@@ -26,7 +26,7 @@ func runService(config) error {
 	return errNotWindows
 }
 
-func install([]string) error {
+func install([]string, config) error {
 	return errNotWindows
 }
 

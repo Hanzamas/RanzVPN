@@ -28,9 +28,22 @@ const maxBody = 16 << 20
 
 // Status is the answer of GET /api/v1/status.
 type Status struct {
-	PublicKey      string `json:"publicKey"`      // base64 of the controller's Noise static key
-	ControlAddress string `json:"controlAddress"` // where the controller listens for control streams
-	TLSFingerprint string `json:"tlsFingerprint"` // hex SHA-256 of the public key of the TLS certificate
+	PublicKey      string       `json:"publicKey"`      // base64 of the controller's Noise static key
+	ControlAddress string       `json:"controlAddress"` // where the controller listens for control streams
+	TLSFingerprint string       `json:"tlsFingerprint"` // hex SHA-256 of the public key of the TLS certificate
+	Capabilities   Capabilities `json:"capabilities"`
+}
+
+// Capabilities is what the controller runs with on its host.
+type Capabilities struct {
+	// TLSPort is the TCP port of the control stream and the API: 443, or 5555 after a fallback.
+	TLSPort int `json:"tlsPort"`
+	// TLSPortFallback is true when 443 could not be bound, at this start or an earlier one, and
+	// the controller listens on 5555 instead (ADR-0020).
+	TLSPortFallback bool `json:"tlsPortFallback"`
+	// PlainHTTP tells where the plain-HTTP port (redirect and ACME) runs, empty when it is off:
+	// a TCP address, or the HTTP.sys URL prefixes on Windows.
+	PlainHTTP string `json:"plainHttp,omitempty"`
 }
 
 // ResourceList is the answer of GET /api/v1/resources: the intent.

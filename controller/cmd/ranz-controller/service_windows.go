@@ -4,15 +4,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/eventlog"
 	"golang.org/x/sys/windows/svc/mgr"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 )
 
 // serviceName is the name of the Windows service and the source of its Application log entries.
@@ -23,6 +27,18 @@ const (
 	eventStarted = 1
 	eventStopped = 2
 	eventFailed  = 3
+	eventWarning = 4 // the TLS port fell back to 5555
+)
+
+// reservationSDDL lets LocalSystem, the service's account, register the URL prefixes of the
+// plain-HTTP port (the right `netsh http add urlacl user=SYSTEM` gives).
+const reservationSDDL = "D:(A;;GX;;;SY)"
+
+// The registry value, under the service's key, that lists the URL reservations install made, so
+// that uninstall removes those and no reservation that existed before.
+const (
+	parametersKey   = `SYSTEM\CurrentControlSet\Services\` + serviceName + `\Parameters`
+	reservationsVal = "UrlReservations"
 )
 
 // logFile is the name of the service's log in the data directory.
@@ -80,7 +96,7 @@ type service struct {
 
 // Execute starts the controller, reports it running once it serves, and stops it on a stop or
 // shutdown request. The service log is controller.log in the data directory; the start, the
-// stop and a failure also go to the Application log.
+// stop, a failure and a fallback of the TLS port also go to the Application log.
 func (s *service) Execute(args []string, req <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
 	const accepts = svc.AcceptStop | svc.AcceptShutdown
 	status <- svc.Status{State: svc.StartPending}
@@ -96,9 +112,14 @@ func (s *service) Execute(args []string, req <-chan svc.ChangeRequest, status ch
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, s.cfg, log, f, func() {
-			status <- svc.Status{State: svc.Running, Accepts: accepts}
-			_ = s.elog.Info(eventStarted, fmt.Sprintf("%s started", serviceName))
+		done <- run(ctx, s.cfg, log, f, hooks{
+			ready: func() {
+				status <- svc.Status{State: svc.Running, Accepts: accepts}
+				_ = s.elog.Info(eventStarted, fmt.Sprintf("%s started", serviceName))
+			},
+			warn: func(msg string) {
+				_ = s.elog.Warning(eventWarning, fmt.Sprintf("%s: %s", serviceName, msg))
+			},
 		})
 	}()
 	for {
@@ -131,8 +152,9 @@ func (s *service) openLog() (*os.File, error) {
 }
 
 // install registers the Windows service, started automatically as LocalSystem and running this
-// executable with args, and the event source of its Application log entries.
-func install(args []string) error {
+// executable with args, the event source of its Application log entries, and, with
+// -http-listen, the HTTP.sys URL reservations of the plain-HTTP port.
+func install(args []string, cfg config) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -159,10 +181,49 @@ func install(args []string) error {
 		_ = s.Delete()
 		return fmt.Errorf("registering the event source: %w", err)
 	}
+	if cfg.httpListen != "" {
+		if err := reserve(cfg.httpListen); err != nil {
+			_ = s.Delete()
+			_ = eventlog.Remove(serviceName)
+			return err
+		}
+	}
 	return nil
 }
 
-// uninstall removes the service and its event source. The service must be stopped first.
+// reserve makes the HTTP.sys URL reservations of the plain-HTTP port for LocalSystem and records
+// the ones it made under the service's key. A reservation that exists already stays as it is.
+func reserve(httpListen string) error {
+	prefixes, err := port.PlainPrefixes(httpListen)
+	if err != nil {
+		return err
+	}
+	var made []string
+	for _, p := range prefixes {
+		created, err := port.Reserve(p, reservationSDDL)
+		if err != nil {
+			for _, m := range made {
+				_ = port.Unreserve(m)
+			}
+			return err
+		}
+		if created {
+			made = append(made, p)
+		}
+	}
+	k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, parametersKey, registry.SET_VALUE)
+	if err != nil {
+		return fmt.Errorf("recording the URL reservations: %w", err)
+	}
+	defer k.Close()
+	if err := k.SetStringsValue(reservationsVal, made); err != nil {
+		return fmt.Errorf("recording the URL reservations: %w", err)
+	}
+	return nil
+}
+
+// uninstall removes the service, its event source and the URL reservations that install made.
+// The service must be stopped first.
 func uninstall() error {
 	m, err := mgr.Connect()
 	if err != nil {
@@ -174,11 +235,22 @@ func uninstall() error {
 		return fmt.Errorf("the service %s is not installed: %w", serviceName, err)
 	}
 	defer s.Close()
+	var made []string
+	if k, err := registry.OpenKey(registry.LOCAL_MACHINE, parametersKey, registry.QUERY_VALUE); err == nil {
+		made, _, _ = k.GetStringsValue(reservationsVal)
+		k.Close()
+	}
 	if err := s.Delete(); err != nil {
 		return err
 	}
-	if err := eventlog.Remove(serviceName); err != nil {
-		return fmt.Errorf("removing the event source: %w", err)
+	var errs []error
+	for _, p := range made {
+		if err := port.Unreserve(p); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	return nil
+	if err := eventlog.Remove(serviceName); err != nil {
+		errs = append(errs, fmt.Errorf("removing the event source: %w", err))
+	}
+	return errors.Join(errs...)
 }
