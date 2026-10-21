@@ -38,12 +38,10 @@ static void FuzzCfg(const uint8_t *data, size_t size)
 
 	if (f != NULL)
 	{
-		// Write the parsed tree back in both formats, as the server does when it saves
-		BUF *text = CfgFolderToBuf(f, true);
-		BUF *bin = CfgFolderToBuf(f, false);
+		// Write the parsed tree back as text, as the server does when it saves
+		BUF *text = CfgFolderToBuf(f);
 
 		FreeBuf(text);
-		FreeBuf(bin);
 		CfgDeleteFolder(f);
 	}
 

@@ -1,7 +1,7 @@
 // packdecode.c
 // Named PACK decoder bounds test of vpntest ("pack_decode_bounds" command, FND-42 #114)
 //
-// BufToPack() decodes every PACK a peer sends, also before the authentication (HttpServerRecvEx,
+// BufToPack() decodes every PACK a peer sends, also before the authentication (HttpServerRecv,
 // at most HTTP_PACK_MAX_SIZE bytes). ReadElement() and ReadValue() allocated from the counts and
 // sizes the peer claimed before they checked that the bytes were there:
 // - an element of 13 bytes that claims 262144 INT values made 262144 values of 0 (ReadBufInt reads
@@ -75,13 +75,10 @@ static BUF *PackDecodeOneElement(UINT type, UINT num_value)
 // bytes allocated meanwhile.
 static bool PackDecodeRejects(BUF *b, UINT64 *alloc)
 {
-	PACK *p;
-	UINT64 before;
-
 	SeekBufToBegin(b);
 
-	before = KS_GET64(KS_TOTAL_MEM_SIZE);
-	p = BufToPack(b);
+	UINT64 before = KS_GET64(KS_TOTAL_MEM_SIZE);
+	PACK *p = BufToPack(b);
 	*alloc = KS_GET64(KS_TOTAL_MEM_SIZE) - before;
 
 	FreeBuf(b);
@@ -114,10 +111,8 @@ static void PackDecodeTestReject(PACKDECODE_CTX *ctx, BUF *b, bool bounded, char
 // Malformed PACKs: counts and sizes past the bytes present, an unknown type, values cut short
 static void PackDecodeTestMalformed(PACKDECODE_CTX *ctx)
 {
-	BUF *b;
-
 	// 13 bytes after the element count, no values
-	b = PackDecodeOneElement(VALUE_INT, MAX_VALUE_NUM);
+	BUF *b = PackDecodeOneElement(VALUE_INT, MAX_VALUE_NUM);
 	PackDecodeTestReject(ctx, b, true,
 		"VALUE_INT with 262144 values and no payload is rejected (the old decoder made 262144 values of 0)");
 
@@ -172,14 +167,12 @@ static void PackDecodeTestMalformed(PACKDECODE_CTX *ctx)
 static void PackDecodeTestValid(PACKDECODE_CTX *ctx)
 {
 	PACK *p = NewPack();
-	PACK *p2;
-	BUF *b1, *b2 = NULL;
+	BUF *b2 = NULL;
 	UCHAR data[20];
 	wchar_t uni[64];
 	char str[64];
-	UINT i;
 
-	for (i = 0;i < sizeof(data);i++)
+	for (UINT i = 0;i < sizeof(data);i++)
 	{
 		data[i] = (UCHAR)i;
 	}
@@ -192,16 +185,16 @@ static void PackDecodeTestValid(PACKDECODE_CTX *ctx)
 	PackAddStr(p, "str_empty", "");
 	PackAddUniStr(p, "unistr", L"Ranz \x00e9\x65e5");
 	PackAddUniStr(p, "unistr_empty", L"");
-	for (i = 0;i < 3;i++)
+	for (UINT i = 0;i < 3;i++)
 	{
 		PackAddIntEx(p, "ints", 443 + i, i, 3);
 		PackAddStrEx(p, "strs", (i == 1 ? "" : "x"), i, 3);
 		PackAddDataEx(p, "datas", data, i * 4, i, 3);
 	}
 
-	b1 = PackToBuf(p);
+	BUF *b1 = PackToBuf(p);
 	SeekBufToBegin(b1);
-	p2 = BufToPack(b1);
+	PACK *p2 = BufToPack(b1);
 	if (p2 != NULL)
 	{
 		b2 = PackToBuf(p2);

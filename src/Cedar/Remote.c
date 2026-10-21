@@ -10,12 +10,12 @@
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 
-void RpcFree(RPC *rpc)
-{
+// The body of a frame is read in pieces of this size, so a frame that declares more than it sends costs only what it sent
+#define RPC_RECV_CHUNK_SIZE (64 * 1024U)
+
+void RpcFree(RPC *rpc) {
 	if (rpc == NULL)
-	{
 		return;
-	}
 
 	Disconnect(rpc->Sock);
 
@@ -26,165 +26,126 @@ void RpcFree(RPC *rpc)
 	Free(rpc);
 }
 
-static PACK *CallRpcDispatcher(RPC *r, PACK *p)
-{
+static PACK *CallRpcDispatcher(RPC *r, PACK *p) {
 	char func_name[MAX_SIZE];
 	if (r == NULL || p == NULL)
-	{
 		return NULL;
-	}
 
 	if (PackGetStr(p, "function_name", func_name, sizeof(func_name)) == false)
-	{
 		return NULL;
-	}
 
 	return r->Dispatch(r, func_name, p);
 }
 
-static bool RpcRecvNextCall(RPC *r)
-{
+// One frame is a 32-bit big-endian size and the serialised PACK
+static bool RpcSendPack(SOCK *s, PACK *p) {
+	BUF *b = PackToBuf(p);
+
+	UINT size = Endian32(b->Size);
+	SendAdd(s, &size, sizeof(UINT));
+	SendAdd(s, b->Buf, b->Size);
+	FreeBuf(b);
+
+	return SendNow(s, s->SecureMode);
+}
+
+static PACK *RpcRecvPack(SOCK *s) {
 	UINT size;
-	void *tmp;
-	SOCK *s;
-	BUF *b;
-	PACK *p;
-	PACK *ret;
-	if (r == NULL)
-	{
-		return false;
-	}
-
-	s = r->Sock;
-
 	if (RecvAll(s, &size, sizeof(UINT), s->SecureMode) == false)
-	{
-		return false;
-	}
+		return NULL;
 
 	size = Endian32(size);
 
 	if (size > MAX_PACK_SIZE)
-	{
-		return false;
+		return NULL;
+
+	BUF *b = NewBuf();
+
+	while (b->Size < size) {
+		UINT chunk = MIN(size - b->Size, RPC_RECV_CHUNK_SIZE);
+
+		AdjustBufSize(b, b->Size + chunk);
+
+		if (RecvAll(s, (UCHAR *)b->Buf + b->Size, chunk, s->SecureMode) == false) {
+			FreeBuf(b);
+			return NULL;
+		}
+
+		b->Size += chunk;
 	}
 
-	tmp = MallocEx(size, true);
-
-	if (RecvAll(s, tmp, size, s->SecureMode) == false)
-	{
-		Free(tmp);
-		return false;
-	}
-
-	b = NewBuf();
-	WriteBuf(b, tmp, size);
-	SeekBuf(b, 0, 0);
-	Free(tmp);
-
-	p = BufToPack(b);
+	PACK *p = BufToPack(b);
 	FreeBuf(b);
 
-	if (p == NULL)
-	{
-		return false;
-	}
+	return p;
+}
 
-	ret = CallRpcDispatcher(r, p);
+static bool RpcRecvNextCall(RPC *r) {
+	if (r == NULL)
+		return false;
+
+	PACK *p = RpcRecvPack(r->Sock);
+	if (p == NULL)
+		return false;
+
+	PACK *ret = CallRpcDispatcher(r, p);
 	FreePack(p);
 
 	if (ret == NULL)
-	{
 		ret = PackError(ERR_NOT_SUPPORTED);
-	}
 
-	b = PackToBuf(ret);
+	bool ok = RpcSendPack(r->Sock, ret);
 	FreePack(ret);
 
-	size = Endian32(b->Size);
-	SendAdd(s, &size, sizeof(UINT));
-	SendAdd(s, b->Buf, b->Size);
-
-	if (SendNow(s, s->SecureMode) == false)
-	{
-		FreeBuf(b);
-		return false;
-	}
-
-	FreeBuf(b);
-
-	return true;
+	return ok;
 }
 
-void RpcServer(RPC *r)
-{
-	SOCK *s;
+void RpcServer(RPC *r) {
 	if (r == NULL)
-	{
 		return;
-	}
-
-	s = r->Sock;
 
 	while (true)
-	{
 		if (RpcRecvNextCall(r) == false)
-		{
 			break;
-		}
-	}
 }
 
-PACK *RpcCall(RPC *r, char *function_name, PACK *p)
-{
+PACK *RpcCall(RPC *r, char *function_name, PACK *p) {
 	PACK *ret;
 	UINT num_retry = 0;
 	UINT err = 0;
 	if (r == NULL || function_name == NULL)
-	{
 		return NULL;
-	}
 
 
 	Lock(r->Lock);
 	{
 		if (p == NULL)
-		{
 			p = NewPack();
-		}
 
 		PackAddStr(p, "function_name", function_name);
 
-RETRY:
+	RETRY:
 		err = 0;
 		ret = RpcCallInternal(r, p);
 
-		if (ret == NULL)
-		{
-			if (r->IsVpnServer && r->Sock != NULL)
-			{
-				if (num_retry < 1)
-				{
+		if (ret == NULL) {
+			if (r->Sock != NULL) {
+				if (num_retry < 1) {
 					num_retry++;
 
 					err = AdminReconnect(r);
 
 					if (err == ERR_NO_ERROR)
-					{
 						goto RETRY;
-					}
 				}
 			}
 		}
 
 		FreePack(p);
 
-		if (ret == NULL)
-		{
+		if (ret == NULL) {
 			if (err == 0)
-			{
 				err = ERR_DISCONNECTED;
-			}
 
 			ret = PackError(err);
 			PackAddInt(ret, "error_code", err);
@@ -195,106 +156,33 @@ RETRY:
 	return ret;
 }
 
-PACK *RpcCallInternal(RPC *r, PACK *p)
-{
-	BUF *b;
-	UINT size;
-	PACK *ret;
-	void *tmp;
+PACK *RpcCallInternal(RPC *r, PACK *p) {
 	if (r == NULL || p == NULL)
-	{
 		return NULL;
-	}
 
 	if (r->Sock == NULL)
-	{
 		return NULL;
-	}
 
-	b = PackToBuf(p);
-
-	size = Endian32(b->Size);
-	SendAdd(r->Sock, &size, sizeof(UINT));
-	SendAdd(r->Sock, b->Buf, b->Size);
-	FreeBuf(b);
-
-	if (SendNow(r->Sock, r->Sock->SecureMode) == false)
-	{
+	if (RpcSendPack(r->Sock, p) == false)
 		return NULL;
-	}
 
-	if (RecvAll(r->Sock, &size, sizeof(UINT), r->Sock->SecureMode) == false)
-	{
-		return NULL;
-	}
-
-	size = Endian32(size);
-	if (size > MAX_PACK_SIZE)
-	{
-		return NULL;
-	}
-
-	tmp = MallocEx(size, true);
-	if (RecvAll(r->Sock, tmp, size, r->Sock->SecureMode) == false)
-	{
-		Free(tmp);
-		return NULL;
-	}
-
-	b = NewBuf();
-	WriteBuf(b, tmp, size);
-	SeekBuf(b, 0, 0);
-	Free(tmp);
-
-	ret = BufToPack(b);
-	if (ret == NULL)
-	{
-		FreeBuf(b);
-		return NULL;
-	}
-
-	FreeBuf(b);
-
-	return ret;
+	return RpcRecvPack(r->Sock);
 }
 
-RPC *StartRpcServer(SOCK *s, RPC_DISPATCHER *dispatch, void *param)
-{
-	RPC *r;
+// dispatch is the function a server-side RPC runs for each call, NULL for the calling side
+RPC *NewRpc(SOCK *s, RPC_DISPATCHER *dispatch, void *param) {
 	if (s == NULL)
-	{
 		return NULL;
-	}
 
-	r = ZeroMallocEx(sizeof(RPC), true);
+	RPC *r = ZeroMallocEx(sizeof(RPC), true);
 	r->Sock = s;
 	r->Param = param;
 	r->Lock = NewLock();
 	AddRef(s->ref);
 
-	r->ServerMode = true;
 	r->Dispatch = dispatch;
 
-	Format(r->Name, sizeof(r->Name), "RPC-%u", s->socket);
-
-	return r;
-}
-
-RPC *StartRpcClient(SOCK *s, void *param)
-{
-	RPC *r;
-	if (s == NULL)
-	{
-		return NULL;
-	}
-
-	r = ZeroMalloc(sizeof(RPC));
-	r->Sock = s;
-	r->Param = param;
-	r->Lock = NewLock();
-	AddRef(s->ref);
-
-	r->ServerMode = false;
+	Format(r->Name, sizeof(r->Name), "RPC-%u", (UINT)s->socket);
 
 	return r;
 }

@@ -1,32 +1,32 @@
 // Hub.h
 // Header of Hub.c
 
-#ifndef	HUB_H
-#define	HUB_H
+#ifndef HUB_H
+#define HUB_H
 
 #include "Account.h"
-#include "Logging.h"
+#include "HubLog.h"
+#include "LogWriter.h"
 
-#define	ACCESS_LIST_INCLUDED_PREFIX		"include:"
-#define	ACCESS_LIST_EXCLUDED_PREFIX		"exclude:"
+#define ACCESS_LIST_INCLUDED_PREFIX "include:"
+#define ACCESS_LIST_EXCLUDED_PREFIX "exclude:"
 
-#define	ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME		30
+#define ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME 30
 
-#define	ACCESS_LIST_INCLUDE_FILE_MAX_SIZE			(1024 * 1024)
+#define ACCESS_LIST_INCLUDE_FILE_MAX_SIZE (1024 * 1024)
 
-#define	ACCESS_LIST_URL_INFO_TAG					"<INFO>"
+#define ACCESS_LIST_URL_INFO_TAG "<INFO>"
 
-#define	OLD_MAC_ADDRESS_ENTRY_FLUSH_INTERVAL		1000
+#define OLD_MAC_ADDRESS_ENTRY_FLUSH_INTERVAL 1000
 
-#define	DEFAULT_FLOODING_QUEUE_LENGTH				(32 * 1024 * 1024)
+#define DEFAULT_FLOODING_QUEUE_LENGTH (32 * 1024 * 1024)
 
-#define	DEFAULT_DHCP_DISCOVER_TIMEOUT				(5 * 1000)
+#define DEFAULT_DHCP_DISCOVER_TIMEOUT (5 * 1000)
 
 // Entries of the broadcast storm list of one session (HUB_PA.StormList): AddStormList drops the oldest one beyond this
-#define	MAX_STORM_LIST_ENTRIES						4096
+#define MAX_STORM_LIST_ENTRIES 4096
 
-struct HUBDB
-{
+struct HUBDB {
 	LIST *UserList;
 	LIST *GroupList;
 	LIST *RootCertList;
@@ -34,14 +34,12 @@ struct HUBDB
 	LIST *AcList;
 };
 
-struct TRAFFIC_LIMITER
-{
+struct TRAFFIC_LIMITER {
 	UINT64 LastTime;
 	UINT64 Value;
 };
 
-struct STORM
-{
+struct STORM {
 	UCHAR MacAddress[6];
 	IP SrcIp;
 	IP DestIp;
@@ -51,8 +49,7 @@ struct STORM
 	bool StrictMode;
 };
 
-struct HUB_PA
-{
+struct HUB_PA {
 	CANCEL *Cancel;
 	QUEUE *PacketQueue;
 	bool MonitorPort;
@@ -62,12 +59,10 @@ struct HUB_PA
 	SESSION *Session;
 	LIST *StormList;
 	UINT64 UsernameHash;
-	UINT64 UsernameHashSimple;
 	UINT64 GroupnameHash;
 };
 
-struct HUB_OPTION
-{
+struct HUB_OPTION {
 	UINT MaxSession;
 	bool NoEnum;
 	bool NoArpPolling;
@@ -116,13 +111,29 @@ struct HUB_OPTION
 	UINT FloodingSendQueueBufferQuota;
 	UINT DetectDormantSessionInterval;
 	bool NoPhysicalIPOnPacketLog;
-	bool UseHubNameAsDhcpUserClassOption;
-	bool AllowEapMatchUserByCert;
 	UINT DhcpDiscoverTimeoutMs;
 };
 
-struct MAC_TABLE_ENTRY
-{
+// Types of the HUB_OPTION_FIELD rows
+#define HUB_OPTION_BOOL 0
+#define HUB_OPTION_UINT 1
+#define HUB_OPTION_HEX  2 // A UINT that the config file holds as the string "0x..."
+
+// Flags of the HUB_OPTION_FIELD rows
+#define HUB_OPTION_WRITE_IF_TRUE   1 // The config file gets the item only when the value is not zero
+#define HUB_OPTION_ZERO_IS_DEFAULT 2 // A stored zero is read as the default
+
+// One row per HUB_OPTION member (hub_option_fields in Hub.c): the order of the rows is the order of the admin options
+struct HUB_OPTION_FIELD {
+	char *CfgName;   // Item name in the config file
+	char *AdminName; // Name in the RPC admin option list, NULL for a member that is not an admin option
+	UINT Offset;     // Offset of the member in HUB_OPTION
+	UINT Type;       // HUB_OPTION_BOOL, HUB_OPTION_UINT or HUB_OPTION_HEX
+	UINT Default;    // Value of a new hub and of an item the config file does not have
+	UINT Flags;
+};
+
+struct MAC_TABLE_ENTRY {
 	UCHAR MacAddress[6];
 	UINT VlanId;
 	SESSION *Session;
@@ -131,18 +142,17 @@ struct MAC_TABLE_ENTRY
 	UINT64 UpdatedTime;
 };
 
-struct IP_TABLE_ENTRY
-{
+struct IP_TABLE_ENTRY {
 	IP Ip;
 	SESSION *Session;
 	bool DhcpAllocated;
 	UINT64 CreatedTime;
 	UINT64 UpdatedTime;
+	UINT64 LastProbeTime; // Tick64 of the last watchdog ARP/NS probe, 0 = never probed
 	UCHAR MacAddress[6];
 };
 
-struct ACCESS
-{
+struct ACCESS {
 	UINT Id;
 	wchar_t Note[MAX_ACCESSLIST_NOTE_LEN + 1];
 
@@ -187,23 +197,20 @@ struct ACCESS
 	UINT UniqueId;
 };
 
-struct ADMIN_OPTION
-{
+struct ADMIN_OPTION {
 	char Name[MAX_ADMIN_OPTION_NAME_LEN + 1];
 	UINT Value;
 	wchar_t Descrption[MAX_SIZE];
 };
 
-struct CRL
-{
+struct CRL {
 	X_SERIAL *Serial;
 	NAME *Name;
 	UCHAR DigestMD5[MD5_SIZE];
 	UCHAR DigestSHA1[SHA1_SIZE];
 };
 
-struct AC
-{
+struct AC {
 	UINT Id;
 	UINT Priority;
 	bool Deny;
@@ -212,14 +219,12 @@ struct AC
 	IP SubnetMask;
 };
 
-struct USERLIST
-{
+struct USERLIST {
 	char Filename[MAX_PATH];
 	LIST *UserHashList;
 };
 
-struct HUB
-{
+struct HUB {
 	LOCK *lock;
 	LOCK *lock_online;
 	REF *ref;
@@ -244,7 +249,6 @@ struct HUB
 	UCHAR HubMacAddr[6];
 	IP HubIp;
 	IPV6_ADDR HubIpV6;
-	UINT HubIP6Id;
 	LIST *AccessList;
 	HUB_LOG LogSetting;
 	LOG *PacketLogger;
@@ -268,22 +272,36 @@ struct HUB
 	bool ForceDisableComm;
 };
 
+// Counters of one hub, copied by HubGetStats under the hub's own locks
+struct HUB_STATS {
+	bool Online;
+	UINT NumSessions;
+	UINT NumSessionsClient;
+	UINT NumSessionsBridge;
+	UINT NumAccessLists;
+	UINT NumUsers;
+	UINT NumGroups;
+	UINT NumMacTables;
+	UINT NumIpTables;
+	TRAFFIC Traffic;
+	UINT64 LastCommTime;
+	UINT64 LastLoginTime;
+	UINT64 CreatedTime;
+	UINT NumLogin;
+};
+
 
 extern ADMIN_OPTION admin_options[];
 extern UINT num_admin_options;
+extern HUB_OPTION_FIELD hub_option_fields[];
+extern UINT num_hub_option_fields;
 
 
-HUBDB *NewHubDb();
-void DeleteHubDb(HUBDB *d);
 HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option);
 void SetHubMsg(HUB *h, wchar_t *msg);
+void HubGetStats(HUB *h, HUB_STATS *st);
 wchar_t *GetHubMsg(HUB *h);
-bool IsHubIpAddress(IP *ip);
-bool IsHubIpAddress32(UINT ip32);
-bool IsHubIpAddress64(IPV6_ADDR *addr);
-bool IsHubMacAddress(UCHAR *mac);
 void ReleaseHub(HUB *h);
-void CleanupHub(HUB *h);
 int CompareHub(void *p1, void *p2);
 int CompareIpTable(void *p1, void *p2);
 void LockHubList(CEDAR *cedar);
@@ -294,62 +312,46 @@ void StopHub(HUB *h);
 void AddSession(HUB *h, SESSION *s);
 void DelSession(HUB *h, SESSION *s);
 PACKET_ADAPTER *GetHubPacketAdapter();
-void StorePacket(HUB *hub, SESSION *s, PKT *packet);
-bool StorePacketFilter(SESSION *s, PKT *packet);
-void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *packet, bool is_flooding, bool no_check_acl);
 void SetHubOnline(HUB *h);
 void SetHubOffline(HUB *h);
+void HubApplyInitialState(HUB *h, bool online);
 SESSION *GetSessionByName(HUB *hub, char *name);
-void DeleteIPv6DefaultRouterInRA(PKT *p);
-void IntoTrafficLimiter(TRAFFIC_LIMITER *tr, PKT *p);
-bool IsMostHighestPriorityPacket(SESSION *s, PKT *p);
+UINT HubCountUserSessions(HUB *h, char *username, UCHAR *unique_id);
+SESSION_INFO *HubEnumSessions(HUB *h, UINT *num);
 STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict);
-STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict);
 bool AddRootCert(HUB *hub, X *x);
-int CmpAccessList(void *p1, void *p2);
 void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id);
-bool IsTcpPacketNcsiHttpAccess(PKT *p);
-UINT64 UsernameToInt64(char *name);
-void MakeSimpleUsernameRemoveNtDomain(char *dst, UINT dst_size, char *src);
 void GetAccessListStr(char *str, UINT size, ACCESS *a);
-void DeleteOldIpTableEntry(LIST *o);
-int CompareCert(void *p1, void *p2);
+void HubLockTables(HUB *h);
+void HubUnlockTables(HUB *h);
+UINT HubIpTableNum(HUB *h);
+MAC_TABLE_ENTRY **MacTableEnum(HUB *h, UINT *num);
+bool MacTableDeleteByKey(HUB *h, UINT key);
+IP_TABLE_ENTRY *IpTableGet(HUB *h, UINT index);
+bool IpTableDeleteByKey(HUB *h, UINT key);
 void GetHubLogSetting(HUB *h, HUB_LOG *setting);
 void SetHubLogSettingEx(HUB *h, HUB_LOG *setting, bool no_change_switch_type);
 void DeleteExpiredIpTableEntry(LIST *o);
-void DeleteExpiredMacTableEntry(HASH_LIST *h);
-void HubWatchDogThread(THREAD *t, void *param);
 UINT GetHubAdminOption(HUB *h, char *name);
-void DeleteAllHubAdminOption(HUB *h, bool lock);
+void DeleteAllHubAdminOption(HUB *h);
 void AddHubAdminOptionsDefaults(HUB *h, bool lock);
-bool IsCertMatchCrl(X *x, CRL *crl);
-bool IsCertMatchCrlList(X *x, LIST *o);
 wchar_t *GenerateCrlStr(CRL *crl);
 bool IsValidCertInHub(HUB *h, X *x);
 void FreeCrl(CRL *crl);
 CRL *CopyCrl(CRL *crl);
 int CmpAc(void *p1, void *p2);
 void AddAc(LIST *o, AC *ac);
-void DelAllAc(LIST *o);
 void SetAcList(LIST *o, LIST *src);
-void NormalizeAcList(LIST *o);
-bool IsIpMaskedByAc(IP *ip, AC *ac);
 bool IsIpDeniedByAcList(IP *ip, LIST *o);
 char *GenerateAcStr(AC *ac);
 void FreeAcList(LIST *o);
-bool IsIPManagementTargetForHUB(IP *ip, HUB *hub);
 wchar_t *GetHubAdminOptionHelpString(char *name);
 void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name);
-ADMIN_OPTION *NewAdminOption(char *name, UINT value);
+UINT GetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f);
+void SetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f, UINT value);
 void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao);
-UINT GetHubAdminOptionData(RPC_ADMIN_OPTION *ao, char *name);
 bool IsURLMsg(wchar_t *str, char *url, UINT url_size);
 void DeleteAllUserListCache(LIST *o);
-void FreeUserListEntry(USERLIST *u);
-int CompareUserList(void *p1, void *p2);
-USERLIST *LoadUserList(LIST *o, char *filename);
-USERLIST *FindUserList(LIST *o, char *filename);
-bool IsUserMatchInUserList(LIST *o, char *filename, UINT64 user_hash);
 bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now);
 
 #endif

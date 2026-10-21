@@ -11,6 +11,9 @@
 // - AdjustTcpMssL3, called by AdjustTcpMssL2 to clamp the MSS of a SYN. It walks the TCP options
 //   with checked lengths, so the MSS option is clamped wherever it is in the list, and a malformed
 //   list is left alone. The old code clamped it only when it was the first option.
+// - IpChecksum, CalcChecksumForIPv4 and CalcChecksumForIPv6 (FND-53), now a 64-bit one's complement
+//   sum that reads the data in place: the result is the same as the sum over 16-bit words (RFC
+//   1071) for every size and alignment.
 // Every payload, frame and packet is in a heap block of exactly its size, so AddressSanitizer
 // reports a read past its end. Prints "TCPIP TEST OK" only when every check passes, and frees
 // everything it allocates. The [PASS] lines carry no values; the [FAIL] details do.
@@ -65,7 +68,7 @@ static void TcpIpTestCheck(TCPIPTEST_CTX *ctx, bool ok, char *what, char *detail
 }
 
 // Ethernet header (14 bytes) of an IPv4 frame from src_mac to dst_mac
-static void TcpIpTestEthernet(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac)
+static void TcpIpTestEthernet(UCHAR *buf, const UCHAR *dst_mac, const UCHAR *src_mac)
 {
 	Copy(buf, dst_mac, 6);
 	Copy(buf + 6, src_mac, 6);
@@ -75,10 +78,8 @@ static void TcpIpTestEthernet(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac)
 
 // IPv4 header (20 bytes, zeroed before) of an ip_size-byte packet from src to dst, with its checksum.
 // The checksum of the layer 4 header behind it is TcpIpTestL4Checksum's
-static void TcpIpTestIpv4(UCHAR *ip, UINT ip_size, UCHAR protocol, UCHAR *src, UCHAR *dst)
+static void TcpIpTestIpv4(UCHAR *ip, UINT ip_size, UCHAR protocol, const UCHAR *src, const UCHAR *dst)
 {
-	USHORT sum;
-
 	ip[0] = 0x45;								// Version 4, 20-byte header
 	ip[2] = (UCHAR)(ip_size >> 8);
 	ip[3] = (UCHAR)(ip_size & 0xFF);
@@ -89,7 +90,7 @@ static void TcpIpTestIpv4(UCHAR *ip, UINT ip_size, UCHAR protocol, UCHAR *src, U
 	ip[9] = protocol;
 	Copy(ip + 12, src, 4);
 	Copy(ip + 16, dst, 4);
-	sum = IpChecksum(ip, 20);
+	USHORT sum = IpChecksum(ip, 20);
 	Copy(ip + 10, &sum, sizeof(USHORT));
 }
 
@@ -97,17 +98,16 @@ static void TcpIpTestIpv4(UCHAR *ip, UINT ip_size, UCHAR protocol, UCHAR *src, U
 static void TcpIpTestL4Checksum(UCHAR *ip, UINT l4_size, UINT sum_offset)
 {
 	UINT src_ip, dst_ip;
-	USHORT sum;
 
 	Copy(&src_ip, ip + 12, sizeof(UINT));
 	Copy(&dst_ip, ip + 16, sizeof(UINT));
-	sum = CalcChecksumForIPv4(src_ip, dst_ip, ip[9], ip + 20, l4_size, 0);
+	USHORT sum = CalcChecksumForIPv4(src_ip, dst_ip, ip[9], ip + 20, l4_size, 0);
 	Copy(ip + 20 + sum_offset, &sum, sizeof(USHORT));
 }
 
 // DHCP payload (a BOOTREPLY to the client) in a zeroed heap block of block_size bytes: the fixed
 // header, the magic cookie at TCPIPTEST_COOKIE_OFFSET and the options behind it
-static UCHAR *TcpIpTestDhcp(UINT block_size, UCHAR *options, UINT options_size)
+static UCHAR *TcpIpTestDhcp(UINT block_size, const UCHAR *options, UINT options_size)
 {
 	UCHAR *p = ZeroMalloc(block_size);
 
@@ -131,20 +131,17 @@ static UCHAR *TcpIpTestDhcp(UINT block_size, UCHAR *options, UINT options_size)
 
 // Ethernet frame of the DHCP server 192.168.30.1:67 to the client 192.168.30.10:68 that carries the
 // payload, with valid IPv4 and UDP checksums, in a heap block of exactly its size (*size)
-static UCHAR *TcpIpTestDhcpFrame(UCHAR *payload, UINT payload_size, UINT *size)
+static UCHAR *TcpIpTestDhcpFrame(const UCHAR *payload, UINT payload_size, UINT *size)
 {
 	UCHAR src[4] = {192, 168, 30, 1};
 	UCHAR dst[4] = {192, 168, 30, 10};
 	UINT udp_size = 8 + payload_size;
 	UINT ip_size = 20 + udp_size;
-	UCHAR *buf;
-	UCHAR *ip;
-	UCHAR *udp;
 
 	*size = 14 + ip_size;
-	buf = ZeroMalloc(*size);
-	ip = buf + 14;
-	udp = ip + 20;
+	UCHAR *buf = ZeroMalloc(*size);
+	UCHAR *ip = buf + 14;
+	UCHAR *udp = ip + 20;
 
 	TcpIpTestEthernet(buf, tcpiptest_mac_client, tcpiptest_mac_server);
 	TcpIpTestIpv4(ip, ip_size, IP_PROTO_UDP, src, dst);
@@ -163,21 +160,18 @@ static UCHAR *TcpIpTestDhcpFrame(UCHAR *payload, UINT payload_size, UINT *size)
 // IPv4 TCP SYN of the client 10.0.0.1:49152 to 10.0.0.2:443 with the options (a multiple of 4
 // bytes) and no data, behind an Ethernet header when ethernet is true, with valid IPv4 and TCP
 // checksums, in a heap block of exactly its size (*size)
-static UCHAR *TcpIpTestSyn(UCHAR *options, UINT options_size, bool ethernet, UINT *size)
+static UCHAR *TcpIpTestSyn(const UCHAR *options, UINT options_size, bool ethernet, UINT *size)
 {
 	UCHAR src[4] = {10, 0, 0, 1};
 	UCHAR dst[4] = {10, 0, 0, 2};
 	UINT l2_size = (ethernet ? 14 : 0);
 	UINT tcp_size = 20 + options_size;
 	UINT ip_size = 20 + tcp_size;
-	UCHAR *buf;
-	UCHAR *ip;
-	UCHAR *tcp;
 
 	*size = l2_size + ip_size;
-	buf = ZeroMalloc(*size);
-	ip = buf + l2_size;
-	tcp = ip + 20;
+	UCHAR *buf = ZeroMalloc(*size);
+	UCHAR *ip = buf + l2_size;
+	UCHAR *tcp = ip + 20;
 
 	if (ethernet)
 	{
@@ -203,7 +197,7 @@ static UCHAR *TcpIpTestSyn(UCHAR *options, UINT options_size, bool ethernet, UIN
 
 // One check of a DhcpModify or DhcpModifyIPv4 result: with expect NULL the call must have returned
 // NULL, otherwise expect_size bytes equal to expect. Frees the result
-static void TcpIpTestBuf(TCPIPTEST_CTX *ctx, char *what, BUF *b, UCHAR *expect, UINT expect_size)
+static void TcpIpTestBuf(TCPIPTEST_CTX *ctx, char *what, BUF *b, const UCHAR *expect, UINT expect_size)
 {
 	bool ok;
 
@@ -250,28 +244,23 @@ static void TcpIpTestDhcpModify(TCPIPTEST_CTX *ctx)
 	UCHAR request[] = {53, 1, 3, 255};
 	UINT short_sizes[] = {44, 100, TCPIPTEST_COOKIE_OFFSET + 3};
 	DHCP_MODIFY_OPTION m;
-	UCHAR *p;
-	UCHAR *e;
 	UCHAR *q;
-	UCHAR *f;
-	UCHAR *g;
 	UINT f_size;
 	UINT g_size;
-	UINT i;
 
 	Zero(&m, sizeof(m));
 	m.RemoveDefaultGatewayOnReply = true;
 
 	// A well-formed ACK: the gateway, DNS, domain name and WINS options go, the result is padded to the
 	// size of the payload. The old code read the 44 bytes behind the payload as options.
-	p = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack, sizeof(ack));
-	e = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack_modified, sizeof(ack_modified));
+	UCHAR *p = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack, sizeof(ack));
+	UCHAR *e = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack_modified, sizeof(ack_modified));
 	TcpIpTestBuf(ctx, "DhcpModify removes the gateway, DNS, domain name and WINS options of an ACK, reading nothing past it",
 		DhcpModify(&m, p, TCPIPTEST_DHCP_SIZE), e, TCPIPTEST_DHCP_SIZE);
 
 	// The parent: the frame of that ACK through DhcpModifyIPv4, with its UDP checksum computed again
-	f = TcpIpTestDhcpFrame(p, TCPIPTEST_DHCP_SIZE, &f_size);
-	g = TcpIpTestDhcpFrame(e, TCPIPTEST_DHCP_SIZE, &g_size);
+	UCHAR *f = TcpIpTestDhcpFrame(p, TCPIPTEST_DHCP_SIZE, &f_size);
+	UCHAR *g = TcpIpTestDhcpFrame(e, TCPIPTEST_DHCP_SIZE, &g_size);
 	TcpIpTestBuf(ctx, "DhcpModifyIPv4 modifies the frame of the ACK and computes its UDP checksum again",
 		DhcpModifyIPv4(&m, f, f_size), g, g_size);
 	Free(f);
@@ -299,7 +288,7 @@ static void TcpIpTestDhcpModify(TCPIPTEST_CTX *ctx)
 
 	// Payloads that end before the options: only the fixed header, part of sname, part of the cookie
 	p = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack, sizeof(ack));
-	for (i = 0; i < sizeof(short_sizes) / sizeof(short_sizes[0]); i++)
+	for (UINT i = 0; i < sizeof(short_sizes) / sizeof(short_sizes[0]); i++)
 	{
 		char what[MAX_SIZE];
 
@@ -328,7 +317,6 @@ static void TcpIpTestMssCase(TCPIPTEST_CTX *ctx, char *what, UCHAR *options, UCH
 	UCHAR *p = TcpIpTestSyn(options, options_size, ethernet, &size);
 	UCHAR *e = TcpIpTestSyn(expect != NULL ? expect : options, options_size, ethernet, &expect_size);
 	bool ret;
-	bool same;
 
 	if (ethernet)
 	{
@@ -339,7 +327,7 @@ static void TcpIpTestMssCase(TCPIPTEST_CTX *ctx, char *what, UCHAR *options, UCH
 		ret = AdjustTcpMssL3(p, size, TCPIPTEST_TARGET_MSS);
 	}
 
-	same = (size == expect_size && Cmp(p, e, size) == 0);
+	bool same = (size == expect_size && Cmp(p, e, size) == 0);
 
 	TcpIpTestCheck(ctx, ret == (expect != NULL) && same, what, "returned %s, the SYN is %s; expected %s",
 		ret ? "true" : "false", same ? "as expected" : "not as expected", expect != NULL ? "true" : "false");
@@ -383,6 +371,150 @@ static void TcpIpTestMss(TCPIPTEST_CTX *ctx)
 	TcpIpTestMssCase(ctx, "AdjustTcpMssL3 stops at an option kind without its length, reading nothing past it", lone_kind, NULL, sizeof(lone_kind), false);
 }
 
+// The word-by-word one's complement sum of RFC 1071, which IpChecksum was before it became a 64-bit
+// sum: 16-bit words in the byte order of the machine, and an odd last byte as the first byte of a
+// word of its own
+static USHORT TcpIpTestRefChecksum(UCHAR *buf, UINT size)
+{
+	UINT64 sum = 0;
+
+	for (UINT i = 0; i + 1 < size; i += 2)
+	{
+		USHORT w;
+
+		Copy(&w, buf + i, sizeof(w));
+		sum += w;
+	}
+
+	if ((size % 2) == 1)
+	{
+		USHORT w = 0;
+
+		*(UCHAR *)(&w) = buf[size - 1];
+		sum += w;
+	}
+
+	while ((sum >> 16) != 0)
+	{
+		sum = (sum >> 16) + (sum & 0xFFFF);
+	}
+
+	return (USHORT)~sum;
+}
+
+// Fill buf: pattern 0 is pseudo-random bytes (a fixed generator, so a failure repeats), 1 is all
+// 0xFF (the sum is a multiple of 0xFFFF) and 2 is all zero
+static void TcpIpTestFill(UCHAR *buf, UINT size, UINT pattern, UINT *seed)
+{
+	for (UINT i = 0; i < size; i++)
+	{
+		if (pattern == 1)
+		{
+			buf[i] = 0xFF;
+		}
+		else if (pattern == 2)
+		{
+			buf[i] = 0;
+		}
+		else
+		{
+			*seed = *seed * 1664525 + 1013904223;
+			buf[i] = (UCHAR)(*seed >> 24);
+		}
+	}
+}
+
+// IpChecksum, CalcChecksumForIPv4 and CalcChecksumForIPv6 against the word-by-word sum, over a
+// buffer that is a heap block of exactly its size at every alignment of 0 to 7 bytes
+static void TcpIpTestChecksum(TCPIPTEST_CTX *ctx)
+{
+	UINT big_sizes[] = {1460, 1461, 4096, 9001, 65535, 65536};
+	UINT num_small = 134;
+	UINT seed = 1;
+	UINT num = 0, bad_ip = 0, bad_v4 = 0, bad_v6 = 0;
+	UINT first_bad = INFINITE;
+
+	for (UINT k = 0; k < num_small + sizeof(big_sizes) / sizeof(big_sizes[0]); k++)
+	{
+		UINT len = (k < num_small) ? k : big_sizes[k - num_small];
+
+		for (UINT off = 0; off < 8; off++)
+		{
+			for (UINT pattern = 0; pattern < 3; pattern++)
+			{
+				UINT alloc = len + off;
+				IPV6_ADDR src6, dst6;
+				UINT src4, dst4;
+
+				if (alloc == 0)
+				{
+					alloc = 1;
+				}
+
+				UCHAR *block = Malloc(alloc);
+				UCHAR *buf = block + off;
+				TcpIpTestFill(buf, len, pattern, &seed);
+
+				// 12-byte pseudo-header of IPv4 and 40-byte pseudo-header of IPv6, then the data
+				UCHAR *v4 = Malloc(12 + len);
+				UCHAR *v6 = Malloc(40 + len);
+				Zero(v4, 12);
+				Zero(v6, 40);
+				TcpIpTestFill((UCHAR *)&src4, sizeof(src4), 0, &seed);
+				TcpIpTestFill((UCHAR *)&dst4, sizeof(dst4), 0, &seed);
+				TcpIpTestFill(src6.Value, sizeof(src6.Value), 0, &seed);
+				TcpIpTestFill(dst6.Value, sizeof(dst6.Value), 0, &seed);
+				Copy(v4, &src4, 4);
+				Copy(v4 + 4, &dst4, 4);
+				v4[9] = IP_PROTO_TCP;
+				v4[10] = (UCHAR)(len >> 8);
+				v4[11] = (UCHAR)len;
+				Copy(v6, src6.Value, 16);
+				Copy(v6 + 16, dst6.Value, 16);
+				v6[32] = (UCHAR)(len >> 24);
+				v6[33] = (UCHAR)(len >> 16);
+				v6[34] = (UCHAR)(len >> 8);
+				v6[35] = (UCHAR)len;
+				v6[39] = IP_PROTO_ICMPV6;
+				Copy(v4 + 12, buf, len);
+				Copy(v6 + 40, buf, len);
+
+				num++;
+
+				if (IpChecksum(buf, len) != TcpIpTestRefChecksum(buf, len))
+				{
+					bad_ip++;
+					if (first_bad == INFINITE)
+					{
+						first_bad = len;
+					}
+				}
+
+				if (CalcChecksumForIPv4(src4, dst4, IP_PROTO_TCP, buf, len, 0) != TcpIpTestRefChecksum(v4, 12 + len))
+				{
+					bad_v4++;
+				}
+
+				if (CalcChecksumForIPv6(&src6, &dst6, IP_PROTO_ICMPV6, buf, len, 0) != TcpIpTestRefChecksum(v6, 40 + len))
+				{
+					bad_v6++;
+				}
+
+				Free(v6);
+				Free(v4);
+				Free(block);
+			}
+		}
+	}
+
+	TcpIpTestCheck(ctx, bad_ip == 0, "IpChecksum equals the 16-bit word sum for sizes 0 to 133 and up to 65536 at every alignment",
+		"%u of %u inputs differ, the first of size %u", bad_ip, num, first_bad);
+	TcpIpTestCheck(ctx, bad_v4 == 0, "CalcChecksumForIPv4 equals the word sum over the pseudo-header and the data",
+		"%u of %u inputs differ", bad_v4, num);
+	TcpIpTestCheck(ctx, bad_v6 == 0, "CalcChecksumForIPv6 equals the word sum over the pseudo-header and the data",
+		"%u of %u inputs differ", bad_v6, num);
+}
+
 void tcpip_test(UINT num, char **arg)
 {
 	TCPIPTEST_CTX ctx;
@@ -393,6 +525,7 @@ void tcpip_test(UINT num, char **arg)
 
 	TcpIpTestDhcpModify(&ctx);
 	TcpIpTestMss(&ctx);
+	TcpIpTestChecksum(&ctx);
 
 	if (ctx.NumFailed == 0)
 	{

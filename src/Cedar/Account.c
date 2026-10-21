@@ -5,11 +5,11 @@
 
 #include "Connection.h"
 #include "Hub.h"
-#include "MsChapV2.h"
 #include "Protocol.h"
 #include "RpcField.h"
 
 #include "Mayaqua/Cfg.h"
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -19,115 +19,94 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
+#define PASSWORD_CRYPT_KEY      "EncryptPassword"
+#define PASSWORD_CRYPT_KEY_SIZE 8
+
 static void CleanupUser(USER *u);
 static void CleanupGroup(USERGROUP *g);
 static char *DecryptPassword(BUF *b);
 static BUF *EncryptPassword(char *password);
 
 POLICY_ITEM policy_item[] =
-{
-//  ID,     Value,  Omittable, Min, Max, Default, Unit name, Offset
-	{0,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, Access)},
-	{1,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPFilter)},
-	{2,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPNoServer)},
-	{3,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPForce)},
-	{4,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoBridge)},
-	{5,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoRouting)},
-	{6,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckMac)},
-	{7,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckIP)},
-	{8,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, ArpDhcpOnly)},
-	{9,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, PrivacyFilter)},
-	{10,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoServer)},
-	{11,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoBroadcastLimiter)},
-	{12,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, MonitorPort)},
-	{13,	true,	false,	1,	32,	32,		"POL_INT_COUNT",		offsetof(POLICY, MaxConnection)},
-	{14,	true,	false,	5,	60,	20,		"POL_INT_SEC",			offsetof(POLICY, TimeOut)},
-	{15,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxMac)},
-	{16,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxIP)},
-	{17,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxUpload)},
-	{18,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxDownload)},
-	{19,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FixPassword)},
-	{20,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MultiLogins)},
-	{21,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoQoS)},
-	{22,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, RSandRAFilter)},
-	{23,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, RAFilter)},
-	{24,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPv6Filter)},
-	{25,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPv6NoServer)},
-	{26,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoRoutingV6)},
-	{27,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckIPv6)},
-	{28,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoServerV6)},
-	{29,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxIPv6)},
-	{30,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoSavePassword)},
-	{31,	true,	true,	1,	4294967295UL,	0,	"POL_INT_SEC",	offsetof(POLICY, AutoDisconnect)},
-	{32,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterIPv4)},
-	{33,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterIPv6)},
-	{34,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterNonIP)},
-	{35,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoIPv6DefaultRouterInRA)},
-	{36,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoIPv6DefaultRouterInRAWhenIPv6)},
-	{37,	true,	true,	1,	4095,	0,	"POL_INT_VLAN",			offsetof(POLICY, VLanId)},
+    {
+        //  ID,     Value,  Omittable, Min, Max, Default, Unit name, Offset, Name, Ver3, Cascade cmd, Cascade cfg
+        // Cascade cmd: settable from the cascade commands. Cascade cfg: written to the config of a cascade connection.
+        {0, false, false, 0, 0, 1, NULL, offsetof(POLICY, Access), "Access", false, false, false},
+        {1, false, false, 0, 0, 0, NULL, offsetof(POLICY, DHCPFilter), "DHCPFilter", false, true, true},
+        {2, false, false, 0, 0, 0, NULL, offsetof(POLICY, DHCPNoServer), "DHCPNoServer", false, true, true},
+        {3, false, false, 0, 0, 0, NULL, offsetof(POLICY, DHCPForce), "DHCPForce", false, true, true},
+        {4, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoBridge), "NoBridge", false, false, false},
+        {5, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoRouting), "NoRouting", false, false, false},
+        {6, false, false, 0, 0, 0, NULL, offsetof(POLICY, CheckMac), "CheckMac", false, true, true},
+        {7, false, false, 0, 0, 0, NULL, offsetof(POLICY, CheckIP), "CheckIP", false, true, true},
+        {8, false, false, 0, 0, 0, NULL, offsetof(POLICY, ArpDhcpOnly), "ArpDhcpOnly", false, true, true},
+        {9, false, false, 0, 0, 0, NULL, offsetof(POLICY, PrivacyFilter), "PrivacyFilter", false, true, true},
+        {10, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoServer), "NoServer", false, true, true},
+        {11, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoBroadcastLimiter), "NoBroadcastLimiter", false, true, true},
+        {12, false, false, 0, 0, 0, NULL, offsetof(POLICY, MonitorPort), "MonitorPort", false, false, false},
+        {13, true, false, 1, 32, 32, "POL_INT_COUNT", offsetof(POLICY, MaxConnection), "MaxConnection", false, false, false},
+        {14, true, false, 5, 60, 20, "POL_INT_SEC", offsetof(POLICY, TimeOut), "TimeOut", false, false, false},
+        {15, true, true, 1, 65535, 0, "POL_INT_COUNT", offsetof(POLICY, MaxMac), "MaxMac", false, true, true},
+        {16, true, true, 1, 65535, 0, "POL_INT_COUNT", offsetof(POLICY, MaxIP), "MaxIP", false, true, true},
+        {17, true, true, 1, 4294967295UL, 0, "POL_INT_BPS", offsetof(POLICY, MaxUpload), "MaxUpload", false, true, true},
+        {18, true, true, 1, 4294967295UL, 0, "POL_INT_BPS", offsetof(POLICY, MaxDownload), "MaxDownload", false, true, true},
+        {19, false, false, 0, 0, 0, NULL, offsetof(POLICY, FixPassword), "FixPassword", false, false, false},
+        {20, true, true, 1, 65535, 0, "POL_INT_COUNT", offsetof(POLICY, MultiLogins), "MultiLogins", false, false, false},
+        {21, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoQoS), "NoQoS", false, false, false},
+        {22, false, false, 0, 0, 0, NULL, offsetof(POLICY, RSandRAFilter), "RSandRAFilter", true, true, true},
+        {23, false, false, 0, 0, 0, NULL, offsetof(POLICY, RAFilter), "RAFilter", true, true, true},
+        {24, false, false, 0, 0, 0, NULL, offsetof(POLICY, DHCPv6Filter), "DHCPv6Filter", true, true, true},
+        {25, false, false, 0, 0, 0, NULL, offsetof(POLICY, DHCPv6NoServer), "DHCPv6NoServer", true, true, true},
+        {26, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoRoutingV6), "NoRoutingV6", true, false, false},
+        {27, false, false, 0, 0, 0, NULL, offsetof(POLICY, CheckIPv6), "CheckIPv6", true, true, true},
+        {28, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoServerV6), "NoServerV6", true, true, true},
+        {29, true, true, 1, 65535, 0, "POL_INT_COUNT", offsetof(POLICY, MaxIPv6), "MaxIPv6", true, true, true},
+        {30, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoSavePassword), "NoSavePassword", true, false, false},
+        {31, true, true, 1, 4294967295UL, 0, "POL_INT_SEC", offsetof(POLICY, AutoDisconnect), "AutoDisconnect", true, false, false},
+        {32, false, false, 0, 0, 0, NULL, offsetof(POLICY, FilterIPv4), "FilterIPv4", true, true, true},
+        {33, false, false, 0, 0, 0, NULL, offsetof(POLICY, FilterIPv6), "FilterIPv6", true, true, true},
+        {34, false, false, 0, 0, 0, NULL, offsetof(POLICY, FilterNonIP), "FilterNonIP", true, true, true},
+        {35, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoIPv6DefaultRouterInRA), "NoIPv6DefaultRouterInRA", true, true, true},
+        {36, false, false, 0, 0, 0, NULL, offsetof(POLICY, NoIPv6DefaultRouterInRAWhenIPv6), "NoIPv6DefaultRouterInRAWhenIPv6", true, false, true},
+        {37, true, true, 1, 4095, 0, "POL_INT_VLAN", offsetof(POLICY, VLanId), "VLanId", true, true, true},
 };
 
-void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value)
-{
-	POLICY_ITEM *p;
-	if (str == NULL)
-	{
-		return;
-	}
+// The table must have exactly NUM_POLICY_ITEM rows: a negative array size is a compile error
+typedef char policy_item_count_check[(sizeof(policy_item) / sizeof(policy_item[0]) == NUM_POLICY_ITEM) ? 1 : -1];
 
-	p = GetPolicyItem(id);
+void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value) {
+	if (str == NULL)
+		return;
+
+	POLICY_ITEM *p = GetPolicyItem(id);
 
 	if (p->TypeInt == false)
-	{
 		if (value == 0)
-		{
 			UniStrCpy(str, size, L"No");
-		}
 		else
-		{
 			UniStrCpy(str, size, L"Yes");
-		}
-	}
+	else if (value == 0 && p->AllowZero)
+		UniStrCpy(str, size, _UU("CMD_NO_SETTINGS"));
 	else
-	{
-		if (value == 0 && p->AllowZero)
-		{
-			UniStrCpy(str, size, _UU("CMD_NO_SETTINGS"));
-		}
-		else
-		{
-			UniFormat(str, size, _UU(p->FormatStr), value);
-		}
-	}
+		UniFormat(str, size, _UU(p->FormatStr), value);
 }
 
-void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id)
-{
-	POLICY_ITEM *p;
+void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id) {
 	if (str == NULL)
-	{
 		return;
-	}
 
-	p = GetPolicyItem(id);
+	POLICY_ITEM *p = GetPolicyItem(id);
 
-	if (p->TypeInt == false)
-	{
+	if (p->TypeInt == false) {
 		UniStrCpy(str, size, _UU("CMD_PolicyList_Range_Bool"));
-	}
-	else
-	{
+	} else {
 		wchar_t *tag;
 		wchar_t tmp1[256], tmp2[256];
 
 		if (p->AllowZero)
-		{
 			tag = _UU("CMD_PolicyList_Range_Int_2");
-		}
 		else
-		{
 			tag = _UU("CMD_PolicyList_Range_Int_1");
-		}
 
 		UniFormat(tmp1, sizeof(tmp1), _UU(p->FormatStr), p->MinValue);
 		UniFormat(tmp2, sizeof(tmp2), _UU(p->FormatStr), p->MaxValue);
@@ -136,217 +115,173 @@ void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id)
 	}
 }
 
-POLICY_ITEM *GetPolicyItem(UINT id)
-{
+POLICY_ITEM *GetPolicyItem(UINT id) {
 	return &policy_item[id];
 }
 
-bool PolicyIsSupportedForCascade(UINT i)
-{
-	if (i == 0 || i == 4 || i == 5 || i == 12 || i == 13 ||
-		i == 14 || i == 19 || i == 20 || i == 21 || i == 26 || i == 30 || i == 31 || i == 36)
-	{
+// Read one policy field by its table id; a bool field gives 0 or 1
+UINT GetPolicyValue(POLICY *p, UINT id) {
+	if (p == NULL || id >= NUM_POLICY_ITEM)
+		return 0;
+
+	POLICY_ITEM *item = &policy_item[id];
+	UCHAR *field = (UCHAR *)p + item->Offset;
+
+	if (item->TypeInt) {
+		UINT value;
+
+		Copy(&value, field, sizeof(UINT));
+
+		return value;
+	}
+
+	return (*(bool *)field) ? 1 : 0;
+}
+
+// Write one policy field by its table id; a bool field takes any non-zero value as true
+void SetPolicyValue(POLICY *p, UINT id, UINT value) {
+	if (p == NULL || id >= NUM_POLICY_ITEM)
+		return;
+
+	POLICY_ITEM *item = &policy_item[id];
+	UCHAR *field = (UCHAR *)p + item->Offset;
+
+	if (item->TypeInt)
+		Copy(field, &value, sizeof(UINT));
+	else
+		*(bool *)field = (value != 0);
+}
+
+bool PolicyIsSupportedForCascade(UINT i) {
+	if (i >= NUM_POLICY_ITEM)
 		return false;
-	}
 
-	return true;
+	return policy_item[i].CascadeCmd;
 }
 
-char *PolicyIdToStr(UINT i)
-{
-	switch (i)
-	{
-	case 0:		return "Access";
-	case 1:		return "DHCPFilter";
-	case 2:		return "DHCPNoServer";
-	case 3:		return "DHCPForce";
-	case 4:		return "NoBridge";
-	case 5:		return "NoRouting";
-	case 6:		return "CheckMac";
-	case 7:		return "CheckIP";
-	case 8:		return "ArpDhcpOnly";
-	case 9:		return "PrivacyFilter";
-	case 10:	return "NoServer";
-	case 11:	return "NoBroadcastLimiter";
-	case 12:	return "MonitorPort";
-	case 13:	return "MaxConnection";
-	case 14:	return "TimeOut";
-	case 15:	return "MaxMac";
-	case 16:	return "MaxIP";
-	case 17:	return "MaxUpload";
-	case 18:	return "MaxDownload";
-	case 19:	return "FixPassword";
-	case 20:	return "MultiLogins";
-	case 21:	return "NoQoS";
+char *PolicyIdToStr(UINT i) {
+	if (i >= NUM_POLICY_ITEM)
+		return NULL;
 
-	case 22:	return "RSandRAFilter";
-	case 23:	return "RAFilter";
-	case 24:	return "DHCPv6Filter";
-	case 25:	return "DHCPv6NoServer";
-	case 26:	return "NoRoutingV6";
-	case 27:	return "CheckIPv6";
-	case 28:	return "NoServerV6";
-	case 29:	return "MaxIPv6";
-	case 30:	return "NoSavePassword";
-	case 31:	return "AutoDisconnect";
-	case 32:	return "FilterIPv4";
-	case 33:	return "FilterIPv6";
-	case 34:	return "FilterNonIP";
-	case 35:	return "NoIPv6DefaultRouterInRA";
-	case 36:	return "NoIPv6DefaultRouterInRAWhenIPv6";
-	case 37:	return "VLanId";
-	}
-
-	return NULL;
+	return policy_item[i].Name;
 }
 
-UINT PolicyStrToId(char *name)
-{
-	UINT i;
+UINT PolicyStrToId(char *name) {
 	if (name == NULL)
-	{
 		return INFINITE;
-	}
 
-	for (i = 0;i < NUM_POLICY_ITEM;i++)
-	{
+	for (UINT i = 0; i < NUM_POLICY_ITEM; i++)
 		if (StartWith(PolicyIdToStr(i), name))
-		{
 			return i;
-		}
-	}
 
 	return INFINITE;
 }
 
-UINT PolicyNum()
-{
+UINT PolicyNum() {
 	return NUM_POLICY_ITEM;
 }
 
-bool IsUserName(char *name)
-{
-	UINT i, len;
+bool IsUserName(char *name) {
 	char tmp[MAX_SIZE];
 	if (name == NULL)
-	{
 		return false;
-	}
 
 	StrCpy(tmp, sizeof(tmp), name);
 	name = tmp;
 
 	Trim(name);
 
-	len = StrLen(name);
+	UINT len = StrLen(name);
 	if (len == 0)
-	{
 		return false;
-	}
 
 	if (StrCmpi(name, "*") == 0)
-	{
 		return true;
-	}
 
-	for (i = 0; i < len; i++)
-	{
+	for (UINT i = 0; i < len; i++)
 		if (IsSafeChar(name[i]) == false && name[i] != '@')
-		{
 			return false;
-		}
-	}
 
 	if (StrCmpi(name, LINK_USER_NAME) == 0)
-	{
 		return false;
-	}
 
 	if (StrCmpi(name, LINK_USER_NAME_PRINT) == 0)
-	{
 		return false;
-	}
 
 	if (StrCmpi(name, BRIDGE_USER_NAME) == 0)
-	{
 		return false;
-	}
 
 	if (StrCmpi(name, BRIDGE_USER_NAME_PRINT) == 0)
-	{
 		return false;
-	}
 
 	if (StrCmpi(name, ADMINISTRATOR_USERNAME) == 0)
-	{
 		return false;
-	}
 
 	return true;
 }
 
-POLICY *ClonePolicy(POLICY *policy)
-{
-	POLICY *ret;
-	if (policy == NULL)
-	{
-		return NULL;
+// Check the authentication data of a user the admin RPC creates or changes.
+// Returns ERR_NO_ERROR, or the error code to send back
+UINT CheckUserAuthData(UINT auth_type, void *auth_data) {
+	if (auth_type == AUTHTYPE_USERCERT) {
+		AUTHUSERCERT *c = auth_data;
+
+		if (c != NULL && c->UserX != NULL &&
+		    c->UserX->is_compatible_bit == false)
+			return ERR_NOT_RSA_1024;
+		if (c == NULL || c->UserX == NULL)
+			return ERR_INVALID_PARAMETER;
 	}
 
-	ret = ZeroMalloc(sizeof(POLICY));
+	// A password user needs a password hash: a missing or all-zero HashedKey is refused
+	if (auth_type == AUTHTYPE_PASSWORD) {
+		AUTHPASSWORD *pw = auth_data;
+
+		if (pw == NULL || IsZero(pw->HashedKey, sizeof(pw->HashedKey)))
+			return ERR_INVALID_PARAMETER;
+	}
+
+	return ERR_NO_ERROR;
+}
+
+POLICY *ClonePolicy(POLICY *policy) {
+	if (policy == NULL)
+		return NULL;
+
+	POLICY *ret = ZeroMalloc(sizeof(POLICY));
 	Copy(ret, policy, sizeof(POLICY));
 
 	return ret;
 }
 
 // Overwrite policy values; data from an older version leaves the Ver 3.0 fields as they are
-static void OverwritePolicy(POLICY **target, POLICY *p)
-{
+static void OverwritePolicy(POLICY **target, POLICY *p) {
 	if (target == NULL)
-	{
 		return;
-	}
 
-	if (p == NULL)
-	{
-		if (*target != NULL)
-		{
+	if (p == NULL) {
+		if (*target != NULL) {
 			Free(*target);
 			*target = NULL;
 		}
-	}
-	else
-	{
-		if (p->Ver3)
-		{
-			if (*target != NULL)
-			{
-				Free(*target);
-				*target = NULL;
-			}
+	} else if (p->Ver3) {
+		if (*target != NULL) {
+			Free(*target);
+			*target = NULL;
+		}
 
+		*target = ClonePolicy(p);
+	} else {
+		if (*target == NULL)
 			*target = ClonePolicy(p);
-		}
 		else
-		{
-			if (*target == NULL)
-			{
-				*target = ClonePolicy(p);
-			}
-			else
-			{
-				Copy(*target, p, policy_item[NUM_POLICY_ITEM_FOR_VER2].Offset);
-			}
-		}
+			Copy(*target, p, POLICY_VER2_SIZE);
 	}
 }
 
-void SetUserPolicy(USER *u, POLICY *policy)
-{
+void SetUserPolicy(USER *u, POLICY *policy) {
 	if (u == NULL)
-	{
 		return;
-	}
 
 	Lock(u->lock);
 	{
@@ -355,12 +290,9 @@ void SetUserPolicy(USER *u, POLICY *policy)
 	Unlock(u->lock);
 }
 
-void SetGroupPolicy(USERGROUP *g, POLICY *policy)
-{
+void SetGroupPolicy(USERGROUP *g, POLICY *policy) {
 	if (g == NULL)
-	{
 		return;
-	}
 
 	Lock(g->lock);
 	{
@@ -369,123 +301,73 @@ void SetGroupPolicy(USERGROUP *g, POLICY *policy)
 	Unlock(g->lock);
 }
 
-POLICY *GetGroupPolicy(USERGROUP *g)
-{
+POLICY *GetGroupPolicy(USERGROUP *g) {
 	POLICY *ret;
 	if (g == NULL)
-	{
 		return NULL;
-	}
 
 	Lock(g->lock);
 	{
 		if (g->Policy == NULL)
-		{
 			ret = NULL;
-		}
 		else
-		{
 			ret = ClonePolicy(g->Policy);
-		}
 	}
 	Unlock(g->lock);
 
 	return ret;
 }
 
-POLICY *GetDefaultPolicy()
-{
-	static POLICY def_policy =
-	{
-		true,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		32,
-		20,
-		0,
-		0,
-		0,
-		0,
-		false,
-		0,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		0,
-		false,
-		0,
-		false,
-		false,
-		false,
-		false,
-		false,
-	};
+POLICY *GetDefaultPolicy() {
+	static POLICY def_policy;
+	static bool ready = false;
+
+	// Built from the policy table on first use; every caller computes the same bytes
+	if (ready == false) {
+		POLICY tmp;
+
+		Zero(&tmp, sizeof(tmp));
+
+		for (UINT i = 0; i < NUM_POLICY_ITEM; i++)
+			SetPolicyValue(&tmp, i, policy_item[i].DefaultValue);
+
+		Copy(&def_policy, &tmp, sizeof(POLICY));
+		ready = true;
+	}
 
 	return &def_policy;
 }
 
-void *NewNTAuthData(wchar_t *username)
-{
-	AUTHNT *a;
-	a = ZeroMallocEx(sizeof(AUTHNT), true);
+void *NewNTAuthData(wchar_t *username) {
+	AUTHNT *a = ZeroMallocEx(sizeof(AUTHNT), true);
 	a->NtUsername = CopyUniStr(username);
 
 	return a;
 }
 
-void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name)
-{
-	AUTHROOTCERT *a;
-
-	a = ZeroMallocEx(sizeof(AUTHROOTCERT), true);
+void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name) {
+	AUTHROOTCERT *a = ZeroMallocEx(sizeof(AUTHROOTCERT), true);
 	if (common_name != NULL && UniIsEmptyStr(common_name) == false)
-	{
 		a->CommonName = CopyUniStr(common_name);
-	}
 	if (serial != NULL && serial->size >= 1)
-	{
 		a->Serial = CloneXSerial(serial);
-	}
 
 	return a;
 }
 
-void *NewUserCertAuthData(X *x)
-{
-	AUTHUSERCERT *a;
-
-	a = ZeroMalloc(sizeof(AUTHUSERCERT));
+void *NewUserCertAuthData(X *x) {
+	AUTHUSERCERT *a = ZeroMalloc(sizeof(AUTHUSERCERT));
 	a->UserX = CloneX(x);
 
 	return a;
 }
 
-void HashPassword(void *dst, char *username, char *password)
-{
-	BUF *b;
-	char *username_upper;
+void HashPassword(void *dst, char *username, char *password) {
 	if (dst == NULL || username == NULL || password == NULL)
-	{
 		return;
-	}
 
-	b = NewBuf();
-	username_upper = CopyStr(username);
+	BUF *b = NewBuf();
+	char *username_upper = CopyStr(username);
 	StrUpper(username_upper);
 	WriteBuf(b, password, StrLen(password));
 	WriteBuf(b, username_upper, StrLen(username_upper));
@@ -495,118 +377,103 @@ void HashPassword(void *dst, char *username, char *password)
 	Free(username_upper);
 }
 
-void *NewPasswordAuthData(char *username, char *password)
-{
-	AUTHPASSWORD *pw;
-	if (username == NULL || password == NULL)
-	{
-		return NULL;
-	}
+void GenerateNtPasswordHash(UCHAR *dst, char *password) {
+	if (dst == NULL || password == NULL)
+		return;
 
-	pw = ZeroMalloc(sizeof(AUTHPASSWORD));
+	UINT len = StrLen(password);
+	UINT tmp_size = len * 2;
+
+	UCHAR *tmp = ZeroMalloc(tmp_size);
+
+	for (UINT i = 0; i < len; i++)
+		tmp[i * 2] = password[i];
+
+	HashMd4(dst, tmp, tmp_size);
+
+	Free(tmp);
+}
+
+void *NewPasswordAuthData(char *username, char *password) {
+	if (username == NULL || password == NULL)
+		return NULL;
+
+	AUTHPASSWORD *pw = ZeroMalloc(sizeof(AUTHPASSWORD));
 	HashPassword(pw->HashedKey, username, password);
 	GenerateNtPasswordHash(pw->NtLmSecureHash, password);
 
 	return pw;
 }
 
-void *NewPasswordAuthDataRaw(UCHAR *hashed_password, UCHAR *ntlm_secure_hash)
-{
-	AUTHPASSWORD *pw;
+void *NewPasswordAuthDataRaw(UCHAR *hashed_password, UCHAR *ntlm_secure_hash) {
 	if (hashed_password == NULL)
-	{
 		return NULL;
-	}
 
-	pw = ZeroMalloc(sizeof(AUTHPASSWORD));
+	AUTHPASSWORD *pw = ZeroMalloc(sizeof(AUTHPASSWORD));
 	Copy(pw->HashedKey, hashed_password, SHA1_SIZE);
 
 	if (ntlm_secure_hash != NULL)
-	{
 		Copy(pw->NtLmSecureHash, ntlm_secure_hash, MD5_SIZE);
-	}
 
 	return pw;
 }
 
-void *CopyAuthData(void *authdata, UINT authtype)
-{
+void *CopyAuthData(void *authdata, UINT authtype) {
 	AUTHPASSWORD *pw = (AUTHPASSWORD *)authdata;
 	AUTHUSERCERT *usercert = (AUTHUSERCERT *)authdata;
 	AUTHROOTCERT *rootcert = (AUTHROOTCERT *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
 	if (authdata == NULL || authtype == AUTHTYPE_ANONYMOUS)
-	{
 		return NULL;
-	}
 
-	switch (authtype)
-	{
-	case AUTHTYPE_PASSWORD:
-		{
-			AUTHPASSWORD *ret = ZeroMalloc(sizeof(AUTHPASSWORD));
-			Copy(ret, pw, sizeof(AUTHPASSWORD));
-			return ret;
-		}
-		break;
+	switch (authtype) {
+	case AUTHTYPE_PASSWORD: {
+		AUTHPASSWORD *ret = ZeroMalloc(sizeof(AUTHPASSWORD));
+		Copy(ret, pw, sizeof(AUTHPASSWORD));
+		return ret;
+	} break;
 
-	case AUTHTYPE_USERCERT:
-		{
-			AUTHUSERCERT *ret = ZeroMalloc(sizeof(AUTHUSERCERT));
-			ret->UserX = CloneX(usercert->UserX);
-			return ret;
-		}
-		break;
+	case AUTHTYPE_USERCERT: {
+		AUTHUSERCERT *ret = ZeroMalloc(sizeof(AUTHUSERCERT));
+		ret->UserX = CloneX(usercert->UserX);
+		return ret;
+	} break;
 
-	case AUTHTYPE_ROOTCERT:
-		{
-			AUTHROOTCERT *ret = ZeroMalloc(sizeof(AUTHROOTCERT));
-			ret->CommonName = CopyUniStr(rootcert->CommonName);
-			ret->Serial = CloneXSerial(rootcert->Serial);
-			return ret;
-		}
-		break;
+	case AUTHTYPE_ROOTCERT: {
+		AUTHROOTCERT *ret = ZeroMalloc(sizeof(AUTHROOTCERT));
+		ret->CommonName = CopyUniStr(rootcert->CommonName);
+		ret->Serial = CloneXSerial(rootcert->Serial);
+		return ret;
+	} break;
 
-	case AUTHTYPE_NT:
-		{
-			AUTHNT *ret = ZeroMalloc(sizeof(AUTHNT));
-			ret->NtUsername = UniCopyStr(nt->NtUsername);
-			return ret;
-		}
-		break;
+	case AUTHTYPE_NT: {
+		AUTHNT *ret = ZeroMalloc(sizeof(AUTHNT));
+		ret->NtUsername = CopyUniStr(nt->NtUsername);
+		return ret;
+	} break;
 	}
 
 	return NULL;
 }
 
-void SetUserAuthData(USER *u, UINT authtype, void *authdata)
-{
+void SetUserAuthData(USER *u, UINT authtype, void *authdata) {
 	if (u == NULL)
-	{
 		return;
-	}
 	if (authtype != AUTHTYPE_ANONYMOUS && authdata == NULL)
-	{
 		return;
-	}
 
 	Lock(u->lock);
 	{
-		if (u->AuthType != AUTHTYPE_ANONYMOUS)
-		{
-			if (u->AuthType == AUTHTYPE_PASSWORD && authtype == AUTHTYPE_PASSWORD)
-			{
+		if (u->AuthType != AUTHTYPE_ANONYMOUS) {
+			if (u->AuthType == AUTHTYPE_PASSWORD && authtype == AUTHTYPE_PASSWORD) {
 				AUTHPASSWORD *pw_old = (AUTHPASSWORD *)u->AuthData;
 				AUTHPASSWORD *pw_new = (AUTHPASSWORD *)authdata;
 
 				// Keep the old NTLM hash if the password is unchanged and the admin tool sent no NTLM hash
 
-				if (Cmp(pw_old->HashedKey, pw_new->HashedKey, SHA1_SIZE) == 0)
-				{
+				if (Cmp(pw_old->HashedKey, pw_new->HashedKey, SHA1_SIZE) == 0) {
 					if (IsZero(pw_new->NtLmSecureHash, MD5_SIZE))
-					{
 						Copy(pw_new->NtLmSecureHash, pw_old->NtLmSecureHash, MD5_SIZE);
-					}
 				}
 			}
 
@@ -618,219 +485,143 @@ void SetUserAuthData(USER *u, UINT authtype, void *authdata)
 	Unlock(u->lock);
 }
 
-void SetGroupTraffic(USERGROUP *g, TRAFFIC *t)
-{
-	if (g == NULL)
+// Replace a user's or group's traffic counters under its lock; NULL resets them
+static void SetTrafficLocked(LOCK *lock, TRAFFIC *dst, const TRAFFIC *src) {
+	Lock(lock);
 	{
-		return;
-	}
-
-	Lock(g->lock);
-	{
-		if (t != NULL)
-		{
-			Copy(g->Traffic, t, sizeof(TRAFFIC));
-		}
+		if (src != NULL)
+			Copy(dst, src, sizeof(TRAFFIC));
 		else
-		{
-			Zero(g->Traffic, sizeof(TRAFFIC));
-		}
+			Zero(dst, sizeof(TRAFFIC));
 	}
-	Unlock(g->lock);
+	Unlock(lock);
 }
 
-void SetUserTraffic(USER *u, TRAFFIC *t)
-{
-	if (u == NULL)
-	{
+void SetGroupTraffic(USERGROUP *g, TRAFFIC *t) {
+	if (g == NULL)
 		return;
-	}
+
+	SetTrafficLocked(g->lock, g->Traffic, t);
+}
+
+void SetUserTraffic(USER *u, TRAFFIC *t) {
+	if (u == NULL)
+		return;
+
+	SetTrafficLocked(u->lock, u->Traffic, t);
+}
+
+void JoinUserToGroup(USER *u, USERGROUP *g) {
+	if (u == NULL)
+		return;
 
 	Lock(u->lock);
 	{
-		if (t != NULL)
-		{
-			Copy(u->Traffic, t, sizeof(TRAFFIC));
+		if (u->Group != NULL) {
+			ReleaseGroup(u->Group);
+			u->Group = NULL;
+			Free(u->GroupName);
+			u->GroupName = NULL;
 		}
-		else
-		{
-			Zero(u->Traffic, sizeof(TRAFFIC));
-		}
-	}
-	Unlock(u->lock);
-}
 
-void JoinUserToGroup(USER *u, USERGROUP *g)
-{
-	if (u == NULL)
-	{
-		return;
-	}
-
-	if (g != NULL)
-	{
-		Lock(u->lock);
-		{
+		if (g != NULL) {
 			Lock(g->lock);
 			{
-				if (u->Group != NULL)
-				{
-					ReleaseGroup(u->Group);
-					u->Group = NULL;
-					Free(u->GroupName);
-					u->GroupName = NULL;
-				}
 				u->GroupName = CopyStr(g->Name);
 				u->Group = g;
 				AddRef(g->ref);
 			}
 			Unlock(g->lock);
 		}
-		Unlock(u->lock);
 	}
-	else
-	{
-		Lock(u->lock);
-		{
-			if (u->Group != NULL)
-			{
-				ReleaseGroup(u->Group);
-				u->Group = NULL;
-				Free(u->GroupName);
-				u->GroupName = NULL;
-			}
-		}
-		Unlock(u->lock);
-	}
+	Unlock(u->lock);
 }
 
-bool AcIsGroup(HUB *h, char *name)
-{
-	USERGROUP *g;
+bool AcIsGroup(HUB *h, char *name) {
 	if (h == NULL || name == NULL)
-	{
 		return false;
-	}
 
-	g = AcGetGroup(h, name);
+	USERGROUP *g = AcGetGroup(h, name);
 	if (g == NULL)
-	{
 		return false;
-	}
 	ReleaseGroup(g);
 
 	return true;
 }
 
-bool AcIsUser(HUB *h, char *name)
-{
-	USER *u;
+bool AcIsUser(HUB *h, char *name) {
 	if (h == NULL || name == NULL)
-	{
 		return false;
-	}
 
-	u = AcGetUser(h, name);
+	USER *u = AcGetUser(h, name);
 	if (u == NULL)
-	{
 		return false;
-	}
 	ReleaseUser(u);
 
 	return true;
 }
 
-USERGROUP *AcGetGroup(HUB *h, char *name)
-{
-	USERGROUP *g, t;
+USERGROUP *AcGetGroup(HUB *h, char *name) {
+	USERGROUP t;
 	if (h == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
 	t.Name = name;
-	g = Search(h->HubDb->GroupList, &t);
+	USERGROUP *g = Search(h->HubDb->GroupList, &t);
 	if (g == NULL)
-	{
 		return NULL;
-	}
 	AddRef(g->ref);
 
 	return g;
 }
 
-USER *AcGetUser(HUB *h, char *name)
-{
-	USER *u, t;
+USER *AcGetUser(HUB *h, char *name) {
+	USER t;
 	if (h == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
 	t.Name = name;
-	u = Search(h->HubDb->UserList, &t);
+	USER *u = Search(h->HubDb->UserList, &t);
 	if (u == NULL)
-	{
 		return NULL;
-	}
 	AddRef(u->ref);
 
 	return u;
 }
 
-bool AcDeleteUser(HUB *h, char *name)
-{
-	USER *u;
+bool AcDeleteUser(HUB *h, char *name) {
 	if (h == NULL || name == NULL)
-	{
 		return false;
-	}
 
-	u = AcGetUser(h, name);
+	USER *u = AcGetUser(h, name);
 	if (u == NULL)
-	{
 		return false;
-	}
 
 	if (Delete(h->HubDb->UserList, u))
-	{
 		ReleaseUser(u);
-	}
 
 	ReleaseUser(u);
 
 	return true;
 }
 
-bool AcDeleteGroup(HUB *h, char *name)
-{
-	USERGROUP *g;
-	UINT i;
+bool AcDeleteGroup(HUB *h, char *name) {
 	if (h == NULL || name == NULL)
-	{
 		return false;
-	}
 
-	g = AcGetGroup(h, name);
+	USERGROUP *g = AcGetGroup(h, name);
 	if (g == NULL)
-	{
 		return false;
-	}
 
 	if (Delete(h->HubDb->GroupList, g))
-	{
 		ReleaseGroup(g);
-	}
 
-	for (i = 0;i < LIST_NUM(h->HubDb->UserList);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(h->HubDb->UserList); i++) {
 		USER *u = LIST_DATA(h->HubDb->UserList, i);
 		Lock(u->lock);
 		{
 			if (u->Group == g)
-			{
 				JoinUserToGroup(u, NULL);
-			}
 		}
 		Unlock(u->lock);
 	}
@@ -840,22 +631,15 @@ bool AcDeleteGroup(HUB *h, char *name)
 	return true;
 }
 
-bool AcAddGroup(HUB *h, USERGROUP *g)
-{
+bool AcAddGroup(HUB *h, USERGROUP *g) {
 	if (h == NULL || g == NULL)
-	{
 		return false;
-	}
 
 	if (LIST_NUM(h->HubDb->GroupList) >= MAX_GROUPS)
-	{
 		return false;
-	}
 
 	if (AcIsGroup(h, g->Name) != false)
-	{
 		return false;
-	}
 
 	Insert(h->HubDb->GroupList, g);
 	AddRef(g->ref);
@@ -863,22 +647,15 @@ bool AcAddGroup(HUB *h, USERGROUP *g)
 	return true;
 }
 
-bool AcAddUser(HUB *h, USER *u)
-{
+bool AcAddUser(HUB *h, USER *u) {
 	if (h == NULL || u == NULL)
-	{
 		return false;
-	}
 
 	if (LIST_NUM(h->HubDb->UserList) >= MAX_USERS)
-	{
 		return false;
-	}
 
 	if (AcIsUser(h, u->Name) != false)
-	{
 		return false;
-	}
 
 	Insert(h->HubDb->UserList, u);
 	AddRef(u->ref);
@@ -886,25 +663,17 @@ bool AcAddUser(HUB *h, USER *u)
 	return true;
 }
 
-void ReleaseUser(USER *u)
-{
+void ReleaseUser(USER *u) {
 	if (u == NULL)
-	{
 		return;
-	}
 
 	if (Release(u->ref) == 0)
-	{
 		CleanupUser(u);
-	}
 }
 
-static void CleanupUser(USER *u)
-{
+static void CleanupUser(USER *u) {
 	if (u == NULL)
-	{
 		return;
-	}
 
 	DeleteLock(u->lock);
 	Free(u->Name);
@@ -912,34 +681,26 @@ static void CleanupUser(USER *u)
 	Free(u->Note);
 	Free(u->GroupName);
 	if (u->Group != NULL)
-	{
 		ReleaseGroup(u->Group);
-	}
 
 	FreeAuthData(u->AuthType, u->AuthData);
 
 	if (u->Policy)
-	{
 		Free(u->Policy);
-	}
 
 	FreeTraffic(u->Traffic);
 
 	Free(u);
 }
 
-void FreeAuthData(UINT authtype, void *authdata)
-{
+void FreeAuthData(UINT authtype, void *authdata) {
 	AUTHUSERCERT *uc = (AUTHUSERCERT *)authdata;
 	AUTHROOTCERT *rc = (AUTHROOTCERT *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
 	if (authtype == AUTHTYPE_ANONYMOUS || authdata == NULL)
-	{
 		return;
-	}
 
-	switch (authtype)
-	{
+	switch (authtype) {
 	case AUTHTYPE_PASSWORD:
 		break;
 
@@ -949,13 +710,9 @@ void FreeAuthData(UINT authtype, void *authdata)
 
 	case AUTHTYPE_ROOTCERT:
 		if (rc->Serial != NULL)
-		{
 			FreeXSerial(rc->Serial);
-		}
 		if (rc->CommonName != NULL)
-		{
 			Free(rc->CommonName);
-		}
 		break;
 
 	case AUTHTYPE_NT:
@@ -966,19 +723,13 @@ void FreeAuthData(UINT authtype, void *authdata)
 	Free(authdata);
 }
 
-USER *NewUser(char *name, wchar_t *realname, wchar_t *note, UINT authtype, void *authdata)
-{
-	USER *u;
+USER *NewUser(char *name, wchar_t *realname, wchar_t *note, UINT authtype, void *authdata) {
 	if (name == NULL || realname == NULL || note == NULL)
-	{
 		return NULL;
-	}
 	if (authtype != AUTHTYPE_ANONYMOUS && authdata == NULL)
-	{
 		return NULL;
-	}
 
-	u = ZeroMalloc(sizeof(USER));
+	USER *u = ZeroMalloc(sizeof(USER));
 	u->lock = NewLock();
 	u->ref = NewRef();
 	u->Name = CopyStr(name);
@@ -997,34 +748,24 @@ USER *NewUser(char *name, wchar_t *realname, wchar_t *note, UINT authtype, void 
 	return u;
 }
 
-void ReleaseGroup(USERGROUP *g)
-{
+void ReleaseGroup(USERGROUP *g) {
 	if (g == NULL)
-	{
 		return;
-	}
 
 	if (Release(g->ref) == 0)
-	{
 		CleanupGroup(g);
-	}
 }
 
-static void CleanupGroup(USERGROUP *g)
-{
+static void CleanupGroup(USERGROUP *g) {
 	if (g == NULL)
-	{
 		return;
-	}
 
 	Free(g->Name);
 	Free(g->RealName);
 	Free(g->Note);
 
 	if (g->Policy)
-	{
 		Free(g->Policy);
-	}
 
 
 	FreeTraffic(g->Traffic);
@@ -1033,15 +774,11 @@ static void CleanupGroup(USERGROUP *g)
 	Free(g);
 }
 
-USERGROUP *NewGroup(char *name, wchar_t *realname, wchar_t *note)
-{
-	USERGROUP *g;
+USERGROUP *NewGroup(char *name, wchar_t *realname, wchar_t *note) {
 	if (name == NULL || realname == NULL || note == NULL)
-	{
 		return NULL;
-	}
 
-	g = ZeroMalloc(sizeof(USERGROUP));
+	USERGROUP *g = ZeroMalloc(sizeof(USERGROUP));
 	g->lock = NewLock();
 	g->ref = NewRef();
 	g->Name = CopyStr(name);
@@ -1053,175 +790,142 @@ USERGROUP *NewGroup(char *name, wchar_t *realname, wchar_t *note)
 	return g;
 }
 
-void AcLock(HUB *h)
-{
+void AcLock(HUB *h) {
 	if (h == NULL)
-	{
 		return;
-	}
 	LockList(h->HubDb->GroupList);
 	LockList(h->HubDb->UserList);
 }
 
-void AcUnlock(HUB *h)
-{
+void AcUnlock(HUB *h) {
 	if (h == NULL)
-	{
 		return;
-	}
 	UnlockList(h->HubDb->UserList);
 	UnlockList(h->HubDb->GroupList);
 }
 
-int CompareGroupName(void *p1, void *p2)
-{
-	USERGROUP *g1, *g2;
+int CompareGroupName(void *p1, void *p2) {
 	if (p1 == NULL || p2 == NULL)
-	{
 		return 0;
-	}
-	g1 = *(USERGROUP **)p1;
-	g2 = *(USERGROUP **)p2;
+	USERGROUP *g1 = *(USERGROUP **)p1;
+	USERGROUP *g2 = *(USERGROUP **)p2;
 	if (g1 == NULL || g2 == NULL)
-	{
 		return 0;
-	}
 
 	return StrCmpi(g1->Name, g2->Name);
 }
 
-int CompareUserName(void *p1, void *p2)
-{
-	USER *u1, *u2;
+int CompareUserName(void *p1, void *p2) {
 	if (p1 == NULL || p2 == NULL)
-	{
 		return 0;
-	}
-	u1 = *(USER **)p1;
-	u2 = *(USER **)p2;
+	USER *u1 = *(USER **)p1;
+	USER *u2 = *(USER **)p2;
 	if (u1 == NULL || u2 == NULL)
-	{
 		return 0;
-	}
 
 	return StrCmpi(u1->Name, u2->Name);
 }
 
 
 static const RPC_FIELD rpc_traffic_ex_fields[] =
-{
-	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Ex.Recv.BroadcastBytes"),
-	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Ex.Recv.BroadcastCount"),
-	RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Ex.Recv.UnicastBytes"),
-	RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Ex.Recv.UnicastCount"),
-	RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Ex.Send.BroadcastBytes"),
-	RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Ex.Send.BroadcastCount"),
-	RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Ex.Send.UnicastBytes"),
-	RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Ex.Send.UnicastCount"),
-	RPC_ROW_END
-};
+    {
+        RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Ex.Recv.BroadcastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Ex.Recv.BroadcastCount"),
+        RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Ex.Recv.UnicastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Ex.Recv.UnicastCount"),
+        RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Ex.Send.BroadcastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Ex.Send.BroadcastCount"),
+        RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Ex.Send.UnicastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Ex.Send.UnicastCount"),
+        RPC_ROW_END};
 RPC_TABLE_DEF(rpc_traffic_ex_table, TRAFFIC, rpc_traffic_ex_fields);
 
-void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i)
-{
+void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i) {
 	RpcFieldInItem(&rpc_traffic_ex_table, t, p, i);
 }
-void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num)
-{
+void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num) {
 	RpcFieldOutItem(&rpc_traffic_ex_table, p, t, i, num);
 }
 
 static const RPC_FIELD rpc_traffic_fields[] =
-{
-	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Recv.BroadcastBytes"),
-	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Recv.BroadcastCount"),
-	RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Recv.UnicastBytes"),
-	RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Recv.UnicastCount"),
-	RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Send.BroadcastBytes"),
-	RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Send.BroadcastCount"),
-	RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Send.UnicastBytes"),
-	RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Send.UnicastCount"),
-	RPC_ROW_END
-};
+    {
+        RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Recv.BroadcastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Recv.BroadcastCount"),
+        RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Recv.UnicastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Recv.UnicastCount"),
+        RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Send.BroadcastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Send.BroadcastCount"),
+        RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Send.UnicastBytes"),
+        RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Send.UnicastCount"),
+        RPC_ROW_END};
 RPC_TABLE_DEF(rpc_traffic_table, TRAFFIC, rpc_traffic_fields);
 
-void InRpcTraffic(TRAFFIC *t, PACK *p)
-{
+void InRpcTraffic(TRAFFIC *t, PACK *p) {
 	RpcFieldIn(&rpc_traffic_table, t, p);
 }
-void OutRpcTraffic(PACK *p, TRAFFIC *t)
-{
+void OutRpcTraffic(PACK *p, TRAFFIC *t) {
 	RpcFieldOut(&rpc_traffic_table, p, t);
 }
 
 static const RPC_FIELD rpc_client_option_fields[] =
-{
-	RPC_ROW_UNISTR(CLIENT_OPTION, AccountName, "AccountName"),
-	RPC_ROW_STR(CLIENT_OPTION, Hostname, "Hostname"),
-	RPC_ROW_STR(CLIENT_OPTION, ProxyName, "ProxyName"),
-	RPC_ROW_STR(CLIENT_OPTION, ProxyUsername, "ProxyUsername"),
-	RPC_ROW_STR(CLIENT_OPTION, ProxyPassword, "ProxyPassword"),
-	RPC_ROW_STR(CLIENT_OPTION, CustomHttpHeader, "CustomHttpHeader"),
-	RPC_ROW_STR(CLIENT_OPTION, HubName, "HubName"),
-	RPC_ROW_STR(CLIENT_OPTION, DeviceName, "DeviceName"),
-	RPC_ROW_INT(CLIENT_OPTION, Port, "Port"),
-	RPC_ROW_INT(CLIENT_OPTION, PortUDP, "PortUDP"),
-	RPC_ROW_INT(CLIENT_OPTION, ProxyType, "ProxyType"),
-	RPC_ROW_INT(CLIENT_OPTION, ProxyPort, "ProxyPort"),
-	RPC_ROW_INT(CLIENT_OPTION, NumRetry, "NumRetry"),
-	RPC_ROW_INT(CLIENT_OPTION, RetryInterval, "RetryInterval"),
-	RPC_ROW_INT(CLIENT_OPTION, MaxConnection, "MaxConnection"),
-	RPC_ROW_BOOL(CLIENT_OPTION, UseEncrypt, "UseEncrypt"),
-	RPC_ROW_BOOL(CLIENT_OPTION, UseCompress, "UseCompress"),
-	RPC_ROW_BOOL(CLIENT_OPTION, HalfConnection, "HalfConnection"),
-	RPC_ROW_BOOL(CLIENT_OPTION, NoRoutingTracking, "NoRoutingTracking"),
-	RPC_ROW_INT(CLIENT_OPTION, AdditionalConnectionInterval, "AdditionalConnectionInterval"),
-	RPC_ROW_INT(CLIENT_OPTION, ConnectionDisconnectSpan, "ConnectionDisconnectSpan"),
-	RPC_ROW_BOOL(CLIENT_OPTION, HideStatusWindow, "HideStatusWindow"),
-	RPC_ROW_BOOL(CLIENT_OPTION, HideNicInfoWindow, "HideNicInfoWindow"),
-	RPC_ROW_BOOL(CLIENT_OPTION, RequireMonitorMode, "RequireMonitorMode"),
-	RPC_ROW_BOOL(CLIENT_OPTION, RequireBridgeRoutingMode, "RequireBridgeRoutingMode"),
-	RPC_ROW_BOOL(CLIENT_OPTION, DisableQoS, "DisableQoS"),
-	RPC_ROW_BOOL(CLIENT_OPTION, FromAdminPack, "FromAdminPack"),
-	RPC_ROW_BOOL(CLIENT_OPTION, NoUdpAcceleration, "NoUdpAcceleration"),
-	RPC_ROW_DATA(CLIENT_OPTION, HostUniqueKey, "HostUniqueKey"),
-	RPC_ROW_IP(CLIENT_OPTION, BindLocalIP, "BindLocalIP"),// Source IP address for outgoing connection
-	RPC_ROW_INT(CLIENT_OPTION, BindLocalPort, "BindLocalPort"),// Source port number for outgoing connection
-	RPC_ROW_END
-};
+    {
+        RPC_ROW_UNISTR(CLIENT_OPTION, AccountName, "AccountName"),
+        RPC_ROW_STR(CLIENT_OPTION, Hostname, "Hostname"),
+        RPC_ROW_STR(CLIENT_OPTION, ProxyName, "ProxyName"),
+        RPC_ROW_STR(CLIENT_OPTION, ProxyUsername, "ProxyUsername"),
+        RPC_ROW_STR(CLIENT_OPTION, ProxyPassword, "ProxyPassword"),
+        RPC_ROW_STR(CLIENT_OPTION, CustomHttpHeader, "CustomHttpHeader"),
+        RPC_ROW_STR(CLIENT_OPTION, HubName, "HubName"),
+        RPC_ROW_STR(CLIENT_OPTION, DeviceName, "DeviceName"),
+        RPC_ROW_INT(CLIENT_OPTION, Port, "Port"),
+        RPC_ROW_INT(CLIENT_OPTION, PortUDP, "PortUDP"),
+        RPC_ROW_INT(CLIENT_OPTION, ProxyType, "ProxyType"),
+        RPC_ROW_INT(CLIENT_OPTION, ProxyPort, "ProxyPort"),
+        RPC_ROW_INT(CLIENT_OPTION, NumRetry, "NumRetry"),
+        RPC_ROW_INT(CLIENT_OPTION, RetryInterval, "RetryInterval"),
+        RPC_ROW_INT(CLIENT_OPTION, MaxConnection, "MaxConnection"),
+        RPC_ROW_BOOL(CLIENT_OPTION, UseEncrypt, "UseEncrypt"),
+        RPC_ROW_BOOL(CLIENT_OPTION, UseCompress, "UseCompress"),
+        RPC_ROW_BOOL(CLIENT_OPTION, HalfConnection, "HalfConnection"),
+        RPC_ROW_BOOL(CLIENT_OPTION, NoRoutingTracking, "NoRoutingTracking"),
+        RPC_ROW_INT(CLIENT_OPTION, AdditionalConnectionInterval, "AdditionalConnectionInterval"),
+        RPC_ROW_INT(CLIENT_OPTION, ConnectionDisconnectSpan, "ConnectionDisconnectSpan"),
+        RPC_ROW_BOOL(CLIENT_OPTION, HideStatusWindow, "HideStatusWindow"),
+        RPC_ROW_BOOL(CLIENT_OPTION, HideNicInfoWindow, "HideNicInfoWindow"),
+        RPC_ROW_BOOL(CLIENT_OPTION, RequireMonitorMode, "RequireMonitorMode"),
+        RPC_ROW_BOOL(CLIENT_OPTION, RequireBridgeRoutingMode, "RequireBridgeRoutingMode"),
+        RPC_ROW_BOOL(CLIENT_OPTION, DisableQoS, "DisableQoS"),
+        RPC_ROW_BOOL(CLIENT_OPTION, FromAdminPack, "FromAdminPack"),
+        RPC_ROW_BOOL(CLIENT_OPTION, NoUdpAcceleration, "NoUdpAcceleration"),
+        RPC_ROW_DATA(CLIENT_OPTION, HostUniqueKey, "HostUniqueKey"),
+        RPC_ROW_IP(CLIENT_OPTION, BindLocalIP, "BindLocalIP"),      // Source IP address for outgoing connection
+        RPC_ROW_INT(CLIENT_OPTION, BindLocalPort, "BindLocalPort"), // Source port number for outgoing connection
+        RPC_ROW_END};
 RPC_TABLE_DEF(rpc_client_option_table, CLIENT_OPTION, rpc_client_option_fields);
 
-void InRpcClientOption(CLIENT_OPTION *c, PACK *p)
-{
+void InRpcClientOption(CLIENT_OPTION *c, PACK *p) {
 	RpcFieldIn(&rpc_client_option_table, c, p);
 }
-void OutRpcClientOption(PACK *p, CLIENT_OPTION *c)
-{
+void OutRpcClientOption(PACK *p, CLIENT_OPTION *c) {
 	RpcFieldOut(&rpc_client_option_table, p, c);
 }
 
-void InRpcClientAuth(CLIENT_AUTH *c, PACK *p)
-{
+void InRpcClientAuth(CLIENT_AUTH *c, PACK *p) {
 	BUF *b;
 	if (c == NULL || p == NULL)
-	{
 		return;
-	}
 
 	Zero(c, sizeof(CLIENT_AUTH));
 	c->AuthType = PackGetInt(p, "AuthType");
 	PackGetStr(p, "Username", c->Username, sizeof(c->Username));
 
-	switch (c->AuthType)
-	{
+	switch (c->AuthType) {
 	case CLIENT_AUTHTYPE_ANONYMOUS:
 		break;
 
 	case CLIENT_AUTHTYPE_PASSWORD:
 		if (PackGetDataSize(p, "HashedPassword") == SHA1_SIZE)
-		{
 			PackGetData(p, "HashedPassword", c->HashedPassword);
-		}
 		break;
 
 	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
@@ -1230,44 +934,37 @@ void InRpcClientAuth(CLIENT_AUTH *c, PACK *p)
 
 	case CLIENT_AUTHTYPE_CERT:
 		b = PackGetBuf(p, "ClientX");
-		if (b != NULL)
-		{
+		if (b != NULL) {
 			c->ClientX = BufToX(b, false);
 			FreeBuf(b);
 		}
 		b = PackGetBuf(p, "ClientK");
-		if (b != NULL)
-		{
+		if (b != NULL) {
 			c->ClientK = BufToK(b, true, false, NULL);
 			FreeBuf(b);
 		}
 		break;
 
-  case CLIENT_AUTHTYPE_OPENSSLENGINE:
+	case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		b = PackGetBuf(p, "ClientX");
-		if (b != NULL)
-		{
+		if (b != NULL) {
 			c->ClientX = BufToX(b, false);
 			FreeBuf(b);
 		}
-    PackGetStr(p, "OpensslEnginePrivateKeyName", c->OpensslEnginePrivateKeyName, sizeof(c->OpensslEnginePrivateKeyName));
-    PackGetStr(p, "OpensslEngineName", c->OpensslEngineName, sizeof(c->OpensslEngineName));
-    break;
+		PackGetStr(p, "OpensslEnginePrivateKeyName", c->OpensslEnginePrivateKeyName, sizeof(c->OpensslEnginePrivateKeyName));
+		PackGetStr(p, "OpensslEngineName", c->OpensslEngineName, sizeof(c->OpensslEngineName));
+		break;
 	}
 }
-void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
-{
+void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c) {
 	BUF *b;
 	if (c == NULL || p == NULL)
-	{
 		return;
-	}
 
 	PackAddInt(p, "AuthType", c->AuthType);
 	PackAddStr(p, "Username", c->Username);
 
-	switch (c->AuthType)
-	{
+	switch (c->AuthType) {
 	case CLIENT_AUTHTYPE_ANONYMOUS:
 		break;
 
@@ -1281,14 +978,12 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
 
 	case CLIENT_AUTHTYPE_CERT:
 		b = XToBuf(c->ClientX, false);
-		if (b != NULL)
-		{
+		if (b != NULL) {
 			PackAddBuf(p, "ClientX", b);
 			FreeBuf(b);
 		}
 		b = KToBuf(c->ClientK, false, NULL);
-		if (b != NULL)
-		{
+		if (b != NULL) {
 			PackAddBuf(p, "ClientK", b);
 			FreeBuf(b);
 		}
@@ -1296,8 +991,7 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
 
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		b = XToBuf(c->ClientX, false);
-		if (b != NULL)
-		{
+		if (b != NULL) {
 			PackAddBuf(p, "ClientX", b);
 			FreeBuf(b);
 		}
@@ -1307,67 +1001,52 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
 	}
 }
 
-void InRpcPolicy(POLICY *o, PACK *p)
-{
-	POLICY *pol;
+void InRpcPolicy(POLICY *o, PACK *p) {
 	if (o == NULL || p == NULL)
-	{
 		return;
-	}
 
-	pol = PackGetPolicy(p);
+	POLICY *pol = PackGetPolicy(p);
 	Copy(o, pol, sizeof(POLICY));
 	Free(pol);
 }
-void OutRpcPolicy(PACK *p, POLICY *o)
-{
+void OutRpcPolicy(PACK *p, POLICY *o) {
 	if (o == NULL || p == NULL)
-	{
 		return;
-	}
 
 	PackAddPolicy(p, o);
 }
 
-static void RpcClientGetConnectionStatusPolicyOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
-{
+static void RpcClientGetConnectionStatusPolicyOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total) {
 	OutRpcPolicy(p, (POLICY *)((UCHAR *)base + f->Offset));
 }
-static void RpcClientGetConnectionStatusPolicyIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
-{
+static void RpcClientGetConnectionStatusPolicyIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
 	InRpcPolicy((POLICY *)((UCHAR *)base + f->Offset), p);
 }
 static const RPC_HOOK rpc_client_get_connection_status_policy_hook = {RpcClientGetConnectionStatusPolicyOut, RpcClientGetConnectionStatusPolicyIn, NULL};
 
-static void RpcClientGetConnectionStatusTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
-{
+static void RpcClientGetConnectionStatusTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total) {
 	OutRpcTraffic(p, (TRAFFIC *)((UCHAR *)base + f->Offset));
 }
-static void RpcClientGetConnectionStatusTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
-{
+static void RpcClientGetConnectionStatusTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
 	InRpcTraffic((TRAFFIC *)((UCHAR *)base + f->Offset), p);
 }
 static const RPC_HOOK rpc_client_get_connection_status_traffic_hook = {RpcClientGetConnectionStatusTrafficOut, RpcClientGetConnectionStatusTrafficIn, NULL};
 
 // Certificate as DER data (read without the PEM fallback of PackGetX);
 // CiFreeClientGetConnectionStatus releases it
-static void RpcClientGetConnectionStatusXOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
-{
+static void RpcClientGetConnectionStatusXOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total) {
 	X *x = *(X **)((UCHAR *)base + f->Offset);
 
-	if (x != NULL)
-	{
+	if (x != NULL) {
 		BUF *b = XToBuf(x, false);
 		PackAddBuf(p, f->Key, b);
 		FreeBuf(b);
 	}
 }
-static void RpcClientGetConnectionStatusXIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
-{
+static void RpcClientGetConnectionStatusXIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
 	BUF *b = PackGetBuf(p, f->Key);
 
-	if (b != NULL)
-	{
+	if (b != NULL) {
 		*(X **)((UCHAR *)base + f->Offset) = BufToX(b, false);
 		FreeBuf(b);
 	}
@@ -1375,68 +1054,62 @@ static void RpcClientGetConnectionStatusXIn(const RPC_FIELD *f, void *base, PACK
 static const RPC_HOOK rpc_client_get_connection_status_x_hook = {RpcClientGetConnectionStatusXOut, RpcClientGetConnectionStatusXIn, NULL};
 
 static const RPC_FIELD rpc_client_get_connection_status_fields[] =
-{
-	RPC_ROW_UNISTR(RPC_CLIENT_GET_CONNECTION_STATUS, AccountName, "AccountName"),
-	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ServerName, "ServerName"),
-	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductName, "ServerProductName"),
-	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ProtocolName, "ProtocolVersion"),
-	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, CipherName, "CipherName"),
-	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, SessionName, "SessionName"),
-	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ConnectionName, "ConnectionName"),
-	RPC_ROW_DATA(RPC_CLIENT_GET_CONNECTION_STATUS, SessionKey, "SessionKey"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, Active, "Active"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, Connected, "Connected"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, SessionStatus, "SessionStatus"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerPort, "ServerPort"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductVer, "ServerProductVer"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductBuild, "ServerProductBuild"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumConnectionsEstablished, "NumConnectionsEstablished"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, HalfConnection, "HalfConnection"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, QoS, "QoS"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, MaxTcpConnections, "MaxTcpConnections"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnections, "NumTcpConnections"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnectionsUpload, "NumTcpConnectionsUpload"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnectionsDownload, "NumTcpConnectionsDownload"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, UseEncrypt, "UseEncrypt"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, UseCompress, "UseCompress"),
-	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, UnderlayProtocol, "UnderlayProtocol"),
-	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ProtocolDetails, "ProtocolDetails"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsUdpAccelerationEnabled, "IsUdpAccelerationEnabled"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsUsingUdpAcceleration, "IsUsingUdpAcceleration"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsBridgeMode, "IsBridgeMode"),
-	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsMonitorMode, "IsMonitorMode"),
-	RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, StartTime, "StartTime"),
-	/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
-	RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, FirstConnectionEstablisiedTime, "FirstConnectionEstablisiedTime"),
-	RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, CurrentConnectionEstablishTime, "CurrentConnectionEstablishTime"),
-	RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalSendSize, "TotalSendSize"),
-	RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalRecvSize, "TotalRecvSize"),
-	RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalSendSizeReal, "TotalSendSizeReal"),
-	RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalRecvSizeReal, "TotalRecvSizeReal"),
-	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, VLanId, "VLanId"),
-	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CLIENT_GET_CONNECTION_STATUS, Policy, NULL, 0, &rpc_client_get_connection_status_policy_hook),
-	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CLIENT_GET_CONNECTION_STATUS, Traffic, NULL, 0, &rpc_client_get_connection_status_traffic_hook),
-	RPC_ROW_HOOK(RPC_FT_X, RPC_CLIENT_GET_CONNECTION_STATUS, ServerX, "ServerX", 0, &rpc_client_get_connection_status_x_hook),
-	RPC_ROW_HOOK(RPC_FT_X, RPC_CLIENT_GET_CONNECTION_STATUS, ClientX, "ClientX", 0, &rpc_client_get_connection_status_x_hook),
-	RPC_ROW_END
-};
+    {
+        RPC_ROW_UNISTR(RPC_CLIENT_GET_CONNECTION_STATUS, AccountName, "AccountName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ServerName, "ServerName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductName, "ServerProductName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ProtocolName, "ProtocolVersion"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, CipherName, "CipherName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, SessionName, "SessionName"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ConnectionName, "ConnectionName"),
+        RPC_ROW_DATA(RPC_CLIENT_GET_CONNECTION_STATUS, SessionKey, "SessionKey"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, Active, "Active"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, Connected, "Connected"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, SessionStatus, "SessionStatus"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerPort, "ServerPort"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductVer, "ServerProductVer"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductBuild, "ServerProductBuild"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumConnectionsEstablished, "NumConnectionsEstablished"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, HalfConnection, "HalfConnection"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, QoS, "QoS"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, MaxTcpConnections, "MaxTcpConnections"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnections, "NumTcpConnections"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnectionsUpload, "NumTcpConnectionsUpload"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnectionsDownload, "NumTcpConnectionsDownload"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, UseEncrypt, "UseEncrypt"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, UseCompress, "UseCompress"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, UnderlayProtocol, "UnderlayProtocol"),
+        RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ProtocolDetails, "ProtocolDetails"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsUdpAccelerationEnabled, "IsUdpAccelerationEnabled"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsUsingUdpAcceleration, "IsUsingUdpAcceleration"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsBridgeMode, "IsBridgeMode"),
+        RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsMonitorMode, "IsMonitorMode"),
+        RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, StartTime, "StartTime"),
+        /* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
+        RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, FirstConnectionEstablisiedTime, "FirstConnectionEstablisiedTime"),
+        RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, CurrentConnectionEstablishTime, "CurrentConnectionEstablishTime"),
+        RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalSendSize, "TotalSendSize"),
+        RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalRecvSize, "TotalRecvSize"),
+        RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalSendSizeReal, "TotalSendSizeReal"),
+        RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalRecvSizeReal, "TotalRecvSizeReal"),
+        RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, VLanId, "VLanId"),
+        RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CLIENT_GET_CONNECTION_STATUS, Policy, NULL, 0, &rpc_client_get_connection_status_policy_hook),
+        RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CLIENT_GET_CONNECTION_STATUS, Traffic, NULL, 0, &rpc_client_get_connection_status_traffic_hook),
+        RPC_ROW_HOOK(RPC_FT_X, RPC_CLIENT_GET_CONNECTION_STATUS, ServerX, "ServerX", 0, &rpc_client_get_connection_status_x_hook),
+        RPC_ROW_HOOK(RPC_FT_X, RPC_CLIENT_GET_CONNECTION_STATUS, ClientX, "ClientX", 0, &rpc_client_get_connection_status_x_hook),
+        RPC_ROW_END};
 RPC_TABLE_DEF(rpc_client_get_connection_status_table, RPC_CLIENT_GET_CONNECTION_STATUS, rpc_client_get_connection_status_fields);
 
-void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p)
-{
+void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p) {
 	RpcFieldIn(&rpc_client_get_connection_status_table, s, p);
 }
-void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *c)
-{
+void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *c) {
 	RpcFieldOut(&rpc_client_get_connection_status_table, p, c);
 }
 
-void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
-{
+void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s) {
 	if (st == NULL || s == NULL)
-	{
 		return;
-	}
 
 	Lock(s->lock);
 	{
@@ -1446,8 +1119,7 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 
 		UniStrCpy(st->AccountName, sizeof(st->AccountName), s->ClientOption->AccountName);
 
-		if (s->ClientStatus == CLIENT_STATUS_ESTABLISHED && s->Connection != NULL)
-		{
+		if (s->ClientStatus == CLIENT_STATUS_ESTABLISHED && s->Connection != NULL) {
 			Lock(s->Connection->lock);
 			{
 				st->Connected = true;
@@ -1461,33 +1133,24 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 				st->HalfConnection = s->HalfConnection;
 				st->VLanId = s->VLanId;
 				st->QoS = s->QoS;
-				if (s->Connection->Protocol == CONNECTION_TCP)
-				{
-					UINT i;
+				if (s->Connection->Protocol == CONNECTION_TCP) {
 					LockList(s->Connection->Tcp->TcpSockList);
 					{
 						st->NumTcpConnections = LIST_NUM(s->Connection->Tcp->TcpSockList);
-						if (st->HalfConnection)
-						{
-							for (i = 0;i < st->NumTcpConnections;i++)
-							{
+						if (st->HalfConnection) {
+							for (UINT i = 0; i < st->NumTcpConnections; i++) {
 								TCPSOCK *ts = LIST_DATA(s->Connection->Tcp->TcpSockList, i);
 								if (ts->Direction & TCP_SERVER_TO_CLIENT)
-								{
 									st->NumTcpConnectionsDownload++;
-								}
 								else
-								{
 									st->NumTcpConnectionsUpload++;
-								}
 							}
 						}
 					}
 					UnlockList(s->Connection->Tcp->TcpSockList);
 				}
 				st->UseEncrypt = s->UseEncrypt;
-				if (st->UseEncrypt)
-				{
+				if (st->UseEncrypt) {
 					StrCpy(st->CipherName, sizeof(st->CipherName), s->Connection->CipherName);
 					StrCpy(st->ProtocolName, sizeof(st->ProtocolName), s->Connection->SslVersion);
 				}
@@ -1499,15 +1162,12 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 				st->IsUsingUdpAcceleration = s->IsUsingUdpAcceleration;
 				Copy(st->SessionKey, s->SessionKey, SHA1_SIZE);
 				Copy(&st->Policy, s->Policy, sizeof(POLICY));
-				if (s->ServerMode == false)
-				{
+				if (s->ServerMode == false) {
 					st->TotalSendSize = s->TotalSendSize;
 					st->TotalRecvSize = s->TotalRecvSize;
 					st->TotalRecvSizeReal = s->TotalRecvSizeReal;
 					st->TotalSendSizeReal = s->TotalSendSizeReal;
-				}
-				else
-				{
+				} else {
 					st->TotalSendSize = s->TotalRecvSize;
 					st->TotalRecvSize = s->TotalSendSize;
 					st->TotalRecvSizeReal = s->TotalSendSizeReal;
@@ -1536,60 +1196,88 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 	Unlock(s->lock);
 }
 
-void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st)
-{
+void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st) {
 	if (st == NULL)
-	{
 		return;
-	}
 
 	if (st->ServerX != NULL)
-	{
 		FreeX(st->ServerX);
-	}
 
 	if (st->ClientX != NULL)
-	{
 		FreeX(st->ClientX);
-	}
 }
 
-void CiFreeClientAuth(CLIENT_AUTH *auth)
-{
+void ClientAuthFree(CLIENT_AUTH *auth) {
 	if (auth == NULL)
-	{
 		return;
-	}
 
 	if (auth->ClientX != NULL)
-	{
 		FreeX(auth->ClientX);
-	}
 	if (auth->ClientK != NULL)
-	{
 		FreeK(auth->ClientK);
-	}
 
 	Free(auth);
 }
 
-CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
-{
-	CLIENT_AUTH *a;
+CLIENT_AUTH *ClientAuthClone(CLIENT_AUTH *a) {
+	if (a == NULL)
+		return NULL;
+
+	CLIENT_AUTH *ret = ZeroMallocEx(sizeof(CLIENT_AUTH), true);
+
+	ret->AuthType = a->AuthType;
+	StrCpy(ret->Username, sizeof(ret->Username), a->Username);
+
+	switch (a->AuthType) {
+	case CLIENT_AUTHTYPE_ANONYMOUS:
+		break;
+
+	case CLIENT_AUTHTYPE_PASSWORD:
+		Copy(ret->HashedPassword, a->HashedPassword, SHA1_SIZE);
+		break;
+
+	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
+		StrCpy(ret->PlainPassword, sizeof(ret->PlainPassword), a->PlainPassword);
+		break;
+
+	case CLIENT_AUTHTYPE_CERT:
+		ret->ClientX = CloneX(a->ClientX);
+		ret->ClientK = CloneK(a->ClientK);
+		break;
+
+	case CLIENT_AUTHTYPE_OPENSSLENGINE:
+		ret->ClientX = CloneX(a->ClientX);
+		StrCpy(ret->OpensslEnginePrivateKeyName, sizeof(ret->OpensslEnginePrivateKeyName), a->OpensslEnginePrivateKeyName);
+		StrCpy(ret->OpensslEngineName, sizeof(ret->OpensslEngineName), a->OpensslEngineName);
+		ret->ClientK = OpensslEngineToK(ret->OpensslEnginePrivateKeyName, ret->OpensslEngineName);
+		break;
+	}
+
+	return ret;
+}
+
+CLIENT_OPTION *ClientOptionClone(CLIENT_OPTION *o) {
+	if (o == NULL)
+		return NULL;
+
+	CLIENT_OPTION *ret = ZeroMalloc(sizeof(CLIENT_OPTION));
+	Copy(ret, o, sizeof(CLIENT_OPTION));
+
+	return ret;
+}
+
+CLIENT_AUTH *CiLoadClientAuth(FOLDER *f) {
 	char *s;
 	BUF *b;
 	if (f == NULL)
-	{
 		return NULL;
-	}
 
-	a = ZeroMalloc(sizeof(CLIENT_AUTH));
+	CLIENT_AUTH *a = ZeroMalloc(sizeof(CLIENT_AUTH));
 
 	a->AuthType = CfgGetInt(f, "AuthType");
 	CfgGetStr(f, "Username", a->Username, sizeof(a->Username));
 
-	switch (a->AuthType)
-	{
+	switch (a->AuthType) {
 	case CLIENT_AUTHTYPE_ANONYMOUS:
 		break;
 
@@ -1599,8 +1287,7 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 
 	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
 		b = CfgGetBuf(f, "EncryptedPassword");
-		if (b != NULL)
-		{
+		if (b != NULL) {
 			s = DecryptPassword(b);
 			StrCpy(a->PlainPassword, sizeof(a->PlainPassword), s);
 			Free(s);
@@ -1611,47 +1298,33 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 	case CLIENT_AUTHTYPE_CERT:
 		b = CfgGetBuf(f, "ClientCert");
 		if (b != NULL)
-		{
 			a->ClientX = BufToX(b, false);
-		}
 		FreeBuf(b);
 		b = CfgGetBuf(f, "ClientKey");
 		if (b != NULL)
-		{
 			a->ClientK = BufToK(b, true, false, NULL);
-		}
 		FreeBuf(b);
 		break;
 
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		b = CfgGetBuf(f, "ClientCert");
 		if (b != NULL)
-		{
 			a->ClientX = BufToX(b, false);
-		}
 		FreeBuf(b);
 		if (CfgGetStr(f, "OpensslEnginePrivateKeyName", a->OpensslEnginePrivateKeyName, sizeof(a->OpensslEnginePrivateKeyName)))
-    {
-        a->ClientK = OpensslEngineToK(a->OpensslEnginePrivateKeyName, a->OpensslEngineName);
-    }
-    CfgGetStr(f, "OpensslEngineName", a->OpensslEngineName, sizeof(a->OpensslEngineName));
+			a->ClientK = OpensslEngineToK(a->OpensslEnginePrivateKeyName, a->OpensslEngineName);
+		CfgGetStr(f, "OpensslEngineName", a->OpensslEngineName, sizeof(a->OpensslEngineName));
 		break;
 	}
 
 	return a;
 }
 
-CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
-{
-	CLIENT_OPTION *o;
-	char *s;
-	BUF *b;
+CLIENT_OPTION *CiLoadClientOption(FOLDER *f) {
 	if (f == NULL)
-	{
 		return NULL;
-	}
 
-	o = ZeroMalloc(sizeof(CLIENT_OPTION));
+	CLIENT_OPTION *o = ZeroMalloc(sizeof(CLIENT_OPTION));
 
 	CfgGetUniStr(f, "AccountName", o->AccountName, sizeof(o->AccountName));
 	CfgGetStr(f, "Hostname", o->Hostname, sizeof(o->Hostname));
@@ -1661,8 +1334,8 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
 	CfgGetStr(f, "ProxyName", o->ProxyName, sizeof(o->ProxyName));
 	o->ProxyPort = CfgGetInt(f, "ProxyPort");
 	CfgGetStr(f, "ProxyUsername", o->ProxyUsername, sizeof(o->ProxyUsername));
-	b = CfgGetBuf(f, "ProxyPassword");
-	s = DecryptPassword(b);
+	BUF *b = CfgGetBuf(f, "ProxyPassword");
+	char *s = DecryptPassword(b);
 	StrCpy(o->ProxyPassword, sizeof(o->ProxyPassword), s);
 	Free(s);
 	FreeBuf(b);
@@ -1689,12 +1362,9 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
 	o->BindLocalPort = CfgGetInt(f, "BindLocalPort");
 
 	b = CfgGetBuf(f, "HostUniqueKey");
-	if (b != NULL)
-	{
+	if (b != NULL) {
 		if (b->Size == SHA1_SIZE)
-		{
 			Copy(o->HostUniqueKey, b->Buf, SHA1_SIZE);
-		}
 
 		FreeBuf(b);
 	}
@@ -1702,19 +1372,15 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
 	return o;
 }
 
-void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
-{
+void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a) {
 	BUF *b;
 	if (f == NULL || a == NULL)
-	{
 		return;
-	}
 
 	CfgAddInt(f, "AuthType", a->AuthType);
 	CfgAddStr(f, "Username", a->Username);
 
-	switch (a->AuthType)
-	{
+	switch (a->AuthType) {
 	case CLIENT_AUTHTYPE_ANONYMOUS:
 		break;
 
@@ -1729,8 +1395,7 @@ void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
 		break;
 
 	case CLIENT_AUTHTYPE_CERT:
-		if (a->ClientK != NULL && a->ClientX != NULL)
-		{
+		if (a->ClientK != NULL && a->ClientX != NULL) {
 			b = XToBuf(a->ClientX, false);
 			CfgAddByte(f, "ClientCert", b->Buf, b->Size);
 			FreeBuf(b);
@@ -1749,17 +1414,13 @@ void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
 		}
 		CfgAddStr(f, "OpensslEnginePrivateKeyName", a->OpensslEnginePrivateKeyName);
 		CfgAddStr(f, "OpensslEngineName", a->OpensslEngineName);
-	break;
+		break;
 	}
 }
 
-void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
-{
-	BUF *b;
+void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o) {
 	if (f == NULL || o == NULL)
-	{
 		return;
-	}
 
 	CfgAddUniStr(f, "AccountName", o->AccountName);
 	CfgAddStr(f, "Hostname", o->Hostname);
@@ -1769,7 +1430,7 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 	CfgAddStr(f, "ProxyName", o->ProxyName);
 	CfgAddInt(f, "ProxyPort", o->ProxyPort);
 	CfgAddStr(f, "ProxyUsername", o->ProxyUsername);
-	b = EncryptPassword(o->ProxyPassword);
+	BUF *b = EncryptPassword(o->ProxyPassword);
 	CfgAddByte(f, "ProxyPassword", b->Buf, b->Size);
 	FreeBuf(b);
 	CfgAddStr(f, "CustomHttpHeader", o->CustomHttpHeader);
@@ -1794,30 +1455,27 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 	CfgAddInt(f, "BindLocalPort", o->BindLocalPort);
 
 	if (o->FromAdminPack)
-	{
 		CfgAddBool(f, "FromAdminPack", o->FromAdminPack);
-	}
 
-	if (IsZero(o->HostUniqueKey, SHA1_SIZE) == false)
-	{
+	if (IsZero(o->HostUniqueKey, SHA1_SIZE) == false) {
 		BUF *b = MemToBuf(o->HostUniqueKey, SHA1_SIZE);
 		CfgAddBuf(f, "HostUniqueKey", b);
 		FreeBuf(b);
 	}
 }
 
-static char *DecryptPassword(BUF *b)
-{
-	char *str;
-	char *key = "EncryptPassword";
-	CRYPT *c;
-	if (b == NULL)
-	{
-		return CopyStr("");
-	}
+// Only the first PASSWORD_CRYPT_KEY_SIZE bytes of the key are used, which is what the stored password blobs were
+// written with: do not change
+static CRYPT *NewPasswordCrypt() {
+	return NewCrypt(PASSWORD_CRYPT_KEY, PASSWORD_CRYPT_KEY_SIZE);
+}
 
-	str = ZeroMalloc(b->Size + 1);
-	c = NewCrypt(key, sizeof(key)); // Intentional (symmetric cipher), not a bug: do not change
+static char *DecryptPassword(BUF *b) {
+	if (b == NULL)
+		return CopyStr("");
+
+	char *str = ZeroMalloc(b->Size + 1);
+	CRYPT *c = NewPasswordCrypt();
 	Encrypt(c, str, b->Buf, b->Size);
 	FreeCrypt(c);
 
@@ -1826,29 +1484,33 @@ static char *DecryptPassword(BUF *b)
 	return str;
 }
 
-static BUF *EncryptPassword(char *password)
-{
-	UCHAR *tmp;
-	UINT size;
-	char *key = "EncryptPassword";
-	CRYPT *c;
-	BUF *b;
+static BUF *EncryptPassword(char *password) {
 	if (password == NULL)
-	{
 		password = "";
-	}
 
-	size = StrLen(password) + 1;
-	tmp = ZeroMalloc(size);
+	UINT size = StrLen(password) + 1;
+	UCHAR *tmp = ZeroMalloc(size);
 
-	c = NewCrypt(key, sizeof(key)); // Intentional, not a bug: do not change
+	CRYPT *c = NewPasswordCrypt();
 	Encrypt(c, tmp, password, size - 1);
 	FreeCrypt(c);
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, tmp, size - 1);
 	SeekBuf(b, 0, 0);
 	Free(tmp);
 
 	return b;
+}
+
+void SecurePassword(void *secure_password, void *password, void *random) {
+	UCHAR tmp[2 * SHA1_SIZE];
+	if (secure_password == NULL || password == NULL || random == NULL)
+		return;
+
+	Copy(tmp, password, SHA1_SIZE);
+	Copy(tmp + SHA1_SIZE, random, SHA1_SIZE);
+	Sha0(secure_password, tmp, sizeof(tmp));
+
+	Zero(tmp, sizeof(tmp));
 }

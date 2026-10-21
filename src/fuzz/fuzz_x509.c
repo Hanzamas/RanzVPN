@@ -18,9 +18,8 @@ static bool FuzzHasEncryptedTag(const uint8_t *data, size_t size)
 {
 	static const char tag[] = "ENCRYPTED";
 	size_t tag_len = sizeof(tag) - 1;
-	size_t i;
 
-	for (i = 0;i + tag_len <= size;i++)
+	for (size_t i = 0;i + tag_len <= size;i++)
 	{
 		if (memcmp(data + i, tag, tag_len) == 0)
 		{
@@ -36,12 +35,11 @@ static void FuzzX509(const uint8_t *data, size_t size)
 {
 	BUF *b = FuzzNewBuf(data, size);
 	UINT num_passes = FuzzHasEncryptedTag(data, size) ? 1 : 2;
-	UINT i;
 
 	// Callers pass text = false (DER) or text = IsBase64(b) (PEM); try both on every input,
 	// except PEM when the input could hold an encrypted PEM header (see above).
 	// BufToX() and BufToXList() never free b.
-	for (i = 0;i < num_passes;i++)
+	for (UINT i = 0;i < num_passes;i++)
 	{
 		X *x = BufToX(b, i == 1);
 

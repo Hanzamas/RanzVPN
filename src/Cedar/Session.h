@@ -1,24 +1,21 @@
 // Session.h
 // Header of Session.c
 
-#ifndef	SESSION_H
-#define	SESSION_H
+#ifndef SESSION_H
+#define SESSION_H
 
 #include "Cedar.h"
 
 // Interval to increment the number of logins after the connection
-#define	NUM_LOGIN_INCREMENT_INTERVAL		(30 * 1000)
+#define NUM_LOGIN_INCREMENT_INTERVAL (30 * 1000)
 
-typedef bool (PA_INIT)(SESSION *s);
-typedef CANCEL *(PA_GETCANCEL)(SESSION *s);
-typedef UINT (PA_GETNEXTPACKET)(SESSION *s, void **data);
-typedef bool (PA_PUTPACKET)(SESSION *s, void *data, UINT size);
-typedef void (PA_FREE)(SESSION *s);
+typedef bool(PA_INIT)(SESSION *s);
+typedef CANCEL *(PA_GETCANCEL)(SESSION * s);
+typedef UINT(PA_GETNEXTPACKET)(SESSION *s, void **data);
+typedef bool(PA_PUTPACKET)(SESSION *s, void *data, UINT size);
+typedef void(PA_FREE)(SESSION *s);
 
-typedef void (CLIENT_STATUS_PRINTER)(SESSION *s, wchar_t *status);
-
-struct NODE_INFO
-{
+struct NODE_INFO {
 	char ClientProductName[64];
 	UINT ClientProductVer;
 	UINT ClientProductBuild;
@@ -45,19 +42,16 @@ struct NODE_INFO
 	char Padding[304 - (16 * 3)];
 };
 
-struct PACKET_ADAPTER
-{
+struct PACKET_ADAPTER {
 	PA_INIT *Init;
 	PA_GETCANCEL *GetCancel;
 	PA_GETNEXTPACKET *GetNextPacket;
 	PA_PUTPACKET *PutPacket;
 	PA_FREE *Free;
 	void *Param;
-	UINT Id;
 };
 
-struct SESSION
-{
+struct SESSION {
 	LOCK *lock;
 	REF *ref;
 	CEDAR *Cedar;
@@ -80,8 +74,6 @@ struct SESSION
 	CANCEL *Cancel1;
 	CANCEL *Cancel2;
 	PACKET_ADAPTER *PacketAdapter;
-	UCHAR UdpSendKey[16];
-	UCHAR UdpRecvKey[16];
 	UINT ClientStatus;
 	bool RetryFlag;
 	bool ForceStopFlag;
@@ -120,15 +112,12 @@ struct SESSION
 	POLICY *Policy;
 	UCHAR SessionKey[SHA1_SIZE];
 	UINT SessionKey32;
-	char SessionKeyStr[64];
 	UINT MaxConnection;
 	bool UseEncrypt;
 	bool UseCompress;
 	bool HalfConnection;
 	bool QoS;
 	bool NoSendSignature;
-	UINT NumDisconnected;
-	bool NoReconnectToSession;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
 	/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
@@ -138,13 +127,11 @@ struct SESSION
 	UINT AdjustMss;
 
 	bool UseUdpAcceleration;
-	bool UseHMacOnUdpAcceleration;
 	UDP_ACCEL *UdpAccel;
 	bool IsUsingUdpAcceleration;
 	UINT UdpAccelMss;
 	bool UdpAccelFastDisconnectDetect;
 
-	ACCOUNT *Account;
 	UINT VLanDeviceErrorCount;
 	bool UserCanceled;
 	UINT64 LastTryAddConnectTime;
@@ -163,10 +150,6 @@ struct SESSION
 	HUB *NumLoginIncrementHubObject;
 	UINT64 NumLoginIncrementTick;
 
-	bool FirstTimeHttpRedirect;
-	char FirstTimeHttpRedirectUrl[128];
-	UINT FirstTimeHttpAccessCheckIp;
-
 	UINT64 MaxLoggedPacketsPerMinuteStartTick;
 	UINT CurrentNumPackets;
 
@@ -175,27 +158,50 @@ struct SESSION
 	UCHAR LastDLinkSTPPacketDataHash[MD5_SIZE];
 };
 
+// What the admin RPCs report about one session, copied by SessionGetInfo under the session's lock
+struct SESSION_INFO {
+	char Name[MAX_SESSION_NAME_LEN + 1];
+	char Username[MAX_USERNAME_LEN + 1];
+	char RealUsername[MAX_USERNAME_LEN + 1];
+	char GroupName[MAX_USERNAME_LEN + 1];
+	NODE_INFO NodeInfo;
+	IP ClientIp; // Zero when the session has no connection
+	char ClientHostname[MAX_HOST_NAME_LEN + 1];
+	UINT NumTcp; // TCP sockets of the connection
+	UINT MaxConnection;
+	UINT64 CreatedTime;            // Tick64
+	UINT64 LastCommTime;           // Tick64
+	UINT64 LastCommTimeForDormant; // Tick64, 0 before the first packet
+	bool LinkModeServer;
+	bool BridgeMode;
+	bool NormalClient;
+	bool IsBridgeMode;
+	bool IsMonitorMode;
+	UINT VLanId;
+	UINT64 PacketSize;
+	UINT64 PacketNum;
+};
+
 SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa);
-SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str, void *hWnd);
+SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str);
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy);
 void ReleaseSession(SESSION *s);
 void StopSession(SESSION *s);
 void StopSessionEx(SESSION *s, bool no_wait);
 PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETNEXTPACKET *getnext,
-								 PA_PUTPACKET *put, PA_FREE *free);
+                                 PA_PUTPACKET *put, PA_FREE *free);
 void SessionMain(SESSION *s);
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key);
 void ClientAdditionalConnectChance(SESSION *s);
 void SessionAdditionalConnect(SESSION *s);
-void PrintSessionTotalDataSize(SESSION *s);
 void AddTrafficForSession(SESSION *s, TRAFFIC *t);
 void IncrementUserTraffic(HUB *hub, char *username, SESSION *s);
-void PrintStatus(SESSION *s, wchar_t *str);
 void ReleaseCancelList(LIST *o);
 void AddCancelList(LIST *o, CANCEL *c);
 void CancelList(LIST *o);
 bool IsPriorityHighestPacketForQoS(void *data, UINT size);
 UINT GetNextDelayedPacketTickDiff(SESSION *s);
+void SessionGetInfo(SESSION *s, SESSION_INFO *info);
 
 #endif
 

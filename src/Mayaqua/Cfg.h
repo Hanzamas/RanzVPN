@@ -1,43 +1,39 @@
 // Cfg.h
 // Header of Cfg.c
 
-#ifndef	CFG_H
-#define	CFG_H
+#ifndef CFG_H
+#define CFG_H
 
 #include "Encrypt.h"
 
 
-#define	SAVE_BINARY_FILE_NAME_SWITCH	L"$save_binary"
+#define TAG_DECLARE "declare"
+#define TAG_STRING  "string"
+#define TAG_INT     "uint"
+#define TAG_INT64   "uint64"
+#define TAG_BOOL    "bool"
+#define TAG_BYTE    "byte"
+#define TAG_TRUE    "true"
+#define TAG_FALSE   "false"
+#define TAG_ROOT    "root"
 
-#define	TAG_DECLARE			"declare"
-#define	TAG_STRING			"string"
-#define	TAG_INT				"uint"
-#define	TAG_INT64			"uint64"
-#define	TAG_BOOL			"bool"
-#define	TAG_BYTE			"byte"
-#define	TAG_TRUE			"true"
-#define	TAG_FALSE			"false"
-#define	TAG_ROOT			"root"
+#define TAG_CPYRIGHT "\xef\xbb\xbf# Software Configuration File\r\n# ---------------------------\r\n# \r\n# You may edit this file when the VPN Server / Client / Bridge program is not running.\r\n# \r\n# In prior to edit this file manually by your text editor,\r\n# shutdown the VPN Server / Client / Bridge background service.\r\n# Otherwise, all changes will be lost.\r\n# \r\n"
+#define TAG_BINARY   "SEVPN_DB"
 
-#define	TAG_CPYRIGHT		"\xef\xbb\xbf# Software Configuration File\r\n# ---------------------------\r\n# \r\n# You may edit this file when the VPN Server / Client / Bridge program is not running.\r\n# \r\n# In prior to edit this file manually by your text editor,\r\n# shutdown the VPN Server / Client / Bridge background service.\r\n# Otherwise, all changes will be lost.\r\n# \r\n"
-#define	TAG_BINARY			"SEVPN_DB"
+#define ITEM_TYPE_INT    1
+#define ITEM_TYPE_INT64  2
+#define ITEM_TYPE_BYTE   3
+#define ITEM_TYPE_STRING 4
+#define ITEM_TYPE_BOOL   5
 
-#define	ITEM_TYPE_INT		1
-#define	ITEM_TYPE_INT64		2
-#define	ITEM_TYPE_BYTE		3
-#define	ITEM_TYPE_STRING	4
-#define	ITEM_TYPE_BOOL		5
-
-struct FOLDER
-{
+struct FOLDER {
 	char *Name;
 	LIST *Items;
 	LIST *Folders;
 	struct FOLDER *Parent;
 };
 
-struct ITEM
-{
+struct ITEM {
 	char *Name;
 	UINT Type;
 	void *Buf;
@@ -45,8 +41,7 @@ struct ITEM
 	FOLDER *Parent;
 };
 
-struct CFG_RW
-{
+struct CFG_RW {
 	LOCK *lock;
 	char *FileName;
 	wchar_t *FileNameW;
@@ -54,13 +49,15 @@ struct CFG_RW
 	UCHAR LashHash[SHA1_SIZE];
 	bool DontBackup;
 	wchar_t LastSavedDateStr[MAX_SIZE];
+	bool SaveFailed;     // The last SaveCfgRwEx could not write the file
+	bool BadFilePending; // An unreadable file is still in place: no save writes over it
+	bool BadFileRenamed; // An unreadable file has been renamed to <name>.bad
 };
 
 typedef bool (*ENUM_FOLDER)(FOLDER *f, void *param);
 typedef bool (*ENUM_ITEM)(ITEM *t, void *param);
 
-struct CFG_ENUM_PARAM
-{
+struct CFG_ENUM_PARAM {
 	BUF *b;
 	UINT depth;
 };
@@ -92,33 +89,31 @@ bool CfgIsItem(FOLDER *f, char *name);
 char *CfgEscape(char *name);
 bool CfgCheckCharForName(char c);
 char *CfgUnescape(char *str);
-BUF *CfgFolderToBuf(FOLDER *f, bool textmode);
-BUF *CfgFolderToBufEx(FOLDER *f, bool textmode, bool no_banner);
+BUF *CfgFolderToBuf(FOLDER *f);
 void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth);
-void CfgOutputFolderBin(BUF *b, FOLDER *f);
 void CfgAddLine(BUF *b, char *str, UINT depth);
 void CfgAddDeclare(BUF *b, char *name, UINT depth);
 void CfgAddEnd(BUF *b, UINT depth);
-void CfgAddData(BUF *b, UINT type, char *name, char *data, char *sub, UINT depth);
+void CfgAddData(BUF *b, UINT type, char *name, char *data, UINT depth);
 char *CfgTypeToStr(UINT type);
 void CfgAddItemText(BUF *b, ITEM *t, UINT depth);
 FOLDER *CfgBufTextToFolder(BUF *b);
 FOLDER *CfgBufBinToFolder(BUF *b);
+FOLDER *CfgBufToFolder(BUF *b, bool require_closed);
 char *CfgReadNextLine(BUF *b);
-void CfgSaveW(FOLDER *f, wchar_t *name);
-bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name);
-bool CfgSaveExW2(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size);
-bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool write_binary);
+bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size);
 FOLDER *CfgReadW(wchar_t *name);
+bool CfgStageNewFile(CFG_RW *rw, void *data, UINT size);
+void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size);
 CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t *template_name);
 CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a);
 UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number);
+void CfgRwSetAsideBadFile(CFG_RW *rw);
 void FreeCfgRw(CFG_RW *rw);
 ITEM *CfgAddIp32(FOLDER *f, char *name, UINT ip);
 UINT CfgGetIp32(FOLDER *f, char *name);
 bool CfgGetIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr);
 ITEM *CfgAddIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr);
-bool FileCopy(char *src, char *dst);
 bool FileCopyW(wchar_t *src, wchar_t *dst);
 bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock);
 

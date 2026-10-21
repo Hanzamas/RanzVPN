@@ -1,8 +1,8 @@
 // Trace.h
 // Header of Trace.c
 
-#ifndef	TRACE_H
-#define	TRACE_H
+#ifndef TRACE_H
+#define TRACE_H
 
 #include "MayaType.h"
 
@@ -11,6 +11,6 @@
 void InitTrace();
 void FreeTrace();
 bool IsTraceEnabled();
-void TraceDebugArgs(char *fmt, va_list args);
+void TraceDebugArgs(const char *fmt, va_list args);
 
-#endif	// TRACE_H
+#endif // TRACE_H

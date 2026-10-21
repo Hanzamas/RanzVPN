@@ -8,7 +8,8 @@
 // flood checks fail on it. Also pins the header check before decryption (a datagram shorter than
 // the smallest packet of the format is dropped, the smallest valid packet is still accepted), the
 // drop counters and the rate limit of their log entry. Runs on loopback sockets in plain text,
-// version 1 (RC4) and version 2 (ChaCha20-Poly1305) mode. Prints "UDPACCEL TEST OK" only when
+// version 1 (RC4) and version 2 (ChaCha20-Poly1305) mode. Also pins the cookie pair of a new
+// UDP_ACCEL: YourCookie is never 0 and never MyCookie (FND-60). Prints "UDPACCEL TEST OK" only when
 // every check passes, and frees everything it allocates.
 
 #include "Cedar/Cedar.h"
@@ -71,7 +72,7 @@ static bool UdpAccelTestCheck(UDPACCEL_TEST *t, bool ok, char *what, char *detai
 }
 
 // Datagrams that Recv has dropped so far
-static UINT64 UdpAccelTestDrops(UDPACCEL_TEST *t)
+static UINT64 UdpAccelTestDrops(const UDPACCEL_TEST *t)
 {
 	return t->Recv->NumDropShort + t->Recv->NumDropInvalid;
 }
@@ -94,8 +95,8 @@ static bool UdpAccelTestOpen(UDPACCEL_TEST *t, UINT version, bool plain_text)
 {
 	SOCKSET set;
 
-	t->Recv = NewUdpAccel(t->Cedar, &t->Localhost, true, true);
-	t->Peer = NewUdpAccel(t->Cedar, &t->Localhost, true, true);
+	t->Recv = NewUdpAccel(t->Cedar, &t->Localhost, true);
+	t->Peer = NewUdpAccel(t->Cedar, &t->Localhost, true);
 	t->Flood = NewUDPEx3(0, &t->Localhost);
 	if (t->Recv == NULL || t->Peer == NULL || t->Flood == NULL)
 	{
@@ -135,21 +136,20 @@ static void UdpAccelTestSendValid(UDPACCEL_TEST *t, UCHAR *data, UINT data_size,
 {
 	t->PeerTick++;
 	UdpAccelSetTick(t->Peer, t->PeerTick);
-	UdpAccelSend(t->Peer, data, data_size, 0, max_size, false);
+	UdpAccelSend(t->Peer, data, data_size, 0, max_size);
 }
 
 // Send num datagrams of size bytes that are no packets of Recv from the flood socket
 static void UdpAccelTestSendJunk(UDPACCEL_TEST *t, UINT num, UINT size)
 {
 	UCHAR buf[UDP_ACCELERATION_TMP_BUF_SIZE];
-	UINT i;
 
 	Rand(buf, sizeof(buf));
 
 	// The cookie leads a plain text packet: never the cookie of Recv
 	buf[0] = (UCHAR)((t->Recv->MyCookie >> 24) ^ 0xff);
 
-	for (i = 0; i < num; i++)
+	for (UINT i = 0; i < num; i++)
 	{
 		SendTo(t->Flood, &t->Localhost, t->Recv->MyPort, buf, size);
 	}
@@ -169,8 +169,6 @@ static void UdpAccelTestFormat(UDPACCEL_TEST *t, char *mode, UINT version, bool 
 {
 	UCHAR data[UDPACCEL_TEST_DATA_SIZE];
 	char what[MAX_SIZE];
-	UINT64 drop_short, drop_invalid;
-	BLOCK *b;
 
 	if (UdpAccelTestOpen(t, version, plain_text) == false)
 	{
@@ -191,7 +189,7 @@ static void UdpAccelTestFormat(UDPACCEL_TEST *t, char *mode, UINT version, bool 
 	Rand(data, sizeof(data));
 	UdpAccelTestSendValid(t, data, sizeof(data), t->Peer->MaxUdpPacketSize);
 	UdpAccelTestPoll(t, Tick64());
-	b = GetNext(t->Recv->RecvBlockQueue);
+	BLOCK *b = GetNext(t->Recv->RecvBlockQueue);
 	Format(what, sizeof(what), "%s: a data packet arrives with its data", mode);
 	UdpAccelTestCheck(t, b != NULL && b->Size == sizeof(data) && Cmp(b->Buf, data, sizeof(data)) == 0 &&
 		UdpAccelTestDrops(t) == 0, what, "block %s, size %u, %I64u dropped",
@@ -199,8 +197,8 @@ static void UdpAccelTestFormat(UDPACCEL_TEST *t, char *mode, UINT version, bool 
 	FreeBlock(b);
 
 	// (3) One byte shorter than the smallest packet: dropped by the header check before decryption
-	drop_short = t->Recv->NumDropShort;
-	drop_invalid = t->Recv->NumDropInvalid;
+	UINT64 drop_short = t->Recv->NumDropShort;
+	UINT64 drop_invalid = t->Recv->NumDropInvalid;
 	UdpAccelTestSendJunk(t, 1, min_size - 1);
 	UdpAccelTestPoll(t, Tick64());
 	Format(what, sizeof(what), "%s: a datagram of %u bytes is dropped before decryption (NumDropShort)", mode, min_size - 1);
@@ -226,9 +224,6 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	UINT per_tick = UDP_ACCELERATION_MAX_RECV_PER_TICK;
 	UCHAR data[UDPACCEL_TEST_DATA_SIZE];
 	wchar_t log[MAX_SIZE];
-	UINT64 drops, limit, tick;
-	BLOCK *b;
-	UINT i;
 
 	if (UdpAccelTestOpen(t, 2, false) == false)
 	{
@@ -242,9 +237,9 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	Rand(data, sizeof(data));
 	UdpAccelTestSendValid(t, data, sizeof(data), t->Peer->MaxUdpPacketSize);
 
-	drops = UdpAccelTestDrops(t);
-	limit = t->Recv->NumRecvLimit;
-	tick = Tick64();
+	UINT64 drops = UdpAccelTestDrops(t);
+	UINT64 limit = t->Recv->NumRecvLimit;
+	UINT64 tick = Tick64();
 
 	UdpAccelTestPoll(t, tick);
 	UdpAccelTestCheck(t, UdpAccelTestDrops(t) - drops == per_poll && t->Recv->NumRecvLimit - limit == 1 &&
@@ -259,7 +254,7 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 		"%I64u read, NumRecvLimit +%I64u", UdpAccelTestDrops(t) - drops, t->Recv->NumRecvLimit - limit);
 
 	UdpAccelTestPoll(t, tick);
-	b = GetNext(t->Recv->RecvBlockQueue);
+	BLOCK *b = GetNext(t->Recv->RecvBlockQueue);
 	UdpAccelTestCheck(t, UdpAccelTestDrops(t) - drops == per_poll * 2 + UDPACCEL_TEST_EXTRA && t->Recv->NumRecvLimit - limit == 2 &&
 		b != NULL && b->Size == sizeof(data) && Cmp(b->Buf, data, sizeof(data)) == 0,
 		"flood: the poll that empties the socket stops below the budget and the valid packet behind the flood arrives",
@@ -275,7 +270,7 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	tick += 1000;
 
 	UdpAccelTestPoll(t, tick);
-	for (i = 0; i < per_tick / per_poll + 3; i++)
+	for (UINT i = 0; i < per_tick / per_poll + 3; i++)
 	{
 		UdpAccelPoll(t->Recv);
 	}
@@ -324,6 +319,26 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	UdpAccelTestClose(t);
 }
 
+// Stub random source of the cookie check: 5, then 0 and 5 that UdpAccelNewCookies must skip, then 7
+static UINT udpaccel_test_rand_index = 0;
+static UINT UdpAccelTestRand32(void)
+{
+	static const UINT seq[] = {5, 0, 5, 7};
+
+	return seq[udpaccel_test_rand_index++ % (sizeof(seq) / sizeof(seq[0]))];
+}
+
+// The cookie pair: YourCookie is never 0 and never MyCookie (FND-60; the old loop tested MyCookie twice)
+static void UdpAccelTestCookies(UDPACCEL_TEST *t)
+{
+	UINT my_cookie, your_cookie;
+
+	udpaccel_test_rand_index = 0;
+	UdpAccelNewCookies(&my_cookie, &your_cookie, UdpAccelTestRand32);
+	UdpAccelTestCheck(t, my_cookie == 5 && your_cookie == 7,
+		"cookies: a drawn 0 or MyCookie is skipped for YourCookie", "MyCookie %u, YourCookie %u", my_cookie, your_cookie);
+}
+
 // udpaccel: bounded receive loop and drop counters of the UDP Acceleration
 void udpaccel_test(UINT num, char **arg)
 {
@@ -332,6 +347,8 @@ void udpaccel_test(UINT num, char **arg)
 	Zero(&t, sizeof(t));
 
 	Print("UDP Acceleration receive test\n");
+
+	UdpAccelTestCookies(&t);
 
 	t.Cedar = NewCedar(NULL, NULL);
 	SetIP(&t.Localhost, 127, 0, 0, 1);

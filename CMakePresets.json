@@ -1,0 +1,74 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "description": "Ninja, clang-cl and the toolchain file of the vcpkg checkout in the environment variable VCPKG_ROOT; every preset builds in build/ (delete it when you switch preset)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_COMPILER": "clang-cl",
+        "BUILD_NUMBER": "0"
+      }
+    },
+    {
+      "name": "x64",
+      "displayName": "x64 RelWithDebInfo",
+      "description": "x64 executables; the configuration CI builds and tests",
+      "inherits": "base",
+      "architecture": { "value": "x64", "strategy": "external" },
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static"
+      }
+    },
+    {
+      "name": "arm64",
+      "displayName": "arm64 RelWithDebInfo",
+      "description": "arm64 executables, built on a Windows ARM64 host",
+      "inherits": "base",
+      "architecture": { "value": "arm64", "strategy": "external" },
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "arm64-windows-static"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "x64 AddressSanitizer and libFuzzer",
+      "description": "x64 with RANZ_ASAN and RANZ_FUZZ (cmake/RanzSanitizers.cmake): the fuzz-asan CI job",
+      "inherits": "x64",
+      "cacheVariables": {
+        "RANZ_ASAN": "ON",
+        "RANZ_FUZZ": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "x64 Debug",
+      "description": "x64 Debug configuration: code that RelWithDebInfo never compiles (_DEBUG)",
+      "inherits": "x64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "debug-arm64",
+      "displayName": "arm64 Debug",
+      "description": "arm64 Debug configuration, built on a Windows ARM64 host",
+      "inherits": "arm64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "x64", "configurePreset": "x64" },
+    { "name": "arm64", "configurePreset": "arm64" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "debug-arm64", "configurePreset": "debug-arm64" }
+  ]
+}

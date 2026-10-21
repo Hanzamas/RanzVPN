@@ -1,15 +1,14 @@
 // Link.h
 // Header of Link.c
 
-#ifndef	LINK_H
-#define	LINK_H
+#ifndef LINK_H
+#define LINK_H
 
 #include "CedarType.h"
 
 #include "Mayaqua/MayaType.h"
 
-struct LINK
-{
+struct LINK {
 	bool Started;
 	volatile bool Halting;
 	bool Offline;
@@ -24,7 +23,6 @@ struct LINK
 	CLIENT_AUTH *Auth;
 	POLICY *Policy;
 	QUEUE *SendPacketQueue;
-	UINT CurrentSendPacketQueueSize;
 	UINT LastError;
 	bool CheckServerCert;
 	bool AddDefaultCA;
@@ -37,6 +35,8 @@ struct LINK
 
 
 bool LinkValidateAuthAndPolicy(CLIENT_AUTH *auth, POLICY *policy);
+void NormalizeLinkOption(CLIENT_OPTION *option);
+LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name);
 LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy);
 void StartLink(LINK *k);
 void StopLink(LINK *k);
@@ -51,7 +51,7 @@ void ReleaseLink(LINK *k);
 void CleanupLink(LINK *k);
 void ReleaseAllLink(HUB *h);
 
-#endif	// LINK_H
+#endif // LINK_H
 
 
 

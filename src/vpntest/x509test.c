@@ -1,15 +1,18 @@
 // x509test.c
 // Named X.509 and certificate signature test of vpntest ("x509" command, SEC-2 #96)
 //
-// Pins four fixes in Mayaqua/Encrypt.c on data that a peer certificate or signature controls:
+// Pins four fixes in Mayaqua/Crypto/ (X509.c, Pem.c, Rsa.c) on data that a peer certificate or
+// signature controls:
 // - GetUniStrFromX509Name scanned UniStrLen() * 4 + 8 bytes of its 1024-byte stack buffer for
 //   high bytes, so a name field of about 508 bytes or more was read past the buffer
 //   (AddressSanitizer: stack-buffer-overflow), and the stray bytes could switch the decoding.
 //   Long PrintableString, UTF8String and BMPString fields must come back exactly, a field longer
 //   than the buffer as its first X509T_NAME_KEPT bytes, as before.
 // - Asn1TimeToSystem moved a GeneralizedTime by the local UTC offset. Both certificate time forms
-//   are UTC (RFC 5280 section 4.1.2.5): with the process time zone set to UTC+9, a GeneralizedTime
-//   must read as written and as the same instant as the equal UTCTime.
+//   are UTC (RFC 5280 section 4.1.2.5): whatever the OS time zone, a GeneralizedTime must read as
+//   written and as the same instant as the equal UTCTime. The old check set the CRT zone with TZ to
+//   UTC+9; the local time conversions follow the OS zone since FND-132 and ignore TZ, so a runner in
+//   UTC no longer exercises a zone with an offset.
 // - BioToXList freed a certificate twice when X509ToX failed on it (here: an unknown public key
 //   algorithm): X509ToX freed it, then X509_INFO_free. A PEM bundle of such a certificate and a
 //   valid one must give a list of the valid one, each certificate freed once.
@@ -43,8 +46,6 @@
 // it. A signature verifies, other data and a block with bytes after the hash do not, and a received
 // signature of another length than the key's is rejected. Prints "RSASIG TEST OK".
 
-#include "Cedar/Sam.h"
-
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
@@ -72,7 +73,6 @@
 #define	X509T_DIGEST_INFO		(15 + SHA1_SIZE)	// Bytes of the SHA-1 DigestInfo and hash in a PKCS#1 v1.5 block
 #define	X509T_TRAILING			8			// Bytes after the DigestInfo and hash in the forged signature block
 #define	X509T_MAX_SIGN			(4096 / 8)	// Largest signature (bytes): the buffer Protocol.c receives it into
-#define	X509T_TIME_ZONE			"JST-9"		// CRT time zone of the time checks: UTC+9, no daylight saving time
 #define	X509T_GUARD				16			// Guard bytes after a signature destination
 #define	X509T_GUARD_BYTE		0xA5		// Value of the guard bytes
 
@@ -230,7 +230,7 @@ static char X509TestChar(UINT i)
 
 // GetUniStrFromX509Name on a name whose common name holds the raw bytes as the ASN.1 string type;
 // true when it returns expect
-static bool X509TestName(int type, UCHAR *bytes, UINT size, wchar_t *expect)
+static bool X509TestName(int type, UCHAR *bytes, UINT size, const wchar_t *expect)
 {
 	X509_NAME *xn = X509_NAME_new();
 	wchar_t *got;
@@ -263,10 +263,9 @@ static void X509TestNames(X509T_CTX *ctx)
 {
 	UCHAR *bytes = ZeroMalloc(X509T_OVERLONG * 2);
 	wchar_t *expect = ZeroMalloc((X509T_OVERLONG + 1) * sizeof(wchar_t));
-	UINT i;
 
 	// 600 ASCII characters as PrintableString and as UTF8String
-	for (i = 0;i < X509T_LONG_ASCII;i++)
+	for (UINT i = 0;i < X509T_LONG_ASCII;i++)
 	{
 		bytes[i] = (UCHAR)X509TestChar(i);
 		expect[i] = (wchar_t)X509TestChar(i);
@@ -278,7 +277,7 @@ static void X509TestNames(X509T_CTX *ctx)
 		"600-character UTF8String common name comes back exactly");
 
 	// 300 times U+00E9 as UTF-8 (C3 A9), 600 bytes
-	for (i = 0;i < X509T_LONG_UTF8;i++)
+	for (UINT i = 0;i < X509T_LONG_UTF8;i++)
 	{
 		bytes[i * 2] = 0xC3;
 		bytes[i * 2 + 1] = 0xA9;
@@ -289,7 +288,7 @@ static void X509TestNames(X509T_CTX *ctx)
 		"UTF8String common name of 300 times U+00E9 comes back exactly");
 
 	// 500 characters as BMPString (UTF-16 big endian), 1000 bytes
-	for (i = 0;i < X509T_LONG_BMP;i++)
+	for (UINT i = 0;i < X509T_LONG_BMP;i++)
 	{
 		bytes[i * 2] = 0;
 		bytes[i * 2 + 1] = (UCHAR)X509TestChar(i);
@@ -300,7 +299,7 @@ static void X509TestNames(X509T_CTX *ctx)
 		"500-character BMPString common name comes back exactly");
 
 	// Longer than the buffer: its first X509T_NAME_KEPT bytes, as before
-	for (i = 0;i < X509T_OVERLONG;i++)
+	for (UINT i = 0;i < X509T_OVERLONG;i++)
 	{
 		bytes[i] = (UCHAR)X509TestChar(i);
 		expect[i] = (wchar_t)X509TestChar(i);
@@ -314,34 +313,21 @@ static void X509TestNames(X509T_CTX *ctx)
 }
 
 // Whether a SYSTEMTIME holds the date and time
-static bool X509TestIsTime(SYSTEMTIME *st, UINT year, UINT month, UINT day, UINT hour, UINT minute, UINT second)
+static bool X509TestIsTime(const SYSTEMTIME *st, UINT year, UINT month, UINT day, UINT hour, UINT minute, UINT second)
 {
 	return st->wYear == year && st->wMonth == month && st->wDay == day &&
 		st->wHour == hour && st->wMinute == minute && st->wSecond == second;
 }
 
-// Certificate times are UTC in both ASN.1 forms, whatever the local time zone
+// Certificate times are UTC in both ASN.1 forms, whatever the local time zone. The zone is the one
+// of the OS: LocalToSystem follows it through the Windows time zone functions, not the TZ variable
 static void X509TestTimes(X509T_CTX *ctx)
 {
-	char old_tz[MAX_SIZE];
-	bool had_tz = GetEnv("TZ", old_tz, sizeof(old_tz));
 	ASN1_GENERALIZEDTIME *gen2060 = ASN1_GENERALIZEDTIME_new();
 	ASN1_GENERALIZEDTIME *gen2049 = ASN1_GENERALIZEDTIME_new();
 	ASN1_UTCTIME *utc2049 = ASN1_UTCTIME_new();
-	SYSTEMTIME local, st;
+	SYSTEMTIME st;
 	bool made;
-
-	// The CRT time functions behind LocalToSystem (mktime, localtime) follow TZ once _tzset reads it
-	_putenv_s("TZ", X509T_TIME_ZONE);
-	_tzset();
-
-	// The zone is in effect: 2060-01-01 00:00 local time is 2059-12-31 15:00 UTC
-	Zero(&local, sizeof(local));
-	local.wYear = 2060;
-	local.wMonth = 1;
-	local.wDay = 1;
-	LocalToSystem(&st, &local);
-	X509TestCheck(ctx, X509TestIsTime(&st, 2059, 12, 31, 15, 0, 0), "Process time zone is UTC+9 for the time checks");
 
 	made = gen2060 != NULL && gen2049 != NULL && utc2049 != NULL &&
 		ASN1_GENERALIZEDTIME_set_string(gen2060, "20600101000000Z") == 1 &&
@@ -366,10 +352,6 @@ static void X509TestTimes(X509T_CTX *ctx)
 	ASN1_UTCTIME_free(utc2049);
 	ASN1_GENERALIZEDTIME_free(gen2049);
 	ASN1_GENERALIZEDTIME_free(gen2060);
-
-	// Back to the time zone of the process: an empty value removes TZ
-	_putenv_s("TZ", had_tz ? old_tz : "");
-	_tzset();
 }
 
 // RsaVerifyEx: a valid signature verifies, a block with bytes after the hash does not
@@ -385,7 +367,6 @@ static void X509TestRsa(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	bool forged_ok = false;
 	char what[MAX_SIZE];
 	UINT sign_size = bits / 8;
-	UINT i;
 
 	// The client signs the 20 random bytes of the server (c->Random in Protocol.c)
 	Rand(data, sizeof(data));
@@ -407,7 +388,7 @@ static void X509TestRsa(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	// signed with the private key (EVP_PKEY_sign with no digest signs the bytes as they are)
 	Copy(block, x509t_sha1_digest_info, sizeof(x509t_sha1_digest_info));
 	Sha1(block + sizeof(x509t_sha1_digest_info), data, sizeof(data));
-	for (i = X509T_DIGEST_INFO;i < sizeof(block);i++)
+	for (UINT i = X509T_DIGEST_INFO;i < sizeof(block);i++)
 	{
 		block[i] = 'X';
 	}
@@ -437,21 +418,19 @@ static void X509TestBundle(X509T_CTX *ctx, K *priv, K *pub)
 	BUF *valid_pem = XToBuf(valid, true);
 	BUF *one = NewBuf();
 	BUF *bundle = NewBuf();
-	LIST *chain;
-	X *x;
 
 	X509TestCheck(ctx, valid != NULL && valid_pem != NULL, "Valid self-signed RSA-2048 certificate is made");
 
 	// Alone: X509ToX gets no public key from it
 	WriteBuf(one, x509t_unknown_key_pem, StrLen(x509t_unknown_key_pem));
-	x = BufToX(one, true);
+	X *x = BufToX(one, true);
 	X509TestCheck(ctx, x == NULL, "BufToX refuses the certificate with the unknown public key algorithm");
 	FreeX(x);
 
 	// First in a bundle, the valid certificate after it
 	WriteBuf(bundle, x509t_unknown_key_pem, StrLen(x509t_unknown_key_pem));
 	WriteBufBuf(bundle, valid_pem);
-	chain = BufToXList(bundle, true);
+	LIST *chain = BufToXList(bundle, true);
 	X509TestCheck(ctx, chain != NULL && LIST_NUM(chain) == 1 && CompareX(LIST_DATA(chain, 0), valid),
 		"BufToXList of the bundle frees the refused certificate once and lists the valid one");
 	FreeXList(chain);
@@ -501,14 +480,13 @@ void x509_test(UINT num, char **arg)
 }
 
 // Load a PEM certificate of the test
-static X *X509TestPemToX(char *pem)
+static X *X509TestPemToX(const char *pem)
 {
 	BUF *b = NewBuf();
-	X *x;
 
 	WriteBuf(b, pem, StrLen(pem));
 	SeekBuf(b, 0, 0);
-	x = BufToX(b, true);
+	X *x = BufToX(b, true);
 	FreeBuf(b);
 
 	return x;
@@ -639,11 +617,9 @@ void x509root_test(UINT num, char **arg)
 }
 
 // Whether every byte of the buffer has the value
-static bool X509TestAllBytes(UCHAR *buf, UINT size, UCHAR value)
+static bool X509TestAllBytes(const UCHAR *buf, UINT size, UCHAR value)
 {
-	UINT i;
-
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if (buf[i] != value)
 		{
@@ -663,13 +639,12 @@ static void X509TestRsaSizes(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	UCHAR dst[X509T_MAX_SIGN + X509T_GUARD];
 	UINT sign_size = bits / 8;
 	UINT small = sign_size / 2;
-	bool signed_ok;
 	char what[MAX_SIZE];
 
 	Rand(data, sizeof(data));
 
 	Zero(sign, sizeof(sign));
-	signed_ok = RsaSignEx(sign, sign_size, data, sizeof(data), priv);
+	bool signed_ok = RsaSignEx(sign, sign_size, data, sizeof(data), priv);
 	Format(what, sizeof(what), "RSA-%u: a signature into a destination of exactly %u bytes verifies", bits, sign_size);
 	X509TestCheck(ctx, signed_ok && RsaVerifyEx(data, sizeof(data), sign, sign_size, pub), what);
 

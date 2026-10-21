@@ -77,11 +77,9 @@ static bool ConsoleLineCheck(CONSOLELINE_CTX *ctx, bool ok, char *what)
 }
 
 // True when the len characters of s are all 'A'
-static bool ConsoleLineAllA(wchar_t *s, UINT len)
+static bool ConsoleLineAllA(const wchar_t *s, UINT len)
 {
-	UINT i;
-
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (s[i] != L'A')
 		{
@@ -93,11 +91,9 @@ static bool ConsoleLineAllA(wchar_t *s, UINT len)
 }
 
 // True when every character of s is printable ASCII
-static bool ConsoleLineIsAscii(wchar_t *s)
+static bool ConsoleLineIsAscii(const wchar_t *s)
 {
-	UINT i;
-
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		if (s[i] < 0x20 || s[i] > 0x7e)
 		{
@@ -109,14 +105,13 @@ static bool ConsoleLineIsAscii(wchar_t *s)
 }
 
 // The UTF-16 code units of s in hexadecimal, each after a space (" 0048 00E9")
-static void ConsoleLineCodes(char *dst, UINT size, wchar_t *s)
+static void ConsoleLineCodes(char *dst, UINT size, const wchar_t *s)
 {
 	char *hex = "0123456789ABCDEF";
-	UINT i;
 
 	dst[0] = 0;
 
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		UINT v = (UINT)s[i];
 		char one[6];
@@ -136,23 +131,21 @@ static void ConsoleLineCodes(char *dst, UINT size, wchar_t *s)
 static void ConsoleLineChild()
 {
 	wchar_t infile[MAX_PATH];
-	CONSOLE *c;
-	UINT i, len;
 
-	len = GetEnvironmentVariableW(CONSOLELINE_ENV_INFILE, infile, MAX_PATH);
+	UINT len = GetEnvironmentVariableW(CONSOLELINE_ENV_INFILE, infile, MAX_PATH);
 	if (len == 0 || len >= MAX_PATH)
 	{
 		infile[0] = 0;
 	}
 
-	c = NewLocalConsole(infile, NULL);
+	CONSOLE *c = NewLocalConsole(infile, NULL);
 	if (c == NULL)
 	{
 		Print(CONSOLELINE_MARK "NO CONSOLE\n");
 		return;
 	}
 
-	for (i = 0;i < CONSOLELINE_MAX_READS;i++)
+	for (UINT i = 0;i < CONSOLELINE_MAX_READS;i++)
 	{
 		wchar_t *s = c->ReadLine(c, L"", false);
 
@@ -188,13 +181,13 @@ static void ConsoleLineChild()
 }
 
 // Input of the bytes of str
-static BUF *ConsoleLineInput(char *str)
+static BUF *ConsoleLineInput(const char *str)
 {
 	return MemToBuf(str, StrLen(str));
 }
 
 // Input of before, CONSOLELINE_LONG_LEN times 'A' and after
-static BUF *ConsoleLineLongInput(char *before, char *after)
+static BUF *ConsoleLineLongInput(const char *before, const char *after)
 {
 	BUF *b = NewBuf();
 	char *a = MakeCharArray('A', CONSOLELINE_LONG_LEN);
@@ -230,7 +223,6 @@ static char *ConsoleLineRunChild(BUF *in, BUF *infile, UINT *exit_code)
 	wchar_t stdin_path[MAX_PATH], stdout_path[MAX_PATH], in_path[MAX_PATH];
 	wchar_t exe[MAX_PATH];
 	wchar_t cmd[MAX_PATH * 2];
-	HANDLE h_in, h_out;
 	STARTUPINFOW si;
 	PROCESS_INFORMATION pi;
 	DWORD code = 1;
@@ -251,8 +243,8 @@ static char *ConsoleLineRunChild(BUF *in, BUF *infile, UINT *exit_code)
 		SetEnvironmentVariableW(CONSOLELINE_ENV_INFILE, in_path);
 	}
 
-	h_in = ConsoleLineOpenForChild(stdin_path, false);
-	h_out = ConsoleLineOpenForChild(stdout_path, true);
+	HANDLE h_in = ConsoleLineOpenForChild(stdin_path, false);
+	HANDLE h_out = ConsoleLineOpenForChild(stdout_path, true);
 
 	GetExeNameW(exe, sizeof(exe));
 	UniFormat(cmd, sizeof(cmd), L"\"%s\" consoleline child", exe);
@@ -319,14 +311,13 @@ static char *ConsoleLineRunChild(BUF *in, BUF *infile, UINT *exit_code)
 }
 
 // The CONSOLELINE lines of the output of a child, without their prefix, joined by '|'
-static void ConsoleLineResult(char *result, UINT size, char *out)
+static void ConsoleLineResult(char *result, UINT size, const char *out)
 {
 	TOKEN_LIST *t = ParseToken(out, "\r\n");
-	UINT i;
 
 	result[0] = 0;
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		char *line = t->Token[i];
 
@@ -344,12 +335,11 @@ static void ConsoleLineResult(char *result, UINT size, char *out)
 }
 
 // Print the output of a failed child, long lines by their length only
-static void ConsoleLinePrintOutput(char *out)
+static void ConsoleLinePrintOutput(const char *out)
 {
 	TOKEN_LIST *t = ParseToken(out, "\r\n");
-	UINT i;
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		UINT len = StrLen(t->Token[i]);
 
@@ -373,7 +363,6 @@ static void ConsoleLineCase(CONSOLELINE_CTX *ctx, char *what, BUF *in, BUF *infi
 	char result[MAX_SIZE];
 	UINT exit_code = 1;
 	char *out = ConsoleLineRunChild(in, infile, &exit_code);
-	bool ok;
 
 	result[0] = 0;
 	if (out != NULL)
@@ -381,7 +370,7 @@ static void ConsoleLineCase(CONSOLELINE_CTX *ctx, char *what, BUF *in, BUF *infi
 		ConsoleLineResult(result, sizeof(result), out);
 	}
 
-	ok = (out != NULL && exit_code == 0 && StrCmp(result, expect) == 0 && InStrEx(out, "NO MEMORY LEAKS", true));
+	bool ok = (out != NULL && exit_code == 0 && StrCmp(result, expect) == 0 && InStrEx(out, "NO MEMORY LEAKS", true));
 
 	if (ConsoleLineCheck(ctx, ok, what) == false)
 	{
@@ -407,9 +396,8 @@ static void ConsoleLineSingleChars(CONSOLELINE_CTX *ctx)
 	char dst[16];
 	char map[8];
 	bool untouched = true;
-	UINT i;
 
-	for (i = 0;i < sizeof(dst) - 1;i++)
+	for (UINT i = 0;i < sizeof(dst) - 1;i++)
 	{
 		dst[i] = CONSOLELINE_SENTINEL;
 	}
@@ -417,7 +405,7 @@ static void ConsoleLineSingleChars(CONSOLELINE_CTX *ctx)
 
 	UniToStrForSingleChars(dst, 8, L"abcdefghij");
 
-	for (i = 8;i < sizeof(dst) - 1;i++)
+	for (UINT i = 8;i < sizeof(dst) - 1;i++)
 	{
 		if (dst[i] != CONSOLELINE_SENTINEL)
 		{
@@ -439,12 +427,11 @@ static void ConsoleLineSingleChars(CONSOLELINE_CTX *ctx)
 static void ConsoleLineUniToInt(CONSOLELINE_CTX *ctx)
 {
 	wchar_t *s = ZeroMalloc((CONSOLELINE_INT_LEN + 1) * sizeof(wchar_t));
-	UINT i;
 
 	ConsoleLineCheck(ctx, UniToInt(L"123456789") == 123456789, "UniToInt of 123456789");
 
 	// 126 zeros and a 7: 127 characters and the terminator fill the 128-byte buffer of UniToInt
-	for (i = 0;i < 126;i++)
+	for (UINT i = 0;i < 126;i++)
 	{
 		s[i] = L'0';
 	}
@@ -456,7 +443,7 @@ static void ConsoleLineUniToInt(CONSOLELINE_CTX *ctx)
 	// 42 and 300 letters: the former copy ran 175 bytes past the buffer
 	s[0] = L'4';
 	s[1] = L'2';
-	for (i = 2;i < CONSOLELINE_INT_LEN;i++)
+	for (UINT i = 2;i < CONSOLELINE_INT_LEN;i++)
 	{
 		s[i] = L'x';
 	}
@@ -465,6 +452,46 @@ static void ConsoleLineUniToInt(CONSOLELINE_CTX *ctx)
 	ConsoleLineCheck(ctx, UniToInt(s) == 42, "UniToInt of a 302-character string (42 and 300 letters) is 42");
 
 	Free(s);
+}
+
+// One ParseCommandEx case: the CMD value of line is expect, or NULL when expect is NULL
+static void ConsoleLineParseCmdCase(CONSOLELINE_CTX *ctx, wchar_t *line, const wchar_t *expect, char *what)
+{
+	wchar_t *ret = ParseCommandEx(line, L"CMD", NULL);
+	bool ok;
+
+	if (expect == NULL)
+	{
+		ok = (ret == NULL);
+	}
+	else
+	{
+		ok = (ret != NULL && UniStrCmp(ret, expect) == 0);
+	}
+
+	ConsoleLineCheck(ctx, ok, what);
+
+	Free(ret);
+}
+
+// ParseCommandEx finds /CMD and -CMD with a space, a tab, ':' or '=' (FND-48)
+static void ConsoleLineParseCmd(CONSOLELINE_CTX *ctx)
+{
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD HubList", L"HubList", "/CMD and a space");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD\tHubList", L"HubList", "/CMD and a tab");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD:HubList", L"HubList", "/CMD:");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD=HubList", L"HubList", "/CMD=");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD HubList", L"HubList", "-CMD and a space");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD\tHubList", L"HubList", "-CMD and a tab");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD:HubList", L"HubList", "-CMD:");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD=HubList", L"HubList", "-CMD=");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /cmd HubList", L"HubList", "/cmd in lower case");
+	// "/" "/" keeps a doubled slash out of the source, which the brace checks read as a comment
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /" L"/CMD HubList", NULL, "/CMD after a slash does not count");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd --CMD HubList", NULL, "-CMD after a dash does not count");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /" L"/CMD a /CMD b", L"", "The first /CMD and a space decides: a slash before it hides the later /CMD");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD:a /CMD=b", L"b", "/CMD before -CMD");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD=a /CMD b", L"b", "/CMD and a space before /CMD=");
 }
 
 // consoleline: console line readers and UniToInt on input longer than their buffers
@@ -484,6 +511,8 @@ void consoleline_test(UINT num, char **arg)
 	Print("Console input test\n");
 
 	ConsoleLineSingleChars(&ctx);
+
+	ConsoleLineParseCmd(&ctx);
 
 	// Prompt, through the standard input of a child
 	Format(expect, sizeof(expect), "LINE [hello world]|LONG %u ALL-A|LINE [next]|CANCEL|CHILD DONE", CONSOLELINE_PROMPT_MAX);

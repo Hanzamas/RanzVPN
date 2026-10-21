@@ -1,0 +1,2 @@
+POST /vpnsvc/connect.cgi HTTP/1.1
+Host: 192.0.2.1

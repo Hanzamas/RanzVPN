@@ -1,11 +1,9 @@
 // vpntest.c
 // VPN Server test program
 
-#define VPN_EXE
-
 #include "harness.h"
 #include "Cedar/Command.h"
-#include "Cedar/MsChapV2.h"
+#include "Cedar/Account.h"
 #include "Cedar/Server.h"
 #include "Cedar/WaterMark.h"
 
@@ -24,7 +22,7 @@ void server_test(UINT num, char **arg)
 
 	StInit();
 
-	StStartServer(false);
+	StStartServer();
 
 	GetLine(NULL, 0);
 
@@ -41,139 +39,67 @@ void memory_leak_test(UINT num, char **arg)
 	Print("Just now I called Malloc(1) and never free! Ha ha ha !!\n");
 }
 
-// MS-CHAPv2 / NT-hash helpers test using the RFC 2759 section 9.2 test vectors
-void mschapv2_test(UINT num, char **arg)
+// One NT-hash vector: GenerateNtPasswordHash(password) must give expect_hex
+static void nthash_test_check(bool *ok, char *password, char *expect_hex)
 {
-	// RFC 2759 section 9.2 test vectors
-	char *username = "User";
-	char *password = "clientPass";
-	char *auth_challenge_hex = "5B5D7C7D7B3F2F3E3C2C602132262628";	// AuthenticatorChallenge (server)
-	char *peer_challenge_hex = "21402324255E262A28295F2B3A337C7E";	// PeerChallenge (client)
-	char *expect_challenge8 = "D02E4386BCE91226";
-	char *expect_pw_hash = "44EBBA8D5312B8D611474411F56989AE";
-	char *expect_pw_hash_hash = "41C00C584BD2D91C4017A2A12FA59F3F";
-	char *expect_nt_response = "82309ECD8D708B5EA08FAA3981CD83544233114A3D85D6DF";
-	char *expect_auth_response = "S=407A5589115FD0D6209F510FE9C04566932CDA56";
-
-	BUF *auth_challenge = StrToBin(auth_challenge_hex);
-	BUF *peer_challenge = StrToBin(peer_challenge_hex);
-
 	UCHAR nt_hash[16];
-	UCHAR nt_hash_hash[16];
-	UCHAR challenge8[8];
-	UCHAR nt_response[24];
-	UCHAR server_response_20[20];
-
 	char nt_hash_str[64];
-	char nt_hash_hash_str[64];
-	char challenge8_str[64];
-	char nt_response_str[128];
-	char server_response_hex[64];
-	char auth_response_str[128];
 
-	bool ok = true;
-
-	Print("MS-CHAPv2 / NT-hash helpers test (RFC 2759 section 9.2)\n");
-
-	// PasswordHash = NtPasswordHash(Password)
+	Zero(nt_hash, sizeof(nt_hash));
 	GenerateNtPasswordHash(nt_hash, password);
 	BinToStr(nt_hash_str, sizeof(nt_hash_str), nt_hash, sizeof(nt_hash));
-	if (StrCmpi(nt_hash_str, expect_pw_hash) == 0)
+
+	if (StrCmpi(nt_hash_str, expect_hex) == 0)
 	{
-		Print("  [PASS] PasswordHash = %s\n", nt_hash_str);
+		Print("  [PASS] NtPasswordHash(\"%s\") = %s\n", password, nt_hash_str);
 	}
 	else
 	{
-		Print("  [FAIL] PasswordHash = %s (expected %s)\n", nt_hash_str, expect_pw_hash);
-		ok = false;
+		Print("  [FAIL] NtPasswordHash(\"%s\") = %s (expected %s)\n", password, nt_hash_str, expect_hex);
+		*ok = false;
 	}
+}
 
-	// PasswordHashHash = NtPasswordHash(PasswordHash)
-	GenerateNtPasswordHashHash(nt_hash_hash, nt_hash);
-	BinToStr(nt_hash_hash_str, sizeof(nt_hash_hash_str), nt_hash_hash, sizeof(nt_hash_hash));
-	if (StrCmpi(nt_hash_hash_str, expect_pw_hash_hash) == 0)
+// NT-hash (MD4 of the UTF-16LE password, the value stored as AuthNtLmSecureHash) known-answer test
+void nthash_test(UINT num, char **arg)
+{
+	bool ok = true;
+	UCHAR nt_hash[16];
+	UCHAR guard[16];
+
+	Print("NT-hash test (RFC 2759 section 9.2 and well-known vectors)\n");
+
+	// RFC 2759 section 9.2: PasswordHash of "clientPass"
+	nthash_test_check(&ok, "clientPass", "44EBBA8D5312B8D611474411F56989AE");
+
+	// The empty password is the MD4 of the empty string
+	nthash_test_check(&ok, "", "31D6CFE0D16AE931B73C59D7E0C089C0");
+
+	// Well-known NT hash of "password"
+	nthash_test_check(&ok, "password", "8846F7EAEE8FB117AD06BDD830B7586C");
+
+	// Missing arguments are ignored
+	Zero(nt_hash, sizeof(nt_hash));
+	Zero(guard, sizeof(guard));
+	GenerateNtPasswordHash(NULL, "password");
+	GenerateNtPasswordHash(nt_hash, NULL);
+	if (Cmp(nt_hash, guard, sizeof(nt_hash)) == 0)
 	{
-		Print("  [PASS] PasswordHashHash = %s\n", nt_hash_hash_str);
+		Print("  [PASS] a missing argument writes nothing\n");
 	}
 	else
 	{
-		Print("  [FAIL] PasswordHashHash = %s (expected %s)\n", nt_hash_hash_str, expect_pw_hash_hash);
+		Print("  [FAIL] a missing argument wrote the output\n");
 		ok = false;
 	}
-
-	// ChallengeHash = SHA1(PeerChallenge + AuthenticatorChallenge + UserName)[0..7]
-	MsChapV2_GenerateChallenge8(challenge8, peer_challenge->Buf, auth_challenge->Buf, username);
-	BinToStr(challenge8_str, sizeof(challenge8_str), challenge8, sizeof(challenge8));
-	if (StrCmpi(challenge8_str, expect_challenge8) == 0)
-	{
-		Print("  [PASS] Challenge = %s\n", challenge8_str);
-	}
-	else
-	{
-		Print("  [FAIL] Challenge = %s (expected %s)\n", challenge8_str, expect_challenge8);
-		ok = false;
-	}
-
-	// NT-Response = ChallengeResponse(Challenge, PasswordHash)
-	MsChapV2Client_GenerateResponse(nt_response, challenge8, nt_hash);
-	BinToStr(nt_response_str, sizeof(nt_response_str), nt_response, sizeof(nt_response));
-	if (StrCmpi(nt_response_str, expect_nt_response) == 0)
-	{
-		Print("  [PASS] NT-Response = %s\n", nt_response_str);
-	}
-	else
-	{
-		Print("  [FAIL] NT-Response = %s (expected %s)\n", nt_response_str, expect_nt_response);
-		ok = false;
-	}
-
-	// AuthenticatorResponse = "S=" + uppercase hex of the 20-byte server response
-	MsChapV2Server_GenerateResponse(server_response_20, nt_hash_hash, nt_response, challenge8);
-	BinToStr(server_response_hex, sizeof(server_response_hex), server_response_20, sizeof(server_response_20));
-	Format(auth_response_str, sizeof(auth_response_str), "S=%s", server_response_hex);
-	if (StrCmpi(auth_response_str, expect_auth_response) == 0)
-	{
-		Print("  [PASS] AuthenticatorResponse = %s\n", auth_response_str);
-	}
-	else
-	{
-		Print("  [FAIL] AuthenticatorResponse = %s (expected %s)\n", auth_response_str, expect_auth_response);
-		ok = false;
-	}
-
-	// Round-trip ParseAndExtractMsChapV2InfoFromPassword against an IPC MS-CHAPv2 password string
-	{
-		char pw[MAX_SIZE];
-		IPC_MSCHAP_V2_AUTHINFO d;
-
-		Format(pw, sizeof(pw), "%s%s:%s:%s:%s:%s", IPC_PASSWORD_MSCHAPV2_TAG, username,
-		       auth_challenge_hex, peer_challenge_hex, nt_response_str, "0000000000000000");
-
-		if (ParseAndExtractMsChapV2InfoFromPassword(&d, pw) &&
-		        StrCmp(d.MsChapV2_PPPUsername, username) == 0 &&
-		        Cmp(d.MsChapV2_ServerChallenge, auth_challenge->Buf, 16) == 0 &&
-		        Cmp(d.MsChapV2_ClientChallenge, peer_challenge->Buf, 16) == 0 &&
-		        Cmp(d.MsChapV2_ClientResponse, nt_response, 24) == 0)
-		{
-			Print("  [PASS] ParseAndExtractMsChapV2InfoFromPassword round-trip\n");
-		}
-		else
-		{
-			Print("  [FAIL] ParseAndExtractMsChapV2InfoFromPassword round-trip\n");
-			ok = false;
-		}
-	}
-
-	FreeBuf(auth_challenge);
-	FreeBuf(peer_challenge);
 
 	if (ok)
 	{
-		Print("MSCHAPV2 TEST OK\n");
+		Print("NTHASH TEST OK\n");
 	}
 	else
 	{
-		Print("MSCHAPV2 TEST FAILED\n");
+		Print("NTHASH TEST FAILED\n");
 	}
 }
 
@@ -321,7 +247,6 @@ void stun_test(UINT num, char **arg)
 	IP expect_ipv4, expect_ipv6, expect_mapped;
 	IP ip;
 	UINT port;
-	UINT size;
 	bool ok = true;
 
 	Print("STUN Binding Request / Response helpers test (RFC 5389, RFC 5769)\n");
@@ -332,7 +257,7 @@ void stun_test(UINT num, char **arg)
 
 	// (1) Binding Request
 	Zero(request, sizeof(request));
-	size = StunBuildBindingRequest(request, sizeof(request), tid);
+	UINT size = StunBuildBindingRequest(request, sizeof(request), tid);
 	stun_test_check(&ok, size == STUN_HEADER_SIZE &&
 		Cmp(request, expect_request_head, sizeof(expect_request_head)) == 0 &&
 		Cmp(request + 8, tid, STUN_TRANSACTION_ID_SIZE) == 0,
@@ -504,9 +429,10 @@ void authtype_test(UINT num, char **arg);
 void acpassword_test(UINT num, char **arg);
 void sigleak_test(UINT num, char **arg);
 
-// Named packet parser tests of FND-38 and FND-39, #113 (pkttest.c)
+// Named packet parser tests of FND-38, FND-39 and FND-54, #113 and #117 (pkttest.c)
 void pktparse_test(UINT num, char **arg);
 void vlantpid_test(UINT num, char **arg);
+void icmpv6ns_test(UINT num, char **arg);
 
 // Named PACK decoder bounds test of FND-42, #114 (packdecode.c)
 void pack_decode_bounds_test(UINT num, char **arg);
@@ -526,6 +452,24 @@ void x509root_test(UINT num, char **arg);
 // Named RSA client certificate signature test of FND-83, #127 (x509test.c)
 void rsasig_test(UINT num, char **arg);
 
+// Named chain_certs cache test of FND-139, #145 (chaincerts.c)
+void chaincerts_test(UINT num, char **arg);
+
+// Named shared server SSL_CTX test of FND-140, #145 (tlsctx.c)
+void tlsctx_test(UINT num, char **arg);
+
+// Named OS information test of FND-203, #166 (osinfo.c)
+void osinfo_test(UINT num, char **arg);
+
+// Named byte-order test of FND-152, #149 (endian.c)
+void endian_test(UINT num, char **arg);
+
+// Named service argument test of FND-205, #167 (svcargs.c)
+void svcargs_test(UINT num, char **arg);
+
+// Named FIFO and queue test of FND-215, #174 (fifo.c)
+void fifo_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -539,12 +483,11 @@ void watermark_test(UINT num, char **arg)
 	UCHAR hash[SHA256_SIZE];
 	char hash_str[SHA256_SIZE * 2 + 1];
 	bool ok = true;
-	BUF *b;
 
 	Print("Watermark test (hamcore %s)\n", WATERMARK_FILENAME);
 
 	// Same code path as InitWaterMark() at startup
-	b = LoadWaterMark();
+	BUF *b = LoadWaterMark();
 	if (b == NULL)
 	{
 		Print("  [FAIL] LoadWaterMark(): file missing, or its size or SHA-256 is wrong\n");
@@ -612,8 +555,8 @@ TEST_LIST test_list[] =
 {
 	{"s", server_test, "VPN Server in Test Mode, enter key to graceful stop."},
 	{"memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc()."},
-	{"mschapv2", mschapv2_test, "MS-CHAPv2 / NT-hash helpers against RFC 2759 test vectors."},
-	{"crypto", crypto_test, "MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, DES and Rand against known-answer vectors."},
+	{"nthash", nthash_test, "NT-hash (MD4 of the UTF-16LE password) against known-answer vectors."},
+	{"crypto", crypto_test, "MD4, MD5, SHA-0, SHA-1, SHA-256, RC4 and Rand against known-answer vectors."},
 	{"stun", stun_test, "STUN Binding Request / Response helpers against RFC 5769 sample messages."},
 	{"harness", harness_test, "In-process server: hubs, cascade, frames, vpncmd golden outputs, config round-trip."},
 	{"bench", bench_test, "Cascade frame throughput and Pack encode/decode benchmark (informational)."},
@@ -655,13 +598,20 @@ TEST_LIST test_list[] =
 	{"sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer."},
 	{"pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236."},
 	{"vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4."},
+	{"icmpv6ns", icmpv6ns_test, "Neighbor Solicitation: BuildNeighborSolicitation gives the bytes of the former builder chain, nothing for a NULL argument."},
 	{"pack_decode_bounds", pack_decode_bounds_test, "PACK decoder: value counts and sizes past the bytes present, unknown types and values cut short are rejected before they allocate."},
 	{"tablecache", tablecache_test, "String table: loaded from the resource only, a planted table_name.txt beside the exe is ignored, no cache file is written."},
 	{"registry", registry_test, "Registry: empty and 1-byte REG_SZ read as empty strings, a REG_MULTI_SZ as its first string, writes and deletes need no KEY_ALL_ACCESS."},
 	{"certsig", certsig_test, "Certificate signatures: only X509_verify() == 1 is valid; an unknown signature algorithm fails CheckXEx and GetIssuerFromList."},
 	{"x509root", x509root_test, "Root certificates: root_cert only for a verified self-signature; X509ToX leaves a certificate it refuses to its caller."},
 	{"rsasig", rsasig_test, "RSA client certificate signatures: PKCS#1 v1.5 SHA-1, a destination smaller than the key refused, a signature of another length rejected."},
+	{"chaincerts", chaincerts_test, "chain_certs: the folder is scanned once for many connections, again after a certificate is added, removed or saved."},
+	{"tlsctx", tlsctx_test, "Shared server SSL_CTX: a new certificate, cipher list or SslAcceptSettings reaches the next connection; accept rate (informational)."},
 	{"ptrkey", ptrkey_test, "Pointer keys: POINTER_TO_KEY keys a block by its address; AccessDelete by UniqueId removes that entry after the Ids are renumbered."},
+	{"osinfo", osinfo_test, "OS information: Windows 10 and 11, Server 2016, 2019, 2022 and 2025 by build number; a GitHub-hosted runner is Server 2022 or later or Windows 11."},
+	{"endian", endian_test, "Byte order: Endian16/32/64 reverse the bytes as htons and htonl do, READ_* and WRITE_* are big-endian at unaligned addresses."},
+	{"svcargs", svcargs_test, "Service arguments: each argument of SVC_HELP selects its mode, /usermode_showtray and /usermode_hidetray select none."},
+	{"fifo", fifo_test, "FIFO and queue: a FIFO that never fully drains stays small and keeps the byte order; the queue ring keeps the item order."},
 };
 
 // Test function
@@ -678,8 +628,6 @@ int TestMain(char *cmd)
 	Print("Enter '?' or 'help' to show the command list.\n");
 	Print("Enter 'q' or 'exit' to exit the process.\n\n");
 	Print("   - In Jurassic Park: \"It's a UNIX system! I know this!\"\n\n");
-
-	MsSetEnableMinidump(true);
 
 	while (true)
 	{
@@ -698,7 +646,7 @@ int TestMain(char *cmd)
 		Trim(tmp);
 		if (StrLen(tmp) != 0)
 		{
-			UINT i, num;
+			UINT num;
 			bool b = false;
 			TOKEN_LIST *token = ParseCmdLine(tmp);
 			char *cmd = token->Token[0];
@@ -712,12 +660,12 @@ int TestMain(char *cmd)
 				UINT max_len = 0;
 				Print("Available commands:\n\n");
 				num = sizeof(test_list) / sizeof(TEST_LIST);
-				for (i = 0;i < num;i++)
+				for (UINT i = 0;i < num;i++)
 				{
 					TEST_LIST *t = &test_list[i];
 					max_len = MAX(max_len, StrLen(t->command_str));
 				}
-				for (i = 0;i < num;i++)
+				for (UINT i = 0;i < num;i++)
 				{
 					TEST_LIST *t = &test_list[i];
 					UINT len = StrLen(t->command_str);
@@ -744,18 +692,17 @@ int TestMain(char *cmd)
 			else
 			{
 				num = sizeof(test_list) / sizeof(TEST_LIST);
-				for (i = 0;i < num;i++)
+				for (UINT i = 0;i < num;i++)
 				{
 					if (!StrCmpi(test_list[i].command_str, cmd))
 					{
 						char **arg = Malloc(sizeof(char *) * (token->NumTokens - 1));
-						UINT j;
-						for (j = 0;j < token->NumTokens - 1;j++)
+						for (UINT j = 0;j < token->NumTokens - 1;j++)
 						{
 							arg[j] = CopyStr(token->Token[j + 1]);
 						}
 						test_list[i].proc(token->NumTokens - 1, arg);
-						for (j = 0;j < token->NumTokens - 1;j++)
+						for (UINT j = 0;j < token->NumTokens - 1;j++)
 						{
 							Free(arg[j]);
 						}
@@ -787,7 +734,6 @@ int TestMain(char *cmd)
 int main(int argc, char *argv[])
 {
 	bool memchk = false;
-	UINT i;
 	char cmd[MAX_SIZE];
 	char *s;
 	int status = 0;
@@ -797,7 +743,7 @@ int main(int argc, char *argv[])
 	cmd[0] = 0;
 	if (argc >= 2)
 	{
-		for (i = 1;i < (UINT)argc;i++)
+		for (UINT i = 1;i < (UINT)argc;i++)
 		{
 			s = argv[i];
 			if (s[0] == '/')
@@ -814,11 +760,15 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	InitMayaqua(memchk, true, argc, argv);
+	InitMayaqua(memchk, true);
 	EnableProbe(true);
 	InitCedar();
 	SetHamMode();
-	status = TestMain(cmdline);
+	wchar_t *args_w = MsCopyProcessArgsW();
+	char *args = CopyUniToStr(args_w);
+	status = TestMain(args);
+	Free(args);
+	Free(args_w);
 	FreeCedar();
 	FreeMayaqua();
 

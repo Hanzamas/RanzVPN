@@ -5,12 +5,19 @@
 // - Asking whether SeLow is supported (SuInitEx, Win32EthIsSuSupported, IsBridgeSupported) never
 //   reaches the driver install step, leaves the SeLow service as it was, and does not use up the one
 //   install attempt of the process.
+// - No Local Bridge support is claimed where no SeLow driver package exists (any architecture but
+//   x64, such as arm64): SuIsSupportedOs and IsBridgeSupported are false there, elevated or not.
 // - Creating a Local Bridge (OpenEth, and Win32EthInstallSu of the AddLocalBridge RPC) and listing
 //   the devices for one (GetEthList, the EnumEthernet RPC) still reach the install step when the
 //   SeLow device is missing, at most once per process.
 // - The adapter-list read (SuReadAdapterInfoList) accepts a list with SL_SIGNATURE and refuses a
 //   wrong signature or a failed read. SuGetAdapterList frees its list on a failed read and leaves
 //   the device handle open (SuFree closes it).
+// - The Local Bridge lists an interface by its type data (MsIsBridgeableIf), not by title words: a
+//   wired NIC is listed whatever it is called, a tunnel, PPP, Wi-Fi or RAS WAN Miniport interface
+//   is hidden whatever its localized title says.
+// - The net-class table of the Local Bridge (MsNetClassEnum, one SetupAPI pass) agrees with the
+//   Class and Enum registry keys for every present network adapter, and has at least one.
 // The install step is replaced by a counting stub (SuSetInstallProc), so the test never installs a
 // driver. The install checks run only on a machine without SeLow, such as the CI runners; elsewhere
 // they are skipped. Prints "SELOW TEST OK" only when every check passes, and frees everything it
@@ -25,6 +32,7 @@
 #include "Mayaqua/Str.h"
 
 #include <stdarg.h>
+#include <iphlpapi.h>
 
 #define	SELOWTEST_FILE_NAME			L"selowtest_list.tmp"			// Adapter list file next to vpntest.exe
 #define	SELOWTEST_VERSION			0x1234							// SeLowVersion written to the file
@@ -42,7 +50,7 @@ typedef struct SELOWTEST_CTX
 static UINT selowtest_num_install = 0;
 
 // Install step stub: counts the call and installs nothing
-static bool SelowTestInstallProc(bool force)
+static bool SelowTestInstallProc()
 {
 	selowtest_num_install++;
 
@@ -148,7 +156,7 @@ static void SelowTestRead(SELOWTEST_CTX *ctx, wchar_t *path)
 
 		h = SelowTestOpen(path, true);
 		u->hFile = h;
-		o = SuGetAdapterList(u);
+		o = SuGetAdapterList(u, NULL);
 		SelowTestCheck(ctx, o != NULL && LIST_NUM(o) == 0, "SuGetAdapterList returns an empty list for a list with SL_SIGNATURE and no adapters",
 			"returned %s", o == NULL ? "NULL" : "a list with entries");
 		SelowTestCheck(ctx, SelowTestIsOpen(h), "SuGetAdapterList leaves the device handle open after a read", "handle closed");
@@ -174,7 +182,7 @@ static void SelowTestRead(SELOWTEST_CTX *ctx, wchar_t *path)
 
 		h = SelowTestOpen(path, true);
 		u->hFile = h;
-		o = SuGetAdapterList(u);
+		o = SuGetAdapterList(u, NULL);
 		SelowTestCheck(ctx, o == NULL, "SuGetAdapterList returns NULL for a wrong signature", "returned a list");
 		SelowTestCheck(ctx, SelowTestIsOpen(h), "SuGetAdapterList leaves the device handle open after a failed read", "handle closed");
 		SuFreeAdapterList(o);
@@ -193,22 +201,31 @@ static void SelowTestRead(SELOWTEST_CTX *ctx, wchar_t *path)
 // as it was. Returns whether SeLow is usable on this machine
 static bool SelowTestQuery(SELOWTEST_CTX *ctx)
 {
-	bool supported;
-	bool running_before, running_after;
+	bool running_before = MsIsServiceRunning(SL_PROTOCOL_NAME);
 
-	running_before = MsIsServiceRunning(SL_PROTOCOL_NAME);
-
-	supported = Win32EthIsSuSupported();
+	bool supported = Win32EthIsSuSupported();
 	Win32EthIsSuSupported();
 	IsBridgeSupported();
 	SuFree(SuInitEx(0));
 
-	running_after = MsIsServiceRunning(SL_PROTOCOL_NAME);
+	bool running_after = MsIsServiceRunning(SL_PROTOCOL_NAME);
 
 	SelowTestCheck(ctx, selowtest_num_install == 0, "Asking whether SeLow is supported never reaches the driver install",
 		"install step ran %u times", selowtest_num_install);
 	SelowTestCheck(ctx, running_before == running_after, "Asking whether SeLow is supported leaves the SeLow service as it was",
 		"running %u before, %u after", running_before, running_after);
+
+#if defined(_M_ARM64)
+	// No SeLow driver package for this architecture (arm64): no support claim, even when elevated
+	{
+		bool os = SuIsSupportedOs();
+		bool bridge = IsBridgeSupported();
+
+		SelowTestCheck(ctx, os == false && bridge == false && supported == false,
+			"No Local Bridge support is claimed where no SeLow driver package exists",
+			"SuIsSupportedOs %u, IsBridgeSupported %u, Win32EthIsSuSupported %u", os, bridge, supported);
+	}
+#endif	// defined(_M_ARM64)
 
 	return supported;
 }
@@ -227,9 +244,16 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 		return;
 	}
 
-	if (SuIsSupportedOs(false) == false)
+	if (SuIsSupportedOs() == false)
 	{
-		Print("  [SKIP] Install step: SeLow is turned off by the DisableSeLow registry value\n");
+#if defined(_M_ARM64)
+		// No SeLow package exists for arm64: even adding a Local Bridge never reaches the install step
+		selowtest_num_install = 0;
+		ok = Win32EthInstallSu();
+		SelowTestCheck(ctx, ok == false && selowtest_num_install == 0, "On arm64, adding a Local Bridge never reaches the driver install",
+			"returned %u, install step ran %u times", ok, selowtest_num_install);
+#endif	// defined(_M_ARM64)
+		Print("  [SKIP] Install step: SeLow is not supported (arm64, or the DisableSeLow registry value)\n");
 		return;
 	}
 
@@ -241,13 +265,13 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 
 	// The queries before did not use up the one install attempt of the process
 	selowtest_num_install = 0;
-	e = OpenEth(SELOWTEST_DEVICE, false, false, NULL);
+	e = OpenEth(SELOWTEST_DEVICE);
 	SelowTestCheck(ctx, e == NULL && selowtest_num_install == 1, "Creating a Local Bridge without SeLow reaches the driver install",
 		"OpenEth returned %s, install step ran %u times", e == NULL ? "NULL" : "an ETH", selowtest_num_install);
 	CloseEth(e);
 
 	// As before, the install step runs at most once per process
-	e = OpenEth(SELOWTEST_DEVICE, false, false, NULL);
+	e = OpenEth(SELOWTEST_DEVICE);
 	SelowTestCheck(ctx, e == NULL && selowtest_num_install == 1, "The driver install runs at most once per process",
 		"OpenEth returned %s, install step ran %u times", e == NULL ? "NULL" : "an ETH", selowtest_num_install);
 	CloseEth(e);
@@ -268,13 +292,69 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 		"returned %u, install step ran %u times", ok, selowtest_num_install);
 }
 
+// Which interfaces the Local Bridge lists unless it shows every interface (FND-182)
+static void SelowTestClass(SELOWTEST_CTX *ctx)
+{
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_ETHERNET_CSMACD, NdisMedium802_3, NdisPhysicalMedium802_3, true),
+		"A wired NIC is listed, whatever its title (such as \"WAN port\")", "hidden");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_ETHERNET_CSMACD, NdisMedium802_3, NdisPhysicalMediumUnspecified, true),
+		"A NIC that does not report its physical medium is listed", "hidden");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_TUNNEL, NdisMedium802_3, NdisPhysicalMediumUnspecified, false) == false,
+		"A tunnel is hidden, whatever its localized title", "listed");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_PPP, NdisMediumWan, NdisPhysicalMediumUnspecified, false) == false,
+		"A PPP interface is hidden", "listed");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_IEEE80211, NdisMedium802_3, NdisPhysicalMediumNative802_11, true) == false,
+		"A Wi-Fi NIC is hidden", "listed");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_ETHERNET_CSMACD, NdisMedium802_3, NdisPhysicalMediumUnspecified, false) == false,
+		"A software interface without a physical medium (WAN Miniport) is hidden", "listed");
+}
+
+// The net-class table of the Local Bridge (MsNetClassEnum, FND-174): one SetupAPI pass over the
+// present network adapters. Every entry agrees with the registry that the former lookup walked: its
+// Class key holds its NetCfgInstanceId, and the Enum key of its device instance id names the same
+// driver key. Every runner has at least one present network adapter
+static void SelowTestNetClass(SELOWTEST_CTX *ctx)
+{
+	LIST *o = MsNetClassEnum();
+	UINT num_ok = 0;
+
+	for (UINT i = 0;i < LIST_NUM(o);i++)
+	{
+		MS_NETCLASS_DEVICE *d = LIST_DATA(o, i);
+		char enum_key[MAX_SIZE];
+
+		Format(enum_key, sizeof(enum_key), "SYSTEM\\CurrentControlSet\\Enum\\%s", d->DeviceInstanceId);
+
+		char *guid = MsRegReadStr(REG_LOCAL_MACHINE, d->ClassKey, "NetCfgInstanceId");
+		char *driver = MsRegReadStr(REG_LOCAL_MACHINE, enum_key, "Driver");
+
+		if (StrCmpi(guid, d->Guid) == 0 && StrCmpi(driver, d->ShortKey) == 0)
+		{
+			num_ok++;
+		}
+		else
+		{
+			Print("  [INFO] %s: NetCfgInstanceId %s under %s, Driver %s under %s\n",
+				d->Guid, guid == NULL ? "(none)" : guid, d->ClassKey, driver == NULL ? "(none)" : driver, enum_key);
+		}
+
+		Free(guid);
+		Free(driver);
+	}
+
+	SelowTestCheck(ctx, LIST_NUM(o) != 0 && num_ok == LIST_NUM(o),
+		"Net-class table: every present network adapter has its Class key, driver key and device instance id",
+		"%u of %u devices agree with the registry", num_ok, LIST_NUM(o));
+
+	MsNetClassFree(o);
+}
+
 // selow: read-only capability query, explicit driver install, one adapter-list read (FIX-2 #98)
 void selow_test(UINT num, char **arg)
 {
 	SELOWTEST_CTX ctx;
 	wchar_t dir[MAX_SIZE];
 	wchar_t path[MAX_SIZE];
-	bool supported;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -284,12 +364,14 @@ void selow_test(UINT num, char **arg)
 	ConbinePathW(path, sizeof(path), dir, SELOWTEST_FILE_NAME);
 
 	SelowTestRead(&ctx, path);
+	SelowTestClass(&ctx);
+	SelowTestNetClass(&ctx);
 
 	// From here on the install step only counts
 	SuSetInstallProc(SelowTestInstallProc);
 	selowtest_num_install = 0;
 
-	supported = SelowTestQuery(&ctx);
+	bool supported = SelowTestQuery(&ctx);
 	SelowTestInstall(&ctx, supported);
 
 	SuSetInstallProc(NULL);

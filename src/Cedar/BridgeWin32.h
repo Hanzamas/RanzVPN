@@ -1,25 +1,24 @@
 // BridgeWin32.h
 // Header of BridgeWin32.c
 
-#ifndef	BRIDGEWIN32_H
-#define	BRIDGEWIN32_H
+#ifndef BRIDGEWIN32_H
+#define BRIDGEWIN32_H
 
 #include "Bridge.h"
 
 #ifdef BRIDGE_C
 
-typedef struct WP_ADAPTER
-{
+typedef struct WP_ADAPTER {
 	char Name[MAX_SIZE];
 	char Title[MAX_SIZE];
 	char Guid[MAX_SIZE];
 	UINT Id;
+	UCHAR MacAddress[6]; // Current MAC address reported by SeLow
 } WP_ADAPTER;
 
 #endif
 
-struct ETH
-{
+struct ETH {
 	char *Name;
 	char *Title;
 	CANCEL *Cancel;
@@ -28,21 +27,18 @@ struct ETH
 
 	SU *Su;
 	SU_ADAPTER *SuAdapter;
-
 };
 
 void InitEth();
 void FreeEth();
-TOKEN_LIST *GetEthList();
-ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr);
+TOKEN_LIST *GetEthList(void);
+bool EnumEthWin32(RPC_ENUM_ETH *t);
+ETH *OpenEth(char *name);
 void CloseEth(ETH *e);
 CANCEL *EthGetCancel(ETH *e);
 UINT EthGetPacket(ETH *e, void **data);
+bool EthHasPendingFrames(ETH *e);
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes);
-void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name);
-UINT EthGetMtu(ETH *e);
-bool EthSetMtu(ETH *e, UINT mtu);
-bool EthIsChangeMtuSupported(ETH *e);
 
 bool Win32EthIsSuSupported();
 bool Win32EthInstallSu();
@@ -51,12 +47,14 @@ void Win32EthSetShowAllIf(bool b);
 bool Win32EthGetShowAllIf();
 
 bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t);
-bool GetClassRegKeyWin32(char *key, UINT key_size, char *short_key, UINT short_key_size, char *guid);
 bool SetVLanEnableStatus(char *title, bool enable);
 UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str);
 
 bool Win32IsUsingSeLow();
 void Win32SetEnableSeLow(bool b);
 bool Win32GetEnableSeLow();
+
+bool IsBridgeSupported();
+UINT GetEthDeviceHash();
 
 #endif

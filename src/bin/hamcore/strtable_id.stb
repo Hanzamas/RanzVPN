@@ -177,7 +177,6 @@ ERR_134					Nama host DNS Dinamis yang ditentukan mengandung karakter tidak vali
 ERR_135					Panjang nama host DNS Dinamis yang ditentukan terlalu panjang. Nama host harus sama atau lebih pendek dari 31 huruf.
 ERR_136					Nama host DNS Dinamis tidak ditentukan.
 ERR_137					Panjang nama host DNS Dinamis yang ditentukan terlalu panjang. Nama host harus sama atau lebih panjang dari 3 huruf.
-ERR_138					Kata sandi pengguna yang ditentukan di Virtual Hub harus direset sebelum menggunakan otentikasi MS-CHAP v2. Harap minta administrator VPN Server untuk mereset kata sandi dengan VPN Server Manager atau vpncmd yang versi internalnya adalah 4.0 atau lebih besar. Atau Anda dapat mengubah kata sandi dengan VPN Client sendiri.
 ERR_139					Koneksi ke server DNS Dinamis telah terputus.
 ERR_140					Gagal menginisialisasi protokol ICMP (Ping). Proses VPN Server mungkin dijalankan dengan hak akses pengguna biasa. Dalam hal ini, jalankan VPN Server sebagai layanan sistem. (di Linux / UNIX, jalankan dengan hak akses root.)
 ERR_141					Gagal membuka port DNS 53. Pastikan tidak ada program server DNS lain (misalnya, BIND atau Microsoft DNS Server) yang berjalan di komputer yang sama. Jika ada layanan yang bertentangan, hentikan mereka. Atau jalankan proses VPN Server dengan hak akses root di Linux / UNIX.
@@ -195,18 +194,6 @@ ERR_152					Gagal melakukan handshake TLS.
 ERR_153					Listener TCP sudah terdaftar, tetapi port-nya tidak dapat dibuka: program lain sedang memakainya atau Windows mencadangkannya. VPN Server terus mencoba dan mulai mendengarkan begitu port itu bebas; sampai saat itu ListenerList menampilkan listener tersebut sebagai Gagal.
 
 
-# Concerning licenses
-LICENSE_STATUS_OK	    Valid
-LICENSE_STATUS_EXPIRED  Kedaluwarsa
-LICENSE_STATUS_ID_DIFF  ID Server Tidak Cocok
-LICENSE_STATUS_DUP      Duplikasi
-LICENSE_STATUS_INSUFFICIENT Lisensi Lain Diperlukan
-LICENSE_STATUS_COMPETITION  Kompetisi dengan Lisensi Lain
-LICENSE_STATUS_NONSENSE     Tidak Bermakna untuk Edisi Saat Ini
-LICENSE_STATUS_CPU		Jenis CPU Tidak Kompatibel
-LICENSE_STATUS_OTHERERROR   Kesalahan Tidak Dikenal
-
-
 # Concerning hardware tokens
 SEC_YES			        Ya
 SEC_NO			        Tidak
@@ -221,16 +208,6 @@ PW_TYPE_3				Autentikasi Sertifikat Klien
 PW_TYPE_5				Autentikasi Mesin OpenSSL
 
 
-# Concerning VPN connection status
-STATUS_1                Menginisialisasi...
-STATUS_2                Menghubungkan ke Server VPN "%S" melalui Server Proxy %S...
-STATUS_4                Menghubungkan ke Server VPN "%S"...
-STATUS_5                Memverifikasi Sertifikat Server...
-STATUS_6                Mengautentikasi Pengguna...
-STATUS_7                Membangun Sesi VPN...
-STATUS_9                Sesi VPN telah berhasil dibangun.
-
-
 # Errors about Windows Versions
 WINVER_ERROR_FORMAT		Versi dan Service Pack Windows pada %s adalah "%S".\r\n\r\nVersi dan Service Pack Windows terbaru yang didukung oleh %s adalah sebagai berikut:\r\n%S\r\nKarena versi Windows pada %s lebih baru daripada versi Windows yang didukung oleh %s, masalah yang tidak terduga atau masalah kompatibilitas mungkin terjadi.\r\nUntuk menghindari masalah, kami menyarankan Anda untuk memperoleh dan menginstal pembaruan terbaru dari %s.\r\n(Meskipun demikian, Anda dapat melanjutkan menggunakan versi saat ini tanpa pembaruan, meskipun itu tidak kami rekomendasikan.)\r\n\r\nJika Anda adalah administrator, Anda dapat mengunduh pembaruan terbaru dari %s secara gratis dari situs web http://selinks.org/?se.\r\n\r\nJika Anda bukan administrator, Anda harus memberi tahu administrator VPN Server tentang pesan ini.\r\n\r\n----- MSG%04u%02u -----\r\n\r\n
 WINVER_ERROR_VPNSERVER	VPN Server pada komputer tujuan
@@ -239,7 +216,6 @@ WINVER_ERROR_PC_REMOTE	server jarak jauh
 
 
 # Warning for Open-source Version
-OSS_MSG					Selamat datang di SoftEther VPN Server Versi Akademik!\r\n\r\n\r\nVPN Server ini adalah perangkat lunak sumber terbuka gratis yang dikembangkan sebagai penelitian akademik di Universitas Tsukuba, Jepang, dan didistribusikan dari Proyek SoftEther VPN (http://www.softether.org/), secara gratis untuk kepentingan publik.\r\n\r\nPerangkat lunak SoftEther VPN didistribusikan kepada publik sebagai bagian dari kontrak penelitian bersama antara Universitas Tsukuba dan Proyek SoftEther VPN. Perangkat lunak SoftEther VPN dikembangkan dan diterbitkan untuk TUJUAN PENELITIAN AKADEMIS SAJA. Oleh karena itu, tidak ada layanan dukungan yang diberikan mengenai perangkat lunak SoftEther VPN meskipun terdapat bug atau kerentanannya. Pengguna akan bertanggung jawab atas hasil penggunaan SoftEther VPN. Pengembang dan penerbit SoftEther VPN tidak akan bertanggung jawab atas konsekuensi atau kerusakan apa pun.\r\n\r\nSelamat menikmati penggunaan VPN dengan SoftEther VPN Server.\r\n\r\nUntuk detail lebih lanjut tentang SoftEther VPN, kunjungi http://www.softether.org/.\r\n\r\n
 
 
 # Virtual HUB Admin Options
@@ -264,9 +240,6 @@ HUB_AO_deny_qos							Jika Anda mengatur opsi ini ke nilai non-nol, maka setiap 
 HUB_AO_deny_change_user_password		Jika Anda mengatur opsi ini ke nilai non-nol, maka pengguna di Virtual Hub akan dilarang untuk mengubah kata sandi mereka menggunakan fungsi pengubahan kata sandi dari VPN Client.\r\n
 HUB_AO_no_change_users					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, atau menghapus pengguna.\r\n
 HUB_AO_no_change_groups					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, atau menghapus grup.\r\n
-HUB_AO_no_securenat						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi SecureNAT.\r\n
-HUB_AO_no_securenat_enablenat			Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi Virtual NAT dalam fungsi SecureNAT.\r\n
-HUB_AO_no_securenat_enabledhcp			Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi Virtual DHCP Server dalam fungsi SecureNAT.\r\n
 HUB_AO_no_cascade						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, menghapus, atau mengubah status online dari koneksi cascade.\r\n
 HUB_AO_no_online						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah Virtual Hub yang offline menjadi status online.\r\n
 HUB_AO_no_offline						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah Virtual Hub yang online menjadi status offline.\r\n
@@ -336,8 +309,6 @@ HUB_AO_SuppressClientUpdateNotification		Tekan tampilan pemberitahuan pembaruan 
 HUB_AO_FloodingSendQueueBufferQuota			Tentukan nilai batas kuota (dalam byte) ukuran buffer antrean pengiriman yang dapat dikonsumsi oleh operasi banjir pada Virtual Hub. Nilai kuota diterapkan pada total panjang antrean pengiriman dari semua sesi VPN aktif. Tentukan '0' untuk menonaktifkan kuota ini. Opsi ini efektif untuk mengatasi masalah kehabisan memori pada jaringan yang memiliki banyak paket banjir.\r\n
 HUB_AO_DetectDormantSessionInterval			Jika Anda mengatur opsi ini ke nilai non-nol, maka Virtual Hub akan menganggap sesi VPN yang tidak mengirimkan paket selama interval waktu tertentu (dalam detik) sebagai Sesi Dorman. Virtual Hub tidak akan membanjiri paket yang seharusnya dibanjiri ke Sesi Dorman.\r\n
 HUB_AO_NoPhysicalIPOnPacketLog				Jika Anda mengatur opsi ini ke nilai non-nol, maka alamat IP fisik dari VPN client, baik untuk sesi VPN sumber maupun sesi VPN tujuan, tidak akan dicatat pada file log paket.\r\n
-HUB_AO_UseHubNameAsDhcpUserClassOption		Jika Anda mengatur opsi ini ke nilai non-nol, maka Nama Virtual Hub akan ditambahkan ke permintaan DHCP ke server DHCP eksternal sebagai opsi "User-Class". Ini memungkinkan penggunaan kumpulan alamat IP terpisah untuk setiap Virtual Hub. (Hanya untuk sesi L2TP/IPsec dan OpenVPN.)\r\n
-HUB_AO_AllowEapMatchUserByCert				Jika Anda mengaktifkan (atur ke 1) opsi ini, Virtual Hub akan mencoba mencocokkan Identitas EAP tidak hanya dengan nama pengguna, tetapi juga dengan sertifikat pengguna selama alur otentikasi PPP EAP.\r\n
 
 
 # Concerning protocols
@@ -385,7 +356,6 @@ CT_b_support_license	Pengelolaan Lisensi Didukung
 CT_b_support_limit_multilogin	Batasan untuk Login Ganda oleh Pengguna yang Sama Didukung
 CT_b_support_qos		Fungsi VoIP / QoS Didukung
 CT_b_support_syslog		Fungsi Pengiriman Syslog Didukung
-CT_b_beta_version		Versi Beta (Build Pra-rilis)
 CT_b_support_check_mac	Penentuan Alamat MAC dalam Daftar Akses Didukung
 CT_b_support_check_tcp_state	Pemeriksaan Penyaringan Status Koneksi TCP Didukung
 CT_b_support_network_connection_name	Penentuan Nama Ramah Jaringan Didukung
@@ -571,7 +541,7 @@ CM_CERT_COLUMN_3		Kadaluarsa
 
 
 # Concerning services (Win32)
-SVC_HELP				*** Argumen Baris Perintah dari %s (%S) ***\r\n\r\nProgram ini (%s) adalah sebuah proses yang berjalan sebagai tugas latar belakang. Mulailah program dengan menentukan argumen berikut pada baris perintah.\r\n\r\n\r\n/install : Menginstal layanan %s (nama layanan: %S) di Windows. Setelah ini, layanan akan otomatis dimulai.\r\n\r\n/uninstall... Menghapus instalasi layanan %s (nama layanan: %S) dari Windows.\r\n\r\n/start : Memulai layanan %s (nama layanan: %S).\r\n\r\n/stop : Menghentikan layanan %s (nama layanan: %S).\r\n\r\n/test : Memulai program %s dalam mode uji. (Untuk debug)\r\n\r\n/usermode : Memulai program %s dalam mode pengguna. (Jika memungkinkan)\r\n\r\n/usermode_showtray : Ketika memulai dalam mode pengguna, ini digunakan untuk menampilkan ikon task tray ketika sebelumnya diset untuk disembunyikan.\r\n\r\n/usermode_hidetray : Ketika memulai dalam mode pengguna, ini menyembunyikan ikon task tray.\r\n\r\n\r\nCatatan: Perintah terkait operasi layanan selain /test dan /usermode hanya dapat dijalankan pada Windows NT / XP / Server 2003 / Vista / Server 2008.
+SVC_HELP				*** Argumen Baris Perintah dari %s (%S) ***\r\n\r\nProgram ini (%s) berjalan sebagai tugas latar belakang. Mulailah program dengan salah satu argumen berikut pada baris perintah.\r\n\r\n\r\n/install : Menginstal layanan %s (nama layanan: %S) di Windows. Setelah ini, layanan akan otomatis dimulai.\r\n\r\n/uninstall : Menghapus instalasi layanan %s (nama layanan: %S) dari Windows.\r\n\r\n/start : Memulai layanan %s (nama layanan: %S).\r\n\r\n/stop : Menghentikan layanan %s (nama layanan: %S).\r\n\r\n/test : Memulai program %s dalam mode uji. (Untuk debug)\r\n\r\n/usermode : Memulai program %s dalam mode pengguna, tanpa layanan.\r\n\r\n/setup_install : Dipakai oleh penginstal. Mengganti layanan %s (nama layanan: %S) dengan program ini lalu memulainya.\r\n\r\n/setup_uninstall : Dipakai oleh penginstal. Menghentikan dan menghapus instalasi layanan %s (nama layanan: %S).\r\n\r\n/service : Dipakai oleh Windows. Menjalankan program %s sebagai layanan.
 SVC_ALREADY_INSTALLED	Layanan "%s" (nama layanan: %S) sudah terinstal di komputer ini. Apakah Anda ingin menghapus instalasi dan menginstalnya kembali?
 SVC_INSTALL_OK			Layanan "%s" (Nama Layanan: %S) telah berhasil diinstal.\r\n\r\n(Jalur Eksekusi: %s)\r\n\r\nLayanan telah dimulai.
 SVC_INSTALL_FAILED		Instalasi layanan "%s" (nama layanan: %S) gagal.
@@ -590,12 +560,6 @@ SVC_NOT_ADMIN			Untuk menginstal, menghapus instalasi, memulai atau menghentikan
 SVC_TEST_MSG			Layanan "%s" telah dimulai dalam mode uji.\r\n\r\nKlik OK untuk keluar dari layanan.
 SVC_TEST_MUTEX			File eksekusi %s sudah dimulai.
 SVC_USERMODE_MUTEX		Proses lain dari %s sudah dimulai.
-
-
-# Service Definition (Ranz VPN Server)
-SVC_VPNSERVER_NAME		vpnserver
-SVC_VPNSERVER_TITLE		Ranz VPN Server
-SVC_VPNSERVER_DESCRIPT	Layanan ini mengelola proses server dari Ranz VPN Server. Ranz VPN Server menyediakan fungsi server Ranz VPN berkinerja tinggi melalui protokol TCP/IP. Ketika layanan ini dihentikan, Ranz VPN Server di komputer ini akan berhenti dan Ranz VPN Client tidak akan dapat membangun koneksi VPN dengan komputer ini.
 
 
 # Service Definition (Ranz VPN Server)
@@ -818,32 +782,8 @@ SM_AC_DENY				Tolak
 SM_LOG_FILE_COLUMN_1	Nama Berkas Log
 SM_LOG_FILE_COLUMN_2	Ukuran Berkas
 SM_LOG_FILE_COLUMN_3	Diperbarui pada
-SM_LICENSE_COLUMN_1		Nomor
-SM_LICENSE_COLUMN_2		Kunci Lisensi
-SM_LICENSE_COLUMN_3		Nama Jenis Lisensi
-SM_LICENSE_COLUMN_4		Status
 SM_LICENSE_COLUMN_5		Tanggal Kedaluwarsa
-SM_LICENSE_COLUMN_6		ID Lisensi
-SM_LICENSE_COLUMN_7		ID Jenis Lisensi
-SM_LICENSE_COLUMN_8		ID Server
-SM_LICENSE_COLUMN_9		ID Serial
-SM_LICENSE_INFINITE		Tak Terbatas
 SM_LICENSE_NO_EXPIRES	Tanpa Kedaluwarsa
-SM_LICENSE_STATUS_EDITION	Edisi Produk
-SM_LICENSE_STATUS_RELEASE	Tanggal Rilis VPN Server
-SM_LICENSE_STATUS_SYSTEM_ID	ID Server Saat Ini
-SM_LICENSE_STATUS_EXPIRES	Kedaluwarsa Lisensi Produk Saat Ini
-SM_LICENSE_STATUS_SUBSCRIPTION	Status Kontrak Berlangganan
-SM_LICENSE_STATUS_SUBSCRIPTION_NONEED	Tidak Perlu (Edisi ini tidak memerlukan kunci langganan)
-SM_LICENSE_STATUS_SUBSCRIPTION_NONE		Tidak Ada Kunci (Menambahkan kunci langganan diperlukan)
-SM_LICENSE_STATUS_SUBSCRIPTION_VALID	Langganan Aktif [Hingga %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_EXPIRED	Langganan Kadaluarsa [pada %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_BUILD_STR	Pembaruan Gratis ke Versi yang Akan Datang Hingga %s Diperbolehkan
-SM_LICENSE_STATUS_ENTERPRISE			Ketersediaan Fitur Enterprise
-SM_LICENSE_STATUS_ENTERPRISE_YES		Ya (Tersedia)
-SM_LICENSE_STATUS_ENTERPRISE_NO			Tidak (Tidak Tersedia)
-SM_LICENSE_NUM_CLIENT	Pelanggan yang Diperbolehkan Terhubung Secara Bersamaan
-SM_LICENSE_NUM_BRIDGE	Jembatan yang Diperbolehkan Terhubung Secara Bersamaan
 SM_NO_LICENSE_COLUMN	Peringatan: 
 SM_NO_LICENSE			Tidak ada lisensi produk yang terdaftar, sehingga fungsi komunikasi VPN Server ini tidak beroperasi.
 SM_SYSLOG_0				Nonaktifkan Fungsi Pengiriman Syslog
@@ -878,6 +818,11 @@ LS_LOAD_CONFIG_2		File konfigurasi telah dimuat.
 LS_LOAD_CONFIG_3		File konfigurasi tidak ada. Mencoba untuk memulai menggunakan pengaturan awal.
 LS_INIT_SAVE_THREAD		Memulai tugas latar belakang penyimpanan otomatis. Interval antara penyimpanan otomatis adalah %u detik. Anda dapat mengubah interval dengan mengubah parameter AutoSaveConfigSpan dalam file konfigurasi.
 LS_BAD_CONFIG			Konten file konfigurasi tidak valid. Proses pemuatan dihentikan.
+LS_DEFAULT_CERT_FAILED		Sertifikat server bawaan tidak dapat dibuat. Server tidak memiliki sertifikat, sehingga koneksi TLS akan ditolak sampai sertifikat dipasang.
+LS_CONFIG_SET_ASIDE		File konfigurasi "%s" tidak dapat dibaca. File disimpan sebagai "%s.bad", dan server dimulai dengan pengaturan awal.
+LS_CONFIG_SET_ASIDE_FAILED	File konfigurasi "%s" tidak dapat dibaca, dan penggantian namanya menjadi "%s.bad" gagal. Server dimulai dengan pengaturan awal dan tidak menyimpan di atas file tersebut sampai penggantian nama berhasil.
+LS_SAVE_CONFIG_FAILED	Penyimpanan file konfigurasi "%s" gagal. Penyimpanan akan dicoba lagi.
+LS_SAVE_CONFIG_RESTORED	File konfigurasi "%s" telah tersimpan kembali setelah penyimpanan yang gagal.
 LS_LISTENER_START_1		Pendengar TCP (port %u) sedang dimulai.
 LS_LISTENER_START_2		Pendengar TCP (port %u) telah dimulai. Sekarang mendengarkan koneksi dari klien.
 LS_LISTENER_START_3		Tidak dapat mengatur port untuk status Dengar untuk Pendengar TCP (port %u). Mencoba pada interval tetap sampai berhasil.
@@ -885,6 +830,9 @@ LS_LISTENER_ACCEPT		Pada Pendengar TCP (Port %u), sebuah Klien (alamat IP %S, Na
 LS_LISTENER_DISCONNECT	Koneksi dengan klien (alamat IP %S, Nomor port %u) telah diputuskan.
 LS_LISTENER_DOS			Sebuah serangan DoS pada Pendengar TCP (port %u) telah terdeteksi. Alamat IP sumber yang terhubung adalah %S, nomor port %u. Koneksi ini akan diputuskan paksa sekarang.
 LS_LISTENER_MAXUEC		Pendengar TCP sementara menghentikan penerimaan koneksi masuk baru karena jumlah koneksi TCP yang tertunda melebihi %u. (Nilai saat ini = %u)
+LS_LISTENER_ACCEPT_RETRY	Pendengar TCP (port %u) gagal menerima koneksi (galat %u, %u kali sejak laporan terakhir). Pendengar tetap memegang port dan mencoba lagi.
+LS_LISTENER_DOS_TABLE_FULL	Tabel perlindungan DoS pada Pendengar TCP (port %u) telah mencapai batas %u alamat sumber. Mulai sekarang sumber yang paling lama tidak terlihat dihapus untuk memberi tempat bagi sumber baru.
+LS_NON_SSL_TABLE_FULL	Tabel sumber yang mengirim data non-SSL telah mencapai batas %u alamat sumber. Mulai sekarang sumber yang paling lama tidak terlihat dihapus untuk memberi tempat bagi sumber baru.
 LS_LISTENER_STOP_1		Pendengar TCP (port %u) sedang dihentikan.
 LS_LISTENER_STOP_2		Pendengar TCP (port %u) telah dihentikan.
 LS_HUB_START			Virtual Hub "%S" telah dimulai.
@@ -910,7 +858,6 @@ LH_AUTH_ANONYMOUS		Otentikasi anonim
 LH_AUTH_PASSWORD		Otentikasi kata sandi
 LH_AUTH_PLAIN_PASSWORD	Otentikasi server eksternal
 LH_AUTH_CERT			Otentikasi sertifikat
-LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE	Koneksi "%S": Metode otentikasi pengguna "%S" telah ditentukan sebagai Otentikasi Sertifikat. Namun, fungsi Otentikasi Sertifikat belum diimplementasikan pada versi Open-Source dari Ranz VPN. Koneksi akan ditolak.
 LH_AUTH_OK				Koneksi "%S": Berhasil diautentikasi sebagai pengguna "%S".
 LH_AUTH_OK_CERT			Manajer Akun Keamanan Virtual Hub telah menerima sertifikat berikut dari VPN Client dan menerima isinya sebagai sertifikat untuk login pengguna "%S": %s
 LH_AUTH_NG_CERT			Meskipun Manajer Akun Keamanan Virtual Hub telah menerima sertifikat berikut, isinya ditolak sebagai sertifikat untuk login pengguna "%S" karena isi sertifikat ini cocok dengan yang terdaftar di daftar pencabutan sertifikat Virtual Hub: %s
@@ -944,8 +891,6 @@ LH_NO_DHCP				Sesi "%S": Meskipun host %S di sesi ini mengirimkan paket yang men
 LH_REGIST_DHCP			Sesi "%S": Server DHCP host "%S" (%S) di sesi ini mengalokasikan, untuk host "%S" di sesi lain "%S", alamat IP baru %S.
 LH_BRIDGE_1				Sesi "%S": Koneksi Local Bridge ke antarmuka Ethernet fisik "%S" dimulai.
 LH_BRIDGE_2				Sesi "%S": Karena komunikasi gagal dibangun dengan antarmuka Ethernet fisik "%S", Local Bridge dihentikan.
-LH_SET_MTU				Sesi "%S": Antarmuka Ethernet fisik "%S" memiliki nilai MTU yang disetel ke %u. Diperlukan untuk mengirim dan menerima paket Ethernet yang memiliki %u byte. MTU sekarang diubah ke %u.
-LH_SET_MTU_ERROR		Sesi "%S": Antarmuka Ethernet fisik "%S" memiliki nilai MTU yang disetel ke %u. Diperlukan untuk mengirim dan menerima paket Ethernet yang memiliki %u byte. Namun, mengubah MTU ke %u gagal. Antarmuka Ethernet fisik ini atau driver perangkat mungkin tidak dapat memproses paket Ethernet yang memiliki lebih dari 1.514 byte (ukuran payload: 1.500 byte). Dalam hal ini, paket VLAN bertanda yang lebih besar dari 1.514 byte tidak dapat ditransmisikan. Anda harus mengganti adaptor Ethernet fisik saat ini dengan adaptor yang mendukung Jumbo Frames. Anda juga dapat mencoba untuk memperbarui driver perangkat. Metode lain yang mungkin adalah mengaktifkan Jumbo Frames pada pengaturan sistem operasi atau driver perangkat.
 LH_START_BRIDGE			Koneksi Local Bridge "%S" telah dimulai. Sesi bridge "%S" telah dibuat.
 LH_STOP_BRIDGE			Koneksi Local Bridge "%S" telah dihentikan.
 LH_LINK_START			Koneksi Cascade "%s" telah terjalin. Sesi Cascade "%S" telah dibuat.
@@ -961,7 +906,6 @@ LH_CONNECT_ERROR		Koneksi untuk Koneksi Cascade "%s" telah terputus atau gagal. 
 LH_POLICY_MONITOR_MODE	Koneksi "%S": Karena seorang pengguna yang kebijakan keamanannya menolak izin untuk Mode Pemantauan meminta agar Mode Pemantauan diaktifkan dan mencoba untuk terhubung ke Virtual Hub, koneksi telah ditolak.
 LH_POLICY_BRIDGE_MODE	Koneksi "%S": Karena seorang pengguna yang kebijakan keamanannya menolak koneksi bridge dan operasi routing meminta agar koneksi bridge atau operasi routing diaktifkan dan mencoba untuk terhubung ke Virtual Hub, koneksi telah ditolak.
 LH_TOO_MANY_MULTILOGINS	Koneksi "%S": Meskipun pengguna "%S" melakukan upaya login, kebijakan keamanan yang berlaku untuk pengguna ini membatasi jumlah maksimum login ganda hingga %u sesi. Saat ini jumlah login pengguna ini adalah %u sesi dan karena itu pengguna tersebut menolak izin untuk koneksi VPN baru.
-LH_PACKET_LOG_NO_LOG_OSS	VPN Server ini adalah versi Open-Source atau Gratis. Fungsi pencatatan data alamat IP atau header TCP/UDP belum diterapkan. Tidak ada alamat IP atau data header TCP/UDP yang akan dicatat di sini.
 
 
 # (Administration log)
@@ -1272,16 +1216,6 @@ CMD_ServerPasswordSet	Setel Kata Sandi Administrator VPN Server
 CMD_ServerPasswordSet_Help	Ini mengatur kata sandi administrator VPN Server. Anda dapat menentukan kata sandi sebagai parameter. Jika kata sandi tidak ditentukan, prompt akan ditampilkan untuk memasukkan kata sandi dan konfirmasi kata sandi. Jika Anda menyertakan kata sandi sebagai parameter, kata sandi ini akan ditampilkan sesaat di layar, yang dapat menimbulkan risiko. Kami menyarankan agar sebisa mungkin, hindari menentukan parameter ini dan masukkan kata sandi menggunakan prompt kata sandi. \nUntuk mengeksekusi perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.
 CMD_ServerPasswordSet_Args	ServerPasswordSet [password]
 CMD_ServerPasswordSet_[password]	Ini menentukan pengaturan kata sandi baru.
-
-
-# Debug command
-CMD_Debug				Jalankan Perintah Debug
-CMD_Debug_Help			Menjalankan perintah debug pada proses VPN Server / Bridge yang sedang berjalan.\nPerintah ini harus dijalankan ketika staf dukungan meminta untuk melakukannya.\nPenyalahgunaan perintah ini dapat menyebabkan kerusakan pada VPN Server / Bridge yang sedang berjalan.
-CMD_Debug_Args			Debug [id] [/ARG:arg]
-CMD_Debug_[id]			Tentukan nomor perintah debug.
-CMD_Debug_ARG			Tentukan string yang akan diteruskan ke perintah debug. Jika string mengandung spasi, masukkan seluruh perintah dalam tanda kutip (" ").
-CMD_Debug_Msg1			Mengirim perintah debug...
-CMD_Debug_Msg2			Perintah debug telah dijalankan.\nHasil: "%S"
 
 
 # Crash command
@@ -2082,8 +2016,8 @@ CMD_AccessAddEx6_Prompt_DELAY	Keterlambatan untuk Dihasilkan (dalam milidetik: 0
 CMD_AccessAddEx6_Prompt_JITTER	Fluktuasi Jitter untuk Dihasilkan (Persen: 0 - 100): 
 CMD_AccessAddEx6_Prompt_LOSS	    Rasio Kehilangan Paket (Persen: 0 - 100): 
 CMD_AccessAddEx6_Eval_DELAY	    Keterlambatan harus maksimal 10000 milidetik.
-CMD_AccessAddEx6_Eval_JITTER	    Fluktuasi Jitter harus maksimal 100%.
-CMD_AccessAddEx6_Eval_LOSS	    Rasio Kehilangan Paket harus maksimal 100%.
+CMD_AccessAddEx6_Eval_JITTER	    Fluktuasi Jitter harus maksimal 100%%.
+CMD_AccessAddEx6_Eval_LOSS	    Rasio Kehilangan Paket harus maksimal 100%%.
 
 
 # AccessList command
@@ -2494,34 +2428,6 @@ CMD_AcDel_[id]			Tentukan ID dari aturan dalam Daftar Batas Alamat IP Sumber yan
 CMD_AcDel_Prompt_ID		ID Aturan untuk Dihapus: 
 
 
-# LicenseAdd command
-CMD_LicenseAdd			Tambahkan Pendaftaran Kunci Lisensi
-CMD_LicenseAdd_Help		Gunakan perintah ini untuk mendaftar kunci lisensi baru pada Ranz VPN Server.\nUntuk menggunakan Ranz VPN Server, Anda harus memperoleh lisensi yang sah dan mendaftarkan kunci lisensi. Kunci lisensi terdiri dari 36 karakter alfanumerik ditambah dengan tanda hubung. Kunci ini adalah kode yang membuktikan kepemilikan lisensi.\nKetika sertifikat lisensi diterima bersama dengan perangkat lunak ini, kunci lisensi tercetak pada sertifikat lisensi tersebut. Jika lisensi untuk perangkat lunak ini dibeli secara online, kunci lisensi diberikan melalui email dan pada jendela situs web saat lisensi dibeli. Kunci lisensi juga dapat dicatat dengan cara lain. Jika Anda tidak tahu di mana kunci lisensi dicatat, tanyakan kepada vendor yang menjual lisensi kepada Anda.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseAdd_Args		LicenseAdd [key]
-CMD_LicenseAdd_[key]	Tentukan kunci lisensi yang akan didaftarkan. Tentukan 36 digit karakter alfanumerik dan kelompokkan digit-digitnya dalam grup-grup yang dipisahkan dengan tanda hubung.
-CMD_LicenseAdd_Prompt_Key	Kunci Lisensi: 
-
-
-# LicenseDel command
-CMD_LicenseDel			Hapus Lisensi Terdaftar
-CMD_LicenseDel_Help		Gunakan perintah ini untuk menghapus lisensi tertentu dari daftar lisensi yang terdaftar pada Ranz VPN Server saat ini.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseDel_Args		LicenseDel [id]
-CMD_LicenseDel_[id]		Tentukan nomor lisensi yang akan dihapus.
-CMD_LicenseDel_Prompt_ID	Nomor Lisensi yang Akan Dihapus: 
-
-
-# LicenseList command
-CMD_LicenseList			Tampilkan Daftar Lisensi Terdaftar
-CMD_LicenseList_Help	Gunakan perintah ini untuk menampilkan daftar informasi lisensi yang saat ini terdaftar pada Ranz VPN Server, termasuk: kunci lisensi, nama jenis lisensi, status, tanggal kedaluwarsa, ID lisensi, ID jenis lisensi, ID server, dan ID serial.\n\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseList_Args	LicenseList
-
-
-# LicenseStatus command
-CMD_LicenseStatus		Tampilkan Status Lisensi dari VPN Server Saat Ini
-CMD_LicenseStatus_Help	Gunakan perintah ini untuk mendapatkan dan menampilkan status lisensi dari Ranz VPN Server saat ini. \nInformasi berikut tentang Ranz VPN Server saat ini akan ditampilkan: edisi produk, ID server, tanggal kedaluwarsa lisensi produk, jumlah Lisensi Koneksi Klien yang dapat digunakan, dan jumlah Lisensi Koneksi Jembatan. \n\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseStatus_Args	LicenseStatus
-
-
 # ServerCertRegenerate command
 CMD_ServerCertRegenerate	Generasi Sertifikat Self-Signed Baru dengan CN (Nama Umum) yang Ditetapkan dan Daftarkan pada VPN Server
 CMD_ServerCertRegenerate_Help	Anda dapat menggunakan perintah ini untuk mengganti sertifikat saat ini pada VPN Server dengan sertifikat self-signed baru yang memiliki nilai CN (Nama Umum) pada bidangnya.\n\nPerintah ini berguna jika Anda berencana untuk menggunakan Fungsi Klon Server SSTP VPN Microsoft. Karena nilai CN (Nama Umum) pada sertifikat SSL VPN Server harus cocok dengan nama host yang ditentukan pada klien SSTP VPN.\n\nPerintah ini akan menghapus sertifikat SSL yang ada pada VPN Server. Disarankan untuk mencadangkan sertifikat SSL dan kunci privat saat ini dengan menggunakan perintah ServerKeyGet sebelumnya.\n\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.\nAnda tidak dapat menjalankan perintah ini untuk Virtual Hubs dari VPN Server yang beroperasi sebagai anggota cluster.
@@ -2549,8 +2455,8 @@ CMD_AccountDetailSet_Prompt_NOQOS	 Nonaktifkan Fungsi Kontrol QoS (yes/no):
 
 
 # MakeCert command
-CMD_MakeCert			Buat Sertifikat X.509 Baru dan Kunci Pribadi (1024 bit)
-CMD_MakeCert_Help		Gunakan ini untuk membuat sertifikat X.509 baru dan kunci pribadi dan menyimpannya sebagai file. \nAlgoritma yang digunakan untuk membuat kunci publik dan kunci pribadi dari sertifikat adalah RSA 1024 bit. \nAnda dapat memilih untuk membuat sertifikat root (sertifikat yang ditandatangani sendiri) atau sertifikat yang ditandatangani oleh sertifikat lain. Untuk membuat sertifikat yang ditandatangani oleh sertifikat lain, Anda memerlukan file kunci pribadi (encoded base64) yang kompatibel dengan sertifikat yang menggunakan tanda tangan tersebut (file format X.509). \n\nSaat membuat sertifikat, Anda dapat menentukan hal-hal berikut: Nama (CN), Organisasi (O), Unit Organisasi (OU), Negara (C), Negara Bagian (ST), Lokal (L), Nomor Seri, dan Tanggal Kedaluwarsa. \nSertifikat yang dibuat akan disimpan sebagai file format X.509 dan file kunci pribadi akan disimpan dalam format Base 64 encoded RSA 1024 bit. \n\nPerintah MakeCert adalah alat yang menyediakan fungsi paling dasar untuk membuat sertifikat. Jika Anda ingin membuat sertifikat yang lebih substansial, kami sarankan untuk menggunakan perangkat lunak gratis seperti OpenSSL, atau perangkat lunak CA (certificate authority) komersial. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah Ranz VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komputasi RSA, menghasilkan data sertifikat, dan menyimpannya ke file adalah komputer tempat perintah tersebut dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
+CMD_MakeCert			Buat Sertifikat X.509 Baru dan Kunci Pribadi (2048 bit)
+CMD_MakeCert_Help		Gunakan ini untuk membuat sertifikat X.509 baru dan kunci pribadi dan menyimpannya sebagai file. \nAlgoritma yang digunakan untuk membuat kunci publik dan kunci pribadi dari sertifikat adalah RSA 2048 bit. \nAnda dapat memilih untuk membuat sertifikat root (sertifikat yang ditandatangani sendiri) atau sertifikat yang ditandatangani oleh sertifikat lain. Untuk membuat sertifikat yang ditandatangani oleh sertifikat lain, Anda memerlukan file kunci pribadi (encoded base64) yang kompatibel dengan sertifikat yang menggunakan tanda tangan tersebut (file format X.509). \n\nSaat membuat sertifikat, Anda dapat menentukan hal-hal berikut: Nama (CN), Organisasi (O), Unit Organisasi (OU), Negara (C), Negara Bagian (ST), Lokal (L), Nomor Seri, dan Tanggal Kedaluwarsa. \nSertifikat yang dibuat akan disimpan sebagai file format X.509 dan file kunci pribadi akan disimpan dalam format Base 64 encoded RSA 2048 bit. \n\nPerintah MakeCert adalah alat yang menyediakan fungsi paling dasar untuk membuat sertifikat. Jika Anda ingin membuat sertifikat yang lebih substansial, kami sarankan untuk menggunakan perangkat lunak gratis seperti OpenSSL, atau perangkat lunak CA (certificate authority) komersial. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah Ranz VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komputasi RSA, menghasilkan data sertifikat, dan menyimpannya ke file adalah komputer tempat perintah tersebut dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
 CMD_MakeCert_Args		MakeCert [/CN:cn] [/O:o] [/OU:ou] [/C:c] [/ST:st] [/L:l] [/SERIAL:serial] [/EXPIRES:expires] [/SIGNCERT:signcert] [/SIGNKEY:signkey] [/SAVECERT:savecert] [/SAVEKEY:savekey]
 CMD_MakeCert_CN			Tentukan Nama (CN) dari sertifikat yang akan dibuat. Anda dapat menentukan "none".
 CMD_MakeCert_O			Tentukan Organisasi (O) dari sertifikat yang akan dibuat. Anda dapat menentukan "none".
@@ -2562,8 +2468,8 @@ CMD_MakeCert_SERIAL		Tentukan Nomor Seri dari sertifikat yang akan dibuat. Tentu
 CMD_MakeCert_EXPIRES	Tentukan Tanggal Kedaluwarsa dari sertifikat yang akan dibuat. Jika Anda menentukan "none" atau "0", 3650 hari (sekitar 10 tahun) akan digunakan. Anda dapat menentukan maksimal 10950 hari (sekitar 30 tahun).
 CMD_MakeCert_SIGNCERT	Tentukan file sertifikat format X.509 yang akan digunakan untuk menandatangani tanda tangan jika sertifikat yang dibuat ditandatangani oleh sertifikat lain. Jika parameter ini tidak disebutkan, maka tanda tangan tidak akan dilakukan dan sertifikat baru akan dibuat sebagai sertifikat root.
 CMD_MakeCert_SIGNKEY	Tentukan kunci pribadi (RSA, encoded base64) yang kompatibel dengan sertifikat yang ditentukan oleh /SIGNCERT.
-CMD_MakeCert_SAVECERT	Tentukan nama file untuk menyimpan sertifikat yang telah Anda buat. Sertifikat akan disimpan dalam format X.509 yang mencakup kunci publik yang berbentuk RSA 1024 bit.
-CMD_MakeCert_SAVEKEY	Tentukan nama file untuk menyimpan kunci pribadi yang kompatibel dengan sertifikat yang Anda buat. Kunci pribadi akan disimpan dalam file RSA-format 1024-bit.
+CMD_MakeCert_SAVECERT	Tentukan nama file untuk menyimpan sertifikat yang telah Anda buat. Sertifikat akan disimpan dalam format X.509 yang mencakup kunci publik yang berbentuk RSA 2048 bit.
+CMD_MakeCert_SAVEKEY	Tentukan nama file untuk menyimpan kunci pribadi yang kompatibel dengan sertifikat yang Anda buat. Kunci pribadi akan disimpan dalam file RSA-format 2048-bit.
 CMD_MakeCert_PROMPT_CN			Nama Sertifikat yang Akan Dibuat (CN): 
 CMD_MakeCert_PROMPT_O			Organisasi Sertifikat yang Akan Dibuat (O): 
 CMD_MakeCert_PROMPT_OU			Unit Organisasi Sertifikat yang Akan Dibuat (OU): 
@@ -2658,7 +2564,6 @@ TTC_TYPE_FULL			Penuh (Server < -- > Klien)
 TTC_SPAN_STR			%.1f detik
 TTC_COMM_START			\nSemua koneksi telah didirikan dan transfer data dimulai. \nWaktu Mulai Pengukuran: %s\nWaktu Selesai yang Dijadwalkan: %s\n\nPengukuran sedang berlangsung. Harap tunggu... \n(Jangan gunakan aplikasi lain saat pengukuran sedang berlangsung.)\n\n
 TTC_COMM_END			Sudah %.1f detik atau lebih berlalu, maka komunikasi data akan berakhir. \n\n
-TTC_COMM_USER_CANCEL	Karena pembatalan oleh pengguna, komunikasi data akan berakhir. \n\n
 TTC_COMM_DISCONNECTED	Koneksi TCP %u telah terputus.
 TTC_RES_TITLE			\n\nAlat Uji Kecepatan Lalu Lintas Jaringan\n\n
 TTC_RES_COLUMN_1		Nama Item

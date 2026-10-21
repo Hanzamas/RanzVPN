@@ -1,12 +1,14 @@
 // MayaType.h
 // Mayaqua Kernel type declaration header file
 
-#ifndef	MAYATYPE_H
-#define	MAYATYPE_H
+#ifndef MAYATYPE_H
+#define MAYATYPE_H
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 // The Windows API level comes from the build, once: ranz_options (cmake/RanzOptions.cmake) sets
 // Windows 10 version 1607 / Windows Server 2016 and WIN32_LEAN_AND_MEAN
@@ -17,70 +19,109 @@
 #include <WinSock2.h>
 #include <ws2ipdef.h>
 
-#define	MAX_SIZE			512
+#define MAX_SIZE 512
 
-#define	SUPPORTED_WINDOWS_LIST		"Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
+#define SUPPORTED_WINDOWS_LIST "Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
 
-typedef int (COMPARE)(void *p1, void *p2);
+typedef int(COMPARE)(void *p1, void *p2);
 
-
-#ifdef	MAX
-#undef	MAX
+// printf format checking (clang -Wformat) for a function whose format string is argument f and whose
+// variable arguments start at argument a (0 for a va_list); empty for other compilers
+#ifdef __clang__
+#define RANZ_PRINTF_FORMAT(f, a) __attribute__((format(printf, f, a)))
+#else
+#define RANZ_PRINTF_FORMAT(f, a)
 #endif
 
-#ifdef	MIN
-#undef	MIN
+
+#ifdef MAX
+#undef MAX
 #endif
 
-#define	MIN(a, b)			((a) >= (b) ? (b) : (a))
-#define	MAX(a, b)			((a) >= (b) ? (a) : (b))
+#ifdef MIN
+#undef MIN
+#endif
 
-#define	INT_TO_BOOL(i)		(((i) == 0) ? false : true)
+// MIN/MAX (and LESS, MORE, MAKESURE, COMPARE_RET below) evaluate an argument twice: never
+// pass one with a side effect (++, --, an assignment or a call that changes state)
+#define MIN(a, b) ((a) >= (b) ? (b) : (a))
+#define MAX(a, b) ((a) >= (b) ? (a) : (b))
 
-#define	NEGATIVE_BOOL(i)	(((i) == false) ? true : false)
+#define INT_TO_BOOL(i) (((i) == 0) ? false : true)
 
-#define	LESS(a, max_value)	((a) <= (max_value) ? (a) : (max_value))
-#define	MORE(a, min_value)	((a) >= (min_value) ? (a) : (min_value))
-#define	MAKESURE(a, b, c)		(((b) <= (c)) ? (MORE(LESS((a), (c)), (b))) : (MORE(LESS((a), (b)), (c))))
-#define COMPARE_RET(a, b)	(((a) == (b)) ? 0 : (((a) > (b)) ? 1 : -1))
+#define NEGATIVE_BOOL(i) (((i) == false) ? true : false)
 
-#define	POINTER_TO_KEY(p)		(HashPtrToUINT(p))
+#define LESS(a, max_value) ((a) <= (max_value) ? (a) : (max_value))
+#define MORE(a, min_value) ((a) >= (min_value) ? (a) : (min_value))
+#define MAKESURE(a, b, c)  (((b) <= (c)) ? (MORE(LESS((a), (c)), (b))) : (MORE(LESS((a), (b)), (c))))
+#define COMPARE_RET(a, b)  (((a) == (b)) ? 0 : (((a) > (b)) ? 1 : -1))
 
-#define	POINTER_TO_UINT64(p)	(UINT64)(p)
+#define POINTER_TO_KEY(p) (HashPtrToUINT(p))
 
-#define	UINT64_TO_POINTER(i)	(void *)(i)
+#define POINTER_TO_UINT64(p) (UINT64)(p)
 
-// Big-endian reads that work on unaligned buffers
-#define	READ_USHORT(buf)		(USHORT)((((USHORT)((UCHAR *)(buf))[0]) << 8) | (((USHORT)((UCHAR *)(buf))[1])))
-#define	READ_UINT(buf)			(UINT)((((UINT)((UCHAR *)(buf))[0]) << 24) | (((UINT)((UCHAR *)(buf))[1]) << 16) | (((UINT)((UCHAR *)(buf))[2]) << 8) | (((UINT)((UCHAR *)(buf))[3])))
-#define	READ_UINT64(buf)		(UINT64)((((UINT64)((UCHAR *)(buf))[0]) << 56) | (((UINT64)((UCHAR *)(buf))[1]) << 48) | (((UINT64)((UCHAR *)(buf))[2]) << 40) | (((UINT64)((UCHAR *)(buf))[3]) << 32) | (((UINT64)((UCHAR *)(buf))[4]) << 24) | (((UINT64)((UCHAR *)(buf))[5]) << 16) | (((UINT64)((UCHAR *)(buf))[6]) << 8) | (((UINT64)((UCHAR *)(buf))[7])))
+#define UINT64_TO_POINTER(i) (void *)(i)
 
-// Big-endian writes that work on unaligned buffers
-#define	WRITE_USHORT(buf, i)	(((UCHAR *)(buf))[0]) = ((((USHORT)(i)) >> 8) & 0xFF); (((UCHAR *)(buf))[1]) = ((((USHORT)(i))) & 0xFF)
-#define	WRITE_UINT(buf, i)		(((UCHAR *)(buf))[0]) = ((((UINT)(i)) >> 24) & 0xFF); (((UCHAR *)(buf))[1]) = ((((UINT)(i)) >> 16) & 0xFF); (((UCHAR *)(buf))[2]) = ((((UINT)(i)) >> 8) & 0xFF); (((UCHAR *)(buf))[3]) = ((((UINT)(i))) & 0xFF)
-#define	WRITE_UINT64(buf, i)	(((UCHAR *)(buf))[0]) = ((((UINT64)(i)) >> 56) & 0xFF); (((UCHAR *)(buf))[1]) = ((((UINT64)(i)) >> 48) & 0xFF); (((UCHAR *)(buf))[2]) = ((((UINT64)(i)) >> 40) & 0xFF); (((UCHAR *)(buf))[3]) = ((((UINT64)(i)) >> 32) & 0xFF); (((UCHAR *)(buf))[4]) = ((((UINT64)(i)) >> 24) & 0xFF); (((UCHAR *)(buf))[5]) = ((((UINT64)(i)) >> 16) & 0xFF); (((UCHAR *)(buf))[6]) = ((((UINT64)(i)) >> 8) & 0xFF); (((UCHAR *)(buf))[7]) = ((((UINT64)(i))) & 0xFF)
+// Byte order. Ranz VPN builds for little-endian Windows only (x64, arm64; Memory.c asserts it at
+// compile time), so host and network order differ on every target: Endian16/32/64 swap always,
+// on the compiler intrinsics (one bswap or rev instruction). Each one converts host to big-endian
+// (network) order and back.
+static inline USHORT Endian16(USHORT src) {
+	return _byteswap_ushort(src);
+}
+static inline UINT Endian32(UINT src) {
+	return (UINT)_byteswap_ulong(src);
+}
+static inline UINT64 Endian64(UINT64 src) {
+	return _byteswap_uint64(src);
+}
+
+// Big-endian loads and stores that work on unaligned buffers: one memcpy load or store plus a swap
+static inline USHORT ReadBigEndian16(const void *buf) {
+	USHORT v;
+	memcpy(&v, buf, sizeof(v));
+	return Endian16(v);
+}
+static inline UINT ReadBigEndian32(const void *buf) {
+	UINT v;
+	memcpy(&v, buf, sizeof(v));
+	return Endian32(v);
+}
+static inline UINT64 ReadBigEndian64(const void *buf) {
+	UINT64 v;
+	memcpy(&v, buf, sizeof(v));
+	return Endian64(v);
+}
+static inline void WriteBigEndian16(void *buf, USHORT i) {
+	USHORT v = Endian16(i);
+	memcpy(buf, &v, sizeof(v));
+}
+static inline void WriteBigEndian32(void *buf, UINT i) {
+	UINT v = Endian32(i);
+	memcpy(buf, &v, sizeof(v));
+}
+static inline void WriteBigEndian64(void *buf, UINT64 i) {
+	UINT64 v = Endian64(i);
+	memcpy(buf, &v, sizeof(v));
+}
+
+#define READ_USHORT(buf) ReadBigEndian16(buf)
+#define READ_UINT(buf)   ReadBigEndian32(buf)
+#define READ_UINT64(buf) ReadBigEndian64(buf)
+
+#define WRITE_USHORT(buf, i) WriteBigEndian16((buf), (USHORT)(i))
+#define WRITE_UINT(buf, i)   WriteBigEndian32((buf), (UINT)(i))
+#define WRITE_UINT64(buf, i) WriteBigEndian64((buf), (UINT64)(i))
 
 typedef int64_t time_64t;
 
-#define	OSTYPE_WINDOWS_10						2702
-#define	OSTYPE_WINDOWS_SERVER_10				2712
-#define	OSTYPE_WINDOWS_11						2800
-#define	OSTYPE_WINDOWS_SERVER_11				2810
-#define	OSTYPE_UNIX_UNKNOWN						3000
-#define	OSTYPE_LINUX							3100
-#define	OSTYPE_SOLARIS							3200
-#define	OSTYPE_CYGWIN							3300
-#define	OSTYPE_BSD								3400
-#define	OSTYPE_MACOS_X							3500
+#define OSTYPE_WINDOWS_10        2702
+#define OSTYPE_WINDOWS_SERVER_10 2712
+#define OSTYPE_WINDOWS_11        2800
+#define OSTYPE_WINDOWS_SERVER_11 2810
 
 
-#define	GET_KETA(t, i)			(((t) % (i * 10)) / i)
-#define	OS_IS_WINDOWS(t)		((GET_KETA(t, 1000) == 1) || (GET_KETA(t, 1000) == 2))
-#define	OS_IS_UNIX(t)			(GET_KETA(t, 1000) == 3)
-
-
-typedef struct OS_INFO
-{
+typedef struct OS_INFO {
 	UINT OsType;
 	UINT OsServicePack;
 	char *OsSystemName;
@@ -154,7 +195,6 @@ typedef struct SSL_VERIFY_OPTION SSL_VERIFY_OPTION;
 typedef struct NIC_ENTRY NIC_ENTRY;
 typedef struct HTTP_VALUE HTTP_VALUE;
 typedef struct HTTP_HEADER HTTP_HEADER;
-typedef struct DYN_VALUE DYN_VALUE;
 typedef struct SSL_ACCEPT_SETTINGS SSL_ACCEPT_SETTINGS;
 
 typedef struct ADJUST_TIME ADJUST_TIME;
@@ -192,11 +232,7 @@ typedef struct ICMPV6_OPTION_LINK_LAYER ICMPV6_OPTION_LINK_LAYER;
 typedef struct ICMPV6_OPTION_PREFIX ICMPV6_OPTION_PREFIX;
 typedef struct ICMPV6_OPTION_MTU ICMPV6_OPTION_MTU;
 typedef struct ICMPV6_HEADER_INFO ICMPV6_HEADER_INFO;
-typedef struct DHCPV4_DATA DHCPV4_DATA;
 typedef struct DHCP_OPTION DHCP_OPTION;
-typedef struct DHCP_OPTION_LIST DHCP_OPTION_LIST;
-typedef struct DHCP_CLASSLESS_ROUTE DHCP_CLASSLESS_ROUTE;
-typedef struct DHCP_CLASSLESS_ROUTE_TABLE DHCP_CLASSLESS_ROUTE_TABLE;
 typedef struct HTTPLOG HTTPLOG;
 typedef struct DHCP_MODIFY_OPTION DHCP_MODIFY_OPTION;
 typedef struct IKE_HEADER IKE_HEADER;
@@ -208,7 +244,5 @@ typedef struct DNS_CACHE DNS_CACHE;
 typedef struct DNS_CACHE_REVERSE DNS_CACHE_REVERSE;
 typedef struct DNS_RESOLVER DNS_RESOLVER;
 typedef struct DNS_RESOLVER_REVERSE DNS_RESOLVER_REVERSE;
-
-#include "Crypto/Types.h"
 
 #endif

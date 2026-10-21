@@ -177,7 +177,6 @@ ERR_134					The specified Dynamic DNS hostname has an invalid characters. Please
 ERR_135					The length of the specified Dynamic DNS hostname is too long. A hostname must be equal or shorter than 31 letters.
 ERR_136					The Dynamic DNS hostname is not specified.
 ERR_137					The length of the specified Dynamic DNS hostname is too short. A hostname must be equal or longer than 3 letters.
-ERR_138					The password of the specified user in the Virtual Hub must be reset before using MS-CHAP v2 authentication. Please ask the administrator of the VPN Server to reset the password by the VPN Server Manager or vpncmd which internal version is 4.0 or greater. Or you can change the password with VPN Client by yourself.
 ERR_139					The connection to the Dynamic DNS server has been disconnected.
 ERR_140					Failed to initialize the ICMP (Ping) protocol. The process of the VPN Server might be running in a normal-user privileges. In such case, run the VPN Server as a system service. (in Linux / UNIX, run it in root privileges.)
 ERR_141					Failed to open the DNS port 53. Make sure that there are no other DNS server program (for example, BIND or Microsoft DNS Server) on the same computer. If there are conflicting services stop them. Or run the VPN Server's process in root privileges on Linux / UNIX/
@@ -195,18 +194,6 @@ ERR_152					TLS handshake has failed.
 ERR_153					The TCP Listener has been registered, but its port could not be opened: another program is using it or Windows reserves it. The VPN Server keeps trying and starts listening once the port is free; until then ListenerList shows the listener as Error.
 
 
-# Concerning licenses
-LICENSE_STATUS_OK		Valid
-LICENSE_STATUS_EXPIRED	Expired
-LICENSE_STATUS_ID_DIFF	Server ID Mismatch
-LICENSE_STATUS_DUP		Duplication
-LICENSE_STATUS_INSUFFICIENT	Other Licenses are Required
-LICENSE_STATUS_COMPETITION	Competition with Other Licenses
-LICENSE_STATUS_NONSENSE		Meaningless for Current Edition
-LICENSE_STATUS_CPU		CPU Type is Incompatible
-LICENSE_STATUS_OTHERERROR	Unknown Error
-
-
 # Concerning hardware tokens
 SEC_YES					Yes
 SEC_NO					No
@@ -221,16 +208,6 @@ PW_TYPE_3				Client Certificate Authentication
 PW_TYPE_5				OpenSSL Engine Authentication
 
 
-# Concerning VPN connection status
-STATUS_1				Initializing...
-STATUS_2				Connecting to VPN Server "%S" via Proxy Server %S...
-STATUS_4				Connecting to VPN Server "%S"...
-STATUS_5				Verifying Server Certificate...
-STATUS_6				Authenticating User...
-STATUS_7				Establishing VPN Session...
-STATUS_9				VPN Session has been established.
-
-
 # Errors about Windows Versions
 WINVER_ERROR_FORMAT		The version and Service Pack of Windows on %s is "%S".\r\n\r\nThe latest supported version and Service Pack of Windows by %s is as follows:\r\n%S\r\nBecause of the version of Windows on %s is newer than the version of Windows which %s supports, unexpected troubles or compatible issues might occur.\r\nIn order to avoid problems, we will recommend you to obtain and install the latest update of %s.\r\n(It is possible to continue using the current version without updates although that is not what we recommend.)\r\n\r\nIf you are the administrator, you can download the latest update-patch of %s from the web site http://selinks.org/?se for free.\r\n\r\nIf you are not the administrator you should notify the VPN Server's administrator of this message.\r\n\r\n----- MSG%04u%02u -----\r\n\r\n
 WINVER_ERROR_VPNSERVER	the VPN Server on the destination computer
@@ -239,7 +216,6 @@ WINVER_ERROR_PC_REMOTE	the remote server
 
 
 # Warning for Open-source Version
-OSS_MSG					Welcome to the SoftEther VPN Server Academic Version!\r\n\r\n\r\nThis VPN Server is open-source free software developed as academic research at University of Tsukuba, Japan, and distributed from the SoftEther VPN Project (http://www.softether.org/), for free of charge for the public interests.\r\n\r\nSoftEther VPN software is distributed to public as a part of the joint-research contract between University of Tsukuba and SoftEther VPN Project. SoftEther VPN software is developed and published for JUST AN ACADEMIC RESEARCH PURPOSE. Therefore no support service are provided about SoftEther VPN software even if it contains bugs or vulnerabilities. A user will be liable for the result of use SoftEther VPN. The developers and publishers of SoftEther VPN will never be liable for either any consequences or damages.\r\n\r\nEnjoy using VPN with SoftEther VPN Server.\r\n\r\nFor more details of SoftEther VPN, visit http://www.softether.org/.\r\n\r\n
 
 
 # Virtual HUB Admin Options
@@ -264,9 +240,6 @@ HUB_AO_deny_qos							If you set this option to non-zero value, then every VPN S
 HUB_AO_deny_change_user_password		If you set this option to non-zero value, then any users on the Virtual Hub will be forbidden to change its password by VPN Client's password-changing function.
 HUB_AO_no_change_users					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to add, edit or remove a user.
 HUB_AO_no_change_groups					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to add, edit or remove a group.
-HUB_AO_no_securenat						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enable or disable the SecureNAT function.
-HUB_AO_no_securenat_enablenat			If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enable or disable the Virtual NAT function in the SecureNAT function.
-HUB_AO_no_securenat_enabledhcp			If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enable or disable the Virtual DHCP Server function in the SecureNAT function.
 HUB_AO_no_cascade						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to add, edit, remove or change the online status of a cascade connection.
 HUB_AO_no_online						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to change the offline Virtual Hub to the online state.
 HUB_AO_no_offline						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to change the online Virtual Hub to the offline state.
@@ -336,8 +309,6 @@ HUB_AO_SuppressClientUpdateNotification		Suppress the update notification screen
 HUB_AO_FloodingSendQueueBufferQuota			Specify the quota limitation value (in bytes) of the sending queue buffer size which the flooding operation on the Virtual Hub can consume. The quota value is applied on the total length of sending queues of all active VPN sessions. Specify '0' to disable the quota. This option is effective to solve the out-of-memory problem on the network where there are many flooding packets.
 HUB_AO_DetectDormantSessionInterval			If you set this option to non-zero value, then the Virtual Hub will treat the VPN sessions, which have transmitted no packets for the last specified intervals (in seconds), as Dormant Sessions. The Virtual Hub will not flood packets, which should be flood, to any Dormant Sessions.
 HUB_AO_NoPhysicalIPOnPacketLog				If you set this option to non-zero value, then the physical IP addresses of VPN clients of either the source VPN session or the destination VPN session will not be recorded on the packet log file.
-HUB_AO_UseHubNameAsDhcpUserClassOption		If you set this option to non-zero value, then the Virtual Hub Name will be added to a DHCP request to an external DHCP server as the "User-Class" option. This allows to use separate pools of IP addresses for each Virtual Hub. (For only L2TP/IPsec and OpenVPN sessions.)
-HUB_AO_AllowEapMatchUserByCert				If you enable (set to 1) this option, the Virtual Hub will attempt to match the EAP Identity not only with usernames, but also with user certificates during the PPP EAP authentication flow.
 
 
 # Concerning protocols
@@ -385,7 +356,6 @@ CT_b_support_license	Management of Licenses is Supported
 CT_b_support_limit_multilogin	Limits for Multiple Login by Same User is Supported
 CT_b_support_qos		VoIP / QoS Functions is Supported
 CT_b_support_syslog		Syslog Sending Functions is Supported
-CT_b_beta_version		Beta Version (Pre-release build)
 CT_b_support_check_mac	Specifing MAC Address in Access Lists is Supported
 CT_b_support_check_tcp_state	Checking TCP Connection State Filtering is Supported
 CT_b_support_network_connection_name	Getting Network Friendly Name is Supported
@@ -571,7 +541,7 @@ CM_CERT_COLUMN_3		Expiration
 
 
 # Concerning services (Win32)
-SVC_HELP				*** Command Line Arguments of %s (%S) ***\r\n\r\nThis program (%s) is a process runs as a background task. Start the program by specifying the following arguments on the command line. \r\n\r\n\r\n/install : Installs %s service (service name: %S) in Windows. After this, the service will automatically start. \r\n\r\n/uninstall... Uninstalls %s service (service name: %S) from Windows. \r\n\r\n/start : Starts %s service (service name: %S). \r\n\r\n/stop : Stops %s service (service name: %S). \r\n\r\n/test : Starts %s program in test mode. (For debug)\r\n\r\n/usermode : Starts %s program in the user mode. (When possible)\r\n\r\n/usermode_showtray : When starting in the user mode, this is used to display task tray icons when they were set to be hidden on a previous occasion. \r\n\r\n/usermode_hidetray : When starting in the user mode, this sets the task tray icons to be hidden. \r\n\r\n\r\nNote: Commands related to service operation other than /test and /usermode can only be operated on Windows NT / XP / Server 2003 / Vista / Server 2008.
+SVC_HELP				*** Command Line Arguments of %s (%S) ***\r\n\r\nThis program (%s) runs as a background task. Start it with one of the following arguments on the command line.\r\n\r\n\r\n/install : Installs the %s service (service name: %S) in Windows. After this, the service starts automatically.\r\n\r\n/uninstall : Uninstalls the %s service (service name: %S) from Windows.\r\n\r\n/start : Starts the %s service (service name: %S).\r\n\r\n/stop : Stops the %s service (service name: %S).\r\n\r\n/test : Starts the %s program in test mode. (For debug)\r\n\r\n/usermode : Starts the %s program in user mode, without the service.\r\n\r\n/setup_install : Used by the installer. Replaces the %s service (service name: %S) with this program and starts it.\r\n\r\n/setup_uninstall : Used by the installer. Stops and uninstalls the %s service (service name: %S).\r\n\r\n/service : Used by Windows. Runs the %s program as the service.
 SVC_ALREADY_INSTALLED	The "%s" service (service name: %S) is already installed on this computer. Do you want to uninstall it and then re-install?
 SVC_INSTALL_OK			The "%s" service (Service name: %S) has been installed successfully. \r\n\r\n(Execution path: %s)\r\n\r\nThe service has started.
 SVC_INSTALL_FAILED		The installation of the "%s" service (service name: %S) failed.
@@ -590,12 +560,6 @@ SVC_NOT_ADMIN			To install, uninstall, start or stop the service you must have a
 SVC_TEST_MSG			The "%s" service is started in test mode. \r\n\r\nClick OK to exit the service.
 SVC_TEST_MUTEX			The executable file %s is already started.
 SVC_USERMODE_MUTEX		Another process of %s is already started.
-
-
-# Service Definition (Ranz VPN Server)
-SVC_VPNSERVER_NAME		vpnserver
-SVC_VPNSERVER_TITLE		Ranz VPN Server
-SVC_VPNSERVER_DESCRIPT	This manages the server processes of Ranz VPN Server. Ranz VPN Server provides high-performance Ranz VPN Server functions via TCP/IP protocol. When this service is stopped, Ranz VPN Server on this computer will stop and Ranz VPN Client will be unable to establish a VPN connection with this computer.
 
 
 # Service Definition (Ranz VPN Server)
@@ -818,32 +782,8 @@ SM_AC_DENY				Deny
 SM_LOG_FILE_COLUMN_1	Log File Name
 SM_LOG_FILE_COLUMN_2	File Size
 SM_LOG_FILE_COLUMN_3	Updated on
-SM_LICENSE_COLUMN_1		Number
-SM_LICENSE_COLUMN_2		License Key
-SM_LICENSE_COLUMN_3		License Type Name
-SM_LICENSE_COLUMN_4		Status
 SM_LICENSE_COLUMN_5		Expiration Date
-SM_LICENSE_COLUMN_6		License ID
-SM_LICENSE_COLUMN_7		License Type ID
-SM_LICENSE_COLUMN_8		Server ID
-SM_LICENSE_COLUMN_9		Serial ID
-SM_LICENSE_INFINITE		Infinite
 SM_LICENSE_NO_EXPIRES	No Expiration
-SM_LICENSE_STATUS_EDITION	Product Edition
-SM_LICENSE_STATUS_RELEASE	Release Date of VPN Server
-SM_LICENSE_STATUS_SYSTEM_ID	Current Server ID
-SM_LICENSE_STATUS_EXPIRES	Expiration of Current Product License
-SM_LICENSE_STATUS_SUBSCRIPTION	Status of Subscription Contract
-SM_LICENSE_STATUS_SUBSCRIPTION_NONEED	No Need (This Edition requires no subscription keys)
-SM_LICENSE_STATUS_SUBSCRIPTION_NONE		No Keys (Adding a subscription key is required)
-SM_LICENSE_STATUS_SUBSCRIPTION_VALID	Subscription is Active [Until %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_EXPIRED	Subscription is Expired [at %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_BUILD_STR	Free Upgrade to Any Future Versions Released Until %s is Allowed
-SM_LICENSE_STATUS_ENTERPRISE			Enterprise Functions Availability
-SM_LICENSE_STATUS_ENTERPRISE_YES		Yes (Available)
-SM_LICENSE_STATUS_ENTERPRISE_NO			No (Unavailable)
-SM_LICENSE_NUM_CLIENT	Allowed Concurrent Clients
-SM_LICENSE_NUM_BRIDGE	Allowed Concurrent Bridges
 SM_NO_LICENSE_COLUMN	Caution: 
 SM_NO_LICENSE			Because there are no product licenses registered, this VPN Server's communication function doesn't operate.
 SM_SYSLOG_0				Disable Syslog Send Function
@@ -878,6 +818,11 @@ LS_LOAD_CONFIG_2		The configuration file has been loaded.
 LS_LOAD_CONFIG_3		Configuration file does not exist. Attempting to start using initial settings.
 LS_INIT_SAVE_THREAD		Starting the automatically saving background task. The interval between auto-saves is %u seconds. You can change the interval by changing the parameter AutoSaveConfigSpan in the configuration file.
 LS_BAD_CONFIG			The contents of the configuration file is invalid. The loading process has been terminated.
+LS_DEFAULT_CERT_FAILED		The default server certificate could not be generated. The server has no certificate, so TLS connections will be refused until one is installed.
+LS_CONFIG_SET_ASIDE		The configuration file "%s" could not be read. It is kept as "%s.bad", and the server starts with the initial settings.
+LS_CONFIG_SET_ASIDE_FAILED	The configuration file "%s" could not be read, and renaming it to "%s.bad" failed. The server starts with the initial settings and does not save over the file until the rename succeeds.
+LS_SAVE_CONFIG_FAILED	Saving the configuration file "%s" failed. The save will be retried.
+LS_SAVE_CONFIG_RESTORED	The configuration file "%s" has been saved again after a failed save.
 LS_LISTENER_START_1		TCP Listener (port %u) is starting.
 LS_LISTENER_START_2		TCP Listener (port %u) has started. Now listening for connection from client.
 LS_LISTENER_START_3		Unable to set port to Listen status for TCP Listener (port %u). Attempting at fixed intervals until successful.
@@ -885,6 +830,9 @@ LS_LISTENER_ACCEPT		On the TCP Listener (Port %u), a Client (IP address %S, Host
 LS_LISTENER_DISCONNECT	The connection with the client (IP address %S, Port number %u) has been disconnected.
 LS_LISTENER_DOS			A DoS attack on the TCP Listener (port %u) has been detected. The connecting source IP address is %S, port number is %u. This connection will be forcefully disconnected now.
 LS_LISTENER_MAXUEC		The TCP listener is temporary suspending to accept new inward connections because of the number of pending TCP connections exceeded %u. (Current value = %u)
+LS_LISTENER_ACCEPT_RETRY	The TCP Listener (port %u) failed to accept a connection (error %u, %u time(s) since the last report). The listener keeps the port and retries.
+LS_LISTENER_DOS_TABLE_FULL	The DoS protection table of the TCP Listener (port %u) has reached its limit of %u source addresses. From now on the least recently seen sources are removed to make room for new ones.
+LS_NON_SSL_TABLE_FULL	The table of sources that sent non-SSL data has reached its limit of %u source addresses. From now on the least recently seen sources are removed to make room for new ones.
 LS_LISTENER_STOP_1		TCP Listener (port %u) is stopping.
 LS_LISTENER_STOP_2		TCP Listener (port %u) has stopped.
 LS_HUB_START			Virtual Hub "%S" has been started.
@@ -910,7 +858,6 @@ LH_AUTH_ANONYMOUS		Anonymous authentication
 LH_AUTH_PASSWORD		Password authentication
 LH_AUTH_PLAIN_PASSWORD	External server authentication
 LH_AUTH_CERT			Certificate authentication
-LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE	Connection "%S": The authentication method of the user "%S" has been specified as Certificate Authentication. However, the Certificate Authentication function hasn't been implemented on the Open-Source version of Ranz VPN yet. The connection will be denied.
 LH_AUTH_OK				Connection "%S": Successfully authenticated as user "%S".
 LH_AUTH_OK_CERT			The Virtual Hub's Security Account Manager has received the following certificate from the VPN Client and accepted its contents as the certificate for when user "%S" logs in: %s
 LH_AUTH_NG_CERT			Although the Virtual Hub's Security Account Manager has received the following certificate, has refused its contents as the certificate for when user "%S" logs in because this certificate's contents matches the contents that are registered in the Virtual Hub's certificates revocation list: %s
@@ -944,8 +891,6 @@ LH_NO_DHCP				Session "%S": Although host %S on this session sent a packet that 
 LH_REGIST_DHCP			Session "%S": The DHCP server of host "%S" (%S) on this session allocated, for host "%S" on another session "%S", the new IP address %S.
 LH_BRIDGE_1				Session "%S": A Local Bridge connection to physical Ethernet interface "%S" was started.
 LH_BRIDGE_2				Session "%S": Because communication has failed to be established with physical Ethernet interface "%S", the Local Bridge has stopped.
-LH_SET_MTU				Session "%S": The physical Ethernet interface "%S" has an MTU value set to %u. It is necessary to send and receive an Ethernet packet which has %u bytes. The MTU is now changed to %u.
-LH_SET_MTU_ERROR		Session "%S": The physical Ethernet interface "%S" has an MTU value set to %u. It is necessary to send and receive an Ethernet packet which has %u bytes. However, changing the MTU to %u failed. This physical Ethernet interface or device driver might be unable to process an Ethernet packet which has more 1,514 bytes (payload size: 1,500 bytes). In such case, the larger tagged-VLAN packets than 1,514 bytes cannot be transmitted. You should replace the current physical Ethernet adapter to another which supports Jumbo Frames. You can also try to update the device driver. Another possible method is to enable Jumbo Frames on the operating system or device driver settings.
 LH_START_BRIDGE			The Local Bridge connection "%S" has started. The bridge session "%S" was created.
 LH_STOP_BRIDGE			The Local Bridge connection "%S" has stopped.
 LH_LINK_START			The Cascade Connection "%s" has been established. The Cascade session "%S" was created.
@@ -961,7 +906,6 @@ LH_CONNECT_ERROR		The connection for Cascade Connection "%s" has been either dis
 LH_POLICY_MONITOR_MODE	Connection "%S": Because of a user whose security policy denies permission for Monitoring Mode requested that Monitoring Mode be enabled and attempted to connect to a Virtual Hub, the connection has been denied.
 LH_POLICY_BRIDGE_MODE	Connection "%S": Because of a user whose security policy denies both bridge connections and routing operations requested that bridge connections or routing operations be enabled and attempted to connect to the Virtual Hub, the connection has been denied.
 LH_TOO_MANY_MULTILOGINS	Connection "%S": Although the user "%S" made a login attempt, the security policy that applies to this user limits the maximum number of multiple logins to %u sessions. Currently the number of logins by this user is %u sessions and therefore the user has denied permission for a new VPN connection.
-LH_PACKET_LOG_NO_LOG_OSS	The VPN Server is either Open-Source or Free version. It hasn't implemented the IP Address or TCP/UDP header data logging function. No IP address nor TCP/UDP header data are not be recorded here.
 
 
 # (Administration log)
@@ -1272,16 +1216,6 @@ CMD_ServerPasswordSet	Set VPN Server Administrator Password
 CMD_ServerPasswordSet_Help	This sets the VPN Server administrator password. You can specify the password as a parameter. If the password is not specified, a prompt will be displayed to input the password and password confirmation. If you include the password as a parameter, this password will be displayed momentarily on the screen, which poses a risk. We recommend that whenever possible, avoid specifying this parameter and input the password using the password prompt. \nTo execute this command, you must have VPN Server administrator privileges.
 CMD_ServerPasswordSet_Args	ServerPasswordSet [password]
 CMD_ServerPasswordSet_[password]	This specifies a new password setting.
-
-
-# Debug command
-CMD_Debug				Execute a Debug Command
-CMD_Debug_Help			Runs a debug command on the running VPN Server / Bridge process.\nThis command should be executed wjen the support staff requests to do so.\nMisuse of this command might cause a crash of VPN Server / Bridge running.
-CMD_Debug_Args			Debug [id] [/ARG:arg]
-CMD_Debug_[id]			Specify a debug command number.
-CMD_Debug_ARG			Specify a string to pass to the debug command. If a string contains spaces, contains the whole command by " ".
-CMD_Debug_Msg1			Sending the debug command...
-CMD_Debug_Msg2			The debug command has executed.\nResults: \"%S\"
 
 
 # Crash command
@@ -2494,34 +2428,6 @@ CMD_AcDel_[id]			Specify the ID of the rule in the Source IP Address Limit List 
 CMD_AcDel_Prompt_ID		ID of Rule to Delete: 
 
 
-# LicenseAdd command
-CMD_LicenseAdd			Add License Key Registration
-CMD_LicenseAdd_Help		Use this to register a new license key on the Ranz VPN Server. \nTo use Ranz VPN Server you must acquire a valid license and register the license key. The license keys are 36 alphanumeric characters in length plus hyphens. They are key codes that certify the ownership of a license. \nWhen a license certificate is received together with this software, the license key is printed on this license certificate. If the license for this software has been purchased online, the license key is provided by email and on the website window at the time the license is purchased. The license key may also be written down by some other method. If you don't know where the license key is written down, ask the vendor who sold you the license. \n\nTo get the list of currently registered licenses, use the LicenseList command. \nTo display the license status of the current VPN Server, use the LicenseStatus command. \nTo execute this command, you must have VPN Server administrator privileges. \nThis command cannot be run on VPN Bridge.
-CMD_LicenseAdd_Args		LicenseAdd [key]
-CMD_LicenseAdd_[key]	Specify the license key to register. Specify 36 digits of alphanumeric characters and group the digits in groups of 6 separating them by hyphen. 
-CMD_LicenseAdd_Prompt_Key	License Key: 
-
-
-# LicenseDel command
-CMD_LicenseDel			Delete Registered License
-CMD_LicenseDel_Help		Use this to delete a specified license from the license list that is currently registered on the Ranz VPN Server. \n\nTo get the list of currently registered licenses, use the LicenseList command. \nTo display the license status of the current VPN Server, use the LicenseStatus command. \nTo execute this command, you must have VPN Server administrator privileges. \nThis command cannot be run on VPN Bridge.
-CMD_LicenseDel_Args		LicenseDel [id]
-CMD_LicenseDel_[id]		Specify the license number to delete.
-CMD_LicenseDel_Prompt_ID	License Number to Delete: 
-
-
-# LicenseList command
-CMD_LicenseList			Get List of Registered Licenses
-CMD_LicenseList_Help	Use this to display a list of license information currently registered on the Ranz VPN Server including: license key, license type name, status, expiration date, license ID, license type ID, server ID and serial ID. \n\nTo display the license status of the current VPN Server, use the LicenseStatus command. \nTo execute this command, you must have VPN Server administrator privileges. \nThis command cannot be run on VPN Bridge.
-CMD_LicenseList_Args	LicenseList
-
-
-# LicenseStatus command
-CMD_LicenseStatus		Get License Status of Current VPN Server
-CMD_LicenseStatus_Help	Use this to get and display the license status of the current Ranz VPN Server. \nThe following current information on the Ranz VPN Server will be displayed: product edition, server ID, product license expiration date, number of usable Client Connection Licenses and number of Bridge Connection Licenses. \n\nTo execute this command, you must have VPN Server administrator privileges. \nThis command cannot be run on VPN Bridge.
-CMD_LicenseStatus_Args	LicenseStatus
-
-
 # ServerCertRegenerate command
 CMD_ServerCertRegenerate	Generate New Self-Signed Certificate with Specified CN (Common Name) and Register on VPN Server
 CMD_ServerCertRegenerate_Help	You can use this command to replace the current certificate on the VPN Server to a new self-signed certificate which has the CN (Common Name) value in the fields.\n\nThis command is convenient if you are planning to use Microsoft SSTP VPN Clone Server Function. Because of the value of CN (Common Name) on the SSL certificate of VPN Server must match to the hostname specified on the SSTP VPN client.\n\nThis command will delete the existing SSL certificate of the VPN Server. It is recommended to backup the current SSL certificate and private key by using the ServerKeyGet command beforehand.\n\nTo execute this command, you must have VPN Server administrator privileges. \nThis command cannot be run on VPN Bridge.\nYou cannot execute this command for Virtual Hubs of VPN Servers operating as a cluster.
@@ -2549,8 +2455,8 @@ CMD_AccountDetailSet_Prompt_NOQOS	 Disable QoS Control Function (yes/no):
 
 
 # MakeCert command
-CMD_MakeCert			Create New X.509 Certificate and Private Key (1024 bit)
-CMD_MakeCert_Help		Use this to create a new X.509 certificate and private key and save it as a file. \nThe algorithm used to create the public key and private key of the certificate is RSA 1024 bit. \nYou can choose to create a root certificate (self-signed certificate) or a certificate signed by another certificate. To create a certificate that is signed by another certificate, you require a private key file (base 64 encoded) that is compatible with the certificate that uses the signature (X.509 format file). \n\nWhen creating a certificate, you can specify the following: Name (CN), Organization (O), Organization Unit (OU), Country (C), State (ST), Locale (L), Serial Number, and Expiration Date. \nThe created certificate will be saved as an X.509 format file and the private key file will be saved in a Base 64 encoded RSA 1024 bit format file. \n\nThe MakeCert command is a tool that provides the most rudimentary function for creating certificates. If you want to create a more substantial certificate, we recommend that you use either free software such as OpenSSL, or commercial CA (certificate authority) software. \n\nNote: This command can be called from the Ranz VPN Command Line Management Utility. You can also execute this command while connected to the current VPN Server or VPN Client in Administration Mode but, what actually performs the RSA computation, generates the certificate data and saves it to file is the computer on which the command is running, and all this is executed in a context that has absolutely no relationship to the computer that is the destination of the Administration Mode connection.
+CMD_MakeCert			Create New X.509 Certificate and Private Key (2048 bit)
+CMD_MakeCert_Help		Use this to create a new X.509 certificate and private key and save it as a file. \nThe algorithm used to create the public key and private key of the certificate is RSA 2048 bit. \nYou can choose to create a root certificate (self-signed certificate) or a certificate signed by another certificate. To create a certificate that is signed by another certificate, you require a private key file (base 64 encoded) that is compatible with the certificate that uses the signature (X.509 format file). \n\nWhen creating a certificate, you can specify the following: Name (CN), Organization (O), Organization Unit (OU), Country (C), State (ST), Locale (L), Serial Number, and Expiration Date. \nThe created certificate will be saved as an X.509 format file and the private key file will be saved in a Base 64 encoded RSA 2048 bit format file. \n\nThe MakeCert command is a tool that provides the most rudimentary function for creating certificates. If you want to create a more substantial certificate, we recommend that you use either free software such as OpenSSL, or commercial CA (certificate authority) software. \n\nNote: This command can be called from the Ranz VPN Command Line Management Utility. You can also execute this command while connected to the current VPN Server or VPN Client in Administration Mode but, what actually performs the RSA computation, generates the certificate data and saves it to file is the computer on which the command is running, and all this is executed in a context that has absolutely no relationship to the computer that is the destination of the Administration Mode connection.
 CMD_MakeCert_Args		MakeCert [/CN:cn] [/O:o] [/OU:ou] [/C:c] [/ST:st] [/L:l] [/SERIAL:serial] [/EXPIRES:expires] [/SIGNCERT:signcert] [/SIGNKEY:signkey] [/SAVECERT:savecert] [/SAVEKEY:savekey]
 CMD_MakeCert_CN			Specify the Name (CN) item of the certificate to create. You can specify "none".
 CMD_MakeCert_O			Specify the Organization (O) item of the certificate to create. You can specify "none".
@@ -2562,8 +2468,8 @@ CMD_MakeCert_SERIAL		Specify the Serial Number item of the certificate to create
 CMD_MakeCert_EXPIRES	Specify the Expiration Date item of the certificate to create. If you specify "none" or "0", 3650 days (approx. 10 years) will be used. You can specify a maximum of 10950 days (about 30 years).
 CMD_MakeCert_SIGNCERT	For cases when the certificate to be created is signed by an existing certificate, specify the X.509 format certificate file name to be used to sign the signature. When this parameter is omitted, such signature signing is not performed and the new certificate is created as a root certificate.
 CMD_MakeCert_SIGNKEY	Specify a private key (RSA, base-64 encoded) that is compatible with the certificate specified by /SIGNCERT.
-CMD_MakeCert_SAVECERT	Specify the file name to save the certificate you created. The certificate is saved as an X.509 file that includes a public key that is RSA format 1024 bit.
-CMD_MakeCert_SAVEKEY	Specify the file name to save private key that is compatible with the certificate you created. The private key will be saved as an RSA-format 1024-bit private key file.
+CMD_MakeCert_SAVECERT	Specify the file name to save the certificate you created. The certificate is saved as an X.509 file that includes a public key that is RSA format 2048 bit.
+CMD_MakeCert_SAVEKEY	Specify the file name to save private key that is compatible with the certificate you created. The private key will be saved as an RSA-format 2048-bit private key file.
 CMD_MakeCert_PROMPT_CN			Name of Certificate to Create (CN): 
 CMD_MakeCert_PROMPT_O			Organization of Certificate to Create (O): 
 CMD_MakeCert_PROMPT_OU			Organization Unit of Certificate to Create (OU): 
@@ -2658,7 +2564,6 @@ TTC_TYPE_FULL			Full (Server < -- > Client)
 TTC_SPAN_STR			%.1f seconds
 TTC_COMM_START			\nAll connections were established and so data transfer started. \nMeasurement Start Time: %s\nScheduled Finish Time: %s\n\nMeasuring in progress. Please wait... \n(Do not use any other applications while measuring is in progress.)\n\n
 TTC_COMM_END			Because %.1f seconds or more have passed, the data communication will end. \n\n
-TTC_COMM_USER_CANCEL	Because of cancellation by user, the data communication will end. \n\n
 TTC_COMM_DISCONNECTED	The TCP connection %u has been disconnected.
 TTC_RES_TITLE			\n\nNetwork Traffic Speed Test Tool\n\n
 TTC_RES_COLUMN_1		Item Name

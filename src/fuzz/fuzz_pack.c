@@ -20,10 +20,9 @@ static void FuzzPack(const uint8_t *data, size_t size)
 		// ReadElement() rejects an element with a value it cannot read (FND-42 #114), so no NULL
 		// value is encoded.
 		BUF *b2 = PackToBuf(p);
-		PACK *p2;
 
 		SeekBufToBegin(b2);
-		p2 = BufToPack(b2);
+		PACK *p2 = BufToPack(b2);
 
 		FreePack(p2);
 		FreeBuf(b2);

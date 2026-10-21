@@ -23,7 +23,7 @@ param(
 	[string] $BuildDir = 'build',
 	[int] $Seconds = 60,
 	[int] $Seed = 1,
-	[string[]] $Targets = @('fuzz_pack', 'fuzz_cfg', 'fuzz_tcpip', 'fuzz_x509', 'fuzz_http')
+	[string[]] $Targets = @('fuzz_pack', 'fuzz_cfg', 'fuzz_tcpip', 'fuzz_x509', 'fuzz_http', 'fuzz_dhcp', 'fuzz_net', 'fuzz_stun', 'fuzz_login')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,9 +31,11 @@ $ErrorActionPreference = 'Stop'
 # RANZ_ASAN builds allocate from the CRT heap (cmake/RanzOptions.cmake leaves
 # WIN32_USE_HEAP_API_FOR_MEMORY undefined), which AddressSanitizer checks without extra ASAN_OPTIONS.
 
-# Largest input per target (-max_len); fuzz_tcpip matches its FUZZ_MAX_FRAME_SIZE, fuzz_http is
-# above twice HTTP_HEADER_LINE_MAX_SIZE (4096) so that over-long lines are reached
-$MaxLen = @{ 'fuzz_pack' = 4096; 'fuzz_cfg' = 4096; 'fuzz_tcpip' = 1600; 'fuzz_x509' = 4096; 'fuzz_http' = 10240 }
+# Largest input per target (-max_len); fuzz_tcpip and fuzz_dhcp match their FUZZ_MAX_FRAME_SIZE,
+# fuzz_net and fuzz_stun their FUZZ_MAX_INPUT_SIZE, fuzz_http is above twice
+# HTTP_HEADER_LINE_MAX_SIZE (4096) so that over-long lines are reached
+$MaxLen = @{ 'fuzz_pack' = 4096; 'fuzz_cfg' = 4096; 'fuzz_tcpip' = 1600; 'fuzz_x509' = 4096; 'fuzz_http' = 10240;
+	'fuzz_dhcp' = 1600; 'fuzz_net' = 4096; 'fuzz_stun' = 2048; 'fuzz_login' = 4096 }
 
 $BuildDir = (Resolve-Path $BuildDir).Path
 $CorpusRoot = Join-Path $PSScriptRoot 'corpus'

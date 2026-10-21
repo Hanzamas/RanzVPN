@@ -1,11 +1,10 @@
-#ifndef	KERNEL_H
-#define	KERNEL_H
+#ifndef KERNEL_H
+#define KERNEL_H
 
 #include "MayaType.h"
 #include "Native.h"
 
-struct MEMINFO
-{
+struct MEMINFO {
 	UINT64 TotalMemory;
 	UINT64 UsedMemory;
 	UINT64 FreeMemory;
@@ -14,8 +13,7 @@ struct MEMINFO
 	UINT64 FreePhys;
 };
 
-struct LOCALE
-{
+struct LOCALE {
 	wchar_t YearStr[16], MonthStr[16], DayStr[16];
 	wchar_t HourStr[16], MinuteStr[16], SecondStr[16];
 	wchar_t DayOfWeek[7][16];
@@ -24,29 +22,27 @@ struct LOCALE
 };
 
 
-typedef void (THREAD_PROC)(THREAD *thread, void *param);
+typedef void(THREAD_PROC)(THREAD *thread, void *param);
 
-struct THREAD
-{
+struct THREAD {
 	REF *ref;
 	THREAD_PROC *thread_proc;
 	void *param;
 	void *pData;
 	EVENT *init_finished_event;
 	UINT ThreadId;
-	void *StartedEvent;				// Kernel event the pool callback sets once it took the job (NewThread waits for it, then closes it)
-	void *EndedEvent;				// Manual-reset kernel event set once the job ended (WaitThread waits on it)
+	void *StartedEvent; // Kernel event the pool callback sets once it took the job (NewThread waits for it, then closes it)
+	void *EndedEvent;   // Manual-reset kernel event set once the job ended (WaitThread waits on it)
 	EVENT *release_event;
 	char *Name;
 };
 
-struct INSTANCE
-{
+struct INSTANCE {
 	char *Name;
 	void *pData;
 };
 
-#define	NewThread(thread_proc, param) NewThreadNamed((thread_proc), (param), (#thread_proc))
+#define NewThread(thread_proc, param) NewThreadNamed((thread_proc), (param), (#thread_proc))
 
 void SleepThread(UINT time);
 THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param);
@@ -63,12 +59,9 @@ void InitThreading();
 void FreeThreading();
 void SetThreadName(UINT thread_id, char *name, void *param);
 
-struct tm;
-time_64t c_mkgmtime(struct tm *tm);
 void TimeToSystem(SYSTEMTIME *st, time_64t t);
-time_64t TmToTime(struct tm *t);
-void TimeToTm(struct tm *t, time_64t time);
-void NormalizeTm(struct tm *t);
+UINT64 FileTimeToUINT64(FILETIME *ft);
+void UINT64ToFileTime(FILETIME *ft, UINT64 t);
 void NormalizeSystem(SYSTEMTIME *st);
 void LocalToSystem(SYSTEMTIME *system, SYSTEMTIME *local);
 void SystemToLocal(SYSTEMTIME *local, SYSTEMTIME *system);
@@ -90,7 +83,6 @@ void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale);
 void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st);
 UINT64 SystemToLocal64(UINT64 t);
 UINT64 LocalToSystem64(UINT64 t);
-UINT ThreadId();
 void GetDateTimeStr64(char *str, UINT size, UINT64 sec64);
 void GetDateTimeStr64Uni(wchar_t *str, UINT size, UINT64 sec64);
 void GetDateTimeStrMilli64(char *str, UINT size, UINT64 sec64);
@@ -100,20 +92,15 @@ void GetDateStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale);
 void GetTimeStrMilli64(char *str, UINT size, UINT64 sec64);
 void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min);
 bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str);
-bool Run(char *filename, char *arg, bool hide, bool wait);
+int GetCurrentTimezone();
+int GetTimezoneInfoOffsetWin32(TIME_ZONE_INFORMATION *info, UINT zone_id);
 void HashInstanceName(char *name, UINT size, char *instance_name);
-void HashInstanceNameLocal(char *name, UINT size, char *instance_name);
 INSTANCE *NewSingleInstance(char *instance_name);
-INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local);
 void FreeSingleInstance(INSTANCE *inst);
 void GetSpanStrMilli(char *str, UINT size, UINT64 sec64);
-void GetMemInfo(MEMINFO *info);
 bool GetEnv(char *name, char *data, UINT size);
-bool GetEnvW(wchar_t *name, wchar_t *data, UINT size);
-void GetHomeDirW(wchar_t *path, UINT size);
-void AbortExit();
-void AbortExitEx(char *msg);
-void YieldCpu();
+__declspec(noreturn) void AbortExit();
+__declspec(noreturn) void AbortExitEx(char *msg);
 UINT GetNumberOfCpu();
 
 #endif

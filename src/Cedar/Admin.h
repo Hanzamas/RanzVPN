@@ -1,19 +1,17 @@
 // Admin.h
 // Header of Admin.c
 
-#ifndef	ADMIN_H
-#define	ADMIN_H
+#ifndef ADMIN_H
+#define ADMIN_H
 
 #include "Account.h"
 #include "Cedar.h"
 #include "Hub.h"
-#include "Logging.h"
-#include "Wpc.h"
+#include "HubLog.h"
 
 #include "Mayaqua/Kernel.h"
 
-struct RPC_WINVER
-{
+struct RPC_WINVER {
 	bool IsWindows;
 	bool IsNT;
 	bool IsServer;
@@ -25,26 +23,39 @@ struct RPC_WINVER
 	char Title[128];
 };
 
-struct ADMIN
-{
+// An admin session that owns everything its RPCs and log lines need: no socket, no RPC object
+struct ADMIN {
 	SERVER *Server;
-	bool ServerAdmin;
-	char *HubName;
-	RPC *Rpc;
+	bool ServerAdmin; // Server scope; otherwise the scope is the hub HubName
+	char *HubName;    // Copy owned by the session, NULL in the server scope
+	IP RemoteIP;
+	char Tag[32];       // "RPC-n", the name of the session in the log lines
+	bool EmptyPassword; // Logged in with the empty password and the client accepts that
 	LIST *LogFileList;
 	RPC_WINVER ClientWinVer;
 };
 
-struct RPC_TEST
-{
+// What a client sends to open an admin session, with the facts of its connection
+struct ADMIN_LOGIN {
+	char ConnName[MAX_SIZE]; // Connection name in the LA_* log lines
+	IP RemoteIP;
+	UINT Id;                           // Number n of the session tag "RPC-n"
+	UCHAR Random[SHA1_SIZE];           // Challenge the connection sent
+	char HubName[MAX_HUBNAME_LEN + 1]; // Empty: server scope
+	bool AcceptEmptyPassword;
+	bool HasSecurePassword; // A secure_password of SHA1_SIZE bytes came with the request
+	UCHAR SecurePassword[SHA1_SIZE];
+	RPC_WINVER ClientWinVer;
+};
+
+struct RPC_TEST {
 	UINT IntValue;
 	UINT64 Int64Value;
 	char StrValue[1024];
 	wchar_t UniStrValue[1024];
 };
 
-struct RPC_SERVER_INFO
-{
+struct RPC_SERVER_INFO {
 	char ServerProductName[128];
 	char ServerVersionString[128];
 	char ServerBuildInfoString[128];
@@ -55,8 +66,7 @@ struct RPC_SERVER_INFO
 	OS_INFO OsInfo;
 };
 
-struct RPC_SERVER_STATUS
-{
+struct RPC_SERVER_STATUS {
 	UINT NumTcpConnections;
 	UINT NumTcpConnectionsLocal;
 	UINT NumHubTotal;
@@ -78,47 +88,40 @@ struct RPC_SERVER_STATUS
 	MEMINFO MemInfo;
 };
 
-struct RPC_LISTENER
-{
+struct RPC_LISTENER {
 	UINT Port;
 	bool Enable;
 };
 
-struct RPC_LISTENER_LIST
-{
+struct RPC_LISTENER_LIST {
 	UINT NumPort;
 	UINT *Ports;
 	bool *Enables;
 	bool *Errors;
 };
 
-struct RPC_STR
-{
+struct RPC_STR {
 	char *String;
 };
 
-struct RPC_SET_PASSWORD
-{
+struct RPC_SET_PASSWORD {
 	UCHAR HashedPassword[SHA1_SIZE];
 	char PlainTextPassword[MAX_SIZE];
 };
 
-struct RPC_KEY_PAIR
-{
+struct RPC_KEY_PAIR {
 	X *Cert;
 	LIST *Chain;
 	K *Key;
 	UINT Flag1;
 };
 
-struct RPC_HUB_OPTION
-{
+struct RPC_HUB_OPTION {
 	UINT MaxSession;
 	bool NoEnum;
 };
 
-struct RPC_CREATE_HUB
-{
+struct RPC_CREATE_HUB {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UCHAR HashedPassword[SHA1_SIZE];
 	UCHAR SecurePassword[SHA1_SIZE];
@@ -127,8 +130,7 @@ struct RPC_CREATE_HUB
 	RPC_HUB_OPTION HubOption;
 };
 
-struct RPC_ENUM_HUB_ITEM
-{
+struct RPC_ENUM_HUB_ITEM {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	bool Online;
 	UINT NumUsers;
@@ -144,19 +146,16 @@ struct RPC_ENUM_HUB_ITEM
 	TRAFFIC Traffic;
 };
 
-struct RPC_ENUM_HUB
-{
+struct RPC_ENUM_HUB {
 	UINT NumHub;
 	RPC_ENUM_HUB_ITEM *Hubs;
 };
 
-struct RPC_DELETE_HUB
-{
+struct RPC_DELETE_HUB {
 	char HubName[MAX_HUBNAME_LEN + 1];
 };
 
-struct RPC_ENUM_CONNECTION_ITEM
-{
+struct RPC_ENUM_CONNECTION_ITEM {
 	char Name[MAX_SIZE];
 	char Hostname[MAX_SIZE];
 	UINT Ip;
@@ -165,19 +164,16 @@ struct RPC_ENUM_CONNECTION_ITEM
 	UINT Type;
 };
 
-struct RPC_ENUM_CONNECTION
-{
+struct RPC_ENUM_CONNECTION {
 	UINT NumConnection;
 	RPC_ENUM_CONNECTION_ITEM *Connections;
 };
 
-struct RPC_DISCONNECT_CONNECTION
-{
+struct RPC_DISCONNECT_CONNECTION {
 	char Name[MAX_SIZE];
 };
 
-struct RPC_CONNECTION_INFO
-{
+struct RPC_CONNECTION_INFO {
 	char Name[MAX_SIZE];
 	UINT Type;
 	char Hostname[MAX_SIZE];
@@ -192,14 +188,12 @@ struct RPC_CONNECTION_INFO
 	UINT ClientBuild;
 };
 
-struct RPC_SET_HUB_ONLINE
-{
+struct RPC_SET_HUB_ONLINE {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	bool Online;
 };
 
-struct RPC_HUB_STATUS
-{
+struct RPC_HUB_STATUS {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	bool Online;
 	UINT NumSessions;
@@ -217,48 +211,41 @@ struct RPC_HUB_STATUS
 	UINT NumLogin;
 };
 
-struct RPC_HUB_LOG
-{
+struct RPC_HUB_LOG {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	HUB_LOG LogSetting;
 };
 
-struct RPC_HUB_ADD_CA
-{
+struct RPC_HUB_ADD_CA {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	X *Cert;
 };
 
-struct RPC_HUB_ENUM_CA_ITEM
-{
+struct RPC_HUB_ENUM_CA_ITEM {
 	UINT Key;
 	wchar_t SubjectName[MAX_SIZE];
 	wchar_t IssuerName[MAX_SIZE];
 	UINT64 Expires;
 };
 
-struct RPC_HUB_ENUM_CA
-{
+struct RPC_HUB_ENUM_CA {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumCa;
 	RPC_HUB_ENUM_CA_ITEM *Ca;
 };
 
-struct RPC_HUB_GET_CA
-{
+struct RPC_HUB_GET_CA {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT Key;
 	X *Cert;
 };
 
-struct RPC_HUB_DELETE_CA
-{
+struct RPC_HUB_DELETE_CA {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT Key;
 };
 
-struct RPC_CREATE_LINK
-{
+struct RPC_CREATE_LINK {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	bool Online;
 	CLIENT_OPTION *ClientOption;
@@ -269,8 +256,7 @@ struct RPC_CREATE_LINK
 	X *ServerCert;
 };
 
-struct RPC_ENUM_LINK_ITEM
-{
+struct RPC_ENUM_LINK_ITEM {
 	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];
 	bool Online;
 	bool Connected;
@@ -280,54 +266,46 @@ struct RPC_ENUM_LINK_ITEM
 	char HubName[MAX_HUBNAME_LEN + 1];
 };
 
-struct RPC_ENUM_LINK
-{
+struct RPC_ENUM_LINK {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumLink;
 	RPC_ENUM_LINK_ITEM *Links;
 };
 
-struct RPC_LINK_STATUS
-{
+struct RPC_LINK_STATUS {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];
 	RPC_CLIENT_GET_CONNECTION_STATUS Status;
 };
 
-struct RPC_LINK
-{
+struct RPC_LINK {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];
 };
 
-struct RPC_RENAME_LINK
-{
+struct RPC_RENAME_LINK {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	wchar_t OldAccountName[MAX_ACCOUNT_NAME_LEN + 1];
 	wchar_t NewAccountName[MAX_ACCOUNT_NAME_LEN + 1];
 };
 
-struct RPC_ENUM_ACCESS_LIST
-{
+struct RPC_ENUM_ACCESS_LIST {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumAccess;
 	ACCESS *Accesses;
 };
 
-struct RPC_ADD_ACCESS
-{
+struct RPC_ADD_ACCESS {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	ACCESS Access;
 };
 
-struct RPC_DELETE_ACCESS
-{
+struct RPC_DELETE_ACCESS {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT Id;
 };
 
-struct RPC_SET_USER
-{
+struct RPC_SET_USER {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	char Name[MAX_USERNAME_LEN + 1];
 	char GroupName[MAX_USERNAME_LEN + 1];
@@ -343,8 +321,7 @@ struct RPC_SET_USER
 	POLICY *Policy;
 };
 
-struct RPC_ENUM_USER_ITEM
-{
+struct RPC_ENUM_USER_ITEM {
 	char Name[MAX_USERNAME_LEN + 1];
 	char GroupName[MAX_USERNAME_LEN + 1];
 	wchar_t Realname[MAX_SIZE];
@@ -359,15 +336,13 @@ struct RPC_ENUM_USER_ITEM
 	UINT64 Expires;
 };
 
-struct RPC_ENUM_USER
-{
+struct RPC_ENUM_USER {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumUser;
 	RPC_ENUM_USER_ITEM *Users;
 };
 
-struct RPC_SET_GROUP
-{
+struct RPC_SET_GROUP {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	char Name[MAX_USERNAME_LEN + 1];
 	wchar_t Realname[MAX_SIZE];
@@ -376,8 +351,7 @@ struct RPC_SET_GROUP
 	POLICY *Policy;
 };
 
-struct RPC_ENUM_GROUP_ITEM
-{
+struct RPC_ENUM_GROUP_ITEM {
 	char Name[MAX_USERNAME_LEN + 1];
 	wchar_t Realname[MAX_SIZE];
 	wchar_t Note[MAX_SIZE];
@@ -385,26 +359,23 @@ struct RPC_ENUM_GROUP_ITEM
 	bool DenyAccess;
 };
 
-struct RPC_ENUM_GROUP
-{
+struct RPC_ENUM_GROUP {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumGroup;
 	RPC_ENUM_GROUP_ITEM *Groups;
 };
 
-struct RPC_DELETE_USER
-{
+struct RPC_DELETE_USER {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	char Name[MAX_USERNAME_LEN + 1];
 };
 
-struct RPC_ENUM_SESSION_ITEM
-{
+struct RPC_ENUM_SESSION_ITEM {
 	char Name[MAX_SESSION_NAME_LEN + 1];
 	char Username[MAX_USERNAME_LEN + 1];
 	UINT Ip;
 	IP ClientIP;
-	char Hostname[MAX_HOST_NAME_LEN	+ 1];
+	char Hostname[MAX_HOST_NAME_LEN + 1];
 	UINT MaxNumTcp;
 	UINT CurrentNumTcp;
 	UINT64 PacketSize;
@@ -422,14 +393,12 @@ struct RPC_ENUM_SESSION_ITEM
 	UINT64 LastCommTime;
 };
 
-struct RPC_DELETE_SESSION
-{
+struct RPC_DELETE_SESSION {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	char Name[MAX_SESSION_NAME_LEN + 1];
 };
 
-struct RPC_ENUM_MAC_TABLE_ITEM
-{
+struct RPC_ENUM_MAC_TABLE_ITEM {
 	UINT Key;
 	char SessionName[MAX_SESSION_NAME_LEN + 1];
 	UCHAR MacAddress[6];
@@ -438,15 +407,13 @@ struct RPC_ENUM_MAC_TABLE_ITEM
 	UINT VlanId;
 };
 
-struct RPC_ENUM_MAC_TABLE
-{
+struct RPC_ENUM_MAC_TABLE {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumMacTable;
 	RPC_ENUM_MAC_TABLE_ITEM *MacTables;
 };
 
-struct RPC_ENUM_IP_TABLE_ITEM
-{
+struct RPC_ENUM_IP_TABLE_ITEM {
 	UINT Key;
 	char SessionName[MAX_SESSION_NAME_LEN + 1];
 	UINT Ip;
@@ -457,33 +424,28 @@ struct RPC_ENUM_IP_TABLE_ITEM
 	UINT64 UpdatedTime;
 };
 
-struct RPC_ENUM_IP_TABLE
-{
+struct RPC_ENUM_IP_TABLE {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumIpTable;
 	RPC_ENUM_IP_TABLE_ITEM *IpTables;
 };
 
-struct RPC_DELETE_TABLE
-{
+struct RPC_DELETE_TABLE {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT Key;
 };
 
-struct RPC_ENUM_ETH_ITEM
-{
+struct RPC_ENUM_ETH_ITEM {
 	char DeviceName[MAX_SIZE];
 	wchar_t NetworkConnectionName[MAX_SIZE];
 };
 
-struct RPC_ENUM_ETH
-{
+struct RPC_ENUM_ETH {
 	UINT NumItem;
 	RPC_ENUM_ETH_ITEM *Items;
 };
 
-struct RPC_LOCALBRIDGE
-{
+struct RPC_LOCALBRIDGE {
 	char DeviceName[MAX_SIZE];
 	char HubName[MAX_HUBNAME_LEN + 1];
 	bool Online;
@@ -491,118 +453,70 @@ struct RPC_LOCALBRIDGE
 	bool TapMode;
 };
 
-struct RPC_ENUM_LOCALBRIDGE
-{
+struct RPC_ENUM_LOCALBRIDGE {
 	UINT NumItem;
 	RPC_LOCALBRIDGE *Items;
 };
 
-struct RPC_BRIDGE_SUPPORT
-{
+struct RPC_BRIDGE_SUPPORT {
 	bool IsBridgeSupportedOs;
 };
 
-struct RPC_CONFIG
-{
+struct RPC_CONFIG {
 	char FileName[MAX_PATH];
 	char *FileData;
 };
 
-struct RPC_ADMIN_OPTION
-{
+struct RPC_ADMIN_OPTION {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumItem;
 	ADMIN_OPTION *Items;
 };
 
-struct RPC_CRL
-{
+struct RPC_CRL {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT Key;
 	CRL *Crl;
 };
 
-struct RPC_ENUM_CRL_ITEM
-{
+struct RPC_ENUM_CRL_ITEM {
 	UINT Key;
 	wchar_t CrlInfo[MAX_SIZE];
 };
-struct RPC_ENUM_CRL
-{
+struct RPC_ENUM_CRL {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumItem;
 	RPC_ENUM_CRL_ITEM *Items;
 };
 
-struct RPC_AC_LIST
-{
+struct RPC_AC_LIST {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	LIST *o;
 };
 
-struct RPC_ENUM_LOG_FILE_ITEM
-{
+struct RPC_ENUM_LOG_FILE_ITEM {
 	char FilePath[MAX_PATH];
 	UINT FileSize;
 	UINT64 UpdatedTime;
 };
-struct RPC_ENUM_LOG_FILE
-{
+struct RPC_ENUM_LOG_FILE {
 	UINT NumItem;
 	RPC_ENUM_LOG_FILE_ITEM *Items;
 };
 
-struct RPC_READ_LOG_FILE
-{
+struct RPC_READ_LOG_FILE {
 	char FilePath[MAX_PATH];
 	UINT Offset;
 	BUF *Buffer;
 };
 
-struct DOWNLOAD_PROGRESS
-{
+struct DOWNLOAD_PROGRESS {
 	UINT TotalSize;
 	UINT CurrentSize;
 	UINT ProgressPercent;
 };
 
-struct RPC_ENUM_LICENSE_KEY_ITEM
-{
-	UINT Id;
-	char LicenseKey[LICENSE_KEYSTR_LEN + 1];
-	char LicenseId[LICENSE_LICENSEID_STR_LEN + 1];
-	char LicenseName[LICENSE_MAX_PRODUCT_NAME_LEN + 1];
-	UINT64 Expires;
-	UINT Status;
-	UINT ProductId;
-	UINT64 SystemId;
-	UINT SerialId;
-};
-struct RPC_ENUM_LICENSE_KEY
-{
-	UINT NumItem;
-	RPC_ENUM_LICENSE_KEY_ITEM *Items;
-};
-
-struct RPC_LICENSE_STATUS
-{
-	UINT EditionId;
-	char EditionStr[LICENSE_MAX_PRODUCT_NAME_LEN + 1];
-	UINT64 SystemId;
-	UINT64 SystemExpires;
-	UINT NumClientConnectLicense;
-	UINT NumBridgeConnectLicense;
-
-	bool NeedSubscription;
-	UINT64 SubscriptionExpires;
-	bool IsSubscriptionExpired;
-	UINT NumUserCreationLicense;
-	bool AllowEnterpriseFunction;
-	UINT64 ReleaseDate;
-};
-
-struct RPC_ENUM_ETH_VLAN_ITEM
-{
+struct RPC_ENUM_ETH_VLAN_ITEM {
 	char DeviceName[MAX_SIZE];
 	char Guid[MAX_SIZE];
 	char DeviceInstanceId[MAX_SIZE];
@@ -611,27 +525,27 @@ struct RPC_ENUM_ETH_VLAN_ITEM
 	bool Support;
 	bool Enabled;
 };
-struct RPC_ENUM_ETH_VLAN
-{
+struct RPC_ENUM_ETH_VLAN {
 	UINT NumItem;
 	RPC_ENUM_ETH_VLAN_ITEM *Items;
 };
 
-struct RPC_MSG
-{
+struct RPC_MSG {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	wchar_t *Msg;
 };
 
 
 UINT AdminAccept(CONNECTION *c, PACK *p);
+ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err);
+PACK *AdminInvoke(ADMIN *a, char *name, PACK *p);
+void AdminClose(ADMIN *a);
 RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name);
 void AdminDisconnect(RPC *rpc);
 UINT AdminReconnect(RPC *rpc);
 CAPSLIST *ScGetCapsEx(RPC *rpc);
-typedef bool (DOWNLOAD_PROC)(DOWNLOAD_PROGRESS *progress);
+typedef bool(DOWNLOAD_PROC)(DOWNLOAD_PROGRESS *progress);
 BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param);
-void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t);
 
 UINT ScGetServerInfo(RPC *r, RPC_SERVER_INFO *t);
 UINT ScGetServerStatus(RPC *r, RPC_SERVER_STATUS *t);
@@ -695,9 +609,7 @@ UINT ScEnumEthernet(RPC *r, RPC_ENUM_ETH *t);
 UINT ScAddLocalBridge(RPC *r, RPC_LOCALBRIDGE *t);
 UINT ScDeleteLocalBridge(RPC *r, RPC_LOCALBRIDGE *t);
 UINT ScEnumLocalBridge(RPC *r, RPC_ENUM_LOCALBRIDGE *t);
-UINT ScGetBridgeSupport(RPC *r, RPC_BRIDGE_SUPPORT *t);
 UINT ScRebootServer(RPC *r, RPC_TEST *t);
-UINT ScGetCaps(RPC *r, CAPSLIST *t);
 UINT ScGetConfig(RPC *r, RPC_CONFIG *t);
 UINT ScSetConfig(RPC *r, RPC_CONFIG *t);
 UINT ScGetHubAdminOptions(RPC *r, RPC_ADMIN_OPTION *t);
@@ -711,16 +623,10 @@ UINT ScGetCrl(RPC *r, RPC_CRL *t);
 UINT ScSetAcList(RPC *r, RPC_AC_LIST *t);
 UINT ScGetAcList(RPC *r, RPC_AC_LIST *t);
 UINT ScEnumLogFile(RPC *r, RPC_ENUM_LOG_FILE *t);
-UINT ScReadLogFile(RPC *r, RPC_READ_LOG_FILE *t);
-UINT ScAddLicenseKey(RPC *r, RPC_TEST *t);
-UINT ScDelLicenseKey(RPC *r, RPC_TEST *t);
-UINT ScEnumLicenseKey(RPC *r, RPC_ENUM_LICENSE_KEY *t);
-UINT ScGetLicenseStatus(RPC *r, RPC_LICENSE_STATUS *t);
 UINT ScSetSysLog(RPC *r, SYSLOG_SETTING *t);
 UINT ScGetSysLog(RPC *r, SYSLOG_SETTING *t);
 UINT ScCrash(RPC *r, RPC_TEST *t);
 UINT ScFlush(RPC *r, RPC_TEST *t);
-UINT ScDebug(RPC *r, RPC_TEST *t);
 UINT ScRegenerateServerCert(RPC *r, RPC_TEST *t);
 
 void FreeRpcTest(RPC_TEST *t);
@@ -757,7 +663,6 @@ void FreeRpcCrl(RPC_CRL *t);
 void FreeRpcEnumCrl(RPC_ENUM_CRL *t);
 void FreeRpcAcList(RPC_AC_LIST *t);
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t);
-void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t);
 void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t);
 void InRpcWinVer(RPC_WINVER *t, PACK *p);
 void OutRpcWinVer(PACK *p, RPC_WINVER *t);
@@ -783,10 +688,6 @@ void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p);
 void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t);
 void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p);
 void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t);
-void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p);
-void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t);
-void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p);
-void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t);
 void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p);
 void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t);
 void InRpcConfig(RPC_CONFIG *t, PACK *p);

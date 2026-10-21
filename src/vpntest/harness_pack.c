@@ -87,19 +87,19 @@ static void HarnessPackFreeStruct(HARNESS_PACK_TYPE *y, void *t);
 static X *HarnessTestCert();
 static K *HarnessTestKey();
 static void HarnessPackIp6(IP *ip, UCHAR last);
-static void HarnessPackPut(BUF *b, char *s);
+static void HarnessPackPut(BUF *b, const char *s);
 static void HarnessPackPutHex(BUF *b, void *data, UINT size);
 static void HarnessPackPutSha1(BUF *b, void *data, UINT size);
-static void HarnessPackPutStr(BUF *b, char *s);
+static void HarnessPackPutStr(BUF *b, const char *s);
 static char *HarnessPackTypeName(UINT type);
-static bool HarnessPackNameInList(char *name, char *list);
-static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, ELEMENT *e);
+static bool HarnessPackNameInList(const char *name, const char *list);
+static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, const ELEMENT *e);
 static void HarnessPackDump(BUF *b, PACK *p, HARNESS_PACK_CASE *c);
 static void HarnessPackPutBytes(BUF *b, PACK *p, bool masked);
-static UINT HarnessPackHash(char *s);
-static bool HarnessPackIsKept(char *name, bool live);
-static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT index, VALUE *v);
-static void HarnessPackCanon(HARNESS_PACK_RUN *r, PACK *p, bool live);
+static UINT HarnessPackHash(const char *s);
+static bool HarnessPackIsKept(const char *name, bool live);
+static void HarnessPackCanonData(const HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT index, VALUE *v);
+static void HarnessPackCanon(const HARNESS_PACK_RUN *r, PACK *p, bool live);
 static UINT HarnessPackGetError(PACK *p);
 static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, BUF *actual, bool update);
 static void HarnessPackRoundTrip(BUF *text, HARNESS_PACK_TYPE *y, BUF *input);
@@ -174,8 +174,6 @@ HARNESS_PACK_TYPE_DEF(RPC_CRL, InRpcCrl, OutRpcCrl, FreeRpcCrl)
 HARNESS_PACK_TYPE_DEF(RPC_AC_LIST, InRpcAcList, OutRpcAcList, FreeRpcAcList)
 HARNESS_PACK_TYPE_DEF(RPC_ENUM_LOG_FILE, InRpcEnumLogFile, OutRpcEnumLogFile, FreeRpcEnumLogFile)
 HARNESS_PACK_TYPE_DEF(RPC_READ_LOG_FILE, InRpcReadLogFile, OutRpcReadLogFile, FreeRpcReadLogFile)
-HARNESS_PACK_TYPE_DEF(RPC_ENUM_LICENSE_KEY, InRpcEnumLicenseKey, OutRpcEnumLicenseKey, FreeRpcEnumLicenseKey)
-HARNESS_PACK_TYPE_DEF_NOFREE(RPC_LICENSE_STATUS, InRpcLicenseStatus, OutRpcLicenseStatus)
 HARNESS_PACK_TYPE_DEF_NOFREE(SYSLOG_SETTING, InRpcSysLogSetting, OutRpcSysLogSetting)
 HARNESS_PACK_TYPE_DEF(RPC_ENUM_ETH_VLAN, InRpcEnumEthVLan, OutRpcEnumEthVLan, FreeRpcEnumEthVLan)
 HARNESS_PACK_TYPE_DEF(RPC_MSG, InRpcMsg, OutRpcMsg, FreeRpcMsg)
@@ -257,11 +255,10 @@ static char *harness_pack_test_key_pem =
 static X *HarnessTestCert()
 {
 	BUF *b = NewBuf();
-	X *x;
 
 	WriteBuf(b, harness_pack_test_cert_pem, StrLen(harness_pack_test_cert_pem));
 	SeekBufToBegin(b);
-	x = BufToX(b, true);
+	X *x = BufToX(b, true);
 	FreeBuf(b);
 
 	return x;
@@ -271,11 +268,10 @@ static X *HarnessTestCert()
 static K *HarnessTestKey()
 {
 	BUF *b = NewBuf();
-	K *k;
 
 	WriteBuf(b, harness_pack_test_key_pem, StrLen(harness_pack_test_key_pem));
 	SeekBufToBegin(b);
-	k = BufToK(b, true, true, NULL);
+	K *k = BufToK(b, true, true, NULL);
 	FreeBuf(b);
 
 	return k;
@@ -294,7 +290,7 @@ static void HarnessPackIp6(IP *ip, UCHAR last)
 // Dump
 
 // Append a string
-static void HarnessPackPut(BUF *b, char *s)
+static void HarnessPackPut(BUF *b, const char *s)
 {
 	WriteBuf(b, s, StrLen(s));
 }
@@ -304,9 +300,8 @@ static void HarnessPackPutHex(BUF *b, void *data, UINT size)
 {
 	static char *digits = "0123456789abcdef";
 	UCHAR *u = (UCHAR *)data;
-	UINT i;
 
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		char two[2];
 
@@ -326,13 +321,11 @@ static void HarnessPackPutSha1(BUF *b, void *data, UINT size)
 }
 
 // Append a quoted string: \\, \" and \xNN for control and non-ASCII bytes (the file stays ASCII)
-static void HarnessPackPutStr(BUF *b, char *s)
+static void HarnessPackPutStr(BUF *b, const char *s)
 {
-	UINT i;
-
 	HarnessPackPut(b, "\"");
 
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		UCHAR c = (UCHAR)s[i];
 
@@ -379,17 +372,17 @@ static char *HarnessPackTypeName(UINT type)
 }
 
 // Whether a name matches a comma-separated list of names ("Prefix*" matches a prefix)
-static bool HarnessPackNameInList(char *name, char *list)
+static bool HarnessPackNameInList(const char *name, const char *list)
 {
 	char pattern[MAX_ELEMENT_NAME_LEN + 2];
-	UINT len, i = 0;
+	UINT i = 0;
 
 	if (name == NULL || list == NULL)
 	{
 		return false;
 	}
 
-	len = StrLen(list);
+	UINT len = StrLen(list);
 
 	while (i < len)
 	{
@@ -435,7 +428,7 @@ static char *harness_pack_live_masks =
 	"caps_*,CapsValue";
 
 // Whether the values of an element are masked in a dump
-static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, ELEMENT *e)
+static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, const ELEMENT *e)
 {
 	if (c == NULL || c->Kind != HARNESS_PACK_LIVE)
 	{
@@ -453,9 +446,7 @@ static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, ELEMENT *e)
 // Dump the elements of a Pack in list order: #<i> <name> <type>[<num>] = <v0>, <v1>, ...
 static void HarnessPackDump(BUF *b, PACK *p, HARNESS_PACK_CASE *c)
 {
-	UINT i, j;
-
-	for (i = 0;i < LIST_NUM(p->elements);i++)
+	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
 		bool masked = HarnessPackIsMasked(c, e);
@@ -464,7 +455,7 @@ static void HarnessPackDump(BUF *b, PACK *p, HARNESS_PACK_CASE *c)
 		Format(tmp, sizeof(tmp), "#%u %s %s[%u] =", i, e->name, HarnessPackTypeName(e->type), e->num_value);
 		HarnessPackPut(b, tmp);
 
-		for (j = 0;j < e->num_value;j++)
+		for (UINT j = 0;j < e->num_value;j++)
 		{
 			VALUE *v = e->values[j];
 
@@ -546,7 +537,6 @@ static void HarnessPackDump(BUF *b, PACK *p, HARNESS_PACK_CASE *c)
 // Size and SHA-1 of the serialised Pack (WritePack writes the list order)
 static void HarnessPackPutBytes(BUF *b, PACK *p, bool masked)
 {
-	BUF *w;
 	char tmp[MAX_SIZE];
 
 	if (masked)
@@ -555,7 +545,7 @@ static void HarnessPackPutBytes(BUF *b, PACK *p, bool masked)
 		return;
 	}
 
-	w = PackToBuf(p);
+	BUF *w = PackToBuf(p);
 	Format(tmp, sizeof(tmp), "bytes=%u sha1=", w->Size);
 	HarnessPackPut(b, tmp);
 	HarnessPackPutSha1(b, w->Buf, w->Size);
@@ -567,12 +557,11 @@ static void HarnessPackPutBytes(BUF *b, PACK *p, bool masked)
 // Canonical round-trip input
 
 // FNV-1a of an element name
-static UINT HarnessPackHash(char *s)
+static UINT HarnessPackHash(const char *s)
 {
 	UINT h = 2166136261U;
-	UINT i;
 
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		h ^= (UCHAR)s[i];
 		h *= 16777619U;
@@ -582,7 +571,7 @@ static UINT HarnessPackHash(char *s)
 }
 
 // Values kept verbatim: they steer a read branch or a count (policy values are the policy table's)
-static bool HarnessPackIsKept(char *name, bool live)
+static bool HarnessPackIsKept(const char *name, bool live)
 {
 	if (StrCmp(name, "AuthType") == 0 || StrCmp(name, "IsIPv6") == 0 || StrCmp(name, "Masked") == 0 ||
 		StrCmp(name, "UsePolicy") == 0 || StrCmp(name, "NumItem") == 0)
@@ -606,11 +595,10 @@ static bool HarnessPackIsKept(char *name, bool live)
 
 // Canonical data value: the test certificate or key for the X and K keys, UTF-8 text for the text keys,
 // otherwise bytes derived from the name and the index with the same size (fixed-size reads keep matching)
-static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT index, VALUE *v)
+static void HarnessPackCanonData(const HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT index, VALUE *v)
 {
 	BUF *src = NULL;
 	char tmp[MAX_SIZE];
-	UINT x, i;
 
 	if (StrCmp(e->name, "Cert") == 0 || StrCmp(e->name, "Chain") == 0 || StrCmp(e->name, "ServerCert") == 0 ||
 		StrCmp(e->name, "ServerX") == 0 || StrCmp(e->name, "ClientX") == 0 || StrCmp(e->name, "UserX") == 0)
@@ -640,9 +628,9 @@ static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT i
 		return;
 	}
 
-	x = h ^ (index * 0x9E3779B9U);
+	UINT x = h ^ (index * 0x9E3779B9U);
 
-	for (i = 0;i < v->Size;i++)
+	for (UINT i = 0;i < v->Size;i++)
 	{
 		x = x * 1103515245U + 12345U;
 		((UCHAR *)v->Data)[i] = (UCHAR)(x >> 16);
@@ -653,23 +641,20 @@ static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT i
 // names, types and counts unchanged): ints get a distinct value (0 for about one key in five, so booleans
 // take both values), int64 a distinct non-zero value, strings "<name>#<index>" (Unicode strings add U+00E9
 // U+4E2D for the UTF-8 path). The kept keys (HarnessPackIsKept) keep their values.
-static void HarnessPackCanon(HARNESS_PACK_RUN *r, PACK *p, bool live)
+static void HarnessPackCanon(const HARNESS_PACK_RUN *r, PACK *p, bool live)
 {
-	UINT i, j;
-
-	for (i = 0;i < LIST_NUM(p->elements);i++)
+	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
-		UINT h;
 
 		if (HarnessPackIsKept(e->name, live))
 		{
 			continue;
 		}
 
-		h = HarnessPackHash(e->name);
+		UINT h = HarnessPackHash(e->name);
 
-		for (j = 0;j < e->num_value;j++)
+		for (UINT j = 0;j < e->num_value;j++)
 		{
 			VALUE *v = e->values[j];
 			char tmp[MAX_SIZE];
@@ -1034,12 +1019,10 @@ static void HarnessPackPrepCrlFull(HARNESS *h, void *p)
 {
 	RPC_CRL *t = p;
 	UCHAR serial[8] = {0x52, 0x41, 0x4E, 0x5A, 0x05, 0x06, 0x07, 0x08};
-	NAME *n;
-	UINT i;
 
 	t->Crl = ZeroMalloc(sizeof(CRL));
 	t->Crl->Serial = NewXSerial(serial, sizeof(serial));
-	n = t->Crl->Name = ZeroMalloc(sizeof(NAME));
+	NAME *n = t->Crl->Name = ZeroMalloc(sizeof(NAME));
 	n->CommonName = CopyUniStr(L"");
 	n->Organization = CopyUniStr(L"");
 	n->Unit = CopyUniStr(L"");
@@ -1048,11 +1031,11 @@ static void HarnessPackPrepCrlFull(HARNESS *h, void *p)
 	n->Local = CopyUniStr(L"");
 
 	// Non-zero digests: OutRpcCrl writes only those
-	for (i = 0;i < MD5_SIZE;i++)
+	for (UINT i = 0;i < MD5_SIZE;i++)
 	{
 		t->Crl->DigestMD5[i] = (UCHAR)(0x10 + i);
 	}
-	for (i = 0;i < SHA1_SIZE;i++)
+	for (UINT i = 0;i < SHA1_SIZE;i++)
 	{
 		t->Crl->DigestSHA1[i] = (UCHAR)(0x40 + i);
 	}
@@ -1109,14 +1092,6 @@ static void HarnessPackPrepReadLogFileBuffer(HARNESS *h, void *p)
 
 	t->Buffer = NewBuf();
 	WriteBuf(t->Buffer, data, sizeof(data));
-}
-
-static void HarnessPackPrepEnumLicenseKey(HARNESS *h, void *p)
-{
-	RPC_ENUM_LICENSE_KEY *t = p;
-
-	t->NumItem = 2;
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LICENSE_KEY_ITEM) * t->NumItem);
 }
 
 static void HarnessPackPrepEnumEthVLan(HARNESS *h, void *p)
@@ -1237,9 +1212,8 @@ static PACK *HarnessPackBuildCrlBadDigest(void)
 {
 	PACK *p = NewPack();
 	UCHAR d[32];
-	UINT i;
 
-	for (i = 0;i < sizeof(d);i++)
+	for (UINT i = 0;i < sizeof(d);i++)
 	{
 		d[i] = (UCHAR)(0xA0 + i);
 	}
@@ -1356,7 +1330,7 @@ static PACK *HarnessPackBuildStrMissing(void)
 }
 
 // NumItem whose item array does not fit in 32 bits: the table engine reads no item (count 0)
-static PACK *HarnessPackBuildEnumLicenseKeyNumItemOverflow(void)
+static PACK *HarnessPackBuildEnumLogFileNumItemOverflow(void)
 {
 	PACK *p = NewPack();
 
@@ -1454,8 +1428,6 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_SYN_CASE("RPC_ENUM_LOG_FILE", RPC_ENUM_LOG_FILE, HarnessPackPrepEnumLogFile),
 	HARNESS_PACK_SYN_CASE("RPC_READ_LOG_FILE_buffer", RPC_READ_LOG_FILE, HarnessPackPrepReadLogFileBuffer),
 	HARNESS_PACK_SYN_CASE("RPC_READ_LOG_FILE_nobuffer", RPC_READ_LOG_FILE, NULL),
-	HARNESS_PACK_SYN_CASE("RPC_ENUM_LICENSE_KEY", RPC_ENUM_LICENSE_KEY, HarnessPackPrepEnumLicenseKey),
-	HARNESS_PACK_SYN_CASE("RPC_LICENSE_STATUS", RPC_LICENSE_STATUS, NULL),
 	HARNESS_PACK_SYN_CASE("SYSLOG_SETTING", SYSLOG_SETTING, NULL),
 	HARNESS_PACK_SYN_CASE("RPC_ENUM_ETH_VLAN", RPC_ENUM_ETH_VLAN, HarnessPackPrepEnumEthVLan),
 	HARNESS_PACK_SYN_CASE("RPC_MSG", RPC_MSG, HarnessPackPrepMsg),
@@ -1500,8 +1472,8 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_IN_CASE("RPC_STR_in_missing", RPC_STR, HarnessPackBuildStrMissing),
 
 	// IN: intended change of the table engine (spec #28, unchecked NumItem option b)
-	HARNESS_PACK_IN_CASE("RPC_ENUM_LICENSE_KEY_in_numitem_overflow", RPC_ENUM_LICENSE_KEY,
-		HarnessPackBuildEnumLicenseKeyNumItemOverflow),
+	HARNESS_PACK_IN_CASE("RPC_ENUM_LOG_FILE_in_numitem_overflow", RPC_ENUM_LOG_FILE,
+		HarnessPackBuildEnumLogFileNumItemOverflow),
 
 	// IN: intended change of the table engine (SEC-6 #96, NumItem capped at the values of the sentinel key)
 	HARNESS_PACK_IN_CASE("RPC_ENUM_LOG_FILE_in_numitem_huge", RPC_ENUM_LOG_FILE, HarnessPackBuildEnumLogFileNumItemHuge),
@@ -1513,14 +1485,12 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 // Error of an admin RPC response, found by a linear scan (a lookup would sort the element list)
 static UINT HarnessPackGetError(PACK *p)
 {
-	UINT i;
-
 	if (p == NULL)
 	{
 		return ERR_INTERNAL_ERROR;
 	}
 
-	for (i = 0;i < LIST_NUM(p->elements);i++)
+	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
 
@@ -1541,7 +1511,6 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 	char path[MAX_SIZE];
 	char tmp[MAX_SIZE];
 	BUF *g;
-	BUF *ret;
 
 	Format(path, sizeof(path), "%s/%s", out_dir, file_name);
 	if (DumpBuf(actual, path) == false)
@@ -1568,7 +1537,6 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 			if (HarnessCheck(h, same, tmp) == false)
 			{
 				BUF *w = NewBuf();
-				char *s;
 
 				HarnessPackPut(w, "  golden: bytes=");
 				Format(tmp, sizeof(tmp), "%u sha1=", g->Size);
@@ -1578,7 +1546,7 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 				Format(tmp, sizeof(tmp), "%u sha1=", actual->Size);
 				HarnessPackPut(w, tmp);
 				HarnessPackPutSha1(w, actual->Buf, actual->Size);
-				s = HarnessBufToStr(w);
+				char *s = HarnessBufToStr(w);
 				Print("%s\n", s);
 				Free(s);
 				FreeBuf(w);
@@ -1595,7 +1563,7 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 		HarnessCheck(h, true, tmp);
 	}
 
-	ret = NewBuf();
+	BUF *ret = NewBuf();
 	WriteBuf(ret, actual->Buf, actual->Size);
 	SeekBufToBegin(ret);
 
@@ -1605,40 +1573,36 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 // [in-out] and [in-out-in-out] sections of one input
 static void HarnessPackRoundTrip(BUF *text, HARNESS_PACK_TYPE *y, BUF *input)
 {
-	PACK *pin, *p1, *pin2, *p2;
-	BUF *b1, *b2;
-	void *t1, *t2;
-
 	HarnessPackPut(text, "[in-out]\n");
 
 	SeekBufToBegin(input);
-	pin = BufToPack(input);
+	PACK *pin = BufToPack(input);
 	if (pin == NULL)
 	{
 		HarnessPackPut(text, "input is not a Pack\n");
 		return;
 	}
 
-	t1 = ZeroMalloc(y->Size);
+	void *t1 = ZeroMalloc(y->Size);
 	y->In(t1, pin);
-	p1 = NewPack();
+	PACK *p1 = NewPack();
 	y->Out(p1, t1);
 	HarnessPackDump(text, p1, NULL);
 	HarnessPackPutBytes(text, p1, false);
 
 	HarnessPackPut(text, "[in-out-in-out]\n");
 
-	b1 = PackToBuf(p1);
+	BUF *b1 = PackToBuf(p1);
 	SeekBufToBegin(b1);
-	pin2 = BufToPack(b1);
-	t2 = ZeroMalloc(y->Size);
+	PACK *pin2 = BufToPack(b1);
+	void *t2 = ZeroMalloc(y->Size);
 	if (pin2 != NULL)
 	{
 		y->In(t2, pin2);
 	}
-	p2 = NewPack();
+	PACK *p2 = NewPack();
 	y->Out(p2, t2);
-	b2 = PackToBuf(p2);
+	BUF *b2 = PackToBuf(p2);
 
 	if (b1->Size == b2->Size && Cmp(b1->Buf, b2->Buf, b1->Size) == 0)
 	{
@@ -1668,11 +1632,9 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 	BUF *text = NewBuf();
 	PACK *p0 = NULL;
 	BUF *fresh;
-	BUF *input;
 	char file_name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 	char *kind = (c->Kind == HARNESS_PACK_SYN ? "syn" : (c->Kind == HARNESS_PACK_LIVE ? "live" : "in"));
-	char *s;
 
 	HarnessSetPhase("pack", c->Name);
 
@@ -1696,7 +1658,6 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 	{
 		void *t = ZeroMalloc(y->Size);
 		PACK *req = NewPack();
-		UINT err;
 
 		if (c->Prep != NULL)
 		{
@@ -1708,7 +1669,7 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 
 		// AdminCall releases the request; the response keeps the server's element order
 		p0 = AdminCall(h->Rpc, c->RpcName, req);
-		err = HarnessPackGetError(p0);
+		UINT err = HarnessPackGetError(p0);
 		if (err != ERR_NO_ERROR)
 		{
 			Format(tmp, sizeof(tmp), "pack %s: admin RPC %s", c->Name, c->RpcName);
@@ -1738,11 +1699,11 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 	}
 
 	Format(file_name, sizeof(file_name), "pack_%s.pack", c->Name);
-	input = HarnessCompareGoldenBin(h, r->OutDir, r->GoldenDir, file_name, fresh, r->Update);
+	BUF *input = HarnessCompareGoldenBin(h, r->OutDir, r->GoldenDir, file_name, fresh, r->Update);
 
 	HarnessPackRoundTrip(text, y, input);
 
-	s = HarnessBufToStr(text);
+	char *s = HarnessBufToStr(text);
 	Format(file_name, sizeof(file_name), "pack_%s.txt", c->Name);
 	HarnessCompareGolden(h, r->OutDir, r->GoldenDir, file_name, s, r->Update);
 
@@ -1756,7 +1717,6 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 static void HarnessCheckStalePack(HARNESS *h, char *golden_dir)
 {
 	DIRLIST *d = EnumDir(golden_dir);
-	UINT i, j;
 	UINT num_stale = 0;
 	char expected[MAX_SIZE];
 	char tmp[MAX_SIZE];
@@ -1766,7 +1726,7 @@ static void HarnessCheckStalePack(HARNESS *h, char *golden_dir)
 		return;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		DIRENT *e = d->File[i];
 		bool known = false;
@@ -1776,7 +1736,7 @@ static void HarnessCheckStalePack(HARNESS *h, char *golden_dir)
 			continue;
 		}
 
-		for (j = 0;j < sizeof(harness_pack_cases) / sizeof(harness_pack_cases[0]);j++)
+		for (UINT j = 0;j < sizeof(harness_pack_cases) / sizeof(harness_pack_cases[0]);j++)
 		{
 			Format(expected, sizeof(expected), "pack_%s.txt", harness_pack_cases[j].Name);
 			if (StrCmpi(e->FileName, expected) == 0)
@@ -1814,9 +1774,6 @@ void HarnessPackGolden(HARNESS *h)
 {
 	HARNESS_PACK_RUN r;
 	UINT64 start = Tick64();
-	X *x;
-	K *k;
-	UINT i;
 
 	Print("[golden: admin RPC Packs]\n");
 	HarnessSetPhase("pack", NULL);
@@ -1832,8 +1789,8 @@ void HarnessPackGolden(HARNESS *h)
 		r.Update ? "update mode: missing or empty, or RANZ_UPDATE_GOLDEN=1" : "compare mode");
 	Print("  output directory: %s\n", r.OutDir);
 
-	x = HarnessTestCert();
-	k = HarnessTestKey();
+	X *x = HarnessTestCert();
+	K *k = HarnessTestKey();
 	if (HarnessCheck(h, x != NULL && k != NULL, "fixed test certificate and key parsed") == false)
 	{
 		FreeX(x);
@@ -1845,7 +1802,7 @@ void HarnessPackGolden(HARNESS *h)
 	FreeX(x);
 	FreeK(k);
 
-	for (i = 0;i < sizeof(harness_pack_cases) / sizeof(harness_pack_cases[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_pack_cases) / sizeof(harness_pack_cases[0]);i++)
 	{
 		HarnessPackRunCase(&r, &harness_pack_cases[i]);
 	}
@@ -1902,7 +1859,7 @@ SOCK *HarnessRawConnect(UCHAR *random)
 
 	SetTimeout(s, HARNESS_RAW_TIMEOUT);
 
-	if (StartSSLEx(s, NULL, NULL, 0, NULL) && ClientUploadSignature(s))
+	if (StartSSLEx(s, NULL, NULL, NULL) && ClientUploadSignature(s))
 	{
 		p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
 		ok = (p != NULL && GetErrorFromPack(p) == ERR_NO_ERROR &&
@@ -1945,21 +1902,18 @@ PACK *HarnessRawLoginPack(char *hubname, char *username, UINT authtype)
 // (ERR_NO_ERROR for a welcome Pack), or ERR_DISCONNECTED when no answer comes. p stays with the caller.
 UINT HarnessRawRequest(SOCK *s, PACK *p)
 {
-	PACK *ret;
-	UINT err;
-
 	if (s == NULL || p == NULL || HttpClientSend(s, p) == false)
 	{
 		return ERR_DISCONNECTED;
 	}
 
-	ret = HttpClientRecvEx(s, CLIENT_WELCOME_PACK_MAX_SIZE);
+	PACK *ret = HttpClientRecvEx(s, CLIENT_WELCOME_PACK_MAX_SIZE);
 	if (ret == NULL)
 	{
 		return ERR_DISCONNECTED;
 	}
 
-	err = GetErrorFromPack(ret);
+	UINT err = GetErrorFromPack(ret);
 	FreePack(ret);
 
 	return err;

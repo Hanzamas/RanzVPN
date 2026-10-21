@@ -1,17 +1,16 @@
 // Tracking.h
 // Header of Tracking.c
 
-#ifndef	TRACKING_H
-#define	TRACKING_H
+#ifndef TRACKING_H
+#define TRACKING_H
 
 #include "MayaType.h"
 
-#define	TRACKING_NUM_ARRAY	1048576
+#define TRACKING_NUM_ARRAY 1048576
 
-#define	TRACKING_HASH(p)	(UINT)(((((UINT64)(p)) / (UINT64)(sizeof(void *))) % ((UINT64)TRACKING_NUM_ARRAY)))
+#define TRACKING_HASH(p) (UINT)(((((UINT64)(p)) / (UINT64)(sizeof(void *))) % ((UINT64)TRACKING_NUM_ARRAY)))
 
-struct CALLSTACK_DATA
-{
+struct CALLSTACK_DATA {
 	bool symbol_cache;
 	UINT64 offset, disp;
 	char *name;
@@ -20,8 +19,7 @@ struct CALLSTACK_DATA
 	UINT line;
 };
 
-struct TRACKING_OBJECT
-{
+struct TRACKING_OBJECT {
 	UINT Id;
 	char *Name;
 	UINT64 Address;
@@ -32,14 +30,12 @@ struct TRACKING_OBJECT
 	UINT LineNumber;
 };
 
-struct MEMORY_STATUS
-{
+struct MEMORY_STATUS {
 	UINT MemoryBlocksNum;
 	UINT MemorySize;
 };
 
-struct TRACKING_LIST
-{
+struct TRACKING_LIST {
 	struct TRACKING_LIST *Next;
 	struct TRACKING_OBJECT *Object;
 };
@@ -67,6 +63,4 @@ void DebugPrintAllObjects();
 void DebugPrintCommandList();
 void DebugPrintObjectInfo(UINT id);
 
-bool IsTrackingEnabled();
-
-#endif	// TRACKING_H
+#endif // TRACKING_H

@@ -2,7 +2,7 @@
 // Named client Pack size cap test of vpntest ("packcap" command, SEC-4 #96)
 //
 // Before the authentication the server side reads a Pack of at most HTTP_PACK_MAX_SIZE
-// (HttpServerRecvEx). The client side read whatever the server announced in Content-Length, up to
+// (HttpServerRecv). The client side read whatever the server announced in Content-Length, up to
 // MAX_PACK_SIZE (512 MiB), allocated it at once and parsed it: a hostile server, or the target of a
 // cascade Link that retries every few seconds, made the client allocate and parse hundreds of MiB
 // per attempt. A loopback peer in the test plays the server: it answers one connection with one
@@ -38,7 +38,6 @@
 #define	PACKCAP_SERVER_VER		444					// "version" of the peer
 #define	PACKCAP_SERVER_BUILD	9999				// "build" of the peer
 #define	PACKCAP_WINVER_MSG_LEN	3800				// Characters of each Windows version notice of ServerAccept (its buffer)
-#define	PACKCAP_OSS_MSG_LEN		1200				// ASCII characters of the OSS_MSG notice of ServerAccept, rounded up
 
 // Run state of the test
 typedef struct PACKCAP_TEST
@@ -101,16 +100,14 @@ static void PackCapPeerThread(THREAD *thread, void *param)
 
 // Start the peer for one connection that it answers with p, and connect to it. Returns the client
 // end, or NULL when the connection fails. PackCapEnd frees p.
-static SOCK *PackCapStart(PACKCAP_TEST *t, PACKCAP_PEER *peer, PACK *p)
+static SOCK *PackCapStart(const PACKCAP_TEST *t, PACKCAP_PEER *peer, PACK *p)
 {
-	SOCK *s;
-
 	Zero(peer, sizeof(PACKCAP_PEER));
 	peer->Listen = t->Listen;
 	peer->Pack = p;
 	peer->Thread = NewThread(PackCapPeerThread, peer);
 
-	s = Connect("127.0.0.1", PACKCAP_PORT);
+	SOCK *s = Connect("127.0.0.1", PACKCAP_PORT);
 	if (s != NULL)
 	{
 		SetTimeout(s, PACKCAP_TIMEOUT);
@@ -150,10 +147,9 @@ static void PackCapEnd(PACKCAP_TEST *t, PACKCAP_PEER *peer, SOCK *s)
 static PACK *PackCapHello(UINT pad_size)
 {
 	UCHAR random[SHA1_SIZE];
-	PACK *p;
 
 	Rand(random, sizeof(random));
-	p = PackHello(random, PACKCAP_SERVER_VER, PACKCAP_SERVER_BUILD, PACKCAP_SERVER_STR);
+	PACK *p = PackHello(random, PACKCAP_SERVER_VER, PACKCAP_SERVER_BUILD, PACKCAP_SERVER_STR);
 
 	if (pad_size != 0)
 	{
@@ -167,8 +163,8 @@ static PACK *PackCapHello(UINT pad_size)
 }
 
 // Welcome Pack with the elements of PackWelcome and the longest "Msg" that ServerAccept can make:
-// the OSS_MSG notice in ASCII, then both Windows version notices and a hub message of HUB_MAXMSG_LEN
-// characters, each character 3 bytes in UTF-8. *msg_size gets the size of "Msg". pad_size bytes of
+// both Windows version notices and a hub message of HUB_MAXMSG_LEN characters, each character 3 bytes
+// in UTF-8. *msg_size gets the size of "Msg". pad_size bytes of
 // padding are added when pad_size is not 0.
 static PACK *PackCapWelcome(UINT pad_size, UINT *msg_size)
 {
@@ -176,7 +172,6 @@ static PACK *PackCapWelcome(UINT pad_size, UINT *msg_size)
 	POLICY *policy = ZeroMalloc(sizeof(POLICY));
 	BUF *msg = NewBuf();
 	UCHAR session_key[SHA1_SIZE];
-	UINT i;
 
 	PackAddStr(p, "session_name", "SID-PACKCAP-1");
 	PackAddStr(p, "connection_name", "CID-PACKCAP-1");
@@ -192,12 +187,7 @@ static PACK *PackCapWelcome(UINT pad_size, UINT *msg_size)
 	PackAddPolicy(p, policy);
 	PackAddInt(p, "vlan_id", 0);
 
-	for (i = 0;i < PACKCAP_OSS_MSG_LEN;i++)
-	{
-		WriteBuf(msg, "A", 1);
-	}
-
-	for (i = 0;i < PACKCAP_WINVER_MSG_LEN * 2 + HUB_MAXMSG_LEN;i++)
+	for (UINT i = 0;i < PACKCAP_WINVER_MSG_LEN * 2 + HUB_MAXMSG_LEN;i++)
 	{
 		// U+3042 HIRAGANA LETTER A
 		WriteBuf(msg, "\xE3\x81\x82", 3);
@@ -273,12 +263,14 @@ void packcap_test(UINT num, char **arg)
 	PACK *p;
 	PACK *w;
 	BUF *b;
+	IP loopback;
 
 	Zero(&t, sizeof(t));
 
 	Print("Client Pack size cap test (ClientDownloadHello, the welcome Pack of ClientConnect)\n");
 
-	t.Listen = ListenEx(PACKCAP_PORT, true);
+	GetLocalHostIP4(&loopback);
+	t.Listen = Listen(PACKCAP_PORT, &loopback, false);
 	PackCapCheck(&t, t.Listen != NULL, "The peer listens on 127.0.0.1", "cannot listen on TCP %u", PACKCAP_PORT);
 
 	if (t.Listen != NULL)

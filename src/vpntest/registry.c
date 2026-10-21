@@ -9,7 +9,7 @@
 // makes a key whose DACL grants its owner only KEY_READ, KEY_SET_VALUE and DELETE (an OWNER RIGHTS
 // entry, so the implicit READ_CONTROL and WRITE_DAC of the owner do not apply) and writes, reads and
 // deletes values in it. A REG_MULTI_SZ reads as its first string, and a REG_SZ without a terminator
-// reads as NULL. Prints "REGISTRY TEST OK" only when every check passes, deletes its keys and frees
+// reads as NULL or as exactly its text, never past its data. Prints "REGISTRY TEST OK" only when every check passes, deletes its keys and frees
 // everything it allocates.
 
 #include "Mayaqua/Internat.h"
@@ -64,7 +64,7 @@ static void RegistryDeleteKeys(char *key, char *restricted)
 }
 
 // Set a value through the W API with the exact bytes given (RegSetValueExW keeps them as they are)
-static bool RegistrySetRaw(char *key, wchar_t *name, UINT type, void *data, UINT size)
+static bool RegistrySetRaw(const char *key, wchar_t *name, UINT type, void *data, UINT size)
 {
 	HKEY h;
 	wchar_t key_w[MAX_PATH];
@@ -85,19 +85,19 @@ static bool RegistrySetRaw(char *key, wchar_t *name, UINT type, void *data, UINT
 }
 
 // True when the wide string read is there and equals expected
-static bool RegistryUniIs(wchar_t *s, wchar_t *expected)
+static bool RegistryUniIs(const wchar_t *s, const wchar_t *expected)
 {
 	return s != NULL && UniStrCmp(s, expected) == 0;
 }
 
 // True when the string read is there and equals expected
-static bool RegistryStrIs(char *s, char *expected)
+static bool RegistryStrIs(const char *s, const char *expected)
 {
 	return s != NULL && StrCmp(s, expected) == 0;
 }
 
 // Make the restricted subkey with REGISTRY_RESTRICTED_SDDL as its security descriptor
-static bool RegistryMakeRestricted(char *restricted)
+static bool RegistryMakeRestricted(const char *restricted)
 {
 	SECURITY_ATTRIBUTES sa;
 	PSECURITY_DESCRIPTOR sd = NULL;
@@ -140,10 +140,7 @@ void registry_test(UINT num, char **arg)
 	char restricted[MAX_PATH];
 	wchar_t no_term[2] = {L'A', L'B'};
 	wchar_t multi[] = L"first\0second\0";
-	HKEY h;
 	LSTATUS open_all;
-	wchar_t *w;
-	char *s;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -157,11 +154,11 @@ void registry_test(UINT num, char **arg)
 	// (1) A string and a number written and read back through the helpers
 	RegistryCheck(&ctx, MsRegWriteStr(REG_CURRENT_USER, key, "str", "ranz"), "MsRegWriteStr makes the key and writes a REG_SZ");
 
-	s = MsRegReadStr(REG_CURRENT_USER, key, "str");
+	char *s = MsRegReadStr(REG_CURRENT_USER, key, "str");
 	RegistryCheck(&ctx, RegistryStrIs(s, "ranz"), "MsRegReadStr reads it back");
 	Free(s);
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "str", false, false);
+	wchar_t *w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "str", false);
 	RegistryCheck(&ctx, RegistryUniIs(w, L"ranz"), "MsRegReadStrEx2W reads it back");
 	Free(w);
 
@@ -172,11 +169,11 @@ void registry_test(UINT num, char **arg)
 	RegistryCheck(&ctx, RegistrySetRaw(key, L"empty", REG_SZ, L"", 0) && RegistrySetRaw(key, L"onebyte", REG_SZ, "A", 1),
 		"An empty and a 1-byte REG_SZ are written");
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "empty", false, false);
+	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "empty", false);
 	RegistryCheck(&ctx, RegistryUniIs(w, L""), "MsRegReadStrEx2W reads an empty REG_SZ as an empty string (was ret[-1])");
 	Free(w);
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "onebyte", false, false);
+	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "onebyte", false);
 	RegistryCheck(&ctx, RegistryUniIs(w, L""), "MsRegReadStrEx2W reads a 1-byte REG_SZ as an empty string (was ret[-1])");
 	Free(w);
 
@@ -184,12 +181,14 @@ void registry_test(UINT num, char **arg)
 	RegistryCheck(&ctx, RegistryStrIs(s, ""), "MsRegReadStr reads an empty REG_SZ as an empty string");
 	Free(s);
 
-	// (3) A REG_SZ without a terminator reads as NULL; a REG_MULTI_SZ reads as its first string
+	// (3) A REG_SZ without a terminator reads as NULL, or as exactly its text when RegQueryValueExW
+	// returns it terminated (it does in the AddressSanitizer build); never past its data, which the
+	// AddressSanitizer job checks. A REG_MULTI_SZ reads as its first string
 	RegistryCheck(&ctx, RegistrySetRaw(key, L"noterm", REG_SZ, no_term, sizeof(no_term)) &&
 		RegistrySetRaw(key, L"multi", REG_MULTI_SZ, multi, sizeof(multi)), "A REG_SZ without a terminator and a REG_MULTI_SZ are written");
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "noterm", false, false);
-	RegistryCheck(&ctx, w == NULL, "MsRegReadStrEx2W reads a REG_SZ without a terminator as NULL");
+	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "noterm", false);
+	RegistryCheck(&ctx, w == NULL || RegistryUniIs(w, L"AB"), "MsRegReadStrEx2W reads a REG_SZ without a terminator as NULL or as exactly its text");
 	Free(w);
 
 	s = MsRegReadStr(REG_CURRENT_USER, key, "multi");
@@ -199,7 +198,7 @@ void registry_test(UINT num, char **arg)
 	// (4) A key that grants its owner reading, setting values and DELETE only
 	RegistryCheck(&ctx, RegistryMakeRestricted(restricted), "The restricted key is made (KEY_READ, KEY_SET_VALUE and DELETE for its owner)");
 
-	h = NULL;
+	HKEY h = NULL;
 	open_all = RegOpenKeyExA(HKEY_CURRENT_USER, restricted, 0, KEY_ALL_ACCESS, &h);
 	if (open_all == ERROR_SUCCESS)
 	{
@@ -223,7 +222,7 @@ void registry_test(UINT num, char **arg)
 	// (5) Nothing left behind
 	RegistryDeleteKeys(key, restricted);
 
-	RegistryCheck(&ctx, MsRegIsKeyEx2(REG_CURRENT_USER, key, false, false) == false, "The keys of the test are deleted");
+	RegistryCheck(&ctx, MsRegIsKeyEx2(REG_CURRENT_USER, key, false) == false, "The keys of the test are deleted");
 
 	if (ctx.NumFailed == 0)
 	{
