@@ -2,21 +2,28 @@ param([string] $BinDir = 'build\controller')
 
 $ErrorActionPreference = 'Stop'
 
-# ranz-controller as a Windows service (SDN-2, #178). Installed with rqlited as its sidecar, the
-# service must start, take an intent from `ranz apply`, push generation 1 to a simulated node
-# (ranz-nodesim) and record its acknowledgement, keep the intent and the acknowledged generation
-# across a restart of the service, and write its start and stop to the Application log (event IDs
-# 1 and 2 of cmd/ranz-controller/service_windows.go) with no failure entry (event ID 3).
+# ranz-controller as a Windows service (SDN-2, #178). Installed with rqlited as its sidecar and
+# with plain HTTP on, the service must:
+# - serve the API and the control stream on TCP 443, told apart by ALPN;
+# - take an intent from `ranz apply`, push generation 1 to a simulated node (ranz-nodesim) and
+#   record its acknowledgement;
+# - redirect plain HTTP to HTTPS on 443 and serve nothing else there;
+# - keep the intent, the acknowledged generation and its keys across a restart of the service:
+#   the same Noise static key (a node with the key it had before still connects) and the same TLS
+#   key (the same fingerprint) from the key storage provider;
+# - write its start and stop to the Application log (event IDs 1 and 2 of
+#   cmd/ranz-controller/service_windows.go) with no failure entry (event ID 3).
 
 $bin = (Resolve-Path $BinDir).Path
 $controller = Join-Path $bin 'ranz-controller.exe'
 $ranz = Join-Path $bin 'ranz.exe'
 $nodesim = Join-Path $bin 'ranz-nodesim.exe'
 
-# serviceName of cmd/ranz-controller, the default -api-listen and -control-listen
+# serviceName of cmd/ranz-controller, the default -listen, and -http-listen as this check sets it
 $service = 'ranz-controller'
-$api = 'http://127.0.0.1:7080'
-$control = '127.0.0.1:7443'
+$api = 'https://127.0.0.1'
+$control = '127.0.0.1:443'
+$plain = '127.0.0.1:80'
 
 $data = Join-Path $env:RUNNER_TEMP 'ranz-controller-data'
 $work = Join-Path $env:RUNNER_TEMP 'ranz-controller-check'
@@ -78,11 +85,17 @@ function Show-Diagnostics {
 }
 
 try {
-	Write-Host (Invoke-Checked $controller @('install', '-data', $data, '-rqlited', $env:RQLITED))
+	Write-Host (Invoke-Checked $controller @('install', '-data', $data, '-rqlited', $env:RQLITED, '-http-listen', $plain))
 	Start-Service -Name $service
 	Wait-Api
 	$status = Invoke-Ranz @('status')
-	Write-Host "controller key $($status.publicKey), control stream on $($status.controlAddress)"
+	Write-Host "controller key $($status.publicKey), TLS fingerprint $($status.tlsFingerprint), control stream on $($status.controlAddress)"
+	if (-not $status.tlsFingerprint) { throw 'the status names no TLS fingerprint' }
+
+	# Plain HTTP only redirects: 301 to the same path over HTTPS on 443
+	$redirect = (& curl.exe -s -o NUL -w '%{http_code} %{redirect_url}' "http://$plain/api/v1/status")
+	Write-Host "plain HTTP: $redirect"
+	if ($redirect -ne '301 https://127.0.0.1/api/v1/status') { throw "plain HTTP answered '$redirect', not a 301 to https://127.0.0.1/api/v1/status" }
 
 	$key = Join-Path $work 'node.key'
 	$pub = (Invoke-Checked $nodesim @('-key', $key, '-pubkey')).Trim()
@@ -117,6 +130,13 @@ try {
 	$node = Wait-Acked 'branch-1' 1
 	if ($node.generation -ne 1) { throw "branch-1 is at generation $($node.generation) after the restart, not 1" }
 	Write-Host "after the restart: $($names -join ', '); branch-1 at generation $($node.generation), acknowledged $($node.ackedGeneration)"
+	$after = Invoke-Ranz @('status')
+	if ($after.publicKey -ne $status.publicKey) { throw "the Noise static key changed across the restart: $($status.publicKey), then $($after.publicKey)" }
+	if ($after.tlsFingerprint -ne $status.tlsFingerprint) { throw "the TLS key changed across the restart: $($status.tlsFingerprint), then $($after.tlsFingerprint)" }
+	# The node still opens the stream with the controller key it knew before the restart
+	$again = Invoke-Checked $nodesim @('-key', $key, '-controller', $control, '-controller-key', $status.publicKey, '-until', '1', '-timeout', "${waitSeconds}s")
+	if ((($again.Trim() -split "`n")[0] | ConvertFrom-Json).generation -ne '1') { throw "after the restart the node did not get generation 1: $again" }
+	Write-Host 'after the restart: the same Noise static key and TLS key, and the node connects with the key it knew'
 
 	Stop-Service -Name $service
 	$started = @(Get-ServiceEvents | Where-Object { $_.Id -eq 1 })
