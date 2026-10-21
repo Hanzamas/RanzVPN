@@ -9,8 +9,6 @@
 
 #include <bcrypt.h>
 
-#include <openssl/evp.h>
-
 // Longest RC4 key (bytes) that CNG turns into real RC4. CNG accepts longer keys without an error
 // but then produces a keystream that is not RC4, so NewCrypt() does not give it those.
 #define	RC4_MAX_KEY_SIZE	64

@@ -10,8 +10,6 @@
 
 #include <bcrypt.h>
 
-#include <openssl/sha.h>
-
 static void Internal_Sha0(unsigned char *dest, const unsigned char *src, const UINT size);
 
 // Hash with a CNG provider. digest_size is the digest size of the algorithm; the source may be the
