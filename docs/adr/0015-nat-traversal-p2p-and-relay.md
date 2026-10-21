@@ -25,3 +25,9 @@ An external suggestion Hilmi pasted said: do not write port prediction yourself,
 - Control-plane messages for candidate exchange and relay assignment.
 - Metrics on the direct-versus-relay ratio per deployment, which decide later whether port prediction for symmetric NAT is worth adding.
 - STUN servers are needed for server-reflexive candidates; the optional `StunServer` setting from the slim-down spec (ticket #20) is the forerunner of this, and the control plane can point nodes at Ranz-operated or public STUN servers per deployment.
+
+## Amendment 2026-10-21: libjuice and libplum are MPL-2.0, not MIT
+
+Correction of fact (Hilmi: "ya ya ya semua"). Decision 1, decision 5 and the first consequence call libjuice and libplum MIT. Both are MPL-2.0, as the licence facts of 2026-10-21 in ADR-0036 record.
+- **MPL-2.0 is file-level copyleft.** It is fine for the proprietary product as long as the library files we modify are published; Ranz's own files stay proprietary (ADR-0036 decision 6).
+- **The libraries stay:** libjuice for ICE (decision 1) and libplum for port mapping (decision 5).

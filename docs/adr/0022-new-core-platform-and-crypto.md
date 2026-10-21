@@ -1,6 +1,6 @@
 # ADR-0022: New-core platform, threading, crypto, adapters and the strangler plan
 
-**Status:** Accepted (2026-10-13, from the grilling; "windows native total yang fast and furious", ADR-0008). This ADR consolidates the platform decisions for the new core and builds on ADR-0005 (transport), ADR-0006 (tiers), ADR-0007 (Schannel), ADR-0010 (routing), ADR-0018 (packet I/O) and ADR-0019 (VLAN and policy), each now Accepted. The security and anti-censorship design is ADR-0023.
+**Status:** Accepted (2026-10-13, from the grilling; "windows native total yang fast and furious", ADR-0008). This ADR consolidates the platform decisions for the new core and builds on ADR-0005 (transport), ADR-0006 (tiers), ADR-0007 (Schannel), ADR-0010 (routing), ADR-0018 (packet I/O) and ADR-0019 (VLAN and policy), each now Accepted. The security and anti-censorship design is ADR-0023. The SDN spec #176 amends the control plane, step 6, step 8 and the ports (amendment of 2026-10-20). Amended 2026-10-21: TCP splitting on the Windows TCP stack, the node identity key in the software KSP, server and controller keys in the CNG KSP with explicit Schannel key exchange groups.
 
 ## Context
 
@@ -27,15 +27,15 @@ Per-core run-to-completion:
 - **Schannel TLS 1.3 and CNG only.** OpenSSL, liboqs and oqs-provider are **removed from the new core** (they stay in the slim fork).
 - **AES-GCM only.** ChaCha20-Poly1305 is off by default in both Schannel and msquic (Schannel treats it as an admin-level, system-wide opt-in and msquic blocks it on the Schannel path).
 - **Session layer: Noise_IK** with **X25519 via CNG** (`BCRYPT_ECDH_ALGORITHM` with `BCRYPT_ECC_CURVE_25519`), SHA-256, and **HKDF via CNG**. The CNG X25519 blob format and clamping are undocumented, so the implementation is tested against the RFC 7748 vectors on both x64 and arm64.
-- **Node identity key in a CNG KSP** (TPM-backable), used for Noise static-key authentication.
-- **Certificates via CryptoAPI:** ECDSA P-256 self-signed certificates, PFX import; ACME is a later addition, not core work for v1. Certificate keys live in a CNG KSP (`PKCS12_ALWAYS_CNG_KSP`) so TLS 1.3 server signatures (RSA-PSS / ECDSA) work.
-- **Post-quantum** is a CNG ML-KEM hybrid with X25519, used where the OS provides it (Windows 11 24H2 / Server 2025 and later) in both TLS and Noise; it is otherwise a later addition, not a blocker.
+- **Node identity key in a CNG KSP** (TPM-backable), used for Noise static-key authentication. *(Amended 2026-10-21 below: the software KSP, because the TPM provider has no curve25519.)*
+- **Certificates via CryptoAPI:** ECDSA P-256 self-signed certificates, PFX import; ACME is a later addition, not core work for v1. Certificate keys live in a CNG KSP (`PKCS12_ALWAYS_CNG_KSP`) so TLS 1.3 server signatures (RSA-PSS / ECDSA) work. *(Amended 2026-10-21 below: server and controller keys always live in the CNG KSP, which closes the legacy-CSP question of #45.)*
+- **Post-quantum** is a CNG ML-KEM hybrid with X25519, used where the OS provides it (Windows 11 24H2 / Server 2025 and later) in both TLS and Noise; it is otherwise a later addition, not a blocker. *(Amended 2026-10-21 below: Schannel's key exchange groups are set explicitly, X25519MLKEM768 first.)*
 - The transport-security layering, key separation and forward secrecy are specified in ADR-0023 (since 2026-10-15: single encryption by QUIC/TLS, Noise for identity bound to the outer session).
 
 ### Roles and SE-VPN compatibility
 
-- **One node binary** with roles: `server`, `client` (cascade), `bridge`, `controller`, `relay`. There is **no separate client product**.
-- The **legacy SE-VPN TCP listener is dropped once the new transport works**. SE-VPN interoperability is tested against the pinned `main-oracle` releases (ADR-0017), not an in-process legacy listener kept alive inside the new core.
+- **One node binary** with roles: `server`, `client` (cascade), `bridge`, `controller`, `relay`. There is **no separate client product**. *(Since the amendment of 2026-10-20 below: the `controller` role leaves the node; the controller is the separate `ranz-controller` service, ADR-0026.)*
+- The **legacy SE-VPN TCP listener is dropped once the new transport works**. SE-VPN interoperability is tested against the pinned `main-oracle` releases (ADR-0017), not an in-process legacy listener kept alive inside the new core. *(SE-VPN returns after v1 only in the separate `ranz-compat` sidecar, amendment of 2026-10-20 below.)*
 
 ### Configuration store
 
@@ -45,17 +45,17 @@ Per-core run-to-completion:
 
 - **L3: Wintun** (default, Accepted in ADR-0009).
 - **L2:** the Microsoft **KM-TEST Loopback Adapter** (ADR-0018 decision 4), a Hyper-V network, or a physical NIC (SeLow, Npcap, or XDP, per the ADR-0018 backend matrix).
-- **Windows 11 client L2** is unproven: Microsoft documents and tests XDP only on Server. Run the XDP spike artifact by hand once in a Windows 11 VM; if it fails, the client L2 fallback is **tap-windows6**. A Ranz-built L2 driver stays crossed out (ADR-0018).
+- **Windows 11 client L2** is unproven: Microsoft documents and tests XDP only on Server. Run the XDP spike artifact by hand once in a Windows 11 VM; if it fails, the client L2 fallback is **tap-windows6**. *(Superseded by the ADR-0002 amendment of 2026-10-21: no by-hand run; Server 2025 CI, run-time fallback to SeLow.)* A Ranz-built L2 driver stays crossed out (ADR-0018).
 - **arm64 is L3 only** until a production-signed arm64 XDP runtime exists (today's arm64 runtimes are test-signed, which needs Secure Boot off and cannot ship).
 - **XDP: ship on the XDP 1.4 rule API** (`XdpCreateProgram`, supported until 2028-01-29), which is the only XDP path that captures the frames the OS sends. The **eBPF path is rejected for now**: the `spike/xdp-ebpf` result (`spike-xdp-ebpf-result.md`) is conclusive that eBPF for Windows has no TX-inspect hook (every program attaches to `{L2, RX, INSPECT}`), and no production-signed eBPF runtime exists. Finish the eBPF spike in parallel and switch only when eBPF-for-Windows installs cleanly and is production-signed. **Re-verify the `xdp.sys` signature on a Server 2022 VM with Secure Boot on and test signing off before ADR-0018 decision 4 is treated as final.** XDP installs via a separate `Install-RanzXdp.ps1`, not bundled in the MSI for v1.
 - **KM-TEST details:** a per-adapter locally administered MAC derived from the node id and the network id (so two adapters on one segment do not share a MAC); forward ARP, IGMP, LLMNR and NetBIOS chatter and rate-limit broadcast per VLAN; add broadcast, multicast and 802.1Q-tagged injection to the spike.
 - **QUIC accelerated through the msquic XDP datapath** (ADR-0018 decision 2): **Accepted, default off, Server x64 only** — one flag, no Ranz AF_XDP code.
-- **QTIP** (ADR-0018 decision 5): strangler step 7, default port **8443** (both TCP and UDP reserved, configurable), proven with a two-VM spike.
+- **QTIP** (ADR-0018 decision 5): strangler step 7, default port **8443** (both TCP and UDP reserved, configurable), proven with a two-VM spike. *(Superseded by the ADR-0002 amendment of 2026-10-21: two node processes on one CI runner.)*
 - **msquic distribution:** ship the official signed `msquic.dll` (Schannel build), pinned, for x64 and arm64.
 
 ### Control plane and routing
 
-- A **`controller` role** in the node binary: one active per deployment plus a passive standby.
+- A **`controller` role** in the node binary: one active per deployment plus a passive standby. *(Superseded by the amendment of 2026-10-20 below: a separate Go service with rqlite, one member by default and 3 or 5 members for HA, ADR-0026.)*
 - **protobuf via nanopb (C)** on the Noise control stream; **no gRPC in the core**.
 - **BGP via a Go sidecar `ranz-bgp`** that embeds GoBGP as a library (ADR-0010). The core talks to the sidecar over a **named pipe with JSON** (announce, withdraw, learned routes); the core installs learned routes into Windows through IP Helper. It is an optional MSI feature, built in CI (Go cross-compiled for x64 and arm64), and spiked on Windows when L3 networks land (strangler step 7). **No RRAS.**
 
@@ -76,9 +76,9 @@ Each step is interop-tested against the oracle (ADR-0017).
 3. The node `client` role (L2 on KM-TEST + XDP, L3 on Wintun), replacing Cascade/Link for new peers.
 4. The new L2 switch with VLAN and the policy engine (ADR-0019), replacing Hub forwarding.
 5. Control plane, `relay` role, ICE (libjuice) and port mapping (libplum).
-6. L3 routed networks (IP Helper routes, WinNAT).
+6. L3 routed networks (IP Helper routes, WinNAT). *(Without WinNAT since the amendment of 2026-10-20 below: NAT in the data plane and three egress tiers.)*
 7. GoBGP sidecar, QTIP, the tier-3 mimicry sidecar (ADR-0023) and the CDN / WebSocket path.
-8. Retire the legacy listener, vpncmd and OpenSSL, together with the slim fork.
+8. Retire the legacy listener, vpncmd and OpenSSL, together with the slim fork. *(They still leave the node; the frozen slim-fork Cedar lives on after v1 only as `ranz-compat`, amendment of 2026-10-20 below.)*
 
 **Before step 1**, do the perf work that the surviving hub needs: ticket #31 Q2 (IP table expiry) and the D2 back-pressure move. Skip D1 (flooding), because the new switch at step 4 replaces it.
 
@@ -87,7 +87,7 @@ Each step is interop-tested against the oracle (ADR-0017).
 - **Enrollment:** username/password checked by the existing Sam, plus Noise static-key pinning on first login (TOFU). Admin-issued one-time join tokens are a later addition. *(Password hashing changed 2026-10-19, see the amendment below: PBKDF2-SHA256 via CNG, not Sam's SHA-0.)*
 - **IPv6:** full dual-stack in the new core (transport, adapters and policy).
 - **v1 scale target (benchmark goal): 10,000 sessions per node and 10 Gbps.** Larger scale comes from many nodes plus the GoBGP sidecar, not from one bigger node.
-- **Non-Windows clients** are served by a standard-protocol plugin transport in phase 2, out of v1.
+- **Non-Windows clients** are served by a standard-protocol plugin transport in phase 2, out of v1. *(Since 2026-10-20: other platforms join through the compat protocols of `ranz-compat` in the Legacy phase, ADR-0037.)*
 
 ## Consequences
 
@@ -95,7 +95,7 @@ Each step is interop-tested against the oracle (ADR-0017).
 - Removing the hub-wide forwarding lock and moving to read-mostly tables is a correctness risk concentrated in the new switch (step 4); the harness frame tests and the benchmark are the net.
 - Depending on the XDP rule API means tracking its deprecation: XDP 1.4 is pinned and supported to 2028-01-29, msquic's own datapath still uses the rule API, and SeLow on the loopback adapter stays the fallback behind the Local Bridge backend interface (ADR-0018). The eBPF path is re-checked on every XDP release.
 - arm64 nodes run L3 only until Microsoft ships a production-signed arm64 XDP runtime, so an arm64 deployment that needs L2 has no virtual adapter yet.
-- The control plane's own design (route advertisement, approval, health checks, ECMP, controller failover) still needs its own spec beyond this ADR; nanopb schemas and the named-pipe sidecar protocol are fixed here.
+- The control plane's own design (route advertisement, approval, health checks, ECMP, controller failover) still needs its own spec beyond this ADR; nanopb schemas and the named-pipe sidecar protocol are fixed here. *(Specified since 2026-10-20 by the SDN spec #176 in ADR-0025 to ADR-0027, except the approval step for advertised subnets, which #176 does not mention; since 2026-10-21 the `Gateway` resource is the approval, ADR-0010 amendment of that date.)*
 - The estimated size of the new core is 15k–25k lines of new code rather than ~150k, because the data path is the only hand-written part; everything the OS provides is called, not reimplemented (ADR-0008).
 
 ## Amendment 2026-10-14: native-first rule for the new core
@@ -120,7 +120,7 @@ Maintainer decision (Hilmi: "ya setuju"). This replaces the tap-windows6 fallbac
 CI benchmark on the same KM-TEST adapter (branch spike/selow-vs-xdp, Server 2022/2025, 1500 B): XDP TX capture 1.24-1.47 Mpps on about 1.1-1.4 cores, RX inject 337-445 kpps; SeLow TX capture 0.93-1.25 Mpps on 4 cores, RX inject about 70 kpps (WriteFile about 14 us per frame).
 Maintainer decision (Hilmi: "(b) XDP default di x64"): this supersedes the client line of the 2026-10-14 amendment.
 - Server: XDP is the default for virtual L2 AND for the physical-NIC bridge (XDP plus Npcap for promiscuous until xdp-for-windows #44); SeLow is not viable at 10 Gbit/s and stays only as a compatibility fallback.
-- Client x64: XDP on KM-TEST is the default L2 backend (needs the XDP runtime; Microsoft does not yet support XDP on client SKUs, so the manual Windows 11 test gates it); SeLow on KM-TEST is the fallback when XDP is not installed or fails.
+- Client x64: XDP on KM-TEST is the default L2 backend (needs the XDP runtime; Microsoft does not yet support XDP on client SKUs, so the manual Windows 11 test gates it, superseded by the ADR-0002 amendment of 2026-10-21: run-time detection instead); SeLow on KM-TEST is the fallback when XDP is not installed or fails.
 - Client arm64: SeLow on KM-TEST (no production-signed arm64 XDP runtime yet). *(Corrected in the amendment of 2026-10-21 below: there is no arm64 SeLow package.)*
 - Known XDP risks to handle in CORE-S3-2: TX inspect with USO blocks senders instead of dropping when the consumer lags; unbinding ms_xdp can hang after heavy load; one unreproduced RX-inject stall followed by WSAENOBUFS. Mitigations: a dedicated drain thread per queue, bounded rings, health check plus reattach, unbind only after all sockets close with a timeout, a CI soak test, and upstream issues.
 
@@ -137,7 +137,7 @@ Maintainer decision (Hilmi: "catat"). One QUIC connection is processed on one ms
 Maintainer decision (Hilmi: "ya"). Tunnelling TCP inside the TCP-443 fallback causes retransmission amplification on lossy links; it cannot be removed while the outer transport is TCP.
 1. Avoid it: QUIC over UDP stays the primary transport; TLS/TCP 443 is used only when UDP is blocked.
 2. v1 mitigations on the TCP path: an active queue (CoDel-style) at the tunnel ingress drops inner packets whose queueing delay exceeds the target instead of buffering them, so inner TCP backs off early; multi-connection tunnels (previous amendment) confine a loss stall to the flows of one connection; the outer TCP uses BBR2 where Windows offers it (to verify on Windows 11 and Server 2022/2025), otherwise the system default.
-3. Phase 2 option for L3 mode: TCP splitting. The client node terminates inner TCP flows with a user-mode TCP stack and sends only the byte stream through the tunnel, which removes the meltdown entirely; it applies to L3 TCP traffic only, not to L2 frames, and changes end-to-end ACK semantics, so it is opt-in.
+3. Phase 2 option for L3 mode: TCP splitting. The client node terminates inner TCP flows with a user-mode TCP stack and sends only the byte stream through the tunnel, which removes the meltdown entirely; it applies to L3 TCP traffic only, not to L2 frames, and changes end-to-end ACK semantics, so it is opt-in. *(Amended 2026-10-21 below: the Windows TCP stack terminates the flows, reached through a WinDivert redirect to a local listener; no user-mode TCP stack.)*
 
 ## Amendment 2026-10-15: BBR congestion control in v1
 
@@ -164,11 +164,39 @@ Maintainer decision (Hilmi: "catat, batching optimal di ring XDP"). A KM-TEST lo
 - **No adapter bonding.** Windows client SKUs have no native NIC teaming (LBFO is Server-only and deprecated), real bonding needs an own kernel driver (crossed out, ADR-0018), and spreading one L2 segment over several adapters in user mode gives several MACs/IPs per network, ARP and gateway confusion and Local Bridge loops.
 - **Parallelism comes from the design instead:** one adapter per network/VLAN (a client in four networks has four KM-TEST adapters, four queues, no loop), multi-connection tunnels on the transport (amendment 2026-10-15), multi-queue physical NICs (RSS) or Hyper-V networks (VMQ/vRSS) on servers, and L3 mode (Wintun) for throughput-heavy single networks.
 - **XDP ring batching is a required optimisation in CORE-S3:** reserve and submit descriptors in bulk (XskRingProducerReserve/Submit, XskRingConsumerReserve/Release with batches of tens to hundreds of frames), one XskNotifySocket poke or wait per batch instead of per frame, fill and completion rings recycled in bulk, rings and UMEM sized for bursts. Batch size is adaptive: flush at N frames or after a short timeout (tens of microseconds) so latency stays bounded at low load.
-- **Measure on real hardware** in CORE-S3 (batch sizes 1/16/64/256; pps and CPU per core for TX capture and RX inject). Target: RX inject of at least 1 Mpps on one KM-TEST adapter. Revisit this amendment only if a single network on a client still needs more than one adapter can carry after batching.
+- **Measure on real hardware** (superseded by the ADR-0002 amendment of 2026-10-21: measured on CI runners as a regression number) in CORE-S3 (batch sizes 1/16/64/256; pps and CPU per core for TX capture and RX inject). Target: RX inject of at least 1 Mpps on one KM-TEST adapter. Revisit this amendment only if a single network on a client still needs more than one adapter can carry after batching.
 
 ## Amendment 2026-10-21: no arm64 SeLow package
 
 Correction of fact (Hilmi: "ya gas"). The 2026-10-14 and 2026-10-15 amendments name SeLow as an arm64 client backend. The repository ships SeLow for x64 only (`src/bin/hamcore/DriverPackages/SeLow_Win10/x64`), and ADR-0009 and ADR-0013 record that there is no arm64 package and that SeLow cannot be rebuilt for arm64 without a driver-signing pipeline of our own.
 - **Client arm64 is L3 only** (Wintun), as the Decision ("arm64 is L3 only") and the Consequences already state, until a production-signed arm64 XDP runtime exists. An arm64 client that needs L2 has no backend until then.
 - **Client x64 is unchanged:** XDP on KM-TEST by default, SeLow on KM-TEST as the fallback.
+
+## Amendment 2026-10-20: controller service with rqlite, step 6 without WinNAT, SE-VPN only through `ranz-compat`, the front door on 443
+
+Maintainer decision, from the SDN spec #176 that Hilmi filed ("controller as a service with rqlite instead of an active and passive standby role; strangler step 6 without WinNAT; step 8 still retires the legacy SE-VPN listener from the node, and SE-VPN returns only in the Legacy phase as `ranz-compat`; the front door on 443"). #176 builds on strangler steps 5 to 7. It supersedes CORE-S5-1 (#77, the controller role with a passive standby) and CORE-S6-2 (#81, control-plane route distribution), and amends CORE-S6-1 (#80).
+- **Controller.** The `controller` role leaves the node; the node roles are `server`, `client`, `bridge` and `relay` (ADR-0011 amendment of 2026-10-20). `ranz-controller` is a Go service on Windows or Linux with rqlite as a sidecar store: a single member by default, a 3 or 5 member Raft cluster for HA, and no passive standby (ADR-0026). nanopb on the Noise control stream stays the transport; it carries desired state by Generation, with deltas and acknowledgements (ADR-0027).
+- **Configuration store.** The node keeps `winsqlite3` for its local state. The intent lives only in the controller.
+- **Strangler step 6** builds L3 routed networks with IP Helper routes and without WinNAT: 1:1 NAT and SNAT per VRF in the node's data plane, and internet egress in three tiers (RRAS NAT on Server, WinNAT only where Hyper-V is present and no NetNat exists, a proxy on the Windows TCP/IP stack everywhere else; ADR-0025). CORE-S6-1 (#80) follows this instead of WinNAT.
+- **Strangler step 8 still retires the legacy SE-VPN listener from the node.** SE-VPN returns only in the Legacy phase, after v1, as the separate `ranz-compat` sidecar: the frozen slim-fork Cedar with OpenSSL (ADR-0037). The node and the new protocol stay free of SE-VPN compatibility and of OpenSSL.
+- **The front door on 443.** Publicly a node needs only TCP 443 and UDP 443. TCP 443 has one front door that peeks the first bytes with `MSG_PEEK`, routes by SNI and ALPN or by the first bytes, and hands each accepted socket to its owner process with `WSADuplicateSocketW`, proxying nothing after the handoff. UDP 443 stays QUIC only, owned by msquic (ADR-0035).
+- **Policy engine.** The conntrack table bounded per network becomes a conntrack quota per VRF, with per-protocol timeouts in the intent (ADR-0029).
+- **Scale.** The per-node target of 10,000 sessions and 10 Gbps stays. One controller cluster targets 10,000 nodes, 1,000 VRFs and 100,000 routes.
+
+## Amendment 2026-10-21: TCP splitting on the Windows TCP stack
+
+Maintainer decision (Hilmi: "ya ya ya semua"). Item 3 of the TCP-over-TCP amendment of 2026-10-15 stays a phase-2 option for L3 mode, without a user-mode TCP stack of our own.
+- **The Windows TCP stack terminates the inner TCP flows.** Overlay TCP flows are redirected to a local listener with WinDivert, the same mechanism as egress tier 3 (ADR-0025), and only the byte stream goes through the tunnel.
+- **It stays opt-in** and applies to L3 TCP traffic only, as before.
+- **No own user-mode TCP stack is added**, so ADR-0014 holds. CORE-P2-3 (#94) is updated to match.
+
+## Amendment 2026-10-21: the node identity key in the software KSP
+
+Maintainer decision (Hilmi: "ya ya ya semua"). The node identity key stays in the software KSP (Microsoft Software Key Storage Provider). The TPM provider has no curve25519, and the Noise suite is X25519, so the key cannot be TPM-held as the crypto section's "TPM-backable" suggests. A TPM-held wrapping key for the identity key is an option after v1.
+
+## Amendment 2026-10-21: server and controller keys in the CNG KSP, explicit Schannel key exchange groups
+
+Maintainer decision (Hilmi: "ya ya ya semua"). CORE-S2-1 (#69) is updated to match.
+- **Server and controller keys always live in the CNG KSP.** A PFX is imported into the KSP, never into a legacy CSP. The question of spec #45, whether Schannel TLS 1.3 falls back to 1.2 or fails when the server key sits in a legacy CSP, is therefore closed: the case does not arise.
+- **Schannel's key exchange groups are set explicitly:** X25519MLKEM768 first, X25519 as the fallback, because Schannel does not pick the hybrid by default on builds 26100 and 26200.
 

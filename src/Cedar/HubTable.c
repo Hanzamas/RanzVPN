@@ -927,26 +927,77 @@ void DeleteExpiredMacTableEntry(HASH_LIST *h) {
 	Free(pp);
 }
 
-void DeleteExpiredIpTableEntry(LIST *o) {
-	UINT num_kept = 0;
-	if (o == NULL)
+// The expiry state of an IP table without entries
+void IpTableExpiryInit(IP_TABLE_EXPIRY *x) {
+	if (x == NULL)
 		return;
 
-	// This runs on every new IP entry, under the hub-wide MacHashTable lock. Read the clock once (Tick64 takes
-	// a global lock) and compact the array in one pass: a Delete per expired entry searched and shifted the
-	// whole array each time, O(n * expired). The kept entries keep their order, so a sorted table stays sorted
-	// and DeleteHighestIpTableEntry still evicts the same entry.
-	UINT64 now = Tick64();
+	x->Oldest = x->OldestDhcp = IP_TABLE_NO_ENTRY;
+	x->Expired = NULL;
+}
+
+// Entry e of the table got a new UpdatedTime or became DhcpAllocated: lower the bound of its kind to its time. A
+// frame reads the clock before it takes the table lock, so the time it gives an entry can be older than the bound
+void IpTableExpiryNote(IP_TABLE_EXPIRY *x, IP_TABLE_ENTRY *e) {
+	UINT64 *oldest = (e->DhcpAllocated ? &x->OldestDhcp : &x->Oldest);
+
+	if (e->UpdatedTime < *oldest)
+		*oldest = e->UpdatedTime;
+}
+
+// Whether an entry of the table can have expired by now. False means that an expiry pass would delete nothing:
+// every entry of a kind was updated at the bound of its kind or later, and the bound plus the expiry time of the
+// kind is still ahead
+bool IpTableExpiryDue(IP_TABLE_EXPIRY *x, UINT64 now) {
+	if (x->Oldest != IP_TABLE_NO_ENTRY && (x->Oldest + (UINT64)IP_TABLE_EXPIRE_TIME) <= now)
+		return true;
+
+	if (x->OldestDhcp != IP_TABLE_NO_ENTRY && (x->OldestDhcp + (UINT64)IP_TABLE_EXPIRE_TIME_DHCP) <= now)
+		return true;
+
+	return false;
+}
+
+void DeleteExpiredIpTableEntry(LIST *o, IP_TABLE_EXPIRY *x, UINT64 now) {
+	UINT num_kept = 0;
+	if (o == NULL || x == NULL)
+		return;
+
+	// This runs under the hub-wide MacHashTable lock, so it only moves pointers. It compacts the array in one pass:
+	// a Delete per expired entry searched and shifted the whole array each time, O(n * expired). The kept entries
+	// keep their order, so a sorted table stays sorted and DeleteHighestIpTableEntry still evicts the same entry.
+	// The expired entries go on x->Expired, which the caller frees after the lock (FreeIpTableEntries): a Free per
+	// entry under the lock made a mass expiry hold up every session of the hub. The pass also takes the bounds of x
+	// from the kept entries, so that IpTableExpiryDue holds the next pass back until an entry can have expired.
+	// The expiry times are read once; an entry expires as before when its UpdatedTime plus the time of its kind
+	// has come.
+	UINT64 expire_time = (UINT64)IP_TABLE_EXPIRE_TIME;
+	UINT64 expire_time_dhcp = (UINT64)IP_TABLE_EXPIRE_TIME_DHCP;
+
+	x->Oldest = x->OldestDhcp = IP_TABLE_NO_ENTRY;
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
-		if ((e->UpdatedTime + (UINT64)(e->DhcpAllocated ? IP_TABLE_EXPIRE_TIME_DHCP : IP_TABLE_EXPIRE_TIME)) <= now)
-			Free(e);
-		else
+		if ((e->UpdatedTime + (e->DhcpAllocated ? expire_time_dhcp : expire_time)) <= now) {
+			e->NextExpired = x->Expired;
+			x->Expired = e;
+		} else {
+			IpTableExpiryNote(x, e);
 			o->p[num_kept++] = e;
+		}
 	}
 
 	o->num_item = num_kept;
+}
+
+// Free a chain of IP table entries that an expiry pass took out of the table (IP_TABLE_EXPIRY.Expired). Needs no
+// lock: no table holds them any more
+void FreeIpTableEntries(IP_TABLE_ENTRY *e) {
+	while (e != NULL) {
+		IP_TABLE_ENTRY *next = e->NextExpired;
+		Free(e);
+		e = next;
+	}
 }
 
 int CompareIpTable(void *p1, void *p2) {

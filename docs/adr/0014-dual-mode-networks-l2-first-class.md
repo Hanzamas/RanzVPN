@@ -1,6 +1,6 @@
 # ADR-0014: Dual-mode virtual networks: L2 switched (first-class) and L3 routed, one node binary with both backends
 
-**Status:** Accepted (2026-10-11, Hilmi: "yang gw suka itu L2-nya"; LAN gaming and other broadcast / non-IP uses must keep working). Supersedes ADR-0004.
+**Status:** Accepted (2026-10-11, Hilmi: "yang gw suka itu L2-nya"; LAN gaming and other broadcast / non-IP uses must keep working). Supersedes ADR-0004. Amended 2026-10-20: NAT in the data plane and three egress tiers instead of WinNAT, no own TCP/IP stack (SDN spec #176).
 
 ## Context
 
@@ -18,7 +18,7 @@ ADR-0004 recommended an L3-only core with Wintun and treated L2 as an optional a
 ## Consequences
 
 - ADR-0004 is Superseded; its performance analysis remains valid for L3 networks.
-- The L2 data path must avoid SoftEther's sins explicitly: no flooding of unknown unicast across the WAN beyond a bounded learning window, no DHCP relay hacks (IPAM can still be control-plane driven for L2 networks), no user-mode TCP/IP stack (SecureNAT); NAT where needed is WinNAT.
+- The L2 data path must avoid SoftEther's sins explicitly: no flooding of unknown unicast across the WAN beyond a bounded learning window, no DHCP relay hacks (IPAM can still be control-plane driven for L2 networks), no user-mode TCP/IP stack (SecureNAT); NAT where needed is WinNAT. *(NAT is replaced by NAT in the data plane and the three egress tiers, amendment of 2026-10-20 below; the rule against a user-mode TCP/IP stack stays.)*
 - Both adapter families stay in the design: Wintun (Accepted for L3) and a TAP driver (Neo6 versus tap-windows6 still Proposed, ADR-0009). SeLow stays (Accepted).
 - The slim fork's L2 code (Virtual Hub switching, Local Bridge, cascade) becomes the reference for the L2 backend rather than disposable compatibility code.
 - Expected code size of the new core rises compared with the L3-only estimate (50k to 60k) because of the L2 backend, MAC learning and group delivery; no new figure was estimated in the discussion.
@@ -26,3 +26,11 @@ ADR-0004 recommended an L3-only core with Wintun and treated L2 as an optional a
 ## Amendment 2026-10-13: edge BGP is the GoBGP sidecar only (no RRAS)
 
 The 2026-10-13 grilling ruled out RRAS BGP. The decision point above originally read "BGP at the edge via RRAS or GoBGP"; the only edge-BGP path is the **GoBGP sidecar** (`ranz-bgp`, embedding GoBGP as a library, over a local named pipe with JSON), as decided in ADR-0010 and specified for the new core in ADR-0022. RRAS is not used for BGP.
+
+## Amendment 2026-10-20: "WinNAT where needed" becomes the three egress tiers; no own TCP/IP stack
+
+Maintainer decision, from the SDN spec #176 that Hilmi filed ("'WinNAT where needed' becomes the three egress tiers; the ADR-0014 rule against an own user-mode TCP/IP stack stays").
+- **NAT is no longer WinNAT.** 1:1 NAT and SNAT per VRF are done in the node's data plane, and internet egress uses the first of three Egress tiers the host supports: RRAS NAT on Windows Server, WinNAT over one supernet where Hyper-V is present and no NetNat exists yet, and otherwise a proxy (ADR-0025, ADR-0008 amendment of 2026-10-20).
+- **The rule against an own user-mode TCP/IP stack stays.** The tier-3 proxy rewrites the destination to a local listener on the Wintun address, lets the Windows TCP/IP stack terminate the flow and re-dials with ordinary sockets (TCP, UDP, ICMP echo). It writes no TCP/IP stack of its own.
+- **Every Network belongs to one VRF** (ADR-0025). The type of a Network (L2 switched or L3 routed) and its backends are unchanged.
+- An L2 Network carries non-IP EtherTypes unchanged, which the Legacy phase relies on for IPX, NetBEUI, AppleTalk, Profinet and GOOSE (ADR-0037).
