@@ -87,6 +87,9 @@ jobs:
     name: ranz-bgp (Windows ${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
     timeout-minutes: 20
+    env:
+      # ranz-bgp is pure Go; the gcc of the arm64 runner builds x64 code only
+      CGO_ENABLED: '0'
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
@@ -117,6 +120,9 @@ jobs:
     name: ranz-bgp MSI feature (${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
     timeout-minutes: 20
+    env:
+      # ranz-bgp is pure Go; the gcc of the arm64 runner builds x64 code only
+      CGO_ENABLED: '0'
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5

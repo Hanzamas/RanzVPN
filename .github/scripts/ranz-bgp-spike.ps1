@@ -18,6 +18,9 @@ $out = Join-Path $build 'harness-out'
 $bin = Join-Path $build 'gobgp'
 New-Item -ItemType Directory -Force -Path $out, $bin | Out-Null
 
+# ranz-bgp and GoBGP are pure Go; the gcc of the arm64 runner builds x64 code only
+$env:CGO_ENABLED = '0'
+
 Push-Location ranz-bgp
 try {
 	go build -trimpath -o (Join-Path $build 'ranz-bgp.exe') ./cmd/ranz-bgp
