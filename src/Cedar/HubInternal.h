@@ -27,6 +27,8 @@ MAC_TABLE_ENTRY *MacTableLearn(HUB *h, SESSION *s, UCHAR *mac, UINT vlan_id, UIN
 void MacTableFlushSession(HUB *h, SESSION *s);
 IP_TABLE_ENTRY *IpTableLookup(HUB *h, IP *ip);
 void IpTableAddEntry(HUB *h, SESSION *s, IP *ip, UCHAR *mac, bool dhcp_allocated, UINT64 now);
+void IpTableExpiryNote(IP_TABLE_EXPIRY *x, IP_TABLE_ENTRY *e);
+bool IpTableExpiryDue(IP_TABLE_EXPIRY *x, UINT64 now);
 UINT CountSessionIps(HUB *h, SESSION *s, bool v6);
 void LogIpConflict(HUB *h, SESSION *s, IP *ip, IP_TABLE_ENTRY *e, UINT64 now);
 void IpTableFlushSession(HUB *h, SESSION *s);

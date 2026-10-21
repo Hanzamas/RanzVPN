@@ -7,6 +7,9 @@
 #include "Cedar.h"
 #include "LogWriter.h"
 
+// Queued packet log records of one source session from which its thread waits for the log writer (PacketLogWait)
+#define PACKET_LOG_WAIT_RECORDS 30000
+
 struct PACKET_LOG {
 	CEDAR *Cedar;
 	struct PKT *Packet;
@@ -18,7 +21,8 @@ struct PACKET_LOG {
 	SESSION *SrcSession;
 };
 
-bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now);
+bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now, bool *wait);
+void PacketLogWait(SESSION *src_session);
 char *PacketLogParseProc(RECORD *rec);
 void PacketLogFreeProc(void *data);
 UINT CalcPacketLoggingLevel(HUB_LOG *g, PKT *packet);
