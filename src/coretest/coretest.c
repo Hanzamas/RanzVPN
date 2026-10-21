@@ -1,0 +1,206 @@
+// coretest.c
+// Test program of the new core (CORE-F1, #61): the known-answer and certificate tests of the
+// crypto module (src/Core), in a program that links the crypto module and nothing of the slim
+// fork, so that it also shows that the module needs no OpenSSL and no liboqs.
+//
+// Usage: coretest <test> | coretest all. Each named test prints "<TEST> TEST OK" or
+// "<TEST> TEST FAILED" (.github/scripts/coretest.ps1 looks for the first) and the exit code is
+// 0 when every test that ran passed.
+
+#include "coretest.h"
+
+#include <stdarg.h>
+#include <string.h>
+
+// Failed checks of the running test
+static UINT coretest_fails = 0;
+
+bool coretest_check(bool passed, const char *what) {
+	if (passed) {
+		printf("  [PASS] %s\n", what);
+	} else {
+		printf("  [FAIL] %s\n", what);
+		coretest_fails++;
+	}
+
+	return passed;
+}
+
+void coretest_info(const char *format, ...) {
+	va_list args;
+
+	printf("  [INFO] ");
+	va_start(args, format);
+	vprintf(format, args);
+	va_end(args);
+	printf("\n");
+}
+
+// Print a byte string in hex
+static void coretest_print_hex(const char *label, const UCHAR *data, UINT size) {
+	printf("         %s ", label);
+	for (UINT i = 0; i < size; i++)
+		printf("%02x", data[i]);
+	printf("\n");
+}
+
+static int coretest_hex_digit(char c) {
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	return -1;
+}
+
+UINT coretest_unhex(UCHAR *dst, UINT size, const char *hex) {
+	UINT n = 0;
+
+	while (n < size && hex[0] != 0 && hex[1] != 0) {
+		int hi = coretest_hex_digit(hex[0]);
+		int lo = coretest_hex_digit(hex[1]);
+		if (hi < 0 || lo < 0)
+			break;
+		dst[n++] = (UCHAR)(hi * 16 + lo);
+		hex += 2;
+	}
+
+	return n;
+}
+
+bool coretest_check_hex(const void *got, UINT size, const char *expect_hex, const char *what) {
+	UCHAR *expect = (UCHAR *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size + 1);
+	bool same = false;
+
+	if (expect != NULL) {
+		same = strlen(expect_hex) == 2 * (size_t)size && coretest_unhex(expect, size, expect_hex) == size && memcmp(got, expect, size) == 0;
+		if (same == false) {
+			coretest_print_hex("got     ", (const UCHAR *)got, size);
+			printf("         expected %s\n", expect_hex);
+		}
+		HeapFree(GetProcessHeap(), 0, expect);
+	}
+
+	return coretest_check(same, what);
+}
+
+bool coretest_elevated() {
+	HANDLE token = NULL;
+	TOKEN_ELEVATION elevation;
+	DWORD size = 0;
+	bool elevated = false;
+
+	if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+		if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size))
+			elevated = elevation.TokenIsElevated != 0;
+		CloseHandle(token);
+	}
+
+	return elevated;
+}
+
+UINT coretest_scope() {
+	return coretest_elevated() ? CRYPTO_MACHINE : 0;
+}
+
+const char *coretest_scope_name() {
+	return coretest_elevated() ? "machine key set and LocalMachine store (elevated, as the service)" : "current user's key set and store (not elevated)";
+}
+
+// The Windows version and the processor, from RtlGetVersion (GetVersionEx answers what the
+// manifest declares)
+static void coretest_print_system() {
+	typedef LONG(WINAPI * RTL_GET_VERSION)(OSVERSIONINFOW *);
+	OSVERSIONINFOW v;
+	SYSTEM_INFO si;
+
+	ZeroMemory(&v, sizeof(v));
+	v.dwOSVersionInfoSize = sizeof(v);
+	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	RTL_GET_VERSION get_version = ntdll != NULL ? (RTL_GET_VERSION)(void *)GetProcAddress(ntdll, "RtlGetVersion") : NULL;
+	if (get_version != NULL)
+		get_version(&v);
+
+	GetNativeSystemInfo(&si);
+	const char *arch = si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 ? "x64" : si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64 ? "arm64" : "other";
+
+	printf("Windows %lu.%lu build %lu, %s\n", v.dwMajorVersion, v.dwMinorVersion, v.dwBuildNumber, arch);
+}
+
+typedef void(TEST_PROC)();
+
+typedef struct TEST_LIST {
+	char *command_str;
+	TEST_PROC *proc;
+	char *help;
+} TEST_LIST;
+
+static TEST_LIST test_list[] = {
+	{"rand", rand_test, "System random generator: sizes, distinct outputs, the share of zero bytes in 1 MiB."},
+	{"sha256", sha256_test, "SHA-256 against the FIPS 180-2 vectors, in one call and over parts."},
+	{"hmac", hmac_test, "HMAC-SHA256 against the RFC 4231 test cases."},
+	{"hkdf", hkdf_test, "HKDF-SHA256 against RFC 5869 A.1 to A.3, Expand alone, an empty IKM, the output limit."},
+	{"aesgcm", aesgcm_test, "AES-128-GCM and AES-256-GCM against the GCM specification test cases; tag, AAD and nonce tampering."},
+	{"x25519", x25519_test, "X25519 against RFC 7748 5.2 and 6.1, the iterated test, clamping, masking, reduction, low-order points."},
+	{"identity", identity_test, "Node identity key in the software KSP: RFC 7748 6.1 through NCrypt, open, create, delete."},
+	{"mlkem", mlkem_test, "ML-KEM-768 and the X25519MLKEM768 hybrid where the OS has it; omitted, without failing, where not."},
+	{"selfsign", selfsign_test, "Self-signed ECDSA P-256 certificate on a CNG key: signature, algorithms, extensions, key in the KSP."},
+	{"pfx", pfx_test, "PFX of OpenSSL 3 defaults (PBES2, AES-256-CBC, SHA-256 MAC) into the KSP; wrong password and no PFX refused."},
+	{"certstore", certstore_test, "Certificate store: add, find by thumbprint, remove; malformed thumbprints refused."},
+	{"schannel", schannel_test, "Schannel TLS 1.3 in memory with the server key in the KSP: store certificate and PFX, data both ways."},
+};
+
+#define NUM_TESTS (sizeof(test_list) / sizeof(test_list[0]))
+
+// Run one test and print its marker; true when it passed
+static bool coretest_run(TEST_LIST *t) {
+	char upper[64];
+	UINT i;
+
+	for (i = 0; t->command_str[i] != 0 && i < sizeof(upper) - 1; i++)
+		upper[i] = (char)((t->command_str[i] >= 'a' && t->command_str[i] <= 'z') ? t->command_str[i] - 'a' + 'A' : t->command_str[i]);
+	upper[i] = 0;
+
+	printf("%s: %s\n", t->command_str, t->help);
+	coretest_fails = 0;
+	t->proc();
+	printf("%s TEST %s\n\n", upper, coretest_fails == 0 ? "OK" : "FAILED");
+	fflush(stdout);
+
+	return coretest_fails == 0;
+}
+
+int main(int argc, char *argv[]) {
+	UINT failed = 0;
+	bool found = false;
+
+	printf("coretest: tests of the Ranz VPN new core\n");
+	coretest_print_system();
+
+	if (argc < 2) {
+		printf("Usage: coretest <test> | coretest all\n\n");
+		for (UINT i = 0; i < NUM_TESTS; i++)
+			printf(" '%s' : %s\n", test_list[i].command_str, test_list[i].help);
+		return 2;
+	}
+
+	if (CryptoInit() == false)
+		printf("CryptoInit(): the CNG curve25519 provider is missing\n");
+	printf("ML-KEM in CNG: %s\n\n", CryptoMlKemAvailable() ? "yes" : "no");
+
+	for (UINT i = 0; i < NUM_TESTS; i++) {
+		if (_stricmp(argv[1], "all") == 0 || _stricmp(argv[1], test_list[i].command_str) == 0) {
+			found = true;
+			if (coretest_run(&test_list[i]) == false)
+				failed++;
+		}
+	}
+
+	if (found == false) {
+		printf("Invalid test: %s\n", argv[1]);
+		return 2;
+	}
+
+	return failed == 0 ? 0 : 1;
+}

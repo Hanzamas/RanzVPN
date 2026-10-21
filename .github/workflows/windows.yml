@@ -149,7 +149,7 @@ jobs:
     - name: Version resource
       shell: pwsh
       run: |
-        foreach ($exe in 'vpnserver', 'vpncmd', 'vpntest') {
+        foreach ($exe in 'vpnserver', 'vpncmd', 'vpntest', 'coretest') {
           $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path "build/$exe.exe").Path)
           Write-Host "${exe}.exe: Language '$($info.Language)', FileDescription '$($info.FileDescription)', FileVersion '$($info.FileVersion)'"
           if ($info.Language -ne 'English (United States)') { throw "${exe}.exe: version resource language is '$($info.Language)', not English (United States) (0x0409)" }
@@ -175,6 +175,27 @@ jobs:
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
       run: |
         . .github/scripts/vpntest.ps1
+    # The new core's crypto module (CORE-F1, #61): known-answer tests of X25519, AES-GCM, SHA-256,
+    # HMAC, HKDF and the RNG, the identity key, the ML-KEM hybrid, the certificate path and an
+    # in-memory Schannel TLS 1.3 handshake, on x64 and arm64
+    - name: Core crypto tests
+      timeout-minutes: 5
+      shell: pwsh
+      run: |
+        . .github/scripts/coretest.ps1
+    # The new core links no OpenSSL and no liboqs (ADR-0022, CORE-F1 #61): the linker map of
+    # coretest, which links the crypto module and the system libraries only, names no object,
+    # library or symbol of either. src/CMakeLists.txt checks the same at configure time
+    # (ranz_core_check_links).
+    - name: Core links no OpenSSL or liboqs
+      shell: pwsh
+      run: |
+        $map = Get-Content -Raw -LiteralPath build/coretest.map
+        if ($map -notmatch 'corecrypto') { throw 'build/coretest.map names no corecrypto object: not the map of the crypto module' }
+        $hits = @([regex]::Matches($map, '(?im)^.*(openssl|libcrypto|libssl|liboqs|oqsprovider|\bOQS_|\bEVP_|\bOSSL_|\bSSL_CTX_|\bX509_new\b).*$') | ForEach-Object { $_.Value.Trim() })
+        $hits | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
+        if ($hits.Count -gt 0) { throw "coretest links OpenSSL or liboqs: $($hits.Count) lines of build/coretest.map" }
+        Write-Host "build/coretest.map (${{ matrix.platform.ARCHITECTURE }}): corecrypto linked, no OpenSSL or liboqs object, library or symbol"
     - name: Self-check
       timeout-minutes: 10
       shell: pwsh
@@ -295,6 +316,18 @@ jobs:
         # and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a report printed
         # after "NO MEMORY LEAKS".
         $script = '.github/scripts/vpntest.ps1'
+        $out = (cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File $script -BuildDir build 2>&1") | Out-String
+        $code = $LASTEXITCODE
+        Write-Host $out
+        if ($code -ne 0) { throw "$script failed under AddressSanitizer (exit code $code)" }
+        if ($out -match 'ERROR: AddressSanitizer') { throw "AddressSanitizer reported an error while running $script" }
+    - name: coretest under ASan
+      shell: pwsh
+      timeout-minutes: 5
+      run: |
+        # The crypto module's tests of build_and_test (.github/scripts/coretest.ps1) on the
+        # instrumented build, output and stderr captured as for vpntest above
+        $script = '.github/scripts/coretest.ps1'
         $out = (cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File $script -BuildDir build 2>&1") | Out-String
         $code = $LASTEXITCODE
         Write-Host $out

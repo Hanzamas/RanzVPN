@@ -63,8 +63,9 @@ add_subdirectory(vpncmd)
 # vpntest
 add_subdirectory(vpntest)
 
-# The new core (ADR-0022): the crypto module
+# The new core (ADR-0022): the crypto module, and its test program coretest
 add_subdirectory(Core)
+add_subdirectory(coretest)
 
 # libFuzzer targets (RANZ_FUZZ=ON only)
 if(RANZ_FUZZ)
@@ -72,4 +73,4 @@ if(RANZ_FUZZ)
 endif()
 
 # Every target exists now: the new core links no OpenSSL, no liboqs and nothing of the slim fork
-ranz_core_check_links(corecrypto)
+ranz_core_check_links(corecrypto coretest)
