@@ -12,12 +12,10 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 
-static bool CheckEraserDiskFreeSpace(const ERASER *e)
-{
+static bool CheckEraserDiskFreeSpace(const ERASER *e) {
 	wchar_t dir[MAX_SIZE];
 	ULARGE_INTEGER free_size;
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		return true;
 	}
 
@@ -29,33 +27,27 @@ static bool CheckEraserDiskFreeSpace(const ERASER *e)
 
 	// A UNC path needs the trailing backslash
 	UINT len = UniStrLen(dir);
-	if (len != 0 && dir[len - 1] != L'\\')
-	{
+	if (len != 0 && dir[len - 1] != L'\\') {
 		UniStrCat(dir, sizeof(dir), L"\\");
 	}
 
-	if (GetDiskFreeSpaceExW(dir, &free_size, NULL, NULL) == FALSE)
-	{
+	if (GetDiskFreeSpaceExW(dir, &free_size, NULL, NULL) == FALSE) {
 		return true;
 	}
 
-	if (e->MinFreeSpace > free_size.QuadPart)
-	{
+	if (e->MinFreeSpace > free_size.QuadPart) {
 		return false;
 	}
 
 	return true;
 }
 
-static void FreeEraseFileList(LIST *o)
-{
-	if (o == NULL)
-	{
+static void FreeEraseFileList(LIST *o) {
+	if (o == NULL) {
 		return;
 	}
 
-	for (UINT i = 0; i < LIST_NUM(o); i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		ERASE_FILE *f = LIST_DATA(o, i);
 		Free(f->FullPath);
 		Free(f);
@@ -64,37 +56,30 @@ static void FreeEraseFileList(LIST *o)
 	ReleaseList(o);
 }
 
-static void EnumEraseFile(LIST *o, char *dirname)
-{
+static void EnumEraseFile(LIST *o, char *dirname) {
 	char tmp[MAX_PATH];
-	if (o == NULL || dirname == NULL)
-	{
+	if (o == NULL || dirname == NULL) {
 		return;
 	}
 
 	DIRLIST *dir = EnumDir(dirname);
 
-	for (UINT i = 0; i < dir->NumFiles; i++)
-	{
+	for (UINT i = 0; i < dir->NumFiles; i++) {
 		DIRENT *e = dir->File[i];
 		Format(tmp, sizeof(tmp), "%s/%s", dirname, e->FileName);
 		NormalizePath(tmp, sizeof(tmp), tmp);
 
-		if (e->Folder == false)
-		{
+		if (e->Folder == false) {
 			ERASE_FILE *f;
 
-			if (EndWith(tmp, ".log") || EndWith(tmp, ".config") || EndWith(tmp, ".old"))
-			{
+			if (EndWith(tmp, ".log") || EndWith(tmp, ".config") || EndWith(tmp, ".old")) {
 				f = ZeroMalloc(sizeof(ERASE_FILE));
 				f->FullPath = CopyStr(tmp);
 				f->UpdateTime = e->UpdateDate;
 
 				Add(o, f);
 			}
-		}
-		else
-		{
+		} else {
 			EnumEraseFile(o, tmp);
 		}
 	}
@@ -102,17 +87,14 @@ static void EnumEraseFile(LIST *o, char *dirname)
 	FreeDir(dir);
 }
 
-static LIST *GenerateEraseFileList(ERASER *e)
-{
-	if (e == NULL)
-	{
+static LIST *GenerateEraseFileList(ERASER *e) {
+	if (e == NULL) {
 		return NULL;
 	}
 
 	LIST *o = NewListFast(CompareEraseFile);
 
-	for (UINT i = 0; i < e->Targets->NumTokens; i++)
-	{
+	for (UINT i = 0; i < e->Targets->NumTokens; i++) {
 		char dirname[MAX_PATH];
 		Format(dirname, sizeof(dirname), "%s/%s", e->DirName, e->Targets->Token[i]);
 
@@ -124,17 +106,14 @@ static LIST *GenerateEraseFileList(ERASER *e)
 	return o;
 }
 
-static void EraserMain(ERASER *e)
-{
+static void EraserMain(ERASER *e) {
 	bool ok = false;
 	char bs[64];
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		return;
 	}
 
-	if (CheckEraserDiskFreeSpace(e))
-	{
+	if (CheckEraserDiskFreeSpace(e)) {
 		return;
 	}
 
@@ -142,17 +121,14 @@ static void EraserMain(ERASER *e)
 
 	LIST *o = GenerateEraseFileList(e);
 
-	for (UINT i = 0; i < LIST_NUM(o); i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		ERASE_FILE *f = LIST_DATA(o, i);
 
-		if (FileDelete(f->FullPath))
-		{
+		if (FileDelete(f->FullPath)) {
 			ELog(e, "LE_DELETE", bs, f->FullPath);
 		}
 
-		if (CheckEraserDiskFreeSpace(e))
-		{
+		if (CheckEraserDiskFreeSpace(e)) {
 			ok = true;
 			break;
 		}
@@ -160,54 +136,42 @@ static void EraserMain(ERASER *e)
 
 	FreeEraseFileList(o);
 
-	if (e->LastFailed == false && ok == false)
-	{
+	if (e->LastFailed == false && ok == false) {
 		ELog(e, "LE_NOT_ENOUGH_FREE", bs);
 	}
 
 	e->LastFailed = ok ? false : true;
 }
 
-int CompareEraseFile(void *p1, void *p2)
-{
-	if (p1 == NULL || p2 == NULL)
-	{
+int CompareEraseFile(void *p1, void *p2) {
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	ERASE_FILE *f1 = *(ERASE_FILE **)p1;
 	ERASE_FILE *f2 = *(ERASE_FILE **)p2;
-	if (f1 == NULL || f2 == NULL)
-	{
+	if (f1 == NULL || f2 == NULL) {
 		return 0;
 	}
-	if (f1->UpdateTime > f2->UpdateTime)
-	{
+	if (f1->UpdateTime > f2->UpdateTime) {
 		return 1;
-	}
-	else if (f1->UpdateTime == f2->UpdateTime)
-	{
+	} else if (f1->UpdateTime == f2->UpdateTime) {
 		return 0;
-	}
-	else
-	{
+	} else {
 		return -1;
 	}
 }
 
-static void EraserThread(THREAD *t, void *p)
-{
+static void EraserThread(THREAD *t, void *p) {
 	ERASER *e = (ERASER *)p;
 	char bs[64];
-	if (t == NULL || e == NULL)
-	{
+	if (t == NULL || e == NULL) {
 		return;
 	}
 
 	ToStrByte(bs, sizeof(bs), e->MinFreeSpace);
 	ELog(e, "LE_START", e->DirName, bs);
 
-	while (e->Halt == false)
-	{
+	while (e->Halt == false) {
 		EraserMain(e);
 		e->NumChecks++;
 
@@ -217,17 +181,14 @@ static void EraserThread(THREAD *t, void *p)
 }
 
 // The check interval of e in seconds, as AutoDeleteCheckIntervalSecs of the configuration (at least 1)
-UINT GetEraserCheckInterval(ERASER *e)
-{
-	if (e == NULL)
-	{
+UINT GetEraserCheckInterval(ERASER *e) {
+	if (e == NULL) {
 		return DISK_FREE_CHECK_INTERVAL_DEFAULT / 1000;
 	}
 
 	UINT ret = e->CheckInterval / 1000;
 
-	if (ret == 0)
-	{
+	if (ret == 0) {
 		ret = 1;
 	}
 
@@ -237,17 +198,14 @@ UINT GetEraserCheckInterval(ERASER *e)
 // Start an eraser that, every interval seconds (0 for DISK_FREE_CHECK_INTERVAL_DEFAULT), deletes the oldest files
 // of the num_targets targets under the directory of the executable while the free disk space is below min_size
 // (0 for DISK_FREE_SPACE_DEFAULT_WINDOWS, at least DISK_FREE_SPACE_MIN). It writes its log lines to log
-ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT num_targets)
-{
+ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT num_targets) {
 	char dir[MAX_PATH];
 
-	if (min_size == 0)
-	{
+	if (min_size == 0) {
 		min_size = DISK_FREE_SPACE_DEFAULT_WINDOWS;
 	}
 
-	if (min_size < DISK_FREE_SPACE_MIN)
-	{
+	if (min_size < DISK_FREE_SPACE_MIN) {
 		min_size = DISK_FREE_SPACE_MIN;
 	}
 
@@ -264,8 +222,7 @@ ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT
 	e->Targets = ZeroMalloc(sizeof(TOKEN_LIST));
 	e->Targets->NumTokens = (targets == NULL ? 0 : num_targets);
 	e->Targets->Token = ZeroMalloc(sizeof(char *) * MAX(e->Targets->NumTokens, 1));
-	for (UINT i = 0; i < e->Targets->NumTokens; i++)
-	{
+	for (UINT i = 0; i < e->Targets->NumTokens; i++) {
 		e->Targets->Token[i] = CopyStr(targets[i]);
 	}
 
@@ -274,10 +231,8 @@ ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT
 	return e;
 }
 
-void FreeEraser(ERASER *e)
-{
-	if (e == NULL)
-	{
+void FreeEraser(ERASER *e) {
+	if (e == NULL) {
 		return;
 	}
 
@@ -292,12 +247,10 @@ void FreeEraser(ERASER *e)
 	Free(e);
 }
 
-void ELog(ERASER *e, char *name, ...)
-{
+void ELog(ERASER *e, char *name, ...) {
 	wchar_t buf[MAX_SIZE * 2];
 	va_list args;
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return;
 	}
 
@@ -306,8 +259,7 @@ void ELog(ERASER *e, char *name, ...)
 
 	InsertUnicodeRecord(e->Log, buf);
 
-	if (IsDebug())
-	{
+	if (IsDebug()) {
 		UniPrint(L"LOG: %s\n", buf);
 	}
 	va_end(args);

@@ -21,15 +21,13 @@
 // The GUID {75b1770a-b78d-5167-6ab6-c837a52a76a2} is the EventSource hash of the name, the
 // convention for TraceLogging providers, so that a tool given the name can derive it
 TRACELOGGING_DEFINE_PROVIDER(trace_provider, "Ranz.VPN",
-	(0x75b1770a, 0xb78d, 0x5167, 0x6a, 0xb6, 0xc8, 0x37, 0xa5, 0x2a, 0x76, 0xa2));
+                             (0x75b1770a, 0xb78d, 0x5167, 0x6a, 0xb6, 0xc8, 0x37, 0xa5, 0x2a, 0x76, 0xa2));
 
 static bool trace_registered = false;
 
 // Register the provider (InitMayaqua)
-void InitTrace()
-{
-	if (trace_registered)
-	{
+void InitTrace() {
+	if (trace_registered) {
 		return;
 	}
 
@@ -38,10 +36,8 @@ void InitTrace()
 }
 
 // Unregister the provider (FreeMayaqua)
-void FreeTrace()
-{
-	if (trace_registered == false)
-	{
+void FreeTrace() {
+	if (trace_registered == false) {
 		return;
 	}
 
@@ -50,28 +46,24 @@ void FreeTrace()
 }
 
 // Whether a trace session listens for the Debug() events
-bool IsTraceEnabled()
-{
+bool IsTraceEnabled() {
 	return TraceLoggingProviderEnabled(trace_provider, WINEVENT_LEVEL_VERBOSE, 0) ? true : false;
 }
 
 // Write a Debug() message as one "Debug" event, formatted as PrintArgs() (Str.c) formats it
-void TraceDebugArgs(const char *fmt, va_list args)
-{
-	if (fmt == NULL || IsTraceEnabled() == false)
-	{
+void TraceDebugArgs(const char *fmt, va_list args) {
+	if (fmt == NULL || IsTraceEnabled() == false) {
 		return;
 	}
 
 	wchar_t *msg = CopyFormatArgsToUni(fmt, args);
-	if (msg == NULL)
-	{
+	if (msg == NULL) {
 		return;
 	}
 
 	TraceLoggingWrite(trace_provider, "Debug",
-		TraceLoggingLevel(WINEVENT_LEVEL_VERBOSE),
-		TraceLoggingWideString(msg, "Message"));
+	                  TraceLoggingLevel(WINEVENT_LEVEL_VERBOSE),
+	                  TraceLoggingWideString(msg, "Message"));
 
 	Free(msg);
 }

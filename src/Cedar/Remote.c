@@ -11,12 +11,10 @@
 #include "Mayaqua/Str.h"
 
 // The body of a frame is read in pieces of this size, so a frame that declares more than it sends costs only what it sent
-#define	RPC_RECV_CHUNK_SIZE		(64 * 1024U)
+#define RPC_RECV_CHUNK_SIZE (64 * 1024U)
 
-void RpcFree(RPC *rpc)
-{
-	if (rpc == NULL)
-	{
+void RpcFree(RPC *rpc) {
+	if (rpc == NULL) {
 		return;
 	}
 
@@ -29,16 +27,13 @@ void RpcFree(RPC *rpc)
 	Free(rpc);
 }
 
-static PACK *CallRpcDispatcher(RPC *r, PACK *p)
-{
+static PACK *CallRpcDispatcher(RPC *r, PACK *p) {
 	char func_name[MAX_SIZE];
-	if (r == NULL || p == NULL)
-	{
+	if (r == NULL || p == NULL) {
 		return NULL;
 	}
 
-	if (PackGetStr(p, "function_name", func_name, sizeof(func_name)) == false)
-	{
+	if (PackGetStr(p, "function_name", func_name, sizeof(func_name)) == false) {
 		return NULL;
 	}
 
@@ -46,8 +41,7 @@ static PACK *CallRpcDispatcher(RPC *r, PACK *p)
 }
 
 // One frame is a 32-bit big-endian size and the serialised PACK
-static bool RpcSendPack(SOCK *s, PACK *p)
-{
+static bool RpcSendPack(SOCK *s, PACK *p) {
 	BUF *b = PackToBuf(p);
 
 	UINT size = Endian32(b->Size);
@@ -58,31 +52,26 @@ static bool RpcSendPack(SOCK *s, PACK *p)
 	return SendNow(s, s->SecureMode);
 }
 
-static PACK *RpcRecvPack(SOCK *s)
-{
+static PACK *RpcRecvPack(SOCK *s) {
 	UINT size;
-	if (RecvAll(s, &size, sizeof(UINT), s->SecureMode) == false)
-	{
+	if (RecvAll(s, &size, sizeof(UINT), s->SecureMode) == false) {
 		return NULL;
 	}
 
 	size = Endian32(size);
 
-	if (size > MAX_PACK_SIZE)
-	{
+	if (size > MAX_PACK_SIZE) {
 		return NULL;
 	}
 
 	BUF *b = NewBuf();
 
-	while (b->Size < size)
-	{
+	while (b->Size < size) {
 		UINT chunk = MIN(size - b->Size, RPC_RECV_CHUNK_SIZE);
 
 		AdjustBufSize(b, b->Size + chunk);
 
-		if (RecvAll(s, (UCHAR *)b->Buf + b->Size, chunk, s->SecureMode) == false)
-		{
+		if (RecvAll(s, (UCHAR *)b->Buf + b->Size, chunk, s->SecureMode) == false) {
 			FreeBuf(b);
 			return NULL;
 		}
@@ -96,24 +85,20 @@ static PACK *RpcRecvPack(SOCK *s)
 	return p;
 }
 
-static bool RpcRecvNextCall(RPC *r)
-{
-	if (r == NULL)
-	{
+static bool RpcRecvNextCall(RPC *r) {
+	if (r == NULL) {
 		return false;
 	}
 
 	PACK *p = RpcRecvPack(r->Sock);
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return false;
 	}
 
 	PACK *ret = CallRpcDispatcher(r, p);
 	FreePack(p);
 
-	if (ret == NULL)
-	{
+	if (ret == NULL) {
 		ret = PackError(ERR_NOT_SUPPORTED);
 	}
 
@@ -123,58 +108,47 @@ static bool RpcRecvNextCall(RPC *r)
 	return ok;
 }
 
-void RpcServer(RPC *r)
-{
-	if (r == NULL)
-	{
+void RpcServer(RPC *r) {
+	if (r == NULL) {
 		return;
 	}
 
-	while (true)
-	{
-		if (RpcRecvNextCall(r) == false)
-		{
+	while (true) {
+		if (RpcRecvNextCall(r) == false) {
 			break;
 		}
 	}
 }
 
-PACK *RpcCall(RPC *r, char *function_name, PACK *p)
-{
+PACK *RpcCall(RPC *r, char *function_name, PACK *p) {
 	PACK *ret;
 	UINT num_retry = 0;
 	UINT err = 0;
-	if (r == NULL || function_name == NULL)
-	{
+	if (r == NULL || function_name == NULL) {
 		return NULL;
 	}
 
 
 	Lock(r->Lock);
 	{
-		if (p == NULL)
-		{
+		if (p == NULL) {
 			p = NewPack();
 		}
 
 		PackAddStr(p, "function_name", function_name);
 
-RETRY:
+	RETRY:
 		err = 0;
 		ret = RpcCallInternal(r, p);
 
-		if (ret == NULL)
-		{
-			if (r->Sock != NULL)
-			{
-				if (num_retry < 1)
-				{
+		if (ret == NULL) {
+			if (r->Sock != NULL) {
+				if (num_retry < 1) {
 					num_retry++;
 
 					err = AdminReconnect(r);
 
-					if (err == ERR_NO_ERROR)
-					{
+					if (err == ERR_NO_ERROR) {
 						goto RETRY;
 					}
 				}
@@ -183,10 +157,8 @@ RETRY:
 
 		FreePack(p);
 
-		if (ret == NULL)
-		{
-			if (err == 0)
-			{
+		if (ret == NULL) {
+			if (err == 0) {
 				err = ERR_DISCONNECTED;
 			}
 
@@ -199,20 +171,16 @@ RETRY:
 	return ret;
 }
 
-PACK *RpcCallInternal(RPC *r, PACK *p)
-{
-	if (r == NULL || p == NULL)
-	{
+PACK *RpcCallInternal(RPC *r, PACK *p) {
+	if (r == NULL || p == NULL) {
 		return NULL;
 	}
 
-	if (r->Sock == NULL)
-	{
+	if (r->Sock == NULL) {
 		return NULL;
 	}
 
-	if (RpcSendPack(r->Sock, p) == false)
-	{
+	if (RpcSendPack(r->Sock, p) == false) {
 		return NULL;
 	}
 
@@ -220,10 +188,8 @@ PACK *RpcCallInternal(RPC *r, PACK *p)
 }
 
 // dispatch is the function a server-side RPC runs for each call, NULL for the calling side
-RPC *NewRpc(SOCK *s, RPC_DISPATCHER *dispatch, void *param)
-{
-	if (s == NULL)
-	{
+RPC *NewRpc(SOCK *s, RPC_DISPATCHER *dispatch, void *param) {
+	if (s == NULL) {
 		return NULL;
 	}
 

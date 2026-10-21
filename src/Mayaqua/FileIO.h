@@ -1,17 +1,16 @@
 // FileIO.h
 // Header of FileIO.c
 
-#ifndef	FILEIO_H
-#define	FILEIO_H
+#ifndef FILEIO_H
+#define FILEIO_H
 
 #include "Mayaqua.h"
 
-#define	HAMCORE_DIR_NAME			"hamcore"
-#define	HAMCORE_RESOURCE_TYPE		"HAMCORE"		// Resource type of the built-in hamcore files
-#define	HAMCORE_RESOURCE_INDEX		"INDEX"			// Resource that names them (cmake/RanzResources.cmake)
+#define HAMCORE_DIR_NAME       "hamcore"
+#define HAMCORE_RESOURCE_TYPE  "HAMCORE" // Resource type of the built-in hamcore files
+#define HAMCORE_RESOURCE_INDEX "INDEX"   // Resource that names them (cmake/RanzResources.cmake)
 
-struct IO
-{
+struct IO {
 	char Name[MAX_SIZE];
 	wchar_t NameW[MAX_SIZE];
 	void *pData;
@@ -22,16 +21,14 @@ struct IO
 	UINT64 GetUpdateTime, GetCreateTime, GetAccessTime;
 };
 
-typedef struct HC
-{
+typedef struct HC {
 	char *Path;
 	void *Buffer;
 	size_t Size;
 	UINT64 LastAccess;
 } HC;
 
-struct DIRENT
-{
+struct DIRENT {
 	bool Folder;
 	char *FileName;
 	wchar_t *FileNameW;
@@ -39,8 +36,7 @@ struct DIRENT
 	UINT64 UpdateDate;
 };
 
-struct DIRLIST
-{
+struct DIRLIST {
 	UINT NumFiles;
 	struct DIRENT **File;
 };
@@ -104,4 +100,4 @@ void ConvertSafeFileName(char *dst, UINT size, char *src);
 bool IsFile(char *name);
 bool IsFileW(wchar_t *name);
 
-#endif	// FILEIO_H
+#endif // FILEIO_H

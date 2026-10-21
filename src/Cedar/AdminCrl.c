@@ -18,16 +18,14 @@
 #include "Mayaqua/Str.h"
 #include "AdminInternal.h"
 
-UINT StSetCrl(ADMIN *a, RPC_CRL *t)
-{
+UINT StSetCrl(ADMIN *a, RPC_CRL *t) {
 	SERVER *s = a->Server;
 	UINT ret = ERR_NO_ERROR;
 
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
@@ -35,15 +33,11 @@ UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 	{
 		CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
 
-		if (crl == NULL)
-		{
+		if (crl == NULL) {
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
+		} else {
 			CRL *new_crl = CopyCrl(t->Crl);
-			if (ReplaceListPointer(h->HubDb->CrlList, crl, new_crl))
-			{
+			if (ReplaceListPointer(h->HubDb->CrlList, crl, new_crl)) {
 				ALog(a, h, "LA_SET_CRL");
 				FreeCrl(crl);
 
@@ -58,8 +52,7 @@ UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-UINT StGetCrl(ADMIN *a, RPC_CRL *t)
-{
+UINT StGetCrl(ADMIN *a, RPC_CRL *t) {
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -73,8 +66,7 @@ UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 	t->Key = key;
 
 	HUB *h = AdminGetHub(a, hubname, NULL, &ret);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
@@ -82,12 +74,9 @@ UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 	{
 		CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
 
-		if (crl == NULL)
-		{
+		if (crl == NULL) {
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
+		} else {
 			t->Crl = CopyCrl(crl);
 		}
 	}
@@ -98,16 +87,14 @@ UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-UINT StDelCrl(ADMIN *a, RPC_CRL *t)
-{
+UINT StDelCrl(ADMIN *a, RPC_CRL *t) {
 	SERVER *s = a->Server;
 	UINT ret = ERR_NO_ERROR;
 
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
@@ -115,12 +102,9 @@ UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 	{
 		CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
 
-		if (crl == NULL)
-		{
+		if (crl == NULL) {
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
+		} else {
 			ALog(a, h, "LA_DEL_CRL");
 			FreeCrl(crl);
 			Delete(h->HubDb->CrlList, crl);
@@ -135,8 +119,7 @@ UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-UINT StAddCrl(ADMIN *a, RPC_CRL *t)
-{
+UINT StAddCrl(ADMIN *a, RPC_CRL *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	UINT err;
@@ -144,15 +127,13 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_crl_list", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	LockList(h->HubDb->CrlList);
 	{
-		if (LIST_NUM(h->HubDb->CrlList) < MAX_HUB_CRLS)
-		{
+		if (LIST_NUM(h->HubDb->CrlList) < MAX_HUB_CRLS) {
 			CRL *crl = CopyCrl(t->Crl);
 
 			Insert(h->HubDb->CrlList, crl);
@@ -169,8 +150,7 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
-{
+UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t) {
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -182,8 +162,7 @@ UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
 	HUB *h = AdminGetHub(a, hubname, NULL, &ret);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
@@ -192,8 +171,7 @@ UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 		t->NumItem = LIST_NUM(h->HubDb->CrlList);
 		t->Items = ZeroMalloc(sizeof(RPC_ENUM_CRL_ITEM) * t->NumItem);
 
-		for (UINT i = 0;i < LIST_NUM(h->HubDb->CrlList);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(h->HubDb->CrlList); i++) {
 			CRL *crl = LIST_DATA(h->HubDb->CrlList, i);
 			wchar_t *info = GenerateCrlStr(crl);
 

@@ -1,8 +1,8 @@
 // MayaType.h
 // Mayaqua Kernel type declaration header file
 
-#ifndef	MAYATYPE_H
-#define	MAYATYPE_H
+#ifndef MAYATYPE_H
+#define MAYATYPE_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -19,119 +19,109 @@
 #include <WinSock2.h>
 #include <ws2ipdef.h>
 
-#define	MAX_SIZE			512
+#define MAX_SIZE 512
 
-#define	SUPPORTED_WINDOWS_LIST		"Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
+#define SUPPORTED_WINDOWS_LIST "Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
 
-typedef int (COMPARE)(void *p1, void *p2);
+typedef int(COMPARE)(void *p1, void *p2);
 
 // printf format checking (clang -Wformat) for a function whose format string is argument f and whose
 // variable arguments start at argument a (0 for a va_list); empty for other compilers
-#ifdef	__clang__
-#define	RANZ_PRINTF_FORMAT(f, a)	__attribute__((format(printf, f, a)))
+#ifdef __clang__
+#define RANZ_PRINTF_FORMAT(f, a) __attribute__((format(printf, f, a)))
 #else
-#define	RANZ_PRINTF_FORMAT(f, a)
+#define RANZ_PRINTF_FORMAT(f, a)
 #endif
 
 
-#ifdef	MAX
-#undef	MAX
+#ifdef MAX
+#undef MAX
 #endif
 
-#ifdef	MIN
-#undef	MIN
+#ifdef MIN
+#undef MIN
 #endif
 
 // MIN/MAX (and LESS, MORE, MAKESURE, COMPARE_RET below) evaluate an argument twice: never
 // pass one with a side effect (++, --, an assignment or a call that changes state)
-#define	MIN(a, b)			((a) >= (b) ? (b) : (a))
-#define	MAX(a, b)			((a) >= (b) ? (a) : (b))
+#define MIN(a, b) ((a) >= (b) ? (b) : (a))
+#define MAX(a, b) ((a) >= (b) ? (a) : (b))
 
-#define	INT_TO_BOOL(i)		(((i) == 0) ? false : true)
+#define INT_TO_BOOL(i) (((i) == 0) ? false : true)
 
-#define	NEGATIVE_BOOL(i)	(((i) == false) ? true : false)
+#define NEGATIVE_BOOL(i) (((i) == false) ? true : false)
 
-#define	LESS(a, max_value)	((a) <= (max_value) ? (a) : (max_value))
-#define	MORE(a, min_value)	((a) >= (min_value) ? (a) : (min_value))
-#define	MAKESURE(a, b, c)		(((b) <= (c)) ? (MORE(LESS((a), (c)), (b))) : (MORE(LESS((a), (b)), (c))))
-#define COMPARE_RET(a, b)	(((a) == (b)) ? 0 : (((a) > (b)) ? 1 : -1))
+#define LESS(a, max_value) ((a) <= (max_value) ? (a) : (max_value))
+#define MORE(a, min_value) ((a) >= (min_value) ? (a) : (min_value))
+#define MAKESURE(a, b, c)  (((b) <= (c)) ? (MORE(LESS((a), (c)), (b))) : (MORE(LESS((a), (b)), (c))))
+#define COMPARE_RET(a, b)  (((a) == (b)) ? 0 : (((a) > (b)) ? 1 : -1))
 
-#define	POINTER_TO_KEY(p)		(HashPtrToUINT(p))
+#define POINTER_TO_KEY(p) (HashPtrToUINT(p))
 
-#define	POINTER_TO_UINT64(p)	(UINT64)(p)
+#define POINTER_TO_UINT64(p) (UINT64)(p)
 
-#define	UINT64_TO_POINTER(i)	(void *)(i)
+#define UINT64_TO_POINTER(i) (void *)(i)
 
 // Byte order. Ranz VPN builds for little-endian Windows only (x64, arm64; Memory.c asserts it at
 // compile time), so host and network order differ on every target: Endian16/32/64 swap always,
 // on the compiler intrinsics (one bswap or rev instruction). Each one converts host to big-endian
 // (network) order and back.
-static inline USHORT Endian16(USHORT src)
-{
+static inline USHORT Endian16(USHORT src) {
 	return _byteswap_ushort(src);
 }
-static inline UINT Endian32(UINT src)
-{
+static inline UINT Endian32(UINT src) {
 	return (UINT)_byteswap_ulong(src);
 }
-static inline UINT64 Endian64(UINT64 src)
-{
+static inline UINT64 Endian64(UINT64 src) {
 	return _byteswap_uint64(src);
 }
 
 // Big-endian loads and stores that work on unaligned buffers: one memcpy load or store plus a swap
-static inline USHORT ReadBigEndian16(const void *buf)
-{
+static inline USHORT ReadBigEndian16(const void *buf) {
 	USHORT v;
 	memcpy(&v, buf, sizeof(v));
 	return Endian16(v);
 }
-static inline UINT ReadBigEndian32(const void *buf)
-{
+static inline UINT ReadBigEndian32(const void *buf) {
 	UINT v;
 	memcpy(&v, buf, sizeof(v));
 	return Endian32(v);
 }
-static inline UINT64 ReadBigEndian64(const void *buf)
-{
+static inline UINT64 ReadBigEndian64(const void *buf) {
 	UINT64 v;
 	memcpy(&v, buf, sizeof(v));
 	return Endian64(v);
 }
-static inline void WriteBigEndian16(void *buf, USHORT i)
-{
+static inline void WriteBigEndian16(void *buf, USHORT i) {
 	USHORT v = Endian16(i);
 	memcpy(buf, &v, sizeof(v));
 }
-static inline void WriteBigEndian32(void *buf, UINT i)
-{
+static inline void WriteBigEndian32(void *buf, UINT i) {
 	UINT v = Endian32(i);
 	memcpy(buf, &v, sizeof(v));
 }
-static inline void WriteBigEndian64(void *buf, UINT64 i)
-{
+static inline void WriteBigEndian64(void *buf, UINT64 i) {
 	UINT64 v = Endian64(i);
 	memcpy(buf, &v, sizeof(v));
 }
 
-#define	READ_USHORT(buf)		ReadBigEndian16(buf)
-#define	READ_UINT(buf)			ReadBigEndian32(buf)
-#define	READ_UINT64(buf)		ReadBigEndian64(buf)
+#define READ_USHORT(buf) ReadBigEndian16(buf)
+#define READ_UINT(buf)   ReadBigEndian32(buf)
+#define READ_UINT64(buf) ReadBigEndian64(buf)
 
-#define	WRITE_USHORT(buf, i)	WriteBigEndian16((buf), (USHORT)(i))
-#define	WRITE_UINT(buf, i)		WriteBigEndian32((buf), (UINT)(i))
-#define	WRITE_UINT64(buf, i)	WriteBigEndian64((buf), (UINT64)(i))
+#define WRITE_USHORT(buf, i) WriteBigEndian16((buf), (USHORT)(i))
+#define WRITE_UINT(buf, i)   WriteBigEndian32((buf), (UINT)(i))
+#define WRITE_UINT64(buf, i) WriteBigEndian64((buf), (UINT64)(i))
 
 typedef int64_t time_64t;
 
-#define	OSTYPE_WINDOWS_10						2702
-#define	OSTYPE_WINDOWS_SERVER_10				2712
-#define	OSTYPE_WINDOWS_11						2800
-#define	OSTYPE_WINDOWS_SERVER_11				2810
+#define OSTYPE_WINDOWS_10        2702
+#define OSTYPE_WINDOWS_SERVER_10 2712
+#define OSTYPE_WINDOWS_11        2800
+#define OSTYPE_WINDOWS_SERVER_11 2810
 
 
-typedef struct OS_INFO
-{
+typedef struct OS_INFO {
 	UINT OsType;
 	UINT OsServicePack;
 	char *OsSystemName;

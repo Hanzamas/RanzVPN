@@ -9,10 +9,8 @@
 #include <openssl/dh.h>
 #include <openssl/bn.h>
 
-static BIGNUM *BinToBigNum(void *data, UINT size)
-{
-	if (data == NULL)
-	{
+static BIGNUM *BinToBigNum(void *data, UINT size) {
+	if (data == NULL) {
 		return NULL;
 	}
 
@@ -24,18 +22,15 @@ static BIGNUM *BinToBigNum(void *data, UINT size)
 
 // The DH parameters of the prime p and the generator g, which the result owns (p is freed on failure).
 // A key is not generated here: TLS makes its own key from these parameters for each handshake.
-static DH_CTX *DhNewFromPrime(BIGNUM *p, UINT g)
-{
-	if (p == NULL)
-	{
+static DH_CTX *DhNewFromPrime(BIGNUM *p, UINT g) {
+	if (p == NULL) {
 		return NULL;
 	}
 
 	DH_CTX *dh = ZeroMalloc(sizeof(DH_CTX));
 	dh->dh = DH_new();
 	BIGNUM *dhg = BN_new();
-	if (dh->dh == NULL || dhg == NULL || BN_set_word(dhg, g) == false)
-	{
+	if (dh->dh == NULL || dhg == NULL || BN_set_word(dhg, g) == false) {
 		BN_free(dhg);
 		BN_free(p);
 		DhFree(dh);
@@ -47,12 +42,10 @@ static DH_CTX *DhNewFromPrime(BIGNUM *p, UINT g)
 	return dh;
 }
 
-DH_CTX *DhNewFromBits(UINT bits)
-{
+DH_CTX *DhNewFromBits(UINT bits) {
 	BIGNUM *p;
 
-	switch (bits)
-	{
+	switch (bits) {
 	case 160:
 		return DhNew(DH_SIMPLE_160, 2);
 	case 768:
@@ -78,10 +71,8 @@ DH_CTX *DhNewFromBits(UINT bits)
 	return DhNewFromPrime(p, 2);
 }
 
-DH_CTX *DhNew(char *prime, UINT g)
-{
-	if (prime == NULL || g == 0)
-	{
+DH_CTX *DhNew(char *prime, UINT g) {
+	if (prime == NULL || g == 0) {
 		return NULL;
 	}
 
@@ -92,10 +83,8 @@ DH_CTX *DhNew(char *prime, UINT g)
 	return DhNewFromPrime(p, g);
 }
 
-void DhFree(DH_CTX *dh)
-{
-	if (dh == NULL)
-	{
+void DhFree(DH_CTX *dh) {
+	if (dh == NULL) {
 		return;
 	}
 

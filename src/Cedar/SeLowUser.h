@@ -4,8 +4,8 @@
 // SeLowUser.h
 // Header for SeLowUser.c
 
-#ifndef	SELOWUSER_H
-#define	SELOWUSER_H
+#ifndef SELOWUSER_H
+#define SELOWUSER_H
 
 #include "CedarType.h"
 
@@ -13,44 +13,41 @@
 
 #include <SeLow/SeLowCommon.h>
 
-#define	SL_USER_INSTALL_LOCK_TIMEOUT		60000		// Lock acquisition timeout
+#define SL_USER_INSTALL_LOCK_TIMEOUT 60000 // Lock acquisition timeout
 
 // The SeLow driver package in hamcore. Only an x64 package exists (see SuIsSupportedOs)
-#define	SU_PACKAGE_DIR		L"|DriverPackages\\SeLow_Win10\\x64"
-#define	SU_PACKAGE_SYS		L"SeLow_x64.sys"
-#define	SU_PACKAGE_CAT		L"SeLow_Win10_x64.cat"		// Windows 10 uses WHQL catalog files
-#define	SU_PACKAGE_INF		L"SeLow_x64.inf"
+#define SU_PACKAGE_DIR L"|DriverPackages\\SeLow_Win10\\x64"
+#define SU_PACKAGE_SYS L"SeLow_x64.sys"
+#define SU_PACKAGE_CAT L"SeLow_Win10_x64.cat" // Windows 10 uses WHQL catalog files
+#define SU_PACKAGE_INF L"SeLow_x64.inf"
 
 // The per-attempt staging directory (SuStageDriverPackage): protected DACL, SYSTEM and
 // Administrators only, random name of SU_STAGE_RANDOM_SIZE bytes in hex
-#define	SU_STAGE_DIR_SDDL		L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
-#define	SU_STAGE_RANDOM_SIZE	8
-#define	SU_STAGE_MAX_TRIES		100
+#define SU_STAGE_DIR_SDDL    L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+#define SU_STAGE_RANDOM_SIZE 8
+#define SU_STAGE_MAX_TRIES   100
 
 // Driver install step (SuInstallDriver); a test replaces it with SuSetInstallProc
-typedef bool (SU_INSTALL_PROC)(void);
+typedef bool(SU_INSTALL_PROC)(void);
 
-struct SU
-{
+struct SU {
 	void *hFile;
 	SL_ADAPTER_INFO_LIST AdapterInfoList;
 };
 
-struct SU_ADAPTER
-{
+struct SU_ADAPTER {
 	void *hFile;
 	void *hEvent;
 	bool Halt;
 	UINT CurrentPacketCount;
-	bool LastGetHadPacket;		// The previous SuGetNextPacket call returned a frame
+	bool LastGetHadPacket; // The previous SuGetNextPacket call returned a frame
 	UCHAR GetBuffer[SL_EXCHANGE_BUFFER_SIZE];
 	UCHAR PutBuffer[SL_EXCHANGE_BUFFER_SIZE];
 };
 
-struct SU_ADAPTER_LIST
-{
-	char FriendlyName[256];			// SL_ADAPTER_INFO.FriendlyName
-	UCHAR MacAddress[6];			// SL_ADAPTER_INFO.MacAddress
+struct SU_ADAPTER_LIST {
+	char FriendlyName[256]; // SL_ADAPTER_INFO.FriendlyName
+	UCHAR MacAddress[6];    // SL_ADAPTER_INFO.MacAddress
 	char Guid[128];
 	char Name[MAX_SIZE];
 	char SortKey[MAX_SIZE];
@@ -80,7 +77,7 @@ void SuSetInstallProc(SU_INSTALL_PROC *proc);
 bool SuIsSupportedOs();
 bool SuCopySysFile(wchar_t *src, wchar_t *dst);
 
-#endif	// SELOWUSER_H
+#endif // SELOWUSER_H
 
 
 

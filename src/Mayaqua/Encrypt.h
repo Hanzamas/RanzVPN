@@ -1,20 +1,20 @@
 // Encrypt.h
 // Header of the Crypto/ module: Hash, Rand, Cipher, Aead, Rsa, Dh, X509, Pem and Init
 
-#ifndef	ENCRYPT_H
-#define	ENCRYPT_H
+#ifndef ENCRYPT_H
+#define ENCRYPT_H
 
 #include "MayaType.h"
 
-#define RSA_KEY_SIZE				1024
+#define RSA_KEY_SIZE 1024
 
 // IANA definitions taken from IKEv1 Phase 1
-#define SHA1_160						2
-#define SHA2_256						4
-#define SHA2_384						5
-#define SHA2_512						6
+#define SHA1_160 2
+#define SHA2_256 4
+#define SHA2_384 5
+#define SHA2_512 6
 
-#define	DH_SIMPLE_160	"AEE7561459353C95DDA966AE1FD25D95CD46E935"
+#define DH_SIMPLE_160 "AEE7561459353C95DDA966AE1FD25D95CD46E935"
 
 typedef struct bignum_st BIGNUM;
 typedef struct bio_st BIO;
@@ -25,13 +25,11 @@ typedef struct evp_pkey_st EVP_PKEY;
 typedef struct ssl_st SSL;
 typedef struct x509_st X509;
 
-struct CRYPT
-{
-	void *Rc4Key;					// CNG key object (BCRYPT_KEY_HANDLE) of the RC4 key, NULL if CNG refused the key
+struct CRYPT {
+	void *Rc4Key; // CNG key object (BCRYPT_KEY_HANDLE) of the RC4 key, NULL if CNG refused the key
 };
 
-struct NAME
-{
+struct NAME {
 	wchar_t *CommonName;
 	wchar_t *Organization;
 	wchar_t *Unit;
@@ -40,14 +38,12 @@ struct NAME
 	wchar_t *Local;
 };
 
-struct X_SERIAL
-{
+struct X_SERIAL {
 	UINT size;
 	UCHAR *data;
 };
 
-struct X
-{
+struct X {
 	X509 *x509;
 	NAME *issuer_name;
 	NAME *subject_name;
@@ -62,24 +58,21 @@ struct X
 	char issuer_url[256];
 };
 
-struct K
-{
+struct K {
 	EVP_PKEY *pkey;
 	bool private_key;
 };
 
-#define	MD4_SIZE	16
-#define	MD5_SIZE	16
-#define	SHA1_SIZE	20
-#define	SHA256_SIZE	32
+#define MD4_SIZE    16
+#define MD5_SIZE    16
+#define SHA1_SIZE   20
+#define SHA256_SIZE 32
 
-struct DH_CTX
-{
+struct DH_CTX {
 	DH *dh;
 };
 
-struct CIPHER
-{
+struct CIPHER {
 	char Name[MAX_PATH];
 	const EVP_CIPHER *Cipher;
 	EVP_CIPHER_CTX *Ctx;
@@ -143,7 +136,7 @@ bool UINT64ToAsn1Time(void *asn1_time, UINT64 t);
 bool CheckXDate(X *x, UINT64 current_system_time);
 bool CheckXDateNow(X *x);
 NAME *NewName(wchar_t *common_name, wchar_t *organization, wchar_t *unit,
-			  wchar_t *country, wchar_t *state, wchar_t *local);
+              wchar_t *country, wchar_t *state, wchar_t *local);
 void *NameToX509Name(NAME *nm);
 void FreeX509Name(void *xn);
 bool AddX509Name(void *xn, int nid, wchar_t *str);

@@ -11,12 +11,10 @@
 // the unicast address of the target: IPv6 header, ICMPv6 header, the target address and the source
 // link-layer address option with my_mac_address, 72 bytes. The hop limit is 255; the flow label is
 // 0. Returns NULL when an argument is NULL
-BUF *BuildNeighborSolicitation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address)
-{
+BUF *BuildNeighborSolicitation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address) {
 	UINT icmp_size = sizeof(ICMP_HEADER) + sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER) +
-		sizeof(ICMPV6_OPTION_LINK_LAYER);
-	if (src_ip == NULL || target_ip == NULL || my_mac_address == NULL)
-	{
+	                 sizeof(ICMPV6_OPTION_LINK_LAYER);
+	if (src_ip == NULL || target_ip == NULL || my_mac_address == NULL) {
 		return NULL;
 	}
 
@@ -48,44 +46,36 @@ BUF *BuildNeighborSolicitation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *m
 	return ret;
 }
 
-static bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR *buf, UINT size)
-{
+static bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR *buf, UINT size) {
 	IPV6_OPTION_HEADER *option_header;
 	UINT option_header_size;
 	UCHAR next_header_2 = IPV6_HEADER_NONE;
-	if (info == NULL || buf == NULL)
-	{
+	if (info == NULL || buf == NULL) {
 		return false;
 	}
 
 	info->IsFragment = false;
 
-	while (true)
-	{
-		if (size > 8)
-		{
+	while (true) {
+		if (size > 8) {
 			next_header_2 = *((UCHAR *)buf);
 		}
 
-		switch (next_header)
-		{
+		switch (next_header) {
 		case IPV6_HEADER_HOP:
 		case IPV6_HEADER_ENDPOINT:
 		case IPV6_HEADER_ROUTING:
-			if (size < 8)
-			{
+			if (size < 8) {
 				return false;
 			}
 
 			option_header = (IPV6_OPTION_HEADER *)buf;
 			option_header_size = (option_header->Size + 1) * 8;
-			if (size < option_header_size)
-			{
+			if (size < option_header_size) {
 				return false;
 			}
 
-			switch (next_header)
-			{
+			switch (next_header) {
 			case IPV6_HEADER_HOP:
 				info->HopHeader = (IPV6_OPTION_HEADER *)buf;
 				info->HopHeaderSize = option_header_size;
@@ -107,15 +97,13 @@ static bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header,
 			break;
 
 		case IPV6_HEADER_FRAGMENT:
-			if (size < sizeof(IPV6_FRAGMENT_HEADER))
-			{
+			if (size < sizeof(IPV6_FRAGMENT_HEADER)) {
 				return false;
 			}
 
 			info->FragmentHeader = (IPV6_FRAGMENT_HEADER *)buf;
 
-			if (IPV6_GET_FRAGMENT_OFFSET(info->FragmentHeader) != 0)
-			{
+			if (IPV6_GET_FRAGMENT_OFFSET(info->FragmentHeader) != 0) {
 				info->IsFragment = true;
 			}
 
@@ -124,13 +112,10 @@ static bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header,
 			break;
 
 		default:
-			if (next_header != IPV6_HEADER_NONE)
-			{
+			if (next_header != IPV6_HEADER_NONE) {
 				info->Payload = buf;
 				info->PayloadSize = size;
-			}
-			else
-			{
+			} else {
 				info->Payload = NULL;
 				info->PayloadSize = 0;
 			}
@@ -142,18 +127,15 @@ static bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header,
 	}
 }
 
-bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size)
-{
-	if (info == NULL || buf == NULL)
-	{
+bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size) {
+	if (info == NULL || buf == NULL) {
 		Zero(info, sizeof(IPV6_HEADER_PACKET_INFO));
 		return false;
 	}
 
 	Zero(info, sizeof(IPV6_HEADER_PACKET_INFO));
 
-	if (size < sizeof(IPV6_HEADER))
-	{
+	if (size < sizeof(IPV6_HEADER)) {
 		return false;
 	}
 
@@ -161,48 +143,39 @@ bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size)
 	buf += sizeof(IPV6_HEADER);
 	size -= sizeof(IPV6_HEADER);
 
-	if (IPV6_GET_VERSION(info->IPv6Header) != 6)
-	{
+	if (IPV6_GET_VERSION(info->IPv6Header) != 6) {
 		return false;
 	}
 
-	if (ParseIPv6ExtHeader(info, info->IPv6Header->NextHeader, buf, size) == false)
-	{
+	if (ParseIPv6ExtHeader(info, info->IPv6Header->NextHeader, buf, size) == false) {
 		return false;
 	}
 
-	if (info->Payload != NULL)
-	{
+	if (info->Payload != NULL) {
 		info->TotalHeaderSize = (UINT)((UINT64)(info->Payload) - (UINT64)(info->IPv6Header));
 	}
 
 	return true;
 }
 
-static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
-{
-	if (o == NULL || buf == NULL)
-	{
+static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size) {
+	if (o == NULL || buf == NULL) {
 		return false;
 	}
 
 	Zero(o, sizeof(ICMPV6_OPTION_LIST));
 
-	while (true)
-	{
-		if (size < sizeof(ICMPV6_OPTION))
-		{
+	while (true) {
+		if (size < sizeof(ICMPV6_OPTION)) {
 			return true;
 		}
 
 		ICMPV6_OPTION *option_header = (ICMPV6_OPTION *)buf;
 		UINT header_total_size = option_header->Length * 8;
-		if (header_total_size == 0)
-		{
+		if (header_total_size == 0) {
 			return true;
 		}
-		if (size < header_total_size)
-		{
+		if (size < header_total_size) {
 			return true;
 		}
 
@@ -210,34 +183,24 @@ static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 		buf += header_total_size;
 		size -= header_total_size;
 
-		switch (option_header->Type)
-		{
+		switch (option_header->Type) {
 		case ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER:
 		case ICMPV6_OPTION_TYPE_TARGET_LINK_LAYER:
-			if (header_total_size >= sizeof(ICMPV6_OPTION_LINK_LAYER))
-			{
-				if (option_header->Type == ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER)
-				{
+			if (header_total_size >= sizeof(ICMPV6_OPTION_LINK_LAYER)) {
+				if (option_header->Type == ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER) {
 					o->SourceLinkLayer = (ICMPV6_OPTION_LINK_LAYER *)header_pointer;
-				}
-				else
-				{
+				} else {
 					o->TargetLinkLayer = (ICMPV6_OPTION_LINK_LAYER *)header_pointer;
 				}
-			}
-			else
-			{
+			} else {
 				return false;
 			}
 			break;
 
 		case ICMPV6_OPTION_TYPE_PREFIX:
-			if (header_total_size >= sizeof(ICMPV6_OPTION_PREFIX))
-			{
-				for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-				{
-					if (o->Prefix[i] == NULL)
-					{
+			if (header_total_size >= sizeof(ICMPV6_OPTION_PREFIX)) {
+				for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++) {
+					if (o->Prefix[i] == NULL) {
 						o->Prefix[i] = (ICMPV6_OPTION_PREFIX *)header_pointer;
 						break;
 					}
@@ -246,8 +209,7 @@ static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 			break;
 
 		case ICMPV6_OPTION_TYPE_MTU:
-			if (header_total_size >= sizeof(ICMPV6_OPTION_MTU))
-			{
+			if (header_total_size >= sizeof(ICMPV6_OPTION_MTU)) {
 				o->Mtu = (ICMPV6_OPTION_MTU *)header_pointer;
 			}
 			break;
@@ -261,26 +223,23 @@ static const struct
 	UCHAR Type;
 	UINT HeaderSize;
 } icmpv6_option_messages[] =
-{
-	{ICMPV6_TYPE_ROUTER_SOLICIATION, sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER)},
-	{ICMPV6_TYPE_ROUTER_ADVERTISEMENT, sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER)},
-	{ICMPV6_TYPE_NEIGHBOR_SOLICIATION, sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER)},
-	{ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT, sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER)},
+    {
+        {ICMPV6_TYPE_ROUTER_SOLICIATION, sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER)},
+        {ICMPV6_TYPE_ROUTER_ADVERTISEMENT, sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER)},
+        {ICMPV6_TYPE_NEIGHBOR_SOLICIATION, sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER)},
+        {ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT, sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER)},
 };
 
-static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
-{
+static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size) {
 	ICMPV6_HEADER_INFO icmp_info;
 	ICMP_ECHO *echo;
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	Zero(&icmp_info, sizeof(icmp_info));
 
-	if (size < sizeof(ICMP_HEADER))
-	{
+	if (size < sizeof(ICMP_HEADER)) {
 		return false;
 	}
 
@@ -293,10 +252,8 @@ static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 	icmp_info.Data = ((UCHAR *)buf) + sizeof(ICMP_HEADER);
 	icmp_info.DataSize = msg_size;
 
-	if (icmp_info.Type == ICMPV6_TYPE_ECHO_REQUEST || icmp_info.Type == ICMPV6_TYPE_ECHO_RESPONSE)
-	{
-		if (icmp_info.DataSize < sizeof(ICMP_ECHO))
-		{
+	if (icmp_info.Type == ICMPV6_TYPE_ECHO_REQUEST || icmp_info.Type == ICMPV6_TYPE_ECHO_RESPONSE) {
+		if (icmp_info.DataSize < sizeof(ICMP_ECHO)) {
 			return false;
 		}
 
@@ -308,22 +265,18 @@ static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 		icmp_info.EchoDataSize = icmp_info.DataSize - sizeof(ICMP_ECHO);
 	}
 
-	for (UINT i = 0; i < sizeof(icmpv6_option_messages) / sizeof(icmpv6_option_messages[0]); i++)
-	{
-		if (icmpv6_option_messages[i].Type == icmp_info.Type)
-		{
+	for (UINT i = 0; i < sizeof(icmpv6_option_messages) / sizeof(icmpv6_option_messages[0]); i++) {
+		if (icmpv6_option_messages[i].Type == icmp_info.Type) {
 			UINT header_size = icmpv6_option_messages[i].HeaderSize;
 
-			if (icmp_info.DataSize < header_size)
-			{
+			if (icmp_info.DataSize < header_size) {
 				return false;
 			}
 
 			icmp_info.Headers.HeaderPointer = icmp_info.Data;
 
 			if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + header_size,
-			                       icmp_info.DataSize - header_size) == false)
-			{
+			                       icmp_info.DataSize - header_size) == false) {
 				return false;
 			}
 
@@ -337,28 +290,23 @@ static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 	return true;
 }
 
-void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o)
-{
-	if (o == NULL)
-	{
+void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o) {
+	if (o == NULL) {
 		return;
 	}
 
 	Free(o->SourceLinkLayer);
 	Free(o->TargetLinkLayer);
 
-	for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-	{
+	for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++) {
 		Free(o->Prefix[i]);
 		o->Prefix[i] = NULL;
 	}
 	Free(o->Mtu);
 }
 
-void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src)
-{
-	if (dst == NULL || src == NULL)
-	{
+void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src) {
+	if (dst == NULL || src == NULL) {
 		return;
 	}
 
@@ -366,60 +314,47 @@ void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src)
 
 	dst->SourceLinkLayer = Clone(src->SourceLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
 	dst->TargetLinkLayer = Clone(src->TargetLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
-	for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-	{
-		if (src->Prefix[i] != NULL)
-		{
+	for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++) {
+		if (src->Prefix[i] != NULL) {
 			dst->Prefix[i] = Clone(src->Prefix[i], sizeof(ICMPV6_OPTION_PREFIX));
-		}
-		else
-		{
+		} else {
 			break;
 		}
 	}
 	dst->Mtu = Clone(src->Mtu, sizeof(ICMPV6_OPTION_MTU));
 }
 
-bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size)
-{
-	if (p == NULL || buf == NULL)
-	{
+bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size) {
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
-	if (ParsePacketIPv6Header(&p->IPv6HeaderPacketInfo, buf, size) == false)
-	{
+	if (ParsePacketIPv6Header(&p->IPv6HeaderPacketInfo, buf, size) == false) {
 		return false;
 	}
 
 	p->TypeL3 = L3_IPV6;
 	p->L3.IPv6Header = p->IPv6HeaderPacketInfo.IPv6Header;
 
-	if (p->IPv6HeaderPacketInfo.Payload == NULL)
-	{
+	if (p->IPv6HeaderPacketInfo.Payload == NULL) {
 		return true;
 	}
 
 	buf = p->IPv6HeaderPacketInfo.Payload;
 	size = p->IPv6HeaderPacketInfo.PayloadSize;
 
-	if (p->IPv6HeaderPacketInfo.IsFragment)
-	{
+	if (p->IPv6HeaderPacketInfo.IsFragment) {
 		// This is a fragmented packet. Quit interpreting
 		p->TypeL4 = L4_FRAGMENT;
 		return true;
 	}
 
-	switch (p->IPv6HeaderPacketInfo.Protocol)
-	{
+	switch (p->IPv6HeaderPacketInfo.Protocol) {
 	case IP_PROTO_ICMPV6:
-		if (ParseICMPv6(p, buf, size) == false)
-		{
+		if (ParseICMPv6(p, buf, size) == false) {
 			// Returns true also if it fails to parse ICMPv6
 			return true;
-		}
-		else
-		{
+		} else {
 			return true;
 		}
 

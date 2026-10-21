@@ -21,30 +21,24 @@
 
 static volatile UINT global_server_flags[NUM_GLOBAL_SERVER_FLAGS] = {0};
 
-void SetGlobalServerFlag(UINT index, UINT value)
-{
-	if (index >= NUM_GLOBAL_SERVER_FLAGS)
-	{
+void SetGlobalServerFlag(UINT index, UINT value) {
+	if (index >= NUM_GLOBAL_SERVER_FLAGS) {
 		return;
 	}
 
 	global_server_flags[index] = value;
 }
 
-UINT GetGlobalServerFlag(UINT index)
-{
-	if (index >= NUM_GLOBAL_SERVER_FLAGS)
-	{
+UINT GetGlobalServerFlag(UINT index) {
+	if (index >= NUM_GLOBAL_SERVER_FLAGS) {
 		return 0;
 	}
 
 	return global_server_flags[index];
 }
 
-void GetServerCapsMain(SERVER *s, CAPSLIST *t)
-{
-	if (s == NULL || t == NULL)
-	{
+void GetServerCapsMain(SERVER *s, CAPSLIST *t) {
+	if (s == NULL || t == NULL) {
 		return;
 	}
 
@@ -158,46 +152,37 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	AddCapsBool(t, "b_vpn4", true);
 }
 
-void InitCapsList(CAPSLIST *t)
-{
-	if (t == NULL)
-	{
+void InitCapsList(CAPSLIST *t) {
+	if (t == NULL) {
 		return;
 	}
 
 	Zero(t, sizeof(CAPSLIST));
 	t->CapsList = NewListFast(NULL);
 }
-void InRpcCapsList(CAPSLIST *t, PACK *p)
-{
-	if (t == NULL || p == NULL)
-	{
+void InRpcCapsList(CAPSLIST *t, PACK *p) {
+	if (t == NULL || p == NULL) {
 		return;
 	}
 
 	Zero(t, sizeof(CAPSLIST));
 	t->CapsList = NewListFast(CompareCaps);
 
-	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(p->elements); i++) {
 		ELEMENT *e = LIST_DATA(p->elements, i);
 
-		if (StartWith(e->name, "caps_") && e->type == VALUE_INT && e->num_value == 1)
-		{
+		if (StartWith(e->name, "caps_") && e->type == VALUE_INT && e->num_value == 1) {
 			CAPS *c = NewCaps(e->name + 5, e->values[0]->IntValue);
 			Insert(t->CapsList, c);
 		}
 	}
 }
-void OutRpcCapsList(PACK *p, CAPSLIST *t)
-{
-	if (t == NULL || p == NULL)
-	{
+void OutRpcCapsList(PACK *p, CAPSLIST *t) {
+	if (t == NULL || p == NULL) {
 		return;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(t->CapsList);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(t->CapsList); i++) {
 		char tmp[MAX_SIZE];
 		char ct_key[MAX_PATH];
 		wchar_t ct_description[MAX_PATH];
@@ -209,12 +194,9 @@ void OutRpcCapsList(PACK *p, CAPSLIST *t)
 
 		Zero(ct_description, sizeof(ct_description));
 		wchar_t *w = _UU(ct_key);
-		if (UniIsEmptyStr(w) == false)
-		{
+		if (UniIsEmptyStr(w) == false) {
 			UniStrCpy(ct_description, sizeof(ct_description), w);
-		}
-		else
-		{
+		} else {
 			StrToUni(ct_description, sizeof(ct_description), c->Name);
 		}
 
@@ -225,15 +207,12 @@ void OutRpcCapsList(PACK *p, CAPSLIST *t)
 		PackAddUniStrEx(p, "CapsDescrption", ct_description, i, LIST_NUM(t->CapsList));
 	}
 }
-void FreeRpcCapsList(CAPSLIST *t)
-{
-	if (t == NULL)
-	{
+void FreeRpcCapsList(CAPSLIST *t) {
+	if (t == NULL) {
 		return;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(t->CapsList);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(t->CapsList); i++) {
 		CAPS *c = LIST_DATA(t->CapsList, i);
 
 		FreeCaps(c);
@@ -242,10 +221,8 @@ void FreeRpcCapsList(CAPSLIST *t)
 	ReleaseList(t->CapsList);
 }
 
-void AddCapsBool(CAPSLIST *caps, char *name, bool b)
-{
-	if (caps == NULL || name == NULL)
-	{
+void AddCapsBool(CAPSLIST *caps, char *name, bool b) {
+	if (caps == NULL || name == NULL) {
 		return;
 	}
 
@@ -253,10 +230,8 @@ void AddCapsBool(CAPSLIST *caps, char *name, bool b)
 	AddCaps(caps, c);
 }
 
-void AddCapsInt(CAPSLIST *caps, char *name, UINT i)
-{
-	if (caps == NULL || name == NULL)
-	{
+void AddCapsInt(CAPSLIST *caps, char *name, UINT i) {
+	if (caps == NULL || name == NULL) {
 		return;
 	}
 
@@ -264,47 +239,38 @@ void AddCapsInt(CAPSLIST *caps, char *name, UINT i)
 	AddCaps(caps, c);
 }
 
-UINT GetCapsInt(CAPSLIST *caps, char *name)
-{
-	if (caps == NULL || name == NULL)
-	{
+UINT GetCapsInt(CAPSLIST *caps, char *name) {
+	if (caps == NULL || name == NULL) {
 		return 0;
 	}
 
 	CAPS *c = GetCaps(caps, name);
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return 0;
 	}
 
 	return c->Value;
 }
 
-bool GetCapsBool(CAPSLIST *caps, char *name)
-{
-	if (caps == NULL || name == NULL)
-	{
+bool GetCapsBool(CAPSLIST *caps, char *name) {
+	if (caps == NULL || name == NULL) {
 		return false;
 	}
 
 	CAPS *c = GetCaps(caps, name);
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return false;
 	}
 
 	return c->Value == 0 ? false : true;
 }
 
-void FreeCapsList(CAPSLIST *caps)
-{
-	if (caps == NULL)
-	{
+void FreeCapsList(CAPSLIST *caps) {
+	if (caps == NULL) {
 		return;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(caps->CapsList);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(caps->CapsList); i++) {
 		CAPS *c = LIST_DATA(caps->CapsList, i);
 
 		FreeCaps(c);
@@ -314,19 +280,15 @@ void FreeCapsList(CAPSLIST *caps)
 	Free(caps);
 }
 
-CAPS *GetCaps(CAPSLIST *caps, char *name)
-{
-	if (caps == NULL || name == NULL)
-	{
+CAPS *GetCaps(CAPSLIST *caps, char *name) {
+	if (caps == NULL || name == NULL) {
 		return NULL;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(caps->CapsList);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(caps->CapsList); i++) {
 		CAPS *c = LIST_DATA(caps->CapsList, i);
 
-		if (StrCmpi(c->Name, name) == 0)
-		{
+		if (StrCmpi(c->Name, name) == 0) {
 			return c;
 		}
 	}
@@ -334,34 +296,28 @@ CAPS *GetCaps(CAPSLIST *caps, char *name)
 	return NULL;
 }
 
-void AddCaps(CAPSLIST *caps, CAPS *c)
-{
-	if (caps == NULL || c == NULL)
-	{
+void AddCaps(CAPSLIST *caps, CAPS *c) {
+	if (caps == NULL || c == NULL) {
 		return;
 	}
 
 	Insert(caps->CapsList, c);
 }
 
-int CompareCaps(void *p1, void *p2)
-{
-	if (p1 == NULL || p2 == NULL)
-	{
+int CompareCaps(void *p1, void *p2) {
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	CAPS *c1 = *(CAPS **)p1;
 	CAPS *c2 = *(CAPS **)p2;
-	if (c1 == NULL || c2 == NULL)
-	{
+	if (c1 == NULL || c2 == NULL) {
 		return 0;
 	}
 
 	return StrCmpi(c1->Name, c2->Name);
 }
 
-CAPSLIST *NewCapsList()
-{
+CAPSLIST *NewCapsList() {
 	CAPSLIST *caps = ZeroMalloc(sizeof(CAPSLIST));
 
 	caps->CapsList = NewListFast(CompareCaps);
@@ -369,10 +325,8 @@ CAPSLIST *NewCapsList()
 	return caps;
 }
 
-void FreeCaps(CAPS *c)
-{
-	if (c == NULL)
-	{
+void FreeCaps(CAPS *c) {
+	if (c == NULL) {
 		return;
 	}
 
@@ -380,10 +334,8 @@ void FreeCaps(CAPS *c)
 	Free(c);
 }
 
-CAPS *NewCaps(char *name, UINT value)
-{
-	if (name == NULL)
-	{
+CAPS *NewCaps(char *name, UINT value) {
+	if (name == NULL) {
 		return NULL;
 	}
 

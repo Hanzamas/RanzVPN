@@ -1,8 +1,8 @@
 // Win32.h
 // Header of Win32.c
 
-#ifndef	WIN32_H
-#define	WIN32_H
+#ifndef WIN32_H
+#define WIN32_H
 
 #include "MayaType.h"
 #include "Platform.h"

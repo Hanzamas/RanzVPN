@@ -20,36 +20,32 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-wchar_t *GetAuthTypeStr(UINT id)
-{
+wchar_t *GetAuthTypeStr(UINT id) {
 	char tmp[MAX_SIZE];
 	Format(tmp, sizeof(tmp), "SM_AUTHTYPE_%u", id);
 
 	return _UU(tmp);
 }
 
-UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-		{"GROUP", CmdPrompt, _UU("CMD_UserCreate_Prompt_GROUP"), NULL, NULL},
-		{"REALNAME", CmdPrompt, _UU("CMD_UserCreate_Prompt_REALNAME"), NULL, NULL},
-		{"NOTE", CmdPrompt, _UU("CMD_UserCreate_Prompt_NOTE"), NULL, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	        {"GROUP", CmdPrompt, _UU("CMD_UserCreate_Prompt_GROUP"), NULL, NULL},
+	        {"REALNAME", CmdPrompt, _UU("CMD_UserCreate_Prompt_REALNAME"), NULL, NULL},
+	        {"NOTE", CmdPrompt, _UU("CMD_UserCreate_Prompt_NOTE"), NULL, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -61,13 +57,10 @@ UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	UniStrCpy(t.Note, sizeof(t.Note), GetParamUniStr(o, "NOTE"));
 
 	Trim(t.Name);
-	if (StrCmpi(t.Name, "*") == 0)
-	{
+	if (StrCmpi(t.Name, "*") == 0) {
 		t.AuthType = AUTHTYPE_NT;
 		t.AuthData = NewNTAuthData(NULL);
-	}
-	else
-	{
+	} else {
 		UCHAR random_pass[SHA1_SIZE];
 		UCHAR random_pass2[MD5_SIZE];
 
@@ -79,8 +72,7 @@ UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScCreateUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -93,28 +85,25 @@ UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-		{"GROUP", CmdPrompt, _UU("CMD_UserCreate_Prompt_GROUP"), NULL, NULL},
-		{"REALNAME", CmdPrompt, _UU("CMD_UserCreate_Prompt_REALNAME"), NULL, NULL},
-		{"NOTE", CmdPrompt, _UU("CMD_UserCreate_Prompt_NOTE"), NULL, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	        {"GROUP", CmdPrompt, _UU("CMD_UserCreate_Prompt_GROUP"), NULL, NULL},
+	        {"REALNAME", CmdPrompt, _UU("CMD_UserCreate_Prompt_REALNAME"), NULL, NULL},
+	        {"NOTE", CmdPrompt, _UU("CMD_UserCreate_Prompt_NOTE"), NULL, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -123,8 +112,7 @@ UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
 
 	ret = ScGetUser(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -136,8 +124,7 @@ UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScSetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -150,25 +137,22 @@ UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsUserDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -178,8 +162,7 @@ UINT PsUserDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScDeleteUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -190,25 +173,22 @@ UINT PsUserDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -217,8 +197,7 @@ UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
 
 	ret = ScGetUser(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -231,8 +210,7 @@ UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScSetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -245,26 +223,23 @@ UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-		{"PASSWORD", CmdPromptChoosePassword, NULL, NULL, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	        {"PASSWORD", CmdPromptChoosePassword, NULL, NULL, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -273,8 +248,7 @@ UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
 
 	ret = ScGetUser(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -291,8 +265,7 @@ UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScSetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -305,32 +278,28 @@ UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-		{"LOADCERT", CmdPrompt, _UU("CMD_LOADCERTPATH"), CmdEvalIsFile, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	        {"LOADCERT", CmdPrompt, _UU("CMD_LOADCERTPATH"), CmdEvalIsFile, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	X *x = FileToXW(GetParamUniStr(o, "LOADCERT"));
-	if (x == NULL)
-	{
+	if (x == NULL) {
 		c->Write(c, _UU("CMD_LOADCERT_FAILED"));
 
 		FreeParamValueList(o);
@@ -343,8 +312,7 @@ UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
 
 	ret = ScGetUser(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		FreeX(x);
@@ -364,8 +332,7 @@ UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScSetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -378,27 +345,24 @@ UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-		{"CN", CmdPrompt, _UU("CMD_UserSignedSet_Prompt_CN"), NULL, NULL},
-		{"SERIAL", CmdPrompt, _UU("CMD_UserSignedSet_Prompt_SERIAL"), NULL, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	        {"CN", CmdPrompt, _UU("CMD_UserSignedSet_Prompt_CN"), NULL, NULL},
+	        {"SERIAL", CmdPrompt, _UU("CMD_UserSignedSet_Prompt_SERIAL"), NULL, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -407,8 +371,7 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
 
 	ret = ScGetUser(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -421,8 +384,7 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		BUF *b = StrToBin(GetParamStr(o, "SERIAL"));
 
-		if (b != NULL && b->Size >= 1)
-		{
+		if (b != NULL && b->Size >= 1) {
 			serial = NewXSerial(b->Buf, b->Size);
 		}
 
@@ -438,8 +400,7 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScSetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -452,26 +413,23 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-		{"ALIAS", CmdPrompt, _UU("CMD_UserRadiusSet_Prompt_ALIAS"), NULL, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	        {"ALIAS", CmdPrompt, _UU("CMD_UserRadiusSet_Prompt_ALIAS"), NULL, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -480,8 +438,7 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
 
 	ret = ScGetUser(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -498,8 +455,7 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScSetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -512,25 +468,22 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -539,23 +492,20 @@ UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
 
 	ret = ScGetUser(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
 	}
 
-	if (t.Policy != NULL)
-	{
+	if (t.Policy != NULL) {
 		Free(t.Policy);
 		t.Policy = NULL;
 	}
 
 	ret = ScSetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -568,22 +518,18 @@ UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-static UINT64 StrToDateTime64(const char *str)
-{
+static UINT64 StrToDateTime64(const char *str) {
 	UINT64 ret = 0;
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return INFINITE;
 	}
 
-	if (IsEmptyStr(str) || StrCmpi(str, "none") == 0)
-	{
+	if (IsEmptyStr(str) || StrCmpi(str, "none") == 0) {
 		return 0;
 	}
 
 	TOKEN_LIST *t = ParseToken(str, ":/,. \"");
-	if (t->NumTokens != 6)
-	{
+	if (t->NumTokens != 6) {
 		FreeToken(t);
 		return INFINITE;
 	}
@@ -598,8 +544,7 @@ static UINT64 StrToDateTime64(const char *str)
 	ret = INFINITE;
 
 	if (a >= 1000 && a <= 9999 && b >= 1 && b <= 12 && c >= 1 && c <= 31 &&
-		d <= 23 && e <= 59 && f <= 59)
-	{
+	    d <= 23 && e <= 59 && f <= 59) {
 		SYSTEMTIME t;
 
 		Zero(&t, sizeof(t));
@@ -618,11 +563,9 @@ static UINT64 StrToDateTime64(const char *str)
 	return ret;
 }
 
-static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param)
-{
+static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param) {
 	char tmp[MAX_SIZE];
-	if (c == NULL || str == NULL)
-	{
+	if (c == NULL || str == NULL) {
 		return false;
 	}
 
@@ -630,8 +573,7 @@ static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param)
 
 	UINT64 ret = StrToDateTime64(tmp);
 
-	if (ret == INFINITE)
-	{
+	if (ret == INFINITE) {
 		c->Write(c, _UU("CMD_EVAL_DATE_TIME_FAILED"));
 		return false;
 	}
@@ -639,26 +581,23 @@ static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param)
 	return true;
 }
 
-UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-		{"EXPIRES", CmdPrompt, _UU("CMD_UserExpiresSet_Prompt_EXPIRES"), CmdEvalDateTime, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	        {"EXPIRES", CmdPrompt, _UU("CMD_UserExpiresSet_Prompt_EXPIRES"), CmdEvalDateTime, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -667,8 +606,7 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
 
 	ret = ScGetUser(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -676,8 +614,7 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	UINT64 expires = StrToDateTime64(GetParamStr(o, "EXPIRES"));
 
-	if (expires != 0)
-	{
+	if (expires != 0) {
 		expires = LocalToSystem64(expires);
 	}
 
@@ -685,8 +622,7 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScSetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -699,26 +635,23 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_GroupCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-		{"USERNAME", CmdPrompt, _UU("CMD_GroupJoin_Prompt_USERNAME"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_GroupCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	        {"USERNAME", CmdPrompt, _UU("CMD_GroupJoin_Prompt_USERNAME"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -728,20 +661,16 @@ UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		StrCpy(t.GroupName, sizeof(t.GroupName), GetParamStr(o, "[name]"));
 
 		ret = ScSetUser(ps->Rpc, &t);
 
-		if (ret != ERR_NO_ERROR)
-		{
+		if (ret != ERR_NO_ERROR) {
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
 			return ret;
@@ -755,25 +684,22 @@ UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsGroupUnjoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsGroupUnjoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_GroupUnjoin_Prompt_name"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_GroupUnjoin_Prompt_name"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -783,20 +709,16 @@ UINT PsGroupUnjoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetUser(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		StrCpy(t.GroupName, sizeof(t.GroupName), "");
 
 		ret = ScSetUser(ps->Rpc, &t);
 
-		if (ret != ERR_NO_ERROR)
-		{
+		if (ret != ERR_NO_ERROR) {
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
 			return ret;

@@ -22,20 +22,17 @@
 
 static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t);
 
-UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
-{
+UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t) {
 	HUB *h = NULL;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	h = AdminGetHub(a, t->HubName, "no_delete_iptable", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
-	if (IpTableDeleteByKey(h, t->Key) == false)
-	{
+	if (IpTableDeleteByKey(h, t->Key) == false) {
 		ret = ERR_OBJECT_NOT_FOUND;
 	}
 
@@ -44,18 +41,15 @@ UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 	return ret;
 }
 
-static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
-{
+static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t) {
 	HUB *h = NULL;
-	if (s == NULL || hubname == NULL || t == NULL)
-	{
+	if (s == NULL || hubname == NULL || t == NULL) {
 		return ERR_INTERNAL_ERROR;
 	}
 
 	h = GetHub(s->Cedar, hubname);
 
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ERR_HUB_NOT_FOUND;
 	}
 
@@ -66,8 +60,7 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 		t->NumIpTable = HubIpTableNum(h);
 		t->IpTables = ZeroMalloc(sizeof(RPC_ENUM_IP_TABLE_ITEM) * t->NumIpTable);
 
-		for (UINT i = 0;i < t->NumIpTable;i++)
-		{
+		for (UINT i = 0; i < t->NumIpTable; i++) {
 			RPC_ENUM_IP_TABLE_ITEM *e = &t->IpTables[i];
 			IP_TABLE_ENTRY *table = IpTableGet(h, i);
 
@@ -88,8 +81,7 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
-{
+UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t) {
 	SERVER *s = a->Server;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -103,20 +95,17 @@ UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 	return SiEnumIpTable(s, hubname, t);
 }
 
-UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
-{
+UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t) {
 	HUB *h = NULL;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	h = AdminGetHub(a, t->HubName, "no_delete_mactable", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
-	if (MacTableDeleteByKey(h, t->Key) == false)
-	{
+	if (MacTableDeleteByKey(h, t->Key) == false) {
 		ret = ERR_OBJECT_NOT_FOUND;
 	}
 
@@ -125,18 +114,15 @@ UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 	return ret;
 }
 
-static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
-{
+static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t) {
 	HUB *h = NULL;
-	if (s == NULL || hubname == NULL || t == NULL)
-	{
+	if (s == NULL || hubname == NULL || t == NULL) {
 		return ERR_INTERNAL_ERROR;
 	}
 
 	h = GetHub(s->Cedar, hubname);
 
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ERR_HUB_NOT_FOUND;
 	}
 
@@ -147,8 +133,7 @@ static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 		MAC_TABLE_ENTRY **pp = MacTableEnum(h, &t->NumMacTable);
 		t->MacTables = ZeroMalloc(sizeof(RPC_ENUM_MAC_TABLE_ITEM) * t->NumMacTable);
 
-		for (UINT i = 0;i < t->NumMacTable;i++)
-		{
+		for (UINT i = 0; i < t->NumMacTable; i++) {
 			RPC_ENUM_MAC_TABLE_ITEM *e = &t->MacTables[i];
 			MAC_TABLE_ENTRY *mac = pp[i];
 
@@ -169,8 +154,7 @@ static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
-{
+UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t) {
 	SERVER *s = a->Server;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -183,51 +167,39 @@ UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 	return SiEnumMacTable(s, hubname, t);
 }
 
-UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
-{
+UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t) {
 	HUB *h = NULL;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	char name[MAX_SESSION_NAME_LEN + 1];
 
-	if (IsEmptyStr(t->Name))
-	{
+	if (IsEmptyStr(t->Name)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	StrCpy(name, sizeof(name), t->Name);
 
 	h = AdminGetHub(a, t->HubName, "no_disconnect_session", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	SESSION *sess = GetSessionByName(h, name);
 
-	if (sess == NULL)
-	{
+	if (sess == NULL) {
 		ret = ERR_OBJECT_NOT_FOUND;
-	}
-	else
-	{
-		if (sess->LinkModeServer)
-		{
+	} else {
+		if (sess->LinkModeServer) {
 			ret = ERR_LINK_CANT_DISCONNECT;
-		}
-		else if (sess->BridgeMode)
-		{
+		} else if (sess->BridgeMode) {
 			ret = ERR_BRIDGE_CANT_DISCONNECT;
-		}
-		else
-		{
+		} else {
 			StopSession(sess);
 		}
 		ReleaseSession(sess);
 	}
 
-	if (ret == ERR_NO_ERROR)
-	{
+	if (ret == ERR_NO_ERROR) {
 		ALog(a, h, "LA_DELETE_SESSION", t->Name);
 	}
 
@@ -236,8 +208,7 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 	return ret;
 }
 
-UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
-{
+UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t) {
 	HUB *h = NULL;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
@@ -247,14 +218,12 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	StrCpy(name, sizeof(name), t->Name);
 
-	if (IsEmptyStr(t->Name))
-	{
+	if (IsEmptyStr(t->Name)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	h = AdminGetHub(a, t->HubName, "no_query_session", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -265,12 +234,9 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 
 	SESSION *sess = GetSessionByName(h, t->Name);
 
-	if (sess == NULL)
-	{
+	if (sess == NULL) {
 		ret = ERR_OBJECT_NOT_FOUND;
-	}
-	else
-	{
+	} else {
 		SESSION_INFO info;
 
 		SessionGetInfo(sess, &info);
@@ -281,8 +247,7 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 		Copy(&t->NodeInfo, &info.NodeInfo, sizeof(NODE_INFO));
 
 		t->ClientIp = IPToUINT(&info.ClientIp);
-		if (IsIP6(&info.ClientIp))
-		{
+		if (IsIP6(&info.ClientIp)) {
 			Copy(&t->ClientIp6, &info.ClientIp.address, sizeof(t->ClientIp6));
 		}
 
@@ -300,8 +265,7 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 	return ret;
 }
 
-UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
-{
+UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t) {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
 	UINT err;
@@ -309,8 +273,7 @@ UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	h = AdminGetHub(a, t->HubName, "no_enum_session", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -327,18 +290,15 @@ UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 	return ret;
 }
 
-static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
-{
+static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t) {
 	UINT64 now = Tick64();
-	if (s == NULL || hubname == NULL || t == NULL)
-	{
+	if (s == NULL || hubname == NULL || t == NULL) {
 		return;
 	}
 
 	HUB *h = GetHub(s->Cedar, hubname);
 
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		t->NumSession = 0;
 		t->Sessions = ZeroMalloc(0);
 		return;
@@ -349,8 +309,7 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 	SESSION_INFO *info = HubEnumSessions(h, &t->NumSession);
 	t->Sessions = ZeroMalloc(sizeof(RPC_ENUM_SESSION_ITEM) * t->NumSession);
 
-	for (UINT i = 0;i < t->NumSession;i++)
-	{
+	for (UINT i = 0; i < t->NumSession; i++) {
 		SESSION_INFO *si = &info[i];
 		RPC_ENUM_SESSION_ITEM *e = &t->Sessions[i];
 
@@ -372,27 +331,18 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 		e->Client_MonitorMode = si->IsMonitorMode;
 		Copy(e->UniqueId, si->NodeInfo.UniqueId, 16);
 
-		if (si->NormalClient)
-		{
+		if (si->NormalClient) {
 			e->IsDormantEnabled = (dormant_interval == 0 ? false : true);
-			if (e->IsDormantEnabled)
-			{
-				if (si->LastCommTimeForDormant == 0)
-				{
+			if (e->IsDormantEnabled) {
+				if (si->LastCommTimeForDormant == 0) {
 					e->LastCommDormant = (UINT64)0x7FFFFFFF;
-				}
-				else
-				{
+				} else {
 					e->LastCommDormant = now - si->LastCommTimeForDormant;
 				}
-				if (si->LastCommTimeForDormant == 0)
-				{
+				if (si->LastCommTimeForDormant == 0) {
 					e->IsDormant = true;
-				}
-				else
-				{
-					if ((si->LastCommTimeForDormant + dormant_interval) < now)
-					{
+				} else {
+					if ((si->LastCommTimeForDormant + dormant_interval) < now) {
 						e->IsDormant = true;
 					}
 				}

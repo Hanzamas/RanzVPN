@@ -14,8 +14,7 @@
 #include "Mayaqua/Str.h"
 #include "AdminInternal.h"
 
-UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
-{
+UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t) {
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -28,8 +27,7 @@ UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
 	HUB *h = AdminGetHub(a, hubname, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -47,8 +45,7 @@ UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
-{
+UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	UINT err;
@@ -56,8 +53,7 @@ UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_access_control_list", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 

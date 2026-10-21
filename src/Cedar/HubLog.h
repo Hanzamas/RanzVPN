@@ -1,13 +1,12 @@
 // HubLog.h
 // Header of HubLog.c
 
-#ifndef	HUBLOG_H
-#define	HUBLOG_H
+#ifndef HUBLOG_H
+#define HUBLOG_H
 
 #include "Cedar.h"
 
-struct HUB_LOG
-{
+struct HUB_LOG {
 	bool SaveSecurityLog;
 	UINT SecurityLogSwitchType;
 	bool SavePacketLog;
@@ -15,8 +14,7 @@ struct HUB_LOG
 	UINT PacketLogConfig[NUM_PACKET_LOG];
 };
 
-struct LOG_FILE
-{
+struct LOG_FILE {
 	char Path[MAX_PATH];
 	UINT FileSize;
 	UINT64 UpdatedTime;

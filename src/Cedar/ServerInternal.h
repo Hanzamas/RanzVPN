@@ -1,8 +1,8 @@
 // ServerInternal.h
 // Module-internal declarations of the Server module: only its own files include this header
 
-#ifndef	SERVER_INTERNAL_H
-#define	SERVER_INTERNAL_H
+#ifndef SERVER_INTERNAL_H
+#define SERVER_INTERNAL_H
 
 bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root);
 void SiLoadLocalBridges(SERVER *s, FOLDER *f);
@@ -24,4 +24,4 @@ int CompareCaps(void *p1, void *p2);
 void AddCaps(CAPSLIST *caps, CAPS *c);
 UINT GetCapsInt(CAPSLIST *caps, char *name);
 
-#endif	// SERVER_INTERNAL_H
+#endif // SERVER_INTERNAL_H

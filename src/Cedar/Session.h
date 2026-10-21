@@ -1,22 +1,21 @@
 // Session.h
 // Header of Session.c
 
-#ifndef	SESSION_H
-#define	SESSION_H
+#ifndef SESSION_H
+#define SESSION_H
 
 #include "Cedar.h"
 
 // Interval to increment the number of logins after the connection
-#define	NUM_LOGIN_INCREMENT_INTERVAL		(30 * 1000)
+#define NUM_LOGIN_INCREMENT_INTERVAL (30 * 1000)
 
-typedef bool (PA_INIT)(SESSION *s);
-typedef CANCEL *(PA_GETCANCEL)(SESSION *s);
-typedef UINT (PA_GETNEXTPACKET)(SESSION *s, void **data);
-typedef bool (PA_PUTPACKET)(SESSION *s, void *data, UINT size);
-typedef void (PA_FREE)(SESSION *s);
+typedef bool(PA_INIT)(SESSION *s);
+typedef CANCEL *(PA_GETCANCEL)(SESSION * s);
+typedef UINT(PA_GETNEXTPACKET)(SESSION *s, void **data);
+typedef bool(PA_PUTPACKET)(SESSION *s, void *data, UINT size);
+typedef void(PA_FREE)(SESSION *s);
 
-struct NODE_INFO
-{
+struct NODE_INFO {
 	char ClientProductName[64];
 	UINT ClientProductVer;
 	UINT ClientProductBuild;
@@ -43,8 +42,7 @@ struct NODE_INFO
 	char Padding[304 - (16 * 3)];
 };
 
-struct PACKET_ADAPTER
-{
+struct PACKET_ADAPTER {
 	PA_INIT *Init;
 	PA_GETCANCEL *GetCancel;
 	PA_GETNEXTPACKET *GetNextPacket;
@@ -53,8 +51,7 @@ struct PACKET_ADAPTER
 	void *Param;
 };
 
-struct SESSION
-{
+struct SESSION {
 	LOCK *lock;
 	REF *ref;
 	CEDAR *Cedar;
@@ -162,20 +159,19 @@ struct SESSION
 };
 
 // What the admin RPCs report about one session, copied by SessionGetInfo under the session's lock
-struct SESSION_INFO
-{
+struct SESSION_INFO {
 	char Name[MAX_SESSION_NAME_LEN + 1];
 	char Username[MAX_USERNAME_LEN + 1];
 	char RealUsername[MAX_USERNAME_LEN + 1];
 	char GroupName[MAX_USERNAME_LEN + 1];
 	NODE_INFO NodeInfo;
-	IP ClientIp;							// Zero when the session has no connection
+	IP ClientIp; // Zero when the session has no connection
 	char ClientHostname[MAX_HOST_NAME_LEN + 1];
-	UINT NumTcp;							// TCP sockets of the connection
+	UINT NumTcp; // TCP sockets of the connection
 	UINT MaxConnection;
-	UINT64 CreatedTime;						// Tick64
-	UINT64 LastCommTime;					// Tick64
-	UINT64 LastCommTimeForDormant;			// Tick64, 0 before the first packet
+	UINT64 CreatedTime;            // Tick64
+	UINT64 LastCommTime;           // Tick64
+	UINT64 LastCommTimeForDormant; // Tick64, 0 before the first packet
 	bool LinkModeServer;
 	bool BridgeMode;
 	bool NormalClient;
@@ -193,7 +189,7 @@ void ReleaseSession(SESSION *s);
 void StopSession(SESSION *s);
 void StopSessionEx(SESSION *s, bool no_wait);
 PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETNEXTPACKET *getnext,
-								 PA_PUTPACKET *put, PA_FREE *free);
+                                 PA_PUTPACKET *put, PA_FREE *free);
 void SessionMain(SESSION *s);
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key);
 void ClientAdditionalConnectChance(SESSION *s);

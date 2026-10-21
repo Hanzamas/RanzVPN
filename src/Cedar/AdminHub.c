@@ -22,13 +22,11 @@
 #include "Mayaqua/Tick64.h"
 #include "AdminInternal.h"
 
-UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
-{
+UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t) {
 	UINT err;
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -39,21 +37,19 @@ UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
-{
+UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t) {
 	SERVER *s = a->Server;
 	UINT err;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_log_config", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	ALog(a, h, "LA_SET_HUB_LOG");
 
 	SetHubLogSettingEx(h, &t->LogSetting,
-		(a->ServerAdmin == false && GetHubAdminOption(h, "no_change_log_switch_type") != 0));
+	                   (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_log_switch_type") != 0));
 
 	ReleaseHub(h);
 
@@ -62,14 +58,12 @@ UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
-{
+UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t) {
 	UINT err;
 	HUB_STATS st;
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -98,37 +92,30 @@ UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
-{
+UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t) {
 	SERVER *s = a->Server;
 	UINT err;
 
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
-	if (a->ServerAdmin == false && t->Online && GetHubAdminOption(h, "no_online") != 0)
-	{
+	if (a->ServerAdmin == false && t->Online && GetHubAdminOption(h, "no_online") != 0) {
 		ReleaseHub(h);
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
-	if (a->ServerAdmin == false && t->Online == false && GetHubAdminOption(h, "no_offline") != 0)
-	{
+	if (a->ServerAdmin == false && t->Online == false && GetHubAdminOption(h, "no_offline") != 0) {
 		ReleaseHub(h);
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
-	if (t->Online)
-	{
+	if (t->Online) {
 		ALog(a, h, "LA_SET_HUB_ONLINE");
 		SetHubOnline(h);
-	}
-	else
-	{
+	} else {
 		ALog(a, h, "LA_SET_HUB_OFFLINE");
 		SetHubOffline(h);
 	}
@@ -140,15 +127,13 @@ UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
-{
+UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	CONNECTION *connection;
 	CONNECTION_INFO info;
 
-	if (IsEmptyStr(t->Name))
-	{
+	if (IsEmptyStr(t->Name)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -162,15 +147,13 @@ UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 
 		connection = Search(c->ConnectionList, &tt);
 
-		if (connection != NULL)
-		{
+		if (connection != NULL) {
 			AddRef(connection->ref);
 		}
 	}
 	UnlockList(c->ConnectionList);
 
-	if (connection == NULL)
-	{
+	if (connection == NULL) {
 		return ERR_OBJECT_NOT_FOUND;
 	}
 
@@ -196,14 +179,12 @@ UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
-{
+UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	CONNECTION *connection;
 
-	if (IsEmptyStr(t->Name))
-	{
+	if (IsEmptyStr(t->Name)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -216,15 +197,13 @@ UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
 		tt.Name = t->Name;
 
 		connection = Search(c->ConnectionList, &tt);
-		if (connection != NULL)
-		{
+		if (connection != NULL) {
 			AddRef(connection->ref);
 		}
 	}
 	UnlockList(c->ConnectionList);
 
-	if (connection == NULL)
-	{
+	if (connection == NULL) {
 		return ERR_OBJECT_NOT_FOUND;
 	}
 
@@ -237,8 +216,7 @@ UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
-{
+UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
@@ -251,9 +229,8 @@ UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 	{
 		t->NumConnection = LIST_NUM(c->ConnectionList);
 		t->Connections = ZeroMalloc(sizeof(RPC_ENUM_CONNECTION_ITEM) * t->NumConnection);
-		
-		for (UINT i = 0;i < t->NumConnection;i++)
-		{
+
+		for (UINT i = 0; i < t->NumConnection; i++) {
 			RPC_ENUM_CONNECTION_ITEM *e = &t->Connections[i];
 			CONNECTION_INFO info;
 
@@ -272,15 +249,13 @@ UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
-{
+UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
 
 
-	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
-	{
+	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -288,8 +263,7 @@ UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 
 	h = GetHub(c, t->HubName);
 
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ERR_HUB_NOT_FOUND;
 	}
 
@@ -305,8 +279,7 @@ UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
-{
+UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
@@ -319,13 +292,11 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 		// Sized for every hub; NumHub counts the ones this admin may see
 		t->Hubs = ZeroMalloc(sizeof(RPC_ENUM_HUB_ITEM) * LIST_NUM(c->HubList));
 
-		for (UINT i = 0;i < LIST_NUM(c->HubList);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(c->HubList); i++) {
 			HUB *h = LIST_DATA(c->HubList, i);
 			HUB_STATS st;
 
-			if (a->ServerAdmin == false && StrCmpi(h->Name, a->HubName) != 0)
-			{
+			if (a->ServerAdmin == false && StrCmpi(h->Name, a->HubName) != 0) {
 				continue;
 			}
 
@@ -354,12 +325,10 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
-{
+UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
-	{
+	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -367,8 +336,7 @@ UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 
 	Zero(t, sizeof(RPC_CREATE_HUB));
 
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
@@ -386,37 +354,31 @@ UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ret;
 }
 
-UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
-{
+UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	SERVER *s = a->Server;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
-	{
+	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	// For JSON-RPC
-	if (StrLen(t->AdminPasswordPlainText) != 0)
-	{
+	if (StrLen(t->AdminPasswordPlainText) != 0) {
 		Sha0(t->HashedPassword, t->AdminPasswordPlainText, StrLen(t->AdminPasswordPlainText));
 		HashPassword(t->SecurePassword, ADMINISTRATOR_USERNAME, t->AdminPasswordPlainText);
 	}
 
 	if (IsZero(t->HashedPassword, sizeof(t->HashedPassword)) == false &&
-		IsZero(t->SecurePassword, sizeof(t->SecurePassword)) == false)
-	{
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_admin_password") != 0)
-		{
+	    IsZero(t->SecurePassword, sizeof(t->SecurePassword)) == false) {
+		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_admin_password") != 0) {
 			ReleaseHub(h);
 			return ERR_NOT_ENOUGH_RIGHT;
 		}
@@ -427,10 +389,8 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 		HashPassword(hash1, ADMINISTRATOR_USERNAME, "");
 		Sha0(hash2, "", 0);
 
-		if (Cmp(t->HashedPassword, hash2, SHA1_SIZE) == 0 || Cmp(t->SecurePassword, hash1, SHA1_SIZE) == 0)
-		{
-			if (a->ServerAdmin == false && IsLocalHostIP(&a->RemoteIP) == false)
-			{
+		if (Cmp(t->HashedPassword, hash2, SHA1_SIZE) == 0 || Cmp(t->SecurePassword, hash1, SHA1_SIZE) == 0) {
+			if (a->ServerAdmin == false && IsLocalHostIP(&a->RemoteIP) == false) {
 				// Refuse a blank hub admin password set from a remote host
 				ReleaseHub(h);
 				return ERR_INVALID_PARAMETER;
@@ -444,25 +404,19 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 		h->Option->NoEnum = t->HubOption.NoEnum;
 
 		if (IsZero(t->HashedPassword, sizeof(t->HashedPassword)) == false &&
-			IsZero(t->SecurePassword, sizeof(t->SecurePassword)) == false)
-		{
+		    IsZero(t->SecurePassword, sizeof(t->SecurePassword)) == false) {
 			Copy(h->HashedPassword, t->HashedPassword, SHA1_SIZE);
 			Copy(h->SecurePassword, t->SecurePassword, SHA1_SIZE);
 		}
 	}
 	Unlock(h->lock);
 
-	if (t->Online)
-	{
-		if (a->ServerAdmin || GetHubAdminOption(h, "no_online") == 0)
-		{
+	if (t->Online) {
+		if (a->ServerAdmin || GetHubAdminOption(h, "no_online") == 0) {
 			SetHubOnline(h);
 		}
-	}
-	else
-	{
-		if (a->ServerAdmin || GetHubAdminOption(h, "no_offline") == 0)
-		{
+	} else {
+		if (a->ServerAdmin || GetHubAdminOption(h, "no_offline") == 0) {
 			SetHubOffline(h);
 		}
 	}
@@ -476,28 +430,24 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ret;
 }
 
-UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
-{
+UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB_OPTION o;
 	UINT current_hub_num;
 	bool b;
 
-	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
-	{
+	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	SERVER_ADMIN_ONLY;
 
 	Trim(t->HubName);
-	if (StrLen(t->HubName) == 0)
-	{
+	if (StrLen(t->HubName) == 0) {
 		return ERR_INVALID_PARAMETER;
 	}
-	if (StartWith(t->HubName, ".") || EndWith(t->HubName, "."))
-	{
+	if (StartWith(t->HubName, ".") || EndWith(t->HubName, ".")) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -513,8 +463,7 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	}
 	UnlockList(c->HubList);
 
-	if (current_hub_num > SERVER_MAX_SESSIONS)
-	{
+	if (current_hub_num > SERVER_MAX_SESSIONS) {
 		return ERR_TOO_MANY_HUBS;
 	}
 
@@ -524,8 +473,7 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	}
 	UnlockList(c->HubList);
 
-	if (b)
-	{
+	if (b) {
 		return ERR_HUB_ALREADY_EXISTS;
 	}
 
@@ -533,9 +481,8 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 
 	// For JSON-RPC
 	if ((IsZero(t->HashedPassword, sizeof(t->HashedPassword)) &&
-		IsZero(t->SecurePassword, sizeof(t->SecurePassword))) ||
-		StrLen(t->AdminPasswordPlainText) != 0)
-	{
+	     IsZero(t->SecurePassword, sizeof(t->SecurePassword))) ||
+	    StrLen(t->AdminPasswordPlainText) != 0) {
 		Sha0(t->HashedPassword, t->AdminPasswordPlainText, StrLen(t->AdminPasswordPlainText));
 		HashPassword(t->SecurePassword, ADMINISTRATOR_USERNAME, t->AdminPasswordPlainText);
 	}

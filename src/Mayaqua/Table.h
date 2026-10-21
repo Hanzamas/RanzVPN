@@ -1,33 +1,31 @@
 // Table.h
 // Header of Table.c
 
-#ifndef	TABLE_H
-#define	TABLE_H
+#ifndef TABLE_H
+#define TABLE_H
 
 #include "Encrypt.h"
 
-#define	LANGLIST_FILENAME		"|languages.txt"
+#define LANGLIST_FILENAME "|languages.txt"
 
-#define	LANG_CONFIG_FILENAME	L"$lang.config"
-#define	LANG_CONFIG_TEMPLETE	"|lang.config"
+#define LANG_CONFIG_FILENAME L"$lang.config"
+#define LANG_CONFIG_TEMPLETE "|lang.config"
 
-#define SE_LANG_JAPANESE			0
-#define SE_LANG_CHINESE_ZH			2
+#define SE_LANG_JAPANESE   0
+#define SE_LANG_CHINESE_ZH 2
 
-struct TABLE
-{
+struct TABLE {
 	char *name;
 	char *str;
 	wchar_t *unistr;
 };
 
-#define	_SS(name)		(GetTableStr((const char *)(name)))
-#define	_UU(name)		(GetTableUniStr((const char *)(name)))
-#define	_II(name)		(GetTableInt((const char *)(name)))
-#define _GETLANG()		(_II("LANG"))
+#define _SS(name)  (GetTableStr((const char *)(name)))
+#define _UU(name)  (GetTableUniStr((const char *)(name)))
+#define _II(name)  (GetTableInt((const char *)(name)))
+#define _GETLANG() (_II("LANG"))
 
-struct LANGLIST
-{
+struct LANGLIST {
 	UINT Id;
 	char Name[32];
 	wchar_t TitleEnglish[128];
@@ -43,8 +41,7 @@ TOKEN_LIST *GetTableNameStartWith(const char *str);
 char *GetTableStr(const char *name);
 wchar_t *GetTableUniStr(const char *name);
 wchar_t *GetUniErrorStr(UINT err);
-static inline wchar_t *_E(UINT name)
-{
+static inline wchar_t *_E(UINT name) {
 	return (GetUniErrorStr((UINT)(name)));
 }
 UINT GetTableInt(const char *name);
@@ -62,5 +59,5 @@ bool SaveLangConfig(wchar_t *filename, const char *str);
 
 UINT GetCurrentLangId();
 
-#endif	// TABLE_H
+#endif // TABLE_H
 

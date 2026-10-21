@@ -1,8 +1,8 @@
 // MemoryInternal.h
 // Module-internal declarations of the Memory module: only its own files include this header
 
-#ifndef	MEMORY_INTERNAL_H
-#define	MEMORY_INTERNAL_H
+#ifndef MEMORY_INTERNAL_H
+#define MEMORY_INTERNAL_H
 
 void CleanupHashList(HASH_LIST *h);
 UINT CalcHashForHashList(const HASH_LIST *h, void *p);
@@ -28,4 +28,4 @@ void LockSk(SK *s);
 void UnlockSk(SK *s);
 UCHAR *GetCanaryRand(UINT id);
 
-#endif	// MEMORY_INTERNAL_H
+#endif // MEMORY_INTERNAL_H

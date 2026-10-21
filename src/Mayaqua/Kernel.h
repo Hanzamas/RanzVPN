@@ -1,11 +1,10 @@
-#ifndef	KERNEL_H
-#define	KERNEL_H
+#ifndef KERNEL_H
+#define KERNEL_H
 
 #include "MayaType.h"
 #include "Native.h"
 
-struct MEMINFO
-{
+struct MEMINFO {
 	UINT64 TotalMemory;
 	UINT64 UsedMemory;
 	UINT64 FreeMemory;
@@ -14,8 +13,7 @@ struct MEMINFO
 	UINT64 FreePhys;
 };
 
-struct LOCALE
-{
+struct LOCALE {
 	wchar_t YearStr[16], MonthStr[16], DayStr[16];
 	wchar_t HourStr[16], MinuteStr[16], SecondStr[16];
 	wchar_t DayOfWeek[7][16];
@@ -24,29 +22,27 @@ struct LOCALE
 };
 
 
-typedef void (THREAD_PROC)(THREAD *thread, void *param);
+typedef void(THREAD_PROC)(THREAD *thread, void *param);
 
-struct THREAD
-{
+struct THREAD {
 	REF *ref;
 	THREAD_PROC *thread_proc;
 	void *param;
 	void *pData;
 	EVENT *init_finished_event;
 	UINT ThreadId;
-	void *StartedEvent;				// Kernel event the pool callback sets once it took the job (NewThread waits for it, then closes it)
-	void *EndedEvent;				// Manual-reset kernel event set once the job ended (WaitThread waits on it)
+	void *StartedEvent; // Kernel event the pool callback sets once it took the job (NewThread waits for it, then closes it)
+	void *EndedEvent;   // Manual-reset kernel event set once the job ended (WaitThread waits on it)
 	EVENT *release_event;
 	char *Name;
 };
 
-struct INSTANCE
-{
+struct INSTANCE {
 	char *Name;
 	void *pData;
 };
 
-#define	NewThread(thread_proc, param) NewThreadNamed((thread_proc), (param), (#thread_proc))
+#define NewThread(thread_proc, param) NewThreadNamed((thread_proc), (param), (#thread_proc))
 
 void SleepThread(UINT time);
 THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param);

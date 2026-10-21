@@ -15,16 +15,14 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	RPC_TEST t;
 	wchar_t tmp[MAX_SIZE];
 	char sizestr[MAX_SIZE];
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -34,8 +32,7 @@ UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	UINT ret = ScFlush(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -50,28 +47,23 @@ UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	PARAM args[] =
-	{
-		{"[yes]", CmdPrompt, _UU("CMD_Crash_Confirm"), NULL, NULL},
-	};
+	    {
+	        {"[yes]", CmdPrompt, _UU("CMD_Crash_Confirm"), NULL, NULL},
+	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	char *yes = GetParamStr(o, "[yes]");
 
-	if (StrCmpi(yes, "yes") != 0)
-	{
+	if (StrCmpi(yes, "yes") != 0) {
 		c->Write(c, _UU("CMD_Crash_Aborted"));
-	}
-	else
-	{
+	} else {
 		RPC_TEST t;
 
 		c->Write(c, _UU("CMD_Crash_Msg"));
@@ -80,8 +72,7 @@ UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		UINT ret = ScCrash(ps->Rpc, &t);
 
-		if (ret != ERR_NO_ERROR)
-		{
+		if (ret != ERR_NO_ERROR) {
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
 			return ret;
@@ -93,19 +84,17 @@ UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_TEST t;
 	PARAM args[] =
-	{
-		{"[CN]", CmdPrompt, _UU("CMD_ServerCertRegenerate_Prompt_CN"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[CN]", CmdPrompt, _UU("CMD_ServerCertRegenerate_Prompt_CN"), CmdEvalNotEmpty, NULL},
+	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -114,8 +103,7 @@ UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 
 	ret = ScRegenerateServerCert(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;

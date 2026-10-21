@@ -19,27 +19,23 @@
 #include "Mayaqua/Tick64.h"
 #include "AdminInternal.h"
 
-UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
-{
+UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t) {
 	SERVER *s = a->Server;
 	UINT ret = ERR_NO_ERROR;
 	LINK *k;
 
-	if (UniIsEmptyStr(t->OldAccountName) || UniIsEmptyStr(t->NewAccountName))
-	{
+	if (UniIsEmptyStr(t->OldAccountName) || UniIsEmptyStr(t->NewAccountName)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	CHECK_RIGHT;
 
-	if (UniStrCmpi(t->NewAccountName, t->OldAccountName) == 0)
-	{
+	if (UniStrCmpi(t->NewAccountName, t->OldAccountName) == 0) {
 		return ERR_NO_ERROR;
 	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_cascade", &ret);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
@@ -48,17 +44,13 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 	{
 		k = FindLinkByAccountName(h, t->OldAccountName);
 
-		if (k != NULL)
-		{
+		if (k != NULL) {
 			LINK *same = FindLinkByAccountName(h, t->NewAccountName);
 
-			if (same != NULL)
-			{
+			if (same != NULL) {
 				ReleaseLink(same);
 				ret = ERR_LINK_ALREADY_EXISTS;
-			}
-			else
-			{
+			} else {
 				UniStrCpy(k->Option->AccountName, sizeof(k->Option->AccountName), t->NewAccountName);
 
 				ALog(a, h, "LA_RENAME_LINK", t->OldAccountName, t->NewAccountName);
@@ -69,8 +61,7 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 	}
 	UnlockList(h->LinkList);
 
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		ReleaseHub(h);
 		return ERR_OBJECT_NOT_FOUND;
 	}
@@ -82,29 +73,25 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 	return ret;
 }
 
-UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
-{
+UINT StDeleteLink(ADMIN *a, RPC_LINK *t) {
 	SERVER *s = a->Server;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	wchar_t accountname[MAX_ACCOUNT_NAME_LEN + 1];
 
-	if (UniIsEmptyStr(t->AccountName))
-	{
+	if (UniIsEmptyStr(t->AccountName)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_cascade", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
 	LINK *k = FindLinkByAccountName(h, accountname);
 
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		ReleaseHub(h);
 
 		return ERR_OBJECT_NOT_FOUND;
@@ -126,30 +113,26 @@ UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
-{
+UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t) {
 	SERVER *s = a->Server;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	wchar_t accountname[MAX_ACCOUNT_NAME_LEN + 1];
 
 
-	if (UniIsEmptyStr(t->AccountName))
-	{
+	if (UniIsEmptyStr(t->AccountName)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_cascade", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
 	LINK *k = FindLinkByAccountName(h, accountname);
 
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		ReleaseHub(h);
 
 		return ERR_OBJECT_NOT_FOUND;
@@ -167,30 +150,26 @@ UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
-{
+UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t) {
 	SERVER *s = a->Server;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	wchar_t accountname[MAX_ACCOUNT_NAME_LEN + 1];
 
 
-	if (UniIsEmptyStr(t->AccountName))
-	{
+	if (UniIsEmptyStr(t->AccountName)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_cascade", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
 	LINK *k = FindLinkByAccountName(h, accountname);
 
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		ReleaseHub(h);
 
 		return ERR_OBJECT_NOT_FOUND;
@@ -208,22 +187,19 @@ UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
-{
+UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t) {
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	wchar_t accountname[MAX_ACCOUNT_NAME_LEN + 1];
 	SESSION *sess;
 
-	if (UniIsEmptyStr(t->AccountName))
-	{
+	if (UniIsEmptyStr(t->AccountName)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -236,8 +212,7 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 
 	LINK *k = FindLinkByAccountName(h, accountname);
 
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		ReleaseHub(h);
 
 		return ERR_OBJECT_NOT_FOUND;
@@ -246,19 +221,15 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 	Lock(k->lock);
 	{
 		sess = k->ClientSession;
-		if (sess != NULL)
-		{
+		if (sess != NULL) {
 			AddRef(sess->ref);
 		}
 	}
 	Unlock(k->lock);
 
-	if (sess != NULL && k->Offline == false)
-	{
+	if (sess != NULL && k->Offline == false) {
 		CiGetSessionStatus(&t->Status, sess);
-	}
-	else
-	{
+	} else {
 		ret = ERR_LINK_IS_OFFLINE;
 	}
 	ReleaseSession(sess);
@@ -269,14 +240,12 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 	return ret;
 }
 
-UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
-{
+UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t) {
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -290,8 +259,7 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 		t->NumLink = LIST_NUM(h->LinkList);
 		t->Links = ZeroMalloc(sizeof(RPC_ENUM_LINK_ITEM) * t->NumLink);
 
-		for (UINT i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(h->LinkList); i++) {
 			LINK *k = LIST_DATA(h->LinkList, i);
 			RPC_ENUM_LINK_ITEM *e = &t->Links[i];
 
@@ -302,10 +270,8 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 				StrCpy(e->HubName, sizeof(e->HubName), k->Option->HubName);
 				e->Online = k->Offline ? false : true;
 
-				if (e->Online)
-				{
-					if (k->ClientSession != NULL)
-					{
+				if (e->Online) {
+					if (k->ClientSession != NULL) {
 						e->ConnectedTime = Tick64ToTime64(k->ClientSession->CurrentConnectionEstablishTime);
 						e->Connected = (k->ClientSession->ClientStatus == CLIENT_STATUS_ESTABLISHED);
 						e->LastError = k->ClientSession->Err;
@@ -322,22 +288,19 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
-{
+UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t) {
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_SIZE];
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	LINK *k = FindLinkByAccountName(h, t->ClientOption->AccountName);
 
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		ReleaseHub(h);
 		return ERR_OBJECT_NOT_FOUND;
 	}
@@ -366,28 +329,24 @@ UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
-{
+UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t) {
 	SERVER *s = a->Server;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	// The checks of NewLink: a supported authentication type, and the policy fields every cascade has
-	if (LinkValidateAuthAndPolicy(t->ClientAuth, &t->Policy) == false)
-	{
+	if (LinkValidateAuthAndPolicy(t->ClientAuth, &t->Policy) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_cascade", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	LINK *k = FindLinkByAccountName(h, t->ClientOption->AccountName);
 
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		ReleaseHub(h);
 		return ERR_OBJECT_NOT_FOUND;
 	}
@@ -396,8 +355,7 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	Lock(k->lock);
 	{
-		if (k->ServerCert != NULL)
-		{
+		if (k->ServerCert != NULL) {
 			FreeX(k->ServerCert);
 			k->ServerCert = NULL;
 		}
@@ -407,12 +365,9 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 		ClientAuthFree(k->Auth);
 		k->Auth = ClientAuthClone(t->ClientAuth);
 
-		if (t->Policy.Ver3 == false)
-		{
+		if (t->Policy.Ver3 == false) {
 			Copy(k->Policy, &t->Policy, POLICY_VER2_SIZE);
-		}
-		else
-		{
+		} else {
 			Copy(k->Policy, &t->Policy, sizeof(POLICY));
 		}
 
@@ -430,23 +385,20 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
-{
+UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_cascade", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	LINK *k = FindLinkByAccountName(h, t->ClientOption->AccountName);
 
-	if (k != NULL)
-	{
+	if (k != NULL) {
 		ReleaseLink(k);
 		ReleaseHub(h);
 		return ERR_LINK_ALREADY_EXISTS;
@@ -456,12 +408,9 @@ UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	k = NewLink(c, h, t->ClientOption, t->ClientAuth, &t->Policy);
 
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		ret = ERR_INTERNAL_ERROR;
-	}
-	else
-	{
+	} else {
 		k->CheckServerCert = t->CheckServerCert;
 		k->AddDefaultCA = t->AddDefaultCA;
 		k->ServerCert = CloneX(t->ServerCert);

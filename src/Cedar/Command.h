@@ -1,8 +1,8 @@
 // Command.h
 // Header of Command.c
 
-#ifndef	COMMAND_H
-#define	COMMAND_H
+#ifndef COMMAND_H
+#define COMMAND_H
 
 #include "CedarType.h"
 
@@ -10,19 +10,18 @@
 
 #include <stddef.h>
 
-#define	TRAFFIC_DEFAULT_PORT		9821
-#define	TRAFFIC_NUMTCP_MAX			32
-#define	TRAFFIC_NUMTCP_DEFAULT		32
-#define	TRAFFIC_SPAN_DEFAULT		15
-#define	TRAFFIC_TYPE_DOWNLOAD		1
-#define	TRAFFIC_TYPE_UPLOAD			2
-#define	TRAFFIC_TYPE_FULL			0
-#define	TRAFFIC_BUF_SIZE			65535
-#define	TRAFFIC_VER_STR_SIZE		16
-#define	TRAFFIC_VER_STR				"TrafficServer\r\n"
+#define TRAFFIC_DEFAULT_PORT   9821
+#define TRAFFIC_NUMTCP_MAX     32
+#define TRAFFIC_NUMTCP_DEFAULT 32
+#define TRAFFIC_SPAN_DEFAULT   15
+#define TRAFFIC_TYPE_DOWNLOAD  1
+#define TRAFFIC_TYPE_UPLOAD    2
+#define TRAFFIC_TYPE_FULL      0
+#define TRAFFIC_BUF_SIZE       65535
+#define TRAFFIC_VER_STR_SIZE   16
+#define TRAFFIC_VER_STR        "TrafficServer\r\n"
 
-struct TT_RESULT
-{
+struct TT_RESULT {
 	bool Raw;
 	bool Double;
 	UINT64 NumBytesUpload;
@@ -34,10 +33,9 @@ struct TT_RESULT
 	UINT64 BpsTotal;
 };
 
-typedef void (TT_PRINT_PROC)(void *param, wchar_t *str);
+typedef void(TT_PRINT_PROC)(void *param, wchar_t *str);
 
-struct TTC_SOCK
-{
+struct TTC_SOCK {
 	SOCK *Sock;
 	UINT State;
 	UINT64 NumBytes;
@@ -48,8 +46,7 @@ struct TTC_SOCK
 	bool HideErrMsg;
 };
 
-struct TTC
-{
+struct TTC {
 	TT_PRINT_PROC *Print;
 	void *Param;
 	bool Double;
@@ -75,8 +72,7 @@ struct TTC
 	UINT64 start_tick;
 };
 
-struct TTC_WORKER
-{
+struct TTC_WORKER {
 	THREAD *WorkerThread;
 	TTC *Ttc;
 	LIST *SockList;
@@ -85,8 +81,7 @@ struct TTC_WORKER
 	bool Ok;
 };
 
-struct TTS_SOCK
-{
+struct TTS_SOCK {
 	SOCK *Sock;
 	UINT State;
 	UINT64 NumBytes;
@@ -102,11 +97,10 @@ struct TTS_SOCK
 	UINT64 LastCommTime;
 };
 
-struct TTS
-{
+struct TTS {
 	TT_PRINT_PROC *Print;
 	void *Param;
-	volatile bool Halt;					// Only through FlagRead and FlagWrite (Native.h)
+	volatile bool Halt; // Only through FlagRead and FlagWrite (Native.h)
 	UINT Port;
 	THREAD *Thread;
 	SOCK *ListenSocket;
@@ -115,8 +109,7 @@ struct TTS
 	LIST *WorkerList;
 };
 
-struct TTS_WORKER
-{
+struct TTS_WORKER {
 	TTS *Tts;
 	THREAD *WorkThread;
 	SOCK_EVENT *SockEvent;
@@ -124,15 +117,13 @@ struct TTS_WORKER
 	bool NewSocketArrived;
 };
 
-struct PT
-{
+struct PT {
 	CONSOLE *Console;
 	UINT LastError;
 	wchar_t *CmdLine;
 };
 
-struct PS
-{
+struct PS {
 	CONSOLE *Console;
 	RPC *Rpc;
 	char *ServerName;
@@ -144,28 +135,22 @@ struct PS
 	CAPSLIST *CapsList;
 };
 
-struct CTC
-{
+struct CTC {
 	wchar_t *String;
 	bool Right;
 };
 
-struct CTR
-{
+struct CTR {
 	wchar_t **Strings;
 };
 
-struct CT
-{
+struct CT {
 	LIST *Columns;
 	LIST *Rows;
 };
 
 UINT CommandMain(wchar_t *command_line);
 bool ParseHostPort(char *src, char **host, UINT *port, UINT default_port);
-
-
-
 
 
 

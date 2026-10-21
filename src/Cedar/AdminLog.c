@@ -20,14 +20,12 @@
 static void SiReadLocalLogFile(const SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t);
 static void SiEnumLocalLogFileList(const SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t);
 
-UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
-{
+UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t) {
 	SERVER *s = a->Server;
 	char logfilename[MAX_PATH];
 	char servername[MAX_HOST_NAME_LEN + 1];
 
-	if (IsEmptyStr(t->FilePath))
-	{
+	if (IsEmptyStr(t->FilePath)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -37,8 +35,7 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	GetMachineName(servername, sizeof(servername));
 
 	// Check the permission to read the log file
-	if (a->LogFileList == NULL)
-	{
+	if (a->LogFileList == NULL) {
 		RPC_ENUM_LOG_FILE elf;
 
 		Zero(&elf, sizeof(elf));
@@ -47,13 +44,11 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 
 		FreeRpcEnumLogFile(&elf);
 
-		if (elf_ret != ERR_NO_ERROR)
-		{
+		if (elf_ret != ERR_NO_ERROR) {
 			return elf_ret;
 		}
 	}
-	if (CheckLogFileNameFromEnumList(a->LogFileList, logfilename) == false)
-	{
+	if (CheckLogFileNameFromEnumList(a->LogFileList, logfilename) == false) {
 		return ERR_OBJECT_NOT_FOUND;
 	}
 
@@ -62,8 +57,7 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 
 	SiReadLocalLogFile(s, logfilename, offset, t);
 
-	if (offset == 0)
-	{
+	if (offset == 0) {
 		ALog(a, NULL, "LA_READ_LOG_FILE", servername, logfilename);
 	}
 
@@ -73,28 +67,24 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
-{
+UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	bool no_access = false;
 
 	HUB *h;
 
-	if (a->ServerAdmin == false)
-	{
+	if (a->ServerAdmin == false) {
 		h = GetHub(c, a->HubName);
 
-		if (GetHubAdminOption(h, "no_read_log_file") != 0)
-		{
+		if (GetHubAdminOption(h, "no_read_log_file") != 0) {
 			no_access = true;
 		}
 
 		ReleaseHub(h);
 	}
 
-	if (no_access)
-	{
+	if (no_access) {
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
@@ -104,15 +94,13 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 	SiEnumLocalLogFileList(s, a->ServerAdmin ? NULL : a->HubName, t);
 
 	// Cache the log file list on the RPC session
-	if (a->LogFileList != NULL)
-	{
+	if (a->LogFileList != NULL) {
 		FreeEnumLogFile(a->LogFileList);
 	}
 
 	a->LogFileList = NewListFast(CmpLogFile);
 
-	for (UINT i = 0;i < t->NumItem;i++)
-	{
+	for (UINT i = 0; i < t->NumItem; i++) {
 		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
 		LOG_FILE *f = ZeroMalloc(sizeof(LOG_FILE));
 
@@ -126,11 +114,9 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 	return ERR_NO_ERROR;
 }
 
-static void SiReadLocalLogFile(const SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t)
-{
+static void SiReadLocalLogFile(const SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t) {
 	char exe_dir[MAX_PATH], full_path[MAX_PATH];
-	if (s == NULL || t == NULL || filepath == NULL)
-	{
+	if (s == NULL || t == NULL || filepath == NULL) {
 		return;
 	}
 
@@ -140,12 +126,10 @@ static void SiReadLocalLogFile(const SERVER *s, char *filepath, UINT offset, RPC
 	Format(full_path, sizeof(full_path), "%s/%s", exe_dir, filepath);
 
 	IO *o = FileOpenEx(full_path, false, false);
-	if (o != NULL)
-	{
+	if (o != NULL) {
 		UINT filesize = FileSize(o);
 
-		if (offset < filesize)
-		{
+		if (offset < filesize) {
 			UINT readsize = MIN(filesize - offset, FTP_BLOCK_SIZE);
 			void *buf = ZeroMalloc(readsize);
 
@@ -161,10 +145,8 @@ static void SiReadLocalLogFile(const SERVER *s, char *filepath, UINT offset, RPC
 	}
 }
 
-static void SiEnumLocalLogFileList(const SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
-{
-	if (s == NULL || t == NULL)
-	{
+static void SiEnumLocalLogFileList(const SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t) {
+	if (s == NULL || t == NULL) {
 		return;
 	}
 
@@ -175,8 +157,7 @@ static void SiEnumLocalLogFileList(const SERVER *s, char *hubname, RPC_ENUM_LOG_
 	t->NumItem = LIST_NUM(o);
 	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LOG_FILE_ITEM) * t->NumItem);
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LOG_FILE *f = LIST_DATA(o, i);
 		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
 

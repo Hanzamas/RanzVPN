@@ -1,15 +1,14 @@
 // Remote.h
 // Header of Remote.c
 
-#ifndef	REMOTE_H
-#define	REMOTE_H
+#ifndef REMOTE_H
+#define REMOTE_H
 
 #include "Connection.h"
 
-typedef PACK *(RPC_DISPATCHER)(RPC *r, char *function_name, PACK *p);
+typedef PACK *(RPC_DISPATCHER)(RPC * r, char *function_name, PACK *p);
 
-struct RPC
-{
+struct RPC {
 	SOCK *Sock;
 	RPC_DISPATCHER *Dispatch;
 	void *Param;
@@ -27,5 +26,5 @@ PACK *RpcCall(RPC *r, char *function_name, PACK *p);
 void RpcServer(RPC *r);
 void RpcFree(RPC *rpc);
 
-#endif	// REMOTE_H
+#endif // REMOTE_H
 

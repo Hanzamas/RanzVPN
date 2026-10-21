@@ -12,17 +12,13 @@ static volatile LONG64 tick64_origin = 0;
 
 // A performance-counter count in seconds; if the counter frequency cannot be read, the count is
 // taken as milliseconds (the Tick64 fallback of HiResCounter)
-static double HiResTimeSpan(UINT64 diff)
-{
+static double HiResTimeSpan(UINT64 diff) {
 	LARGE_INTEGER t;
 	UINT64 freq;
 
-	if (QueryPerformanceFrequency(&t) == false)
-	{
+	if (QueryPerformanceFrequency(&t) == false) {
 		freq = 1000ULL;
-	}
-	else
-	{
+	} else {
 		Copy(&freq, &t, sizeof(UINT64));
 	}
 
@@ -30,13 +26,11 @@ static double HiResTimeSpan(UINT64 diff)
 }
 
 // The performance counter; Tick64 if the counter cannot be read
-static UINT64 HiResCounter()
-{
+static UINT64 HiResCounter() {
 	LARGE_INTEGER t;
 	UINT64 ret;
 
-	if (QueryPerformanceCounter(&t) == false)
-	{
+	if (QueryPerformanceCounter(&t) == false) {
 		return Tick64();
 	}
 
@@ -45,14 +39,11 @@ static UINT64 HiResCounter()
 	return ret;
 }
 
-UINT64 TickHighres64()
-{
+UINT64 TickHighres64() {
 	return (UINT64)(HiResTimeSpan(HiResCounter()) * 1000.0f);
-
 }
 
-UINT64 TickHighresNano64()
-{
+UINT64 TickHighresNano64() {
 	UINT64 ret = 0;
 
 	ret = (UINT64)(HiResTimeSpan(HiResCounter()) * 1000000000.0f);
@@ -60,39 +51,31 @@ UINT64 TickHighresNano64()
 	return ret;
 }
 
-UINT64 Tick64ToTime64(UINT64 tick)
-{
+UINT64 Tick64ToTime64(UINT64 tick) {
 	UINT64 ret = 0;
-	if (tick == 0)
-	{
+	if (tick == 0) {
 		return 0;
 	}
 	LockList(tk64->AdjustTime);
 	{
-		for (INT i = ((INT)LIST_NUM(tk64->AdjustTime) - 1); i >= 0; i--)
-		{
+		for (INT i = ((INT)LIST_NUM(tk64->AdjustTime) - 1); i >= 0; i--) {
 			ADJUST_TIME *t = LIST_DATA(tk64->AdjustTime, i);
-			if (t->Tick <= tick)
-			{
+			if (t->Tick <= tick) {
 				ret = t->Time + (tick - t->Tick);
 				break;
 			}
 		}
 	}
 	UnlockList(tk64->AdjustTime);
-	if (ret == 0)
-	{
+	if (ret == 0) {
 		ret++;
 	}
 	return ret;
 }
 
-UINT64 Tick64()
-{
-	if (tick64_origin == 0)
-	{
-		if (InterlockedCompareExchange64(&tick64_origin, (LONG64)GetTickCount64(), 0) == 0)
-		{
+UINT64 Tick64() {
+	if (tick64_origin == 0) {
+		if (InterlockedCompareExchange64(&tick64_origin, (LONG64)GetTickCount64(), 0) == 0) {
 			return 1;
 		}
 	}
@@ -103,16 +86,14 @@ UINT64 Tick64()
 // Clock check: record a correction when the system clock moved against the tick by a span or
 // more, or went back, so that Tick64ToTime64 follows the clock. It runs under the list lock,
 // so two checks never interleave.
-static void Tick64CheckTime()
-{
+static void Tick64CheckTime() {
 	LockList(tk64->AdjustTime);
 	{
 		UINT64 tick64 = Tick64();
 		UINT64 now = SystemTime64();
 
 		if (now < tk64->Time64 ||
-			Diff64((now - tk64->Time64) + tk64->Tick64WithTime64, tick64) >= TICK64_SPAN_WIN32)
-		{
+		    Diff64((now - tk64->Time64) + tk64->Tick64WithTime64, tick64) >= TICK64_SPAN_WIN32) {
 			ADJUST_TIME *t = ZeroMalloc(sizeof(ADJUST_TIME));
 
 			t->Tick = tick64;
@@ -120,8 +101,7 @@ static void Tick64CheckTime()
 			Add(tk64->AdjustTime, t);
 
 			// Bound the correction list on a system whose clock keeps skewing
-			if (LIST_NUM(tk64->AdjustTime) > MAX_ADJUST_TIME)
-			{
+			if (LIST_NUM(tk64->AdjustTime) > MAX_ADJUST_TIME) {
 				ADJUST_TIME *t2 = LIST_DATA(tk64->AdjustTime, 1);
 
 				Delete(tk64->AdjustTime, t2);
@@ -141,8 +121,7 @@ static void Tick64CheckTime()
 // Timer callback (process thread pool), every TICK64_SPAN_WIN32 ms: the clock check runs at
 // time-critical priority, so that its two clock reads stay close, and the pool thread gets
 // its normal priority back
-static void NTAPI Tick64TimerCallback(PTP_CALLBACK_INSTANCE instance, void *param, PTP_TIMER timer)
-{
+static void NTAPI Tick64TimerCallback(PTP_CALLBACK_INSTANCE instance, void *param, PTP_TIMER timer) {
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 
 	Tick64CheckTime();
@@ -150,24 +129,18 @@ static void NTAPI Tick64TimerCallback(PTP_CALLBACK_INSTANCE instance, void *para
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
 }
 
-UINT64 Diff64(UINT64 a, UINT64 b)
-{
-	if (a > b)
-	{
+UINT64 Diff64(UINT64 a, UINT64 b) {
+	if (a > b) {
 		return a - b;
-	}
-	else
-	{
+	} else {
 		return b - a;
 	}
 }
 
-void InitTick64()
-{
+void InitTick64() {
 	ULARGE_INTEGER span;
 	FILETIME due;
-	if (tk64 != NULL)
-	{
+	if (tk64 != NULL) {
 		return;
 	}
 
@@ -184,8 +157,7 @@ void InitTick64()
 
 	// Then the clock check every TICK64_SPAN_WIN32 ms, from one span on (a negative due time is relative)
 	tk64->Timer = CreateThreadpoolTimer(Tick64TimerCallback, NULL, NULL);
-	if (tk64->Timer == NULL)
-	{
+	if (tk64->Timer == NULL) {
 		AbortExitEx("Tick64 timer create failed.");
 	}
 
@@ -195,10 +167,8 @@ void InitTick64()
 	SetThreadpoolTimer(tk64->Timer, &due, TICK64_SPAN_WIN32, 0);
 }
 
-void FreeTick64()
-{
-	if (tk64 == NULL)
-	{
+void FreeTick64() {
+	if (tk64 == NULL) {
 		return;
 	}
 
@@ -208,8 +178,7 @@ void FreeTick64()
 	CloseThreadpoolTimer(tk64->Timer);
 	tk64->Timer = NULL;
 
-	for (UINT i = 0;i < LIST_NUM(tk64->AdjustTime);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(tk64->AdjustTime); i++) {
 		ADJUST_TIME *t = LIST_DATA(tk64->AdjustTime, i);
 		Free(t);
 	}

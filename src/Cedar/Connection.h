@@ -1,22 +1,24 @@
 // Connection.h
 // Header of Connection.c
 
-#ifndef	CONNECTION_H
-#define	CONNECTION_H
+#ifndef CONNECTION_H
+#define CONNECTION_H
 
 #include "Cedar.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Proxy.h"
 
-#define	UPDATE_LAST_COMM_TIME(v, n)		{if ((v) <= (n)) { v = (n); } }
+#define UPDATE_LAST_COMM_TIME(v, n)  \
+	{                                \
+		if ((v) <= (n)) { v = (n); } \
+	}
 
-struct CLIENT_OPTION
-{
+struct CLIENT_OPTION {
 	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];
 	char Hostname[MAX_HOST_NAME_LEN + 1];
 	UINT Port;
-	UINT PortUDP;											// UDP port number (0: Use only TCP)
+	UINT PortUDP; // UDP port number (0: Use only TCP)
 	UINT ProxyType;
 	char ProxyName[MAX_HOST_NAME_LEN + 1];
 	UINT ProxyPort;
@@ -42,12 +44,11 @@ struct CLIENT_OPTION
 	bool NoUdpAcceleration;
 	UCHAR HostUniqueKey[SHA1_SIZE];
 	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];
-	IP   BindLocalIP;
+	IP BindLocalIP;
 	UINT BindLocalPort;
 };
 
-struct CLIENT_AUTH
-{
+struct CLIENT_AUTH {
 	UINT AuthType;
 	char Username[MAX_USERNAME_LEN + 1];
 	UCHAR HashedPassword[SHA1_SIZE];
@@ -58,8 +59,7 @@ struct CLIENT_AUTH
 	char OpensslEngineName[MAX_SECURE_DEVICE_FILE_LEN + 1];
 };
 
-struct TCPSOCK
-{
+struct TCPSOCK {
 	SOCK *Sock;
 	FIFO *RecvFifo;
 	FIFO *SendFifo;
@@ -75,13 +75,11 @@ struct TCPSOCK
 	UINT64 DisconnectTick;
 };
 
-struct TCP
-{
+struct TCP {
 	LIST *TcpSockList;
 };
 
-struct BLOCK
-{
+struct BLOCK {
 	bool Compressed;
 	UINT Size;
 	UINT SizeofData;
@@ -90,8 +88,7 @@ struct BLOCK
 	bool IsFlooding;
 };
 
-struct CONNECTION
-{
+struct CONNECTION {
 	LOCK *lock;
 	REF *ref;
 	CEDAR *Cedar;
@@ -103,7 +100,7 @@ struct CONNECTION
 	UINT Status;
 	char *Name;
 	THREAD *Thread;
-	volatile bool Halt;					// Only through FlagRead and FlagWrite (Native.h)
+	volatile bool Halt; // Only through FlagRead and FlagWrite (Native.h)
 	UCHAR Random[SHA1_SIZE];
 	UINT ServerVer;
 	UINT ServerBuild;
@@ -140,12 +137,11 @@ struct CONNECTION
 };
 
 // What the admin RPCs report about one connection, copied by ConnectionGetInfo under the connection's lock
-struct CONNECTION_INFO
-{
+struct CONNECTION_INFO {
 	char Name[MAX_SIZE];
 	UINT Type;
 	UINT64 ConnectedTick;
-	IP RemoteIp;							// The remote end of the first socket; zero without one
+	IP RemoteIp; // The remote end of the first socket; zero without one
 	UINT RemotePort;
 	char RemoteHostname[MAX_SIZE];
 	char ServerStr[MAX_SERVER_STR_LEN + 1];

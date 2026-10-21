@@ -22,19 +22,16 @@
 #include "Mayaqua/Table.h"
 #include "AdminInternal.h"
 
-UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
-{
+UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	SERVER *s = a->Server;
 	UINT err;
 
-	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS)
-	{
+	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS) {
 		return ERR_TOO_MANT_ITEMS;
 	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "deny_hub_admin_change_ext_option", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -53,13 +50,11 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
-{
+UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	UINT err;
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -79,25 +74,20 @@ UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
-{
+UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	SERVER *s = a->Server;
 	UINT err;
 
-	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS)
-	{
+	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS) {
 		return ERR_TOO_MANT_ITEMS;
 	}
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
-	if (GetHubAdminOption(h, "allow_hub_admin_change_option") == false
-		&& a->ServerAdmin == false)
-	{
+	if (GetHubAdminOption(h, "allow_hub_admin_change_option") == false && a->ServerAdmin == false) {
 		ReleaseHub(h);
 
 		return ERR_NOT_ENOUGH_RIGHT;
@@ -107,8 +97,7 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	{
 		DeleteAllHubAdminOption(h);
 
-		for (UINT i = 0;i < t->NumItem;i++)
-		{
+		for (UINT i = 0; i < t->NumItem; i++) {
 			ADMIN_OPTION *e = &t->Items[i];
 			ADMIN_OPTION *a = ZeroMalloc(sizeof(ADMIN_OPTION));
 
@@ -131,15 +120,13 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
-{
+UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	UINT err;
 
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -153,8 +140,7 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 		t->NumItem = LIST_NUM(h->AdminOptionList);
 		t->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * t->NumItem);
 
-		for (UINT i = 0;i < t->NumItem;i++)
-		{
+		for (UINT i = 0; i < t->NumItem; i++) {
 			ADMIN_OPTION *a = LIST_DATA(h->AdminOptionList, i);
 			ADMIN_OPTION *e = &t->Items[i];
 
@@ -170,16 +156,14 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
-{
+UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	FreeRpcAdminOption(t);
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
 
 	t->NumItem = num_admin_options;
 	t->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * t->NumItem);
 
-	for (UINT i = 0;i < t->NumItem;i++)
-	{
+	for (UINT i = 0; i < t->NumItem; i++) {
 		ADMIN_OPTION *a = &t->Items[i];
 
 		StrCpy(a->Name, sizeof(a->Name), admin_options[i].Name);
@@ -190,8 +174,7 @@ UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
-{
+UINT StGetConfig(ADMIN *a, RPC_CONFIG *t) {
 	SERVER_ADMIN_ONLY;
 
 	FreeRpcConfig(t);
@@ -201,8 +184,7 @@ UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 
 	ALog(a, NULL, "LA_GET_CONFIG");
 
-	if (s->CfgRw != NULL)
-	{
+	if (s->CfgRw != NULL) {
 		FOLDER *f = SiWriteConfigurationToCfg(s);
 		BUF *b = CfgFolderToBuf(f);
 
@@ -215,27 +197,22 @@ UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 		FreeBuf(b);
 
 		return ERR_NO_ERROR;
-	}
-	else
-	{
+	} else {
 		return ERR_INTERNAL_ERROR;
 	}
 }
 
-UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
-{
+UINT StSetConfig(ADMIN *a, RPC_CONFIG *t) {
 	SERVER_ADMIN_ONLY;
 
 	SERVER *s = a->Server;
-	if (s->CfgRw == NULL)
-	{
+	if (s->CfgRw == NULL) {
 		return ERR_INTERNAL_ERROR;
 	}
 
 	// A bad upload or a failed write keeps the live configuration and the server running
 	UINT ret = SiStageConfiguration(s, t->FileData, StrLen(t->FileData));
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		return ret;
 	}
 
@@ -246,8 +223,7 @@ UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetCaps(ADMIN *a, CAPSLIST *t)
-{
+UINT StGetCaps(ADMIN *a, CAPSLIST *t) {
 	FreeRpcCapsList(t);
 	Zero(t, sizeof(CAPSLIST));
 

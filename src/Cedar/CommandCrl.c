@@ -20,21 +20,18 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_CRL t;
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -43,21 +40,17 @@ UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScEnumCrl(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		CT *ct = CtNew();
 
 		CtInsertColumn(ct, _UU("CMD_ID"), false);
 		CtInsertColumn(ct, _UU("SM_CRL_COLUMN_1"), false);
 
-		for (UINT i = 0;i < t.NumItem;i++)
-		{
+		for (UINT i = 0; i < t.NumItem; i++) {
 			wchar_t tmp[64];
 			RPC_ENUM_CRL_ITEM *e = &t.Items[i];
 
@@ -75,33 +68,30 @@ UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_CRL t;
 	PARAM args[] =
-	{
-		{"SERIAL", NULL, NULL, NULL, NULL},
-		{"MD5", NULL, NULL, NULL, NULL},
-		{"SHA1", NULL, NULL, NULL, NULL},
-		{"CN", NULL, NULL, NULL, NULL},
-		{"O", NULL, NULL, NULL, NULL},
-		{"OU", NULL, NULL, NULL, NULL},
-		{"C", NULL, NULL, NULL, NULL},
-		{"ST", NULL, NULL, NULL, NULL},
-		{"L", NULL, NULL, NULL, NULL},
-	};
+	    {
+	        {"SERIAL", NULL, NULL, NULL, NULL},
+	        {"MD5", NULL, NULL, NULL, NULL},
+	        {"SHA1", NULL, NULL, NULL, NULL},
+	        {"CN", NULL, NULL, NULL, NULL},
+	        {"O", NULL, NULL, NULL, NULL},
+	        {"OU", NULL, NULL, NULL, NULL},
+	        {"C", NULL, NULL, NULL, NULL},
+	        {"ST", NULL, NULL, NULL, NULL},
+	        {"L", NULL, NULL, NULL, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -114,20 +104,17 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		// Each option in its own field; NewName copies only the non-empty ones and FreeName frees them
 		NAME *n = crl->Name = NewName(GetParamUniStr(o, "CN"), GetParamUniStr(o, "O"), GetParamUniStr(o, "OU"),
-			GetParamUniStr(o, "C"), GetParamUniStr(o, "ST"), GetParamUniStr(o, "L"));
+		                              GetParamUniStr(o, "C"), GetParamUniStr(o, "ST"), GetParamUniStr(o, "L"));
 
 		if (n->CommonName != NULL || n->Organization != NULL || n->Unit != NULL ||
-			n->Country != NULL || n->State != NULL || n->Local != NULL)
-		{
+		    n->Country != NULL || n->State != NULL || n->Local != NULL) {
 			param_exists = true;
 		}
 
-		if (IsEmptyStr(GetParamStr(o, "SERIAL")) == false)
-		{
+		if (IsEmptyStr(GetParamStr(o, "SERIAL")) == false) {
 			BUF *b = StrToBin(GetParamStr(o, "SERIAL"));
 
-			if (b != NULL && b->Size >= 1)
-			{
+			if (b != NULL && b->Size >= 1) {
 				crl->Serial = NewXSerial(b->Buf, b->Size);
 				param_exists = true;
 			}
@@ -135,12 +122,10 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			FreeBuf(b);
 		}
 
-		if (IsEmptyStr(GetParamStr(o, "MD5")) == false)
-		{
+		if (IsEmptyStr(GetParamStr(o, "MD5")) == false) {
 			BUF *b = StrToBin(GetParamStr(o, "MD5"));
 
-			if (b != NULL && b->Size == MD5_SIZE)
-			{
+			if (b != NULL && b->Size == MD5_SIZE) {
 				Copy(crl->DigestMD5, b->Buf, MD5_SIZE);
 				param_exists = true;
 			}
@@ -148,12 +133,10 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			FreeBuf(b);
 		}
 
-		if (IsEmptyStr(GetParamStr(o, "SHA1")) == false)
-		{
+		if (IsEmptyStr(GetParamStr(o, "SHA1")) == false) {
 			BUF *b = StrToBin(GetParamStr(o, "SHA1"));
 
-			if (b != NULL && b->Size == SHA1_SIZE)
-			{
+			if (b != NULL && b->Size == SHA1_SIZE) {
 				Copy(crl->DigestSHA1, b->Buf, SHA1_SIZE);
 				param_exists = true;
 			}
@@ -163,8 +146,7 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		t.Crl = crl;
 
-		if (param_exists == false)
-		{
+		if (param_exists == false) {
 			FreeRpcCrl(&t);
 			ret = ERR_INVALID_PARAMETER;
 			CmdPrintError(c, ret);
@@ -175,8 +157,7 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScAddCrl(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -189,25 +170,22 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCrlDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsCrlDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_CRL t;
 	PARAM args[] =
-	{
-		{"[id]", CmdPrompt, _UU("CMD_CrlDel_Prompt_ID"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[id]", CmdPrompt, _UU("CMD_CrlDel_Prompt_ID"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -217,8 +195,7 @@ UINT PsCrlDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScDelCrl(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -231,25 +208,22 @@ UINT PsCrlDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_CRL t;
 	PARAM args[] =
-	{
-		{"[id]", CmdPrompt, _UU("CMD_CrlGet_Prompt_ID"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[id]", CmdPrompt, _UU("CMD_CrlGet_Prompt_ID"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -259,52 +233,40 @@ UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetCrl(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		CT *ct = CtNewStandard();
 		CRL *crl = t.Crl;
 		NAME *n;
 
-		if (crl != NULL)
-		{
+		if (crl != NULL) {
 			n = crl->Name;
 
-			if (n != NULL)
-			{
-				if (UniIsEmptyStr(n->CommonName) == false)
-				{
+			if (n != NULL) {
+				if (UniIsEmptyStr(n->CommonName) == false) {
 					CtInsert(ct, _UU("CMD_CrlGet_CN"), n->CommonName);
 				}
-				if (UniIsEmptyStr(n->Organization) == false)
-				{
+				if (UniIsEmptyStr(n->Organization) == false) {
 					CtInsert(ct, _UU("CMD_CrlGet_O"), n->Organization);
 				}
-				if (UniIsEmptyStr(n->Unit) == false)
-				{
+				if (UniIsEmptyStr(n->Unit) == false) {
 					CtInsert(ct, _UU("CMD_CrlGet_OU"), n->Unit);
 				}
-				if (UniIsEmptyStr(n->Country) == false)
-				{
+				if (UniIsEmptyStr(n->Country) == false) {
 					CtInsert(ct, _UU("CMD_CrlGet_C"), n->Country);
 				}
-				if (UniIsEmptyStr(n->State) == false)
-				{
+				if (UniIsEmptyStr(n->State) == false) {
 					CtInsert(ct, _UU("CMD_CrlGet_ST"), n->State);
 				}
-				if (UniIsEmptyStr(n->Local) == false)
-				{
+				if (UniIsEmptyStr(n->Local) == false) {
 					CtInsert(ct, _UU("CMD_CrlGet_L"), n->Local);
 				}
 			}
 
-			if (crl->Serial != NULL && crl->Serial->size >= 1)
-			{
+			if (crl->Serial != NULL && crl->Serial->size >= 1) {
 				wchar_t tmp[MAX_SIZE];
 				char str[MAX_SIZE];
 
@@ -314,8 +276,7 @@ UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 				CtInsert(ct, _UU("CMD_CrlGet_SERI"), tmp);
 			}
 
-			if (IsZero(crl->DigestMD5, MD5_SIZE) == false)
-			{
+			if (IsZero(crl->DigestMD5, MD5_SIZE) == false) {
 				wchar_t tmp[MAX_SIZE];
 				char str[MAX_SIZE];
 
@@ -325,8 +286,7 @@ UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 				CtInsert(ct, _UU("CMD_CrlGet_MD5_HASH"), tmp);
 			}
 
-			if (IsZero(crl->DigestSHA1, SHA1_SIZE) == false)
-			{
+			if (IsZero(crl->DigestSHA1, SHA1_SIZE) == false) {
 				wchar_t tmp[MAX_SIZE];
 				char str[MAX_SIZE];
 

@@ -1,8 +1,8 @@
 // CedarType.h
 // List of types that Cedar using
 
-#ifndef	CEDARTYPE_H
-#define	CEDARTYPE_H
+#ifndef CEDARTYPE_H
+#define CEDARTYPE_H
 
 typedef struct CEDAR CEDAR;
 typedef struct TRAFFIC TRAFFIC;

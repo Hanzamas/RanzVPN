@@ -1,8 +1,8 @@
 // CommandInternal.h
 // Module-internal declarations of the Command module: only its own files include this header
 
-#ifndef	COMMAND_INTERNAL_H
-#define	COMMAND_INTERNAL_H
+#ifndef COMMAND_INTERNAL_H
+#define COMMAND_INTERNAL_H
 
 CT *CtNew();
 void CtFree(CT *ct, CONSOLE *c);
@@ -87,4 +87,4 @@ UINT PsAcAdd6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 
-#endif	// COMMAND_INTERNAL_H
+#endif // COMMAND_INTERNAL_H

@@ -1,38 +1,36 @@
 // IpAddr.h
 // Header of IpAddr.c: the IP address value types and their pure functions
 
-#ifndef	IPADDR_H
-#define	IPADDR_H
+#ifndef IPADDR_H
+#define IPADDR_H
 
 #include "MayaType.h"
 
-struct IP
-{
-	BYTE address[16];   // IP address (RFC 3493 format used for IPv4)
+struct IP {
+	BYTE address[16]; // IP address (RFC 3493 format used for IPv4)
 	UINT ipv6_scope_id;
 };
 
-#define	IPV4(address)				(&address[12])
-#define	IPV4_SIZE					(4)
+#define IPV4(address) (&address[12])
+#define IPV4_SIZE     (4)
 
-#define	CmpIpAddr(ip1, ip2)			(Cmp((ip1)->address, (ip2)->address, sizeof((ip1)->address)))
+#define CmpIpAddr(ip1, ip2) (Cmp((ip1)->address, (ip2)->address, sizeof((ip1)->address)))
 
-#define	IsIP6(ip)					(ip && IsIP4(ip) == false)
+#define IsIP6(ip) (ip && IsIP4(ip) == false)
 
-struct IPV6_ADDR
-{
+struct IPV6_ADDR {
 	UCHAR Value[16];
 };
 
-#define IPV6_ADDR_UNICAST						1
-#define IPV6_ADDR_LOCAL_UNICAST					2
-#define IPV6_ADDR_GLOBAL_UNICAST				4
-#define IPV6_ADDR_MULTICAST						8
-#define IPV6_ADDR_ALL_NODE_MULTICAST			16
-#define IPV6_ADDR_ALL_ROUTER_MULTICAST			32
-#define IPV6_ADDR_SOLICIATION_MULTICAST			64
-#define	IPV6_ADDR_ZERO							128
-#define	IPV6_ADDR_LOOPBACK						256
+#define IPV6_ADDR_UNICAST               1
+#define IPV6_ADDR_LOCAL_UNICAST         2
+#define IPV6_ADDR_GLOBAL_UNICAST        4
+#define IPV6_ADDR_MULTICAST             8
+#define IPV6_ADDR_ALL_NODE_MULTICAST    16
+#define IPV6_ADDR_ALL_ROUTER_MULTICAST  32
+#define IPV6_ADDR_SOLICIATION_MULTICAST 64
+#define IPV6_ADDR_ZERO                  128
+#define IPV6_ADDR_LOOPBACK              256
 
 bool IsStrIPv6Address(char *str);
 UINT SubnetMaskToInt6(const IP *a);

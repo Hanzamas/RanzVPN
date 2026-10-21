@@ -1,31 +1,30 @@
 // Pack.h
 // Header of Pack.c
 
-#ifndef	PACK_H
-#define	PACK_H
+#ifndef PACK_H
+#define PACK_H
 
 #include "MayaType.h"
 
-#define	MAX_VALUE_SIZE			(384 * 1024 * 1024)	// Maximum Data size that can be stored in a single VALUE
-#define	MAX_VALUE_NUM			262144	// Maximum VALUE number that can be stored in a single ELEMENT
-#define	MAX_ELEMENT_NAME_LEN	63		// The length of the name that can be attached to the ELEMENT
-#define	MAX_ELEMENT_NUM			262144	// Maximum ELEMENT number that can be stored in a single PACK
-#define	MAX_PACK_SIZE			(512 * 1024 * 1024)	// Maximum size of a serialized PACK
-#define	HTTP_PACK_RAND_SIZE_MAX			1000
+#define MAX_VALUE_SIZE          (384 * 1024 * 1024) // Maximum Data size that can be stored in a single VALUE
+#define MAX_VALUE_NUM           262144              // Maximum VALUE number that can be stored in a single ELEMENT
+#define MAX_ELEMENT_NAME_LEN    63                  // The length of the name that can be attached to the ELEMENT
+#define MAX_ELEMENT_NUM         262144              // Maximum ELEMENT number that can be stored in a single PACK
+#define MAX_PACK_SIZE           (512 * 1024 * 1024) // Maximum size of a serialized PACK
+#define HTTP_PACK_RAND_SIZE_MAX 1000
 
 
-#define	VALUE_INT			0
-#define	VALUE_DATA			1
-#define	VALUE_STR			2
-#define	VALUE_UNISTR		3
-#define	VALUE_INT64			4
+#define VALUE_INT    0
+#define VALUE_DATA   1
+#define VALUE_STR    2
+#define VALUE_UNISTR 3
+#define VALUE_INT64  4
 
-#define	MAX_NOOP_PER_SESSION	30
-#define NOOP 1
-#define NOOP_IGNORE 2 // A noop, but don't send a response noop
+#define MAX_NOOP_PER_SESSION 30
+#define NOOP                 1
+#define NOOP_IGNORE          2 // A noop, but don't send a response noop
 
-struct VALUE
-{
+struct VALUE {
 	UINT Size;
 	UINT IntValue;
 	void *Data;
@@ -34,16 +33,14 @@ struct VALUE
 	UINT64 Int64Value;
 };
 
-struct ELEMENT
-{
+struct ELEMENT {
 	char name[MAX_ELEMENT_NAME_LEN + 1];
 	UINT num_value;
 	UINT type;
 	VALUE **values;
 };
 
-struct PACK
-{
+struct PACK {
 	LIST *elements;
 };
 

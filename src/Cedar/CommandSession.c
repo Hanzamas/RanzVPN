@@ -19,12 +19,10 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-static void CmdPrintNodeInfo(CT *ct, const NODE_INFO *info)
-{
+static void CmdPrintNodeInfo(CT *ct, const NODE_INFO *info) {
 	wchar_t tmp[MAX_SIZE];
 	char str[MAX_SIZE];
-	if (ct == NULL || info == NULL)
-	{
+	if (ct == NULL || info == NULL) {
 		return;
 	}
 
@@ -66,8 +64,7 @@ static void CmdPrintNodeInfo(CT *ct, const NODE_INFO *info)
 	UniToStru(tmp, Endian32(info->ServerPort));
 	CtInsert(ct, _UU("SM_NODE_SERVER_PORT"), tmp);
 
-	if (StrLen(info->ProxyHostname) != 0)
-	{
+	if (StrLen(info->ProxyHostname) != 0) {
 		StrToUni(tmp, sizeof(tmp), info->ProxyHostname);
 		CtInsert(ct, _UU("SM_NODE_PROXY_HOSTNAME"), tmp);
 
@@ -80,25 +77,22 @@ static void CmdPrintNodeInfo(CT *ct, const NODE_INFO *info)
 	}
 }
 
-UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SESSION_STATUS t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_SessionGet_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_SessionGet_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -108,27 +102,22 @@ UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetSessionStatus(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		wchar_t tmp[MAX_SIZE];
 		char str[MAX_SIZE];
 		CT *ct = CtNewStandard();
 
-		if (t.ClientIp != 0 || IsZero(t.ClientIp6, sizeof(t.ClientIp6)) == false)
-		{
+		if (t.ClientIp != 0 || IsZero(t.ClientIp6, sizeof(t.ClientIp6)) == false) {
 			IPToStr4or6(str, sizeof(str), t.ClientIp, t.ClientIp6);
 			StrToUni(tmp, sizeof(tmp), str);
 			CtInsert(ct, _UU("SM_CLIENT_IP"), tmp);
 		}
 
-		if (StrLen(t.ClientHostName) != 0)
-		{
+		if (StrLen(t.ClientHostName) != 0) {
 			StrToUni(tmp, sizeof(tmp), t.ClientHostName);
 			CtInsert(ct, _UU("SM_CLIENT_HOSTNAME"), tmp);
 		}
@@ -136,14 +125,12 @@ UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		StrToUni(tmp, sizeof(tmp), t.Username);
 		CtInsert(ct, _UU("SM_SESS_STATUS_USERNAME"), tmp);
 
-		if (StrCmpi(t.Username, LINK_USER_NAME_PRINT) != 0 && StrCmpi(t.Username, BRIDGE_USER_NAME_PRINT) != 0)
-		{
+		if (StrCmpi(t.Username, LINK_USER_NAME_PRINT) != 0 && StrCmpi(t.Username, BRIDGE_USER_NAME_PRINT) != 0) {
 			StrToUni(tmp, sizeof(tmp), t.RealUsername);
 			CtInsert(ct, _UU("SM_SESS_STATUS_REALUSER"), tmp);
 		}
 
-		if (IsEmptyStr(t.GroupName) == false)
-		{
+		if (IsEmptyStr(t.GroupName) == false) {
 			StrToUni(tmp, sizeof(tmp), t.GroupName);
 			CtInsert(ct, _UU("SM_SESS_STATUS_GROUPNAME"), tmp);
 		}
@@ -151,8 +138,7 @@ UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		CmdPrintStatusToListViewEx(ct, &t.Status, true);
 
-		if (StrCmpi(t.Username, LINK_USER_NAME_PRINT) != 0 && StrCmpi(t.Username, BRIDGE_USER_NAME_PRINT) != 0)
-		{
+		if (StrCmpi(t.Username, LINK_USER_NAME_PRINT) != 0 && StrCmpi(t.Username, BRIDGE_USER_NAME_PRINT) != 0) {
 			CmdPrintNodeInfo(ct, &t.NodeInfo);
 		}
 
@@ -166,21 +152,18 @@ UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_SESSION t;
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -189,14 +172,11 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScEnumSession(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		CT *ct = CtNew();
 
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_1"), false);
@@ -208,8 +188,7 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_6"), true);
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_7"), true);
 
-		for (UINT i = 0;i < t.NumSession;i++)
-		{
+		for (UINT i = 0; i < t.NumSession; i++) {
 			RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
 			wchar_t tmp1[MAX_SIZE];
 			wchar_t tmp3[MAX_SIZE];
@@ -222,42 +201,32 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			StrToUni(tmp1, sizeof(tmp1), e->Name);
 
 			wchar_t *tmp2 = _UU("SM_SESS_NORMAL");
-			if (e->LinkMode)
-			{
+			if (e->LinkMode) {
 				tmp2 = _UU("SM_SESS_LINK");
 			}
 
 			StrToUni(tmp3, sizeof(tmp3), e->Username);
 
 			StrToUni(tmp4, sizeof(tmp4), e->Hostname);
-			if (e->LinkMode)
-			{
+			if (e->LinkMode) {
 				UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_SESS_LINK_HOSTNAME"));
-			}
-			else if (e->BridgeMode)
-			{
+			} else if (e->BridgeMode) {
 				UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_SESS_BRIDGE_HOSTNAME"));
 			}
 
 			UniFormat(tmp5, sizeof(tmp5), L"%u / %u", e->CurrentNumTcp, e->MaxNumTcp);
-			if (e->LinkMode)
-			{
+			if (e->LinkMode) {
 				UniStrCpy(tmp5, sizeof(tmp5), _UU("SM_SESS_LINK_TCP"));
-			}
-			else if (e->BridgeMode)
-			{
+			} else if (e->BridgeMode) {
 				UniStrCpy(tmp5, sizeof(tmp5), _UU("SM_SESS_BRIDGE_TCP"));
 			}
 
 			UniToStr3(tmp6, sizeof(tmp6), e->PacketSize);
 			UniToStr3(tmp7, sizeof(tmp7), e->PacketNum);
 
-			if (e->VLanId == 0)
-			{
+			if (e->VLanId == 0) {
 				UniStrCpy(tmp8, sizeof(tmp8), _UU("CM_ST_NO_VLAN"));
-			}
-			else
-			{
+			} else {
 				UniToStru(tmp8, e->VLanId);
 			}
 
@@ -275,25 +244,22 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_SESSION t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_SessionGet_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_SessionGet_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -303,8 +269,7 @@ UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScDeleteSession(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -315,26 +280,28 @@ UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_MAC_TABLE t;
 
 	PARAM args[] =
-	{
-		{"[session_name]", NULL, NULL, NULL, NULL,}
-	};
+	    {
+	        {
+	            "[session_name]",
+	            NULL,
+	            NULL,
+	            NULL,
+	            NULL,
+	        }};
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -343,19 +310,15 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScEnumMacTable(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		CT *ct = CtNew();
 		char *session_name = GetParamStr(o, "[session_name]");
 
-		if (IsEmptyStr(session_name))
-		{
+		if (IsEmptyStr(session_name)) {
 			session_name = NULL;
 		}
 
@@ -366,8 +329,7 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_4"), false);
 
-		for (UINT i = 0;i < t.NumMacTable;i++)
-		{
+		for (UINT i = 0; i < t.NumMacTable; i++) {
 			char str[MAX_SIZE];
 			wchar_t tmp0[128];
 			wchar_t tmp1[MAX_SIZE];
@@ -378,8 +340,7 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 			RPC_ENUM_MAC_TABLE_ITEM *e = &t.MacTables[i];
 
-			if (session_name == NULL || StrCmpi(e->SessionName, session_name) == 0)
-			{
+			if (session_name == NULL || StrCmpi(e->SessionName, session_name) == 0) {
 				UniToStru(tmp0, e->Key);
 
 				StrToUni(tmp1, sizeof(tmp1), e->SessionName);
@@ -392,13 +353,12 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 				GetDateTimeStr64Uni(tmp4, sizeof(tmp4), SystemToLocal64(e->UpdatedTime));
 
 				UniToStru(tmp6, e->VlanId);
-				if (e->VlanId == 0)
-				{
+				if (e->VlanId == 0) {
 					UniStrCpy(tmp6, sizeof(tmp6), _UU("CM_ST_NONE"));
 				}
 
 				CtInsert(ct,
-					tmp0, tmp1, tmp6, tmp2, tmp3, tmp4);
+				         tmp0, tmp1, tmp6, tmp2, tmp3, tmp4);
 			}
 		}
 
@@ -412,25 +372,22 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_TABLE t;
 	PARAM args[] =
-	{
-		{"[id]", CmdPrompt, _UU("CMD_MacDelete_Prompt"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[id]", CmdPrompt, _UU("CMD_MacDelete_Prompt"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -440,8 +397,7 @@ UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScDeleteMacTable(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -452,26 +408,28 @@ UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_IP_TABLE t;
 
 	PARAM args[] =
-	{
-		{"[session_name]", NULL, NULL, NULL, NULL,}
-	};
+	    {
+	        {
+	            "[session_name]",
+	            NULL,
+	            NULL,
+	            NULL,
+	            NULL,
+	        }};
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -480,19 +438,15 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScEnumIpTable(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		CT *ct = CtNew();
 		char *session_name = GetParamStr(o, "[session_name]");
 
-		if (IsEmptyStr(session_name))
-		{
+		if (IsEmptyStr(session_name)) {
 			session_name = NULL;
 		}
 
@@ -502,8 +456,7 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_4"), false);
 
-		for (UINT i = 0;i < t.NumIpTable;i++)
-		{
+		for (UINT i = 0; i < t.NumIpTable; i++) {
 			char str[MAX_SIZE];
 			wchar_t tmp0[128];
 			wchar_t tmp1[MAX_SIZE];
@@ -512,19 +465,15 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			wchar_t tmp4[MAX_SIZE];
 			RPC_ENUM_IP_TABLE_ITEM *e = &t.IpTables[i];
 
-			if (session_name == NULL || StrCmpi(e->SessionName, session_name) == 0)
-			{
+			if (session_name == NULL || StrCmpi(e->SessionName, session_name) == 0) {
 				UniToStru(tmp0, e->Key);
 
 				StrToUni(tmp1, sizeof(tmp1), e->SessionName);
 
 				IPToStr(str, sizeof(str), &e->IpV6);
-				if (e->DhcpAllocated == false)
-				{
+				if (e->DhcpAllocated == false) {
 					StrToUni(tmp2, sizeof(tmp2), str);
-				}
-				else
-				{
+				} else {
 					UniFormat(tmp2, sizeof(tmp2), _UU("SM_MAC_IP_DHCP"), str);
 				}
 
@@ -533,7 +482,7 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 				GetDateTimeStr64Uni(tmp4, sizeof(tmp4), SystemToLocal64(e->UpdatedTime));
 
 				CtInsert(ct,
-					tmp0, tmp1, tmp2, tmp3, tmp4);
+				         tmp0, tmp1, tmp2, tmp3, tmp4);
 			}
 		}
 
@@ -547,25 +496,22 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsIpDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsIpDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_TABLE t;
 	PARAM args[] =
-	{
-		{"[id]", CmdPrompt, _UU("CMD_MacDelete_Prompt"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[id]", CmdPrompt, _UU("CMD_MacDelete_Prompt"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -575,8 +521,7 @@ UINT PsIpDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScDeleteIpTable(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;

@@ -2,8 +2,8 @@
 // The platform functions that Cedar calls: memory info and priority (Win32.c), the OS version
 // (OsInfo.c) and folder compression (FileIO.c). Win32.h includes it for the Mayaqua files.
 
-#ifndef	PLATFORM_H
-#define	PLATFORM_H
+#ifndef PLATFORM_H
+#define PLATFORM_H
 
 #include "MayaType.h"
 

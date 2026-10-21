@@ -21,30 +21,25 @@
 #include "Mayaqua/Table.h"
 #include "AdminInternal.h"
 
-typedef struct ENUM_GROUP_COUNT
-{
+typedef struct ENUM_GROUP_COUNT {
 	USERGROUP *Group;
 	RPC_ENUM_GROUP_ITEM *Item;
 } ENUM_GROUP_COUNT;
 
-static int CompareEnumGroupCount(void *p1, void *p2)
-{
-	if (p1 == NULL || p2 == NULL)
-	{
+static int CompareEnumGroupCount(void *p1, void *p2) {
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	ENUM_GROUP_COUNT *c1 = *(ENUM_GROUP_COUNT **)p1;
 	ENUM_GROUP_COUNT *c2 = *(ENUM_GROUP_COUNT **)p2;
-	if (c1 == NULL || c2 == NULL)
-	{
+	if (c1 == NULL || c2 == NULL) {
 		return 0;
 	}
 
 	return COMPARE_RET(c1->Group, c2->Group);
 }
 
-UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
-{
+UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t) {
 	HUB *h = NULL;
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
@@ -54,8 +49,7 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 	CHECK_RIGHT;
 
 	h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -72,8 +66,7 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 		ENUM_GROUP_COUNT *counts = ZeroMalloc(sizeof(ENUM_GROUP_COUNT) * t->NumGroup);
 		LIST *index = NewListFast(CompareEnumGroupCount);
 
-		for (UINT i = 0;i < t->NumGroup;i++)
-		{
+		for (UINT i = 0; i < t->NumGroup; i++) {
 			RPC_ENUM_GROUP_ITEM *e = &t->Groups[i];
 			USERGROUP *g = LIST_DATA(h->HubDb->GroupList, i);
 
@@ -82,10 +75,8 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 				StrCpy(e->Name, sizeof(e->Name), g->Name);
 				UniStrCpy(e->Realname, sizeof(e->Realname), g->RealName);
 				UniStrCpy(e->Note, sizeof(e->Note), g->Note);
-				if (g->Policy != NULL)
-				{
-					if (g->Policy->Access == false)
-					{
+				if (g->Policy != NULL) {
+					if (g->Policy->Access == false) {
 						e->DenyAccess = true;
 					}
 				}
@@ -99,8 +90,7 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 			Add(index, &counts[i]);
 		}
 
-		for (UINT j = 0;j < LIST_NUM(h->HubDb->UserList);j++)
-		{
+		for (UINT j = 0; j < LIST_NUM(h->HubDb->UserList); j++) {
 			USER *u = LIST_DATA(h->HubDb->UserList, j);
 			USERGROUP *ug;
 
@@ -110,16 +100,14 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 			}
 			Unlock(u->lock);
 
-			if (ug != NULL)
-			{
+			if (ug != NULL) {
 				ENUM_GROUP_COUNT key;
 
 				key.Group = ug;
 				key.Item = NULL;
 
 				ENUM_GROUP_COUNT *found = Search(index, &key);
-				if (found != NULL)
-				{
+				if (found != NULL) {
 					found->Item->NumUsers++;
 				}
 			}
@@ -135,37 +123,32 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
-{
+UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t) {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
-	{
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	CHECK_RIGHT;
 
 	h = AdminGetHub(a, t->HubName, "no_change_groups", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	AcLock(h);
 	{
-		if (AcDeleteGroup(h, t->Name) == false)
-		{
+		if (AcDeleteGroup(h, t->Name) == false) {
 			ret = ERR_OBJECT_NOT_FOUND;
 		}
 	}
 	AcUnlock(h);
 
-	if (ret == ERR_NO_ERROR)
-	{
+	if (ret == ERR_NO_ERROR) {
 		ALog(a, h, "LA_DELETE_GROUP", t->Name);
 
 		IncrementServerConfigRevision(s);
@@ -176,14 +159,12 @@ UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 	return ret;
 }
 
-UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
-{
+UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
-	{
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -191,8 +172,7 @@ UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = AdminGetHub(a, t->HubName, NULL, &ret);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
@@ -200,12 +180,9 @@ UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	{
 		USERGROUP *g = AcGetGroup(h, t->Name);
 
-		if (g == NULL)
-		{
+		if (g == NULL) {
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
+		} else {
 			FreeRpcSetGroup(t);
 			Zero(t, sizeof(RPC_SET_GROUP));
 
@@ -232,34 +209,28 @@ UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
-{
+UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
-	{
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	CHECK_RIGHT;
 	h = AdminGetHub(a, t->HubName, "no_change_groups", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	AcLock(h);
 	{
 		USERGROUP *g = AcGetGroup(h, t->Name);
-		if (g == NULL)
-		{
+		if (g == NULL) {
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
+		} else {
 			Lock(g->lock);
 			{
 				Free(g->RealName);
@@ -285,44 +256,35 @@ UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
-{
+UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
-	{
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	CHECK_RIGHT;
 
 	h = AdminGetHub(a, t->HubName, "no_change_groups", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	AcLock(h);
 	{
-		if (AcIsGroup(h, t->Name))
-		{
+		if (AcIsGroup(h, t->Name)) {
 			ret = ERR_GROUP_ALREADY_EXISTS;
-		}
-		else
-		{
+		} else {
 			USERGROUP *g = NewGroup(t->Name, t->Realname, t->Note);
 			SetGroupPolicy(g, t->Policy);
 
 			if ((LIST_NUM(h->HubDb->GroupList) >= MAX_USERS) ||
-				((GetHubAdminOption(h, "max_groups") != 0) && (LIST_NUM(h->HubDb->GroupList) >= GetHubAdminOption(h, "max_groups"))))
-			{
+			    ((GetHubAdminOption(h, "max_groups") != 0) && (LIST_NUM(h->HubDb->GroupList) >= GetHubAdminOption(h, "max_groups")))) {
 				ret = ERR_TOO_MANY_GROUP;
-			}
-			else
-			{
+			} else {
 				AcAddGroup(h, g);
 
 				ALog(a, h, "LA_CREATE_GROUP", t->Name);
@@ -335,8 +297,7 @@ UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 
 	ReleaseHub(h);
 
-	if (ret == ERR_NO_ERROR)
-	{
+	if (ret == ERR_NO_ERROR) {
 		IncrementServerConfigRevision(s);
 	}
 

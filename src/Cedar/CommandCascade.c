@@ -16,25 +16,22 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-UINT PsCascadeStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsCascadeStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_LINK_STATUS t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_CascadeCreate_Prompt_Name"), CmdEvalNotEmpty, NULL},
-	};
-	
-	if (ps->HubName == NULL)
-	{
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_CascadeCreate_Prompt_Name"), CmdEvalNotEmpty, NULL},
+	    };
+
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -44,14 +41,11 @@ UINT PsCascadeStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetLinkStatus(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		CT *ct = CtNewStandard();
 
 		CmdPrintStatusToListViewEx(ct, &t.Status, false);
@@ -66,26 +60,23 @@ UINT PsCascadeStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeRename(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsCascadeRename(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_RENAME_LINK t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_CascadeRename_PROMPT_OLD"), CmdEvalNotEmpty, NULL},
-		{"NEW", CmdPrompt, _UU("CMD_CascadeRename_PROMPT_NEW"), CmdEvalNotEmpty, NULL},
-	};
-	
-	if (ps->HubName == NULL)
-	{
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_CascadeRename_PROMPT_OLD"), CmdEvalNotEmpty, NULL},
+	        {"NEW", CmdPrompt, _UU("CMD_CascadeRename_PROMPT_NEW"), CmdEvalNotEmpty, NULL},
+	    };
+
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -97,8 +88,7 @@ UINT PsCascadeRename(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScRenameLink(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -109,25 +99,22 @@ UINT PsCascadeRename(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsCascadeOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_LINK t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_CascadeCreate_Prompt_Name"), CmdEvalNotEmpty, NULL},
-	};
-	
-	if (ps->HubName == NULL)
-	{
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_CascadeCreate_Prompt_Name"), CmdEvalNotEmpty, NULL},
+	    };
+
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -137,8 +124,7 @@ UINT PsCascadeOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScSetLinkOnline(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -149,25 +135,22 @@ UINT PsCascadeOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeOffline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsCascadeOffline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_LINK t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_CascadeCreate_Prompt_Name"), CmdEvalNotEmpty, NULL},
-	};
-	
-	if (ps->HubName == NULL)
-	{
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_CascadeCreate_Prompt_Name"), CmdEvalNotEmpty, NULL},
+	    };
+
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -177,8 +160,7 @@ UINT PsCascadeOffline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScSetLinkOffline(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;

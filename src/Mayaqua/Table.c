@@ -16,36 +16,30 @@
 static LIST *TableList = NULL;
 static LANGLIST current_lang = {0};
 
-void InitTable()
-{
+void InitTable() {
 	LIST *o;
 	char tmp[MAX_SIZE];
 	LANGLIST *e = NULL;
 	char table_name[MAX_SIZE];
-	if (MayaquaIsMinimalMode())
-	{
+	if (MayaquaIsMinimalMode()) {
 		return;
 	}
 
 	o = LoadLangList();
-	if (o == NULL)
-	{
-LABEL_FATAL_ERROR:
+	if (o == NULL) {
+	LABEL_FATAL_ERROR:
 		MayaFatalExit(1, "Fatal Error: The hamcore files are missing or broken.\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)");
 	}
 
-	if (LoadLangConfig(LANG_CONFIG_FILENAME, tmp, sizeof(tmp)))
-	{
+	if (LoadLangConfig(LANG_CONFIG_FILENAME, tmp, sizeof(tmp))) {
 		e = GetBestLangByName(o, tmp);
 	}
 
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		e = GetBestLangForCurrentEnvironment(o);
 	}
 
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		goto LABEL_FATAL_ERROR;
 	}
 
@@ -56,26 +50,22 @@ LABEL_FATAL_ERROR:
 	current_lang.LcidList = NULL;
 
 	Format(table_name, sizeof(table_name), "|strtable_%s.stb", current_lang.Name);
-	if (LoadTable(table_name) == false)
-	{
+	if (LoadTable(table_name) == false) {
 		goto LABEL_FATAL_ERROR;
 	}
 
 	FreeLangList(o);
 }
 
-static void GetCurrentLang(LANGLIST *e)
-{
-	if (e == NULL)
-	{
+static void GetCurrentLang(LANGLIST *e) {
+	if (e == NULL) {
 		return;
 	}
 
 	Copy(e, &current_lang, sizeof(LANGLIST));
 }
 
-UINT GetCurrentLangId()
-{
+UINT GetCurrentLangId() {
 	LANGLIST e;
 
 	Zero(&e, sizeof(e));
@@ -85,34 +75,29 @@ UINT GetCurrentLangId()
 	return e.Id;
 }
 
-bool SaveLangConfig(wchar_t *filename, const char *str)
-{
-	if (filename == NULL)
-	{
+bool SaveLangConfig(wchar_t *filename, const char *str) {
+	if (filename == NULL) {
 		return false;
 	}
 
 	BUF *b = ReadDump(LANG_CONFIG_TEMPLETE);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 
 	SeekBuf(b, b->Size, 0);
 
 	LIST *o = LoadLangList();
-	if (o != NULL)
-	{
+	if (o != NULL) {
 		wchar_t tmp[MAX_SIZE];
 
 		AppendBufStr(b, "# Available Language IDs are:\r\n");
 
-		for (UINT i = 0;i < LIST_NUM(o);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(o); i++) {
 			LANGLIST *e = LIST_DATA(o, i);
 
 			UniFormat(tmp, sizeof(tmp), L"#  %S: %s (%s)\r\n",
-				e->Name, e->TitleEnglish, e->TitleLocal);
+			          e->Name, e->TitleEnglish, e->TitleLocal);
 
 			AppendBufUtf8(b, tmp);
 		}
@@ -131,36 +116,29 @@ bool SaveLangConfig(wchar_t *filename, const char *str)
 	return ret;
 }
 
-bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size)
-{
+bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size) {
 	bool ret = false;
-	if (filename == NULL || str == NULL)
-	{
+	if (filename == NULL || str == NULL) {
 		return false;
 	}
 
 	BUF *b = ReadDumpW(filename);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 
-	while (true)
-	{
+	while (true) {
 		char *line = CfgReadNextLine(b);
 
-		if (line == NULL)
-		{
+		if (line == NULL) {
 			break;
 		}
 
 		Trim(line);
 
-		if (IsEmptyStr(line) == false)
-		{
+		if (IsEmptyStr(line) == false) {
 			if (StartWith(line, "#") == false && StartWith(line, "//") == false && StartWith(line, ";") == false &&
-				InStr(line, "#") == false)
-			{
+			    InStr(line, "#") == false) {
 				StrCpy(str, str_size, line);
 				ret = true;
 			}
@@ -174,11 +152,9 @@ bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size)
 	return ret;
 }
 
-LANGLIST *GetBestLangForCurrentEnvironment(LIST *o)
-{
+LANGLIST *GetBestLangForCurrentEnvironment(LIST *o) {
 	LANGLIST *ret = NULL;
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
@@ -187,19 +163,15 @@ LANGLIST *GetBestLangForCurrentEnvironment(LIST *o)
 	return ret;
 }
 
-LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid)
-{
-	if (o == NULL)
-	{
+LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid) {
+	if (o == NULL) {
 		return NULL;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
 
-		if (IsIntInList(e->LcidList, lcid))
-		{
+		if (IsIntInList(e->LcidList, lcid)) {
 			return e;
 		}
 	}
@@ -209,58 +181,47 @@ LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid)
 	return ret;
 }
 
-LANGLIST *GetBestLangByName(LIST *o, const char *name)
-{
+LANGLIST *GetBestLangByName(LIST *o, const char *name) {
 	LANGLIST *ret = NULL;
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
 
-		if (StrCmpi(e->Name, name) == 0)
-		{
+		if (StrCmpi(e->Name, name) == 0) {
 			ret = e;
 			break;
 		}
 	}
 
-	if (ret != NULL)
-	{
+	if (ret != NULL) {
 		return ret;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
 
-		if (StartWith(e->Name, name) || StartWith(name, e->Name))
-		{
+		if (StartWith(e->Name, name) || StartWith(name, e->Name)) {
 			ret = e;
 			break;
 		}
 	}
 
-	if (ret != NULL)
-	{
+	if (ret != NULL) {
 		return ret;
 	}
 
 	return ret;
 }
 
-void FreeLangList(LIST *o)
-{
-	if (o == NULL)
-	{
+void FreeLangList(LIST *o) {
+	if (o == NULL) {
 		return;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
 
 		ReleaseIntList(e->LcidList);
@@ -271,36 +232,29 @@ void FreeLangList(LIST *o)
 	ReleaseList(o);
 }
 
-LIST *LoadLangList()
-{
+LIST *LoadLangList() {
 	LIST *o = NewListFast(NULL);
 	char *filename = LANGLIST_FILENAME;
 
 	BUF *b = ReadDump(filename);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		FreeLangList(o);
 		return NULL;
 	}
 
-	while (true)
-	{
+	while (true) {
 		char *line = CfgReadNextLine(b);
 
-		if (line == NULL)
-		{
+		if (line == NULL) {
 			break;
 		}
 
 		Trim(line);
 
-		if (IsEmptyStr(line) == false && StartWith(line, "#") == false)
-		{
+		if (IsEmptyStr(line) == false && StartWith(line, "#") == false) {
 			TOKEN_LIST *t = ParseToken(line, "\t ");
-			if (t != NULL)
-			{
-				if (t->NumTokens == 6)
-				{
+			if (t != NULL) {
+				if (t->NumTokens == 6) {
 					LANGLIST *e = ZeroMalloc(sizeof(LANGLIST));
 
 					e->Id = ToInt(t->Token[0]);
@@ -309,18 +263,16 @@ LIST *LoadLangList()
 					Utf8ToUni(e->TitleLocal, sizeof(e->TitleLocal), t->Token[3], StrLen(t->Token[3]));
 
 					UniReplaceStrEx(e->TitleEnglish, sizeof(e->TitleEnglish), e->TitleEnglish,
-						L"_", L" ", true);
+					                L"_", L" ", true);
 
 					UniReplaceStrEx(e->TitleLocal, sizeof(e->TitleLocal), e->TitleLocal,
-						L"_", L" ", true);
+					                L"_", L" ", true);
 
 					e->LcidList = NewIntList();
 
 					TOKEN_LIST *t2 = ParseToken(t->Token[4], ",");
-					if (t2 != NULL)
-					{
-						for (UINT i = 0;i < t2->NumTokens;i++)
-						{
+					if (t2 != NULL) {
+						for (UINT i = 0; i < t2->NumTokens; i++) {
 							UINT id = ToInt(t2->Token[i]);
 
 							AddIntDistinct(e->LcidList, id);
@@ -344,26 +296,20 @@ LIST *LoadLangList()
 	return o;
 }
 
-wchar_t *GetUniErrorStr(UINT err)
-{
+wchar_t *GetUniErrorStr(UINT err) {
 	char name[MAX_SIZE];
 	Format(name, sizeof(name), "ERR_%u", err);
 
 	wchar_t *ret = GetTableUniStr(name);
-	if (UniStrLen(ret) != 0)
-	{
+	if (UniStrLen(ret) != 0) {
 		return ret;
-	}
-	else
-	{
+	} else {
 		return _UU("ERR_UNKNOWN");
 	}
 }
 
-UINT GetTableInt(const char *name)
-{
-	if (name == NULL)
-	{
+UINT GetTableInt(const char *name) {
+	if (name == NULL) {
 		return 0;
 	}
 
@@ -371,44 +317,36 @@ UINT GetTableInt(const char *name)
 	return ToInt(str);
 }
 
-wchar_t *GetTableUniStr(const char *name)
-{
-	if (name == NULL)
-	{
+wchar_t *GetTableUniStr(const char *name) {
+	if (name == NULL) {
 		return L"";
 	}
 
 	TABLE *t = FindTable(name);
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return L"";
 	}
 
 	return t->unistr;
 }
 
-char *GetTableStr(const char *name)
-{
-	if (name == NULL)
-	{
+char *GetTableStr(const char *name) {
+	if (name == NULL) {
 		return "";
 	}
 
 	TABLE *t = FindTable(name);
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return "";
 	}
 
 	return t->str;
 }
 
-TOKEN_LIST *GetTableNameStartWith(const char *str)
-{
+TOKEN_LIST *GetTableNameStartWith(const char *str) {
 	TOKEN_LIST *t;
 	char tmp[MAX_SIZE];
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return NullToken();
 	}
 
@@ -419,15 +357,12 @@ TOKEN_LIST *GetTableNameStartWith(const char *str)
 
 	LIST *o = NewListFast(NULL);
 
-	for (UINT i = 0;i < LIST_NUM(TableList);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(TableList); i++) {
 		TABLE *t = LIST_DATA(TableList, i);
 		UINT len2 = StrLen(t->name);
 
-		if (len2 >= len)
-		{
-			if (Cmp(t->name, tmp, len) == 0)
-			{
+		if (len2 >= len) {
+			if (Cmp(t->name, tmp, len) == 0) {
 				Insert(o, CopyStr(t->name));
 			}
 		}
@@ -437,8 +372,7 @@ TOKEN_LIST *GetTableNameStartWith(const char *str)
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
-	for (UINT i = 0;i < t->NumTokens;i++)
-	{
+	for (UINT i = 0; i < t->NumTokens; i++) {
 		t->Token[i] = LIST_DATA(o, i);
 	}
 
@@ -447,11 +381,9 @@ TOKEN_LIST *GetTableNameStartWith(const char *str)
 	return t;
 }
 
-TABLE *FindTable(const char *name)
-{
+TABLE *FindTable(const char *name) {
 	TABLE tt;
-	if (name == NULL || TableList == NULL)
-	{
+	if (name == NULL || TableList == NULL) {
 		return NULL;
 	}
 
@@ -462,52 +394,42 @@ TABLE *FindTable(const char *name)
 	return t;
 }
 
-static int CmpTableName(void *p1, void *p2)
-{
-	if (p1 == NULL || p2 == NULL)
-	{
+static int CmpTableName(void *p1, void *p2) {
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	TABLE *t1 = *(TABLE **)p1;
 	TABLE *t2 = *(TABLE **)p2;
-	if (t1 == NULL || t2 == NULL)
-	{
+	if (t1 == NULL || t2 == NULL) {
 		return 0;
 	}
 
 	return StrCmpi(t1->name, t2->name);
 }
 
-static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_list)
-{
+static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_list) {
 	UINT i;
 	char *str;
-	if (line == NULL || prefix == NULL)
-	{
+	if (line == NULL || prefix == NULL) {
 		return NULL;
 	}
 	TrimLeft(line);
 
 	UINT len = StrLen(line);
-	if (len == 0)
-	{
+	if (len == 0) {
 		return NULL;
 	}
 
-	if (line[0] == '#' || (line[0] == '/' && line[1] == '/'))
-	{
+	if (line[0] == '#' || (line[0] == '/' && line[1] == '/')) {
 		return NULL;
 	}
 
 	UINT len_name = 0;
-	for (i = 0;;i++)
-	{
-		if (line[i] == 0)
-		{
+	for (i = 0;; i++) {
+		if (line[i] == 0) {
 			return NULL;
 		}
-		if (line[i] == ' ' || line[i] == '\t')
-		{
+		if (line[i] == ' ' || line[i] == '\t') {
 			break;
 		}
 		len_name++;
@@ -517,16 +439,13 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 	StrCpy(name, len_name + 1, line);
 
 	UINT string_start = len_name;
-	for (i = len_name;i < len;i++)
-	{
-		if (line[i] != ' ' && line[i] != '\t')
-		{
+	for (i = len_name; i < len; i++) {
+		if (line[i] != ' ' && line[i] != '\t') {
 			break;
 		}
 		string_start++;
 	}
-	if (i == len)
-	{
+	if (i == len) {
 		Free(name);
 		return NULL;
 	}
@@ -534,24 +453,21 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 	UnescapeStr(&line[string_start]);
 
 	UINT unistr_size = CalcUtf8ToUni(&line[string_start], StrLen(&line[string_start]));
-	if (unistr_size == 0)
-	{
+	if (unistr_size == 0) {
 		Free(name);
 		return NULL;
 	}
 	wchar_t *unistr = Malloc(unistr_size);
 	Utf8ToUni(unistr, unistr_size, &line[string_start], StrLen(&line[string_start]));
 
-	if (UniIsCharInStr(unistr, L'$'))
-	{
+	if (UniIsCharInStr(unistr, L'$')) {
 		UINT tmp_size = (UniStrSize(unistr) + 1024) * 2;
 
 		wchar_t *tmp = Malloc(tmp_size);
 
 		UniStrCpy(tmp, tmp_size, unistr);
 
-		for (UINT i = 0; i < LIST_NUM(replace_list);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(replace_list); i++) {
 			TABLE *r = LIST_DATA(replace_list, i);
 
 			UniReplaceStrEx(tmp, tmp_size, tmp, (wchar_t *)r->name, r->unistr, false);
@@ -565,25 +481,20 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 	}
 
 	UINT str_size = CalcUniToStr(unistr);
-	if (str_size == 0)
-	{
+	if (str_size == 0) {
 		str_size = 1;
 		str = Malloc(1);
 		str[0] = 0;
-	}
-	else
-	{
+	} else {
 		str = Malloc(str_size);
 		UniToStr(str, str_size, unistr);
 	}
 
-	if (StrCmpi(name, "PREFIX") == 0)
-	{
+	if (StrCmpi(name, "PREFIX") == 0) {
 		StrCpy(prefix, prefix_size, str);
 		Trim(prefix);
 
-		if (StrCmpi(prefix, "$") == 0 || StrCmpi(prefix, "NULL") == 0)
-		{
+		if (StrCmpi(prefix, "$") == 0 || StrCmpi(prefix, "NULL") == 0) {
 			prefix[0] = 0;
 		}
 
@@ -597,8 +508,7 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 	UINT name2_size = StrLen(name) + StrLen(prefix) + 2;
 	char *name2 = ZeroMalloc(name2_size);
 
-	if (prefix[0] != 0)
-	{
+	if (prefix[0] != 0) {
 		StrCat(name2, name2_size, prefix);
 		StrCat(name2, name2_size, "@");
 	}
@@ -616,25 +526,20 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 	return t;
 }
 
-void UnescapeStr(char *src)
-{
+void UnescapeStr(char *src) {
 	UINT len, wp;
 	char *tmp;
-	if (src == NULL)
-	{
+	if (src == NULL) {
 		return;
 	}
-	
+
 	len = StrLen(src);
 	tmp = Malloc(len + 1);
 	wp = 0;
-	for (UINT i = 0;i < len;i++)
-	{
-		if (src[i] == '\\')
-		{
+	for (UINT i = 0; i < len; i++) {
+		if (src[i] == '\\') {
 			i++;
-			switch (src[i])
-			{
+			switch (src[i]) {
 			case 0:
 				goto FINISH;
 			case '\\':
@@ -656,9 +561,7 @@ void UnescapeStr(char *src)
 				tmp[wp++] = '\t';
 				break;
 			}
-		}
-		else
-		{
+		} else {
 			tmp[wp++] = src[i];
 		}
 	}
@@ -668,17 +571,14 @@ FINISH:
 	Free(tmp);
 }
 
-void FreeTable()
-{
-	if (TableList == NULL)
-	{
+void FreeTable() {
+	if (TableList == NULL) {
 		return;
 	}
 
 	UINT num = LIST_NUM(TableList);
 	TABLE **tables = ToArray(TableList);
-	for (UINT i = 0;i < num;i++)
-	{
+	for (UINT i = 0; i < num; i++) {
 		TABLE *t = tables[i];
 		Free(t->name);
 		Free(t->str);
@@ -690,13 +590,11 @@ void FreeTable()
 	Free(tables);
 }
 
-static bool LoadTableFromBuf(BUF *b)
-{
+static bool LoadTableFromBuf(BUF *b) {
 	char *tmp;
 	char prefix[MAX_SIZE];
 	LIST *replace_list = NULL;
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 
@@ -708,25 +606,20 @@ static bool LoadTableFromBuf(BUF *b)
 
 	replace_list = NewListFast(NULL);
 
-	while (true)
-	{
+	while (true) {
 		TABLE *t;
 		bool ok = true;
 
 		tmp = CfgReadNextLine(b);
-		if (tmp == NULL)
-		{
+		if (tmp == NULL) {
 			break;
 		}
 
-		if (tmp[0] == '$')
-		{
+		if (tmp[0] == '$') {
 			char key[128];
 			char value[MAX_SIZE];
-			if (GetKeyAndValue(tmp, key, sizeof(key), value, sizeof(value), " \t"))
-			{
-				if (StartWith(key, "$") && EndWith(key, "$") && StrLen(key) >= 3)
-				{
+			if (GetKeyAndValue(tmp, key, sizeof(key), value, sizeof(value), " \t")) {
+				if (StartWith(key, "$") && EndWith(key, "$") && StrLen(key) >= 3) {
 					wchar_t univalue[MAX_SIZE];
 					wchar_t uniname[MAX_SIZE];
 
@@ -747,11 +640,9 @@ static bool LoadTableFromBuf(BUF *b)
 			}
 		}
 
-		if (ok)
-		{
+		if (ok) {
 			t = ParseTableLine(tmp, prefix, sizeof(prefix), replace_list);
-			if (t != NULL)
-			{
+			if (t != NULL) {
 				Insert(TableList, t);
 			}
 		}
@@ -759,8 +650,7 @@ static bool LoadTableFromBuf(BUF *b)
 		Free(tmp);
 	}
 
-	for (UINT i = 0;i < LIST_NUM(replace_list);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(replace_list); i++) {
 		TABLE *t = LIST_DATA(replace_list, i);
 
 		Free(t->name);
@@ -777,26 +667,21 @@ static bool LoadTableFromBuf(BUF *b)
 
 // Load the string table from the file, '|' names a resource. Parsed at every load: no cache file in %TEMP%,
 // which other users can write (SEC-8), and no override file beside the exe naming another table (FND-43)
-bool LoadTable(const char *filename)
-{
-	if (filename == NULL)
-	{
+bool LoadTable(const char *filename) {
+	if (filename == NULL) {
 		return false;
 	}
 
-	if (MayaquaIsMinimalMode())
-	{
+	if (MayaquaIsMinimalMode()) {
 		return true;
 	}
 
 	BUF *b = ReadDump(filename);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		MayaFatalExit(1, "Error: Can't read string tables (file not found).\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)");
 	}
 
-	if (LoadTableFromBuf(b) == false)
-	{
+	if (LoadTableFromBuf(b) == false) {
 		FreeBuf(b);
 		return false;
 	}
@@ -805,11 +690,10 @@ bool LoadTable(const char *filename)
 
 	SetLocale(_UU("DEFAULT_LOCALE"));
 
-	if (StrCmpi(_SS("STRTABLE_ID"), STRTABLE_ID) != 0)
-	{
+	if (StrCmpi(_SS("STRTABLE_ID"), STRTABLE_ID) != 0) {
 		char tmp[MAX_SIZE];
 		Format(tmp, sizeof(tmp), "Error: Can't read string tables (invalid version: '%s'!='%s').\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)",
-			_SS("STRTABLE_ID"), STRTABLE_ID);
+		       _SS("STRTABLE_ID"), STRTABLE_ID);
 		MayaFatalExit(1, tmp);
 	}
 

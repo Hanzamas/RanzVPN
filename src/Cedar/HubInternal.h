@@ -1,8 +1,8 @@
 // HubInternal.h
 // Module-internal declarations of the Hub module: only its own files include this header
 
-#ifndef	HUB_INTERNAL_H
-#define	HUB_INTERNAL_H
+#ifndef HUB_INTERNAL_H
+#define HUB_INTERNAL_H
 
 HUBDB *NewHubDb();
 void DeleteHubDb(HUBDB *d);
@@ -46,4 +46,4 @@ USERLIST *LoadUserList(LIST *o, char *filename);
 USERLIST *FindUserList(LIST *o, char *filename);
 bool IsUserMatchInUserList(LIST *o, char *filename, UINT64 user_hash);
 
-#endif	// HUB_INTERNAL_H
+#endif // HUB_INTERNAL_H

@@ -17,27 +17,23 @@
 static HANDLE heap_handle = NULL;
 static bool use_heap_api = false;
 
-typedef struct WIN32MUTEX
-{
+typedef struct WIN32MUTEX {
 	HANDLE hMutex;
 } WIN32MUTEX;
 
-#pragma pack(push,8)
-typedef struct tagTHREADNAME_INFO
-{
-	DWORD dwType; // Must be 0x1000.
-	LPCSTR szName; // Pointer to name (in user addr space).
+#pragma pack(push, 8)
+typedef struct tagTHREADNAME_INFO {
+	DWORD dwType;     // Must be 0x1000.
+	LPCSTR szName;    // Pointer to name (in user addr space).
 	DWORD dwThreadID; // Thread ID (-1=caller thread).
-	DWORD dwFlags; // Reserved for future use, must be zero.
+	DWORD dwFlags;    // Reserved for future use, must be zero.
 } THREADNAME_INFO;
 #pragma pack(pop)
 
-void Win32SetThreadName(UINT thread_id, char *name)
-{
+void Win32SetThreadName(UINT thread_id, char *name) {
 	DWORD ms_vc_exception = 0x406D1388;
 	THREADNAME_INFO t;
-	if (thread_id == 0 || name == NULL)
-	{
+	if (thread_id == 0 || name == NULL) {
 		return;
 	}
 
@@ -47,25 +43,19 @@ void Win32SetThreadName(UINT thread_id, char *name)
 	t.dwThreadID = thread_id;
 	t.dwFlags = 0;
 
-	__try
-	{
+	__try {
 		RaiseException(ms_vc_exception, 0, sizeof(t) / sizeof(ULONG_PTR), (ULONG_PTR *)&t);
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
 	}
 }
 
-void Win32InitNewThread()
-{
+void Win32InitNewThread() {
 	SetThreadLocale(LOCALE_USER_DEFAULT);
 }
 
-void Win32GetMemInfo(MEMINFO *info)
-{
+void Win32GetMemInfo(MEMINFO *info) {
 	MEMORYSTATUSEX st;
-	if (info == NULL)
-	{
+	if (info == NULL) {
 		return;
 	}
 
@@ -74,8 +64,7 @@ void Win32GetMemInfo(MEMINFO *info)
 	Zero(&st, sizeof(st));
 	st.dwLength = sizeof(st);
 
-	if (GlobalMemoryStatusEx(&st) == false)
-	{
+	if (GlobalMemoryStatusEx(&st) == false) {
 		return;
 	}
 
@@ -88,12 +77,10 @@ void Win32GetMemInfo(MEMINFO *info)
 	info->UsedPhys = info->TotalPhys - info->FreePhys;
 }
 
-void *Win32NewSingleInstance(char *instance_name)
-{
+void *Win32NewSingleInstance(char *instance_name) {
 	char tmp[MAX_SIZE];
 	wchar_t name_w[MAX_SIZE];
-	if (instance_name == NULL)
-	{
+	if (instance_name == NULL) {
 		char exe_path[MAX_PATH];
 		GetModuleFileName(NULL, exe_path, sizeof(exe_path));
 		HashInstanceName(tmp, sizeof(tmp), exe_path);
@@ -103,12 +90,10 @@ void *Win32NewSingleInstance(char *instance_name)
 	// One atomic create: an existing mutex (or one this account may not open) means another instance runs
 	StrToUni(name_w, sizeof(name_w), instance_name);
 	HANDLE hMutex = CreateMutexW(NULL, FALSE, name_w);
-	if (hMutex == NULL)
-	{
+	if (hMutex == NULL) {
 		return NULL;
 	}
-	if (GetLastError() == ERROR_ALREADY_EXISTS)
-	{
+	if (GetLastError() == ERROR_ALREADY_EXISTS) {
 		CloseHandle(hMutex);
 		return NULL;
 	}
@@ -119,10 +104,8 @@ void *Win32NewSingleInstance(char *instance_name)
 	return (void *)ret;
 }
 
-void Win32FreeSingleInstance(void *data)
-{
-	if (data == NULL)
-	{
+void Win32FreeSingleInstance(void *data) {
+	if (data == NULL) {
 		return;
 	}
 
@@ -133,44 +116,38 @@ void Win32FreeSingleInstance(void *data)
 	Win32MemoryFree(m);
 }
 
-void Win32SetHighPriority()
-{
+void Win32SetHighPriority() {
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 }
 
-void Win32RestorePriority()
-{
+void Win32RestorePriority() {
 	SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
 }
 
-void Win32Init()
-{
+void Win32Init() {
 	Win32InitConsole();
 
 	Win32InitNewThread();
 
 	CoInitialize(NULL);
 
-#ifdef	WIN32_USE_HEAP_API_FOR_MEMORY
+#ifdef WIN32_USE_HEAP_API_FOR_MEMORY
 	use_heap_api = true;
 #else
 	use_heap_api = false;
 #endif
 
-	if (use_heap_api)
-	{
+	if (use_heap_api) {
 		heap_handle = HeapCreate(0, 0, 0);
 	}
 
 	Win32InitCallStack();
 }
 
-void Win32Free()
-{
+void Win32Free() {
 	Win32FreeCallStack();
 
-	if (use_heap_api)
-	{
+	if (use_heap_api) {
 		HeapDestroy(heap_handle);
 		heap_handle = NULL;
 	}
@@ -178,38 +155,26 @@ void Win32Free()
 	CoUninitialize();
 }
 
-void *Win32MemoryAlloc(UINT size)
-{
-	if (use_heap_api)
-	{
+void *Win32MemoryAlloc(UINT size) {
+	if (use_heap_api) {
 		return HeapAlloc(heap_handle, 0, size);
-	}
-	else
-	{
+	} else {
 		return malloc(size);
 	}
 }
 
-void *Win32MemoryReAlloc(void *addr, UINT size)
-{
-	if (use_heap_api)
-	{
+void *Win32MemoryReAlloc(void *addr, UINT size) {
+	if (use_heap_api) {
 		return HeapReAlloc(heap_handle, 0, addr, size);
-	}
-	else
-	{
+	} else {
 		return realloc(addr, size);
 	}
 }
 
-void Win32MemoryFree(void *addr)
-{
-	if (use_heap_api)
-	{
+void Win32MemoryFree(void *addr) {
+	if (use_heap_api) {
 		HeapFree(heap_handle, 0, addr);
-	}
-	else
-	{
+	} else {
 		free(addr);
 	}
 }

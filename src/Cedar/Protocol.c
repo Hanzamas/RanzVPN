@@ -29,16 +29,13 @@
 #include <winhttp.h>
 #include "ProtocolInternal.h"
 
-bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x)
-{
+bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x) {
 	bool ret = false;
-	if (x == NULL)
-	{
+	if (x == NULL) {
 		return false;
 	}
 
-	if (x->root_cert)
-	{
+	if (x->root_cert) {
 		return true;
 	}
 
@@ -51,13 +48,11 @@ bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x)
 	return ret;
 }
 
-bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
-{
+bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x) {
 	bool ret = false;
 	LIST *chain = NULL;
 	LIST *current_chain_dir = NULL;
-	if (o == NULL || x == NULL)
-	{
+	if (o == NULL || x == NULL) {
 		return false;
 	}
 
@@ -65,8 +60,7 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 
 	ret = TryGetParentCertFromCertList(o, x, chain);
 
-	if (ret)
-	{
+	if (ret) {
 		DIRLIST *dir;
 		wchar_t dirname[MAX_SIZE];
 		wchar_t exedir[MAX_SIZE];
@@ -75,19 +69,14 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 		CombinePathW(dirname, sizeof(dirname), exedir, L"chain_certs");
 		MakeDirExW(dirname);
 
-		if (auto_save)
-		{
+		if (auto_save) {
 			dir = EnumDirW(dirname);
-			if (dir != NULL)
-			{
-				for (UINT i = 0;i < dir->NumFiles;i++)
-				{
+			if (dir != NULL) {
+				for (UINT i = 0; i < dir->NumFiles; i++) {
 					DIRENT *e = dir->File[i];
 
-					if (e->Folder == false)
-					{
-						if (UniStartWith(e->FileNameW, AUTO_DOWNLOAD_CERTS_PREFIX))
-						{
+					if (e->Folder == false) {
+						if (UniStartWith(e->FileNameW, AUTO_DOWNLOAD_CERTS_PREFIX)) {
 							wchar_t tmp[MAX_SIZE];
 
 							CombinePathW(tmp, sizeof(tmp), dirname, e->FileNameW);
@@ -104,16 +93,14 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 		current_chain_dir = NewCertList(false);
 		AddAllChainCertsToCertList(current_chain_dir);
 
-		for (UINT i = 0;i < LIST_NUM(chain);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(chain); i++) {
 			wchar_t tmp[MAX_SIZE];
 			X *xx = LIST_DATA(chain, i);
 
 			GetAllNameFromName(tmp, sizeof(tmp), xx->subject_name);
 
 
-			if (auto_save && CompareX(x, xx) == false && IsXInCertList(current_chain_dir, xx) == false)
-			{
+			if (auto_save && CompareX(x, xx) == false && IsXInCertList(current_chain_dir, xx) == false) {
 				wchar_t fn[MAX_PATH];
 				char hex_a[128];
 				wchar_t hex[128];
@@ -137,10 +124,8 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 				FreeBuf(b);
 			}
 
-			if (xx->root_cert)
-			{
-				if (found_root_x != NULL)
-				{
+			if (xx->root_cert) {
+				if (found_root_x != NULL) {
 					*found_root_x = CloneX(xx);
 				}
 			}
@@ -151,8 +136,7 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 
 	FreeCertList(current_chain_dir);
 
-	if (ret && auto_save)
-	{
+	if (ret && auto_save) {
 		// The folder was changed: the next connection of the server scans it again
 		InvalidateChainCertCache();
 	}
@@ -160,80 +144,63 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 	return ret;
 }
 
-bool TryGetParentCertFromCertList(LIST *o, X *x, LIST *found_chain)
-{
+bool TryGetParentCertFromCertList(LIST *o, X *x, LIST *found_chain) {
 	bool ret = false;
 	bool do_free = false;
-	if (o == NULL || x == NULL || found_chain == NULL)
-	{
+	if (o == NULL || x == NULL || found_chain == NULL) {
 		return false;
 	}
 
-	if (LIST_NUM(found_chain) >= FIND_CERT_CHAIN_MAX_DEPTH)
-	{
+	if (LIST_NUM(found_chain) >= FIND_CERT_CHAIN_MAX_DEPTH) {
 		return false;
 	}
 
 	Add(found_chain, CloneX(x));
 
-	if (x->root_cert)
-	{
+	if (x->root_cert) {
 		return true;
 	}
 
 	X *r = FindCertIssuerFromCertList(o, x);
 
-	if (r == NULL)
-	{
-		if (IsEmptyStr(x->issuer_url) == false)
-		{
+	if (r == NULL) {
+		if (IsEmptyStr(x->issuer_url) == false) {
 			r = DownloadCert(x->issuer_url);
 
-			if (CheckXEx(x, r, true, true) && CompareX(x, r) == false)
-			{
+			if (CheckXEx(x, r, true, true) && CompareX(x, r) == false) {
 				do_free = true;
-			}
-			else
-			{
+			} else {
 				FreeX(r);
 				r = NULL;
 			}
 		}
 	}
 
-	if (r != NULL)
-	{
+	if (r != NULL) {
 		ret = TryGetParentCertFromCertList(o, r, found_chain);
 	}
 
-	if (do_free)
-	{
+	if (do_free) {
 		FreeX(r);
 	}
 
 	return ret;
 }
 
-X *FindCertIssuerFromCertList(LIST *o, X *x)
-{
-	if (o == NULL || x == NULL)
-	{
+X *FindCertIssuerFromCertList(LIST *o, X *x) {
+	if (o == NULL || x == NULL) {
 		return NULL;
 	}
 
-	if (x->root_cert)
-	{
+	if (x->root_cert) {
 		return NULL;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		X *xx = LIST_DATA(o, i);
 
-		if (CheckXEx(x, xx, true, true))
-		{
-			if (CompareX(x, xx) == false)
-			{
+		if (CheckXEx(x, xx, true, true)) {
+			if (CompareX(x, xx) == false) {
 				return xx;
 			}
 		}
@@ -243,11 +210,10 @@ X *FindCertIssuerFromCertList(LIST *o, X *x)
 }
 
 // Receive buffer size of HttpGet
-#define	HTTP_GET_RECV_BUF_SIZE		64000
+#define HTTP_GET_RECV_BUF_SIZE 64000
 
 // Set a DWORD option of a WinHTTP handle
-static bool HttpSetDword(HINTERNET h, DWORD option, DWORD value)
-{
+static bool HttpSetDword(HINTERNET h, DWORD option, DWORD value) {
 	return (WinHttpSetOption(h, option, &value, sizeof(value)) != FALSE);
 }
 
@@ -257,8 +223,7 @@ static bool HttpSetDword(HINTERNET h, DWORD option, DWORD value)
 // The body is read as far as Content-Length says, up to max_size bytes (0: no limit); without Content-Length no
 // body is read, chunked or not. timeout_ms is the TCP connect timeout and the time of each send and receive, the
 // TLS handshake of an https URL gets TIMEOUT_SSL_CONNECT instead. error_code may be NULL.
-static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error_code)
-{
+static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error_code) {
 	char str[MAX_SIZE * 3];
 	wchar_t tmp[MAX_SIZE];
 	wchar_t host[MAX_HOST_NAME_LEN + 1];
@@ -282,8 +247,7 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	StrCpy(str, sizeof(str), url);
 	Trim(str);
 
-	if (SearchStrEx(str, "://", 0, false) == INFINITE)
-	{
+	if (SearchStrEx(str, "://", 0, false) == INFINITE) {
 		// Without a scheme the URL is http
 		char *copy = CopyStr(str);
 
@@ -304,9 +268,8 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	uc.dwExtraInfoLength = (DWORD)-1;
 
 	if (WinHttpCrackUrl(wide_url, 0, 0, &uc) == FALSE ||
-		(uc.nScheme != INTERNET_SCHEME_HTTP && uc.nScheme != INTERNET_SCHEME_HTTPS) ||
-		uc.dwHostNameLength == 0 || uc.dwUserNameLength != 0 || uc.nPort == 0 || (uc.dwUrlPathLength == 0 && uc.dwExtraInfoLength != 0))
-	{
+	    (uc.nScheme != INTERNET_SCHEME_HTTP && uc.nScheme != INTERNET_SCHEME_HTTPS) ||
+	    uc.dwHostNameLength == 0 || uc.dwUserNameLength != 0 || uc.nPort == 0 || (uc.dwUrlPathLength == 0 && uc.dwExtraInfoLength != 0)) {
 		err = ERR_INVALID_PARAMETER;
 		goto FINAL;
 	}
@@ -315,9 +278,8 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	target = (uc.dwUrlPathLength == 0 ? L"/" : uc.lpszUrlPath);
 
 	session = WinHttpOpen(L"" DEFAULT_USER_AGENT, WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME,
-		WINHTTP_NO_PROXY_BYPASS, 0);
-	if (session == NULL)
-	{
+	                      WINHTTP_NO_PROXY_BYPASS, 0);
+	if (session == NULL) {
 		goto FINAL;
 	}
 
@@ -326,22 +288,19 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	io_timeout = (secure ? TIMEOUT_SSL_CONNECT : timeout_ms);
 
 	if (WinHttpSetTimeouts(session, (int)DNS_RESOLVE_DEFAULT_TIMEOUT, (int)timeout_ms, (int)io_timeout,
-		(int)io_timeout) == FALSE)
-	{
+	                       (int)io_timeout) == FALSE) {
 		goto FINAL;
 	}
 
 	connect = WinHttpConnect(session, host, uc.nPort, 0);
-	if (connect == NULL)
-	{
+	if (connect == NULL) {
 		goto FINAL;
 	}
 
 	request = WinHttpOpenRequest(connect, L"GET", target, L"HTTP/1.1", WINHTTP_NO_REFERER,
-		WINHTTP_DEFAULT_ACCEPT_TYPES,
-		WINHTTP_FLAG_ESCAPE_DISABLE | WINHTTP_FLAG_ESCAPE_DISABLE_QUERY | (secure ? WINHTTP_FLAG_SECURE : 0));
-	if (request == NULL)
-	{
+	                             WINHTTP_DEFAULT_ACCEPT_TYPES,
+	                             WINHTTP_FLAG_ESCAPE_DISABLE | WINHTTP_FLAG_ESCAPE_DISABLE_QUERY | (secure ? WINHTTP_FLAG_SECURE : 0));
+	if (request == NULL) {
 		goto FINAL;
 	}
 
@@ -349,40 +308,35 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	// one request per connection: a pooled keep-alive connection would outlive the request and let a later
 	// request reach a server that already answered the first one
 	ok = HttpSetDword(request, WINHTTP_OPTION_DISABLE_FEATURE,
-		WINHTTP_DISABLE_KEEP_ALIVE | WINHTTP_DISABLE_REDIRECTS | WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_AUTHENTICATION) &&
-		HttpSetDword(request, WINHTTP_OPTION_AUTOLOGON_POLICY, WINHTTP_AUTOLOGON_SECURITY_LEVEL_HIGH);
+	                  WINHTTP_DISABLE_KEEP_ALIVE | WINHTTP_DISABLE_REDIRECTS | WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_AUTHENTICATION) &&
+	     HttpSetDword(request, WINHTTP_OPTION_AUTOLOGON_POLICY, WINHTTP_AUTOLOGON_SECURITY_LEVEL_HIGH);
 
 	// No total time limit on the response header. Should WinHTTP refuse the value, the request keeps
 	// WinHTTP's default limit instead of failing.
 	HttpSetDword(request, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT, INFINITE);
 
-	if (ok && secure)
-	{
+	if (ok && secure) {
 		// No check of the server certificate, and no client certificate
 		ok = HttpSetDword(request, WINHTTP_OPTION_SECURITY_FLAGS,
-			SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
-			SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE) &&
-			(WinHttpSetOption(request, WINHTTP_OPTION_CLIENT_CERT_CONTEXT, WINHTTP_NO_CLIENT_CERT_CONTEXT, 0) != FALSE);
+		                  SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
+		                      SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE) &&
+		     (WinHttpSetOption(request, WINHTTP_OPTION_CLIENT_CERT_CONTEXT, WINHTTP_NO_CLIENT_CERT_CONTEXT, 0) != FALSE);
 	}
 
-	if (ok)
-	{
+	if (ok) {
 		// Request headers that WinHTTP does not add itself (it sends Host, User-Agent and Connection: Keep-Alive)
 		ok = (WinHttpAddRequestHeaders(request,
-			L"Keep-Alive: " HTTP_KEEP_ALIVE "\r\nAccept-Language: ja\r\nPragma: no-cache\r\nCache-Control: no-cache",
-			(DWORD)-1, WINHTTP_ADDREQ_FLAG_ADD) != FALSE);
+		                               L"Keep-Alive: " HTTP_KEEP_ALIVE "\r\nAccept-Language: ja\r\nPragma: no-cache\r\nCache-Control: no-cache",
+		                               (DWORD)-1, WINHTTP_ADDREQ_FLAG_ADD) != FALSE);
 	}
 
-	if (ok == false)
-	{
+	if (ok == false) {
 		goto FINAL;
 	}
 
 	// Send
-	if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) == FALSE)
-	{
-		switch (GetLastError())
-		{
+	if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) == FALSE) {
+		switch (GetLastError()) {
 		case ERROR_WINHTTP_NAME_NOT_RESOLVED:
 		case ERROR_WINHTTP_CANNOT_CONNECT:
 		case ERROR_WINHTTP_TIMEOUT:
@@ -409,8 +363,7 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	WinHttpSetTimeouts(request, (int)DNS_RESOLVE_DEFAULT_TIMEOUT, (int)timeout_ms, (int)timeout_ms, (int)timeout_ms);
 
 	// Receive
-	if (WinHttpReceiveResponse(request, NULL) == FALSE)
-	{
+	if (WinHttpReceiveResponse(request, NULL) == FALSE) {
 		err = ERR_DISCONNECTED;
 		goto FINAL;
 	}
@@ -418,23 +371,19 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	// Only an HTTP/1.x status line counts. WinHTTP has already skipped interim 1xx responses.
 	size = sizeof(tmp);
 	if (WinHttpQueryHeaders(request, WINHTTP_QUERY_VERSION, WINHTTP_HEADER_NAME_BY_INDEX, tmp, &size,
-		WINHTTP_NO_HEADER_INDEX))
-	{
+	                        WINHTTP_NO_HEADER_INDEX)) {
 		UniToStr(str, sizeof(str), tmp);
 
-		if (StrLen(str) == 8 && Cmp(str, "HTTP/1.", 7) == 0)
-		{
+		if (StrLen(str) == 8 && Cmp(str, "HTTP/1.", 7) == 0) {
 			size = sizeof(http_status);
 			if (WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-				WINHTTP_HEADER_NAME_BY_INDEX, &http_status, &size, WINHTTP_NO_HEADER_INDEX) == FALSE)
-			{
+			                        WINHTTP_HEADER_NAME_BY_INDEX, &http_status, &size, WINHTTP_NO_HEADER_INDEX) == FALSE) {
 				http_status = 0;
 			}
 		}
 	}
 
-	switch (http_status)
-	{
+	switch (http_status) {
 	case 401:
 	case 407:
 		// Proxy authentication error
@@ -457,8 +406,7 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 		break;
 	}
 
-	if (err != ERR_NO_ERROR)
-	{
+	if (err != ERR_NO_ERROR) {
 		goto FINAL;
 	}
 
@@ -466,13 +414,11 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	// one. Without it no body is read, chunked or not.
 	size = sizeof(tmp);
 	if (WinHttpQueryHeaders(request, WINHTTP_QUERY_CONTENT_LENGTH, WINHTTP_HEADER_NAME_BY_INDEX, tmp, &size,
-		WINHTTP_NO_HEADER_INDEX))
-	{
+	                        WINHTTP_NO_HEADER_INDEX)) {
 		UniToStr(str, sizeof(str), tmp);
 		content_len = ToInt(str);
 	}
-	if (max_size != 0)
-	{
+	if (max_size != 0) {
 		content_len = MIN(content_len, max_size);
 	}
 
@@ -480,18 +426,15 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	buffer = Malloc(HTTP_GET_RECV_BUF_SIZE);
 	ret = NewBuf();
 
-	while (true)
-	{
+	while (true) {
 		UINT recv_size = MIN(HTTP_GET_RECV_BUF_SIZE, content_len - ret->Size);
 
-		if (recv_size == 0)
-		{
+		if (recv_size == 0) {
 			break;
 		}
 
 		size = 0;
-		if (WinHttpReadData(request, buffer, recv_size, &size) == FALSE || size == 0)
-		{
+		if (WinHttpReadData(request, buffer, recv_size, &size) == FALSE || size == 0) {
 			// Disconnected
 			err = ERR_DISCONNECTED;
 			FreeBuf(ret);
@@ -504,46 +447,38 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 
 	Free(buffer);
 
-	if (ret != NULL)
-	{
+	if (ret != NULL) {
 		SeekBuf(ret, 0, 0);
 	}
 
 FINAL:
-	if (request != NULL)
-	{
+	if (request != NULL) {
 		WinHttpCloseHandle(request);
 	}
-	if (connect != NULL)
-	{
+	if (connect != NULL) {
 		WinHttpCloseHandle(connect);
 	}
-	if (session != NULL)
-	{
+	if (session != NULL) {
 		WinHttpCloseHandle(session);
 	}
 	Free(wide_url);
 
-	if (error_code != NULL)
-	{
+	if (error_code != NULL) {
 		*error_code = err;
 	}
 
 	return ret;
 }
 
-X *DownloadCert(char *url)
-{
+X *DownloadCert(char *url) {
 	X *ret = NULL;
-	if (IsEmptyStr(url))
-	{
+	if (IsEmptyStr(url)) {
 		return NULL;
 	}
 
 	BUF *b = HttpGet(url, CERT_HTTP_DOWNLOAD_TIMEOUT, CERT_HTTP_DOWNLOAD_MAXSIZE, NULL);
 
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return NULL;
 	}
 
@@ -554,12 +489,10 @@ X *DownloadCert(char *url)
 	return ret;
 }
 
-LIST *NewCertList(bool load_root_and_chain)
-{
+LIST *NewCertList(bool load_root_and_chain) {
 	LIST *o = NewList(NULL);
 
-	if (load_root_and_chain)
-	{
+	if (load_root_and_chain) {
 		AddAllRootCertsToCertList(o);
 		AddAllChainCertsToCertList(o);
 	}
@@ -567,15 +500,12 @@ LIST *NewCertList(bool load_root_and_chain)
 	return o;
 }
 
-void FreeCertList(LIST *o)
-{
-	if (o == NULL)
-	{
+void FreeCertList(LIST *o) {
+	if (o == NULL) {
 		return;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		X *x = LIST_DATA(o, i);
 
 		FreeX(x);
@@ -584,19 +514,15 @@ void FreeCertList(LIST *o)
 	ReleaseList(o);
 }
 
-bool IsXInCertList(LIST *o, X *x)
-{
-	if (o == NULL || x == NULL)
-	{
+bool IsXInCertList(LIST *o, X *x) {
+	if (o == NULL || x == NULL) {
 		return false;
 	}
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		X *xx = LIST_DATA(o, i);
 
-		if (CompareX(x, xx))
-		{
+		if (CompareX(x, xx)) {
 			return true;
 		}
 	}
@@ -604,32 +530,26 @@ bool IsXInCertList(LIST *o, X *x)
 	return false;
 }
 
-static void AddXToCertList(LIST *o, X *x)
-{
-	if (o == NULL || x == NULL)
-	{
+static void AddXToCertList(LIST *o, X *x) {
+	if (o == NULL || x == NULL) {
 		return;
 	}
 
-	if (IsXInCertList(o, x))
-	{
+	if (IsXInCertList(o, x)) {
 		return;
 	}
 
-	if (CheckXDateNow(x) == false)
-	{
+	if (CheckXDateNow(x) == false) {
 		return;
 	}
 
 	Add(o, CloneX(x));
 }
 
-void AddAllChainCertsToCertList(LIST *o)
-{
+void AddAllChainCertsToCertList(LIST *o) {
 	wchar_t dirname[MAX_SIZE];
 	wchar_t exedir[MAX_SIZE];
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
@@ -641,22 +561,18 @@ void AddAllChainCertsToCertList(LIST *o)
 
 	DIRLIST *dir = EnumDirW(dirname);
 
-	if (dir != NULL)
-	{
-		for (UINT i = 0;i < dir->NumFiles;i++)
-		{
+	if (dir != NULL) {
+		for (UINT i = 0; i < dir->NumFiles; i++) {
 			DIRENT *e = dir->File[i];
 
-			if (e->Folder == false)
-			{
+			if (e->Folder == false) {
 				wchar_t tmp[MAX_SIZE];
 
 				CombinePathW(tmp, sizeof(tmp), dirname, e->FileNameW);
 
 				X *x = FileToXW(tmp);
 
-				if (x != NULL)
-				{
+				if (x != NULL) {
 					AddXToCertList(o, x);
 
 					FreeX(x);
@@ -668,37 +584,30 @@ void AddAllChainCertsToCertList(LIST *o)
 	}
 }
 
-void AddAllRootCertsToCertList(LIST *o)
-{
+void AddAllRootCertsToCertList(LIST *o) {
 	UINT num_ok = 0, num_error = 0;
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
 	BUF *buf = ReadDump(ROOT_CERTS_FILENAME);
-	if (buf == NULL)
-	{
+	if (buf == NULL) {
 		return;
 	}
 
 	PACK *p = BufToPack(buf);
 
-	if (p != NULL)
-	{
+	if (p != NULL) {
 		UINT num = PackGetIndexCount(p, "cert");
 
-		for (UINT i = 0;i < num;i++)
-		{
+		for (UINT i = 0; i < num; i++) {
 			bool ok = false;
 			BUF *b = PackGetBufEx(p, "cert", i);
 
-			if (b != NULL)
-			{
+			if (b != NULL) {
 				X *x = BufToX(b, false);
 
-				if (x != NULL)
-				{
+				if (x != NULL) {
 					AddXToCertList(o, x);
 
 					ok = true;
@@ -709,12 +618,9 @@ void AddAllRootCertsToCertList(LIST *o)
 				FreeBuf(b);
 			}
 
-			if (ok)
-			{
+			if (ok) {
 				num_ok++;
-			}
-			else
-			{
+			} else {
 				num_error++;
 			}
 		}
@@ -723,19 +629,16 @@ void AddAllRootCertsToCertList(LIST *o)
 	}
 
 	FreeBuf(buf);
-
 }
 
 // Machine identity (FIX-5, #101): the first SHA1_SIZE bytes of SHA-256 over MACHINE_ID_LABEL with its
 // terminator, the MachineGuid of Windows (trimmed, lower case) with its terminator, and the salt. Host
 // name, IP addresses and OS version are no input. An unreadable MachineGuid is the empty string, so the
 // salt alone still tells two servers apart.
-void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size)
-{
+void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size) {
 	char guid[MAX_SIZE];
 	UCHAR hash[SHA256_SIZE];
-	if (data == NULL || (salt == NULL && salt_size != 0))
-	{
+	if (data == NULL || (salt == NULL && salt_size != 0)) {
 		return;
 	}
 
@@ -756,10 +659,8 @@ void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT s
 }
 
 // HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid in the 64-bit registry view, or "" when it cannot be read
-static void GetMachineGuid(char *guid, UINT size)
-{
-	if (guid == NULL)
-	{
+static void GetMachineGuid(char *guid, UINT size) {
+	if (guid == NULL) {
 		return;
 	}
 
@@ -773,11 +674,9 @@ static void GetMachineGuid(char *guid, UINT size)
 // Set the machine identity salt of a CEDAR (NewCedar: a random one; SiLoadMachineIdCfg: the one of the
 // config file) and derive its machine identity. Called before the hubs and listeners exist, so readers
 // of the identity need no lock.
-void SetCedarMachineIdSalt(CEDAR *c, void *salt)
-{
+void SetCedarMachineIdSalt(CEDAR *c, void *salt) {
 	char guid[MAX_SIZE];
-	if (c == NULL || salt == NULL)
-	{
+	if (c == NULL || salt == NULL) {
 		return;
 	}
 
@@ -789,10 +688,8 @@ void SetCedarMachineIdSalt(CEDAR *c, void *salt)
 }
 
 // The machine identity of a server (SHA1_SIZE bytes): virtual hub MAC address and address, Cascade unique_id
-void GenerateMachineUniqueHash(CEDAR *c, void *data)
-{
-	if (c == NULL || data == NULL)
-	{
+void GenerateMachineUniqueHash(CEDAR *c, void *data) {
+	if (c == NULL || data == NULL) {
 		return;
 	}
 
@@ -800,19 +697,15 @@ void GenerateMachineUniqueHash(CEDAR *c, void *data)
 }
 
 
-bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32)
-{
-	if (p == NULL || session_key == NULL || session_key_32 == NULL)
-	{
+bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32) {
+	if (p == NULL || session_key == NULL || session_key_32 == NULL) {
 		return false;
 	}
 
-	if (PackGetDataSize(p, "session_key") != SHA1_SIZE)
-	{
+	if (PackGetDataSize(p, "session_key") != SHA1_SIZE) {
 		return false;
 	}
-	if (PackGetData(p, "session_key", session_key) == false)
-	{
+	if (PackGetData(p, "session_key", session_key) == false) {
 		return false;
 	}
 	*session_key_32 = PackGetInt(p, "session_key_32");

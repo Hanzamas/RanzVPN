@@ -21,8 +21,7 @@
 #include "Mayaqua/Table.h"
 #include "AdminInternal.h"
 
-UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
-{
+UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t) {
 	HUB *h = NULL;
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
@@ -30,8 +29,7 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 
 	CHECK_RIGHT;
 	h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -49,8 +47,7 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 		t->NumUser = num;
 		t->Users = ZeroMalloc(sizeof(RPC_ENUM_USER_ITEM) * num);
 
-		for (UINT i = 0;i < num;i++)
-		{
+		for (UINT i = 0; i < num; i++) {
 			USER *u = LIST_DATA(h->HubDb->UserList, i);
 
 			Lock(u->lock);
@@ -65,8 +62,7 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 				e->LastLoginTime = u->LastLoginTime;
 				e->NumLogin = u->NumLogin;
 
-				if (u->Policy != NULL)
-				{
+				if (u->Policy != NULL) {
 					e->DenyAccess = u->Policy->Access ? false : true;
 				}
 
@@ -86,37 +82,32 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
-{
+UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t) {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 
-	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false)
-	{
+	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	CHECK_RIGHT;
 	h = AdminGetHub(a, t->HubName, "no_change_users", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	AcLock(h);
 	{
-		if (AcDeleteUser(h, t->Name) == false)
-		{
+		if (AcDeleteUser(h, t->Name) == false) {
 			ret = ERR_OBJECT_NOT_FOUND;
 		}
 	}
 	AcUnlock(h);
 
-	if (ret == ERR_NO_ERROR)
-	{
+	if (ret == ERR_NO_ERROR) {
 		ALog(a, h, "LA_DELETE_USER", t->Name);
 
 		IncrementServerConfigRevision(s);
@@ -127,8 +118,7 @@ UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 	return ret;
 }
 
-UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
-{
+UINT StGetUser(ADMIN *a, RPC_SET_USER *t) {
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	USER *u = NULL;
@@ -137,8 +127,7 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	StrCpy(name, sizeof(name), t->Name);
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
-	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false)
-	{
+	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -149,20 +138,16 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	StrCpy(t->Name, sizeof(t->Name), name);
 
 	h = AdminGetHub(a, hubname, NULL, &ret);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
 	AcLock(h);
 	{
 		u = AcGetUser(h, name);
-		if (u == NULL)
-		{
+		if (u == NULL) {
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
+		} else {
 			Lock(u->lock);
 			{
 				StrCpy(t->GroupName, sizeof(t->GroupName), u->GroupName);
@@ -176,8 +161,7 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 				t->AuthData = CopyAuthData(u->AuthData, t->AuthType);
 				t->NumLogin = u->NumLogin;
 				Copy(&t->Traffic, u->Traffic, sizeof(TRAFFIC));
-				if (u->Policy != NULL)
-				{
+				if (u->Policy != NULL) {
 					t->Policy = ClonePolicy(u->Policy);
 				}
 			}
@@ -193,8 +177,7 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
-{
+UINT StSetUser(ADMIN *a, RPC_SET_USER *t) {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
@@ -202,65 +185,50 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 	USERGROUP *g = NULL;
 
 
-	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false)
-	{
+	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	CHECK_RIGHT;
 
-	if (StrCmpi(t->Name, "*") == 0)
-	{
-		if (t->AuthType != AUTHTYPE_NT)
-		{
+	if (StrCmpi(t->Name, "*") == 0) {
+		if (t->AuthType != AUTHTYPE_NT) {
 			return ERR_INVALID_PARAMETER;
 		}
 	}
 
 	ret = CheckUserAuthData(t->AuthType, t->AuthData);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		return ret;
 	}
 
 	h = AdminGetHub(a, t->HubName, "no_change_users", &ret);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
 	AcLock(h);
 	{
 		u = AcGetUser(h, t->Name);
-		if (u == NULL)
-		{
+		if (u == NULL) {
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
+		} else {
 			Lock(u->lock);
 			{
-				if (StrLen(t->GroupName) != 0)
-				{
+				if (StrLen(t->GroupName) != 0) {
 					g = AcGetGroup(h, t->GroupName);
 
-					if (g != NULL)
-					{
+					if (g != NULL) {
 						JoinUserToGroup(u, g);
 						ReleaseGroup(g);
-					}
-					else
-					{
+					} else {
 						ret = ERR_GROUP_NOT_FOUND;
 					}
-				}
-				else
-				{
+				} else {
 					JoinUserToGroup(u, NULL);
 				}
 
-				if (ret != ERR_GROUP_NOT_FOUND)
-				{
+				if (ret != ERR_GROUP_NOT_FOUND) {
 					Free(u->RealName);
 					Free(u->Note);
 					u->RealName = CopyUniStr(t->Realname);
@@ -281,8 +249,7 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 	}
 	AcUnlock(h);
 
-	if (ret == ERR_NO_ERROR)
-	{
+	if (ret == ERR_NO_ERROR) {
 		ALog(a, h, "LA_SET_USER", t->Name);
 	}
 
@@ -291,44 +258,37 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
-{
+UINT StCreateUser(ADMIN *a, RPC_SET_USER *t) {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	USERGROUP *g = NULL;
 
 
-	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false)
-	{
+	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	CHECK_RIGHT;
 
 	ret = CheckUserAuthData(t->AuthType, t->AuthData);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		return ret;
 	}
 
-	if (StrCmpi(t->Name, "*") == 0)
-	{
-		if (t->AuthType != AUTHTYPE_NT)
-		{
+	if (StrCmpi(t->Name, "*") == 0) {
+		if (t->AuthType != AUTHTYPE_NT) {
 			return ERR_INVALID_PARAMETER;
 		}
 	}
 
 	h = AdminGetHub(a, t->HubName, "no_change_users", &ret);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return ret;
 	}
 
 	USER *u = NewUser(t->Name, t->Realname, t->Note, t->AuthType, CopyAuthData(t->AuthData, t->AuthType));
-	if (u == NULL)
-	{
+	if (u == NULL) {
 		ReleaseHub(h);
 		return ERR_INTERNAL_ERROR;
 	}
@@ -340,29 +300,20 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 	AcLock(h);
 	{
 		if ((LIST_NUM(h->HubDb->UserList) >= MAX_USERS) ||
-			((GetHubAdminOption(h, "max_users") != 0) && (LIST_NUM(h->HubDb->UserList) >= GetHubAdminOption(h, "max_users"))))
-		{
+		    ((GetHubAdminOption(h, "max_users") != 0) && (LIST_NUM(h->HubDb->UserList) >= GetHubAdminOption(h, "max_users")))) {
 			ret = ERR_TOO_MANY_USER;
-		}
-		else if (AcIsUser(h, t->Name))
-		{
+		} else if (AcIsUser(h, t->Name)) {
 			ret = ERR_USER_ALREADY_EXISTS;
-		}
-		else
-		{
-			if (StrLen(t->GroupName) != 0)
-			{
+		} else {
+			if (StrLen(t->GroupName) != 0) {
 				g = AcGetGroup(h, t->GroupName);
-				if (g == NULL)
-				{
+				if (g == NULL) {
 					ret = ERR_GROUP_NOT_FOUND;
 				}
 			}
 
-			if (ret != ERR_GROUP_NOT_FOUND)
-			{
-				if (g != NULL)
-				{
+			if (ret != ERR_GROUP_NOT_FOUND) {
+				if (g != NULL) {
 					JoinUserToGroup(u, g);
 					ReleaseGroup(g);
 				}

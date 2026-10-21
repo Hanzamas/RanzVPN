@@ -8,17 +8,14 @@
 #include "Str.h"
 #include "TcpIpInternal.h"
 
-HTTPLOG *ParseHttpsAccessLog(PKT *pkt)
-{
+HTTPLOG *ParseHttpsAccessLog(PKT *pkt) {
 	HTTPLOG h;
 	char sni[MAX_PATH];
-	if (pkt == NULL)
-	{
+	if (pkt == NULL) {
 		return NULL;
 	}
 
-	if (GetSniNameFromSslPacket(pkt->Payload, pkt->PayloadSize, sni, sizeof(sni)) == false)
-	{
+	if (GetSniNameFromSslPacket(pkt->Payload, pkt->PayloadSize, sni, sizeof(sni)) == false) {
 		return NULL;
 	}
 
@@ -33,27 +30,23 @@ HTTPLOG *ParseHttpsAccessLog(PKT *pkt)
 	return Clone(&h, sizeof(h));
 }
 
-HTTPLOG *ParseHttpAccessLog(PKT *pkt)
-{
+HTTPLOG *ParseHttpAccessLog(PKT *pkt) {
 	HTTPLOG h;
 	bool ok = false;
-	if (pkt == NULL)
-	{
+	if (pkt == NULL) {
 		return NULL;
 	}
 
 	UCHAR *buf = pkt->Payload;
 	UINT size = pkt->PayloadSize;
 
-	if (size <= 5)
-	{
+	if (size <= 5) {
 		return NULL;
 	}
 
 	if (CmpCaseIgnore(buf, "GET ", 4) != 0 &&
-	        CmpCaseIgnore(buf, "HEAD ", 5) != 0 &&
-	        CmpCaseIgnore(buf, "POST ", 5) != 0)
-	{
+	    CmpCaseIgnore(buf, "HEAD ", 5) != 0 &&
+	    CmpCaseIgnore(buf, "POST ", 5) != 0) {
 		return NULL;
 	}
 
@@ -67,13 +60,10 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 
 	char *line1 = CfgReadNextLine(b);
 
-	if (line1 != NULL)
-	{
+	if (line1 != NULL) {
 		TOKEN_LIST *tokens = ParseToken(line1, " \t");
-		if (tokens != NULL)
-		{
-			if (tokens->NumTokens == 3)
-			{
+		if (tokens != NULL) {
+			if (tokens->NumTokens == 3) {
 				StrCpy(h.Method, sizeof(h.Method), tokens->Token[0]);
 				Trim(h.Method);
 
@@ -85,18 +75,15 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 
 				StrUpper(h.Method);
 
-				while (true)
-				{
+				while (true) {
 					char *line = CfgReadNextLine(b);
 
-					if (line == NULL)
-					{
+					if (line == NULL) {
 						break;
 					}
 
 					UINT i = SearchStr(line, ":", 0);
-					if (i != INFINITE && i < (MAX_SIZE / 2))
-					{
+					if (i != INFINITE && i < (MAX_SIZE / 2)) {
 						char name[MAX_SIZE];
 						char value[MAX_SIZE];
 
@@ -107,16 +94,11 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 						StrCpy(value, sizeof(value), line + i + 1);
 						Trim(value);
 
-						if (StrCmpi(name, "host") == 0)
-						{
+						if (StrCmpi(name, "host") == 0) {
 							StrCpy(h.Hostname, sizeof(h.Hostname), value);
-						}
-						else if (StrCmpi(name, "referer") == 0)
-						{
+						} else if (StrCmpi(name, "referer") == 0) {
 							StrCpy(h.Referer, sizeof(h.Referer), value);
-						}
-						else if (StrCmpi(name, "user-agent") == 0)
-						{
+						} else if (StrCmpi(name, "user-agent") == 0) {
 							StrCpy(h.UserAgent, sizeof(h.UserAgent), value);
 						}
 					}
@@ -124,8 +106,7 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 					Free(line);
 				}
 
-				if (IsEmptyStr(h.Hostname) == false)
-				{
+				if (IsEmptyStr(h.Hostname) == false) {
 					ok = true;
 				}
 			}
@@ -136,12 +117,9 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 	Free(line1);
 	FreeBuf(b);
 
-	if (ok)
-	{
+	if (ok) {
 		return Clone(&h, sizeof(h));
-	}
-	else
-	{
+	} else {
 		return NULL;
 	}
 }

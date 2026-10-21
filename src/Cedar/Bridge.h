@@ -1,16 +1,15 @@
 // Bridge.h
 // Header of Bridge.c
 
-#ifndef	BRIDGE_H
-#define	BRIDGE_H
+#ifndef BRIDGE_H
+#define BRIDGE_H
 
 #include "Cedar.h"
 
-#define	BRIDGE_TRY_SPAN					1000
-#define	BRIDGE_NUM_DEVICE_CHECK_SPAN	(5 * 60 * 1000)
+#define BRIDGE_TRY_SPAN              1000
+#define BRIDGE_NUM_DEVICE_CHECK_SPAN (5 * 60 * 1000)
 
-struct BRIDGE
-{
+struct BRIDGE {
 	bool Active;
 	CEDAR *Cedar;
 	HUB *Hub;
@@ -24,8 +23,7 @@ struct BRIDGE
 	LOCALBRIDGE *ParentLocalBridge;
 };
 
-struct LOCALBRIDGE
-{
+struct LOCALBRIDGE {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	char DeviceName[MAX_SIZE];
 	bool Local;
@@ -44,7 +42,7 @@ void BrSendBlocks(CONNECTION *c);
 void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2);
 void BrSessionCleanup(SESSION *s);
 
-#endif	// BRIDGE_H
+#endif // BRIDGE_H
 
 
 

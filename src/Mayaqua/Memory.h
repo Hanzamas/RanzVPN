@@ -1,55 +1,50 @@
 // Memory.h
 // Header of Memory.c
 
-#ifndef	MEMORY_H
-#define	MEMORY_H
+#ifndef MEMORY_H
+#define MEMORY_H
 
 #include "MayaType.h"
 
-#define MAX_MALLOC_MEM_SIZE					(0xffffffff - 64)
+#define MAX_MALLOC_MEM_SIZE (0xffffffff - 64)
 
 // Memory size that can be passed to the kernel at a time
-#define	MAX_SEND_BUF_MEM_SIZE				(10 * 1024 * 1024)
+#define MAX_SEND_BUF_MEM_SIZE (10 * 1024 * 1024)
 
-#define	CALC_MALLOCSIZE(size)				(((MAX(size, 1) + 7) / 8) * 8 + sizeof(MEMTAG1) + sizeof(MEMTAG2))
-#define	MEMTAG1_TO_POINTER(p)				((void *)(((UCHAR *)(p)) + sizeof(MEMTAG1)))
-#define	POINTER_TO_MEMTAG1(p)				((MEMTAG1 *)(((UCHAR *)(p)) - sizeof(MEMTAG1)))
-#define	IS_NULL_POINTER(p)					(((p) == NULL) || ((POINTER_TO_UINT64(p) == (UINT64)sizeof(MEMTAG1))))
-#define	PTR_TO_PTR(p)						((void **)(&p))
+#define CALC_MALLOCSIZE(size) (((MAX(size, 1) + 7) / 8) * 8 + sizeof(MEMTAG1) + sizeof(MEMTAG2))
+#define MEMTAG1_TO_POINTER(p) ((void *)(((UCHAR *)(p)) + sizeof(MEMTAG1)))
+#define POINTER_TO_MEMTAG1(p) ((MEMTAG1 *)(((UCHAR *)(p)) - sizeof(MEMTAG1)))
+#define IS_NULL_POINTER(p)    (((p) == NULL) || ((POINTER_TO_UINT64(p) == (UINT64)sizeof(MEMTAG1))))
+#define PTR_TO_PTR(p)         ((void **)(&p))
 
 // Golden ratio prime, from
 // From https://github.com/torvalds/linux/blob/88c5083442454e5e8a505b11fa16f32d2879651e/include/linux/hash.h
-#define GOLDEN_RATION_PRIME_U64				((UINT64)7046029254386353131ULL) // 0x61C8864680B583EB
+#define GOLDEN_RATION_PRIME_U64 ((UINT64)7046029254386353131ULL) // 0x61C8864680B583EB
 
 
-struct MEMTAG1
-{
+struct MEMTAG1 {
 	UINT64 Magic;
 	UINT Size;
 	bool ZeroFree;
 };
 
-struct MEMTAG2
-{
+struct MEMTAG2 {
 	UINT64 Magic;
 };
 
-struct BUF
-{
+struct BUF {
 	void *Buf;
 	UINT Size;
 	UINT SizeReserved;
 	UINT Current;
 };
 
-struct FIFO
-{
+struct FIFO {
 	void *p;
 	UINT pos, size, memsize;
 };
 
-struct LIST
-{
+struct LIST {
 	UINT num_item, num_reserved;
 	void **p;
 	LOCK *lock;
@@ -59,30 +54,27 @@ struct LIST
 };
 
 // A ring of num_reserved slots (a power of two): the oldest of the num_item items is at p[head]
-struct QUEUE
-{
+struct QUEUE {
 	UINT num_item;
 	UINT head, num_reserved;
 	void **p;
 	LOCK *lock;
 };
 
-struct SK
-{
+struct SK {
 	UINT num_item, num_reserved;
 	void **p;
 	LOCK *lock;
 };
 
-#define	LIST_DATA(o, i)		(((o) != NULL) ? ((o)->p[(i)]) : NULL)
-#define	LIST_NUM(o)			(((o) != NULL) ? (o)->num_item : 0)
-#define	HASH_LIST_NUM(o)	(((o) != NULL) ? (o)->NumItems : 0)
+#define LIST_DATA(o, i)  (((o) != NULL) ? ((o)->p[(i)]) : NULL)
+#define LIST_NUM(o)      (((o) != NULL) ? (o)->num_item : 0)
+#define HASH_LIST_NUM(o) (((o) != NULL) ? (o)->NumItems : 0)
 
-typedef UINT (GET_HASH)(void *p);
-typedef bool (HASH_LIST_TAKE_PROC)(void *p, void *param);
+typedef UINT(GET_HASH)(void *p);
+typedef bool(HASH_LIST_TAKE_PROC)(void *p, void *param);
 
-struct HASH_LIST
-{
+struct HASH_LIST {
 	UINT Size;
 	GET_HASH *GetHashProc;
 	COMPARE *CompareProc;
@@ -218,11 +210,11 @@ void CrashNow();
 void AppendBufUtf8(BUF *b, const wchar_t *str);
 void AppendBufStr(BUF *b, const char *str);
 
-#define NUM_CANARY_RAND					2
-#define CANARY_RAND_ID_MEMTAG_MAGIC		0
-#define CANARY_RAND_SIZE				20
+#define NUM_CANARY_RAND             2
+#define CANARY_RAND_ID_MEMTAG_MAGIC 0
+#define CANARY_RAND_SIZE            20
 
-#define CANARY_RAND_ID_PTR_KEY_HASH		1
+#define CANARY_RAND_ID_PTR_KEY_HASH 1
 
 void InitCanaryRand();
 

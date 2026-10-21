@@ -1,15 +1,14 @@
 // Link.h
 // Header of Link.c
 
-#ifndef	LINK_H
-#define	LINK_H
+#ifndef LINK_H
+#define LINK_H
 
 #include "CedarType.h"
 
 #include "Mayaqua/MayaType.h"
 
-struct LINK
-{
+struct LINK {
 	bool Started;
 	volatile bool Halting;
 	bool Offline;
@@ -52,7 +51,7 @@ void ReleaseLink(LINK *k);
 void CleanupLink(LINK *k);
 void ReleaseAllLink(HUB *h);
 
-#endif	// LINK_H
+#endif // LINK_H
 
 
 

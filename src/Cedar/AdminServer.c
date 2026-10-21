@@ -23,13 +23,11 @@
 
 static void CopyOsInfo(OS_INFO *dst, const OS_INFO *info);
 
-UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
-{
+UINT StSetServerCipher(ADMIN *a, RPC_STR *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
-	if (IsEmptyStr(t->String))
-	{
+	if (IsEmptyStr(t->String)) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -50,8 +48,7 @@ UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
-{
+UINT StGetServerCipher(ADMIN *a, RPC_STR *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
@@ -67,8 +64,7 @@ UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
-{
+UINT StGetServerCipherList(ADMIN *a, RPC_STR *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
@@ -79,15 +75,13 @@ UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
 	{
 		UINT i;
 		TOKEN_LIST *ciphers = GetCipherList();
-		if (ciphers->NumTokens > 0)
-		{
+		if (ciphers->NumTokens > 0) {
 			UINT size = StrSize(ciphers->Token[0]);
 			t->String = Malloc(size);
 			StrCpy(t->String, size, ciphers->Token[0]);
 			i = 1;
 
-			for (; i < ciphers->NumTokens; i++)
-			{
+			for (; i < ciphers->NumTokens; i++) {
 				// We use StrSize() because we need the extra space for ';'
 				size += StrSize(ciphers->Token[i]);
 				t->String = ReAlloc(t->String, size);
@@ -103,8 +97,7 @@ UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
-{
+UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
@@ -117,8 +110,7 @@ UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	{
 
 		t->Cert = CloneX(c->ServerX);
-		if (admin)
-		{
+		if (admin) {
 			t->Key = CloneK(c->ServerK);
 		}
 	}
@@ -127,28 +119,23 @@ UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
-{
+UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
 	SERVER_ADMIN_ONLY;
 
-	if (t->Cert == NULL || t->Key == NULL)
-	{
+	if (t->Cert == NULL || t->Key == NULL) {
 		return ERR_PROTOCOL_ERROR;
 	}
 
-	if (CheckXandK(t->Cert, t->Key) == false)
-	{
+	if (CheckXandK(t->Cert, t->Key) == false) {
 		return ERR_PROTOCOL_ERROR;
 	}
 
 	t->Flag1 = 1;
-	if (t->Cert->root_cert == false)
-	{
-		if (DownloadAndSaveIntermediateCertificatesIfNecessary(t->Cert) == false)
-		{
+	if (t->Cert->root_cert == false) {
+		if (DownloadAndSaveIntermediateCertificatesIfNecessary(t->Cert) == false) {
 			t->Flag1 = 0;
 		}
 	}
@@ -162,12 +149,10 @@ UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
-{
+UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t) {
 	SERVER_ADMIN_ONLY;
 
-	if (IsZero(t->HashedPassword, sizeof(t->HashedPassword)))
-	{
+	if (IsZero(t->HashedPassword, sizeof(t->HashedPassword))) {
 		// For JSON-RPC
 		HashAdminPassword(t->HashedPassword, t->PlainTextPassword);
 	}
@@ -183,16 +168,14 @@ UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
 
 // Wait for the bind attempt of the listener on a port, at most LISTENER_BIND_WAIT_TIME: ERR_NO_ERROR when the port
 // is bound, ERR_LISTENER_BIND_FAILED when it is not (the listener stays registered and keeps retrying)
-static UINT StWaitListenerBind(SERVER *s, UINT port)
-{
+static UINT StWaitListenerBind(SERVER *s, UINT port) {
 	SERVER_LISTENER *e;
 	LISTENER *r = NULL;
 
 	SiLockListenerList(s);
 	{
 		e = SiGetListener(s, port);
-		if (e != NULL && e->Listener != NULL)
-		{
+		if (e != NULL && e->Listener != NULL) {
 			r = e->Listener;
 			AddRef(r->ref);
 		}
@@ -207,8 +190,7 @@ static UINT StWaitListenerBind(SERVER *s, UINT port)
 	return (bound ? ERR_NO_ERROR : ERR_LISTENER_BIND_FAILED);
 }
 
-UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
-{
+UINT StEnableListener(ADMIN *a, RPC_LISTENER *t) {
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
@@ -216,25 +198,16 @@ UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 
 	SiLockListenerList(a->Server);
 	{
-		if (t->Enable)
-		{
-			if (SiEnableListener(a->Server, t->Port) == false)
-			{
+		if (t->Enable) {
+			if (SiEnableListener(a->Server, t->Port) == false) {
 				ret = ERR_LISTENER_NOT_FOUND;
-			}
-			else
-			{
+			} else {
 				ALog(a, NULL, "LA_ENABLE_LISTENER", t->Port);
 			}
-		}
-		else
-		{
-			if (SiDisableListener(a->Server, t->Port) == false)
-			{
+		} else {
+			if (SiDisableListener(a->Server, t->Port) == false) {
 				ret = ERR_LISTENER_NOT_FOUND;
-			}
-			else
-			{
+			} else {
 				ALog(a, NULL, "LA_DISABLE_LISTENER", t->Port);
 			}
 		}
@@ -244,16 +217,14 @@ UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 	IncrementServerConfigRevision(a->Server);
 
 	// Disabling is synchronous (StopListener waits for the listener thread); enabling reports the bind
-	if (ret == ERR_NO_ERROR && t->Enable)
-	{
+	if (ret == ERR_NO_ERROR && t->Enable) {
 		ret = StWaitListenerBind(a->Server, t->Port);
 	}
 
 	return ret;
 }
 
-UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
-{
+UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t) {
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
@@ -261,12 +232,9 @@ UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 
 	SiLockListenerList(a->Server);
 	{
-		if (SiDeleteListener(a->Server, t->Port) == false)
-		{
+		if (SiDeleteListener(a->Server, t->Port) == false) {
 			ret = ERR_LISTENER_NOT_FOUND;
-		}
-		else
-		{
+		} else {
 			ALog(a, NULL, "LA_DELETE_LISTENER", t->Port);
 
 			IncrementServerConfigRevision(a->Server);
@@ -277,8 +245,7 @@ UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
-{
+UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t) {
 	SERVER_ADMIN_ONLY;
 
 	FreeRpcListenerList(t);
@@ -289,8 +256,7 @@ UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 	t->Enables = ZeroMalloc(sizeof(bool) * t->NumPort);
 	t->Errors = ZeroMalloc(sizeof(bool) * t->NumPort);
 
-	for (UINT i = 0;i < t->NumPort;i++)
-	{
+	for (UINT i = 0; i < t->NumPort; i++) {
 		t->Ports[i] = o[i].Port;
 		t->Enables[i] = o[i].Enabled;
 		t->Errors[i] = o[i].Trying;
@@ -301,12 +267,10 @@ UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
-{
+UINT StCreateListener(ADMIN *a, RPC_LISTENER *t) {
 	UINT ret = ERR_NO_ERROR;
 
-	if (t->Port == 0 || t->Port > 65535)
-	{
+	if (t->Port == 0 || t->Port > 65535) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -314,12 +278,9 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 
 	SiLockListenerList(a->Server);
 	{
-		if (SiAddListenerEx(a->Server, t->Port, t->Enable, false) == false)
-		{
+		if (SiAddListenerEx(a->Server, t->Port, t->Enable, false) == false) {
 			ret = ERR_LISTENER_ALREADY_EXISTS;
-		}
-		else
-		{
+		} else {
 			ALog(a, NULL, "LA_CREATE_LISTENER", t->Port);
 
 			IncrementServerConfigRevision(a->Server);
@@ -328,16 +289,14 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 	SiUnlockListenerList(a->Server);
 
 	// A disabled listener has no bind to wait for
-	if (ret == ERR_NO_ERROR && t->Enable)
-	{
+	if (ret == ERR_NO_ERROR && t->Enable) {
 		ret = StWaitListenerBind(a->Server, t->Port);
 	}
 
 	return ret;
 }
 
-UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
-{
+UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t) {
 	CEDAR *c = a->Server->Cedar;
 
 	Zero(t, sizeof(RPC_SERVER_STATUS));
@@ -349,8 +308,7 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	Unlock(c->TrafficLock);
 
 	// Hide the memory figures of the host from hub administrators
-	if (a->ServerAdmin)
-	{
+	if (a->ServerAdmin) {
 		Win32GetMemInfo(&t->MemInfo);
 	}
 
@@ -367,8 +325,7 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 
 		t->NumHubStandalone = 0;
 
-		for (UINT i = 0;i < LIST_NUM(c->HubList);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(c->HubList); i++) {
 			HUB *h = LIST_DATA(c->HubList, i);
 			HUB_STATS st;
 
@@ -402,12 +359,10 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
-{
+UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t) {
 	OS_INFO *info;
 	SYSTEMTIME st;
-	if (a == NULL || t == NULL)
-	{
+	if (a == NULL || t == NULL) {
 		return ERR_INTERNAL_ERROR;
 	}
 
@@ -433,18 +388,14 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 
 	t->ServerBuildDate = SystemToUINT64(&st);
 
-	if (a->ServerAdmin)
-	{
+	if (a->ServerAdmin) {
 		GetMachineName(t->ServerHostName, sizeof(t->ServerHostName));
 
 		info = GetOsInfo();
-		if (info != NULL)
-		{
+		if (info != NULL) {
 			CopyOsInfo(&t->OsInfo, info);
 		}
-	}
-	else
-	{
+	} else {
 		// Hide the host name and the OS from hub administrators; the empty
 		// strings keep the reply's Pack layout the same
 		OS_INFO hidden;
@@ -459,10 +410,8 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 	return ERR_NO_ERROR;
 }
 
-static void CopyOsInfo(OS_INFO *dst, const OS_INFO *info)
-{
-	if (info == NULL || dst == NULL)
-	{
+static void CopyOsInfo(OS_INFO *dst, const OS_INFO *info) {
+	if (info == NULL || dst == NULL) {
 		return;
 	}
 

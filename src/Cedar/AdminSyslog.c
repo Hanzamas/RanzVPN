@@ -10,8 +10,7 @@
 #include "Mayaqua/Str.h"
 #include "AdminInternal.h"
 
-UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
-{
+UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t) {
 	SERVER *s = a->Server;
 
 	SERVER_ADMIN_ONLY;
@@ -24,22 +23,17 @@ UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
-{
+UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t) {
 	SERVER *s = a->Server;
 
 	SiGetSysLogSetting(s, t);
 
-	if (a->ServerAdmin == false)
-	{
+	if (a->ServerAdmin == false) {
 		// Hide the server name from non-administrators
-		if (t->SaveType == SYSLOG_NONE)
-		{
+		if (t->SaveType == SYSLOG_NONE) {
 			StrCpy(t->Hostname, sizeof(t->Hostname), "");
 			t->Port = 0;
-		}
-		else
-		{
+		} else {
 			StrCpy(t->Hostname, sizeof(t->Hostname), "Secret");
 			t->Port = 0;
 		}

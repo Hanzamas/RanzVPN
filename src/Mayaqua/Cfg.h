@@ -1,41 +1,39 @@
 // Cfg.h
 // Header of Cfg.c
 
-#ifndef	CFG_H
-#define	CFG_H
+#ifndef CFG_H
+#define CFG_H
 
 #include "Encrypt.h"
 
 
-#define	TAG_DECLARE			"declare"
-#define	TAG_STRING			"string"
-#define	TAG_INT				"uint"
-#define	TAG_INT64			"uint64"
-#define	TAG_BOOL			"bool"
-#define	TAG_BYTE			"byte"
-#define	TAG_TRUE			"true"
-#define	TAG_FALSE			"false"
-#define	TAG_ROOT			"root"
+#define TAG_DECLARE "declare"
+#define TAG_STRING  "string"
+#define TAG_INT     "uint"
+#define TAG_INT64   "uint64"
+#define TAG_BOOL    "bool"
+#define TAG_BYTE    "byte"
+#define TAG_TRUE    "true"
+#define TAG_FALSE   "false"
+#define TAG_ROOT    "root"
 
-#define	TAG_CPYRIGHT		"\xef\xbb\xbf# Software Configuration File\r\n# ---------------------------\r\n# \r\n# You may edit this file when the VPN Server / Client / Bridge program is not running.\r\n# \r\n# In prior to edit this file manually by your text editor,\r\n# shutdown the VPN Server / Client / Bridge background service.\r\n# Otherwise, all changes will be lost.\r\n# \r\n"
-#define	TAG_BINARY			"SEVPN_DB"
+#define TAG_CPYRIGHT "\xef\xbb\xbf# Software Configuration File\r\n# ---------------------------\r\n# \r\n# You may edit this file when the VPN Server / Client / Bridge program is not running.\r\n# \r\n# In prior to edit this file manually by your text editor,\r\n# shutdown the VPN Server / Client / Bridge background service.\r\n# Otherwise, all changes will be lost.\r\n# \r\n"
+#define TAG_BINARY   "SEVPN_DB"
 
-#define	ITEM_TYPE_INT		1
-#define	ITEM_TYPE_INT64		2
-#define	ITEM_TYPE_BYTE		3
-#define	ITEM_TYPE_STRING	4
-#define	ITEM_TYPE_BOOL		5
+#define ITEM_TYPE_INT    1
+#define ITEM_TYPE_INT64  2
+#define ITEM_TYPE_BYTE   3
+#define ITEM_TYPE_STRING 4
+#define ITEM_TYPE_BOOL   5
 
-struct FOLDER
-{
+struct FOLDER {
 	char *Name;
 	LIST *Items;
 	LIST *Folders;
 	struct FOLDER *Parent;
 };
 
-struct ITEM
-{
+struct ITEM {
 	char *Name;
 	UINT Type;
 	void *Buf;
@@ -43,8 +41,7 @@ struct ITEM
 	FOLDER *Parent;
 };
 
-struct CFG_RW
-{
+struct CFG_RW {
 	LOCK *lock;
 	char *FileName;
 	wchar_t *FileNameW;
@@ -52,16 +49,15 @@ struct CFG_RW
 	UCHAR LashHash[SHA1_SIZE];
 	bool DontBackup;
 	wchar_t LastSavedDateStr[MAX_SIZE];
-	bool SaveFailed;			// The last SaveCfgRwEx could not write the file
-	bool BadFilePending;		// An unreadable file is still in place: no save writes over it
-	bool BadFileRenamed;		// An unreadable file has been renamed to <name>.bad
+	bool SaveFailed;     // The last SaveCfgRwEx could not write the file
+	bool BadFilePending; // An unreadable file is still in place: no save writes over it
+	bool BadFileRenamed; // An unreadable file has been renamed to <name>.bad
 };
 
 typedef bool (*ENUM_FOLDER)(FOLDER *f, void *param);
 typedef bool (*ENUM_ITEM)(ITEM *t, void *param);
 
-struct CFG_ENUM_PARAM
-{
+struct CFG_ENUM_PARAM {
 	BUF *b;
 	UINT depth;
 };

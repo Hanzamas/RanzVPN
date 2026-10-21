@@ -1,7 +1,7 @@
 // MicrosoftSystem.c
 // Windows system information: VM detection, user locale, computer name, console width
 
-#define	MICROSOFT_C
+#define MICROSOFT_C
 
 #include "Microsoft.h"
 
@@ -27,34 +27,32 @@
 #include <SetupAPI.h>
 #include <shellapi.h>
 #include <ShlObj.h>
-#include <Shlwapi.h>		// PathGetArgsW() of MsCopyProcessArgsW
+#include <Shlwapi.h> // PathGetArgsW() of MsCopyProcessArgsW
 #include <SoftPub.h>
 
 #if defined(_M_X64) || defined(_M_IX86)
-#include <intrin.h>		// __cpuid() of the VM detection
-#endif	// defined(_M_X64) || defined(_M_IX86)
+#include <intrin.h> // __cpuid() of the VM detection
+#endif              // defined(_M_X64) || defined(_M_IX86)
 #include "MicrosoftInternal.h"
 
 // Raw SMBIOS table of GetSystemFirmwareTable
-#define	MS_SMBIOS_PROVIDER			0x52534D42		// Firmware table provider 'RSMB'
-#define	MS_SMBIOS_HEADER_SIZE		8				// Header before the structures
-#define	MS_SMBIOS_TYPE_SYSTEM		1				// Structure type: system information
-#define	MS_SMBIOS_TYPE_BASEBOARD	2				// Structure type: baseboard information
-#define	MS_SMBIOS_TYPE_END			127				// Structure type: end of the table
+#define MS_SMBIOS_PROVIDER       0x52534D42 // Firmware table provider 'RSMB'
+#define MS_SMBIOS_HEADER_SIZE    8          // Header before the structures
+#define MS_SMBIOS_TYPE_SYSTEM    1          // Structure type: system information
+#define MS_SMBIOS_TYPE_BASEBOARD 2          // Structure type: baseboard information
+#define MS_SMBIOS_TYPE_END       127        // Structure type: end of the table
 
 #if defined(_M_X64) || defined(_M_IX86)
 // True when CPUID reports a hypervisor that runs this OS as a guest. The hypervisor-present bit
 // (leaf 1, ECX bit 31) is also set in the root partition of Hyper-V, which is the host OS of a
 // physical machine that runs Hyper-V or virtualization-based security: that partition holds the
 // CreatePartitions privilege (leaf 0x40000003, EBX bit 0) and is not a guest.
-static bool MsIsHypervisorGuest()
-{
-	int regs[4];	// EAX, EBX, ECX, EDX
+static bool MsIsHypervisorGuest() {
+	int regs[4]; // EAX, EBX, ECX, EDX
 	char vendor[13];
 
 	__cpuid(regs, 1);
-	if (((UINT)regs[2] & 0x80000000) == 0)
-	{
+	if (((UINT)regs[2] & 0x80000000) == 0) {
 		return false;
 	}
 
@@ -63,41 +61,34 @@ static bool MsIsHypervisorGuest()
 	Copy(vendor, &regs[1], 12);
 	vendor[12] = 0;
 
-	if (StrCmp(vendor, "Microsoft Hv") == 0 && (UINT)regs[0] >= 0x40000003)
-	{
+	if (StrCmp(vendor, "Microsoft Hv") == 0 && (UINT)regs[0] >= 0x40000003) {
 		__cpuid(regs, 0x40000003);
-		if (((UINT)regs[1] & 1) != 0)
-		{
+		if (((UINT)regs[1] & 1) != 0) {
 			return false;
 		}
 	}
 
 	return true;
 }
-#endif	// defined(_M_X64) || defined(_M_IX86)
+#endif // defined(_M_X64) || defined(_M_IX86)
 
 // Append string number index (1 is the first, 0 is none) of an SMBIOS string set to dst, after a space
-static void MsSmbiosAddString(char *dst, UINT dst_size, UCHAR *str_set, UINT str_set_size, UINT index)
-{
+static void MsSmbiosAddString(char *dst, UINT dst_size, UCHAR *str_set, UINT str_set_size, UINT index) {
 	UINT pos = 0;
 
-	for (UINT i = 1; index != 0 && pos < str_set_size; i++)
-	{
+	for (UINT i = 1; index != 0 && pos < str_set_size; i++) {
 		UINT len = 0;
 
-		while (pos + len < str_set_size && str_set[pos + len] != 0)
-		{
+		while (pos + len < str_set_size && str_set[pos + len] != 0) {
 			len++;
 		}
 
-		if (len == 0 || pos + len >= str_set_size)
-		{
+		if (len == 0 || pos + len >= str_set_size) {
 			// End of the set, or a string without its terminator
 			return;
 		}
 
-		if (i == index)
-		{
+		if (i == index) {
 			StrCat(dst, dst_size, " ");
 			StrCat(dst, dst_size, (char *)str_set + pos);
 			return;
@@ -111,29 +102,40 @@ static void MsSmbiosAddString(char *dst, UINT dst_size, UCHAR *str_set, UINT str
 // baseboard (type 2) names a virtual machine. The raw SMBIOS table of GetSystemFirmwareTable is
 // a header of 8 bytes (the table length at offset 4), then the structures: type, length of the
 // formatted area, handle and the rest of the area, then a string set that ends with two zero bytes.
-static bool MsIsVmFirmware()
-{
+static bool MsIsVmFirmware() {
 	// Lower case; "virtual" covers Hyper-V and Azure ("Virtual Machine"), VirtualBox and Virtual PC.
 	// "microsoft corporation", "hvm", "domu", "xvm" and "oracle vm" are kept from the old WMI list:
 	// the manufacturer "microsoft corporation" names Hyper-V and Azure guests (the arm64 CI runner
 	// included) and also physical Microsoft hardware, as before.
 	static char *vm_names[] =
-	{
-		"microsoft corporation", "virtual", "vmware", "innotek", "qemu", "kvm", "xen", "parallels", "bochs", "bhyve",
-		"hvm", "domu", "xvm", "oracle vm", "amazon ec2", "google compute engine",
-	};
+	    {
+	        "microsoft corporation",
+	        "virtual",
+	        "vmware",
+	        "innotek",
+	        "qemu",
+	        "kvm",
+	        "xen",
+	        "parallels",
+	        "bochs",
+	        "bhyve",
+	        "hvm",
+	        "domu",
+	        "xvm",
+	        "oracle vm",
+	        "amazon ec2",
+	        "google compute engine",
+	    };
 	char names[MAX_SIZE];
 	bool ret = false;
 
 	UINT size = GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, NULL, 0);
-	if (size <= MS_SMBIOS_HEADER_SIZE)
-	{
+	if (size <= MS_SMBIOS_HEADER_SIZE) {
 		return false;
 	}
 
 	UCHAR *buf = ZeroMalloc(size);
-	if (GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, buf, size) != size)
-	{
+	if (GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, buf, size) != size) {
 		Free(buf);
 		return false;
 	}
@@ -144,35 +146,29 @@ static bool MsIsVmFirmware()
 	names[0] = 0;
 	UINT pos = MS_SMBIOS_HEADER_SIZE;
 
-	while (pos + 4 <= end)
-	{
+	while (pos + 4 <= end) {
 		UINT type = buf[pos];
 		UINT len = buf[pos + 1];
 		UINT str_set = pos + len;
 		UINT next = str_set;
 
-		if (len < 4 || str_set > end)
-		{
+		if (len < 4 || str_set > end) {
 			break;
 		}
 
-		while (next + 1 < end && (buf[next] != 0 || buf[next + 1] != 0))
-		{
+		while (next + 1 < end && (buf[next] != 0 || buf[next + 1] != 0)) {
 			next++;
 		}
-		if (next + 1 >= end)
-		{
+		if (next + 1 >= end) {
 			break;
 		}
 		next += 2;
 
-		if (type == MS_SMBIOS_TYPE_END)
-		{
+		if (type == MS_SMBIOS_TYPE_END) {
 			break;
 		}
 
-		if ((type == MS_SMBIOS_TYPE_SYSTEM || type == MS_SMBIOS_TYPE_BASEBOARD) && len > 5)
-		{
+		if ((type == MS_SMBIOS_TYPE_SYSTEM || type == MS_SMBIOS_TYPE_BASEBOARD) && len > 5) {
 			// Manufacturer at offset 4 and product name at offset 5 of the formatted area
 			MsSmbiosAddString(names, sizeof(names), buf + str_set, next - str_set, buf[pos + 4]);
 			MsSmbiosAddString(names, sizeof(names), buf + str_set, next - str_set, buf[pos + 5]);
@@ -183,10 +179,8 @@ static bool MsIsVmFirmware()
 
 	Free(buf);
 
-	for (UINT i = 0; i < sizeof(vm_names) / sizeof(vm_names[0]); i++)
-	{
-		if (InStrEx(names, vm_names[i], false))
-		{
+	for (UINT i = 0; i < sizeof(vm_names) / sizeof(vm_names[0]); i++) {
+		if (InStrEx(names, vm_names[i], false)) {
 			ret = true;
 			break;
 		}
@@ -198,24 +192,20 @@ static bool MsIsVmFirmware()
 // True when this OS runs in a virtual machine: CPUID reports a hypervisor that runs it as a guest
 // (x64), or the SMBIOS strings name a virtual machine (the only check on arm64, which has no CPUID).
 // Writes no file and starts no process.
-static bool MsIsInVmMain()
-{
+static bool MsIsInVmMain() {
 #if defined(_M_X64) || defined(_M_IX86)
-	if (MsIsHypervisorGuest())
-	{
+	if (MsIsHypervisorGuest()) {
 		return true;
 	}
-#endif	// defined(_M_X64) || defined(_M_IX86)
+#endif // defined(_M_X64) || defined(_M_IX86)
 
 	return MsIsVmFirmware();
 }
-bool MsIsInVm()
-{
+bool MsIsInVm() {
 	static bool flag_detected = false;
 	static bool flag_is_vm = false;
 
-	if (flag_detected == false)
-	{
+	if (flag_detected == false) {
 		flag_is_vm = MsIsInVmMain();
 
 		flag_detected = true;
@@ -224,12 +214,10 @@ bool MsIsInVm()
 	return flag_is_vm;
 }
 
-UINT MsGetUserLocaleId()
-{
+UINT MsGetUserLocaleId() {
 	static UINT lcid_cache = 0;
 
-	if (lcid_cache == 0)
-	{
+	if (lcid_cache == 0) {
 		lcid_cache = (UINT)GetUserDefaultLCID();
 	}
 
@@ -238,10 +226,8 @@ UINT MsGetUserLocaleId()
 
 static wchar_t ms_computer_name_full_cache[MAX_SIZE] = {0};
 
-void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
-{
-	if (name == NULL || size < sizeof(wchar_t))
-	{
+void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache) {
+	if (name == NULL || size < sizeof(wchar_t)) {
 		return;
 	}
 
@@ -250,17 +236,14 @@ void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
 	// size counts bytes; GetComputerNameExW counts wide characters
 	DWORD size2 = size / sizeof(wchar_t);
 
-	if (with_cache)
-	{
-		if (UniIsEmptyStr(ms_computer_name_full_cache) == false)
-		{
+	if (with_cache) {
+		if (UniIsEmptyStr(ms_computer_name_full_cache) == false) {
 			UniStrCpy(name, size, ms_computer_name_full_cache);
 			return;
 		}
 	}
 
-	if (GetComputerNameExW(ComputerNameDnsFullyQualified, name, &size2) == false)
-	{
+	if (GetComputerNameExW(ComputerNameDnsFullyQualified, name, &size2) == false) {
 		char tmp[MAX_SIZE];
 
 		MsGetComputerName(tmp, sizeof(tmp));
@@ -268,16 +251,13 @@ void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
 		StrToUni(name, size, tmp);
 	}
 
-	if (with_cache)
-	{
+	if (with_cache) {
 		UniStrCpy(ms_computer_name_full_cache, sizeof(ms_computer_name_full_cache), name);
 	}
 }
 
-void MsGetComputerName(char *name, UINT size)
-{
-	if (name == NULL)
-	{
+void MsGetComputerName(char *name, UINT size) {
+	if (name == NULL) {
 		return;
 	}
 
@@ -285,19 +265,16 @@ void MsGetComputerName(char *name, UINT size)
 	GetComputerName(name, &sz);
 }
 
-UINT MsGetConsoleWidth()
-{
+UINT MsGetConsoleWidth() {
 	HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO info;
 
-	if (h == INVALID_HANDLE_VALUE)
-	{
+	if (h == INVALID_HANDLE_VALUE) {
 		return 80;
 	}
 
 	Zero(&info, sizeof(info));
-	if (GetConsoleScreenBufferInfo(h, &info) == false)
-	{
+	if (GetConsoleScreenBufferInfo(h, &info) == false) {
 		return 80;
 	}
 

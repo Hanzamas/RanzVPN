@@ -1,17 +1,16 @@
 // Object.h
 // Header of Object.c
 
-#ifndef	OBJECT_H
-#define	OBJECT_H
+#ifndef OBJECT_H
+#define OBJECT_H
 
 #include "MayaType.h"
 #include "Native.h"
 
-#define	OBJECT_ALLOC_FAIL_SLEEP_TIME		150
-#define	OBJECT_ALLOC__MAX_RETRY				30
+#define OBJECT_ALLOC_FAIL_SLEEP_TIME 150
+#define OBJECT_ALLOC__MAX_RETRY      30
 
-struct DEADCHECK
-{
+struct DEADCHECK {
 	LOCK *Lock;
 	bool Unlocked;
 };
@@ -24,8 +23,8 @@ struct DEADCHECK
 // Native.h that Kernel.h pulls into every unit, so they never reach the Windows
 // COM/security headers of units that do not include Object.h (e.g. Win32Com.c).
 // The same expressions in every configuration: Lock() returns the bool of LockInner().
-#define	Lock(lock)		LockInner((lock))
-#define	Unlock(lock)	UnlockInner((lock))
+#define Lock(lock)   LockInner((lock))
+#define Unlock(lock) UnlockInner((lock))
 
 LOCK *NewLock();
 void DeleteLock(LOCK *lock);
@@ -43,5 +42,5 @@ bool Wait(EVENT *e, UINT timeout);
 bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel);
 void CheckDeadLock(LOCK *lock, UINT timeout, char *name);
 
-#endif	// OBJECT_H
+#endif // OBJECT_H
 

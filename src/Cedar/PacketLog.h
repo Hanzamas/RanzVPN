@@ -1,14 +1,13 @@
 // PacketLog.h
 // Header of PacketLog.c
 
-#ifndef	PACKETLOG_H
-#define	PACKETLOG_H
+#ifndef PACKETLOG_H
+#define PACKETLOG_H
 
 #include "Cedar.h"
 #include "LogWriter.h"
 
-struct PACKET_LOG
-{
+struct PACKET_LOG {
 	CEDAR *Cedar;
 	struct PKT *Packet;
 	char *SrcSessionName;

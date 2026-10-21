@@ -1,26 +1,24 @@
 // BridgeWin32.h
 // Header of BridgeWin32.c
 
-#ifndef	BRIDGEWIN32_H
-#define	BRIDGEWIN32_H
+#ifndef BRIDGEWIN32_H
+#define BRIDGEWIN32_H
 
 #include "Bridge.h"
 
 #ifdef BRIDGE_C
 
-typedef struct WP_ADAPTER
-{
+typedef struct WP_ADAPTER {
 	char Name[MAX_SIZE];
 	char Title[MAX_SIZE];
 	char Guid[MAX_SIZE];
 	UINT Id;
-	UCHAR MacAddress[6];			// Current MAC address reported by SeLow
+	UCHAR MacAddress[6]; // Current MAC address reported by SeLow
 } WP_ADAPTER;
 
 #endif
 
-struct ETH
-{
+struct ETH {
 	char *Name;
 	char *Title;
 	CANCEL *Cancel;
@@ -29,7 +27,6 @@ struct ETH
 
 	SU *Su;
 	SU_ADAPTER *SuAdapter;
-
 };
 
 void InitEth();

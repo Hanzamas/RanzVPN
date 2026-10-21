@@ -17,21 +17,18 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_ACCESS_LIST t;
-	
-	if (ps->HubName == NULL)
-	{
+
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -40,8 +37,7 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScEnumAccess(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -56,8 +52,7 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	CtInsertColumn(ct, _UU("SM_ACCESS_COLUMN_5"), false);
 	CtInsertColumn(ct, _UU("SM_ACCESS_COLUMN_4"), false);
 
-	for (UINT i = 0;i < t.NumAccess;i++)
-	{
+	for (UINT i = 0; i < t.NumAccess; i++) {
 		ACCESS *a = &t.Accesses[i];
 		char tmp[MAX_SIZE];
 		wchar_t tmp3[MAX_SIZE];
@@ -69,21 +64,20 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		UniToStru(tmp1, a->Priority);
 		StrToUni(tmp2, sizeof(tmp2), tmp);
 		UniToStru(tmp4, a->UniqueId);
-		if (a->UniqueId == 0)
-		{
+		if (a->UniqueId == 0) {
 			UniStrCpy(tmp4, sizeof(tmp4), _UU("SEC_NONE"));
 		}
 
 		UniToStru(tmp3, a->Id);
 
 		CtInsert(ct,
-			tmp3,
-			a->Discard ? _UU("SM_ACCESS_DISCARD") : _UU("SM_ACCESS_PASS"),
-			a->Active ? _UU("SM_ACCESS_ENABLE") : _UU("SM_ACCESS_DISABLE"),
-			tmp1,
-			tmp4,
-			tmp2,
-			a->Note);
+		         tmp3,
+		         a->Discard ? _UU("SM_ACCESS_DISCARD") : _UU("SM_ACCESS_PASS"),
+		         a->Active ? _UU("SM_ACCESS_ENABLE") : _UU("SM_ACCESS_DISABLE"),
+		         tmp1,
+		         tmp4,
+		         tmp2,
+		         a->Note);
 	}
 
 	CtFreeEx(ct, c, true);
@@ -95,25 +89,22 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsAccessDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsAccessDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_ACCESS t;
 	PARAM args[] =
-	{
-		{"[id]", CmdPrompt, _UU("CMD_Access_Prompt_ID"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[id]", CmdPrompt, _UU("CMD_Access_Prompt_ID"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -123,8 +114,7 @@ UINT PsAccessDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScDeleteAccess(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -135,25 +125,22 @@ UINT PsAccessDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_ACCESS_LIST t;
 	PARAM args[] =
-	{
-		{"[id]", CmdPrompt, _UU("CMD_Access_Prompt_ID"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[id]", CmdPrompt, _UU("CMD_Access_Prompt_ID"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -162,29 +149,23 @@ UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScEnumAccess(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		bool b = false;
-		for (UINT i = 0;i < t.NumAccess;i++)
-		{
+		for (UINT i = 0; i < t.NumAccess; i++) {
 			ACCESS *a = &t.Accesses[i];
 
-			if (a->Id == GetParamInt(o, "[id]"))
-			{
+			if (a->Id == GetParamInt(o, "[id]")) {
 				b = true;
 
 				a->Active = true;
 			}
 		}
 
-		if (b == false)
-		{
+		if (b == false) {
 			ret = ERR_OBJECT_NOT_FOUND;
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
@@ -193,8 +174,7 @@ UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		}
 
 		ret = ScSetAccessList(ps->Rpc, &t);
-		if (ret != ERR_NO_ERROR)
-		{
+		if (ret != ERR_NO_ERROR) {
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
 			return ret;
@@ -208,25 +188,22 @@ UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PsAccessDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsAccessDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_ACCESS_LIST t;
 	PARAM args[] =
-	{
-		{"[id]", CmdPrompt, _UU("CMD_Access_Prompt_ID"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[id]", CmdPrompt, _UU("CMD_Access_Prompt_ID"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -235,29 +212,23 @@ UINT PsAccessDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScEnumAccess(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		bool b = false;
-		for (UINT i = 0;i < t.NumAccess;i++)
-		{
+		for (UINT i = 0; i < t.NumAccess; i++) {
 			ACCESS *a = &t.Accesses[i];
 
-			if (a->Id == GetParamInt(o, "[id]"))
-			{
+			if (a->Id == GetParamInt(o, "[id]")) {
 				b = true;
 
 				a->Active = false;
 			}
 		}
 
-		if (b == false)
-		{
+		if (b == false) {
 			ret = ERR_OBJECT_NOT_FOUND;
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
@@ -266,8 +237,7 @@ UINT PsAccessDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		}
 
 		ret = ScSetAccessList(ps->Rpc, &t);
-		if (ret != ERR_NO_ERROR)
-		{
+		if (ret != ERR_NO_ERROR) {
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
 			return ret;

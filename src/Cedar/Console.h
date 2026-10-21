@@ -1,42 +1,39 @@
 // Console.h
 // Header of Console.c
 
-#ifndef	CONSOLE_H
-#define	CONSOLE_H
+#ifndef CONSOLE_H
+#define CONSOLE_H
 
 #include "CedarType.h"
 
 #include "Mayaqua/MayaType.h"
 
-#define	MAX_PROMPT_STRSIZE			65536
+#define MAX_PROMPT_STRSIZE 65536
 
-#define	CONSOLE_LOCAL				0
-#define	CONSOLE_CSV					1
+#define CONSOLE_LOCAL 0
+#define CONSOLE_CSV   1
 
-typedef wchar_t *(PROMPT_PROC)(CONSOLE *c, void *param);
+typedef wchar_t *(PROMPT_PROC)(CONSOLE * c, void *param);
 
-typedef bool (EVAL_PROC)(CONSOLE *c, wchar_t *str, void *param);
+typedef bool(EVAL_PROC)(CONSOLE *c, wchar_t *str, void *param);
 
-struct PARAM
-{
+struct PARAM {
 	char *Name;
-	PROMPT_PROC *PromptProc;	// Called when the parameter is not given; skipped if NULL
+	PROMPT_PROC *PromptProc; // Called when the parameter is not given; skipped if NULL
 	void *PromptProcParam;
 	EVAL_PROC *EvalProc;
 	void *EvalProcParam;
 	char *Tmp;
 };
 
-struct PARAM_VALUE
-{
+struct PARAM_VALUE {
 	char *Name;
 	char *StrValue;
 	wchar_t *UniStrValue;
 	UINT IntValue;
 };
 
-struct CONSOLE
-{
+struct CONSOLE {
 	UINT ConsoleType;
 	UINT RetCode;
 	void *Param;
@@ -49,23 +46,20 @@ struct CONSOLE
 	LOCK *OutputLock;
 };
 
-struct LOCAL_CONSOLE_PARAM
-{
+struct LOCAL_CONSOLE_PARAM {
 	IO *InFile;
 	BUF *InBuf;
 	IO *OutFile;
 };
 
-typedef UINT (COMMAND_PROC)(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+typedef UINT(COMMAND_PROC)(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 
-struct CMD
-{
+struct CMD {
 	char *Name;
 	COMMAND_PROC *Proc;
 };
 
-struct CMD_EVAL_MIN_MAX
-{
+struct CMD_EVAL_MIN_MAX {
 	char *StrName;
 	UINT MinValue, MaxValue;
 };

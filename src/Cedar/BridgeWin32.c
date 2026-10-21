@@ -41,54 +41,44 @@ static volatile LONG enable_selow = 1;
 static volatile LONG g_bridge_win32_show_all_if = 0;
 
 // Atomic read of a shared flag
-static bool Win32ReadFlag(volatile LONG *flag)
-{
+static bool Win32ReadFlag(volatile LONG *flag) {
 	return InterlockedCompareExchange(flag, 0, 0) != 0;
 }
 
-void Win32SetEnableSeLow(bool b)
-{
+void Win32SetEnableSeLow(bool b) {
 	InterlockedExchange(&enable_selow, b ? 1 : 0);
 }
 
-bool Win32GetEnableSeLow()
-{
+bool Win32GetEnableSeLow() {
 	return Win32ReadFlag(&enable_selow);
 }
 
-void Win32EthSetShowAllIf(bool b)
-{
+void Win32EthSetShowAllIf(bool b) {
 	InterlockedExchange(&g_bridge_win32_show_all_if, b ? 1 : 0);
 }
 
-bool Win32EthGetShowAllIf()
-{
+bool Win32EthGetShowAllIf() {
 	return Win32ReadFlag(&g_bridge_win32_show_all_if);
 }
 
-static int CmpRpcEnumEthVLan(void *p1, void *p2)
-{
-	if (p1 == NULL || p2 == NULL)
-	{
+static int CmpRpcEnumEthVLan(void *p1, void *p2) {
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	RPC_ENUM_ETH_VLAN_ITEM *v1 = *((RPC_ENUM_ETH_VLAN_ITEM **)p1);
 	RPC_ENUM_ETH_VLAN_ITEM *v2 = *((RPC_ENUM_ETH_VLAN_ITEM **)p2);
-	if (v1 == NULL || v2 == NULL)
-	{
+	if (v1 == NULL || v2 == NULL) {
 		return 0;
 	}
 
 	return StrCmpi(v1->DeviceName, v2->DeviceName);
 }
 
-bool SetVLanEnableStatus(char *title, bool enable)
-{
+bool SetVLanEnableStatus(char *title, bool enable) {
 	RPC_ENUM_ETH_VLAN t;
 	bool ret = false;
 	char tcpkey[MAX_SIZE];
-	if (title == NULL)
-	{
+	if (title == NULL) {
 		return false;
 	}
 
@@ -96,72 +86,52 @@ bool SetVLanEnableStatus(char *title, bool enable)
 	LIST *netclass = MsNetClassEnum();
 
 	Zero(&t, sizeof(t));
-	if (EnumEthVLanMain(&t, netclass) == false)
-	{
+	if (EnumEthVLanMain(&t, netclass) == false) {
 		MsNetClassFree(netclass);
 		return false;
 	}
 
 	RPC_ENUM_ETH_VLAN_ITEM *e = FindEthVLanItem(&t, title);
 
-	if (e != NULL)
-	{
+	if (e != NULL) {
 		MS_NETCLASS_DEVICE *d = MsNetClassFind(netclass, e->Guid);
 
-		if (d != NULL)
-		{
+		if (d != NULL) {
 			char *key = d->ClassKey;
 
-			if (StrCmpi(e->DriverType, "Intel") == 0)
-			{
-				if (enable)
-				{
+			if (StrCmpi(e->DriverType, "Intel") == 0) {
+				if (enable) {
 					MsRegWriteStr(REG_LOCAL_MACHINE, key, "VlanFiltering", "0");
 					MsRegWriteStr(REG_LOCAL_MACHINE, key, "TaggingMode", "0");
 					MsRegWriteInt(REG_LOCAL_MACHINE, key, "MonitorMode", 1);
 					MsRegWriteInt(REG_LOCAL_MACHINE, key, "MonitorModeEnabled", 1);
-				}
-				else
-				{
-					if (MsRegReadInt(REG_LOCAL_MACHINE, key, "TaggingMode") == 0)
-					{
+				} else {
+					if (MsRegReadInt(REG_LOCAL_MACHINE, key, "TaggingMode") == 0) {
 						MsRegDeleteValue(REG_LOCAL_MACHINE, key, "TaggingMode");
 					}
 
-					if (MsRegReadInt(REG_LOCAL_MACHINE, key, "MonitorMode") == 1)
-					{
+					if (MsRegReadInt(REG_LOCAL_MACHINE, key, "MonitorMode") == 1) {
 						MsRegDeleteValue(REG_LOCAL_MACHINE, key, "MonitorMode");
 					}
 
-					if (MsRegReadInt(REG_LOCAL_MACHINE, key, "MonitorModeEnabled") == 1)
-					{
+					if (MsRegReadInt(REG_LOCAL_MACHINE, key, "MonitorModeEnabled") == 1) {
 						MsRegDeleteValue(REG_LOCAL_MACHINE, key, "MonitorModeEnabled");
 					}
 				}
 
 				ret = true;
-			}
-			else if (StrCmpi(e->DriverType, "Broadcom") == 0)
-			{
-				if (enable)
-				{
+			} else if (StrCmpi(e->DriverType, "Broadcom") == 0) {
+				if (enable) {
 					MsRegWriteStr(REG_LOCAL_MACHINE, key, "PreserveVlanInfoInRxPacket", "1");
-				}
-				else
-				{
+				} else {
 					MsRegDeleteValue(REG_LOCAL_MACHINE, key, "PreserveVlanInfoInRxPacket");
 				}
 
 				ret = true;
-			}
-			else if (StrCmpi(e->DriverType, "Marvell") == 0)
-			{
-				if (enable)
-				{
+			} else if (StrCmpi(e->DriverType, "Marvell") == 0) {
+				if (enable) {
 					MsRegWriteInt(REG_LOCAL_MACHINE, key, "SkDisableVlanStrip", 1);
-				}
-				else
-				{
+				} else {
 					MsRegDeleteValue(REG_LOCAL_MACHINE, key, "SkDisableVlanStrip");
 				}
 
@@ -169,21 +139,16 @@ bool SetVLanEnableStatus(char *title, bool enable)
 			}
 
 			Format(tcpkey, sizeof(tcpkey),
-				"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s",
-				e->Guid);
+			       "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s",
+			       e->Guid);
 
-			if (enable)
-			{
-				if (MsRegIsValue(REG_LOCAL_MACHINE, tcpkey, "MTU") == false)
-				{
+			if (enable) {
+				if (MsRegIsValue(REG_LOCAL_MACHINE, tcpkey, "MTU") == false) {
 					MsRegWriteInt(REG_LOCAL_MACHINE, tcpkey, "MTU", 1500);
 				}
-			}
-			else
-			{
+			} else {
 				UINT mtu = MsRegReadInt(REG_LOCAL_MACHINE, tcpkey, "MTU");
-				if (mtu == 1500)
-				{
+				if (mtu == 1500) {
 					MsRegDeleteValue(REG_LOCAL_MACHINE, tcpkey, "MTU");
 				}
 			}
@@ -197,17 +162,13 @@ bool SetVLanEnableStatus(char *title, bool enable)
 	return ret;
 }
 
-static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, const char *name)
-{
-	if (t == NULL || name == NULL)
-	{
+static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, const char *name) {
+	if (t == NULL || name == NULL) {
 		return NULL;
 	}
 
-	for (UINT i = 0;i < t->NumItem;i++)
-	{
-		if (StrCmpi(t->Items[i].DeviceName, name) == 0)
-		{
+	for (UINT i = 0; i < t->NumItem; i++) {
+		if (StrCmpi(t->Items[i].DeviceName, name) == 0) {
 			return &t->Items[i];
 		}
 	}
@@ -216,77 +177,63 @@ static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, const char 
 }
 
 // key: the Class key of the adapter (MS_NETCLASS_DEVICE.ClassKey)
-static void GetVLanEnableStatus(RPC_ENUM_ETH_VLAN_ITEM *e, char *key)
-{
+static void GetVLanEnableStatus(RPC_ENUM_ETH_VLAN_ITEM *e, char *key) {
 	char tcpkey[MAX_SIZE];
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		return;
 	}
 
 	e->Enabled = false;
 
-	if (e->Support == false || key == NULL)
-	{
+	if (e->Support == false || key == NULL) {
 		return;
 	}
 
 	Format(tcpkey, sizeof(tcpkey),
-		"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s",
-		e->Guid);
+	       "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s",
+	       e->Guid);
 
-	if (StrCmpi(e->DriverType, "Intel") == 0)
-	{
+	if (StrCmpi(e->DriverType, "Intel") == 0) {
 		char *VlanFiltering = MsRegReadStr(REG_LOCAL_MACHINE, key, "VlanFiltering");
 		UINT MonitorMode = MsRegReadInt(REG_LOCAL_MACHINE, key, "MonitorMode");
 		UINT MonitorModeEnabled = MsRegReadInt(REG_LOCAL_MACHINE, key, "MonitorModeEnabled");
 		char *TaggingMode = MsRegReadStr(REG_LOCAL_MACHINE, key, "TaggingMode");
 
 		if (StrCmpi(VlanFiltering, "0") == 0 &&
-			MonitorMode == 1 &&
-			MonitorModeEnabled == 1 &&
-			StrCmpi(TaggingMode, "0") == 0)
-		{
+		    MonitorMode == 1 &&
+		    MonitorModeEnabled == 1 &&
+		    StrCmpi(TaggingMode, "0") == 0) {
 			e->Enabled = true;
 		}
 
 		Free(VlanFiltering);
 		Free(TaggingMode);
-	}
-	else if (StrCmpi(e->DriverType, "Broadcom") == 0)
-	{
+	} else if (StrCmpi(e->DriverType, "Broadcom") == 0) {
 		char *PreserveVlanInfoInRxPacket = MsRegReadStr(REG_LOCAL_MACHINE,
-			key, "PreserveVlanInfoInRxPacket");
+		                                                key, "PreserveVlanInfoInRxPacket");
 
-		if (StrCmpi(PreserveVlanInfoInRxPacket, "1") == 0)
-		{
+		if (StrCmpi(PreserveVlanInfoInRxPacket, "1") == 0) {
 			e->Enabled = true;
 		}
 
 		Free(PreserveVlanInfoInRxPacket);
-	}
-	else if (StrCmpi(e->DriverType, "Marvell") == 0)
-	{
+	} else if (StrCmpi(e->DriverType, "Marvell") == 0) {
 		DWORD SkDisableVlanStrip = MsRegReadInt(REG_LOCAL_MACHINE,
-			key, "SkDisableVlanStrip");
+		                                        key, "SkDisableVlanStrip");
 
-		if (SkDisableVlanStrip == 1)
-		{
+		if (SkDisableVlanStrip == 1) {
 			e->Enabled = true;
 		}
 	}
 
-	if (MsRegIsValue(REG_LOCAL_MACHINE, tcpkey, "MTU") == false)
-	{
+	if (MsRegIsValue(REG_LOCAL_MACHINE, tcpkey, "MTU") == false) {
 		e->Enabled = false;
 	}
 }
 
-static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
-{
+static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e) {
 	char filename[MAX_SIZE];
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		return;
 	}
 
@@ -295,8 +242,7 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 
 	BUF *b = ReadDump(filename);
 
-	if (b != NULL)
-	{
+	if (b != NULL) {
 		char intel1[] = "VlanFiltering";
 		char intel2[] = "V\0l\0a\0n\0F\0i\0l\0t\0e\0r\0i\0n\0g";
 		char intel3[] = "MonitorMode";
@@ -309,28 +255,15 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 		char marvell2[] = "S\0k\0D\0i\0s\0a\0b\0l\0e\0V\0l\0a\0n\0S\0t\0r\0i\0p";
 		char *driver_type = "";
 
-		if (SearchBin(b->Buf, b->Size, intel1, sizeof(intel1)) != INFINITE
-			|| SearchBin(b->Buf, b->Size, intel2, sizeof(intel2)) != INFINITE
-			|| SearchBin(b->Buf, b->Size, intel3, sizeof(intel3)) != INFINITE
-			|| SearchBin(b->Buf, b->Size, intel4, sizeof(intel4)) != INFINITE
-			|| SearchBin(b->Buf, b->Size, intel5, sizeof(intel5)) != INFINITE
-			|| SearchBin(b->Buf, b->Size, intel6, sizeof(intel6)) != INFINITE)
-		{
+		if (SearchBin(b->Buf, b->Size, intel1, sizeof(intel1)) != INFINITE || SearchBin(b->Buf, b->Size, intel2, sizeof(intel2)) != INFINITE || SearchBin(b->Buf, b->Size, intel3, sizeof(intel3)) != INFINITE || SearchBin(b->Buf, b->Size, intel4, sizeof(intel4)) != INFINITE || SearchBin(b->Buf, b->Size, intel5, sizeof(intel5)) != INFINITE || SearchBin(b->Buf, b->Size, intel6, sizeof(intel6)) != INFINITE) {
 			driver_type = "Intel";
-		}
-		else if (SearchBin(b->Buf, b->Size, broadcom1, sizeof(broadcom1)) != INFINITE
-			|| SearchBin(b->Buf, b->Size, broadcom2, sizeof(broadcom2)) != INFINITE)
-		{
+		} else if (SearchBin(b->Buf, b->Size, broadcom1, sizeof(broadcom1)) != INFINITE || SearchBin(b->Buf, b->Size, broadcom2, sizeof(broadcom2)) != INFINITE) {
 			driver_type = "Broadcom";
-		}
-		else if (SearchBin(b->Buf, b->Size, marvell1, sizeof(marvell1)) != INFINITE
-			|| SearchBin(b->Buf, b->Size, marvell2, sizeof(marvell2)) != INFINITE)
-		{
+		} else if (SearchBin(b->Buf, b->Size, marvell1, sizeof(marvell1)) != INFINITE || SearchBin(b->Buf, b->Size, marvell2, sizeof(marvell2)) != INFINITE) {
 			driver_type = "Marvell";
 		}
 
-		if (IsEmptyStr(driver_type) == false)
-		{
+		if (IsEmptyStr(driver_type) == false) {
 			StrCpy(e->DriverType, sizeof(e->DriverType), driver_type);
 			e->Support = true;
 		}
@@ -342,18 +275,15 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 // The VLAN items of the SeLow adapters. netclass is the net-class table of the caller (MsNetClassEnum):
 // one SetupAPI pass gives the device instance id, the driver file and the Class key of every adapter.
 // One SeLow probe, which also reads the adapter list
-static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
-{
-	if (t == NULL)
-	{
+static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass) {
+	if (t == NULL) {
 		return false;
 	}
 
 	Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
 
 	SU *su = SuInitEx(0);
-	if (su == NULL)
-	{
+	if (su == NULL) {
 		return false;
 	}
 
@@ -363,13 +293,11 @@ static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 
 	LIST *o = NewListFast(CmpRpcEnumEthVLan);
 
-	for (UINT i = 0;i < LIST_NUM(eth_list);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(eth_list); i++) {
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
 		MS_NETCLASS_DEVICE *d = MsNetClassFind(netclass, a->Guid);
 
-		if (d != NULL && IsEmptyStr(d->DeviceInstanceId) == false && EndWith(d->DriverFileName, ".sys"))
-		{
+		if (d != NULL && IsEmptyStr(d->DeviceInstanceId) == false && EndWith(d->DriverFileName, ".sys")) {
 			RPC_ENUM_ETH_VLAN_ITEM *e = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM));
 
 			StrCpy(e->DeviceName, sizeof(e->DeviceName), a->Title);
@@ -388,8 +316,7 @@ static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 	t->NumItem = LIST_NUM(o);
 	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM) * t->NumItem);
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		RPC_ENUM_ETH_VLAN_ITEM *e = LIST_DATA(o, i);
 
 		Copy(&t->Items[i], e, sizeof(RPC_ENUM_ETH_VLAN_ITEM));
@@ -406,8 +333,7 @@ static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 	return true;
 }
 
-bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
-{
+bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t) {
 	LIST *netclass = MsNetClassEnum();
 	bool ret = EnumEthVLanMain(t, netclass);
 
@@ -416,59 +342,47 @@ bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 	return ret;
 }
 
-void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
-{
+void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes) {
 	bool ok = true;
-	if (e == NULL || num == 0 || datas == NULL || sizes == NULL)
-	{
+	if (e == NULL || num == 0 || datas == NULL || sizes == NULL) {
 		return;
 	}
-	if (e->HasFatalError)
-	{
+	if (e->HasFatalError) {
 		return;
 	}
 
-	for (UINT i = 0;i < num;i++)
-	{
+	for (UINT i = 0; i < num; i++) {
 		UCHAR *data = datas[i];
 		UINT size = sizes[i];
 
-		if (ok)
-		{
+		if (ok) {
 			ok = SuPutPacket(e->SuAdapter, data, size);
 		}
 
-		if (ok == false)
-		{
+		if (ok == false) {
 			Free(data);
 		}
 	}
 
-	if (ok)
-	{
+	if (ok) {
 		ok = SuPutPacket(e->SuAdapter, NULL, 0);
 	}
 
-	if (ok == false)
-	{
+	if (ok == false) {
 		e->HasFatalError = true;
 	}
 }
 
-UINT EthGetPacket(ETH *e, void **data)
-{
+UINT EthGetPacket(ETH *e, void **data) {
 	UINT size;
-	if (e == NULL || data == NULL)
-	{
+	if (e == NULL || data == NULL) {
 		return INFINITE;
 	}
-	if (e->HasFatalError)
-	{
+	if (e->HasFatalError) {
 		return INFINITE;
 	}
 
-	if (SuGetNextPacket(e->SuAdapter, data, &size) == false)
-	{
+	if (SuGetNextPacket(e->SuAdapter, data, &size) == false) {
 		e->HasFatalError = true;
 		return INFINITE;
 	}
@@ -477,20 +391,16 @@ UINT EthGetPacket(ETH *e, void **data)
 }
 
 // Frames EthGetPacket can return without waiting for the cancel event
-bool EthHasPendingFrames(ETH *e)
-{
-	if (e == NULL || e->HasFatalError)
-	{
+bool EthHasPendingFrames(ETH *e) {
+	if (e == NULL || e->HasFatalError) {
 		return false;
 	}
 
 	return SuHasPendingPackets(e->SuAdapter);
 }
 
-CANCEL *EthGetCancel(ETH *e)
-{
-	if (e == NULL)
-	{
+CANCEL *EthGetCancel(ETH *e) {
+	if (e == NULL) {
 		return NULL;
 	}
 
@@ -499,10 +409,8 @@ CANCEL *EthGetCancel(ETH *e)
 	return e->Cancel;
 }
 
-void CloseEth(ETH *e)
-{
-	if (e == NULL)
-	{
+void CloseEth(ETH *e) {
+	if (e == NULL) {
 		return;
 	}
 
@@ -517,52 +425,40 @@ void CloseEth(ETH *e)
 	Free(e);
 }
 
-static struct WP_ADAPTER *Win32EthSearch(char *name)
-{
+static struct WP_ADAPTER *Win32EthSearch(char *name) {
 	char simple_name[MAX_SIZE];
 	WP_ADAPTER *ret = NULL;
 
 	UINT id = Win32EthGetNameAndIdFromCombinedName(simple_name, sizeof(simple_name), name);
 
-	if (id != 0)
-	{
+	if (id != 0) {
 		UINT num_match = 0;
-		for (UINT i = 0;i < LIST_NUM(eth_list);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(eth_list); i++) {
 			WP_ADAPTER *a = LIST_DATA(eth_list, i);
 
-			if (a->Id != 0 && a->Id == id)
-			{
+			if (a->Id != 0 && a->Id == id) {
 				ret = a;
 				num_match++;
 			}
 		}
 
-		if (num_match >= 2)
-		{
-			for (UINT i = 0;i < LIST_NUM(eth_list);i++)
-			{
+		if (num_match >= 2) {
+			for (UINT i = 0; i < LIST_NUM(eth_list); i++) {
 				WP_ADAPTER *a = LIST_DATA(eth_list, i);
 
-				if (a->Id != 0 && a->Id == id)
-				{
-					if (StrCmpi(a->Title, name) == 0)
-					{
+				if (a->Id != 0 && a->Id == id) {
+					if (StrCmpi(a->Title, name) == 0) {
 						ret = a;
 						break;
 					}
 				}
 			}
 		}
-	}
-	else
-	{
-		for (UINT i = 0;i < LIST_NUM(eth_list);i++)
-		{
+	} else {
+		for (UINT i = 0; i < LIST_NUM(eth_list); i++) {
 			WP_ADAPTER *a = LIST_DATA(eth_list, i);
 
-			if (StrCmpi(a->Title, name) == 0)
-			{
+			if (StrCmpi(a->Title, name) == 0) {
 				ret = a;
 				break;
 			}
@@ -572,21 +468,18 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 	return ret;
 }
 
-ETH *OpenEth(char *name)
-{
+ETH *OpenEth(char *name) {
 	char name_with_id[MAX_SIZE];
 	SU *su = NULL;
 	SU_ADAPTER *su_adapter = NULL;
-	if (name == NULL || Win32GetEnableSeLow() == false)
-	{
+	if (name == NULL || Win32GetEnableSeLow() == false) {
 		return NULL;
 	}
 
 	// One SeLow open per OpenEth: it installs SeLow when needed (creating a Local Bridge), reads the
 	// adapter list and opens the adapter, and the ETH keeps it
 	su = SuInitInstall();
-	if (su == NULL)
-	{
+	if (su == NULL) {
 		return NULL;
 	}
 
@@ -600,8 +493,7 @@ ETH *OpenEth(char *name)
 
 	WP_ADAPTER *t = Win32EthSearch(name);
 
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		Unlock(eth_list_lock);
 		SuFree(su);
 		return NULL;
@@ -609,8 +501,7 @@ ETH *OpenEth(char *name)
 
 	su_adapter = SuOpenAdapter(t->Name);
 
-	if (su_adapter == NULL)
-	{
+	if (su_adapter == NULL) {
 		SuFree(su);
 		Unlock(eth_list_lock);
 		return NULL;
@@ -637,48 +528,37 @@ ETH *OpenEth(char *name)
 	return e;
 }
 
-static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, const char *guid)
-{
-	if (dst == NULL || nicname == NULL || guid == NULL)
-	{
+static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, const char *guid) {
+	if (dst == NULL || nicname == NULL || guid == NULL) {
 		return;
 	}
 
-	if (IsEmptyStr(guid) == false)
-	{
+	if (IsEmptyStr(guid) == false) {
 		Format(dst, dst_size, "%s(ID=%010u)", nicname, Win32EthGenIdFromGuid(guid));
-	}
-	else
-	{
+	} else {
 		StrCpy(dst, dst_size, nicname);
 	}
 }
 
-UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
-{
+UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str) {
 	UINT ret = 0;
 	char id_str[MAX_SIZE];
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return 0;
 	}
 	ClearStr(name, name_size);
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return 0;
 	}
 	StrCpy(name, name_size, str);
 
 	UINT len = StrLen(str);
 
-	if (len >= 15)
-	{
+	if (len >= 15) {
 		StrCpy(id_str, sizeof(id_str), str + len - 15);
 
-		if (StartWith(id_str, "(ID="))
-		{
-			if (EndWith(id_str, ")"))
-			{
+		if (StartWith(id_str, "(ID=")) {
+			if (EndWith(id_str, ")")) {
 				char num[MAX_SIZE];
 
 				Zero(num, sizeof(num));
@@ -688,8 +568,7 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 
 				ret = ToInt(num);
 
-				if (ret != 0)
-				{
+				if (ret != 0) {
 					name[len - 15] = 0;
 				}
 			}
@@ -699,13 +578,11 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 	return ret;
 }
 
-static UINT Win32EthGenIdFromGuid(const char *guid)
-{
+static UINT Win32EthGenIdFromGuid(const char *guid) {
 	char tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
 	UINT i;
-	if (guid == NULL)
-	{
+	if (guid == NULL) {
 		return 0;
 	}
 
@@ -719,20 +596,17 @@ static UINT Win32EthGenIdFromGuid(const char *guid)
 
 	i = Endian32(i);
 
-	if (i == 0)
-	{
+	if (i == 0) {
 		i = 1;
 	}
 
 	return i;
 }
 
-TOKEN_LIST *GetEthList(void)
-{
+TOKEN_LIST *GetEthList(void) {
 	RPC_ENUM_ETH t;
 
-	if (EnumEthWin32(&t) == false)
-	{
+	if (EnumEthWin32(&t) == false) {
 		return NULL;
 	}
 
@@ -740,8 +614,7 @@ TOKEN_LIST *GetEthList(void)
 	ret->NumTokens = t.NumItem;
 	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
 
-	for (UINT i = 0;i < t.NumItem;i++)
-	{
+	for (UINT i = 0; i < t.NumItem; i++) {
 		ret->Token[i] = CopyStr(t.Items[i].DeviceName);
 	}
 
@@ -753,25 +626,21 @@ TOKEN_LIST *GetEthList(void)
 // The devices for a Local Bridge and their network connection names (the EnumEthernet RPC): one
 // SeLow probe, one net-class pass, one adapter-list build and one IP Helper interface table. The
 // connection name is the interface alias that IP Helper reports. False when SeLow is not usable
-bool EnumEthWin32(RPC_ENUM_ETH *t)
-{
-	if (t == NULL)
-	{
+bool EnumEthWin32(RPC_ENUM_ETH *t) {
+	if (t == NULL) {
 		return false;
 	}
 
 	Zero(t, sizeof(RPC_ENUM_ETH));
 
 	// SeLow turned off (EnableSoftEtherKernelModeDriver): no Local Bridge, never open or install SeLow
-	if (Win32GetEnableSeLow() == false)
-	{
+	if (Win32GetEnableSeLow() == false) {
 		return false;
 	}
 
 	// Listing the devices for a Local Bridge is the first step of creating one: install SeLow when needed
 	SU *su = SuInitInstall();
-	if (su == NULL)
-	{
+	if (su == NULL) {
 		return false;
 	}
 
@@ -783,21 +652,18 @@ bool EnumEthWin32(RPC_ENUM_ETH *t)
 
 	InitEthAdaptersList(su, netclass);
 
-	for (UINT i = 0;i < LIST_NUM(eth_list);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(eth_list); i++) {
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
 		MS_ADAPTER *msa = MsGetAdapterByGuidFromList(adapter_list, a->Guid);
 
 		// Hidden by the interface type that the OS reports, not by words in the title; an
 		// adapter that the OS does not list cannot be classified and stays listed
-		if (Win32EthGetShowAllIf() || msa == NULL || msa->IsBridgeable)
-		{
+		if (Win32EthGetShowAllIf() || msa == NULL || msa->IsBridgeable) {
 			RPC_ENUM_ETH_ITEM *e = ZeroMalloc(sizeof(RPC_ENUM_ETH_ITEM));
 
 			Win32EthMakeCombinedName(e->DeviceName, sizeof(e->DeviceName), a->Title, a->Guid);
 
-			if (msa != NULL)
-			{
+			if (msa != NULL) {
 				UniStrCpy(e->NetworkConnectionName, sizeof(e->NetworkConnectionName), msa->Alias);
 			}
 
@@ -812,8 +678,7 @@ bool EnumEthWin32(RPC_ENUM_ETH *t)
 	t->NumItem = LIST_NUM(o);
 	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_ITEM) * t->NumItem);
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		RPC_ENUM_ETH_ITEM *e = LIST_DATA(o, i);
 
 		Copy(&t->Items[i], e, sizeof(RPC_ENUM_ETH_ITEM));
@@ -829,21 +694,17 @@ bool EnumEthWin32(RPC_ENUM_ETH *t)
 	return true;
 }
 
-static int CompareWpAdapter(void *p1, void *p2)
-{
-	if (p1 == NULL || p2 == NULL)
-	{
+static int CompareWpAdapter(void *p1, void *p2) {
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	WP_ADAPTER *a1 = *(WP_ADAPTER **)p1;
 	WP_ADAPTER *a2 = *(WP_ADAPTER **)p2;
-	if (a1 == NULL || a2 == NULL)
-	{
+	if (a1 == NULL || a2 == NULL) {
 		return 0;
 	}
 	int i = StrCmpi(a1->Title, a2->Title);
-	if (i != 0)
-	{
+	if (i != 0) {
 		return i;
 	}
 
@@ -852,14 +713,12 @@ static int CompareWpAdapter(void *p1, void *p2)
 	return StrCmpi(a1->Guid, a2->Guid);
 }
 
-bool Win32IsUsingSeLow()
-{
+bool Win32IsUsingSeLow() {
 	return Win32ReadFlag(&is_using_selow);
 }
 
 // Strip line breaks and blanks from both ends of an adapter title
-static void Win32EthTrimTitle(char *title)
-{
+static void Win32EthTrimTitle(char *title) {
 	TrimCrlf(title);
 	Trim(title);
 	TrimCrlf(title);
@@ -868,24 +727,20 @@ static void Win32EthTrimTitle(char *title)
 
 // The adapters of the SeLow device su, which the caller opened and frees; empty when su is NULL or
 // SeLow is turned off. netclass: the net-class table of the caller (MsNetClassEnum)
-static LIST *GetEthAdapterList(SU *su, LIST *netclass)
-{
+static LIST *GetEthAdapterList(SU *su, LIST *netclass) {
 	char *qos_tag = "(Microsoft's Packet Scheduler)";
 	LIST *su_adapter_list = NULL;
 
 	LIST *o = NewListFast(CompareWpAdapter);
 
-	if (su != NULL && Win32GetEnableSeLow())
-	{
+	if (su != NULL && Win32GetEnableSeLow()) {
 		su_adapter_list = SuGetAdapterList(su, netclass);
 	}
 
 	InterlockedExchange(&is_using_selow, su_adapter_list != NULL ? 1 : 0);
 
-	if (su_adapter_list != NULL)
-	{
-		for (UINT i = 0;i < LIST_NUM(su_adapter_list);i++)
-		{
+	if (su_adapter_list != NULL) {
+		for (UINT i = 0; i < LIST_NUM(su_adapter_list); i++) {
 			SU_ADAPTER_LIST *t = LIST_DATA(su_adapter_list, i);
 			WP_ADAPTER *a = ZeroMalloc(sizeof(WP_ADAPTER));
 
@@ -896,8 +751,7 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 
 			Win32EthTrimTitle(a->Title);
 
-			if (EndWith(a->Title, qos_tag))
-			{
+			if (EndWith(a->Title, qos_tag)) {
 				a->Title[StrLen(a->Title) - StrLen(qos_tag)] = 0;
 				Win32EthTrimTitle(a->Title);
 			}
@@ -913,35 +767,27 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 
 	LIST *ret = NewListFast(CompareWpAdapter);
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		WP_ADAPTER *a = LIST_DATA(o, i);
 		char tmp[MAX_SIZE];
 
 		// Every SeLow adapter is listed here; EnumEthWin32 hides the ones that are no wired LAN
-		for (UINT k = 0;;k++)
-		{
-			if (k == 0)
-			{
+		for (UINT k = 0;; k++) {
+			if (k == 0) {
 				StrCpy(tmp, sizeof(tmp), a->Title);
-			}
-			else
-			{
+			} else {
 				Format(tmp, sizeof(tmp), "%s(%u)", a->Title, k + 1);
 			}
 
 			bool ok = true;
-			for (UINT j = 0;j < LIST_NUM(ret);j++)
-			{
+			for (UINT j = 0; j < LIST_NUM(ret); j++) {
 				WP_ADAPTER *aa = LIST_DATA(ret, j);
-				if (StrCmpi(aa->Title, tmp) == 0)
-				{
+				if (StrCmpi(aa->Title, tmp) == 0) {
 					ok = false;
 				}
 			}
 
-			if (ok)
-			{
+			if (ok) {
 				break;
 			}
 		}
@@ -960,24 +806,19 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 
 // Rebuild eth_list from the SeLow device su and the net-class table netclass of the caller, which
 // holds eth_list_lock. One rebuild per operation
-static void InitEthAdaptersList(SU *su, LIST *netclass)
-{
-	if (eth_list != NULL)
-	{
+static void InitEthAdaptersList(SU *su, LIST *netclass) {
+	if (eth_list != NULL) {
 		FreeEthAdaptersList();
 		eth_list = NULL;
 	}
 	eth_list = GetEthAdapterList(su, netclass);
 }
 
-static void FreeEthAdaptersList()
-{
-	if (eth_list == NULL)
-	{
+static void FreeEthAdaptersList() {
+	if (eth_list == NULL) {
 		return;
 	}
-	for (UINT i = 0;i < LIST_NUM(eth_list);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(eth_list); i++) {
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
 		Free(a);
 	}
@@ -987,19 +828,16 @@ static void FreeEthAdaptersList()
 
 // Whether SeLow is usable now. Read-only: never starts the SeLow service or installs the driver,
 // so the capability queries (caps, BridgeSupport, BridgeList) change nothing (FIX-2 #98)
-bool Win32EthIsSuSupported()
-{
+bool Win32EthIsSuSupported() {
 	bool ret = false;
 
-	if (Win32GetEnableSeLow() == false)
-	{
+	if (Win32GetEnableSeLow() == false) {
 		return false;
 	}
 
 	SU *su = SuInitEx(0);
 
-	if (su != NULL)
-	{
+	if (su != NULL) {
 		ret = true;
 	}
 
@@ -1011,19 +849,16 @@ bool Win32EthIsSuSupported()
 // Make SeLow usable for a Local Bridge: start the SeLow service or install the driver when needed
 // (at most once per process), then report whether SeLow is usable. Only for creating a Local
 // Bridge (OpenEth, the AddLocalBridge RPC) and for listing the devices for one (the EnumEthernet RPC)
-bool Win32EthInstallSu()
-{
+bool Win32EthInstallSu() {
 	bool ret = false;
 
-	if (Win32GetEnableSeLow() == false)
-	{
+	if (Win32GetEnableSeLow() == false) {
 		return false;
 	}
 
 	SU *su = SuInitInstall();
 
-	if (su != NULL)
-	{
+	if (su != NULL) {
 		ret = true;
 	}
 
@@ -1032,20 +867,16 @@ bool Win32EthInstallSu()
 	return ret;
 }
 
-void InitEth()
-{
-	if (eth_list_lock != NULL)
-	{
+void InitEth() {
+	if (eth_list_lock != NULL) {
 		return;
 	}
 
 	eth_list_lock = NewLock();
 }
 
-void FreeEth()
-{
-	if (eth_list_lock == NULL)
-	{
+void FreeEth() {
+	if (eth_list_lock == NULL) {
 		return;
 	}
 
@@ -1055,18 +886,15 @@ void FreeEth()
 	eth_list_lock = NULL;
 }
 
-UINT GetEthDeviceHash()
-{
+UINT GetEthDeviceHash() {
 	MS_ADAPTER_LIST *a = MsCreateAdapterList();
 	UINT num;
 	char tmp[4096];
 	UCHAR hash[SHA1_SIZE];
 
 	tmp[0] = 0;
-	if (a != NULL)
-	{
-		for (UINT i = 0;i < a->Num;i++)
-		{
+	if (a != NULL) {
+		for (UINT i = 0; i < a->Num; i++) {
 			StrCat(tmp, sizeof(tmp), a->Adapters[i]->Title);
 		}
 	}
@@ -1082,10 +910,8 @@ UINT GetEthDeviceHash()
 // Whether this machine can run a Local Bridge. SeLow must exist for this OS and architecture
 // (SuIsSupportedOs: no claim where no SeLow driver package exists, such as arm64), and then be
 // usable now or installable by this elevated process (FND-173)
-bool IsBridgeSupported()
-{
-	if (SuIsSupportedOs() == false)
-	{
+bool IsBridgeSupported() {
+	if (SuIsSupportedOs() == false) {
 		return false;
 	}
 

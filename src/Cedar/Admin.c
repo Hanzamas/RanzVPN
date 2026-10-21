@@ -33,61 +33,52 @@
 static UINT AdminCheckPassword(CEDAR *c, void *random, const void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
 static bool SiIsEmptyPassword(const void *hash_password);
 
-#define	DECLARE_RPC_EX(rpc_name, data_type, function, in_rpc, out_rpc, free_rpc)		\
-	else if (StrCmpi(name, rpc_name) == 0)								\
-	{																	\
-		data_type *t;													\
-		t = ZeroMalloc(sizeof(data_type));								\
-		in_rpc(t, p);													\
-		err = function(a, t);											\
-		if (err == ERR_NO_ERROR)										\
-		{																\
-			out_rpc(ret, t);											\
-		}																\
-		free_rpc(t);													\
-		Free(t);														\
-		ok = true;														\
+#define DECLARE_RPC_EX(rpc_name, data_type, function, in_rpc, out_rpc, free_rpc) \
+	else if (StrCmpi(name, rpc_name) == 0) {                                     \
+		data_type *t;                                                            \
+		t = ZeroMalloc(sizeof(data_type));                                       \
+		in_rpc(t, p);                                                            \
+		err = function(a, t);                                                    \
+		if (err == ERR_NO_ERROR) {                                               \
+			out_rpc(ret, t);                                                     \
+		}                                                                        \
+		free_rpc(t);                                                             \
+		Free(t);                                                                 \
+		ok = true;                                                               \
 	}
-#define	DECLARE_RPC(rpc_name, data_type, function, in_rpc, out_rpc)		\
-	else if (StrCmpi(name, rpc_name) == 0)								\
-	{																	\
-		data_type *t;													\
-		t = ZeroMalloc(sizeof(data_type));								\
-		in_rpc(t, p);													\
-		err = function(a, t);											\
-		if (err == ERR_NO_ERROR)										\
-		{																\
-			out_rpc(ret, t);											\
-		}																\
-		Free(t);														\
-		ok = true;														\
+#define DECLARE_RPC(rpc_name, data_type, function, in_rpc, out_rpc) \
+	else if (StrCmpi(name, rpc_name) == 0) {                        \
+		data_type *t;                                               \
+		t = ZeroMalloc(sizeof(data_type));                          \
+		in_rpc(t, p);                                               \
+		err = function(a, t);                                       \
+		if (err == ERR_NO_ERROR) {                                  \
+			out_rpc(ret, t);                                        \
+		}                                                           \
+		Free(t);                                                    \
+		ok = true;                                                  \
 	}
 
 // Hub lookup for the admin handlers: the access check, the lookup and the hub
 // admin option check, in that order. Returns a referenced HUB, or NULL with *err set.
-HUB *AdminGetHub(ADMIN *a, char *hubname, char *denied_option, UINT *err)
-{
-	if (a->ServerAdmin == false && StrCmpi(a->HubName, hubname) != 0)
-	{
+HUB *AdminGetHub(ADMIN *a, char *hubname, char *denied_option, UINT *err) {
+	if (a->ServerAdmin == false && StrCmpi(a->HubName, hubname) != 0) {
 		*err = ERR_NOT_ENOUGH_RIGHT;
 		return NULL;
 	}
 
-	if (IsEmptyStr(hubname))
-	{
+	if (IsEmptyStr(hubname)) {
 		*err = ERR_INVALID_PARAMETER;
 		return NULL;
 	}
 
 	HUB *h = GetHub(a->Server->Cedar, hubname);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		*err = ERR_HUB_NOT_FOUND;
 		return NULL;
 	}
 
-	if (denied_option != NULL && a->ServerAdmin == false && GetHubAdminOption(h, denied_option) != 0)
-	{
+	if (denied_option != NULL && a->ServerAdmin == false && GetHubAdminOption(h, denied_option) != 0) {
 		ReleaseHub(h);
 		*err = ERR_NOT_ENOUGH_RIGHT;
 		return NULL;
@@ -97,8 +88,7 @@ HUB *AdminGetHub(ADMIN *a, char *hubname, char *denied_option, UINT *err)
 }
 
 // Debug log line "RPC: RPC-n (ip): ..." of the session
-static void AdminDispatchTrace(ADMIN *a, char *format, ...)
-{
+static void AdminDispatchTrace(ADMIN *a, char *format, ...) {
 	char msg[MAX_PATH];
 	char ip[MAX_PATH];
 	char tmp[MAX_PATH * 2];
@@ -116,20 +106,17 @@ static void AdminDispatchTrace(ADMIN *a, char *format, ...)
 }
 
 // Run one admin RPC of the session: take the super lock, trace, dispatch, trace; the Pack of the answer
-PACK *AdminInvoke(ADMIN *a, char *name, PACK *p)
-{
+PACK *AdminInvoke(ADMIN *a, char *name, PACK *p) {
 	SERVER *server = NULL;
 	CEDAR *cedar = NULL;
 	bool ok = false;
-	if (a == NULL || name == NULL || p == NULL)
-	{
+	if (a == NULL || name == NULL || p == NULL) {
 		return NULL;
 	}
 
 	server = a->Server;
 
-	if (server == NULL)
-	{
+	if (server == NULL) {
 		return NULL;
 	}
 
@@ -235,13 +222,11 @@ PACK *AdminInvoke(ADMIN *a, char *name, PACK *p)
 	DECLARE_RPC("Flush", RPC_TEST, StFlush, InRpcTest, OutRpcTest)
 	DECLARE_RPC("RegenerateServerCert", RPC_TEST, StRegenerateServerCert, InRpcTest, OutRpcTest)
 
-	if (ok == false)
-	{
+	if (ok == false) {
 		err = ERR_NOT_SUPPORTED;
 	}
 
-	if (err != ERR_NO_ERROR)
-	{
+	if (err != ERR_NO_ERROR) {
 		PackAddInt(ret, "error", err);
 	}
 
@@ -254,90 +239,70 @@ PACK *AdminInvoke(ADMIN *a, char *name, PACK *p)
 
 
 
-static bool CheckAdminSourceAddress(IP *remote_ip, const char *hubname)
-{
+static bool CheckAdminSourceAddress(IP *remote_ip, const char *hubname) {
 	char *s;
 	bool ok = false;
-	if (remote_ip == NULL)
-	{
+	if (remote_ip == NULL) {
 		return false;
 	}
 
 	BUF *b = ReadDump(ADMINIP_TXT);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return true;
 	}
 
-	while (true)
-	{
+	while (true) {
 		IP ip;
 		IP mask;
 		IP ip1;
 		IP ip2;
 		s = CfgReadNextLine(b);
 
-		if (s == NULL)
-		{
+		if (s == NULL) {
 			break;
 		}
 
 		Trim(s);
 
 		UINT i = SearchStrEx(s, "//", 0, false);
-		if (i != INFINITE)
-		{
+		if (i != INFINITE) {
 			s[i] = 0;
 		}
 
 		i = SearchStrEx(s, "#", 0, false);
-		if (i != INFINITE)
-		{
+		if (i != INFINITE) {
 			s[i] = 0;
 		}
 
 		Trim(s);
 
 		TOKEN_LIST *t = ParseToken(s, " \t");
-		if (t != NULL)
-		{
-			if (t->NumTokens >= 1)
-			{
-				if (t->NumTokens == 1 || StrCmpi(hubname, t->Token[1]) == 0)
-				{
-					if (ParseIpAndMask46(t->Token[0], &ip, &mask))
-					{
-						if (IsIP4(remote_ip) && IsIP4(&ip))
-						{
+		if (t != NULL) {
+			if (t->NumTokens >= 1) {
+				if (t->NumTokens == 1 || StrCmpi(hubname, t->Token[1]) == 0) {
+					if (ParseIpAndMask46(t->Token[0], &ip, &mask)) {
+						if (IsIP4(remote_ip) && IsIP4(&ip)) {
 							IPAnd4(&ip1, remote_ip, &mask);
 							IPAnd4(&ip2, &ip, &mask);
 
-							if (CmpIpAddr(&ip1, &ip2) == 0)
-							{
+							if (CmpIpAddr(&ip1, &ip2) == 0) {
 								ok = true;
 							}
-						}
-						else if (IsIP6(remote_ip) && IsIP6(&ip))
-						{
+						} else if (IsIP6(remote_ip) && IsIP6(&ip)) {
 							IPAnd6(&ip1, remote_ip, &mask);
 							IPAnd6(&ip2, &ip, &mask);
 
-							if (CmpIpAddr(&ip1, &ip2) == 0)
-							{
+							if (CmpIpAddr(&ip1, &ip2) == 0) {
 								ok = true;
 							}
 						}
-					}
-					else if (StrToIP(&ip, t->Token[0]))
-					{
-						if (CmpIpAddr(remote_ip, &ip) == 0)
-						{
+					} else if (StrToIP(&ip, t->Token[0])) {
+						if (CmpIpAddr(remote_ip, &ip) == 0) {
 							ok = true;
 						}
 					}
 
-					if (StrCmpi(t->Token[0], "*") == 0)
-					{
+					if (StrCmpi(t->Token[0], "*") == 0) {
 						ok = true;
 					}
 				}
@@ -355,18 +320,15 @@ static bool CheckAdminSourceAddress(IP *remote_ip, const char *hubname)
 }
 
 // Open an admin session: the source address list, the password and the empty-password policy, with the LA_* log lines
-ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err)
-{
+ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err) {
 	bool is_empty_password = false;
 	UCHAR null_password[SHA1_SIZE];
 	UCHAR secure_null_password[SHA1_SIZE];
 	UINT dummy;
-	if (err == NULL)
-	{
+	if (err == NULL) {
 		err = &dummy;
 	}
-	if (server == NULL || login == NULL)
-	{
+	if (server == NULL || login == NULL) {
 		*err = ERR_INTERNAL_ERROR;
 		return NULL;
 	}
@@ -374,33 +336,27 @@ ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err)
 	CEDAR *cedar = server->Cedar;
 	bool hub_scope = (StrLen(login->HubName) != 0);
 
-	if (CheckAdminSourceAddress(&login->RemoteIP, login->HubName) == false)
-	{
+	if (CheckAdminSourceAddress(&login->RemoteIP, login->HubName) == false) {
 		SLog(cedar, "LA_IP_DENIED", login->ConnName);
 		*err = ERR_IP_ADDRESS_DENIED;
 		return NULL;
 	}
 
-	if (login->HasSecurePassword == false)
-	{
+	if (login->HasSecurePassword == false) {
 		*err = ERR_PROTOCOL_ERROR;
 		return NULL;
 	}
 
-	if (hub_scope == false)
-	{
+	if (hub_scope == false) {
 		SLog(cedar, "LA_CONNECTED_1", login->ConnName);
-	}
-	else
-	{
+	} else {
 		SLog(cedar, "LA_CONNECTED_2", login->ConnName, login->HubName);
 	}
 
 	UINT e = AdminCheckPassword(cedar, login->Random, login->SecurePassword,
-		hub_scope ? login->HubName : NULL, login->AcceptEmptyPassword, &is_empty_password);
+	                            hub_scope ? login->HubName : NULL, login->AcceptEmptyPassword, &is_empty_password);
 
-	if (e != ERR_NO_ERROR)
-	{
+	if (e != ERR_NO_ERROR) {
 		SLog(cedar, "LA_ERROR", login->ConnName, GetUniErrorStr(e), e);
 		*err = e;
 		return NULL;
@@ -411,13 +367,10 @@ ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err)
 	HashAdminPassword(null_password, "");
 	SecurePassword(secure_null_password, null_password, login->Random);
 
-	if (Cmp(secure_null_password, login->SecurePassword, SHA1_SIZE) == 0)
-	{
-		if (IsLocalHostIP(&login->RemoteIP) == false)
-		{
+	if (Cmp(secure_null_password, login->SecurePassword, SHA1_SIZE) == 0) {
+		if (IsLocalHostIP(&login->RemoteIP) == false) {
 			// Refuse a blank hub admin password from a remote client
-			if (hub_scope)
-			{
+			if (hub_scope) {
 				*err = ERR_NULL_PASSWORD_LOCAL_ONLY;
 				return NULL;
 			}
@@ -439,15 +392,12 @@ ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err)
 }
 
 // Free an admin session
-void AdminClose(ADMIN *a)
-{
-	if (a == NULL)
-	{
+void AdminClose(ADMIN *a) {
+	if (a == NULL) {
 		return;
 	}
 
-	if (a->LogFileList != NULL)
-	{
+	if (a->LogFileList != NULL) {
 		FreeEnumLogFile(a->LogFileList);
 	}
 
@@ -456,22 +406,18 @@ void AdminClose(ADMIN *a)
 }
 
 // RPC server dispatcher of the admin connection: the session is the RPC parameter
-static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
-{
-	if (rpc == NULL)
-	{
+static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p) {
+	if (rpc == NULL) {
 		return NULL;
 	}
 
 	return AdminInvoke((ADMIN *)rpc->Param, name, p);
 }
 
-UINT AdminAccept(CONNECTION *c, PACK *p)
-{
+UINT AdminAccept(CONNECTION *c, PACK *p) {
 	ADMIN_LOGIN login;
 	UINT err;
-	if (c == NULL || p == NULL || c->FirstSock == NULL || c->Cedar == NULL || c->Cedar->Server == NULL)
-	{
+	if (c == NULL || p == NULL || c->FirstSock == NULL || c->Cedar == NULL || c->Cedar->Server == NULL) {
 		return ERR_INTERNAL_ERROR;
 	}
 
@@ -485,21 +431,18 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 	login.AcceptEmptyPassword = PackGetBool(p, "accept_empty_password");
 	InRpcWinVer(&login.ClientWinVer, p);
 	PackGetStr(p, "hubname", login.HubName, sizeof(login.HubName));
-	if (PackGetDataSize(p, "secure_password") == SHA1_SIZE)
-	{
+	if (PackGetDataSize(p, "secure_password") == SHA1_SIZE) {
 		PackGetData(p, "secure_password", login.SecurePassword);
 		login.HasSecurePassword = true;
 	}
 
 	ADMIN *a = AdminOpen(c->Cedar->Server, &login, &err);
-	if (a == NULL)
-	{
+	if (a == NULL) {
 		return err;
 	}
 
 	p = NewPack();
-	if (a->EmptyPassword)
-	{
+	if (a->EmptyPassword) {
 		PackAddBool(p, "empty_password", true);
 	}
 	HttpServerSend(sock, p);
@@ -520,27 +463,22 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 }
 
 static UINT AdminCheckPassword(CEDAR *c, void *random, const void *secure_password, char *hubname,
-						bool accept_empty_password, bool *is_password_empty)
-{
+                               bool accept_empty_password, bool *is_password_empty) {
 	UCHAR check[SHA1_SIZE];
 	bool b_dummy;
-	if (c == NULL || random == NULL || secure_password == NULL)
-	{
+	if (c == NULL || random == NULL || secure_password == NULL) {
 		return ERR_INTERNAL_ERROR;
 	}
-	if (is_password_empty == NULL)
-	{
+	if (is_password_empty == NULL) {
 		is_password_empty = &b_dummy;
 	}
 
 	*is_password_empty = false;
 
-	if (hubname == NULL || StrLen(hubname) == 0)
-	{
+	if (hubname == NULL || StrLen(hubname) == 0) {
 		Lock(c->lock);
 		{
-			if (accept_empty_password && SiIsEmptyPassword(c->Server->HashedPassword))
-			{
+			if (accept_empty_password && SiIsEmptyPassword(c->Server->HashedPassword)) {
 				*is_password_empty = true;
 			}
 
@@ -548,24 +486,19 @@ static UINT AdminCheckPassword(CEDAR *c, void *random, const void *secure_passwo
 		}
 		Unlock(c->lock);
 
-		if (Cmp(check, secure_password, SHA1_SIZE) != 0)
-		{
+		if (Cmp(check, secure_password, SHA1_SIZE) != 0) {
 			return ERR_ACCESS_DENIED;
 		}
-	}
-	else
-	{
+	} else {
 		HUB *h = GetHub(c, hubname);
 
-		if (h == NULL)
-		{
+		if (h == NULL) {
 			return ERR_HUB_NOT_FOUND;
 		}
 
 		Lock(h->lock);
 		{
-			if (accept_empty_password && SiIsEmptyPassword(h->HashedPassword))
-			{
+			if (accept_empty_password && SiIsEmptyPassword(h->HashedPassword)) {
 				*is_password_empty = true;
 			}
 
@@ -575,8 +508,7 @@ static UINT AdminCheckPassword(CEDAR *c, void *random, const void *secure_passwo
 
 		ReleaseHub(h);
 
-		if (Cmp(check, secure_password, SHA1_SIZE) != 0)
-		{
+		if (Cmp(check, secure_password, SHA1_SIZE) != 0) {
 			return ERR_ACCESS_DENIED;
 		}
 	}
@@ -584,23 +516,19 @@ static UINT AdminCheckPassword(CEDAR *c, void *random, const void *secure_passwo
 	return ERR_NO_ERROR;
 }
 
-void HashAdminPassword(void *hash, char *password)
-{
-	if (hash == NULL || password == NULL)
-	{
+void HashAdminPassword(void *hash, char *password) {
+	if (hash == NULL || password == NULL) {
 		return;
 	}
 
 	Sha0(hash, password, StrLen(password));
 }
 
-static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, bool *empty_password)
-{
+static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, bool *empty_password) {
 	UCHAR secure_password[SHA1_SIZE];
 	RPC_WINVER ver;
 	SESSION *s = NewRpcSession(cedar, o, err, client_name);
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return NULL;
 	}
 
@@ -622,13 +550,11 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 
 	PackAddData(p, "secure_password", secure_password, sizeof(secure_password));
 
-	if (hubname != NULL)
-	{
+	if (hubname != NULL) {
 		PackAddStr(p, "hubname", hubname);
 	}
 
-	if (HttpClientSend(sock, p) == false)
-	{
+	if (HttpClientSend(sock, p) == false) {
 		FreePack(p);
 		ReleaseSession(s);
 		*err = ERR_DISCONNECTED;
@@ -638,23 +564,20 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 	FreePack(p);
 
 	p = HttpClientRecv(sock);
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		ReleaseSession(s);
 		*err = ERR_DISCONNECTED;
 		return NULL;
 	}
 
-	if (GetErrorFromPack(p) != 0)
-	{
+	if (GetErrorFromPack(p) != 0) {
 		ReleaseSession(s);
 		*err = GetErrorFromPack(p);
 		FreePack(p);
 		return NULL;
 	}
 
-	if (empty_password != NULL)
-	{
+	if (empty_password != NULL) {
 		*empty_password = PackGetBool(p, "empty_password");
 	}
 
@@ -666,8 +589,7 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 // The socket an admin RPC uses after the login of its session (AdminConnectMain), at the first connect and at every
 // reconnect: no timeout, because the server can take long to answer an RPC (SetConfig, a large EnumSession or
 // EnumLogFile) and the connect left CONNECTING_TIMEOUT on the socket. The caller takes its own reference
-static SOCK *AdminRpcSock(const SESSION *s)
-{
+static SOCK *AdminRpcSock(const SESSION *s) {
 	CONNECTION *c = s->Connection;
 	SOCK *sock = c->FirstSock;
 
@@ -676,17 +598,14 @@ static SOCK *AdminRpcSock(const SESSION *s)
 	return sock;
 }
 
-RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name)
-{
+RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name) {
 	UCHAR hashed_password_2[SHA1_SIZE];
 	bool empty_password = false;
-	if (cedar == NULL || o == NULL || hashed_password == NULL || err == NULL)
-	{
+	if (cedar == NULL || o == NULL || hashed_password == NULL || err == NULL) {
 		return NULL;
 	}
 
-	if (client_name == NULL)
-	{
+	if (client_name == NULL) {
 		client_name = CEDAR_MANAGER_STR;
 	}
 
@@ -694,8 +613,7 @@ RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_
 
 	SESSION *s = AdminConnectMain(cedar, o, hubname, hashed_password_2, err, client_name, &empty_password);
 
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return NULL;
 	}
 
@@ -707,24 +625,19 @@ RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_
 	StrCpy(rpc->VpnServerHubName, sizeof(rpc->VpnServerHubName), hubname);
 	StrCpy(rpc->VpnServerClientName, sizeof(rpc->VpnServerClientName), client_name);
 
-	if (empty_password == false)
-	{
+	if (empty_password == false) {
 		Copy(rpc->VpnServerHashedPassword, hashed_password_2, SHA1_SIZE);
-	}
-	else
-	{
+	} else {
 		HashAdminPassword(rpc->VpnServerHashedPassword, "");
 	}
 
 	return rpc;
 }
 
-UINT AdminReconnect(RPC *rpc)
-{
+UINT AdminReconnect(RPC *rpc) {
 	UINT err;
 	bool empty_password = false;
-	if (rpc == NULL)
-	{
+	if (rpc == NULL) {
 		return ERR_INTERNAL_ERROR;
 	}
 
@@ -741,20 +654,18 @@ UINT AdminReconnect(RPC *rpc)
 	rpc->Sock = NULL;
 
 	s = AdminConnectMain(cedar, &rpc->VpnServerClientOption,
-		rpc->VpnServerHubName,
-		rpc->VpnServerHashedPassword,
-		&err,
-		rpc->VpnServerClientName, &empty_password);
+	                     rpc->VpnServerHubName,
+	                     rpc->VpnServerHashedPassword,
+	                     &err,
+	                     rpc->VpnServerClientName, &empty_password);
 
 	ReleaseCedar(cedar);
 
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return err;
 	}
 
-	if (empty_password)
-	{
+	if (empty_password) {
 		HashAdminPassword(rpc->VpnServerHashedPassword, "");
 	}
 
@@ -765,18 +676,15 @@ UINT AdminReconnect(RPC *rpc)
 	return ERR_NO_ERROR;
 }
 
-static bool SiIsEmptyPassword(const void *hash_password)
-{
+static bool SiIsEmptyPassword(const void *hash_password) {
 	UCHAR hash[SHA1_SIZE];
-	if (hash_password == NULL)
-	{
+	if (hash_password == NULL) {
 		return false;
 	}
 
 	Sha0(hash, "", 0);
 
-	if (Cmp(hash_password, hash, SHA1_SIZE) == 0)
-	{
+	if (Cmp(hash_password, hash, SHA1_SIZE) == 0) {
 		return true;
 	}
 

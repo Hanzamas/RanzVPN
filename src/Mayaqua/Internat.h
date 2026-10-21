@@ -1,15 +1,14 @@
 // Internat.h
 // Header of Internat.c
 
-#ifndef	INTERNAT_H
-#define	INTERNAT_H
+#ifndef INTERNAT_H
+#define INTERNAT_H
 
 #include "MayaType.h"
 
 #include <stdarg.h>
 
-struct UNI_TOKEN_LIST
-{
+struct UNI_TOKEN_LIST {
 	UINT NumTokens;
 	wchar_t **Token;
 };

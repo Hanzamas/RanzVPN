@@ -10,10 +10,8 @@
 #include <winhttp.h>
 #include "HTTPInternal.h"
 
-HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version)
-{
-	if (method == NULL || target == NULL || version == NULL)
-	{
+HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version) {
+	if (method == NULL || target == NULL || version == NULL) {
 		return NULL;
 	}
 
@@ -27,10 +25,8 @@ HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version)
 	return header;
 }
 
-void FreeHttpHeader(HTTP_HEADER *header)
-{
-	if (header == NULL)
-	{
+void FreeHttpHeader(HTTP_HEADER *header) {
+	if (header == NULL) {
 		return;
 	}
 
@@ -39,8 +35,7 @@ void FreeHttpHeader(HTTP_HEADER *header)
 	Free(header->Version);
 
 	HTTP_VALUE **values = ToArray(header->ValueList);
-	for (UINT i = 0;i < LIST_NUM(header->ValueList);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(header->ValueList); i++) {
 		FreeHttpValue(values[i]);
 	}
 	Free(values);
@@ -50,10 +45,8 @@ void FreeHttpHeader(HTTP_HEADER *header)
 	Free(header);
 }
 
-HTTP_VALUE *NewHttpValue(char *name, char *data)
-{
-	if (name == NULL || data == NULL)
-	{
+HTTP_VALUE *NewHttpValue(char *name, char *data) {
+	if (name == NULL || data == NULL) {
 		return NULL;
 	}
 
@@ -68,10 +61,8 @@ HTTP_VALUE *NewHttpValue(char *name, char *data)
 	return v;
 }
 
-void FreeHttpValue(HTTP_VALUE *value)
-{
-	if (value == NULL)
-	{
+void FreeHttpValue(HTTP_VALUE *value) {
+	if (value == NULL) {
 		return;
 	}
 
@@ -81,78 +72,63 @@ void FreeHttpValue(HTTP_VALUE *value)
 	Free(value);
 }
 
-int CompareHttpValue(void *p1, void *p2)
-{
-	if (p1 == NULL || p2 == NULL)
-	{
+int CompareHttpValue(void *p1, void *p2) {
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	HTTP_VALUE *v1 = *(HTTP_VALUE **)p1;
 	HTTP_VALUE *v2 = *(HTTP_VALUE **)p2;
-	if (v1 == NULL || v2 == NULL)
-	{
+	if (v1 == NULL || v2 == NULL) {
 		return 0;
 	}
 	return StrCmpi(v1->Name, v2->Name);
 }
 
-HTTP_VALUE *GetHttpValue(HTTP_HEADER *header, char *name)
-{
+HTTP_VALUE *GetHttpValue(HTTP_HEADER *header, char *name) {
 	HTTP_VALUE t;
-	if (header == NULL || name == NULL)
-	{
+	if (header == NULL || name == NULL) {
 		return NULL;
 	}
 
 	t.Name = name;
 	HTTP_VALUE *v = Search(header->ValueList, &t);
-	if (v == NULL)
-	{
+	if (v == NULL) {
 		return NULL;
 	}
 
 	return v;
 }
 
-void AddHttpValue(HTTP_HEADER *header, HTTP_VALUE *value)
-{
-	if (header == NULL || value == NULL)
-	{
+void AddHttpValue(HTTP_HEADER *header, HTTP_VALUE *value) {
+	if (header == NULL || value == NULL) {
 		return;
 	}
 
-	if (LIST_NUM(header->ValueList) < HTTP_HEADER_MAX_LINES)
-	{
+	if (LIST_NUM(header->ValueList) < HTTP_HEADER_MAX_LINES) {
 		Insert(header->ValueList, value);
-	}
-	else
-	{
+	} else {
 		FreeHttpValue(value);
 	}
 }
 
-bool AddHttpValueStr(HTTP_HEADER* header, char *string)
-{
+bool AddHttpValueStr(HTTP_HEADER *header, char *string) {
 	HTTP_VALUE *value = NULL;
 	UINT pos = 0;
 	char *value_name = NULL;
 	char *value_data = NULL;
 
-	if (header == NULL || IsEmptyStr(string))
-	{
+	if (header == NULL || IsEmptyStr(string)) {
 		return false;
 	}
 
 	EnSafeHttpHeaderValueStr(string, ' ');
 
 	pos = SearchStr(string, ":", 0);
-	if (pos == INFINITE)
-	{
+	if (pos == INFINITE) {
 		return false;
 	}
 
-	if ((pos + 1) >= StrLen(string))
-	{
+	if ((pos + 1) >= StrLen(string)) {
 		return false;
 	}
 
@@ -162,8 +138,7 @@ bool AddHttpValueStr(HTTP_HEADER* header, char *string)
 	value_data = &string[pos + 1];
 
 	value = NewHttpValue(value_name, value_data);
-	if (value == NULL)
-	{
+	if (value == NULL) {
 		Free(value_name);
 		return false;
 	}
@@ -175,16 +150,13 @@ bool AddHttpValueStr(HTTP_HEADER* header, char *string)
 	return true;
 }
 
-UINT GetContentLength(HTTP_HEADER *header)
-{
-	if (header == NULL)
-	{
+UINT GetContentLength(HTTP_HEADER *header) {
+	if (header == NULL) {
 		return 0;
 	}
 
 	HTTP_VALUE *v = GetHttpValue(header, "Content-Length");
-	if (v == NULL)
-	{
+	if (v == NULL) {
 		return 0;
 	}
 
@@ -193,23 +165,19 @@ UINT GetContentLength(HTTP_HEADER *header)
 	return ret;
 }
 
-bool PostHttp(SOCK *s, HTTP_HEADER *header, void *post_data, UINT post_size)
-{
-	if (s == NULL || header == NULL || (post_size != 0 && post_data == NULL))
-	{
+bool PostHttp(SOCK *s, HTTP_HEADER *header, void *post_data, UINT post_size) {
+	if (s == NULL || header == NULL || (post_size != 0 && post_data == NULL)) {
 		return false;
 	}
 
-	if (GetHttpValue(header, "Content-Length") == NULL)
-	{
+	if (GetHttpValue(header, "Content-Length") == NULL) {
 		char tmp[MAX_SIZE];
 		ToStr(tmp, post_size);
 		AddHttpValue(header, NewHttpValue("Content-Length", tmp));
 	}
 
 	char *header_str = HttpHeaderToStr(header);
-	if (header_str == NULL)
-	{
+	if (header_str == NULL) {
 		return false;
 	}
 	BUF *b = NewBuf();
@@ -225,10 +193,8 @@ bool PostHttp(SOCK *s, HTTP_HEADER *header, void *post_data, UINT post_size)
 	return ret;
 }
 
-char *HttpHeaderToStr(HTTP_HEADER *header)
-{
-	if (header == NULL)
-	{
+char *HttpHeaderToStr(HTTP_HEADER *header) {
+	if (header == NULL) {
 		return NULL;
 	}
 
@@ -236,14 +202,13 @@ char *HttpHeaderToStr(HTTP_HEADER *header)
 	BUF *b = NewBuf();
 
 	Format(tmp, HTTP_HEADER_LINE_MAX_SIZE,
-		"%s %s %s\r\n", header->Method, header->Target, header->Version);
+	       "%s %s %s\r\n", header->Method, header->Target, header->Version);
 	WriteBuf(b, tmp, StrLen(tmp));
 
-	for (UINT i = 0;i < LIST_NUM(header->ValueList);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(header->ValueList); i++) {
 		HTTP_VALUE *v = (HTTP_VALUE *)LIST_DATA(header->ValueList, i);
 		Format(tmp, HTTP_HEADER_LINE_MAX_SIZE,
-			"%s: %s\r\n", v->Name, v->Data);
+		       "%s: %s\r\n", v->Name, v->Data);
 		WriteBuf(b, tmp, StrLen(tmp));
 	}
 
@@ -258,10 +223,8 @@ char *HttpHeaderToStr(HTTP_HEADER *header)
 	return s;
 }
 
-bool SendHttpHeader(SOCK *s, HTTP_HEADER *header)
-{
-	if (s == NULL || header == NULL)
-	{
+bool SendHttpHeader(SOCK *s, HTTP_HEADER *header) {
+	if (s == NULL || header == NULL) {
 		return false;
 	}
 
@@ -275,8 +238,7 @@ bool SendHttpHeader(SOCK *s, HTTP_HEADER *header)
 }
 
 // Line source over a SOCK (param): RecvLine()
-static char *HttpSockLineSource(void *param, UINT max_size)
-{
+static char *HttpSockLineSource(void *param, UINT max_size) {
 	return RecvLine((SOCK *)param, max_size);
 }
 
@@ -285,33 +247,27 @@ static char *HttpSockLineSource(void *param, UINT max_size)
 // without the '\n' and without one '\r' before it, in a Malloc() block. NULL at the end of the
 // buffer before '\n', and when more than max_size bytes, '\n' included, were consumed without
 // completing the line.
-char *HttpBufLineSource(void *param, UINT max_size)
-{
+char *HttpBufLineSource(void *param, UINT max_size) {
 	BUF *b = (BUF *)param;
-	if (b == NULL || max_size == 0)
-	{
+	if (b == NULL || max_size == 0) {
 		return NULL;
 	}
 
 	UCHAR *data = (UCHAR *)b->Buf;
 	UINT start = b->Current;
 
-	for (UINT i = start;i < b->Size;i++)
-	{
+	for (UINT i = start; i < b->Size; i++) {
 		UINT consumed = i - start + 1;
 
-		if (consumed > max_size)
-		{
+		if (consumed > max_size) {
 			b->Current = i + 1;
 			return NULL;
 		}
 
-		if (data[i] == '\n')
-		{
+		if (data[i] == '\n') {
 			UINT len = consumed - 1;
 
-			if (len >= 1 && data[start + len - 1] == '\r')
-			{
+			if (len >= 1 && data[start + len - 1] == '\r') {
 				len--;
 			}
 
@@ -331,19 +287,16 @@ char *HttpBufLineSource(void *param, UINT max_size)
 // Parses an HTTP header from the lines that source returns: the request or status line, then
 // the header lines up to the blank line (none for HTTP/0.9). NULL when a line cannot be read
 // (a NULL line is not the blank line that ends the header) or does not parse.
-HTTP_HEADER *HttpParseHeaderLines(HTTP_LINE_SOURCE *source, void *param)
-{
+HTTP_HEADER *HttpParseHeaderLines(HTTP_LINE_SOURCE *source, void *param) {
 	TOKEN_LIST *token = NULL;
 	char *str = NULL;
 	HTTP_HEADER *header = NULL;
-	if (source == NULL)
-	{
+	if (source == NULL) {
 		return NULL;
 	}
 
 	str = source(param, HTTP_HEADER_LINE_MAX_SIZE);
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return NULL;
 	}
 
@@ -351,13 +304,11 @@ HTTP_HEADER *HttpParseHeaderLines(HTTP_LINE_SOURCE *source, void *param)
 
 	FreeSafe(PTR_TO_PTR(str));
 
-	if (token == NULL)
-	{
+	if (token == NULL) {
 		return NULL;
 	}
 
-	if (token->NumTokens < 3)
-	{
+	if (token->NumTokens < 3) {
 		FreeToken(token);
 		return NULL;
 	}
@@ -365,30 +316,25 @@ HTTP_HEADER *HttpParseHeaderLines(HTTP_LINE_SOURCE *source, void *param)
 	header = NewHttpHeader(token->Token[0], token->Token[1], token->Token[2]);
 	FreeToken(token);
 
-	if (StrCmpi(header->Version, "HTTP/0.9") == 0)
-	{
+	if (StrCmpi(header->Version, "HTTP/0.9") == 0) {
 		return header;
 	}
 
-	while (true)
-	{
+	while (true) {
 		str = source(param, HTTP_HEADER_LINE_MAX_SIZE);
-		if (str == NULL)
-		{
+		if (str == NULL) {
 			// Socket error, timeout or an oversized line: not the blank line that ends the header
 			FreeHttpHeader(header);
 			return NULL;
 		}
 
 		Trim(str);
-		if (IsEmptyStr(str))
-		{
+		if (IsEmptyStr(str)) {
 			FreeSafe(PTR_TO_PTR(str));
 			break;
 		}
 
-		if (AddHttpValueStr(header, str) == false)
-		{
+		if (AddHttpValueStr(header, str) == false) {
 			FreeSafe(PTR_TO_PTR(str));
 			FreeHttpHeader(header);
 			header = NULL;
@@ -401,49 +347,38 @@ HTTP_HEADER *HttpParseHeaderLines(HTTP_LINE_SOURCE *source, void *param)
 	return header;
 }
 
-HTTP_HEADER *RecvHttpHeader(SOCK *s)
-{
-	if (s == NULL)
-	{
+HTTP_HEADER *RecvHttpHeader(SOCK *s) {
+	if (s == NULL) {
 		return NULL;
 	}
 
 	return HttpParseHeaderLines(HttpSockLineSource, s);
 }
 
-char *RecvLine(SOCK *s, UINT max_size)
-{
+char *RecvLine(SOCK *s, UINT max_size) {
 	char c;
 	char *str;
-	if (s == NULL || max_size == 0)
-	{
+	if (s == NULL || max_size == 0) {
 		return NULL;
 	}
 
 	BUF *b = NewBuf();
-	while (true)
-	{
-		if (RecvAll(s, &c, sizeof(c), s->SecureMode) == false)
-		{
+	while (true) {
+		if (RecvAll(s, &c, sizeof(c), s->SecureMode) == false) {
 			FreeBuf(b);
 			return NULL;
 		}
 		WriteBuf(b, &c, sizeof(c));
 		UCHAR *buf = (UCHAR *)b->Buf;
-		if (b->Size > max_size)
-		{
+		if (b->Size > max_size) {
 			FreeBuf(b);
 			return NULL;
 		}
-		if (b->Size >= 1)
-		{
-			if (buf[b->Size - 1] == '\n')
-			{
+		if (b->Size >= 1) {
+			if (buf[b->Size - 1] == '\n') {
 				b->Size--;
-				if (b->Size >= 1)
-				{
-					if (buf[b->Size - 1] == '\r')
-					{
+				if (b->Size >= 1) {
+					if (buf[b->Size - 1] == '\r') {
 						b->Size--;
 					}
 				}

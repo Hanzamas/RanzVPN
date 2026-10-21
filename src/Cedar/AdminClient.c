@@ -18,74 +18,62 @@
 #include "Mayaqua/Table.h"
 #include "AdminInternal.h"
 
-#define	DECLARE_SC_EX(rpc_name, data_type, function, in_rpc, out_rpc, free_rpc)	\
-	UINT function(RPC *r, data_type *t)									\
-	{																	\
-		PACK *p, *ret;													\
-		UINT err;														\
-		if (r == NULL || t == NULL)										\
-		{																\
-			return ERR_INTERNAL_ERROR;									\
-		}																\
-		p = NewPack();													\
-		out_rpc(p, t);													\
-		free_rpc(t);													\
-		Zero(t, sizeof(data_type));										\
-		ret = AdminCall(r, rpc_name, p);								\
-		err = GetErrorFromPack(ret);									\
-		if (err == ERR_NO_ERROR)										\
-		{																\
-			in_rpc(t, ret);												\
-		}																\
-		FreePack(ret);													\
-		return err;														\
+#define DECLARE_SC_EX(rpc_name, data_type, function, in_rpc, out_rpc, free_rpc) \
+	UINT function(RPC *r, data_type *t) {                                       \
+		PACK *p, *ret;                                                          \
+		UINT err;                                                               \
+		if (r == NULL || t == NULL) {                                           \
+			return ERR_INTERNAL_ERROR;                                          \
+		}                                                                       \
+		p = NewPack();                                                          \
+		out_rpc(p, t);                                                          \
+		free_rpc(t);                                                            \
+		Zero(t, sizeof(data_type));                                             \
+		ret = AdminCall(r, rpc_name, p);                                        \
+		err = GetErrorFromPack(ret);                                            \
+		if (err == ERR_NO_ERROR) {                                              \
+			in_rpc(t, ret);                                                     \
+		}                                                                       \
+		FreePack(ret);                                                          \
+		return err;                                                             \
 	}
-#define	DECLARE_SC(rpc_name, data_type, function, in_rpc, out_rpc)		\
-	UINT function(RPC *r, data_type *t)									\
-	{																	\
-		PACK *p, *ret;													\
-		UINT err;														\
-		if (r == NULL || t == NULL)										\
-		{																\
-			return ERR_INTERNAL_ERROR;									\
-		}																\
-		p = NewPack();													\
-		out_rpc(p, t);													\
-		ret = AdminCall(r, rpc_name, p);								\
-		err = GetErrorFromPack(ret);									\
-		if (err == ERR_NO_ERROR)										\
-		{																\
-			in_rpc(t, ret);												\
-		}																\
-		FreePack(ret);													\
-		return err;														\
+#define DECLARE_SC(rpc_name, data_type, function, in_rpc, out_rpc) \
+	UINT function(RPC *r, data_type *t) {                          \
+		PACK *p, *ret;                                             \
+		UINT err;                                                  \
+		if (r == NULL || t == NULL) {                              \
+			return ERR_INTERNAL_ERROR;                             \
+		}                                                          \
+		p = NewPack();                                             \
+		out_rpc(p, t);                                             \
+		ret = AdminCall(r, rpc_name, p);                           \
+		err = GetErrorFromPack(ret);                               \
+		if (err == ERR_NO_ERROR) {                                 \
+			in_rpc(t, ret);                                        \
+		}                                                          \
+		FreePack(ret);                                             \
+		return err;                                                \
 	}
 
-CAPSLIST *ScGetCapsEx(RPC *rpc)
-{
-	if (rpc == NULL)
-	{
+CAPSLIST *ScGetCapsEx(RPC *rpc) {
+	if (rpc == NULL) {
 		return NULL;
 	}
 
 	CAPSLIST *t = ZeroMalloc(sizeof(CAPSLIST));
 
-	if (ScGetCaps(rpc, t) != ERR_NO_ERROR)
-	{
+	if (ScGetCaps(rpc, t) != ERR_NO_ERROR) {
 		Free(t);
 		return NULL;
 	}
 
 	// Caps the server did not report default to false
 	TOKEN_LIST *names = GetTableNameStartWith("CT_b_");
-	if (names != NULL)
-	{
-		for (UINT i = 0;i < names->NumTokens;i++)
-		{
+	if (names != NULL) {
+		for (UINT i = 0; i < names->NumTokens; i++) {
 			char *name = names->Token[i] + 3;
 
-			if (GetCaps(t, name) == NULL)
-			{
+			if (GetCaps(t, name) == NULL) {
 				AddCapsBool(t, name, false);
 			}
 		}
@@ -181,10 +169,8 @@ DECLARE_SC("Crash", RPC_TEST, ScCrash, InRpcTest, OutRpcTest)
 DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
 
-BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param)
-{
-	if (r == NULL || filepath == NULL)
-	{
+BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param) {
+	if (r == NULL || filepath == NULL) {
 		return NULL;
 	}
 
@@ -192,8 +178,7 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 
 	BUF *buf = NewBuf();
 
-	while (true)
-	{
+	while (true) {
 		DOWNLOAD_PROGRESS g;
 		RPC_READ_LOG_FILE t;
 
@@ -203,15 +188,13 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 
 		UINT ret = ScReadLogFile(r, &t);
 
-		if (ret != ERR_NO_ERROR)
-		{
+		if (ret != ERR_NO_ERROR) {
 			FreeRpcReadLogFile(&t);
 			FreeBuf(buf);
 			return NULL;
 		}
 
-		if (t.Buffer == NULL)
-		{
+		if (t.Buffer == NULL) {
 			break;
 		}
 
@@ -225,18 +208,15 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 
 		FreeRpcReadLogFile(&t);
 
-		if (proc != NULL)
-		{
-			if (proc(&g) == false)
-			{
+		if (proc != NULL) {
+			if (proc(&g) == false) {
 				FreeBuf(buf);
 				return NULL;
 			}
 		}
 	}
 
-	if (buf->Size == 0)
-	{
+	if (buf->Size == 0) {
 		FreeBuf(buf);
 		return NULL;
 	}
@@ -244,14 +224,11 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 	return buf;
 }
 
-PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
-{
-	if (rpc == NULL || function_name == NULL)
-	{
+PACK *AdminCall(RPC *rpc, char *function_name, PACK *p) {
+	if (rpc == NULL || function_name == NULL) {
 		return NULL;
 	}
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		p = NewPack();
 	}
 
@@ -259,10 +236,8 @@ PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 	return RpcCall(rpc, function_name, p);
 }
 
-void AdminDisconnect(RPC *rpc)
-{
-	if (rpc == NULL)
-	{
+void AdminDisconnect(RPC *rpc) {
+	if (rpc == NULL) {
 		return;
 	}
 

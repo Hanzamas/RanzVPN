@@ -12,17 +12,15 @@
 
 // Folders nest at most this deep. The text and binary readers recurse once per level, so a deeper
 // file is rejected instead of running the stack out
-#define	CFG_MAX_DEPTH				64
+#define CFG_MAX_DEPTH 64
 
-static void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number)
-{
+static void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number) {
 	wchar_t dirname[MAX_PATH];
 	wchar_t filename[MAX_PATH];
 	wchar_t fullpath[MAX_PATH];
 	wchar_t datestr[MAX_PATH];
 	SYSTEMTIME st;
-	if (f == NULL || rw == NULL)
-	{
+	if (f == NULL || rw == NULL) {
 		return;
 	}
 
@@ -30,27 +28,22 @@ static void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision
 
 	LocalTime(&st);
 	UniFormat(datestr, sizeof(datestr), L"%04u%02u%02u%02u_%s",
-		st.wYear, st.wMonth, st.wDay, st.wHour, original[0] == L'$' ? original + 1 : original);
+	          st.wYear, st.wMonth, st.wDay, st.wHour, original[0] == L'$' ? original + 1 : original);
 
-	if (revision_number == INFINITE)
-	{
+	if (revision_number == INFINITE) {
 		UniStrCpy(filename, sizeof(filename), datestr);
-	}
-	else
-	{
+	} else {
 		UniFormat(filename, sizeof(filename), L"%08u_%s",
-			revision_number, original[0] == L'$' ? original + 1 : original);
+		          revision_number, original[0] == L'$' ? original + 1 : original);
 	}
 
-	if (UniStrCmpi(datestr, rw->LastSavedDateStr) == 0)
-	{
+	if (UniStrCmpi(datestr, rw->LastSavedDateStr) == 0) {
 		return;
 	}
 
 	UniStrCpy(rw->LastSavedDateStr, sizeof(rw->LastSavedDateStr), datestr);
 
-	if (IsFileExistsW(filename))
-	{
+	if (IsFileExistsW(filename)) {
 		return;
 	}
 
@@ -60,15 +53,12 @@ static void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision
 	CfgSaveExW(NULL, f, fullpath, NULL);
 }
 
-void FreeCfgRw(CFG_RW *rw)
-{
-	if (rw == NULL)
-	{
+void FreeCfgRw(CFG_RW *rw) {
+	if (rw == NULL) {
 		return;
 	}
 
-	if (rw->Io != NULL)
-	{
+	if (rw->Io != NULL) {
 		FileClose(rw->Io);
 	}
 
@@ -79,15 +69,13 @@ void FreeCfgRw(CFG_RW *rw)
 }
 
 // True when the file exists and is not empty, also when another process holds it locked
-static bool CfgFileHasDataW(wchar_t *name)
-{
+static bool CfgFileHasDataW(wchar_t *name) {
 	wchar_t tmp[MAX_SIZE];
 	WIN32_FILE_ATTRIBUTE_DATA data;
 
 	InnerFilePathW(tmp, sizeof(tmp), name);
 
-	if (GetFileAttributesExW(tmp, GetFileExInfoStandard, &data) == FALSE)
-	{
+	if (GetFileAttributesExW(tmp, GetFileExInfoStandard, &data) == FALSE) {
 		return false;
 	}
 
@@ -95,25 +83,21 @@ static bool CfgFileHasDataW(wchar_t *name)
 }
 
 // Rename a pending unreadable file to <name>.bad, replacing an older one. False while the file stays in place
-static bool CfgRwRenameBadFile(CFG_RW *rw)
-{
+static bool CfgRwRenameBadFile(CFG_RW *rw) {
 	wchar_t bad[MAX_SIZE];
 	wchar_t src[MAX_SIZE];
 	wchar_t dst[MAX_SIZE];
 
-	if (rw->BadFilePending == false)
-	{
+	if (rw->BadFilePending == false) {
 		return true;
 	}
 
-	if (CfgFileHasDataW(rw->FileNameW))
-	{
+	if (CfgFileHasDataW(rw->FileNameW)) {
 		UniFormat(bad, sizeof(bad), L"%s.bad", rw->FileNameW);
 		InnerFilePathW(src, sizeof(src), rw->FileNameW);
 		InnerFilePathW(dst, sizeof(dst), bad);
 
-		if (MoveFileExW(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE)
-		{
+		if (MoveFileExW(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE) {
 			return false;
 		}
 
@@ -127,17 +111,14 @@ static bool CfgRwRenameBadFile(CFG_RW *rw)
 
 // The file of rw exists but holds no usable configuration: rename it to <name>.bad before anything writes the
 // file. When the rename fails, every save tries it again and writes nothing until it succeeds
-void CfgRwSetAsideBadFile(CFG_RW *rw)
-{
-	if (rw == NULL)
-	{
+void CfgRwSetAsideBadFile(CFG_RW *rw) {
+	if (rw == NULL) {
 		return;
 	}
 
 	Lock(rw->lock);
 	{
-		if (rw->Io != NULL)
-		{
+		if (rw->Io != NULL) {
 			FileClose(rw->Io);
 			rw->Io = NULL;
 		}
@@ -148,38 +129,29 @@ void CfgRwSetAsideBadFile(CFG_RW *rw)
 	Unlock(rw->lock);
 }
 
-UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
-{
+UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number) {
 	UINT ret = 0;
-	if (rw == NULL || f == NULL)
-	{
+	if (rw == NULL || f == NULL) {
 		return 0;
 	}
 
 	Lock(rw->lock);
 	{
-		if (rw->Io != NULL)
-		{
+		if (rw->Io != NULL) {
 			FileClose(rw->Io);
 			rw->Io = NULL;
 		}
 
 		rw->SaveFailed = false;
 
-		if (CfgRwRenameBadFile(rw) == false)
-		{
+		if (CfgRwRenameBadFile(rw) == false) {
 			// The unreadable file is still in place: write nothing over it
 			rw->SaveFailed = true;
-		}
-		else if (CfgSaveExW(rw, f, rw->FileNameW, &ret))
-		{
-			if (rw->DontBackup == false)
-			{
+		} else if (CfgSaveExW(rw, f, rw->FileNameW, &ret)) {
+			if (rw->DontBackup == false) {
 				BackupCfgWEx(rw, f, rw->FileNameW, revision_number);
 			}
-		}
-		else
-		{
+		} else {
 			ret = 0;
 		}
 
@@ -190,8 +162,7 @@ UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 	return ret;
 }
 
-CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a)
-{
+CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a) {
 	wchar_t *cfg_name_w = CopyStrToUni(cfg_name_a);
 	wchar_t *template_name_w = CopyStrToUni(template_name_a);
 
@@ -202,10 +173,8 @@ CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *te
 
 	return ret;
 }
-CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t *template_name)
-{
-	if (cfg_name == NULL || root == NULL)
-	{
+CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t *template_name) {
+	if (cfg_name == NULL || root == NULL) {
 		return NULL;
 	}
 
@@ -217,8 +186,7 @@ CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t
 	rw->FileName = CopyUniToStr(cfg_name);
 	rw->DontBackup = dont_backup;
 
-	if (f != NULL)
-	{
+	if (f != NULL) {
 		rw->Io = FileOpenW(cfg_name, false);
 		*root = f;
 
@@ -229,13 +197,11 @@ CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t
 	rw->BadFilePending = true;
 	CfgRwRenameBadFile(rw);
 
-	if (UniIsEmptyStr(template_name) == false)
-	{
+	if (UniIsEmptyStr(template_name) == false) {
 		f = CfgReadW(template_name);
 	}
 
-	if (rw->BadFilePending == false)
-	{
+	if (rw->BadFilePending == false) {
 		rw->Io = FileCreateW(cfg_name);
 	}
 
@@ -244,21 +210,17 @@ CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t
 	return rw;
 }
 
-bool FileCopyW(wchar_t *src, wchar_t *dst)
-{
+bool FileCopyW(wchar_t *src, wchar_t *dst) {
 	return FileCopyExW(src, dst, true);
 }
-bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock)
-{
+bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock) {
 	bool ret = false;
-	if (src == NULL || dst == NULL)
-	{
+	if (src == NULL || dst == NULL) {
 		return false;
 	}
 
 	BUF *b = ReadDumpExW(src, false, 0);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 
@@ -272,47 +234,40 @@ bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock)
 }
 // Writes data to <name>.tmp in the same directory, flushes it to disk and replaces name with it
 // in one step, so a reader sees either the old file or the whole new one
-static bool CfgWriteFileReplace(wchar_t *name, void *data, UINT size)
-{
+static bool CfgWriteFileReplace(wchar_t *name, void *data, UINT size) {
 	wchar_t tmp[MAX_SIZE];
 	wchar_t inner_tmp[MAX_SIZE];
 	wchar_t inner_name[MAX_SIZE];
-	if (name == NULL || data == NULL)
-	{
+	if (name == NULL || data == NULL) {
 		return false;
 	}
 
 	UniFormat(tmp, sizeof(tmp), L"%s.tmp", name);
 
 	IO *o = FileCreateW(tmp);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return false;
 	}
 	bool ok = FileWrite(o, data, size);
 	// FileClose flushes a writer with FlushFileBuffers
 	FileClose(o);
 
-	if (ok)
-	{
+	if (ok) {
 		InnerFilePathW(inner_tmp, sizeof(inner_tmp), tmp);
 		InnerFilePathW(inner_name, sizeof(inner_name), name);
 		ok = MoveFileExW(inner_tmp, inner_name, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
 	}
 
-	if (ok == false)
-	{
+	if (ok == false) {
 		FileDeleteW(tmp);
 	}
 
 	return ok;
 }
 
-bool CfgStageNewFile(CFG_RW *rw, void *data, UINT size)
-{
+bool CfgStageNewFile(CFG_RW *rw, void *data, UINT size) {
 	wchar_t newfile[MAX_SIZE];
-	if (rw == NULL || data == NULL)
-	{
+	if (rw == NULL || data == NULL) {
 		return false;
 	}
 
@@ -322,14 +277,11 @@ bool CfgStageNewFile(CFG_RW *rw, void *data, UINT size)
 	return CfgWriteFileReplace(newfile, data, size);
 }
 
-void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size)
-{
-	if (dst == NULL)
-	{
+void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size) {
+	if (dst == NULL) {
 		return;
 	}
-	if (rw == NULL)
-	{
+	if (rw == NULL) {
 		ClearStr(dst, size);
 		return;
 	}
@@ -340,56 +292,43 @@ void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size)
 
 // Save the folder as a text configuration file. With rw, an unchanged tree (same hash as the
 // last save) is not written again and false is returned.
-bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size)
-{
+bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size) {
 	UCHAR hash[SHA1_SIZE];
 	bool ret = true;
 	UINT dummy_int = 0;
-	if (name == NULL || f == NULL)
-	{
+	if (name == NULL || f == NULL) {
 		return false;
 	}
-	if (written_size == NULL)
-	{
+	if (written_size == NULL) {
 		written_size = &dummy_int;
 	}
 
 	BUF *b = CfgFolderToBuf(f);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 	Sha0(hash, b->Buf, b->Size);
 
-	if (rw != NULL)
-	{
-		if (Cmp(hash, rw->LashHash, SHA1_SIZE) == 0)
-		{
+	if (rw != NULL) {
+		if (Cmp(hash, rw->LashHash, SHA1_SIZE) == 0) {
 			ret = false;
-		}
-		else
-		{
+		} else {
 			Copy(rw->LashHash, hash, SHA1_SIZE);
 		}
 	}
 
-	if (ret)
-	{
+	if (ret) {
 		// A failed write keeps the live file; the next save writes again
-		if (CfgWriteFileReplace(name, b->Buf, b->Size))
-		{
+		if (CfgWriteFileReplace(name, b->Buf, b->Size)) {
 			wchar_t log_name[MAX_SIZE];
 
 			// CfgReadW prefers a <name>.log left by an older save; the new file supersedes it
 			UniFormat(log_name, sizeof(log_name), L"%s.log", name);
 			FileDeleteW(log_name);
-		}
-		else
-		{
+		} else {
 			ret = false;
 
-			if (rw != NULL)
-			{
+			if (rw != NULL) {
 				Zero(rw->LashHash, sizeof(rw->LashHash));
 				rw->SaveFailed = true;
 			}
@@ -403,15 +342,13 @@ bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size)
 	return ret;
 }
 
-FOLDER *CfgReadW(wchar_t *name)
-{
+FOLDER *CfgReadW(wchar_t *name) {
 	wchar_t tmp[MAX_SIZE];
 	wchar_t newfile[MAX_SIZE];
 	UINT size;
 	bool delete_new = false;
 	bool has_eof = false;
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return NULL;
 	}
 
@@ -419,54 +356,40 @@ FOLDER *CfgReadW(wchar_t *name)
 	UniFormat(tmp, sizeof(tmp), L"%s.log", name);
 
 	IO *o = FileOpenW(newfile, false);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		UINT size;
 		o = FileOpenW(tmp, false);
 
-		if (o != NULL)
-		{
+		if (o != NULL) {
 			size = FileSize(o);
-			if (size >= 2)
-			{
+			if (size >= 2) {
 				char c;
 
-				if (FileSeek(o, FILE_BEGIN, size - 1) && FileRead(o, &c, 1) && c == 0x1A && FileSeek(o, FILE_BEGIN, 0))
-				{
+				if (FileSeek(o, FILE_BEGIN, size - 1) && FileRead(o, &c, 1) && c == 0x1A && FileSeek(o, FILE_BEGIN, 0)) {
 					has_eof = true;
-				}
-				else
-				{
+				} else {
 					FileClose(o);
 					o = NULL;
 				}
 			}
 		}
-	}
-	else
-	{
+	} else {
 		delete_new = true;
 	}
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		o = FileOpenW(name, false);
-	}
-	else
-	{
-		if (FileSize(o) == 0)
-		{
+	} else {
+		if (FileSize(o) == 0) {
 			FileClose(o);
 			o = FileOpenW(name, false);
 		}
 	}
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
 	size = FileSize(o);
-	if (has_eof)
-	{
+	if (has_eof) {
 		size -= 1;
 	}
 	// Read straight into the BUF; a failed read loads nothing, as a missing file does
@@ -477,14 +400,12 @@ FOLDER *CfgReadW(wchar_t *name)
 
 	FileClose(o);
 
-	if (read_ok == false)
-	{
+	if (read_ok == false) {
 		FreeBuf(b);
 		return NULL;
 	}
 
-	if (delete_new)
-	{
+	if (delete_new) {
 		FileDeleteW(newfile);
 	}
 
@@ -497,35 +418,27 @@ FOLDER *CfgReadW(wchar_t *name)
 	return f;
 }
 
-char *CfgReadNextLine(BUF *b)
-{
-	if (b == NULL)
-	{
+char *CfgReadNextLine(BUF *b) {
+	if (b == NULL) {
 		return NULL;
 	}
 
 	char *tmp = (char *)b->Buf + b->Current;
-	if ((b->Size - b->Current) == 0)
-	{
+	if ((b->Size - b->Current) == 0) {
 		return NULL;
 	}
 	UINT len = 0;
-	while (true)
-	{
-		if (tmp[len] == 13 || tmp[len] == 10)
-		{
-			if (tmp[len] == 13)
-			{
-				if (len < (b->Size - b->Current))
-				{
+	while (true) {
+		if (tmp[len] == 13 || tmp[len] == 10) {
+			if (tmp[len] == 13) {
+				if (len < (b->Size - b->Current)) {
 					len++;
 				}
 			}
 			break;
 		}
 		len++;
-		if (len >= (b->Size - b->Current))
-		{
+		if (len >= (b->Size - b->Current)) {
 			break;
 		}
 	}
@@ -534,10 +447,8 @@ char *CfgReadNextLine(BUF *b)
 	ReadBuf(b, buf, len);
 	SeekBuf(b, 1, 1);
 
-	if (StrLen(buf) >= 1)
-	{
-		if (buf[StrLen(buf) - 1] == 13)
-		{
+	if (StrLen(buf) >= 1) {
+		if (buf[StrLen(buf) - 1] == 13) {
 			buf[StrLen(buf) - 1] = 0;
 		}
 	}
@@ -548,54 +459,42 @@ char *CfgReadNextLine(BUF *b)
 // Read one line of the text format into current, a folder depth levels below the top. false at
 // the closing brace of current or at the end of the data; *error set when a folder nests deeper
 // than CFG_MAX_DEPTH. *open counts the declared folders whose closing brace has not been read yet.
-static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error, UINT *open)
-{
+static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error, UINT *open) {
 	char *name;
 	char *string;
 	char *data;
 	FOLDER *f;
 
-	if (b == NULL || current == NULL || error == NULL || open == NULL)
-	{
+	if (b == NULL || current == NULL || error == NULL || open == NULL) {
 		return false;
 	}
 
 	bool ret = true;
 
 	char *buf = CfgReadNextLine(b);
-	if (buf == NULL)
-	{
+	if (buf == NULL) {
 		return false;
 	}
 
 	TOKEN_LIST *token = ParseToken(buf, "\t ");
-	if (token == NULL)
-	{
+	if (token == NULL) {
 		Free(buf);
 		return false;
 	}
 
-	if (token->NumTokens >= 1)
-	{
-		if (!StrCmpi(token->Token[0], TAG_DECLARE))
-		{
-			if (token->NumTokens >= 2)
-			{
-				if (depth >= CFG_MAX_DEPTH)
-				{
+	if (token->NumTokens >= 1) {
+		if (!StrCmpi(token->Token[0], TAG_DECLARE)) {
+			if (token->NumTokens >= 2) {
+				if (depth >= CFG_MAX_DEPTH) {
 					*error = true;
-				}
-				else
-				{
+				} else {
 					name = CfgUnescape(token->Token[1]);
 
 					f = CfgCreateFolder(current, name);
 					(*open)++;
 
-					while (true)
-					{
-						if (CfgReadNextTextBUF(b, f, depth + 1, error, open) == false)
-						{
+					while (true) {
+						if (CfgReadNextTextBUF(b, f, depth + 1, error, open) == false) {
 							break;
 						}
 					}
@@ -603,34 +502,28 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error,
 					Free(name);
 				}
 
-				if (*error)
-				{
+				if (*error) {
 					FreeToken(token);
 					Free(buf);
 					return false;
 				}
 			}
 		}
-		if (!StrCmpi(token->Token[0], "}"))
-		{
-			if (*open != 0)
-			{
+		if (!StrCmpi(token->Token[0], "}")) {
+			if (*open != 0) {
 				(*open)--;
 			}
 			ret = false;
 		}
-		if (token->NumTokens >= 3)
-		{
+		if (token->NumTokens >= 3) {
 			name = CfgUnescape(token->Token[1]);
 			data = token->Token[2];
 
-			if (!StrCmpi(token->Token[0], TAG_STRING))
-			{
+			if (!StrCmpi(token->Token[0], TAG_STRING)) {
 				wchar_t *uni;
 				string = CfgUnescape(data);
 				UINT uni_size = CalcUtf8ToUni(string, StrLen(string));
-				if (uni_size != 0)
-				{
+				if (uni_size != 0) {
 					uni = Malloc(uni_size);
 					Utf8ToUni(uni, uni_size, string, StrLen(string));
 					CfgAddUniStr(current, name, uni);
@@ -638,36 +531,28 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error,
 				}
 				Free(string);
 			}
-			if (!StrCmpi(token->Token[0], TAG_INT))
-			{
+			if (!StrCmpi(token->Token[0], TAG_INT)) {
 				CfgAddInt(current, name, ToInt(data));
 			}
-			if (!StrCmpi(token->Token[0], TAG_INT64))
-			{
+			if (!StrCmpi(token->Token[0], TAG_INT64)) {
 				CfgAddInt64(current, name, ToInt64(data));
 			}
-			if (!StrCmpi(token->Token[0], TAG_BOOL))
-			{
+			if (!StrCmpi(token->Token[0], TAG_BOOL)) {
 				bool b = false;
-				if (!StrCmpi(data, TAG_TRUE))
-				{
+				if (!StrCmpi(data, TAG_TRUE)) {
 					b = true;
-				}
-				else if (ToInt(data) != 0)
-				{
+				} else if (ToInt(data) != 0) {
 					b = true;
 				}
 				CfgAddBool(current, name, b);
 			}
-			if (!StrCmpi(token->Token[0], TAG_BYTE))
-			{
+			if (!StrCmpi(token->Token[0], TAG_BYTE)) {
 				char *base64 = CfgUnescape(data);
 				const UINT base64_size = StrLen(base64);
 
 				UINT bin_size;
 				void *bin = Base64ToBin(&bin_size, base64, base64_size);
-				if (bin != NULL)
-				{
+				if (bin != NULL) {
 					CfgAddByte(current, name, bin, bin_size);
 					Free(bin);
 				}
@@ -688,34 +573,28 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error,
 
 // Parse a text configuration. With require_closed, a folder whose closing brace is missing, as in a
 // truncated file, gives NULL.
-static FOLDER *CfgBufTextToFolderEx(BUF *b, bool require_closed)
-{
+static FOLDER *CfgBufTextToFolderEx(BUF *b, bool require_closed) {
 	UINT open = 0;
 	bool error = false;
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return NULL;
 	}
 
 	FOLDER *c = CfgCreateFolder(NULL, "tmp");
 
-	while (true)
-	{
-		if (CfgReadNextTextBUF(b, c, 0, &error, &open) == false)
-		{
+	while (true) {
+		if (CfgReadNextTextBUF(b, c, 0, &error, &open) == false) {
 			break;
 		}
 	}
 
-	if (error)
-	{
+	if (error) {
 		CfgDeleteFolder(c);
 		return NULL;
 	}
 
 	FOLDER *f = CfgFindFolder(c, TAG_ROOT);
-	if (f == NULL || (require_closed && open != 0))
-	{
+	if (f == NULL || (require_closed && open != 0)) {
 		CfgDeleteFolder(c);
 		return NULL;
 	}
@@ -728,36 +607,30 @@ static FOLDER *CfgBufTextToFolderEx(BUF *b, bool require_closed)
 	return f;
 }
 
-FOLDER *CfgBufTextToFolder(BUF *b)
-{
+FOLDER *CfgBufTextToFolder(BUF *b) {
 	return CfgBufTextToFolderEx(b, false);
 }
 
 // Parse a configuration in either format. A buffer starting with "SEVPN_DB" is the binary format,
 // whose stored SHA-0 must match the body; anything else is text, where require_closed rejects a
 // truncated file. NULL when it does not parse.
-FOLDER *CfgBufToFolder(BUF *b, bool require_closed)
-{
+FOLDER *CfgBufToFolder(BUF *b, bool require_closed) {
 	UCHAR hash[SHA1_SIZE];
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return NULL;
 	}
 
-	if (b->Size < 8 || Cmp(b->Buf, TAG_BINARY, 8) != 0)
-	{
+	if (b->Size < 8 || Cmp(b->Buf, TAG_BINARY, 8) != 0) {
 		SeekBuf(b, 0, 0);
 		return CfgBufTextToFolderEx(b, require_closed);
 	}
 
-	if (b->Size < 8 + SHA1_SIZE)
-	{
+	if (b->Size < 8 + SHA1_SIZE) {
 		return NULL;
 	}
 
 	Sha0(hash, ((UCHAR *)b->Buf) + 8 + SHA1_SIZE, b->Size - 8 - SHA1_SIZE);
-	if (Cmp(((UCHAR *)b->Buf) + 8, hash, SHA1_SIZE) != 0)
-	{
+	if (Cmp(((UCHAR *)b->Buf) + 8, hash, SHA1_SIZE) != 0) {
 		return NULL;
 	}
 
@@ -767,16 +640,14 @@ FOLDER *CfgBufToFolder(BUF *b, bool require_closed)
 
 // Smallest encoding of one folder or one item in the binary format: a folder is a name length and
 // two counts, an item a name length, a type and a value of at least 4 bytes
-#define	CFG_BIN_MIN_ENTRY_SIZE		12
+#define CFG_BIN_MIN_ENTRY_SIZE 12
 
 // Read one big-endian UINT of the binary format; false at the end of the data, where ReadBufInt()
 // returns 0
-static bool CfgReadBinInt(BUF *b, UINT *value)
-{
+static bool CfgReadBinInt(BUF *b, UINT *value) {
 	UINT v;
 
-	if (ReadBuf(b, &v, sizeof(v)) != sizeof(v))
-	{
+	if (ReadBuf(b, &v, sizeof(v)) != sizeof(v)) {
 		return false;
 	}
 
@@ -786,10 +657,8 @@ static bool CfgReadBinInt(BUF *b, UINT *value)
 }
 
 // Read a folder or item count; false when that many entries cannot fit in the bytes left
-static bool CfgReadBinCount(BUF *b, UINT *count)
-{
-	if (CfgReadBinInt(b, count) == false)
-	{
+static bool CfgReadBinCount(BUF *b, UINT *count) {
+	if (CfgReadBinInt(b, count) == false) {
 		return false;
 	}
 
@@ -800,63 +669,51 @@ static bool CfgReadBinCount(BUF *b, UINT *count)
 // count and size is checked against the bytes left before it is used: false on a short or
 // malformed input or a folder nested deeper than CFG_MAX_DEPTH, which leaves a partial tree under
 // parent for the caller to delete
-static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
-{
+static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth) {
 	char name[MAX_SIZE];
 	UINT n;
 	UINT size;
 	UINT value;
 	char *buf;
 	wchar_t *string;
-	if (b == NULL || parent == NULL || depth >= CFG_MAX_DEPTH)
-	{
+	if (b == NULL || parent == NULL || depth >= CFG_MAX_DEPTH) {
 		return false;
 	}
 
-	if (ReadBufStr(b, name, sizeof(name)) == false)
-	{
+	if (ReadBufStr(b, name, sizeof(name)) == false) {
 		return false;
 	}
 	FOLDER *f = CfgCreateFolder(parent, name);
 
-	if (CfgReadBinCount(b, &n) == false)
-	{
+	if (CfgReadBinCount(b, &n) == false) {
 		return false;
 	}
-	for (UINT i = 0;i < n;i++)
-	{
-		if (CfgReadNextFolderBin(b, f, depth + 1) == false)
-		{
+	for (UINT i = 0; i < n; i++) {
+		if (CfgReadNextFolderBin(b, f, depth + 1) == false) {
 			return false;
 		}
 	}
 
-	if (CfgReadBinCount(b, &n) == false)
-	{
+	if (CfgReadBinCount(b, &n) == false) {
 		return false;
 	}
-	for (UINT i = 0;i < n;i++)
-	{
+	for (UINT i = 0; i < n; i++) {
 		UINT type;
 
-		if (ReadBufStr(b, name, sizeof(name)) == false || CfgReadBinInt(b, &type) == false)
-		{
+		if (ReadBufStr(b, name, sizeof(name)) == false || CfgReadBinInt(b, &type) == false) {
 			return false;
 		}
 
-		switch (type)
-		{
+		switch (type) {
 		case ITEM_TYPE_INT:
-			if (CfgReadBinInt(b, &value) == false)
-			{
+			if (CfgReadBinInt(b, &value) == false) {
 				return false;
 			}
 			CfgAddInt(f, name, value);
 			break;
 
 		case ITEM_TYPE_INT64:
-			if (ReadBufRemainSize(b) < sizeof(UINT64))
-			{
+			if (ReadBufRemainSize(b) < sizeof(UINT64)) {
 				return false;
 			}
 			CfgAddInt64(f, name, ReadBufInt64(b));
@@ -864,8 +721,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 
 		case ITEM_TYPE_BYTE:
 			// The size is bounded by the bytes left before it allocates
-			if (CfgReadBinInt(b, &size) == false || size > ReadBufRemainSize(b))
-			{
+			if (CfgReadBinInt(b, &size) == false || size > ReadBufRemainSize(b)) {
 				return false;
 			}
 			buf = ZeroMalloc(size);
@@ -876,8 +732,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 
 		case ITEM_TYPE_STRING:
 			// Bounded by the bytes left, so size + 1 does not wrap
-			if (CfgReadBinInt(b, &size) == false || size > ReadBufRemainSize(b))
-			{
+			if (CfgReadBinInt(b, &size) == false || size > ReadBufRemainSize(b)) {
 				return false;
 			}
 			buf = ZeroMalloc(size + 1);
@@ -890,8 +745,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 			break;
 
 		case ITEM_TYPE_BOOL:
-			if (CfgReadBinInt(b, &value) == false)
-			{
+			if (CfgReadBinInt(b, &value) == false) {
 				return false;
 			}
 			CfgAddBool(f, name, value == 0 ? false : true);
@@ -906,24 +760,20 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 	return true;
 }
 
-FOLDER *CfgBufBinToFolder(BUF *b)
-{
-	if (b == NULL)
-	{
+FOLDER *CfgBufBinToFolder(BUF *b) {
+	if (b == NULL) {
 		return NULL;
 	}
 
 	FOLDER *c = CfgCreateFolder(NULL, "tmp");
 
-	if (CfgReadNextFolderBin(b, c, 0) == false)
-	{
+	if (CfgReadNextFolderBin(b, c, 0) == false) {
 		CfgDeleteFolder(c);
 		return NULL;
 	}
 
 	FOLDER *f = CfgFindFolder(c, TAG_ROOT);
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		CfgDeleteFolder(c);
 		return NULL;
 	}
@@ -936,10 +786,8 @@ FOLDER *CfgBufBinToFolder(BUF *b)
 	return f;
 }
 
-static bool CfgEnumFolderProc(FOLDER *f, void *param)
-{
-	if (f == NULL || param == NULL)
-	{
+static bool CfgEnumFolderProc(FOLDER *f, void *param) {
+	if (f == NULL || param == NULL) {
 		return false;
 	}
 
@@ -949,10 +797,8 @@ static bool CfgEnumFolderProc(FOLDER *f, void *param)
 	return true;
 }
 
-static bool CfgEnumItemProc(ITEM *t, void *param)
-{
-	if (t == NULL || param == NULL)
-	{
+static bool CfgEnumItemProc(ITEM *t, void *param) {
+	if (t == NULL || param == NULL) {
 		return false;
 	}
 
@@ -962,11 +808,9 @@ static bool CfgEnumItemProc(ITEM *t, void *param)
 	return true;
 }
 
-void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
-{
+void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth) {
 	CFG_ENUM_PARAM p;
-	if (b == NULL || f == NULL)
-	{
+	if (b == NULL || f == NULL) {
 		return;
 	}
 
@@ -979,31 +823,26 @@ void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
 
 	CfgEnumItem(f, CfgEnumItemProc, &p);
 
-	if (LIST_NUM(f->Folders) != 0 && LIST_NUM(f->Items) != 0)
-	{
+	if (LIST_NUM(f->Folders) != 0 && LIST_NUM(f->Items) != 0) {
 		WriteBuf(b, "\r\n", 2);
 	}
 
 	CfgEnumFolder(f, CfgEnumFolderProc, &p);
 	depth--;
 	CfgAddEnd(b, depth);
-
 }
 
-void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
-{
+void CfgAddItemText(BUF *b, ITEM *t, UINT depth) {
 	UINT size;
 	char *utf8;
 	UINT utf8_size;
 	wchar_t *string;
-	if (b == NULL || t == NULL)
-	{
+	if (b == NULL || t == NULL) {
 		return;
 	}
 
 	char *data = NULL;
-	switch (t->Type)
-	{
+	switch (t->Type) {
 	case ITEM_TYPE_INT:
 		data = Malloc(32);
 		ToStr(data, *((UINT *)t->Buf));
@@ -1031,18 +870,14 @@ void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 	case ITEM_TYPE_BOOL:
 		size = 32;
 		data = Malloc(size);
-		if (*((bool *)t->Buf) == false)
-		{
+		if (*((bool *)t->Buf) == false) {
 			StrCpy(data, size, TAG_FALSE);
-		}
-		else
-		{
+		} else {
 			StrCpy(data, size, TAG_TRUE);
 		}
 		break;
 	}
-	if (data == NULL)
-	{
+	if (data == NULL) {
 		return;
 	}
 
@@ -1052,8 +887,7 @@ void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 }
 
 // The escaped form of c, a character CfgCheckCharForName refuses: '$' and two upper-case hex digits
-static void CfgEscapeChar(char c, char *dst)
-{
+static void CfgEscapeChar(char c, char *dst) {
 	static char hex[] = "0123456789ABCDEF";
 
 	dst[0] = '$';
@@ -1062,22 +896,18 @@ static void CfgEscapeChar(char c, char *dst)
 }
 
 // Write str to b as CfgEscape escapes it, without a copy of the escaped string
-static void CfgWriteEscaped(BUF *b, char *str)
-{
+static void CfgWriteEscaped(BUF *b, char *str) {
 	char esc[3];
 
 	UINT len = StrLen(str);
-	if (len == 0)
-	{
+	if (len == 0) {
 		WriteBuf(b, "$", 1);
 		return;
 	}
 
 	UINT start = 0;
-	for (UINT i = 0;i < len;i++)
-	{
-		if (CfgCheckCharForName(str[i]) == false)
-		{
+	for (UINT i = 0; i < len; i++) {
+		if (CfgCheckCharForName(str[i]) == false) {
 			WriteBuf(b, str + start, i - start);
 			CfgEscapeChar(str[i], esc);
 			WriteBuf(b, esc, sizeof(esc));
@@ -1087,19 +917,15 @@ static void CfgWriteEscaped(BUF *b, char *str)
 	WriteBuf(b, str + start, len - start);
 }
 
-static void CfgAddIndent(BUF *b, UINT depth)
-{
-	for (UINT i = 0;i < depth;i++)
-	{
+static void CfgAddIndent(BUF *b, UINT depth) {
+	for (UINT i = 0; i < depth; i++) {
 		WriteBuf(b, "\t", 1);
 	}
 }
 
 // The line "<type> <name> <data>" with the escaped name and data written straight into b
-void CfgAddData(BUF *b, UINT type, char *name, char *data, UINT depth)
-{
-	if (b == NULL || type == 0 || name == NULL || data == NULL)
-	{
+void CfgAddData(BUF *b, UINT type, char *name, char *data, UINT depth) {
+	if (b == NULL || type == 0 || name == NULL || data == NULL) {
 		return;
 	}
 
@@ -1114,10 +940,8 @@ void CfgAddData(BUF *b, UINT type, char *name, char *data, UINT depth)
 	WriteBuf(b, "\r\n", 2);
 }
 
-char *CfgTypeToStr(UINT type)
-{
-	switch (type)
-	{
+char *CfgTypeToStr(UINT type) {
+	switch (type) {
 	case ITEM_TYPE_INT:
 		return TAG_INT;
 	case ITEM_TYPE_INT64:
@@ -1132,20 +956,16 @@ char *CfgTypeToStr(UINT type)
 	return NULL;
 }
 
-void CfgAddEnd(BUF *b, UINT depth)
-{
-	if (b == NULL)
-	{
+void CfgAddEnd(BUF *b, UINT depth) {
+	if (b == NULL) {
 		return;
 	}
 
 	CfgAddLine(b, "}", depth);
 }
 
-void CfgAddDeclare(BUF *b, char *name, UINT depth)
-{
-	if (b == NULL || name == NULL)
-	{
+void CfgAddDeclare(BUF *b, char *name, UINT depth) {
+	if (b == NULL || name == NULL) {
 		return;
 	}
 
@@ -1161,10 +981,8 @@ void CfgAddDeclare(BUF *b, char *name, UINT depth)
 	Free(name2);
 }
 
-void CfgAddLine(BUF *b, char *str, UINT depth)
-{
-	if (b == NULL)
-	{
+void CfgAddLine(BUF *b, char *str, UINT depth) {
+	if (b == NULL) {
 		return;
 	}
 
@@ -1174,10 +992,8 @@ void CfgAddLine(BUF *b, char *str, UINT depth)
 }
 
 // Write the folder as a text configuration: the banner, then the tree
-BUF *CfgFolderToBuf(FOLDER *f)
-{
-	if (f == NULL)
-	{
+BUF *CfgFolderToBuf(FOLDER *f) {
+	if (f == NULL) {
 		return NULL;
 	}
 
@@ -1192,23 +1008,19 @@ BUF *CfgFolderToBuf(FOLDER *f)
 
 // Unescape str into dst when dst is not NULL, without a terminator. Returns the length of the
 // result, which ends at the first character that unescapes to 0. A lone '$' is the empty string.
-static UINT CfgUnescapeTo(const char *str, char *dst)
-{
+static UINT CfgUnescapeTo(const char *str, char *dst) {
 	char tmp2[8];
 	char c;
 
 	UINT len = StrLen(str);
-	if (len == 1 && str[0] == '$')
-	{
+	if (len == 1 && str[0] == '$') {
 		return 0;
 	}
 
 	UINT wp = 0;
-	for (UINT i = 0;i < len;i++)
-	{
+	for (UINT i = 0; i < len; i++) {
 		c = str[i];
-		if (c == '$')
-		{
+		if (c == '$') {
 			tmp2[0] = '0';
 			tmp2[1] = 'x';
 			tmp2[2] = str[i + 1];
@@ -1217,13 +1029,11 @@ static UINT CfgUnescapeTo(const char *str, char *dst)
 			i += 2;
 			tmp2[4] = 0;
 			c = (char)ToInt(tmp2);
-			if (c == 0)
-			{
+			if (c == 0) {
 				break;
 			}
 		}
-		if (dst != NULL)
-		{
+		if (dst != NULL) {
 			dst[wp] = c;
 		}
 		wp++;
@@ -1232,10 +1042,8 @@ static UINT CfgUnescapeTo(const char *str, char *dst)
 	return wp;
 }
 
-char *CfgUnescape(char *str)
-{
-	if (str == NULL)
-	{
+char *CfgUnescape(char *str) {
+	if (str == NULL) {
 		return NULL;
 	}
 
@@ -1250,33 +1058,24 @@ char *CfgUnescape(char *str)
 
 // Escape str into dst when dst is not NULL, without a terminator, and return the escaped length.
 // A character CfgCheckCharForName refuses becomes '$' and two hex digits; "" becomes a lone '$'.
-static UINT CfgEscapeTo(const char *str, char *dst)
-{
+static UINT CfgEscapeTo(const char *str, char *dst) {
 	UINT len = StrLen(str);
-	if (len == 0)
-	{
-		if (dst != NULL)
-		{
+	if (len == 0) {
+		if (dst != NULL) {
 			dst[0] = '$';
 		}
 		return 1;
 	}
 
 	UINT wp = 0;
-	for (UINT i = 0;i < len;i++)
-	{
-		if (CfgCheckCharForName(str[i]))
-		{
-			if (dst != NULL)
-			{
+	for (UINT i = 0; i < len; i++) {
+		if (CfgCheckCharForName(str[i])) {
+			if (dst != NULL) {
 				dst[wp] = str[i];
 			}
 			wp++;
-		}
-		else
-		{
-			if (dst != NULL)
-			{
+		} else {
+			if (dst != NULL) {
 				CfgEscapeChar(str[i], dst + wp);
 			}
 			wp += 3;
@@ -1286,10 +1085,8 @@ static UINT CfgEscapeTo(const char *str, char *dst)
 	return wp;
 }
 
-char *CfgEscape(char *str)
-{
-	if (str == NULL)
-	{
+char *CfgEscape(char *str) {
+	if (str == NULL) {
 		return NULL;
 	}
 
@@ -1302,35 +1099,28 @@ char *CfgEscape(char *str)
 	return ret;
 }
 
-bool CfgCheckCharForName(char c)
-{
-	if (c >= 0 && c <= 31)
-	{
+bool CfgCheckCharForName(char c) {
+	if (c >= 0 && c <= 31) {
 		return false;
 	}
-	if (c == ' ' || c == '\t')
-	{
+	if (c == ' ' || c == '\t') {
 		return false;
 	}
-	if (c == '$')
-	{
+	if (c == '$') {
 		return false;
 	}
 	return true;
 }
 
-bool CfgGetStr(FOLDER *f, char *name, char *str, UINT size)
-{
-	if (f == NULL || name == NULL || str == NULL)
-	{
+bool CfgGetStr(FOLDER *f, char *name, char *str, UINT size) {
+	if (f == NULL || name == NULL || str == NULL) {
 		return false;
 	}
 
 	str[0] = 0;
 
 	ITEM *t = CfgFindItem(f, name);
-	if (t == NULL || t->Type != ITEM_TYPE_STRING)
-	{
+	if (t == NULL || t->Type != ITEM_TYPE_STRING) {
 		return false;
 	}
 
@@ -1340,54 +1130,44 @@ bool CfgGetStr(FOLDER *f, char *name, char *str, UINT size)
 	return true;
 }
 
-bool CfgGetUniStr(FOLDER *f, char *name, wchar_t *str, UINT size)
-{
-	if (f == NULL || name == NULL || str == NULL)
-	{
+bool CfgGetUniStr(FOLDER *f, char *name, wchar_t *str, UINT size) {
+	if (f == NULL || name == NULL || str == NULL) {
 		return false;
 	}
 
 	str[0] = 0;
 
 	ITEM *t = CfgFindItem(f, name);
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return false;
 	}
-	if (t->Type != ITEM_TYPE_STRING)
-	{
+	if (t->Type != ITEM_TYPE_STRING) {
 		return false;
 	}
 	UniStrCpy(str, size, t->Buf);
 	return true;
 }
 
-bool CfgIsItem(FOLDER *f, char *name)
-{
-	if (f == NULL || name == NULL)
-	{
+bool CfgIsItem(FOLDER *f, char *name) {
+	if (f == NULL || name == NULL) {
 		return false;
 	}
 
 	ITEM *t = CfgFindItem(f, name);
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return false;
 	}
 
 	return true;
 }
 
-BUF *CfgGetBuf(FOLDER *f, char *name)
-{
-	if (f == NULL || name == NULL)
-	{
+BUF *CfgGetBuf(FOLDER *f, char *name) {
+	if (f == NULL || name == NULL) {
 		return NULL;
 	}
 
 	ITEM *t = CfgFindItem(f, name);
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return NULL;
 	}
 
@@ -1398,78 +1178,62 @@ BUF *CfgGetBuf(FOLDER *f, char *name)
 	return b;
 }
 
-UINT CfgGetByte(FOLDER *f, char *name, void *buf, UINT size)
-{
-	if (f == NULL || name == NULL || buf == NULL)
-	{
+UINT CfgGetByte(FOLDER *f, char *name, void *buf, UINT size) {
+	if (f == NULL || name == NULL || buf == NULL) {
 		return 0;
 	}
 
 	ITEM *t = CfgFindItem(f, name);
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return 0;
 	}
-	if (t->Type != ITEM_TYPE_BYTE)
-	{
+	if (t->Type != ITEM_TYPE_BYTE) {
 		return 0;
 	}
-	if (t->size <= size)
-	{
+	if (t->size <= size) {
 		Copy(buf, t->Buf, t->size);
 		return t->size;
-	}
-	else
-	{
+	} else {
 		Copy(buf, t->Buf, size);
 		return t->size;
 	}
 }
 
 // The value of the item called name when it has the given type and size, else NULL
-static void *CfgFindValue(FOLDER *f, char *name, UINT type, UINT size)
-{
-	if (f == NULL || name == NULL)
-	{
+static void *CfgFindValue(FOLDER *f, char *name, UINT type, UINT size) {
+	if (f == NULL || name == NULL) {
 		return NULL;
 	}
 
 	ITEM *t = CfgFindItem(f, name);
-	if (t == NULL || t->Type != type || t->size != size)
-	{
+	if (t == NULL || t->Type != type || t->size != size) {
 		return NULL;
 	}
 
 	return t->Buf;
 }
 
-UINT64 CfgGetInt64(FOLDER *f, char *name)
-{
+UINT64 CfgGetInt64(FOLDER *f, char *name) {
 	UINT64 *ret = CfgFindValue(f, name, ITEM_TYPE_INT64, sizeof(UINT64));
-	if (ret == NULL)
-	{
+	if (ret == NULL) {
 		return 0;
 	}
 
 	return *ret;
 }
 
-bool CfgGetBool(FOLDER *f, char *name)
-{
+bool CfgGetBool(FOLDER *f, char *name) {
 	bool *ret = CfgFindValue(f, name, ITEM_TYPE_BOOL, sizeof(bool));
-	if (ret == NULL || *ret == false)
-	{
+	if (ret == NULL || *ret == false) {
 		return false;
 	}
 
 	return true;
 }
 
-UINT CfgGetInt(FOLDER *f, char *name)
-{
+UINT CfgGetInt(FOLDER *f, char *name) {
 	UINT *ret = CfgFindValue(f, name, ITEM_TYPE_INT, sizeof(UINT));
-	if (ret == NULL)
-	{
+	if (ret == NULL) {
 		return 0;
 	}
 
@@ -1478,10 +1242,8 @@ UINT CfgGetInt(FOLDER *f, char *name)
 
 // The entry called name in an Items or Folders list. The key is a char * that CfgCmpName reads
 // as it reads the Name, the first member of an ITEM and a FOLDER.
-static void *CfgFindByName(LIST *o, char *name)
-{
-	if (o == NULL || name == NULL)
-	{
+static void *CfgFindByName(LIST *o, char *name) {
+	if (o == NULL || name == NULL) {
 		return NULL;
 	}
 
@@ -1489,36 +1251,29 @@ static void *CfgFindByName(LIST *o, char *name)
 	return Search(o, &name);
 }
 
-ITEM *CfgFindItem(FOLDER *parent, char *name)
-{
-	if (parent == NULL)
-	{
+ITEM *CfgFindItem(FOLDER *parent, char *name) {
+	if (parent == NULL) {
 		return NULL;
 	}
 
 	return CfgFindByName(parent->Items, name);
 }
 
-FOLDER *CfgFindFolder(FOLDER *parent, char *name)
-{
-	if (parent == NULL)
-	{
+FOLDER *CfgFindFolder(FOLDER *parent, char *name) {
+	if (parent == NULL) {
 		return NULL;
 	}
 
 	return CfgFindByName(parent->Folders, name);
 }
 
-ITEM *CfgAddStr(FOLDER *f, char *name, char *str)
-{
-	if (f == NULL || name == NULL || str == NULL)
-	{
+ITEM *CfgAddStr(FOLDER *f, char *name, char *str) {
+	if (f == NULL || name == NULL || str == NULL) {
 		return NULL;
 	}
 
 	UINT tmp_size = CalcStrToUni(str);
-	if (tmp_size == 0)
-	{
+	if (tmp_size == 0) {
 		return NULL;
 	}
 	wchar_t *tmp = Malloc(tmp_size);
@@ -1529,112 +1284,90 @@ ITEM *CfgAddStr(FOLDER *f, char *name, char *str)
 	return t;
 }
 
-ITEM *CfgAddUniStr(FOLDER *f, char *name, wchar_t *str)
-{
-	if (f == NULL || name == NULL || str == NULL)
-	{
+ITEM *CfgAddUniStr(FOLDER *f, char *name, wchar_t *str) {
+	if (f == NULL || name == NULL || str == NULL) {
 		return NULL;
 	}
 
 	return CfgCreateItem(f, name, ITEM_TYPE_STRING, str, UniStrSize(str));
 }
 
-ITEM *CfgAddBuf(FOLDER *f, char *name, BUF *b)
-{
-	if (f == NULL || name == NULL || b == NULL)
-	{
+ITEM *CfgAddBuf(FOLDER *f, char *name, BUF *b) {
+	if (f == NULL || name == NULL || b == NULL) {
 		return NULL;
 	}
 	return CfgAddByte(f, name, b->Buf, b->Size);
 }
 
-ITEM *CfgAddByte(FOLDER *f, char *name, void *buf, UINT size)
-{
-	if (f == NULL || name == NULL || buf == NULL)
-	{
+ITEM *CfgAddByte(FOLDER *f, char *name, void *buf, UINT size) {
+	if (f == NULL || name == NULL || buf == NULL) {
 		return NULL;
 	}
 	return CfgCreateItem(f, name, ITEM_TYPE_BYTE, buf, size);
 }
 
-ITEM *CfgAddInt64(FOLDER *f, char *name, UINT64 i)
-{
-	if (f == NULL || name == NULL)
-	{
+ITEM *CfgAddInt64(FOLDER *f, char *name, UINT64 i) {
+	if (f == NULL || name == NULL) {
 		return NULL;
 	}
 	return CfgCreateItem(f, name, ITEM_TYPE_INT64, &i, sizeof(UINT64));
 }
 
-bool CfgGetIp(FOLDER *f, char *name, struct IP *ip)
-{
+bool CfgGetIp(FOLDER *f, char *name, struct IP *ip) {
 	char tmp[MAX_SIZE];
-	if (f == NULL || name == NULL || ip == NULL)
-	{
+	if (f == NULL || name == NULL || ip == NULL) {
 		return false;
 	}
 
 	Zero(ip, sizeof(IP));
 
-	if (CfgGetStr(f, name, tmp, sizeof(tmp)) == false)
-	{
+	if (CfgGetStr(f, name, tmp, sizeof(tmp)) == false) {
 		return false;
 	}
 
-	if (StrToIP(ip, tmp) == false)
-	{
+	if (StrToIP(ip, tmp) == false) {
 		return false;
 	}
 
 	return true;
 }
-UINT CfgGetIp32(FOLDER *f, char *name)
-{
+UINT CfgGetIp32(FOLDER *f, char *name) {
 	IP p;
-	if (f == NULL || name == NULL)
-	{
+	if (f == NULL || name == NULL) {
 		return 0;
 	}
 
-	if (CfgGetIp(f, name, &p) == false)
-	{
+	if (CfgGetIp(f, name, &p) == false) {
 		return 0;
 	}
 
 	return IPToUINT(&p);
 }
-bool CfgGetIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr)
-{
+bool CfgGetIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr) {
 	IP ip;
 	Zero(addr, sizeof(IPV6_ADDR));
-	if (f == NULL || name == NULL || addr == NULL)
-	{
+	if (f == NULL || name == NULL || addr == NULL) {
 		return false;
 	}
 
-	if (CfgGetIp(f, name, &ip) == false)
-	{
+	if (CfgGetIp(f, name, &ip) == false) {
 		return false;
 	}
 
-	if (IsIP6(&ip) == false)
-	{
+	if (IsIP6(&ip) == false) {
 		return false;
 	}
 
-	if (IPToIPv6Addr(addr, &ip) == false)
-	{
+	if (IPToIPv6Addr(addr, &ip) == false) {
 		return false;
 	}
 
 	return true;
 }
 
-ITEM *CfgAddIp(FOLDER *f, char *name, struct IP *ip)
-{
+ITEM *CfgAddIp(FOLDER *f, char *name, struct IP *ip) {
 	char tmp[MAX_SIZE];
-	if (f == NULL || name == NULL || ip == NULL)
-	{
+	if (f == NULL || name == NULL || ip == NULL) {
 		return NULL;
 	}
 
@@ -1642,11 +1375,9 @@ ITEM *CfgAddIp(FOLDER *f, char *name, struct IP *ip)
 
 	return CfgAddStr(f, name, tmp);
 }
-ITEM *CfgAddIp32(FOLDER *f, char *name, UINT ip)
-{
+ITEM *CfgAddIp32(FOLDER *f, char *name, UINT ip) {
 	IP p;
-	if (f == NULL || name == NULL)
-	{
+	if (f == NULL || name == NULL) {
 		return NULL;
 	}
 
@@ -1654,11 +1385,9 @@ ITEM *CfgAddIp32(FOLDER *f, char *name, UINT ip)
 
 	return CfgAddIp(f, name, &p);
 }
-ITEM *CfgAddIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr)
-{
+ITEM *CfgAddIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr) {
 	IP ip;
-	if (f == NULL || name == NULL || addr == NULL)
-	{
+	if (f == NULL || name == NULL || addr == NULL) {
 		return NULL;
 	}
 
@@ -1667,19 +1396,15 @@ ITEM *CfgAddIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr)
 	return CfgAddIp(f, name, &ip);
 }
 
-ITEM *CfgAddInt(FOLDER *f, char *name, UINT i)
-{
-	if (f == NULL || name == NULL)
-	{
+ITEM *CfgAddInt(FOLDER *f, char *name, UINT i) {
+	if (f == NULL || name == NULL) {
 		return NULL;
 	}
 	return CfgCreateItem(f, name, ITEM_TYPE_INT, &i, sizeof(UINT));
 }
 
-ITEM *CfgAddBool(FOLDER *f, char *name, bool b)
-{
-	if (f == NULL || name == NULL)
-	{
+ITEM *CfgAddBool(FOLDER *f, char *name, bool b) {
+	if (f == NULL || name == NULL) {
 		return NULL;
 	}
 
@@ -1688,39 +1413,31 @@ ITEM *CfgAddBool(FOLDER *f, char *name, bool b)
 
 // The Name of an entry of an Items or Folders list. Name is the first member of both ITEM and
 // FOLDER, and a pointer to a structure points to its first member, so this reads either.
-static char *CfgEntryName(void *p)
-{
+static char *CfgEntryName(void *p) {
 	return *(char **)p;
 }
 
 // Comparator of the Items and the Folders lists: case-insensitive by Name
-static int CfgCmpName(void *p1, void *p2)
-{
-	if (p1 == NULL || p2 == NULL)
-	{
+static int CfgCmpName(void *p1, void *p2) {
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	void *e1 = *(void **)p1;
 	void *e2 = *(void **)p2;
-	if (e1 == NULL || e2 == NULL)
-	{
+	if (e1 == NULL || e2 == NULL) {
 		return 0;
 	}
 	return StrCmpi(CfgEntryName(e1), CfgEntryName(e2));
 }
 
-void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param)
-{
-	if (f == NULL || proc == NULL)
-	{
+void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param) {
+	if (f == NULL || proc == NULL) {
 		return;
 	}
-	
-	for (UINT i = 0;i < LIST_NUM(f->Items);i++)
-	{
+
+	for (UINT i = 0; i < LIST_NUM(f->Items); i++) {
 		ITEM *tt = LIST_DATA(f->Items, i);
-		if (proc(tt, param) == false)
-		{
+		if (proc(tt, param) == false) {
 			break;
 		}
 	}
@@ -1729,18 +1446,15 @@ void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param)
 // The names of an Items or Folders list, each case-insensitive name once. Insert() keeps the list
 // sorted by CfgCmpName, so names equal but for case are adjacent: one pass against the last kept
 // name drops them and keeps the first, as the old O(N^2) scan did.
-static TOKEN_LIST *CfgNamesToTokenList(LIST *o)
-{
+static TOKEN_LIST *CfgNamesToTokenList(LIST *o) {
 	char *last = NULL;
 
 	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->Token = ZeroMalloc(sizeof(char *) * LIST_NUM(o));
 
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		char *name = CfgEntryName(LIST_DATA(o, i));
-		if (last != NULL && StrCmpi(last, name) == 0)
-		{
+		if (last != NULL && StrCmpi(last, name) == 0) {
 			continue;
 		}
 
@@ -1751,52 +1465,41 @@ static TOKEN_LIST *CfgNamesToTokenList(LIST *o)
 	return t;
 }
 
-TOKEN_LIST *CfgEnumFolderToTokenList(FOLDER *f)
-{
-	if (f == NULL)
-	{
+TOKEN_LIST *CfgEnumFolderToTokenList(FOLDER *f) {
+	if (f == NULL) {
 		return NULL;
 	}
 
 	return CfgNamesToTokenList(f->Folders);
 }
 
-TOKEN_LIST *CfgEnumItemToTokenList(FOLDER *f)
-{
-	if (f == NULL)
-	{
+TOKEN_LIST *CfgEnumItemToTokenList(FOLDER *f) {
+	if (f == NULL) {
 		return NULL;
 	}
 
 	return CfgNamesToTokenList(f->Items);
 }
 
-void CfgEnumFolder(FOLDER *f, ENUM_FOLDER proc, void *param)
-{
-	if (f == NULL || proc == NULL)
-	{
+void CfgEnumFolder(FOLDER *f, ENUM_FOLDER proc, void *param) {
+	if (f == NULL || proc == NULL) {
 		return;
 	}
-	
-	for (UINT i = 0;i < LIST_NUM(f->Folders);i++)
-	{
+
+	for (UINT i = 0; i < LIST_NUM(f->Folders); i++) {
 		FOLDER *ff = LIST_DATA(f->Folders, i);
-		if (proc(ff, param) == false)
-		{
+		if (proc(ff, param) == false) {
 			break;
 		}
 
-		if ((i % 100) == 99)
-		{
+		if ((i % 100) == 99) {
 			YieldCpu();
 		}
 	}
 }
 
-ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
-{
-	if (parent == NULL || name == NULL || type == 0 || buf == NULL)
-	{
+ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size) {
+	if (parent == NULL || name == NULL || type == 0 || buf == NULL) {
 		return NULL;
 	}
 
@@ -1810,7 +1513,7 @@ ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
 	t->Type = type;
 	t->size = size;
 	t->Parent = parent;
-	
+
 	Insert(parent->Items, t);
 
 	return t;
@@ -1818,15 +1521,12 @@ ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
 
 // Free f with its subfolders and items. The children are not taken out of f's lists one by
 // one: the lists go whole with f, so freeing n children costs O(n). The caller detaches f.
-static void CfgFreeFolderTree(FOLDER *f)
-{
-	for (UINT i = 0;i < LIST_NUM(f->Folders);i++)
-	{
+static void CfgFreeFolderTree(FOLDER *f) {
+	for (UINT i = 0; i < LIST_NUM(f->Folders); i++) {
 		CfgFreeFolderTree(LIST_DATA(f->Folders, i));
 	}
 
-	for (UINT i = 0;i < LIST_NUM(f->Items);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(f->Items); i++) {
 		ITEM *t = LIST_DATA(f->Items, i);
 
 		Free(t->Buf);
@@ -1840,30 +1540,24 @@ static void CfgFreeFolderTree(FOLDER *f)
 	Free(f);
 }
 
-void CfgDeleteFolder(FOLDER *f)
-{
-	if (f == NULL)
-	{
+void CfgDeleteFolder(FOLDER *f) {
+	if (f == NULL) {
 		return;
 	}
 
-	if(f->Folders == NULL)
-	{
+	if (f->Folders == NULL) {
 		return;
 	}
 
-	if (f->Parent != NULL)
-	{
+	if (f->Parent != NULL) {
 		Delete(f->Parent->Folders, f);
 	}
 
 	CfgFreeFolderTree(f);
 }
 
-FOLDER *CfgCreateFolder(FOLDER *parent, char *name)
-{
-	if (name == NULL)
-	{
+FOLDER *CfgCreateFolder(FOLDER *parent, char *name) {
+	if (name == NULL) {
 		return NULL;
 	}
 
@@ -1876,8 +1570,7 @@ FOLDER *CfgCreateFolder(FOLDER *parent, char *name)
 	StrCpy(f->Name, 0, name);
 	f->Parent = parent;
 
-	if (f->Parent != NULL)
-	{
+	if (f->Parent != NULL) {
 		Insert(f->Parent->Folders, f);
 	}
 	return f;

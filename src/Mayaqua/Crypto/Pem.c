@@ -17,15 +17,12 @@
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 
-typedef struct CB_PARAM
-{
+typedef struct CB_PARAM {
 	char *password;
 } CB_PARAM;
 
-X *FileToXW(wchar_t *filename)
-{
-	if (filename == NULL)
-	{
+X *FileToXW(wchar_t *filename) {
+	if (filename == NULL) {
 		return NULL;
 	}
 
@@ -38,16 +35,13 @@ X *FileToXW(wchar_t *filename)
 	return x;
 }
 
-bool XToFileW(X *x, wchar_t *filename, bool text)
-{
-	if (x == NULL || filename == NULL)
-	{
+bool XToFileW(X *x, wchar_t *filename, bool text) {
+	if (x == NULL || filename == NULL) {
 		return false;
 	}
 
 	BUF *b = XToBuf(x, text);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 
@@ -57,30 +51,23 @@ bool XToFileW(X *x, wchar_t *filename, bool text)
 	return ret;
 }
 
-K *FileToKW(wchar_t *filename, bool private_key, char *password)
-{
+K *FileToKW(wchar_t *filename, bool private_key, char *password) {
 	K *k;
-	if (filename == NULL)
-	{
+	if (filename == NULL) {
 		return NULL;
 	}
 
 	BUF *b = ReadDumpW(filename);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return NULL;
 	}
 
 	bool text = IsBase64(b);
-	if (text == false)
-	{
+	if (text == false) {
 		k = BufToK(b, private_key, false, NULL);
-	}
-	else
-	{
+	} else {
 		k = BufToK(b, private_key, true, NULL);
-		if (k == NULL)
-		{
+		if (k == NULL) {
 			k = BufToK(b, private_key, true, password);
 		}
 	}
@@ -90,16 +77,13 @@ K *FileToKW(wchar_t *filename, bool private_key, char *password)
 	return k;
 }
 
-bool KToFileW(K *k, wchar_t *filename, bool text, char *password)
-{
-	if (k == NULL || filename == NULL)
-	{
+bool KToFileW(K *k, wchar_t *filename, bool text, char *password) {
+	if (k == NULL || filename == NULL) {
 		return false;
 	}
 
 	BUF *b = KToBuf(k, text, password);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 
@@ -109,16 +93,13 @@ bool KToFileW(K *k, wchar_t *filename, bool text, char *password)
 	return ret;
 }
 
-BUF *KToBuf(K *k, bool text, char *password)
-{
-	if (k == NULL)
-	{
+BUF *KToBuf(K *k, bool text, char *password) {
+	if (k == NULL) {
 		return NULL;
 	}
 
 	BIO *bio = KToBio(k, text, password);
-	if (bio == NULL)
-	{
+	if (bio == NULL) {
 		return NULL;
 	}
 
@@ -130,44 +111,30 @@ BUF *KToBuf(K *k, bool text, char *password)
 	return buf;
 }
 
-BIO *KToBio(K *k, bool text, char *password)
-{
-	if (k == NULL)
-	{
+BIO *KToBio(K *k, bool text, char *password) {
+	if (k == NULL) {
 		return NULL;
 	}
 
 	BIO *bio = BIO_new(BIO_s_mem());
 
-	if (k->private_key)
-	{
-		if (text == false)
-		{
+	if (k->private_key) {
+		if (text == false) {
 			i2d_PrivateKey_bio(bio, k->pkey);
-		}
-		else
-		{
-			if (password == 0 || StrLen(password) == 0)
-			{
+		} else {
+			if (password == 0 || StrLen(password) == 0) {
 				PEM_write_bio_PrivateKey(bio, k->pkey, NULL, NULL, 0, NULL, NULL);
-			}
-			else
-			{
+			} else {
 				CB_PARAM cb;
 				cb.password = password;
 				PEM_write_bio_PrivateKey(bio, k->pkey, EVP_des_ede3_cbc(),
-					NULL, 0, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
+				                         NULL, 0, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
 			}
 		}
-	}
-	else
-	{
-		if (text == false)
-		{
+	} else {
+		if (text == false) {
 			i2d_PUBKEY_bio(bio, k->pkey);
-		}
-		else
-		{
+		} else {
 			PEM_write_bio_PUBKEY(bio, k->pkey);
 		}
 	}
@@ -175,76 +142,52 @@ BIO *KToBio(K *k, bool text, char *password)
 	return bio;
 }
 
-bool IsBase64(BUF *b)
-{
-	if (b == NULL)
-	{
+bool IsBase64(BUF *b) {
+	if (b == NULL) {
 		return false;
 	}
 
-	if (SearchAsciiInBinary(b->Buf, b->Size, "-----BEGIN", false) != INFINITE)
-	{
+	if (SearchAsciiInBinary(b->Buf, b->Size, "-----BEGIN", false) != INFINITE) {
 		return true;
 	}
 
-	for (UINT i = 0;i < b->Size;i++)
-	{
+	for (UINT i = 0; i < b->Size; i++) {
 		char c = ((char *)b->Buf)[i];
 		bool b = false;
-		if ('a' <= c && c <= 'z')
-		{
+		if ('a' <= c && c <= 'z') {
+			b = true;
+		} else if ('A' <= c && c <= 'Z') {
+			b = true;
+		} else if ('0' <= c && c <= '9') {
+			b = true;
+		} else if (c == ':' || c == '.' || c == ';' || c == ',') {
+			b = true;
+		} else if (c == '!' || c == '&' || c == '#' || c == '(' || c == ')') {
+			b = true;
+		} else if (c == '-' || c == ' ') {
+			b = true;
+		} else if (c == 13 || c == 10 || c == EOF) {
+			b = true;
+		} else if (c == '\t' || c == '=' || c == '+' || c == '/') {
 			b = true;
 		}
-		else if ('A' <= c && c <= 'Z')
-		{
-			b = true;
-		}
-		else if ('0' <= c && c <= '9')
-		{
-			b = true;
-		}
-		else if (c == ':' || c == '.' || c == ';' || c == ',')
-		{
-			b = true;
-		}
-		else if (c == '!' || c == '&' || c == '#' || c == '(' || c == ')')
-		{
-			b = true;
-		}
-		else if (c == '-' || c == ' ')
-		{
-			b = true;
-		}
-		else if (c == 13 || c == 10 || c == EOF)
-		{
-			b = true;
-		}
-		else if (c == '\t' || c == '=' || c == '+' || c == '/')
-		{
-			b = true;
-		}
-		if (b == false)
-		{
+		if (b == false) {
 			return false;
 		}
 	}
 	return true;
 }
 
-bool IsEncryptedK(BUF *b, bool private_key)
-{
-	if (b == NULL)
-	{
+bool IsEncryptedK(BUF *b, bool private_key) {
+	if (b == NULL) {
 		return false;
 	}
-	if (IsBase64(b) == false)
-	{
+	if (IsBase64(b) == false) {
 		return false;
 	}
 
 	K *k = BufToK(b, private_key, true, NULL);
-	if (k != NULL)
-	{
+	if (k != NULL) {
 		FreeK(k);
 		return false;
 	}
@@ -252,26 +195,23 @@ bool IsEncryptedK(BUF *b, bool private_key)
 	return true;
 }
 
-K *OpensslEngineToK(char *key_file_name, char *engine_name)
-{
+K *OpensslEngineToK(char *key_file_name, char *engine_name) {
 #ifndef OPENSSL_NO_ENGINE
-    ENGINE *engine = ENGINE_by_id(engine_name);
-    ENGINE_init(engine);
-    EVP_PKEY *pkey;
-    pkey = ENGINE_load_private_key(engine, key_file_name, NULL, NULL);
-   	K *k = ZeroMalloc(sizeof(K));
-    k->pkey = pkey;
-    k->private_key = true;
-    return k;
+	ENGINE *engine = ENGINE_by_id(engine_name);
+	ENGINE_init(engine);
+	EVP_PKEY *pkey;
+	pkey = ENGINE_load_private_key(engine, key_file_name, NULL, NULL);
+	K *k = ZeroMalloc(sizeof(K));
+	k->pkey = pkey;
+	k->private_key = true;
+	return k;
 #else
-    return NULL;
+	return NULL;
 #endif
 }
 
-K *BufToK(BUF *b, bool private_key, bool text, char *password)
-{
-	if (b == NULL)
-	{
+K *BufToK(BUF *b, bool private_key, bool text, char *password) {
+	if (b == NULL) {
 		return NULL;
 	}
 
@@ -282,57 +222,41 @@ K *BufToK(BUF *b, bool private_key, bool text, char *password)
 	return k;
 }
 
-K *BioToK(BIO *bio, bool private_key, bool text, char *password)
-{
+K *BioToK(BIO *bio, bool private_key, bool text, char *password) {
 	EVP_PKEY *pkey;
-	if (bio == NULL)
-	{
+	if (bio == NULL) {
 		return NULL;
 	}
 
-	if (password != NULL && StrLen(password) == 0)
-	{
+	if (password != NULL && StrLen(password) == 0) {
 		password = NULL;
 	}
 
-	if (private_key == false)
-	{
-		if (text == false)
-		{
+	if (private_key == false) {
+		if (text == false) {
 			pkey = d2i_PUBKEY_bio(bio, NULL);
-			if (pkey == NULL)
-			{
+			if (pkey == NULL) {
 				return NULL;
 			}
-		}
-		else
-		{
+		} else {
 			CB_PARAM cb;
 			cb.password = password;
 			pkey = PEM_read_bio_PUBKEY(bio, NULL, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
-			if (pkey == NULL)
-			{
+			if (pkey == NULL) {
 				return NULL;
 			}
 		}
-	}
-	else
-	{
-		if (text == false)
-		{
+	} else {
+		if (text == false) {
 			pkey = d2i_PrivateKey_bio(bio, NULL);
-			if (pkey == NULL)
-			{
+			if (pkey == NULL) {
 				return NULL;
 			}
-		}
-		else
-		{
+		} else {
 			CB_PARAM cb;
 			cb.password = password;
 			pkey = PEM_read_bio_PrivateKey(bio, NULL, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
-			if (pkey == NULL)
-			{
+			if (pkey == NULL) {
 				return NULL;
 			}
 		}
@@ -345,32 +269,26 @@ K *BioToK(BIO *bio, bool private_key, bool text, char *password)
 	return k;
 }
 
-int PKeyPasswordCallbackFunction(char *buf, int bufsize, int verify, void *param)
-{
-	if (buf == NULL || param == NULL || bufsize == 0)
-	{
+int PKeyPasswordCallbackFunction(char *buf, int bufsize, int verify, void *param) {
+	if (buf == NULL || param == NULL || bufsize == 0) {
 		return 0;
 	}
 
 	CB_PARAM *cb = (CB_PARAM *)param;
-	if (cb->password == NULL)
-	{
+	if (cb->password == NULL) {
 		return 0;
 	}
 
 	return StrCpy(buf, bufsize, cb->password);
 }
 
-BUF *XToBuf(X *x, bool text)
-{
-	if (x == NULL)
-	{
+BUF *XToBuf(X *x, bool text) {
+	if (x == NULL) {
 		return NULL;
 	}
 
 	BIO *bio = XToBio(x, text);
-	if (bio == NULL)
-	{
+	if (bio == NULL) {
 		return NULL;
 	}
 
@@ -382,21 +300,16 @@ BUF *XToBuf(X *x, bool text)
 	return b;
 }
 
-BIO *XToBio(X *x, bool text)
-{
-	if (x == NULL)
-	{
+BIO *XToBio(X *x, bool text) {
+	if (x == NULL) {
 		return NULL;
 	}
 
 	BIO *bio = BIO_new(BIO_s_mem());
 
-	if (text == false)
-	{
+	if (text == false) {
 		i2d_X509_bio(bio, x->x509);
-	}
-	else
-	{
+	} else {
 		PEM_write_bio_X509(bio, x->x509);
 	}
 
@@ -404,16 +317,13 @@ BIO *XToBio(X *x, bool text)
 }
 
 // The caller keeps b and frees it, also when this fails
-X *BufToX(BUF *b, bool text)
-{
-	if (b == NULL)
-	{
+X *BufToX(BUF *b, bool text) {
+	if (b == NULL) {
 		return NULL;
 	}
 
 	BIO *bio = BufToBio(b);
-	if (bio == NULL)
-	{
+	if (bio == NULL) {
 		return NULL;
 	}
 
@@ -425,16 +335,13 @@ X *BufToX(BUF *b, bool text)
 }
 
 // The caller keeps b and frees it, also when this fails
-LIST *BufToXList(BUF *b, bool text)
-{
-	if (b == NULL)
-	{
+LIST *BufToXList(BUF *b, bool text) {
+	if (b == NULL) {
 		return NULL;
 	}
 
 	BIO *bio = BufToBio(b);
-	if (bio == NULL)
-	{
+	if (bio == NULL) {
 		return NULL;
 	}
 
@@ -445,32 +352,25 @@ LIST *BufToXList(BUF *b, bool text)
 	return chain;
 }
 
-X *BioToX(BIO *bio, bool text)
-{
+X *BioToX(BIO *bio, bool text) {
 	X509 *x509;
-	if (bio == NULL)
-	{
+	if (bio == NULL) {
 		return NULL;
 	}
 
-	if (text == false)
-	{
+	if (text == false) {
 		x509 = d2i_X509_bio(bio, NULL);
-	}
-	else
-	{
+	} else {
 		x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
 	}
 
-	if (x509 == NULL)
-	{
+	if (x509 == NULL) {
 		return NULL;
 	}
 
 	X *x = X509ToX(x509);
 
-	if (x == NULL)
-	{
+	if (x == NULL) {
 		FreeX509(x509);
 		return NULL;
 	}
@@ -478,32 +378,27 @@ X *BioToX(BIO *bio, bool text)
 	return x;
 }
 
-LIST *BioToXList(BIO *bio, bool text)
-{
+LIST *BioToXList(BIO *bio, bool text) {
 	X *x;
 	STACK_OF(X509_INFO) *sk = NULL;
 	X509_INFO *xi;
 	LIST *chain;
 
-	if (bio == NULL || text == false)
-	{
+	if (bio == NULL || text == false) {
 		return NULL;
 	}
 
 	sk = PEM_X509_INFO_read_bio(bio, NULL, NULL, NULL);
-	if (sk == NULL)
-	{
+	if (sk == NULL) {
 		return NULL;
 	}
 
 	chain = NewList(NULL);
 
-	while (sk_X509_INFO_num(sk))
-	{
+	while (sk_X509_INFO_num(sk)) {
 		xi = sk_X509_INFO_shift(sk);
 		x = X509ToX(xi->x509);
-		if (x != NULL)
-		{
+		if (x != NULL) {
 			// The X owns the certificate now
 			xi->x509 = NULL;
 			Add(chain, x);
@@ -517,20 +412,16 @@ LIST *BioToXList(BIO *bio, bool text)
 	return chain;
 }
 
-void FreeBio(BIO *bio)
-{
-	if (bio == NULL)
-	{
+void FreeBio(BIO *bio) {
+	if (bio == NULL) {
 		return;
 	}
 
 	BIO_free(bio);
 }
 
-BUF *BioToBuf(BIO *bio)
-{
-	if (bio == NULL)
-	{
+BUF *BioToBuf(BIO *bio) {
+	if (bio == NULL) {
 		return NULL;
 	}
 
@@ -546,16 +437,13 @@ BUF *BioToBuf(BIO *bio)
 	return b;
 }
 
-BIO *BufToBio(BUF *b)
-{
-	if (b == NULL)
-	{
+BIO *BufToBio(BUF *b) {
+	if (b == NULL) {
 		return NULL;
 	}
 
 	BIO *bio = BIO_new(BIO_s_mem());
-	if (bio == NULL)
-	{
+	if (bio == NULL) {
 		return NULL;
 	}
 	BIO_write(bio, b->Buf, b->Size);

@@ -1,36 +1,35 @@
 // Server.h
 // Header of Server.c
 
-#ifndef	SERVER_H
-#define	SERVER_H
+#ifndef SERVER_H
+#define SERVER_H
 
 #include "Account.h"
 #include "Eraser.h"
 #include "LogWriter.h"
 #include "Syslog.h"
 
-#define	SERVER_DEF_PORTS_1				443
-#define	SERVER_DEF_PORTS_4				GC_DEFAULT_PORT
+#define SERVER_DEF_PORTS_1 443
+#define SERVER_DEF_PORTS_4 GC_DEFAULT_PORT
 
 extern char *SERVER_CONFIG_FILE_NAME;
-#define	SERVER_DEFAULT_HUB_NAME			"DEFAULT"
+#define SERVER_DEFAULT_HUB_NAME "DEFAULT"
 
-#define	SERVER_FILE_SAVE_INTERVAL_DEFAULT	(5 * 60 * 1000)
-#define	SERVER_FILE_SAVE_INTERVAL_MIN		(5 * 1000)
-#define	SERVER_FILE_SAVE_INTERVAL_MAX		(3600 * 1000)
-#define	SERVER_FILE_SAVE_INTERVAL_USERMODE	(1 * 60 * 1000)
+#define SERVER_FILE_SAVE_INTERVAL_DEFAULT  (5 * 60 * 1000)
+#define SERVER_FILE_SAVE_INTERVAL_MIN      (5 * 1000)
+#define SERVER_FILE_SAVE_INTERVAL_MAX      (3600 * 1000)
+#define SERVER_FILE_SAVE_INTERVAL_USERMODE (1 * 60 * 1000)
 
 // A failed configuration save is retried after this span, doubled per failure up to the autosave span
-#define	SERVER_FILE_SAVE_RETRY_MIN			(1 * 1000)
+#define SERVER_FILE_SAVE_RETRY_MIN (1 * 1000)
 // Tries of the last save when the server stops
-#define	SERVER_FILE_SAVE_FINAL_TRIES		3
+#define SERVER_FILE_SAVE_FINAL_TRIES 3
 
-#define SERVER_DEADLOCK_CHECK_SPAN		(2 * 60 * 1000)
-#define SERVER_DEADLOCK_CHECK_TIMEOUT	(10 * 60 * 1000)
+#define SERVER_DEADLOCK_CHECK_SPAN    (2 * 60 * 1000)
+#define SERVER_DEADLOCK_CHECK_TIMEOUT (10 * 60 * 1000)
 
 
-struct SERVER_LISTENER
-{
+struct SERVER_LISTENER {
 	UINT Port;
 	bool Enabled;
 	LISTENER *Listener;
@@ -38,22 +37,19 @@ struct SERVER_LISTENER
 };
 
 // One listener as the admin RPCs report it, copied by SiEnumListeners under the listener list lock
-struct SERVER_LISTENER_INFO
-{
+struct SERVER_LISTENER_INFO {
 	UINT Port;
 	bool Enabled;
-	bool Trying;							// Enabled, and the port is not bound yet
+	bool Trying; // Enabled, and the port is not bound yet
 };
 
-struct SYSLOG_SETTING
-{
+struct SYSLOG_SETTING {
 	UINT SaveType;
 	char Hostname[MAX_HOST_NAME_LEN + 1];
 	UINT Port;
 };
 
-struct SERVER
-{
+struct SERVER {
 	LIST *ServerListenerList;
 	UCHAR HashedPassword[SHA1_SIZE];
 	UINT64 StartTime;
@@ -75,7 +71,7 @@ struct SERVER
 	CEDAR *Cedar;
 	CFG_RW *CfgRw;
 	LOCK *SaveCfgLock;
-	bool ConfigSaveFailing;		// The last configuration save failed (under SaveCfgLock)
+	bool ConfigSaveFailing; // The last configuration save failed (under SaveCfgLock)
 	EVENT *SaveHaltEvent;
 	THREAD *SaveThread;
 
@@ -104,15 +100,13 @@ struct SERVER
 };
 
 
-struct RPC_ENUM_SESSION
-{
+struct RPC_ENUM_SESSION {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT NumSession;
 	struct RPC_ENUM_SESSION_ITEM *Sessions;
 };
 
-struct RPC_SESSION_STATUS
-{
+struct RPC_SESSION_STATUS {
 	char HubName[MAX_HUBNAME_LEN + 1];
 	char Name[MAX_SESSION_NAME_LEN + 1];
 	char Username[MAX_USERNAME_LEN + 1];
@@ -127,19 +121,17 @@ struct RPC_SESSION_STATUS
 };
 
 
-struct CAPS
-{
+struct CAPS {
 	char *Name;
 	UINT Value;
 };
-struct CAPSLIST
-{
+struct CAPSLIST {
 	LIST *CapsList;
 };
 
 
-#define	NUM_GLOBAL_SERVER_FLAGS			128
-#define	GSF_DISABLE_SESSION_RECONNECT	9
+#define NUM_GLOBAL_SERVER_FLAGS       128
+#define GSF_DISABLE_SESSION_RECONNECT 9
 
 SERVER *SiNewServer(void);
 void SiReleaseServer(SERVER *s);

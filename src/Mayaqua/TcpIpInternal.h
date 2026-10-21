@@ -1,8 +1,8 @@
 // TcpIpInternal.h
 // Module-internal declarations of the TcpIp module: only its own files include this header
 
-#ifndef	TCPIP_INTERNAL_H
-#define	TCPIP_INTERNAL_H
+#ifndef TCPIP_INTERNAL_H
+#define TCPIP_INTERNAL_H
 
 bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid);
 bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3);
@@ -23,4 +23,4 @@ UINT GetIpHeaderSize(UCHAR *src, UINT src_size);
 HTTPLOG *ParseHttpAccessLog(PKT *pkt);
 HTTPLOG *ParseHttpsAccessLog(PKT *pkt);
 
-#endif	// TCPIP_INTERNAL_H
+#endif // TCPIP_INTERNAL_H

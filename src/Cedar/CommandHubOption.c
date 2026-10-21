@@ -18,21 +18,18 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ADMIN_OPTION t;
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -41,18 +38,14 @@ UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetHubAdminOptions(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		CT *ct = CtNewStandardEx();
 
-		for (UINT i = 0;i < t.NumItem;i++)
-		{
+		for (UINT i = 0; i < t.NumItem; i++) {
 			ADMIN_OPTION *e = &t.Items[i];
 			wchar_t tmp1[MAX_SIZE];
 			wchar_t tmp2[MAX_SIZE];
@@ -61,7 +54,6 @@ UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			UniToStru(tmp2, e->Value);
 
 			CtInsert(ct, tmp1, tmp2, GetHubAdminOptionHelpString(e->Name));
-				
 		}
 
 		CtFreeEx(ct, c, true);
@@ -74,26 +66,23 @@ UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ADMIN_OPTION t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_name"), CmdEvalNotEmpty, NULL},
-		{"VALUE", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_VALUE"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_name"), CmdEvalNotEmpty, NULL},
+	        {"VALUE", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_VALUE"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -102,40 +91,31 @@ UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetHubAdminOptions(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		bool b = false;
 
-		for (UINT i = 0;i < t.NumItem;i++)
-		{
-			if (StrCmpi(t.Items[i].Name, GetParamStr(o, "[name]")) == 0)
-			{
+		for (UINT i = 0; i < t.NumItem; i++) {
+			if (StrCmpi(t.Items[i].Name, GetParamStr(o, "[name]")) == 0) {
 				t.Items[i].Value = GetParamInt(o, "VALUE");
 				b = true;
 			}
 		}
 
-		if (b == false)
-		{
+		if (b == false) {
 			ret = ERR_OBJECT_NOT_FOUND;
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
 			FreeRpcAdminOption(&t);
 			return ret;
-		}
-		else
-		{
+		} else {
 			StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
 			ret = ScSetHubAdminOptions(ps->Rpc, &t);
 
-			if (ret != ERR_NO_ERROR)
-			{
+			if (ret != ERR_NO_ERROR) {
 				CmdPrintError(c, ret);
 				FreeParamValueList(o);
 				return ret;
@@ -150,21 +130,18 @@ UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ADMIN_OPTION t;
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -173,18 +150,14 @@ UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetHubExtOptions(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		CT *ct = CtNewStandardEx();
 
-		for (UINT i = 0;i < t.NumItem;i++)
-		{
+		for (UINT i = 0; i < t.NumItem; i++) {
 			ADMIN_OPTION *e = &t.Items[i];
 			wchar_t tmp1[MAX_SIZE];
 			wchar_t tmp2[MAX_SIZE];
@@ -193,7 +166,6 @@ UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			UniToStru(tmp2, e->Value);
 
 			CtInsert(ct, tmp1, tmp2, GetHubAdminOptionHelpString(e->Name));
-
 		}
 
 		CtFreeEx(ct, c, true);
@@ -206,26 +178,23 @@ UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsExtOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsExtOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ADMIN_OPTION t;
 	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_name"), CmdEvalNotEmpty, NULL},
-		{"VALUE", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_VALUE"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[name]", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_name"), CmdEvalNotEmpty, NULL},
+	        {"VALUE", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_VALUE"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -234,40 +203,31 @@ UINT PsExtOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetHubExtOptions(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		bool b = false;
 
-		for (UINT i = 0;i < t.NumItem;i++)
-		{
-			if (StrCmpi(t.Items[i].Name, GetParamStr(o, "[name]")) == 0)
-			{
+		for (UINT i = 0; i < t.NumItem; i++) {
+			if (StrCmpi(t.Items[i].Name, GetParamStr(o, "[name]")) == 0) {
 				t.Items[i].Value = GetParamInt(o, "VALUE");
 				b = true;
 			}
 		}
 
-		if (b == false)
-		{
+		if (b == false) {
 			ret = ERR_OBJECT_NOT_FOUND;
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
 			FreeRpcAdminOption(&t);
 			return ret;
-		}
-		else
-		{
+		} else {
 			StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
 			ret = ScSetHubExtOptions(ps->Rpc, &t);
 
-			if (ret != ERR_NO_ERROR)
-			{
+			if (ret != ERR_NO_ERROR) {
 				CmdPrintError(c, ret);
 				FreeParamValueList(o);
 				return ret;

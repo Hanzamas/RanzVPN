@@ -17,21 +17,18 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_AC_LIST t;
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -40,22 +37,18 @@ UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetAcList(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		CT *ct = CtNew();
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_1"), true);
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_2"), true);
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_4"), false);
 
-		for (UINT i = 0;i < LIST_NUM(t.o);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(t.o); i++) {
 			wchar_t tmp1[32], tmp3[MAX_SIZE], tmp4[32];
 			AC *ac = LIST_DATA(t.o, i);
 
@@ -81,25 +74,22 @@ UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_AC_LIST t;
 	PARAM args[] =
-	{
-		{"[id]", CmdPrompt, _UU("CMD_AcDel_Prompt_ID"), CmdEvalNotEmpty, NULL},
-	};
+	    {
+	        {"[id]", CmdPrompt, _UU("CMD_AcDel_Prompt_ID"), CmdEvalNotEmpty, NULL},
+	    };
 
-	if (ps->HubName == NULL)
-	{
+	if (ps->HubName == NULL) {
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -108,22 +98,17 @@ UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ret = ScGetAcList(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
-	}
-	else
-	{
+	} else {
 		bool b = false;
 
-		for (UINT i = 0;i < LIST_NUM(t.o);i++)
-		{
+		for (UINT i = 0; i < LIST_NUM(t.o); i++) {
 			AC *ac = LIST_DATA(t.o, i);
 
-			if (ac->Id == GetParamInt(o, "[id]"))
-			{
+			if (ac->Id == GetParamInt(o, "[id]")) {
 				Delete(t.o, ac);
 				Free(ac);
 				b = true;
@@ -131,17 +116,13 @@ UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			}
 		}
 
-		if (b == false)
-		{
+		if (b == false) {
 			ret = ERR_OBJECT_NOT_FOUND;
 			FreeRpcAcList(&t);
-		}
-		else
-		{
+		} else {
 			ret = ScSetAcList(ps->Rpc, &t);
 		}
-		if (ret != ERR_NO_ERROR)
-		{
+		if (ret != ERR_NO_ERROR) {
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
 			return ret;

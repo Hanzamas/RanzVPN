@@ -1,16 +1,16 @@
 // AdminInternal.h
 // Module-internal declarations of the Admin module: only its own files include this header
 
-#ifndef	ADMIN_INTERNAL_H
-#define	ADMIN_INTERNAL_H
+#ifndef ADMIN_INTERNAL_H
+#define ADMIN_INTERNAL_H
 
-#define	CHECK_RIGHT														\
-	if (a->ServerAdmin == false && (StrCmpi(a->HubName, t->HubName) != 0))	\
-		return ERR_NOT_ENOUGH_RIGHT;	\
-	if (IsEmptyStr(t->HubName))			\
+#define CHECK_RIGHT                                                        \
+	if (a->ServerAdmin == false && (StrCmpi(a->HubName, t->HubName) != 0)) \
+		return ERR_NOT_ENOUGH_RIGHT;                                       \
+	if (IsEmptyStr(t->HubName))                                            \
 		return ERR_INVALID_PARAMETER;
-#define	SERVER_ADMIN_ONLY												\
-	if (a->ServerAdmin == false)										\
+#define SERVER_ADMIN_ONLY        \
+	if (a->ServerAdmin == false) \
 		return ERR_NOT_ENOUGH_RIGHT;
 
 UINT ScGetBridgeSupport(RPC *r, RPC_BRIDGE_SUPPORT *t);
@@ -111,4 +111,4 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t);
 void HashAdminPassword(void *hash, char *password);
 HUB *AdminGetHub(ADMIN *a, char *hubname, char *denied_option, UINT *err);
 
-#endif	// ADMIN_INTERNAL_H
+#endif // ADMIN_INTERNAL_H

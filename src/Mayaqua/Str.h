@@ -1,15 +1,14 @@
 // Str.h
 // Header of Str.c
 
-#ifndef	STR_H
-#define	STR_H
+#ifndef STR_H
+#define STR_H
 
 #include "MayaType.h"
 
 #include <stdarg.h>
 
-struct TOKEN_LIST
-{
+struct TOKEN_LIST {
 	UINT NumTokens;
 	char **Token;
 };

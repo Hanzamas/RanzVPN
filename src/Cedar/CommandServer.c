@@ -20,25 +20,20 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode)
-{
+void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode) {
 	wchar_t tmp[MAX_SIZE];
 	char str[MAX_SIZE];
 	char vv[128];
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return;
 	}
 
-	if (server_mode == false)
-	{
+	if (server_mode == false) {
 		CtInsert(ct, _UU("CM_ST_ACCOUNT_NAME"), s->AccountName);
 
-		if (s->Connected == false)
-		{
+		if (s->Connected == false) {
 			wchar_t *st = _UU("CM_ST_CONNECTED_FALSE");
-			switch (s->SessionStatus)
-			{
+			switch (s->SessionStatus) {
 			case CLIENT_STATUS_CONNECTING:
 				st = _UU("CM_ST_CONNECTING");
 				break;
@@ -59,28 +54,21 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 				break;
 			}
 			CtInsert(ct, _UU("CM_ST_CONNECTED"), st);
-		}
-		else
-		{
+		} else {
 			CtInsert(ct, _UU("CM_ST_CONNECTED"), _UU("CM_ST_CONNECTED_TRUE"));
 		}
 	}
 
-	if (s->Connected)
-	{
-		if (s->VLanId == 0)
-		{
+	if (s->Connected) {
+		if (s->VLanId == 0) {
 			UniStrCpy(tmp, sizeof(tmp), _UU("CM_ST_NO_VLAN"));
-		}
-		else
-		{
+		} else {
 			UniToStru(tmp, s->VLanId);
 		}
 
 		CtInsert(ct, _UU("CM_ST_VLAN_ID"), tmp);
 
-		if (server_mode == false)
-		{
+		if (server_mode == false) {
 			StrToUni(tmp, sizeof(tmp), s->ServerName);
 			CtInsert(ct, _UU("CM_ST_SERVER_NAME"), tmp);
 
@@ -103,20 +91,17 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 	GetDateTimeStrEx64(tmp, sizeof(tmp), SystemToLocal64(s->FirstConnectionEstablisiedTime), NULL);
 	CtInsert(ct, _UU("CM_ST_FIRST_ESTAB_TIME"), s->FirstConnectionEstablisiedTime == 0 ? _UU("CM_ST_NONE") : tmp);
 
-	if (s->Connected)
-	{
+	if (s->Connected) {
 		GetDateTimeStrEx64(tmp, sizeof(tmp), SystemToLocal64(s->CurrentConnectionEstablishTime), NULL);
 		CtInsert(ct, _UU("CM_ST_CURR_ESTAB_TIME"), tmp);
 	}
 
-	if (server_mode == false)
-	{
+	if (server_mode == false) {
 		UniFormat(tmp, sizeof(tmp), _UU("CM_ST_NUM_STR"), s->NumConnectionsEstablished);
 		CtInsert(ct, _UU("CM_ST_NUM_ESTABLISHED"), tmp);
 	}
 
-	if (s->Connected)
-	{
+	if (s->Connected) {
 		CtInsert(ct, _UU("CM_ST_HALF_CONNECTION"), s->HalfConnection ? _UU("CM_ST_HALF_TRUE") : _UU("CM_ST_HALF_FALSE"));
 
 		CtInsert(ct, _UU("CM_ST_QOS"), s->QoS ? _UU("CM_ST_QOS_TRUE") : _UU("CM_ST_QOS_FALSE"));
@@ -124,8 +109,7 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 		UniFormat(tmp, sizeof(tmp), L"%u", s->NumTcpConnections);
 		CtInsert(ct, _UU("CM_ST_NUM_TCP"), tmp);
 
-		if (s->HalfConnection)
-		{
+		if (s->HalfConnection) {
 			UniFormat(tmp, sizeof(tmp), L"%u", s->NumTcpConnectionsUpload);
 			CtInsert(ct, _UU("CM_ST_NUM_TCP_UPLOAD"), tmp);
 			UniFormat(tmp, sizeof(tmp), L"%u", s->NumTcpConnectionsDownload);
@@ -135,53 +119,39 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 		UniFormat(tmp, sizeof(tmp), L"%u", s->MaxTcpConnections);
 		CtInsert(ct, _UU("CM_ST_MAX_TCP"), tmp);
 
-		if (s->UseEncrypt == false)
-		{
+		if (s->UseEncrypt == false) {
 			UniStrCpy(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_FALSE"));
-		}
-		else
-		{
-			if (StrLen(s->CipherName) != 0 && StrLen(s->ProtocolName) != 0)
-			{
+		} else {
+			if (StrLen(s->CipherName) != 0 && StrLen(s->ProtocolName) != 0) {
 				UniFormat(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_TRUE3"), s->ProtocolName, s->CipherName);
-			}
-			else if (StrLen(s->CipherName) != 0)
-			{
+			} else if (StrLen(s->CipherName) != 0) {
 				UniFormat(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_TRUE"), s->CipherName);
-			}
-			else
-			{
+			} else {
 				UniFormat(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_TRUE2"));
 			}
 		}
 		CtInsert(ct, _UU("CM_ST_USE_ENCRYPT"), tmp);
 
-		if (s->UseCompress)
-		{
+		if (s->UseCompress) {
 			UINT percent = 0;
-			if ((s->TotalRecvSize + s->TotalSendSize) > 0)
-			{
+			if ((s->TotalRecvSize + s->TotalSendSize) > 0) {
 				percent = (UINT)((UINT64)100 - (UINT64)(s->TotalRecvSizeReal + s->TotalSendSizeReal) * (UINT64)100 /
-					(s->TotalRecvSize + s->TotalSendSize));
+				                                   (s->TotalRecvSize + s->TotalSendSize));
 				percent = MAKESURE(percent, 0, 100);
 			}
 
 			UniFormat(tmp, sizeof(tmp), _UU("CM_ST_COMPRESS_TRUE"), percent);
-		}
-		else
-		{
+		} else {
 			UniStrCpy(tmp, sizeof(tmp), _UU("CM_ST_COMPRESS_FALSE"));
 		}
 		CtInsert(ct, _UU("CM_ST_USE_COMPRESS"), tmp);
 
-		if (IsEmptyStr(s->UnderlayProtocol) == false)
-		{
+		if (IsEmptyStr(s->UnderlayProtocol) == false) {
 			StrToUni(tmp, sizeof(tmp), s->UnderlayProtocol);
 			CtInsert(ct, _UU("CM_ST_UNDERLAY_PROTOCOL"), tmp);
 		}
 
-		if (IsEmptyStr(s->ProtocolDetails) == false)
-		{
+		if (IsEmptyStr(s->ProtocolDetails) == false) {
 			StrToUni(tmp, sizeof(tmp), s->ProtocolDetails);
 			CtInsert(ct, _UU("CM_ST_PROTOCOL_DETAILS"), tmp);
 		}
@@ -193,8 +163,7 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 		CtInsert(ct, _UU("CM_ST_SESSION_NAME"), tmp);
 
 		StrToUni(tmp, sizeof(tmp), s->ConnectionName);
-		if (UniStrCmpi(tmp, L"INITING") != 0)
-		{
+		if (UniStrCmpi(tmp, L"INITING") != 0) {
 			CtInsert(ct, _UU("CM_ST_CONNECTION_NAME"), tmp);
 		}
 
@@ -248,18 +217,16 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 	}
 }
 
-UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	RPC_SET_PASSWORD t;
 	PARAM args[] =
-	{
-		{"[password]", CmdPromptChoosePassword, NULL, NULL, NULL},
-	};
+	    {
+	        {"[password]", CmdPromptChoosePassword, NULL, NULL, NULL},
+	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -270,8 +237,7 @@ UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	UINT ret = ScSetServerPassword(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -282,21 +248,16 @@ UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-wchar_t *CmdPromptChoosePassword(CONSOLE *c, void *param)
-{
-	if (c == NULL)
-	{
+wchar_t *CmdPromptChoosePassword(CONSOLE *c, void *param) {
+	if (c == NULL) {
 		return NULL;
 	}
 
 	char *s = CmdPasswordPrompt(c);
 
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return NULL;
-	}
-	else
-	{
+	} else {
 		wchar_t *ret = CopyStrToUni(s);
 
 		Free(s);
@@ -305,11 +266,9 @@ wchar_t *CmdPromptChoosePassword(CONSOLE *c, void *param)
 	}
 }
 
-char *CmdPasswordPrompt(CONSOLE *c)
-{
+char *CmdPasswordPrompt(CONSOLE *c) {
 	char *pw1, *pw2;
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return NULL;
 	}
 
@@ -320,22 +279,19 @@ RETRY:
 
 
 	pw1 = c->ReadPassword(c, _UU("CMD_VPNCMD_PWPROMPT_1"));
-	if (pw1 == NULL)
-	{
+	if (pw1 == NULL) {
 		return NULL;
 	}
 
 	pw2 = c->ReadPassword(c, _UU("CMD_VPNCMD_PWPROMPT_2"));
-	if (pw2 == NULL)
-	{
+	if (pw2 == NULL) {
 		Free(pw1);
 		return NULL;
 	}
 
 	c->Write(c, L"");
 
-	if (StrCmp(pw1, pw2) != 0)
-	{
+	if (StrCmp(pw1, pw2) != 0) {
 		Free(pw1);
 		Free(pw2);
 		c->Write(c, _UU("CMD_VPNCMD_PWPROMPT_3"));
@@ -347,18 +303,16 @@ RETRY:
 	return pw2;
 }
 
-UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	RPC_LISTENER t;
 	PARAM args[] =
-	{
-		{"[port]", CmdPromptPort, _UU("CMD_ListenerDisable_PortPrompt"), CmdEvalPort, NULL},
-	};
+	    {
+	        {"[port]", CmdPromptPort, _UU("CMD_ListenerDisable_PortPrompt"), CmdEvalPort, NULL},
+	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -368,8 +322,7 @@ UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	UINT ret = ScEnableListener(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -380,18 +333,16 @@ UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	RPC_LISTENER t;
 	PARAM args[] =
-	{
-		{"[port]", CmdPromptPort, _UU("CMD_ListenerEnable_PortPrompt"), CmdEvalPort, NULL},
-	};
+	    {
+	        {"[port]", CmdPromptPort, _UU("CMD_ListenerEnable_PortPrompt"), CmdEvalPort, NULL},
+	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -401,8 +352,7 @@ UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	UINT ret = ScEnableListener(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -413,14 +363,12 @@ UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	RPC_LISTENER_LIST t;
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -428,8 +376,7 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	UINT ret = ScEnumListener(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -440,17 +387,13 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	CtInsertColumn(ct, _UU("CM_LISTENER_COLUMN_1"), false);
 	CtInsertColumn(ct, _UU("CM_LISTENER_COLUMN_2"), false);
 
-	for (UINT i = 0;i < t.NumPort;i++)
-	{
+	for (UINT i = 0; i < t.NumPort; i++) {
 		wchar_t *status = _UU("CM_LISTENER_OFFLINE");
 		wchar_t tmp[128];
 
-		if (t.Errors[i])
-		{
+		if (t.Errors[i]) {
 			status = _UU("CM_LISTENER_ERROR");
-		}
-		else if (t.Enables[i])
-		{
+		} else if (t.Enables[i]) {
 			status = _UU("CM_LISTENER_ONLINE");
 		}
 
@@ -468,18 +411,16 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	RPC_LISTENER t;
 	PARAM args[] =
-	{
-		{"[port]", CmdPromptPort, _UU("CMD_ListenerDelete_PortPrompt"), CmdEvalPort, NULL},
-	};
+	    {
+	        {"[port]", CmdPromptPort, _UU("CMD_ListenerDelete_PortPrompt"), CmdEvalPort, NULL},
+	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -489,8 +430,7 @@ UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	UINT ret = ScDeleteListener(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -501,22 +441,19 @@ UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	RPC_SERVER_INFO t;
 	wchar_t tmp[MAX_SIZE];
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	Zero(&t, sizeof(t));
 	UINT ret = ScGetServerInfo(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -545,8 +482,7 @@ UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrToUni(tmp, sizeof(tmp), t.OsInfo.OsProductName);
 	CtInsert(ct, _UU("SM_OS_PRODUCT_NAME"), tmp);
 
-	if (t.OsInfo.OsServicePack != 0)
-	{
+	if (t.OsInfo.OsServicePack != 0) {
 		UniFormat(tmp, sizeof(tmp), _UU("SM_OS_SP_TAG"), t.OsInfo.OsServicePack);
 		CtInsert(ct, _UU("SM_OS_SERVICE_PACK"), tmp);
 	}
@@ -572,23 +508,20 @@ UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	RPC_SERVER_STATUS t;
 	wchar_t tmp[MAX_PATH];
 	char tmp2[MAX_PATH];
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	Zero(&t, sizeof(t));
 	UINT ret = ScGetServerStatus(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -638,8 +571,7 @@ UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	UniFormat(tmp, sizeof(tmp), L"%I64u", t.CurrentTick);
 	CtInsert(ct, _UU("SM_ST_CURRENT_TICK"), tmp);
 
-	if (t.MemInfo.TotalMemory != 0)
-	{
+	if (t.MemInfo.TotalMemory != 0) {
 		char vv[128];
 
 		ToStr3(vv, sizeof(vv), t.MemInfo.TotalMemory);
@@ -674,12 +606,10 @@ UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-void CmdInsertTrafficInfo(CT *ct, TRAFFIC *t)
-{
+void CmdInsertTrafficInfo(CT *ct, TRAFFIC *t) {
 	wchar_t tmp[MAX_SIZE];
 	char vv[128];
-	if (ct == NULL || t == NULL)
-	{
+	if (ct == NULL || t == NULL) {
 		return;
 	}
 
@@ -716,33 +646,26 @@ void CmdInsertTrafficInfo(CT *ct, TRAFFIC *t)
 	CtInsert(ct, _UU("SM_ST_RECV_BCAST_SIZE"), tmp);
 }
 
-wchar_t *CmdPromptPort(CONSOLE *c, void *param)
-{
+wchar_t *CmdPromptPort(CONSOLE *c, void *param) {
 	wchar_t *prompt_str;
 
-	if (param != NULL)
-	{
+	if (param != NULL) {
 		prompt_str = (wchar_t *)param;
-	}
-	else
-	{
+	} else {
 		prompt_str = _UU("CMD_PROMPT_PORT");
 	}
 
 	return c->ReadLine(c, prompt_str, true);
 }
 
-bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param)
-{
-	if (c == NULL || str == NULL)
-	{
+bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param) {
+	if (c == NULL || str == NULL) {
 		return false;
 	}
 
 	UINT i = UniToInt(str);
 
-	if (i >= 1 && i <= 65535)
-	{
+	if (i >= 1 && i <= 65535) {
 		return true;
 	}
 
@@ -751,18 +674,16 @@ bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param)
 	return false;
 }
 
-UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PS *ps = (PS *)param;
 	RPC_LISTENER t;
 	PARAM args[] =
-	{
-		{"[port]", CmdPromptPort, _UU("CMD_ListenerCreate_PortPrompt"), CmdEvalPort, NULL},
-	};
+	    {
+	        {"[port]", CmdPromptPort, _UU("CMD_ListenerCreate_PortPrompt"), CmdEvalPort, NULL},
+	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -772,8 +693,7 @@ UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	UINT ret = ScCreateListener(ps->Rpc, &t);
 
-	if (ret != ERR_NO_ERROR)
-	{
+	if (ret != ERR_NO_ERROR) {
 		CmdPrintError(c, ret);
 		FreeParamValueList(o);
 		return ret;
@@ -784,11 +704,9 @@ UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
+UINT PsAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
@@ -797,8 +715,7 @@ UINT PsAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	CmdPrintAbout(c);
 	c->Write(c, L"\r\n");
 
-	if (b != NULL)
-	{
+	if (b != NULL) {
 		SeekBufToEnd(b);
 		WriteBufChar(b, 13);
 		WriteBufChar(b, 10);

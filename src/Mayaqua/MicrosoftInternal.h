@@ -1,8 +1,8 @@
 // MicrosoftInternal.h
 // Module-internal declarations of the Microsoft module: only its own files include this header
 
-#ifndef	MICROSOFT_INTERNAL_H
-#define	MICROSOFT_INTERNAL_H
+#ifndef MICROSOFT_INTERNAL_H
+#define MICROSOFT_INTERNAL_H
 
 bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit);
@@ -25,4 +25,4 @@ MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a);
 void MsRegistWindowsFirewallEx(char *title, char *exe);
 void MsGetComputerName(char *name, UINT size);
 
-#endif	// MICROSOFT_INTERNAL_H
+#endif // MICROSOFT_INTERNAL_H

@@ -11,12 +11,10 @@
 #include "Tracking.h"
 #include "Win32.h"
 
-static void CheckDeadLockThread(THREAD *t, void *param)
-{
+static void CheckDeadLockThread(THREAD *t, void *param) {
 	DEADCHECK *c = (DEADCHECK *)param;
 
-	if (t == NULL || c == NULL)
-	{
+	if (t == NULL || c == NULL) {
 		return;
 	}
 
@@ -27,17 +25,14 @@ static void CheckDeadLockThread(THREAD *t, void *param)
 	c->Unlocked = true;
 }
 
-void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
-{
+void CheckDeadLock(LOCK *lock, UINT timeout, char *name) {
 	DEADCHECK c;
 	char msg[MAX_PATH];
 
-	if (lock == NULL)
-	{
+	if (lock == NULL) {
 		return;
 	}
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		name = "Unknown";
 	}
 
@@ -49,14 +44,10 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 
 	THREAD *t = NewThread(CheckDeadLockThread, &c);
 	WaitThreadInit(t);
-	if (WaitThread(t, timeout) == false)
-	{
-		if (c.Unlocked == false)
-		{
+	if (WaitThread(t, timeout) == false) {
+		if (c.Unlocked == false) {
 			AbortExitEx(msg);
-		}
-		else
-		{
+		} else {
 			WaitThread(t, INFINITE);
 		}
 	}
@@ -65,13 +56,11 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 }
 
 // Create a raw lock. One heap block from the raw OS allocator
-LOCK *NewRawLock()
-{
+LOCK *NewRawLock() {
 	// Memory allocation
 	LOCK *lock = Win32MemoryAlloc(sizeof(LOCK));
 
-	if (lock == NULL)
-	{
+	if (lock == NULL) {
 		return NULL;
 	}
 
@@ -82,10 +71,8 @@ LOCK *NewRawLock()
 	return lock;
 }
 
-bool RawLock(LOCK *lock)
-{
-	if (lock->Ready == false)
-	{
+bool RawLock(LOCK *lock) {
+	if (lock->Ready == false) {
 		// State is invalid
 		return false;
 	}
@@ -96,10 +83,8 @@ bool RawLock(LOCK *lock)
 	return true;
 }
 
-void RawUnlock(LOCK *lock)
-{
-	if (lock->Ready == false)
-	{
+void RawUnlock(LOCK *lock) {
+	if (lock->Ready == false) {
 		// State is invalid
 		return;
 	}
@@ -108,8 +93,7 @@ void RawUnlock(LOCK *lock)
 	LeaveCriticalSection(&lock->CriticalSection);
 }
 
-void DeleteRawLock(LOCK *lock)
-{
+void DeleteRawLock(LOCK *lock) {
 	// Reset the Ready flag safely
 	EnterCriticalSection(&lock->CriticalSection);
 	lock->Ready = false;
@@ -122,20 +106,16 @@ void DeleteRawLock(LOCK *lock)
 	Win32MemoryFree(lock);
 }
 
-static LOCK *NewLockMain()
-{
+static LOCK *NewLockMain() {
 	LOCK *lock;
 	UINT retry = 0;
 
-	while (true)
-	{
-		if ((retry++) > OBJECT_ALLOC__MAX_RETRY)
-		{
+	while (true) {
+		if ((retry++) > OBJECT_ALLOC__MAX_RETRY) {
 			AbortExitEx("error: NewRawLock() failed.\n\n");
 		}
 		lock = NewRawLock();
-		if (lock != NULL)
-		{
+		if (lock != NULL) {
 			break;
 		}
 		SleepThread(OBJECT_ALLOC_FAIL_SLEEP_TIME);
@@ -143,8 +123,7 @@ static LOCK *NewLockMain()
 
 	return lock;
 }
-LOCK *NewLock()
-{
+LOCK *NewLock() {
 	LOCK *lock = NewLockMain();
 
 	KS_INC(KS_NEWLOCK_COUNT);
@@ -153,10 +132,8 @@ LOCK *NewLock()
 	return lock;
 }
 
-void DeleteLock(LOCK *lock)
-{
-	if (lock == NULL)
-	{
+void DeleteLock(LOCK *lock) {
+	if (lock == NULL) {
 		return;
 	}
 
@@ -166,10 +143,8 @@ void DeleteLock(LOCK *lock)
 	DeleteRawLock(lock);
 }
 
-bool LockInner(LOCK *lock)
-{
-	if (lock == NULL)
-	{
+bool LockInner(LOCK *lock) {
+	if (lock == NULL) {
 		return false;
 	}
 
@@ -179,10 +154,8 @@ bool LockInner(LOCK *lock)
 	return RawLock(lock);
 }
 
-void UnlockInner(LOCK *lock)
-{
-	if (lock == NULL)
-	{
+void UnlockInner(LOCK *lock) {
+	if (lock == NULL) {
 		return;
 	}
 
@@ -192,8 +165,7 @@ void UnlockInner(LOCK *lock)
 	RawUnlock(lock);
 }
 
-COUNTER *NewCounter()
-{
+COUNTER *NewCounter() {
 	COUNTER *c = Malloc(sizeof(COUNTER));
 
 	c->c = 0;
@@ -203,10 +175,8 @@ COUNTER *NewCounter()
 	return c;
 }
 
-void DeleteCounter(COUNTER *c)
-{
-	if (c == NULL)
-	{
+void DeleteCounter(COUNTER *c) {
+	if (c == NULL) {
 		return;
 	}
 
@@ -217,10 +187,8 @@ void DeleteCounter(COUNTER *c)
 }
 
 // Increment; returns the new value
-UINT Inc(COUNTER *c)
-{
-	if (c == NULL)
-	{
+UINT Inc(COUNTER *c) {
+	if (c == NULL) {
 		return 0;
 	}
 
@@ -233,27 +201,22 @@ UINT Inc(COUNTER *c)
 }
 
 // Decrement; returns the new value. A COUNTER at 0 stays at 0 and returns 0.
-UINT Dec(COUNTER *c)
-{
+UINT Dec(COUNTER *c) {
 	UINT old_value, ret;
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return 0;
 	}
 
 	// Compare-exchange loop, so that the floor at 0 holds under contention
-	while (true)
-	{
+	while (true) {
 		old_value = c->c;
-		if (old_value == 0)
-		{
+		if (old_value == 0) {
 			ret = 0;
 			break;
 		}
 
 		ret = old_value - 1;
-		if ((UINT)InterlockedCompareExchange((volatile LONG *)&c->c, (LONG)ret, (LONG)old_value) == old_value)
-		{
+		if ((UINT)InterlockedCompareExchange((volatile LONG *)&c->c, (LONG)ret, (LONG)old_value) == old_value) {
 			break;
 		}
 	}
@@ -264,10 +227,8 @@ UINT Dec(COUNTER *c)
 	return ret;
 }
 
-UINT Release(REF *ref)
-{
-	if (ref == NULL)
-	{
+UINT Release(REF *ref) {
+	if (ref == NULL) {
 		return 0;
 	}
 
@@ -275,8 +236,7 @@ UINT Release(REF *ref)
 	KS_DEC(KS_CURRENT_REFED_COUNT);
 
 	UINT c = Dec(&ref->c);
-	if (c == 0)
-	{
+	if (c == 0) {
 		KS_DEC(KS_CURRENT_REF_COUNT);
 		KS_INC(KS_FREEREF_COUNT);
 
@@ -285,10 +245,8 @@ UINT Release(REF *ref)
 	return c;
 }
 
-UINT AddRef(REF *ref)
-{
-	if (ref == NULL)
-	{
+UINT AddRef(REF *ref) {
+	if (ref == NULL) {
 		return 0;
 	}
 
@@ -300,8 +258,7 @@ UINT AddRef(REF *ref)
 	return c;
 }
 
-REF *NewRef()
-{
+REF *NewRef() {
 	// Memory allocation: the counter is embedded, so this is the only heap block
 	REF *ref = Malloc(sizeof(REF));
 
@@ -318,8 +275,7 @@ REF *NewRef()
 	return ref;
 }
 
-EVENT *NewEvent()
-{
+EVENT *NewEvent() {
 	EVENT *e = Malloc(sizeof(EVENT));
 
 	e->ref = NewRef();
@@ -332,28 +288,22 @@ EVENT *NewEvent()
 	return e;
 }
 
-void ReleaseEvent(EVENT *e)
-{
-	if (e == NULL)
-	{
+void ReleaseEvent(EVENT *e) {
+	if (e == NULL) {
 		return;
 	}
 
-	if (Release(e->ref) == 0)
-	{
+	if (Release(e->ref) == 0) {
 		CleanupEvent(e);
 	}
 }
 
-void CleanupEvent(EVENT *e)
-{
-	if (e == NULL)
-	{
+void CleanupEvent(EVENT *e) {
+	if (e == NULL) {
 		return;
 	}
 
-	if (e->pData != NULL)
-	{
+	if (e->pData != NULL) {
 		CloseHandle((HANDLE)e->pData);
 	}
 
@@ -362,17 +312,14 @@ void CleanupEvent(EVENT *e)
 	KS_INC(KS_FREEEVENT_COUNT);
 }
 
-bool Wait(EVENT *e, UINT timeout)
-{
-	if (e == NULL)
-	{
+bool Wait(EVENT *e, UINT timeout) {
+	if (e == NULL) {
 		return false;
 	}
 
 	KS_INC(KS_WAIT_COUNT);
 
-	if (e->pData == NULL)
-	{
+	if (e->pData == NULL) {
 		return false;
 	}
 
@@ -380,58 +327,43 @@ bool Wait(EVENT *e, UINT timeout)
 	return (WaitForSingleObject((HANDLE)e->pData, timeout) != WAIT_TIMEOUT);
 }
 
-bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
-{
+bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel) {
 	bool dummy_bool = false;
 	UINT64 giveup;
-	if (cancel == NULL)
-	{
+	if (cancel == NULL) {
 		cancel = &dummy_bool;
 	}
 
 	UINT64 start = Tick64();
 
-	if (timeout == INFINITE || timeout == 0x7FFFFFFF)
-	{
+	if (timeout == INFINITE || timeout == 0x7FFFFFFF) {
 		giveup = 0;
-	}
-	else
-	{
+	} else {
 		giveup = start + (UINT64)timeout;
 	}
 
-	while (true)
-	{
+	while (true) {
 		UINT64 now = Tick64();
 		UINT interval_to_giveup = (UINT)(giveup - now);
-		if (giveup == 0)
-		{
+		if (giveup == 0) {
 			interval_to_giveup = INFINITE;
-		}
-		else
-		{
-			if (now >= giveup)
-			{
+		} else {
+			if (now >= giveup) {
 				return false;
 			}
 		}
 
 		interval_to_giveup = MIN(interval_to_giveup, 25);
 
-		if (FlagRead(cancel))
-		{
+		if (FlagRead(cancel)) {
 			return false;
 		}
 
-		if (e != NULL)
-		{
-			if (Wait(e, interval_to_giveup))
-			{
+		if (e != NULL) {
+			if (Wait(e, interval_to_giveup)) {
 				return true;
 			}
-		}
-		else
-		{
+		} else {
 			SleepThread(interval_to_giveup);
 		}
 	}

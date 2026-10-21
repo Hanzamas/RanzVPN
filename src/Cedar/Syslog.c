@@ -13,20 +13,16 @@
 #include "Mayaqua/Str.h"
 
 // Send one syslog datagram to the current address (g->lock held)
-static void SendSysLogLocked(SLOG *g, const UCHAR *buf, UINT size)
-{
-	if (g->DestPort != 0 && IsZeroIP(&g->DestIp) == false)
-	{
+static void SendSysLogLocked(SLOG *g, const UCHAR *buf, UINT size) {
+	if (g->DestPort != 0 && IsZeroIP(&g->DestIp) == false) {
 		SendTo(g->Udp, &g->DestIp, g->DestPort, buf, size);
 	}
 }
 
-void SendSysLog(SLOG *g, wchar_t *str)
-{
+void SendSysLog(SLOG *g, wchar_t *str) {
 	char hostname[MAX_HOST_NAME_LEN + 1];
 	bool poll = false;
-	if (g == NULL || str == NULL)
-	{
+	if (g == NULL || str == NULL) {
 		return;
 	}
 
@@ -35,29 +31,24 @@ void SendSysLog(SLOG *g, wchar_t *str)
 	UniToUtf8(buf, buf_size, str);
 	LogMapControlChars(buf, buf_size);
 
-	if (buf_size >= 1024)
-	{
+	if (buf_size >= 1024) {
 		buf_size = 1023;
 	}
 
 	Lock(g->lock);
 	{
-		if (Tick64() >= g->NextPollIp)
-		{
+		if (Tick64() >= g->NextPollIp) {
 			// This sender resolves the host again; the others use the current address meanwhile
 			g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL_NG;
 			StrCpy(hostname, sizeof(hostname), g->HostName);
 			poll = true;
-		}
-		else
-		{
+		} else {
 			SendSysLogLocked(g, buf, buf_size);
 		}
 	}
 	Unlock(g->lock);
 
-	if (poll)
-	{
+	if (poll) {
 		// The resolve can take seconds: it runs outside the lock, which every logging thread takes
 		IP ip;
 		bool resolved = GetIP(&ip, hostname);
@@ -65,15 +56,11 @@ void SendSysLog(SLOG *g, wchar_t *str)
 		Lock(g->lock);
 		{
 			// A SetSysLog with another host meanwhile has resolved that host already
-			if (StrCmp(g->HostName, hostname) == 0)
-			{
-				if (resolved)
-				{
+			if (StrCmp(g->HostName, hostname) == 0) {
+				if (resolved) {
 					g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL;
 					Copy(&g->DestIp, &ip, sizeof(IP));
-				}
-				else
-				{
+				} else {
 					g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL_NG;
 				}
 			}
@@ -86,10 +73,8 @@ void SendSysLog(SLOG *g, wchar_t *str)
 	Free(buf);
 }
 
-void FreeSysLog(SLOG *g)
-{
-	if (g == NULL)
-	{
+void FreeSysLog(SLOG *g) {
+	if (g == NULL) {
 		return;
 	}
 
@@ -98,20 +83,16 @@ void FreeSysLog(SLOG *g)
 	Free(g);
 }
 
-void SetSysLog(SLOG *g, char *hostname, UINT port)
-{
+void SetSysLog(SLOG *g, char *hostname, UINT port) {
 	IP ip;
-	if (g == NULL)
-	{
+	if (g == NULL) {
 		return;
 	}
-	if (port == 0)
-	{
+	if (port == 0) {
 		port = SYSLOG_PORT;
 	}
 
-	if (hostname == NULL)
-	{
+	if (hostname == NULL) {
 		hostname = "";
 	}
 
@@ -128,8 +109,7 @@ void SetSysLog(SLOG *g, char *hostname, UINT port)
 	Unlock(g->lock);
 }
 
-SLOG *NewSysLog(char *hostname, UINT port, IP *ip)
-{
+SLOG *NewSysLog(char *hostname, UINT port, IP *ip) {
 	SLOG *g = ZeroMalloc(sizeof(SLOG));
 
 	g->lock = NewLock();

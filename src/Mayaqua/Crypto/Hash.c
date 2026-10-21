@@ -14,74 +14,60 @@ static void Internal_Sha0(unsigned char *dest, const unsigned char *src, const U
 
 // Hash with a CNG provider. digest_size is the digest size of the algorithm; the source may be the
 // destination. Should CNG fail, the digest is all zero.
-static void CngHash(const BCRYPT_ALG_HANDLE *alg, void *dst, UINT digest_size, void *src, UINT size)
-{
+static void CngHash(const BCRYPT_ALG_HANDLE *alg, void *dst, UINT digest_size, void *src, UINT size) {
 	BCRYPT_HASH_HANDLE h = NULL;
 	bool ok = false;
 
 	CngInit();
 
-	if (*alg != NULL && CNG_SUCCESS(BCryptCreateHash(*alg, &h, NULL, 0, NULL, 0, 0)))
-	{
+	if (*alg != NULL && CNG_SUCCESS(BCryptCreateHash(*alg, &h, NULL, 0, NULL, 0, 0))) {
 		if ((size == 0 || CNG_SUCCESS(BCryptHashData(h, (PUCHAR)src, size, 0))) &&
-			CNG_SUCCESS(BCryptFinishHash(h, (PUCHAR)dst, digest_size, 0)))
-		{
+		    CNG_SUCCESS(BCryptFinishHash(h, (PUCHAR)dst, digest_size, 0))) {
 			ok = true;
 		}
 
 		BCryptDestroyHash(h);
 	}
 
-	if (ok == false)
-	{
+	if (ok == false) {
 		Zero(dst, digest_size);
 	}
 }
 
-void HashMd4(void *dst, void *src, UINT size)
-{
-	if (dst == NULL || (src == NULL && size != 0))
-	{
+void HashMd4(void *dst, void *src, UINT size) {
+	if (dst == NULL || (src == NULL && size != 0)) {
 		return;
 	}
 
 	CngHash(&cng_md4, dst, MD4_SIZE, src, size);
 }
 
-void Md5(void *dst, void *src, UINT size)
-{
-	if (dst == NULL || (src == NULL && size != 0))
-	{
+void Md5(void *dst, void *src, UINT size) {
+	if (dst == NULL || (src == NULL && size != 0)) {
 		return;
 	}
 
 	CngHash(&cng_md5, dst, MD5_SIZE, src, size);
 }
 
-void Sha0(void *dst, void *src, UINT size)
-{
-	if (dst == NULL || (src == NULL && size != 0))
-	{
+void Sha0(void *dst, void *src, UINT size) {
+	if (dst == NULL || (src == NULL && size != 0)) {
 		return;
 	}
 
 	Internal_Sha0(dst, src, size);
 }
 
-void Sha1(void *dst, void *src, UINT size)
-{
-	if (dst == NULL || (src == NULL && size != 0))
-	{
+void Sha1(void *dst, void *src, UINT size) {
+	if (dst == NULL || (src == NULL && size != 0)) {
 		return;
 	}
 
 	CngHash(&cng_sha1, dst, SHA1_SIZE, src, size);
 }
 
-void Sha2_256(void *dst, void *src, UINT size)
-{
-	if (dst == NULL || (src == NULL && size != 0))
-	{
+void Sha2_256(void *dst, void *src, UINT size) {
+	if (dst == NULL || (src == NULL && size != 0)) {
 		return;
 	}
 
@@ -131,38 +117,38 @@ typedef struct MY_SHA0_CTX {
 
 #define MY_SHA0_DIGEST_SIZE 20
 
-static void MY_SHA0_Transform(MY_SHA0_CTX* ctx) {
+static void MY_SHA0_Transform(MY_SHA0_CTX *ctx) {
 	UINT W[80];
-	UCHAR* p = ctx->buf;
+	UCHAR *p = ctx->buf;
 	int t;
-	for(t = 0; t < 16; ++t) {
-		UINT tmp =  (UINT)*p++ << 24;
+	for (t = 0; t < 16; ++t) {
+		UINT tmp = (UINT)*p++ << 24;
 		tmp |= *p++ << 16;
 		tmp |= *p++ << 8;
 		tmp |= *p++;
 		W[t] = tmp;
 	}
-	for(; t < 80; t++) {
-		W[t] = (1,W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
+	for (; t < 80; t++) {
+		W[t] = (1, W[t - 3] ^ W[t - 8] ^ W[t - 14] ^ W[t - 16]);
 	}
 	UINT A = ctx->state[0];
 	UINT B = ctx->state[1];
 	UINT C = ctx->state[2];
 	UINT D = ctx->state[3];
 	UINT E = ctx->state[4];
-	for(t = 0; t < 80; t++) {
-		UINT tmp = rol(5,A) + E + W[t];
+	for (t = 0; t < 80; t++) {
+		UINT tmp = rol(5, A) + E + W[t];
 		if (t < 20)
-			tmp += (D^(B&(C^D))) + 0x5A827999;
-		else if ( t < 40)
-			tmp += (B^C^D) + 0x6ED9EBA1;
-		else if ( t < 60)
-			tmp += ((B&C)|(D&(B|C))) + 0x8F1BBCDC;
+			tmp += (D ^ (B & (C ^ D))) + 0x5A827999;
+		else if (t < 40)
+			tmp += (B ^ C ^ D) + 0x6ED9EBA1;
+		else if (t < 60)
+			tmp += ((B & C) | (D & (B | C))) + 0x8F1BBCDC;
 		else
-			tmp += (B^C^D) + 0xCA62C1D6;
+			tmp += (B ^ C ^ D) + 0xCA62C1D6;
 		E = D;
 		D = C;
-		C = rol(30,B);
+		C = rol(30, B);
 		B = A;
 		A = tmp;
 	}
@@ -172,7 +158,7 @@ static void MY_SHA0_Transform(MY_SHA0_CTX* ctx) {
 	ctx->state[3] += D;
 	ctx->state[4] += E;
 }
-static void MY_SHA0_init(MY_SHA0_CTX* ctx) {
+static void MY_SHA0_init(MY_SHA0_CTX *ctx) {
 	ctx->state[0] = 0x67452301;
 	ctx->state[1] = 0xEFCDAB89;
 	ctx->state[2] = 0x98BADCFE;
@@ -180,9 +166,9 @@ static void MY_SHA0_init(MY_SHA0_CTX* ctx) {
 	ctx->state[4] = 0xC3D2E1F0;
 	ctx->count = 0;
 }
-static void MY_SHA0_update(MY_SHA0_CTX* ctx, const void* data, int len) {
-	int i = (int) (ctx->count & 63);
-	const UCHAR* p = (const UCHAR*)data;
+static void MY_SHA0_update(MY_SHA0_CTX *ctx, const void *data, int len) {
+	int i = (int)(ctx->count & 63);
+	const UCHAR *p = (const UCHAR *)data;
 	ctx->count += len;
 	while (len--) {
 		ctx->buf[i++] = *p++;
@@ -192,15 +178,15 @@ static void MY_SHA0_update(MY_SHA0_CTX* ctx, const void* data, int len) {
 		}
 	}
 }
-static const UCHAR* MY_SHA0_final(MY_SHA0_CTX* ctx) {
+static const UCHAR *MY_SHA0_final(MY_SHA0_CTX *ctx) {
 	UCHAR *p = ctx->buf;
 	UINT64 cnt = ctx->count * 8;
-	MY_SHA0_update(ctx, (UCHAR*)"\x80", 1);
+	MY_SHA0_update(ctx, (UCHAR *)"\x80", 1);
 	while ((ctx->count & 63) != 56) {
-		MY_SHA0_update(ctx, (UCHAR*)"\0", 1);
+		MY_SHA0_update(ctx, (UCHAR *)"\0", 1);
 	}
 	for (int i = 0; i < 8; ++i) {
-		UCHAR tmp = (UCHAR) (cnt >> ((7 - i) * 8));
+		UCHAR tmp = (UCHAR)(cnt >> ((7 - i) * 8));
 		MY_SHA0_update(ctx, &tmp, 1);
 	}
 	for (int i = 0; i < 5; i++) {
@@ -212,14 +198,13 @@ static const UCHAR* MY_SHA0_final(MY_SHA0_CTX* ctx) {
 	}
 	return ctx->buf;
 }
-static const UCHAR* MY_SHA0_hash(const void* data, int len, UCHAR* digest) {
+static const UCHAR *MY_SHA0_hash(const void *data, int len, UCHAR *digest) {
 	MY_SHA0_CTX ctx;
 	MY_SHA0_init(&ctx);
 	MY_SHA0_update(&ctx, data, len);
 	memcpy(digest, MY_SHA0_final(&ctx), MY_SHA0_DIGEST_SIZE);
 	return digest;
 }
-static void Internal_Sha0(unsigned char *dest, const unsigned char *src, const UINT size)
-{
+static void Internal_Sha0(unsigned char *dest, const unsigned char *src, const UINT size) {
 	MY_SHA0_hash(src, (int)size, dest);
 }

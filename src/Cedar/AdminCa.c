@@ -16,22 +16,19 @@
 #include "Mayaqua/Str.h"
 #include "AdminInternal.h"
 
-UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
-{
+UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t) {
 	SERVER *s = a->Server;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	LockList(h->HubDb->RootCertList);
 	{
-		if (IsInListKey(h->HubDb->RootCertList, t->Key))
-		{
+		if (IsInListKey(h->HubDb->RootCertList, t->Key)) {
 			X *x = ListKeyToPointer(h->HubDb->RootCertList, t->Key);
 			Delete(h->HubDb->RootCertList, x);
 			FreeX(x);
@@ -39,9 +36,7 @@ UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 			ALog(a, h, "LA_DELETE_CA");
 
 			IncrementServerConfigRevision(s);
-		}
-		else
-		{
+		} else {
 			ret = ERR_OBJECT_NOT_FOUND;
 		}
 	}
@@ -52,8 +47,7 @@ UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 	return ret;
 }
 
-UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
-{
+UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t) {
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
@@ -67,21 +61,17 @@ UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	LockList(h->HubDb->RootCertList);
 	{
-		if (IsInListKey(h->HubDb->RootCertList, key))
-		{
+		if (IsInListKey(h->HubDb->RootCertList, key)) {
 			X *x = ListKeyToPointer(h->HubDb->RootCertList, key);
 
 			t->Cert = CloneX(x);
-		}
-		else
-		{
+		} else {
 			ret = ERR_OBJECT_NOT_FOUND;
 		}
 	}
@@ -92,8 +82,7 @@ UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 	return ret;
 }
 
-UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
-{
+UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t) {
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -104,8 +93,7 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
@@ -114,8 +102,7 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 		t->NumCa = LIST_NUM(h->HubDb->RootCertList);
 		t->Ca = ZeroMalloc(sizeof(RPC_HUB_ENUM_CA_ITEM) * t->NumCa);
 
-		for (UINT i = 0;i < t->NumCa;i++)
-		{
+		for (UINT i = 0; i < t->NumCa; i++) {
 			RPC_HUB_ENUM_CA_ITEM *e = &t->Ca[i];
 			X *x = LIST_DATA(h->HubDb->RootCertList, i);
 
@@ -132,26 +119,22 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
-{
+UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	UINT err;
 
-	if (t->Cert == NULL)
-	{
+	if (t->Cert == NULL) {
 		return ERR_INVALID_PARAMETER;
 	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return err;
 	}
 
 	// The hub ignores a certificate it already trusts and one over MAX_HUB_CERTS; the call still succeeds
-	if (AddRootCert(h, t->Cert))
-	{
+	if (AddRootCert(h, t->Cert)) {
 		ALog(a, h, "LA_ADD_CA");
 
 		IncrementServerConfigRevision(s);
