@@ -3,13 +3,18 @@
 // updates it receives to the state it holds and acknowledges each generation. It is the test
 // seam of every controller ticket: tests apply intent through the API and assert the control
 // messages each simulated node receives.
+//
+// Against a controller cluster (SDN-17), Serve keeps the node on a stream as a node does: it
+// goes from member to member until one leads, and keeps its state while no member is reachable.
 package nodesim
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
+	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
@@ -41,29 +46,93 @@ func (e *RefusedError) Error() string {
 	return fmt.Sprintf("refused by the controller: %s: %s", e.Refuse.GetReason(), e.Refuse.GetMessage())
 }
 
+// retryPause is the pause of Serve before the next stream, unless a standby named the leader.
+const retryPause = 200 * time.Millisecond
+
+// Endpoint is a controller that a node can open its stream to.
+type Endpoint struct {
+	Address string // host:port of the controller's port
+	Key     []byte // the controller's static public key
+}
+
 // Node is one simulated node. It keeps its state and its generation across streams, like a
 // node that keeps forwarding on its last applied generation while no controller is reachable.
 type Node struct {
 	Key           keys.Static // the node's static key
 	Controller    string      // host:port of the controller's port
 	ControllerKey []byte      // the controller's static public key
-	// Version is the schema version of the Hello, SCHEMA_VERSION_1 when it is unspecified.
+	// Controllers are the members of a controller cluster that Serve tries, after the ones
+	// the cluster named in its last Controllers message and before Controller.
+	Controllers []Endpoint
+	// Version is the schema version of the Hello, SCHEMA_VERSION_1 when it is unspecified. It
+	// may change between two streams only, as a node that was upgraded.
 	Version controlpb.SchemaVersion
 	// Updates receives every update the node applied, after the node sent its Ack. When it is
 	// nil, nothing is delivered.
 	Updates chan *controlpb.Update
 
-	mu     sync.Mutex
-	state  desired.State
-	gen    uint64
-	frames []Frame
+	mu      sync.Mutex
+	state   desired.State
+	gen     uint64
+	frames  []Frame
+	learned []Endpoint // from the last Controllers message
 }
 
-// Run opens one control stream and serves it: the Hello, then each Update applied and
-// acknowledged. It returns when the stream ends, with a *RefusedError if the controller refused
-// the node, or when ctx ends.
+// Run opens one control stream to Controller and serves it: the Hello, then each Update applied
+// and acknowledged. It returns when the stream ends, with a *RefusedError if the controller
+// refused the node, or when ctx ends.
 func (n *Node) Run(ctx context.Context) error {
-	conn, err := control.Dial(ctx, n.Controller, n.Key, n.ControllerKey)
+	return n.run(ctx, Endpoint{Address: n.Controller, Key: n.ControllerKey})
+}
+
+// Serve keeps the node on a control stream until ctx ends, as a node does: it opens a stream to
+// one controller after the other (the members the cluster named in its last Controllers
+// message, then Controllers, then Controller) and, as a node of schema version 2, goes straight
+// to the leader that a standby names when it refuses the node. Between two streams, also while
+// no controller is reachable, the node keeps its state and so forwards on the last generation it
+// applied. Serve returns ctx.Err().
+func (n *Node) Serve(ctx context.Context) error {
+	next := ""
+	for i := 0; ; i++ {
+		eps := n.endpoints()
+		if len(eps) == 0 {
+			return errors.New("nodesim: no controller to open a stream to")
+		}
+		ep := eps[i%len(eps)]
+		if next != "" {
+			if j := slices.IndexFunc(eps, func(e Endpoint) bool { return e.Address == next }); j >= 0 {
+				ep, i = eps[j], j
+			}
+			next = ""
+		}
+		err := n.run(ctx, ep)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var refused *RefusedError
+		if errors.As(err, &refused) && n.version() >= controlpb.SchemaVersion_SCHEMA_VERSION_2 &&
+			refused.Refuse.GetReason() == controlpb.RefuseReason_REFUSE_REASON_NOT_LEADER &&
+			refused.Refuse.GetLeader() != "" && refused.Refuse.GetLeader() != ep.Address {
+			next = refused.Refuse.GetLeader()
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(retryPause):
+		}
+	}
+}
+
+// Learned returns the controllers that the cluster named in its last Controllers message.
+func (n *Node) Learned() []Endpoint {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return slices.Clone(n.learned)
+}
+
+func (n *Node) run(ctx context.Context, ep Endpoint) error {
+	conn, err := control.Dial(ctx, ep.Address, n.Key, ep.Key)
 	if err != nil {
 		return err
 	}
@@ -71,10 +140,7 @@ func (n *Node) Run(ctx context.Context) error {
 	defer stop()
 	defer conn.Close()
 
-	version := n.Version
-	if version == controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED {
-		version = controlpb.SchemaVersion_SCHEMA_VERSION_1
-	}
+	version := n.version()
 	n.mu.Lock()
 	hello := &controlpb.Hello{SchemaVersion: version, AppliedGeneration: n.gen}
 	n.mu.Unlock()
@@ -108,10 +174,46 @@ func (n *Node) Run(ctx context.Context) error {
 			}
 		case *controlpb.ControlMessage_Refuse:
 			return &RefusedError{Refuse: body.Refuse}
+		case *controlpb.ControlMessage_Controllers:
+			if version < controlpb.SchemaVersion_SCHEMA_VERSION_2 {
+				return errors.New("nodesim: the controller sent a Controllers message to a node of schema version 1, which does not have it")
+			}
+			n.learn(body.Controllers)
 		default:
-			return errors.New("nodesim: the controller sent a frame that is neither an Update nor a Refuse")
+			return errors.New("nodesim: the controller sent a frame that is neither an Update, a Controllers message nor a Refuse")
 		}
 	}
+}
+
+// version returns the schema version of the Hello.
+func (n *Node) version() controlpb.SchemaVersion {
+	if n.Version == controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED {
+		return controlpb.SchemaVersion_SCHEMA_VERSION_1
+	}
+	return n.Version
+}
+
+// endpoints returns the controllers that Serve tries, in order, each once.
+func (n *Node) endpoints() []Endpoint {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	var out []Endpoint
+	for _, ep := range slices.Concat(n.learned, n.Controllers, []Endpoint{{Address: n.Controller, Key: n.ControllerKey}}) {
+		if ep.Address != "" && !slices.ContainsFunc(out, func(e Endpoint) bool { return e.Address == ep.Address }) {
+			out = append(out, ep)
+		}
+	}
+	return out
+}
+
+func (n *Node) learn(m *controlpb.Controllers) {
+	var eps []Endpoint
+	for _, c := range m.GetControllers() {
+		eps = append(eps, Endpoint{Address: c.GetAddress(), Key: c.GetPublicKey()})
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.learned = eps
 }
 
 // State returns the generation the node applied last and its state then.

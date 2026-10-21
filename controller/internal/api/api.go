@@ -21,6 +21,7 @@ import (
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
 // maxBody bounds the body of an apply.
@@ -32,7 +33,26 @@ type Status struct {
 	ControlAddress string       `json:"controlAddress"` // where the controller listens for control streams
 	TLSFingerprint string       `json:"tlsFingerprint"` // hex SHA-256 of the public key of the TLS certificate
 	Capabilities   Capabilities `json:"capabilities"`
+	// Cluster tells which member of the controller cluster answers and which one leads
+	// (internal/cluster). Every member answers the status itself.
+	Cluster *ClusterStatus `json:"cluster,omitempty"`
 }
+
+// ClusterStatus is the cluster part of Status.
+type ClusterStatus struct {
+	Member string `json:"member"` // the name of the member that answers
+	Role   string `json:"role"`   // RoleLeader or RoleStandby
+	Leader string `json:"leader"` // the name of the member that holds the lease, empty while none does
+	Epoch  int64  `json:"epoch"`  // the lease epoch of the leader
+	// SchemaVersion is the control schema version the member runs as (controller.Config.Schema).
+	SchemaVersion int32 `json:"schemaVersion"`
+}
+
+// The roles of a member of a controller cluster.
+const (
+	RoleLeader  = "leader"
+	RoleStandby = "standby"
+)
 
 // Capabilities is what the controller runs with on its host.
 type Capabilities struct {
@@ -128,6 +148,11 @@ func LoopbackOnly(h http.Handler) http.Handler {
 	})
 }
 
+// Reply writes v as the JSON answer with the status code code, as every answer of the API.
+func Reply(w http.ResponseWriter, code int, v any) {
+	reply(w, code, v)
+}
+
 func reply(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -143,6 +168,9 @@ func replyError(w http.ResponseWriter, err error) {
 		code = http.StatusNotFound
 	case errors.Is(err, intent.ErrInvalid):
 		code = http.StatusBadRequest
+	case errors.Is(err, store.ErrNotLeader):
+		// The member lost the lease during the request; the next leader serves it again.
+		code = http.StatusServiceUnavailable
 	}
 	reply(w, code, Problem{Error: err.Error()})
 }
