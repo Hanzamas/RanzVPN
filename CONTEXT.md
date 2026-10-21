@@ -253,6 +253,14 @@ _Avoid_: config, configuration (the slim fork's Config file)
 The number of one version of a Node's desired state. The Controller sends the changes since the Generation the Node last acknowledged, and the Node acknowledges each Generation it applied.
 _Avoid_: revision (a version of the whole Intent), version, epoch
 
+**Revision**:
+The number of one version of the whole Intent, from 1. Every apply, delete and rollback makes the next one, and the Controller stores each with its whole Intent; revision 0 is the empty Intent before the first apply. `ranz diff` shows the resource changes between two, and `ranz rollback` makes the Intent of an earlier one the Intent again, as a new revision. An apply with `--confirm` makes a revision that waits for `ranz confirm`; without it in time, the Controller rolls it back by itself (an automatic rollback) and raises an Event. While a revision waits, the Controller takes no other change but a rollback.
+_Avoid_: Generation (a version of one Node's desired state), version, commit
+
+**Event**:
+A condition the Controller reports to operators (ADR-0030), kept with the change that raised it and listed by the API (`ranz get events`): so far the automatic rollback of an unconfirmed revision. SDN-16 delivers them by webhook and as metrics.
+_Avoid_: alert, log entry, ETW event (a local Node event)
+
 **4via6**:
 The mapping of an IPv4 address of a VRF into an IPv6 address inside that VRF's ULA prefix, so a host that joins two VRFs with overlapping IPv4 can tell the two addresses apart.
 _Avoid_: NAT64, 6to4
