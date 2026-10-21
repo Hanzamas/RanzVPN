@@ -2288,6 +2288,7 @@ static wchar_t *rt_resource_exes[] =
 {
 	L"vpnserver.exe",
 	L"vpncmd.exe",
+	L"ranz-node.exe",
 };
 
 // State of RtResourceCompare: the module to compare with, and the counts it gives
