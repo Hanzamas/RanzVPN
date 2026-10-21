@@ -37,8 +37,6 @@ void InitLocalBridgeList(CEDAR *c);
 void FreeLocalBridgeList(CEDAR *c);
 void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool limit_broadcast);
 bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename);
-bool IsBridgeSupported();
-UINT GetEthDeviceHash();
 void BrSendBlocks(CONNECTION *c);
 void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2);
 void BrSessionCleanup(SESSION *s);
