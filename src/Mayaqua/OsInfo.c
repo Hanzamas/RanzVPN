@@ -7,6 +7,8 @@
 #include "Memory.h"
 #include "Str.h"
 
+#include <intrin.h>
+
 // InitMayaqua() ends the process through MayaFatalExit() when this is false
 bool Win32IsSupportedOs()
 {
