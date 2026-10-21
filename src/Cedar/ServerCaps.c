@@ -78,8 +78,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	AddCapsInt(t, "i_max_ip_tables", MAX_IP_TABLES);
 
-	AddCapsBool(t, "b_support_cascade", true);
-
 	AddCapsBool(t, "b_standalone", true);
 
 	AddCapsBool(t, "b_support_config_hub", true);
