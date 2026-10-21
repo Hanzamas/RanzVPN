@@ -41,7 +41,7 @@ ADR-0021 gives the slim fork an RPC-style HTTP API that mirrors the admin RPCs o
 
 ## Consequences
 
-- The new core's administrative surface is this declarative API on the controller, not the RPC-style API of ADR-0021. That departs from ADR-0021's aim of an API contract that survives the core swap; #224 records the slim fork's web admin (#44) as superseded by the controller web UI (SDN-28). ADR-0021 itself is not amended by #176.
+- The new core's administrative surface is this declarative API on the controller, not the RPC-style API of ADR-0021. That departs from ADR-0021's aim of an API contract that survives the core swap; #224 records the slim fork's web admin (#44) as superseded by the controller web UI (SDN-28). ADR-0021 itself is not amended by #176. *(ADR-0021 is superseded since 2026-10-21 by this ADR, ADR-0026 and ADR-0038; see its amendment.)*
 - The importer settles the question left open by the ADR-0022 amendment of 2026-10-19 (whether the importer is needed): #176 keeps it, as SDN-27 (#203).
 - The unified-management spec #224 (2026-10-21) adds administrators scoped to one Network with quotas and permissions (SDN-38, #231) and a separate operations API for live sessions (SDN-50, #243). The three role names stay; the scope is a Network, not a VRF.
 - The controller conformance seam (ADR-0026) covers revisions, rollback, `--confirm` and RBAC; explain conformance is its own suite over shared scenario files.

@@ -1,6 +1,6 @@
 # ADR-0008: Replace SoftEther's self-written runtime with Windows and standard APIs where they exist
 
-**Status:** Accepted as a principle (2026-10-13, Hilmi: "windows native total yang fast and furious"); individual rows are decided when the spec that touches them is written (Windows-native runtime #30, new core). Amended 2026-10-13: RIO is crossed out (Hilmi: "gas"). Amended 2026-10-20: the SecureNAT row becomes NAT in the data plane plus three egress tiers (SDN spec #176).
+**Status:** Accepted as a principle (2026-10-13, Hilmi: "windows native total yang fast and furious"); individual rows are decided when the spec that touches them is written (Windows-native runtime #30, new core). Amended 2026-10-13: RIO is crossed out (Hilmi: "gas"). Amended 2026-10-20: the SecureNAT row becomes NAT in the data plane plus three egress tiers (SDN spec #176). Amended 2026-10-21: the http.sys row is superseded by the controller's intent API and web UI (Hilmi: "ya ya ya semua").
 
 ## Context
 
@@ -19,7 +19,7 @@ The principle agreed in the discussion: the data path stays ours (that is the pr
 | SecureNAT (12k lines) | WinNAT (`New-NetNat`, kernel NAT in Windows 10+) *(replaced by the amendment of 2026-10-20 below: 1:1 NAT and SNAT in the node's data plane, internet egress in three tiers)* | built-in |
 | host firewall / ACL | **WFP user-mode API** (`FwpmFilterAdd0`) or `INetFwPolicy2` | kernel-enforced filters defined from user mode, no driver |
 | virtual DHCP | none; IPAM in the control plane | an overlay does not need DHCP |
-| `HTTP.c` for admin / web UI | **http.sys** (HTTP Server API) with Schannel certificate binding | kernel HTTP listener, native |
+| `HTTP.c` for admin / web UI | **http.sys** (HTTP Server API) with Schannel certificate binding *(superseded by the amendment of 2026-10-21 below: the Go controller serves the intent API and the web UI)* | kernel HTTP listener, native |
 | threads and locks (`Kernel.c`, `Object.c`) | SRWLOCK, `WaitOnAddress`, thread pool or per-core pinned workers | lighter than CRITICAL_SECTION |
 | `Memory.c` allocator | HeapAlloc plus packet pools from `VirtualAlloc` (large pages) | no allocation on the data path |
 | own log files | ETW (`TraceLogging`), Event Log, Prometheus metrics | Windows tooling can read them |
@@ -53,3 +53,8 @@ Maintainer decision, from the SDN spec #176 that Hilmi filed ("the SecureNAT row
 - **An existing NetNat on the host is never touched.**
 - A WinDivert packet-driver module is opt-in only and ships only after it passes the gate in ADR-0025.
 - The native-first rule still holds: tiers 1 and 2 are Windows kernel NAT, and tier 3 uses the Windows TCP/IP stack rather than one of our own (ADR-0014).
+
+## Amendment 2026-10-21: the http.sys row is superseded by the controller
+
+Maintainer decision (Hilmi: "ya ya ya semua"). The admin surface of the new core is the declarative intent API (ADR-0031) and the native web UI (ADR-0038), served by the Go service `ranz-controller` (ADR-0026) on 443 next to the API. The node is the data plane only (ADR-0026). The row "`HTTP.c` for admin / web UI: http.sys with Schannel certificate binding" is therefore superseded, together with ADR-0021.
+- HTTP.sys keeps one narrow use: on hosts where it already holds port 80, Ranz's port 80 (ACME HTTP-01 and the HTTPS redirect) registers through HTTP.sys URL reservations (ADR-0035 amendment of 2026-10-21).
