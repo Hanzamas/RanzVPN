@@ -39,10 +39,12 @@ import re
 import subprocess
 import sys
 
-# The reformat scope: Cedar, Mayaqua and the program entry sources. Third-party code, driver
-# sources that CI does not compile (src/SeLow), the test and fuzz programs (src/vpntest,
-# src/fuzz) and generated files are excluded.
-SCOPE_DIRS = ['src/Cedar', 'src/Mayaqua', 'src/vpnserver', 'src/vpncmd']
+# The reformat scope: Cedar, Mayaqua, the program entry sources, the new core (src/Core) and its
+# test program (src/coretest). Third-party code, driver sources that CI does not compile
+# (src/SeLow), the test and fuzz programs of the slim fork (src/vpntest, src/fuzz) and generated
+# files are excluded.
+SCOPE_DIRS = ['src/Cedar', 'src/Mayaqua', 'src/vpnserver', 'src/vpncmd', 'src/Core',
+              'src/coretest']
 SCOPE_EXTS = ('.c', '.h', '.cpp')
 EXCLUDED_PREFIXES = ['src/Mayaqua/3rdparty/']
 # Generated files inside SCOPE_DIRS, by path. None are left: the MIDL output (netcfgn.h,
