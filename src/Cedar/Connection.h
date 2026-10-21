@@ -139,6 +139,23 @@ struct CONNECTION
 	UINT LastRecvBlocksNum;
 };
 
+// What the admin RPCs report about one connection, copied by ConnectionGetInfo under the connection's lock
+struct CONNECTION_INFO
+{
+	char Name[MAX_SIZE];
+	UINT Type;
+	UINT64 ConnectedTick;
+	IP RemoteIp;							// The remote end of the first socket; zero without one
+	UINT RemotePort;
+	char RemoteHostname[MAX_SIZE];
+	char ServerStr[MAX_SERVER_STR_LEN + 1];
+	UINT ServerVer;
+	UINT ServerBuild;
+	char ClientStr[MAX_CLIENT_STR_LEN + 1];
+	UINT ClientVer;
+	UINT ClientBuild;
+};
+
 
 CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str);
 CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t);
@@ -159,6 +176,7 @@ void FreeBlockQueue(QUEUE *q);
 void StopAllAdditionalConnectThread(CONNECTION *c);
 UINT GenNextKeepAliveSpan(CONNECTION *c);
 void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block);
+void ConnectionGetInfo(CONNECTION *c, CONNECTION_INFO *info);
 
 
 #endif

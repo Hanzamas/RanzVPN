@@ -19,7 +19,10 @@
 #     continuations and #if/#endif balanced, and does not sit inside an #if of the source, so only
 #     whole functions, declarations and macros move and none of them loses a condition;
 #   - a new destination adds nothing before the moved blocks except a leading comment and
-#     preprocessor lines of the source file's own preamble, in the source's order.
+#     preprocessor lines of the source file's own preamble, in the source's order;
+#   - a new header as destination (for example <Module>Internal.h, #29 open question 12 (a))
+#     may also hold its include guard, and its source may gain exactly one line: the #include
+#     of that header, in the preamble and outside any #if.
 # A header commit may change only #include lines in .c files; in headers it may delete lines,
 # re-add lines the commit deletes elsewhere (a move), change #include lines and, in a new
 # header, add a leading comment and the include guard. A linkage commit may only prefix a .c
@@ -338,9 +341,6 @@ def check_split(repo, p, c):
         hs = hunks(repo, p, c, path)
         adds = [h for h in hs if h[3] > 0]
         dels = [h for h in hs if h[1] > 0]
-        if adds and dels:
-            raise Fail('%s:%d: a split commit deletes from its source and adds to its destination, never both in one file'
-                       % (path, adds[0][2]))
         if dels:
             if src:
                 raise Fail('%s: a split commit has one source' % path)
@@ -353,9 +353,25 @@ def check_split(repo, p, c):
         raise Fail('a split commit deletes from one file and adds to another')
 
     spath, shunks = src
+    dpath, dhunks = dst
+    # #29 open question 12 (a): a split into a NEW header (for example <Module>Internal.h) may add
+    # exactly one line to its source: the #include of that header, in the preamble, outside any #if.
+    new_header = dhunks is None and dpath.endswith('.h')
+    added = [h for h in shunks if h[3] > 0]
+    if added:
+        C = lines_of(repo, c, spath)
+        CS, ccodes = states(C)
+        include = '#include "%s"' % dpath.rsplit('/', 1)[-1]
+        lines_added = [(h[2] - 1 + k) for h in added for k in range(h[3])]
+        k = lines_added[0]
+        if not new_header or len(lines_added) != 1 or C[k].strip() != include:
+            raise Fail('%s:%d: a split commit adds nothing to its source, except the one #include of a new header '
+                       'it creates' % (spath, k + 1))
+        if any(ccodes[:k]) or CS[k][4] != 0 or not clean(CS[k]):
+            raise Fail('%s:%d: the #include of the new header goes in the preamble, outside any #if' % (spath, k + 1))
     P = lines_of(repo, p, spath)
     S, codes = states(P)
-    runs = [(h[0] - 1, h[0] - 1 + h[1]) for h in shunks]
+    runs = [(h[0] - 1, h[0] - 1 + h[1]) for h in shunks if h[1] > 0]
     moved, prev = [], 0
     for i, (s, e) in enumerate(runs):
         hi = runs[i + 1][0] if i + 1 < len(runs) else len(P)
@@ -365,8 +381,11 @@ def check_split(repo, p, c):
         moved.extend(chunks(P[a:b], a + 1))
         prev = b
 
-    dpath, dhunks = dst
     D = lines_of(repo, c, dpath)
+    if new_header:
+        # The include guard of the new header is neither moved code nor preamble: blank it out.
+        for k in guard_lines(D):
+            D[k] = ''
     if dhunks is not None:
         Q = lines_of(repo, p, dpath)
         while Q and blank(Q[-1]):

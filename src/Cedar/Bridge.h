@@ -6,6 +6,9 @@
 
 #include "Cedar.h"
 
+#define	BRIDGE_TRY_SPAN					1000
+#define	BRIDGE_NUM_DEVICE_CHECK_SPAN	(5 * 60 * 1000)
+
 struct BRIDGE
 {
 	bool Active;
@@ -37,8 +40,9 @@ void InitLocalBridgeList(CEDAR *c);
 void FreeLocalBridgeList(CEDAR *c);
 void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool limit_broadcast);
 bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename);
-bool IsBridgeSupported();
-UINT GetEthDeviceHash();
+void BrSendBlocks(CONNECTION *c);
+void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2);
+void BrSessionCleanup(SESSION *s);
 
 #endif	// BRIDGE_H
 

@@ -341,6 +341,7 @@ void SetHubOffline(HUB *h);
 void HubApplyInitialState(HUB *h, bool online);
 SESSION *GetSessionByName(HUB *hub, char *name);
 UINT HubCountUserSessions(HUB *h, char *username, UCHAR *unique_id);
+SESSION_INFO *HubEnumSessions(HUB *h, UINT *num);
 void DeleteIPv6DefaultRouterInRA(PKT *p);
 void IntoTrafficLimiter(TRAFFIC_LIMITER *tr, PKT *p);
 bool IsMostHighestPriorityPacket(SESSION *s, PKT *p);
