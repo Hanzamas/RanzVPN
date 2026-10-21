@@ -1,36 +1,38 @@
 // Sam.c
-// Security Accounts Manager
+// Security Accounts Manager: the credential gate of a login (SamAuthenticate)
 
 #include "Sam.h"
 
 #include "Account.h"
 #include "Cedar.h"
-#include "Connection.h"
 #include "Hub.h"
-#include "Server.h"
+#include "LogWriter.h"
 
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 
-void SecurePassword(void *secure_password, void *password, void *random)
+// Formats a log line of a credential check as HLog does and hands it to the log callback of req
+static void SamLog(AUTH_REQUEST *req, char *name, ...)
 {
-	UCHAR tmp[2 * SHA1_SIZE];
-	if (secure_password == NULL || password == NULL || random == NULL)
+	wchar_t buf[MAX_SIZE * 2];
+	va_list args;
+	if (req->Log == NULL || name == NULL)
 	{
 		return;
 	}
 
-	Copy(tmp, password, SHA1_SIZE);
-	Copy(tmp + SHA1_SIZE, random, SHA1_SIZE);
-	Sha0(secure_password, tmp, sizeof(tmp));
+	va_start(args, name);
+	LogFormat(buf, sizeof(buf), name, args);
 
-	Zero(tmp, sizeof(tmp));
+	req->Log(req->LogParam, buf);
+	va_end(args);
 }
 
-bool SamAuthUserByAnonymous(HUB *h, char *username)
+static bool SamAuthUserByAnonymous(HUB *h, char *username)
 {
 	bool b = false;
 	if (h == NULL || username == NULL)
@@ -59,7 +61,9 @@ bool SamAuthUserByAnonymous(HUB *h, char *username)
 	return b;
 }
 
-bool SamAuthUserByPlainPassword(HUB *hub, char *username, char *password)
+// The domain password of an NT domain user (AUTHTYPE_NT; the "*" user stands for an unknown name), checked by
+// MsCheckLogon. That call blocks, so the lock yield, which the caller holds, is released around it.
+static bool SamAuthUserByPlainPassword(HUB *hub, char *username, char *password, LOCK *yield)
 {
 	bool b = false;
 	wchar_t *name = NULL;
@@ -103,11 +107,17 @@ bool SamAuthUserByPlainPassword(HUB *hub, char *username, char *password)
 
 	if (name != NULL)
 	{
-		Unlock(hub->lock);
+		if (yield != NULL)
+		{
+			Unlock(yield);
+		}
 
 		b = MsCheckLogon(name, password);
 
-		Lock(hub->lock);
+		if (yield != NULL)
+		{
+			Lock(yield);
+		}
 
 		Free(name);
 	}
@@ -115,9 +125,12 @@ bool SamAuthUserByPlainPassword(HUB *hub, char *username, char *password)
 	return b;
 }
 
-bool SamAuthUserByCert(HUB *h, char *username, X *x)
+// The certificate req->Cert against the user req->Username; the result is logged through req->Log
+static bool SamAuthUserByCert(HUB *h, AUTH_REQUEST *req)
 {
 	bool b = false;
+	char *username = req->Username;
+	X *x = req->Cert;
 	if (h == NULL || username == NULL || x == NULL)
 	{
 		return false;
@@ -134,7 +147,7 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 
 		GetAllNameFromX(tmp, sizeof(tmp), x);
 
-		HLog(h, "LH_AUTH_NG_CERT", username, tmp);
+		SamLog(req, "LH_AUTH_NG_CERT", username, tmp);
 		return false;
 	}
 
@@ -198,50 +211,13 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 
 		GetAllNameFromX(tmp, sizeof(tmp), x);
 
-		HLog(h, "LH_AUTH_OK_CERT", username, tmp);
+		SamLog(req, "LH_AUTH_OK_CERT", username, tmp);
 	}
 
 	return b;
 }
 
-X *GetIssuerFromList(LIST *cert_list, X *cert)
-{
-	UINT i;
-	X *ret = NULL;
-	if (cert_list == NULL || cert == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0;i < LIST_NUM(cert_list);i++)
-	{
-		X *x = LIST_DATA(cert_list, i);
-		if (CheckXDateNow(x))
-		{
-			if (CompareName(x->subject_name, cert->issuer_name))
-			{
-				K *k = GetKFromX(x);
-
-				if (k != NULL)
-				{
-					if (CheckSignature(cert, k))
-					{
-						ret = x;
-					}
-					FreeK(k);
-				}
-			}
-		}
-		if (CompareX(x, cert))
-		{
-			ret = x;
-		}
-	}
-
-	return ret;
-}
-
-POLICY *SamGetUserPolicy(HUB *h, char *username)
+static POLICY *SamGetUserPolicy(HUB *h, char *username)
 {
 	POLICY *ret = NULL;
 	if (h == NULL || username == NULL)
@@ -298,7 +274,7 @@ POLICY *SamGetUserPolicy(HUB *h, char *username)
 	return ret;
 }
 
-bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password)
+static bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password)
 {
 	bool b = false;
 	UCHAR secure_password_check[SHA1_SIZE];
@@ -339,6 +315,149 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 	AcUnlock(h);
 
 	return b;
+}
+
+// CLIENT_AUTHTYPE_PASSWORD: the secure password against a password user. The user's policy is read also when
+// the password is wrong: the error PACK of a refused login carries its NoSavePassword.
+static void SamAuthenticateSecurePassword(HUB *hub, AUTH_REQUEST *req, AUTH_RESULT *ret)
+{
+	if (req->SecurePassword == NULL)
+	{
+		return;
+	}
+
+	ret->Ok = SamAuthUserByPassword(hub, req->Username, req->Random, req->SecurePassword);
+
+	ret->Policy = SamGetUserPolicy(hub, req->Username);
+
+	if (ret->Ok)
+	{
+		UCHAR hashed_empty_password[SHA1_SIZE];
+		UCHAR secure_empty_password[SHA1_SIZE];
+		HashPassword(hashed_empty_password, req->Username, "");
+		SecurePassword(secure_empty_password, hashed_empty_password, req->Random);
+		if (Cmp(req->SecurePassword, secure_empty_password, SHA1_SIZE) == 0)
+		{
+			ret->IsEmptyPassword = true;
+		}
+	}
+}
+
+// CLIENT_AUTHTYPE_PLAIN_PASSWORD: the password of a password user, else the domain password of an NT domain user
+static void SamAuthenticatePlainPassword(HUB *hub, AUTH_REQUEST *req, AUTH_RESULT *ret)
+{
+	UCHAR secure_password[SHA1_SIZE];
+	UCHAR hash_password[SHA1_SIZE];
+
+	if (req->PlainPassword == NULL)
+	{
+		return;
+	}
+
+	HashPassword(hash_password, req->Username, req->PlainPassword);
+	SecurePassword(secure_password, hash_password, req->Random);
+	ret->Ok = SamAuthUserByPassword(hub, req->Username, req->Random, secure_password);
+
+	if (ret->Ok)
+	{
+		ret->Policy = SamGetUserPolicy(hub, req->Username);
+	}
+
+	if (ret->Ok == false)
+	{
+		ret->Ok = SamAuthUserByPlainPassword(hub, req->Username, req->PlainPassword, req->YieldForBlockingCall);
+
+		if (ret->Ok)
+		{
+			ret->Policy = SamGetUserPolicy(hub, req->Username);
+		}
+	}
+
+	if (ret->Ok)
+	{
+		if (IsEmptyStr(req->PlainPassword))
+		{
+			ret->IsEmptyPassword = true;
+		}
+	}
+}
+
+// CLIENT_AUTHTYPE_CERT: the signature of the server random by the key of the certificate, then the certificate
+// against the user. The certificate that logs the user in is cloned into the result.
+static void SamAuthenticateCert(HUB *hub, AUTH_REQUEST *req, AUTH_RESULT *ret)
+{
+	X *x = req->Cert;
+
+	if (x != NULL && req->Sign != NULL && x->is_compatible_bit &&
+		req->SignSize == (x->bits / 8))
+	{
+		K *k = GetKFromX(x);
+		if (RsaVerifyEx(req->Random, SHA1_SIZE, req->Sign, req->SignSize, k))
+		{
+			// A matching signature proves the client holds this certificate.
+			ret->Ok = SamAuthUserByCert(hub, req);
+			if (ret->Ok)
+			{
+				ret->ClientX = CloneX(x);
+			}
+		}
+		FreeK(k);
+	}
+}
+
+// Checks the credentials of a login against the users of hub: first whether the user is an anonymous user,
+// then the method of req->AuthType. The caller holds req->YieldForBlockingCall (if any), and holds it again
+// when this returns. ret receives the outcome; the caller frees ret->Policy (Free) and takes ret->ClientX.
+void SamAuthenticate(HUB *hub, AUTH_REQUEST *req, AUTH_RESULT *ret)
+{
+	if (ret == NULL)
+	{
+		return;
+	}
+
+	Zero(ret, sizeof(AUTH_RESULT));
+	ret->Error = ERR_AUTH_FAILED;
+
+	if (hub == NULL || req == NULL || req->Username == NULL)
+	{
+		return;
+	}
+
+	ret->Ok = SamAuthUserByAnonymous(hub, req->Username);
+	if (ret->Ok)
+	{
+		ret->IsEmptyPassword = true;
+	}
+
+	if (ret->Ok == false)
+	{
+		switch (req->AuthType)
+		{
+		case CLIENT_AUTHTYPE_ANONYMOUS:
+			break;
+
+		case CLIENT_AUTHTYPE_PASSWORD:
+			SamAuthenticateSecurePassword(hub, req, ret);
+			break;
+
+		case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
+			SamAuthenticatePlainPassword(hub, req, ret);
+			break;
+
+		case CLIENT_AUTHTYPE_CERT:
+			SamAuthenticateCert(hub, req, ret);
+			break;
+
+		default:
+			ret->Error = ERR_AUTHTYPE_NOT_SUPPORTED;
+			return;
+		}
+	}
+
+	if (ret->Ok)
+	{
+		ret->Error = ERR_NO_ERROR;
+	}
 }
 
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark)

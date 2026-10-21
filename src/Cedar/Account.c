@@ -1948,3 +1948,18 @@ static BUF *EncryptPassword(char *password)
 
 	return b;
 }
+
+void SecurePassword(void *secure_password, void *password, void *random)
+{
+	UCHAR tmp[2 * SHA1_SIZE];
+	if (secure_password == NULL || password == NULL || random == NULL)
+	{
+		return;
+	}
+
+	Copy(tmp, password, SHA1_SIZE);
+	Copy(tmp + SHA1_SIZE, random, SHA1_SIZE);
+	Sha0(secure_password, tmp, sizeof(tmp));
+
+	Zero(tmp, sizeof(tmp));
+}

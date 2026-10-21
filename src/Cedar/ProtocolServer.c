@@ -264,6 +264,48 @@ static void ServerAcceptEnd(CONNECTION *c, bool send_error, bool no_save_passwor
 	SLog(c->Cedar, "LS_CONNECTION_ERROR", c->Name, GetUniErrorStr(c->Err), c->Err);
 }
 
+// The log callback of SamAuthenticate: writes the line to the hub log of param (a HUB)
+static void ServerAuthLog(void *param, wchar_t *line)
+{
+	WriteHubLog((HUB *)param, line);
+}
+
+// The certificate of a CLIENT_AUTHTYPE_CERT login and its signature of the server random, which goes to sign
+// (sign_buf_size bytes at most) with its size in *sign_size. NULL when the certificate or the signature is
+// missing, of a size out of bounds or unreadable; the caller frees the certificate.
+static X *ServerReadClientCert(PACK *p, UCHAR *sign, UINT sign_buf_size, UINT *sign_size)
+{
+	UINT cert_size;
+	void *cert_buf;
+	X *x = NULL;
+
+	*sign_size = 0;
+
+	cert_size = PackGetDataSize(p, "cert");
+	if (cert_size >= 1 && cert_size <= 100000)
+	{
+		cert_buf = ZeroMalloc(cert_size);
+		if (PackGetData(p, "cert", cert_buf))
+		{
+			UINT size = PackGetDataSize(p, "sign");
+			if (size <= sign_buf_size && size >= 1)
+			{
+				if (PackGetData(p, "sign", sign))
+				{
+					BUF *b = NewBuf();
+					WriteBuf(b, cert_buf, cert_size);
+					x = BufToX(b, false);
+					FreeBuf(b);
+					*sign_size = size;
+				}
+			}
+		}
+		Free(cert_buf);
+	}
+
+	return x;
+}
+
 // Accepts a connection on the server side. True for a logged-in session, which ConnectionAccept runs with
 // ServerRunSession (login->Session set), and for an additional connection of a session (login->Session NULL).
 bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
@@ -290,7 +332,6 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 	wchar_t *msg = NULL;
 	bool suppress_client_update_notification = false;
 	RPC_WINVER winver;
-	bool is_empty_password = false;
 
 	if (c == NULL || login == NULL)
 	{
@@ -355,8 +396,6 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 
 	if (StrCmpi(method, "login") == 0)
 	{
-		bool auth_ret = false;
-
 		c->Status = CONNECTION_STATUS_USERAUTH;
 
 		c->Type = CONNECTION_TYPE_LOGIN;
@@ -417,9 +456,11 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 
 		Lock(hub->lock);
 		{
-			UINT cert_size = 0;
-			void *cert_buf = NULL;
+			AUTH_REQUEST auth;
+			AUTH_RESULT auth_result;
+			UCHAR secure_password[SHA1_SIZE];
 			char plain_password[MAX_PASSWORD_LEN + 1];
+			UCHAR sign[4096 / 8];
 
 			if (hub->Halt || hub->Offline)
 			{
@@ -475,159 +516,76 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 			HLog(hub, "LH_CONNECT_CLIENT", c->Name, ip1, c->FirstSock->RemoteHostname, c->FirstSock->RemotePort,
 				c->ClientStr, verstr, c->ClientBuild, authtype_str, username);
 
-			auth_ret = SamAuthUserByAnonymous(hub, username);
-			if (auth_ret)
-			{
-				is_empty_password = true;
-			}
+			// The credentials as the client sent them; Sam checks them with hub->lock held, which it yields
+			// around a blocking domain logon
+			Zero(&auth, sizeof(auth));
+			auth.Username = username;
+			auth.AuthType = req.AuthType;
+			auth.Random = c->Random;
+			auth.YieldForBlockingCall = hub->lock;
+			auth.Log = ServerAuthLog;
+			auth.LogParam = hub;
 
-			if (auth_ret == false)
+			switch (req.AuthType)
 			{
-				switch (req.AuthType)
+			case CLIENT_AUTHTYPE_PASSWORD:
+				if (PackGetDataSize(p, "secure_password") == SHA1_SIZE)
 				{
-				case CLIENT_AUTHTYPE_ANONYMOUS:
-					break;
-
-				case CLIENT_AUTHTYPE_PASSWORD:
-					if (PackGetDataSize(p, "secure_password") == SHA1_SIZE)
-					{
-						POLICY *pol = NULL;
-						UCHAR secure_password[SHA1_SIZE];
-						Zero(secure_password, sizeof(secure_password));
-						PackGetData(p, "secure_password", secure_password);
-						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password);
-
-						pol = SamGetUserPolicy(hub, username);
-						if (pol != NULL)
-						{
-							no_save_password = pol->NoSavePassword;
-							Free(pol);
-						}
-
-						if(auth_ret){
-							UCHAR hashed_empty_password[SHA1_SIZE];
-							UCHAR secure_empty_password[SHA1_SIZE];
-							HashPassword(hashed_empty_password, username, "");
-							SecurePassword(secure_empty_password, hashed_empty_password, c->Random);
-							if(Cmp(secure_password, secure_empty_password, SHA1_SIZE)==0){
-								is_empty_password = true;
-							}
-						}
-					}
-					break;
-
-				case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
-					{
-						POLICY *pol = NULL;
-						UCHAR secure_password[SHA1_SIZE];
-						UCHAR hash_password[SHA1_SIZE];
-
-						Zero(plain_password, sizeof(plain_password));
-						PackGetStr(p, "plain_password", plain_password, sizeof(plain_password));
-						if (StartWith(plain_password, PLAIN_PASSWORD_RETIRED_MSCHAPV2_TAG))
-						{
-							// Do not allow the MS-CHAPv2 authentication (it was only available to IPC sessions)
-							Zero(plain_password, sizeof(plain_password));
-						}
-
-						HashPassword(hash_password, username, plain_password);
-						SecurePassword(secure_password, hash_password, c->Random);
-						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password);
-
-						if (auth_ret)
-						{
-							pol = SamGetUserPolicy(hub, username);
-						}
-
-						if (auth_ret == false)
-						{
-							auth_ret = SamAuthUserByPlainPassword(hub, username, plain_password);
-
-							if (auth_ret)
-							{
-								pol = SamGetUserPolicy(hub, username);
-							}
-						}
-
-						if (pol != NULL)
-						{
-							no_save_password = pol->NoSavePassword;
-							Free(pol);
-						}
-
-						if(auth_ret){
-							if(IsEmptyStr(plain_password)){
-								is_empty_password = true;
-							}
-						}
-					}
-					break;
-
-				case CLIENT_AUTHTYPE_CERT:
-					cert_size = PackGetDataSize(p, "cert");
-					if (cert_size >= 1 && cert_size <= 100000)
-					{
-						cert_buf = ZeroMalloc(cert_size);
-						if (PackGetData(p, "cert", cert_buf))
-						{
-							UCHAR sign[4096 / 8];
-							UINT sign_size = PackGetDataSize(p, "sign");
-							if (sign_size <= sizeof(sign) && sign_size >= 1)
-							{
-								if (PackGetData(p, "sign", sign))
-								{
-									BUF *b = NewBuf();
-									X *x;
-									WriteBuf(b, cert_buf, cert_size);
-									x = BufToX(b, false);
-									if (x != NULL && x->is_compatible_bit &&
-										sign_size == (x->bits / 8))
-									{
-										K *k = GetKFromX(x);
-										if (RsaVerifyEx(c->Random, SHA1_SIZE, sign, sign_size, k))
-										{
-											// A matching signature proves the client holds this certificate.
-											auth_ret = SamAuthUserByCert(hub, username, x);
-											if (auth_ret)
-											{
-												c->ClientX = CloneX(x);
-											}
-										}
-										FreeK(k);
-									}
-									FreeX(x);
-									FreeBuf(b);
-								}
-							}
-						}
-						Free(cert_buf);
-					}
-					break;
-
-				default:
-					Unlock(hub->lock);
-					ReleaseHub(hub);
-					FreePack(p);
-					c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-					goto CLEANUP;
+					Zero(secure_password, sizeof(secure_password));
+					PackGetData(p, "secure_password", secure_password);
+					auth.SecurePassword = secure_password;
 				}
+				break;
+
+			case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
+				Zero(plain_password, sizeof(plain_password));
+				PackGetStr(p, "plain_password", plain_password, sizeof(plain_password));
+				if (StartWith(plain_password, PLAIN_PASSWORD_RETIRED_MSCHAPV2_TAG))
+				{
+					// Do not allow the MS-CHAPv2 authentication (it was only available to IPC sessions)
+					Zero(plain_password, sizeof(plain_password));
+				}
+				auth.PlainPassword = plain_password;
+				break;
+
+			case CLIENT_AUTHTYPE_CERT:
+				auth.Cert = ServerReadClientCert(p, sign, sizeof(sign), &auth.SignSize);
+				auth.Sign = sign;
+				break;
 			}
 
-			if (auth_ret == false)
+			SamAuthenticate(hub, &auth, &auth_result);
+			FreeX(auth.Cert);
+
+			if (auth_result.Policy != NULL)
 			{
-				char ip[64];
-				IPToStr(ip, sizeof(ip), &c->FirstSock->RemoteIP);
-				HLog(hub, "LH_AUTH_NG", c->Name, username, ip);
+				no_save_password = auth_result.Policy->NoSavePassword;
+				Free(auth_result.Policy);
+			}
+
+			if (auth_result.ClientX != NULL)
+			{
+				c->ClientX = auth_result.ClientX;
+			}
+
+			if (auth_result.Ok == false)
+			{
+				if (auth_result.Error == ERR_AUTH_FAILED)
+				{
+					char ip[64];
+					IPToStr(ip, sizeof(ip), &c->FirstSock->RemoteIP);
+					HLog(hub, "LH_AUTH_NG", c->Name, username, ip);
+				}
 
 				Unlock(hub->lock);
 				ReleaseHub(hub);
 				FreePack(p);
-				c->Err = ERR_AUTH_FAILED;
+				c->Err = auth_result.Error;
 				goto CLEANUP;
 			}
 			else
 			{
-				if (is_empty_password)
+				if (auth_result.IsEmptyPassword)
 				{
 					const SOCK *s = c->FirstSock;
 					if (s != NULL && IsLocalHostIP(&s->RemoteIP) == false)
