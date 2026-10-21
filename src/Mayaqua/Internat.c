@@ -13,7 +13,7 @@
 #include <locale.h>
 #include <wchar.h>
 
-bool UniIsCharInStr(wchar_t *str, wchar_t c)
+bool UniIsCharInStr(const wchar_t *str, wchar_t c)
 {
 	if (str == NULL)
 	{
@@ -49,7 +49,7 @@ void UniFreeStrList(LIST *o)
 	FreeListItems(o);
 }
 
-wchar_t *UniNormalizeCrlf(wchar_t *str)
+wchar_t *UniNormalizeCrlf(const wchar_t *str)
 {
 	wchar_t *ret;
 	UINT ret_size, i, len, wp;
@@ -95,7 +95,7 @@ wchar_t *UniNormalizeCrlf(wchar_t *str)
 	return ret;
 }
 
-bool UniEndWith(wchar_t *str, wchar_t *key)
+bool UniEndWith(const wchar_t *str, const wchar_t *key)
 {
 	UINT str_len;
 	UINT key_len;
@@ -121,7 +121,7 @@ bool UniEndWith(wchar_t *str, wchar_t *key)
 	}
 }
 
-bool UniStartWith(wchar_t *str, wchar_t *key)
+bool UniStartWith(const wchar_t *str, const wchar_t *key)
 {
 	UINT i;
 	if (str == NULL || key == NULL)
@@ -160,7 +160,7 @@ void UniToStr3(wchar_t *str, UINT size, UINT64 value)
 	StrToUni(str, size, tmp);
 }
 
-UINT UniStrWidth(wchar_t *str)
+UINT UniStrWidth(const wchar_t *str)
 {
 	UINT i, len, ret;
 	if (str == NULL)
@@ -184,7 +184,7 @@ UINT UniStrWidth(wchar_t *str)
 	return ret;
 }
 
-bool UniIsEmptyStr(wchar_t *str)
+bool UniIsEmptyStr(const wchar_t *str)
 {
 	UINT i;
 	if (str == NULL)
@@ -211,7 +211,7 @@ UNI_TOKEN_LIST *UniNullToken()
 	return ret;
 }
 
-UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str)
+UNI_TOKEN_LIST *UniParseCmdLine(const wchar_t *str)
 {
 	UNI_TOKEN_LIST *t;
 	LIST *o;
@@ -328,7 +328,7 @@ UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str)
 	return t;
 }
 
-UINT UtfToUni(wchar_t *unistr, UINT size, char *utfstr)
+UINT UtfToUni(wchar_t *unistr, UINT size, const char *utfstr)
 {
 	wchar_t *tmp;
 	if (unistr == NULL || utfstr == NULL)
@@ -346,7 +346,7 @@ UINT UtfToUni(wchar_t *unistr, UINT size, char *utfstr)
 	return UniStrLen(unistr);
 }
 
-wchar_t *CopyUtfToUni(char *utfstr)
+wchar_t *CopyUtfToUni(const char *utfstr)
 {
 	UINT size;
 	wchar_t *ret;
@@ -358,14 +358,14 @@ wchar_t *CopyUtfToUni(char *utfstr)
 
 	utfstr_len = StrLen(utfstr);
 
-	size = CalcUtf8ToUni((BYTE *)utfstr, utfstr_len);
+	size = CalcUtf8ToUni((const BYTE *)utfstr, utfstr_len);
 	ret = ZeroMalloc(size + sizeof(wchar_t));
-	Utf8ToUni(ret, size, (BYTE *)utfstr, utfstr_len);
+	Utf8ToUni(ret, size, (const BYTE *)utfstr, utfstr_len);
 
 	return ret;
 }
 
-char *CopyUniToUtf(wchar_t *unistr)
+char *CopyUniToUtf(const wchar_t *unistr)
 {
 	UINT size;
 	char *ret;
@@ -382,7 +382,7 @@ char *CopyUniToUtf(wchar_t *unistr)
 	return ret;
 }
 
-wchar_t *CopyUniStr(wchar_t *str)
+wchar_t *CopyUniStr(const wchar_t *str)
 {
 	UINT len;
 	wchar_t *dst;
@@ -398,7 +398,7 @@ wchar_t *CopyUniStr(wchar_t *str)
 	return dst;
 }
 
-bool IsSafeUniStr(wchar_t *str)
+bool IsSafeUniStr(const wchar_t *str)
 {
 	UINT i, len;
 	if (str == NULL)
@@ -493,7 +493,7 @@ static UINT ConvertAnsiToUni(wchar_t *dst, UINT dst_len, const char *str)
 
 // Convert the wide string s into dst (NULL: only count), dst_size bytes at most. Returns the
 // number of bytes with the terminating NUL, or 0 when s does not convert
-static UINT ConvertUniToAnsi(char *dst, UINT dst_size, wchar_t *s)
+static UINT ConvertUniToAnsi(char *dst, UINT dst_size, const wchar_t *s)
 {
 	bool c_locale;
 	UINT cp = AnsiCodePage(&c_locale);
@@ -561,7 +561,7 @@ static UINT AnsiAsciiLen(const char *str)
 }
 
 // Length of s when the ASCII fast path converts it, else INFINITE
-static UINT UniAsciiLen(wchar_t *s)
+static UINT UniAsciiLen(const wchar_t *s)
 {
 	UINT i;
 
@@ -589,7 +589,7 @@ static void WidenAscii(wchar_t *s, const char *str, UINT len)
 }
 
 // Narrow the first len characters of the ASCII string s into str and terminate str
-static void NarrowAscii(char *str, wchar_t *s, UINT len)
+static void NarrowAscii(char *str, const wchar_t *s, UINT len)
 {
 	UINT i;
 
@@ -604,7 +604,7 @@ static void NarrowAscii(char *str, wchar_t *s, UINT len)
 // gives (StrCpy, UniStrCpy). A result that fits is converted straight into the destination;
 // only a result that the copy cuts still goes through a temporary string.
 
-UINT UniToStr(char *str, UINT size, wchar_t *s)
+UINT UniToStr(char *str, UINT size, const wchar_t *s)
 {
 	UINT ret;
 	char *tmp;
@@ -656,7 +656,7 @@ UINT UniToStr(char *str, UINT size, wchar_t *s)
 	return ret;
 }
 
-UINT CalcUniToStr(wchar_t *s)
+UINT CalcUniToStr(const wchar_t *s)
 {
 	UINT len;
 	if (s == NULL)
@@ -750,7 +750,7 @@ UINT CalcStrToUni(const char *str)
 }
 
 // The converted string in one allocation of its exact size, without a temporary string
-char *CopyUniToStr(wchar_t *unistr)
+char *CopyUniToStr(const wchar_t *unistr)
 {
 	char *str;
 	UINT str_size;
@@ -834,7 +834,7 @@ static bool IsSurrogateUnit(wchar_t c)
 
 // Encode the len code units of s into u (NULL: only count), which has room for u_size bytes,
 // all of the encoding. Returns the number of bytes
-static UINT UniToUtf8Units(BYTE *u, UINT u_size, wchar_t *s, UINT len)
+static UINT UniToUtf8Units(BYTE *u, UINT u_size, const wchar_t *s, UINT len)
 {
 	UINT i = 0, wp = 0;
 
@@ -1022,7 +1022,7 @@ UINT Utf8Len(const BYTE *u, UINT size)
 	return num;
 }
 
-UINT UniToUtf8(void *u, UINT size, wchar_t *s)
+UINT UniToUtf8(void *u, UINT size, const wchar_t *s)
 {
 	UINT len, need, wp;
 	if (u == NULL || s == NULL)
@@ -1058,7 +1058,7 @@ UINT UniToUtf8(void *u, UINT size, wchar_t *s)
 	return wp;
 }
 
-UINT CalcUniToUtf8(wchar_t *s)
+UINT CalcUniToUtf8(const wchar_t *s)
 {
 	if (s == NULL)
 	{
@@ -1120,7 +1120,7 @@ UINT GetUniType(wchar_t c)
 	return 3;
 }
 
-UINT UniReplaceStrEx(wchar_t *dst, UINT size, wchar_t *string, wchar_t *old_keyword, wchar_t *new_keyword, bool case_sensitive)
+UINT UniReplaceStrEx(wchar_t *dst, UINT size, const wchar_t *string, const wchar_t *old_keyword, const wchar_t *new_keyword, bool case_sensitive)
 {
 	UINT i, j, num, len_string, len_old, len_new, len_ret, wp;
 	wchar_t *ret;
@@ -1163,7 +1163,7 @@ UINT UniReplaceStrEx(wchar_t *dst, UINT size, wchar_t *string, wchar_t *old_keyw
 	return num;
 }
 
-UINT UniCalcReplaceStrEx(wchar_t *string, wchar_t *old_keyword, wchar_t *new_keyword, bool case_sensitive)
+UINT UniCalcReplaceStrEx(const wchar_t *string, const wchar_t *old_keyword, const wchar_t *new_keyword, bool case_sensitive)
 {
 	UINT i, num;
 	UINT len_string, len_old, len_new;
@@ -1197,17 +1197,18 @@ UINT UniCalcReplaceStrEx(wchar_t *string, wchar_t *old_keyword, wchar_t *new_key
 	return len_string + len_new * num - len_old * num;
 }
 
-UINT UniSearchStr(wchar_t *string, wchar_t *keyword, UINT start)
+UINT UniSearchStr(const wchar_t *string, const wchar_t *keyword, UINT start)
 {
 	return UniSearchStrEx(string, keyword, start, true);
 }
 
 // Returns INFINITE if not found
-UINT UniSearchStrEx(wchar_t *string, wchar_t *keyword, UINT start, bool case_sensitive)
+UINT UniSearchStrEx(const wchar_t *string, const wchar_t *keyword, UINT start, bool case_sensitive)
 {
 	UINT len_string, len_keyword;
 	UINT i;
-	wchar_t *cmp_string, *cmp_keyword;
+	const wchar_t *cmp_string, *cmp_keyword;
+	wchar_t *upper_string = NULL, *upper_keyword = NULL;
 	bool found;
 	if (string == NULL || keyword == NULL)
 	{
@@ -1238,12 +1239,14 @@ UINT UniSearchStrEx(wchar_t *string, wchar_t *keyword, UINT start, bool case_sen
 	}
 	else
 	{
-		cmp_string = Malloc((len_string + 1) * sizeof(wchar_t));
-		UniStrCpy(cmp_string, (len_string + 1) * sizeof(wchar_t), string);
-		cmp_keyword = Malloc((len_keyword + 1) * sizeof(wchar_t));
-		UniStrCpy(cmp_keyword, (len_keyword + 1) * sizeof(wchar_t), keyword);
-		UniStrUpper(cmp_string);
-		UniStrUpper(cmp_keyword);
+		upper_string = Malloc((len_string + 1) * sizeof(wchar_t));
+		UniStrCpy(upper_string, (len_string + 1) * sizeof(wchar_t), string);
+		upper_keyword = Malloc((len_keyword + 1) * sizeof(wchar_t));
+		UniStrCpy(upper_keyword, (len_keyword + 1) * sizeof(wchar_t), keyword);
+		UniStrUpper(upper_string);
+		UniStrUpper(upper_keyword);
+		cmp_string = upper_string;
+		cmp_keyword = upper_keyword;
 	}
 
 	found = false;
@@ -1258,8 +1261,8 @@ UINT UniSearchStrEx(wchar_t *string, wchar_t *keyword, UINT start, bool case_sen
 
 	if (case_sensitive == false)
 	{
-		Free(cmp_keyword);
-		Free(cmp_string);
+		Free(upper_keyword);
+		Free(upper_string);
 	}
 
 	if (found == false)
@@ -1358,7 +1361,7 @@ static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_
 	return t;
 }
 
-UNI_TOKEN_LIST *UniParseToken(wchar_t *src, wchar_t *separator)
+UNI_TOKEN_LIST *UniParseToken(const wchar_t *src, const wchar_t *separator)
 {
 	return UniParseTokenWithoutNullStr(src, separator);
 }
@@ -1459,7 +1462,7 @@ void UniToStru(wchar_t *str, UINT i)
 	UniFormat(str, 0, L"%u", i);
 }
 
-UINT UniToInt(wchar_t *str)
+UINT UniToInt(const wchar_t *str)
 {
 	char tmp[128];
 	if (str == NULL)
@@ -1473,7 +1476,7 @@ UINT UniToInt(wchar_t *str)
 	return ToInti(tmp);
 }
 
-void UniToStrForSingleChars(char *dst, UINT dst_size, wchar_t *src)
+void UniToStrForSingleChars(char *dst, UINT dst_size, const wchar_t *src)
 {
 	UINT i, len;
 	if (dst == NULL || src == NULL || dst_size == 0)
@@ -1505,7 +1508,7 @@ void UniToStrForSingleChars(char *dst, UINT dst_size, wchar_t *src)
 	dst[len] = 0;
 }
 
-UNI_TOKEN_LIST *UniGetLines(wchar_t *str)
+UNI_TOKEN_LIST *UniGetLines(const wchar_t *str)
 {
 	UINT i, len;
 	BUF *b = NULL;
@@ -1586,7 +1589,7 @@ void UniPrintStr(wchar_t *string)
 }
 
 // The CRT formats the whole message into a heap buffer, which goes to the console as it is
-static void UniPrintArgs(wchar_t *fmt, va_list args)
+static void UniPrintArgs(const wchar_t *fmt, va_list args)
 {
 	va_list count_args;
 	wchar_t *str;
@@ -1612,7 +1615,7 @@ static void UniPrintArgs(wchar_t *fmt, va_list args)
 	Free(str);
 }
 
-void UniPrint(wchar_t *fmt, ...)
+void UniPrint(const wchar_t *fmt, ...)
 {
 	va_list args;
 	if (fmt == NULL)
@@ -1628,7 +1631,7 @@ void UniPrint(wchar_t *fmt, ...)
 // The CRT formatter (wide: %s is a wchar_t string, %S a char string). size is in bytes: 0 means
 // the buffer holds the whole result, 1 leaves buf as it is, and a longer result keeps
 // size / sizeof(wchar_t) - 1 characters and the terminator. buf must not be an argument or fmt
-void UniFormatArgs(wchar_t *buf, UINT size, wchar_t *fmt, va_list args)
+void UniFormatArgs(wchar_t *buf, UINT size, const wchar_t *fmt, va_list args)
 {
 	size_t count = size / sizeof(wchar_t);
 	if (buf == NULL || fmt == NULL)
@@ -1661,7 +1664,7 @@ void UniFormatArgs(wchar_t *buf, UINT size, wchar_t *fmt, va_list args)
 	_vsnwprintf_s(buf, count, _TRUNCATE, fmt, args);
 }
 
-void UniFormat(wchar_t *buf, UINT size, wchar_t *fmt, ...)
+void UniFormat(wchar_t *buf, UINT size, const wchar_t *fmt, ...)
 {
 	va_list args;
 	if (buf == NULL || fmt == NULL)
@@ -1674,7 +1677,7 @@ void UniFormat(wchar_t *buf, UINT size, wchar_t *fmt, ...)
 	va_end(args);
 }
 
-int UniSoftStrCmp(wchar_t *str1, wchar_t *str2)
+int UniSoftStrCmp(const wchar_t *str1, const wchar_t *str2)
 {
 	UINT len1, len2, i;
 	if (str1 == NULL && str2 == NULL)
@@ -1729,7 +1732,7 @@ int UniSoftStrCmp(wchar_t *str1, wchar_t *str2)
 	return 0;
 }
 
-int UniStrCmpi(wchar_t *str1, wchar_t *str2)
+int UniStrCmpi(const wchar_t *str1, const wchar_t *str2)
 {
 	UINT i;
 	if (str1 == NULL && str2 == NULL)
@@ -1767,7 +1770,7 @@ int UniStrCmpi(wchar_t *str1, wchar_t *str2)
 	}
 }
 
-int UniStrCmp(wchar_t *str1, wchar_t *str2)
+int UniStrCmp(const wchar_t *str1, const wchar_t *str2)
 {
 	if (str1 == NULL && str2 == NULL)
 	{
@@ -1835,7 +1838,7 @@ wchar_t UniToUpper(wchar_t c)
 	return c;
 }
 
-UINT UniStrCat(wchar_t *dst, UINT size, wchar_t *src)
+UINT UniStrCat(wchar_t *dst, UINT size, const wchar_t *src)
 {
 	UINT len1, len2, len_test;
 	if (dst == NULL || src == NULL)
@@ -1873,7 +1876,7 @@ UINT UniStrCat(wchar_t *dst, UINT size, wchar_t *src)
 	return len1 + len2;
 }
 
-UINT UniStrCpy(wchar_t *dst, UINT size, wchar_t *src)
+UINT UniStrCpy(wchar_t *dst, UINT size, const wchar_t *src)
 {
 	UINT len;
 	if (dst == NULL || src == NULL)
@@ -1920,7 +1923,7 @@ UINT UniStrCpy(wchar_t *dst, UINT size, wchar_t *src)
 	return len;
 }
 
-UINT UniStrSize(wchar_t *str)
+UINT UniStrSize(const wchar_t *str)
 {
 	if (str == NULL)
 	{
@@ -1930,7 +1933,7 @@ UINT UniStrSize(wchar_t *str)
 	return (UniStrLen(str) + 1) * sizeof(wchar_t);
 }
 
-UINT UniStrLen(wchar_t *str)
+UINT UniStrLen(const wchar_t *str)
 {
 	if (str == NULL)
 	{
