@@ -44,6 +44,9 @@
 // - Phase "setlink" (FND-13 #107) runs after "iptablelock": SetLink on an offline cascade HARNESS_SETLINK of hub
 //   HARNESS_HUB_A refuses an unsupported authentication type and stores the cascade policy that NewLink stores. The
 //   phase deletes the cascade again.
+// - Phase "autodisconnect" (FND-221 #258) runs after "setlink": a user of hub HARNESS_HUB_A whose policy has
+//   AutoDisconnect connects; the server session and the client session end at that time, and the client does not
+//   reconnect. The phase deletes the user again.
 // - Phase "adminreconnect" (FND-14 #107) runs after "setlink": a second admin RPC loses its connection
 //   (DisconnectConnection through the first one), reconnects inside the next call and keeps no socket timeout.
 //   The same phase calls AdminInvoke on a session that AdminOpen opened without a socket (FND-130 #142) and compares
@@ -209,6 +212,13 @@
 // Phase "setlink" on hub HARNESS_HUB_A (the cascade is offline and deleted again by the phase)
 #define	HARNESS_SETLINK_NAME		L"HARNESS_SETLINK"
 #define	HARNESS_SETLINK_AUTHTYPE	99					// No CLIENT_AUTHTYPE_* value
+
+// Phase "autodisconnect" on hub HARNESS_HUB_A (the user is deleted again by the phase)
+#define	HARNESS_AUTODISC_USER		"autodisconnect"
+#define	HARNESS_AUTODISC_SECONDS	2					// Policy AutoDisconnect of the user
+#define	HARNESS_AUTODISC_LATE		3000				// The server session has ended within this after that time (ms)
+#define	HARNESS_AUTODISC_IDLE		2000				// Then the client session has stopped within this (ms)
+#define	HARNESS_AUTODISC_POLL		50					// EnumSession and client status poll interval (ms)
 
 // Ethernet frame owned by the test packet adapter
 typedef struct HARNESS_FRAME
@@ -533,6 +543,7 @@ static UINT HarnessSetLinkGet(HARNESS *h, RPC_CREATE_LINK *t);
 static void HarnessSetLinkAuthType(HARNESS *h);
 static void HarnessSetLinkPolicy(HARNESS *h);
 static void HarnessSetLink(HARNESS *h);
+static void HarnessAutoDisconnect(HARNESS *h);
 static bool HarnessFindAdminConnection(HARNESS *h, UINT port, char *name, UINT name_size);
 static void HarnessAdminReconnect(HARNESS *h);
 static void HarnessAdminInvoke(HARNESS *h);
@@ -3626,6 +3637,116 @@ static void HarnessSetLink(HARNESS *h)
 	StrCpy(k.HubName, sizeof(k.HubName), HARNESS_HUB_A);
 	UniStrCpy(k.AccountName, sizeof(k.AccountName), HARNESS_SETLINK_NAME);
 	HarnessCheckErr(h, ScDeleteLink(h->Rpc, &k), "DeleteLink HARNESS_SETLINK");
+}
+
+////////////////////////////
+// Policy AutoDisconnect ends the session (FND-221 #258)
+
+// A user whose policy has AutoDisconnect HARNESS_AUTODISC_SECONDS logs in to hub HARNESS_HUB_A with a test session.
+// The server session ends at that time: not before it (both sessions were created after the test started) and long
+// before the policy TimeOut (20 s), which would end it only after the client went away. The client session gets the
+// policy in the welcome Pack, ends with ERR_AUTO_DISCONNECTED and does not wait for a reconnection (its NumRetry is 1,
+// its retry interval 5 s). The user is deleted again, so the later phases see the same users as before
+static void HarnessAutoDisconnect(HARNESS *h)
+{
+	RPC_SET_USER t;
+	RPC_DELETE_USER d;
+	HARNESS_PA *p;
+	UINT64 started, established, ended = 0, stopped = 0, end;
+	UINT err;
+	bool listed;
+	char tmp[MAX_SIZE];
+
+	Print("[autodisconnect: policy AutoDisconnect ends the session at its time]\n");
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	StrCpy(t.Name, sizeof(t.Name), HARNESS_AUTODISC_USER);
+	UniStrCpy(t.Note, sizeof(t.Note), L"ranz harness");
+	t.AuthType = AUTHTYPE_PASSWORD;
+	t.AuthData = NewPasswordAuthData(HARNESS_AUTODISC_USER, HARNESS_PASSWORD);
+	t.Policy = ClonePolicy(GetDefaultPolicy());
+	t.Policy->AutoDisconnect = HARNESS_AUTODISC_SECONDS;
+	err = ScCreateUser(h->Rpc, &t);
+	FreeRpcSetUser(&t);
+	if (HarnessCheckErr(h, err, "CreateUser " HARNESS_AUTODISC_USER " on " HARNESS_HUB_A " with policy AutoDisconnect") == false)
+	{
+		return;
+	}
+
+	p = HarnessNewPa("autodisc");
+	started = Tick64();
+
+	if (HarnessCheck(h, HarnessStartSession(h, p, HARNESS_HUB_A, HARNESS_AUTODISC_USER), "test session autodisc started") &&
+		HarnessWaitSession(h, p, HARNESS_SESSION_TIMEOUT))
+	{
+		established = Tick64();
+
+		listed = HarnessWaitSessionListed(h, HARNESS_HUB_A, HARNESS_AUTODISC_USER, false, NULL, 0);
+		HarnessCheck(h, listed, "the server lists the session of " HARNESS_AUTODISC_USER " (EnumSession)");
+
+		// The server session ends
+		end = established + (UINT64)HARNESS_AUTODISC_SECONDS * 1000 + HARNESS_AUTODISC_LATE;
+		while (listed)
+		{
+			if (HarnessFindSession(h, HARNESS_HUB_A, HARNESS_AUTODISC_USER, false, NULL, 0) == false)
+			{
+				ended = Tick64();
+				break;
+			}
+
+			if (Tick64() >= end)
+			{
+				break;
+			}
+
+			SleepThread(HARNESS_AUTODISC_POLL);
+		}
+
+		if (listed)
+		{
+			Format(tmp, sizeof(tmp), "the server session ends within %u ms after its AutoDisconnect time (%u s)",
+				HARNESS_AUTODISC_LATE, HARNESS_AUTODISC_SECONDS);
+			HarnessCheck(h, ended != 0, tmp);
+			HarnessCheck(h, ended == 0 || ended - started >= (UINT64)HARNESS_AUTODISC_SECONDS * 1000,
+				"the server session does not end before its AutoDisconnect time");
+			if (ended != 0)
+			{
+				Print("TIME autodisconnect_session_end %I64u ms\n", ended - established);
+			}
+		}
+
+		// The client session stops without a reconnection
+		end = Tick64() + HARNESS_AUTODISC_IDLE;
+		while (true)
+		{
+			if (p->Session->ClientStatus == CLIENT_STATUS_IDLE)
+			{
+				stopped = Tick64();
+				break;
+			}
+
+			if (Tick64() >= end)
+			{
+				break;
+			}
+
+			SleepThread(HARNESS_AUTODISC_POLL);
+		}
+
+		Format(tmp, sizeof(tmp), "the client session stops within %u ms and does not reconnect (client status %u)",
+			HARNESS_AUTODISC_IDLE, p->Session->ClientStatus);
+		HarnessCheck(h, stopped != 0, tmp);
+		HarnessExpectErr(h, p->Session->Err, ERR_AUTO_DISCONNECTED, "error of the client session");
+	}
+
+	HarnessStopSession(p);
+	HarnessFreePa(p);
+
+	Zero(&d, sizeof(d));
+	StrCpy(d.HubName, sizeof(d.HubName), HARNESS_HUB_A);
+	StrCpy(d.Name, sizeof(d.Name), HARNESS_AUTODISC_USER);
+	HarnessCheckErr(h, ScDeleteUser(h->Rpc, &d), "DeleteUser " HARNESS_AUTODISC_USER);
 }
 
 ////////////////////////////
@@ -7402,6 +7523,8 @@ void harness_test(UINT num, char **arg)
 		HarnessIpTableLock(h);
 		HarnessSetPhase("setlink", NULL);
 		HarnessSetLink(h);
+		HarnessSetPhase("autodisconnect", NULL);
+		HarnessAutoDisconnect(h);
 		HarnessSetPhase("adminreconnect", NULL);
 		HarnessAdminReconnect(h);
 		HarnessAdminInvoke(h);

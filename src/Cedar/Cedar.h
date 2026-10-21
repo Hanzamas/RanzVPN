@@ -304,6 +304,7 @@
 #define ERR_NOT_ADMINPACK_SERVER		121
 #define ERR_BRANDED_C_TO_S				124
 #define ERR_BRANDED_C_FROM_S			125
+#define	ERR_AUTO_DISCONNECTED			126		// Policy AutoDisconnect ended the session; it does not reconnect
 #define	ERR_CLIENT_ID_REQUIRED			127
 #define	ERR_TOO_MANY_USERS_CREATED		128
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143
