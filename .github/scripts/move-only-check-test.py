@@ -40,6 +40,11 @@ PRE_I = PRE.replace('#include "A.h"\n', '#include "A.h"\n#include "AInternal.h"\
 A_INT = '// AInternal.h\n// Shared inside module A\n\n#ifndef\tA_INTERNAL_H\n#define\tA_INTERNAL_H\n\n' + MAC + '\n#endif\n'
 
 
+S_INT = '// SInternal.h\n\n#ifndef\tS_INTERNAL_H\n#define\tS_INTERNAL_H\n\n#endif\n'
+S_C = ('// S.c\n\n#include "A.h"\n#include "SInternal.h"\n\nstatic int F3(void);\n\n'
+       'int G(void)\n{\n\treturn F3();\n}\n\nstatic int F3(void)\n{\n\treturn 3;\n}\n')
+
+
 def a_c(*blocks):
     return PRE + ''.join('\n' + b for b in blocks)
 
@@ -59,6 +64,8 @@ BASE = {
     'B.h': B_H,
     'W.c': crlf(a_c(F1, F2, F3, F4, MAC, F5)),
     'R.c': a_c(F1, F2_CR),
+    'S.c': S_C,
+    'SInternal.h': S_INT,
 }
 
 # (name, subject, files changed against BASE, expect pass, check a --range instead of the commit)
@@ -108,6 +115,19 @@ CASES = [
     ('header: guard with a value', 'header: C.h', {'A.h': A_H.replace('int F2(int b);\n', ''), 'C.h': '// C.h\n\n#ifndef\tC_H\n#define\tC_H 1\n\nint F2(int b);\n\n#endif\n'}, False, False),
     ('linkage: static and prototype', 'linkage: F3', {'A.c': BASE['A.c'].replace('int F3(void)\n{', 'static int F3(void)\n{'), 'A.h': A_H.replace('int F3(void);\n', '')}, True, False),
     ('linkage: with an edit', 'linkage: F3', {'A.c': BASE['A.c'].replace('int F3(void)\n{\n\treturn 3;', 'static int F3(void)\n{\n\treturn 4;')}, False, False),
+    ('linkage: static removed, prototype to a header', 'linkage: F3 visible in module S',
+     {'S.c': S_C.replace('static int F3(void);\n\n', '').replace('static int F3(void)\n{', 'int F3(void)\n{'),
+      'SInternal.h': S_INT.replace('\n\n#endif', '\n\nint F3(void);\n\n#endif')}, True, False),
+    ('linkage: prototype changed on the way', 'linkage: F3 visible in module S',
+     {'S.c': S_C.replace('static int F3(void);\n\n', '').replace('static int F3(void)\n{', 'int F3(void)\n{'),
+      'SInternal.h': S_INT.replace('\n\n#endif', '\n\nint F3(int x);\n\n#endif')}, False, False),
+    ('linkage: static removed with an edit', 'linkage: F3 visible in module S',
+     {'S.c': S_C.replace('static int F3(void);\n\n', '').replace('static int F3(void)\n{\n\treturn 3;', 'int F3(void)\n{\n\treturn 4;'),
+      'SInternal.h': S_INT.replace('\n\n#endif', '\n\nint F3(void);\n\n#endif')}, False, False),
+    ('linkage: prototype deleted, declared nowhere', 'linkage: F3 visible in module S',
+     {'S.c': S_C.replace('static int F3(void);\n\n', '').replace('static int F3(void)\n{', 'int F3(void)\n{')}, False, False),
+    ('linkage: other line deleted', 'linkage: F3 visible in module S',
+     {'S.c': S_C.replace('#include "A.h"\n', '').replace('static int F3(void)\n{', 'int F3(void)\n{')}, False, False),
     ('unmarked commit that moves code', 'Refactor F2', {'A.c': a_c(F1, F3, F4, MAC, F5), 'B.c': B_C.replace('return 1', 'return 0') + '\n' + F2}, False, True),
     ('unmarked commit that only edits', 'Fix F1', {'A.c': BASE['A.c'].replace('return a + 1', 'return a + 2')}, True, True),
     ('unmarked extract of a function part', 'Extract F2 core',
