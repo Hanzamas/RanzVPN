@@ -199,6 +199,58 @@ The server's text configuration tree (`$ranz_server.config`, `FOLDER`/`ITEM`), l
 The 20 bytes that `GenerateMachineUniqueHash` returns for a server: a hash of the Windows MachineGuid and the `MachineIdSalt` of the Config file, kept in the `CEDAR`. It sets the MAC address and the 172.31.x.x address of every Hub and the `unique_id` of a Cascade login. It stays the same across restarts, renames and IP changes; servers cloned from one image differ only when each has its own config file, and so its own salt (FIX-5, `docs/upgrade-notes.md`).
 _Avoid_: machine ID (Windows' name for the MachineGuid), `UniqueId` (a random value per `CEDAR`, copied into `NODE_INFO`)
 
+## SDN language (new core)
+
+The terms of the new-core SDN (spec #176). Its decisions are ADR-0025 to ADR-0037.
+
+**VRF**:
+A routing domain of the overlay with its own forwarding table, address pools, DNS zone and policy. VRFs are isolated unless the Intent leaks routes between them, and two VRFs may use the same private range.
+_Avoid_: tenant, routing compartment, segment
+
+**Network**:
+One L2 switched or L3 routed segment inside exactly one VRF, with its own address pools; the successor of the Hub.
+_Avoid_: Hub (the slim fork object), VLAN, subnet
+
+**Node**:
+One Windows host running `ranz-node`, the data plane, in one or more roles (`server`, `client`, `bridge`, `relay`). It joins VRFs and applies the desired state that the Controller sends it.
+_Avoid_: agent, server (a role), peer (the other end of a link)
+
+**Controller**:
+The `ranz-controller` service: the single authority that stores the Intent, allocates addresses and DNS records, and compiles the desired state of every Node. It runs as one member or as a cluster of 3 or 5.
+_Avoid_: `controller` role (it left the node binary), master, management server
+
+**Intent**:
+The declared description of the network (VRFs, Networks, Nodes, policy, routes and the other resources) that an administrator applies. Every apply is a revision.
+_Avoid_: config, configuration (the slim fork's Config file)
+
+**Generation**:
+The number of one version of a Node's desired state. The Controller sends the changes since the Generation the Node last acknowledged, and the Node acknowledges each Generation it applied.
+_Avoid_: revision (a version of the whole Intent), version, epoch
+
+**4via6**:
+The mapping of an IPv4 address of a VRF into an IPv6 address inside that VRF's ULA prefix, so a host that joins two VRFs with overlapping IPv4 can tell the two addresses apart.
+_Avoid_: NAT64, 6to4
+
+**Endpoint**:
+One service (an IP address and port) of a source VRF published into a consumer VRF, so the consumer reaches only that service.
+_Avoid_: service, port forward; "endpoint" for the end of a connection (say peer or address)
+
+**Mirror**:
+A rate-limited copy of matching overlay traffic, sent to a sensor over VXLAN.
+_Avoid_: tap, SPAN, monitor (the Local Bridge `Monitor` flag is a different thing)
+
+**Front door**:
+The TCP 443 listener of a Node that reads the first bytes of each connection and hands the socket to the process that owns that protocol.
+_Avoid_: port sharing, reverse proxy, demultiplexer (the opt-in UDP 443 demultiplexer is a different thing)
+
+**Egress tier**:
+How a Node that is an internet exit for a VRF translates its traffic: tier 1 is RRAS NAT, tier 2 is WinNAT, tier 3 is a proxy on the Windows TCP/IP stack.
+_Avoid_: SecureNAT, NAT mode
+
+**Capability**:
+A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier), against which the Controller checks the Intent before an apply.
+_Avoid_: `CAPS` (the slim fork's server capability list), feature flag
+
 ## Flagged ambiguities
 
 - "Cedar" names both the library and the root `CEDAR` object. "Mayaqua" names the library and the Mayaqua module (`Mayaqua.c`, start-up and shut-down).
@@ -211,3 +263,8 @@ _Avoid_: machine ID (Windows' name for the MachineGuid), `UniqueId` (a random va
 - The "Pkt" files (`Pkt.c`, `PktChecksum.c`, `PktIpv6.c`, `PktSniff.c`) and `Dhcp.c` are part of TcpIp, with `TcpIp.h` as their API header. A `PKT` is a parsed frame.
 - "DNS" is the resolver module (`DNS.c`). `NetworkDns.c` is part of Network: the machine name, the reverse host name lookup and the NetBIOS name query.
 - PACK over HTTP (`PackHttp.c`) is part of HTTP, not of Pack.
+- "Network" names three things: the SDN resource (a segment inside a VRF, the successor of the Hub), the Mayaqua Network module (sockets), and a word the Hub entry tells you to avoid. In slim-fork text say Hub; say Network only for the SDN resource.
+- "Node" is a new-core host running `ranz-node`. `NODE_INFO` in the slim fork's Session is the record of a connecting client's host details, not a Node.
+- "Capability" is what a Node reports to the Controller. `CAPS` (`ServerCaps.c`) is the slim fork's list of server capabilities for admin clients.
+- "controller" was a role of the node binary in ADR-0022. Since ADR-0026 the Controller is the separate `ranz-controller` service, and the node has no `controller` role.
+- "Generation" and "revision" are different versions: a revision is a version of the whole Intent (what `ranz rollback` returns to); a Generation is a version of one Node's desired state.
