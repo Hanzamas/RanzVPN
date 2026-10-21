@@ -90,15 +90,142 @@
     },
     {
       "source": "src/Cedar/Admin.c",
-      "files": [],
+      "files": [
+        {
+          "file": "AdminLog.c",
+          "group": "log file RPCs",
+          "description": "Admin RPC area: log files (enumerate and read the server log files)",
+          "names": ["StReadLogFile", "StEnumLogFile", "SiReadLocalLogFile", "SiEnumLocalLogFileList"]
+        },
+        {
+          "file": "AdminAc.c",
+          "group": "IP access control RPCs",
+          "description": "Admin RPC area: IP access control list of a Virtual Hub",
+          "names": ["StGetAcList", "StSetAcList"]
+        },
+        {
+          "file": "AdminCrl.c",
+          "group": "CRL RPCs",
+          "description": "Admin RPC area: certificate revocation list of a Virtual Hub",
+          "names": ["StSetCrl", "StGetCrl", "StDelCrl", "StAddCrl", "StEnumCrl"]
+        },
+        {
+          "file": "AdminHubOption.c",
+          "group": "hub option and configuration RPCs",
+          "description": "Admin RPC area: Virtual Hub options, the server configuration file and the server capabilities",
+          "names": [
+            "StSetHubExtOptions", "StGetHubExtOptions", "StSetHubAdminOptions", "StGetHubAdminOptions",
+            "StGetDefaultHubAdminOptions", "StGetConfig", "StSetConfig", "StGetCaps"
+          ]
+        },
+        {
+          "file": "AdminBridge.c",
+          "group": "Local Bridge RPCs",
+          "description": "Admin RPC area: Local Bridge",
+          "names": [
+            "StGetBridgeSupport", "StEnumEthernet", "StAddLocalBridge", "StDeleteLocalBridge", "StEnumLocalBridge"
+          ]
+        },
+        {
+          "file": "AdminSyslog.c",
+          "group": "syslog RPCs",
+          "description": "Admin RPC area: syslog settings",
+          "names": ["StSetSysLog", "StGetSysLog"]
+        },
+        {
+          "file": "AdminSession.c",
+          "group": "IP and MAC table and session RPCs",
+          "description": "Admin RPC area: IP and MAC tables and sessions of a Virtual Hub",
+          "names": [
+            "StDeleteIpTable", "SiEnumIpTable", "StEnumIpTable", "StDeleteMacTable", "SiEnumMacTable", "StEnumMacTable",
+            "StDeleteSession", "StGetSessionStatus", "StEnumSession", "SiEnumLocalSession"
+          ]
+        },
+        {
+          "file": "AdminGroup.c",
+          "group": "group RPCs",
+          "description": "Admin RPC area: groups",
+          "names": [
+            "CompareEnumGroupCount", "StEnumGroup", "StDeleteGroup", "StGetGroup", "StSetGroup", "StCreateGroup"
+          ]
+        },
+        {
+          "file": "AdminUser.c",
+          "group": "user RPCs",
+          "description": "Admin RPC area: users",
+          "names": ["StEnumUser", "StDeleteUser", "StGetUser", "StSetUser", "StCreateUser"]
+        },
+        {
+          "file": "AdminAccess.c",
+          "group": "access list RPCs",
+          "description": "Admin RPC area: access lists",
+          "names": ["StEnumAccess", "StDeleteAccess", "AdminSanitizeAccess", "StSetAccessList", "StAddAccess"]
+        },
+        {
+          "file": "AdminLink.c",
+          "group": "cascade connection RPCs",
+          "description": "Admin RPC area: cascade connections",
+          "names": [
+            "StRenameLink", "StDeleteLink", "StSetLinkOffline", "StSetLinkOnline", "StGetLinkStatus", "StEnumLink",
+            "StGetLink", "StSetLink", "StCreateLink"
+          ]
+        },
+        {
+          "file": "AdminCa.c",
+          "group": "CA RPCs",
+          "description": "Admin RPC area: trusted CA certificates of a Virtual Hub",
+          "names": ["StDeleteCa", "StGetCa", "StEnumCa", "StAddCa"]
+        },
+        {
+          "file": "AdminHub.c",
+          "group": "hub RPCs",
+          "description": "Admin RPC area: Virtual Hubs (create, set, enumerate, delete, status, online, log settings) and the server connections",
+          "names": [
+            "StGetHubLog", "StSetHubLog", "StGetHubStatus", "StSetHubOnline", "StGetConnectionInfo",
+            "StDisconnectConnection", "StEnumConnection", "StDeleteHub", "StEnumHub", "StGetHub", "StSetHub",
+            "StCreateHub"
+          ]
+        },
+        {
+          "file": "AdminServer.c",
+          "group": "server, cipher and listener RPCs",
+          "description": "Admin RPC area: server information and status, cipher, certificate, password and listeners",
+          "names": [
+            "StSetServerCipher", "StGetServerCipher", "StGetServerCipherList", "StGetServerCert", "StSetServerCert",
+            "StSetServerPassword", "StWaitListenerBind", "StEnableListener", "StDeleteListener", "StEnumListener",
+            "StCreateListener", "StGetServerStatus", "StGetServerInfo", "CopyOsInfo"
+          ]
+        },
+        {
+          "file": "AdminMessage.c",
+          "group": "message and maintenance RPCs",
+          "description": "Admin RPC area: hub and admin messages, maintenance (flush, crash, reboot, certificate regeneration) and Ethernet VLAN",
+          "names": [
+            "StRegenerateServerCert", "StSetHubMsg", "StGetHubMsg", "StFlush", "StCrash", "StGetAdminMsg",
+            "StEnumEthVLan", "StSetEnableEthVLan", "StRebootServer"
+          ]
+        },
+        {
+          "file": "AdminClient.c",
+          "group": "vpncmd client",
+          "description": "Admin RPC client code that only vpncmd uses: the Sc* client stubs, AdminCall, AdminDisconnect and DownloadFileFromServer (#29 open question 7)",
+          "names": ["AdminCall", "AdminDisconnect", "DownloadFileFromServer"],
+          "patterns": ["^Sc[A-Z]"]
+        },
+        {
+          "file": "AdminMarshal.c",
+          "group": "marshalling",
+          "description": "Admin RPC marshalling: the In/Out/FreeRpc functions of the admin RPC structures, their field tables and the table-driven field hooks (#29 open question 7)",
+          "patterns": ["^(In|Out|Free)Rpc[A-Z]", "^Rpc[A-Z]\\w*(In|Out|Free)$"]
+        }
+      ],
       "remainder": {
-        "description": "everything stays in Admin.c: the admin RPC dispatch (AdminInvoke, AdminDispatch, AdminDispatchTrace) names every static St* handler, so the 15 RPC areas of #29 and their static helpers (AdminGetHub, HashAdminPassword, CompareEnumGroupCount, AdminSanitizeAccess, StWaitListenerBind, CopyOsInfo, the Si* enumerators) cannot leave this file in a pure move before #29 open question 1 (a); the admin connection and login (AdminAccept, AdminOpen, AdminClose, AdminCall, AdminConnectEx, AdminReconnect, AdminDisconnect), the Sc* client stubs, ScGetCapsEx, DownloadFileFromServer and the table-driven marshalling (In/Out/FreeRpc*, the Rpc*In/Out/Free field hooks) stay here by the #29 default (open question 7)",
+        "description": "admin RPC dispatch (AdminInvoke with its RPC table, AdminDispatch, AdminDispatchTrace), the hub lookup that the handlers of several areas share (AdminGetHub), and the admin connection and login (AdminAccept, AdminOpen, AdminClose, AdminCheckPassword, HashAdminPassword, CheckAdminSourceAddress, SiIsEmptyPassword, AdminConnectEx, AdminConnectMain, AdminRpcSock, AdminReconnect); the St* handlers and the helpers that cross areas are visible inside the module through AdminInternal.h (#29 open question 1 (a))",
         "names": [
-          "CompareEnumGroupCount", "CopyOsInfo", "SiEnumIpTable", "SiEnumMacTable", "SiReadLocalLogFile",
-          "SiEnumLocalLogFileList", "SiEnumLocalSession", "CheckAdminSourceAddress", "HashAdminPassword",
-          "SiIsEmptyPassword", "DownloadFileFromServer"
-        ],
-        "patterns": ["^St[A-Z]", "^Admin[A-Z]", "^Sc[A-Z]", "^(In|Out|Free)Rpc[A-Z]", "^Rpc[A-Z]\\w*(In|Out|Free)$"]
+          "AdminGetHub", "AdminDispatchTrace", "AdminInvoke", "CheckAdminSourceAddress", "AdminOpen", "AdminClose",
+          "AdminDispatch", "AdminAccept", "AdminCheckPassword", "HashAdminPassword", "AdminConnectMain", "AdminRpcSock",
+          "AdminConnectEx", "AdminReconnect", "SiIsEmptyPassword"
+        ]
       }
     },
     {
