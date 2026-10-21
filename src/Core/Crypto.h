@@ -23,6 +23,7 @@
 #define CRYPTO_AES_GCM_TAG_SIZE   16
 #define CRYPTO_HKDF_MAX_SIZE      (255 * CRYPTO_SHA256_SIZE) // RFC 5869: at most 255 blocks of output
 #define CRYPTO_THUMBPRINT_SIZE    20                         // SHA-1 of the encoded certificate
+#define CRYPTO_END_POINT_MAX_SIZE 64                         // tls-server-end-point of a certificate signed with SHA-512
 
 // ML-KEM-768 (FIPS 203) and the X25519MLKEM768 hybrid of draft-ietf-tls-ecdhe-mlkem: the client
 // share is the encapsulation key followed by an X25519 public key, the server share the
@@ -58,6 +59,11 @@ typedef struct CRYPTO_IDENTITY {
 	ULONG_PTR Provider; // NCRYPT_PROV_HANDLE
 	ULONG_PTR Key;      // NCRYPT_KEY_HANDLE
 } CRYPTO_IDENTITY;
+
+// The decapsulating side of one ML-KEM-768 exchange, between CryptoMlKemGenerate and CryptoMlKemDecapsulate
+typedef struct CRYPTO_MLKEM {
+	void *Key; // BCRYPT_KEY_HANDLE of the ML-KEM-768 key pair
+} CRYPTO_MLKEM;
 
 // The initiator side of one X25519MLKEM768 exchange, between CryptoHybridBegin and CryptoHybridFinish
 typedef struct CRYPTO_HYBRID {
@@ -125,6 +131,15 @@ bool CryptoHybridRespond(UCHAR *server_share, UCHAR *secret, const UCHAR *client
 bool CryptoHybridFinish(CRYPTO_HYBRID *h, UCHAR *secret, const UCHAR *server_share);
 void CryptoHybridFree(CRYPTO_HYBRID *h);
 
+// ML-KEM-768 alone (CryptoMlKem.c), the KEM of the Noise hfs handshake (Core/Noise.h). Generate
+// makes a key pair and writes its encapsulation key; Encapsulate writes the ciphertext and the
+// secret for a peer's encapsulation key; Decapsulate writes the secret of a ciphertext. Decapsulate
+// and Free release the key pair. Where CNG has no ML-KEM, each fails without side effects.
+bool CryptoMlKemGenerate(CRYPTO_MLKEM *k, UCHAR *encaps_key);
+bool CryptoMlKemEncapsulate(UCHAR *ciphertext, UCHAR *secret, const UCHAR *encaps_key);
+bool CryptoMlKemDecapsulate(CRYPTO_MLKEM *k, UCHAR *secret, const UCHAR *ciphertext);
+void CryptoMlKemFree(CRYPTO_MLKEM *k);
+
 // Certificates through CryptoAPI (CryptoCert.c); free each returned context with CryptoCertFree.
 // CreateSelfSigned: a self-signed ECDSA P-256 certificate (ecdsa-with-SHA256, server and client
 // authentication) whose key is a new persisted key of the software KSP, named key_name or, for
@@ -132,13 +147,18 @@ void CryptoHybridFree(CRYPTO_HYBRID *h);
 // optional subject alternative name. ImportPfx: the first certificate of a PKCS #12 file that has
 // a private key, the key persisted in the software KSP (PKCS12_ALWAYS_CNG_KSP). The store
 // functions take a system store name (NULL: L"My") and CRYPTO_MACHINE for LocalMachine; the
-// thumbprint is 40 hex digits, spaces and colons ignored.
+// thumbprint is 40 hex digits, spaces and colons ignored. EndPoint: the tls-server-end-point
+// channel binding of the certificate (RFC 5929 section 4.1), the hash of its encoding by the hash
+// of its signature algorithm, SHA-256 for MD5 and SHA-1, into CRYPTO_END_POINT_MAX_SIZE bytes of
+// hash; size receives 32, 48 or 64. It fails for a signature algorithm whose hash is in its
+// parameters (RSA-PSS) or is none of these.
 PCCERT_CONTEXT CryptoCertCreateSelfSigned(const wchar_t *subject, const wchar_t *dns_name, const wchar_t *key_name, UINT days, UINT flags);
 PCCERT_CONTEXT CryptoCertImportPfx(const void *pfx, UINT size, const wchar_t *password, UINT flags);
 bool CryptoCertVerifySelfSigned(PCCERT_CONTEXT cert);
 bool CryptoCertHasKspKey(PCCERT_CONTEXT cert);
 bool CryptoCertThumbprint(PCCERT_CONTEXT cert, UCHAR *thumbprint);
 bool CryptoCertThumbprintStr(PCCERT_CONTEXT cert, char *str, UINT size);
+bool CryptoCertEndPoint(PCCERT_CONTEXT cert, UCHAR *hash, UINT *size);
 bool CryptoCertAddToStore(PCCERT_CONTEXT cert, const wchar_t *store_name, UINT flags);
 PCCERT_CONTEXT CryptoCertFindByThumbprint(const char *thumbprint, const wchar_t *store_name, UINT flags);
 bool CryptoCertRemoveFromStore(const char *thumbprint, const wchar_t *store_name, UINT flags);
