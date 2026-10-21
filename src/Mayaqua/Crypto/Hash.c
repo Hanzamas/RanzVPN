@@ -1,5 +1,5 @@
 // Hash.c
-// Hashes: MD4, MD5 and SHA-1 on CNG, SHA-256 on OpenSSL, and SHA-0, which is Mayaqua's own code
+// Hashes: MD4, MD5, SHA-1 and SHA-256 on CNG, and SHA-0, which is Mayaqua's own code
 
 #include "Mayaqua/Encrypt.h"
 
@@ -87,7 +87,7 @@ void Sha2_256(void *dst, void *src, UINT size)
 		return;
 	}
 
-	SHA256(src, size, dst);
+	CngHash(&cng_sha256, dst, SHA256_SIZE, src, size);
 }
 
 // SHA0 implementation

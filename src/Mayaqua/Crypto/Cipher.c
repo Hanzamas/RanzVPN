@@ -1,5 +1,5 @@
 // Cipher.c
-// Symmetric ciphers: the AEAD CIPHER on OpenSSL EVP and the RC4 CRYPT on CNG
+// The RC4 CRYPT on CNG
 
 #include "Mayaqua/Encrypt.h"
 

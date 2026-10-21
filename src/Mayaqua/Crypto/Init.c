@@ -24,7 +24,7 @@ static OSSL_PROVIDER *ossl_provider_legacy = NULL;
 static OSSL_PROVIDER *ossl_provider_default = NULL;
 static OSSL_PROVIDER *ossl_provider_oqsprovider = NULL;
 
-// CNG algorithm providers of MD4, MD5, SHA-1 and RC4, which run on CNG instead of OpenSSL.
+// CNG algorithm providers of MD4, MD5, SHA-1, SHA-256 and RC4, which run on CNG instead of OpenSSL.
 // They are opened once, on first use, and kept for the life of the process, as the CNG
 // pseudo-handles are (MayaType.h selects the Vista SDK level, which does not declare those).
 // A provider that failed to open stays NULL.
@@ -32,6 +32,7 @@ static INIT_ONCE cng_init_once = INIT_ONCE_STATIC_INIT;
 BCRYPT_ALG_HANDLE cng_md4 = NULL;
 BCRYPT_ALG_HANDLE cng_md5 = NULL;
 BCRYPT_ALG_HANDLE cng_sha1 = NULL;
+BCRYPT_ALG_HANDLE cng_sha256 = NULL;
 BCRYPT_ALG_HANDLE cng_rc4 = NULL;
 
 // Open one CNG algorithm provider; NULL on failure
@@ -53,6 +54,7 @@ static BOOL CALLBACK CngOpenAll(PINIT_ONCE once, PVOID param, PVOID *context)
 	cng_md4 = CngOpenAlg(BCRYPT_MD4_ALGORITHM);
 	cng_md5 = CngOpenAlg(BCRYPT_MD5_ALGORITHM);
 	cng_sha1 = CngOpenAlg(BCRYPT_SHA1_ALGORITHM);
+	cng_sha256 = CngOpenAlg(BCRYPT_SHA256_ALGORITHM);
 	cng_rc4 = CngOpenAlg(BCRYPT_RC4_ALGORITHM);
 
 	return TRUE;
