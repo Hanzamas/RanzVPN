@@ -3,35 +3,64 @@ package control
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"net"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
+	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 )
 
-func newKey(t *testing.T) []byte {
+func newKey(t *testing.T) *keys.Soft {
 	t.Helper()
-	k, err := GenerateKey()
+	k, err := keys.GenerateSoft()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return k.Private
+	return k
 }
 
-// accept runs one server handshake on l and sends its result to the returned channels.
-func accept(l *Listener) (<-chan *Conn, <-chan error) {
+// listen returns a TLS listener that offers ALPN, as the controller's port does.
+func listen(t *testing.T) net.Listener {
+	t.Helper()
+	tlsKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := keys.SelfSigned(tlsKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		NextProtos:   []string{ALPN},
+		Certificates: []tls.Certificate{cert},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	return ln
+}
+
+// accept runs the controller side of one handshake on ln and sends its result to the returned
+// channels.
+func accept(ln net.Listener, key keys.Static) (<-chan *Conn, <-chan error) {
 	conns, errs := make(chan *Conn, 1), make(chan error, 1)
 	go func() {
-		raw, err := l.Accept()
+		raw, err := ln.Accept()
 		if err != nil {
 			errs <- err
 			return
 		}
-		c, err := l.Handshake(context.Background(), raw)
+		c, err := Accept(context.Background(), raw.(*tls.Conn), key)
 		if err != nil {
-			raw.Close()
 			errs <- err
 			return
 		}
@@ -42,24 +71,13 @@ func accept(l *Listener) (<-chan *Conn, <-chan error) {
 
 // Both ends learn each other's static key, and frames go through unchanged.
 func TestHandshakeAndFrames(t *testing.T) {
-	ctrl, err := PrivateKey(newKey(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	node, err := PrivateKey(newKey(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := Listen("127.0.0.1:0", ctrl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	conns, errs := accept(l)
+	ctrl, node := newKey(t), newKey(t)
+	ln := listen(t)
+	conns, errs := accept(ln, ctrl)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	nc, err := Dial(ctx, l.Addr().String(), node, ctrl.Public)
+	nc, err := Dial(ctx, ln.Addr().String(), node, ctrl.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,10 +89,10 @@ func TestHandshakeAndFrames(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cc.Close()
-	if !bytes.Equal(cc.PeerKey(), node.Public) {
+	if !bytes.Equal(cc.PeerKey(), node.Public()) {
 		t.Error("the controller end does not see the node's static key")
 	}
-	if !bytes.Equal(nc.PeerKey(), ctrl.Public) {
+	if !bytes.Equal(nc.PeerKey(), ctrl.Public()) {
 		t.Error("the node end does not see the controller's static key")
 	}
 
@@ -96,28 +114,13 @@ func TestHandshakeAndFrames(t *testing.T) {
 
 // A node that expects another controller key fails the handshake, and so does the controller end.
 func TestHandshakeWrongControllerKey(t *testing.T) {
-	ctrl, err := PrivateKey(newKey(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	other, err := PrivateKey(newKey(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	node, err := PrivateKey(newKey(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := Listen("127.0.0.1:0", ctrl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	conns, errs := accept(l)
+	ctrl, other, node := newKey(t), newKey(t), newKey(t)
+	ln := listen(t)
+	conns, errs := accept(ln, ctrl)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if c, err := Dial(ctx, l.Addr().String(), node, other.Public); err == nil {
+	if c, err := Dial(ctx, ln.Addr().String(), node, other.Public()); err == nil {
 		c.Close()
 		t.Fatal("the node opened a stream to a controller that does not hold the key it expects")
 	}

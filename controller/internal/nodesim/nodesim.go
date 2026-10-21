@@ -11,11 +11,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/flynn/noise"
-
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
+	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 )
 
 // Direction tells which end sent a frame.
@@ -45,8 +44,8 @@ func (e *RefusedError) Error() string {
 // Node is one simulated node. It keeps its state and its generation across streams, like a
 // node that keeps forwarding on its last applied generation while no controller is reachable.
 type Node struct {
-	Key           noise.DHKey // the node's static key
-	Controller    string      // host:port of the controller's control stream
+	Key           keys.Static // the node's static key
+	Controller    string      // host:port of the controller's port
 	ControllerKey []byte      // the controller's static public key
 	// Version is the schema version of the Hello, SCHEMA_VERSION_1 when it is unspecified.
 	Version controlpb.SchemaVersion

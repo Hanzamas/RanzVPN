@@ -23,27 +23,27 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
 )
 
 func main() {
 	keyFile := flag.String("key", "node.key", "the node's static key, created the first time")
 	pubkey := flag.Bool("pubkey", false, "print the base64 public key of -key and exit")
-	addr := flag.String("controller", "127.0.0.1:7443", "the host:port of the controller's control stream")
+	addr := flag.String("controller", "127.0.0.1:443", "the host:port of the controller's port")
 	controllerKey := flag.String("controller-key", "", "the base64 public key of the controller")
 	until := flag.Uint64("until", 0, "exit once this generation is applied and acknowledged; 0 runs until interrupted")
 	timeout := flag.Duration("timeout", 0, "give up after this long; 0 waits for ever")
 	flag.Parse()
 
-	key, err := control.LoadKey(*keyFile)
+	key, err := keys.LoadSoft(*keyFile)
 	if err != nil {
 		fail(err)
 	}
 	if *pubkey {
-		fmt.Println(base64.StdEncoding.EncodeToString(key.Public))
+		fmt.Println(base64.StdEncoding.EncodeToString(key.Public()))
 		return
 	}
 	ck, err := intent.ParseKey(*controllerKey)

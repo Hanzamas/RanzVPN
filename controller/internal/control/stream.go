@@ -1,8 +1,9 @@
 // Package control is the Noise control stream between a node and the controller (#176
-// "Control protocol"). TLS 1.3 carries it; a Noise_IK handshake on it authenticates both ends by
-// their static keys and is bound to that TLS session through a TLS exporter, so the data is
-// encrypted once, by TLS (ADR-0022, ADR-0023 single encryption). After the handshake every frame
-// is a 4-byte big-endian length and one ControlMessage of proto/ranz/control/v1/control.proto.
+// "Control protocol"). TLS 1.3 carries it, with the ALPN protocol ALPN; a Noise_IK handshake on
+// it authenticates both ends by their static keys and is bound to that TLS session through a TLS
+// exporter, so the data is encrypted once, by TLS (ADR-0022, ADR-0023 single encryption). After
+// the handshake every frame is a 4-byte big-endian length and one ControlMessage of
+// proto/ranz/control/v1/control.proto.
 //
 // The node opens the stream (the Noise initiator, which knows the controller's static key in
 // advance); the controller learns the node's static key from the handshake and looks the node up
@@ -10,17 +11,13 @@
 package control
 
 import (
+	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"sync"
 	"time"
@@ -29,10 +26,12 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
+	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 )
 
 const (
-	// ALPN is the TLS application protocol of the control stream.
+	// ALPN is the TLS application protocol of the control stream: on the controller's port it
+	// tells a control stream from the HTTP of the API and the web UI.
 	ALPN = "ranz-control/1"
 	// MaxFrame is the largest frame either end accepts.
 	MaxFrame = 16 << 20
@@ -47,12 +46,36 @@ const (
 	handshakeTimeout = 10 * time.Second
 )
 
-// suite is Noise_IK_25519_AESGCM_SHA256: X25519, AES-GCM and SHA-256 (ADR-0022).
-var suite = noise.NewCipherSuite(noise.DH25519, noise.CipherAESGCM, noise.HashSHA256)
+// staticMarker stands in for the private half of the local static key in the Noise handshake
+// state. The private half may stay in a key storage provider, so staticDH hands every
+// Diffie-Hellman with this marker to the key; it is not 32 bytes long, so no ephemeral key is
+// ever taken for it.
+var staticMarker = []byte("the static key of keys.Static")
 
-// GenerateKey returns a new static key pair.
-func GenerateKey() (noise.DHKey, error) {
-	return noise.DH25519.GenerateKeypair(rand.Reader)
+// staticDH is X25519 for flynn/noise, the DH of Noise_IK_25519_AESGCM_SHA256 (ADR-0022): the
+// Diffie-Hellman with the local static key goes to that key, every other one (the ephemeral
+// keys) is done here.
+type staticDH struct {
+	key keys.Static
+}
+
+func (d staticDH) GenerateKeypair(random io.Reader) (noise.DHKey, error) {
+	return noise.DH25519.GenerateKeypair(random)
+}
+
+func (d staticDH) DH(priv, pub []byte) ([]byte, error) {
+	if bytes.Equal(priv, staticMarker) {
+		return d.key.DH(pub)
+	}
+	return noise.DH25519.DH(priv, pub)
+}
+
+func (d staticDH) DHLen() int {
+	return 32
+}
+
+func (d staticDH) DHName() string {
+	return "25519"
 }
 
 // Conn is one control stream after the handshake.
@@ -117,9 +140,9 @@ func (c *Conn) Close() error {
 	return c.tc.Close()
 }
 
-// Dial opens a control stream to the controller at addr as the node with static key key. The
-// handshake fails unless the controller holds the private key of controllerKey.
-func Dial(ctx context.Context, addr string, key noise.DHKey, controllerKey []byte) (*Conn, error) {
+// Dial opens a control stream to the controller at addr as the node with the static key key.
+// The handshake fails unless the controller holds the private half of controllerKey.
+func Dial(ctx context.Context, addr string, key keys.Static, controllerKey []byte) (*Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
@@ -134,14 +157,7 @@ func Dial(ctx context.Context, addr string, key noise.DHKey, controllerKey []byt
 		NextProtos:         []string{ALPN},
 		InsecureSkipVerify: true,
 	})
-	c, err := handshake(ctx, tc, noise.Config{
-		CipherSuite:   suite,
-		Random:        rand.Reader,
-		Pattern:       noise.HandshakeIK,
-		Initiator:     true,
-		StaticKeypair: key,
-		PeerStatic:    controllerKey,
-	})
+	c, err := handshake(ctx, tc, key, true, controllerKey)
 	if err != nil {
 		tc.Close()
 		return nil, err
@@ -149,59 +165,13 @@ func Dial(ctx context.Context, addr string, key noise.DHKey, controllerKey []byt
 	return c, nil
 }
 
-// Listener accepts control streams.
-type Listener struct {
-	ln  net.Listener
-	key noise.DHKey
-	cfg *tls.Config
-}
-
-// Listen listens for control streams on the TCP address addr, as the controller with static key
-// key.
-func Listen(addr string, key noise.DHKey) (*Listener, error) {
-	cert, err := selfSigned()
-	if err != nil {
-		return nil, fmt.Errorf("control: certificate: %w", err)
-	}
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("control: %w", err)
-	}
-	return &Listener{ln: ln, key: key, cfg: &tls.Config{
-		MinVersion:   tls.VersionTLS13,
-		NextProtos:   []string{ALPN},
-		Certificates: []tls.Certificate{cert},
-	}}, nil
-}
-
-// Addr returns the address the listener listens on.
-func (l *Listener) Addr() net.Addr {
-	return l.ln.Addr()
-}
-
-// Accept waits for the next connection. Pass it to Handshake, which may block for a while, on
-// its own goroutine.
-func (l *Listener) Accept() (net.Conn, error) {
-	return l.ln.Accept()
-}
-
-// Close stops the listener.
-func (l *Listener) Close() error {
-	return l.ln.Close()
-}
-
-// Handshake runs the TLS and Noise handshakes on a connection that Accept returned. The node's
-// static key is PeerKey of the result.
-func (l *Listener) Handshake(ctx context.Context, raw net.Conn) (*Conn, error) {
+// Accept runs the controller side of the handshake on tc, a TLS connection whose client asked
+// for ALPN, as the controller with the static key key. The node's static key is PeerKey of the
+// result. On an error tc is closed.
+func Accept(ctx context.Context, tc *tls.Conn, key keys.Static) (*Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
-	tc := tls.Server(raw, l.cfg)
-	c, err := handshake(ctx, tc, noise.Config{
-		CipherSuite:   suite,
-		Random:        rand.Reader,
-		Pattern:       noise.HandshakeIK,
-		StaticKeypair: l.key,
-	})
+	c, err := handshake(ctx, tc, key, false, nil)
 	if err != nil {
 		tc.Close()
 		return nil, err
@@ -209,9 +179,10 @@ func (l *Listener) Handshake(ctx context.Context, raw net.Conn) (*Conn, error) {
 	return c, nil
 }
 
-// handshake runs the TLS handshake on tc, then the two Noise_IK messages with the TLS exporter
-// in the prologue. The Noise cipher states are dropped: TLS encrypts the stream (ADR-0023).
-func handshake(ctx context.Context, tc *tls.Conn, cfg noise.Config) (*Conn, error) {
+// handshake runs the TLS handshake on tc if it has not run yet, then the two Noise_IK messages
+// with the TLS exporter in the prologue. The Noise cipher states are dropped: TLS encrypts the
+// stream (ADR-0023).
+func handshake(ctx context.Context, tc *tls.Conn, key keys.Static, initiator bool, peer []byte) (*Conn, error) {
 	if dl, ok := ctx.Deadline(); ok {
 		if err := tc.SetDeadline(dl); err != nil {
 			return nil, fmt.Errorf("control: %w", err)
@@ -221,16 +192,26 @@ func handshake(ctx context.Context, tc *tls.Conn, cfg noise.Config) (*Conn, erro
 		return nil, fmt.Errorf("control: TLS handshake: %w", err)
 	}
 	st := tc.ConnectionState()
+	if st.NegotiatedProtocol != ALPN {
+		return nil, fmt.Errorf("control: the TLS session negotiated the protocol %q, not %q", st.NegotiatedProtocol, ALPN)
+	}
 	ekm, err := st.ExportKeyingMaterial(exporterLabel, nil, 32)
 	if err != nil {
 		return nil, fmt.Errorf("control: TLS exporter: %w", err)
 	}
-	cfg.Prologue = append([]byte(prologue), ekm...)
-	hs, err := noise.NewHandshakeState(cfg)
+	hs, err := noise.NewHandshakeState(noise.Config{
+		CipherSuite:   noise.NewCipherSuite(staticDH{key: key}, noise.CipherAESGCM, noise.HashSHA256),
+		Random:        rand.Reader,
+		Pattern:       noise.HandshakeIK,
+		Initiator:     initiator,
+		Prologue:      append([]byte(prologue), ekm...),
+		StaticKeypair: noise.DHKey{Private: staticMarker, Public: key.Public()},
+		PeerStatic:    peer,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("control: %w", err)
 	}
-	if cfg.Initiator {
+	if initiator {
 		msg, _, _, err := hs.WriteMessage(nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("control: Noise handshake: %w", err)
@@ -288,31 +269,4 @@ func readFrame(r io.Reader, limit int) ([]byte, error) {
 		return nil, err
 	}
 	return b, nil
-}
-
-// selfSigned returns a new self-signed ECDSA P-256 certificate for the TLS side of the stream.
-// Nobody checks it (see Dial), so a new one per process is enough.
-func selfSigned() (tls.Certificate, error) {
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	now := time.Now()
-	tmpl := &x509.Certificate{
-		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: "ranz-controller"},
-		NotBefore:    now.Add(-time.Hour),
-		NotAfter:     now.AddDate(10, 0, 0),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: priv}, nil
 }

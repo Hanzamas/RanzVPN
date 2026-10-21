@@ -1,36 +1,42 @@
 // Controller conformance with the node simulator (#176 "Testing Decisions", SDN-2 #178): each
 // test applies intent through the HTTP API and checks the control messages that simulated nodes
 // receive and acknowledge against the golden files in testdata (prototext, compared as
-// messages). -update rewrites the golden files. With RANZ_CONTROL_WIRE set to a directory, the
-// tests also write every frame as it went over the wire, for the nanopb round trip of CI
-// (tests/control/nanopb_roundtrip.c).
+// messages). The API and the control streams share one TLS port, as in the controller, so every
+// test also goes through the ALPN routing of internal/port. -update rewrites the golden files.
+// With RANZ_CONTROL_WIRE set to a directory, the tests also write every frame as it went over
+// the wire, for the nanopb round trip of CI (tests/control/nanopb_roundtrip.c).
 package controller_test
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http/httptest"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/flynn/noise"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
-	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
+	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
@@ -61,6 +67,25 @@ func TestApplySendsGeneration1(t *testing.T) {
 	golden(t, "apply1-branch-1", b1.update(t))
 	h.waitNode("branch-1", 1, true)
 	h.checkState(b1)
+}
+
+// TestYAMLAndJSONGiveTheSameGeneration applies apply1.yaml, the intent of apply1.json in YAML:
+// the node receives the same generation 1, the golden file of TestApplySendsGeneration1, and
+// the stored intent is the same JSON.
+func TestYAMLAndJSONGiveTheSameGeneration(t *testing.T) {
+	fromJSON := newHarness(t)
+	fromJSON.apply("apply1.json")
+	fromYAML := newHarness(t)
+	res := fromYAML.apply("apply1.yaml")
+	if want := []controller.NodeGeneration{{Name: "branch-1", Generation: 1}}; !equalGenerations(res.Nodes, want) {
+		t.Errorf("apply1.yaml changed %+v, want %+v", res.Nodes, want)
+	}
+	if a, b := fromJSON.resources(), fromYAML.resources(); a != b {
+		t.Errorf("the intent of apply1.yaml differs from the one of apply1.json:\n--- YAML\n%s\n--- JSON\n%s", b, a)
+	}
+	b1 := fromYAML.sim("branch-1", keyBranch1)
+	golden(t, "apply1-branch-1", b1.update(t))
+	fromYAML.waitNode("branch-1", 1, true)
 }
 
 // TestSecondApplySendsDelta is the second criterion of #178: a second apply sends only the
@@ -188,23 +213,28 @@ func TestApplyRejectsInvalidIntent(t *testing.T) {
 	}
 }
 
-// harness is one controller on its own rqlite, with its HTTP API on a test server.
+// harness is one controller on its own rqlite, with the control stream and the HTTP API on one
+// TLS port, as ranz-controller runs them.
 type harness struct {
-	t     *testing.T
-	rq    *sidecar.Rqlited
-	key   noise.DHKey
-	st    *store.Store
-	c     *controller.Controller
-	ln    *control.Listener
-	srv   *httptest.Server
-	api   *api.Client
-	serve chan error
+	t      *testing.T
+	rq     *sidecar.Rqlited
+	key    *keys.Soft    // the controller's Noise static key
+	tlsKey crypto.Signer // the key of its TLS certificate
+	st     *store.Store
+	c      *controller.Controller
+	ln     net.Listener
+	port   *port.Server
+	api    *api.Client
+	serve  chan error
 }
 
 func newHarness(t *testing.T) *harness {
 	h := &harness{t: t, rq: rqlitetest.Start(t)}
 	var err error
-	if h.key, err = control.GenerateKey(); err != nil {
+	if h.key, err = keys.GenerateSoft(); err != nil {
+		t.Fatal(err)
+	}
+	if h.tlsKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader); err != nil {
 		t.Fatal(err)
 	}
 	h.start()
@@ -220,44 +250,54 @@ func (h *harness) start() {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	log := slog.New(slog.NewTextHandler(testWriter{h.t}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	log := slog.New(slog.NewTextHandler(testWriter{h.t}, nil))
 	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log})
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	ln, err := control.Listen("127.0.0.1:0", h.key)
+	cert, err := keys.SelfSigned(h.tlsKey)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		h.t.Fatal(err)
 	}
 	h.st, h.c, h.ln = st, c, ln
+	h.port = &port.Server{
+		TLS:     &tls.Config{Certificates: []tls.Certificate{cert}},
+		Control: c.ServeStream,
+		HTTP:    api.Handler(c, api.Status{ControlAddress: ln.Addr().String(), TLSFingerprint: keys.Fingerprint(cert)}),
+		Log:     log,
+	}
 	h.serve = make(chan error, 1)
-	go func() { h.serve <- c.Serve(ln) }()
-	h.srv = httptest.NewServer(api.Handler(c, ln.Addr().String()))
-	h.api = &api.Client{URL: h.srv.URL}
+	go func() { h.serve <- h.port.Serve(ln) }()
+	h.api = api.NewClient("https://" + ln.Addr().String())
 }
 
 func (h *harness) stop() {
 	if h.c == nil {
 		return
 	}
-	h.srv.Close()
 	h.ln.Close()
-	h.c.Close()
 	if err := <-h.serve; err != nil {
 		h.t.Errorf("Serve: %v", err)
 	}
+	h.port.Close()
+	h.c.Close()
 	h.st.Close()
 	h.c = nil
 }
 
+// apply applies the intent document testdata/file, YAML or JSON, as `ranz apply -f` does.
 func (h *harness) apply(file string) controller.ApplyResult {
 	h.t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", file))
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	var doc intent.Document
-	if err := json.Unmarshal(b, &doc); err != nil {
+	doc, err := intent.ParseDocument(b)
+	if err != nil {
 		h.t.Fatalf("%s: %v", file, err)
 	}
 	res, err := h.api.Apply(context.Background(), doc)
@@ -335,8 +375,8 @@ type sim struct {
 }
 
 // newSim returns a simulated node that has no stream yet; start runs one.
-func (h *harness) newSim(name string, key noise.DHKey) *sim {
-	s := &sim{Node: &nodesim.Node{Key: key, ControllerKey: h.key.Public, Updates: make(chan *controlpb.Update, 16)}, name: name}
+func (h *harness) newSim(name string, key keys.Static) *sim {
+	s := &sim{Node: &nodesim.Node{Key: key, ControllerKey: h.key.Public(), Updates: make(chan *controlpb.Update, 16)}, name: name}
 	h.t.Cleanup(func() {
 		s.halt()
 		dumpWire(h.t, s)
@@ -345,7 +385,7 @@ func (h *harness) newSim(name string, key noise.DHKey) *sim {
 }
 
 // sim returns a simulated node with a stream to the controller.
-func (h *harness) sim(name string, key noise.DHKey) *sim {
+func (h *harness) sim(name string, key keys.Static) *sim {
 	s := h.newSim(name, key)
 	s.start(h)
 	return s
@@ -468,13 +508,13 @@ func equalGenerations(a, b []controller.NodeGeneration) bool {
 	return fmt.Sprint(a) == fmt.Sprint(b)
 }
 
-// fixedKey returns the key pair whose private key is the 32 bytes first, first+1, ...
-func fixedKey(first byte) noise.DHKey {
+// fixedKey returns the static key whose private key is the 32 bytes first, first+1, ...
+func fixedKey(first byte) *keys.Soft {
 	priv := make([]byte, 32)
 	for i := range priv {
 		priv[i] = first + byte(i)
 	}
-	k, err := control.PrivateKey(priv)
+	k, err := keys.NewSoft(priv)
 	if err != nil {
 		panic(err)
 	}

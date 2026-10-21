@@ -2,18 +2,17 @@
 //
 // Usage:
 //
-//	ranz [-server URL] apply -f FILE      apply the resources of an intent document (JSON, - for standard input)
+//	ranz [-server URL] apply -f FILE      apply the resources of an intent document (YAML or JSON, - for standard input)
 //	ranz [-server URL] get resources      print the intent
 //	ranz [-server URL] get nodes          print the generation of each node and the one it acknowledged
 //	ranz [-server URL] delete KIND NAME   delete one resource
-//	ranz [-server URL] status             print the controller's public key and control address
+//	ranz [-server URL] status             print the controller's public key, control address and TLS fingerprint
 //
-// The server is http://127.0.0.1:7080 unless -server or the RANZ_SERVER environment variable
-// names another. Every answer is printed as JSON.
+// The server is https://127.0.0.1 (port 443) unless -server or the RANZ_SERVER environment
+// variable names another. Every answer is printed as JSON, the canonical form of the intent.
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -39,7 +38,7 @@ func main() {
 	flags := flag.NewFlagSet("ranz", flag.ExitOnError)
 	server := os.Getenv("RANZ_SERVER")
 	if server == "" {
-		server = "http://127.0.0.1:7080"
+		server = "https://127.0.0.1"
 	}
 	flags.StringVar(&server, "server", server, "the URL of the controller's HTTP API")
 	flags.Usage = func() {
@@ -47,7 +46,7 @@ func main() {
 		flags.PrintDefaults()
 	}
 	_ = flags.Parse(os.Args[1:])
-	err := do(context.Background(), &api.Client{URL: server}, flags.Args())
+	err := do(context.Background(), api.NewClient(server), flags.Args())
 	if errors.Is(err, errUsage) {
 		flags.Usage()
 		os.Exit(2)
@@ -106,7 +105,8 @@ func do(ctx context.Context, c *api.Client, args []string) error {
 	return errUsage
 }
 
-// readDocument reads an intent document from the file name, or from standard input for "-".
+// readDocument reads an intent document, YAML or JSON, from the file name, or from standard
+// input for "-".
 func readDocument(name string) (intent.Document, error) {
 	var b []byte
 	var err error
@@ -118,10 +118,8 @@ func readDocument(name string) (intent.Document, error) {
 	if err != nil {
 		return intent.Document{}, err
 	}
-	var doc intent.Document
-	d := json.NewDecoder(bytes.NewReader(b))
-	d.DisallowUnknownFields()
-	if err := d.Decode(&doc); err != nil {
+	doc, err := intent.ParseDocument(b)
+	if err != nil {
 		return intent.Document{}, fmt.Errorf("%s is not an intent document: %w", name, err)
 	}
 	return doc, nil

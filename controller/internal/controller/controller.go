@@ -7,7 +7,7 @@ package controller
 import (
 	"context"
 	"crypto/rand"
-	"errors"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,12 +17,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flynn/noise"
-
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -42,7 +41,7 @@ const (
 // Config is what a controller runs with.
 type Config struct {
 	Store  *store.Store
-	Key    noise.DHKey  // the controller's static key
+	Key    keys.Static  // the controller's Noise static key
 	Log    *slog.Logger // discarded when nil
 	Random io.Reader    // draws the ULA of a new VRF; crypto/rand when nil
 }
@@ -70,7 +69,7 @@ type NodeStatus struct {
 // Controller holds the intent and the desired state of every node.
 type Controller struct {
 	store  *store.Store
-	key    noise.DHKey
+	key    keys.Static
 	log    *slog.Logger
 	random io.Reader
 
@@ -160,7 +159,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 
 // PublicKey returns the controller's static public key, which a node needs to open a stream.
 func (c *Controller) PublicKey() []byte {
-	return c.key.Public
+	return c.key.Public()
 }
 
 // Apply applies doc to the intent (`ranz apply -f`).
@@ -214,44 +213,29 @@ func (c *Controller) Nodes() []NodeStatus {
 	return out
 }
 
-// Serve accepts control streams on ln until ln is closed.
-func (c *Controller) Serve(ln *control.Listener) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	for {
-		raw, err := ln.Accept()
-		if err != nil {
-			c.mu.Lock()
-			closed := c.closed
-			c.mu.Unlock()
-			if closed || errors.Is(err, net.ErrClosed) {
-				return nil
-			}
-			c.log.Warn("accepting a control stream", "err", err)
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		c.mu.Lock()
-		if c.closed {
-			c.mu.Unlock()
-			raw.Close()
-			return nil
-		}
-		c.conns[raw] = struct{}{}
-		c.wg.Add(1)
+// ServeStream serves the control stream of one node on tc, a TLS connection that negotiated
+// control.ALPN on the controller's port (internal/port), and returns when the stream ends.
+func (c *Controller) ServeStream(tc *tls.Conn) {
+	c.mu.Lock()
+	if c.closed {
 		c.mu.Unlock()
-		go func() {
-			defer c.wg.Done()
-			c.serveConn(ctx, ln, raw)
-			c.mu.Lock()
-			delete(c.conns, raw)
-			c.mu.Unlock()
-		}()
+		tc.Close()
+		return
 	}
+	c.conns[tc] = struct{}{}
+	c.wg.Add(1)
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.conns, tc)
+		c.mu.Unlock()
+		c.wg.Done()
+	}()
+	c.serveConn(tc)
 }
 
-// Close closes every control stream and waits until their goroutines end. Close the listener
-// first, so Serve returns.
+// Close closes every control stream and waits until their goroutines end. Stop the port first,
+// so no new stream starts.
 func (c *Controller) Close() {
 	c.mu.Lock()
 	c.closed = true
@@ -342,13 +326,12 @@ func (c *Controller) refuse(s *stream, reason controlpb.RefuseReason, format str
 	s.poke()
 }
 
-// serveConn runs one control stream: the handshake, the Hello, then the node's Acks on this
-// goroutine and the updates on a writer goroutine.
-func (c *Controller) serveConn(ctx context.Context, ln *control.Listener, raw net.Conn) {
-	conn, err := ln.Handshake(ctx, raw)
+// serveConn runs one control stream: the Noise handshake, the Hello, then the node's Acks on
+// this goroutine and the updates on a writer goroutine.
+func (c *Controller) serveConn(tc *tls.Conn) {
+	conn, err := control.Accept(context.Background(), tc, c.key)
 	if err != nil {
-		c.log.Warn("control stream handshake failed", "remote", raw.RemoteAddr().String(), "err", err)
-		raw.Close()
+		c.log.Warn("control stream handshake failed", "remote", tc.RemoteAddr().String(), "err", err)
 		return
 	}
 	defer conn.Close()
