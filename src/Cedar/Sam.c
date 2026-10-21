@@ -15,21 +15,6 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 
-void SecurePassword(void *secure_password, void *password, void *random)
-{
-	UCHAR tmp[2 * SHA1_SIZE];
-	if (secure_password == NULL || password == NULL || random == NULL)
-	{
-		return;
-	}
-
-	Copy(tmp, password, SHA1_SIZE);
-	Copy(tmp + SHA1_SIZE, random, SHA1_SIZE);
-	Sha0(secure_password, tmp, sizeof(tmp));
-
-	Zero(tmp, sizeof(tmp));
-}
-
 bool SamAuthUserByAnonymous(HUB *h, char *username)
 {
 	bool b = false;
