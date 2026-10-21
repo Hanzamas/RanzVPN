@@ -1,5 +1,6 @@
 // fuzz_net.c
-// libFuzzer target: network-input parsers of Mayaqua/Network.c, without a frame around the input.
+// libFuzzer target: network-input parsers of Mayaqua (NetworkTls.c and IpAddr.c), without a frame
+// around the input.
 // Every input runs as a TCP payload through GetSniNameFromSslPacket(), which the frame parser runs
 // on a TCP payload to port 443 (ParseHttpsAccessLog() in TcpIp.c; fuzz_tcpip reaches it only
 // through a whole frame), and as text through the address and mask parsers of the admin RPC and
