@@ -1,0 +1,10 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48", "mtu": 1400}},
+    {"kind": "VRF", "name": "lab", "spec": {"id": 20, "ula": "fd12:3456:789b::/48"}},
+    {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "mode": "L3", "ipv4Pool": "10.10.0.0/24", "ipv6Pool": "fd12:3456:789a:1::/64"}},
+    {"kind": "Network", "name": "lab-lan", "spec": {"vrf": "lab", "ipv4Pool": "10.30.0.0/24"}},
+    {"kind": "Node", "name": "laptop", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp", "lab"], "tags": ["branch", "laptop"]}},
+    {"kind": "Node", "name": "gw", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp", "lab"]}}
+  ]
+}

@@ -4,7 +4,7 @@
 //
 //	ranz [-server URL] apply -f FILE      apply the resources of an intent document (YAML or JSON, - for standard input)
 //	ranz [-server URL] get resources      print the intent
-//	ranz [-server URL] get nodes          print the generation of each node and the one it acknowledged
+//	ranz [-server URL] get nodes          print the generation of each node, the one it acknowledged and its Capabilities
 //	ranz [-server URL] delete KIND NAME   delete one resource
 //	ranz [-server URL] status             print the controller's public key, control address and TLS fingerprint
 //

@@ -1,22 +1,28 @@
 // Package controller is the controller of #176: the single authority that keeps the intent in
 // rqlite, compiles it into the desired state of each node with a generation number, and pushes
 // that state over the control stream as deltas against the generation each node acknowledged
-// last (#176 "Control protocol").
+// last (#176 "Control protocol"). It keeps the Capabilities each node reports in its Hello and
+// refuses an apply that a node cannot honour (ADR-0033).
 package controller
 
 import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"maps"
 	"net"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
@@ -64,6 +70,8 @@ type NodeStatus struct {
 	Generation      uint64 `json:"generation"`      // of the desired state
 	AckedGeneration uint64 `json:"ackedGeneration"` // the last one the node acknowledged
 	Connected       bool   `json:"connected"`
+	// The Capabilities the node reported in its last Hello, nil before its first (ADR-0033).
+	Capabilities *capability.Capabilities `json:"capabilities"`
 }
 
 // Controller holds the intent and the desired state of every node.
@@ -77,6 +85,9 @@ type Controller struct {
 	intent intent.Intent
 	nodes  map[string]*node
 	byKey  map[string]string // node static key to node name
+	// node static key to the Capabilities that the node reported last, kept while a Node
+	// resource holds the key
+	caps   map[string]*controlpb.Capabilities
 	conns  map[net.Conn]struct{}
 	closed bool
 	wg     sync.WaitGroup
@@ -135,6 +146,9 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if err != nil {
 		return nil, err
 	}
+	if c.caps, err = c.store.LoadCapabilities(ctx); err != nil {
+		return nil, err
+	}
 	for _, sn := range stored {
 		n := &node{gen: sn.Generation, ackedGen: sn.AckedGeneration}
 		if n.state, err = desired.FromFull(sn.Desired); err != nil {
@@ -150,7 +164,11 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	c.intent = in
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, err := c.commit(ctx, in); err != nil {
+	states, err := desired.Compile(in)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.commit(ctx, in, states); err != nil {
 		return nil, err
 	}
 	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes))
@@ -162,7 +180,8 @@ func (c *Controller) PublicKey() []byte {
 	return c.key.Public()
 }
 
-// Apply applies doc to the intent (`ranz apply -f`).
+// Apply applies doc to the intent (`ranz apply -f`). It refuses, with an error that wraps
+// capability.ErrMissing, an intent that a node cannot honour, and then changes nothing.
 func (c *Controller) Apply(ctx context.Context, doc intent.Document) (ApplyResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -170,7 +189,15 @@ func (c *Controller) Apply(ctx context.Context, doc intent.Document) (ApplyResul
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	nodes, err := c.commit(ctx, next)
+	states, err := desired.Compile(next)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	if err := c.honoured(next, states); err != nil {
+		c.log.Warn("intent refused: capability", "err", err)
+		return ApplyResult{}, err
+	}
+	nodes, err := c.commit(ctx, next, states)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -178,7 +205,8 @@ func (c *Controller) Apply(ctx context.Context, doc intent.Document) (ApplyResul
 	return ApplyResult{Nodes: nodes}, nil
 }
 
-// Delete deletes the resource kind/name from the intent.
+// Delete deletes the resource kind/name from the intent. A delete only takes objects away from
+// desired states, so it never needs a Capability and is not checked against them.
 func (c *Controller) Delete(ctx context.Context, kind, name string) (ApplyResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -186,7 +214,11 @@ func (c *Controller) Delete(ctx context.Context, kind, name string) (ApplyResult
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	nodes, err := c.commit(ctx, next)
+	states, err := desired.Compile(next)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	nodes, err := c.commit(ctx, next, states)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -205,10 +237,15 @@ func (c *Controller) Resources() []intent.Resource {
 func (c *Controller) Nodes() []NodeStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	reported := map[string]*controlpb.Capabilities{}
+	for k, name := range c.byKey {
+		reported[name] = c.caps[k]
+	}
 	out := []NodeStatus{}
 	for _, name := range slices.Sorted(maps.Keys(c.nodes)) {
 		n := c.nodes[name]
-		out = append(out, NodeStatus{Name: name, Generation: n.gen, AckedGeneration: n.ackedGen, Connected: n.stream != nil})
+		out = append(out, NodeStatus{Name: name, Generation: n.gen, AckedGeneration: n.ackedGen, Connected: n.stream != nil,
+			Capabilities: capability.FromProto(reported[name])})
 	}
 	return out
 }
@@ -246,14 +283,11 @@ func (c *Controller) Close() {
 	c.wg.Wait()
 }
 
-// commit makes next the intent: it compiles the desired state of every node, gives each node
-// whose state changed the next generation, writes the intent and those states to the store in
-// one transaction, and then wakes the streams of the changed nodes. c.mu is held.
-func (c *Controller) commit(ctx context.Context, next intent.Intent) ([]NodeGeneration, error) {
-	states, err := desired.Compile(next)
-	if err != nil {
-		return nil, err
-	}
+// commit makes next the intent: with states, the desired state of every node that next compiles
+// to, it gives each node whose state changed the next generation, writes the intent and those
+// states to the store in one transaction, and then wakes the streams of the changed nodes. The
+// Capabilities of a static key that no Node resource of next holds are dropped. c.mu is held.
+func (c *Controller) commit(ctx context.Context, next intent.Intent, states map[string]desired.State) ([]NodeGeneration, error) {
 	var ch store.Changes
 	ch.PutResources, ch.DeleteResources = intent.Changed(c.intent, next)
 	result := []NodeGeneration{}
@@ -277,6 +311,17 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent) ([]NodeGene
 	for _, name := range slices.Sorted(maps.Keys(c.nodes)) {
 		if _, ok := states[name]; !ok {
 			ch.DeleteNodes = append(ch.DeleteNodes, name)
+		}
+	}
+	held := map[string]bool{}
+	for _, n := range next.Nodes {
+		// Apply validated the key.
+		k, _ := intent.ParseKey(n.PublicKey)
+		held[string(k)] = true
+	}
+	for _, k := range slices.Sorted(maps.Keys(c.caps)) {
+		if !held[k] {
+			ch.DeleteCapabilities = append(ch.DeleteCapabilities, []byte(k))
 		}
 	}
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)
@@ -303,6 +348,9 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent) ([]NodeGene
 		}
 		delete(c.nodes, name)
 	}
+	for _, k := range ch.DeleteCapabilities {
+		delete(c.caps, string(k))
+	}
 	c.byKey = map[string]string{}
 	for name, n := range next.Nodes {
 		// Apply validated the key.
@@ -315,6 +363,48 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent) ([]NodeGene
 		}
 	}
 	return result, nil
+}
+
+// honoured checks states, the desired states that next compiles to, against the Capabilities of
+// their nodes (ADR-0033). It returns an error that wraps capability.ErrMissing and names each
+// node and each Capability it lacks, or nil. Only the nodes whose state changes are checked, and
+// of those only the ones that have reported Capabilities: a node that has not yet is checked
+// when it reports them in its Hello. c.mu is held.
+func (c *Controller) honoured(next intent.Intent, states map[string]desired.State) error {
+	var problems []error
+	for _, name := range slices.Sorted(maps.Keys(states)) {
+		if n := c.nodes[name]; n != nil && desired.Equal(n.state, states[name]) {
+			continue
+		}
+		// Apply validated the key.
+		k, _ := intent.ParseKey(next.Nodes[name].PublicKey)
+		if caps, ok := c.caps[string(k)]; ok {
+			problems = append(problems, capability.Check(name, caps, states[name])...)
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("%w:\n%w", capability.ErrMissing, errors.Join(problems...))
+	}
+	return nil
+}
+
+// report records the Capabilities caps that the node with the static key key reported in its
+// Hello. A Hello without them reports none. c.mu is held.
+func (c *Controller) report(key []byte, name string, caps *controlpb.Capabilities) *controlpb.Capabilities {
+	if caps == nil {
+		caps = &controlpb.Capabilities{}
+	}
+	if old, ok := c.caps[string(key)]; ok && proto.Equal(old, caps) {
+		return old
+	}
+	c.caps[string(key)] = caps
+	c.log.Info("node capabilities", "node", name, "capabilities", capability.FromProto(caps))
+	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+	defer cancel()
+	if err := c.store.SaveCapabilities(ctx, key, caps); err != nil {
+		c.log.Error("storing the Capabilities of a node", "node", name, "err", err)
+	}
+	return caps
 }
 
 // refuse detaches s from its node and has its writer send a Refuse and close it. c.mu is held.
@@ -369,6 +459,16 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 	}
 	s.name = name
 	n := c.nodes[name]
+	caps := c.report(conn.PeerKey(), name, hello.GetCapabilities())
+	if problems := capability.Check(name, caps, n.state); len(problems) > 0 {
+		// The node keeps forwarding on the generation it applied last; the intent it cannot
+		// honour does not reach it.
+		c.mu.Unlock()
+		msg := problemList(problems)
+		c.log.Warn("node refused: capability", "node", name, "problems", msg)
+		writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_CAPABILITY, "%s", msg))
+		return
+	}
 	if n.stream != nil {
 		// A new stream of the node replaces its old one.
 		n.stream.shut()
@@ -554,6 +654,15 @@ func refusal(reason controlpb.RefuseReason, format string, args ...any) *control
 		msg = msg[:maxRefuseMessage]
 	}
 	return &controlpb.Refuse{Reason: reason, Message: msg}
+}
+
+// problemList joins problems into one line, the form of a Refuse message.
+func problemList(problems []error) string {
+	msgs := make([]string, len(problems))
+	for i, p := range problems {
+		msgs[i] = p.Error()
+	}
+	return strings.Join(msgs, "; ")
 }
 
 func writeRefuse(conn *control.Conn, r *controlpb.Refuse) {

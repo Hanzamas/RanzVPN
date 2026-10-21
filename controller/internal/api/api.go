@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 )
@@ -51,7 +52,8 @@ type ResourceList struct {
 	Resources []intent.Resource `json:"resources"`
 }
 
-// NodeList is the answer of GET /api/v1/nodes.
+// NodeList is the answer of GET /api/v1/nodes: for each node its generations and the
+// Capabilities it reported (ADR-0033).
 type NodeList struct {
 	Nodes []controller.NodeStatus `json:"nodes"`
 }
@@ -69,7 +71,8 @@ type Problem struct {
 //	POST   /api/v1/apply                  an intent.Document; answers a controller.ApplyResult
 //	DELETE /api/v1/resources/{kind}/{name} answers a controller.ApplyResult
 //
-// status holds the control address and the TLS fingerprint that the status call reports;
+// An apply that a node cannot honour answers 409 Conflict, naming the node and the Capability it
+// lacks. status holds the control address and the TLS fingerprint that the status call reports;
 // Handler fills in the public key. The handler answers loopback clients only (LoopbackOnly).
 func Handler(c *controller.Controller, status Status) http.Handler {
 	status.PublicKey = base64.StdEncoding.EncodeToString(c.PublicKey())
@@ -143,6 +146,8 @@ func replyError(w http.ResponseWriter, err error) {
 		code = http.StatusNotFound
 	case errors.Is(err, intent.ErrInvalid):
 		code = http.StatusBadRequest
+	case errors.Is(err, capability.ErrMissing):
+		code = http.StatusConflict
 	}
 	reply(w, code, Problem{Error: err.Error()})
 }
@@ -187,7 +192,7 @@ func (c *Client) Resources(ctx context.Context) ([]intent.Resource, error) {
 	return l.Resources, err
 }
 
-// Nodes returns the status of every node.
+// Nodes returns the status of every node, with the Capabilities it reported.
 func (c *Client) Nodes(ctx context.Context) ([]controller.NodeStatus, error) {
 	var l NodeList
 	err := c.do(ctx, http.MethodGet, "/api/v1/nodes", nil, &l)
