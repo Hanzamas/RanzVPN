@@ -57,4 +57,7 @@ bool Win32IsUsingSeLow();
 void Win32SetEnableSeLow(bool b);
 bool Win32GetEnableSeLow();
 
+bool IsBridgeSupported();
+UINT GetEthDeviceHash();
+
 #endif
