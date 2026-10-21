@@ -2,19 +2,22 @@
 # ranz_add_executable(): every executable of the project (vpnserver, vpncmd, vpntest and the fuzz
 # targets) is created by this one function.
 #
-# ranz_add_executable(<name> [WIN32] [HAMCORE]
+# ranz_add_executable(<name> [WIN32] [HAMCORE] [CORE]
 #   DESCRIPTION <text>          FileDescription and ProductName, after the project name
 #   [ICON <file>]               the application icon, relative to the calling directory
 #   SOURCES <file>...           the C sources and headers
 #   [C_DEFINITIONS <def>...]    definitions for the C sources only, not for the resource scripts
 #   [LINK_OPTIONS <option>...]  extra linker options
+#   [LIBRARIES <library>...]    further libraries to link
 # )
 #
 # Each executable gets:
 # - the version resource and the icon, from the template src/BuildFiles/VerScript/ver.rc.in:
 #   English (United States), language 0x0409
 # - the manifest src/BuildFiles/Manifests/common.manifest
-# - cedar, and through it mayaqua; ranz_options (cmake/RanzOptions.cmake)
+# - cedar, and through it mayaqua; ranz_options (cmake/RanzOptions.cmake). With CORE, a program of
+#   the new core (src/coretest): ranz_core_options instead, and neither cedar nor mayaqua, so it
+#   links only its LIBRARIES and the system libraries
 # - the project's compiler warnings (ranz_warnings, cmake/RanzWarnings.cmake)
 # - with HAMCORE, the hamcore files as resources (ranz_hamcore_resources, cmake/RanzResources.cmake)
 # - its .exe and .pdb in the build directory
@@ -24,7 +27,7 @@ set(RANZ_VERSION_RESOURCE_TEMPLATE "${TOP_DIRECTORY}/src/BuildFiles/VerScript/ve
 set(RANZ_EXECUTABLE_MANIFEST "${TOP_DIRECTORY}/src/BuildFiles/Manifests/common.manifest")
 
 function(ranz_add_executable name)
-  cmake_parse_arguments(PARSE_ARGV 1 _ranz "WIN32;HAMCORE" "DESCRIPTION;ICON" "SOURCES;C_DEFINITIONS;LINK_OPTIONS")
+  cmake_parse_arguments(PARSE_ARGV 1 _ranz "WIN32;HAMCORE;CORE" "DESCRIPTION;ICON" "SOURCES;C_DEFINITIONS;LINK_OPTIONS;LIBRARIES")
   if(_ranz_UNPARSED_ARGUMENTS)
     message(FATAL_ERROR "ranz_add_executable(${name}): unknown arguments: ${_ranz_UNPARSED_ARGUMENTS}")
   endif()
@@ -64,7 +67,11 @@ function(ranz_add_executable name)
     PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   )
 
-  target_link_libraries(${name} PRIVATE cedar ranz_options ranz_warnings)
+  if(_ranz_CORE)
+    target_link_libraries(${name} PRIVATE ${_ranz_LIBRARIES} ranz_core_options ranz_warnings)
+  else()
+    target_link_libraries(${name} PRIVATE cedar ${_ranz_LIBRARIES} ranz_options ranz_warnings)
+  endif()
 
   foreach(_ranz_definition IN LISTS _ranz_C_DEFINITIONS)
     target_compile_definitions(${name} PRIVATE "$<$<COMPILE_LANGUAGE:C>:${_ranz_definition}>")
