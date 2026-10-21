@@ -17,9 +17,12 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
+	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 )
 
@@ -56,6 +59,32 @@ type NodeList struct {
 	Nodes []controller.NodeStatus `json:"nodes"`
 }
 
+// RevisionList is the answer of GET /api/v1/revisions: every revision, oldest first, without
+// their resources.
+type RevisionList struct {
+	Revisions []intent.Revision `json:"revisions"`
+}
+
+// RollbackRequest is the body of POST /api/v1/rollback.
+type RollbackRequest struct {
+	// Revision is the revision whose intent becomes the intent again; 0 is the empty intent.
+	// It must be given.
+	Revision *uint64 `json:"revision"`
+}
+
+// DiffResult is the answer of GET /api/v1/diff: how the intent of revision To differs from the
+// intent of revision From.
+type DiffResult struct {
+	From    uint64          `json:"from"`
+	To      uint64          `json:"to"`
+	Changes []intent.Change `json:"changes"`
+}
+
+// EventList is the answer of GET /api/v1/events: every event, oldest first.
+type EventList struct {
+	Events []event.Event `json:"events"`
+}
+
 // Problem is the body of every answer that is not 200 OK.
 type Problem struct {
 	Error string `json:"error"`
@@ -67,7 +96,15 @@ type Problem struct {
 //	GET    /api/v1/resources              ResourceList
 //	GET    /api/v1/nodes                  NodeList
 //	POST   /api/v1/apply                  an intent.Document; answers a controller.ApplyResult
+//	                                      ?confirm=DURATION: roll back after DURATION unless confirmed
 //	DELETE /api/v1/resources/{kind}/{name} answers a controller.ApplyResult
+//	GET    /api/v1/revisions              RevisionList
+//	GET    /api/v1/revisions/{id}         an intent.Revision with its resources
+//	POST   /api/v1/revisions/{id}/confirm answers the intent.Revision, confirmed
+//	POST   /api/v1/rollback               a RollbackRequest; answers a controller.ApplyResult
+//	GET    /api/v1/diff?from=A&to=B       DiffResult; to is the latest revision when left out,
+//	                                      from the one before to
+//	GET    /api/v1/events                 EventList
 //
 // status holds the control address and the TLS fingerprint that the status call reports;
 // Handler fills in the public key. The handler answers loopback clients only (LoopbackOnly).
@@ -88,6 +125,11 @@ func Handler(c *controller.Controller, status Status) http.Handler {
 		reply(w, http.StatusOK, NodeList{Nodes: c.Nodes()})
 	})
 	mux.HandleFunc("POST /api/v1/apply", func(w http.ResponseWriter, r *http.Request) {
+		confirm, err := confirmParam(r.URL.Query().Get("confirm"))
+		if err != nil {
+			reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
+			return
+		}
 		var doc intent.Document
 		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
 		d.DisallowUnknownFields()
@@ -95,7 +137,7 @@ func Handler(c *controller.Controller, status Status) http.Handler {
 			reply(w, http.StatusBadRequest, Problem{Error: "the body is not an intent document: " + err.Error()})
 			return
 		}
-		res, err := c.Apply(r.Context(), doc)
+		res, err := c.ApplyConfirm(r.Context(), doc, confirm)
 		if err != nil {
 			replyError(w, err)
 			return
@@ -110,7 +152,112 @@ func Handler(c *controller.Controller, status Status) http.Handler {
 		}
 		reply(w, http.StatusOK, res)
 	})
+	mux.HandleFunc("GET /api/v1/revisions", func(w http.ResponseWriter, r *http.Request) {
+		revs, err := c.Revisions(r.Context())
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, RevisionList{Revisions: revs})
+	})
+	mux.HandleFunc("GET /api/v1/revisions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, err := revisionNumber(r.PathValue("id"))
+		if err != nil {
+			reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
+			return
+		}
+		rev, err := c.Revision(r.Context(), id)
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, rev)
+	})
+	mux.HandleFunc("POST /api/v1/revisions/{id}/confirm", func(w http.ResponseWriter, r *http.Request) {
+		id, err := revisionNumber(r.PathValue("id"))
+		if err != nil {
+			reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
+			return
+		}
+		rev, err := c.Confirm(r.Context(), id)
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, rev)
+	})
+	mux.HandleFunc("POST /api/v1/rollback", func(w http.ResponseWriter, r *http.Request) {
+		var req RollbackRequest
+		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
+		d.DisallowUnknownFields()
+		if err := d.Decode(&req); err != nil || req.Revision == nil {
+			reply(w, http.StatusBadRequest, Problem{Error: `the body must be {"revision": N}, with N the revision to return to`})
+			return
+		}
+		res, err := c.Rollback(r.Context(), *req.Revision)
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, res)
+	})
+	mux.HandleFunc("GET /api/v1/diff", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		to := c.LatestRevision()
+		if s := q.Get("to"); s != "" {
+			var err error
+			if to, err = revisionNumber(s); err != nil {
+				reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
+				return
+			}
+		}
+		var from uint64
+		if to > 0 {
+			from = to - 1
+		}
+		if s := q.Get("from"); s != "" {
+			var err error
+			if from, err = revisionNumber(s); err != nil {
+				reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
+				return
+			}
+		}
+		changes, err := c.Diff(r.Context(), from, to)
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, DiffResult{From: from, To: to, Changes: changes})
+	})
+	mux.HandleFunc("GET /api/v1/events", func(w http.ResponseWriter, r *http.Request) {
+		evs, err := c.Events(r.Context())
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, EventList{Events: evs})
+	})
 	return LoopbackOnly(mux)
+}
+
+// confirmParam parses the confirmation time of an apply, for example 5m; empty is none.
+func confirmParam(s string) (time.Duration, error) {
+	if s == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("confirm %q is not a duration above 0, for example 5m", s)
+	}
+	return d, nil
+}
+
+func revisionNumber(s string) (uint64, error) {
+	id, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a revision number", s)
+	}
+	return id, nil
 }
 
 // LoopbackOnly answers 403 Forbidden to every request that does not come over the loopback
@@ -139,10 +286,12 @@ func reply(w http.ResponseWriter, code int, v any) {
 func replyError(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
 	switch {
-	case errors.Is(err, intent.ErrNotFound):
+	case errors.Is(err, intent.ErrNotFound), errors.Is(err, controller.ErrNoRevision):
 		code = http.StatusNotFound
-	case errors.Is(err, intent.ErrInvalid):
+	case errors.Is(err, intent.ErrInvalid), errors.Is(err, controller.ErrBadConfirm):
 		code = http.StatusBadRequest
+	case errors.Is(err, controller.ErrConflict):
+		code = http.StatusConflict
 	}
 	reply(w, code, Problem{Error: err.Error()})
 }
@@ -196,8 +345,18 @@ func (c *Client) Nodes(ctx context.Context) ([]controller.NodeStatus, error) {
 
 // Apply applies doc.
 func (c *Client) Apply(ctx context.Context, doc intent.Document) (controller.ApplyResult, error) {
+	return c.ApplyConfirm(ctx, doc, 0)
+}
+
+// ApplyConfirm applies doc. With a confirm other than 0, the controller rolls the apply back
+// after confirm unless Confirm confirms it first.
+func (c *Client) ApplyConfirm(ctx context.Context, doc intent.Document, confirm time.Duration) (controller.ApplyResult, error) {
+	path := "/api/v1/apply"
+	if confirm != 0 {
+		path += "?confirm=" + url.QueryEscape(confirm.String())
+	}
 	var res controller.ApplyResult
-	err := c.do(ctx, http.MethodPost, "/api/v1/apply", doc, &res)
+	err := c.do(ctx, http.MethodPost, path, doc, &res)
 	return res, err
 }
 
@@ -206,6 +365,65 @@ func (c *Client) Delete(ctx context.Context, kind, name string) (controller.Appl
 	var res controller.ApplyResult
 	err := c.do(ctx, http.MethodDelete, "/api/v1/resources/"+url.PathEscape(kind)+"/"+url.PathEscape(name), nil, &res)
 	return res, err
+}
+
+// Revisions returns every revision, oldest first, without their resources.
+func (c *Client) Revisions(ctx context.Context) ([]intent.Revision, error) {
+	var l RevisionList
+	err := c.do(ctx, http.MethodGet, "/api/v1/revisions", nil, &l)
+	return l.Revisions, err
+}
+
+// Revision returns revision id with its resources.
+func (c *Client) Revision(ctx context.Context, id uint64) (intent.Revision, error) {
+	var r intent.Revision
+	err := c.do(ctx, http.MethodGet, "/api/v1/revisions/"+strconv.FormatUint(id, 10), nil, &r)
+	return r, err
+}
+
+// Confirm confirms revision id, which an apply with a confirmation time made.
+func (c *Client) Confirm(ctx context.Context, id uint64) (intent.Revision, error) {
+	var r intent.Revision
+	err := c.do(ctx, http.MethodPost, "/api/v1/revisions/"+strconv.FormatUint(id, 10)+"/confirm", nil, &r)
+	return r, err
+}
+
+// Rollback makes the intent of revision id the intent again, as a new revision.
+func (c *Client) Rollback(ctx context.Context, id uint64) (controller.ApplyResult, error) {
+	var res controller.ApplyResult
+	err := c.do(ctx, http.MethodPost, "/api/v1/rollback", RollbackRequest{Revision: &id}, &res)
+	return res, err
+}
+
+// Diff returns how the intent differs between two revisions: with no revision given, the change
+// that the latest revision made; with one, from it to the latest revision; with two, from the
+// first to the second.
+func (c *Client) Diff(ctx context.Context, revisions ...uint64) (DiffResult, error) {
+	q := url.Values{}
+	switch len(revisions) {
+	case 0:
+	case 1:
+		q.Set("from", strconv.FormatUint(revisions[0], 10))
+	case 2:
+		q.Set("from", strconv.FormatUint(revisions[0], 10))
+		q.Set("to", strconv.FormatUint(revisions[1], 10))
+	default:
+		return DiffResult{}, errors.New("a diff is between two revisions")
+	}
+	path := "/api/v1/diff"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	var d DiffResult
+	err := c.do(ctx, http.MethodGet, path, nil, &d)
+	return d, err
+}
+
+// Events returns every event, oldest first.
+func (c *Client) Events(ctx context.Context) ([]event.Event, error) {
+	var l EventList
+	err := c.do(ctx, http.MethodGet, "/api/v1/events", nil, &l)
+	return l.Events, err
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
