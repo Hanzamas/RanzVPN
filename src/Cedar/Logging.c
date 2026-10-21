@@ -48,7 +48,7 @@ static UINT LogWriterWaitTime(LOG_WRITER *w);
 
 // Map the control characters of size bytes of UTF-8 text (bytes below 0x20 and 0x7F, never part of a
 // multi-byte sequence) to '?': a CR or LF from untrusted input cannot start a forged log line or syslog message
-static void LogMapControlChars(UCHAR *s, UINT size)
+void LogMapControlChars(UCHAR *s, UINT size)
 {
 	UINT i;
 
@@ -479,7 +479,7 @@ void FreeEraser(ERASER *e)
 
 // Format the text of the string table entry name with args into buf (size bytes): the one place SLog, HLog, ALog
 // and ELog build their log line
-static void LogFormat(wchar_t *buf, UINT size, char *name, va_list args)
+void LogFormat(wchar_t *buf, UINT size, char *name, va_list args)
 {
 	UniFormatArgs(buf, size, _UU(name), args);
 }

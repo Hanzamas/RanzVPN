@@ -106,6 +106,8 @@ void UnlockLog(LOG *g);
 void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc);
 void InsertStringRecord(LOG *g, char *str);
 void InsertUnicodeRecord(LOG *g, wchar_t *unistr);
+void LogMapControlChars(UCHAR *s, UINT size);
+void LogFormat(wchar_t *buf, UINT size, char *name, va_list args);
 void WriteRecordToBuffer(BUF *b, RECORD *r);
 void SetLogSwitchType(LOG *g, UINT switch_type);
 bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now);
