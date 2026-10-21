@@ -5,7 +5,7 @@
 
 #include "Cedar.h"
 #include "Connection.h"
-#include "Logging.h"
+#include "HubLog.h"
 #include "Server.h"
 #include "Session.h"
 

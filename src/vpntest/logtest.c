@@ -6,7 +6,7 @@
 // characters were kept and every record closed the file and opened it again. A LOG in a private
 // directory takes LOGTEST_WRITER_RECORDS string records: the writer opens or creates a file at most
 // LOGTEST_WRITER_MAX_OPENS times (KS_IO_OPEN_COUNT plus KS_IO_CREATE_COUNT), and every record is in
-// the file in order. A second LOG on the same file with a small maximum log size (SetMaxLogSize)
+// the file in order. A second LOG on the same file with a small maximum log size (NewLog, SetMaxLogSize)
 // appends to it, switches once to the next file, named as before, and keeps every record in order.
 //
 // "logbound" (FND-16): while the log file could not be opened, the record queue grew without a limit
@@ -33,8 +33,11 @@
 // Each test prints "<NAME> TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Cedar.h"
-#include "Cedar/Logging.h"
+#include "Cedar/Eraser.h"
+#include "Cedar/LogWriter.h"
+#include "Cedar/PacketLog.h"
 #include "Cedar/Session.h"
+#include "Cedar/Syslog.h"
 
 #include "Mayaqua/DNS.h"
 #include "Mayaqua/Encrypt.h"
@@ -310,10 +313,9 @@ void logwriter_test(UINT num, char **arg)
 	Format(file3, sizeof(file3), "%s/%s", dir, LOGTEST_WRITER_NEXT_FILE);
 
 	// First LOG: the default maximum size, no date in the file name
-	SetMaxLogSize(0);
 	opens = LogTestNumOpens();
 
-	g = NewLog(dir, LOGTEST_WRITER_PREFIX, LOG_SWITCH_NO);
+	g = NewLog(dir, LOGTEST_WRITER_PREFIX, LOG_SWITCH_NO, 0);
 	for (i = 0;i < LOGTEST_WRITER_RECORDS;i++)
 	{
 		LogWriterInsert(g, i);
@@ -337,10 +339,9 @@ void logwriter_test(UINT num, char **arg)
 
 	// Second LOG on the same file with a small maximum size: it appends to lw.log until a write would pass the
 	// maximum, then moves on to the next number; the record after that opens lw~0000001.log
-	SetMaxLogSize(LOGTEST_WRITER_MAX_SIZE);
 	opens = LogTestNumOpens();
 
-	g = NewLog(dir, LOGTEST_WRITER_PREFIX, LOG_SWITCH_NO);
+	g = NewLog(dir, LOGTEST_WRITER_PREFIX, LOG_SWITCH_NO, LOGTEST_WRITER_MAX_SIZE);
 	for (i = LOGTEST_WRITER_RECORDS;i < (total - 1);i++)
 	{
 		LogWriterInsert(g, i);
@@ -355,8 +356,6 @@ void logwriter_test(UINT num, char **arg)
 
 	LogWriterInsert(g, total - 1);
 	FreeLog(g);
-
-	SetMaxLogSize(0);
 
 	opens = LogTestNumOpens() - opens;
 	LogTestCheck(&ctx, opens <= LOGTEST_WRITER_MAX_OPENS,
@@ -458,7 +457,7 @@ static void LogBoundInsertPacket(LOGBOUND_TEST *t, SESSION *s, PKT *frame)
 	AddRef(s->ref);
 	Inc(s->LoggingRecordCount);
 
-	InsertRecord(t->Log, pl, PacketLogParseProc);
+	InsertRecord(t->Log, pl, PacketLogParseProc, PacketLogFreeProc, true);
 	LogBoundQueued(t);
 }
 
@@ -630,8 +629,7 @@ void logbound_test(UINT num, char **arg)
 	frame = LogBoundParseFrame(frame_buf);
 	LogTestCheck(&ctx, frame != NULL, "the frame of the packet log records parses", "ParsePacket returned NULL");
 
-	SetMaxLogSize(0);
-	t.Log = NewLog(log_dir, LOGTEST_BOUND_PREFIX, LOG_SWITCH_NO);
+	t.Log = NewLog(log_dir, LOGTEST_BOUND_PREFIX, LOG_SWITCH_NO, 0);
 
 	for (i = 0;i < LOGTEST_BOUND_RECORDS;i++)
 	{
@@ -899,15 +897,15 @@ void eraser_test(UINT num, char **arg)
 
 	Print("Eraser test: check interval %u s for %u ms\n", LOGTEST_ERASER_INTERVAL, LOGTEST_ERASER_SPAN);
 
-	// AutoDeleteCheckIntervalSecs goes through SetEraserCheckInterval and GetEraserCheckInterval in seconds
-	SetEraserCheckInterval(LOGTEST_ERASER_CONFIG_SECS);
-	secs = GetEraserCheckInterval();
+	// AutoDeleteCheckIntervalSecs goes through NewEraser and GetEraserCheckInterval in seconds. The threshold of
+	// DISK_FREE_SPACE_MIN is met on any test machine and no target is given: the eraser only checks, it deletes nothing
+	e = NewEraser(NULL, DISK_FREE_SPACE_MIN, LOGTEST_ERASER_CONFIG_SECS, NULL, 0);
+	secs = GetEraserCheckInterval(e);
+	FreeEraser(e);
 	LogTestCheck(&ctx, secs == LOGTEST_ERASER_CONFIG_SECS, "the check interval goes in and out of the configuration in seconds",
 		"set %u s, got %u", LOGTEST_ERASER_CONFIG_SECS, secs);
 
-	// The threshold of DISK_FREE_SPACE_MIN is met on any test machine: the eraser only checks, it deletes nothing
-	SetEraserCheckInterval(LOGTEST_ERASER_INTERVAL);
-	e = NewEraser(NULL, DISK_FREE_SPACE_MIN);
+	e = NewEraser(NULL, DISK_FREE_SPACE_MIN, LOGTEST_ERASER_INTERVAL, NULL, 0);
 	SleepThread(LOGTEST_ERASER_SPAN);
 	checks = e->NumChecks;
 	FreeEraser(e);
@@ -916,8 +914,9 @@ void eraser_test(UINT num, char **arg)
 		"a check interval of 1 s gives at most 4 free space checks in 3 s (it waited 1 ms)",
 		"%u checks", checks);
 
-	SetEraserCheckInterval(0);
-	secs = GetEraserCheckInterval();
+	e = NewEraser(NULL, DISK_FREE_SPACE_MIN, 0, NULL, 0);
+	secs = GetEraserCheckInterval(e);
+	FreeEraser(e);
 	LogTestCheck(&ctx, secs == DISK_FREE_CHECK_INTERVAL_DEFAULT / 1000, "an interval of 0 restores the default of 300 s",
 		"got %u s", secs);
 

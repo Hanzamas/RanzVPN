@@ -6,7 +6,7 @@
 #include "Account.h"
 #include "Connection.h"
 #include "Hub.h"
-#include "Logging.h"
+#include "HubLog.h"
 #include "Session.h"
 
 #include "Mayaqua/Internat.h"

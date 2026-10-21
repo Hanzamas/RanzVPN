@@ -5,6 +5,9 @@
 #define	SERVER_H
 
 #include "Account.h"
+#include "Eraser.h"
+#include "LogWriter.h"
+#include "Syslog.h"
 
 #define	SERVER_DEF_PORTS_1				443
 #define	SERVER_DEF_PORTS_4				GC_DEFAULT_PORT
@@ -134,13 +137,6 @@ struct CAPSLIST
 	LIST *CapsList;
 };
 
-struct LOG_FILE
-{
-	char Path[MAX_PATH];
-	UINT FileSize;
-	UINT64 UpdatedTime;
-};
-
 
 #define	NUM_GLOBAL_SERVER_FLAGS			128
 #define	GSF_DISABLE_SESSION_RECONNECT	9
@@ -179,11 +175,6 @@ void SiWriteHubLogCfg(FOLDER *f, HUB_LOG *g);
 void SiRebootServerEx(bool reset_setting);
 void StInit();
 void StFree();
-int CmpLogFile(void *p1, void *p2);
-LIST *EnumLogFile(char *hubname);
-void EnumLogFileDir(LIST *o, char *dirname);
-void FreeEnumLogFile(LIST *o);
-bool CheckLogFileNameFromEnumList(LIST *o, char *name);
 void IncrementServerConfigRevision(SERVER *s);
 UINT SiStageConfiguration(SERVER *s, char *data, UINT size);
 void GetServerProductName(SERVER *s, char *name, UINT size);
