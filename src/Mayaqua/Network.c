@@ -241,56 +241,6 @@ void FreeNicList(LIST *o)
 	ReleaseList(o);
 }
 
-void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark)
-{
-	char tmp_username[MAX_SIZE];
-	char tmp_domain[MAX_SIZE];
-	TOKEN_LIST *t;
-
-	if (src_username != dst_username)
-	{
-		ClearStr(dst_username, dst_username_size);
-	}
-
-	ClearStr(dst_domain, dst_domain_size);
-	if (src_username == NULL || dst_username == NULL || dst_domain == NULL)
-	{
-		return;
-	}
-
-	StrCpy(tmp_username, sizeof(tmp_username), src_username);
-	ClearStr(tmp_domain, sizeof(tmp_domain));
-
-	if (do_not_parse_atmark == false)
-	{
-		t = ParseTokenWithNullStr(tmp_username, "@");
-		if (t->NumTokens >= 1)
-		{
-			StrCpy(tmp_username, sizeof(tmp_username), t->Token[0]);
-		}
-		if (t->NumTokens >= 2)
-		{
-			StrCpy(tmp_domain, sizeof(tmp_domain), t->Token[1]);
-		}
-		FreeToken(t);
-	}
-
-	t = ParseTokenWithNullStr(tmp_username, "\\");
-	if (t->NumTokens >= 2)
-	{
-		if (IsEmptyStr(tmp_domain))
-		{
-			StrCpy(tmp_domain, sizeof(tmp_domain), t->Token[0]);
-		}
-
-		StrCpy(tmp_username, sizeof(tmp_username), t->Token[1]);
-	}
-	FreeToken(t);
-
-	StrCpy(dst_username, dst_username_size, tmp_username);
-	StrCpy(dst_domain, dst_domain_size, tmp_domain);
-}
-
 UINT GetNumIpClient(const IP *ip)
 {
 	IP_CLIENT *c;
