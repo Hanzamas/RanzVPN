@@ -26,6 +26,7 @@
 #define	MEMTAG_POISON(tag1)
 #define	MEMTAG_UNPOISON(tag1)
 #endif	// RANZ_ASAN
+#include "MemoryInternal.h"
 
 #define	MEMORY_SLEEP_TIME		150
 #define	MEMORY_MAX_RETRY		30

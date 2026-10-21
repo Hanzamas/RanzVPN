@@ -91,12 +91,10 @@ struct HASH_LIST
 
 HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits);
 void ReleaseHashList(HASH_LIST *h);
-void CleanupHashList(HASH_LIST *h);
 void AddHash(HASH_LIST *h, void *p);
 bool DeleteHash(HASH_LIST *h, void *p);
 UINT DeleteHashIf(HASH_LIST *h, HASH_LIST_TAKE_PROC *proc, void *param);
 void *SearchHash(HASH_LIST *h, void *t);
-UINT CalcHashForHashList(HASH_LIST *h, void *p);
 void **HashListToArray(HASH_LIST *h, UINT *num);
 void LockHashList(HASH_LIST *h);
 void UnlockHashList(HASH_LIST *h);
@@ -110,12 +108,6 @@ void *ZeroMallocEx(UINT size, bool zero_clear_when_free);
 void *ReAlloc(void *addr, UINT size);
 void Free(void *addr);
 void FreeSafe(void **addr);
-void CheckMemTag1(MEMTAG1 *tag);
-void CheckMemTag2(MEMTAG2 *tag);
-
-void *InternalMalloc(UINT size);
-void *InternalReAlloc(void *addr, UINT size);
-void InternalFree(void *addr);
 
 void Copy(void *dst, const void *src, UINT size);
 void Move(void *dst, const void *src, UINT size);
@@ -141,11 +133,8 @@ void SeekBuf(BUF *b, UINT offset, int mode);
 void SeekBufToEnd(BUF *b);
 void SeekBufToBegin(BUF *b);
 void FreeBuf(BUF *b);
-bool BufToFile(IO *o, BUF *b);
-BUF *FileToBuf(IO *o);
 UINT ReadBufInt(BUF *b);
 UINT64 ReadBufInt64(BUF *b);
-UCHAR ReadBufChar(BUF *b);
 bool WriteBufInt(BUF *b, UINT value);
 bool WriteBufInt64(BUF *b, UINT64 value);
 bool WriteBufChar(BUF *b, UCHAR uc);
@@ -167,10 +156,7 @@ void ShrinkFifoMemory(FIFO *f);
 void WriteFifo(FIFO *f, void *p, UINT size);
 UINT FifoSize(FIFO *f);
 void ReleaseFifo(FIFO *f);
-void CleanupFifo(FIFO *f);
 FIFO *NewFifo();
-FIFO *NewFifoFast();
-FIFO *NewFifoEx2();
 void SetFifoCurrentReallocMemSize(UINT size);
 
 void *Search(LIST *o, const void *target);
@@ -183,10 +169,8 @@ void DeleteAll(LIST *o);
 void LockList(LIST *o);
 void UnlockList(LIST *o);
 void ReleaseList(LIST *o);
-void CleanupList(LIST *o);
 LIST *NewList(COMPARE *cmp);
 LIST *NewListFast(COMPARE *cmp);
-LIST *NewListEx2(COMPARE *cmp, bool fast);
 void *ToArray(LIST *o);
 void *ToArrayEx(LIST *o, bool fast);
 int CompareStr(void *p1, void *p2);
@@ -205,25 +189,18 @@ bool IsIntInList(LIST *o, UINT i);
 bool IsInt64InList(LIST *o, UINT64 i);
 LIST *NewIntList();
 LIST *NewInt64List();
-int CompareInt(void *p1, void *p2);
-int CompareInt64(void *p1, void *p2);
 
 void *GetNext(QUEUE *q);
 void InsertQueue(QUEUE *q, void *p);
-void InsertQueueInt(QUEUE *q, UINT value);
 void LockQueue(QUEUE *q);
 void UnlockQueue(QUEUE *q);
 void ReleaseQueue(QUEUE *q);
-void CleanupQueue(QUEUE *q);
 QUEUE *NewQueue();
 QUEUE *NewQueueFast();
 UINT GetQueueNum(QUEUE *q);
 
 SK *NewSk();
 void ReleaseSk(SK *s);
-void CleanupSk(SK *s);
-void LockSk(SK *s);
-void UnlockSk(SK *s);
 void Push(SK *s, void *p);
 void *Pop(SK *s);
 
@@ -246,7 +223,6 @@ void AppendBufStr(BUF *b, char *str);
 #define CANARY_RAND_ID_PTR_KEY_HASH		1
 
 void InitCanaryRand();
-UCHAR *GetCanaryRand(UINT id);
 
 #endif
 

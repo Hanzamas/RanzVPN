@@ -37,6 +37,7 @@
 #define	MEMTAG_POISON(tag1)
 #define	MEMTAG_UNPOISON(tag1)
 #endif	// RANZ_ASAN
+#include "MemoryInternal.h"
 
 #define	INIT_BUF_SIZE			10240
 
