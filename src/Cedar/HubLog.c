@@ -6,8 +6,10 @@
 #include "Admin.h"
 #include "Server.h"
 
+#include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
+#include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 
 // The log setting of a new hub: security and packet logs on, switched daily, TCP connection and DHCP packets logged by header
