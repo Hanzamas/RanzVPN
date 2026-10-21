@@ -53,6 +53,7 @@ typedef struct HUB_OPTION HUB_OPTION;
 typedef struct HUB_OPTION_FIELD HUB_OPTION_FIELD;
 typedef struct MAC_TABLE_ENTRY MAC_TABLE_ENTRY;
 typedef struct IP_TABLE_ENTRY IP_TABLE_ENTRY;
+typedef struct IP_TABLE_EXPIRY IP_TABLE_EXPIRY;
 typedef struct ACCESS ACCESS;
 typedef struct HUB HUB;
 typedef struct HUB_STATS HUB_STATS;

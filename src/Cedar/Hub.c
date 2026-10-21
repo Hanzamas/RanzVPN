@@ -1077,18 +1077,29 @@ static void DeleteHighestIpTableEntry(LIST *o) {
 }
 
 // The one place that creates an IP table entry: drop the expired entries, evict the highest address when the
-// table is full (MAX_IP_TABLES), then insert the new entry for ip
+// table is full (MAX_IP_TABLES), then insert the new entry for ip. The expiry pass runs only when an entry can have
+// expired (IpTableExpiryDue), not as a scan of the whole table on every new address. StorePacket frees the entries
+// it takes out after the table lock
 void IpTableAddEntry(HUB *h, SESSION *s, IP *ip, UCHAR *mac, bool dhcp_allocated, UINT64 now) {
 	IP_TABLE_ENTRY *e = ZeroMalloc(sizeof(IP_TABLE_ENTRY));
 
 	IpTableSetEntry(e, s, ip, mac, dhcp_allocated, now);
 
-	DeleteExpiredIpTableEntry(h->IpTable);
+	UINT64 tick = Tick64();
+	if (IpTableExpiryDue(&h->IpTableExpiry, tick))
+		DeleteExpiredIpTableEntry(h->IpTable, &h->IpTableExpiry, tick);
 
 	if (LIST_NUM(h->IpTable) >= MAX_IP_TABLES)
 		DeleteHighestIpTableEntry(h->IpTable);
 
 	Insert(h->IpTable, e);
+	IpTableExpiryNote(&h->IpTableExpiry, e);
+}
+
+// A frame of the session of IP table entry e refreshed it
+static void IpTableTouch(HUB *h, IP_TABLE_ENTRY *e, UINT64 now) {
+	e->UpdatedTime = now;
+	IpTableExpiryNote(&h->IpTableExpiry, e);
 }
 
 // True when session s may not learn one more IPv6 (v6) or IPv4 address: it holds the cap of its policy
@@ -1305,6 +1316,7 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 	bool allow_same_user_packet_privacy = false;
 	UINT tcp_queue_quota = 0;
 	UINT64 dormant_interval = 0;
+	IP_TABLE_ENTRY *expired = NULL;
 	if (hub == NULL || packet == NULL)
 		return;
 
@@ -1549,7 +1561,7 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 								if (IsIPManagementTargetForHUB(&ip, hub))
 									IpTableAddEntry(hub, s, &ip, packet->MacAddressSrc, false, now);
 							} else if (e->Session == s) {
-								e->UpdatedTime = now;
+								IpTableTouch(hub, e, now);
 								Copy(e->MacAddress, packet->MacAddressSrc, 6);
 							} else if ((s->Policy->CheckIPv6) &&
 							           ((e->UpdatedTime + IP_TABLE_EXCLUSIVE_TIME) >= now)) {
@@ -1601,7 +1613,7 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 							if (IsIPManagementTargetForHUB(&ip, hub))
 								IpTableAddEntry(hub, s, &ip, packet->MacAddressSrc, false, now);
 						} else if (e->Session == s) {
-							e->UpdatedTime = now;
+							IpTableTouch(hub, e, now);
 							Copy(e->MacAddress, packet->MacAddressSrc, 6);
 						} else {
 							if ((s->Policy->CheckIP || s->Policy->DHCPForce) &&
@@ -1624,7 +1636,7 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 							}
 
 							e->Session = s;
-							e->UpdatedTime = now;
+							IpTableTouch(hub, e, now);
 							Copy(e->MacAddress, packet->MacAddressSrc, 6);
 						}
 					}
@@ -1793,8 +1805,14 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 				FreePacket(packet);
 			}
 		}
+
+		// The entries that the IP table expiry took out are freed after the lock
+		expired = hub->IpTableExpiry.Expired;
+		hub->IpTableExpiry.Expired = NULL;
 	}
 	HubUnlockTables(hub);
+
+	FreeIpTableEntries(expired);
 }
 
 
@@ -2062,6 +2080,7 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p) {
 							if (e != NULL) {
 								// A lease the table holds already: the ACK gives it to this client again
 								IpTableSetEntry(e, mac_table->Session, &ip, p->MacAddressDest, true, Tick64());
+								IpTableExpiryNote(&hub->IpTableExpiry, e);
 							} else {
 								IpTableAddEntry(hub, mac_table->Session, &ip, p->MacAddressDest, true, Tick64());
 
@@ -2376,6 +2395,7 @@ void CleanupHub(HUB *h) {
 	Free(h->Name);
 	ReleaseList(h->SessionList);
 	ReleaseHashList(h->MacHashTable);
+	FreeIpTableEntries(h->IpTableExpiry.Expired);
 	ReleaseList(h->IpTable);
 	ReleaseList(h->MonitorList);
 	ReleaseList(h->LinkList);
@@ -2633,6 +2653,7 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option) {
 	h->NumSessionsBridge = NewCounter();
 	h->MacHashTable = NewHashList(GetHashOfMacTable, CompareMacTable, 8);
 	h->IpTable = NewList(CompareIpTable);
+	IpTableExpiryInit(&h->IpTableExpiry);
 	h->MonitorList = NewList(NULL);
 	h->LinkList = NewList(NULL);
 

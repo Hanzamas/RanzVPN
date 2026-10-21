@@ -26,7 +26,8 @@
 //   n sessions of hub HARNESS_FLOOD through the hub packet adapter, no SessionMain thread), flood_fps_logwait_<n>
 //   (the same while another session of the hub waits for the log writer in the packet log back-pressure, CORE-F6),
 //   parse_packet_<kind> (the parse of HubPaPutPacket; _nolog: hub packet log off), pack_<encode|decode>_names_<n> (a
-//   Pack with n distinct element names), ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass), ip_table_add_<n>
+//   Pack with n distinct element names), ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass; ip_table_free_<n>:
+//   freeing what it took out, which the hub does after its table lock since CORE-F6), ip_table_add_<n>
 //   (frames from new source addresses into a hub IP table of n entries, CORE-F6) and accept_table_<n> (n first connections
 //   from n distinct addresses to the DoS table of a listener, FND-127), fifo_cycle, queue_cycle and queue_burst_<n>
 //   (a FIFO and a queue that never fully drain, a queue burst, FND-215). A wrong result of these cases prints a
@@ -5109,19 +5110,27 @@ static void HarnessBenchParse()
 }
 
 // ip_table_expire_<n>: microseconds of one DeleteExpiredIpTableEntry pass over an IP table of n entries,
-// every second entry expired
+// every second entry expired: the part that the hub runs under its table lock. ip_table_free_<n>: microseconds to
+// free the entries that the pass took out, which the hub does after the lock (FreeIpTableEntries, CORE-F6)
 static void HarnessBenchIpTableExpire(UINT num)
 {
 	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT64 free_runs[HARNESS_BENCH_RUNS];
 	bool ok = true;
 	char name[MAX_SIZE];
+	char free_name[MAX_SIZE];
 
 	Format(name, sizeof(name), "ip_table_expire_%u", num);
+	Format(free_name, sizeof(free_name), "ip_table_free_%u", num);
 
 	for (UINT r = 0;r < HARNESS_BENCH_RUNS;r++)
 	{
 		LIST *o = NewList(CompareIpTable);
+		IP_TABLE_EXPIRY x;
+		UINT num_expired = 0;
 		UINT64 now = Tick64();
+
+		IpTableExpiryInit(&x);
 
 		for (UINT i = 0;i < num;i++)
 		{
@@ -5139,13 +5148,22 @@ static void HarnessBenchIpTableExpire(UINT num)
 		}
 
 		UINT64 start = HarnessNowNs();
-		DeleteExpiredIpTableEntry(o);
+		DeleteExpiredIpTableEntry(o, &x, Tick64());
 		runs[r] = (HarnessNowNs() - start) / 1000ULL;
 
-		if (LIST_NUM(o) != (num - (num + 1) / 2))
+		for (IP_TABLE_ENTRY *e = x.Expired;e != NULL;e = e->NextExpired)
+		{
+			num_expired++;
+		}
+
+		if (LIST_NUM(o) != (num - (num + 1) / 2) || num_expired != (num + 1) / 2)
 		{
 			ok = false;
 		}
+
+		start = HarnessNowNs();
+		FreeIpTableEntries(x.Expired);
+		free_runs[r] = (HarnessNowNs() - start) / 1000ULL;
 
 		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
@@ -5155,6 +5173,7 @@ static void HarnessBenchIpTableExpire(UINT num)
 	}
 
 	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "us", false);
+	HarnessBenchReport(free_name, free_runs, HARNESS_BENCH_RUNS, "us", false);
 
 	if (ok == false)
 	{

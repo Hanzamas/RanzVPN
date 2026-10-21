@@ -23,6 +23,10 @@
 // - NoServer ports (FND-25 #109): under the NoServer and NoServerV6 policies a SYN+ACK of the sender is
 //   dropped, and its security log line names both TCP ports in host order. The old line printed them
 //   big-endian: port 443 as 47873.
+// - IP table (CORE-F6 #66): with MAX_IP_TABLES and the expiry times lowered, a new address at the cap evicts
+//   the highest address, and the entries that expired (with their DHCP and non-DHCP times) are gone at the
+//   next new address while refreshed ones stay. The hub now skips the expiry pass while no entry can have
+//   expired and frees the expired entries after its table lock; the deletions are the same.
 // Prints "STOREPACKET TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Account.h"
@@ -32,6 +36,7 @@
 #include "Cedar/LogWriter.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
+#include "Cedar/Tunables.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
@@ -85,6 +90,17 @@
 #define	STOREPACKET_TEST_LONG_URL_TAIL	"?i=" ACCESS_LIST_URL_INFO_TAG "|" STOREPACKET_TEST_INFO_SECRET
 #define	STOREPACKET_TEST_SERVER_PORT	443		// The sender's port as a TCP server (NoServer case)
 #define	STOREPACKET_TEST_LOG_MAX		2048	// Buffer of one security log line (UTF-8)
+#define	STOREPACKET_TEST_IPTABLE_MAX	4		// MAX_IP_TABLES of the IP table case
+#define	STOREPACKET_TEST_IPTABLE_EXPIRE	1000	// IP_TABLE_EXPIRE_TIME of its first part (ms)
+#define	STOREPACKET_TEST_IPTABLE_STEP	600		// Milliseconds between its steps: below that time, two steps above it
+#define	STOREPACKET_TEST_IPTABLE_LONG	10000	// IP_TABLE_EXPIRE_TIME of its DHCP part (ms)
+#define	STOREPACKET_TEST_IPTABLE_DHCP	600		// IP_TABLE_EXPIRE_TIME_DHCP of its DHCP part (ms)
+#define	STOREPACKET_TEST_IPTABLE_WAIT	1000	// The DHCP part waits this long (ms), above that DHCP time
+#define	STOREPACKET_TEST_IPTABLE_NET	0x0A060000	// Addresses of the case: 10.6.0.x
+#define	STOREPACKET_TEST_IPTABLE_DST	0x0A06FF01	// Their destination 10.6.255.1 (at MAC storepacket_test_mac_peer)
+#define	STOREPACKET_TEST_IPTABLE_DHCPD	0x0A06FFFE	// The sender as the DHCP server of the case: 10.6.255.254
+#define	STOREPACKET_TEST_DHCP_SIZE		300		// DHCP payload of an ACK of the case (DHCP_MIN_SIZE)
+#define	STOREPACKET_TEST_DHCP_COOKIE	236		// Offset of the magic cookie: fixed header (44 bytes), sname (64), file (128)
 
 // Run state of the test
 typedef struct STOREPACKET_TEST
@@ -111,6 +127,7 @@ typedef struct STOREPACKET_TEST_REPLY
 static UCHAR storepacket_test_mac_sender[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x5A};
 static UCHAR storepacket_test_mac_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 static UCHAR storepacket_test_mac_peer[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x5B};	// No session has it
+static UCHAR storepacket_test_mac_iptable[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x5C};	// Session of the IP table case
 static UCHAR storepacket_test_mac_dlink[2][6] =		// Source MACs of D-Link spanning tree frames
 {
 	{0x00, 0x80, 0xC8, 0x00, 0x00, 0x00},
@@ -173,9 +190,9 @@ static void StorePacketTestFreeSession(SESSION *s)
 	ReleaseSession(s);
 }
 
-// Broadcast IPv4 UDP frame of the sender from 10.5.0.1 to dst (host order), ports 40000 to 40001,
-// 8 bytes of data. Returns its size
-static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
+// IPv4 UDP frame from src_mac and src to dst_mac and dst (addresses in host order), ports 40000 to 40001, 8 bytes of
+// data. Returns its size
+static UINT StorePacketTestIpFrameEx(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac, UINT src, UINT dst)
 {
 	UCHAR *ip = buf + 14;
 	UCHAR *udp = ip + 20;
@@ -184,8 +201,8 @@ static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
 
 	Zero(buf, 14 + ip_size);
 
-	Copy(buf, storepacket_test_mac_broadcast, 6);
-	Copy(buf + 6, storepacket_test_mac_sender, 6);
+	Copy(buf, dst_mac, 6);
+	Copy(buf + 6, src_mac, 6);
 	buf[12] = 0x08;								// IPv4
 	buf[13] = 0x00;
 
@@ -194,10 +211,10 @@ static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
 	ip[3] = (UCHAR)(ip_size & 0xFF);
 	ip[8] = 64;									// TTL
 	ip[9] = IP_PROTO_UDP;
-	ip[12] = 10;
-	ip[13] = 5;
-	ip[14] = 0;
-	ip[15] = 1;
+	ip[12] = (UCHAR)(src >> 24);
+	ip[13] = (UCHAR)(src >> 16);
+	ip[14] = (UCHAR)(src >> 8);
+	ip[15] = (UCHAR)src;
 	ip[16] = (UCHAR)(dst >> 24);
 	ip[17] = (UCHAR)(dst >> 16);
 	ip[18] = (UCHAR)(dst >> 8);
@@ -217,6 +234,14 @@ static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
 	}
 
 	return 14 + ip_size;
+}
+
+// Broadcast IPv4 UDP frame of the sender from 10.5.0.1 to dst (host order), ports 40000 to 40001,
+// 8 bytes of data. Returns its size
+static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
+{
+	return StorePacketTestIpFrameEx(buf, storepacket_test_mac_broadcast, storepacket_test_mac_sender,
+		STOREPACKET_TEST_IP_SENDER, dst);
 }
 
 // Broadcast frame of the sender with EtherType 0x88B5 (IEEE local experimental), no IP: only an access
@@ -1125,6 +1150,200 @@ static void StorePacketTestNoServerPort(STOREPACKET_TEST *t)
 	pol->NoServerV6 = old_no_server_v6;
 }
 
+// One frame of the session s of the IP table case from 10.6.0.host to 10.6.255.1, at a MAC address no session has:
+// the hub floods it to the sender and the receiver, which drop it
+static void StorePacketTestIpTableSend(STOREPACKET_TEST *t, SESSION *s, UINT host)
+{
+	UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
+	UINT size = StorePacketTestIpFrameEx(frame, storepacket_test_mac_peer, storepacket_test_mac_iptable,
+		STOREPACKET_TEST_IPTABLE_NET + host, STOREPACKET_TEST_IPTABLE_DST);
+
+	StorePacketTestSendFrom(s, frame, size);
+	StorePacketTestDrainFrom(t->Sender);
+	StorePacketTestDrainFrom(t->Receiver);
+}
+
+// DHCP ACK of the sender (10.6.255.254, port 67) that gives 10.6.0.host to the session s of the IP table case (its
+// MAC address, port 68)
+static void StorePacketTestIpTableDhcpAck(STOREPACKET_TEST *t, SESSION *s, UINT host)
+{
+	UCHAR frame[14 + 20 + 8 + STOREPACKET_TEST_DHCP_SIZE];
+	UCHAR *ip = frame + 14;
+	UCHAR *udp = ip + 20;
+	UCHAR *dhcp = udp + 8;
+	UINT udp_size = 8 + STOREPACKET_TEST_DHCP_SIZE;
+	UINT ip_size = 20 + udp_size;
+	UINT your_ip = Endian32(STOREPACKET_TEST_IPTABLE_NET + host);
+	UINT server_ip = Endian32(STOREPACKET_TEST_IPTABLE_DHCPD);
+	UCHAR *opt;
+
+	Zero(frame, sizeof(frame));
+
+	Copy(frame, storepacket_test_mac_iptable, 6);
+	Copy(frame + 6, storepacket_test_mac_sender, 6);
+	frame[12] = 0x08;							// IPv4
+	frame[13] = 0x00;
+
+	ip[0] = 0x45;								// Version 4, 20-byte header
+	ip[2] = (UCHAR)(ip_size >> 8);
+	ip[3] = (UCHAR)(ip_size & 0xFF);
+	ip[8] = 64;									// TTL
+	ip[9] = IP_PROTO_UDP;
+	Copy(ip + 12, &server_ip, 4);
+	Copy(ip + 16, &your_ip, 4);
+	USHORT sum = IpChecksum(ip, 20);
+	Copy(ip + 10, &sum, sizeof(USHORT));
+
+	udp[1] = 67;								// Source port 67, destination port 68
+	udp[3] = 68;
+	udp[4] = (UCHAR)(udp_size >> 8);			// Length; checksum 0 (none)
+	udp[5] = (UCHAR)(udp_size & 0xFF);
+
+	dhcp[0] = 2;								// BOOTREPLY
+	dhcp[1] = 1;								// Ethernet
+	dhcp[2] = 6;								// Length of a MAC address
+	dhcp[4] = 0x12;								// Transaction ID
+	dhcp[5] = 0x34;
+	dhcp[6] = 0x56;
+	dhcp[7] = (UCHAR)host;
+	Copy(dhcp + 16, &your_ip, 4);				// Your address
+	Copy(dhcp + 28, storepacket_test_mac_iptable, 6);	// Client hardware address
+
+	opt = dhcp + STOREPACKET_TEST_DHCP_COOKIE;
+	opt[0] = 0x63;								// Magic cookie
+	opt[1] = 0x82;
+	opt[2] = 0x53;
+	opt[3] = 0x63;
+	opt[4] = DHCP_ID_MESSAGE_TYPE;
+	opt[5] = 1;
+	opt[6] = DHCP_ACK;
+	opt[7] = 0xFF;								// End
+
+	StorePacketTestSendFrom(t->Sender, frame, sizeof(frame));
+	StorePacketTestDrainFrom(s);
+}
+
+// Whether the IP table of the test hub holds exactly the addresses 10.6.0.host of hosts (ascending, num of them),
+// each for session s and a DHCP entry where dhcp (optional) says so. detail gets the table as it is
+static bool StorePacketTestIpTableIs(STOREPACKET_TEST *t, SESSION *s, const UINT *hosts, const bool *dhcp, UINT num,
+	char *detail, UINT detail_size)
+{
+	bool ok;
+
+	StrCpy(detail, detail_size, "(empty)");
+
+	HubLockTables(t->Hub);
+	{
+		UINT n = HubIpTableNum(t->Hub);
+
+		ok = (n == num);
+
+		for (UINT i = 0;i < n;i++)
+		{
+			IP_TABLE_ENTRY *e = IpTableGet(t->Hub, i);
+			char ip_str[64];
+
+			IPToStr(ip_str, sizeof(ip_str), &e->Ip);
+			if (i == 0)
+			{
+				StrCpy(detail, detail_size, "");
+			}
+			else
+			{
+				StrCat(detail, detail_size, " ");
+			}
+			StrCat(detail, detail_size, ip_str);
+			if (e->DhcpAllocated)
+			{
+				StrCat(detail, detail_size, "(DHCP)");
+			}
+
+			if (i < num && (IsIP4(&e->Ip) == false || Endian32(IPToUINT(&e->Ip)) != STOREPACKET_TEST_IPTABLE_NET + hosts[i] ||
+				e->Session != s || e->DhcpAllocated != (dhcp != NULL && dhcp[i])))
+			{
+				ok = false;
+			}
+		}
+	}
+	HubUnlockTables(t->Hub);
+
+	return ok;
+}
+
+// IP table (CORE-F6 #66), with MAX_IP_TABLES and the expiry times lowered for the case. A session of its own sends
+// from 10.6.0.x, into an IP table that holds nothing else. At the cap a new address evicts the highest address, not
+// the oldest entry. At the first new address after IP_TABLE_EXPIRE_TIME the older entries are gone and an entry the
+// session refreshed in time stays; it expires one expiry time after its refresh. A DHCP ACK makes an entry a DHCP
+// entry and adds an entry for a new lease; the DHCP entries go after IP_TABLE_EXPIRE_TIME_DHCP, at the next new
+// address, while an older entry without DHCP stays. The hub skips the expiry pass while no entry can have expired:
+// these are the deletions of a pass on every new address, as before
+static void StorePacketTestIpTable(STOREPACKET_TEST *t)
+{
+	UINT old_max = vpn_global_parameters[GP_MAX_IP_TABLES];
+	UINT old_expire = vpn_global_parameters[GP_IP_TABLE_EXPIRE_TIME];
+	UINT old_expire_dhcp = vpn_global_parameters[GP_IP_TABLE_EXPIRE_TIME_DHCP];
+	UINT fill[] = {10, 20, 30, 40};
+	UINT at_cap[] = {5, 10, 20, 30};
+	UINT refreshed[] = {20, 50};
+	UINT later[] = {50, 60};
+	UINT leased[] = {50, 60, 70};
+	bool leased_dhcp[] = {false, true, true};
+	UINT after_dhcp[] = {50, 80};
+	char detail[MAX_SIZE];
+
+	vpn_global_parameters[GP_MAX_IP_TABLES] = STOREPACKET_TEST_IPTABLE_MAX;
+	vpn_global_parameters[GP_IP_TABLE_EXPIRE_TIME] = STOREPACKET_TEST_IPTABLE_EXPIRE;
+
+	SESSION *s = StorePacketTestNewSession(t, "storepacket-iptable");
+
+	for (UINT i = 0;i < sizeof(fill) / sizeof(fill[0]);i++)
+	{
+		StorePacketTestIpTableSend(t, s, fill[i]);
+	}
+	StorePacketTestCheck(t, StorePacketTestIpTableIs(t, s, fill, NULL, 4, detail, sizeof(detail)),
+		"IP table: four new addresses fill the table up to MAX_IP_TABLES", "table: %s", detail);
+
+	StorePacketTestIpTableSend(t, s, 5);
+	StorePacketTestCheck(t, StorePacketTestIpTableIs(t, s, at_cap, NULL, 4, detail, sizeof(detail)),
+		"IP table: at MAX_IP_TABLES a new address evicts the highest address, not the oldest entry", "table: %s", detail);
+
+	SleepThread(STOREPACKET_TEST_IPTABLE_STEP);
+	StorePacketTestIpTableSend(t, s, 20);
+	SleepThread(STOREPACKET_TEST_IPTABLE_STEP);
+	StorePacketTestIpTableSend(t, s, 50);
+	StorePacketTestCheck(t, StorePacketTestIpTableIs(t, s, refreshed, NULL, 2, detail, sizeof(detail)),
+		"IP table: at the first new address after IP_TABLE_EXPIRE_TIME the older entries are gone, the refreshed one stays",
+		"table: %s", detail);
+
+	SleepThread(STOREPACKET_TEST_IPTABLE_STEP);
+	StorePacketTestIpTableSend(t, s, 60);
+	StorePacketTestCheck(t, StorePacketTestIpTableIs(t, s, later, NULL, 2, detail, sizeof(detail)),
+		"IP table: the refreshed entry expires one IP_TABLE_EXPIRE_TIME after its refresh", "table: %s", detail);
+
+	// Entries without DHCP now stay for long, DHCP entries go after a short time
+	vpn_global_parameters[GP_IP_TABLE_EXPIRE_TIME] = STOREPACKET_TEST_IPTABLE_LONG;
+	vpn_global_parameters[GP_IP_TABLE_EXPIRE_TIME_DHCP] = STOREPACKET_TEST_IPTABLE_DHCP;
+
+	StorePacketTestIpTableDhcpAck(t, s, 60);
+	StorePacketTestIpTableDhcpAck(t, s, 70);
+	StorePacketTestCheck(t, StorePacketTestIpTableIs(t, s, leased, leased_dhcp, 3, detail, sizeof(detail)),
+		"IP table: a DHCP ACK makes the entry of its address a DHCP entry and adds an entry for a new lease",
+		"table: %s", detail);
+
+	SleepThread(STOREPACKET_TEST_IPTABLE_WAIT);
+	StorePacketTestIpTableSend(t, s, 80);
+	StorePacketTestCheck(t, StorePacketTestIpTableIs(t, s, after_dhcp, NULL, 2, detail, sizeof(detail)),
+		"IP table: the DHCP entries expire after IP_TABLE_EXPIRE_TIME_DHCP at the next new address, an older entry without DHCP stays",
+		"table: %s", detail);
+
+	vpn_global_parameters[GP_MAX_IP_TABLES] = old_max;
+	vpn_global_parameters[GP_IP_TABLE_EXPIRE_TIME] = old_expire;
+	vpn_global_parameters[GP_IP_TABLE_EXPIRE_TIME_DHCP] = old_expire_dhcp;
+
+	// Leaving the hub drops the entries of the session
+	StorePacketTestFreeSession(s);
+}
+
 // storepacket: bounded broadcast storm list, access list delay and jitter without a divide by zero
 void storepacket_test(UINT num, char **arg)
 {
@@ -1149,6 +1368,9 @@ void storepacket_test(UINT num, char **arg)
 	t.Thread = NewThread(StorePacketTestIdleThread, NULL);
 	t.Sender = StorePacketTestNewSession(&t, "storepacket-sender");
 	t.Receiver = StorePacketTestNewSession(&t, "storepacket-receiver");
+
+	// While the IP table of the hub is still empty
+	StorePacketTestIpTable(&t);
 
 	// Storm list first: the access list entry of the delay cases would hold these frames back
 	StorePacketTestStormDetect(&t, "below the cap", STOREPACKET_TEST_DETECT_BELOW);
