@@ -1,7 +1,9 @@
 // Eraser.c
 // Eraser: deletes the oldest log files while the free disk space is below the minimum
 
-#include "Logging.h"
+#include "Eraser.h"
+
+#include "Cedar.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/FileIO.h"

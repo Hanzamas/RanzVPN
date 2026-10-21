@@ -1,7 +1,9 @@
 // Syslog.c
 // Syslog sender: each log line as one UDP datagram to the syslog server
 
-#include "Logging.h"
+#include "Syslog.h"
+
+#include "LogWriter.h"
 
 #include "Mayaqua/DNS.h"
 #include "Mayaqua/Internat.h"

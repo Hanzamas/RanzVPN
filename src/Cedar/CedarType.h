@@ -28,10 +28,6 @@ typedef struct TCP_ACCEPTED_PARAM TCP_ACCEPTED_PARAM;
 
 typedef struct PACKET_LOG PACKET_LOG;
 typedef struct HUB_LOG HUB_LOG;
-typedef struct RECORD RECORD;
-typedef struct LOG LOG;
-typedef struct ERASER ERASER;
-typedef struct SLOG SLOG;
 
 
 typedef struct CLIENT_OPTION CLIENT_OPTION;

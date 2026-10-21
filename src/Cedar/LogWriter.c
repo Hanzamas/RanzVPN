@@ -1,7 +1,9 @@
 // LogWriter.c
 // Log writer: a thread per LOG writes its records to log files that switch by date and size
 
-#include "Logging.h"
+#include "LogWriter.h"
+
+#include "PacketLog.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/FileIO.h"

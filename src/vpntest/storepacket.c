@@ -29,7 +29,7 @@
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
-#include "Cedar/Logging.h"
+#include "Cedar/LogWriter.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
 

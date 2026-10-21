@@ -7,6 +7,7 @@
 #include "Bridge.h"
 #include "Connection.h"
 #include "Link.h"
+#include "PacketLog.h"
 #include "Protocol.h"
 #include "Server.h"
 

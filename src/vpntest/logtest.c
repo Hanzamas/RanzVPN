@@ -33,8 +33,11 @@
 // Each test prints "<NAME> TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Cedar.h"
-#include "Cedar/Logging.h"
+#include "Cedar/Eraser.h"
+#include "Cedar/LogWriter.h"
+#include "Cedar/PacketLog.h"
 #include "Cedar/Session.h"
+#include "Cedar/Syslog.h"
 
 #include "Mayaqua/DNS.h"
 #include "Mayaqua/Encrypt.h"

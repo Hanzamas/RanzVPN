@@ -110,10 +110,6 @@
 #define SYSLOG_SERVER_AND_HUB_SECURITY_LOG	2
 #define SYSLOG_SERVER_AND_HUB_ALL_LOG		3
 
-#define SYSLOG_PORT					514
-#define SYSLOG_POLL_IP_INTERVAL		(UINT64)(3600 * 1000)
-#define	SYSLOG_POLL_IP_INTERVAL_NG	(UINT64)(60 * 1000)
-
 #define	RECV_BUF_SIZE				65536
 
 #define	TCP_BOTH				0
@@ -196,9 +192,6 @@
 #define	DEFAULT_MAX_UNESTABLISHED_CONNECTIONS	1000
 
 
-#define	LOG_ENGINE_SAVE_START_CACHE_COUNT	100000
-#define	LOG_ENGINE_BUFFER_CACHE_SIZE_MAX	(10 * 1024 * 1024)
-
 // These placeholders will be replaced in InnerFilePathW().
 // @ - placeholder for LogDir
 // $ - placeholder for DbDir (config directory)
@@ -228,19 +221,6 @@
 #define	PACKET_LOG_NONE				0
 #define	PACKET_LOG_HEADER			1
 #define	PACKET_LOG_ALL				2
-
-#define	LOG_SWITCH_NO				0
-#define	LOG_SWITCH_SECOND			1
-#define	LOG_SWITCH_MINUTE			2
-#define	LOG_SWITCH_HOUR				3
-#define	LOG_SWITCH_DAY				4
-#define	LOG_SWITCH_MONTH			5
-
-#define	DISK_FREE_SPACE_MIN			1048576
-#define	DISK_FREE_SPACE_DEFAULT		(DISK_FREE_SPACE_MIN * 100)
-#define	DISK_FREE_SPACE_DEFAULT_WINDOWS	((UINT64)(8ULL * 1024ULL * 1024ULL * 1024ULL))
-
-#define	DISK_FREE_CHECK_INTERVAL_DEFAULT	(5 * 60 * 1000)
 
 #define TINY_LOG_DIRNAME			"@tiny_log"
 #define TINY_LOG_FILENAME			"@tiny_log/%04u%02u%02u_%02u%02u%02u.log"

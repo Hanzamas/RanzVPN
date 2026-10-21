@@ -1,9 +1,10 @@
 // PacketLog.c
 // Packet log of the Virtual Hubs: which frames are logged, and their CSV line
 
-#include "Logging.h"
+#include "PacketLog.h"
 
 #include "Admin.h"
+#include "LogWriter.h"
 #include "Server.h"
 
 #include "Mayaqua/DNS.h"

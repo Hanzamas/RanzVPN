@@ -1,9 +1,10 @@
 // HubLog.c
 // Log API of Cedar: the server log and the security logs of the Virtual Hubs, to their files or to syslog
 
-#include "Logging.h"
+#include "HubLog.h"
 
 #include "Admin.h"
+#include "LogWriter.h"
 #include "Server.h"
 
 #include "Mayaqua/FileIO.h"
