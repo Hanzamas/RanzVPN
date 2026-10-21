@@ -71,12 +71,13 @@ struct NODE_BGP {
 	UINT LineSize;              // Its bytes
 };
 
-// cJSON allocates through Mayaqua, so the memory check of vpntest covers it
-static void *CJSON_CDECL NodeBgpJsonMalloc(size_t size) {
+// cJSON allocates through Mayaqua, so the memory check of vpntest covers it. x64 and arm64 have one calling
+// convention, so plain functions fit the CJSON_CDECL pointers of cJSON_Hooks.
+static void *NodeBgpJsonMalloc(size_t size) {
 	return Malloc((UINT)size);
 }
 
-static void CJSON_CDECL NodeBgpJsonFree(void *p) {
+static void NodeBgpJsonFree(void *p) {
 	Free(p);
 }
 
@@ -516,8 +517,9 @@ static bool NodeBgpLaunch(NODE_BGP *b) {
 	sa.lpSecurityDescriptor = sd;
 	sa.bInheritHandle = FALSE;
 
-	b->Pipe = CreateNamedPipeW(b->PipeName, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
-		PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1, NODE_BGP_MAX_LINE, NODE_BGP_MAX_LINE, 0, &sa);
+	DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE;
+	DWORD pipe_mode = PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS;
+	b->Pipe = CreateNamedPipeW(b->PipeName, open_mode, pipe_mode, 1, NODE_BGP_MAX_LINE, NODE_BGP_MAX_LINE, 0, &sa);
 	LocalFree(sd);
 
 	if (b->Pipe == INVALID_HANDLE_VALUE) {
@@ -648,8 +650,7 @@ void NodeBgpStart(NODE *n) {
 	b->WriteEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
 	b->StopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
 
-	cJSON *p;
-	cJSON_ArrayForEach(p, peers) {
+	for (cJSON *p = peers->child; p != NULL; p = p->next) {
 		NODE_BGP_PEER *peer = ZeroMalloc(sizeof(NODE_BGP_PEER));
 
 		StrCpy(peer->Address, sizeof(peer->Address), NodeBgpJsonStr(p, "address"));
@@ -679,8 +680,7 @@ void NodeBgpStart(NODE *n) {
 			n->Bgp = b;
 			NodeLog(n, "BGP sidecar %S started: process %u, %u peers, pipe %S", n->BgpSidecar, b->ProcessId, LIST_NUM(b->Peers), b->PipeName);
 
-			cJSON *a;
-			cJSON_ArrayForEach(a, announce) {
+			for (cJSON *a = (cJSON_IsArray(announce) ? announce->child : NULL); a != NULL; a = a->next) {
 				if (cJSON_IsString(a))
 					NodeBgpAnnounceLocked(n, cJSON_GetStringValue(a), NULL);
 				else
