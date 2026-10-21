@@ -1,7 +1,8 @@
 // x509test.c
 // Named X.509 and certificate signature test of vpntest ("x509" command, SEC-2 #96)
 //
-// Pins four fixes in Mayaqua/Encrypt.c on data that a peer certificate or signature controls:
+// Pins four fixes in Mayaqua/Crypto/ (X509.c, Pem.c, Rsa.c) on data that a peer certificate or
+// signature controls:
 // - GetUniStrFromX509Name scanned UniStrLen() * 4 + 8 bytes of its 1024-byte stack buffer for
 //   high bytes, so a name field of about 508 bytes or more was read past the buffer
 //   (AddressSanitizer: stack-buffer-overflow), and the stray bytes could switch the decoding.

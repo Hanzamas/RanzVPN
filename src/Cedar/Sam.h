@@ -16,6 +16,7 @@ POLICY *SamGetUserPolicy(HUB *h, char *username);
 
 void SecurePassword(void *secure_password, void *password, void *random);
 X *GetIssuerFromList(LIST *cert_list, X *cert);
+void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
 
 #endif	// SAM_H
 

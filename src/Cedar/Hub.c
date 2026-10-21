@@ -9,6 +9,7 @@
 #include "Link.h"
 #include "PacketLog.h"
 #include "Protocol.h"
+#include "Sam.h"
 #include "Server.h"
 
 #include "Mayaqua/Cfg.h"

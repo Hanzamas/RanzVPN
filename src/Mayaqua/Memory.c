@@ -2623,3 +2623,26 @@ void Zero(void *addr, UINT size)
 
 	memset(addr, 0, size);
 }
+
+UINT HashPtrToUINT(void *p)
+{
+	UCHAR hash_data[SHA256_SIZE];
+	UCHAR hash_src[CANARY_RAND_SIZE + sizeof(void *)];
+	UINT ret;
+	if (p == NULL)
+	{
+		return 0;
+	}
+
+	// The key names the block by its address: the pointer value, never the bytes it points to (blocks
+	// with equal content must get different keys, and a key must not change with the content)
+	Zero(hash_src, sizeof(hash_src));
+	Copy(hash_src + 0, GetCanaryRand(CANARY_RAND_ID_PTR_KEY_HASH), CANARY_RAND_SIZE);
+	Copy(hash_src + CANARY_RAND_SIZE, &p, sizeof(void *));
+
+	Sha2_256(hash_data, hash_src, sizeof(hash_src));
+
+	Copy(&ret, hash_data, sizeof(ret));
+
+	return ret;
+}
