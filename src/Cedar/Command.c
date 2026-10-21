@@ -4460,16 +4460,14 @@ static UINT PsCascadeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			StrToUni(tmp2, sizeof(tmp2), e->Hostname);
 			StrToUni(tmp3, sizeof(tmp3), e->HubName);
 
-			if (e->Online == false) {
+			if (e->Online == false)
 				UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_LINK_STATUS_OFFLINE"));
-			} else {
-				if (e->Connected)
-					UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_LINK_STATUS_ONLINE"));
-				else if (e->LastError != 0)
-					UniFormat(tmp4, sizeof(tmp4), _UU("SM_LINK_STATUS_ERROR"), e->LastError, _E(e->LastError));
-				else
-					UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_LINK_CONNECTING"));
-			}
+			else if (e->Connected)
+				UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_LINK_STATUS_ONLINE"));
+			else if (e->LastError != 0)
+				UniFormat(tmp4, sizeof(tmp4), _UU("SM_LINK_STATUS_ERROR"), e->LastError, _E(e->LastError));
+			else
+				UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_LINK_CONNECTING"));
 
 			CtInsert(ct, e->AccountName, tmp4, tmp1, tmp2, tmp3);
 		}

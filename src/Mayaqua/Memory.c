@@ -1507,16 +1507,14 @@ void SeekBuf(BUF *b, UINT offset, int mode) {
 	if (b == NULL)
 		return;
 
-	if (mode == 0) {
+	if (mode == 0)
 		new_pos = offset;
-	} else {
-		if (mode > 0)
-			new_pos = b->Current + offset;
-		else if (b->Current >= offset)
-			new_pos = b->Current - offset;
-		else
-			new_pos = 0;
-	}
+	else if (mode > 0)
+		new_pos = b->Current + offset;
+	else if (b->Current >= offset)
+		new_pos = b->Current - offset;
+	else
+		new_pos = 0;
 	b->Current = MAKESURE(new_pos, 0, b->Size);
 
 	KS_INC(KS_SEEK_BUF_COUNT);
