@@ -12,6 +12,7 @@
 // which ends a truncated result in NUL (FND-2, #105).
 
 #include "Mayaqua/Internat.h"
+#include "Mayaqua/Kernel.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
@@ -611,6 +612,191 @@ static void StrTestBase64(STRTEST_CTX *ctx)
 	Free(s);
 }
 
+// Functions of StrTestFast: MacToStr and the narrow date strings of Kernel.c
+#define	STRTEST_FAST_MAC			0
+#define	STRTEST_FAST_DATE			1
+#define	STRTEST_FAST_DATETIME		2
+#define	STRTEST_FAST_DATETIME_MILLI	3
+#define	STRTEST_FAST_TIME_MILLI		4
+#define	STRTEST_FAST_RFC3339		5
+#define	STRTEST_FAST_NUM			6
+#define	STRTEST_FAST_BUF			64		// Bytes of the destinations of StrTestFast
+
+static char *strtest_fast_names[STRTEST_FAST_NUM] =
+{
+	"MacToStr", "GetDateStr", "GetDateTimeStr", "GetDateTimeStrMilli", "GetTimeStrMilli", "GetDateTimeStrRFC3339",
+};
+
+// Write function func of st, mac and tz into dst: the function itself, or (by_format) Format with
+// the format the function stands for
+static void StrTestFastCall(UINT func, bool by_format, char *dst, UINT size, SYSTEMTIME *st, UCHAR *mac, int tz)
+{
+	UINT abs_min = (tz < 0) ? (UINT)(-tz) : (UINT)tz;
+
+	switch (func)
+	{
+	case STRTEST_FAST_MAC:
+		if (by_format)
+		{
+			Format(dst, size, "%02X-%02X-%02X-%02X-%02X-%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+		}
+		else
+		{
+			MacToStr(dst, size, mac);
+		}
+		break;
+
+	case STRTEST_FAST_DATE:
+		if (by_format)
+		{
+			Format(dst, size, "%04u-%02u-%02u", st->wYear, st->wMonth, st->wDay);
+		}
+		else
+		{
+			GetDateStr(dst, size, st);
+		}
+		break;
+
+	case STRTEST_FAST_DATETIME:
+		if (by_format)
+		{
+			Format(dst, size, "%04u-%02u-%02u %02u:%02u:%02u", st->wYear, st->wMonth, st->wDay,
+				st->wHour, st->wMinute, st->wSecond);
+		}
+		else
+		{
+			GetDateTimeStr(dst, size, st);
+		}
+		break;
+
+	case STRTEST_FAST_DATETIME_MILLI:
+		if (by_format)
+		{
+			Format(dst, size, "%04u-%02u-%02u %02u:%02u:%02u.%03u", st->wYear, st->wMonth, st->wDay,
+				st->wHour, st->wMinute, st->wSecond, st->wMilliseconds);
+		}
+		else
+		{
+			GetDateTimeStrMilli(dst, size, st);
+		}
+		break;
+
+	case STRTEST_FAST_TIME_MILLI:
+		if (by_format)
+		{
+			Format(dst, size, "%02u:%02u:%02u.%03u", st->wHour, st->wMinute, st->wSecond, st->wMilliseconds);
+		}
+		else
+		{
+			GetTimeStrMilli(dst, size, st);
+		}
+		break;
+
+	default:
+		if (by_format == false)
+		{
+			GetDateTimeStrRFC3339(dst, size, st, tz);
+		}
+		else if (tz == 0)
+		{
+			Format(dst, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ", st->wYear, st->wMonth, st->wDay,
+				st->wHour, st->wMinute, st->wSecond, st->wMilliseconds);
+		}
+		else
+		{
+			Format(dst, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03u%s%02u:%02u", st->wYear, st->wMonth, st->wDay,
+				st->wHour, st->wMinute, st->wSecond, st->wMilliseconds, (tz < 0) ? "-" : "+", abs_min / 60, abs_min % 60);
+		}
+		break;
+	}
+}
+
+// MacToStr and the narrow date strings, which write their digits by hand, against Format with
+// the format each one stood for (FND-216): a corpus of field values from one to five digits, MAC
+// bytes with letter and digit nibbles and time zone offsets up to eight digits of hours, at size
+// 0 (no limit) and at every size up to two past the length. The strings must be the same and
+// nothing may be written behind the terminator.
+static void StrTestFast(STRTEST_CTX *ctx)
+{
+	static WORD values[] = {0, 1, 9, 10, 59, 99, 100, 999, 1000, 2026, 9999, 10000, 65535};
+	static int zones[] = {0, 1, -1, 59, -60, 330, -480, 840, 0, 100000, -100000, 2147483647, -2147483647};
+	UINT num_values = sizeof(values) / sizeof(values[0]);
+	UINT func;
+
+	for (func = 0;func < STRTEST_FAST_NUM;func++)
+	{
+		UINT num_compared = 0;
+		UINT num_differ = 0;
+		UINT first_size = 0;
+		char first_got[STRTEST_FAST_BUF];
+		char first_want[STRTEST_FAST_BUF];
+		char what[MAX_SIZE];
+		UINT v;
+
+		first_got[0] = 0;
+		first_want[0] = 0;
+
+		for (v = 0;v < num_values;v++)
+		{
+			SYSTEMTIME st;
+			UCHAR mac[6];
+			char full[STRTEST_FAST_BUF];
+			UINT len, size, i;
+
+			Zero(&st, sizeof(st));
+			st.wYear = values[v];
+			st.wMonth = values[(v + 1) % num_values];
+			st.wDay = values[(v + 2) % num_values];
+			st.wHour = values[(v + 3) % num_values];
+			st.wMinute = values[(v + 4) % num_values];
+			st.wSecond = values[(v + 5) % num_values];
+			st.wMilliseconds = values[(v + 6) % num_values];
+			for (i = 0;i < sizeof(mac);i++)
+			{
+				mac[i] = (UCHAR)(values[v] + i * 0x2B);
+			}
+
+			StrTestFastCall(func, true, full, 0, &st, mac, zones[v]);
+			len = StrLen(full);
+
+			for (size = 0;size <= len + 2;size++)
+			{
+				char got[STRTEST_FAST_BUF];
+				char want[STRTEST_FAST_BUF];
+				bool same;
+
+				memset(got, STRTEST_FILL, sizeof(got));
+				memset(want, STRTEST_FILL, sizeof(want));
+				StrTestFastCall(func, false, got, size, &st, mac, zones[v]);
+				StrTestFastCall(func, true, want, size, &st, mac, zones[v]);
+
+				same = (StrCmp(got, want) == 0);
+				for (i = StrSize(got);same && i < sizeof(got);i++)
+				{
+					same = (got[i] == STRTEST_FILL);
+				}
+
+				num_compared++;
+				if (same == false)
+				{
+					if (num_differ == 0)
+					{
+						first_size = size;
+						StrCpy(first_got, sizeof(first_got), got);
+						StrCpy(first_want, sizeof(first_want), want);
+					}
+					num_differ++;
+				}
+			}
+		}
+
+		Format(what, sizeof(what), "%s gives what Format gives, at every size, and writes nothing behind the terminator",
+			strtest_fast_names[func]);
+		StrTestCheck(ctx, num_differ == 0, what, "%u of %u calls differ, first at size %u: \"%s\", Format gives \"%s\"",
+			num_differ, num_compared, first_size, first_got, first_want);
+	}
+}
+
 // str: truncation and return values of the string functions
 void str_test(UINT num, char **arg)
 {
@@ -631,6 +817,7 @@ void str_test(UINT num, char **arg)
 	StrTestEdge(&ctx);
 	StrTestCompare(&ctx);
 	StrTestBase64(&ctx);
+	StrTestFast(&ctx);
 
 	if (ctx.NumFailed == 0)
 	{

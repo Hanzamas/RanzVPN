@@ -1575,6 +1575,20 @@ static void RtAnsiGenUni(UINT *state, wchar_t *w)
 	w[len] = 0;
 }
 
+// Generate a string of up to RT_ANSI_MAX_LEN ASCII code units (U+0001-U+007F) into w
+// (RT_ANSI_MAX_LEN + 1 units): the input of the ASCII fast path of the ANSI functions (FND-216)
+static void RtAnsiGenAscii(UINT *state, wchar_t *w)
+{
+	UINT len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
+	UINT i;
+
+	for (i = 0;i < len;i++)
+	{
+		w[i] = (wchar_t)(1 + (RtCharsetRandom(state) >> 3) % 0x7F);
+	}
+	w[len] = 0;
+}
+
 // Generate a byte string into s (RT_CHARSET_BUF bytes): random bytes, favoured bytes, or the
 // bytes of a generated UTF-16 string in the current locale (input that converts), the last
 // now and then cut by a byte or with one byte replaced
@@ -1629,7 +1643,8 @@ static void RtAnsiGenStr(UINT *state, char *s)
 // UniToStr, CalcUniToStr and CopyUniToStr against the old code on wcstombs, StrToUni,
 // CalcStrToUni and CopyStrToUni against the old code on mbstowcs, in the current locale. Each
 // destination is filled first and compared whole, at size 0 (no limit), at the exact size and at
-// a random size. Prints nothing: the current locale may not be the locale of the process.
+// a random size. Every fourth input is ASCII alone, which the ASCII fast path converts. Prints
+// nothing: the current locale may not be the locale of the process.
 static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 {
 	UINT n, i;
@@ -1642,7 +1657,14 @@ static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 		UINT full, sizes[3];
 		char *copy, *want_copy;
 
-		RtAnsiGenUni(state, w);
+		if ((n % 4) == 0)
+		{
+			RtAnsiGenAscii(state, w);
+		}
+		else
+		{
+			RtAnsiGenUni(state, w);
+		}
 		full = RtOldCalcUniToStr(w);
 		RtAnsiDiff(d, CalcUniToStr(w) == full, "CalcUniToStr", 0, w, NULL);
 
@@ -1675,7 +1697,21 @@ static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 		UINT full, sizes[3];
 		wchar_t *copy, *want_copy;
 
-		RtAnsiGenStr(state, s);
+		if ((n % 4) == 0)
+		{
+			wchar_t a[RT_ANSI_MAX_LEN + 1];
+
+			RtAnsiGenAscii(state, a);
+			for (i = 0;a[i] != 0;i++)
+			{
+				s[i] = (char)a[i];
+			}
+			s[i] = 0;
+		}
+		else
+		{
+			RtAnsiGenStr(state, s);
+		}
 		full = RtOldCalcStrToUni(s);
 		RtAnsiDiff(d, CalcStrToUni(s) == full, "CalcStrToUni", 0, NULL, s);
 

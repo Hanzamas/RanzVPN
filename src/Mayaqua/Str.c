@@ -506,20 +506,26 @@ void ToStr3(char *str, UINT size, UINT64 v)
 	StrCpy(str, size, tmp2);
 }
 
+// The digits of "%02X-%02X-%02X-%02X-%02X-%02X" by hand into a local string, copied with StrCpy,
+// which cuts it as Format did: at most size - 1 characters (no limit for size 0) and the terminator
 void MacToStr(char *str, UINT size, const UCHAR *mac_address)
 {
+	static const char hex[] = "0123456789ABCDEF";
+	char tmp[6 * 3];
+	UINT i;
 	if (str == NULL || mac_address == NULL)
 	{
 		return;
 	}
 
-	Format(str, size, "%02X-%02X-%02X-%02X-%02X-%02X",
-		mac_address[0],
-		mac_address[1],
-		mac_address[2],
-		mac_address[3],
-		mac_address[4],
-		mac_address[5]);
+	for (i = 0;i < 6;i++)
+	{
+		tmp[i * 3] = hex[mac_address[i] >> 4];
+		tmp[i * 3 + 1] = hex[mac_address[i] & 0x0F];
+		tmp[i * 3 + 2] = (i == 5) ? '\0' : '-';
+	}
+
+	StrCpy(str, size, tmp);
 }
 
 bool IsEmptyStr(const char *str)

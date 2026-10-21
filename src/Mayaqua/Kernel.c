@@ -824,51 +824,132 @@ void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 		locale->DayOfWeek[st->wDayOfWeek]);
 }
 
+// The narrow date strings write their digits by hand into a local string and copy it with
+// StrCpy, which cuts it as Format did: at most size - 1 characters (no limit for size 0) and the
+// terminator. Each field prints as the %0<width>u of its format: at least width digits,
+// zero-padded, and every digit of a larger value.
+
+// Room for the longest narrow date string and its terminator (54 bytes): every field of five
+// digits, and an RFC 3339 offset of eight digits of hours
+#define	DATE_STR_SIZE		64
+
+// Write v at p as %0<width>u prints it (width 10 at most); returns the end
+static char *DateStrDigits(char *p, UINT v, UINT width)
+{
+	char digits[10];
+	UINT n = 0;
+
+	do
+	{
+		digits[n++] = (char)('0' + v % 10);
+		v /= 10;
+	}
+	while (v != 0);
+
+	while (n < width)
+	{
+		digits[n++] = '0';
+	}
+
+	while (n != 0)
+	{
+		*p++ = digits[--n];
+	}
+
+	return p;
+}
+
+// Write the date of st at p as "%04u-%02u-%02u"; returns the end
+static char *DateStrDate(char *p, SYSTEMTIME *st)
+{
+	p = DateStrDigits(p, st->wYear, 4);
+	*p++ = '-';
+	p = DateStrDigits(p, st->wMonth, 2);
+	*p++ = '-';
+	return DateStrDigits(p, st->wDay, 2);
+}
+
+// Write the time of st at p as "%02u:%02u:%02u"; returns the end
+static char *DateStrTime(char *p, SYSTEMTIME *st)
+{
+	p = DateStrDigits(p, st->wHour, 2);
+	*p++ = ':';
+	p = DateStrDigits(p, st->wMinute, 2);
+	*p++ = ':';
+	return DateStrDigits(p, st->wSecond, 2);
+}
+
+// Write the milliseconds of st at p as ".%03u"; returns the end
+static char *DateStrMilli(char *p, SYSTEMTIME *st)
+{
+	*p++ = '.';
+	return DateStrDigits(p, st->wMilliseconds, 3);
+}
+
 void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
 {
+	char tmp[DATE_STR_SIZE];
+	char *p;
 	if (st == NULL || str == NULL)
 	{
 		return;
 	}
 
-	Format(str, size, "%02u:%02u:%02u.%03u",
-		st->wHour, st->wMinute, st->wSecond, st->wMilliseconds);
+	p = DateStrTime(tmp, st);
+	p = DateStrMilli(p, st);
+	*p = 0;
+
+	StrCpy(str, size, tmp);
 }
 
 void GetDateStr(char *str, UINT size, SYSTEMTIME *st)
 {
+	char tmp[DATE_STR_SIZE];
+	char *p;
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	Format(str, size, "%04u-%02u-%02u",
-		st->wYear, st->wMonth, st->wDay);
+	p = DateStrDate(tmp, st);
+	*p = 0;
+
+	StrCpy(str, size, tmp);
 }
 
 void GetDateTimeStr(char *str, UINT size, SYSTEMTIME *st)
 {
+	char tmp[DATE_STR_SIZE];
+	char *p;
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	Format(str, size, "%04u-%02u-%02u %02u:%02u:%02u",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond);
+	p = DateStrDate(tmp, st);
+	*p++ = ' ';
+	p = DateStrTime(p, st);
+	*p = 0;
+
+	StrCpy(str, size, tmp);
 }
 
 void GetDateTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
 {
+	char tmp[DATE_STR_SIZE];
+	char *p;
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	Format(str, size, "%04u-%02u-%02u %02u:%02u:%02u.%03u",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond,
-		st->wMilliseconds);
+	p = DateStrDate(tmp, st);
+	*p++ = ' ';
+	p = DateStrTime(p, st);
+	p = DateStrMilli(p, st);
+	*p = 0;
+
+	StrCpy(str, size, tmp);
 }
 
 
@@ -877,6 +958,8 @@ void GetDateTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
 // prints "+HH:MM" or "-HH:MM", the sign taken from the whole offset and both fields two digits
 void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min)
 {
+	char tmp[DATE_STR_SIZE];
+	char *p;
 	UINT abs_min;
 	if (str == NULL || st == NULL)
 	{
@@ -884,22 +967,27 @@ void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_mi
 		return;
 	}
 
+	p = DateStrDate(tmp, st);
+	*p++ = 'T';
+	p = DateStrTime(p, st);
+	p = DateStrMilli(p, st);
+
 	if (timezone_min == 0)
 	{
-		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
-			st->wYear, st->wMonth, st->wDay,
-			st->wHour, st->wMinute, st->wSecond,
-			st->wMilliseconds);
+		*p++ = 'Z';
 	}
 	else
 	{
 		abs_min = (timezone_min < 0) ? (UINT)(-timezone_min) : (UINT)timezone_min;
 
-		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03u%s%02u:%02u",
-			st->wYear, st->wMonth, st->wDay,
-			st->wHour, st->wMinute, st->wSecond,
-			st->wMilliseconds, (timezone_min < 0) ? "-" : "+", abs_min / 60, abs_min % 60);
+		*p++ = (timezone_min < 0) ? '-' : '+';
+		p = DateStrDigits(p, abs_min / 60, 2);
+		*p++ = ':';
+		p = DateStrDigits(p, abs_min % 60, 2);
 	}
+	*p = 0;
+
+	StrCpy(str, size, tmp);
 }
 
 // Read count decimal digits at str. Stops at the first character that is not a digit, so it
