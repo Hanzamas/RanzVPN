@@ -4,6 +4,15 @@
 #ifndef	ADMIN_INTERNAL_H
 #define	ADMIN_INTERNAL_H
 
+#define	CHECK_RIGHT														\
+	if (a->ServerAdmin == false && (StrCmpi(a->HubName, t->HubName) != 0))	\
+		return ERR_NOT_ENOUGH_RIGHT;	\
+	if (IsEmptyStr(t->HubName))			\
+		return ERR_INVALID_PARAMETER;
+#define	SERVER_ADMIN_ONLY												\
+	if (a->ServerAdmin == false)										\
+		return ERR_NOT_ENOUGH_RIGHT;
+
 UINT ScGetBridgeSupport(RPC *r, RPC_BRIDGE_SUPPORT *t);
 UINT ScGetCaps(RPC *r, CAPSLIST *t);
 UINT ScReadLogFile(RPC *r, RPC_READ_LOG_FILE *t);
@@ -103,12 +112,3 @@ void HashAdminPassword(void *hash, char *password);
 HUB *AdminGetHub(ADMIN *a, char *hubname, char *denied_option, UINT *err);
 
 #endif	// ADMIN_INTERNAL_H
-
-#define	CHECK_RIGHT														\
-	if (a->ServerAdmin == false && (StrCmpi(a->HubName, t->HubName) != 0))	\
-		return ERR_NOT_ENOUGH_RIGHT;	\
-	if (IsEmptyStr(t->HubName))			\
-		return ERR_INVALID_PARAMETER;
-#define	SERVER_ADMIN_ONLY												\
-	if (a->ServerAdmin == false)										\
-		return ERR_NOT_ENOUGH_RIGHT;
