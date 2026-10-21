@@ -10,4 +10,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0
 )
 
-require golang.org/x/crypto v0.58.0 // indirect
+require (
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+)
