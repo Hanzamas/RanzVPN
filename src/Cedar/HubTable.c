@@ -890,3 +890,464 @@ void GetAccessListStr(char *str, UINT size, ACCESS *a)
 		StrCat(str, size, "*");
 	}
 }
+
+void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id)
+{
+	if (hub == NULL || a == NULL)
+	{
+		return;
+	}
+
+	LockList(hub->AccessList);
+	{
+		ACCESS *access;
+		UINT i;
+
+		if (LIST_NUM(hub->AccessList) >= MAX_ACCESSLISTS)
+		{
+			UnlockList(hub->AccessList);
+			return;
+		}
+
+		access = Malloc(sizeof(ACCESS));
+		Copy(access, a, sizeof(ACCESS));
+
+		access->IsSrcUsernameIncludeOrExclude = false;
+		access->IsDestUsernameIncludeOrExclude = false;
+
+		if (IsEmptyStr(access->SrcUsername) == false)
+		{
+			if (StartWith(access->SrcUsername, ACCESS_LIST_INCLUDED_PREFIX) == false && StartWith(access->SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX) == false)
+			{
+				MakeSimpleUsernameRemoveNtDomain(access->SrcUsername, sizeof(access->SrcUsername), access->SrcUsername);
+			}
+			else
+			{
+				access->IsSrcUsernameIncludeOrExclude = true;
+			}
+		}
+		if (IsEmptyStr(access->DestUsername) == false)
+		{
+			if (StartWith(access->DestUsername, ACCESS_LIST_INCLUDED_PREFIX) == false && StartWith(access->DestUsername, ACCESS_LIST_EXCLUDED_PREFIX) == false)
+			{
+				MakeSimpleUsernameRemoveNtDomain(access->DestUsername, sizeof(access->DestUsername), access->DestUsername);
+			}
+			else
+			{
+				access->IsDestUsernameIncludeOrExclude = true;
+			}
+		}
+
+		access->SrcUsernameHash = UsernameToInt64(access->SrcUsername);
+		access->DestUsernameHash = UsernameToInt64(access->DestUsername);
+
+		if (access->SrcPortStart != 0)
+		{
+			access->SrcPortEnd = MAX(access->SrcPortEnd, access->SrcPortStart);
+		}
+		if (access->DestPortStart != 0)
+		{
+			access->DestPortEnd = MAX(access->DestPortEnd, access->DestPortStart);
+		}
+
+		access->Delay = MAKESURE(access->Delay, 0, HUB_ACCESSLIST_DELAY_MAX);
+		access->Jitter = MAKESURE(access->Jitter, 0, HUB_ACCESSLIST_JITTER_MAX);
+		access->Loss = MAKESURE(access->Loss, 0, HUB_ACCESSLIST_LOSS_MAX);
+
+		if (no_sort == false)
+		{
+			Insert(hub->AccessList, access);
+		}
+		else
+		{
+			Add(hub->AccessList, access);
+		}
+
+		if (no_reassign_id == false)
+		{
+			for (i = 0;i < LIST_NUM(hub->AccessList);i++)
+			{
+				ACCESS *a = LIST_DATA(hub->AccessList, i);
+				a->Id = (i + 1);
+			}
+		}
+	}
+	UnlockList(hub->AccessList);
+}
+
+int CmpAccessList(void *p1, void *p2)
+{
+	ACCESS *a1, *a2;
+	if (p1 == NULL || p2 == NULL)
+	{
+		return 0;
+	}
+	a1 = *(ACCESS **)p1;
+	a2 = *(ACCESS **)p2;
+	if (a1 == NULL || a2 == NULL)
+	{
+		return 0;
+	}
+	if (a1->Priority > a2->Priority)
+	{
+		return 1;
+	}
+	else if (a1->Priority < a2->Priority)
+	{
+		return -1;
+	}
+	else if (a1->Discard > a2->Discard)
+	{
+		return 1;
+	}
+	else if (a1->Discard < a2->Discard)
+	{
+		return -1;
+	}
+	else
+	{
+		UINT64 size64 = ((UINT64)(&a1->UniqueId) - (UINT64)(&a1->Active));
+		UINT size32 = (UINT)size64;
+
+		return Cmp(&a1->Active, &a2->Active, size32);
+	}
+}
+
+// The MAC table and the IP table of a hub. One lock guards both: the lock of MacHashTable. The functions below
+// that take no lock themselves expect the caller to hold it (HubLockTables).
+void HubLockTables(HUB *h)
+{
+	LockHashList(h->MacHashTable);
+}
+
+void HubUnlockTables(HUB *h)
+{
+	UnlockHashList(h->MacHashTable);
+}
+
+// Entry counts for status RPCs. Without the table lock the count may be stale, as it always was.
+UINT HubMacTableNum(HUB *h)
+{
+	return HASH_LIST_NUM(h->MacHashTable);
+}
+
+UINT HubIpTableNum(HUB *h)
+{
+	return LIST_NUM(h->IpTable);
+}
+
+MAC_TABLE_ENTRY *MacTableLookup(HUB *h, UCHAR *mac, UINT vlan_id)
+{
+	MAC_TABLE_ENTRY t;
+
+	Copy(t.MacAddress, mac, 6);
+	t.VlanId = vlan_id;
+
+	return SearchHash(h->MacHashTable, &t);
+}
+
+// Learn mac on vlan_id for session s, which has no entry for it yet. NULL when the table is full (MAX_MAC_TABLES)
+MAC_TABLE_ENTRY *MacTableLearn(HUB *h, SESSION *s, UCHAR *mac, UINT vlan_id, UINT64 now)
+{
+	MAC_TABLE_ENTRY *e;
+
+	if (HASH_LIST_NUM(h->MacHashTable) >= MAX_MAC_TABLES)
+	{
+		return NULL;
+	}
+
+	e = ZeroMalloc(sizeof(MAC_TABLE_ENTRY));
+	e->HubPa = (HUB_PA *)s->PacketAdapter->Param;
+	Copy(e->MacAddress, mac, 6);
+	e->VlanId = vlan_id;
+	e->Session = s;
+	e->UpdatedTime = e->CreatedTime = now;
+
+	AddHash(h->MacHashTable, e);
+
+	return e;
+}
+
+static bool MacTableTakeSessionEntry(void *p, void *param)
+{
+	MAC_TABLE_ENTRY *e = (MAC_TABLE_ENTRY *)p;
+
+	if (e->Session != (SESSION *)param)
+	{
+		return false;
+	}
+
+	Free(e);
+
+	return true;
+}
+
+// Drop every MAC table entry of session s, in one walk over the hash buckets
+void MacTableFlushSession(HUB *h, SESSION *s)
+{
+	DeleteHashIf(h->MacHashTable, MacTableTakeSessionEntry, s);
+}
+
+// All MAC table entries; Free() the array. The entries stay valid while the caller holds the table lock
+MAC_TABLE_ENTRY **MacTableEnum(HUB *h, UINT *num)
+{
+	return (MAC_TABLE_ENTRY **)HashListToArray(h->MacHashTable, num);
+}
+
+// Drop the MAC table entry of an admin RPC key (POINTER_TO_KEY). Takes the table lock. False when no entry has it
+bool MacTableDeleteByKey(HUB *h, UINT key)
+{
+	bool ret = false;
+
+	HubLockTables(h);
+	{
+		if (IsInHashListKey(h->MacHashTable, key))
+		{
+			MAC_TABLE_ENTRY *e = HashListKeyToPointer(h->MacHashTable, key);
+			DeleteHash(h->MacHashTable, e);
+			Free(e);
+			ret = true;
+		}
+	}
+	HubUnlockTables(h);
+
+	return ret;
+}
+
+IP_TABLE_ENTRY *IpTableLookup(HUB *h, IP *ip)
+{
+	IP_TABLE_ENTRY t;
+
+	Copy(&t.Ip, ip, sizeof(IP));
+
+	return Search(h->IpTable, &t);
+}
+
+// Entry index of the IP table, sorted by address (0 to HubIpTableNum - 1)
+IP_TABLE_ENTRY *IpTableGet(HUB *h, UINT index)
+{
+	return LIST_DATA(h->IpTable, index);
+}
+
+// IPv6 (v6) or IPv4 addresses that session s holds in the IP table
+UINT CountSessionIps(HUB *h, SESSION *s, bool v6)
+{
+	UINT i, num = 0;
+
+	for (i = 0;i < LIST_NUM(h->IpTable);i++)
+	{
+		IP_TABLE_ENTRY *e = LIST_DATA(h->IpTable, i);
+
+		if (e->Session == s && (v6 ? IsIP6(&e->Ip) : IsIP4(&e->Ip)))
+		{
+			num++;
+		}
+	}
+
+	return num;
+}
+
+// Session s sent from ip while the IP table gives ip to the other session of entry e
+void LogIpConflict(HUB *h, SESSION *s, IP *ip, IP_TABLE_ENTRY *e, UINT64 now)
+{
+	char ip_address[32];
+	char mac_str[48];
+
+	IPToStr(ip_address, sizeof(ip_address), ip);
+	MacToStr(mac_str, sizeof(mac_str), e->MacAddress);
+
+	HLog(h, "LH_IP_CONFLICT", s->Name, ip_address, e->Session->Name, mac_str,
+		e->CreatedTime, e->UpdatedTime, e->DhcpAllocated, now);
+}
+
+// Drop every IP table entry of session s in one pass that keeps the order of the others
+void IpTableFlushSession(HUB *h, SESSION *s)
+{
+	LIST *o = h->IpTable;
+	UINT i, num_kept = 0;
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
+
+		if (e->Session == s)
+		{
+			Free(e);
+		}
+		else
+		{
+			o->p[num_kept++] = e;
+		}
+	}
+
+	o->num_item = num_kept;
+}
+
+// Drop the IP table entry of an admin RPC key (POINTER_TO_KEY). Takes the table lock. False when no entry has it
+bool IpTableDeleteByKey(HUB *h, UINT key)
+{
+	bool ret = false;
+
+	HubLockTables(h);
+	{
+		IP_TABLE_ENTRY *e = ListKeyToPointer(h->IpTable, key);
+
+		if (e != NULL)
+		{
+			Delete(h->IpTable, e);
+			Free(e);
+			ret = true;
+		}
+	}
+	HubUnlockTables(h);
+
+	return ret;
+}
+
+void DeleteExpiredMacTableEntry(HASH_LIST *h)
+{
+	LIST *o2;
+	UINT i;
+	MAC_TABLE_ENTRY **pp;
+	UINT num;
+	if (h == NULL)
+	{
+		return;
+	}
+
+	o2 = NewListFast(NULL);
+
+	pp = (MAC_TABLE_ENTRY **)HashListToArray(h, &num);
+
+	for (i = 0;i < num;i++)
+	{
+		MAC_TABLE_ENTRY *e = pp[i];
+		if ((e->UpdatedTime + (UINT64)MAC_TABLE_EXPIRE_TIME) <= Tick64())
+		{
+			Add(o2, e);
+		}
+	}
+
+	for (i = 0;i < LIST_NUM(o2);i++)
+	{
+		MAC_TABLE_ENTRY *e = LIST_DATA(o2, i);
+		DeleteHash(h, e);
+		Free(e);
+	}
+
+	ReleaseList(o2);
+
+	Free(pp);
+}
+
+void DeleteExpiredIpTableEntry(LIST *o)
+{
+	UINT i, num_kept = 0;
+	UINT64 now;
+	if (o == NULL)
+	{
+		return;
+	}
+
+	// This runs on every new IP entry, under the hub-wide MacHashTable lock. Read the clock once (Tick64 takes
+	// a global lock) and compact the array in one pass: a Delete per expired entry searched and shifted the
+	// whole array each time, O(n * expired). The kept entries keep their order, so a sorted table stays sorted
+	// and DeleteHighestIpTableEntry still evicts the same entry.
+	now = Tick64();
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
+		if ((e->UpdatedTime + (UINT64)(e->DhcpAllocated ? IP_TABLE_EXPIRE_TIME_DHCP : IP_TABLE_EXPIRE_TIME)) <= now)
+		{
+			Free(e);
+		}
+		else
+		{
+			o->p[num_kept++] = e;
+		}
+	}
+
+	o->num_item = num_kept;
+}
+
+int CompareIpTable(void *p1, void *p2)
+{
+	IP_TABLE_ENTRY *e1, *e2;
+	if (p1 == NULL || p2 == NULL)
+	{
+		return 0;
+	}
+	e1 = *(IP_TABLE_ENTRY **)p1;
+	e2 = *(IP_TABLE_ENTRY **)p2;
+	if (e1 == NULL || e2 == NULL)
+	{
+		return 0;
+	}
+	return CmpIpAddr(&e1->Ip, &e2->Ip);
+}
+
+// Add a trusted root certificate to the hub; false when the hub already trusts it or holds MAX_HUB_CERTS
+bool AddRootCert(HUB *hub, X *x)
+{
+	HUBDB *db;
+	bool added = false;
+	if (hub == NULL || x == NULL)
+	{
+		return false;
+	}
+
+	db = hub->HubDb;
+	if (db != NULL)
+	{
+		LockList(db->RootCertList);
+		{
+			if (LIST_NUM(db->RootCertList) < MAX_HUB_CERTS)
+			{
+				UINT i;
+				bool ok = true;
+
+				for (i = 0;i < LIST_NUM(db->RootCertList);i++)
+				{
+					X *exist_x = LIST_DATA(db->RootCertList, i);
+					if (CompareX(exist_x, x))
+					{
+						ok = false;
+						break;
+					}
+				}
+
+				if (ok)
+				{
+					Insert(db->RootCertList, CloneX(x));
+					added = true;
+				}
+			}
+		}
+		UnlockList(db->RootCertList);
+	}
+
+	return added;
+}
+
+int CompareCert(void *p1, void *p2)
+{
+	X *x1, *x2;
+	wchar_t tmp1[MAX_SIZE];
+	wchar_t tmp2[MAX_SIZE];
+	if (p1 == NULL || p2 == NULL)
+	{
+		return 0;
+	}
+	x1 = *(X **)p1;
+	x2 = *(X **)p2;
+	if (x1 == NULL || x2 == NULL)
+	{
+		return 0;
+	}
+
+	GetPrintNameFromX(tmp1, sizeof(tmp1), x1);
+	GetPrintNameFromX(tmp2, sizeof(tmp2), x2);
+
+	return UniStrCmpi(tmp1, tmp2);
+}
