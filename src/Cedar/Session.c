@@ -4,7 +4,7 @@
 #include "Session.h"
 
 #include "Account.h"
-#include "BridgeWin32.h"
+#include "Bridge.h"
 #include "Connection.h"
 #include "Hub.h"
 #include "Link.h"

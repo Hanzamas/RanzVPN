@@ -3,7 +3,7 @@
 
 #include "Connection.h"
 
-#include "BridgeWin32.h"
+#include "Bridge.h"
 #include "Hub.h"
 #include "Link.h"
 #include "Listener.h"
