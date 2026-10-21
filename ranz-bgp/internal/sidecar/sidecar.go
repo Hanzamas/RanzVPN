@@ -23,6 +23,7 @@ const (
 	exportPolicy   = "ranz-export"
 	exportLocal    = "ranz-export-local"
 	importPolicy   = "ranz-import"
+	importLocal    = "ranz-import-local"
 	acceptSetV4    = "ranz-accept-v4"
 	acceptSetV6    = "ranz-accept-v6"
 	acceptStmtV4   = "ranz-import-v4"
@@ -292,7 +293,8 @@ func (s *session) stop() {
 
 // setPolicies sets the filters of both sides: the peers get the node's own prefixes only, so the
 // node never carries traffic from one router of the operator to another, and the sidecar takes
-// from the peers only what accept covers.
+// from the peers only what accept covers. GoBGP applies the import policy of the global RIB to the
+// node's own paths too, so its first statement takes them.
 func (s *session) setPolicies(ctx context.Context, accept []netip.Prefix) error {
 	accepted := api.RouteAction_ROUTE_ACTION_ACCEPT
 	rejected := api.RouteAction_ROUTE_ACTION_REJECT
@@ -339,7 +341,11 @@ func (s *session) setPolicies(ctx context.Context, accept []netip.Prefix) error 
 		{acceptSetV4, acceptStmtV4, v4},
 		{acceptSetV6, acceptStmtV6, v6},
 	}
-	var statements []*api.Statement
+	statements := []*api.Statement{{
+		Name:       importLocal,
+		Conditions: &api.Conditions{RouteType: api.Conditions_ROUTE_TYPE_LOCAL},
+		Actions:    &api.Actions{RouteAction: accepted},
+	}}
 	for _, set := range sets {
 		if len(set.prefixes) == 0 {
 			continue
@@ -358,18 +364,14 @@ func (s *session) setPolicies(ctx context.Context, accept []netip.Prefix) error 
 			Actions:    &api.Actions{RouteAction: accepted},
 		})
 	}
-	var policies []*api.Policy
-	if len(statements) > 0 {
-		err := s.bgp.AddPolicy(ctx, &api.AddPolicyRequest{Policy: &api.Policy{Name: importPolicy, Statements: statements}})
-		if err != nil {
-			return err
-		}
-		policies = []*api.Policy{{Name: importPolicy}}
+	err = s.bgp.AddPolicy(ctx, &api.AddPolicyRequest{Policy: &api.Policy{Name: importPolicy, Statements: statements}})
+	if err != nil {
+		return err
 	}
 	return s.bgp.SetPolicyAssignment(ctx, &api.SetPolicyAssignmentRequest{Assignment: &api.PolicyAssignment{
 		Name:          globalRIB,
 		Direction:     api.PolicyDirection_POLICY_DIRECTION_IMPORT,
-		Policies:      policies,
+		Policies:      []*api.Policy{{Name: importPolicy}},
 		DefaultAction: rejected,
 	}})
 }
