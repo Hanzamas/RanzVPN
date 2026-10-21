@@ -756,3 +756,541 @@ bool ClientUploadAuth(CONNECTION *c)
 
 	return ret;
 }
+
+bool ParseWelcomeFromPack(PACK *p, char *session_name, UINT session_name_size,
+						  char *connection_name, UINT connection_name_size,
+						  POLICY **policy)
+{
+	if (p == NULL || session_name == NULL || connection_name == NULL || policy == NULL)
+	{
+		return false;
+	}
+
+	if (PackGetStr(p, "session_name", session_name, session_name_size) == false)
+	{
+		return false;
+	}
+
+	if (PackGetStr(p, "connection_name", connection_name, connection_name_size) == false)
+	{
+		return false;
+	}
+
+	*policy = PackGetPolicy(p);
+	if (*policy == NULL)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+POLICY *PackGetPolicy(PACK *p)
+{
+	POLICY *y;
+	UINT i;
+	if (p == NULL)
+	{
+		return NULL;
+	}
+
+	y = ZeroMalloc(sizeof(POLICY));
+
+	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	{
+		POLICY_ITEM *item = &policy_item[i];
+		char name[MAX_SIZE];
+
+		Format(name, sizeof(name), "policy:%s", item->Name);
+
+		SetPolicyValue(y, i, item->TypeInt ? PackGetInt(p, name) : PackGetBool(p, name));
+	}
+
+	// Ver 3 flag
+	y->Ver3 = PackGetBool(p, "policy:Ver3");
+
+	return y;
+}
+
+bool ClientUploadAuth2(CONNECTION *c, SOCK *s)
+{
+	PACK *p = NULL;
+	if (c == NULL)
+	{
+		return false;
+	}
+
+	p = PackAdditionalConnect(c->Session->SessionKey);
+
+	PackAddClientVersion(p, c);
+
+	if (HttpClientSend(s, p) == false)
+	{
+		FreePack(p);
+		return false;
+	}
+	FreePack(p);
+
+	return true;
+}
+
+void PackAddClientVersion(PACK *p, CONNECTION *c)
+{
+	if (p == NULL || c == NULL)
+	{
+		return;
+	}
+
+	PackAddStr(p, "client_str", c->ClientStr);
+	PackAddInt(p, "client_ver", c->ClientVer);
+	PackAddInt(p, "client_build", c->ClientBuild);
+}
+
+bool ClientDownloadHello(CONNECTION *c, SOCK *s)
+{
+	PACK *p;
+	UINT err;
+	UCHAR random[SHA1_SIZE];
+	if (c == NULL)
+	{
+		return false;
+	}
+
+	p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
+	if (p == NULL)
+	{
+		c->Err = ERR_SERVER_IS_NOT_VPN;
+		return false;
+	}
+
+	if (err = GetErrorFromPack(p))
+	{
+		c->Err = err;
+		FreePack(p);
+		return false;
+	}
+
+	if (GetHello(p, random, &c->ServerVer, &c->ServerBuild, c->ServerStr, sizeof(c->ServerStr)) == false)
+	{
+		c->Err = ERR_SERVER_IS_NOT_VPN;
+		FreePack(p);
+		return false;
+	}
+
+	if (c->FirstSock == s)
+	{
+		Copy(c->Random, random, SHA1_SIZE);
+	}
+
+	FreePack(p);
+
+	return true;
+}
+
+bool ClientUploadSignature(SOCK *s)
+{
+	HTTP_HEADER *h;
+	UINT water_size, rand_size;
+	UCHAR *water;
+	char ip_str[128];
+	if (s == NULL)
+	{
+		return false;
+	}
+
+	IPToStr(ip_str, sizeof(ip_str), &s->RemoteIP);
+
+	h = NewHttpHeader("POST", HTTP_VPN_TARGET2, "HTTP/1.1");
+	AddHttpValue(h, NewHttpValue("Host", ip_str));
+	AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE3));
+	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
+
+
+	rand_size = Rand32() % (HTTP_PACK_RAND_SIZE_MAX * 2);
+	water_size = WaterMarkSize + rand_size;
+	water = Malloc(water_size);
+	Copy(water, WaterMark, WaterMarkSize);
+	Rand(&water[WaterMarkSize], rand_size);
+
+	if (PostHttp(s, h, water, water_size) == false)
+	{
+		Free(water);
+		FreeHttpHeader(h);
+		return false;
+	}
+
+	Free(water);
+	FreeHttpHeader(h);
+
+	return true;
+}
+
+// Set c->FirstSock under c->lock, where StopConnection reads it and takes its ref
+static void ClientSetFirstSock(CONNECTION *c, SOCK *s)
+{
+	Lock(c->lock);
+	{
+		c->FirstSock = s;
+	}
+	Unlock(c->lock);
+}
+
+SOCK *ClientConnectToServer(CONNECTION *c)
+{
+	SOCK *s = NULL;
+	if (c == NULL)
+	{
+		return NULL;
+	}
+
+	if (FlagRead(&c->Halt))
+	{
+		c->Err = ERR_USER_CANCEL;
+		return NULL;
+	}
+
+	s = ClientConnectGetSocket(c, false);
+	if (s == NULL)
+	{
+		return NULL;
+	}
+
+	// StopConnection reads c->FirstSock and takes its ref under c->lock
+	ClientSetFirstSock(c, s);
+
+	if (FlagRead(&c->Halt))
+	{
+		c->Err = ERR_USER_CANCEL;
+		ClientSetFirstSock(c, NULL);
+		ReleaseSock(s);
+		return NULL;
+	}
+
+	SetTimeout(s, CONNECTING_TIMEOUT);
+
+	UINT err = 0;
+	if (StartSSLEx3(s, NULL, NULL, NULL, c->ServerName, c->Session->SslOption, &err) == false)
+	{
+		Disconnect(s);
+		ClientSetFirstSock(c, NULL);
+		ReleaseSock(s);
+		if (err != 0)
+		{
+			c->Err = err;
+		}
+		else
+		{
+			c->Err = ERR_SERVER_IS_NOT_VPN;
+		}
+		return NULL;
+	}
+
+	if (s->RemoteX == NULL)
+	{
+		Disconnect(s);
+		ClientSetFirstSock(c, NULL);
+		ReleaseSock(s);
+		c->Err = ERR_SERVER_IS_NOT_VPN;
+		return NULL;
+	}
+
+	return s;
+}
+
+SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
+{
+	volatile bool *cancel_flag = NULL;
+	char hostname[MAX_HOST_NAME_LEN];
+
+	bool save_resolved_ip = false;
+	CLIENT_OPTION *o;
+	SESSION *sess;
+	SOCK *sock = NULL;
+	IP resolved_ip;
+	IP *bind_ip;
+	UINT bind_port;
+	if (c == NULL || c->Session == NULL || c->Session->ClientOption == NULL)
+	{
+		return NULL;
+	}
+
+	cancel_flag = &c->Halt;
+	sess = c->Session;
+	o = c->Session->ClientOption;
+
+	Zero(&resolved_ip, sizeof(resolved_ip));
+
+	// The local address and port to bind, the same for a direct and a proxy connection
+	if (additional_connect == false)
+	{
+		if (o->NoRoutingTracking == false || IsZeroIP(&o->BindLocalIP))
+		{
+			bind_ip = BIND_LOCALIP_NULL;
+		}
+		else
+		{
+			// A nonzero address is the source IP address to bind, a zero address does not bind
+			bind_ip = &o->BindLocalIP;
+		}
+	}
+	else
+	{
+		// Bind to the local IP address of the first TCP/IP connection
+		bind_ip = &sess->LocalIP_CacheForNextConnect;
+	}
+
+	if (o->BindLocalPort == 0)
+	{
+		bind_port = BIND_LOCALPORT_NULL;
+	}
+	else
+	{
+		bind_port = o->BindLocalPort + Count(sess->Connection->CurrentNumConnection) - 1;
+	}
+
+	if (additional_connect && IsZeroIP(&sess->ServerIP_CacheForNextConnect) == false)
+	{
+		IPToStr(hostname, sizeof(hostname), &sess->ServerIP_CacheForNextConnect);
+	}
+	else
+	{
+		IP tmp;
+
+		StrCpy(hostname, sizeof(hostname), o->ProxyType == PROXY_DIRECT ? c->ServerName : o->ProxyName);
+
+		if (StrToIP(&tmp, hostname) == false)
+		{
+			save_resolved_ip = true;
+		}
+	}
+
+	if (o->ProxyType == PROXY_DIRECT)
+	{
+		sock = BindTcpIpConnectEx(bind_ip, bind_port, hostname, c->ServerPort,
+			(bool *)cancel_flag, &resolved_ip);
+
+		if (sock == NULL)
+		{
+			c->Err = ERR_CONNECT_FAILED;
+
+			return NULL;
+		}
+	}
+	else
+	{
+		PROXY_PARAM_OUT out;
+		PROXY_PARAM_IN in;
+		UINT ret;
+
+		Zero(&in, sizeof(in));
+
+		in.Timeout = 0;
+
+		StrCpy(in.TargetHostname, sizeof(in.TargetHostname), c->ServerName);
+		in.TargetPort = c->ServerPort;
+
+		StrCpy(in.Hostname, sizeof(in.Hostname), IsEmptyStr(hostname) ? o->ProxyName : hostname);
+		in.Port = o->ProxyPort;
+
+		StrCpy(in.Username, sizeof(in.Username), o->ProxyUsername);
+		StrCpy(in.Password, sizeof(in.Password), o->ProxyPassword);
+
+		StrCpy(in.HttpCustomHeader, sizeof(in.HttpCustomHeader), o->CustomHttpHeader);
+		StrCpy(in.HttpUserAgent, sizeof(in.HttpUserAgent), c->Cedar->HttpUserAgent);
+
+		in.BindLocalIP = bind_ip;
+		in.BindLocalPort = bind_port;
+
+		// An unknown proxy type gives PROXY_ERROR_PARAMETER, which is ERR_INTERNAL_ERROR
+		ret = ProxyConnect(o->ProxyType, &out, &in, cancel_flag);
+
+		c->Err = ProxyCodeToCedar(ret);
+
+		if (c->Err != ERR_NO_ERROR)
+		{
+			return NULL;
+		}
+
+		sock = out.Sock;
+
+		CopyIP(&resolved_ip, &out.ResolvedIp);
+	}
+
+	if (additional_connect == false || IsZeroIP(&sock->RemoteIP))
+	{
+		if (IsZeroIP(&sock->RemoteIP) == false || (sock->IPv6 && GetIP6(&c->Session->ServerIP, hostname) == false) || (sock->IPv6 == false && GetIP4(&c->Session->ServerIP, hostname) == false))
+		{
+			Copy(&c->Session->ServerIP, &sock->RemoteIP, sizeof(c->Session->ServerIP));
+		}
+	}
+
+	if (save_resolved_ip && IsZeroIP(&resolved_ip) == false)
+	{
+		Copy(&c->Session->ServerIP_CacheForNextConnect, &resolved_ip, sizeof(c->Session->ServerIP_CacheForNextConnect));
+	}
+
+	if (additional_connect == false)
+	{
+		c->Session->LocalIP_CacheForNextConnect = sock->LocalIP;
+	}
+
+	return sock;
+}
+
+UINT ProxyCodeToCedar(UINT code)
+{
+	switch (code)
+	{
+	case PROXY_ERROR_SUCCESS:
+		return ERR_NO_ERROR;
+	case PROXY_ERROR_GENERIC:
+	case PROXY_ERROR_VERSION:
+		return ERR_PROXY_ERROR;
+	case PROXY_ERROR_CANCELED:
+		return ERR_USER_CANCEL;
+	case PROXY_ERROR_CONNECTION:
+		return ERR_PROXY_CONNECT_FAILED;
+	case PROXY_ERROR_TARGET:
+		return ERR_CONNECT_FAILED;
+	case PROXY_ERROR_DISCONNECTED:
+		return ERR_DISCONNECTED;
+	case PROXY_ERROR_AUTHENTICATION:
+		return ERR_PROXY_AUTH_FAILED;
+	default:
+		return ERR_INTERNAL_ERROR;
+	}
+}
+
+SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, IP *ret_ip)
+{
+	SOCK *s = NULL;
+	if (hostname == NULL || port == 0)
+	{
+		return NULL;
+	}
+
+	s = BindConnectEx4(localIP, localport, hostname, port, 0, cancel_flag, ret_ip);
+	if (s == NULL)
+	{
+		return NULL;
+	}
+
+	return s;
+}
+
+bool GetHello(PACK *p, void *random, UINT *ver, UINT *build, char *server_str, UINT server_str_size)
+{
+	if (p == NULL || random == NULL || ver == NULL || server_str == NULL)
+	{
+		return false;
+	}
+
+	if (PackGetStr(p, "hello", server_str, server_str_size) == false)
+	{
+		return false;
+	}
+	*ver = PackGetInt(p, "version");
+	*build = PackGetInt(p, "build");
+	if (PackGetDataSize(p, "random") != SHA1_SIZE)
+	{
+		return false;
+	}
+	if (PackGetData(p, "random", random) == false)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+PACK *PackLoginWithCert(char *hubname, char *username, X *x, void *sign, UINT sign_size)
+{
+	PACK *p;
+	BUF *b;
+	if (hubname == NULL || username == NULL)
+	{
+		return NULL;
+	}
+
+	p = NewPack();
+	PackAddStr(p, "method", "login");
+	PackAddStr(p, "hubname", hubname);
+	PackAddStr(p, "username", username);
+	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_CERT);
+
+	b = XToBuf(x, false);
+	PackAddData(p, "cert", b->Buf, b->Size);
+	FreeBuf(b);
+
+	PackAddData(p, "sign", sign, sign_size);
+
+	return p;
+}
+
+PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_password)
+{
+	PACK *p;
+	if (hubname == NULL || username == NULL)
+	{
+		return NULL;
+	}
+
+	p = NewPack();
+	PackAddStr(p, "method", "login");
+	PackAddStr(p, "hubname", hubname);
+	PackAddStr(p, "username", username);
+	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_PLAIN_PASSWORD);
+	PackAddStr(p, "plain_password", plain_password);
+
+	return p;
+}
+
+PACK *PackLoginWithPassword(char *hubname, char *username, void *secure_password)
+{
+	PACK *p;
+	if (hubname == NULL || username == NULL)
+	{
+		return NULL;
+	}
+
+	p = NewPack();
+	PackAddStr(p, "method", "login");
+	PackAddStr(p, "hubname", hubname);
+	PackAddStr(p, "username", username);
+	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_PASSWORD);
+	PackAddData(p, "secure_password", secure_password, SHA1_SIZE);
+
+	return p;
+}
+
+PACK *PackLoginWithAnonymous(char *hubname, char *username)
+{
+	PACK *p;
+	if (hubname == NULL || username == NULL)
+	{
+		return NULL;
+	}
+
+	p = NewPack();
+	PackAddStr(p, "method", "login");
+	PackAddStr(p, "hubname", hubname);
+	PackAddStr(p, "username", username);
+	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_ANONYMOUS);
+
+	return p;
+}
+
+PACK *PackAdditionalConnect(UCHAR *session_key)
+{
+	PACK *p;
+	if (session_key == NULL)
+	{
+		return NULL;
+	}
+
+	p = NewPack();
+	PackAddStr(p, "method", "additional_connect");
+	PackAddData(p, "session_key", session_key, SHA1_SIZE);
+
+	return p;
+}
