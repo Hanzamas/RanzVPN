@@ -1413,15 +1413,6 @@ void AbortExitEx(char *msg)
 }
 
 
-int GetCurrentTimezone()
-{
-	int ret = 0;
-
-	ret = GetCurrentTimezoneWin32();
-
-	return ret;
-}
-
 // Offset of local time from UTC in minutes (positive east of UTC), for the time zone
 // information and the zone ID that GetTimeZoneInformation returned. The biases of
 // TIME_ZONE_INFORMATION are UTC minus local time: the offset is the zone bias plus the
@@ -1450,7 +1441,7 @@ int GetTimezoneInfoOffsetWin32(TIME_ZONE_INFORMATION *info, UINT zone_id)
 
 // Current offset of local time from UTC in minutes (positive east of UTC), daylight saving
 // time included when it is in effect; 0 when the time zone cannot be read
-int GetCurrentTimezoneWin32()
+int GetCurrentTimezone()
 {
 	TIME_ZONE_INFORMATION info;
 	DWORD zone_id;

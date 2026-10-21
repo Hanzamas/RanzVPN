@@ -97,7 +97,6 @@ void GetTimeStrMilli64(char *str, UINT size, UINT64 sec64);
 void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min);
 bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str);
 int GetCurrentTimezone();
-int GetCurrentTimezoneWin32();
 int GetTimezoneInfoOffsetWin32(TIME_ZONE_INFORMATION *info, UINT zone_id);
 void HashInstanceName(char *name, UINT size, char *instance_name);
 INSTANCE *NewSingleInstance(char *instance_name);
