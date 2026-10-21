@@ -6,8 +6,9 @@ $ErrorActionPreference = 'Stop'
 # with plain HTTP on port 80, the service must:
 # - reserve the URL prefixes of port 80 in HTTP.sys at install, and remove them at uninstall;
 # - serve the API and the control stream on TCP 443, told apart by ALPN;
-# - serve port 80 through HTTP.sys, which the runner's system holds already: a 301 to HTTPS on
-#   the TLS port, and its own answer on the ACME HTTP-01 path, nothing else;
+# - serve port 80 through HTTP.sys, which the runner's system holds already: its own answer on
+#   the ACME HTTP-01 path, and a 301 to HTTPS on the TLS port for the rest of the port unless
+#   another HTTP.sys user held that catch-all first (on the runner one does), nothing else;
 # - take an intent from `ranz apply`, push generation 1 to a simulated node (ranz-nodesim) and
 #   record its acknowledgement;
 # - keep the intent, the acknowledged generation and its keys across a restart of the service:
@@ -84,11 +85,18 @@ function Test-Node([string] $addr, [string] $controllerKey) {
 	return $received
 }
 
-# Plain HTTP on port 80 must redirect to $target
+# Port 80 outside the ACME path: when the controller holds the catch-all prefix it must redirect
+# to $target; when another HTTP.sys user held it first (the runner has one), the controller must
+# have left it to that user, so the answer is not the controller's redirect.
 function Test-Redirect([string] $target) {
 	$redirect = (& curl.exe -s -o NUL -w '%{http_code} %{redirect_url}' 'http://127.0.0.1/api/v1/status')
-	Write-Host "port 80: $redirect"
-	if ($redirect -ne "301 $target") { throw "port 80 answered '$redirect', not a 301 to $target" }
+	if ($script:redirectOurs) {
+		Write-Host "port 80, the controller's catch-all: $redirect"
+		if ($redirect -ne "301 $target") { throw "port 80 answered '$redirect', not a 301 to $target" }
+	} else {
+		Write-Host "port 80, the catch-all of the HTTP.sys user that held it first: $redirect"
+		if ($redirect -eq "301 $target") { throw "port 80 redirects for the controller although another HTTP.sys user holds $redirectPrefix" }
+	}
 }
 
 function Get-URLReservation([string] $prefix) {
@@ -113,10 +121,12 @@ function Show-Diagnostics {
 	}
 }
 
-# Who listens on TCP 80 before the controller starts: process 4 (System) is HTTP.sys
+# Who listens on TCP 80 before the controller starts: process 4 (System) is HTTP.sys, and the
+# request queues show which HTTP.sys user registered which URL on the port
 Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
 	Write-Host "TCP 80 before the check: $($_.LocalAddress) held by process $($_.OwningProcess) ($((Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName))"
 }
+& netsh http show servicestate view=requestq | Select-String -Pattern ':80/' -SimpleMatch -Context 12, 0 | ForEach-Object { Write-Host $_ }
 
 $hold = $null
 try {
@@ -134,6 +144,15 @@ try {
 	if (-not $status.tlsFingerprint) { throw 'the status names no TLS fingerprint' }
 	if ($status.capabilities.tlsPort -ne 443 -or $status.capabilities.tlsPortFallback) { throw 'the TLS port is not 443 with 443 free' }
 	if ($status.capabilities.plainHttp -notmatch 'HTTP\.sys') { throw "port 80 does not run on HTTP.sys: $($status.capabilities.plainHttp)" }
+	if ($status.capabilities.plainHttp -notmatch [regex]::Escape($acmePrefix)) { throw "the controller does not hold the ACME path of port 80: $($status.capabilities.plainHttp)" }
+	$script:redirectOurs = $status.capabilities.plainHttp -match [regex]::Escape($redirectPrefix)
+	if (-not $script:redirectOurs) {
+		$log = Get-Content -LiteralPath (Join-Path $data 'controller.log') -Raw
+		if ($log -notmatch [regex]::Escape("another HTTP.sys user holds this URL prefix") -or $log -notmatch [regex]::Escape($redirectPrefix)) {
+			throw "the controller does not hold $redirectPrefix and logged no warning about it"
+		}
+		Write-Host "another HTTP.sys user holds $redirectPrefix on this host: the controller shares port 80 with it and keeps the ACME path"
+	}
 
 	Test-Redirect 'https://127.0.0.1/api/v1/status'
 	$acmeBody = Join-Path $work 'acme.txt'
