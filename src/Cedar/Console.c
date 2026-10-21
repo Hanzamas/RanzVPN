@@ -23,9 +23,8 @@
 static void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list) {
 	wchar_t tmp[MAX_SIZE];
 	wchar_t *description, *args, *help;
-	if (c == NULL || cmd_name == NULL || param_list == NULL) {
+	if (c == NULL || cmd_name == NULL || param_list == NULL)
 		return;
-	}
 
 	UINT width = GetConsoleWidth(c) - 2;
 
@@ -80,9 +79,8 @@ static void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list) {
 bool CmdEvalSafe(CONSOLE *c, wchar_t *str, void *param) {
 	wchar_t *p = (param == NULL) ? _UU("CMD_EVAL_SAFE") : (wchar_t *)param;
 
-	if (IsSafeUniStr(str)) {
+	if (IsSafeUniStr(str))
 		return true;
-	}
 
 	c->Write(c, p);
 
@@ -97,9 +95,8 @@ wchar_t *CmdPrompt(CONSOLE *c, void *param) {
 
 bool CmdEvalIsFile(CONSOLE *c, wchar_t *str, void *param) {
 	wchar_t tmp[MAX_PATH];
-	if (c == NULL || str == NULL) {
+	if (c == NULL || str == NULL)
 		return false;
-	}
 
 	UniStrCpy(tmp, sizeof(tmp), str);
 
@@ -123,9 +120,8 @@ bool CmdEvalIsFile(CONSOLE *c, wchar_t *str, void *param) {
 bool CmdEvalNotEmpty(CONSOLE *c, wchar_t *str, void *param) {
 	wchar_t *p = (param == NULL) ? _UU("CMD_EVAL_NOT_EMPTY") : (wchar_t *)param;
 
-	if (UniIsEmptyStr(str) == false) {
+	if (UniIsEmptyStr(str) == false)
 		return true;
-	}
 
 	c->Write(c, p);
 
@@ -134,17 +130,15 @@ bool CmdEvalNotEmpty(CONSOLE *c, wchar_t *str, void *param) {
 
 bool CmdEvalMinMax(CONSOLE *c, wchar_t *str, void *param) {
 	wchar_t *tag;
-	if (param == NULL) {
+	if (param == NULL)
 		return false;
-	}
 
 	CMD_EVAL_MIN_MAX *e = (CMD_EVAL_MIN_MAX *)param;
 
-	if (e->StrName == NULL) {
+	if (e->StrName == NULL)
 		tag = _UU("CMD_EVAL_MIN_MAX");
-	} else {
+	else
 		tag = _UU(e->StrName);
-	}
 
 	UINT v = UniToInt(str);
 
@@ -169,64 +163,55 @@ void GetCommandHelpStr(char *command_name, wchar_t **description, wchar_t **args
 
 	if (description != NULL) {
 		*description = _UU(tmp1);
-		if (UniIsEmptyStr(*description)) {
+		if (UniIsEmptyStr(*description))
 			*description = _UU("CMD_UNKNOWM");
-		}
 	}
 
 	if (args != NULL) {
 		*args = _UU(tmp2);
-		if (UniIsEmptyStr(*args)) {
+		if (UniIsEmptyStr(*args))
 			*args = _UU("CMD_UNKNOWN_ARGS");
-		}
 	}
 
 	if (help != NULL) {
 		*help = _UU(tmp3);
-		if (UniIsEmptyStr(*help)) {
+		if (UniIsEmptyStr(*help))
 			*help = _UU("CMD_UNKNOWN_HELP");
-		}
 	}
 }
 
 static void GetCommandParamHelpStr(char *command_name, char *param_name, wchar_t **description) {
 	char tmp[160];
-	if (description == NULL) {
+	if (description == NULL)
 		return;
-	}
 
 	Format(tmp, sizeof(tmp), "CMD_%s_%s", command_name, param_name);
 
 	*description = _UU(tmp);
 
-	if (UniIsEmptyStr(*description)) {
+	if (UniIsEmptyStr(*description))
 		*description = _UU("CMD_UNKNOWN_PARAM");
-	}
 }
 
 static int CompareCandidateStr(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	char *s1 = *(char **)p1;
 	char *s2 = *(char **)p2;
-	if (s1 == NULL || s2 == NULL) {
+	if (s1 == NULL || s2 == NULL)
 		return 0;
-	}
 
-	if (s1[0] == '[' && s2[0] != '[') {
+	if (s1[0] == '[' && s2[0] != '[')
 		return -1;
-	} else if (s2[0] == '[' && s1[0] != '[') {
+	else if (s2[0] == '[' && s1[0] != '[')
 		return 1;
-	}
 
 	return StrCmp(s1, s2);
 }
 
 void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, UINT left_space) {
-	if (c == NULL || candidate_list == NULL) {
+	if (c == NULL || candidate_list == NULL)
 		return;
-	}
 
 	UINT console_width = GetConsoleWidth(c) - 1;
 
@@ -244,11 +229,10 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 
 		UINT keyword_width = StrWidth(candidate_list->Token[i]);
 		if (cmd_name != NULL) {
-			if (candidate_list->Token[i][0] != '[') {
+			if (candidate_list->Token[i][0] != '[')
 				keyword_width += 1;
-			} else {
+			else
 				keyword_width -= 2;
-			}
 		}
 
 		max_keyword_width = MAX(max_keyword_width, keyword_width);
@@ -263,43 +247,37 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 		UINT descript_start_width = left_space + max_keyword_width + 1;
 		UINT descript_width;
 
-		if (console_width >= (descript_start_width + 5)) {
+		if (console_width >= (descript_start_width + 5))
 			descript_width = console_width - descript_start_width - 3;
-		} else {
+		else
 			descript_width = 2;
-		}
 
 		if (cmd_name != NULL && name[0] != '[') {
 			Format(tmp, sizeof(tmp), "/%s", name);
+		} else if (cmd_name == NULL) {
+			StrCpy(tmp, sizeof(tmp), name);
 		} else {
-			if (cmd_name == NULL) {
-				StrCpy(tmp, sizeof(tmp), name);
-			} else {
-				StrCpy(tmp, sizeof(tmp), name + 1);
-				if (StrLen(tmp) >= 1) {
-					tmp[StrLen(tmp) - 1] = 0;
-				}
-			}
+			StrCpy(tmp, sizeof(tmp), name + 1);
+			if (StrLen(tmp) >= 1)
+				tmp[StrLen(tmp) - 1] = 0;
 		}
 
-		if (cmd_name == NULL) {
+		if (cmd_name == NULL)
 			GetCommandHelpStr(name, &help, NULL, NULL);
-		} else {
+		else
 			GetCommandParamHelpStr(cmd_name, name, &help);
-		}
 
 		char *space = MakeCharArray(' ', max_keyword_width - StrWidth(name) - (cmd_name == NULL ? 0 : (name[0] != '[' ? 1 : -2)));
 
 		UNI_TOKEN_LIST *t = SeparateStringByWidth(help, descript_width);
 
 		for (UINT j = 0; j < t->NumTokens; j++) {
-			if (j == 0) {
+			if (j == 0)
 				UniFormat(tmpbuf, tmpbuf_size, L"%S%S%S - %s",
 				          left_space_array, tmp, space, t->Token[j]);
-			} else {
+			else
 				UniFormat(tmpbuf, tmpbuf_size, L"%S%S   %s",
 				          left_space_array, max_space_array, t->Token[j]);
-			}
 
 			c->Write(c, tmpbuf);
 		}
@@ -317,57 +295,44 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 }
 
 static bool IsWordChar(wchar_t c) {
-	if (c >= L'a' && c <= 'z') {
+	if (c >= L'a' && c <= 'z')
 		return true;
-	}
-	if (c >= L'A' && c <= 'Z') {
+	if (c >= L'A' && c <= 'Z')
 		return true;
-	}
-	if (c >= L'0' && c <= '9') {
+	if (c >= L'0' && c <= '9')
 		return true;
-	}
-	if (c == L'_') {
+	if (c == L'_')
 		return true;
-	}
-	if (c == L'.') {
+	if (c == L'.')
 		return true;
-	}
-	if (c == L'\"') {
+	if (c == L'\"')
 		return true;
-	}
-	if (c == L'\'') {
+	if (c == L'\'')
 		return true;
-	}
-	if (c == L',') {
+	if (c == L',')
 		return true;
-	}
-	if (c == L')') {
+	if (c == L')')
 		return true;
-	}
-	if (c == L']') {
+	if (c == L']')
 		return true;
-	}
 
 	return false;
 }
 
 static UINT GetNextWordWidth(const wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	UINT ret = 0;
 
 	for (UINT i = 0;; i++) {
 		wchar_t c = str[i];
 
-		if (c == 0) {
+		if (c == 0)
 			break;
-		}
 
-		if (IsWordChar(c) == false) {
+		if (IsWordChar(c) == false)
 			break;
-		}
 
 		ret++;
 	}
@@ -376,12 +341,10 @@ static UINT GetNextWordWidth(const wchar_t *str) {
 }
 
 UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width) {
-	if (str == NULL) {
+	if (str == NULL)
 		return UniNullToken();
-	}
-	if (width == 0) {
+	if (width == 0)
 		width = 1;
-	}
 
 	LIST *o = NewListFast(NULL);
 
@@ -399,9 +362,8 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width) {
 		case L'\r':
 		case L'\n':
 			if (c == L'\r') {
-				if (str[i + 1] == L'\n') {
+				if (str[i + 1] == L'\n')
 					i++;
-				}
 			}
 
 			tmp[wp++] = 0;
@@ -433,9 +395,8 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width) {
 		}
 	}
 
-	if (LIST_NUM(o) == 0) {
+	if (LIST_NUM(o) == 0)
 		Insert(o, CopyUniStr(L""));
-	}
 
 	UNI_TOKEN_LIST *ret = ZeroMalloc(sizeof(UNI_TOKEN_LIST));
 	ret->NumTokens = LIST_NUM(o);
@@ -456,9 +417,8 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width) {
 }
 
 static bool IsHelpStr(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	if (StrCmpi(str, "help") == 0 || StrCmpi(str, "?") == 0 ||
 	    StrCmpi(str, "man") == 0 || StrCmpi(str, "/man") == 0 ||
@@ -466,9 +426,8 @@ static bool IsHelpStr(const char *str) {
 	    StrCmpi(str, "/help") == 0 || StrCmpi(str, "/?") == 0 ||
 	    StrCmpi(str, "-help") == 0 || StrCmpi(str, "-?") == 0 ||
 	    StrCmpi(str, "/h") == 0 || StrCmpi(str, "--help") == 0 ||
-	    StrCmpi(str, "--?") == 0) {
+	    StrCmpi(str, "--?") == 0)
 		return true;
-	}
 
 	return false;
 }
@@ -483,9 +442,8 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 	TOKEN_LIST *t;
 	TOKEN_LIST *candidate;
 	UINT i;
-	if (c == NULL || (num_cmd >= 1 && cmd == NULL)) {
+	if (c == NULL || (num_cmd >= 1 && cmd == NULL))
 		return false;
-	}
 
 	if (exec_command == NULL) {
 	RETRY:
@@ -521,9 +479,8 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 		str = CopyUniStr(exec_command);
 	}
 
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	UniTrimCrlf(str);
 	UniTrim(str);
@@ -565,9 +522,8 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = num_cmd;
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-	for (i = 0; i < t->NumTokens; i++) {
+	for (i = 0; i < t->NumTokens; i++)
 		t->Token[i] = CopyStr(cmd[i].Name);
-	}
 
 	if (IsHelpStr(cmd_name)) {
 		if (UniIsEmptyStr(cmd_param)) {
@@ -586,9 +542,8 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 			if (SeparateCommandAndParam(cmd_param, &cmd_name, NULL)) {
 				bool b = true;
 
-				if (IsHelpStr(cmd_name)) {
+				if (IsHelpStr(cmd_name))
 					b = false;
-				}
 
 				if (b) {
 					wchar_t str[MAX_SIZE];
@@ -641,11 +596,10 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 
 						ret = cmd[i].Proc(c, cmd[i].Name, cmd_param, param);
 
-						if (ret == INFINITE) {
+						if (ret == INFINITE)
 							b_exit = true;
-						} else {
+						else
 							c->RetCode = ret;
-						}
 					}
 				}
 			}
@@ -659,9 +613,8 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 	Free(cmd_name);
 	Free(cmd_param);
 
-	if (b_exit) {
+	if (b_exit)
 		return false;
-	}
 
 	return true;
 }
@@ -669,17 +622,14 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 UINT GetConsoleWidth(CONSOLE *c) {
 	UINT size = c->GetWidth(c);
 
-	if (size == 0) {
+	if (size == 0)
 		size = 80;
-	}
 
-	if (size < 32) {
+	if (size < 32)
 		size = 32;
-	}
 
-	if (size > 65536) {
+	if (size > 65536)
 		size = 65535;
-	}
 
 	return size;
 }
@@ -688,15 +638,12 @@ bool SeparateCommandAndParam(wchar_t *src, char **cmd, wchar_t **param) {
 	UINT len, wp;
 	wchar_t *tmp;
 	wchar_t *src_tmp;
-	if (src == NULL) {
+	if (src == NULL)
 		return false;
-	}
-	if (cmd != NULL) {
+	if (cmd != NULL)
 		*cmd = NULL;
-	}
-	if (param != NULL) {
+	if (param != NULL)
 		*param = NULL;
-	}
 
 	src_tmp = CopyUniStr(src);
 	UniTrimCrlf(src_tmp);
@@ -746,9 +693,8 @@ ESCAPE:
 TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list) {
 	TOKEN_LIST *ret;
 	bool ok = false;
-	if (input_name == NULL || real_name_list == NULL) {
+	if (input_name == NULL || real_name_list == NULL)
 		return NullToken();
-	}
 
 	LIST *o = NewListFast(NULL);
 
@@ -773,11 +719,10 @@ TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list) {
 		}
 	}
 
-	if (ok) {
+	if (ok)
 		ret = ListToTokenList(o);
-	} else {
+	else
 		ret = NullToken();
-	}
 
 	ReleaseList(o);
 
@@ -786,9 +731,8 @@ TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list) {
 
 bool IsOmissionName(char *input_name, char *real_name) {
 	char oname[128];
-	if (input_name == NULL || real_name == NULL) {
+	if (input_name == NULL || real_name == NULL)
 		return false;
-	}
 
 	if (IsAllUpperStr(real_name)) {
 		// Command of all capital letters do not take abbreviations
@@ -797,9 +741,8 @@ bool IsOmissionName(char *input_name, char *real_name) {
 
 	GetOmissionName(oname, sizeof(oname), real_name);
 
-	if (IsEmptyStr(oname)) {
+	if (IsEmptyStr(oname))
 		return false;
-	}
 
 	if (StartWith(oname, input_name)) {
 		// e.g. the short name of AccountSecureCertSet is "ascs", so "asc" matches
@@ -809,18 +752,16 @@ bool IsOmissionName(char *input_name, char *real_name) {
 	if (StartWith(input_name, oname)) {
 		// e.g. with AccountCreate and AccountConnect, "aconnect" matches only AccountConnect
 
-		if (EndWith(real_name, &input_name[StrLen(oname)])) {
+		if (EndWith(real_name, &input_name[StrLen(oname)]))
 			return true;
-		}
 	}
 
 	return false;
 }
 
 void GetOmissionName(char *dst, UINT size, char *src) {
-	if (dst == NULL || src == NULL) {
+	if (dst == NULL || src == NULL)
 		return;
-	}
 
 	StrCpy(dst, size, "");
 	UINT len = StrLen(src);
@@ -840,13 +781,11 @@ void GetOmissionName(char *dst, UINT size, char *src) {
 }
 
 bool IsNameInRealName(char *input_name, char *real_name) {
-	if (input_name == NULL || real_name == NULL) {
+	if (input_name == NULL || real_name == NULL)
 		return false;
-	}
 
-	if (StartWith(real_name, input_name)) {
+	if (StartWith(real_name, input_name))
 		return true;
-	}
 
 	return false;
 }
@@ -859,29 +798,25 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 	TOKEN_LIST *real_name_list;
 	bool help_mode = false;
 	wchar_t *tmp;
-	if (c == NULL || command == NULL || (num_param >= 1 && param == NULL) || cmd_name == NULL) {
+	if (c == NULL || command == NULL || (num_param >= 1 && param == NULL) || cmd_name == NULL)
 		return NULL;
-	}
 
 	for (i = 0; i < num_param; i++) {
-		if (IsEmptyStr(param[i].Name) == false) {
-			if (param[i].Name[0] == '[') {
+		if (IsEmptyStr(param[i].Name) == false)
+			if (param[i].Name[0] == '[')
 				param[i].Tmp = "";
-			} else {
+			else
 				param[i].Tmp = NULL;
-			}
-		} else {
+		else
 			param[i].Tmp = "";
-		}
 	}
 
 	real_name_list = ZeroMalloc(sizeof(TOKEN_LIST));
 	real_name_list->NumTokens = num_param;
 	real_name_list->Token = ZeroMalloc(sizeof(char *) * real_name_list->NumTokens);
 
-	for (i = 0; i < real_name_list->NumTokens; i++) {
+	for (i = 0; i < real_name_list->NumTokens; i++)
 		real_name_list->Token[i] = CopyStr(param[i].Name);
-	}
 
 	param_list = GetCommandNameList(command);
 
@@ -896,9 +831,8 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 
 	tmp = ParseCommandEx(command, L"", NULL);
 	if (tmp != NULL) {
-		if (UniStrCmpi(tmp, L"?") == 0) {
+		if (UniStrCmpi(tmp, L"?") == 0)
 			help_mode = true;
-		}
 		Free(tmp);
 	}
 
@@ -929,11 +863,9 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 			} else {
 				char *real_name = candidate->Token[0];
 
-				for (UINT j = 0; j < num_param; j++) {
-					if (StrCmpi(param[j].Name, real_name) == 0) {
+				for (UINT j = 0; j < num_param; j++)
+					if (StrCmpi(param[j].Name, real_name) == 0)
 						param[j].Tmp = param_list->Token[i];
-					}
-				}
 			}
 		} else {
 			wchar_t tmp[MAX_SIZE];
@@ -965,11 +897,10 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 			wchar_t *tmp;
 			wchar_t *str;
 
-			if (p->Tmp != NULL) {
+			if (p->Tmp != NULL)
 				tmp = CopyStrToUni(p->Tmp);
-			} else {
+			else
 				tmp = CopyStrToUni(p->Name);
-			}
 
 			str = ParseCommandEx(command, tmp, NULL);
 			Free(tmp);
@@ -979,11 +910,10 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 			EVAL_VALUE:
 				unistr = str;
 
-				if (p->EvalProc != NULL) {
+				if (p->EvalProc != NULL)
 					ret = p->EvalProc(c, unistr, p->EvalProcParam);
-				} else {
+				else
 					ret = true;
-				}
 
 				if (ret == false) {
 					if (p->PromptProc == NULL) {
@@ -1011,25 +941,22 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 					v->IntValue = ToInt(v->StrValue);
 					Insert(o, v);
 				}
-			} else {
-				if (p->PromptProc != NULL) {
-					wchar_t *tmp;
-				SHOW_PROMPT:
-					tmp = NULL;
-					if (c->ProgrammingMode == false) {
-						tmp = p->PromptProc(c, p->PromptProcParam);
-					}
-					if (tmp == NULL) {
-						ok = false;
-						Free(str);
-						Free(name);
-						break;
-					} else {
-						c->Write(c, L"");
-						str = tmp;
-						prompt_input_value = true;
-						goto EVAL_VALUE;
-					}
+			} else if (p->PromptProc != NULL) {
+				wchar_t *tmp;
+			SHOW_PROMPT:
+				tmp = NULL;
+				if (c->ProgrammingMode == false)
+					tmp = p->PromptProc(c, p->PromptProcParam);
+				if (tmp == NULL) {
+					ok = false;
+					Free(str);
+					Free(name);
+					break;
+				} else {
+					c->Write(c, L"");
+					str = tmp;
+					prompt_input_value = true;
+					goto EVAL_VALUE;
 				}
 			}
 
@@ -1051,80 +978,67 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 
 bool GetParamYes(LIST *o, char *name) {
 	char tmp[64];
-	if (o == NULL) {
+	if (o == NULL)
 		return false;
-	}
 
 	char *s = GetParamStr(o, name);
-	if (s == NULL) {
+	if (s == NULL)
 		return false;
-	}
 
 	StrCpy(tmp, sizeof(tmp), s);
 	Trim(tmp);
 
-	if (StartWith(tmp, "y")) {
+	if (StartWith(tmp, "y"))
 		return true;
-	}
 
-	if (StartWith(tmp, "t")) {
+	if (StartWith(tmp, "t"))
 		return true;
-	}
 
-	if (ToInt(tmp) != 0) {
+	if (ToInt(tmp) != 0)
 		return true;
-	}
 
 	return false;
 }
 
 UINT GetParamInt(LIST *o, char *name) {
-	if (o == NULL) {
+	if (o == NULL)
 		return 0;
-	}
 
 	PARAM_VALUE *v = FindParamValue(o, name);
-	if (v == NULL) {
+	if (v == NULL)
 		return 0;
-	} else {
+	else
 		return v->IntValue;
-	}
 }
 
 wchar_t *GetParamUniStr(LIST *o, char *name) {
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	PARAM_VALUE *v = FindParamValue(o, name);
-	if (v == NULL) {
+	if (v == NULL)
 		return NULL;
-	} else {
+	else
 		return v->UniStrValue;
-	}
 }
 
 char *GetParamStr(LIST *o, char *name) {
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	PARAM_VALUE *v = FindParamValue(o, name);
-	if (v == NULL) {
+	if (v == NULL)
 		return NULL;
-	} else {
+	else
 		return v->StrValue;
-	}
 }
 
 PARAM_VALUE *FindParamValue(LIST *o, char *name) {
 	PARAM_VALUE t;
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
-	if (name == NULL) {
+	if (name == NULL)
 		name = "";
-	}
 
 	Zero(&t, sizeof(t));
 	t.Name = name;
@@ -1135,9 +1049,8 @@ PARAM_VALUE *FindParamValue(LIST *o, char *name) {
 }
 
 void FreeParamValueList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		PARAM_VALUE *v = LIST_DATA(o, i);
@@ -1152,18 +1065,15 @@ void FreeParamValueList(LIST *o) {
 }
 
 static int CmpParamValue(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	PARAM_VALUE *v1 = *(PARAM_VALUE **)p1;
 	PARAM_VALUE *v2 = *(PARAM_VALUE **)p2;
-	if (v1 == NULL || v2 == NULL) {
+	if (v1 == NULL || v2 == NULL)
 		return 0;
-	}
 
-	if (IsEmptyStr(v1->Name) && IsEmptyStr(v2->Name)) {
+	if (IsEmptyStr(v1->Name) && IsEmptyStr(v2->Name))
 		return 0;
-	}
 	return StrCmpi(v1->Name, v2->Name);
 }
 
@@ -1173,9 +1083,8 @@ LIST *NewParamValueList() {
 
 TOKEN_LIST *GetCommandNameList(wchar_t *str) {
 	TOKEN_LIST *t;
-	if (str == NULL) {
+	if (str == NULL)
 		return NullToken();
-	}
 
 	Free(ParseCommandEx(str, L"dummy_str", &t));
 
@@ -1187,17 +1096,14 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list) {
 	static const wchar_t cmd_suffixes[4] = {L' ', L'\t', L':', L'='};
 	UNI_TOKEN_LIST *t;
 	wchar_t *ret = NULL;
-	if (str == NULL) {
+	if (str == NULL)
 		return NULL;
-	}
-	if (name != NULL && UniIsEmptyStr(name)) {
+	if (name != NULL && UniIsEmptyStr(name))
 		name = NULL;
-	}
 
 	LIST *o = NULL;
-	if (param_list != NULL) {
+	if (param_list != NULL)
 		o = NewListFast(CompareStr);
-	}
 
 	wchar_t *tmp = CopyUniStr(str);
 	UniTrim(tmp);
@@ -1218,17 +1124,15 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list) {
 			key[5] = 0;
 
 			i = UniSearchStrEx(tmp, key, 0, false);
-			if (i != INFINITE && i >= 1 && tmp[i - 1] == cmd_prefixes[prefix_index]) {
+			if (i != INFINITE && i >= 1 && tmp[i - 1] == cmd_prefixes[prefix_index])
 				i = INFINITE;
-			}
 		}
 	}
 
 	if (i != INFINITE) {
 		char *s = CopyStr("CMD");
-		if (InsertStr(o, s) == false) {
+		if (InsertStr(o, s) == false)
 			Free(s);
-		}
 		if (UniStrCmpi(name, L"CMD") == 0) {
 			ret = CopyUniStr(&str[i + 5]);
 			UniTrim(ret);
@@ -1248,53 +1152,44 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list) {
 				    (UniStrCmpi(token, L"--help") == 0) ||
 				    (token[0] == L'/' && token[1] != L'/')) {
 
-					if (UniStrCmpi(token, L"--help") == 0) {
+					if (UniStrCmpi(token, L"--help") == 0)
 						token++;
-					}
 
 					UINT i = UniSearchStrEx(token, L":", 0, false);
-					if (i == INFINITE) {
+					if (i == INFINITE)
 						i = UniSearchStrEx(token, L"=", 0, false);
-					}
 					if (i != INFINITE) {
 						wchar_t *tmp = CopyUniStr(token);
 						tmp[i] = 0;
 
 						char *a = CopyUniToStr(&tmp[1]);
-						if (InsertStr(o, a) == false) {
+						if (InsertStr(o, a) == false)
 							Free(a);
-						}
 
 						if (UniStrCmpi(name, &tmp[1]) == 0) {
-							if (ret == NULL) {
+							if (ret == NULL)
 								ret = CopyUniStr(&token[i + 1]);
-							}
 						}
 
 						Free(tmp);
 					} else {
 						char *a = CopyUniToStr(&token[1]);
-						if (InsertStr(o, a) == false) {
+						if (InsertStr(o, a) == false)
 							Free(a);
-						}
 
 						if (UniStrCmpi(name, &token[1]) == 0) {
-							if (ret == NULL) {
+							if (ret == NULL)
 								ret = CopyUniStr(L"");
-							}
 						}
 					}
-				} else {
-					if (name == NULL) {
-						if (ret == NULL) {
-							if (token[0] == L'-' && token[1] == L'-') {
-								ret = CopyUniStr(&token[1]);
-							} else if (token[0] == L'/' && token[1] == L'/') {
-								ret = CopyUniStr(&token[1]);
-							} else {
-								ret = CopyUniStr(token);
-							}
-						}
+				} else if (name == NULL) {
+					if (ret == NULL) {
+						if (token[0] == L'-' && token[1] == L'-')
+							ret = CopyUniStr(&token[1]);
+						else if (token[0] == L'/' && token[1] == L'/')
+							ret = CopyUniStr(&token[1]);
+						else
+							ret = CopyUniStr(token);
 					}
 				}
 			}
@@ -1311,9 +1206,8 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list) {
 		t->NumTokens = LIST_NUM(o);
 		t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
-		for (UINT i = 0; i < t->NumTokens; i++) {
+		for (UINT i = 0; i < t->NumTokens; i++)
 			t->Token[i] = LIST_DATA(o, i);
-		}
 
 		ReleaseList(o);
 
@@ -1333,9 +1227,8 @@ static bool PasswordPrompt(char *password, UINT size) {
 	bool escape = false;
 	void *console;
 	if (password == NULL || size <= 1) {
-		if (size >= 1) {
+		if (size >= 1)
 			password[0] = 0;
-		}
 		return false;
 	}
 
@@ -1359,15 +1252,13 @@ static bool PasswordPrompt(char *password, UINT size) {
 			RestoreConsole(console);
 			exit(0);
 		} else if (c == 0x04 || c == 0x1a || c == 0x0D || c == 0x0A) {
-			if (c == 0x04 || c == 0x1a) {
+			if (c == 0x04 || c == 0x1a)
 				escape = true;
-			}
 			break;
 		} else if (c == 0xE0) {
 			c = _getch();
-			if (c == 0x4B || c == 0x53) {
+			if (c == 0x4B || c == 0x53)
 				goto BACKSPACE;
-			}
 		} else if (c == 0x08 || c == 0x7F) {
 		BACKSPACE:
 			if (wp >= 1) {
@@ -1388,9 +1279,8 @@ static bool PasswordPrompt(char *password, UINT size) {
 static wchar_t *Prompt(wchar_t *prompt_str) {
 	wchar_t *ret = NULL;
 	wchar_t *tmp = NULL;
-	if (prompt_str == NULL) {
+	if (prompt_str == NULL)
 		prompt_str = L"";
-	}
 
 	UniPrint(L"%s", prompt_str);
 	tmp = Malloc(MAX_PROMPT_STRSIZE);
@@ -1414,9 +1304,8 @@ static wchar_t *Prompt(wchar_t *prompt_str) {
 	}
 	Free(tmp);
 
-	if (ret == NULL) {
+	if (ret == NULL)
 		Print("\n");
-	}
 
 	return ret;
 }
@@ -1426,9 +1315,8 @@ void *SetConsoleRaw() {
 }
 
 void RestoreConsole(void *p) {
-	if (p != NULL) {
+	if (p != NULL)
 		Free(p);
-	}
 }
 
 
@@ -1470,9 +1358,8 @@ CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile) {
 			c->Write(c, tmp);
 			Free(c);
 
-			if (in_io != NULL) {
+			if (in_io != NULL)
 				FileClose(in_io);
-			}
 			return NULL;
 		} else {
 			wchar_t tmp[MAX_SIZE];
@@ -1504,9 +1391,8 @@ CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile) {
 }
 
 void ConsoleLocalFree(CONSOLE *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	LOCAL_CONSOLE_PARAM *p = (LOCAL_CONSOLE_PARAM *)c->Param;
 
@@ -1516,9 +1402,8 @@ void ConsoleLocalFree(CONSOLE *c) {
 			FreeBuf(p->InBuf);
 		}
 
-		if (p->OutFile != NULL) {
+		if (p->OutFile != NULL)
 			FileClose(p->OutFile);
-		}
 
 		Free(p);
 	}
@@ -1530,9 +1415,8 @@ void ConsoleLocalFree(CONSOLE *c) {
 
 UINT ConsoleLocalGetWidth(CONSOLE *c) {
 	UINT ret = 0;
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
 
 	ret = MsGetConsoleWidth();
 
@@ -1541,13 +1425,11 @@ UINT ConsoleLocalGetWidth(CONSOLE *c) {
 
 wchar_t *ConsoleLocalReadLine(CONSOLE *c, wchar_t *prompt, bool nofile) {
 	wchar_t *ret;
-	if (c == NULL) {
+	if (c == NULL)
 		return NULL;
-	}
 	LOCAL_CONSOLE_PARAM *p = (LOCAL_CONSOLE_PARAM *)c->Param;
-	if (prompt == NULL) {
+	if (prompt == NULL)
 		prompt = L">";
-	}
 
 	ConsoleWriteOutFile(c, prompt, false);
 
@@ -1563,23 +1445,20 @@ wchar_t *ConsoleLocalReadLine(CONSOLE *c, wchar_t *prompt, bool nofile) {
 		ret = Prompt(prompt);
 	}
 
-	if (ret != NULL) {
+	if (ret != NULL)
 		ConsoleWriteOutFile(c, ret, true);
-	} else {
+	else
 		ConsoleWriteOutFile(c, _UU("CON_USER_CANCEL"), true);
-	}
 
 	return ret;
 }
 
 char *ConsoleLocalReadPassword(CONSOLE *c, wchar_t *prompt) {
 	char tmp[64];
-	if (c == NULL) {
+	if (c == NULL)
 		return NULL;
-	}
-	if (prompt == NULL) {
+	if (prompt == NULL)
 		prompt = L"Password>";
-	}
 
 	UniPrint(L"%s", prompt);
 	ConsoleWriteOutFile(c, prompt, false);
@@ -1594,9 +1473,8 @@ char *ConsoleLocalReadPassword(CONSOLE *c, wchar_t *prompt) {
 }
 
 bool ConsoleLocalWrite(CONSOLE *c, wchar_t *str) {
-	if (c == NULL || str == NULL) {
+	if (c == NULL || str == NULL)
 		return false;
-	}
 
 	UniPrint(L"%s%s", str, (UniEndWith(str, L"\n") ? L"" : L"\n"));
 
@@ -1607,22 +1485,19 @@ bool ConsoleLocalWrite(CONSOLE *c, wchar_t *str) {
 
 wchar_t *ConsoleReadNextFromInFile(CONSOLE *c) {
 	char *str;
-	if (c == NULL) {
+	if (c == NULL)
 		return NULL;
-	}
 
 	LOCAL_CONSOLE_PARAM *p = (LOCAL_CONSOLE_PARAM *)c->Param;
 
-	if (p->InBuf == NULL) {
+	if (p->InBuf == NULL)
 		return NULL;
-	}
 
 	while (true) {
 		str = CfgReadNextLine(p->InBuf);
 
-		if (str == NULL) {
+		if (str == NULL)
 			return NULL;
-		}
 
 		Trim(str);
 
@@ -1641,9 +1516,8 @@ wchar_t *ConsoleReadNextFromInFile(CONSOLE *c) {
 }
 
 void ConsoleWriteOutFile(CONSOLE *c, wchar_t *str, bool add_last_crlf) {
-	if (c == NULL || str == NULL) {
+	if (c == NULL || str == NULL)
 		return;
-	}
 
 	LOCAL_CONSOLE_PARAM *p = (LOCAL_CONSOLE_PARAM *)c->Param;
 

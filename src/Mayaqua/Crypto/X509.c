@@ -19,51 +19,46 @@
 #define FILETIME_UNIX_EPOCH_TICKS 116444736000000000ULL // 1970-01-01 00:00:00 UTC as a FILETIME
 
 NAME *CopyName(NAME *n) {
-	if (n == NULL) {
+	if (n == NULL)
 		return NULL;
-	}
 
 	return NewName(n->CommonName, n->Organization, n->Unit,
 	               n->Country, n->State, n->Local);
 }
 
 void GetPrintNameFromX(wchar_t *str, UINT size, X *x) {
-	if (x == NULL || str == NULL) {
+	if (x == NULL || str == NULL)
 		return;
-	}
 
 	GetPrintNameFromName(str, size, x->subject_name);
 }
 
 void GetPrintNameFromName(wchar_t *str, UINT size, NAME *name) {
-	if (str == NULL || name == NULL) {
+	if (str == NULL || name == NULL)
 		return;
-	}
 
-	if (name->CommonName != NULL) {
+	if (name->CommonName != NULL)
 		UniStrCpy(str, size, name->CommonName);
-	} else if (name->Organization != NULL) {
+	else if (name->Organization != NULL)
 		UniStrCpy(str, size, name->Organization);
-	} else if (name->Unit != NULL) {
+	else if (name->Unit != NULL)
 		UniStrCpy(str, size, name->Unit);
-	} else if (name->State != NULL) {
+	else if (name->State != NULL)
 		UniStrCpy(str, size, name->State);
-	} else if (name->Local != NULL) {
+	else if (name->Local != NULL)
 		UniStrCpy(str, size, name->Local);
-	} else if (name->Country != NULL) {
+	else if (name->Country != NULL)
 		UniStrCpy(str, size, name->Country);
-	} else {
+	else
 		UniStrCpy(str, size, L"untitled");
-	}
 }
 
 void GetAllNameFromX(wchar_t *str, UINT size, X *x) {
 	UCHAR md5[MD5_SIZE], sha1[SHA1_SIZE];
 	char tmp1[MD5_SIZE * 3 + 8], tmp2[SHA1_SIZE * 3 + 8];
 	wchar_t tmp3[sizeof(tmp1) + sizeof(tmp2) + 64];
-	if (str == NULL || x == NULL) {
+	if (str == NULL || x == NULL)
 		return;
-	}
 
 	GetAllNameFromName(str, size, x->subject_name);
 
@@ -100,43 +95,37 @@ static void BuildAllName(wchar_t *str, UINT size, NAME *name, bool with_labels) 
 	wchar_t *labels[] = {L"CN=", L"O=", L"OU=", L"S=", L"L=", L"C="};
 	wchar_t *values[] = {name->CommonName, name->Organization, name->Unit, name->State, name->Local, name->Country};
 
-	for (UINT i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
-		if (values[i] != NULL) {
+	for (UINT i = 0; i < sizeof(values) / sizeof(values[0]); i++)
+		if (values[i] != NULL)
 			AppendNamePart(str, size, with_labels ? labels[i] : L"", values[i]);
-		}
-	}
 
 	if (UniStrLen(str) >= 3) {
 		UINT len = UniStrLen(str);
 		if (str[len - 2] == L',' &&
-		    str[len - 1] == L' ') {
+		    str[len - 1] == L' ')
 			str[len - 2] = 0;
-		}
 	}
 }
 
 void GetAllNameFromName(wchar_t *str, UINT size, NAME *name) {
 	UniStrCpy(str, size, L"");
-	if (str == NULL || name == NULL) {
+	if (str == NULL || name == NULL)
 		return;
-	}
 
 	BuildAllName(str, size, name, true);
 }
 
 void GetAllNameFromNameEx(wchar_t *str, UINT size, NAME *name) {
-	if (str == NULL || name == NULL) {
+	if (str == NULL || name == NULL)
 		return;
-	}
 
 	UniStrCpy(str, size, L"");
 	BuildAllName(str, size, name, false);
 }
 
 static NAME *CloneName(const NAME *n) {
-	if (n == NULL) {
+	if (n == NULL)
 		return NULL;
-	}
 
 	NAME *ret = ZeroMalloc(sizeof(NAME));
 	ret->CommonName = CopyUniStr(n->CommonName);
@@ -153,13 +142,11 @@ static NAME *CloneName(const NAME *n) {
 // fields are copied. NewX/NewRootX change an X509 only before they wrap it, so a shared X509 is
 // read only.
 X *CloneX(X *x) {
-	if (x == NULL || x->x509 == NULL) {
+	if (x == NULL || x->x509 == NULL)
 		return NULL;
-	}
 
-	if (X509_up_ref(x->x509) != 1) {
+	if (X509_up_ref(x->x509) != 1)
 		return NULL;
-	}
 
 	X *ret = ZeroMalloc(sizeof(X));
 	*ret = *x;
@@ -174,18 +161,16 @@ X *CloneX(X *x) {
 
 LIST *CloneXList(LIST *chain) {
 	X *x;
-	if (chain == NULL) {
+	if (chain == NULL)
 		return NULL;
-	}
 
 	LIST *ret = NewList(NULL);
 	LockList(chain);
 	{
 		for (UINT i = 0; i < LIST_NUM(chain); i++) {
 			x = CloneX(LIST_DATA(chain, i));
-			if (x != NULL) {
+			if (x != NULL)
 				Add(ret, x);
-			}
 		}
 	}
 	UnlockList(chain);
@@ -194,34 +179,29 @@ LIST *CloneXList(LIST *chain) {
 }
 
 void FreeXSerial(X_SERIAL *serial) {
-	if (serial == NULL) {
+	if (serial == NULL)
 		return;
-	}
 
 	Free(serial->data);
 	Free(serial);
 }
 
 bool CompareXSerial(X_SERIAL *s1, X_SERIAL *s2) {
-	if (s1 == NULL || s2 == NULL) {
+	if (s1 == NULL || s2 == NULL)
 		return false;
-	}
 
-	if (s1->size != s2->size) {
+	if (s1->size != s2->size)
 		return false;
-	}
 
-	if (Cmp(s1->data, s2->data, s1->size) != 0) {
+	if (Cmp(s1->data, s2->data, s1->size) != 0)
 		return false;
-	}
 
 	return true;
 }
 
 X_SERIAL *CloneXSerial(X_SERIAL *src) {
-	if (src == NULL) {
+	if (src == NULL)
 		return NULL;
-	}
 
 	X_SERIAL *s = ZeroMalloc(sizeof(X_SERIAL));
 	s->data = ZeroMalloc(src->size);
@@ -234,18 +214,14 @@ X_SERIAL *CloneXSerial(X_SERIAL *src) {
 X_SERIAL *NewXSerial(void *data, UINT size) {
 	UCHAR *buf = (UCHAR *)data;
 	UINT i;
-	if (data == NULL || size == 0) {
+	if (data == NULL || size == 0)
 		return NULL;
-	}
 
-	for (i = 0; i < size; i++) {
-		if (buf[i] != 0) {
+	for (i = 0; i < size; i++)
+		if (buf[i] != 0)
 			break;
-		}
-	}
-	if (i == size) {
+	if (i == size)
 		i = size - 1;
-	}
 	buf += i;
 
 	X_SERIAL *serial = Malloc(sizeof(X_SERIAL));
@@ -257,14 +233,12 @@ X_SERIAL *NewXSerial(void *data, UINT size) {
 }
 
 X *NewX(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial) {
-	if (pub == NULL || priv == NULL || name == NULL || ca == NULL) {
+	if (pub == NULL || priv == NULL || name == NULL || ca == NULL)
 		return NULL;
-	}
 
 	X509 *x509 = NewX509(pub, priv, ca, name, days, serial);
-	if (x509 == NULL) {
+	if (x509 == NULL)
 		return NULL;
-	}
 
 	X *x = X509ToX(x509);
 
@@ -277,14 +251,12 @@ X *NewX(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial) {
 }
 
 X *NewRootX(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial) {
-	if (pub == NULL || priv == NULL || name == NULL) {
+	if (pub == NULL || priv == NULL || name == NULL)
 		return NULL;
-	}
 
 	X509 *x509 = NewRootX509(pub, priv, name, days, serial);
-	if (x509 == NULL) {
+	if (x509 == NULL)
 		return NULL;
-	}
 
 	X *x = X509ToX(x509);
 	if (x == NULL) {
@@ -297,23 +269,20 @@ X *NewRootX(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial) {
 
 static void AddKeyUsageX509(EXTENDED_KEY_USAGE *ex, int nid) {
 	ASN1_OBJECT *obj;
-	if (ex == NULL) {
+	if (ex == NULL)
 		return;
-	}
 
 	obj = OBJ_nid2obj(nid);
-	if (obj != NULL) {
+	if (obj != NULL)
 		sk_ASN1_OBJECT_push(ex, obj);
-	}
 }
 // Extended key usage of a generated certificate: TLS server and TLS client only
 static X509_EXTENSION *NewExtendedKeyUsageForX509() {
 	EXTENDED_KEY_USAGE *ex = sk_ASN1_OBJECT_new_null();
 	X509_EXTENSION *ret;
 
-	if (ex == NULL) {
+	if (ex == NULL)
 		return NULL;
-	}
 
 	AddKeyUsageX509(ex, NID_server_auth);
 	AddKeyUsageX509(ex, NID_client_auth);
@@ -325,9 +294,8 @@ static X509_EXTENSION *NewExtendedKeyUsageForX509() {
 	return ret;
 }
 static void BitStringSetBit(ASN1_BIT_STRING *str, int bit) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	ASN1_BIT_STRING_set_bit(str, bit, 1);
 }
@@ -358,9 +326,8 @@ static X509_EXTENSION *NewBasicKeyUsageForX509(bool ca) {
 
 // Adds an extension made for a new certificate and frees it. False when it is NULL or cannot be added.
 static bool AddNewExtToX509(X509 *x509, X509_EXTENSION *ex) {
-	if (ex == NULL) {
+	if (ex == NULL)
 		return false;
-	}
 
 	bool ret = (X509_add_ext(x509, ex, -1) == 1);
 	X509_EXTENSION_free(ex);
@@ -375,9 +342,8 @@ static bool SetSerialForNewX509(X509 *x509, X_SERIAL *serial) {
 	BIGNUM *bn;
 	bool ret;
 
-	if (s == NULL) {
+	if (s == NULL)
 		return false;
-	}
 
 	if (serial != NULL) {
 		bn = BN_bin2bn(serial->data, serial->size, NULL);
@@ -391,9 +357,8 @@ static bool SetSerialForNewX509(X509 *x509, X_SERIAL *serial) {
 		bn = BN_bin2bn(random_serial, sizeof(random_serial), NULL);
 	}
 
-	if (bn == NULL) {
+	if (bn == NULL)
 		return false;
-	}
 
 	ret = (BN_to_ASN1_INTEGER(bn, s) != NULL);
 	BN_free(bn);
@@ -411,20 +376,16 @@ static bool AddDnsAltNameToX509(X509 *x509, const wchar_t *common_name) {
 	ASN1_IA5STRING *ia5;
 	bool ret = false;
 
-	if (UniIsEmptyStr(common_name)) {
+	if (UniIsEmptyStr(common_name))
 		return true;
-	}
 
 	UniToStr(dns, sizeof(dns), common_name);
 	UINT len = StrLen(dns);
-	if (len == 0 || len != UniStrLen(common_name)) {
+	if (len == 0 || len != UniStrLen(common_name))
 		return true;
-	}
-	for (UINT i = 0; i < len; i++) {
-		if (dns[i] <= ' ' || dns[i] > '~') {
+	for (UINT i = 0; i < len; i++)
+		if (dns[i] <= ' ' || dns[i] > '~')
 			return true;
-		}
-	}
 
 	names = GENERAL_NAMES_new();
 	gn = GENERAL_NAME_new();
@@ -450,9 +411,8 @@ static bool AddDnsAltNameToX509(X509 *x509, const wchar_t *common_name) {
 static bool SignNewX509(X509 *x509, K *pub, K *priv) {
 	bool ret = false;
 
-	if (X509_set_pubkey(x509, pub->pkey) == 1 && X509_sign(x509, priv->pkey, EVP_sha256()) > 0) {
+	if (X509_set_pubkey(x509, pub->pkey) == 1 && X509_sign(x509, priv->pkey, EVP_sha256()) > 0)
 		ret = true;
-	}
 
 	return ret;
 }
@@ -460,23 +420,19 @@ static bool SignNewX509(X509 *x509, K *pub, K *priv) {
 X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial) {
 	const ASN1_TIME *t1, *t2;
 	X509_NAME *subject_name, *issuer_name;
-	if (pub == NULL || priv == NULL || name == NULL || ca == NULL) {
+	if (pub == NULL || priv == NULL || name == NULL || ca == NULL)
 		return NULL;
-	}
-	if (pub->private_key != false) {
+	if (pub->private_key != false)
 		return NULL;
-	}
-	if (priv->private_key == false) {
+	if (priv->private_key == false)
 		return NULL;
-	}
 
 	UINT64 notBefore = SystemTime64();
 	UINT64 notAfter = notBefore + (UINT64)days * (UINT64)3600 * (UINT64)24 * (UINT64)1000;
 
 	X509 *x509 = X509_new();
-	if (x509 == NULL) {
+	if (x509 == NULL)
 		return NULL;
-	}
 
 	X509_set_version(x509, 2L);
 
@@ -524,26 +480,21 @@ X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial) {
 X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial) {
 	const ASN1_TIME *t1, *t2;
 	X509_NAME *subject_name, *issuer_name;
-	if (pub == NULL || name == NULL || priv == NULL) {
+	if (pub == NULL || name == NULL || priv == NULL)
 		return NULL;
-	}
-	if (days == 0) {
+	if (days == 0)
 		days = 365;
-	}
-	if (priv->private_key == false) {
+	if (priv->private_key == false)
 		return NULL;
-	}
-	if (pub->private_key != false) {
+	if (pub->private_key != false)
 		return NULL;
-	}
 
 	UINT64 notBefore = SystemTime64();
 	UINT64 notAfter = notBefore + (UINT64)days * (UINT64)3600 * (UINT64)24 * (UINT64)1000;
 
 	X509 *x509 = X509_new();
-	if (x509 == NULL) {
+	if (x509 == NULL)
 		return NULL;
-	}
 
 	X509_set_version(x509, 2L);
 
@@ -590,14 +541,12 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial) {
 
 void *NameToX509Name(NAME *nm) {
 	X509_NAME *xn;
-	if (nm == NULL) {
+	if (nm == NULL)
 		return NULL;
-	}
 
 	xn = X509_NAME_new();
-	if (xn == NULL) {
+	if (xn == NULL)
 		return NULL;
-	}
 
 	AddX509Name(xn, NID_commonName, nm->CommonName);
 	AddX509Name(xn, NID_organizationName, nm->Organization);
@@ -614,21 +563,18 @@ bool AddX509Name(void *xn, int nid, wchar_t *str) {
 	UINT utf8_size;
 	BYTE *utf8;
 	int encoding_type = MBSTRING_ASC;
-	if (xn == NULL || str == NULL) {
+	if (xn == NULL || str == NULL)
 		return false;
-	}
 
 	utf8_size = CalcUniToUtf8(str);
-	if (utf8_size == 0) {
+	if (utf8_size == 0)
 		return false;
-	}
 	utf8 = ZeroMalloc(utf8_size + 1);
 	UniToUtf8(utf8, utf8_size, str);
 	utf8[utf8_size] = 0;
 
-	if (utf8_size != UniStrLen(str)) {
+	if (utf8_size != UniStrLen(str))
 		encoding_type = MBSTRING_UTF8;
-	}
 
 	x509_name = (X509_NAME *)xn;
 	X509_NAME_add_entry_by_NID(x509_name, nid, encoding_type, utf8, utf8_size, -1, 0);
@@ -639,9 +585,8 @@ bool AddX509Name(void *xn, int nid, wchar_t *str) {
 
 void FreeX509Name(void *xn) {
 	X509_NAME *x509_name;
-	if (xn == NULL) {
+	if (xn == NULL)
 		return;
-	}
 
 	x509_name = (X509_NAME *)xn;
 	X509_NAME_free(x509_name);
@@ -651,56 +596,46 @@ NAME *NewName(wchar_t *common_name, wchar_t *organization, wchar_t *unit,
               wchar_t *country, wchar_t *state, wchar_t *local) {
 	NAME *nm = ZeroMalloc(sizeof(NAME));
 
-	if (UniIsEmptyStr(common_name) == false) {
+	if (UniIsEmptyStr(common_name) == false)
 		nm->CommonName = CopyUniStr(common_name);
-	}
 
-	if (UniIsEmptyStr(organization) == false) {
+	if (UniIsEmptyStr(organization) == false)
 		nm->Organization = CopyUniStr(organization);
-	}
 
-	if (UniIsEmptyStr(unit) == false) {
+	if (UniIsEmptyStr(unit) == false)
 		nm->Unit = CopyUniStr(unit);
-	}
 
-	if (UniIsEmptyStr(country) == false) {
+	if (UniIsEmptyStr(country) == false)
 		nm->Country = CopyUniStr(country);
-	}
 
-	if (UniIsEmptyStr(state) == false) {
+	if (UniIsEmptyStr(state) == false)
 		nm->State = CopyUniStr(state);
-	}
 
-	if (UniIsEmptyStr(local) == false) {
+	if (UniIsEmptyStr(local) == false)
 		nm->Local = CopyUniStr(local);
-	}
 
 	return nm;
 }
 
 bool CheckXDateNow(X *x) {
-	if (x == NULL) {
+	if (x == NULL)
 		return false;
-	}
 
 	return CheckXDate(x, SystemTime64());
 }
 
 bool CheckXDate(X *x, UINT64 current_system_time) {
-	if (x == NULL) {
+	if (x == NULL)
 		return false;
-	}
 
-	if (x->notBefore >= current_system_time || x->notAfter <= current_system_time) {
+	if (x->notBefore >= current_system_time || x->notAfter <= current_system_time)
 		return false;
-	}
 	return true;
 }
 
 static void LoadXDates(X *x) {
-	if (x == NULL) {
+	if (x == NULL)
 		return;
-	}
 
 	x->notBefore = Asn1TimeToUINT64((ASN1_TIME *)X509_get0_notBefore(x->x509));
 	x->notAfter = Asn1TimeToUINT64((ASN1_TIME *)X509_get0_notAfter(x->x509));
@@ -710,44 +645,38 @@ static void LoadXDates(X *x) {
 // UTCTime for 1950 to 2049, GeneralizedTime (4-digit year) from 2050, so a later time does not wrap
 bool UINT64ToAsn1Time(void *asn1_time, UINT64 t) {
 	FILETIME ft;
-	if (asn1_time == NULL) {
+	if (asn1_time == NULL)
 		return false;
-	}
 
 	// The UTC time as FILETIME ticks; whole seconds after 1970 are the time_t OpenSSL takes
 	UINT64ToFileTime(&ft, t);
 	UINT64 ticks = ((UINT64)ft.dwHighDateTime << 32) | (UINT64)ft.dwLowDateTime;
-	if (ticks < FILETIME_UNIX_EPOCH_TICKS + FILETIME_TICKS_PER_SEC) {
+	if (ticks < FILETIME_UNIX_EPOCH_TICKS + FILETIME_TICKS_PER_SEC)
 		return false;
-	}
 
 	return ASN1_TIME_set((ASN1_TIME *)asn1_time, (time_t)((ticks - FILETIME_UNIX_EPOCH_TICKS) / FILETIME_TICKS_PER_SEC)) != NULL;
 }
 
 UINT64 Asn1TimeToUINT64(void *asn1_time) {
 	SYSTEMTIME st;
-	if (asn1_time == NULL) {
+	if (asn1_time == NULL)
 		return 0;
-	}
 
-	if (Asn1TimeToSystem(&st, asn1_time) == false) {
+	if (Asn1TimeToSystem(&st, asn1_time) == false)
 		return 0;
-	}
 	return SystemToUINT64(&st);
 }
 
 bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time) {
 	struct tm tm;
-	if (s == NULL || asn1_time == NULL) {
+	if (s == NULL || asn1_time == NULL)
 		return false;
-	}
 
 	// UTCTime and GeneralizedTime in a certificate are both UTC ("Z", RFC 5280 section 4.1.2.5):
 	// ASN1_TIME_to_tm reads either form as UTC, so neither is moved by the local time zone
 	Zero(&tm, sizeof(tm));
-	if (ASN1_TIME_to_tm((const ASN1_TIME *)asn1_time, &tm) != 1) {
+	if (ASN1_TIME_to_tm((const ASN1_TIME *)asn1_time, &tm) != 1)
 		return false;
-	}
 
 	Zero(s, sizeof(SYSTEMTIME));
 	s->wYear = (USHORT)(tm.tm_year + 1900);
@@ -762,28 +691,24 @@ bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time) {
 }
 
 bool CheckXEx(X *x, X *x_issuer, bool check_name, bool check_date) {
-	if (x == NULL || x_issuer == NULL) {
+	if (x == NULL || x_issuer == NULL)
 		return false;
-	}
 
 	K *k = GetKFromX(x_issuer);
-	if (k == NULL) {
+	if (k == NULL)
 		return false;
-	}
 
 	bool ret = CheckSignature(x, k);
 
 	if (ret) {
 		if (check_name) {
-			if (CompareName(x->issuer_name, x_issuer->subject_name) == false) {
+			if (CompareName(x->issuer_name, x_issuer->subject_name) == false)
 				ret = false;
-			}
 		}
 
 		if (check_date) {
-			if (CheckXDateNow(x_issuer) == false) {
+			if (CheckXDateNow(x_issuer) == false)
 				ret = false;
-			}
 		}
 	}
 
@@ -793,9 +718,8 @@ bool CheckXEx(X *x, X *x_issuer, bool check_name, bool check_date) {
 }
 
 bool CheckSignature(X *x, K *k) {
-	if (x == NULL || k == NULL) {
+	if (x == NULL || k == NULL)
 		return false;
-	}
 
 	// X509_verify() returns 1 for a valid signature, 0 for a bad one and a negative value when it
 	// cannot check it (unknown signature algorithm, bad BIT STRING): only 1 is a valid signature
@@ -805,14 +729,12 @@ bool CheckSignature(X *x, K *k) {
 }
 
 K *GetKFromX(X *x) {
-	if (x == NULL) {
+	if (x == NULL)
 		return NULL;
-	}
 
 	EVP_PKEY *pkey = X509_get_pubkey(x->x509);
-	if (pkey == NULL) {
+	if (pkey == NULL)
 		return NULL;
-	}
 
 	K *k = ZeroMalloc(sizeof(K));
 	k->pkey = pkey;
@@ -821,26 +743,23 @@ K *GetKFromX(X *x) {
 }
 
 bool CompareName(NAME *n1, NAME *n2) {
-	if (n1 == NULL || n2 == NULL) {
+	if (n1 == NULL || n2 == NULL)
 		return false;
-	}
 
 	if (UniStrCmpi(n1->CommonName, n2->CommonName) == 0 &&
 	    UniStrCmpi(n1->Organization, n2->Organization) == 0 &&
 	    UniStrCmpi(n1->Unit, n2->Unit) == 0 &&
 	    UniStrCmpi(n1->Country, n2->Country) == 0 &&
 	    UniStrCmpi(n1->State, n2->State) == 0 &&
-	    UniStrCmpi(n1->Local, n2->Local) == 0) {
+	    UniStrCmpi(n1->Local, n2->Local) == 0)
 		return true;
-	}
 
 	return false;
 }
 
 static void FreeXNames(X *x) {
-	if (x == NULL) {
+	if (x == NULL)
 		return;
-	}
 
 	FreeName(x->issuer_name);
 	x->issuer_name = NULL;
@@ -850,9 +769,8 @@ static void FreeXNames(X *x) {
 }
 
 void FreeName(NAME *n) {
-	if (n == NULL) {
+	if (n == NULL)
 		return;
-	}
 
 	Free(n->CommonName);
 	Free(n->Organization);
@@ -867,9 +785,8 @@ void FreeName(NAME *n) {
 }
 
 static void LoadXNames(X *x) {
-	if (x == NULL) {
+	if (x == NULL)
 		return;
-	}
 
 	X509 *x509 = x->x509;
 	x->issuer_name = X509NameToName(X509_get_issuer_name(x509));
@@ -877,9 +794,8 @@ static void LoadXNames(X *x) {
 }
 
 NAME *X509NameToName(void *xn) {
-	if (xn == NULL) {
+	if (xn == NULL)
 		return NULL;
-	}
 
 	NAME *n = ZeroMalloc(sizeof(NAME));
 
@@ -899,34 +815,27 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid) {
 	bool is_utf_8 = false;
 	ASN1_OBJECT *obj;
 	const ASN1_STRING *data;
-	if (xn == NULL || nid == 0) {
+	if (xn == NULL || nid == 0)
 		return NULL;
-	}
 
 	Zero(txt, sizeof(txt));
 	int len = X509_NAME_get_text_by_NID(xn, nid, txt, sizeof(txt) - 2);
-	if (len <= 0) {
+	if (len <= 0)
 		return NULL;
-	}
 
 	obj = OBJ_nid2obj(nid);
-	if (obj == NULL) {
+	if (obj == NULL)
 		return NULL;
-	}
 	int index = X509_NAME_get_index_by_OBJ(xn, obj, -1);
-	if (index < 0) {
+	if (index < 0)
 		return NULL;
-	}
 	data = X509_NAME_ENTRY_get_data(X509_NAME_get_entry(xn, index));
-	if (data == NULL) {
+	if (data == NULL)
 		return NULL;
-	}
-	if (ASN1_STRING_type(data) == V_ASN1_BMPSTRING) {
+	if (ASN1_STRING_type(data) == V_ASN1_BMPSTRING)
 		unicode = true;
-	}
-	if (ASN1_STRING_type(data) == V_ASN1_UTF8STRING || ASN1_STRING_type(data) == V_ASN1_T61STRING) {
+	if (ASN1_STRING_type(data) == V_ASN1_UTF8STRING || ASN1_STRING_type(data) == V_ASN1_T61STRING)
 		is_utf_8 = true;
-	}
 
 	// Scan only the bytes X509_NAME_get_text_by_NID copied (at most sizeof(txt) - 3): the field
 	// comes from the peer's certificate, and a scan sized from it ran past txt
@@ -955,45 +864,39 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid) {
 }
 
 bool CompareX(X *x1, X *x2) {
-	if (x1 == NULL || x2 == NULL) {
+	if (x1 == NULL || x2 == NULL)
 		return false;
-	}
 
 	return (X509_cmp(x1->x509, x2->x509) == 0);
 }
 
 bool CheckXandK(X *x, K *k) {
-	if (x == NULL || k == NULL) {
+	if (x == NULL || k == NULL)
 		return false;
-	}
 
-	if (X509_check_private_key(x->x509, k->pkey) != 0) {
+	if (X509_check_private_key(x->x509, k->pkey) != 0)
 		return true;
-	} else {
+	else
 		return false;
-	}
 }
 
 void FreeX(X *x) {
-	if (x == NULL) {
+	if (x == NULL)
 		return;
-	}
 
 	FreeXNames(x);
 
 
 	FreeXSerial(x->serial);
 
-	if (x->do_not_free == false) {
+	if (x->do_not_free == false)
 		FreeX509(x->x509);
-	}
 	Free(x);
 }
 
 void FreeXList(LIST *chain) {
-	if (chain == NULL) {
+	if (chain == NULL)
 		return;
-	}
 
 	LockList(chain);
 	{
@@ -1008,17 +911,15 @@ void FreeXList(LIST *chain) {
 }
 
 void FreeX509(X509 *x509) {
-	if (x509 == NULL) {
+	if (x509 == NULL)
 		return;
-	}
 
 	X509_free(x509);
 }
 
 void GetXDigest(X *x, UCHAR *buf, bool sha1) {
-	if (x == NULL) {
+	if (x == NULL)
 		return;
-	}
 
 	if (sha1 == false) {
 		UINT size = MD5_SIZE;
@@ -1033,9 +934,8 @@ void GetXDigest(X *x, UCHAR *buf, bool sha1) {
 // A certificate it refuses (NULL) stays the caller's, who frees it or leaves it to its owner.
 X *X509ToX(X509 *x509) {
 	ASN1_INTEGER *s;
-	if (x509 == NULL) {
+	if (x509 == NULL)
 		return NULL;
-	}
 
 	X *x = ZeroMalloc(sizeof(X));
 	x->x509 = x509;
@@ -1049,16 +949,14 @@ X *X509ToX(X509 *x509) {
 	if (CompareName(x->issuer_name, x->subject_name)) {
 		K *pubkey = GetKFromX(x);
 		if (pubkey != NULL) {
-			if (CheckSignature(x, pubkey)) {
+			if (CheckSignature(x, pubkey))
 				x->root_cert = true;
-			}
 			FreeK(pubkey);
 		}
 	}
 
-	if (X509_get_ext_by_NID(x509, NID_basic_constraints, -1) != -1) {
+	if (X509_get_ext_by_NID(x509, NID_basic_constraints, -1) != -1)
 		x->has_basic_constraints = true;
-	}
 
 	// Get the "Certification Authority Issuer" (1.3.6.1.5.5.7.48.2) field value
 	if (x->root_cert == false) {
@@ -1103,18 +1001,16 @@ X *X509ToX(X509 *x509) {
 
 	FreeK(k);
 
-	if (type == EVP_PKEY_RSA) {
+	if (type == EVP_PKEY_RSA)
 		x->is_compatible_bit = (x->bits == 1024 || x->bits == 1536 || x->bits == 2048 || x->bits == 3072 || x->bits == 4096);
-	}
 
 	return x;
 }
 
 X *GetIssuerFromList(LIST *cert_list, X *cert) {
 	X *ret = NULL;
-	if (cert_list == NULL || cert == NULL) {
+	if (cert_list == NULL || cert == NULL)
 		return NULL;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(cert_list); i++) {
 		X *x = LIST_DATA(cert_list, i);
@@ -1123,16 +1019,14 @@ X *GetIssuerFromList(LIST *cert_list, X *cert) {
 				K *k = GetKFromX(x);
 
 				if (k != NULL) {
-					if (CheckSignature(cert, k)) {
+					if (CheckSignature(cert, k))
 						ret = x;
-					}
 					FreeK(k);
 				}
 			}
 		}
-		if (CompareX(x, cert)) {
+		if (CompareX(x, cert))
 			ret = x;
-		}
 	}
 
 	return ret;

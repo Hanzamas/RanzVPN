@@ -15,9 +15,8 @@
 
 // The log setting of a new hub: security and packet logs on, switched daily, TCP connection and DHCP packets logged by header
 void SetDefaultHubLog(HUB_LOG *g) {
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	Zero(g, sizeof(HUB_LOG));
 	g->SaveSecurityLog = true;
@@ -31,9 +30,8 @@ void SetDefaultHubLog(HUB_LOG *g) {
 void SLog(CEDAR *c, char *name, ...) {
 	wchar_t buf[MAX_SIZE * 2];
 	va_list args;
-	if (name == NULL) {
+	if (name == NULL)
 		return;
-	}
 
 	va_start(args, name);
 	LogFormat(buf, sizeof(buf), name, args);
@@ -46,34 +44,30 @@ void ALog(ADMIN *a, HUB *h, char *name, ...) {
 	wchar_t buf[MAX_SIZE * 2];
 	wchar_t tmp[MAX_SIZE * 2];
 	va_list args;
-	if (a == NULL || name == NULL) {
+	if (a == NULL || name == NULL)
 		return;
-	}
 
 	va_start(args, name);
 	LogFormat(buf, sizeof(buf), name, args);
 
-	if (h == NULL) {
+	if (h == NULL)
 		UniFormat(tmp, sizeof(tmp), _UU("LA_TAG_1"), a->Tag);
-	} else {
+	else
 		UniFormat(tmp, sizeof(tmp), _UU("LA_TAG_2"), a->Tag, h->Name);
-	}
 
 	UniStrCat(tmp, sizeof(tmp), buf);
 
-	if (h == NULL) {
+	if (h == NULL)
 		WriteServerLog(a->Server->Cedar, tmp);
-	} else {
+	else
 		WriteHubLog(h, tmp);
-	}
 	va_end(args);
 }
 void HLog(HUB *h, char *name, ...) {
 	wchar_t buf[MAX_SIZE * 2];
 	va_list args;
-	if (name == NULL) {
+	if (name == NULL)
 		return;
-	}
 
 	va_start(args, name);
 	LogFormat(buf, sizeof(buf), name, args);
@@ -84,71 +78,60 @@ void HLog(HUB *h, char *name, ...) {
 
 void WriteHubLog(HUB *h, wchar_t *str) {
 	wchar_t buf[MAX_SIZE * 2];
-	if (h == NULL || str == NULL) {
+	if (h == NULL || str == NULL)
 		return;
-	}
 
 	SERVER *s = h->Cedar->Server;
 	UINT syslog_status = SiGetSysLogSaveStatus(s);
 
 	UniFormat(buf, sizeof(buf), L"[HUB \"%S\"] %s", h->Name, str);
 
-	if (syslog_status == SYSLOG_NONE) {
+	if (syslog_status == SYSLOG_NONE)
 		WriteServerLog(h->Cedar, buf);
-	}
 
-	if (h->LogSetting.SaveSecurityLog == false) {
+	if (h->LogSetting.SaveSecurityLog == false)
 		return;
-	}
 
-	if (syslog_status == SYSLOG_SERVER_AND_HUB_SECURITY_LOG || syslog_status == SYSLOG_SERVER_AND_HUB_ALL_LOG) {
+	if (syslog_status == SYSLOG_SERVER_AND_HUB_SECURITY_LOG || syslog_status == SYSLOG_SERVER_AND_HUB_ALL_LOG)
 		SiWriteSysLog(s, "SECURITY_LOG", h->Name, str);
-	} else {
+	else
 		InsertUnicodeRecord(h->SecurityLogger, str);
-	}
 }
 
 void WriteServerLog(CEDAR *c, wchar_t *str) {
-	if (c == NULL || str == NULL) {
+	if (c == NULL || str == NULL)
 		return;
-	}
 
 	SERVER *s = c->Server;
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
-	if (IsDebug()) {
+	if (IsDebug())
 		UniPrint(L"LOG: %s\n", str);
-	}
 
-	if (SiGetSysLogSaveStatus(s) != SYSLOG_NONE) {
+	if (SiGetSysLogSaveStatus(s) != SYSLOG_NONE)
 		SiWriteSysLog(s, "SERVER_LOG", NULL, str);
-	} else {
+	else
 		InsertUnicodeRecord(s->Logger, str);
-	}
 }
 
 bool CheckLogFileNameFromEnumList(LIST *o, char *name) {
 	LOG_FILE t;
-	if (o == NULL || name == NULL) {
+	if (o == NULL || name == NULL)
 		return false;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.Path, sizeof(t.Path), name);
 
-	if (Search(o, &t) == NULL) {
+	if (Search(o, &t) == NULL)
 		return false;
-	}
 
 	return true;
 }
 
 void FreeEnumLogFile(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LOG_FILE *f = LIST_DATA(o, i);
@@ -189,9 +172,8 @@ LIST *EnumLogFile(char *hubname) {
 	char dir[MAX_PATH];
 	LIST *o = NewListFast(CmpLogFile);
 
-	if (StrLen(hubname) == 0) {
+	if (StrLen(hubname) == 0)
 		hubname = NULL;
-	}
 
 	GetExeDir(exe_dir, sizeof(exe_dir));
 
@@ -211,9 +193,8 @@ LIST *EnumLogFile(char *hubname) {
 void EnumLogFileDir(LIST *o, char *dirname) {
 	char exe_dir[MAX_PATH];
 	char dir_full_path[MAX_PATH];
-	if (o == NULL || dirname == NULL) {
+	if (o == NULL || dirname == NULL)
 		return;
-	}
 
 	GetExeDir(exe_dir, sizeof(exe_dir));
 	Format(dir_full_path, sizeof(dir_full_path), "%s/%s", exe_dir, dirname);
@@ -244,14 +225,12 @@ void EnumLogFileDir(LIST *o, char *dirname) {
 }
 
 int CmpLogFile(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	LOG_FILE *f1 = *(LOG_FILE **)p1;
 	LOG_FILE *f2 = *(LOG_FILE **)p2;
-	if (f1 == NULL || f2 == NULL) {
+	if (f1 == NULL || f2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(f1->Path, f2->Path);
 }
@@ -265,11 +244,10 @@ void ServerLogDir(char *dir, UINT size) {
 // The directory of a security or packet log: the one of the hub hubname, or with hubname NULL or empty the one
 // that holds the logs of every hub
 static void HubLogDir(char *dir, UINT size, char *base, char *hubname) {
-	if (IsEmptyStr(hubname)) {
+	if (IsEmptyStr(hubname))
 		StrCpy(dir, size, base);
-	} else {
+	else
 		Format(dir, size, "%s/%s", base, hubname);
-	}
 }
 
 void HubSecurityLogDir(char *dir, UINT size, char *hubname) {

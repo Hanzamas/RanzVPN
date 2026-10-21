@@ -16,34 +16,29 @@
 static BUF *RsaPublicToBuf(K *k) {
 	const RSA *rsa;
 	const BIGNUM *n;
-	if (k == NULL || k->pkey == NULL) {
+	if (k == NULL || k->pkey == NULL)
 		return NULL;
-	}
 
 	rsa = EVP_PKEY_get0_RSA(k->pkey);
-	if (rsa == NULL) {
+	if (rsa == NULL)
 		return NULL;
-	}
 
 	RSA_get0_key(rsa, &n, NULL, NULL);
-	if (n == NULL) {
+	if (n == NULL)
 		return NULL;
-	}
 
 	BUF *b = BigNumToBuf(n);
 
-	if (b == NULL) {
+	if (b == NULL)
 		return NULL;
-	}
 
 	return b;
 }
 
 static UINT RsaPublicSize(K *k) {
 	BUF *b = RsaPublicToBuf(k);
-	if (b == NULL) {
+	if (b == NULL)
 		return 0;
-	}
 
 	UINT ret = b->Size;
 
@@ -53,9 +48,8 @@ static UINT RsaPublicSize(K *k) {
 }
 
 BUF *BigNumToBuf(const BIGNUM *bn) {
-	if (bn == NULL) {
+	if (bn == NULL)
 		return NULL;
-	}
 
 	UINT size = BN_num_bytes(bn);
 	UCHAR *tmp = ZeroMalloc(size);
@@ -73,13 +67,11 @@ BUF *BigNumToBuf(const BIGNUM *bn) {
 // The clone holds its own reference to the key, FreeK releases exactly one. A key is never changed
 // after it is loaded or generated, so sharing the EVP_PKEY is safe across threads.
 K *CloneK(K *k) {
-	if (k == NULL || k->pkey == NULL) {
+	if (k == NULL || k->pkey == NULL)
 		return NULL;
-	}
 
-	if (EVP_PKEY_up_ref(k->pkey) != 1) {
+	if (EVP_PKEY_up_ref(k->pkey) != 1)
 		return NULL;
-	}
 
 	K *ret = ZeroMalloc(sizeof(K));
 	ret->pkey = k->pkey;
@@ -97,25 +89,21 @@ bool RsaVerifyEx(void *data, UINT data_size, void *sign, UINT sign_size, K *k) {
 	int key_size;
 	bool ret = false;
 	if (data == NULL || data_size == 0 || sign == NULL || k == NULL || k->pkey == NULL || k->private_key != false ||
-	    EVP_PKEY_base_id(k->pkey) != EVP_PKEY_RSA) {
+	    EVP_PKEY_base_id(k->pkey) != EVP_PKEY_RSA)
 		return false;
-	}
 
 	key_size = EVP_PKEY_size(k->pkey);
-	if (key_size <= 0 || sign_size != (UINT)key_size) {
+	if (key_size <= 0 || sign_size != (UINT)key_size)
 		return false;
-	}
 
 	md_ctx = EVP_MD_CTX_new();
-	if (md_ctx == NULL) {
+	if (md_ctx == NULL)
 		return false;
-	}
 
 	if (EVP_DigestVerifyInit(md_ctx, &pkey_ctx, EVP_sha1(), NULL, k->pkey) == 1 &&
 	    EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PADDING) == 1 &&
-	    EVP_DigestVerify(md_ctx, sign, sign_size, data, data_size) == 1) {
+	    EVP_DigestVerify(md_ctx, sign, sign_size, data, data_size) == 1)
 		ret = true;
-	}
 
 	EVP_MD_CTX_free(md_ctx);
 
@@ -132,27 +120,23 @@ bool RsaSignEx(void *dst, UINT dst_size, void *src, UINT src_size, K *k) {
 	int key_size;
 	bool ret = false;
 	if (dst == NULL || src == NULL || src_size == 0 || k == NULL || k->pkey == NULL ||
-	    EVP_PKEY_base_id(k->pkey) != EVP_PKEY_RSA) {
+	    EVP_PKEY_base_id(k->pkey) != EVP_PKEY_RSA)
 		return false;
-	}
 
 	key_size = EVP_PKEY_size(k->pkey);
-	if (key_size <= 0 || (UINT)key_size > dst_size) {
+	if (key_size <= 0 || (UINT)key_size > dst_size)
 		return false;
-	}
 
 	md_ctx = EVP_MD_CTX_new();
-	if (md_ctx == NULL) {
+	if (md_ctx == NULL)
 		return false;
-	}
 
 	sign_size = (size_t)key_size;
 	if (EVP_DigestSignInit(md_ctx, &pkey_ctx, EVP_sha1(), NULL, k->pkey) == 1 &&
 	    EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PADDING) == 1 &&
 	    EVP_DigestSign(md_ctx, dst, &sign_size, src, src_size) == 1 &&
-	    sign_size == (size_t)key_size) {
+	    sign_size == (size_t)key_size)
 		ret = true;
-	}
 
 	EVP_MD_CTX_free(md_ctx);
 
@@ -169,17 +153,14 @@ bool RsaGen(K **priv, K **pub, UINT bit) {
 	BIO *bio;
 	char errbuf[MAX_SIZE];
 	UINT size = 0;
-	if (priv == NULL || pub == NULL) {
+	if (priv == NULL || pub == NULL)
 		return false;
-	}
-	if (bit == 0) {
+	if (bit == 0)
 		bit = RSA_KEY_SIZE;
-	}
 
 	e = BN_new();
-	if (e == NULL) {
+	if (e == NULL)
 		return false;
-	}
 	ret = BN_set_word(e, RSA_F4);
 	if (ret == 0) {
 		BN_free(e);
@@ -188,11 +169,10 @@ bool RsaGen(K **priv, K **pub, UINT bit) {
 	}
 
 	rsa = RSA_new();
-	if (rsa != NULL) {
+	if (rsa != NULL)
 		ret = RSA_generate_key_ex(rsa, bit, e, NULL);
-	} else {
+	else
 		ret = 0;
-	}
 	BN_free(e);
 	if (ret == 0) {
 		Debug("RSA_generate_key_ex: err=%s\n", ERR_error_string(ERR_get_error(), errbuf));
@@ -237,18 +217,16 @@ bool RsaGen(K **priv, K **pub, UINT bit) {
 }
 
 void FreeK(K *k) {
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	FreePKey(k->pkey);
 	Free(k);
 }
 
 void FreePKey(EVP_PKEY *pkey) {
-	if (pkey == NULL) {
+	if (pkey == NULL)
 		return;
-	}
 
 	EVP_PKEY_free(pkey);
 }

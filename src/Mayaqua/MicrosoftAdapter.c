@@ -41,18 +41,15 @@
 
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir) {
 	char tmp[MAX_PATH];
-	if (title == NULL || exe == NULL) {
+	if (title == NULL || exe == NULL)
 		return;
-	}
-	if (dir == NULL || IsEmptyStr(dir)) {
+	if (dir == NULL || IsEmptyStr(dir))
 		dir = MsGetExeDirName();
-	}
 
 	ConbinePath(tmp, sizeof(tmp), dir, exe);
 
-	if (IsFileExists(tmp) == false) {
+	if (IsFileExists(tmp) == false)
 		return;
-	}
 
 	MsRegistWindowsFirewallEx(title, tmp);
 }
@@ -65,13 +62,11 @@ void MsRegistWindowsFirewallEx(char *title, char *exe) {
 	UCHAR hashbin[SHA1_SIZE];
 	UCHAR file_hash_bin[SHA1_SIZE];
 	char file_hash_str[MAX_SIZE];
-	if (title == NULL || exe == NULL) {
+	if (title == NULL || exe == NULL)
 		return;
-	}
 
-	if (MsIsAdmin() == false) {
+	if (MsIsAdmin() == false)
 		return;
-	}
 
 	char *data = "Option Explicit\r\n\r\nConst PROFILES_ALL = 7\r\nConst NET_FW_ACTION_ALLOWNET_FW_ACTION_ALLOW = 1\r\n"
 	             "\r\nDim policy2\r\nDim rules\r\nDim new_rule\r\n\r\nOn Error Resume Next\r\n\r\n"
@@ -102,9 +97,8 @@ void MsRegistWindowsFirewallEx(char *title, char *exe) {
 		Format(cscript, sizeof(cscript), "%s\\cscript.exe", MsGetSystem32Dir());
 		Format(arg, sizeof(arg), "\"%s\"", filename);
 
-		if (Win32Run(cscript, arg, true, false)) {
+		if (Win32Run(cscript, arg, true, false))
 			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SOFTETHER_FW_SCRIPT_HASH, file_hash_str, 1, false);
-		}
 	}
 
 	Free(tmp);
@@ -112,9 +106,8 @@ void MsRegistWindowsFirewallEx(char *title, char *exe) {
 
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid) {
 	MS_ADAPTER *ret = NULL;
-	if (o == NULL || guid == NULL) {
+	if (o == NULL || guid == NULL)
 		return NULL;
-	}
 
 	for (UINT i = 0; i < o->Num; i++) {
 		if (StrCmpi(o->Adapters[i]->Guid, guid) == 0) {
@@ -133,21 +126,18 @@ MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid) {
 // and dial-up, loopback and wireless interfaces are not, and neither are software interfaces
 // that do not report their physical medium, such as the WAN Miniport interfaces of RAS
 bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface) {
-	if (type != IF_TYPE_ETHERNET_CSMACD || media_type != NdisMedium802_3) {
+	if (type != IF_TYPE_ETHERNET_CSMACD || media_type != NdisMedium802_3)
 		return false;
-	}
 
-	if (physical_medium_type == NdisPhysicalMedium802_3) {
+	if (physical_medium_type == NdisPhysicalMedium802_3)
 		return true;
-	}
 
 	return physical_medium_type == NdisPhysicalMediumUnspecified && hardware_interface;
 }
 
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a) {
-	if (a == NULL) {
+	if (a == NULL)
 		return NULL;
-	}
 
 	MS_ADAPTER *ret = ZeroMalloc(sizeof(MS_ADAPTER));
 	Copy(ret, a, sizeof(MS_ADAPTER));
@@ -159,9 +149,8 @@ MS_ADAPTER_LIST *MsCreateAdapterList() {
 	PMIB_IF_TABLE2 table;
 
 	UINT retcode = GetIfTable2(&table);
-	if (retcode != NO_ERROR || table == NULL) {
+	if (retcode != NO_ERROR || table == NULL)
 		return ZeroMalloc(sizeof(MS_ADAPTER_LIST));
-	}
 
 	LIST *o = NewListFast(NULL);
 
@@ -173,11 +162,10 @@ MS_ADAPTER_LIST *MsCreateAdapterList() {
 		{
 			{
 				for (UINT j = 1;; j++) {
-					if (j == 1) {
+					if (j == 1)
 						UniStrCpy(title, sizeof(title), r->Description);
-					} else {
+					else
 						UniFormat(title, sizeof(title), L"%s (%u)", r->Description, j);
-					}
 
 					bool exists = false;
 
@@ -190,9 +178,8 @@ MS_ADAPTER_LIST *MsCreateAdapterList() {
 						}
 					}
 
-					if (exists == false) {
+					if (exists == false)
 						break;
-					}
 				}
 
 				a = ZeroMalloc(sizeof(MS_ADAPTER));
@@ -235,22 +222,19 @@ MS_ADAPTER_LIST *MsCreateAdapterList() {
 }
 
 void MsFreeAdapterList(MS_ADAPTER_LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
-	for (UINT i = 0; i < o->Num; i++) {
+	for (UINT i = 0; i < o->Num; i++)
 		MsFreeAdapter(o->Adapters[i]);
-	}
 	Free(o->Adapters);
 
 	Free(o);
 }
 
 void MsFreeAdapter(MS_ADAPTER *a) {
-	if (a == NULL) {
+	if (a == NULL)
 		return;
-	}
 
 	Free(a);
 }
@@ -259,14 +243,12 @@ void MsFreeAdapter(MS_ADAPTER *a) {
 static const GUID ms_netclass_guid = {0x4d36e972, 0xe325, 0x11ce, {0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18}};
 
 static int MsNetClassCmp(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	MS_NETCLASS_DEVICE *d1 = *(MS_NETCLASS_DEVICE **)p1;
 	MS_NETCLASS_DEVICE *d2 = *(MS_NETCLASS_DEVICE **)p2;
-	if (d1 == NULL || d2 == NULL) {
+	if (d1 == NULL || d2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(d1->Guid, d2->Guid);
 }
@@ -280,9 +262,8 @@ static void MsNetClassGetProperty(char *dst, UINT size, HDEVINFO h, SP_DEVINFO_D
 	Zero(tmp, sizeof(tmp));
 
 	if (SetupDiGetDeviceRegistryPropertyW(h, d, property, &type, (BYTE *)tmp, sizeof(tmp) - sizeof(wchar_t), NULL) &&
-	    type == REG_SZ) {
+	    type == REG_SZ)
 		UniToStr(dst, size, tmp);
-	}
 }
 
 // The present devices of the network adapter setup class in one SetupAPI pass, keyed by their
@@ -295,9 +276,8 @@ LIST *MsNetClassEnum() {
 	HDEVINFO h;
 
 	h = SetupDiGetClassDevsW(&ms_netclass_guid, NULL, NULL, DIGCF_PRESENT);
-	if (h == INVALID_HANDLE_VALUE) {
+	if (h == INVALID_HANDLE_VALUE)
 		return o;
-	}
 
 	for (UINT i = 0;; i++) {
 		SP_DEVINFO_DATA d;
@@ -306,9 +286,8 @@ LIST *MsNetClassEnum() {
 		Zero(&d, sizeof(d));
 		d.cbSize = sizeof(d);
 
-		if (SetupDiEnumDeviceInfo(h, i, &d) == false) {
+		if (SetupDiEnumDeviceInfo(h, i, &d) == false)
 			break;
-		}
 
 		MS_NETCLASS_DEVICE *e = ZeroMalloc(sizeof(MS_NETCLASS_DEVICE));
 
@@ -320,9 +299,8 @@ LIST *MsNetClassEnum() {
 
 			Zero(tmp, sizeof(tmp));
 			if (RegQueryValueExW(key, L"NetCfgInstanceId", NULL, &type, (BYTE *)tmp, &size) == ERROR_SUCCESS &&
-			    type == REG_SZ) {
+			    type == REG_SZ)
 				UniToStr(e->Guid, sizeof(e->Guid), tmp);
-			}
 
 			RegCloseKey(key);
 		}
@@ -339,9 +317,8 @@ LIST *MsNetClassEnum() {
 		Format(e->ClassKey, sizeof(e->ClassKey), "SYSTEM\\CurrentControlSet\\Control\\Class\\%s", e->ShortKey);
 
 		Zero(tmp, sizeof(tmp));
-		if (SetupDiGetDeviceInstanceIdW(h, &d, tmp, MAX_SIZE - 1, NULL)) {
+		if (SetupDiGetDeviceInstanceIdW(h, &d, tmp, MAX_SIZE - 1, NULL))
 			UniToStr(e->DeviceInstanceId, sizeof(e->DeviceInstanceId), tmp);
-		}
 
 		MsNetClassGetProperty(e->Service, sizeof(e->Service), h, &d, SPDRP_SERVICE);
 
@@ -371,9 +348,8 @@ LIST *MsNetClassEnum() {
 // The device of the network adapter GUID guid in the table of MsNetClassEnum, or NULL
 MS_NETCLASS_DEVICE *MsNetClassFind(LIST *o, char *guid) {
 	MS_NETCLASS_DEVICE t;
-	if (o == NULL || guid == NULL) {
+	if (o == NULL || guid == NULL)
 		return NULL;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.Guid, sizeof(t.Guid), guid);
@@ -382,13 +358,11 @@ MS_NETCLASS_DEVICE *MsNetClassFind(LIST *o, char *guid) {
 }
 
 void MsNetClassFree(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
-	for (UINT i = 0; i < LIST_NUM(o); i++) {
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 		Free(LIST_DATA(o, i));
-	}
 
 	ReleaseList(o);
 }

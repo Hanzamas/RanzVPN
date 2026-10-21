@@ -77,17 +77,14 @@ static USHORT IpChecksumFinish(UINT64 sum) {
 
 USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data, UINT size, UINT real_size) {
 	IPV4_PSEUDO_HEADER ph;
-	if (data == NULL && size != 0) {
+	if (data == NULL && size != 0)
 		return 0;
-	}
 
-	if (real_size == 0) {
+	if (real_size == 0)
 		real_size = size;
-	}
 
-	if (real_size == INFINITE) {
+	if (real_size == INFINITE)
 		real_size = 0;
-	}
 
 	ph.SrcIP = src_ip;
 	ph.DstIP = dst_ip;
@@ -103,17 +100,14 @@ USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data,
 
 USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol, void *data, UINT size, UINT real_size) {
 	IPV6_PSEUDO_HEADER ph;
-	if (data == NULL && size != 0) {
+	if (data == NULL && size != 0)
 		return 0;
-	}
 
-	if (real_size == 0) {
+	if (real_size == 0)
 		real_size = size;
-	}
 
-	if (real_size == INFINITE) {
+	if (real_size == INFINITE)
 		real_size = 0;
-	}
 
 	Zero(&ph, sizeof(ph));
 	Copy(&ph.SrcAddress, src_ip, sizeof(IPV6_ADDR));
@@ -150,15 +144,13 @@ static void FixOffloadChecksum(const PKT *p, UCHAR protocol, void *l4, void *che
 
 	Copy(&checksum, checksum_field, sizeof(checksum));
 
-	if (protocol == IP_PROTO_UDP && checksum == 0) {
+	if (protocol == IP_PROTO_UDP && checksum == 0)
 		return;
-	}
 
 	USHORT offloading_checksum = CalcL4Checksum(p, protocol, NULL, 0, len);
 
-	if (checksum != 0 && checksum != offloading_checksum && checksum != (USHORT)~offloading_checksum) {
+	if (checksum != 0 && checksum != offloading_checksum && checksum != (USHORT)~offloading_checksum)
 		return;
-	}
 
 	checksum = 0;
 	Copy(checksum_field, &checksum, sizeof(checksum));
@@ -175,20 +167,17 @@ void CorrectChecksum(PKT *p) {
 	bool udp_checked;
 	bool last_fragment;
 
-	if (p == NULL) {
+	if (p == NULL)
 		return;
-	}
 
 	if (p->TypeL3 == L3_IPV4) {
 		IPV4_HEADER *v4 = p->L3.IPv4Header;
 
-		if (v4 == NULL) {
+		if (v4 == NULL)
 			return;
-		}
 
-		if (v4->Checksum == 0x0000) {
+		if (v4->Checksum == 0x0000)
 			v4->Checksum = IpChecksum(v4, IPV4_GET_HEADER_LEN(v4) * 4);
-		}
 
 		payload_size = p->IPv4PayloadSize;
 		last_fragment = ((IPV4_GET_FLAGS(v4) & 0x01) == 0);
@@ -199,9 +188,8 @@ void CorrectChecksum(PKT *p) {
 	} else if (p->TypeL3 == L3_IPV6) {
 		IPV6_HEADER_PACKET_INFO *v6info = &p->IPv6HeaderPacketInfo;
 
-		if (p->L3.IPv6Header == NULL) {
+		if (p->L3.IPv6Header == NULL)
 			return;
-		}
 
 		payload_size = v6info->PayloadSize;
 		last_fragment = (v6info->FragmentHeader == NULL || ((IPV6_GET_FLAGS(v6info->FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS) == 0));
@@ -214,9 +202,8 @@ void CorrectChecksum(PKT *p) {
 	if (p->TypeL4 == L4_TCP) {
 		TCP_HEADER *tcp = p->L4.TCPHeader;
 
-		if (tcp_checked && tcp != NULL) {
+		if (tcp_checked && tcp != NULL)
 			FixOffloadChecksum(p, IP_PROTO_TCP, tcp, &tcp->Checksum, payload_size, true);
-		}
 	} else if (p->TypeL4 == L4_UDP) {
 		UDP_HEADER *udp = p->L4.UDPHeader;
 

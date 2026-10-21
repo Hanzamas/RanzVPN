@@ -42,11 +42,10 @@ CALLSTACK_DATA *Win32GetCallStack() {
 		n->line = 0;
 		n->filename[0] = 0;
 
-		if (s == NULL) {
+		if (s == NULL)
 			cs = n;
-		} else {
+		else
 			s->next = n;
-		}
 		s = n;
 	}
 
@@ -71,13 +70,11 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s) {
 	DWORD disp32 = 0; // The DWORD that SymGetLineFromAddrW64 writes
 	wchar_t *file_name;
 	int size;
-	if (s == NULL) {
+	if (s == NULL)
 		return false;
-	}
 
-	if (s->symbol_cache) {
+	if (s->symbol_cache)
 		return true;
-	}
 
 	Zero(&sym, sizeof(sym));
 	sym.info.SizeOfStruct = sizeof(sym.info);
@@ -106,11 +103,10 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s) {
 		// The file name without its directory
 		file_name = wcsrchr(line.FileName, L'\\');
 		file_name = (file_name == NULL) ? line.FileName : file_name + 1;
-		if (WideCharToMultiByte(CP_ACP, 0, file_name, -1, s->filename, sizeof(s->filename), NULL, NULL) != 0) {
+		if (WideCharToMultiByte(CP_ACP, 0, file_name, -1, s->filename, sizeof(s->filename), NULL, NULL) != 0)
 			s->line = line.LineNumber;
-		} else {
+		else
 			s->filename[0] = 0;
-		}
 	}
 
 	s->symbol_cache = true;

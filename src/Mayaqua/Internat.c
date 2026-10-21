@@ -14,25 +14,22 @@
 #include <wchar.h>
 
 bool UniIsCharInStr(const wchar_t *str, wchar_t c) {
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	// wcschr also finds the terminator, which is not a character of the string
 	return c != L'\0' && wcschr(str, c) != NULL;
 }
 
 static UNI_TOKEN_LIST *UniListToTokenList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	UNI_TOKEN_LIST *t = ZeroMalloc(sizeof(UNI_TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(wchar_t *) * t->NumTokens);
-	for (UINT i = 0; i < LIST_NUM(o); i++) {
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 		t->Token[i] = CopyUniStr(LIST_DATA(o, i));
-	}
 
 	return t;
 }
@@ -42,9 +39,8 @@ void UniFreeStrList(LIST *o) {
 }
 
 wchar_t *UniNormalizeCrlf(const wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return NULL;
-	}
 
 	UINT len = UniStrLen(str);
 	UINT ret_size = sizeof(wchar_t) * (len + 32) * 2;
@@ -57,9 +53,8 @@ wchar_t *UniNormalizeCrlf(const wchar_t *str) {
 
 		switch (c) {
 		case L'\r':
-			if (str[i + 1] == L'\n') {
+			if (str[i + 1] == L'\n')
 				i++;
-			}
 			ret[wp++] = L'\r';
 			ret[wp++] = L'\n';
 			break;
@@ -81,48 +76,40 @@ wchar_t *UniNormalizeCrlf(const wchar_t *str) {
 }
 
 bool UniEndWith(const wchar_t *str, const wchar_t *key) {
-	if (str == NULL || key == NULL) {
+	if (str == NULL || key == NULL)
 		return false;
-	}
 
 	UINT str_len = UniStrLen(str);
 	UINT key_len = UniStrLen(key);
-	if (str_len < key_len) {
+	if (str_len < key_len)
 		return false;
-	}
 
-	if (UniStrCmpi(str + (str_len - key_len), key) == 0) {
+	if (UniStrCmpi(str + (str_len - key_len), key) == 0)
 		return true;
-	} else {
+	else
 		return false;
-	}
 }
 
 bool UniStartWith(const wchar_t *str, const wchar_t *key) {
-	if (str == NULL || key == NULL) {
+	if (str == NULL || key == NULL)
 		return false;
-	}
 
 	// An empty str or key never matches
-	if (key[0] == L'\0') {
+	if (key[0] == L'\0')
 		return false;
-	}
 
 	// Compares in place with the ASCII-only fold of UniStrCmpi, and stops at the end of str
-	for (UINT i = 0; key[i] != L'\0'; i++) {
-		if (str[i] == L'\0' || UniToUpper(str[i]) != UniToUpper(key[i])) {
+	for (UINT i = 0; key[i] != L'\0'; i++)
+		if (str[i] == L'\0' || UniToUpper(str[i]) != UniToUpper(key[i]))
 			return false;
-		}
-	}
 
 	return true;
 }
 
 void UniToStr3(wchar_t *str, UINT size, UINT64 value) {
 	char tmp[MAX_SIZE];
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	ToStr3(tmp, sizeof(tmp), value);
 
@@ -130,32 +117,27 @@ void UniToStr3(wchar_t *str, UINT size, UINT64 value) {
 }
 
 UINT UniStrWidth(const wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	UINT ret = 0;
 	UINT len = UniStrLen(str);
-	for (UINT i = 0; i < len; i++) {
-		if (str[i] <= 255) {
+	for (UINT i = 0; i < len; i++)
+		if (str[i] <= 255)
 			ret++;
-		} else {
+		else
 			ret += 2;
-		}
-	}
 	return ret;
 }
 
 bool UniIsEmptyStr(const wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return true;
-	}
 
 	// Empty when nothing but blanks (the characters UniTrim removes) precedes the terminator
 	UINT i = 0;
-	while (str[i] == L' ' || str[i] == L'\t') {
+	while (str[i] == L' ' || str[i] == L'\t')
 		i++;
-	}
 
 	return str[i] == L'\0';
 }
@@ -171,9 +153,8 @@ UNI_TOKEN_LIST *UniNullToken() {
 UNI_TOKEN_LIST *UniParseCmdLine(const wchar_t *str) {
 	wchar_t c;
 	bool ignore_space = false;
-	if (str == NULL) {
+	if (str == NULL)
 		return UniNullToken();
-	}
 
 	LIST *o = NewListFast(NULL);
 	wchar_t *tmp = Malloc(UniStrSize(str) + 32);
@@ -213,23 +194,19 @@ UNI_TOKEN_LIST *UniParseCmdLine(const wchar_t *str) {
 
 				Insert(o, CopyUniStr(tmp));
 				mode = 0;
-			} else {
-				if (c == L'\"') {
-					if (str[i + 1] == L'\"') {
-						// "" is an escaped quote
-						tmp[wp++] = L'\"';
-						i++;
-					} else {
-						if (ignore_space == false) {
-							// A lone " toggles quoted mode (spaces are kept)
-							ignore_space = true;
-						} else {
-							ignore_space = false;
-						}
-					}
+			} else if (c == L'\"') {
+				if (str[i + 1] == L'\"') {
+					// "" is an escaped quote
+					tmp[wp++] = L'\"';
+					i++;
+				} else if (ignore_space == false) {
+					// A lone " toggles quoted mode (spaces are kept)
+					ignore_space = true;
 				} else {
-					tmp[wp++] = c;
+					ignore_space = false;
 				}
+			} else {
+				tmp[wp++] = c;
 			}
 			break;
 		}
@@ -245,9 +222,8 @@ UNI_TOKEN_LIST *UniParseCmdLine(const wchar_t *str) {
 	UNI_TOKEN_LIST *t = ZeroMalloc(sizeof(UNI_TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(wchar_t *) * t->NumTokens);
-	for (UINT i = 0; i < t->NumTokens; i++) {
+	for (UINT i = 0; i < t->NumTokens; i++)
 		t->Token[i] = LIST_DATA(o, i);
-	}
 
 	ReleaseList(o);
 
@@ -270,9 +246,8 @@ UINT UtfToUni(wchar_t *unistr, UINT size, const char *utfstr) {
 }
 
 wchar_t *CopyUtfToUni(const char *utfstr) {
-	if (utfstr == NULL) {
+	if (utfstr == NULL)
 		return NULL;
-	}
 
 	UINT utfstr_len = StrLen(utfstr);
 
@@ -284,9 +259,8 @@ wchar_t *CopyUtfToUni(const char *utfstr) {
 }
 
 char *CopyUniToUtf(const wchar_t *unistr) {
-	if (unistr == NULL) {
+	if (unistr == NULL)
 		return NULL;
-	}
 
 	UINT size = CalcUniToUtf8(unistr);
 	char *ret = ZeroMalloc(size + sizeof(char));
@@ -297,9 +271,8 @@ char *CopyUniToUtf(const wchar_t *unistr) {
 }
 
 wchar_t *CopyUniStr(const wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return NULL;
-	}
 
 	UINT len = UniStrLen(str);
 	wchar_t *dst = Malloc((len + 1) * sizeof(wchar_t));
@@ -309,23 +282,18 @@ wchar_t *CopyUniStr(const wchar_t *str) {
 }
 
 bool IsSafeUniStr(const wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	UINT len = UniStrLen(str);
-	for (UINT i = 0; i < len; i++) {
-		if (IsSafeUniChar(str[i]) == false) {
+	for (UINT i = 0; i < len; i++)
+		if (IsSafeUniChar(str[i]) == false)
 			return false;
-		}
-	}
-	if (str[0] == L' ') {
+	if (str[0] == L' ')
 		return false;
-	}
 	if (len != 0) {
-		if (str[len - 1] == L' ') {
+		if (str[len - 1] == L' ')
 			return false;
-		}
 	}
 	return true;
 }
@@ -338,11 +306,9 @@ bool IsSafeUniChar(wchar_t c) {
 	    L" ()-_#%&.";
 
 	UINT len = UniStrLen(check_str);
-	for (UINT i = 0; i < len; i++) {
-		if (c == check_str[i]) {
+	for (UINT i = 0; i < len; i++)
+		if (c == check_str[i])
 			return true;
-		}
-	}
 	return false;
 }
 
@@ -363,13 +329,11 @@ bool IsSafeUniChar(wchar_t c) {
 static UINT AnsiCodePage(bool *c_locale) {
 	bool c = (___lc_locale_name_func()[LC_CTYPE] == NULL);
 
-	if (c_locale != NULL) {
+	if (c_locale != NULL)
 		*c_locale = c;
-	}
 
-	if (c) {
+	if (c)
 		return ANSI_C_LOCALE_CODE_PAGE;
-	}
 
 	return ___lc_codepage_func();
 }
@@ -436,11 +400,9 @@ static bool AnsiKeepsAscii(void) {
 static UINT AnsiAsciiLen(const char *str) {
 	UINT i;
 
-	for (i = 0; str[i] != 0; i++) {
-		if ((UCHAR)str[i] >= 0x80) {
+	for (i = 0; str[i] != 0; i++)
+		if ((UCHAR)str[i] >= 0x80)
 			return INFINITE;
-		}
-	}
 
 	return AnsiKeepsAscii() ? i : INFINITE;
 }
@@ -449,28 +411,24 @@ static UINT AnsiAsciiLen(const char *str) {
 static UINT UniAsciiLen(const wchar_t *s) {
 	UINT i;
 
-	for (i = 0; s[i] != 0; i++) {
-		if (s[i] >= 0x80) {
+	for (i = 0; s[i] != 0; i++)
+		if (s[i] >= 0x80)
 			return INFINITE;
-		}
-	}
 
 	return AnsiKeepsAscii() ? i : INFINITE;
 }
 
 // Widen the first len characters of the ASCII string str into s and terminate s
 static void WidenAscii(wchar_t *s, const char *str, UINT len) {
-	for (UINT i = 0; i < len; i++) {
+	for (UINT i = 0; i < len; i++)
 		s[i] = (wchar_t)str[i];
-	}
 	s[len] = 0;
 }
 
 // Narrow the first len characters of the ASCII string s into str and terminate str
 static void NarrowAscii(char *str, const wchar_t *s, UINT len) {
-	for (UINT i = 0; i < len; i++) {
+	for (UINT i = 0; i < len; i++)
 		str[i] = (char)s[i];
-	}
 	str[len] = 0;
 }
 
@@ -479,9 +437,8 @@ static void NarrowAscii(char *str, const wchar_t *s, UINT len) {
 // only a result that the copy cuts still goes through a temporary string.
 
 UINT UniToStr(char *str, UINT size, const wchar_t *s) {
-	if (s == NULL || str == NULL) {
+	if (s == NULL || str == NULL)
 		return 0;
-	}
 
 	// StrCpy copies at most room - 1 bytes and the terminator: room is size, or STRSAFE_MAX_CCH
 	// for size 0 and for a larger size
@@ -496,9 +453,8 @@ UINT UniToStr(char *str, UINT size, const wchar_t *s) {
 
 	UINT new_size = ConvertUniToAnsi(NULL, 0, s);
 	if (new_size == 0) {
-		if (size >= 1) {
+		if (size >= 1)
 			StrCpy(str, 0, "");
-		}
 		return 0;
 	}
 	if (new_size <= room) {
@@ -519,28 +475,24 @@ UINT UniToStr(char *str, UINT size, const wchar_t *s) {
 }
 
 UINT CalcUniToStr(const wchar_t *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return 0;
-	}
 
 	UINT len = UniAsciiLen(s);
-	if (len != INFINITE) {
+	if (len != INFINITE)
 		return len + 1;
-	}
 
 	return ConvertUniToAnsi(NULL, 0, s);
 }
 
 UINT StrToUni(wchar_t *s, UINT size, const char *str) {
-	if (s == NULL || str == NULL) {
+	if (s == NULL || str == NULL)
 		return 0;
-	}
 
 	// UniStrCpy writes nothing into a destination without room for the terminator, and no
 	// result here writes one
-	if (size == 1) {
+	if (size == 1)
 		return 0;
-	}
 
 	// UniStrCpy copies at most room / sizeof(wchar_t) - 1 characters and the terminator: room
 	// is size, or 0x3fffffff bytes for size 0
@@ -555,9 +507,8 @@ UINT StrToUni(wchar_t *s, UINT size, const char *str) {
 
 	UINT new_size = ConvertAnsiToUni(NULL, 0, str) * (UINT)sizeof(wchar_t);
 	if (new_size == 0) {
-		if (size >= 2) {
+		if (size >= 2)
 			UniStrCpy(s, 0, L"");
-		}
 		return 0;
 	}
 	if (new_size <= room) {
@@ -578,14 +529,12 @@ UINT StrToUni(wchar_t *s, UINT size, const char *str) {
 }
 
 UINT CalcStrToUni(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	UINT len = AnsiAsciiLen(str);
-	if (len != INFINITE) {
+	if (len != INFINITE)
 		return (len + 1) * (UINT)sizeof(wchar_t);
-	}
 
 	return ConvertAnsiToUni(NULL, 0, str) * (UINT)sizeof(wchar_t);
 }
@@ -593,9 +542,8 @@ UINT CalcStrToUni(const char *str) {
 // The converted string in one allocation of its exact size, without a temporary string
 char *CopyUniToStr(const wchar_t *unistr) {
 	char *str;
-	if (unistr == NULL) {
+	if (unistr == NULL)
 		return NULL;
-	}
 
 	UINT len = UniAsciiLen(unistr);
 	if (len != INFINITE) {
@@ -605,13 +553,11 @@ char *CopyUniToStr(const wchar_t *unistr) {
 	}
 
 	UINT str_size = ConvertUniToAnsi(NULL, 0, unistr);
-	if (str_size == 0) {
+	if (str_size == 0)
 		return CopyStr("");
-	}
 	str = Malloc(str_size);
-	if (ConvertUniToAnsi(str, str_size, unistr) == 0) {
+	if (ConvertUniToAnsi(str, str_size, unistr) == 0)
 		str[0] = 0;
-	}
 
 	return str;
 }
@@ -619,9 +565,8 @@ char *CopyUniToStr(const wchar_t *unistr) {
 // The converted string in one allocation of its exact size, without a temporary string
 wchar_t *CopyStrToUni(const char *str) {
 	wchar_t *uni;
-	if (str == NULL) {
+	if (str == NULL)
 		return NULL;
-	}
 
 	UINT len = AnsiAsciiLen(str);
 	if (len != INFINITE) {
@@ -631,13 +576,11 @@ wchar_t *CopyStrToUni(const char *str) {
 	}
 
 	UINT uni_len = ConvertAnsiToUni(NULL, 0, str);
-	if (uni_len == 0) {
+	if (uni_len == 0)
 		return CopyUniStr(L"");
-	}
 	uni = Malloc(uni_len * (UINT)sizeof(wchar_t));
-	if (ConvertAnsiToUni(uni, uni_len, str) == 0) {
+	if (ConvertAnsiToUni(uni, uni_len, str) == 0)
 		uni[0] = 0;
-	}
 
 	return uni;
 }
@@ -680,15 +623,13 @@ static UINT UniToUtf8Units(BYTE *u, UINT u_size, const wchar_t *s, UINT len) {
 		// A run without surrogates: WideCharToMultiByte writes the same bytes as one code unit
 		// at a time
 		UINT run = 1;
-		while (i + run < len && run < UTF8_NATIVE_MAX && IsSurrogateUnit(s[i + run]) == false) {
+		while (i + run < len && run < UTF8_NATIVE_MAX && IsSurrogateUnit(s[i + run]) == false)
 			run++;
-		}
 
-		if (u != NULL) {
+		if (u != NULL)
 			wp += (UINT)WideCharToMultiByte(CP_UTF8, 0, &s[i], (int)run, (char *)&u[wp], (int)MIN(u_size - wp, UTF8_NATIVE_MAX), NULL, NULL);
-		} else {
+		else
 			wp += (UINT)WideCharToMultiByte(CP_UTF8, 0, &s[i], (int)run, NULL, 0, NULL, NULL);
-		}
 		i += run;
 	}
 
@@ -699,15 +640,12 @@ static UINT UniToUtf8Units(BYTE *u, UINT u_size, const wchar_t *s, UINT len) {
 // the bit-level decoder: they are not well-formed UTF-8, or hold a 4-byte sequence (a byte of
 // 0xF0 or above)
 static UINT Utf8NativeLen(const BYTE *u, UINT size) {
-	if (size == 0 || size > UTF8_NATIVE_MAX) {
+	if (size == 0 || size > UTF8_NATIVE_MAX)
 		return 0;
-	}
 
-	for (UINT i = 0; i < size; i++) {
-		if (u[i] >= 0xf0) {
+	for (UINT i = 0; i < size; i++)
+		if (u[i] >= 0xf0)
 			return 0;
-		}
-	}
 
 	int ret = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (char *)u, (int)size, NULL, 0);
 
@@ -721,9 +659,8 @@ static UINT Utf8ToUniBits(wchar_t *s, UINT room, const BYTE *u, UINT size) {
 
 	while (num < room) {
 		UINT type = GetUtf8Type(u, size, i);
-		if (type == 0) {
+		if (type == 0)
 			break;
-		}
 
 		if (s != NULL) {
 			switch (type) {
@@ -748,15 +685,12 @@ static UINT Utf8ToUniBits(wchar_t *s, UINT room, const BYTE *u, UINT size) {
 
 UINT Utf8ToUni(wchar_t *s, UINT size, const void *u, UINT u_size) {
 	UINT num;
-	if (s == NULL || u == NULL) {
+	if (s == NULL || u == NULL)
 		return 0;
-	}
-	if (size == 0) {
+	if (size == 0)
 		size = 0x3fffffff;
-	}
-	if (u_size == 0) {
+	if (u_size == 0)
 		u_size = StrLen(u);
-	}
 
 	// Code units that fit before the terminating NUL
 	UINT room = (UINT)(size / sizeof(wchar_t) - 1);
@@ -775,48 +709,40 @@ UINT Utf8ToUni(wchar_t *s, UINT size, const void *u, UINT u_size) {
 		num = room;
 	}
 
-	if (num < (size / sizeof(wchar_t))) {
+	if (num < (size / sizeof(wchar_t)))
 		s[num] = 0;
-	}
 
 	return num;
 }
 
 UINT CalcUtf8ToUni(const void *u, UINT u_size) {
-	if (u == NULL) {
+	if (u == NULL)
 		return 0;
-	}
-	if (u_size == 0) {
+	if (u_size == 0)
 		u_size = StrLen(u);
-	}
 
 	return (Utf8Len(u, u_size) + 1) * sizeof(wchar_t);
 }
 
 UINT Utf8Len(const BYTE *u, UINT size) {
-	if (u == NULL) {
+	if (u == NULL)
 		return 0;
-	}
-	if (size == 0) {
+	if (size == 0)
 		size = StrLen((char *)u);
-	}
 
 	UINT num = Utf8NativeLen(u, size);
-	if (num == 0) {
+	if (num == 0)
 		num = Utf8ToUniBits(NULL, INFINITE, u, size);
-	}
 
 	return num;
 }
 
 UINT UniToUtf8(void *u, UINT size, const wchar_t *s) {
 	UINT wp;
-	if (u == NULL || s == NULL) {
+	if (u == NULL || s == NULL)
 		return 0;
-	}
-	if (size == 0) {
+	if (size == 0)
 		size = 0x3fffffff;
-	}
 
 	UINT len = UniStrLen(s);
 	UINT need = UniToUtf8Units(NULL, 0, s, len);
@@ -831,40 +757,33 @@ UINT UniToUtf8(void *u, UINT size, const wchar_t *s) {
 		wp = size;
 	}
 
-	if (wp < size) {
+	if (wp < size)
 		((BYTE *)u)[wp] = 0;
-	}
 
 	return wp;
 }
 
 UINT CalcUniToUtf8(const wchar_t *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return 0;
-	}
 
 	return UniToUtf8Units(NULL, 0, s, UniStrLen(s));
 }
 
 UINT GetUtf8Type(const BYTE *s, UINT size, UINT offset) {
-	if (s == NULL) {
+	if (s == NULL)
 		return 0;
-	}
-	if ((offset + 1) > size) {
+	if ((offset + 1) > size)
 		return 0;
-	}
-	if ((s[offset] & 0x80) == 0) {
+	if ((s[offset] & 0x80) == 0)
 		return 1;
-	}
 	if ((s[offset] & 0x20) == 0) {
-		if ((offset + 2) > size) {
+		if ((offset + 2) > size)
 			return 0;
-		}
 		return 2;
 	}
-	if ((offset + 3) > size) {
+	if ((offset + 3) > size)
 		return 0;
-	}
 	return 3;
 }
 
@@ -873,23 +792,20 @@ UINT GetUniType(wchar_t c) {
 	BYTE c2 = (BYTE)(c & 0xFF);
 
 	if (c1 == 0) {
-		if (c2 <= 0x7f) {
+		if (c2 <= 0x7f)
 			return 1;
-		} else {
+		else
 			return 2;
-		}
 	}
-	if ((c1 & 0xf8) == 0) {
+	if ((c1 & 0xf8) == 0)
 		return 2;
-	}
 	return 3;
 }
 
 UINT UniReplaceStrEx(wchar_t *dst, UINT size, const wchar_t *string, const wchar_t *old_keyword, const wchar_t *new_keyword, bool case_sensitive) {
 	UINT j, num, wp;
-	if (string == NULL || old_keyword == NULL || new_keyword == NULL) {
+	if (string == NULL || old_keyword == NULL || new_keyword == NULL)
 		return 0;
-	}
 
 	UINT len_string = UniStrLen(string);
 	UINT len_old = UniStrLen(old_keyword);
@@ -924,25 +840,22 @@ UINT UniReplaceStrEx(wchar_t *dst, UINT size, const wchar_t *string, const wchar
 }
 
 UINT UniCalcReplaceStrEx(const wchar_t *string, const wchar_t *old_keyword, const wchar_t *new_keyword, bool case_sensitive) {
-	if (string == NULL || old_keyword == NULL || new_keyword == NULL) {
+	if (string == NULL || old_keyword == NULL || new_keyword == NULL)
 		return 0;
-	}
 
 	UINT len_string = UniStrLen(string);
 	UINT len_old = UniStrLen(old_keyword);
 	UINT len_new = UniStrLen(new_keyword);
 
-	if (len_old == len_new) {
+	if (len_old == len_new)
 		return len_string;
-	}
 
 	UINT num = 0;
 	UINT i = 0;
 	while (true) {
 		i = UniSearchStrEx(string, old_keyword, i, case_sensitive);
-		if (i == INFINITE) {
+		if (i == INFINITE)
 			break;
-		}
 		i += len_old;
 		num++;
 	}
@@ -959,23 +872,19 @@ UINT UniSearchStrEx(const wchar_t *string, const wchar_t *keyword, UINT start, b
 	UINT i;
 	const wchar_t *cmp_string, *cmp_keyword;
 	wchar_t *upper_string = NULL, *upper_keyword = NULL;
-	if (string == NULL || keyword == NULL) {
+	if (string == NULL || keyword == NULL)
 		return INFINITE;
-	}
 
 	UINT len_string = UniStrLen(string);
-	if (len_string <= start) {
+	if (len_string <= start)
 		return INFINITE;
-	}
 
 	UINT len_keyword = UniStrLen(keyword);
-	if (len_keyword == 0) {
+	if (len_keyword == 0)
 		return INFINITE;
-	}
 
-	if (len_string < len_keyword) {
+	if (len_string < len_keyword)
 		return INFINITE;
-	}
 
 	if (case_sensitive) {
 		cmp_string = string;
@@ -1004,19 +913,16 @@ UINT UniSearchStrEx(const wchar_t *string, const wchar_t *keyword, UINT start, b
 		Free(upper_string);
 	}
 
-	if (found == false) {
+	if (found == false)
 		return INFINITE;
-	}
 	return i;
 }
 
 void UniFreeToken(UNI_TOKEN_LIST *tokens) {
-	if (tokens == NULL) {
+	if (tokens == NULL)
 		return;
-	}
-	for (UINT i = 0; i < tokens->NumTokens; i++) {
+	for (UINT i = 0; i < tokens->NumTokens; i++)
 		Free(tokens->Token[i]);
-	}
 	Free(tokens->Token);
 	Free(tokens);
 }
@@ -1027,12 +933,10 @@ static wchar_t *UniDefaultTokenSplitChars() {
 
 static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(const wchar_t *str, const wchar_t *split_chars) {
 	wchar_t zero = 0;
-	if (str == NULL) {
+	if (str == NULL)
 		return UniNullToken();
-	}
-	if (split_chars == NULL) {
+	if (split_chars == NULL)
 		split_chars = UniDefaultTokenSplitChars();
-	}
 
 	BUF *b = NewBuf();
 	LIST *o = NewListFast(NULL);
@@ -1044,21 +948,17 @@ static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(const wchar_t *str, const wch
 		wchar_t c = str[i];
 		bool flag = UniIsCharInStr(split_chars, c);
 
-		if (c == L'\0') {
+		if (c == L'\0')
 			flag = true;
-		}
 
 		if (flag == false) {
 			WriteBuf(b, &c, sizeof(wchar_t));
-		} else {
-			if (last_flag == false) {
-				WriteBuf(b, &zero, sizeof(wchar_t));
+		} else if (last_flag == false) {
+			WriteBuf(b, &zero, sizeof(wchar_t));
 
-				if ((UniStrLen((wchar_t *)b->Buf)) != 0) {
-					Insert(o, CopyUniStr((wchar_t *)b->Buf));
-				}
-				ClearBuf(b);
-			}
+			if ((UniStrLen((wchar_t *)b->Buf)) != 0)
+				Insert(o, CopyUniStr((wchar_t *)b->Buf));
+			ClearBuf(b);
 		}
 
 		last_flag = flag;
@@ -1068,9 +968,8 @@ static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(const wchar_t *str, const wch
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(wchar_t *) * t->NumTokens);
 
-	for (UINT i = 0; i < t->NumTokens; i++) {
+	for (UINT i = 0; i < t->NumTokens; i++)
 		t->Token[i] = LIST_DATA(o, i);
-	}
 
 	ReleaseList(o);
 	FreeBuf(b);
@@ -1091,18 +990,15 @@ bool UniGetLineWin32(wchar_t *str, UINT size) {
 }
 
 void UniTrimCrlf(wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 	UINT len = UniStrLen(str);
-	if (len == 0) {
+	if (len == 0)
 		return;
-	}
 
 	if (str[len - 1] == L'\n') {
-		if (len >= 2 && str[len - 2] == L'\r') {
+		if (len >= 2 && str[len - 2] == L'\r')
 			str[len - 2] = 0;
-		}
 		str[len - 1] = 0;
 	} else if (str[len - 1] == L'\r') {
 		str[len - 1] = 0;
@@ -1110,41 +1006,35 @@ void UniTrimCrlf(wchar_t *str) {
 }
 
 void UniTrim(wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UniTrimLeft(str);
 	UniTrimRight(str);
 }
 
 void UniTrimRight(wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINT len = UniStrLen(str);
 	UINT end = len;
-	while (end != 0 && (str[end - 1] == L' ' || str[end - 1] == L'\t')) {
+	while (end != 0 && (str[end - 1] == L' ' || str[end - 1] == L'\t'))
 		end--;
-	}
 
 	// Writes only when there is something to remove
-	if (end != len) {
+	if (end != len)
 		str[end] = L'\0';
-	}
 }
 
 void UniTrimLeft(wchar_t *str) {
 	UINT len;
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINT skip = 0;
-	while (str[skip] == L' ' || str[skip] == L'\t') {
+	while (str[skip] == L' ' || str[skip] == L'\t')
 		skip++;
-	}
 
 	// Writes only when there is something to remove; the terminator moves along
 	if (skip != 0) {
@@ -1159,9 +1049,8 @@ void UniToStru(wchar_t *str, UINT i) {
 
 UINT UniToInt(const wchar_t *str) {
 	char tmp[128];
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	// A longer string is read up to its first sizeof(tmp) - 1 characters
 	UniToStrForSingleChars(tmp, sizeof(tmp), str);
@@ -1170,24 +1059,21 @@ UINT UniToInt(const wchar_t *str) {
 }
 
 void UniToStrForSingleChars(char *dst, UINT dst_size, const wchar_t *src) {
-	if (dst == NULL || src == NULL || dst_size == 0) {
+	if (dst == NULL || src == NULL || dst_size == 0)
 		return;
-	}
 
 	// At most dst_size - 1 characters and the terminator
 	UINT len = UniStrLen(src);
-	if (len > dst_size - 1) {
+	if (len > dst_size - 1)
 		len = dst_size - 1;
-	}
 
 	for (UINT i = 0; i < len; i++) {
 		wchar_t s = src[i];
 
-		if (s <= 0xff) {
+		if (s <= 0xff)
 			dst[i] = (char)s;
-		} else {
+		else
 			dst[i] = ' ';
-		}
 	}
 
 	dst[len] = 0;
@@ -1197,9 +1083,8 @@ UNI_TOKEN_LIST *UniGetLines(const wchar_t *str) {
 	BUF *b = NULL;
 	wchar_t zero = 0;
 	wchar_t *s;
-	if (str == NULL) {
+	if (str == NULL)
 		return UniNullToken();
-	}
 
 	LIST *o = NewListFast(NULL);
 
@@ -1212,9 +1097,8 @@ UNI_TOKEN_LIST *UniGetLines(const wchar_t *str) {
 		bool f = false;
 
 		if (c == L'\r') {
-			if (str[i + 1] == L'\n') {
+			if (str[i + 1] == L'\n')
 				i++;
-			}
 			f = true;
 		} else if (c == L'\n') {
 			f = true;
@@ -1251,9 +1135,8 @@ UNI_TOKEN_LIST *UniGetLines(const wchar_t *str) {
 }
 
 void UniPrintStr(wchar_t *string) {
-	if (string == NULL) {
+	if (string == NULL)
 		return;
-	}
 
 	Win32PrintW(string);
 }
@@ -1261,16 +1144,14 @@ void UniPrintStr(wchar_t *string) {
 // The CRT formats the whole message into a heap buffer, which goes to the console as it is
 static void UniPrintArgs(const wchar_t *fmt, va_list args) {
 	va_list count_args;
-	if (fmt == NULL) {
+	if (fmt == NULL)
 		return;
-	}
 
 	va_copy(count_args, args);
 	int len = _vscwprintf(fmt, count_args);
 	va_end(count_args);
-	if (len < 0) {
+	if (len < 0)
 		return;
-	}
 
 	wchar_t *str = Malloc(((UINT)len + 1) * (UINT)sizeof(wchar_t));
 	_vsnwprintf_s(str, (size_t)len + 1, _TRUNCATE, fmt, args);
@@ -1282,9 +1163,8 @@ static void UniPrintArgs(const wchar_t *fmt, va_list args) {
 
 void UniPrint(const wchar_t *fmt, ...) {
 	va_list args;
-	if (fmt == NULL) {
+	if (fmt == NULL)
 		return;
-	}
 
 	va_start(args, fmt);
 	UniPrintArgs(fmt, args);
@@ -1296,12 +1176,10 @@ void UniPrint(const wchar_t *fmt, ...) {
 // size / sizeof(wchar_t) - 1 characters and the terminator. buf must not be an argument or fmt
 void UniFormatArgs(wchar_t *buf, UINT size, const wchar_t *fmt, va_list args) {
 	size_t count = size / sizeof(wchar_t);
-	if (buf == NULL || fmt == NULL) {
+	if (buf == NULL || fmt == NULL)
 		return;
-	}
-	if (size == 1) {
+	if (size == 1)
 		return;
-	}
 
 	KS_INC(KS_FORMAT_COUNT);
 
@@ -1323,9 +1201,8 @@ void UniFormatArgs(wchar_t *buf, UINT size, const wchar_t *fmt, va_list args) {
 
 void UniFormat(wchar_t *buf, UINT size, const wchar_t *fmt, ...) {
 	va_list args;
-	if (buf == NULL || fmt == NULL) {
+	if (buf == NULL || fmt == NULL)
 		return;
-	}
 
 	va_start(args, fmt);
 	UniFormatArgs(buf, size, fmt, args);
@@ -1333,148 +1210,122 @@ void UniFormat(wchar_t *buf, UINT size, const wchar_t *fmt, ...) {
 }
 
 int UniSoftStrCmp(const wchar_t *str1, const wchar_t *str2) {
-	if (str1 == NULL && str2 == NULL) {
+	if (str1 == NULL && str2 == NULL)
 		return 0;
-	}
-	if (str1 == NULL) {
+	if (str1 == NULL)
 		return 1;
-	}
-	if (str2 == NULL) {
+	if (str2 == NULL)
 		return -1;
-	}
 
 	// Compares the ranges left after UniTrim in place, with the fold of UniStrCmpi
-	while (*str1 == L' ' || *str1 == L'\t') {
+	while (*str1 == L' ' || *str1 == L'\t')
 		str1++;
-	}
-	while (*str2 == L' ' || *str2 == L'\t') {
+	while (*str2 == L' ' || *str2 == L'\t')
 		str2++;
-	}
 
 	UINT len1 = UniStrLen(str1);
-	while (len1 != 0 && (str1[len1 - 1] == L' ' || str1[len1 - 1] == L'\t')) {
+	while (len1 != 0 && (str1[len1 - 1] == L' ' || str1[len1 - 1] == L'\t'))
 		len1--;
-	}
 	UINT len2 = UniStrLen(str2);
-	while (len2 != 0 && (str2[len2 - 1] == L' ' || str2[len2 - 1] == L'\t')) {
+	while (len2 != 0 && (str2[len2 - 1] == L' ' || str2[len2 - 1] == L'\t'))
 		len2--;
-	}
 
 	for (UINT i = 0; i < len1 || i < len2; i++) {
 		// A range that has ended reads as the terminator
 		wchar_t c1 = (i < len1) ? UniToUpper(str1[i]) : L'\0';
 		wchar_t c2 = (i < len2) ? UniToUpper(str2[i]) : L'\0';
-		if (c1 > c2) {
+		if (c1 > c2)
 			return 1;
-		} else if (c1 < c2) {
+		else if (c1 < c2)
 			return -1;
-		}
 	}
 
 	return 0;
 }
 
 int UniStrCmpi(const wchar_t *str1, const wchar_t *str2) {
-	if (str1 == NULL && str2 == NULL) {
+	if (str1 == NULL && str2 == NULL)
 		return 0;
-	}
-	if (str1 == NULL) {
+	if (str1 == NULL)
 		return 1;
-	}
-	if (str2 == NULL) {
+	if (str2 == NULL)
 		return -1;
-	}
 
 	UINT i = 0;
 	while (true) {
 		wchar_t c1 = UniToUpper(str1[i]);
 		wchar_t c2 = UniToUpper(str2[i]);
-		if (c1 > c2) {
+		if (c1 > c2)
 			return 1;
-		} else if (c1 < c2) {
+		else if (c1 < c2)
 			return -1;
-		}
-		if (str1[i] == 0 || str2[i] == 0) {
+		if (str1[i] == 0 || str2[i] == 0)
 			return 0;
-		}
 		i++;
 	}
 }
 
 int UniStrCmp(const wchar_t *str1, const wchar_t *str2) {
-	if (str1 == NULL && str2 == NULL) {
+	if (str1 == NULL && str2 == NULL)
 		return 0;
-	}
-	if (str1 == NULL) {
+	if (str1 == NULL)
 		return 1;
-	}
-	if (str2 == NULL) {
+	if (str2 == NULL)
 		return -1;
-	}
 
 	return wcscmp(str1, str2);
 }
 
 void UniStrLower(wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINT len = UniStrLen(str);
-	for (UINT i = 0; i < len; i++) {
+	for (UINT i = 0; i < len; i++)
 		str[i] = UniToLower(str[i]);
-	}
 }
 
 void UniStrUpper(wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINT len = UniStrLen(str);
-	for (UINT i = 0; i < len; i++) {
+	for (UINT i = 0; i < len; i++)
 		str[i] = UniToUpper(str[i]);
-	}
 }
 
 wchar_t UniToLower(wchar_t c) {
-	if (c >= L'A' && c <= L'Z') {
+	if (c >= L'A' && c <= L'Z')
 		c += L'a' - L'A';
-	}
 
 	return c;
 }
 
 wchar_t UniToUpper(wchar_t c) {
-	if (c >= L'a' && c <= L'z') {
+	if (c >= L'a' && c <= L'z')
 		c -= L'a' - L'A';
-	}
 
 	return c;
 }
 
 UINT UniStrCat(wchar_t *dst, UINT size, const wchar_t *src) {
-	if (dst == NULL || src == NULL) {
+	if (dst == NULL || src == NULL)
 		return 0;
-	}
-	if (size != 0 && size < sizeof(wchar_t)) {
+	if (size != 0 && size < sizeof(wchar_t))
 		return 0;
-	}
 	if (size == sizeof(wchar_t)) {
 		wcscpy(dst, L"");
 		return 0;
 	}
-	if (size == 0) {
+	if (size == 0)
 		size = 0x3fffffff;
-	}
 
 	UINT len1 = UniStrLen(dst);
 	UINT len2 = UniStrLen(src);
 	UINT len_test = len1 + len2 + 1;
 	if (len_test > (size / sizeof(wchar_t))) {
-		if (len2 <= (len_test - (size / sizeof(wchar_t)))) {
+		if (len2 <= (len_test - (size / sizeof(wchar_t))))
 			return 0;
-		}
 		len2 -= len_test - (size / sizeof(wchar_t));
 	}
 	Copy(&dst[len1], src, len2 * sizeof(wchar_t));
@@ -1486,25 +1337,21 @@ UINT UniStrCat(wchar_t *dst, UINT size, const wchar_t *src) {
 UINT UniStrCpy(wchar_t *dst, UINT size, const wchar_t *src) {
 	if (dst == NULL || src == NULL) {
 		if (src == NULL && dst != NULL) {
-			if (size >= sizeof(wchar_t)) {
+			if (size >= sizeof(wchar_t))
 				dst[0] = L'\0';
-			}
 		}
 		return 0;
 	}
-	if (dst == src) {
+	if (dst == src)
 		return UniStrLen(src);
-	}
-	if (size != 0 && size < sizeof(wchar_t)) {
+	if (size != 0 && size < sizeof(wchar_t))
 		return 0;
-	}
 	if (size == sizeof(wchar_t)) {
 		wcscpy(dst, L"");
 		return 0;
 	}
-	if (size == 0) {
+	if (size == 0)
 		size = 0x3fffffff;
-	}
 
 	UINT len = UniStrLen(src);
 	if (len <= (size / sizeof(wchar_t) - 1)) {
@@ -1519,17 +1366,15 @@ UINT UniStrCpy(wchar_t *dst, UINT size, const wchar_t *src) {
 }
 
 UINT UniStrSize(const wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	return (UniStrLen(str) + 1) * sizeof(wchar_t);
 }
 
 UINT UniStrLen(const wchar_t *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	return (UINT)wcslen(str);
 }

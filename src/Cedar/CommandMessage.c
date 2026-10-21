@@ -22,9 +22,8 @@ UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	char sizestr[MAX_SIZE];
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	c->Write(c, _UU("CMD_Flush_Msg1"));
 
@@ -55,9 +54,8 @@ UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	char *yes = GetParamStr(o, "[yes]");
 
@@ -94,9 +92,8 @@ UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.StrValue, sizeof(t.StrValue), GetParamStr(o, "[CN]"));

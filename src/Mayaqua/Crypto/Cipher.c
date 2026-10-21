@@ -24,21 +24,18 @@ CRYPT *NewCrypt(void *key, UINT size) {
 	CngInit();
 
 	if (cng_rc4 != NULL && key != NULL && size >= 1 && size <= RC4_MAX_KEY_SIZE &&
-	    CNG_SUCCESS(BCryptGenerateSymmetricKey(cng_rc4, &k, NULL, 0, (PUCHAR)key, size, 0))) {
+	    CNG_SUCCESS(BCryptGenerateSymmetricKey(cng_rc4, &k, NULL, 0, (PUCHAR)key, size, 0)))
 		c->Rc4Key = k;
-	}
 
 	return c;
 }
 
 void FreeCrypt(CRYPT *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
-	if (c->Rc4Key != NULL) {
+	if (c->Rc4Key != NULL)
 		BCryptDestroyKey(c->Rc4Key);
-	}
 
 	Free(c);
 }
@@ -47,13 +44,11 @@ void FreeCrypt(CRYPT *c) {
 // so that an in-place call never leaves the plain text in place.
 void Encrypt(CRYPT *c, void *dst, void *src, UINT size) {
 	ULONG done = 0;
-	if (c == NULL || dst == NULL || src == NULL || size == 0) {
+	if (c == NULL || dst == NULL || src == NULL || size == 0)
 		return;
-	}
 
 	if (c->Rc4Key == NULL ||
 	    CNG_SUCCESS(BCryptEncrypt(c->Rc4Key, (PUCHAR)src, size, NULL, NULL, 0, (PUCHAR)dst, size, &done, 0)) == false ||
-	    done != size) {
+	    done != size)
 		Zero(dst, size);
-	}
 }

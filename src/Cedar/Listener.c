@@ -24,9 +24,8 @@ UINT GetMaxUnestablishedConnections() {
 }
 
 void SetMaxUnestablishedConnections(UINT num) {
-	if (num == 0) {
+	if (num == 0)
 		num = DEFAULT_MAX_UNESTABLISHED_CONNECTIONS;
-	}
 
 	max_unestablished_connections = MAX(num, max_connections_per_ip);
 }
@@ -36,9 +35,8 @@ UINT GetMaxConnectionsPerIp() {
 }
 
 void SetMaxConnectionsPerIp(UINT num) {
-	if (num == 0) {
+	if (num == 0)
 		num = DEFAULT_MAX_CONNECTIONS_PER_IP;
-	}
 	max_connections_per_ip = MAX(num, MIN_MAX_CONNECTIONS_PER_IP);
 }
 
@@ -52,9 +50,8 @@ void DisableDosProtect() {
 
 static void TCPAcceptedThread(THREAD *t, void *param) {
 	char tmp[128];
-	if (t == NULL || param == NULL) {
+	if (t == NULL || param == NULL)
 		return;
-	}
 
 	TCP_ACCEPTED_PARAM *data = (TCP_ACCEPTED_PARAM *)param;
 	LISTENER *r = data->r;
@@ -92,9 +89,8 @@ static void TCPAcceptedThread(THREAD *t, void *param) {
 static void TCPAccepted(LISTENER *r, SOCK *s) {
 	char tmp[MAX_SIZE];
 	UINT num_clients_from_this_ip = 0;
-	if (r == NULL || s == NULL) {
+	if (r == NULL || s == NULL)
 		return;
-	}
 
 	CEDAR *cedar = r->Cedar;
 
@@ -161,9 +157,8 @@ static void MakeRoomInDosList(LISTENER *r) {
 		for (UINT i = 0; i < LIST_NUM(r->DosList); i++) {
 			DOS *d = LIST_DATA(r->DosList, i);
 
-			if (oldest == NULL || d->LastConnectedTick < oldest->LastConnectedTick) {
+			if (oldest == NULL || d->LastConnectedTick < oldest->LastConnectedTick)
 				oldest = d;
-			}
 		}
 
 		if (oldest != NULL) {
@@ -181,9 +176,8 @@ static void MakeRoomInDosList(LISTENER *r) {
 bool CheckDosAttack(LISTENER *r, SOCK *s) {
 	DOS *d;
 	bool ok = true;
-	if (r == NULL || s == NULL) {
+	if (r == NULL || s == NULL)
 		return false;
-	}
 
 	LockList(r->DosList);
 	{
@@ -195,13 +189,11 @@ bool CheckDosAttack(LISTENER *r, SOCK *s) {
 			d->LastConnectedTick = Tick64();
 			d->CurrentExpireSpan = MIN(d->CurrentExpireSpan * (UINT64)2, DOS_TABLE_EXPIRES_MAX);
 			d->AccessCount++;
-			if (d->AccessCount > DOS_TABLE_MAX_LIMIT_PER_IP) {
+			if (d->AccessCount > DOS_TABLE_MAX_LIMIT_PER_IP)
 				ok = false;
-			}
 		} else {
-			if (LIST_NUM(r->DosList) >= RATE_LIMIT_TABLE_MAX) {
+			if (LIST_NUM(r->DosList) >= RATE_LIMIT_TABLE_MAX)
 				MakeRoomInDosList(r);
-			}
 
 			d = ZeroMalloc(sizeof(DOS));
 			d->CurrentExpireSpan = (UINT64)DOS_TABLE_EXPIRES_FIRST;
@@ -218,9 +210,8 @@ bool CheckDosAttack(LISTENER *r, SOCK *s) {
 }
 
 void RefreshDosList(LISTENER *r) {
-	if (r == NULL) {
+	if (r == NULL)
 		return;
-	}
 
 	if (r->DosListLastRefreshTime == 0 ||
 	    (r->DosListLastRefreshTime + (UINT64)DOS_TABLE_REFRESH_INTERVAL) <= Tick64()) {
@@ -233,9 +224,8 @@ void RefreshDosList(LISTENER *r) {
 
 DOS *SearchDosList(LISTENER *r, IP *ip) {
 	DOS t;
-	if (r == NULL || ip == NULL) {
+	if (r == NULL || ip == NULL)
 		return NULL;
-	}
 
 	GetRateLimitKey(&t.IpAddress, ip);
 
@@ -255,23 +245,20 @@ DOS *SearchDosList(LISTENER *r, IP *ip) {
 }
 
 int CompareDos(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	DOS *d1 = *(DOS **)p1;
 	DOS *d2 = *(DOS **)p2;
-	if (d1 == NULL || d2 == NULL) {
+	if (d1 == NULL || d2 == NULL)
 		return 0;
-	}
 
 	return CmpIpAddr(&d1->IpAddress, &d2->IpAddress);
 }
 
 // Wake WaitListenerBind: the listener thread has tried to bind, r->Status holds the result
 static void ListenerBindTried(const LISTENER *r) {
-	if (r->BindEvent != NULL) {
+	if (r->BindEvent != NULL)
 		SetEvent((HANDLE)r->BindEvent);
-	}
 }
 
 // A transient accept() error (IsTransientAcceptError) keeps the listening socket: log it at most once per
@@ -294,9 +281,8 @@ static void ListenerAcceptRetry(LISTENER *r, UINT err) {
 static void ListenerTCPMainLoop(LISTENER *r) {
 	SOCK *new_sock;
 	SOCK *s;
-	if (r == NULL) {
+	if (r == NULL)
 		return;
-	}
 
 	r->Status = LISTENER_STATUS_TRYING;
 
@@ -305,9 +291,8 @@ static void ListenerTCPMainLoop(LISTENER *r) {
 		r->Status = LISTENER_STATUS_TRYING;
 
 		while (true) {
-			if (r->Halt) {
+			if (r->Halt)
 				return;
-			}
 
 			// One socket per port: dual-stack unless IPv6 is disabled or the ListenIP is IPv4
 			s = Listen(r->Port, &r->Cedar->Server->ListenIP, r->Cedar->DisableIPv6Listener);
@@ -335,17 +320,15 @@ static void ListenerTCPMainLoop(LISTENER *r) {
 
 			Wait(r->Event, LISTEN_RETRY_TIME);
 
-			if (r->Halt) {
+			if (r->Halt)
 				return;
-			}
 		}
 
 		r->Status = LISTENER_STATUS_LISTENING;
 		ListenerBindTried(r);
 
-		if (r->Halt) {
+		if (r->Halt)
 			goto STOP;
-		}
 
 		while (true) {
 			new_sock = Accept(s);
@@ -370,9 +353,8 @@ static void ListenerTCPMainLoop(LISTENER *r) {
 				}
 				Unlock(r->lock);
 
-				if (s != NULL) {
+				if (s != NULL)
 					ReleaseSock(s);
-				}
 
 				s = NULL;
 
@@ -380,16 +362,14 @@ static void ListenerTCPMainLoop(LISTENER *r) {
 			}
 		}
 
-		if (r->Halt) {
+		if (r->Halt)
 			return;
-		}
 	}
 }
 
 static void ListenerThread(THREAD *thread, void *param) {
-	if (thread == NULL || param == NULL) {
+	if (thread == NULL || param == NULL)
 		return;
-	}
 
 	LISTENER *r = (LISTENER *)param;
 	AddRef(r->ref);
@@ -411,9 +391,8 @@ static void ListenerThread(THREAD *thread, void *param) {
 
 void StopListener(LISTENER *r) {
 	SOCK *s = NULL;
-	if (r == NULL) {
+	if (r == NULL)
 		return;
-	}
 
 	Lock(r->lock);
 	if (r->Halt) {
@@ -451,23 +430,20 @@ void StopListener(LISTENER *r) {
 // Wait until the listener thread has tried to bind the port, at most timeout ms. True when the port is bound;
 // false when the bind failed (the thread keeps retrying every LISTEN_RETRY_TIME) or did not finish in time.
 bool WaitListenerBind(LISTENER *r, UINT timeout) {
-	if (r == NULL) {
+	if (r == NULL)
 		return false;
-	}
 
 	// The event is set after the thread wrote r->Status and stays set
-	if (r->BindEvent != NULL) {
+	if (r->BindEvent != NULL)
 		WaitForSingleObject((HANDLE)r->BindEvent, timeout);
-	}
 
 	return (r->Status == LISTENER_STATUS_LISTENING);
 }
 
 static void CleanupListener(LISTENER *r) {
 	UINT i = 0;
-	if (r == NULL) {
+	if (r == NULL)
 		return;
-	}
 
 	for (i = 0; i < LIST_NUM(r->DosList); i++) {
 		DOS *d = LIST_DATA(r->DosList, i);
@@ -475,17 +451,15 @@ static void CleanupListener(LISTENER *r) {
 	}
 	ReleaseList(r->DosList);
 
-	if (r->Sock != NULL) {
+	if (r->Sock != NULL)
 		ReleaseSock(r->Sock);
-	}
 
 	DeleteLock(r->lock);
 	ReleaseThread(r->Thread);
 	ReleaseEvent(r->Event);
 
-	if (r->BindEvent != NULL) {
+	if (r->BindEvent != NULL)
 		CloseHandle((HANDLE)r->BindEvent);
-	}
 
 	ReleaseCedar(r->Cedar);
 
@@ -493,42 +467,36 @@ static void CleanupListener(LISTENER *r) {
 }
 
 void ReleaseListener(LISTENER *r) {
-	if (r == NULL) {
+	if (r == NULL)
 		return;
-	}
 
-	if (Release(r->ref) == 0) {
+	if (Release(r->ref) == 0)
 		CleanupListener(r);
-	}
 }
 
 int CompareListener(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	LISTENER *r1 = *(LISTENER **)p1;
 	LISTENER *r2 = *(LISTENER **)p2;
-	if (r1 == NULL || r2 == NULL) {
+	if (r1 == NULL || r2 == NULL)
 		return 0;
-	}
 
-	if (r1->Protocol > r2->Protocol) {
+	if (r1->Protocol > r2->Protocol)
 		return 1;
-	} else if (r1->Protocol < r2->Protocol) {
+	else if (r1->Protocol < r2->Protocol)
 		return -1;
-	} else if (r1->Port > r2->Port) {
+	else if (r1->Port > r2->Port)
 		return 1;
-	} else if (r1->Port < r2->Port) {
+	else if (r1->Port < r2->Port)
 		return -1;
-	} else {
+	else
 		return 0;
-	}
 }
 
 LISTENER *NewListener(CEDAR *cedar, UINT port) {
-	if (port == 0 || cedar == NULL) {
+	if (port == 0 || cedar == NULL)
 		return NULL;
-	}
 
 	LISTENER *r = ZeroMalloc(sizeof(LISTENER));
 

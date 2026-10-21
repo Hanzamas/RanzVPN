@@ -17,9 +17,8 @@ static bool VpncmdIsShellRunning() {
 	bool ret = false;
 
 	HANDLE h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-	if (h == INVALID_HANDLE_VALUE) {
+	if (h == INVALID_HANDLE_VALUE)
 		return false;
-	}
 
 	Zero(&e, sizeof(e));
 	e.dwSize = sizeof(e);
@@ -67,9 +66,8 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (VpncmdIsShellRunning() == false) {
-		if (ret != ERR_NO_ERROR) {
+		if (ret != ERR_NO_ERROR)
 			SleepThread(1000);
-		}
 	}
 
 	Free(s);

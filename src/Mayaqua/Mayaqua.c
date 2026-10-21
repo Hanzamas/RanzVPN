@@ -106,9 +106,8 @@ bool MayaquaIsMinimalMode() {
 void InitMayaqua(bool memcheck, bool debug) {
 	wchar_t tmp[MAX_PATH];
 
-	if ((init_mayaqua_counter++) > 0) {
+	if ((init_mayaqua_counter++) > 0)
 		return;
-	}
 
 	InitProcessCallOnce();
 
@@ -127,9 +126,8 @@ void InitMayaqua(bool memcheck, bool debug) {
 
 	InitKernelStatus();
 
-	if (IsTrackingEnabled()) {
+	if (IsTrackingEnabled())
 		InitTracking();
-	}
 
 	InitThreading();
 
@@ -149,10 +147,9 @@ void InitMayaqua(bool memcheck, bool debug) {
 
 	MsInit();
 
-	if (Win32IsSupportedOs() == false) {
+	if (Win32IsSupportedOs() == false)
 		MayaFatalExit(1, CEDAR_PRODUCT_STR " VPN doesn't support this Windows Operating System.\r\n" CEDAR_PRODUCT_STR " VPN requires " SUPPORTED_WINDOWS_LIST ".\r\n\r\n"
 		                                   "Please contact your system administrator.");
-	}
 
 	InitHamcore();
 
@@ -177,9 +174,8 @@ void InitMayaqua(bool memcheck, bool debug) {
 }
 
 void FreeMayaqua() {
-	if ((--init_mayaqua_counter) > 0) {
+	if ((--init_mayaqua_counter) > 0)
 		return;
-	}
 
 	FreePrivateIPFile();
 
@@ -202,13 +198,11 @@ void FreeMayaqua() {
 	FreeCryptLibrary();
 
 	if (IsTrackingEnabled()) {
-		if (g_debug) {
+		if (g_debug)
 			PrintKernelStatus();
-		}
 
-		if (g_memcheck) {
+		if (g_memcheck)
 			PrintDebugInformation();
-		}
 
 		FreeTracking();
 	}
@@ -230,13 +224,11 @@ static bool FatalExitCanShowBox() {
 
 	Zero(&flags, sizeof(flags));
 	if (station == NULL || GetUserObjectInformationW(station, UOI_FLAGS, &flags, sizeof(flags), NULL) == FALSE ||
-	    (flags.dwFlags & WSF_VISIBLE) == 0) {
+	    (flags.dwFlags & WSF_VISIBLE) == 0)
 		return false;
-	}
 
-	if (err == NULL || err == INVALID_HANDLE_VALUE) {
+	if (err == NULL || err == INVALID_HANDLE_VALUE)
 		return true;
-	}
 
 	HWND console = GetConsoleWindow();
 
@@ -249,12 +241,10 @@ static bool FatalExitCanShowBox() {
 // Exits with code (1 when code is 0) without CRT clean-up, as other threads may still run.
 // Plain CRT and Win32 calls only: it may run before InitMayaqua() is done.
 void MayaFatalExit(UINT code, char *msg) {
-	if (msg == NULL) {
+	if (msg == NULL)
 		msg = "Unknown Error";
-	}
-	if (code == 0) {
+	if (code == 0)
 		code = 1;
-	}
 
 	fputs(msg, stderr);
 	fputs("\n", stderr);
@@ -262,9 +252,8 @@ void MayaFatalExit(UINT code, char *msg) {
 
 	MsWriteEventLog(CEDAR_PRODUCT_STR " VPN", EVENTLOG_ERROR_TYPE, MS_EVENT_FATAL_ERROR, msg);
 
-	if (FatalExitCanShowBox()) {
+	if (FatalExitCanShowBox())
 		MessageBoxA(NULL, msg, CEDAR_PRODUCT_STR " VPN Kernel", MB_SETFOREGROUND | MB_TOPMOST | MB_OK | MB_ICONERROR);
-	}
 
 	_exit((int)code);
 }
@@ -274,9 +263,8 @@ OS_INFO *GetOsInfo() {
 }
 
 void InitOsInfo() {
-	if (os_info != NULL) {
+	if (os_info != NULL)
 		return;
-	}
 
 	os_info = ZeroMalloc(sizeof(OS_INFO));
 
@@ -284,9 +272,8 @@ void InitOsInfo() {
 }
 
 void FreeOsInfo() {
-	if (os_info == NULL) {
+	if (os_info == NULL)
 		return;
-	}
 
 	Free(os_info->OsSystemName);
 	Free(os_info->OsProductName);
@@ -356,9 +343,8 @@ void PrintKernelStatus() {
 
 	if (KS_GET(KS_CURRENT_MEM_COUNT) != 0 || KS_GET(KS_CURRENT_LOCK_COUNT) != 0 ||
 	    KS_GET(KS_MEMPOOL_CURRENT_NUM) != 0 ||
-	    KS_GET(KS_CURRENT_LOCKED_COUNT) != 0 || KS_GET(KS_CURRENT_REF_COUNT) != 0) {
+	    KS_GET(KS_CURRENT_LOCKED_COUNT) != 0 || KS_GET(KS_CURRENT_REF_COUNT) != 0)
 		leaked = true;
-	}
 
 	if (leaked) {
 		Print("      !!! MEMORY LEAKS DETECTED !!!\n\n");

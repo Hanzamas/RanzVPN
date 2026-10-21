@@ -29,9 +29,8 @@ static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index);
 static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total);
 
 void InRpcWinVer(RPC_WINVER *t, PACK *p) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_WINVER));
 
@@ -46,9 +45,8 @@ void InRpcWinVer(RPC_WINVER *t, PACK *p) {
 	PackGetStr(p, "V_Title", t->Title, sizeof(t->Title));
 }
 void OutRpcWinVer(PACK *p, RPC_WINVER *t) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddBool(p, "V_IsWindows", t->IsWindows);
 	PackAddBool(p, "V_IsNT", t->IsNT);
@@ -62,9 +60,8 @@ void OutRpcWinVer(PACK *p, RPC_WINVER *t) {
 }
 
 void InRpcMsg(RPC_MSG *t, PACK *p) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_MSG));
 
@@ -76,9 +73,8 @@ void InRpcMsg(RPC_MSG *t, PACK *p) {
 	Free(utf8);
 }
 void OutRpcMsg(PACK *p, RPC_MSG *t) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	char *utf8 = CopyUniToUtf(t->Msg);
@@ -87,9 +83,8 @@ void OutRpcMsg(PACK *p, RPC_MSG *t) {
 	Free(utf8);
 }
 void FreeRpcMsg(RPC_MSG *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Msg);
 }
@@ -150,9 +145,8 @@ static void RpcReadLogFileBufferOut(const RPC_FIELD *f, PACK *p, void *base, UIN
 	BUF *b = *((BUF **)(((UCHAR *)base) + f->Offset));
 
 	// Written only when there is a buffer
-	if (b != NULL) {
+	if (b != NULL)
 		PackAddBuf(p, f->Key, b);
-	}
 }
 static void RpcReadLogFileBufferIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
 	*((BUF **)(((UCHAR *)base) + f->Offset)) = PackGetBuf(p, f->Key);
@@ -160,9 +154,8 @@ static void RpcReadLogFileBufferIn(const RPC_FIELD *f, void *base, PACK *p, UINT
 static void RpcReadLogFileBufferFree(const RPC_FIELD *f, void *base) {
 	BUF *b = *((BUF **)(((UCHAR *)base) + f->Offset));
 
-	if (b != NULL) {
+	if (b != NULL)
 		FreeBuf(b);
-	}
 }
 static const RPC_HOOK rpc_read_log_file_buffer_hook = {RpcReadLogFileBufferOut, RpcReadLogFileBufferIn, RpcReadLogFileBufferFree};
 
@@ -185,9 +178,8 @@ void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t) {
 }
 
 void InRpcAcList(RPC_AC_LIST *t, PACK *p) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_AC_LIST));
 	LIST *o = NewList(CmpAc);
@@ -203,9 +195,8 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p) {
 		PackGetIpEx(p, "IpAddress", &ac->IpAddress, i);
 		ac->Masked = PackGetBoolEx(p, "Masked", i);
 
-		if (ac->Masked) {
+		if (ac->Masked)
 			PackGetIpEx(p, "SubnetMask", &ac->SubnetMask, i);
-		}
 
 		ac->Priority = PackGetIntEx(p, "Priority", i);
 
@@ -217,9 +208,8 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p) {
 	t->o = o;
 }
 void OutRpcAcList(PACK *p, RPC_AC_LIST *t) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	LIST *o = t->o;
 	UINT num = LIST_NUM(o);
@@ -242,9 +232,8 @@ void OutRpcAcList(PACK *p, RPC_AC_LIST *t) {
 	}
 }
 void FreeRpcAcList(RPC_AC_LIST *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	FreeAcList(t->o);
 }
@@ -276,9 +265,8 @@ void FreeRpcEnumCrl(RPC_ENUM_CRL *t) {
 
 void InRpcCrl(RPC_CRL *t, PACK *p) {
 	wchar_t tmp[MAX_SIZE];
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_CRL));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -291,76 +279,56 @@ void InRpcCrl(RPC_CRL *t, PACK *p) {
 	}
 	t->Crl->Name = ZeroMalloc(sizeof(NAME));
 	NAME *n = t->Crl->Name;
-	if (PackGetUniStr(p, "CommonName", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "CommonName", tmp, sizeof(tmp)))
 		n->CommonName = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "Organization", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "Organization", tmp, sizeof(tmp)))
 		n->Organization = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "Unit", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "Unit", tmp, sizeof(tmp)))
 		n->Unit = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "Country", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "Country", tmp, sizeof(tmp)))
 		n->Country = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "State", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "State", tmp, sizeof(tmp)))
 		n->State = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "Local", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "Local", tmp, sizeof(tmp)))
 		n->Local = CopyUniStr(tmp);
-	}
-	if (PackGetDataSize(p, "DigestMD5") == MD5_SIZE) {
+	if (PackGetDataSize(p, "DigestMD5") == MD5_SIZE)
 		PackGetData(p, "DigestMD5", t->Crl->DigestMD5);
-	}
-	if (PackGetDataSize(p, "DigestSHA1") == SHA1_SIZE) {
+	if (PackGetDataSize(p, "DigestSHA1") == SHA1_SIZE)
 		PackGetData(p, "DigestSHA1", t->Crl->DigestSHA1);
-	}
 }
 void OutRpcCrl(PACK *p, RPC_CRL *t) {
-	if (p == NULL || t == NULL) {
+	if (p == NULL || t == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddInt(p, "Key", t->Key);
 
-	if (t->Crl == NULL) {
+	if (t->Crl == NULL)
 		return;
-	}
 
-	if (t->Crl->Serial != NULL) {
+	if (t->Crl->Serial != NULL)
 		PackAddData(p, "Serial", t->Crl->Serial->data, t->Crl->Serial->size);
-	}
 	NAME *n = t->Crl->Name;
-	if (n->CommonName != NULL) {
+	if (n->CommonName != NULL)
 		PackAddUniStr(p, "CommonName", n->CommonName);
-	}
-	if (n->Organization != NULL) {
+	if (n->Organization != NULL)
 		PackAddUniStr(p, "Organization", n->Organization);
-	}
-	if (n->Unit != NULL) {
+	if (n->Unit != NULL)
 		PackAddUniStr(p, "Unit", n->Unit);
-	}
-	if (n->Country != NULL) {
+	if (n->Country != NULL)
 		PackAddUniStr(p, "Country", n->Country);
-	}
-	if (n->State != NULL) {
+	if (n->State != NULL)
 		PackAddUniStr(p, "State", n->State);
-	}
-	if (n->Local != NULL) {
+	if (n->Local != NULL)
 		PackAddUniStr(p, "Local", n->Local);
-	}
-	if (IsZero(t->Crl->DigestMD5, MD5_SIZE) == false) {
+	if (IsZero(t->Crl->DigestMD5, MD5_SIZE) == false)
 		PackAddData(p, "DigestMD5", t->Crl->DigestMD5, MD5_SIZE);
-	}
-	if (IsZero(t->Crl->DigestSHA1, SHA1_SIZE) == false) {
+	if (IsZero(t->Crl->DigestSHA1, SHA1_SIZE) == false)
 		PackAddData(p, "DigestSHA1", t->Crl->DigestSHA1, SHA1_SIZE);
-	}
 }
 void FreeRpcCrl(RPC_CRL *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	FreeCrl(t->Crl);
 }
@@ -453,36 +421,28 @@ static void OutRpcMemInfo(PACK *p, MEMINFO *t) {
 
 static void InRpcOsInfo(OS_INFO *t, PACK *p) {
 	char tmp[MAX_SIZE];
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(OS_INFO));
 	t->OsType = PackGetInt(p, "OsType");
 	t->OsServicePack = PackGetInt(p, "OsServicePack");
-	if (PackGetStr(p, "OsSystemName", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "OsSystemName", tmp, sizeof(tmp)))
 		t->OsSystemName = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "OsProductName", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "OsProductName", tmp, sizeof(tmp)))
 		t->OsProductName = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "OsVendorName", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "OsVendorName", tmp, sizeof(tmp)))
 		t->OsVendorName = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "OsVersion", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "OsVersion", tmp, sizeof(tmp)))
 		t->OsVersion = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "KernelName", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "KernelName", tmp, sizeof(tmp)))
 		t->KernelName = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "KernelVersion", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "KernelVersion", tmp, sizeof(tmp)))
 		t->KernelVersion = CopyStr(tmp);
-	}
 }
 static void OutRpcOsInfo(PACK *p, OS_INFO *t) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "OsType", t->OsType);
 	PackAddInt(p, "OsServicePack", t->OsServicePack);
@@ -494,9 +454,8 @@ static void OutRpcOsInfo(PACK *p, OS_INFO *t) {
 	PackAddStr(p, "KernelVersion", t->KernelVersion);
 }
 static void FreeRpcOsInfo(OS_INFO *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->OsSystemName);
 	Free(t->OsProductName);
@@ -534,9 +493,8 @@ void FreeRpcAdminOption(RPC_ADMIN_OPTION *t) {
 }
 
 void InRpcConfig(RPC_CONFIG *t, PACK *p) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_CONFIG));
 	PackGetStr(p, "FileName", t->FileName, sizeof(t->FileName));
@@ -545,17 +503,15 @@ void InRpcConfig(RPC_CONFIG *t, PACK *p) {
 	PackGetData(p, "FileData", t->FileData);
 }
 void OutRpcConfig(PACK *p, RPC_CONFIG *t) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "FileName", t->FileName);
 	PackAddData(p, "FileData", t->FileData, StrLen(t->FileData));
 }
 void FreeRpcConfig(RPC_CONFIG *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->FileData);
 }
@@ -578,20 +534,18 @@ void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t) {
 static void RpcAccessOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total) {
 	ACCESS *a = (ACCESS *)(((UCHAR *)base) + f->Offset);
 
-	if (total == 0) {
+	if (total == 0)
 		OutRpcAccess(p, a);
-	} else {
+	else
 		OutRpcAccessEx(p, a, index, total);
-	}
 }
 static void RpcAccessIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
 	ACCESS *a = (ACCESS *)(((UCHAR *)base) + f->Offset);
 
-	if (total == 0) {
+	if (total == 0)
 		InRpcAccess(a, p);
-	} else {
+	else
 		InRpcAccessEx(a, p, index);
-	}
 }
 static const RPC_HOOK rpc_access_hook = {RpcAccessOut, RpcAccessIn, NULL};
 
@@ -719,9 +673,8 @@ void OutRpcListener(PACK *p, RPC_LISTENER *t) {
 }
 
 void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_LISTENER_LIST));
 	t->NumPort = PackGetIndexCount(p, "Ports");
@@ -735,9 +688,8 @@ void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p) {
 	}
 }
 void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < t->NumPort; i++) {
 		PackAddIntEx(p, "Ports", t->Ports[i], i, t->NumPort);
@@ -746,9 +698,8 @@ void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t) {
 	}
 }
 void FreeRpcListenerList(RPC_LISTENER_LIST *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Ports);
 	Free(t->Enables);
@@ -758,29 +709,25 @@ void FreeRpcListenerList(RPC_LISTENER_LIST *t) {
 void InRpcStr(RPC_STR *t, PACK *p) {
 	UINT size = 65536;
 	char *tmp = Malloc(size);
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_STR));
-	if (PackGetStr(p, "String", tmp, size) == false) {
+	if (PackGetStr(p, "String", tmp, size) == false)
 		t->String = CopyStr("");
-	} else {
+	else
 		t->String = CopyStr(tmp);
-	}
 	Free(tmp);
 }
 void OutRpcStr(PACK *p, RPC_STR *t) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "String", t->String);
 }
 void FreeRpcStr(RPC_STR *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->String);
 }
@@ -1011,17 +958,15 @@ static void RpcHubLogPacketLogConfigOut(const RPC_FIELD *f, PACK *p, void *base,
 	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
 	UINT num = f->Size / sizeof(UINT);
 
-	for (UINT i = 0; i < num; i++) {
+	for (UINT i = 0; i < num; i++)
 		PackAddIntEx(p, f->Key, c[i], i, num);
-	}
 }
 static void RpcHubLogPacketLogConfigIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
 	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
 	UINT num = f->Size / sizeof(UINT);
 
-	for (UINT i = 0; i < num; i++) {
+	for (UINT i = 0; i < num; i++)
 		c[i] = PackGetIntEx(p, f->Key, i);
-	}
 }
 static const RPC_HOOK rpc_hub_log_packet_log_config_hook = {RpcHubLogPacketLogConfigOut, RpcHubLogPacketLogConfigIn, NULL};
 
@@ -1187,9 +1132,8 @@ static void RpcCreateLinkServerCertIn(const RPC_FIELD *f, void *base, PACK *p, U
 static void RpcCreateLinkServerCertFree(const RPC_FIELD *f, void *base) {
 	X *x = *(X **)((UCHAR *)base + f->Offset);
 
-	if (x != NULL) {
+	if (x != NULL)
 		FreeX(x);
-	}
 }
 static const RPC_HOOK rpc_create_link_server_cert_hook = {RpcCreateLinkServerCertOut, RpcCreateLinkServerCertIn, RpcCreateLinkServerCertFree};
 
@@ -1220,9 +1164,8 @@ void FreeRpcCreateLink(RPC_CREATE_LINK *t) {
 static void RpcEnumLinkHubNameIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total) {
 	char *s = (char *)((UCHAR *)base + f->Offset);
 
-	if (PackGetStrEx(p, f->Key, s, f->Size, index) == false) {
+	if (PackGetStrEx(p, f->Key, s, f->Size, index) == false)
 		PackGetStrEx(p, "TargetHubName", s, f->Size, index);
-	}
 }
 static const RPC_HOOK rpc_enum_link_hub_name_hook = {NULL, RpcEnumLinkHubNameIn, NULL};
 
@@ -1321,9 +1264,8 @@ void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t) {
 }
 
 static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index) {
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 
 	Zero(a, sizeof(ACCESS));
 	a->Id = PackGetIntEx(p, "Id", index);
@@ -1364,16 +1306,14 @@ static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index) {
 	}
 }
 static void InRpcAccess(ACCESS *a, PACK *p) {
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 
 	InRpcAccessEx(a, p, 0);
 }
 static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total) {
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 
 	PackAddIntEx(p, "Id", a->Id, index, total);
 	PackAddUniStrEx(p, "Note", a->Note, index, total);
@@ -1429,9 +1369,8 @@ static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total) {
 	}
 }
 static void OutRpcAccess(PACK *p, ACCESS *a) {
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 
 	OutRpcAccessEx(p, a, 0, 1);
 }
@@ -1467,12 +1406,10 @@ static void *InRpcAuthData(PACK *p, UINT *authtype, char *username) {
 	AUTHNT *nt;
 	BUF *b;
 	char plain_pw[MAX_SIZE];
-	if (p == NULL) {
+	if (p == NULL)
 		return NULL;
-	}
-	if (authtype == NULL) {
+	if (authtype == NULL)
 		return NULL;
-	}
 
 	*authtype = PackGetInt(p, "AuthType");
 
@@ -1502,18 +1439,16 @@ static void *InRpcAuthData(PACK *p, UINT *authtype, char *username) {
 			rootcert->Serial = NewXSerial(b->Buf, b->Size);
 			FreeBuf(b);
 		}
-		if (PackGetUniStr(p, "CommonName", tmp, sizeof(tmp))) {
+		if (PackGetUniStr(p, "CommonName", tmp, sizeof(tmp)))
 			rootcert->CommonName = CopyUniStr(tmp);
-		}
 		return rootcert;
 
 	case AUTHTYPE_NT:
 		nt = ZeroMalloc(sizeof(AUTHNT));
-		if (PackGetUniStr(p, "NtUsername", tmp, sizeof(tmp))) {
+		if (PackGetUniStr(p, "NtUsername", tmp, sizeof(tmp)))
 			nt->NtUsername = CopyUniStr(tmp);
-		} else {
+		else
 			nt->NtUsername = CopyUniStr(L"");
-		}
 		return nt;
 	}
 
@@ -1524,9 +1459,8 @@ static void OutRpcAuthData(PACK *p, void *authdata, UINT authtype) {
 	AUTHUSERCERT *usercert = authdata;
 	AUTHROOTCERT *rootcert = authdata;
 	AUTHNT *nt = authdata;
-	if (p == NULL) {
+	if (p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "AuthType", authtype);
 
@@ -1541,12 +1475,10 @@ static void OutRpcAuthData(PACK *p, void *authdata, UINT authtype) {
 		break;
 
 	case AUTHTYPE_ROOTCERT:
-		if (rootcert->Serial != NULL) {
+		if (rootcert->Serial != NULL)
 			PackAddData(p, "Serial", rootcert->Serial->data, rootcert->Serial->size);
-		}
-		if (rootcert->CommonName != NULL) {
+		if (rootcert->CommonName != NULL)
 			PackAddUniStr(p, "CommonName", rootcert->CommonName);
-		}
 		break;
 
 	case AUTHTYPE_NT:
@@ -1788,9 +1720,8 @@ void FreeRpcEnumSession(RPC_ENUM_SESSION *t) {
 }
 
 void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	t->Cert = PackGetX(p, "Cert");
 	t->Chain = PackGetXList(p, "Chain");
@@ -1798,9 +1729,8 @@ void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p) {
 	t->Flag1 = PackGetInt(p, "Flag1");
 }
 void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t) {
-	if (p == NULL || t == NULL) {
+	if (p == NULL || t == NULL)
 		return;
-	}
 
 	PackAddX(p, "Cert", t->Cert);
 	PackAddXList(p, "Chain", t->Chain);
@@ -1814,9 +1744,8 @@ void FreeRpcKeyPair(RPC_KEY_PAIR *t) {
 }
 
 void InRpcNodeInfo(NODE_INFO *t, PACK *p) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(NODE_INFO));
 	PackGetStr(p, "ClientProductName", t->ClientProductName, sizeof(t->ClientProductName));
@@ -1845,9 +1774,8 @@ void InRpcNodeInfo(NODE_INFO *t, PACK *p) {
 	t->ProxyPort = PackGetInt(p, "ProxyPort");
 }
 void OutRpcNodeInfo(PACK *p, NODE_INFO *t) {
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "ClientProductName", t->ClientProductName);
 	PackAddStr(p, "ServerProductName", t->ServerProductName);
@@ -1975,9 +1903,8 @@ static void RpcEnumIpTableIpV6In(const RPC_FIELD *f, void *base, PACK *p, UINT i
 	RPC_ENUM_IP_TABLE_ITEM *e = (RPC_ENUM_IP_TABLE_ITEM *)base;
 	IP *ip = (IP *)(((UCHAR *)base) + f->Offset);
 
-	if (PackGetIpEx(p, f->Key, ip, index) == false) {
+	if (PackGetIpEx(p, f->Key, ip, index) == false)
 		UINTToIP(ip, e->Ip);
-	}
 }
 static const RPC_HOOK rpc_enum_ip_table_ipv6_hook = {NULL, RpcEnumIpTableIpV6In, NULL};
 

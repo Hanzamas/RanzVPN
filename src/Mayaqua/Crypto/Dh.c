@@ -10,9 +10,8 @@
 #include <openssl/bn.h>
 
 static BIGNUM *BinToBigNum(void *data, UINT size) {
-	if (data == NULL) {
+	if (data == NULL)
 		return NULL;
-	}
 
 	BIGNUM *bn = BN_new();
 	BN_bin2bn(data, size, bn);
@@ -23,9 +22,8 @@ static BIGNUM *BinToBigNum(void *data, UINT size) {
 // The DH parameters of the prime p and the generator g, which the result owns (p is freed on failure).
 // A key is not generated here: TLS makes its own key from these parameters for each handshake.
 static DH_CTX *DhNewFromPrime(BIGNUM *p, UINT g) {
-	if (p == NULL) {
+	if (p == NULL)
 		return NULL;
-	}
 
 	DH_CTX *dh = ZeroMalloc(sizeof(DH_CTX));
 	dh->dh = DH_new();
@@ -72,9 +70,8 @@ DH_CTX *DhNewFromBits(UINT bits) {
 }
 
 DH_CTX *DhNew(char *prime, UINT g) {
-	if (prime == NULL || g == 0) {
+	if (prime == NULL || g == 0)
 		return NULL;
-	}
 
 	BUF *buf = StrToBin(prime);
 	BIGNUM *p = BinToBigNum(buf->Buf, buf->Size);
@@ -84,9 +81,8 @@ DH_CTX *DhNew(char *prime, UINT g) {
 }
 
 void DhFree(DH_CTX *dh) {
-	if (dh == NULL) {
+	if (dh == NULL)
 		return;
-	}
 
 	DH_free(dh->dh);
 

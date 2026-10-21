@@ -22,9 +22,8 @@
 static void CmdPrintNodeInfo(CT *ct, const NODE_INFO *info) {
 	wchar_t tmp[MAX_SIZE];
 	char str[MAX_SIZE];
-	if (ct == NULL || info == NULL) {
+	if (ct == NULL || info == NULL)
 		return;
-	}
 
 	StrToUni(tmp, sizeof(tmp), info->ClientProductName);
 	CtInsert(ct, _UU("SM_NODE_CLIENT_NAME"), tmp);
@@ -92,9 +91,8 @@ UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -138,9 +136,8 @@ UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 
 		CmdPrintStatusToListViewEx(ct, &t.Status, true);
 
-		if (StrCmpi(t.Username, LINK_USER_NAME_PRINT) != 0 && StrCmpi(t.Username, BRIDGE_USER_NAME_PRINT) != 0) {
+		if (StrCmpi(t.Username, LINK_USER_NAME_PRINT) != 0 && StrCmpi(t.Username, BRIDGE_USER_NAME_PRINT) != 0)
 			CmdPrintNodeInfo(ct, &t.NodeInfo);
-		}
 
 		CtFree(ct, c);
 	}
@@ -163,9 +160,8 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -201,34 +197,30 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 			StrToUni(tmp1, sizeof(tmp1), e->Name);
 
 			wchar_t *tmp2 = _UU("SM_SESS_NORMAL");
-			if (e->LinkMode) {
+			if (e->LinkMode)
 				tmp2 = _UU("SM_SESS_LINK");
-			}
 
 			StrToUni(tmp3, sizeof(tmp3), e->Username);
 
 			StrToUni(tmp4, sizeof(tmp4), e->Hostname);
-			if (e->LinkMode) {
+			if (e->LinkMode)
 				UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_SESS_LINK_HOSTNAME"));
-			} else if (e->BridgeMode) {
+			else if (e->BridgeMode)
 				UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_SESS_BRIDGE_HOSTNAME"));
-			}
 
 			UniFormat(tmp5, sizeof(tmp5), L"%u / %u", e->CurrentNumTcp, e->MaxNumTcp);
-			if (e->LinkMode) {
+			if (e->LinkMode)
 				UniStrCpy(tmp5, sizeof(tmp5), _UU("SM_SESS_LINK_TCP"));
-			} else if (e->BridgeMode) {
+			else if (e->BridgeMode)
 				UniStrCpy(tmp5, sizeof(tmp5), _UU("SM_SESS_BRIDGE_TCP"));
-			}
 
 			UniToStr3(tmp6, sizeof(tmp6), e->PacketSize);
 			UniToStr3(tmp7, sizeof(tmp7), e->PacketNum);
 
-			if (e->VLanId == 0) {
+			if (e->VLanId == 0)
 				UniStrCpy(tmp8, sizeof(tmp8), _UU("CM_ST_NO_VLAN"));
-			} else {
+			else
 				UniToStru(tmp8, e->VLanId);
-			}
 
 			CtInsert(ct, tmp1, tmp8, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7);
 		}
@@ -259,9 +251,8 @@ UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) 
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -301,9 +292,8 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -318,9 +308,8 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 		CT *ct = CtNew();
 		char *session_name = GetParamStr(o, "[session_name]");
 
-		if (IsEmptyStr(session_name)) {
+		if (IsEmptyStr(session_name))
 			session_name = NULL;
-		}
 
 		CtInsertColumn(ct, _UU("CMD_ID"), false);
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_1"), false);
@@ -353,9 +342,8 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 				GetDateTimeStr64Uni(tmp4, sizeof(tmp4), SystemToLocal64(e->UpdatedTime));
 
 				UniToStru(tmp6, e->VlanId);
-				if (e->VlanId == 0) {
+				if (e->VlanId == 0)
 					UniStrCpy(tmp6, sizeof(tmp6), _UU("CM_ST_NONE"));
-				}
 
 				CtInsert(ct,
 				         tmp0, tmp1, tmp6, tmp2, tmp3, tmp4);
@@ -387,9 +375,8 @@ UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -429,9 +416,8 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -446,9 +432,8 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 		CT *ct = CtNew();
 		char *session_name = GetParamStr(o, "[session_name]");
 
-		if (IsEmptyStr(session_name)) {
+		if (IsEmptyStr(session_name))
 			session_name = NULL;
-		}
 
 		CtInsertColumn(ct, _UU("CMD_ID"), false);
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_1"), false);
@@ -471,11 +456,10 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 				StrToUni(tmp1, sizeof(tmp1), e->SessionName);
 
 				IPToStr(str, sizeof(str), &e->IpV6);
-				if (e->DhcpAllocated == false) {
+				if (e->DhcpAllocated == false)
 					StrToUni(tmp2, sizeof(tmp2), str);
-				} else {
+				else
 					UniFormat(tmp2, sizeof(tmp2), _UU("SM_MAC_IP_DHCP"), str);
-				}
 
 				GetDateTimeStr64Uni(tmp3, sizeof(tmp3), SystemToLocal64(e->CreatedTime));
 
@@ -511,9 +495,8 @@ UINT PsIpDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);

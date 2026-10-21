@@ -14,9 +14,8 @@
 #define RPC_RECV_CHUNK_SIZE (64 * 1024U)
 
 void RpcFree(RPC *rpc) {
-	if (rpc == NULL) {
+	if (rpc == NULL)
 		return;
-	}
 
 	Disconnect(rpc->Sock);
 
@@ -29,13 +28,11 @@ void RpcFree(RPC *rpc) {
 
 static PACK *CallRpcDispatcher(RPC *r, PACK *p) {
 	char func_name[MAX_SIZE];
-	if (r == NULL || p == NULL) {
+	if (r == NULL || p == NULL)
 		return NULL;
-	}
 
-	if (PackGetStr(p, "function_name", func_name, sizeof(func_name)) == false) {
+	if (PackGetStr(p, "function_name", func_name, sizeof(func_name)) == false)
 		return NULL;
-	}
 
 	return r->Dispatch(r, func_name, p);
 }
@@ -54,15 +51,13 @@ static bool RpcSendPack(SOCK *s, PACK *p) {
 
 static PACK *RpcRecvPack(SOCK *s) {
 	UINT size;
-	if (RecvAll(s, &size, sizeof(UINT), s->SecureMode) == false) {
+	if (RecvAll(s, &size, sizeof(UINT), s->SecureMode) == false)
 		return NULL;
-	}
 
 	size = Endian32(size);
 
-	if (size > MAX_PACK_SIZE) {
+	if (size > MAX_PACK_SIZE)
 		return NULL;
-	}
 
 	BUF *b = NewBuf();
 
@@ -86,21 +81,18 @@ static PACK *RpcRecvPack(SOCK *s) {
 }
 
 static bool RpcRecvNextCall(RPC *r) {
-	if (r == NULL) {
+	if (r == NULL)
 		return false;
-	}
 
 	PACK *p = RpcRecvPack(r->Sock);
-	if (p == NULL) {
+	if (p == NULL)
 		return false;
-	}
 
 	PACK *ret = CallRpcDispatcher(r, p);
 	FreePack(p);
 
-	if (ret == NULL) {
+	if (ret == NULL)
 		ret = PackError(ERR_NOT_SUPPORTED);
-	}
 
 	bool ok = RpcSendPack(r->Sock, ret);
 	FreePack(ret);
@@ -109,31 +101,26 @@ static bool RpcRecvNextCall(RPC *r) {
 }
 
 void RpcServer(RPC *r) {
-	if (r == NULL) {
+	if (r == NULL)
 		return;
-	}
 
-	while (true) {
-		if (RpcRecvNextCall(r) == false) {
+	while (true)
+		if (RpcRecvNextCall(r) == false)
 			break;
-		}
-	}
 }
 
 PACK *RpcCall(RPC *r, char *function_name, PACK *p) {
 	PACK *ret;
 	UINT num_retry = 0;
 	UINT err = 0;
-	if (r == NULL || function_name == NULL) {
+	if (r == NULL || function_name == NULL)
 		return NULL;
-	}
 
 
 	Lock(r->Lock);
 	{
-		if (p == NULL) {
+		if (p == NULL)
 			p = NewPack();
-		}
 
 		PackAddStr(p, "function_name", function_name);
 
@@ -148,9 +135,8 @@ PACK *RpcCall(RPC *r, char *function_name, PACK *p) {
 
 					err = AdminReconnect(r);
 
-					if (err == ERR_NO_ERROR) {
+					if (err == ERR_NO_ERROR)
 						goto RETRY;
-					}
 				}
 			}
 		}
@@ -158,9 +144,8 @@ PACK *RpcCall(RPC *r, char *function_name, PACK *p) {
 		FreePack(p);
 
 		if (ret == NULL) {
-			if (err == 0) {
+			if (err == 0)
 				err = ERR_DISCONNECTED;
-			}
 
 			ret = PackError(err);
 			PackAddInt(ret, "error_code", err);
@@ -172,26 +157,22 @@ PACK *RpcCall(RPC *r, char *function_name, PACK *p) {
 }
 
 PACK *RpcCallInternal(RPC *r, PACK *p) {
-	if (r == NULL || p == NULL) {
+	if (r == NULL || p == NULL)
 		return NULL;
-	}
 
-	if (r->Sock == NULL) {
+	if (r->Sock == NULL)
 		return NULL;
-	}
 
-	if (RpcSendPack(r->Sock, p) == false) {
+	if (RpcSendPack(r->Sock, p) == false)
 		return NULL;
-	}
 
 	return RpcRecvPack(r->Sock);
 }
 
 // dispatch is the function a server-side RPC runs for each call, NULL for the calling side
 RPC *NewRpc(SOCK *s, RPC_DISPATCHER *dispatch, void *param) {
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	RPC *r = ZeroMallocEx(sizeof(RPC), true);
 	r->Sock = s;

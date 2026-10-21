@@ -14,9 +14,8 @@
 static void CheckDeadLockThread(THREAD *t, void *param) {
 	DEADCHECK *c = (DEADCHECK *)param;
 
-	if (t == NULL || c == NULL) {
+	if (t == NULL || c == NULL)
 		return;
-	}
 
 	NoticeThreadInit(t);
 
@@ -29,12 +28,10 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name) {
 	DEADCHECK c;
 	char msg[MAX_PATH];
 
-	if (lock == NULL) {
+	if (lock == NULL)
 		return;
-	}
-	if (name == NULL) {
+	if (name == NULL)
 		name = "Unknown";
-	}
 
 	Format(msg, sizeof(msg), "error: CheckDeadLock() Failed: %s\n", name);
 
@@ -45,11 +42,10 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name) {
 	THREAD *t = NewThread(CheckDeadLockThread, &c);
 	WaitThreadInit(t);
 	if (WaitThread(t, timeout) == false) {
-		if (c.Unlocked == false) {
+		if (c.Unlocked == false)
 			AbortExitEx(msg);
-		} else {
+		else
 			WaitThread(t, INFINITE);
-		}
 	}
 
 	ReleaseThread(t);
@@ -60,9 +56,8 @@ LOCK *NewRawLock() {
 	// Memory allocation
 	LOCK *lock = Win32MemoryAlloc(sizeof(LOCK));
 
-	if (lock == NULL) {
+	if (lock == NULL)
 		return NULL;
-	}
 
 	// Initialize the critical section
 	InitializeCriticalSection(&lock->CriticalSection);
@@ -111,13 +106,11 @@ static LOCK *NewLockMain() {
 	UINT retry = 0;
 
 	while (true) {
-		if ((retry++) > OBJECT_ALLOC__MAX_RETRY) {
+		if ((retry++) > OBJECT_ALLOC__MAX_RETRY)
 			AbortExitEx("error: NewRawLock() failed.\n\n");
-		}
 		lock = NewRawLock();
-		if (lock != NULL) {
+		if (lock != NULL)
 			break;
-		}
 		SleepThread(OBJECT_ALLOC_FAIL_SLEEP_TIME);
 	}
 
@@ -133,9 +126,8 @@ LOCK *NewLock() {
 }
 
 void DeleteLock(LOCK *lock) {
-	if (lock == NULL) {
+	if (lock == NULL)
 		return;
-	}
 
 	KS_INC(KS_DELETELOCK_COUNT);
 	KS_DEC(KS_CURRENT_LOCK_COUNT);
@@ -144,9 +136,8 @@ void DeleteLock(LOCK *lock) {
 }
 
 bool LockInner(LOCK *lock) {
-	if (lock == NULL) {
+	if (lock == NULL)
 		return false;
-	}
 
 	KS_INC(KS_LOCK_COUNT);
 	KS_INC(KS_CURRENT_LOCKED_COUNT);
@@ -155,9 +146,8 @@ bool LockInner(LOCK *lock) {
 }
 
 void UnlockInner(LOCK *lock) {
-	if (lock == NULL) {
+	if (lock == NULL)
 		return;
-	}
 
 	KS_INC(KS_UNLOCK_COUNT);
 	KS_DEC(KS_CURRENT_LOCKED_COUNT);
@@ -176,9 +166,8 @@ COUNTER *NewCounter() {
 }
 
 void DeleteCounter(COUNTER *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	KS_INC(KS_DELETE_COUNTER_COUNT);
 	KS_SUB(KS_CURRENT_COUNT, c->c);
@@ -188,9 +177,8 @@ void DeleteCounter(COUNTER *c) {
 
 // Increment; returns the new value
 UINT Inc(COUNTER *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
 
 	UINT ret = (UINT)InterlockedIncrement((volatile LONG *)&c->c);
 
@@ -203,9 +191,8 @@ UINT Inc(COUNTER *c) {
 // Decrement; returns the new value. A COUNTER at 0 stays at 0 and returns 0.
 UINT Dec(COUNTER *c) {
 	UINT old_value, ret;
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
 
 	// Compare-exchange loop, so that the floor at 0 holds under contention
 	while (true) {
@@ -216,9 +203,8 @@ UINT Dec(COUNTER *c) {
 		}
 
 		ret = old_value - 1;
-		if ((UINT)InterlockedCompareExchange((volatile LONG *)&c->c, (LONG)ret, (LONG)old_value) == old_value) {
+		if ((UINT)InterlockedCompareExchange((volatile LONG *)&c->c, (LONG)ret, (LONG)old_value) == old_value)
 			break;
-		}
 	}
 
 	KS_INC(KS_DEC_COUNT);
@@ -228,9 +214,8 @@ UINT Dec(COUNTER *c) {
 }
 
 UINT Release(REF *ref) {
-	if (ref == NULL) {
+	if (ref == NULL)
 		return 0;
-	}
 
 	KS_INC(KS_RELEASE_COUNT);
 	KS_DEC(KS_CURRENT_REFED_COUNT);
@@ -246,9 +231,8 @@ UINT Release(REF *ref) {
 }
 
 UINT AddRef(REF *ref) {
-	if (ref == NULL) {
+	if (ref == NULL)
 		return 0;
-	}
 
 	UINT c = Inc(&ref->c);
 
@@ -289,23 +273,19 @@ EVENT *NewEvent() {
 }
 
 void ReleaseEvent(EVENT *e) {
-	if (e == NULL) {
+	if (e == NULL)
 		return;
-	}
 
-	if (Release(e->ref) == 0) {
+	if (Release(e->ref) == 0)
 		CleanupEvent(e);
-	}
 }
 
 void CleanupEvent(EVENT *e) {
-	if (e == NULL) {
+	if (e == NULL)
 		return;
-	}
 
-	if (e->pData != NULL) {
+	if (e->pData != NULL)
 		CloseHandle((HANDLE)e->pData);
-	}
 
 	Free(e);
 
@@ -313,15 +293,13 @@ void CleanupEvent(EVENT *e) {
 }
 
 bool Wait(EVENT *e, UINT timeout) {
-	if (e == NULL) {
+	if (e == NULL)
 		return false;
-	}
 
 	KS_INC(KS_WAIT_COUNT);
 
-	if (e->pData == NULL) {
+	if (e->pData == NULL)
 		return false;
-	}
 
 	// Only a time-out gives false: WAIT_FAILED and WAIT_ABANDONED give true
 	return (WaitForSingleObject((HANDLE)e->pData, timeout) != WAIT_TIMEOUT);
@@ -330,39 +308,32 @@ bool Wait(EVENT *e, UINT timeout) {
 bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel) {
 	bool dummy_bool = false;
 	UINT64 giveup;
-	if (cancel == NULL) {
+	if (cancel == NULL)
 		cancel = &dummy_bool;
-	}
 
 	UINT64 start = Tick64();
 
-	if (timeout == INFINITE || timeout == 0x7FFFFFFF) {
+	if (timeout == INFINITE || timeout == 0x7FFFFFFF)
 		giveup = 0;
-	} else {
+	else
 		giveup = start + (UINT64)timeout;
-	}
 
 	while (true) {
 		UINT64 now = Tick64();
 		UINT interval_to_giveup = (UINT)(giveup - now);
-		if (giveup == 0) {
+		if (giveup == 0)
 			interval_to_giveup = INFINITE;
-		} else {
-			if (now >= giveup) {
-				return false;
-			}
-		}
+		else if (now >= giveup)
+			return false;
 
 		interval_to_giveup = MIN(interval_to_giveup, 25);
 
-		if (FlagRead(cancel)) {
+		if (FlagRead(cancel))
 			return false;
-		}
 
 		if (e != NULL) {
-			if (Wait(e, interval_to_giveup)) {
+			if (Wait(e, interval_to_giveup))
 				return true;
-			}
 		} else {
 			SleepThread(interval_to_giveup);
 		}

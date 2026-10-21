@@ -24,30 +24,25 @@
 
 static int CompareStormList(void *p1, void *p2) {
 	UINT r;
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	STORM *s1 = *(STORM **)p1;
 	STORM *s2 = *(STORM **)p2;
-	if (s1 == NULL || s2 == NULL) {
+	if (s1 == NULL || s2 == NULL)
 		return 0;
-	}
 	if (s1->StrictMode == false && s2->StrictMode == false) {
 		r = CmpIpAddr(&s1->DestIp, &s2->DestIp);
-		if (r != 0) {
+		if (r != 0)
 			return r;
-		}
 		r = CmpIpAddr(&s1->SrcIp, &s2->SrcIp);
-		if (r != 0) {
+		if (r != 0)
 			return r;
-		}
 	} else {
 		int r1 = CmpIpAddr(&s1->DestIp, &s2->DestIp);
 		int r2 = CmpIpAddr(&s1->SrcIp, &s2->SrcIp);
 		// Strict mode: entries that share either address differ only by MAC address
-		if (r1 != 0 && r2 != 0) {
+		if (r1 != 0 && r2 != 0)
 			return r1;
-		}
 	}
 	r = Cmp(s1->MacAddress, s2->MacAddress, 6);
 	return r;
@@ -114,9 +109,8 @@ static void HubPaFree(SESSION *s) {
 		BLOCK *b;
 
 		while (b = GetNext(pa->PacketQueue)) {
-			if (b->IsFlooding) {
+			if (b->IsFlooding)
 				CedarAddCurrentTcpQueueSize(s->Cedar, -((int)b->Size));
-			}
 
 			FreeBlock(b);
 		}
@@ -148,9 +142,8 @@ static UINT HubPaGetNextPacket(SESSION *s, void **data) {
 		if (block == NULL) {
 			ret = 0;
 		} else {
-			if (block->IsFlooding) {
+			if (block->IsFlooding)
 				CedarAddCurrentTcpQueueSize(s->Cedar, -((int)block->Size));
-			}
 
 			*data = block->Buf;
 			ret = block->Size;
@@ -185,13 +178,11 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size) {
 
 		target_mss = MIN(target_mss, session_mss);
 
-		if (s->UseUdpAcceleration && s->UdpAccelMss != 0) {
+		if (s->UseUdpAcceleration && s->UdpAccelMss != 0)
 			target_mss = MIN(target_mss, s->UdpAccelMss);
-		}
 
-		if (target_mss != INFINITE) {
+		if (target_mss != INFINITE)
 			AdjustTcpMssL2(data, size, target_mss, opt->VlanTypeId);
-		}
 	}
 
 	if (data == NULL) {
@@ -204,9 +195,8 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size) {
 					PKT *p = LIST_DATA(s->DelayedPacketList, i);
 
 					if (now >= p->DelayedForwardTick) {
-						if (o == NULL) {
+						if (o == NULL)
 							o = NewListFast(NULL);
-						}
 
 						Add(o, p);
 					}
@@ -235,9 +225,8 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size) {
 
 		CancelList(s->CancelList);
 
-		if (opt->YieldAfterStorePacket) {
+		if (opt->YieldAfterStorePacket)
 			YieldCpu();
-		}
 
 		return true;
 	}
@@ -254,9 +243,8 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size) {
 		no_l7 = true;
 	}
 
-	if (s->VLanId != 0) {
+	if (s->VLanId != 0)
 		VLanInsertTag(&data, &size, s->VLanId, vlan_type_id);
-	}
 
 LABEL_TRY_AGAIN:
 	packet = ParsePacketEx5(data, size, no_l3, vlan_type_id, !no_look_bpdu_bridge_id, no_http || no_l7, !no_correct_checksum, no_l7);
@@ -310,25 +298,22 @@ LABEL_TRY_AGAIN:
 		}
 	}
 
-	if (packet != NULL) {
+	if (packet != NULL)
 		StorePacket(s->Hub, s, packet);
-	} else {
+	else
 		Free(data);
-	}
 
 	return true;
 }
 
 bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now) {
 	UINT64 minute = 60 * 1000;
-	if (s == NULL || max_packets == 0) {
+	if (s == NULL || max_packets == 0)
 		return true;
-	}
 
 	if ((s->Policy != NULL && s->Policy->NoBroadcastLimiter) ||
-	    s->BridgeMode || s->LinkModeServer || s->LinkModeClient) {
+	    s->BridgeMode || s->LinkModeServer || s->LinkModeClient)
 		return true;
-	}
 
 	if (s->MaxLoggedPacketsPerMinuteStartTick == 0 ||
 	    ((s->MaxLoggedPacketsPerMinuteStartTick + minute) <= now)) {
@@ -337,32 +322,26 @@ bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now) {
 	}
 
 	s->CurrentNumPackets++;
-	if (s->CurrentNumPackets > max_packets) {
+	if (s->CurrentNumPackets > max_packets)
 		return false;
-	}
 
 	return true;
 }
 
 bool IsIPManagementTargetForHUB(IP *ip, HUB *hub) {
-	if (ip == NULL || hub == NULL) {
+	if (ip == NULL || hub == NULL)
 		return false;
-	}
 
 	if (IsIP4(ip)) {
 		if (hub->Option->ManageOnlyPrivateIP) {
-			if (IsIPPrivate(ip) == false) {
+			if (IsIPPrivate(ip) == false)
 				return false;
-			}
 		}
-	} else {
-		if (hub->Option->ManageOnlyLocalUnicastIPv6) {
-			UINT ip_type = GetIPAddrType6(ip);
+	} else if (hub->Option->ManageOnlyLocalUnicastIPv6) {
+		UINT ip_type = GetIPAddrType6(ip);
 
-			if (!(ip_type & IPV6_ADDR_LOCAL_UNICAST)) {
-				return false;
-			}
-		}
+		if (!(ip_type & IPV6_ADDR_LOCAL_UNICAST))
+			return false;
 	}
 
 	return true;
@@ -375,9 +354,8 @@ static void DeleteOldestStorm(LIST *o) {
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		STORM *s = LIST_DATA(o, i);
 
-		if (oldest == NULL || s->CheckStartTick < oldest->CheckStartTick) {
+		if (oldest == NULL || s->CheckStartTick < oldest->CheckStartTick)
 			oldest = s;
-		}
 	}
 
 	if (oldest != NULL) {
@@ -387,23 +365,19 @@ static void DeleteOldestStorm(LIST *o) {
 }
 
 STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict) {
-	if (pa == NULL || mac_address == NULL) {
+	if (pa == NULL || mac_address == NULL)
 		return NULL;
-	}
 
 	// One entry per source MAC, source IP and destination IP: a session that varies its addresses would
 	// grow the list without bound, so a full list makes room first
-	if (LIST_NUM(pa->StormList) >= MAX_STORM_LIST_ENTRIES) {
+	if (LIST_NUM(pa->StormList) >= MAX_STORM_LIST_ENTRIES)
 		DeleteOldestStorm(pa->StormList);
-	}
 
 	STORM *s = ZeroMalloc(sizeof(STORM));
-	if (src_ip != NULL) {
+	if (src_ip != NULL)
 		Copy(&s->SrcIp, src_ip, sizeof(IP));
-	}
-	if (dest_ip != NULL) {
+	if (dest_ip != NULL)
 		Copy(&s->DestIp, dest_ip, sizeof(IP));
-	}
 	Copy(s->MacAddress, mac_address, 6);
 	s->StrictMode = strict;
 
@@ -414,17 +388,14 @@ STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, boo
 
 STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict) {
 	STORM t;
-	if (pa == NULL || mac_address == NULL) {
+	if (pa == NULL || mac_address == NULL)
 		return NULL;
-	}
 
 	Zero(&t, sizeof(t));
-	if (src_ip != NULL) {
+	if (src_ip != NULL)
 		Copy(&t.SrcIp, src_ip, sizeof(IP));
-	}
-	if (dest_ip != NULL) {
+	if (dest_ip != NULL)
 		Copy(&t.DestIp, dest_ip, sizeof(IP));
-	}
 	Copy(t.MacAddress, mac_address, 6);
 
 	t.StrictMode = strict;
@@ -451,9 +422,8 @@ void DeleteIPv6DefaultRouterInRA(PKT *p) {
 
 void IntoTrafficLimiter(TRAFFIC_LIMITER *tr, PKT *p) {
 	UINT64 now = Tick64();
-	if (tr == NULL || p == NULL) {
+	if (tr == NULL || p == NULL)
 		return;
-	}
 
 	if (tr->LastTime == 0 || tr->LastTime > now ||
 	    (tr->LastTime + LIMITER_SAMPLING_SPAN) < now) {

@@ -30,9 +30,8 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t) {
 	SERVER_ADMIN_ONLY;
 
 	// One SeLow probe and one adapter-list build for the devices and their connection names
-	if (EnumEthWin32(&ret) == false) {
+	if (EnumEthWin32(&ret) == false)
 		return ERR_NOT_SUPPORTED;
-	}
 
 	FreeRpcEnumEth(t);
 	Copy(t, &ret, sizeof(RPC_ENUM_ETH));
@@ -43,17 +42,15 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t) {
 UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t) {
 	char tmp[MAX_SIZE];
 
-	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName)) {
+	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
 
 	// Creating a Local Bridge installs SeLow when needed (FIX-2 #98)
-	if (Win32EthInstallSu() == false) {
+	if (Win32EthInstallSu() == false)
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
-	}
 
 	if (Win32EthGetNameAndIdFromCombinedName(tmp, sizeof(tmp), t->DeviceName) == 0) {
 		// On Win32, adding fails when no device ID is given
@@ -71,15 +68,13 @@ UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t) {
 }
 
 UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t) {
-	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName)) {
+	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
-	if (DeleteLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName) == false) {
+	if (DeleteLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName) == false)
 		return ERR_OBJECT_NOT_FOUND;
-	}
 
 	ALog(a, NULL, "LA_DELETE_BRIDGE", t->HubName, t->DeviceName);
 
@@ -91,9 +86,8 @@ UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t) {
 UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t) {
 	SERVER_ADMIN_ONLY;
 
-	if (Win32EthIsSuSupported() == false) {
+	if (Win32EthIsSuSupported() == false)
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
-	}
 
 	FreeRpcEnumLocalBridge(t);
 	Zero(t, sizeof(RPC_ENUM_LOCALBRIDGE));

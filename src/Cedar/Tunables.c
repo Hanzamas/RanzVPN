@@ -42,29 +42,25 @@ static TUNABLE tunables[] =
 #define NUM_TUNABLES (sizeof(tunables) / sizeof(tunables[0]))
 
 UINT TunablesGet(UINT id) {
-	if (id == 0 || id > NUM_TUNABLES) {
+	if (id == 0 || id > NUM_TUNABLES)
 		return 0;
-	}
 
 	return vpn_global_parameters[id] != 0 ? vpn_global_parameters[id] : tunables[id - 1].DefaultValue;
 }
 
 // f == NULL resets every tunable to its default
 void TunablesLoad(FOLDER *f) {
-	for (UINT i = 0; i < NUM_TUNABLES; i++) {
+	for (UINT i = 0; i < NUM_TUNABLES; i++)
 		vpn_global_parameters[tunables[i].Id] = CfgGetInt(f, tunables[i].Key);
-	}
 
 	SetFifoCurrentReallocMemSize(TunablesGet(GP_MEM_FIFO_REALLOC_MEM_SIZE));
 }
 
 void TunablesSave(FOLDER *f) {
-	if (f == NULL) {
+	if (f == NULL)
 		return;
-	}
 
-	for (UINT i = 0; i < NUM_TUNABLES; i++) {
+	for (UINT i = 0; i < NUM_TUNABLES; i++)
 		CfgAddInt(f, tunables[i].Key, TunablesGet(tunables[i].Id));
-	}
 }
 

@@ -73,15 +73,13 @@ void MsInitProcessCallOnce() {
 }
 
 static LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-	if (hWnd == NULL) {
+	if (hWnd == NULL)
 		return 0;
-	}
 
 	switch (msg) {
 	case WM_ENDSESSION:
-		if (wParam == false) {
+		if (wParam == false)
 			break;
-		}
 	case WM_CREATE:
 		exiting = false;
 		g_start();
@@ -116,9 +114,8 @@ static void MsUserModeW(const wchar_t *title, SERVICE_FUNCTION *start, SERVICE_F
 	MSG msg;
 	char title_a[MAX_PATH];
 	wchar_t msg_str[MAX_SIZE];
-	if (title == NULL || start == NULL || stop == NULL) {
+	if (title == NULL || start == NULL || stop == NULL)
 		return;
-	}
 
 	UniToStr(title_a, sizeof(title_a), title);
 
@@ -139,17 +136,15 @@ static void MsUserModeW(const wchar_t *title, SERVICE_FUNCTION *start, SERVICE_F
 	wc.hInstance = ms->hInst;
 	wc.lpfnWndProc = MsUserModeWindowProc;
 	wc.lpszClassName = title_a;
-	if (RegisterClass(&wc) == 0) {
+	if (RegisterClass(&wc) == 0)
 		return;
-	}
 
 	HWND hWnd = CreateWindow(title_a, title_a, WS_OVERLAPPEDWINDOW,
 	                         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 	                         NULL, NULL, ms->hInst, NULL);
 
-	if (hWnd == NULL) {
+	if (hWnd == NULL)
 		return;
-	}
 
 	wnd_end = false;
 	while (wnd_end == false) {
@@ -168,11 +163,10 @@ static void MsUserModeW(const wchar_t *title, SERVICE_FUNCTION *start, SERVICE_F
 static void MsWriteServiceEvent(UINT type, UINT event_id, char *what, UINT error) {
 	char msg[MAX_SIZE];
 
-	if (error == 0) {
+	if (error == 0)
 		snprintf(msg, sizeof(msg), "Service %s %s.", g_service_name, what);
-	} else {
+	else
 		snprintf(msg, sizeof(msg), "Service %s %s (error %u).", g_service_name, what, error);
-	}
 
 	MsWriteEventLog(g_service_name, type, event_id, msg);
 }
@@ -218,12 +212,11 @@ static bool MsServiceStopProc() {
 	}
 
 	// The entry goes out before SERVICE_STOPPED: once that is reported, the process may end at any time
-	if (ret) {
+	if (ret)
 		MsWriteServiceEvent(EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STOPPED, "stopped", 0);
-	} else {
+	else
 		MsWriteServiceEvent(EVENTLOG_ERROR_TYPE, MS_EVENT_SERVICE_FAILED,
 		                    "did not stop within the self-kill timeout and is terminated", 0);
-	}
 
 	MsSetServiceState(SERVICE_STOPPED, 0, ret ? NO_ERROR : ERROR_TIMEOUT);
 
@@ -304,9 +297,8 @@ static void WINAPI MsServiceDispatcher(DWORD argc, LPWSTR *argv) {
 
 static void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop) {
 	wchar_t msg[MAX_SIZE];
-	if (title == NULL || start == NULL || stop == NULL) {
+	if (title == NULL || start == NULL || stop == NULL)
 		return;
-	}
 
 	is_usermode = true;
 
@@ -351,9 +343,8 @@ static void MsSvcMsg(bool silent, char *id, ...) {
 	wchar_t msg[MAX_SIZE * 4];
 	va_list args;
 
-	if (silent) {
+	if (silent)
 		return;
-	}
 
 	va_start(args, id);
 	UniFormatArgs(msg, sizeof(msg), _UU(id), args);
@@ -373,9 +364,8 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 	char tmp[MAX_SIZE];
 	bool restoreReg = false;
 	bool silent = false;
-	if (name == NULL || start == NULL || stop == NULL) {
+	if (name == NULL || start == NULL || stop == NULL)
 		return ret;
-	}
 
 	g_start = start;
 	g_stop = stop;
@@ -436,13 +426,11 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 		Free(args_w);
 		arg = NULL;
 
-		if (t->NumTokens >= 1) {
+		if (t->NumTokens >= 1)
 			arg = t->Token[0];
-		}
 		if (t->NumTokens >= 2) {
-			if (StrCmpi(t->Token[1], SVC_ARG_SILENT) == 0) {
+			if (StrCmpi(t->Token[1], SVC_ARG_SILENT) == 0)
 				silent = true;
-			}
 		}
 
 		mode = MsSvcArgToMode(arg);
@@ -471,14 +459,12 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 				restoreReg = true;
 
 				if (MsIsServiceInstalled(service_name)) {
-					if (MsIsServiceRunning(service_name)) {
+					if (MsIsServiceRunning(service_name))
 						MsStopService(service_name);
-					}
 					MsUninstallService(service_name);
 				}
-				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false) {
+				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false)
 					ret = 1;
-				}
 				MsStartService(service_name);
 				MsWriteCallingServiceManagerProcessId(service_name, 0);
 				break;
@@ -488,12 +474,10 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 				restoreReg = true;
 
 				if (MsIsServiceInstalled(service_name)) {
-					if (MsIsServiceRunning(service_name)) {
+					if (MsIsServiceRunning(service_name))
 						MsStopService(service_name);
-					}
-					if (MsUninstallService(service_name) == false) {
+					if (MsUninstallService(service_name) == false)
 						ret = 1;
-					}
 				}
 				break;
 
@@ -502,9 +486,8 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 				restoreReg = true;
 
 				if (MsIsServiceInstalled(service_name)) {
-					if (silent == true) {
+					if (silent == true)
 						break;
-					}
 					// The operator explicitly requested /install, so uninstall and then re-install
 					MsSvcMsg(silent, "SVC_ALREADY_INSTALLED", service_title, service_name);
 
@@ -612,9 +595,8 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 		}
 		FreeToken(t);
 
-		if (restoreReg) {
+		if (restoreReg)
 			MsWriteCallingServiceManagerProcessId(service_name, 0);
-		}
 	}
 
 	FreeMayaqua();
@@ -716,15 +698,13 @@ void MsDeleteAllFileW(wchar_t *dir) {
 	BY_HANDLE_FILE_INFORMATION info;
 	wchar_t file_mask[MAX_PATH];
 	WIN32_FIND_DATAW data;
-	if (dir == NULL || UniIsEmptyStr(dir)) {
+	if (dir == NULL || UniIsEmptyStr(dir))
 		return;
-	}
 
 	HANDLE dir_handle = CreateFileW(dir, FILE_LIST_DIRECTORY, FILE_SHARE_READ, NULL, OPEN_EXISTING,
 	                                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-	if (dir_handle == INVALID_HANDLE_VALUE) {
+	if (dir_handle == INVALID_HANDLE_VALUE)
 		return;
-	}
 
 	Zero(&info, sizeof(info));
 	if (GetFileInformationByHandle(dir_handle, &info) == FALSE ||
@@ -748,9 +728,8 @@ void MsDeleteAllFileW(wchar_t *dir) {
 				if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
 					DeleteFileW(fullpath);
 				} else {
-					if ((data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+					if ((data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
 						MsDeleteAllFileW(fullpath);
-					}
 
 					RemoveDirectoryW(fullpath);
 				}
@@ -774,9 +753,8 @@ static void MsInitTempDir() {
 
 	MsDeleteTempDir();
 
-	if (ConvertStringSecurityDescriptorToSecurityDescriptorW(MS_TEMP_DIR_SDDL, SDDL_REVISION_1, &sd, NULL) == FALSE) {
+	if (ConvertStringSecurityDescriptorToSecurityDescriptorW(MS_TEMP_DIR_SDDL, SDDL_REVISION_1, &sd, NULL) == FALSE)
 		AbortExitEx("MsInitTempDir(): ConvertStringSecurityDescriptorToSecurityDescriptorW() failed");
-	}
 
 	Zero(&sa, sizeof(sa));
 	sa.nLength = sizeof(sa);
@@ -790,9 +768,8 @@ static void MsInitTempDir() {
 		UniFormat(tmp, sizeof(tmp), L"%s\\VPN_%s", ms->TempDirW, tmp2);
 
 		// Fails when the name exists, so the directory is always a new one made here
-		if (CreateDirectoryW(tmp, &sa)) {
+		if (CreateDirectoryW(tmp, &sa))
 			break;
-		}
 
 		if ((num++) >= 100) {
 			char msg[MAX_SIZE];
@@ -828,9 +805,8 @@ static void MsFreeTempDir() {
 }
 
 void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir) {
-	if (name == NULL || temp_dir == NULL) {
+	if (name == NULL || temp_dir == NULL)
 		return;
-	}
 
 	UniFormat(name, size, L"%s\\VPN_Lock.dat", temp_dir);
 }
@@ -840,13 +816,11 @@ bool MsEnablePrivilege(char *name, bool enable) {
 	LUID luid;
 	TOKEN_PRIVILEGES *tp;
 	bool ret;
-	if (name == NULL) {
+	if (name == NULL)
 		return false;
-	}
 
-	if (OpenProcessToken(ms->hCurrentProcess, TOKEN_ADJUST_PRIVILEGES, &hToken) == false) {
+	if (OpenProcessToken(ms->hCurrentProcess, TOKEN_ADJUST_PRIVILEGES, &hToken) == false)
 		return false;
-	}
 
 	if (LookupPrivilegeValue(NULL, name, &luid) == FALSE) {
 		CloseHandle(hToken);
@@ -917,14 +891,12 @@ static bool MsCheckIsAdmin() {
 	DWORD size = 0;
 	bool ret = false;
 
-	if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token) == false) {
+	if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token) == false)
 		return false;
-	}
 
 	Zero(&elevation, sizeof(elevation));
-	if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size)) {
+	if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size))
 		ret = (elevation.TokenIsElevated != 0);
-	}
 
 	CloseHandle(token);
 
@@ -933,9 +905,8 @@ static bool MsCheckIsAdmin() {
 
 void MsInit() {
 	char tmp[MAX_SIZE];
-	if (ms != NULL) {
+	if (ms != NULL)
 		return;
-	}
 
 	ms = ZeroMalloc(sizeof(MS));
 
@@ -965,16 +936,14 @@ void MsInit() {
 	wchar_t tmp_w[MAX_SIZE];
 
 	DWORD size = ARRAYSIZE(tmp_w);
-	if (GetUserNameW(tmp_w, &size) == false) {
+	if (GetUserNameW(tmp_w, &size) == false)
 		tmp_w[0] = 0;
-	}
 	ms->UserNameW = CopyUniStr(tmp_w);
 }
 
 void MsFree() {
-	if (ms == NULL) {
+	if (ms == NULL)
 		return;
-	}
 
 	MsFreeTempDir();
 

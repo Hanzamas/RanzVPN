@@ -45,9 +45,8 @@ UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -103,9 +102,8 @@ UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -152,9 +150,8 @@ UINT PsUserDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -188,9 +185,8 @@ UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -239,9 +235,8 @@ UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -294,9 +289,8 @@ UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	X *x = FileToXW(GetParamUniStr(o, "LOADCERT"));
 	if (x == NULL) {
@@ -362,9 +356,8 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -384,9 +377,8 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 
 		BUF *b = StrToBin(GetParamStr(o, "SERIAL"));
 
-		if (b != NULL && b->Size >= 1) {
+		if (b != NULL && b->Size >= 1)
 			serial = NewXSerial(b->Buf, b->Size);
-		}
 
 		FreeBuf(b);
 
@@ -429,9 +421,8 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -483,9 +474,8 @@ UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -520,13 +510,11 @@ UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 
 static UINT64 StrToDateTime64(const char *str) {
 	UINT64 ret = 0;
-	if (str == NULL) {
+	if (str == NULL)
 		return INFINITE;
-	}
 
-	if (IsEmptyStr(str) || StrCmpi(str, "none") == 0) {
+	if (IsEmptyStr(str) || StrCmpi(str, "none") == 0)
 		return 0;
-	}
 
 	TOKEN_LIST *t = ParseToken(str, ":/,. \"");
 	if (t->NumTokens != 6) {
@@ -565,9 +553,8 @@ static UINT64 StrToDateTime64(const char *str) {
 
 static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param) {
 	char tmp[MAX_SIZE];
-	if (c == NULL || str == NULL) {
+	if (c == NULL || str == NULL)
 		return false;
-	}
 
 	UniToStr(tmp, sizeof(tmp), str);
 
@@ -597,9 +584,8 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -614,9 +600,8 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 
 	UINT64 expires = StrToDateTime64(GetParamStr(o, "EXPIRES"));
 
-	if (expires != 0) {
+	if (expires != 0)
 		expires = LocalToSystem64(expires);
-	}
 
 	t.ExpireTime = expires;
 
@@ -651,9 +636,8 @@ UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -699,9 +683,8 @@ UINT PsGroupUnjoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);

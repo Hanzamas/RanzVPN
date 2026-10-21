@@ -30,25 +30,22 @@
 	((ts->Direction == TCP_BOTH) || ((ts->Direction == TCP_SERVER_TO_CLIENT) && (s->ServerMode == false)) || ((ts->Direction == TCP_CLIENT_TO_SERVER) && (s->ServerMode)))
 
 static void WriteSendFifo(TCPSOCK *ts, const void *data, UINT size) {
-	if (ts == NULL || data == NULL) {
+	if (ts == NULL || data == NULL)
 		return;
-	}
 
 	WriteFifo(ts->SendFifo, data, size);
 }
 
 static void WriteRecvFifo(TCPSOCK *ts, const void *data, UINT size) {
-	if (ts == NULL || data == NULL) {
+	if (ts == NULL || data == NULL)
 		return;
-	}
 
 	WriteFifo(ts->RecvFifo, data, size);
 }
 
 void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block) {
-	if (c == NULL || block == NULL) {
+	if (c == NULL || block == NULL)
 		return;
-	}
 
 	SESSION *s = c->Session;
 
@@ -57,11 +54,10 @@ void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block) {
 		s->TotalRecvSize += block->Size;
 	}
 
-	if (c->ReceivedBlocks->num_item < MAX_STORED_QUEUE_NUM) {
+	if (c->ReceivedBlocks->num_item < MAX_STORED_QUEUE_NUM)
 		InsertQueue(c->ReceivedBlocks, block);
-	} else {
+	else
 		FreeBlock(block);
-	}
 }
 
 // Queues one block received from the peer, or drops it when it is oversized or the Cedar queue budget is
@@ -75,20 +71,17 @@ static void ConnectionEnqueueReceivedBlock(CONNECTION *c, BLOCK *b, UINT *packet
 
 	InsertReceivedBlockToQueue(c, b);
 
-	if (packet_index == NULL || (*packet_index % 32) == 0) {
+	if (packet_index == NULL || (*packet_index % 32) == 0)
 		CedarSyncQueueBudget(c->Cedar, c->ReceivedBlocks->num_item, &c->LastRecvBlocksNum);
-	}
 
-	if (packet_index != NULL) {
+	if (packet_index != NULL)
 		(*packet_index)++;
-	}
 }
 
 // Randomize the Keep-Alive interval to spread network load.
 UINT GenNextKeepAliveSpan(CONNECTION *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return INFINITE;
-	}
 
 	// Clamped to the bounds of ServerAccept: a timeout below 2 would divide by zero
 	UINT a = MAKESURE(c->Session->Timeout, TIMEOUT_MIN, TIMEOUT_MAX);
@@ -99,14 +92,12 @@ UINT GenNextKeepAliveSpan(CONNECTION *c) {
 }
 
 static void SendKeepAlive(CONNECTION *c, TCPSOCK *ts) {
-	if (c == NULL || ts == NULL) {
+	if (c == NULL || ts == NULL)
 		return;
-	}
 
 	SESSION *s = c->Session;
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	UINT size = Rand32() % MAX_KEEPALIVE_SIZE;
 	UINT num = KEEP_ALIVE_MAGIC;
@@ -133,9 +124,8 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 	UINT size;
 	SESSION *s;
 	bool use_qos = false;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	s = c->Session;
 
@@ -182,13 +172,12 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 			    IS_SEND_TCP_SOCK(tcpsock)) {
 				bool b = false;
 
-				if (use_qos == false) {
+				if (use_qos == false)
 					b = true;
-				} else if (num_available < 2) {
+				else if (num_available < 2)
 					b = true;
-				} else if (tcpsock != ts_hp) {
+				else if (tcpsock != ts_hp)
 					b = true;
-				}
 
 				if (b) {
 					if (tcpsock->LateCount <= min_count) {
@@ -207,21 +196,18 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 
 		c->LastTcpQueueSize = tcp_queue_size;
 
-		if (ts_hp == NULL) {
+		if (ts_hp == NULL)
 			ts_hp = ts;
-		}
 
-		if (use_qos == false) {
+		if (use_qos == false)
 			ts_hp = ts;
-		}
 
 		if (ts != NULL && ts_hp != NULL) {
 			TCPSOCK *tss;
 			QUEUE *q;
 
-			if (s->UdpAccel != NULL) {
+			if (s->UdpAccel != NULL)
 				UdpAccelSetTick(s->UdpAccel, now);
-			}
 
 			for (UINT j = 0; j < 2; j++) {
 				if (j == 0) {
@@ -245,54 +231,50 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 								FreeBlock(b);
 							}
 						}
+					} else if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, true)) {
+						while (b = GetNext(q)) {
+							UdpAccelSendBlock(s->UdpAccel, b);
+
+							s->TotalSendSize += b->Size;
+							s->TotalSendSizeReal += b->Size;
+
+							c->CurrentSendQueueSize -= b->Size;
+
+							FreeBlock(b);
+						}
 					} else {
-						if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, true)) {
-							while (b = GetNext(q)) {
-								UdpAccelSendBlock(s->UdpAccel, b);
+						bool update_keepalive_timer = false;
+						num_data = Endian32(q->num_item);
+						WriteSendFifo(tss, &num_data, sizeof(UINT));
 
-								s->TotalSendSize += b->Size;
-								s->TotalSendSizeReal += b->Size;
+						s->TotalSendSize += sizeof(UINT);
+						s->TotalSendSizeReal += sizeof(UINT);
 
-								c->CurrentSendQueueSize -= b->Size;
+						while (b = GetNext(q)) {
+							UINT size_data;
+							size_data = Endian32(b->Size);
+							WriteSendFifo(tss, &size_data, sizeof(UINT));
 
-								FreeBlock(b);
-							}
-						} else {
-							bool update_keepalive_timer = false;
-							num_data = Endian32(q->num_item);
-							WriteSendFifo(tss, &num_data, sizeof(UINT));
+							c->CurrentSendQueueSize -= b->Size;
 
 							s->TotalSendSize += sizeof(UINT);
 							s->TotalSendSizeReal += sizeof(UINT);
 
-							while (b = GetNext(q)) {
-								UINT size_data;
-								size_data = Endian32(b->Size);
-								WriteSendFifo(tss, &size_data, sizeof(UINT));
+							WriteSendFifo(tss, b->Buf, b->Size);
 
-								c->CurrentSendQueueSize -= b->Size;
+							s->TotalSendSize += b->SizeofData;
+							s->TotalSendSizeReal += b->Size;
 
-								s->TotalSendSize += sizeof(UINT);
-								s->TotalSendSizeReal += sizeof(UINT);
+							update_keepalive_timer = true;
 
-								WriteSendFifo(tss, b->Buf, b->Size);
-
-								s->TotalSendSize += b->SizeofData;
-								s->TotalSendSizeReal += b->Size;
-
-								update_keepalive_timer = true;
-
-								FreeBlock(b);
-							}
-
-							if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, false)) {
-								update_keepalive_timer = false;
-							}
-
-							if (update_keepalive_timer) {
-								tss->NextKeepAliveTime = now + (UINT64)GenNextKeepAliveSpan(c);
-							}
+							FreeBlock(b);
 						}
+
+						if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, false))
+							update_keepalive_timer = false;
+
+						if (update_keepalive_timer)
+							tss->NextKeepAliveTime = now + (UINT64)GenNextKeepAliveSpan(c);
 					}
 				}
 			}
@@ -329,9 +311,8 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 					ts->LateCount++;
 				} else {
 					ReadFifo(ts->SendFifo, NULL, size);
-					if (size >= want_send_size) {
+					if (size >= want_send_size)
 						ts->LateCount = 0;
-					}
 					UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
 
 					goto SEND_START;
@@ -362,9 +343,8 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 			}
 			UnlockQueue(k->SendPacketQueue);
 
-			if (num_blocks != 0) {
+			if (num_blocks != 0)
 				Cancel(k->ClientSession->Cancel1);
-			}
 		}
 	} else if (c->Protocol == CONNECTION_HUB_BRIDGE) {
 		BrSendBlocks(c);
@@ -383,22 +363,19 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 	bool no_spinlock_for_delay = false;
 	UINT64 now = Tick64();
 	HUB *hub = NULL;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 
 	s = c->Session;
 
 	hub = s->Hub;
 
-	if (hub != NULL) {
+	if (hub != NULL)
 		no_spinlock_for_delay = hub->Option->NoSpinLockForPacketDelay;
-	}
 
-	if (c->RecvBuf == NULL) {
+	if (c->RecvBuf == NULL)
 		c->RecvBuf = Malloc(RECV_BUF_SIZE);
-	}
 	buf = c->RecvBuf;
 
 	if (c->Protocol == CONNECTION_TCP) {
@@ -415,9 +392,8 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 					for (UINT i = 0; i < LIST_NUM(tcp->TcpSockList); i++) {
 						TCPSOCK *ts = LIST_DATA(tcp->TcpSockList, i);
 						if (ts->DisconnectTick != 0 &&
-						    ts->DisconnectTick <= now) {
+						    ts->DisconnectTick <= now)
 							Disconnect(ts->Sock);
-						}
 					}
 				}
 				UnlockList(tcp->TcpSockList);
@@ -436,15 +412,13 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 					TCPSOCK *ts;
 					for (UINT i = 0; i < num; i++) {
 						ts = LIST_DATA(tcp->TcpSockList, i);
-						if (ts->Direction == TCP_SERVER_TO_CLIENT) {
+						if (ts->Direction == TCP_SERVER_TO_CLIENT)
 							s2c++;
-						} else {
+						else
 							c2s++;
-						}
 					}
-					if (s2c == 0 || c2s == 0) {
+					if (s2c == 0 || c2s == 0)
 						Disconnect(ts->Sock);
-					}
 				}
 			}
 			UnlockList(tcp->TcpSockList);
@@ -458,14 +432,12 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 		}
 		UnlockList(tcp->TcpSockList);
 
-		for (i = 0; i < num; i++) {
+		for (i = 0; i < num; i++)
 			AddSockSet(&set, tcpsocks[i]->Sock);
-		}
 
 		if (s->UseUdpAcceleration && s->UdpAccel != NULL) {
-			if (s->UdpAccel->UdpSock != NULL) {
+			if (s->UdpAccel->UdpSock != NULL)
 				AddSockSet(&set, s->UdpAccel->UdpSock);
-			}
 		}
 
 		time = SELECT_TIME;
@@ -482,13 +454,11 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 		if (s->Flag1 != set.NumSocket) {
 			Select(&set, (num_delayed == 0 ? time : 1), c1, c2);
 			s->Flag1 = set.NumSocket;
+		} else if (no_spinlock_for_delay || time >= 50 || num_delayed == false) {
+			Select(&set, (num_delayed == 0 ? time : (time > 100 ? (time - 100) : 1)), c1, c2);
+			s->Flag1 = set.NumSocket;
 		} else {
-			if (no_spinlock_for_delay || time >= 50 || num_delayed == false) {
-				Select(&set, (num_delayed == 0 ? time : (time > 100 ? (time - 100) : 1)), c1, c2);
-				s->Flag1 = set.NumSocket;
-			} else {
-				YieldCpu();
-			}
+			YieldCpu();
 		}
 
 		now = Tick64();
@@ -498,16 +468,14 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 			UdpAccelSetTick(s->UdpAccel, now);
 			UdpAccelPoll(s->UdpAccel);
 
-			if (s->UdpAccelMss == 0) {
+			if (s->UdpAccelMss == 0)
 				s->UdpAccelMss = UdpAccelCalcMss(s->UdpAccel);
-			}
 
 			while (true) {
 				BLOCK *b = GetNext(s->UdpAccel->RecvBlockQueue);
 
-				if (b == NULL) {
+				if (b == NULL)
 					break;
-				}
 
 				ConnectionEnqueueReceivedBlock(c, b, NULL);
 			}
@@ -520,9 +488,8 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 
 			UINT current_fifo_budget = 0;
 			UINT current_packet_index = 0;
-			if (ts->WantSize == 0) {
+			if (ts->WantSize == 0)
 				ts->WantSize = sizeof(UINT);
-			}
 
 			now = Tick64();
 
@@ -556,17 +523,15 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 				continue;
 			} else if (size == SOCK_LATER) {
 				if (IS_RECV_TCP_SOCK(ts)) {
-					if ((now > ts->LastCommTime) && ((now - ts->LastCommTime) >= ((UINT64)s->Timeout))) {
+					if ((now > ts->LastCommTime) && ((now - ts->LastCommTime) >= ((UINT64)s->Timeout)))
 						goto DISCONNECT_THIS_TCP;
-					}
 				}
 			} else {
 				UINT budget_balance = CedarGetFifoBudgetBalance(c->Cedar);
 				UINT fifo_size_limit = budget_balance;
 
-				if (fifo_size_limit > MAX_BUFFERING_PACKET_SIZE) {
+				if (fifo_size_limit > MAX_BUFFERING_PACKET_SIZE)
 					fifo_size_limit = MAX_BUFFERING_PACKET_SIZE;
-				}
 
 				UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
 
@@ -575,9 +540,8 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 
 				WriteRecvFifo(ts, buf, size);
 
-				if (ts->RecvFifo->size < fifo_size_limit) {
+				if (ts->RecvFifo->size < fifo_size_limit)
 					goto RECV_START;
-				}
 			}
 
 			current_recv_fifo_size += FifoSize(ts->RecvFifo);
@@ -602,20 +566,18 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 
 					ts->CurrentPacketNum = 0;
 					if (ts->NextBlockNum != 0) {
-						if (ts->NextBlockNum == KEEP_ALIVE_MAGIC) {
+						if (ts->NextBlockNum == KEEP_ALIVE_MAGIC)
 							ts->Mode = 3;
-						} else {
+						else
 							ts->Mode = 1;
-						}
 					}
 					break;
 
 				case 1:
 					Copy(&sz, buf, sizeof(UINT));
 					sz = Endian32(sz);
-					if (sz > (MAX_PACKET_SIZE * 2)) {
+					if (sz > (MAX_PACKET_SIZE * 2))
 						Disconnect(ts->Sock);
-					}
 					ts->NextBlockSize = MIN(sz, MAX_PACKET_SIZE * 2);
 					ReadFifo(ts->RecvFifo, NULL, sizeof(UINT));
 
@@ -629,9 +591,8 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 						ts->Mode = 1;
 						ts->WantSize = sizeof(UINT);
 						ts->CurrentPacketNum++;
-						if (ts->CurrentPacketNum >= ts->NextBlockNum) {
+						if (ts->CurrentPacketNum >= ts->NextBlockNum)
 							ts->Mode = 0;
-						}
 					}
 					break;
 
@@ -648,20 +609,18 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 
 					ConnectionEnqueueReceivedBlock(c, block, &current_packet_index);
 
-					if (ts->CurrentPacketNum >= ts->NextBlockNum) {
+					if (ts->CurrentPacketNum >= ts->NextBlockNum)
 						ts->Mode = 0;
-					} else {
+					else
 						ts->Mode = 1;
-					}
 					break;
 
 				case 3:
 					ts->Mode = 4;
 					Copy(&sz, buf, sizeof(UINT));
 					sz = Endian32(sz);
-					if (sz > MAX_KEEPALIVE_SIZE) {
+					if (sz > MAX_KEEPALIVE_SIZE)
 						Disconnect(ts->Sock);
-					}
 					ts->NextBlockSize = MIN(sz, MAX_KEEPALIVE_SIZE);
 					ReadFifo(ts->RecvFifo, NULL, sizeof(UINT));
 
@@ -712,11 +671,10 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 			time = MIN(time, next_delay_packet_diff);
 			num_delayed = LIST_NUM(s->DelayedPacketList);
 
-			if (no_spinlock_for_delay || time >= 50 || num_delayed == false) {
+			if (no_spinlock_for_delay || time >= 50 || num_delayed == false)
 				Select(NULL, (num_delayed == 0 ? time : (time > 100 ? (time - 100) : 1)), c1, c2);
-			} else {
+			else
 				YieldCpu();
-			}
 		}
 	} else if (c->Protocol == CONNECTION_HUB_BRIDGE) {
 		BrReceiveBlocks(c, c1, c2);
@@ -724,9 +682,8 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 }
 
 void FreeBlock(BLOCK *b) {
-	if (b == NULL) {
+	if (b == NULL)
 		return;
-	}
 
 	Free(b->Buf);
 	Free(b);
@@ -735,15 +692,13 @@ void FreeBlock(BLOCK *b) {
 // Frees the blocks still in q, then q itself
 void FreeBlockQueue(QUEUE *q) {
 	BLOCK *b;
-	if (q == NULL) {
+	if (q == NULL)
 		return;
-	}
 
 	LockQueue(q);
 	{
-		while (b = GetNext(q)) {
+		while (b = GetNext(q))
 			FreeBlock(b);
-		}
 	}
 	UnlockQueue(q);
 
@@ -751,9 +706,8 @@ void FreeBlockQueue(QUEUE *q) {
 }
 
 BLOCK *NewBlock(void *data, UINT size, int compress) {
-	if (data == NULL) {
+	if (data == NULL)
 		return NULL;
-	}
 
 	BLOCK *b = Malloc(sizeof(BLOCK));
 
@@ -788,9 +742,8 @@ BLOCK *NewBlock(void *data, UINT size, int compress) {
 }
 
 TCPSOCK *NewTcpSock(SOCK *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	TCPSOCK *ts = ZeroMalloc(sizeof(TCPSOCK));
 
@@ -807,9 +760,8 @@ TCPSOCK *NewTcpSock(SOCK *s) {
 }
 
 void FreeTcpSock(TCPSOCK *ts) {
-	if (ts == NULL) {
+	if (ts == NULL)
 		return;
-	}
 
 	Disconnect(ts->Sock);
 	ReleaseSock(ts->Sock);
@@ -820,21 +772,18 @@ void FreeTcpSock(TCPSOCK *ts) {
 }
 
 void EndTunnelingMode(CONNECTION *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
-	if (c->Protocol == CONNECTION_TCP) {
+	if (c->Protocol == CONNECTION_TCP)
 		DisconnectTcpSockets(c);
-	}
 }
 
 void StartTunnelingMode(CONNECTION *c) {
 	SOCK *s;
 	TCPSOCK *ts;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	TCP *tcp = c->Tcp;
 
@@ -844,9 +793,8 @@ void StartTunnelingMode(CONNECTION *c) {
 		ts = NewTcpSock(s);
 
 		if (c->ServerMode == false) {
-			if (c->Session->ClientOption->ConnectionDisconnectSpan != 0) {
+			if (c->Session->ClientOption->ConnectionDisconnectSpan != 0)
 				ts->DisconnectTick = Tick64() + c->Session->ClientOption->ConnectionDisconnectSpan * (UINT64)1000;
-			}
 		}
 
 		LockList(tcp->TcpSockList);
@@ -902,9 +850,8 @@ void ConnectionAccept(CONNECTION *c) {
 	UINT initial_timeout = CONNECTING_TIMEOUT;
 	SERVER_LOGIN login;
 
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	s = c->FirstSock;
 	AddRef(s->ref);
@@ -928,9 +875,8 @@ void ConnectionAccept(CONNECTION *c) {
 		FreeSSLCtx(ssl_ctx);
 
 		AddNoSsl(c->Cedar, &s->RemoteIP);
-		if (err != ERR_NO_ERROR) {
+		if (err != ERR_NO_ERROR)
 			SLog(c->Cedar, "LS_SSL_START_ERROR", c->Name, GetUniErrorStr(err), err);
-		}
 
 		goto FINAL;
 	}
@@ -946,9 +892,8 @@ void ConnectionAccept(CONNECTION *c) {
 	}
 
 FINAL:
-	if (c->flag1 == false) {
+	if (c->flag1 == false)
 		Disconnect(s);
-	}
 
 	DelConnection(c->Cedar, c);
 	ReleaseSock(s);
@@ -958,9 +903,8 @@ void StopAllAdditionalConnectThread(CONNECTION *c) {
 	UINT num;
 	SOCK **socks;
 	THREAD **threads;
-	if (c == NULL || c->ServerMode != false) {
+	if (c == NULL || c->ServerMode != false)
 		return;
-	}
 
 	LockList(c->ConnectingSocks);
 	{
@@ -991,9 +935,8 @@ void StopAllAdditionalConnectThread(CONNECTION *c) {
 
 void StopConnection(CONNECTION *c, bool no_wait) {
 	SOCK *s;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 
 	FlagWrite(&c->Halt, true);
@@ -1003,29 +946,25 @@ void StopConnection(CONNECTION *c, bool no_wait) {
 	Lock(c->lock);
 	{
 		s = c->FirstSock;
-		if (s != NULL) {
+		if (s != NULL)
 			AddRef(s->ref);
-		}
 	}
 	Unlock(c->lock);
 
 	Disconnect(s);
 	ReleaseSock(s);
 
-	if (no_wait == false) {
+	if (no_wait == false)
 		WaitThread(c->Thread, INFINITE);
-	}
 }
 
 void DisconnectTcpSockets(CONNECTION *c) {
 	UINT num;
 	TCPSOCK **tcpsocks;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
-	if (c->Protocol != CONNECTION_TCP) {
+	if (c->Protocol != CONNECTION_TCP)
 		return;
-	}
 
 	TCP *tcp = c->Tcp;
 	LockList(tcp->TcpSockList);
@@ -1048,9 +987,8 @@ void DisconnectTcpSockets(CONNECTION *c) {
 
 static void CleanupConnection(CONNECTION *c) {
 	UINT num;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	if (c->LastRecvFifoTotalSize != 0) {
 		CedarAddFifoBudget(c->Cedar, -((int)c->LastRecvFifoTotalSize));
@@ -1095,9 +1033,8 @@ static void CleanupConnection(CONNECTION *c) {
 		{
 			num = LIST_NUM(c->ConnectingThreads);
 			threads = ToArray(c->ConnectingThreads);
-			for (UINT i = 0; i < num; i++) {
+			for (UINT i = 0; i < num; i++)
 				ReleaseThread(threads[i]);
-			}
 			Free(threads);
 		}
 		UnlockList(c->ConnectingThreads);
@@ -1120,50 +1057,41 @@ static void CleanupConnection(CONNECTION *c) {
 		ReleaseList(c->ConnectingSocks);
 	}
 
-	if (c->RecvBuf) {
+	if (c->RecvBuf)
 		Free(c->RecvBuf);
-	}
 
-	if (c->ServerX != NULL) {
+	if (c->ServerX != NULL)
 		FreeX(c->ServerX);
-	}
 
-	if (c->ClientX != NULL) {
+	if (c->ClientX != NULL)
 		FreeX(c->ClientX);
-	}
 
 	DeleteCounter(c->CurrentNumConnection);
 
-	if (c->CipherName != NULL) {
+	if (c->CipherName != NULL)
 		Free(c->CipherName);
-	}
 
-	if (c->SslVersion != NULL) {
+	if (c->SslVersion != NULL)
 		Free(c->SslVersion);
-	}
 
 	Free(c);
 }
 
 void ReleaseConnection(CONNECTION *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
-	if (Release(c->ref) == 0) {
+	if (Release(c->ref) == 0)
 		CleanupConnection(c);
-	}
 }
 
 int CompareConnection(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	CONNECTION *c1 = *(CONNECTION **)p1;
 	CONNECTION *c2 = *(CONNECTION **)p2;
-	if (c1 == NULL || c2 == NULL) {
+	if (c1 == NULL || c2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(c1->Name, c2->Name);
 }
@@ -1191,9 +1119,8 @@ static CONNECTION *NewConnectionBase(CEDAR *cedar, bool server_mode) {
 }
 
 CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t) {
-	if (cedar == NULL) {
+	if (cedar == NULL)
 		return NULL;
-	}
 
 	CONNECTION *c = NewConnectionBase(cedar, true);
 	c->Type = CONNECTION_TYPE_INIT;
@@ -1213,9 +1140,8 @@ CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t) {
 	StrCpy(c->ServerStr, sizeof(c->ServerStr), cedar->ServerStr);
 	GetServerProductName(cedar->Server, c->ServerStr, sizeof(c->ServerStr));
 
-	if (s != NULL && s->RemoteX != NULL) {
+	if (s != NULL && s->RemoteX != NULL)
 		c->ServerX = CloneX(s->RemoteX);
-	}
 
 	return c;
 }
@@ -1233,15 +1159,13 @@ CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str) {
 	c->ClientVer = s->Cedar->Version;
 	c->ClientBuild = s->Cedar->Build;
 
-	if (client_str == NULL) {
-		if (c->Session->LinkModeClient == false) {
+	if (client_str == NULL)
+		if (c->Session->LinkModeClient == false)
 			StrCpy(c->ClientStr, sizeof(c->ClientStr), CEDAR_CLIENT_STR);
-		} else {
+		else
 			StrCpy(c->ClientStr, sizeof(c->ClientStr), CEDAR_SERVER_LINK_STR);
-		}
-	} else {
+	else
 		StrCpy(c->ClientStr, sizeof(c->ClientStr), client_str);
-	}
 
 	StrCpy(c->ServerName, sizeof(c->ServerName), s->ClientOption->Hostname);
 	c->ServerPort = s->ClientOption->Port;
@@ -1251,15 +1175,13 @@ CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str) {
 
 // Copy what the admin RPCs report about the connection; the caller may hold the Cedar's ConnectionList
 void ConnectionGetInfo(CONNECTION *c, CONNECTION_INFO *info) {
-	if (info == NULL) {
+	if (info == NULL)
 		return;
-	}
 
 	Zero(info, sizeof(CONNECTION_INFO));
 
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	Lock(c->lock);
 	{

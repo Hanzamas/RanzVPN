@@ -134,39 +134,34 @@ UINT num_hub_option_fields = sizeof(hub_option_fields) / sizeof(HUB_OPTION_FIELD
 
 // Value of a HUB_OPTION member, a bool as 0 or 1
 UINT GetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f) {
-	if (o == NULL || f == NULL) {
+	if (o == NULL || f == NULL)
 		return 0;
-	}
 
 	UCHAR *p = ((UCHAR *)o) + f->Offset;
 
-	if (f->Type == HUB_OPTION_BOOL) {
+	if (f->Type == HUB_OPTION_BOOL)
 		return *((bool *)p) ? 1 : 0;
-	}
 
 	return *((UINT *)p);
 }
 
 void SetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f, UINT value) {
-	if (o == NULL || f == NULL) {
+	if (o == NULL || f == NULL)
 		return;
-	}
 
 	UCHAR *p = ((UCHAR *)o) + f->Offset;
 
-	if (f->Type == HUB_OPTION_BOOL) {
+	if (f->Type == HUB_OPTION_BOOL)
 		*((bool *)p) = (value != 0);
-	} else {
+	else
 		*((UINT *)p) = value;
-	}
 }
 
 bool IsURLMsg(wchar_t *str, char *url, UINT url_size) {
 	bool ret = false;
 	UINT n = 0;
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	UNI_TOKEN_LIST *t = UniParseToken(str, L"\r\n");
 
@@ -190,9 +185,8 @@ bool IsURLMsg(wchar_t *str, char *url, UINT url_size) {
 		}
 	}
 
-	if (n != 1) {
+	if (n != 1)
 		ret = false;
-	}
 
 	UniFreeToken(t);
 
@@ -200,25 +194,22 @@ bool IsURLMsg(wchar_t *str, char *url, UINT url_size) {
 }
 
 UINT GetHubAdminOptionData(RPC_ADMIN_OPTION *ao, char *name) {
-	if (ao == NULL || name == NULL) {
+	if (ao == NULL || name == NULL)
 		return INFINITE;
-	}
 
 	for (UINT i = 0; i < ao->NumItem; i++) {
 		ADMIN_OPTION *a = &ao->Items[i];
 
-		if (StrCmpi(a->Name, name) == 0) {
+		if (StrCmpi(a->Name, name) == 0)
 			return a->Value;
-		}
 	}
 
 	return INFINITE;
 }
 
 void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao) {
-	if (o == NULL || ao == NULL) {
+	if (o == NULL || ao == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < num_hub_option_fields; i++) {
 		HUB_OPTION_FIELD *f = &hub_option_fields[i];
@@ -226,27 +217,23 @@ void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao) {
 		if (f->AdminName != NULL) {
 			UINT value = GetHubAdminOptionData(ao, f->AdminName);
 
-			if (value != INFINITE) {
+			if (value != INFINITE)
 				SetHubOptionField(o, f, value);
-			}
 		}
 	}
 }
 
 void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name) {
-	if (ao == NULL || o == NULL || hub_name == NULL) {
+	if (ao == NULL || o == NULL || hub_name == NULL)
 		return;
-	}
 
 	Zero(ao, sizeof(RPC_ADMIN_OPTION));
 
 	StrCpy(ao->HubName, sizeof(ao->HubName), hub_name);
 
-	for (UINT i = 0; i < num_hub_option_fields; i++) {
-		if (hub_option_fields[i].AdminName != NULL) {
+	for (UINT i = 0; i < num_hub_option_fields; i++)
+		if (hub_option_fields[i].AdminName != NULL)
 			ao->NumItem++;
-		}
-	}
 
 	ao->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * ao->NumItem);
 
@@ -267,28 +254,24 @@ void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name) 
 
 wchar_t *GetHubAdminOptionHelpString(char *name) {
 	char tmp[MAX_SIZE];
-	if (name == NULL) {
+	if (name == NULL)
 		return L"";
-	}
 
 	Format(tmp, sizeof(tmp), "HUB_AO_%s", name);
 
 	wchar_t *ret = _UU(tmp);
-	if (UniIsEmptyStr(ret)) {
+	if (UniIsEmptyStr(ret))
 		ret = _UU("HUB_AO_UNKNOWN");
-	}
 
 	return ret;
 }
 
 void AddHubAdminOptionsDefaults(HUB *h, bool lock) {
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
-	if (lock) {
+	if (lock)
 		LockList(h->AdminOptionList);
-	}
 
 	for (UINT i = 0; i < num_admin_options; i++) {
 		ADMIN_OPTION *e = &admin_options[i];
@@ -308,28 +291,24 @@ void AddHubAdminOptionsDefaults(HUB *h, bool lock) {
 		}
 	}
 
-	if (lock) {
+	if (lock)
 		UnlockList(h->AdminOptionList);
-	}
 }
 
 void DeleteAllHubAdminOption(HUB *h) {
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
-	for (UINT i = 0; i < LIST_NUM(h->AdminOptionList); i++) {
+	for (UINT i = 0; i < LIST_NUM(h->AdminOptionList); i++)
 		Free(LIST_DATA(h->AdminOptionList, i));
-	}
 
 	DeleteAll(h->AdminOptionList);
 }
 
 UINT GetHubAdminOption(HUB *h, char *name) {
 	UINT ret = 0;
-	if (h == NULL || name == NULL) {
+	if (h == NULL || name == NULL)
 		return 0;
-	}
 
 	LockList(h->AdminOptionList);
 	{
@@ -341,9 +320,8 @@ UINT GetHubAdminOption(HUB *h, char *name) {
 
 		ADMIN_OPTION *a = Search(h->AdminOptionList, &t);
 
-		if (a != NULL) {
+		if (a != NULL)
 			ret = a->Value;
-		}
 	}
 	UnlockList(h->AdminOptionList);
 
@@ -352,15 +330,13 @@ UINT GetHubAdminOption(HUB *h, char *name) {
 
 wchar_t *GetHubMsg(HUB *h) {
 	wchar_t *ret = NULL;
-	if (h == NULL) {
+	if (h == NULL)
 		return NULL;
-	}
 
 	Lock(h->lock);
 	{
-		if (h->Msg != NULL) {
+		if (h->Msg != NULL)
 			ret = CopyUniStr(h->Msg);
-		}
 	}
 	Unlock(h->lock);
 
@@ -368,9 +344,8 @@ wchar_t *GetHubMsg(HUB *h) {
 }
 
 void SetHubMsg(HUB *h, wchar_t *msg) {
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
 	Lock(h->lock);
 	{
@@ -379,25 +354,22 @@ void SetHubMsg(HUB *h, wchar_t *msg) {
 			h->Msg = NULL;
 		}
 
-		if (UniIsEmptyStr(msg) == false) {
+		if (UniIsEmptyStr(msg) == false)
 			h->Msg = CopyUniStr(msg);
-		}
 	}
 	Unlock(h->lock);
 }
 
 void GetHubLogSetting(HUB *h, HUB_LOG *setting) {
-	if (setting == NULL || h == NULL) {
+	if (setting == NULL || h == NULL)
 		return;
-	}
 
 	Copy(setting, &h->LogSetting, sizeof(HUB_LOG));
 }
 
 void SetHubLogSettingEx(HUB *h, HUB_LOG *setting, bool no_change_switch_type) {
-	if (setting == NULL || h == NULL) {
+	if (setting == NULL || h == NULL)
 		return;
-	}
 
 	UINT i1 = h->LogSetting.PacketLogSwitchType;
 	UINT i2 = h->LogSetting.SecurityLogSwitchType;

@@ -46,14 +46,12 @@ UCHAR *GetCanaryRand(UINT id) {
 }
 
 void InitCanaryRand() {
-	if (canary_inited) {
+	if (canary_inited)
 		return;
-	}
 
 	// From CNG (Rand): no seed, no state shared with the CRT generator
-	for (UINT i = 0; i < NUM_CANARY_RAND; i++) {
+	for (UINT i = 0; i < NUM_CANARY_RAND; i++)
 		Rand(canary_rand_data[i].Data, CANARY_RAND_SIZE);
-	}
 
 	canary_memtag_magic1 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 0));
 	canary_memtag_magic2 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 8));
@@ -65,13 +63,11 @@ void *Malloc(UINT size) {
 	return MallocEx(size, false);
 }
 void *MallocEx(UINT size, bool zero_clear_when_free) {
-	if (canary_inited == false) {
+	if (canary_inited == false)
 		InitCanaryRand();
-	}
 
-	if (size > MAX_MALLOC_MEM_SIZE) {
+	if (size > MAX_MALLOC_MEM_SIZE)
 		AbortExitEx("MallocEx() error: too large size");
-	}
 
 	UINT real_size = CALC_MALLOCSIZE(size);
 
@@ -89,17 +85,14 @@ void *MallocEx(UINT size, bool zero_clear_when_free) {
 }
 
 void *ReAlloc(void *addr, UINT size) {
-	if (canary_inited == false) {
+	if (canary_inited == false)
 		InitCanaryRand();
-	}
 
-	if (size > MAX_MALLOC_MEM_SIZE) {
+	if (size > MAX_MALLOC_MEM_SIZE)
 		AbortExitEx("ReAlloc() error: too large size");
-	}
 
-	if (IS_NULL_POINTER(addr)) {
+	if (IS_NULL_POINTER(addr))
 		return NULL;
-	}
 
 	MEMTAG1 *tag1 = POINTER_TO_MEMTAG1(addr);
 	CheckMemTag1(tag1);
@@ -113,47 +106,42 @@ void *ReAlloc(void *addr, UINT size) {
 	if (tag1->Size == size) {
 		MEMTAG_POISON(tag1);
 		return addr;
+	} else if (zerofree) {
+		// Zero-free block: copy to a new block so the old one is zeroed on Free
+		void *new_p = MallocEx(size, true);
+
+		if (tag1->Size <= size)
+			Copy(new_p, addr, tag1->Size);
+		else
+			Copy(new_p, addr, size);
+
+		Free(addr);
+
+		return new_p;
 	} else {
-		if (zerofree) {
-			// Zero-free block: copy to a new block so the old one is zeroed on Free
-			void *new_p = MallocEx(size, true);
+		tag1->Magic = 0;
+		tag2->Magic = 0;
 
-			if (tag1->Size <= size) {
-				Copy(new_p, addr, tag1->Size);
-			} else {
-				Copy(new_p, addr, size);
-			}
+		MEMTAG1 *tag1_new = InternalReAlloc(tag1, CALC_MALLOCSIZE(size));
 
-			Free(addr);
+		tag1_new->Magic = canary_memtag_magic1 ^ ((UINT64)tag1_new * GOLDEN_RATION_PRIME_U64);
+		tag1_new->Size = size;
+		tag1_new->ZeroFree = 0;
 
-			return new_p;
-		} else {
-			tag1->Magic = 0;
-			tag2->Magic = 0;
+		MEMTAG2 *tag2_new = (MEMTAG2 *)(((UCHAR *)tag1_new) + CALC_MALLOCSIZE(size) - sizeof(MEMTAG2));
+		tag2_new->Magic = canary_memtag_magic2 ^ ((UINT64)tag2_new * GOLDEN_RATION_PRIME_U64);
+		MEMTAG_POISON(tag1_new);
 
-			MEMTAG1 *tag1_new = InternalReAlloc(tag1, CALC_MALLOCSIZE(size));
-
-			tag1_new->Magic = canary_memtag_magic1 ^ ((UINT64)tag1_new * GOLDEN_RATION_PRIME_U64);
-			tag1_new->Size = size;
-			tag1_new->ZeroFree = 0;
-
-			MEMTAG2 *tag2_new = (MEMTAG2 *)(((UCHAR *)tag1_new) + CALC_MALLOCSIZE(size) - sizeof(MEMTAG2));
-			tag2_new->Magic = canary_memtag_magic2 ^ ((UINT64)tag2_new * GOLDEN_RATION_PRIME_U64);
-			MEMTAG_POISON(tag1_new);
-
-			return MEMTAG1_TO_POINTER(tag1_new);
-		}
+		return MEMTAG1_TO_POINTER(tag1_new);
 	}
 }
 
 void Free(void *addr) {
-	if (IS_NULL_POINTER(addr)) {
+	if (IS_NULL_POINTER(addr))
 		return;
-	}
 
-	if (canary_inited == false) {
+	if (canary_inited == false)
 		InitCanaryRand();
-	}
 
 	MEMTAG1 *tag1 = POINTER_TO_MEMTAG1(addr);
 	CheckMemTag1(tag1);
@@ -162,9 +150,8 @@ void Free(void *addr) {
 	MEMTAG2 *tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
 	CheckMemTag2(tag2);
 
-	if (tag1->ZeroFree) {
+	if (tag1->ZeroFree)
 		Zero(addr, tag1->Size);
-	}
 
 	tag1->Magic = 0;
 	tag2->Magic = 0;
@@ -220,13 +207,11 @@ void *InternalMalloc(UINT size) {
 	KS_INC(KS_CURRENT_MEM_COUNT);
 
 	while (true) {
-		if ((retry++) > MEMORY_MAX_RETRY) {
+		if ((retry++) > MEMORY_MAX_RETRY)
 			AbortExitEx("InternalMalloc: error: malloc() failed.\n\n");
-		}
 		addr = Win32MemoryAlloc(size);
-		if (addr != NULL) {
+		if (addr != NULL)
 			break;
-		}
 
 		Sleep(MEMORY_SLEEP_TIME);
 	}
@@ -237,9 +222,8 @@ void *InternalMalloc(UINT size) {
 }
 
 void InternalFree(void *addr) {
-	if (addr == NULL) {
+	if (addr == NULL)
 		return;
-	}
 
 	KS_DEC(KS_CURRENT_MEM_COUNT);
 	KS_INC(KS_FREE_COUNT);
@@ -258,13 +242,11 @@ void *InternalReAlloc(void *addr, UINT size) {
 	KS_ADD(KS_TOTAL_MEM_SIZE, size);
 
 	while (true) {
-		if ((retry++) > MEMORY_MAX_RETRY) {
+		if ((retry++) > MEMORY_MAX_RETRY)
 			AbortExitEx("InternalReAlloc: error: realloc() failed.\n\n");
-		}
 		new_addr = Win32MemoryReAlloc(addr, size);
-		if (new_addr != NULL) {
+		if (new_addr != NULL)
 			break;
-		}
 
 		Sleep(MEMORY_SLEEP_TIME);
 	}

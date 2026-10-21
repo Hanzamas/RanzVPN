@@ -29,9 +29,8 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path) {
 	bool ret = false;
 	bool com_initialized = false;
 	INetCfg *pNetCfg;
-	if (inf_path == NULL) {
+	if (inf_path == NULL)
 		return false;
-	}
 
 	// COM for this call only: S_OK and S_FALSE both take a reference that CoUninitialize returns.
 	// RPC_E_CHANGED_MODE means the thread already runs in another apartment, which stays as it is.
@@ -56,9 +55,8 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path) {
 			hr = INetCfgLock_AcquireWriteLock(pLock, SL_USER_INSTALL_LOCK_TIMEOUT, L"Ranz VPN", &locked_by);
 
 			// S_FALSE: another client (locked_by) holds the write lock, so nothing may be installed
-			if (locked_by != NULL) {
+			if (locked_by != NULL)
 				CoTaskMemFree(locked_by);
-			}
 
 			if (hr == S_OK) {
 				hr = INetCfg_Initialize(pNetCfg, NULL);
@@ -84,17 +82,15 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path) {
 							hr = INetCfgClassSetup_Install(pSetup, L"" SL_PROTOCOL_NAME, &token, 0, 0, NULL, NULL, &pComponent);
 
 							if (SUCCEEDED(hr)) {
-								if (pComponent != NULL) {
+								if (pComponent != NULL)
 									INetCfgComponent_Release(pComponent);
-								}
 
 								hr = INetCfg_Apply(pNetCfg);
 
-								if (SUCCEEDED(hr)) {
+								if (SUCCEEDED(hr))
 									ret = true;
-								} else {
+								else
 									NetCfgDebugHr("INetCfg::Apply", hr);
-								}
 							} else {
 								NetCfgDebugHr("INetCfgClassSetup::Install", hr);
 							}
@@ -110,9 +106,8 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path) {
 
 							if (SetupCopyOEMInfW(inf_path, inf_dir, SPOST_PATH, SP_COPY_REPLACEONLY,
 							                     dst_inf_name, dst_inf_name_size, &dst_inf_name_size, NULL) == false &&
-							    GetLastError() == ERROR_FILE_EXISTS) {
+							    GetLastError() == ERROR_FILE_EXISTS)
 								SetupUninstallOEMInfW(dst_inf_name, 0, NULL);
-							}
 						}
 					} else {
 						NetCfgDebugHr("SetupCopyOEMInfW", HRESULT_FROM_WIN32(GetLastError()));
@@ -120,9 +115,8 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path) {
 
 					hr = INetCfg_Uninitialize(pNetCfg);
 
-					if (FAILED(hr)) {
+					if (FAILED(hr))
 						NetCfgDebugHr("INetCfg::Uninitialize", hr);
-					}
 				} else {
 					NetCfgDebugHr("INetCfg::Initialize", hr);
 				}
@@ -142,9 +136,8 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path) {
 		NetCfgDebugHr("CoCreateInstance(CNetCfg)", hr);
 	}
 
-	if (com_initialized) {
+	if (com_initialized)
 		CoUninitialize();
-	}
 
 	return ret;
 }

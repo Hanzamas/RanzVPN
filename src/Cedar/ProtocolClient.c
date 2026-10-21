@@ -27,20 +27,18 @@
 
 // An address goes into the IPv4 field of a NODE_INFO, or into its IPv6 field when it is an IPv6 address
 static void NodeInfoSetIp(UINT *ip4, UCHAR *ip6, IP *ip) {
-	if (IsIP6(ip) == false) {
+	if (IsIP6(ip) == false)
 		*ip4 = IPToUINT(ip);
-	} else {
+	else
 		Copy(ip6, ip->address, sizeof(ip->address));
-	}
 }
 
 static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c) {
 	IP ip;
 	wchar_t namew[256];
 	char namea[256];
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	SESSION *s = c->Session;
 	OS_INFO *os = GetOsInfo();
@@ -66,9 +64,8 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c) {
 	Zero(namea, sizeof(namea));
 	UniToStr(namea, sizeof(namea), namew);
 
-	if (IsEmptyStr(namea)) {
+	if (IsEmptyStr(namea))
 		GetMachineName(namea, sizeof(namea));
-	}
 
 	StrCpy(info->ClientHostname, sizeof(info->ClientHostname), namea);
 
@@ -76,11 +73,10 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c) {
 	info->ClientPort = Endian32(c->FirstSock->LocalPort);
 
 	StrCpy(info->ServerHostname, sizeof(info->ServerHostname), c->ServerName);
-	if (s->ClientOption->ProxyType == PROXY_DIRECT) {
+	if (s->ClientOption->ProxyType == PROXY_DIRECT)
 		NodeInfoSetIp(&info->ServerIpAddress, info->ServerIpAddress6, &c->FirstSock->RemoteIP);
-	} else if (GetIP(&ip, info->ServerHostname)) {
+	else if (GetIP(&ip, info->ServerHostname))
 		NodeInfoSetIp(&info->ServerIpAddress, info->ServerIpAddress6, &ip);
-	}
 	info->ServerPort = Endian32(c->ServerPort);
 
 	if (s->ClientOption->ProxyType == PROXY_SOCKS || s->ClientOption->ProxyType == PROXY_HTTP) {
@@ -100,23 +96,20 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c) {
 static void ConnectingSockRemove(CONNECTION *c, SOCK *s) {
 	LockList(c->ConnectingSocks);
 	{
-		if (Delete(c->ConnectingSocks, s)) {
+		if (Delete(c->ConnectingSocks, s))
 			ReleaseSock(s);
-		}
 	}
 	UnlockList(c->ConnectingSocks);
 	ReleaseSock(s);
 }
 
 static SOCK *ClientAdditionalConnectToServer(CONNECTION *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return NULL;
-	}
 
 	SOCK *s = ClientConnectGetSocket(c, true);
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	LockList(c->ConnectingSocks);
 	{
@@ -158,43 +151,34 @@ bool ClientAdditionalConnect(CONNECTION *c) {
 	UINT err;
 	UINT direction;
 
-	if (c == NULL) {
+	if (c == NULL)
 		return false;
-	}
 
 	s = ClientAdditionalConnectToServer(c);
-	if (s == NULL) {
+	if (s == NULL)
 		return false;
-	}
 
-	if (FlagRead(&c->Halt)) {
+	if (FlagRead(&c->Halt))
 		goto CLEANUP;
-	}
 
-	if (ClientUploadSignature(s) == false) {
+	if (ClientUploadSignature(s) == false)
 		goto CLEANUP;
-	}
 
-	if (FlagRead(&c->Halt)) {
+	if (FlagRead(&c->Halt))
 		goto CLEANUP;
-	}
 
-	if (ClientDownloadHello(c, s) == false) {
+	if (ClientDownloadHello(c, s) == false)
 		goto CLEANUP;
-	}
 
-	if (FlagRead(&c->Halt)) {
+	if (FlagRead(&c->Halt))
 		goto CLEANUP;
-	}
 
-	if (ClientUploadAuth2(c, s) == false) {
+	if (ClientUploadAuth2(c, s) == false)
 		goto CLEANUP;
-	}
 
 	p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
-	if (p == NULL) {
+	if (p == NULL)
 		goto CLEANUP;
-	}
 
 	err = GetErrorFromPack(p);
 	direction = PackGetInt(p, "direction");
@@ -203,9 +187,8 @@ bool ClientAdditionalConnect(CONNECTION *c) {
 	p = NULL;
 
 	if (err != 0) {
-		if (err == ERR_SESSION_TIMEOUT || err == ERR_INVALID_PROTOCOL) {
+		if (err == ERR_SESSION_TIMEOUT || err == ERR_INVALID_PROTOCOL)
 			c->Session->SessionTimeOuted = true;
-		}
 		goto CLEANUP;
 	}
 
@@ -213,9 +196,8 @@ bool ClientAdditionalConnect(CONNECTION *c) {
 	ts = NewTcpSock(s);
 
 	if (c->ServerMode == false) {
-		if (c->Session->ClientOption->ConnectionDisconnectSpan != 0) {
+		if (c->Session->ClientOption->ConnectionDisconnectSpan != 0)
 			ts->DisconnectTick = Tick64() + c->Session->ClientOption->ConnectionDisconnectSpan * (UINT64)1000;
-		}
 	}
 
 	LockList(c->Tcp->TcpSockList);
@@ -250,9 +232,8 @@ bool ClientConnect(CONNECTION *c) {
 	UINT utf_size;
 	char *utf;
 	wchar_t *msg;
-	if (c == NULL) {
+	if (c == NULL)
 		return false;
-	}
 
 	sess = c->Session;
 
@@ -262,9 +243,8 @@ bool ClientConnect(CONNECTION *c) {
 	s = ClientConnectToServer(c);
 	if (s == NULL) {
 		// Do not retry if untrusted or hostname mismatched
-		if (c->Session->LinkModeClient == false && (c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH)) {
+		if (c->Session->LinkModeClient == false && (c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH))
 			c->Session->ForceStopFlag = true;
-		}
 		return false;
 	}
 
@@ -297,9 +277,8 @@ bool ClientConnect(CONNECTION *c) {
 		goto CLEANUP;
 	}
 
-	if (ClientDownloadHello(c, s) == false) {
+	if (ClientDownloadHello(c, s) == false)
 		goto CLEANUP;
-	}
 
 	if (FlagRead(&c->Halt)) {
 		c->Err = ERR_USER_CANCEL;
@@ -309,9 +288,8 @@ bool ClientConnect(CONNECTION *c) {
 
 	c->Session->ClientStatus = CLIENT_STATUS_AUTH;
 
-	if (ClientUploadAuth(c) == false) {
+	if (ClientUploadAuth(c) == false)
 		goto CLEANUP;
-	}
 
 	if (FlagRead(&c->Halt)) {
 		c->Err = ERR_USER_CANCEL;
@@ -337,9 +315,8 @@ bool ClientConnect(CONNECTION *c) {
 	msg = CopyUtfToUni(utf);
 
 	if (UniIsEmptyStr(msg) == false) {
-		if (c->Session->Client_Message != NULL) {
+		if (c->Session->Client_Message != NULL)
 			Free(c->Session->Client_Message);
-		}
 
 		c->Session->Client_Message = msg;
 	} else {
@@ -380,9 +357,8 @@ bool ClientConnect(CONNECTION *c) {
 		c->Session->Timeout = MIN(c->Session->Timeout, TIMEOUT_MAX);
 		c->Session->Timeout = MAX(c->Session->Timeout, TIMEOUT_MIN);
 		c->Session->QoS = PackGetInt(p, "qos") == 0 ? false : true;
-		if (c->Session->QoS) {
+		if (c->Session->QoS)
 			c->Session->MaxConnection = MAX(c->Session->MaxConnection, (UINT)(c->Session->HalfConnection ? 4 : 2));
-		}
 		c->Session->VLanId = PackGetInt(p, "vlan_id");
 
 		StrCpy(c->Session->UnderlayProtocol, sizeof(c->Session->UnderlayProtocol), s->UnderlayProtocol);
@@ -401,18 +377,16 @@ bool ClientConnect(CONNECTION *c) {
 				UINT udp_acceleration_version = PackGetInt(p, "udp_acceleration_version");
 				IP udp_acceleration_server_ip;
 
-				if (udp_acceleration_version == 0) {
+				if (udp_acceleration_version == 0)
 					udp_acceleration_version = 1;
-				}
 
 				sess->UdpAccelFastDisconnectDetect = PackGetBool(p, "udp_accel_fast_disconnect_detect");
 
 				if (PackGetIp(p, "udp_acceleration_server_ip", &udp_acceleration_server_ip)) {
 					UINT udp_acceleration_server_port = PackGetInt(p, "udp_acceleration_server_port");
 
-					if (IsZeroIP(&udp_acceleration_server_ip)) {
+					if (IsZeroIP(&udp_acceleration_server_ip))
 						Copy(&udp_acceleration_server_ip, &s->RemoteIP, sizeof(IP));
-					}
 
 					if (udp_acceleration_server_port != 0) {
 						UCHAR udp_acceleration_server_key[UDP_ACCELERATION_COMMON_KEY_SIZE_V1];
@@ -433,9 +407,8 @@ bool ClientConnect(CONNECTION *c) {
 							Copy(&remote_ip, &s->RemoteIP, sizeof(IP));
 
 							sess->UdpAccel->Version = 1;
-							if (udp_acceleration_version == 2) {
+							if (udp_acceleration_version == 2)
 								sess->UdpAccel->Version = 2;
-							}
 
 							if (UdpAccelInitClient(sess->UdpAccel,
 							                       sess->UdpAccel->Version == 2 ? udp_acceleration_server_key_v2 : udp_acceleration_server_key,
@@ -469,20 +442,17 @@ bool ClientConnect(CONNECTION *c) {
 
 	Lock(c->lock);
 	{
-		if (c->Name != NULL) {
+		if (c->Name != NULL)
 			Free(c->Name);
-		}
 		c->Name = CopyStr(connection_name);
 
-		if (c->CipherName != NULL) {
+		if (c->CipherName != NULL)
 			Free(c->CipherName);
-		}
 
 		c->CipherName = CopyStr(c->FirstSock->CipherName);
 
-		if (c->SslVersion != NULL) {
+		if (c->SslVersion != NULL)
 			Free(c->SslVersion);
-		}
 
 		c->SslVersion = CopyStr(c->FirstSock->SslVersion);
 	}
@@ -490,9 +460,8 @@ bool ClientConnect(CONNECTION *c) {
 
 	Lock(c->Session->lock);
 	{
-		if (c->Session->Name != NULL) {
+		if (c->Session->Name != NULL)
 			Free(c->Session->Name);
-		}
 		c->Session->Name = CopyStr(session_name);
 
 		c->Session->Policy = policy;
@@ -505,9 +474,8 @@ bool ClientConnect(CONNECTION *c) {
 
 	c->Session->ClientStatus = CLIENT_STATUS_ESTABLISHED;
 
-	if (c->ServerX == NULL) {
+	if (c->ServerX == NULL)
 		c->ServerX = CloneX(c->FirstSock->RemoteX);
-	}
 
 	StartTunnelingMode(c);
 	s = NULL;
@@ -517,15 +485,13 @@ bool ClientConnect(CONNECTION *c) {
 		ts->Direction = TCP_CLIENT_TO_SERVER;
 	}
 
-	if (c->Session->LinkModeClient && c->Session->Link != NULL) {
+	if (c->Session->LinkModeClient && c->Session->Link != NULL)
 		HLog(c->Session->Link->Hub, "LH_CONNECT_2", c->Session->ClientOption->AccountName, session_name);
-	}
 
 	SessionMain(c->Session);
 
-	if (c->Err == ERR_USER_CANCEL) {
+	if (c->Err == ERR_USER_CANCEL)
 		ret = true;
-	}
 
 CLEANUP:
 	// StopConnection reads c->FirstSock and takes its ref under c->lock
@@ -540,9 +506,8 @@ CLEANUP:
 		sess->UdpAccel = NULL;
 	}
 
-	if (p != NULL) {
+	if (p != NULL)
 		FreePack(p);
-	}
 
 	Disconnect(s);
 	ReleaseSock(s);
@@ -557,9 +522,8 @@ bool ClientUploadAuth(CONNECTION *c) {
 	UCHAR sign[4096 / 8];
 	UCHAR unique[SHA1_SIZE];
 	RPC_WINVER v;
-	if (c == NULL) {
+	if (c == NULL)
 		return false;
-	}
 
 	Zero(sign, sizeof(sign));
 
@@ -652,9 +616,8 @@ bool ClientUploadAuth(CONNECTION *c) {
 	OutRpcWinVer(p, &v);
 
 	bool ret = HttpClientSend(c->FirstSock, p);
-	if (ret == false) {
+	if (ret == false)
 		c->Err = ERR_DISCONNECTED;
-	}
 
 	FreePack(p);
 
@@ -664,30 +627,25 @@ bool ClientUploadAuth(CONNECTION *c) {
 bool ParseWelcomeFromPack(PACK *p, char *session_name, UINT session_name_size,
                           char *connection_name, UINT connection_name_size,
                           POLICY **policy) {
-	if (p == NULL || session_name == NULL || connection_name == NULL || policy == NULL) {
+	if (p == NULL || session_name == NULL || connection_name == NULL || policy == NULL)
 		return false;
-	}
 
-	if (PackGetStr(p, "session_name", session_name, session_name_size) == false) {
+	if (PackGetStr(p, "session_name", session_name, session_name_size) == false)
 		return false;
-	}
 
-	if (PackGetStr(p, "connection_name", connection_name, connection_name_size) == false) {
+	if (PackGetStr(p, "connection_name", connection_name, connection_name_size) == false)
 		return false;
-	}
 
 	*policy = PackGetPolicy(p);
-	if (*policy == NULL) {
+	if (*policy == NULL)
 		return false;
-	}
 
 	return true;
 }
 
 POLICY *PackGetPolicy(PACK *p) {
-	if (p == NULL) {
+	if (p == NULL)
 		return NULL;
-	}
 
 	POLICY *y = ZeroMalloc(sizeof(POLICY));
 
@@ -708,9 +666,8 @@ POLICY *PackGetPolicy(PACK *p) {
 
 bool ClientUploadAuth2(CONNECTION *c, SOCK *s) {
 	PACK *p = NULL;
-	if (c == NULL) {
+	if (c == NULL)
 		return false;
-	}
 
 	p = PackAdditionalConnect(c->Session->SessionKey);
 
@@ -726,9 +683,8 @@ bool ClientUploadAuth2(CONNECTION *c, SOCK *s) {
 }
 
 void PackAddClientVersion(PACK *p, CONNECTION *c) {
-	if (p == NULL || c == NULL) {
+	if (p == NULL || c == NULL)
 		return;
-	}
 
 	PackAddStr(p, "client_str", c->ClientStr);
 	PackAddInt(p, "client_ver", c->ClientVer);
@@ -738,9 +694,8 @@ void PackAddClientVersion(PACK *p, CONNECTION *c) {
 bool ClientDownloadHello(CONNECTION *c, SOCK *s) {
 	UINT err;
 	UCHAR random[SHA1_SIZE];
-	if (c == NULL) {
+	if (c == NULL)
 		return false;
-	}
 
 	PACK *p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
 	if (p == NULL) {
@@ -760,9 +715,8 @@ bool ClientDownloadHello(CONNECTION *c, SOCK *s) {
 		return false;
 	}
 
-	if (c->FirstSock == s) {
+	if (c->FirstSock == s)
 		Copy(c->Random, random, SHA1_SIZE);
-	}
 
 	FreePack(p);
 
@@ -771,9 +725,8 @@ bool ClientDownloadHello(CONNECTION *c, SOCK *s) {
 
 bool ClientUploadSignature(SOCK *s) {
 	char ip_str[128];
-	if (s == NULL) {
+	if (s == NULL)
 		return false;
-	}
 
 	IPToStr(ip_str, sizeof(ip_str), &s->RemoteIP);
 
@@ -812,9 +765,8 @@ static void ClientSetFirstSock(CONNECTION *c, SOCK *s) {
 
 SOCK *ClientConnectToServer(CONNECTION *c) {
 	SOCK *s = NULL;
-	if (c == NULL) {
+	if (c == NULL)
 		return NULL;
-	}
 
 	if (FlagRead(&c->Halt)) {
 		c->Err = ERR_USER_CANCEL;
@@ -822,9 +774,8 @@ SOCK *ClientConnectToServer(CONNECTION *c) {
 	}
 
 	s = ClientConnectGetSocket(c, false);
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	// StopConnection reads c->FirstSock and takes its ref under c->lock
 	ClientSetFirstSock(c, s);
@@ -845,11 +796,10 @@ SOCK *ClientConnectToServer(CONNECTION *c) {
 		Disconnect(s);
 		ClientSetFirstSock(c, NULL);
 		ReleaseSock(s);
-		if (err != ERR_NO_ERROR) {
+		if (err != ERR_NO_ERROR)
 			c->Err = err;
-		} else {
+		else
 			c->Err = ERR_SERVER_IS_NOT_VPN;
-		}
 		return NULL;
 	}
 
@@ -873,9 +823,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect) {
 	IP resolved_ip;
 	IP *bind_ip;
 	UINT bind_port;
-	if (c == NULL || c->Session == NULL || c->Session->ClientOption == NULL) {
+	if (c == NULL || c->Session == NULL || c->Session->ClientOption == NULL)
 		return NULL;
-	}
 
 	cancel_flag = &c->Halt;
 	SESSION *sess = c->Session;
@@ -896,11 +845,10 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect) {
 		bind_ip = &sess->LocalIP_CacheForNextConnect;
 	}
 
-	if (o->BindLocalPort == 0) {
+	if (o->BindLocalPort == 0)
 		bind_port = BIND_LOCALPORT_NULL;
-	} else {
+	else
 		bind_port = o->BindLocalPort + Count(sess->Connection->CurrentNumConnection) - 1;
-	}
 
 	if (additional_connect && IsZeroIP(&sess->ServerIP_CacheForNextConnect) == false) {
 		IPToStr(hostname, sizeof(hostname), &sess->ServerIP_CacheForNextConnect);
@@ -909,9 +857,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect) {
 
 		StrCpy(hostname, sizeof(hostname), o->ProxyType == PROXY_DIRECT ? c->ServerName : o->ProxyName);
 
-		if (StrToIP(&tmp, hostname) == false) {
+		if (StrToIP(&tmp, hostname) == false)
 			save_resolved_ip = true;
-		}
 	}
 
 	if (o->ProxyType == PROXY_DIRECT) {
@@ -951,9 +898,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect) {
 
 		c->Err = ProxyCodeToCedar(ret);
 
-		if (c->Err != ERR_NO_ERROR) {
+		if (c->Err != ERR_NO_ERROR)
 			return NULL;
-		}
 
 		sock = out.Sock;
 
@@ -961,18 +907,15 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect) {
 	}
 
 	if (additional_connect == false || IsZeroIP(&sock->RemoteIP)) {
-		if (IsZeroIP(&sock->RemoteIP) == false || (sock->IPv6 && GetIP6(&c->Session->ServerIP, hostname) == false) || (sock->IPv6 == false && GetIP4(&c->Session->ServerIP, hostname) == false)) {
+		if (IsZeroIP(&sock->RemoteIP) == false || (sock->IPv6 && GetIP6(&c->Session->ServerIP, hostname) == false) || (sock->IPv6 == false && GetIP4(&c->Session->ServerIP, hostname) == false))
 			Copy(&c->Session->ServerIP, &sock->RemoteIP, sizeof(c->Session->ServerIP));
-		}
 	}
 
-	if (save_resolved_ip && IsZeroIP(&resolved_ip) == false) {
+	if (save_resolved_ip && IsZeroIP(&resolved_ip) == false)
 		Copy(&c->Session->ServerIP_CacheForNextConnect, &resolved_ip, sizeof(c->Session->ServerIP_CacheForNextConnect));
-	}
 
-	if (additional_connect == false) {
+	if (additional_connect == false)
 		c->Session->LocalIP_CacheForNextConnect = sock->LocalIP;
-	}
 
 	return sock;
 }
@@ -1001,42 +944,35 @@ UINT ProxyCodeToCedar(UINT code) {
 
 SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, IP *ret_ip) {
 	SOCK *s = NULL;
-	if (hostname == NULL || port == 0) {
+	if (hostname == NULL || port == 0)
 		return NULL;
-	}
 
 	s = BindConnectEx4(localIP, localport, hostname, port, 0, cancel_flag, ret_ip);
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	return s;
 }
 
 bool GetHello(PACK *p, void *random, UINT *ver, UINT *build, char *server_str, UINT server_str_size) {
-	if (p == NULL || random == NULL || ver == NULL || server_str == NULL) {
+	if (p == NULL || random == NULL || ver == NULL || server_str == NULL)
 		return false;
-	}
 
-	if (PackGetStr(p, "hello", server_str, server_str_size) == false) {
+	if (PackGetStr(p, "hello", server_str, server_str_size) == false)
 		return false;
-	}
 	*ver = PackGetInt(p, "version");
 	*build = PackGetInt(p, "build");
-	if (PackGetDataSize(p, "random") != SHA1_SIZE) {
+	if (PackGetDataSize(p, "random") != SHA1_SIZE)
 		return false;
-	}
-	if (PackGetData(p, "random", random) == false) {
+	if (PackGetData(p, "random", random) == false)
 		return false;
-	}
 
 	return true;
 }
 
 PACK *PackLoginWithCert(char *hubname, char *username, X *x, void *sign, UINT sign_size) {
-	if (hubname == NULL || username == NULL) {
+	if (hubname == NULL || username == NULL)
 		return NULL;
-	}
 
 	PACK *p = NewPack();
 	PackAddStr(p, "method", "login");
@@ -1054,9 +990,8 @@ PACK *PackLoginWithCert(char *hubname, char *username, X *x, void *sign, UINT si
 }
 
 PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_password) {
-	if (hubname == NULL || username == NULL) {
+	if (hubname == NULL || username == NULL)
 		return NULL;
-	}
 
 	PACK *p = NewPack();
 	PackAddStr(p, "method", "login");
@@ -1069,9 +1004,8 @@ PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_pass
 }
 
 PACK *PackLoginWithPassword(char *hubname, char *username, void *secure_password) {
-	if (hubname == NULL || username == NULL) {
+	if (hubname == NULL || username == NULL)
 		return NULL;
-	}
 
 	PACK *p = NewPack();
 	PackAddStr(p, "method", "login");
@@ -1084,9 +1018,8 @@ PACK *PackLoginWithPassword(char *hubname, char *username, void *secure_password
 }
 
 PACK *PackLoginWithAnonymous(char *hubname, char *username) {
-	if (hubname == NULL || username == NULL) {
+	if (hubname == NULL || username == NULL)
 		return NULL;
-	}
 
 	PACK *p = NewPack();
 	PackAddStr(p, "method", "login");
@@ -1098,9 +1031,8 @@ PACK *PackLoginWithAnonymous(char *hubname, char *username) {
 }
 
 PACK *PackAdditionalConnect(UCHAR *session_key) {
-	if (session_key == NULL) {
+	if (session_key == NULL)
 		return NULL;
-	}
 
 	PACK *p = NewPack();
 	PackAddStr(p, "method", "additional_connect");

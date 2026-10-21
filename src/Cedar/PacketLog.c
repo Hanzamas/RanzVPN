@@ -17,40 +17,33 @@
 
 bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now) {
 	HUB_OPTION *opt = NULL;
-	if (hub == NULL || src_session == NULL || packet == NULL) {
+	if (hub == NULL || src_session == NULL || packet == NULL)
 		return true;
-	}
 
 	SERVER *s = hub->Cedar->Server;
 
-	if (hub->LogSetting.SavePacketLog == false) {
+	if (hub->LogSetting.SavePacketLog == false)
 		return true;
-	}
 
 	if (Cmp(hub->HubMacAddr, packet->MacAddressSrc, 6) == 0 ||
-	    Cmp(hub->HubMacAddr, packet->MacAddressDest, 6) == 0) {
+	    Cmp(hub->HubMacAddr, packet->MacAddressDest, 6) == 0)
 		return true;
-	}
 
 	opt = hub->Option;
 
 	UINT level = CalcPacketLoggingLevel(&hub->LogSetting, packet);
-	if (level == PACKET_LOG_NONE) {
+	if (level == PACKET_LOG_NONE)
 		return true;
-	}
 
-	if (opt->NoIPv4PacketLog && (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4)) {
+	if (opt->NoIPv4PacketLog && (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4))
 		return true;
-	}
 
-	if (opt->NoIPv6PacketLog && packet->TypeL3 == L3_IPV6) {
+	if (opt->NoIPv6PacketLog && packet->TypeL3 == L3_IPV6)
 		return true;
-	}
 
 	if (opt->MaxLoggedPacketsPerMinute != 0) {
-		if (CheckMaxLoggedPacketsPerMinute(src_session, opt->MaxLoggedPacketsPerMinute, now) == false) {
+		if (CheckMaxLoggedPacketsPerMinute(src_session, opt->MaxLoggedPacketsPerMinute, now) == false)
 			return false;
-		}
 	}
 
 	UINT syslog_setting = SiGetSysLogSaveStatus(s);
@@ -62,20 +55,17 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	pl->Cedar = hub->Cedar;
 	pl->Packet = p;
 	pl->SrcSessionName = CopyStr(src_session->Name);
-	if (dest_session != NULL) {
+	if (dest_session != NULL)
 		pl->DestSessionName = CopyStr(dest_session->Name);
-	} else {
+	else
 		pl->DestSessionName = CopyStr("");
-	}
 
 	if (opt == NULL || opt->NoPhysicalIPOnPacketLog == false) {
-		if (src_session->NormalClient) {
+		if (src_session->NormalClient)
 			StrCpy(pl->SrcPhysicalIP, sizeof(pl->SrcPhysicalIP), src_session->ClientIP);
-		}
 
-		if (dest_session != NULL && dest_session->NormalClient) {
+		if (dest_session != NULL && dest_session->NormalClient)
 			StrCpy(pl->DestPhysicalIP, sizeof(pl->DestPhysicalIP), dest_session->ClientIP);
-		}
 
 		pl->WritePhysicalIP = true;
 	}
@@ -85,9 +75,8 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		while (src_session->LoggingRecordCount->c >= 30000) {
 			SleepThread(50);
 			n++;
-			if (n >= 5) {
+			if (n >= 5)
 				break;
-			}
 		}
 	}
 
@@ -108,9 +97,8 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 					if (IsZeroIP(&s->Syslog->DestIp) == false && s->Syslog->DestPort != 0) {
 						if (IPToUINT(&s->Syslog->DestIp) == packet->L3.IPv4Header->DstIP) {
 							// DstPort is a 16-bit field in network order, DestPort a port in host order
-							if (Endian16(packet->L4.UDPHeader->DstPort) == (USHORT)s->Syslog->DestPort) {
+							if (Endian16(packet->L4.UDPHeader->DstPort) == (USHORT)s->Syslog->DestPort)
 								self_syslog_packet = true;
-							}
 						}
 					}
 				}
@@ -124,9 +112,8 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		char *buf = PacketLogParseProc(&rec);
 		StrToUni(tmp, sizeof(tmp), buf);
 
-		if (self_syslog_packet == false) {
+		if (self_syslog_packet == false)
 			SiWriteSysLog(s, "PACKET_LOG", hub->Name, tmp);
-		}
 
 		Free(buf);
 	} else {
@@ -143,9 +130,8 @@ static bool IsTcpConnectionFlag(UCHAR flag) {
 
 UINT CalcPacketLoggingLevel(HUB_LOG *g, PKT *packet) {
 	UINT ret = 0;
-	if (g == NULL || packet == NULL) {
+	if (g == NULL || packet == NULL)
 		return PACKET_LOG_NONE;
-	}
 
 	ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_ETHERNET]);
 
@@ -167,9 +153,8 @@ UINT CalcPacketLoggingLevel(HUB_LOG *g, PKT *packet) {
 		case L4_TCP:
 			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP]);
 
-			if (IsTcpConnectionFlag(packet->L4.TCPHeader->Flag)) {
+			if (IsTcpConnectionFlag(packet->L4.TCPHeader->Flag))
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-			}
 
 			break;
 
@@ -193,9 +178,8 @@ UINT CalcPacketLoggingLevel(HUB_LOG *g, PKT *packet) {
 		break;
 	}
 
-	if (packet->HttpLog != NULL) {
+	if (packet->HttpLog != NULL)
 		ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-	}
 
 	return ret;
 }
@@ -203,32 +187,27 @@ UINT CalcPacketLoggingLevel(HUB_LOG *g, PKT *packet) {
 static char *BuildHttpLogStr(HTTPLOG *h) {
 	char url[MAX_SIZE];
 	char nullchar = 0;
-	if (h == NULL) {
+	if (h == NULL)
 		return CopyStr("");
-	}
 
 	BUF *b = NewBuf();
 
 	if (StartWith(h->Path, "http://") || StartWith(h->Path, "https://")) {
 		StrCpy(url, sizeof(url), h->Path);
 	} else {
-		if (h->IsSsl == false) {
-			if (h->Port == 80) {
+		if (h->IsSsl == false)
+			if (h->Port == 80)
 				Format(url, sizeof(url), "http://%s%s",
 				       h->Hostname, h->Path);
-			} else {
+			else
 				Format(url, sizeof(url), "http://%s:%u%s",
 				       h->Hostname, h->Port, h->Path);
-			}
-		} else {
-			if (h->Port == 443) {
-				Format(url, sizeof(url), "https://%s/",
-				       h->Hostname);
-			} else {
-				Format(url, sizeof(url), "https://%s:%u/",
-				       h->Hostname, h->Port);
-			}
-		}
+		else if (h->Port == 443)
+			Format(url, sizeof(url), "https://%s/",
+			       h->Hostname);
+		else
+			Format(url, sizeof(url), "https://%s:%u/",
+			       h->Hostname, h->Port);
 	}
 
 	AddLogBufToStr(b, "HttpMethod", h->Method);
@@ -249,13 +228,11 @@ static char *BuildHttpLogStr(HTTPLOG *h) {
 void AddLogBufToStr(BUF *b, char *name, char *value) {
 	char tmp[MAX_SIZE * 2];
 	char *p = NULL;
-	if (b == NULL || value == NULL) {
+	if (b == NULL || value == NULL)
 		return;
-	}
 
-	if (IsEmptyStr(value)) {
+	if (IsEmptyStr(value))
 		return;
-	}
 
 	tmp[0] = 0;
 
@@ -276,14 +253,12 @@ void AddLogBufToStr(BUF *b, char *name, char *value) {
 
 void MakeSafeLogStr(char *str) {
 	bool is_http = false;
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	if (str[0] == 'h' && str[1] == 't' && str[2] == 't' && str[3] == 'p' &&
-	    ((str[4] == 's' && str[5] == ':') || (str[4] == ':'))) {
+	    ((str[4] == 's' && str[5] == ':') || (str[4] == ':')))
 		is_http = true;
-	}
 
 	EnPrintableAsciiStr(str, '?');
 
@@ -292,9 +267,8 @@ void MakeSafeLogStr(char *str) {
 		if (str[i] == ',') {
 			str[i] = '.';
 		} else if (str[i] == ' ') {
-			if (is_http == false) {
+			if (is_http == false)
 				str[i] = '_';
-			}
 		}
 	}
 }
@@ -347,11 +321,10 @@ static void PacketLogIke(TOKEN_LIST *t, const PKT *p, char *suffix) {
 	t->Token[6] = CopyStr(tmp);
 
 	if (p->L7.IkeHeader != NULL) {
-		if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN) {
+		if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
 			t->Token[7] = CopyStr("MainMode");
-		} else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE) {
+		else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
 			t->Token[7] = CopyStr("AggressiveMode");
-		}
 
 		Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
 		                         "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
@@ -389,11 +362,10 @@ static void PacketLogUdp(TOKEN_LIST *t, PACKET_LOG *pl, const PKT *p, char *suff
 	switch (p->TypeL7) {
 	case L7_DHCPV4:
 		t->Token[6] = CopyStr("DHCPv4");
-		if (p->L7.DHCPv4Header->OpCode == 1) {
+		if (p->L7.DHCPv4Header->OpCode == 1)
 			t->Token[7] = CopyStr("Request");
-		} else {
+		else
 			t->Token[7] = CopyStr("Response");
-		}
 
 		{
 			char ip1[64], ip2[64], ip3[64], ip4[64];
@@ -479,18 +451,16 @@ static void PacketLogArp(TOKEN_LIST *t, const PKT *p) {
 
 char *PacketLogParseProc(RECORD *rec) {
 	char tmp[MAX_SIZE];
-	if (rec == NULL) {
+	if (rec == NULL)
 		return NULL;
-	}
 
 	PACKET_LOG *pl = (PACKET_LOG *)rec->Data;
 	PKT *p = pl->Packet;
 
 	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = 16;
-	if (pl->WritePhysicalIP) {
+	if (pl->WritePhysicalIP)
 		t->NumTokens += 2;
-	}
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
 	t->Token[0] = pl->SrcSessionName;
@@ -664,9 +634,8 @@ char *PacketLogParseProc(RECORD *rec) {
 
 			Trim(info);
 
-			if (IsEmptyStr(info) == false) {
+			if (IsEmptyStr(info) == false)
 				t->Token[14] = CopyStr(info);
-			}
 		} break;
 
 		case L4_TCP:
@@ -708,12 +677,10 @@ char *PacketLogParseProc(RECORD *rec) {
 		t->Token[15] = data;
 	}
 
-	if (StrLen(pl->SrcPhysicalIP) != 0) {
+	if (StrLen(pl->SrcPhysicalIP) != 0)
 		t->Token[16] = CopyStr(pl->SrcPhysicalIP);
-	}
-	if (StrLen(pl->DestPhysicalIP) != 0) {
+	if (StrLen(pl->DestPhysicalIP) != 0)
 		t->Token[17] = CopyStr(pl->DestPhysicalIP);
-	}
 
 	char *s = GenCsvLine(t);
 	FreeToken(t);
@@ -733,9 +700,8 @@ char *PacketLogParseProc(RECORD *rec) {
 // logging record count and its reference to the source session
 void PacketLogFreeProc(void *data) {
 	PACKET_LOG *pl = (PACKET_LOG *)data;
-	if (pl == NULL) {
+	if (pl == NULL)
 		return;
-	}
 
 	Free(pl->SrcSessionName);
 	Free(pl->DestSessionName);
@@ -753,34 +719,27 @@ char *TcpFlagStr(UCHAR flag) {
 	char tmp[MAX_SIZE];
 	StrCpy(tmp, sizeof(tmp), "");
 
-	if (flag & TCP_FIN) {
+	if (flag & TCP_FIN)
 		StrCat(tmp, sizeof(tmp), "FIN+");
-	}
 
-	if (flag & TCP_SYN) {
+	if (flag & TCP_SYN)
 		StrCat(tmp, sizeof(tmp), "SYN+");
-	}
 
-	if (flag & TCP_RST) {
+	if (flag & TCP_RST)
 		StrCat(tmp, sizeof(tmp), "RST+");
-	}
 
-	if (flag & TCP_PSH) {
+	if (flag & TCP_PSH)
 		StrCat(tmp, sizeof(tmp), "PSH+");
-	}
 
-	if (flag & TCP_ACK) {
+	if (flag & TCP_ACK)
 		StrCat(tmp, sizeof(tmp), "ACK+");
-	}
 
-	if (flag & TCP_URG) {
+	if (flag & TCP_URG)
 		StrCat(tmp, sizeof(tmp), "URG+");
-	}
 
 	if (StrLen(tmp) >= 1) {
-		if (tmp[StrLen(tmp) - 1] == '+') {
+		if (tmp[StrLen(tmp) - 1] == '+')
 			tmp[StrLen(tmp) - 1] = 0;
-		}
 	}
 
 	return CopyStr(tmp);
@@ -788,41 +747,36 @@ char *TcpFlagStr(UCHAR flag) {
 
 char *PortStr(CEDAR *cedar, UINT port, bool udp) {
 	char tmp[MAX_SIZE];
-	if (cedar == NULL) {
+	if (cedar == NULL)
 		return NULL;
-	}
 
 	char *name = GetSvcName(cedar, udp, port);
 
-	if (name == NULL) {
+	if (name == NULL)
 		snprintf(tmp, sizeof(tmp), "%u", port);
-	} else {
+	else
 		snprintf(tmp, sizeof(tmp), "%s(%u)", name, port);
-	}
 
 	return CopyStr(tmp);
 }
 
 char *GenCsvLine(TOKEN_LIST *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return NULL;
-	}
 
 	BUF *b = NewBuf();
 	for (UINT i = 0; i < t->NumTokens; i++) {
 		if (t->Token[i] != NULL) {
 			ReplaceForCsv(t->Token[i]);
-			if (StrLen(t->Token[i]) == 0) {
+			if (StrLen(t->Token[i]) == 0)
 				WriteBuf(b, "-", 1);
-			} else {
+			else
 				WriteBuf(b, t->Token[i], StrLen(t->Token[i]));
-			}
 		} else {
 			WriteBuf(b, "-", 1);
 		}
-		if (i != (t->NumTokens - 1)) {
+		if (i != (t->NumTokens - 1))
 			WriteBuf(b, ",", 1);
-		}
 	}
 	WriteBuf(b, "\0", 1);
 
@@ -834,16 +788,13 @@ char *GenCsvLine(TOKEN_LIST *t) {
 }
 
 void ReplaceForCsv(char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINT len = StrLen(str);
 
 	// A comma, a CR, an LF or another control character would split the record (a NUL ends the token)
-	for (UINT i = 0; i < len; i++) {
-		if (str[i] == ',' || (UCHAR)str[i] < 0x20 || (UCHAR)str[i] == 0x7F) {
+	for (UINT i = 0; i < len; i++)
+		if (str[i] == ',' || (UCHAR)str[i] < 0x20 || (UCHAR)str[i] == 0x7F)
 			str[i] = '_';
-		}
-	}
 }

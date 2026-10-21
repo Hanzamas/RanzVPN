@@ -31,11 +31,9 @@ static UINT LogWriterWaitTime(const LOG_WRITER *w);
 // Map the control characters of size bytes of UTF-8 text (bytes below 0x20 and 0x7F, never part of a
 // multi-byte sequence) to '?': a CR or LF from untrusted input cannot start a forged log line or syslog message
 void LogMapControlChars(UCHAR *s, UINT size) {
-	for (UINT i = 0; i < size; i++) {
-		if (s[i] < 0x20 || s[i] == 0x7F) {
+	for (UINT i = 0; i < size; i++)
+		if (s[i] < 0x20 || s[i] == 0x7F)
 			s[i] = '?';
-		}
-	}
 }
 
 // Format the text of the string table entry name with args into buf (size bytes): the one place SLog, HLog, ALog
@@ -45,9 +43,8 @@ void LogFormat(wchar_t *buf, UINT size, char *name, va_list args) {
 }
 
 void SetLogSwitchType(LOG *g, UINT switch_type) {
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	LockLog(g);
 	{
@@ -57,17 +54,15 @@ void SetLogSwitchType(LOG *g, UINT switch_type) {
 }
 
 static char *StringRecordParseProc(RECORD *rec) {
-	if (rec == NULL) {
+	if (rec == NULL)
 		return NULL;
-	}
 
 	return (char *)rec->Data;
 }
 
 void InsertUnicodeRecord(LOG *g, wchar_t *unistr) {
-	if (g == NULL || unistr == NULL) {
+	if (g == NULL || unistr == NULL)
 		return;
-	}
 
 	UINT size = CalcUniToUtf8(unistr) + 32;
 	char *str = ZeroMalloc(size);
@@ -80,9 +75,8 @@ void InsertUnicodeRecord(LOG *g, wchar_t *unistr) {
 }
 
 void InsertStringRecord(LOG *g, char *str) {
-	if (g == NULL || str == NULL) {
+	if (g == NULL || str == NULL)
 		return;
-	}
 
 	char *str_copy = CopyStr(str);
 	LogMapControlChars((UCHAR *)str_copy, StrLen(str_copy));
@@ -101,9 +95,8 @@ static void FreeRecord(RECORD *rec) {
 // is dropped, is_csv separates the date and the time of the line with commas
 void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc, RECORD_FREE_PROC *free_proc, bool is_csv) {
 	bool dropped = false;
-	if (g == NULL || data == NULL || proc == NULL || free_proc == NULL) {
+	if (g == NULL || data == NULL || proc == NULL || free_proc == NULL)
 		return;
-	}
 
 	RECORD *rec = ZeroMalloc(sizeof(RECORD));
 	rec->Tick = Tick64();
@@ -124,25 +117,22 @@ void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc, RECORD_FREE_PROC 
 	}
 	UnlockQueue(g->RecordQueue);
 
-	if (dropped) {
+	if (dropped)
 		FreeRecord(rec);
-	}
 
 	Set(g->Event);
 }
 
 void LockLog(LOG *g) {
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	Lock(g->lock);
 }
 
 void UnlockLog(LOG *g) {
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	Unlock(g->lock);
 }
@@ -150,9 +140,8 @@ void UnlockLog(LOG *g) {
 static void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UINT switch_type) {
 	SYSTEMTIME st;
 
-	if (str == NULL || g == NULL) {
+	if (str == NULL || g == NULL)
 		return;
-	}
 
 	if (g->CacheFlag) {
 		if (g->LastTick == tick &&
@@ -206,9 +195,8 @@ static bool MakeLogFileName(LOG *g, char *name, UINT size, UINT64 tick, UINT swi
 	char tmp[MAX_SIZE];
 	char tmp2[64];
 	bool ret = false;
-	if (g == NULL || name == NULL || old_datestr == NULL) {
+	if (g == NULL || name == NULL || old_datestr == NULL)
 		return false;
-	}
 
 	MakeLogFileNameStringFromTick(g, tmp, sizeof(tmp), tick, switch_type);
 
@@ -221,21 +209,20 @@ static bool MakeLogFileName(LOG *g, char *name, UINT size, UINT64 tick, UINT swi
 		} else {
 			char tag[32];
 			char c = '2';
-			if (max_log_size >= 1000000000ULL) {
+			if (max_log_size >= 1000000000ULL)
 				c = '3';
-			} else if (max_log_size >= 100000000ULL) {
+			else if (max_log_size >= 100000000ULL)
 				c = '4';
-			} else if (max_log_size >= 10000000ULL) {
+			else if (max_log_size >= 10000000ULL)
 				c = '5';
-			} else if (max_log_size >= 1000000ULL) {
+			else if (max_log_size >= 1000000ULL)
 				c = '6';
-			} else if (max_log_size >= 100000ULL) {
+			else if (max_log_size >= 100000ULL)
 				c = '7';
-			} else if (max_log_size >= 10000ULL) {
+			else if (max_log_size >= 10000ULL)
 				c = '8';
-			} else if (max_log_size >= 1000ULL) {
+			else if (max_log_size >= 1000ULL)
 				c = '9';
-			}
 
 			StrCpy(tag, sizeof(tag), "~%02u");
 			tag[3] = c;
@@ -257,9 +244,8 @@ static bool MakeLogFileName(LOG *g, char *name, UINT size, UINT64 tick, UINT swi
 }
 
 void WaitLogFlush(LOG *g) {
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	while (true) {
 		UINT num;
@@ -269,9 +255,8 @@ void WaitLogFlush(LOG *g) {
 		}
 		UnlockQueue(g->RecordQueue);
 
-		if (num == 0) {
+		if (num == 0)
 			break;
-		}
 
 		Wait(g->FlushEvent, 100);
 	}
@@ -280,52 +265,45 @@ void WaitLogFlush(LOG *g) {
 // Set the maximum size of a log file of g (LoggerMaxLogSize of the configuration), 0 for MAX_LOG_SIZE_DEFAULT: a
 // record that would take the file over it goes to the next file number
 void SetMaxLogSize(LOG *g, UINT64 size) {
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
-	if (size == 0) {
+	if (size == 0)
 		size = MAX_LOG_SIZE_DEFAULT;
-	}
 
 	g->MaxLogSize = size;
 }
 
 UINT64 GetMaxLogSize(LOG *g) {
-	if (g == NULL) {
+	if (g == NULL)
 		return MAX_LOG_SIZE_DEFAULT;
-	}
 
 	UINT64 ret = g->MaxLogSize;
 
-	if (ret == 0) {
+	if (ret == 0)
 		ret = MAX_LOG_SIZE_DEFAULT;
-	}
 
 	return ret;
 }
 
 // Run the writer thread at the realtime priority (realtime) or the idle priority: the system call only on a change
 static void LogWriterSetPriority(LOG_WRITER *w, bool realtime) {
-	if (w->Realtime == realtime) {
+	if (w->Realtime == realtime)
 		return;
-	}
 
 	w->Realtime = realtime;
 
-	if (realtime) {
+	if (realtime)
 		MsSetThreadPriorityRealtime();
-	} else {
+	else
 		MsSetThreadPriorityIdle();
-	}
 }
 
 static void LogThread(THREAD *thread, void *param) {
 	LOG_WRITER w;
 	bool flag = false;
-	if (thread == NULL || param == NULL) {
+	if (thread == NULL || param == NULL)
 		return;
-	}
 
 	Zero(&w, sizeof(w));
 
@@ -340,11 +318,9 @@ static void LogThread(THREAD *thread, void *param) {
 	NoticeThreadInit(thread);
 
 	while (true) {
-		while (true) {
-			if (!LogThreadWriteGeneral(g, &w)) {
+		while (true)
+			if (!LogThreadWriteGeneral(g, &w))
 				break;
-			}
-		}
 
 		if (g->Halt) {
 			// When the stop flag is set, break only after every record is saved
@@ -367,17 +343,15 @@ static void LogThread(THREAD *thread, void *param) {
 			}
 			UnlockQueue(g->RecordQueue);
 
-			if (num == 0 || w.Io == NULL) {
+			if (num == 0 || w.Io == NULL)
 				break;
-			}
 		} else {
 			Wait(g->Event, LogWriterWaitTime(&w));
 		}
 	}
 
-	if (w.Io != NULL) {
+	if (w.Io != NULL)
 		FileCloseEx(w.Io, true);
-	}
 
 	FreeBuf(w.Buffer);
 }
@@ -385,14 +359,12 @@ static void LogThread(THREAD *thread, void *param) {
 // Milliseconds the writer thread waits for a new record: while records wait in the buffer for a file that
 // could not be opened, only until the next try to open it
 static UINT LogWriterWaitTime(const LOG_WRITER *w) {
-	if (w->Io != NULL || w->Buffer->Size == 0 || IsEmptyStr(w->FileName)) {
+	if (w->Io != NULL || w->Buffer->Size == 0 || IsEmptyStr(w->FileName))
 		return 9821;
-	}
 
 	UINT64 now = Tick64();
-	if (w->RetryTick <= now) {
+	if (w->RetryTick <= now)
 		return 1;
-	}
 
 	return (UINT)MIN(w->RetryTick - now, 9821);
 }
@@ -441,9 +413,8 @@ static void LogWriterAddDropped(LOG *g, LOG_WRITER *w) {
 	}
 	UnlockQueue(g->RecordQueue);
 
-	if (num == 0) {
+	if (num == 0)
 		return;
-	}
 
 	Format(tmp, sizeof(tmp), LOG_DROPPED_RECORDS_FORMAT, num);
 
@@ -482,9 +453,8 @@ static void LogWriterKeep(LOG *g, LOG_WRITER *w, RECORD *rec) {
 static void LogFlushBuffer(LOG *g, LOG_WRITER *w, bool next_number) {
 	BUF *buffer = w->Buffer;
 
-	if (w->Io == NULL || buffer->Size == 0) {
+	if (w->Io == NULL || buffer->Size == 0)
 		return;
-	}
 
 	if ((g->CurrentFilePointer + (UINT64)buffer->Size) > GetMaxLogSize(g)) {
 		if (next_number && g->log_number_incremented == false) {
@@ -519,17 +489,14 @@ static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w) {
 	}
 	UnlockQueue(log_object->RecordQueue);
 
-	if (num >= LOG_ENGINE_SAVE_START_CACHE_COUNT) {
+	if (num >= LOG_ENGINE_SAVE_START_CACHE_COUNT)
 		LogWriterSetPriority(w, true);
-	}
 
-	if (num < (LOG_ENGINE_SAVE_START_CACHE_COUNT / 2)) {
+	if (num < (LOG_ENGINE_SAVE_START_CACHE_COUNT / 2))
 		LogWriterSetPriority(w, false);
-	}
 
-	if (buffer->Size > GetMaxLogSize(log_object)) {
+	if (buffer->Size > GetMaxLogSize(log_object))
 		ClearBuf(buffer);
-	}
 
 	if (rec == NULL && w->Io == NULL && buffer->Size != 0 && IsEmptyStr(w->FileName) == false &&
 	    Tick64() >= w->RetryTick) {
@@ -540,14 +507,12 @@ static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w) {
 		LogOpenFile(log_object, w, last_name);
 		log_object->log_number_incremented = false;
 
-		if (w->Io != NULL) {
+		if (w->Io != NULL)
 			LogWriterAddDropped(log_object, w);
-		}
 	}
 
-	if (buffer->Size >= LOG_ENGINE_BUFFER_CACHE_SIZE_MAX) {
+	if (buffer->Size >= LOG_ENGINE_BUFFER_CACHE_SIZE_MAX)
 		LogFlushBuffer(log_object, w, true);
-	}
 
 	if (rec == NULL) {
 		LogFlushBuffer(log_object, w, true);
@@ -571,9 +536,8 @@ static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w) {
 				MakeLogFileName(log_object, tmp, sizeof(tmp),
 				                rec->Tick, log_object->SwitchType, i, w->DateName, sizeof(w->DateName));
 
-				if (IsFileExists(tmp) == false) {
+				if (IsFileExists(tmp) == false)
 					break;
-				}
 				StrCpy(file_name, sizeof(file_name), tmp);
 				log_object->CurrentLogNumber = i;
 			}
@@ -584,9 +548,8 @@ static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w) {
 	if (w->Io != NULL) {
 		if (StrCmp(w->FileName, file_name) != 0) {
 			// Switching to another log file: flush the buffer and close the current file first
-			if (log_date_changed) {
+			if (log_date_changed)
 				LogFlushBuffer(log_object, w, false);
-			}
 			FileCloseEx(w->Io, true);
 
 			log_object->log_number_incremented = false;
@@ -619,9 +582,8 @@ static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w) {
 void WriteRecordToBuffer(BUF *b, RECORD *r) {
 	char time_str[MAX_SIZE];
 	char date_str[MAX_SIZE];
-	if (b == NULL || r == NULL) {
+	if (b == NULL || r == NULL)
 		return;
-	}
 
 	UINT64 time = SystemToLocal64(Tick64ToTime64(r->Tick));
 
@@ -649,9 +611,8 @@ void WriteRecordToBuffer(BUF *b, RECORD *r) {
 
 void FreeLog(LOG *g) {
 	RECORD *rec;
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	g->Halt = true;
 	Set(g->Event);
@@ -664,9 +625,8 @@ void FreeLog(LOG *g) {
 	Free(g->Prefix);
 
 	// Release any leftover records (there should be none) without making their lines
-	while (rec = GetNext(g->RecordQueue)) {
+	while (rec = GetNext(g->RecordQueue))
 		FreeRecord(rec);
-	}
 	ReleaseQueue(g->RecordQueue);
 
 	ReleaseEvent(g->Event);

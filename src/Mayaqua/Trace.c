@@ -27,9 +27,8 @@ static bool trace_registered = false;
 
 // Register the provider (InitMayaqua)
 void InitTrace() {
-	if (trace_registered) {
+	if (trace_registered)
 		return;
-	}
 
 	// A provider that fails to register stays off, as it is without a session
 	trace_registered = (TraceLoggingRegister(trace_provider) == S_OK);
@@ -37,9 +36,8 @@ void InitTrace() {
 
 // Unregister the provider (FreeMayaqua)
 void FreeTrace() {
-	if (trace_registered == false) {
+	if (trace_registered == false)
 		return;
-	}
 
 	TraceLoggingUnregister(trace_provider);
 	trace_registered = false;
@@ -52,14 +50,12 @@ bool IsTraceEnabled() {
 
 // Write a Debug() message as one "Debug" event, formatted as PrintArgs() (Str.c) formats it
 void TraceDebugArgs(const char *fmt, va_list args) {
-	if (fmt == NULL || IsTraceEnabled() == false) {
+	if (fmt == NULL || IsTraceEnabled() == false)
 		return;
-	}
 
 	wchar_t *msg = CopyFormatArgsToUni(fmt, args);
-	if (msg == NULL) {
+	if (msg == NULL)
 		return;
-	}
 
 	TraceLoggingWrite(trace_provider, "Debug",
 	                  TraceLoggingLevel(WINEVENT_LEVEL_VERBOSE),

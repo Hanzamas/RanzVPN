@@ -27,9 +27,8 @@ UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t) {
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
 	HUB *h = AdminGetHub(a, hubname, NULL, &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	HUBDB *db = h->HubDb;
 
@@ -53,9 +52,8 @@ UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t) {
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_access_control_list", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	HUBDB *db = h->HubDb;
 

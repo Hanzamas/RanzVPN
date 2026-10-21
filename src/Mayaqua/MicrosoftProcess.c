@@ -49,15 +49,13 @@ void MsRestoreThreadPriority() {
 bool MsCheckLogon(wchar_t *username, char *password) {
 	wchar_t password_unicode[MAX_SIZE];
 	HANDLE h;
-	if (username == NULL || password == NULL) {
+	if (username == NULL || password == NULL)
 		return false;
-	}
 
 	StrToUni(password_unicode, sizeof(password_unicode), password);
 
-	if (LogonUserW(username, NULL, password_unicode, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false) {
+	if (LogonUserW(username, NULL, password_unicode, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
 		return false;
-	}
 
 	CloseHandle(h);
 

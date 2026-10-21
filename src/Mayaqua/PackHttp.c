@@ -54,9 +54,8 @@ static HTTP_HEADER *NewHttpHeaderKeepAlive(char *method, char *target, char *ver
 
 	GetHttpDateStr(date_str, sizeof(date_str), SystemTime64());
 	AddHttpValue(h, NewHttpValue("Date", date_str));
-	if (host != NULL) {
+	if (host != NULL)
 		AddHttpValue(h, NewHttpValue("Host", host));
-	}
 	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
 	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
 	AddHttpValue(h, NewHttpValue("Content-Type", content_type));
@@ -65,12 +64,11 @@ static HTTP_HEADER *NewHttpHeaderKeepAlive(char *method, char *target, char *ver
 }
 
 static void ReplaceUnsafeCharInHttpTarget(char *target) {
-	for (UINT i = 0; target[i]; i++) {
+	for (UINT i = 0; target[i]; i++)
 		if (target[i] == '<')
 			target[i] = '(';
 		else if (target[i] == '>')
 			target[i] = ')';
-	}
 }
 
 // Send p as the body of an HTTP message with the given start line; host, when not NULL, goes in a Host header
@@ -78,9 +76,8 @@ static bool HttpSendPack(SOCK *s, PACK *p, char *method, char *target, char *ver
 	CreateDummyValue(p);
 
 	BUF *b = PackToBuf(p);
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	HTTP_HEADER *h = NewHttpHeaderKeepAlive(method, target, version, host, HTTP_CONTENT_TYPE2);
 
@@ -104,9 +101,8 @@ static PACK *HttpRecvPackBody(SOCK *s, HTTP_HEADER *h, UINT max_data_size) {
 
 	UINT size = GetContentLength(h);
 	FreeHttpHeader(h);
-	if (size == 0 || size > max_data_size) {
+	if (size == 0 || size > max_data_size)
 		return NULL;
-	}
 
 	UCHAR *tmp = MallocEx(size, true);
 	if (RecvAll(s, tmp, size, s->SecureMode) == false) {
@@ -128,9 +124,8 @@ static PACK *HttpRecvPackBody(SOCK *s, HTTP_HEADER *h, UINT max_data_size) {
 bool HttpClientSend(SOCK *s, PACK *p) {
 	char ip_str[MAX_SIZE];
 
-	if (s == NULL || p == NULL) {
+	if (s == NULL || p == NULL)
 		return false;
-	}
 
 	IPToStr(ip_str, sizeof(ip_str), &s->RemoteIP);
 
@@ -148,15 +143,13 @@ PACK *HttpClientRecvEx(SOCK *s, UINT max_data_size) {
 	PACK *p;
 	HTTP_HEADER *h;
 	UINT num_noop = 0;
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 START:
 	h = RecvHttpHeader(s);
-	if (h == NULL) {
+	if (h == NULL)
 		return NULL;
-	}
 
 	if (StrCmpi(h->Method, "HTTP/1.1") != 0 ||
 	    StrCmpi(h->Target, "200") != 0) {
@@ -165,9 +158,8 @@ START:
 	}
 
 	p = HttpRecvPackBody(s, h, max_data_size);
-	if (p == NULL) {
+	if (p == NULL)
 		return NULL;
-	}
 
 	// Client shouldn't receive a noop other than NOOP_IGNORE
 	// because it can't respond without a full new HTTP request
@@ -177,9 +169,8 @@ START:
 
 		num_noop++;
 
-		if (num_noop > MAX_NOOP_PER_SESSION) {
+		if (num_noop > MAX_NOOP_PER_SESSION)
 			return NULL;
-		}
 
 		goto START;
 	}
@@ -187,9 +178,8 @@ START:
 }
 
 bool HttpServerSend(SOCK *s, PACK *p) {
-	if (s == NULL || p == NULL) {
+	if (s == NULL || p == NULL)
 		return false;
-	}
 
 	return HttpSendPack(s, p, "HTTP/1.1", "200", "OK", NULL);
 }
@@ -199,15 +189,13 @@ PACK *HttpServerRecv(SOCK *s) {
 	PACK *p;
 	HTTP_HEADER *h;
 	UINT num_noop = 0;
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 START:
 	h = RecvHttpHeader(s);
-	if (h == NULL) {
+	if (h == NULL)
 		return NULL;
-	}
 
 	if (StrCmpi(h->Method, "POST") != 0 ||
 	    StrCmpi(h->Target, HTTP_VPN_TARGET) != 0 ||
@@ -217,9 +205,8 @@ START:
 	}
 
 	p = HttpRecvPackBody(s, h, HTTP_PACK_MAX_SIZE);
-	if (p == NULL) {
+	if (p == NULL)
 		return NULL;
-	}
 
 	UINT noop = PackGetInt(p, "noop");
 	if (noop == NOOP) {
@@ -236,9 +223,8 @@ START:
 
 		num_noop++;
 
-		if (num_noop > MAX_NOOP_PER_SESSION) {
+		if (num_noop > MAX_NOOP_PER_SESSION)
 			return NULL;
-		}
 
 		goto START;
 	} else if (noop == NOOP_IGNORE) {
@@ -258,9 +244,8 @@ bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request) {
 	char code_str[MAX_SIZE];
 	char port_str[MAX_SIZE];
 	char host[MAX_SIZE];
-	if (s == NULL || request == NULL) {
+	if (s == NULL || request == NULL)
 		return false;
-	}
 
 	for (UINT i = 0; i < sizeof(http_decoy_pages) / sizeof(http_decoy_pages[0]); i++) {
 		if (http_decoy_pages[i].Code == code) {
@@ -268,9 +253,8 @@ bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request) {
 			break;
 		}
 	}
-	if (page == NULL) {
+	if (page == NULL)
 		return false;
-	}
 
 	Zero(host, sizeof(host));
 	IPToStr(host, sizeof(host), &s->LocalIP);
@@ -279,9 +263,8 @@ bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request) {
 	HTTP_HEADER *h = NewHttpHeaderKeepAlive("HTTP/1.1", code_str, page->Reason, NULL, HTTP_CONTENT_TYPE);
 
 	UINT str_size = (StrLen(page->Template) + 1) * 2 + StrLen(request->Target) + StrLen(host);
-	if (page->NamesMethod) {
+	if (page->NamesMethod)
 		str_size += StrLen(request->Method) + StrLen(request->Version);
-	}
 	char *str = Malloc(str_size);
 	StrCpy(str, str_size, page->Template);
 

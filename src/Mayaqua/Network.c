@@ -58,15 +58,13 @@ static LIST *g_private_ip_list = NULL;
 
 bool IsMacAddressLocalFast(void *addr) {
 	bool ret = false;
-	if (addr == NULL) {
+	if (addr == NULL)
 		return false;
-	}
 
 	Lock(local_mac_list_lock);
 	{
-		if (local_mac_list == NULL) {
+		if (local_mac_list == NULL)
 			RefreshLocalMacAddressList();
-		}
 
 		ret = IsMacAddressLocalInner(local_mac_list, addr);
 	}
@@ -78,9 +76,8 @@ bool IsMacAddressLocalFast(void *addr) {
 void RefreshLocalMacAddressList() {
 	Lock(local_mac_list_lock);
 	{
-		if (local_mac_list != NULL) {
+		if (local_mac_list != NULL)
 			FreeNicList(local_mac_list);
-		}
 
 		local_mac_list = GetNicList();
 	}
@@ -89,9 +86,8 @@ void RefreshLocalMacAddressList() {
 
 bool IsMacAddressLocalInner(LIST *o, void *addr) {
 	bool ret = false;
-	if (o == NULL || addr == NULL) {
+	if (o == NULL || addr == NULL)
 		return false;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		NIC_ENTRY *e = LIST_DATA(o, i);
@@ -110,9 +106,8 @@ LIST *GetNicList() {
 
 	o = Win32GetNicList();
 
-	if (o != NULL) {
+	if (o != NULL)
 		return o;
-	}
 
 
 	return NewListFast(NULL);
@@ -122,18 +117,16 @@ LIST *Win32GetNicList() {
 	LIST *o = NewListFast(NULL);
 	MS_ADAPTER_LIST *al = MsCreateAdapterList();
 
-	if (al == NULL) {
+	if (al == NULL)
 		return NULL;
-	}
 
 	for (UINT i = 0; i < al->Num; i++) {
 		MS_ADAPTER *a = al->Adapters[i];
 
 		if (a->Type == 6 && a->AddressSize == 6) {
 			// Skip interfaces whose state is unknown: the device is not plugged in.
-			if (a->MediaConnectState == MediaConnectStateUnknown) {
+			if (a->MediaConnectState == MediaConnectStateUnknown)
 				continue;
-			}
 
 			NIC_ENTRY *e = ZeroMalloc(sizeof(NIC_ENTRY));
 
@@ -149,9 +142,8 @@ LIST *Win32GetNicList() {
 }
 
 void FreeNicList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		NIC_ENTRY *e = LIST_DATA(o, i);
@@ -165,17 +157,15 @@ void FreeNicList(LIST *o) {
 UINT GetNumIpClient(const IP *ip) {
 	IP_CLIENT *c;
 	UINT ret = 0;
-	if (ip == NULL) {
+	if (ip == NULL)
 		return 0;
-	}
 
 	LockList(ip_clients);
 	{
 		c = SearchIpClient(ip);
 
-		if (c != NULL) {
+		if (c != NULL)
 			ret = c->NumConnections;
-		}
 	}
 	UnlockList(ip_clients);
 
@@ -185,21 +175,18 @@ UINT GetNumIpClient(const IP *ip) {
 // Map a source address to its per-source rate-limit key: an IPv4 address keeps all 32 bits,
 // an IPv6 address keeps only its /64 prefix, since one host can pick any address inside its /64
 void GetRateLimitKey(IP *key, const IP *ip) {
-	if (key == NULL) {
+	if (key == NULL)
 		return;
-	}
 
 	Zero(key, sizeof(IP));
 
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	Copy(key->address, ip->address, sizeof(key->address));
 
-	if (IsIP4(ip) == false) {
+	if (IsIP4(ip) == false)
 		Zero(&key->address[8], 8);
-	}
 }
 
 // ip_clients is full: drop the key with the oldest last connection (ip_clients has no
@@ -210,9 +197,8 @@ static void EvictOldestIpClient() {
 	for (UINT i = 0; i < LIST_NUM(ip_clients); i++) {
 		IP_CLIENT *c = LIST_DATA(ip_clients, i);
 
-		if (oldest == NULL || c->LastTick < oldest->LastTick) {
+		if (oldest == NULL || c->LastTick < oldest->LastTick)
 			oldest = c;
-		}
 	}
 
 	if (oldest != NULL) {
@@ -228,18 +214,16 @@ static void EvictOldestIpClient() {
 
 static void AddIpClient(const IP *ip) {
 	IP_CLIENT *c;
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	LockList(ip_clients);
 	{
 		c = SearchIpClient(ip);
 
 		if (c == NULL) {
-			if (LIST_NUM(ip_clients) >= RATE_LIMIT_TABLE_MAX) {
+			if (LIST_NUM(ip_clients) >= RATE_LIMIT_TABLE_MAX)
 				EvictOldestIpClient();
-			}
 
 			c = ZeroMalloc(sizeof(IP_CLIENT));
 			GetRateLimitKey(&c->IpAddress, ip);
@@ -256,9 +240,8 @@ static void AddIpClient(const IP *ip) {
 
 static void DelIpClient(const IP *ip) {
 	IP_CLIENT *c;
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	LockList(ip_clients);
 	{
@@ -278,9 +261,8 @@ static void DelIpClient(const IP *ip) {
 
 IP_CLIENT *SearchIpClient(const IP *ip) {
 	IP_CLIENT t;
-	if (ip == NULL) {
+	if (ip == NULL)
 		return NULL;
-	}
 
 	Zero(&t, sizeof(t));
 	GetRateLimitKey(&t.IpAddress, ip);
@@ -305,14 +287,12 @@ static void FreeIpClientList() {
 }
 
 int CompareIpClientList(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	IP_CLIENT *c1 = *(IP_CLIENT **)p1;
 	IP_CLIENT *c2 = *(IP_CLIENT **)p2;
-	if (c1 == NULL || c2 == NULL) {
+	if (c1 == NULL || c2 == NULL)
 		return 0;
-	}
 
 	return CmpIpAddr(&c1->IpAddress, &c2->IpAddress);
 }
@@ -325,13 +305,11 @@ static void Win32InitSocketLibrary() {
 }
 
 static void Win32FreeAsyncSocket(SOCK *sock) {
-	if (sock == NULL) {
+	if (sock == NULL)
 		return;
-	}
 
-	if (sock->hEvent != NULL) {
+	if (sock->hEvent != NULL)
 		CloseHandle((HANDLE)sock->hEvent);
-	}
 	sock->hEvent = NULL;
 	sock->AsyncMode = false;
 
@@ -344,9 +322,8 @@ static void Win32FreeAsyncSocket(SOCK *sock) {
 
 bool IsIPv6Supported() {
 	SOCKET s = socket(AF_INET6, SOCK_STREAM, 0);
-	if (s == INVALID_SOCKET) {
+	if (s == INVALID_SOCKET)
 		return false;
-	}
 
 	closesocket(s);
 
@@ -405,9 +382,8 @@ void PrepareChainCertDir() {
 
 // Mark the cached chain certificates as out of date: the next connection scans the folder again
 void InvalidateChainCertCache() {
-	if (chain_cert_lock == NULL) {
+	if (chain_cert_lock == NULL)
 		return;
-	}
 
 	Lock(chain_cert_lock);
 	{
@@ -420,9 +396,8 @@ void InvalidateChainCertCache() {
 UINT GetChainCertScanCount() {
 	UINT ret;
 
-	if (chain_cert_lock == NULL) {
+	if (chain_cert_lock == NULL)
 		return 0;
-	}
 
 	Lock(chain_cert_lock);
 	{
@@ -494,9 +469,8 @@ static void ScanChainCertDir(wchar_t *dirname) {
 		FreeDir(dir);
 	}
 
-	for (UINT i = 0; i < LIST_NUM(hashes); i++) {
+	for (UINT i = 0; i < LIST_NUM(hashes); i++)
 		Free(LIST_DATA(hashes, i));
-	}
 
 	ReleaseList(hashes);
 
@@ -528,10 +502,9 @@ static void RefreshChainCertCache() {
 		}
 
 		// The notification is opened before the scan so that no change between them is lost
-		if (chain_cert_notify == INVALID_HANDLE_VALUE) {
+		if (chain_cert_notify == INVALID_HANDLE_VALUE)
 			chain_cert_notify = FindFirstChangeNotificationW(dirname, FALSE,
 			                                                 FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE);
-		}
 
 		ScanChainCertDir(dirname);
 
@@ -545,9 +518,8 @@ static void RefreshChainCertCache() {
 UINT GetChainCertGeneration() {
 	UINT ret;
 
-	if (chain_cert_lock == NULL) {
+	if (chain_cert_lock == NULL)
 		return 0;
-	}
 
 	Lock(chain_cert_lock);
 	{
@@ -564,19 +536,16 @@ UINT GetChainCertGeneration() {
 UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx) {
 	UINT ret = 0;
 
-	if (ctx == NULL || chain_cert_lock == NULL) {
+	if (ctx == NULL || chain_cert_lock == NULL)
 		return 0;
-	}
 
 	Lock(chain_cert_lock);
 	{
 		RefreshChainCertCache();
 
-		for (UINT i = 0; i < LIST_NUM(chain_cert_list); i++) {
-			if (AddChainSslCert(ctx, LIST_DATA(chain_cert_list, i))) {
+		for (UINT i = 0; i < LIST_NUM(chain_cert_list); i++)
+			if (AddChainSslCert(ctx, LIST_DATA(chain_cert_list, i)))
 				ret++;
-			}
-		}
 	}
 	Unlock(chain_cert_lock);
 
@@ -588,9 +557,8 @@ static void SslHandshakeError(bool server_mode, UINT *ssl_err) {
 	unsigned long err;
 	while ((err = ERR_get_error()) != 0) {
 		Debug("%s error %X: %s\n", server_mode ? "SSL_accept" : "SSL_connect", (UINT)err, ERR_reason_error_string(err));
-		if (ERR_GET_LIB(err) != ERR_LIB_SSL) {
+		if (ERR_GET_LIB(err) != ERR_LIB_SSL)
 			continue;
-		}
 		switch (ERR_GET_REASON(err)) {
 		case SSL_R_UNSUPPORTED_PROTOCOL:
 		case SSL_R_VERSION_TOO_LOW:
@@ -627,9 +595,8 @@ static void AddSslRootCerts(X509_STORE *store) {
 					// d2i_X509 advances the pointer it is given: decode from a local copy, never the store's own context
 					const unsigned char *der = pContext->pbCertEncoded;
 					X509 *x509 = d2i_X509(NULL, &der, (long)pContext->cbCertEncoded);
-					if (x509 != NULL && sk_X509_push(certs, x509) == 0) {
+					if (x509 != NULL && sk_X509_push(certs, x509) == 0)
 						X509_free(x509);
-					}
 				}
 				CertCloseStore(hStore, 0);
 			}
@@ -640,25 +607,20 @@ static void AddSslRootCerts(X509_STORE *store) {
 		}
 	}
 
-	if (ssl_root_certs != NULL) {
-		for (int i = 0; i < sk_X509_num(ssl_root_certs); i++) {
+	if (ssl_root_certs != NULL)
+		for (int i = 0; i < sk_X509_num(ssl_root_certs); i++)
 			X509_STORE_add_cert(store, sk_X509_value(ssl_root_certs, i));
-		}
-	}
 }
 
 // A TLS start needs a connected socket that does not listen, a key with a certificate, and a server socket for a shared server context
 static bool TlsCanStart(const SOCK *sock, const SSL_CTX *server_ctx, const X *x, const K *priv) {
 	if (sock->Connected == false || sock->socket == INVALID_SOCKET ||
-	    sock->ListenMode != false) {
+	    sock->ListenMode != false)
 		return false;
-	}
-	if (x != NULL && priv == NULL) {
+	if (x != NULL && priv == NULL)
 		return false;
-	}
-	if (server_ctx != NULL && sock->ServerMode == false) {
+	if (server_ctx != NULL && sock->ServerMode == false)
 		return false;
-	}
 
 	return true;
 }
@@ -670,9 +632,8 @@ static SSL_CTX *TlsGetCtx(const SOCK *sock, SSL_CTX *server_ctx, X *x, K *priv, 
 		ShareSSLCtx(server_ctx);
 		return server_ctx;
 	}
-	if (sock->ServerMode) {
+	if (sock->ServerMode)
 		return NewServerSSLCtx(x, priv, chain, NULL, NULL);
-	}
 
 	return NewSSLCtx(false);
 }
@@ -682,14 +643,12 @@ static void TlsSetClientVerify(SSL_CTX *ssl_ctx, char *sni_hostname, SSL_VERIFY_
 	X509_STORE *store;
 	X509_VERIFY_PARAM *vpm;
 
-	if (ssl_option == NULL || ssl_option->VerifyPeer == false) {
+	if (ssl_option == NULL || ssl_option->VerifyPeer == false)
 		return;
-	}
 
 	store = SSL_CTX_get_cert_store(ssl_ctx);
-	if (ssl_option->AddDefaultCA) {
+	if (ssl_option->AddDefaultCA)
 		AddSslRootCerts(store);
-	}
 
 	for (UINT i = 0; i < LIST_NUM(ssl_option->CaList); ++i) {
 		X *ca = LIST_DATA(ssl_option->CaList, i);
@@ -700,27 +659,23 @@ static void TlsSetClientVerify(SSL_CTX *ssl_ctx, char *sni_hostname, SSL_VERIFY_
 	X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
 
 	// Enable hostname verification (by default CN is only checked if SAN is not available)
-	if (ssl_option->VerifyHostname && IsEmptyStr(sni_hostname) == false) {
+	if (ssl_option->VerifyHostname && IsEmptyStr(sni_hostname) == false)
 		X509_VERIFY_PARAM_set1_host(vpm, sni_hostname, StrLen(sni_hostname));
-	}
 }
 
 // The SSL object of the connection on ssl_ctx
 static bool TlsNewSsl(SOCK *sock, SSL_CTX *ssl_ctx, X *x, K *priv, char *sni_hostname) {
 	sock->ssl = SSL_new(ssl_ctx);
-	if (sock->ssl == NULL) {
+	if (sock->ssl == NULL)
 		return false;
-	}
 
 	SSL_set_fd(sock->ssl, (int)sock->socket);
 
-	if (sock->ServerMode) {
+	if (sock->ServerMode)
 		return true;
-	}
 
-	if (IsEmptyStr(sni_hostname) == false) {
+	if (IsEmptyStr(sni_hostname) == false)
 		SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
-	}
 
 	// A client: certificate and groups of this connection (a server has them in its context)
 	if (x != NULL && CheckXandK(x, priv)) {
@@ -778,23 +733,19 @@ static long TlsReadPeer(SOCK *sock) {
 
 // The peer check that ssl_option asks for (VerifyPeer): false, with ssl_err set, when the peer certificate fails it
 static bool TlsCheckPeer(SOCK *sock, long ssl_verify_err, const char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err) {
-	if (ssl_option == NULL || ssl_option->VerifyPeer == false) {
+	if (ssl_option == NULL || ssl_option->VerifyPeer == false)
 		return true;
-	}
 
 	// OpenSSL checks no name when none is given: hostname verification without a hostname is a mismatch
-	if (ssl_verify_err == X509_V_OK && sock->ServerMode == false && ssl_option->VerifyHostname && IsEmptyStr(sni_hostname)) {
+	if (ssl_verify_err == X509_V_OK && sock->ServerMode == false && ssl_option->VerifyHostname && IsEmptyStr(sni_hostname))
 		ssl_verify_err = X509_V_ERR_HOSTNAME_MISMATCH;
-	}
 
-	if (ssl_verify_err == X509_V_OK) {
+	if (ssl_verify_err == X509_V_OK)
 		return true;
-	}
 
 	// Clear any error if matching saved certificate and not expired
-	if (ssl_option->SavedCert != NULL && sock->RemoteX != NULL && CheckXDateNow(sock->RemoteX) && CompareX(ssl_option->SavedCert, sock->RemoteX)) {
+	if (ssl_option->SavedCert != NULL && sock->RemoteX != NULL && CheckXDateNow(sock->RemoteX) && CompareX(ssl_option->SavedCert, sock->RemoteX))
 		return true;
-	}
 
 	switch (ssl_verify_err) {
 	case X509_V_ERR_CERT_HAS_EXPIRED:
@@ -818,9 +769,8 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 // Start TLS on an accepted connection with a server context that is shared by many connections (NewServerSSLCtx).
 // The caller keeps its own reference of ctx
 bool StartSSLServer(SOCK *sock, struct ssl_ctx_st *ctx, UINT *ssl_err) {
-	if (ctx == NULL) {
+	if (ctx == NULL)
 		return false;
-	}
 
 	return StartSSLMain(sock, ctx, NULL, NULL, NULL, NULL, NULL, ssl_err);
 }
@@ -830,19 +780,15 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 	UINT dummy_err = 0;
 	long ssl_verify_err;
 
-	if (sock == NULL) {
+	if (sock == NULL)
 		return false;
-	}
-	if (ssl_err == NULL) {
+	if (ssl_err == NULL)
 		ssl_err = &dummy_err;
-	}
-	if (TlsCanStart(sock, server_ctx, x, priv) == false) {
+	if (TlsCanStart(sock, server_ctx, x, priv) == false)
 		return false;
-	}
 
-	if (sock->SecureMode) {
+	if (sock->SecureMode)
 		return true;
-	}
 
 	Lock(sock->ssl_lock);
 	if (sock->SecureMode) {
@@ -851,22 +797,18 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 	}
 
 	ssl_ctx = TlsGetCtx(sock, server_ctx, x, priv, chain);
-	if (ssl_ctx == NULL) {
+	if (ssl_ctx == NULL)
 		goto FAIL;
-	}
 
-	if (sock->ServerMode == false) {
+	if (sock->ServerMode == false)
 		TlsSetClientVerify(ssl_ctx, sni_hostname, ssl_option);
-	}
 
-	if (TlsNewSsl(sock, ssl_ctx, x, priv, sni_hostname) == false || TlsHandshake(sock, ssl_err) == false) {
+	if (TlsNewSsl(sock, ssl_ctx, x, priv, sni_hostname) == false || TlsHandshake(sock, ssl_err) == false)
 		goto FAIL;
-	}
 
 	ssl_verify_err = TlsReadPeer(sock);
-	if (TlsCheckPeer(sock, ssl_verify_err, sni_hostname, ssl_option, ssl_err) == false) {
+	if (TlsCheckPeer(sock, ssl_verify_err, sni_hostname, ssl_option, ssl_err) == false)
 		goto FAIL;
-	}
 
 	SSL_set_mode(sock->ssl, SSL_MODE_AUTO_RETRY);
 
@@ -903,24 +845,21 @@ void DisableGetHostNameWhenAcceptInit() {
 
 void AcceptInitEx(SOCK *s, bool no_lookup_hostname) {
 	char tmp[MAX_SIZE];
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	Zero(tmp, sizeof(tmp));
 
 	if (disable_gethostname_by_accept == false && no_lookup_hostname == false) {
 		if (GetHostName(tmp, sizeof(tmp), &s->RemoteIP) == false ||
-		    IsEmptyStr(tmp)) {
+		    IsEmptyStr(tmp))
 			IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
-		}
 	} else {
 		IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 	}
 
-	if (s->RemoteHostname != NULL) {
+	if (s->RemoteHostname != NULL)
 		Free(s->RemoteHostname);
-	}
 
 	s->RemoteHostname = CopyStr(tmp);
 }
@@ -928,21 +867,17 @@ void AcceptInitEx(SOCK *s, bool no_lookup_hostname) {
 SOCK *Accept(SOCK *sock) {
 	struct sockaddr_storage addr;
 	UINT true_flag = 1;
-	if (sock == NULL) {
+	if (sock == NULL)
 		return NULL;
-	}
 	sock->AcceptError = 0;
-	if (sock->ListenMode == false || sock->Type != SOCK_TCP || sock->ServerMode == false) {
+	if (sock->ListenMode == false || sock->Type != SOCK_TCP || sock->ServerMode == false)
 		return NULL;
-	}
-	if (sock->CancelAccept) {
+	if (sock->CancelAccept)
 		return NULL;
-	}
 
 	SOCKET s = sock->socket;
-	if (s == INVALID_SOCKET) {
+	if (s == INVALID_SOCKET)
 		return NULL;
-	}
 	Zero(&addr, sizeof(addr));
 	int size = sizeof(addr);
 
@@ -987,13 +922,11 @@ SOCK *Accept(SOCK *sock) {
 
 void Disconnect(SOCK *sock) {
 	SOCKET s;
-	if (sock == NULL) {
+	if (sock == NULL)
 		return;
-	}
 
-	if (sock->Type == SOCK_TCP && sock->ListenMode) {
+	if (sock->Type == SOCK_TCP && sock->ListenMode)
 		sock->CancelAccept = true;
-	}
 
 	Lock(sock->disconnect_lock);
 
@@ -1007,9 +940,8 @@ void Disconnect(SOCK *sock) {
 			}
 			s = sock->socket;
 
-			if (sock->Connected) {
+			if (sock->Connected)
 				shutdown(s, SD_BOTH);
-			}
 
 			closesocket(s);
 
@@ -1068,18 +1000,16 @@ void Disconnect(SOCK *sock) {
 
 
 void CleanupSock(SOCK *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	Disconnect(s);
 
 	Win32FreeAsyncSocket(s);
 
 	FreeBuf(s->SendBuf);
-	if (s->socket != INVALID_SOCKET) {
+	if (s->socket != INVALID_SOCKET)
 		closesocket(s->socket);
-	}
 	Free(s->RemoteHostname);
 
 	if (s->RemoteX != NULL) {
@@ -1119,26 +1049,23 @@ SOCK *NewSock() {
 static DH *TmpDhCallback(SSL *ssl, int is_export, int keylength) {
 	DH *ret = NULL;
 
-	if (dh_param != NULL) {
+	if (dh_param != NULL)
 		ret = dh_param->dh;
-	}
 
 	return ret;
 }
 
 struct ssl_ctx_st *NewSSLCtx(bool server_mode) {
 	struct ssl_ctx_st *ctx = SSL_CTX_new(server_mode ? TLS_server_method() : TLS_client_method());
-	if (ctx == NULL) {
+	if (ctx == NULL)
 		return NULL;
-	}
 
 	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv3);
 
 	SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
 
-	if (server_mode) {
+	if (server_mode)
 		SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
-	}
 
 	SSL_CTX_set_tmp_dh_callback(ctx, TmpDhCallback);
 
@@ -1173,13 +1100,11 @@ COUNTER *GetNumTcpConnectionsCounter() {
 
 bool IsIPMyHost(const IP *ip) {
 	bool ret = false;
-	if (ip == NULL) {
+	if (ip == NULL)
 		return false;
-	}
 
-	if (IsZeroIP(ip)) {
+	if (IsZeroIP(ip))
 		return false;
-	}
 
 	LIST *o = GetHostIPAddressList();
 
@@ -1195,70 +1120,60 @@ bool IsIPMyHost(const IP *ip) {
 	FreeHostIPAddressList(o);
 
 	if (ret == false) {
-		if (IsLocalHostIP(ip)) {
+		if (IsLocalHostIP(ip))
 			ret = true;
-		}
 	}
 
 	return ret;
 }
 
 bool IsIPPrivate(const IP *ip) {
-	if (IsIP4(ip) == false) {
+	if (IsIP4(ip) == false)
 		return false;
-	}
 
 	const BYTE *ipv4 = IPV4(ip->address);
 
 	// RFC 1918 defines 10.0.0.0/8
-	if (ipv4[0] == 10) {
+	if (ipv4[0] == 10)
 		return true;
-	}
 
 	// RFC 1918 defines 172.16.0.0/12
 	if (ipv4[0] == 172) {
-		if (ipv4[1] >= 16 && ipv4[1] <= 31) {
+		if (ipv4[1] >= 16 && ipv4[1] <= 31)
 			return true;
-		}
 	}
 
 	// RFC 1918 defines 192.168.0.0/16
-	if (ipv4[0] == 192 && ipv4[1] == 168) {
+	if (ipv4[0] == 192 && ipv4[1] == 168)
 		return true;
-	}
 
 	// RFC 3927 defines 169.254.0.0/16
-	if (ipv4[0] == 169 && ipv4[1] == 254) {
+	if (ipv4[0] == 169 && ipv4[1] == 254)
 		return true;
-	}
 
 	// RFC 6598 defines 100.64.0.0/10
 	if (ipv4[0] == 100) {
-		if (ipv4[1] >= 64 && ipv4[1] <= 127) {
+		if (ipv4[1] >= 64 && ipv4[1] <= 127)
 			return true;
-		}
 	}
 
-	if (g_private_ip_list != NULL) {
+	if (g_private_ip_list != NULL)
 		return IsOnPrivateIPFile(IPToUINT(ip));
-	}
 
 	return false;
 }
 
 void LoadPrivateIPFile() {
 	BUF *b = ReadDump(PRIVATE_IP_TXT_FILENAME);
-	if (b == NULL) {
+	if (b == NULL)
 		return;
-	}
 
 	LIST *o = NewList(NULL);
 
 	while (true) {
 		char *line = CfgReadNextLine(b);
-		if (line == NULL) {
+		if (line == NULL)
 			break;
-		}
 
 		Trim(line);
 
@@ -1293,9 +1208,8 @@ bool IsOnPrivateIPFile(UINT ip) {
 		for (UINT i = 0; i < LIST_NUM(o); i++) {
 			PRIVATE_IP_SUBNET *p = LIST_DATA(o, i);
 
-			if ((ip & p->Mask) == p->Ip2) {
+			if ((ip & p->Mask) == p->Ip2)
 				ret = true;
-			}
 		}
 	}
 
@@ -1361,56 +1275,46 @@ void FreeNetwork() {
 
 
 static int CmpIpAddressList(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	IP *ip1 = *(IP **)p1;
 	IP *ip2 = *(IP **)p2;
-	if (ip1 == NULL || ip2 == NULL) {
+	if (ip1 == NULL || ip2 == NULL)
 		return 0;
-	}
 
 	// IPv4 < IPv6
 	UINT r = COMPARE_RET(IsIP6(ip1), IsIP6(ip2));
-	if (r != 0) {
+	if (r != 0)
 		return r;
-	}
 
 	// any > specified IP
-	if (IsZeroIP(ip1) && IsZeroIP(ip2) == false) {
+	if (IsZeroIP(ip1) && IsZeroIP(ip2) == false)
 		return 1;
-	}
-	if (IsZeroIP(ip1) == false && IsZeroIP(ip2)) {
+	if (IsZeroIP(ip1) == false && IsZeroIP(ip2))
 		return -1;
-	}
 
 	// local > others
-	if (IsLocalHostIP(ip1) && IsLocalHostIP(ip2) == false) {
+	if (IsLocalHostIP(ip1) && IsLocalHostIP(ip2) == false)
 		return 1;
-	}
-	if (IsLocalHostIP(ip1) == false && IsLocalHostIP(ip2)) {
+	if (IsLocalHostIP(ip1) == false && IsLocalHostIP(ip2))
 		return -1;
-	}
 
 	r = CmpIpAddr(ip1, ip2);
-	if (r != 0) {
+	if (r != 0)
 		return r;
-	}
 
-	if (IsIP6(ip1)) {
+	if (IsIP6(ip1))
 		r = COMPARE_RET(ip1->ipv6_scope_id, ip2->ipv6_scope_id);
-	} else {
+	else
 		r = 0;
-	}
 
 	return r;
 }
 
 LIST *GetHostIPAddressList() {
 	LIST *o = NULL;
-	if (host_ip_address_list_cache_lock == NULL) {
+	if (host_ip_address_list_cache_lock == NULL)
 		return GetHostIPAddressListInternal();
-	}
 
 	Lock(host_ip_address_list_cache_lock);
 	{
@@ -1419,9 +1323,8 @@ LIST *GetHostIPAddressList() {
 		if (host_ip_address_list_cache_last == 0 ||
 		    ((host_ip_address_list_cache_last + (UINT64)HOST_IP_ADDRESS_LIST_CACHE) < now) ||
 		    host_ip_address_cache == NULL) {
-			if (host_ip_address_cache != NULL) {
+			if (host_ip_address_cache != NULL)
 				FreeHostIPAddressList(host_ip_address_cache);
-			}
 
 			host_ip_address_cache = GetHostIPAddressListInternal();
 
@@ -1432,9 +1335,8 @@ LIST *GetHostIPAddressList() {
 	}
 	Unlock(host_ip_address_list_cache_lock);
 
-	if (o == NULL) {
+	if (o == NULL)
 		o = GetHostIPAddressListInternal();
-	}
 
 	return o;
 }
@@ -1459,14 +1361,12 @@ LIST *GetHostIPAddressListInternal() {
 	LIST *o = NewListFast(CmpIpAddressList);
 
 	AddHostIPAddressToList(o, &any4);
-	if (is_v6_supported) {
+	if (is_v6_supported)
 		AddHostIPAddressToList(o, &any6);
-	}
 
 	AddHostIPAddressToList(o, &local4);
-	if (is_v6_supported) {
+	if (is_v6_supported)
 		AddHostIPAddressToList(o, &local6);
-	}
 
 	Zero(&hint, sizeof(hint));
 	hint.ai_family = AF_UNSPEC;
@@ -1506,9 +1406,8 @@ LIST *GetHostIPAddressListInternal() {
 }
 
 void SetDhParam(DH_CTX *dh) {
-	if (dh_param) {
+	if (dh_param)
 		DhFree(dh_param);
-	}
 
 	dh_param = dh;
 }

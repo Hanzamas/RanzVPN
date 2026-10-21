@@ -28,21 +28,18 @@
 #include "NetworkInternal.h"
 
 static void Win32Cancel(const CANCEL *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	SetEvent((HANDLE)c->hEvent);
 }
 
 static void Win32CleanupCancel(CANCEL *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
-	if (c->SpecialFlag == false) {
+	if (c->SpecialFlag == false)
 		CloseHandle(c->hEvent);
-	}
 
 	Free(c);
 }
@@ -57,21 +54,18 @@ static CANCEL *Win32NewCancel() {
 }
 
 static bool Win32WaitSockEvent(const SOCK_EVENT *event, UINT timeout) {
-	if (event == NULL || timeout == 0) {
+	if (event == NULL || timeout == 0)
 		return false;
-	}
 
-	if (WaitForSingleObject((HANDLE)event->hEvent, timeout) == WAIT_OBJECT_0) {
+	if (WaitForSingleObject((HANDLE)event->hEvent, timeout) == WAIT_OBJECT_0)
 		return true;
-	} else {
+	else
 		return false;
-	}
 }
 
 static void Win32CleanupSockEvent(SOCK_EVENT *event) {
-	if (event == NULL) {
+	if (event == NULL)
 		return;
-	}
 
 	CloseHandle((HANDLE)event->hEvent);
 
@@ -79,9 +73,8 @@ static void Win32CleanupSockEvent(SOCK_EVENT *event) {
 }
 
 static void Win32SetSockEvent(const SOCK_EVENT *event) {
-	if (event == NULL) {
+	if (event == NULL)
 		return;
-	}
 
 	SetEvent((HANDLE)event->hEvent);
 }
@@ -96,12 +89,10 @@ static SOCK_EVENT *Win32NewSockEvent() {
 }
 
 static void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event) {
-	if (sock == NULL || event == NULL || sock->AsyncMode) {
+	if (sock == NULL || event == NULL || sock->AsyncMode)
 		return;
-	}
-	if (sock->ListenMode != false || (sock->Type != SOCK_UDP && sock->Connected == false)) {
+	if (sock->ListenMode != false || (sock->Type != SOCK_UDP && sock->Connected == false))
 		return;
-	}
 
 	sock->AsyncMode = true;
 
@@ -114,15 +105,12 @@ static void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event) {
 }
 
 static void Win32InitAsyncSocket(SOCK *sock) {
-	if (sock == NULL) {
+	if (sock == NULL)
 		return;
-	}
-	if (sock->AsyncMode) {
+	if (sock->AsyncMode)
 		return;
-	}
-	if (sock->ListenMode || (sock->Type == SOCK_TCP && sock->Connected == false)) {
+	if (sock->ListenMode || (sock->Type == SOCK_TCP && sock->Connected == false))
 		return;
-	}
 
 	sock->AsyncMode = true;
 
@@ -142,32 +130,25 @@ static void Win32Select(SOCKSET *set, UINT timeout, const CANCEL *c1, const CANC
 			s = set->Sock[i];
 			if (s != NULL) {
 				Win32InitAsyncSocket(s);
-				if (s->hEvent != NULL) {
+				if (s->hEvent != NULL)
 					array[n++] = (HANDLE)s->hEvent;
-				}
 			}
 		}
 	}
-	if (c1 != NULL && c1->hEvent != NULL) {
+	if (c1 != NULL && c1->hEvent != NULL)
 		array[n++] = c1->hEvent;
-	}
-	if (c2 != NULL && c2->hEvent != NULL) {
+	if (c2 != NULL && c2->hEvent != NULL)
 		array[n++] = c2->hEvent;
-	}
 
-	if (timeout == 0) {
+	if (timeout == 0)
 		return;
-	}
 
-	if (n == 0) {
+	if (n == 0)
 		SleepThread(timeout);
-	} else {
-		if (n == 1) {
-			WaitForSingleObject(array[0], timeout);
-		} else {
-			WaitForMultipleObjects(n, array, false, timeout);
-		}
-	}
+	else if (n == 1)
+		WaitForSingleObject(array[0], timeout);
+	else
+		WaitForMultipleObjects(n, array, false, timeout);
 }
 
 SOCK_EVENT *NewSockEvent() {
@@ -185,27 +166,23 @@ bool WaitSockEvent(SOCK_EVENT *event, UINT timeout) {
 }
 
 void ReleaseSockEvent(SOCK_EVENT *event) {
-	if (event == NULL) {
+	if (event == NULL)
 		return;
-	}
 
-	if (Release(event->ref) == 0) {
+	if (Release(event->ref) == 0)
 		Win32CleanupSockEvent(event);
-	}
 }
 
 void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event) {
-	if (sock == NULL || event == NULL) {
+	if (sock == NULL || event == NULL)
 		return;
-	}
 
 	Win32JoinSockToSockEvent(sock, event);
 }
 
 CANCEL *NewCancelSpecial(void *hEvent) {
-	if (hEvent == NULL) {
+	if (hEvent == NULL)
 		return NULL;
-	}
 
 	CANCEL *c = ZeroMalloc(sizeof(CANCEL));
 	c->ref = NewRef();
@@ -223,13 +200,11 @@ CANCEL *NewCancel() {
 }
 
 void ReleaseCancel(CANCEL *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
-	if (Release(c->ref) == 0) {
+	if (Release(c->ref) == 0)
 		Win32CleanupCancel(c);
-	}
 }
 
 void Cancel(CANCEL *c) {
@@ -244,9 +219,8 @@ static int UdpSockAddr(struct sockaddr_storage *sa, bool ipv6, const IP *ip, UIN
 	if (ipv6) {
 		struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)sa;
 
-		if (ip != NULL && IsIP6(ip) == false) {
+		if (ip != NULL && IsIP6(ip) == false)
 			return 0;
-		}
 
 		a6->sin6_family = AF_INET6;
 		a6->sin6_port = htons((USHORT)port);
@@ -260,16 +234,14 @@ static int UdpSockAddr(struct sockaddr_storage *sa, bool ipv6, const IP *ip, UIN
 	} else {
 		struct sockaddr_in *a4 = (struct sockaddr_in *)sa;
 
-		if (ip != NULL && IsIP4(ip) == false) {
+		if (ip != NULL && IsIP4(ip) == false)
 			return 0;
-		}
 
 		a4->sin_family = AF_INET;
 		a4->sin_port = htons((USHORT)port);
 
-		if (ip != NULL && IsZeroIP(ip) == false) {
+		if (ip != NULL && IsZeroIP(ip) == false)
 			IPToInAddr(&a4->sin_addr, ip);
-		}
 
 		return sizeof(*a4);
 	}
@@ -293,9 +265,8 @@ static void UdpSockAddrToIP(IP *ip, UINT *port, struct sockaddr_storage *sa, boo
 
 // Whether a datagram to this address needs SO_BROADCAST: the IPv4 limited broadcast, or a multicast address
 static bool UdpNeedsBroadcast(bool ipv6, const IP *ip) {
-	if (ipv6) {
+	if (ipv6)
 		return (GetIPAddrType6(ip) & IPV6_ADDR_MULTICAST) != 0;
-	}
 
 	const BYTE *ipv4 = IPV4(ip->address);
 
@@ -310,17 +281,15 @@ static UINT UdpIoFailed(SOCK *sock, bool send) {
 
 	if (e == WSAECONNRESET || e == WSAENETRESET || e == WSAEMSGSIZE || e == WSAENETUNREACH ||
 	    e == WSAENOBUFS || e == WSAEHOSTUNREACH || e == WSAEUSERS || e == WSAEADDRNOTAVAIL ||
-	    (send && e == WSAEINVAL)) {
-		if (send) {
+	    (send && e == WSAEINVAL))
+		if (send)
 			sock->IgnoreSendErr = true;
-		} else {
+		else
 			sock->IgnoreRecvErr = true;
-		}
-	} else if (e == WSAEWOULDBLOCK || e == WSAEINPROGRESS) {
+	else if (e == WSAEWOULDBLOCK || e == WSAEINPROGRESS)
 		return SOCK_LATER;
-	} else if (send == false) {
+	else if (send == false)
 		Debug("RecvFrom(): recvfrom() failed with error: %u\n", e);
-	}
 
 	return 0;
 }
@@ -330,19 +299,16 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size) {
 	int ret = 0;
 	int socklen = sizeof(addr);
 
-	if (sock == NULL) {
+	if (sock == NULL)
 		return 0;
-	}
 
 	sock->IgnoreRecvErr = false;
 
-	if (src_addr == NULL || src_port == NULL || data == NULL || size == 0) {
+	if (src_addr == NULL || src_port == NULL || data == NULL || size == 0)
 		return 0;
-	}
 
-	if (sock->Type != SOCK_UDP || sock->socket == INVALID_SOCKET) {
+	if (sock->Type != SOCK_UDP || sock->socket == INVALID_SOCKET)
 		return 0;
-	}
 
 	ret = recvfrom(sock->socket, data, size, 0, (struct sockaddr *)&addr, &socklen);
 	if (ret > 0) {
@@ -359,26 +325,20 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size) {
 UINT SendTo(SOCK *sock, const IP *dest_addr, UINT dest_port, const void *data, UINT size) {
 	struct sockaddr_storage addr;
 
-	if (sock != NULL) {
+	if (sock != NULL)
 		sock->IgnoreSendErr = false;
-	}
-	if (sock == NULL || dest_addr == NULL || dest_port == 0 || data == NULL) {
+	if (sock == NULL || dest_addr == NULL || dest_port == 0 || data == NULL)
 		return 0;
-	}
-	if (dest_port >= 65536) {
+	if (dest_port >= 65536)
 		return 0;
-	}
-	if (sock->Type != SOCK_UDP || sock->socket == INVALID_SOCKET) {
+	if (sock->Type != SOCK_UDP || sock->socket == INVALID_SOCKET)
 		return 0;
-	}
-	if (size == 0) {
+	if (size == 0)
 		return 0;
-	}
 
 	int addrlen = UdpSockAddr(&addr, sock->IPv6, dest_addr, dest_port);
-	if (addrlen == 0) {
+	if (addrlen == 0)
 		return 0;
-	}
 
 	if (sock->UdpBroadcast == false && UdpNeedsBroadcast(sock->IPv6, dest_addr)) {
 		UINT yes = 1;
@@ -389,9 +349,8 @@ UINT SendTo(SOCK *sock, const IP *dest_addr, UINT dest_port, const void *data, U
 	}
 
 	int ret = sendto(sock->socket, data, size, 0, (struct sockaddr *)&addr, addrlen);
-	if (ret != (int)size) {
+	if (ret != (int)size)
 		return UdpIoFailed(sock, true);
-	}
 
 	return ret;
 }
@@ -403,13 +362,11 @@ static void DisableUdpReset(SOCKET s) {
 	BOOL off = FALSE;
 	DWORD ret_size = 0;
 
-	if (WSAIoctl(s, SIO_UDP_CONNRESET, &off, sizeof(off), NULL, 0, &ret_size, NULL, NULL) != 0) {
+	if (WSAIoctl(s, SIO_UDP_CONNRESET, &off, sizeof(off), NULL, 0, &ret_size, NULL, NULL) != 0)
 		Debug("DisableUdpReset(): SIO_UDP_CONNRESET failed with error: %u\n", WSAGetLastError());
-	}
 
-	if (WSAIoctl(s, SIO_UDP_NETRESET, &off, sizeof(off), NULL, 0, &ret_size, NULL, NULL) != 0) {
+	if (WSAIoctl(s, SIO_UDP_NETRESET, &off, sizeof(off), NULL, 0, &ret_size, NULL, NULL) != 0)
 		Debug("DisableUdpReset(): SIO_UDP_NETRESET failed with error: %u\n", WSAGetLastError());
-	}
 }
 
 SOCK *NewUDP(UINT port) {
@@ -420,14 +377,12 @@ SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip) {
 	UINT true_flag = 1;
 
 	int addrlen = UdpSockAddr(&addr, ipv6, ip, port);
-	if (addrlen == 0) {
+	if (addrlen == 0)
 		return NULL;
-	}
 
 	SOCKET s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (s == INVALID_SOCKET) {
+	if (s == INVALID_SOCKET)
 		return NULL;
-	}
 
 	if (bind(s, (struct sockaddr *)&addr, addrlen) != 0) {
 		if (port != 0) {
@@ -454,9 +409,8 @@ SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip) {
 	sock->AsyncMode = false;
 	sock->ServerMode = false;
 	sock->IPv6 = ipv6;
-	if (port != 0) {
+	if (port != 0)
 		sock->ServerMode = true;
-	}
 
 	sock->socket = s;
 
@@ -477,66 +431,55 @@ void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2) {
 }
 
 void AddSockSet(SOCKSET *set, SOCK *sock) {
-	if (set == NULL || sock == NULL) {
+	if (set == NULL || sock == NULL)
 		return;
-	}
-	if (sock->Type == SOCK_TCP && sock->Connected == false) {
+	if (sock->Type == SOCK_TCP && sock->Connected == false)
 		return;
-	}
 
-	if (set->NumSocket >= MAX_SOCKSET_NUM) {
+	if (set->NumSocket >= MAX_SOCKSET_NUM)
 		return;
-	}
 	set->Sock[set->NumSocket++] = sock;
 }
 
 void InitSockSet(SOCKSET *set) {
-	if (set == NULL) {
+	if (set == NULL)
 		return;
-	}
 
 	Zero(set, sizeof(SOCKSET));
 }
 
 bool RecvAll(SOCK *sock, void *data, UINT size, bool secure) {
 	UINT sz, ret;
-	if (sock == NULL || data == NULL) {
+	if (sock == NULL || data == NULL)
 		return false;
-	}
-	if (size == 0) {
+	if (size == 0)
 		return true;
-	}
-	if (sock->AsyncMode) {
+	if (sock->AsyncMode)
 		return false;
-	}
 
 	UINT recv_size = 0;
 
 	while (true) {
 		sz = size - recv_size;
 		ret = Recv(sock, (UCHAR *)data + recv_size, sz, secure);
-		if (ret == 0) {
+		if (ret == 0)
 			return false;
-		}
 		if (ret == SOCK_LATER) {
 			// Safe: RecvAll() runs only when AsyncMode is true, and Recv() returns
 			// SOCK_LATER only when AsyncMode is false.
 			return false;
 		}
 		recv_size += ret;
-		if (recv_size >= size) {
+		if (recv_size >= size)
 			return true;
-		}
 	}
 }
 
 bool SendNow(SOCK *sock, int secure) {
-	if (sock == NULL || sock->AsyncMode != false) {
+	if (sock == NULL || sock->AsyncMode != false)
 		return false;
-	}
-	if (sock->SendBuf->Size == 0) {
+	if (sock->SendBuf->Size == 0)
 		return true;
-	}
 
 	bool ret = SendAll(sock, sock->SendBuf->Buf, sock->SendBuf->Size, secure);
 	ClearBuf(sock->SendBuf);
@@ -545,63 +488,52 @@ bool SendNow(SOCK *sock, int secure) {
 }
 
 void SendAdd(SOCK *sock, void *data, UINT size) {
-	if (sock == NULL || data == NULL || size == 0 || sock->AsyncMode != false) {
+	if (sock == NULL || data == NULL || size == 0 || sock->AsyncMode != false)
 		return;
-	}
 
 	WriteBuf(sock->SendBuf, data, size);
 }
 
 bool SendAll(SOCK *sock, void *data, UINT size, bool secure) {
 	UINT ret;
-	if (sock == NULL || data == NULL) {
+	if (sock == NULL || data == NULL)
 		return false;
-	}
-	if (sock->AsyncMode) {
+	if (sock->AsyncMode)
 		return false;
-	}
-	if (size == 0) {
+	if (size == 0)
 		return true;
-	}
 
 	UCHAR *buf = (UCHAR *)data;
 	UINT sent_size = 0;
 
 	while (true) {
 		ret = Send(sock, buf, size - sent_size, secure);
-		if (ret == 0) {
+		if (ret == 0)
 			return false;
-		}
 		sent_size += ret;
 		buf += ret;
-		if (sent_size >= size) {
+		if (sent_size >= size)
 			return true;
-		}
 	}
 }
 
 UINT GetTimeout(SOCK *sock) {
-	if (sock == NULL) {
+	if (sock == NULL)
 		return INFINITE;
-	}
-	if (sock->Type != SOCK_TCP) {
+	if (sock->Type != SOCK_TCP)
 		return INFINITE;
-	}
 
 	return sock->TimeOut;
 }
 
 void SetTimeout(SOCK *sock, UINT timeout) {
-	if (sock == NULL) {
+	if (sock == NULL)
 		return;
-	}
-	if (sock->Type == SOCK_UDP) {
+	if (sock->Type == SOCK_UDP)
 		return;
-	}
 
-	if (timeout == INFINITE) {
+	if (timeout == INFINITE)
 		timeout = TIMEOUT_INFINITE;
-	}
 
 	// Same value again, or "no limit" on a socket whose timeouts were never set (the OS default): nothing to change
 	if (timeout == sock->TimeOut || (timeout == TIMEOUT_INFINITE && sock->TimeOut == 0)) {
@@ -640,13 +572,11 @@ bool IsTransientAcceptError(UINT err) {
 static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, bool *bind_failed) {
 	SOCKET s = socket(addr->sa_family, SOCK_STREAM, 0);
 
-	if (bind_failed != NULL) {
+	if (bind_failed != NULL)
 		*bind_failed = false;
-	}
 
-	if (s == INVALID_SOCKET) {
+	if (s == INVALID_SOCKET)
 		return INVALID_SOCKET;
-	}
 
 	if (addr->sa_family == AF_INET6) {
 		DWORD flag = (v6only ? 1 : 0);
@@ -658,9 +588,8 @@ static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, bool
 	}
 
 	if (bind(s, addr, addr_size) != 0) {
-		if (bind_failed != NULL) {
+		if (bind_failed != NULL)
 			*bind_failed = true;
-		}
 
 		closesocket(s);
 		return INVALID_SOCKET;
@@ -677,9 +606,8 @@ SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only) {
 	struct sockaddr_in addr4;
 	struct sockaddr_in6 addr6;
 	bool is_ipv6 = false;
-	if (port == 0 || port >= 65536) {
+	if (port == 0 || port >= 65536)
 		return NULL;
-	}
 
 	Zero(&addr4, sizeof(addr4));
 	addr4.sin_family = AF_INET;
@@ -713,9 +641,8 @@ SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only) {
 		is_ipv6 = true;
 	}
 
-	if (s == INVALID_SOCKET) {
+	if (s == INVALID_SOCKET)
 		return NULL;
-	}
 
 	if (listen(s, SOMAXCONN)) {
 		closesocket(s);
@@ -787,12 +714,10 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 	UINT zero = 0;
 	UINT tmp = 0;
 	DWORD ret_size = 0;
-	if (s == INVALID_SOCKET || addr == NULL) {
+	if (s == INVALID_SOCKET || addr == NULL)
 		return -1;
-	}
-	if (timeout == 0) {
+	if (timeout == 0)
 		timeout = TIMEOUT_TCP_PORT_CHECK;
-	}
 
 	WSAEVENT hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
@@ -808,13 +733,11 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 		while (*cancel_flag == false && Tick64() < end_time) {
 			WSANETWORKEVENTS events;
 
-			if (WaitForSingleObject(hEvent, 25) != WAIT_OBJECT_0) {
+			if (WaitForSingleObject(hEvent, 25) != WAIT_OBJECT_0)
 				continue;
-			}
 
-			if (WSAEnumNetworkEvents(s, hEvent, &events) != 0) {
+			if (WSAEnumNetworkEvents(s, hEvent, &events) != 0)
 				break;
-			}
 
 			if (events.lNetworkEvents & FD_CONNECT) {
 				ok = (events.iErrorCode[FD_CONNECT_BIT] == 0);
@@ -829,11 +752,10 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 
 	CloseHandle(hEvent);
 
-	if (ok) {
+	if (ok)
 		return 0;
-	} else {
+	else
 		return -1;
-	}
 }
 
 static int bind_sock(SOCKET sock, const IP *ip, UINT port) {
@@ -895,9 +817,8 @@ static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, const I
 	}
 
 	SOCKET s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
-	if (s == INVALID_SOCKET) {
+	if (s == INVALID_SOCKET)
 		return INVALID_SOCKET;
-	}
 
 	if (bind_ip == BIND_LOCALIP_NULL) {
 		// A NULL local address is the unspecified address of the target family
@@ -924,28 +845,23 @@ static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, const I
 
 static void BindConnectThread(THREAD *thread, void *param) {
 	CONNECT_SERIAL_PARAM *p = (CONNECT_SERIAL_PARAM *)param;
-	if (thread == NULL || p == NULL) {
+	if (thread == NULL || p == NULL)
 		return;
-	}
 
-	if (p->Delay >= 1) {
+	if (p->Delay >= 1)
 		WaitEx(NULL, p->Delay, p->NoDelayFlag);
-	}
 
 	for (UINT i = 0; i < LIST_NUM(p->IpList); ++i) {
 		IP *ip = LIST_DATA(p->IpList, i);
 
-		if (IsZeroIP(ip)) {
+		if (IsZeroIP(ip))
 			continue;
-		}
 
-		if (i > 0 && p->RetryDelay >= 1) {
+		if (i > 0 && p->RetryDelay >= 1)
 			WaitEx(NULL, p->RetryDelay, p->CancelFlag);
-		}
 
-		if (*p->CancelFlag) {
+		if (*p->CancelFlag)
 			break;
-		}
 
 		SOCKET s = BindConnectTimeout(p->IPv6, p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
 
@@ -966,9 +882,8 @@ static void BindConnectThread(THREAD *thread, void *param) {
 SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original) {
 	UINT true_flag = 1;
 
-	if (s == INVALID_SOCKET) {
+	if (s == INVALID_SOCKET)
 		return NULL;
-	}
 
 	SOCK *sock = NewSock();
 	sock->socket = s;
@@ -1011,20 +926,16 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	bool cancel_flag2 = false;
 	bool no_delay_flag = false;
 	SOCK *ret = NULL;
-	if (hostname == NULL || port == 0 || port >= 65536 || IsEmptyStr(hostname)) {
+	if (hostname == NULL || port == 0 || port >= 65536 || IsEmptyStr(hostname))
 		return NULL;
-	}
-	if (timeout == 0) {
+	if (timeout == 0)
 		timeout = TIMEOUT_TCP_PORT_CHECK;
-	}
-	if (cancel_flag == NULL) {
+	if (cancel_flag == NULL)
 		cancel_flag = &dummy;
-	}
 
 	Zero(&dummy_ret_ip, sizeof(IP));
-	if (ret_ip == NULL) {
+	if (ret_ip == NULL)
 		ret_ip = &dummy_ret_ip;
-	}
 
 	if (IsZeroIP(ret_ip) == false) {
 		LIST **target = IsIP6(ret_ip) ? &iplists[0] : &iplists[1];
@@ -1032,9 +943,8 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 		*target = NewListFast(NULL);
 		AddHostIPAddressToList(*target, ret_ip);
 	} else {
-		if (DnsResolveEx(&iplists[0], &iplists[1], hostname, 0, cancel_flag) == false) {
+		if (DnsResolveEx(&iplists[0], &iplists[1], hostname, 0, cancel_flag) == false)
 			return NULL;
-		}
 	}
 
 	EVENT *finish_event = NewEvent();
@@ -1045,9 +955,8 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	for (UINT i = 0; i < 2; ++i) {
 		CONNECT_SERIAL_PARAM *p = &params[i];
 
-		if (LIST_NUM(iplists[i]) == 0) {
+		if (LIST_NUM(iplists[i]) == 0)
 			continue;
-		}
 
 		p->IpList = iplists[i];
 		p->IPv6 = (i == 0);
@@ -1072,27 +981,22 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 		threads[i] = NewThread(BindConnectThread, p);
 	}
 
-	if (threads[0] == NULL || threads[1] == NULL) {
+	if (threads[0] == NULL || threads[1] == NULL)
 		no_delay_flag = true;
-	}
 
 	while (true) {
-		if (*cancel_flag) {
+		if (*cancel_flag)
 			break;
-		}
 
-		if ((threads[0] == NULL || params[0].Finished) && (threads[1] == NULL || params[1].Finished)) {
+		if ((threads[0] == NULL || params[0].Finished) && (threads[1] == NULL || params[1].Finished))
 			break;
-		}
 
-		if ((params[0].Finished && params[0].Ok) || (params[1].Finished && params[1].Ok)) {
+		if ((params[0].Finished && params[0].Ok) || (params[1].Finished && params[1].Ok))
 			break;
-		}
 
 		// This check must be placed last to avoid race condition with cancel flag
-		if (no_delay_flag == false && (params[0].Finished || params[1].Finished)) {
+		if (no_delay_flag == false && (params[0].Finished || params[1].Finished))
 			no_delay_flag = true;
-		}
 
 		Wait(finish_event, 25);
 	}
@@ -1123,9 +1027,8 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 }
 
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str) {
-	if (dst == NULL || str == NULL) {
+	if (dst == NULL || str == NULL)
 		return;
-	}
 
 	TOKEN_LIST *t1 = ParseTokenWithoutNullStr(dst, " ");
 	TOKEN_LIST *t2 = ParseTokenWithoutNullStr(str, " ");
@@ -1165,31 +1068,26 @@ void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT val
 
 static bool SetSocketBufferSize(SOCKET s, bool send, UINT size) {
 	int value = (int)size;
-	if (s == INVALID_SOCKET) {
+	if (s == INVALID_SOCKET)
 		return false;
-	}
 
-	if (setsockopt(s, SOL_SOCKET, (send ? SO_SNDBUF : SO_RCVBUF), (char *)&value, sizeof(int)) != 0) {
+	if (setsockopt(s, SOL_SOCKET, (send ? SO_SNDBUF : SO_RCVBUF), (char *)&value, sizeof(int)) != 0)
 		return false;
-	}
 
 	return true;
 }
 static UINT SetSocketBufferSizeWithBestEffort(SOCKET s, bool send, UINT size) {
-	if (s == INVALID_SOCKET) {
+	if (s == INVALID_SOCKET)
 		return 0;
-	}
 
 	while (true) {
-		if (SetSocketBufferSize(s, send, size)) {
+		if (SetSocketBufferSize(s, send, size))
 			return size;
-		}
 
 		size = (UINT)((double)size / 1.5);
 
-		if (size <= 32767) {
+		if (size <= 32767)
 			return 0;
-		}
 	}
 }
 
@@ -1216,9 +1114,8 @@ static void DecodeSockAddr(struct sockaddr_storage *addr, IP *ip, UINT *port) {
 }
 
 void QuerySocketInformation(SOCK *sock) {
-	if (sock == NULL) {
+	if (sock == NULL)
 		return;
-	}
 
 	Lock(sock->lock);
 	{
@@ -1227,25 +1124,21 @@ void QuerySocketInformation(SOCK *sock) {
 
 		if (sock->Type == SOCK_TCP) {
 			size = sizeof(sockaddr);
-			if (getpeername(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0) {
+			if (getpeername(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0)
 				DecodeSockAddr(&sockaddr, &sock->RemoteIP, &sock->RemotePort);
-			}
 		}
 
 		size = sizeof(sockaddr);
-		if (getsockname(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0) {
+		if (getsockname(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0)
 			DecodeSockAddr(&sockaddr, &sock->LocalIP, &sock->LocalPort);
-		}
 	}
 	Unlock(sock->lock);
 }
 
 void ReleaseSock(SOCK *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
-	if (Release(s->ref) == 0) {
+	if (Release(s->ref) == 0)
 		CleanupSock(s);
-	}
 }

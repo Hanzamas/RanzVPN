@@ -49,9 +49,8 @@ void ClearStr(char *str, UINT str_size) {
 
 UINT SearchAsciiInBinary(const void *data, UINT size, const char *str, bool case_sensitive) {
 	UINT ret = INFINITE;
-	if (data == NULL || size == 0 || str == NULL) {
+	if (data == NULL || size == 0 || str == NULL)
 		return INFINITE;
-	}
 
 	char *tmp = ZeroMalloc(size + 1);
 	Copy(tmp, data, size);
@@ -65,32 +64,28 @@ UINT SearchAsciiInBinary(const void *data, UINT size, const char *str, bool case
 
 UINT HexToInt(const char *str) {
 	UINT ret = 0;
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
-	if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+	if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X'))
 		str += 2;
-	}
 
 	UINT len = StrLen(str);
 	for (UINT i = 0; i < len; i++) {
 		char c = str[i];
 
-		if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
 			ret = ret * 16 + (UINT)HexTo4Bit(c);
-		} else {
+		else
 			break;
-		}
 	}
 
 	return ret;
 }
 
 void ToHex(char *str, UINT value) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	// Lower case digits without leading zeros
 	StringCchPrintfA(str, TOHEX_SIZE, "%x", value);
@@ -99,23 +94,21 @@ void ToHex(char *str, UINT value) {
 char FourBitToHex(UINT value) {
 	value = value % 16;
 
-	if (value <= 9) {
+	if (value <= 9)
 		return '0' + value;
-	} else {
+	else
 		return 'a' + (value - 10);
-	}
 }
 
 UINT HexTo4Bit(char c) {
-	if ('0' <= c && c <= '9') {
+	if ('0' <= c && c <= '9')
 		return c - '0';
-	} else if ('a' <= c && c <= 'f') {
+	else if ('a' <= c && c <= 'f')
 		return c - 'a' + 10;
-	} else if ('A' <= c && c <= 'F') {
+	else if ('A' <= c && c <= 'F')
 		return c - 'A' + 10;
-	} else {
+	else
 		return 0;
-	}
 }
 
 // A heap copy of the first len characters of str
@@ -130,30 +123,26 @@ static char *CopyStrPrefix(const char *str, UINT len) {
 // The tokenizer of both variants. With keep_empty, each separator and the terminator end a token,
 // also an empty one; without it, a run of separators splits once and no token is empty.
 static TOKEN_LIST *ParseTokenCore(const char *str, const char *split_chars, bool keep_empty) {
-	if (str == NULL) {
+	if (str == NULL)
 		return NullToken();
-	}
-	if (split_chars == NULL) {
+	if (split_chars == NULL)
 		split_chars = DEFAULT_TOKEN_SPLIT_CHARS;
-	}
 
 	LIST *o = NewListFast(NULL);
 
 	while (true) {
 		if (keep_empty == false) {
 			str += strspn(str, split_chars);
-			if (str[0] == '\0') {
+			if (str[0] == '\0')
 				break;
-			}
 		}
 
 		UINT len = (UINT)strcspn(str, split_chars);
 
 		Insert(o, CopyStrPrefix(str, len));
 
-		if (str[len] == '\0') {
+		if (str[len] == '\0')
 			break;
-		}
 
 		str += len + 1;
 	}
@@ -162,9 +151,8 @@ static TOKEN_LIST *ParseTokenCore(const char *str, const char *split_chars, bool
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
-	for (UINT i = 0; i < t->NumTokens; i++) {
+	for (UINT i = 0; i < t->NumTokens; i++)
 		t->Token[i] = LIST_DATA(o, i);
-	}
 
 	ReleaseList(o);
 
@@ -183,13 +171,11 @@ bool InStr(const char *str, const char *keyword) {
 	return InStrEx(str, keyword, false);
 }
 bool InStrEx(const char *str, const char *keyword, bool case_sensitive) {
-	if (IsEmptyStr(str) || IsEmptyStr(keyword)) {
+	if (IsEmptyStr(str) || IsEmptyStr(keyword))
 		return false;
-	}
 
-	if (SearchStrEx(str, keyword, 0, case_sensitive) == INFINITE) {
+	if (SearchStrEx(str, keyword, 0, case_sensitive) == INFINITE)
 		return false;
-	}
 
 	return true;
 }
@@ -199,11 +185,9 @@ static bool IsSplitChar(char c, const char *split_str) {
 
 	UINT len = StrLen(split_str);
 
-	for (UINT i = 0; i < len; i++) {
-		if (ToUpper(split_str[i]) == c_upper) {
+	for (UINT i = 0; i < len; i++)
+		if (ToUpper(split_str[i]) == c_upper)
 			return true;
-		}
-	}
 
 	return false;
 }
@@ -277,9 +261,8 @@ char *MakeCharArray(char c, UINT count) {
 }
 
 UINT StrWidth(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	wchar_t *s = CopyStrToUni(str);
 	UINT ret = UniStrWidth(s);
@@ -289,9 +272,8 @@ UINT StrWidth(const char *str) {
 }
 
 bool IsAllUpperStr(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	UINT len = StrLen(str);
 
@@ -309,9 +291,8 @@ bool IsAllUpperStr(const char *str) {
 }
 
 void ToStrByte1000(char *str, UINT size, UINT64 v) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	// Built by multiplication to avoid a gcc overflow warning
 	bytestr[0].base_value = 1000000000UL;
@@ -341,9 +322,8 @@ void ToStrByte1000(char *str, UINT size, UINT64 v) {
 }
 
 void ToStrByte(char *str, UINT size, UINT64 v) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	// Built by multiplication to avoid a gcc overflow warning
 	bytestr[0].base_value = 1073741824UL;
@@ -375,35 +355,31 @@ void ToStrByte(char *str, UINT size, UINT64 v) {
 void ToStr3(char *str, UINT size, UINT64 v) {
 	char tmp[128];
 	char tmp2[128];
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	ToStr64(tmp, v);
 
 	UINT wp = 0;
 	UINT len = StrLen(tmp);
 
-	for (UINT i = len - 1; ((int)i) >= 0; i--) {
+	for (UINT i = len - 1; ((int)i) >= 0; i--)
 		tmp2[wp++] = tmp[i];
-	}
 	tmp2[wp++] = 0;
 
 	wp = 0;
 
 	for (UINT i = 0; i < len; i++) {
-		if (i != 0 && (i % 3) == 0) {
+		if (i != 0 && (i % 3) == 0)
 			tmp[wp++] = ',';
-		}
 		tmp[wp++] = tmp2[i];
 	}
 	tmp[wp++] = 0;
 	wp = 0;
 	len = StrLen(tmp);
 
-	for (UINT i = len - 1; ((int)i) >= 0; i--) {
+	for (UINT i = len - 1; ((int)i) >= 0; i--)
 		tmp2[wp++] = tmp[i];
-	}
 	tmp2[wp++] = 0;
 
 	StrCpy(str, size, tmp2);
@@ -414,9 +390,8 @@ void ToStr3(char *str, UINT size, UINT64 v) {
 void MacToStr(char *str, UINT size, const UCHAR *mac_address) {
 	static const char hex[] = "0123456789ABCDEF";
 	char tmp[6 * 3];
-	if (str == NULL || mac_address == NULL) {
+	if (str == NULL || mac_address == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < 6; i++) {
 		tmp[i * 3] = hex[mac_address[i] >> 4];
@@ -428,25 +403,22 @@ void MacToStr(char *str, UINT size, const UCHAR *mac_address) {
 }
 
 bool IsEmptyStr(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return true;
-	}
 
 	// Empty when nothing but blanks (the characters Trim removes) precedes the terminator
 	return str[strspn(str, " \t")] == '\0';
 }
 
 TOKEN_LIST *ListToTokenList(const LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-	for (UINT i = 0; i < LIST_NUM(o); i++) {
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 		t->Token[i] = CopyStr(LIST_DATA(o, i));
-	}
 
 	return t;
 }
@@ -459,22 +431,19 @@ bool IsNum(const char *str) {
 	char c;
 	UINT n = 0;
 	char tmp[MAX_SIZE];
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	StrCpy(tmp, sizeof(tmp), str);
 	Trim(tmp);
 
-	if (StrLen(tmp) == 0) {
+	if (StrLen(tmp) == 0)
 		return false;
-	}
 
 	TOKEN_LIST *t = ParseToken(tmp, " ");
 
-	if (t->NumTokens >= 1) {
+	if (t->NumTokens >= 1)
 		StrCpy(tmp, sizeof(tmp), t->Token[0]);
-	}
 
 	FreeToken(t);
 
@@ -482,24 +451,20 @@ bool IsNum(const char *str) {
 	for (UINT i = 0; i < len; i++) {
 		bool b = false;
 		c = tmp[i];
-		if (('0' <= c && c <= '9') || (c == '+') || (c == '-') || (c == ',')) {
+		if (('0' <= c && c <= '9') || (c == '+') || (c == '-') || (c == ','))
 			b = true;
-		}
 
-		if (b == false) {
+		if (b == false)
 			return false;
-		}
 	}
 
 	for (UINT i = 0; i < len; i++) {
 		c = tmp[i];
-		if (c == '-') {
+		if (c == '-')
 			n++;
-		}
 	}
-	if (n >= 2) {
+	if (n >= 2)
 		return false;
-	}
 
 	return true;
 }
@@ -514,9 +479,8 @@ TOKEN_LIST *NullToken() {
 TOKEN_LIST *ParseCmdLine(const char *str) {
 	char c;
 	bool ignore_space = false;
-	if (str == NULL) {
+	if (str == NULL)
 		return NullToken();
-	}
 
 	LIST *o = NewListFast(NULL);
 	char *tmp = Malloc(StrSize(str) + 32);
@@ -556,23 +520,19 @@ TOKEN_LIST *ParseCmdLine(const char *str) {
 
 				Insert(o, CopyStr(tmp));
 				mode = 0;
-			} else {
-				if (c == '\"') {
-					if (str[i + 1] == '\"') {
-						// "" is an escaped quote
-						tmp[wp++] = L'\"';
-						i++;
-					} else {
-						if (ignore_space == false) {
-							// A lone " toggles quoted mode (spaces are kept)
-							ignore_space = true;
-						} else {
-							ignore_space = false;
-						}
-					}
+			} else if (c == '\"') {
+				if (str[i + 1] == '\"') {
+					// "" is an escaped quote
+					tmp[wp++] = L'\"';
+					i++;
+				} else if (ignore_space == false) {
+					// A lone " toggles quoted mode (spaces are kept)
+					ignore_space = true;
 				} else {
-					tmp[wp++] = c;
+					ignore_space = false;
 				}
+			} else {
+				tmp[wp++] = c;
 			}
 			break;
 		}
@@ -588,9 +548,8 @@ TOKEN_LIST *ParseCmdLine(const char *str) {
 	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-	for (UINT i = 0; i < t->NumTokens; i++) {
+	for (UINT i = 0; i < t->NumTokens; i++)
 		t->Token[i] = LIST_DATA(o, i);
-	}
 
 	ReleaseList(o);
 
@@ -598,28 +557,25 @@ TOKEN_LIST *ParseCmdLine(const char *str) {
 }
 
 void ToStr64(char *str, UINT64 value) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	StringCchPrintfA(str, TOSTR64_SIZE, "%I64u", value);
 }
 
 UINT64 ToInt64(const char *str) {
 	UINT64 ret = 0;
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	UINT len = StrLen(str);
 	for (UINT i = 0; i < len; i++) {
 		char c = str[i];
 		if (c != ',') {
-			if ('0' <= c && c <= '9') {
+			if ('0' <= c && c <= '9')
 				ret = ret * (UINT64)10 + (UINT64)(c - '0');
-			} else {
+			else
 				break;
-			}
 		}
 	}
 
@@ -628,52 +584,43 @@ UINT64 ToInt64(const char *str) {
 
 
 bool EndWith(const char *str, const char *key) {
-	if (str == NULL || key == NULL) {
+	if (str == NULL || key == NULL)
 		return false;
-	}
 
 	UINT str_len = StrLen(str);
 	UINT key_len = StrLen(key);
-	if (str_len < key_len) {
+	if (str_len < key_len)
 		return false;
-	}
 
-	if (StrCmpi(str + (str_len - key_len), key) == 0) {
+	if (StrCmpi(str + (str_len - key_len), key) == 0)
 		return true;
-	} else {
+	else
 		return false;
-	}
 }
 
 bool StartWith(const char *str, const char *key) {
-	if (str == NULL || key == NULL) {
+	if (str == NULL || key == NULL)
 		return false;
-	}
 
 	// An empty str or key never matches
-	if (key[0] == '\0') {
+	if (key[0] == '\0')
 		return false;
-	}
 
 	// Compares in place with the ASCII-only fold of StrCmpi, and stops at the end of str
-	for (UINT i = 0; key[i] != '\0'; i++) {
-		if (str[i] == '\0' || ToUpper(str[i]) != ToUpper(key[i])) {
+	for (UINT i = 0; key[i] != '\0'; i++)
+		if (str[i] == '\0' || ToUpper(str[i]) != ToUpper(key[i]))
 			return false;
-		}
-	}
 
 	return true;
 }
 
 bool StrToMac(UCHAR *mac_address, const char *str) {
-	if (mac_address == NULL || str == NULL) {
+	if (mac_address == NULL || str == NULL)
 		return false;
-	}
 
 	BUF *b = StrToBin(str);
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	if (b->Size != 6) {
 		FreeBuf(b);
@@ -689,9 +636,8 @@ bool StrToMac(UCHAR *mac_address, const char *str) {
 
 BUF *StrToBin(const char *str) {
 	char tmp[3];
-	if (str == NULL) {
+	if (str == NULL)
 		return NULL;
-	}
 
 	UINT len = StrLen(str);
 	tmp[0] = 0;
@@ -732,15 +678,13 @@ static void BinToHexStr(char *str, UINT str_size, const UCHAR *data, UINT data_s
 	for (UINT i = 0; i < data_size && wp < room; i++) {
 		if (spaced && i != 0) {
 			str[wp++] = ' ';
-			if (wp >= room) {
+			if (wp >= room)
 				break;
-			}
 		}
 
 		str[wp++] = hex[data[i] >> 4];
-		if (wp >= room) {
+		if (wp >= room)
 			break;
-		}
 
 		str[wp++] = hex[data[i] & 0x0F];
 	}
@@ -749,18 +693,16 @@ static void BinToHexStr(char *str, UINT str_size, const UCHAR *data, UINT data_s
 }
 
 void BinToStrEx(char *str, UINT str_size, const void *data, UINT data_size) {
-	if (str == NULL || data == NULL) {
+	if (str == NULL || data == NULL)
 		return;
-	}
 
 	BinToHexStr(str, str_size, (const UCHAR *)data, data_size, true);
 }
 
 void BinToStr(char *str, UINT str_size, const void *data, UINT data_size) {
 	if (str == NULL || data == NULL) {
-		if (str != NULL) {
+		if (str != NULL)
 			str[0] = 0;
-		}
 		return;
 	}
 
@@ -768,9 +710,8 @@ void BinToStr(char *str, UINT str_size, const void *data, UINT data_size) {
 }
 void BinToStrW(wchar_t *str, UINT str_size, const void *data, UINT data_size) {
 	if (str == NULL || data == NULL) {
-		if (str != NULL) {
+		if (str != NULL)
 			str[0] = 0;
-		}
 		return;
 	}
 
@@ -785,9 +726,8 @@ void BinToStrW(wchar_t *str, UINT str_size, const void *data, UINT data_size) {
 }
 
 char *CopyStr(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return NULL;
-	}
 
 	UINT len = StrLen(str);
 	char *dst = Malloc(len + 1);
@@ -796,51 +736,42 @@ char *CopyStr(const char *str) {
 }
 
 bool IsSafeStr(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	UINT len = StrLen(str);
-	for (UINT i = 0; i < len; i++) {
-		if (IsSafeChar(str[i]) == false) {
+	for (UINT i = 0; i < len; i++)
+		if (IsSafeChar(str[i]) == false)
 			return false;
-		}
-	}
-	if (str[0] == ' ') {
+	if (str[0] == ' ')
 		return false;
-	}
 	if (len != 0) {
-		if (str[len - 1] == ' ') {
+		if (str[len - 1] == ' ')
 			return false;
-		}
 	}
 	return true;
 }
 
 bool IsPrintableAsciiChar(char c) {
 	UCHAR uc = (UCHAR)c;
-	if (uc <= 31) {
+	if (uc <= 31)
 		return false;
-	}
-	if (uc >= 127) {
+	if (uc >= 127)
 		return false;
-	}
 	return true;
 }
 
 void EnPrintableAsciiStr(char *str, char replace) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINT len = StrLen(str);
 
 	for (UINT i = 0; i < len; i++) {
 		char c = str[i];
 
-		if (IsPrintableAsciiChar(c) == false) {
+		if (IsPrintableAsciiChar(c) == false)
 			str[i] = replace;
-		}
 	}
 }
 
@@ -860,18 +791,16 @@ void EnSafeHttpHeaderValueStr(char *str, char replace) {
 	UINT length = 0;
 	UINT index = 0;
 
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	length = StrLen(str);
 	while (index < length) {
 		if ((str[index] == '\r' || str[index] == '\n') && length - index > 1) {
-			if (replace == ' ') {
+			if (replace == ' ')
 				Move(&str[index], &str[index + 1], length - index - 1);
-			} else {
+			else
 				str[index] = replace;
-			}
 		} else if (str[index] == '\\') {
 			if ((str[index + 1] == 'r' || str[index + 1] == 'n') && length - index > 2) {
 				if (replace == ' ') {
@@ -898,17 +827,15 @@ static bool CheckStringLibrary() {
 	UniFormat(tmp, sizeof(tmp), L"%S_%s_%u_%I64u", teststr, testunistr,
 	          i1, i2);
 
-	if (UniStrCmpi(tmp, compare_str) != 0) {
+	if (UniStrCmpi(tmp, compare_str) != 0)
 		return false;
-	}
 
 	return true;
 }
 
 void InitStringLibrary() {
-	if (CheckStringLibrary() == false) {
+	if (CheckStringLibrary() == false)
 		MayaFatalExit(1, "String Library Init Failed.\r\nPlease check your locale settings.");
-	}
 }
 
 UINT ReplaceStri(char *dst, UINT size, const char *string, const char *old_keyword, const char *new_keyword) {
@@ -920,9 +847,8 @@ UINT ReplaceStr(char *dst, UINT size, const char *string, const char *old_keywor
 }
 
 UINT ReplaceStrEx(char *dst, UINT size, const char *string, const char *old_keyword, const char *new_keyword, bool case_sensitive) {
-	if (string == NULL || old_keyword == NULL || new_keyword == NULL) {
+	if (string == NULL || old_keyword == NULL || new_keyword == NULL)
 		return 0;
-	}
 
 	UINT len_string = StrLen(string);
 	UINT len_old = StrLen(old_keyword);
@@ -960,25 +886,22 @@ UINT ReplaceStrEx(char *dst, UINT size, const char *string, const char *old_keyw
 }
 
 UINT CalcReplaceStrEx(const char *string, const char *old_keyword, const char *new_keyword, bool case_sensitive) {
-	if (string == NULL || old_keyword == NULL || new_keyword == NULL) {
+	if (string == NULL || old_keyword == NULL || new_keyword == NULL)
 		return 0;
-	}
 
 	UINT len_string = StrLen(string);
 	UINT len_old = StrLen(old_keyword);
 	UINT len_new = StrLen(new_keyword);
 
-	if (len_old == len_new) {
+	if (len_old == len_new)
 		return len_string;
-	}
 
 	UINT num = 0;
 	UINT i = 0;
 	while (true) {
 		i = SearchStrEx(string, old_keyword, i, case_sensitive);
-		if (i == INFINITE) {
+		if (i == INFINITE)
 			break;
-		}
 		i += len_old;
 		num++;
 	}
@@ -994,23 +917,19 @@ UINT SearchStr(const char *string, const char *keyword, UINT start) {
 UINT SearchStrEx(const char *string, const char *keyword, UINT start, bool case_sensitive) {
 	const char *cmp_string, *cmp_keyword;
 	char *upper_string = NULL, *upper_keyword = NULL;
-	if (string == NULL || keyword == NULL) {
+	if (string == NULL || keyword == NULL)
 		return INFINITE;
-	}
 
 	UINT len_string = StrLen(string);
-	if (len_string <= start) {
+	if (len_string <= start)
 		return INFINITE;
-	}
 
 	UINT len_keyword = StrLen(keyword);
-	if (len_keyword == 0) {
+	if (len_keyword == 0)
 		return INFINITE;
-	}
 
-	if ((len_string - start) < len_keyword) {
+	if ((len_string - start) < len_keyword)
 		return INFINITE;
-	}
 
 	if (case_sensitive) {
 		cmp_string = string;
@@ -1037,14 +956,11 @@ UINT SearchStrEx(const char *string, const char *keyword, UINT start, bool case_
 }
 
 void FreeToken(TOKEN_LIST *tokens) {
-	if (tokens == NULL) {
+	if (tokens == NULL)
 		return;
-	}
-	for (UINT i = 0; i < tokens->NumTokens; i++) {
-		if (tokens->Token[i] != 0) {
+	for (UINT i = 0; i < tokens->NumTokens; i++)
+		if (tokens->Token[i] != 0)
 			Free(tokens->Token[i]);
-		}
-	}
 	Free(tokens->Token);
 	Free(tokens);
 }
@@ -1068,18 +984,15 @@ bool GetLine(char *str, UINT size) {
 }
 
 void TrimCrlf(char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 	UINT len = StrLen(str);
-	if (len == 0) {
+	if (len == 0)
 		return;
-	}
 
 	if (str[len - 1] == '\n') {
-		if (len >= 2 && str[len - 2] == '\r') {
+		if (len >= 2 && str[len - 2] == '\r')
 			str[len - 2] = 0;
-		}
 		str[len - 1] = 0;
 	} else if (str[len - 1] == '\r') {
 		str[len - 1] = 0;
@@ -1087,9 +1000,8 @@ void TrimCrlf(char *str) {
 }
 
 void Trim(char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	TrimLeft(str);
 
@@ -1097,32 +1009,27 @@ void Trim(char *str) {
 }
 
 void TrimRight(char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINT len = StrLen(str);
 	UINT end = len;
-	while (end != 0 && (str[end - 1] == ' ' || str[end - 1] == '\t')) {
+	while (end != 0 && (str[end - 1] == ' ' || str[end - 1] == '\t'))
 		end--;
-	}
 
 	// Writes only when there is something to remove
-	if (end != len) {
+	if (end != len)
 		str[end] = '\0';
-	}
 }
 
 void TrimLeft(char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	// Writes only when there is something to remove
 	UINT skip = (UINT)strspn(str, " \t");
-	if (skip != 0) {
+	if (skip != 0)
 		StrCpy(str, 0, str + skip);
-	}
 }
 
 void ToStr(char *str, UINT i) {
@@ -1130,26 +1037,22 @@ void ToStr(char *str, UINT i) {
 }
 
 int ToInti(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	return (int)ToInt(str);
 }
 
 UINT ToInt(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	// Ignore the octal literal
 	while (true) {
-		if (*str != '0') {
+		if (*str != '0')
 			break;
-		}
-		if ((*(str + 1) == 'x') || (*(str + 1) == 'X')) {
+		if ((*(str + 1) == 'x') || (*(str + 1) == 'X'))
 			break;
-		}
 		str++;
 	}
 
@@ -1166,9 +1069,8 @@ wchar_t *CopyFormatArgsToUni(const char *fmt, va_list args) {
 	wchar_t *fmt_w;
 	wchar_t *ret;
 	int len;
-	if (fmt == NULL) {
+	if (fmt == NULL)
 		return NULL;
-	}
 
 	fmt_w = CopyStrToUni(fmt);
 
@@ -1189,14 +1091,12 @@ wchar_t *CopyFormatArgsToUni(const char *fmt, va_list args) {
 
 // The message goes to the console as a wide string, without a hop through the ANSI code page
 static void PrintArgs(const char *fmt, va_list args) {
-	if (fmt == NULL) {
+	if (fmt == NULL)
 		return;
-	}
 
 	wchar_t *str = CopyFormatArgsToUni(fmt, args);
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UniPrintStr(str);
 	Free(str);
@@ -1204,9 +1104,8 @@ static void PrintArgs(const char *fmt, va_list args) {
 
 void Print(const char *fmt, ...) {
 	va_list args;
-	if (fmt == NULL) {
+	if (fmt == NULL)
 		return;
-	}
 
 	va_start(args, fmt);
 	PrintArgs(fmt, args);
@@ -1214,9 +1113,8 @@ void Print(const char *fmt, ...) {
 }
 
 static void DebugArgs(const char *fmt, va_list args) {
-	if (fmt == NULL) {
+	if (fmt == NULL)
 		return;
-	}
 	if (IsTraceEnabled()) {
 		// An ETW trace session listens (Trace.c): it gets the message also with debug output off
 		va_list trace_args;
@@ -1225,21 +1123,18 @@ static void DebugArgs(const char *fmt, va_list args) {
 		TraceDebugArgs(fmt, trace_args);
 		va_end(trace_args);
 	}
-	if (g_debug == false) {
+	if (g_debug == false)
 		return;
-	}
 
 	PrintArgs(fmt, args);
 }
 
 void Debug(const char *fmt, ...) {
 	va_list args;
-	if (fmt == NULL) {
+	if (fmt == NULL)
 		return;
-	}
-	if (g_debug == false && IsTraceEnabled() == false) {
+	if (g_debug == false && IsTraceEnabled() == false)
 		return;
-	}
 
 	va_start(args, fmt);
 
@@ -1250,9 +1145,8 @@ void Debug(const char *fmt, ...) {
 
 void Format(char *buf, UINT size, const char *fmt, ...) {
 	va_list args;
-	if (buf == NULL || fmt == NULL) {
+	if (buf == NULL || fmt == NULL)
 		return;
-	}
 
 	va_start(args, fmt);
 	FormatArgs(buf, size, fmt, args);
@@ -1264,9 +1158,8 @@ void Format(char *buf, UINT size, const char *fmt, ...) {
 // terminator. buf must not be an argument or fmt
 void FormatArgs(char *buf, UINT size, const char *fmt, va_list args) {
 	size_t count = size;
-	if (buf == NULL || fmt == NULL) {
+	if (buf == NULL || fmt == NULL)
 		return;
-	}
 
 	if (size == 0) {
 		va_list count_args;
@@ -1285,97 +1178,81 @@ void FormatArgs(char *buf, UINT size, const char *fmt, va_list args) {
 }
 
 int StrCmpi(const char *str1, const char *str2) {
-	if (str1 == NULL && str2 == NULL) {
+	if (str1 == NULL && str2 == NULL)
 		return 0;
-	}
-	if (str1 == NULL) {
+	if (str1 == NULL)
 		return 1;
-	}
-	if (str2 == NULL) {
+	if (str2 == NULL)
 		return -1;
-	}
 
 	UINT i = 0;
 	while (true) {
 		char c1 = ToUpper(str1[i]);
 		char c2 = ToUpper(str2[i]);
-		if (c1 > c2) {
+		if (c1 > c2)
 			return 1;
-		} else if (c1 < c2) {
+		else if (c1 < c2)
 			return -1;
-		}
-		if (str1[i] == 0 || str2[i] == 0) {
+		if (str1[i] == 0 || str2[i] == 0)
 			return 0;
-		}
 		i++;
 	}
 }
 
 int StrCmp(const char *str1, const char *str2) {
-	if (str1 == NULL && str2 == NULL) {
+	if (str1 == NULL && str2 == NULL)
 		return 0;
-	}
-	if (str1 == NULL) {
+	if (str1 == NULL)
 		return 1;
-	}
-	if (str2 == NULL) {
+	if (str2 == NULL)
 		return -1;
-	}
 
 	return strcmp(str1, str2);
 }
 
 void StrLower(char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINT len = StrLen(str);
-	for (UINT i = 0; i < len; i++) {
+	for (UINT i = 0; i < len; i++)
 		str[i] = ToLower(str[i]);
-	}
 }
 
 void StrUpper(char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINT len = StrLen(str);
-	for (UINT i = 0; i < len; i++) {
+	for (UINT i = 0; i < len; i++)
 		str[i] = ToUpper(str[i]);
-	}
 }
 
 char ToLower(char c) {
-	if ('A' <= c && c <= 'Z') {
+	if ('A' <= c && c <= 'Z')
 		c += 'z' - 'Z';
-	}
 	return c;
 }
 
 char ToUpper(char c) {
-	if ('a' <= c && c <= 'z') {
+	if ('a' <= c && c <= 'z')
 		c += 'Z' - 'z';
-	}
 	return c;
 }
 
 // The cch that strsafe takes for the size argument of a string function: size 0 means no limit,
 // and strsafe accepts at most STRSAFE_MAX_CCH characters
 static size_t StrSafeCch(UINT size) {
-	if (size == 0 || size > STRSAFE_MAX_CCH) {
+	if (size == 0 || size > STRSAFE_MAX_CCH)
 		return STRSAFE_MAX_CCH;
-	}
 
 	return size;
 }
 
 UINT StrCat(char *dst, UINT size, const char *src) {
 	size_t len1;
-	if (dst == NULL || src == NULL) {
+	if (dst == NULL || src == NULL)
 		return 0;
-	}
 
 	KS_INC(KS_STRCAT_COUNT);
 
@@ -1383,9 +1260,8 @@ UINT StrCat(char *dst, UINT size, const char *src) {
 
 	// A destination without room for one more character takes nothing and gives 0, except that
 	// an empty src gives the length of a destination that fits
-	if (FAILED(StringCchLengthA(dst, cch, &len1)) || (len1 == cch - 1 && src[0] != '\0')) {
+	if (FAILED(StringCchLengthA(dst, cch, &len1)) || (len1 == cch - 1 && src[0] != '\0'))
 		return 0;
-	}
 
 	// Appends at most cch - 1 - len1 characters and always writes the terminator
 	char *end = dst + len1;
@@ -1394,9 +1270,8 @@ UINT StrCat(char *dst, UINT size, const char *src) {
 	return (UINT)(end - dst);
 }
 UINT StrCatLeft(char *dst, UINT size, const char *src) {
-	if (dst == NULL || src == NULL) {
+	if (dst == NULL || src == NULL)
 		return 0;
-	}
 
 	char *s = CopyStr(dst);
 	StrCpy(dst, size, src);
@@ -1409,14 +1284,12 @@ UINT StrCatLeft(char *dst, UINT size, const char *src) {
 
 UINT StrCpy(char *dst, UINT size, const char *src) {
 	size_t len;
-	if (dst == src) {
+	if (dst == src)
 		return StrLen(src);
-	}
 	if (dst == NULL || src == NULL) {
 		if (src == NULL && dst != NULL) {
-			if (size >= 1) {
+			if (size >= 1)
 				dst[0] = '\0';
-			}
 		}
 		return 0;
 	}
@@ -1426,9 +1299,8 @@ UINT StrCpy(char *dst, UINT size, const char *src) {
 	// so Move copies; strsafe bounds the length, which is size - 1 for a src of size characters
 	// or more
 	size_t cch = StrSafeCch(size);
-	if (FAILED(StringCchLengthA(src, cch, &len))) {
+	if (FAILED(StringCchLengthA(src, cch, &len)))
 		len = cch - 1;
-	}
 	Move(dst, src, (UINT)len);
 	dst[len] = '\0';
 
@@ -1438,9 +1310,8 @@ UINT StrCpy(char *dst, UINT size, const char *src) {
 }
 
 bool StrCheckLen(const char *str, UINT len) {
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	KS_INC(KS_STRCHECK_COUNT);
 
@@ -1449,17 +1320,15 @@ bool StrCheckLen(const char *str, UINT len) {
 }
 
 UINT StrSize(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	return StrLen(str) + 1;
 }
 
 UINT StrLen(const char *str) {
-	if (str == NULL) {
+	if (str == NULL)
 		return 0;
-	}
 
 	KS_INC(KS_STRLEN_COUNT);
 

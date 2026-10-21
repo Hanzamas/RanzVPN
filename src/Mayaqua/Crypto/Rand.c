@@ -42,13 +42,11 @@ bool Rand1() {
 }
 
 void Rand(void *buf, UINT size) {
-	if (buf == NULL || size == 0) {
+	if (buf == NULL || size == 0)
 		return;
-	}
 
 	// The system-preferred generator needs no provider handle; it fails only on bad arguments.
 	// Bytes that may not be random are never returned: the process stops instead.
-	if (CNG_SUCCESS(BCryptGenRandom(NULL, (PUCHAR)buf, size, BCRYPT_USE_SYSTEM_PREFERRED_RNG)) == false) {
+	if (CNG_SUCCESS(BCryptGenRandom(NULL, (PUCHAR)buf, size, BCRYPT_USE_SYSTEM_PREFERRED_RNG)) == false)
 		AbortExitEx("Rand(): BCryptGenRandom() failed");
-	}
 }

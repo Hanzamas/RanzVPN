@@ -27,14 +27,12 @@ typedef struct ENUM_GROUP_COUNT {
 } ENUM_GROUP_COUNT;
 
 static int CompareEnumGroupCount(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	ENUM_GROUP_COUNT *c1 = *(ENUM_GROUP_COUNT **)p1;
 	ENUM_GROUP_COUNT *c2 = *(ENUM_GROUP_COUNT **)p2;
-	if (c1 == NULL || c2 == NULL) {
+	if (c1 == NULL || c2 == NULL)
 		return 0;
-	}
 
 	return COMPARE_RET(c1->Group, c2->Group);
 }
@@ -49,9 +47,8 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t) {
 	CHECK_RIGHT;
 
 	h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	AcLock(h);
 	{
@@ -76,9 +73,8 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t) {
 				UniStrCpy(e->Realname, sizeof(e->Realname), g->RealName);
 				UniStrCpy(e->Note, sizeof(e->Note), g->Note);
 				if (g->Policy != NULL) {
-					if (g->Policy->Access == false) {
+					if (g->Policy->Access == false)
 						e->DenyAccess = true;
-					}
 				}
 			}
 			Unlock(g->lock);
@@ -107,9 +103,8 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t) {
 				key.Item = NULL;
 
 				ENUM_GROUP_COUNT *found = Search(index, &key);
-				if (found != NULL) {
+				if (found != NULL)
 					found->Item->NumUsers++;
-				}
 			}
 		}
 
@@ -129,22 +124,19 @@ UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t) {
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
 	h = AdminGetHub(a, t->HubName, "no_change_groups", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	AcLock(h);
 	{
-		if (AcDeleteGroup(h, t->Name) == false) {
+		if (AcDeleteGroup(h, t->Name) == false)
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
 	}
 	AcUnlock(h);
 
@@ -164,17 +156,15 @@ UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = AdminGetHub(a, t->HubName, NULL, &ret);
-	if (h == NULL) {
+	if (h == NULL)
 		return ret;
-	}
 
 	AcLock(h);
 	{
@@ -215,15 +205,13 @@ UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 	h = AdminGetHub(a, t->HubName, "no_change_groups", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	AcLock(h);
 	{
@@ -262,16 +250,14 @@ UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
 	h = AdminGetHub(a, t->HubName, "no_change_groups", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	AcLock(h);
 	{
@@ -297,9 +283,8 @@ UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t) {
 
 	ReleaseHub(h);
 
-	if (ret == ERR_NO_ERROR) {
+	if (ret == ERR_NO_ERROR)
 		IncrementServerConfigRevision(s);
-	}
 
 	return ret;
 }

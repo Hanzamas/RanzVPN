@@ -47,14 +47,12 @@ UINT StSetHubMsg(ADMIN *a, RPC_MSG *t) {
 	UINT err;
 
 	CHECK_RIGHT;
-	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN) {
+	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN)
 		return ERR_MEMORY_NOT_ENOUGH;
-	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_msg", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	SetHubMsg(h, t->Msg);
 
@@ -71,9 +69,8 @@ UINT StGetHubMsg(ADMIN *a, RPC_MSG *t) {
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	FreeRpcMsg(t);
 	Zero(t, sizeof(RPC_MSG));
@@ -132,9 +129,8 @@ UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t) {
 	FreeRpcEnumEthVLan(t);
 	Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
 
-	if (EnumEthVLanWin32(t) == false) {
+	if (EnumEthVLanWin32(t) == false)
 		ret = ERR_INTERNAL_ERROR;
-	}
 
 	return ret;
 }
@@ -144,13 +140,10 @@ UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t) {
 
 	SERVER_ADMIN_ONLY;
 
-	if (MsIsAdmin() == false) {
+	if (MsIsAdmin() == false)
 		ret = ERR_NOT_ENOUGH_RIGHT;
-	} else {
-		if (SetVLanEnableStatus(t->StrValue, INT_TO_BOOL(t->IntValue)) == false) {
-			ret = ERR_INTERNAL_ERROR;
-		}
-	}
+	else if (SetVLanEnableStatus(t->StrValue, INT_TO_BOOL(t->IntValue)) == false)
+		ret = ERR_INTERNAL_ERROR;
 
 	return ret;
 }

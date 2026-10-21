@@ -25,9 +25,8 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t) {
 	char logfilename[MAX_PATH];
 	char servername[MAX_HOST_NAME_LEN + 1];
 
-	if (IsEmptyStr(t->FilePath)) {
+	if (IsEmptyStr(t->FilePath))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	StrCpy(logfilename, sizeof(logfilename), t->FilePath);
 	UINT offset = t->Offset;
@@ -44,22 +43,19 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t) {
 
 		FreeRpcEnumLogFile(&elf);
 
-		if (elf_ret != ERR_NO_ERROR) {
+		if (elf_ret != ERR_NO_ERROR)
 			return elf_ret;
-		}
 	}
-	if (CheckLogFileNameFromEnumList(a->LogFileList, logfilename) == false) {
+	if (CheckLogFileNameFromEnumList(a->LogFileList, logfilename) == false)
 		return ERR_OBJECT_NOT_FOUND;
-	}
 
 	FreeRpcReadLogFile(t);
 	Zero(t, sizeof(RPC_READ_LOG_FILE));
 
 	SiReadLocalLogFile(s, logfilename, offset, t);
 
-	if (offset == 0) {
+	if (offset == 0)
 		ALog(a, NULL, "LA_READ_LOG_FILE", servername, logfilename);
-	}
 
 	StrCpy(t->FilePath, sizeof(t->FilePath), logfilename);
 	t->Offset = offset;
@@ -77,16 +73,14 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t) {
 	if (a->ServerAdmin == false) {
 		h = GetHub(c, a->HubName);
 
-		if (GetHubAdminOption(h, "no_read_log_file") != 0) {
+		if (GetHubAdminOption(h, "no_read_log_file") != 0)
 			no_access = true;
-		}
 
 		ReleaseHub(h);
 	}
 
-	if (no_access) {
+	if (no_access)
 		return ERR_NOT_ENOUGH_RIGHT;
-	}
 
 	FreeRpcEnumLogFile(t);
 	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
@@ -94,9 +88,8 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t) {
 	SiEnumLocalLogFileList(s, a->ServerAdmin ? NULL : a->HubName, t);
 
 	// Cache the log file list on the RPC session
-	if (a->LogFileList != NULL) {
+	if (a->LogFileList != NULL)
 		FreeEnumLogFile(a->LogFileList);
-	}
 
 	a->LogFileList = NewListFast(CmpLogFile);
 
@@ -116,9 +109,8 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t) {
 
 static void SiReadLocalLogFile(const SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t) {
 	char exe_dir[MAX_PATH], full_path[MAX_PATH];
-	if (s == NULL || t == NULL || filepath == NULL) {
+	if (s == NULL || t == NULL || filepath == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_READ_LOG_FILE));
 
@@ -146,9 +138,8 @@ static void SiReadLocalLogFile(const SERVER *s, char *filepath, UINT offset, RPC
 }
 
 static void SiEnumLocalLogFileList(const SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t) {
-	if (s == NULL || t == NULL) {
+	if (s == NULL || t == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
 

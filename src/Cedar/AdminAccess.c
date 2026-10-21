@@ -20,9 +20,8 @@ UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t) {
 
 	CHECK_RIGHT;
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	FreeRpcEnumAccessList(t);
@@ -55,9 +54,8 @@ UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t) {
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	bool exists = false;
 
@@ -95,20 +93,17 @@ UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t) {
 // Apply the hub admin options on an access list entry sent by a hub administrator:
 // no delay, jitter and packet loss; no user name taken from an include or exclude file
 static void AdminSanitizeAccess(ACCESS *access, bool no_jitter, bool no_include) {
-	if (no_jitter) {
+	if (no_jitter)
 		access->Jitter = access->Loss = access->Delay = 0;
-	}
 
 	if (no_include) {
 		if (StartWith(access->SrcUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-		    StartWith(access->SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX)) {
+		    StartWith(access->SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX))
 			ClearStr(access->SrcUsername, sizeof(access->SrcUsername));
-		}
 
 		if (StartWith(access->DestUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-		    StartWith(access->DestUsername, ACCESS_LIST_EXCLUDED_PREFIX)) {
+		    StartWith(access->DestUsername, ACCESS_LIST_EXCLUDED_PREFIX))
 			ClearStr(access->DestUsername, sizeof(access->DestUsername));
-		}
 	}
 }
 
@@ -120,14 +115,12 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t) {
 
 	CHECK_RIGHT;
 
-	if (t->NumAccess > MAX_ACCESSLISTS) {
+	if (t->NumAccess > MAX_ACCESSLISTS)
 		return ERR_TOO_MANY_ACCESS_LIST;
-	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	no_jitter = GetHubAdminOption(h, "no_delay_jitter_packet_loss");
 	no_include = GetHubAdminOption(h, "no_access_list_include_file");
@@ -154,9 +147,8 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t) {
 
 			AdminSanitizeAccess(access, no_jitter, no_include);
 
-			if (i == (t->NumAccess - 1)) {
+			if (i == (t->NumAccess - 1))
 				Sort(h->AccessList);
-			}
 
 			AddAccessListEx(h, access, ((i != (t->NumAccess - 1)) ? true : false), ((i != (t->NumAccess - 1)) ? true : false));
 		}
@@ -179,9 +171,8 @@ UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t) {
 
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	no_jitter = GetHubAdminOption(h, "no_delay_jitter_packet_loss");
 	no_include = GetHubAdminOption(h, "no_access_list_include_file");

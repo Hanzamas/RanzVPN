@@ -9,9 +9,8 @@
 #include <openssl/evp.h>
 
 CIPHER *NewCipher(char *name) {
-	if (name == NULL) {
+	if (name == NULL)
 		return NULL;
-	}
 
 	CIPHER *c = ZeroMalloc(sizeof(CIPHER));
 
@@ -29,13 +28,11 @@ CIPHER *NewCipher(char *name) {
 }
 
 void SetCipherKey(CIPHER *c, void *key, bool enc) {
-	if (c == NULL || key == NULL) {
+	if (c == NULL || key == NULL)
 		return;
-	}
 
-	if (c->Ctx != NULL) {
+	if (c->Ctx != NULL)
 		EVP_CipherInit(c->Ctx, c->Cipher, key, NULL, enc);
-	}
 
 	c->Encrypt = enc;
 }
@@ -43,11 +40,10 @@ void SetCipherKey(CIPHER *c, void *key, bool enc) {
 UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest, void *src, UINT src_size, void *aad, UINT aad_size) {
 	int r = src_size;
 	int r2 = 0;
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	} else if (iv == NULL || tag == NULL || tag_size == 0 || dest == NULL || src == NULL || src_size == 0) {
+	else if (iv == NULL || tag == NULL || tag_size == 0 || dest == NULL || src == NULL || src_size == 0)
 		return 0;
-	}
 
 	if (EVP_CipherInit_ex(c->Ctx, NULL, NULL, NULL, iv, c->Encrypt) == false) {
 		DrainCryptErrors("CipherProcessAead(): EVP_CipherInit_ex() failed");
@@ -89,13 +85,11 @@ UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest
 }
 
 void FreeCipher(CIPHER *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
-	if (c->Ctx != NULL) {
+	if (c->Ctx != NULL)
 		EVP_CIPHER_CTX_free(c->Ctx);
-	}
 
 	Free(c);
 }

@@ -14,26 +14,23 @@
 
 // Send one syslog datagram to the current address (g->lock held)
 static void SendSysLogLocked(SLOG *g, const UCHAR *buf, UINT size) {
-	if (g->DestPort != 0 && IsZeroIP(&g->DestIp) == false) {
+	if (g->DestPort != 0 && IsZeroIP(&g->DestIp) == false)
 		SendTo(g->Udp, &g->DestIp, g->DestPort, buf, size);
-	}
 }
 
 void SendSysLog(SLOG *g, wchar_t *str) {
 	char hostname[MAX_HOST_NAME_LEN + 1];
 	bool poll = false;
-	if (g == NULL || str == NULL) {
+	if (g == NULL || str == NULL)
 		return;
-	}
 
 	UINT buf_size = CalcUniToUtf8(str);
 	UCHAR *buf = ZeroMalloc(buf_size);
 	UniToUtf8(buf, buf_size, str);
 	LogMapControlChars(buf, buf_size);
 
-	if (buf_size >= 1024) {
+	if (buf_size >= 1024)
 		buf_size = 1023;
-	}
 
 	Lock(g->lock);
 	{
@@ -74,9 +71,8 @@ void SendSysLog(SLOG *g, wchar_t *str) {
 }
 
 void FreeSysLog(SLOG *g) {
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	DeleteLock(g->lock);
 	ReleaseSock(g->Udp);
@@ -85,16 +81,13 @@ void FreeSysLog(SLOG *g) {
 
 void SetSysLog(SLOG *g, char *hostname, UINT port) {
 	IP ip;
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
-	if (port == 0) {
+	if (port == 0)
 		port = SYSLOG_PORT;
-	}
 
-	if (hostname == NULL) {
+	if (hostname == NULL)
 		hostname = "";
-	}
 
 	Zero(&ip, sizeof(IP));
 	GetIP(&ip, hostname);

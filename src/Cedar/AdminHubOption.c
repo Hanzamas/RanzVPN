@@ -26,14 +26,12 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	SERVER *s = a->Server;
 	UINT err;
 
-	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS) {
+	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS)
 		return ERR_TOO_MANT_ITEMS;
-	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "deny_hub_admin_change_ext_option", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	Lock(h->lock);
 	{
@@ -54,9 +52,8 @@ UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	UINT err;
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	FreeRpcAdminOption(t);
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
@@ -78,14 +75,12 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	SERVER *s = a->Server;
 	UINT err;
 
-	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS) {
+	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS)
 		return ERR_TOO_MANT_ITEMS;
-	}
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	if (GetHubAdminOption(h, "allow_hub_admin_change_option") == false && a->ServerAdmin == false) {
 		ReleaseHub(h);
@@ -126,9 +121,8 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	FreeRpcAdminOption(t);
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
@@ -206,15 +200,13 @@ UINT StSetConfig(ADMIN *a, RPC_CONFIG *t) {
 	SERVER_ADMIN_ONLY;
 
 	SERVER *s = a->Server;
-	if (s->CfgRw == NULL) {
+	if (s->CfgRw == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	// A bad upload or a failed write keeps the live configuration and the server running
 	UINT ret = SiStageConfiguration(s, t->FileData, StrLen(t->FileData));
-	if (ret != ERR_NO_ERROR) {
+	if (ret != ERR_NO_ERROR)
 		return ret;
-	}
 
 	ALog(a, NULL, "LA_SET_CONFIG");
 

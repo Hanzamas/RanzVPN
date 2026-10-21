@@ -19,9 +19,8 @@
 static void SamLog(const AUTH_REQUEST *req, char *name, ...) {
 	wchar_t buf[MAX_SIZE * 2];
 	va_list args;
-	if (req->Log == NULL || name == NULL) {
+	if (req->Log == NULL || name == NULL)
 		return;
-	}
 
 	va_start(args, name);
 	LogFormat(buf, sizeof(buf), name, args);
@@ -32,9 +31,8 @@ static void SamLog(const AUTH_REQUEST *req, char *name, ...) {
 
 static bool SamAuthUserByAnonymous(HUB *h, char *username) {
 	bool b = false;
-	if (h == NULL || username == NULL) {
+	if (h == NULL || username == NULL)
 		return false;
-	}
 
 	AcLock(h);
 	{
@@ -42,9 +40,8 @@ static bool SamAuthUserByAnonymous(HUB *h, char *username) {
 		if (u) {
 			Lock(u->lock);
 			{
-				if (u->AuthType == AUTHTYPE_ANONYMOUS) {
+				if (u->AuthType == AUTHTYPE_ANONYMOUS)
 					b = true;
-				}
 			}
 			Unlock(u->lock);
 		}
@@ -60,27 +57,24 @@ static bool SamAuthUserByAnonymous(HUB *h, char *username) {
 static bool SamAuthUserByPlainPassword(HUB *hub, char *username, char *password, LOCK *yield) {
 	bool b = false;
 	wchar_t *name = NULL;
-	if (hub == NULL || username == NULL || password == NULL) {
+	if (hub == NULL || username == NULL || password == NULL)
 		return false;
-	}
 
 	AcLock(hub);
 	{
 		USER *u = AcGetUser(hub, username);
-		if (u == NULL) {
+		if (u == NULL)
 			u = AcGetUser(hub, "*");
-		}
 
 		if (u) {
 			Lock(u->lock);
 			{
 				if (u->AuthType == AUTHTYPE_NT) {
 					AUTHNT *auth = (AUTHNT *)u->AuthData;
-					if (auth->NtUsername == NULL || UniStrLen(auth->NtUsername) == 0) {
+					if (auth->NtUsername == NULL || UniStrLen(auth->NtUsername) == 0)
 						name = CopyStrToUni(username);
-					} else {
+					else
 						name = CopyUniStr(auth->NtUsername);
-					}
 				}
 			}
 			Unlock(u->lock);
@@ -90,15 +84,13 @@ static bool SamAuthUserByPlainPassword(HUB *hub, char *username, char *password,
 	AcUnlock(hub);
 
 	if (name != NULL) {
-		if (yield != NULL) {
+		if (yield != NULL)
 			Unlock(yield);
-		}
 
 		b = MsCheckLogon(name, password);
 
-		if (yield != NULL) {
+		if (yield != NULL)
 			Lock(yield);
-		}
 
 		Free(name);
 	}
@@ -111,13 +103,11 @@ static bool SamAuthUserByCert(HUB *h, AUTH_REQUEST *req) {
 	bool b = false;
 	char *username = req->Username;
 	X *x = req->Cert;
-	if (h == NULL || username == NULL || x == NULL) {
+	if (h == NULL || username == NULL || x == NULL)
 		return false;
-	}
 
-	if (CheckXDateNow(x) == false) {
+	if (CheckXDateNow(x) == false)
 		return false;
-	}
 
 	if (IsValidCertInHub(h, x) == false) {
 		wchar_t tmp[MAX_SIZE * 2];
@@ -136,9 +126,8 @@ static bool SamAuthUserByCert(HUB *h, AUTH_REQUEST *req) {
 			{
 				if (u->AuthType == AUTHTYPE_USERCERT) {
 					AUTHUSERCERT *auth = (AUTHUSERCERT *)u->AuthData;
-					if (CompareX(auth->UserX, x)) {
+					if (CompareX(auth->UserX, x))
 						b = true;
-					}
 				} else if (u->AuthType == AUTHTYPE_ROOTCERT) {
 					AUTHROOTCERT *auth = (AUTHROOTCERT *)u->AuthData;
 					if (h->HubDb != NULL) {
@@ -148,14 +137,12 @@ static bool SamAuthUserByCert(HUB *h, AUTH_REQUEST *req) {
 							if (root_cert != NULL) {
 								b = true;
 								if (auth->CommonName != NULL && UniIsEmptyStr(auth->CommonName) == false) {
-									if (UniStrCmpi(x->subject_name->CommonName, auth->CommonName) != 0) {
+									if (UniStrCmpi(x->subject_name->CommonName, auth->CommonName) != 0)
 										b = false;
-									}
 								}
 								if (auth->Serial != NULL && auth->Serial->size >= 1) {
-									if (CompareXSerial(x->serial, auth->Serial) == false) {
+									if (CompareXSerial(x->serial, auth->Serial) == false)
 										b = false;
-									}
 								}
 							}
 						}
@@ -182,9 +169,8 @@ static bool SamAuthUserByCert(HUB *h, AUTH_REQUEST *req) {
 
 static POLICY *SamGetUserPolicy(HUB *h, char *username) {
 	POLICY *ret = NULL;
-	if (h == NULL || username == NULL) {
+	if (h == NULL || username == NULL)
 		return NULL;
-	}
 
 	AcLock(h);
 	{
@@ -193,15 +179,13 @@ static POLICY *SamGetUserPolicy(HUB *h, char *username) {
 			USERGROUP *g = NULL;
 			Lock(u->lock);
 			{
-				if (u->Policy != NULL) {
+				if (u->Policy != NULL)
 					ret = ClonePolicy(u->Policy);
-				}
 
 				g = u->Group;
 
-				if (g != NULL) {
+				if (g != NULL)
 					AddRef(g->ref);
-				}
 			}
 			Unlock(u->lock);
 
@@ -218,9 +202,8 @@ static POLICY *SamGetUserPolicy(HUB *h, char *username) {
 				}
 			}
 
-			if (g != NULL) {
+			if (g != NULL)
 				ReleaseGroup(g);
-			}
 		}
 	}
 	AcUnlock(h);
@@ -231,9 +214,8 @@ static POLICY *SamGetUserPolicy(HUB *h, char *username) {
 static bool SamAuthUserByPassword(HUB *h, char *username, void *random, const void *secure_password) {
 	bool b = false;
 	UCHAR secure_password_check[SHA1_SIZE];
-	if (h == NULL || username == NULL || secure_password == NULL) {
+	if (h == NULL || username == NULL || secure_password == NULL)
 		return false;
-	}
 
 	if (StrCmpi(username, ADMINISTRATOR_USERNAME) == 0) {
 		SecurePassword(secure_password_check, h->SecurePassword, random);
@@ -250,9 +232,8 @@ static bool SamAuthUserByPassword(HUB *h, char *username, void *random, const vo
 					AUTHPASSWORD *auth = (AUTHPASSWORD *)u->AuthData;
 
 					SecurePassword(secure_password_check, auth->HashedKey, random);
-					if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0) {
+					if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0)
 						b = true;
-					}
 				}
 			}
 			Unlock(u->lock);
@@ -267,9 +248,8 @@ static bool SamAuthUserByPassword(HUB *h, char *username, void *random, const vo
 // CLIENT_AUTHTYPE_PASSWORD: the secure password against a password user. The user's policy is read also when
 // the password is wrong: the error PACK of a refused login carries its NoSavePassword.
 static void SamAuthenticateSecurePassword(HUB *hub, AUTH_REQUEST *req, AUTH_RESULT *ret) {
-	if (req->SecurePassword == NULL) {
+	if (req->SecurePassword == NULL)
 		return;
-	}
 
 	ret->Ok = SamAuthUserByPassword(hub, req->Username, req->Random, req->SecurePassword);
 
@@ -280,9 +260,8 @@ static void SamAuthenticateSecurePassword(HUB *hub, AUTH_REQUEST *req, AUTH_RESU
 		UCHAR secure_empty_password[SHA1_SIZE];
 		HashPassword(hashed_empty_password, req->Username, "");
 		SecurePassword(secure_empty_password, hashed_empty_password, req->Random);
-		if (Cmp(req->SecurePassword, secure_empty_password, SHA1_SIZE) == 0) {
+		if (Cmp(req->SecurePassword, secure_empty_password, SHA1_SIZE) == 0)
 			ret->IsEmptyPassword = true;
-		}
 	}
 }
 
@@ -291,30 +270,26 @@ static void SamAuthenticatePlainPassword(HUB *hub, AUTH_REQUEST *req, AUTH_RESUL
 	UCHAR secure_password[SHA1_SIZE];
 	UCHAR hash_password[SHA1_SIZE];
 
-	if (req->PlainPassword == NULL) {
+	if (req->PlainPassword == NULL)
 		return;
-	}
 
 	HashPassword(hash_password, req->Username, req->PlainPassword);
 	SecurePassword(secure_password, hash_password, req->Random);
 	ret->Ok = SamAuthUserByPassword(hub, req->Username, req->Random, secure_password);
 
-	if (ret->Ok) {
+	if (ret->Ok)
 		ret->Policy = SamGetUserPolicy(hub, req->Username);
-	}
 
 	if (ret->Ok == false) {
 		ret->Ok = SamAuthUserByPlainPassword(hub, req->Username, req->PlainPassword, req->YieldForBlockingCall);
 
-		if (ret->Ok) {
+		if (ret->Ok)
 			ret->Policy = SamGetUserPolicy(hub, req->Username);
-		}
 	}
 
 	if (ret->Ok) {
-		if (IsEmptyStr(req->PlainPassword)) {
+		if (IsEmptyStr(req->PlainPassword))
 			ret->IsEmptyPassword = true;
-		}
 	}
 }
 
@@ -329,9 +304,8 @@ static void SamAuthenticateCert(HUB *hub, AUTH_REQUEST *req, AUTH_RESULT *ret) {
 		if (RsaVerifyEx(req->Random, SHA1_SIZE, req->Sign, req->SignSize, k)) {
 			// A matching signature proves the client holds this certificate.
 			ret->Ok = SamAuthUserByCert(hub, req);
-			if (ret->Ok) {
+			if (ret->Ok)
 				ret->ClientX = CloneX(x);
-			}
 		}
 		FreeK(k);
 	}
@@ -341,21 +315,18 @@ static void SamAuthenticateCert(HUB *hub, AUTH_REQUEST *req, AUTH_RESULT *ret) {
 // then the method of req->AuthType. The caller holds req->YieldForBlockingCall (if any), and holds it again
 // when this returns. ret receives the outcome; the caller frees ret->Policy (Free) and takes ret->ClientX.
 void SamAuthenticate(HUB *hub, AUTH_REQUEST *req, AUTH_RESULT *ret) {
-	if (ret == NULL) {
+	if (ret == NULL)
 		return;
-	}
 
 	Zero(ret, sizeof(AUTH_RESULT));
 	ret->Error = ERR_AUTH_FAILED;
 
-	if (hub == NULL || req == NULL || req->Username == NULL) {
+	if (hub == NULL || req == NULL || req->Username == NULL)
 		return;
-	}
 
 	ret->Ok = SamAuthUserByAnonymous(hub, req->Username);
-	if (ret->Ok) {
+	if (ret->Ok)
 		ret->IsEmptyPassword = true;
-	}
 
 	if (ret->Ok == false) {
 		switch (req->AuthType) {
@@ -380,9 +351,8 @@ void SamAuthenticate(HUB *hub, AUTH_REQUEST *req, AUTH_RESULT *ret) {
 		}
 	}
 
-	if (ret->Ok) {
+	if (ret->Ok)
 		ret->Error = ERR_NO_ERROR;
-	}
 }
 
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark) {
@@ -390,34 +360,29 @@ void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_s
 	char tmp_domain[MAX_SIZE];
 	TOKEN_LIST *t;
 
-	if (src_username != dst_username) {
+	if (src_username != dst_username)
 		ClearStr(dst_username, dst_username_size);
-	}
 
 	ClearStr(dst_domain, dst_domain_size);
-	if (src_username == NULL || dst_username == NULL || dst_domain == NULL) {
+	if (src_username == NULL || dst_username == NULL || dst_domain == NULL)
 		return;
-	}
 
 	StrCpy(tmp_username, sizeof(tmp_username), src_username);
 	ClearStr(tmp_domain, sizeof(tmp_domain));
 
 	if (do_not_parse_atmark == false) {
 		t = ParseTokenWithNullStr(tmp_username, "@");
-		if (t->NumTokens >= 1) {
+		if (t->NumTokens >= 1)
 			StrCpy(tmp_username, sizeof(tmp_username), t->Token[0]);
-		}
-		if (t->NumTokens >= 2) {
+		if (t->NumTokens >= 2)
 			StrCpy(tmp_domain, sizeof(tmp_domain), t->Token[1]);
-		}
 		FreeToken(t);
 	}
 
 	t = ParseTokenWithNullStr(tmp_username, "\\");
 	if (t->NumTokens >= 2) {
-		if (IsEmptyStr(tmp_domain)) {
+		if (IsEmptyStr(tmp_domain))
 			StrCpy(tmp_domain, sizeof(tmp_domain), t->Token[0]);
-		}
 
 		StrCpy(tmp_username, sizeof(tmp_username), t->Token[1]);
 	}

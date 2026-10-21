@@ -29,9 +29,8 @@
 
 static void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info) {
 	char client_ip[128], server_ip[128], proxy_ip[128], unique_id[128];
-	if (str == NULL || info == NULL) {
+	if (str == NULL || info == NULL)
 		return;
-	}
 
 	IPToStr4or6(client_ip, sizeof(client_ip), info->ClientIpAddress, info->ClientIpAddress6);
 	IPToStr4or6(server_ip, sizeof(server_ip), info->ServerIpAddress, info->ServerIpAddress6);
@@ -54,15 +53,13 @@ static bool ServerCheckHubAccess(CONNECTION *c, const HUB *hub) {
 	IP ip;
 	char ip_str[64];
 
-	if (hub->HubDb == NULL || c->FirstSock == NULL) {
+	if (hub->HubDb == NULL || c->FirstSock == NULL)
 		return true;
-	}
 
 	Copy(&ip, &c->FirstSock->RemoteIP, sizeof(IP));
 
-	if (IsIpDeniedByAcList(&ip, hub->HubDb->AcList) == false) {
+	if (IsIpDeniedByAcList(&ip, hub->HubDb->AcList) == false)
 		return true;
-	}
 
 	IPToStr(ip_str, sizeof(ip_str), &ip);
 	SLog(c->Cedar, "LS_IP_DENIED", c->Name, ip_str);
@@ -80,21 +77,18 @@ static UINT ChangePasswordAccept(CONNECTION *c, PACK *p) {
 	UCHAR check_secure_old_password[SHA1_SIZE];
 	UINT ret = ERR_NO_ERROR;
 	HUB *hub;
-	if (c == NULL || p == NULL) {
+	if (c == NULL || p == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	Copy(random, c->Random, SHA1_SIZE);
 	if (PackGetStr(p, "hubname", hubname, sizeof(hubname)) == false ||
 	    PackGetStr(p, "username", username, sizeof(username)) == false ||
 	    PackGetData2(p, "secure_old_password", secure_old_password, sizeof(secure_old_password)) == false ||
-	    PackGetData2(p, "new_password", new_password, sizeof(new_password)) == false) {
+	    PackGetData2(p, "new_password", new_password, sizeof(new_password)) == false)
 		return ERR_PROTOCOL_ERROR;
-	}
 
-	if (PackGetData2(p, "new_password_ntlm", new_password_ntlm, MD5_SIZE) == false) {
+	if (PackGetData2(p, "new_password_ntlm", new_password_ntlm, MD5_SIZE) == false)
 		Zero(new_password_ntlm, sizeof(new_password_ntlm));
-	}
 
 	CEDAR *cedar = c->Cedar;
 
@@ -138,12 +132,9 @@ static UINT ChangePasswordAccept(CONNECTION *c, PACK *p) {
 						bool fix_password = false;
 						if (u->Policy != NULL) {
 							fix_password = u->Policy->FixPassword;
-						} else {
-							if (u->Group != NULL) {
-								if (u->Group->Policy != NULL) {
-									fix_password = u->Group->Policy->FixPassword;
-								}
-							}
+						} else if (u->Group != NULL) {
+							if (u->Group->Policy != NULL)
+								fix_password = u->Group->Policy->FixPassword;
 						}
 						if (fix_password == false) {
 							AUTHPASSWORD *pw = (AUTHPASSWORD *)u->AuthData;
@@ -187,9 +178,8 @@ static void PackAddWelcomeMsg(PACK *p, RPC_WINVER *client_winver, wchar_t *msg) 
 
 	wchar_t *tmp = ZeroMalloc(tmpsize);
 
-	if (IsURLMsg(msg, NULL, 0) == false) {
+	if (IsURLMsg(msg, NULL, 0) == false)
 		UniStrCat(tmp, tmpsize, winver_msg_client);
-	}
 	UniStrCat(tmp, tmpsize, msg);
 
 	char *utf = CopyUniToUtf(tmp);
@@ -284,9 +274,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 	bool suppress_client_update_notification = false;
 	RPC_WINVER winver;
 
-	if (c == NULL || login == NULL) {
+	if (c == NULL || login == NULL)
 		return false;
-	}
 
 	Zero(&req, sizeof(req));
 	Zero(&hub_login, sizeof(hub_login));
@@ -302,9 +291,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 		goto CLEANUP;
 	}
 
-	if (ServerUploadHello(c) == false) {
+	if (ServerUploadHello(c) == false)
 		goto CLEANUP;
-	}
 
 
 	p = HttpServerRecv(c->FirstSock);
@@ -330,9 +318,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 	c->ClientBuild = PackGetInt(p, "client_build");
 
 	if (SearchStrEx(c->ClientStr, "server", 0, false) != INFINITE ||
-	    SearchStrEx(c->ClientStr, "bridge", 0, false) != INFINITE) {
+	    SearchStrEx(c->ClientStr, "bridge", 0, false) != INFINITE)
 		is_server_or_bridge = true;
-	}
 
 	InRpcWinVer(&winver, p);
 
@@ -343,9 +330,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 
 		c->Type = CONNECTION_TYPE_LOGIN;
 
-		if (PackGetStr(p, "hello", c->ClientStr, sizeof(c->ClientStr)) == false) {
+		if (PackGetStr(p, "hello", c->ClientStr, sizeof(c->ClientStr)) == false)
 			StrCpy(c->ClientStr, sizeof(c->ClientStr), "Unknown");
-		}
 
 		c->Protocol = GetProtocolFromPack(p);
 
@@ -355,13 +341,11 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 			goto CLEANUP;
 		}
 
-		if (req.UseUdpAcceleration && IsZeroIP(&req.UdpAccelClientIp)) {
+		if (req.UseUdpAcceleration && IsZeroIP(&req.UdpAccelClientIp))
 			Copy(&req.UdpAccelClientIp, &c->FirstSock->RemoteIP, sizeof(IP));
-		}
 
-		if (is_server_or_bridge) {
+		if (is_server_or_bridge)
 			req.RequireBridgeRoutingMode = true;
-		}
 
 		LockHubList(c->Cedar);
 		{
@@ -406,23 +390,19 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 				goto CLEANUP;
 			}
 
-			if (c->CipherName != NULL) {
+			if (c->CipherName != NULL)
 				Free(c->CipherName);
-			}
 			c->CipherName = NULL;
 
-			if (c->SslVersion != NULL) {
+			if (c->SslVersion != NULL)
 				Free(c->SslVersion);
-			}
 			c->SslVersion = NULL;
 
-			if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->CipherName) == false) {
+			if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->CipherName) == false)
 				c->CipherName = CopyStr(c->FirstSock->CipherName);
-			}
 
-			if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->SslVersion) == false) {
+			if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->SslVersion) == false)
 				c->SslVersion = CopyStr(c->FirstSock->SslVersion);
-			}
 
 			authtype_str = _UU("LH_AUTH_UNKNOWN");
 			switch (req.AuthType) {
@@ -489,9 +469,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 				Free(auth_result.Policy);
 			}
 
-			if (auth_result.ClientX != NULL) {
+			if (auth_result.ClientX != NULL)
 				c->ClientX = auth_result.ClientX;
-			}
 
 			if (auth_result.Ok == false) {
 				if (auth_result.Error == ERR_AUTH_FAILED) {
@@ -545,9 +524,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 			}
 
 			timeout = hub_login.Policy->TimeOut * 1000;
-			if (timeout == 0) {
+			if (timeout == 0)
 				timeout = TIMEOUT_DEFAULT;
-			}
 			timeout = MIN(timeout, TIMEOUT_MAX);
 			timeout = MAX(timeout, TIMEOUT_MIN);
 
@@ -563,9 +541,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 			if (hub_login.QoS) {
 				// VoIP / QoS needs at least 2 connections.
 				max_connection = MAX(max_connection, 2);
-				if (req.HalfConnection) {
+				if (req.HalfConnection)
 					max_connection = MAX(max_connection, 4);
-				}
 			}
 
 			c->Status = CONNECTION_STATUS_ESTABLISHED;
@@ -638,9 +615,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 
 			HLog(hub, "LH_NODE_INFO", s->Name, tmp);
 
-			if (s->VLanId != 0) {
+			if (s->VLanId != 0)
 				HLog(hub, "LH_VLAN_ID", s->Name, s->VLanId);
-			}
 		}
 
 		StartTunnelingMode(c);
@@ -651,9 +627,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 			ts->Direction = TCP_CLIENT_TO_SERVER;
 		}
 
-		if (s->LocalHostSession) {
+		if (s->LocalHostSession)
 			RefreshLocalMacAddressList();
-		}
 
 		DeleteAllUserListCache(hub->UserList);
 
@@ -694,16 +669,14 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 		c->Err = 0;
 		Lock(s->lock);
 		{
-			if (s->Connection->Protocol != CONNECTION_TCP) {
+			if (s->Connection->Protocol != CONNECTION_TCP)
 				c->Err = ERR_INVALID_PROTOCOL;
-			}
 		}
 		Unlock(s->lock);
 		Lock(s->Connection->lock);
 		if (c->Err == 0) {
-			if (Count(s->Connection->CurrentNumConnection) > s->MaxConnection) {
+			if (Count(s->Connection->CurrentNumConnection) > s->MaxConnection)
 				c->Err = ERR_TOO_MANY_CONNECTION;
-			}
 		}
 		if (c->Err != 0) {
 			Unlock(s->Connection->lock);
@@ -724,17 +697,15 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 				c2s = s2c = 0;
 				for (UINT i = 0; i < LIST_NUM(s->Connection->Tcp->TcpSockList); i++) {
 					TCPSOCK *ts = (TCPSOCK *)LIST_DATA(s->Connection->Tcp->TcpSockList, i);
-					if (ts->Direction == TCP_SERVER_TO_CLIENT) {
+					if (ts->Direction == TCP_SERVER_TO_CLIENT)
 						s2c++;
-					} else {
+					else
 						c2s++;
-					}
 				}
-				if (s2c > c2s) {
+				if (s2c > c2s)
 					direction = TCP_CLIENT_TO_SERVER;
-				} else {
+				else
 					direction = TCP_SERVER_TO_CLIENT;
-				}
 				ts->Direction = direction;
 			}
 		}
@@ -779,9 +750,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 			num = LIST_NUM(c->Cedar->HubList);
 			for (UINT i = 0; i < num; i++) {
 				HUB *h = LIST_DATA(c->Cedar->HubList, i);
-				if (h->Option->NoEnum == false) {
+				if (h->Option->NoEnum == false)
 					Insert(o, CopyStr(h->Name));
-				}
 			}
 		}
 		UnlockList(c->Cedar->HubList);
@@ -834,9 +804,8 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login) {
 	}
 
 CLEANUP:
-	if (hub_login.User != NULL) {
+	if (hub_login.User != NULL)
 		ReleaseUser(hub_login.User);
-	}
 
 	ServerAcceptEnd(c, supress_return_pack_error == false, no_save_password);
 
@@ -846,9 +815,8 @@ CLEANUP:
 // Runs a session that ServerAccept logged in until it ends, gives its hub slot back, releases the login's
 // references and ends the connection. Does nothing when ServerAccept handed over no session.
 void ServerRunSession(CONNECTION *c, SERVER_LOGIN *login) {
-	if (c == NULL || login == NULL || login->Session == NULL) {
+	if (c == NULL || login == NULL || login->Session == NULL)
 		return;
-	}
 
 	SESSION *s = login->Session;
 	HUB *hub = login->Hub;
@@ -873,9 +841,8 @@ void ServerRunSession(CONNECTION *c, SERVER_LOGIN *login) {
 
 	ReleaseHub(hub);
 
-	if (login->User != NULL) {
+	if (login->User != NULL)
 		ReleaseUser(login->User);
-	}
 
 	ServerAcceptEnd(c, true, login->NoSavePassword);
 
@@ -885,18 +852,16 @@ void ServerRunSession(CONNECTION *c, SERVER_LOGIN *login) {
 // Reads the fields of the client's "login" PACK that the hub-side login steps and the new session use.
 // Reads the PACK only. False when the PACK has no user name or no hub name.
 bool ParseLoginRequest(PACK *p, LOGIN_REQ *req) {
-	if (p == NULL || req == NULL) {
+	if (p == NULL || req == NULL)
 		return false;
-	}
 
 	Zero(req, sizeof(LOGIN_REQ));
 
 	InRpcNodeInfo(&req->NodeInfo, p);
 
 	req->AuthType = GetAuthTypeFromPack(p);
-	if (GetHubnameAndUsernameFromPack(p, req->Username, sizeof(req->Username), req->HubName, sizeof(req->HubName)) == false) {
+	if (GetHubnameAndUsernameFromPack(p, req->Username, sizeof(req->Username), req->HubName, sizeof(req->HubName)) == false)
 		return false;
-	}
 
 	req->UseEncrypt = PackGetInt(p, "use_encrypt") == 0 ? false : true;
 	req->UseCompress = PackGetInt(p, "use_compress") == 0 ? false : true;
@@ -907,9 +872,8 @@ bool ParseLoginRequest(PACK *p, LOGIN_REQ *req) {
 	req->AdjustMss = PackGetInt(p, "adjust_mss");
 	req->UseUdpAcceleration = PackGetBool(p, "use_udp_acceleration");
 	req->UdpAccelMaxVersion = PackGetInt(p, "udp_acceleration_max_version");
-	if (req->UdpAccelMaxVersion == 0) {
+	if (req->UdpAccelMaxVersion == 0)
 		req->UdpAccelMaxVersion = 1;
-	}
 	req->UseHMacOnUdpAcceleration = PackGetBool(p, "support_hmac_on_udp_acceleration");
 	req->UdpAccelFastDisconnectDetect = PackGetBool(p, "support_udp_accel_fast_disconnect_detect");
 
@@ -921,21 +885,18 @@ bool ParseLoginRequest(PACK *p, LOGIN_REQ *req) {
 			req->UseUdpAcceleration = false;
 		} else {
 			req->UdpAccelClientPort = PackGetInt(p, "udp_acceleration_client_port");
-			if (req->UdpAccelClientPort == 0) {
+			if (req->UdpAccelClientPort == 0)
 				req->UseUdpAcceleration = false;
-			}
 		}
 	}
 
 	req->RequireBridgeRoutingMode = PackGetBool(p, "require_bridge_routing_mode");
 	req->RequireMonitorMode = PackGetBool(p, "require_monitor_mode");
-	if (req->RequireMonitorMode) {
+	if (req->RequireMonitorMode)
 		req->QoS = false;
-	}
 
-	if (PackGetDataSize(p, "unique_id") == SHA1_SIZE) {
+	if (PackGetDataSize(p, "unique_id") == SHA1_SIZE)
 		PackGetData(p, "unique_id", req->UniqueId);
-	}
 
 	return true;
 }
@@ -952,9 +913,8 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 	UCHAR unique2[SHA1_SIZE];
 	bool local_host_session = false;
 
-	if (hub == NULL || c == NULL || req == NULL || login == NULL) {
+	if (hub == NULL || c == NULL || req == NULL || login == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	bool qos = req->QoS;
 
@@ -962,9 +922,8 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 		user = AcGetUser(hub, req->Username);
 		if (user == NULL) {
 			user = AcGetUser(hub, "*");
-			if (user == NULL) {
+			if (user == NULL)
 				return ERR_ACCESS_DENIED;
-			}
 		}
 
 		policy = NULL;
@@ -987,21 +946,17 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 
 			if (user->Policy != NULL) {
 				policy = ClonePolicy(user->Policy);
-			} else {
-				if (group) {
-					Lock(group->lock);
-					{
-						if (group->Policy != NULL) {
-							policy = ClonePolicy(group->Policy);
-						}
-					}
-					Unlock(group->lock);
+			} else if (group) {
+				Lock(group->lock);
+				{
+					if (group->Policy != NULL)
+						policy = ClonePolicy(group->Policy);
 				}
+				Unlock(group->lock);
 			}
 
-			if (group != NULL) {
+			if (group != NULL)
 				ReleaseGroup(group);
-			}
 		}
 		Unlock(user->lock);
 		login->User = user;
@@ -1014,22 +969,18 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 		policy->MonitorPort = true;
 	}
 
-	if (policy == NULL) {
+	if (policy == NULL)
 		policy = ClonePolicy(GetDefaultPolicy());
-	}
 
-	if (policy->MaxConnection == 0) {
+	if (policy->MaxConnection == 0)
 		policy->MaxConnection = MAX_TCP_CONNECTION;
-	}
 
-	if (policy->TimeOut == 0) {
+	if (policy->TimeOut == 0)
 		policy->TimeOut = 20;
-	}
 
 	if (qos) {
-		if (policy->NoQoS) {
+		if (policy->NoQoS)
 			qos = false;
-		}
 		if (GetHubAdminOption(hub, "deny_qos") != 0) {
 			qos = false;
 			policy->NoQoS = true;
@@ -1054,13 +1005,11 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 		}
 	}
 
-	if (GetHubAdminOption(hub, "deny_bridge") != 0) {
+	if (GetHubAdminOption(hub, "deny_bridge") != 0)
 		policy->NoBridge = true;
-	}
 
-	if (GetHubAdminOption(hub, "deny_routing") != 0) {
+	if (GetHubAdminOption(hub, "deny_routing") != 0)
 		policy->NoRouting = true;
-	}
 
 	if (hub->Option->ClientMinimumRequiredBuild > c->ClientBuild &&
 	    InStrEx(c->ClientStr, "client", false)) {
@@ -1101,14 +1050,12 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 	}
 
 	if (policy->MonitorPort) {
-		if (req->RequireMonitorMode == false) {
+		if (req->RequireMonitorMode == false)
 			policy->MonitorPort = false;
-		}
 	}
 
-	if (policy->MonitorPort) {
+	if (policy->MonitorPort)
 		qos = false;
-	}
 
 	if (req->RequireBridgeRoutingMode &&
 	    (policy->NoBridge && policy->NoRouting)) {
@@ -1124,17 +1071,15 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 	}
 
 	GenerateMachineUniqueHash(c->Cedar, unique2);
-	if (Cmp(req->UniqueId, unique2, SHA1_SIZE) == 0) {
+	if (Cmp(req->UniqueId, unique2, SHA1_SIZE) == 0)
 		local_host_session = true;
-	}
 
 	if (local_host_session == false) {
 		SOCK *s = c->FirstSock;
 
 		if (s != NULL) {
-			if (IsIPMyHost(&s->RemoteIP)) {
+			if (IsIPMyHost(&s->RemoteIP))
 				local_host_session = true;
-			}
 		}
 	}
 
@@ -1157,9 +1102,8 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, HUB_SESSION_SLOT *slot) {
 	bool use_client_license = false, use_bridge_license = false;
 
-	if (hub == NULL) {
+	if (hub == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 	if (c == NULL || req == NULL || login == NULL || login->Policy == NULL || slot == NULL) {
 		Unlock(hub->lock);
 		return ERR_INTERNAL_ERROR;
@@ -1171,11 +1115,10 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 
 	if (login->LocalHostSession == false) {
 
-		if (policy->NoBridge == false || policy->NoRouting == false) {
+		if (policy->NoBridge == false || policy->NoRouting == false)
 			use_bridge_license = true;
-		} else {
+		else
 			use_client_license = true;
-		}
 	}
 
 
@@ -1185,11 +1128,10 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 		UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
 
 		if (ao != 0) {
-			if (max_logins != 0) {
+			if (max_logins != 0)
 				max_logins = MIN(max_logins, ao);
-			} else {
+			else
 				max_logins = ao;
-			}
 		}
 
 		if (max_logins != 0) {
@@ -1291,13 +1233,11 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 	}
 
 	Inc(hub->NumSessions);
-	if (use_bridge_license) {
+	if (use_bridge_license)
 		Inc(hub->NumSessionsBridge);
-	}
 
-	if (use_client_license) {
+	if (use_client_license)
 		Inc(hub->NumSessionsClient);
-	}
 	Inc(hub->Cedar->CurrentSessions);
 
 	slot->Hub = hub;
@@ -1309,19 +1249,16 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 
 // Takes the licence counters of an admitted session's slot on Cedar
 void HubAssignSessionLicense(HUB_SESSION_SLOT *slot) {
-	if (slot == NULL || slot->Hub == NULL) {
+	if (slot == NULL || slot->Hub == NULL)
 		return;
-	}
 
 	CEDAR *cedar = slot->Hub->Cedar;
 
-	if (slot->UseBridgeLicense) {
+	if (slot->UseBridgeLicense)
 		Inc(cedar->AssignedBridgeLicense);
-	}
 
-	if (slot->UseClientLicense) {
+	if (slot->UseClientLicense)
 		Inc(cedar->AssignedClientLicense);
-	}
 
 	slot->LicenseAssigned = true;
 }
@@ -1329,34 +1266,29 @@ void HubAssignSessionLicense(HUB_SESSION_SLOT *slot) {
 // Gives back every counter a slot holds (HubAdmitSession, HubAssignSessionLicense), under hub->lock, and empties the
 // slot. Does nothing for an empty slot.
 void HubReleaseSessionSlot(HUB_SESSION_SLOT *slot) {
-	if (slot == NULL || slot->Hub == NULL) {
+	if (slot == NULL || slot->Hub == NULL)
 		return;
-	}
 
 	HUB *hub = slot->Hub;
 	CEDAR *cedar = hub->Cedar;
 
 	Lock(hub->lock);
 	{
-		if (slot->UseBridgeLicense) {
+		if (slot->UseBridgeLicense)
 			Dec(hub->NumSessionsBridge);
-		}
 
-		if (slot->UseClientLicense) {
+		if (slot->UseClientLicense)
 			Dec(hub->NumSessionsClient);
-		}
 
 		Dec(hub->NumSessions);
 		Dec(cedar->CurrentSessions);
 
 		if (slot->LicenseAssigned) {
-			if (slot->UseBridgeLicense) {
+			if (slot->UseBridgeLicense)
 				Dec(cedar->AssignedBridgeLicense);
-			}
 
-			if (slot->UseClientLicense) {
+			if (slot->UseClientLicense)
 				Dec(cedar->AssignedClientLicense);
-			}
 		}
 	}
 	Unlock(hub->lock);
@@ -1368,9 +1300,8 @@ void HubReleaseSessionSlot(HUB_SESSION_SLOT *slot) {
 // slot's licence (HubAssignSessionLicense) and sets c->Session. Runs under hub->lock, so the UDP acceleration
 // socket (NewUdpAccel) is created under it.
 SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HUB_SESSION_SLOT *slot) {
-	if (c == NULL || hub == NULL || prm == NULL || prm->Policy == NULL || slot == NULL) {
+	if (c == NULL || hub == NULL || prm == NULL || prm->Policy == NULL || slot == NULL)
 		return NULL;
-	}
 
 	SERVER *server = c->Cedar->Server;
 	POLICY *policy = prm->Policy;
@@ -1394,9 +1325,8 @@ SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HU
 		s->UdpAccelFastDisconnectDetect = prm->UdpAccelFastDisconnectDetect;
 	}
 
-	if (hub->Option->DisableUdpAcceleration) {
+	if (hub->Option->DisableUdpAcceleration)
 		s->UseUdpAcceleration = false;
-	}
 
 	if (s->UseUdpAcceleration) {
 		s->UdpAccel = NewUdpAccel(c->Cedar, &c->FirstSock->LocalIP, false);
@@ -1406,15 +1336,13 @@ SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HU
 			s->UdpAccel->Version = prm->UdpAccelVersion;
 
 			if (UdpAccelInitServer(s->UdpAccel, prm->UdpAccelClientKey,
-			                       &c->FirstSock->RemoteIP, &prm->UdpAccelClientIp, prm->UdpAccelClientPort) == false) {
+			                       &c->FirstSock->RemoteIP, &prm->UdpAccelClientIp, prm->UdpAccelClientPort) == false)
 				s->UseUdpAcceleration = false;
-			}
 
 			s->UdpAccel->FastDetect = s->UdpAccelFastDisconnectDetect;
 
-			if (prm->UseEncrypt == false) {
+			if (prm->UseEncrypt == false)
 				s->UdpAccel->PlainTextMode = true;
-			}
 
 			s->UdpAccel->UseHMac = prm->UseHMacOnUdpAcceleration;
 
@@ -1423,9 +1351,8 @@ SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HU
 	}
 
 	s->AdjustMss = prm->AdjustMss;
-	if (s->AdjustMss != 0) {
+	if (s->AdjustMss != 0)
 		AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "AdjustMSS", s->AdjustMss);
-	}
 
 	s->IsBridgeMode = (policy->NoBridge == false) || (policy->NoRouting == false);
 	s->IsMonitorMode = policy->MonitorPort;
@@ -1464,9 +1391,8 @@ SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HU
 }
 
 PACK *PackWelcome(SESSION *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	PACK *p = NewPack();
 
@@ -1488,9 +1414,8 @@ PACK *PackWelcome(SESSION *s) {
 
 	PackAddInt(p, "vlan_id", s->VLanId);
 
-	if (s->NoSendSignature) {
+	if (s->NoSendSignature)
 		PackAddBool(p, "no_send_signature", true);
-	}
 
 	if (s->UdpAccel != NULL) {
 		PackAddBool(p, "use_udp_acceleration", true);
@@ -1515,9 +1440,8 @@ PACK *PackWelcome(SESSION *s) {
 }
 
 void PackAddPolicy(PACK *p, POLICY *y) {
-	if (p == NULL || y == NULL) {
+	if (p == NULL || y == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < NUM_POLICY_ITEM; i++) {
 		POLICY_ITEM *item = &policy_item[i];
@@ -1525,11 +1449,10 @@ void PackAddPolicy(PACK *p, POLICY *y) {
 
 		Format(name, sizeof(name), "policy:%s", item->Name);
 
-		if (item->TypeInt) {
+		if (item->TypeInt)
 			PackAddInt(p, name, GetPolicyValue(y, i));
-		} else {
+		else
 			PackAddBool(p, name, GetPolicyValue(y, i) != 0);
-		}
 	}
 
 	// Ver 3 flag
@@ -1537,9 +1460,8 @@ void PackAddPolicy(PACK *p, POLICY *y) {
 }
 
 bool ServerUploadHello(CONNECTION *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return false;
-	}
 
 	Rand(c->Random, SHA1_SIZE);
 
@@ -1561,9 +1483,8 @@ bool ServerDownloadSignature(CONNECTION *c) {
 	UINT data_size;
 	UINT num = 0, max = 19;
 	char *vpn_http_target = HTTP_VPN_TARGET2;
-	if (c == NULL) {
+	if (c == NULL)
 		return false;
-	}
 
 	SOCK *s = c->FirstSock;
 
@@ -1599,43 +1520,35 @@ bool ServerDownloadSignature(CONNECTION *c) {
 				c->Err = ERR_DISCONNECTED;
 				return false;
 			}
-			if (StrCmpi(h->Target, vpn_http_target) != 0) {
+			if (StrCmpi(h->Target, vpn_http_target) != 0)
 				HttpSendDecoyPage(s, 404, h);
-			} else {
-				if ((data_size == StrLen(HTTP_VPN_TARGET_POSTDATA) && (Cmp(data, HTTP_VPN_TARGET_POSTDATA, data_size) == 0)) || ((data_size >= WaterMarkSize) && Cmp(data, WaterMark, WaterMarkSize) == 0)) {
-					signature_ok = true;
-				} else {
-					HttpSendDecoyPage(s, 403, h);
-				}
-			}
+			else if ((data_size == StrLen(HTTP_VPN_TARGET_POSTDATA) && (Cmp(data, HTTP_VPN_TARGET_POSTDATA, data_size) == 0)) || ((data_size >= WaterMarkSize) && Cmp(data, WaterMark, WaterMarkSize) == 0))
+				signature_ok = true;
+			else
+				HttpSendDecoyPage(s, 403, h);
 
 			// The one release of the body of a received POST, whatever the comparison found
 			Free(data);
 			FreeHttpHeader(h);
 
-			if (signature_ok) {
+			if (signature_ok)
 				return true;
-			}
 		} else {
 			// Not a VPN client, but still answer plain HTTP.
-			if (StrCmpi(h->Method, "GET") != 0 && StrCmpi(h->Method, "HEAD") != 0 && StrCmpi(h->Method, "POST") != 0) {
+			if (StrCmpi(h->Method, "GET") != 0 && StrCmpi(h->Method, "HEAD") != 0 && StrCmpi(h->Method, "POST") != 0)
 				HttpSendDecoyPage(s, 501, h);
-			} else {
-				if (StrCmpi(h->Target, "/") == 0) {
-					HttpSendDecoyPage(s, 403, h);
-				} else {
-					HttpSendDecoyPage(s, 404, h);
-				}
-			}
+			else if (StrCmpi(h->Target, "/") == 0)
+				HttpSendDecoyPage(s, 403, h);
+			else
+				HttpSendDecoyPage(s, 404, h);
 			FreeHttpHeader(h);
 		}
 	}
 }
 
 PACK *PackHello(void *random, UINT ver, UINT build, char *server_str) {
-	if (random == NULL || server_str == NULL) {
+	if (random == NULL || server_str == NULL)
 		return NULL;
-	}
 
 	PACK *p = NewPack();
 	PackAddStr(p, "hello", server_str);
@@ -1647,41 +1560,35 @@ PACK *PackHello(void *random, UINT ver, UINT build, char *server_str) {
 }
 
 UINT GetAuthTypeFromPack(PACK *p) {
-	if (p == NULL) {
+	if (p == NULL)
 		return 0;
-	}
 
 	return PackGetInt(p, "authtype");
 }
 
 bool GetHubnameAndUsernameFromPack(PACK *p, char *username, UINT username_size,
                                    char *hubname, UINT hubname_size) {
-	if (p == NULL || username == NULL || hubname == NULL) {
+	if (p == NULL || username == NULL || hubname == NULL)
 		return false;
-	}
 
-	if (PackGetStr(p, "username", username, username_size) == false) {
+	if (PackGetStr(p, "username", username, username_size) == false)
 		return false;
-	}
-	if (PackGetStr(p, "hubname", hubname, hubname_size) == false) {
+	if (PackGetStr(p, "hubname", hubname, hubname_size) == false)
 		return false;
-	}
 	return true;
 }
 
 UINT GetProtocolFromPack(PACK *p) {
-	if (p == NULL) {
+	if (p == NULL)
 		return 0;
-	}
 
 	// Only TCP is supported.
 	return CONNECTION_TCP;
 }
 
 bool GetMethodFromPack(PACK *p, char *method, UINT size) {
-	if (p == NULL || method == NULL || size == 0) {
+	if (p == NULL || method == NULL || size == 0)
 		return false;
-	}
 
 	return PackGetStr(p, "method", method, size);
 }

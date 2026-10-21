@@ -16,14 +16,12 @@
 
 static void CtPrintRow(CONSOLE *c, UINT num, const UINT *widths, wchar_t **strings, const bool *rights, char separate_char) {
 	bool is_sep_line = true;
-	if (c == NULL || num == 0 || widths == NULL || strings == NULL || rights == NULL) {
+	if (c == NULL || num == 0 || widths == NULL || strings == NULL || rights == NULL)
 		return;
-	}
 
 	UINT buf_size = 32;
-	for (UINT i = 0; i < num; i++) {
+	for (UINT i = 0; i < num; i++)
 		buf_size += sizeof(wchar_t) * widths[i] + 6;
-	}
 
 	wchar_t *buf = ZeroMalloc(buf_size);
 
@@ -43,22 +41,19 @@ static void CtPrintRow(CONSOLE *c, UINT num, const UINT *widths, wchar_t **strin
 
 		UINT w = UniStrWidth(string);
 
-		if (widths[i] >= w) {
+		if (widths[i] >= w)
 			space = widths[i] - w;
-		}
 
 		char *tmp = MakeCharArray(' ', space);
 		wchar_t *space_string = CopyStrToUni(tmp);
 
-		if (rights[i] != false) {
+		if (rights[i] != false)
 			UniStrCat(buf, buf_size, space_string);
-		}
 
 		UniStrCat(buf, buf_size, string);
 
-		if (rights[i] == false) {
+		if (rights[i] == false)
 			UniStrCat(buf, buf_size, space_string);
-		}
 
 		Free(space_string);
 		Free(tmp);
@@ -67,11 +62,10 @@ static void CtPrintRow(CONSOLE *c, UINT num, const UINT *widths, wchar_t **strin
 			wchar_t tmp[4];
 			char str[2];
 
-			if (UniStrCmpi(strings[i], L"---") == 0) {
+			if (UniStrCmpi(strings[i], L"---") == 0)
 				str[0] = '+';
-			} else {
+			else
 				str[0] = separate_char;
-			}
 			str[1] = 0;
 
 			StrToUni(tmp, sizeof(tmp), str);
@@ -79,17 +73,15 @@ static void CtPrintRow(CONSOLE *c, UINT num, const UINT *widths, wchar_t **strin
 			UniStrCat(buf, buf_size, tmp);
 		}
 
-		if (tmp_line != NULL) {
+		if (tmp_line != NULL)
 			Free(tmp_line);
-		}
 	}
 
 	UniTrimRight(buf);
 
 	if (is_sep_line) {
-		if (UniStrLen(buf) > (c->GetWidth(c) - 1)) {
+		if (UniStrLen(buf) > (c->GetWidth(c) - 1))
 			buf[c->GetWidth(c) - 1] = 0;
-		}
 	}
 
 	c->Write(c, buf);
@@ -98,9 +90,8 @@ static void CtPrintRow(CONSOLE *c, UINT num, const UINT *widths, wchar_t **strin
 }
 
 static void CtPrintStandard(CT *ct, CONSOLE *c) {
-	if (ct == NULL || c == NULL) {
+	if (ct == NULL || c == NULL)
 		return;
-	}
 
 	CT *t = CtNewStandard();
 	for (UINT i = 0; i < LIST_NUM(ct->Rows); i++) {
@@ -112,18 +103,16 @@ static void CtPrintStandard(CT *ct, CONSOLE *c) {
 			CtInsert(t, column->String, row->Strings[j]);
 		}
 
-		if (i != (LIST_NUM(ct->Rows) - 1)) {
+		if (i != (LIST_NUM(ct->Rows) - 1))
 			CtInsert(t, L"---", L"---");
-		}
 	}
 
 	CtFree(t, c);
 }
 
 static void CtPrint(CT *ct, CONSOLE *c) {
-	if (ct == NULL || c == NULL) {
+	if (ct == NULL || c == NULL)
 		return;
-	}
 
 	UINT num = LIST_NUM(ct->Columns);
 	UINT *widths = ZeroMalloc(sizeof(UINT) * num);
@@ -163,9 +152,8 @@ static void CtPrint(CT *ct, CONSOLE *c) {
 
 	CtPrintRow(c, num, widths, header_strings, rights, '+');
 
-	for (UINT i = 0; i < num; i++) {
+	for (UINT i = 0; i < num; i++)
 		Free(header_strings[i]);
-	}
 
 	for (UINT j = 0; j < LIST_NUM(ct->Rows); j++) {
 		CTR *ctr = LIST_DATA(ct->Rows, j);
@@ -183,15 +171,13 @@ static void CtEscapeCsv(wchar_t *dst, UINT size, const wchar_t *src) {
 	bool need_to_escape = false;
 	wchar_t tmp[2] = L"*";
 
-	if (src == NULL || dst == NULL) {
+	if (src == NULL || dst == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < len; i++) {
 		tmp[0] = src[i];
-		if (tmp[0] == L","[0] || tmp[0] == L"\n"[0] || tmp[0] == L"\""[0]) {
+		if (tmp[0] == L","[0] || tmp[0] == L"\n"[0] || tmp[0] == L"\""[0])
 			need_to_escape = true;
-		}
 	}
 	if (need_to_escape == false) {
 		UniStrCpy(dst, size, src);
@@ -204,9 +190,8 @@ static void CtEscapeCsv(wchar_t *dst, UINT size, const wchar_t *src) {
 	if (idx < size - 1) {
 		for (UINT i = 0; i < len; i++) {
 			tmp[0] = src[i];
-			if (tmp[0] == L"\""[0]) {
+			if (tmp[0] == L"\""[0])
 				UniStrCat(dst, size, tmp);
-			}
 			UniStrCat(dst, size, tmp);
 		}
 	}
@@ -243,20 +228,16 @@ static void CtPrintCsv(CT *ct, CONSOLE *c) {
 }
 
 void CtFreeEx(CT *ct, CONSOLE *c, bool standard_view) {
-	if (ct == NULL) {
+	if (ct == NULL)
 		return;
-	}
 
 	if (c != NULL) {
-		if (c->ConsoleType == CONSOLE_CSV) {
+		if (c->ConsoleType == CONSOLE_CSV)
 			CtPrintCsv(ct, c);
-		} else {
-			if (standard_view == false) {
-				CtPrint(ct, c);
-			} else {
-				CtPrintStandard(ct, c);
-			}
-		}
+		else if (standard_view == false)
+			CtPrint(ct, c);
+		else
+			CtPrintStandard(ct, c);
 	}
 
 	UINT num = LIST_NUM(ct->Columns);
@@ -264,9 +245,8 @@ void CtFreeEx(CT *ct, CONSOLE *c, bool standard_view) {
 	for (UINT i = 0; i < LIST_NUM(ct->Rows); i++) {
 		CTR *ctr = LIST_DATA(ct->Rows, i);
 
-		for (UINT j = 0; j < num; j++) {
+		for (UINT j = 0; j < num; j++)
 			Free(ctr->Strings[j]);
-		}
 
 		Free(ctr->Strings);
 		Free(ctr);
@@ -290,9 +270,8 @@ void CtFree(CT *ct, CONSOLE *c) {
 
 void CtInsert(CT *ct, ...) {
 	va_list va;
-	if (ct == NULL) {
+	if (ct == NULL)
 		return;
-	}
 
 	UINT num = LIST_NUM(ct->Columns);
 
@@ -313,12 +292,10 @@ void CtInsert(CT *ct, ...) {
 }
 
 void CtInsertColumn(CT *ct, wchar_t *str, bool right) {
-	if (ct == NULL) {
+	if (ct == NULL)
 		return;
-	}
-	if (str == NULL) {
+	if (str == NULL)
 		str = L"";
-	}
 
 	CTC *ctc = ZeroMalloc(sizeof(CTC));
 	ctc->String = CopyUniStr(str);

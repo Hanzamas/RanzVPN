@@ -24,9 +24,8 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 	wchar_t tmp[MAX_SIZE];
 	char str[MAX_SIZE];
 	char vv[128];
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	if (server_mode == false) {
 		CtInsert(ct, _UU("CM_ST_ACCOUNT_NAME"), s->AccountName);
@@ -60,11 +59,10 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 	}
 
 	if (s->Connected) {
-		if (s->VLanId == 0) {
+		if (s->VLanId == 0)
 			UniStrCpy(tmp, sizeof(tmp), _UU("CM_ST_NO_VLAN"));
-		} else {
+		else
 			UniToStru(tmp, s->VLanId);
-		}
 
 		CtInsert(ct, _UU("CM_ST_VLAN_ID"), tmp);
 
@@ -119,17 +117,14 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 		UniFormat(tmp, sizeof(tmp), L"%u", s->MaxTcpConnections);
 		CtInsert(ct, _UU("CM_ST_MAX_TCP"), tmp);
 
-		if (s->UseEncrypt == false) {
+		if (s->UseEncrypt == false)
 			UniStrCpy(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_FALSE"));
-		} else {
-			if (StrLen(s->CipherName) != 0 && StrLen(s->ProtocolName) != 0) {
-				UniFormat(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_TRUE3"), s->ProtocolName, s->CipherName);
-			} else if (StrLen(s->CipherName) != 0) {
-				UniFormat(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_TRUE"), s->CipherName);
-			} else {
-				UniFormat(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_TRUE2"));
-			}
-		}
+		else if (StrLen(s->CipherName) != 0 && StrLen(s->ProtocolName) != 0)
+			UniFormat(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_TRUE3"), s->ProtocolName, s->CipherName);
+		else if (StrLen(s->CipherName) != 0)
+			UniFormat(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_TRUE"), s->CipherName);
+		else
+			UniFormat(tmp, sizeof(tmp), _UU("CM_ST_USE_ENCRYPT_TRUE2"));
 		CtInsert(ct, _UU("CM_ST_USE_ENCRYPT"), tmp);
 
 		if (s->UseCompress) {
@@ -163,9 +158,8 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 		CtInsert(ct, _UU("CM_ST_SESSION_NAME"), tmp);
 
 		StrToUni(tmp, sizeof(tmp), s->ConnectionName);
-		if (UniStrCmpi(tmp, L"INITING") != 0) {
+		if (UniStrCmpi(tmp, L"INITING") != 0)
 			CtInsert(ct, _UU("CM_ST_CONNECTION_NAME"), tmp);
-		}
 
 		BinToStr(str, sizeof(str), s->SessionKey, sizeof(s->SessionKey));
 		StrToUni(tmp, sizeof(tmp), str);
@@ -226,9 +220,8 @@ UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) 
 	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	char *pw = GetParamStr(o, "[password]");
 
@@ -249,9 +242,8 @@ UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) 
 }
 
 wchar_t *CmdPromptChoosePassword(CONSOLE *c, void *param) {
-	if (c == NULL) {
+	if (c == NULL)
 		return NULL;
-	}
 
 	char *s = CmdPasswordPrompt(c);
 
@@ -268,9 +260,8 @@ wchar_t *CmdPromptChoosePassword(CONSOLE *c, void *param) {
 
 char *CmdPasswordPrompt(CONSOLE *c) {
 	char *pw1, *pw2;
-	if (c == NULL) {
+	if (c == NULL)
 		return NULL;
-	}
 
 	c->Write(c, _UU("CMD_VPNCMD_PWPROMPT_0"));
 
@@ -279,9 +270,8 @@ RETRY:
 
 
 	pw1 = c->ReadPassword(c, _UU("CMD_VPNCMD_PWPROMPT_1"));
-	if (pw1 == NULL) {
+	if (pw1 == NULL)
 		return NULL;
-	}
 
 	pw2 = c->ReadPassword(c, _UU("CMD_VPNCMD_PWPROMPT_2"));
 	if (pw2 == NULL) {
@@ -312,9 +302,8 @@ UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	t.Enable = false;
@@ -342,9 +331,8 @@ UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	t.Enable = true;
@@ -368,9 +356,8 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	RPC_LISTENER_LIST t;
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 
@@ -391,11 +378,10 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 		wchar_t *status = _UU("CM_LISTENER_OFFLINE");
 		wchar_t tmp[128];
 
-		if (t.Errors[i]) {
+		if (t.Errors[i])
 			status = _UU("CM_LISTENER_ERROR");
-		} else if (t.Enables[i]) {
+		else if (t.Enables[i])
 			status = _UU("CM_LISTENER_ONLINE");
-		}
 
 		UniFormat(tmp, sizeof(tmp), _UU("CM_LISTENER_TCP_PORT"), t.Ports[i]);
 
@@ -420,9 +406,8 @@ UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	t.Enable = true;
@@ -447,9 +432,8 @@ UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	wchar_t tmp[MAX_SIZE];
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	UINT ret = ScGetServerInfo(ps->Rpc, &t);
@@ -515,9 +499,8 @@ UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	char tmp2[MAX_PATH];
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	UINT ret = ScGetServerStatus(ps->Rpc, &t);
@@ -609,9 +592,8 @@ UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 void CmdInsertTrafficInfo(CT *ct, TRAFFIC *t) {
 	wchar_t tmp[MAX_SIZE];
 	char vv[128];
-	if (ct == NULL || t == NULL) {
+	if (ct == NULL || t == NULL)
 		return;
-	}
 
 	ToStr3(vv, sizeof(vv), t->Send.UnicastCount);
 	UniFormat(tmp, sizeof(tmp), _UU("SM_ST_NUM_PACKET_STR"), vv);
@@ -649,25 +631,22 @@ void CmdInsertTrafficInfo(CT *ct, TRAFFIC *t) {
 wchar_t *CmdPromptPort(CONSOLE *c, void *param) {
 	wchar_t *prompt_str;
 
-	if (param != NULL) {
+	if (param != NULL)
 		prompt_str = (wchar_t *)param;
-	} else {
+	else
 		prompt_str = _UU("CMD_PROMPT_PORT");
-	}
 
 	return c->ReadLine(c, prompt_str, true);
 }
 
 bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param) {
-	if (c == NULL || str == NULL) {
+	if (c == NULL || str == NULL)
 		return false;
-	}
 
 	UINT i = UniToInt(str);
 
-	if (i >= 1 && i <= 65535) {
+	if (i >= 1 && i <= 65535)
 		return true;
-	}
 
 	c->Write(c, _UU("CMD_EVAL_PORT"));
 
@@ -683,9 +662,8 @@ UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	    };
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	t.Enable = true;
@@ -706,9 +684,8 @@ UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 
 UINT PsAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	BUF *b = ReadDump("|legal.txt");
 

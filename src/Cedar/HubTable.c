@@ -25,20 +25,17 @@
 bool IsUserMatchInUserList(LIST *o, char *filename, UINT64 user_hash) {
 	USERLIST *u;
 	bool ret = false;
-	if (o == NULL || filename == NULL || user_hash == 0) {
+	if (o == NULL || filename == NULL || user_hash == 0)
 		return false;
-	}
 
 	LockList(o);
 	{
 		u = FindUserList(o, filename);
-		if (u == NULL) {
+		if (u == NULL)
 			u = LoadUserList(o, filename);
-		}
 
-		if (u != NULL) {
+		if (u != NULL)
 			ret = IsInt64InList(u->UserHashList, user_hash);
-		}
 	}
 	UnlockList(o);
 
@@ -46,9 +43,8 @@ bool IsUserMatchInUserList(LIST *o, char *filename, UINT64 user_hash) {
 }
 
 USERLIST *LoadUserList(LIST *o, char *filename) {
-	if (o == NULL || filename == NULL) {
+	if (o == NULL || filename == NULL)
 		return NULL;
-	}
 
 	USERLIST *u = ZeroMalloc(sizeof(USERLIST));
 
@@ -61,9 +57,8 @@ USERLIST *LoadUserList(LIST *o, char *filename) {
 		while (true) {
 			char *line = CfgReadNextLine(b);
 			UINT64 ui;
-			if (line == NULL) {
+			if (line == NULL)
 				break;
-			}
 
 			Trim(line);
 
@@ -89,9 +84,8 @@ USERLIST *LoadUserList(LIST *o, char *filename) {
 }
 
 void FreeUserListEntry(USERLIST *u) {
-	if (u == NULL) {
+	if (u == NULL)
 		return;
-	}
 
 	ReleaseInt64List(u->UserHashList);
 
@@ -100,9 +94,8 @@ void FreeUserListEntry(USERLIST *u) {
 
 USERLIST *FindUserList(LIST *o, char *filename) {
 	USERLIST t;
-	if (o == NULL || filename == NULL) {
+	if (o == NULL || filename == NULL)
 		return NULL;
-	}
 
 	Zero(&t, sizeof(t));
 
@@ -114,22 +107,19 @@ USERLIST *FindUserList(LIST *o, char *filename) {
 }
 
 int CompareUserList(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	USERLIST *u1 = *(USERLIST **)p1;
 	USERLIST *u2 = *(USERLIST **)p2;
-	if (u1 == NULL || u2 == NULL) {
+	if (u1 == NULL || u2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(u1->Filename, u2->Filename);
 }
 
 void DeleteAllUserListCache(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	LockList(o);
 	{
@@ -145,9 +135,8 @@ void DeleteAllUserListCache(LIST *o) {
 }
 
 void SetAcList(LIST *o, LIST *src) {
-	if (o == NULL || src == NULL) {
+	if (o == NULL || src == NULL)
 		return;
-	}
 
 	DelAllAc(o);
 
@@ -159,9 +148,8 @@ void SetAcList(LIST *o, LIST *src) {
 }
 
 void DelAllAc(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		AC *ac = LIST_DATA(o, i);
@@ -173,9 +161,8 @@ void DelAllAc(LIST *o) {
 }
 
 void FreeAcList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	DelAllAc(o);
 
@@ -186,36 +173,32 @@ char *GenerateAcStr(AC *ac) {
 	char tmp[MAX_SIZE];
 	char ip[64], mask[64];
 
-	if (ac == NULL) {
+	if (ac == NULL)
 		return NULL;
-	}
 
 	IPToStr(ip, sizeof(ip), &ac->IpAddress);
 	MaskToStr(mask, sizeof(mask), &ac->SubnetMask);
 
-	if (ac->Masked == false) {
+	if (ac->Masked == false)
 		Format(tmp, sizeof(tmp), "%s", ip);
-	} else {
+	else
 		Format(tmp, sizeof(tmp), "%s/%s", ip, mask);
-	}
 
 	return CopyStr(tmp);
 }
 
 bool IsIpDeniedByAcList(IP *ip, LIST *o) {
-	if (ip == NULL || o == NULL) {
+	if (ip == NULL || o == NULL)
 		return false;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		AC *ac = LIST_DATA(o, i);
 
 		if (IsIpMaskedByAc(ip, ac)) {
-			if (ac->Deny == false) {
+			if (ac->Deny == false)
 				return false;
-			} else {
+			else
 				return true;
-			}
 		}
 	}
 
@@ -224,9 +207,8 @@ bool IsIpDeniedByAcList(IP *ip, LIST *o) {
 
 bool IsIpMaskedByAc(IP *ip, AC *ac) {
 	UINT uip, net, mask;
-	if (ip == NULL || ac == NULL) {
+	if (ip == NULL || ac == NULL)
 		return false;
-	}
 
 	if (IsIP4(ip)) {
 		uip = IPToUINT(ip);
@@ -234,30 +216,26 @@ bool IsIpMaskedByAc(IP *ip, AC *ac) {
 		mask = IPToUINT(&ac->SubnetMask);
 
 		if (ac->Masked == false) {
-			if (uip == net) {
+			if (uip == net)
 				return true;
-			}
 		} else {
-			if ((uip & mask) == (net & mask)) {
+			if ((uip & mask) == (net & mask))
 				return true;
-			}
 		}
 
 		return false;
 	} else {
 		if (ac->Masked == false) {
-			if (CmpIpAddr(ip, &ac->IpAddress) == 0) {
+			if (CmpIpAddr(ip, &ac->IpAddress) == 0)
 				return true;
-			}
 		} else {
 			IP and1, and2;
 
 			IPAnd6(&and1, ip, &ac->SubnetMask);
 			IPAnd6(&and2, &ac->IpAddress, &ac->SubnetMask);
 
-			if (CmpIpAddr(&and1, &and2) == 0) {
+			if (CmpIpAddr(&and1, &and2) == 0)
 				return true;
-			}
 		}
 
 		return false;
@@ -265,9 +243,8 @@ bool IsIpMaskedByAc(IP *ip, AC *ac) {
 }
 
 void AddAc(LIST *o, AC *ac) {
-	if (o == NULL || ac == NULL) {
+	if (o == NULL || ac == NULL)
 		return;
-	}
 
 	if (LIST_NUM(o) < MAX_HUB_ACS) {
 		Insert(o, Clone(ac, sizeof(AC)));
@@ -277,53 +254,46 @@ void AddAc(LIST *o, AC *ac) {
 }
 
 void NormalizeAcList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		AC *ac = LIST_DATA(o, i);
 
-		if (IsIP6(&ac->IpAddress)) {
+		if (IsIP6(&ac->IpAddress))
 			ac->IpAddress.ipv6_scope_id = 0;
-		}
 
 		ac->Id = (i + 1);
 	}
 }
 
 int CmpAc(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	AC *a1 = *(AC **)p1;
 	AC *a2 = *(AC **)p2;
-	if (a1 == NULL || a2 == NULL) {
+	if (a1 == NULL || a2 == NULL)
 		return 0;
-	}
-	if (a1->Priority > a2->Priority) {
+	if (a1->Priority > a2->Priority)
 		return 1;
-	} else if (a1->Priority < a2->Priority) {
+	else if (a1->Priority < a2->Priority)
 		return -1;
-	} else if (a1->Deny > a2->Deny) {
+	else if (a1->Deny > a2->Deny)
 		return 1;
-	} else if (a1->Deny < a2->Deny) {
+	else if (a1->Deny < a2->Deny)
 		return -1;
-	} else {
+	else
 		return 0;
-	}
 }
 
 CRL *CopyCrl(CRL *crl) {
-	if (crl == NULL) {
+	if (crl == NULL)
 		return NULL;
-	}
 
 	CRL *ret = ZeroMalloc(sizeof(CRL));
 
-	if (crl->Serial != NULL) {
+	if (crl->Serial != NULL)
 		ret->Serial = NewXSerial(crl->Serial->data, crl->Serial->size);
-	}
 
 	ret->Name = CopyName(crl->Name);
 
@@ -334,26 +304,22 @@ CRL *CopyCrl(CRL *crl) {
 }
 
 void FreeCrl(CRL *crl) {
-	if (crl == NULL) {
+	if (crl == NULL)
 		return;
-	}
 
-	if (crl->Serial != NULL) {
+	if (crl->Serial != NULL)
 		FreeXSerial(crl->Serial);
-	}
 
-	if (crl->Name != NULL) {
+	if (crl->Name != NULL)
 		FreeName(crl->Name);
-	}
 
 	Free(crl);
 }
 
 bool IsValidCertInHub(HUB *h, X *x) {
 	bool ret;
-	if (h == NULL || x == NULL) {
+	if (h == NULL || x == NULL)
 		return false;
-	}
 
 	LockList(h->HubDb->CrlList);
 	{
@@ -361,24 +327,21 @@ bool IsValidCertInHub(HUB *h, X *x) {
 	}
 	UnlockList(h->HubDb->CrlList);
 
-	if (ret) {
+	if (ret)
 		return false;
-	}
 
 	return true;
 }
 
 bool IsCertMatchCrlList(X *x, LIST *o) {
-	if (x == NULL || o == NULL) {
+	if (x == NULL || o == NULL)
 		return false;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		CRL *crl = LIST_DATA(o, i);
 
-		if (IsCertMatchCrl(x, crl)) {
+		if (IsCertMatchCrl(x, crl))
 			return true;
-		}
 	}
 
 	return false;
@@ -386,9 +349,8 @@ bool IsCertMatchCrlList(X *x, LIST *o) {
 
 wchar_t *GenerateCrlStr(CRL *crl) {
 	wchar_t tmp[2048];
-	if (crl == NULL) {
+	if (crl == NULL)
 		return NULL;
-	}
 
 	UniStrCpy(tmp, sizeof(tmp), L"");
 
@@ -435,41 +397,36 @@ wchar_t *GenerateCrlStr(CRL *crl) {
 		UniStrCat(tmp, sizeof(tmp), L"\", ");
 	}
 
-	if (UniEndWith(tmp, L", ")) {
+	if (UniEndWith(tmp, L", "))
 		tmp[UniStrLen(tmp) - 2] = 0;
-	}
 
 	return CopyUniStr(tmp);
 }
 
 bool IsCertMatchCrl(X *x, CRL *crl) {
 	bool b = true;
-	if (x == NULL || crl == NULL) {
+	if (x == NULL || crl == NULL)
 		return false;
-	}
 
 	if (crl->Serial != NULL) {
-		if (x->serial == NULL || CompareXSerial(x->serial, crl->Serial) == false) {
+		if (x->serial == NULL || CompareXSerial(x->serial, crl->Serial) == false)
 			b = false;
-		}
 	}
 
 	if (IsZero(crl->DigestMD5, sizeof(crl->DigestMD5)) == false) {
 		UCHAR test[MD5_SIZE];
 		GetXDigest(x, test, false);
 
-		if (Cmp(test, crl->DigestMD5, MD5_SIZE) != 0) {
+		if (Cmp(test, crl->DigestMD5, MD5_SIZE) != 0)
 			b = false;
-		}
 	}
 
 	if (IsZero(crl->DigestSHA1, sizeof(crl->DigestSHA1)) == false) {
 		UCHAR test[SHA1_SIZE];
 		GetXDigest(x, test, true);
 
-		if (Cmp(test, crl->DigestSHA1, SHA1_SIZE) != 0) {
+		if (Cmp(test, crl->DigestSHA1, SHA1_SIZE) != 0)
 			b = false;
-		}
 	}
 
 	if (crl->Name != NULL) {
@@ -477,39 +434,33 @@ bool IsCertMatchCrl(X *x, CRL *crl) {
 		NAME *cn = crl->Name;
 
 		if (cn->CommonName != NULL && (UniIsEmptyStr(cn->CommonName) == false)) {
-			if (xn->CommonName == NULL || UniSoftStrCmp(xn->CommonName, cn->CommonName) != 0) {
+			if (xn->CommonName == NULL || UniSoftStrCmp(xn->CommonName, cn->CommonName) != 0)
 				b = false;
-			}
 		}
 
 		if (cn->Organization != NULL && (UniIsEmptyStr(cn->Organization) == false)) {
-			if (xn->Organization == NULL || UniSoftStrCmp(xn->Organization, cn->Organization) != 0) {
+			if (xn->Organization == NULL || UniSoftStrCmp(xn->Organization, cn->Organization) != 0)
 				b = false;
-			}
 		}
 
 		if (cn->Unit != NULL && (UniIsEmptyStr(cn->Unit) == false)) {
-			if (xn->Unit == NULL || UniSoftStrCmp(xn->Unit, cn->Unit) != 0) {
+			if (xn->Unit == NULL || UniSoftStrCmp(xn->Unit, cn->Unit) != 0)
 				b = false;
-			}
 		}
 
 		if (cn->Country != NULL && (UniIsEmptyStr(cn->Country) == false)) {
-			if (xn->Country == NULL || UniSoftStrCmp(xn->Country, cn->Country) != 0) {
+			if (xn->Country == NULL || UniSoftStrCmp(xn->Country, cn->Country) != 0)
 				b = false;
-			}
 		}
 
 		if (cn->State != NULL && (UniIsEmptyStr(cn->State) == false)) {
-			if (xn->State == NULL || UniSoftStrCmp(xn->State, cn->State) != 0) {
+			if (xn->State == NULL || UniSoftStrCmp(xn->State, cn->State) != 0)
 				b = false;
-			}
 		}
 
 		if (cn->Local != NULL && (UniIsEmptyStr(cn->Local) == false)) {
-			if (xn->Local == NULL || UniSoftStrCmp(xn->Local, cn->Local) != 0) {
+			if (xn->Local == NULL || UniSoftStrCmp(xn->Local, cn->Local) != 0)
 				b = false;
-			}
 		}
 	}
 
@@ -522,9 +473,8 @@ void GetAccessListStr(char *str, UINT size, ACCESS *a) {
 	char tmp2[MAX_SIZE];
 	bool l3 = false;
 	bool asterisk = false;
-	if (str == NULL || a == NULL) {
+	if (str == NULL || a == NULL)
 		return;
-	}
 
 	StrCpy(str, size, "");
 
@@ -604,11 +554,10 @@ void GetAccessListStr(char *str, UINT size, ACCESS *a) {
 			break;
 		}
 
-		if (IsEmptyStr(tmp1)) {
+		if (IsEmptyStr(tmp1))
 			Format(tmp, sizeof(tmp), "Protocol=%s(%u), ", tmp1, a->Protocol);
-		} else {
+		else
 			Format(tmp, sizeof(tmp), "Protocol=%s, ", tmp1);
-		}
 
 		StrCat(str, size, tmp);
 
@@ -665,11 +614,10 @@ void GetAccessListStr(char *str, UINT size, ACCESS *a) {
 	}
 
 	if (a->CheckTcpState) {
-		if (a->Established) {
+		if (a->Established)
 			StrCat(str, size, "Established, ");
-		} else {
+		else
 			StrCat(str, size, "Unestablished, ");
-		}
 
 		l3 = true;
 	}
@@ -696,33 +644,27 @@ void GetAccessListStr(char *str, UINT size, ACCESS *a) {
 		StrCat(str, size, tmp);
 	}
 
-	if (StrLen(str) == 0) {
+	if (StrLen(str) == 0)
 		asterisk = true;
-	}
 
-	if (l3) {
-		if (a->IsIPv6) {
+	if (l3)
+		if (a->IsIPv6)
 			StrCatLeft(str, size, "(ipv6) ");
-		} else {
+		else
 			StrCatLeft(str, size, "(ipv4) ");
-		}
-	} else {
+	else
 		StrCatLeft(str, size, "(ether) ");
-	}
 
-	if (EndWith(str, ", ")) {
+	if (EndWith(str, ", "))
 		str[StrLen(str) - 2] = 0;
-	}
 
-	if (asterisk) {
+	if (asterisk)
 		StrCat(str, size, "*");
-	}
 }
 
 void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id) {
-	if (hub == NULL || a == NULL) {
+	if (hub == NULL || a == NULL)
 		return;
-	}
 
 	LockList(hub->AccessList);
 	{
@@ -738,39 +680,34 @@ void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id) {
 		access->IsDestUsernameIncludeOrExclude = false;
 
 		if (IsEmptyStr(access->SrcUsername) == false) {
-			if (StartWith(access->SrcUsername, ACCESS_LIST_INCLUDED_PREFIX) == false && StartWith(access->SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX) == false) {
+			if (StartWith(access->SrcUsername, ACCESS_LIST_INCLUDED_PREFIX) == false && StartWith(access->SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX) == false)
 				MakeSimpleUsernameRemoveNtDomain(access->SrcUsername, sizeof(access->SrcUsername), access->SrcUsername);
-			} else {
+			else
 				access->IsSrcUsernameIncludeOrExclude = true;
-			}
 		}
 		if (IsEmptyStr(access->DestUsername) == false) {
-			if (StartWith(access->DestUsername, ACCESS_LIST_INCLUDED_PREFIX) == false && StartWith(access->DestUsername, ACCESS_LIST_EXCLUDED_PREFIX) == false) {
+			if (StartWith(access->DestUsername, ACCESS_LIST_INCLUDED_PREFIX) == false && StartWith(access->DestUsername, ACCESS_LIST_EXCLUDED_PREFIX) == false)
 				MakeSimpleUsernameRemoveNtDomain(access->DestUsername, sizeof(access->DestUsername), access->DestUsername);
-			} else {
+			else
 				access->IsDestUsernameIncludeOrExclude = true;
-			}
 		}
 
 		access->SrcUsernameHash = UsernameToInt64(access->SrcUsername);
 		access->DestUsernameHash = UsernameToInt64(access->DestUsername);
 
-		if (access->SrcPortStart != 0) {
+		if (access->SrcPortStart != 0)
 			access->SrcPortEnd = MAX(access->SrcPortEnd, access->SrcPortStart);
-		}
-		if (access->DestPortStart != 0) {
+		if (access->DestPortStart != 0)
 			access->DestPortEnd = MAX(access->DestPortEnd, access->DestPortStart);
-		}
 
 		access->Delay = MAKESURE(access->Delay, 0, HUB_ACCESSLIST_DELAY_MAX);
 		access->Jitter = MAKESURE(access->Jitter, 0, HUB_ACCESSLIST_JITTER_MAX);
 		access->Loss = MAKESURE(access->Loss, 0, HUB_ACCESSLIST_LOSS_MAX);
 
-		if (no_sort == false) {
+		if (no_sort == false)
 			Insert(hub->AccessList, access);
-		} else {
+		else
 			Add(hub->AccessList, access);
-		}
 
 		if (no_reassign_id == false) {
 			for (UINT i = 0; i < LIST_NUM(hub->AccessList); i++) {
@@ -783,14 +720,12 @@ void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id) {
 }
 
 int CmpAccessList(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	ACCESS *a1 = *(ACCESS **)p1;
 	ACCESS *a2 = *(ACCESS **)p2;
-	if (a1 == NULL || a2 == NULL) {
+	if (a1 == NULL || a2 == NULL)
 		return 0;
-	}
 	if (a1->Priority > a2->Priority) {
 		return 1;
 	} else if (a1->Priority < a2->Priority) {
@@ -837,9 +772,8 @@ MAC_TABLE_ENTRY *MacTableLookup(HUB *h, UCHAR *mac, UINT vlan_id) {
 
 // Learn mac on vlan_id for session s, which has no entry for it yet. NULL when the table is full (MAX_MAC_TABLES)
 MAC_TABLE_ENTRY *MacTableLearn(HUB *h, SESSION *s, UCHAR *mac, UINT vlan_id, UINT64 now) {
-	if (HASH_LIST_NUM(h->MacHashTable) >= MAX_MAC_TABLES) {
+	if (HASH_LIST_NUM(h->MacHashTable) >= MAX_MAC_TABLES)
 		return NULL;
-	}
 
 	MAC_TABLE_ENTRY *e = ZeroMalloc(sizeof(MAC_TABLE_ENTRY));
 	e->HubPa = (HUB_PA *)s->PacketAdapter->Param;
@@ -856,9 +790,8 @@ MAC_TABLE_ENTRY *MacTableLearn(HUB *h, SESSION *s, UCHAR *mac, UINT vlan_id, UIN
 static bool MacTableTakeSessionEntry(void *p, void *param) {
 	MAC_TABLE_ENTRY *e = (MAC_TABLE_ENTRY *)p;
 
-	if (e->Session != (SESSION *)param) {
+	if (e->Session != (SESSION *)param)
 		return false;
-	}
 
 	Free(e);
 
@@ -913,9 +846,8 @@ UINT CountSessionIps(HUB *h, SESSION *s, bool v6) {
 	for (UINT i = 0; i < LIST_NUM(h->IpTable); i++) {
 		IP_TABLE_ENTRY *e = LIST_DATA(h->IpTable, i);
 
-		if (e->Session == s && (v6 ? IsIP6(&e->Ip) : IsIP4(&e->Ip))) {
+		if (e->Session == s && (v6 ? IsIP6(&e->Ip) : IsIP4(&e->Ip)))
 			num++;
-		}
 	}
 
 	return num;
@@ -941,11 +873,10 @@ void IpTableFlushSession(HUB *h, SESSION *s) {
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
 
-		if (e->Session == s) {
+		if (e->Session == s)
 			Free(e);
-		} else {
+		else
 			o->p[num_kept++] = e;
-		}
 	}
 
 	o->num_item = num_kept;
@@ -972,9 +903,8 @@ bool IpTableDeleteByKey(HUB *h, UINT key) {
 
 void DeleteExpiredMacTableEntry(HASH_LIST *h) {
 	UINT num;
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
 	LIST *o2 = NewListFast(NULL);
 
@@ -982,9 +912,8 @@ void DeleteExpiredMacTableEntry(HASH_LIST *h) {
 
 	for (UINT i = 0; i < num; i++) {
 		MAC_TABLE_ENTRY *e = pp[i];
-		if ((e->UpdatedTime + (UINT64)MAC_TABLE_EXPIRE_TIME) <= Tick64()) {
+		if ((e->UpdatedTime + (UINT64)MAC_TABLE_EXPIRE_TIME) <= Tick64())
 			Add(o2, e);
-		}
 	}
 
 	for (UINT i = 0; i < LIST_NUM(o2); i++) {
@@ -1000,9 +929,8 @@ void DeleteExpiredMacTableEntry(HASH_LIST *h) {
 
 void DeleteExpiredIpTableEntry(LIST *o) {
 	UINT num_kept = 0;
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	// This runs on every new IP entry, under the hub-wide MacHashTable lock. Read the clock once (Tick64 takes
 	// a global lock) and compact the array in one pass: a Delete per expired entry searched and shifted the
@@ -1012,34 +940,30 @@ void DeleteExpiredIpTableEntry(LIST *o) {
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
-		if ((e->UpdatedTime + (UINT64)(e->DhcpAllocated ? IP_TABLE_EXPIRE_TIME_DHCP : IP_TABLE_EXPIRE_TIME)) <= now) {
+		if ((e->UpdatedTime + (UINT64)(e->DhcpAllocated ? IP_TABLE_EXPIRE_TIME_DHCP : IP_TABLE_EXPIRE_TIME)) <= now)
 			Free(e);
-		} else {
+		else
 			o->p[num_kept++] = e;
-		}
 	}
 
 	o->num_item = num_kept;
 }
 
 int CompareIpTable(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	IP_TABLE_ENTRY *e1 = *(IP_TABLE_ENTRY **)p1;
 	IP_TABLE_ENTRY *e2 = *(IP_TABLE_ENTRY **)p2;
-	if (e1 == NULL || e2 == NULL) {
+	if (e1 == NULL || e2 == NULL)
 		return 0;
-	}
 	return CmpIpAddr(&e1->Ip, &e2->Ip);
 }
 
 // Add a trusted root certificate to the hub; false when the hub already trusts it or holds MAX_HUB_CERTS
 bool AddRootCert(HUB *hub, X *x) {
 	bool added = false;
-	if (hub == NULL || x == NULL) {
+	if (hub == NULL || x == NULL)
 		return false;
-	}
 
 	HUBDB *db = hub->HubDb;
 	if (db != NULL) {
@@ -1071,14 +995,12 @@ bool AddRootCert(HUB *hub, X *x) {
 int CompareCert(void *p1, void *p2) {
 	wchar_t tmp1[MAX_SIZE];
 	wchar_t tmp2[MAX_SIZE];
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	X *x1 = *(X **)p1;
 	X *x2 = *(X **)p2;
-	if (x1 == NULL || x2 == NULL) {
+	if (x1 == NULL || x2 == NULL)
 		return 0;
-	}
 
 	GetPrintNameFromX(tmp1, sizeof(tmp1), x1);
 	GetPrintNameFromX(tmp2, sizeof(tmp2), x2);

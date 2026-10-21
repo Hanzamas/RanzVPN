@@ -16,11 +16,10 @@ static double HiResTimeSpan(UINT64 diff) {
 	LARGE_INTEGER t;
 	UINT64 freq;
 
-	if (QueryPerformanceFrequency(&t) == false) {
+	if (QueryPerformanceFrequency(&t) == false)
 		freq = 1000ULL;
-	} else {
+	else
 		Copy(&freq, &t, sizeof(UINT64));
-	}
 
 	return (double)diff / (double)freq;
 }
@@ -30,9 +29,8 @@ static UINT64 HiResCounter() {
 	LARGE_INTEGER t;
 	UINT64 ret;
 
-	if (QueryPerformanceCounter(&t) == false) {
+	if (QueryPerformanceCounter(&t) == false)
 		return Tick64();
-	}
 
 	Copy(&ret, &t, sizeof(UINT64));
 
@@ -53,9 +51,8 @@ UINT64 TickHighresNano64() {
 
 UINT64 Tick64ToTime64(UINT64 tick) {
 	UINT64 ret = 0;
-	if (tick == 0) {
+	if (tick == 0)
 		return 0;
-	}
 	LockList(tk64->AdjustTime);
 	{
 		for (INT i = ((INT)LIST_NUM(tk64->AdjustTime) - 1); i >= 0; i--) {
@@ -67,17 +64,15 @@ UINT64 Tick64ToTime64(UINT64 tick) {
 		}
 	}
 	UnlockList(tk64->AdjustTime);
-	if (ret == 0) {
+	if (ret == 0)
 		ret++;
-	}
 	return ret;
 }
 
 UINT64 Tick64() {
 	if (tick64_origin == 0) {
-		if (InterlockedCompareExchange64(&tick64_origin, (LONG64)GetTickCount64(), 0) == 0) {
+		if (InterlockedCompareExchange64(&tick64_origin, (LONG64)GetTickCount64(), 0) == 0)
 			return 1;
-		}
 	}
 
 	return GetTickCount64() - (UINT64)tick64_origin + 1;
@@ -130,19 +125,17 @@ static void NTAPI Tick64TimerCallback(PTP_CALLBACK_INSTANCE instance, void *para
 }
 
 UINT64 Diff64(UINT64 a, UINT64 b) {
-	if (a > b) {
+	if (a > b)
 		return a - b;
-	} else {
+	else
 		return b - a;
-	}
 }
 
 void InitTick64() {
 	ULARGE_INTEGER span;
 	FILETIME due;
-	if (tk64 != NULL) {
+	if (tk64 != NULL)
 		return;
-	}
 
 	tk64 = ZeroMalloc(sizeof(TICK64));
 	tk64->AdjustTime = NewList(NULL);
@@ -157,9 +150,8 @@ void InitTick64() {
 
 	// Then the clock check every TICK64_SPAN_WIN32 ms, from one span on (a negative due time is relative)
 	tk64->Timer = CreateThreadpoolTimer(Tick64TimerCallback, NULL, NULL);
-	if (tk64->Timer == NULL) {
+	if (tk64->Timer == NULL)
 		AbortExitEx("Tick64 timer create failed.");
-	}
 
 	span.QuadPart = (ULONGLONG)(-((LONGLONG)TICK64_SPAN_WIN32 * 10000LL));
 	due.dwLowDateTime = span.LowPart;
@@ -168,9 +160,8 @@ void InitTick64() {
 }
 
 void FreeTick64() {
-	if (tk64 == NULL) {
+	if (tk64 == NULL)
 		return;
-	}
 
 	// Stop the clock check, and wait for a check that is still running
 	SetThreadpoolTimer(tk64->Timer, NULL, 0, 0);

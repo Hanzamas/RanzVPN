@@ -16,9 +16,8 @@
 
 bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename) {
 	bool ret = false;
-	if (c == NULL || hubname == NULL || devicename == NULL) {
+	if (c == NULL || hubname == NULL || devicename == NULL)
 		return false;
-	}
 
 	LockList(c->HubList);
 	{
@@ -53,9 +52,8 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename) {
 void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool limit_broadcast) {
 	HUB *h = NULL;
 	LOCALBRIDGE *br = NULL;
-	if (c == NULL || hubname == NULL || devicename == NULL) {
+	if (c == NULL || hubname == NULL || devicename == NULL)
 		return;
-	}
 
 	LockList(c->HubList);
 	{
@@ -66,9 +64,8 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 			for (UINT i = 0; i < LIST_NUM(c->LocalBridgeList); i++) {
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 				if (StrCmpi(br->DeviceName, devicename) == 0) {
-					if (StrCmpi(br->HubName, hubname) == 0) {
+					if (StrCmpi(br->HubName, hubname) == 0)
 						exists = true;
-					}
 				}
 			}
 
@@ -104,9 +101,8 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 				LockList(c->LocalBridgeList);
 				{
 					if (IsInList(c->LocalBridgeList, br)) {
-						if (br->Bridge == NULL) {
+						if (br->Bridge == NULL)
 							br->Bridge = BrNewBridge(h, br);
-						}
 					}
 				}
 				UnlockList(c->LocalBridgeList);
@@ -119,17 +115,15 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 }
 
 void InitLocalBridgeList(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	c->LocalBridgeList = NewList(NULL);
 }
 
 void FreeLocalBridgeList(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(c->LocalBridgeList); i++) {
 		LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
@@ -142,9 +136,8 @@ void FreeLocalBridgeList(CEDAR *c) {
 
 static void BrBridgeThread(THREAD *thread, void *param) {
 	char name[MAX_SIZE];
-	if (thread == NULL || param == NULL) {
+	if (thread == NULL || param == NULL)
 		return;
-	}
 
 	BRIDGE *b = (BRIDGE *)param;
 
@@ -178,13 +171,11 @@ static void BrBridgeThread(THREAD *thread, void *param) {
 }
 
 void BrFreeBridge(BRIDGE *b) {
-	if (b == NULL) {
+	if (b == NULL)
 		return;
-	}
 
-	if (b->ParentLocalBridge != NULL) {
+	if (b->ParentLocalBridge != NULL)
 		b->ParentLocalBridge = NULL;
-	}
 
 	StopSession(b->Session);
 	ReleaseSession(b->Session);
@@ -193,9 +184,8 @@ void BrFreeBridge(BRIDGE *b) {
 }
 
 BRIDGE *BrNewBridge(HUB *h, LOCALBRIDGE *parent_local_bridge) {
-	if (h == NULL || parent_local_bridge == NULL) {
+	if (h == NULL || parent_local_bridge == NULL)
 		return NULL;
-	}
 
 	POLICY *policy = ClonePolicy(GetDefaultPolicy());
 
@@ -206,13 +196,11 @@ BRIDGE *BrNewBridge(HUB *h, LOCALBRIDGE *parent_local_bridge) {
 	b->Policy = policy;
 	b->ParentLocalBridge = parent_local_bridge;
 
-	if (parent_local_bridge->Monitor) {
+	if (parent_local_bridge->Monitor)
 		policy->MonitorPort = true;
-	}
 
-	if (parent_local_bridge->LimitBroadcast == false) {
+	if (parent_local_bridge->LimitBroadcast == false)
 		policy->NoBroadcastLimiter = true;
-	}
 
 	THREAD *t = NewThread(BrBridgeThread, b);
 	WaitThreadInit(t);
@@ -223,9 +211,8 @@ BRIDGE *BrNewBridge(HUB *h, LOCALBRIDGE *parent_local_bridge) {
 
 // Sends the blocks queued on a Local Bridge connection to its Ethernet device
 void BrSendBlocks(CONNECTION *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	SESSION *s = c->Session;
 	HUB *hub = s->Hub;
@@ -271,17 +258,15 @@ void BrSendBlocks(CONNECTION *c) {
 // opens the device again while the bridge is not active
 void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 	bool no_spinlock_for_delay = false;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	SESSION *s = c->Session;
 	HUB *hub = s->Hub;
 	BRIDGE *b = s->Bridge;
 
-	if (hub != NULL) {
+	if (hub != NULL)
 		no_spinlock_for_delay = hub->Option->NoSpinLockForPacketDelay;
-	}
 
 	if (b->Active) {
 		void *data;
@@ -298,13 +283,12 @@ void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 
 		// Frames left in the bridge's receive buffer by the last drain do not
 		// signal c2, so take them without waiting
-		if (EthHasPendingFrames(b->Eth)) {
+		if (EthHasPendingFrames(b->Eth))
 			Select(NULL, 0, c1, c2);
-		} else if (no_spinlock_for_delay || time >= 50 || num_delayed == false) {
+		else if (no_spinlock_for_delay || time >= 50 || num_delayed == false)
 			Select(NULL, (num_delayed == 0 ? time : (time > 100 ? (time - 100) : 1)), c1, c2);
-		} else {
+		else
 			YieldCpu();
-		}
 
 		if ((b->LastNumDeviceCheck + BRIDGE_NUM_DEVICE_CHECK_SPAN) <= Tick64()) {
 			device_changed = (b->LastNumDevice != GetEthDeviceHash());
@@ -312,11 +296,10 @@ void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 		}
 
 		while (true) {
-			if (device_changed) {
+			if (device_changed)
 				ret = INFINITE;
-			} else {
+			else
 				ret = EthGetPacket(b->Eth, &data);
-			}
 
 			if (ret == INFINITE) {
 				CloseEth(b->Eth);
@@ -330,23 +313,19 @@ void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 				break;
 			} else if (ret == 0) {
 				break;
+			} else if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
+			           b->Eth != NULL && IsDhcpPacketForSpecificMac(data, ret, b->Eth->MacAddress)) {
+				Free(data);
 			} else {
-				if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
-				    b->Eth != NULL && IsDhcpPacketForSpecificMac(data, ret, b->Eth->MacAddress)) {
-					Free(data);
-				} else {
-					BLOCK *block = NewBlock(data, ret, 0);
+				BLOCK *block = NewBlock(data, ret, 0);
 
-					if (block->Size > MAX_PACKET_SIZE) {
-						FreeBlock(block);
-					} else {
-						InsertReceivedBlockToQueue(c, block);
-					}
-					num++;
-					if (num >= MAX_SEND_SOCKET_QUEUE_NUM) {
-						break;
-					}
-				}
+				if (block->Size > MAX_PACKET_SIZE)
+					FreeBlock(block);
+				else
+					InsertReceivedBlockToQueue(c, block);
+				num++;
+				if (num >= MAX_SEND_SOCKET_QUEUE_NUM)
+					break;
 			}
 		}
 	} else {
@@ -366,9 +345,8 @@ void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 				if (IsEmptyStr(e->Title) == false) {
 					StrCpy(b->Name, sizeof(b->Name), e->Title);
 
-					if (b->ParentLocalBridge != NULL) {
+					if (b->ParentLocalBridge != NULL)
 						StrCpy(b->ParentLocalBridge->DeviceName, sizeof(b->ParentLocalBridge->DeviceName), e->Title);
-					}
 				}
 
 
@@ -382,9 +360,8 @@ void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 
 // Closes the Ethernet device of a Local Bridge session whose session loop has ended
 void BrSessionCleanup(SESSION *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	if (s->Bridge->Active) {
 		CloseEth(s->Bridge->Eth);

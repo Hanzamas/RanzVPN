@@ -31,13 +31,11 @@
 
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x) {
 	bool ret = false;
-	if (x == NULL) {
+	if (x == NULL)
 		return false;
-	}
 
-	if (x->root_cert) {
+	if (x->root_cert)
 		return true;
-	}
 
 	LIST *o = NewCertList(true);
 
@@ -52,9 +50,8 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x) {
 	bool ret = false;
 	LIST *chain = NULL;
 	LIST *current_chain_dir = NULL;
-	if (o == NULL || x == NULL) {
+	if (o == NULL || x == NULL)
 		return false;
-	}
 
 	chain = NewCertList(false);
 
@@ -125,9 +122,8 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x) {
 			}
 
 			if (xx->root_cert) {
-				if (found_root_x != NULL) {
+				if (found_root_x != NULL)
 					*found_root_x = CloneX(xx);
-				}
 			}
 		}
 	}
@@ -147,19 +143,16 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x) {
 bool TryGetParentCertFromCertList(LIST *o, X *x, LIST *found_chain) {
 	bool ret = false;
 	bool do_free = false;
-	if (o == NULL || x == NULL || found_chain == NULL) {
+	if (o == NULL || x == NULL || found_chain == NULL)
 		return false;
-	}
 
-	if (LIST_NUM(found_chain) >= FIND_CERT_CHAIN_MAX_DEPTH) {
+	if (LIST_NUM(found_chain) >= FIND_CERT_CHAIN_MAX_DEPTH)
 		return false;
-	}
 
 	Add(found_chain, CloneX(x));
 
-	if (x->root_cert) {
+	if (x->root_cert)
 		return true;
-	}
 
 	X *r = FindCertIssuerFromCertList(o, x);
 
@@ -176,33 +169,28 @@ bool TryGetParentCertFromCertList(LIST *o, X *x, LIST *found_chain) {
 		}
 	}
 
-	if (r != NULL) {
+	if (r != NULL)
 		ret = TryGetParentCertFromCertList(o, r, found_chain);
-	}
 
-	if (do_free) {
+	if (do_free)
 		FreeX(r);
-	}
 
 	return ret;
 }
 
 X *FindCertIssuerFromCertList(LIST *o, X *x) {
-	if (o == NULL || x == NULL) {
+	if (o == NULL || x == NULL)
 		return NULL;
-	}
 
-	if (x->root_cert) {
+	if (x->root_cert)
 		return NULL;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		X *xx = LIST_DATA(o, i);
 
 		if (CheckXEx(x, xx, true, true)) {
-			if (CompareX(x, xx) == false) {
+			if (CompareX(x, xx) == false)
 				return xx;
-			}
 		}
 	}
 
@@ -279,30 +267,26 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 
 	session = WinHttpOpen(L"" DEFAULT_USER_AGENT, WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME,
 	                      WINHTTP_NO_PROXY_BYPASS, 0);
-	if (session == NULL) {
+	if (session == NULL)
 		goto FINAL;
-	}
 
 	// Timeouts until the request is sent: the DnsResolveEx default, the TCP connect timeout, and on each send
 	// and receive the TLS handshake timeout for https
 	io_timeout = (secure ? TIMEOUT_SSL_CONNECT : timeout_ms);
 
 	if (WinHttpSetTimeouts(session, (int)DNS_RESOLVE_DEFAULT_TIMEOUT, (int)timeout_ms, (int)io_timeout,
-	                       (int)io_timeout) == FALSE) {
+	                       (int)io_timeout) == FALSE)
 		goto FINAL;
-	}
 
 	connect = WinHttpConnect(session, host, uc.nPort, 0);
-	if (connect == NULL) {
+	if (connect == NULL)
 		goto FINAL;
-	}
 
 	request = WinHttpOpenRequest(connect, L"GET", target, L"HTTP/1.1", WINHTTP_NO_REFERER,
 	                             WINHTTP_DEFAULT_ACCEPT_TYPES,
 	                             WINHTTP_FLAG_ESCAPE_DISABLE | WINHTTP_FLAG_ESCAPE_DISABLE_QUERY | (secure ? WINHTTP_FLAG_SECURE : 0));
-	if (request == NULL) {
+	if (request == NULL)
 		goto FINAL;
-	}
 
 	// No redirect, cookie, authentication or default credentials, and no keep-alive. DownloadCert makes
 	// one request per connection: a pooled keep-alive connection would outlive the request and let a later
@@ -330,9 +314,8 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 		                               (DWORD)-1, WINHTTP_ADDREQ_FLAG_ADD) != FALSE);
 	}
 
-	if (ok == false) {
+	if (ok == false)
 		goto FINAL;
-	}
 
 	// Send
 	if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) == FALSE) {
@@ -377,9 +360,8 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 		if (StrLen(str) == 8 && Cmp(str, "HTTP/1.", 7) == 0) {
 			size = sizeof(http_status);
 			if (WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-			                        WINHTTP_HEADER_NAME_BY_INDEX, &http_status, &size, WINHTTP_NO_HEADER_INDEX) == FALSE) {
+			                        WINHTTP_HEADER_NAME_BY_INDEX, &http_status, &size, WINHTTP_NO_HEADER_INDEX) == FALSE)
 				http_status = 0;
-			}
 		}
 	}
 
@@ -406,9 +388,8 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 		break;
 	}
 
-	if (err != ERR_NO_ERROR) {
+	if (err != ERR_NO_ERROR)
 		goto FINAL;
-	}
 
 	// Get the length of the content as GetContentLength does: ToInt of the first Content-Length value, 0 without
 	// one. Without it no body is read, chunked or not.
@@ -418,9 +399,8 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 		UniToStr(str, sizeof(str), tmp);
 		content_len = ToInt(str);
 	}
-	if (max_size != 0) {
+	if (max_size != 0)
 		content_len = MIN(content_len, max_size);
-	}
 
 	// Receive the content
 	buffer = Malloc(HTTP_GET_RECV_BUF_SIZE);
@@ -429,9 +409,8 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 	while (true) {
 		UINT recv_size = MIN(HTTP_GET_RECV_BUF_SIZE, content_len - ret->Size);
 
-		if (recv_size == 0) {
+		if (recv_size == 0)
 			break;
-		}
 
 		size = 0;
 		if (WinHttpReadData(request, buffer, recv_size, &size) == FALSE || size == 0) {
@@ -447,40 +426,33 @@ static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error
 
 	Free(buffer);
 
-	if (ret != NULL) {
+	if (ret != NULL)
 		SeekBuf(ret, 0, 0);
-	}
 
 FINAL:
-	if (request != NULL) {
+	if (request != NULL)
 		WinHttpCloseHandle(request);
-	}
-	if (connect != NULL) {
+	if (connect != NULL)
 		WinHttpCloseHandle(connect);
-	}
-	if (session != NULL) {
+	if (session != NULL)
 		WinHttpCloseHandle(session);
-	}
 	Free(wide_url);
 
-	if (error_code != NULL) {
+	if (error_code != NULL)
 		*error_code = err;
-	}
 
 	return ret;
 }
 
 X *DownloadCert(char *url) {
 	X *ret = NULL;
-	if (IsEmptyStr(url)) {
+	if (IsEmptyStr(url))
 		return NULL;
-	}
 
 	BUF *b = HttpGet(url, CERT_HTTP_DOWNLOAD_TIMEOUT, CERT_HTTP_DOWNLOAD_MAXSIZE, NULL);
 
-	if (b == NULL) {
+	if (b == NULL)
 		return NULL;
-	}
 
 	ret = BufToX(b, IsBase64(b));
 
@@ -501,9 +473,8 @@ LIST *NewCertList(bool load_root_and_chain) {
 }
 
 void FreeCertList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		X *x = LIST_DATA(o, i);
@@ -515,33 +486,28 @@ void FreeCertList(LIST *o) {
 }
 
 bool IsXInCertList(LIST *o, X *x) {
-	if (o == NULL || x == NULL) {
+	if (o == NULL || x == NULL)
 		return false;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		X *xx = LIST_DATA(o, i);
 
-		if (CompareX(x, xx)) {
+		if (CompareX(x, xx))
 			return true;
-		}
 	}
 
 	return false;
 }
 
 static void AddXToCertList(LIST *o, X *x) {
-	if (o == NULL || x == NULL) {
+	if (o == NULL || x == NULL)
 		return;
-	}
 
-	if (IsXInCertList(o, x)) {
+	if (IsXInCertList(o, x))
 		return;
-	}
 
-	if (CheckXDateNow(x) == false) {
+	if (CheckXDateNow(x) == false)
 		return;
-	}
 
 	Add(o, CloneX(x));
 }
@@ -549,9 +515,8 @@ static void AddXToCertList(LIST *o, X *x) {
 void AddAllChainCertsToCertList(LIST *o) {
 	wchar_t dirname[MAX_SIZE];
 	wchar_t exedir[MAX_SIZE];
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	GetExeDirW(exedir, sizeof(exedir));
 
@@ -586,14 +551,12 @@ void AddAllChainCertsToCertList(LIST *o) {
 
 void AddAllRootCertsToCertList(LIST *o) {
 	UINT num_ok = 0, num_error = 0;
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	BUF *buf = ReadDump(ROOT_CERTS_FILENAME);
-	if (buf == NULL) {
+	if (buf == NULL)
 		return;
-	}
 
 	PACK *p = BufToPack(buf);
 
@@ -618,11 +581,10 @@ void AddAllRootCertsToCertList(LIST *o) {
 				FreeBuf(b);
 			}
 
-			if (ok) {
+			if (ok)
 				num_ok++;
-			} else {
+			else
 				num_error++;
-			}
 		}
 
 		FreePack(p);
@@ -638,9 +600,8 @@ void AddAllRootCertsToCertList(LIST *o) {
 void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size) {
 	char guid[MAX_SIZE];
 	UCHAR hash[SHA256_SIZE];
-	if (data == NULL || (salt == NULL && salt_size != 0)) {
+	if (data == NULL || (salt == NULL && salt_size != 0))
 		return;
-	}
 
 	StrCpy(guid, sizeof(guid), machine_guid);
 	Trim(guid);
@@ -660,9 +621,8 @@ void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT s
 
 // HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid in the 64-bit registry view, or "" when it cannot be read
 static void GetMachineGuid(char *guid, UINT size) {
-	if (guid == NULL) {
+	if (guid == NULL)
 		return;
-	}
 
 	char *s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false);
 
@@ -676,9 +636,8 @@ static void GetMachineGuid(char *guid, UINT size) {
 // of the identity need no lock.
 void SetCedarMachineIdSalt(CEDAR *c, void *salt) {
 	char guid[MAX_SIZE];
-	if (c == NULL || salt == NULL) {
+	if (c == NULL || salt == NULL)
 		return;
-	}
 
 	Copy(c->MachineIdSalt, salt, sizeof(c->MachineIdSalt));
 
@@ -689,25 +648,21 @@ void SetCedarMachineIdSalt(CEDAR *c, void *salt) {
 
 // The machine identity of a server (SHA1_SIZE bytes): virtual hub MAC address and address, Cascade unique_id
 void GenerateMachineUniqueHash(CEDAR *c, void *data) {
-	if (c == NULL || data == NULL) {
+	if (c == NULL || data == NULL)
 		return;
-	}
 
 	Copy(data, c->MachineUniqueHash, SHA1_SIZE);
 }
 
 
 bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32) {
-	if (p == NULL || session_key == NULL || session_key_32 == NULL) {
+	if (p == NULL || session_key == NULL || session_key_32 == NULL)
 		return false;
-	}
 
-	if (PackGetDataSize(p, "session_key") != SHA1_SIZE) {
+	if (PackGetDataSize(p, "session_key") != SHA1_SIZE)
 		return false;
-	}
-	if (PackGetData(p, "session_key", session_key) == false) {
+	if (PackGetData(p, "session_key", session_key) == false)
 		return false;
-	}
 	*session_key_32 = PackGetInt(p, "session_key_32");
 
 	return true;

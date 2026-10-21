@@ -18,9 +18,8 @@
 static void LinkServerSessionThread(THREAD *t, void *param) {
 	LINK *k = (LINK *)param;
 	wchar_t name[MAX_SIZE];
-	if (t == NULL || param == NULL) {
+	if (t == NULL || param == NULL)
 		return;
-	}
 
 	CONNECTION *c = NewServerConnection(k->Cedar, NULL, t);
 	c->Protocol = CONNECTION_HUB_LINK_SERVER;
@@ -53,13 +52,11 @@ static void LinkServerSessionThread(THREAD *t, void *param) {
 
 static bool LinkPaInit(SESSION *s) {
 	LINK *k;
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 		return false;
-	}
 
-	if (k->Halting || (*k->StopAllLinkFlag)) {
+	if (k->Halting || (*k->StopAllLinkFlag))
 		return false;
-	}
 
 	k->SendPacketQueue = NewQueue();
 
@@ -80,13 +77,11 @@ static CANCEL *LinkPaGetCancel(SESSION *s) {
 static UINT LinkPaGetNextPacket(SESSION *s, void **data) {
 	LINK *k;
 	UINT ret = 0;
-	if (s == NULL || data == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
+	if (s == NULL || data == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 		return INFINITE;
-	}
 
-	if (k->Halting || (*k->StopAllLinkFlag)) {
+	if (k->Halting || (*k->StopAllLinkFlag))
 		return INFINITE;
-	}
 	LockQueue(k->SendPacketQueue);
 	{
 		BLOCK *block = GetNext(k->SendPacketQueue);
@@ -108,9 +103,8 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 	BLOCK *block = NULL;
 	bool ret = true;
 	bool halting = false;
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 		return false;
-	}
 
 	halting = (k->Halting || (*k->StopAllLinkFlag));
 
@@ -129,9 +123,8 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 	// The packet came from the link destination HUB,
 	// so deliver it to the server session's ReceivedBlocks
 	if (data != NULL) {
-		if (halting == false) {
+		if (halting == false)
 			block = NewBlock(data, size, 0);
-		}
 
 		if (k->LockFlag == false) {
 			k->LockFlag = true;
@@ -141,11 +134,10 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 		}
 
 		if (halting == false) {
-			if (CedarGetFifoBudgetBalance(k->Cedar) == 0) {
+			if (CedarGetFifoBudgetBalance(k->Cedar) == 0)
 				FreeBlock(block);
-			} else {
+			else
 				InsertReceivedBlockToQueue(server_connection, block);
-			}
 		}
 	} else {
 		CedarSyncQueueBudget(k->Cedar, GetQueueNum(server_connection->ReceivedBlocks), &k->LastServerConnectionReceivedBlocksNum);
@@ -158,14 +150,12 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 		// data == NULL means all packets are stored, so issue the Cancel
 		Cancel(server_session->Cancel1);
 
-		if (k->Hub->Option->YieldAfterStorePacket) {
+		if (k->Hub->Option->YieldAfterStorePacket)
 			YieldCpu();
-		}
 	}
 
-	if (halting) {
+	if (halting)
 		ret = false;
-	}
 
 	ReleaseConnection(server_connection);
 
@@ -174,9 +164,8 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 
 static void LinkPaFree(SESSION *s) {
 	LINK *k;
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 		return;
-	}
 
 	CedarSyncQueueBudget(k->Cedar, 0, &k->LastServerConnectionReceivedBlocksNum);
 
@@ -194,9 +183,8 @@ static PACKET_ADAPTER *LinkGetPacketAdapter() {
 void ReleaseAllLink(HUB *h) {
 	LINK **kk;
 	UINT num;
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
 	LockList(h->LinkList);
 	{
@@ -216,92 +204,78 @@ void ReleaseAllLink(HUB *h) {
 }
 
 void ReleaseLink(LINK *k) {
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
-	if (Release(k->ref) == 0) {
+	if (Release(k->ref) == 0)
 		CleanupLink(k);
-	}
 }
 
 void CleanupLink(LINK *k) {
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	DeleteLock(k->lock);
-	if (k->ClientSession) {
+	if (k->ClientSession)
 		ReleaseSession(k->ClientSession);
-	}
 	Free(k->Option);
 	ClientAuthFree(k->Auth);
 	Free(k->Policy);
 
-	if (k->ServerCert != NULL) {
+	if (k->ServerCert != NULL)
 		FreeX(k->ServerCert);
-	}
 
 	Free(k);
 }
 
 void SetLinkOnline(LINK *k) {
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
-	if (k->NoOnline) {
+	if (k->NoOnline)
 		return;
-	}
 
-	if (k->Offline == false) {
+	if (k->Offline == false)
 		return;
-	}
 
 	k->Offline = false;
 	StartLink(k);
 }
 
 void SetLinkOffline(LINK *k) {
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
-	if (k->Offline) {
+	if (k->Offline)
 		return;
-	}
 
 	StopLink(k);
 	k->Offline = true;
 }
 
 void DelLink(HUB *hub, LINK *k) {
-	if (hub == NULL || k == NULL) {
+	if (hub == NULL || k == NULL)
 		return;
-	}
 
 	LockList(hub->LinkList);
 	{
-		if (Delete(hub->LinkList, k)) {
+		if (Delete(hub->LinkList, k))
 			ReleaseLink(k);
-		}
 	}
 	UnlockList(hub->LinkList);
 }
 
 void StartAllLink(HUB *h) {
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
 	LockList(h->LinkList);
 	{
 		for (UINT i = 0; i < LIST_NUM(h->LinkList); i++) {
 			LINK *k = (LINK *)LIST_DATA(h->LinkList, i);
 
-			if (k->Offline == false) {
+			if (k->Offline == false)
 				StartLink(k);
-			}
 		}
 	}
 	UnlockList(h->LinkList);
@@ -310,9 +284,8 @@ void StartAllLink(HUB *h) {
 void StopAllLink(HUB *h) {
 	LINK **link_list;
 	UINT num_link;
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
 	h->StopAllLinkFlag = true;
 
@@ -320,9 +293,8 @@ void StopAllLink(HUB *h) {
 	{
 		link_list = ToArray(h->LinkList);
 		num_link = LIST_NUM(h->LinkList);
-		for (UINT i = 0; i < num_link; i++) {
+		for (UINT i = 0; i < num_link; i++)
 			AddRef(link_list[i]->ref);
-		}
 	}
 	UnlockList(h->LinkList);
 
@@ -337,9 +309,8 @@ void StopAllLink(HUB *h) {
 }
 
 void StartLink(LINK *k) {
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	LockLink(k);
 	{
@@ -364,9 +335,8 @@ void StartLink(LINK *k) {
 
 void StopLink(LINK *k) {
 	SESSION *s;
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	// Read k->ClientSession and take a ref under the link lock, then stop the session
 	// outside it (lock order: see StopSessionEx in Session.c)
@@ -382,9 +352,8 @@ void StopLink(LINK *k) {
 		Dec(k->Cedar->CurrentActiveLinks);
 
 		s = k->ClientSession;
-		if (s != NULL) {
+		if (s != NULL)
 			AddRef(s->ref);
-		}
 	}
 	UnlockLink(k);
 
@@ -411,25 +380,22 @@ void StopLink(LINK *k) {
 }
 
 void LockLink(LINK *k) {
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	Lock(k->lock);
 }
 
 void UnlockLink(LINK *k) {
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	Unlock(k->lock);
 }
 
 static void NormalizeLinkPolicy(POLICY *p) {
-	if (p == NULL) {
+	if (p == NULL)
 		return;
-	}
 
 	p->Access = true;
 	p->NoBridge = p->NoRouting = p->MonitorPort = false;
@@ -441,14 +407,12 @@ static void NormalizeLinkPolicy(POLICY *p) {
 // Check the authentication type of a cascade and set the policy fields every cascade has, in place.
 // NewLink and the SetLink admin RPC call it; false for an authentication type a cascade cannot use
 bool LinkValidateAuthAndPolicy(CLIENT_AUTH *auth, POLICY *policy) {
-	if (auth == NULL || policy == NULL) {
+	if (auth == NULL || policy == NULL)
 		return false;
-	}
 
 	if (auth->AuthType != CLIENT_AUTHTYPE_ANONYMOUS && auth->AuthType != CLIENT_AUTHTYPE_PASSWORD &&
-	    auth->AuthType != CLIENT_AUTHTYPE_PLAIN_PASSWORD && auth->AuthType != CLIENT_AUTHTYPE_CERT && auth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE) {
+	    auth->AuthType != CLIENT_AUTHTYPE_PLAIN_PASSWORD && auth->AuthType != CLIENT_AUTHTYPE_CERT && auth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE)
 		return false;
-	}
 
 	NormalizeLinkPolicy(policy);
 
@@ -458,9 +422,8 @@ bool LinkValidateAuthAndPolicy(CLIENT_AUTH *auth, POLICY *policy) {
 // Set the client option fields every cascade has, in place.
 // NewLink and the SetLink admin RPC call it
 void NormalizeLinkOption(CLIENT_OPTION *option) {
-	if (option == NULL) {
+	if (option == NULL)
 		return;
-	}
 
 	StrCpy(option->DeviceName, sizeof(option->DeviceName), LINK_DEVICE_NAME);
 
@@ -476,9 +439,8 @@ void NormalizeLinkOption(CLIENT_OPTION *option) {
 LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name) {
 	LINK *found = NULL;
 
-	if (hub == NULL || account_name == NULL) {
+	if (hub == NULL || account_name == NULL)
 		return NULL;
-	}
 
 	LockList(hub->LinkList);
 	{
@@ -494,9 +456,8 @@ LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name) {
 			}
 			Unlock(k->lock);
 
-			if (found != NULL) {
+			if (found != NULL)
 				break;
-			}
 		}
 	}
 	UnlockList(hub->LinkList);
@@ -507,21 +468,17 @@ LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name) {
 LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy) {
 	POLICY link_policy;
 	bool added = false;
-	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL) {
+	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL)
 		return NULL;
-	}
-	if (hub->Halt) {
+	if (hub->Halt)
 		return NULL;
-	}
 
-	if (UniIsEmptyStr(option->AccountName)) {
+	if (UniIsEmptyStr(option->AccountName))
 		return NULL;
-	}
 
 	Copy(&link_policy, policy, sizeof(POLICY));
-	if (LinkValidateAuthAndPolicy(auth, &link_policy) == false) {
+	if (LinkValidateAuthAndPolicy(auth, &link_policy) == false)
 		return NULL;
-	}
 
 	CLIENT_OPTION *o = ClientOptionClone(option);
 	NormalizeLinkOption(o);

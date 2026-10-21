@@ -31,9 +31,8 @@ UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -91,9 +90,8 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -107,9 +105,8 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 		                              GetParamUniStr(o, "C"), GetParamUniStr(o, "ST"), GetParamUniStr(o, "L"));
 
 		if (n->CommonName != NULL || n->Organization != NULL || n->Unit != NULL ||
-		    n->Country != NULL || n->State != NULL || n->Local != NULL) {
+		    n->Country != NULL || n->State != NULL || n->Local != NULL)
 			param_exists = true;
-		}
 
 		if (IsEmptyStr(GetParamStr(o, "SERIAL")) == false) {
 			BUF *b = StrToBin(GetParamStr(o, "SERIAL"));
@@ -185,9 +182,8 @@ UINT PsCrlDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -223,9 +219,8 @@ UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	}
 
 	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
@@ -246,24 +241,18 @@ UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 			n = crl->Name;
 
 			if (n != NULL) {
-				if (UniIsEmptyStr(n->CommonName) == false) {
+				if (UniIsEmptyStr(n->CommonName) == false)
 					CtInsert(ct, _UU("CMD_CrlGet_CN"), n->CommonName);
-				}
-				if (UniIsEmptyStr(n->Organization) == false) {
+				if (UniIsEmptyStr(n->Organization) == false)
 					CtInsert(ct, _UU("CMD_CrlGet_O"), n->Organization);
-				}
-				if (UniIsEmptyStr(n->Unit) == false) {
+				if (UniIsEmptyStr(n->Unit) == false)
 					CtInsert(ct, _UU("CMD_CrlGet_OU"), n->Unit);
-				}
-				if (UniIsEmptyStr(n->Country) == false) {
+				if (UniIsEmptyStr(n->Country) == false)
 					CtInsert(ct, _UU("CMD_CrlGet_C"), n->Country);
-				}
-				if (UniIsEmptyStr(n->State) == false) {
+				if (UniIsEmptyStr(n->State) == false)
 					CtInsert(ct, _UU("CMD_CrlGet_ST"), n->State);
-				}
-				if (UniIsEmptyStr(n->Local) == false) {
+				if (UniIsEmptyStr(n->Local) == false)
 					CtInsert(ct, _UU("CMD_CrlGet_L"), n->Local);
-				}
 			}
 
 			if (crl->Serial != NULL && crl->Serial->size >= 1) {

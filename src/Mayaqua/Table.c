@@ -21,9 +21,8 @@ void InitTable() {
 	char tmp[MAX_SIZE];
 	LANGLIST *e = NULL;
 	char table_name[MAX_SIZE];
-	if (MayaquaIsMinimalMode()) {
+	if (MayaquaIsMinimalMode())
 		return;
-	}
 
 	o = LoadLangList();
 	if (o == NULL) {
@@ -31,17 +30,14 @@ void InitTable() {
 		MayaFatalExit(1, "Fatal Error: The hamcore files are missing or broken.\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)");
 	}
 
-	if (LoadLangConfig(LANG_CONFIG_FILENAME, tmp, sizeof(tmp))) {
+	if (LoadLangConfig(LANG_CONFIG_FILENAME, tmp, sizeof(tmp)))
 		e = GetBestLangByName(o, tmp);
-	}
 
-	if (e == NULL) {
+	if (e == NULL)
 		e = GetBestLangForCurrentEnvironment(o);
-	}
 
-	if (e == NULL) {
+	if (e == NULL)
 		goto LABEL_FATAL_ERROR;
-	}
 
 	SaveLangConfig(LANG_CONFIG_FILENAME, e->Name);
 
@@ -50,17 +46,15 @@ void InitTable() {
 	current_lang.LcidList = NULL;
 
 	Format(table_name, sizeof(table_name), "|strtable_%s.stb", current_lang.Name);
-	if (LoadTable(table_name) == false) {
+	if (LoadTable(table_name) == false)
 		goto LABEL_FATAL_ERROR;
-	}
 
 	FreeLangList(o);
 }
 
 static void GetCurrentLang(LANGLIST *e) {
-	if (e == NULL) {
+	if (e == NULL)
 		return;
-	}
 
 	Copy(e, &current_lang, sizeof(LANGLIST));
 }
@@ -76,14 +70,12 @@ UINT GetCurrentLangId() {
 }
 
 bool SaveLangConfig(wchar_t *filename, const char *str) {
-	if (filename == NULL) {
+	if (filename == NULL)
 		return false;
-	}
 
 	BUF *b = ReadDump(LANG_CONFIG_TEMPLETE);
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	SeekBuf(b, b->Size, 0);
 
@@ -118,21 +110,18 @@ bool SaveLangConfig(wchar_t *filename, const char *str) {
 
 bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size) {
 	bool ret = false;
-	if (filename == NULL || str == NULL) {
+	if (filename == NULL || str == NULL)
 		return false;
-	}
 
 	BUF *b = ReadDumpW(filename);
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	while (true) {
 		char *line = CfgReadNextLine(b);
 
-		if (line == NULL) {
+		if (line == NULL)
 			break;
-		}
 
 		Trim(line);
 
@@ -154,9 +143,8 @@ bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size) {
 
 LANGLIST *GetBestLangForCurrentEnvironment(LIST *o) {
 	LANGLIST *ret = NULL;
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	ret = GetBestLangByLcid(o, MsGetUserLocaleId());
 
@@ -164,16 +152,14 @@ LANGLIST *GetBestLangForCurrentEnvironment(LIST *o) {
 }
 
 LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid) {
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
 
-		if (IsIntInList(e->LcidList, lcid)) {
+		if (IsIntInList(e->LcidList, lcid))
 			return e;
-		}
 	}
 
 	LANGLIST *ret = GetBestLangByName(o, "en");
@@ -183,9 +169,8 @@ LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid) {
 
 LANGLIST *GetBestLangByName(LIST *o, const char *name) {
 	LANGLIST *ret = NULL;
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
@@ -196,9 +181,8 @@ LANGLIST *GetBestLangByName(LIST *o, const char *name) {
 		}
 	}
 
-	if (ret != NULL) {
+	if (ret != NULL)
 		return ret;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
@@ -209,17 +193,15 @@ LANGLIST *GetBestLangByName(LIST *o, const char *name) {
 		}
 	}
 
-	if (ret != NULL) {
+	if (ret != NULL)
 		return ret;
-	}
 
 	return ret;
 }
 
 void FreeLangList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
@@ -245,9 +227,8 @@ LIST *LoadLangList() {
 	while (true) {
 		char *line = CfgReadNextLine(b);
 
-		if (line == NULL) {
+		if (line == NULL)
 			break;
-		}
 
 		Trim(line);
 
@@ -301,44 +282,38 @@ wchar_t *GetUniErrorStr(UINT err) {
 	Format(name, sizeof(name), "ERR_%u", err);
 
 	wchar_t *ret = GetTableUniStr(name);
-	if (UniStrLen(ret) != 0) {
+	if (UniStrLen(ret) != 0)
 		return ret;
-	} else {
+	else
 		return _UU("ERR_UNKNOWN");
-	}
 }
 
 UINT GetTableInt(const char *name) {
-	if (name == NULL) {
+	if (name == NULL)
 		return 0;
-	}
 
 	char *str = GetTableStr(name);
 	return ToInt(str);
 }
 
 wchar_t *GetTableUniStr(const char *name) {
-	if (name == NULL) {
+	if (name == NULL)
 		return L"";
-	}
 
 	TABLE *t = FindTable(name);
-	if (t == NULL) {
+	if (t == NULL)
 		return L"";
-	}
 
 	return t->unistr;
 }
 
 char *GetTableStr(const char *name) {
-	if (name == NULL) {
+	if (name == NULL)
 		return "";
-	}
 
 	TABLE *t = FindTable(name);
-	if (t == NULL) {
+	if (t == NULL)
 		return "";
-	}
 
 	return t->str;
 }
@@ -346,9 +321,8 @@ char *GetTableStr(const char *name) {
 TOKEN_LIST *GetTableNameStartWith(const char *str) {
 	TOKEN_LIST *t;
 	char tmp[MAX_SIZE];
-	if (str == NULL) {
+	if (str == NULL)
 		return NullToken();
-	}
 
 	StrCpy(tmp, sizeof(tmp), str);
 	StrUpper(tmp);
@@ -362,9 +336,8 @@ TOKEN_LIST *GetTableNameStartWith(const char *str) {
 		UINT len2 = StrLen(t->name);
 
 		if (len2 >= len) {
-			if (Cmp(t->name, tmp, len) == 0) {
+			if (Cmp(t->name, tmp, len) == 0)
 				Insert(o, CopyStr(t->name));
-			}
 		}
 	}
 
@@ -372,9 +345,8 @@ TOKEN_LIST *GetTableNameStartWith(const char *str) {
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
-	for (UINT i = 0; i < t->NumTokens; i++) {
+	for (UINT i = 0; i < t->NumTokens; i++)
 		t->Token[i] = LIST_DATA(o, i);
-	}
 
 	ReleaseList(o);
 
@@ -383,9 +355,8 @@ TOKEN_LIST *GetTableNameStartWith(const char *str) {
 
 TABLE *FindTable(const char *name) {
 	TABLE tt;
-	if (name == NULL || TableList == NULL) {
+	if (name == NULL || TableList == NULL)
 		return NULL;
-	}
 
 	// The key only lends its name to CmpTableName, which does not change it
 	tt.name = (char *)name;
@@ -395,14 +366,12 @@ TABLE *FindTable(const char *name) {
 }
 
 static int CmpTableName(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	TABLE *t1 = *(TABLE **)p1;
 	TABLE *t2 = *(TABLE **)p2;
-	if (t1 == NULL || t2 == NULL) {
+	if (t1 == NULL || t2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(t1->name, t2->name);
 }
@@ -410,28 +379,23 @@ static int CmpTableName(void *p1, void *p2) {
 static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_list) {
 	UINT i;
 	char *str;
-	if (line == NULL || prefix == NULL) {
+	if (line == NULL || prefix == NULL)
 		return NULL;
-	}
 	TrimLeft(line);
 
 	UINT len = StrLen(line);
-	if (len == 0) {
+	if (len == 0)
 		return NULL;
-	}
 
-	if (line[0] == '#' || (line[0] == '/' && line[1] == '/')) {
+	if (line[0] == '#' || (line[0] == '/' && line[1] == '/'))
 		return NULL;
-	}
 
 	UINT len_name = 0;
 	for (i = 0;; i++) {
-		if (line[i] == 0) {
+		if (line[i] == 0)
 			return NULL;
-		}
-		if (line[i] == ' ' || line[i] == '\t') {
+		if (line[i] == ' ' || line[i] == '\t')
 			break;
-		}
 		len_name++;
 	}
 
@@ -440,9 +404,8 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 
 	UINT string_start = len_name;
 	for (i = len_name; i < len; i++) {
-		if (line[i] != ' ' && line[i] != '\t') {
+		if (line[i] != ' ' && line[i] != '\t')
 			break;
-		}
 		string_start++;
 	}
 	if (i == len) {
@@ -494,9 +457,8 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 		StrCpy(prefix, prefix_size, str);
 		Trim(prefix);
 
-		if (StrCmpi(prefix, "$") == 0 || StrCmpi(prefix, "NULL") == 0) {
+		if (StrCmpi(prefix, "$") == 0 || StrCmpi(prefix, "NULL") == 0)
 			prefix[0] = 0;
-		}
 
 		Free(name);
 		Free(str);
@@ -529,9 +491,8 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 void UnescapeStr(char *src) {
 	UINT len, wp;
 	char *tmp;
-	if (src == NULL) {
+	if (src == NULL)
 		return;
-	}
 
 	len = StrLen(src);
 	tmp = Malloc(len + 1);
@@ -572,9 +533,8 @@ FINISH:
 }
 
 void FreeTable() {
-	if (TableList == NULL) {
+	if (TableList == NULL)
 		return;
-	}
 
 	UINT num = LIST_NUM(TableList);
 	TABLE **tables = ToArray(TableList);
@@ -594,9 +554,8 @@ static bool LoadTableFromBuf(BUF *b) {
 	char *tmp;
 	char prefix[MAX_SIZE];
 	LIST *replace_list = NULL;
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	FreeTable();
 
@@ -611,9 +570,8 @@ static bool LoadTableFromBuf(BUF *b) {
 		bool ok = true;
 
 		tmp = CfgReadNextLine(b);
-		if (tmp == NULL) {
+		if (tmp == NULL)
 			break;
-		}
 
 		if (tmp[0] == '$') {
 			char key[128];
@@ -642,9 +600,8 @@ static bool LoadTableFromBuf(BUF *b) {
 
 		if (ok) {
 			t = ParseTableLine(tmp, prefix, sizeof(prefix), replace_list);
-			if (t != NULL) {
+			if (t != NULL)
 				Insert(TableList, t);
-			}
 		}
 
 		Free(tmp);
@@ -668,18 +625,15 @@ static bool LoadTableFromBuf(BUF *b) {
 // Load the string table from the file, '|' names a resource. Parsed at every load: no cache file in %TEMP%,
 // which other users can write (SEC-8), and no override file beside the exe naming another table (FND-43)
 bool LoadTable(const char *filename) {
-	if (filename == NULL) {
+	if (filename == NULL)
 		return false;
-	}
 
-	if (MayaquaIsMinimalMode()) {
+	if (MayaquaIsMinimalMode())
 		return true;
-	}
 
 	BUF *b = ReadDump(filename);
-	if (b == NULL) {
+	if (b == NULL)
 		MayaFatalExit(1, "Error: Can't read string tables (file not found).\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)");
-	}
 
 	if (LoadTableFromBuf(b) == false) {
 		FreeBuf(b);

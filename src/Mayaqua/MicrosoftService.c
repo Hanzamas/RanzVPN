@@ -45,14 +45,12 @@
 // entries before InitMayaqua().
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message) {
 	LPCSTR strings[1];
-	if (source == NULL || message == NULL) {
+	if (source == NULL || message == NULL)
 		return false;
-	}
 
 	HANDLE h = RegisterEventSourceA(NULL, source);
-	if (h == NULL) {
+	if (h == NULL)
 		return false;
-	}
 
 	strings[0] = message;
 	BOOL ret = ReportEventA(h, (WORD)type, 0, event_id, NULL, 1, 0, strings, NULL);
@@ -79,9 +77,8 @@ static const MS_SVC_ARG ms_svc_args[] =
 
 // The argument table of MsService; num receives the number of its entries
 const MS_SVC_ARG *MsSvcArgs(UINT *num) {
-	if (num != NULL) {
+	if (num != NULL)
 		*num = sizeof(ms_svc_args) / sizeof(ms_svc_args[0]);
-	}
 
 	return ms_svc_args;
 }
@@ -89,15 +86,12 @@ const MS_SVC_ARG *MsSvcArgs(UINT *num) {
 // The mode that the command line argument arg selects, compared without case; SVC_MODE_NONE for an
 // argument that is not in the table, and for NULL
 UINT MsSvcArgToMode(char *arg) {
-	if (arg == NULL) {
+	if (arg == NULL)
 		return SVC_MODE_NONE;
-	}
 
-	for (UINT i = 0; i < sizeof(ms_svc_args) / sizeof(ms_svc_args[0]); i++) {
-		if (StrCmpi(arg, ms_svc_args[i].Arg) == 0) {
+	for (UINT i = 0; i < sizeof(ms_svc_args) / sizeof(ms_svc_args[0]); i++)
+		if (StrCmpi(arg, ms_svc_args[i].Arg) == 0)
 			return ms_svc_args[i].Mode;
-		}
-	}
 
 	return SVC_MODE_NONE;
 }
@@ -108,9 +102,8 @@ static void MsWaitServiceState(char *name, bool running) {
 	UINT64 end = Tick64() + 10000ULL;
 
 	while (Tick64() < end) {
-		if (MsIsServiceRunning(name) == running) {
+		if (MsIsServiceRunning(name) == running)
 			break;
-		}
 
 		SleepThread(250);
 	}
@@ -118,14 +111,12 @@ static void MsWaitServiceState(char *name, bool running) {
 
 bool MsStopService(char *name) {
 	bool ret = false;
-	if (name == NULL) {
+	if (name == NULL)
 		return false;
-	}
 
 	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-	if (sc == NULL) {
+	if (sc == NULL)
 		return false;
-	}
 
 	SC_HANDLE service = OpenService(sc, name, SERVICE_ALL_ACCESS);
 	if (service != NULL) {
@@ -135,9 +126,8 @@ bool MsStopService(char *name) {
 		CloseServiceHandle(service);
 	}
 
-	if (ret) {
+	if (ret)
 		MsWaitServiceState(name, false);
-	}
 
 	CloseServiceHandle(sc);
 	return ret;
@@ -145,14 +135,12 @@ bool MsStopService(char *name) {
 
 bool MsStartService(char *name) {
 	bool ret = false;
-	if (name == NULL) {
+	if (name == NULL)
 		return false;
-	}
 
 	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-	if (sc == NULL) {
+	if (sc == NULL)
 		return false;
-	}
 
 	SC_HANDLE service = OpenService(sc, name, SERVICE_ALL_ACCESS);
 	if (service != NULL) {
@@ -161,9 +149,8 @@ bool MsStartService(char *name) {
 		CloseServiceHandle(service);
 	}
 
-	if (ret) {
+	if (ret)
 		MsWaitServiceState(name, true);
-	}
 
 	CloseServiceHandle(sc);
 	return ret;
@@ -171,14 +158,12 @@ bool MsStartService(char *name) {
 
 bool MsIsServiceRunning(char *name) {
 	bool ret = false;
-	if (name == NULL || IsEmptyStr(name)) {
+	if (name == NULL || IsEmptyStr(name))
 		return false;
-	}
 
 	SC_HANDLE sc = OpenSCManager(NULL, NULL, GENERIC_READ);
-	if (sc == NULL) {
+	if (sc == NULL)
 		return false;
-	}
 
 	SC_HANDLE service = OpenService(sc, name, GENERIC_READ);
 	if (service != NULL) {
@@ -206,30 +191,26 @@ bool MsIsServiceRunning(char *name) {
 
 bool MsUninstallService(char *name) {
 	bool ret = false;
-	if (name == NULL) {
+	if (name == NULL)
 		return false;
-	}
 
 	MsStopService(name);
 
 	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-	if (sc == NULL) {
+	if (sc == NULL)
 		return false;
-	}
 
 	SC_HANDLE service = OpenService(sc, name, SERVICE_ALL_ACCESS);
 	if (service != NULL) {
-		if (DeleteService(service)) {
+		if (DeleteService(service))
 			ret = true;
-		}
 		CloseServiceHandle(service);
 	}
 
 	CloseServiceHandle(sc);
 
-	if (ret) {
+	if (ret)
 		SleepThread(2000);
-	}
 
 	return ret;
 }
@@ -255,21 +236,18 @@ static void MsSetServiceRecovery(SC_HANDLE service) {
 }
 
 bool MsUpdateServiceConfig(char *name) {
-	if (name == NULL) {
+	if (name == NULL)
 		return false;
-	}
 
 	// Shortly after Windows startup (prevents a deadlock)
 	if (timeGetTime() <= (60 * 30 * 1000)) {
-		if (MsRegReadInt(REG_LOCAL_MACHINE, "Software\\" GC_REG_COMPANY_NAME "\\Update Service Config", name) != 0) {
+		if (MsRegReadInt(REG_LOCAL_MACHINE, "Software\\" GC_REG_COMPANY_NAME "\\Update Service Config", name) != 0)
 			return false;
-		}
 	}
 
 	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_CONNECT);
-	if (sc == NULL) {
+	if (sc == NULL)
 		return false;
-	}
 
 	// ChangeServiceConfig2 needs SERVICE_CHANGE_CONFIG, and SERVICE_START for the restart actions
 	SC_HANDLE service = OpenService(sc, name, SERVICE_CHANGE_CONFIG | SERVICE_START);
@@ -302,16 +280,14 @@ bool MsUpdateServiceConfig(char *name) {
 bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path) {
 	bool ret = false;
 	wchar_t name_w[MAX_SIZE];
-	if (name == NULL || title == NULL || path == NULL) {
+	if (name == NULL || title == NULL || path == NULL)
 		return false;
-	}
 
 	StrToUni(name_w, sizeof(name_w), name);
 
 	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-	if (sc == NULL) {
+	if (sc == NULL)
 		return false;
-	}
 
 	SC_HANDLE service = CreateServiceW(sc, name_w, title, SERVICE_ALL_ACCESS,
 	                                   SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START,
@@ -333,28 +309,24 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 
 	CloseServiceHandle(sc);
 
-	if (ret) {
+	if (ret)
 		SleepThread(2000);
-	}
 
 	return ret;
 }
 
 bool MsIsServiceInstalled(char *name) {
 	bool ret = false;
-	if (name == NULL) {
+	if (name == NULL)
 		return false;
-	}
 
 	SC_HANDLE sc = OpenSCManager(NULL, NULL, GENERIC_READ);
-	if (sc == NULL) {
+	if (sc == NULL)
 		return false;
-	}
 
 	SC_HANDLE service = OpenService(sc, name, GENERIC_READ);
-	if (service != NULL) {
+	if (service != NULL)
 		ret = true;
-	}
 
 	CloseServiceHandle(service);
 	CloseServiceHandle(sc);

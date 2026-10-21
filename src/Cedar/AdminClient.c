@@ -56,9 +56,8 @@
 	}
 
 CAPSLIST *ScGetCapsEx(RPC *rpc) {
-	if (rpc == NULL) {
+	if (rpc == NULL)
 		return NULL;
-	}
 
 	CAPSLIST *t = ZeroMalloc(sizeof(CAPSLIST));
 
@@ -73,9 +72,8 @@ CAPSLIST *ScGetCapsEx(RPC *rpc) {
 		for (UINT i = 0; i < names->NumTokens; i++) {
 			char *name = names->Token[i] + 3;
 
-			if (GetCaps(t, name) == NULL) {
+			if (GetCaps(t, name) == NULL)
 				AddCapsBool(t, name, false);
-			}
 		}
 
 		FreeToken(names);
@@ -170,9 +168,8 @@ DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
 
 BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param) {
-	if (r == NULL || filepath == NULL) {
+	if (r == NULL || filepath == NULL)
 		return NULL;
-	}
 
 	UINT offset = 0;
 
@@ -194,9 +191,8 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 			return NULL;
 		}
 
-		if (t.Buffer == NULL) {
+		if (t.Buffer == NULL)
 			break;
-		}
 
 		offset += t.Buffer->Size;
 		Zero(&g, sizeof(g));
@@ -225,21 +221,18 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 }
 
 PACK *AdminCall(RPC *rpc, char *function_name, PACK *p) {
-	if (rpc == NULL || function_name == NULL) {
+	if (rpc == NULL || function_name == NULL)
 		return NULL;
-	}
-	if (p == NULL) {
+	if (p == NULL)
 		p = NewPack();
-	}
 
 
 	return RpcCall(rpc, function_name, p);
 }
 
 void AdminDisconnect(RPC *rpc) {
-	if (rpc == NULL) {
+	if (rpc == NULL)
 		return;
-	}
 
 	SESSION *s = (SESSION *)rpc->Param;
 	SOCK *sock = rpc->Sock;

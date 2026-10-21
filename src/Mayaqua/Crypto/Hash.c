@@ -22,54 +22,47 @@ static void CngHash(const BCRYPT_ALG_HANDLE *alg, void *dst, UINT digest_size, v
 
 	if (*alg != NULL && CNG_SUCCESS(BCryptCreateHash(*alg, &h, NULL, 0, NULL, 0, 0))) {
 		if ((size == 0 || CNG_SUCCESS(BCryptHashData(h, (PUCHAR)src, size, 0))) &&
-		    CNG_SUCCESS(BCryptFinishHash(h, (PUCHAR)dst, digest_size, 0))) {
+		    CNG_SUCCESS(BCryptFinishHash(h, (PUCHAR)dst, digest_size, 0)))
 			ok = true;
-		}
 
 		BCryptDestroyHash(h);
 	}
 
-	if (ok == false) {
+	if (ok == false)
 		Zero(dst, digest_size);
-	}
 }
 
 void HashMd4(void *dst, void *src, UINT size) {
-	if (dst == NULL || (src == NULL && size != 0)) {
+	if (dst == NULL || (src == NULL && size != 0))
 		return;
-	}
 
 	CngHash(&cng_md4, dst, MD4_SIZE, src, size);
 }
 
 void Md5(void *dst, void *src, UINT size) {
-	if (dst == NULL || (src == NULL && size != 0)) {
+	if (dst == NULL || (src == NULL && size != 0))
 		return;
-	}
 
 	CngHash(&cng_md5, dst, MD5_SIZE, src, size);
 }
 
 void Sha0(void *dst, void *src, UINT size) {
-	if (dst == NULL || (src == NULL && size != 0)) {
+	if (dst == NULL || (src == NULL && size != 0))
 		return;
-	}
 
 	Internal_Sha0(dst, src, size);
 }
 
 void Sha1(void *dst, void *src, UINT size) {
-	if (dst == NULL || (src == NULL && size != 0)) {
+	if (dst == NULL || (src == NULL && size != 0))
 		return;
-	}
 
 	CngHash(&cng_sha1, dst, SHA1_SIZE, src, size);
 }
 
 void Sha2_256(void *dst, void *src, UINT size) {
-	if (dst == NULL || (src == NULL && size != 0)) {
+	if (dst == NULL || (src == NULL && size != 0))
 		return;
-	}
 
 	CngHash(&cng_sha256, dst, SHA256_SIZE, src, size);
 }
@@ -128,9 +121,8 @@ static void MY_SHA0_Transform(MY_SHA0_CTX *ctx) {
 		tmp |= *p++;
 		W[t] = tmp;
 	}
-	for (; t < 80; t++) {
+	for (; t < 80; t++)
 		W[t] = (1, W[t - 3] ^ W[t - 8] ^ W[t - 14] ^ W[t - 16]);
-	}
 	UINT A = ctx->state[0];
 	UINT B = ctx->state[1];
 	UINT C = ctx->state[2];
@@ -182,9 +174,8 @@ static const UCHAR *MY_SHA0_final(MY_SHA0_CTX *ctx) {
 	UCHAR *p = ctx->buf;
 	UINT64 cnt = ctx->count * 8;
 	MY_SHA0_update(ctx, (UCHAR *)"\x80", 1);
-	while ((ctx->count & 63) != 56) {
+	while ((ctx->count & 63) != 56)
 		MY_SHA0_update(ctx, (UCHAR *)"\0", 1);
-	}
 	for (int i = 0; i < 8; ++i) {
 		UCHAR tmp = (UCHAR)(cnt >> ((7 - i) * 8));
 		MY_SHA0_update(ctx, &tmp, 1);

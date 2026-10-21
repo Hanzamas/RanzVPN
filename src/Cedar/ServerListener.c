@@ -18,20 +18,17 @@
 #include "ServerInternal.h"
 
 bool SiDeleteListener(SERVER *s, UINT port) {
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return false;
-	}
 
 	SERVER_LISTENER *e = SiGetListener(s, port);
-	if (e == NULL) {
+	if (e == NULL)
 		return false;
-	}
 
 	SiDisableListener(s, port);
 
-	if (e->Listener != NULL) {
+	if (e->Listener != NULL)
 		ReleaseListener(e->Listener);
-	}
 
 	Delete(s->ServerListenerList, e);
 	Free(e);
@@ -40,18 +37,15 @@ bool SiDeleteListener(SERVER *s, UINT port) {
 }
 
 bool SiDisableListener(SERVER *s, UINT port) {
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return false;
-	}
 
 	SERVER_LISTENER *e = SiGetListener(s, port);
-	if (e == NULL) {
+	if (e == NULL)
 		return false;
-	}
 
-	if (e->Enabled == false || e->Listener == NULL) {
+	if (e->Enabled == false || e->Listener == NULL)
 		return true;
-	}
 
 	StopListener(e->Listener);
 
@@ -64,23 +58,19 @@ bool SiDisableListener(SERVER *s, UINT port) {
 }
 
 bool SiEnableListener(SERVER *s, UINT port) {
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return false;
-	}
 
 	SERVER_LISTENER *e = SiGetListener(s, port);
-	if (e == NULL) {
+	if (e == NULL)
 		return false;
-	}
 
-	if (e->Enabled) {
+	if (e->Enabled)
 		return true;
-	}
 
 	e->Listener = NewListener(s->Cedar, e->Port);
-	if (e->Listener == NULL) {
+	if (e->Listener == NULL)
 		return false;
-	}
 
 	e->Listener->DisableDos = e->DisableDos;
 
@@ -90,15 +80,13 @@ bool SiEnableListener(SERVER *s, UINT port) {
 }
 
 SERVER_LISTENER *SiGetListener(SERVER *s, UINT port) {
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return NULL;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(s->ServerListenerList); i++) {
 		SERVER_LISTENER *e = LIST_DATA(s->ServerListenerList, i);
-		if (e->Port == port) {
+		if (e->Port == port)
 			return e;
-		}
 	}
 
 	return NULL;
@@ -106,15 +94,13 @@ SERVER_LISTENER *SiGetListener(SERVER *s, UINT port) {
 
 bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos) {
 	SERVER_LISTENER *e;
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return false;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(s->ServerListenerList); i++) {
 		e = LIST_DATA(s->ServerListenerList, i);
-		if (e->Port == port) {
+		if (e->Port == port)
 			return false;
-		}
 	}
 
 	e = ZeroMalloc(sizeof(SERVER_LISTENER));
@@ -124,9 +110,8 @@ bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos) {
 
 	if (e->Enabled) {
 		e->Listener = NewListener(s->Cedar, e->Port);
-		if (e->Listener != NULL) {
+		if (e->Listener != NULL)
 			e->Listener->DisableDos = e->DisableDos;
-		}
 	}
 
 	Insert(s->ServerListenerList, e);
@@ -135,17 +120,15 @@ bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos) {
 }
 
 void SiLockListenerList(SERVER *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	LockList(s->ServerListenerList);
 }
 
 void SiUnlockListenerList(SERVER *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	UnlockList(s->ServerListenerList);
 }
@@ -154,9 +137,8 @@ void SiUnlockListenerList(SERVER *s) {
 // The caller frees the array with Free
 SERVER_LISTENER_INFO *SiEnumListeners(SERVER *s, UINT *num) {
 	SERVER_LISTENER_INFO *ret;
-	if (s == NULL || num == NULL) {
+	if (s == NULL || num == NULL)
 		return NULL;
-	}
 
 	SiLockListenerList(s);
 	{
@@ -168,9 +150,8 @@ SERVER_LISTENER_INFO *SiEnumListeners(SERVER *s, UINT *num) {
 
 			ret[i].Port = o->Port;
 			ret[i].Enabled = o->Enabled;
-			if (o->Enabled && o->Listener->Status == LISTENER_STATUS_TRYING) {
+			if (o->Enabled && o->Listener->Status == LISTENER_STATUS_TRYING)
 				ret[i].Trying = true;
-			}
 		}
 	}
 	SiUnlockListenerList(s);

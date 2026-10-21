@@ -40,9 +40,8 @@ void SessionMain(SESSION *s) {
 	bool lock_receive_blocks_queue = false;
 	HUB *udp_accel_log_hub;
 
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	// The drop counters of the UDP Acceleration go to the log of the session's hub, or for a
 	// cascade connection to the log of the local hub of the cascade
@@ -57,11 +56,10 @@ void SessionMain(SESSION *s) {
 
 	pa = s->PacketAdapter;
 	if (pa->Init(s) == false) {
-		if (s->VLanDeviceErrorCount >= 2) {
+		if (s->VLanDeviceErrorCount >= 2)
 			s->ForceStopFlag = true;
-		} else {
+		else
 			s->VLanDeviceErrorCount++;
-		}
 		err = ERR_DEVICE_DRIVER_ERROR;
 		goto CLEANUP;
 	}
@@ -79,16 +77,13 @@ void SessionMain(SESSION *s) {
 	s->RetryFlag = false;
 
 	s->LastCommTime = Tick64();
-	if (s->ServerMode == false) {
+	if (s->ServerMode == false)
 		s->NextConnectionTime = Tick64() + (UINT64)((UINT64)s->ClientOption->AdditionalConnectionInterval * (UINT64)1000);
-	}
 
 	s->NumConnectionsEstablished++;
 	s->CurrentConnectionEstablishTime = Tick64();
-	if (s->FirstConnectionEstablisiedTime == 0) /* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
-	{
+	if (s->FirstConnectionEstablisiedTime == 0)       /* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
 		s->FirstConnectionEstablisiedTime = Tick64(); /* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
-	}
 
 	s->LastIncrementTraffic = Tick64();
 
@@ -98,13 +93,11 @@ void SessionMain(SESSION *s) {
 	s->LastTryAddConnectTime = Tick64();
 
 	if (policy != NULL) {
-		if (policy->MonitorPort) {
+		if (policy->MonitorPort)
 			s->IsMonitorMode = true;
-		}
 
-		if (policy->NoRouting == false || policy->NoBridge == false) {
+		if (policy->NoRouting == false || policy->NoBridge == false)
 			s->IsBridgeMode = true;
-		}
 	}
 
 	is_server_session = s->ServerMode;
@@ -141,9 +134,8 @@ void SessionMain(SESSION *s) {
 		}
 
 		if (is_server_session == false) {
-			if (GetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT) == false) {
+			if (GetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT) == false)
 				ClientAdditionalConnectChance(s);
-			}
 		}
 
 		ConnectionReceive(c, s->Cancel1, s->Cancel2);
@@ -161,16 +153,14 @@ void SessionMain(SESSION *s) {
 			UdpAccelLogDrops(s->UdpAccel, udp_accel_log_hub, s->Name, false);
 		}
 
-		if (lock_receive_blocks_queue) {
+		if (lock_receive_blocks_queue)
 			LockQueue(c->ReceivedBlocks);
-		}
 		{
 			BLOCK *b;
 			while (true) {
 				b = GetNext(c->ReceivedBlocks);
-				if (b == NULL) {
+				if (b == NULL)
 					break;
-				}
 
 				update_hub_last_comm = true;
 
@@ -189,9 +179,8 @@ void SessionMain(SESSION *s) {
 				err = ERR_DEVICE_DRIVER_ERROR;
 			}
 		}
-		if (lock_receive_blocks_queue) {
+		if (lock_receive_blocks_queue)
 			UnlockQueue(c->ReceivedBlocks);
-		}
 
 		{
 			UINT i, max_num = MAX_SEND_SOCKET_QUEUE_NUM;
@@ -217,15 +206,13 @@ void SessionMain(SESSION *s) {
 					b = NewBlock(packet, packet_size, s->UseCompress ? 1 : 0);
 					b->PriorityQoS = priority;
 
-					if (b->PriorityQoS && c->Protocol == CONNECTION_TCP && s->QoS) {
+					if (b->PriorityQoS && c->Protocol == CONNECTION_TCP && s->QoS)
 						q = c->SendBlocks2;
-					} else {
+					else
 						q = c->SendBlocks;
-					}
 
-					if (q->num_item > MAX_STORED_QUEUE_NUM) {
+					if (q->num_item > MAX_STORED_QUEUE_NUM)
 						q = NULL;
-					}
 
 					if (q != NULL) {
 						c->CurrentSendQueueSize += b->Size;
@@ -242,9 +229,8 @@ void SessionMain(SESSION *s) {
 				}
 
 				i++;
-				if (i >= max_num) {
+				if (i >= max_num)
 					break;
-				}
 			}
 		}
 
@@ -259,9 +245,8 @@ void SessionMain(SESSION *s) {
 		ConnectionSend(c, now);
 
 		if (s->Halt) {
-			if (s->ForceStopFlag) {
+			if (s->ForceStopFlag)
 				err = ERR_USER_CANCEL;
-			}
 			break;
 		}
 
@@ -270,13 +255,11 @@ void SessionMain(SESSION *s) {
 		if (s->NumLoginIncrementTick != 0 && s->NumLoginIncrementTick <= now) {
 			s->NumLoginIncrementTick = 0;
 
-			if (s->NumLoginIncrementHubObject != NULL) {
+			if (s->NumLoginIncrementHubObject != NULL)
 				s->NumLoginIncrementHubObject->NumLogin++;
-			}
 
-			if (s->NumLoginIncrementUserObject != NULL) {
+			if (s->NumLoginIncrementUserObject != NULL)
 				s->NumLoginIncrementUserObject->NumLogin++;
-			}
 		}
 
 		if (is_server_session) {
@@ -289,34 +272,30 @@ void SessionMain(SESSION *s) {
 		if (s->LinkModeServer == false && s->BridgeMode == false) {
 			bool timeouted = false;
 
-			if ((now > s->LastCommTime) && ((now - s->LastCommTime) >= ((UINT64)s->Timeout))) {
+			if ((now > s->LastCommTime) && ((now - s->LastCommTime) >= ((UINT64)s->Timeout)))
 				timeouted = true;
-			}
 
 			if (c->Protocol == CONNECTION_TCP) {
 				if (GetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT)) {
 					UINT num_tcp_connections = Count(c->CurrentNumConnection);
 
-					if (num_tcp_connections == 0) {
+					if (num_tcp_connections == 0)
 						timeouted = true;
-					}
 				}
 			}
 
 			if (is_server_session == false && s->ClientOption != NULL && s->ClientOption->ConnectionDisconnectSpan == 0) {
 				if (LIST_NUM(s->Connection->Tcp->TcpSockList) < s->MaxConnection) {
 					if ((s->LastTryAddConnectTime +
-					     (UINT64)(s->ClientOption->AdditionalConnectionInterval * 1000 * 2 + CONNECTING_TIMEOUT * 2)) <= Tick64()) {
+					     (UINT64)(s->ClientOption->AdditionalConnectionInterval * 1000 * 2 + CONNECTING_TIMEOUT * 2)) <= Tick64())
 						timeouted = true;
-					}
 
 					UINT num_tcp_conn = LIST_NUM(s->Connection->Tcp->TcpSockList);
 
 					if ((s->CurrentConnectionEstablishTime +
 					     (UINT64)(num_tcp_conn * s->ClientOption->AdditionalConnectionInterval * 1000 * 2 + CONNECTING_TIMEOUT * 2)) <= Tick64()) {
-						if (s->ClientOption->BindLocalPort != 0 || num_tcp_conn == 0) {
+						if (s->ClientOption->BindLocalPort != 0 || num_tcp_conn == 0)
 							timeouted = true;
-						}
 					}
 				}
 			}
@@ -360,17 +339,14 @@ CLEANUP:
 		c->LastPacketQueueSize = c->CurrentSendQueueSize;
 	}
 
-	if (pa_inited) {
+	if (pa_inited)
 		pa->Free(s);
-	}
 
-	if (s->ServerMode == false) {
+	if (s->ServerMode == false)
 		StopAllAdditionalConnectThread(s->Connection);
-	}
 
-	if (s->BridgeMode) {
+	if (s->BridgeMode)
 		BrSessionCleanup(s);
-	}
 
 	if (s->Cancel2 != NULL) {
 		ReleaseCancel(s->Cancel2);
@@ -385,9 +361,8 @@ CLEANUP:
 UINT GetNextDelayedPacketTickDiff(SESSION *s) {
 	UINT ret = 0x7fffffff;
 	UINT64 now;
-	if (s == NULL) {
+	if (s == NULL)
 		return 0;
-	}
 
 	if (LIST_NUM(s->DelayedPacketList) >= 1) {
 		now = TickHighres64();
@@ -399,11 +374,10 @@ UINT GetNextDelayedPacketTickDiff(SESSION *s) {
 				UINT64 t = p->DelayedForwardTick;
 				UINT d = 0x7fffffff;
 
-				if (now >= t) {
+				if (now >= t)
 					d = 0;
-				} else {
+				else
 					d = (UINT)(t - now);
-				}
 
 				ret = MIN(ret, d);
 			}
@@ -415,20 +389,17 @@ UINT GetNextDelayedPacketTickDiff(SESSION *s) {
 }
 
 bool IsPriorityHighestPacketForQoS(void *data, UINT size) {
-	if (data == NULL) {
+	if (data == NULL)
 		return false;
-	}
 
 	UCHAR *buf = (UCHAR *)data;
 	if (size >= 16) {
-		if (buf[12] == 0x08 && buf[13] == 0x00 && buf[15] != 0x00 && buf[15] != 0x08) {
+		if (buf[12] == 0x08 && buf[13] == 0x00 && buf[15] != 0x00 && buf[15] != 0x08)
 			return true;
-		}
 
 		if (size >= 34 && size <= 128) {
-			if (buf[12] == 0x08 && buf[13] == 0x00 && buf[23] == 0x01) {
+			if (buf[12] == 0x08 && buf[13] == 0x00 && buf[23] == 0x01)
 				return true;
-			}
 		}
 	}
 
@@ -437,9 +408,8 @@ bool IsPriorityHighestPacketForQoS(void *data, UINT size) {
 
 void IncrementUserTraffic(HUB *hub, char *username, SESSION *s) {
 	TRAFFIC report_traffic;
-	if (hub == NULL || username == NULL || s == NULL) {
+	if (hub == NULL || username == NULL || s == NULL)
 		return;
-	}
 
 	Lock(s->TrafficLock);
 	{
@@ -473,9 +443,8 @@ void IncrementUserTraffic(HUB *hub, char *username, SESSION *s) {
 void AddTrafficForSession(SESSION *s, TRAFFIC *t) {
 	HUB *h;
 	TRAFFIC t2;
-	if (s == NULL || t == NULL) {
+	if (s == NULL || t == NULL)
 		return;
-	}
 
 	Lock(s->TrafficLock);
 	{
@@ -502,20 +471,16 @@ void AddTrafficForSession(SESSION *s, TRAFFIC *t) {
 }
 
 void ClientAdditionalConnectChance(SESSION *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
-	if (s->ServerMode) {
+	if (s->ServerMode)
 		return;
-	}
-	if (s->Connection->Protocol != CONNECTION_TCP) {
+	if (s->Connection->Protocol != CONNECTION_TCP)
 		return;
-	}
 	while (true) {
-		if (s->Halt) {
+		if (s->Halt)
 			return;
-		}
 		if (Count(s->Connection->CurrentNumConnection) < s->MaxConnection) {
 			UINT64 now = Tick64();
 
@@ -534,18 +499,16 @@ void ClientAdditionalConnectChance(SESSION *s) {
 }
 
 static void FreePacketAdapter(PACKET_ADAPTER *pa) {
-	if (pa == NULL) {
+	if (pa == NULL)
 		return;
-	}
 
 	Free(pa);
 }
 
 PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETNEXTPACKET *getnext,
                                  PA_PUTPACKET *put, PA_FREE *free) {
-	if (init == NULL || getcancel == NULL || getnext == NULL || put == NULL || free == NULL) {
+	if (init == NULL || getcancel == NULL || getnext == NULL || put == NULL || free == NULL)
 		return NULL;
-	}
 
 	PACKET_ADAPTER *pa = ZeroMalloc(sizeof(PACKET_ADAPTER));
 
@@ -559,9 +522,8 @@ PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETN
 }
 
 static void ClientAdditionalThread(THREAD *t, void *param) {
-	if (t == NULL || param == NULL) {
+	if (t == NULL || param == NULL)
 		return;
-	}
 
 	SESSION *s = (SESSION *)param;
 
@@ -581,9 +543,8 @@ static void ClientAdditionalThread(THREAD *t, void *param) {
 	if (ClientAdditionalConnect(c) == false) {
 		Dec(c->CurrentNumConnection);
 
-		if (c->AdditionalConnectionFailedCounter == 0) {
+		if (c->AdditionalConnectionFailedCounter == 0)
 			c->LastCounterResetTick = Tick64();
-		}
 
 		c->AdditionalConnectionFailedCounter++;
 
@@ -599,18 +560,16 @@ static void ClientAdditionalThread(THREAD *t, void *param) {
 
 	LockList(c->ConnectingThreads);
 	{
-		if (Delete(c->ConnectingThreads, t)) {
+		if (Delete(c->ConnectingThreads, t))
 			ReleaseThread(t);
-		}
 	}
 	UnlockList(c->ConnectingThreads);
 	ReleaseSession(s);
 }
 
 void SessionAdditionalConnect(SESSION *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	AddRef(s->ref);
 	THREAD *t = NewThread(ClientAdditionalThread, (void *)s);
@@ -620,9 +579,8 @@ void SessionAdditionalConnect(SESSION *s) {
 
 static bool SessionConnect(SESSION *s) {
 	bool ret = false;
-	if (s == NULL) {
+	if (s == NULL)
 		return false;
-	}
 
 	s->ClientStatus = CLIENT_STATUS_CONNECTING;
 
@@ -677,9 +635,8 @@ void StopSession(SESSION *s) {
 // None of them is taken under the MacHashTable lock of a hub.
 void StopSessionEx(SESSION *s, bool no_wait) {
 	CONNECTION *c;
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	s->UserCanceled = true;
 	s->Halt = true;
@@ -692,9 +649,8 @@ void StopSessionEx(SESSION *s, bool no_wait) {
 	Lock(s->lock);
 	{
 		c = s->Connection;
-		if (c != NULL) {
+		if (c != NULL)
 			AddRef(c->ref);
-		}
 	}
 	Unlock(s->lock);
 
@@ -707,9 +663,8 @@ void StopSessionEx(SESSION *s, bool no_wait) {
 		while (true) {
 			s->ForceStopFlag = true;
 			s->Halt = true;
-			if (WaitThread(s->Thread, 20)) {
+			if (WaitThread(s->Thread, 20))
 				break;
-			}
 		}
 	} else {
 		s->ForceStopFlag = true;
@@ -718,9 +673,8 @@ void StopSessionEx(SESSION *s, bool no_wait) {
 }
 
 static void CleanupSession(SESSION *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	if (s->DelayedPacketList != NULL) {
 		for (UINT i = 0; i < LIST_NUM(s->DelayedPacketList); i++) {
@@ -733,9 +687,8 @@ static void CleanupSession(SESSION *s) {
 		ReleaseList(s->DelayedPacketList);
 	}
 
-	if (s->ClientOption != NULL) {
+	if (s->ClientOption != NULL)
 		Free(s->ClientOption);
-	}
 
 	ClientAuthFree(s->ClientAuth);
 
@@ -748,49 +701,40 @@ static void CleanupSession(SESSION *s) {
 	FreeTraffic(s->Traffic);
 	Free(s->Name);
 
-	if (s->Thread != NULL) {
+	if (s->Thread != NULL)
 		ReleaseThread(s->Thread);
-	}
 
 	DeleteLock(s->lock);
 
 	ReleaseEvent(s->HaltEvent);
 
-	if (s->Cancel1) {
+	if (s->Cancel1)
 		ReleaseCancel(s->Cancel1);
-	}
 
-	if (s->Cancel2) {
+	if (s->Cancel2)
 		ReleaseCancel(s->Cancel2);
-	}
 
-	if (s->Policy) {
+	if (s->Policy)
 		Free(s->Policy);
-	}
 
-	if (s->Connection) {
+	if (s->Connection)
 		ReleaseConnection(s->Connection);
-	}
 
 	Free(s->Username);
 
-	if (s->PacketAdapter) {
+	if (s->PacketAdapter)
 		FreePacketAdapter(s->PacketAdapter);
-	}
 
-	if (s->OldTraffic != NULL) {
+	if (s->OldTraffic != NULL)
 		FreeTraffic(s->OldTraffic);
-	}
 
 	DeleteLock(s->TrafficLock);
 
-	if (s->CancelList != NULL) {
+	if (s->CancelList != NULL)
 		ReleaseCancelList(s->CancelList);
-	}
 
-	if (s->Client_Message != NULL) {
+	if (s->Client_Message != NULL)
 		Free(s->Client_Message);
-	}
 
 	DeleteCounter(s->LoggingRecordCount);
 
@@ -798,19 +742,16 @@ static void CleanupSession(SESSION *s) {
 }
 
 void ReleaseSession(SESSION *s) {
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
-	if (Release(s->ref) == 0) {
+	if (Release(s->ref) == 0)
 		CleanupSession(s);
-	}
 }
 
 static void ClientThread(THREAD *t, void *param) {
-	if (t == NULL || param == NULL) {
+	if (t == NULL || param == NULL)
 		return;
-	}
 
 	SESSION *s = (SESSION *)param;
 	AddRef(s->ref);
@@ -834,33 +775,28 @@ static void ClientThread(THREAD *t, void *param) {
 			break;
 		}
 
-		if (s->LinkModeClient && s->Link != NULL) {
+		if (s->LinkModeClient && s->Link != NULL)
 			HLog(s->Link->Hub, "LH_CONNECT_1", s->ClientOption->AccountName, s->CurrentRetryCount + 1);
-		}
 
 		s->NextConnectionTime = 0;
 
 		s->ClientStatus = CLIENT_STATUS_CONNECTING;
 		s->Halt = false;
 		SessionConnect(s);
-		if (s->UserCanceled) {
+		if (s->UserCanceled)
 			s->Err = ERR_USER_CANCEL;
-		}
 
-		if (s->LinkModeClient && s->Link != NULL) {
+		if (s->LinkModeClient && s->Link != NULL)
 			HLog(s->Link->Hub, "LH_CONNECT_ERROR", s->ClientOption->AccountName,
 			     GetUniErrorStr(s->Err), s->Err);
-		}
 
 		s->ClientStatus = CLIENT_STATUS_RETRY;
 
-		if (s->Link != NULL) {
+		if (s->Link != NULL)
 			((LINK *)s->Link)->LastError = s->Err;
-		}
 
-		if (s->Halt && (s->RetryFlag == false) || s->ForceStopFlag) {
+		if (s->Halt && (s->RetryFlag == false) || s->ForceStopFlag)
 			break;
-		}
 		UINT retry_interval = s->RetryInterval;
 
 		if (s->LinkModeClient) {
@@ -870,29 +806,24 @@ static void ClientThread(THREAD *t, void *param) {
 			retry_interval += retry_interval * MIN(s->CurrentRetryCount, 1000);
 			retry_interval = MIN(retry_interval, max_retry_interval);
 
-			if (retry_interval >= 1000 && retry_interval <= (60 * 60 * 1000)) {
+			if (retry_interval >= 1000 && retry_interval <= (60 * 60 * 1000))
 				retry_interval = (retry_interval * 8 / 10) + (Rand32() % (retry_interval * 4 / 10));
-			}
 		}
 
 		if (s->Err == ERR_HUB_IS_BUSY || s->Err == ERR_LICENSE_ERROR ||
-		    s->Err == ERR_HUB_STOPPING || s->Err == ERR_TOO_MANY_USER_SESSION) {
+		    s->Err == ERR_HUB_STOPPING || s->Err == ERR_TOO_MANY_USER_SESSION)
 			retry_interval = RETRY_INTERVAL_SPECIAL;
-		}
 
-		if (s->CurrentRetryCount >= s->ClientOption->NumRetry) {
+		if (s->CurrentRetryCount >= s->ClientOption->NumRetry)
 			break;
-		}
 
 		Wait(s->HaltEvent, retry_interval);
 
-		if (s->ConnectSucceed == false) {
+		if (s->ConnectSucceed == false)
 			s->CurrentRetryCount++;
-		}
 
-		if (s->ForceStopFlag) {
+		if (s->ForceStopFlag)
 			break;
-		}
 	}
 
 	s->ClientStatus = CLIENT_STATUS_IDLE;
@@ -920,9 +851,8 @@ static SESSION *NewSessionBase(CEDAR *cedar, bool server_mode) {
 
 SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str) {
 	if (cedar == NULL || option == NULL) {
-		if (err != NULL) {
+		if (err != NULL)
 			*err = ERR_INTERNAL_ERROR;
-		}
 		return NULL;
 	}
 
@@ -940,9 +870,8 @@ SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *cli
 
 	SOCK *sock = ClientConnectToServer(c);
 	if (sock == NULL) {
-		if (err != NULL) {
+		if (err != NULL)
 			*err = c->Err;
-		}
 		ReleaseSession(s);
 		return NULL;
 	}
@@ -950,17 +879,15 @@ SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *cli
 	if (ClientUploadSignature(sock) == false) {
 		// ClientUploadSignature has no connection to set the error of: the socket broke
 		c->Err = ERR_DISCONNECTED;
-		if (err != NULL) {
+		if (err != NULL)
 			*err = c->Err;
-		}
 		ReleaseSession(s);
 		return NULL;
 	}
 
 	if (ClientDownloadHello(c, sock) == false) {
-		if (err != NULL) {
+		if (err != NULL)
 			*err = c->Err;
-		}
 		ReleaseSession(s);
 		return NULL;
 	}
@@ -969,9 +896,8 @@ SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *cli
 }
 
 SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa) {
-	if (cedar == NULL || option == NULL || auth == NULL || pa == NULL) {
+	if (cedar == NULL || option == NULL || auth == NULL || pa == NULL)
 		return NULL;
-	}
 
 	SESSION *s = NewSessionBase(cedar, false);
 
@@ -1023,9 +949,8 @@ SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth
 
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key) {
 	HUB *h;
-	if (cedar == NULL || session_key == NULL) {
+	if (cedar == NULL || session_key == NULL)
 		return NULL;
-	}
 
 	LockList(cedar->HubList);
 	{
@@ -1058,9 +983,8 @@ SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key) {
 }
 
 static void NewSessionKey(UCHAR *session_key, UINT *session_key_32) {
-	if (session_key == NULL || session_key_32 == NULL) {
+	if (session_key == NULL || session_key_32 == NULL)
 		return;
-	}
 
 	Rand(session_key, SHA1_SIZE);
 	*session_key_32 = Rand32();
@@ -1070,9 +994,8 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 	char name[MAX_SIZE];
 	char hub_name_upper[MAX_SIZE];
 	char user_name_upper[MAX_USERNAME_LEN + 1];
-	if (cedar == NULL || c == NULL || h == NULL || username == NULL || policy == NULL) {
+	if (cedar == NULL || c == NULL || h == NULL || username == NULL || policy == NULL)
 		return NULL;
-	}
 
 	SESSION *s = NewSessionBase(cedar, true);
 
@@ -1114,13 +1037,11 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 // CancelListNum == 0 means c is in no list. Otherwise (c is in some list, the owner mark is not o) the old
 // scan runs, so o stays a set exactly as before.
 void AddCancelList(LIST *o, CANCEL *c) {
-	if (o == NULL || c == NULL) {
+	if (o == NULL || c == NULL)
 		return;
-	}
 
-	if (c->CancelListOwner == o) {
+	if (c->CancelListOwner == o)
 		return;
-	}
 
 	if (c->CancelListNum != 0) {
 		for (UINT i = 0; i < LIST_NUM(o); i++) {
@@ -1140,17 +1061,15 @@ void AddCancelList(LIST *o, CANCEL *c) {
 
 // c leaves the cancel list o: undo the marks of AddCancelList before o drops its reference to c
 static void LeaveCancelList(const LIST *o, CANCEL *c) {
-	if (c->CancelListOwner == o) {
+	if (c->CancelListOwner == o)
 		c->CancelListOwner = NULL;
-	}
 
 	InterlockedDecrement((volatile LONG *)&c->CancelListNum);
 }
 
 void CancelList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		CANCEL *c = LIST_DATA(o, i);
@@ -1163,9 +1082,8 @@ void CancelList(LIST *o) {
 }
 
 void ReleaseCancelList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		CANCEL *c = LIST_DATA(o, i);
@@ -1179,15 +1097,13 @@ void ReleaseCancelList(LIST *o) {
 // Copy what the admin RPCs report about the session. Lock order as in HubCountUserSessions: the caller may hold the
 // hub's SessionList; this takes s->lock, then the TcpSockList lock and the traffic lock
 void SessionGetInfo(SESSION *s, SESSION_INFO *info) {
-	if (info == NULL) {
+	if (info == NULL)
 		return;
-	}
 
 	Zero(info, sizeof(SESSION_INFO));
 
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	Lock(s->lock);
 	{

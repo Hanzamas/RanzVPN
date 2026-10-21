@@ -32,18 +32,15 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 	char target_hostname[MAX_HOST_NAME_LEN + 1];
 	char target_hostname_port[MAX_SIZE];
 
-	if ((IsEmptyStr(in->Username) || IsEmptyStr(in->Password)) == false) {
+	if ((IsEmptyStr(in->Username) || IsEmptyStr(in->Password)) == false)
 		use_auth = true;
-	}
 
 	Zero(target_hostname, sizeof(target_hostname));
 	StrCpy(target_hostname, sizeof(target_hostname), in->TargetHostname);
 
-	for (UINT i = 0; i < StrLen(target_hostname); ++i) {
-		if (target_hostname[i] == '/') {
+	for (UINT i = 0; i < StrLen(target_hostname); ++i)
+		if (target_hostname[i] == '/')
 			target_hostname[i] = 0;
-		}
-	}
 
 	if (IsStrIPv6Address(target_hostname)) {
 		IP ip;
@@ -62,33 +59,27 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 	if (IsEmptyStr(in->HttpCustomHeader) == false) {
 		TOKEN_LIST *tokens = ParseToken(in->HttpCustomHeader, "\r\n");
 		if (tokens != NULL) {
-			for (UINT i = 0; i < tokens->NumTokens; i++) {
+			for (UINT i = 0; i < tokens->NumTokens; i++)
 				AddHttpValueStr(h, tokens->Token[i]);
-			}
 
 			FreeToken(tokens);
 		}
 	}
 
-	if (GetHttpValue(h, "User-Agent") == NULL) {
+	if (GetHttpValue(h, "User-Agent") == NULL)
 		AddHttpValue(h, NewHttpValue("User-Agent", IsEmptyStr(in->HttpUserAgent) ? DEFAULT_USER_AGENT : in->HttpUserAgent));
-	}
 
-	if (GetHttpValue(h, "Host") == NULL) {
+	if (GetHttpValue(h, "Host") == NULL)
 		AddHttpValue(h, NewHttpValue("Host", target_hostname));
-	}
 
-	if (GetHttpValue(h, "Content-Length") == NULL) {
+	if (GetHttpValue(h, "Content-Length") == NULL)
 		AddHttpValue(h, NewHttpValue("Content-Length", "0"));
-	}
 
-	if (GetHttpValue(h, "Proxy-Connection") == NULL) {
+	if (GetHttpValue(h, "Proxy-Connection") == NULL)
 		AddHttpValue(h, NewHttpValue("Proxy-Connection", "Keep-Alive"));
-	}
 
-	if (GetHttpValue(h, "Pragma") == NULL) {
+	if (GetHttpValue(h, "Pragma") == NULL)
 		AddHttpValue(h, NewHttpValue("Pragma", "no-cache"));
-	}
 
 	if (use_auth && GetHttpValue(h, "Proxy-Authorization") == NULL) {
 		char auth_str[MAX_SIZE * 2];
@@ -105,24 +96,20 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 
 	FreeHttpHeader(h);
 
-	if (ok == false) {
+	if (ok == false)
 		return PROXY_ERROR_DISCONNECTED;
-	}
 
-	if (*cancel_flag) {
+	if (*cancel_flag)
 		return PROXY_ERROR_CANCELED;
-	}
 
 	h = RecvHttpHeader(s);
-	if (h == NULL) {
+	if (h == NULL)
 		return PROXY_ERROR_GENERIC;
-	}
 
 	UINT code = 0;
 	if (StrLen(h->Method) == 8) {
-		if (Cmp(h->Method, "HTTP/1.", 7) == 0) {
+		if (Cmp(h->Method, "HTTP/1.", 7) == 0)
 			code = ToInt(h->Target);
-		}
 	}
 	FreeHttpHeader(h);
 
@@ -133,9 +120,8 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 		return PROXY_ERROR_AUTHENTICATION;
 
 	default:
-		if ((code / 100) == 2) {
+		if ((code / 100) == 2)
 			return PROXY_ERROR_SUCCESS;
-		}
 
 		return PROXY_ERROR_GENERIC;
 	}
@@ -169,9 +155,8 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b) {
 	WriteBufChar(b, SOCKS5_METHOD_NONE);
 	WriteBufChar(b, SOCKS5_METHOD_USERPASS);
 
-	if (SendAll(s, b->Buf, b->Size, false) == false) {
+	if (SendAll(s, b->Buf, b->Size, false) == false)
 		return PROXY_ERROR_DISCONNECTED;
-	}
 
 	// +----+--------+
 	// |VER | METHOD |
@@ -179,13 +164,11 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b) {
 	// | 1  |   1    |
 	// +----+--------+
 
-	if (RecvAll(s, recv_buf, sizeof(recv_buf), false) == false) {
+	if (RecvAll(s, recv_buf, sizeof(recv_buf), false) == false)
 		return PROXY_ERROR_DISCONNECTED;
-	}
 
-	if (recv_buf[0] != SOCKS5_VERSION) {
+	if (recv_buf[0] != SOCKS5_VERSION)
 		return PROXY_ERROR_VERSION;
-	}
 
 	ClearBuf(b);
 
@@ -215,9 +198,8 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b) {
 		Zero(b->Buf, b->Size);
 		ClearBuf(b);
 
-		if (ok == false) {
+		if (ok == false)
 			return PROXY_ERROR_DISCONNECTED;
-		}
 
 		// +----+--------+
 		// |VER | STATUS |
@@ -225,17 +207,14 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b) {
 		// | 1  |   1    |
 		// +----+--------+
 
-		if (RecvAll(s, recv_buf, sizeof(recv_buf), false) == false) {
+		if (RecvAll(s, recv_buf, sizeof(recv_buf), false) == false)
 			return PROXY_ERROR_DISCONNECTED;
-		}
 
-		if (recv_buf[0] != SOCKS5_USERPASS_VERSION) {
+		if (recv_buf[0] != SOCKS5_USERPASS_VERSION)
 			return PROXY_ERROR_VERSION;
-		}
 
-		if (recv_buf[1] != 0) {
+		if (recv_buf[1] != 0)
 			return PROXY_ERROR_AUTHENTICATION;
-		}
 	} else if (recv_buf[1] == SOCKS5_METHOD_NO_ACCEPTABLE) {
 		// The proxy accepts neither no authentication nor a user name and password
 		return PROXY_ERROR_AUTHENTICATION;
@@ -274,22 +253,19 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b) {
 		WriteBufChar(b, SOCKS5_ATYP_DOMAINNAME);
 		WriteBufChar(b, dest_length);
 		WriteBuf(b, in->TargetHostname, dest_length);
+	} else if (IsIP6(&target_ip)) {
+		WriteBufChar(b, SOCKS5_ATYP_IPV6);
+		WriteBuf(b, target_ip.address, sizeof(target_ip.address));
 	} else {
-		if (IsIP6(&target_ip)) {
-			WriteBufChar(b, SOCKS5_ATYP_IPV6);
-			WriteBuf(b, target_ip.address, sizeof(target_ip.address));
-		} else {
-			WriteBufChar(b, SOCKS5_ATYP_IPV4);
-			WriteBuf(b, IPV4(target_ip.address), IPV4_SIZE);
-		}
+		WriteBufChar(b, SOCKS5_ATYP_IPV4);
+		WriteBuf(b, IPV4(target_ip.address), IPV4_SIZE);
 	}
 
 	USHORT target_port = Endian16(in->TargetPort);
 	WriteBuf(b, &target_port, sizeof(target_port));
 
-	if (SendAll(s, b->Buf, b->Size, false) == false) {
+	if (SendAll(s, b->Buf, b->Size, false) == false)
 		return PROXY_ERROR_DISCONNECTED;
-	}
 
 	// +----+-----+-------+------+----------+----------+
 	// |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
@@ -313,9 +289,8 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b) {
 	// The packet sent by the server should always have the same size as the one we sent to it.
 	// However, there are some implementations which send fixed values (aside from the first 2 bytes).
 	// In order to support such implementations, we read the first 4 bytes in order to know the address type before trying to read the rest of the packet.
-	if (RecvAll(s, reply, sizeof(reply), false) == false) {
+	if (RecvAll(s, reply, sizeof(reply), false) == false)
 		return PROXY_ERROR_DISCONNECTED;
-	}
 
 	// We receive the rest of the packet by knowing the size according to the address type
 	switch (reply[3]) {
@@ -326,9 +301,8 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b) {
 		bnd_size = 16 + 2;
 		break;
 	case SOCKS5_ATYP_DOMAINNAME:
-		if (RecvAll(s, &tmp, 1, false) == false) {
+		if (RecvAll(s, &tmp, 1, false) == false)
 			return PROXY_ERROR_DISCONNECTED;
-		}
 		bnd_size = (UINT)tmp + 2; // Hostname length + 2 bytes (port)
 		break;
 	default:
@@ -338,13 +312,11 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b) {
 		break;
 	}
 
-	if (bnd_size != 0 && RecvAll(s, bnd, bnd_size, false) == false) {
+	if (bnd_size != 0 && RecvAll(s, bnd, bnd_size, false) == false)
 		return PROXY_ERROR_DISCONNECTED;
-	}
 
-	if (reply[0] != SOCKS5_VERSION) {
+	if (reply[0] != SOCKS5_VERSION)
 		return PROXY_ERROR_VERSION;
-	}
 
 	switch (reply[1]) {
 	case SOCKS5_REP_SUCCEEDED:
@@ -384,17 +356,14 @@ static UINT ProxySocks4Handshake(SOCK *s, const PROXY_PARAM_IN *in, IP *target_i
 
 	FreeBuf(b);
 
-	if (ok == false) {
+	if (ok == false)
 		return PROXY_ERROR_DISCONNECTED;
-	}
 
-	if (RecvAll(s, recv_buf, sizeof(recv_buf), false) == false) {
+	if (RecvAll(s, recv_buf, sizeof(recv_buf), false) == false)
 		return PROXY_ERROR_DISCONNECTED;
-	}
 
-	if (recv_buf[0] != SOCKS4_REPLY_VERSION) {
+	if (recv_buf[0] != SOCKS4_REPLY_VERSION)
 		return PROXY_ERROR_GENERIC;
-	}
 
 	switch (recv_buf[1]) {
 	case SOCKS4_REPLY_GRANTED:
@@ -411,28 +380,24 @@ UINT ProxyConnect(UINT proxy_type, PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, vol
 	IP target_ip;
 	UINT ret;
 	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname) ||
-	    (proxy_type != PROXY_HTTP && proxy_type != PROXY_SOCKS && proxy_type != PROXY_SOCKS5)) {
+	    (proxy_type != PROXY_HTTP && proxy_type != PROXY_SOCKS && proxy_type != PROXY_SOCKS5))
 		return PROXY_ERROR_PARAMETER;
-	}
 
-	if (cancel_flag == NULL) {
+	if (cancel_flag == NULL)
 		cancel_flag = &dummy_cancel_flag;
-	} else if (*cancel_flag) {
+	else if (*cancel_flag)
 		return PROXY_ERROR_CANCELED;
-	}
 
 	Zero(out, sizeof(PROXY_PARAM_OUT));
 	Zero(&target_ip, sizeof(target_ip));
 
 	// Get the IPv4 address of the destination server (SOCKS4 does not support IPv6).
-	if (proxy_type == PROXY_SOCKS && GetIP4(&target_ip, in->TargetHostname) == false) {
+	if (proxy_type == PROXY_SOCKS && GetIP4(&target_ip, in->TargetHostname) == false)
 		return PROXY_ERROR_CONNECTION;
-	}
 
 	SOCK *s = BindConnectEx4(in->BindLocalIP, in->BindLocalPort, in->Hostname, in->Port, in->Timeout, (bool *)cancel_flag, &out->ResolvedIp);
-	if (s == NULL) {
+	if (s == NULL)
 		return PROXY_ERROR_CONNECTION;
-	}
 
 	SetTimeout(s, MIN(PROXY_CONNECTION_TIMEOUT, (in->Timeout == 0 ? INFINITE : in->Timeout)));
 

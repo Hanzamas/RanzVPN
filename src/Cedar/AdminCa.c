@@ -22,9 +22,8 @@ UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t) {
 	UINT ret = ERR_NO_ERROR;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	LockList(h->HubDb->RootCertList);
 	{
@@ -61,9 +60,8 @@ UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t) {
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	LockList(h->HubDb->RootCertList);
 	{
@@ -93,9 +91,8 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t) {
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	LockList(h->HubDb->RootCertList);
 	{
@@ -124,14 +121,12 @@ UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t) {
 	CEDAR *c = s->Cedar;
 	UINT err;
 
-	if (t->Cert == NULL) {
+	if (t->Cert == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	// The hub ignores a certificate it already trusts and one over MAX_HUB_CERTS; the call still succeeds
 	if (AddRootCert(h, t->Cert)) {

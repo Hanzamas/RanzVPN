@@ -11,13 +11,11 @@
 HTTPLOG *ParseHttpsAccessLog(PKT *pkt) {
 	HTTPLOG h;
 	char sni[MAX_PATH];
-	if (pkt == NULL) {
+	if (pkt == NULL)
 		return NULL;
-	}
 
-	if (GetSniNameFromSslPacket(pkt->Payload, pkt->PayloadSize, sni, sizeof(sni)) == false) {
+	if (GetSniNameFromSslPacket(pkt->Payload, pkt->PayloadSize, sni, sizeof(sni)) == false)
 		return NULL;
-	}
 
 	Zero(&h, sizeof(h));
 
@@ -33,22 +31,19 @@ HTTPLOG *ParseHttpsAccessLog(PKT *pkt) {
 HTTPLOG *ParseHttpAccessLog(PKT *pkt) {
 	HTTPLOG h;
 	bool ok = false;
-	if (pkt == NULL) {
+	if (pkt == NULL)
 		return NULL;
-	}
 
 	UCHAR *buf = pkt->Payload;
 	UINT size = pkt->PayloadSize;
 
-	if (size <= 5) {
+	if (size <= 5)
 		return NULL;
-	}
 
 	if (CmpCaseIgnore(buf, "GET ", 4) != 0 &&
 	    CmpCaseIgnore(buf, "HEAD ", 5) != 0 &&
-	    CmpCaseIgnore(buf, "POST ", 5) != 0) {
+	    CmpCaseIgnore(buf, "POST ", 5) != 0)
 		return NULL;
-	}
 
 	Zero(&h, sizeof(h));
 
@@ -78,9 +73,8 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt) {
 				while (true) {
 					char *line = CfgReadNextLine(b);
 
-					if (line == NULL) {
+					if (line == NULL)
 						break;
-					}
 
 					UINT i = SearchStr(line, ":", 0);
 					if (i != INFINITE && i < (MAX_SIZE / 2)) {
@@ -94,21 +88,19 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt) {
 						StrCpy(value, sizeof(value), line + i + 1);
 						Trim(value);
 
-						if (StrCmpi(name, "host") == 0) {
+						if (StrCmpi(name, "host") == 0)
 							StrCpy(h.Hostname, sizeof(h.Hostname), value);
-						} else if (StrCmpi(name, "referer") == 0) {
+						else if (StrCmpi(name, "referer") == 0)
 							StrCpy(h.Referer, sizeof(h.Referer), value);
-						} else if (StrCmpi(name, "user-agent") == 0) {
+						else if (StrCmpi(name, "user-agent") == 0)
 							StrCpy(h.UserAgent, sizeof(h.UserAgent), value);
-						}
 					}
 
 					Free(line);
 				}
 
-				if (IsEmptyStr(h.Hostname) == false) {
+				if (IsEmptyStr(h.Hostname) == false)
 					ok = true;
-				}
 			}
 			FreeToken(tokens);
 		}
@@ -117,9 +109,8 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt) {
 	Free(line1);
 	FreeBuf(b);
 
-	if (ok) {
+	if (ok)
 		return Clone(&h, sizeof(h));
-	} else {
+	else
 		return NULL;
-	}
 }

@@ -27,9 +27,8 @@ static char *RpcFieldKeyName(char *key) {
 
 // Keys of the RPC envelope, which no row may write or read
 static bool RpcFieldIsReservedKey(const char *key) {
-	if (key == NULL) {
+	if (key == NULL)
 		return false;
-	}
 
 	return (StrCmpi(key, "function_name") == 0 || StrCmpi(key, "error") == 0 || StrCmpi(key, "error_code") == 0);
 }
@@ -38,20 +37,18 @@ static bool RpcFieldIsReservedKey(const char *key) {
 static bool RpcFieldGetBool(const RPC_FIELD *f, void *base) {
 	void *m = RPC_FIELD_MEMBER(base, f);
 
-	if (f->Size == sizeof(bool)) {
+	if (f->Size == sizeof(bool))
 		return *((bool *)m);
-	}
 
 	return (*((UINT *)m) != 0);
 }
 static void RpcFieldSetBool(const RPC_FIELD *f, void *base, bool b) {
 	void *m = RPC_FIELD_MEMBER(base, f);
 
-	if (f->Size == sizeof(bool)) {
+	if (f->Size == sizeof(bool))
 		*((bool *)m) = b;
-	} else {
+	else
 		*((UINT *)m) = (b ? 1 : 0);
-	}
 }
 
 // Item count of an ARRAY row, or 0 when the item array would not fit in 32 bits. A "NumItem" count is capped at the
@@ -69,9 +66,8 @@ static UINT RpcFieldArrayCount(const RPC_FIELD *f, PACK *p) {
 		num = PackGetIndexCount(p, f->Key);
 	}
 
-	if (((UINT64)num * (UINT64)f->Item->Size) > 0xFFFFFFFFULL) {
+	if (((UINT64)num * (UINT64)f->Item->Size) > 0xFFFFFFFFULL)
 		num = 0;
-	}
 
 	return num;
 }
@@ -85,13 +81,11 @@ static void RpcFieldOutArray(const RPC_FIELD *f, PACK *p, void *base, UINT total
 
 	UINT num = *((UINT *)(((UCHAR *)base) + f->CountOffset));
 	UCHAR *items = *((UCHAR **)RPC_FIELD_MEMBER(base, f));
-	if (num == 0 || items == NULL) {
+	if (num == 0 || items == NULL)
 		return;
-	}
 
-	for (UINT i = 0; i < num; i++) {
+	for (UINT i = 0; i < num; i++)
 		RpcFieldOutRows(f->Item, p, items + ((size_t)f->Item->Size * i), i, num);
-	}
 }
 
 // Read the items of a top-level ARRAY row
@@ -107,9 +101,8 @@ static void RpcFieldInArray(const RPC_FIELD *f, void *base, PACK *p, UINT total)
 	*((UINT *)(((UCHAR *)base) + f->CountOffset)) = num;
 	*((UCHAR **)RPC_FIELD_MEMBER(base, f)) = items;
 
-	for (UINT i = 0; i < num; i++) {
+	for (UINT i = 0; i < num; i++)
 		RpcFieldInRows(f->Item, items + ((size_t)f->Item->Size * i), p, i, num);
-	}
 }
 
 // Release the items of an ARRAY row
@@ -117,24 +110,19 @@ static void RpcFieldFreeArray(const RPC_FIELD *f, void *base) {
 	const RPC_FIELD *r;
 	bool item_free = false;
 
-	if (f->Item == NULL) {
+	if (f->Item == NULL)
 		return;
-	}
 
 	UINT num = *((UINT *)(((UCHAR *)base) + f->CountOffset));
 	UCHAR *items = *((UCHAR **)RPC_FIELD_MEMBER(base, f));
 
-	for (r = f->Item->Fields; r->Type != RPC_FT_END; r++) {
-		if (r->Hook != NULL && r->Hook->Free != NULL) {
+	for (r = f->Item->Fields; r->Type != RPC_FT_END; r++)
+		if (r->Hook != NULL && r->Hook->Free != NULL)
 			item_free = true;
-		}
-	}
 
-	if (item_free && items != NULL) {
-		for (UINT i = 0; i < num; i++) {
+	if (item_free && items != NULL)
+		for (UINT i = 0; i < num; i++)
 			RpcFieldFreeRows(f->Item, items + ((size_t)f->Item->Size * i));
-		}
-	}
 
 	Free(items);
 }
@@ -146,68 +134,60 @@ static void RpcFieldOutGeneric(const RPC_FIELD *f, PACK *p, void *base, UINT ind
 	switch (f->Type) {
 	case RPC_FT_INT:
 	case RPC_FT_COUNT:
-		if (total == 0) {
+		if (total == 0)
 			PackAddInt(p, f->Key, *((UINT *)m));
-		} else {
+		else
 			PackAddIntEx(p, f->Key, *((UINT *)m), index, total);
-		}
 		break;
 
 	case RPC_FT_BOOL:
-		if (total == 0) {
+		if (total == 0)
 			PackAddBool(p, f->Key, RpcFieldGetBool(f, base));
-		} else {
+		else
 			PackAddBoolEx(p, f->Key, RpcFieldGetBool(f, base), index, total);
-		}
 		break;
 
 	case RPC_FT_INT64:
 	case RPC_FT_TIME64:
-		if (total == 0) {
+		if (total == 0)
 			PackAddInt64(p, f->Key, *((UINT64 *)m));
-		} else {
+		else
 			PackAddInt64Ex(p, f->Key, *((UINT64 *)m), index, total);
-		}
 		break;
 
 	case RPC_FT_STR:
-		if (total == 0) {
+		if (total == 0)
 			PackAddStr(p, f->Key, (char *)m);
-		} else {
+		else
 			PackAddStrEx(p, f->Key, (char *)m, index, total);
-		}
 		break;
 
 	case RPC_FT_UNISTR:
-		if (total == 0) {
+		if (total == 0)
 			PackAddUniStr(p, f->Key, (wchar_t *)m);
-		} else {
+		else
 			PackAddUniStrEx(p, f->Key, (wchar_t *)m, index, total);
-		}
 		break;
 
 	case RPC_FT_DATA:
-		if (total == 0) {
+		if (total == 0)
 			PackAddData(p, f->Key, m, f->Size);
-		} else {
+		else
 			PackAddDataEx(p, f->Key, m, f->Size, index, total);
-		}
 		break;
 
 	case RPC_FT_IP32:
-		if (total == 0) {
+		if (total == 0)
 			PackAddIp32(p, f->Key, *((UINT *)m));
-		} else {
+		else
 			PackAddIp32Ex(p, f->Key, *((UINT *)m), index, total);
-		}
 		break;
 
 	case RPC_FT_IP:
-		if (total == 0) {
+		if (total == 0)
 			PackAddIp(p, f->Key, (IP *)m);
-		} else {
+		else
 			PackAddIpEx(p, f->Key, (IP *)m, index, total);
-		}
 		break;
 
 	case RPC_FT_ARRAY:
@@ -239,27 +219,24 @@ static void RpcFieldInGeneric(const RPC_FIELD *f, void *base, PACK *p, UINT inde
 		break;
 
 	case RPC_FT_STR:
-		if (total == 0) {
+		if (total == 0)
 			PackGetStr(p, f->Key, (char *)m, f->Size);
-		} else {
+		else
 			PackGetStrEx(p, f->Key, (char *)m, f->Size, index);
-		}
 		break;
 
 	case RPC_FT_UNISTR:
-		if (total == 0) {
+		if (total == 0)
 			PackGetUniStr(p, f->Key, (wchar_t *)m, f->Size);
-		} else {
+		else
 			PackGetUniStrEx(p, f->Key, (wchar_t *)m, f->Size, index);
-		}
 		break;
 
 	case RPC_FT_DATA:
-		if (total == 0) {
+		if (total == 0)
 			PackGetData2(p, f->Key, m, f->Size);
-		} else {
+		else
 			PackGetDataEx2(p, f->Key, m, f->Size, index);
-		}
 		break;
 
 	case RPC_FT_IP32:
@@ -267,11 +244,10 @@ static void RpcFieldInGeneric(const RPC_FIELD *f, void *base, PACK *p, UINT inde
 		break;
 
 	case RPC_FT_IP:
-		if (total == 0) {
+		if (total == 0)
 			PackGetIp(p, f->Key, (IP *)m);
-		} else {
+		else
 			PackGetIpEx(p, f->Key, (IP *)m, index);
-		}
 		break;
 
 	case RPC_FT_COUNT:
@@ -298,11 +274,10 @@ static void RpcFieldOutRows(const RPC_TABLE *t, PACK *p, void *base, UINT index,
 			continue;
 		}
 
-		if (f->Hook != NULL && f->Hook->Out != NULL) {
+		if (f->Hook != NULL && f->Hook->Out != NULL)
 			f->Hook->Out(f, p, base, index, total);
-		} else {
+		else
 			RpcFieldOutGeneric(f, p, base, index, total);
-		}
 	}
 }
 
@@ -316,11 +291,10 @@ static void RpcFieldInRows(const RPC_TABLE *t, void *base, PACK *p, UINT index, 
 			continue;
 		}
 
-		if (f->Hook != NULL && f->Hook->In != NULL) {
+		if (f->Hook != NULL && f->Hook->In != NULL)
 			f->Hook->In(f, base, p, index, total);
-		} else {
+		else
 			RpcFieldInGeneric(f, base, p, index, total);
-		}
 	}
 }
 
@@ -328,21 +302,18 @@ static void RpcFieldInRows(const RPC_TABLE *t, void *base, PACK *p, UINT index, 
 static void RpcFieldFreeRows(const RPC_TABLE *t, void *base) {
 	const RPC_FIELD *f;
 
-	for (f = t->Fields; f->Type != RPC_FT_END; f++) {
-		if (f->Hook != NULL && f->Hook->Free != NULL) {
+	for (f = t->Fields; f->Type != RPC_FT_END; f++)
+		if (f->Hook != NULL && f->Hook->Free != NULL)
 			f->Hook->Free(f, base);
-		} else if (f->Type == RPC_FT_ARRAY) {
+		else if (f->Type == RPC_FT_ARRAY)
 			RpcFieldFreeArray(f, base);
-		}
-	}
 }
 
 // Write a structure to a Pack
 void RpcFieldOut(const RPC_TABLE *t, PACK *p, void *s) {
 	// Validate arguments
-	if (t == NULL || p == NULL || s == NULL) {
+	if (t == NULL || p == NULL || s == NULL)
 		return;
-	}
 
 	RpcFieldOutRows(t, p, s, 0, 0);
 }
@@ -350,9 +321,8 @@ void RpcFieldOut(const RPC_TABLE *t, PACK *p, void *s) {
 // Read a structure from a Pack (the structure is zeroed first)
 void RpcFieldIn(const RPC_TABLE *t, void *s, PACK *p) {
 	// Validate arguments
-	if (t == NULL || s == NULL || p == NULL) {
+	if (t == NULL || s == NULL || p == NULL)
 		return;
-	}
 
 	Zero(s, t->Size);
 	RpcFieldInRows(t, s, p, 0, 0);
@@ -361,9 +331,8 @@ void RpcFieldIn(const RPC_TABLE *t, void *s, PACK *p) {
 // Release what RpcFieldIn allocated
 void RpcFieldFree(const RPC_TABLE *t, void *s) {
 	// Validate arguments
-	if (t == NULL || s == NULL) {
+	if (t == NULL || s == NULL)
 		return;
-	}
 
 	RpcFieldFreeRows(t, s);
 }
@@ -371,9 +340,8 @@ void RpcFieldFree(const RPC_TABLE *t, void *s) {
 // Write a structure as item index of total (indexed Pack calls)
 void RpcFieldOutItem(const RPC_TABLE *t, PACK *p, void *s, UINT index, UINT total) {
 	// Validate arguments
-	if (t == NULL || p == NULL || s == NULL || total == 0) {
+	if (t == NULL || p == NULL || s == NULL || total == 0)
 		return;
-	}
 
 	RpcFieldOutRows(t, p, s, index, total);
 }
@@ -382,9 +350,8 @@ void RpcFieldOutItem(const RPC_TABLE *t, PACK *p, void *s, UINT index, UINT tota
 // zeroed first). The item count is not known here: hooks get INFINITE.
 void RpcFieldInItem(const RPC_TABLE *t, void *s, PACK *p, UINT index) {
 	// Validate arguments
-	if (t == NULL || s == NULL || p == NULL) {
+	if (t == NULL || s == NULL || p == NULL)
 		return;
-	}
 
 	Zero(s, t->Size);
 	RpcFieldInRows(t, s, p, index, INFINITE);

@@ -39,9 +39,8 @@ static bool SuIsSeLowOemInf(wchar_t *oem_name) {
 	bool ret = false;
 
 	inf = SetupOpenInfFileW(oem_name, NULL, INF_STYLE_WIN4, NULL);
-	if (inf == INVALID_HANDLE_VALUE) {
+	if (inf == INVALID_HANDLE_VALUE)
 		return false;
-	}
 
 	if (SetupGetInfInformationW(inf, INFINFO_INF_SPEC_IS_HINF, NULL, 0, &info_size) && info_size != 0) {
 		info = ZeroMalloc(info_size);
@@ -54,9 +53,8 @@ static bool SuIsSeLowOemInf(wchar_t *oem_name) {
 		    UniStartWith(original.OriginalInfName, L"selow") &&
 		    SetupFindFirstLineW(inf, L"Version", L"Provider", &ctx) &&
 		    SetupGetStringFieldW(&ctx, 1, provider, sizeof(provider) / sizeof(wchar_t), NULL) &&
-		    UniSearchStrEx(provider, L"softether", 0, false) != INFINITE) {
+		    UniSearchStrEx(provider, L"softether", 0, false) != INFINITE)
 			ret = true;
-		}
 
 		Free(info);
 	}
@@ -105,15 +103,13 @@ void SuSetInstallProc(SU_INSTALL_PROC *proc) {
 
 // Remove a staging directory made by SuStageDriverPackage and everything in it
 void SuUnstageDriverPackage(wchar_t *dir) {
-	if (UniIsEmptyStr(dir)) {
+	if (UniIsEmptyStr(dir))
 		return;
-	}
 
 	MsDeleteAllFileW(dir);
 
-	if (RemoveDirectoryW(dir) == FALSE) {
+	if (RemoveDirectoryW(dir) == FALSE)
 		Debug("SuUnstageDriverPackage: RemoveDirectoryW(%S) failed: %u\n", dir, (UINT)GetLastError());
-	}
 }
 
 // Stage the driver package for one install attempt: make a new directory with a random name under
@@ -130,9 +126,8 @@ bool SuStageDriverPackage(wchar_t *dir, UINT dir_size) {
 	bool created = false;
 	UINT err = 0;
 
-	if (dir == NULL || dir_size == 0) {
+	if (dir == NULL || dir_size == 0)
 		return false;
-	}
 
 	dir[0] = 0;
 
@@ -160,9 +155,8 @@ bool SuStageDriverPackage(wchar_t *dir, UINT dir_size) {
 
 		// Only a name clash is worth another name
 		err = GetLastError();
-		if (err != ERROR_ALREADY_EXISTS) {
+		if (err != ERROR_ALREADY_EXISTS)
 			break;
-		}
 	}
 
 	LocalFree(sd);
@@ -198,9 +192,8 @@ static bool SuInstallDriver() {
 	wchar_t stage_dir[MAX_PATH];
 	wchar_t dst_inf[MAX_PATH];
 
-	if (SuIsSupportedOs() == false) {
+	if (SuIsSupportedOs() == false)
 		return false;
-	}
 
 	// Where the installed driver lives; SuCopySysFile also copies it there by hand
 	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), L"drivers\\" SU_PACKAGE_SYS);
@@ -226,18 +219,16 @@ static bool SuInstallDriver() {
 	}
 
 	// Wait for the new driver to bind: it may start the service, it never installs again
-	if (ret) {
+	if (ret)
 		SuFree(SuInitMain(180 * 1000, true, false));
-	}
 
 	return ret;
 }
 
 bool SuCopySysFile(wchar_t *src, wchar_t *dst) {
 	wchar_t dst_rename[MAX_PATH];
-	if (src == NULL || dst == NULL) {
+	if (src == NULL || dst == NULL)
 		return false;
-	}
 	if (FileCopyW(src, dst)) {
 		for (UINT i = 1; i <= 100; i++) {
 			UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
@@ -251,18 +242,15 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst) {
 	for (UINT i = 1;; i++) {
 		UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
 
-		if (IsFileExistsW(dst_rename) == false) {
+		if (IsFileExistsW(dst_rename) == false)
 			break;
-		}
 
-		if (i >= 100) {
+		if (i >= 100)
 			return false;
-		}
 	}
 
-	if (MoveFileW(dst, dst_rename) == false) {
+	if (MoveFileW(dst, dst_rename) == false)
 		return false;
-	}
 
 	if (FileCopyW(src, dst)) {
 		for (UINT i = 1; i <= 100; i++) {
@@ -286,34 +274,28 @@ bool SuIsSupportedOs() {
 #if defined(_M_ARM64)
 	return false;
 #else  // defined(_M_ARM64)
-	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "EnableSeLow", false) != 0) {
+	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "EnableSeLow", false) != 0)
 		return true;
-	}
 
-	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "DisableSeLow", false) != 0) {
+	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "DisableSeLow", false) != 0)
 		return false;
-	}
 
 	return true;
 #endif // defined(_M_ARM64)
 }
 
 bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size) {
-	if (a == NULL) {
+	if (a == NULL)
 		return false;
-	}
-	if (a->Halt) {
+	if (a->Halt)
 		return false;
-	}
-	if (size > MAX_PACKET_SIZE) {
+	if (size > MAX_PACKET_SIZE)
 		return false;
-	}
 
 	if ((SL_NUM_PACKET(a->PutBuffer) >= SL_MAX_PACKET_EXCHANGE) ||
 	    (buf == NULL && SL_NUM_PACKET(a->PutBuffer) != 0)) {
-		if (SuPutPacketsToDriver(a) == false) {
+		if (SuPutPacketsToDriver(a) == false)
 			return false;
-		}
 
 		SL_NUM_PACKET(a->PutBuffer) = 0;
 	}
@@ -334,12 +316,10 @@ bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size) {
 
 bool SuPutPacketsToDriver(SU_ADAPTER *a) {
 	DWORD write_size;
-	if (a == NULL) {
+	if (a == NULL)
 		return false;
-	}
-	if (a->Halt) {
+	if (a->Halt)
 		return false;
-	}
 
 	if (WriteFile(a->hFile, a->PutBuffer, SL_EXCHANGE_BUFFER_SIZE, &write_size, NULL) == false) {
 		a->Halt = true;
@@ -355,13 +335,11 @@ bool SuPutPacketsToDriver(SU_ADAPTER *a) {
 }
 
 bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size) {
-	if (a == NULL || buf == NULL || size == NULL) {
+	if (a == NULL || buf == NULL || size == NULL)
 		return false;
-	}
 
-	if (a->Halt) {
+	if (a->Halt)
 		return false;
-	}
 
 	while (true) {
 		if (a->CurrentPacketCount < SL_NUM_PACKET(a->GetBuffer)) {
@@ -387,9 +365,8 @@ bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size) {
 				return true;
 			}
 
-			if (SuGetPacketsFromDriver(a) == false) {
+			if (SuGetPacketsFromDriver(a) == false)
 				return false;
-			}
 
 			if (SL_NUM_PACKET(a->GetBuffer) == 0) {
 				a->LastGetHadPacket = false;
@@ -406,22 +383,19 @@ bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size) {
 // Frames already read from the driver but not yet taken by SuGetNextPacket.
 // The driver event does not signal them.
 bool SuHasPendingPackets(SU_ADAPTER *a) {
-	if (a == NULL || a->Halt) {
+	if (a == NULL || a->Halt)
 		return false;
-	}
 
 	return a->CurrentPacketCount < SL_NUM_PACKET(a->GetBuffer);
 }
 
 bool SuGetPacketsFromDriver(SU_ADAPTER *a) {
 	DWORD read_size;
-	if (a == NULL) {
+	if (a == NULL)
 		return false;
-	}
 
-	if (a->Halt) {
+	if (a->Halt)
 		return false;
-	}
 
 	if (ReadFile(a->hFile, a->GetBuffer, SL_EXCHANGE_BUFFER_SIZE, &read_size, NULL) == false) {
 		a->Halt = true;
@@ -437,13 +411,11 @@ bool SuGetPacketsFromDriver(SU_ADAPTER *a) {
 }
 
 void SuCloseAdapter(SU_ADAPTER *a) {
-	if (a == NULL) {
+	if (a == NULL)
 		return;
-	}
 
-	if (a->hEvent != NULL) {
+	if (a->hEvent != NULL)
 		CloseHandle(a->hEvent);
-	}
 
 	if (a->hFile != INVALID_HANDLE_VALUE) {
 		CloseHandle(a->hFile);
@@ -457,18 +429,16 @@ SU_ADAPTER *SuOpenAdapter(char *adapter_id) {
 	char filename[MAX_PATH];
 	SL_IOCTL_EVENT_NAME t;
 	DWORD read_size;
-	if (adapter_id == NULL) {
+	if (adapter_id == NULL)
 		return NULL;
-	}
 
 	Format(filename, sizeof(filename), SL_ADAPTER_DEVICE_FILENAME_WIN32, adapter_id);
 
 	void *h = CreateFileA(filename, GENERIC_READ | GENERIC_WRITE,
 	                      FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
 
-	if (h == INVALID_HANDLE_VALUE) {
+	if (h == INVALID_HANDLE_VALUE)
 		return NULL;
-	}
 
 	SU_ADAPTER *a = ZeroMalloc(sizeof(SU_ADAPTER));
 
@@ -495,13 +465,11 @@ SU_ADAPTER *SuOpenAdapter(char *adapter_id) {
 // the only copy of that read; each caller keeps its own cleanup when it fails
 bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list) {
 	DWORD read_size;
-	if (h == NULL || list == NULL) {
+	if (h == NULL || list == NULL)
 		return false;
-	}
 
-	if (ReadFile(h, list, sizeof(SL_ADAPTER_INFO_LIST), &read_size, NULL) == false) {
+	if (ReadFile(h, list, sizeof(SL_ADAPTER_INFO_LIST), &read_size, NULL) == false)
 		return false;
-	}
 
 	return (list->Signature == SL_SIGNATURE);
 }
@@ -510,9 +478,8 @@ bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list) {
 // which gives the Class key of each adapter and the DriverDesc fallback of its name; an adapter
 // that is not a present device of the network class is left out
 LIST *SuGetAdapterList(SU *u, LIST *netclass) {
-	if (u == NULL) {
+	if (u == NULL)
 		return NULL;
-	}
 
 	LIST *ret = NewList(SuCmpAdapterList);
 
@@ -547,9 +514,8 @@ LIST *SuGetAdapterList(SU *u, LIST *netclass) {
 		{
 			SU_ADAPTER_LIST *a = SuAdapterInfoToAdapterList(info, netclass);
 
-			if (a != NULL) {
+			if (a != NULL)
 				Add(ret, a);
-			}
 		}
 	}
 
@@ -559,27 +525,23 @@ LIST *SuGetAdapterList(SU *u, LIST *netclass) {
 }
 
 int SuCmpAdapterList(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	SU_ADAPTER_LIST *a1 = *(SU_ADAPTER_LIST **)p1;
 	SU_ADAPTER_LIST *a2 = *(SU_ADAPTER_LIST **)p2;
-	if (a1 == NULL || a2 == NULL) {
+	if (a1 == NULL || a2 == NULL)
 		return 0;
-	}
 
 	int r = StrCmpi(a1->SortKey, a2->SortKey);
-	if (r != 0) {
+	if (r != 0)
 		return 0;
-	}
 
 	return StrCmpi(a1->Guid, a2->Guid);
 }
 
 void SuFreeAdapterList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		SU_ADAPTER_LIST *a = LIST_DATA(o, i);
@@ -593,9 +555,8 @@ void SuFreeAdapterList(LIST *o) {
 SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info, LIST *netclass) {
 	SU_ADAPTER_LIST t;
 	char tmp[MAX_SIZE];
-	if (info == NULL) {
+	if (info == NULL)
 		return NULL;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.FriendlyName, sizeof(t.FriendlyName), info->FriendlyName);
@@ -603,18 +564,16 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info, LIST *netclas
 
 	UniToStr(tmp, sizeof(tmp), info->AdapterId);
 	// List the NIC in Local Bridge settings even when its FriendlyName is empty.
-	if (IsEmptyStr(tmp) || /* IsEmptyStr(info->FriendlyName) || */ StartWith(tmp, SL_ADAPTER_ID_PREFIX) == false) {
+	if (IsEmptyStr(tmp) || /* IsEmptyStr(info->FriendlyName) || */ StartWith(tmp, SL_ADAPTER_ID_PREFIX) == false)
 		return NULL;
-	}
 
 	StrCpy(t.Guid, sizeof(t.Guid), tmp + StrLen(SL_ADAPTER_ID_PREFIX));
 
 	StrCpy(t.Name, sizeof(t.Name), tmp);
 
 	MS_NETCLASS_DEVICE *d = MsNetClassFind(netclass, t.Guid);
-	if (d == NULL) {
+	if (d == NULL)
 		return NULL;
-	}
 
 	StrCpy(t.SortKey, sizeof(t.SortKey), d->ClassKey);
 
@@ -643,9 +602,8 @@ static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool
 	bool flag = false;
 	UINT64 giveup_tick = 0;
 
-	if (SuIsSupportedOs() == false) {
+	if (SuIsSupportedOs() == false)
 		return NULL;
-	}
 
 LABEL_RETRY:
 
@@ -657,9 +615,8 @@ LABEL_RETRY:
 			if (MsStartService(SL_PROTOCOL_NAME) == false) {
 				// Exactly one caller per process wins the latch and runs the install step
 				if (install && InterlockedCompareExchange(&su_install_tried, 1, 0) == 0) {
-					if (su_install_proc()) {
+					if (su_install_proc())
 						goto LABEL_RETRY;
-					}
 				}
 			} else {
 				flag = true;
@@ -694,9 +651,8 @@ LABEL_RETRY:
 				return NULL;
 			}
 
-			if (u->AdapterInfoList.EnumCompleted) {
+			if (u->AdapterInfoList.EnumCompleted)
 				break;
-			}
 
 			SleepThread(25);
 		}
@@ -708,9 +664,8 @@ LABEL_RETRY:
 }
 
 void SuFree(SU *u) {
-	if (u == NULL) {
+	if (u == NULL)
 		return;
-	}
 
 	CloseHandle(u->hFile);
 

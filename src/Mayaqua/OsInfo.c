@@ -22,9 +22,8 @@ UINT Win32GetNumberOfCpuInner() {
 
 	GetSystemInfo(&info);
 
-	if (info.dwNumberOfProcessors >= 1 && info.dwNumberOfProcessors <= 128) {
+	if (info.dwNumberOfProcessors >= 1 && info.dwNumberOfProcessors <= 128)
 		ret = info.dwNumberOfProcessors;
-	}
 
 	return ret;
 }
@@ -56,18 +55,16 @@ UINT Win32ClassifyOs(UINT major, UINT build, bool server, char **name) {
 			const WIN32_OS_RELEASE *r = &win32_os_releases[i];
 
 			if (r->Server == server && build >= r->Build) {
-				if (name != NULL) {
+				if (name != NULL)
 					*name = r->Name;
-				}
 
 				return r->OsType;
 			}
 		}
 	}
 
-	if (name != NULL) {
+	if (name != NULL)
 		*name = "Unsupported OS by Ranz VPN";
-	}
 
 	return 0;
 }
@@ -85,9 +82,8 @@ static BOOL CALLBACK Win32ReadOsVersion(PINIT_ONCE once, PVOID param, PVOID *con
 
 	os_version.dwOSVersionInfoSize = sizeof(os_version);
 
-	if (rtl_get_version == NULL || rtl_get_version(&os_version) != 0) {
+	if (rtl_get_version == NULL || rtl_get_version(&os_version) != 0)
 		Zero(&os_version, sizeof(os_version));
-	}
 
 	return TRUE;
 }
@@ -103,9 +99,8 @@ void Win32GetOsInfo(OS_INFO *info) {
 	char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
 	char *product_name;
 	char tmp[MAX_SIZE];
-	if (info == NULL) {
+	if (info == NULL)
 		return;
-	}
 
 	char *current_type = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType");
 	char *build_lab = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab");

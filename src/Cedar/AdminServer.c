@@ -27,9 +27,8 @@ UINT StSetServerCipher(ADMIN *a, RPC_STR *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
-	if (IsEmptyStr(t->String)) {
+	if (IsEmptyStr(t->String))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
@@ -110,9 +109,8 @@ UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t) {
 	{
 
 		t->Cert = CloneX(c->ServerX);
-		if (admin) {
+		if (admin)
 			t->Key = CloneK(c->ServerK);
-		}
 	}
 	Unlock(c->lock);
 
@@ -125,19 +123,16 @@ UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t) {
 
 	SERVER_ADMIN_ONLY;
 
-	if (t->Cert == NULL || t->Key == NULL) {
+	if (t->Cert == NULL || t->Key == NULL)
 		return ERR_PROTOCOL_ERROR;
-	}
 
-	if (CheckXandK(t->Cert, t->Key) == false) {
+	if (CheckXandK(t->Cert, t->Key) == false)
 		return ERR_PROTOCOL_ERROR;
-	}
 
 	t->Flag1 = 1;
 	if (t->Cert->root_cert == false) {
-		if (DownloadAndSaveIntermediateCertificatesIfNecessary(t->Cert) == false) {
+		if (DownloadAndSaveIntermediateCertificatesIfNecessary(t->Cert) == false)
 			t->Flag1 = 0;
-		}
 	}
 
 	SetCedarCertAndChain(c, t->Cert, t->Key, t->Chain);
@@ -198,28 +193,23 @@ UINT StEnableListener(ADMIN *a, RPC_LISTENER *t) {
 
 	SiLockListenerList(a->Server);
 	{
-		if (t->Enable) {
-			if (SiEnableListener(a->Server, t->Port) == false) {
+		if (t->Enable)
+			if (SiEnableListener(a->Server, t->Port) == false)
 				ret = ERR_LISTENER_NOT_FOUND;
-			} else {
+			else
 				ALog(a, NULL, "LA_ENABLE_LISTENER", t->Port);
-			}
-		} else {
-			if (SiDisableListener(a->Server, t->Port) == false) {
-				ret = ERR_LISTENER_NOT_FOUND;
-			} else {
-				ALog(a, NULL, "LA_DISABLE_LISTENER", t->Port);
-			}
-		}
+		else if (SiDisableListener(a->Server, t->Port) == false)
+			ret = ERR_LISTENER_NOT_FOUND;
+		else
+			ALog(a, NULL, "LA_DISABLE_LISTENER", t->Port);
 	}
 	SiUnlockListenerList(a->Server);
 
 	IncrementServerConfigRevision(a->Server);
 
 	// Disabling is synchronous (StopListener waits for the listener thread); enabling reports the bind
-	if (ret == ERR_NO_ERROR && t->Enable) {
+	if (ret == ERR_NO_ERROR && t->Enable)
 		ret = StWaitListenerBind(a->Server, t->Port);
-	}
 
 	return ret;
 }
@@ -270,9 +260,8 @@ UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t) {
 UINT StCreateListener(ADMIN *a, RPC_LISTENER *t) {
 	UINT ret = ERR_NO_ERROR;
 
-	if (t->Port == 0 || t->Port > 65535) {
+	if (t->Port == 0 || t->Port > 65535)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
@@ -289,9 +278,8 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t) {
 	SiUnlockListenerList(a->Server);
 
 	// A disabled listener has no bind to wait for
-	if (ret == ERR_NO_ERROR && t->Enable) {
+	if (ret == ERR_NO_ERROR && t->Enable)
 		ret = StWaitListenerBind(a->Server, t->Port);
-	}
 
 	return ret;
 }
@@ -308,9 +296,8 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t) {
 	Unlock(c->TrafficLock);
 
 	// Hide the memory figures of the host from hub administrators
-	if (a->ServerAdmin) {
+	if (a->ServerAdmin)
 		Win32GetMemInfo(&t->MemInfo);
-	}
 
 	t->NumTcpConnections = t->NumTcpConnectionsLocal = 0;
 	t->NumSessionsTotal = t->NumSessionsLocal = 0;
@@ -362,9 +349,8 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t) {
 UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t) {
 	OS_INFO *info;
 	SYSTEMTIME st;
-	if (a == NULL || t == NULL) {
+	if (a == NULL || t == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	FreeRpcServerInfo(t);
 	Zero(t, sizeof(RPC_SERVER_INFO));
@@ -392,9 +378,8 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t) {
 		GetMachineName(t->ServerHostName, sizeof(t->ServerHostName));
 
 		info = GetOsInfo();
-		if (info != NULL) {
+		if (info != NULL)
 			CopyOsInfo(&t->OsInfo, info);
-		}
 	} else {
 		// Hide the host name and the OS from hub administrators; the empty
 		// strings keep the reply's Pack layout the same
@@ -411,9 +396,8 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t) {
 }
 
 static void CopyOsInfo(OS_INFO *dst, const OS_INFO *info) {
-	if (info == NULL || dst == NULL) {
+	if (info == NULL || dst == NULL)
 		return;
-	}
 
 	dst->OsType = info->OsType;
 	dst->OsServicePack = info->OsServicePack;

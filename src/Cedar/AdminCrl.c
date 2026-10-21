@@ -25,9 +25,8 @@ UINT StSetCrl(ADMIN *a, RPC_CRL *t) {
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
-	if (h == NULL) {
+	if (h == NULL)
 		return ret;
-	}
 
 	LockList(h->HubDb->CrlList);
 	{
@@ -66,19 +65,17 @@ UINT StGetCrl(ADMIN *a, RPC_CRL *t) {
 	t->Key = key;
 
 	HUB *h = AdminGetHub(a, hubname, NULL, &ret);
-	if (h == NULL) {
+	if (h == NULL)
 		return ret;
-	}
 
 	LockList(h->HubDb->CrlList);
 	{
 		CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
 
-		if (crl == NULL) {
+		if (crl == NULL)
 			ret = ERR_OBJECT_NOT_FOUND;
-		} else {
+		else
 			t->Crl = CopyCrl(crl);
-		}
 	}
 	UnlockList(h->HubDb->CrlList);
 
@@ -94,9 +91,8 @@ UINT StDelCrl(ADMIN *a, RPC_CRL *t) {
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
-	if (h == NULL) {
+	if (h == NULL)
 		return ret;
-	}
 
 	LockList(h->HubDb->CrlList);
 	{
@@ -127,9 +123,8 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t) {
 	CHECK_RIGHT;
 
 	HUB *h = AdminGetHub(a, t->HubName, "no_change_crl_list", &err);
-	if (h == NULL) {
+	if (h == NULL)
 		return err;
-	}
 
 	LockList(h->HubDb->CrlList);
 	{
@@ -162,9 +157,8 @@ UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t) {
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
 	HUB *h = AdminGetHub(a, hubname, NULL, &ret);
-	if (h == NULL) {
+	if (h == NULL)
 		return ret;
-	}
 
 	LockList(h->HubDb->CrlList);
 	{

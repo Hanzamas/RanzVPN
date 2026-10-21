@@ -47,20 +47,17 @@ bool MsRegDeleteValue(UINT root, char *keyname, char *valuename) {
 bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit) {
 	HKEY h;
 	bool ret;
-	if (keyname == NULL) {
+	if (keyname == NULL)
 		return false;
-	}
 
 	// RegDeleteValue needs KEY_SET_VALUE only
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_SET_VALUE | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS) {
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_SET_VALUE | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS)
 		return false;
-	}
 
-	if (RegDeleteValue(h, valuename) != ERROR_SUCCESS) {
+	if (RegDeleteValue(h, valuename) != ERROR_SUCCESS)
 		ret = false;
-	} else {
+	else
 		ret = true;
-	}
 
 	RegCloseKey(h);
 
@@ -68,13 +65,11 @@ bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32
 }
 
 bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit) {
-	if (keyname == NULL) {
+	if (keyname == NULL)
 		return false;
-	}
 
-	if (RegDeleteKeyExA(MsGetRootKeyFromInt(root), keyname, MsRegViewMask(force32bit), 0) != ERROR_SUCCESS) {
+	if (RegDeleteKeyExA(MsGetRootKeyFromInt(root), keyname, MsRegViewMask(force32bit), 0) != ERROR_SUCCESS)
 		return false;
-	}
 
 	return true;
 }
@@ -85,13 +80,10 @@ TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname) {
 TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit) {
 	HKEY h;
 
-	if (keyname == NULL) {
+	if (keyname == NULL)
 		h = MsGetRootKeyFromInt(root);
-	} else {
-		if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS) {
-			return NULL;
-		}
-	}
+	else if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS)
+		return NULL;
 
 	LIST *o = NewListFast(CompareStr);
 
@@ -102,11 +94,10 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit) {
 
 		Zero(tmp, sizeof(tmp));
 		UINT ret = RegEnumKeyEx(h, i, tmp, &size, NULL, NULL, NULL, &ft);
-		if (ret == ERROR_NO_MORE_ITEMS) {
+		if (ret == ERROR_NO_MORE_ITEMS)
 			break;
-		} else if (ret != ERROR_SUCCESS) {
+		else if (ret != ERROR_SUCCESS)
 			break;
-		}
 
 		Add(o, CopyStr(tmp));
 	}
@@ -116,15 +107,13 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit) {
 	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-	for (UINT i = 0; i < t->NumTokens; i++) {
+	for (UINT i = 0; i < t->NumTokens; i++)
 		t->Token[i] = LIST_DATA(o, i);
-	}
 
 	ReleaseList(o);
 
-	if (keyname != NULL) {
+	if (keyname != NULL)
 		RegCloseKey(h);
-	}
 
 	return t;
 }
@@ -133,9 +122,8 @@ bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value) {
 	return MsRegWriteIntEx2(root, keyname, valuename, value, false);
 }
 bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit) {
-	if (keyname == NULL) {
+	if (keyname == NULL)
 		return false;
-	}
 
 	return MsRegWriteValueEx2(root, keyname, valuename, REG_DWORD, &value, sizeof(UINT), force32bit);
 }
@@ -144,25 +132,22 @@ bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str) {
 	return MsRegWriteStrEx2(root, keyname, valuename, str, false);
 }
 bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit) {
-	if (keyname == NULL || str == NULL) {
+	if (keyname == NULL || str == NULL)
 		return false;
-	}
 
 	return MsRegWriteValueEx2(root, keyname, valuename, REG_SZ, str, StrSize(str), force32bit);
 }
 
 bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit) {
 	HKEY h;
-	if (keyname == NULL || (size != 0 && data == NULL)) {
+	if (keyname == NULL || (size != 0 && data == NULL))
 		return false;
-	}
 
 	MsRegNewKeyEx2(root, keyname, force32bit);
 
 	// RegSetValueEx needs KEY_SET_VALUE only
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_SET_VALUE | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS) {
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_SET_VALUE | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS)
 		return false;
-	}
 
 	if (RegSetValueEx(h, valuename, 0, type, data, size) != ERROR_SUCCESS) {
 		RegCloseKey(h);
@@ -179,19 +164,16 @@ bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, vo
 static bool MsRegReadValueCore(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool wide) {
 	HKEY h;
 	wchar_t *valuename_w = NULL;
-	if (keyname == NULL || data == NULL || type == NULL || size == NULL) {
+	if (keyname == NULL || data == NULL || type == NULL || size == NULL)
 		return false;
-	}
 	*type = 0;
 	*size = 0;
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_QUERY_VALUE | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS) {
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_QUERY_VALUE | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS)
 		return false;
-	}
 
-	if (wide) {
+	if (wide)
 		valuename_w = CopyStrToUni(valuename);
-	}
 
 	*data = ZeroMalloc(*size);
 	UINT ret = wide ? RegQueryValueExW(h, valuename_w, 0, type, *data, size) : RegQueryValueEx(h, valuename, 0, type, *data, size);
@@ -223,13 +205,11 @@ UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit)
 	char *ret;
 	DWORD type, size;
 	UINT value;
-	if (keyname == NULL || valuename == NULL) {
+	if (keyname == NULL || valuename == NULL)
 		return 0;
-	}
 
-	if (MsRegReadValueCore(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, false) == false) {
+	if (MsRegReadValueCore(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, false) == false)
 		return 0;
-	}
 
 	if (type != REG_DWORD && type != REG_DWORD_BIG_ENDIAN) {
 		Free(ret);
@@ -246,9 +226,8 @@ UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit)
 	Free(ret);
 
 	// The host is little-endian: only a REG_DWORD_BIG_ENDIAN value needs a swap
-	if (type == REG_DWORD_BIG_ENDIAN) {
+	if (type == REG_DWORD_BIG_ENDIAN)
 		value = Endian32(value);
-	}
 
 	return value;
 }
@@ -259,13 +238,11 @@ char *MsRegReadStr(UINT root, char *keyname, char *valuename) {
 char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit) {
 	char *ret;
 	DWORD type, size;
-	if (keyname == NULL || valuename == NULL) {
+	if (keyname == NULL || valuename == NULL)
 		return NULL;
-	}
 
-	if (MsRegReadValueCore(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, false) == false) {
+	if (MsRegReadValueCore(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, false) == false)
 		return NULL;
-	}
 
 	// A REG_MULTI_SZ reads as its first string: the buffer ends with a terminator (checked below)
 	// and the first string ends at its first one
@@ -290,13 +267,11 @@ char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit
 wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit) {
 	wchar_t *ret;
 	DWORD type, size;
-	if (keyname == NULL || valuename == NULL) {
+	if (keyname == NULL || valuename == NULL)
 		return NULL;
-	}
 
-	if (MsRegReadValueCore(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, true) == false) {
+	if (MsRegReadValueCore(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, true) == false)
 		return NULL;
-	}
 
 	if (type != REG_SZ && type != REG_EXPAND_SZ) {
 		Free(ret);
@@ -325,13 +300,11 @@ bool MsRegIsValue(UINT root, char *keyname, char *valuename) {
 bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit) {
 	HKEY h;
 	DWORD type;
-	if (keyname == NULL) {
+	if (keyname == NULL)
 		return false;
-	}
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_QUERY_VALUE | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS) {
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_QUERY_VALUE | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS)
 		return false;
-	}
 
 	DWORD size = 0;
 	UINT ret = RegQueryValueEx(h, valuename, 0, &type, NULL, &size);
@@ -348,20 +321,17 @@ bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit)
 
 bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit) {
 	HKEY h;
-	if (keyname == NULL) {
+	if (keyname == NULL)
 		return false;
-	}
 
-	if (MsRegIsKeyEx2(root, keyname, force32bit)) {
+	if (MsRegIsKeyEx2(root, keyname, force32bit))
 		return true;
-	}
 
 	// The handle is closed at once, so it asks for little. Creating the key needs KEY_CREATE_SUB_KEY
 	// on the parent key, which RegCreateKeyEx checks by itself.
 	if (RegCreateKeyEx(MsGetRootKeyFromInt(root), keyname, 0, NULL, REG_OPTION_NON_VOLATILE,
-	                   KEY_QUERY_VALUE | MsRegViewMask(force32bit), NULL, &h, NULL) != ERROR_SUCCESS) {
+	                   KEY_QUERY_VALUE | MsRegViewMask(force32bit), NULL, &h, NULL) != ERROR_SUCCESS)
 		return false;
-	}
 
 	RegCloseKey(h);
 
@@ -370,13 +340,11 @@ bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit) {
 
 bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit) {
 	HKEY h;
-	if (name == NULL) {
+	if (name == NULL)
 		return false;
-	}
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), name, 0, KEY_READ | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS) {
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), name, 0, KEY_READ | MsRegViewMask(force32bit), &h) != ERROR_SUCCESS)
 		return false;
-	}
 
 	RegCloseKey(h);
 

@@ -33,9 +33,8 @@ typedef struct tagTHREADNAME_INFO {
 void Win32SetThreadName(UINT thread_id, char *name) {
 	DWORD ms_vc_exception = 0x406D1388;
 	THREADNAME_INFO t;
-	if (thread_id == 0 || name == NULL) {
+	if (thread_id == 0 || name == NULL)
 		return;
-	}
 
 	Zero(&t, sizeof(t));
 	t.dwType = 0x1000;
@@ -55,18 +54,16 @@ void Win32InitNewThread() {
 
 void Win32GetMemInfo(MEMINFO *info) {
 	MEMORYSTATUSEX st;
-	if (info == NULL) {
+	if (info == NULL)
 		return;
-	}
 
 	Zero(info, sizeof(MEMINFO));
 
 	Zero(&st, sizeof(st));
 	st.dwLength = sizeof(st);
 
-	if (GlobalMemoryStatusEx(&st) == false) {
+	if (GlobalMemoryStatusEx(&st) == false)
 		return;
-	}
 
 	info->TotalMemory = st.ullTotalPageFile;
 	info->FreeMemory = st.ullAvailPageFile;
@@ -90,9 +87,8 @@ void *Win32NewSingleInstance(char *instance_name) {
 	// One atomic create: an existing mutex (or one this account may not open) means another instance runs
 	StrToUni(name_w, sizeof(name_w), instance_name);
 	HANDLE hMutex = CreateMutexW(NULL, FALSE, name_w);
-	if (hMutex == NULL) {
+	if (hMutex == NULL)
 		return NULL;
-	}
 	if (GetLastError() == ERROR_ALREADY_EXISTS) {
 		CloseHandle(hMutex);
 		return NULL;
@@ -105,9 +101,8 @@ void *Win32NewSingleInstance(char *instance_name) {
 }
 
 void Win32FreeSingleInstance(void *data) {
-	if (data == NULL) {
+	if (data == NULL)
 		return;
-	}
 
 	WIN32MUTEX *m = (WIN32MUTEX *)data;
 	ReleaseMutex(m->hMutex);
@@ -137,9 +132,8 @@ void Win32Init() {
 	use_heap_api = false;
 #endif
 
-	if (use_heap_api) {
+	if (use_heap_api)
 		heap_handle = HeapCreate(0, 0, 0);
-	}
 
 	Win32InitCallStack();
 }
@@ -156,26 +150,23 @@ void Win32Free() {
 }
 
 void *Win32MemoryAlloc(UINT size) {
-	if (use_heap_api) {
+	if (use_heap_api)
 		return HeapAlloc(heap_handle, 0, size);
-	} else {
+	else
 		return malloc(size);
-	}
 }
 
 void *Win32MemoryReAlloc(void *addr, UINT size) {
-	if (use_heap_api) {
+	if (use_heap_api)
 		return HeapReAlloc(heap_handle, 0, addr, size);
-	} else {
+	else
 		return realloc(addr, size);
-	}
 }
 
 void Win32MemoryFree(void *addr) {
-	if (use_heap_api) {
+	if (use_heap_api)
 		HeapFree(heap_handle, 0, addr);
-	} else {
+	else
 		free(addr);
-	}
 }
 

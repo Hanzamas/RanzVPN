@@ -39,9 +39,8 @@ BCRYPT_ALG_HANDLE cng_rc4 = NULL;
 static BCRYPT_ALG_HANDLE CngOpenAlg(LPCWSTR alg_id) {
 	BCRYPT_ALG_HANDLE h = NULL;
 
-	if (CNG_SUCCESS(BCryptOpenAlgorithmProvider(&h, alg_id, NULL, 0)) == false) {
+	if (CNG_SUCCESS(BCryptOpenAlgorithmProvider(&h, alg_id, NULL, 0)) == false)
 		return NULL;
-	}
 
 	return h;
 }

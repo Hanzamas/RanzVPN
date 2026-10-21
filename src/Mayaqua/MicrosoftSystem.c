@@ -52,9 +52,8 @@ static bool MsIsHypervisorGuest() {
 	char vendor[13];
 
 	__cpuid(regs, 1);
-	if (((UINT)regs[2] & 0x80000000) == 0) {
+	if (((UINT)regs[2] & 0x80000000) == 0)
 		return false;
-	}
 
 	// Highest hypervisor leaf in EAX, vendor signature in EBX, ECX and EDX
 	__cpuid(regs, 0x40000000);
@@ -63,9 +62,8 @@ static bool MsIsHypervisorGuest() {
 
 	if (StrCmp(vendor, "Microsoft Hv") == 0 && (UINT)regs[0] >= 0x40000003) {
 		__cpuid(regs, 0x40000003);
-		if (((UINT)regs[1] & 1) != 0) {
+		if (((UINT)regs[1] & 1) != 0)
 			return false;
-		}
 	}
 
 	return true;
@@ -79,9 +77,8 @@ static void MsSmbiosAddString(char *dst, UINT dst_size, UCHAR *str_set, UINT str
 	for (UINT i = 1; index != 0 && pos < str_set_size; i++) {
 		UINT len = 0;
 
-		while (pos + len < str_set_size && str_set[pos + len] != 0) {
+		while (pos + len < str_set_size && str_set[pos + len] != 0)
 			len++;
-		}
 
 		if (len == 0 || pos + len >= str_set_size) {
 			// End of the set, or a string without its terminator
@@ -130,9 +127,8 @@ static bool MsIsVmFirmware() {
 	bool ret = false;
 
 	UINT size = GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, NULL, 0);
-	if (size <= MS_SMBIOS_HEADER_SIZE) {
+	if (size <= MS_SMBIOS_HEADER_SIZE)
 		return false;
-	}
 
 	UCHAR *buf = ZeroMalloc(size);
 	if (GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, buf, size) != size) {
@@ -152,21 +148,17 @@ static bool MsIsVmFirmware() {
 		UINT str_set = pos + len;
 		UINT next = str_set;
 
-		if (len < 4 || str_set > end) {
+		if (len < 4 || str_set > end)
 			break;
-		}
 
-		while (next + 1 < end && (buf[next] != 0 || buf[next + 1] != 0)) {
+		while (next + 1 < end && (buf[next] != 0 || buf[next + 1] != 0))
 			next++;
-		}
-		if (next + 1 >= end) {
+		if (next + 1 >= end)
 			break;
-		}
 		next += 2;
 
-		if (type == MS_SMBIOS_TYPE_END) {
+		if (type == MS_SMBIOS_TYPE_END)
 			break;
-		}
 
 		if ((type == MS_SMBIOS_TYPE_SYSTEM || type == MS_SMBIOS_TYPE_BASEBOARD) && len > 5) {
 			// Manufacturer at offset 4 and product name at offset 5 of the formatted area
@@ -194,9 +186,8 @@ static bool MsIsVmFirmware() {
 // Writes no file and starts no process.
 static bool MsIsInVmMain() {
 #if defined(_M_X64) || defined(_M_IX86)
-	if (MsIsHypervisorGuest()) {
+	if (MsIsHypervisorGuest())
 		return true;
-	}
 #endif // defined(_M_X64) || defined(_M_IX86)
 
 	return MsIsVmFirmware();
@@ -217,9 +208,8 @@ bool MsIsInVm() {
 UINT MsGetUserLocaleId() {
 	static UINT lcid_cache = 0;
 
-	if (lcid_cache == 0) {
+	if (lcid_cache == 0)
 		lcid_cache = (UINT)GetUserDefaultLCID();
-	}
 
 	return lcid_cache;
 }
@@ -227,9 +217,8 @@ UINT MsGetUserLocaleId() {
 static wchar_t ms_computer_name_full_cache[MAX_SIZE] = {0};
 
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache) {
-	if (name == NULL || size < sizeof(wchar_t)) {
+	if (name == NULL || size < sizeof(wchar_t))
 		return;
-	}
 
 	UniStrCpy(name, size, L"");
 
@@ -251,15 +240,13 @@ void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache) {
 		StrToUni(name, size, tmp);
 	}
 
-	if (with_cache) {
+	if (with_cache)
 		UniStrCpy(ms_computer_name_full_cache, sizeof(ms_computer_name_full_cache), name);
-	}
 }
 
 void MsGetComputerName(char *name, UINT size) {
-	if (name == NULL) {
+	if (name == NULL)
 		return;
-	}
 
 	DWORD sz = size;
 	GetComputerName(name, &sz);
@@ -269,14 +256,12 @@ UINT MsGetConsoleWidth() {
 	HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO info;
 
-	if (h == INVALID_HANDLE_VALUE) {
+	if (h == INVALID_HANDLE_VALUE)
 		return 80;
-	}
 
 	Zero(&info, sizeof(info));
-	if (GetConsoleScreenBufferInfo(h, &info) == false) {
+	if (GetConsoleScreenBufferInfo(h, &info) == false)
 		return 80;
-	}
 
 	return info.dwSize.X;
 }

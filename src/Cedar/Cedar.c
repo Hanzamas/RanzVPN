@@ -37,21 +37,17 @@ static void FreeNetSvcList(CEDAR *cedar);
 static UINT init_cedar_counter = 0;
 
 static bool IsSupportedWinVer(const RPC_WINVER *v) {
-	if (v == NULL) {
+	if (v == NULL)
 		return false;
-	}
 
-	if (v->IsWindows == false) {
+	if (v->IsWindows == false)
 		return true;
-	}
 
-	if (v->IsNT == false) {
+	if (v->IsNT == false)
 		return true;
-	}
 
-	if (v->IsBeta) {
+	if (v->IsBeta)
 		return true;
-	}
 
 	if (v->VerMajor <= 4) {
 		// Windows NT
@@ -60,58 +56,50 @@ static bool IsSupportedWinVer(const RPC_WINVER *v) {
 
 	if (v->VerMajor == 5 && v->VerMinor == 0) {
 		// Windows 2000
-		if (v->ServicePack <= 4) {
+		if (v->ServicePack <= 4)
 			return true;
-		}
 	}
 
 	if (v->VerMajor == 5 && v->VerMinor == 1) {
 		// Windows XP x86
-		if (v->ServicePack <= 3) {
+		if (v->ServicePack <= 3)
 			return true;
-		}
 	}
 
 	if (v->VerMajor == 5 && v->VerMinor == 2) {
 		// Windows XP x64, Windows Server 2003
-		if (v->ServicePack <= 2) {
+		if (v->ServicePack <= 2)
 			return true;
-		}
 	}
 
 	if (v->VerMajor == 6 && v->VerMinor == 0) {
 		// Windows Vista, Server 2008
-		if (v->ServicePack <= 2) {
+		if (v->ServicePack <= 2)
 			return true;
-		}
 	}
 
 	if (v->VerMajor == 6 && v->VerMinor == 1) {
 		// Windows 7, Server 2008 R2
-		if (v->ServicePack <= 1) {
+		if (v->ServicePack <= 1)
 			return true;
-		}
 	}
 
 	if (v->VerMajor == 6 && v->VerMinor == 2) {
 		// Windows 8, Server 2012
-		if (v->ServicePack <= 0) {
+		if (v->ServicePack <= 0)
 			return true;
-		}
 	}
 
 	if (v->VerMajor == 6 && v->VerMinor == 3) {
 		// Windows 8.1, Server 2012 R2
-		if (v->ServicePack <= 0) {
+		if (v->ServicePack <= 0)
 			return true;
-		}
 	}
 
 	if ((v->VerMajor == 6 && v->VerMinor == 4) || (v->VerMajor == 10 && v->VerMinor == 0)) {
 		// Windows 10 or Windows Server 2016
-		if (v->ServicePack <= 0) {
+		if (v->ServicePack <= 0)
 			return true;
-		}
 	}
 
 	return false;
@@ -121,15 +109,13 @@ static bool IsSupportedWinVer(const RPC_WINVER *v) {
 void FormatUnsupportedWinVerMsg(wchar_t *buf, UINT size, RPC_WINVER *peer) {
 	SYSTEMTIME st;
 
-	if (buf == NULL || size == 0) {
+	if (buf == NULL || size == 0)
 		return;
-	}
 
 	Zero(buf, size);
 
-	if (peer == NULL || IsSupportedWinVer(peer)) {
+	if (peer == NULL || IsSupportedWinVer(peer))
 		return;
-	}
 
 	LocalTime(&st);
 
@@ -148,9 +134,8 @@ void FormatUnsupportedWinVerMsg(wchar_t *buf, UINT size, RPC_WINVER *peer) {
 void GetWinVer(RPC_WINVER *v) {
 	const OSVERSIONINFOEXW *os = Win32GetOsVersion();
 
-	if (v == NULL) {
+	if (v == NULL)
 		return;
-	}
 
 	Zero(v, sizeof(RPC_WINVER));
 
@@ -167,15 +152,13 @@ void GetWinVer(RPC_WINVER *v) {
 	Trim(v->Title);
 
 	if (InStr(GetOsInfo()->OsVersion, "rc") ||
-	    InStr(GetOsInfo()->OsVersion, "beta")) {
+	    InStr(GetOsInfo()->OsVersion, "beta"))
 		v->IsBeta = true;
-	}
 }
 
 void FreeTinyLog(TINY_LOG *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	FileClose(t->io);
 	DeleteLock(t->Lock);
@@ -184,9 +167,8 @@ void FreeTinyLog(TINY_LOG *t) {
 
 void WriteTinyLog(TINY_LOG *t, char *str) {
 	char dt[MAX_PATH];
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	GetDateTimeStrMilli64(dt, sizeof(dt), LocalTime64());
 	StrCat(dt, sizeof(dt), ": ");
@@ -227,30 +209,26 @@ TINY_LOG *NewTinyLog() {
 }
 
 static int CompareNoSslList(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	NON_SSL *n1 = *(NON_SSL **)p1;
 	NON_SSL *n2 = *(NON_SSL **)p2;
-	if (n1 == NULL || n2 == NULL) {
+	if (n1 == NULL || n2 == NULL)
 		return 0;
-	}
 	return CmpIpAddr(&n1->IpAddress, &n2->IpAddress);
 }
 
 void DecrementNoSsl(CEDAR *c, IP *ip, UINT num_dec) {
-	if (c == NULL || ip == NULL) {
+	if (c == NULL || ip == NULL)
 		return;
-	}
 
 	LockList(c->NonSslList);
 	{
 		NON_SSL *n = SearchNoSslList(c, ip);
 
 		if (n != NULL) {
-			if (n->Count >= num_dec) {
+			if (n->Count >= num_dec)
 				n->Count -= num_dec;
-			}
 		}
 	}
 	UnlockList(c->NonSslList);
@@ -258,9 +236,8 @@ void DecrementNoSsl(CEDAR *c, IP *ip, UINT num_dec) {
 
 bool IsInNoSsl(CEDAR *c, IP *ip) {
 	bool ret = false;
-	if (c == NULL || ip == NULL) {
+	if (c == NULL || ip == NULL)
 		return false;
-	}
 
 	LockList(c->NonSslList);
 	{
@@ -281,9 +258,8 @@ bool IsInNoSsl(CEDAR *c, IP *ip) {
 bool AddNoSsl(CEDAR *c, IP *ip) {
 	NON_SSL *n;
 	bool ret = true;
-	if (c == NULL || ip == NULL) {
+	if (c == NULL || ip == NULL)
 		return true;
-	}
 
 	LockList(c->NonSslList);
 	{
@@ -292,9 +268,8 @@ bool AddNoSsl(CEDAR *c, IP *ip) {
 		n = SearchNoSslList(c, ip);
 
 		if (n == NULL) {
-			if (LIST_NUM(c->NonSslList) >= RATE_LIMIT_TABLE_MAX) {
+			if (LIST_NUM(c->NonSslList) >= RATE_LIMIT_TABLE_MAX)
 				MakeRoomInNoSslList(c);
-			}
 
 			n = ZeroMalloc(sizeof(NON_SSL));
 			GetRateLimitKey(&n->IpAddress, ip);
@@ -307,9 +282,8 @@ bool AddNoSsl(CEDAR *c, IP *ip) {
 
 		n->Count++;
 
-		if (n->Count > NON_SSL_MIN_COUNT) {
+		if (n->Count > NON_SSL_MIN_COUNT)
 			ret = false;
-		}
 	}
 	UnlockList(c->NonSslList);
 
@@ -323,9 +297,8 @@ static bool IsNoSslExpired(void *p, void *param) {
 }
 
 static void DeleteOldNoSsl(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	UINT64 now = Tick64();
 
@@ -339,9 +312,8 @@ static void MakeRoomInNoSslList(CEDAR *c) {
 	for (UINT i = 0; i < LIST_NUM(c->NonSslList); i++) {
 		NON_SSL *n = LIST_DATA(c->NonSslList, i);
 
-		if (oldest == NULL || n->EntryExpires < oldest->EntryExpires) {
+		if (oldest == NULL || n->EntryExpires < oldest->EntryExpires)
 			oldest = n;
-		}
 	}
 
 	if (oldest != NULL) {
@@ -357,34 +329,30 @@ static void MakeRoomInNoSslList(CEDAR *c) {
 
 static NON_SSL *SearchNoSslList(CEDAR *c, const IP *ip) {
 	NON_SSL t;
-	if (c == NULL || ip == NULL) {
+	if (c == NULL || ip == NULL)
 		return NULL;
-	}
 
 	Zero(&t, sizeof(t));
 	GetRateLimitKey(&t.IpAddress, ip);
 
 	NON_SSL *n = Search(c->NonSslList, &t);
 
-	if (n == NULL) {
+	if (n == NULL)
 		return NULL;
-	}
 
 	return n;
 }
 
 static void InitNoSslList(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	c->NonSslList = NewList(CompareNoSslList);
 }
 
 static void FreeNoSslList(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(c->NonSslList); i++) {
 		NON_SSL *n = LIST_DATA(c->NonSslList, i);
@@ -397,41 +365,36 @@ static void FreeNoSslList(CEDAR *c) {
 }
 
 UINT64 GetTrafficPacketSize(TRAFFIC *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return 0;
-	}
 
 	return t->Recv.BroadcastBytes + t->Recv.UnicastBytes +
 	       t->Send.BroadcastBytes + t->Send.UnicastBytes;
 }
 
 UINT64 GetTrafficPacketNum(TRAFFIC *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return 0;
-	}
 
 	return t->Recv.BroadcastCount + t->Recv.UnicastCount +
 	       t->Send.BroadcastCount + t->Send.UnicastCount;
 }
 
 void DelConnection(CEDAR *cedar, CONNECTION *c) {
-	if (cedar == NULL || c == NULL) {
+	if (cedar == NULL || c == NULL)
 		return;
-	}
 
 	LockList(cedar->ConnectionList);
 	{
-		if (Delete(cedar->ConnectionList, c)) {
+		if (Delete(cedar->ConnectionList, c))
 			ReleaseConnection(c);
-		}
 	}
 	UnlockList(cedar->ConnectionList);
 }
 
 UINT GetUnestablishedConnections(CEDAR *cedar) {
-	if (cedar == NULL) {
+	if (cedar == NULL)
 		return 0;
-	}
 
 	UINT ret = 0;
 
@@ -463,9 +426,8 @@ UINT GetUnestablishedConnections(CEDAR *cedar) {
 
 void AddConnection(CEDAR *cedar, CONNECTION *c) {
 	char tmp[MAX_SIZE];
-	if (cedar == NULL || c == NULL) {
+	if (cedar == NULL || c == NULL)
 		return;
-	}
 
 	UINT i = Inc(cedar->ConnectionIncrement);
 	Format(tmp, sizeof(tmp), "CID-%u", i);
@@ -488,9 +450,8 @@ void AddConnection(CEDAR *cedar, CONNECTION *c) {
 static void StopAllConnection(CEDAR *c) {
 	UINT num;
 	CONNECTION **connections;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	LockList(c->ConnectionList);
 	{
@@ -508,23 +469,20 @@ static void StopAllConnection(CEDAR *c) {
 }
 
 void DelHub(CEDAR *c, HUB *h) {
-	if (c == NULL || h == NULL) {
+	if (c == NULL || h == NULL)
 		return;
-	}
 
 	LockHubList(c);
 
-	if (Delete(c->HubList, h)) {
+	if (Delete(c->HubList, h))
 		ReleaseHub(h);
-	}
 
 	UnlockHubList(c);
 }
 
 void AddHub(CEDAR *c, HUB *h) {
-	if (c == NULL || h == NULL) {
+	if (c == NULL || h == NULL)
 		return;
-	}
 
 	LockHubList(c);
 	{
@@ -542,9 +500,8 @@ void AddHub(CEDAR *c, HUB *h) {
 static void StopAllHub(CEDAR *c) {
 	HUB **hubs;
 	UINT num;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	LockHubList(c);
 	{
@@ -563,9 +520,8 @@ static void StopAllHub(CEDAR *c) {
 }
 
 void AddListener(CEDAR *c, LISTENER *r) {
-	if (c == NULL || r == NULL) {
+	if (c == NULL || r == NULL)
 		return;
-	}
 
 	LockList(c->ListenerList);
 	{
@@ -578,9 +534,8 @@ void AddListener(CEDAR *c, LISTENER *r) {
 static void StopAllListener(CEDAR *c) {
 	LISTENER **array;
 	UINT num;
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	LockList(c->ListenerList);
 	{
@@ -600,41 +555,36 @@ static void StopAllListener(CEDAR *c) {
 // Both budgets are plain counters shared by every connection and link of the Cedar, so one atomic add
 // replaces the lock each of them had. Callers keep the queue budget in step through CedarSyncQueueBudget
 static void CedarAddQueueBudget(CEDAR *c, int diff) {
-	if (c == NULL || diff == 0) {
+	if (c == NULL || diff == 0)
 		return;
-	}
 
 	InterlockedExchangeAdd((volatile LONG *)&c->QueueBudget, (LONG)diff);
 }
 // Moves the queue budget by how much one queue's block count changed since its last sync, and records
 // the new count. A count of 0 hands back everything that queue still holds in the budget
 void CedarSyncQueueBudget(CEDAR *c, UINT current, UINT *last) {
-	if (last == NULL) {
+	if (last == NULL)
 		return;
-	}
 
 	CedarAddQueueBudget(c, (int)current - (int)(*last));
 	*last = current;
 }
 void CedarAddFifoBudget(CEDAR *c, int diff) {
-	if (c == NULL || diff == 0) {
+	if (c == NULL || diff == 0)
 		return;
-	}
 
 	InterlockedExchangeAdd((volatile LONG *)&c->FifoBudget, (LONG)diff);
 }
 UINT CedarGetQueueBudgetConsuming(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
 
 	// Barrier read of the atomically changed counter
 	return (UINT)InterlockedCompareExchange((volatile LONG *)&c->QueueBudget, 0, 0);
 }
 UINT CedarGetFifoBudgetConsuming(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
 
 	// Barrier read of the atomically changed counter
 	return (UINT)InterlockedCompareExchange((volatile LONG *)&c->FifoBudget, 0, 0);
@@ -643,27 +593,24 @@ UINT CedarGetQueueBudgetBalance(CEDAR *c) {
 	UINT current = CedarGetQueueBudgetConsuming(c);
 	UINT budget = QUEUE_BUDGET;
 
-	if (current <= budget) {
+	if (current <= budget)
 		return budget - current;
-	} else {
+	else
 		return 0;
-	}
 }
 UINT CedarGetFifoBudgetBalance(CEDAR *c) {
 	UINT current = CedarGetFifoBudgetConsuming(c);
 	UINT budget = FIFO_BUDGET;
 
-	if (current <= budget) {
+	if (current <= budget)
 		return budget - current;
-	} else {
+	else
 		return 0;
-	}
 }
 
 void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff) {
-	if (c == NULL || diff == 0) {
+	if (c == NULL || diff == 0)
 		return;
-	}
 
 	// One atomic add instead of a Cedar-wide lock: every flooded copy calls this on enqueue and again on
 	// dequeue, from all sessions of all hubs, and nothing else shares the counter. Readers read it unlocked
@@ -671,17 +618,15 @@ void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff) {
 }
 
 UINT CedarGetCurrentTcpQueueSize(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
 
 	return c->CurrentTcpQueueSize;
 }
 
 void StopCedar(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	StopAllListener(c);
 	StopAllConnection(c);
@@ -689,9 +634,8 @@ void StopCedar(CEDAR *c) {
 }
 
 static void CleanupCedar(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	ReleaseList(c->ListenerList);
 	ReleaseList(c->HubList);
@@ -700,19 +644,15 @@ static void CleanupCedar(CEDAR *c) {
 	DeleteCounter(c->ConnectionIncrement);
 	DeleteCounter(c->CurrentSessions);
 
-	if (c->ServerX) {
+	if (c->ServerX)
 		FreeX(c->ServerX);
-	}
-	if (c->ServerK) {
+	if (c->ServerK)
 		FreeK(c->ServerK);
-	}
-	if (c->ServerChain) {
+	if (c->ServerChain)
 		FreeXList(c->ServerChain);
-	}
 
-	if (c->CipherList) {
+	if (c->CipherList)
 		Free(c->CipherList);
-	}
 
 	FreeSSLCtx(c->ServerSslCtx);
 
@@ -748,13 +688,11 @@ static void CleanupCedar(CEDAR *c) {
 }
 
 void ReleaseCedar(CEDAR *c) {
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
-	if (Release(c->ref) == 0) {
+	if (Release(c->ref) == 0)
 		CleanupCedar(c);
-	}
 }
 
 // Release the shared server SSL_CTX: the next accepted connection builds it again. Connections that already
@@ -772,21 +710,18 @@ struct ssl_ctx_st *GetCedarServerSslCtx(CEDAR *c) {
 	struct ssl_ctx_st *ret;
 	UINT chain_gen = 0;
 
-	if (c == NULL) {
+	if (c == NULL)
 		return NULL;
-	}
 
 	Lock(c->lock);
 	{
-		if (c->ServerChain == NULL) {
+		if (c->ServerChain == NULL)
 			chain_gen = GetChainCertGeneration();
-		}
 
 		if (c->ServerSslCtx != NULL &&
 		    (Cmp(&c->ServerSslCtxSettings, &c->SslAcceptSettings, sizeof(SSL_ACCEPT_SETTINGS)) != 0 ||
-		     (c->ServerChain == NULL && c->ServerSslCtxChainGen != chain_gen))) {
+		     (c->ServerChain == NULL && c->ServerSslCtxChainGen != chain_gen)))
 			ResetCedarServerSslCtx(c);
-		}
 
 		if (c->ServerSslCtx == NULL) {
 			c->ServerSslCtx = NewServerSSLCtx(c->ServerX, c->ServerK, c->ServerChain, c->CipherList, &c->SslAcceptSettings);
@@ -803,20 +738,17 @@ struct ssl_ctx_st *GetCedarServerSslCtx(CEDAR *c) {
 }
 
 void SetCedarCipherList(CEDAR *cedar, char *name) {
-	if (cedar == NULL) {
+	if (cedar == NULL)
 		return;
-	}
 
 	Lock(cedar->lock);
 	{
-		if (cedar->CipherList != NULL) {
+		if (cedar->CipherList != NULL)
 			Free(cedar->CipherList);
-		}
-		if (name != NULL) {
+		if (name != NULL)
 			cedar->CipherList = CopyStr(name);
-		} else {
+		else
 			cedar->CipherList = NULL;
-		}
 
 		ResetCedarServerSslCtx(cedar);
 	}
@@ -824,46 +756,40 @@ void SetCedarCipherList(CEDAR *cedar, char *name) {
 }
 
 static int CompareNetSvc(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	NETSVC *n1 = *(NETSVC **)p1;
 	NETSVC *n2 = *(NETSVC **)p2;
-	if (n1 == NULL || n2 == NULL) {
+	if (n1 == NULL || n2 == NULL)
 		return 0;
-	}
-	if (n1->Port > n2->Port) {
+	if (n1->Port > n2->Port)
 		return 1;
-	} else if (n1->Port < n2->Port) {
+	else if (n1->Port < n2->Port)
 		return -1;
-	} else if (n1->Udp > n2->Udp) {
+	else if (n1->Udp > n2->Udp)
 		return 1;
-	} else if (n1->Udp < n2->Udp) {
+	else if (n1->Udp < n2->Udp)
 		return -1;
-	}
 	return 0;
 }
 
 static void InitNetSvcList(CEDAR *cedar) {
 	char filename[MAX_PATH] = "/etc/services";
-	if (cedar == NULL) {
+	if (cedar == NULL)
 		return;
-	}
 
 	Format(filename, sizeof(filename), "%s\\drivers\\etc\\services", MsGetSystem32Dir());
 
 	cedar->NetSvcList = NewList(CompareNetSvc);
 
 	BUF *b = ReadDump(filename);
-	if (b == NULL) {
+	if (b == NULL)
 		return;
-	}
 
 	while (true) {
 		char *s = CfgReadNextLine(b);
-		if (s == NULL) {
+		if (s == NULL)
 			break;
-		}
 
 		Trim(s);
 		if (s[0] != '#') {
@@ -886,9 +812,8 @@ static void InitNetSvcList(CEDAR *cedar) {
 char *GetSvcName(CEDAR *cedar, bool udp, UINT port) {
 	char *ret = NULL;
 	NETSVC t;
-	if (cedar == NULL) {
+	if (cedar == NULL)
 		return NULL;
-	}
 
 	t.Udp = (udp == 0 ? false : true);
 	t.Port = port;
@@ -896,9 +821,8 @@ char *GetSvcName(CEDAR *cedar, bool udp, UINT port) {
 	LockList(cedar->NetSvcList);
 	{
 		NETSVC *n = Search(cedar->NetSvcList, &t);
-		if (n != NULL) {
+		if (n != NULL)
 			ret = n->Name;
-		}
 	}
 	UnlockList(cedar->NetSvcList);
 
@@ -906,9 +830,8 @@ char *GetSvcName(CEDAR *cedar, bool udp, UINT port) {
 }
 
 static void FreeNetSvcList(CEDAR *cedar) {
-	if (cedar == NULL) {
+	if (cedar == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(cedar->NetSvcList); i++) {
 		NETSVC *n = LIST_DATA(cedar->NetSvcList, i);
@@ -919,23 +842,19 @@ static void FreeNetSvcList(CEDAR *cedar) {
 }
 
 void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain) {
-	if (server_x == NULL || server_k == NULL) {
+	if (server_x == NULL || server_k == NULL)
 		return;
-	}
 
 	Lock(c->lock);
 	{
-		if (c->ServerX != NULL) {
+		if (c->ServerX != NULL)
 			FreeX(c->ServerX);
-		}
 
-		if (c->ServerK != NULL) {
+		if (c->ServerK != NULL)
 			FreeK(c->ServerK);
-		}
 
-		if (c->ServerChain != NULL) {
+		if (c->ServerChain != NULL)
 			FreeXList(c->ServerChain);
-		}
 
 		c->ServerX = CloneX(server_x);
 		c->ServerK = CloneK(server_k);
@@ -1034,9 +953,8 @@ CEDAR *NewCedar(X *server_x, K *server_k) {
 }
 
 void AddTraffic(TRAFFIC *dst, TRAFFIC *diff) {
-	if (dst == NULL || diff == NULL) {
+	if (dst == NULL || diff == NULL)
 		return;
-	}
 
 	dst->Recv.BroadcastBytes += diff->Recv.BroadcastBytes;
 	dst->Recv.BroadcastCount += diff->Recv.BroadcastCount;
@@ -1051,9 +969,8 @@ void AddTraffic(TRAFFIC *dst, TRAFFIC *diff) {
 
 // dst = a - b
 void SubTraffic(TRAFFIC *dst, TRAFFIC *a, TRAFFIC *b) {
-	if (dst == NULL || a == NULL || b == NULL) {
+	if (dst == NULL || a == NULL || b == NULL)
 		return;
-	}
 
 	dst->Send.BroadcastBytes = a->Send.BroadcastBytes - b->Send.BroadcastBytes;
 	dst->Send.BroadcastCount = a->Send.BroadcastCount - b->Send.BroadcastCount;
@@ -1068,9 +985,8 @@ void SubTraffic(TRAFFIC *dst, TRAFFIC *a, TRAFFIC *b) {
 
 // Counts one Ethernet frame as broadcast or unicast; a frame shorter than an Ethernet header is not counted
 void TrafficCountFrame(TRAFFIC_ENTRY *e, UCHAR *buf, UINT size) {
-	if (e == NULL || buf == NULL || size < 14) {
+	if (e == NULL || buf == NULL || size < 14)
 		return;
-	}
 
 	if (buf[0] & 0x01) {
 		e->BroadcastCount++;
@@ -1087,25 +1003,22 @@ TRAFFIC *NewTraffic() {
 }
 
 void FreeTraffic(TRAFFIC *t) {
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t);
 }
 
 void InitCedar() {
-	if ((init_cedar_counter++) > 0) {
+	if ((init_cedar_counter++) > 0)
 		return;
-	}
 
 	InitWaterMark();
 }
 
 void FreeCedar() {
-	if ((--init_cedar_counter) > 0) {
+	if ((--init_cedar_counter) > 0)
 		return;
-	}
 
 	FreeWaterMark();
 }

@@ -12,24 +12,20 @@ static HANDLE hstdin = INVALID_HANDLE_VALUE;
 
 // The standard handles that the console input and output functions read and write
 void Win32InitConsole() {
-	if (hstdout == INVALID_HANDLE_VALUE) {
+	if (hstdout == INVALID_HANDLE_VALUE)
 		hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
-	}
 
-	if (hstdin == INVALID_HANDLE_VALUE) {
+	if (hstdin == INVALID_HANDLE_VALUE)
 		hstdin = GetStdHandle(STD_INPUT_HANDLE);
-	}
 }
 
 bool Win32InputW(wchar_t *str, UINT size) {
 	bool ret = false;
 	DWORD read_size = 0;
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
-	if (size == 0) {
+	if (size == 0)
 		size = 0x7fffffff;
-	}
 
 	if (size <= sizeof(wchar_t)) {
 		Zero(str, size);
@@ -59,9 +55,8 @@ void Win32InputDiscardLine() {
 }
 
 bool Win32InputFromFileW(wchar_t *str, UINT size) {
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	char *a = Win32InputFromFileLineA();
 	if (a == NULL) {
@@ -98,16 +93,14 @@ char *Win32InputFromFileLineA() {
 
 		WriteBuf(b, &c, 1);
 
-		if (c == 10) {
+		if (c == 10)
 			break;
-		}
 	}
 
 	WriteBuf(b, &zero, 1);
 
-	if (ok) {
+	if (ok)
 		ret = CopyStr(b->Buf);
-	}
 
 	FreeBuf(b);
 
@@ -116,19 +109,16 @@ char *Win32InputFromFileLineA() {
 
 void Win32PrintW(wchar_t *str) {
 	DWORD write_size = 0;
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
-	if (WriteConsoleW(hstdout, str, UniStrLen(str), &write_size, NULL) == false) {
+	if (WriteConsoleW(hstdout, str, UniStrLen(str), &write_size, NULL) == false)
 		Win32PrintToFileW(str);
-	}
 }
 void Win32PrintToFileW(wchar_t *str) {
 	DWORD size = 0;
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	char *utf = CopyUniToUtf(str);
 

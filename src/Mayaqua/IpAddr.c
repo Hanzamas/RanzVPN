@@ -10,13 +10,11 @@
 
 bool IsStrIPv6Address(char *str) {
 	IP ip;
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
-	if (StrToIP6(&ip, str) == false) {
+	if (StrToIP6(&ip, str) == false)
 		return false;
-	}
 
 	return true;
 }
@@ -47,9 +45,8 @@ static UINT MaskToPrefixLen(const UCHAR *mask, UINT size) {
 		i++;
 	}
 
-	if (i == size) {
+	if (i == size)
 		return len;
-	}
 
 	// The first byte with a zero bit: its leading one bits count, the bits behind them must be zero
 	UCHAR rest = mask[i];
@@ -58,59 +55,51 @@ static UINT MaskToPrefixLen(const UCHAR *mask, UINT size) {
 		rest = (UCHAR)(rest << 1);
 	}
 
-	if (rest != 0) {
+	if (rest != 0)
 		return INFINITE;
-	}
 
 	// Every byte behind it must be zero
-	for (i++; i < size; i++) {
-		if (mask[i] != 0) {
+	for (i++; i < size; i++)
+		if (mask[i] != 0)
 			return INFINITE;
-		}
-	}
 
 	return len;
 }
 
 // Prefix length of an IPv6 subnet mask; 0 for an IPv4 address or a mask that is not contiguous
 UINT SubnetMaskToInt6(const IP *a) {
-	if (IsIP6(a) == false) {
+	if (IsIP6(a) == false)
 		return 0;
-	}
 
 	UINT len = MaskToPrefixLen(a->address, sizeof(a->address));
 
 	return (len == INFINITE ? 0 : len);
 }
 static UINT SubnetMaskToInt4(const IP *a) {
-	if (IsIP4(a) == false) {
+	if (IsIP4(a) == false)
 		return 0;
-	}
 
 	UINT len = MaskToPrefixLen(IPV4(a->address), IPV4_SIZE);
 
 	return (len == INFINITE ? 0 : len);
 }
 static UINT SubnetMaskToInt(const IP *a) {
-	if (IsIP6(a)) {
+	if (IsIP6(a))
 		return SubnetMaskToInt6(a);
-	} else {
+	else
 		return SubnetMaskToInt4(a);
-	}
 }
 
 static bool IsSubnetMask6(const IP *a) {
-	if (IsIP6(a) == false) {
+	if (IsIP6(a) == false)
 		return false;
-	}
 
 	return (MaskToPrefixLen(a->address, sizeof(a->address)) != INFINITE);
 }
 
 void IntToSubnetMask6(IP *ip, UINT i) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	Zero(ip, sizeof(IP));
 
@@ -118,9 +107,8 @@ void IntToSubnetMask6(IP *ip, UINT i) {
 }
 
 void IntToSubnetMask4(IP *ip, UINT i) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	ZeroIP4(ip);
 
@@ -128,80 +116,66 @@ void IntToSubnetMask4(IP *ip, UINT i) {
 }
 
 static bool IsSubnetMask(const IP *ip) {
-	if (IsIP6(ip)) {
+	if (IsIP6(ip))
 		return IsSubnetMask6(ip);
-	} else {
+	else
 		return IsSubnetMask4(ip);
-	}
 }
 bool IsSubnetMask4(const IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return false;
-	}
 
-	if (IsIP6(ip)) {
+	if (IsIP6(ip))
 		return false;
-	}
 
 	return (MaskToPrefixLen(IPV4(ip->address), IPV4_SIZE) != INFINITE);
 }
 
 static bool ParseIpAndSubnetMask46(const char *src, IP *ip, IP *mask) {
-	if (src == NULL || ip == NULL || mask == NULL) {
+	if (src == NULL || ip == NULL || mask == NULL)
 		return false;
-	}
 
-	if (ParseIpAndMask46(src, ip, mask) == false) {
+	if (ParseIpAndMask46(src, ip, mask) == false)
 		return false;
-	}
 
-	if (IsIP4(ip)) {
+	if (IsIP4(ip))
 		return IsSubnetMask4(mask);
-	} else {
+	else
 		return IsSubnetMask6(mask);
-	}
 }
 bool ParseIpAndSubnetMask4(char *src, UINT *ip, UINT *mask) {
 	IP ip2, mask2;
-	if (src == NULL) {
+	if (src == NULL)
 		return false;
-	}
 
-	if (ParseIpAndSubnetMask46(src, &ip2, &mask2) == false) {
+	if (ParseIpAndSubnetMask46(src, &ip2, &mask2) == false)
 		return false;
-	}
 
-	if (IsIP4(&ip2) == false) {
+	if (IsIP4(&ip2) == false)
 		return false;
-	}
 
-	if (ip != NULL) {
+	if (ip != NULL)
 		*ip = IPToUINT(&ip2);
-	}
 
-	if (mask != NULL) {
+	if (mask != NULL)
 		*mask = IPToUINT(&mask2);
-	}
 
 	return true;
 }
 
 void MaskToStrEx(char *str, UINT size, const IP *mask, bool always_full_address) {
-	if (str == NULL || mask == NULL) {
+	if (str == NULL || mask == NULL)
 		return;
-	}
 
-	if (always_full_address == false && IsSubnetMask(mask)) {
+	if (always_full_address == false && IsSubnetMask(mask))
 		ToStr(str, SubnetMaskToInt(mask));
-	} else {
+	else
 		IPToStr(str, size, mask);
-	}
 }
 
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac) {
-	if (a == NULL || mac == NULL) {
+	if (a == NULL || mac == NULL)
 		return;
-	}
 
 	Zero(a, sizeof(IP));
 
@@ -215,9 +189,8 @@ void GenerateEui64LocalAddress(IP *a, UCHAR *mac) {
 }
 
 void GenerateEui64Address6(UCHAR *dst, UCHAR *mac) {
-	if (dst == NULL || mac == NULL) {
+	if (dst == NULL || mac == NULL)
 		return;
-	}
 
 	Copy(dst, mac, 3);
 	Copy(dst + 5, mac, 3);
@@ -229,9 +202,8 @@ void GenerateEui64Address6(UCHAR *dst, UCHAR *mac) {
 
 UINT GetIPv6AddrType(const IPV6_ADDR *addr) {
 	IP ip;
-	if (addr == NULL) {
+	if (addr == NULL)
 		return 0;
-	}
 
 	IPv6AddrToIP(&ip, addr);
 
@@ -239,9 +211,8 @@ UINT GetIPv6AddrType(const IPV6_ADDR *addr) {
 }
 UINT GetIPAddrType6(const IP *ip) {
 	UINT ret = 0;
-	if (IsIP6(ip) == false) {
+	if (IsIP6(ip) == false)
 		return 0;
-	}
 
 	if (ip->address[0] == 0xff) {
 		IP all_node, all_router;
@@ -252,18 +223,15 @@ UINT GetIPAddrType6(const IP *ip) {
 
 		ret |= IPV6_ADDR_MULTICAST;
 
-		if (CmpIpAddr(ip, &all_node) == 0) {
+		if (CmpIpAddr(ip, &all_node) == 0)
 			ret |= IPV6_ADDR_ALL_NODE_MULTICAST;
-		} else if (CmpIpAddr(ip, &all_router) == 0) {
+		else if (CmpIpAddr(ip, &all_router) == 0)
 			ret |= IPV6_ADDR_ALL_ROUTER_MULTICAST;
-		} else {
-			if (ip->address[1] == 0x02 && ip->address[2] == 0 && ip->address[3] == 0 &&
-			    ip->address[4] == 0 && ip->address[5] == 0 && ip->address[6] == 0 &&
-			    ip->address[7] == 0 && ip->address[8] == 0 && ip->address[9] == 0 &&
-			    ip->address[10] == 0 && ip->address[11] == 0x01 && ip->address[12] == 0xff) {
-				ret |= IPV6_ADDR_SOLICIATION_MULTICAST;
-			}
-		}
+		else if (ip->address[1] == 0x02 && ip->address[2] == 0 && ip->address[3] == 0 &&
+		         ip->address[4] == 0 && ip->address[5] == 0 && ip->address[6] == 0 &&
+		         ip->address[7] == 0 && ip->address[8] == 0 && ip->address[9] == 0 &&
+		         ip->address[10] == 0 && ip->address[11] == 0x01 && ip->address[12] == 0xff)
+			ret |= IPV6_ADDR_SOLICIATION_MULTICAST;
 	} else {
 		ret |= IPV6_ADDR_UNICAST;
 
@@ -279,9 +247,8 @@ UINT GetIPAddrType6(const IP *ip) {
 
 				GetLoopbackAddress6(&loopback);
 
-				if (Cmp(ip->address, loopback.address, sizeof(ip->address)) == 0) {
+				if (Cmp(ip->address, loopback.address, sizeof(ip->address)) == 0)
 					ret |= IPV6_ADDR_LOOPBACK;
-				}
 			}
 		}
 	}
@@ -290,9 +257,8 @@ UINT GetIPAddrType6(const IP *ip) {
 }
 
 void GetLoopbackAddress6(IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	Zero(ip, sizeof(IP));
 
@@ -300,9 +266,8 @@ void GetLoopbackAddress6(IP *ip) {
 }
 
 void GetAllNodeMulticaseAddress6(IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	Zero(ip, sizeof(IP));
 
@@ -312,9 +277,8 @@ void GetAllNodeMulticaseAddress6(IP *ip) {
 }
 
 void GetAllRouterMulticastAddress6(IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	Zero(ip, sizeof(IP));
 
@@ -335,20 +299,17 @@ void IPAnd4(IP *dst, const IP *a, const IP *b) {
 void IPAnd6(IP *dst, const IP *a, const IP *b) {
 	Zero(dst, sizeof(IP));
 
-	if (dst == NULL || IsIP6(a) == false || IsIP6(b) == false) {
+	if (dst == NULL || IsIP6(a) == false || IsIP6(b) == false)
 		return;
-	}
 
-	for (BYTE i = 0; i < sizeof(dst->address); ++i) {
+	for (BYTE i = 0; i < sizeof(dst->address); ++i)
 		dst->address[i] = a->address[i] & b->address[i];
-	}
 }
 
 void IP6AddrToStr(char *str, UINT size, const IPV6_ADDR *addr) {
 	IP ip;
-	if (str == NULL || addr == NULL) {
+	if (str == NULL || addr == NULL)
 		return;
-	}
 
 	SetIP6(&ip, addr->Value);
 
@@ -358,16 +319,14 @@ void IPToStr6(char *str, UINT size, const IP *ip) {
 	IN6_ADDR addr;
 	char tmp[INET6_ADDRSTRLEN];
 	ULONG len = sizeof(tmp);
-	if (str == NULL || ip == NULL) {
+	if (str == NULL || ip == NULL)
 		return;
-	}
 
 	Copy(&addr, ip->address, sizeof(addr));
 
 	// RFC 5952 text, with "%" and the scope ID when the scope ID is not zero
-	if (RtlIpv6AddressToStringExA(&addr, ip->ipv6_scope_id, 0, tmp, &len) != 0) {
+	if (RtlIpv6AddressToStringExA(&addr, ip->ipv6_scope_id, 0, tmp, &len) != 0)
 		tmp[0] = 0;
-	}
 
 	StrCpy(str, size, tmp);
 }
@@ -377,9 +336,8 @@ bool StrToIP6(IP *ip, const char *str) {
 	IN6_ADDR addr;
 	ULONG scope_id;
 	USHORT port;
-	if (str == NULL || ip == NULL) {
+	if (str == NULL || ip == NULL)
 		return false;
-	}
 
 	StrCpy(tmp, sizeof(tmp), str);
 	Trim(tmp);
@@ -387,19 +345,16 @@ bool StrToIP6(IP *ip, const char *str) {
 	if (StartWith(tmp, "[") && EndWith(tmp, "]")) {
 		StrCpy(tmp, sizeof(tmp), &tmp[1]);
 
-		if (StrLen(tmp) >= 1) {
+		if (StrLen(tmp) >= 1)
 			tmp[StrLen(tmp) - 1] = 0;
-		}
 	}
 
 	// The whole text is the address and an optional decimal "%scope": no brackets and so no port
-	if (InStr(tmp, "[") || InStr(tmp, "]")) {
+	if (InStr(tmp, "[") || InStr(tmp, "]"))
 		return false;
-	}
 
-	if (RtlIpv6StringToAddressExA(tmp, &addr, &scope_id, &port) != 0) {
+	if (RtlIpv6StringToAddressExA(tmp, &addr, &scope_id, &port) != 0)
 		return false;
-	}
 
 	Zero(ip, sizeof(IP));
 	Copy(ip->address, &addr, sizeof(ip->address));
@@ -409,9 +364,8 @@ bool StrToIP6(IP *ip, const char *str) {
 }
 
 void ZeroIP4(IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	Zero(ip, sizeof(IP));
 
@@ -420,69 +374,58 @@ void ZeroIP4(IP *ip) {
 }
 
 void GetLocalHostIP6(IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	Zero(ip, sizeof(IP));
 
 	ip->address[15] = 1;
 }
 void GetLocalHostIP4(IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	SetIP(ip, 127, 0, 0, 1);
 }
 
 static bool IsLocalHostIP6(const IP *ip) {
 	IP local;
-	if (ip == NULL) {
+	if (ip == NULL)
 		return false;
-	}
-	if (IsIP6(ip) == false) {
+	if (IsIP6(ip) == false)
 		return false;
-	}
 
 	GetLocalHostIP6(&local);
 
-	if (CmpIpAddr(&local, ip) == 0) {
+	if (CmpIpAddr(&local, ip) == 0)
 		return true;
-	}
 
 	return false;
 }
 static bool IsLocalHostIP4(const IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return false;
-	}
-	if (IsIP4(ip) == false) {
+	if (IsIP4(ip) == false)
 		return false;
-	}
 
-	if (IPV4(ip->address)[0] == 127) {
+	if (IPV4(ip->address)[0] == 127)
 		return true;
-	}
 
 	return false;
 }
 bool IsLocalHostIP(const IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return false;
-	}
 
-	if (IsIP4(ip)) {
+	if (IsIP4(ip))
 		return IsLocalHostIP4(ip);
-	} else {
+	else
 		return IsLocalHostIP6(ip);
-	}
 }
 
 void IPv6AddrToIP(IP *ip, const IPV6_ADDR *addr) {
-	if (ip == NULL || addr == NULL) {
+	if (ip == NULL || addr == NULL)
 		return;
-	}
 
 	SetIP6(ip, addr->Value);
 }
@@ -498,37 +441,31 @@ bool IPToIPv6Addr(IPV6_ADDR *addr, const IP *ip) {
 		return false;
 	}
 
-	for (UINT i = 0; i < sizeof(addr->Value); ++i) {
+	for (UINT i = 0; i < sizeof(addr->Value); ++i)
 		addr->Value[i] = ip->address[i];
-	}
 
 	return true;
 }
 
 void SetIP6(IP *ip, const UCHAR *value) {
-	if (ip == NULL || value == NULL) {
+	if (ip == NULL || value == NULL)
 		return;
-	}
 
 	Zero(ip, sizeof(IP));
 
-	for (BYTE i = 0; i < sizeof(ip->address); ++i) {
+	for (BYTE i = 0; i < sizeof(ip->address); ++i)
 		ip->address[i] = value[i];
-	}
 }
 
 bool IsIP4(const IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return false;
-	}
 
-	if (IsZero(ip->address, 10) == false) {
+	if (IsZero(ip->address, 10) == false)
 		return false;
-	}
 
-	if (ip->address[10] != 0xff || ip->address[11] != 0xff) {
+	if (ip->address[10] != 0xff || ip->address[11] != 0xff)
 		return false;
-	}
 
 	return true;
 }
@@ -538,90 +475,75 @@ void CopyIP(IP *dst, const IP *src) {
 }
 
 bool IsValidUnicastIPAddress4(const IP *ip) {
-	if (IsIP4(ip) == false) {
+	if (IsIP4(ip) == false)
 		return false;
-	}
 
-	if (IsZeroIP(ip)) {
+	if (IsZeroIP(ip))
 		return false;
-	}
 
 	const BYTE *ipv4 = IPV4(ip->address);
 
-	if (ipv4[0] >= 224 && ipv4[0] <= 239) {
+	if (ipv4[0] >= 224 && ipv4[0] <= 239)
 		return false;
-	}
 
 	// Not exact: correct parsing needs the netmask.
-	for (BYTE i = 0; i < IPV4_SIZE; ++i) {
-		if (ipv4[i] != 255) {
+	for (BYTE i = 0; i < IPV4_SIZE; ++i)
+		if (ipv4[i] != 255)
 			return true;
-		}
-	}
 
 	return false;
 }
 
 bool IsValidUnicastIPAddress6(const IP *ip) {
-	if (!IsIP6(ip)) {
+	if (!IsIP6(ip))
 		return false;
-	}
 
-	if (IsZeroIP(ip)) {
+	if (IsZeroIP(ip))
 		return false;
-	}
 
 	UINT ipv6Type = GetIPAddrType6(ip);
 
 	if (!(ipv6Type & IPV6_ADDR_LOCAL_UNICAST) &&
-	    !(ipv6Type & IPV6_ADDR_GLOBAL_UNICAST)) {
+	    !(ipv6Type & IPV6_ADDR_GLOBAL_UNICAST))
 		return false;
-	}
 
 	return true;
 }
 
 bool IsZeroIP(const IP *ip) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return true;
-	}
 
-	if (IsZero(ip->address, sizeof(ip->address))) {
+	if (IsZero(ip->address, sizeof(ip->address)))
 		return true;
-	}
 
-	if (IsIP4(ip)) {
+	if (IsIP4(ip))
 		return IsZero(IPV4(ip->address), IPV4_SIZE);
-	}
 
 	return false;
 }
 bool IsZeroIP6Addr(const IPV6_ADDR *addr) {
-	if (addr == NULL) {
+	if (addr == NULL)
 		return true;
-	}
 
 	return IsZero(addr, sizeof(IPV6_ADDR));
 }
 
 UINT IPToUINT(const IP *ip) {
-	if (ip == NULL || IsIP6(ip)) {
+	if (ip == NULL || IsIP6(ip))
 		return 0;
-	}
 
 	UINT value;
 
-	for (BYTE i = 0; i < IPV4_SIZE; ++i) {
+	for (BYTE i = 0; i < IPV4_SIZE; ++i)
 		((BYTE *)&value)[i] = IPV4(ip->address)[i];
-	}
 
 	return value;
 }
 
 void UINTToIP(IP *ip, UINT value) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	ZeroIP4(ip);
 
@@ -632,9 +554,8 @@ void UINTToIP(IP *ip, UINT value) {
 }
 
 void SetIP(IP *ip, UCHAR a1, UCHAR a2, UCHAR a3, UCHAR a4) {
-	if (ip == NULL) {
+	if (ip == NULL)
 		return;
-	}
 
 	ZeroIP4(ip);
 
@@ -646,9 +567,8 @@ void SetIP(IP *ip, UCHAR a1, UCHAR a2, UCHAR a3, UCHAR a4) {
 
 void IPToStr32(char *str, UINT size, UINT ip) {
 	IP ip_st;
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	UINTToIP(&ip_st, ip);
 	IPToStr(str, size, &ip_st);
@@ -658,28 +578,25 @@ void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, const UCHAR *ip_6_bytes) 
 	IP ip4;
 	IP ip6;
 	IP ip;
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	Zero(&ip, sizeof(ip));
 
 	UINTToIP(&ip4, ip_4_uint);
 	SetIP6(&ip6, ip_6_bytes);
 
-	if (IsIP6(&ip4) || (IsZeroIP(&ip4) && (IsZeroIP(&ip6) == false))) {
+	if (IsIP6(&ip4) || (IsZeroIP(&ip4) && (IsZeroIP(&ip6) == false)))
 		Copy(&ip, &ip6, sizeof(IP));
-	} else {
+	else
 		Copy(&ip, &ip4, sizeof(IP));
-	}
 
 	IPToStr(str, size, &ip);
 }
 
 void IPToStr(char *str, UINT size, const IP *ip) {
-	if (str == NULL || ip == NULL) {
+	if (str == NULL || ip == NULL)
 		return;
-	}
 
 	if (IsIP6(ip)) {
 		IPToStr6(str, size, ip);
@@ -697,13 +614,11 @@ void IPToStr(char *str, UINT size, const IP *ip) {
 bool StrToIP(IP *ip, const char *str) {
 	PCSTR end;
 	IN_ADDR addr;
-	if (ip == NULL || str == NULL) {
+	if (ip == NULL || str == NULL)
 		return false;
-	}
 
-	if (StrToIP6(ip, str)) {
+	if (StrToIP6(ip, str))
 		return true;
-	}
 
 	ZeroIP4(ip);
 
@@ -713,9 +628,8 @@ bool StrToIP(IP *ip, const char *str) {
 	bool ok = (RtlIpv4StringToAddressA(tmp, TRUE, &end, &addr) == 0 && *end == 0);
 	Free(tmp);
 
-	if (ok == false) {
+	if (ok == false)
 		return false;
-	}
 
 	Copy(IPV4(ip->address), &addr, IPV4_SIZE);
 
@@ -723,63 +637,54 @@ bool StrToIP(IP *ip, const char *str) {
 }
 
 void IPToInAddr(struct in_addr *addr, const IP *ip) {
-	if (addr == NULL || IsIP4(ip) == false) {
+	if (addr == NULL || IsIP4(ip) == false)
 		return;
-	}
 
 	Zero(addr, sizeof(struct in_addr));
 
 	const BYTE *ipv4 = IPV4(ip->address);
-	for (UINT i = 0; i < IPV4_SIZE; ++i) {
+	for (UINT i = 0; i < IPV4_SIZE; ++i)
 		((BYTE *)addr)[i] = ipv4[i];
-	}
 }
 
 void IPToInAddr6(struct in6_addr *addr, const IP *ip) {
-	if (addr == NULL || ip == NULL) {
+	if (addr == NULL || ip == NULL)
 		return;
-	}
 
 	Zero(addr, sizeof(struct in6_addr));
 
-	for (BYTE i = 0; i < sizeof(ip->address); ++i) {
+	for (BYTE i = 0; i < sizeof(ip->address); ++i)
 		((BYTE *)addr)[i] = ip->address[i];
-	}
 }
 
 void InAddrToIP(IP *ip, const struct in_addr *addr) {
-	if (ip == NULL || addr == NULL) {
+	if (ip == NULL || addr == NULL)
 		return;
-	}
 
 	ZeroIP4(ip);
 
 	BYTE *ipv4 = IPV4(ip->address);
 
-	for (BYTE i = 0; i < IPV4_SIZE; ++i) {
+	for (BYTE i = 0; i < IPV4_SIZE; ++i)
 		ipv4[i] = ((UCHAR *)addr)[i];
-	}
 }
 
 void InAddrToIP6(IP *ip, const struct in6_addr *addr) {
-	if (ip == NULL || addr == NULL) {
+	if (ip == NULL || addr == NULL)
 		return;
-	}
 
 	Zero(ip, sizeof(IP));
 
-	for (BYTE i = 0; i < sizeof(ip->address); ++i) {
+	for (BYTE i = 0; i < sizeof(ip->address); ++i)
 		ip->address[i] = ((UCHAR *)addr)[i];
-	}
 }
 
 bool ParseIpAndMask46(const char *src, IP *ip, IP *mask) {
 	bool ret = false;
 	IP ip2;
 	IP mask2;
-	if (src == NULL || ip == NULL || mask == NULL) {
+	if (src == NULL || ip == NULL || mask == NULL)
 		return false;
-	}
 
 	Zero(&ip2, sizeof(IP));
 	Zero(&mask2, sizeof(IP));
@@ -806,18 +711,16 @@ bool ParseIpAndMask46(const char *src, IP *ip, IP *mask) {
 				Copy(ip, &ip2, sizeof(IP));
 				Copy(mask, &mask2, sizeof(IP));
 			}
-		} else {
-			if (IsNum(subnetstr)) {
-				UINT i = ToInt(subnetstr);
-				if (IsIP6(&ip2) && i <= 128) {
-					ret = true;
-					Copy(ip, &ip2, sizeof(IP));
-					IntToSubnetMask6(mask, i);
-				} else if (i <= 32) {
-					ret = true;
-					Copy(ip, &ip2, sizeof(IP));
-					IntToSubnetMask4(mask, i);
-				}
+		} else if (IsNum(subnetstr)) {
+			UINT i = ToInt(subnetstr);
+			if (IsIP6(&ip2) && i <= 128) {
+				ret = true;
+				Copy(ip, &ip2, sizeof(IP));
+				IntToSubnetMask6(mask, i);
+			} else if (i <= 32) {
+				ret = true;
+				Copy(ip, &ip2, sizeof(IP));
+				IntToSubnetMask4(mask, i);
 			}
 		}
 	}
@@ -828,32 +731,26 @@ bool ParseIpAndMask46(const char *src, IP *ip, IP *mask) {
 }
 bool ParseIpAndMask4(char *src, UINT *ip, UINT *mask) {
 	IP ip_ip, ip_mask;
-	if (ParseIpAndMask46(src, &ip_ip, &ip_mask) == false) {
+	if (ParseIpAndMask46(src, &ip_ip, &ip_mask) == false)
 		return false;
-	}
 
-	if (IsIP4(&ip_ip) == false) {
+	if (IsIP4(&ip_ip) == false)
 		return false;
-	}
 
-	if (ip != NULL) {
+	if (ip != NULL)
 		*ip = IPToUINT(&ip_ip);
-	}
 
-	if (mask != NULL) {
+	if (mask != NULL)
 		*mask = IPToUINT(&ip_mask);
-	}
 
 	return true;
 }
 bool ParseIpAndMask6(const char *src, IP *ip, IP *mask) {
-	if (ParseIpAndMask46(src, ip, mask) == false) {
+	if (ParseIpAndMask46(src, ip, mask) == false)
 		return false;
-	}
 
-	if (IsIP6(ip) == false) {
+	if (IsIP6(ip) == false)
 		return false;
-	}
 
 	return true;
 }
@@ -888,9 +785,8 @@ void Mask6AddrToStr(char *str, UINT size, const IPV6_ADDR *mask) {
 }
 
 void FreeHostIPAddressList(LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		IP *ip = LIST_DATA(o, i);
@@ -903,9 +799,8 @@ void FreeHostIPAddressList(LIST *o) {
 
 void AddHostIPAddressToList(LIST *o, const IP *ip) {
 	const IP *r = NULL;
-	if (o == NULL || ip == NULL) {
+	if (o == NULL || ip == NULL)
 		return;
-	}
 
 	if (o->cmp != NULL) {
 		r = Search(o, ip);
@@ -920,17 +815,15 @@ void AddHostIPAddressToList(LIST *o, const IP *ip) {
 		}
 	}
 
-	if (r != NULL) {
+	if (r != NULL)
 		return;
-	}
 
 	Insert(o, Clone(ip, sizeof(IP)));
 }
 
 LIST *CloneIPAddressList(const LIST *o) {
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	LIST *ret = NewListFast(o->cmp);
 

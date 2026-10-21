@@ -25,9 +25,8 @@
 void GetMachineName(char *name, UINT size) {
 	char tmp[MAX_SIZE];
 	DWORD tmp_size = sizeof(tmp);
-	if (name == NULL) {
+	if (name == NULL)
 		return;
-	}
 
 	if (GetComputerNameExA(ComputerNameDnsHostname, tmp, &tmp_size) == false) {
 		StrCpy(name, size, "Unknown");
@@ -38,13 +37,11 @@ void GetMachineName(char *name, UINT size) {
 }
 
 bool GetHostName(char *hostname, UINT size, const IP *ip) {
-	if (hostname == NULL || size == 0 || ip == NULL) {
+	if (hostname == NULL || size == 0 || ip == NULL)
 		return false;
-	}
 
-	if (DnsResolveReverse(hostname, size, ip, 0, NULL)) {
+	if (DnsResolveReverse(hostname, size, ip, 0, NULL))
 		return true;
-	}
 
 	if (IsIP4(ip) && GetNetBiosName(hostname, size, ip)) {
 		DnsCacheReverseUpdate(ip, hostname);
@@ -63,20 +60,17 @@ bool GetNetBiosName(char *name, UINT size, const IP *ip) {
 	NBTREQUEST req;
 	UCHAR buf[1024];
 	USHORT tran_id[NUM_NBT_QUERYS_SEND];
-	if (name == NULL || ip == NULL) {
+	if (name == NULL || ip == NULL)
 		return false;
-	}
 
 	IPToStr(name, size, ip);
 
-	for (i = 0; i < NUM_NBT_QUERYS_SEND; i++) {
+	for (i = 0; i < NUM_NBT_QUERYS_SEND; i++)
 		tran_id[i] = Rand16();
-	}
 
 	SOCK *s = NewUDP(0);
-	if (s == NULL) {
+	if (s == NULL)
 		return false;
-	}
 
 	for (UINT j = 0; j < NUM_NBT_QUERYS_SEND; j++) {
 		Zero(&req, sizeof(req));
@@ -85,9 +79,8 @@ bool GetNetBiosName(char *name, UINT size, const IP *ip) {
 		req.Query[0] = 0x20;
 		req.Query[1] = 0x43;
 		req.Query[2] = 0x4b;
-		for (i = 3; i <= 32; i++) {
+		for (i = 3; i <= 32; i++)
 			req.Query[i] = 0x41;
-		}
 		req.Query[35] = 0x21;
 		req.Query[37] = 0x01;
 
@@ -103,18 +96,16 @@ bool GetNetBiosName(char *name, UINT size, const IP *ip) {
 		IP src_ip;
 		UINT src_port;
 		SOCKSET set;
-		if (Tick64() >= timeout_tick) {
+		if (Tick64() >= timeout_tick)
 			break;
-		}
 		InitSockSet(&set);
 		AddSockSet(&set, s);
 		Select(&set, 100, NULL, NULL);
 
-		if (flag == false) {
+		if (flag == false)
 			flag = true;
-		} else {
+		else
 			SleepThread(10);
-		}
 
 		UINT ret = RecvFrom(s, &src_ip, &src_port, buf, sizeof(buf));
 

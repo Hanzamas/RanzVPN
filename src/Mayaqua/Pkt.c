@@ -29,13 +29,11 @@ static void ParseDNS(PKT *p, UCHAR *buf, UINT size);
 // NULL when the payload has no cookie
 static UCHAR *DhcpOptionsOf(void *data, UINT size, UINT *options_size) {
 	UINT magic_cookie = Endian32(DHCP_MAGIC_COOKIE);
-	if (data == NULL || size < DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT)) {
+	if (data == NULL || size < DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT))
 		return NULL;
-	}
 
-	if (Cmp(((UCHAR *)data) + DHCP_MAGIC_COOKIE_OFFSET, &magic_cookie, sizeof(UINT)) != 0) {
+	if (Cmp(((UCHAR *)data) + DHCP_MAGIC_COOKIE_OFFSET, &magic_cookie, sizeof(UINT)) != 0)
 		return NULL;
-	}
 
 	*options_size = size - (UINT)(DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT));
 
@@ -45,9 +43,8 @@ static UCHAR *DhcpOptionsOf(void *data, UINT size, UINT *options_size) {
 // The DHCP message type (option 53) of an option list: 0 when the list has none or it is not one byte long
 static UINT DhcpMessageType(LIST *o) {
 	DHCP_OPTION *opt = GetDhcpOption(o, DHCP_ID_MESSAGE_TYPE);
-	if (opt == NULL || opt->Size != 1) {
+	if (opt == NULL || opt->Size != 1)
 		return 0;
-	}
 
 	return *((UCHAR *)opt->Data);
 }
@@ -55,12 +52,10 @@ static UINT DhcpMessageType(LIST *o) {
 void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid) {
 	USHORT vlan_ushort = Endian16(((USHORT)vlan_id) & 0xFFF);
 	if (packet_data == NULL || *packet_data == NULL || packet_size == NULL ||
-	    *packet_size < 14 || vlan_id == 0) {
+	    *packet_size < 14 || vlan_id == 0)
 		return;
-	}
-	if (vlan_tpid == 0) {
+	if (vlan_tpid == 0)
 		vlan_tpid = MAC_PROTO_TAGVLAN;
-	}
 
 	USHORT vlan_tpid_ushort = Endian16((USHORT)vlan_tpid);
 
@@ -84,13 +79,11 @@ void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 
 bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid) {
 	if (packet_data == NULL || *packet_data == NULL || packet_size == NULL ||
-	    *packet_size < 14) {
+	    *packet_size < 14)
 		return false;
-	}
 
-	if (vlan_tpid == 0) {
+	if (vlan_tpid == 0)
 		vlan_tpid = MAC_PROTO_TAGVLAN;
-	}
 
 	USHORT vlan_tpid_ushort = Endian16((USHORT)vlan_tpid);
 	UCHAR *vlan_tpid_uchar = (UCHAR *)(&vlan_tpid_ushort);
@@ -106,9 +99,8 @@ bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 			if (vlan_id == 0 || (vlan_ushort == vlan_id)) {
 				UINT dest_size = src_size - 4;
 
-				for (UINT i = 12; i < dest_size; i++) {
+				for (UINT i = 12; i < dest_size; i++)
 					src_data[i] = src_data[i + 4];
-				}
 
 				*packet_size = dest_size;
 
@@ -139,9 +131,8 @@ static bool TrimToIpLength(UCHAR *buf, UINT *size, UINT l2_len) {
 		return false;
 	}
 
-	if (ip_len >= 1 && *size > frame_size) {
+	if (ip_len >= 1 && *size > frame_size)
 		*size = frame_size;
-	}
 
 	return true;
 }
@@ -149,32 +140,27 @@ static bool TrimToIpLength(UCHAR *buf, UINT *size, UINT l2_len) {
 // Reads the HTTP request or the TLS server name out of the first data segment of a TCP packet to a
 // web proxy or web server port, and keeps it in p->HttpLog
 static void ParseTcpHttpLog(PKT *p) {
-	if ((p->TypeL3 != L3_IPV4 && p->TypeL3 != L3_IPV6) || p->TypeL4 != L4_TCP) {
+	if ((p->TypeL3 != L3_IPV4 && p->TypeL3 != L3_IPV6) || p->TypeL4 != L4_TCP)
 		return;
-	}
 
 	TCP_HEADER *tcp = p->L4.TCPHeader;
-	if (tcp == NULL || (tcp->Flag & (TCP_SYN | TCP_RST | TCP_FIN)) != 0 || p->PayloadSize == 0) {
+	if (tcp == NULL || (tcp->Flag & (TCP_SYN | TCP_RST | TCP_FIN)) != 0 || p->PayloadSize == 0)
 		return;
-	}
 
 	USHORT port = tcp->DstPort;
 
-	if (port == Endian16(80) || port == Endian16(8080) || port == Endian16(3128)) {
+	if (port == Endian16(80) || port == Endian16(8080) || port == Endian16(3128))
 		p->HttpLog = ParseHttpAccessLog(p);
-	} else if (port == Endian16(443)) {
+	else if (port == Endian16(443))
 		p->HttpLog = ParseHttpsAccessLog(p);
-	}
 }
 
 PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_dns) {
-	if (buf == NULL || size == 0) {
+	if (buf == NULL || size == 0)
 		return NULL;
-	}
 
-	if (vlan_type_id == 0) {
+	if (vlan_type_id == 0)
 		vlan_type_id = MAC_PROTO_TAGVLAN;
-	}
 
 	USHORT vlan_type_id_16 = Endian16((USHORT)vlan_type_id);
 
@@ -182,9 +168,8 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 
 	// Drop any garbage after the payload of IPv4 and IPv6 packets, tagged with a VLAN or not
 	if (size >= 24) {
-		if (TrimToIpLength(buf, &size, 14) == false && buf[12] == ((UCHAR *)&vlan_type_id_16)[0] && buf[13] == ((UCHAR *)&vlan_type_id_16)[1]) {
+		if (TrimToIpLength(buf, &size, 14) == false && buf[12] == ((UCHAR *)&vlan_type_id_16)[0] && buf[13] == ((UCHAR *)&vlan_type_id_16)[1])
 			TrimToIpLength(buf, &size, 18);
-		}
 	}
 
 	if (ParsePacketL2Ex(p, buf, size, no_l3, (USHORT)vlan_type_id) == false) {
@@ -200,21 +185,18 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 
 	if (bridge_id_as_mac_address) {
 		if (p->TypeL3 == L3_BPDU) {
-			if (p->L3.BpduHeader != NULL) {
+			if (p->L3.BpduHeader != NULL)
 				p->MacAddressSrc = p->L3.BpduHeader->BridgeMacAddress;
-			}
 		}
 	}
 
-	if (no_http == false) {
+	if (no_http == false)
 		ParseTcpHttpLog(p);
-	}
 
 	// DNS query name of a query to UDP port 53. It is parsed here and not in ParseUDP so that a caller can
 	// skip it (no_dns): only packet logging reads it
-	if (no_dns == false && p->TypeL4 == L4_UDP && p->L4.UDPHeader != NULL && Endian16(p->L4.UDPHeader->DstPort) == 53) {
+	if (no_dns == false && p->TypeL4 == L4_UDP && p->L4.UDPHeader != NULL && Endian16(p->L4.UDPHeader->DstPort) == 53)
 		ParseDNS(p, p->Payload, p->PayloadSize);
-	}
 
 	if (p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4) {
 		UINT dhcp_size = (UINT)(p->PacketSize - (((UCHAR *)p->L7.PointerL7) - ((UCHAR *)p->PacketData)));
@@ -230,22 +212,19 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 		}
 	}
 
-	if (correct_checksum) {
+	if (correct_checksum)
 		CorrectChecksum(p);
-	}
 
 	return p;
 }
 
 static UCHAR GetNextByte(BUF *b) {
 	UCHAR c = 0;
-	if (b == NULL) {
+	if (b == NULL)
 		return 0;
-	}
 
-	if (ReadBuf(b, &c, 1) != 1) {
+	if (ReadBuf(b, &c, 1) != 1)
 		return 0;
-	}
 
 	return c;
 }
@@ -255,9 +234,8 @@ static bool ParseDnsQuery(char *name, UINT name_size, const void *data, UINT dat
 	bool ok = true;
 	UINT wire_len = 1; // Octets of the name on the wire: the root label, then each label with its length byte
 	USHORT val;
-	if (name == NULL || data == NULL || data_size == 0) {
+	if (name == NULL || data == NULL || data_size == 0)
 		return false;
-	}
 	StrCpy(name, name_size, "");
 
 	BUF *b = NewBuf();
@@ -281,66 +259,53 @@ static bool ParseDnsQuery(char *name, UINT name_size, const void *data, UINT dat
 				ok = false;
 				break;
 			}
-			if (StrLen(name) != 0) {
+			if (StrLen(name) != 0)
 				StrCat(name, name_size, ".");
-			}
 			StrCat(name, name_size, tmp);
 		} else {
 			break;
 		}
 	}
 
-	if (ReadBuf(b, &val, sizeof(val)) != sizeof(val)) {
+	if (ReadBuf(b, &val, sizeof(val)) != sizeof(val))
 		ok = false;
-	} else {
-		if (Endian16(val) != 0x01 && Endian16(val) != 0x0c) {
-			ok = false;
-		}
-	}
+	else if (Endian16(val) != 0x01 && Endian16(val) != 0x0c)
+		ok = false;
 
-	if (ReadBuf(b, &val, sizeof(val)) != sizeof(val)) {
+	if (ReadBuf(b, &val, sizeof(val)) != sizeof(val))
 		ok = false;
-	} else {
-		if (Endian16(val) != 0x01) {
-			ok = false;
-		}
-	}
+	else if (Endian16(val) != 0x01)
+		ok = false;
 
 	FreeBuf(b);
 
-	if (ok == false || StrLen(name) == 0) {
+	if (ok == false || StrLen(name) == 0)
 		return false;
-	} else {
+	else
 		return true;
-	}
 }
 
 static void ParseDNS(PKT *p, UCHAR *buf, UINT size) {
 	char hostname[MAX_SIZE];
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return;
-	}
 
-	if (size < sizeof(DNSV4_HEADER)) {
+	if (size < sizeof(DNSV4_HEADER))
 		return;
-	}
 
 	DNSV4_HEADER *dns = (DNSV4_HEADER *)buf;
 
 	// A standard query only: not a response, opcode 0 (QUERY), whatever its AA, TC and RD bits
-	if ((dns->Flag1 & (DNS_FLAG1_QR | DNS_FLAG1_OPCODE)) != 0) {
+	if ((dns->Flag1 & (DNS_FLAG1_QR | DNS_FLAG1_OPCODE)) != 0)
 		return;
-	}
-	if (Endian16(dns->NumQuery) != 1) {
+	if (Endian16(dns->NumQuery) != 1)
 		return;
-	}
 
 	UCHAR *query_data = ((UCHAR *)dns) + sizeof(DNSV4_HEADER);
 	UINT query_data_size = size - sizeof(DNSV4_HEADER);
 
-	if (ParseDnsQuery(hostname, sizeof(hostname), query_data, query_data_size) == false) {
+	if (ParseDnsQuery(hostname, sizeof(hostname), query_data, query_data_size) == false)
 		return;
-	}
 
 	StrCpy(p->DnsQueryHost, sizeof(p->DnsQueryHost), hostname);
 	p->TypeL7 = L7_DNS;
@@ -349,9 +314,8 @@ static void ParseDNS(PKT *p, UCHAR *buf, UINT size) {
 static BUF *BuildDhcpOptionsBuf(LIST *o) {
 	UCHAR id;
 	UCHAR sz;
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	BUF *b = NewBuf();
 	for (UINT i = 0; i < LIST_NUM(o); i++) {
@@ -360,11 +324,10 @@ static BUF *BuildDhcpOptionsBuf(LIST *o) {
 		UINT current_pos = 0;
 
 		id = (UCHAR)d->Id;
-		if (d->Size <= 255) {
+		if (d->Size <= 255)
 			sz = (UCHAR)d->Size;
-		} else {
+		else
 			sz = 0xFF;
-		}
 		WriteBuf(b, &id, 1);
 		WriteBuf(b, &sz, 1);
 		WriteBuf(b, d->Data, sz);
@@ -374,11 +337,10 @@ static BUF *BuildDhcpOptionsBuf(LIST *o) {
 
 		while (current_size != 0) {
 			id = DHCP_ID_PRIVATE;
-			if (current_size <= 255) {
+			if (current_size <= 255)
 				sz = (UCHAR)current_size;
-			} else {
+			else
 				sz = 0xFF;
-			}
 			WriteBuf(b, &id, 1);
 			WriteBuf(b, &sz, 1);
 			WriteBuf(b, ((UCHAR *)d->Data) + current_pos, sz);
@@ -395,9 +357,8 @@ static BUF *BuildDhcpOptionsBuf(LIST *o) {
 }
 
 static DHCP_OPTION *NewDhcpOption(UINT id, const void *data, UINT size) {
-	if (size != 0 && data == NULL) {
+	if (size != 0 && data == NULL)
 		return NULL;
-	}
 
 	DHCP_OPTION *ret = ZeroMalloc(sizeof(DHCP_OPTION));
 	ret->Data = ZeroMalloc(size);
@@ -419,22 +380,19 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size) {
 	LIST *opt_list2 = NULL;
 	UINT src_size = size;
 	UINT dhcp_min_size;
-	if (m == NULL || data == NULL || size == 0) {
+	if (m == NULL || data == NULL || size == 0)
 		return NULL;
-	}
 
 	options = DhcpOptionsOf(data, size, &options_size);
-	if (options == NULL) {
+	if (options == NULL)
 		goto LABEL_CLEANUP;
-	}
 
 	ret = NewBuf();
 	WriteBuf(ret, data, (UINT)(options - ((UCHAR *)data)));
 
 	opt_list = ParseDhcpOptions(options, options_size);
-	if (opt_list == NULL) {
+	if (opt_list == NULL)
 		goto LABEL_CLEANUP;
-	}
 
 	opcode = DhcpMessageType(opt_list);
 
@@ -447,20 +405,17 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size) {
 
 		if (m->RemoveDefaultGatewayOnReply) {
 			if (opcode == DHCP_OFFER || opcode == DHCP_ACK) {
-				if (o->Id == DHCP_ID_GATEWAY_ADDR) {
+				if (o->Id == DHCP_ID_GATEWAY_ADDR)
 					ok = false;
-				}
-				if (o->Id == DHCP_ID_DNS_ADDR || o->Id == DHCP_ID_WINS_ADDR || o->Id == DHCP_ID_DOMAIN_NAME) {
+				if (o->Id == DHCP_ID_DNS_ADDR || o->Id == DHCP_ID_WINS_ADDR || o->Id == DHCP_ID_DOMAIN_NAME)
 					ok = false;
-				}
 			}
 		}
 
 		if (ok) {
 			o2 = NewDhcpOption(o->Id, o->Data, o->Size);
-			if (o2 != NULL) {
+			if (o2 != NULL)
 				Add(opt_list2, o2);
-			}
 		}
 	}
 
@@ -486,17 +441,14 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size) {
 	}
 
 LABEL_CLEANUP:
-	if (opt_buf != NULL) {
+	if (opt_buf != NULL)
 		FreeBuf(opt_buf);
-	}
 
-	if (opt_list != NULL) {
+	if (opt_list != NULL)
 		FreeDhcpOptions(opt_list);
-	}
 
-	if (opt_list2 != NULL) {
+	if (opt_list2 != NULL)
 		FreeDhcpOptions(opt_list2);
-	}
 
 	if (ret_ok) {
 		return ret;
@@ -507,9 +459,8 @@ LABEL_CLEANUP:
 }
 
 void FreeClonePacket(PKT *p) {
-	if (p == NULL) {
+	if (p == NULL)
 		return;
-	}
 
 	Free(p->IPv6HeaderPacketInfo.IPv6Header);
 	Free(p->IPv6HeaderPacketInfo.HopHeader);
@@ -531,9 +482,8 @@ void FreeClonePacket(PKT *p) {
 }
 
 PKT *ClonePacket(PKT *p, bool copy_data) {
-	if (p == NULL) {
+	if (p == NULL)
 		return NULL;
-	}
 
 	PKT *ret = ZeroMalloc(sizeof(PKT));
 	ret->PacketSize = p->PacketSize;
@@ -670,9 +620,8 @@ PKT *ClonePacket(PKT *p, bool copy_data) {
 		Copy(ret->PacketData, p->PacketData, p->PacketSize);
 	}
 
-	if (p->HttpLog != NULL) {
+	if (p->HttpLog != NULL)
 		ret->HttpLog = Clone(p->HttpLog, sizeof(HTTPLOG));
-	}
 
 	return ret;
 }
@@ -689,13 +638,11 @@ PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 // what is behind the tag, as VLanInsertTag, VLanRemoveTag and AdjustTcpMssL2 use that TPID. A
 // vlan_tpid that is the type of ARP, IPv4 or IPv6 tags nothing, so those frames stay what they are
 bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid) {
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return false;
-	}
 
-	if (size < sizeof(MAC_HEADER)) {
+	if (size < sizeof(MAC_HEADER))
 		return false;
-	}
 
 	p->MacHeader = (MAC_HEADER *)buf;
 
@@ -706,79 +653,67 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid
 	bool b1 = true;
 	bool b2 = true;
 	for (UINT i = 0; i < 6; i++) {
-		if (p->MacHeader->DestAddress[i] != 0xff) {
+		if (p->MacHeader->DestAddress[i] != 0xff)
 			p->BroadcastPacket = false;
-		}
-		if (p->MacHeader->SrcAddress[i] != 0xff) {
+		if (p->MacHeader->SrcAddress[i] != 0xff)
 			b1 = false;
-		}
-		if (p->MacHeader->SrcAddress[i] != 0x00) {
+		if (p->MacHeader->SrcAddress[i] != 0x00)
 			b2 = false;
-		}
 	}
-	if (b1 || b2 || (Cmp(p->MacHeader->SrcAddress, p->MacHeader->DestAddress, 6) == 0)) {
+	if (b1 || b2 || (Cmp(p->MacHeader->SrcAddress, p->MacHeader->DestAddress, 6) == 0))
 		p->InvalidSourcePacket = true;
-	} else {
+	else
 		p->InvalidSourcePacket = false;
-	}
 
-	if (p->MacHeader->DestAddress[0] & 0x01) {
+	if (p->MacHeader->DestAddress[0] & 0x01)
 		p->BroadcastPacket = true;
-	}
 
 	USHORT type_id_16 = Endian16(p->MacHeader->Protocol);
 
 	bool is_tag_vlan = (type_id_16 == MAC_PROTO_TAGVLAN);
-	if (type_id_16 == vlan_tpid && vlan_tpid != MAC_PROTO_ARPV4 && vlan_tpid != MAC_PROTO_IPV4 && vlan_tpid != MAC_PROTO_IPV6) {
+	if (type_id_16 == vlan_tpid && vlan_tpid != MAC_PROTO_ARPV4 && vlan_tpid != MAC_PROTO_IPV4 && vlan_tpid != MAC_PROTO_IPV6)
 		is_tag_vlan = true;
-	}
 
 	if (type_id_16 > 1500) {
-		if (is_tag_vlan) {
+		if (is_tag_vlan)
 			return ParsePacketTAGVLAN(p, buf, size, no_l3);
-		} else {
+		else
 			return ParsePacketL3(p, buf, size, type_id_16, no_l3);
-		}
 	} else {
 		// Old IEEE 802.3 frame: the header holds the payload length (used by BPDU, etc.)
 		UINT length = (UINT)type_id_16;
 
-		if (size < length || size < sizeof(LLC_HEADER)) {
+		if (size < length || size < sizeof(LLC_HEADER))
 			return true;
-		}
 
 		LLC_HEADER *llc = (LLC_HEADER *)buf;
 		buf += sizeof(LLC_HEADER);
 		size -= sizeof(LLC_HEADER);
 
-		if (llc->Dsap == LLC_DSAP_BPDU && llc->Ssap == LLC_SSAP_BPDU) {
+		if (llc->Dsap == LLC_DSAP_BPDU && llc->Ssap == LLC_SSAP_BPDU)
 			return ParsePacketBPDU(p, buf, size);
-		} else {
+		else
 			return true;
-		}
 	}
 }
 
 bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3) {
 	switch (proto) {
 	case MAC_PROTO_ARPV4:
-		if (no_l3) {
+		if (no_l3)
 			return true;
-		}
 
 		return ParsePacketARPv4(p, buf, size);
 
 	case MAC_PROTO_IPV4:
-		if (no_l3) {
+		if (no_l3)
 			return true;
-		}
 
 		return ParsePacketIPv4(p, buf, size);
 
 	case MAC_PROTO_IPV6:
-		if (no_l3) {
+		if (no_l3)
 			return true;
-		}
 
 		return ParsePacketIPv6(p, buf, size);
 
@@ -788,13 +723,11 @@ bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3) {
 }
 
 bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3) {
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return false;
-	}
 
-	if (size < sizeof(TAGVLAN_HEADER)) {
+	if (size < sizeof(TAGVLAN_HEADER))
 		return false;
-	}
 
 	p->L3.TagVlanHeader = (TAGVLAN_HEADER *)buf;
 	p->TypeL3 = L3_TAGVLAN;
@@ -813,13 +746,11 @@ bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3) {
 }
 
 bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size) {
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return false;
-	}
 
-	if (size < sizeof(BPDU_HEADER)) {
+	if (size < sizeof(BPDU_HEADER))
 		return true;
-	}
 
 	p->L3.BpduHeader = (BPDU_HEADER *)buf;
 	p->TypeL3 = L3_BPDU;
@@ -828,13 +759,11 @@ bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size) {
 }
 
 bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size) {
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return false;
-	}
 
-	if (size < sizeof(ARPV4_HEADER)) {
+	if (size < sizeof(ARPV4_HEADER))
 		return false;
-	}
 
 	p->L3.ARPv4Header = (ARPV4_HEADER *)buf;
 	p->TypeL3 = L3_ARPV4;
@@ -843,13 +772,11 @@ bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size) {
 }
 
 bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size) {
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return false;
-	}
 
-	if (size < sizeof(IPV4_HEADER)) {
+	if (size < sizeof(IPV4_HEADER))
 		return false;
-	}
 
 	p->L3.IPv4Header = (IPV4_HEADER *)buf;
 	p->TypeL3 = L3_IPV4;
@@ -865,9 +792,8 @@ bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size) {
 	size -= header_size;
 
 	p->IPv4PayloadSize = MIN(size, Endian16(p->L3.IPv4Header->TotalLength) - header_size);
-	if (Endian16(p->L3.IPv4Header->TotalLength) < header_size) {
+	if (Endian16(p->L3.IPv4Header->TotalLength) < header_size)
 		p->IPv4PayloadSize = 0;
-	}
 
 	if (IPV4_GET_OFFSET(p->L3.IPv4Header) != 0) {
 		p->TypeL4 = L4_FRAGMENT;
@@ -891,13 +817,11 @@ bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size) {
 }
 
 bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size) {
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return false;
-	}
 
-	if (size < sizeof(ICMP_HEADER)) {
+	if (size < sizeof(ICMP_HEADER))
 		return false;
-	}
 
 	p->L4.ICMPHeader = (ICMP_HEADER *)buf;
 	p->TypeL4 = L4_ICMPV4;
@@ -906,13 +830,11 @@ bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size) {
 }
 
 bool ParseTCP(PKT *p, UCHAR *buf, UINT size) {
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return false;
-	}
 
-	if (size < sizeof(TCP_HEADER)) {
+	if (size < sizeof(TCP_HEADER))
 		return false;
-	}
 
 	p->L4.TCPHeader = (TCP_HEADER *)buf;
 	p->TypeL4 = L4_TCP;
@@ -934,13 +856,11 @@ bool ParseTCP(PKT *p, UCHAR *buf, UINT size) {
 }
 
 bool ParseUDP(PKT *p, UCHAR *buf, UINT size) {
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return false;
-	}
 
-	if (size < sizeof(UDP_HEADER)) {
+	if (size < sizeof(UDP_HEADER))
 		return false;
-	}
 
 	p->L4.UDPHeader = (UDP_HEADER *)buf;
 	p->TypeL4 = L4_UDP;
@@ -987,22 +907,19 @@ bool ParseUDP(PKT *p, UCHAR *buf, UINT size) {
 }
 
 void ParseDHCPv4(PKT *p, UCHAR *buf, UINT size) {
-	if (p == NULL || buf == NULL) {
+	if (p == NULL || buf == NULL)
 		return;
-	}
 
-	if (size < sizeof(DHCPV4_HEADER)) {
+	if (size < sizeof(DHCPV4_HEADER))
 		return;
-	}
 
 	p->L7.DHCPv4Header = (DHCPV4_HEADER *)buf;
 	p->TypeL7 = L7_DHCPV4;
 }
 
 void FreePacket(PKT *p) {
-	if (p == NULL) {
+	if (p == NULL)
 		return;
-	}
 
 	// The headers of a PKT point into the buffer the caller owns: only the HTTP log is the PKT's own
 	Free(p->HttpLog);
