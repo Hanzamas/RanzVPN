@@ -6,6 +6,9 @@
 
 #include "Cedar.h"
 
+#define	BRIDGE_TRY_SPAN					1000
+#define	BRIDGE_NUM_DEVICE_CHECK_SPAN	(5 * 60 * 1000)
+
 struct BRIDGE
 {
 	bool Active;
