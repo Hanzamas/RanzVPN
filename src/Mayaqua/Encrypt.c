@@ -3,6 +3,7 @@
 
 #include "Mayaqua/Encrypt.h"
 
+#include "Mayaqua/Crypto/Cng.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
@@ -55,9 +56,6 @@ typedef struct CB_PARAM
 	char *password;
 } CB_PARAM;
 
-// Whether a CNG call succeeded: an NTSTATUS of 0 or more (success or information)
-#define	CNG_SUCCESS(status)		(((NTSTATUS)(status)) >= 0)
-
 // BCryptGenRandom() flag of Windows 7 and later, in case the Vista SDK level of MayaType.h hides it
 #ifndef	BCRYPT_USE_SYSTEM_PREFERRED_RNG
 #define	BCRYPT_USE_SYSTEM_PREFERRED_RNG	0x00000002
@@ -76,10 +74,10 @@ typedef struct CB_PARAM
 // pseudo-handles are (MayaType.h selects the Vista SDK level, which does not declare those).
 // A provider that failed to open stays NULL.
 static INIT_ONCE cng_init_once = INIT_ONCE_STATIC_INIT;
-static BCRYPT_ALG_HANDLE cng_md4 = NULL;
-static BCRYPT_ALG_HANDLE cng_md5 = NULL;
-static BCRYPT_ALG_HANDLE cng_sha1 = NULL;
-static BCRYPT_ALG_HANDLE cng_rc4 = NULL;
+BCRYPT_ALG_HANDLE cng_md4 = NULL;
+BCRYPT_ALG_HANDLE cng_md5 = NULL;
+BCRYPT_ALG_HANDLE cng_sha1 = NULL;
+BCRYPT_ALG_HANDLE cng_rc4 = NULL;
 
 // Open one CNG algorithm provider; NULL on failure
 static BCRYPT_ALG_HANDLE CngOpenAlg(LPCWSTR alg_id)
@@ -106,7 +104,7 @@ static BOOL CALLBACK CngOpenAll(PINIT_ONCE once, PVOID param, PVOID *context)
 }
 
 // Open the CNG providers, once per process; any thread, any time, also before InitCryptLibrary()
-static void CngInit()
+void CngInit()
 {
 	InitOnceExecuteOnce(&cng_init_once, CngOpenAll, NULL, NULL);
 }
