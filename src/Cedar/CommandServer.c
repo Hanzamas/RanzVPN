@@ -3404,3 +3404,435 @@ UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	return 0;
 }
+
+UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret;
+	RPC_LISTENER_LIST t;
+	UINT i;
+	CT *ct;
+
+	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+
+	ret = ScEnumListener(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	ct = CtNew();
+
+	CtInsertColumn(ct, _UU("CM_LISTENER_COLUMN_1"), false);
+	CtInsertColumn(ct, _UU("CM_LISTENER_COLUMN_2"), false);
+
+	for (i = 0;i < t.NumPort;i++)
+	{
+		wchar_t *status = _UU("CM_LISTENER_OFFLINE");
+		wchar_t tmp[128];
+
+		if (t.Errors[i])
+		{
+			status = _UU("CM_LISTENER_ERROR");
+		}
+		else if (t.Enables[i])
+		{
+			status = _UU("CM_LISTENER_ONLINE");
+		}
+
+		UniFormat(tmp, sizeof(tmp), _UU("CM_LISTENER_TCP_PORT"), t.Ports[i]);
+
+		CtInsert(ct, tmp, status);
+	}
+
+	CtFree(ct, c);
+
+	FreeRpcListenerList(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret;
+	RPC_LISTENER t;
+	PARAM args[] =
+	{
+		{"[port]", CmdPromptPort, _UU("CMD_ListenerDelete_PortPrompt"), CmdEvalPort, NULL},
+	};
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	t.Enable = true;
+	t.Port = ToInt(GetParamStr(o, "[port]"));
+
+	ret = ScDeleteListener(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret;
+	RPC_SERVER_INFO t;
+	CT *ct;
+	wchar_t tmp[MAX_SIZE];
+
+	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	ret = ScGetServerInfo(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	ct = CtNew();
+
+	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_1"), false);
+	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_2"), false);
+
+	StrToUni(tmp, sizeof(tmp), t.ServerProductName);
+	CtInsert(ct, _UU("SM_INFO_PRODUCT_NAME"), tmp);
+
+	StrToUni(tmp, sizeof(tmp), t.ServerVersionString);
+	CtInsert(ct, _UU("SM_INFO_VERSION"), tmp);
+
+	StrToUni(tmp, sizeof(tmp), t.ServerBuildInfoString);
+	CtInsert(ct, _UU("SM_INFO_BUILD"), tmp);
+
+	StrToUni(tmp, sizeof(tmp), t.ServerHostName);
+	CtInsert(ct, _UU("SM_INFO_HOSTNAME"), tmp);
+
+	StrToUni(tmp, sizeof(tmp), t.OsInfo.OsSystemName);
+	CtInsert(ct, _UU("SM_OS_SYSTEM_NAME"), tmp);
+
+	StrToUni(tmp, sizeof(tmp), t.OsInfo.OsProductName);
+	CtInsert(ct, _UU("SM_OS_PRODUCT_NAME"), tmp);
+
+	if (t.OsInfo.OsServicePack != 0)
+	{
+		UniFormat(tmp, sizeof(tmp), _UU("SM_OS_SP_TAG"), t.OsInfo.OsServicePack);
+		CtInsert(ct, _UU("SM_OS_SERVICE_PACK"), tmp);
+	}
+
+	StrToUni(tmp, sizeof(tmp), t.OsInfo.OsVendorName);
+	CtInsert(ct, _UU("SM_OS_VENDER_NAME"), tmp);
+
+	StrToUni(tmp, sizeof(tmp), t.OsInfo.OsVersion);
+	CtInsert(ct, _UU("SM_OS_VERSION"), tmp);
+
+	StrToUni(tmp, sizeof(tmp), t.OsInfo.KernelName);
+	CtInsert(ct, _UU("SM_OS_KERNEL_NAME"), tmp);
+
+	StrToUni(tmp, sizeof(tmp), t.OsInfo.KernelVersion);
+	CtInsert(ct, _UU("SM_OS_KERNEL_VERSION"), tmp);
+
+	CtFree(ct, c);
+
+	FreeRpcServerInfo(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret;
+	RPC_SERVER_STATUS t;
+	wchar_t tmp[MAX_PATH];
+	char tmp2[MAX_PATH];
+	CT *ct;
+
+	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	ret = ScGetServerStatus(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	ct = CtNew();
+
+	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_1"), false);
+	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_2"), false);
+
+	UniToStru(tmp, t.NumTcpConnections);
+	CtInsert(ct, _UU("SM_ST_NUM_TCP"), tmp);
+
+	UniToStru(tmp, t.NumHubTotal);
+	CtInsert(ct, _UU("SM_ST_NUM_HUB_TOTAL"), tmp);
+
+	UniToStru(tmp, t.NumSessionsTotal);
+	CtInsert(ct, _UU("SM_ST_NUM_SESSION_TOTAL"), tmp);
+
+	UniToStru(tmp, t.NumMacTables);
+	CtInsert(ct, _UU("SM_ST_NUM_MAC_TABLE"), tmp);
+
+	UniToStru(tmp, t.NumIpTables);
+	CtInsert(ct, _UU("SM_ST_NUM_IP_TABLE"), tmp);
+
+	UniToStru(tmp, t.NumUsers);
+	CtInsert(ct, _UU("SM_ST_NUM_USERS"), tmp);
+
+	UniToStru(tmp, t.NumGroups);
+	CtInsert(ct, _UU("SM_ST_NUM_GROUPS"), tmp);
+
+	UniToStru(tmp, t.AssignedClientLicenses);
+	CtInsert(ct, _UU("SM_ST_CLIENT_LICENSE"), tmp);
+
+	UniToStru(tmp, t.AssignedBridgeLicenses);
+	CtInsert(ct, _UU("SM_ST_BRIDGE_LICENSE"), tmp);
+
+	CmdInsertTrafficInfo(ct, &t.Traffic);
+
+	GetDateTimeStrEx64(tmp, sizeof(tmp), SystemToLocal64(t.StartTime), NULL);
+	CtInsert(ct, _UU("SM_ST_START_TIME"), tmp);
+
+	GetDateTimeStrMilli64(tmp2, sizeof(tmp2), SystemToLocal64(t.CurrentTime));
+	StrToUni(tmp, sizeof(tmp), tmp2);
+	CtInsert(ct, _UU("SM_ST_CURRENT_TIME"), tmp);
+
+	UniFormat(tmp, sizeof(tmp), L"%I64u", t.CurrentTick);
+	CtInsert(ct, _UU("SM_ST_CURRENT_TICK"), tmp);
+
+	if (t.MemInfo.TotalMemory != 0)
+	{
+		char vv[128];
+
+		ToStr3(vv, sizeof(vv), t.MemInfo.TotalMemory);
+		UniFormat(tmp, sizeof(tmp), _UU("SM_ST_RAM_SIZE_KB"), vv);
+		CtInsert(ct, _UU("SM_ST_TOTAL_MEMORY"), tmp);
+
+		ToStr3(vv, sizeof(vv), t.MemInfo.UsedMemory);
+		UniFormat(tmp, sizeof(tmp), _UU("SM_ST_RAM_SIZE_KB"), vv);
+		CtInsert(ct, _UU("SM_ST_USED_MEMORY"), tmp);
+
+		ToStr3(vv, sizeof(vv), t.MemInfo.FreeMemory);
+		UniFormat(tmp, sizeof(tmp), _UU("SM_ST_RAM_SIZE_KB"), vv);
+		CtInsert(ct, _UU("SM_ST_FREE_MEMORY"), tmp);
+
+		ToStr3(vv, sizeof(vv), t.MemInfo.TotalPhys);
+		UniFormat(tmp, sizeof(tmp), _UU("SM_ST_RAM_SIZE_KB"), vv);
+		CtInsert(ct, _UU("SM_ST_TOTAL_PHYS"), tmp);
+
+		ToStr3(vv, sizeof(vv), t.MemInfo.UsedPhys);
+		UniFormat(tmp, sizeof(tmp), _UU("SM_ST_RAM_SIZE_KB"), vv);
+		CtInsert(ct, _UU("SM_ST_USED_PHYS"), tmp);
+
+		ToStr3(vv, sizeof(vv), t.MemInfo.FreePhys);
+		UniFormat(tmp, sizeof(tmp), _UU("SM_ST_RAM_SIZE_KB"), vv);
+		CtInsert(ct, _UU("SM_ST_FREE_PHYS"), tmp);
+	}
+
+	CtFree(ct, c);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+void CmdInsertTrafficInfo(CT *ct, TRAFFIC *t)
+{
+	wchar_t tmp[MAX_SIZE];
+	char vv[128];
+	if (ct == NULL || t == NULL)
+	{
+		return;
+	}
+
+	ToStr3(vv, sizeof(vv), t->Send.UnicastCount);
+	UniFormat(tmp, sizeof(tmp), _UU("SM_ST_NUM_PACKET_STR"), vv);
+	CtInsert(ct, _UU("SM_ST_SEND_UCAST_NUM"), tmp);
+
+	ToStr3(vv, sizeof(vv), t->Send.UnicastBytes);
+	UniFormat(tmp, sizeof(tmp), _UU("SM_ST_SIZE_BYTE_STR"), vv);
+	CtInsert(ct, _UU("SM_ST_SEND_UCAST_SIZE"), tmp);
+
+	ToStr3(vv, sizeof(vv), t->Send.BroadcastCount);
+	UniFormat(tmp, sizeof(tmp), _UU("SM_ST_NUM_PACKET_STR"), vv);
+	CtInsert(ct, _UU("SM_ST_SEND_BCAST_NUM"), tmp);
+
+	ToStr3(vv, sizeof(vv), t->Send.BroadcastBytes);
+	UniFormat(tmp, sizeof(tmp), _UU("SM_ST_SIZE_BYTE_STR"), vv);
+	CtInsert(ct, _UU("SM_ST_SEND_BCAST_SIZE"), tmp);
+
+	ToStr3(vv, sizeof(vv), t->Recv.UnicastCount);
+	UniFormat(tmp, sizeof(tmp), _UU("SM_ST_NUM_PACKET_STR"), vv);
+	CtInsert(ct, _UU("SM_ST_RECV_UCAST_NUM"), tmp);
+
+	ToStr3(vv, sizeof(vv), t->Recv.UnicastBytes);
+	UniFormat(tmp, sizeof(tmp), _UU("SM_ST_SIZE_BYTE_STR"), vv);
+	CtInsert(ct, _UU("SM_ST_RECV_UCAST_SIZE"), tmp);
+
+	ToStr3(vv, sizeof(vv), t->Recv.BroadcastCount);
+	UniFormat(tmp, sizeof(tmp), _UU("SM_ST_NUM_PACKET_STR"), vv);
+	CtInsert(ct, _UU("SM_ST_RECV_BCAST_NUM"), tmp);
+
+	ToStr3(vv, sizeof(vv), t->Recv.BroadcastBytes);
+	UniFormat(tmp, sizeof(tmp), _UU("SM_ST_SIZE_BYTE_STR"), vv);
+	CtInsert(ct, _UU("SM_ST_RECV_BCAST_SIZE"), tmp);
+}
+
+wchar_t *CmdPromptPort(CONSOLE *c, void *param)
+{
+	wchar_t *prompt_str;
+
+	if (param != NULL)
+	{
+		prompt_str = (wchar_t *)param;
+	}
+	else
+	{
+		prompt_str = _UU("CMD_PROMPT_PORT");
+	}
+
+	return c->ReadLine(c, prompt_str, true);
+}
+
+bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param)
+{
+	UINT i;
+	if (c == NULL || str == NULL)
+	{
+		return false;
+	}
+
+	i = UniToInt(str);
+
+	if (i >= 1 && i <= 65535)
+	{
+		return true;
+	}
+
+	c->Write(c, _UU("CMD_EVAL_PORT"));
+
+	return false;
+}
+
+UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret;
+	RPC_LISTENER t;
+	PARAM args[] =
+	{
+		{"[port]", CmdPromptPort, _UU("CMD_ListenerCreate_PortPrompt"), CmdEvalPort, NULL},
+	};
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	t.Enable = true;
+	t.Port = ToInt(GetParamStr(o, "[port]"));
+
+	ret = ScCreateListener(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	BUF *b;
+
+	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	b = ReadDump("|legal.txt");
+
+	CmdPrintAbout(c);
+	c->Write(c, L"\r\n");
+
+	if (b != NULL)
+	{
+		wchar_t *s;
+
+		SeekBufToEnd(b);
+		WriteBufChar(b, 13);
+		WriteBufChar(b, 10);
+		WriteBufChar(b, 0);
+
+		s = CopyUtfToUni(b->Buf);
+
+		c->Write(c, s);
+
+		Free(s);
+	}
+
+	c->Write(c, _UU("D_ABOUT@S_INFO3"));
+	c->Write(c, L"\r\n");
+	c->Write(c, _UU("D_ABOUT@S_INFO4"));
+	c->Write(c, L"\r\n");
+	CmdPrintAbout(c);
+	c->Write(c, L"\r\n");
+
+	FreeParamValueList(o);
+
+	FreeBuf(b);
+
+	return 0;
+}
