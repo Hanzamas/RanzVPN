@@ -1,6 +1,6 @@
 # ADR-0021: Web admin console and HTTP API, replacing vpncmd
 
-**Status:** Accepted (2026-10-13, from the grilling). Built on the slim fork now, with an API contract designed to survive the new-core swap.
+**Status:** Superseded by ADR-0026, ADR-0031 and ADR-0038 (2026-10-21, Hilmi: "ya ya ya semua"; see the amendment at the end). Originally Accepted (2026-10-13, from the grilling), to be built on the slim fork with an API contract designed to survive the new-core swap.
 
 ## Context
 
@@ -10,7 +10,7 @@ Ticket #28 adds runtime field tables for the admin RPCs (about 108 RPCs over 63 
 
 ## Decision
 
-1. **Build it now on the slim fork**, with an API contract made to survive the core swap (ADR-0022). vpncmd is the only admin surface today; building the API once against a stable contract means the new core keeps the same UI.
+1. **Build it now on the slim fork**, with an API contract made to survive the core swap (ADR-0022). vpncmd is the only admin surface today; building the API once against a stable contract means the new core keeps the same UI. *(Superseded 2026-10-21: the admin surface is the controller's intent API and web UI; see the amendment at the end.)*
 
 2. **Surface.** Served on the server's existing admin TLS listener(s): `/admin` for the UI, `POST /api/v1/<RpcName>` for the API. No new certificate plumbing and no `netsh http add sslcert` step; the listener's certificate is reused (self-signed by default, set with `ServerCertSet`). Never plain HTTP.
 
@@ -34,6 +34,13 @@ Ticket #28 adds runtime field tables for the admin RPCs (about 108 RPCs over 63 
 
 - vpncmd ships in the MSI (ADR-0020) and stays the scripting path and the harness test seam until the UI reaches parity; deleting it earlier would blind CI.
 - The API depends on the #28 RPC tables and on the runtime RPC table (the read/write flag drives both the audit and the schema endpoint).
-- The new core moves the same API to http.sys with a Schannel binding (ADR-0008) and swaps the credential model for named accounts and roles in SQLite (ADR-0022); the UI is built once against the unchanged contract.
+- The new core moves the same API to http.sys with a Schannel binding (ADR-0008) and swaps the credential model for named accounts and roles in SQLite (ADR-0022); the UI is built once against the unchanged contract. *(Superseded 2026-10-21: the Go controller serves the intent API and the web UI; see the amendment at the end.)*
 - Keeping 443 presentable to unlisted clients (the decoy page rather than a 403) ties the admin surface to the anti-censorship design (ADR-0023); 443 never reveals an admin API.
 - The parser restored for the JSON body (the oracle's Parson-derived parser) and the HTTP request path get fuzz targets in the existing fuzz-asan job; negative cases (401 without auth, 403 without CSRF, native-vs-web rights parity, 413 on an oversized body) are added to the harness.
+
+## Amendment 2026-10-21: superseded by the controller's intent API and web UI
+
+Maintainer decision (Hilmi: "ya ya ya semua"). The admin surface of Ranz is the declarative intent API (ADR-0031) and the native web UI (ADR-0038), both served by the Go service `ranz-controller` (ADR-0026). This ADR is superseded as a whole.
+- **The slim fork gets no web admin and no RPC-style HTTP API.** The unified-management spec #224 already records the slim fork's web admin (#44) as superseded by the controller web UI (SDN-28, #204; ADR-0031).
+- **The new core does not move this API to http.sys** (the third consequence above). The http.sys row of ADR-0008 is superseded by the same decision (ADR-0008 amendment of 2026-10-21).
+- **vpncmd stays the slim fork's admin tool** until strangler step 8 retires it (ADR-0022).
