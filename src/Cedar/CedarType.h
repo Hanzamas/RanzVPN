@@ -69,6 +69,10 @@ typedef struct SERVER_SESSION_PARAMS SERVER_SESSION_PARAMS;
 typedef struct SERVER_LOGIN SERVER_LOGIN;
 
 
+typedef struct AUTH_REQUEST AUTH_REQUEST;
+typedef struct AUTH_RESULT AUTH_RESULT;
+
+
 typedef struct LINK LINK;
 
 

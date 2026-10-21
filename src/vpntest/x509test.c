@@ -46,8 +46,6 @@
 // it. A signature verifies, other data and a block with bytes after the hash do not, and a received
 // signature of another length than the key's is rejected. Prints "RSASIG TEST OK".
 
-#include "Cedar/Sam.h"
-
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
