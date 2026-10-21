@@ -5,8 +5,8 @@
 
 #include "FileIO.h"
 #include "Internat.h"
+#include "IpAddr.h"
 #include "Memory.h"
-#include "Network.h"
 #include "Object.h"
 #include "Str.h"
 

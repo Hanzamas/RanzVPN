@@ -4,7 +4,7 @@
 #ifndef	MICROSOFT_H
 #define	MICROSOFT_H
 
-#include "Network.h"
+#include "MayaType.h"
 
 #define	SVC_ARG_INSTALL				"/install"
 #define	SVC_ARG_UNINSTALL			"/uninstall"

@@ -12,8 +12,8 @@
 // Prints "ENDIAN TEST OK" only when every check passes.
 
 #include "Mayaqua/Internat.h"
+#include "Mayaqua/IpAddr.h"
 #include "Mayaqua/Memory.h"
-#include "Mayaqua/Network.h"
 #include "Mayaqua/Str.h"
 
 static UINT endian_test_failed = 0;
