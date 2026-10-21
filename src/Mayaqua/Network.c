@@ -3996,44 +3996,6 @@ LIST *GetHostIPAddressListInternal()
 	return o;
 }
 
-PACK *PackError(UINT error)
-{
-	PACK *p;
-
-	p = NewPack();
-	PackAddInt(p, "error", error);
-
-	return p;
-}
-
-UINT GetErrorFromPack(PACK *p)
-{
-	if (p == NULL)
-	{
-		return 0;
-	}
-
-	return PackGetInt(p, "error");
-}
-
-void CreateDummyValue(PACK *p)
-{
-	UINT size;
-	UCHAR *buf;
-	if (p == NULL)
-	{
-		return;
-	}
-
-	size = Rand32() % HTTP_PACK_RAND_SIZE_MAX;
-	buf = Malloc(size);
-	Rand(buf, size);
-
-	PackAddData(p, "pencore", buf, size);
-
-	Free(buf);
-}
-
 char *RecvLine(SOCK *s, UINT max_size)
 {
 	BUF *b;
