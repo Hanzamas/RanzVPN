@@ -15,6 +15,7 @@
 #include "Mayaqua/TcpIp.h"
 
 #include <stdlib.h>
+#include "ServerInternal.h"
 
 bool SiDeleteListener(SERVER *s, UINT port)
 {

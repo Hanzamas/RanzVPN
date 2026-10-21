@@ -29,6 +29,7 @@
 #include "Mayaqua/Tick64.h"
 
 #include <stdlib.h>
+#include "ServerInternal.h"
 
 static SERVER *server = NULL;
 static LOCK *server_lock = NULL;

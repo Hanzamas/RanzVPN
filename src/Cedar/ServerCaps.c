@@ -17,6 +17,7 @@
 #include "Mayaqua/Table.h"
 
 #include <stdlib.h>
+#include "ServerInternal.h"
 
 static volatile UINT global_server_flags[NUM_GLOBAL_SERVER_FLAGS] = {0};
 
