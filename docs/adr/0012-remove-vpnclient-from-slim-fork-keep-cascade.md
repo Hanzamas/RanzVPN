@@ -21,5 +21,9 @@ The ticket is blocked by #13 (SecureNAT) and #16 (cloud), because `Client.c` tou
 ## Consequences
 
 - The slim fork becomes server plus cascade plus Local Bridge plus vpncmd server mode; about 20k lines fewer, hamcore without Neo6 packages.
-- Endpoint users rely on the official SoftEther client until the new node binary exists (ADR-0011, ADR-0014).
+- Endpoint users rely on the official SoftEther client until the new node binary exists (ADR-0011, ADR-0014). *(Superseded 2026-10-19: the stock client is not used at all; see ADR-0011.)*
 - `vpntest` and the CI smoke script lose the client mode; the server mode and the named tests remain the verification seam.
+
+## Amendment 2026-10-19
+
+With the stock SoftEther client dropped (ADR-0011 amendment), the client side of `Protocol.c`, `ClientThread`, `Account.c` client structures, `UdpAccel` and `Link.c` are kept only for cascade between Ranz servers and for the harness, until the new core's `client` role replaces Cascade/Link (strangler step 3) and the legacy listener goes (step 8). They are not extended or modernised in the meantime beyond bug fixes and the foundation audit's behaviour-preserving clean-up.

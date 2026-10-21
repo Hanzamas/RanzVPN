@@ -15,5 +15,13 @@ SoftEther ships `vpnserver`, `vpnclient` and `vpnbridge` as separate executables
 ## Consequences
 
 - Hub-to-hub, hub-to-user and P2P are one mechanism: nodes try a direct connection (STUN and hole punching) and fall back to a relay node, the model used by Tailscale and similar systems.
-- During the transition, endpoint users connect with the stock SoftEther client to the legacy SE-VPN listener of the slim fork; once the new node binary exists, the client is the same binary in the client role.
+- During the transition, endpoint users connect with the stock SoftEther client to the legacy SE-VPN listener of the slim fork; once the new node binary exists, the client is the same binary in the client role. *(Superseded by the amendment of 2026-10-19 below.)*
 - The admin surface becomes the API that the planned web UI uses; vpncmd's 25k lines of CLI are not carried over.
+
+## Amendment 2026-10-19: no stock SoftEther client, not even during the transition
+
+Maintainer decision (Hilmi: "kita gapakai client softether lama, dan cascade kita juga server kita yang baru"). Ranz is not used with the stock SoftEther client at any point.
+- There are no endpoint users before the new node binary exists; the first release that end users run is the node binary in the client role. The slim fork is the foundation and test bed under the new core, not a product on its own.
+- Cascade is only ever between Ranz servers.
+- There are no deployed installs or configs, so wire and config compatibility with SoftEther peers is no longer a requirement. The legacy SE-VPN path (Pack wire format, SHA-0 challenge-response, cascade) is still not rewritten: it is deleted as a whole with the legacy listener in strangler step 8 (ADR-0022), so rewriting it now would be work done twice.
+- Consequences for other decisions are recorded in ADR-0012 and ADR-0022 (amendments of the same date); the release spec #43 is re-scoped accordingly.
