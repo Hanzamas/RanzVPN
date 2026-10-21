@@ -1,0 +1,7 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48", "mtu": 1400}},
+    {"kind": "Network", "name": "corp-dmz", "spec": {"vrf": "corp", "mode": "L2", "ipv4Pool": "10.20.0.0/24"}},
+    {"kind": "Node", "name": "branch-2", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"]}}
+  ]
+}

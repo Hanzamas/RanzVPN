@@ -1,0 +1,5 @@
+# A node whose static key no Node resource holds is refused.
+refuse: {
+  reason: REFUSE_REASON_UNKNOWN_NODE
+  message: "no Node resource has the static key of this node"
+}

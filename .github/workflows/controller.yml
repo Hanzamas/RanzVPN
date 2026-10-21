@@ -1,0 +1,161 @@
+# The controller (controller/, Go) and the control protocol schema (proto/), SDN-2 #178.
+#
+# linux: generates the Go code of proto/ranz/control/v1/control.proto with the pinned protoc and
+# protoc-gen-go, tidies go.mod and go.sum and runs gofmt; then vets (for Linux and for Windows),
+# builds (for Linux, and for Windows on x64 and arm64) and tests the module, with rqlited of the
+# pinned rqlite release for the controller conformance tests. Those tests write every control
+# message they sent or received to a directory, and the nanopb code generated from the same schema
+# decodes each one and encodes it back to the same bytes (tests/control/nanopb_roundtrip.c). Last,
+# the job fails, and prints the diff, if generation, tidy or gofmt changed a committed file.
+#
+# windows: vets, builds and tests the module on Windows, with the controller's keys in the
+# Microsoft Software Key Storage Provider, then runs ranz-controller as a Windows service on TCP
+# 443 (and plain HTTP for the redirect) with rqlited as its sidecar, and drives it with ranz and
+# ranz-nodesim (.github/scripts/controller-service.ps1).
+#
+# Neither job touches the C build, so they run beside windows.yml and add nothing to its time.
+
+name: controller
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27.2'
+  PROTOC_VERSION: '36.2'
+  PROTOC_GEN_GO_VERSION: 'v1.36.12'
+  # The Python protobuf runtime of the nanopb generator, the one of the protoc release above
+  PROTOBUF_PY_VERSION: '7.36.2'
+  NANOPB_VERSION: '0.4.9.2'
+  RQLITE_VERSION: 'v10.5.3'
+
+jobs:
+  linux:
+    name: controller (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: controller/go.sum
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install protoc, protoc-gen-go, rqlited and the nanopb generator
+      run: |
+        curl -fsSL -o "$RUNNER_TEMP/protoc.zip" "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+        unzip -q "$RUNNER_TEMP/protoc.zip" -d "$RUNNER_TEMP/protoc"
+        echo "$RUNNER_TEMP/protoc/bin" >> "$GITHUB_PATH"
+        GOBIN="$RUNNER_TEMP/gobin" go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}"
+        echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
+
+        curl -fsSL -o "$RUNNER_TEMP/rqlite.tar.gz" "https://github.com/rqlite/rqlite/releases/download/${RQLITE_VERSION}/rqlite-${RQLITE_VERSION}-linux-amd64.tar.gz"
+        mkdir -p "$RUNNER_TEMP/rqlite"
+        tar -xzf "$RUNNER_TEMP/rqlite.tar.gz" -C "$RUNNER_TEMP/rqlite"
+        rqlited="$(find "$RUNNER_TEMP/rqlite" -name rqlited -type f | head -n 1)"
+        test -n "$rqlited"
+        "$rqlited" -version
+        echo "RQLITED=$rqlited" >> "$GITHUB_ENV"
+
+        python -m pip install --disable-pip-version-check "protobuf==${PROTOBUF_PY_VERSION}"
+        git clone --quiet --depth 1 --branch "nanopb-${NANOPB_VERSION}" https://github.com/nanopb/nanopb "$RUNNER_TEMP/nanopb"
+    - name: Generate, tidy and format
+      working-directory: controller
+      run: |
+        protoc --version
+        go generate ./internal/controlpb
+        go mod tidy
+        gofmt -l -w .
+    - name: Vet
+      working-directory: controller
+      run: |
+        go vet ./...
+        GOOS=windows go vet ./...
+    - name: Build
+      working-directory: controller
+      run: |
+        go build ./...
+        GOOS=windows GOARCH=amd64 go build -o "$RUNNER_TEMP/windows-x64/" ./cmd/...
+        GOOS=windows GOARCH=arm64 go build -o "$RUNNER_TEMP/windows-arm64/" ./cmd/...
+        ls -l "$RUNNER_TEMP/windows-x64" "$RUNNER_TEMP/windows-arm64"
+    - name: Test
+      working-directory: controller
+      env:
+        RANZ_CONTROL_WIRE: ${{ runner.temp }}/wire
+      run: go test -race -count=1 ./...
+    - name: nanopb round trip of the control messages
+      run: |
+        out="$RUNNER_TEMP/nanopb-out"
+        mkdir -p "$out"
+        python "$RUNNER_TEMP/nanopb/generator/nanopb_generator.py" --error-on-unmatched -I proto -D "$out" ranz/control/v1/control.proto
+        nanopb="$RUNNER_TEMP/nanopb"
+        # PB_FIELD_32BIT: an Update of control.options is larger than 64 kB (see there)
+        cflags="-std=c17 -O2 -DPB_FIELD_32BIT -I $nanopb -I $out"
+        gcc $cflags -Wall -Wextra -Werror -c tests/control/nanopb_roundtrip.c -o "$RUNNER_TEMP/nanopb_roundtrip.o"
+        gcc $cflags -o "$RUNNER_TEMP/nanopb_roundtrip" "$RUNNER_TEMP/nanopb_roundtrip.o" \
+          "$out/ranz/control/v1/control.pb.c" "$nanopb/pb_encode.c" "$nanopb/pb_decode.c" "$nanopb/pb_common.c"
+        "$RUNNER_TEMP/nanopb_roundtrip" "$RUNNER_TEMP"/wire/*.bin
+    - name: Committed files match generation, tidy and gofmt
+      if: ${{ !cancelled() }}
+      run: |
+        git add -A -N controller
+        if ! git diff --exit-code -- controller; then
+          echo "::error::controller/ differs from what go generate, go mod tidy and gofmt make of it: commit the diff above"
+          exit 1
+        fi
+
+  windows:
+    name: controller (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: controller/go.sum
+    - name: Install rqlited
+      shell: pwsh
+      run: |
+        $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
+        $dir = Join-Path $env:RUNNER_TEMP 'rqlite'
+        Invoke-WebRequest -Uri "https://github.com/rqlite/rqlite/releases/download/$env:RQLITE_VERSION/rqlite-$env:RQLITE_VERSION-win64.zip" -OutFile $zip
+        Expand-Archive -Path $zip -DestinationPath $dir
+        $exe = Get-ChildItem -Path $dir -Recurse -Filter 'rqlited.exe' | Select-Object -First 1
+        if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
+        & $exe.FullName -version
+        "RQLITED=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    - name: Vet, build and test
+      shell: pwsh
+      working-directory: controller
+      run: |
+        go vet ./...
+        if ($LASTEXITCODE -ne 0) { throw "go vet exited with code $LASTEXITCODE" }
+        go build -o ..\build\controller\ ./cmd/...
+        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
+        go test -count=1 ./...
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    # The controller's keys in the Microsoft Software Key Storage Provider (internal/keys), in the
+    # job log: the X25519 Noise static key against crypto/ecdh, and both keys across two loads.
+    - name: Keys in the key storage provider
+      shell: pwsh
+      working-directory: controller
+      run: |
+        go test -count=1 -v -run 'TestKSPStatic|TestLoad' ./internal/keys
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    - name: Controller as a Windows service
+      shell: pwsh
+      timeout-minutes: 10
+      run: |
+        . .github/scripts/controller-service.ps1 -BinDir build\controller

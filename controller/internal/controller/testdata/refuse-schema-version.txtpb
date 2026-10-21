@@ -1,0 +1,5 @@
+# A node that speaks a schema version the controller does not serve is refused.
+refuse: {
+  reason: REFUSE_REASON_SCHEMA_VERSION
+  message: "schema version 7 is not served: this controller serves version 1 and the one before it"
+}

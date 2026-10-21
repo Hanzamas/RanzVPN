@@ -1,0 +1,5 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"mtu": 1500}}
+  ]
+}

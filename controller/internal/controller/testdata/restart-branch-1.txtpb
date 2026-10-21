@@ -1,0 +1,18 @@
+# Generation 3 of branch-1 after the controller and rqlite restarted and apply3.json changed the
+# MTU of corp: a delta from generation 2, which the node acknowledged before the restart. corp
+# keeps the id and ULA it got from apply1.json, which apply3.json leaves out.
+update: {
+  generation: 3
+  base_generation: 2
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\375\0224Vx\232\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1500
+    }
+  }
+}
