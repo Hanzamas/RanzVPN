@@ -5,9 +5,9 @@
 
 #include "Encrypt.h"
 #include "Internat.h"
+#include "IpAddr.h"
 #include "Mayaqua.h"
 #include "Memory.h"
-#include "Network.h"
 #include "Str.h"
 
 // Smallest element on the wire: name length (the name may be empty), type, value count, one value

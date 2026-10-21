@@ -5,6 +5,7 @@
 #define	NETWORK_H
 
 #include "Encrypt.h"
+#include "IpAddr.h"
 #include "Mayaqua.h"
 
 #define	MAX_HOST_NAME_LEN			255
@@ -24,34 +25,6 @@
 #define	UDP_MAX_BUFFER_SIZE			11911168
 
 #define	HOST_IP_ADDRESS_LIST_CACHE	(5 * 1000)
-
-struct IP
-{
-	BYTE address[16];   // IP address (RFC 3493 format used for IPv4)
-	UINT ipv6_scope_id;
-};
-
-#define	IPV4(address)				(&address[12])
-#define	IPV4_SIZE					(4)
-
-#define	CmpIpAddr(ip1, ip2)			(Cmp((ip1)->address, (ip2)->address, sizeof((ip1)->address)))
-
-#define	IsIP6(ip)					(ip && IsIP4(ip) == false)
-
-struct IPV6_ADDR
-{
-	UCHAR Value[16];
-};
-
-#define IPV6_ADDR_UNICAST						1
-#define IPV6_ADDR_LOCAL_UNICAST					2
-#define IPV6_ADDR_GLOBAL_UNICAST				4
-#define IPV6_ADDR_MULTICAST						8
-#define IPV6_ADDR_ALL_NODE_MULTICAST			16
-#define IPV6_ADDR_ALL_ROUTER_MULTICAST			32
-#define IPV6_ADDR_SOLICIATION_MULTICAST			64
-#define	IPV6_ADDR_ZERO							128
-#define	IPV6_ADDR_LOOPBACK						256
 
 // Per-source tables (ip_clients, the listener DoS table, the non-SSL table) hold at most this many keys
 #define	RATE_LIMIT_TABLE_MAX		65536
@@ -226,18 +199,8 @@ void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_s
 void InitNetwork();
 void FreeNetwork();
 
-void InAddrToIP(IP *ip, const struct in_addr *addr);
-void InAddrToIP6(IP *ip, const struct in6_addr *addr);
-void IPToInAddr(struct in_addr *addr, const IP *ip);
-void IPToInAddr6(struct in6_addr *addr, const IP *ip);
-bool StrToIP(IP *ip, const char *str);
-void IPToStr(char *str, UINT size, const IP *ip);
-void IPToStr32(char *str, UINT size, UINT ip);
-void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, const UCHAR *ip_6_bytes);
 bool GetHostName(char *hostname, UINT size, const IP *ip);
 void GetMachineName(char *name, UINT size);
-void UINTToIP(IP *ip, UINT value);
-UINT IPToUINT(const IP *ip);
 SOCK *NewSock();
 void ReleaseSock(SOCK *s);
 void CleanupSock(SOCK *s);
@@ -289,7 +252,6 @@ SOCK_EVENT *NewSockEvent();
 void SetSockEvent(SOCK_EVENT *event);
 bool WaitSockEvent(SOCK_EVENT *event, UINT timeout);
 void ReleaseSockEvent(SOCK_EVENT *event);
-void SetIP(IP *ip, UCHAR a1, UCHAR a2, UCHAR a3, UCHAR a4);
 void AcceptInit(SOCK *s);
 void AcceptInitEx(SOCK *s, bool no_lookup_hostname);
 void DisableGetHostNameWhenAcceptInit();
@@ -297,10 +259,6 @@ TOKEN_LIST *GetCipherList();
 COUNTER *GetNumTcpConnectionsCounter();
 void AddWaitThread(THREAD *t);
 void DelWaitThread(THREAD *t);
-bool IsSubnetMask4(const IP *ip);
-bool IsZeroIP(const IP *ip);
-bool IsZeroIP6Addr(const IPV6_ADDR *addr);
-void IntToSubnetMask4(IP *ip, UINT i);
 bool GetNetBiosName(char *name, UINT size, const IP *ip);
 bool IsIPv6Supported();
 bool HasIPv6Address();
@@ -311,49 +269,8 @@ void GetRateLimitKey(IP *key, const IP *ip);
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str);
 void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT value);
 
-void CopyIP(IP *dst, const IP *src);
-bool IsIP4(const IP *ip);
-void IPv6AddrToIP(IP *ip, const IPV6_ADDR *addr);
-bool IPToIPv6Addr(IPV6_ADDR *addr, const IP *ip);
-void SetIP6(IP *ip, const UCHAR *value);
-void GetLocalHostIP6(IP *ip);
-void GetLocalHostIP4(IP *ip);
-bool IsLocalHostIP(const IP *ip);
-void ZeroIP4(IP *ip);
-bool StrToIP6(IP *ip, const char *str);
-void IPToStr6(char *str, UINT size, const IP *ip);
-void IP6AddrToStr(char *str, UINT size, const IPV6_ADDR *addr);
-void IntToSubnetMask6(IP *ip, UINT i);
-void IPAnd6(IP *dst, const IP *a, const IP *b);
-void GetAllRouterMulticastAddress6(IP *ip);
-void GetAllNodeMulticaseAddress6(IP *ip);
-void GetLoopbackAddress6(IP *ip);
-UINT GetIPAddrType6(const IP *ip);
-UINT GetIPv6AddrType(const IPV6_ADDR *addr);
-void GenerateEui64Address6(UCHAR *dst, UCHAR *mac);
-void GenerateEui64LocalAddress(IP *a, UCHAR *mac);
-UINT SubnetMaskToInt6(const IP *a);
-bool IsStrIPv6Address(char *str);
-void IPAnd4(IP *dst, const IP *a, const IP *b);
-
-bool IsValidUnicastIPAddress4(const IP *ip);
-bool IsValidUnicastIPAddress6(const IP *ip);
-
-bool ParseIpAndSubnetMask4(char *src, UINT *ip, UINT *mask);
-bool ParseIpAndMask4(char *src, UINT *ip, UINT *mask);
-bool ParseIpAndMask6(const char *src, IP *ip, IP *mask);
-bool ParseIpAndMask46(const char *src, IP *ip, IP *mask);
-void MaskToStr(char *str, UINT size, const IP *mask);
-void Mask6AddrToStr(char *str, UINT size, const IPV6_ADDR *mask);
-void MaskToStr32(char *str, UINT size, UINT mask);
-void MaskToStr32Ex(char *str, UINT size, UINT mask, bool always_full_address);
-void MaskToStrEx(char *str, UINT size, const IP *mask, bool always_full_address);
-
 LIST *GetHostIPAddressListInternal();
 LIST *GetHostIPAddressList();
-LIST *CloneIPAddressList(const LIST *o);
-void FreeHostIPAddressList(LIST *o);
-void AddHostIPAddressToList(LIST *o, const IP *ip);
 
 bool IsIPPrivate(const IP *ip);
 bool IsIPMyHost(const IP *ip);

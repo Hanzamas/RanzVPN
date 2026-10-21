@@ -1,7 +1,7 @@
 #ifndef DNS_H
 #define DNS_H
 
-#include "Network.h"
+#include "IpAddr.h"
 
 #define DNS_CACHE_EXPIRATION (10 * 60 * 1000)
 
