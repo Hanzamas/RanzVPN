@@ -395,6 +395,7 @@ struct CEDAR
 	char StunServer[MAX_HOST_NAME_LEN + 1];	// STUN server (host[:port]) for UDP acceleration, empty = STUN disabled
 	UCHAR MachineIdSalt[MACHINE_ID_SALT_SIZE];	// Machine identity salt: random from NewCedar, then the one of the config file
 	UCHAR MachineUniqueHash[SHA1_SIZE];	// Machine identity from MachineGuid and MachineIdSalt (SetCedarMachineIdSalt)
+	UINT64 MaxLogSize;					// Maximum size of a log file of the server and its hubs (LoggerMaxLogSize), 0 for MAX_LOG_SIZE_DEFAULT
 };
 
 TRAFFIC *NewTraffic();

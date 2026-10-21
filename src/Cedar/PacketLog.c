@@ -163,7 +163,7 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	}
 	else
 	{
-		InsertRecord(hub->PacketLogger, pl, PacketLogParseProc);
+		InsertRecord(hub->PacketLogger, pl, PacketLogParseProc, PacketLogFreeProc, true);
 	}
 
 	return true;
@@ -859,6 +859,29 @@ char *PacketLogParseProc(RECORD *rec)
 	Free(pl);
 
 	return s;
+}
+
+// Release a packet log record that is not written, without making its line: its packet and session names, its
+// logging record count and its reference to the source session
+void PacketLogFreeProc(void *data)
+{
+	PACKET_LOG *pl = (PACKET_LOG *)data;
+	if (pl == NULL)
+	{
+		return;
+	}
+
+	Free(pl->SrcSessionName);
+	Free(pl->DestSessionName);
+
+	FreeClonePacket(pl->Packet);
+
+	if (pl->SrcSession != NULL)
+	{
+		Dec(pl->SrcSession->LoggingRecordCount);
+		ReleaseSession(pl->SrcSession);
+	}
+	Free(pl);
 }
 
 char *TcpFlagStr(UCHAR flag)

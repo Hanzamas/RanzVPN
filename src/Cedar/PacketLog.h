@@ -21,6 +21,7 @@ struct PACKET_LOG
 
 bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now);
 char *PacketLogParseProc(RECORD *rec);
+void PacketLogFreeProc(void *data);
 UINT CalcPacketLoggingLevel(HUB_LOG *g, PKT *packet);
 char *GenCsvLine(TOKEN_LIST *t);
 void ReplaceForCsv(char *str);

@@ -235,6 +235,7 @@ static void EnumLogFileSubdirs(LIST *o, char *exe_dir, char *base_dir, char *hub
 LIST *EnumLogFile(char *hubname)
 {
 	char exe_dir[MAX_PATH];
+	char dir[MAX_PATH];
 	LIST *o = NewListFast(CmpLogFile);
 
 	if (StrLen(hubname) == 0)
@@ -246,11 +247,14 @@ LIST *EnumLogFile(char *hubname)
 
 	if (hubname == NULL)
 	{
-		EnumLogFileDir(o, SERVER_LOG_DIR);
+		ServerLogDir(dir, sizeof(dir));
+		EnumLogFileDir(o, dir);
 	}
 
-	EnumLogFileSubdirs(o, exe_dir, HUB_PACKET_LOG_DIR, hubname);
-	EnumLogFileSubdirs(o, exe_dir, HUB_SECURITY_LOG_DIR, hubname);
+	HubPacketLogDir(dir, sizeof(dir), NULL);
+	EnumLogFileSubdirs(o, exe_dir, dir, hubname);
+	HubSecurityLogDir(dir, sizeof(dir), NULL);
+	EnumLogFileSubdirs(o, exe_dir, dir, hubname);
 
 	return o;
 }
@@ -312,4 +316,35 @@ int CmpLogFile(void *p1, void *p2)
 	}
 
 	return StrCmpi(f1->Path, f2->Path);
+}
+
+// LogPaths: the directory of a log, relative to the directory of the executable (a log file path names it after an
+// "@", see InnerFilePathW). NewHub, EnumLogFile and the eraser of the server take the directories from here
+void ServerLogDir(char *dir, UINT size)
+{
+	StrCpy(dir, size, SERVER_LOG_DIR);
+}
+
+// The directory of a security or packet log: the one of the hub hubname, or with hubname NULL or empty the one
+// that holds the logs of every hub
+static void HubLogDir(char *dir, UINT size, char *base, char *hubname)
+{
+	if (IsEmptyStr(hubname))
+	{
+		StrCpy(dir, size, base);
+	}
+	else
+	{
+		Format(dir, size, "%s/%s", base, hubname);
+	}
+}
+
+void HubSecurityLogDir(char *dir, UINT size, char *hubname)
+{
+	HubLogDir(dir, size, HUB_SECURITY_LOG_DIR, hubname);
+}
+
+void HubPacketLogDir(char *dir, UINT size, char *hubname)
+{
+	HubLogDir(dir, size, HUB_PACKET_LOG_DIR, hubname);
 }

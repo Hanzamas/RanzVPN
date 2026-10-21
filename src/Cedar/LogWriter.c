@@ -3,8 +3,6 @@
 
 #include "LogWriter.h"
 
-#include "PacketLog.h"
-
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Memory.h"
@@ -14,8 +12,6 @@
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
-
-static UINT64 logger_max_log_size = MAX_LOG_SIZE_DEFAULT;
 
 // State of the writer thread of a LOG (LogThread): the open file, the records not yet written,
 // the name of the open file and the date part of the current file name
@@ -95,7 +91,7 @@ void InsertUnicodeRecord(LOG *g, wchar_t *unistr)
 	LogMapControlChars((UCHAR *)str, StrLen(str));
 
 	// The record owns the buffer
-	InsertRecord(g, str, StringRecordParseProc);
+	InsertRecord(g, str, StringRecordParseProc, Free, false);
 }
 
 void InsertStringRecord(LOG *g, char *str)
@@ -109,22 +105,24 @@ void InsertStringRecord(LOG *g, char *str)
 	str_copy = CopyStr(str);
 	LogMapControlChars((UCHAR *)str_copy, StrLen(str_copy));
 
-	InsertRecord(g, str_copy, StringRecordParseProc);
+	InsertRecord(g, str_copy, StringRecordParseProc, Free, false);
 }
 
-// Release a record that is not written: its parse procedure frees its data (a packet log record also
-// gives back its session reference and its logging record count)
+// Release a record that is not written: its free procedure releases its data without making its line (a packet
+// log record also gives back its session reference and its logging record count)
 static void FreeRecord(RECORD *rec)
 {
-	Free(rec->ParseProc(rec));
+	rec->FreeProc(rec->Data);
 	Free(rec);
 }
 
-void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc)
+// Queue a record of data for the writer: proc makes its line when it is written, free_proc releases data when it
+// is dropped, is_csv separates the date and the time of the line with commas
+void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc, RECORD_FREE_PROC *free_proc, bool is_csv)
 {
 	RECORD *rec;
 	bool dropped = false;
-	if (g == NULL || data == NULL || proc == NULL)
+	if (g == NULL || data == NULL || proc == NULL || free_proc == NULL)
 	{
 		return;
 	}
@@ -132,6 +130,8 @@ void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc)
 	rec = ZeroMalloc(sizeof(RECORD));
 	rec->Tick = Tick64();
 	rec->ParseProc = proc;
+	rec->FreeProc = free_proc;
+	rec->IsCsv = is_csv;
 	rec->Data = data;
 
 	LockQueue(g->RecordQueue);
@@ -256,7 +256,7 @@ static bool MakeLogFileName(LOG *g, char *name, UINT size, UINT64 tick, UINT swi
 	}
 	else
 	{
-		UINT64 max_log_size = GetMaxLogSize();
+		UINT64 max_log_size = GetMaxLogSize(g);
 		if (max_log_size == MAX_LOG_SIZE_DEFAULT)
 		{
 			snprintf(tmp2, sizeof(tmp2), "~%02u", num);
@@ -340,19 +340,33 @@ void WaitLogFlush(LOG *g)
 	}
 }
 
-void SetMaxLogSize(UINT64 size)
+// Set the maximum size of a log file of g (LoggerMaxLogSize of the configuration), 0 for MAX_LOG_SIZE_DEFAULT: a
+// record that would take the file over it goes to the next file number
+void SetMaxLogSize(LOG *g, UINT64 size)
 {
+	if (g == NULL)
+	{
+		return;
+	}
+
 	if (size == 0)
 	{
 		size = MAX_LOG_SIZE_DEFAULT;
 	}
 
-	logger_max_log_size = size;
+	g->MaxLogSize = size;
 }
 
-UINT64 GetMaxLogSize()
+UINT64 GetMaxLogSize(LOG *g)
 {
-	UINT64 ret = logger_max_log_size;
+	UINT64 ret;
+
+	if (g == NULL)
+	{
+		return MAX_LOG_SIZE_DEFAULT;
+	}
+
+	ret = g->MaxLogSize;
 
 	if (ret == 0)
 	{
@@ -539,6 +553,7 @@ static void LogWriterAddDropped(LOG *g, LOG_WRITER *w)
 	Zero(&r, sizeof(r));
 	r.Tick = Tick64();
 	r.ParseProc = StringRecordParseProc;
+	r.FreeProc = Free;
 	r.Data = CopyStr(tmp);
 
 	WriteRecordToBuffer(w->Buffer, &r);
@@ -552,7 +567,7 @@ static void LogWriterKeep(LOG *g, LOG_WRITER *w, RECORD *rec)
 
 	WriteRecordToBuffer(b, rec);
 
-	if ((UINT64)w->Buffer->Size + (UINT64)b->Size <= MIN((UINT64)LOG_ENGINE_BUFFER_NO_FILE_MAX, GetMaxLogSize()))
+	if ((UINT64)w->Buffer->Size + (UINT64)b->Size <= MIN((UINT64)LOG_ENGINE_BUFFER_NO_FILE_MAX, GetMaxLogSize(g)))
 	{
 		WriteBuf(w->Buffer, b->Buf, b->Size);
 	}
@@ -580,7 +595,7 @@ static void LogFlushBuffer(LOG *g, LOG_WRITER *w, bool next_number)
 		return;
 	}
 
-	if ((g->CurrentFilePointer + (UINT64)buffer->Size) > GetMaxLogSize())
+	if ((g->CurrentFilePointer + (UINT64)buffer->Size) > GetMaxLogSize(g))
 	{
 		if (next_number && g->log_number_incremented == false)
 		{
@@ -629,7 +644,7 @@ static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w)
 		LogWriterSetPriority(w, false);
 	}
 
-	if (buffer->Size > GetMaxLogSize())
+	if (buffer->Size > GetMaxLogSize(log_object))
 	{
 		ClearBuf(buffer);
 	}
@@ -755,7 +770,7 @@ void WriteRecordToBuffer(BUF *b, RECORD *r)
 	GetDateStr64(date_str, sizeof(date_str), time);
 	GetTimeStrMilli64(time_str, sizeof(time_str), time);
 
-	if (r->ParseProc != PacketLogParseProc)
+	if (r->IsCsv == false)
 	{
 		WriteBuf(b, date_str, StrLen(date_str));
 		WriteBuf(b, " ", 1);
@@ -795,7 +810,7 @@ void FreeLog(LOG *g)
 	Free(g->DirName);
 	Free(g->Prefix);
 
-	// Free any leftover records (there should be none)
+	// Release any leftover records (there should be none) without making their lines
 	while (rec = GetNext(g->RecordQueue))
 	{
 		FreeRecord(rec);
@@ -808,7 +823,9 @@ void FreeLog(LOG *g)
 	Free(g);
 }
 
-LOG *NewLog(char *dir, char *prefix, UINT switch_type)
+// A log writing to files with prefix in dir that switch by switch_type, each at most max_size bytes (0 for
+// MAX_LOG_SIZE_DEFAULT, see SetMaxLogSize)
+LOG *NewLog(char *dir, char *prefix, UINT switch_type, UINT64 max_size)
 {
 	LOG *g;
 
@@ -817,6 +834,7 @@ LOG *NewLog(char *dir, char *prefix, UINT switch_type)
 	g->DirName = CopyStr(dir == NULL ? "" : dir);
 	g->Prefix = CopyStr(prefix == NULL ? "log" : prefix);
 	g->SwitchType = switch_type;
+	SetMaxLogSize(g, max_size);
 	g->RecordQueue = NewQueue();
 	g->Event = NewEvent();
 	g->FlushEvent = NewEvent();

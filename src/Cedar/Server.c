@@ -1065,6 +1065,50 @@ static void SiInitDefaultHubList(SERVER *s)
 	ReleaseHub(h);
 }
 
+// Start the eraser of s: while the free disk space is below min_size it deletes the oldest backups of the
+// configuration and log files (LogPaths), checking every interval seconds (AutoDeleteCheckIntervalSecs)
+static ERASER *SiNewEraser(SERVER *s, UINT64 min_size, UINT interval)
+{
+	char packet_log_dir[MAX_PATH];
+	char security_log_dir[MAX_PATH];
+	char server_log_dir[MAX_PATH];
+	char *targets[4];
+
+	HubPacketLogDir(packet_log_dir, sizeof(packet_log_dir), NULL);
+	HubSecurityLogDir(security_log_dir, sizeof(security_log_dir), NULL);
+	ServerLogDir(server_log_dir, sizeof(server_log_dir));
+
+	targets[0] = "backup.ranz_server.config";
+	targets[1] = packet_log_dir;
+	targets[2] = security_log_dir;
+	targets[3] = server_log_dir;
+
+	return NewEraser(s->Logger, min_size, interval, targets, sizeof(targets) / sizeof(targets[0]));
+}
+
+// Set the maximum size of a log file (LoggerMaxLogSize, 0 for MAX_LOG_SIZE_DEFAULT) of the server log and of the
+// logs of every hub; a hub made later takes it from the Cedar in NewHub
+static void SiSetMaxLogSize(SERVER *s, UINT64 size)
+{
+	CEDAR *c = s->Cedar;
+	UINT i;
+
+	c->MaxLogSize = size;
+	SetMaxLogSize(s->Logger, size);
+
+	LockList(c->HubList);
+	{
+		for (i = 0;i < LIST_NUM(c->HubList);i++)
+		{
+			HUB *h = LIST_DATA(c->HubList, i);
+
+			SetMaxLogSize(h->PacketLogger, size);
+			SetMaxLogSize(h->SecurityLogger, size);
+		}
+	}
+	UnlockList(c->HubList);
+}
+
 static void SiLoadInitialConfiguration(SERVER *s)
 {
 	if (s == NULL)
@@ -1088,7 +1132,7 @@ static void SiLoadInitialConfiguration(SERVER *s)
 
 	SiInitListenerList(s);
 
-	s->Eraser = NewEraser(s->Logger, 0);
+	s->Eraser = SiNewEraser(s, 0, 0);
 }
 
 // Log what happened to a configuration file that could not be read: renamed to .bad, or still in place
@@ -3047,7 +3091,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		SetLogSwitchType(s->Logger, st);
 	}
 
-	SetMaxLogSize(CfgGetInt64(f, "LoggerMaxLogSize"));
+	SiSetMaxLogSize(s, CfgGetInt64(f, "LoggerMaxLogSize"));
 
 	params_folder = CfgFindFolder(f, "GlobalParams");
 	TunablesLoad(params_folder);
@@ -3081,8 +3125,8 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 
 		s->DisableDeadLockCheck = CfgGetBool(f, "DisableDeadLockCheck");
 
-		SetEraserCheckInterval(CfgGetInt(f, "AutoDeleteCheckIntervalSecs"));
-		s->Eraser = NewEraser(s->Logger, CfgGetInt64(f, "AutoDeleteCheckDiskFreeSpaceMin"));
+		s->Eraser = SiNewEraser(s, CfgGetInt64(f, "AutoDeleteCheckDiskFreeSpaceMin"),
+			CfgGetInt(f, "AutoDeleteCheckIntervalSecs"));
 
 		s->NoHighPriorityProcess = CfgGetBool(f, "NoHighPriorityProcess");
 
@@ -3229,7 +3273,7 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		CfgAddInt(f, "ServerLogSwitchType", s->Logger->SwitchType);
 	}
 
-	CfgAddInt64(f, "LoggerMaxLogSize", GetMaxLogSize());
+	CfgAddInt64(f, "LoggerMaxLogSize", GetMaxLogSize(s->Logger));
 
 	params_folder = CfgCreateFolder(f, "GlobalParams");
 
@@ -3267,7 +3311,7 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		CfgAddBool(f, "DisableDeadLockCheck", s->DisableDeadLockCheck);
 
 		CfgAddInt64(f, "AutoDeleteCheckDiskFreeSpaceMin", s->Eraser->MinFreeSpace);
-		CfgAddInt(f, "AutoDeleteCheckIntervalSecs", GetEraserCheckInterval());
+		CfgAddInt(f, "AutoDeleteCheckIntervalSecs", GetEraserCheckInterval(s->Eraser));
 
 
 		CfgAddBool(f, "NoHighPriorityProcess", s->NoHighPriorityProcess);
@@ -3728,8 +3772,6 @@ SERVER *SiNewServer(void)
 
 	s = ZeroMalloc(sizeof(SERVER));
 
-	SetEraserCheckInterval(0);
-
 	s->lock = NewLock();
 
 
@@ -3751,7 +3793,7 @@ SERVER *SiNewServer(void)
 	}
 
 	MakeDir(SERVER_LOG_DIR_NAME);
-	s->Logger = NewLog(SERVER_LOG_DIR_NAME, SERVER_LOG_PERFIX, LOG_SWITCH_DAY);
+	s->Logger = NewLog(SERVER_LOG_DIR_NAME, SERVER_LOG_PERFIX, LOG_SWITCH_DAY, s->Cedar->MaxLogSize);
 
 	SLog(s->Cedar, "L_LINE");
 	SLog(s->Cedar, "LS_START_2", s->Cedar->ServerStr, s->Cedar->VerString);

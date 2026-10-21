@@ -3,25 +3,14 @@
 
 #include "Eraser.h"
 
-#include "Cedar.h"
-
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/FileIO.h"
+#include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Platform.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
-
-static char *delete_targets[] =
-{
-	"backup.ranz_server.config",
-	HUB_PACKET_LOG_DIR,
-	HUB_SECURITY_LOG_DIR,
-	SERVER_LOG_DIR,
-};
-
-static UINT eraser_check_interval = DISK_FREE_CHECK_INTERVAL_DEFAULT;
 
 static bool CheckEraserDiskFreeSpace(ERASER *e)
 {
@@ -129,10 +118,10 @@ static LIST *GenerateEraseFileList(ERASER *e)
 
 	o = NewListFast(CompareEraseFile);
 
-	for (i = 0; i < sizeof(delete_targets) / sizeof(delete_targets[0]); i++)
+	for (i = 0; i < e->Targets->NumTokens; i++)
 	{
 		char dirname[MAX_PATH];
-		Format(dirname, sizeof(dirname), "%s/%s", e->DirName, delete_targets[i]);
+		Format(dirname, sizeof(dirname), "%s/%s", e->DirName, e->Targets->Token[i]);
 
 		EnumEraseFile(o, dirname);
 	}
@@ -233,25 +222,21 @@ static void EraserThread(THREAD *t, void *p)
 		e->NumChecks++;
 
 		// The interval in milliseconds (at least 1 s, as the seconds of GetEraserCheckInterval for the configuration)
-		Wait(e->HaltEvent, MAX(eraser_check_interval, 1000));
+		Wait(e->HaltEvent, MAX(e->CheckInterval, 1000));
 	}
 }
 
-void SetEraserCheckInterval(UINT interval)
+// The check interval of e in seconds, as AutoDeleteCheckIntervalSecs of the configuration (at least 1)
+UINT GetEraserCheckInterval(ERASER *e)
 {
-	if (interval == 0)
-	{
-		eraser_check_interval = DISK_FREE_CHECK_INTERVAL_DEFAULT;
-	}
-	else
-	{
-		eraser_check_interval = interval * 1000;
-	}
-}
+	UINT ret;
 
-UINT GetEraserCheckInterval()
-{
-	UINT ret = eraser_check_interval / 1000;
+	if (e == NULL)
+	{
+		return DISK_FREE_CHECK_INTERVAL_DEFAULT / 1000;
+	}
+
+	ret = e->CheckInterval / 1000;
 
 	if (ret == 0)
 	{
@@ -261,10 +246,14 @@ UINT GetEraserCheckInterval()
 	return ret;
 }
 
-ERASER *NewEraser(LOG *log, UINT64 min_size)
+// Start an eraser that, every interval seconds (0 for DISK_FREE_CHECK_INTERVAL_DEFAULT), deletes the oldest files
+// of the num_targets targets under the directory of the executable while the free disk space is below min_size
+// (0 for DISK_FREE_SPACE_DEFAULT_WINDOWS, at least DISK_FREE_SPACE_MIN). It writes its log lines to log
+ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT num_targets)
 {
 	ERASER *e;
 	char dir[MAX_PATH];
+	UINT i;
 
 	if (min_size == 0)
 	{
@@ -284,6 +273,15 @@ ERASER *NewEraser(LOG *log, UINT64 min_size)
 	e->MinFreeSpace = min_size;
 	e->DirName = CopyStr(dir);
 	e->HaltEvent = NewEvent();
+	e->CheckInterval = (interval == 0 ? DISK_FREE_CHECK_INTERVAL_DEFAULT : interval * 1000);
+
+	e->Targets = ZeroMalloc(sizeof(TOKEN_LIST));
+	e->Targets->NumTokens = (targets == NULL ? 0 : num_targets);
+	e->Targets->Token = ZeroMalloc(sizeof(char *) * MAX(e->Targets->NumTokens, 1));
+	for (i = 0; i < e->Targets->NumTokens; i++)
+	{
+		e->Targets->Token[i] = CopyStr(targets[i]);
+	}
 
 	e->Thread = NewThread(EraserThread, e);
 
@@ -303,6 +301,7 @@ void FreeEraser(ERASER *e)
 	ReleaseThread(e->Thread);
 	ReleaseEvent(e->HaltEvent);
 
+	FreeToken(e->Targets);
 	Free(e->DirName);
 	Free(e);
 }

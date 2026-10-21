@@ -33,5 +33,8 @@ LIST *EnumLogFile(char *hubname);
 void EnumLogFileDir(LIST *o, char *dirname);
 void FreeEnumLogFile(LIST *o);
 bool CheckLogFileNameFromEnumList(LIST *o, char *name);
+void ServerLogDir(char *dir, UINT size);
+void HubSecurityLogDir(char *dir, UINT size, char *hubname);
+void HubPacketLogDir(char *dir, UINT size, char *hubname);
 
 #endif

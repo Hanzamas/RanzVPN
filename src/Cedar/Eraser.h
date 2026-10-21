@@ -24,6 +24,8 @@ struct ERASER
 	bool LastFailed;
 	EVENT *HaltEvent;
 	volatile UINT NumChecks;			// Free space checks made so far (EraserMain passes)
+	UINT CheckInterval;					// Milliseconds between two free space checks
+	TOKEN_LIST *Targets;				// Files and directories under DirName whose files may be deleted, in this order
 };
 
 typedef struct ERASE_FILE
@@ -32,11 +34,10 @@ typedef struct ERASE_FILE
 	UINT64 UpdateTime;
 } ERASE_FILE;
 
-ERASER *NewEraser(LOG *log, UINT64 min_size);
+ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT num_targets);
 void FreeEraser(ERASER *e);
 void ELog(ERASER *e, char *name, ...);
 int CompareEraseFile(void *p1, void *p2);
-void SetEraserCheckInterval(UINT interval);
-UINT GetEraserCheckInterval();
+UINT GetEraserCheckInterval(ERASER *e);
 
 #endif

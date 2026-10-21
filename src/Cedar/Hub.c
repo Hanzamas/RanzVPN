@@ -5766,6 +5766,7 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	HUB *h;
 	char packet_logger_name[MAX_SIZE];
 	char tmp[MAX_SIZE];
+	char log_dir[MAX_SIZE];
 	char safe_hub_name[MAX_HUBNAME_LEN + 1];
 	UCHAR machine_hash[SHA1_SIZE];
 	UCHAR hash[SHA1_SIZE];
@@ -5833,14 +5834,22 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 
 	SetDefaultHubLog(&h->LogSetting);
 
-	MakeDir(HUB_SECURITY_LOG_DIR_NAME);
-	MakeDir(HUB_PACKET_LOG_DIR_NAME);
+	// The log directories (LogPaths) under the directory of the executable, which "@" names in a log file path
+	HubSecurityLogDir(log_dir, sizeof(log_dir), NULL);
+	Format(tmp, sizeof(tmp), "@%s", log_dir);
+	MakeDir(tmp);
+	HubPacketLogDir(log_dir, sizeof(log_dir), NULL);
+	Format(tmp, sizeof(tmp), "@%s", log_dir);
+	MakeDir(tmp);
 
-	Format(packet_logger_name, sizeof(packet_logger_name), HUB_PACKET_LOG_FILE_NAME, h->Name);
-	h->PacketLogger = NewLog(packet_logger_name, HUB_PACKET_LOG_PREFIX, h->LogSetting.PacketLogSwitchType);
+	HubPacketLogDir(log_dir, sizeof(log_dir), h->Name);
+	Format(packet_logger_name, sizeof(packet_logger_name), "@%s", log_dir);
+	h->PacketLogger = NewLog(packet_logger_name, HUB_PACKET_LOG_PREFIX, h->LogSetting.PacketLogSwitchType,
+		cedar->MaxLogSize);
 
-	Format(tmp, sizeof(tmp), HUB_SECURITY_LOG_FILE_NAME, h->Name);
-	h->SecurityLogger = NewLog(tmp, HUB_SECURITY_LOG_PREFIX, h->LogSetting.SecurityLogSwitchType);
+	HubSecurityLogDir(log_dir, sizeof(log_dir), h->Name);
+	Format(tmp, sizeof(tmp), "@%s", log_dir);
+	h->SecurityLogger = NewLog(tmp, HUB_SECURITY_LOG_PREFIX, h->LogSetting.SecurityLogSwitchType, cedar->MaxLogSize);
 
 	if (h->Option->NoArpPolling == false && h->Option->NoIpTable == false)
 	{

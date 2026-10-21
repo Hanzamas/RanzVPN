@@ -29,12 +29,17 @@ typedef struct LOG LOG;
 #define	LOG_SWITCH_DAY				4
 #define	LOG_SWITCH_MONTH			5
 
+// The line of a record, which the writer frees; it also releases the data of the record
 typedef char *(RECORD_PARSE_PROC)(RECORD *rec);
+// Release the data of a record that is not written, without making its line
+typedef void (RECORD_FREE_PROC)(void *data);
 
 struct RECORD
 {
 	UINT64 Tick;
-	RECORD_PARSE_PROC *ParseProc;
+	RECORD_PARSE_PROC *ParseProc;		// Makes the line of a written record and releases Data
+	RECORD_FREE_PROC *FreeProc;			// Releases Data of a dropped record, or of one left at FreeLog
+	bool IsCsv;							// The date and the time in front of the line end with a comma, not a space
 	void *Data;
 };
 
@@ -57,21 +62,22 @@ struct LOG
 	UINT CurrentLogNumber;
 	bool log_number_incremented;
 	UINT64 NumDropped;					// Records dropped and not yet reported in the file (under the RecordQueue lock)
+	volatile UINT64 MaxLogSize;			// Maximum size of a log file (SetMaxLogSize), never 0
 };
 
-LOG *NewLog(char *dir, char *prefix, UINT switch_type);
+LOG *NewLog(char *dir, char *prefix, UINT switch_type, UINT64 max_size);
 void FreeLog(LOG *g);
 void WaitLogFlush(LOG *g);
 void LockLog(LOG *g);
 void UnlockLog(LOG *g);
-void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc);
+void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc, RECORD_FREE_PROC *free_proc, bool is_csv);
 void InsertStringRecord(LOG *g, char *str);
 void InsertUnicodeRecord(LOG *g, wchar_t *unistr);
 void LogMapControlChars(UCHAR *s, UINT size);
 void LogFormat(wchar_t *buf, UINT size, char *name, va_list args);
 void WriteRecordToBuffer(BUF *b, RECORD *r);
 void SetLogSwitchType(LOG *g, UINT switch_type);
-void SetMaxLogSize(UINT64 size);
-UINT64 GetMaxLogSize();
+void SetMaxLogSize(LOG *g, UINT64 size);
+UINT64 GetMaxLogSize(LOG *g);
 
 #endif
