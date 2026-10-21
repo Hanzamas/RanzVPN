@@ -791,3 +791,741 @@ bool IsTransientAcceptError(UINT err)
 		return false;
 	}
 }
+
+// A TCP socket bound to addr. An AF_INET6 socket gets IPV6_V6ONLY from v6only: false makes it dual-stack.
+// bind_failed (may be NULL) tells a failed bind(), a port held or reserved, from a family the stack does not support.
+static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, bool *bind_failed)
+{
+	SOCKET s = socket(addr->sa_family, SOCK_STREAM, 0);
+
+	if (bind_failed != NULL)
+	{
+		*bind_failed = false;
+	}
+
+	if (s == INVALID_SOCKET)
+	{
+		return INVALID_SOCKET;
+	}
+
+	if (addr->sa_family == AF_INET6)
+	{
+		DWORD flag = (v6only ? 1 : 0);
+
+		if (setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&flag, sizeof(flag)) != 0)
+		{
+			closesocket(s);
+			return INVALID_SOCKET;
+		}
+	}
+
+	if (bind(s, addr, addr_size) != 0)
+	{
+		if (bind_failed != NULL)
+		{
+			*bind_failed = true;
+		}
+
+		closesocket(s);
+		return INVALID_SOCKET;
+	}
+
+	return s;
+}
+
+// One TCP listen socket per port. Without a ListenIP it is a dual-stack AF_INET6 socket on [::]:port, so IPv4 peers
+// arrive as ::ffff:a.b.c.d. AF_INET is used for an IPv4 ListenIP (127.0.0.1 for a local-only socket), ipv4_only or
+// an unsupported IPv6.
+SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only)
+{
+	SOCKET s = INVALID_SOCKET;
+	SOCK *sock;
+	struct sockaddr_in addr4;
+	struct sockaddr_in6 addr6;
+	bool is_ipv6 = false;
+	if (port == 0 || port >= 65536)
+	{
+		return NULL;
+	}
+
+	Zero(&addr4, sizeof(addr4));
+	addr4.sin_family = AF_INET;
+	addr4.sin_port = htons((UINT)port);
+	Zero(&addr6, sizeof(addr6));
+	addr6.sin6_family = AF_INET6;
+	addr6.sin6_port = htons((UINT)port);
+
+	if (listen_ip == NULL || IsZeroIP(listen_ip))
+	{
+		bool held = false;
+
+		if (ipv4_only == false)
+		{
+			s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), false, &held);
+			is_ipv6 = true;
+		}
+
+		// IPv6 is off or unsupported: IPv4 listens. A port another process holds or Windows reserves stays a failed
+		// bind, so the listener reports it and retries instead of listening on one family only.
+		if (s == INVALID_SOCKET && held == false)
+		{
+			s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, NULL);
+			is_ipv6 = false;
+		}
+	}
+	else if (IsIP4(listen_ip))
+	{
+		IPToInAddr(&addr4.sin_addr, listen_ip);
+
+		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, NULL);
+	}
+	else if (ipv4_only == false)
+	{
+		IPToInAddr6(&addr6.sin6_addr, listen_ip);
+
+		s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true, NULL);
+		is_ipv6 = true;
+	}
+
+	if (s == INVALID_SOCKET)
+	{
+		return NULL;
+	}
+
+	if (listen(s, SOMAXCONN))
+	{
+		closesocket(s);
+		return NULL;
+	}
+
+	sock = NewSock();
+	sock->Connected = false;
+	sock->AsyncMode = false;
+	sock->ServerMode = true;
+	sock->Type = SOCK_TCP;
+	sock->socket = s;
+	sock->ListenMode = true;
+	sock->SecureMode = false;
+	sock->LocalPort = port;
+	sock->IPv6 = is_ipv6;
+
+	return sock;
+}
+
+static char *PrintError(int ErrorCode)
+{
+	char *Message;
+	switch (ErrorCode) {
+	case WSAEFAULT:
+		Message = "Bad address.";
+		break;
+
+	case WSAEWOULDBLOCK:
+		Message = "Resource temporarily unavailable.";
+		break;
+
+	case WSAEINPROGRESS:
+		Message = "Operation now in progress.";
+		break;
+
+	case WSAEALREADY:
+		Message = "Operation already in progress.";
+		break;
+
+	case WSAEAFNOSUPPORT:
+		Message = "Address family not supported by protocol family.";
+		break;
+
+	case WSAEADDRINUSE:
+		Message = "Address already in use.";
+		break;
+
+	case WSAEADDRNOTAVAIL:
+		Message = "Cannot assign requested address.";
+		break;
+
+	case WSAEISCONN:
+		Message = "Socket is already connected.";
+		break;
+
+	case WSAEINVAL:
+		Message = "Invalid argument.";
+		break;
+
+	default:
+		Message = "";
+		break;
+	}
+	return Message;
+}
+
+static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
+{
+	UINT64 end_time;
+	bool ok = false;
+	WSAEVENT hEvent;
+	UINT zero = 0;
+	UINT tmp = 0;
+	DWORD ret_size = 0;
+	if (s == INVALID_SOCKET || addr == NULL)
+	{
+		return -1;
+	}
+	if (timeout == 0)
+	{
+		timeout = TIMEOUT_TCP_PORT_CHECK;
+	}
+
+	hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+	// WSAEventSelect puts the socket in non-blocking mode; connect() is issued once and
+	// its result arrives as FD_CONNECT, polled in 25 ms slices so the cancel flag is honoured
+	WSAEventSelect(s, hEvent, FD_CONNECT);
+
+	end_time = Tick64() + (UINT64)timeout;
+
+	if (connect(s, addr, size) == 0)
+	{
+		ok = true;
+	}
+	else if (WSAGetLastError() == WSAEWOULDBLOCK)
+	{
+		while (*cancel_flag == false && Tick64() < end_time)
+		{
+			WSANETWORKEVENTS events;
+
+			if (WaitForSingleObject(hEvent, 25) != WAIT_OBJECT_0)
+			{
+				continue;
+			}
+
+			if (WSAEnumNetworkEvents(s, hEvent, &events) != 0)
+			{
+				break;
+			}
+
+			if (events.lNetworkEvents & FD_CONNECT)
+			{
+				ok = (events.iErrorCode[FD_CONNECT_BIT] == 0);
+				break;
+			}
+		}
+	}
+
+	WSAEventSelect(s, hEvent, 0);
+
+	WSAIoctl(s, FIONBIO, &zero, sizeof(zero), &tmp, sizeof(tmp), &ret_size, NULL, NULL);
+
+	CloseHandle(hEvent);
+
+	if (ok)
+	{
+		return 0;
+	}
+	else
+	{
+		return -1;
+	}
+}
+
+static int bind_sock(SOCKET sock, IP *ip, UINT port)
+{
+
+	if (IsIP4(ip))
+	{
+		struct sockaddr_in sockaddr_in;
+
+		Zero(&sockaddr_in, sizeof(sockaddr_in));
+
+		sockaddr_in.sin_family = AF_INET;
+		IPToInAddr(&sockaddr_in.sin_addr, ip);
+		sockaddr_in.sin_port = htons((USHORT)port);
+
+		UINT true_flag = 1;
+		(void)setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&true_flag, sizeof(true_flag));
+
+		return (bind(sock, (struct sockaddr *)&sockaddr_in, sizeof(sockaddr_in)));
+	}
+	else
+	{
+		struct sockaddr_in6 sockaddr_in;
+
+		Zero(&sockaddr_in, sizeof(sockaddr_in));
+
+		sockaddr_in.sin6_family = AF_INET6;
+		IPToInAddr6(&sockaddr_in.sin6_addr, ip);
+		sockaddr_in.sin6_scope_id = ip->ipv6_scope_id;
+		sockaddr_in.sin6_port = htons((USHORT)port);
+
+		UINT true_flag = 1;
+		(void)setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&true_flag, sizeof(true_flag));
+
+		return (bind(sock, (struct sockaddr *)&sockaddr_in, sizeof(sockaddr_in)));
+	}
+}
+
+static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, IP *ip, UINT port, UINT timeout, bool *cancel_flag)
+{
+	SOCKET s;
+	struct sockaddr_in sockaddr4;
+	struct sockaddr_in6 sockaddr6;
+	struct sockaddr *addr;
+	int addr_size;
+	IP tmpIP;
+	IP *bind_ip = localIP;
+
+	Zero(&sockaddr4, sizeof(sockaddr4));
+	Zero(&sockaddr6, sizeof(sockaddr6));
+
+	if (ipv6)
+	{
+		sockaddr6.sin6_family = AF_INET6;
+		sockaddr6.sin6_port = htons((USHORT)port);
+		sockaddr6.sin6_scope_id = ip->ipv6_scope_id;
+		IPToInAddr6(&sockaddr6.sin6_addr, ip);
+		addr = (struct sockaddr *)&sockaddr6;
+		addr_size = sizeof(sockaddr6);
+	}
+	else
+	{
+		sockaddr4.sin_family = AF_INET;
+		sockaddr4.sin_port = htons((USHORT)port);
+		IPToInAddr(&sockaddr4.sin_addr, ip);
+		addr = (struct sockaddr *)&sockaddr4;
+		addr_size = sizeof(sockaddr4);
+	}
+
+	s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
+	if (s == INVALID_SOCKET)
+	{
+		return INVALID_SOCKET;
+	}
+
+	if (bind_ip == BIND_LOCALIP_NULL)
+	{
+		// A NULL local address is the unspecified address of the target family
+		StrToIP(&tmpIP, ipv6 ? "0::0" : "0.0.0.0");
+		bind_ip = &tmpIP;
+	}
+
+	if ((IsZeroIP(bind_ip) == false) || (localport != 0))
+	{
+		if (bind_sock(s, bind_ip, localport) != 0)
+		{
+			int ier = WSAGetLastError();
+			Debug("IPv%d bind() failed with error: %d %s\n", ipv6 ? 6 : 4, ier, PrintError(ier));
+			closesocket(s);
+			return INVALID_SOCKET;
+		}
+	}
+
+	if (connect_timeout(s, addr, addr_size, timeout, cancel_flag) != 0)
+	{
+		closesocket(s);
+		return INVALID_SOCKET;
+	}
+
+	return s;
+}
+
+static void BindConnectThread(THREAD *thread, void *param)
+{
+	UINT i;
+	CONNECT_SERIAL_PARAM *p = (CONNECT_SERIAL_PARAM *)param;
+	if (thread == NULL || p == NULL)
+	{
+		return;
+	}
+
+	if (p->Delay >= 1)
+	{
+		WaitEx(NULL, p->Delay, p->NoDelayFlag);
+	}
+
+	for (i = 0; i < LIST_NUM(p->IpList); ++i)
+	{
+		SOCKET s;
+		IP *ip = LIST_DATA(p->IpList, i);
+
+		if (IsZeroIP(ip))
+		{
+			continue;
+		}
+
+		if (i > 0 && p->RetryDelay >= 1)
+		{
+			WaitEx(NULL, p->RetryDelay, p->CancelFlag);
+		}
+
+		if (*p->CancelFlag)
+		{
+			break;
+		}
+
+		s = BindConnectTimeout(p->IPv6, p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
+
+		if (s != INVALID_SOCKET)
+		{
+			Copy(p->Ret_Ip, ip, sizeof(IP));
+
+			p->Sock = CreateTCPSock(s, p->IPv6, p->Hostname);
+			break;
+		}
+	}
+
+	p->Ok = (p->Sock == NULL ? false : true);
+	p->Finished = true;
+
+	Set(p->FinishEvent);
+}
+
+SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original)
+{
+	SOCK *sock;
+	UINT true_flag = 1;
+
+	if (s == INVALID_SOCKET)
+	{
+		return NULL;
+	}
+
+	sock = NewSock();
+	sock->socket = s;
+	sock->Type = SOCK_TCP;
+	sock->ServerMode = false;
+
+	StrCpy(sock->UnderlayProtocol, sizeof(sock->UnderlayProtocol), is_ipv6 ? SOCK_UNDERLAY_NATIVE_V6 : SOCK_UNDERLAY_NATIVE_V4);
+	AddProtocolDetailsStr(sock->ProtocolDetails, sizeof(sock->ProtocolDetails), is_ipv6 ? "IPv6" : "IPv4");
+
+	sock->RemoteHostname = CopyStr(hostname_original);
+
+	(void)setsockopt(sock->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
+
+	SetTimeout(sock, TIMEOUT_INFINITE);
+
+	QuerySocketInformation(sock);
+
+	sock->Connected = true;
+	sock->AsyncMode = false;
+	sock->SecureMode = false;
+	sock->IPv6 = is_ipv6;
+
+	return sock;
+}
+
+SOCK *Connect(char *hostname, UINT port)
+{
+	return ConnectEx4(hostname, port, 0, NULL, NULL);
+}
+SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip)
+{
+	return BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, ret_ip);
+}
+
+SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip)
+{
+	bool dummy = false;
+	IP dummy_ret_ip;
+	LIST *iplists[2] = {NULL, NULL};	// [0] IPv6, [1] IPv4
+	CONNECT_SERIAL_PARAM params[2];
+	THREAD *threads[2] = {NULL, NULL};
+	IP ret_ips[2];
+	EVENT *finish_event;
+	bool cancel_flag2 = false;
+	bool no_delay_flag = false;
+	SOCK *ret = NULL;
+	UINT i;
+	if (hostname == NULL || port == 0 || port >= 65536 || IsEmptyStr(hostname))
+	{
+		return NULL;
+	}
+	if (timeout == 0)
+	{
+		timeout = TIMEOUT_TCP_PORT_CHECK;
+	}
+	if (cancel_flag == NULL)
+	{
+		cancel_flag = &dummy;
+	}
+
+	Zero(&dummy_ret_ip, sizeof(IP));
+	if (ret_ip == NULL)
+	{
+		ret_ip = &dummy_ret_ip;
+	}
+
+	if (IsZeroIP(ret_ip) == false)
+	{
+		LIST **target = IsIP6(ret_ip) ? &iplists[0] : &iplists[1];
+
+		*target = NewListFast(NULL);
+		AddHostIPAddressToList(*target, ret_ip);
+	}
+	else
+	{
+		if (DnsResolveEx(&iplists[0], &iplists[1], hostname, 0, cancel_flag) == false)
+		{
+			return NULL;
+		}
+	}
+
+	finish_event = NewEvent();
+
+	Zero(params, sizeof(params));
+	Zero(ret_ips, sizeof(ret_ips));
+
+	for (i = 0; i < 2; ++i)
+	{
+		CONNECT_SERIAL_PARAM *p = &params[i];
+
+		if (LIST_NUM(iplists[i]) == 0)
+		{
+			continue;
+		}
+
+		p->IpList = iplists[i];
+		p->IPv6 = (i == 0);
+
+		if (localIP == BIND_LOCALIP_NULL)
+		{
+			p->LocalIP = BIND_LOCALIP_NULL;
+		}
+		else
+		{
+			CopyIP(&p->LocalIP_Cache, localIP);
+			p->LocalIP = &p->LocalIP_Cache;
+		}
+		p->LocalPort = localport;
+
+		p->Port = port;
+		p->Timeout = timeout;
+		StrCpy(p->Hostname, sizeof(p->Hostname), hostname);
+		p->CancelFlag = &cancel_flag2;
+		p->NoDelayFlag = &no_delay_flag;
+		p->FinishEvent = finish_event;
+		p->Ret_Ip = &ret_ips[i];
+		p->RetryDelay = 250;
+		p->Delay = (p->IPv6 ? 0 : 250);		// Delay IPv4 by 250ms to prioritize IPv6 (RFC 6555 recommends 150-250ms, Chrome uses 300ms)
+		threads[i] = NewThread(BindConnectThread, p);
+	}
+
+	if (threads[0] == NULL || threads[1] == NULL)
+	{
+		no_delay_flag = true;
+	}
+
+	while (true)
+	{
+		if (*cancel_flag)
+		{
+			break;
+		}
+
+		if ((threads[0] == NULL || params[0].Finished) && (threads[1] == NULL || params[1].Finished))
+		{
+			break;
+		}
+
+		if ((params[0].Finished && params[0].Ok) || (params[1].Finished && params[1].Ok))
+		{
+			break;
+		}
+
+		// This check must be placed last to avoid race condition with cancel flag
+		if (no_delay_flag == false && (params[0].Finished || params[1].Finished))
+		{
+			no_delay_flag = true;
+		}
+
+		Wait(finish_event, 25);
+	}
+
+	cancel_flag2 = true;
+	no_delay_flag = true;
+
+	for (i = 0; i < 2; ++i)
+	{
+		WaitThread(threads[i], INFINITE);
+		ReleaseThread(threads[i]);
+	}
+	ReleaseEvent(finish_event);
+	FreeHostIPAddressList(iplists[0]);
+	FreeHostIPAddressList(iplists[1]);
+
+	// IPv6 wins over IPv4 when both connected; the losing socket (or both, on cancel) is closed
+	for (i = 0; i < 2; ++i)
+	{
+		if (*cancel_flag == false && ret == NULL && params[i].Ok)
+		{
+			ret = params[i].Sock;
+			Copy(ret_ip, &ret_ips[i], sizeof(IP));
+		}
+		else
+		{
+			Disconnect(params[i].Sock);
+			ReleaseSock(params[i].Sock);
+		}
+	}
+
+	return ret;
+}
+
+void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)
+{
+	TOKEN_LIST *t1, *t2;
+	UINT i, j;
+	if (dst == NULL || str == NULL)
+	{
+		return;
+	}
+
+	t1 = ParseTokenWithoutNullStr(dst, " ");
+	t2 = ParseTokenWithoutNullStr(str, " ");
+
+	for (i = 0; i < t2->NumTokens; i++)
+	{
+		bool exists = false;
+		for (j = 0; j < t1->NumTokens; j++)
+		{
+			if (StrCmpi(t1->Token[j], t2->Token[i]) == 0)
+			{
+				exists = true;
+				break;
+			}
+		}
+
+		if (exists == false)
+		{
+			StrCat(dst, dst_size, t2->Token[i]);
+			StrCat(dst, dst_size, " ");
+		}
+	}
+
+	FreeToken(t1);
+	FreeToken(t2);
+}
+
+static void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value)
+{
+	char tmp[128];
+	StrCpy(tmp, sizeof(tmp), key);
+	StrCat(tmp, sizeof(tmp), "=");
+	StrCat(tmp, sizeof(tmp), value);
+	AddProtocolDetailsStr(dst, dst_size, tmp);
+}
+
+void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT value)
+{
+	char tmp[128];
+	ToStr(tmp, value);
+	AddProtocolDetailsKeyValueStr(dst, dst_size, key, tmp);
+}
+
+static bool SetSocketBufferSize(SOCKET s, bool send, UINT size)
+{
+	int value = (int)size;
+	if (s == INVALID_SOCKET)
+	{
+		return false;
+	}
+
+	if (setsockopt(s, SOL_SOCKET, (send ? SO_SNDBUF : SO_RCVBUF), (char *)&value, sizeof(int)) != 0)
+	{
+		return false;
+	}
+
+	return true;
+}
+static UINT SetSocketBufferSizeWithBestEffort(SOCKET s, bool send, UINT size)
+{
+	if (s == INVALID_SOCKET)
+	{
+		return 0;
+	}
+
+	while (true)
+	{
+		if (SetSocketBufferSize(s, send, size))
+		{
+			return size;
+		}
+
+		size = (UINT)((double)size / 1.5);
+
+		if (size <= 32767)
+		{
+			return 0;
+		}
+	}
+}
+
+void InitUdpSocketBufferSize(SOCKET s)
+{
+	SetSocketBufferSizeWithBestEffort(s, true, UDP_MAX_BUFFER_SIZE);
+	SetSocketBufferSizeWithBestEffort(s, false, UDP_MAX_BUFFER_SIZE);
+}
+
+// Decode a socket address by its family. An IPv4-mapped IPv6 address (an IPv4 peer of a dual-stack socket)
+// becomes an IPv4 IP.
+static void DecodeSockAddr(struct sockaddr_storage *addr, IP *ip, UINT *port)
+{
+	if (addr->ss_family == AF_INET6)
+	{
+		struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
+
+		*port = (UINT)ntohs(addr6->sin6_port);
+		InAddrToIP6(ip, &addr6->sin6_addr);
+		ip->ipv6_scope_id = addr6->sin6_scope_id;
+	}
+	else if (addr->ss_family == AF_INET)
+	{
+		struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
+
+		*port = (UINT)ntohs(addr4->sin_port);
+		InAddrToIP(ip, &addr4->sin_addr);
+	}
+}
+
+void QuerySocketInformation(SOCK *sock)
+{
+	if (sock == NULL)
+	{
+		return;
+	}
+
+	Lock(sock->lock);
+	{
+		struct sockaddr_storage sockaddr;
+		int size;
+
+		if (sock->Type == SOCK_TCP)
+		{
+			size = sizeof(sockaddr);
+			if (getpeername(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0)
+			{
+				DecodeSockAddr(&sockaddr, &sock->RemoteIP, &sock->RemotePort);
+			}
+		}
+
+		size = sizeof(sockaddr);
+		if (getsockname(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0)
+		{
+			DecodeSockAddr(&sockaddr, &sock->LocalIP, &sock->LocalPort);
+		}
+
+	}
+	Unlock(sock->lock);
+}
+
+void ReleaseSock(SOCK *s)
+{
+	if (s == NULL)
+	{
+		return;
+	}
+
+	if (Release(s->ref) == 0)
+	{
+		CleanupSock(s);
+	}
+}
