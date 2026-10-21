@@ -5,23 +5,57 @@
 
 #include "Kernel.h"
 #include "Memory.h"
-#include "Microsoft.h"
 #include "Str.h"
 
 static TICK64 *tk64 = NULL;
 static volatile LONG64 tick64_origin = 0;
 
+// A performance-counter count in seconds; if the counter frequency cannot be read, the count is
+// taken as milliseconds (the Tick64 fallback of HiResCounter)
+static double HiResTimeSpan(UINT64 diff)
+{
+	LARGE_INTEGER t;
+	UINT64 freq;
+
+	if (QueryPerformanceFrequency(&t) == false)
+	{
+		freq = 1000ULL;
+	}
+	else
+	{
+		Copy(&freq, &t, sizeof(UINT64));
+	}
+
+	return (double)diff / (double)freq;
+}
+
+// The performance counter; Tick64 if the counter cannot be read
+static UINT64 HiResCounter()
+{
+	LARGE_INTEGER t;
+	UINT64 ret;
+
+	if (QueryPerformanceCounter(&t) == false)
+	{
+		return Tick64();
+	}
+
+	Copy(&ret, &t, sizeof(UINT64));
+
+	return ret;
+}
+
 UINT64 TickHighres64()
 {
-	return (UINT64)(MsGetHiResTimeSpan(MsGetHiResCounter()) * 1000.0f);
+	return (UINT64)(HiResTimeSpan(HiResCounter()) * 1000.0f);
 
 }
 
-UINT64 TickHighresNano64(bool raw)
+UINT64 TickHighresNano64()
 {
 	UINT64 ret = 0;
 
-	ret = (UINT64)(MsGetHiResTimeSpan(MsGetHiResCounter()) * 1000000000.0f);
+	ret = (UINT64)(HiResTimeSpan(HiResCounter()) * 1000000000.0f);
 
 	return ret;
 }
@@ -110,11 +144,11 @@ static void Tick64CheckTime()
 // its normal priority back
 static void NTAPI Tick64TimerCallback(PTP_CALLBACK_INSTANCE instance, void *param, PTP_TIMER timer)
 {
-	MsSetThreadPriorityRealtime();
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 
 	Tick64CheckTime();
 
-	MsRestoreThreadPriority();
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
 }
 
 UINT64 Diff64(UINT64 a, UINT64 b)

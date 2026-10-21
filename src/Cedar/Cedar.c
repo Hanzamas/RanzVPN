@@ -24,10 +24,10 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
+#include "Mayaqua/Platform.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
-#include "Mayaqua/Win32.h"
 
 static void DeleteOldNoSsl(CEDAR *c);
 static void MakeRoomInNoSslList(CEDAR *c);

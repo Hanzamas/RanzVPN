@@ -14,6 +14,8 @@
 
 #include <stdlib.h>
 
+#include <winioctl.h>
+
 static char exe_file_name[MAX_SIZE];
 static wchar_t exe_file_name_w[MAX_SIZE];
 
@@ -1501,4 +1503,266 @@ IO *FileOpenExW(wchar_t *name, bool write_mode, bool read_lock)
 	}
 }
 
+
+bool Win32SetFolderCompress(char *path, bool compressed)
+{
+	HANDLE h;
+	DWORD retsize = 0;
+	USHORT flag;
+	bool ret;
+	char tmp[MAX_PATH];
+	if (path == NULL)
+	{
+		return false;
+	}
+
+	InnerFilePath(tmp, sizeof(tmp), path);
+
+	h = CreateFile(tmp, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+
+	if (h == INVALID_HANDLE_VALUE)
+	{
+		return false;
+	}
+
+	flag = compressed ? COMPRESSION_FORMAT_DEFAULT : COMPRESSION_FORMAT_NONE;
+
+	ret = (DeviceIoControl(h, FSCTL_SET_COMPRESSION, &flag, sizeof(USHORT),
+		NULL, 0, &retsize, NULL) != FALSE);
+
+	CloseHandle(h);
+
+	return ret;
+}
+
+DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
+{
+	WIN32_FIND_DATAW data_w;
+	HANDLE h;
+	wchar_t tmp[MAX_PATH];
+	wchar_t tmp2[MAX_PATH];
+	wchar_t dirname2[MAX_PATH];
+	LIST *o;
+	DIRLIST *d;
+
+	UniStrCpy(tmp2, sizeof(tmp2), dirname);
+
+	if (UniStrLen(tmp2) >= 1 && tmp2[UniStrLen(tmp2) - 1] == L'\\')
+	{
+		tmp2[UniStrLen(tmp2) - 1] = 0;
+	}
+
+	UniFormat(tmp, sizeof(tmp), L"%s\\*.*", tmp2);
+	NormalizePathW(tmp, sizeof(tmp), tmp);
+	NormalizePathW(dirname2, sizeof(dirname2), tmp2);
+
+	o = NewListFast(compare);
+
+	Zero(&data_w, sizeof(data_w));
+
+	h = FindFirstFileW(tmp, &data_w);
+
+	if (h != INVALID_HANDLE_VALUE)
+	{
+		bool b = true;
+
+		do
+		{
+			if (UniStrCmpi(data_w.cFileName, L"..") != 0 &&
+				UniStrCmpi(data_w.cFileName, L".") != 0)
+			{
+				DIRENT *f = ZeroMalloc(sizeof(DIRENT));
+				wchar_t fullpath[MAX_SIZE];
+				bool ok = false;
+				HANDLE hfile;
+
+				f->FileNameW = CopyUniStr(data_w.cFileName);
+				f->FileName = CopyUniToStr(f->FileNameW);
+				f->Folder = (data_w.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? true : false;
+
+				CombinePathW(fullpath, sizeof(fullpath), dirname2, f->FileNameW);
+
+				hfile = CreateFileW(fullpath, 0,
+					FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+					NULL, OPEN_EXISTING, 0, NULL);
+
+				if (hfile != INVALID_HANDLE_VALUE)
+				{
+					BY_HANDLE_FILE_INFORMATION info;
+
+					Zero(&info, sizeof(info));
+
+					if (GetFileInformationByHandle(hfile, &info))
+					{
+						f->UpdateDate = FileTimeToUINT64(&info.ftLastWriteTime);
+
+						if (f->Folder == false)
+						{
+							f->FileSize = ((UINT64)info.nFileSizeHigh * (UINT64)((UINT64)MAXDWORD + (UINT64)1)) + (UINT64)info.nFileSizeLow;
+						}
+
+						ok = true;
+					}
+
+					CloseHandle(hfile);
+				}
+
+				if (ok == false)
+				{
+					f->UpdateDate = FileTimeToUINT64(&data_w.ftLastWriteTime);
+
+					if (f->Folder == false)
+					{
+						f->FileSize = ((UINT64)data_w.nFileSizeHigh * (UINT64)((UINT64)MAXDWORD + (UINT64)1)) + (UINT64)data_w.nFileSizeLow;
+					}
+				}
+
+				Add(o, f);
+			}
+
+			Zero(&data_w, sizeof(data_w));
+
+			b = FindNextFileW(h, &data_w);
+		}
+		while (b);
+
+		FindClose(h);
+	}
+
+	Sort(o);
+
+	d = ZeroMalloc(sizeof(DIRLIST));
+	d->NumFiles = LIST_NUM(o);
+	d->File = ToArray(o);
+
+	ReleaseList(o);
+
+	return d;
+}
+
+// The path of the executable; num_chars counts wide characters, not bytes. Empty when it fails or
+// does not fit.
+void Win32GetExeNameW(wchar_t *name, UINT num_chars)
+{
+	DWORD ret;
+	if (name == NULL || num_chars == 0)
+	{
+		return;
+	}
+
+	ret = GetModuleFileNameW(NULL, name, num_chars);
+	if (ret == 0 || ret >= num_chars)
+	{
+		name[0] = 0;
+	}
+}
+
+// The current directory; num_chars counts wide characters, not bytes. Empty when it fails or does
+// not fit.
+void Win32GetCurrentDirW(wchar_t *dir, UINT num_chars)
+{
+	DWORD ret;
+	if (dir == NULL || num_chars == 0)
+	{
+		return;
+	}
+
+	ret = GetCurrentDirectoryW(num_chars, dir);
+	if (ret == 0 || ret >= num_chars)
+	{
+		dir[0] = 0;
+	}
+}
+
+void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src)
+{
+	wchar_t str[MAX_SIZE];
+	int i;
+	if (src)
+	{
+		UniStrCpy(str, sizeof(str), src);
+	}
+	else
+	{
+		UniStrCpy(str, sizeof(str), dst);
+	}
+	i = UniStrLen(str);
+	if (i > 0 && str[i - 1] == L'\\')
+	{
+		str[i - 1] = 0;
+	}
+	UniStrCpy(dst, size, str);
+}
+void Win32NukuEn(char *dst, UINT size, char *src)
+{
+	char str[MAX_SIZE];
+	int i;
+	if (src)
+	{
+		StrCpy(str, sizeof(str), src);
+	}
+	else
+	{
+		StrCpy(str, sizeof(str), dst);
+	}
+	i = StrLen(str);
+	if (i > 0 && str[i - 1] == '\\')
+	{
+		str[i - 1] = 0;
+	}
+	StrCpy(dst, size, str);
+}
+
+void Win32GetDirFromPath(char *dst, UINT size, char *src)
+{
+	char str[MAX_SIZE];
+	int i,len;
+	char c;
+	char tmp[MAX_SIZE];
+	int wp;
+	if (src)
+	{
+		StrCpy(str, sizeof(str), src);
+	}
+	else
+	{
+		StrCpy(str, sizeof(str), dst);
+	}
+	Win32NukuEn(str, sizeof(str), NULL);
+	wp = 0;
+	len = StrLen(str);
+	dst[0] = 0;
+	for (i = 0;i < len;i++)
+	{
+		c = str[i];
+		switch (c)
+		{
+		case '\\':
+			tmp[wp] = 0;
+			wp = 0;
+			StrCat(dst, size, tmp);
+			StrCat(dst, size, "\\");
+			break;
+		default:
+			tmp[wp] = c;
+			wp++;
+			break;
+		}
+	}
+	Win32NukuEn(dst, size, NULL);
+}
+
+bool Win32DeleteDirW(wchar_t *name)
+{
+	if (name == NULL)
+	{
+		return false;
+	}
+
+	if (RemoveDirectoryW(name) == FALSE)
+	{
+		return false;
+	}
+	return true;
+}
 
