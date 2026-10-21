@@ -365,46 +365,6 @@ wchar_t *CopyUtfToUni(char *utfstr)
 	return ret;
 }
 
-char *CopyUniToStr(wchar_t *unistr)
-{
-	char *str;
-	UINT str_size;
-	if (unistr == NULL)
-	{
-		return NULL;
-	}
-
-	str_size = CalcUniToStr(unistr);
-	if (str_size == 0)
-	{
-		return CopyStr("");
-	}
-	str = Malloc(str_size);
-	UniToStr(str, str_size, unistr);
-
-	return str;
-}
-
-wchar_t *CopyStrToUni(const char *str)
-{
-	wchar_t *uni;
-	UINT uni_size;
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	uni_size = CalcStrToUni(str);
-	if (uni_size == 0)
-	{
-		return CopyUniStr(L"");
-	}
-	uni = Malloc(uni_size);
-	StrToUni(uni, uni_size, str);
-
-	return uni;
-}
-
 char *CopyUniToUtf(wchar_t *unistr)
 {
 	UINT size;
@@ -553,17 +513,122 @@ static UINT ConvertUniToAnsi(char *dst, UINT dst_size, wchar_t *s)
 	return (ret > 0 && used_default == FALSE) ? (UINT)ret : 0;
 }
 
+// ASCII fast path: in the code page of the C locale and in the ANSI code pages of the Windows
+// locales, the only ones setlocale(LC_ALL, "") selects, the characters U+0001-U+007F and the
+// bytes 0x01-0x7F map to each other one to one, so a string of them alone converts by widening
+// or narrowing each unit, without MultiByteToWideChar or WideCharToMultiByte. Any other code
+// page takes the conversion functions.
+static bool AnsiKeepsAscii(void)
+{
+	switch (AnsiCodePage(NULL))
+	{
+	case ANSI_C_LOCALE_CODE_PAGE:
+	case CP_UTF8:
+	case 874:
+	case 932:
+	case 936:
+	case 949:
+	case 950:
+	case 1250:
+	case 1251:
+	case 1252:
+	case 1253:
+	case 1254:
+	case 1255:
+	case 1256:
+	case 1257:
+	case 1258:
+		return true;
+	}
+
+	return false;
+}
+
+// Length of str when the ASCII fast path converts it, else INFINITE
+static UINT AnsiAsciiLen(const char *str)
+{
+	UINT i;
+
+	for (i = 0;str[i] != 0;i++)
+	{
+		if ((UCHAR)str[i] >= 0x80)
+		{
+			return INFINITE;
+		}
+	}
+
+	return AnsiKeepsAscii() ? i : INFINITE;
+}
+
+// Length of s when the ASCII fast path converts it, else INFINITE
+static UINT UniAsciiLen(wchar_t *s)
+{
+	UINT i;
+
+	for (i = 0;s[i] != 0;i++)
+	{
+		if (s[i] >= 0x80)
+		{
+			return INFINITE;
+		}
+	}
+
+	return AnsiKeepsAscii() ? i : INFINITE;
+}
+
+// Widen the first len characters of the ASCII string str into s and terminate s
+static void WidenAscii(wchar_t *s, const char *str, UINT len)
+{
+	UINT i;
+
+	for (i = 0;i < len;i++)
+	{
+		s[i] = (wchar_t)str[i];
+	}
+	s[len] = 0;
+}
+
+// Narrow the first len characters of the ASCII string s into str and terminate str
+static void NarrowAscii(char *str, wchar_t *s, UINT len)
+{
+	UINT i;
+
+	for (i = 0;i < len;i++)
+	{
+		str[i] = (char)s[i];
+	}
+	str[len] = 0;
+}
+
+// UniToStr and StrToUni give what the copy of the whole converted string into the destination
+// gives (StrCpy, UniStrCpy). A result that fits is converted straight into the destination;
+// only a result that the copy cuts still goes through a temporary string.
+
 UINT UniToStr(char *str, UINT size, wchar_t *s)
 {
 	UINT ret;
 	char *tmp;
 	UINT new_size;
+	UINT room;
+	UINT len;
 	if (s == NULL || str == NULL)
 	{
 		return 0;
 	}
 
-	new_size = CalcUniToStr(s);
+	// StrCpy copies at most room - 1 bytes and the terminator: room is size, or STRSAFE_MAX_CCH
+	// for size 0 and for a larger size
+	room = (size == 0 || size > 0x7fffffff) ? 0x7fffffff : size;
+
+	len = UniAsciiLen(s);
+	if (len != INFINITE)
+	{
+		len = MIN(len, room - 1);
+		NarrowAscii(str, s, len);
+		return len;
+	}
+
+	new_size = ConvertUniToAnsi(NULL, 0, s);
 	if (new_size == 0)
 	{
 		if (size >= 1)
@@ -571,6 +636,15 @@ UINT UniToStr(char *str, UINT size, wchar_t *s)
 			StrCpy(str, 0, "");
 		}
 		return 0;
+	}
+	if (new_size <= room)
+	{
+		if (ConvertUniToAnsi(str, new_size, s) == 0)
+		{
+			str[0] = 0;
+			return 0;
+		}
+		return new_size - 1;
 	}
 	tmp = Malloc(new_size);
 	tmp[0] = 0;
@@ -584,9 +658,16 @@ UINT UniToStr(char *str, UINT size, wchar_t *s)
 
 UINT CalcUniToStr(wchar_t *s)
 {
+	UINT len;
 	if (s == NULL)
 	{
 		return 0;
+	}
+
+	len = UniAsciiLen(s);
+	if (len != INFINITE)
+	{
+		return len + 1;
 	}
 
 	return ConvertUniToAnsi(NULL, 0, s);
@@ -597,12 +678,33 @@ UINT StrToUni(wchar_t *s, UINT size, const char *str)
 	UINT ret;
 	wchar_t *tmp;
 	UINT new_size;
+	UINT room;
+	UINT len;
 	if (s == NULL || str == NULL)
 	{
 		return 0;
 	}
 
-	new_size = CalcStrToUni(str);
+	// UniStrCpy writes nothing into a destination without room for the terminator, and no
+	// result here writes one
+	if (size == 1)
+	{
+		return 0;
+	}
+
+	// UniStrCpy copies at most room / sizeof(wchar_t) - 1 characters and the terminator: room
+	// is size, or 0x3fffffff bytes for size 0
+	room = (size == 0) ? 0x3fffffff : size;
+
+	len = AnsiAsciiLen(str);
+	if (len != INFINITE)
+	{
+		len = MIN(len, room / (UINT)sizeof(wchar_t) - 1);
+		WidenAscii(s, str, len);
+		return len;
+	}
+
+	new_size = ConvertAnsiToUni(NULL, 0, str) * (UINT)sizeof(wchar_t);
 	if (new_size == 0)
 	{
 		if (size >= 2)
@@ -610,6 +712,15 @@ UINT StrToUni(wchar_t *s, UINT size, const char *str)
 			UniStrCpy(s, 0, L"");
 		}
 		return 0;
+	}
+	if (new_size <= room)
+	{
+		if (ConvertAnsiToUni(s, new_size / (UINT)sizeof(wchar_t), str) == 0)
+		{
+			s[0] = 0;
+			return 0;
+		}
+		return new_size / (UINT)sizeof(wchar_t) - 1;
 	}
 	tmp = Malloc(new_size);
 	tmp[0] = 0;
@@ -623,12 +734,85 @@ UINT StrToUni(wchar_t *s, UINT size, const char *str)
 
 UINT CalcStrToUni(const char *str)
 {
+	UINT len;
 	if (str == NULL)
 	{
 		return 0;
 	}
 
+	len = AnsiAsciiLen(str);
+	if (len != INFINITE)
+	{
+		return (len + 1) * (UINT)sizeof(wchar_t);
+	}
+
 	return ConvertAnsiToUni(NULL, 0, str) * (UINT)sizeof(wchar_t);
+}
+
+// The converted string in one allocation of its exact size, without a temporary string
+char *CopyUniToStr(wchar_t *unistr)
+{
+	char *str;
+	UINT str_size;
+	UINT len;
+	if (unistr == NULL)
+	{
+		return NULL;
+	}
+
+	len = UniAsciiLen(unistr);
+	if (len != INFINITE)
+	{
+		str = Malloc(len + 1);
+		NarrowAscii(str, unistr, len);
+		return str;
+	}
+
+	str_size = ConvertUniToAnsi(NULL, 0, unistr);
+	if (str_size == 0)
+	{
+		return CopyStr("");
+	}
+	str = Malloc(str_size);
+	if (ConvertUniToAnsi(str, str_size, unistr) == 0)
+	{
+		str[0] = 0;
+	}
+
+	return str;
+}
+
+// The converted string in one allocation of its exact size, without a temporary string
+wchar_t *CopyStrToUni(const char *str)
+{
+	wchar_t *uni;
+	UINT uni_len;
+	UINT len;
+	if (str == NULL)
+	{
+		return NULL;
+	}
+
+	len = AnsiAsciiLen(str);
+	if (len != INFINITE)
+	{
+		uni = Malloc((len + 1) * (UINT)sizeof(wchar_t));
+		WidenAscii(uni, str, len);
+		return uni;
+	}
+
+	uni_len = ConvertAnsiToUni(NULL, 0, str);
+	if (uni_len == 0)
+	{
+		return CopyUniStr(L"");
+	}
+	uni = Malloc(uni_len * (UINT)sizeof(wchar_t));
+	if (ConvertAnsiToUni(uni, uni_len, str) == 0)
+	{
+		uni[0] = 0;
+	}
+
+	return uni;
 }
 
 // Mayaqua's UTF-8 differs from the standard in two ways, which stay. The encoder writes every

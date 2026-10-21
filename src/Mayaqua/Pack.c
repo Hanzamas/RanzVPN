@@ -935,6 +935,14 @@ void PackAddIp32(PACK *p, char *name, UINT ip32)
 {
 	PackAddIp32Ex(p, name, ip32, 0, 1);
 }
+// Element name of one part of an IP: name followed by suffix, cut as Format of "%s<suffix>" cuts
+// it: at most size - 1 characters (size is not 0) and the terminator
+static void PackIpName(char *dst, UINT size, char *name, char *suffix)
+{
+	UINT len = StrCpy(dst, size, name);
+
+	StrCpy(dst + len, size - len, suffix);
+}
 void PackAddIpEx(PACK *p, char *name, IP *ip, UINT index, UINT total)
 {
 	UINT i;
@@ -944,13 +952,13 @@ void PackAddIpEx(PACK *p, char *name, IP *ip, UINT index, UINT total)
 		return;
 	}
 
-	Format(tmp, sizeof(tmp), "%s@ipv6_bool", name);
+	PackIpName(tmp, sizeof(tmp), name, "@ipv6_bool");
 	PackAddBoolEx(p, tmp, IsIP6(ip), index, total);
 
-	Format(tmp, sizeof(tmp), "%s@ipv6_array", name);
+	PackIpName(tmp, sizeof(tmp), name, "@ipv6_array");
 	PackAddDataEx(p, tmp, ip->address, sizeof(ip->address), index, total);
 
-	Format(tmp, sizeof(tmp), "%s@ipv6_scope_id", name);
+	PackIpName(tmp, sizeof(tmp), name, "@ipv6_scope_id");
 	PackAddIntEx(p, tmp, ip->ipv6_scope_id, index, total);
 
 	i = IPToUINT(ip);
@@ -990,7 +998,7 @@ bool PackGetIpEx(PACK *p, char *name, IP *ip, UINT index)
 		return false;
 	}
 
-	Format(tmp, sizeof(tmp), "%s@ipv6_bool", name);
+	PackIpName(tmp, sizeof(tmp), name, "@ipv6_bool");
 	if (PackGetBoolEx(p, tmp, index))
 	{
 		UCHAR data[16];
@@ -998,10 +1006,10 @@ bool PackGetIpEx(PACK *p, char *name, IP *ip, UINT index)
 
 		Zero(data, sizeof(data));
 
-		Format(tmp, sizeof(tmp), "%s@ipv6_array", name);
+		PackIpName(tmp, sizeof(tmp), name, "@ipv6_array");
 		PackGetDataEx2(p, tmp, data, sizeof(data), index);
 
-		Format(tmp, sizeof(tmp), "%s@ipv6_scope_id", name);
+		PackIpName(tmp, sizeof(tmp), name, "@ipv6_scope_id");
 		scope_id = PackGetIntEx(p, tmp, index);
 
 		SetIP6(ip, data);
