@@ -4,7 +4,7 @@ Slimmed fork of SoftEther VPN (C, CMake): native SE-VPN protocol only, Windows 1
 
 ## Module map
 
-A module is one `X.c` / `X.h` pair under `src/Mayaqua` or `src/Cedar`. The files split out of a god file (#29) belong to that file's module and use its header as their API header. Declarations that only those files need are in the module-internal header `XInternal.h`, which only the module's own files include. Encrypt is named differently: its API header is `Encrypt.h`, its code is `src/Mayaqua/Crypto/*.c` and its internal header is `Crypto/Cng.h`. The tree has 50 modules (23 in Mayaqua, 27 in Cedar) and four headers without code: MayaType.h, Platform.h, CedarType.h, and `src/GlobalConst.h` (the product name strings, included by Cedar.h, FileIO, Mayaqua and Microsoft).
+A module is one `X.c` / `X.h` pair under `src/Mayaqua`, `src/Cedar` or `src/Core` (the new core). The files split out of a god file (#29) belong to that file's module and use its header as their API header. Declarations that only those files need are in the module-internal header `XInternal.h`, which only the module's own files include. Encrypt is named differently: its API header is `Encrypt.h`, its code is `src/Mayaqua/Crypto/*.c` and its internal header is `Crypto/Cng.h`. The tree has 51 modules (23 in Mayaqua, 27 in Cedar, 1 in Core) and four headers without code: MayaType.h, Platform.h, CedarType.h, and `src/GlobalConst.h` (the product name strings, included by Cedar.h, FileIO, Mayaqua and Microsoft).
 
 The Uses and Used by columns are generated from the tree, not written by hand:
 
@@ -19,6 +19,7 @@ Executables:
 - `vpncmd` uses, in Cedar: Cedar, Command; in Mayaqua: Internat, Kernel, Mayaqua, Memory, Microsoft.
 - `vpntest` uses, in Cedar: all except Bridge, Link, RpcField, Sam, Win32Com; in Mayaqua: all except Tracking.
 - `fuzz` uses, in Cedar: Protocol; in Mayaqua: Cfg, Encrypt, HTTP, IpAddr, Mayaqua, Memory, Network, Pack, Stun, TcpIp.
+- `coretest` uses, in Core: Crypto; nothing of Cedar or Mayaqua.
 
 ### Mayaqua (`src/Mayaqua`)
 
@@ -82,6 +83,14 @@ Executables:
 | PacketLog | The packet log of a Hub: which frames are logged, and their CSV line | `PACKET_LOG` | Cedar, Hub, LogWriter, Server, Session; types and macros only: HubLog | Internat, IpAddr, Kernel, Memory, Object, Str, TcpIp | Hub. Programs: `vpntest` |
 | Syslog | The syslog sender: one UDP datagram per log line | `SLOG` | LogWriter | DNS, Internat, IpAddr, Memory, Network, Object, Str, Tick64 | Server; types and macros only: Command. Programs: `vpntest` |
 | Eraser | Deletes the oldest log files while the free disk space is below the minimum | `ERASER` | LogWriter | FileIO, Internat, Kernel, Memory, Object, Str; types and macros only: Mayaqua | Server. Programs: `vpntest` |
+
+### Core (`src/Core`)
+
+The new core (ADR-0022). Each of its modules is a static library of its own that links nothing of Mayaqua or Cedar, and no OpenSSL or liboqs; `ranz_core_check_links` (`src/Core/CMakeLists.txt`) stops the configure when one does.
+
+| Module | Contract | Main types | Uses | Used by |
+|---|---|---|---|---|
+| Crypto: `Crypto.h`, `Crypto.c`, `CryptoX25519.c`, `CryptoMlKem.c`, `CryptoCert.c`, `CryptoInternal.h` (library `corecrypto`) | X25519, AES-GCM, SHA-256, HMAC-SHA256, HKDF and random bytes on CNG; the X25519MLKEM768 hybrid where CNG has ML-KEM; the node identity key in the Microsoft Software Key Storage Provider; self-signed ECDSA P-256 certificates, PFX import and the certificate stores through CryptoAPI | `CRYPTO_SHA256`, `CRYPTO_AEAD`, `CRYPTO_IDENTITY`, `CRYPTO_HYBRID` | none (the system libraries bcrypt, ncrypt and crypt32) | Programs: `coretest` |
 
 ### Dependency cycles
 
@@ -207,6 +216,7 @@ _Avoid_: machine ID (Windows' name for the MachineGuid), `UniqueId` (a random va
 - "Console" names two things: the Cedar module Console (`Console.c` and `Console.h`, the console abstraction of vpncmd) and `src/Mayaqua/Console.c`, the console input and output of the Win32 module (declared in `Win32.h`).
 - "Win32" names the module (`Win32.c` with `Console.c`, `Diag.c`, `OsInfo.c` and `Proc.c`, all declared in `Win32.h`) and a function prefix. Not every `Win32*` function is in the module: FileIO defines the file ones (`Win32EnumDirExW` and the others that Win32.h declares, and `Win32SetFolderCompress` of Platform.h), and BridgeWin32 defines the adapter ones (`Win32Eth*`).
 - "Encrypt" is the API header of the crypto module; there is no Encrypt.c. The code is in `src/Mayaqua/Crypto/` (Hash, Rand, Cipher, Aead, Rsa, Dh, X509, Pem, Init).
+- "Crypto" also names the new core's crypto module, `src/Core/Crypto*.c` with the API header `Core/Crypto.h` (functions `Crypto*`), which is not Mayaqua's `Crypto/` directory of the Encrypt module.
 - "Logging" is no longer a module. `Logging.c` became five modules: LogWriter (the file writer), HubLog (`SLog`, `HLog`, the log directories and the log file list), PacketLog, Syslog and Eraser. HubLog also holds the server log, despite its name.
 - The "Pkt" files (`Pkt.c`, `PktChecksum.c`, `PktIpv6.c`, `PktSniff.c`) and `Dhcp.c` are part of TcpIp, with `TcpIp.h` as their API header. A `PKT` is a parsed frame.
 - "DNS" is the resolver module (`DNS.c`). `NetworkDns.c` is part of Network: the machine name, the reverse host name lookup and the NetBIOS name query.
