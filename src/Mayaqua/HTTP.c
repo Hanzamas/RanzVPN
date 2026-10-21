@@ -8,6 +8,7 @@
 #include "Str.h"
 
 #include <winhttp.h>
+#include "HTTPInternal.h"
 
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version)
 {

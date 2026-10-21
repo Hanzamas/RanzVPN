@@ -37,8 +37,6 @@ typedef char *(HTTP_LINE_SOURCE)(void *param, UINT max_size);
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version);
 void FreeHttpHeader(HTTP_HEADER *header);
 HTTP_VALUE *NewHttpValue(char *name, char *data);
-void FreeHttpValue(HTTP_VALUE *value);
-int CompareHttpValue(void *p1, void *p2);
 HTTP_VALUE *GetHttpValue(HTTP_HEADER *header, char *name);
 void AddHttpValue(HTTP_HEADER *header, HTTP_VALUE *value);
 bool AddHttpValueStr(HTTP_HEADER* header, char *string);
@@ -55,7 +53,5 @@ PACK *HttpClientRecvEx(SOCK *s, UINT max_data_size);
 bool HttpServerSend(SOCK *s, PACK *p);
 PACK *HttpServerRecv(SOCK *s);
 bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request);
-
-char *RecvLine(SOCK *s, UINT max_size);
 
 #endif
