@@ -14,6 +14,7 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
+#include "Mayaqua/Tick64.h"
 
 UINT GetEthDeviceHash()
 {
