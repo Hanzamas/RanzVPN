@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-static void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode)
+void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode)
 {
 	wchar_t tmp[MAX_SIZE];
 	char str[MAX_SIZE];
