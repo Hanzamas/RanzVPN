@@ -123,8 +123,9 @@ static void coretest_print_system() {
 		get_version(&v);
 
 	GetNativeSystemInfo(&si);
-	const char *arch = si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 ? "x64" : si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64 ? "arm64"
-	                                                                                                                                                 : "other";
+	const char *arch = si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64   ? "x64"
+	                   : si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64 ? "arm64"
+	                                                                               : "other";
 
 	printf("Windows %lu.%lu build %lu, %s\n", v.dwMajorVersion, v.dwMinorVersion, v.dwBuildNumber, arch);
 }
@@ -138,18 +139,18 @@ typedef struct TEST_LIST {
 } TEST_LIST;
 
 static TEST_LIST test_list[] = {
-    {"rand", rand_test, "System random generator: sizes, distinct outputs, the share of zero bytes in 1 MiB."},
-    {"sha256", sha256_test, "SHA-256 against the FIPS 180-2 vectors, in one call and over parts."},
-    {"hmac", hmac_test, "HMAC-SHA256 against the RFC 4231 test cases."},
-    {"hkdf", hkdf_test, "HKDF-SHA256 against RFC 5869 A.1 to A.3, Expand alone, an empty IKM, the output limit."},
-    {"aesgcm", aesgcm_test, "AES-128-GCM and AES-256-GCM against the GCM specification test cases; tag, AAD and nonce tampering."},
-    {"x25519", x25519_test, "X25519 against RFC 7748 5.2 and 6.1, the iterated test, clamping, masking, reduction, low-order points."},
-    {"identity", identity_test, "Node identity key in the software KSP: RFC 7748 6.1 through NCrypt, open, create, delete."},
-    {"mlkem", mlkem_test, "ML-KEM-768 and the X25519MLKEM768 hybrid where the OS has it; omitted, without failing, where not."},
-    {"selfsign", selfsign_test, "Self-signed ECDSA P-256 certificate on a CNG key: signature, algorithms, extensions, key in the KSP."},
-    {"pfx", pfx_test, "PFX of OpenSSL 3 defaults (PBES2, AES-256-CBC, SHA-256 MAC) into the KSP; wrong password and no PFX refused."},
-    {"certstore", certstore_test, "Certificate store: add, find by thumbprint, remove; malformed thumbprints refused."},
-    {"schannel", schannel_test, "Schannel TLS 1.3 in memory with the server key in the KSP: store certificate and PFX, data both ways."},
+	{"rand", rand_test, "System random generator: sizes, distinct outputs, the share of zero bytes in 1 MiB."},
+	{"sha256", sha256_test, "SHA-256 against the FIPS 180-2 vectors, in one call and over parts."},
+	{"hmac", hmac_test, "HMAC-SHA256 against the RFC 4231 test cases."},
+	{"hkdf", hkdf_test, "HKDF-SHA256 against RFC 5869 A.1 to A.3, Expand alone, an empty IKM, the output limit."},
+	{"aesgcm", aesgcm_test, "AES-128-GCM and AES-256-GCM against the GCM specification test cases; tag, AAD and nonce tampering."},
+	{"x25519", x25519_test, "X25519 against RFC 7748 5.2 and 6.1, the iterated test, clamping, masking, reduction, low-order points."},
+	{"identity", identity_test, "Node identity key in the software KSP: RFC 7748 6.1 through NCrypt, open, create, delete."},
+	{"mlkem", mlkem_test, "ML-KEM-768 and the X25519MLKEM768 hybrid where the OS has it; omitted, without failing, where not."},
+	{"selfsign", selfsign_test, "Self-signed ECDSA P-256 certificate on a CNG key: signature, algorithms, extensions, key in the KSP."},
+	{"pfx", pfx_test, "PFX of OpenSSL 3 defaults (PBES2, AES-256-CBC, SHA-256 MAC) into the KSP; wrong password and no PFX refused."},
+	{"certstore", certstore_test, "Certificate store: add, find by thumbprint, remove; malformed thumbprints refused."},
+	{"schannel", schannel_test, "Schannel TLS 1.3 in memory with the server key in the KSP: store certificate and PFX, data both ways."},
 };
 
 #define NUM_TESTS (sizeof(test_list) / sizeof(test_list[0]))
