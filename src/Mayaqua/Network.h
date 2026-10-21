@@ -175,14 +175,9 @@ struct NIC_ENTRY
 	UCHAR MacAddress[6];
 };
 
-int GetCurrentTimezone();
-
 bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UINT sni_size);
 
 void SetDhParam(DH_CTX *dh);
-
-int GetCurrentTimezoneWin32();
-int GetTimezoneInfoOffsetWin32(TIME_ZONE_INFORMATION *info, UINT zone_id);
 
 UINT GetErrorFromPack(PACK *p);
 PACK *PackError(UINT error);
