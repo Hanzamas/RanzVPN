@@ -3,15 +3,17 @@
 # linux: generates the Go code of proto/ranz/control/v1/control.proto with the pinned protoc and
 # protoc-gen-go, tidies go.mod and go.sum and runs gofmt; then vets (for Linux and for Windows),
 # builds (for Linux, and for Windows on x64 and arm64) and tests the module, with rqlited of the
-# pinned rqlite release for the controller conformance tests. Those tests write every control
-# message they sent or received to a directory, and the nanopb code generated from the same schema
-# decodes each one and encodes it back to the same bytes (tests/control/nanopb_roundtrip.c). Last,
-# the job fails, and prints the diff, if generation, tidy or gofmt changed a committed file.
+# pinned rqlite release for the controller conformance tests and the cluster tests of SDN-17 (three
+# ranz-controller processes, each with its rqlited, on the runner: cmd/ranz-controller). Those
+# tests write every control message they sent or received to a directory, and the nanopb code
+# generated from the same schema decodes each one and encodes it back to the same bytes
+# (tests/control/nanopb_roundtrip.c). Last, the job fails, and prints the diff, if generation,
+# tidy or gofmt changed a committed file.
 #
-# windows: vets, builds and tests the module on Windows, with the controller's keys in the
-# Microsoft Software Key Storage Provider, then runs ranz-controller as a Windows service on TCP
-# 443 (and plain HTTP for the redirect) with rqlited as its sidecar, and drives it with ranz and
-# ranz-nodesim (.github/scripts/controller-service.ps1).
+# windows: vets, builds and tests the module on Windows (the cluster tests included), with the
+# controller's keys in the Microsoft Software Key Storage Provider, then runs ranz-controller as a
+# Windows service on TCP 443 (and plain HTTP for the redirect) with rqlited as its sidecar, and
+# drives it with ranz and ranz-nodesim (.github/scripts/controller-service.ps1).
 #
 # Neither job touches the C build, so they run beside windows.yml and add nothing to its time.
 

@@ -242,8 +242,12 @@ One L2 switched or L3 routed segment inside exactly one VRF, with its own addres
 _Avoid_: Hub (the slim fork object), VLAN, subnet
 
 **Controller**:
-The `ranz-controller` service: the single authority that stores the Intent, allocates addresses and DNS records, and compiles the desired state of every Node. It runs as one member or as a cluster of 3 or 5.
+The `ranz-controller` service: the single authority that stores the Intent, allocates addresses and DNS records, and compiles the desired state of every Node. It runs as one member or as a cluster of 3 or 5, each member with its own rqlite member as sidecar. A `Controller` resource of the Intent names one member as Nodes reach it.
 _Avoid_: `controller` role (it left the node binary), master, management server
+
+**Leader**:
+The member of a Controller cluster that holds the lease in the store and so runs the Controller: it applies the Intent, pushes desired state and stores the acknowledgements. The other members are standbys: they send Nodes to the leader and forward API calls to it, and one of them takes the lease when the leader is lost (ADR-0026 amendment of 2026-10-22).
+_Avoid_: master, primary, active controller
 
 **Intent**:
 The declared description of the network (VRFs, Networks, Nodes, policy, routes and the other resources) that an administrator applies. Every apply is a revision.
@@ -294,5 +298,6 @@ _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
 - "Node" is a new-core host running `ranz-node`, the new core's binary, and its `NODE` object. `NODE_INFO` (Session) is unrelated: the record of a connecting client's host details that a SE-VPN login sends, not a Node.
 - "Capability" is what a Node reports to the Controller. `CAPS` (`ServerCaps.c`) is the slim fork's list of server capabilities for admin clients.
 - "controller" was a role of the node binary in ADR-0022. Since ADR-0026 the Controller is the separate `ranz-controller` service, and the node has no `controller` role.
+- "Leader" is the member of a Controller cluster that holds the lease. The Raft leader of rqlite is a different thing: any member's rqlite may be it, and rqlite forwards writes to it by itself.
 - "Generation" and "revision" are different versions: a revision is a version of the whole Intent (what `ranz rollback` returns to); a Generation is a version of one Node's desired state.
 - "Server" names the slim fork's `vpnserver` and its `SERVER` object, and the server Role of a Node. The service of the Node is `ranzvpnserver`; the one of `vpnserver` is still `sevpnserverdev`.
