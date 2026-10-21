@@ -179,15 +179,7 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 
 void SetDhParam(DH_CTX *dh);
 
-UINT GetErrorFromPack(PACK *p);
-PACK *PackError(UINT error);
-
-void CreateDummyValue(PACK *p);
-
-char *RecvLine(SOCK *s, UINT max_size);
-
 SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original);
-void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
 
 
 
@@ -252,10 +244,6 @@ void AcceptInitEx(SOCK *s, bool no_lookup_hostname);
 void DisableGetHostNameWhenAcceptInit();
 TOKEN_LIST *GetCipherList();
 COUNTER *GetNumTcpConnectionsCounter();
-void AddWaitThread(THREAD *t);
-void DelWaitThread(THREAD *t);
-void InitWaitThread();
-void FreeWaitThread();
 bool GetNetBiosName(char *name, UINT size, const IP *ip);
 bool IsIPv6Supported();
 bool HasIPv6Address();

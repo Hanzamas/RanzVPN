@@ -72,4 +72,9 @@ bool GetIPEx(IP *ip, const char *hostname, UINT timeout, volatile const bool *ca
 void ReleaseDnsResolver(DNS_RESOLVER *p);
 void ReleaseDnsResolverReverse(DNS_RESOLVER_REVERSE *p);
 
+void AddWaitThread(THREAD *t);
+void DelWaitThread(THREAD *t);
+void InitWaitThread();
+void FreeWaitThread();
+
 #endif

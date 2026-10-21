@@ -116,4 +116,9 @@ bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index);
 bool PackGetData2(PACK *p, char *name, void *data, UINT size);
 bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index);
 
+UINT GetErrorFromPack(PACK *p);
+PACK *PackError(UINT error);
+
+void CreateDummyValue(PACK *p);
+
 #endif

@@ -8,6 +8,7 @@
 #include "Connection.h"
 #include "Link.h"
 #include "Protocol.h"
+#include "Sam.h"
 #include "Server.h"
 
 #include "Mayaqua/Cfg.h"

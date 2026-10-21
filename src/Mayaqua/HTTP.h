@@ -56,4 +56,6 @@ bool HttpServerSend(SOCK *s, PACK *p);
 PACK *HttpServerRecv(SOCK *s);
 bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request);
 
+char *RecvLine(SOCK *s, UINT max_size);
+
 #endif
