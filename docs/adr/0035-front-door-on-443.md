@@ -1,6 +1,6 @@
 # ADR-0035: The front door on TCP 443 hands sockets to their owners; UDP 443 stays QUIC only
 
-**Status:** Accepted (2026-10-20, from the SDN spec #176 that Hilmi filed; recorded by SDN-1, #177). Builds on the transport of ADR-0005 and ADR-0022 and the listener defaults of ADR-0020.
+**Status:** Accepted (2026-10-20, from the SDN spec #176 that Hilmi filed; recorded by SDN-1, #177). Builds on the transport of ADR-0005 and ADR-0022 and the listener defaults of ADR-0020. Amended 2026-10-21: port 80 through HTTP.sys URL reservations where HTTP.sys already holds it, and the 5555 fallback when 443 is taken.
 
 ## Context
 
@@ -8,7 +8,7 @@ A node should need one line in a firewall: TCP 443 and UDP 443 open to the inter
 
 ## Decision
 
-1. **Publicly a node needs only TCP 443 and UDP 443.**
+1. **Publicly a node needs only TCP 443 and UDP 443.** *(Amended 2026-10-21 below: when 443 is taken, the node falls back to 5555.)*
 2. **TCP 443: one front door.** The node accepts the connection, peeks the first bytes with `MSG_PEEK` (nothing is consumed), and routes it:
    - TLS by SNI and ALPN: the new protocol's TLS fallback, the web UI and the API, ACME, DoH, and in the Legacy phase SE-VPN and SSTP in `ranz-compat`;
    - non-TLS signatures, for example OpenVPN over TCP, by their first bytes.
@@ -24,3 +24,9 @@ A node should need one line in a firewall: TCP 443 and UDP 443 open to the inter
 - The VM CI job covers the TCP 443 front door with socket handoff (seam 3 of #45). SE-VPN through the front door is tested against the pinned `main-oracle` releases in the Legacy phase (SDN-L2, #208).
 - The unified-management spec #224 adds a `Listener` resource for ports and certificates (SDN-45, #238) and a front-door DoS guard (SDN-46, #239).
 - Tickets: SDN-29 (#205), SDN-L2 (#208), SDN-L5 (#211).
+
+## Amendment 2026-10-21: port 80 through HTTP.sys where it holds the port, 5555 when 443 is taken
+
+Maintainer decisions (Hilmi: "ya ya ya semua").
+- **Port 80 shares through HTTP.sys.** On hosts where HTTP.sys already holds port 80, for example under IIS, Ranz's port 80 (ACME HTTP-01 and the HTTPS redirect, ADR-0020 decision 7, ADR-0038 decision 6) registers through HTTP.sys URL reservations, the Windows-native way to share the port. Port 443 keeps its own listener, because ALPN `ranz-control/1` cannot pass through HTTP.sys.
+- **When 443 is taken, the controller and the node fall back to 5555**, log it loudly and report it as a Capability (ADR-0033). This is the same rule as ADR-0020 decision 6 for the current server.
