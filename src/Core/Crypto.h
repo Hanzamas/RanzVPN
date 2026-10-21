@@ -18,7 +18,7 @@
 #include <stdbool.h>
 
 #define CRYPTO_SHA256_SIZE        32
-#define CRYPTO_X25519_SIZE        32                         // Scalar, u-coordinate and shared secret
+#define CRYPTO_X25519_SIZE        32 // Scalar, u-coordinate and shared secret
 #define CRYPTO_AES_GCM_NONCE_SIZE 12
 #define CRYPTO_AES_GCM_TAG_SIZE   16
 #define CRYPTO_HKDF_MAX_SIZE      (255 * CRYPTO_SHA256_SIZE) // RFC 5869: at most 255 blocks of output
@@ -61,8 +61,8 @@ typedef struct CRYPTO_IDENTITY {
 
 // The initiator side of one X25519MLKEM768 exchange, between CryptoHybridBegin and CryptoHybridFinish
 typedef struct CRYPTO_HYBRID {
-	void *MlKemKey;                       // BCRYPT_KEY_HANDLE of the ML-KEM-768 key pair
-	UCHAR X25519Key[CRYPTO_X25519_SIZE];  // Ephemeral X25519 scalar
+	void *MlKemKey;                      // BCRYPT_KEY_HANDLE of the ML-KEM-768 key pair
+	UCHAR X25519Key[CRYPTO_X25519_SIZE]; // Ephemeral X25519 scalar
 } CRYPTO_HYBRID;
 
 // Start-up (Crypto.c): opens the CNG providers once per process, from any thread. false when a
