@@ -24,6 +24,9 @@
 // Entries of the broadcast storm list of one session (HUB_PA.StormList): AddStormList drops the oldest one beyond this
 #define MAX_STORM_LIST_ENTRIES 4096
 
+// IP_TABLE_EXPIRY.Oldest or OldestDhcp of an IP table without entries of that kind
+#define IP_TABLE_NO_ENTRY 0xFFFFFFFFFFFFFFFFULL
+
 struct HUBDB {
 	LIST *UserList;
 	LIST *GroupList;
@@ -147,6 +150,18 @@ struct IP_TABLE_ENTRY {
 	UINT64 UpdatedTime;
 	UINT64 LastProbeTime; // Tick64 of the last watchdog ARP/NS probe, 0 = never probed
 	UCHAR MacAddress[6];
+	// Next entry of the chain IP_TABLE_EXPIRY.Expired, once an expiry pass took this one out of the table
+	IP_TABLE_ENTRY *NextExpired;
+};
+
+// Expiry state of the IP table of a hub, guarded by the lock of the table (the MacHashTable lock). Oldest and
+// OldestDhcp are lower bounds of the UpdatedTime of the entries without and with DhcpAllocated: while neither bound
+// plus the expiry time of its kind has come, no entry can have expired and a new entry skips the expiry pass.
+// Expired chains the entries that a pass took out of the table, which are freed after the lock (FreeIpTableEntries)
+struct IP_TABLE_EXPIRY {
+	UINT64 Oldest;
+	UINT64 OldestDhcp;
+	IP_TABLE_ENTRY *Expired;
 };
 
 struct ACCESS {
@@ -240,6 +255,7 @@ struct HUB {
 	HUB_OPTION *Option;
 	HASH_LIST *MacHashTable;
 	LIST *IpTable;
+	IP_TABLE_EXPIRY IpTableExpiry;
 	LIST *MonitorList;
 	LIST *LinkList;
 	UCHAR HubSignature[16];
@@ -328,7 +344,9 @@ IP_TABLE_ENTRY *IpTableGet(HUB *h, UINT index);
 bool IpTableDeleteByKey(HUB *h, UINT key);
 void GetHubLogSetting(HUB *h, HUB_LOG *setting);
 void SetHubLogSettingEx(HUB *h, HUB_LOG *setting, bool no_change_switch_type);
-void DeleteExpiredIpTableEntry(LIST *o);
+void IpTableExpiryInit(IP_TABLE_EXPIRY *x);
+void DeleteExpiredIpTableEntry(LIST *o, IP_TABLE_EXPIRY *x, UINT64 now);
+void FreeIpTableEntries(IP_TABLE_ENTRY *e);
 UINT GetHubAdminOption(HUB *h, char *name);
 void DeleteAllHubAdminOption(HUB *h);
 void AddHubAdminOptionsDefaults(HUB *h, bool lock);
