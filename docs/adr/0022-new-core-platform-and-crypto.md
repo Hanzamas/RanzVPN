@@ -1,6 +1,6 @@
 # ADR-0022: New-core platform, threading, crypto, adapters and the strangler plan
 
-**Status:** Accepted (2026-10-13, from the grilling; "windows native total yang fast and furious", ADR-0008). This ADR consolidates the platform decisions for the new core and builds on ADR-0005 (transport), ADR-0006 (tiers), ADR-0007 (Schannel), ADR-0010 (routing), ADR-0018 (packet I/O) and ADR-0019 (VLAN and policy), each now Accepted. The security and anti-censorship design is ADR-0023. The SDN spec #176 amends the control plane, step 6, step 8 and the ports (amendment of 2026-10-20).
+**Status:** Accepted (2026-10-13, from the grilling; "windows native total yang fast and furious", ADR-0008). This ADR consolidates the platform decisions for the new core and builds on ADR-0005 (transport), ADR-0006 (tiers), ADR-0007 (Schannel), ADR-0010 (routing), ADR-0018 (packet I/O) and ADR-0019 (VLAN and policy), each now Accepted. The security and anti-censorship design is ADR-0023. The SDN spec #176 amends the control plane, step 6, step 8 and the ports (amendment of 2026-10-20). Amended 2026-10-21: TCP splitting on the Windows TCP stack, the node identity key in the software KSP, server and controller keys in the CNG KSP with explicit Schannel key exchange groups.
 
 ## Context
 
@@ -27,9 +27,9 @@ Per-core run-to-completion:
 - **Schannel TLS 1.3 and CNG only.** OpenSSL, liboqs and oqs-provider are **removed from the new core** (they stay in the slim fork).
 - **AES-GCM only.** ChaCha20-Poly1305 is off by default in both Schannel and msquic (Schannel treats it as an admin-level, system-wide opt-in and msquic blocks it on the Schannel path).
 - **Session layer: Noise_IK** with **X25519 via CNG** (`BCRYPT_ECDH_ALGORITHM` with `BCRYPT_ECC_CURVE_25519`), SHA-256, and **HKDF via CNG**. The CNG X25519 blob format and clamping are undocumented, so the implementation is tested against the RFC 7748 vectors on both x64 and arm64.
-- **Node identity key in a CNG KSP** (TPM-backable), used for Noise static-key authentication.
-- **Certificates via CryptoAPI:** ECDSA P-256 self-signed certificates, PFX import; ACME is a later addition, not core work for v1. Certificate keys live in a CNG KSP (`PKCS12_ALWAYS_CNG_KSP`) so TLS 1.3 server signatures (RSA-PSS / ECDSA) work.
-- **Post-quantum** is a CNG ML-KEM hybrid with X25519, used where the OS provides it (Windows 11 24H2 / Server 2025 and later) in both TLS and Noise; it is otherwise a later addition, not a blocker.
+- **Node identity key in a CNG KSP** (TPM-backable), used for Noise static-key authentication. *(Amended 2026-10-21 below: the software KSP, because the TPM provider has no curve25519.)*
+- **Certificates via CryptoAPI:** ECDSA P-256 self-signed certificates, PFX import; ACME is a later addition, not core work for v1. Certificate keys live in a CNG KSP (`PKCS12_ALWAYS_CNG_KSP`) so TLS 1.3 server signatures (RSA-PSS / ECDSA) work. *(Amended 2026-10-21 below: server and controller keys always live in the CNG KSP, which closes the legacy-CSP question of #45.)*
+- **Post-quantum** is a CNG ML-KEM hybrid with X25519, used where the OS provides it (Windows 11 24H2 / Server 2025 and later) in both TLS and Noise; it is otherwise a later addition, not a blocker. *(Amended 2026-10-21 below: Schannel's key exchange groups are set explicitly, X25519MLKEM768 first.)*
 - The transport-security layering, key separation and forward secrecy are specified in ADR-0023 (since 2026-10-15: single encryption by QUIC/TLS, Noise for identity bound to the outer session).
 
 ### Roles and SE-VPN compatibility
@@ -137,7 +137,7 @@ Maintainer decision (Hilmi: "catat"). One QUIC connection is processed on one ms
 Maintainer decision (Hilmi: "ya"). Tunnelling TCP inside the TCP-443 fallback causes retransmission amplification on lossy links; it cannot be removed while the outer transport is TCP.
 1. Avoid it: QUIC over UDP stays the primary transport; TLS/TCP 443 is used only when UDP is blocked.
 2. v1 mitigations on the TCP path: an active queue (CoDel-style) at the tunnel ingress drops inner packets whose queueing delay exceeds the target instead of buffering them, so inner TCP backs off early; multi-connection tunnels (previous amendment) confine a loss stall to the flows of one connection; the outer TCP uses BBR2 where Windows offers it (to verify on Windows 11 and Server 2022/2025), otherwise the system default.
-3. Phase 2 option for L3 mode: TCP splitting. The client node terminates inner TCP flows with a user-mode TCP stack and sends only the byte stream through the tunnel, which removes the meltdown entirely; it applies to L3 TCP traffic only, not to L2 frames, and changes end-to-end ACK semantics, so it is opt-in.
+3. Phase 2 option for L3 mode: TCP splitting. The client node terminates inner TCP flows with a user-mode TCP stack and sends only the byte stream through the tunnel, which removes the meltdown entirely; it applies to L3 TCP traffic only, not to L2 frames, and changes end-to-end ACK semantics, so it is opt-in. *(Amended 2026-10-21 below: the Windows TCP stack terminates the flows, reached through a WinDivert redirect to a local listener; no user-mode TCP stack.)*
 
 ## Amendment 2026-10-15: BBR congestion control in v1
 
@@ -182,4 +182,21 @@ Maintainer decision, from the SDN spec #176 that Hilmi filed ("controller as a s
 - **The front door on 443.** Publicly a node needs only TCP 443 and UDP 443. TCP 443 has one front door that peeks the first bytes with `MSG_PEEK`, routes by SNI and ALPN or by the first bytes, and hands each accepted socket to its owner process with `WSADuplicateSocketW`, proxying nothing after the handoff. UDP 443 stays QUIC only, owned by msquic (ADR-0035).
 - **Policy engine.** The conntrack table bounded per network becomes a conntrack quota per VRF, with per-protocol timeouts in the intent (ADR-0029).
 - **Scale.** The per-node target of 10,000 sessions and 10 Gbps stays. One controller cluster targets 10,000 nodes, 1,000 VRFs and 100,000 routes.
+
+## Amendment 2026-10-21: TCP splitting on the Windows TCP stack
+
+Maintainer decision (Hilmi: "ya ya ya semua"). Item 3 of the TCP-over-TCP amendment of 2026-10-15 stays a phase-2 option for L3 mode, without a user-mode TCP stack of our own.
+- **The Windows TCP stack terminates the inner TCP flows.** Overlay TCP flows are redirected to a local listener with WinDivert, the same mechanism as egress tier 3 (ADR-0025), and only the byte stream goes through the tunnel.
+- **It stays opt-in** and applies to L3 TCP traffic only, as before.
+- **No own user-mode TCP stack is added**, so ADR-0014 holds. CORE-P2-3 (#94) is updated to match.
+
+## Amendment 2026-10-21: the node identity key in the software KSP
+
+Maintainer decision (Hilmi: "ya ya ya semua"). The node identity key stays in the software KSP (Microsoft Software Key Storage Provider). The TPM provider has no curve25519, and the Noise suite is X25519, so the key cannot be TPM-held as the crypto section's "TPM-backable" suggests. A TPM-held wrapping key for the identity key is an option after v1.
+
+## Amendment 2026-10-21: server and controller keys in the CNG KSP, explicit Schannel key exchange groups
+
+Maintainer decision (Hilmi: "ya ya ya semua"). CORE-S2-1 (#69) is updated to match.
+- **Server and controller keys always live in the CNG KSP.** A PFX is imported into the KSP, never into a legacy CSP. The question of spec #45, whether Schannel TLS 1.3 falls back to 1.2 or fails when the server key sits in a legacy CSP, is therefore closed: the case does not arise.
+- **Schannel's key exchange groups are set explicitly:** X25519MLKEM768 first, X25519 as the fallback, because Schannel does not pick the hybrid by default on builds 26100 and 26200.
 
