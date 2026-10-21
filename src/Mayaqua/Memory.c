@@ -880,28 +880,6 @@ void Sort(LIST *o)
 	KS_INC(KS_SORT_COUNT);
 }
 
-bool ReplaceListPointer(LIST *o, const void *oldptr, void *newptr)
-{
-	UINT i;
-	if (o == NULL || oldptr == NULL || newptr == NULL)
-	{
-		return false;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		void *p = LIST_DATA(o, i);
-
-		if (p == oldptr)
-		{
-			o->p[i] = newptr;
-			return true;
-		}
-	}
-
-	return false;
-}
-
 void *ListKeyToPointer(LIST *o, UINT key)
 {
 	UINT i;

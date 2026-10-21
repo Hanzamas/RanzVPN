@@ -160,13 +160,10 @@
 #define	ADMINAUDIT_NO_USER			"audit_nouser"		// No such user
 #define	ADMINAUDIT_GROUP			"audit_group"		// Group that CreateGroup creates and DeleteGroup deletes
 #define	ADMINAUDIT_GROUP2			"audit_group2"		// Group over the max_groups limit
-#define	ADMINAUDIT_NO_HUB			"AUDIT_NOHUB"		// No such hub
 #define	ADMINAUDIT_NO_SESSION		"AUDIT-NOSESSION"	// No such session
 #define	ADMINAUDIT_NO_DEVICE		"audit_nodevice"	// No such Local Bridge device
-#define	ADMINAUDIT_MSG				L"Ranz adminaudit hub message"
 #define	ADMINAUDIT_CRL_NAME			L"AUDITCRL"			// CommonName of the CRL entry
 #define	ADMINAUDIT_CRL_NAME_A		"AUDITCRL"			// The same in the configuration file
-#define	ADMINAUDIT_CRL_ORG			L"audit"			// Organization that SetCrl adds to the entry
 
 // Limits
 #define	HARNESS_QUEUE_HIGH			256					// Frames kept queued by the bench sender
@@ -619,9 +616,7 @@ static void AdminAuditUsers(ADMINAUDIT *a);
 static UINT AdminAuditCreateGroup(ADMINAUDIT *a, char *name);
 static bool AdminAuditMaxGroups(ADMINAUDIT *a);
 static void AdminAuditGroups(ADMINAUDIT *a);
-static UINT AdminAuditHubMsgCall(ADMINAUDIT *a, char *rpc_name, char *hubname, wchar_t *msg, wchar_t **got);
-static void AdminAuditHubMsg(ADMINAUDIT *a);
-static CRL *AdminAuditNewCrl(wchar_t *organization);
+static CRL *AdminAuditNewCrl();
 static bool AdminAuditCrlKey(ADMINAUDIT *a, UINT *key);
 static void AdminAuditCheckSaved(ADMINAUDIT *a, bool expected, char *what);
 static void AdminAuditCrl(ADMINAUDIT *a);
@@ -6215,73 +6210,12 @@ static void AdminAuditGroups(ADMINAUDIT *a)
 		false);
 }
 
-// SetHubMsg or GetHubMsg (no Sc* stubs) with a hub name and a message. For GetHubMsg, *got receives the message of
-// the answer (the caller frees it)
-static UINT AdminAuditHubMsgCall(ADMINAUDIT *a, char *rpc_name, char *hubname, wchar_t *msg, wchar_t **got)
-{
-	RPC_MSG t;
-	PACK *p = NewPack();
-	PACK *ret;
-	UINT err;
-
-	Zero(&t, sizeof(t));
-	StrCpy(t.HubName, sizeof(t.HubName), hubname);
-	t.Msg = msg;
-	OutRpcMsg(p, &t);
-
-	// AdminCall releases the request
-	ret = AdminCall(a->H->Rpc, rpc_name, p);
-	err = GetErrorFromPack(ret);
-	if (err == ERR_NO_ERROR && got != NULL)
-	{
-		Zero(&t, sizeof(t));
-		InRpcMsg(&t, ret);
-		*got = t.Msg;
-	}
-	FreePack(ret);
-
-	return err;
-}
-
-// SetHubMsg changes the configuration only when it set the message; GetHubMsg reads no message from the request
-static void AdminAuditHubMsg(ADMINAUDIT *a)
-{
-	wchar_t *msg;
-	wchar_t *got = NULL;
-	UINT err;
-	UINT i;
-
-	Print("[hub message]\n");
-
-	AdminAuditBegin(a);
-	err = AdminAuditHubMsgCall(a, "SetHubMsg", ADMINAUDIT_NO_HUB, ADMINAUDIT_MSG, NULL);
-	AdminAuditEnd(a, "SetHubMsg " ADMINAUDIT_NO_HUB " (no such hub)", err, ERR_HUB_NOT_FOUND, NULL, NULL, false);
-
-	AdminAuditBegin(a);
-	err = AdminAuditHubMsgCall(a, "SetHubMsg", HARNESS_HUB_A, ADMINAUDIT_MSG, NULL);
-	AdminAuditEnd(a, "SetHubMsg " HARNESS_HUB_A, err, ERR_NO_ERROR, NULL, NULL, true);
-
-	msg = ZeroMalloc(sizeof(wchar_t) * (HUB_MAXMSG_LEN + 2));
-	for (i = 0;i <= HUB_MAXMSG_LEN;i++)
-	{
-		msg[i] = L'x';
-	}
-	err = AdminAuditHubMsgCall(a, "GetHubMsg", HARNESS_HUB_A, msg, &got);
-	HarnessExpectErr(a->H, err, ERR_NO_ERROR, "GetHubMsg " HARNESS_HUB_A " with a request message one character over "
-		"HUB_MAXMSG_LEN");
-	HarnessCheck(a->H, got != NULL && UniStrCmp(got, ADMINAUDIT_MSG) == 0,
-		"GetHubMsg " HARNESS_HUB_A " returns the message of SetHubMsg");
-
-	Free(got);
-	Free(msg);
-}
-
-// CRL entry with the CommonName ADMINAUDIT_CRL_NAME and an optional Organization
-static CRL *AdminAuditNewCrl(wchar_t *organization)
+// CRL entry with the CommonName ADMINAUDIT_CRL_NAME
+static CRL *AdminAuditNewCrl()
 {
 	CRL *crl = ZeroMalloc(sizeof(CRL));
 
-	crl->Name = NewName(ADMINAUDIT_CRL_NAME, organization, NULL, NULL, NULL, NULL);
+	crl->Name = NewName(ADMINAUDIT_CRL_NAME, NULL, NULL, NULL, NULL, NULL);
 
 	return crl;
 }
@@ -6331,15 +6265,11 @@ static void AdminAuditCheckSaved(ADMINAUDIT *a, bool expected, char *what)
 	FreeBuf(b);
 }
 
-// AddCrl writes "added" and SetCrl "edited" (the two keys were swapped); DelCrl changes the configuration revision
-// as AddCrl and SetCrl do
+// AddCrl writes "added"; DelCrl changes the configuration revision as AddCrl does
 static void AdminAuditCrl(ADMINAUDIT *a)
 {
 	RPC_CRL t;
-	PACK *p;
-	PACK *ret;
 	wchar_t add_text[MAX_SIZE];
-	wchar_t set_text[MAX_SIZE];
 	wchar_t del_text[MAX_SIZE];
 	UINT key;
 	UINT err;
@@ -6347,42 +6277,21 @@ static void AdminAuditCrl(ADMINAUDIT *a)
 	Print("[certificate revocation list]\n");
 
 	AdminAuditText(add_text, sizeof(add_text), "LA_ADD_CRL", NULL, NULL);
-	AdminAuditText(set_text, sizeof(set_text), "LA_SET_CRL", NULL, NULL);
 	AdminAuditText(del_text, sizeof(del_text), "LA_DEL_CRL", NULL, NULL);
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
-	t.Crl = AdminAuditNewCrl(NULL);
+	t.Crl = AdminAuditNewCrl();
 	AdminAuditBegin(a);
 	err = ScAddCrl(a->H->Rpc, &t);
 	if (err == ERR_NO_ERROR)
 	{
 		FreeRpcCrl(&t);
 	}
-	AdminAuditEnd(a, "AddCrl " ADMINAUDIT_CRL_NAME_A, err, ERR_NO_ERROR, add_text, set_text, true);
-
-	if (AdminAuditCrlKey(a, &key) == false)
-	{
-		return;
-	}
-
-	// SetCrl has no Sc* stub
-	Zero(&t, sizeof(t));
-	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
-	t.Key = key;
-	t.Crl = AdminAuditNewCrl(ADMINAUDIT_CRL_ORG);
-	p = NewPack();
-	OutRpcCrl(p, &t);
-	FreeRpcCrl(&t);
-	AdminAuditBegin(a);
-	ret = AdminCall(a->H->Rpc, "SetCrl", p);
-	err = GetErrorFromPack(ret);
-	FreePack(ret);
-	AdminAuditEnd(a, "SetCrl " ADMINAUDIT_CRL_NAME_A, err, ERR_NO_ERROR, set_text, add_text, true);
+	AdminAuditEnd(a, "AddCrl " ADMINAUDIT_CRL_NAME_A, err, ERR_NO_ERROR, add_text, NULL, true);
 
 	AdminAuditCheckSaved(a, true, "the saved configuration holds the CRL entry " ADMINAUDIT_CRL_NAME_A);
 
-	// SetCrl replaced the entry, which gives it another key
 	if (AdminAuditCrlKey(a, &key) == false)
 	{
 		return;
@@ -8017,8 +7926,6 @@ void adminaudit_test(UINT num, char **arg)
 		AdminAuditUsers(a);
 		HarnessSetPhase("adminaudit", "groups");
 		AdminAuditGroups(a);
-		HarnessSetPhase("adminaudit", "hub message");
-		AdminAuditHubMsg(a);
 		HarnessSetPhase("adminaudit", "crl");
 		AdminAuditCrl(a);
 		HarnessSetPhase("adminaudit", "sessions");

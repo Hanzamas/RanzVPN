@@ -13,7 +13,6 @@ Changing Virtual Hub Settings is Supported,Yes
 Changing Settings for Saving Log is Supported,Yes
 Remote Reading and Writing of Config File is Supported,Yes
 Virtual Hub-Specific Certificate Revocation Lists is Supported,Yes
-Tagged VLAN Packet Transparency Support tool is Supported,Yes
 "Delay, Jitter and Packet Loss is Supported in Access List",Yes
 Virtual Hub Enumeration Setting is Supported,Yes
 Virtual Hub Administration Options is Supported,Yes
@@ -22,7 +21,6 @@ IPv6 IP Access Control Lists is Supported,Yes
 IPv6 Access List is Supported,Yes
 Management of Licenses is Supported,No
 Limits for Multiple Login by Same User is Supported,Yes
-Message of Today function is Supported,Yes
 Security Policy version 3 is Supported,Yes
 VoIP / QoS Functions is Supported,Yes
 Downloading of Log Files is Supported,Yes

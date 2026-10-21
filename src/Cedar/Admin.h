@@ -34,7 +34,6 @@ struct ADMIN
 	char Tag[32];				// "RPC-n", the name of the session in the log lines
 	bool EmptyPassword;			// Logged in with the empty password and the client accepts that
 	LIST *LogFileList;
-	RPC_WINVER ClientWinVer;
 };
 
 // What a client sends to open an admin session, with the facts of its connection
@@ -48,7 +47,6 @@ struct ADMIN_LOGIN
 	bool AcceptEmptyPassword;
 	bool HasSecurePassword;		// A secure_password of SHA1_SIZE bytes came with the request
 	UCHAR SecurePassword[SHA1_SIZE];
-	RPC_WINVER ClientWinVer;
 };
 
 struct RPC_TEST
@@ -513,11 +511,6 @@ struct RPC_ENUM_LOCALBRIDGE
 	RPC_LOCALBRIDGE *Items;
 };
 
-struct RPC_BRIDGE_SUPPORT
-{
-	bool IsBridgeSupportedOs;
-};
-
 struct RPC_CONFIG
 {
 	char FileName[MAX_PATH];
@@ -580,28 +573,6 @@ struct DOWNLOAD_PROGRESS
 	UINT TotalSize;
 	UINT CurrentSize;
 	UINT ProgressPercent;
-};
-
-struct RPC_ENUM_ETH_VLAN_ITEM
-{
-	char DeviceName[MAX_SIZE];
-	char Guid[MAX_SIZE];
-	char DeviceInstanceId[MAX_SIZE];
-	char DriverName[MAX_SIZE];
-	char DriverType[MAX_SIZE];
-	bool Support;
-	bool Enabled;
-};
-struct RPC_ENUM_ETH_VLAN
-{
-	UINT NumItem;
-	RPC_ENUM_ETH_VLAN_ITEM *Items;
-};
-
-struct RPC_MSG
-{
-	char HubName[MAX_HUBNAME_LEN + 1];
-	wchar_t *Msg;
 };
 
 
@@ -732,14 +703,8 @@ void FreeRpcCrl(RPC_CRL *t);
 void FreeRpcEnumCrl(RPC_ENUM_CRL *t);
 void FreeRpcAcList(RPC_AC_LIST *t);
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t);
-void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t);
 void InRpcWinVer(RPC_WINVER *t, PACK *p);
 void OutRpcWinVer(PACK *p, RPC_WINVER *t);
-void InRpcMsg(RPC_MSG *t, PACK *p);
-void OutRpcMsg(PACK *p, RPC_MSG *t);
-void FreeRpcMsg(RPC_MSG *t);
-void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p);
-void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t);
 void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p);
 void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t);
 void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p);
@@ -761,8 +726,6 @@ void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p);
 void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t);
 void InRpcConfig(RPC_CONFIG *t, PACK *p);
 void OutRpcConfig(PACK *p, RPC_CONFIG *t);
-void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p);
-void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t);
 void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p);
 void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t);
 void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p);

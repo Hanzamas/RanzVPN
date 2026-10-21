@@ -180,7 +180,6 @@ bool InsertStr(LIST *o, char *str);
 bool IsInList(LIST *o, const void *p);
 bool IsInListKey(LIST *o, UINT key);
 void *ListKeyToPointer(LIST *o, UINT key);
-bool ReplaceListPointer(LIST *o, const void *oldptr, void *newptr);
 void AddIntDistinct(LIST *o, UINT i);
 void AddInt64Distinct(LIST *o, UINT64 i);
 void DelInt(LIST *o, UINT i);

@@ -121,7 +121,7 @@ static void HarnessCheckStalePack(HARNESS *h, char *golden_dir);
 	static HARNESS_PACK_TYPE harness_pack_type_##type =										\
 		{#type, sizeof(type), HarnessPackIn_##type, HarnessPackOut_##type, NULL};
 
-// The 57 wire types of the admin RPC dispatch table (Admin.c), RPC_WINVER excepted (login handshake)
+// The 52 wire types of the admin RPC dispatch table (Admin.c), RPC_WINVER excepted (login handshake)
 HARNESS_PACK_TYPE_DEF(RPC_TEST, InRpcTest, OutRpcTest, FreeRpcTest)
 HARNESS_PACK_TYPE_DEF(RPC_SERVER_INFO, InRpcServerInfo, OutRpcServerInfo, FreeRpcServerInfo)
 HARNESS_PACK_TYPE_DEF_NOFREE(RPC_SERVER_STATUS, InRpcServerStatus, OutRpcServerStatus)
@@ -165,7 +165,6 @@ HARNESS_PACK_TYPE_DEF(RPC_ENUM_IP_TABLE, InRpcEnumIpTable, OutRpcEnumIpTable, Fr
 HARNESS_PACK_TYPE_DEF(RPC_ENUM_ETH, InRpcEnumEth, OutRpcEnumEth, FreeRpcEnumEth)
 HARNESS_PACK_TYPE_DEF_NOFREE(RPC_LOCALBRIDGE, InRpcLocalBridge, OutRpcLocalBridge)
 HARNESS_PACK_TYPE_DEF(RPC_ENUM_LOCALBRIDGE, InRpcEnumLocalBridge, OutRpcEnumLocalBridge, FreeRpcEnumLocalBridge)
-HARNESS_PACK_TYPE_DEF_NOFREE(RPC_BRIDGE_SUPPORT, InRpcBridgeSupport, OutRpcBridgeSupport)
 HARNESS_PACK_TYPE_DEF(CAPSLIST, InRpcCapsList, OutRpcCapsList, FreeRpcCapsList)
 HARNESS_PACK_TYPE_DEF(RPC_CONFIG, InRpcConfig, OutRpcConfig, FreeRpcConfig)
 HARNESS_PACK_TYPE_DEF(RPC_ADMIN_OPTION, InRpcAdminOption, OutRpcAdminOption, FreeRpcAdminOption)
@@ -175,8 +174,6 @@ HARNESS_PACK_TYPE_DEF(RPC_AC_LIST, InRpcAcList, OutRpcAcList, FreeRpcAcList)
 HARNESS_PACK_TYPE_DEF(RPC_ENUM_LOG_FILE, InRpcEnumLogFile, OutRpcEnumLogFile, FreeRpcEnumLogFile)
 HARNESS_PACK_TYPE_DEF(RPC_READ_LOG_FILE, InRpcReadLogFile, OutRpcReadLogFile, FreeRpcReadLogFile)
 HARNESS_PACK_TYPE_DEF_NOFREE(SYSLOG_SETTING, InRpcSysLogSetting, OutRpcSysLogSetting)
-HARNESS_PACK_TYPE_DEF(RPC_ENUM_ETH_VLAN, InRpcEnumEthVLan, OutRpcEnumEthVLan, FreeRpcEnumEthVLan)
-HARNESS_PACK_TYPE_DEF(RPC_MSG, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 
 // Release a structure through its FreeRpc* (when the type has one), then its memory
 static void HarnessPackFreeStruct(HARNESS_PACK_TYPE *y, void *t)
@@ -619,7 +616,7 @@ static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT i
 	{
 		src = r->KeyDer;
 	}
-	else if (StrCmp(e->name, "Msg") == 0 || StrCmp(e->name, "FileData") == 0)
+	else if (StrCmp(e->name, "FileData") == 0)
 	{
 		Format(tmp, sizeof(tmp), "%s#%u ", e->name, index);
 		StrCat(tmp, sizeof(tmp), "\xc3\xa9\xe4\xb8\xad");
@@ -1109,21 +1106,6 @@ static void HarnessPackPrepReadLogFileBuffer(HARNESS *h, void *p)
 	WriteBuf(t->Buffer, data, sizeof(data));
 }
 
-static void HarnessPackPrepEnumEthVLan(HARNESS *h, void *p)
-{
-	RPC_ENUM_ETH_VLAN *t = p;
-
-	t->NumItem = 2;
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM) * t->NumItem);
-}
-
-static void HarnessPackPrepMsg(HARNESS *h, void *p)
-{
-	RPC_MSG *t = p;
-
-	t->Msg = CopyUniStr(L"Ranz \x00e9\x4e2d");
-}
-
 ////////////////////////////
 // Cases: LIVE requests (read-only RPCs on the scenario of harness.c)
 
@@ -1329,16 +1311,6 @@ static PACK *HarnessPackBuildCreateHubWrongType(void)
 	return p;
 }
 
-// No Msg: an empty message
-static PACK *HarnessPackBuildMsgNoMsg(void)
-{
-	PACK *p = NewPack();
-
-	PackAddStr(p, "HubName", HARNESS_HUB_A);
-
-	return p;
-}
-
 // No String: an empty string
 static PACK *HarnessPackBuildStrMissing(void)
 {
@@ -1433,7 +1405,6 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_SYN_CASE("RPC_ENUM_ETH", RPC_ENUM_ETH, HarnessPackPrepEnumEth),
 	HARNESS_PACK_SYN_CASE("RPC_LOCALBRIDGE", RPC_LOCALBRIDGE, NULL),
 	HARNESS_PACK_SYN_CASE("RPC_ENUM_LOCALBRIDGE", RPC_ENUM_LOCALBRIDGE, HarnessPackPrepEnumLocalBridge),
-	HARNESS_PACK_SYN_CASE("RPC_BRIDGE_SUPPORT", RPC_BRIDGE_SUPPORT, NULL),
 	HARNESS_PACK_SYN_CASE("CAPSLIST", CAPSLIST, HarnessPackPrepCapsList),
 	HARNESS_PACK_SYN_CASE("RPC_CONFIG", RPC_CONFIG, HarnessPackPrepConfig),
 	HARNESS_PACK_SYN_CASE("RPC_ADMIN_OPTION", RPC_ADMIN_OPTION, HarnessPackPrepAdminOption),
@@ -1445,8 +1416,6 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_SYN_CASE("RPC_READ_LOG_FILE_buffer", RPC_READ_LOG_FILE, HarnessPackPrepReadLogFileBuffer),
 	HARNESS_PACK_SYN_CASE("RPC_READ_LOG_FILE_nobuffer", RPC_READ_LOG_FILE, NULL),
 	HARNESS_PACK_SYN_CASE("SYSLOG_SETTING", SYSLOG_SETTING, NULL),
-	HARNESS_PACK_SYN_CASE("RPC_ENUM_ETH_VLAN", RPC_ENUM_ETH_VLAN, HarnessPackPrepEnumEthVLan),
-	HARNESS_PACK_SYN_CASE("RPC_MSG", RPC_MSG, HarnessPackPrepMsg),
 
 	// LIVE: read-only RPCs on the scenario (no server state changes)
 	HARNESS_PACK_LIVE_CASE("RPC_SERVER_INFO_live", RPC_SERVER_INFO, NULL, "GetServerInfo", NULL),
@@ -1468,10 +1437,7 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_LIVE_CASE("CAPSLIST_live", CAPSLIST, NULL, "GetCaps", NULL),
 	HARNESS_PACK_LIVE_CASE("RPC_ADMIN_OPTION_live_admin", RPC_ADMIN_OPTION, HarnessPackLiveHubA, "GetHubAdminOptions", NULL),
 	HARNESS_PACK_LIVE_CASE("RPC_ADMIN_OPTION_live_ext", RPC_ADMIN_OPTION, HarnessPackLiveHubA, "GetHubExtOptions", NULL),
-	HARNESS_PACK_LIVE_CASE("RPC_ADMIN_OPTION_live_default", RPC_ADMIN_OPTION, NULL, "GetDefaultHubAdminOptions", NULL),
 	HARNESS_PACK_LIVE_CASE("SYSLOG_SETTING_live", SYSLOG_SETTING, NULL, "GetSysLog", NULL),
-	HARNESS_PACK_LIVE_CASE("RPC_MSG_live_hub", RPC_MSG, HarnessPackLiveHubA, "GetHubMsg", NULL),
-	HARNESS_PACK_LIVE_CASE("RPC_MSG_live_admin", RPC_MSG, NULL, "GetAdminMsg", NULL),
 
 	// IN: read quirks of the current code
 	HARNESS_PACK_IN_CASE("RPC_SET_USER_in_plainpassword", RPC_SET_USER, HarnessPackBuildSetUserPlainPassword),
@@ -1484,7 +1450,6 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_IN_CASE("RPC_ENUM_LOG_FILE_in_numitem_more", RPC_ENUM_LOG_FILE, HarnessPackBuildEnumLogFileNumItemMore),
 	HARNESS_PACK_IN_CASE("RPC_ENUM_HUB_in_ragged", RPC_ENUM_HUB, HarnessPackBuildEnumHubRagged),
 	HARNESS_PACK_IN_CASE("RPC_CREATE_HUB_in_wrongtype", RPC_CREATE_HUB, HarnessPackBuildCreateHubWrongType),
-	HARNESS_PACK_IN_CASE("RPC_MSG_in_nomsg", RPC_MSG, HarnessPackBuildMsgNoMsg),
 	HARNESS_PACK_IN_CASE("RPC_STR_in_missing", RPC_STR, HarnessPackBuildStrMissing),
 
 	// IN: intended change of the table engine (spec #28, unchecked NumItem option b)

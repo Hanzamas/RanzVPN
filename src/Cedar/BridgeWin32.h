@@ -49,8 +49,6 @@ bool Win32EthInstallSu();
 void Win32EthSetShowAllIf(bool b);
 bool Win32EthGetShowAllIf();
 
-bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t);
-bool SetVLanEnableStatus(char *title, bool enable);
 UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str);
 
 bool Win32IsUsingSeLow();

@@ -1,7 +1,0 @@
-# RPC_MSG_in_nomsg RPC_MSG in
-[in-out]
-#0 HubName str[1] = "HARNESS_A"
-#1 Msg data[1] = hex:
-bytes=55 sha1=94951851f4b59b59b4d0ac3bc3d9479293161318
-[in-out-in-out]
-same

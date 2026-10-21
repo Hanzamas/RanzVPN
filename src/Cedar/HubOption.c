@@ -62,7 +62,6 @@ ADMIN_OPTION admin_options[] =
 	{"no_read_log_file", 0},
 	{"deny_hub_admin_change_ext_option", 0},
 	{"no_delay_jitter_packet_loss", 0},
-	{"no_change_msg", 0},
 	{"no_access_list_include_file", 0},
 };
 

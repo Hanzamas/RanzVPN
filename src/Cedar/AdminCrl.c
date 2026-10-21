@@ -18,47 +18,6 @@
 #include "Mayaqua/Str.h"
 #include "AdminInternal.h"
 
-UINT StSetCrl(ADMIN *a, RPC_CRL *t)
-{
-	SERVER *s = a->Server;
-	HUB *h;
-	UINT ret = ERR_NO_ERROR;
-
-	CHECK_RIGHT;
-
-	h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
-	if (h == NULL)
-	{
-		return ret;
-	}
-
-	LockList(h->HubDb->CrlList);
-	{
-		CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
-
-		if (crl == NULL)
-		{
-			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
-			CRL *new_crl = CopyCrl(t->Crl);
-			if (ReplaceListPointer(h->HubDb->CrlList, crl, new_crl))
-			{
-				ALog(a, h, "LA_SET_CRL");
-				FreeCrl(crl);
-
-				IncrementServerConfigRevision(s);
-			}
-		}
-	}
-	UnlockList(h->HubDb->CrlList);
-
-	ReleaseHub(h);
-
-	return ret;
-}
-
 UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 {
 	HUB *h;

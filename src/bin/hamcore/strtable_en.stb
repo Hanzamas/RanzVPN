@@ -256,7 +256,6 @@ HUB_AO_no_change_access_control_list	If you set this option to non-zero value, t
 HUB_AO_no_change_cert_list				If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to modify the trusted certificate authority list of the Virtual Hub.
 HUB_AO_no_change_crl_list				If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to modify the certificate revoked list of the Virtual Hub.
 HUB_AO_no_read_log_file					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enumerate or download the log files of the Virtual Hub remotely.
-HUB_AO_no_change_msg					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to change the message which should be displayed when a VPN Client connects to the Virtual Hub.
 HUB_AO_no_access_list_include_file		If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to specify "include:" or "exclude:" instruction as a source or a destination user field on a access list entry of the Virtual Hub.
 
 
@@ -367,8 +366,6 @@ CT_b_support_ipv6_acl	IPv6 Access List is Supported
 CT_b_support_ex_acl		Delay, Jitter and Packet Loss is Supported in Access List
 CT_b_support_acl_group	Conditioning by Group name is Supported in Access List
 CT_b_support_ipv6_ac	IPv6 IP Access Control Lists is Supported
-CT_b_support_eth_vlan	Tagged VLAN Packet Transparency Support tool is Supported
-CT_b_support_msg		Message of Today function is Supported
 CT_b_vpn3				Internal Version 3.0 functions are Supported
 CT_b_vpn4				Internal Version 4.0 functions are Supported
 CT_b_support_udp_acceleration	UDP Acceleration Function is Supported
@@ -960,7 +957,6 @@ LA_SET_HUB_ADMIN_OPTION	The administration option has been set for Virtual Hub "
 LA_SET_HUB_EXT_OPTION	The Virtual Hub Extended Option has been set for Virtual Hub "%S".
 LA_ADD_CRL				A certificate has been added to Certificate Revocation List.
 LA_DEL_CRL				A certificate has been deleted from Certificate Revocation List.
-LA_SET_CRL				A registered item in a registration of a list of invalid certificates has been edited.
 LA_READ_LOG_FILE		The log file on the server "%S" (log file "%S") has been downloaded.
 
 # (Eraser log)

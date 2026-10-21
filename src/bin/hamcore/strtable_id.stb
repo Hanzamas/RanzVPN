@@ -256,7 +256,6 @@ HUB_AO_no_change_access_control_list	Jika Anda mengatur opsi ini ke nilai non-no
 HUB_AO_no_change_cert_list				Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah daftar otoritas sertifikat yang dipercaya oleh Virtual Hub.\r\n
 HUB_AO_no_change_crl_list				Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah daftar sertifikat yang dicabut (CRL) dari Virtual Hub.\r\n
 HUB_AO_no_read_log_file					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mendaftar atau mengunduh file log Virtual Hub dari jarak jauh.\r\n
-HUB_AO_no_change_msg					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah pesan yang akan ditampilkan saat Klien VPN terhubung ke Virtual Hub.\r\n
 HUB_AO_no_access_list_include_file		Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menentukan instruksi "include:" atau "exclude:" sebagai sumber atau tujuan dalam entri daftar akses Virtual Hub.\r\n
 
 
@@ -367,8 +366,6 @@ CT_b_support_ipv6_acl	Daftar Akses IPv6 Didukung
 CT_b_support_ex_acl		Delay, Jitter, dan Kehilangan Paket Didukung dalam Daftar Akses
 CT_b_support_acl_group	Pengondisian berdasarkan Nama Grup Didukung dalam Daftar Akses
 CT_b_support_ipv6_ac	Daftar Kontrol Akses IP IPv6 Didukung
-CT_b_support_eth_vlan	Dukungan untuk Alat Transparansi Paket VLAN Berlabel Didukung
-CT_b_support_msg		Fungsi Pesan Hari Ini Didukung
 CT_b_vpn3				Fungsi Versi Internal 3.0 Didukung
 CT_b_vpn4				Fungsi Versi Internal 4.0 Didukung
 CT_b_support_udp_acceleration	Fungsi Akselerasi UDP Didukung
@@ -960,7 +957,6 @@ LA_SET_HUB_ADMIN_OPTION	Pengaturan administrasi telah ditetapkan untuk Virtual H
 LA_SET_HUB_EXT_OPTION	Pengaturan Opsi Ekstensi Virtual Hub telah ditetapkan untuk Virtual Hub "%S".
 LA_ADD_CRL				Sertifikat telah ditambahkan ke Daftar Pencabutan Sertifikat (CRL).
 LA_DEL_CRL				Sertifikat telah dihapus dari Daftar Pencabutan Sertifikat (CRL).
-LA_SET_CRL				Item yang terdaftar dalam daftar sertifikat yang tidak sah telah diedit.
 LA_READ_LOG_FILE		File log pada server "%S" (file log "%S") telah diunduh.
 
 # (Eraser log)
