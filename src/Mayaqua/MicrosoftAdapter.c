@@ -267,8 +267,8 @@ static void MsNetClassGetProperty(char *dst, UINT size, HDEVINFO h, SP_DEVINFO_D
 }
 
 // The present devices of the network adapter setup class in one SetupAPI pass, keyed by their
-// NetCfgInstanceId (FND-174). Each entry has the Class key and short key of its driver, its device
-// instance id, its service and the file name of the service binary. A device without a
+// NetCfgInstanceId (FND-174). Each entry has the Class key and short key of its driver and its device
+// instance id. A device without a
 // NetCfgInstanceId or a driver key is left out, and so are the class keys of devices that are not
 // present (phantom devices). Free the table with MsNetClassFree
 LIST *MsNetClassEnum() {
@@ -319,23 +319,6 @@ LIST *MsNetClassEnum() {
 		Zero(tmp, sizeof(tmp));
 		if (SetupDiGetDeviceInstanceIdW(h, &d, tmp, MAX_SIZE - 1, NULL))
 			UniToStr(e->DeviceInstanceId, sizeof(e->DeviceInstanceId), tmp);
-
-		MsNetClassGetProperty(e->Service, sizeof(e->Service), h, &d, SPDRP_SERVICE);
-
-		if (IsEmptyStr(e->Service) == false) {
-			char service_key[MAX_SIZE];
-
-			Format(service_key, sizeof(service_key), "SYSTEM\\CurrentControlSet\\services\\%s", e->Service);
-
-			char *image_path = MsRegReadStr(REG_LOCAL_MACHINE, service_key, "ImagePath");
-
-			if (IsEmptyStr(image_path) == false) {
-				GetFileNameFromFilePath(e->DriverFileName, sizeof(e->DriverFileName), image_path);
-				Trim(e->DriverFileName);
-			}
-
-			Free(image_path);
-		}
 
 		Insert(o, e);
 	}

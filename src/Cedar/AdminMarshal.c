@@ -59,64 +59,6 @@ void OutRpcWinVer(PACK *p, RPC_WINVER *t) {
 	PackAddStr(p, "V_Title", t->Title);
 }
 
-void InRpcMsg(RPC_MSG *t, PACK *p) {
-	if (t == NULL || p == NULL)
-		return;
-
-	Zero(t, sizeof(RPC_MSG));
-
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	UINT size = PackGetDataSize(p, "Msg");
-	char *utf8 = ZeroMalloc(size + 8);
-	PackGetData(p, "Msg", utf8);
-	t->Msg = CopyUtfToUni(utf8);
-	Free(utf8);
-}
-void OutRpcMsg(PACK *p, RPC_MSG *t) {
-	if (t == NULL || p == NULL)
-		return;
-
-	PackAddStr(p, "HubName", t->HubName);
-	char *utf8 = CopyUniToUtf(t->Msg);
-	UINT size = StrLen(utf8);
-	PackAddData(p, "Msg", utf8, size);
-	Free(utf8);
-}
-void FreeRpcMsg(RPC_MSG *t) {
-	if (t == NULL)
-		return;
-
-	Free(t->Msg);
-}
-
-static const RPC_FIELD rpc_enum_eth_vlan_item_fields[] =
-    {
-        RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DeviceName, "DeviceName"),
-        RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, Guid, "Guid"),
-        RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DeviceInstanceId, "DeviceInstanceId"),
-        RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DriverName, "DriverName"),
-        RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DriverType, "DriverType"),
-        RPC_ROW_BOOL(RPC_ENUM_ETH_VLAN_ITEM, Support, "Support"),
-        RPC_ROW_BOOL(RPC_ENUM_ETH_VLAN_ITEM, Enabled, "Enabled"),
-        RPC_ROW_END};
-RPC_TABLE_DEF(rpc_enum_eth_vlan_item_table, RPC_ENUM_ETH_VLAN_ITEM, rpc_enum_eth_vlan_item_fields);
-
-static const RPC_FIELD rpc_enum_eth_vlan_fields[] =
-    {
-        RPC_ROW_ARRAY(RPC_ENUM_ETH_VLAN, Items, NumItem, &rpc_enum_eth_vlan_item_table, "DeviceName", 0),
-        RPC_ROW_END};
-RPC_TABLE_DEF(rpc_enum_eth_vlan_table, RPC_ENUM_ETH_VLAN, rpc_enum_eth_vlan_fields);
-
-void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p) {
-	RpcFieldIn(&rpc_enum_eth_vlan_table, t, p);
-}
-void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t) {
-	RpcFieldOut(&rpc_enum_eth_vlan_table, p, t);
-}
-void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t) {
-	RpcFieldFree(&rpc_enum_eth_vlan_table, t);
-}
-
 static const RPC_FIELD rpc_enum_log_file_item_fields[] =
     {
         RPC_ROW_STR(RPC_ENUM_LOG_FILE_ITEM, FilePath, "FilePath"),
@@ -514,19 +456,6 @@ void FreeRpcConfig(RPC_CONFIG *t) {
 		return;
 
 	Free(t->FileData);
-}
-
-static const RPC_FIELD rpc_bridge_support_fields[] =
-    {
-        RPC_ROW_BOOL(RPC_BRIDGE_SUPPORT, IsBridgeSupportedOs, "IsBridgeSupportedOs"),
-        RPC_ROW_END};
-RPC_TABLE_DEF(rpc_bridge_support_table, RPC_BRIDGE_SUPPORT, rpc_bridge_support_fields);
-
-void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p) {
-	RpcFieldIn(&rpc_bridge_support_table, t, p);
-}
-void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t) {
-	RpcFieldOut(&rpc_bridge_support_table, p, t);
 }
 
 // ACCESS entry, written and read by the hand-written ACCESS functions: as

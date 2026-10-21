@@ -18,19 +18,18 @@
 #define CEDAR_WIRE_VER   502 // Major * 100 + minor
 #define CEDAR_WIRE_BUILD 5187
 
-#define MAX_ACCOUNT_NAME_LEN       255
-#define MAX_USERNAME_LEN           255
-#define MAX_PASSWORD_LEN           255
-#define MAX_SERVER_STR_LEN         255
-#define MAX_CLIENT_STR_LEN         255
-#define MAX_HUBNAME_LEN            255
-#define MAX_SESSION_NAME_LEN       255
-#define MAX_CONNECTION_NAME_LEN    255
-#define MAX_DEVICE_NAME_LEN        31
-#define MAX_ACCESSLIST_NOTE_LEN    255
-#define MAX_SECURE_DEVICE_FILE_LEN 255
-#define MAX_ADMIN_OPTION_NAME_LEN  63
-#define MAX_REDIRECT_URL_LEN       255
+#define MAX_ACCOUNT_NAME_LEN      255
+#define MAX_USERNAME_LEN          255
+#define MAX_PASSWORD_LEN          255
+#define MAX_SERVER_STR_LEN        255
+#define MAX_CLIENT_STR_LEN        255
+#define MAX_HUBNAME_LEN           255
+#define MAX_SESSION_NAME_LEN      255
+#define MAX_CONNECTION_NAME_LEN   255
+#define MAX_DEVICE_NAME_LEN       31
+#define MAX_ACCESSLIST_NOTE_LEN   255
+#define MAX_ADMIN_OPTION_NAME_LEN 63
+#define MAX_REDIRECT_URL_LEN      255
 
 
 #define SERVER_MAX_SESSIONS   100000
@@ -45,9 +44,8 @@
 #define MAX_HUB_LINKS         VPN_GP(GP_MAX_HUB_LINKS)
 #define MAX_HUB_ADMIN_OPTIONS 4096
 
-#define MEM_FIFO_REALLOC_MEM_SIZE VPN_GP(GP_MEM_FIFO_REALLOC_MEM_SIZE)
-#define QUEUE_BUDGET              VPN_GP(GP_QUEUE_BUDGET)
-#define FIFO_BUDGET               VPN_GP(GP_FIFO_BUDGET)
+#define QUEUE_BUDGET VPN_GP(GP_QUEUE_BUDGET)
+#define FIFO_BUDGET  VPN_GP(GP_FIFO_BUDGET)
 
 #define MAX_PACKET_SIZE 1600
 
@@ -59,7 +57,6 @@
 #define MAX_SEND_SOCKET_QUEUE_NUM VPN_GP(GP_MAX_SEND_SOCKET_QUEUE_NUM)
 #define MAX_TCP_CONNECTION        32
 #define SELECT_TIME               VPN_GP(GP_SELECT_TIME)
-#define SELECT_TIME_FOR_NAT       VPN_GP(GP_SELECT_TIME_FOR_NAT)
 
 #define TIMEOUT_MIN            (5 * 1000)
 #define TIMEOUT_MAX            (60 * 1000)
@@ -163,7 +160,6 @@
 #define CLIENT_AUTHTYPE_PASSWORD       1
 #define CLIENT_AUTHTYPE_PLAIN_PASSWORD 2
 #define CLIENT_AUTHTYPE_CERT           3
-#define CLIENT_AUTHTYPE_OPENSSLENGINE  5
 
 
 
@@ -304,6 +300,7 @@
 #define ERR_NOT_ADMINPACK_SERVER                 121
 #define ERR_BRANDED_C_TO_S                       124
 #define ERR_BRANDED_C_FROM_S                     125
+#define ERR_AUTO_DISCONNECTED                    126 // Policy AutoDisconnect ended the session; it does not reconnect
 #define ERR_CLIENT_ID_REQUIRED                   127
 #define ERR_TOO_MANY_USERS_CREATED               128
 #define ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE     143

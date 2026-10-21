@@ -10,9 +10,6 @@
 
 #include <openssl/err.h>
 #include <openssl/evp.h>
-#ifndef OPENSSL_NO_ENGINE
-#include <openssl/engine.h>
-#endif
 #include <openssl/bio.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
@@ -173,21 +170,6 @@ bool IsEncryptedK(BUF *b, bool private_key) {
 	}
 
 	return true;
-}
-
-K *OpensslEngineToK(char *key_file_name, char *engine_name) {
-#ifndef OPENSSL_NO_ENGINE
-	ENGINE *engine = ENGINE_by_id(engine_name);
-	ENGINE_init(engine);
-	EVP_PKEY *pkey;
-	pkey = ENGINE_load_private_key(engine, key_file_name, NULL, NULL);
-	K *k = ZeroMalloc(sizeof(K));
-	k->pkey = pkey;
-	k->private_key = true;
-	return k;
-#else
-	return NULL;
-#endif
 }
 
 K *BufToK(BUF *b, bool private_key, bool text, char *password) {

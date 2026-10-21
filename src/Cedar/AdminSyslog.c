@@ -15,6 +15,9 @@ UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t) {
 
 	SERVER_ADMIN_ONLY;
 
+	if (SiIsSysLogSaveType(t->SaveType) == false)
+		return ERR_INVALID_PARAMETER;
+
 	SiSetSysLogSetting(s, t);
 
 	IncrementServerConfigRevision(s);

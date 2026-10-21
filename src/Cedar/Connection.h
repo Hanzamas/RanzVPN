@@ -18,7 +18,6 @@ struct CLIENT_OPTION {
 	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];
 	char Hostname[MAX_HOST_NAME_LEN + 1];
 	UINT Port;
-	UINT PortUDP; // UDP port number (0: Use only TCP)
 	UINT ProxyType;
 	char ProxyName[MAX_HOST_NAME_LEN + 1];
 	UINT ProxyPort;
@@ -35,14 +34,10 @@ struct CLIENT_OPTION {
 	char DeviceName[MAX_DEVICE_NAME_LEN + 1];
 	UINT AdditionalConnectionInterval;
 	UINT ConnectionDisconnectSpan;
-	bool HideStatusWindow;
-	bool HideNicInfoWindow;
 	bool RequireMonitorMode;
 	bool RequireBridgeRoutingMode;
 	bool DisableQoS;
-	bool FromAdminPack;
 	bool NoUdpAcceleration;
-	UCHAR HostUniqueKey[SHA1_SIZE];
 	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];
 	IP BindLocalIP;
 	UINT BindLocalPort;
@@ -55,8 +50,6 @@ struct CLIENT_AUTH {
 	char PlainPassword[MAX_PASSWORD_LEN + 1];
 	X *ClientX;
 	K *ClientK;
-	char OpensslEnginePrivateKeyName[MAX_SECURE_DEVICE_FILE_LEN + 1];
-	char OpensslEngineName[MAX_SECURE_DEVICE_FILE_LEN + 1];
 };
 
 struct TCPSOCK {

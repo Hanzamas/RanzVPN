@@ -39,6 +39,7 @@ void SessionMain(SESSION *s) {
 	bool is_server_session = false;
 	bool lock_receive_blocks_queue = false;
 	HUB *udp_accel_log_hub;
+	UINT64 auto_disconnect_tick = 0;
 
 	if (s == NULL)
 		return;
@@ -98,6 +99,11 @@ void SessionMain(SESSION *s) {
 
 		if (policy->NoRouting == false || policy->NoBridge == false)
 			s->IsBridgeMode = true;
+
+		// Policy AutoDisconnect (seconds) counts from the creation of the session. The server session and the
+		// client session (which gets the policy in the welcome Pack) both end at that time
+		if (policy->AutoDisconnect != 0)
+			auto_disconnect_tick = s->CreatedTime + (UINT64)policy->AutoDisconnect * 1000ULL;
 	}
 
 	is_server_session = s->ServerMode;
@@ -247,6 +253,13 @@ void SessionMain(SESSION *s) {
 		if (s->Halt) {
 			if (s->ForceStopFlag)
 				err = ERR_USER_CANCEL;
+			break;
+		}
+
+		if (auto_disconnect_tick != 0 && auto_disconnect_tick <= now) {
+			// A client session does not reconnect: the retry count is used up (ClientThread)
+			err = ERR_AUTO_DISCONNECTED;
+			s->CurrentRetryCount = INFINITE;
 			break;
 		}
 

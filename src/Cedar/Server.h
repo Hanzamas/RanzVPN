@@ -63,7 +63,6 @@ struct SERVER {
 	bool SaveDebugLog;
 	bool NoSendSignature;
 	bool NoHighPriorityProcess;
-	bool NoDebugDump;
 	bool NoMoreSave;
 
 	volatile bool Halt;
@@ -159,6 +158,7 @@ UINT SiStageConfiguration(SERVER *s, char *data, UINT size);
 void GetServerProductName(SERVER *s, char *name, UINT size);
 
 
+bool SiIsSysLogSaveType(UINT save_type);
 void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
 void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
 void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message);

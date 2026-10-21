@@ -150,24 +150,6 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	return ERR_NO_ERROR;
 }
 
-UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
-	FreeRpcAdminOption(t);
-	Zero(t, sizeof(RPC_ADMIN_OPTION));
-
-	t->NumItem = num_admin_options;
-	t->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * t->NumItem);
-
-	for (UINT i = 0; i < t->NumItem; i++) {
-		ADMIN_OPTION *a = &t->Items[i];
-
-		StrCpy(a->Name, sizeof(a->Name), admin_options[i].Name);
-		a->Value = admin_options[i].Value;
-		UniStrCpy(a->Descrption, sizeof(a->Descrption), GetHubAdminOptionHelpString(a->Name));
-	}
-
-	return ERR_NO_ERROR;
-}
-
 UINT StGetConfig(ADMIN *a, RPC_CONFIG *t) {
 	SERVER_ADMIN_ONLY;
 

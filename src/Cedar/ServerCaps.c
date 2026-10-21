@@ -134,10 +134,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t) {
 
 	AddCapsBool(t, "b_support_ipv6_ac", true);
 
-	AddCapsBool(t, "b_support_eth_vlan", true);
-
-	AddCapsBool(t, "b_support_msg", true);
-
 	AddCapsBool(t, "b_support_udp_acceleration", true);
 
 	AddCapsBool(t, "b_support_aes_ni", IsAesNiSupported());

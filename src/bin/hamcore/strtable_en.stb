@@ -205,7 +205,6 @@ PW_TYPE_0				Anonymous Authentication
 PW_TYPE_1				Standard Password Authentication
 PW_TYPE_2				RADIUS or NT Domain Authentication
 PW_TYPE_3				Client Certificate Authentication
-PW_TYPE_5				OpenSSL Engine Authentication
 
 
 # Errors about Windows Versions
@@ -256,7 +255,6 @@ HUB_AO_no_change_access_control_list	If you set this option to non-zero value, t
 HUB_AO_no_change_cert_list				If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to modify the trusted certificate authority list of the Virtual Hub.
 HUB_AO_no_change_crl_list				If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to modify the certificate revoked list of the Virtual Hub.
 HUB_AO_no_read_log_file					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enumerate or download the log files of the Virtual Hub remotely.
-HUB_AO_no_change_msg					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to change the message which should be displayed when a VPN Client connects to the Virtual Hub.
 HUB_AO_no_access_list_include_file		If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to specify "include:" or "exclude:" instruction as a source or a destination user field on a access list entry of the Virtual Hub.
 
 
@@ -367,8 +365,6 @@ CT_b_support_ipv6_acl	IPv6 Access List is Supported
 CT_b_support_ex_acl		Delay, Jitter and Packet Loss is Supported in Access List
 CT_b_support_acl_group	Conditioning by Group name is Supported in Access List
 CT_b_support_ipv6_ac	IPv6 IP Access Control Lists is Supported
-CT_b_support_eth_vlan	Tagged VLAN Packet Transparency Support tool is Supported
-CT_b_support_msg		Message of Today function is Supported
 CT_b_vpn3				Internal Version 3.0 functions are Supported
 CT_b_vpn4				Internal Version 4.0 functions are Supported
 CT_b_support_udp_acceleration	UDP Acceleration Function is Supported
@@ -787,7 +783,6 @@ SM_LICENSE_NO_EXPIRES	No Expiration
 SM_NO_LICENSE_COLUMN	Caution: 
 SM_NO_LICENSE			Because there are no product licenses registered, this VPN Server's communication function doesn't operate.
 SM_SYSLOG_0				Disable Syslog Send Function
-SM_SYSLOG_1				Send Server Logs by Syslog
 SM_SYSLOG_2				Send Server and Virtual Hub Security Logs by Syslog
 SM_SYSLOG_3				Send Server, Virtual Hub Security, and Packet Logs by Syslog
 SM_CERT_MESSAGE_CLI				--- Caution ---\r\n\r\nThe current SSL self-signed root certificate on this VPN Server is in the old format.\r\n\r\nSome versions of OpenVPN Connect for Android have a bug to misinterpret SSL certificates in the old format. It might cause the connection problem from OpenVPN Connect for Android to this VPN Server.\r\n\r\nIf you are planning to use OpenVPN Connect for Android as a VPN client, it is recommended to regenerate the SSL server certificate.\r\n\r\nTo regenerate and update the server certificate, execute the "ServerCertRegenerate" command after updating the VPN Server to the latest version.
@@ -961,7 +956,6 @@ LA_SET_HUB_ADMIN_OPTION	The administration option has been set for Virtual Hub "
 LA_SET_HUB_EXT_OPTION	The Virtual Hub Extended Option has been set for Virtual Hub "%S".
 LA_ADD_CRL				A certificate has been added to Certificate Revocation List.
 LA_DEL_CRL				A certificate has been deleted from Certificate Revocation List.
-LA_SET_CRL				A registered item in a registration of a list of invalid certificates has been edited.
 LA_READ_LOG_FILE		The log file on the server "%S" (log file "%S") has been downloaded.
 
 # (Eraser log)
@@ -1275,11 +1269,11 @@ CMD_ServerCipherSet_PROMPT_NAME	Encrypted Algorithm Name to Specify:
 # SyslogEnable command
 CMD_SyslogEnable		Set syslog Send Function
 CMD_SyslogEnable_Help	Use this to set the usage of syslog send function and which syslog server to use. 
-CMD_SyslogEnable_Args	SyslogEnable [1|2|3] [/HOST:host:port]
-CMD_SyslogEnable_[1|2|3]	Specify, using an integer, 1, 2 or 3 for the setting to use the syslog send function. \n1: Send server log by syslog. \n2: Send server and Virtual Hub security logs by syslog. \n3: Send server, Virtual Hub security, and packet logs by syslog.
+CMD_SyslogEnable_Args	SyslogEnable [2|3] [/HOST:host:port]
+CMD_SyslogEnable_[2|3]	Specify, using an integer, 2 or 3 for the setting to use the syslog send function. \n2: Send server and Virtual Hub security logs by syslog. \n3: Send server, Virtual Hub security, and packet logs by syslog.
 CMD_SyslogEnable_HOST	Specify the host name or IP address, and port number of the syslog server using the format [host name:port number]. If the port number is omitted, 514 will be used.
-CMD_SyslogEnable_MINMAX	Specify, using an integer, 1, 2 or 3 for the setting to use the syslog send function.
-CMD_SyslogEnable_Prompt_123		Setting to Use syslog Send Function (1-3): 
+CMD_SyslogEnable_MINMAX	Specify, using an integer, 2 or 3 for the setting to use the syslog send function.
+CMD_SyslogEnable_Prompt_23		Setting to Use syslog Send Function (2-3):
 CMD_SyslogEnable_Prompt_HOST	Specify syslog Server: 
 
 
@@ -2056,7 +2050,7 @@ CMD_UserList_Args		UserList
 
 # UserCreate command
 CMD_UserCreate			Create User 
-CMD_UserCreate_Help		Use this to create a new user in the security account database of the currently managed Virtual Hub. \nBy creating a user, the VPN Client can connect to the Virtual Hub by using the authentication information of that user. \nWhen a user is created using the UserCreate command and the auth type of that user is registered as Password Authentication, a random string will be assigned as the password. Therefore, that user will not be able to connect to the Virtual Hub in that state. After creating the user, you must always use the UserPasswordSet command to specify the user password, or alternatively use the UserAnonymousSet command, UserCertSet command, UserSignedSet command, UserRadiusSet command or UserNTLMSet command to change the user's auth type. \nNote that a user whose user name has been created as "*" (a single asterisk character) will automatically be registered as a RADIUS authentication user. For cases where there are users with "*" as the name, when a user, whose user name that has been provided when a client connected to a VPN Server does not match existing user names, is able to be authenticated by a RADIUS server or NT domain controller by inputting a user name and password, the authentication settings and security policy settings will follow the setting for the user "*". \nTo change the user information of a user that has been created, use the UserSet command. \nThis command cannot be run on VPN Bridge. \nYou cannot execute this command for Virtual Hubs of VPN Servers operating as a member server on a cluster.
+CMD_UserCreate_Help		Use this to create a new user in the security account database of the currently managed Virtual Hub. \nBy creating a user, the VPN Client can connect to the Virtual Hub by using the authentication information of that user. \nWhen a user is created using the UserCreate command and the auth type of that user is registered as Password Authentication, a random string will be assigned as the password. Therefore, that user will not be able to connect to the Virtual Hub in that state. After creating the user, you must always use the UserPasswordSet command to specify the user password, or alternatively use the UserAnonymousSet command, UserCertSet command, UserSignedSet command or UserNTLMSet command to change the user's auth type. \nNote that a user whose user name has been created as "*" (a single asterisk character) will automatically be registered as a RADIUS authentication user. For cases where there are users with "*" as the name, when a user, whose user name that has been provided when a client connected to a VPN Server does not match existing user names, is able to be authenticated by a RADIUS server or NT domain controller by inputting a user name and password, the authentication settings and security policy settings will follow the setting for the user "*". \nTo change the user information of a user that has been created, use the UserSet command. \nThis command cannot be run on VPN Bridge. \nYou cannot execute this command for Virtual Hubs of VPN Servers operating as a member server on a cluster.
 CMD_UserCreate_Args		UserCreate [name] [/GROUP:group] [/REALNAME:realname] [/NOTE:note]
 CMD_UserCreate_[name]	Specify the user name of the user to be newly created.
 CMD_UserCreate_GROUP	When assigning a user in a group, specify the group name. When not assigning a user to any group, specify /GROUP:none. 
@@ -2097,7 +2091,7 @@ CMD_UserGet_Column_Group	Group Name
 CMD_UserGet_Column_Expires	Expiration Date
 CMD_UserGet_Column_AuthType	Auth Type
 CMD_UserGet_Column_UserCert	Registered User Individual Certificate
-CMD_UserGet_Column_RadiusAlias	External Authentication Server Authentication User Name
+CMD_UserGet_Column_NtUsername	External Authentication Server Authentication User Name
 CMD_UserGet_Column_RootCert_CN	Limit of Certificate CN Value
 CMD_UserGet_Column_RootCert_SERIAL	Limit of Certificate Serial Number
 CMD_UserGet_Policy		Security Policy Set for this User
@@ -2146,16 +2140,13 @@ CMD_UserSignedSet_Prompt_CN	Limit of Common Name (CN) Value:
 CMD_UserSignedSet_Prompt_SERIAL	Limit of Serial Number Value: 
 
 
-# UserRadiusSet command
-CMD_UserRadiusSet_Prompt_ALIAS	Alias Name for Authentication (Optional): 
-
-
 # UserNTLMSet コマンド
 CMD_UserNTLMSet			Set NT Domain Authentication for User Auth Type
 CMD_UserNTLMSet_Help	Use this to set NT Domain Authentication as the auth type for a user that is registered on the security account database of the currently managed Virtual Hub. When a user connects to a Virtual Hub using a user name that is set for NT Domain authentication, the user name and the user input password is sent to the Windows NT / 2000 / Server 2003 / Server 2008 / Server 2008 R2 / Server 2012 Domain Controller or Active Directory Server where the server checks the user name and password, then if the verification is successful, that user is allowed VPN connection. \nTo use NT Domain authentication, the VPN Server must be operating on a Windows NT 4.0, Windows 2000, Windows XP, Windows Vista, Windows Server 2008, Windows Server 2008 R2 or Windows Server 2012 operating system that is connected to that domain. For details please contact the VPN Server's administrator. \nTo get the list of currently registered users, use the UserList command. \nThis command cannot be run on VPN Bridge. \nYou cannot execute this command for Virtual Hubs of VPN Servers operating as a member server on a cluster.
 CMD_UserNTLMSet_Args	UserNTLMSet [name] [/ALIAS:alias_name]
 CMD_UserNTLMSet_[name]	Specify the user name of the user whose setting you want to change.
 CMD_UserNTLMSet_ALIAS	When this parameter is set, it is possible to make the user name sent to the NT Domain or Active Directory server different to the user name on the Virtual Hub. When this is not set, please specify /ALIAS:none (the user name on the Virtual Hub will be used). If the user name is "*", the /ALIAS parameter will be ignored. To read an explanation of the "*" user, please input UserCreate/HELP to display this information.
+CMD_UserNTLMSet_Prompt_ALIAS	Alias Name for Authentication (Optional): 
 
 
 # UserPolicyRemove command

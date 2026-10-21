@@ -878,7 +878,6 @@ static const RPC_FIELD rpc_client_option_fields[] =
         RPC_ROW_STR(CLIENT_OPTION, HubName, "HubName"),
         RPC_ROW_STR(CLIENT_OPTION, DeviceName, "DeviceName"),
         RPC_ROW_INT(CLIENT_OPTION, Port, "Port"),
-        RPC_ROW_INT(CLIENT_OPTION, PortUDP, "PortUDP"),
         RPC_ROW_INT(CLIENT_OPTION, ProxyType, "ProxyType"),
         RPC_ROW_INT(CLIENT_OPTION, ProxyPort, "ProxyPort"),
         RPC_ROW_INT(CLIENT_OPTION, NumRetry, "NumRetry"),
@@ -890,14 +889,10 @@ static const RPC_FIELD rpc_client_option_fields[] =
         RPC_ROW_BOOL(CLIENT_OPTION, NoRoutingTracking, "NoRoutingTracking"),
         RPC_ROW_INT(CLIENT_OPTION, AdditionalConnectionInterval, "AdditionalConnectionInterval"),
         RPC_ROW_INT(CLIENT_OPTION, ConnectionDisconnectSpan, "ConnectionDisconnectSpan"),
-        RPC_ROW_BOOL(CLIENT_OPTION, HideStatusWindow, "HideStatusWindow"),
-        RPC_ROW_BOOL(CLIENT_OPTION, HideNicInfoWindow, "HideNicInfoWindow"),
         RPC_ROW_BOOL(CLIENT_OPTION, RequireMonitorMode, "RequireMonitorMode"),
         RPC_ROW_BOOL(CLIENT_OPTION, RequireBridgeRoutingMode, "RequireBridgeRoutingMode"),
         RPC_ROW_BOOL(CLIENT_OPTION, DisableQoS, "DisableQoS"),
-        RPC_ROW_BOOL(CLIENT_OPTION, FromAdminPack, "FromAdminPack"),
         RPC_ROW_BOOL(CLIENT_OPTION, NoUdpAcceleration, "NoUdpAcceleration"),
-        RPC_ROW_DATA(CLIENT_OPTION, HostUniqueKey, "HostUniqueKey"),
         RPC_ROW_IP(CLIENT_OPTION, BindLocalIP, "BindLocalIP"),      // Source IP address for outgoing connection
         RPC_ROW_INT(CLIENT_OPTION, BindLocalPort, "BindLocalPort"), // Source port number for outgoing connection
         RPC_ROW_END};
@@ -944,16 +939,6 @@ void InRpcClientAuth(CLIENT_AUTH *c, PACK *p) {
 			FreeBuf(b);
 		}
 		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		b = PackGetBuf(p, "ClientX");
-		if (b != NULL) {
-			c->ClientX = BufToX(b, false);
-			FreeBuf(b);
-		}
-		PackGetStr(p, "OpensslEnginePrivateKeyName", c->OpensslEnginePrivateKeyName, sizeof(c->OpensslEnginePrivateKeyName));
-		PackGetStr(p, "OpensslEngineName", c->OpensslEngineName, sizeof(c->OpensslEngineName));
-		break;
 	}
 }
 void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c) {
@@ -987,16 +972,6 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c) {
 			PackAddBuf(p, "ClientK", b);
 			FreeBuf(b);
 		}
-		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		b = XToBuf(c->ClientX, false);
-		if (b != NULL) {
-			PackAddBuf(p, "ClientX", b);
-			FreeBuf(b);
-		}
-		PackAddStr(p, "OpensslEnginePrivateKeyName", c->OpensslEnginePrivateKeyName);
-		PackAddStr(p, "OpensslEngineName", c->OpensslEngineName);
 		break;
 	}
 }
@@ -1244,13 +1219,6 @@ CLIENT_AUTH *ClientAuthClone(CLIENT_AUTH *a) {
 		ret->ClientX = CloneX(a->ClientX);
 		ret->ClientK = CloneK(a->ClientK);
 		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		ret->ClientX = CloneX(a->ClientX);
-		StrCpy(ret->OpensslEnginePrivateKeyName, sizeof(ret->OpensslEnginePrivateKeyName), a->OpensslEnginePrivateKeyName);
-		StrCpy(ret->OpensslEngineName, sizeof(ret->OpensslEngineName), a->OpensslEngineName);
-		ret->ClientK = OpensslEngineToK(ret->OpensslEnginePrivateKeyName, ret->OpensslEngineName);
-		break;
 	}
 
 	return ret;
@@ -1305,16 +1273,6 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f) {
 			a->ClientK = BufToK(b, true, false, NULL);
 		FreeBuf(b);
 		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		b = CfgGetBuf(f, "ClientCert");
-		if (b != NULL)
-			a->ClientX = BufToX(b, false);
-		FreeBuf(b);
-		if (CfgGetStr(f, "OpensslEnginePrivateKeyName", a->OpensslEnginePrivateKeyName, sizeof(a->OpensslEnginePrivateKeyName)))
-			a->ClientK = OpensslEngineToK(a->OpensslEnginePrivateKeyName, a->OpensslEngineName);
-		CfgGetStr(f, "OpensslEngineName", a->OpensslEngineName, sizeof(a->OpensslEngineName));
-		break;
 	}
 
 	return a;
@@ -1329,7 +1287,6 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f) {
 	CfgGetUniStr(f, "AccountName", o->AccountName, sizeof(o->AccountName));
 	CfgGetStr(f, "Hostname", o->Hostname, sizeof(o->Hostname));
 	o->Port = CfgGetInt(f, "Port");
-	o->PortUDP = CfgGetInt(f, "PortUDP");
 	o->ProxyType = CfgGetInt(f, "ProxyType");
 	CfgGetStr(f, "ProxyName", o->ProxyName, sizeof(o->ProxyName));
 	o->ProxyPort = CfgGetInt(f, "ProxyPort");
@@ -1350,24 +1307,13 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f) {
 	o->NoRoutingTracking = CfgGetBool(f, "NoRoutingTracking");
 	CfgGetStr(f, "DeviceName", o->DeviceName, sizeof(o->DeviceName));
 	o->AdditionalConnectionInterval = CfgGetInt(f, "AdditionalConnectionInterval");
-	o->HideStatusWindow = CfgGetBool(f, "HideStatusWindow");
-	o->HideNicInfoWindow = CfgGetBool(f, "HideNicInfoWindow");
 	o->ConnectionDisconnectSpan = CfgGetInt(f, "ConnectionDisconnectSpan");
 	o->RequireMonitorMode = CfgGetBool(f, "RequireMonitorMode");
 	o->RequireBridgeRoutingMode = CfgGetBool(f, "RequireBridgeRoutingMode");
 	o->DisableQoS = CfgGetBool(f, "DisableQoS");
-	o->FromAdminPack = CfgGetBool(f, "FromAdminPack");
 	o->NoUdpAcceleration = CfgGetBool(f, "NoUdpAcceleration");
 	CfgGetIp(f, "BindLocalIP", &o->BindLocalIP);
 	o->BindLocalPort = CfgGetInt(f, "BindLocalPort");
-
-	b = CfgGetBuf(f, "HostUniqueKey");
-	if (b != NULL) {
-		if (b->Size == SHA1_SIZE)
-			Copy(o->HostUniqueKey, b->Buf, SHA1_SIZE);
-
-		FreeBuf(b);
-	}
 
 	return o;
 }
@@ -1405,16 +1351,6 @@ void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a) {
 			FreeBuf(b);
 		}
 		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		if (a->ClientX != NULL) {
-			b = XToBuf(a->ClientX, false);
-			CfgAddByte(f, "ClientCert", b->Buf, b->Size);
-			FreeBuf(b);
-		}
-		CfgAddStr(f, "OpensslEnginePrivateKeyName", a->OpensslEnginePrivateKeyName);
-		CfgAddStr(f, "OpensslEngineName", a->OpensslEngineName);
-		break;
 	}
 }
 
@@ -1425,7 +1361,6 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o) {
 	CfgAddUniStr(f, "AccountName", o->AccountName);
 	CfgAddStr(f, "Hostname", o->Hostname);
 	CfgAddInt(f, "Port", o->Port);
-	CfgAddInt(f, "PortUDP", o->PortUDP);
 	CfgAddInt(f, "ProxyType", o->ProxyType);
 	CfgAddStr(f, "ProxyName", o->ProxyName);
 	CfgAddInt(f, "ProxyPort", o->ProxyPort);
@@ -1444,8 +1379,6 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o) {
 	CfgAddBool(f, "NoRoutingTracking", o->NoRoutingTracking);
 	CfgAddStr(f, "DeviceName", o->DeviceName);
 	CfgAddInt(f, "AdditionalConnectionInterval", o->AdditionalConnectionInterval);
-	CfgAddBool(f, "HideStatusWindow", o->HideStatusWindow);
-	CfgAddBool(f, "HideNicInfoWindow", o->HideNicInfoWindow);
 	CfgAddInt(f, "ConnectionDisconnectSpan", o->ConnectionDisconnectSpan);
 	CfgAddBool(f, "RequireMonitorMode", o->RequireMonitorMode);
 	CfgAddBool(f, "RequireBridgeRoutingMode", o->RequireBridgeRoutingMode);
@@ -1453,15 +1386,6 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o) {
 	CfgAddBool(f, "NoUdpAcceleration", o->NoUdpAcceleration);
 	CfgAddIp(f, "BindLocalIP", &o->BindLocalIP);
 	CfgAddInt(f, "BindLocalPort", o->BindLocalPort);
-
-	if (o->FromAdminPack)
-		CfgAddBool(f, "FromAdminPack", o->FromAdminPack);
-
-	if (IsZero(o->HostUniqueKey, SHA1_SIZE) == false) {
-		BUF *b = MemToBuf(o->HostUniqueKey, SHA1_SIZE);
-		CfgAddBuf(f, "HostUniqueKey", b);
-		FreeBuf(b);
-	}
 }
 
 // Only the first PASSWORD_CRYPT_KEY_SIZE bytes of the key are used, which is what the stored password blobs were

@@ -160,6 +160,13 @@ void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message) {
 	SendSysLog(s->Syslog, tmp);
 }
 
+// The syslog save types: SYSLOG_NONE, SYSLOG_SERVER_AND_HUB_SECURITY_LOG and SYSLOG_SERVER_AND_HUB_ALL_LOG. Type 1
+// (the server log only) is gone
+bool SiIsSysLogSaveType(UINT save_type) {
+	return save_type == SYSLOG_NONE || save_type == SYSLOG_SERVER_AND_HUB_SECURITY_LOG ||
+	       save_type == SYSLOG_SERVER_AND_HUB_ALL_LOG;
+}
+
 void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
 	SYSLOG_SETTING set;
 	if (s == NULL || setting == NULL)
@@ -167,7 +174,8 @@ void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
 
 	Copy(&set, setting, sizeof(SYSLOG_SETTING));
 
-	if (IsEmptyStr(set.Hostname) || set.Port == 0)
+	// Another save type, such as a type 1 of an older configuration file, turns syslog sending off
+	if (IsEmptyStr(set.Hostname) || set.Port == 0 || SiIsSysLogSaveType(set.SaveType) == false)
 		set.SaveType = SYSLOG_NONE;
 
 	Lock(s->SyslogLock);
@@ -1956,8 +1964,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f) {
 
 		s->NoHighPriorityProcess = CfgGetBool(f, "NoHighPriorityProcess");
 
-		s->NoDebugDump = CfgGetBool(f, "NoDebugDump");
-
 		s->SaveDebugLog = CfgGetBool(f, "SaveDebugLog");
 		if (s->SaveDebugLog)
 			s->DebugLog = NewTinyLog();
@@ -2106,8 +2112,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s) {
 
 
 		CfgAddBool(f, "NoHighPriorityProcess", s->NoHighPriorityProcess);
-
-		CfgAddBool(f, "NoDebugDump", s->NoDebugDump);
 
 		CfgAddBool(f, "SaveDebugLog", s->SaveDebugLog);
 

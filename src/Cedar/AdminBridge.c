@@ -16,14 +16,6 @@
 #include "Mayaqua/Str.h"
 #include "AdminInternal.h"
 
-UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t) {
-	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
-
-	t->IsBridgeSupportedOs = IsBridgeSupported();
-
-	return ERR_NO_ERROR;
-}
-
 UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t) {
 	RPC_ENUM_ETH ret;
 

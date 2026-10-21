@@ -13,23 +13,16 @@
 	if (a->ServerAdmin == false) \
 		return ERR_NOT_ENOUGH_RIGHT;
 
-UINT ScGetBridgeSupport(RPC *r, RPC_BRIDGE_SUPPORT *t);
 UINT ScGetCaps(RPC *r, CAPSLIST *t);
 UINT ScReadLogFile(RPC *r, RPC_READ_LOG_FILE *t);
 
 UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
-UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);
-UINT StGetHubMsg(ADMIN *a, RPC_MSG *t);
 UINT StFlush(ADMIN *a, RPC_TEST *t);
 UINT StCrash(ADMIN *a, RPC_TEST *t);
-UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
-UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t);
-UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t);
 UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t);
 UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t);
 UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t);
 UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t);
-UINT StSetCrl(ADMIN *a, RPC_CRL *t);
 UINT StGetCrl(ADMIN *a, RPC_CRL *t);
 UINT StDelCrl(ADMIN *a, RPC_CRL *t);
 UINT StAddCrl(ADMIN *a, RPC_CRL *t);
@@ -38,12 +31,10 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
 UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
 UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
 UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
-UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
 UINT StGetConfig(ADMIN *a, RPC_CONFIG *t);
 UINT StSetConfig(ADMIN *a, RPC_CONFIG *t);
 UINT StGetCaps(ADMIN *a, CAPSLIST *t);
 UINT StRebootServer(ADMIN *a, RPC_TEST *t);
-UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t);
 UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t);
 UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
 UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);

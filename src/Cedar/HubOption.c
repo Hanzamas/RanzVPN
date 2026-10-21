@@ -62,7 +62,6 @@ ADMIN_OPTION admin_options[] =
         {"no_read_log_file", 0},
         {"deny_hub_admin_change_ext_option", 0},
         {"no_delay_jitter_packet_loss", 0},
-        {"no_change_msg", 0},
         {"no_access_list_include_file", 0},
 };
 
@@ -127,7 +126,6 @@ HUB_OPTION_FIELD hub_option_fields[] =
         HUB_OPTION_UINT_ROW(FloodingSendQueueBufferQuota, DEFAULT_FLOODING_QUEUE_LENGTH, 0),
         HUB_OPTION_UINT_ROW(DetectDormantSessionInterval, 0, 0),
         HUB_OPTION_BOOL_ROW(NoPhysicalIPOnPacketLog, 0),
-        HUB_OPTION_UINT_ROW(DhcpDiscoverTimeoutMs, DEFAULT_DHCP_DISCOVER_TIMEOUT, HUB_OPTION_ZERO_IS_DEFAULT),
 };
 
 UINT num_hub_option_fields = sizeof(hub_option_fields) / sizeof(HUB_OPTION_FIELD);

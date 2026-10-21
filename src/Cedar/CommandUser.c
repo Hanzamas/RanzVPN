@@ -412,7 +412,7 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param) {
 	PARAM args[] =
 	    {
 	        {"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-	        {"ALIAS", CmdPrompt, _UU("CMD_UserRadiusSet_Prompt_ALIAS"), NULL, NULL},
+	        {"ALIAS", CmdPrompt, _UU("CMD_UserNTLMSet_Prompt_ALIAS"), NULL, NULL},
 	    };
 
 	if (ps->HubName == NULL) {

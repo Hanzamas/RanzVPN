@@ -102,8 +102,6 @@ typedef struct MS_NETCLASS_DEVICE {
 	char ShortKey[MAX_SIZE];         // Driver key below the Class key, "{4D36E972-E325-11CE-BFC1-08002BE10318}\0007"
 	char ClassKey[MAX_SIZE];         // "SYSTEM\CurrentControlSet\Control\Class\" and ShortKey
 	char DeviceInstanceId[MAX_SIZE]; // Such as "PCI\VEN_8086&DEV_15B8&...\3&11583659&0&FE"
-	char Service[MAX_SIZE];          // Name of the driver service
-	char DriverFileName[MAX_PATH];   // File name of the service ImagePath, such as "e1d68x64.sys"
 } MS_NETCLASS_DEVICE;
 
 typedef struct MS_ADAPTER_LIST {
