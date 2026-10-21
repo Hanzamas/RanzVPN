@@ -240,8 +240,6 @@
 
 #define	BRIDGE_USER_NAME				"localbridge"
 #define	BRIDGE_USER_NAME_PRINT			"Local Bridge"
-#define	BRIDGE_TRY_SPAN					1000
-#define	BRIDGE_NUM_DEVICE_CHECK_SPAN	(5 * 60 * 1000)
 
 
 

@@ -7,6 +7,8 @@
 # its #if, an include the source does not have, a destination that grows in the middle, a CR
 # inside a line, header and linkage commits that edit code, and an unmarked commit that moves
 # code). A CRLF source moved into an LF file passes: git normalizes line endings (text=auto).
+# A split into a new internal header passes with its guard and the one #include it adds to
+# the source; any other source line, another header's include, or the include inside an #if fails.
 #
 # Usage: python -I move-only-check-test.py
 
@@ -32,6 +34,10 @@ CPRE = '// C.c\n// Split out of A.c\n\n#include "A.h"\n'
 A_H = '// A.h\n\n#ifndef\tA_H\n#define\tA_H\n\nint F1(int a);\nint F2(int b);\nint F3(void);\n#define LIMIT 10\n\n#endif\n'
 B_C = '// B.c\n\n#include "A.h"\n\nint G1(void)\n{\n\treturn 1;\n}\n'
 B_H = '// B.h\n\n#ifndef\tB_H\n#define\tB_H\n\nint G1(void);\n\n#endif\n'
+
+
+PRE_I = PRE.replace('#include "A.h"\n', '#include "A.h"\n#include "AInternal.h"\n')
+A_INT = '// AInternal.h\n// Shared inside module A\n\n#ifndef\tA_INTERNAL_H\n#define\tA_INTERNAL_H\n\n' + MAC + '\n#endif\n'
 
 
 def a_c(*blocks):
@@ -82,6 +88,18 @@ CASES = [
     ('CRLF source into an LF file', 'split: F2', {'W.c': crlf(a_c(F1, F3, F4, MAC, F5)), 'C.c': c_c(F2)}, True, False),
     ('CR inside a moved line kept', 'split: F2', {'R.c': a_c(F1), 'C.c': c_c(F2_CR)}, True, False),
     ('CR inside a moved line dropped', 'split: F2', {'R.c': a_c(F1), 'C.c': c_c(F2)}, False, False),
+    ('split to a new internal header', 'split: TWICE to AInternal.h',
+     {'A.c': a_c(F1, F2, F3, F4, F5).replace(PRE, PRE_I), 'AInternal.h': A_INT}, True, False),
+    ('new header plus another source line', 'split: TWICE to AInternal.h',
+     {'A.c': a_c(F1, F2, F3, F4, F5).replace(PRE, PRE_I) + 'int z;\n', 'AInternal.h': A_INT}, False, False),
+    ('include of a different header', 'split: TWICE to AInternal.h',
+     {'A.c': a_c(F1, F2, F3, F4, F5).replace(PRE, PRE_I.replace('AInternal.h', 'BInternal.h')), 'AInternal.h': A_INT}, False, False),
+    ('include of the new header inside an #if', 'split: TWICE to AInternal.h',
+     {'A.c': a_c(F1, F2, F3, F4, F5).replace(PRE, PRE.replace('#include <x.h>\n', '#include <x.h>\n#include "AInternal.h"\n')),
+      'AInternal.h': A_INT}, False, False),
+    ('include added for an existing destination', 'split: F3',
+     {'A.c': a_c(F1, F2, F4, MAC, F5).replace(PRE, PRE.replace('#include "A.h"\n', '#include "A.h"\n#include "B.h"\n')),
+      'B.c': B_C + '\n' + F3}, False, False),
     ('header: include in a .c file', 'header: B.h in A.c', {'A.c': BASE['A.c'].replace('#include <string.h>\n', '#include <string.h>\n#include "B.h"\n')}, True, False),
     ('header: declaration moved', 'header: F3 to B.h', {'A.h': A_H.replace('int F3(void);\n', ''), 'B.h': B_H.replace('int G1(void);\n', 'int G1(void);\nint F3(void);\n')}, True, False),
     ('header: new header with a guard', 'header: C.h', {'A.h': A_H.replace('int F2(int b);\n', ''), 'C.h': '// C.h\n\n#ifndef\tC_H\n#define\tC_H\n\nint F2(int b);\n\n#endif\n'}, True, False),

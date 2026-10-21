@@ -4,7 +4,7 @@
 #include "Session.h"
 
 #include "Account.h"
-#include "BridgeWin32.h"
+#include "Bridge.h"
 #include "Connection.h"
 #include "Hub.h"
 #include "Link.h"
@@ -440,11 +440,7 @@ CLEANUP:
 
 	if (s->BridgeMode)
 	{
-		if (s->Bridge->Active)
-		{
-			CloseEth(s->Bridge->Eth);
-			s->Bridge->Eth = NULL;
-		}
+		BrSessionCleanup(s);
 	}
 
 	if (s->Cancel2 != NULL)
