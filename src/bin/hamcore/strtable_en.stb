@@ -2050,7 +2050,7 @@ CMD_UserList_Args		UserList
 
 # UserCreate command
 CMD_UserCreate			Create User 
-CMD_UserCreate_Help		Use this to create a new user in the security account database of the currently managed Virtual Hub. \nBy creating a user, the VPN Client can connect to the Virtual Hub by using the authentication information of that user. \nWhen a user is created using the UserCreate command and the auth type of that user is registered as Password Authentication, a random string will be assigned as the password. Therefore, that user will not be able to connect to the Virtual Hub in that state. After creating the user, you must always use the UserPasswordSet command to specify the user password, or alternatively use the UserAnonymousSet command, UserCertSet command, UserSignedSet command, UserRadiusSet command or UserNTLMSet command to change the user's auth type. \nNote that a user whose user name has been created as "*" (a single asterisk character) will automatically be registered as a RADIUS authentication user. For cases where there are users with "*" as the name, when a user, whose user name that has been provided when a client connected to a VPN Server does not match existing user names, is able to be authenticated by a RADIUS server or NT domain controller by inputting a user name and password, the authentication settings and security policy settings will follow the setting for the user "*". \nTo change the user information of a user that has been created, use the UserSet command. \nThis command cannot be run on VPN Bridge. \nYou cannot execute this command for Virtual Hubs of VPN Servers operating as a member server on a cluster.
+CMD_UserCreate_Help		Use this to create a new user in the security account database of the currently managed Virtual Hub. \nBy creating a user, the VPN Client can connect to the Virtual Hub by using the authentication information of that user. \nWhen a user is created using the UserCreate command and the auth type of that user is registered as Password Authentication, a random string will be assigned as the password. Therefore, that user will not be able to connect to the Virtual Hub in that state. After creating the user, you must always use the UserPasswordSet command to specify the user password, or alternatively use the UserAnonymousSet command, UserCertSet command, UserSignedSet command or UserNTLMSet command to change the user's auth type. \nNote that a user whose user name has been created as "*" (a single asterisk character) will automatically be registered as a RADIUS authentication user. For cases where there are users with "*" as the name, when a user, whose user name that has been provided when a client connected to a VPN Server does not match existing user names, is able to be authenticated by a RADIUS server or NT domain controller by inputting a user name and password, the authentication settings and security policy settings will follow the setting for the user "*". \nTo change the user information of a user that has been created, use the UserSet command. \nThis command cannot be run on VPN Bridge. \nYou cannot execute this command for Virtual Hubs of VPN Servers operating as a member server on a cluster.
 CMD_UserCreate_Args		UserCreate [name] [/GROUP:group] [/REALNAME:realname] [/NOTE:note]
 CMD_UserCreate_[name]	Specify the user name of the user to be newly created.
 CMD_UserCreate_GROUP	When assigning a user in a group, specify the group name. When not assigning a user to any group, specify /GROUP:none. 
@@ -2091,7 +2091,7 @@ CMD_UserGet_Column_Group	Group Name
 CMD_UserGet_Column_Expires	Expiration Date
 CMD_UserGet_Column_AuthType	Auth Type
 CMD_UserGet_Column_UserCert	Registered User Individual Certificate
-CMD_UserGet_Column_RadiusAlias	External Authentication Server Authentication User Name
+CMD_UserGet_Column_NtUsername	External Authentication Server Authentication User Name
 CMD_UserGet_Column_RootCert_CN	Limit of Certificate CN Value
 CMD_UserGet_Column_RootCert_SERIAL	Limit of Certificate Serial Number
 CMD_UserGet_Policy		Security Policy Set for this User
@@ -2140,16 +2140,13 @@ CMD_UserSignedSet_Prompt_CN	Limit of Common Name (CN) Value:
 CMD_UserSignedSet_Prompt_SERIAL	Limit of Serial Number Value: 
 
 
-# UserRadiusSet command
-CMD_UserRadiusSet_Prompt_ALIAS	Alias Name for Authentication (Optional): 
-
-
 # UserNTLMSet コマンド
 CMD_UserNTLMSet			Set NT Domain Authentication for User Auth Type
 CMD_UserNTLMSet_Help	Use this to set NT Domain Authentication as the auth type for a user that is registered on the security account database of the currently managed Virtual Hub. When a user connects to a Virtual Hub using a user name that is set for NT Domain authentication, the user name and the user input password is sent to the Windows NT / 2000 / Server 2003 / Server 2008 / Server 2008 R2 / Server 2012 Domain Controller or Active Directory Server where the server checks the user name and password, then if the verification is successful, that user is allowed VPN connection. \nTo use NT Domain authentication, the VPN Server must be operating on a Windows NT 4.0, Windows 2000, Windows XP, Windows Vista, Windows Server 2008, Windows Server 2008 R2 or Windows Server 2012 operating system that is connected to that domain. For details please contact the VPN Server's administrator. \nTo get the list of currently registered users, use the UserList command. \nThis command cannot be run on VPN Bridge. \nYou cannot execute this command for Virtual Hubs of VPN Servers operating as a member server on a cluster.
 CMD_UserNTLMSet_Args	UserNTLMSet [name] [/ALIAS:alias_name]
 CMD_UserNTLMSet_[name]	Specify the user name of the user whose setting you want to change.
 CMD_UserNTLMSet_ALIAS	When this parameter is set, it is possible to make the user name sent to the NT Domain or Active Directory server different to the user name on the Virtual Hub. When this is not set, please specify /ALIAS:none (the user name on the Virtual Hub will be used). If the user name is "*", the /ALIAS parameter will be ignored. To read an explanation of the "*" user, please input UserCreate/HELP to display this information.
+CMD_UserNTLMSet_Prompt_ALIAS	Alias Name for Authentication (Optional): 
 
 
 # UserPolicyRemove command

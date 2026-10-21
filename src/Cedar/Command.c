@@ -8551,7 +8551,7 @@ UINT PsUserGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 				if (UniIsEmptyStr(an->NtUsername) == false)
 				{
-					CtInsert(ct, _UU("CMD_UserGet_Column_RadiusAlias"), an->NtUsername);
+					CtInsert(ct, _UU("CMD_UserGet_Column_NtUsername"), an->NtUsername);
 				}
 			}
 			break;

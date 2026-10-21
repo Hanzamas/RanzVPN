@@ -2050,7 +2050,7 @@ CMD_UserList_Args		UserList
 
 # UserCreate command
 CMD_UserCreate			Buat Pengguna
-CMD_UserCreate_Help	    Gunakan ini untuk membuat pengguna baru di database akun keamanan dari Virtual Hub yang sedang dikelola. \nDengan membuat pengguna, VPN Client dapat terhubung ke Virtual Hub dengan menggunakan informasi otentikasi dari pengguna tersebut. \nKetika pengguna dibuat menggunakan perintah UserCreate dan jenis otentikasi pengguna tersebut terdaftar sebagai Otentikasi Password, string acak akan diberikan sebagai kata sandi. Oleh karena itu, pengguna tersebut tidak akan dapat terhubung ke Virtual Hub dalam keadaan ini. Setelah membuat pengguna, kamu harus selalu menggunakan perintah UserPasswordSet untuk menentukan kata sandi pengguna, atau sebaliknya menggunakan perintah UserAnonymousSet, UserCertSet, UserSignedSet, UserRadiusSet, atau UserNTLMSet untuk mengubah jenis otentikasi pengguna. \nPerlu dicatat bahwa pengguna yang nama penggunanya dibuat sebagai "*" (karakter asterisk tunggal) akan secara otomatis terdaftar sebagai pengguna otentikasi RADIUS. Untuk kasus di mana ada pengguna dengan "*" sebagai nama, ketika seorang pengguna, yang nama penggunanya telah diberikan ketika klien terhubung ke VPN Server dan tidak cocok dengan nama pengguna yang ada, dapat diautentikasi oleh server RADIUS atau pengontrol domain NT dengan memasukkan nama pengguna dan kata sandi, pengaturan otentikasi dan pengaturan kebijakan keamanan akan mengikuti pengaturan untuk pengguna "*". \nUntuk mengubah informasi pengguna dari pengguna yang telah dibuat, gunakan perintah UserSet. \nPerintah ini tidak dapat dijalankan pada VPN Bridge. \nKamu tidak dapat menjalankan perintah ini untuk Virtual Hub dari VPN Server yang beroperasi sebagai anggota server dalam cluster.
+CMD_UserCreate_Help	    Gunakan ini untuk membuat pengguna baru di database akun keamanan dari Virtual Hub yang sedang dikelola. \nDengan membuat pengguna, VPN Client dapat terhubung ke Virtual Hub dengan menggunakan informasi otentikasi dari pengguna tersebut. \nKetika pengguna dibuat menggunakan perintah UserCreate dan jenis otentikasi pengguna tersebut terdaftar sebagai Otentikasi Password, string acak akan diberikan sebagai kata sandi. Oleh karena itu, pengguna tersebut tidak akan dapat terhubung ke Virtual Hub dalam keadaan ini. Setelah membuat pengguna, kamu harus selalu menggunakan perintah UserPasswordSet untuk menentukan kata sandi pengguna, atau sebaliknya menggunakan perintah UserAnonymousSet, UserCertSet, UserSignedSet, atau UserNTLMSet untuk mengubah jenis otentikasi pengguna. \nPerlu dicatat bahwa pengguna yang nama penggunanya dibuat sebagai "*" (karakter asterisk tunggal) akan secara otomatis terdaftar sebagai pengguna otentikasi RADIUS. Untuk kasus di mana ada pengguna dengan "*" sebagai nama, ketika seorang pengguna, yang nama penggunanya telah diberikan ketika klien terhubung ke VPN Server dan tidak cocok dengan nama pengguna yang ada, dapat diautentikasi oleh server RADIUS atau pengontrol domain NT dengan memasukkan nama pengguna dan kata sandi, pengaturan otentikasi dan pengaturan kebijakan keamanan akan mengikuti pengaturan untuk pengguna "*". \nUntuk mengubah informasi pengguna dari pengguna yang telah dibuat, gunakan perintah UserSet. \nPerintah ini tidak dapat dijalankan pada VPN Bridge. \nKamu tidak dapat menjalankan perintah ini untuk Virtual Hub dari VPN Server yang beroperasi sebagai anggota server dalam cluster.
 CMD_UserCreate_Args		UserCreate [name] [/GROUP:group] [/REALNAME:realname] [/NOTE:note]
 CMD_UserCreate_[name]	Tentukan nama pengguna dari pengguna yang akan dibuat.
 CMD_UserCreate_GROUP	Jika menetapkan pengguna ke grup, tentukan nama grup. Jika tidak menetapkan pengguna ke grup mana pun, tentukan /GROUP:none.
@@ -2091,7 +2091,7 @@ CMD_UserGet_Column_Group	Nama Grup
 CMD_UserGet_Column_Expires	Tanggal Kedaluwarsa
 CMD_UserGet_Column_AuthType	Jenis Otentikasi
 CMD_UserGet_Column_UserCert	Sertifikat Individu Pengguna Terdaftar
-CMD_UserGet_Column_RadiusAlias	Nama Pengguna Server Otentikasi Eksternal
+CMD_UserGet_Column_NtUsername	Nama Pengguna Server Otentikasi Eksternal
 CMD_UserGet_Column_RootCert_CN	Batasan Nilai Certificate CN
 CMD_UserGet_Column_RootCert_SERIAL	Batasan Nomor Seri Sertifikat
 CMD_UserGet_Policy		Kebijakan Keamanan yang Ditetapkan untuk Pengguna ini
@@ -2140,16 +2140,13 @@ CMD_UserSignedSet_Prompt_CN	Batasan Nilai Nama Umum (CN):
 CMD_UserSignedSet_Prompt_SERIAL	Batasan Nilai Nomor Seri: 
 
 
-# UserRadiusSet command
-CMD_UserRadiusSet_Prompt_ALIAS	Nama Alias untuk Otentikasi (Opsional): 
-
-
 # UserNTLMSet コマンド
 CMD_UserNTLMSet		    Atur Otentikasi Domain NT untuk Tipe Otentikasi Pengguna
 CMD_UserNTLMSet_Help	Gunakan ini untuk mengatur Otentikasi Domain NT sebagai tipe otentikasi untuk pengguna yang terdaftar dalam database akun keamanan Virtual Hub yang sedang dikelola. Ketika seorang pengguna menghubungkan ke Virtual Hub menggunakan nama pengguna yang diatur untuk otentikasi Domain NT, nama pengguna dan kata sandi yang dimasukkan oleh pengguna dikirim ke Windows NT / 2000 / Server 2003 / Server 2008 / Server 2008 R2 / Server 2012 Domain Controller atau Active Directory Server, dimana server tersebut memeriksa nama pengguna dan kata sandi, kemudian jika verifikasi berhasil, pengguna tersebut diizinkan untuk terhubung ke VPN. \nUntuk menggunakan otentikasi Domain NT, Server VPN harus beroperasi di sistem operasi Windows NT 4.0, Windows 2000, Windows XP, Windows Vista, Windows Server 2008, Windows Server 2008 R2 atau Windows Server 2012 yang terhubung dengan domain tersebut. Untuk rincian lebih lanjut, silakan hubungi administrator Server VPN. \nUntuk mendapatkan daftar pengguna yang terdaftar saat ini, gunakan perintah UserList. \nPerintah ini tidak dapat dijalankan pada VPN Bridge. \nKamu tidak dapat menjalankan perintah ini untuk Virtual Hub dari VPN Server yang beroperasi sebagai anggota server dalam cluster.
 CMD_UserNTLMSet_Args	UserNTLMSet [name] [/ALIAS:alias_name]
 CMD_UserNTLMSet_[name]	Tentukan nama pengguna dari pengguna yang pengaturannya ingin diubah.
 CMD_UserNTLMSet_ALIAS	Saat parameter ini diatur, dimungkinkan untuk membuat nama pengguna yang dikirim ke server Domain NT atau Active Directory berbeda dengan nama pengguna pada Virtual Hub. Saat ini tidak diatur, harap tentukan /ALIAS:none (nama pengguna pada Virtual Hub akan digunakan). Jika nama pengguna adalah "*", parameter /ALIAS akan diabaikan. Untuk membaca penjelasan tentang pengguna "*", silakan masukkan UserCreate/HELP untuk menampilkan informasi ini.
+CMD_UserNTLMSet_Prompt_ALIAS	Nama Alias untuk Otentikasi (Opsional): 
 
 
 # UserPolicyRemove command
