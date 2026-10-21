@@ -205,7 +205,6 @@ PW_TYPE_0				Anonymous Authentication
 PW_TYPE_1				Standard Password Authentication
 PW_TYPE_2				RADIUS or NT Domain Authentication
 PW_TYPE_3				Client Certificate Authentication
-PW_TYPE_5				OpenSSL Engine Authentication
 
 
 # Errors about Windows Versions

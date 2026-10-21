@@ -205,7 +205,6 @@ PW_TYPE_0				Autentikasi Anonim
 PW_TYPE_1				Autentikasi Kata Sandi Standar
 PW_TYPE_2				Autentikasi RADIUS atau NT Domain
 PW_TYPE_3				Autentikasi Sertifikat Klien
-PW_TYPE_5				Autentikasi Mesin OpenSSL
 
 
 # Errors about Windows Versions

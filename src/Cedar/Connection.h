@@ -54,8 +54,6 @@ struct CLIENT_AUTH
 	char PlainPassword[MAX_PASSWORD_LEN + 1];
 	X *ClientX;
 	K *ClientK;
-	char OpensslEnginePrivateKeyName[MAX_SECURE_DEVICE_FILE_LEN + 1];
-	char OpensslEngineName[MAX_SECURE_DEVICE_FILE_LEN + 1];
 };
 
 struct TCPSOCK

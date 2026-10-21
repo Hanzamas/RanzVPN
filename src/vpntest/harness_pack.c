@@ -823,14 +823,6 @@ static void HarnessPackPrepCreateLinkCert(HARNESS *h, void *p)
 	t->ServerCert = HarnessTestCert();
 }
 
-static void HarnessPackPrepCreateLinkEngine(HARNESS *h, void *p)
-{
-	RPC_CREATE_LINK *t = p;
-
-	HarnessPackPrepCreateLinkAuth(t, CLIENT_AUTHTYPE_OPENSSLENGINE);
-	t->ClientAuth->ClientX = HarnessTestCert();
-}
-
 static void HarnessPackPrepEnumLink(HARNESS *h, void *p)
 {
 	RPC_ENUM_LINK *t = p;
@@ -1379,7 +1371,6 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_SYN_CASE("RPC_CREATE_LINK_password", RPC_CREATE_LINK, HarnessPackPrepCreateLinkPassword),
 	HARNESS_PACK_SYN_CASE("RPC_CREATE_LINK_plain", RPC_CREATE_LINK, HarnessPackPrepCreateLinkPlain),
 	HARNESS_PACK_SYN_CASE("RPC_CREATE_LINK_cert", RPC_CREATE_LINK, HarnessPackPrepCreateLinkCert),
-	HARNESS_PACK_SYN_CASE("RPC_CREATE_LINK_engine", RPC_CREATE_LINK, HarnessPackPrepCreateLinkEngine),
 	HARNESS_PACK_SYN_CASE("RPC_ENUM_LINK", RPC_ENUM_LINK, HarnessPackPrepEnumLink),
 	HARNESS_PACK_SYN_CASE("RPC_LINK_STATUS", RPC_LINK_STATUS, HarnessPackPrepLinkStatus),
 	HARNESS_PACK_SYN_CASE("RPC_ADD_ACCESS_v4", RPC_ADD_ACCESS, NULL),

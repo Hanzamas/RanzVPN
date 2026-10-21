@@ -1277,17 +1277,6 @@ void InRpcClientAuth(CLIENT_AUTH *c, PACK *p)
 			FreeBuf(b);
 		}
 		break;
-
-  case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		b = PackGetBuf(p, "ClientX");
-		if (b != NULL)
-		{
-			c->ClientX = BufToX(b, false);
-			FreeBuf(b);
-		}
-    PackGetStr(p, "OpensslEnginePrivateKeyName", c->OpensslEnginePrivateKeyName, sizeof(c->OpensslEnginePrivateKeyName));
-    PackGetStr(p, "OpensslEngineName", c->OpensslEngineName, sizeof(c->OpensslEngineName));
-    break;
 	}
 }
 void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
@@ -1327,17 +1316,6 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
 			PackAddBuf(p, "ClientK", b);
 			FreeBuf(b);
 		}
-		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		b = XToBuf(c->ClientX, false);
-		if (b != NULL)
-		{
-			PackAddBuf(p, "ClientX", b);
-			FreeBuf(b);
-		}
-		PackAddStr(p, "OpensslEnginePrivateKeyName", c->OpensslEnginePrivateKeyName);
-		PackAddStr(p, "OpensslEngineName", c->OpensslEngineName);
 		break;
 	}
 }
@@ -1638,13 +1616,6 @@ CLIENT_AUTH *ClientAuthClone(CLIENT_AUTH *a)
 		ret->ClientX = CloneX(a->ClientX);
 		ret->ClientK = CloneK(a->ClientK);
 		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		ret->ClientX = CloneX(a->ClientX);
-		StrCpy(ret->OpensslEnginePrivateKeyName, sizeof(ret->OpensslEnginePrivateKeyName), a->OpensslEnginePrivateKeyName);
-		StrCpy(ret->OpensslEngineName, sizeof(ret->OpensslEngineName), a->OpensslEngineName);
-		ret->ClientK = OpensslEngineToK(ret->OpensslEnginePrivateKeyName, ret->OpensslEngineName);
-		break;
 	}
 
 	return ret;
@@ -1712,20 +1683,6 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 			a->ClientK = BufToK(b, true, false, NULL);
 		}
 		FreeBuf(b);
-		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		b = CfgGetBuf(f, "ClientCert");
-		if (b != NULL)
-		{
-			a->ClientX = BufToX(b, false);
-		}
-		FreeBuf(b);
-		if (CfgGetStr(f, "OpensslEnginePrivateKeyName", a->OpensslEnginePrivateKeyName, sizeof(a->OpensslEnginePrivateKeyName)))
-    {
-        a->ClientK = OpensslEngineToK(a->OpensslEnginePrivateKeyName, a->OpensslEngineName);
-    }
-    CfgGetStr(f, "OpensslEngineName", a->OpensslEngineName, sizeof(a->OpensslEngineName));
 		break;
 	}
 
@@ -1831,16 +1788,6 @@ void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
 			FreeBuf(b);
 		}
 		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		if (a->ClientX != NULL) {
-			b = XToBuf(a->ClientX, false);
-			CfgAddByte(f, "ClientCert", b->Buf, b->Size);
-			FreeBuf(b);
-		}
-		CfgAddStr(f, "OpensslEnginePrivateKeyName", a->OpensslEnginePrivateKeyName);
-		CfgAddStr(f, "OpensslEngineName", a->OpensslEngineName);
-	break;
 	}
 }
 

@@ -668,7 +668,6 @@ bool ClientUploadAuth(CONNECTION *c)
 		break;
 
 	case CLIENT_AUTHTYPE_CERT:
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
 			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
 		{

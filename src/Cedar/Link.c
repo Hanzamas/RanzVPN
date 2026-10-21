@@ -528,7 +528,7 @@ bool LinkValidateAuthAndPolicy(CLIENT_AUTH *auth, POLICY *policy)
 	}
 
 	if (auth->AuthType != CLIENT_AUTHTYPE_ANONYMOUS && auth->AuthType != CLIENT_AUTHTYPE_PASSWORD &&
-		auth->AuthType != CLIENT_AUTHTYPE_PLAIN_PASSWORD && auth->AuthType != CLIENT_AUTHTYPE_CERT && auth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE)
+		auth->AuthType != CLIENT_AUTHTYPE_PLAIN_PASSWORD && auth->AuthType != CLIENT_AUTHTYPE_CERT)
 	{
 		return false;
 	}
