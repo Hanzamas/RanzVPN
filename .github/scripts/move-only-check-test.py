@@ -9,6 +9,8 @@
 # code). A CRLF source moved into an LF file passes: git normalizes line endings (text=auto).
 # A split into a new internal header passes with its guard and the one #include it adds to
 # the source; any other source line, another header's include, or the include inside an #if fails.
+# A linkage commit that removes "static " from a function without a static prototype may declare
+# it by its definition head; another head, or a declaration while "static " stays, fails.
 #
 # Usage: python -I move-only-check-test.py
 
@@ -42,7 +44,8 @@ A_INT = '// AInternal.h\n// Shared inside module A\n\n#ifndef\tA_INTERNAL_H\n#de
 
 S_INT = '// SInternal.h\n\n#ifndef\tS_INTERNAL_H\n#define\tS_INTERNAL_H\n\n#endif\n'
 S_C = ('// S.c\n\n#include "A.h"\n#include "SInternal.h"\n\nstatic int F3(void);\n\n'
-       'int G(void)\n{\n\treturn F3();\n}\n\nstatic int F3(void)\n{\n\treturn 3;\n}\n')
+       'static int H(void)\n{\n\treturn 7;\n}\n\n'
+       'int G(void)\n{\n\treturn F3() + H();\n}\n\nstatic int F3(void)\n{\n\treturn 3;\n}\n')
 
 
 def a_c(*blocks):
@@ -128,6 +131,14 @@ CASES = [
      {'S.c': S_C.replace('static int F3(void);\n\n', '').replace('static int F3(void)\n{', 'int F3(void)\n{')}, False, False),
     ('linkage: other line deleted', 'linkage: F3 visible in module S',
      {'S.c': S_C.replace('#include "A.h"\n', '').replace('static int F3(void)\n{', 'int F3(void)\n{')}, False, False),
+    ('linkage: static removed, declared by its head', 'linkage: H visible in module S',
+     {'S.c': S_C.replace('static int H(void)\n{', 'int H(void)\n{'),
+      'SInternal.h': S_INT.replace('\n\n#endif', '\n\nint H(void);\n\n#endif')}, True, False),
+    ('linkage: declared with another head', 'linkage: H visible in module S',
+     {'S.c': S_C.replace('static int H(void)\n{', 'int H(void)\n{'),
+      'SInternal.h': S_INT.replace('\n\n#endif', '\n\nint H(int x);\n\n#endif')}, False, False),
+    ('linkage: declared, static kept', 'linkage: H visible in module S',
+     {'SInternal.h': S_INT.replace('\n\n#endif', '\n\nint H(void);\n\n#endif')}, False, False),
     ('unmarked commit that moves code', 'Refactor F2', {'A.c': a_c(F1, F3, F4, MAC, F5), 'B.c': B_C.replace('return 1', 'return 0') + '\n' + F2}, False, True),
     ('unmarked commit that only edits', 'Fix F1', {'A.c': BASE['A.c'].replace('return a + 1', 'return a + 2')}, True, True),
     ('unmarked extract of a function part', 'Extract F2 core',

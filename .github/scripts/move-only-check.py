@@ -28,7 +28,9 @@
 # header, add a leading comment and the include guard. A linkage commit may only add or remove
 # "static " at the start of .c lines, delete header lines, and move static prototypes out of a
 # .c file into a header of the module without "static " (#29 open question 1 (a)); each moved
-# prototype must reappear in a header word for word.
+# prototype must reappear in a header word for word. A function that loses "static " and has
+# no static prototype to move (it is defined before its first use) may be declared in such a
+# header by its one-line definition head, word for word, followed by ";".
 #
 # With --range, every marked commit in the range is checked. An unmarked commit made after this
 # checker landed fails when it moves a whole file-scope block (function, declaration or macro) of
@@ -462,12 +464,19 @@ def static_prototype(ln):
     return s.startswith('static ') and '(' in s and s.endswith(');') and '{' not in s and '=' not in s
 
 
+def definition_head(ln):
+    """True for the one-line head of a function definition: 'type name(params)' with nothing after."""
+    s = ln.strip()
+    return '(' in s and s.endswith(')') and not any(ch in s for ch in ';={}') and not s.startswith('#')
+
+
 def check_linkage(repo, p, c):
     # Both directions of #29: "static " added to a function one file uses (its header prototype
     # deleted), or, open question 1 (a), "static " removed so a group can move to another file of
-    # the module, its static prototype moving without "static " to a header of that module.
+    # the module, its static prototype moving without "static " to a header of that module. A
+    # function that loses "static " but has no static prototype is declared by its definition head.
     files = no_special(changed_files(repo, p, c), 'linkage')
-    moved_protos, h_deleted, h_added = set(), set(), []
+    moved_protos, h_deleted, h_added, heads = set(), set(), [], set()
     for status, path, om, nm in files:
         if not path.endswith(('.c', '.h')) or om != nm and status == 'M':
             raise Fail('%s: a linkage commit only edits .c and .h files' % path)
@@ -502,6 +511,8 @@ def check_linkage(repo, p, c):
                     j += 1
                 if j == len(dels):
                     raise Fail('%s:%d: a linkage commit only adds or removes "static "' % (path, k + 1))
+                if old[dels[j]] == 'static ' + a and definition_head(a):
+                    heads.add(a.strip() + ';')
                 j += 1
             for i in dels[j:]:
                 d = old[i]
@@ -512,9 +523,10 @@ def check_linkage(repo, p, c):
                                'to a header' % (path, i + 1))
                 moved_protos.add(d.strip()[len('static '):])
     for path, k, ln in h_added:
-        if ln.strip() not in moved_protos and ln not in h_deleted:
-            raise Fail('%s:%d: a linkage commit adds to a header only prototypes it removes "static " from or moves '
-                       'from another header' % (path, k))
+        if ln.strip() not in moved_protos and ln not in h_deleted and ln.strip() not in heads:
+            raise Fail('%s:%d: a linkage commit adds to a header only prototypes it removes "static " from, '
+                       'declarations of definitions it removes "static " from, or lines it moves from another header'
+                       % (path, k))
     placed = {ln.strip() for _, _, ln in h_added}
     for proto in sorted(moved_protos):
         if proto not in placed:
