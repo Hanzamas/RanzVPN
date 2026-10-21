@@ -988,21 +988,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 	return ret;
 }
 
-void MsSetThreadPriorityIdle()
-{
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
-}
-
-void MsSetThreadPriorityRealtime()
-{
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-}
-
-void MsRestoreThreadPriority()
-{
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
-}
-
 // Temp directory of the process: %TEMP%\VPN_ and 16 hex digits of the CNG generator (64 bits),
 // so the name cannot be guessed and created first. The protected DACL inherits nothing from
 // %TEMP% (C:\Windows\Temp for the service, where every user can add files and folders): full
@@ -1259,27 +1244,6 @@ void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir)
 	UniFormat(name, size, L"%s\\VPN_Lock.dat", temp_dir);
 }
 
-bool MsCheckLogon(wchar_t *username, char *password)
-{
-	wchar_t password_unicode[MAX_SIZE];
-	HANDLE h;
-	if (username == NULL || password == NULL)
-	{
-		return false;
-	}
-
-	StrToUni(password_unicode, sizeof(password_unicode), password);
-
-	if (LogonUserW(username, NULL, password_unicode, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
-	{
-		return false;
-	}
-
-	CloseHandle(h);
-
-	return true;
-}
-
 bool MsEnablePrivilege(char *name, bool enable)
 {
 	HANDLE hToken;
@@ -1320,20 +1284,6 @@ bool MsEnablePrivilege(char *name, bool enable)
 bool MsIsAdmin()
 {
 	return ms->IsAdmin;
-}
-
-// The arguments of this process: its command line (GetCommandLineW) without the program name,
-// quoted or not, and the one space after it. The caller frees the copy.
-wchar_t *MsCopyProcessArgsW()
-{
-	wchar_t *line = CopyUniStr(GetCommandLineW());
-	wchar_t *args;
-
-	UniTrim(line);
-	args = CopyUniStr(PathGetArgsW(line));
-	Free(line);
-
-	return args;
 }
 
 UINT MsGetCurrentProcessId()
