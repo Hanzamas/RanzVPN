@@ -3117,14 +3117,14 @@ static UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	SYSLOG_SETTING t;
-	CMD_EVAL_MIN_MAX minmax = {"CMD_SyslogEnable_MINMAX", 1, 3};
+	CMD_EVAL_MIN_MAX minmax = {"CMD_SyslogEnable_MINMAX", SYSLOG_SERVER_AND_HUB_SECURITY_LOG, SYSLOG_SERVER_AND_HUB_ALL_LOG};
 	CMD_EVAL_HOST_PORT host_eval = {SYSLOG_PORT, NULL};
 	char *host;
 	UINT port;
 
 	PARAM args[] =
 	{
-		{"[1|2|3]", CmdPrompt, _UU("CMD_SyslogEnable_Prompt_123"), CmdEvalMinMax, &minmax},
+		{"[2|3]", CmdPrompt, _UU("CMD_SyslogEnable_Prompt_23"), CmdEvalMinMax, &minmax},
 		{"HOST", CmdPrompt, _UU("CMD_SyslogEnable_Prompt_HOST"), CmdEvalHostAndPort, &host_eval},
 	};
 
@@ -3140,7 +3140,7 @@ static UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param
 	{
 		StrCpy(t.Hostname, sizeof(t.Hostname), host);
 		t.Port = port;
-		t.SaveType = GetParamInt(o, "[1|2|3]");
+		t.SaveType = GetParamInt(o, "[2|3]");
 
 		Free(host);
 

@@ -787,7 +787,6 @@ SM_LICENSE_NO_EXPIRES	Tanpa Kedaluwarsa
 SM_NO_LICENSE_COLUMN	Peringatan: 
 SM_NO_LICENSE			Tidak ada lisensi produk yang terdaftar, sehingga fungsi komunikasi VPN Server ini tidak beroperasi.
 SM_SYSLOG_0				Nonaktifkan Fungsi Pengiriman Syslog
-SM_SYSLOG_1				Kirim Log Server melalui Syslog
 SM_SYSLOG_2				Kirim Log Server dan Log Keamanan Virtual Hub melalui Syslog
 SM_SYSLOG_3				Kirim Log Server, Log Keamanan Virtual Hub, dan Log Paket melalui Syslog
 SM_CERT_MESSAGE_CLI				--- Peringatan ---\r\n\r\nSertifikat root self-signed SSL saat ini pada VPN Server ini berada dalam format lama.\r\n\r\nBeberapa versi OpenVPN Connect untuk Android memiliki bug yang salah menginterpretasikan sertifikat SSL dalam format lama. Hal ini mungkin menyebabkan masalah koneksi dari OpenVPN Connect untuk Android ke VPN Server ini.\r\n\r\nJika Anda berencana menggunakan OpenVPN Connect untuk Android sebagai klien VPN, disarankan untuk menghasilkan ulang sertifikat server SSL.\r\n\r\nUntuk menghasilkan ulang dan memperbarui sertifikat server, jalankan perintah "ServerCertRegenerate" setelah memperbarui VPN Server ke versi terbaru.
@@ -1275,11 +1274,11 @@ CMD_ServerCipherSet_PROMPT_NAME	Nama Algoritma Enkripsi yang Akan Ditetapkan:
 # SyslogEnable command
 CMD_SyslogEnable		Setel Fungsi Pengiriman Syslog
 CMD_SyslogEnable_Help	Gunakan ini untuk mengatur penggunaan fungsi pengiriman syslog dan server syslog mana yang akan digunakan.
-CMD_SyslogEnable_Args	SyslogEnable [1|2|3] [/HOST:host:port]
-CMD_SyslogEnable_[1|2|3]	Tentukan, menggunakan angka, 1, 2, atau 3 untuk pengaturan yang akan menggunakan fungsi pengiriman syslog. \n1: Kirim log server melalui syslog. \n2: Kirim log server dan log keamanan Virtual Hub melalui syslog. \n3: Kirim log server, log keamanan Virtual Hub, dan log paket melalui syslog.
+CMD_SyslogEnable_Args	SyslogEnable [2|3] [/HOST:host:port]
+CMD_SyslogEnable_[2|3]	Tentukan, menggunakan angka, 2 atau 3 untuk pengaturan yang akan menggunakan fungsi pengiriman syslog. \n2: Kirim log server dan log keamanan Virtual Hub melalui syslog. \n3: Kirim log server, log keamanan Virtual Hub, dan log paket melalui syslog.
 CMD_SyslogEnable_HOST	Tentukan nama host atau alamat IP, dan nomor port server syslog menggunakan format [nama host:nomor port]. Jika nomor port tidak disebutkan, 514 akan digunakan.
-CMD_SyslogEnable_MINMAX	Tentukan, menggunakan angka, 1, 2, atau 3 untuk pengaturan yang akan menggunakan fungsi pengiriman syslog.
-CMD_SyslogEnable_Prompt_123	    Pengaturan untuk Menggunakan Fungsi Pengiriman Syslog (1-3): 
+CMD_SyslogEnable_MINMAX	Tentukan, menggunakan angka, 2 atau 3 untuk pengaturan yang akan menggunakan fungsi pengiriman syslog.
+CMD_SyslogEnable_Prompt_23	    Pengaturan untuk Menggunakan Fungsi Pengiriman Syslog (2-3):
 CMD_SyslogEnable_Prompt_HOST	Tentukan Server syslog:
 
 

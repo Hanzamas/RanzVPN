@@ -100,16 +100,18 @@ static HARNESS_CMD_STEP harness_cmd_access_portrange[] =
 
 // SyslogEnableBadHost (FND-6 #106): /HOST without a port takes the syslog port 514, a host and port are stored as
 // typed; an empty /HOST, port 0 and a port that is no number fail with CMD_HOSTPORT_EVAL_FAILED and change nothing.
+// Type 1 (the server log only, gone, FND-221 #258) fails with CMD_SyslogEnable_MINMAX and changes nothing.
 // The server is left with syslog sending disabled.
 static HARNESS_CMD_STEP harness_cmd_syslog_badhost[] =
 {
-	{"SyslogEnable 1 /HOST:127.0.0.1", ERR_NO_ERROR},
+	{"SyslogEnable 1 /HOST:127.0.0.1", ERR_INVALID_PARAMETER, "CMD_SyslogEnable_MINMAX"},
+	{"SyslogEnable 2 /HOST:127.0.0.1", ERR_NO_ERROR},
 	{"SyslogGet", ERR_NO_ERROR, NULL, true},
-	{"SyslogEnable 2 /HOST:127.0.0.1:5140", ERR_NO_ERROR},
+	{"SyslogEnable 3 /HOST:127.0.0.1:5140", ERR_NO_ERROR},
 	{"SyslogGet", ERR_NO_ERROR, NULL, true},
-	{"SyslogEnable 1 /HOST:none", ERR_INVALID_PARAMETER, "CMD_HOSTPORT_EVAL_FAILED"},
-	{"SyslogEnable 1 /HOST:127.0.0.1:0", ERR_INVALID_PARAMETER, "CMD_HOSTPORT_EVAL_FAILED"},
-	{"SyslogEnable 1 /HOST:127.0.0.1:abc", ERR_INVALID_PARAMETER, "CMD_HOSTPORT_EVAL_FAILED"},
+	{"SyslogEnable 2 /HOST:none", ERR_INVALID_PARAMETER, "CMD_HOSTPORT_EVAL_FAILED"},
+	{"SyslogEnable 2 /HOST:127.0.0.1:0", ERR_INVALID_PARAMETER, "CMD_HOSTPORT_EVAL_FAILED"},
+	{"SyslogEnable 2 /HOST:127.0.0.1:abc", ERR_INVALID_PARAMETER, "CMD_HOSTPORT_EVAL_FAILED"},
 	{"SyslogGet", ERR_NO_ERROR, NULL, true},
 	{"SyslogDisable", ERR_NO_ERROR},
 	{"SyslogGet", ERR_NO_ERROR, NULL, true},

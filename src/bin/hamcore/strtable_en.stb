@@ -787,7 +787,6 @@ SM_LICENSE_NO_EXPIRES	No Expiration
 SM_NO_LICENSE_COLUMN	Caution: 
 SM_NO_LICENSE			Because there are no product licenses registered, this VPN Server's communication function doesn't operate.
 SM_SYSLOG_0				Disable Syslog Send Function
-SM_SYSLOG_1				Send Server Logs by Syslog
 SM_SYSLOG_2				Send Server and Virtual Hub Security Logs by Syslog
 SM_SYSLOG_3				Send Server, Virtual Hub Security, and Packet Logs by Syslog
 SM_CERT_MESSAGE_CLI				--- Caution ---\r\n\r\nThe current SSL self-signed root certificate on this VPN Server is in the old format.\r\n\r\nSome versions of OpenVPN Connect for Android have a bug to misinterpret SSL certificates in the old format. It might cause the connection problem from OpenVPN Connect for Android to this VPN Server.\r\n\r\nIf you are planning to use OpenVPN Connect for Android as a VPN client, it is recommended to regenerate the SSL server certificate.\r\n\r\nTo regenerate and update the server certificate, execute the "ServerCertRegenerate" command after updating the VPN Server to the latest version.
@@ -1275,11 +1274,11 @@ CMD_ServerCipherSet_PROMPT_NAME	Encrypted Algorithm Name to Specify:
 # SyslogEnable command
 CMD_SyslogEnable		Set syslog Send Function
 CMD_SyslogEnable_Help	Use this to set the usage of syslog send function and which syslog server to use. 
-CMD_SyslogEnable_Args	SyslogEnable [1|2|3] [/HOST:host:port]
-CMD_SyslogEnable_[1|2|3]	Specify, using an integer, 1, 2 or 3 for the setting to use the syslog send function. \n1: Send server log by syslog. \n2: Send server and Virtual Hub security logs by syslog. \n3: Send server, Virtual Hub security, and packet logs by syslog.
+CMD_SyslogEnable_Args	SyslogEnable [2|3] [/HOST:host:port]
+CMD_SyslogEnable_[2|3]	Specify, using an integer, 2 or 3 for the setting to use the syslog send function. \n2: Send server and Virtual Hub security logs by syslog. \n3: Send server, Virtual Hub security, and packet logs by syslog.
 CMD_SyslogEnable_HOST	Specify the host name or IP address, and port number of the syslog server using the format [host name:port number]. If the port number is omitted, 514 will be used.
-CMD_SyslogEnable_MINMAX	Specify, using an integer, 1, 2 or 3 for the setting to use the syslog send function.
-CMD_SyslogEnable_Prompt_123		Setting to Use syslog Send Function (1-3): 
+CMD_SyslogEnable_MINMAX	Specify, using an integer, 2 or 3 for the setting to use the syslog send function.
+CMD_SyslogEnable_Prompt_23		Setting to Use syslog Send Function (2-3):
 CMD_SyslogEnable_Prompt_HOST	Specify syslog Server: 
 
 

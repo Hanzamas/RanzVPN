@@ -6970,6 +6970,41 @@ static void HarnessSyslogSelf(HARNESS *h)
 	HarnessCheckErr(h, ScSetHubLog(h->Rpc, &old_log), "SYSLOG_SELF: SetHubLog restores the log setting of " HARNESS_HUB_A);
 }
 
+// SYSLOG_TYPE (FND-221 #258): SetSysLog refuses a save type other than SYSLOG_NONE, SYSLOG_SERVER_AND_HUB_SECURITY_LOG
+// and SYSLOG_SERVER_AND_HUB_ALL_LOG, such as the former type 1 (the server log only), and keeps the setting
+static void HarnessSyslogType(HARNESS *h)
+{
+	static UINT refused[] = {1, 4};
+	SYSLOG_SETTING old, t, now;
+	UINT err;
+	UINT i;
+	char tmp[MAX_SIZE];
+
+	Print("[logs: SYSLOG_TYPE]\n");
+
+	Zero(&old, sizeof(old));
+	if (HarnessCheckErr(h, ScGetSysLog(h->Rpc, &old), "SYSLOG_TYPE: GetSysLog") == false)
+	{
+		return;
+	}
+
+	for (i = 0;i < sizeof(refused) / sizeof(refused[0]);i++)
+	{
+		Zero(&t, sizeof(t));
+		t.SaveType = refused[i];
+		StrCpy(t.Hostname, sizeof(t.Hostname), "127.0.0.1");
+		t.Port = SYSLOG_PORT;
+
+		Format(tmp, sizeof(tmp), "SYSLOG_TYPE: SetSysLog with save type %u", refused[i]);
+		HarnessExpectErr(h, ScSetSysLog(h->Rpc, &t), ERR_INVALID_PARAMETER, tmp);
+	}
+
+	Zero(&now, sizeof(now));
+	err = ScGetSysLog(h->Rpc, &now);
+	HarnessCheck(h, err == ERR_NO_ERROR && now.SaveType == old.SaveType && StrCmp(now.Hostname, old.Hostname) == 0 &&
+		now.Port == old.Port, "SYSLOG_TYPE: a refused save type keeps the syslog setting");
+}
+
 ////////////////////////////
 // Packet log golden (FND-101)
 
@@ -7532,6 +7567,7 @@ void harness_test(UINT num, char **arg)
 		HarnessSetPhase("logs", NULL);
 		HarnessLogInject(h);
 		HarnessSyslogSelf(h);
+		HarnessSyslogType(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}
