@@ -29,6 +29,14 @@
 // The settings of a node in its configuration store
 #define NODE_SETTING_ROLES   "Roles"      // A list of role names; without it NODE_DEFAULT_ROLES, "none" for no role
 #define NODE_SETTING_WORKERS "NumWorkers" // The number of workers; without it, or 0, one per core
+#define NODE_SETTING_BGP     "Bgp"        // The BGP settings, one JSON object (NodeBgpStart); without it no BGP sidecar
+
+// The BGP sidecar ranz-bgp (NodeBgp.c; ADR-0010, CORE-S7-1 #82)
+#define NODE_BGP_EXE_NAME     L"ranz-bgp.exe" // The sidecar, next to the executable of the node (the RanzBgp feature of the MSI)
+#define NODE_BGP_LOG_NAME     L"ranz-bgp.log" // Its log, in the node log directory
+#define NODE_BGP_MAX_LINE     65536           // Bytes of one message of the pipe at most, with its newline (sidecar.MaxLine)
+#define NODE_BGP_MAX_ROUTES   65536           // Learned routes that a node installs at most
+#define NODE_BGP_ROUTE_METRIC 256             // The route metric of a learned route: the default RouteMetric of New-NetRoute
 
 #define NODE_MAX_WORKERS       256      // Workers of one node at most, whatever the number of cores
 #define NODE_WORKER_BATCH      64       // Completions that a worker takes from its port in one wait
@@ -120,6 +128,9 @@ struct NODE {
 	volatile LONG64 Epoch;        // The table epoch: one more at each swap
 	volatile LONG64 Generation;   // The generation of the current snapshot, 0 while stopped
 	UINT64 LastGeneration;        // The generation of the last snapshot installed, under TableLock
+	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
+	wchar_t BgpSidecar[MAX_PATH]; // The sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
+	NODE_BGP *Bgp;                // The running BGP sidecar (NodeBgp.c), NULL when none runs
 };
 
 // What NodeGetStatus reports
@@ -131,6 +142,18 @@ struct NODE_STATUS {
 	UINT NumReaders;   // Registered table readers
 	UINT NumHubs;      // Hubs of the server role
 	UINT64 Generation; // The generation of the current table snapshot, 0 when there is none
+};
+
+// What NodeBgpGetStatus reports
+struct NODE_BGP_STATUS {
+	bool Running;           // The sidecar runs and BGP started (it sent ready)
+	UINT ProcessId;         // The process of the sidecar, 0 when none runs
+	UINT NumPeers;          // The peers of the settings
+	UINT NumEstablished;    // ... whose session is established
+	UINT NumAnnounced;      // The prefixes the node announces
+	UINT NumRoutes;         // The learned routes installed through IP Helper
+	UINT NumErrors;         // Error messages of the sidecar so far
+	char Version[MAX_SIZE]; // What the sidecar named in ready: ranz-bgp and its GoBGP
 };
 
 // Node.c
@@ -166,5 +189,10 @@ void NodeReaderUnregister(NODE *n, NODE_READER *r);
 void NodeReaderQuiescent(NODE *n, NODE_READER *r);
 void NodeReaderOffline(NODE_READER *r);
 void NodeReaderOnline(NODE *n, NODE_READER *r);
+
+// NodeBgp.c
+bool NodeBgpAnnounce(NODE *n, char *prefix, char *next_hop);
+bool NodeBgpWithdraw(NODE *n, char *prefix);
+void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
 
 #endif // NODE_H
