@@ -282,6 +282,18 @@ _Avoid_: SecureNAT, NAT mode
 A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier), against which the Controller checks the Intent before an apply.
 _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
 
+**Licence key**:
+The vendor-signed key of one installation that names its Tier, its node cap, its expiry and the version of its Perpetual fallback licence (ADR-0036). Only the Controller checks it (`internal/licence`), and it caps the Nodes in name order: a Node above the cap gets no desired state and its control stream is refused. Without a key the Personal Tier of 10 Nodes is in force.
+_Avoid_: licence file, serial, activation code
+
+**Tier**:
+What a Licence key sells: Personal (free, non-commercial, all core features, a small node cap), Business (per Node per year) or Enterprise (adds EVPN and BGP, controller high availability and priority support).
+_Avoid_: plan, edition, SKU (a Windows SKU is a Capability)
+
+**Perpetual fallback licence**:
+What a subscription leaves after 12 paid months: once it expires, the version its Licence key names (major.minor, with its bugfix releases and every older version) stays licensed with the Tier and node cap of the subscription. A subscription that expires without one for the running version leaves the Personal Tier.
+_Avoid_: lifetime licence, grace period
+
 ## Flagged ambiguities
 
 - "Cedar" names both the library and the root `CEDAR` object. "Mayaqua" names the library and the Mayaqua module (`Mayaqua.c`, start-up and shut-down).
@@ -300,5 +312,6 @@ _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
 - "Capability" is what a Node reports to the Controller. `CAPS` (`ServerCaps.c`) is the slim fork's list of server capabilities for admin clients.
 - "controller" was a role of the node binary in ADR-0022. Since ADR-0026 the Controller is the separate `ranz-controller` service, and the node has no `controller` role.
 - "Generation" and "revision" are different versions: a revision is a version of the whole Intent (what `ranz rollback` returns to); a Generation is a version of one Node's desired state.
+- "Licence" is the noun in prose and code (`licence`, `REFUSE_REASON_LICENCE`); "license" is the verb ("licensed") and the name of the `LICENSE` file at the repository root.
 - "Configuration" is the Config file of the slim fork (`ranz_server.config`, Cfg) or the Configuration store of a Node (`ranz_node.db`, ConfigStore). Say which one.
 - "Server" names the slim fork's `vpnserver` and its `SERVER` object, and the server Role of a Node. The service of the Node is `ranzvpnserver`; the one of `vpnserver` is still `sevpnserverdev`.
