@@ -1,5 +1,5 @@
 // Encrypt.h
-// Header of Encrypt.c
+// Header of the Crypto/ module: Hash, Rand, Cipher, Aead, Rsa, Dh, X509, Pem and Init
 
 #ifndef	ENCRYPT_H
 #define	ENCRYPT_H
