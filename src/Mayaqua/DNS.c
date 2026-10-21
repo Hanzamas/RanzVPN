@@ -674,3 +674,69 @@ void ReleaseDnsResolverReverse(DNS_RESOLVER_REVERSE *p)
 		Free(p);
 	}
 }
+
+static LIST *WaitThreadList = NULL;
+
+void AddWaitThread(THREAD *t)
+{
+	if (t == NULL)
+	{
+		return;
+	}
+
+	AddRef(t->ref);
+
+	LockList(WaitThreadList);
+	{
+		Add(WaitThreadList, t);
+	}
+	UnlockList(WaitThreadList);
+}
+
+void DelWaitThread(THREAD *t)
+{
+	if (t == NULL)
+	{
+		return;
+	}
+
+	LockList(WaitThreadList);
+	{
+		if (Delete(WaitThreadList, t))
+		{
+			ReleaseThread(t);
+		}
+	}
+	UnlockList(WaitThreadList);
+}
+
+void InitWaitThread()
+{
+	WaitThreadList = NewList(NULL);
+}
+
+void FreeWaitThread()
+{
+	UINT i, num;
+	THREAD **threads;
+
+	LockList(WaitThreadList);
+	{
+		num = LIST_NUM(WaitThreadList);
+		threads = ToArray(WaitThreadList);
+		DeleteAll(WaitThreadList);
+	}
+	UnlockList(WaitThreadList);
+
+	for (i = 0; i < num; i++)
+	{
+		THREAD *t = threads[i];
+		WaitThread(t, INFINITE);
+		ReleaseThread(t);
+	}
+
+	Free(threads);
+
+	ReleaseList(WaitThreadList);
+	WaitThreadList = NULL;
+}

@@ -32,7 +32,6 @@
 #define PQ_GROUP_LIST				"X25519MLKEM768:p521_kyber1024:x25519_kyber768:P-521:X25519:P-256"
 
 static COUNTER *num_tcp_connections = NULL;
-static LIST *WaitThreadList = NULL;
 static LOCK *host_ip_address_list_cache_lock = NULL;
 static UINT64 host_ip_address_list_cache_last = 0;
 static LIST *host_ip_address_cache = NULL;
@@ -686,70 +685,6 @@ bool HasIPv6Address()
 	FreeHostIPAddressList(o);
 
 	return ret;
-}
-
-void AddWaitThread(THREAD *t)
-{
-	if (t == NULL)
-	{
-		return;
-	}
-
-	AddRef(t->ref);
-
-	LockList(WaitThreadList);
-	{
-		Add(WaitThreadList, t);
-	}
-	UnlockList(WaitThreadList);
-}
-
-void DelWaitThread(THREAD *t)
-{
-	if (t == NULL)
-	{
-		return;
-	}
-
-	LockList(WaitThreadList);
-	{
-		if (Delete(WaitThreadList, t))
-		{
-			ReleaseThread(t);
-		}
-	}
-	UnlockList(WaitThreadList);
-}
-
-void InitWaitThread()
-{
-	WaitThreadList = NewList(NULL);
-}
-
-void FreeWaitThread()
-{
-	UINT i, num;
-	THREAD **threads;
-
-	LockList(WaitThreadList);
-	{
-		num = LIST_NUM(WaitThreadList);
-		threads = ToArray(WaitThreadList);
-		DeleteAll(WaitThreadList);
-	}
-	UnlockList(WaitThreadList);
-
-	for (i = 0; i < num; i++)
-	{
-		THREAD *t = threads[i];
-		WaitThread(t, INFINITE);
-		ReleaseThread(t);
-	}
-
-	Free(threads);
-
-	ReleaseList(WaitThreadList);
-	WaitThreadList = NULL;
 }
 
 SOCK_EVENT *NewSockEvent()
