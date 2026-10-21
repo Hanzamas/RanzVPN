@@ -5,7 +5,8 @@
 #define	HUB_H
 
 #include "Account.h"
-#include "Logging.h"
+#include "HubLog.h"
+#include "LogWriter.h"
 
 #define	ACCESS_LIST_INCLUDED_PREFIX		"include:"
 #define	ACCESS_LIST_EXCLUDED_PREFIX		"exclude:"

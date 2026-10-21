@@ -4,7 +4,7 @@
 #include "UdpAccel.h"
 
 #include "Connection.h"
-#include "Logging.h"
+#include "HubLog.h"
 
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
