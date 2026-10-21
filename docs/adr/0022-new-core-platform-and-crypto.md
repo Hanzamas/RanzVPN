@@ -1,6 +1,6 @@
 # ADR-0022: New-core platform, threading, crypto, adapters and the strangler plan
 
-**Status:** Accepted (2026-10-13, from the grilling; "windows native total yang fast and furious", ADR-0008). This ADR consolidates the platform decisions for the new core and builds on ADR-0005 (transport), ADR-0006 (tiers), ADR-0007 (Schannel), ADR-0010 (routing), ADR-0018 (packet I/O) and ADR-0019 (VLAN and policy), each now Accepted. The security and anti-censorship design is ADR-0023.
+**Status:** Accepted (2026-10-13, from the grilling; "windows native total yang fast and furious", ADR-0008). This ADR consolidates the platform decisions for the new core and builds on ADR-0005 (transport), ADR-0006 (tiers), ADR-0007 (Schannel), ADR-0010 (routing), ADR-0018 (packet I/O) and ADR-0019 (VLAN and policy), each now Accepted. The security and anti-censorship design is ADR-0023. The SDN spec #176 amends the control plane, step 6, step 8 and the ports (amendment of 2026-10-20).
 
 ## Context
 
@@ -34,8 +34,8 @@ Per-core run-to-completion:
 
 ### Roles and SE-VPN compatibility
 
-- **One node binary** with roles: `server`, `client` (cascade), `bridge`, `controller`, `relay`. There is **no separate client product**.
-- The **legacy SE-VPN TCP listener is dropped once the new transport works**. SE-VPN interoperability is tested against the pinned `main-oracle` releases (ADR-0017), not an in-process legacy listener kept alive inside the new core.
+- **One node binary** with roles: `server`, `client` (cascade), `bridge`, `controller`, `relay`. There is **no separate client product**. *(Since the amendment of 2026-10-20 below: the `controller` role leaves the node; the controller is the separate `ranz-controller` service, ADR-0026.)*
+- The **legacy SE-VPN TCP listener is dropped once the new transport works**. SE-VPN interoperability is tested against the pinned `main-oracle` releases (ADR-0017), not an in-process legacy listener kept alive inside the new core. *(SE-VPN returns after v1 only in the separate `ranz-compat` sidecar, amendment of 2026-10-20 below.)*
 
 ### Configuration store
 
@@ -55,7 +55,7 @@ Per-core run-to-completion:
 
 ### Control plane and routing
 
-- A **`controller` role** in the node binary: one active per deployment plus a passive standby.
+- A **`controller` role** in the node binary: one active per deployment plus a passive standby. *(Superseded by the amendment of 2026-10-20 below: a separate Go service with rqlite, one member by default and 3 or 5 members for HA, ADR-0026.)*
 - **protobuf via nanopb (C)** on the Noise control stream; **no gRPC in the core**.
 - **BGP via a Go sidecar `ranz-bgp`** that embeds GoBGP as a library (ADR-0010). The core talks to the sidecar over a **named pipe with JSON** (announce, withdraw, learned routes); the core installs learned routes into Windows through IP Helper. It is an optional MSI feature, built in CI (Go cross-compiled for x64 and arm64), and spiked on Windows when L3 networks land (strangler step 7). **No RRAS.**
 
@@ -76,9 +76,9 @@ Each step is interop-tested against the oracle (ADR-0017).
 3. The node `client` role (L2 on KM-TEST + XDP, L3 on Wintun), replacing Cascade/Link for new peers.
 4. The new L2 switch with VLAN and the policy engine (ADR-0019), replacing Hub forwarding.
 5. Control plane, `relay` role, ICE (libjuice) and port mapping (libplum).
-6. L3 routed networks (IP Helper routes, WinNAT).
+6. L3 routed networks (IP Helper routes, WinNAT). *(Without WinNAT since the amendment of 2026-10-20 below: NAT in the data plane and three egress tiers.)*
 7. GoBGP sidecar, QTIP, the tier-3 mimicry sidecar (ADR-0023) and the CDN / WebSocket path.
-8. Retire the legacy listener, vpncmd and OpenSSL, together with the slim fork.
+8. Retire the legacy listener, vpncmd and OpenSSL, together with the slim fork. *(They still leave the node; the frozen slim-fork Cedar lives on after v1 only as `ranz-compat`, amendment of 2026-10-20 below.)*
 
 **Before step 1**, do the perf work that the surviving hub needs: ticket #31 Q2 (IP table expiry) and the D2 back-pressure move. Skip D1 (flooding), because the new switch at step 4 replaces it.
 
@@ -87,7 +87,7 @@ Each step is interop-tested against the oracle (ADR-0017).
 - **Enrollment:** username/password checked by the existing Sam, plus Noise static-key pinning on first login (TOFU). Admin-issued one-time join tokens are a later addition. *(Password hashing changed 2026-10-19, see the amendment below: PBKDF2-SHA256 via CNG, not Sam's SHA-0.)*
 - **IPv6:** full dual-stack in the new core (transport, adapters and policy).
 - **v1 scale target (benchmark goal): 10,000 sessions per node and 10 Gbps.** Larger scale comes from many nodes plus the GoBGP sidecar, not from one bigger node.
-- **Non-Windows clients** are served by a standard-protocol plugin transport in phase 2, out of v1.
+- **Non-Windows clients** are served by a standard-protocol plugin transport in phase 2, out of v1. *(Since 2026-10-20: other platforms join through the compat protocols of `ranz-compat` in the Legacy phase, ADR-0037.)*
 
 ## Consequences
 
@@ -95,7 +95,7 @@ Each step is interop-tested against the oracle (ADR-0017).
 - Removing the hub-wide forwarding lock and moving to read-mostly tables is a correctness risk concentrated in the new switch (step 4); the harness frame tests and the benchmark are the net.
 - Depending on the XDP rule API means tracking its deprecation: XDP 1.4 is pinned and supported to 2028-01-29, msquic's own datapath still uses the rule API, and SeLow on the loopback adapter stays the fallback behind the Local Bridge backend interface (ADR-0018). The eBPF path is re-checked on every XDP release.
 - arm64 nodes run L3 only until Microsoft ships a production-signed arm64 XDP runtime, so an arm64 deployment that needs L2 has no virtual adapter yet.
-- The control plane's own design (route advertisement, approval, health checks, ECMP, controller failover) still needs its own spec beyond this ADR; nanopb schemas and the named-pipe sidecar protocol are fixed here.
+- The control plane's own design (route advertisement, approval, health checks, ECMP, controller failover) still needs its own spec beyond this ADR; nanopb schemas and the named-pipe sidecar protocol are fixed here. *(Specified since 2026-10-20 by the SDN spec #176 in ADR-0025 to ADR-0027, except the approval step for advertised subnets, which #176 does not mention.)*
 - The estimated size of the new core is 15k–25k lines of new code rather than ~150k, because the data path is the only hand-written part; everything the OS provides is called, not reimplemented (ADR-0008).
 
 ## Amendment 2026-10-14: native-first rule for the new core
@@ -171,4 +171,15 @@ Maintainer decision (Hilmi: "catat, batching optimal di ring XDP"). A KM-TEST lo
 Correction of fact (Hilmi: "ya gas"). The 2026-10-14 and 2026-10-15 amendments name SeLow as an arm64 client backend. The repository ships SeLow for x64 only (`src/bin/hamcore/DriverPackages/SeLow_Win10/x64`), and ADR-0009 and ADR-0013 record that there is no arm64 package and that SeLow cannot be rebuilt for arm64 without a driver-signing pipeline of our own.
 - **Client arm64 is L3 only** (Wintun), as the Decision ("arm64 is L3 only") and the Consequences already state, until a production-signed arm64 XDP runtime exists. An arm64 client that needs L2 has no backend until then.
 - **Client x64 is unchanged:** XDP on KM-TEST by default, SeLow on KM-TEST as the fallback.
+
+## Amendment 2026-10-20: controller service with rqlite, step 6 without WinNAT, SE-VPN only through `ranz-compat`, the front door on 443
+
+Maintainer decision, from the SDN spec #176 that Hilmi filed ("controller as a service with rqlite instead of an active and passive standby role; strangler step 6 without WinNAT; step 8 still retires the legacy SE-VPN listener from the node, and SE-VPN returns only in the Legacy phase as `ranz-compat`; the front door on 443"). #176 builds on strangler steps 5 to 7. It supersedes CORE-S5-1 (#77, the controller role with a passive standby) and CORE-S6-2 (#81, control-plane route distribution), and amends CORE-S6-1 (#80).
+- **Controller.** The `controller` role leaves the node; the node roles are `server`, `client`, `bridge` and `relay` (ADR-0011 amendment of 2026-10-20). `ranz-controller` is a Go service on Windows or Linux with rqlite as a sidecar store: a single member by default, a 3 or 5 member Raft cluster for HA, and no passive standby (ADR-0026). nanopb on the Noise control stream stays the transport; it carries desired state by Generation, with deltas and acknowledgements (ADR-0027).
+- **Configuration store.** The node keeps `winsqlite3` for its local state. The intent lives only in the controller.
+- **Strangler step 6** builds L3 routed networks with IP Helper routes and without WinNAT: 1:1 NAT and SNAT per VRF in the node's data plane, and internet egress in three tiers (RRAS NAT on Server, WinNAT only where Hyper-V is present and no NetNat exists, a proxy on the Windows TCP/IP stack everywhere else; ADR-0025). CORE-S6-1 (#80) follows this instead of WinNAT.
+- **Strangler step 8 still retires the legacy SE-VPN listener from the node.** SE-VPN returns only in the Legacy phase, after v1, as the separate `ranz-compat` sidecar: the frozen slim-fork Cedar with OpenSSL (ADR-0037). The node and the new protocol stay free of SE-VPN compatibility and of OpenSSL.
+- **The front door on 443.** Publicly a node needs only TCP 443 and UDP 443. TCP 443 has one front door that peeks the first bytes with `MSG_PEEK`, routes by SNI and ALPN or by the first bytes, and hands each accepted socket to its owner process with `WSADuplicateSocketW`, proxying nothing after the handoff. UDP 443 stays QUIC only, owned by msquic (ADR-0035).
+- **Policy engine.** The conntrack table bounded per network becomes a conntrack quota per VRF, with per-protocol timeouts in the intent (ADR-0029).
+- **Scale.** The per-node target of 10,000 sessions and 10 Gbps stays. One controller cluster targets 10,000 nodes, 1,000 VRFs and 100,000 routes.
 
