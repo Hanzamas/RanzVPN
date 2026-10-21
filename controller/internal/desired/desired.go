@@ -37,13 +37,16 @@ func KeyOf(o *controlpb.Object) Key {
 		return Key{controlpb.Kind_KIND_NETWORK, k.Network.GetName()}
 	case *controlpb.Object_Peer:
 		return Key{controlpb.Kind_KIND_PEER, k.Peer.GetName()}
+	case *controlpb.Object_Relay:
+		return Key{controlpb.Kind_KIND_RELAY, k.Relay.GetName()}
 	}
 	return Key{}
 }
 
 // Compile returns the desired state of every Node of in, by node name. A node gets itself, the
-// VRFs it is a member of with their Networks, and a Peer for every other node that shares one of
-// those VRFs (full mesh). in must be an intent that intent.Apply returned.
+// VRFs it is a member of with their Networks, a Peer for every other node that shares one of
+// those VRFs (full mesh), and a Relay for every such node that is a relay (ADR-0015). in must be
+// an intent that intent.Apply returned.
 func Compile(in intent.Intent) (map[string]State, error) {
 	vrfs := map[string]*controlpb.Vrf{}
 	for name, v := range in.VRFs {
@@ -107,6 +110,14 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			}
 			slices.Sort(shared)
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared}}})
+			if o.Relay != "" {
+				ap, err := intent.ParseRelay(o.Relay)
+				if err != nil {
+					return nil, fmt.Errorf("Node %q: %w", other, err)
+				}
+				relay := &controlpb.Relay{Name: other, PublicKey: keys[other], Address: ap.Addr().AsSlice(), Port: uint32(ap.Port())}
+				s.add(&controlpb.Object{Kind: &controlpb.Object_Relay{Relay: relay}})
+			}
 		}
 		out[name] = s
 	}

@@ -1,8 +1,9 @@
 // Package nodesim is the node simulator of #176 "Testing Decisions": a protocol-only node, with
 // no Wintun and no data plane, that opens the control stream to the controller, applies the
-// updates it receives to the state it holds and acknowledges each generation. It is the test
-// seam of every controller ticket: tests apply intent through the API and assert the control
-// messages each simulated node receives.
+// updates it receives to the state it holds and acknowledges each generation, and sends and
+// receives the Signals between peers (ADR-0015). It is the test seam of every controller ticket:
+// tests apply intent through the API and assert the control messages each simulated node
+// receives.
 package nodesim
 
 import (
@@ -52,11 +53,16 @@ type Node struct {
 	// Updates receives every update the node applied, after the node sent its Ack. When it is
 	// nil, nothing is delivered.
 	Updates chan *controlpb.Update
+	// Signals receives every Signal that the controller forwarded to the node: peer names the
+	// node that sent it. When it is nil, nothing is delivered.
+	Signals chan *controlpb.Signal
 
 	mu     sync.Mutex
 	state  desired.State
 	gen    uint64
 	frames []Frame
+	// The stream that Run serves, nil while it serves none
+	conn *control.Conn
 }
 
 // Run opens one control stream and serves it: the Hello, then each Update applied and
@@ -70,6 +76,14 @@ func (n *Node) Run(ctx context.Context) error {
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
 	defer conn.Close()
+	n.mu.Lock()
+	n.conn = conn
+	n.mu.Unlock()
+	defer func() {
+		n.mu.Lock()
+		n.conn = nil
+		n.mu.Unlock()
+	}()
 
 	version := n.Version
 	if version == controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED {
@@ -106,12 +120,32 @@ func (n *Node) Run(ctx context.Context) error {
 					return ctx.Err()
 				}
 			}
+		case *controlpb.ControlMessage_Signal:
+			if n.Signals != nil {
+				select {
+				case n.Signals <- body.Signal:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
 		case *controlpb.ControlMessage_Refuse:
 			return &RefusedError{Refuse: body.Refuse}
 		default:
-			return errors.New("nodesim: the controller sent a frame that is neither an Update nor a Refuse")
+			return errors.New("nodesim: the controller sent a frame that is neither an Update, a Signal nor a Refuse")
 		}
 	}
+}
+
+// Signal sends the controller a Signal with envelope for the node peer, on the stream that Run
+// serves.
+func (n *Node) Signal(peer string, envelope []byte) error {
+	n.mu.Lock()
+	conn := n.conn
+	n.mu.Unlock()
+	if conn == nil {
+		return errors.New("nodesim: no stream to send a Signal on")
+	}
+	return n.send(conn, &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Signal{Signal: &controlpb.Signal{Peer: peer, Envelope: envelope}}})
 }
 
 // State returns the generation the node applied last and its state then.

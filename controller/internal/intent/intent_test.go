@@ -75,6 +75,8 @@ func TestApplyRejects(t *testing.T) {
 		{doc(res(KindNode, "n", `{"publicKey": "`+key1+`"}`)), `Node "n": the publicKey is already the key of Node "branch-1"`},
 		{doc(res(KindNode, "branch-1", `{"publicKey": "`+key1+`", "vrfs": ["corp", "corp"]}`)), `VRF "corp" is listed twice`},
 		{doc(res(KindNode, "branch-1", `{"publicKey": "`+key1+`", "tags": ["Finance"]}`)), `tag "Finance" must be`},
+		{doc(res(KindNode, "branch-1", `{"publicKey": "`+key1+`", "relay": "relay.example:7000"}`)), `relay "relay.example:7000" is not an IP address and a port`},
+		{doc(res(KindNode, "branch-1", `{"publicKey": "`+key1+`", "relay": "192.0.2.10:0"}`)), `a port other than 0`},
 	} {
 		next, err := Apply(base, c.doc, nil)
 		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), c.want) {
