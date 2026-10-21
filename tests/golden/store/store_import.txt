@@ -1,0 +1,18 @@
+schema 1
+setting name="ImportedFrom" value="fork_server.config"
+network name="DEFAULT" mode="l2" online=1
+network name="SALES" mode="l2" online=0
+user network="DEFAULT" name="alice" auth="password" group="staff" real_name="Alice Example" note="first user" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="DEFAULT" name="guest" auth="anonymous" group="" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="SALES" name="bob" auth="password" group="" real_name="Bob" note="" auth_name="" auth_serial=none expire_time=132537600000000 password="unset" pinned_key=none
+user network="SALES" name="carol" auth="user-cert" group="" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="SALES" name="dave" auth="root-cert" group="" real_name="" note="" auth_name="dave" auth_serial=1001 expire_time=0 password="unset" pinned_key=none
+user network="SALES" name="erin" auth="windows" group="" real_name="" note="" auth_name="CORP\\erin" auth_serial=none expire_time=0 password="unset" pinned_key=none
+listener transport="tls" port=443 enabled=1
+listener transport="tls" port=992 enabled=0
+certificate usage="ca" network="SALES" user=none subject="CN=Ranz certdl test CA" thumbprint="846661DF3B2B5B640D2C299180D62965BF9812D7"
+certificate usage="chain" network=none user=none subject="CN=Ranz certdl test CA" thumbprint="846661DF3B2B5B640D2C299180D62965BF9812D7"
+certificate usage="server" network=none user=none subject="CN=ranz-certdl-tls" thumbprint="3823F110343932548E74BAAE873D2BEED00F8E59"
+certificate usage="user" network="SALES" user="carol" subject="CN=ranz-certdl-https" thumbprint="D6B5303BB746EBCA5CD879E55670A4AB05091507"
+admin name="administrator" role="owner" network=none password="unset"
+admin name="administrator@SALES" role="hub-admin" network="SALES" password="unset"
