@@ -179,18 +179,13 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 
 void SetDhParam(DH_CTX *dh);
 
-SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original);
-
 
 
 void InitNetwork();
 void FreeNetwork();
 
-bool GetHostName(char *hostname, UINT size, const IP *ip);
 void GetMachineName(char *name, UINT size);
-SOCK *NewSock();
 void ReleaseSock(SOCK *s);
-void CleanupSock(SOCK *s);
 SOCK *Connect(char *hostname, UINT port);
 SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip);
 
@@ -198,8 +193,6 @@ SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP 
 #define	BIND_LOCALPORT_NULL			0			// NULL port number specifies no binding
 SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip);
 
-void InitUdpSocketBufferSize(SOCKET s);
-void QuerySocketInformation(SOCK *sock);
 void Disconnect(SOCK *sock);
 SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only);
 SOCK *Accept(SOCK *sock);
@@ -210,7 +203,6 @@ bool StartSSL(SOCK *sock, X *x, K *priv);
 bool StartSSLEx(SOCK *sock, X *x, K *priv, char *sni_hostname);
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
 bool StartSSLServer(SOCK *sock, struct ssl_ctx_st *ctx, UINT *ssl_err);
-bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x);
 UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx);
 UINT GetChainCertGeneration();
 void PrepareChainCertDir();
@@ -227,7 +219,6 @@ CANCEL *NewCancelSpecial(void *hEvent);
 void ReleaseCancel(CANCEL *c);
 void Cancel(CANCEL *c);
 void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2);
-SOCK *NewUDP(UINT port);
 SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip);
 SOCK *NewUDPEx3(UINT port, IP *ip);
 UINT SendTo(SOCK *sock, const IP *dest_addr, UINT dest_port, const void *data, UINT size);
@@ -244,28 +235,17 @@ void AcceptInitEx(SOCK *s, bool no_lookup_hostname);
 void DisableGetHostNameWhenAcceptInit();
 TOKEN_LIST *GetCipherList();
 COUNTER *GetNumTcpConnectionsCounter();
-bool GetNetBiosName(char *name, UINT size, const IP *ip);
-bool IsIPv6Supported();
 bool HasIPv6Address();
-int CompareIpClientList(void *p1, void *p2);
-IP_CLIENT *SearchIpClient(const IP *ip);
 UINT GetNumIpClient(const IP *ip);
 void GetRateLimitKey(IP *key, const IP *ip);
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str);
 void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT value);
 
-LIST *GetHostIPAddressListInternal();
-LIST *GetHostIPAddressList();
-
 bool IsIPPrivate(const IP *ip);
 bool IsIPMyHost(const IP *ip);
 void LoadPrivateIPFile();
-bool IsOnPrivateIPFile(UINT ip);
 void FreePrivateIPFile();
 
-LIST *GetNicList();
-void FreeNicList(LIST *o);
-bool IsMacAddressLocalInner(LIST *o, void *addr);
 bool IsMacAddressLocalFast(void *addr);
 void RefreshLocalMacAddressList();
 
@@ -274,8 +254,6 @@ struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list
 void ShareSSLCtx(struct ssl_ctx_st *ctx);
 void FreeSSLCtx(struct ssl_ctx_st *ctx);
 UINT GetOSSecurityLevel();
-
-LIST *Win32GetNicList();
 
 
 
