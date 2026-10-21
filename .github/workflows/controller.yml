@@ -99,8 +99,10 @@ jobs:
         mkdir -p "$out"
         python "$RUNNER_TEMP/nanopb/generator/nanopb_generator.py" --error-on-unmatched -I proto -D "$out" ranz/control/v1/control.proto
         nanopb="$RUNNER_TEMP/nanopb"
-        gcc -std=c17 -O2 -Wall -Wextra -Werror -I "$nanopb" -I "$out" -c tests/control/nanopb_roundtrip.c -o "$RUNNER_TEMP/nanopb_roundtrip.o"
-        gcc -std=c17 -O2 -I "$nanopb" -I "$out" -o "$RUNNER_TEMP/nanopb_roundtrip" "$RUNNER_TEMP/nanopb_roundtrip.o" \
+        # PB_FIELD_32BIT: an Update of control.options is larger than 64 kB (see there)
+        cflags="-std=c17 -O2 -DPB_FIELD_32BIT -I $nanopb -I $out"
+        gcc $cflags -Wall -Wextra -Werror -c tests/control/nanopb_roundtrip.c -o "$RUNNER_TEMP/nanopb_roundtrip.o"
+        gcc $cflags -o "$RUNNER_TEMP/nanopb_roundtrip" "$RUNNER_TEMP/nanopb_roundtrip.o" \
           "$out/ranz/control/v1/control.pb.c" "$nanopb/pb_encode.c" "$nanopb/pb_decode.c" "$nanopb/pb_common.c"
         "$RUNNER_TEMP/nanopb_roundtrip" "$RUNNER_TEMP"/wire/*.bin
     - name: Committed files match generation, tidy and gofmt

@@ -2,7 +2,8 @@
 #
 # Names are DNS labels of at most 63 characters (controller/internal/intent), so 64 bytes hold
 # one with its terminating NUL. The counts bound one Update; a node whose state outgrows them
-# needs callback fields here, which the node's control stream decides when it lands.
+# needs callback fields here, which the node's control stream decides when it lands. An Update of
+# 64 objects is larger than 64 kB, so the C build defines PB_FIELD_32BIT.
 ranz.control.v1.NodeConfig.name max_size:64
 ranz.control.v1.NodeConfig.tags max_count:16 max_size:64
 ranz.control.v1.Vrf.name max_size:64
