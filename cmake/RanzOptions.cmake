@@ -1,5 +1,6 @@
 # RanzOptions.cmake
-# Build options of the project's own code: the C standard and the INTERFACE target ranz_options.
+# Build options of the project's own code: the C standard and the INTERFACE target ranz_options,
+# and ranz_core_options for the new core (at the end of this file).
 #
 # mayaqua links ranz_options PUBLIC (src/Mayaqua/CMakeLists.txt), so every target that builds on
 # Mayaqua (cedar, vpnserver, vpncmd, vpntest and the fuzz targets) compiles with these options.
@@ -62,3 +63,20 @@ if(RANZ_FUZZ)
   # (Kernel.c), so that libFuzzer saves the input
   target_compile_definitions(ranz_options INTERFACE RANZ_FUZZING)
 endif()
+
+# ranz_core_options: the build options of the new core (src/Core) and of its test program
+# (src/coretest), ADR-0022. The new core runs on Windows 11 and Windows Server 2022 and later, so
+# its API level is that of Windows Server 2022 (NTDDI_WIN10_FE), the older of the two; ML-KEM
+# (Windows 11 24H2) is looked up at run time. Of ranz_options it keeps /volatile:ms and
+# WIN32_LEAN_AND_MEAN; the other definitions are Mayaqua's, and the new-core targets link neither
+# Mayaqua nor ranz_options.
+add_library(ranz_core_options INTERFACE)
+
+target_compile_options(ranz_core_options INTERFACE "$<$<COMPILE_LANGUAGE:C,CXX>:/volatile:ms>")
+
+target_compile_definitions(ranz_core_options INTERFACE
+  WINVER=0x0A00
+  _WIN32_WINNT=0x0A00
+  NTDDI_VERSION=0x0A00000A
+  WIN32_LEAN_AND_MEAN
+)
