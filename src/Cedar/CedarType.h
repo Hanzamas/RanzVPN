@@ -191,5 +191,15 @@ typedef struct SU_ADAPTER SU_ADAPTER;
 typedef struct SU_ADAPTER_LIST SU_ADAPTER_LIST;
 
 
+typedef struct NODE NODE;
+typedef struct NODE_STATUS NODE_STATUS;
+typedef struct NODE_WORKER NODE_WORKER;
+typedef struct NODE_QUEUE NODE_QUEUE;
+typedef struct NODE_READER NODE_READER;
+typedef struct NODE_TABLE_ENTRY NODE_TABLE_ENTRY;
+typedef struct NODE_TABLE NODE_TABLE;
+typedef struct NODE_TABLES NODE_TABLES;
+
+
 
 #endif
