@@ -23,9 +23,11 @@
 // - "bench" runs every case HARNESS_BENCH_RUNS times and prints "BENCH <name> <median> <unit>", then
 //   "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order. Besides the cascade path it has in-process
 //   cases without TLS, one per hot spot of spec #31: flood_fps_<n> (one session floods broadcast frames to
-//   n sessions of hub HARNESS_FLOOD through the hub packet adapter, no SessionMain thread), parse_packet_<kind>
-//   (the parse of HubPaPutPacket; _nolog: hub packet log off), pack_<encode|decode>_names_<n> (a Pack with n distinct element
-//   names), ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass) and accept_table_<n> (n first connections
+//   n sessions of hub HARNESS_FLOOD through the hub packet adapter, no SessionMain thread), flood_fps_logwait_<n>
+//   (the same while another session of the hub waits for the log writer in the packet log back-pressure, CORE-F6),
+//   parse_packet_<kind> (the parse of HubPaPutPacket; _nolog: hub packet log off), pack_<encode|decode>_names_<n> (a
+//   Pack with n distinct element names), ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass), ip_table_add_<n>
+//   (frames from new source addresses into a hub IP table of n entries, CORE-F6) and accept_table_<n> (n first connections
 //   from n distinct addresses to the DoS table of a listener, FND-127), fifo_cycle, queue_cycle and queue_burst_<n>
 //   (a FIFO and a queue that never fully drain, a queue burst, FND-215). A wrong result of these cases prints a
 //   "BENCH WARNING" line and skips the case; it does not fail the test.
@@ -175,6 +177,9 @@
 #define	HARNESS_PACK_ITEMS			32					// Sessions in the Pack benchmark struct
 #define	HARNESS_BENCH_RUNS			5					// Runs per bench case: the median and every run are printed
 #define	HARNESS_FLOOD_BATCH			32					// Frames the flood sender stores per receive loop
+#define	HARNESS_LOGWAIT_BACKLOG		30000				// Queued packet log records of a session from which PacketLog makes it wait
+#define	HARNESS_LOGWAIT_DELAY		20					// flood_fps_logwait floods this long (ms) into that wait of up to 250 ms
+#define	HARNESS_IPTABLE_ADD_BATCH	1024				// New source addresses per run of an ip_table_add case
 #define	HARNESS_PACK_NAMES			500					// Distinct element names of the many-names Pack case
 #define	HARNESS_PARSE_FRAME_MAX		512					// Buffer of one ParsePacket bench frame
 #define	HARNESS_NUM_PARSE_FRAMES	5					// ParsePacket bench frames: l2, tcp, http, tls, dns
@@ -348,6 +353,15 @@ typedef struct HARNESS_IPTABLE_SENDER
 	HARNESS_PA *Pa;				// Session A
 	volatile bool Halt;			// Set by the test to stop the sender
 } HARNESS_IPTABLE_SENDER;
+
+// Waiting session of flood_fps_logwait: its packet log backlog is at the back-pressure mark of PacketLog
+typedef struct HARNESS_LOGWAIT
+{
+	SESSION *Session;			// A session of the flood hub
+	UCHAR Frame[128];			// The logged frame it sends once per run (UDP)
+	UINT Size;
+	EVENT *Sending;				// Set right before the frame goes into the hub
+} HARNESS_LOGWAIT;
 
 // State of "adminaudit": the server sends its server log and the hub security logs to a syslog receiver of the test
 typedef struct ADMINAUDIT
@@ -559,6 +573,10 @@ static SESSION *HarnessNewFloodSession(HUB *hub, THREAD *thread, UINT index, boo
 static void HarnessFreeFloodSession(SESSION *s);
 static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, const UCHAR *frame, UINT size);
 static void HarnessBenchFloodCase(HUB *hub, UINT num_recv);
+static void HarnessLogWaitThread(THREAD *thread, void *param);
+static void HarnessBenchFloodLogWaitCase(HUB *hub, UINT num_recv);
+static void HarnessIpTableAddFrame(SESSION *s, UCHAR *frame, UINT size, UINT index);
+static void HarnessBenchIpTableAdd(HUB *hub, UINT num);
 static void HarnessBenchFlood(HARNESS *h);
 static bool HarnessOpEncodeEnumSession(void *param);
 static bool HarnessOpDecodeEnumSession(void *param);
@@ -4312,6 +4330,224 @@ static void HarnessBenchFloodCase(HUB *hub, UINT num_recv)
 	ReleaseThread(thread);
 }
 
+// Thread of the waiting session of flood_fps_logwait: one logged frame into the hub. PacketLog finds the backlog of
+// the session at its back-pressure mark and makes this thread wait up to 250 ms for the log writer
+static void HarnessLogWaitThread(THREAD *thread, void *param)
+{
+	HARNESS_LOGWAIT *w = (HARNESS_LOGWAIT *)param;
+
+	if (w == NULL)
+	{
+		return;
+	}
+
+	void *data = Malloc(w->Size);
+	Copy(data, w->Frame, w->Size);
+
+	Set(w->Sending);
+	w->Session->PacketAdapter->PutPacket(w->Session, data, w->Size);
+	w->Session->PacketAdapter->PutPacket(w->Session, NULL, 0);
+}
+
+// flood_fps_logwait_<n>: broadcast frames per second that one session floods to n receiving sessions while another
+// session of the hub waits for the log writer. That session holds HARNESS_LOGWAIT_BACKLOG queued packet log records;
+// each run it sends one logged frame on a thread of its own, and one flood batch starts HARNESS_LOGWAIT_DELAY ms
+// later, inside the back-pressure wait of that frame (up to 250 ms). For the case the packet logger of the hub is a
+// LOG with a record queue and no log thread, so the backlog stays at the mark
+static void HarnessBenchFloodLogWaitCase(HUB *hub, UINT num_recv)
+{
+	UCHAR frame[HARNESS_FRAME_SIZE];
+	UCHAR mac_sender[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0xF1};
+	UCHAR payload[8];
+	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT64 sent = 0;
+	UINT64 delivered = 0;
+	HARNESS_LOGWAIT w;
+	HUB_LOG old_setting;
+	LOG *old_logger = hub->PacketLogger;
+	LOG *capture = ZeroMalloc(sizeof(LOG));
+	RECORD *rec;
+	UINT num_records = 0;
+	char name[MAX_SIZE];
+	void *data;
+
+	Format(name, sizeof(name), "flood_fps_logwait_%u", num_recv);
+
+	THREAD *thread = NewThread(HarnessFloodIdleThread, NULL);
+	SESSION *sender = HarnessNewFloodSession(hub, thread, 0, true);
+	SESSION **recv = ZeroMalloc(sizeof(SESSION *) * num_recv);
+	for (UINT i = 0;i < num_recv;i++)
+	{
+		recv[i] = HarnessNewFloodSession(hub, thread, i + 1, false);
+	}
+
+	// The waiting session sends UDP frames from 10.0.0.1 to a MAC address no session has: the hub floods them too
+	Zero(&w, sizeof(w));
+	Zero(payload, sizeof(payload));
+	w.Session = HarnessNewFloodSession(hub, thread, num_recv + 1, false);
+	w.Size = HarnessBuildIpFrame(w.Frame, sizeof(w.Frame), IP_PROTO_UDP, HARNESS_IPTABLE_PORT, payload, sizeof(payload));
+	w.Sending = NewEvent();
+
+	HarnessBuildFrame(frame, sizeof(frame), harness_mac_broadcast, mac_sender, 0x30000 + num_recv);
+
+	// UDP frames are logged at header level, into a record queue that nothing drains
+	Copy(&old_setting, &hub->LogSetting, sizeof(HUB_LOG));
+	hub->LogSetting.SavePacketLog = true;
+	hub->LogSetting.PacketLogConfig[PACKET_LOG_UDP] = PACKET_LOG_HEADER;
+	capture->RecordQueue = NewQueue();
+	capture->Event = NewEvent();
+	hub->PacketLogger = capture;
+	InterlockedExchangeAdd((volatile LONG *)&w.Session->LoggingRecordCount->c, (LONG)HARNESS_LOGWAIT_BACKLOG);
+
+	// Warm-up: the hub learns the sender MAC address
+	HarnessFloodBatch(sender, recv, num_recv, frame, sizeof(frame));
+
+	for (UINT r = 0;r < HARNESS_BENCH_RUNS;r++)
+	{
+		THREAD *t = NewThread(HarnessLogWaitThread, &w);
+
+		Wait(w.Sending, INFINITE);
+		SleepThread(HARNESS_LOGWAIT_DELAY);
+
+		UINT64 start = HarnessNowNs();
+		delivered += HarnessFloodBatch(sender, recv, num_recv, frame, sizeof(frame));
+		UINT64 now = HarnessNowNs();
+
+		sent += HARNESS_FLOOD_BATCH;
+		runs[r] = (UINT64)HARNESS_FLOOD_BATCH * HARNESS_NS_PER_S / MAX(now - start, 1);
+
+		WaitThread(t, INFINITE);
+		ReleaseThread(t);
+	}
+
+	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "frames/s", false);
+
+	// Every receiver gets every flood frame (and the frames of the waiting session on top)
+	if (delivered < sent * (UINT64)num_recv)
+	{
+		Print("BENCH WARNING %s: %I64u of %I64u copies delivered\n", name, delivered, sent * (UINT64)num_recv);
+	}
+
+	// One record per logged frame: freeing it gives back its record count and its session reference
+	hub->PacketLogger = old_logger;
+	while ((rec = GetNext(capture->RecordQueue)) != NULL)
+	{
+		rec->FreeProc(rec->Data);
+		Free(rec);
+		num_records++;
+	}
+	ReleaseQueue(capture->RecordQueue);
+	ReleaseEvent(capture->Event);
+	Free(capture);
+	InterlockedExchangeAdd((volatile LONG *)&w.Session->LoggingRecordCount->c, -(LONG)HARNESS_LOGWAIT_BACKLOG);
+	Copy(&hub->LogSetting, &old_setting, sizeof(HUB_LOG));
+
+	if (num_records != HARNESS_BENCH_RUNS)
+	{
+		Print("BENCH WARNING %s: %u packet log records of the waiting session, %u expected\n", name, num_records,
+			HARNESS_BENCH_RUNS);
+	}
+
+	// The flood frames queued for the waiting session
+	while (w.Session->PacketAdapter->GetNextPacket(w.Session, &data) != 0)
+	{
+		Free(data);
+	}
+
+	HarnessFreeFloodSession(w.Session);
+	ReleaseEvent(w.Sending);
+	for (UINT i = 0;i < num_recv;i++)
+	{
+		HarnessFreeFloodSession(recv[i]);
+	}
+	Free(recv);
+	HarnessFreeFloodSession(sender);
+
+	ReleaseThread(thread);
+}
+
+// One UDP frame of the ip_table_add cases into the hub through the packet adapter of session s. Its source address
+// is 10.x.y.z, x.y.z the low 24 bits of index times an odd number: another address for every index below 2^24, in
+// no particular order
+static void HarnessIpTableAddFrame(SESSION *s, UCHAR *frame, UINT size, UINT index)
+{
+	UINT v = (index * 2654435761U) & 0xFFFFFF;
+	USHORT sum;
+
+	// Source address (frame bytes 26-29), then the IPv4 header checksum again. The UDP checksum covers the source
+	// address: 0 (no checksum) instead
+	frame[26] = 10;
+	frame[27] = (UCHAR)((v >> 16) & 0xFF);
+	frame[28] = (UCHAR)((v >> 8) & 0xFF);
+	frame[29] = (UCHAR)(v & 0xFF);
+	frame[24] = 0;
+	frame[25] = 0;
+	sum = IpChecksum(frame + 14, 20);
+	Copy(frame + 24, &sum, sizeof(USHORT));
+	frame[40] = 0;
+	frame[41] = 0;
+
+	void *data = Malloc(size);
+	Copy(data, frame, size);
+	s->PacketAdapter->PutPacket(s, data, size);
+}
+
+// ip_table_add_<n>: frames per second from new source addresses into a hub IP table that holds n live entries,
+// through the hub packet adapter of one session of the flood hub (HubPaPutPacket, StorePacket, IpTableAddEntry).
+// The frames go to a MAC address no session has and the hub has no other session, so the flood loop has no
+// destination. Each run sends HARNESS_IPTABLE_ADD_BATCH new addresses
+static void HarnessBenchIpTableAdd(HUB *hub, UINT num)
+{
+	UCHAR frame[128];
+	UCHAR payload[8];
+	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT index = 0;
+	char name[MAX_SIZE];
+
+	Format(name, sizeof(name), "ip_table_add_%u", num);
+
+	Zero(payload, sizeof(payload));
+	UINT size = HarnessBuildIpFrame(frame, sizeof(frame), IP_PROTO_UDP, HARNESS_IPTABLE_PORT, payload, sizeof(payload));
+
+	// A sender session: the broadcast storm guard is off, which would keep one storm list entry per address
+	THREAD *thread = NewThread(HarnessFloodIdleThread, NULL);
+	SESSION *s = HarnessNewFloodSession(hub, thread, 0, true);
+
+	// The n entries that the table holds before the measured runs
+	while (index < num)
+	{
+		HarnessIpTableAddFrame(s, frame, size, index++);
+	}
+
+	for (UINT r = 0;r < HARNESS_BENCH_RUNS;r++)
+	{
+		UINT64 start = HarnessNowNs();
+
+		for (UINT i = 0;i < HARNESS_IPTABLE_ADD_BATCH;i++)
+		{
+			HarnessIpTableAddFrame(s, frame, size, index++);
+		}
+
+		UINT64 now = HarnessNowNs();
+		runs[r] = (UINT64)HARNESS_IPTABLE_ADD_BATCH * HARNESS_NS_PER_S / MAX(now - start, 1);
+	}
+
+	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "frames/s", false);
+
+	// Every frame added one entry: none expired and none was evicted (MAX_IP_TABLES is far away)
+	HubLockTables(hub);
+	UINT num_entries = HubIpTableNum(hub);
+	HubUnlockTables(hub);
+
+	if (num_entries != index)
+	{
+		Print("BENCH WARNING %s: %u IP table entries after %u new source addresses\n", name, num_entries, index);
+	}
+
+	HarnessFreeFloodSession(s);
+	ReleaseThread(thread);
+}
+
 // Flood cases on a hub of their own: the flood loop of StorePacket sends to every session of the hub
 static void HarnessBenchFlood(HARNESS *h)
 {
@@ -4329,6 +4565,13 @@ static void HarnessBenchFlood(HARNESS *h)
 		HarnessBenchFloodCase(hub, 8);
 		HarnessSetPhase("bench_flood_64", NULL);
 		HarnessBenchFloodCase(hub, 64);
+		HarnessSetPhase("bench_flood_logwait_8", NULL);
+		HarnessBenchFloodLogWaitCase(hub, 8);
+
+		// The IP table cases use the same hub, with one session
+		HarnessSetPhase("bench_ip_table_add", NULL);
+		HarnessBenchIpTableAdd(hub, 1024);
+		HarnessBenchIpTableAdd(hub, 16384);
 
 		ReleaseHub(hub);
 	}
