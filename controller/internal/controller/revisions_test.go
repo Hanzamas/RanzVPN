@@ -276,20 +276,6 @@ func TestConfirmationSurvivesRestart(t *testing.T) {
 	h.checkAutomaticRollback(3, 2)
 }
 
-// document reads the intent document testdata/file.
-func (h *harness) document(file string) intent.Document {
-	h.t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", file))
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	doc, err := intent.ParseDocument(b)
-	if err != nil {
-		h.t.Fatalf("%s: %v", file, err)
-	}
-	return doc
-}
-
 // applyConfirm applies testdata/file with a confirmation time, as `ranz apply -f file --confirm`.
 func (h *harness) applyConfirm(file string, confirm time.Duration) controller.ApplyResult {
 	h.t.Helper()

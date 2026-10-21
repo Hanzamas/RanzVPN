@@ -2,7 +2,9 @@
 // test applies intent through the HTTP API and checks the control messages that simulated nodes
 // receive and acknowledge against the golden files in testdata (prototext, compared as
 // messages). The API and the control streams share one TLS port, as in the controller, so every
-// test also goes through the ALPN routing of internal/port. -update rewrites the golden files.
+// test also goes through the ALPN routing of internal/port. The harness calls the API with the
+// admin token that the first start of the controller creates (rbac_test.go tests the roles).
+// -update rewrites the golden files.
 // With RANZ_CONTROL_WIRE set to a directory, the tests also write every frame as it went over
 // the wire, for the nanopb round trip of CI (tests/control/nanopb_roundtrip.c).
 package controller_test
@@ -37,6 +39,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
@@ -224,7 +227,8 @@ type harness struct {
 	c      *controller.Controller
 	ln     net.Listener
 	port   *port.Server
-	api    *api.Client
+	api    *api.Client // with the admin token
+	admin  string      // the secret of the admin token rbac.FirstAdmin
 	serve  chan error
 }
 
@@ -259,6 +263,11 @@ func (h *harness) start() {
 	if err != nil {
 		h.t.Fatal(err)
 	}
+	tokens := rbac.New(st)
+	// The first start creates the admin token; a restart finds it in the store.
+	if _, err := tokens.Bootstrap(ctx, func(secret string) error { h.admin = secret; return nil }); err != nil {
+		h.t.Fatal(err)
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		h.t.Fatal(err)
@@ -267,12 +276,19 @@ func (h *harness) start() {
 	h.port = &port.Server{
 		TLS:     &tls.Config{Certificates: []tls.Certificate{cert}},
 		Control: c.ServeStream,
-		HTTP:    api.Handler(c, api.Status{ControlAddress: ln.Addr().String(), TLSFingerprint: keys.Fingerprint(cert)}),
+		HTTP:    api.Handler(c, tokens, api.Status{ControlAddress: ln.Addr().String(), TLSFingerprint: keys.Fingerprint(cert)}),
 		Log:     log,
 	}
 	h.serve = make(chan error, 1)
 	go func() { h.serve <- h.port.Serve(ln) }()
-	h.api = api.NewClient("https://" + ln.Addr().String())
+	h.api = h.client(h.admin)
+}
+
+// client returns a client of the API that calls with the token secret, none when it is empty.
+func (h *harness) client(secret string) *api.Client {
+	c := api.NewClient("https://" + h.ln.Addr().String())
+	c.Token = secret
+	return c
 }
 
 func (h *harness) stop() {
