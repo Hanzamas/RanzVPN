@@ -20,6 +20,6 @@ ADR-0019 and ADR-0022 define a stateful, identity-based policy engine in the nod
 
 ## Consequences
 
-- ADR-0019 decision 3 allows "a default action per network (allow or deny)". Under this ADR the engine's default is always deny, and the allow case is the explicit starter rule. The per-network conntrack bound of ADR-0022 becomes a quota per VRF.
+- ADR-0019 decision 3 allows "a default action per network (allow or deny)". Under this ADR the engine's default is always deny, and the allow case is the explicit starter rule. *(ADR-0019 is amended to match, amendment of 2026-10-21.)* The per-network conntrack bound of ADR-0022 becomes a quota per VRF.
 - The vpntest harness (seam 2 of #45) checks policy from tags with conntrack, per-VRF conntrack quotas, FQDN rules and mirroring against golden output; the controller conformance seam (ADR-0026) checks the rules each simulated node receives.
 - Tickets: SDN-8 (#184), SDN-21 (#197), SDN-23 (#199).
