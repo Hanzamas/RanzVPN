@@ -1,7 +1,7 @@
 // Package controller is the controller of #176: the single authority that keeps the intent in
 // rqlite, compiles it into the desired state of each node with a generation number, and pushes
 // that state over the control stream as deltas against the generation each node acknowledged
-// last (#176 "Control protocol").
+// last (#176 "Control protocol"). In a controller cluster the leader runs it (internal/cluster).
 package controller
 
 import (
@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
@@ -25,9 +27,9 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
-// SchemaVersion is the control schema version of this controller (N). It serves nodes of
+// SchemaVersion is the newest control schema version of this controller (N). It serves nodes of
 // version N and N-1.
-const SchemaVersion = controlpb.SchemaVersion_SCHEMA_VERSION_1
+const SchemaVersion = controlpb.SchemaVersion_SCHEMA_VERSION_2
 
 const (
 	helloTimeout = 10 * time.Second // from the end of the handshake to the Hello
@@ -44,6 +46,12 @@ type Config struct {
 	Key    keys.Static  // the controller's Noise static key
 	Log    *slog.Logger // discarded when nil
 	Random io.Reader    // draws the ULA of a new VRF; crypto/rand when nil
+	// Schema is the control schema version the controller runs as, SchemaVersion when it is
+	// unspecified. In a rolling upgrade of a cluster, the members of the new release run as
+	// SchemaVersion-1, the version of the old release, until every member runs the new one
+	// (SDN-17): they serve the nodes the old release serves, send nothing that version does
+	// not have, and refuse the resources it does not know.
+	Schema controlpb.SchemaVersion
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -72,14 +80,16 @@ type Controller struct {
 	key    keys.Static
 	log    *slog.Logger
 	random io.Reader
+	schema controlpb.SchemaVersion
 
-	mu     sync.Mutex
-	intent intent.Intent
-	nodes  map[string]*node
-	byKey  map[string]string // node static key to node name
-	conns  map[net.Conn]struct{}
-	closed bool
-	wg     sync.WaitGroup
+	mu      sync.Mutex
+	intent  intent.Intent
+	members *controlpb.Controllers // the Controller resources of the intent, for nodes of version 2
+	nodes   map[string]*node
+	byKey   map[string]string // node static key to node name
+	conns   map[net.Conn]struct{}
+	closed  bool
+	wg      sync.WaitGroup
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -100,11 +110,13 @@ type stream struct {
 	once sync.Once
 
 	// Guarded by Controller.mu.
-	known    bool          // base is the state the node holds, at baseGen
-	base     desired.State // nil at baseGen 0
+	version  controlpb.SchemaVersion // of the node's Hello
+	known    bool                    // base is the state the node holds, at baseGen
+	base     desired.State           // nil at baseGen 0
 	baseGen  uint64
-	inflight uint64        // the generation sent and not yet acknowledged, 0 if none
-	sent     desired.State // the state of inflight
+	inflight uint64                 // the generation sent and not yet acknowledged, 0 if none
+	sent     desired.State          // the state of inflight
+	members  *controlpb.Controllers // the Controllers message sent last, nil before the first
 	refusal  *controlpb.Refuse
 }
 
@@ -116,6 +128,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		key:    cfg.Key,
 		log:    cfg.Log,
 		random: cfg.Random,
+		schema: cfg.Schema,
 		intent: intent.New(),
 		nodes:  map[string]*node{},
 		byKey:  map[string]string{},
@@ -126,6 +139,12 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	}
 	if c.random == nil {
 		c.random = rand.Reader
+	}
+	if c.schema == controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED {
+		c.schema = SchemaVersion
+	}
+	if c.schema != SchemaVersion && c.schema != SchemaVersion-1 {
+		return nil, fmt.Errorf("controller: schema version %d: this release runs as version %d or %d", int32(c.schema), int32(SchemaVersion), int32(SchemaVersion-1))
 	}
 	rs, stored, err := c.store.Load(ctx)
 	if err != nil {
@@ -153,7 +172,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if _, err := c.commit(ctx, in); err != nil {
 		return nil, err
 	}
-	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes))
+	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "schema", int32(c.schema))
 	return c, nil
 }
 
@@ -162,8 +181,21 @@ func (c *Controller) PublicKey() []byte {
 	return c.key.Public()
 }
 
+// Schema returns the control schema version the controller runs as.
+func (c *Controller) Schema() controlpb.SchemaVersion {
+	return c.schema
+}
+
 // Apply applies doc to the intent (`ranz apply -f`).
 func (c *Controller) Apply(ctx context.Context, doc intent.Document) (ApplyResult, error) {
+	if c.schema < controlpb.SchemaVersion_SCHEMA_VERSION_2 {
+		for _, r := range doc.Resources {
+			if r.Kind == intent.KindController {
+				return ApplyResult{}, fmt.Errorf("%w: Controller %q: Controller resources need control schema version 2, and this controller runs as version %d until every member of the cluster runs the new release",
+					intent.ErrInvalid, r.Name, int32(c.schema))
+			}
+		}
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	next, err := intent.Apply(c.intent, doc, c.random)
@@ -286,6 +318,14 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent) ([]NodeGene
 	}
 
 	c.intent = next
+	if m := members(next); !proto.Equal(m, c.members) {
+		c.members = m
+		for _, n := range c.nodes {
+			if n.stream != nil {
+				n.stream.poke()
+			}
+		}
+	}
 	for _, ng := range result {
 		n := c.nodes[ng.Name]
 		if n == nil {
@@ -348,17 +388,17 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "the first frame must be a Hello"))
 		return
 	}
-	if v := hello.GetSchemaVersion(); !served(v) {
+	if v := hello.GetSchemaVersion(); !c.served(v) {
 		c.log.Warn("node refused: schema version", "remote", conn.RemoteAddr().String(), "version", int32(v))
 		writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_SCHEMA_VERSION,
-			"schema version %d is not served: this controller serves version %d and the one before it", int32(v), int32(SchemaVersion)))
+			"schema version %d is not served: this controller serves version %d and the one before it", int32(v), int32(c.schema)))
 		return
 	}
 	if err := conn.SetReadDeadline(time.Time{}); err != nil {
 		return
 	}
 
-	s := &stream{conn: conn, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	s := &stream{conn: conn, wake: make(chan struct{}, 1), done: make(chan struct{}), version: hello.GetSchemaVersion()}
 	c.mu.Lock()
 	name, ok := c.byKey[string(conn.PeerKey())]
 	if !ok || c.closed {
@@ -488,8 +528,10 @@ func (c *Controller) writeLoop(s *stream) {
 		}
 		c.mu.Lock()
 		r := s.refusal
+		var m *controlpb.Controllers
 		var u *controlpb.Update
 		if r == nil {
+			m = c.nextMembers(s)
 			u = c.nextUpdate(s)
 		}
 		c.mu.Unlock()
@@ -498,6 +540,14 @@ func (c *Controller) writeLoop(s *stream) {
 			writeRefuse(s.conn, r)
 			s.shut()
 			return
+		}
+		if m != nil {
+			if _, err := s.conn.Write(&controlpb.ControlMessage{Body: &controlpb.ControlMessage_Controllers{Controllers: m}}); err != nil {
+				c.log.Warn("sending the controllers", "node", s.name, "err", err)
+				s.shut()
+				return
+			}
+			c.log.Info("controllers sent", "node", s.name, "controllers", len(m.GetControllers()))
 		}
 		if u == nil {
 			continue
@@ -529,9 +579,35 @@ func (c *Controller) nextUpdate(s *stream) *controlpb.Update {
 	return u
 }
 
-// served reports whether the controller serves nodes of schema version v: N and N-1.
-func served(v controlpb.SchemaVersion) bool {
-	return v == SchemaVersion || (v == SchemaVersion-1 && v != controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED)
+// nextMembers returns the Controllers message the node of s lacks: none for a node of schema
+// version 1, which does not have the message, and none when the node has the current one.
+// c.mu is held.
+func (c *Controller) nextMembers(s *stream) *controlpb.Controllers {
+	n := c.nodes[s.name]
+	if n == nil || n.stream != s || s.version < controlpb.SchemaVersion_SCHEMA_VERSION_2 ||
+		(s.members != nil && proto.Equal(s.members, c.members)) {
+		return nil
+	}
+	s.members = c.members
+	return c.members
+}
+
+// members returns the Controllers message of in: its Controller resources, ordered by name.
+func members(in intent.Intent) *controlpb.Controllers {
+	m := &controlpb.Controllers{}
+	for _, name := range slices.Sorted(maps.Keys(in.Controllers)) {
+		ct := in.Controllers[name]
+		// Apply validated the key.
+		k, _ := intent.ParseKey(ct.PublicKey)
+		m.Controllers = append(m.Controllers, &controlpb.Controller{Name: name, Address: ct.Address, PublicKey: k})
+	}
+	return m
+}
+
+// served reports whether the controller serves nodes of schema version v: N and N-1, where N is
+// the version the controller runs as.
+func (c *Controller) served(v controlpb.SchemaVersion) bool {
+	return v == c.schema || (v == c.schema-1 && v != controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED)
 }
 
 func (s *stream) poke() {

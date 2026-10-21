@@ -1,0 +1,9 @@
+# The Controllers message that branch-1 receives when the Controller resource c2 is deleted: c1
+# alone. The desired state of the node does not change, so no generation comes with it.
+controllers: {
+  controllers: {
+    name: "c1"
+    address: "192.0.2.1:443"
+    public_key: "\240\241\242\243\244\245\246\247\250\251\252\253\254\255\256\257\260\261\262\263\264\265\266\267\270\271\272\273\274\275\276\277"
+  }
+}

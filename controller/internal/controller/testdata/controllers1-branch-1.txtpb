@@ -1,0 +1,14 @@
+# The Controllers message of schema version 2 that branch-1 receives before its generation 1:
+# the Controller resources of controllers1.json, ordered by name.
+controllers: {
+  controllers: {
+    name: "c1"
+    address: "192.0.2.1:443"
+    public_key: "\240\241\242\243\244\245\246\247\250\251\252\253\254\255\256\257\260\261\262\263\264\265\266\267\270\271\272\273\274\275\276\277"
+  }
+  controllers: {
+    name: "c2"
+    address: "192.0.2.2:443"
+    public_key: "\300\301\302\303\304\305\306\307\310\311\312\313\314\315\316\317\320\321\322\323\324\325\326\327\330\331\332\333\334\335\336\337"
+  }
+}
