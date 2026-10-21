@@ -1,6 +1,6 @@
 # SoftEtherVPN
 
-Fork of SoftEther VPN (C, CMake). Main code lives in `src/Cedar` (VPN protocol, server/client logic) and `src/Mayaqua` (runtime: OS, network, crypto, memory). Build docs: `src/BUILD_UNIX.md`, `src/BUILD_WINDOWS.md`.
+Fork of SoftEther VPN (C, CMake). Main code lives in `src/Cedar` (VPN protocol, server/client logic) and `src/Mayaqua` (runtime: OS, network, crypto, memory). Build doc: `src/BUILD_WINDOWS.md`.
 
 ## Agent skills
 

@@ -165,7 +165,7 @@ An L2 bridge between a Hub and a physical Ethernet adapter. `LOCALBRIDGE` is the
 _Avoid_: network bridge, bare "Bridge"
 
 **SeLow**:
-SoftEther's signed NDIS lightweight filter driver that captures and injects frames for a Local Bridge. Driver sources live in `src/SeLow`; the user-mode side is `SeLowUser`.
+SoftEther's Microsoft-WHQL-signed NDIS protocol driver (Class `NetTrans`, x64 only) that captures and injects frames for a Local Bridge. Driver sources live in `src/SeLow`; the user-mode side is `SeLowUser`.
 
 **PACK**:
 SE-VPN's key/value message: a `PACK` holds named `ELEMENT`s, each with one or more typed `VALUE`s (int, int64, string, wide string, data). It carries the handshake (hello, login, welcome) and every admin RPC request and response.

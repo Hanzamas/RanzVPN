@@ -112,7 +112,7 @@ Maintainer decision (Hilmi: "ya setuju"). This replaces the tap-windows6 fallbac
 
 - Server, virtual L2 (KM-TEST loopback): XDP rule API (proven: TX inspect and RX inject).
 - Server, bridge to a physical NIC: SeLow by default (proven, sets promiscuous itself); XDP plus Npcap as a performance option once CORE-S3-3 proves it on a physical NIC and on a Hyper-V network.
-- Client (Windows 11, x64 or arm64): L3 through Wintun by default. When L2 is needed: SeLow on KM-TEST by default (signed, x64 and arm64, already shipped, no extra runtime); XDP on KM-TEST as an option if the manual Windows 11 test passes. tap-windows6 is no longer needed.
+- Client (Windows 11, x64 or arm64): L3 through Wintun by default. When L2 is needed: SeLow on KM-TEST by default (signed, x64 and arm64, already shipped, no extra runtime); XDP on KM-TEST as an option if the manual Windows 11 test passes. tap-windows6 is no longer needed. *(Corrected in the amendment of 2026-10-21 below: SeLow ships for x64 only.)*
 - Speed matters mainly on servers (10 Gbps target is roughly 0.8 Mpps at 1500 bytes); a client link rarely exceeds what SeLow carries. A CI benchmark of SeLow vs XDP on the same KM-TEST adapter gives the numbers.
 
 ## Amendment 2026-10-15: measured SeLow vs XDP, client default flips to XDP
@@ -121,7 +121,7 @@ CI benchmark on the same KM-TEST adapter (branch spike/selow-vs-xdp, Server 2022
 Maintainer decision (Hilmi: "(b) XDP default di x64"): this supersedes the client line of the 2026-10-14 amendment.
 - Server: XDP is the default for virtual L2 AND for the physical-NIC bridge (XDP plus Npcap for promiscuous until xdp-for-windows #44); SeLow is not viable at 10 Gbit/s and stays only as a compatibility fallback.
 - Client x64: XDP on KM-TEST is the default L2 backend (needs the XDP runtime; Microsoft does not yet support XDP on client SKUs, so the manual Windows 11 test gates it); SeLow on KM-TEST is the fallback when XDP is not installed or fails.
-- Client arm64: SeLow on KM-TEST (no production-signed arm64 XDP runtime yet).
+- Client arm64: SeLow on KM-TEST (no production-signed arm64 XDP runtime yet). *(Corrected in the amendment of 2026-10-21 below: there is no arm64 SeLow package.)*
 - Known XDP risks to handle in CORE-S3-2: TX inspect with USO blocks senders instead of dropping when the consumer lags; unbinding ms_xdp can hang after heavy load; one unreproduced RX-inject stall followed by WSAENOBUFS. Mitigations: a dedicated drain thread per queue, bounded rings, health check plus reattach, unbind only after all sockets close with a timeout, a CI soak test, and upstream issues.
 
 ## Amendment 2026-10-15: multi-connection tunnels
@@ -165,4 +165,10 @@ Maintainer decision (Hilmi: "catat, batching optimal di ring XDP"). A KM-TEST lo
 - **Parallelism comes from the design instead:** one adapter per network/VLAN (a client in four networks has four KM-TEST adapters, four queues, no loop), multi-connection tunnels on the transport (amendment 2026-10-15), multi-queue physical NICs (RSS) or Hyper-V networks (VMQ/vRSS) on servers, and L3 mode (Wintun) for throughput-heavy single networks.
 - **XDP ring batching is a required optimisation in CORE-S3:** reserve and submit descriptors in bulk (XskRingProducerReserve/Submit, XskRingConsumerReserve/Release with batches of tens to hundreds of frames), one XskNotifySocket poke or wait per batch instead of per frame, fill and completion rings recycled in bulk, rings and UMEM sized for bursts. Batch size is adaptive: flush at N frames or after a short timeout (tens of microseconds) so latency stays bounded at low load.
 - **Measure on real hardware** in CORE-S3 (batch sizes 1/16/64/256; pps and CPU per core for TX capture and RX inject). Target: RX inject of at least 1 Mpps on one KM-TEST adapter. Revisit this amendment only if a single network on a client still needs more than one adapter can carry after batching.
+
+## Amendment 2026-10-21: no arm64 SeLow package
+
+Correction of fact (Hilmi: "ya gas"). The 2026-10-14 and 2026-10-15 amendments name SeLow as an arm64 client backend. The repository ships SeLow for x64 only (`src/bin/hamcore/DriverPackages/SeLow_Win10/x64`), and ADR-0009 and ADR-0013 record that there is no arm64 package and that SeLow cannot be rebuilt for arm64 without a driver-signing pipeline of our own.
+- **Client arm64 is L3 only** (Wintun), as the Decision ("arm64 is L3 only") and the Consequences already state, until a production-signed arm64 XDP runtime exists. An arm64 client that needs L2 has no backend until then.
+- **Client x64 is unchanged:** XDP on KM-TEST by default, SeLow on KM-TEST as the fallback.
 
