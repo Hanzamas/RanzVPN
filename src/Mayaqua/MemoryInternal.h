@@ -11,7 +11,7 @@ void CheckMemTag2(MEMTAG2 *tag);
 void *InternalMalloc(UINT size);
 void *InternalReAlloc(void *addr, UINT size);
 void InternalFree(void *addr);
-bool BufToFile(const IO *o, BUF *b);
+bool BufToFile(IO *o, BUF *b);
 BUF *FileToBuf(IO *o);
 UCHAR ReadBufChar(BUF *b);
 void CleanupFifo(FIFO *f);
