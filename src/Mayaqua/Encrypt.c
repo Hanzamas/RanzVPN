@@ -1968,19 +1968,3 @@ BIO *BufToBio(BUF *b)
 
 	return bio;
 }
-
-bool IsAesNiSupported()
-{
-	bool supported = false;
-
-	// OpenSSL has no API to detect AES-NI
-  #if defined(_M_X64)
-    int regs[4]; // EAX, EBX, ECX, EDX
-    __cpuid(regs, 1);
-    supported = (regs[2] >> 25) & 1;
-  #elif defined(_M_ARM64)
-	return IsProcessorFeaturePresent(PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE);
-  #endif
-
-	return supported;
-}
