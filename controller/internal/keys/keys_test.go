@@ -85,7 +85,7 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cert.Leaf.CheckSignatureFrom(cert.Leaf); err != nil {
+	if err := cert.Leaf.CheckSignature(cert.Leaf.SignatureAlgorithm, cert.Leaf.RawTBSCertificate, cert.Leaf.Signature); err != nil {
 		t.Errorf("the self-signed certificate does not verify: %v", err)
 	}
 	digest := sha256.Sum256([]byte("ranz"))

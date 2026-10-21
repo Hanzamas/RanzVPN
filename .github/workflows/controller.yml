@@ -8,9 +8,10 @@
 # decodes each one and encodes it back to the same bytes (tests/control/nanopb_roundtrip.c). Last,
 # the job fails, and prints the diff, if generation, tidy or gofmt changed a committed file.
 #
-# windows: vets, builds and tests the module on Windows, then runs ranz-controller as a Windows
-# service with rqlited as its sidecar and drives it with ranz and ranz-nodesim
-# (.github/scripts/controller-service.ps1).
+# windows: vets, builds and tests the module on Windows, with the controller's keys in the
+# Microsoft Software Key Storage Provider, then runs ranz-controller as a Windows service on TCP
+# 443 (and plain HTTP for the redirect) with rqlited as its sidecar, and drives it with ranz and
+# ranz-nodesim (.github/scripts/controller-service.ps1).
 #
 # Neither job touches the C build, so they run beside windows.yml and add nothing to its time.
 
@@ -145,15 +146,14 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
         go test -count=1 ./...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
-    # What the Microsoft Software Key Storage Provider does with X25519 keys, in the job log: the
-    # answers behind where the controller keeps its Noise static key (internal/keys, Load).
-    - name: Key storage provider and X25519
-      if: ${{ !cancelled() }}
+    # The controller's keys in the Microsoft Software Key Storage Provider (internal/keys), in the
+    # job log: the X25519 Noise static key against crypto/ecdh, and both keys across two loads.
+    - name: Keys in the key storage provider
       shell: pwsh
       working-directory: controller
       run: |
-        go test -count=1 -v -run TestKSPX25519Probe ./internal/keys
-        if ($LASTEXITCODE -ne 0) { throw "the probe exited with code $LASTEXITCODE" }
+        go test -count=1 -v -run 'TestKSPStatic|TestLoad' ./internal/keys
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     - name: Controller as a Windows service
       shell: pwsh
       timeout-minutes: 10
