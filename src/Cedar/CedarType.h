@@ -53,6 +53,7 @@ typedef struct HUB_OPTION HUB_OPTION;
 typedef struct HUB_OPTION_FIELD HUB_OPTION_FIELD;
 typedef struct MAC_TABLE_ENTRY MAC_TABLE_ENTRY;
 typedef struct IP_TABLE_ENTRY IP_TABLE_ENTRY;
+typedef struct IP_TABLE_EXPIRY IP_TABLE_EXPIRY;
 typedef struct ACCESS ACCESS;
 typedef struct HUB HUB;
 typedef struct HUB_STATS HUB_STATS;
@@ -189,6 +190,16 @@ typedef struct UDP_ACCEL UDP_ACCEL;
 typedef struct SU SU;
 typedef struct SU_ADAPTER SU_ADAPTER;
 typedef struct SU_ADAPTER_LIST SU_ADAPTER_LIST;
+
+
+typedef struct NODE NODE;
+typedef struct NODE_STATUS NODE_STATUS;
+typedef struct NODE_WORKER NODE_WORKER;
+typedef struct NODE_QUEUE NODE_QUEUE;
+typedef struct NODE_READER NODE_READER;
+typedef struct NODE_TABLE_ENTRY NODE_TABLE_ENTRY;
+typedef struct NODE_TABLE NODE_TABLE;
+typedef struct NODE_TABLES NODE_TABLES;
 
 
 

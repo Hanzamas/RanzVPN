@@ -15,7 +15,11 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
 
-bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now) {
+// Log the frame packet of src_session (to dest_session, NULL for a flooded frame) when the hub logs its kind. False
+// drops the frame (MaxLoggedPacketsPerMinute). wait gets true when the source session has PACKET_LOG_WAIT_RECORDS or
+// more records queued: the caller then calls PacketLogWait once it holds no hub lock. With wait NULL the wait happens
+// here
+bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now, bool *wait) {
 	HUB_OPTION *opt = NULL;
 	if (hub == NULL || src_session == NULL || packet == NULL)
 		return true;
@@ -70,14 +74,14 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		pl->WritePhysicalIP = true;
 	}
 
-	if (src_session->LoggingRecordCount != NULL) {
-		UINT n = 0;
-		while (src_session->LoggingRecordCount->c >= 30000) {
-			SleepThread(50);
-			n++;
-			if (n >= 5)
-				break;
-		}
+	// Back-pressure: a session with too many records that the log writer has not written yet waits for it. StorePacket
+	// calls PacketLog under the hub-wide MacHashTable lock, so it waits after the lock (PacketLogWait); a wait under
+	// the lock stalled the forwarding of every session of the hub for up to 250 ms per frame
+	if (src_session->LoggingRecordCount != NULL && src_session->LoggingRecordCount->c >= PACKET_LOG_WAIT_RECORDS) {
+		if (wait != NULL)
+			*wait = true;
+		else
+			PacketLogWait(src_session);
 	}
 
 	pl->SrcSession = src_session;
@@ -121,6 +125,21 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	}
 
 	return true;
+}
+
+// The back-pressure wait of PacketLog: up to 250 ms, in steps of 50 ms, while src_session has PACKET_LOG_WAIT_RECORDS
+// or more packet log records queued. The caller holds no hub lock
+void PacketLogWait(SESSION *src_session) {
+	if (src_session == NULL || src_session->LoggingRecordCount == NULL)
+		return;
+
+	UINT n = 0;
+	while (src_session->LoggingRecordCount->c >= PACKET_LOG_WAIT_RECORDS) {
+		SleepThread(50);
+		n++;
+		if (n >= 5)
+			break;
+	}
 }
 
 // A TCP segment that opens or closes a connection

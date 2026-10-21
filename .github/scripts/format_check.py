@@ -43,7 +43,7 @@ import sys
 # test program (src/coretest). Third-party code, driver sources that CI does not compile
 # (src/SeLow), the test and fuzz programs of the slim fork (src/vpntest, src/fuzz) and generated
 # files are excluded.
-SCOPE_DIRS = ['src/Cedar', 'src/Mayaqua', 'src/vpnserver', 'src/vpncmd', 'src/Core',
+SCOPE_DIRS = ['src/Cedar', 'src/Mayaqua', 'src/vpnserver', 'src/vpncmd', 'src/ranz-node', 'src/Core',
               'src/coretest']
 SCOPE_EXTS = ('.c', '.h', '.cpp')
 EXCLUDED_PREFIXES = ['src/Mayaqua/3rdparty/']

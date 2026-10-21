@@ -563,6 +563,11 @@ SVC_SEVPNSERVERDEV_NAME		sevpnserverdev
 SVC_SEVPNSERVERDEV_TITLE		Ranz VPN Server
 SVC_SEVPNSERVERDEV_DESCRIPT	This manages the server processes of Ranz VPN Server. Ranz VPN Server provides high-performance Ranz VPN Server functions via TCP/IP protocol. When this service is stopped, Ranz VPN Server on this computer will stop and Ranz VPN Client will be unable to establish a VPN connection with this computer.
 
+# Service Definition (Ranz VPN Node)
+SVC_RANZVPNSERVER_NAME		ranzvpnserver
+SVC_RANZVPNSERVER_TITLE		Ranz VPN Node
+SVC_RANZVPNSERVER_DESCRIPT	This runs the node of Ranz VPN: the server, client, bridge and relay roles that its configuration selects. When this service is stopped, the node on this computer stops.
+
 
 # Concerning Ranz VPN Server Manager
 SM_HUB_COLUMN_1			Virtual Hub Name

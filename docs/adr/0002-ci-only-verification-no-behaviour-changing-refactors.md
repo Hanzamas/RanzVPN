@@ -22,3 +22,17 @@ During the discussion a list of possible "fase 2" slimming steps was drawn up. S
 - With the amendment, the table-driven refactor becomes its own spec after the harness spec; see the roadmap in ADR-0017.
 - The realistic floor for the C code with safe cleanup only is roughly 135k to 150k lines including headers (about 100k statements); see the discussion log for how that number was derived. Going lower requires scope cuts or the harness.
 - Commits stay small and one-topic so a red CI run can be bisected by stepping back one commit.
+
+## Amendment 2026-10-21: no manual or hardware verification in the new core
+
+Maintainer decision (Hilmi: "tinggal cek kode yg udh pernah dibuat lah dan best practice di opensource, ngpaain susah susah, gw gaada arm64 gaadaa 10k node gaada hardware nic").
+
+- Every acceptance criterion of the new core and the SDN platform is proven in CI. There is no by-hand spike, no physical NIC, no arm64 machine and no second host.
+- What CI stands in for:
+  - a second host: several node processes on one runner, each with its own KM-TEST loopback adapter, with the runner's own NIC as the physical side;
+  - many nodes: the node simulator (SDN-2), up to the 10,000-node scale test (SDN-18);
+  - NAT behaviour: the harness NAT simulator (CORE-S5-4);
+  - a Windows 11 client: Windows Server 2025 runners. Microsoft does not support XDP on client SKUs, so the node detects at run time when XDP cannot bind and falls back to SeLow on x64; the client path does not wait for a by-hand run;
+  - arm64: every pull request builds arm64; tests run on the `windows-11-arm` runner where the plan provides it, otherwise the x64 tests cover the architecture-neutral code.
+- Where CI cannot reach (real NIC drivers, Hyper-V switches, absolute 10 and 100 Gbit/s numbers), the code follows an established open-source reference implementation and its documented practice (for example xdp-for-windows and its samples, msquic, Wintun, Npcap, Tailscale's NAT traversal, libjuice, libplum), and the pull request names the reference. Throughput is measured on CI runners as a regression number; the absolute targets stay estimates.
+- This replaces the by-hand Windows 11 XDP spike and the two-VM QTIP spike (ADR-0018, ADR-0022), the "measure on real hardware" step of the ADR-0022 amendment of 2026-10-19, and the two-VM spikes of seam 3 of #45.
