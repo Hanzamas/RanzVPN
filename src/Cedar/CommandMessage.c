@@ -1,5 +1,5 @@
 // CommandMessage.c
-// vpncmd commands of the Admin RPC area messages and maintenance (AdminMessage.c): flush, crash and server certificate regeneration
+// vpncmd commands of the Admin RPC area maintenance (AdminMessage.c): flush, crash and server certificate regeneration
 
 #include "Command.h"
 
