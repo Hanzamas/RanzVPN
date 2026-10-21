@@ -34,7 +34,10 @@ the commits made so far in place; at the end it checks the whole range once more
    the checker allows no comment after the first directive. When git diff would not show the move
    as deletions only from the god file (git's myers diff gives up on the minimal script next to
    large deletions), the group moves in parts, `(1/n)` ... `(n/n)`, each appended to the end of the
-   destination.
+   destination. A part never cuts a unit: the items that a file-local symbol ties together, with
+   the file's own macros and types that they use, move in one commit, so that every part compiles.
+   A unit that git diff does not show as deletions only even when it moves alone is reported; the
+   checker would reject its commit, so the map keeps it in the god file.
 3. `header: module-only prototypes move from <Module>.h to <Module>Internal.h`: prototypes that no
    file outside the module names. When the internal header is new here, the commit creates it and
    adds its `#include` to every `.c` file of the module.
@@ -61,7 +64,8 @@ When the tree has drifted from the map, the tool warns and goes on; it never sto
 
 - a map name or pattern that matches no definition (deleted or renamed) places nothing, and the
   warning names the closest unmapped definitions;
-- a definition that no map entry places stays in the god file and is listed;
+- a definition that no map entry places stays in the god file and is listed (an `#if` region that
+  defines no name, such as a static assertion, stays too and is only noted);
 - a group of definitions that a file-local symbol ties to users in other files stays in the god
   file and is listed (`--explain` shows which symbol ties which users);
 - a god file that is missing or does not parse skips its module, and the other modules still split;

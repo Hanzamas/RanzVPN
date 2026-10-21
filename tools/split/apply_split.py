@@ -452,6 +452,7 @@ class Module:
         self.why = why
         self.uf = uf
         self.local = local
+        self.hoist_users = users
 
     # ---- reporting
     def report(self):
@@ -484,6 +485,11 @@ class Module:
         unplaced = []
         for i, it in enumerate(items):
             exported = it.kind in ("var", "macrocall") and not it.static and not any(n in self.local for n in it.names)
+            if it.kind == "cond" and not it.all_names():
+                # an #if region that defines no name (a static assertion): no map entry can name it
+                if self.dest[i] == src_name:
+                    self.drift["notes"].append(f"the #if region at line {it.l0 + 1} defines no name; it stays in {src_name}")
+                continue
             if self.want[i] is None and self.dest[i] == src_name and (it.kind in ("func", "cond") or exported):
                 # an item that only follows its users is placed; an unused one is not. Data that a
                 # macro defines (RPC_TABLE_DEF) is file-local and follows its users.
@@ -761,32 +767,60 @@ class Module:
         int_included = has_inc or state["insert"]
 
         # 2. one split commit per destination file, in map order. When git diff would not show the
-        # move as deletions only from the god file, the group moves in parts (halves, recursively),
-        # each part appended to the end of the destination.
+        # move as deletions only from the god file, the group moves in parts (halves by line count,
+        # recursively), each part appended to the end of the destination. A part never cuts a unit:
+        # the items that a file-local symbol ties together, with the macros and types of the file
+        # that they use, move in one commit, so that every part compiles on its own.
         inc = (inc_line + ("\r" if nl == "\r\n" else "")) if state["insert"] else None
 
-        def parts_of(idxs, prev, base):
+        def units_of(idxs):
+            mine = set(idxs)
+            uf = UF()
+            for i in idxs:
+                uf.union(i, -1 - self.uf.find(i))  # a negative key stands for a file-local tie group
+            for h, us in self.hoist_users.items():
+                if h in mine:
+                    for u in us:
+                        if u in mine:
+                            uf.union(h, u)
+            out = {}
+            for i in idxs:
+                out.setdefault(uf.find(i), []).append(i)
+            return sorted(out.values(), key=lambda u: u[0])
+
+        def size(unit):
+            return sum(items[i].l1 - items[i].l0 + 1 for i in unit)
+
+        def parts_of(units, prev, base):
+            idxs = sorted(i for u in units for i in u)
             nd = set(base)
             for i in idxs:
                 nd.update(range(items[i].l0, items[i].l1 + 1))
             text = god_text(lines, nd, prol_end - 1, inc)
             if self.git is None or self.git.pure(prev, text):
                 return [(idxs, nd, text)]
-            if len(idxs) == 1:
+            if len(units) == 1:
                 nm = ",".join(names_of(items, idxs)) or f"line {items[idxs[0]].l0 + 1}"
-                self.warn(f"git diff does not show the move of {nm} out of {src_name} as deletions only, even alone; "
-                          f"the move-only checker will reject that commit", f"{nm}: not a pure deletion for git diff, even alone")
+                what = f"of {nm}" if len(idxs) == 1 else f"of the {len(idxs)} items that file-local symbols tie together ({nm[:200]})"
+                self.warn(f"git diff does not show the move {what} out of {src_name} as deletions only, even alone; "
+                          f"the move-only checker will reject that commit",
+                          f"{nm[:200]}: not a pure deletion for git diff, even alone")
                 return [(idxs, nd, text)]
-            h = len(idxs) // 2
-            a = parts_of(idxs[:h], prev, base)
-            return a + parts_of(idxs[h:], a[-1][2], a[-1][1])
+            total, run, h = sum(size(u) for u in units), 0, 1
+            for k, u in enumerate(units[:-1], 1):
+                run += size(u)
+                h = k
+                if 2 * run >= total:
+                    break
+            a = parts_of(units[:h], prev, base)
+            return a + parts_of(units[h:], a[-1][2], a[-1][1])
 
         for d in self.dests:
             idxs = moves.get(d)
             if not idxs:
                 continue
             path = os.path.join(self.dir, d)
-            chunks = parts_of(idxs, vfs.get(src, cf.text), dropped)
+            chunks = parts_of(units_of(idxs), vfs.get(src, cf.text), dropped)
             group = self.group.get(d) or "group"
             for k, (pidx, nd, text) in enumerate(chunks, 1):
                 dropped = nd
