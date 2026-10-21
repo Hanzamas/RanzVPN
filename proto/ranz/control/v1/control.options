@@ -1,0 +1,17 @@
+# nanopb options of control.proto: the sizes of the C node's static structures.
+#
+# Names are DNS labels of at most 63 characters (controller/internal/intent), so 64 bytes hold
+# one with its terminating NUL. The counts bound one Update; a node whose state outgrows them
+# needs callback fields here, which the node's control stream decides when it lands.
+ranz.control.v1.NodeConfig.name max_size:64
+ranz.control.v1.NodeConfig.tags max_count:16 max_size:64
+ranz.control.v1.Vrf.name max_size:64
+ranz.control.v1.Network.name max_size:64
+ranz.control.v1.Peer.name max_size:64
+ranz.control.v1.Peer.public_key max_size:32
+ranz.control.v1.Peer.vrf_ids max_count:16
+ranz.control.v1.Prefix.address max_size:16
+ranz.control.v1.ObjectKey.name max_size:64
+ranz.control.v1.Refuse.message max_size:256
+ranz.control.v1.Update.set max_count:64
+ranz.control.v1.Update.remove max_count:64
