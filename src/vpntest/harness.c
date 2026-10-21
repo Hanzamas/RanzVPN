@@ -26,7 +26,8 @@
 //   n sessions of hub HARNESS_FLOOD through the hub packet adapter, no SessionMain thread), parse_packet_<kind>
 //   (the parse of HubPaPutPacket; _nolog: hub packet log off), pack_<encode|decode>_names_<n> (a Pack with n distinct element
 //   names), ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass) and accept_table_<n> (n first connections
-//   from n distinct addresses to the DoS table of a listener, FND-127). A wrong result of these cases prints a
+//   from n distinct addresses to the DoS table of a listener, FND-127), fifo_cycle, queue_cycle and queue_burst_<n>
+//   (a FIFO and a queue that never fully drain, a queue burst, FND-215). A wrong result of these cases prints a
 //   "BENCH WARNING" line and skips the case; it does not fail the test.
 // - Files left after a run: the server_log, security_log and packet_log folders (as in the "s"
 //   mode). The configuration file and its backup folder are deleted at the start and at the end.
@@ -177,6 +178,10 @@
 #define	HARNESS_PACK_NAMES			500					// Distinct element names of the many-names Pack case
 #define	HARNESS_PARSE_FRAME_MAX		512					// Buffer of one ParsePacket bench frame
 #define	HARNESS_NUM_PARSE_FRAMES	5					// ParsePacket bench frames: l2, tcp, http, tls, dns
+#define	HARNESS_FIFO_BACKLOG		1000				// Standing bytes of the fifo_cycle case
+#define	HARNESS_FIFO_CYCLE			3000				// Bytes written, then read, per fifo_cycle operation
+#define	HARNESS_QUEUE_BACKLOG		1000				// Standing items of the queue_cycle case
+#define	HARNESS_QUEUE_BURST			4096				// Items inserted, then taken, per queue_burst operation
 
 // Time units of the high-resolution bench clock
 #define	HARNESS_NS_PER_MS			1000000ULL
@@ -271,6 +276,17 @@ typedef struct HARNESS_PARSE_BENCH
 	UINT Next;					// Next frame of the mixed case
 	bool NoLog;					// Parse as with the hub packet log off
 } HARNESS_PARSE_BENCH;
+
+// State of the FIFO and queue bench cases
+typedef struct HARNESS_FIFO_BENCH
+{
+	FIFO *Fifo;					// fifo_cycle: HARNESS_FIFO_BACKLOG bytes stay in it between operations
+	UINT PeakMemSize;			// Largest Fifo->memsize seen
+	QUEUE *Queue;				// queue_cycle: HARNESS_QUEUE_BACKLOG items stay in it between operations
+	UINT NextInsert;			// Item the next InsertQueue adds, as a pointer value
+	UINT NextGet;				// Item the next GetNext must return
+	UCHAR Buf[HARNESS_FIFO_CYCLE];
+} HARNESS_FIFO_BENCH;
 
 // Loopback listener of "certdl": serves the issuer certificate that the fixture server certificates name
 typedef struct CERTDL_SERVER
@@ -553,6 +569,10 @@ static bool HarnessOpParseMix(void *param);
 static void HarnessBenchParse();
 static void HarnessBenchIpTableExpire(UINT num);
 static void HarnessBenchAcceptTable(UINT num);
+static bool HarnessOpFifoCycle(void *param);
+static bool HarnessOpQueueCycle(void *param);
+static bool HarnessOpQueueBurst(void *param);
+static void HarnessBenchFifo();
 static bool HarnessStartServer(HARNESS *h);
 static void HarnessStopServer(HARNESS *h);
 static X *CertDlPemToX(char *pem);
@@ -4989,6 +5009,105 @@ static void HarnessBenchAcceptTable(UINT num)
 	}
 }
 
+// One fifo_cycle operation: write HARNESS_FIFO_CYCLE bytes behind the backlog, then read as many from its front
+static bool HarnessOpFifoCycle(void *param)
+{
+	HARNESS_FIFO_BENCH *b = (HARNESS_FIFO_BENCH *)param;
+
+	WriteFifo(b->Fifo, b->Buf, HARNESS_FIFO_CYCLE);
+	b->PeakMemSize = MAX(b->PeakMemSize, b->Fifo->memsize);
+
+	if (ReadFifo(b->Fifo, b->Buf, HARNESS_FIFO_CYCLE) != HARNESS_FIFO_CYCLE)
+	{
+		return false;
+	}
+
+	return FifoSize(b->Fifo) == HARNESS_FIFO_BACKLOG;
+}
+
+// One queue_cycle operation: insert one item behind the backlog, then take the oldest one
+static bool HarnessOpQueueCycle(void *param)
+{
+	HARNESS_FIFO_BENCH *b = (HARNESS_FIFO_BENCH *)param;
+
+	InsertQueue(b->Queue, (void *)(UINT_PTR)b->NextInsert);
+	b->NextInsert++;
+
+	if (GetNext(b->Queue) != (void *)(UINT_PTR)b->NextGet)
+	{
+		return false;
+	}
+	b->NextGet++;
+
+	return true;
+}
+
+// One queue_burst operation: insert HARNESS_QUEUE_BURST items into the empty queue, then take them all
+static bool HarnessOpQueueBurst(void *param)
+{
+	HARNESS_FIFO_BENCH *b = (HARNESS_FIFO_BENCH *)param;
+	UINT i;
+	bool ok = true;
+
+	for (i = 0;i < HARNESS_QUEUE_BURST;i++)
+	{
+		InsertQueue(b->Queue, (void *)(UINT_PTR)(i + 1));
+	}
+
+	for (i = 0;i < HARNESS_QUEUE_BURST;i++)
+	{
+		if (GetNext(b->Queue) != (void *)(UINT_PTR)(i + 1))
+		{
+			ok = false;
+		}
+	}
+
+	return ok && GetQueueNum(b->Queue) == 0;
+}
+
+// fifo_cycle: operations per second of write HARNESS_FIFO_CYCLE / read HARNESS_FIFO_CYCLE bytes over a standing
+// backlog of HARNESS_FIFO_BACKLOG bytes, in one FIFO kept across the runs: a producer and a consumer that never
+// fully drain it. fifo_cycle_peak_memsize is the largest buffer the FIFO reached. queue_cycle: insert one / take
+// one item over a standing backlog of HARNESS_QUEUE_BACKLOG items; queue_burst_<n>: n items into an empty queue,
+// then all of them out (FND-215)
+static void HarnessBenchFifo()
+{
+	HARNESS_FIFO_BENCH *b = ZeroMalloc(sizeof(HARNESS_FIFO_BENCH));
+	char name[MAX_SIZE];
+	UINT i;
+
+	b->Fifo = NewFifo();
+	WriteFifo(b->Fifo, b->Buf, HARNESS_FIFO_BACKLOG);
+	b->PeakMemSize = b->Fifo->memsize;
+
+	HarnessBenchOps("fifo_cycle", HarnessOpFifoCycle, b, HARNESS_BENCH_MICRO_SPAN, 16);
+	Print("BENCH fifo_cycle_peak_memsize %u bytes\n", b->PeakMemSize);
+
+	ReleaseFifo(b->Fifo);
+
+	b->Queue = NewQueueFast();
+	b->NextInsert = 1;
+	b->NextGet = 1;
+	for (i = 0;i < HARNESS_QUEUE_BACKLOG;i++)
+	{
+		InsertQueue(b->Queue, (void *)(UINT_PTR)b->NextInsert);
+		b->NextInsert++;
+	}
+
+	HarnessBenchOps("queue_cycle", HarnessOpQueueCycle, b, HARNESS_BENCH_MICRO_SPAN, 16);
+
+	while (GetQueueNum(b->Queue) != 0)
+	{
+		GetNext(b->Queue);
+	}
+
+	Format(name, sizeof(name), "queue_burst_%u", HARNESS_QUEUE_BURST);
+	HarnessBenchOps(name, HarnessOpQueueBurst, b, HARNESS_BENCH_MICRO_SPAN, 1);
+
+	ReleaseQueue(b->Queue);
+	Free(b);
+}
+
 ////////////////////////////
 // Intermediate certificate download ("certdl")
 //
@@ -7375,6 +7494,8 @@ void bench_test(UINT num, char **arg)
 	HarnessBenchAcceptTable(1024);
 	HarnessBenchAcceptTable(4096);
 	HarnessBenchAcceptTable(16384);
+	HarnessSetPhase("bench_fifo", NULL);
+	HarnessBenchFifo();
 
 	HarnessSetPhase("teardown", NULL);
 	HarnessTeardown(h, ok);

@@ -58,10 +58,12 @@ struct LIST
 	UINT64 Param1;
 };
 
+// A ring of num_reserved slots (a power of two): the oldest of the num_item items is at p[head]
 struct QUEUE
 {
 	UINT num_item;
-	FIFO *fifo;
+	UINT head, num_reserved;
+	void **p;
 	LOCK *lock;
 };
 
