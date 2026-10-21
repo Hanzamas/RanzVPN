@@ -2037,3 +2037,932 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	return 0;
 }
+
+UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_DELETE_SESSION t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_SessionGet_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScDeleteSession(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_ENUM_MAC_TABLE t;
+	UINT i;
+
+	PARAM args[] =
+	{
+		{"[session_name]", NULL, NULL, NULL, NULL,}
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	ret = ScEnumMacTable(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		CT *ct = CtNew();
+		char *session_name = GetParamStr(o, "[session_name]");
+
+		if (IsEmptyStr(session_name))
+		{
+			session_name = NULL;
+		}
+
+		CtInsertColumn(ct, _UU("CMD_ID"), false);
+		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_1"), false);
+		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_1A"), false);
+		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_2"), false);
+		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_3"), false);
+		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_4"), false);
+
+		for (i = 0;i < t.NumMacTable;i++)
+		{
+			char str[MAX_SIZE];
+			wchar_t tmp0[128];
+			wchar_t tmp1[MAX_SIZE];
+			wchar_t tmp2[MAX_SIZE];
+			wchar_t tmp3[MAX_SIZE];
+			wchar_t tmp4[MAX_SIZE];
+			wchar_t tmp6[MAX_SIZE];
+
+			RPC_ENUM_MAC_TABLE_ITEM *e = &t.MacTables[i];
+
+			if (session_name == NULL || StrCmpi(e->SessionName, session_name) == 0)
+			{
+				UniToStru(tmp0, e->Key);
+
+				StrToUni(tmp1, sizeof(tmp1), e->SessionName);
+
+				MacToStr(str, sizeof(str), e->MacAddress);
+				StrToUni(tmp2, sizeof(tmp2), str);
+
+				GetDateTimeStr64Uni(tmp3, sizeof(tmp3), SystemToLocal64(e->CreatedTime));
+
+				GetDateTimeStr64Uni(tmp4, sizeof(tmp4), SystemToLocal64(e->UpdatedTime));
+
+				UniToStru(tmp6, e->VlanId);
+				if (e->VlanId == 0)
+				{
+					UniStrCpy(tmp6, sizeof(tmp6), _UU("CM_ST_NONE"));
+				}
+
+				CtInsert(ct,
+					tmp0, tmp1, tmp6, tmp2, tmp3, tmp4);
+			}
+		}
+
+		CtFreeEx(ct, c, true);
+	}
+
+	FreeRpcEnumMacTable(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_DELETE_TABLE t;
+	PARAM args[] =
+	{
+		{"[id]", CmdPrompt, _UU("CMD_MacDelete_Prompt"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	t.Key = GetParamInt(o, "[id]");
+
+	ret = ScDeleteMacTable(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_ENUM_IP_TABLE t;
+	UINT i;
+
+	PARAM args[] =
+	{
+		{"[session_name]", NULL, NULL, NULL, NULL,}
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	ret = ScEnumIpTable(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		CT *ct = CtNew();
+		char *session_name = GetParamStr(o, "[session_name]");
+
+		if (IsEmptyStr(session_name))
+		{
+			session_name = NULL;
+		}
+
+		CtInsertColumn(ct, _UU("CMD_ID"), false);
+		CtInsertColumn(ct, _UU("SM_IP_COLUMN_1"), false);
+		CtInsertColumn(ct, _UU("SM_IP_COLUMN_2"), false);
+		CtInsertColumn(ct, _UU("SM_IP_COLUMN_3"), false);
+		CtInsertColumn(ct, _UU("SM_IP_COLUMN_4"), false);
+
+		for (i = 0;i < t.NumIpTable;i++)
+		{
+			char str[MAX_SIZE];
+			wchar_t tmp0[128];
+			wchar_t tmp1[MAX_SIZE];
+			wchar_t tmp2[MAX_SIZE];
+			wchar_t tmp3[MAX_SIZE];
+			wchar_t tmp4[MAX_SIZE];
+			RPC_ENUM_IP_TABLE_ITEM *e = &t.IpTables[i];
+
+			if (session_name == NULL || StrCmpi(e->SessionName, session_name) == 0)
+			{
+				UniToStru(tmp0, e->Key);
+
+				StrToUni(tmp1, sizeof(tmp1), e->SessionName);
+
+				IPToStr(str, sizeof(str), &e->IpV6);
+				if (e->DhcpAllocated == false)
+				{
+					StrToUni(tmp2, sizeof(tmp2), str);
+				}
+				else
+				{
+					UniFormat(tmp2, sizeof(tmp2), _UU("SM_MAC_IP_DHCP"), str);
+				}
+
+				GetDateTimeStr64Uni(tmp3, sizeof(tmp3), SystemToLocal64(e->CreatedTime));
+
+				GetDateTimeStr64Uni(tmp4, sizeof(tmp4), SystemToLocal64(e->UpdatedTime));
+
+				CtInsert(ct,
+					tmp0, tmp1, tmp2, tmp3, tmp4);
+			}
+		}
+
+		CtFreeEx(ct, c, true);
+	}
+
+	FreeRpcEnumIpTable(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsIpDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_DELETE_TABLE t;
+	PARAM args[] =
+	{
+		{"[id]", CmdPrompt, _UU("CMD_MacDelete_Prompt"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	t.Key = GetParamInt(o, "[id]");
+
+	ret = ScDeleteIpTable(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_ADMIN_OPTION t;
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	ret = ScGetHubAdminOptions(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		CT *ct = CtNewStandardEx();
+		UINT i;
+
+		for (i = 0;i < t.NumItem;i++)
+		{
+			ADMIN_OPTION *e = &t.Items[i];
+			wchar_t tmp1[MAX_SIZE];
+			wchar_t tmp2[MAX_SIZE];
+
+			StrToUni(tmp1, sizeof(tmp1), e->Name);
+			UniToStru(tmp2, e->Value);
+
+			CtInsert(ct, tmp1, tmp2, GetHubAdminOptionHelpString(e->Name));
+				
+		}
+
+		CtFreeEx(ct, c, true);
+	}
+
+	FreeRpcAdminOption(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_ADMIN_OPTION t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_name"), CmdEvalNotEmpty, NULL},
+		{"VALUE", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_VALUE"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	ret = ScGetHubAdminOptions(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		UINT i;
+		bool b = false;
+
+		for (i = 0;i < t.NumItem;i++)
+		{
+			if (StrCmpi(t.Items[i].Name, GetParamStr(o, "[name]")) == 0)
+			{
+				t.Items[i].Value = GetParamInt(o, "VALUE");
+				b = true;
+			}
+		}
+
+		if (b == false)
+		{
+			ret = ERR_OBJECT_NOT_FOUND;
+			CmdPrintError(c, ret);
+			FreeParamValueList(o);
+			FreeRpcAdminOption(&t);
+			return ret;
+		}
+		else
+		{
+			StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+			ret = ScSetHubAdminOptions(ps->Rpc, &t);
+
+			if (ret != ERR_NO_ERROR)
+			{
+				CmdPrintError(c, ret);
+				FreeParamValueList(o);
+				return ret;
+			}
+		}
+	}
+
+	FreeRpcAdminOption(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_ADMIN_OPTION t;
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	ret = ScGetHubExtOptions(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		CT *ct = CtNewStandardEx();
+		UINT i;
+
+		for (i = 0;i < t.NumItem;i++)
+		{
+			ADMIN_OPTION *e = &t.Items[i];
+			wchar_t tmp1[MAX_SIZE];
+			wchar_t tmp2[MAX_SIZE];
+
+			StrToUni(tmp1, sizeof(tmp1), e->Name);
+			UniToStru(tmp2, e->Value);
+
+			CtInsert(ct, tmp1, tmp2, GetHubAdminOptionHelpString(e->Name));
+
+		}
+
+		CtFreeEx(ct, c, true);
+	}
+
+	FreeRpcAdminOption(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsExtOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_ADMIN_OPTION t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_name"), CmdEvalNotEmpty, NULL},
+		{"VALUE", CmdPrompt, _UU("CMD_AdminOptionSet_Prompt_VALUE"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	ret = ScGetHubExtOptions(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		UINT i;
+		bool b = false;
+
+		for (i = 0;i < t.NumItem;i++)
+		{
+			if (StrCmpi(t.Items[i].Name, GetParamStr(o, "[name]")) == 0)
+			{
+				t.Items[i].Value = GetParamInt(o, "VALUE");
+				b = true;
+			}
+		}
+
+		if (b == false)
+		{
+			ret = ERR_OBJECT_NOT_FOUND;
+			CmdPrintError(c, ret);
+			FreeParamValueList(o);
+			FreeRpcAdminOption(&t);
+			return ret;
+		}
+		else
+		{
+			StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+			ret = ScSetHubExtOptions(ps->Rpc, &t);
+
+			if (ret != ERR_NO_ERROR)
+			{
+				CmdPrintError(c, ret);
+				FreeParamValueList(o);
+				return ret;
+			}
+		}
+	}
+
+	FreeRpcAdminOption(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_ENUM_CRL t;
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	ret = ScEnumCrl(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		UINT i;
+		CT *ct = CtNew();
+
+		CtInsertColumn(ct, _UU("CMD_ID"), false);
+		CtInsertColumn(ct, _UU("SM_CRL_COLUMN_1"), false);
+
+		for (i = 0;i < t.NumItem;i++)
+		{
+			wchar_t tmp[64];
+			RPC_ENUM_CRL_ITEM *e = &t.Items[i];
+
+			UniToStru(tmp, e->Key);
+			CtInsert(ct, tmp, e->CrlInfo);
+		}
+
+		CtFreeEx(ct, c, true);
+	}
+
+	FreeRpcEnumCrl(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_CRL t;
+	PARAM args[] =
+	{
+		{"SERIAL", NULL, NULL, NULL, NULL},
+		{"MD5", NULL, NULL, NULL, NULL},
+		{"SHA1", NULL, NULL, NULL, NULL},
+		{"CN", NULL, NULL, NULL, NULL},
+		{"O", NULL, NULL, NULL, NULL},
+		{"OU", NULL, NULL, NULL, NULL},
+		{"C", NULL, NULL, NULL, NULL},
+		{"ST", NULL, NULL, NULL, NULL},
+		{"L", NULL, NULL, NULL, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	{
+		bool param_exists = false;
+		CRL *crl = ZeroMalloc(sizeof(CRL));
+		NAME *n;
+
+		// Each option in its own field; NewName copies only the non-empty ones and FreeName frees them
+		n = crl->Name = NewName(GetParamUniStr(o, "CN"), GetParamUniStr(o, "O"), GetParamUniStr(o, "OU"),
+			GetParamUniStr(o, "C"), GetParamUniStr(o, "ST"), GetParamUniStr(o, "L"));
+
+		if (n->CommonName != NULL || n->Organization != NULL || n->Unit != NULL ||
+			n->Country != NULL || n->State != NULL || n->Local != NULL)
+		{
+			param_exists = true;
+		}
+
+		if (IsEmptyStr(GetParamStr(o, "SERIAL")) == false)
+		{
+			BUF *b;
+
+			b = StrToBin(GetParamStr(o, "SERIAL"));
+
+			if (b != NULL && b->Size >= 1)
+			{
+				crl->Serial = NewXSerial(b->Buf, b->Size);
+				param_exists = true;
+			}
+
+			FreeBuf(b);
+		}
+
+		if (IsEmptyStr(GetParamStr(o, "MD5")) == false)
+		{
+			BUF *b;
+
+			b = StrToBin(GetParamStr(o, "MD5"));
+
+			if (b != NULL && b->Size == MD5_SIZE)
+			{
+				Copy(crl->DigestMD5, b->Buf, MD5_SIZE);
+				param_exists = true;
+			}
+
+			FreeBuf(b);
+		}
+
+		if (IsEmptyStr(GetParamStr(o, "SHA1")) == false)
+		{
+			BUF *b;
+
+			b = StrToBin(GetParamStr(o, "SHA1"));
+
+			if (b != NULL && b->Size == SHA1_SIZE)
+			{
+				Copy(crl->DigestSHA1, b->Buf, SHA1_SIZE);
+				param_exists = true;
+			}
+
+			FreeBuf(b);
+		}
+
+		t.Crl = crl;
+
+		if (param_exists == false)
+		{
+			FreeRpcCrl(&t);
+			ret = ERR_INVALID_PARAMETER;
+			CmdPrintError(c, ret);
+			FreeParamValueList(o);
+			return ret;
+		}
+	}
+
+	ret = ScAddCrl(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcCrl(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsCrlDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_CRL t;
+	PARAM args[] =
+	{
+		{"[id]", CmdPrompt, _UU("CMD_CrlDel_Prompt_ID"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	t.Key = GetParamInt(o, "[id]");
+
+	ret = ScDelCrl(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcCrl(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_CRL t;
+	PARAM args[] =
+	{
+		{"[id]", CmdPrompt, _UU("CMD_CrlGet_Prompt_ID"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	t.Key = GetParamInt(o, "[id]");
+
+	ret = ScGetCrl(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		CT *ct = CtNewStandard();
+		CRL *crl = t.Crl;
+		NAME *n;
+
+		if (crl != NULL)
+		{
+			n = crl->Name;
+
+			if (n != NULL)
+			{
+				if (UniIsEmptyStr(n->CommonName) == false)
+				{
+					CtInsert(ct, _UU("CMD_CrlGet_CN"), n->CommonName);
+				}
+				if (UniIsEmptyStr(n->Organization) == false)
+				{
+					CtInsert(ct, _UU("CMD_CrlGet_O"), n->Organization);
+				}
+				if (UniIsEmptyStr(n->Unit) == false)
+				{
+					CtInsert(ct, _UU("CMD_CrlGet_OU"), n->Unit);
+				}
+				if (UniIsEmptyStr(n->Country) == false)
+				{
+					CtInsert(ct, _UU("CMD_CrlGet_C"), n->Country);
+				}
+				if (UniIsEmptyStr(n->State) == false)
+				{
+					CtInsert(ct, _UU("CMD_CrlGet_ST"), n->State);
+				}
+				if (UniIsEmptyStr(n->Local) == false)
+				{
+					CtInsert(ct, _UU("CMD_CrlGet_L"), n->Local);
+				}
+			}
+
+			if (crl->Serial != NULL && crl->Serial->size >= 1)
+			{
+				wchar_t tmp[MAX_SIZE];
+				char str[MAX_SIZE];
+
+				BinToStrEx(str, sizeof(str), crl->Serial->data, crl->Serial->size);
+				StrToUni(tmp, sizeof(tmp), str);
+
+				CtInsert(ct, _UU("CMD_CrlGet_SERI"), tmp);
+			}
+
+			if (IsZero(crl->DigestMD5, MD5_SIZE) == false)
+			{
+				wchar_t tmp[MAX_SIZE];
+				char str[MAX_SIZE];
+
+				BinToStrEx(str, sizeof(str), crl->DigestMD5, MD5_SIZE);
+				StrToUni(tmp, sizeof(tmp), str);
+
+				CtInsert(ct, _UU("CMD_CrlGet_MD5_HASH"), tmp);
+			}
+
+			if (IsZero(crl->DigestSHA1, SHA1_SIZE) == false)
+			{
+				wchar_t tmp[MAX_SIZE];
+				char str[MAX_SIZE];
+
+				BinToStrEx(str, sizeof(str), crl->DigestSHA1, SHA1_SIZE);
+				StrToUni(tmp, sizeof(tmp), str);
+
+				CtInsert(ct, _UU("CMD_CrlGet_SHA1_HASH"), tmp);
+			}
+		}
+		CtFree(ct, c);
+	}
+
+	FreeRpcCrl(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
