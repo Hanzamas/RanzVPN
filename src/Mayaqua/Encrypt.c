@@ -54,11 +54,6 @@ typedef struct CB_PARAM
 	char *password;
 } CB_PARAM;
 
-// BCryptGenRandom() flag of Windows 7 and later, in case the Vista SDK level of MayaType.h hides it
-#ifndef	BCRYPT_USE_SYSTEM_PREFERRED_RNG
-#define	BCRYPT_USE_SYSTEM_PREFERRED_RNG	0x00000002
-#endif	// BCRYPT_USE_SYSTEM_PREFERRED_RNG
-
 // Longest RC4 key (bytes) that CNG turns into real RC4. CNG accepts longer keys without an error
 // but then produces a keystream that is not RC4, so NewCrypt() does not give it those.
 #define	RC4_MAX_KEY_SIZE	64
@@ -2480,54 +2475,6 @@ BIO *BufToBio(BUF *b)
 	BIO_seek(bio, 0);
 
 	return bio;
-}
-
-UINT64 Rand64()
-{
-	UINT64 i;
-	Rand(&i, sizeof(i));
-	return i;
-}
-
-UINT Rand32()
-{
-	UINT i;
-	Rand(&i, sizeof(i));
-	return i;
-}
-
-USHORT Rand16()
-{
-	USHORT i;
-	Rand(&i, sizeof(i));
-	return i;
-}
-
-UCHAR Rand8()
-{
-	UCHAR i;
-	Rand(&i, sizeof(i));
-	return i;
-}
-
-bool Rand1()
-{
-	return (Rand32() % 2) == 0 ? false : true;
-}
-
-void Rand(void *buf, UINT size)
-{
-	if (buf == NULL || size == 0)
-	{
-		return;
-	}
-
-	// The system-preferred generator needs no provider handle; it fails only on bad arguments.
-	// Bytes that may not be random are never returned: the process stops instead.
-	if (CNG_SUCCESS(BCryptGenRandom(NULL, (PUCHAR)buf, size, BCRYPT_USE_SYSTEM_PREFERRED_RNG)) == false)
-	{
-		AbortExitEx("Rand(): BCryptGenRandom() failed");
-	}
 }
 
 void FreeOpenSSLThreadState()
