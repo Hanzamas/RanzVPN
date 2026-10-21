@@ -30,97 +30,6 @@
 #include "Mayaqua/Tick64.h"
 #include "AdminInternal.h"
 
-static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
-static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);
-static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t);
-static UINT StFlush(ADMIN *a, RPC_TEST *t);
-static UINT StCrash(ADMIN *a, RPC_TEST *t);
-static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
-static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t);
-static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t);
-static UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t);
-static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t);
-static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t);
-static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t);
-static UINT StSetCrl(ADMIN *a, RPC_CRL *t);
-static UINT StGetCrl(ADMIN *a, RPC_CRL *t);
-static UINT StDelCrl(ADMIN *a, RPC_CRL *t);
-static UINT StAddCrl(ADMIN *a, RPC_CRL *t);
-static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t);
-static UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
-static UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
-static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
-static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
-static UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
-static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t);
-static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t);
-static UINT StGetCaps(ADMIN *a, CAPSLIST *t);
-static UINT StRebootServer(ADMIN *a, RPC_TEST *t);
-static UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t);
-static UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t);
-static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
-static UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
-static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t);
-static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t);
-static UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t);
-static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t);
-static UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t);
-static UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t);
-static UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t);
-static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t);
-static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t);
-static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t);
-static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t);
-static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t);
-static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t);
-static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t);
-static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t);
-static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t);
-static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t);
-static UINT StGetUser(ADMIN *a, RPC_SET_USER *t);
-static UINT StSetUser(ADMIN *a, RPC_SET_USER *t);
-static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t);
-static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t);
-static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t);
-static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t);
-static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t);
-static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t);
-static UINT StDeleteLink(ADMIN *a, RPC_LINK *t);
-static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t);
-static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t);
-static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t);
-static UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t);
-static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t);
-static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t);
-static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t);
-static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t);
-static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t);
-static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t);
-static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t);
-static UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t);
-static UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t);
-static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t);
-static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t);
-static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t);
-static UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t);
-static UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t);
-static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t);
-static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t);
-static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t);
-static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t);
-static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t);
-static UINT StSetServerCipher(ADMIN *a, RPC_STR *t);
-static UINT StGetServerCipher(ADMIN *a, RPC_STR *t);
-static UINT StGetServerCipherList(ADMIN *a, RPC_STR *t);
-static UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
-static UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
-static UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t);
-static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t);
-static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t);
-static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t);
-static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t);
-static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t);
-static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t);
 static void CopyOsInfo(OS_INFO *dst, OS_INFO *info);
 static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t);
 static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t);
@@ -130,7 +39,6 @@ static void OutRpcAccess(PACK *p, ACCESS *a);
 static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index);
 static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total);
 static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
-static void HashAdminPassword(void *hash, char *password);
 static bool SiIsEmptyPassword(void *hash_password);
 
 #define	DECLARE_RPC_EX(rpc_name, data_type, function, in_rpc, out_rpc, free_rpc)		\
@@ -215,7 +123,7 @@ static bool SiIsEmptyPassword(void *hash_password);
 
 // Hub lookup for the admin handlers: the access check, the lookup and the hub
 // admin option check, in that order. Returns a referenced HUB, or NULL with *err set.
-static HUB *AdminGetHub(ADMIN *a, char *hubname, char *denied_option, UINT *err)
+HUB *AdminGetHub(ADMIN *a, char *hubname, char *denied_option, UINT *err)
 {
 	HUB *h;
 
@@ -529,7 +437,7 @@ DECLARE_SC("Crash", RPC_TEST, ScCrash, InRpcTest, OutRpcTest)
 DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
 
-static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
+UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -556,7 +464,7 @@ static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
+UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -583,7 +491,7 @@ static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
+UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 {
 	HUB *h;
 	UINT err;
@@ -606,7 +514,7 @@ static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StFlush(ADMIN *a, RPC_TEST *t)
+UINT StFlush(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
 	UINT size;
@@ -620,7 +528,7 @@ static UINT StFlush(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StCrash(ADMIN *a, RPC_TEST *t)
+UINT StCrash(ADMIN *a, RPC_TEST *t)
 {
 	SERVER_ADMIN_ONLY;
 
@@ -629,7 +537,7 @@ static UINT StCrash(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
+UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 {
 	wchar_t winver_msg_client[3800];
 	UINT tmpsize;
@@ -651,7 +559,7 @@ static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
+UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 {
 	UINT ret = ERR_NO_ERROR;
 
@@ -668,7 +576,7 @@ static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 	return ret;
 }
 
-static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
+UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 {
 	UINT ret = ERR_NO_ERROR;
 
@@ -755,7 +663,7 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 	return buf;
 }
 
-static UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
+UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 {
 	SERVER *s = a->Server;
 	char logfilename[MAX_PATH];
@@ -810,7 +718,7 @@ static UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
+UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -865,7 +773,7 @@ static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 }
 
 
-static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
+UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 {
 	HUB *h;
 	HUBDB *db;
@@ -900,7 +808,7 @@ static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
+UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -934,7 +842,7 @@ static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetCrl(ADMIN *a, RPC_CRL *t)
+UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -975,7 +883,7 @@ static UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-static UINT StGetCrl(ADMIN *a, RPC_CRL *t)
+UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 {
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
@@ -1017,7 +925,7 @@ static UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-static UINT StDelCrl(ADMIN *a, RPC_CRL *t)
+UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -1055,7 +963,7 @@ static UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-static UINT StAddCrl(ADMIN *a, RPC_CRL *t)
+UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1090,7 +998,7 @@ static UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
+UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 {
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
@@ -1134,7 +1042,7 @@ static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 	return ret;
 }
 
-static UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -1166,7 +1074,7 @@ static UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	HUB *h;
 	UINT err;
@@ -1193,7 +1101,7 @@ static UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -1247,7 +1155,7 @@ static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 	HUB *h;
@@ -1288,7 +1196,7 @@ static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 
@@ -1310,7 +1218,7 @@ static UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
+UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 {
 	SERVER *s;
 
@@ -1344,7 +1252,7 @@ static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 	}
 }
 
-static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
+UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 {
 	SERVER *s;
 	UINT ret;
@@ -1371,7 +1279,7 @@ static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetCaps(ADMIN *a, CAPSLIST *t)
+UINT StGetCaps(ADMIN *a, CAPSLIST *t)
 {
 	FreeRpcCapsList(t);
 	Zero(t, sizeof(CAPSLIST));
@@ -1381,7 +1289,7 @@ static UINT StGetCaps(ADMIN *a, CAPSLIST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StRebootServer(ADMIN *a, RPC_TEST *t)
+UINT StRebootServer(ADMIN *a, RPC_TEST *t)
 {
 	SERVER_ADMIN_ONLY;
 
@@ -1392,7 +1300,7 @@ static UINT StRebootServer(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
+UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
 {
 	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
 
@@ -1401,7 +1309,7 @@ static UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
+UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 {
 	RPC_ENUM_ETH ret;
 
@@ -1419,7 +1327,7 @@ static UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
+UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 {
 	char tmp[MAX_SIZE];
 
@@ -1453,7 +1361,7 @@ static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
+UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 {
 	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName))
 	{
@@ -1474,7 +1382,7 @@ static UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
+UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 {
 	UINT i;
 	CEDAR *c;
@@ -1514,7 +1422,7 @@ static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
+UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 {
 	SERVER *s = a->Server;
 
@@ -1528,7 +1436,7 @@ static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
+UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 {
 	SERVER *s = a->Server;
 
@@ -1552,7 +1460,7 @@ static UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
+UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 {
 	HUB *h = NULL;
 	UINT err;
@@ -1619,7 +1527,7 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
+UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 {
 	SERVER *s = a->Server;
 	char hubname[MAX_HUBNAME_LEN + 1];
@@ -1634,7 +1542,7 @@ static UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 	return SiEnumIpTable(s, hubname, t);
 }
 
-static UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
+UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 {
 	HUB *h = NULL;
 	UINT err;
@@ -1701,7 +1609,7 @@ static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
+UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 {
 	SERVER *s = a->Server;
 	char hubname[MAX_HUBNAME_LEN + 1];
@@ -1715,7 +1623,7 @@ static UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 	return SiEnumMacTable(s, hubname, t);
 }
 
-static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
+UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 {
 	HUB *h = NULL;
 	UINT err;
@@ -1769,7 +1677,7 @@ static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 	return ret;
 }
 
-static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
+UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 {
 	HUB *h = NULL;
 	UINT err;
@@ -1834,7 +1742,7 @@ static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 	return ret;
 }
 
-static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
+UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
@@ -1884,7 +1792,7 @@ static int CompareEnumGroupCount(void *p1, void *p2)
 	return COMPARE_RET(c1->Group, c2->Group);
 }
 
-static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
+UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 {
 	HUB *h = NULL;
 	UINT err;
@@ -1980,7 +1888,7 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
+UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
@@ -2021,7 +1929,7 @@ static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 	return ret;
 }
 
-static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
+UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
@@ -2077,7 +1985,7 @@ static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
+UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
@@ -2130,7 +2038,7 @@ static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
+UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
@@ -2188,7 +2096,7 @@ static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
+UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 {
 	HUB *h = NULL;
 	UINT err;
@@ -2253,7 +2161,7 @@ static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
+UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
@@ -2294,7 +2202,7 @@ static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 	return ret;
 }
 
-static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
+UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 {
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
@@ -2360,7 +2268,7 @@ static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
+UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
@@ -2458,7 +2366,7 @@ static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
+UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
 	HUB *h = NULL;
@@ -2551,7 +2459,7 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
+UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	HUB *h;
 	UINT err;
@@ -2589,7 +2497,7 @@ static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
+UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -2667,7 +2575,7 @@ static void AdminSanitizeAccess(ACCESS *access, bool no_jitter, bool no_include)
 	}
 }
 
-static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
+UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -2736,7 +2644,7 @@ static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
+UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -2774,7 +2682,7 @@ static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
+UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -2838,7 +2746,7 @@ static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 	return ret;
 }
 
-static UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
+UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -2884,7 +2792,7 @@ static UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
+UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -2927,7 +2835,7 @@ static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
+UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -2970,7 +2878,7 @@ static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
+UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 {
 	HUB *h;
 	UINT err;
@@ -3033,7 +2941,7 @@ static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 	return ret;
 }
 
-static UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
+UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 {
 	HUB *h;
 	UINT err;
@@ -3088,7 +2996,7 @@ static UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
+UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	HUB *h;
 	UINT err;
@@ -3134,7 +3042,7 @@ static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
+UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -3200,7 +3108,7 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
+UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3250,7 +3158,7 @@ static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
+UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -3287,7 +3195,7 @@ static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 	return ret;
 }
 
-static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
+UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 {
 	HUB *h;
 	UINT err;
@@ -3329,7 +3237,7 @@ static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 	return ret;
 }
 
-static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
+UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 {
 	HUB *h;
 	UINT err;
@@ -3371,7 +3279,7 @@ static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
+UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3402,7 +3310,7 @@ static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
+UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
 	HUB *h;
 	UINT err;
@@ -3420,7 +3328,7 @@ static UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
+UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -3444,7 +3352,7 @@ static UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
+UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 {
 	HUB *h;
 	UINT err;
@@ -3481,7 +3389,7 @@ static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
+UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -3524,7 +3432,7 @@ static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
+UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3580,7 +3488,7 @@ static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
+UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3621,7 +3529,7 @@ static UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
+UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3657,7 +3565,7 @@ static UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
+UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3690,7 +3598,7 @@ static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
+UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3742,7 +3650,7 @@ static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
+UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	UINT ret = ERR_NO_ERROR;
 	HUB *h;
@@ -3775,7 +3683,7 @@ static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ret;
 }
 
-static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
+UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
 	HUB *h;
@@ -3866,7 +3774,7 @@ static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ret;
 }
 
-static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
+UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3948,7 +3856,7 @@ static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
+UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3975,7 +3883,7 @@ static UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
+UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3992,7 +3900,7 @@ static UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
+UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4028,7 +3936,7 @@ static UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
+UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 {
 	bool admin;
 	SERVER *s = a->Server;
@@ -4053,7 +3961,7 @@ static UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
+UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4088,7 +3996,7 @@ static UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
+UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
 {
 	SERVER_ADMIN_ONLY;
 
@@ -4134,7 +4042,7 @@ static UINT StWaitListenerBind(SERVER *s, UINT port)
 	return (bound ? ERR_NO_ERROR : ERR_LISTENER_BIND_FAILED);
 }
 
-static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
+UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
 
@@ -4179,7 +4087,7 @@ static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
+UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
 
@@ -4204,7 +4112,7 @@ static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
+UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 {
 	UINT i;
 	SERVER_LISTENER_INFO *o;
@@ -4231,7 +4139,7 @@ static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
+UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
 
@@ -4266,7 +4174,7 @@ static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
+UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 {
 	CEDAR *c;
 	UINT i;
@@ -4335,7 +4243,7 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	return ERR_NO_ERROR;
 }
 
-static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
+UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 {
 	CEDAR *c;
 	OS_INFO *info;
@@ -7330,7 +7238,7 @@ static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, ch
 	return ERR_NO_ERROR;
 }
 
-static void HashAdminPassword(void *hash, char *password)
+void HashAdminPassword(void *hash, char *password)
 {
 	if (hash == NULL || password == NULL)
 	{
