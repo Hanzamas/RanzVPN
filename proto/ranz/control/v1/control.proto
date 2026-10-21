@@ -77,6 +77,8 @@ enum RefuseReason {
   REFUSE_REASON_SCHEMA_VERSION = 2;
   // An unexpected or malformed frame.
   REFUSE_REASON_PROTOCOL = 3;
+  // The licence in force does not cover the node: it is above the node cap (ADR-0036).
+  REFUSE_REASON_LICENCE = 4;
 }
 
 // The kind of an Object. Objects are ordered by it, so a VRF comes before its Networks.

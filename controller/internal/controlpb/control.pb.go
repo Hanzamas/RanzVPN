@@ -98,6 +98,8 @@ const (
 	RefuseReason_REFUSE_REASON_SCHEMA_VERSION RefuseReason = 2
 	// An unexpected or malformed frame.
 	RefuseReason_REFUSE_REASON_PROTOCOL RefuseReason = 3
+	// The licence in force does not cover the node: it is above the node cap (ADR-0036).
+	RefuseReason_REFUSE_REASON_LICENCE RefuseReason = 4
 )
 
 // Enum value maps for RefuseReason.
@@ -107,12 +109,14 @@ var (
 		1: "REFUSE_REASON_UNKNOWN_NODE",
 		2: "REFUSE_REASON_SCHEMA_VERSION",
 		3: "REFUSE_REASON_PROTOCOL",
+		4: "REFUSE_REASON_LICENCE",
 	}
 	RefuseReason_value = map[string]int32{
 		"REFUSE_REASON_UNSPECIFIED":    0,
 		"REFUSE_REASON_UNKNOWN_NODE":   1,
 		"REFUSE_REASON_SCHEMA_VERSION": 2,
 		"REFUSE_REASON_PROTOCOL":       3,
+		"REFUSE_REASON_LICENCE":        4,
 	}
 )
 
@@ -1130,12 +1134,13 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x06length\x18\x02 \x01(\rR\x06length*E\n" +
 	"\rSchemaVersion\x12\x1e\n" +
 	"\x1aSCHEMA_VERSION_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10SCHEMA_VERSION_1\x10\x01*\x8b\x01\n" +
+	"\x10SCHEMA_VERSION_1\x10\x01*\xa6\x01\n" +
 	"\fRefuseReason\x12\x1d\n" +
 	"\x19REFUSE_REASON_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aREFUSE_REASON_UNKNOWN_NODE\x10\x01\x12 \n" +
 	"\x1cREFUSE_REASON_SCHEMA_VERSION\x10\x02\x12\x1a\n" +
-	"\x16REFUSE_REASON_PROTOCOL\x10\x03*Z\n" +
+	"\x16REFUSE_REASON_PROTOCOL\x10\x03\x12\x19\n" +
+	"\x15REFUSE_REASON_LICENCE\x10\x04*Z\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tKIND_NODE\x10\x01\x12\f\n" +
