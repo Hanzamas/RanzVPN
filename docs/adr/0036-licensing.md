@@ -26,5 +26,5 @@ Ranz is sold, but an individual must be able to run their own network for free, 
 
 - The licence check is controller code; nodes never decide a tier themselves. Licence enforcement is tested in the controller conformance seam (ADR-0026).
 - The process boundary already used for GPL and MPL sidecars (ADR-0023) is also the boundary for the Legacy-phase GPL libraries.
-- ADR-0015's "MIT" for libjuice and libplum needs a correction; it is recorded here and not amended by this ADR.
+- ADR-0015's "MIT" for libjuice and libplum needs a correction; it is recorded here and not amended by this ADR. *(Corrected by the ADR-0015 amendment of 2026-10-21.)*
 - Tickets: SDN-30 (#206).
