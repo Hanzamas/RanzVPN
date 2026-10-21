@@ -19,11 +19,13 @@ $controller = Join-Path $bin 'ranz-controller.exe'
 $ranz = Join-Path $bin 'ranz.exe'
 $nodesim = Join-Path $bin 'ranz-nodesim.exe'
 
-# serviceName of cmd/ranz-controller, the default -listen, and -http-listen as this check sets it
+# serviceName of cmd/ranz-controller, the default -listen, and -http-listen as this check sets it.
+# The runner's system holds TCP 80 (a bind there fails with WSAEACCES), so plain HTTP listens on
+# 8080 here; it redirects to HTTPS on 443 all the same.
 $service = 'ranz-controller'
 $api = 'https://127.0.0.1'
 $control = '127.0.0.1:443'
-$plain = '127.0.0.1:80'
+$plain = '127.0.0.1:8080'
 
 $data = Join-Path $env:RUNNER_TEMP 'ranz-controller-data'
 $work = Join-Path $env:RUNNER_TEMP 'ranz-controller-check'
