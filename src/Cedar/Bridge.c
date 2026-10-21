@@ -511,3 +511,18 @@ void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 	}
 }
 
+// Closes the Ethernet device of a Local Bridge session whose session loop has ended
+void BrSessionCleanup(SESSION *s)
+{
+	if (s == NULL)
+	{
+		return;
+	}
+
+	if (s->Bridge->Active)
+	{
+		CloseEth(s->Bridge->Eth);
+		s->Bridge->Eth = NULL;
+	}
+}
+

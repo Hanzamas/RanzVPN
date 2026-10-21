@@ -454,21 +454,6 @@ CLEANUP:
 	c->Err = err;
 }
 
-// Closes the Ethernet device of a Local Bridge session whose session loop has ended
-void BrSessionCleanup(SESSION *s)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (s->Bridge->Active)
-	{
-		CloseEth(s->Bridge->Eth);
-		s->Bridge->Eth = NULL;
-	}
-}
-
 UINT GetNextDelayedPacketTickDiff(SESSION *s)
 {
 	UINT i;
