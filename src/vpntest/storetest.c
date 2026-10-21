@@ -615,6 +615,18 @@ static void StoreTestAdmins(STORETEST_CTX *ctx, CONFIG_STORE *s, wchar_t *path)
 		"An admin name is taken once without case; a hub-admin needs a network, an owner or read-only takes none, and there is no fourth role",
 		"errors %u, %u, %u, %u, %u", r1, r2, r3, r4, r5);
 
+	// The fork reserves "administrator" for the users of a hub, not for admin accounts
+	CS_USER u;
+	Zero(&u, sizeof(u));
+	StrCpy(u.Network, sizeof(u.Network), "SALES");
+	StrCpy(u.Name, sizeof(u.Name), ADMINISTRATOR_USERNAME);
+	u.AuthType = AUTHTYPE_PASSWORD;
+	UINT as_user = CsAddUser(s, &u);
+	UINT as_admin = CsAddAdmin(s, ADMINISTRATOR_USERNAME, CS_ROLE_OWNER, NULL, NULL);
+	StoreTestCheck(ctx, as_user == ERR_INVALID_PARAMETER && as_admin == ERR_NO_ERROR,
+		"\"administrator\" is refused as the name of a user of a network and taken as the name of an admin account",
+		"as a user %u, as an admin %u", as_user, as_admin);
+
 	// The schema refuses an admin row that breaks the rule on its own, whatever writes it
 	bool raw_hub = StoreTestRawExec(path, "INSERT INTO admins (name, role) VALUES ('raw1', 'hub-admin')");
 	bool raw_role = StoreTestRawExec(path, "INSERT INTO admins (name, role) VALUES ('raw2', 'superuser')");

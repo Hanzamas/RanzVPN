@@ -131,9 +131,23 @@ static bool CsIsNetworkName(char *name) {
 	return (IsEmptyStr(name) == false && StrLen(name) <= MAX_HUBNAME_LEN && IsSafeStr(name));
 }
 
-// Whether name is a valid user or admin name: the rule of the fork's user names
+// Whether name is a valid user name: the rule of the fork's user names, which also reserves the names of the
+// administrator, the cascade and the bridge of a hub
 static bool CsIsUserName(char *name) {
 	return (IsEmptyStr(name) == false && StrLen(name) <= MAX_USERNAME_LEN && IsUserName(name));
+}
+
+// Whether name is a valid admin name: the characters of the fork's user names. An admin is no user of a hub, so the
+// names that the fork reserves for those are not reserved here: the import names its owner "administrator".
+static bool CsIsAdminName(char *name) {
+	if (IsEmptyStr(name) || StrLen(name) > MAX_USERNAME_LEN)
+		return false;
+
+	for (UINT i = 0; name[i] != 0; i++)
+		if (IsSafeChar(name[i]) == false && name[i] != '@')
+			return false;
+
+	return true;
 }
 
 // Prepare a statement on the connection; NULL when it does not compile
@@ -939,7 +953,7 @@ UINT CsAddAdmin(CONFIG_STORE *s, char *name, UINT role, char *network, char *pas
 	CS_PASSWORD p;
 	UINT ret = ERR_INTERNAL_ERROR;
 	char *role_name = CsName(cs_role_names, CS_NUM(cs_role_names), role);
-	if (s == NULL || role_name == NULL || CsIsUserName(name) == false)
+	if (s == NULL || role_name == NULL || CsIsAdminName(name) == false)
 		return ERR_INVALID_PARAMETER;
 
 	bool with_network = (role == CS_ROLE_HUB_ADMIN);
