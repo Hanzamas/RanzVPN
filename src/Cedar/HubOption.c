@@ -21,6 +21,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "HubInternal.h"
 
 // These names must be shorter than 64 bytes
 ADMIN_OPTION admin_options[] =

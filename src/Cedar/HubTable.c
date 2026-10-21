@@ -20,6 +20,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "HubInternal.h"
 
 bool IsUserMatchInUserList(LIST *o, char *filename, UINT64 user_hash)
 {

@@ -20,6 +20,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "HubInternal.h"
 
 static int CompareStormList(void *p1, void *p2)
 {
