@@ -214,8 +214,8 @@ func Guard(tokens *rbac.Tokens, h http.Handler) http.Handler {
 		}
 		if need := Needs(r.Method, r.URL.Path); !tok.Role.Allows(need) {
 			w.Header().Set("WWW-Authenticate", challenge+`, error="insufficient_scope"`)
-			reply(w, http.StatusForbidden, Problem{Error: fmt.Sprintf("%s %s needs the role %s or one above it, and the token %q has the role %s",
-				r.Method, r.URL.Path, need, tok.Name, tok.Role)})
+			reply(w, http.StatusForbidden, Problem{Error: fmt.Sprintf("the call needs the role %s or one above it, and the token %q has the role %s",
+				need, tok.Name, tok.Role)})
 			return
 		}
 		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, tok)))
