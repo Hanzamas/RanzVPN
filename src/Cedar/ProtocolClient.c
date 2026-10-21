@@ -969,13 +969,15 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 
 	SetTimeout(s, CONNECTING_TIMEOUT);
 
-	UINT err = 0;
-	if (StartSSLEx3(s, NULL, NULL, NULL, c->ServerName, c->Session->SslOption, &err) == false)
+	UINT ssl_err = TLS_ERR_NONE;
+	if (StartSSLEx3(s, NULL, NULL, NULL, c->ServerName, c->Session->SslOption, &ssl_err) == false)
 	{
+		UINT err = TlsErrToCedarErr(ssl_err);
+
 		Disconnect(s);
 		ClientSetFirstSock(c, NULL);
 		ReleaseSock(s);
-		if (err != 0)
+		if (err != ERR_NO_ERROR)
 		{
 			c->Err = err;
 		}
