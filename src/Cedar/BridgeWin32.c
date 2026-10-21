@@ -20,10 +20,10 @@
 
 #include <Ws2tcpip.h>
 
-static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name);
+static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, const char *name);
 static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass);
-static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid);
-static UINT Win32EthGenIdFromGuid(char *guid);
+static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, const char *guid);
+static UINT Win32EthGenIdFromGuid(const char *guid);
 static void InitEthAdaptersList(SU *su, LIST *netclass);
 static void FreeEthAdaptersList();
 
@@ -197,7 +197,7 @@ bool SetVLanEnableStatus(char *title, bool enable)
 	return ret;
 }
 
-static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name)
+static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, const char *name)
 {
 	if (t == NULL || name == NULL)
 	{
@@ -637,7 +637,7 @@ ETH *OpenEth(char *name)
 	return e;
 }
 
-static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid)
+static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, const char *guid)
 {
 	if (dst == NULL || nicname == NULL || guid == NULL)
 	{
@@ -699,7 +699,7 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 	return ret;
 }
 
-static UINT Win32EthGenIdFromGuid(char *guid)
+static UINT Win32EthGenIdFromGuid(const char *guid)
 {
 	char tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];

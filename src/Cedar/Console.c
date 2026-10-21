@@ -426,7 +426,7 @@ static bool IsWordChar(wchar_t c)
 	return false;
 }
 
-static UINT GetNextWordWidth(wchar_t *str)
+static UINT GetNextWordWidth(const wchar_t *str)
 {
 	if (str == NULL)
 	{
@@ -546,7 +546,7 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 	return ret;
 }
 
-static bool IsHelpStr(char *str)
+static bool IsHelpStr(const char *str)
 {
 	if (str == NULL)
 	{

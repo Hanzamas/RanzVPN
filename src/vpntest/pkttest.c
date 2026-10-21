@@ -94,7 +94,7 @@ static void PktTestCheck(PKTTEST_CTX *ctx, bool ok, char *what, char *detail_fmt
 
 // Ethernet header from src_mac to dst_mac for the EtherType type, with a VLAN tag (tpid, VLAN ID
 // PKTTEST_VLAN_ID) in front of the type when tpid is not 0. Returns its size: 14, or 18 with the tag
-static UINT PktTestEthernet(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac, USHORT tpid, USHORT type)
+static UINT PktTestEthernet(UCHAR *buf, const UCHAR *dst_mac, const UCHAR *src_mac, USHORT tpid, USHORT type)
 {
 	UINT size = 12;
 
@@ -118,8 +118,8 @@ static UINT PktTestEthernet(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac, USHORT t
 // Ethernet frame from src_mac to dst_mac (tagged as PktTestEthernet does) with an IPv4 UDP datagram
 // from src:sport to dst:dport that carries the payload, with a valid IPv4 checksum and UDP checksum 0
 // (none), in a heap block of exactly its size (*size)
-static UCHAR *PktTestUdpFrame(UCHAR *dst_mac, UCHAR *src_mac, USHORT tpid, UCHAR *src, UCHAR *dst,
-	USHORT sport, USHORT dport, void *payload, UINT payload_size, UINT *size)
+static UCHAR *PktTestUdpFrame(const UCHAR *dst_mac, const UCHAR *src_mac, USHORT tpid, const UCHAR *src, const UCHAR *dst,
+	USHORT sport, USHORT dport, const void *payload, UINT payload_size, UINT *size)
 {
 	UCHAR l2[18];
 	UINT l2_size = PktTestEthernet(l2, dst_mac, src_mac, tpid, MAC_PROTO_IPV4);
@@ -162,7 +162,7 @@ static UCHAR PktTestLabelChar(UINT i)
 // DNS query message (RFC 1035 4.1) with the first flag byte flag1 and one question for type A, class
 // IN. Its name is num_labels labels, each a length byte from labels[] and that many letters, then the
 // root label. A length above 63 is written as it is
-static BUF *PktTestDnsQuery(UCHAR flag1, UINT *labels, UINT num_labels)
+static BUF *PktTestDnsQuery(UCHAR flag1, const UINT *labels, UINT num_labels)
 {
 	BUF *b = NewBuf();
 	UCHAR header[12];
@@ -195,7 +195,7 @@ static BUF *PktTestDnsQuery(UCHAR flag1, UINT *labels, UINT num_labels)
 }
 
 // Name of the labels of PktTestDnsQuery as ParseDnsQuery gives it: the labels joined with dots
-static void PktTestDnsName(char *name, UINT name_size, UINT *labels, UINT num_labels)
+static void PktTestDnsName(char *name, UINT name_size, const UINT *labels, UINT num_labels)
 {
 	StrCpy(name, name_size, "");
 
@@ -220,7 +220,7 @@ static void PktTestDnsName(char *name, UINT name_size, UINT *labels, UINT num_la
 // One DNS case: the query of PktTestDnsQuery from the client to port 53, through ParsePacket. With
 // parsed true the frame must give a DNS query (L7_DNS) with the name of the labels, as far as
 // PKT.DnsQueryHost holds it; with parsed false it must give none
-static void PktTestDnsCase(PKTTEST_CTX *ctx, char *what, UCHAR flag1, UINT *labels, UINT num_labels, bool parsed)
+static void PktTestDnsCase(PKTTEST_CTX *ctx, char *what, UCHAR flag1, const UINT *labels, UINT num_labels, bool parsed)
 {
 	UCHAR client[4] = {10, 0, 0, 1};
 	UCHAR server[4] = {10, 0, 0, 53};
@@ -299,7 +299,7 @@ static void PktTestDns(PKTTEST_CTX *ctx)
 }
 
 // The option of the list with the id, as GetDhcpOption finds it, holds exactly expect (expect_size bytes)
-static bool PktTestHasOption(LIST *o, UINT id, void *expect, UINT expect_size)
+static bool PktTestHasOption(LIST *o, UINT id, const void *expect, UINT expect_size)
 {
 	DHCP_OPTION *opt = GetDhcpOption(o, id);
 
@@ -308,8 +308,8 @@ static bool PktTestHasOption(LIST *o, UINT id, void *expect, UINT expect_size)
 
 // One ParseDhcpOptions case on the options, in a heap block of exactly options_size bytes: the list
 // must hold expect_num options, the option expect_id among them with the bytes expect (expect_size)
-static void PktTestOptionsCase(PKTTEST_CTX *ctx, char *what, UCHAR *options, UINT options_size,
-	UINT expect_num, UINT expect_id, void *expect, UINT expect_size)
+static void PktTestOptionsCase(PKTTEST_CTX *ctx, char *what, const UCHAR *options, UINT options_size,
+	UINT expect_num, UINT expect_id, const void *expect, UINT expect_size)
 {
 	UCHAR *data = Clone(options, options_size);
 	LIST *o = ParseDhcpOptions(data, options_size);
@@ -373,7 +373,7 @@ static void PktTestDhcpOptions(PKTTEST_CTX *ctx)
 
 // DHCP payload of a BOOTREQUEST of the client in a zeroed heap block of PKTTEST_DHCP_SIZE bytes: the
 // fixed header, the magic cookie at PKTTEST_COOKIE_OFFSET and the options (if any) behind it
-static UCHAR *PktTestDhcpRequest(UCHAR *options, UINT options_size)
+static UCHAR *PktTestDhcpRequest(const UCHAR *options, UINT options_size)
 {
 	UCHAR *p = ZeroMalloc(PKTTEST_DHCP_SIZE);
 
@@ -397,7 +397,7 @@ static UCHAR *PktTestDhcpRequest(UCHAR *options, UINT options_size)
 
 // Frame of the DHCP payload (PKTTEST_DHCP_SIZE bytes) from the client 0.0.0.0:68 to
 // 255.255.255.255:67, tagged as PktTestEthernet does, in a heap block of exactly its size (*size)
-static UCHAR *PktTestDhcpFrame(USHORT tpid, UCHAR *payload, UINT *size)
+static UCHAR *PktTestDhcpFrame(USHORT tpid, const UCHAR *payload, UINT *size)
 {
 	UCHAR src[4] = {0, 0, 0, 0};
 	UCHAR dst[4] = {255, 255, 255, 255};
@@ -408,7 +408,7 @@ static UCHAR *PktTestDhcpFrame(USHORT tpid, UCHAR *payload, UINT *size)
 
 // One DhcpOpCode case: ParsePacket on the frame of the payload must give a DHCP packet with the
 // message type expect (0: none)
-static void PktTestOpCodeCase(PKTTEST_CTX *ctx, char *what, UCHAR *payload, UINT expect)
+static void PktTestOpCodeCase(PKTTEST_CTX *ctx, char *what, const UCHAR *payload, UINT expect)
 {
 	UINT size;
 	UCHAR *f = PktTestDhcpFrame(0, payload, &size);
@@ -599,7 +599,7 @@ static void PktTestFreeSession(SESSION *s)
 // One hub case: the sender stores a broadcast IPv4 UDP frame from 10.5.0.1 to dst, tagged with tpid
 // (VLAN ID PKTTEST_VLAN_ID), into the hub. With pass true the receiver must get it once and
 // unchanged, with pass false not at all
-static void PktTestHubCase(PKTTEST_CTX *ctx, PKTTEST_HUB *h, char *what, USHORT tpid, UCHAR *dst, bool pass)
+static void PktTestHubCase(PKTTEST_CTX *ctx, const PKTTEST_HUB *h, char *what, USHORT tpid, const UCHAR *dst, bool pass)
 {
 	UCHAR src[4] = {10, 5, 0, 1};
 	UCHAR data[8] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7};

@@ -1334,7 +1334,7 @@ void AddCancelList(LIST *o, CANCEL *c)
 }
 
 // c leaves the cancel list o: undo the marks of AddCancelList before o drops its reference to c
-static void LeaveCancelList(LIST *o, CANCEL *c)
+static void LeaveCancelList(const LIST *o, CANCEL *c)
 {
 	if (c->CancelListOwner == o)
 	{

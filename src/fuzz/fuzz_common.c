@@ -49,7 +49,7 @@ static void FuzzGetLive(UINT64 *live)
 }
 
 // True when a live object counter is higher after than before
-static bool FuzzLiveGrew(UINT64 *before, UINT64 *after)
+static bool FuzzLiveGrew(const UINT64 *before, const UINT64 *after)
 {
 	for (UINT i = 0;i < FUZZ_NUM_LIVE;i++)
 	{

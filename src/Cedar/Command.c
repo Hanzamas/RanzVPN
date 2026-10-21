@@ -808,7 +808,7 @@ static void PtMain(PT *pt)
 	}
 }
 
-static PT *NewPt(CONSOLE *c, wchar_t *cmdline)
+static PT *NewPt(CONSOLE *c, const wchar_t *cmdline)
 {
 	if (c == NULL)
 	{
@@ -838,7 +838,7 @@ static void FreePt(PT *pt)
 	Free(pt);
 }
 
-static UINT PtConnect(CONSOLE *c, wchar_t *cmdline)
+static UINT PtConnect(CONSOLE *c, const wchar_t *cmdline)
 {
 	UINT ret = 0;
 	if (c == NULL)
@@ -1879,7 +1879,7 @@ static void TtcThread(THREAD *thread, void *param)
 	ReleaseList(ttc->ItcSockList);
 }
 
-static TTC *NewTtcEx(char *host, UINT port, UINT numtcp, UINT type, UINT64 span, bool dbl, bool raw, TT_PRINT_PROC *print_proc, void *param)
+static TTC *NewTtcEx(const char *host, UINT port, UINT numtcp, UINT type, UINT64 span, bool dbl, bool raw, TT_PRINT_PROC *print_proc, void *param)
 {
 	TTC *ttc = ZeroMalloc(sizeof(TTC));
 	ttc->InitedEvent = NewEvent();
@@ -2010,7 +2010,7 @@ static void PtTrafficPrintProc(void *param, wchar_t *str)
 	}
 }
 
-static void TtcPrintResult(CONSOLE *c, TT_RESULT *res)
+static void TtcPrintResult(CONSOLE *c, const TT_RESULT *res)
 {
 	wchar_t tmp[MAX_SIZE];
 	wchar_t tmp1[MAX_SIZE];
@@ -4830,7 +4830,7 @@ static UINT PsLogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-static UINT StrToLogSwitchType(char *str)
+static UINT StrToLogSwitchType(const char *str)
 {
 	UINT ret = INFINITE;
 	if (str == NULL)
@@ -4947,7 +4947,7 @@ static UINT PsLogSwitchSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param
 	return 0;
 }
 
-static UINT StrToPacketLogSaveInfoType(char *str)
+static UINT StrToPacketLogSaveInfoType(const char *str)
 {
 	UINT ret = INFINITE;
 	if (str == NULL)
@@ -4971,7 +4971,7 @@ static UINT StrToPacketLogSaveInfoType(char *str)
 	return ret;
 }
 
-static UINT StrToPacketLogType(char *str)
+static UINT StrToPacketLogType(const char *str)
 {
 	UINT ret = INFINITE;
 	if (str == NULL || IsEmptyStr(str))
@@ -6359,7 +6359,7 @@ static UINT PsCascadeHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, voi
 }
 
 // Whether line is a header named name: the text before its first colon, trimmed, is name in any case
-static bool IsHttpHeaderLineOf(char *line, char *name)
+static bool IsHttpHeaderLineOf(const char *line, const char *name)
 {
 	char *tmp = CopyStr(line);
 	UINT pos = SearchStr(tmp, ":", 0);
@@ -7257,7 +7257,7 @@ static void PrintPolicyList(CONSOLE *c, char *name)
 	}
 }
 
-static bool EditPolicy(CONSOLE *c, POLICY *pol, char *name, char *value, bool cascade_mode)
+static bool EditPolicy(CONSOLE *c, POLICY *pol, char *name, const char *value, bool cascade_mode)
 {
 	ELEMENT *e;
 	UINT id;
@@ -7421,7 +7421,7 @@ static UINT PsCascadePolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *p
 	return 0;
 }
 
-static bool StrToPassOrDiscard(char *str)
+static bool StrToPassOrDiscard(const char *str)
 {
 	if (str == NULL)
 	{
@@ -7441,7 +7441,7 @@ static bool StrToPassOrDiscard(char *str)
 	return false;
 }
 
-static UINT StrToProtocol(char *str)
+static UINT StrToProtocol(const char *str)
 {
 	if (IsEmptyStr(str))
 	{
@@ -7509,7 +7509,7 @@ static bool CmdEvalProtocol(CONSOLE *c, wchar_t *str, void *param)
 }
 
 // Value of str when it is only decimal digits (no sign, no space) and at most max
-static bool StrToUIntStrict(char *str, UINT max, UINT *value)
+static bool StrToUIntStrict(const char *str, UINT max, UINT *value)
 {
 	UINT v = 0;
 
@@ -7544,7 +7544,7 @@ static bool StrToUIntStrict(char *str, UINT max, UINT *value)
 // Port range of an access list rule: empty text is every port (0-0); otherwise one port or two joined by a
 // hyphen, spaces around each allowed, each 1 to 65535 and the first not above the second. Anything else (a
 // service name, a list, a sign, a third number) is refused instead of being stored as another range.
-static bool ParsePortRange(char *str, UINT *start, UINT *end)
+static bool ParsePortRange(const char *str, UINT *start, UINT *end)
 {
 	UINT a = 0, b = 0;
 	char *tmp;
@@ -7618,7 +7618,7 @@ static bool CmdEvalPortRange(CONSOLE *c, wchar_t *str, void *param)
 	return true;
 }
 
-static bool ParseMacAddressAndMask(char *src, bool *check_mac, UCHAR *mac_bin, UCHAR *mask_bin)
+static bool ParseMacAddressAndMask(const char *src, bool *check_mac, UCHAR *mac_bin, UCHAR *mask_bin)
 {
 	UCHAR mac[6], mask[6];
 	bool ok = false;
@@ -7696,12 +7696,12 @@ static bool CmdEvalMacAddressAndMask(CONSOLE *c, wchar_t *str, void *param)
 }
 
 // Whether input abbreviates word: a non-empty prefix of it in any case ("est" abbreviates "Established")
-static bool IsAbbreviationOf(char *input, char *word)
+static bool IsAbbreviationOf(const char *input, const char *word)
 {
 	return StartWith(word, input);
 }
 
-static bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
+static bool ParseTcpState(const char *src, bool *check_tcp_state, bool *established)
 {
 	bool ok = false;
 	if(src == NULL)
@@ -8824,7 +8824,7 @@ UINT PsAcAdd6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-static PS *NewPs(CONSOLE *c, RPC *rpc, char *servername, UINT serverport, char *hubname, char *adminhub, wchar_t *cmdline)
+static PS *NewPs(CONSOLE *c, RPC *rpc, const char *servername, UINT serverport, const char *hubname, const char *adminhub, const wchar_t *cmdline)
 {
 	if (c == NULL || rpc == NULL || servername == NULL)
 	{
@@ -8872,7 +8872,7 @@ static void FreePs(PS *ps)
 	Free(ps);
 }
 
-static UINT PsConnect(CONSOLE *c, char *host, UINT port, char *hub, char *adminhub, wchar_t *cmdline, char *password)
+static UINT PsConnect(CONSOLE *c, const char *host, UINT port, char *hub, const char *adminhub, const wchar_t *cmdline, char *password)
 {
 	UINT retcode = 0;
 	RPC *rpc = NULL;
@@ -8997,7 +8997,7 @@ void CmdPrintAbout(CONSOLE *c)
 }
 
 // Split src at separator into host and optional port: the shared tail of ParseHostPort
-static bool ParseHostPortTokens(char *src, char *separator, char **host, UINT *port, UINT default_port)
+static bool ParseHostPortTokens(const char *src, const char *separator, char **host, UINT *port, UINT default_port)
 {
 	bool ret = false;
 	if (src == NULL)

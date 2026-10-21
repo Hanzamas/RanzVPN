@@ -389,7 +389,7 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive)
 
 // Size of the smallest packet of the format in use: the header with no data and no padding,
 // plus the IV and the tag (version 2) or the IV and the zero trailer (version 1)
-static UINT UdpAccelMinPacketSize(UDP_ACCEL *a)
+static UINT UdpAccelMinPacketSize(const UDP_ACCEL *a)
 {
 	UINT ret = (UINT)UDP_ACCELERATION_PACKET_HEADER_SIZE;
 
@@ -628,7 +628,7 @@ void UdpAccelSetTick(UDP_ACCEL *a, UINT64 tick64)
 }
 
 // The init of both roles: the key and the endpoint of the peer
-static bool UdpAccelInit(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port)
+static bool UdpAccelInit(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, const IP *reported_ip, USHORT port)
 {
 	if (a == NULL || key == NULL || detected_ip == NULL || port == 0)
 	{

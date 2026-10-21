@@ -52,7 +52,7 @@ static void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info)
 
 // Whether the access list of hub (source IP address limit) admits the client of c. A denied client is logged
 // (LS_IP_DENIED); the caller refuses the request with ERR_IP_ADDRESS_DENIED before any credential check.
-static bool ServerCheckHubAccess(CONNECTION *c, HUB *hub)
+static bool ServerCheckHubAccess(CONNECTION *c, const HUB *hub)
 {
 	IP ip;
 	char ip_str[64];

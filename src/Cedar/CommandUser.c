@@ -568,7 +568,7 @@ UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-static UINT64 StrToDateTime64(char *str)
+static UINT64 StrToDateTime64(const char *str)
 {
 	UINT64 ret = 0;
 	if (str == NULL)

@@ -307,7 +307,7 @@ void WriteValue(BUF *b, VALUE *v, UINT type)
 
 // The value at the index of the element, or NULL when there is no element, the index is past its values, or the
 // slot is still empty (an element added with PackAdd*Ex gets its values one index at a time)
-static VALUE *GetElementValue(ELEMENT *e, UINT index)
+static VALUE *GetElementValue(const ELEMENT *e, UINT index)
 {
 	if (e == NULL || e->values == NULL || index >= e->num_value)
 	{
@@ -893,7 +893,7 @@ void PackAddIp32(PACK *p, char *name, UINT ip32)
 }
 // Element name of one part of an IP: name followed by suffix, cut as Format of "%s<suffix>" cuts
 // it: at most size - 1 characters (size is not 0) and the terminator
-static void PackIpName(char *dst, UINT size, char *name, char *suffix)
+static void PackIpName(char *dst, UINT size, const char *name, const char *suffix)
 {
 	UINT len = StrCpy(dst, size, name);
 

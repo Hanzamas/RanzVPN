@@ -230,7 +230,7 @@ static char X509TestChar(UINT i)
 
 // GetUniStrFromX509Name on a name whose common name holds the raw bytes as the ASN.1 string type;
 // true when it returns expect
-static bool X509TestName(int type, UCHAR *bytes, UINT size, wchar_t *expect)
+static bool X509TestName(int type, UCHAR *bytes, UINT size, const wchar_t *expect)
 {
 	X509_NAME *xn = X509_NAME_new();
 	wchar_t *got;
@@ -313,7 +313,7 @@ static void X509TestNames(X509T_CTX *ctx)
 }
 
 // Whether a SYSTEMTIME holds the date and time
-static bool X509TestIsTime(SYSTEMTIME *st, UINT year, UINT month, UINT day, UINT hour, UINT minute, UINT second)
+static bool X509TestIsTime(const SYSTEMTIME *st, UINT year, UINT month, UINT day, UINT hour, UINT minute, UINT second)
 {
 	return st->wYear == year && st->wMonth == month && st->wDay == day &&
 		st->wHour == hour && st->wMinute == minute && st->wSecond == second;
@@ -480,7 +480,7 @@ void x509_test(UINT num, char **arg)
 }
 
 // Load a PEM certificate of the test
-static X *X509TestPemToX(char *pem)
+static X *X509TestPemToX(const char *pem)
 {
 	BUF *b = NewBuf();
 
@@ -617,7 +617,7 @@ void x509root_test(UINT num, char **arg)
 }
 
 // Whether every byte of the buffer has the value
-static bool X509TestAllBytes(UCHAR *buf, UINT size, UCHAR value)
+static bool X509TestAllBytes(const UCHAR *buf, UINT size, UCHAR value)
 {
 	for (UINT i = 0;i < size;i++)
 	{

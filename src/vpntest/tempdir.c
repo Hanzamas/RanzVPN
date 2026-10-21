@@ -248,7 +248,7 @@ static bool TempDirTableName(LIST *o, UINT id, bool same, char *name, UINT size)
 
 // Make link a junction (mount point) to the directory target, a full path without a trailing
 // backslash
-static bool TempDirMakeJunction(wchar_t *link, wchar_t *target)
+static bool TempDirMakeJunction(wchar_t *link, const wchar_t *target)
 {
 	UINT target_len = UniStrLen(target);
 	UINT sub_len = 4 + target_len;		// "\??\" and the target

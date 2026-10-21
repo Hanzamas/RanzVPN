@@ -154,12 +154,12 @@ static HARNESS_CMD_CASE harness_cmd_cases[] =
 static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret);
 static char *HarnessCmdMessageLine(char *name);
 static void HarnessCmdFirstCell(char *dst, UINT size, char *text);
-static char *HarnessCmdMaskId(char *text, char *id);
+static char *HarnessCmdMaskId(char *text, const char *id);
 static void HarnessCmdRunStep(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, HARNESS_CMD_STEP *s, char *id, UINT id_size,
 	BUF *golden);
 static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, char *out_dir, char *golden_dir, bool update);
 static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir);
-static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, char *expect_host,
+static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, const char *expect_host,
 	UINT expect_port, char *what);
 static void HarnessParseHostPort(HARNESS *h);
 
@@ -250,7 +250,7 @@ static void HarnessCmdFirstCell(char *dst, UINT size, char *text)
 }
 
 // Copy of text with the ID at the start of every line replaced by <ID>
-static char *HarnessCmdMaskId(char *text, char *id)
+static char *HarnessCmdMaskId(char *text, const char *id)
 {
 	BUF *b = NewBuf();
 	UINT id_len = StrLen(id);
@@ -437,7 +437,7 @@ static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir)
 
 // vpncmd command cases: every case of the table, then the stale file check
 // ParseHostPort on one input: its result and, when it succeeds, the host and the port it gives
-static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, char *expect_host,
+static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, const char *expect_host,
 	UINT expect_port, char *what)
 {
 	char *host = NULL;

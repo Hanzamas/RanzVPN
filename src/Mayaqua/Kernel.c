@@ -972,7 +972,7 @@ void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_mi
 
 // Read count decimal digits at str. Stops at the first character that is not a digit, so it
 // never reads past the end of the string
-static bool ParseRFC3339Digits(char *str, UINT count, UINT *value)
+static bool ParseRFC3339Digits(const char *str, UINT count, UINT *value)
 {
 	*value = 0;
 	for (UINT i = 0; i < count; i++)

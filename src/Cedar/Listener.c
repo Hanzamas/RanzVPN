@@ -312,7 +312,7 @@ int CompareDos(void *p1, void *p2)
 }
 
 // Wake WaitListenerBind: the listener thread has tried to bind, r->Status holds the result
-static void ListenerBindTried(LISTENER *r)
+static void ListenerBindTried(const LISTENER *r)
 {
 	if (r->BindEvent != NULL)
 	{

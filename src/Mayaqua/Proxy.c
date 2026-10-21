@@ -166,7 +166,7 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 
 // SOCKS5 CONNECT on the connected socket s, using the BUF b for the requests.
 // PROXY_ERROR_SUCCESS when the proxy reported the connection made.
-static UINT ProxySocks5HandshakeBuf(SOCK *s, PROXY_PARAM_IN *in, BUF *b)
+static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b)
 {
 	UCHAR recv_buf[2], reply[4], tmp;
 	// The rest of the reply: a domain name of up to 255 bytes and the port
@@ -409,7 +409,7 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, PROXY_PARAM_IN *in, BUF *b)
 	}
 }
 
-static UINT ProxySocks5Handshake(SOCK *s, PROXY_PARAM_IN *in)
+static UINT ProxySocks5Handshake(SOCK *s, const PROXY_PARAM_IN *in)
 {
 	BUF *b = NewBuf();
 	UINT ret = ProxySocks5HandshakeBuf(s, in, b);
@@ -420,7 +420,7 @@ static UINT ProxySocks5Handshake(SOCK *s, PROXY_PARAM_IN *in)
 }
 
 // SOCKS4 CONNECT to the IPv4 address target_ip on the connected socket s
-static UINT ProxySocks4Handshake(SOCK *s, PROXY_PARAM_IN *in, IP *target_ip)
+static UINT ProxySocks4Handshake(SOCK *s, const PROXY_PARAM_IN *in, IP *target_ip)
 {
 	UCHAR recv_buf[8];
 

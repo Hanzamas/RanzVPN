@@ -119,7 +119,7 @@ bool MsIsUserMode()
 	return is_usermode;
 }
 
-static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
+static void MsUserModeW(const wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
 {
 	WNDCLASS wc;
 	MSG msg;

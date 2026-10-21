@@ -30,8 +30,8 @@
 #include "Mayaqua/Tick64.h"
 #include "AdminInternal.h"
 
-static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
-static bool SiIsEmptyPassword(void *hash_password);
+static UINT AdminCheckPassword(CEDAR *c, void *random, const void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
+static bool SiIsEmptyPassword(const void *hash_password);
 
 #define	DECLARE_RPC_EX(rpc_name, data_type, function, in_rpc, out_rpc, free_rpc)		\
 	else if (StrCmpi(name, rpc_name) == 0)								\
@@ -254,7 +254,7 @@ PACK *AdminInvoke(ADMIN *a, char *name, PACK *p)
 
 
 
-static bool CheckAdminSourceAddress(IP *remote_ip, char *hubname)
+static bool CheckAdminSourceAddress(IP *remote_ip, const char *hubname)
 {
 	char *s;
 	bool ok = false;
@@ -519,7 +519,7 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 	return ERR_NO_ERROR;
 }
 
-static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname,
+static UINT AdminCheckPassword(CEDAR *c, void *random, const void *secure_password, char *hubname,
 						bool accept_empty_password, bool *is_password_empty)
 {
 	UCHAR check[SHA1_SIZE];
@@ -666,7 +666,7 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 // The socket an admin RPC uses after the login of its session (AdminConnectMain), at the first connect and at every
 // reconnect: no timeout, because the server can take long to answer an RPC (SetConfig, a large EnumSession or
 // EnumLogFile) and the connect left CONNECTING_TIMEOUT on the socket. The caller takes its own reference
-static SOCK *AdminRpcSock(SESSION *s)
+static SOCK *AdminRpcSock(const SESSION *s)
 {
 	CONNECTION *c = s->Connection;
 	SOCK *sock = c->FirstSock;
@@ -765,7 +765,7 @@ UINT AdminReconnect(RPC *rpc)
 	return ERR_NO_ERROR;
 }
 
-static bool SiIsEmptyPassword(void *hash_password)
+static bool SiIsEmptyPassword(const void *hash_password)
 {
 	UCHAR hash[SHA1_SIZE];
 	if (hash_password == NULL)

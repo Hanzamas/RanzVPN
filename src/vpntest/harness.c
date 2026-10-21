@@ -469,47 +469,47 @@ static LIST *HarnessSplitLines(char *text);
 static void HarnessFreeLines(LIST *o);
 static bool HarnessTextEqual(char *a, char *b);
 static void HarnessPrintDiff(char *name, char *expected, char *actual);
-static void HarnessBuildFrame(UCHAR *buf, UINT size, UCHAR *dst, UCHAR *src, UINT seq);
+static void HarnessBuildFrame(UCHAR *buf, UINT size, const UCHAR *dst, const UCHAR *src, UINT seq);
 static bool HarnessPaInit(SESSION *s);
 static CANCEL *HarnessPaGetCancel(SESSION *s);
 static UINT HarnessPaGetNextPacket(SESSION *s, void **data);
 static bool HarnessPaPutPacket(SESSION *s, void *data, UINT size);
 static void HarnessPaFree(SESSION *s);
-static HARNESS_PA *HarnessNewPa(char *name);
+static HARNESS_PA *HarnessNewPa(const char *name);
 static void HarnessClearRecv(HARNESS_PA *p);
 static void HarnessFreePa(HARNESS_PA *p);
-static void HarnessPaSend(HARNESS_PA *p, UCHAR *frame, UINT size);
+static void HarnessPaSend(HARNESS_PA *p, const UCHAR *frame, UINT size);
 static bool HarnessPaWaitRecv(HARNESS_PA *p, UINT num, UINT timeout);
 static UINT HarnessPaNumRecorded(HARNESS_PA *p);
-static bool HarnessPaFrameIs(HARNESS_PA *p, UINT index, UCHAR *expected, UINT size);
+static bool HarnessPaFrameIs(HARNESS_PA *p, UINT index, const UCHAR *expected, UINT size);
 static UINT64 HarnessPaGetNumRecv(HARNESS_PA *p);
 static UINT HarnessPaQueued(HARNESS_PA *p);
 static void HarnessPaDrain(HARNESS_PA *p, UINT timeout);
 static UINT HarnessPaPurge(HARNESS_PA *p);
-static bool HarnessStartSession(HARNESS *h, HARNESS_PA *p, char *hubname, char *username);
+static bool HarnessStartSession(HARNESS *h, HARNESS_PA *p, const char *hubname, char *username);
 static void HarnessStopSession(HARNESS_PA *p);
 static void HarnessStopSessions(HARNESS *h);
 static bool HarnessWaitListener(HARNESS *h, UINT timeout);
 static RPC *HarnessAdminConnect(CEDAR *cedar, UINT timeout, UINT *err);
 static bool HarnessUseOnlyTestListener(HARNESS *h);
 static bool HarnessCreateHub(HARNESS *h, char *name);
-static bool HarnessCreateUser(HARNESS *h, char *hubname, char *username, wchar_t *realname);
+static bool HarnessCreateUser(HARNESS *h, char *hubname, char *username, const wchar_t *realname);
 static bool HarnessCreateLink(HARNESS *h);
 static bool HarnessWaitLink(HARNESS *h, UINT timeout);
 static bool HarnessWaitSessionListed(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size);
 static bool HarnessWaitSession(HARNESS *h, HARNESS_PA *p, UINT timeout);
 static bool HarnessSetup(HARNESS *h);
-static bool HarnessCheckMac(HARNESS *h, char *hubname, UCHAR *mac, char *session_name);
+static bool HarnessCheckMac(HARNESS *h, char *hubname, const UCHAR *mac, char *session_name);
 static bool HarnessTeach(HARNESS *h);
 static bool HarnessFrames(HARNESS *h);
 static void HarnessAddLabel(LIST *o, wchar_t *label);
 static void HarnessAddCapsLabel(LIST *o, char *caps_name);
-static bool HarnessInList(LIST *o, char *str);
-static HARNESS_CELLS *HarnessCsvSplit(char *line);
-static char *HarnessCsvJoin(HARNESS_CELLS *c);
+static bool HarnessInList(LIST *o, const char *str);
+static HARNESS_CELLS *HarnessCsvSplit(const char *line);
+static char *HarnessCsvJoin(const HARNESS_CELLS *c);
 static void HarnessFreeCells(HARNESS_CELLS *c);
-static void HarnessSetCell(HARNESS_CELLS *c, UINT index, char *str);
-static bool HarnessIsDateTime(char *s);
+static void HarnessSetCell(HARNESS_CELLS *c, UINT index, const char *str);
+static bool HarnessIsDateTime(const char *s);
 static bool HarnessIsHexChar(char c);
 static bool HarnessHasRandomMac(char *s);
 static char *HarnessNormalizeCell(char *s);
@@ -517,7 +517,7 @@ static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v);
 static void HarnessGetDirs(char *out_dir, UINT out_size, char *golden_dir, UINT golden_size, bool *update);
 static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir);
 static void HarnessGolden(HARNESS *h);
-static bool HarnessIsVolatileConfigName(char *name, bool is_uint64);
+static bool HarnessIsVolatileConfigName(const char *name, bool is_uint64);
 static char *HarnessNormalizeConfig(char *text);
 static bool HarnessCompareConfig(HARNESS *h, char *what, char *text1, char *text2);
 static void HarnessConfigApiRoundTrip(HARNESS *h);
@@ -543,27 +543,27 @@ static HARNESS *HarnessNew();
 static void HarnessFree(HARNESS *h);
 static UINT64 HarnessNowNs();
 static void HarnessBenchValue(char *str, UINT size, UINT64 value, bool centi);
-static void HarnessBenchReport(char *name, UINT64 *runs, UINT num, char *unit, bool centi);
+static void HarnessBenchReport(char *name, const UINT64 *runs, UINT num, char *unit, bool centi);
 static bool HarnessBenchOps(char *name, HARNESS_BENCH_OP *op, void *param, UINT span, UINT check_every);
 static void HarnessBenchFrames(HARNESS *h, UINT size);
 static void HarnessFloodIdleThread(THREAD *thread, void *param);
 static SESSION *HarnessNewFloodSession(HUB *hub, THREAD *thread, UINT index, bool sender);
 static void HarnessFreeFloodSession(SESSION *s);
-static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, UCHAR *frame, UINT size);
+static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, const UCHAR *frame, UINT size);
 static void HarnessBenchFloodCase(HUB *hub, UINT num_recv);
 static void HarnessBenchFlood(HARNESS *h);
 static bool HarnessOpEncodeEnumSession(void *param);
 static bool HarnessOpDecodeEnumSession(void *param);
 static void HarnessBenchPack(HARNESS *h);
-static PACK *HarnessNewNamesPack(HARNESS_PACK_BENCH *b);
+static PACK *HarnessNewNamesPack(const HARNESS_PACK_BENCH *b);
 static bool HarnessOpEncodeNames(void *param);
 static bool HarnessOpDecodePack(void *param);
 static void HarnessBenchPackNames();
 static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHORT dst_port, UCHAR *payload, UINT payload_size);
-static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, char *host);
+static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, const char *host);
 static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host);
 static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f, bool no_log);
-static bool HarnessParsedAsBuilt(HARNESS_PARSE_FRAME *f, PKT *p, bool no_log);
+static bool HarnessParsedAsBuilt(const HARNESS_PARSE_FRAME *f, const PKT *p, bool no_log);
 static bool HarnessOpParseOne(void *param);
 static bool HarnessOpParseMix(void *param);
 static void HarnessBenchParse();
@@ -575,13 +575,13 @@ static bool HarnessOpQueueBurst(void *param);
 static void HarnessBenchFifo();
 static bool HarnessStartServer(HARNESS *h);
 static void HarnessStopServer(HARNESS *h);
-static X *CertDlPemToX(char *pem);
-static K *CertDlPemToK(char *pem);
+static X *CertDlPemToX(const char *pem);
+static K *CertDlPemToK(const char *pem);
 static void CertDlSavedPath(wchar_t *path, UINT size, X *issuer);
 static UINT CertDlRecord(CERTDL_SERVER *srv, HTTP_HEADER *h);
-static void CertDlWriteStr(BUF *b, char *str);
-static void CertDlWriteOk(CERTDL_SERVER *srv, BUF *b);
-static bool CertDlRespond(CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num);
+static void CertDlWriteStr(BUF *b, const char *str);
+static void CertDlWriteOk(const CERTDL_SERVER *srv, BUF *b);
+static bool CertDlRespond(const CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num);
 static void CertDlConnThread(THREAD *thread, void *param);
 static void CertDlAcceptThread(THREAD *thread, void *param);
 static CERTDL_SERVER *CertDlStartServer(X *issuer, X *tls_cert, K *tls_key);
@@ -590,7 +590,7 @@ static void CertDlRun(HARNESS *h, CERTDL_SERVER *srv, char *name, UINT mode, X *
 	CERTDL_RESULT *r);
 static bool CertDlCheckUint(HARNESS *h, char *what, UINT actual, UINT expected);
 static bool CertDlCheckStr(HARNESS *h, char *what, char *actual, char *expected);
-static void CertDlExpect(HARNESS *h, char *name, CERTDL_RESULT *r, bool chain, bool waits);
+static void CertDlExpect(HARNESS *h, char *name, const CERTDL_RESULT *r, bool chain, bool waits);
 static bool ListenBindState(HARNESS *h, UINT port, bool *enabled, bool *error);
 static UINT ListenBindCall(HARNESS *h, bool create, UINT port, bool enable, UINT64 *elapsed);
 static bool ListenBindExpect(HARNESS *h, char *name, char *what, UINT err, UINT expected, UINT64 elapsed);
@@ -605,10 +605,10 @@ static wchar_t *AdminAuditText(wchar_t *buf, UINT size, char *name, char *arg1, 
 static void AdminAuditFree(ADMINAUDIT *a);
 static ADMINAUDIT *AdminAuditNew(HARNESS *h);
 static void AdminAuditUsers(ADMINAUDIT *a);
-static UINT AdminAuditCreateGroup(ADMINAUDIT *a, char *name);
+static UINT AdminAuditCreateGroup(const ADMINAUDIT *a, const char *name);
 static bool AdminAuditMaxGroups(ADMINAUDIT *a);
 static void AdminAuditGroups(ADMINAUDIT *a);
-static UINT AdminAuditHubMsgCall(ADMINAUDIT *a, char *rpc_name, char *hubname, wchar_t *msg, wchar_t **got);
+static UINT AdminAuditHubMsgCall(const ADMINAUDIT *a, char *rpc_name, const char *hubname, wchar_t *msg, wchar_t **got);
 static void AdminAuditHubMsg(ADMINAUDIT *a);
 static CRL *AdminAuditNewCrl(wchar_t *organization);
 static bool AdminAuditCrlKey(ADMINAUDIT *a, UINT *key);
@@ -1004,7 +1004,7 @@ static void HarnessPrintDiff(char *name, char *expected, char *actual)
 // Test sessions are TCP client sessions, not in-process server sessions: bench = 3 TLS hops
 
 // Build a deterministic test frame: dst, src, EtherType 0x88B5, sequence number, pattern
-static void HarnessBuildFrame(UCHAR *buf, UINT size, UCHAR *dst, UCHAR *src, UINT seq)
+static void HarnessBuildFrame(UCHAR *buf, UINT size, const UCHAR *dst, const UCHAR *src, UINT seq)
 {
 	Copy(buf, dst, 6);
 	Copy(buf + 6, src, 6);
@@ -1147,7 +1147,7 @@ static void HarnessPaFree(SESSION *s)
 }
 
 // Create the state of a test packet adapter
-static HARNESS_PA *HarnessNewPa(char *name)
+static HARNESS_PA *HarnessNewPa(const char *name)
 {
 	HARNESS_PA *p = ZeroMalloc(sizeof(HARNESS_PA));
 
@@ -1205,7 +1205,7 @@ static void HarnessFreePa(HARNESS_PA *p)
 }
 
 // Queue a frame for injection and wake up the session
-static void HarnessPaSend(HARNESS_PA *p, UCHAR *frame, UINT size)
+static void HarnessPaSend(HARNESS_PA *p, const UCHAR *frame, UINT size)
 {
 	HARNESS_FRAME *f = ZeroMalloc(sizeof(HARNESS_FRAME));
 
@@ -1262,7 +1262,7 @@ static UINT HarnessPaNumRecorded(HARNESS_PA *p)
 }
 
 // Whether the recorded frame at index is byte-identical to the expected frame
-static bool HarnessPaFrameIs(HARNESS_PA *p, UINT index, UCHAR *expected, UINT size)
+static bool HarnessPaFrameIs(HARNESS_PA *p, UINT index, const UCHAR *expected, UINT size)
 {
 	bool ret = false;
 
@@ -1345,7 +1345,7 @@ static UINT HarnessPaPurge(HARNESS_PA *p)
 }
 
 // Connect a test session to a hub through the test listener (client session + test packet adapter)
-static bool HarnessStartSession(HARNESS *h, HARNESS_PA *p, char *hubname, char *username)
+static bool HarnessStartSession(HARNESS *h, HARNESS_PA *p, const char *hubname, char *username)
 {
 	CLIENT_OPTION o;
 	CLIENT_AUTH a;
@@ -1551,7 +1551,7 @@ static bool HarnessCreateHub(HARNESS *h, char *name)
 }
 
 // Create a password user
-static bool HarnessCreateUser(HARNESS *h, char *hubname, char *username, wchar_t *realname)
+static bool HarnessCreateUser(HARNESS *h, char *hubname, char *username, const wchar_t *realname)
 {
 	RPC_SET_USER t;
 	char tmp[MAX_SIZE];
@@ -1886,7 +1886,7 @@ static bool HarnessSetup(HARNESS *h)
 // Frames through the cascade
 
 // Check that the MAC table of a hub maps a MAC address to a session
-static bool HarnessCheckMac(HARNESS *h, char *hubname, UCHAR *mac, char *session_name)
+static bool HarnessCheckMac(HARNESS *h, char *hubname, const UCHAR *mac, char *session_name)
 {
 	RPC_ENUM_MAC_TABLE t;
 	bool found = false;
@@ -2079,7 +2079,7 @@ static void HarnessAddCapsLabel(LIST *o, char *caps_name)
 }
 
 // Exact string lookup
-static bool HarnessInList(LIST *o, char *str)
+static bool HarnessInList(LIST *o, const char *str)
 {
 	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
@@ -2093,7 +2093,7 @@ static bool HarnessInList(LIST *o, char *str)
 }
 
 // Split a CSV line (quoted cells as written by vpncmd /CSV, lenient for plain text lines)
-static HARNESS_CELLS *HarnessCsvSplit(char *line)
+static HARNESS_CELLS *HarnessCsvSplit(const char *line)
 {
 	HARNESS_CELLS *c = ZeroMalloc(sizeof(HARNESS_CELLS));
 	UINT len = StrLen(line);
@@ -2148,7 +2148,7 @@ static HARNESS_CELLS *HarnessCsvSplit(char *line)
 }
 
 // Join cells into a CSV line with the vpncmd escaping rules
-static char *HarnessCsvJoin(HARNESS_CELLS *c)
+static char *HarnessCsvJoin(const HARNESS_CELLS *c)
 {
 	BUF *b = NewBuf();
 
@@ -2215,14 +2215,14 @@ static void HarnessFreeCells(HARNESS_CELLS *c)
 }
 
 // Replace a cell
-static void HarnessSetCell(HARNESS_CELLS *c, UINT index, char *str)
+static void HarnessSetCell(HARNESS_CELLS *c, UINT index, const char *str)
 {
 	Free(c->Cell[index]);
 	c->Cell[index] = CopyStr(str);
 }
 
 // Whether a cell contains a date (4-digit year, 1-2 digit month and day with any separators)
-static bool HarnessIsDateTime(char *s)
+static bool HarnessIsDateTime(const char *s)
 {
 	UINT len = StrLen(s);
 
@@ -2830,7 +2830,7 @@ static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir)
 // Configuration round-trips
 
 // Configuration items normalised before a comparison
-static bool HarnessIsVolatileConfigName(char *name, bool is_uint64)
+static bool HarnessIsVolatileConfigName(const char *name, bool is_uint64)
 {
 	// Timestamps: CreatedTime, UpdatedTime, LastCommTime, LastLoginTime, ExpireTime
 	if (is_uint64 && EndWith(name, "Time"))
@@ -2993,7 +2993,7 @@ static bool HarnessGetMachineId(HARNESS *h, UCHAR *id, UCHAR *hub_mac, IP *hub_i
 
 // HUBIP: the hub MAC address and address computed independently from the machine identity and the hub
 // name; the address takes the last octet from the second hash byte (FND-145, #147)
-static void HarnessCheckHubAddr(HARNESS *h, UCHAR *id, UCHAR *hub_mac, IP *hub_ip)
+static void HarnessCheckHubAddr(HARNESS *h, const UCHAR *id, const UCHAR *hub_mac, IP *hub_ip)
 {
 	char tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
@@ -3868,7 +3868,7 @@ static void HarnessBenchValue(char *str, UINT size, UINT64 value, bool centi)
 }
 
 // Print one case: "BENCH <name> <median> <unit>", then "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order
-static void HarnessBenchReport(char *name, UINT64 *runs, UINT num, char *unit, bool centi)
+static void HarnessBenchReport(char *name, const UINT64 *runs, UINT num, char *unit, bool centi)
 {
 	UINT64 sorted[HARNESS_BENCH_RUNS];
 	char list[MAX_SIZE];
@@ -4104,7 +4104,7 @@ static void HarnessFreeFloodSession(SESSION *s)
 // One receive loop of the sender: HARNESS_FLOOD_BATCH broadcast frames into the hub, the end-of-loop call that
 // wakes the receivers (cancel list), then every receiver takes its queued frames as its SessionMain would.
 // Returns the frames the receivers got
-static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, UCHAR *frame, UINT size)
+static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, const UCHAR *frame, UINT size)
 {
 	PACKET_ADAPTER *pa = sender->PacketAdapter;
 	UINT64 delivered = 0;
@@ -4324,7 +4324,7 @@ static void HarnessBenchPack(HARNESS *h)
 }
 
 // Pack with HARNESS_PACK_NAMES distinct element names (integers and strings), added in a non-sorted order
-static PACK *HarnessNewNamesPack(HARNESS_PACK_BENCH *b)
+static PACK *HarnessNewNamesPack(const HARNESS_PACK_BENCH *b)
 {
 	PACK *p = NewPack();
 
@@ -4499,7 +4499,7 @@ static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHOR
 
 // TLS ClientHello with one cipher suite and only the server_name extension (the part GetSniNameFromSslPacket reads).
 // Returns the size, 0 if it does not fit
-static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, char *host)
+static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, const char *host)
 {
 	UINT name_len = StrLen(host);
 	UINT ext_data = 2 + 1 + 2 + name_len;		// server_name_list length, name type, name length, name
@@ -4598,7 +4598,7 @@ static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f, bool no_log)
 }
 
 // The parser reached the layer the frame was built for (no_log: and stopped before layer 7)
-static bool HarnessParsedAsBuilt(HARNESS_PARSE_FRAME *f, PKT *p, bool no_log)
+static bool HarnessParsedAsBuilt(const HARNESS_PARSE_FRAME *f, const PKT *p, bool no_log)
 {
 	if (p == NULL)
 	{
@@ -5113,7 +5113,7 @@ static char certdl_key_pem[] =
 	"-----END PRIVATE KEY-----\n";
 
 // Load a PEM certificate
-static X *CertDlPemToX(char *pem)
+static X *CertDlPemToX(const char *pem)
 {
 	BUF *b = NewBuf();
 
@@ -5126,7 +5126,7 @@ static X *CertDlPemToX(char *pem)
 }
 
 // Load a PEM private key
-static K *CertDlPemToK(char *pem)
+static K *CertDlPemToK(const char *pem)
 {
 	BUF *b = NewBuf();
 
@@ -5185,13 +5185,13 @@ static UINT CertDlRecord(CERTDL_SERVER *srv, HTTP_HEADER *h)
 }
 
 // Append a string to an answer
-static void CertDlWriteStr(BUF *b, char *str)
+static void CertDlWriteStr(BUF *b, const char *str)
 {
 	WriteBuf(b, str, StrLen(str));
 }
 
 // Append the 200 answer with Content-Length and the issuer certificate in DER
-static void CertDlWriteOk(CERTDL_SERVER *srv, BUF *b)
+static void CertDlWriteOk(const CERTDL_SERVER *srv, BUF *b)
 {
 	char tmp[MAX_SIZE];
 
@@ -5202,7 +5202,7 @@ static void CertDlWriteOk(CERTDL_SERVER *srv, BUF *b)
 }
 
 // Answer request number num of the run in the mode of the run; true closes the connection
-static bool CertDlRespond(CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num)
+static bool CertDlRespond(const CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num)
 {
 	BUF *b = NewBuf();
 	bool close_now = false;
@@ -5479,7 +5479,7 @@ static bool CertDlCheckStr(HARNESS *h, char *what, char *actual, char *expected)
 
 // Check the outcome of one run: the RPC succeeds, the listener gets one request, the server builds and saves the
 // chain (chain) or reports no issuer, and the run waits for the client receive timeout (waits) or not
-static void CertDlExpect(HARNESS *h, char *name, CERTDL_RESULT *r, bool chain, bool waits)
+static void CertDlExpect(HARNESS *h, char *name, const CERTDL_RESULT *r, bool chain, bool waits)
 {
 	bool ok;
 	char tmp[MAX_SIZE];
@@ -5853,7 +5853,7 @@ static void AdminAuditUsers(ADMINAUDIT *a)
 }
 
 // CreateGroup of a group on hub HARNESS_HUB_A
-static UINT AdminAuditCreateGroup(ADMINAUDIT *a, char *name)
+static UINT AdminAuditCreateGroup(const ADMINAUDIT *a, const char *name)
 {
 	RPC_SET_GROUP t;
 
@@ -5936,7 +5936,7 @@ static void AdminAuditGroups(ADMINAUDIT *a)
 
 // SetHubMsg or GetHubMsg (no Sc* stubs) with a hub name and a message. For GetHubMsg, *got receives the message of
 // the answer (the caller frees it)
-static UINT AdminAuditHubMsgCall(ADMINAUDIT *a, char *rpc_name, char *hubname, wchar_t *msg, wchar_t **got)
+static UINT AdminAuditHubMsgCall(const ADMINAUDIT *a, char *rpc_name, const char *hubname, wchar_t *msg, wchar_t **got)
 {
 	RPC_MSG t;
 	PACK *p = NewPack();
@@ -6213,7 +6213,7 @@ typedef struct HARNESS_LOG_SCAN
 
 // Text of every .log file in a log folder of the server (HUB_SECURITY_LOG_FILE_NAME or HUB_PACKET_LOG_FILE_NAME
 // of a hub), joined. The server keeps its current file open, so the files are read with write sharing
-static char *HarnessReadLogDir(char *dir_fmt, char *hubname)
+static char *HarnessReadLogDir(const char *dir_fmt, char *hubname)
 {
 	char dir[MAX_PATH];
 	wchar_t full[MAX_SIZE];
@@ -6256,7 +6256,7 @@ static char *HarnessReadLogDir(char *dir_fmt, char *hubname)
 }
 
 // Whether a string holds a CR or an LF (InStr trims its keyword, so it cannot look for them)
-static bool HarnessHasLineBreak(char *s)
+static bool HarnessHasLineBreak(const char *s)
 {
 	for (;*s != 0;s++)
 	{
@@ -6270,7 +6270,7 @@ static bool HarnessHasLineBreak(char *s)
 }
 
 // Count the lines of a log text with the marker and with the forged text
-static void HarnessScanLog(char *text, char *marker, char *forged, HARNESS_LOG_SCAN *r)
+static void HarnessScanLog(char *text, const char *marker, const char *forged, HARNESS_LOG_SCAN *r)
 {
 	LIST *lines = HarnessSplitLines(text);
 
@@ -6304,7 +6304,7 @@ static void HarnessScanLog(char *text, char *marker, char *forged, HARNESS_LOG_S
 }
 
 // Wait until a log folder of a hub holds a line with the marker (or HARNESS_LOG_TIMEOUT), then count its lines
-static void HarnessWaitLog(char *dir_fmt, char *hubname, char *marker, char *forged, HARNESS_LOG_SCAN *r)
+static void HarnessWaitLog(const char *dir_fmt, char *hubname, const char *marker, const char *forged, HARNESS_LOG_SCAN *r)
 {
 	UINT64 end = Tick64() + HARNESS_LOG_TIMEOUT;
 
@@ -6360,7 +6360,7 @@ static char *HarnessRecvSyslog(SOCK *s, UINT timeout)
 }
 
 // Next syslog datagram with the marker (others are skipped), NULL when none arrives within HARNESS_LOG_TIMEOUT
-static char *HarnessRecvSyslogWith(SOCK *s, char *marker)
+static char *HarnessRecvSyslogWith(SOCK *s, const char *marker)
 {
 	UINT64 end = Tick64() + HARNESS_LOG_TIMEOUT;
 
@@ -6791,7 +6791,7 @@ static UINT HarnessPlogBuildArp(UCHAR *buf, bool request)
 
 // Ethernet frame from A to B around an L4 segment: IPv4 10.0.0.1 to 10.0.0.2 or IPv6 fe80::1 to fe80::2, no
 // checksum (the parser does not check one). Returns the size, 0 if it does not fit
-static UINT HarnessPlogWrap(UCHAR *buf, UINT buf_size, bool v6, UCHAR protocol, UCHAR *l4, UINT l4_size)
+static UINT HarnessPlogWrap(UCHAR *buf, UINT buf_size, bool v6, UCHAR protocol, const UCHAR *l4, UINT l4_size)
 {
 	UINT ip_header = (v6 ? 40 : 20);
 	UINT ip_size = ip_header + l4_size;
@@ -7037,7 +7037,7 @@ static char *HarnessPlogLine(HARNESS_PLOG_CASE *c, CEDAR *cedar, UCHAR *frame, U
 	return ret;
 }
 
-static void HarnessPlogWriteLine(BUF *b, char *name, char *sep, char *text)
+static void HarnessPlogWriteLine(BUF *b, const char *name, const char *sep, const char *text)
 {
 	WriteBuf(b, name, StrLen(name));
 	WriteBuf(b, sep, StrLen(sep));

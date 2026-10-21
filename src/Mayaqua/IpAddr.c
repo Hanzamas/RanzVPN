@@ -182,7 +182,7 @@ bool IsSubnetMask4(const IP *ip)
 	return (MaskToPrefixLen(IPV4(ip->address), IPV4_SIZE) != INFINITE);
 }
 
-static bool ParseIpAndSubnetMask46(char *src, IP *ip, IP *mask)
+static bool ParseIpAndSubnetMask46(const char *src, IP *ip, IP *mask)
 {
 	if (src == NULL || ip == NULL || mask == NULL)
 	{

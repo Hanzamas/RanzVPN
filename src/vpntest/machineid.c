@@ -58,7 +58,7 @@ static bool MachineIdCheck(MACHINEID_CTX *ctx, bool ok, char *what)
 }
 
 // Check an identity against its expected value in hex; a failure also prints the identity
-static void MachineIdCheckHex(MACHINEID_CTX *ctx, UCHAR *id, char *expect, char *what)
+static void MachineIdCheckHex(MACHINEID_CTX *ctx, const UCHAR *id, char *expect, char *what)
 {
 	char hex[SHA1_SIZE * 2 + 1];
 

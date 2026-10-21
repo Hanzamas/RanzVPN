@@ -14,7 +14,7 @@ static void Internal_Sha0(unsigned char *dest, const unsigned char *src, const U
 
 // Hash with a CNG provider. digest_size is the digest size of the algorithm; the source may be the
 // destination. Should CNG fail, the digest is all zero.
-static void CngHash(BCRYPT_ALG_HANDLE *alg, void *dst, UINT digest_size, void *src, UINT size)
+static void CngHash(const BCRYPT_ALG_HANDLE *alg, void *dst, UINT digest_size, void *src, UINT size)
 {
 	BCRYPT_HASH_HANDLE h = NULL;
 	bool ok = false;

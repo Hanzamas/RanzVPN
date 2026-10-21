@@ -31,12 +31,12 @@
 
 static void DeleteOldNoSsl(CEDAR *c);
 static void MakeRoomInNoSslList(CEDAR *c);
-static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip);
+static NON_SSL *SearchNoSslList(CEDAR *c, const IP *ip);
 static void FreeNetSvcList(CEDAR *cedar);
 
 static UINT init_cedar_counter = 0;
 
-static bool IsSupportedWinVer(RPC_WINVER *v)
+static bool IsSupportedWinVer(const RPC_WINVER *v)
 {
 	if (v == NULL)
 	{
@@ -412,7 +412,7 @@ static void MakeRoomInNoSslList(CEDAR *c)
 	}
 }
 
-static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
+static NON_SSL *SearchNoSslList(CEDAR *c, const IP *ip)
 {
 	NON_SSL t;
 	if (c == NULL || ip == NULL)

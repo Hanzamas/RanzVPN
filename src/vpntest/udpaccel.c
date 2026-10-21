@@ -72,7 +72,7 @@ static bool UdpAccelTestCheck(UDPACCEL_TEST *t, bool ok, char *what, char *detai
 }
 
 // Datagrams that Recv has dropped so far
-static UINT64 UdpAccelTestDrops(UDPACCEL_TEST *t)
+static UINT64 UdpAccelTestDrops(const UDPACCEL_TEST *t)
 {
 	return t->Recv->NumDropShort + t->Recv->NumDropInvalid;
 }

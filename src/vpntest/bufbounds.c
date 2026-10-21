@@ -204,7 +204,7 @@ static void BufBoundsWriteWrapChild(void)
 }
 
 // True when the file holds text
-static bool BufBoundsFileHas(wchar_t *name, char *text)
+static bool BufBoundsFileHas(wchar_t *name, const char *text)
 {
 	BUF *b = ReadDumpW(name);
 
@@ -324,7 +324,7 @@ static void BufBoundsTestWriteBuf(BUFBOUNDS_CTX *ctx)
 
 // Body of a binary configuration (what follows "SEVPN_DB" and the hash): folder "root" without
 // subfolders and with one item of the given name and type; the caller writes the value
-static BUF *BufBoundsCfgOneItem(char *name, UINT type)
+static BUF *BufBoundsCfgOneItem(const char *name, UINT type)
 {
 	BUF *b = NewBuf();
 
@@ -451,7 +451,7 @@ static bool BufBoundsCfgListSorted(LIST *o, bool folders)
 }
 
 // True when every name of t comes after the one before it, case-insensitively: sorted, each once
-static bool BufBoundsCfgTokensUnique(TOKEN_LIST *t)
+static bool BufBoundsCfgTokensUnique(const TOKEN_LIST *t)
 {
 	for (UINT i = 1;i < t->NumTokens;i++)
 	{

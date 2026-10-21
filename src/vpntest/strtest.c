@@ -61,7 +61,7 @@ static bool StrTestCheck(STRTEST_CTX *ctx, bool ok, char *what, char *detail_fmt
 
 // Fill the destination with STRTEST_FILL, put init (with its terminator) at its start when it
 // is not NULL, and return the destination
-static char *StrTestReset(STRTEST_CTX *ctx, char *init)
+static char *StrTestReset(STRTEST_CTX *ctx, const char *init)
 {
 	memset(ctx->Buf, STRTEST_FILL, STRTEST_BUF_SIZE);
 	ctx->Buf[STRTEST_BUF_SIZE] = 0;
@@ -609,7 +609,7 @@ static char *strtest_fast_names[STRTEST_FAST_NUM] =
 
 // Write function func of st, mac and tz into dst: the function itself, or (by_format) Format with
 // the format the function stands for
-static void StrTestFastCall(UINT func, bool by_format, char *dst, UINT size, SYSTEMTIME *st, UCHAR *mac, int tz)
+static void StrTestFastCall(UINT func, bool by_format, char *dst, UINT size, SYSTEMTIME *st, const UCHAR *mac, int tz)
 {
 	UINT abs_min = (tz < 0) ? (UINT)(-tz) : (UINT)tz;
 

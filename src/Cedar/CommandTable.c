@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-static void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bool *rights, char separate_char)
+static void CtPrintRow(CONSOLE *c, UINT num, const UINT *widths, wchar_t **strings, const bool *rights, char separate_char)
 {
 	bool is_sep_line = true;
 	if (c == NULL || num == 0 || widths == NULL || strings == NULL || rights == NULL)
@@ -209,7 +209,7 @@ static void CtPrint(CT *ct, CONSOLE *c)
 	Free(widths);
 }
 
-static void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
+static void CtEscapeCsv(wchar_t *dst, UINT size, const wchar_t *src){
 	UINT len = UniStrLen(src);
 	bool need_to_escape = false;
 	wchar_t tmp[2]=L"*";

@@ -29,7 +29,7 @@
 #define	IS_RECV_TCP_SOCK(ts)		\
 	((ts->Direction == TCP_BOTH) || ((ts->Direction == TCP_SERVER_TO_CLIENT) && (s->ServerMode == false)) || ((ts->Direction == TCP_CLIENT_TO_SERVER) && (s->ServerMode)))
 
-static void WriteSendFifo(TCPSOCK *ts, void *data, UINT size)
+static void WriteSendFifo(TCPSOCK *ts, const void *data, UINT size)
 {
 	if (ts == NULL || data == NULL)
 	{
@@ -39,7 +39,7 @@ static void WriteSendFifo(TCPSOCK *ts, void *data, UINT size)
 	WriteFifo(ts->SendFifo, data, size);
 }
 
-static void WriteRecvFifo(TCPSOCK *ts, void *data, UINT size)
+static void WriteRecvFifo(TCPSOCK *ts, const void *data, UINT size)
 {
 	if (ts == NULL || data == NULL)
 	{

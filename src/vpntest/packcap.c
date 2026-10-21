@@ -100,7 +100,7 @@ static void PackCapPeerThread(THREAD *thread, void *param)
 
 // Start the peer for one connection that it answers with p, and connect to it. Returns the client
 // end, or NULL when the connection fails. PackCapEnd frees p.
-static SOCK *PackCapStart(PACKCAP_TEST *t, PACKCAP_PEER *peer, PACK *p)
+static SOCK *PackCapStart(const PACKCAP_TEST *t, PACKCAP_PEER *peer, PACK *p)
 {
 	Zero(peer, sizeof(PACKCAP_PEER));
 	peer->Listen = t->Listen;

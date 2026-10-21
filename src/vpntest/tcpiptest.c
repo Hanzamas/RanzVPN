@@ -68,7 +68,7 @@ static void TcpIpTestCheck(TCPIPTEST_CTX *ctx, bool ok, char *what, char *detail
 }
 
 // Ethernet header (14 bytes) of an IPv4 frame from src_mac to dst_mac
-static void TcpIpTestEthernet(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac)
+static void TcpIpTestEthernet(UCHAR *buf, const UCHAR *dst_mac, const UCHAR *src_mac)
 {
 	Copy(buf, dst_mac, 6);
 	Copy(buf + 6, src_mac, 6);
@@ -78,7 +78,7 @@ static void TcpIpTestEthernet(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac)
 
 // IPv4 header (20 bytes, zeroed before) of an ip_size-byte packet from src to dst, with its checksum.
 // The checksum of the layer 4 header behind it is TcpIpTestL4Checksum's
-static void TcpIpTestIpv4(UCHAR *ip, UINT ip_size, UCHAR protocol, UCHAR *src, UCHAR *dst)
+static void TcpIpTestIpv4(UCHAR *ip, UINT ip_size, UCHAR protocol, const UCHAR *src, const UCHAR *dst)
 {
 	ip[0] = 0x45;								// Version 4, 20-byte header
 	ip[2] = (UCHAR)(ip_size >> 8);
@@ -107,7 +107,7 @@ static void TcpIpTestL4Checksum(UCHAR *ip, UINT l4_size, UINT sum_offset)
 
 // DHCP payload (a BOOTREPLY to the client) in a zeroed heap block of block_size bytes: the fixed
 // header, the magic cookie at TCPIPTEST_COOKIE_OFFSET and the options behind it
-static UCHAR *TcpIpTestDhcp(UINT block_size, UCHAR *options, UINT options_size)
+static UCHAR *TcpIpTestDhcp(UINT block_size, const UCHAR *options, UINT options_size)
 {
 	UCHAR *p = ZeroMalloc(block_size);
 
@@ -131,7 +131,7 @@ static UCHAR *TcpIpTestDhcp(UINT block_size, UCHAR *options, UINT options_size)
 
 // Ethernet frame of the DHCP server 192.168.30.1:67 to the client 192.168.30.10:68 that carries the
 // payload, with valid IPv4 and UDP checksums, in a heap block of exactly its size (*size)
-static UCHAR *TcpIpTestDhcpFrame(UCHAR *payload, UINT payload_size, UINT *size)
+static UCHAR *TcpIpTestDhcpFrame(const UCHAR *payload, UINT payload_size, UINT *size)
 {
 	UCHAR src[4] = {192, 168, 30, 1};
 	UCHAR dst[4] = {192, 168, 30, 10};
@@ -160,7 +160,7 @@ static UCHAR *TcpIpTestDhcpFrame(UCHAR *payload, UINT payload_size, UINT *size)
 // IPv4 TCP SYN of the client 10.0.0.1:49152 to 10.0.0.2:443 with the options (a multiple of 4
 // bytes) and no data, behind an Ethernet header when ethernet is true, with valid IPv4 and TCP
 // checksums, in a heap block of exactly its size (*size)
-static UCHAR *TcpIpTestSyn(UCHAR *options, UINT options_size, bool ethernet, UINT *size)
+static UCHAR *TcpIpTestSyn(const UCHAR *options, UINT options_size, bool ethernet, UINT *size)
 {
 	UCHAR src[4] = {10, 0, 0, 1};
 	UCHAR dst[4] = {10, 0, 0, 2};
@@ -197,7 +197,7 @@ static UCHAR *TcpIpTestSyn(UCHAR *options, UINT options_size, bool ethernet, UIN
 
 // One check of a DhcpModify or DhcpModifyIPv4 result: with expect NULL the call must have returned
 // NULL, otherwise expect_size bytes equal to expect. Frees the result
-static void TcpIpTestBuf(TCPIPTEST_CTX *ctx, char *what, BUF *b, UCHAR *expect, UINT expect_size)
+static void TcpIpTestBuf(TCPIPTEST_CTX *ctx, char *what, BUF *b, const UCHAR *expect, UINT expect_size)
 {
 	bool ok;
 

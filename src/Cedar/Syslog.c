@@ -13,7 +13,7 @@
 #include "Mayaqua/Str.h"
 
 // Send one syslog datagram to the current address (g->lock held)
-static void SendSysLogLocked(SLOG *g, UCHAR *buf, UINT size)
+static void SendSysLogLocked(SLOG *g, const UCHAR *buf, UINT size)
 {
 	if (g->DestPort != 0 && IsZeroIP(&g->DestIp) == false)
 	{

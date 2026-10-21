@@ -64,7 +64,7 @@ static void RegistryDeleteKeys(char *key, char *restricted)
 }
 
 // Set a value through the W API with the exact bytes given (RegSetValueExW keeps them as they are)
-static bool RegistrySetRaw(char *key, wchar_t *name, UINT type, void *data, UINT size)
+static bool RegistrySetRaw(const char *key, wchar_t *name, UINT type, void *data, UINT size)
 {
 	HKEY h;
 	wchar_t key_w[MAX_PATH];
@@ -85,19 +85,19 @@ static bool RegistrySetRaw(char *key, wchar_t *name, UINT type, void *data, UINT
 }
 
 // True when the wide string read is there and equals expected
-static bool RegistryUniIs(wchar_t *s, wchar_t *expected)
+static bool RegistryUniIs(const wchar_t *s, const wchar_t *expected)
 {
 	return s != NULL && UniStrCmp(s, expected) == 0;
 }
 
 // True when the string read is there and equals expected
-static bool RegistryStrIs(char *s, char *expected)
+static bool RegistryStrIs(const char *s, const char *expected)
 {
 	return s != NULL && StrCmp(s, expected) == 0;
 }
 
 // Make the restricted subkey with REGISTRY_RESTRICTED_SDDL as its security descriptor
-static bool RegistryMakeRestricted(char *restricted)
+static bool RegistryMakeRestricted(const char *restricted)
 {
 	SECURITY_ATTRIBUTES sa;
 	PSECURITY_DESCRIPTOR sd = NULL;

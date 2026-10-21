@@ -27,7 +27,7 @@
 #include <IcmpAPI.h>
 #include "NetworkInternal.h"
 
-static void Win32Cancel(CANCEL *c)
+static void Win32Cancel(const CANCEL *c)
 {
 	if (c == NULL)
 	{
@@ -62,7 +62,7 @@ static CANCEL *Win32NewCancel()
 	return c;
 }
 
-static bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout)
+static bool Win32WaitSockEvent(const SOCK_EVENT *event, UINT timeout)
 {
 	if (event == NULL || timeout == 0)
 	{
@@ -91,7 +91,7 @@ static void Win32CleanupSockEvent(SOCK_EVENT *event)
 	Free(event);
 }
 
-static void Win32SetSockEvent(SOCK_EVENT *event)
+static void Win32SetSockEvent(const SOCK_EVENT *event)
 {
 	if (event == NULL)
 	{
@@ -154,7 +154,7 @@ static void Win32InitAsyncSocket(SOCK *sock)
 	WSAEventSelect(sock->socket, sock->hEvent, FD_READ | FD_WRITE | FD_CLOSE);
 }
 
-static void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
+static void Win32Select(SOCKSET *set, UINT timeout, const CANCEL *c1, const CANCEL *c2)
 {
 	HANDLE array[MAXIMUM_WAIT_OBJECTS];
 	SOCK *s;
@@ -945,7 +945,7 @@ static char *PrintError(int ErrorCode)
 	return Message;
 }
 
-static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
+static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, const bool *cancel_flag)
 {
 	bool ok = false;
 	UINT zero = 0;
@@ -1012,7 +1012,7 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 	}
 }
 
-static int bind_sock(SOCKET sock, IP *ip, UINT port)
+static int bind_sock(SOCKET sock, const IP *ip, UINT port)
 {
 
 	if (IsIP4(ip))
@@ -1048,7 +1048,7 @@ static int bind_sock(SOCKET sock, IP *ip, UINT port)
 	}
 }
 
-static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, IP *ip, UINT port, UINT timeout, bool *cancel_flag)
+static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, const IP *ip, UINT port, UINT timeout, const bool *cancel_flag)
 {
 	struct sockaddr_in sockaddr4;
 	struct sockaddr_in6 sockaddr6;
@@ -1381,7 +1381,7 @@ void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)
 	FreeToken(t2);
 }
 
-static void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value)
+static void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, const char *key, const char *value)
 {
 	char tmp[128];
 	StrCpy(tmp, sizeof(tmp), key);

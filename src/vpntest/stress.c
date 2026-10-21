@@ -208,7 +208,7 @@ static void StressExitWatchdogStart()
 }
 
 // Read a counter protected by a lock
-static UINT StressGet(LOCK *lock, UINT *p)
+static UINT StressGet(LOCK *lock, const UINT *p)
 {
 	UINT ret;
 
@@ -245,7 +245,7 @@ static UINT StressElapsed(UINT64 start)
 }
 
 // Poll a locked counter until it reaches value; false if timeout ms pass first
-static bool StressWaitCount(LOCK *lock, UINT *p, UINT value, UINT timeout)
+static bool StressWaitCount(LOCK *lock, const UINT *p, UINT value, UINT timeout)
 {
 	UINT64 start = Tick64();
 

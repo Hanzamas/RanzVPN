@@ -1238,7 +1238,7 @@ static wchar_t *UniDefaultTokenSplitChars()
 	return L" ,\t\r\n";
 }
 
-static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars)
+static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(const wchar_t *str, const wchar_t *split_chars)
 {
 	wchar_t zero = 0;
 	if (str == NULL)

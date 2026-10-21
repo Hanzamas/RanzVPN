@@ -76,7 +76,7 @@ static void SvcArgsTestCheck(SVCARGS_TEST *t, bool ok, char *what, char *detail_
 }
 
 // The number of times keyword occurs in str
-static UINT SvcArgsTestCount(wchar_t *str, wchar_t *keyword)
+static UINT SvcArgsTestCount(const wchar_t *str, const wchar_t *keyword)
 {
 	UINT num = 0;
 	UINT pos = 0;

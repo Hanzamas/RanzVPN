@@ -295,7 +295,7 @@ static UCHAR GetNextByte(BUF *b)
 	return c;
 }
 
-static bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size)
+static bool ParseDnsQuery(char *name, UINT name_size, const void *data, UINT data_size)
 {
 	char tmp[DNS_MAX_LABEL_LEN + 1];
 	bool ok = true;
@@ -476,7 +476,7 @@ static BUF *BuildDhcpOptionsBuf(LIST *o)
 	return b;
 }
 
-static DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size)
+static DHCP_OPTION *NewDhcpOption(UINT id, const void *data, UINT size)
 {
 	if (size != 0 && data == NULL)
 	{

@@ -709,7 +709,7 @@ QUEUE *NewQueueFast()
 	return q;
 }
 
-static void CopyToArray(LIST *o, void *p)
+static void CopyToArray(const LIST *o, void *p)
 {
 	if (o == NULL || p == NULL)
 	{

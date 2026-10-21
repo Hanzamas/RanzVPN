@@ -70,7 +70,7 @@ void ConvertSafeFileName(char *dst, UINT size, char *src)
 	}
 }
 
-static DIRLIST *EnumDirEx(char *dirname, COMPARE *compare)
+static DIRLIST *EnumDirEx(const char *dirname, COMPARE *compare)
 {
 	wchar_t *dirname_w = CopyStrToUni(dirname);
 	DIRLIST *ret = EnumDirExW(dirname_w, compare);
@@ -161,7 +161,7 @@ static bool HamcoreResource(char *id, void **data, UINT *size)
 
 // The line of the index text that starts at *pos: its start and its length without the line
 // end (LF, or CR LF). Moves *pos past the line. False when *pos is at the end of the text.
-static bool HamcoreIndexLine(char *text, UINT size, UINT *pos, UINT *start, UINT *len)
+static bool HamcoreIndexLine(const char *text, UINT size, UINT *pos, UINT *start, UINT *len)
 {
 	UINT n = 0;
 
@@ -192,7 +192,7 @@ static bool HamcoreIndexLine(char *text, UINT size, UINT *pos, UINT *start, UINT
 // Resource ID of the built-in hamcore file <name> (compared byte by byte): its line in the
 // index, from 1, or 0 when the index does not name it. <num> (optional) receives the number of
 // lines: 0 when the executable has no index.
-static UINT HamcoreResourceId(char *name, UINT *num)
+static UINT HamcoreResourceId(const char *name, UINT *num)
 {
 	char *text;
 	UINT size, pos, start, len, line = 0, id = 0;
@@ -255,7 +255,7 @@ static void HamcoreResourceName(UINT id, char *name, UINT name_size)
 	}
 }
 
-static BUF *ReadHamcoreW(wchar_t *filename)
+static BUF *ReadHamcoreW(const wchar_t *filename)
 {
 	char *filename_a = CopyUniToStr(filename);
 
@@ -1284,7 +1284,7 @@ bool FileCloseEx(IO *o, bool no_flush)
 	return ret;
 }
 
-static IO *FileCreateInnerW(wchar_t *name)
+static IO *FileCreateInnerW(const wchar_t *name)
 {
 	wchar_t name2[MAX_SIZE];
 	if (name == NULL)

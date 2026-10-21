@@ -21,7 +21,7 @@
 #include "Mayaqua/Tick64.h"
 #include "AdminInternal.h"
 
-static void CopyOsInfo(OS_INFO *dst, OS_INFO *info);
+static void CopyOsInfo(OS_INFO *dst, const OS_INFO *info);
 
 UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
 {
@@ -459,7 +459,7 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 	return ERR_NO_ERROR;
 }
 
-static void CopyOsInfo(OS_INFO *dst, OS_INFO *info)
+static void CopyOsInfo(OS_INFO *dst, const OS_INFO *info)
 {
 	if (info == NULL || dst == NULL)
 	{

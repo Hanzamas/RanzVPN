@@ -10,7 +10,7 @@
 #include "Str.h"
 #include "Tick64.h"
 
-static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped, UCHAR *transaction_id, IP *ip, UINT *port)
+static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped, const UCHAR *transaction_id, IP *ip, UINT *port)
 {
 	UINT addr_size;
 	UCHAR addr[16];

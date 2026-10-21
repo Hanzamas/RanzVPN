@@ -258,7 +258,7 @@ static void EvictOldestIpClient()
 	}
 }
 
-static void AddIpClient(IP *ip)
+static void AddIpClient(const IP *ip)
 {
 	IP_CLIENT *c;
 	if (ip == NULL)
@@ -291,7 +291,7 @@ static void AddIpClient(IP *ip)
 
 }
 
-static void DelIpClient(IP *ip)
+static void DelIpClient(const IP *ip)
 {
 	IP_CLIENT *c;
 	if (ip == NULL)
@@ -754,7 +754,7 @@ static void AddSslRootCerts(X509_STORE *store)
 }
 
 // A TLS start needs a connected socket that does not listen, a key with a certificate, and a server socket for a shared server context
-static bool TlsCanStart(SOCK *sock, SSL_CTX *server_ctx, X *x, K *priv)
+static bool TlsCanStart(const SOCK *sock, const SSL_CTX *server_ctx, const X *x, const K *priv)
 {
 	if (sock->Connected == false || sock->socket == INVALID_SOCKET ||
 	        sock->ListenMode != false)
@@ -775,7 +775,7 @@ static bool TlsCanStart(SOCK *sock, SSL_CTX *server_ctx, X *x, K *priv)
 
 // The context of this TLS start: the shared server context (a reference of this call), a server context built from x, priv
 // and chain, or a client context. NULL when it cannot be built
-static SSL_CTX *TlsGetCtx(SOCK *sock, SSL_CTX *server_ctx, X *x, K *priv, LIST *chain)
+static SSL_CTX *TlsGetCtx(const SOCK *sock, SSL_CTX *server_ctx, X *x, K *priv, LIST *chain)
 {
 	if (server_ctx != NULL)
 	{
@@ -910,7 +910,7 @@ static long TlsReadPeer(SOCK *sock)
 }
 
 // The peer check that ssl_option asks for (VerifyPeer): false, with ssl_err set, when the peer certificate fails it
-static bool TlsCheckPeer(SOCK *sock, long ssl_verify_err, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
+static bool TlsCheckPeer(SOCK *sock, long ssl_verify_err, const char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
 {
 	if (ssl_option == NULL || ssl_option->VerifyPeer == false)
 	{

@@ -12,7 +12,7 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 
-static bool CheckEraserDiskFreeSpace(ERASER *e)
+static bool CheckEraserDiskFreeSpace(const ERASER *e)
 {
 	wchar_t dir[MAX_SIZE];
 	ULARGE_INTEGER free_size;

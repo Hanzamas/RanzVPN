@@ -57,7 +57,7 @@ static void TableCacheCheck(TABLECACHE_CTX *ctx, bool ok, char *what, char *deta
 }
 
 // The language of the list with this name, or NULL
-static LANGLIST *TableCacheFindLang(LIST *o, char *name)
+static LANGLIST *TableCacheFindLang(LIST *o, const char *name)
 {
 	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
@@ -73,7 +73,7 @@ static LANGLIST *TableCacheFindLang(LIST *o, char *name)
 }
 
 // True when the language has the name and the Windows locale ID
-static bool TableCacheLangOk(LANGLIST *e, char *name, UINT lcid)
+static bool TableCacheLangOk(LANGLIST *e, const char *name, UINT lcid)
 {
 	return e != NULL && StrCmpi(e->Name, name) == 0 && IsIntInList(e->LcidList, lcid);
 }
@@ -96,7 +96,7 @@ static bool TableCacheTableName(LIST *o, UINT id, char *name, UINT size)
 }
 
 // Number of files in the directory that the list taken before does not hold; prints their names
-static UINT TableCacheNewFiles(DIRLIST *before, wchar_t *dir)
+static UINT TableCacheNewFiles(const DIRLIST *before, wchar_t *dir)
 {
 	UINT num = 0;
 

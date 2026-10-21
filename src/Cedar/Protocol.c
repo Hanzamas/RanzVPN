@@ -257,7 +257,7 @@ static bool HttpSetDword(HINTERNET h, DWORD option, DWORD value)
 // The body is read as far as Content-Length says, up to max_size bytes (0: no limit); without Content-Length no
 // body is read, chunked or not. timeout_ms is the TCP connect timeout and the time of each send and receive, the
 // TLS handshake of an https URL gets TIMEOUT_SSL_CONNECT instead. error_code may be NULL.
-static BUF *HttpGet(char *url, UINT timeout_ms, UINT max_size, UINT *error_code)
+static BUF *HttpGet(const char *url, UINT timeout_ms, UINT max_size, UINT *error_code)
 {
 	char str[MAX_SIZE * 3];
 	wchar_t tmp[MAX_SIZE];

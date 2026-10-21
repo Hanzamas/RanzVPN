@@ -406,7 +406,7 @@ static void PacketLogTcp(TOKEN_LIST *t, PACKET_LOG *pl, PKT *p, char *suffix)
 }
 
 // The packet log tokens of an IKE connection packet. suffix is "v4" or "v6"
-static void PacketLogIke(TOKEN_LIST *t, PKT *p, char *suffix)
+static void PacketLogIke(TOKEN_LIST *t, const PKT *p, char *suffix)
 {
 	char tmp[MAX_SIZE];
 
@@ -439,7 +439,7 @@ static void PacketLogIke(TOKEN_LIST *t, PKT *p, char *suffix)
 }
 
 // The packet log tokens of a DNS query. suffix is "v4" or "v6"
-static void PacketLogDns(TOKEN_LIST *t, PKT *p, char *suffix)
+static void PacketLogDns(TOKEN_LIST *t, const PKT *p, char *suffix)
 {
 	char tmp[MAX_SIZE];
 
@@ -452,7 +452,7 @@ static void PacketLogDns(TOKEN_LIST *t, PKT *p, char *suffix)
 }
 
 // The packet log tokens of a UDP datagram. suffix is "v4" or "v6"
-static void PacketLogUdp(TOKEN_LIST *t, PACKET_LOG *pl, PKT *p, char *suffix)
+static void PacketLogUdp(TOKEN_LIST *t, PACKET_LOG *pl, const PKT *p, char *suffix)
 {
 	char tmp[MAX_SIZE];
 
@@ -505,7 +505,7 @@ static void PacketLogUdp(TOKEN_LIST *t, PACKET_LOG *pl, PKT *p, char *suffix)
 }
 
 // The packet log tokens of an ARP packet: the request and the response differ only in the text
-static void PacketLogArp(TOKEN_LIST *t, PKT *p)
+static void PacketLogArp(TOKEN_LIST *t, const PKT *p)
 {
 	ARPV4_HEADER *a = p->L3.ARPv4Header;
 	char tmp[MAX_SIZE];

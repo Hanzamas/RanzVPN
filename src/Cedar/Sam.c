@@ -16,7 +16,7 @@
 #include "Mayaqua/Str.h"
 
 // Formats a log line of a credential check as HLog does and hands it to the log callback of req
-static void SamLog(AUTH_REQUEST *req, char *name, ...)
+static void SamLog(const AUTH_REQUEST *req, char *name, ...)
 {
 	wchar_t buf[MAX_SIZE * 2];
 	va_list args;
@@ -269,7 +269,7 @@ static POLICY *SamGetUserPolicy(HUB *h, char *username)
 	return ret;
 }
 
-static bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password)
+static bool SamAuthUserByPassword(HUB *h, char *username, void *random, const void *secure_password)
 {
 	bool b = false;
 	UCHAR secure_password_check[SHA1_SIZE];

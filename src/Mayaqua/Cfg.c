@@ -1192,7 +1192,7 @@ BUF *CfgFolderToBuf(FOLDER *f)
 
 // Unescape str into dst when dst is not NULL, without a terminator. Returns the length of the
 // result, which ends at the first character that unescapes to 0. A lone '$' is the empty string.
-static UINT CfgUnescapeTo(char *str, char *dst)
+static UINT CfgUnescapeTo(const char *str, char *dst)
 {
 	char tmp2[8];
 	char c;
@@ -1250,7 +1250,7 @@ char *CfgUnescape(char *str)
 
 // Escape str into dst when dst is not NULL, without a terminator, and return the escaped length.
 // A character CfgCheckCharForName refuses becomes '$' and two hex digits; "" becomes a lone '$'.
-static UINT CfgEscapeTo(char *str, char *dst)
+static UINT CfgEscapeTo(const char *str, char *dst)
 {
 	UINT len = StrLen(str);
 	if (len == 0)

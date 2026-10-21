@@ -221,7 +221,7 @@ static bool KatCheck(KAT_CTX *ctx, bool ok, char *what, char *detail_fmt, ...)
 }
 
 // Compare bytes with a hex string; got receives the hex of the bytes
-static bool KatHexEq(void *data, UINT size, char *expect_hex, char *got, UINT got_size)
+static bool KatHexEq(const void *data, UINT size, const char *expect_hex, char *got, UINT got_size)
 {
 	BinToStr(got, got_size, data, size);
 
@@ -229,7 +229,7 @@ static bool KatHexEq(void *data, UINT size, char *expect_hex, char *got, UINT go
 }
 
 // Whether every byte of the buffer has the value
-static bool KatAllBytes(UCHAR *buf, UINT size, UCHAR value)
+static bool KatAllBytes(const UCHAR *buf, UINT size, UCHAR value)
 {
 	for (UINT i = 0;i < size;i++)
 	{

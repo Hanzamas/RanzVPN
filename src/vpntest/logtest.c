@@ -125,7 +125,7 @@ static bool LogTestCheck(LOGTEST_CTX *ctx, bool ok, char *what, char *detail_fmt
 }
 
 // Print the result line of a test
-static void LogTestEnd(LOGTEST_CTX *ctx, char *name)
+static void LogTestEnd(const LOGTEST_CTX *ctx, char *name)
 {
 	if (ctx->NumFailed == 0)
 	{
@@ -150,7 +150,7 @@ static void LogTestDirName(char *dir, UINT size, char *name)
 }
 
 // Delete a directory (it must be empty)
-static void LogTestDeleteDir(char *dir)
+static void LogTestDeleteDir(const char *dir)
 {
 	wchar_t *dir_w = CopyStrToUni(dir);
 
@@ -160,7 +160,7 @@ static void LogTestDeleteDir(char *dir)
 }
 
 // Contents of a file as a string, NULL when it cannot be read
-static char *LogTestReadText(char *path)
+static char *LogTestReadText(const char *path)
 {
 	BUF *b = ReadDump(path);
 

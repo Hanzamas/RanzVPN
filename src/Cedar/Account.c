@@ -650,7 +650,7 @@ void SetUserAuthData(USER *u, UINT authtype, void *authdata)
 }
 
 // Replace a user's or group's traffic counters under its lock; NULL resets them
-static void SetTrafficLocked(LOCK *lock, TRAFFIC *dst, TRAFFIC *src)
+static void SetTrafficLocked(LOCK *lock, TRAFFIC *dst, const TRAFFIC *src)
 {
 	Lock(lock);
 	{

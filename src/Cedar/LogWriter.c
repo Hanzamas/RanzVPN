@@ -27,7 +27,7 @@ typedef struct LOG_WRITER
 } LOG_WRITER;
 
 static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w);
-static UINT LogWriterWaitTime(LOG_WRITER *w);
+static UINT LogWriterWaitTime(const LOG_WRITER *w);
 
 // Map the control characters of size bytes of UTF-8 text (bytes below 0x20 and 0x7F, never part of a
 // multi-byte sequence) to '?': a CR or LF from untrusted input cannot start a forged log line or syslog message
@@ -463,7 +463,7 @@ static void LogThread(THREAD *thread, void *param)
 
 // Milliseconds the writer thread waits for a new record: while records wait in the buffer for a file that
 // could not be opened, only until the next try to open it
-static UINT LogWriterWaitTime(LOG_WRITER *w)
+static UINT LogWriterWaitTime(const LOG_WRITER *w)
 {
 	if (w->Io != NULL || w->Buffer->Size == 0 || IsEmptyStr(w->FileName))
 	{

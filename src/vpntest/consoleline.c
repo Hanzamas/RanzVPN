@@ -77,7 +77,7 @@ static bool ConsoleLineCheck(CONSOLELINE_CTX *ctx, bool ok, char *what)
 }
 
 // True when the len characters of s are all 'A'
-static bool ConsoleLineAllA(wchar_t *s, UINT len)
+static bool ConsoleLineAllA(const wchar_t *s, UINT len)
 {
 	for (UINT i = 0;i < len;i++)
 	{
@@ -91,7 +91,7 @@ static bool ConsoleLineAllA(wchar_t *s, UINT len)
 }
 
 // True when every character of s is printable ASCII
-static bool ConsoleLineIsAscii(wchar_t *s)
+static bool ConsoleLineIsAscii(const wchar_t *s)
 {
 	for (UINT i = 0;s[i] != 0;i++)
 	{
@@ -105,7 +105,7 @@ static bool ConsoleLineIsAscii(wchar_t *s)
 }
 
 // The UTF-16 code units of s in hexadecimal, each after a space (" 0048 00E9")
-static void ConsoleLineCodes(char *dst, UINT size, wchar_t *s)
+static void ConsoleLineCodes(char *dst, UINT size, const wchar_t *s)
 {
 	char *hex = "0123456789ABCDEF";
 
@@ -181,13 +181,13 @@ static void ConsoleLineChild()
 }
 
 // Input of the bytes of str
-static BUF *ConsoleLineInput(char *str)
+static BUF *ConsoleLineInput(const char *str)
 {
 	return MemToBuf(str, StrLen(str));
 }
 
 // Input of before, CONSOLELINE_LONG_LEN times 'A' and after
-static BUF *ConsoleLineLongInput(char *before, char *after)
+static BUF *ConsoleLineLongInput(const char *before, const char *after)
 {
 	BUF *b = NewBuf();
 	char *a = MakeCharArray('A', CONSOLELINE_LONG_LEN);
@@ -311,7 +311,7 @@ static char *ConsoleLineRunChild(BUF *in, BUF *infile, UINT *exit_code)
 }
 
 // The CONSOLELINE lines of the output of a child, without their prefix, joined by '|'
-static void ConsoleLineResult(char *result, UINT size, char *out)
+static void ConsoleLineResult(char *result, UINT size, const char *out)
 {
 	TOKEN_LIST *t = ParseToken(out, "\r\n");
 
@@ -335,7 +335,7 @@ static void ConsoleLineResult(char *result, UINT size, char *out)
 }
 
 // Print the output of a failed child, long lines by their length only
-static void ConsoleLinePrintOutput(char *out)
+static void ConsoleLinePrintOutput(const char *out)
 {
 	TOKEN_LIST *t = ParseToken(out, "\r\n");
 
@@ -455,7 +455,7 @@ static void ConsoleLineUniToInt(CONSOLELINE_CTX *ctx)
 }
 
 // One ParseCommandEx case: the CMD value of line is expect, or NULL when expect is NULL
-static void ConsoleLineParseCmdCase(CONSOLELINE_CTX *ctx, wchar_t *line, wchar_t *expect, char *what)
+static void ConsoleLineParseCmdCase(CONSOLELINE_CTX *ctx, wchar_t *line, const wchar_t *expect, char *what)
 {
 	wchar_t *ret = ParseCommandEx(line, L"CMD", NULL);
 	bool ok;

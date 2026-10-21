@@ -27,7 +27,7 @@ static char *RpcFieldKeyName(char *key)
 }
 
 // Keys of the RPC envelope, which no row may write or read
-static bool RpcFieldIsReservedKey(char *key)
+static bool RpcFieldIsReservedKey(const char *key)
 {
 	if (key == NULL)
 	{

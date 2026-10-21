@@ -722,7 +722,7 @@ static UINT RtCharsetRandom(UINT *state)
 
 // Reference of the UTF-8 decoding Mayaqua has always done, independent of Internat.c (see the
 // decoding vectors). Writes the code units to s when s is not NULL and returns their number
-static UINT RtUtf8DecodeRef(wchar_t *s, BYTE *u, UINT size)
+static UINT RtUtf8DecodeRef(wchar_t *s, const BYTE *u, UINT size)
 {
 	UINT i = 0, num = 0;
 
@@ -763,7 +763,7 @@ static UINT RtUtf8DecodeRef(wchar_t *s, BYTE *u, UINT size)
 
 // Reference of the UTF-8 encoding Mayaqua has always done (see the encoding vectors): 1 byte
 // below U+0080, 2 below U+0800, 3 otherwise. Writes the bytes to u and returns their number
-static UINT RtUtf8EncodeRef(BYTE *u, wchar_t *s, UINT len)
+static UINT RtUtf8EncodeRef(BYTE *u, const wchar_t *s, UINT len)
 {
 	UINT wp = 0;
 
@@ -794,7 +794,7 @@ static UINT RtUtf8EncodeRef(BYTE *u, wchar_t *s, UINT len)
 // Compare Utf8Len, CalcUtf8ToUni and Utf8ToUni on the size bytes of u (at least 1) with the
 // reference. out_units is the size given to Utf8ToUni in wchar_t (0: no limit). On a difference,
 // describe it in err and return false
-static bool RtUtf8DecodeMatches(BYTE *u, UINT size, UINT out_units, char *err, UINT err_size)
+static bool RtUtf8DecodeMatches(const BYTE *u, UINT size, UINT out_units, char *err, UINT err_size)
 {
 	wchar_t expect[RT_CHARSET_BUF];
 	wchar_t got[RT_CHARSET_BUF];
@@ -829,7 +829,7 @@ static bool RtUtf8DecodeMatches(BYTE *u, UINT size, UINT out_units, char *err, U
 // Compare CalcUniToUtf8 and UniToUtf8 on s (at most RT_CHARSET_BUF code units) with the
 // reference. out_size is the size given to UniToUtf8 in bytes (0: no limit). On a difference,
 // describe it in err and return false
-static bool RtUtf8EncodeMatches(wchar_t *s, UINT out_size, char *err, UINT err_size)
+static bool RtUtf8EncodeMatches(const wchar_t *s, UINT out_size, char *err, UINT err_size)
 {
 	BYTE expect[RT_CHARSET_BUF * 3];
 	BYTE got[RT_CHARSET_BUF * 3 + 1];
@@ -1176,7 +1176,7 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 
 // StrToUni, CalcStrToUni and CopyStrToUni of str in the current locale: expect, or an empty
 // string with CalcStrToUni 0 when str does not convert (converts false)
-static void RtCharsetStrToUni(RT_CTX *ctx, char *what, char *str, wchar_t *expect, bool converts)
+static void RtCharsetStrToUni(RT_CTX *ctx, char *what, const char *str, const wchar_t *expect, bool converts)
 {
 	wchar_t got[RT_CHARSET_BUF];
 
@@ -1195,7 +1195,7 @@ static void RtCharsetStrToUni(RT_CTX *ctx, char *what, char *str, wchar_t *expec
 
 // UniToStr, CalcUniToStr and CopyUniToStr of s in the current locale: expect, or an empty string
 // with CalcUniToStr 0 when s does not convert (converts false)
-static void RtCharsetUniToStr(RT_CTX *ctx, char *what, wchar_t *s, char *expect, bool converts)
+static void RtCharsetUniToStr(RT_CTX *ctx, char *what, const wchar_t *s, const char *expect, bool converts)
 {
 	char got[RT_CHARSET_BUF];
 	char hex[RT_CHARSET_BUF * 2 + 1];
@@ -1467,7 +1467,7 @@ static wchar_t *RtOldCopyStrToUni(char *str)
 }
 
 // Count one compared call, and keep the first one whose result differs
-static void RtAnsiDiff(RT_ANSI_DIFF *d, bool same, char *func, UINT size, wchar_t *w, char *s)
+static void RtAnsiDiff(RT_ANSI_DIFF *d, bool same, char *func, UINT size, const wchar_t *w, const char *s)
 {
 	d->NumCompared++;
 	if (same)
@@ -2189,7 +2189,7 @@ void fileio_test(UINT num, char **arg)
 #define	RT_RES_SOURCE_DIR		RANZ_HAMCORE_SOURCE_DIR				// src/bin/hamcore of the source tree (src/vpntest/CMakeLists.txt)
 
 // Both buffers were read and hold the same bytes
-static bool RtResourceSame(BUF *a, BUF *b)
+static bool RtResourceSame(const BUF *a, const BUF *b)
 {
 	return a != NULL && b != NULL && a->Size == b->Size && Cmp(a->Buf, b->Buf, a->Size) == 0;
 }
@@ -2794,7 +2794,7 @@ static void RtDnsCheckList(RT_CTX *ctx, LIST *o, IP *expect, char *what)
 
 // Check one immediate answer of DnsResolveEx: the call succeeds within the 1 ms timeout and
 // fills only the lists it should (expect6 or expect4 NULL: that list stays unset)
-static void RtDnsCheckImmediate(RT_CTX *ctx, char *hostname, IP *expect6, IP *expect4, volatile bool *cancel_flag, char *label)
+static void RtDnsCheckImmediate(RT_CTX *ctx, const char *hostname, IP *expect6, IP *expect4, volatile bool *cancel_flag, char *label)
 {
 	LIST *v6 = NULL;
 	LIST *v4 = NULL;
@@ -2961,7 +2961,7 @@ void trace_test(UINT num, char **arg)
 
 // Whether one of the newest entries of the Application log has the source, type and event ID,
 // and the message as its only insertion string
-static bool RtEventLogFind(char *source, UINT type, UINT event_id, char *message)
+static bool RtEventLogFind(const char *source, UINT type, UINT event_id, const char *message)
 {
 	DWORD buf_size = 0x10000;
 	UINT scanned = 0;

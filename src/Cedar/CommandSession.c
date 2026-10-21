@@ -19,7 +19,7 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-static void CmdPrintNodeInfo(CT *ct, NODE_INFO *info)
+static void CmdPrintNodeInfo(CT *ct, const NODE_INFO *info)
 {
 	wchar_t tmp[MAX_SIZE];
 	char str[MAX_SIZE];

@@ -692,7 +692,7 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 	return true;
 }
 
-static void SiWriteListenerCfg(FOLDER *f, SERVER_LISTENER *r)
+static void SiWriteListenerCfg(FOLDER *f, const SERVER_LISTENER *r)
 {
 	if (f == NULL || r == NULL)
 	{
@@ -776,7 +776,7 @@ static void SiWriteLocalBridgeCfg(FOLDER *f, LOCALBRIDGE *br)
 	CfgAddBool(f, "LimitBroadcast", br->LimitBroadcast);
 }
 
-static void SiWriteLocalBridges(FOLDER *f, SERVER *s)
+static void SiWriteLocalBridges(FOLDER *f, const SERVER *s)
 {
 	if (s == NULL || f == NULL)
 	{
@@ -2192,7 +2192,7 @@ void SiWriteHubLogCfg(FOLDER *f, HUB_LOG *g)
 	CfgAddInt(f, "PACKET_LOG_ETHERNET", g->PacketLogConfig[PACKET_LOG_ETHERNET]);
 }
 
-static void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
+static void SiLoadHubCfg(const SERVER *s, FOLDER *f, char *name)
 {
 	HUB_OPTION o;
 	bool online;

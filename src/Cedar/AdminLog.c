@@ -17,8 +17,8 @@
 #include "Mayaqua/Str.h"
 #include "AdminInternal.h"
 
-static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t);
-static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t);
+static void SiReadLocalLogFile(const SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t);
+static void SiEnumLocalLogFileList(const SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t);
 
 UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 {
@@ -126,7 +126,7 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 	return ERR_NO_ERROR;
 }
 
-static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t)
+static void SiReadLocalLogFile(const SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t)
 {
 	char exe_dir[MAX_PATH], full_path[MAX_PATH];
 	if (s == NULL || t == NULL || filepath == NULL)
@@ -161,7 +161,7 @@ static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_
 	}
 }
 
-static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
+static void SiEnumLocalLogFileList(const SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
 {
 	if (s == NULL || t == NULL)
 	{

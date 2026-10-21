@@ -110,7 +110,7 @@ void GetAllNameFromX(wchar_t *str, UINT size, X *x)
 }
 
 // Append key, value and ", " to str, cut at size like the rest of the name list
-static void AppendNamePart(wchar_t *str, UINT size, wchar_t *key, wchar_t *value)
+static void AppendNamePart(wchar_t *str, UINT size, const wchar_t *key, const wchar_t *value)
 {
 	UniStrCat(str, size, key);
 	UniStrCat(str, size, value);
@@ -165,7 +165,7 @@ void GetAllNameFromNameEx(wchar_t *str, UINT size, NAME *name)
 	BuildAllName(str, size, name, false);
 }
 
-static NAME *CloneName(NAME *n)
+static NAME *CloneName(const NAME *n)
 {
 	if (n == NULL)
 	{
@@ -484,7 +484,7 @@ static bool SetSerialForNewX509(X509 *x509, X_SERIAL *serial)
 // Subject alternative name of a new certificate: the common name as one DNS name. The name is built as a
 // single GENERAL_NAME, so a ',' or "DNS:" in the common name cannot add further entries. A common name
 // that is not printable ASCII without spaces gets no SAN; that is not an error.
-static bool AddDnsAltNameToX509(X509 *x509, wchar_t *common_name)
+static bool AddDnsAltNameToX509(X509 *x509, const wchar_t *common_name)
 {
 	char dns[MAX_PATH];
 	GENERAL_NAMES *names;

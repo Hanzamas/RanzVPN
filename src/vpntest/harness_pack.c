@@ -87,19 +87,19 @@ static void HarnessPackFreeStruct(HARNESS_PACK_TYPE *y, void *t);
 static X *HarnessTestCert();
 static K *HarnessTestKey();
 static void HarnessPackIp6(IP *ip, UCHAR last);
-static void HarnessPackPut(BUF *b, char *s);
+static void HarnessPackPut(BUF *b, const char *s);
 static void HarnessPackPutHex(BUF *b, void *data, UINT size);
 static void HarnessPackPutSha1(BUF *b, void *data, UINT size);
-static void HarnessPackPutStr(BUF *b, char *s);
+static void HarnessPackPutStr(BUF *b, const char *s);
 static char *HarnessPackTypeName(UINT type);
-static bool HarnessPackNameInList(char *name, char *list);
-static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, ELEMENT *e);
+static bool HarnessPackNameInList(const char *name, const char *list);
+static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, const ELEMENT *e);
 static void HarnessPackDump(BUF *b, PACK *p, HARNESS_PACK_CASE *c);
 static void HarnessPackPutBytes(BUF *b, PACK *p, bool masked);
-static UINT HarnessPackHash(char *s);
-static bool HarnessPackIsKept(char *name, bool live);
-static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT index, VALUE *v);
-static void HarnessPackCanon(HARNESS_PACK_RUN *r, PACK *p, bool live);
+static UINT HarnessPackHash(const char *s);
+static bool HarnessPackIsKept(const char *name, bool live);
+static void HarnessPackCanonData(const HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT index, VALUE *v);
+static void HarnessPackCanon(const HARNESS_PACK_RUN *r, PACK *p, bool live);
 static UINT HarnessPackGetError(PACK *p);
 static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, BUF *actual, bool update);
 static void HarnessPackRoundTrip(BUF *text, HARNESS_PACK_TYPE *y, BUF *input);
@@ -290,7 +290,7 @@ static void HarnessPackIp6(IP *ip, UCHAR last)
 // Dump
 
 // Append a string
-static void HarnessPackPut(BUF *b, char *s)
+static void HarnessPackPut(BUF *b, const char *s)
 {
 	WriteBuf(b, s, StrLen(s));
 }
@@ -321,7 +321,7 @@ static void HarnessPackPutSha1(BUF *b, void *data, UINT size)
 }
 
 // Append a quoted string: \\, \" and \xNN for control and non-ASCII bytes (the file stays ASCII)
-static void HarnessPackPutStr(BUF *b, char *s)
+static void HarnessPackPutStr(BUF *b, const char *s)
 {
 	HarnessPackPut(b, "\"");
 
@@ -372,7 +372,7 @@ static char *HarnessPackTypeName(UINT type)
 }
 
 // Whether a name matches a comma-separated list of names ("Prefix*" matches a prefix)
-static bool HarnessPackNameInList(char *name, char *list)
+static bool HarnessPackNameInList(const char *name, const char *list)
 {
 	char pattern[MAX_ELEMENT_NAME_LEN + 2];
 	UINT i = 0;
@@ -428,7 +428,7 @@ static char *harness_pack_live_masks =
 	"caps_*,CapsValue";
 
 // Whether the values of an element are masked in a dump
-static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, ELEMENT *e)
+static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, const ELEMENT *e)
 {
 	if (c == NULL || c->Kind != HARNESS_PACK_LIVE)
 	{
@@ -557,7 +557,7 @@ static void HarnessPackPutBytes(BUF *b, PACK *p, bool masked)
 // Canonical round-trip input
 
 // FNV-1a of an element name
-static UINT HarnessPackHash(char *s)
+static UINT HarnessPackHash(const char *s)
 {
 	UINT h = 2166136261U;
 
@@ -571,7 +571,7 @@ static UINT HarnessPackHash(char *s)
 }
 
 // Values kept verbatim: they steer a read branch or a count (policy values are the policy table's)
-static bool HarnessPackIsKept(char *name, bool live)
+static bool HarnessPackIsKept(const char *name, bool live)
 {
 	if (StrCmp(name, "AuthType") == 0 || StrCmp(name, "IsIPv6") == 0 || StrCmp(name, "Masked") == 0 ||
 		StrCmp(name, "UsePolicy") == 0 || StrCmp(name, "NumItem") == 0)
@@ -595,7 +595,7 @@ static bool HarnessPackIsKept(char *name, bool live)
 
 // Canonical data value: the test certificate or key for the X and K keys, UTF-8 text for the text keys,
 // otherwise bytes derived from the name and the index with the same size (fixed-size reads keep matching)
-static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT index, VALUE *v)
+static void HarnessPackCanonData(const HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT index, VALUE *v)
 {
 	BUF *src = NULL;
 	char tmp[MAX_SIZE];
@@ -641,7 +641,7 @@ static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT i
 // names, types and counts unchanged): ints get a distinct value (0 for about one key in five, so booleans
 // take both values), int64 a distinct non-zero value, strings "<name>#<index>" (Unicode strings add U+00E9
 // U+4E2D for the UTF-8 path). The kept keys (HarnessPackIsKept) keep their values.
-static void HarnessPackCanon(HARNESS_PACK_RUN *r, PACK *p, bool live)
+static void HarnessPackCanon(const HARNESS_PACK_RUN *r, PACK *p, bool live)
 {
 	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
