@@ -236,8 +236,8 @@
           "group": "server administration",
           "description": "vpncmd server administration commands (Ps*) that the dispatch tables reach through Command.h, and the argument parsers, evaluators and printers that only they use",
           "names": [
-            "CmdPrintStatusToListViewEx", "GetAuthTypeStr", "StrToDateTime64", "CmdEvalDateTime", "CmdPrintNodeInfo",
-            "CmdPromptChoosePassword", "CmdPasswordPrompt", "CmdInsertTrafficInfo", "CmdPromptPort", "CmdEvalPort"
+            "CmdPrintStatusToListViewEx", "GetAuthTypeStr", "CmdPromptChoosePassword", "CmdPasswordPrompt",
+            "CmdInsertTrafficInfo", "CmdPromptPort", "CmdEvalPort"
           ],
           "patterns": ["^Ps[A-Z]"]
         },
@@ -281,6 +281,79 @@
           "StrToUIntStrict", "ParsePortRange", "CmdEvalPortRange", "ParseMacAddressAndMask", "CmdEvalMacAddressAndMask",
           "IsAbbreviationOf", "ParseTcpState", "CmdEvalTcpState", "PsAccessAdd", "PsAccessAddEx", "PsAccessAdd6",
           "PsAccessAddEx6", "PsAcAdd", "PsAcAdd6"
+        ]
+      }
+    },
+    {
+      "source": "src/Cedar/CommandServer.c",
+      "api_header": "src/Cedar/Command.h",
+      "internal_header": "CommandInternal.h",
+      "files": [
+        {
+          "file": "CommandAc.c",
+          "group": "IP access control commands",
+          "description": "vpncmd commands of the Admin RPC area IP access control (AdminAc.c): list and delete the IP access control rules of a Virtual Hub",
+          "names": ["PsAcList", "PsAcDel"]
+        },
+        {
+          "file": "CommandCrl.c",
+          "group": "CRL commands",
+          "description": "vpncmd commands of the Admin RPC area CRL (AdminCrl.c): the certificate revocation list of a Virtual Hub",
+          "names": ["PsCrlList", "PsCrlAdd", "PsCrlDel", "PsCrlGet"]
+        },
+        {
+          "file": "CommandHubOption.c",
+          "group": "hub option commands",
+          "description": "vpncmd commands of the Admin RPC area hub options (AdminHubOption.c): the admin options and the extended options of a Virtual Hub",
+          "names": ["PsAdminOptionList", "PsAdminOptionSet", "PsExtOptionList", "PsExtOptionSet"]
+        },
+        {
+          "file": "CommandSession.c",
+          "group": "IP and MAC table and session commands",
+          "description": "vpncmd commands of the Admin RPC area sessions (AdminSession.c): the sessions, the MAC table and the IP table of a Virtual Hub",
+          "names": ["PsSessionList", "PsSessionGet", "PsSessionDisconnect", "PsMacTable", "PsMacDelete", "PsIpTable", "PsIpDelete"]
+        },
+        {
+          "file": "CommandGroup.c",
+          "group": "group commands",
+          "description": "vpncmd commands of the Admin RPC area groups (AdminGroup.c): create, set, list and delete groups, and remove a group policy",
+          "names": ["PsGroupList", "PsGroupCreate", "PsGroupSet", "PsGroupDelete", "PsGroupPolicyRemove"]
+        },
+        {
+          "file": "CommandUser.c",
+          "group": "user commands",
+          "description": "vpncmd commands of the Admin RPC area users (AdminUser.c): create, set and delete users, their authentication, policy and expiry, and the group join and unjoin, which set the group of a user through the user RPCs; with GetAuthTypeStr",
+          "names": [
+            "GetAuthTypeStr", "PsUserCreate", "PsUserSet", "PsUserDelete", "PsUserAnonymousSet", "PsUserPasswordSet",
+            "PsUserCertSet", "PsUserSignedSet", "PsUserNTLMSet", "PsUserPolicyRemove", "PsUserExpiresSet", "PsGroupJoin",
+            "PsGroupUnjoin"
+          ]
+        },
+        {
+          "file": "CommandAccess.c",
+          "group": "access list commands",
+          "description": "vpncmd commands of the Admin RPC area access lists (AdminAccess.c): list, delete, enable and disable access list rules",
+          "names": ["PsAccessList", "PsAccessDelete", "PsAccessEnable", "PsAccessDisable"]
+        },
+        {
+          "file": "CommandCascade.c",
+          "group": "cascade connection commands",
+          "description": "vpncmd commands of the Admin RPC area cascade connections (AdminLink.c): status, rename, online and offline of a cascade connection",
+          "names": ["PsCascadeStatusGet", "PsCascadeRename", "PsCascadeOnline", "PsCascadeOffline"]
+        },
+        {
+          "file": "CommandMessage.c",
+          "group": "maintenance commands",
+          "description": "vpncmd commands of the Admin RPC area messages and maintenance (AdminMessage.c): flush, crash and server certificate regeneration",
+          "names": ["PsFlush", "PsCrash", "PsServerCertRegenerate"]
+        }
+      ],
+      "remainder": {
+        "description": "the commands of the Admin RPC area server and listeners (AdminServer.c: PsServerInfoGet, PsServerStatusGet, PsServerPasswordSet, PsListener*), PsAbout, and the helpers that several command families or Command.c use: the connection status printer (CmdPrintStatusToListViewEx, cascade and session commands), the password prompts, the traffic printer and the port prompt and evaluator (#29 open question 8)",
+        "names": [
+          "CmdPrintStatusToListViewEx", "CmdPromptChoosePassword", "CmdPasswordPrompt", "CmdInsertTrafficInfo",
+          "CmdPromptPort", "CmdEvalPort", "PsServerPasswordSet", "PsListenerDisable", "PsListenerEnable",
+          "PsListenerList", "PsListenerDelete", "PsServerInfoGet", "PsServerStatusGet", "PsListenerCreate", "PsAbout"
         ]
       }
     },
