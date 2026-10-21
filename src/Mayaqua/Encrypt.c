@@ -1,16 +1,16 @@
 // Encrypt.c
 // Encryption and digital certification routine
 
-#include "Encrypt.h"
+#include "Mayaqua/Encrypt.h"
 
-#include "FileIO.h"
-#include "Internat.h"
-#include "Kernel.h"
-#include "Mayaqua.h"
-#include "Memory.h"
-#include "Object.h"
-#include "Str.h"
-#include "Trace.h"
+#include "Mayaqua/FileIO.h"
+#include "Mayaqua/Internat.h"
+#include "Mayaqua/Kernel.h"
+#include "Mayaqua/Mayaqua.h"
+#include "Mayaqua/Memory.h"
+#include "Mayaqua/Object.h"
+#include "Mayaqua/Str.h"
+#include "Mayaqua/Trace.h"
 
 #include <string.h>
 
@@ -19,6 +19,7 @@
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/evp.h>
 #include <openssl/rand.h>
 #ifndef OPENSSL_NO_ENGINE
 #include <openssl/engine.h>
