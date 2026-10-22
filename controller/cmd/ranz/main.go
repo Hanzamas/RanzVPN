@@ -15,6 +15,10 @@
 //	ranz [flags] get revision ID               print one revision with its resources
 //	ranz [flags] get events                    print the events, such as an automatic rollback
 //	ranz [flags] delete KIND NAME              delete one resource
+//	ranz [flags] export [-o json|yaml]         print the whole intent as one intent document, with the values the controller
+//	                                           filled in, such as the id and the ULA of each VRF; JSON unless -o yaml
+//	ranz [flags] import -f FILE                make the intent document in FILE (YAML or JSON, - for standard input) the whole
+//	                                           intent, as a new revision: the resources it leaves out are deleted
 //	ranz [flags] status                        print the controller's public key, control address and TLS fingerprint
 //	ranz [flags] get licence                   print the licence in force: tier, node cap, features, expiry
 //	ranz [flags] licence -f FILE               install the licence key in FILE (- for standard input)
@@ -33,14 +37,15 @@
 //	                      `ranz status` prints, RANZ_TLS_FINGERPRINT by default: for a controller on
 //	                      another host while its certificate is self-signed
 //
-// Every call needs the token of a role (SDN-14, #190): viewer reads, operator also applies,
-// deletes, confirms, rolls back and installs or removes the licence key, admin also manages the
-// tokens. The first start of the controller creates the admin token and writes its secret to
+// Every call needs the token of a role (SDN-14, #190): viewer reads and exports, operator also
+// applies, imports, deletes, confirms, rolls back and installs or removes the licence key, admin
+// also manages the tokens. The first start of the controller creates the admin token and writes its secret to
 // admin.token in its data directory; when it is lost, `ranz-controller reset-admin` on the
 // controller's host makes a new one.
 // The controller decides what a token may do, so ranz prints its answer as it is: JSON, the
-// canonical form of the intent, or the controller's refusal. Each apply, delete and rollback
-// prints the revision it made.
+// canonical form of the intent, or the controller's refusal. Each apply, import, delete and
+// rollback prints the revision it made. An export moves the intent alone; the whole store, with
+// the revisions, is backed up with `ranz-controller backup` on the controller's host.
 package main
 
 import (
@@ -68,6 +73,8 @@ const usage = `usage:
   ranz [flags] get resources|nodes|revisions|events|licence
   ranz [flags] get revision ID
   ranz [flags] delete KIND NAME
+  ranz [flags] export [-o json|yaml]
+  ranz [flags] import -f FILE
   ranz [flags] status
   ranz [flags] licence -f FILE|-remove
   ranz [flags] whoami
@@ -223,6 +230,40 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 		return show(out, api.NodeList{Nodes: nodes})
 	case len(args) == 3 && args[0] == "delete":
 		res, err := c.Delete(ctx, args[1], args[2])
+		if err != nil {
+			return err
+		}
+		return show(out, res)
+	case args[0] == "export":
+		flags := flag.NewFlagSet("export", flag.ContinueOnError)
+		format := flags.String("o", "json", "the form of the intent document: json or yaml")
+		if err := flags.Parse(args[1:]); err != nil || flags.NArg() > 0 || (*format != "json" && *format != "yaml") {
+			return errUsage
+		}
+		doc, err := c.Export(ctx)
+		if err != nil {
+			return err
+		}
+		if *format == "json" {
+			return show(out, doc)
+		}
+		b, err := doc.YAML()
+		if err != nil {
+			return err
+		}
+		_, err = out.Write(b)
+		return err
+	case args[0] == "import":
+		flags := flag.NewFlagSet("import", flag.ContinueOnError)
+		file := flags.String("f", "", "the intent document, - for standard input")
+		if err := flags.Parse(args[1:]); err != nil || *file == "" || flags.NArg() > 0 {
+			return errUsage
+		}
+		doc, err := readDocument(*file)
+		if err != nil {
+			return err
+		}
+		res, err := c.Import(ctx, doc)
 		if err != nil {
 			return err
 		}
