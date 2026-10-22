@@ -200,6 +200,8 @@ typedef struct NODE_READER NODE_READER;
 typedef struct NODE_TABLE_ENTRY NODE_TABLE_ENTRY;
 typedef struct NODE_TABLE NODE_TABLE;
 typedef struct NODE_TABLES NODE_TABLES;
+typedef struct NODE_BGP NODE_BGP;
+typedef struct NODE_BGP_STATUS NODE_BGP_STATUS;
 
 
 typedef struct CONFIG_STORE CONFIG_STORE;

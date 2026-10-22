@@ -4,7 +4,8 @@
 // snapshot of NodeTable.c. Its configuration is the SQLite store of ConfigStore.c in its data directory under
 // ProgramData (CORE-F5, #65). It reuses the fork's Hub, Account, Sam and Logging modules in-process, and Cfg
 // for the one-time import of a fork configuration. It runs the relay role on the peer module of the new core
-// (src/Core/Peer.c).
+// (src/Core/Peer.c). A node whose configuration names BGP peers also runs the BGP sidecar of NodeBgp.c
+// (CORE-S7-1, #82).
 
 #include "Node.h"
 
@@ -232,14 +233,15 @@ static void NodeImportForkConfig(NODE *n) {
 // Open the configuration store (CS_FILE_NAME in the data directory), import a fork configuration into it once,
 // then read the settings: Roles (NODE_SETTING_ROLES; without it NODE_DEFAULT_ROLES, "none" for no role),
 // NumWorkers (NODE_SETTING_WORKERS; 0 for one per core), RelayPort (NODE_SETTING_RELAY_PORT; without it, or 0, a
-// port that the system picks) and IdentityKey (NODE_SETTING_IDENTITY_KEY; without it NODE_IDENTITY_KEY_NAME). The
-// networks are read by the server role.
+// port that the system picks), IdentityKey (NODE_SETTING_IDENTITY_KEY; without it NODE_IDENTITY_KEY_NAME) and Bgp
+// (NODE_SETTING_BGP; none for no BGP sidecar). The networks are read by the server role.
 static void NodeLoadConfig(NODE *n) {
 	wchar_t path[MAX_PATH];
 	char roles[MAX_SIZE];
 	char unknown[MAX_SIZE];
 	char workers[MAX_SIZE];
 	char relay_port[MAX_SIZE];
+	char *bgp;
 
 	n->ConfigRoles = NODE_DEFAULT_ROLES;
 	n->ConfigWorkers = 0;
@@ -277,6 +279,12 @@ static void NodeLoadConfig(NODE *n) {
 
 	if (CsGetSetting(n->Store, NODE_SETTING_IDENTITY_KEY, n->IdentityKey, sizeof(n->IdentityKey)) == false || IsEmptyStr(n->IdentityKey))
 		StrCpy(n->IdentityKey, sizeof(n->IdentityKey), NODE_IDENTITY_KEY_NAME);
+
+	bgp = ZeroMalloc(NODE_BGP_MAX_LINE);
+	if (CsGetSetting(n->Store, NODE_SETTING_BGP, bgp, NODE_BGP_MAX_LINE) && IsEmptyStr(bgp) == false)
+		n->ConfigBgp = bgp;
+	else
+		Free(bgp);
 }
 
 // A node with its data directory: NULL for NodeDefaultDataDir, which NodeMakeDataDir protects. It opens the node
@@ -313,6 +321,10 @@ NODE *NewNode(wchar_t *data_dir) {
 
 	n->Cedar = NewCedar(NULL, NULL);
 
+	GetExeDirW(n->BgpSidecar, sizeof(n->BgpSidecar));
+	ConbinePathW(n->BgpSidecar, sizeof(n->BgpSidecar), n->BgpSidecar, NODE_BGP_EXE_NAME);
+	NodeBgpInit();
+
 	NodeLoadConfig(n);
 
 	return n;
@@ -327,6 +339,7 @@ void FreeNode(NODE *n) {
 
 	CsClose(n->Store);
 	ReleaseCedar(n->Cedar);
+	Free(n->ConfigBgp);
 
 	// The last lines of the node log are written before FreeLog returns
 	FreeLog(n->Log);
@@ -369,8 +382,8 @@ static void NodeApplyRoles(NODE *n, UINT roles) {
 	}
 }
 
-// Start the node: the table snapshot, the workers, then the roles of the configuration. False when it runs
-// already or no worker could start.
+// Start the node: the table snapshot, the workers, the roles of the configuration, then the BGP sidecar when the
+// configuration names BGP peers. False when it runs already or no worker could start.
 bool NodeStart(NODE *n) {
 	char roles[MAX_SIZE];
 	bool ret = false;
@@ -391,6 +404,8 @@ bool NodeStart(NODE *n) {
 				NodeRolesToStr(roles, sizeof(roles), n->Roles);
 				NodeLog(n, "Node roles: %s", roles);
 
+				NodeBgpStart(n);
+
 				ret = true;
 			} else {
 				NodeStopWorkers(n);
@@ -404,8 +419,8 @@ bool NodeStart(NODE *n) {
 	return ret;
 }
 
-// Stop the node: the roles, last first, the adapter queues that are still attached, the workers and the
-// table snapshot. Every thread of the node is joined before it returns.
+// Stop the node: the BGP sidecar and its learned routes, the roles, last first, the adapter queues that are still
+// attached, the workers and the table snapshot. Every thread of the node is joined before it returns.
 void NodeStop(NODE *n) {
 	if (n == NULL)
 		return;
@@ -415,6 +430,7 @@ void NodeStop(NODE *n) {
 		if (n->Running) {
 			UINT num_workers = n->NumWorkers;
 
+			NodeBgpStop(n);
 			NodeApplyRoles(n, 0);
 
 			UINT num_queues = NodeDelAllQueues(n);

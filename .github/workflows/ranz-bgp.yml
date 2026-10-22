@@ -1,0 +1,182 @@
+# The BGP sidecar ranz-bgp (ranz-bgp/, Go), CORE-S7-1 #82: GoBGP as a library, driven by the node over a
+# named pipe with JSON messages.
+#
+# linux: tidies go.mod and go.sum and runs gofmt; then vets (for Linux and for Windows), builds (for Linux,
+# and for Windows on x64 and arm64) and tests the module: the session of the sidecar against GoBGP routers
+# in the test, over an in-memory pipe. Last, the job fails, and prints the diff, if tidy or gofmt changed a
+# committed file.
+#
+# windows: vets, builds and tests the module on Windows x64 and arm64, with the named pipe of the node
+# (go-winio) in the tests of cmd/ranz-bgp.
+#
+# msi: builds ranz-bgp for x64 and arm64 and the CI package of its optional MSI feature RanzBgp
+# (ranz-bgp/installer) with WiX, on the runner of each architecture, and installs it there
+# (.github/scripts/ranz-bgp-msi.ps1): a default install carries no sidecar, ADDLOCAL=RanzBgp adds it,
+# REMOVE=RanzBgp takes it away again.
+#
+# The spike with the node (BGP on TCP 179, a prefix announced and withdrawn, a learned route installed
+# through IP Helper) needs the C build and runs in windows.yml (.github/scripts/ranz-bgp-spike.ps1).
+
+name: ranz-bgp
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27.2'
+  # The WiX Toolset of the MSI (ADR-0020; REL-5, #50)
+  WIX_VERSION: '5.0.2'
+
+jobs:
+  linux:
+    name: ranz-bgp (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: ranz-bgp/go.sum
+    - name: Tidy and format
+      working-directory: ranz-bgp
+      run: |
+        go mod tidy
+        gofmt -l -w .
+    - name: Vet
+      working-directory: ranz-bgp
+      run: |
+        go vet ./...
+        GOOS=windows go vet ./...
+    - name: Build
+      working-directory: ranz-bgp
+      run: |
+        go build ./...
+        GOOS=windows GOARCH=amd64 go build -o "$RUNNER_TEMP/windows-x64/" ./cmd/...
+        GOOS=windows GOARCH=arm64 go build -o "$RUNNER_TEMP/windows-arm64/" ./cmd/...
+        ls -l "$RUNNER_TEMP/windows-x64" "$RUNNER_TEMP/windows-arm64"
+    - name: Test
+      working-directory: ranz-bgp
+      run: go test -race -count=1 ./...
+    - name: Committed files match tidy and gofmt
+      if: ${{ !cancelled() }}
+      run: |
+        git add -A -N ranz-bgp
+        if ! git diff --exit-code -- ranz-bgp; then
+          echo "::error::ranz-bgp/ differs from what go mod tidy and gofmt make of it: commit the diff above"
+          exit 1
+        fi
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+        ]
+    name: ranz-bgp (Windows ${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 20
+    env:
+      # ranz-bgp is pure Go; the gcc of the arm64 runner builds x64 code only
+      CGO_ENABLED: '0'
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: ranz-bgp/go.sum
+    - name: Vet, build and test
+      shell: pwsh
+      working-directory: ranz-bgp
+      run: |
+        go vet ./...
+        if ($LASTEXITCODE -ne 0) { throw "go vet exited with code $LASTEXITCODE" }
+        go build -o ..\build\ranz-bgp\ ./cmd/...
+        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
+        go test -count=1 -v -run 'TestPipe|TestNoPipe' ./cmd/ranz-bgp
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+        go test -count=1 ./...
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+
+  msi:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, GOARCH: amd64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, GOARCH: arm64, RUNNER: "windows-11-arm" }
+        ]
+    name: ranz-bgp MSI feature (${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 20
+    env:
+      # ranz-bgp is pure Go; the gcc of the arm64 runner builds x64 code only
+      CGO_ENABLED: '0'
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: ranz-bgp/go.sum
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    - name: Build ranz-bgp
+      shell: pwsh
+      working-directory: ranz-bgp
+      env:
+        GOARCH: ${{ matrix.platform.GOARCH }}
+      run: |
+        go build -trimpath -o ..\build\msi\ranz-bgp.exe ./cmd/ranz-bgp
+        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
+        # The licence of the GoBGP that go.mod pins, from the module cache
+        $dir = (go list -m -f '{{.Dir}}' github.com/osrg/gobgp/v4 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $dir) { throw 'the GoBGP module is not in the module cache' }
+        Copy-Item -LiteralPath (Join-Path $dir 'LICENSE') -Destination ..\build\msi\GoBGP-LICENSE.txt
+    - name: Install WiX
+      shell: pwsh
+      run: |
+        dotnet tool install --global wix --version $env:WIX_VERSION
+        if ($LASTEXITCODE -ne 0) { throw "dotnet tool install exited with code $LASTEXITCODE" }
+        $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
+        $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        & (Join-Path $tools 'wix.exe') --version
+    - name: Build the MSI
+      shell: pwsh
+      run: |
+        $arch = '${{ matrix.platform.ARCHITECTURE }}'
+        wix build -arch $arch `
+          -d "Version=0.1.0.$env:GITHUB_RUN_NUMBER" `
+          -d "LicenseFile=$PWD\LICENSE" `
+          -d "RanzBgpExe=$PWD\build\msi\ranz-bgp.exe" `
+          -d "GoBgpLicense=$PWD\build\msi\GoBGP-LICENSE.txt" `
+          -o "build\msi\ranz-vpn-ranzbgp-ci-$arch.msi" `
+          ranz-bgp\installer\RanzBgpCi.wxs ranz-bgp\installer\RanzBgp.wxs
+        if ($LASTEXITCODE -ne 0) { throw "wix build exited with code $LASTEXITCODE" }
+        Get-ChildItem build\msi | Format-Table Name, Length
+    - name: Install, add and remove the RanzBgp feature
+      shell: pwsh
+      timeout-minutes: 10
+      run: |
+        $arch = '${{ matrix.platform.ARCHITECTURE }}'
+        . .github/scripts/ranz-bgp-msi.ps1 -Msi "build\msi\ranz-vpn-ranzbgp-ci-$arch.msi" -Arch $arch -LogDir build\msi\logs
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: ranz-bgp-msi-${{ matrix.platform.ARCHITECTURE }}
+        if-no-files-found: warn
+        retention-days: 14
+        path: |
+          build/msi/*.msi
+          build/msi/logs/

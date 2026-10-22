@@ -33,9 +33,17 @@
 #define NODE_SETTING_WORKERS      "NumWorkers"  // The number of workers; without it, or 0, one per core
 #define NODE_SETTING_RELAY_PORT   "RelayPort"   // The UDP port of the relay role; without it, or 0, one that the system picks
 #define NODE_SETTING_IDENTITY_KEY "IdentityKey" // The name of the node identity key; without it NODE_IDENTITY_KEY_NAME
+#define NODE_SETTING_BGP          "Bgp"         // The BGP settings, one JSON object (NodeBgpStart); without it no BGP sidecar
 
 // The node identity key in the software key storage provider (ADR-0022) without the IdentityKey setting
 #define NODE_IDENTITY_KEY_NAME "Ranz Node"
+
+// The BGP sidecar ranz-bgp (NodeBgp.c; ADR-0010, CORE-S7-1 #82)
+#define NODE_BGP_EXE_NAME     L"ranz-bgp.exe" // The sidecar, next to the executable of the node (the RanzBgp feature of the MSI)
+#define NODE_BGP_LOG_NAME     L"ranz-bgp.log" // Its log, in the node log directory
+#define NODE_BGP_MAX_LINE     65536           // Bytes of one message of the pipe at most, with its newline (sidecar.MaxLine)
+#define NODE_BGP_MAX_ROUTES   65536           // Learned routes that a node installs at most
+#define NODE_BGP_ROUTE_METRIC 256             // The route metric of a learned route: the default RouteMetric of New-NetRoute
 
 #define NODE_MAX_WORKERS       256      // Workers of one node at most, whatever the number of cores
 #define NODE_WORKER_BATCH      64       // Completions that a worker takes from its port in one wait
@@ -136,6 +144,11 @@ struct NODE {
 	PEER_KEY RelayKey;          // The identity key, while the relay role runs
 	PEER_UDP *RelayUdp;         // The UDP socket of the relay role, NULL while it does not run
 	PEER_AGENT *Relay;          // The peer layer of the relay role, NULL while it does not run
+
+	// The BGP sidecar (CORE-S7-1, #82), under Lock
+	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
+	wchar_t BgpSidecar[MAX_PATH]; // The sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
+	NODE_BGP *Bgp;                // The running BGP sidecar (NodeBgp.c), NULL when none runs
 };
 
 // What NodeGetStatus reports
@@ -154,6 +167,18 @@ struct NODE_STATUS {
 	UINT RelayBindings;            // The nodes bound to it
 	UINT64 RelayBinds;             // The binds it took
 	UINT64 RelayForwarded;         // The datagrams it forwarded
+};
+
+// What NodeBgpGetStatus reports
+struct NODE_BGP_STATUS {
+	bool Running;           // The sidecar runs and BGP started (it sent ready)
+	UINT ProcessId;         // The process of the sidecar, 0 when none runs
+	UINT NumPeers;          // The peers of the settings
+	UINT NumEstablished;    // ... whose session is established
+	UINT NumAnnounced;      // The prefixes the node announces
+	UINT NumRoutes;         // The learned routes installed through IP Helper
+	UINT NumErrors;         // Error messages of the sidecar so far
+	char Version[MAX_SIZE]; // What the sidecar named in ready: ranz-bgp and its GoBGP
 };
 
 // Node.c
@@ -190,5 +215,10 @@ void NodeReaderUnregister(NODE *n, NODE_READER *r);
 void NodeReaderQuiescent(NODE *n, NODE_READER *r);
 void NodeReaderOffline(NODE_READER *r);
 void NodeReaderOnline(NODE *n, NODE_READER *r);
+
+// NodeBgp.c
+bool NodeBgpAnnounce(NODE *n, char *prefix, char *next_hop);
+bool NodeBgpWithdraw(NODE *n, char *prefix);
+void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
 
 #endif // NODE_H

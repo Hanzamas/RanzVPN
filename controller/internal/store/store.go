@@ -1,15 +1,19 @@
 // Package store keeps the controller's state in rqlite (#176 "Controller store"): the intent,
 // one row per resource; per node the generation of its desired state and the state it
 // acknowledged last; per node static key the Capabilities that the node reported last
-// (ADR-0033); every revision of the intent with its resources; and the events. rqlite runs
-// beside the controller (internal/sidecar) and is reached over its HTTP API through gorqlite.
+// (ADR-0033); every revision of the intent with its resources; the events; and the licence key
+// (ADR-0036). rqlite runs beside the controller (internal/sidecar) and is reached over its HTTP
+// API through gorqlite.
 package store
 
 import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/rqlite/gorqlite"
@@ -30,11 +34,13 @@ var schema = []string{
 	`CREATE TABLE IF NOT EXISTS api_tokens (name TEXT NOT NULL PRIMARY KEY, role TEXT NOT NULL, hash TEXT NOT NULL UNIQUE)`,
 	`CREATE TABLE IF NOT EXISTS revisions (id INTEGER PRIMARY KEY, revision TEXT NOT NULL, intent TEXT NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, event TEXT NOT NULL)`,
+	`CREATE TABLE IF NOT EXISTS licence (id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1), key TEXT NOT NULL)`,
 }
 
 // Store is the controller's connection to rqlite.
 type Store struct {
 	conn *gorqlite.Connection
+	url  string
 }
 
 // Node is the stored state of one node. Desired is the full state at Generation; Acked is the
@@ -62,6 +68,9 @@ type Changes struct {
 	UpdateRevisions []intent.Revision
 	// AddEvents are new events; the store gives them their ids.
 	AddEvents []event.Event
+	// Licence, when it is not nil, replaces the licence key with the one it points to, or with
+	// none when that is empty.
+	Licence *string
 }
 
 // Open connects to rqlite at url and creates the tables the first time. It retries until
@@ -71,7 +80,7 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		conn, err := gorqlite.Open(url)
 		if err == nil {
 			if _, err = conn.WriteContext(ctx, schema); err == nil {
-				return &Store{conn: conn}, nil
+				return &Store{conn: conn, url: url}, nil
 			}
 			conn.Close()
 		}
@@ -154,6 +163,13 @@ func (s *Store) Commit(ctx context.Context, c Changes) error {
 	for _, name := range c.DeleteNodes {
 		stmts = append(stmts, statement(`DELETE FROM node_state WHERE name = ?`, name))
 	}
+	if c.Licence != nil {
+		if *c.Licence == "" {
+			stmts = append(stmts, statement(`DELETE FROM licence`))
+		} else {
+			stmts = append(stmts, statement(`INSERT OR REPLACE INTO licence (id, key) VALUES (1, ?)`, *c.Licence))
+		}
+	}
 	for _, key := range c.DeleteCapabilities {
 		stmts = append(stmts, statement(`DELETE FROM node_capabilities WHERE public_key = ?`, base64.StdEncoding.EncodeToString(key)))
 	}
@@ -199,6 +215,64 @@ func (s *Store) SaveAck(ctx context.Context, name string, gen uint64, acked *con
 		return fmt.Errorf("store: node %q: %w", name, err)
 	}
 	return nil
+}
+
+// Licence returns the stored licence key, empty when none is stored.
+func (s *Store) Licence(ctx context.Context) (string, error) {
+	qr, err := s.conn.QueryOneContext(ctx, `SELECT key FROM licence WHERE id = 1`)
+	if err != nil {
+		return "", fmt.Errorf("store: reading the licence key: %w", err)
+	}
+	var key string
+	for qr.Next() {
+		if err := qr.Scan(&key); err != nil {
+			return "", fmt.Errorf("store: reading the licence key: %w", err)
+		}
+	}
+	return key, nil
+}
+
+// Members returns the number of voting members of the rqlite cluster, from the Raft
+// configuration in rqlite's status: 1 for a single controller, 3 or 5 for controller high
+// availability (ADR-0026).
+func (s *Store) Members(ctx context.Context) (int, error) {
+	u, err := url.Parse(s.url)
+	if err != nil {
+		return 0, fmt.Errorf("store: %w", err)
+	}
+	u.Path, u.RawQuery = "/status", ""
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return 0, fmt.Errorf("store: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("store: rqlite status: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("store: rqlite status: %s", resp.Status)
+	}
+	var status struct {
+		Store struct {
+			Nodes []struct {
+				Suffrage string `json:"suffrage"`
+			} `json:"nodes"`
+		} `json:"store"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return 0, fmt.Errorf("store: rqlite status: %w", err)
+	}
+	n := 0
+	for _, m := range status.Store.Nodes {
+		if m.Suffrage == "voter" {
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, errors.New("store: rqlite status names no voting member")
+	}
+	return n, nil
 }
 
 // LoadCapabilities returns the stored Capabilities by node static key (the key's bytes as a

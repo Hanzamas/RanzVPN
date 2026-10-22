@@ -1,0 +1,6 @@
+# A subscription that expired without a fallback licence for this version leaves the Personal
+# tier of 10 nodes, and the eleventh node is refused.
+refuse: {
+  reason: REFUSE_REASON_LICENCE
+  message: "the Personal licence in force allows 10 nodes, and Node \"node-11\" is above that cap (nodes count in name order)"
+}

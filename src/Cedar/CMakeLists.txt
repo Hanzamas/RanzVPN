@@ -25,8 +25,18 @@ set_target_properties(cedar
 # SetupUninstallOEMInf* (SeLowUser.c, Win32Com.c); ole32.lib and uuid.lib: CoCreateInstance and the
 # INetCfg GUIDs (Win32Com.c), CoTaskMemFree and FOLDERID_ProgramData (Node.c); winhttp.lib: the HTTP
 # client of Protocol.c; winsqlite3.lib: the SQLite of System32 (ConfigStore.c, ADR-0022); bcrypt.lib:
-# BCryptDeriveKeyPBKDF2 and crypt32.lib: the certificate subject and thumbprint (ConfigStore.c)
-target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib ole32.lib setupapi.lib uuid.lib winhttp.lib winsqlite3.lib)
+# BCryptDeriveKeyPBKDF2 and crypt32.lib: the certificate subject and thumbprint (ConfigStore.c);
+# iphlpapi.lib: the learned routes of the BGP sidecar and ParseNetworkString (NodeBgp.c), which also
+# takes the pipe name's nonce from bcrypt.lib
+target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib iphlpapi.lib ole32.lib setupapi.lib uuid.lib winhttp.lib winsqlite3.lib)
+
+# cJSON (vcpkg, MIT): the JSON messages of the pipe to the BGP sidecar ranz-bgp (NodeBgp.c, CORE-S7-1 #82).
+# Windows has no JSON parser for C outside the Windows Runtime. The include directory is found from the
+# header, so the include line is <cjson/cJSON.h> whatever directory the package config exports.
+find_package(cJSON CONFIG REQUIRED)
+find_path(RANZ_CJSON_INCLUDE_DIR "cjson/cJSON.h" REQUIRED)
+target_include_directories(cedar PRIVATE "${RANZ_CJSON_INCLUDE_DIR}")
+target_link_libraries(cedar PRIVATE cjson)
 
 # The peer module of the new core (src/Core/CMakeLists.txt), which the relay role of the Node module runs
 # (CORE-S5-2, #78). It keeps the build options of the new core to itself, so Cedar compiles with its own.

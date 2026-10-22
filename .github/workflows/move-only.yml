@@ -5,6 +5,10 @@
 # for code that moves verbatim into another file. The fixtures run first, so a broken checker
 # fails here instead of passing everything. Only git and Python are needed, so it runs on Linux
 # and finishes in about a minute, beside the Windows build.
+#
+# It is the commit audit, so it has no path filter: it runs on every pull request, whatever files
+# it changes, and on every push to master. windows.yml and controller.yml run only for the paths
+# that they read (see their header comments).
 
 name: move-only
 

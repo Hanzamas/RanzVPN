@@ -1,6 +1,7 @@
 // Package rqlitetest runs rqlited for tests: the binary that the RQLITED environment variable
-// names, one member with its data in a temporary directory. Without RQLITED a test that needs
-// rqlite is skipped, except under CI (the CI environment variable is set), where it fails.
+// names, one member (or more that join it), each with its data in a temporary directory.
+// Without RQLITED a test that needs rqlite is skipped, except under CI (the CI environment
+// variable is set), where it fails.
 package rqlitetest
 
 import (
@@ -21,6 +22,18 @@ const startTimeout = 60 * time.Second
 // rqlited's output.
 func Start(t testing.TB) *sidecar.Rqlited {
 	t.Helper()
+	return start(t, "", "")
+}
+
+// Join starts another member, with Raft node id id, that joins the cluster of leader (which
+// Start returned) as a voter, and stops it when the test ends.
+func Join(t testing.TB, leader *sidecar.Rqlited, id string) *sidecar.Rqlited {
+	t.Helper()
+	return start(t, id, leader.RaftAddr)
+}
+
+func start(t testing.TB, id, join string) *sidecar.Rqlited {
+	t.Helper()
 	path := os.Getenv("RQLITED")
 	if path == "" {
 		if os.Getenv("CI") != "" {
@@ -34,7 +47,7 @@ func Start(t testing.TB) *sidecar.Rqlited {
 		t.Fatal(err)
 	}
 	addrs := freeAddrs(t, 2)
-	r := &sidecar.Rqlited{Path: path, DataDir: filepath.Join(dir, "data"), HTTPAddr: addrs[0], RaftAddr: addrs[1], Output: out}
+	r := &sidecar.Rqlited{Path: path, DataDir: filepath.Join(dir, "data"), HTTPAddr: addrs[0], RaftAddr: addrs[1], NodeID: id, Join: join, Output: out}
 	t.Cleanup(func() {
 		r.Stop()
 		out.Close()

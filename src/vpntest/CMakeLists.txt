@@ -60,6 +60,8 @@ ranz_add_executable(vpntest HAMCORE
     nodetest.c
     # Named configuration store test of CORE-F5 (#65)
     storetest.c
+    # Named BGP sidecar test of CORE-S7-1 (#82)
+    bgptest.c
   # The resources test (runtime.c) compares every hamcore file the executable serves with its source
   # file. A C-only definition, so the resource scripts of vpntest do not get the quoted path.
   C_DEFINITIONS

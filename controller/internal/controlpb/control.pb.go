@@ -101,6 +101,8 @@ const (
 	// The desired state of the node needs a Capability that its Hello does not report. The node
 	// keeps forwarding on the last generation it applied.
 	RefuseReason_REFUSE_REASON_CAPABILITY RefuseReason = 4
+	// The licence in force does not cover the node: it is above the node cap (ADR-0036).
+	RefuseReason_REFUSE_REASON_LICENCE RefuseReason = 5
 )
 
 // Enum value maps for RefuseReason.
@@ -111,6 +113,7 @@ var (
 		2: "REFUSE_REASON_SCHEMA_VERSION",
 		3: "REFUSE_REASON_PROTOCOL",
 		4: "REFUSE_REASON_CAPABILITY",
+		5: "REFUSE_REASON_LICENCE",
 	}
 	RefuseReason_value = map[string]int32{
 		"REFUSE_REASON_UNSPECIFIED":    0,
@@ -118,6 +121,7 @@ var (
 		"REFUSE_REASON_SCHEMA_VERSION": 2,
 		"REFUSE_REASON_PROTOCOL":       3,
 		"REFUSE_REASON_CAPABILITY":     4,
+		"REFUSE_REASON_LICENCE":        5,
 	}
 )
 
@@ -1597,13 +1601,14 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x11tls_port_fallback\x18\b \x01(\bR\x0ftlsPortFallback*E\n" +
 	"\rSchemaVersion\x12\x1e\n" +
 	"\x1aSCHEMA_VERSION_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10SCHEMA_VERSION_1\x10\x01*\xa9\x01\n" +
+	"\x10SCHEMA_VERSION_1\x10\x01*\xc4\x01\n" +
 	"\fRefuseReason\x12\x1d\n" +
 	"\x19REFUSE_REASON_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aREFUSE_REASON_UNKNOWN_NODE\x10\x01\x12 \n" +
 	"\x1cREFUSE_REASON_SCHEMA_VERSION\x10\x02\x12\x1a\n" +
 	"\x16REFUSE_REASON_PROTOCOL\x10\x03\x12\x1c\n" +
-	"\x18REFUSE_REASON_CAPABILITY\x10\x04*j\n" +
+	"\x18REFUSE_REASON_CAPABILITY\x10\x04\x12\x19\n" +
+	"\x15REFUSE_REASON_LICENCE\x10\x05*j\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tKIND_NODE\x10\x01\x12\f\n" +

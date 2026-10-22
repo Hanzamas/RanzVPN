@@ -84,7 +84,7 @@ Executables:
 | PacketLog | The packet log of a Hub: which frames are logged, and their CSV line | `PACKET_LOG` | Cedar, Hub, LogWriter, Server, Session; types and macros only: HubLog | Internat, IpAddr, Kernel, Memory, Object, Str, TcpIp | Hub. Programs: `vpntest` |
 | Syslog | The syslog sender: one UDP datagram per log line | `SLOG` | LogWriter | DNS, Internat, IpAddr, Memory, Network, Object, Str, Tick64 | Server; types and macros only: Command. Programs: `vpntest` |
 | Eraser | Deletes the oldest log files while the free disk space is below the minimum | `ERASER` | LogWriter | FileIO, Internat, Kernel, Memory, Object, Str; types and macros only: Mayaqua | Server. Programs: `vpntest` |
-| Node: `Node.c`, `NodeTable.c`, `NodeWorker.c`, `NodeInternal.h` | The Node of the new core (`ranz-node`, service `ranzvpnserver`): its data directory under ProgramData with a protected DACL, Roles from its Configuration store and the control plane (`NodeSetRoles`), the one-time import of a fork Config file found there, one Worker per core, one I/O thread per Adapter queue, the Table snapshot swapped by pointer, the Hubs of the server role and their credential gate through Sam (`NodeAuthenticate`), and the relay role on the Peer module of the new core, under the node identity key, with the peers that the control plane sets (`NodeSetPeers`) | `NODE`, `NODE_WORKER`, `NODE_QUEUE`, `NODE_READER`, `NODE_TABLES` | Cedar, ConfigStore, Hub, LogWriter, Sam, Server; in Core: Peer | FileIO, Internat, Memory, Object, Str | Programs: `ranz-node`, `vpntest` |
+| Node: `Node.c`, `NodeBgp.c`, `NodeTable.c`, `NodeWorker.c`, `NodeInternal.h` | The Node of the new core (`ranz-node`, service `ranzvpnserver`): its data directory under ProgramData with a protected DACL, Roles from its Configuration store and the control plane (`NodeSetRoles`), the one-time import of a fork Config file found there, one Worker per core, one I/O thread per Adapter queue, the Table snapshot swapped by pointer, the Hubs of the server role and their credential gate through Sam (`NodeAuthenticate`), the relay role on the Peer module of the new core, under the node identity key, with the peers that the control plane sets (`NodeSetPeers`), and the BGP sidecar with its learned routes in the Windows routing table through IP Helper (`NodeBgp.c`) | `NODE`, `NODE_WORKER`, `NODE_QUEUE`, `NODE_READER`, `NODE_TABLES`, `NODE_BGP` | Cedar, ConfigStore, Hub, LogWriter, Sam, Server; in Core: Peer | FileIO, Internat, Memory, Object, Str | Programs: `ranz-node`, `vpntest` |
 | ConfigStore: `ConfigStore.c`, `ConfigStoreImport.c`, `ConfigStoreInternal.h` | The Configuration store of the new core: a SQLite database through the `winsqlite3.dll` of System32 (settings, networks, users with PBKDF2 password hashes and pinned keys, listeners, certificates, named admin accounts with roles), its text dump, and the one-time import of a fork Config file (`CsImportForkConfig`) | `CONFIG_STORE`, `CS_NETWORK`, `CS_USER`, `CS_ADMIN`, `CS_IMPORT` | Account; types and macros only: Cedar | Cfg, Encrypt, FileIO, Internat, Kernel, Memory, Object, Str | Node. Programs: `vpntest` |
 
 ### Core (`src/Core`)
@@ -235,6 +235,10 @@ One queue of an adapter (the Wintun ring, the AF_XDP queue of a KM-TEST adapter)
 The read-mostly MAC, route and policy tables of a Node (`NODE_TABLES`), rebuilt off the data path and installed by pointer (`NodeSwapTables`). Readers (Workers, Adapter queue threads) read it without a lock between two quiescent points; a swap frees the old snapshot only after every online reader passed one (the grace period), so no reader sees a torn or freed table.
 _Avoid_: MAC table (the Hub's `MAC_TABLE_ENTRY` hash list), routing table (the Windows one)
 
+**BGP sidecar**:
+`ranz-bgp` (`ranz-bgp/`, Go), a separate process that embeds GoBGP as a library and peers with the operator's own routers on TCP 179 (ADR-0010, ADR-0022). A Node starts it only when its `Bgp` setting names peers (`NodeBgp.c`), talks to it over a named pipe with JSON messages, one per line (start, announce and withdraw from the Node; ready, peer, learned, withdrawn and error from the sidecar), and installs the learned routes into the Windows routing table through IP Helper; the sidecar installs none itself. It is the optional RanzBgp feature of the MSI.
+_Avoid_: BGP daemon, BGP role (it is no Role), RRAS BGP
+
 ## SDN language (new core)
 
 The terms of the new-core SDN (spec #176). Its decisions are ADR-0025 to ADR-0037. Node and Role are defined above.
@@ -311,6 +315,19 @@ _Avoid_: route (a route of a VRF), connection
 A message from a node to one peer that the Controller carries (`Signal` of the control protocol): the relay assignment (the node's home relay) and the node's ICE candidates, as an offer or an answer. It is sealed by the node's static key to the peer's with the Noise one-way pattern K (`PeerSealSignal`), so the Controller can neither forge, alter nor redirect it, and a sequence that grows with the clock makes a replay fail.
 _Avoid_: signature (it is authenticated encryption, which only the receiver checks), SDP offer
 
+**Licence key**:
+The vendor-signed key of one installation that names its Tier, its node cap, its expiry and the version of its Perpetual fallback licence (ADR-0036). Only the Controller checks it (`internal/licence`), and it caps the Nodes in name order: a Node above the cap gets no desired state and its control stream is refused. Without a key the Personal Tier of 10 Nodes is in force.
+_Avoid_: licence file, serial, activation code
+
+**Tier**:
+What a Licence key sells: Personal (free, non-commercial, all core features, a small node cap), Business (per Node per year) or Enterprise (adds EVPN and BGP, controller high availability and priority support).
+_Avoid_: plan, edition, SKU (a Windows SKU is a Capability)
+
+**Perpetual fallback licence**:
+What a subscription leaves after 12 paid months: once it expires, the version its Licence key names (major.minor, with its bugfix releases and every older version) stays licensed with the Tier and node cap of the subscription. A subscription that expires without one for the running version leaves the Personal Tier.
+_Avoid_: lifetime licence, grace period
+
+
 ## Flagged ambiguities
 
 - "Cedar" names both the library and the root `CEDAR` object. "Mayaqua" names the library and the Mayaqua module (`Mayaqua.c`, start-up and shut-down).
@@ -330,6 +347,7 @@ _Avoid_: signature (it is authenticated encryption, which only the receiver chec
 - "Role" is what a Node does (`server`, `client`, `bridge`, `relay`). The `admin`, `operator` and `viewer` of the Controller's API are API roles, held by an API token; say API role for them.
 - "controller" was a role of the node binary in ADR-0022. Since ADR-0026 the Controller is the separate `ranz-controller` service, and the node has no `controller` role.
 - "Generation" and "revision" are different versions: a revision is a version of the whole Intent (what `ranz rollback` returns to); a Generation is a version of one Node's desired state.
+- "Licence" is the noun in prose and code (`licence`, `REFUSE_REASON_LICENCE`); "license" is the verb ("licensed") and the name of the `LICENSE` file at the repository root.
 - "Configuration" is the Config file of the slim fork (`ranz_server.config`, Cfg) or the Configuration store of a Node (`ranz_node.db`, ConfigStore). Say which one.
 - "Server" names the slim fork's `vpnserver` and its `SERVER` object, and the server Role of a Node. The service of the Node is `ranzvpnserver`; the one of `vpnserver` is still `sevpnserverdev`.
 - "Peer" names the other end of a link, the Peer object of a node's desired state (another node that shares a VRF with it), and the Peer module of the new core (`src/Core/Peer*.c`), which keeps a node's peers.
