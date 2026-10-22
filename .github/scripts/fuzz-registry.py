@@ -26,8 +26,10 @@
 #
 # Usage:
 #   python fuzz-registry.py [check] [--root DIR]  the check above; exit 1 on any problem
-#   python fuzz-registry.py go-targets MODULE     the Go fuzz tests of MODULE (controller, ranz-bgp),
-#                                                 one "<package> <test>" per line, for go test -fuzz
+#   python fuzz-registry.py go-targets MODULE     the Go fuzz tests of the module in the directory MODULE
+#                                                 ("." for the module at the repository root, which
+#                                                 holds controller/ and ranz-bgp/), one
+#                                                 "<package> <test>" per line, for go test -fuzz
 #
 # Standard library only.
 
@@ -260,23 +262,32 @@ def go_targets(root, module):
         raise SystemExit('\n'.join(problems))
     pairs = []
     for e in entries:
-        if e['target'] and e['target'].startswith('Fuzz') and (e['dir'] == module or e['dir'].startswith(module + '/')):
-            pair = ('./' + e['dir'][len(module) + 1:] if e['dir'] != module else '.', e['target'])
-            if pair not in pairs:
-                pairs.append(pair)
+        if not (e['target'] and e['target'].startswith('Fuzz')):
+            continue
+        if module == '.':
+            package = './' + e['dir']
+        elif e['dir'] == module:
+            package = '.'
+        elif e['dir'].startswith(module + '/'):
+            package = './' + e['dir'][len(module) + 1:]
+        else:
+            continue
+        pair = (package, e['target'])
+        if pair not in pairs:
+            pairs.append(pair)
     return pairs
 
 
 def main():
     ap = argparse.ArgumentParser(description='The fuzz target gate of ADR-0040 item 1')
     ap.add_argument('mode', nargs='?', default='check', choices=['check', 'go-targets'])
-    ap.add_argument('module', nargs='?', help='go-targets: controller or ranz-bgp')
+    ap.add_argument('module', nargs='?', help='go-targets: the directory of the Go module, "." for the repository root')
     ap.add_argument('--root', default=os.environ.get('GITHUB_WORKSPACE') or os.getcwd())
     args = ap.parse_args()
 
     if args.mode == 'go-targets':
-        if args.module not in GO_SCOPE:
-            ap.error('go-targets needs one of: ' + ', '.join(GO_SCOPE))
+        if args.module != '.' and args.module not in GO_SCOPE:
+            ap.error('go-targets needs "." or one of: ' + ', '.join(GO_SCOPE))
         for package, target in go_targets(args.root, args.module):
             print(package, target)
         return 0

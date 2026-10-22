@@ -4,10 +4,10 @@
 #   <directory> <function> exempt <reason>
 # A function of the new core whose name looks like a parser's needs a line here: a C function that is
 # not static in src/Core, src/Cedar/Node*.c or src/Cedar/ConfigStore*.c, or an exported Go function or
-# method of controller/ or ranz-bgp/. The target is a libFuzzer target of src/fuzz (C) or a Go fuzz test
-# in the function's package; its source names the function, or the entry point it is reached through.
-# The Go fuzz tests listed here are the ones that the controller and ranz-bgp workflows run with
-# go test -fuzz.
+# method of controller/ or ranz-bgp/, the two trees of the one Go module of ranz. The target is a
+# libFuzzer target of src/fuzz (C) or a Go fuzz test in the function's package; its source names the
+# function, or the entry point it is reached through. The Go fuzz tests listed here are the ones that
+# the ranz workflow runs with go test -fuzz.
 
 # The crypto module (CORE-F1 #61)
 src/Core  CryptoAeadOpen        fuzz_noise  via NoiseSessionReceive
