@@ -257,6 +257,16 @@ jobs:
       shell: pwsh
       run: |
         ./.github/scripts/binary-hardening.ps1 -Path build\ranz-node.exe -Unhardened build\ranz-noisepeer.exe
+    # When a step fails: what the build asked the linker for, next to what the gate read from the
+    # binary. The link command of ranz-node (ninja -t commands; its response file holds the objects
+    # and libraries) and the link variables of its build statement in build.ninja.
+    - name: Link command of ranz-node
+      if: failure()
+      shell: pwsh
+      run: |
+        $ninja = (Select-String -LiteralPath build\CMakeCache.txt -Pattern '^CMAKE_MAKE_PROGRAM:\w+=(.+)$').Matches[0].Groups[1].Value
+        & $ninja -C build -t commands ranz-node.exe | Select-Object -Last 1
+        (Select-String -LiteralPath build\build.ninja -Pattern '^build ranz-node\.exe:' -Context 0, 20).Context.PostContext | Where-Object { $_ -match '^\s+LINK_' }
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}

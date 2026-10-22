@@ -11,13 +11,16 @@ $ErrorActionPreference = 'Stop'
 
 # The exploit-mitigation flags of ADR-0039 decision 1 (SEC-1, #279), read from the shipped binary
 # with dumpbin /headers and dumpbin /loadconfig, so that a flag a toolchain change drops fails the
-# build rather than the build script:
-# - CFG: /guard:cf, the Guard DLL characteristic and the "CF instrumented" guard flag of the load
-#   configuration
+# build rather than the build script. The DLL characteristics of the optional header and the guard
+# flags of the load configuration are read as the numbers that dumpbin prints, and their bits
+# decide (winnt.h), not the names that dumpbin lists under them:
+# - CFG: /guard:cf, the Guard DLL characteristic (IMAGE_DLLCHARACTERISTICS_GUARD_CF, 0x4000) and
+#   the guard flags "CF instrumented" (0x100) and "FID table present" (0x400): the code checks its
+#   indirect calls, and the linker wrote the table of their valid targets
 # - CET: /CETCOMPAT, the "CET compatible" extended DLL characteristic (x64 only: ARM64 has no CET)
-# - ASLR: /DYNAMICBASE with /HIGHENTROPYVA, the "Dynamic base" and "High Entropy Virtual
-#   Addresses" DLL characteristics
-# - DEP: /NXCOMPAT, the "NX compatible" DLL characteristic
+# - ASLR: /DYNAMICBASE with /HIGHENTROPYVA, the Dynamic base (0x40) and High Entropy Virtual
+#   Addresses (0x20) DLL characteristics
+# - DEP: /NXCOMPAT, the NX compatible DLL characteristic (0x100)
 # - GS: /GS. link.exe writes a VC feature record (the "feat" debug directory) that counts the
 #   compilands built with /GS and with /sdl; every C/C++ compiland must be counted. lld-link
 #   writes no such record, so without it the security cookie of the load configuration stands for
@@ -43,8 +46,9 @@ $mitigations = @('CFG', 'CET', 'ASLR', 'DEP', 'GS', 'SDL')
 # runner when it has one
 $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
 $hostArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
-$dumpbin = @(Get-ChildItem -Path "$vs\VC\Tools\MSVC\*\bin\Host$hostArch\$hostArch\dumpbin.exe" -ErrorAction SilentlyContinue) +
-	@(Get-ChildItem -Path "$vs\VC\Tools\MSVC\*\bin\*\*\dumpbin.exe" -ErrorAction SilentlyContinue) |
+$newest = { [version] ($_.FullName -replace '^.*\\MSVC\\([0-9.]+)\\.*$', '$1') }
+$dumpbin = @(Get-ChildItem -Path "$vs\VC\Tools\MSVC\*\bin\Host$hostArch\$hostArch\dumpbin.exe" -ErrorAction SilentlyContinue | Sort-Object $newest -Descending) +
+	@(Get-ChildItem -Path "$vs\VC\Tools\MSVC\*\bin\*\*\dumpbin.exe" -ErrorAction SilentlyContinue | Sort-Object $newest -Descending) |
 	Select-Object -First 1
 if (-not $dumpbin) { throw "No dumpbin.exe under $vs\VC\Tools\MSVC" }
 Write-Host "dumpbin: $($dumpbin.FullName)"
@@ -57,11 +61,17 @@ function Get-Missing([string] $file) {
 	if ($LASTEXITCODE -ne 0) { throw "dumpbin /loadconfig $file exited with code $LASTEXITCODE" }
 
 	$machine = if ($headers -match '(?m)^\s*[0-9A-F]+ machine \(([^)]+)\)') { $Matches[1] } else { '?' }
+	$dll = if ($headers -match '(?m)^\s*([0-9A-F]+) DLL characteristics') { [Convert]::ToUInt32($Matches[1], 16) } else { throw "dumpbin /headers $file shows no DLL characteristics" }
+	# A binary without a load configuration (the Go toolchain writes none) has no guard flags
+	$flags = if ($load -match '(?m)^\s*([0-9A-F]+) Guard Flags') { [Convert]::ToUInt32($Matches[1], 16) } else { [uint32] 0 }
 	$missing = @{}
 
-	$guard = $headers -match '(?m)^\s+Guard\s*$'
-	$instrumented = $load -match '(?i)CF instrumented'
-	if (-not ($guard -and $instrumented)) { $missing.CFG = "Guard characteristic $guard, CF instrumented $instrumented" }
+	$guard = ($dll -band 0x4000) -ne 0
+	$instrumented = ($flags -band 0x100) -ne 0
+	$table = ($flags -band 0x400) -ne 0
+	if (-not ($guard -and $instrumented -and $table)) {
+		$missing.CFG = ('DLL characteristics {0:X4}, Guard {1}; guard flags {2:X8}, CF instrumented {3}, FID table present {4}' -f $dll, $guard, $flags, $instrumented, $table)
+	}
 
 	if ($machine -match '^x64$' -and $headers -notmatch '(?i)CET compatible') {
 		# What the debug directories hold instead, for the log
@@ -69,11 +79,11 @@ function Get-Missing([string] $file) {
 		$missing.CET = "no CET compatible extended DLL characteristic; debug directories: $debug"
 	}
 
-	$dynamic = $headers -match '(?m)^\s+Dynamic base\s*$'
-	$high = $headers -match '(?m)^\s+High Entropy Virtual Addresses\s*$'
-	if (-not ($dynamic -and $high)) { $missing.ASLR = "Dynamic base $dynamic, High Entropy Virtual Addresses $high" }
+	$dynamic = ($dll -band 0x40) -ne 0
+	$high = ($dll -band 0x20) -ne 0
+	if (-not ($dynamic -and $high)) { $missing.ASLR = ('DLL characteristics {0:X4}, Dynamic base {1}, High Entropy Virtual Addresses {2}' -f $dll, $dynamic, $high) }
 
-	if ($headers -notmatch '(?m)^\s+NX compatible\s*$') { $missing.DEP = 'no NX compatible DLL characteristic' }
+	if (($dll -band 0x100) -eq 0) { $missing.DEP = ('DLL characteristics {0:X4}, no NX compatible' -f $dll) }
 
 	if ($headers -match 'Counts: Pre-VC\+\+ 11\.00=(\d+), C/C\+\+=(\d+), /GS=(\d+), /sdl=(\d+)') {
 		$c = [int] $Matches[2]; $gs = [int] $Matches[3]; $sdl = [int] $Matches[4]
