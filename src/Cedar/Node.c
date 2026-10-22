@@ -30,10 +30,11 @@
 #include <ShlObj.h>
 #include <sddl.h>
 
-// The DACL of the default data directory: full control for SYSTEM and the Administrators, inherited by the
-// configuration store and the node log, and nothing for anyone else. It is protected, so the ACL of ProgramData,
-// which lets every user create files and folders, is not inherited.
-#define NODE_DATA_DIR_SDDL L"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+// The DACL of the default data directory: full control for SYSTEM, the Administrators and the virtual account of the
+// ranzvpnserver service (NODE_SERVICE_SID, ADR-0039 decision 3), inherited by the configuration store and the node
+// log, and nothing for anyone else. It is protected, so the ACL of ProgramData, which lets every user create files
+// and folders, is not inherited.
+#define NODE_DATA_DIR_SDDL L"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" NODE_SERVICE_SID L")"
 
 // Starts a role while the node runs: false when it cannot run. The caller holds the node lock.
 typedef bool(NODE_ROLE_START)(NODE *n);
@@ -162,7 +163,8 @@ void NodeDefaultDataDir(wchar_t *dir, UINT size) {
 // Create a data directory, or take over the one that exists, with the owner Administrators and the protected DACL
 // NODE_DATA_DIR_SDDL, which also replaces the ACL of what the directory holds. A directory that a user created
 // before the node so keeps no access for that user. Without the right to set the owner (a process that is not
-// elevated), only the DACL is set.
+// elevated, such as the service under its virtual account, which then owns the directory it created), only the
+// DACL is set.
 bool NodeMakeDataDir(wchar_t *dir) {
 	PSECURITY_DESCRIPTOR sd = NULL;
 	PSID owner = NULL;
@@ -320,7 +322,9 @@ NODE *NewNode(wchar_t *data_dir) {
 	n->Log = NewLog(log_dir, NODE_LOG_PREFIX, LOG_SWITCH_DAY, 0);
 
 	if (protect)
-		NodeLog(n, protected_dir ? "Data directory %S: SYSTEM and the Administrators only" : "Data directory %S: its DACL could not be set", n->DataDir);
+		NodeLog(n, protected_dir ? "Data directory %S: SYSTEM, the Administrators and the service account only" : "Data directory %S: its DACL could not be set", n->DataDir);
+
+	NodeLogMitigations(n);
 
 	n->Cedar = NewCedar(NULL, NULL);
 

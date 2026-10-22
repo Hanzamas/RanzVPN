@@ -7,7 +7,9 @@
 # committed file.
 #
 # windows: vets, builds and tests the module on Windows x64 and arm64, with the named pipe of the node
-# (go-winio) in the tests of cmd/ranz-bgp.
+# (go-winio) in the tests of cmd/ranz-bgp, among them the process mitigations and the System32-only DLL
+# search of ranz-bgp read from outside its process (ADR-0039, SEC-1 #279), then checks the flags of the
+# binary (.github/scripts/binary-hardening.ps1).
 #
 # msi: builds ranz-bgp for x64 and arm64 and the CI package of its optional MSI feature RanzBgp
 # (ranz-bgp/installer) with WiX, on the runner of each architecture, and installs it there
@@ -32,7 +34,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.27.2'
+  GO_VERSION: '1.27.3'
   # The WiX Toolset of the MSI (ADR-0020; REL-5, #50)
   WIX_VERSION: '5.0.2'
 
@@ -104,10 +106,17 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "go vet exited with code $LASTEXITCODE" }
         go build -o ..\build\ranz-bgp\ ./cmd/...
         if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
-        go test -count=1 -v -run 'TestPipe|TestNoPipe' ./cmd/ranz-bgp
+        go test -count=1 -v -run 'TestPipe|TestNoPipe|TestMitigations' ./cmd/ranz-bgp
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
         go test -count=1 ./...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    # The exploit-mitigation flags of ADR-0039 decision 1 (SEC-1, #279) on the sidecar, read with
+    # dumpbin (.github/scripts/binary-hardening.ps1): ASLR and DEP from the Go toolchain, and the
+    # exceptions of the script for CFG, CET, /GS and /sdl
+    - name: Binary hardening
+      shell: pwsh
+      run: |
+        ./.github/scripts/binary-hardening.ps1 -Path build\ranz-bgp\ranz-bgp.exe
 
   msi:
     strategy:
@@ -138,7 +147,9 @@ jobs:
       env:
         GOARCH: ${{ matrix.platform.GOARCH }}
       run: |
-        go build -trimpath -o ..\build\msi\ranz-bgp.exe ./cmd/ranz-bgp
+        # -trimpath and -ldflags "-s -w" strip the paths and the symbol table from the shipped sidecar
+        # (SEC-3 #281, ADR-0036 amendment of 2026-10-22; checked by .github/scripts/self-integrity.ps1)
+        go build -trimpath -ldflags '-s -w' -o ..\build\msi\ranz-bgp.exe ./cmd/ranz-bgp
         if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
         # The licence of the GoBGP that go.mod pins, from the module cache
         $dir = (go list -m -f '{{.Dir}}' github.com/osrg/gobgp/v4 | Out-String).Trim()

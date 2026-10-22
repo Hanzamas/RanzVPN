@@ -16,6 +16,8 @@ ranz_add_executable(coretest CORE
     envelope.c relay.c natsim.c
     # ICE and the port mapping of home gateways, with the simulated gateway, CORE-S5-3 (#79)
     ice.c homegw.c
+    # Port prediction and birthday punching for symmetric NAT on the NAT simulator, CORE-S5-4 (#266)
+    punch.c
   LIBRARIES
     corenoise
     corepeer

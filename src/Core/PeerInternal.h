@@ -25,6 +25,10 @@
 // The path of a data datagram at the ingress: the PEER_PATH_* values, and a node bound to the relay role
 #define PEER_PATH_BOUND 3
 
+// The target addresses one punch of a peer probes: the peer's predicted port, then a birthday range above each of
+// its reflexive and mapped candidates (PeerPunch.c)
+#define PEER_PUNCH_MAX_TARGETS 48
+
 // The agent of libjuice (juice/juice.h), which only PeerIce.c calls
 struct juice_agent;
 
@@ -44,6 +48,19 @@ typedef struct PEER_ICE {
 	PEER_ADDR Selected;                    // The peer's address on the direct path (the lock of the layer)
 } PEER_ICE;
 
+// The symmetric-NAT hole punch of a node with one peer (PeerPunch.c, CORE-S5-4): the probes it sends to the ports
+// it predicts of the peer, on the peer layer's own socket, while the peer stays on the relay. The control plane
+// triggers it with the signal exchange; a validated probe sets HasDirect below, like PeerSetDirect does.
+typedef struct PEER_PUNCH {
+	UINT State;                                // PEER_PUNCH_*
+	UINT Budget;                               // Probes left before the punch gives up
+	bool Attempted;                            // Counted once in PunchAttempts
+	UINT64 LastSeq;                            // The last punch sequence taken from the peer, for anti-replay
+	UINT NumTargets;                           // The addresses the probes go to: the predicted port first
+	UINT Next;                                 // The next target of the round over them, so one tick sends a bounded burst
+	PEER_ADDR Targets[PEER_PUNCH_MAX_TARGETS]; // ...
+} PEER_PUNCH;
+
 // One peer in the peer table, kept across PeerSetPeers while the peer stays
 typedef struct PEER {
 	PEER_INFO Info;                                 // From the control plane
@@ -52,9 +69,10 @@ typedef struct PEER {
 	UCHAR RelayKey[PEER_KEY_SIZE];                  // ... this one
 	UINT NumCandidates;                             // The candidates of its last signal
 	PEER_CANDIDATE Candidates[PEER_MAX_CANDIDATES]; // ... their types and addresses
-	bool HasDirect;                                 // A direct path set by hand (PeerSetDirect)
+	bool HasDirect;                                 // A direct path set by hand (PeerSetDirect) or won by a punch
 	PEER_ADDR Direct;                               // ... to this address
 	PEER_ICE *Ice;                                  // The ICE session with the peer, NULL for none
+	PEER_PUNCH Punch;                               // The symmetric-NAT hole punch with the peer (PeerPunch.c)
 } PEER;
 
 // The ICE side of a node (PeerIce.c, PeerPortMap.c), with Config.Ice
@@ -107,7 +125,7 @@ struct PEER_AGENT {
 	volatile LONG64 Sequence;                // The last sequence of a bind or a signal of the node
 	LONG64 RateInterval;                     // GCRA: performance counter ticks between two datagrams at RelayRate
 	LONG64 RateTolerance;                    // ... and the burst tolerance
-	volatile LONG64 Counters[8];             // Sent, Delivered, DeliveredRelay, Forwarded, Binds, Signals, Upgrades, Fallbacks
+	volatile LONG64 Counters[10];            // Sent, Delivered, DeliveredRelay, Forwarded, Binds, Signals, Upgrades, Fallbacks, PunchAttempts, PunchSuccesses
 	volatile LONG64 Drops[PEER_NUM_REASONS]; // What the layer dropped, by reason
 	SRWLOCK IceLock;                         // Serialises the start, the remote side and the end of the ICE sessions
 	PEER_ICE_NODE Ice;                       // The ICE socket and the port mapping, with Config.Ice
@@ -122,6 +140,8 @@ struct PEER_AGENT {
 #define PEER_COUNT_SIGNALS         5
 #define PEER_COUNT_UPGRADES        6
 #define PEER_COUNT_FALLBACKS       7
+#define PEER_COUNT_PUNCH_ATTEMPTS  8
+#define PEER_COUNT_PUNCH_SUCCESSES 9
 
 // Peer.c
 void PeerCount(PEER_AGENT *a, UINT counter);
@@ -153,5 +173,11 @@ bool PeerAddrFromHost(PEER_ADDR *a, const char *host, USHORT port);
 void PeerPortMapStart(PEER_AGENT *a);
 void PeerPortMapStop(PEER_AGENT *a);
 bool PeerPortMapGet(PEER_AGENT *a, PEER_ADDR *addr);
+
+// PeerPunch.c
+UINT PeerPunchCandidate(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max);
+void PeerPunchStart(PEER_AGENT *a, const UCHAR *key);
+void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size);
+void PeerPunchTick(PEER_AGENT *a);
 
 #endif // CORE_PEER_INTERNAL_H

@@ -54,15 +54,17 @@
 #define PEER_MSG_BIND   2 // Envelope and datagram: a node binds to a relay
 #define PEER_MSG_BOUND  3 // Envelope and datagram: the relay's answer, with the address it sees the node at
 #define PEER_MSG_SIGNAL 4 // Envelope: a signal from a node to a peer, through the control plane only
+#define PEER_MSG_PUNCH  5 // Envelope and datagram: a hole-punch probe straight to a predicted address of a peer
 
 // The type of a signal
 #define PEER_SIGNAL_OFFER  1 // Sent to a new peer
 #define PEER_SIGNAL_ANSWER 2 // Sent back for an offer
 
 // The type of an ICE candidate (RFC 8445 section 5.1.1)
-#define PEER_CANDIDATE_HOST   1 // An address of the node itself
-#define PEER_CANDIDATE_SRFLX  2 // Server reflexive: the address that its relay, or with ICE its STUN server, sees it at
-#define PEER_CANDIDATE_MAPPED 3 // A public port that the node's home gateway granted (PCP, NAT-PMP or UPnP)
+#define PEER_CANDIDATE_HOST      1 // An address of the node itself
+#define PEER_CANDIDATE_SRFLX     2 // Server reflexive: the address that its relay, or with ICE its STUN server, sees it at
+#define PEER_CANDIDATE_MAPPED    3 // A public port that the node's home gateway granted (PCP, NAT-PMP or UPnP)
+#define PEER_CANDIDATE_PREDICTED 4 // The public port the node's own NAT will give its next mapping (PeerPunch.c, CORE-S5-4)
 
 // The ICE session of a node with a peer (PEER_STATUS)
 #define PEER_ICE_NONE      0 // None: ICE is off, or no signal of the session yet
@@ -70,6 +72,13 @@
 #define PEER_ICE_CONNECTED 2 // A candidate pair validated: the direct path is up
 #define PEER_ICE_COMPLETED 3 // ... and the controlling end nominated it
 #define PEER_ICE_FAILED    4 // No pair validated, or the direct path lost consent: the peer is on the relay
+
+// The symmetric-NAT hole punch of a node with a peer (PEER_STATUS; PeerPunch.c, CORE-S5-4). It runs on the peer
+// layer's own socket, not libjuice, so the simulated NATs of the harness carry it.
+#define PEER_PUNCH_NONE      0 // Off, or no signal of the peer yet
+#define PEER_PUNCH_PROBING   1 // Sending probes to the predicted ports while the peer stays on the relay
+#define PEER_PUNCH_CONNECTED 2 // A probe met one of the peer's: the direct path is up
+#define PEER_PUNCH_FAILED    3 // The probe budget ran out with no meeting: the peer stays on the relay
 
 // How a node reaches a peer (PEER_STATUS) and how a delivered datagram came (PEER_RECV_PROC)
 #define PEER_PATH_NONE   0 // No path: no signal of the peer yet
@@ -144,6 +153,7 @@ typedef struct PEER_STATUS {
 	UINT NumCandidates;            // The candidates of its last signal
 	UINT64 Sequence;               // The sequence of its last signal
 	UINT Ice;                      // PEER_ICE_*: the ICE session with the peer
+	UINT Punch;                    // PEER_PUNCH_*: the symmetric-NAT hole punch with the peer
 	PEER_ADDR Direct;              // The peer's address on the direct path, while the peer is on it
 } PEER_STATUS;
 
@@ -157,6 +167,8 @@ typedef struct PEER_STATS {
 	UINT64 Signals;                 // Signals taken
 	UINT64 Upgrades;                // ICE sessions that validated a direct path: peers that moved off the relay
 	UINT64 Fallbacks;               // ... of them whose direct path failed later: peers back on the relay
+	UINT64 PunchAttempts;           // Symmetric-NAT hole punches started (one per peer per control-plane trigger)
+	UINT64 PunchSuccesses;          // ... of them that reached a direct path by port prediction or birthday punching
 	UINT NumBindings;               // Nodes bound to the relay role now
 	UINT NumBound;                  // Relays that the node is bound to now
 	UINT NumIce;                    // ICE sessions now
@@ -179,13 +191,20 @@ typedef struct PEER_CONFIG {
 	USHORT StunPort;                 // ... its port, 0 for 3478
 	bool PortMap;                    // Ask the home gateway for a public port of the ICE socket (libplum)
 	UINT PortMapTimeout;             // ms that the port mapping waits for a gateway, per protocol; 0 for 10 s
+	bool Punch;                      // Try port prediction and birthday punching for a symmetric-NAT peer (PeerPunch.c)
+	UINT PunchBudget;                // The most probes one punch of a peer may send before it gives up; 0 for the default
+	UINT PunchPorts;                 // The ports swept above a predicted or reflexive one in the birthday range; 0 for the default
+	UINT PunchRate;                  // Probes one PeerTick sends per punching peer, so a burst stays bounded; 0 for the default
 } PEER_CONFIG;
 
-#define PEER_DEFAULT_RELAY_RATE  20000
-#define PEER_DEFAULT_RELAY_BURST 2000
-#define PEER_DEFAULT_BIND        25000 // Below the 30 s UDP mapping timeout of common NATs (RFC 4787 REQ-5 asks 2 min)
-#define PEER_DEFAULT_BIND_RETRY  1000
-#define PEER_DEFAULT_BIND_EXPIRY 90000
+#define PEER_DEFAULT_RELAY_RATE   20000
+#define PEER_DEFAULT_RELAY_BURST  2000
+#define PEER_DEFAULT_BIND         25000 // Below the 30 s UDP mapping timeout of common NATs (RFC 4787 REQ-5 asks 2 min)
+#define PEER_DEFAULT_BIND_RETRY   1000
+#define PEER_DEFAULT_BIND_EXPIRY  90000
+#define PEER_DEFAULT_PUNCH_BUDGET 256 // Bounded (ADR-0015 item 2): a punch stops here and the peer stays on the relay
+#define PEER_DEFAULT_PUNCH_PORTS  16  // The birthday range: a sequential NAT's next port is within a few of the predicted one
+#define PEER_DEFAULT_PUNCH_RATE   16  // Probes per tick, so the probe rate stays within a configurable bound
 
 // The peer layer of one node, Peer.c
 typedef struct PEER_AGENT PEER_AGENT;

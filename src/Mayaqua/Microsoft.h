@@ -27,7 +27,21 @@
 // MayaFatalExit() (Mayaqua.c), under the source "Ranz VPN"
 #define MS_EVENT_FATAL_ERROR 4
 
+// SEC-3 (#281), ADR-0036 amendment of 2026-10-22: the result of the self-integrity check. OK is a
+// signed binary whose signature verifies and whose .text section is intact. NO_SIGNATURE is an unsigned
+// build (a development build), which is not tampering. BAD_SIGNATURE is a signature that does not verify,
+// so the file on disk was changed. TEXT_MISMATCH is a loaded .text that differs from the file, so the
+// code was patched in memory. UNAVAILABLE is the check itself failing to run.
+#define MS_INTEGRITY_OK            0
+#define MS_INTEGRITY_NO_SIGNATURE  1
+#define MS_INTEGRITY_BAD_SIGNATURE 2
+#define MS_INTEGRITY_TEXT_MISMATCH 3
+#define MS_INTEGRITY_UNAVAILABLE   4
+
 #define SVC_RUN_COMMANDLINE L"\"%s\" /service"
+
+// The account of a service that MsServiceEx installs with its virtual account: this and the service name
+#define SVC_VIRTUAL_ACCOUNT_PREFIX L"NT SERVICE\\"
 
 #define SVC_MODE_NONE            0
 #define SVC_MODE_INSTALL         1
@@ -130,6 +144,7 @@ bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, boo
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename);
 
 bool MsIsAdmin();
+bool MsEnablePrivilege(char *name, bool enable);
 UINT MsGetCurrentProcessId();
 wchar_t *MsCopyProcessArgsW();
 
@@ -154,6 +169,7 @@ bool MsIsServiceInstalled(char *name);
 bool MsStartService(char *name);
 bool MsIsServiceRunning(char *name);
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule);
+UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule, bool virtual_account);
 const MS_SVC_ARG *MsSvcArgs(UINT *num);
 UINT MsSvcArgToMode(char *arg);
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);
@@ -172,6 +188,15 @@ void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
 UINT MsGetUserLocaleId();
 
 bool MsIsInVm();
+
+// SEC-3 (#281): the self-integrity check of the running executable. MsCheckSelfIntegrity returns one of
+// MS_INTEGRITY_*, MsSelfIntegrityName names it for a log. MsStartSelfIntegrity runs the check at start
+// and, on a changed or patched binary, applies the degrade-or-deceive response of ADR-0036: it sets the
+// degraded flag (MsIsSelfIntegrityDegraded) that a feature reads later, and never crashes the process.
+UINT MsCheckSelfIntegrity();
+char *MsSelfIntegrityName(UINT status);
+void MsStartSelfIntegrity();
+bool MsIsSelfIntegrityDegraded();
 
 void MsInitProcessCallOnce();
 

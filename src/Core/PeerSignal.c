@@ -88,7 +88,7 @@ static bool PeerKeyDh(PEER_KEY *k, UCHAR *shared, const UCHAR *peer) {
 
 // Whether kind is the kind of an envelope
 static bool PeerIsEnvelopeKind(UINT kind) {
-	return kind == PEER_MSG_BIND || kind == PEER_MSG_BOUND || kind == PEER_MSG_SIGNAL;
+	return kind == PEER_MSG_BIND || kind == PEER_MSG_BOUND || kind == PEER_MSG_SIGNAL || kind == PEER_MSG_PUNCH;
 }
 
 // The static key of the X25519 scalar priv, held in memory
@@ -109,26 +109,28 @@ bool PeerKeyFromScalar(PEER_KEY *k, const UCHAR *priv) {
 	return true;
 }
 
-// Whether the process runs elevated, as the ranzvpnserver service does
-static bool PeerElevated() {
-	HANDLE token = NULL;
-	TOKEN_ELEVATION elevation;
-	DWORD size = 0;
-	bool elevated = false;
+// Whether the process holds the rights of a local administrator: an elevated administrator's process, or
+// LocalSystem. The ranzvpnserver service does not: it runs as its virtual account (ADR-0039 decision 3), which may
+// not create machine keys. The elevation of the token does not tell the two apart: a service token counts as
+// elevated.
+static bool PeerAdmin() {
+	BYTE sid[SECURITY_MAX_SID_SIZE];
+	DWORD size = sizeof(sid);
+	BOOL member = FALSE;
 
-	if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
-		if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size))
-			elevated = (elevation.TokenIsElevated != 0);
-		CloseHandle(token);
-	}
+	if (CreateWellKnownSid(WinBuiltinAdministratorsSid, NULL, sid, &size) == FALSE)
+		return false;
 
-	return elevated;
+	if (CheckTokenMembership(NULL, sid, &member) == FALSE)
+		return false;
+
+	return (member != FALSE);
 }
 
-// The key set of the identity keys: the machine key set when the process runs elevated, as the service, else the
-// current user's
+// The key set of the identity keys: the machine key set when the process holds the rights of a local
+// administrator, else the current user's, which for the service is the key set of its virtual account
 static UINT PeerKeyScope() {
-	return PeerElevated() ? CRYPTO_MACHINE : 0;
+	return PeerAdmin() ? CRYPTO_MACHINE : 0;
 }
 
 // The node identity key name of the software key storage provider (ADR-0022): opened, or created when it does not
@@ -422,7 +424,7 @@ bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s) {
 	for (UINT i = 0; i < num; i++) {
 		const UCHAR *p = buf + PEER_SIGNAL_FIXED + i * PEER_CANDIDATE_LEN;
 
-		if ((p[0] != PEER_CANDIDATE_HOST && p[0] != PEER_CANDIDATE_SRFLX && p[0] != PEER_CANDIDATE_MAPPED) || PeerGetUint16(p + 17) == 0) {
+		if ((p[0] != PEER_CANDIDATE_HOST && p[0] != PEER_CANDIDATE_SRFLX && p[0] != PEER_CANDIDATE_MAPPED && p[0] != PEER_CANDIDATE_PREDICTED) || PeerGetUint16(p + 17) == 0) {
 			ZeroMemory(s, sizeof(PEER_SIGNAL));
 			return false;
 		}

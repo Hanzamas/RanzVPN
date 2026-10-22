@@ -1,5 +1,9 @@
 param([string] $Msi, [string] $Arch, [string] $LogDir)
 
+# The shipped sidecar is stripped of symbols (SEC-3 #281, ADR-0036 amendment of 2026-10-22): the go build
+# that fills build\msi\ranz-bgp.exe carries -trimpath and -ldflags "-s -w" (in .github/workflows/ranz-bgp.yml).
+# .github/scripts/self-integrity.ps1 checks that the same flags leave no symbol table.
+
 # The RanzBgp feature of the MSI (ranz-bgp/installer, CORE-S7-1 #82), installed on the runner of its
 # architecture: a default install carries no ranz-bgp.exe, ADDLOCAL=RanzBgp adds the sidecar of the
 # architecture of the package, REMOVE=RanzBgp takes it away and leaves the node feature, and an

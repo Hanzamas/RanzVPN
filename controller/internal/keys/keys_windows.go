@@ -14,16 +14,17 @@ import (
 
 // Load returns the controller's keys for the data directory dataDir, creating them the first
 // time. The controller follows ADR-0022, which keeps the node identity key in a CNG key storage
-// provider: both keys are persisted keys of the Microsoft Software Key Storage Provider, machine
-// scope and not exportable, named after the data directory (keyName), and both are used inside
-// the provider, so neither private key enters the controller's memory.
+// provider: both keys are persisted keys of the Microsoft Software Key Storage Provider, not
+// exportable, named after the data directory (keyName), and both are used inside the provider, so
+// neither private key enters the controller's memory.
 //
 //   - The Noise static key is an X25519 key (NCRYPT_ECDH_ALGORITHM with the curve25519 curve
 //     name); its Diffie-Hellman is NCryptSecretAgreement (kspStatic).
 //   - The TLS key is an ECDSA P-256 key; it signs with NCryptSignHash (kspSigner).
 //
-// Machine-scope keys need the rights of an administrator or of LocalSystem, the account of the
-// service.
+// Machine-scope keys need the rights of an administrator: an administrator's process keeps the
+// keys in the machine scope, and the service, which runs as its virtual account, in the key set
+// of that account (keyScope).
 func Load(dataDir string) (Static, crypto.Signer, error) {
 	// The provider handle stays open with the key handles, for the life of the process.
 	prov, err := openProvider()
@@ -69,7 +70,7 @@ func removeKeys(dir string) error {
 	defer freeObject(prov)
 	var errs []error
 	for _, kind := range []string{"Noise", "TLS"} {
-		h, err := openKey(prov, keyName(kind, dir), machineKeyFlag)
+		h, err := openKey(prov, keyName(kind, dir), keyScope())
 		if err == nil {
 			err = deleteKey(h)
 		}

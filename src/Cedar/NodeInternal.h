@@ -13,5 +13,6 @@ void NodeTablesStop(NODE *n);
 void NodeBgpInit();
 void NodeBgpStart(NODE *n);
 void NodeBgpStop(NODE *n);
+void NodeLogMitigations(NODE *n);
 
 #endif // NODE_INTERNAL_H

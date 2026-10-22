@@ -40,6 +40,9 @@ ranz_add_executable(vpntest HAMCORE
     logtest.c
     # Named login path tests of PKG-6 (#110)
     login.c
+    # Named listeners test of spec #43: cases 1 to 5, the default listener, REL-3 (#48); case 6, the empty admin
+    # password from loopback only, REL-4 (#49)
+    listeners.c
     # Named packet parser tests of PKG-9 (#113)
     pkttest.c
     # Named PACK decoder bounds test of FND-42 (#114)
@@ -64,10 +67,16 @@ ranz_add_executable(vpntest HAMCORE
     storetest.c
     # Named BGP sidecar test of CORE-S7-1 (#82)
     bgptest.c
+    # Named self-integrity test of SEC-3 (#281)
+    selfint.c
     # Named transport test of CORE-F4 (#64): the transport interface of the new core and the session layer on it
     transporttest.c
     # Named QUIC transport test of CORE-S1-1 (#67): the msquic listener, the Noise session, Sam and the key pinning
     quictest.c
+    # Named hardened licence gate test of SEC-4 (#282): drives ranzguard under the Win32 debug API
+    harden.c
+    # Named HTTP listener test of REL-6 (#51)
+    httplistener.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
   # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked);
   # netapi32: the local account that stands for a domain account (NetUserAdd)

@@ -358,6 +358,12 @@ static void MsSvcMsg(bool silent, char *id, ...) {
 // before the service starts, and /uninstall and /setup_uninstall delete; NULL for none. The service
 // itself adds no rule when it starts.
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule) {
+	return MsServiceEx(name, start, stop, cmd_line, firewall_rule, false);
+}
+
+// MsService, which with virtual_account installs the service to run as its virtual account, NT SERVICE\<service
+// name>, instead of LocalSystem: the least privilege of ADR-0039 decision 3, for the services of the new core
+UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule, bool virtual_account) {
 	UINT mode;
 	UINT ret = 0;
 	char *arg;
@@ -467,7 +473,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 						MsStopService(service_name);
 					MsUninstallService(service_name);
 				}
-				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false)
+				if (MsInstallServiceExW(service_name, service_title, service_description, path, virtual_account) == false)
 					ret = 1;
 				if (firewall_rule != NULL)
 					MsAddFirewallRule(firewall_rule, ms->ExeFileNameW);
@@ -511,7 +517,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 					}
 				}
 
-				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false) {
+				if (MsInstallServiceExW(service_name, service_title, service_description, path, virtual_account) == false) {
 					MsSvcMsg(silent, "SVC_INSTALL_FAILED", service_title, service_name);
 					break;
 				}
@@ -912,6 +918,182 @@ static bool MsCheckIsAdmin() {
 	CloseHandle(token);
 
 	return ret;
+}
+
+// SEC-3 (#281), ADR-0036 amendment of 2026-10-22: the self-integrity check of the running executable.
+// Two mechanisms, so one that an attacker defeats still leaves the other. WinVerifyTrust reads the
+// Authenticode signature of the file on disk; the signature covers every byte but the checksum field and
+// the certificate table, so a changed .text breaks it. A SHA-256 of the loaded .text section is also
+// compared with the same section read from the file, which a live memory patch (an inline hook) changes
+// while the file stays intact. An unsigned build is reported as MS_INTEGRITY_NO_SIGNATURE, not as
+// tampering, so a development build is never degraded.
+
+// Set once by MsStartSelfIntegrity when the binary is changed or patched; read by the licence and feature
+// code (ADR-0036), which locks or deceives far from the check. Never cleared: a degrade stays for the
+// life of the process.
+static volatile bool ms_integrity_degraded = false;
+
+// The Authenticode verdict of the file at path. S_OK is a signature that verifies and chains to a trusted
+// root; TRUST_E_NOSIGNATURE is an unsigned file; every other result (a changed file, an untrusted root,
+// an expired certificate) is a bad signature.
+static UINT MsVerifyAuthenticode(wchar_t *path) {
+	WINTRUST_FILE_INFO file;
+	WINTRUST_DATA data;
+	GUID action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+	LONG result;
+
+	if (path == NULL)
+		return MS_INTEGRITY_UNAVAILABLE;
+
+	Zero(&file, sizeof(file));
+	file.cbStruct = sizeof(file);
+	file.pcwszFilePath = path;
+
+	Zero(&data, sizeof(data));
+	data.cbStruct = sizeof(data);
+	data.dwUIChoice = WTD_UI_NONE;
+	data.fdwRevocationChecks = WTD_REVOKE_NONE;
+	data.dwUnionChoice = WTD_CHOICE_FILE;
+	data.pFile = &file;
+	data.dwStateAction = WTD_STATEACTION_VERIFY;
+	// The revocation lists are never fetched over the network, so the check is fast and runs offline
+	data.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
+
+	result = WinVerifyTrust(NULL, &action, &data);
+
+	// Release the state the verify allocated, whatever the result
+	data.dwStateAction = WTD_STATEACTION_CLOSE;
+	WinVerifyTrust(NULL, &action, &data);
+
+	if (result == 0)
+		return MS_INTEGRITY_OK;
+	if (result == TRUST_E_NOSIGNATURE)
+		return MS_INTEGRITY_NO_SIGNATURE;
+
+	return MS_INTEGRITY_BAD_SIGNATURE;
+}
+
+// Compare the SHA-256 of the loaded .text section with the same section read from the file on disk.
+// Returns false when the section cannot be found or read; otherwise *mismatch tells whether they differ.
+static bool MsHashOwnText(bool *mismatch) {
+	BYTE *base;
+	IMAGE_DOS_HEADER *dos;
+	IMAGE_NT_HEADERS *nt;
+	IMAGE_SECTION_HEADER *sec, *text = NULL;
+	UINT i, n, file_size;
+	IO *io;
+	UCHAR *disk;
+	UCHAR mem_hash[SHA256_SIZE], disk_hash[SHA256_SIZE];
+	bool ok = false;
+
+	if (mismatch != NULL)
+		*mismatch = false;
+
+	if (ms == NULL || ms->hInst == NULL)
+		return false;
+
+	base = (BYTE *)ms->hInst;
+	dos = (IMAGE_DOS_HEADER *)base;
+	if (dos->e_magic != IMAGE_DOS_SIGNATURE)
+		return false;
+
+	nt = (IMAGE_NT_HEADERS *)(base + dos->e_lfanew);
+	if (nt->Signature != IMAGE_NT_SIGNATURE)
+		return false;
+
+	sec = IMAGE_FIRST_SECTION(nt);
+	for (i = 0; i < (UINT)nt->FileHeader.NumberOfSections; i++) {
+		// Name is 8 bytes, zero-padded; ".text" and its terminator fit in six
+		if (Cmp(sec[i].Name, ".text", 6) == 0) {
+			text = &sec[i];
+			break;
+		}
+	}
+	if (text == NULL)
+		return false;
+
+	// The virtual size is the bytes the section really holds; the raw size is rounded up to the file
+	// alignment. Hash the smaller of the two, so the file padding (zero-filled in memory, kept on disk)
+	// is left out of the comparison. A changed padding byte is still caught by the signature.
+	n = MIN(text->Misc.VirtualSize, text->SizeOfRawData);
+	if (n == 0)
+		return false;
+
+	io = FileOpenW(ms->ExeFileNameW, false);
+	if (io == NULL)
+		return false;
+
+	file_size = FileSize(io);
+	if (file_size == 0 || (UINT64)text->PointerToRawData + n > file_size) {
+		FileClose(io);
+		return false;
+	}
+
+	// FileOpenW reads from the start; read the whole file and index the raw .text bytes
+	disk = Malloc(file_size);
+	if (FileRead(io, disk, file_size)) {
+		Sha2_256(mem_hash, base + text->VirtualAddress, n);
+		Sha2_256(disk_hash, disk + text->PointerToRawData, n);
+		if (mismatch != NULL)
+			*mismatch = (Cmp(mem_hash, disk_hash, SHA256_SIZE) != 0);
+		ok = true;
+	}
+
+	Free(disk);
+	FileClose(io);
+
+	return ok;
+}
+
+UINT MsCheckSelfIntegrity() {
+	UINT auth;
+	bool text_read, text_mismatch = false;
+
+	if (ms == NULL)
+		return MS_INTEGRITY_UNAVAILABLE;
+
+	auth = MsVerifyAuthenticode(ms->ExeFileNameW);
+
+	// The .text comparison runs whatever the signature verdict is, so a live memory patch of a signed or
+	// an unsigned build is caught either way.
+	text_read = MsHashOwnText(&text_mismatch);
+
+	if (text_read && text_mismatch)
+		return MS_INTEGRITY_TEXT_MISMATCH;
+
+	return auth;
+}
+
+char *MsSelfIntegrityName(UINT status) {
+	switch (status) {
+	case MS_INTEGRITY_OK:
+		return "OK";
+	case MS_INTEGRITY_NO_SIGNATURE:
+		return "NO_SIGNATURE";
+	case MS_INTEGRITY_BAD_SIGNATURE:
+		return "BAD_SIGNATURE";
+	case MS_INTEGRITY_TEXT_MISMATCH:
+		return "TEXT_MISMATCH";
+	default:
+		return "UNAVAILABLE";
+	}
+}
+
+bool MsIsSelfIntegrityDegraded() {
+	return ms_integrity_degraded;
+}
+
+void MsStartSelfIntegrity() {
+	UINT status = MsCheckSelfIntegrity();
+
+	// The degrade-or-deceive rule of ADR-0036: a changed file or a patched .text sets the degraded flag,
+	// which a feature reads later to lock or deceive, far from this check. The process is never crashed
+	// here, so a false positive cannot brick a paying customer and the live tunnel is never touched. An
+	// unsigned build is a development build, not tampering, and is left running clean.
+	if (status == MS_INTEGRITY_BAD_SIGNATURE || status == MS_INTEGRITY_TEXT_MISMATCH) {
+		ms_integrity_degraded = true;
+		Debug("MsStartSelfIntegrity(): self-integrity check reported %s\n", MsSelfIntegrityName(status));
+	}
 }
 
 void MsInit() {
