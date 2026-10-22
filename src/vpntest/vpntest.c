@@ -483,6 +483,9 @@ void store_test(UINT num, char **arg);
 // Named BGP sidecar test of CORE-S7-1, #82 (bgptest.c)
 void bgp_test(UINT num, char **arg);
 
+// Named self-integrity test of SEC-3, #281 (selfint.c)
+void selfint_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -630,6 +633,7 @@ TEST_LIST test_list[] =
 	{"nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result (administrator rights)."},
 	{"store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords."},
 	{"bgp", bgp_test, "BGP sidecar: ranz-bgp peers with a router (gobgpd, RANZ_GOBGP) on TCP 179, a prefix announced and withdrawn, a learned route installed through IP Helper (administrator rights)."},
+	{"selfintegrity", selfint_test, "Self-integrity: WinVerifyTrust and the .text hash of the running binary; OK when signed and intact, the degrade-or-deceive response when changed (SEC-3; run on a signed binary by self-integrity.ps1)."},
 };
 
 // Test function
