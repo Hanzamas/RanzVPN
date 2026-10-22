@@ -223,15 +223,25 @@ func prefix(p netip.Prefix) *controlpb.Prefix {
 }
 
 // addresses returns the addresses of the Node node in the Networks of the VRFs in vrfNames, each
-// with the id of its VRF from vrfs, ordered by Network name.
+// with the id of its VRF from vrfs, ordered by Network name, the IPv4 address of a Network before
+// its IPv6 address.
 func addresses(in intent.Intent, node string, vrfs map[string]*controlpb.Vrf, vrfNames map[string]bool) []*controlpb.Address {
+	n := in.Nodes[node]
+	networks := slices.Sorted(maps.Keys(n.Addresses))
+	networks = append(networks, slices.Sorted(maps.Keys(n.IPv6Addresses))...)
+	slices.Sort(networks)
+	networks = slices.Compact(networks)
 	var out []*controlpb.Address
-	for _, network := range slices.Sorted(maps.Keys(in.Nodes[node].Addresses)) {
-		p, ok := in.NodeAddress(node, network)
-		if !ok || !vrfNames[in.Networks[network].VRF] {
+	for _, network := range networks {
+		vrf := in.Networks[network].VRF
+		if !vrfNames[vrf] {
 			continue
 		}
-		out = append(out, &controlpb.Address{Network: network, VrfId: vrfs[in.Networks[network].VRF].GetId(), Prefix: prefix(p)})
+		for _, address := range []func(node, network string) (netip.Prefix, bool){in.NodeAddress, in.NodeAddress6} {
+			if p, ok := address(node, network); ok {
+				out = append(out, &controlpb.Address{Network: network, VrfId: vrfs[vrf].GetId(), Prefix: prefix(p)})
+			}
+		}
 	}
 	return out
 }
