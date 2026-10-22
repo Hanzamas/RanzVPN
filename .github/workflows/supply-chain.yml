@@ -1,0 +1,132 @@
+# The supply chain of the new core (ADR-0039 decision 4; SEC-1, #279): the dependency pins,
+# govulncheck and the SBOM.
+#
+# - Pins: vcpkg.json pins the vcpkg ports tree with its builtin-baseline, a commit of
+#   microsoft/vcpkg, so every runner builds the same port versions; the job checks that it is a
+#   full commit hash that the runner's vcpkg checkout has. Each Go module (controller/, ranz-bgp/)
+#   pins its modules in go.sum: go mod verify checks the modules in the module cache against it,
+#   and go list -mod=readonly fails when go.mod needs a module that go.sum does not pin.
+# - govulncheck: the known vulnerabilities of the Go vulnerability database that the code of each
+#   Go module reaches, in its modules or in the standard library of GO_VERSION, for Windows.
+# - SBOM: vcpkg installs the ports of vcpkg.json at the baseline and writes an SPDX document for
+#   each; Microsoft's sbom-tool reads those and the Go modules of the tree and writes one SPDX 2.2
+#   SBOM for the Go executables of the new core. The job checks that it names every port of
+#   vcpkg.json and every module that a go.mod requires, at its version
+#   (.github/scripts/sbom-check.ps1), and keeps it as the artifact sbom.
+#
+# It reads the whole tree, so it has no path filter: it runs on every pull request and on every
+# push to master.
+
+name: supply-chain
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# The vcpkg binary cache of windows.yml, restored only: this job builds the ports of build_and_test
+# x64 and never saves them
+env:
+  VCPKG_ROOT: C:\vcpkg
+  VCPKG_BINCACHE: ${{ github.workspace }}\vcpkg-bincache
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-bincache,readwrite
+  GO_VERSION: '1.27.2'
+  GOVULNCHECK_VERSION: 'v1.8.0'
+  SBOM_TOOL_VERSION: 'v4.1.5'
+
+jobs:
+  supply_chain:
+    name: pins, govulncheck and SBOM
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: |
+          controller/go.sum
+          ranz-bgp/go.sum
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-
+    - name: Dependency pins
+      shell: pwsh
+      run: |
+        $baseline = (Get-Content -Raw -LiteralPath vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+        if ($baseline -notmatch '^[0-9a-f]{40}$') { throw "vcpkg.json: builtin-baseline '$baseline' is not a full commit hash of microsoft/vcpkg" }
+        $type = (& git -C $env:VCPKG_ROOT cat-file -t $baseline 2>$null | Out-String).Trim()
+        if ($type -ne 'commit') { throw "vcpkg.json: the vcpkg checkout $env:VCPKG_ROOT has no commit $baseline" }
+        Write-Host "vcpkg.json: the ports tree of microsoft/vcpkg $baseline"
+        foreach ($module in 'controller', 'ranz-bgp') {
+          Push-Location $module
+          if (-not (Test-Path -LiteralPath go.sum)) { throw "${module}: no go.sum" }
+          go mod download
+          if ($LASTEXITCODE -ne 0) { throw "${module}: go mod download exited with code $LASTEXITCODE" }
+          go mod verify
+          if ($LASTEXITCODE -ne 0) { throw "${module}: go mod verify exited with code $LASTEXITCODE" }
+          $n = @(go list -mod=readonly -m all).Count
+          if ($LASTEXITCODE -ne 0) { throw "${module}: go.sum does not pin every module that go.mod needs" }
+          Write-Host "${module}: $n modules, each pinned by go.sum"
+          Pop-Location
+        }
+    - name: govulncheck
+      shell: pwsh
+      run: |
+        go install "golang.org/x/vuln/cmd/govulncheck@$env:GOVULNCHECK_VERSION"
+        if ($LASTEXITCODE -ne 0) { throw "go install govulncheck exited with code $LASTEXITCODE" }
+        $govulncheck = Join-Path (go env GOPATH) 'bin\govulncheck.exe'
+        $failed = @()
+        foreach ($module in 'controller', 'ranz-bgp') {
+          Write-Host "=== govulncheck ${module}"
+          Push-Location $module
+          & $govulncheck ./...
+          if ($LASTEXITCODE -ne 0) { $failed += $module }
+          Pop-Location
+        }
+        if ($failed.Count -gt 0) { throw "govulncheck found vulnerabilities that the code reaches, or failed: $($failed -join ', ')" }
+    - name: Install the vcpkg ports
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path $env:VCPKG_BINCACHE | Out-Null
+        & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows-static --x-install-root build\vcpkg_installed
+        if ($LASTEXITCODE -ne 0) { throw "vcpkg install exited with code $LASTEXITCODE" }
+        Get-ChildItem -Path build\vcpkg_installed -Recurse -Filter vcpkg.spdx.json | ForEach-Object { Write-Host $_.FullName }
+    # The shipped ones: the controller, its CLI and the BGP sidecar, not the test tools of cmd/
+    - name: Build the Go executables
+      shell: pwsh
+      run: |
+        foreach ($build in @(@('controller', './cmd/ranz-controller', './cmd/ranz'), @('ranz-bgp', './cmd/ranz-bgp'))) {
+          Push-Location $build[0]
+          go build -trimpath -o ..\build\sbom\ @($build | Select-Object -Skip 1)
+          if ($LASTEXITCODE -ne 0) { throw "$($build[0]): go build exited with code $LASTEXITCODE" }
+          Pop-Location
+        }
+        Get-ChildItem build\sbom | Format-Table Name, Length
+    - name: Generate the SBOM
+      shell: pwsh
+      run: |
+        $tool = Join-Path $env:RUNNER_TEMP 'sbom-tool.exe'
+        Invoke-WebRequest -Uri "https://github.com/microsoft/sbom-tool/releases/download/$env:SBOM_TOOL_VERSION/sbom-tool-win-x64.exe" -OutFile $tool
+        & $tool generate -b build\sbom -bc . -pn ranz-vpn -pv "0.1.0.$env:GITHUB_RUN_NUMBER" -ps Hanzcodes -nsb https://github.com/Hanzamas/RanzVPN -V Information
+        if ($LASTEXITCODE -ne 0) { throw "sbom-tool generate exited with code $LASTEXITCODE" }
+    - name: Check the SBOM
+      shell: pwsh
+      run: |
+        ./.github/scripts/sbom-check.ps1 -Sbom build\sbom\_manifest\spdx_2.2\manifest.spdx.json
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: sbom
+        if-no-files-found: warn
+        path: build/sbom/_manifest/
