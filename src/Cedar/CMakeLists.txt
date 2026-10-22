@@ -23,8 +23,10 @@ set_target_properties(cedar
 
 # A Windows library sits on the target whose sources call it. setupapi.lib: SetupCopyOEMInfW and
 # SetupUninstallOEMInf* (SeLowUser.c, Win32Com.c); ole32.lib and uuid.lib: CoCreateInstance and the
-# INetCfg GUIDs (Win32Com.c); winhttp.lib: the HTTP client of Protocol.c
-target_link_libraries(cedar PRIVATE ole32.lib setupapi.lib uuid.lib winhttp.lib)
+# INetCfg GUIDs (Win32Com.c), CoTaskMemFree and FOLDERID_ProgramData (Node.c); winhttp.lib: the HTTP
+# client of Protocol.c; winsqlite3.lib: the SQLite of System32 (ConfigStore.c, ADR-0022); bcrypt.lib:
+# BCryptDeriveKeyPBKDF2 and crypt32.lib: the certificate subject and thumbprint (ConfigStore.c)
+target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib ole32.lib setupapi.lib uuid.lib winhttp.lib winsqlite3.lib)
 
 # Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that
 # print it include it (Cedar.c, Admin.c, Server.c, Command.c), so a new stamp rebuilds those four

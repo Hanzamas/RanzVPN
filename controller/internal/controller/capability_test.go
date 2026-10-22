@@ -8,6 +8,7 @@ package controller_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -188,6 +189,35 @@ func TestHelloRefusesMissingCapability(t *testing.T) {
 	}
 	h.waitNode("laptop", gen, true)
 	h.checkState(laptop)
+}
+
+// TestRollbackRefusesMissingCapability checks a rollback against the Capabilities like an apply
+// (SDN-13 #189 with ADR-0033): a rollback to a revision that a node cannot honour, applied before
+// the node reported its Capabilities, is refused with 409 Conflict, naming the node and the
+// Capability, and makes no revision.
+func TestRollbackRefusesMissingCapability(t *testing.T) {
+	h := newHarness(t)
+	h.apply("caps-apply1.json")
+	h.apply("caps-l2-corp.json")
+	laptop := h.newSim("laptop", keyBranch2)
+	laptop.Capabilities = capsArmHome
+	laptop.start(h)
+	golden(t, "refuse-capability", laptop.refusal(t))
+	if _, err := h.api.Delete(context.Background(), intent.KindNetwork, "corp-dmz"); err != nil {
+		t.Fatal(err)
+	}
+	before := h.resources()
+
+	_, err := h.api.Rollback(context.Background(), 2)
+	if httpStatus(err) != http.StatusConflict || !strings.Contains(err.Error(), laptopMissesL2) {
+		t.Errorf("the rollback to revision 2, which laptop cannot honour, gave %v, want a 409 that names %q", err, laptopMissesL2)
+	}
+	if after := h.resources(); after != before {
+		t.Errorf("a refused rollback changed the intent:\n--- after\n%s\n--- before\n%s", after, before)
+	}
+	if got, want := h.revisionLog(), "1 apply\n2 apply\n3 delete\n"; got != want {
+		t.Errorf("the revisions are\n%s\nwant\n%s", got, want)
+	}
 }
 
 // nodes returns the status of every node as the API reports it.

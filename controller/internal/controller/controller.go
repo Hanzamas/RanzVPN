@@ -1,8 +1,9 @@
 // Package controller is the controller of #176: the single authority that keeps the intent in
 // rqlite, compiles it into the desired state of each node with a generation number, and pushes
 // that state over the control stream as deltas against the generation each node acknowledged
-// last (#176 "Control protocol"). It keeps the Capabilities each node reports in its Hello and
-// refuses an apply that a node cannot honour (ADR-0033).
+// last (#176 "Control protocol"). Every change of the intent is a revision, which can be diffed
+// and rolled back (ADR-0031, revision.go). It keeps the Capabilities each node reports in its
+// Hello and refuses an apply or a rollback that a node cannot honour (ADR-0033).
 package controller
 
 import (
@@ -58,10 +59,14 @@ type NodeGeneration struct {
 	Generation uint64 `json:"generation"`
 }
 
-// ApplyResult lists the nodes whose desired state an apply or a delete changed, with their new
-// generations.
+// ApplyResult is the answer to a change of the intent (an apply, a delete or a rollback): the
+// revision it made, and the nodes whose desired state it changed, with their new generations.
 type ApplyResult struct {
-	Nodes []NodeGeneration `json:"nodes"`
+	Revision uint64           `json:"revision"`
+	Nodes    []NodeGeneration `json:"nodes"`
+	// ConfirmBy is set for an apply with a confirmation time: the controller rolls the revision
+	// back then unless it is confirmed first.
+	ConfirmBy time.Time `json:"confirmBy,omitzero"`
 }
 
 // NodeStatus is what the controller knows about one node.
@@ -91,6 +96,11 @@ type Controller struct {
 	conns  map[net.Conn]struct{}
 	closed bool
 	wg     sync.WaitGroup
+
+	// The revisions, guarded by mu.
+	revision uint64           // the latest revision, 0 before the first
+	pending  *intent.Revision // the revision that waits for confirmation, nil if none
+	timer    *time.Timer      // rolls pending back at its deadline
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -120,7 +130,9 @@ type stream struct {
 }
 
 // New loads the intent and the node states from the store and reconciles them: a node whose
-// compiled state differs from its stored one gets a new generation.
+// compiled state differs from its stored one gets a new generation. A revision that waited for
+// confirmation when the controller stopped waits again until its deadline, or is rolled back at
+// once if the deadline passed.
 func New(ctx context.Context, cfg Config) (*Controller, error) {
 	c := &Controller{
 		store:  cfg.Store,
@@ -168,10 +180,20 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := c.commit(ctx, in, states); err != nil {
+	if _, err := c.commit(ctx, in, states, store.Changes{}); err != nil {
 		return nil, err
 	}
-	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes))
+	last, ok, err := c.store.LastRevision(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		c.revision = last.ID
+		if last.Confirm != nil && last.Confirm.State == intent.ConfirmPending {
+			c.await(last, time.Until(last.Confirm.Deadline))
+		}
+	}
+	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision)
 	return c, nil
 }
 
@@ -180,11 +202,25 @@ func (c *Controller) PublicKey() []byte {
 	return c.key.Public()
 }
 
-// Apply applies doc to the intent (`ranz apply -f`). It refuses, with an error that wraps
-// capability.ErrMissing, an intent that a node cannot honour, and then changes nothing.
+// Apply applies doc to the intent (`ranz apply -f`) as the next revision. It refuses, with an
+// error that wraps capability.ErrMissing, an intent that a node cannot honour, and then changes
+// nothing.
 func (c *Controller) Apply(ctx context.Context, doc intent.Document) (ApplyResult, error) {
+	return c.ApplyConfirm(ctx, doc, 0)
+}
+
+// ApplyConfirm applies doc to the intent as the next revision. With a confirm above 0
+// (`ranz apply --confirm`), the controller rolls that revision back by itself after confirm,
+// unless Confirm confirms it first; until then it takes no other change but a rollback.
+func (c *Controller) ApplyConfirm(ctx context.Context, doc intent.Document, confirm time.Duration) (ApplyResult, error) {
+	if confirm != 0 && (confirm < MinConfirm || confirm > MaxConfirm) {
+		return ApplyResult{}, fmt.Errorf("%w: %v is not between %v and %v", ErrBadConfirm, confirm, MinConfirm, MaxConfirm)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.unconfirmed(); err != nil {
+		return ApplyResult{}, err
+	}
 	next, err := intent.Apply(c.intent, doc, c.random)
 	if err != nil {
 		return ApplyResult{}, err
@@ -197,19 +233,31 @@ func (c *Controller) Apply(ctx context.Context, doc intent.Document) (ApplyResul
 		c.log.Warn("intent refused: capability", "err", err)
 		return ApplyResult{}, err
 	}
-	nodes, err := c.commit(ctx, next, states)
+	rev := c.nextRevision(intent.OpApply)
+	if confirm > 0 {
+		rev.Confirm = &intent.Confirmation{Deadline: rev.Time.Add(confirm), State: intent.ConfirmPending}
+	}
+	res, err := c.change(ctx, next, states, rev, store.Changes{})
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	c.log.Info("intent applied", "resources", len(doc.Resources), "changed", len(nodes))
-	return ApplyResult{Nodes: nodes}, nil
+	if confirm > 0 {
+		c.await(rev, confirm)
+		res.ConfirmBy = rev.Confirm.Deadline
+	}
+	c.log.Info("intent applied", "revision", res.Revision, "resources", len(doc.Resources), "changed", len(res.Nodes), "confirm", confirm)
+	return res, nil
 }
 
-// Delete deletes the resource kind/name from the intent. A delete only takes objects away from
-// desired states, so it never needs a Capability and is not checked against them.
+// Delete deletes the resource kind/name from the intent as the next revision. A delete only
+// takes objects away from desired states, so it never needs a Capability and is not checked
+// against them.
 func (c *Controller) Delete(ctx context.Context, kind, name string) (ApplyResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.unconfirmed(); err != nil {
+		return ApplyResult{}, err
+	}
 	next, err := intent.Delete(c.intent, kind, name)
 	if err != nil {
 		return ApplyResult{}, err
@@ -218,12 +266,12 @@ func (c *Controller) Delete(ctx context.Context, kind, name string) (ApplyResult
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	nodes, err := c.commit(ctx, next, states)
+	res, err := c.change(ctx, next, states, c.nextRevision(intent.OpDelete), store.Changes{})
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	c.log.Info("resource deleted", "kind", kind, "name", name, "changed", len(nodes))
-	return ApplyResult{Nodes: nodes}, nil
+	c.log.Info("resource deleted", "kind", kind, "name", name, "revision", res.Revision, "changed", len(res.Nodes))
+	return res, nil
 }
 
 // Resources returns the intent.
@@ -276,6 +324,9 @@ func (c *Controller) ServeStream(tc *tls.Conn) {
 func (c *Controller) Close() {
 	c.mu.Lock()
 	c.closed = true
+	if c.timer != nil {
+		c.timer.Stop()
+	}
 	for raw := range c.conns {
 		raw.Close()
 	}
@@ -285,10 +336,10 @@ func (c *Controller) Close() {
 
 // commit makes next the intent: with states, the desired state of every node that next compiles
 // to, it gives each node whose state changed the next generation, writes the intent and those
-// states to the store in one transaction, and then wakes the streams of the changed nodes. The
-// Capabilities of a static key that no Node resource of next holds are dropped. c.mu is held.
-func (c *Controller) commit(ctx context.Context, next intent.Intent, states map[string]desired.State) ([]NodeGeneration, error) {
-	var ch store.Changes
+// states to the store in one transaction together with the further changes of ch, and then
+// wakes the streams of the changed nodes. The Capabilities of a static key that no Node resource
+// of next holds are dropped. c.mu is held.
+func (c *Controller) commit(ctx context.Context, next intent.Intent, states map[string]desired.State, ch store.Changes) ([]NodeGeneration, error) {
 	ch.PutResources, ch.DeleteResources = intent.Changed(c.intent, next)
 	result := []NodeGeneration{}
 	for _, name := range slices.Sorted(maps.Keys(states)) {
