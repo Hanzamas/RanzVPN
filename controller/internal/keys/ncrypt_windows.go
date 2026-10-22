@@ -160,12 +160,17 @@ func openOrCreate(prov uintptr, name, alg, curve string) (uintptr, error) {
 }
 
 // keyScope is the key set of the persisted keys, as the flags of the provider: the machine scope
-// when the process runs elevated, as an administrator's does, else the key set of its account. The
-// service runs as its virtual account (ADR-0039 decision 3), which is no administrator and may not
-// create machine-scope keys, so it keeps its keys in its own key set, as the node keeps its
-// identity key.
+// when the process holds the rights of a local administrator (an elevated administrator, or
+// LocalSystem), else the key set of its account. The service runs as its virtual account
+// (ADR-0039 decision 3), which is no administrator and may not create machine-scope keys, so it
+// keeps its keys in its own key set, as the node keeps its identity key. The elevation of the
+// token does not tell the two apart: a service token counts as elevated.
 func keyScope() uint32 {
-	if windows.GetCurrentProcessToken().IsElevated() {
+	admins, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		return 0
+	}
+	if member, err := windows.Token(0).IsMember(admins); err == nil && member {
 		return machineKeyFlag
 	}
 	return 0

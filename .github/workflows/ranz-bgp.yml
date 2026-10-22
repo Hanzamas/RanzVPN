@@ -34,7 +34,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.27.2'
+  GO_VERSION: '1.27.3'
   # The WiX Toolset of the MSI (ADR-0020; REL-5, #50)
   WIX_VERSION: '5.0.2'
 

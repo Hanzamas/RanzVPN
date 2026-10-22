@@ -22,9 +22,9 @@ import (
 //     name); its Diffie-Hellman is NCryptSecretAgreement (kspStatic).
 //   - The TLS key is an ECDSA P-256 key; it signs with NCryptSignHash (kspSigner).
 //
-// Machine-scope keys need the rights of an administrator: an elevated process keeps the keys in
-// the machine scope, and the service, which runs as its virtual account, in the key set of that
-// account (keyScope).
+// Machine-scope keys need the rights of an administrator: an administrator's process keeps the
+// keys in the machine scope, and the service, which runs as its virtual account, in the key set
+// of that account (keyScope).
 func Load(dataDir string) (Static, crypto.Signer, error) {
 	// The provider handle stays open with the key handles, for the life of the process.
 	prov, err := openProvider()

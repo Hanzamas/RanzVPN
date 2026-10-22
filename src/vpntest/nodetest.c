@@ -1497,10 +1497,10 @@ static bool NodeSvcWaitGone()
 // account NODE_SERVICE_SID, the SID that the DACL of the data directory names (ADR-0039 decision 3)
 static void NodeSvcAccountCase(NODETEST_CTX *ctx)
 {
-	BYTE config_buf[8192];
 	BYTE sid_buf[SECURITY_MAX_SID_SIZE];
 	wchar_t domain[MAX_SIZE];
-	QUERY_SERVICE_CONFIGW *config = (QUERY_SERVICE_CONFIGW *)config_buf;
+	// 8 KB, the largest configuration QueryServiceConfigW returns
+	QUERY_SERVICE_CONFIGW *config = ZeroMalloc(8192);
 	SERVICE_SID_INFO sid_info;
 	DWORD size = 0;
 	DWORD sid_size = sizeof(sid_buf);
@@ -1510,14 +1510,13 @@ static void NodeSvcAccountCase(NODETEST_CTX *ctx)
 	bool got_config = false;
 	bool got_sid_type = false;
 
-	Zero(config_buf, sizeof(config_buf));
 	Zero(&sid_info, sizeof(sid_info));
 
 	SC_HANDLE sc = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT);
 	SC_HANDLE service = (sc != NULL ? OpenServiceW(sc, L"" NODESVC_NAME, SERVICE_QUERY_CONFIG) : NULL);
 	if (service != NULL)
 	{
-		got_config = QueryServiceConfigW(service, config, sizeof(config_buf), &size);
+		got_config = QueryServiceConfigW(service, config, 8192, &size);
 		got_sid_type = QueryServiceConfig2W(service, SERVICE_CONFIG_SERVICE_SID_INFO, (BYTE *)&sid_info, sizeof(sid_info), &size);
 		CloseServiceHandle(service);
 	}
@@ -1530,6 +1529,7 @@ static void NodeSvcAccountCase(NODETEST_CTX *ctx)
 	NodeTestCheck(ctx, UniStrCmpi(account, NODE_SERVICE_ACCOUNT) == 0 && got_sid_type && sid_info.dwServiceSidType == SERVICE_SID_TYPE_UNRESTRICTED,
 		"The service runs as its virtual account NT SERVICE\\" NODESVC_NAME ", not LocalSystem, with an unrestricted service SID",
 		"account \"%S\", service SID type %u", account, (UINT)sid_info.dwServiceSidType);
+	Free(config);
 
 	bool looked_up = LookupAccountNameW(NULL, NODE_SERVICE_ACCOUNT, (PSID)sid_buf, &sid_size, domain, &domain_size, &use);
 	DWORD err = GetLastError();
@@ -1693,7 +1693,11 @@ static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *data_dir, 
 	}
 
 	Format(what, sizeof(what), "Role %s: the node log of the service holds the start and the stop of that role alone", role_name);
-	NodeTestCheck(ctx, ok, what, "%s", log == NULL ? "no node log" : missing);
+	if (NodeTestCheck(ctx, ok, what, "%s", log == NULL ? "no node log" : missing) == false && log != NULL)
+	{
+		// Why the role did not start, for the job log
+		Print("  The node log of the service:\n%s\n", log);
+	}
 
 	// The node log records each mitigation, on or off with its reason, and the System32-only DLL search
 	UINT num_mitigations = 0;
