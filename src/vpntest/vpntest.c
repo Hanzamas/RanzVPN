@@ -429,7 +429,7 @@ void authtype_test(UINT num, char **arg);
 void acpassword_test(UINT num, char **arg);
 void sigleak_test(UINT num, char **arg);
 
-// Named listeners test of spec #43, case 6 of REL-4, #49 (listeners.c)
+// Named listeners test of spec #43, cases 1 to 5 of REL-3, #48, and case 6 of REL-4, #49 (listeners.c)
 void listeners_test(UINT num, char **arg);
 
 // Named packet parser tests of FND-38, FND-39 and FND-54, #113 and #117 (pkttest.c)
@@ -615,7 +615,7 @@ TEST_LIST test_list[] =
 	{"authtype", authtype_test, "Login authtype: 96 (the former external authentication) and unknown types are refused without a session, 0 to 2 keep their results."},
 	{"acpassword", acpassword_test, "Access list on the 'password' method: a denied address gets ERR_IP_ADDRESS_DENIED before the old password is checked."},
 	{"sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer."},
-	{"listeners", listeners_test, "Listeners and admin access: an admin login with the empty password gets error 51 from a non-loopback address and passes over loopback."},
+	{"listeners", listeners_test, "Listeners and admin access: TCP 443 on a fresh configuration, 5555 when 443 cannot be bound at that first start, kept on later starts; ListenerCreate on any port; an admin login with the empty password gets error 51 from a non-loopback address and passes over loopback."},
 	{"pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236."},
 	{"vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4."},
 	{"icmpv6ns", icmpv6ns_test, "Neighbor Solicitation: BuildNeighborSolicitation gives the bytes of the former builder chain, nothing for a NULL argument."},
