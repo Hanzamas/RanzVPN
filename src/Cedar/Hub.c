@@ -1736,8 +1736,9 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 									current_tcp_queue_size = CedarGetCurrentTcpQueueSize(hub->Cedar);
 
 									if (current_tcp_queue_size >= tcp_queue_quota) {
+										// A Tunnel of the new core is a client's network connection, as a TCP one is
 										if (dest_session->Connection != NULL &&
-										    dest_session->Connection->Protocol == CONNECTION_TCP)
+										    (dest_session->Connection->Protocol == CONNECTION_TCP || dest_session->Connection->Protocol == CONNECTION_NOISE))
 											discard = true;
 
 										if (dest_session->LinkModeServer)
