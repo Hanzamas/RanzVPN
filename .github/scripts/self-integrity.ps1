@@ -204,16 +204,16 @@ foreach ($pair in @(@{ Dir = $X64Dir; Arch = 'x64' }, @{ Dir = $Arm64Dir; Arch =
 	}
 }
 
-# No public PDB in the MSI: the File table names no .pdb
+# No public PDB in the MSI: the File table names no .pdb (the package is built from signing-proof.wxs,
+# which declares only vpnserver.exe). The COM object is called directly; the InvokeMember reflection path
+# mis-marshals the open-mode argument (DISP_E_TYPEMISMATCH).
 $installer = New-Object -ComObject WindowsInstaller.Installer
-$db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($msi, 0))
-$view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @('SELECT `FileName` FROM `File`'))
-$view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+$db = $installer.OpenDatabase($msi, 0)
+$view = $db.OpenView('SELECT `FileName` FROM `File`')
+$view.Execute()
 $pdbInMsi = @()
-while ($true) {
-	$rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-	if ($null -eq $rec) { break }
-	$name = $rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, @(1))
+while ($null -ne ($rec = $view.Fetch())) {
+	$name = $rec.StringData(1)
 	if ($name -match '\.pdb') { $pdbInMsi += $name }
 }
 if ($pdbInMsi.Count -gt 0) { throw "the MSI ships a PDB: $($pdbInMsi -join ', ')" }
