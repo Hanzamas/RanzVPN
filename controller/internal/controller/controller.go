@@ -101,6 +101,9 @@ type Config struct {
 	// SEC-5 #283); empty when none is delivered. The controller reads and verifies it at start and
 	// when ReloadRevocations is called.
 	Revocations string
+	// Defaults has the first start of the controller, on a store that holds no revision yet,
+	// create the intent of a first install as revision 1 (ADR-0034, defaults.go).
+	Defaults bool
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -295,6 +298,10 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		c.revision = last.ID
 		if last.Confirm != nil && last.Confirm.State == intent.ConfirmPending {
 			c.await(last, time.Until(last.Confirm.Deadline))
+		}
+	} else if cfg.Defaults && len(rs) == 0 {
+		if err := c.firstStart(ctx); err != nil {
+			return nil, err
 		}
 	}
 	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision, "schema", int32(c.schema))

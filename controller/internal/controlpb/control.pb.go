@@ -1175,11 +1175,13 @@ func (x *ObjectKey) GetName() string {
 	return ""
 }
 
-// The node itself. Every state holds exactly one.
+// The node itself, with its addresses in the L3 Networks of its VRFs, ordered by Network name.
+// Every state holds exactly one.
 type NodeConfig struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Tags          []string               `protobuf:"bytes,2,rep,name=tags,proto3" json:"tags,omitempty"` // sorted
+	Addresses     []*Address             `protobuf:"bytes,3,rep,name=addresses,proto3" json:"addresses,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1224,6 +1226,13 @@ func (x *NodeConfig) GetName() string {
 func (x *NodeConfig) GetTags() []string {
 	if x != nil {
 		return x.Tags
+	}
+	return nil
+}
+
+func (x *NodeConfig) GetAddresses() []*Address {
+	if x != nil {
+		return x.Addresses
 	}
 	return nil
 }
@@ -1374,12 +1383,14 @@ func (x *Network) GetIpv6Pool() *Prefix {
 	return nil
 }
 
-// Another node that shares at least one VRF with this one (full mesh).
+// Another node that shares at least one VRF with this one (full mesh), with its addresses in the
+// L3 Networks of the shared VRFs, ordered by Network name.
 type Peer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	PublicKey     []byte                 `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // the Noise static key, 32 bytes
 	VrfIds        []uint32               `protobuf:"varint,3,rep,packed,name=vrf_ids,json=vrfIds,proto3" json:"vrf_ids,omitempty"`  // the shared VRFs, ascending
+	Addresses     []*Address             `protobuf:"bytes,4,rep,name=addresses,proto3" json:"addresses,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1431,6 +1442,13 @@ func (x *Peer) GetPublicKey() []byte {
 func (x *Peer) GetVrfIds() []uint32 {
 	if x != nil {
 		return x.VrfIds
+	}
+	return nil
+}
+
+func (x *Peer) GetAddresses() []*Address {
+	if x != nil {
+		return x.Addresses
 	}
 	return nil
 }
@@ -1664,6 +1682,68 @@ func (x *Capabilities) GetTlsPortFallback() bool {
 	return false
 }
 
+// An address of a node in an L3 Network of one of its VRFs (ADR-0028, SDN-3): the controller
+// allocates it from the IPv4 pool of the Network, and the prefix has the length of that pool.
+type Address struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Network       string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	VrfId         uint32                 `protobuf:"varint,2,opt,name=vrf_id,json=vrfId,proto3" json:"vrf_id,omitempty"`
+	Prefix        *Prefix                `protobuf:"bytes,3,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Address) Reset() {
+	*x = Address{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Address) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Address) ProtoMessage() {}
+
+func (x *Address) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Address.ProtoReflect.Descriptor instead.
+func (*Address) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *Address) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *Address) GetVrfId() uint32 {
+	if x != nil {
+		return x.VrfId
+	}
+	return 0
+}
+
+func (x *Address) GetPrefix() *Prefix {
+	if x != nil {
+		return x.Prefix
+	}
+	return nil
+}
+
 var File_ranz_control_v1_control_proto protoreflect.FileDescriptor
 
 const file_ranz_control_v1_control_proto_rawDesc = "" +
@@ -1716,11 +1796,12 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04kind\"J\n" +
 	"\tObjectKey\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.ranz.control.v1.KindR\x04kind\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"4\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"l\n" +
 	"\n" +
 	"NodeConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04tags\x18\x02 \x03(\tR\x04tags\"f\n" +
+	"\x04tags\x18\x02 \x03(\tR\x04tags\x126\n" +
+	"\taddresses\x18\x03 \x03(\v2\x18.ranz.control.v1.AddressR\taddresses\"f\n" +
 	"\x03Vrf\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\rR\x02id\x12)\n" +
@@ -1731,12 +1812,13 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x120\n" +
 	"\x04mode\x18\x03 \x01(\x0e2\x1c.ranz.control.v1.NetworkModeR\x04mode\x124\n" +
 	"\tipv4_pool\x18\x04 \x01(\v2\x17.ranz.control.v1.PrefixR\bipv4Pool\x124\n" +
-	"\tipv6_pool\x18\x05 \x01(\v2\x17.ranz.control.v1.PrefixR\bipv6Pool\"R\n" +
+	"\tipv6_pool\x18\x05 \x01(\v2\x17.ranz.control.v1.PrefixR\bipv6Pool\"\x8a\x01\n" +
 	"\x04Peer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
 	"public_key\x18\x02 \x01(\fR\tpublicKey\x12\x17\n" +
-	"\avrf_ids\x18\x03 \x03(\rR\x06vrfIds\"h\n" +
+	"\avrf_ids\x18\x03 \x03(\rR\x06vrfIds\x126\n" +
+	"\taddresses\x18\x04 \x03(\v2\x18.ranz.control.v1.AddressR\taddresses\"h\n" +
 	"\x05Relay\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -1755,7 +1837,11 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x03xdp\x18\x06 \x01(\bR\x03xdp\x12<\n" +
 	"\vegress_tier\x18\a \x01(\x0e2\x1b.ranz.control.v1.EgressTierR\n" +
 	"egressTier\x12*\n" +
-	"\x11tls_port_fallback\x18\b \x01(\bR\x0ftlsPortFallback*[\n" +
+	"\x11tls_port_fallback\x18\b \x01(\bR\x0ftlsPortFallback\"k\n" +
+	"\aAddress\x12\x18\n" +
+	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x15\n" +
+	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x12/\n" +
+	"\x06prefix\x18\x03 \x01(\v2\x17.ranz.control.v1.PrefixR\x06prefix*[\n" +
 	"\rSchemaVersion\x12\x1e\n" +
 	"\x1aSCHEMA_VERSION_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SCHEMA_VERSION_1\x10\x01\x12\x14\n" +
@@ -1811,7 +1897,7 @@ func file_ranz_control_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_ranz_control_v1_control_proto_goTypes = []any{
 	(SchemaVersion)(0),     // 0: ranz.control.v1.SchemaVersion
 	(RefuseReason)(0),      // 1: ranz.control.v1.RefuseReason
@@ -1837,6 +1923,7 @@ var file_ranz_control_v1_control_proto_goTypes = []any{
 	(*Relay)(nil),          // 21: ranz.control.v1.Relay
 	(*Prefix)(nil),         // 22: ranz.control.v1.Prefix
 	(*Capabilities)(nil),   // 23: ranz.control.v1.Capabilities
+	(*Address)(nil),        // 24: ranz.control.v1.Address
 }
 var file_ranz_control_v1_control_proto_depIdxs = []int32{
 	8,  // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
@@ -1857,18 +1944,21 @@ var file_ranz_control_v1_control_proto_depIdxs = []int32{
 	20, // 15: ranz.control.v1.Object.peer:type_name -> ranz.control.v1.Peer
 	21, // 16: ranz.control.v1.Object.relay:type_name -> ranz.control.v1.Relay
 	2,  // 17: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
-	22, // 18: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
-	3,  // 19: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
-	22, // 20: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
-	22, // 21: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
-	4,  // 22: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
-	5,  // 23: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
-	6,  // 24: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
-	25, // [25:25] is the sub-list for method output_type
-	25, // [25:25] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	24, // 18: ranz.control.v1.NodeConfig.addresses:type_name -> ranz.control.v1.Address
+	22, // 19: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
+	3,  // 20: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
+	22, // 21: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
+	22, // 22: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
+	24, // 23: ranz.control.v1.Peer.addresses:type_name -> ranz.control.v1.Address
+	4,  // 24: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
+	5,  // 25: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
+	6,  // 26: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
+	22, // 27: ranz.control.v1.Address.prefix:type_name -> ranz.control.v1.Prefix
+	28, // [28:28] is the sub-list for method output_type
+	28, // [28:28] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_ranz_control_v1_control_proto_init() }
@@ -1897,7 +1987,7 @@ func file_ranz_control_v1_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ranz_control_v1_control_proto_rawDesc), len(file_ranz_control_v1_control_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   17,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -153,10 +153,12 @@ message ObjectKey {
   string name = 2;
 }
 
-// The node itself. Every state holds exactly one.
+// The node itself, with its addresses in the L3 Networks of its VRFs, ordered by Network name.
+// Every state holds exactly one.
 message NodeConfig {
   string name = 1;
   repeated string tags = 2;  // sorted
+  repeated Address addresses = 3;
 }
 
 // A VRF the node is a member of.
@@ -182,11 +184,13 @@ message Network {
   Prefix ipv6_pool = 5;
 }
 
-// Another node that shares at least one VRF with this one (full mesh).
+// Another node that shares at least one VRF with this one (full mesh), with its addresses in the
+// L3 Networks of the shared VRFs, ordered by Network name.
 message Peer {
   string name = 1;
   bytes public_key = 2;         // the Noise static key, 32 bytes
   repeated uint32 vrf_ids = 3;  // the shared VRFs, ascending
+  repeated Address addresses = 4;
 }
 
 // A relay that the node may use (ADR-0015): another node with the relay role that shares a VRF
@@ -244,4 +248,12 @@ enum EgressTier {
   EGRESS_TIER_RRAS_NAT = 1;  // tier 1: RRAS NAT on Windows Server
   EGRESS_TIER_WINNAT = 2;    // tier 2: WinNAT, where Hyper-V is present and no NetNat exists
   EGRESS_TIER_PROXY = 3;     // tier 3: a proxy on the Windows TCP/IP stack
+}
+
+// An address of a node in an L3 Network of one of its VRFs (ADR-0028, SDN-3): the controller
+// allocates it from the IPv4 pool of the Network, and the prefix has the length of that pool.
+message Address {
+  string network = 1;
+  uint32 vrf_id = 2;
+  Prefix prefix = 3;
 }

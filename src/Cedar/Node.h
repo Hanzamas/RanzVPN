@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeTable.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeTable.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -10,6 +10,7 @@
 #include "Mayaqua/MayaType.h"
 
 #include "Core/Peer.h"
+#include "Core/Transport.h"
 
 // The roles of a node (ADR-0011, ADR-0022). A node runs any set of them, chosen by the configuration
 // and later by the control plane (NodeSetRoles). The controller is not a role: it left the node with #176.
@@ -56,10 +57,19 @@
 #define NODE_TABLE_KEY_SIZE    16       // Bytes of a table key: an IPv6 address; a shorter key is zero-padded
 #define NODE_TABLE_MAX_ENTRIES 0x400000 // Entries of one table at most
 
+// The overlay of a node (NodeOverlay.c; SDN-3, #179)
+#define NODE_OVERLAY_MAX_ADDRESSES 16   // Addresses of a node or a peer (CONTROL_MAX_ADDRESSES of Core/Control.h)
+#define NODE_OVERLAY_HANDSHAKE     5000 // ms for the handshake of a Noise session to a peer
+#define NODE_OVERLAY_REDIAL        1000 // ms before a peer is dialled again
+#define NODE_OVERLAY_IDLE          10   // ms that the thread of the overlay sleeps when it found nothing to do
+#define NODE_OVERLAY_BATCH         64   // Records that the thread takes from one session in one pass
+
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
 // Drains an adapter queue on its I/O thread, to completion (NodeAddQueue)
 typedef void(NODE_QUEUE_PROC)(NODE_QUEUE *q, void *param);
+// Takes an IP packet of the overlay for the host (NodeOverlayStart), on the thread of the overlay
+typedef void(NODE_ADAPTER_PROC)(NODE *n, void *param, const UCHAR *packet, UINT size);
 
 // A thread that reads the table snapshot: a worker, the I/O thread of an adapter queue, or a thread that
 // registered itself. It holds a snapshot only between two quiescent points and none while it is offline,
@@ -155,6 +165,34 @@ struct NODE {
 	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
 	wchar_t BgpSidecar[MAX_PATH]; // The sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
 	NODE_BGP *Bgp;                // The running BGP sidecar (NodeBgp.c), NULL when none runs
+
+	// The overlay (NodeOverlay.c; SDN-3, #179), NULL while it does not run
+	NODE_OVERLAY *Overlay;
+};
+
+// How the overlay of a node runs (NodeOverlayStart)
+struct NODE_OVERLAY_CONFIG {
+	TRANSPORT *Control;                      // The transport of the control stream to the controller (Core/Control.h)
+	char Controller[TRANSPORT_ADDRESS_SIZE]; // The controller's address on it
+	UCHAR ControllerKey[PEER_KEY_SIZE];      // ... and its static key
+	TRANSPORT *Data;                         // The transport of the Noise sessions to the peers, which finds a peer by its node name
+	PEER_KEY *Key;                           // The node's static key, which must outlive the overlay
+	NODE_ADAPTER_PROC *Adapter;              // Takes the packets for the host, NULL for none
+	void *AdapterParam;                      // ... and its second parameter
+};
+
+// What NodeOverlayGetStatus reports
+struct NODE_OVERLAY_STATUS {
+	bool Connected;                             // The control stream is open
+	UINT64 Generation;                          // The Generation of the desired state that the overlay runs, 0 before the first
+	char Name[PEER_NAME_SIZE];                  // The node's name in the intent
+	UINT NumAddresses;                          // Its IPv4 addresses in the L3 Networks of its VRFs
+	UINT Addresses[NODE_OVERLAY_MAX_ADDRESSES]; // ... in network byte order
+	UINT NumPeers;                              // Its peers
+	UINT NumLinks;                              // ... with a Noise session up
+	UINT64 Forwarded;                           // Packets of the host sent to a peer
+	UINT64 Delivered;                           // Packets of the peers delivered to the host
+	UINT64 Dropped;                             // Packets of either side that the overlay dropped
 };
 
 // What NodeGetStatus reports
@@ -244,5 +282,11 @@ void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
 // NodeHarden.c
 void NodeHarden();
 const NODE_MITIGATION *NodeGetMitigations(UINT *num);
+
+// NodeOverlay.c
+bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg);
+void NodeOverlayStop(NODE *n);
+bool NodeOverlayInput(NODE *n, const UCHAR *packet, UINT size);
+void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
 
 #endif // NODE_H

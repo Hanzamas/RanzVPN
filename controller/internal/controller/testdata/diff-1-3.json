@@ -23,6 +23,14 @@
       "from": {"vrf": "corp", "mode": "L3", "ipv4Pool": "10.10.0.0/24", "ipv6Pool": "fd12:3456:789a:1::/64"}
     },
     {
+      "action": "changed",
+      "kind": "Node",
+      "name": "branch-1",
+      "fields": ["addresses"],
+      "from": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "tags": ["branch"], "addresses": {"corp-lan": "10.10.0.1"}},
+      "to": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "tags": ["branch"]}
+    },
+    {
       "action": "added",
       "kind": "Node",
       "name": "branch-2",
