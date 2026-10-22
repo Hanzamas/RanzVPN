@@ -1,8 +1,8 @@
 // Package store keeps the controller's state in rqlite (#176 "Controller store"): the intent,
 // one row per resource; per node the generation of its desired state and the state it
-// acknowledged last; every revision of the intent with its resources; and the events. rqlite
-// runs beside the controller (internal/sidecar) and is reached over its HTTP API through
-// gorqlite.
+// acknowledged last; per node static key the Capabilities that the node reported last
+// (ADR-0033); every revision of the intent with its resources; and the events. rqlite runs
+// beside the controller (internal/sidecar) and is reached over its HTTP API through gorqlite.
 package store
 
 import (
@@ -26,6 +26,7 @@ import (
 var schema = []string{
 	`CREATE TABLE IF NOT EXISTS resources (kind TEXT NOT NULL, name TEXT NOT NULL, spec TEXT NOT NULL, PRIMARY KEY (kind, name))`,
 	`CREATE TABLE IF NOT EXISTS node_state (name TEXT NOT NULL PRIMARY KEY, generation INTEGER NOT NULL, desired TEXT NOT NULL, acked_generation INTEGER NOT NULL, acked TEXT NOT NULL)`,
+	`CREATE TABLE IF NOT EXISTS node_capabilities (public_key TEXT NOT NULL PRIMARY KEY, capabilities TEXT NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS api_tokens (name TEXT NOT NULL PRIMARY KEY, role TEXT NOT NULL, hash TEXT NOT NULL UNIQUE)`,
 	`CREATE TABLE IF NOT EXISTS revisions (id INTEGER PRIMARY KEY, revision TEXT NOT NULL, intent TEXT NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, event TEXT NOT NULL)`,
@@ -52,6 +53,8 @@ type Changes struct {
 	DeleteResources []intent.Resource // kind and name
 	PutNodes        []Node
 	DeleteNodes     []string
+	// The Capabilities of these node static keys, which no Node resource holds any more.
+	DeleteCapabilities [][]byte
 	// AddRevision is a new revision, with the resources of its intent.
 	AddRevision *intent.Revision
 	// UpdateRevisions replace what is stored of earlier revisions, all but their resources,
@@ -151,6 +154,9 @@ func (s *Store) Commit(ctx context.Context, c Changes) error {
 	for _, name := range c.DeleteNodes {
 		stmts = append(stmts, statement(`DELETE FROM node_state WHERE name = ?`, name))
 	}
+	for _, key := range c.DeleteCapabilities {
+		stmts = append(stmts, statement(`DELETE FROM node_capabilities WHERE public_key = ?`, base64.StdEncoding.EncodeToString(key)))
+	}
 	if r := c.AddRevision; r != nil {
 		meta, rs, err := encodeRevision(*r)
 		if err != nil {
@@ -191,6 +197,46 @@ func (s *Store) SaveAck(ctx context.Context, name string, gen uint64, acked *con
 		int64(gen), b, name))
 	if err != nil {
 		return fmt.Errorf("store: node %q: %w", name, err)
+	}
+	return nil
+}
+
+// LoadCapabilities returns the stored Capabilities by node static key (the key's bytes as a
+// string).
+func (s *Store) LoadCapabilities(ctx context.Context) (map[string]*controlpb.Capabilities, error) {
+	qr, err := s.conn.QueryOneContext(ctx, `SELECT public_key, capabilities FROM node_capabilities ORDER BY public_key`)
+	if err != nil {
+		return nil, fmt.Errorf("store: reading the Capabilities: %w", err)
+	}
+	out := map[string]*controlpb.Capabilities{}
+	for qr.Next() {
+		var key, caps string
+		if err := qr.Scan(&key, &caps); err != nil {
+			return nil, fmt.Errorf("store: reading the Capabilities: %w", err)
+		}
+		k, err := base64.StdEncoding.DecodeString(key)
+		if err != nil {
+			return nil, fmt.Errorf("store: the Capabilities of key %q: %w", key, err)
+		}
+		c := &controlpb.Capabilities{}
+		if err := decode(caps, c); err != nil {
+			return nil, fmt.Errorf("store: the Capabilities of key %q: %w", key, err)
+		}
+		out[string(k)] = c
+	}
+	return out, nil
+}
+
+// SaveCapabilities records that the node with the static key key reported the Capabilities caps.
+func (s *Store) SaveCapabilities(ctx context.Context, key []byte, caps *controlpb.Capabilities) error {
+	b, err := encode(caps)
+	if err != nil {
+		return fmt.Errorf("store: Capabilities: %w", err)
+	}
+	_, err = s.conn.WriteOneParameterizedContext(ctx, statement(`INSERT OR REPLACE INTO node_capabilities (public_key, capabilities) VALUES (?, ?)`,
+		base64.StdEncoding.EncodeToString(key), b))
+	if err != nil {
+		return fmt.Errorf("store: Capabilities: %w", err)
 	}
 	return nil
 }
@@ -305,21 +351,30 @@ func statement(query string, args ...any) gorqlite.ParameterizedStatement {
 
 // encodeUpdate returns the base64 of the protobuf encoding of u, the form a state is stored in.
 func encodeUpdate(u *controlpb.Update) (string, error) {
-	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(u)
+	return encode(u)
+}
+
+func decodeUpdate(s string) (*controlpb.Update, error) {
+	u := &controlpb.Update{}
+	if err := decode(s, u); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// encode returns the base64 of the protobuf encoding of m, the form a message is stored in.
+func encode(m proto.Message) (string, error) {
+	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(m)
 	if err != nil {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(b), nil
 }
 
-func decodeUpdate(s string) (*controlpb.Update, error) {
+func decode(s string, m proto.Message) error {
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	u := &controlpb.Update{}
-	if err := proto.Unmarshal(b, u); err != nil {
-		return nil, err
-	}
-	return u, nil
+	return proto.Unmarshal(b, m)
 }

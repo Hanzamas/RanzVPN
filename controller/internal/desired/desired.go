@@ -194,6 +194,15 @@ func Equal(a, b State) bool {
 	return maps.EqualFunc(a, b, func(x, y *controlpb.Object) bool { return proto.Equal(x, y) })
 }
 
+// Objects returns the objects of s ordered by kind, then name.
+func (s State) Objects() []*controlpb.Object {
+	var out []*controlpb.Object
+	for _, k := range s.keys() {
+		out = append(out, s[k])
+	}
+	return out
+}
+
 func (s State) add(o *controlpb.Object) {
 	s[KeyOf(o)] = o
 }

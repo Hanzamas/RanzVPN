@@ -33,6 +33,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
+	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
@@ -156,11 +157,11 @@ func TestIntentSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []controller.NodeStatus{
-		{Name: "branch-1", Generation: 2, AckedGeneration: 2},
+		{Name: "branch-1", Generation: 2, AckedGeneration: 2, Capabilities: capability.FromProto(capsServer)},
 		{Name: "branch-2", Generation: 1},
 	}
-	if fmt.Sprint(nodes) != fmt.Sprint(want) {
-		t.Errorf("the nodes after the restart are %+v, want %+v", nodes, want)
+	if a, b := asJSON(t, nodes), asJSON(t, want); a != b {
+		t.Errorf("the nodes after the restart are %s, want %s", a, b)
 	}
 
 	// branch-1 reconnects at generation 2, which it applied, so it gets nothing until the
@@ -396,6 +397,16 @@ func (h *harness) stop() {
 // apply applies the intent document testdata/file, YAML or JSON, as `ranz apply -f` does.
 func (h *harness) apply(file string) controller.ApplyResult {
 	h.t.Helper()
+	res, err := h.tryApply(file)
+	if err != nil {
+		h.t.Fatalf("applying %s: %v", file, err)
+	}
+	return res
+}
+
+// tryApply applies the intent document testdata/file and returns the answer of the API.
+func (h *harness) tryApply(file string) (controller.ApplyResult, error) {
+	h.t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", file))
 	if err != nil {
 		h.t.Fatal(err)
@@ -404,11 +415,7 @@ func (h *harness) apply(file string) controller.ApplyResult {
 	if err != nil {
 		h.t.Fatalf("%s: %v", file, err)
 	}
-	res, err := h.api.Apply(context.Background(), doc)
-	if err != nil {
-		h.t.Fatalf("applying %s: %v", file, err)
-	}
-	return res
+	return h.api.Apply(context.Background(), doc)
 }
 
 // resources returns the intent as the API reports it, as JSON.
@@ -480,7 +487,7 @@ type sim struct {
 
 // newSim returns a simulated node that has no stream yet; start runs one.
 func (h *harness) newSim(name string, key keys.Static) *sim {
-	s := &sim{Node: &nodesim.Node{Key: key, ControllerKey: h.key.Public(), Updates: make(chan *controlpb.Update, 16), Signals: make(chan *controlpb.Signal, 16)}, name: name}
+	s := &sim{Node: &nodesim.Node{Key: key, ControllerKey: h.key.Public(), Capabilities: capsServer, Updates: make(chan *controlpb.Update, 16), Signals: make(chan *controlpb.Signal, 16)}, name: name}
 	h.t.Cleanup(func() {
 		s.halt()
 		dumpWire(h.t, s)
@@ -635,6 +642,15 @@ func show(m proto.Message) string {
 
 func equalGenerations(a, b []controller.NodeGeneration) bool {
 	return fmt.Sprint(a) == fmt.Sprint(b)
+}
+
+func asJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // fixedKey returns the static key whose private key is the 32 bytes first, first+1, ...

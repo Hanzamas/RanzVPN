@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
@@ -133,12 +134,12 @@ func (c *Controller) Events(ctx context.Context) ([]event.Event, error) {
 	return c.store.Events(ctx)
 }
 
-// change makes next the intent as revision rev, which nextRevision made, together with the
-// further changes of ch. c.mu is held.
-func (c *Controller) change(ctx context.Context, next intent.Intent, rev intent.Revision, ch store.Changes) (ApplyResult, error) {
+// change makes next, which compiles to states, the intent as revision rev, which nextRevision
+// made, together with the further changes of ch. c.mu is held.
+func (c *Controller) change(ctx context.Context, next intent.Intent, states map[string]desired.State, rev intent.Revision, ch store.Changes) (ApplyResult, error) {
 	rev.Resources = next.Resources()
 	ch.AddRevision = &rev
-	nodes, err := c.commit(ctx, next, ch)
+	nodes, err := c.commit(ctx, next, states, ch)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -147,7 +148,10 @@ func (c *Controller) change(ctx context.Context, next intent.Intent, rev intent.
 }
 
 // restore makes the intent of revision target the intent again as revision rev, together with
-// the further changes of ch. c.mu is held.
+// the further changes of ch. A rollback that a node cannot honour is refused like an apply, with
+// an error that wraps capability.ErrMissing (ADR-0033). An automatic rollback is not checked:
+// it returns to the intent before an unconfirmed apply, and nothing may keep that apply. c.mu is
+// held.
 func (c *Controller) restore(ctx context.Context, target uint64, rev intent.Revision, ch store.Changes) (ApplyResult, error) {
 	if target > c.revision {
 		return ApplyResult{}, fmt.Errorf("%w: %d, the latest revision is %d", ErrNoRevision, target, c.revision)
@@ -160,8 +164,18 @@ func (c *Controller) restore(ctx context.Context, target uint64, rev intent.Revi
 	if err != nil {
 		return ApplyResult{}, fmt.Errorf("revision %d: %w", target, err)
 	}
+	states, err := desired.Compile(next)
+	if err != nil {
+		return ApplyResult{}, fmt.Errorf("revision %d: %w", target, err)
+	}
+	if rev.Operation == intent.OpRollback {
+		if err := c.honoured(next, states); err != nil {
+			c.log.Warn("rollback refused: capability", "revision", target, "err", err)
+			return ApplyResult{}, err
+		}
+	}
 	rev.Restores = &target
-	return c.change(ctx, next, rev, ch)
+	return c.change(ctx, next, states, rev, ch)
 }
 
 // intentAt returns the resources of revision id: none for revision 0.
