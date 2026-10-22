@@ -71,6 +71,8 @@ ranz_add_executable(vpntest HAMCORE
     selfint.c
     # Named transport test of CORE-F4 (#64): the transport interface of the new core and the session layer on it
     transporttest.c
+    # Named hardened licence gate test of SEC-4 (#282): drives ranzguard under the Win32 debug API
+    harden.c
     # Named HTTP listener test of REL-6 (#51)
     httplistener.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c;
