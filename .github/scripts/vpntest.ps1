@@ -48,6 +48,7 @@ $named | % {
 	Write-Host "testing: $test"
 
 	$full = (Write-Output "q\n" | & "$BuildDir\vpntest.exe" $test)
+	$exit = $LASTEXITCODE
 
 	# Benchmark lines before the result check, so a failed test still shows and saves them
 	$bench = @($full | ? { $_ -cmatch '^BENCH ' -and $_ -cnotmatch '^BENCH TEST ' })
@@ -63,6 +64,7 @@ $named | % {
 
 	if (($ok).Count -ne 1 -or ($leak).Count -ne 1) {
 		$full
+		Write-Host ('vpntest exit code of ' + $test + ': ' + $exit + ' (0x' + ('{0:X8}' -f $exit) + ')')
 		Write-Error 'failed'
 		return $false
 	}

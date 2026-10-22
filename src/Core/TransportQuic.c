@@ -352,12 +352,16 @@ static void QuicRelease(void *p, UINT size) {
 
 static void QuicConnRelease(QUIC_CONN *c);
 
-// Release one reference of a stream: free the ring, release the connection and free the stream once
+// Release one reference of a stream: close the handle, free the ring, release the connection and free the stream once
 // the app and msquic are both gone
 static void QuicStreamRelease(QUIC_STREAM *s) {
 	if (s == NULL || InterlockedDecrement(&s->Refs) != 0)
 		return;
 
+	// Both the app and msquic are done with the stream: the handle is closed last, so that no call of
+	// the app, QuicStreamWrite and QuicStreamClose among them, ever meets a handle that msquic closed
+	if (s->Stream != NULL)
+		g_quic->StreamClose(s->Stream);
 	QuicRelease(s->Ring, QUIC_RING_SIZE);
 	QuicConnRelease(s->Conn);
 	QuicRelease(s, sizeof(QUIC_STREAM));
@@ -396,6 +400,8 @@ static void QuicRingPut(QUIC_STREAM *s, const UCHAR *src, UINT size) {
 // drains the ring and re-enables it.
 static QUIC_STATUS QUIC_API QuicStreamCallback(HQUIC stream, void *context, QUIC_STREAM_EVENT *event) {
 	QUIC_STREAM *s = (QUIC_STREAM *)context;
+
+	UNREFERENCED_PARAMETER(stream);
 
 	switch (event->Type) {
 	case QUIC_STREAM_EVENT_RECEIVE: {
@@ -444,8 +450,7 @@ static QUIC_STATUS QUIC_API QuicStreamCallback(HQUIC stream, void *context, QUIC
 		return QUIC_STATUS_SUCCESS;
 
 	case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
-		// msquic is done with the stream: close the handle and let go of its reference
-		g_quic->StreamClose(stream);
+		// msquic is done with the stream: let go of its reference; the handle is closed with the last one
 		QuicStreamRelease(s);
 		return QUIC_STATUS_SUCCESS;
 
@@ -633,6 +638,9 @@ static void QuicConnRelease(QUIC_CONN *c) {
 
 	if (c->Ready != NULL)
 		CloseHandle(c->Ready);
+	// The handle is closed with the last reference, once the callback and every stream are done with it
+	if (c->Connection != NULL)
+		g_quic->ConnectionClose(c->Connection);
 	QuicRelease(c, sizeof(QUIC_CONN));
 }
 
@@ -640,6 +648,8 @@ static void QuicConnRelease(QUIC_CONN *c) {
 // failure, and closes the connection on shutdown
 static QUIC_STATUS QUIC_API QuicConnCallback(HQUIC connection, void *context, QUIC_CONNECTION_EVENT *event) {
 	QUIC_CONN *c = (QUIC_CONN *)context;
+
+	UNREFERENCED_PARAMETER(connection);
 
 	switch (event->Type) {
 	case QUIC_CONNECTION_EVENT_CONNECTED:
@@ -701,7 +711,6 @@ static QUIC_STATUS QUIC_API QuicConnCallback(HQUIC connection, void *context, QU
 		InterlockedExchange(&c->Failed, 1);
 		if (c->Ready != NULL)
 			SetEvent(c->Ready);
-		g_quic->ConnectionClose(connection);
 		QuicConnRelease(c);
 		return QUIC_STATUS_SUCCESS;
 
@@ -751,6 +760,7 @@ static QUIC_STATUS QUIC_API QuicListenerCallback(HQUIC listener, void *context, 
 	c->Connection = event->NEW_CONNECTION.Connection;
 	g_quic->SetCallbackHandler(event->NEW_CONNECTION.Connection, (void *)QuicConnCallback, c);
 	if (QUIC_FAILED(g_quic->ConnectionSetConfiguration(event->NEW_CONNECTION.Connection, l->Net->Configuration))) {
+		c->Connection = NULL; // msquic closes a connection whose acceptance failed
 		QuicConnRelease(c);
 		return QUIC_STATUS_INTERNAL_ERROR;
 	}
