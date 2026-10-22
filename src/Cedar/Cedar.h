@@ -176,6 +176,8 @@
 
 
 #define LISTENER_TCP 0
+// The HTTP listener: the redirect to HTTPS and ACME HTTP-01 (HttpListener.c)
+#define LISTENER_HTTP 1
 
 #define LISTENER_STATUS_TRYING    0
 #define LISTENER_STATUS_LISTENING 1

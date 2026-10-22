@@ -835,6 +835,13 @@ LS_LISTENER_DOS_TABLE_FULL	Tabel perlindungan DoS pada Pendengar TCP (port %u) t
 LS_NON_SSL_TABLE_FULL	Tabel sumber yang mengirim data non-SSL telah mencapai batas %u alamat sumber. Mulai sekarang sumber yang paling lama tidak terlihat dihapus untuk memberi tempat bagi sumber baru.
 LS_LISTENER_STOP_1		Pendengar TCP (port %u) sedang dihentikan.
 LS_LISTENER_STOP_2		Pendengar TCP (port %u) telah dihentikan.
+LS_HTTP_LISTENER_START_1	Pendengar HTTP (port %u) sedang dimulai.
+LS_HTTP_LISTENER_START_2	Pendengar HTTP (port %u) telah dimulai. Pendengar ini menjawab dengan pengalihan ke HTTPS dan dengan tantangan ACME HTTP-01 dari folder acme_webroot.
+LS_HTTP_LISTENER_START_3	Tidak dapat mengatur port untuk status Dengar untuk Pendengar HTTP (port %u). Program lain mungkin sedang memakai port tersebut. Mencoba pada interval tetap sampai berhasil.
+LS_HTTP_LISTENER_STOP_1	Pendengar HTTP (port %u) sedang dihentikan.
+LS_HTTP_LISTENER_STOP_2	Pendengar HTTP (port %u) telah dihentikan.
+LS_HTTP_ACME_SERVED		Pendengar HTTP (port %u): tantangan ACME "%S" telah dilayani untuk %S.
+LS_HTTP_ACME_NOT_FOUND	Pendengar HTTP (port %u): tidak ada tantangan ACME untuk permintaan dari %S (404).
 LS_HUB_START			Virtual Hub "%S" telah dimulai.
 LS_HUB_STOP				Virtual Hub "%S" telah dihentikan.
 LS_HUB_MAC				Alamat MAC dari Virtual Hub "%S" adalah "%S".
@@ -921,6 +928,8 @@ LA_CREATE_LISTENER		Pendengar TCP baru (nomor port %u) telah dibuat.
 LA_DELETE_LISTENER		Pendengar TCP (nomor port %u) telah dihapus.
 LA_ENABLE_LISTENER		Pendengar TCP (nomor port %u) telah diaktifkan.
 LA_DISABLE_LISTENER		Pendengar TCP (nomor port %u) telah dinonaktifkan.
+LA_ENABLE_HTTP_LISTENER	Pendengar HTTP (nomor port %u) telah diaktifkan.
+LA_DISABLE_HTTP_LISTENER	Pendengar HTTP telah dinonaktifkan.
 LA_SET_SERVER_PASSWORD	Kata sandi administrator server telah diatur.
 LA_SET_SERVER_CERT		Sertifikat server telah diatur.
 LA_REGENERATE_SERVER_CERT	Sertifikat server telah dihasilkan ulang. CN baru: "%S"
@@ -1208,6 +1217,32 @@ CMD_ListenerDisable_Help	Ini menghentikan operasi Listener TCP yang sedang berja
 CMD_ListenerDisable_Args	ListenerDisable [port]
 CMD_ListenerDisable_[port]	Menggunakan angka, tentukan nomor port dari listener TCP/IP yang ingin Anda hentikan.
 CMD_ListenerDisable_PortPrompt	Nomor port dari Listener TCP/IP yang akan dihentikan: 
+
+
+# HttpListenerGet command
+CMD_HttpListenerGet		Dapatkan Pengaturan Pendengar HTTP
+CMD_HttpListenerGet_Help	Ini menampilkan apakah pendengar HTTP aktif, nomor port TCP-nya, dan apakah pendengar itu sedang mendengarkan. Pendengar HTTP hanya menjawab dua hal: pengalihan permanen setiap permintaan ke HTTPS pada host dan path yang sama, dan file tantangan ACME HTTP-01 dari folder acme_webroot. Pendengar ini tidak membawa sesi VPN dan tidak melayani administrasi. \nUntuk menjalankan perintah ini, Anda harus memiliki hak akses administrator VPN Server.
+CMD_HttpListenerGet_Args	HttpListenerGet
+CMD_HttpListenerGet_COLUMN_1	Pendengar HTTP
+CMD_HttpListenerGet_COLUMN_2	Nomor Port
+CMD_HttpListenerGet_COLUMN_3	Status
+CMD_HttpListenerGet_ON		Aktif
+CMD_HttpListenerGet_OFF		Nonaktif
+CMD_HttpListenerGet_LISTENING	Mendengarkan
+CMD_HttpListenerGet_NOT_LISTENING	Tidak mendengarkan
+
+
+# HttpListenerEnable command
+CMD_HttpListenerEnable		Aktifkan Pendengar HTTP
+CMD_HttpListenerEnable_Help	Ini mengaktifkan pendengar HTTP, secara bawaan pada port TCP 80. Pendengar ini menjawab setiap permintaan dengan pengalihan permanen ke HTTPS pada host dan path yang sama, kecuali permintaan tantangan ACME HTTP-01: pendengar ini melayani file tantangan yang ditulis oleh klien ACME dalam mode webroot ke folder acme_webroot/.well-known/acme-challenge di samping konfigurasi server. Port tidak boleh berupa port dari Listener TCP. Jika program lain memakai port tersebut, pendengar HTTP tetap aktif tetapi tidak mendengarkan, dan terus mencoba sampai port itu bebas. \nUntuk menjalankan perintah ini, Anda harus memiliki hak akses administrator VPN Server.
+CMD_HttpListenerEnable_Args	HttpListenerEnable [port]
+CMD_HttpListenerEnable_[port]	Menggunakan angka, tentukan nomor port TCP/IP dari pendengar HTTP, dalam rentang 1 hingga 65535. Jika dihilangkan, nomor port yang tersimpan (80 pada awalnya) yang digunakan.
+
+
+# HttpListenerDisable command
+CMD_HttpListenerDisable		Nonaktifkan Pendengar HTTP
+CMD_HttpListenerDisable_Help	Ini menonaktifkan pendengar HTTP. Nomor port-nya disimpan untuk perintah HttpListenerEnable berikutnya. \nUntuk menjalankan perintah ini, Anda harus memiliki hak akses administrator VPN Server.
+CMD_HttpListenerDisable_Args	HttpListenerDisable
 
 
 # ServerPasswordSet command

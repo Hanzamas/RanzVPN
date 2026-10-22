@@ -386,6 +386,7 @@ static HARNESS_VPNCMD harness_vpncmd_list[] =
 	{"ListenerList", NULL, "ListenerList"},
 	{"HubList", NULL, "HubList"},
 	{"Caps", NULL, "Caps"},
+	{"HttpListenerGet", NULL, "HttpListenerGet"},
 	{"HARNESS_A_StatusGet", HARNESS_HUB_A, "StatusGet"},
 	{"HARNESS_A_CascadeList", HARNESS_HUB_A, "CascadeList"},
 	{"HARNESS_A_SessionList", HARNESS_HUB_A, "SessionList"},
@@ -8066,6 +8067,29 @@ UINT HarnessCloseServer(HARNESS *h)
 	HarnessFree(h);
 
 	return num_fail;
+}
+
+// The configuration round trip of a run of HarnessOpenServer: SiReleaseServer writes the configuration file, SiNewServer
+// loads it again, then the test listener and the admin RPC are back. False when a step failed
+bool HarnessRestartServer(HARNESS *h)
+{
+	UINT err = ERR_NO_ERROR;
+
+	AdminDisconnect(h->Rpc);
+	h->Rpc = NULL;
+	SiReleaseServer(h->Server);
+	h->Server = NULL;
+
+	h->Server = SiNewServer();
+	if (HarnessCheck(h, h->Server != NULL, "server restarted from the saved " HARNESS_CONFIG_FILE) == false ||
+		HarnessWaitListener(h, HARNESS_LISTEN_TIMEOUT) == false)
+	{
+		return false;
+	}
+
+	h->Rpc = HarnessAdminConnect(h->ClientCedar, HARNESS_START_TIMEOUT, &err);
+
+	return HarnessCheckErr(h, (h->Rpc != NULL ? ERR_NO_ERROR : err), "admin RPC reconnected after the restart");
 }
 
 // "ptrkey" (FND-84 #127): POINTER_TO_KEY (HashPtrToUINT) keys a block by its address. It hashed the first

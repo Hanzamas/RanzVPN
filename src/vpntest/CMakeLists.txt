@@ -64,6 +64,8 @@ ranz_add_executable(vpntest HAMCORE
     storetest.c
     # Named BGP sidecar test of CORE-S7-1 (#82)
     bgptest.c
+    # Named HTTP listener test of REL-6 (#51)
+    httplistener.c
   # The session and crypto modules of the new core for nodelogin.c; netapi32: the local account that stands for
   # a domain account (NetUserAdd)
   LIBRARIES

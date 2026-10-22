@@ -88,6 +88,8 @@ DECLARE_SC("CreateListener", RPC_LISTENER, ScCreateListener, InRpcListener, OutR
 DECLARE_SC_EX("EnumListener", RPC_LISTENER_LIST, ScEnumListener, InRpcListenerList, OutRpcListenerList, FreeRpcListenerList)
 DECLARE_SC("DeleteListener", RPC_LISTENER, ScDeleteListener, InRpcListener, OutRpcListener)
 DECLARE_SC("EnableListener", RPC_LISTENER, ScEnableListener, InRpcListener, OutRpcListener)
+DECLARE_SC("GetHttpListener", RPC_HTTP_LISTENER, ScGetHttpListener, InRpcHttpListener, OutRpcHttpListener)
+DECLARE_SC("SetHttpListener", RPC_HTTP_LISTENER, ScSetHttpListener, InRpcHttpListener, OutRpcHttpListener)
 DECLARE_SC("SetServerPassword", RPC_SET_PASSWORD, ScSetServerPassword, InRpcSetPassword, OutRpcSetPassword)
 DECLARE_SC_EX("SetServerCert", RPC_KEY_PAIR, ScSetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)
 DECLARE_SC_EX("GetServerCert", RPC_KEY_PAIR, ScGetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)

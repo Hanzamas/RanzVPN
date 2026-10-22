@@ -134,6 +134,8 @@ PACK *AdminInvoke(ADMIN *a, char *name, PACK *p) {
 	DECLARE_RPC_EX("EnumListener", RPC_LISTENER_LIST, StEnumListener, InRpcListenerList, OutRpcListenerList, FreeRpcListenerList)
 	DECLARE_RPC("DeleteListener", RPC_LISTENER, StDeleteListener, InRpcListener, OutRpcListener)
 	DECLARE_RPC("EnableListener", RPC_LISTENER, StEnableListener, InRpcListener, OutRpcListener)
+	DECLARE_RPC("GetHttpListener", RPC_HTTP_LISTENER, StGetHttpListener, InRpcHttpListener, OutRpcHttpListener)
+	DECLARE_RPC("SetHttpListener", RPC_HTTP_LISTENER, StSetHttpListener, InRpcHttpListener, OutRpcHttpListener)
 	DECLARE_RPC("SetServerPassword", RPC_SET_PASSWORD, StSetServerPassword, InRpcSetPassword, OutRpcSetPassword)
 	DECLARE_RPC_EX("SetServerCert", RPC_KEY_PAIR, StSetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)
 	DECLARE_RPC_EX("GetServerCert", RPC_KEY_PAIR, StGetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)

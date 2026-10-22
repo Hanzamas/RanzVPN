@@ -543,6 +543,58 @@ def make_http_seeds():
 
 
 # ---------------------------------------------------------------------------
+# HTTP listener (Cedar/HttpListener.c, REL-6 #51): the requests of the vpntest test httplistener
+# ---------------------------------------------------------------------------
+HTTPLISTENER_TOKEN = b'fuzz-token_0123456789abcdef'     # The one token that fuzz_httplistener.c serves
+
+
+def http_request(line, *headers):
+    return line + b'\r\n' + b''.join(h + b'\r\n' for h in headers) + b'\r\n'
+
+
+def make_httplistener_seeds():
+    host = b'Host: example.test'
+    challenge = b'/.well-known/acme-challenge/'
+    seeds = {
+        # Redirects to HTTPS
+        'redirect_query.txt': http_request(b'GET /some/path?x=1&y=2 HTTP/1.1', host),
+        'redirect_host_port.txt': http_request(b'GET /some/path?x=1&y=2 HTTP/1.1', b'Host: example.test:8080'),
+        'redirect_head.txt': http_request(b'HEAD /some/path?x=1&y=2 HTTP/1.1', host),
+        'redirect_http10.txt': http_request(b'GET /some/path?x=1&y=2 HTTP/1.0', host),
+        'redirect_ipv6_host.txt': http_request(b'GET /some/path?x=1&y=2 HTTP/1.1', b'Host: [2001:db8::1]:8080'),
+        'redirect_ipv4_host.txt': http_request(b'GET / HTTP/1.1', b'Host: 192.0.2.1'),
+        # ACME HTTP-01 challenges
+        'challenge_get.txt': http_request(b'GET ' + challenge + HTTPLISTENER_TOKEN + b' HTTP/1.1', host),
+        'challenge_head_query.txt': http_request(b'HEAD ' + challenge + HTTPLISTENER_TOKEN + b'?x=1 HTTP/1.1', host),
+        'challenge_unknown.txt': http_request(b'GET ' + challenge + b'0123456789abcdef0123 HTTP/1.1', host),
+        'challenge_dotdot.txt': http_request(b'GET ' + challenge + b'.. HTTP/1.1', host),
+        'challenge_percent.txt': http_request(b'GET ' + challenge + b'%2e%2e HTTP/1.1', host),
+        'challenge_slash.txt': http_request(b'GET ' + challenge + HTTPLISTENER_TOKEN + b'/x HTTP/1.1', host),
+        'challenge_backslash.txt': http_request(b'GET ' + challenge + HTTPLISTENER_TOKEN + b'\\x HTTP/1.1', host),
+        'challenge_device.txt': http_request(b'GET ' + challenge + b'NUL HTTP/1.1', host),
+        'challenge_long.txt': http_request(b'GET ' + challenge + b'a' * 256 + b' HTTP/1.1', host),
+        # Errors
+        'post.txt': http_request(b'POST / HTTP/1.1', host, b'Content-Length: 0'),
+        'request_line_no_version.txt': http_request(b'GET /', host),
+        'request_line_extra_word.txt': http_request(b'GET / HTTP/1.1 more', host),
+        'request_line_other_version.txt': http_request(b'GET / FTP/1.1', host),
+        'missing_host.txt': http_request(b'GET / HTTP/1.1', b'Accept: */*'),
+        'repeated_host.txt': http_request(b'GET / HTTP/1.1', host, b'Host: other.test'),
+        'host_at.txt': http_request(b'GET / HTTP/1.1', b'Host: user@example.test'),
+        'host_slash.txt': http_request(b'GET / HTTP/1.1', b'Host: example.test/x'),
+        'host_control.txt': http_request(b'GET / HTTP/1.1', b'Host: exa\x01mple.test'),
+        'host_bad_port.txt': http_request(b'GET / HTTP/1.1', b'Host: example.test:8x'),
+        'absolute_form.txt': http_request(b'GET http://example.test/ HTTP/1.1', host),
+        # Bytes that never complete a request, or go over the limits of the reader
+        'tls_client_hello.bin': client_hello(b''),
+        'incomplete.txt': b'GET / HTTP/1.1\r\n' + host + b'\r\n',
+        'over_long_line.txt': http_request(b'GET / HTTP/1.1', host, b'X-Pad: ' + b'A' * 4200),
+    }
+    for name, data in seeds.items():
+        write_seed('fuzz_httplistener', name, data)
+
+
+# ---------------------------------------------------------------------------
 # DHCP replies (Mayaqua/TcpIp.c DhcpModifyIPv4, DhcpModify, ParseDhcpOptions)
 # ---------------------------------------------------------------------------
 DHCP_COOKIE = b'\x63\x82\x53\x63'
@@ -794,6 +846,7 @@ if __name__ == '__main__':
     make_tcpip_seeds()
     make_x509_seeds()
     make_http_seeds()
+    make_httplistener_seeds()
     make_dhcp_seeds()
     make_net_seeds()
     make_stun_seeds()
