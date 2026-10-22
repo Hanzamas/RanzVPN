@@ -470,6 +470,9 @@ void svcargs_test(UINT num, char **arg);
 // Named FIFO and queue test of FND-215, #174 (fifo.c)
 void fifo_test(UINT num, char **arg);
 
+// Named hardened licence gate test of SEC-4, #282 (harden.c)
+void harden_test(UINT num, char **arg);
+
 // Named node tests of CORE-F3, #63 (nodetest.c)
 void node_test(UINT num, char **arg);
 void nodesvc_test(UINT num, char **arg);
@@ -630,6 +633,7 @@ TEST_LIST test_list[] =
 	{"nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result (administrator rights)."},
 	{"store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords."},
 	{"bgp", bgp_test, "BGP sidecar: ranz-bgp peers with a router (gobgpd, RANZ_GOBGP) on TCP 179, a prefix announced and withdrawn, a learned route installed through IP Helper (administrator rights)."},
+	{"harden", harden_test, "Hardened licence gate: ranzguard reports unlocked unwatched and degrades to locked under a debugger, never crashing (skips when ranzguard.exe is absent)."},
 };
 
 // Test function

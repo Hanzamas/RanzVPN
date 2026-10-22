@@ -36,6 +36,10 @@ include("${TOP_DIRECTORY}/cmake/RanzOptions.cmake")
 # ranz_add_executable(): each executable with its version resource, icon, manifest and options
 include("${TOP_DIRECTORY}/cmake/RanzExecutable.cmake")
 
+# The release-only hardened licence-gate binary ranzguard (SEC-4 #282, ADR-0036), x64 only and OFF by
+# default; the clean internal and debug variant is the default build
+option(RANZ_HARDENED "Build the release-only hardened licence-gate binary ranzguard (x64 only, ADR-0036)" OFF)
+
 # Check that submodules are present only if source was downloaded with git
 if(EXISTS "${TOP_DIRECTORY}/.git" AND NOT EXISTS "${TOP_DIRECTORY}/src/Mayaqua/3rdparty/liboqs/CMakeLists.txt")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
@@ -54,3 +58,12 @@ string(SUBSTRING "${BUILD_STAMP}" 0 4 DATE_YEAR)
 message(STATUS "Build time (UTC): ${BUILD_STAMP}")
 
 add_subdirectory(src)
+
+# ranzguard is added here, not from src/, so it escapes the control-flow-guard and other linker flags
+# that src/CMakeLists.txt sets (which would add a load-config import to its empty import table).
+if(RANZ_HARDENED)
+  if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR "RANZ_HARDENED is the x64-only hardened variant (ADR-0036)")
+  endif()
+  add_subdirectory(src/guard)
+endif()

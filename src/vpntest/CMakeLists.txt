@@ -64,6 +64,8 @@ ranz_add_executable(vpntest HAMCORE
     storetest.c
     # Named BGP sidecar test of CORE-S7-1 (#82)
     bgptest.c
+    # Named hardened licence gate test of SEC-4 (#282): drives ranzguard under the Win32 debug API
+    harden.c
   # The session and crypto modules of the new core for nodelogin.c; netapi32: the local account that stands for
   # a domain account (NetUserAdd)
   LIBRARIES
