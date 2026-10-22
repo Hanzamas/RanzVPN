@@ -51,6 +51,9 @@ struct SYSLOG_SETTING {
 
 struct SERVER {
 	LIST *ServerListenerList;
+	bool HttpListenerEnabled; // The HTTP listener setting (ServerHttpListener.c), under the listener list lock
+	UINT HttpListenerPort;
+	LISTENER *HttpListener; // NULL while it is off
 	UCHAR HashedPassword[SHA1_SIZE];
 	UINT64 StartTime;
 	UINT AutoSaveConfigSpan;
@@ -146,6 +149,8 @@ bool SiDisableListener(SERVER *s, UINT port);
 bool SiDeleteListener(SERVER *s, UINT port);
 SERVER_LISTENER *SiGetListener(SERVER *s, UINT port);
 SERVER_LISTENER_INFO *SiEnumListeners(SERVER *s, UINT *num);
+UINT SiSetHttpListener(SERVER *s, bool enabled, UINT port);
+void SiGetHttpListener(SERVER *s, bool *enabled, UINT *port, bool *listening);
 void SiSetDefaultHubOption(HUB_OPTION *o);
 FOLDER *SiWriteConfigurationToCfg(SERVER *s);
 void SiWriteMachineIdCfg(FOLDER *f, CEDAR *c);

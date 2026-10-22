@@ -7,6 +7,7 @@
 #include "BridgeWin32.h"
 #include "BuildInfo.h"
 #include "Connection.h"
+#include "HttpListener.h"
 #include "Link.h"
 #include "Listener.h"
 #include "Protocol.h"
@@ -20,6 +21,7 @@
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
+#include "Mayaqua/Network.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Platform.h"
@@ -308,17 +310,32 @@ static void SiInitCipherName(SERVER *s) {
 	SetCedarCipherList(s->Cedar, SERVER_DEFAULT_CIPHER_NAME);
 }
 
+// The one VPN listener of a default configuration (ADR-0020 decision 6): TCP 443, or TCP 5555 when 443 cannot be bound
+// at this first start. The probe binds as the listener does, without address reuse, and closes the socket at once.
+// With 5555 taken too the listener stays on 443 and retries it like any listener. A loaded configuration never comes
+// here, so a fallback listener on 5555 stays until the operator changes it.
 static void SiInitListenerList(SERVER *s) {
+	UINT port = SERVER_DEF_PORTS_1;
+	UINT err_1, err_4;
 	if (s == NULL)
 		return;
 
+	bool ipv4_only = s->Cedar->DisableIPv6Listener;
+
+	if (ListenProbe(SERVER_DEF_PORTS_1, &s->ListenIP, ipv4_only, &err_1) == false) {
+		if (ListenProbe(SERVER_DEF_PORTS_4, &s->ListenIP, ipv4_only, &err_4)) {
+			port = SERVER_DEF_PORTS_4;
+			SLog(s->Cedar, "LS_DEFAULT_LISTENER_FALLBACK", SERVER_DEF_PORTS_1, err_1, SERVER_DEF_PORTS_4,
+			     SERVER_DEF_PORTS_4, SERVER_DEF_PORTS_1, SERVER_DEF_PORTS_1, SERVER_DEF_PORTS_4);
+		} else {
+			SLog(s->Cedar, "LS_DEFAULT_LISTENER_BOTH_TAKEN", SERVER_DEF_PORTS_1, SERVER_DEF_PORTS_4, err_1, err_4,
+			     SERVER_DEF_PORTS_1);
+		}
+	}
+
 	SiLockListenerList(s);
 	{
-		{
-			// Default listeners: 443 and 5555
-			SiAddListenerEx(s, SERVER_DEF_PORTS_1, true, false);
-			SiAddListenerEx(s, SERVER_DEF_PORTS_4, true, false);
-		}
+		SiAddListenerEx(s, port, true, false);
 	}
 	SiUnlockListenerList(s);
 }
@@ -547,6 +564,8 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root) {
 
 	SiLoadListeners(s, f3);
 
+	SiLoadHttpListenerCfg(s, CfgFindFolder(root, "HttpListener"));
+
 	if (f4 != NULL)
 		SiLoadLocalBridges(s, f4);
 
@@ -715,6 +734,8 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s) {
 	CfgAddInt(root, "ConfigRevision", s->ConfigRevision);
 
 	SiWriteListeners(CfgCreateFolder(root, "ListenerList"), s);
+
+	SiWriteHttpListenerCfg(CfgCreateFolder(root, "HttpListener"), s);
 
 	SiWriteLocalBridges(CfgCreateFolder(root, "LocalBridgeList"), s);
 
@@ -2389,6 +2410,8 @@ static void SiStopAllListener(SERVER *s) {
 	}
 	SiUnlockListenerList(s);
 
+	SiFreeHttpListener(s);
+
 	ReleaseList(s->ServerListenerList);
 }
 
@@ -2488,6 +2511,7 @@ SERVER *SiNewServer(void) {
 	s->IsInVm = MsIsInVm();
 
 	s->ServerListenerList = NewList(CompareServerListener);
+	s->HttpListenerPort = HTTP_LISTENER_DEFAULT_PORT;
 	s->StartTime = SystemTime64();
 
 	PrepareChainCertDir();

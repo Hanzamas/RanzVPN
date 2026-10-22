@@ -252,8 +252,16 @@ The Noise sessions of up to 16 connections between the same two Nodes (`NOISE_TU
 _Avoid_: Cascade, link
 
 **BGP sidecar**:
-`ranz-bgp` (`ranz-bgp/`, Go), a separate process that embeds GoBGP as a library and peers with the operator's own routers on TCP 179 (ADR-0010, ADR-0022). A Node starts it only when its `Bgp` setting names peers (`NodeBgp.c`), talks to it over a named pipe with JSON messages, one per line (start, announce and withdraw from the Node; ready, peer, learned, withdrawn and error from the sidecar), and installs the learned routes into the Windows routing table through IP Helper; the sidecar installs none itself. It is the optional RanzBgp feature of the MSI.
+`ranz-bgp` (`ranz-bgp/`, Go), a separate process that embeds GoBGP as a library and peers with the operator's own routers on TCP 179 (ADR-0010, ADR-0022). A Node starts it only when its `Bgp` setting names peers (`NodeBgp.c`), talks to it over a named pipe with JSON messages, one per line (start, announce and withdraw from the Node; ready, peer, learned, withdrawn and error from the sidecar), and installs the learned routes into the Windows routing table through IP Helper; the sidecar installs none itself. It is the optional RanzBgp feature of the MSI until ONE-1 (#310) makes it the subcommand `ranz bgp` of `ranz.exe` (ADR-0011 amendment of 2026-10-22).
 _Avoid_: BGP daemon, BGP role (it is no Role), RRAS BGP
+
+**ranz.exe**:
+The one signed executable of the product, one per architecture (ADR-0011 amendment of 2026-10-22): a Go multi-call binary (`ranz controller`, `ranz bgp`, `ranz tray` and the CLI verbs) that carries the Node and what it needs as Payloads. `ranz install` unpacks and registers them and `ranz uninstall` reverses it. Decided and ticketed (ONE-1 to ONE-5, #310 to #314), not built yet; until then `ranz-controller`, `ranz-bgp` and `ranz-node` are separate files.
+_Avoid_: installer (the MSI is only a thin wrapper that runs `ranz install`), launcher, bundle
+
+**Payload**:
+A file embedded in `ranz.exe` that `ranz install` writes out after checking its Authenticode signature and its hash: `ranz-node`, the Wintun driver, the SeLow package, the XDP runtime and the rqlite member of a Controller. A component under the GPL or MPL stays a separate process; it enters the file only as an optional Payload, after its licence terms are checked (ADR-0036).
+_Avoid_: resource (an Intent resource is a different thing), plugin, dependency
 
 
 ## SDN language (new core)

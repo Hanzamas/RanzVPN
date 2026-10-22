@@ -556,6 +556,12 @@ static void BgpTestSpike(BGPTEST_CTX *ctx)
 	BgpTestCheck(ctx, BgpTestListens(bst.ProcessId, BGPTEST_PORT), "The sidecar listens on TCP 179 of 127.0.0.1",
 		"no listener of process %u on 127.0.0.1:%u", bst.ProcessId, BGPTEST_PORT);
 
+	// The strict DACL of ADR-0039 decision 3 (NODE_BGP_PIPE_SDDL), as the system holds it: GENERIC_ALL becomes the
+	// file rights it maps to
+	BgpTestCheck(ctx, StrCmp(bst.PipeAcl, "D:P(A;;FA;;;OW)") == 0 || StrCmp(bst.PipeAcl, "D:P(A;;GA;;;OW)") == 0,
+		"The pipe to the sidecar has the strict DACL: protected, full access for the account of the node (OWNER RIGHTS) alone",
+		"DACL \"%s\"", bst.PipeAcl);
+
 	// The prefix of announce in the settings reaches the router, leaves it after a withdraw, and comes back
 	BgpTestCheck(ctx, BgpTestWaitRouter(BGPTEST_ANNOUNCE, true), "The prefix the settings announce reaches the router",
 		"the router has no %s", BGPTEST_ANNOUNCE);

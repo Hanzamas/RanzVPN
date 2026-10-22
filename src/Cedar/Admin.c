@@ -134,6 +134,8 @@ PACK *AdminInvoke(ADMIN *a, char *name, PACK *p) {
 	DECLARE_RPC_EX("EnumListener", RPC_LISTENER_LIST, StEnumListener, InRpcListenerList, OutRpcListenerList, FreeRpcListenerList)
 	DECLARE_RPC("DeleteListener", RPC_LISTENER, StDeleteListener, InRpcListener, OutRpcListener)
 	DECLARE_RPC("EnableListener", RPC_LISTENER, StEnableListener, InRpcListener, OutRpcListener)
+	DECLARE_RPC("GetHttpListener", RPC_HTTP_LISTENER, StGetHttpListener, InRpcHttpListener, OutRpcHttpListener)
+	DECLARE_RPC("SetHttpListener", RPC_HTTP_LISTENER, StSetHttpListener, InRpcHttpListener, OutRpcHttpListener)
 	DECLARE_RPC("SetServerPassword", RPC_SET_PASSWORD, StSetServerPassword, InRpcSetPassword, OutRpcSetPassword)
 	DECLARE_RPC_EX("SetServerCert", RPC_KEY_PAIR, StSetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)
 	DECLARE_RPC_EX("GetServerCert", RPC_KEY_PAIR, StGetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)
@@ -345,12 +347,10 @@ ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err) {
 	SecurePassword(secure_null_password, null_password, login->Random);
 
 	if (Cmp(secure_null_password, login->SecurePassword, SHA1_SIZE) == 0) {
+		// Refuse a blank server admin or Hub admin password from any address but loopback (127.0.0.0/8, ::1)
 		if (IsLocalHostIP(&login->RemoteIP) == false) {
-			// Refuse a blank hub admin password from a remote client
-			if (hub_scope) {
-				*err = ERR_NULL_PASSWORD_LOCAL_ONLY;
-				return NULL;
-			}
+			*err = ERR_NULL_PASSWORD_LOCAL_ONLY;
+			return NULL;
 		}
 	}
 

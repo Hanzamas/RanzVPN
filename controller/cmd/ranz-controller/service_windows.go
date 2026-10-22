@@ -22,6 +22,15 @@ import (
 // serviceName is the name of the Windows service and the source of its Application log entries.
 const serviceName = "ranz-controller"
 
+// serviceAccount is the account the service runs as, its virtual account, not LocalSystem (ADR-0039
+// decision 3), and serviceSID its SID, the one Windows derives from the service name (the SHA-1 of
+// its upper-case UTF-16 form, as sc showsid prints it), so that the ACLs can name it before the
+// service exists.
+const (
+	serviceAccount = `NT SERVICE\` + serviceName
+	serviceSID     = "S-1-5-80-3572785604-795126647-2475823641-2319294638-1653438898"
+)
+
 // The event IDs of the service's entries in the Application log.
 const (
 	eventStarted = 1
@@ -31,9 +40,9 @@ const (
 	eventReset   = 5 // reset-admin created an admin token
 )
 
-// reservationSDDL lets LocalSystem, the service's account, register the URL prefixes of the
-// plain-HTTP port (the right `netsh http add urlacl user=SYSTEM` gives).
-const reservationSDDL = "D:(A;;GX;;;SY)"
+// reservationSDDL lets the service's account register the URL prefixes of the plain-HTTP port
+// (the right `netsh http add urlacl user="NT SERVICE\ranz-controller"` gives).
+const reservationSDDL = "D:(A;;GX;;;" + serviceSID + ")"
 
 // The registry value, under the service's key, that lists the URL reservations install made, so
 // that uninstall removes those and no reservation that existed before.
@@ -46,9 +55,10 @@ const (
 const logFile = "controller.log"
 
 // dataDirSDDL is the ACL of a data directory the controller creates: full control for SYSTEM,
-// the Administrators and the directory's owner, inherited, and nothing for anyone else. A
-// directory created under ProgramData would otherwise let every user read the controller key.
-const dataDirSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)"
+// the Administrators, the directory's owner and the service's account, inherited, and nothing for
+// anyone else. A directory created under ProgramData would otherwise let every user read the
+// controller key.
+const dataDirSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)(A;OICI;FA;;;" + serviceSID + ")"
 
 func defaultDataDir() string {
 	base := os.Getenv("ProgramData")
@@ -152,12 +162,20 @@ func (s *service) openLog() (*os.File, error) {
 	return os.OpenFile(filepath.Join(s.cfg.dataDir, logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }
 
-// install registers the Windows service, started automatically as LocalSystem and running this
-// executable with args, the event source of its Application log entries, and, with
-// -http-listen, the HTTP.sys URL reservations of the plain-HTTP port.
+// install registers the Windows service, started automatically as its virtual account and running
+// this executable with args, the event source of its Application log entries, and, with
+// -http-listen, the HTTP.sys URL reservations of the plain-HTTP port. It creates the data
+// directory, or sets the ACL of the one that exists, so that the service's account, which is not
+// an administrator, has it.
 func install(args []string, cfg config) error {
 	exe, err := os.Executable()
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(cfg.dataDir, 0o700); err != nil {
+		return err
+	}
+	if err := protectDir(cfg.dataDir); err != nil {
 		return err
 	}
 	m, err := mgr.Connect()
@@ -170,9 +188,11 @@ func install(args []string, cfg config) error {
 		return fmt.Errorf("the service %s already exists", serviceName)
 	}
 	s, err := m.CreateService(serviceName, exe, mgr.Config{
-		DisplayName: "Ranz controller",
-		Description: "Keeps the Ranz intent and pushes the desired state of each node over the control stream.",
-		StartType:   mgr.StartAutomatic,
+		DisplayName:      "Ranz controller",
+		Description:      "Keeps the Ranz intent and pushes the desired state of each node over the control stream.",
+		StartType:        mgr.StartAutomatic,
+		ServiceStartName: serviceAccount,
+		SidType:          windows.SERVICE_SID_TYPE_UNRESTRICTED,
 	}, args...)
 	if err != nil {
 		return err
@@ -192,8 +212,9 @@ func install(args []string, cfg config) error {
 	return nil
 }
 
-// reserve makes the HTTP.sys URL reservations of the plain-HTTP port for LocalSystem and records
-// the ones it made under the service's key. A reservation that exists already stays as it is.
+// reserve makes the HTTP.sys URL reservations of the plain-HTTP port for the service's account and
+// records the ones it made under the service's key. A reservation that exists already stays as it
+// is.
 func reserve(httpListen string) error {
 	prefixes, err := port.PlainPrefixes(httpListen)
 	if err != nil {

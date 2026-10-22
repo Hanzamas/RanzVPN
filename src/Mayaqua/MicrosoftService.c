@@ -277,13 +277,17 @@ bool MsUpdateServiceConfig(char *name) {
 	return true;
 }
 
-bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path) {
+// Install the service, as LocalSystem, or with virtual_account as its virtual account NT SERVICE\<name>, which
+// needs no password and whose SID is the service SID (an unrestricted service SID type)
+bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, bool virtual_account) {
 	bool ret = false;
 	wchar_t name_w[MAX_SIZE];
+	wchar_t account[MAX_SIZE];
 	if (name == NULL || title == NULL || path == NULL)
 		return false;
 
 	StrToUni(name_w, sizeof(name_w), name);
+	UniFormat(account, sizeof(account), SVC_VIRTUAL_ACCOUNT_PREFIX L"%s", name_w);
 
 	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 	if (sc == NULL)
@@ -291,7 +295,7 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 
 	SC_HANDLE service = CreateServiceW(sc, name_w, title, SERVICE_ALL_ACCESS,
 	                                   SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START,
-	                                   SERVICE_ERROR_NORMAL, path, NULL, NULL, NULL, NULL, NULL);
+	                                   SERVICE_ERROR_NORMAL, path, NULL, NULL, NULL, virtual_account ? account : NULL, NULL);
 
 	if (service != NULL) {
 		SERVICE_DESCRIPTIONW d;
@@ -301,6 +305,14 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 		Zero(&d, sizeof(d));
 		d.lpDescription = description;
 		ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
+
+		if (virtual_account) {
+			SERVICE_SID_INFO sid_info;
+
+			Zero(&sid_info, sizeof(sid_info));
+			sid_info.dwServiceSidType = SERVICE_SID_TYPE_UNRESTRICTED;
+			ChangeServiceConfig2W(service, SERVICE_CONFIG_SERVICE_SID_INFO, &sid_info);
+		}
 
 		MsSetServiceRecovery(service);
 

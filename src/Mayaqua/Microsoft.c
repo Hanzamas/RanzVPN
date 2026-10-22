@@ -358,6 +358,12 @@ static void MsSvcMsg(bool silent, char *id, ...) {
 // before the service starts, and /uninstall and /setup_uninstall delete; NULL for none. The service
 // itself adds no rule when it starts.
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule) {
+	return MsServiceEx(name, start, stop, cmd_line, firewall_rule, false);
+}
+
+// MsService, which with virtual_account installs the service to run as its virtual account, NT SERVICE\<service
+// name>, instead of LocalSystem: the least privilege of ADR-0039 decision 3, for the services of the new core
+UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule, bool virtual_account) {
 	UINT mode;
 	UINT ret = 0;
 	char *arg;
@@ -467,7 +473,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 						MsStopService(service_name);
 					MsUninstallService(service_name);
 				}
-				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false)
+				if (MsInstallServiceExW(service_name, service_title, service_description, path, virtual_account) == false)
 					ret = 1;
 				if (firewall_rule != NULL)
 					MsAddFirewallRule(firewall_rule, ms->ExeFileNameW);
@@ -511,7 +517,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 					}
 				}
 
-				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false) {
+				if (MsInstallServiceExW(service_name, service_title, service_description, path, virtual_account) == false) {
 					MsSvcMsg(silent, "SVC_INSTALL_FAILED", service_title, service_name);
 					break;
 				}

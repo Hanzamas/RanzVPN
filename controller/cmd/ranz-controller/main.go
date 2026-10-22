@@ -85,6 +85,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/mitigation"
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
@@ -232,7 +233,16 @@ func loopbackAddr(addr string) bool {
 	return err == nil && a.IsLoopback()
 }
 
+// mitigations and mitigationErr are what mitigation.Apply did in main, which run logs; nil when a
+// test calls run itself.
+var (
+	mitigations   []mitigation.Result
+	mitigationErr error
+)
+
 func main() {
+	// The process mitigations of ADR-0039 before the controller starts anything
+	mitigations, mitigationErr = mitigation.Apply()
 	args := os.Args[1:]
 	if len(args) > 0 && (args[0] == "install" || args[0] == "uninstall") {
 		var err error
@@ -300,6 +310,7 @@ type hooks struct {
 // run runs the controller until ctx ends: rqlited if the configuration asks for it, the store,
 // the TLS port, and the optional ports. out receives the output of rqlited.
 func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hooks) error {
+	mitigation.Log(log, mitigations, mitigationErr)
 	if err := makeDataDir(cfg.dataDir); err != nil {
 		return err
 	}
