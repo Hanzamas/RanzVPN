@@ -13,7 +13,6 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit);
 bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit);
 bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 bool MsEnablePrivilege(char *name, bool enable);
-char *MsGetExeDirName();
 void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir);
 wchar_t *MsGetExeFileNameW();
 wchar_t *MsGetUserNameW();
@@ -22,7 +21,8 @@ bool MsUpdateServiceConfig(char *name);
 bool MsUninstallService(char *name);
 bool MsStopService(char *name);
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a);
-void MsRegistWindowsFirewallEx(char *title, char *exe);
+bool MsAddFirewallRule(wchar_t *name, wchar_t *exe);
+bool MsDeleteFirewallRule(wchar_t *name);
 void MsGetComputerName(char *name, UINT size);
 
 #endif // MICROSOFT_INTERNAL_H

@@ -551,6 +551,8 @@ SVC_STOP_FAILED			Layanan "%s" (nama layanan: %S) gagal dihentikan.
 SVC_ALREADY_STOP		Layanan "%s" (nama layanan: %S) sudah dihentikan.
 SVC_UNINSTALL_OK		Layanan "%s" (Nama Layanan: %S) telah berhasil dihapus.
 SVC_UNINSTALL_FAILED	Penghapusan layanan "%s" (nama layanan: %S) gagal.
+SVC_FIREWALL_ADD_FAILED	Aturan masuk "%s" di Windows Firewall untuk %s tidak dapat ditambahkan. Komputer lain mungkin tidak dapat terhubung ke layanan.
+SVC_FIREWALL_DELETE_FAILED	Aturan masuk "%s" di Windows Firewall tidak dapat dihapus. Hapus aturan tersebut di Windows Defender Firewall with Advanced Security.
 SVC_NOT_FOUND			Tidak dapat menemukan informasi terkait layanan %S dari tabel string.
 SVC_NOT_ADMIN			Untuk menginstal, menghapus instalasi, memulai atau menghentikan layanan, Anda harus memiliki hak administrator untuk komputer ini.\r\n\r\nJika Anda memiliki akun administrator untuk komputer ini, keluar dan masuk sebagai administrator. \r\nJika Anda tidak jelas tentang akun administrator, hubungi administrator sistem Anda.
 SVC_TEST_MSG			Layanan "%s" telah dimulai dalam mode uji.\r\n\r\nKlik OK untuk keluar dari layanan.
@@ -826,6 +828,8 @@ LS_SAVE_CONFIG_RESTORED	File konfigurasi "%s" telah tersimpan kembali setelah pe
 LS_LISTENER_START_1		Pendengar TCP (port %u) sedang dimulai.
 LS_LISTENER_START_2		Pendengar TCP (port %u) telah dimulai. Sekarang mendengarkan koneksi dari klien.
 LS_LISTENER_START_3		Tidak dapat mengatur port untuk status Dengar untuk Pendengar TCP (port %u). Mencoba pada interval tetap sampai berhasil.
+LS_DEFAULT_LISTENER_FALLBACK	Port TCP %u tidak dapat dibuka (galat soket Windows %u): program lain sedang memakainya atau Windows mencadangkannya. Pendengar VPN bawaan dari konfigurasi baru ini memakai port TCP %u sebagai gantinya, jadi vpncmd harus menyebut port %u untuk menjangkau server ini. Untuk memindahkan pendengar ke port %u: bebaskan port itu, jalankan ListenerCreate %u, lalu ListenerDelete %u.
+LS_DEFAULT_LISTENER_BOTH_TAKEN	Port TCP %u dan %u tidak dapat dibuka (galat soket Windows %u dan %u). Pendengar VPN bawaan tetap pada port TCP %u dan terus mencobanya; ListenerList menampilkannya sebagai Gagal sampai port itu bebas.
 LS_LISTENER_ACCEPT		Pada Pendengar TCP (Port %u), sebuah Klien (alamat IP %S, Nama host "%S", Nomor port %u) telah terhubung.
 LS_LISTENER_DISCONNECT	Koneksi dengan klien (alamat IP %S, Nomor port %u) telah diputuskan.
 LS_LISTENER_DOS			Sebuah serangan DoS pada Pendengar TCP (port %u) telah terdeteksi. Alamat IP sumber yang terhubung adalah %S, nomor port %u. Koneksi ini akan diputuskan paksa sekarang.

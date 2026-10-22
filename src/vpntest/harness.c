@@ -36,6 +36,9 @@
 //   mode). The configuration file and its backup folder are deleted at the start and at the end.
 // - "listenerbind" (FIX-3 #99) adds listeners on TCP 39557 (held by the test) and 39558 through the admin
 //   RPC and deletes them again; "certdl" runs its own loopback listener on TCP 39556.
+// - "listeners" (REL-3 #48, listeners.c) keeps the default listener of the server, holds TCP 443 and 5555, and uses
+//   TCP 39559 and 39560. Its case 6 (REL-4 #49) logs in to the test listener at an address of the machine that is not
+//   loopback and puts back the $adminip.txt it changes.
 // - Phase "zerokey" (SEC-6 #96) runs after the Pack goldens: CreateUser and SetUser refuse a password user
 //   without a password hash, and the user it creates is deleted again before the configuration phases.
 // - Phase "iptablelock" (SEC-6 #96, FND-11 #107) runs after "zerokey": while the test holds the MacHashTable lock of
@@ -1804,9 +1807,10 @@ static bool HarnessWaitSession(HARNESS *h, HARNESS_PA *p, UINT timeout)
 	return HarnessCheck(h, false, tmp);
 }
 
-// Start the server from a fresh configuration, add the test listener, connect the admin RPC and delete
-// every other listener
-static bool HarnessStartServer(HARNESS *h)
+// Start the server from its configuration file HARNESS_CONFIG_FILE, deleted first when fresh is true, add the test
+// listener unless the configuration lists it, and connect the admin RPC. The other listeners stay. A run that
+// started the server this way stops it with HarnessStopServerKeep or HarnessStopServer.
+bool HarnessStartServerKeep(HARNESS *h, bool fresh)
 {
 	UINT err = ERR_NO_ERROR;
 	bool ok;
@@ -1814,25 +1818,33 @@ static bool HarnessStartServer(HARNESS *h)
 
 	HarnessSetPhase("setup", "server start");
 
-	// Isolated configuration file: always start from the default configuration
-	h->OldConfigName = SERVER_CONFIG_FILE_NAME;
+	// Isolated configuration file; the name before the run is kept once, for HarnessStopServer
+	if (h->OldConfigName == NULL)
+	{
+		h->OldConfigName = SERVER_CONFIG_FILE_NAME;
+	}
 	SERVER_CONFIG_FILE_NAME = HARNESS_CONFIG_FILE;
-	HarnessDeleteConfigFiles();
+	if (fresh)
+	{
+		HarnessDeleteConfigFiles();
+	}
 
 	h->ClientCedar = NewCedar(NULL, NULL);
 
 	// Same server object as the "s" mode (StStartServer is a wrapper of SiNewServer)
 	h->Server = SiNewServer();
-	if (HarnessCheck(h, h->Server != NULL, "server started in-process from a fresh " HARNESS_CONFIG_FILE) == false)
+	if (HarnessCheck(h, h->Server != NULL, fresh ? "server started in-process from a fresh " HARNESS_CONFIG_FILE :
+		"server started in-process from the saved " HARNESS_CONFIG_FILE) == false)
 	{
 		return false;
 	}
 
 	// The admin RPC needs a listener: add the test listener through the server API.
 	// DoS protection is off on it because the harness opens many local connections in a short time.
+	// A configuration that an earlier start of the run saved lists it already.
 	SiLockListenerList(h->Server);
 	{
-		ok = SiAddListenerEx(h->Server, HARNESS_PORT, true, true);
+		ok = (SiGetListener(h->Server, HARNESS_PORT) != NULL || SiAddListenerEx(h->Server, HARNESS_PORT, true, true));
 	}
 	SiUnlockListenerList(h->Server);
 
@@ -1845,12 +1857,15 @@ static bool HarnessStartServer(HARNESS *h)
 	HarnessSetPhase("setup", "admin RPC");
 	h->Rpc = HarnessAdminConnect(h->ClientCedar, HARNESS_START_TIMEOUT, &err);
 	Format(tmp, sizeof(tmp), "admin RPC connected to 127.0.0.1:%u with the empty password", HARNESS_PORT);
-	if (HarnessCheckErr(h, (h->Rpc != NULL ? ERR_NO_ERROR : err), tmp) == false)
-	{
-		return false;
-	}
 
-	return HarnessUseOnlyTestListener(h);
+	return HarnessCheckErr(h, (h->Rpc != NULL ? ERR_NO_ERROR : err), tmp);
+}
+
+// Start the server from a fresh configuration, add the test listener, connect the admin RPC and delete
+// every other listener
+static bool HarnessStartServer(HARNESS *h)
+{
+	return HarnessStartServerKeep(h, true) && HarnessUseOnlyTestListener(h);
 }
 
 // Start the server, the test listener, the admin RPC, the hubs, the users, the cascade and the test sessions
@@ -3932,8 +3947,9 @@ static void HarnessTeardown(HARNESS *h, bool check)
 	HarnessStopServer(h);
 }
 
-// Disconnect the admin RPC, stop the server and delete its configuration files
-static void HarnessStopServer(HARNESS *h)
+// Disconnect the admin RPC and stop the server. The server saves its configuration file as it stops, and the file
+// stays for the next HarnessStartServerKeep of the run.
+void HarnessStopServerKeep(HARNESS *h)
 {
 	if (h->Rpc != NULL)
 	{
@@ -3947,17 +3963,23 @@ static void HarnessStopServer(HARNESS *h)
 		h->Server = NULL;
 	}
 
+	if (h->ClientCedar != NULL)
+	{
+		ReleaseCedar(h->ClientCedar);
+		h->ClientCedar = NULL;
+	}
+}
+
+// Disconnect the admin RPC, stop the server and delete its configuration files
+static void HarnessStopServer(HARNESS *h)
+{
+	HarnessStopServerKeep(h);
+
 	if (h->OldConfigName != NULL)
 	{
 		SERVER_CONFIG_FILE_NAME = h->OldConfigName;
 		h->OldConfigName = NULL;
 		HarnessDeleteConfigFiles();
-	}
-
-	if (h->ClientCedar != NULL)
-	{
-		ReleaseCedar(h->ClientCedar);
-		h->ClientCedar = NULL;
 	}
 }
 
@@ -8022,23 +8044,29 @@ void adminaudit_test(UINT num, char **arg)
 ////////////////////////////
 // In-process server of the named tests in other files (login.c)
 
-// Watchdog of the run that HarnessOpenServer started (one test command runs at a time)
+// Watchdog of the run that HarnessOpenServer or HarnessOpenRun started (one test command runs at a time)
 static HARNESS_WATCHDOG *harness_open_watchdog = NULL;
 
-// Start a run of a named test in another file: its watchdog (marker test_name, process aborted after limit ms), the
-// server from a fresh configuration with the test listener and the admin RPC, then, unless hubname is NULL, the online
-// hub hubname with the password user username (HARNESS_PASSWORD). *ok is false when a step failed. HarnessCloseServer
-// ends the run in every case.
-HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *username, bool *ok)
+// Start a run of a named test in another file that starts and stops the server itself (HarnessStartServerKeep,
+// HarnessStopServerKeep): only its watchdog (marker test_name, process aborted after limit ms). HarnessCloseServer
+// ends the run and deletes the configuration files of the run.
+HARNESS *HarnessOpenRun(char *test_name, UINT limit)
 {
 	HARNESS *h = HarnessNew();
 
 	harness_open_watchdog = HarnessStartWatchdog(test_name, limit);
 
-	Print("[setup]\n");
-	*ok = HarnessStartServer(h);
+	return h;
+}
 
-	if (*ok && hubname != NULL)
+// Start the server of a run from a fresh configuration with the test listener only and the admin RPC, then, unless
+// hubname is NULL, the online hub hubname with the password user username (HARNESS_PASSWORD). False when a step
+// failed. HarnessStopServerKeep or HarnessCloseServer stops it.
+bool HarnessStartServerHub(HARNESS *h, char *hubname, char *username)
+{
+	bool ok = HarnessStartServer(h);
+
+	if (ok && hubname != NULL)
 	{
 		// A server session then ends as soon as its last TCP connection is gone (Session.c, SessionMain), instead
 		// of after the 20 s TimeOut of the default policy. Set after the server started, because loading its
@@ -8046,8 +8074,22 @@ HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *use
 		SetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT, 1);
 
 		HarnessSetPhase("setup", "hub and user");
-		*ok = HarnessCreateHub(h, hubname) && HarnessCreateUser(h, hubname, username, L"Harness login tester");
+		ok = HarnessCreateHub(h, hubname) && HarnessCreateUser(h, hubname, username, L"Harness login tester");
 	}
+
+	return ok;
+}
+
+// Start a run of a named test in another file: its watchdog (marker test_name, process aborted after limit ms), the
+// server from a fresh configuration with the test listener and the admin RPC, then, unless hubname is NULL, the online
+// hub hubname with the password user username (HARNESS_PASSWORD). *ok is false when a step failed. HarnessCloseServer
+// ends the run in every case.
+HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *username, bool *ok)
+{
+	HARNESS *h = HarnessOpenRun(test_name, limit);
+
+	Print("[setup]\n");
+	*ok = HarnessStartServerHub(h, hubname, username);
 
 	return h;
 }

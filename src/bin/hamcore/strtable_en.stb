@@ -551,6 +551,8 @@ SVC_STOP_FAILED			The "%s" service (service name: %S) failed to stop.
 SVC_ALREADY_STOP		The "%s" service (service name: %S) is already stopped.
 SVC_UNINSTALL_OK		The "%s" service (Service name: %S) has been uninstalled successfully.
 SVC_UNINSTALL_FAILED	The uninstallation of the "%s" service (service name: %S) failed.
+SVC_FIREWALL_ADD_FAILED	The inbound rule "%s" of Windows Firewall for %s could not be added. Other computers may be unable to connect to the service.
+SVC_FIREWALL_DELETE_FAILED	The inbound rule "%s" of Windows Firewall could not be deleted. Delete it in Windows Defender Firewall with Advanced Security.
 SVC_NOT_FOUND			Unable to find information related to service %S from the string table.
 SVC_NOT_ADMIN			To install, uninstall, start or stop the service you must have administrator privileges for this computer. \r\n\r\nIf you have an administrators account for this computer, log out and log on as an administrator. \r\nIf you are unclear about administrators accounts, contact your system administrator.
 SVC_TEST_MSG			The "%s" service is started in test mode. \r\n\r\nClick OK to exit the service.
@@ -826,6 +828,8 @@ LS_SAVE_CONFIG_RESTORED	The configuration file "%s" has been saved again after a
 LS_LISTENER_START_1		TCP Listener (port %u) is starting.
 LS_LISTENER_START_2		TCP Listener (port %u) has started. Now listening for connection from client.
 LS_LISTENER_START_3		Unable to set port to Listen status for TCP Listener (port %u). Attempting at fixed intervals until successful.
+LS_DEFAULT_LISTENER_FALLBACK	TCP port %u could not be opened (Windows socket error %u): another program is using it or Windows reserves it. The default VPN listener of this new configuration uses TCP port %u instead, so vpncmd must name port %u to reach this server. To move the listener to port %u: free that port, run ListenerCreate %u, then ListenerDelete %u.
+LS_DEFAULT_LISTENER_BOTH_TAKEN	TCP ports %u and %u could not be opened (Windows socket errors %u and %u). The default VPN listener stays on TCP port %u and keeps trying it; ListenerList shows it as Error until the port is free.
 LS_LISTENER_ACCEPT		On the TCP Listener (Port %u), a Client (IP address %S, Host name "%S", Port number %u) has connected.
 LS_LISTENER_DISCONNECT	The connection with the client (IP address %S, Port number %u) has been disconnected.
 LS_LISTENER_DOS			A DoS attack on the TCP Listener (port %u) has been detected. The connecting source IP address is %S, port number is %u. This connection will be forcefully disconnected now.
