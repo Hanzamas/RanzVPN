@@ -45,6 +45,9 @@ var stateNames = map[bgp.FSMState]string{
 type Options struct {
 	Logger   *slog.Logger   // the log of the sidecar and of GoBGP; none when nil
 	LogLevel *slog.LevelVar // the level of Logger, which GoBGP may change; may be nil
+
+	// started, when set, gets GoBGP once BGP runs, before ready; the tests look into its RIB.
+	started func(*server.BgpServer)
 }
 
 // Version names ranz-bgp and the GoBGP it embeds.
@@ -134,6 +137,9 @@ func Run(ctx context.Context, conn io.ReadWriteCloser, opts Options) error {
 		return err
 	}
 	defer s.stop()
+	if opts.started != nil {
+		opts.started(s.bgp)
+	}
 
 	if err := w.Write(Message{Type: TypeReady, Version: Version(), Protocol: ProtocolVersion}); err != nil {
 		return err

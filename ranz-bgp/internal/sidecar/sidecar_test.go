@@ -41,24 +41,28 @@ func freePort(t *testing.T) int {
 // testNode is the node's end of a session over an in-memory pipe: it sends messages and keeps
 // every message of the sidecar.
 type testNode struct {
-	t    *testing.T
-	conn net.Conn
-	w    *Writer
-	msgs chan Message
-	seen []Message
-	done chan error
+	t       *testing.T
+	conn    net.Conn
+	w       *Writer
+	msgs    chan Message
+	seen    []Message
+	done    chan error
+	started chan *server.BgpServer
+	bgp     *server.BgpServer // the GoBGP of the sidecar, from started
 }
 
 func startNode(t *testing.T, ctx context.Context) *testNode {
 	nodeEnd, sidecarEnd := net.Pipe()
 	n := &testNode{
-		t:    t,
-		conn: nodeEnd,
-		w:    NewWriter(nodeEnd),
-		msgs: make(chan Message, 1024),
-		done: make(chan error, 1),
+		t:       t,
+		conn:    nodeEnd,
+		w:       NewWriter(nodeEnd),
+		msgs:    make(chan Message, 1024),
+		done:    make(chan error, 1),
+		started: make(chan *server.BgpServer, 1),
 	}
-	go func() { n.done <- Run(ctx, sidecarEnd, Options{Logger: testLogger()}) }()
+	opts := Options{Logger: testLogger(), started: func(b *server.BgpServer) { n.started <- b }}
+	go func() { n.done <- Run(ctx, sidecarEnd, opts) }()
 	go func() {
 		r := NewReader(nodeEnd)
 		for {
@@ -123,6 +127,34 @@ func (n *testNode) drain() {
 			return
 		}
 	}
+}
+
+// hasPath reports whether the global RIB of the sidecar holds a path to prefix from peer, the
+// best path or another one. It is for after ready.
+func (n *testNode) hasPath(prefix, peer string) bool {
+	n.t.Helper()
+	if n.bgp == nil {
+		n.bgp = <-n.started
+	}
+	family := bgp.RF_IPv4_UC
+	if netip.MustParsePrefix(prefix).Addr().Is6() {
+		family = bgp.RF_IPv6_UC
+	}
+	found := false
+	err := n.bgp.ListPath(apiutil.ListPathRequest{TableType: api.TableType_TABLE_TYPE_GLOBAL, Family: family}, func(nlri bgp.NLRI, paths []*apiutil.Path) {
+		if nlri.String() != prefix {
+			return
+		}
+		for _, p := range paths {
+			if p.PeerAddress.String() == peer {
+				found = true
+			}
+		}
+	})
+	if err != nil {
+		n.t.Fatalf("sidecar RIB: %v", err)
+	}
+	return found
 }
 
 // count is the number of messages seen that match.
@@ -331,8 +363,11 @@ func TestSession(t *testing.T) {
 		t.Errorf("192.0.2.128/25 is outside accept, but the node learned it %d times", c)
 	}
 
-	// The best route to 2001:db8:100::/48 moves to router b when router a withdraws it.
+	// The best route to 2001:db8:100::/48 moves to router b when router a withdraws it. The route of
+	// router a stays the best one until then, so no message tells when the sidecar has the route of
+	// router b: the test looks into the RIB of the sidecar, or the withdraw could overtake it.
 	b.announce("2001:db8:100::/48", "2001:db8::fb")
+	waitUntil(t, "the sidecar has 2001:db8:100::/48 from router b", func() bool { return node.hasPath("2001:db8:100::/48", "127.0.0.2") })
 	a.withdraw("2001:db8:100::/48")
 	moved := node.wait("2001:db8:100::/48 via router b", false, func(m Message) bool {
 		return m.Type == TypeLearned && m.Prefix == "2001:db8:100::/48" && m.Peer == "127.0.0.2"
