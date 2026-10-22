@@ -55,7 +55,7 @@ env:
   # The Go of controller.yml and ranz-bgp.yml: ranz-noisepeer (controller/cmd/ranz-noisepeer), the
   # flynn/noise end of the session module's interop test (coretest noiseinterop, CORE-F2 #62), and
   # the BGP sidecar spike (ranz-bgp.yml, CORE-S7-1)
-  GO_VERSION: '1.27.2'
+  GO_VERSION: '1.27.3'
 
 jobs:
   build_and_test:
@@ -249,6 +249,24 @@ jobs:
         $hits | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
         if ($hits.Count -gt 0) { throw "coretest links OpenSSL or liboqs: $($hits.Count) lines of build/coretest.map" }
         Write-Host "build/coretest.map (${{ matrix.platform.ARCHITECTURE }}): corecrypto and corenoise linked, no OpenSSL or liboqs object, library or symbol"
+    # The exploit-mitigation flags of ADR-0039 decision 1 (SEC-1, #279) on the node, the shipped
+    # executable of the new core, read from the binary with dumpbin: CFG, CET (x64), high-entropy
+    # ASLR, DEP, /GS and /sdl, or an exception that says why not (.github/scripts/binary-hardening.ps1).
+    # ranz-noisepeer, a Go test tool built without them, must fail the gate.
+    - name: Binary hardening
+      shell: pwsh
+      run: |
+        ./.github/scripts/binary-hardening.ps1 -Path build\ranz-node.exe -Unhardened build\ranz-noisepeer.exe
+    # When a step fails: what the build asked the linker for, next to what the gate read from the
+    # binary. The link command of ranz-node (ninja -t commands; its response file holds the objects
+    # and libraries) and the link variables of its build statement in build.ninja.
+    - name: Link command of ranz-node
+      if: failure()
+      shell: pwsh
+      run: |
+        $ninja = (Select-String -LiteralPath build\CMakeCache.txt -Pattern '^CMAKE_MAKE_PROGRAM:\w+=(.+)$').Matches[0].Groups[1].Value
+        & $ninja -C build -t commands ranz-node.exe | Select-Object -Last 1
+        (Select-String -LiteralPath build\build.ninja -Pattern '^build ranz-node\.exe:' -Context 0, 20).Context.PostContext | Where-Object { $_ -match '^\s+LINK_' }
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}

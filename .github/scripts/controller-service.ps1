@@ -4,7 +4,12 @@ $ErrorActionPreference = 'Stop'
 
 # ranz-controller as a Windows service (SDN-2, #178). Installed with rqlited as its sidecar and
 # with plain HTTP on port 80, the service must:
-# - reserve the URL prefixes of port 80 in HTTP.sys at install, and remove them at uninstall;
+# - run as its virtual account NT SERVICE\ranz-controller, not LocalSystem, with an unrestricted
+#   service SID that is the serviceSID of cmd/ranz-controller/service_windows.go; run with the
+#   process mitigations of internal/mitigation and load DLLs from System32 only, as go test reads
+#   its process from outside (TestProcess), and say so in its log (ADR-0039, SEC-1 #279);
+# - reserve the URL prefixes of port 80 in HTTP.sys for that account at install, and remove them
+#   at uninstall;
 # - serve the API and the control stream on TCP 443, told apart by ALPN;
 # - serve port 80 through HTTP.sys, which the runner's system holds already: its own answer on
 #   the ACME HTTP-01 path, and a 301 to HTTPS on the TLS port for the rest of the port unless
@@ -46,6 +51,9 @@ $api = 'https://127.0.0.1'
 $control = '127.0.0.1:443'
 $acmePrefix = 'http://+:80/.well-known/acme-challenge/'
 $redirectPrefix = 'http://*:80/'
+# The account of the service and its SID (serviceAccount and serviceSID of service_windows.go)
+$account = "NT SERVICE\$service"
+$serviceSid = 'S-1-5-80-3572785604-795126647-2475823641-2319294638-1653438898'
 
 $data = Join-Path $env:RUNNER_TEMP 'ranz-controller-data'
 # adminTokenFile of cmd/ranz-controller: the secret of the admin token of the first start
@@ -142,6 +150,34 @@ function Get-URLReservation([string] $prefix) {
 	return ((& netsh http show urlacl "url=$prefix") -join "`n")
 }
 
+# The hardening of ADR-0039 on the running service: its account and the SID Windows gives it, and
+# its process read from outside by TestProcess of internal/mitigation, with the debug privilege of
+# the runner's elevated account: every mitigation that is not off is set, and every DLL is in
+# System32. Its log records them.
+function Test-Hardening {
+	$svc = Get-CimInstance Win32_Service -Filter "Name='$service'"
+	if ($svc.StartName -ne $account) { throw "$service runs as '$($svc.StartName)', not its virtual account $account" }
+	$sidType = (& sc.exe qsidtype $service | Out-String)
+	if ($sidType -notmatch 'UNRESTRICTED') { throw "the service SID type of $service is not unrestricted:`n$sidType" }
+	$sid = (& sc.exe showsid $service | Out-String)
+	if ($sid -notmatch [regex]::Escape($serviceSid)) { throw "Windows gives $account another SID than serviceSID ($serviceSid):`n$sid" }
+	Write-Host "$service runs as $account ($serviceSid), process $($svc.ProcessId)"
+	Push-Location (Join-Path $PSScriptRoot '..\..\controller')
+	try {
+		$env:RANZ_MITIGATION_PID = "$($svc.ProcessId)"
+		go test -count=1 -v -run '^TestProcess$' ./internal/mitigation
+		$code = $LASTEXITCODE
+	} finally {
+		Remove-Item Env:RANZ_MITIGATION_PID -ErrorAction SilentlyContinue
+		Pop-Location
+	}
+	if ($code -ne 0) { throw "the process of $service lacks a mitigation or loaded a DLL outside System32 (go test exited with code $code)" }
+	$log = Get-Content -LiteralPath (Join-Path $data 'controller.log') -Raw
+	if ($log -notmatch [regex]::Escape('msg="DLLs load from System32 only"') -or $log -match [regex]::Escape('msg="process mitigation not set"')) {
+		throw 'controller.log does not record the process mitigations and the DLL search of the service'
+	}
+}
+
 function Get-ServiceEvents {
 	@(Get-WinEvent -LogName Application -FilterXPath "*[System[Provider[@Name='$service']]]" -ErrorAction SilentlyContinue |
 		Where-Object { $_.TimeCreated -ge $since } | Sort-Object RecordId)
@@ -172,12 +208,19 @@ try {
 	Write-Host (Invoke-Checked $controller @('install', '-data', $data, '-rqlited', $env:RQLITED, '-http-listen', ':80'))
 	foreach ($p in @($acmePrefix, $redirectPrefix)) {
 		$acl = Get-URLReservation $p
-		if ($acl -notmatch [regex]::Escape($p) -or $acl -notmatch 'SYSTEM') { throw "install made no URL reservation of $p for SYSTEM:`n$acl" }
+		if ($acl -notmatch [regex]::Escape($p) -or $acl -notmatch [regex]::Escape($account)) { throw "install made no URL reservation of $p for ${account}:`n$acl" }
 	}
-	Write-Host 'install reserved both URL prefixes of port 80 for SYSTEM'
+	Write-Host "install reserved both URL prefixes of port 80 for $account"
+	# The virtual account, unlike LocalSystem, has no right to the runner's directories of the
+	# executables: it gets read and execute there, as every account has in Program Files
+	foreach ($dir in @($bin, (Split-Path -Parent $env:RQLITED))) {
+		& icacls $dir /grant "${account}:(OI)(CI)RX" | Out-Null
+		if ($LASTEXITCODE -ne 0) { throw "icacls $dir exited with code $LASTEXITCODE" }
+	}
 
 	Start-Service -Name $service
 	Wait-Api
+	Test-Hardening
 	$status = Invoke-Ranz @('status')
 	Write-Host "status: $($status | ConvertTo-Json -Compress -Depth 4)"
 	if (-not $status.tlsFingerprint) { throw 'the status names no TLS fingerprint' }
