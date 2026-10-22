@@ -1,0 +1,5 @@
+# A node above the node cap of the licence in force (a Personal key of 2 nodes) is refused.
+refuse: {
+  reason: REFUSE_REASON_LICENCE
+  message: "the Personal licence in force allows 2 nodes, and Node \"node-03\" is above that cap (nodes count in name order)"
+}

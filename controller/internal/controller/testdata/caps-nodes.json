@@ -1,0 +1,36 @@
+{
+  "nodes": [
+    {
+      "name": "gw",
+      "generation": 1,
+      "ackedGeneration": 1,
+      "connected": true,
+      "capabilities": {
+        "sku": "Server",
+        "architecture": "x64",
+        "hyperV": true,
+        "lbfo": true,
+        "selow": true,
+        "xdp": true,
+        "egressTier": 1,
+        "tlsPortFallback": false
+      }
+    },
+    {
+      "name": "laptop",
+      "generation": 1,
+      "ackedGeneration": 1,
+      "connected": true,
+      "capabilities": {
+        "sku": "Home",
+        "architecture": "arm64",
+        "hyperV": false,
+        "lbfo": false,
+        "selow": false,
+        "xdp": false,
+        "egressTier": 3,
+        "tlsPortFallback": true
+      }
+    }
+  ]
+}

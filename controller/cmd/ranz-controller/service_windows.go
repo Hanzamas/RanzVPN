@@ -28,6 +28,7 @@ const (
 	eventStopped = 2
 	eventFailed  = 3
 	eventWarning = 4 // the TLS port fell back to 5555
+	eventReset   = 5 // reset-admin created an admin token
 )
 
 // reservationSDDL lets LocalSystem, the service's account, register the URL prefixes of the

@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
@@ -32,6 +33,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
+	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
@@ -149,11 +151,11 @@ func TestIntentSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []controller.NodeStatus{
-		{Name: "branch-1", Generation: 2, AckedGeneration: 2},
+		{Name: "branch-1", Generation: 2, AckedGeneration: 2, Capabilities: capability.FromProto(capsServer)},
 		{Name: "branch-2", Generation: 1},
 	}
-	if fmt.Sprint(nodes) != fmt.Sprint(want) {
-		t.Errorf("the nodes after the restart are %+v, want %+v", nodes, want)
+	if a, b := asJSON(t, nodes), asJSON(t, want); a != b {
+		t.Errorf("the nodes after the restart are %s, want %s", a, b)
 	}
 
 	// branch-1 reconnects at generation 2, which it applied, so it gets nothing until the
@@ -217,23 +219,31 @@ func TestApplyRejectsInvalidIntent(t *testing.T) {
 }
 
 // harness is one controller on its own rqlite, with the control stream and the HTTP API on one
-// TLS port, as ranz-controller runs them.
+// TLS port, as ranz-controller runs them. Its controller verifies licence keys that testVendor
+// signed (licence_test.go).
 type harness struct {
-	t      *testing.T
-	rq     *sidecar.Rqlited
-	key    *keys.Soft    // the controller's Noise static key
-	tlsKey crypto.Signer // the key of its TLS certificate
-	st     *store.Store
-	c      *controller.Controller
-	ln     net.Listener
-	port   *port.Server
-	api    *api.Client // with the admin token
-	admin  string      // the secret of the admin token rbac.FirstAdmin
-	serve  chan error
+	t       *testing.T
+	rq      *sidecar.Rqlited
+	key     *keys.Soft    // the controller's Noise static key
+	tlsKey  crypto.Signer // the key of its TLS certificate
+	version string        // of the controller, version.Version when empty
+	st      *store.Store
+	c       *controller.Controller
+	ln      net.Listener
+	port    *port.Server
+	api     *api.Client // with the admin token
+	admin   string      // the secret of the admin token rbac.FirstAdmin
+	serve   chan error
 }
 
 func newHarness(t *testing.T) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t)}
+	return newHarnessAt(t, "")
+}
+
+// newHarnessAt returns a harness whose controller is of version v, which the fallback licence
+// of an expired subscription must cover.
+func newHarnessAt(t *testing.T, v string) *harness {
+	h := &harness{t: t, rq: rqlitetest.Start(t), version: v}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
@@ -255,7 +265,8 @@ func (h *harness) start() {
 		h.t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(testWriter{h.t}, nil))
-	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log})
+	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log,
+		LicenceKeys: []ed25519.PublicKey{testVendor.Public().(ed25519.PublicKey)}, Version: h.version})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -308,6 +319,16 @@ func (h *harness) stop() {
 // apply applies the intent document testdata/file, YAML or JSON, as `ranz apply -f` does.
 func (h *harness) apply(file string) controller.ApplyResult {
 	h.t.Helper()
+	res, err := h.tryApply(file)
+	if err != nil {
+		h.t.Fatalf("applying %s: %v", file, err)
+	}
+	return res
+}
+
+// tryApply applies the intent document testdata/file and returns the answer of the API.
+func (h *harness) tryApply(file string) (controller.ApplyResult, error) {
+	h.t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", file))
 	if err != nil {
 		h.t.Fatal(err)
@@ -316,11 +337,7 @@ func (h *harness) apply(file string) controller.ApplyResult {
 	if err != nil {
 		h.t.Fatalf("%s: %v", file, err)
 	}
-	res, err := h.api.Apply(context.Background(), doc)
-	if err != nil {
-		h.t.Fatalf("applying %s: %v", file, err)
-	}
-	return res
+	return h.api.Apply(context.Background(), doc)
 }
 
 // resources returns the intent as the API reports it, as JSON.
@@ -360,7 +377,8 @@ func (h *harness) waitNode(name string, gen uint64, connected bool) {
 }
 
 // checkState checks that the state the simulated node built from its updates is the full state
-// that the controller's intent compiles to for it.
+// that the controller's intent compiles to for it, with the Nodes that the licence in force
+// covers.
 func (h *harness) checkState(s *sim) {
 	h.t.Helper()
 	rs, err := h.api.Resources(context.Background())
@@ -371,7 +389,11 @@ func (h *harness) checkState(s *sim) {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	states, err := desired.Compile(in)
+	lic, err := h.api.Licence(context.Background())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	states, err := desired.Compile(in.Capped(lic.Nodes))
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -392,7 +414,7 @@ type sim struct {
 
 // newSim returns a simulated node that has no stream yet; start runs one.
 func (h *harness) newSim(name string, key keys.Static) *sim {
-	s := &sim{Node: &nodesim.Node{Key: key, ControllerKey: h.key.Public(), Updates: make(chan *controlpb.Update, 16)}, name: name}
+	s := &sim{Node: &nodesim.Node{Key: key, ControllerKey: h.key.Public(), Capabilities: capsServer, Updates: make(chan *controlpb.Update, 16)}, name: name}
 	h.t.Cleanup(func() {
 		s.halt()
 		dumpWire(h.t, s)
@@ -522,6 +544,15 @@ func show(m proto.Message) string {
 
 func equalGenerations(a, b []controller.NodeGeneration) bool {
 	return fmt.Sprint(a) == fmt.Sprint(b)
+}
+
+func asJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // fixedKey returns the static key whose private key is the 32 bytes first, first+1, ...

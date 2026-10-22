@@ -98,6 +98,11 @@ const (
 	RefuseReason_REFUSE_REASON_SCHEMA_VERSION RefuseReason = 2
 	// An unexpected or malformed frame.
 	RefuseReason_REFUSE_REASON_PROTOCOL RefuseReason = 3
+	// The desired state of the node needs a Capability that its Hello does not report. The node
+	// keeps forwarding on the last generation it applied.
+	RefuseReason_REFUSE_REASON_CAPABILITY RefuseReason = 4
+	// The licence in force does not cover the node: it is above the node cap (ADR-0036).
+	RefuseReason_REFUSE_REASON_LICENCE RefuseReason = 5
 )
 
 // Enum value maps for RefuseReason.
@@ -107,12 +112,16 @@ var (
 		1: "REFUSE_REASON_UNKNOWN_NODE",
 		2: "REFUSE_REASON_SCHEMA_VERSION",
 		3: "REFUSE_REASON_PROTOCOL",
+		4: "REFUSE_REASON_CAPABILITY",
+		5: "REFUSE_REASON_LICENCE",
 	}
 	RefuseReason_value = map[string]int32{
 		"REFUSE_REASON_UNSPECIFIED":    0,
 		"REFUSE_REASON_UNKNOWN_NODE":   1,
 		"REFUSE_REASON_SCHEMA_VERSION": 2,
 		"REFUSE_REASON_PROTOCOL":       3,
+		"REFUSE_REASON_CAPABILITY":     4,
+		"REFUSE_REASON_LICENCE":        5,
 	}
 )
 
@@ -248,6 +257,166 @@ func (NetworkMode) EnumDescriptor() ([]byte, []int) {
 	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{3}
 }
 
+// The Windows edition of a node's host.
+type Sku int32
+
+const (
+	Sku_SKU_UNSPECIFIED Sku = 0
+	Sku_SKU_HOME        Sku = 1
+	Sku_SKU_PRO         Sku = 2 // also Pro for Workstations and Pro Education
+	Sku_SKU_ENTERPRISE  Sku = 3 // also Education and IoT Enterprise
+	Sku_SKU_SERVER      Sku = 4 // Windows Server 2022 or later
+)
+
+// Enum value maps for Sku.
+var (
+	Sku_name = map[int32]string{
+		0: "SKU_UNSPECIFIED",
+		1: "SKU_HOME",
+		2: "SKU_PRO",
+		3: "SKU_ENTERPRISE",
+		4: "SKU_SERVER",
+	}
+	Sku_value = map[string]int32{
+		"SKU_UNSPECIFIED": 0,
+		"SKU_HOME":        1,
+		"SKU_PRO":         2,
+		"SKU_ENTERPRISE":  3,
+		"SKU_SERVER":      4,
+	}
+)
+
+func (x Sku) Enum() *Sku {
+	p := new(Sku)
+	*p = x
+	return p
+}
+
+func (x Sku) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Sku) Descriptor() protoreflect.EnumDescriptor {
+	return file_ranz_control_v1_control_proto_enumTypes[4].Descriptor()
+}
+
+func (Sku) Type() protoreflect.EnumType {
+	return &file_ranz_control_v1_control_proto_enumTypes[4]
+}
+
+func (x Sku) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Sku.Descriptor instead.
+func (Sku) EnumDescriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{4}
+}
+
+// The processor architecture of a node's host.
+type Architecture int32
+
+const (
+	Architecture_ARCHITECTURE_UNSPECIFIED Architecture = 0
+	Architecture_ARCHITECTURE_X64         Architecture = 1
+	Architecture_ARCHITECTURE_ARM64       Architecture = 2
+)
+
+// Enum value maps for Architecture.
+var (
+	Architecture_name = map[int32]string{
+		0: "ARCHITECTURE_UNSPECIFIED",
+		1: "ARCHITECTURE_X64",
+		2: "ARCHITECTURE_ARM64",
+	}
+	Architecture_value = map[string]int32{
+		"ARCHITECTURE_UNSPECIFIED": 0,
+		"ARCHITECTURE_X64":         1,
+		"ARCHITECTURE_ARM64":       2,
+	}
+)
+
+func (x Architecture) Enum() *Architecture {
+	p := new(Architecture)
+	*p = x
+	return p
+}
+
+func (x Architecture) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Architecture) Descriptor() protoreflect.EnumDescriptor {
+	return file_ranz_control_v1_control_proto_enumTypes[5].Descriptor()
+}
+
+func (Architecture) Type() protoreflect.EnumType {
+	return &file_ranz_control_v1_control_proto_enumTypes[5]
+}
+
+func (x Architecture) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Architecture.Descriptor instead.
+func (Architecture) EnumDescriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{5}
+}
+
+// How the node translates the traffic of a VRF it is the internet exit of: the first tier its
+// host supports (ADR-0025). Tier 3 runs on every host, so any node can be an exit.
+type EgressTier int32
+
+const (
+	EgressTier_EGRESS_TIER_UNSPECIFIED EgressTier = 0
+	EgressTier_EGRESS_TIER_RRAS_NAT    EgressTier = 1 // tier 1: RRAS NAT on Windows Server
+	EgressTier_EGRESS_TIER_WINNAT      EgressTier = 2 // tier 2: WinNAT, where Hyper-V is present and no NetNat exists
+	EgressTier_EGRESS_TIER_PROXY       EgressTier = 3 // tier 3: a proxy on the Windows TCP/IP stack
+)
+
+// Enum value maps for EgressTier.
+var (
+	EgressTier_name = map[int32]string{
+		0: "EGRESS_TIER_UNSPECIFIED",
+		1: "EGRESS_TIER_RRAS_NAT",
+		2: "EGRESS_TIER_WINNAT",
+		3: "EGRESS_TIER_PROXY",
+	}
+	EgressTier_value = map[string]int32{
+		"EGRESS_TIER_UNSPECIFIED": 0,
+		"EGRESS_TIER_RRAS_NAT":    1,
+		"EGRESS_TIER_WINNAT":      2,
+		"EGRESS_TIER_PROXY":       3,
+	}
+)
+
+func (x EgressTier) Enum() *EgressTier {
+	p := new(EgressTier)
+	*p = x
+	return p
+}
+
+func (x EgressTier) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (EgressTier) Descriptor() protoreflect.EnumDescriptor {
+	return file_ranz_control_v1_control_proto_enumTypes[6].Descriptor()
+}
+
+func (EgressTier) Type() protoreflect.EnumType {
+	return &file_ranz_control_v1_control_proto_enumTypes[6]
+}
+
+func (x EgressTier) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use EgressTier.Descriptor instead.
+func (EgressTier) EnumDescriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{6}
+}
+
 // One frame of the control stream.
 type ControlMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -369,8 +538,11 @@ type Hello struct {
 	SchemaVersion SchemaVersion          `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3,enum=ranz.control.v1.SchemaVersion" json:"schema_version,omitempty"`
 	// The last generation the node applied, 0 if it has applied none.
 	AppliedGeneration uint64 `protobuf:"varint,2,opt,name=applied_generation,json=appliedGeneration,proto3" json:"applied_generation,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// What the node's host can do. A node reports them in every Hello, so a node whose
+	// Capabilities change opens a new stream.
+	Capabilities  *Capabilities `protobuf:"bytes,3,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Hello) Reset() {
@@ -415,6 +587,13 @@ func (x *Hello) GetAppliedGeneration() uint64 {
 		return x.AppliedGeneration
 	}
 	return 0
+}
+
+func (x *Hello) GetCapabilities() *Capabilities {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
 }
 
 // Desired state of one node.
@@ -1068,6 +1247,111 @@ func (x *Prefix) GetLength() uint32 {
 	return 0
 }
 
+// The Capabilities of a node: facts about its host (ADR-0033). The controller checks the desired
+// state of the node against them before an apply and refuses an intent that needs one the node
+// does not report. Only gateway and edge features need a Capability; every core feature runs on
+// every host. A Capability the node leaves out counts as missing.
+type Capabilities struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Sku          Sku                    `protobuf:"varint,1,opt,name=sku,proto3,enum=ranz.control.v1.Sku" json:"sku,omitempty"`
+	Architecture Architecture           `protobuf:"varint,2,opt,name=architecture,proto3,enum=ranz.control.v1.Architecture" json:"architecture,omitempty"`
+	HyperV       bool                   `protobuf:"varint,3,opt,name=hyper_v,json=hyperV,proto3" json:"hyper_v,omitempty"` // Hyper-V is present
+	Lbfo         bool                   `protobuf:"varint,4,opt,name=lbfo,proto3" json:"lbfo,omitempty"`                   // LBFO team interfaces can be created (Windows Server)
+	Selow        bool                   `protobuf:"varint,5,opt,name=selow,proto3" json:"selow,omitempty"`                 // the SeLow driver is installed (x64 only)
+	Xdp          bool                   `protobuf:"varint,6,opt,name=xdp,proto3" json:"xdp,omitempty"`                     // the XDP for Windows runtime is installed
+	EgressTier   EgressTier             `protobuf:"varint,7,opt,name=egress_tier,json=egressTier,proto3,enum=ranz.control.v1.EgressTier" json:"egress_tier,omitempty"`
+	// TCP 443 was taken, so the node listens on 5555 instead (ADR-0035 amendment of 2026-10-21).
+	TlsPortFallback bool `protobuf:"varint,8,opt,name=tls_port_fallback,json=tlsPortFallback,proto3" json:"tls_port_fallback,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *Capabilities) Reset() {
+	*x = Capabilities{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Capabilities) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Capabilities) ProtoMessage() {}
+
+func (x *Capabilities) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Capabilities.ProtoReflect.Descriptor instead.
+func (*Capabilities) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Capabilities) GetSku() Sku {
+	if x != nil {
+		return x.Sku
+	}
+	return Sku_SKU_UNSPECIFIED
+}
+
+func (x *Capabilities) GetArchitecture() Architecture {
+	if x != nil {
+		return x.Architecture
+	}
+	return Architecture_ARCHITECTURE_UNSPECIFIED
+}
+
+func (x *Capabilities) GetHyperV() bool {
+	if x != nil {
+		return x.HyperV
+	}
+	return false
+}
+
+func (x *Capabilities) GetLbfo() bool {
+	if x != nil {
+		return x.Lbfo
+	}
+	return false
+}
+
+func (x *Capabilities) GetSelow() bool {
+	if x != nil {
+		return x.Selow
+	}
+	return false
+}
+
+func (x *Capabilities) GetXdp() bool {
+	if x != nil {
+		return x.Xdp
+	}
+	return false
+}
+
+func (x *Capabilities) GetEgressTier() EgressTier {
+	if x != nil {
+		return x.EgressTier
+	}
+	return EgressTier_EGRESS_TIER_UNSPECIFIED
+}
+
+func (x *Capabilities) GetTlsPortFallback() bool {
+	if x != nil {
+		return x.TlsPortFallback
+	}
+	return false
+}
+
 var File_ranz_control_v1_control_proto protoreflect.FileDescriptor
 
 const file_ranz_control_v1_control_proto_rawDesc = "" +
@@ -1078,10 +1362,11 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x06update\x18\x02 \x01(\v2\x17.ranz.control.v1.UpdateH\x00R\x06update\x12(\n" +
 	"\x03ack\x18\x03 \x01(\v2\x14.ranz.control.v1.AckH\x00R\x03ack\x121\n" +
 	"\x06refuse\x18\x04 \x01(\v2\x17.ranz.control.v1.RefuseH\x00R\x06refuseB\x06\n" +
-	"\x04body\"}\n" +
+	"\x04body\"\xc0\x01\n" +
 	"\x05Hello\x12E\n" +
 	"\x0eschema_version\x18\x01 \x01(\x0e2\x1e.ranz.control.v1.SchemaVersionR\rschemaVersion\x12-\n" +
-	"\x12applied_generation\x18\x02 \x01(\x04R\x11appliedGeneration\"\xb0\x01\n" +
+	"\x12applied_generation\x18\x02 \x01(\x04R\x11appliedGeneration\x12A\n" +
+	"\fcapabilities\x18\x03 \x01(\v2\x1d.ranz.control.v1.CapabilitiesR\fcapabilities\"\xb0\x01\n" +
 	"\x06Update\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +
@@ -1127,15 +1412,27 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\avrf_ids\x18\x03 \x03(\rR\x06vrfIds\":\n" +
 	"\x06Prefix\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x16\n" +
-	"\x06length\x18\x02 \x01(\rR\x06length*E\n" +
+	"\x06length\x18\x02 \x01(\rR\x06length\"\xb8\x02\n" +
+	"\fCapabilities\x12&\n" +
+	"\x03sku\x18\x01 \x01(\x0e2\x14.ranz.control.v1.SkuR\x03sku\x12A\n" +
+	"\farchitecture\x18\x02 \x01(\x0e2\x1d.ranz.control.v1.ArchitectureR\farchitecture\x12\x17\n" +
+	"\ahyper_v\x18\x03 \x01(\bR\x06hyperV\x12\x12\n" +
+	"\x04lbfo\x18\x04 \x01(\bR\x04lbfo\x12\x14\n" +
+	"\x05selow\x18\x05 \x01(\bR\x05selow\x12\x10\n" +
+	"\x03xdp\x18\x06 \x01(\bR\x03xdp\x12<\n" +
+	"\vegress_tier\x18\a \x01(\x0e2\x1b.ranz.control.v1.EgressTierR\n" +
+	"egressTier\x12*\n" +
+	"\x11tls_port_fallback\x18\b \x01(\bR\x0ftlsPortFallback*E\n" +
 	"\rSchemaVersion\x12\x1e\n" +
 	"\x1aSCHEMA_VERSION_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10SCHEMA_VERSION_1\x10\x01*\x8b\x01\n" +
+	"\x10SCHEMA_VERSION_1\x10\x01*\xc4\x01\n" +
 	"\fRefuseReason\x12\x1d\n" +
 	"\x19REFUSE_REASON_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aREFUSE_REASON_UNKNOWN_NODE\x10\x01\x12 \n" +
 	"\x1cREFUSE_REASON_SCHEMA_VERSION\x10\x02\x12\x1a\n" +
-	"\x16REFUSE_REASON_PROTOCOL\x10\x03*Z\n" +
+	"\x16REFUSE_REASON_PROTOCOL\x10\x03\x12\x1c\n" +
+	"\x18REFUSE_REASON_CAPABILITY\x10\x04\x12\x19\n" +
+	"\x15REFUSE_REASON_LICENCE\x10\x05*Z\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tKIND_NODE\x10\x01\x12\f\n" +
@@ -1145,7 +1442,24 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\vNetworkMode\x12\x1c\n" +
 	"\x18NETWORK_MODE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fNETWORK_MODE_L3\x10\x01\x12\x13\n" +
-	"\x0fNETWORK_MODE_L2\x10\x02B;Z9github.com/Hanzamas/RanzVPN/controller/internal/controlpbb\x06proto3"
+	"\x0fNETWORK_MODE_L2\x10\x02*Y\n" +
+	"\x03Sku\x12\x13\n" +
+	"\x0fSKU_UNSPECIFIED\x10\x00\x12\f\n" +
+	"\bSKU_HOME\x10\x01\x12\v\n" +
+	"\aSKU_PRO\x10\x02\x12\x12\n" +
+	"\x0eSKU_ENTERPRISE\x10\x03\x12\x0e\n" +
+	"\n" +
+	"SKU_SERVER\x10\x04*Z\n" +
+	"\fArchitecture\x12\x1c\n" +
+	"\x18ARCHITECTURE_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10ARCHITECTURE_X64\x10\x01\x12\x16\n" +
+	"\x12ARCHITECTURE_ARM64\x10\x02*r\n" +
+	"\n" +
+	"EgressTier\x12\x1b\n" +
+	"\x17EGRESS_TIER_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14EGRESS_TIER_RRAS_NAT\x10\x01\x12\x16\n" +
+	"\x12EGRESS_TIER_WINNAT\x10\x02\x12\x15\n" +
+	"\x11EGRESS_TIER_PROXY\x10\x03B;Z9github.com/Hanzamas/RanzVPN/controller/internal/controlpbb\x06proto3"
 
 var (
 	file_ranz_control_v1_control_proto_rawDescOnce sync.Once
@@ -1159,49 +1473,57 @@ func file_ranz_control_v1_control_proto_rawDescGZIP() []byte {
 	return file_ranz_control_v1_control_proto_rawDescData
 }
 
-var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_ranz_control_v1_control_proto_goTypes = []any{
 	(SchemaVersion)(0),     // 0: ranz.control.v1.SchemaVersion
 	(RefuseReason)(0),      // 1: ranz.control.v1.RefuseReason
 	(Kind)(0),              // 2: ranz.control.v1.Kind
 	(NetworkMode)(0),       // 3: ranz.control.v1.NetworkMode
-	(*ControlMessage)(nil), // 4: ranz.control.v1.ControlMessage
-	(*Hello)(nil),          // 5: ranz.control.v1.Hello
-	(*Update)(nil),         // 6: ranz.control.v1.Update
-	(*Ack)(nil),            // 7: ranz.control.v1.Ack
-	(*Refuse)(nil),         // 8: ranz.control.v1.Refuse
-	(*Object)(nil),         // 9: ranz.control.v1.Object
-	(*ObjectKey)(nil),      // 10: ranz.control.v1.ObjectKey
-	(*NodeConfig)(nil),     // 11: ranz.control.v1.NodeConfig
-	(*Vrf)(nil),            // 12: ranz.control.v1.Vrf
-	(*Network)(nil),        // 13: ranz.control.v1.Network
-	(*Peer)(nil),           // 14: ranz.control.v1.Peer
-	(*Prefix)(nil),         // 15: ranz.control.v1.Prefix
+	(Sku)(0),               // 4: ranz.control.v1.Sku
+	(Architecture)(0),      // 5: ranz.control.v1.Architecture
+	(EgressTier)(0),        // 6: ranz.control.v1.EgressTier
+	(*ControlMessage)(nil), // 7: ranz.control.v1.ControlMessage
+	(*Hello)(nil),          // 8: ranz.control.v1.Hello
+	(*Update)(nil),         // 9: ranz.control.v1.Update
+	(*Ack)(nil),            // 10: ranz.control.v1.Ack
+	(*Refuse)(nil),         // 11: ranz.control.v1.Refuse
+	(*Object)(nil),         // 12: ranz.control.v1.Object
+	(*ObjectKey)(nil),      // 13: ranz.control.v1.ObjectKey
+	(*NodeConfig)(nil),     // 14: ranz.control.v1.NodeConfig
+	(*Vrf)(nil),            // 15: ranz.control.v1.Vrf
+	(*Network)(nil),        // 16: ranz.control.v1.Network
+	(*Peer)(nil),           // 17: ranz.control.v1.Peer
+	(*Prefix)(nil),         // 18: ranz.control.v1.Prefix
+	(*Capabilities)(nil),   // 19: ranz.control.v1.Capabilities
 }
 var file_ranz_control_v1_control_proto_depIdxs = []int32{
-	5,  // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
-	6,  // 1: ranz.control.v1.ControlMessage.update:type_name -> ranz.control.v1.Update
-	7,  // 2: ranz.control.v1.ControlMessage.ack:type_name -> ranz.control.v1.Ack
-	8,  // 3: ranz.control.v1.ControlMessage.refuse:type_name -> ranz.control.v1.Refuse
+	8,  // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
+	9,  // 1: ranz.control.v1.ControlMessage.update:type_name -> ranz.control.v1.Update
+	10, // 2: ranz.control.v1.ControlMessage.ack:type_name -> ranz.control.v1.Ack
+	11, // 3: ranz.control.v1.ControlMessage.refuse:type_name -> ranz.control.v1.Refuse
 	0,  // 4: ranz.control.v1.Hello.schema_version:type_name -> ranz.control.v1.SchemaVersion
-	9,  // 5: ranz.control.v1.Update.set:type_name -> ranz.control.v1.Object
-	10, // 6: ranz.control.v1.Update.remove:type_name -> ranz.control.v1.ObjectKey
-	1,  // 7: ranz.control.v1.Refuse.reason:type_name -> ranz.control.v1.RefuseReason
-	11, // 8: ranz.control.v1.Object.node:type_name -> ranz.control.v1.NodeConfig
-	12, // 9: ranz.control.v1.Object.vrf:type_name -> ranz.control.v1.Vrf
-	13, // 10: ranz.control.v1.Object.network:type_name -> ranz.control.v1.Network
-	14, // 11: ranz.control.v1.Object.peer:type_name -> ranz.control.v1.Peer
-	2,  // 12: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
-	15, // 13: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
-	3,  // 14: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
-	15, // 15: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
-	15, // 16: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	19, // 5: ranz.control.v1.Hello.capabilities:type_name -> ranz.control.v1.Capabilities
+	12, // 6: ranz.control.v1.Update.set:type_name -> ranz.control.v1.Object
+	13, // 7: ranz.control.v1.Update.remove:type_name -> ranz.control.v1.ObjectKey
+	1,  // 8: ranz.control.v1.Refuse.reason:type_name -> ranz.control.v1.RefuseReason
+	14, // 9: ranz.control.v1.Object.node:type_name -> ranz.control.v1.NodeConfig
+	15, // 10: ranz.control.v1.Object.vrf:type_name -> ranz.control.v1.Vrf
+	16, // 11: ranz.control.v1.Object.network:type_name -> ranz.control.v1.Network
+	17, // 12: ranz.control.v1.Object.peer:type_name -> ranz.control.v1.Peer
+	2,  // 13: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
+	18, // 14: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
+	3,  // 15: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
+	18, // 16: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
+	18, // 17: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
+	4,  // 18: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
+	5,  // 19: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
+	6,  // 20: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_ranz_control_v1_control_proto_init() }
@@ -1226,8 +1548,8 @@ func file_ranz_control_v1_control_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ranz_control_v1_control_proto_rawDesc), len(file_ranz_control_v1_control_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   12,
+			NumEnums:      7,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

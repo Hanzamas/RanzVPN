@@ -25,9 +25,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 )
 
@@ -65,7 +67,8 @@ type ResourceList struct {
 	Resources []intent.Resource `json:"resources"`
 }
 
-// NodeList is the answer of GET /api/v1/nodes.
+// NodeList is the answer of GET /api/v1/nodes: for each node its generations and the
+// Capabilities it reported (ADR-0033).
 type NodeList struct {
 	Nodes []controller.NodeStatus `json:"nodes"`
 }
@@ -107,6 +110,11 @@ type TokenRequest struct {
 	Role rbac.Role `json:"role"`
 }
 
+// LicenceKey is the body of PUT /api/v1/licence.
+type LicenceKey struct {
+	Key string `json:"key"`
+}
+
 // Problem is the body of every answer that is not 200 OK.
 type Problem struct {
 	Error string `json:"error"`
@@ -129,12 +137,17 @@ type Problem struct {
 //	GET    /api/v1/diff?from=A&to=B        DiffResult                                   viewer
 //	                                       to is the latest revision when left out, from the one before to
 //	GET    /api/v1/events                  EventList                                    viewer
+//	GET    /api/v1/licence                 licence.Status, the licence in force         viewer
+//	PUT    /api/v1/licence                 a LicenceKey; licence.Status                 operator
+//	DELETE /api/v1/licence                 removes the licence key; licence.Status      operator
 //	GET    /api/v1/tokens                  TokenList                                    admin
 //	POST   /api/v1/tokens                  a TokenRequest; an rbac.NewToken             admin
 //	DELETE /api/v1/tokens/{name}           the rbac.Token deleted                       admin
 //
-// status holds the control address and the TLS fingerprint that the status call reports;
-// Handler fills in the public key.
+// An apply or a rollback that a node cannot honour answers 409 Conflict, naming the node and the
+// Capability it lacks. What the licence in force does not allow is answered with 403 Forbidden,
+// and a licence key that does not verify with 400 Bad Request. status holds the control address
+// and the TLS fingerprint that the status call reports; Handler fills in the public key.
 func Handler(c *controller.Controller, tokens *rbac.Tokens, status Status) http.Handler {
 	status.PublicKey = base64.StdEncoding.EncodeToString(c.PublicKey())
 	mux := http.NewServeMux()
@@ -268,6 +281,36 @@ func Handler(c *controller.Controller, tokens *rbac.Tokens, status Status) http.
 		}
 		reply(w, http.StatusOK, EventList{Events: evs})
 	})
+	mux.HandleFunc("GET /api/v1/licence", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, http.StatusOK, c.Licence())
+	})
+	mux.HandleFunc("PUT /api/v1/licence", func(w http.ResponseWriter, r *http.Request) {
+		var k LicenceKey
+		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
+		d.DisallowUnknownFields()
+		if err := d.Decode(&k); err != nil {
+			reply(w, http.StatusBadRequest, Problem{Error: "the body is not a licence key: " + err.Error()})
+			return
+		}
+		if strings.TrimSpace(k.Key) == "" {
+			reply(w, http.StatusBadRequest, Problem{Error: "the body names no licence key; DELETE /api/v1/licence removes the installed one"})
+			return
+		}
+		st, err := c.SetLicence(r.Context(), k.Key)
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, st)
+	})
+	mux.HandleFunc("DELETE /api/v1/licence", func(w http.ResponseWriter, r *http.Request) {
+		st, err := c.SetLicence(r.Context(), "")
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, st)
+	})
 	mux.HandleFunc("GET "+tokensPath, func(w http.ResponseWriter, r *http.Request) {
 		ts, err := tokens.List(r.Context())
 		if err != nil {
@@ -398,9 +441,13 @@ func replyError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, intent.ErrNotFound), errors.Is(err, controller.ErrNoRevision), errors.Is(err, rbac.ErrNotFound):
 		code = http.StatusNotFound
-	case errors.Is(err, intent.ErrInvalid), errors.Is(err, controller.ErrBadConfirm), errors.Is(err, rbac.ErrInvalid):
+	case errors.Is(err, intent.ErrInvalid), errors.Is(err, controller.ErrBadConfirm), errors.Is(err, rbac.ErrInvalid),
+		errors.Is(err, licence.ErrInvalid):
 		code = http.StatusBadRequest
-	case errors.Is(err, controller.ErrConflict), errors.Is(err, rbac.ErrExists), errors.Is(err, rbac.ErrLastAdmin):
+	case errors.Is(err, licence.ErrRefused):
+		code = http.StatusForbidden
+	case errors.Is(err, capability.ErrMissing), errors.Is(err, controller.ErrConflict), errors.Is(err, rbac.ErrExists),
+		errors.Is(err, rbac.ErrLastAdmin):
 		code = http.StatusConflict
 	}
 	reply(w, code, Problem{Error: err.Error()})
@@ -490,7 +537,7 @@ func (c *Client) Resources(ctx context.Context) ([]intent.Resource, error) {
 	return l.Resources, err
 }
 
-// Nodes returns the status of every node.
+// Nodes returns the status of every node, with the Capabilities it reported.
 func (c *Client) Nodes(ctx context.Context) ([]controller.NodeStatus, error) {
 	var l NodeList
 	err := c.do(ctx, http.MethodGet, "/api/v1/nodes", nil, &l)
@@ -578,6 +625,28 @@ func (c *Client) Events(ctx context.Context) ([]event.Event, error) {
 	var l EventList
 	err := c.do(ctx, http.MethodGet, "/api/v1/events", nil, &l)
 	return l.Events, err
+}
+
+// Licence returns the licence in force.
+func (c *Client) Licence(ctx context.Context) (licence.Status, error) {
+	var st licence.Status
+	err := c.do(ctx, http.MethodGet, "/api/v1/licence", nil, &st)
+	return st, err
+}
+
+// SetLicence installs the licence key key and returns the licence in force then.
+func (c *Client) SetLicence(ctx context.Context, key string) (licence.Status, error) {
+	var st licence.Status
+	err := c.do(ctx, http.MethodPut, "/api/v1/licence", LicenceKey{Key: key}, &st)
+	return st, err
+}
+
+// RemoveLicence removes the installed licence key and returns the licence in force then: the
+// Personal tier.
+func (c *Client) RemoveLicence(ctx context.Context) (licence.Status, error) {
+	var st licence.Status
+	err := c.do(ctx, http.MethodDelete, "/api/v1/licence", nil, &st)
+	return st, err
 }
 
 // Tokens returns every API token, without the secrets.
