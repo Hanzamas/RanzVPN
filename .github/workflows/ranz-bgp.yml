@@ -36,7 +36,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.27.2'
+  GO_VERSION: '1.27.3'
   # The WiX Toolset of the MSI (ADR-0020; REL-5, #50)
   WIX_VERSION: '5.0.2'
   # The Go static analysis of ADR-0040 item 3: staticcheck 2026.2.2 and govulncheck, as in controller.yml

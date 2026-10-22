@@ -64,7 +64,7 @@ env:
   # The Go of controller.yml and ranz-bgp.yml: ranz-noisepeer (controller/cmd/ranz-noisepeer), the
   # flynn/noise end of the session module's interop test (coretest noiseinterop, CORE-F2 #62), and
   # the BGP sidecar spike (ranz-bgp.yml, CORE-S7-1)
-  GO_VERSION: '1.27.2'
+  GO_VERSION: '1.27.3'
 
 jobs:
   build_and_test:
