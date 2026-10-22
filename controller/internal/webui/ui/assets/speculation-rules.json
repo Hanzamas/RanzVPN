@@ -1,0 +1,13 @@
+{
+  "prefetch": [
+    {
+      "where": {
+        "and": [
+          {"href_matches": "/*"},
+          {"not": {"href_matches": "/assets/*"}}
+        ]
+      },
+      "eagerness": "moderate"
+    }
+  ]
+}

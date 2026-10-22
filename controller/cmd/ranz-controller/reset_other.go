@@ -7,8 +7,8 @@ import (
 	"os"
 )
 
-// errNoAdminRights refuses a reset-admin by anyone but root.
-var errNoAdminRights = errors.New("reset-admin needs root on the controller's host")
+// errNoAdminRights refuses a reset-admin, a backup or a restore by anyone but root.
+var errNoAdminRights = errors.New("this command needs root on the controller's host")
 
 // adminRights returns nil when the process runs as root.
 func adminRights() error {

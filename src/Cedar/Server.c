@@ -2492,9 +2492,6 @@ SERVER *SiNewServer(void) {
 
 	PrepareChainCertDir();
 
-	if (IsHamMode() == false)
-		RegistWindowsFirewallAll();
-
 	MakeDir(SERVER_LOG_DIR_NAME);
 	s->Logger = NewLog(SERVER_LOG_DIR_NAME, SERVER_LOG_PERFIX, LOG_SWITCH_DAY, s->Cedar->MaxLogSize);
 

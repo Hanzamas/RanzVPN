@@ -115,6 +115,20 @@ SOFTWARE.
 
 -------------------
 
+libjuice:
+Copyright (c) 2020-2022 Paul-Louis Ageneau
+
+libjuice is licensed under the Mozilla Public License, Version 2.0 (https://mozilla.org/MPL/2.0/). Ranz VPN includes version 1.7.4, whose source code is available at https://github.com/paullouisageneau/libjuice.
+
+-------------------
+
+libplum:
+Copyright (c) 2021 Paul-Louis Ageneau
+
+libplum is licensed under the Mozilla Public License, Version 2.0 (https://mozilla.org/MPL/2.0/). Ranz VPN includes version 0.6.0, whose source code is available at https://github.com/paullouisageneau/libplum, with one function changed (xml_find_matching_child of src/util.c); the source code of that change is available under the same license.
+
+-------------------
+
 SHA-0 implementation (from Android libmincrypt):
 Copyright 2013 The Android Open Source Project
 

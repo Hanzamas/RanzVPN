@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -232,6 +233,98 @@ func TestSubscriptionExpiresWhileRunning(t *testing.T) {
 	if st := h.licence(); st.State != licence.StateExpired || st.Tier != licence.Personal {
 		t.Errorf("after the expiry the licence in force is %+v, want the Personal tier", st)
 	}
+}
+
+// TestRevocationListRefusesAKey is the second criterion of SEC-5 (#283): the controller refuses a
+// licence key whose id is on the revocation list, and accepts an equivalent key that is not on it.
+func TestRevocationListRefusesAKey(t *testing.T) {
+	h := newHarnessRevocations(t)
+	leaked := licence.Licence{ID: "biz-leaked", Licensee: "Example Ltd", Tier: licence.Business, Nodes: 20, Expires: time.Now().Add(year)}
+	h.writeRevocations(licence.Revocations{Issued: time.Now(), IDs: []string{leaked.ID}})
+	h.reloadRevocations()
+
+	key, err := licence.Sign(testVendor, leaked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("refused by the licence: the Business licence key biz-leaked of Example Ltd is on the revocation list and cannot be installed (watermark %s)",
+		licence.WatermarkFor(leaked.Licensee))
+	if _, err := h.api.SetLicence(context.Background(), key); httpStatus(err) != http.StatusForbidden || !strings.Contains(err.Error(), want) {
+		t.Errorf("installing the revoked key gave %v, want a 403 that says %q", err, want)
+	}
+	if st := h.licence(); st.State != licence.StateNone {
+		t.Errorf("after the refused install the licence in force is %+v, want no key installed", st)
+	}
+
+	// An equivalent key with another id is not on the list: it installs and is active.
+	equivalent := leaked
+	equivalent.ID = "biz-fresh"
+	if st := h.setLicence(equivalent); st.State != licence.StateActive || st.Tier != licence.Business || st.Nodes != 20 {
+		t.Errorf("the equivalent key is %+v, want an active Business licence of 20 nodes", st)
+	}
+}
+
+// TestRevocationListDeliveredByUpdateIsApplied is the third criterion of SEC-5 (#283): a signed
+// revocation list delivered through the update channel is applied by the controller, so an installed
+// key the list revokes drops to the Personal tier while the core tunnel keeps working. A list that
+// is not vendor-signed is ignored, so only a signed list takes effect.
+func TestRevocationListDeliveredByUpdateIsApplied(t *testing.T) {
+	h := newHarnessRevocations(t)
+	leaked := licence.Licence{ID: "biz-leaked", Licensee: "Example Ltd", Tier: licence.Business, Nodes: 20, Expires: time.Now().Add(year)}
+	if st := h.setLicence(leaked); st.State != licence.StateActive {
+		t.Fatalf("before any revocation the installed key is %s, want active", st.State)
+	}
+
+	// The update delivers a list that is not signed by a vendor key: the controller ignores it.
+	foreign := ed25519.NewKeyFromSeed(slices.Repeat([]byte{0x09}, ed25519.SeedSize))
+	unsigned, err := licence.SignRevocations(foreign, licence.Revocations{Issued: time.Now(), IDs: []string{leaked.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(h.revPath, []byte(unsigned), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := h.c.ReloadRevocations(context.Background()); err != nil || st.State != licence.StateActive {
+		t.Errorf("a list not signed by the vendor changed the licence to %+v (err %v), want it still active", st, err)
+	}
+
+	// The update delivers the vendor-signed list: the controller applies it and the installed key
+	// is revoked, so the Personal tier is in force.
+	h.writeRevocations(licence.Revocations{Issued: time.Now(), IDs: []string{leaked.ID}})
+	st := h.reloadRevocations()
+	if st.State != licence.StateRevoked || st.Tier != licence.Personal || st.Nodes != licence.PersonalNodes {
+		t.Errorf("after the signed list the licence in force is %+v, want the Personal tier, revoked", st)
+	}
+	if st.Key == nil || st.Key.ID != leaked.ID {
+		t.Errorf("the revoked licence in force does not name the key: %+v", st.Key)
+	}
+	if got := h.licence(); got.State != licence.StateRevoked {
+		t.Errorf("the API reports %+v, want the key revoked", got)
+	}
+}
+
+// writeRevocations signs r with testVendor and writes it to the update channel's path, as an update
+// delivers the revocation list (SEC-5 #283).
+func (h *harness) writeRevocations(r licence.Revocations) {
+	h.t.Helper()
+	signed, err := licence.SignRevocations(testVendor, r)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if err := os.WriteFile(h.revPath, []byte(signed), 0o600); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+// reloadRevocations applies the revocation list the update channel delivered and returns the licence
+// in force then.
+func (h *harness) reloadRevocations() licence.Status {
+	h.t.Helper()
+	st, err := h.c.ReloadRevocations(context.Background())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return st
 }
 
 // checkEVPNRefused checks that the licence in force, of tier inForce, refuses the EVPN and BGP
