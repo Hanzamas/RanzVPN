@@ -157,6 +157,7 @@ const (
 	Kind_KIND_VRF         Kind = 2
 	Kind_KIND_NETWORK     Kind = 3
 	Kind_KIND_PEER        Kind = 4
+	Kind_KIND_RELAY       Kind = 5
 )
 
 // Enum value maps for Kind.
@@ -167,6 +168,7 @@ var (
 		2: "KIND_VRF",
 		3: "KIND_NETWORK",
 		4: "KIND_PEER",
+		5: "KIND_RELAY",
 	}
 	Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
@@ -174,6 +176,7 @@ var (
 		"KIND_VRF":         2,
 		"KIND_NETWORK":     3,
 		"KIND_PEER":        4,
+		"KIND_RELAY":       5,
 	}
 )
 
@@ -422,6 +425,7 @@ type ControlMessage struct {
 	//	*ControlMessage_Update
 	//	*ControlMessage_Ack
 	//	*ControlMessage_Refuse
+	//	*ControlMessage_Signal
 	Body          isControlMessage_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -500,6 +504,15 @@ func (x *ControlMessage) GetRefuse() *Refuse {
 	return nil
 }
 
+func (x *ControlMessage) GetSignal() *Signal {
+	if x != nil {
+		if x, ok := x.Body.(*ControlMessage_Signal); ok {
+			return x.Signal
+		}
+	}
+	return nil
+}
+
 type isControlMessage_Body interface {
 	isControlMessage_Body()
 }
@@ -520,6 +533,10 @@ type ControlMessage_Refuse struct {
 	Refuse *Refuse `protobuf:"bytes,4,opt,name=refuse,proto3,oneof"` // controller to node, the last frame before the controller closes
 }
 
+type ControlMessage_Signal struct {
+	Signal *Signal `protobuf:"bytes,5,opt,name=signal,proto3,oneof"` // node to controller to node, after the Hello
+}
+
 func (*ControlMessage_Hello) isControlMessage_Body() {}
 
 func (*ControlMessage_Update) isControlMessage_Body() {}
@@ -527,6 +544,8 @@ func (*ControlMessage_Update) isControlMessage_Body() {}
 func (*ControlMessage_Ack) isControlMessage_Body() {}
 
 func (*ControlMessage_Refuse) isControlMessage_Body() {}
+
+func (*ControlMessage_Signal) isControlMessage_Body() {}
 
 // The first frame a node sends.
 type Hello struct {
@@ -710,6 +729,65 @@ func (x *Ack) GetGeneration() uint64 {
 	return 0
 }
 
+// Signalling between two peers, which the controller carries (ADR-0015 item 6, ADR-0027 item 8):
+// the relay assignment and the ICE candidates of a node. From a node, peer names the node the
+// signal is for; the controller forwards it to that node, with peer set to the sending node, when
+// the two share a VRF and that node has a stream, and drops it otherwise. The envelope is sealed by
+// the sending node's static key to the receiving node's with the Noise one-way pattern K
+// (src/Core/PeerSignal.c, controller/internal/control), so the controller can read, forge, alter
+// or redirect none of it.
+type Signal struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Peer          string                 `protobuf:"bytes,1,opt,name=peer,proto3" json:"peer,omitempty"`
+	Envelope      []byte                 `protobuf:"bytes,2,opt,name=envelope,proto3" json:"envelope,omitempty"` // at most 1024 bytes
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Signal) Reset() {
+	*x = Signal{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Signal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Signal) ProtoMessage() {}
+
+func (x *Signal) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Signal.ProtoReflect.Descriptor instead.
+func (*Signal) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Signal) GetPeer() string {
+	if x != nil {
+		return x.Peer
+	}
+	return ""
+}
+
+func (x *Signal) GetEnvelope() []byte {
+	if x != nil {
+		return x.Envelope
+	}
+	return nil
+}
+
 // Why the controller closes the stream.
 type Refuse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -721,7 +799,7 @@ type Refuse struct {
 
 func (x *Refuse) Reset() {
 	*x = Refuse{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[4]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -733,7 +811,7 @@ func (x *Refuse) String() string {
 func (*Refuse) ProtoMessage() {}
 
 func (x *Refuse) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[4]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -746,7 +824,7 @@ func (x *Refuse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Refuse.ProtoReflect.Descriptor instead.
 func (*Refuse) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{4}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Refuse) GetReason() RefuseReason {
@@ -772,6 +850,7 @@ type Object struct {
 	//	*Object_Vrf
 	//	*Object_Network
 	//	*Object_Peer
+	//	*Object_Relay
 	Kind          isObject_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -779,7 +858,7 @@ type Object struct {
 
 func (x *Object) Reset() {
 	*x = Object{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[5]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -791,7 +870,7 @@ func (x *Object) String() string {
 func (*Object) ProtoMessage() {}
 
 func (x *Object) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[5]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -804,7 +883,7 @@ func (x *Object) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Object.ProtoReflect.Descriptor instead.
 func (*Object) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{5}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Object) GetKind() isObject_Kind {
@@ -850,6 +929,15 @@ func (x *Object) GetPeer() *Peer {
 	return nil
 }
 
+func (x *Object) GetRelay() *Relay {
+	if x != nil {
+		if x, ok := x.Kind.(*Object_Relay); ok {
+			return x.Relay
+		}
+	}
+	return nil
+}
+
 type isObject_Kind interface {
 	isObject_Kind()
 }
@@ -870,6 +958,10 @@ type Object_Peer struct {
 	Peer *Peer `protobuf:"bytes,4,opt,name=peer,proto3,oneof"`
 }
 
+type Object_Relay struct {
+	Relay *Relay `protobuf:"bytes,5,opt,name=relay,proto3,oneof"`
+}
+
 func (*Object_Node) isObject_Kind() {}
 
 func (*Object_Vrf) isObject_Kind() {}
@@ -877,6 +969,8 @@ func (*Object_Vrf) isObject_Kind() {}
 func (*Object_Network) isObject_Kind() {}
 
 func (*Object_Peer) isObject_Kind() {}
+
+func (*Object_Relay) isObject_Kind() {}
 
 type ObjectKey struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -888,7 +982,7 @@ type ObjectKey struct {
 
 func (x *ObjectKey) Reset() {
 	*x = ObjectKey{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[6]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -900,7 +994,7 @@ func (x *ObjectKey) String() string {
 func (*ObjectKey) ProtoMessage() {}
 
 func (x *ObjectKey) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[6]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -913,7 +1007,7 @@ func (x *ObjectKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObjectKey.ProtoReflect.Descriptor instead.
 func (*ObjectKey) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{6}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ObjectKey) GetKind() Kind {
@@ -941,7 +1035,7 @@ type NodeConfig struct {
 
 func (x *NodeConfig) Reset() {
 	*x = NodeConfig{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[7]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -953,7 +1047,7 @@ func (x *NodeConfig) String() string {
 func (*NodeConfig) ProtoMessage() {}
 
 func (x *NodeConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[7]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -966,7 +1060,7 @@ func (x *NodeConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeConfig.ProtoReflect.Descriptor instead.
 func (*NodeConfig) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{7}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *NodeConfig) GetName() string {
@@ -996,7 +1090,7 @@ type Vrf struct {
 
 func (x *Vrf) Reset() {
 	*x = Vrf{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[8]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1008,7 +1102,7 @@ func (x *Vrf) String() string {
 func (*Vrf) ProtoMessage() {}
 
 func (x *Vrf) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[8]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1021,7 +1115,7 @@ func (x *Vrf) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vrf.ProtoReflect.Descriptor instead.
 func (*Vrf) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{8}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Vrf) GetName() string {
@@ -1066,7 +1160,7 @@ type Network struct {
 
 func (x *Network) Reset() {
 	*x = Network{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[9]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1078,7 +1172,7 @@ func (x *Network) String() string {
 func (*Network) ProtoMessage() {}
 
 func (x *Network) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[9]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1091,7 +1185,7 @@ func (x *Network) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Network.ProtoReflect.Descriptor instead.
 func (*Network) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{9}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Network) GetName() string {
@@ -1141,7 +1235,7 @@ type Peer struct {
 
 func (x *Peer) Reset() {
 	*x = Peer{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[10]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1153,7 +1247,7 @@ func (x *Peer) String() string {
 func (*Peer) ProtoMessage() {}
 
 func (x *Peer) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[10]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1166,7 +1260,7 @@ func (x *Peer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Peer.ProtoReflect.Descriptor instead.
 func (*Peer) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{10}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Peer) GetName() string {
@@ -1190,6 +1284,77 @@ func (x *Peer) GetVrfIds() []uint32 {
 	return nil
 }
 
+// A relay that the node may use (ADR-0015): another node with the relay role that shares a VRF
+// with it. The node binds to the first, in name order, as its home relay, and to the relay that a
+// peer's signal names; a signal that names a relay the node has no Relay object of is refused.
+type Relay struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	PublicKey     []byte                 `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // the Noise static key, 32 bytes
+	Address       []byte                 `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`                      // the address its relay role listens on: 4 bytes for IPv4, 16 for IPv6
+	Port          uint32                 `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`                           // ... and the UDP port
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Relay) Reset() {
+	*x = Relay{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Relay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Relay) ProtoMessage() {}
+
+func (x *Relay) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Relay.ProtoReflect.Descriptor instead.
+func (*Relay) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Relay) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Relay) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
+func (x *Relay) GetAddress() []byte {
+	if x != nil {
+		return x.Address
+	}
+	return nil
+}
+
+func (x *Relay) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
 // An IP prefix: 4 address bytes for IPv4, 16 for IPv6.
 type Prefix struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1201,7 +1366,7 @@ type Prefix struct {
 
 func (x *Prefix) Reset() {
 	*x = Prefix{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[11]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1213,7 +1378,7 @@ func (x *Prefix) String() string {
 func (*Prefix) ProtoMessage() {}
 
 func (x *Prefix) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[11]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1226,7 +1391,7 @@ func (x *Prefix) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Prefix.ProtoReflect.Descriptor instead.
 func (*Prefix) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{11}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Prefix) GetAddress() []byte {
@@ -1264,7 +1429,7 @@ type Capabilities struct {
 
 func (x *Capabilities) Reset() {
 	*x = Capabilities{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[12]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1276,7 +1441,7 @@ func (x *Capabilities) String() string {
 func (*Capabilities) ProtoMessage() {}
 
 func (x *Capabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[12]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1289,7 +1454,7 @@ func (x *Capabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Capabilities.ProtoReflect.Descriptor instead.
 func (*Capabilities) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{12}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Capabilities) GetSku() Sku {
@@ -1352,12 +1517,13 @@ var File_ranz_control_v1_control_proto protoreflect.FileDescriptor
 
 const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1dranz/control/v1/control.proto\x12\x0franz.control.v1\"\xd8\x01\n" +
+	"\x1dranz/control/v1/control.proto\x12\x0franz.control.v1\"\x8b\x02\n" +
 	"\x0eControlMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.ranz.control.v1.HelloH\x00R\x05hello\x121\n" +
 	"\x06update\x18\x02 \x01(\v2\x17.ranz.control.v1.UpdateH\x00R\x06update\x12(\n" +
 	"\x03ack\x18\x03 \x01(\v2\x14.ranz.control.v1.AckH\x00R\x03ack\x121\n" +
-	"\x06refuse\x18\x04 \x01(\v2\x17.ranz.control.v1.RefuseH\x00R\x06refuseB\x06\n" +
+	"\x06refuse\x18\x04 \x01(\v2\x17.ranz.control.v1.RefuseH\x00R\x06refuse\x121\n" +
+	"\x06signal\x18\x05 \x01(\v2\x17.ranz.control.v1.SignalH\x00R\x06signalB\x06\n" +
 	"\x04body\"\xc0\x01\n" +
 	"\x05Hello\x12E\n" +
 	"\x0eschema_version\x18\x01 \x01(\x0e2\x1e.ranz.control.v1.SchemaVersionR\rschemaVersion\x12-\n" +
@@ -1373,15 +1539,19 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x03Ack\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +
-	"generation\"Y\n" +
+	"generation\"8\n" +
+	"\x06Signal\x12\x12\n" +
+	"\x04peer\x18\x01 \x01(\tR\x04peer\x12\x1a\n" +
+	"\benvelope\x18\x02 \x01(\fR\benvelope\"Y\n" +
 	"\x06Refuse\x125\n" +
 	"\x06reason\x18\x01 \x01(\x0e2\x1d.ranz.control.v1.RefuseReasonR\x06reason\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xd0\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x80\x02\n" +
 	"\x06Object\x121\n" +
 	"\x04node\x18\x01 \x01(\v2\x1b.ranz.control.v1.NodeConfigH\x00R\x04node\x12(\n" +
 	"\x03vrf\x18\x02 \x01(\v2\x14.ranz.control.v1.VrfH\x00R\x03vrf\x124\n" +
 	"\anetwork\x18\x03 \x01(\v2\x18.ranz.control.v1.NetworkH\x00R\anetwork\x12+\n" +
-	"\x04peer\x18\x04 \x01(\v2\x15.ranz.control.v1.PeerH\x00R\x04peerB\x06\n" +
+	"\x04peer\x18\x04 \x01(\v2\x15.ranz.control.v1.PeerH\x00R\x04peer\x12.\n" +
+	"\x05relay\x18\x05 \x01(\v2\x16.ranz.control.v1.RelayH\x00R\x05relayB\x06\n" +
 	"\x04kind\"J\n" +
 	"\tObjectKey\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.ranz.control.v1.KindR\x04kind\x12\x12\n" +
@@ -1405,7 +1575,13 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
 	"public_key\x18\x02 \x01(\fR\tpublicKey\x12\x17\n" +
-	"\avrf_ids\x18\x03 \x03(\rR\x06vrfIds\":\n" +
+	"\avrf_ids\x18\x03 \x03(\rR\x06vrfIds\"h\n" +
+	"\x05Relay\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x02 \x01(\fR\tpublicKey\x12\x18\n" +
+	"\aaddress\x18\x03 \x01(\fR\aaddress\x12\x12\n" +
+	"\x04port\x18\x04 \x01(\rR\x04port\":\n" +
 	"\x06Prefix\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x16\n" +
 	"\x06length\x18\x02 \x01(\rR\x06length\"\xb8\x02\n" +
@@ -1427,13 +1603,15 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x1aREFUSE_REASON_UNKNOWN_NODE\x10\x01\x12 \n" +
 	"\x1cREFUSE_REASON_SCHEMA_VERSION\x10\x02\x12\x1a\n" +
 	"\x16REFUSE_REASON_PROTOCOL\x10\x03\x12\x1c\n" +
-	"\x18REFUSE_REASON_CAPABILITY\x10\x04*Z\n" +
+	"\x18REFUSE_REASON_CAPABILITY\x10\x04*j\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tKIND_NODE\x10\x01\x12\f\n" +
 	"\bKIND_VRF\x10\x02\x12\x10\n" +
 	"\fKIND_NETWORK\x10\x03\x12\r\n" +
-	"\tKIND_PEER\x10\x04*U\n" +
+	"\tKIND_PEER\x10\x04\x12\x0e\n" +
+	"\n" +
+	"KIND_RELAY\x10\x05*U\n" +
 	"\vNetworkMode\x12\x1c\n" +
 	"\x18NETWORK_MODE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fNETWORK_MODE_L3\x10\x01\x12\x13\n" +
@@ -1469,7 +1647,7 @@ func file_ranz_control_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_ranz_control_v1_control_proto_goTypes = []any{
 	(SchemaVersion)(0),     // 0: ranz.control.v1.SchemaVersion
 	(RefuseReason)(0),      // 1: ranz.control.v1.RefuseReason
@@ -1482,43 +1660,47 @@ var file_ranz_control_v1_control_proto_goTypes = []any{
 	(*Hello)(nil),          // 8: ranz.control.v1.Hello
 	(*Update)(nil),         // 9: ranz.control.v1.Update
 	(*Ack)(nil),            // 10: ranz.control.v1.Ack
-	(*Refuse)(nil),         // 11: ranz.control.v1.Refuse
-	(*Object)(nil),         // 12: ranz.control.v1.Object
-	(*ObjectKey)(nil),      // 13: ranz.control.v1.ObjectKey
-	(*NodeConfig)(nil),     // 14: ranz.control.v1.NodeConfig
-	(*Vrf)(nil),            // 15: ranz.control.v1.Vrf
-	(*Network)(nil),        // 16: ranz.control.v1.Network
-	(*Peer)(nil),           // 17: ranz.control.v1.Peer
-	(*Prefix)(nil),         // 18: ranz.control.v1.Prefix
-	(*Capabilities)(nil),   // 19: ranz.control.v1.Capabilities
+	(*Signal)(nil),         // 11: ranz.control.v1.Signal
+	(*Refuse)(nil),         // 12: ranz.control.v1.Refuse
+	(*Object)(nil),         // 13: ranz.control.v1.Object
+	(*ObjectKey)(nil),      // 14: ranz.control.v1.ObjectKey
+	(*NodeConfig)(nil),     // 15: ranz.control.v1.NodeConfig
+	(*Vrf)(nil),            // 16: ranz.control.v1.Vrf
+	(*Network)(nil),        // 17: ranz.control.v1.Network
+	(*Peer)(nil),           // 18: ranz.control.v1.Peer
+	(*Relay)(nil),          // 19: ranz.control.v1.Relay
+	(*Prefix)(nil),         // 20: ranz.control.v1.Prefix
+	(*Capabilities)(nil),   // 21: ranz.control.v1.Capabilities
 }
 var file_ranz_control_v1_control_proto_depIdxs = []int32{
 	8,  // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
 	9,  // 1: ranz.control.v1.ControlMessage.update:type_name -> ranz.control.v1.Update
 	10, // 2: ranz.control.v1.ControlMessage.ack:type_name -> ranz.control.v1.Ack
-	11, // 3: ranz.control.v1.ControlMessage.refuse:type_name -> ranz.control.v1.Refuse
-	0,  // 4: ranz.control.v1.Hello.schema_version:type_name -> ranz.control.v1.SchemaVersion
-	19, // 5: ranz.control.v1.Hello.capabilities:type_name -> ranz.control.v1.Capabilities
-	12, // 6: ranz.control.v1.Update.set:type_name -> ranz.control.v1.Object
-	13, // 7: ranz.control.v1.Update.remove:type_name -> ranz.control.v1.ObjectKey
-	1,  // 8: ranz.control.v1.Refuse.reason:type_name -> ranz.control.v1.RefuseReason
-	14, // 9: ranz.control.v1.Object.node:type_name -> ranz.control.v1.NodeConfig
-	15, // 10: ranz.control.v1.Object.vrf:type_name -> ranz.control.v1.Vrf
-	16, // 11: ranz.control.v1.Object.network:type_name -> ranz.control.v1.Network
-	17, // 12: ranz.control.v1.Object.peer:type_name -> ranz.control.v1.Peer
-	2,  // 13: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
-	18, // 14: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
-	3,  // 15: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
-	18, // 16: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
-	18, // 17: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
-	4,  // 18: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
-	5,  // 19: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
-	6,  // 20: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	12, // 3: ranz.control.v1.ControlMessage.refuse:type_name -> ranz.control.v1.Refuse
+	11, // 4: ranz.control.v1.ControlMessage.signal:type_name -> ranz.control.v1.Signal
+	0,  // 5: ranz.control.v1.Hello.schema_version:type_name -> ranz.control.v1.SchemaVersion
+	21, // 6: ranz.control.v1.Hello.capabilities:type_name -> ranz.control.v1.Capabilities
+	13, // 7: ranz.control.v1.Update.set:type_name -> ranz.control.v1.Object
+	14, // 8: ranz.control.v1.Update.remove:type_name -> ranz.control.v1.ObjectKey
+	1,  // 9: ranz.control.v1.Refuse.reason:type_name -> ranz.control.v1.RefuseReason
+	15, // 10: ranz.control.v1.Object.node:type_name -> ranz.control.v1.NodeConfig
+	16, // 11: ranz.control.v1.Object.vrf:type_name -> ranz.control.v1.Vrf
+	17, // 12: ranz.control.v1.Object.network:type_name -> ranz.control.v1.Network
+	18, // 13: ranz.control.v1.Object.peer:type_name -> ranz.control.v1.Peer
+	19, // 14: ranz.control.v1.Object.relay:type_name -> ranz.control.v1.Relay
+	2,  // 15: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
+	20, // 16: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
+	3,  // 17: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
+	20, // 18: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
+	20, // 19: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
+	4,  // 20: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
+	5,  // 21: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
+	6,  // 22: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_ranz_control_v1_control_proto_init() }
@@ -1531,12 +1713,14 @@ func file_ranz_control_v1_control_proto_init() {
 		(*ControlMessage_Update)(nil),
 		(*ControlMessage_Ack)(nil),
 		(*ControlMessage_Refuse)(nil),
+		(*ControlMessage_Signal)(nil),
 	}
-	file_ranz_control_v1_control_proto_msgTypes[5].OneofWrappers = []any{
+	file_ranz_control_v1_control_proto_msgTypes[6].OneofWrappers = []any{
 		(*Object_Node)(nil),
 		(*Object_Vrf)(nil),
 		(*Object_Network)(nil),
 		(*Object_Peer)(nil),
+		(*Object_Relay)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1544,7 +1728,7 @@ func file_ranz_control_v1_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ranz_control_v1_control_proto_rawDesc), len(file_ranz_control_v1_control_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
