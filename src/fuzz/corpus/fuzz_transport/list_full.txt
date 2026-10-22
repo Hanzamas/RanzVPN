@@ -1,0 +1,1 @@
+cdn:https://edge0.example/ranz,cdn:https://edge1.example/ranz,cdn:https://edge2.example/ranz,cdn:https://edge3.example/ranz,cdn:https://edge4.example/ranz,cdn:https://edge5.example/ranz,cdn:https://edge6.example/ranz,cdn:https://edge7.example/ranz

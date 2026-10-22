@@ -1,0 +1,1 @@
+	quic:vpn.example:443 ,	wss:vpn.example:443

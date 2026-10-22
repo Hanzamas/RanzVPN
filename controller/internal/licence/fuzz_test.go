@@ -3,10 +3,12 @@ package licence
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"slices"
 	"testing"
+	"time"
 )
 
-// The fuzz test of the licence package (ADR-0040 item 1, .github/quality/fuzz-targets.txt), which
+// The fuzz tests of the licence package (ADR-0040 item 1, .github/quality/fuzz-targets.txt), which
 // the controller workflow runs with go test -fuzz.
 
 // FuzzParse reads the input as a licence key (Parse), then signs it with the vendor key as the
@@ -40,5 +42,43 @@ func FuzzParse(f *testing.F) {
 				t.Fatalf("the signed licence %q parses with the fallback version %q: %v", s, l.FallbackVersion, err)
 			}
 		}
+	})
+}
+
+// FuzzParseRevocations reads the input as a signed revocation list (ParseRevocations), then signs
+// it with the vendor key as the list of a signed one and parses that, so that the JSON behind the
+// signature is reached too: a list that parses keeps its ids when it is signed again.
+func FuzzParseRevocations(f *testing.F) {
+	pub, priv := testVendor(1)
+	list, err := SignRevocations(priv, Revocations{Issued: time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC), IDs: []string{"biz-1", "ent-2"}})
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(list)
+	f.Add(`{"issued":"2026-10-22T00:00:00Z","ids":["biz-1","ent-2"]}`)
+	f.Add(`{"ids":[]}`)
+	vendor := []ed25519.PublicKey{pub}
+
+	// The list s, read from the input in, signed again and parsed back. A list whose time JSON
+	// cannot write again is not this test's.
+	roundTrip := func(t *testing.T, in, s string) {
+		r, err := ParseRevocations(s, vendor)
+		if err != nil {
+			return
+		}
+		again, err := SignRevocations(priv, r)
+		if err != nil {
+			return
+		}
+		back, err := ParseRevocations(again, vendor)
+		if err != nil || !slices.Equal(back.IDs, r.IDs) {
+			t.Fatalf("the list of %q parses with the ids %q, which signed again parse as %q (%v)", in, r.IDs, back.IDs, err)
+		}
+	}
+
+	f.Fuzz(func(t *testing.T, s string) {
+		roundTrip(t, s, s)
+		signed := revokePrefix + base64.RawURLEncoding.EncodeToString([]byte(s))
+		roundTrip(t, s, signed+"."+base64.RawURLEncoding.EncodeToString(ed25519.Sign(priv, []byte(signed))))
 	})
 }
