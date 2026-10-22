@@ -26,7 +26,7 @@
 #define	VXLANTEST_QUIET			300			// A harness VTEP or the receiver that gets nothing gets nothing within this time (ms)
 #define	VXLANTEST_POLL			10			// Poll interval of the receiver and the counters of the module (ms)
 #define	VXLANTEST_NUM_VTEPS		4			// The harness VTEPs A, B, C and D
-#define	VXLANTEST_BURST			200			// The frames of the burst during which the flood list changes
+#define	VXLANTEST_BURST_FRAMES	200			// The frames of the burst during which the flood list changes
 #define	VXLANTEST_BURST_PAUSE	10			// The burst pauses after every this many frames, so that the change meets it halfway
 #define	VXLANTEST_RCVBUF		(4 * 1024 * 1024)	// The receive buffer of a harness VTEP: a whole burst fits in it
 #define	VXLANTEST_SMALL			60			// An untagged frame of the smallest Ethernet size, without its FCS
@@ -289,7 +289,7 @@ static bool VxlanTestTally(VXLANTEST_CTX *ctx, VXLANTEST_VTEP *t, UINT *seen)
 		UINT seq = ((UINT)ctx->Datagram[VXLAN_HEADER_SIZE + 14] << 8) | ctx->Datagram[VXLAN_HEADER_SIZE + 15];
 
 		VxlanTestFrame(want, sizeof(want), false, seq);
-		if (n != VXLAN_HEADER_SIZE + sizeof(want) || port != ctx->Port || seq >= VXLANTEST_BURST ||
+		if (n != VXLAN_HEADER_SIZE + sizeof(want) || port != ctx->Port || seq >= VXLANTEST_BURST_FRAMES ||
 			Cmp(ctx->Datagram, vxlantest_header_flood, VXLAN_HEADER_SIZE) != 0 || Cmp(ctx->Datagram + VXLAN_HEADER_SIZE, want, sizeof(want)) != 0)
 		{
 			ok = false;
@@ -474,14 +474,14 @@ static void VxlanTestOne(VXLANTEST_CTX *ctx)
 	VxlanTestCheck(ctx, after.Delivered == before.Delivered + 3, "  the module counted the three frames as delivered", "%I64u delivered before, %I64u after", before.Delivered, after.Delivered);
 }
 
-// The burst: VXLANTEST_BURST frames on VXLANTEST_VNI_FLOOD numbered from 0, with a short pause after every
+// The burst: VXLANTEST_BURST_FRAMES frames on VXLANTEST_VNI_FLOOD numbered from 0, with a short pause after every
 // VXLANTEST_BURST_PAUSE of them
 static void VxlanTestBurstThread(THREAD *thread, void *param)
 {
 	VXLANTEST_BURST *b = (VXLANTEST_BURST *)param;
 	UCHAR frame[VXLANTEST_SMALL];
 
-	for (UINT i = 0;i < VXLANTEST_BURST;i++)
+	for (UINT i = 0;i < VXLANTEST_BURST_FRAMES;i++)
 	{
 		VxlanTestFrame(frame, sizeof(frame), false, i);
 		if (VxlanSend(b->Vxlan, VXLANTEST_VNI_FLOOD, frame, sizeof(frame)) == false)
@@ -506,7 +506,7 @@ static void VxlanTestFlood(VXLANTEST_CTX *ctx)
 	VXLANTEST_VTEP *d = &ctx->Vteps[3];
 	VXLAN_ADDR abc[3], dcbd[4];
 	VXLAN_STATS before, after;
-	UINT seen[VXLANTEST_NUM_VTEPS][VXLANTEST_BURST];
+	UINT seen[VXLANTEST_NUM_VTEPS][VXLANTEST_BURST_FRAMES];
 	UCHAR *f = ctx->Frame;
 
 	Print("[a frame to the flood list of three VTEPs, and the list changing while the module runs]\n");
@@ -540,7 +540,7 @@ static void VxlanTestFlood(VXLANTEST_CTX *ctx)
 	burst->Vxlan = ctx->Vxlan;
 	THREAD *thread = NewThread(VxlanTestBurstThread, burst);
 	UINT64 end = Tick64() + VXLANTEST_TIMEOUT;
-	while (InterlockedCompareExchange(&burst->NumSent, 0, 0) < VXLANTEST_BURST / 4 && Tick64() < end)
+	while (InterlockedCompareExchange(&burst->NumSent, 0, 0) < VXLANTEST_BURST_FRAMES / 4 && Tick64() < end)
 	{
 		SleepThread(1);
 	}
@@ -557,8 +557,8 @@ static void VxlanTestFlood(VXLANTEST_CTX *ctx)
 	}
 
 	bool split = true;
-	UINT num_a = 0, num_d = 0, last_a = 0, first_d = VXLANTEST_BURST;
-	for (UINT i = 0;i < VXLANTEST_BURST;i++)
+	UINT num_a = 0, num_d = 0, last_a = 0, first_d = VXLANTEST_BURST_FRAMES;
+	for (UINT i = 0;i < VXLANTEST_BURST_FRAMES;i++)
 	{
 		// B and C are on both lists, so they read every frame once; A and D read each frame once between them
 		if (seen[1][i] != 1 || seen[2][i] != 1 || seen[0][i] + seen[3][i] != 1)
@@ -579,7 +579,7 @@ static void VxlanTestFlood(VXLANTEST_CTX *ctx)
 	VxlanTestCheck(ctx, changed && burst->NumFailed == 0 && tallied && split,
 		"  the list changes to D, C, B, D during a burst of 200 frames: B and C read every frame once, A the frames before the change, D the frames after it",
 		"changed %u, %u sends failed, tallied %u, %u frames at A, %u at D", (UINT)changed, burst->NumFailed, (UINT)tallied, num_a, num_d);
-	Print("  [INFO] the list changed after %u of the %u frames: A read %u of them, D %u\n", at, VXLANTEST_BURST, num_a, num_d);
+	Print("  [INFO] the list changed after %u of the %u frames: A read %u of them, D %u\n", at, VXLANTEST_BURST_FRAMES, num_a, num_d);
 	Free(burst);
 
 	// The new list: B, C and D, each once

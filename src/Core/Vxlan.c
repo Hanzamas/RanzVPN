@@ -134,9 +134,14 @@ void VxlanFree(VXLAN *v) {
 	if (v == NULL)
 		return;
 
-	for (UINT i = 0; i < v->NumVnis; i++)
-		if (v->Vnis[i].Vteps != NULL)
-			HeapFree(GetProcessHeap(), 0, v->Vnis[i].Vteps);
+	// Each list through a local: HeapFree invalidates the pointer that it is given, which /analyze would then see in
+	// every element of the array
+	for (UINT i = 0; i < v->NumVnis; i++) {
+		VXLAN_ADDR *vteps = v->Vnis[i].Vteps;
+
+		if (vteps != NULL)
+			HeapFree(GetProcessHeap(), 0, vteps);
+	}
 
 	HeapFree(GetProcessHeap(), 0, v->Vnis);
 	HeapFree(GetProcessHeap(), 0, v);
