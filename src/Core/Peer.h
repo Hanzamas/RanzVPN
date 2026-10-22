@@ -3,20 +3,24 @@
 //
 // A node reaches a peer over a path. The relay path goes through a relay, a node with the relay role that both
 // ends are bound to; it is up as soon as the two have exchanged one signal each through the control plane, so a
-// new peer pair comes up in one round trip (relay-first). The direct path is the one that ICE validates later
-// (CORE-S5-3, #79), PeerSetDirect. Every datagram a node receives goes through one ingress, PeerInput, whichever
-// path it came on: a datagram for the node itself is delivered, one for another node is forwarded when the node
-// has the relay role and both ends are bound to it. The same policy check runs in both cases: the source is a
-// peer, and the destination is the node itself or a peer that shares a VRF with the source. The control plane
-// sets the peers (the Peer objects of the desired state, PeerSetPeers) and the relays a node may use (its Relay
-// objects, PeerSetRelays).
+// new peer pair comes up in one round trip (relay-first). The direct path is the one that ICE validates later, in
+// the background (PeerIce.c, CORE-S5-3 #79): the pair moves to it once a candidate pair validates, with no
+// datagram held back, and back to the relay when consent freshness (RFC 7675) finds it dead. A node behind a home
+// gateway asks it for a public port with PCP, NAT-PMP or UPnP (PeerPortMap.c), so that a peer reaches it there.
+// PeerSetDirect sets a direct path by hand. Every datagram a node receives goes through one ingress, PeerInput,
+// whichever path it came on: a datagram for the node itself is delivered, one for another node is forwarded when
+// the node has the relay role and both ends are bound to it. The same policy check runs in both cases: the source
+// is a peer, and the destination is the node itself or a peer that shares a VRF with the source. The control
+// plane sets the peers (the Peer objects of the desired state, PeerSetPeers) and the relays a node may use (its
+// Relay objects, PeerSetRelays).
 //
 // Signals and binds (PeerSignal.c) are envelopes sealed by the sending node's static key to the receiving
 // node's, with the Noise one-way pattern K (Noise_K_25519_AESGCM_SHA256): only the receiver can open one, and
 // only a holder of the sender's private key can make one, so the controller that carries a signal can neither
 // forge, alter nor redirect it, and a relay binds no node that does not hold its key. A signal carries the relay
-// assignment of its sender (the relay it is bound to) and its ICE candidates. A sequence that grows with the
-// wall clock, as the timestamp of a WireGuard handshake initiation does, makes every replay fail.
+// assignment of its sender (the relay it is bound to), its ICE candidates and, with ICE on, the credentials of
+// its ICE session with the receiver. A sequence that grows with the wall clock, as the timestamp of a WireGuard
+// handshake initiation does, makes every replay fail.
 //
 // The datagrams travel over a send procedure that the caller gives (PEER_SEND_PROC) and come back through
 // PeerInput: a UDP socket (PeerUdp.c) or the harness network of coretest. The socket stands in for the QUIC
@@ -41,6 +45,9 @@
 #define PEER_ENVELOPE_HEADER  65   // An envelope: its kind, the sender's static key, the ephemeral key
 #define PEER_ENVELOPE_TAG     16   // ... then the ciphertext and the AES-GCM tag
 #define PEER_MAX_ENVELOPE     1024 // The largest envelope (Signal.envelope of control.options)
+#define PEER_HOST_SIZE        64   // An address of the configuration as text, with its terminating NUL
+#define PEER_ICE_UFRAG_SIZE   17   // An ICE username fragment of a signal, 4 to 16 ice-chars (RFC 8839 section 5.4), and its NUL
+#define PEER_ICE_PWD_SIZE     33   // An ICE password of a signal, 22 to 32 ice-chars, and its NUL
 
 // The first byte of a datagram or an envelope
 #define PEER_MSG_DATA   1 // Datagram: a frame from a node to a node
@@ -53,8 +60,16 @@
 #define PEER_SIGNAL_ANSWER 2 // Sent back for an offer
 
 // The type of an ICE candidate (RFC 8445 section 5.1.1)
-#define PEER_CANDIDATE_HOST  1 // An address of the node itself
-#define PEER_CANDIDATE_SRFLX 2 // Server reflexive: the address that its relay sees it at
+#define PEER_CANDIDATE_HOST   1 // An address of the node itself
+#define PEER_CANDIDATE_SRFLX  2 // Server reflexive: the address that its relay, or with ICE its STUN server, sees it at
+#define PEER_CANDIDATE_MAPPED 3 // A public port that the node's home gateway granted (PCP, NAT-PMP or UPnP)
+
+// The ICE session of a node with a peer (PEER_STATUS)
+#define PEER_ICE_NONE      0 // None: ICE is off, or no signal of the session yet
+#define PEER_ICE_CHECKING  1 // Checking candidate pairs, while the peer stays on the relay
+#define PEER_ICE_CONNECTED 2 // A candidate pair validated: the direct path is up
+#define PEER_ICE_COMPLETED 3 // ... and the controlling end nominated it
+#define PEER_ICE_FAILED    4 // No pair validated, or the direct path lost consent: the peer is on the relay
 
 // How a node reaches a peer (PEER_STATUS) and how a delivered datagram came (PEER_RECV_PROC)
 #define PEER_PATH_NONE   0 // No path: no signal of the peer yet
@@ -118,6 +133,8 @@ typedef struct PEER_SIGNAL {
 	PEER_ADDR Relay;                                // ... and the address of that relay
 	UINT NumCandidates;                             // The sender's ICE candidates
 	PEER_CANDIDATE Candidates[PEER_MAX_CANDIDATES]; // ... and their types and addresses
+	char IceUfrag[PEER_ICE_UFRAG_SIZE];             // The username fragment of the sender's ICE session with the receiver, empty without
+	char IcePwd[PEER_ICE_PWD_SIZE];                 // ... and its password
 } PEER_SIGNAL;
 
 // How a node reaches one peer (PeerGetStatus)
@@ -126,6 +143,8 @@ typedef struct PEER_STATUS {
 	UCHAR RelayKey[PEER_KEY_SIZE]; // The relay of the peer's last signal, zero for none
 	UINT NumCandidates;            // The candidates of its last signal
 	UINT64 Sequence;               // The sequence of its last signal
+	UINT Ice;                      // PEER_ICE_*: the ICE session with the peer
+	PEER_ADDR Direct;              // The peer's address on the direct path, while the peer is on it
 } PEER_STATUS;
 
 // The counters of the peer layer of a node (PeerGetStats)
@@ -136,19 +155,30 @@ typedef struct PEER_STATS {
 	UINT64 Forwarded;               // Data datagrams that the relay role forwarded
 	UINT64 Binds;                   // Binds that the relay role took
 	UINT64 Signals;                 // Signals taken
+	UINT64 Upgrades;                // ICE sessions that validated a direct path: peers that moved off the relay
+	UINT64 Fallbacks;               // ... of them whose direct path failed later: peers back on the relay
 	UINT NumBindings;               // Nodes bound to the relay role now
 	UINT NumBound;                  // Relays that the node is bound to now
+	UINT NumIce;                    // ICE sessions now
 	UINT64 Drops[PEER_NUM_REASONS]; // What the peer layer dropped, by reason (PEER_DROP_*)
 } PEER_STATS;
 
-// The configuration of the peer layer of a node (PeerDefaultConfig)
+// The configuration of the peer layer of a node (PeerDefaultConfig). With Ice, every ICE session of the node runs
+// on one UDP socket, the ICE socket, so that one mapping of a NAT or a home gateway serves all of its peers.
 typedef struct PEER_CONFIG {
-	bool Relay;        // The relay role: take binds and forward between the nodes bound to it
-	UINT RelayRate;    // Data datagrams per second that one bound node may send through the relay
-	UINT RelayBurst;   // ... of them in one burst
-	UINT BindInterval; // ms between two binds of the node to a relay: the keepalive of its binding
-	UINT BindRetry;    // ms before a bind that had no answer is sent again
-	UINT BindExpiry;   // ms after which the relay role drops a binding that was not renewed
+	bool Relay;                      // The relay role: take binds and forward between the nodes bound to it
+	UINT RelayRate;                  // Data datagrams per second that one bound node may send through the relay
+	UINT RelayBurst;                 // ... of them in one burst
+	UINT BindInterval;               // ms between two binds of the node to a relay: the keepalive of its binding
+	UINT BindRetry;                  // ms before a bind that had no answer is sent again
+	UINT BindExpiry;                 // ms after which the relay role drops a binding that was not renewed
+	bool Ice;                        // Move each peer from the relay to a direct path that ICE validates (libjuice)
+	char IceBind[PEER_HOST_SIZE];    // The address of the ICE socket, empty for every address of the node
+	USHORT IcePort;                  // ... its port, 0 for one that the system picks (then one node per process)
+	char StunServer[PEER_HOST_SIZE]; // The STUN server of the server reflexive candidate (an address), empty for none
+	USHORT StunPort;                 // ... its port, 0 for 3478
+	bool PortMap;                    // Ask the home gateway for a public port of the ICE socket (libplum)
+	UINT PortMapTimeout;             // ms that the port mapping waits for a gateway, per protocol; 0 for 10 s
 } PEER_CONFIG;
 
 #define PEER_DEFAULT_RELAY_RATE  20000
@@ -165,7 +195,8 @@ typedef struct PEER_UDP PEER_UDP;
 // Sends one datagram to dst; false when it could not be sent
 typedef bool(PEER_SEND_PROC)(void *param, const PEER_ADDR *dst, const void *data, UINT size);
 // Takes one data datagram for the node from the peer src, which came on path (PEER_PATH_RELAY or
-// PEER_PATH_DIRECT). It runs on the thread that called PeerInput and may call PeerSend.
+// PEER_PATH_DIRECT). It runs on the thread that called PeerInput, or on the thread of the ICE socket for a
+// datagram of an ICE session, and may call PeerSend and nothing else of the peer layer.
 typedef void(PEER_RECV_PROC)(PEER_AGENT *a, void *param, const UCHAR *src, UINT path, const void *data, UINT size);
 
 // Peer.c
@@ -183,6 +214,7 @@ bool PeerSend(PEER_AGENT *a, const UCHAR *dst, const void *data, UINT size);
 void PeerTick(PEER_AGENT *a);
 bool PeerGetStatus(PEER_AGENT *a, const UCHAR *key, PEER_STATUS *st);
 void PeerGetStats(PEER_AGENT *a, PEER_STATS *st);
+UINT PeerGetCandidates(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max);
 const UCHAR *PeerPublicKey(PEER_AGENT *a);
 void PeerAddrSetV4(PEER_ADDR *a, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, USHORT port);
 bool PeerAddrEqual(const PEER_ADDR *a, const PEER_ADDR *b);

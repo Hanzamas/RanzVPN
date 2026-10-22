@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-page="sign-in">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/sign-in.js"></script>
+</head>
+<body class="narrow">
+<main>
+<h1>Ranz controller</h1>
+<p>Sign in with an API token. The web UI calls the controller's API with it, so it can do what the token's role allows: a viewer reads, an operator also applies Intent, an admin also manages the API tokens.</p>
+<ranz-problem></ranz-problem>
+<form id="sign-in">
+<label for="token">API token</label>
+<input id="token" type="password" autocomplete="off" spellcheck="false" required>
+<button type="submit">Sign in</button>
+</form>
+<p class="hint">The first start of the controller writes the secret of the admin token to <code>admin.token</code> in its data directory. <code>ranz token create</code> makes a token for each person or tool. The token stays in this tab until you sign out or close it.</p>
+</main>
+</body>
+</html>

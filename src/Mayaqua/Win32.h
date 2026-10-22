@@ -26,7 +26,6 @@ UINT Win32GetOsType();
 
 void Win32CloseProcess(void *handle);
 bool Win32WaitProcess(void *h, UINT timeout);
-bool Win32Run(char *filename, char *arg, bool hide, bool wait);
 
 CALLSTACK_DATA *Win32GetCallStack();
 bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s);

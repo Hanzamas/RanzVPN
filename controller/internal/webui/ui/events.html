@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" data-page="events">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Events | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/events.js"></script>
+</head>
+<body>
+<ranz-nav></ranz-nav>
+<main>
+<h1>Events</h1>
+<p class="lead">What the controller reports to operators, the latest first: so far the automatic rollback of a revision that was not confirmed in time.</p>
+<ranz-problem></ranz-problem>
+<div class="buttons">
+<button type="button" id="refresh" class="quiet" data-action="events" hidden>Refresh</button>
+</div>
+<ranz-table id="events"></ranz-table>
+</main>
+</body>
+</html>

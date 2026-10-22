@@ -1,0 +1,22 @@
+{
+  "actions": [
+    {"name": "status", "method": "GET", "path": "/api/v1/status", "role": "viewer"},
+    {"name": "whoami", "method": "GET", "path": "/api/v1/whoami", "role": "viewer"},
+    {"name": "resources", "method": "GET", "path": "/api/v1/resources", "role": "viewer"},
+    {"name": "nodes", "method": "GET", "path": "/api/v1/nodes", "role": "viewer"},
+    {"name": "apply", "method": "POST", "path": "/api/v1/apply", "role": "operator"},
+    {"name": "deleteResource", "method": "DELETE", "path": "/api/v1/resources/{kind}/{name}", "role": "operator"},
+    {"name": "revisions", "method": "GET", "path": "/api/v1/revisions", "role": "viewer"},
+    {"name": "revision", "method": "GET", "path": "/api/v1/revisions/{id}", "role": "viewer"},
+    {"name": "confirmRevision", "method": "POST", "path": "/api/v1/revisions/{id}/confirm", "role": "operator"},
+    {"name": "rollback", "method": "POST", "path": "/api/v1/rollback", "role": "operator"},
+    {"name": "diff", "method": "GET", "path": "/api/v1/diff", "role": "viewer"},
+    {"name": "events", "method": "GET", "path": "/api/v1/events", "role": "viewer"},
+    {"name": "licence", "method": "GET", "path": "/api/v1/licence", "role": "viewer"},
+    {"name": "installLicence", "method": "PUT", "path": "/api/v1/licence", "role": "operator"},
+    {"name": "removeLicence", "method": "DELETE", "path": "/api/v1/licence", "role": "operator"},
+    {"name": "tokens", "method": "GET", "path": "/api/v1/tokens", "role": "admin"},
+    {"name": "createToken", "method": "POST", "path": "/api/v1/tokens", "role": "admin"},
+    {"name": "deleteToken", "method": "DELETE", "path": "/api/v1/tokens/{name}", "role": "admin"}
+  ]
+}
