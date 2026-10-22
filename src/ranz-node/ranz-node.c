@@ -27,5 +27,5 @@ static void StopProcess() {
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow) {
 	InitProcessCallOnce();
 
-	return MsService(GC_SVC_NAME_NODE, StartProcess, StopProcess, CmdLine);
+	return MsService(GC_SVC_NAME_NODE, StartProcess, StopProcess, CmdLine, NULL);
 }
