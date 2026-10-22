@@ -30,8 +30,8 @@ import (
 //     HTTP.sys user (an IIS site, for example) takes.
 //
 // A prefix that another HTTP.sys user registered already is left to it, with a warning; when
-// neither registers, the port does not open. install reserves both prefixes for LocalSystem
-// (Reserve), and uninstall removes the reservations it made.
+// neither registers, the port does not open. install reserves both prefixes for the account of
+// the service (Reserve), and uninstall removes the reservations it made.
 
 // The HTTP Server API names and values (http.h) this file uses.
 const (
