@@ -21,6 +21,10 @@ $ErrorActionPreference = 'Stop'
 #   key (the same fingerprint) from the key storage provider;
 # - fall back to TCP 5555 when 443 is taken, warn about it in the Application log, report it in
 #   its capabilities, and keep 5555 after 443 is free again (ADR-0020);
+# - keep each apply as a revision across those restarts, and through `ranz` (SDN-13, #189): show
+#   what a revision changed with `ranz diff`, roll back by itself an apply with -confirm that
+#   nobody confirmed and record the event, return to a revision with `ranz rollback`, and keep
+#   an apply that `ranz confirm` confirmed;
 # - write its starts and stops to the Application log (event IDs 1 and 2 of
 #   cmd/ranz-controller/service_windows.go), a warning for each start on the fallback (4), and no
 #   failure entry (3).
@@ -260,6 +264,43 @@ try {
 	$kept = Invoke-Ranz @('status')
 	if ($kept.capabilities.tlsPort -ne 5555 -or -not $kept.capabilities.tlsPortFallback) { throw 'with 443 free again the controller left its fallback' }
 	Write-Host 'the TLS port fell back to 5555 with 443 taken, and stays there with 443 free again'
+
+	# Revisions: the apply above is revision 1, also after the restarts
+	$revisions = @((Invoke-Ranz @('get', 'revisions')).revisions)
+	if ($revisions.Count -ne 1 -or $revisions[0].operation -ne 'apply') { throw "the revisions are not the one apply: $($revisions | ConvertTo-Json -Compress -Depth 4)" }
+	$intent.resources[0].spec.mtu = 1400
+	$mtuFile = Join-Path $work 'intent-mtu.json'
+	$intent | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $mtuFile -Encoding utf8NoBOM
+	$trial = Invoke-Ranz @('apply', '-f', $mtuFile, '-confirm', '5s')
+	if ($trial.revision -ne 2 -or -not $trial.confirmBy) { throw "apply -confirm did not make revision 2 with a deadline: $($trial | ConvertTo-Json -Compress)" }
+	$diff = Invoke-Ranz @('diff', '1', '2')
+	$changes = @($diff.changes)
+	if ($changes.Count -ne 1 -or $changes[0].action -ne 'changed' -or $changes[0].kind -ne 'VRF' -or (@($changes[0].fields) -join ',') -ne 'mtu') {
+		throw "ranz diff 1 2 is not the MTU change of VRF corp: $($diff | ConvertTo-Json -Compress -Depth 6)"
+	}
+	# Nobody confirms revision 2, so the service rolls it back by itself after 5 s
+	$end = (Get-Date).AddSeconds($waitSeconds)
+	while (@((Invoke-Ranz @('get', 'events')).events).Count -eq 0) {
+		if ((Get-Date) -ge $end) { throw "no automatic rollback within $waitSeconds s of the unconfirmed apply" }
+		Start-Sleep -Milliseconds 500
+	}
+	$events = @((Invoke-Ranz @('get', 'events')).events)
+	if ($events.Count -ne 1 -or $events[0].type -ne 'automatic-rollback' -or $events[0].revision -ne 3 -or $events[0].reverts -ne 2) {
+		throw "the events are not the automatic rollback of revision 2: $($events | ConvertTo-Json -Compress)"
+	}
+	Write-Host "event: $($events[0].message)"
+	# A rollback changes the intent, so it needs operator: the viewer token is refused
+	Assert-Refused @('-server', $api, '-token-file', $viewerFile, 'rollback', '2') 403
+	$back = Invoke-Ranz @('rollback', '2')
+	if ($back.revision -ne 4) { throw "ranz rollback 2 made revision $($back.revision), not 4" }
+	$vrf = (Invoke-Ranz @('get', 'resources')).resources | Where-Object { $_.kind -eq 'VRF' }
+	if ($vrf.spec.mtu -ne 1400) { throw "after ranz rollback 2 the MTU of corp is $($vrf.spec.mtu), not the 1400 of revision 2" }
+	$confirmApply = Invoke-Ranz @('apply', '-f', $file, '-confirm', '60s')
+	$confirmed = Invoke-Ranz @('confirm', "$($confirmApply.revision)")
+	if ($confirmed.confirm.state -ne 'confirmed') { throw "ranz confirm $($confirmApply.revision) answered $($confirmed | ConvertTo-Json -Compress -Depth 4)" }
+	$operations = ((Invoke-Ranz @('get', 'revisions')).revisions | ForEach-Object { $_.operation }) -join ','
+	if ($operations -ne 'apply,apply,automatic-rollback,rollback,apply') { throw "the revisions are $operations" }
+	Write-Host "revisions: $operations; the unconfirmed apply came back by itself with an event, the confirmed one stays"
 
 	Stop-Service -Name $service
 	$started = @(Get-ServiceEvents | Where-Object { $_.Id -eq 1 })

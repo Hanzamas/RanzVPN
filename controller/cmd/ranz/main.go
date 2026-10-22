@@ -3,8 +3,17 @@
 // Usage:
 //
 //	ranz [flags] apply -f FILE                 apply the resources of an intent document (YAML or JSON, - for standard input)
+//	ranz [flags] apply -f FILE -confirm DURATION
+//	                                           the same, rolled back by the controller after DURATION (for example 5m) unless confirmed
+//	ranz [flags] confirm REVISION              confirm the revision of an apply with -confirm, so that it stays
+//	ranz [flags] diff [FROM [TO]]              print the resource changes from revision FROM to revision TO (the latest when left
+//	                                           out); with no revision, the changes of the latest revision
+//	ranz [flags] rollback REVISION             make the intent of REVISION the intent again, as a new revision (0 is the empty intent)
 //	ranz [flags] get resources                 print the intent
 //	ranz [flags] get nodes                     print the generation of each node and the one it acknowledged
+//	ranz [flags] get revisions                 print every revision of the intent
+//	ranz [flags] get revision ID               print one revision with its resources
+//	ranz [flags] get events                    print the events, such as an automatic rollback
 //	ranz [flags] delete KIND NAME              delete one resource
 //	ranz [flags] status                        print the controller's public key, control address and TLS fingerprint
 //	ranz [flags] whoami                        print the name and the role of the token
@@ -21,11 +30,12 @@
 //	                      `ranz status` prints, RANZ_TLS_FINGERPRINT by default: for a controller on
 //	                      another host while its certificate is self-signed
 //
-// Every call needs the token of a role (SDN-14, #190): viewer reads, operator also applies and
-// deletes, admin also manages the tokens. The first start of the controller creates the admin
-// token and writes its secret to admin.token in its data directory. The controller decides what a
-// token may do, so ranz prints its answer as it is: JSON, the canonical form of the intent, or
-// the controller's refusal.
+// Every call needs the token of a role (SDN-14, #190): viewer reads, operator also applies,
+// deletes, confirms and rolls back, admin also manages the tokens. The first start of the
+// controller creates the admin token and writes its secret to admin.token in its data directory.
+// The controller decides what a token may do, so ranz prints its answer as it is: JSON, the
+// canonical form of the intent, or the controller's refusal. Each apply, delete and rollback
+// prints the revision it made.
 package main
 
 import (
@@ -37,6 +47,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
@@ -45,8 +56,12 @@ import (
 )
 
 const usage = `usage:
-  ranz [flags] apply -f FILE
-  ranz [flags] get resources|nodes
+  ranz [flags] apply -f FILE [-confirm DURATION]
+  ranz [flags] confirm REVISION
+  ranz [flags] diff [FROM [TO]]
+  ranz [flags] rollback REVISION
+  ranz [flags] get resources|nodes|revisions|events
+  ranz [flags] get revision ID
   ranz [flags] delete KIND NAME
   ranz [flags] status
   ranz [flags] whoami
@@ -119,6 +134,7 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 	case args[0] == "apply":
 		flags := flag.NewFlagSet("apply", flag.ContinueOnError)
 		file := flags.String("f", "", "the intent document, - for standard input")
+		confirm := flags.Duration("confirm", 0, "have the controller roll the apply back after this long, for example 5m, unless ranz confirm confirms it")
 		if err := flags.Parse(args[1:]); err != nil || *file == "" || flags.NArg() > 0 {
 			return errUsage
 		}
@@ -126,11 +142,67 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 		if err != nil {
 			return err
 		}
-		res, err := c.Apply(ctx, doc)
+		res, err := c.ApplyConfirm(ctx, doc, *confirm)
 		if err != nil {
 			return err
 		}
 		return show(out, res)
+	case len(args) == 2 && args[0] == "confirm":
+		id, err := revisionArg(args[1])
+		if err != nil {
+			return err
+		}
+		rev, err := c.Confirm(ctx, id)
+		if err != nil {
+			return err
+		}
+		return show(out, rev)
+	case len(args) <= 3 && args[0] == "diff":
+		var ids []uint64
+		for _, a := range args[1:] {
+			id, err := revisionArg(a)
+			if err != nil {
+				return err
+			}
+			ids = append(ids, id)
+		}
+		d, err := c.Diff(ctx, ids...)
+		if err != nil {
+			return err
+		}
+		return show(out, d)
+	case len(args) == 2 && args[0] == "rollback":
+		id, err := revisionArg(args[1])
+		if err != nil {
+			return err
+		}
+		res, err := c.Rollback(ctx, id)
+		if err != nil {
+			return err
+		}
+		return show(out, res)
+	case len(args) == 2 && args[0] == "get" && args[1] == "revisions":
+		revs, err := c.Revisions(ctx)
+		if err != nil {
+			return err
+		}
+		return show(out, api.RevisionList{Revisions: revs})
+	case len(args) == 3 && args[0] == "get" && args[1] == "revision":
+		id, err := revisionArg(args[2])
+		if err != nil {
+			return err
+		}
+		rev, err := c.Revision(ctx, id)
+		if err != nil {
+			return err
+		}
+		return show(out, rev)
+	case len(args) == 2 && args[0] == "get" && args[1] == "events":
+		evs, err := c.Events(ctx)
+		if err != nil {
+			return err
+		}
+		return show(out, api.EventList{Events: evs})
 	case len(args) == 2 && args[0] == "get" && args[1] == "resources":
 		rs, err := c.Resources(ctx)
 		if err != nil {
@@ -186,6 +258,15 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 		return show(out, tok)
 	}
 	return errUsage
+}
+
+// revisionArg parses a revision number of the command line.
+func revisionArg(s string) (uint64, error) {
+	id, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a revision number", s)
+	}
+	return id, nil
 }
 
 // readDocument reads an intent document, YAML or JSON, from the file name, or from standard
