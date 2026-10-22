@@ -20,6 +20,7 @@ type Rqlited struct {
 	HTTPAddr string    // host:port of its HTTP API
 	RaftAddr string    // host:port of its Raft transport
 	NodeID   string    // its Raft node id, "1" when empty
+	Join     string    // the Raft address of a member of the cluster to join; empty for a new cluster
 	Output   io.Writer // its standard output and error, discarded when nil
 
 	cmd  *exec.Cmd
@@ -42,7 +43,11 @@ func (r *Rqlited) Start(ctx context.Context) error {
 	if id == "" {
 		id = "1"
 	}
-	cmd := exec.Command(r.Path, "-node-id", id, "-http-addr", r.HTTPAddr, "-raft-addr", r.RaftAddr, r.DataDir)
+	args := []string{"-node-id", id, "-http-addr", r.HTTPAddr, "-raft-addr", r.RaftAddr}
+	if r.Join != "" {
+		args = append(args, "-join", r.Join)
+	}
+	cmd := exec.Command(r.Path, append(args, r.DataDir)...)
 	if r.Output != nil {
 		cmd.Stdout = r.Output
 		cmd.Stderr = r.Output

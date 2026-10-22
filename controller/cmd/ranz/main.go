@@ -16,6 +16,9 @@
 //	ranz [flags] get events                    print the events, such as an automatic rollback
 //	ranz [flags] delete KIND NAME              delete one resource
 //	ranz [flags] status                        print the controller's public key, control address and TLS fingerprint
+//	ranz [flags] get licence                   print the licence in force: tier, node cap, features, expiry
+//	ranz [flags] licence -f FILE               install the licence key in FILE (- for standard input)
+//	ranz [flags] licence -remove               remove the licence key, which leaves the Personal tier
 //	ranz [flags] whoami                        print the name and the role of the token
 //	ranz [flags] token list                    print the API tokens, without their secrets
 //	ranz [flags] token create -role ROLE NAME  create an API token with the role viewer, operator or admin, and print its secret
@@ -31,8 +34,9 @@
 //	                      another host while its certificate is self-signed
 //
 // Every call needs the token of a role (SDN-14, #190): viewer reads, operator also applies,
-// deletes, confirms and rolls back, admin also manages the tokens. The first start of the
-// controller creates the admin token and writes its secret to admin.token in its data directory.
+// deletes, confirms, rolls back and installs or removes the licence key, admin also manages the
+// tokens. The first start of the controller creates the admin token and writes its secret to
+// admin.token in its data directory.
 // The controller decides what a token may do, so ranz prints its answer as it is: JSON, the
 // canonical form of the intent, or the controller's refusal. Each apply, delete and rollback
 // prints the revision it made.
@@ -60,10 +64,11 @@ const usage = `usage:
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]
   ranz [flags] rollback REVISION
-  ranz [flags] get resources|nodes|revisions|events
+  ranz [flags] get resources|nodes|revisions|events|licence
   ranz [flags] get revision ID
   ranz [flags] delete KIND NAME
   ranz [flags] status
+  ranz [flags] licence -f FILE|-remove
   ranz [flags] whoami
   ranz [flags] token list
   ranz [flags] token create -role viewer|operator|admin NAME
@@ -256,6 +261,35 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 			return err
 		}
 		return show(out, tok)
+	case len(args) == 2 && args[0] == "get" && args[1] == "licence":
+		st, err := c.Licence(ctx)
+		if err != nil {
+			return err
+		}
+		return show(out, st)
+	case args[0] == "licence":
+		flags := flag.NewFlagSet("licence", flag.ContinueOnError)
+		file := flags.String("f", "", "the licence key, - for standard input")
+		remove := flags.Bool("remove", false, "remove the licence key")
+		if err := flags.Parse(args[1:]); err != nil || flags.NArg() > 0 || (*file != "") == *remove {
+			return errUsage
+		}
+		if *remove {
+			st, err := c.RemoveLicence(ctx)
+			if err != nil {
+				return err
+			}
+			return show(out, st)
+		}
+		b, err := readInput(*file)
+		if err != nil {
+			return err
+		}
+		st, err := c.SetLicence(ctx, string(b))
+		if err != nil {
+			return err
+		}
+		return show(out, st)
 	}
 	return errUsage
 }
@@ -269,16 +303,18 @@ func revisionArg(s string) (uint64, error) {
 	return id, nil
 }
 
+// readInput reads the file name, or standard input for "-".
+func readInput(name string) ([]byte, error) {
+	if name == "-" {
+		return io.ReadAll(os.Stdin)
+	}
+	return os.ReadFile(name)
+}
+
 // readDocument reads an intent document, YAML or JSON, from the file name, or from standard
 // input for "-".
 func readDocument(name string) (intent.Document, error) {
-	var b []byte
-	var err error
-	if name == "-" {
-		b, err = io.ReadAll(os.Stdin)
-	} else {
-		b, err = os.ReadFile(name)
-	}
+	b, err := readInput(name)
 	if err != nil {
 		return intent.Document{}, err
 	}

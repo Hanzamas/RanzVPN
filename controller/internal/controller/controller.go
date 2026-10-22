@@ -4,10 +4,19 @@
 // last (#176 "Control protocol"). Every change of the intent is a revision, which can be diffed
 // and rolled back (ADR-0031, revision.go). It keeps the Capabilities each node reports in its
 // Hello and refuses an apply or a rollback that a node cannot honour (ADR-0033).
+//
+// It also enforces the licence (ADR-0036, SDN-30 #206). The licence in force caps the nodes: an
+// apply or a rollback that adds a Node above the cap is refused, and when the intent holds more
+// Nodes than the cap (after the licence changed or expired) only the first ones in name order
+// get a desired state, so a node above the cap is refused on its control stream and is no peer
+// of the others. Without an Enterprise licence the controller refuses the Enterprise features:
+// the resources of EVPN and BGP, and any change of the intent while its store is a cluster of
+// more than one member (controller high availability).
 package controller
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
 	"errors"
@@ -17,6 +26,7 @@ import (
 	"maps"
 	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +39,9 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
+	"github.com/Hanzamas/RanzVPN/controller/internal/version"
 )
 
 // SchemaVersion is the control schema version of this controller (N). It serves nodes of
@@ -43,7 +55,23 @@ const (
 	// maxRefuseMessage is the size of Refuse.message on the C node (control.options), without
 	// the terminating NUL.
 	maxRefuseMessage = 255
+	// expiryRetry is the wait before the controller tries again to apply the expiry of the
+	// licence when the store failed.
+	expiryRetry = 10 * time.Second
 )
+
+// capFormat is the message of the Refuse for a node above the node cap of the licence in force:
+// the tier, the cap and the node's name.
+const capFormat = "the %s licence in force allows %d nodes, and Node %q is above that cap (nodes count in name order)"
+
+// enterpriseKinds are the resource kinds of an Enterprise feature: the BGP and EVPN peers of a
+// gateway (ADR-0032, #176 "Resource model"). The intent does not hold them yet (SDN-25, #201):
+// with an Enterprise licence the intent refuses them as unknown kinds, and without one the
+// licence refuses them first.
+var enterpriseKinds = map[string]licence.Feature{
+	"BgpPeer":  licence.FeatureEVPN,
+	"EvpnPeer": licence.FeatureEVPN,
+}
 
 // Config is what a controller runs with.
 type Config struct {
@@ -51,6 +79,12 @@ type Config struct {
 	Key    keys.Static  // the controller's Noise static key
 	Log    *slog.Logger // discarded when nil
 	Random io.Reader    // draws the ULA of a new VRF; crypto/rand when nil
+	// LicenceKeys are the public keys that a licence key must be signed with:
+	// licence.VendorKeys() when nil.
+	LicenceKeys []ed25519.PublicKey
+	// Version is the version of the controller that the fallback licence of an expired
+	// subscription must cover: version.Version when empty.
+	Version string
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -77,18 +111,26 @@ type NodeStatus struct {
 	Connected       bool   `json:"connected"`
 	// The Capabilities the node reported in its last Hello, nil before its first (ADR-0033).
 	Capabilities *capability.Capabilities `json:"capabilities"`
+	// Unlicensed is true for a Node above the node cap of the licence in force: it has no
+	// desired state, and its control stream is refused.
+	Unlicensed bool `json:"unlicensed,omitempty"`
 }
 
 // Controller holds the intent and the desired state of every node.
 type Controller struct {
-	store  *store.Store
-	key    keys.Static
-	log    *slog.Logger
-	random io.Reader
+	store       *store.Store
+	key         keys.Static
+	log         *slog.Logger
+	random      io.Reader
+	licenceKeys []ed25519.PublicKey
+	version     string
 
 	mu     sync.Mutex
 	intent intent.Intent
-	nodes  map[string]*node
+	lic    *licence.Licence  // what the installed licence key holds, nil without one
+	force  licence.Status    // the licence in force at the last commit
+	expiry *time.Timer       // recompiles the intent when the active licence expires
+	nodes  map[string]*node  // the nodes the licence in force covers
 	byKey  map[string]string // node static key to node name
 	// node static key to the Capabilities that the node reported last, kept while a Node
 	// resource holds the key
@@ -129,20 +171,22 @@ type stream struct {
 	refusal  *controlpb.Refuse
 }
 
-// New loads the intent and the node states from the store and reconciles them: a node whose
-// compiled state differs from its stored one gets a new generation. A revision that waited for
-// confirmation when the controller stopped waits again until its deadline, or is rolled back at
-// once if the deadline passed.
+// New loads the intent, the node states and the licence key from the store and reconciles them:
+// a node whose compiled state differs from its stored one gets a new generation. A revision that
+// waited for confirmation when the controller stopped waits again until its deadline, or is
+// rolled back at once if the deadline passed.
 func New(ctx context.Context, cfg Config) (*Controller, error) {
 	c := &Controller{
-		store:  cfg.Store,
-		key:    cfg.Key,
-		log:    cfg.Log,
-		random: cfg.Random,
-		intent: intent.New(),
-		nodes:  map[string]*node{},
-		byKey:  map[string]string{},
-		conns:  map[net.Conn]struct{}{},
+		store:       cfg.Store,
+		key:         cfg.Key,
+		log:         cfg.Log,
+		random:      cfg.Random,
+		licenceKeys: cfg.LicenceKeys,
+		version:     cfg.Version,
+		intent:      intent.New(),
+		nodes:       map[string]*node{},
+		byKey:       map[string]string{},
+		conns:       map[net.Conn]struct{}{},
 	}
 	if c.log == nil {
 		c.log = slog.New(slog.DiscardHandler)
@@ -150,9 +194,30 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if c.random == nil {
 		c.random = rand.Reader
 	}
+	if c.version == "" {
+		c.version = version.Version
+	}
+	if c.licenceKeys == nil {
+		var err error
+		if c.licenceKeys, err = licence.VendorKeys(); err != nil {
+			return nil, err
+		}
+	}
 	rs, stored, err := c.store.Load(ctx)
 	if err != nil {
 		return nil, err
+	}
+	var lic *licence.Licence
+	key, err := c.store.Licence(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if key != "" {
+		if l, err := licence.Parse(key, c.licenceKeys); err != nil {
+			c.log.Warn("the stored licence key does not verify, so the Personal tier is in force", "err", err)
+		} else {
+			lic = &l
+		}
 	}
 	in, err := intent.FromResources(rs)
 	if err != nil {
@@ -176,11 +241,11 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	c.intent = in
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	states, err := desired.Compile(in)
+	cp, err := c.compile(in, lic)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := c.commit(ctx, in, states, store.Changes{}); err != nil {
+	if _, err := c.commit(ctx, in, cp, store.Changes{}); err != nil {
 		return nil, err
 	}
 	last, ok, err := c.store.LastRevision(ctx)
@@ -194,6 +259,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		}
 	}
 	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision)
+	c.log.Info("licence", "tier", c.force.Tier, "nodes", c.force.Nodes, "state", c.force.State, "message", c.force.Message)
 	return c, nil
 }
 
@@ -202,8 +268,9 @@ func (c *Controller) PublicKey() []byte {
 	return c.key.Public()
 }
 
-// Apply applies doc to the intent (`ranz apply -f`) as the next revision. It refuses, with an
-// error that wraps capability.ErrMissing, an intent that a node cannot honour, and then changes
+// Apply applies doc to the intent (`ranz apply -f`) as the next revision. What the licence in
+// force does not allow is refused with an error that wraps licence.ErrRefused, and an intent that
+// a node cannot honour with one that wraps capability.ErrMissing; a refused apply changes
 // nothing.
 func (c *Controller) Apply(ctx context.Context, doc intent.Document) (ApplyResult, error) {
 	return c.ApplyConfirm(ctx, doc, 0)
@@ -221,15 +288,25 @@ func (c *Controller) ApplyConfirm(ctx context.Context, doc intent.Document, conf
 	if err := c.unconfirmed(); err != nil {
 		return ApplyResult{}, err
 	}
+	st := c.evaluate(c.lic)
+	if err := c.checkCluster(ctx, st); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := checkFeatures(doc, st); err != nil {
+		return ApplyResult{}, err
+	}
 	next, err := intent.Apply(c.intent, doc, c.random)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	states, err := desired.Compile(next)
+	if err := c.checkCap(next, st, "apply"); err != nil {
+		return ApplyResult{}, err
+	}
+	cp, err := c.compile(next, c.lic)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	if err := c.honoured(next, states); err != nil {
+	if err := c.honoured(next, cp.states); err != nil {
 		c.log.Warn("intent refused: capability", "err", err)
 		return ApplyResult{}, err
 	}
@@ -237,7 +314,7 @@ func (c *Controller) ApplyConfirm(ctx context.Context, doc intent.Document, conf
 	if confirm > 0 {
 		rev.Confirm = &intent.Confirmation{Deadline: rev.Time.Add(confirm), State: intent.ConfirmPending}
 	}
-	res, err := c.change(ctx, next, states, rev, store.Changes{})
+	res, err := c.change(ctx, next, cp, rev, store.Changes{})
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -258,20 +335,57 @@ func (c *Controller) Delete(ctx context.Context, kind, name string) (ApplyResult
 	if err := c.unconfirmed(); err != nil {
 		return ApplyResult{}, err
 	}
+	if err := c.checkCluster(ctx, c.evaluate(c.lic)); err != nil {
+		return ApplyResult{}, err
+	}
 	next, err := intent.Delete(c.intent, kind, name)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	states, err := desired.Compile(next)
+	cp, err := c.compile(next, c.lic)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	res, err := c.change(ctx, next, states, c.nextRevision(intent.OpDelete), store.Changes{})
+	res, err := c.change(ctx, next, cp, c.nextRevision(intent.OpDelete), store.Changes{})
 	if err != nil {
 		return ApplyResult{}, err
 	}
 	c.log.Info("resource deleted", "kind", kind, "name", name, "revision", res.Revision, "changed", len(res.Nodes))
 	return res, nil
+}
+
+// Licence returns the licence in force.
+func (c *Controller) Licence() licence.Status {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.force
+}
+
+// SetLicence installs the licence key key, or removes the installed one when key is empty
+// (`ranz licence`), and returns the licence in force then. The nodes it no longer covers lose
+// their desired state and their control streams; the ones it covers again get theirs. A key
+// that does not verify changes nothing and gives an error that wraps licence.ErrInvalid.
+func (c *Controller) SetLicence(ctx context.Context, key string) (licence.Status, error) {
+	key = strings.TrimSpace(key)
+	var lic *licence.Licence
+	if key != "" {
+		l, err := licence.Parse(key, c.licenceKeys)
+		if err != nil {
+			return licence.Status{}, err
+		}
+		lic = &l
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cp, err := c.compile(c.intent, lic)
+	if err != nil {
+		return licence.Status{}, err
+	}
+	if _, err := c.commit(ctx, c.intent, cp, store.Changes{Licence: &key}); err != nil {
+		return licence.Status{}, err
+	}
+	c.log.Info("licence key changed", "tier", c.force.Tier, "nodes", c.force.Nodes, "state", c.force.State, "message", c.force.Message)
+	return c.force, nil
 }
 
 // Resources returns the intent.
@@ -290,10 +404,15 @@ func (c *Controller) Nodes() []NodeStatus {
 		reported[name] = c.caps[k]
 	}
 	out := []NodeStatus{}
-	for _, name := range slices.Sorted(maps.Keys(c.nodes)) {
+	for _, name := range slices.Sorted(maps.Keys(c.intent.Nodes)) {
 		n := c.nodes[name]
+		caps := capability.FromProto(reported[name])
+		if n == nil {
+			out = append(out, NodeStatus{Name: name, Capabilities: caps, Unlicensed: true})
+			continue
+		}
 		out = append(out, NodeStatus{Name: name, Generation: n.gen, AckedGeneration: n.ackedGen, Connected: n.stream != nil,
-			Capabilities: capability.FromProto(reported[name])})
+			Capabilities: caps})
 	}
 	return out
 }
@@ -324,6 +443,9 @@ func (c *Controller) ServeStream(tc *tls.Conn) {
 func (c *Controller) Close() {
 	c.mu.Lock()
 	c.closed = true
+	if c.expiry != nil {
+		c.expiry.Stop()
+	}
 	if c.timer != nil {
 		c.timer.Stop()
 	}
@@ -334,12 +456,31 @@ func (c *Controller) Close() {
 	c.wg.Wait()
 }
 
-// commit makes next the intent: with states, the desired state of every node that next compiles
-// to, it gives each node whose state changed the next generation, writes the intent and those
-// states to the store in one transaction together with the further changes of ch, and then
-// wakes the streams of the changed nodes. The Capabilities of a static key that no Node resource
-// of next holds are dropped. c.mu is held.
-func (c *Controller) commit(ctx context.Context, next intent.Intent, states map[string]desired.State, ch store.Changes) ([]NodeGeneration, error) {
+// compiled is an intent compiled under a licence: the licence key installed (nil for none), the
+// licence in force with it, and the desired state of every node that the licence in force covers.
+type compiled struct {
+	lic    *licence.Licence
+	force  licence.Status
+	states map[string]desired.State
+}
+
+// compile compiles next under lic, the licence key installed (nil for none).
+func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled, error) {
+	force := c.evaluate(lic)
+	states, err := desired.Compile(next.Capped(force.Nodes))
+	if err != nil {
+		return compiled{}, err
+	}
+	return compiled{lic: lic, force: force, states: states}, nil
+}
+
+// commit makes next the intent and cp.lic the licence, with cp what next compiles to under it:
+// it gives each node whose state changed the next generation, writes the intent, those states
+// and the further changes of ch to the store in one transaction, and then wakes the streams of
+// the changed nodes and refuses the streams of the nodes that lost their state. The Capabilities
+// of a static key that no Node resource of next holds are dropped. c.mu is held.
+func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled, ch store.Changes) ([]NodeGeneration, error) {
+	states, force := cp.states, cp.force
 	ch.PutResources, ch.DeleteResources = intent.Changed(c.intent, next)
 	result := []NodeGeneration{}
 	for _, name := range slices.Sorted(maps.Keys(states)) {
@@ -381,7 +522,7 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, states map[
 		return nil, err
 	}
 
-	c.intent = next
+	c.intent, c.lic, c.force = next, cp.lic, force
 	for _, ng := range result {
 		n := c.nodes[ng.Name]
 		if n == nil {
@@ -395,7 +536,11 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, states map[
 	}
 	for _, name := range ch.DeleteNodes {
 		if s := c.nodes[name].stream; s != nil {
-			c.refuse(s, controlpb.RefuseReason_REFUSE_REASON_UNKNOWN_NODE, "the Node resource %q was deleted", name)
+			if _, ok := next.Nodes[name]; ok {
+				c.refuse(s, controlpb.RefuseReason_REFUSE_REASON_LICENCE, capFormat, force.Tier, force.Nodes, name)
+			} else {
+				c.refuse(s, controlpb.RefuseReason_REFUSE_REASON_UNKNOWN_NODE, "the Node resource %q was deleted", name)
+			}
 		}
 		delete(c.nodes, name)
 	}
@@ -413,7 +558,102 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, states map[
 			c.refuse(n.stream, controlpb.RefuseReason_REFUSE_REASON_UNKNOWN_NODE, "the publicKey of the Node resource %q changed", name)
 		}
 	}
+	c.schedule(force)
 	return result, nil
+}
+
+// evaluate returns the licence in force now with lic installed (nil for none).
+func (c *Controller) evaluate(lic *licence.Licence) licence.Status {
+	return licence.Evaluate(lic, time.Now(), c.version)
+}
+
+// schedule arms the timer that recompiles the intent when force, the licence in force, is an
+// active one and expires. c.mu is held.
+func (c *Controller) schedule(force licence.Status) {
+	if c.expiry != nil {
+		c.expiry.Stop()
+		c.expiry = nil
+	}
+	if force.State == licence.StateActive && !c.closed {
+		c.expiry = time.AfterFunc(time.Until(force.Key.Expires), c.expireLicence)
+	}
+}
+
+// expireLicence recompiles the intent once the active licence expired: under its fallback
+// licence, or the Personal tier. It makes no revision, since the intent does not change.
+func (c *Controller) expireLicence() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	cp, err := c.compile(c.intent, c.lic)
+	if err == nil {
+		_, err = c.commit(context.Background(), c.intent, cp, store.Changes{})
+	}
+	if err != nil {
+		c.log.Error("applying the expiry of the licence", "err", err)
+		c.expiry = time.AfterFunc(expiryRetry, c.expireLicence)
+		return
+	}
+	c.log.Warn("licence expired", "tier", c.force.Tier, "nodes", c.force.Nodes, "state", c.force.State, "message", c.force.Message)
+}
+
+// checkCluster refuses a change of the intent while the store is a cluster of more than one
+// member and the licence in force st lacks controller high availability. c.mu is held.
+func (c *Controller) checkCluster(ctx context.Context, st licence.Status) error {
+	if st.Allows(licence.FeatureHA) {
+		return nil
+	}
+	members, err := c.store.Members(ctx)
+	if err != nil {
+		return err
+	}
+	if members > 1 {
+		return fmt.Errorf("%w: the store of this controller is a cluster of %d members, and %s is an Enterprise feature; the licence in force is %s: install an Enterprise licence key or run a single member",
+			licence.ErrRefused, members, licence.FeatureHA.Name(), st.Tier)
+	}
+	return nil
+}
+
+// checkFeatures refuses the resources of doc whose kind is a feature that the licence in force
+// st lacks.
+func checkFeatures(doc intent.Document, st licence.Status) error {
+	var problems []error
+	for _, r := range doc.Resources {
+		if f, ok := enterpriseKinds[r.Kind]; ok && !st.Allows(f) {
+			problems = append(problems, fmt.Errorf("%s %q: %s is an Enterprise feature, and the licence in force is %s", r.Kind, r.Name, f.Name(), st.Tier))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("%w:\n%w", licence.ErrRefused, errors.Join(problems...))
+	}
+	return nil
+}
+
+// checkCap refuses a change of the intent, an apply or a rollback as op names it, that adds a
+// Node when next would hold more Nodes than the licence in force st allows. A change that adds
+// none passes, so an intent above the cap (after the licence changed) can still be changed and
+// shrunk. c.mu is held.
+func (c *Controller) checkCap(next intent.Intent, st licence.Status, op string) error {
+	if len(next.Nodes) <= st.Nodes {
+		return nil
+	}
+	var added []string
+	for _, name := range slices.Sorted(maps.Keys(next.Nodes)) {
+		if _, ok := c.intent.Nodes[name]; !ok {
+			added = append(added, "Node "+strconv.Quote(name))
+		}
+	}
+	if len(added) == 0 {
+		return nil
+	}
+	hint := ""
+	if st.Tier == licence.Personal {
+		hint = "; a Business or Enterprise licence key raises the cap"
+	}
+	return fmt.Errorf("%w: the %s licence in force allows %d nodes, and this %s would make %d (new: %s)%s",
+		licence.ErrRefused, st.Tier, st.Nodes, op, len(next.Nodes), strings.Join(added, ", "), hint)
 }
 
 // honoured checks states, the desired states that next compiles to, against the Capabilities of
@@ -511,6 +751,14 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 	s.name = name
 	n := c.nodes[name]
 	caps := c.report(conn.PeerKey(), name, hello.GetCapabilities())
+	if n == nil {
+		// The Node resource exists, but the licence in force does not cover it.
+		force := c.force
+		c.mu.Unlock()
+		c.log.Warn("node refused: above the node cap of the licence", "node", name, "tier", force.Tier, "nodes", force.Nodes)
+		writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_LICENCE, capFormat, force.Tier, force.Nodes, name))
+		return
+	}
 	if problems := capability.Check(name, caps, n.state); len(problems) > 0 {
 		// The node keeps forwarding on the generation it applied last; the intent it cannot
 		// honour does not reach it.

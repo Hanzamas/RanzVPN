@@ -14,6 +14,7 @@ $ErrorActionPreference = 'Stop'
 # - refuse a call without a token (401) and an apply with a viewer token (403), and answer the
 #   admin token from an address of the host that is not loopback, with the TLS fingerprint of
 #   its status pinned, while a wrong fingerprint fails;
+# - report the Personal tier through `ranz get licence` while no licence key is installed;
 # - take an intent from `ranz apply`, push generation 1 to a simulated node (ranz-nodesim) and
 #   record its acknowledgement;
 # - keep the intent, the acknowledged generation and its keys across a restart of the service:
@@ -168,6 +169,10 @@ try {
 	if ($status.capabilities.tlsPort -ne 443 -or $status.capabilities.tlsPortFallback) { throw 'the TLS port is not 443 with 443 free' }
 	if ($status.capabilities.plainHttp -notmatch 'HTTP\.sys') { throw "port 80 does not run on HTTP.sys: $($status.capabilities.plainHttp)" }
 	if ($status.capabilities.plainHttp -notmatch [regex]::Escape($acmePrefix)) { throw "the controller does not hold the ACME path of port 80: $($status.capabilities.plainHttp)" }
+	# No licence key is installed: the Personal tier is in force (ADR-0036)
+	$licence = Invoke-Ranz @('get', 'licence')
+	Write-Host "licence: $($licence | ConvertTo-Json -Compress -Depth 4)"
+	if ($licence.tier -ne 'Personal' -or $licence.state -ne 'none' -or $licence.nodes -lt 1) { throw 'without a licence key the licence in force is not the Personal tier' }
 	$script:redirectOurs = $status.capabilities.plainHttp -match [regex]::Escape($redirectPrefix)
 	if (-not $script:redirectOurs) {
 		$log = Get-Content -LiteralPath (Join-Path $data 'controller.log') -Raw

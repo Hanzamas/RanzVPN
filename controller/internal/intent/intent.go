@@ -120,6 +120,19 @@ func (in Intent) Clone() Intent {
 	return out
 }
 
+// Capped returns in with only its first n Nodes in name order: the Nodes that a licence with a
+// node cap of n covers (internal/licence). in itself is not changed.
+func (in Intent) Capped(n int) Intent {
+	if len(in.Nodes) <= n {
+		return in
+	}
+	out := in.Clone()
+	for _, name := range sortedNames(in.Nodes)[max(n, 0):] {
+		delete(out.Nodes, name)
+	}
+	return out
+}
+
 // Apply returns in with the resources of doc added or replaced, completed and validated; in
 // itself is not changed. random draws the ULA of a VRF that declares none; crypto/rand when nil.
 func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {

@@ -83,6 +83,8 @@ enum RefuseReason {
   // The desired state of the node needs a Capability that its Hello does not report. The node
   // keeps forwarding on the last generation it applied.
   REFUSE_REASON_CAPABILITY = 4;
+  // The licence in force does not cover the node: it is above the node cap (ADR-0036).
+  REFUSE_REASON_LICENCE = 5;
 }
 
 // The kind of an Object. Objects are ordered by it, so a VRF comes before its Networks.
