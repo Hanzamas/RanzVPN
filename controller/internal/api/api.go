@@ -4,6 +4,12 @@
 // host. Every call needs the bearer token of a role (internal/rbac, SDN-14 #190): a read needs
 // viewer, a change of the Intent operator, and the tokens themselves admin (Needs). The roles are
 // checked here only, so every client of the API gets the same answers.
+//
+// Each feature contributes its routes from its own file: the file's init() calls register with
+// the route's method, path, the least role it needs and its handler, and Routes builds the mux
+// from what is registered. Adding an endpoint is a new file, not an edit of this one, and the
+// Guard stays the one place that turns a request into the role it needs (Needs). See CONTEXT.md,
+// "Controller API registries".
 package api
 
 import (
@@ -21,13 +27,10 @@ import (
 	"net/netip"
 	"net/url"
 	"path"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
-	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
@@ -43,105 +46,44 @@ const tokensPath = "/api/v1/tokens"
 // challenge is the WWW-Authenticate header of a refusal (RFC 6750), which names the controller.
 const challenge = `Bearer realm="ranz-controller"`
 
-// Status is the answer of GET /api/v1/status.
-type Status struct {
-	PublicKey      string       `json:"publicKey"`      // base64 of the controller's Noise static key
-	ControlAddress string       `json:"controlAddress"` // where the controller listens for control streams
-	TLSFingerprint string       `json:"tlsFingerprint"` // hex SHA-256 of the public key of the TLS certificate
-	Capabilities   Capabilities `json:"capabilities"`
-	// Cluster tells which member of the controller cluster answers and which one leads
-	// (internal/cluster). Every member answers the status itself.
-	Cluster *ClusterStatus `json:"cluster,omitempty"`
-}
-
-// ClusterStatus is the cluster part of Status.
-type ClusterStatus struct {
-	Member string `json:"member"` // the name of the member that answers
-	Role   string `json:"role"`   // RoleLeader or RoleStandby
-	Leader string `json:"leader"` // the name of the member that holds the lease, empty while none does
-	Epoch  int64  `json:"epoch"`  // the lease epoch of the leader
-	// SchemaVersion is the control schema version the member runs as (controller.Config.Schema).
-	SchemaVersion int32 `json:"schemaVersion"`
-}
-
-// The roles of a member of a controller cluster.
-const (
-	RoleLeader  = "leader"
-	RoleStandby = "standby"
-)
-
-// Capabilities is what the controller runs with on its host.
-type Capabilities struct {
-	// TLSPort is the TCP port of the control stream and the API: 443, or 5555 after a fallback.
-	TLSPort int `json:"tlsPort"`
-	// TLSPortFallback is true when 443 could not be bound, at this start or an earlier one, and
-	// the controller listens on 5555 instead (ADR-0020).
-	TLSPortFallback bool `json:"tlsPortFallback"`
-	// PlainHTTP tells where the plain-HTTP port (redirect and ACME) runs, empty when it is off:
-	// a TCP address, or the HTTP.sys URL prefixes on Windows.
-	PlainHTTP string `json:"plainHttp,omitempty"`
-}
-
-// ResourceList is the answer of GET /api/v1/resources: the intent.
-type ResourceList struct {
-	Resources []intent.Resource `json:"resources"`
-}
-
-// NodeList is the answer of GET /api/v1/nodes: for each node its generations and the
-// Capabilities it reported (ADR-0033).
-type NodeList struct {
-	Nodes []controller.NodeStatus `json:"nodes"`
-}
-
-// RevisionList is the answer of GET /api/v1/revisions: every revision, oldest first, without
-// their resources.
-type RevisionList struct {
-	Revisions []intent.Revision `json:"revisions"`
-}
-
-// RollbackRequest is the body of POST /api/v1/rollback.
-type RollbackRequest struct {
-	// Revision is the revision whose intent becomes the intent again; 0 is the empty intent.
-	// It must be given.
-	Revision *uint64 `json:"revision"`
-}
-
-// DiffResult is the answer of GET /api/v1/diff: how the intent of revision To differs from the
-// intent of revision From.
-type DiffResult struct {
-	From    uint64          `json:"from"`
-	To      uint64          `json:"to"`
-	Changes []intent.Change `json:"changes"`
-}
-
-// EventList is the answer of GET /api/v1/events: every event, oldest first.
-type EventList struct {
-	Events []event.Event `json:"events"`
-}
-
-// TokenList is the answer of GET /api/v1/tokens.
-type TokenList struct {
-	Tokens []rbac.Token `json:"tokens"`
-}
-
-// TokenRequest is the body of POST /api/v1/tokens.
-type TokenRequest struct {
-	Name string    `json:"name"`
-	Role rbac.Role `json:"role"`
-}
-
-// LicenceKey is the body of PUT /api/v1/licence.
-type LicenceKey struct {
-	Key string `json:"key"`
-}
-
 // Problem is the body of every answer that is not 200 OK.
 type Problem struct {
 	Error string `json:"error"`
 }
 
-// Handler returns the API of c, guarded by the roles of tokens (Guard). The role each call
-// needs at least is on its right:
+// routeDeps is what a route's handler needs to serve a request: the controller the member leads,
+// the API tokens and the static part of GET /api/v1/status. Routes fills one in and passes it to
+// every handler.
+type routeDeps struct {
+	Controller *controller.Controller
+	Tokens     *rbac.Tokens
+	Status     Status
+}
+
+// route is one registered API endpoint: its method and its path pattern (an http.ServeMux
+// pattern), the least role it needs, and the handler. Role must be the role Needs returns for the
+// method and a path that matches the pattern, so the role a feature declares in its own file can
+// never drift from the one place the Guard decides roles (TestRegisteredRolesMatchNeeds checks
+// it).
+type route struct {
+	Method  string
+	Pattern string
+	Role    rbac.Role
+	Handle  func(d routeDeps, w http.ResponseWriter, r *http.Request)
+}
+
+// routes holds every registered API route. Each feature file appends to it from its own init()
+// through register.
+var routes []route
+
+// register adds rs to the API. A feature file calls it once from its init(), so adding an
+// endpoint is a new file, not an edit of Routes.
+func register(rs ...route) {
+	routes = append(routes, rs...)
+}
+
+// Handler returns the API of c, guarded by the roles of tokens (Guard). The role each call needs
+// at least is on its right:
 //
 //	GET    /api/v1/status                  Status                                       viewer
 //	GET    /api/v1/whoami                  the caller's rbac.Token                      viewer
@@ -164,6 +106,7 @@ type Problem struct {
 //	POST   /api/v1/tokens                  a TokenRequest; an rbac.NewToken             admin
 //	DELETE /api/v1/tokens/{name}           the rbac.Token deleted                       admin
 //
+// Each call is registered from its feature file (register); the table above is the overview.
 // An apply or a rollback that a node cannot honour answers 409 Conflict, naming the node and the
 // Capability it lacks. What the licence in force does not allow is answered with 403 Forbidden,
 // and a licence key that does not verify with 400 Bad Request. status holds the control address
@@ -174,222 +117,18 @@ func Handler(c *controller.Controller, tokens *rbac.Tokens, status Status) http.
 
 // Routes returns the calls of Handler without the Guard in front of them, for a handler that
 // guards them itself: a member of a controller cluster guards its own calls and the ones it
-// forwards to the leader alike (internal/cluster).
+// forwards to the leader alike (internal/cluster). It builds the mux from the registered routes.
 func Routes(c *controller.Controller, tokens *rbac.Tokens, status Status) *http.ServeMux {
 	status.PublicKey = base64.StdEncoding.EncodeToString(c.PublicKey())
+	deps := routeDeps{Controller: c, Tokens: tokens, Status: status}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, http.StatusOK, status)
-	})
-	mux.HandleFunc("GET /api/v1/whoami", func(w http.ResponseWriter, r *http.Request) {
-		tok, _ := Caller(r.Context())
-		reply(w, http.StatusOK, tok)
-	})
-	mux.HandleFunc("GET /api/v1/resources", func(w http.ResponseWriter, r *http.Request) {
-		rs := c.Resources()
-		if rs == nil {
-			rs = []intent.Resource{}
-		}
-		reply(w, http.StatusOK, ResourceList{Resources: rs})
-	})
-	mux.HandleFunc("GET /api/v1/nodes", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, http.StatusOK, NodeList{Nodes: c.Nodes()})
-	})
-	mux.HandleFunc("POST /api/v1/apply", func(w http.ResponseWriter, r *http.Request) {
-		confirm, err := confirmParam(r.URL.Query().Get("confirm"))
-		if err != nil {
-			reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
-			return
-		}
-		var doc intent.Document
-		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
-		d.DisallowUnknownFields()
-		if err := d.Decode(&doc); err != nil {
-			reply(w, http.StatusBadRequest, Problem{Error: "the body is not an intent document: " + err.Error()})
-			return
-		}
-		res, err := c.ApplyConfirm(r.Context(), doc, confirm)
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, res)
-	})
-	mux.HandleFunc("DELETE /api/v1/resources/{kind}/{name}", func(w http.ResponseWriter, r *http.Request) {
-		res, err := c.Delete(r.Context(), r.PathValue("kind"), r.PathValue("name"))
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, res)
-	})
-	mux.HandleFunc("GET /api/v1/revisions", func(w http.ResponseWriter, r *http.Request) {
-		revs, err := c.Revisions(r.Context())
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, RevisionList{Revisions: revs})
-	})
-	mux.HandleFunc("GET /api/v1/revisions/{id}", func(w http.ResponseWriter, r *http.Request) {
-		id, err := revisionNumber(r.PathValue("id"))
-		if err != nil {
-			reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
-			return
-		}
-		rev, err := c.Revision(r.Context(), id)
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, rev)
-	})
-	mux.HandleFunc("POST /api/v1/revisions/{id}/confirm", func(w http.ResponseWriter, r *http.Request) {
-		id, err := revisionNumber(r.PathValue("id"))
-		if err != nil {
-			reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
-			return
-		}
-		rev, err := c.Confirm(r.Context(), id)
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, rev)
-	})
-	mux.HandleFunc("POST /api/v1/rollback", func(w http.ResponseWriter, r *http.Request) {
-		var req RollbackRequest
-		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
-		d.DisallowUnknownFields()
-		if err := d.Decode(&req); err != nil || req.Revision == nil {
-			reply(w, http.StatusBadRequest, Problem{Error: `the body must be {"revision": N}, with N the revision to return to`})
-			return
-		}
-		res, err := c.Rollback(r.Context(), *req.Revision)
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, res)
-	})
-	mux.HandleFunc("GET /api/v1/diff", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		to := c.LatestRevision()
-		if s := q.Get("to"); s != "" {
-			var err error
-			if to, err = revisionNumber(s); err != nil {
-				reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
-				return
-			}
-		}
-		var from uint64
-		if to > 0 {
-			from = to - 1
-		}
-		if s := q.Get("from"); s != "" {
-			var err error
-			if from, err = revisionNumber(s); err != nil {
-				reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
-				return
-			}
-		}
-		changes, err := c.Diff(r.Context(), from, to)
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, DiffResult{From: from, To: to, Changes: changes})
-	})
-	mux.HandleFunc("GET /api/v1/events", func(w http.ResponseWriter, r *http.Request) {
-		evs, err := c.Events(r.Context())
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, EventList{Events: evs})
-	})
-	mux.HandleFunc("GET /api/v1/licence", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, http.StatusOK, c.Licence())
-	})
-	mux.HandleFunc("PUT /api/v1/licence", func(w http.ResponseWriter, r *http.Request) {
-		var k LicenceKey
-		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
-		d.DisallowUnknownFields()
-		if err := d.Decode(&k); err != nil {
-			reply(w, http.StatusBadRequest, Problem{Error: "the body is not a licence key: " + err.Error()})
-			return
-		}
-		if strings.TrimSpace(k.Key) == "" {
-			reply(w, http.StatusBadRequest, Problem{Error: "the body names no licence key; DELETE /api/v1/licence removes the installed one"})
-			return
-		}
-		st, err := c.SetLicence(r.Context(), k.Key)
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, st)
-	})
-	mux.HandleFunc("DELETE /api/v1/licence", func(w http.ResponseWriter, r *http.Request) {
-		st, err := c.SetLicence(r.Context(), "")
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, st)
-	})
-	mux.HandleFunc("GET "+tokensPath, func(w http.ResponseWriter, r *http.Request) {
-		ts, err := tokens.List(r.Context())
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, TokenList{Tokens: ts})
-	})
-	mux.HandleFunc("POST "+tokensPath, func(w http.ResponseWriter, r *http.Request) {
-		var req TokenRequest
-		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
-		d.DisallowUnknownFields()
-		if err := d.Decode(&req); err != nil {
-			reply(w, http.StatusBadRequest, Problem{Error: "the body is not a token request: " + err.Error()})
-			return
-		}
-		tok, err := tokens.Create(r.Context(), req.Name, req.Role)
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, tok)
-	})
-	mux.HandleFunc("DELETE "+tokensPath+"/{name}", func(w http.ResponseWriter, r *http.Request) {
-		tok, err := tokens.Delete(r.Context(), r.PathValue("name"))
-		if err != nil {
-			replyError(w, err)
-			return
-		}
-		reply(w, http.StatusOK, tok)
-	})
+	for _, rt := range routes {
+		handle := rt.Handle
+		mux.HandleFunc(rt.Method+" "+rt.Pattern, func(w http.ResponseWriter, r *http.Request) {
+			handle(deps, w, r)
+		})
+	}
 	return mux
-}
-
-// confirmParam parses the confirmation time of an apply, for example 5m; empty is none.
-func confirmParam(s string) (time.Duration, error) {
-	if s == "" {
-		return 0, nil
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil || d <= 0 {
-		return 0, fmt.Errorf("confirm %q is not a duration above 0, for example 5m", s)
-	}
-	return d, nil
-}
-
-func revisionNumber(s string) (uint64, error) {
-	id, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("%q is not a revision number", s)
-	}
-	return id, nil
 }
 
 // Needs returns the least role that may make a request with method to urlPath. Everything under
@@ -549,160 +288,6 @@ func loopbackHost(host string) bool {
 	}
 	a, err := netip.ParseAddr(host)
 	return err == nil && a.Unmap().IsLoopback()
-}
-
-// Status returns the controller's static key, its control address and its TLS fingerprint.
-func (c *Client) Status(ctx context.Context) (Status, error) {
-	var s Status
-	err := c.do(ctx, http.MethodGet, "/api/v1/status", nil, &s)
-	return s, err
-}
-
-// Whoami returns the token the client calls with: its name and its role.
-func (c *Client) Whoami(ctx context.Context) (rbac.Token, error) {
-	var t rbac.Token
-	err := c.do(ctx, http.MethodGet, "/api/v1/whoami", nil, &t)
-	return t, err
-}
-
-// Resources returns the intent.
-func (c *Client) Resources(ctx context.Context) ([]intent.Resource, error) {
-	var l ResourceList
-	err := c.do(ctx, http.MethodGet, "/api/v1/resources", nil, &l)
-	return l.Resources, err
-}
-
-// Nodes returns the status of every node, with the Capabilities it reported.
-func (c *Client) Nodes(ctx context.Context) ([]controller.NodeStatus, error) {
-	var l NodeList
-	err := c.do(ctx, http.MethodGet, "/api/v1/nodes", nil, &l)
-	return l.Nodes, err
-}
-
-// Apply applies doc.
-func (c *Client) Apply(ctx context.Context, doc intent.Document) (controller.ApplyResult, error) {
-	return c.ApplyConfirm(ctx, doc, 0)
-}
-
-// ApplyConfirm applies doc. With a confirm other than 0, the controller rolls the apply back
-// after confirm unless Confirm confirms it first.
-func (c *Client) ApplyConfirm(ctx context.Context, doc intent.Document, confirm time.Duration) (controller.ApplyResult, error) {
-	path := "/api/v1/apply"
-	if confirm != 0 {
-		path += "?confirm=" + url.QueryEscape(confirm.String())
-	}
-	var res controller.ApplyResult
-	err := c.do(ctx, http.MethodPost, path, doc, &res)
-	return res, err
-}
-
-// Delete deletes the resource kind/name.
-func (c *Client) Delete(ctx context.Context, kind, name string) (controller.ApplyResult, error) {
-	var res controller.ApplyResult
-	err := c.do(ctx, http.MethodDelete, "/api/v1/resources/"+url.PathEscape(kind)+"/"+url.PathEscape(name), nil, &res)
-	return res, err
-}
-
-// Revisions returns every revision, oldest first, without their resources.
-func (c *Client) Revisions(ctx context.Context) ([]intent.Revision, error) {
-	var l RevisionList
-	err := c.do(ctx, http.MethodGet, "/api/v1/revisions", nil, &l)
-	return l.Revisions, err
-}
-
-// Revision returns revision id with its resources.
-func (c *Client) Revision(ctx context.Context, id uint64) (intent.Revision, error) {
-	var r intent.Revision
-	err := c.do(ctx, http.MethodGet, "/api/v1/revisions/"+strconv.FormatUint(id, 10), nil, &r)
-	return r, err
-}
-
-// Confirm confirms revision id, which an apply with a confirmation time made.
-func (c *Client) Confirm(ctx context.Context, id uint64) (intent.Revision, error) {
-	var r intent.Revision
-	err := c.do(ctx, http.MethodPost, "/api/v1/revisions/"+strconv.FormatUint(id, 10)+"/confirm", nil, &r)
-	return r, err
-}
-
-// Rollback makes the intent of revision id the intent again, as a new revision.
-func (c *Client) Rollback(ctx context.Context, id uint64) (controller.ApplyResult, error) {
-	var res controller.ApplyResult
-	err := c.do(ctx, http.MethodPost, "/api/v1/rollback", RollbackRequest{Revision: &id}, &res)
-	return res, err
-}
-
-// Diff returns how the intent differs between two revisions: with no revision given, the change
-// that the latest revision made; with one, from it to the latest revision; with two, from the
-// first to the second.
-func (c *Client) Diff(ctx context.Context, revisions ...uint64) (DiffResult, error) {
-	q := url.Values{}
-	switch len(revisions) {
-	case 0:
-	case 1:
-		q.Set("from", strconv.FormatUint(revisions[0], 10))
-	case 2:
-		q.Set("from", strconv.FormatUint(revisions[0], 10))
-		q.Set("to", strconv.FormatUint(revisions[1], 10))
-	default:
-		return DiffResult{}, errors.New("a diff is between two revisions")
-	}
-	path := "/api/v1/diff"
-	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
-	var d DiffResult
-	err := c.do(ctx, http.MethodGet, path, nil, &d)
-	return d, err
-}
-
-// Events returns every event, oldest first.
-func (c *Client) Events(ctx context.Context) ([]event.Event, error) {
-	var l EventList
-	err := c.do(ctx, http.MethodGet, "/api/v1/events", nil, &l)
-	return l.Events, err
-}
-
-// Licence returns the licence in force.
-func (c *Client) Licence(ctx context.Context) (licence.Status, error) {
-	var st licence.Status
-	err := c.do(ctx, http.MethodGet, "/api/v1/licence", nil, &st)
-	return st, err
-}
-
-// SetLicence installs the licence key key and returns the licence in force then.
-func (c *Client) SetLicence(ctx context.Context, key string) (licence.Status, error) {
-	var st licence.Status
-	err := c.do(ctx, http.MethodPut, "/api/v1/licence", LicenceKey{Key: key}, &st)
-	return st, err
-}
-
-// RemoveLicence removes the installed licence key and returns the licence in force then: the
-// Personal tier.
-func (c *Client) RemoveLicence(ctx context.Context) (licence.Status, error) {
-	var st licence.Status
-	err := c.do(ctx, http.MethodDelete, "/api/v1/licence", nil, &st)
-	return st, err
-}
-
-// Tokens returns every API token, without the secrets.
-func (c *Client) Tokens(ctx context.Context) ([]rbac.Token, error) {
-	var l TokenList
-	err := c.do(ctx, http.MethodGet, tokensPath, nil, &l)
-	return l.Tokens, err
-}
-
-// CreateToken creates the API token name with role and returns it with its secret.
-func (c *Client) CreateToken(ctx context.Context, name string, role rbac.Role) (rbac.NewToken, error) {
-	var t rbac.NewToken
-	err := c.do(ctx, http.MethodPost, tokensPath, TokenRequest{Name: name, Role: role}, &t)
-	return t, err
-}
-
-// DeleteToken deletes the API token name and returns it.
-func (c *Client) DeleteToken(ctx context.Context, name string) (rbac.Token, error) {
-	var t rbac.Token
-	err := c.do(ctx, http.MethodDelete, tokensPath+"/"+url.PathEscape(name), nil, &t)
-	return t, err
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {

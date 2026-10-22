@@ -276,6 +276,10 @@ _Avoid_: `controller` role (it left the node binary), master, management server
 The member of a Controller cluster that holds the lease in the store and so runs the Controller: it applies the Intent, pushes desired state and stores the acknowledgements. The other members are standbys: they send Nodes to the leader and forward API calls to it, and one of them takes the lease when the leader is lost (ADR-0026 amendment of 2026-10-22).
 _Avoid_: master, primary, active controller
 
+**Controller API registries**:
+The controller Go module adds its HTTP routes and its store tables through two registries, so feature lanes stop colliding on shared files. A route lives in its own file under `controller/internal/api/`: the file's `init()` calls `register` with the route's method, path, the least API role it needs and its handler, and `api.Routes` builds the mux from them; the SDN-14 Guard still turns every request into the role it needs through `api.Needs`, the one place roles are decided. A table lives in its own file under `controller/internal/store/`: the file's `init()` calls `store.RegisterSchema(name, ddl...)`, and `Open` runs the registered statements sorted by name, which creates the same tables as before. A new feature is a new file in each package, never an edit of `api.go`, `store.go` or this document. The control protocol (`proto/ranz/control/v1/control.proto` and the generated `control.pb.go`) stays a shared file.
+_Avoid_: appending routes to a shared `Routes`, appending DDL to a shared schema slice
+
 **Intent**:
 The declared description of the network (VRFs, Networks, Nodes, policy, routes and the other resources) that an administrator applies. Every apply is a revision.
 _Avoid_: config, configuration (the slim fork's Config file)

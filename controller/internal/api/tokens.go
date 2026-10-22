@@ -1,0 +1,78 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/url"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
+)
+
+// TokenList is the answer of GET /api/v1/tokens.
+type TokenList struct {
+	Tokens []rbac.Token `json:"tokens"`
+}
+
+// TokenRequest is the body of POST /api/v1/tokens.
+type TokenRequest struct {
+	Name string    `json:"name"`
+	Role rbac.Role `json:"role"`
+}
+
+func init() {
+	register(
+		route{http.MethodGet, tokensPath, rbac.Admin, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
+			ts, err := d.Tokens.List(r.Context())
+			if err != nil {
+				replyError(w, err)
+				return
+			}
+			reply(w, http.StatusOK, TokenList{Tokens: ts})
+		}},
+		route{http.MethodPost, tokensPath, rbac.Admin, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
+			var req TokenRequest
+			dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&req); err != nil {
+				reply(w, http.StatusBadRequest, Problem{Error: "the body is not a token request: " + err.Error()})
+				return
+			}
+			tok, err := d.Tokens.Create(r.Context(), req.Name, req.Role)
+			if err != nil {
+				replyError(w, err)
+				return
+			}
+			reply(w, http.StatusOK, tok)
+		}},
+		route{http.MethodDelete, tokensPath + "/{name}", rbac.Admin, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
+			tok, err := d.Tokens.Delete(r.Context(), r.PathValue("name"))
+			if err != nil {
+				replyError(w, err)
+				return
+			}
+			reply(w, http.StatusOK, tok)
+		}},
+	)
+}
+
+// Tokens returns every API token, without the secrets.
+func (c *Client) Tokens(ctx context.Context) ([]rbac.Token, error) {
+	var l TokenList
+	err := c.do(ctx, http.MethodGet, tokensPath, nil, &l)
+	return l.Tokens, err
+}
+
+// CreateToken creates the API token name with role and returns it with its secret.
+func (c *Client) CreateToken(ctx context.Context, name string, role rbac.Role) (rbac.NewToken, error) {
+	var t rbac.NewToken
+	err := c.do(ctx, http.MethodPost, tokensPath, TokenRequest{Name: name, Role: role}, &t)
+	return t, err
+}
+
+// DeleteToken deletes the API token name and returns it.
+func (c *Client) DeleteToken(ctx context.Context, name string) (rbac.Token, error) {
+	var t rbac.Token
+	err := c.do(ctx, http.MethodDelete, tokensPath+"/"+url.PathEscape(name), nil, &t)
+	return t, err
+}

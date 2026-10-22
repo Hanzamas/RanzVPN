@@ -1,0 +1,7 @@
+# Move-only waivers (.github/scripts/move-only-check.py).
+#
+# One "<full-sha> <reason>" per line. The checker reports each listed commit as
+# WAIVED and skips it, so a commit that moves code verbatim between files but is
+# not a #29 C-split commit can land without rewriting history. Lines that start
+# with # are comments. Keep this list short and give a reason for every entry.
+12b21fcb2c6180bfd1080b8143acbaa5846d6463 controller registry refactor moves the Status struct to status.go together with the registry change

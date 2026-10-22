@@ -7,6 +7,10 @@ import (
 	"github.com/rqlite/gorqlite"
 )
 
+func init() {
+	RegisterSchema("api_tokens", `CREATE TABLE IF NOT EXISTS api_tokens (name TEXT NOT NULL PRIMARY KEY, role TEXT NOT NULL, hash TEXT NOT NULL UNIQUE)`)
+}
+
 // Token is a stored API token (internal/rbac): its name, its role and the hash of its secret.
 // The secret itself is never stored.
 type Token struct {
