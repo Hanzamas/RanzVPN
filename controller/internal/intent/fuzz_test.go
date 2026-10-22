@@ -8,10 +8,11 @@ import (
 // The fuzz tests of the intent package (ADR-0040 item 1, .github/quality/fuzz-targets.txt), which
 // the controller workflow runs with go test -fuzz.
 
-// FuzzParseDocument reads the input as an intent document, in JSON or YAML as `ranz apply -f` and
-// the API take one (ParseDocument), and applies a document that parses to an empty intent (Apply),
-// which completes and checks every resource. The ULAs it draws come from a reader of zeros, so a
-// failing input fails again.
+// FuzzParseDocument reads the input as an intent document, in JSON or YAML as `ranz apply -f`,
+// `ranz import -f` and the API take one (ParseDocument), and applies a document that parses to an
+// empty intent (Apply) and as the whole intent of one (Replace, the import), which complete and
+// check every resource. The ULAs they draw come from a reader of zeros, so a failing input fails
+// again.
 func FuzzParseDocument(f *testing.F) {
 	f.Add([]byte(docJSON))
 	f.Add([]byte(docYAML))
@@ -23,12 +24,13 @@ func FuzzParseDocument(f *testing.F) {
 			return
 		}
 		in, err := Apply(New(), doc, bytes.NewReader(make([]byte, 4096)))
-		if err != nil {
-			return
+		if err == nil {
+			if _, err := FromResources(in.Resources()); err != nil {
+				t.Fatalf("an applied intent does not load from its own resources: %v", err)
+			}
 		}
-		if _, err := FromResources(in.Resources()); err != nil {
-			t.Fatalf("an applied intent does not load from its own resources: %v", err)
-		}
+		// The import of the same document over what Apply made
+		_, _ = Replace(in, doc, bytes.NewReader(make([]byte, 4096)))
 	})
 }
 
