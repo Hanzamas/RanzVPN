@@ -35,9 +35,8 @@ $exceptions = @{
 	'ranz-node.exe'       = @{
 		SDL = 'clang-cl, the compiler of ADR-0024, accepts /sdl and ignores it, and lld-link writes no VC feature record; its /GS is the strong stack protector of /sdl'
 	}
-	'ranz-controller.exe' = @{ CFG = $goToolchain; CET = $goToolchain; GS = $goToolchain; SDL = $goToolchain }
+	# ranz.exe is the one Go executable: the controller, the BGP sidecar and the CLI are subcommands of it
 	'ranz.exe'            = @{ CFG = $goToolchain; CET = $goToolchain; GS = $goToolchain; SDL = $goToolchain }
-	'ranz-bgp.exe'        = @{ CFG = $goToolchain; CET = $goToolchain; GS = $goToolchain; SDL = $goToolchain }
 }
 
 $mitigations = @('CFG', 'CET', 'ASLR', 'DEP', 'GS', 'SDL')

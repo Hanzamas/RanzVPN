@@ -2,7 +2,7 @@ param([string] $BuildDir = 'build')
 
 $ErrorActionPreference = 'Stop'
 
-# The default VRF tracer (SDN-3, #179). A ranz-controller with rqlited as its sidecar, on test ports,
+# The default VRF tracer (SDN-3, #179). A `ranz controller` with rqlited as its sidecar, on test ports,
 # and two real nodes of the new core in vpntest (sdntrace, src/vpntest/sdntrace.c). The controller
 # must:
 # - create VRF default, its Network default with the automatic pool and the starter rule
@@ -16,14 +16,13 @@ $ErrorActionPreference = 'Stop'
 # is read once they ended.
 
 $bin = (Resolve-Path $BuildDir).Path
-$controller = Join-Path $bin 'ranz-controller.exe'
 $ranz = Join-Path $bin 'ranz.exe'
 $vpntest = Join-Path $bin 'vpntest.exe'
 
 $work = Join-Path $env:RUNNER_TEMP 'sdn-tracer'
 $data = Join-Path $work 'data'
 New-Item -ItemType Directory -Force -Path $work | Out-Null
-# adminTokenFile of cmd/ranz-controller: the secret of the admin token of the first start
+# adminTokenFile of controller: the secret of the admin token of the first start
 $tokenFile = Join-Path $data 'admin.token'
 $controllerOut = Join-Path $work 'controller.out'
 $controllerErr = Join-Path $work 'controller.err'
@@ -68,20 +67,20 @@ function Stop-All {
 $ctl = $null
 $trace = $null
 try {
-	$ctl = Start-Process -FilePath $controller -PassThru -NoNewWindow -RedirectStandardOutput $controllerOut -RedirectStandardError $controllerErr -ArgumentList @(
-		'-data', $data, '-listen', $tls, '-name', 'tracer', '-rqlited', $env:RQLITED, '-rqlite', "http://$rqliteHttp", '-rqlite-raft', $rqliteRaft)
+	$ctl = Start-Process -FilePath $ranz -PassThru -NoNewWindow -RedirectStandardOutput $controllerOut -RedirectStandardError $controllerErr -ArgumentList @(
+		'controller', '-data', $data, '-listen', $tls, '-name', 'tracer', '-rqlited', $env:RQLITED, '-rqlite', "http://$rqliteHttp", '-rqlite-raft', $rqliteRaft)
 	# The handle keeps the exit code of the process for ExitCode
 	$null = $ctl.Handle
 
 	# The first start writes the admin token, then the API answers it
 	$end = (Get-Date).AddSeconds($waitSeconds)
 	while ($true) {
-		if ($ctl.HasExited) { throw "ranz-controller exited with code $($ctl.ExitCode) before it served" }
+		if ($ctl.HasExited) { throw "ranz controller exited with code $($ctl.ExitCode) before it served" }
 		if ((Test-Path -LiteralPath $tokenFile) -and ((Get-Content -LiteralPath $tokenFile -Raw) -match "`n$")) {
 			& $ranz -server $api -token-file $tokenFile status 2>$null | Out-Null
 			if ($LASTEXITCODE -eq 0) { break }
 		}
-		if ((Get-Date) -ge $end) { throw "ranz-controller did not serve on $api within $waitSeconds s" }
+		if ((Get-Date) -ge $end) { throw "ranz controller did not serve on $api within $waitSeconds s" }
 		Start-Sleep -Milliseconds 500
 	}
 	$status = Invoke-Ranz @('status')
@@ -154,7 +153,7 @@ try {
 	Stop-All
 	Show-Output 'vpntest sdntrace' $traceOut 200
 	Show-Output 'vpntest sdntrace (stderr)' $traceErr 50
-	Show-Output 'ranz-controller' $controllerErr 120
+	Show-Output 'ranz controller' $controllerErr 120
 	throw
 } finally {
 	Stop-All

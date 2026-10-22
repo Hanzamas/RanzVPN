@@ -1,21 +1,23 @@
 param(
 	[Parameter(Mandatory = $true)] [string] $Govulncheck,
-	[string[]] $Module = @('controller', 'ranz-bgp')
+	[string[]] $Module = @('.')
 )
 
 $ErrorActionPreference = 'Stop'
 
 # govulncheck on each Go module of the new core (ADR-0039 decision 4; SEC-1, #279), for the
-# Windows of the runner. A known vulnerability of the Go vulnerability database that the code of a
-# module reaches, a call path to an affected function of a required module or of the standard
-# library of the Go that builds it, fails the job unless $accepted records why it does not apply.
-# govulncheck prints its text report for the log; its JSON findings decide.
+# Windows of the runner. Since ONE-1 (#310) there is one module, at the repository root: it holds
+# the controller, the BGP sidecar and the CLI, the one executable ranz. A known vulnerability of
+# the Go vulnerability database that the code of a module reaches, a call path to an affected
+# function of a required module or of the standard library of the Go that builds it, fails the job
+# unless $accepted records why it does not apply. govulncheck prints its text report for the log;
+# its JSON findings decide.
 
-# Why a reachable vulnerability does not apply, by module and ID. An entry goes once the database
-# names a fixed version that go.mod pins, or the module no longer reaches the vulnerability; the
-# job notes an entry that nothing reaches any more.
+# Why a reachable vulnerability does not apply, by module directory and ID. An entry goes once the
+# database names a fixed version that go.mod pins, or the module no longer reaches the
+# vulnerability; the job notes an entry that nothing reaches any more.
 $accepted = @{
-	'ranz-bgp' = @{
+	'.' = @{
 		'GO-2026-4736' = 'the database names no fixed version, but the fix (osrg/gobgp 583080a7, "server: fix malformed nexthop attribute crash", 2026-03-05, issue 3305) is in v4.10.0, which go.mod pins'
 	}
 }

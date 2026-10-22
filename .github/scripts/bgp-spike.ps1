@@ -4,13 +4,15 @@ $ErrorActionPreference = 'Stop'
 # A failing test must not stop the script before its output is printed
 $PSNativeCommandUseErrorActionPreference = $false
 
-# The Windows spike of the BGP sidecar (ADR-0010, CORE-S7-1 #82), run by the build job of windows.yml on x64 and
-# arm64 after the C build:
-#   - ranz-bgp (ranz-bgp/, Go) is built for this machine next to vpntest.exe, where the node looks for it;
-#   - the router of the operator is GoBGP's own daemon gobgpd, of the GoBGP version that ranz-bgp/go.mod pins,
+# The Windows spike of the BGP sidecar (ADR-0010, CORE-S7-1 #82; ONE-1 #310), run by the build job of
+# windows.yml on x64 and arm64 after the C build:
+#   - ranz (controller/cmd/ranz, Go) is built for this machine next to vpntest.exe, where the node looks for
+#     it and starts it as `ranz bgp`: the sidecar is a subcommand of the one executable, not a file of its own;
+#   - the router of the operator is GoBGP's own daemon gobgpd, of the GoBGP version that go.mod pins,
 #     with its CLI gobgp: AS 65002, no listener of its own, dialling the sidecar on 127.0.0.1:179;
 #   - vpntest bgp runs the node with its sidecar against that router (src/vpntest/bgptest.c) and must print
-#     "BGP TEST OK" and "NO MEMORY LEAKS".
+#     "BGP TEST OK" and "NO MEMORY LEAKS". It also reads the command line of the sidecar from its log: the
+#     node started ranz.exe bgp.
 # The log of gobgpd goes to build/harness-out/gobgpd.log and into the job log.
 
 $build = (Resolve-Path -LiteralPath $BuildDir).Path
@@ -18,19 +20,14 @@ $out = Join-Path $build 'harness-out'
 $bin = Join-Path $build 'gobgp'
 New-Item -ItemType Directory -Force -Path $out, $bin | Out-Null
 
-# ranz-bgp and GoBGP are pure Go; the gcc of the arm64 runner builds x64 code only
+# ranz and GoBGP are pure Go; the gcc of the arm64 runner builds x64 code only
 $env:CGO_ENABLED = '0'
 
-Push-Location ranz-bgp
-try {
-	go build -trimpath -o (Join-Path $build 'ranz-bgp.exe') ./cmd/ranz-bgp
-	if ($LASTEXITCODE -ne 0) { throw "go build of ranz-bgp exited with $LASTEXITCODE" }
-	$gobgpVersion = (go list -m -f '{{.Version}}' github.com/osrg/gobgp/v4 | Out-String).Trim()
-	if ($LASTEXITCODE -ne 0 -or -not $gobgpVersion) { throw 'the GoBGP version of ranz-bgp/go.mod is unknown' }
-} finally {
-	Pop-Location
-}
-& (Join-Path $build 'ranz-bgp.exe') -version
+go build -trimpath -o (Join-Path $build 'ranz.exe') ./controller/cmd/ranz
+if ($LASTEXITCODE -ne 0) { throw "go build of ranz exited with $LASTEXITCODE" }
+$gobgpVersion = (go list -m -f '{{.Version}}' github.com/osrg/gobgp/v4 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $gobgpVersion) { throw 'the GoBGP version of go.mod is unknown' }
+& (Join-Path $build 'ranz.exe') version
 
 $env:GOBIN = $bin
 foreach ($cmd in @('gobgpd', 'gobgp')) {
