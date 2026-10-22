@@ -11,6 +11,7 @@
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/Tick64.h"
 
 #include <stdarg.h>
 
