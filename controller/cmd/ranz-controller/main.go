@@ -11,7 +11,8 @@
 //
 // Ports:
 //
-//	-listen          :443, TLS: ranz-control/1 to the control stream; h2, http/1.1 or none to the API;
+//	-listen          :443, TLS: ranz-control/1 to the control stream; h2, http/1.1 or none to the API
+//	                 and the web UI (SDN-28);
 //	                 with the default, a 443 that cannot be bound falls back to 5555 (ADR-0020)
 //	-http-listen     off; plain HTTP (port 80) for the redirect to HTTPS and ACME HTTP-01 only,
 //	                 through HTTP.sys on Windows
@@ -77,6 +78,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
+	"github.com/Hanzamas/RanzVPN/controller/internal/webui"
 )
 
 // startTimeout bounds the start of rqlited and the first connection to rqlite.
@@ -389,7 +391,8 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		"leader", st0.Cluster.Leader, "schema", st0.Cluster.SchemaVersion, "rqliteJoin", strings.Join(cfg.join, ","))
 	apiHandler := m.Handler()
 	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
-	tlsPort := &port.Server{TLS: tlsCfg, Control: m.ServeStream, HTTP: apiHandler, Log: log}
+	// The web UI (internal/webui) is served beside the API it calls, at every path outside /api/.
+	tlsPort := &port.Server{TLS: tlsCfg, Control: m.ServeStream, HTTP: webui.Handler(apiHandler), Log: log}
 	defer tlsPort.Close()
 	go func() { errc <- tlsPort.Serve(ln) }()
 	log.Info("TLS port", "address", ln.Addr().String(), "protocols", "ranz-control/1, h2, http/1.1")

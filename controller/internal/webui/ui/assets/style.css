@@ -1,0 +1,386 @@
+/* The style of the controller's web UI: one sheet for every page, light and dark. */
+
+@view-transition {
+  navigation: auto;
+}
+
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1b1f24;
+  --muted: #5b6470;
+  --line: #d9dde3;
+  --accent: #1f5fbf;
+  --accent-text: #ffffff;
+  --danger: #b42318;
+  --danger-text: #ffffff;
+  --ok: #18794e;
+  --code-bg: #eef1f5;
+  --focus: #1f5fbf;
+  --radius: 6px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418;
+    --surface: #1a1f25;
+    --text: #e6e9ed;
+    --muted: #9aa4b1;
+    --line: #2f3741;
+    --accent: #6ea8ff;
+    --accent-text: #0b1220;
+    --danger: #ff7b72;
+    --danger-text: #1a0b0a;
+    --ok: #4cc38a;
+    --code-bg: #232a32;
+    --focus: #6ea8ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+body.narrow main {
+  max-width: 34rem;
+  padding-top: 12vh;
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin: 0 0 8px;
+}
+
+h2 {
+  font-size: 1.15rem;
+  margin: 0 0 12px;
+}
+
+section {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.lead,
+.hint {
+  color: var(--muted);
+  max-width: 70ch;
+}
+
+a {
+  color: var(--accent);
+}
+
+code,
+pre {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+pre.json {
+  margin: 0;
+  padding: 8px;
+  background: var(--code-bg);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  max-height: 16rem;
+  overflow: auto;
+}
+
+/* Navigation */
+
+ranz-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  view-transition-name: nav;
+}
+
+ranz-nav nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+
+ranz-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+ranz-nav a {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+ranz-nav a:hover {
+  background: var(--code-bg);
+}
+
+ranz-nav a[aria-current="page"] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+ranz-nav .brand {
+  font-weight: 600;
+}
+
+ranz-nav .who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+ranz-nav .role {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.85em;
+}
+
+/* Tables and facts */
+
+.scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  background: var(--surface);
+}
+
+th,
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.empty,
+.none {
+  color: var(--muted);
+}
+
+.yes {
+  color: var(--ok);
+}
+
+.no {
+  color: var(--muted);
+}
+
+.change.added {
+  color: var(--ok);
+}
+
+.change.removed {
+  color: var(--danger);
+}
+
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 8px;
+}
+
+dl.facts dt {
+  color: var(--muted);
+}
+
+dl.facts dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 16px;
+}
+
+.cards section {
+  margin: 0;
+}
+
+/* Forms and buttons */
+
+form {
+  display: grid;
+  gap: 8px;
+}
+
+form.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+label {
+  font-weight: 600;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  max-width: 100%;
+}
+
+textarea {
+  width: 100%;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+button.quiet {
+  background: transparent;
+  color: var(--accent);
+}
+
+button.danger {
+  border-color: var(--danger);
+  background: transparent;
+  color: var(--danger);
+}
+
+dialog button.danger {
+  background: var(--danger);
+  color: var(--danger-text);
+}
+
+button.small {
+  padding: 2px 10px;
+  font-size: 0.9em;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Results, problems and dialogs */
+
+output#result {
+  display: block;
+}
+
+output#result:not(:empty) {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--ok);
+  background: var(--surface);
+}
+
+code.secret {
+  user-select: all;
+  padding: 2px 6px;
+  background: var(--code-bg);
+  border-radius: 4px;
+}
+
+ranz-problem p,
+.notice {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--danger);
+  background: var(--surface);
+}
+
+.notice {
+  border-left-color: var(--muted);
+}
+
+dialog {
+  max-width: min(32rem, calc(100vw - 32px));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 16px;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}

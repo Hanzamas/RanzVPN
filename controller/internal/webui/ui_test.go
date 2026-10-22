@@ -1,0 +1,546 @@
+// The web UI against a controller and the node simulator (SDN-28 #204, the controller
+// conformance seam of #176): the controller serves the API and the UI on one TLS port, as
+// ranz-controller does, and a headless Chrome drives the pages (ADR-0038). Without rqlited
+// (RQLITED) or a Chrome, the tests are skipped, except under CI, where they fail.
+package webui_test
+
+import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/chromedp"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/api"
+	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
+	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
+	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
+	"github.com/Hanzamas/RanzVPN/controller/internal/port"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
+	"github.com/Hanzamas/RanzVPN/controller/internal/store"
+	"github.com/Hanzamas/RanzVPN/controller/internal/webui"
+)
+
+// waitTimeout bounds every wait for the controller, a node or a page.
+const waitTimeout = 30 * time.Second
+
+// pollInterval is how often a test checks a page for what it waits for.
+const pollInterval = 50 * time.Millisecond
+
+// action is an entry of ui/assets/actions.json.
+type action struct {
+	Name   string    `json:"name"`
+	Method string    `json:"method"`
+	Path   string    `json:"path"`
+	Role   rbac.Role `json:"role"`
+}
+
+// actions returns the action table of the UI, by name.
+func actions(t *testing.T) map[string]action {
+	t.Helper()
+	b, err := os.ReadFile("ui/assets/actions.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var table struct {
+		Actions []action `json:"actions"`
+	}
+	if err := json.Unmarshal(b, &table); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]action{}
+	for _, a := range table.Actions {
+		out[a.Name] = a
+	}
+	return out
+}
+
+// placeholder is a {wildcard} of a path pattern.
+var placeholder = regexp.MustCompile(`\{[^}]*\}`)
+
+// TestActionsAreAPIRoutes is the first criterion of SDN-28 against the API itself: every UI
+// action is a route the API registered, with the same method and path pattern, so no action
+// reaches anything but the public API. With the second criterion: the role the table gives
+// each action is the role that the API's Guard asks for it (api.Needs), so the UI hides
+// exactly what the API refuses.
+func TestActionsAreAPIRoutes(t *testing.T) {
+	h := newHarness(t)
+	for _, a := range actions(t) {
+		concrete := placeholder.ReplaceAllString(a.Path, "x")
+		_, pattern := h.routes.Handler(httptest.NewRequest(a.Method, concrete, nil))
+		if want := a.Method + " " + a.Path; pattern != want {
+			t.Errorf("the action %s calls %s %s, which the API answers with the route %q, not %q", a.Name, a.Method, concrete, pattern, want)
+		}
+		if need := api.Needs(a.Method, concrete); need != a.Role {
+			t.Errorf("the action %s needs the role %s in the table, and the API asks for %s", a.Name, a.Role, need)
+		}
+	}
+}
+
+// TestRolesLimitTheUI is the second criterion of SDN-28 (#204): roles limit the UI the same way
+// they limit the API. A viewer, an operator and an admin sign in and open every page; on each,
+// every control of a UI action shows exactly when the role allows the role that the API asks for
+// the action (TestActionsAreAPIRoutes ties the two together).
+func TestRolesLimitTheUI(t *testing.T) {
+	h := newHarness(t)
+	table := actions(t)
+	ctx := context.Background()
+	nodeKey := newKey(t)
+	if _, err := h.admin.Apply(ctx, document(nodeKey)); err != nil {
+		t.Fatal(err)
+	}
+	// A revision that waits for its confirmation, so the Revisions page offers the confirmation.
+	if _, err := h.admin.ApplyConfirm(ctx, labDocument(nodeKey), time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	secrets := map[rbac.Role]string{
+		rbac.Viewer:   h.token(t, "viewer-1", rbac.Viewer),
+		rbac.Operator: h.token(t, "operator-1", rbac.Operator),
+		rbac.Admin:    h.secret,
+	}
+	pages := []struct{ path, page string }{
+		{"/", "overview"},
+		{"/vrfs", "vrfs"},
+		{"/networks", "networks"},
+		{"/nodes", "nodes"},
+		{"/intent", "intent"},
+		{"/revisions", "revisions"},
+		{"/revisions?revision=1&from=0&to=2", "revisions"},
+		{"/events", "events"},
+		{"/licence", "licence"},
+		{"/tokens", "tokens"},
+	}
+	b := newBrowser(t)
+	for _, role := range rbac.Roles {
+		tab := b.tab(t)
+		h.signIn(t, tab, secrets[role])
+		seen := map[string]bool{}
+		for _, p := range pages {
+			h.visit(t, tab, p.path, p.page)
+			var controls []struct {
+				Action  string `json:"action"`
+				Visible bool   `json:"visible"`
+			}
+			run(t, tab, chromedp.Evaluate(`[...document.querySelectorAll('[data-action]')].map((e) => ({action: e.dataset.action, visible: e.checkVisibility()}))`, &controls))
+			if len(controls) == 0 {
+				t.Errorf("%s: %s has no control of a UI action", role, p.path)
+			}
+			for _, c := range controls {
+				a, ok := table[c.Action]
+				if !ok {
+					t.Errorf("%s: %s has a control of the action %q, which is not in the table", role, p.path, c.Action)
+					continue
+				}
+				if want := role.Allows(a.Role); c.Visible != want {
+					t.Errorf("%s: %s shows a control of the action %s (needs %s): %v, want %v", role, p.path, a.Name, a.Role, c.Visible, want)
+				}
+				seen[a.Name] = true
+			}
+		}
+		for _, name := range []string{"apply", "deleteResource", "confirmRevision", "rollback", "diff", "installLicence", "tokens", "createToken", "deleteToken"} {
+			if !seen[name] && (name != "deleteToken" || role == rbac.Admin) {
+				t.Errorf("%s: no page has a control of the action %s", role, name)
+			}
+		}
+		if role != rbac.Admin {
+			var notice string
+			run(t, tab, chromedp.Text("#admin-only", &notice, chromedp.ByQuery))
+			if !strings.Contains(notice, "needs the role admin") {
+				t.Errorf("%s: the API tokens page says %q", role, notice)
+			}
+		}
+	}
+}
+
+// TestTheUIWorksThroughTheAPI drives each area of the UI: an operator applies Intent and rolls
+// it back, a viewer sees the node that the node simulator runs with its Capabilities and the
+// diff between two revisions, an admin makes and deletes an API token. Each change shows in the
+// API. A call that the role of the token may not make gets the API's own refusal in the UI.
+func TestTheUIWorksThroughTheAPI(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	nodeKey := newKey(t)
+	viewerSecret := h.token(t, "viewer-1", rbac.Viewer)
+	b := newBrowser(t)
+
+	operator := b.tab(t)
+	h.signIn(t, operator, h.token(t, "operator-1", rbac.Operator))
+	h.visit(t, operator, "/intent", "intent")
+	doc, err := json.Marshal(document(nodeKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.act(t, operator, chromedp.SetValue("#document", string(doc), chromedp.ByQuery),
+		chromedp.Click(`#apply-form button[type="submit"]`, chromedp.ByQuery)); !strings.Contains(got, "Applied as revision 1.") {
+		t.Errorf("the apply says %q", got)
+	}
+	revs, err := h.admin.Revisions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revs) != 1 || revs[0].Operation != intent.OpApply {
+		t.Fatalf("after the apply of the UI, the revisions are %+v", revs)
+	}
+
+	node := &nodesim.Node{Key: nodeKey, Controller: h.ln.Addr().String(), ControllerKey: h.key.Public(),
+		Capabilities: &controlpb.Capabilities{Sku: controlpb.Sku_SKU_PRO, Architecture: controlpb.Architecture_ARCHITECTURE_X64,
+			HyperV: true, EgressTier: controlpb.EgressTier_EGRESS_TIER_WINNAT}}
+	sctx, stop := context.WithCancel(context.Background())
+	served := make(chan error, 1)
+	go func() { served <- node.Serve(sctx) }()
+	t.Cleanup(func() {
+		stop()
+		<-served
+	})
+	h.waitNode(t, "branch-1", 1)
+
+	viewer := b.tab(t)
+	h.signIn(t, viewer, viewerSecret)
+	h.visit(t, viewer, "/nodes", "nodes")
+	var row string
+	run(t, viewer, chromedp.Text(`//tr[td[1][normalize-space()="branch-1"]]`, &row, chromedp.BySearch))
+	for _, want := range []string{"corp", "yes", "Pro", "x64", "2, WinNAT", "443"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the row of branch-1 on the Nodes page has no %q: %q", want, row)
+		}
+	}
+
+	h.visit(t, operator, "/intent", "intent")
+	lab, err := json.Marshal(labDocument(nodeKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.act(t, operator, chromedp.SetValue("#document", string(lab), chromedp.ByQuery),
+		chromedp.Click(`#apply-form button[type="submit"]`, chromedp.ByQuery)); !strings.Contains(got, "Applied as revision 2.") {
+		t.Errorf("the second apply says %q", got)
+	}
+
+	h.visit(t, viewer, "/revisions?from=1&to=2", "revisions")
+	var changes string
+	run(t, viewer, chromedp.Text("#changes", &changes, chromedp.ByQuery))
+	if !strings.Contains(changes, "added") || !strings.Contains(changes, "lab") {
+		t.Errorf("the diff from 1 to 2 shows %q", changes)
+	}
+
+	h.visit(t, operator, "/revisions", "revisions")
+	if got := h.act(t, operator, chromedp.Click(`//button[normalize-space()="Roll back to 1"]`, chromedp.BySearch),
+		chromedp.WaitVisible(`dialog[open] button[value="ok"]`, chromedp.ByQuery),
+		chromedp.Click(`dialog[open] button[value="ok"]`, chromedp.ByQuery)); !strings.Contains(got, "Rolled back to revision 1 as revision 3.") {
+		t.Errorf("the rollback says %q", got)
+	}
+	rev, err := h.admin.Revision(ctx, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev.Operation != intent.OpRollback || rev.Restores == nil || *rev.Restores != 1 {
+		t.Errorf("revision 3 is %+v, want the rollback to 1", rev)
+	}
+
+	admin := b.tab(t)
+	h.signIn(t, admin, h.secret)
+	h.visit(t, admin, "/tokens", "tokens")
+	if got := h.act(t, admin, chromedp.SetValue("#name", "ui-made", chromedp.ByQuery),
+		chromedp.SetValue("#role", "operator", chromedp.ByQuery),
+		chromedp.Click(`#create-form button[type="submit"]`, chromedp.ByQuery)); !strings.Contains(got, "ui-made (operator) is made") {
+		t.Errorf("making the token says %q", got)
+	}
+	var secret string
+	run(t, admin, chromedp.Text("code.secret", &secret, chromedp.ByQuery))
+	if tok, err := h.client(secret).Whoami(ctx); err != nil || tok != (rbac.Token{Name: "ui-made", Role: rbac.Operator}) {
+		t.Errorf("the secret the UI showed is the token %+v, %v", tok, err)
+	}
+	if got := h.act(t, admin, chromedp.Click(`//tr[td[1][normalize-space()="ui-made"]]//button`, chromedp.BySearch),
+		chromedp.WaitVisible(`dialog[open] button[value="ok"]`, chromedp.ByQuery),
+		chromedp.Click(`dialog[open] button[value="ok"]`, chromedp.ByQuery)); !strings.Contains(got, "ui-made is deleted") {
+		t.Errorf("deleting the token says %q", got)
+	}
+	if _, err := h.client(secret).Whoami(ctx); httpStatus(err) != http.StatusUnauthorized {
+		t.Errorf("the token the UI deleted still answers %v", err)
+	}
+
+	// A viewer's tab that calls an operator's action anyway gets the API's own refusal.
+	var got string
+	run(t, viewer, chromedp.Evaluate(`import('/assets/api.js').then((m) => m.call('apply', {body: {resources: []}})).then(() => 'allowed', (e) => e.status + ' ' + e.message)`,
+		&got, func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) }))
+	_, err = h.client(viewerSecret).Apply(ctx, intent.Document{Resources: []intent.Resource{}})
+	var e *api.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("the viewer's apply through the API gave %v", err)
+	}
+	if want := fmt.Sprintf("%d %s", e.Status, e.Message); got != want || e.Status != http.StatusForbidden {
+		t.Errorf("the viewer's apply through the UI gave %q, and through the API %q", got, want)
+	}
+}
+
+// harness is one controller on its own rqlite, with the control stream, the API and the web UI
+// on one TLS port, as ranz-controller serves them.
+type harness struct {
+	key    *keys.Soft     // the controller's Noise static key
+	routes *http.ServeMux // the API without its Guard
+	ln     net.Listener
+	admin  *api.Client // with the admin token
+	secret string      // of the admin token
+}
+
+func newHarness(t *testing.T) *harness {
+	t.Helper()
+	rq := rqlitetest.Start(t)
+	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
+	defer cancel()
+	h := &harness{}
+	st, err := store.Open(ctx, rq.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.key, err = keys.GenerateSoft(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tlsKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := keys.SelfSigned(tlsKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := rbac.New(st)
+	if _, err := tokens.Bootstrap(ctx, func(secret string) error { h.secret = secret; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if h.ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
+		t.Fatal(err)
+	}
+	h.routes = api.Routes(c, tokens, api.Status{ControlAddress: h.ln.Addr().String(), TLSFingerprint: keys.Fingerprint(cert)})
+	srv := &port.Server{
+		TLS:     &tls.Config{Certificates: []tls.Certificate{cert}},
+		Control: c.ServeStream,
+		HTTP:    webui.Handler(api.Guard(tokens, h.routes)),
+	}
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(h.ln) }()
+	t.Cleanup(func() {
+		h.ln.Close()
+		if err := <-served; err != nil {
+			t.Errorf("Serve: %v", err)
+		}
+		srv.Close()
+		c.Close()
+		st.Close()
+	})
+	h.admin = h.client(h.secret)
+	return h
+}
+
+// url returns the URL of path on the controller's TLS port.
+func (h *harness) url(path string) string {
+	return "https://" + h.ln.Addr().String() + path
+}
+
+// client returns a client of the API that calls with the token secret.
+func (h *harness) client(secret string) *api.Client {
+	c := api.NewClient(h.url(""))
+	c.Token = secret
+	return c
+}
+
+// token creates the API token name with role and returns its secret.
+func (h *harness) token(t *testing.T, name string, role rbac.Role) string {
+	t.Helper()
+	tok, err := h.admin.CreateToken(context.Background(), name, role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok.Secret
+}
+
+// newKey returns a new static key, for the simulated node branch-1.
+func newKey(t *testing.T) *keys.Soft {
+	t.Helper()
+	k, err := keys.GenerateSoft()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+// document returns the Intent of the tests: the VRF corp with the Network corp-lan, and the
+// Node branch-1 with the static key node in it.
+func document(node *keys.Soft) intent.Document {
+	return intent.Document{Resources: []intent.Resource{
+		{Kind: intent.KindVRF, Name: "corp", Spec: json.RawMessage(`{"id": 10, "ula": "fd12:3456:789a::/48"}`)},
+		{Kind: intent.KindNetwork, Name: "corp-lan", Spec: json.RawMessage(`{"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}`)},
+		{Kind: intent.KindNode, Name: "branch-1", Spec: json.RawMessage(fmt.Sprintf(`{"publicKey": %q, "vrfs": ["corp"]}`, base64.StdEncoding.EncodeToString(node.Public())))},
+	}}
+}
+
+// labDocument returns the Intent of document with the VRF lab added, which no node joins.
+func labDocument(node *keys.Soft) intent.Document {
+	doc := document(node)
+	doc.Resources = append(doc.Resources, intent.Resource{Kind: intent.KindVRF, Name: "lab", Spec: json.RawMessage(`{"id": 99, "ula": "fd99:1:2::/48"}`)})
+	return doc
+}
+
+// waitNode waits until the API reports node name connected, with generation gen acknowledged.
+func (h *harness) waitNode(t *testing.T, name string, gen uint64) {
+	t.Helper()
+	deadline := time.Now().Add(waitTimeout)
+	for {
+		nodes, err := h.admin.Nodes(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range nodes {
+			if n.Name == name && n.Connected && n.Generation == gen && n.AckedGeneration == gen {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the node %s did not acknowledge generation %d within %v: %+v", name, gen, waitTimeout, nodes)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// signIn signs tab in with the token secret on the sign-in page, which goes on to the overview.
+func (h *harness) signIn(t *testing.T, tab context.Context, secret string) {
+	t.Helper()
+	run(t, tab,
+		chromedp.Navigate(h.url("/sign-in")),
+		chromedp.WaitVisible("#token", chromedp.ByQuery),
+		chromedp.SetValue("#token", secret, chromedp.ByQuery),
+		chromedp.Click(`#sign-in button[type="submit"]`, chromedp.ByQuery),
+		chromedp.WaitReady(`html[data-page="overview"]`, chromedp.ByQuery),
+	)
+	h.settle(t, tab, "overview")
+}
+
+// visit opens the page at path, whose <html> has data-page page, and waits until it rendered.
+func (h *harness) visit(t *testing.T, tab context.Context, path, page string) {
+	t.Helper()
+	run(t, tab, chromedp.Navigate(h.url(path)))
+	h.settle(t, tab, page)
+}
+
+// settle waits until the page page rendered, and fails the test when it shows a problem instead.
+func (h *harness) settle(t *testing.T, tab context.Context, page string) {
+	t.Helper()
+	var state string
+	run(t, tab, chromedp.Poll(fmt.Sprintf(`(() => {
+		const html = document.documentElement;
+		return html.dataset.page === %q && ['ready', 'error'].includes(html.dataset.state ?? '') ? html.dataset.state : null;
+	})()`, page), &state, chromedp.WithPollingInterval(pollInterval), chromedp.WithPollingTimeout(waitTimeout)))
+	if state != "ready" {
+		var problem string
+		run(t, tab, chromedp.Evaluate(`document.querySelector('ranz-problem')?.textContent ?? ''`, &problem))
+		t.Fatalf("the page %s did not render: %s", page, problem)
+	}
+}
+
+// act runs actions on the page in tab, which make a change through the API, and returns what
+// the page then says in its #result. A problem that the page shows instead fails the test.
+func (h *harness) act(t *testing.T, tab context.Context, actions ...chromedp.Action) string {
+	t.Helper()
+	var cleared bool
+	run(t, tab, chromedp.Evaluate(`document.querySelector('#result')?.replaceChildren();
+		document.querySelector('ranz-problem')?.replaceChildren();
+		true`, &cleared))
+	run(t, tab, actions...)
+	var out struct {
+		Result  string `json:"result"`
+		Problem string `json:"problem"`
+	}
+	run(t, tab, chromedp.Poll(`(() => {
+		const result = document.querySelector('#result')?.textContent ?? '';
+		const problem = document.querySelector('ranz-problem')?.textContent ?? '';
+		return result || problem ? {result, problem} : null;
+	})()`, &out, chromedp.WithPollingInterval(pollInterval), chromedp.WithPollingTimeout(waitTimeout)))
+	if out.Problem != "" {
+		t.Fatalf("the page shows the problem %q", out.Problem)
+	}
+	return out.Result
+}
+
+// browser is a headless Chrome for one test.
+type browser struct {
+	ctx context.Context
+}
+
+// newBrowser starts a headless Chrome, which ends with the test. Without a Chrome on the host the
+// test is skipped, except under CI.
+func newBrowser(t *testing.T) *browser {
+	t.Helper()
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		// The browser only ever opens the test's own controller on the loopback address.
+		chromedp.NoSandbox,
+		// The controller's certificate is self-signed until ACME.
+		chromedp.Flag("ignore-certificate-errors", true),
+	)
+	actx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	t.Cleanup(cancel)
+	ctx, cancel := chromedp.NewContext(actx)
+	t.Cleanup(cancel)
+	if err := chromedp.Run(ctx); err != nil {
+		if (errors.Is(err, exec.ErrNotFound) || strings.Contains(err.Error(), "executable file not found")) && os.Getenv("CI") == "" {
+			t.Skip("no Chrome on this host: install one to run this test")
+		}
+		t.Fatal(err)
+	}
+	return &browser{ctx: ctx}
+}
+
+// tab opens a new tab, which has a sessionStorage, and so a sign-in, of its own.
+func (b *browser) tab(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := chromedp.NewContext(b.ctx)
+	t.Cleanup(cancel)
+	if err := chromedp.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return ctx
+}
+
+// run runs actions in tab within waitTimeout.
+func run(t *testing.T, tab context.Context, actions ...chromedp.Action) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(tab, waitTimeout)
+	defer cancel()
+	if err := chromedp.Run(ctx, actions...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// httpStatus returns the HTTP status of an error of the API: 200 for no error, 0 for an error
+// that is not an answer of the API.
+func httpStatus(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	var e *api.Error
+	if errors.As(err, &e) {
+		return e.Status
+	}
+	return 0
+}
