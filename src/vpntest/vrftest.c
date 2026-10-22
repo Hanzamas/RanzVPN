@@ -666,6 +666,7 @@ static void VrfTestReferenceRound(VRFTEST_CTX *ctx, UINT round, UINT64 seed)
 	Format(what, sizeof(what), "Round %u (seed %I64u): %u random routes build one table per VRF", round, seed, num);
 	if (VrfTestCheck(ctx, t != NULL && t->NumVrfs == VRFTEST_REF_VRFS, what, "tables %p", t) == false)
 	{
+		NodeFreeVrfTables(t);
 		Free(routes);
 		return;
 	}
