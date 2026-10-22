@@ -393,7 +393,6 @@ struct CEDAR {
 TRAFFIC *NewTraffic();
 void FreeTraffic(TRAFFIC *t);
 CEDAR *NewCedar(X *server_x, K *server_k);
-void RegistWindowsFirewallAll();
 void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain);
 void ReleaseCedar(CEDAR *c);
 void StopCedar(CEDAR *c);

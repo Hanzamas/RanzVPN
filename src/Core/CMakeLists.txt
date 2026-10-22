@@ -52,10 +52,14 @@ set_target_properties(corenoise
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# libjuice and libplum (3rdparty/CMakeLists.txt): ICE and the port mapping of the peer module
+add_subdirectory(3rdparty)
+
 # corepeer: the peer module (Peer.h, Peer*.c; CORE-S5-2, #78): the peer layer of a node, the relay role and the
-# envelopes of binds and signals, on the crypto module and Winsock. The Node module of Cedar links it too, so
-# ranz_core_options and the crypto module stay PRIVATE: a target that links corepeer keeps its own build options
-# and gets the two libraries for the link only.
+# envelopes of binds and signals, on the crypto module and Winsock; ICE and the port mapping of home gateways
+# (PeerIce.c, PeerPortMap.c; CORE-S5-3, #79) on libjuice and libplum. The Node module of Cedar links it too, so
+# ranz_core_options and the libraries stay PRIVATE: a target that links corepeer keeps its own build options and
+# gets the libraries for the link only.
 file(GLOB SOURCES_CORE_PEER "Peer*.c")
 file(GLOB HEADERS_CORE_PEER "Peer*.h")
 
@@ -69,6 +73,8 @@ target_link_libraries(corepeer PRIVATE ranz_core_options ranz_warnings)
 target_link_libraries(corepeer
   PRIVATE
     corecrypto
+    libjuice
+    libplum
     "ws2_32.lib"
 )
 
@@ -78,6 +84,26 @@ set_target_properties(corepeer
   LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   COMPILE_PDB_NAME "corepeer"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
+# coretransport: the transport module (Transport.h, Transport*.c; CORE-F4, #64): the transport interface, the
+# session layer on it, the race of a client's fallback list and the in-process loopback transport, over the
+# session module, which brings the crypto module. Its threads are those of the Windows thread pool.
+file(GLOB SOURCES_CORE_TRANSPORT "Transport*.c")
+file(GLOB HEADERS_CORE_TRANSPORT "Transport*.h")
+
+add_library(coretransport STATIC ${SOURCES_CORE_TRANSPORT} ${HEADERS_CORE_TRANSPORT})
+
+target_link_libraries(coretransport PUBLIC corenoise)
+target_link_libraries(coretransport PRIVATE ranz_core_options ranz_warnings)
+
+set_target_properties(coretransport
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "coretransport"
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
