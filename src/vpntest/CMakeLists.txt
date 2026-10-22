@@ -77,7 +77,7 @@ ranz_add_executable(vpntest HAMCORE
     harden.c
     # Named HTTP listener test of REL-6 (#51)
     httplistener.c
-    # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz-controller and ping each other
+    # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz controller and ping each other
     sdntrace.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
   # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked);

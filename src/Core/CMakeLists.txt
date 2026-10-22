@@ -123,7 +123,7 @@ set_target_properties(coretransport
 # controller, over the transport module, with the messages that nanopb generates at build time from the one schema of
 # the node and the controller, proto/ranz/control/v1/control.proto with its control.options (ADR-0027 decision 1).
 # The generator is the one of the nanopb submodule (3rdparty/CMakeLists.txt); it needs Python with the protobuf
-# package and protoc on the PATH, as the nanopb round trip of controller.yml does (CI: .github/actions/nanopb). It
+# package and protoc on the PATH, as the nanopb round trip of ranz.yml does (CI: .github/actions/nanopb). It
 # builds its nanopb_pb2.py in the build tree, not in the submodule.
 find_program(RANZ_PYTHON NAMES python python3 REQUIRED)
 set(_ranz_proto "${TOP_DIRECTORY}/proto/ranz/control/v1")

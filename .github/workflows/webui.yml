@@ -2,7 +2,7 @@
 # native JavaScript with no build step (ADR-0038): its modules carry JSDoc types and // @ts-check,
 # and this job runs tsc --noEmit over them with the pinned TypeScript, as a development check only.
 # Nothing is compiled and nothing it fetches ships; the repository holds no npm lock file. The
-# Go tests of the UI, with the headless browser, run in controller.yml.
+# Go tests of the UI, with the headless browser, run in ranz.yml.
 #
 # A push to master runs it, with no path filter. A pull request runs it when it changes the UI or
 # this file.

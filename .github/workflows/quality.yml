@@ -9,8 +9,8 @@
 #
 # The gates themselves run where their code is built: the fuzzers, the coverage floors, the static
 # analysis, Application Verifier and the performance gate of the C build in windows.yml; go test
-# -fuzz, -race, the coverage floors, staticcheck and govulncheck of the Go modules in controller.yml
-# and ranz-bgp.yml.
+# -fuzz, -race, the coverage floors, staticcheck and govulncheck of the Go module, which holds
+# controller/ and ranz-bgp/ and builds the one executable ranz, in ranz.yml.
 #
 # It needs only Python and reads every part of the tree, so it has no path filter: it runs on every
 # pull request and on every push to master.
