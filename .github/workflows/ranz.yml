@@ -1,36 +1,54 @@
-# The controller (controller/, Go) and the control protocol schema (proto/), SDN-2 #178.
+# The Go programs of Ranz: one module and one executable, ranz (ONE-1 #310, ADR-0011 amendment of
+# 2026-10-22). The controller with its web UI (controller/, SDN-2 #178), the BGP sidecar of ADR-0010
+# (ranz-bgp/, CORE-S7-1 #82) and the CLI are all in controller/cmd/ranz: the subcommands controller
+# and bgp, and the verbs of the controller's API. ranz-nodesim and ranz-noisepeer (controller/cmd)
+# are test tools: this workflow builds them and never ships them. The control protocol schema
+# (proto/) belongs here too.
 #
 # linux: generates the Go code of proto/ranz/control/v1/control.proto with the pinned protoc and
 # protoc-gen-go, tidies go.mod and go.sum and runs gofmt; then vets (for Linux and for Windows),
-# builds (for Linux, and for Windows on x64 and arm64) and tests the module, with rqlited of the
+# builds every package and ranz for Linux x64, Windows x64 and Windows arm64 as it ships, records
+# the size of each, runs the Linux executable for its contract (one version for every subcommand,
+# the subcommands, the NOTICE with the licence of GoBGP), and tests the module, with rqlited of the
 # pinned rqlite release for the controller conformance tests and the cluster tests of SDN-17 (three
-# ranz-controller processes, each with its rqlited, on the runner: cmd/ranz-controller). Those
-# tests write every control message they sent or received to a directory, and the nanopb code
-# generated from the same schema decodes each one and encodes it back to the same bytes
-# (tests/control/nanopb_roundtrip.c). Then the job fails, and prints the diff, if generation,
-# tidy or gofmt changed a committed file. Last come the quality gates of ADR-0040 for the module:
-# the tests run with -race (item 4) and -coverprofile, and each package must stay at or above its
+# controller processes, each with its rqlited, on the runner: controller/cluster_test.go), and the
+# session of the BGP sidecar against GoBGP routers over an in-memory pipe. The controller tests
+# write every control message they sent or received to a directory, and the nanopb code generated
+# from the same schema decodes each one and encodes it back to the same bytes
+# (tests/control/nanopb_roundtrip.c). Then the job fails, and prints the diff, if generation, tidy
+# or gofmt changed a committed file. Last come the quality gates of ADR-0040 for the module: the
+# tests run with -race (item 4) and -coverprofile, and each package must stay at or above its
 # coverage floor (item 2, .github/quality/coverage-floors.txt); the fuzz tests of
 # .github/quality/fuzz-targets.txt run with go test -fuzz for a short time each (item 1); and
 # staticcheck and govulncheck, for Linux and for Windows, must find nothing (item 3).
 #
-# windows: vets, builds and tests the module on Windows (the cluster tests included), with the
-# controller's keys in the Microsoft Software Key Storage Provider, then runs ranz-controller as a
-# Windows service on TCP 443 (and plain HTTP for the redirect) with rqlited as its sidecar, and
-# drives it with ranz and ranz-nodesim (.github/scripts/controller-service.ps1).
+# windows: vets, builds and tests the module on Windows x64 and arm64. On x64 that includes the
+# controller (the cluster tests, its keys in the Microsoft Software Key Storage Provider) and ranz
+# controller as a Windows service on TCP 443 (and plain HTTP for the redirect) with rqlited as its
+# sidecar: install, start, stop, reset-admin and uninstall, driven with ranz and ranz-nodesim
+# (.github/scripts/controller-service.ps1). On both architectures it runs the sidecar on the named
+# pipe of the node, among them the process mitigations and the System32-only DLL search of ranz
+# read from outside its process (ADR-0039, SEC-1 #279), runs the executable for its contract, and
+# checks its flags (.github/scripts/binary-hardening.ps1). The arm64 runner has no rqlited, so it
+# tests the sidecar only.
+#
+# The spike with the node (BGP on TCP 179, a prefix announced and withdrawn, a learned route
+# installed through IP Helper, the node starting ranz bgp) needs the C build and runs in
+# windows.yml (.github/scripts/bgp-spike.ps1).
 #
 # Neither job touches the C build, so they run beside windows.yml and add nothing to its time.
 #
 # A push to master runs both jobs, with no path filter. A pull request runs them when it changes a
-# path that they read: controller/; proto/, the schema that go generate and the nanopb round trip
-# read; tests/control/, the round trip program; .gitattributes, which sets the line endings of the
-# checkout; this file, .github/scripts/controller-service.ps1, the binary hardening gate
+# path that they read: controller/ and ranz-bgp/, the two trees of the module; go.mod and go.sum;
+# proto/, the schema that go generate and the nanopb round trip read; tests/control/, the round
+# trip program; .gitattributes, which sets the line endings of the checkout; this file,
+# .github/scripts/controller-service.ps1, the binary hardening gate
 # .github/scripts/binary-hardening.ps1, which windows.yml runs too, the fuzz targets, coverage
 # floors and accepted vulnerabilities of .github/quality and the scripts that read them. A pull
 # request that changes none of them (a C change under src/, or docs only) does not run this
 # workflow.
 
-name: controller
+name: ranz
 
 on:
   push:
@@ -38,10 +56,13 @@ on:
   pull_request:
     paths:
     - 'controller/**'
+    - 'ranz-bgp/**'
+    - 'go.mod'
+    - 'go.sum'
     - 'proto/**'
     - 'tests/control/**'
     - '.gitattributes'
-    - '.github/workflows/controller.yml'
+    - '.github/workflows/ranz.yml'
     - '.github/scripts/controller-service.ps1'
     - '.github/quality/fuzz-targets.txt'
     - '.github/quality/coverage-floors.txt'
@@ -72,15 +93,15 @@ env:
 
 jobs:
   linux:
-    name: controller (Linux)
+    name: ranz (Linux)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
-        cache-dependency-path: controller/go.sum
+        cache-dependency-path: go.sum
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -107,28 +128,83 @@ jobs:
         GOBIN="$RUNNER_TEMP/gobin" go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
         GOBIN="$RUNNER_TEMP/gobin" go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
     - name: Generate, tidy and format
-      working-directory: controller
       run: |
         protoc --version
-        go generate ./internal/controlpb
+        go generate ./controller/internal/controlpb
         go mod tidy
-        gofmt -l -w .
+        gofmt -l -w controller ranz-bgp
     - name: Vet
-      working-directory: controller
       run: |
         go vet ./...
         GOOS=windows go vet ./...
+    # ranz as it ships (ONE-1): -trimpath and -ldflags "-s -w" strip the paths and the symbol table
+    # (SEC-3 #281, ADR-0036 amendment of 2026-10-22; checked by .github/scripts/self-integrity.ps1),
+    # and the run number is the build number of its one version. The test tools are built by
+    # go build ./..., not shipped.
     - name: Build
-      working-directory: controller
       run: |
         go build ./...
-        GOOS=windows GOARCH=amd64 go build -o "$RUNNER_TEMP/windows-x64/" ./cmd/...
-        GOOS=windows GOARCH=arm64 go build -o "$RUNNER_TEMP/windows-arm64/" ./cmd/...
-        ls -l "$RUNNER_TEMP/windows-x64" "$RUNNER_TEMP/windows-arm64"
+        ldflags="-s -w -X main.build=${GITHUB_RUN_NUMBER}"
+        GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$ldflags" -o "$RUNNER_TEMP/linux-x64/ranz" ./controller/cmd/ranz
+        GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$ldflags" -o "$RUNNER_TEMP/windows-x64/ranz.exe" ./controller/cmd/ranz
+        GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "$ldflags" -o "$RUNNER_TEMP/windows-arm64/ranz.exe" ./controller/cmd/ranz
+        ls -l "$RUNNER_TEMP/linux-x64" "$RUNNER_TEMP/windows-x64" "$RUNNER_TEMP/windows-arm64"
+    # ONE-1 records the size of the one file, which carries the controller, GoBGP and the CLI: in the
+    # job log, in the job summary and in the artifact ranz-size
+    - name: Size of ranz
+      run: |
+        size="$RUNNER_TEMP/ranz-size.md"
+        {
+          echo '### Size of ranz, the one executable'
+          echo
+          echo '| Platform | Bytes |'
+          echo '|---|---:|'
+          echo "| linux-x64 | $(stat -c %s "$RUNNER_TEMP/linux-x64/ranz") |"
+          echo "| windows-x64 | $(stat -c %s "$RUNNER_TEMP/windows-x64/ranz.exe") |"
+          echo "| windows-arm64 | $(stat -c %s "$RUNNER_TEMP/windows-arm64/ranz.exe") |"
+        } > "$size"
+        cat "$size"
+        cat "$size" >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ranz-size
+        retention-days: 14
+        path: ${{ runner.temp }}/ranz-size.md
+    # The contract of the one executable, read from outside (ONE-1): ranz version prints one line
+    # with the one version, in every spelling, and the run number as its build number; ranz bgp,
+    # ranz controller and the CLI answer as their subcommands do; ranz notice prints the NOTICE that
+    # is committed, which holds the licence of GoBGP
+    - name: The executable
+      run: |
+        ranz="$RUNNER_TEMP/linux-x64/ranz"
+        version="$("$ranz" version)"
+        echo "$version"
+        echo "$version" | grep -Eq "^ranz [0-9]+\.[0-9]+\.${GITHUB_RUN_NUMBER}\$"
+        test "$("$ranz" -version)" = "$version"
+        test "$("$ranz" --version)" = "$version"
+
+        code=0
+        "$ranz" bgp 2> "$RUNNER_TEMP/bgp.err" || code=$?
+        cat "$RUNNER_TEMP/bgp.err"
+        test "$code" = 2
+        grep -q 'ranz bgp: -pipe is required' "$RUNNER_TEMP/bgp.err"
+
+        "$ranz" controller -h 2> "$RUNNER_TEMP/controller.err"
+        grep -q 'Usage of ranz controller' "$RUNNER_TEMP/controller.err"
+
+        code=0
+        "$ranz" 2> "$RUNNER_TEMP/cli.err" || code=$?
+        cat "$RUNNER_TEMP/cli.err"
+        test "$code" = 2
+        grep -q '^usage:' "$RUNNER_TEMP/cli.err"
+
+        "$ranz" notice > "$RUNNER_TEMP/NOTICE"
+        grep -q 'GoBGP' "$RUNNER_TEMP/NOTICE"
+        grep -q 'Apache License' "$RUNNER_TEMP/NOTICE"
+        cmp "$RUNNER_TEMP/NOTICE" controller/cmd/ranz/NOTICE
     # -race is the race detection of ADR-0040 item 4 for the Go code; the profile is read by the
     # coverage floor step
     - name: Test
-      working-directory: controller
       env:
         RANZ_CONTROL_WIRE: ${{ runner.temp }}/wire
       run: go test -race -count=1 -coverprofile="$RUNNER_TEMP/cover.out" ./...
@@ -142,8 +218,7 @@ jobs:
     # degrades to the Licence in force or Personal past it, and round-trips the offline activation
     # file with no network.
     - name: Activation service and the install, with the software KSP
-      working-directory: controller
-      run: go test -count=1 -v ./internal/activation
+      run: go test -count=1 -v ./controller/internal/activation
     - name: nanopb round trip of the control messages
       run: |
         out="$RUNNER_TEMP/nanopb-out"
@@ -159,41 +234,39 @@ jobs:
     - name: Committed files match generation, tidy and gofmt
       if: ${{ !cancelled() }}
       run: |
-        git add -A -N controller
-        if ! git diff --exit-code -- controller; then
-          echo "::error::controller/ differs from what go generate, go mod tidy and gofmt make of it: commit the diff above"
+        git add -A -N go.mod go.sum controller ranz-bgp
+        if ! git diff --exit-code -- go.mod go.sum controller ranz-bgp; then
+          echo "::error::go.mod, go.sum, controller/ or ranz-bgp/ differs from what go generate, go mod tidy and gofmt make of it: commit the diff above"
           exit 1
         fi
     # ADR-0040 item 2: the statement coverage of each package against its floor
     - name: Coverage floor
       if: ${{ !cancelled() }}
-      run: python .github/scripts/coverage-floor.py go --module controller --profile "$RUNNER_TEMP/cover.out"
+      run: python .github/scripts/coverage-floor.py go --module . --profile "$RUNNER_TEMP/cover.out"
     # ADR-0040 item 1: every fuzz test of the module in .github/quality/fuzz-targets.txt, 20 s each. A
     # crashing input is saved under testdata/fuzz of its package and uploaded below.
     - name: Fuzz (go test -fuzz)
       if: ${{ !cancelled() }}
-      working-directory: controller
       run: |
-        targets="$(python ../.github/scripts/fuzz-registry.py go-targets controller --root ..)"
+        targets="$(python .github/scripts/fuzz-registry.py go-targets .)"
         test -n "$targets"
         failed=0
         while read -r package target; do
           echo "::group::$target ($package)"
           if ! go test -run '^$' -fuzz "^${target}\$" -fuzztime 20s "$package"; then
-            echo "::error::$target of $package found a failing input (testdata/fuzz/$target of the package, in the artifact controller-fuzz-inputs)"
+            echo "::error::$target of $package found a failing input (testdata/fuzz/$target of the package, in the artifact ranz-fuzz-inputs)"
             failed=1
           fi
           echo "::endgroup::"
         done <<< "$targets"
         exit $failed
-    # ADR-0040 item 3: staticcheck (with the checks of controller/staticcheck.conf) and govulncheck,
-    # for Linux and for Windows. Any staticcheck finding fails the job, and so does a vulnerability
-    # that the code calls, unless .github/quality/govulncheck-accepted.txt accepts it for that version.
-    # The two staticcheck runs are merged (-merge), so code that one platform alone uses is not
-    # reported as unused.
+    # ADR-0040 item 3: staticcheck (with the checks of controller/staticcheck.conf for controller/)
+    # and govulncheck, for Linux and for Windows. Any staticcheck finding fails the job, and so does
+    # a vulnerability that the code calls, unless .github/quality/govulncheck-accepted.txt accepts it
+    # for that version. The two staticcheck runs are merged (-merge), so code that one platform alone
+    # uses is not reported as unused.
     - name: Static analysis (staticcheck, govulncheck)
       if: ${{ !cancelled() }}
-      working-directory: controller
       run: |
         "$RUNNER_TEMP/gobin/staticcheck" -version
         "$RUNNER_TEMP/gobin/staticcheck" -f binary ./... > "$RUNNER_TEMP/staticcheck-linux.bin"
@@ -202,25 +275,38 @@ jobs:
         "$RUNNER_TEMP/gobin/govulncheck" -version
         "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
         GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"
-        python ../.github/scripts/govulncheck-gate.py --accepted ../.github/quality/govulncheck-accepted.txt "$RUNNER_TEMP/govulncheck-linux.json" "$RUNNER_TEMP/govulncheck-windows.json"
+        python .github/scripts/govulncheck-gate.py --accepted .github/quality/govulncheck-accepted.txt "$RUNNER_TEMP/govulncheck-linux.json" "$RUNNER_TEMP/govulncheck-windows.json"
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
-        name: controller-fuzz-inputs
+        name: ranz-fuzz-inputs
         if-no-files-found: ignore
-        path: controller/**/testdata/fuzz/
+        path: |
+          controller/**/testdata/fuzz/
+          ranz-bgp/**/testdata/fuzz/
 
   windows:
-    name: controller (Windows)
-    runs-on: windows-latest
-    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+        ]
+    name: ranz (Windows ${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 35
+    env:
+      # The Go code builds without cgo; the gcc of the arm64 runner builds x64 code only
+      CGO_ENABLED: '0'
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
-        cache-dependency-path: controller/go.sum
+        cache-dependency-path: go.sum
     - name: Install rqlited
+      if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
       run: |
         $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
@@ -231,34 +317,80 @@ jobs:
         if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
         & $exe.FullName -version
         "RQLITED=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-    - name: Vet, build and test
+    # ranz as it ships (-trimpath, -ldflags "-s -w", the run number as the build number), and the
+    # test tool ranz-nodesim, which the service check and the hardening gate use
+    - name: Vet and build
       shell: pwsh
-      working-directory: controller
       run: |
         go vet ./...
         if ($LASTEXITCODE -ne 0) { throw "go vet exited with code $LASTEXITCODE" }
-        go build -o ..\build\controller\ ./cmd/...
-        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
+        go build -trimpath -ldflags "-s -w -X main.build=$env:GITHUB_RUN_NUMBER" -o build\ranz\ ./controller/cmd/ranz
+        if ($LASTEXITCODE -ne 0) { throw "go build of ranz exited with code $LASTEXITCODE" }
+        go build -o build\ranz\ ./controller/cmd/ranz-nodesim
+        if ($LASTEXITCODE -ne 0) { throw "go build of ranz-nodesim exited with code $LASTEXITCODE" }
+        Get-ChildItem build\ranz | Format-Table Name, Length
+    # ranz bgp on a named pipe that the test makes the way the node does, and its process read from
+    # outside: the mitigations of ADR-0039 and the System32-only DLL search (SEC-1 #279)
+    - name: The BGP sidecar on the named pipe of the node
+      shell: pwsh
+      run: |
+        go test -count=1 -v -run 'TestPipe|TestNoPipe|TestMitigations' ./ranz-bgp
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    - name: Test
+      if: matrix.platform.ARCHITECTURE == 'x64'
+      shell: pwsh
+      run: |
         go test -count=1 ./...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
-    # The exploit-mitigation flags of ADR-0039 decision 1 (SEC-1, #279) on the shipped executables,
+    - name: Test the BGP sidecar
+      if: matrix.platform.ARCHITECTURE != 'x64'
+      shell: pwsh
+      run: |
+        go test -count=1 ./ranz-bgp/...
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    # The contract of the one executable, read from outside and natively on this architecture
+    # (ONE-1): one version for every subcommand, the subcommands, the NOTICE
+    - name: The executable
+      shell: pwsh
+      run: |
+        $ranz = (Resolve-Path build\ranz\ranz.exe).Path
+        $err = Join-Path $env:RUNNER_TEMP 'ranz.err'
+        $version = (& $ranz version | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) { throw "ranz version exited with code $LASTEXITCODE" }
+        Write-Host $version
+        if ($version -notmatch ('^ranz \d+\.\d+\.' + $env:GITHUB_RUN_NUMBER + '$')) { throw "ranz version printed '$version'" }
+        foreach ($flag in '-version', '--version') {
+          $again = (& $ranz $flag | Out-String).Trim()
+          if ($again -ne $version) { throw "ranz $flag printed '$again', not '$version'" }
+        }
+        & $ranz bgp 2> $err
+        if ($LASTEXITCODE -ne 2 -or (Get-Content -LiteralPath $err -Raw) -notmatch 'ranz bgp: -pipe is required') { throw "ranz bgp without -pipe: exit code $LASTEXITCODE, $(Get-Content -LiteralPath $err -Raw)" }
+        & $ranz controller -h 2> $err
+        if ($LASTEXITCODE -ne 0 -or (Get-Content -LiteralPath $err -Raw) -notmatch 'Usage of ranz controller') { throw "ranz controller -h: exit code $LASTEXITCODE, $(Get-Content -LiteralPath $err -Raw)" }
+        & $ranz 2> $err
+        if ($LASTEXITCODE -ne 2 -or (Get-Content -LiteralPath $err -Raw) -notmatch '(?m)^usage:') { throw "ranz without arguments: exit code $LASTEXITCODE, $(Get-Content -LiteralPath $err -Raw)" }
+        $notice = (& $ranz notice | Out-String)
+        if ($LASTEXITCODE -ne 0 -or $notice -notmatch 'GoBGP' -or $notice -notmatch 'Apache License') { throw 'ranz notice does not print the licence of GoBGP' }
+        Write-Host 'ranz: one version for every subcommand, the subcommands answer, the NOTICE has the licence of GoBGP'
+    # The exploit-mitigation flags of ADR-0039 decision 1 (SEC-1, #279) on the shipped executable,
     # read with dumpbin (.github/scripts/binary-hardening.ps1): the Go toolchain gives them ASLR and
     # DEP, and the exceptions of the script say why not CFG, CET, /GS and /sdl. ranz-nodesim, a
     # test tool, is checked without exceptions and must fail the gate.
     - name: Binary hardening
       shell: pwsh
       run: |
-        ./.github/scripts/binary-hardening.ps1 -Path build\controller\ranz-controller.exe, build\controller\ranz.exe -Unhardened build\controller\ranz-nodesim.exe
+        ./.github/scripts/binary-hardening.ps1 -Path build\ranz\ranz.exe -Unhardened build\ranz\ranz-nodesim.exe
     # The controller's keys in the Microsoft Software Key Storage Provider (internal/keys), in the
     # job log: the X25519 Noise static key against crypto/ecdh, and both keys across two loads.
     - name: Keys in the key storage provider
+      if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
-      working-directory: controller
       run: |
-        go test -count=1 -v -run 'TestKSPStatic|TestLoad' ./internal/keys
+        go test -count=1 -v -run 'TestKSPStatic|TestLoad' ./controller/internal/keys
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     - name: Controller as a Windows service
+      if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
       timeout-minutes: 10
       run: |
-        . .github/scripts/controller-service.ps1 -BinDir build\controller
+        . .github/scripts/controller-service.ps1 -BinDir build\ranz
