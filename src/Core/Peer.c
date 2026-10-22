@@ -952,6 +952,9 @@ void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT siz
 // What the ICE session with the peer of key delivered (PeerIce.c): a data datagram on the direct path, through the
 // same checks as one from PeerInput. Anything else is dropped.
 void PeerInputDirect(PEER_AGENT *a, const UCHAR *key, const UCHAR *data, UINT size) {
+	if (a == NULL || key == NULL || data == NULL)
+		return;
+
 	if (size == 0 || size > PEER_MAX_DATAGRAM || data[0] != PEER_MSG_DATA) {
 		PeerDrop(a, PEER_DROP_MALFORMED);
 		return;
