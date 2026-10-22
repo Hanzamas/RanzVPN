@@ -429,6 +429,9 @@ void authtype_test(UINT num, char **arg);
 void acpassword_test(UINT num, char **arg);
 void sigleak_test(UINT num, char **arg);
 
+// Named default listener test of REL-3, #48 (listeners.c)
+void listeners_test(UINT num, char **arg);
+
 // Named packet parser tests of FND-38, FND-39 and FND-54, #113 and #117 (pkttest.c)
 void pktparse_test(UINT num, char **arg);
 void vlantpid_test(UINT num, char **arg);
@@ -590,6 +593,7 @@ TEST_LIST test_list[] =
 	{"udpaccel", udpaccel_test, "UDP Acceleration: receive budget per poll and per tick, header check before decryption, drop counters and their log."},
 	{"selow", selow_test, "SeLow: the capability query installs nothing, a Local Bridge reaches the driver install, one adapter-list read."},
 	{"listenerbind", listenerbind_test, "ListenerCreate and ListenerEnable wait for the bind and report a port that cannot be bound."},
+	{"listeners", listeners_test, "Default VPN listener: TCP 443 on a fresh configuration, 5555 when 443 cannot be bound at that first start, kept on later starts; ListenerCreate on any port."},
 	{"dllsearch", dllsearch_test, "DLL search order: next to the executable, System32 and AddDllDirectory, never the current directory or PATH."},
 	{"machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts, the salt in the config."},
 	{"vmdetect", vmdetect_test, "VM detection: MsIsInVm writes no script, starts no process, answers at once, reports a VM on a GitHub-hosted runner."},

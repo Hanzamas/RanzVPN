@@ -82,6 +82,12 @@ void HarnessCmdCases(HARNESS *h);
 HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *username, bool *ok);
 UINT HarnessCloseServer(HARNESS *h);
 
+// harness.c: a run whose test starts and stops the server itself, keeping its listeners and its configuration file
+// between starts (listeners.c); HarnessCloseServer ends it
+HARNESS *HarnessOpenRun(char *test_name, UINT limit);
+bool HarnessStartServerKeep(HARNESS *h, bool fresh);
+void HarnessStopServerKeep(HARNESS *h);
+
 // harness_pack.c: raw-pack client of the named login tests (login.c)
 SOCK *HarnessRawConnect(UCHAR *random);
 PACK *HarnessRawLoginPack(char *hubname, char *username, UINT authtype);

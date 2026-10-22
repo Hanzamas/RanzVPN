@@ -40,6 +40,8 @@ ranz_add_executable(vpntest HAMCORE
     logtest.c
     # Named login path tests of PKG-6 (#110)
     login.c
+    # Named default listener test of REL-3 (#48)
+    listeners.c
     # Named packet parser tests of PKG-9 (#113)
     pkttest.c
     # Named PACK decoder bounds test of FND-42 (#114)
