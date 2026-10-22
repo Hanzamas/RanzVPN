@@ -10,10 +10,12 @@
 #   Go module reaches, in its modules or in the standard library of GO_VERSION, for Windows. One
 #   that .github/scripts/govulncheck.ps1 does not accept, with the reason, fails the job.
 # - SBOM: vcpkg installs the ports of vcpkg.json at the baseline and writes an SPDX document for
-#   each; Microsoft's sbom-tool reads those and the Go modules of the tree and writes one SPDX 2.2
-#   SBOM for the Go executables of the new core. The job checks that it names every port of
-#   vcpkg.json and every module that a go.mod requires, at its version
-#   (.github/scripts/sbom-check.ps1), and keeps it as the artifact sbom.
+#   each; Microsoft's sbom-tool reads the Go modules of the tree and writes one SPDX 2.2 SBOM for
+#   the Go executables of the new core. sbom-tool finds the ports too but writes no package for
+#   them, so .github/scripts/sbom-vcpkg.py adds the port package of each vcpkg SPDX document to
+#   that SBOM. The job checks that it names every port of vcpkg.json and every module that a
+#   go.mod requires, at its version (.github/scripts/sbom-check.ps1), and keeps it as the artifact
+#   sbom.
 #
 # It reads the whole tree, so it has no path filter: it runs on every pull request and on every
 # push to master.
@@ -114,6 +116,13 @@ jobs:
         Invoke-WebRequest -Uri "https://github.com/microsoft/sbom-tool/releases/download/$env:SBOM_TOOL_VERSION/sbom-tool-win-x64.exe" -OutFile $tool
         & $tool generate -b build\sbom -bc . -pn ranz-vpn -pv "0.1.0.$env:GITHUB_RUN_NUMBER" -ps Hanzcodes -nsb https://github.com/Hanzamas/RanzVPN -V Information
         if ($LASTEXITCODE -ne 0) { throw "sbom-tool generate exited with code $LASTEXITCODE" }
+    # sbom-tool has no conversion of a detected vcpkg component into a package: the ports of the
+    # target triplet come from their vcpkg SPDX documents
+    - name: Add the vcpkg ports to the SBOM
+      shell: pwsh
+      run: |
+        python .github/scripts/sbom-vcpkg.py --sbom build\sbom\_manifest\spdx_2.2\manifest.spdx.json
+        if ($LASTEXITCODE -ne 0) { throw "sbom-vcpkg.py exited with code $LASTEXITCODE" }
     - name: Check the SBOM
       shell: pwsh
       run: |
