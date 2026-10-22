@@ -37,7 +37,8 @@
 // - "listenerbind" (FIX-3 #99) adds listeners on TCP 39557 (held by the test) and 39558 through the admin
 //   RPC and deletes them again; "certdl" runs its own loopback listener on TCP 39556.
 // - "listeners" (REL-3 #48, listeners.c) keeps the default listener of the server, holds TCP 443 and 5555, and uses
-//   TCP 39559 and 39560.
+//   TCP 39559 and 39560. Its case 6 (REL-4 #49) logs in to the test listener at an address of the machine that is not
+//   loopback and puts back the $adminip.txt it changes.
 // - Phase "zerokey" (SEC-6 #96) runs after the Pack goldens: CreateUser and SetUser refuse a password user
 //   without a password hash, and the user it creates is deleted again before the configuration phases.
 // - Phase "iptablelock" (SEC-6 #96, FND-11 #107) runs after "zerokey": while the test holds the MacHashTable lock of
@@ -8057,6 +8058,27 @@ HARNESS *HarnessOpenRun(char *test_name, UINT limit)
 	return h;
 }
 
+// Start the server of a run from a fresh configuration with the test listener only and the admin RPC, then, unless
+// hubname is NULL, the online hub hubname with the password user username (HARNESS_PASSWORD). False when a step
+// failed. HarnessStopServerKeep or HarnessCloseServer stops it.
+bool HarnessStartServerHub(HARNESS *h, char *hubname, char *username)
+{
+	bool ok = HarnessStartServer(h);
+
+	if (ok && hubname != NULL)
+	{
+		// A server session then ends as soon as its last TCP connection is gone (Session.c, SessionMain), instead
+		// of after the 20 s TimeOut of the default policy. Set after the server started, because loading its
+		// configuration resets the flag
+		SetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT, 1);
+
+		HarnessSetPhase("setup", "hub and user");
+		ok = HarnessCreateHub(h, hubname) && HarnessCreateUser(h, hubname, username, L"Harness login tester");
+	}
+
+	return ok;
+}
+
 // Start a run of a named test in another file: its watchdog (marker test_name, process aborted after limit ms), the
 // server from a fresh configuration with the test listener and the admin RPC, then, unless hubname is NULL, the online
 // hub hubname with the password user username (HARNESS_PASSWORD). *ok is false when a step failed. HarnessCloseServer
@@ -8066,18 +8088,7 @@ HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *use
 	HARNESS *h = HarnessOpenRun(test_name, limit);
 
 	Print("[setup]\n");
-	*ok = HarnessStartServer(h);
-
-	if (*ok && hubname != NULL)
-	{
-		// A server session then ends as soon as its last TCP connection is gone (Session.c, SessionMain), instead
-		// of after the 20 s TimeOut of the default policy. Set after the server started, because loading its
-		// configuration resets the flag
-		SetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT, 1);
-
-		HarnessSetPhase("setup", "hub and user");
-		*ok = HarnessCreateHub(h, hubname) && HarnessCreateUser(h, hubname, username, L"Harness login tester");
-	}
+	*ok = HarnessStartServerHub(h, hubname, username);
 
 	return h;
 }

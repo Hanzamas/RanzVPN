@@ -40,7 +40,8 @@ ranz_add_executable(vpntest HAMCORE
     logtest.c
     # Named login path tests of PKG-6 (#110)
     login.c
-    # Named default listener test of REL-3 (#48)
+    # Named listeners test of spec #43: cases 1 to 5, the default listener, REL-3 (#48); case 6, the empty admin
+    # password from loopback only, REL-4 (#49)
     listeners.c
     # Named packet parser tests of PKG-9 (#113)
     pkttest.c
@@ -66,9 +67,12 @@ ranz_add_executable(vpntest HAMCORE
     storetest.c
     # Named BGP sidecar test of CORE-S7-1 (#82)
     bgptest.c
-  # The session and crypto modules of the new core for nodelogin.c; netapi32: the local account that stands for
-  # a domain account (NetUserAdd)
+    # Named transport test of CORE-F4 (#64): the transport interface of the new core and the session layer on it
+    transporttest.c
+  # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c;
+  # netapi32: the local account that stands for a domain account (NetUserAdd)
   LIBRARIES
+    coretransport
     corenoise
     corecrypto
     "netapi32.lib"

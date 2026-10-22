@@ -42,6 +42,7 @@ func TestSignAndParse(t *testing.T) {
 		if !l.Expires.Equal(want.Expires) {
 			t.Errorf("the key expires at %v, want %v", l.Expires, want.Expires)
 		}
+		want.Watermark = WatermarkFor(want.Licensee) // Sign embedded it
 		l.Expires, want.Expires = time.Time{}, time.Time{}
 		if l != want {
 			t.Errorf("the key holds %+v, want %+v", l, want)
@@ -173,6 +174,113 @@ func TestVendorKeys(t *testing.T) {
 	vendorKeys = "AAAA"
 	if _, err := VendorKeys(); err == nil {
 		t.Error("a malformed vendor key was accepted")
+	}
+}
+
+// Every generated licence key embeds the per-customer watermark, which round-trips through
+// verification (SEC-5 #283, first criterion). It is the same for every key of one customer, and an
+// explicit watermark is kept as given.
+func TestWatermarkRoundTrips(t *testing.T) {
+	pub, priv := testVendor(1)
+	key, err := Sign(priv, business())
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := Parse(key, []ed25519.PublicKey{pub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := WatermarkFor(business().Licensee)
+	if want == "" {
+		t.Fatal("the watermark of a licensee is empty")
+	}
+	if l.Watermark != want {
+		t.Errorf("the key embeds the watermark %q, want %q", l.Watermark, want)
+	}
+
+	// A second key of the same customer carries the same watermark; another customer's differs.
+	same := business()
+	same.ID = "biz-2"
+	k2, _ := Sign(priv, same)
+	l2, _ := Parse(k2, []ed25519.PublicKey{pub})
+	if l2.Watermark != want {
+		t.Errorf("a second key of the same customer has the watermark %q, want %q", l2.Watermark, want)
+	}
+	other := business()
+	other.Licensee = "Other Ltd"
+	k3, _ := Sign(priv, other)
+	l3, _ := Parse(k3, []ed25519.PublicKey{pub})
+	if l3.Watermark == want {
+		t.Errorf("a key of another customer has the same watermark %q", l3.Watermark)
+	}
+
+	// An explicit watermark is signed and parsed back as given, not overwritten.
+	fixed := business()
+	fixed.Watermark = "deadbeefcafef00d"
+	k4, _ := Sign(priv, fixed)
+	l4, _ := Parse(k4, []ed25519.PublicKey{pub})
+	if l4.Watermark != fixed.Watermark {
+		t.Errorf("the explicit watermark became %q, want %q", l4.Watermark, fixed.Watermark)
+	}
+}
+
+// A signed revocation list verifies and holds what was signed, also with the space of a list file
+// around it, and names the keys it revokes.
+func TestSignAndParseRevocations(t *testing.T) {
+	pub, priv := testVendor(1)
+	r := Revocations{Issued: expiry, IDs: []string{"biz-1", "ent-7"}}
+	signed, err := SignRevocations(priv, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(signed, "revoke/") || strings.Count(signed, ".") != 1 {
+		t.Errorf("the list %q is not of the form revoke/<list>.<signature>", signed)
+	}
+	other, _ := testVendor(2)
+	for _, s := range []string{signed, "  " + signed + "\r\n"} {
+		got, err := ParseRevocations(s, []ed25519.PublicKey{other, pub})
+		if err != nil {
+			t.Fatalf("%q: %v", s, err)
+		}
+		if !got.Issued.Equal(r.Issued) || !slices.Equal(got.IDs, r.IDs) {
+			t.Errorf("the list holds %+v, want %+v", got, r)
+		}
+		if !got.Revokes(Licence{ID: "biz-1"}) || got.Revokes(Licence{ID: "biz-9"}) {
+			t.Errorf("the list revokes the wrong ids: %+v", got.IDs)
+		}
+	}
+}
+
+// A revocation list that is malformed, changed after signing or signed with another key does not
+// verify.
+func TestParseRevocationsRefuses(t *testing.T) {
+	pub, priv := testVendor(1)
+	_, otherPriv := testVendor(2)
+	signed, err := SignRevocations(priv, Revocations{Issued: expiry, IDs: []string{"biz-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := SignRevocations(otherPriv, Revocations{Issued: expiry, IDs: []string{"biz-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, sig, _ := strings.Cut(strings.TrimPrefix(signed, "revoke/"), ".")
+	b, _ := base64.RawURLEncoding.DecodeString(payload)
+	more := strings.Replace(string(b), `"biz-1"`, `"biz-2"`, 1)
+	tampered := "revoke/" + base64.RawURLEncoding.EncodeToString([]byte(more)) + "." + sig
+	for _, c := range []struct{ name, list, want string }{
+		{"empty", "", "not of the form"},
+		{"no prefix", strings.TrimPrefix(signed, "revoke/"), "not of the form"},
+		{"no signature", "revoke/" + payload, "not of the form"},
+		{"bad base64", "revoke/!!." + sig, "not base64url"},
+		{"short signature", "revoke/" + payload + ".AAAA", "not the base64url of an Ed25519 signature"},
+		{"tampered", tampered, "not signed with a Ranz vendor key"},
+		{"foreign vendor", foreign, "not signed with a Ranz vendor key"},
+	} {
+		_, err := ParseRevocations(c.list, []ed25519.PublicKey{pub})
+		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want ErrInvalid that says %q", c.name, err, c.want)
+		}
 	}
 }
 

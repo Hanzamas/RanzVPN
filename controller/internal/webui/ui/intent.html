@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" data-page="intent">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intent | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/intent.js"></script>
+</head>
+<body>
+<ranz-nav></ranz-nav>
+<main>
+<h1>Intent</h1>
+<p class="lead">Every resource the Intent declares, of every kind. An apply, a delete and a rollback each make a new <a href="/revisions">revision</a>.</p>
+<ranz-problem></ranz-problem>
+<output id="result" aria-live="polite"></output>
+<section id="apply" aria-labelledby="h-apply" data-action="apply" hidden>
+<h2 id="h-apply">Apply</h2>
+<form id="apply-form">
+<label for="document">Intent document (JSON, as <code>ranz apply -f</code> takes it)</label>
+<textarea id="document" name="document" rows="14" spellcheck="false" required placeholder='{"resources": [{"kind": "VRF", "name": "corp", "spec": {"id": 10}}]}'></textarea>
+<div class="row">
+<label for="confirm">Roll back unless confirmed within</label>
+<input id="confirm" name="confirm" placeholder="for example 5m; empty to apply for good" pattern="([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+" size="28">
+</div>
+<div class="buttons">
+<button type="button" id="load" class="quiet">Start from the current Intent</button>
+<button type="submit">Apply</button>
+</div>
+</form>
+</section>
+<section aria-labelledby="h-resources">
+<h2 id="h-resources">Resources</h2>
+<form id="filter" class="inline">
+<label for="kind">Kind</label>
+<select id="kind" name="kind"><option value="">every kind</option></select>
+</form>
+<ranz-table id="resources"></ranz-table>
+</section>
+<ranz-confirm></ranz-confirm>
+</main>
+</body>
+</html>
