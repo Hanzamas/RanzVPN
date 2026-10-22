@@ -111,9 +111,9 @@ func setProperty(h uintptr, name string, value []byte) error {
 }
 
 // createKey creates a key of the algorithm alg in the provider prov: persisted under name, with
-// machineKeyFlag in flags for the machine scope, or ephemeral when name is empty. curve names
-// the curve of an ECDH key; exportPolicy is the export policy, 0 for a key that never leaves the
-// provider.
+// machineKeyFlag in flags for the machine scope (keyScope), or ephemeral when name is empty.
+// curve names the curve of an ECDH key; exportPolicy is the export policy, 0 for a key that never
+// leaves the provider.
 func createKey(prov uintptr, name, alg, curve string, flags, exportPolicy uint32) (uintptr, error) {
 	var namePtr *uint16
 	if name != "" {
@@ -149,14 +149,31 @@ func openKey(prov uintptr, name string, flags uint32) (uintptr, error) {
 	return h, status("NCryptOpenKey", r)
 }
 
-// openOrCreate opens the machine-scope key name of prov, or creates it, not exportable, the first
-// time.
+// openOrCreate opens the key name of prov in the key set of keyScope, or creates it, not
+// exportable, the first time.
 func openOrCreate(prov uintptr, name, alg, curve string) (uintptr, error) {
-	h, err := openKey(prov, name, machineKeyFlag)
+	h, err := openKey(prov, name, keyScope())
 	if errors.Is(err, errBadKeyset) {
-		return createKey(prov, name, alg, curve, machineKeyFlag, 0)
+		return createKey(prov, name, alg, curve, keyScope(), 0)
 	}
 	return h, err
+}
+
+// keyScope is the key set of the persisted keys, as the flags of the provider: the machine scope
+// when the process holds the rights of a local administrator (an elevated administrator, or
+// LocalSystem), else the key set of its account. The service runs as its virtual account
+// (ADR-0039 decision 3), which is no administrator and may not create machine-scope keys, so it
+// keeps its keys in its own key set, as the node keeps its identity key. The elevation of the
+// token does not tell the two apart: a service token counts as elevated.
+func keyScope() uint32 {
+	admins, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		return 0
+	}
+	if member, err := windows.Token(0).IsMember(admins); err == nil && member {
+		return machineKeyFlag
+	}
+	return 0
 }
 
 // deleteKey deletes the persisted key h and frees its handle.

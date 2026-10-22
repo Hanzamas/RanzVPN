@@ -57,7 +57,7 @@ Per-core run-to-completion:
 
 - A **`controller` role** in the node binary: one active per deployment plus a passive standby. *(Superseded by the amendment of 2026-10-20 below: a separate Go service with rqlite, one member by default and 3 or 5 members for HA, ADR-0026.)*
 - **protobuf via nanopb (C)** on the Noise control stream; **no gRPC in the core**.
-- **BGP via a Go sidecar `ranz-bgp`** that embeds GoBGP as a library (ADR-0010). The core talks to the sidecar over a **named pipe with JSON** (announce, withdraw, learned routes); the core installs learned routes into Windows through IP Helper. It is an optional MSI feature, built in CI (Go cross-compiled for x64 and arm64), and spiked on Windows when L3 networks land (strangler step 7). **No RRAS.**
+- **BGP via a Go sidecar `ranz-bgp`** that embeds GoBGP as a library (ADR-0010). The core talks to the sidecar over a **named pipe with JSON** (announce, withdraw, learned routes); the core installs learned routes into Windows through IP Helper. It is an optional MSI feature, built in CI (Go cross-compiled for x64 and arm64), and spiked on Windows when L3 networks land (strangler step 7). **No RRAS.** *(Amended 2026-10-22: `ranz-bgp` becomes the subcommand `ranz bgp` of the one `ranz.exe`, not an optional MSI feature; ADR-0011 amendment, ONE-1.)*
 
 ### VLAN and policy engine (ADR-0019) v1
 

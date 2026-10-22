@@ -23,6 +23,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/Hanzamas/RanzVPN/ranz-bgp/internal/mitigation"
 	"github.com/Hanzamas/RanzVPN/ranz-bgp/internal/sidecar"
 )
 
@@ -30,7 +31,16 @@ import (
 // ranz-bgp.
 const dialTimeout = 10 * time.Second
 
+// mitigations and mitigationErr are what mitigation.Apply did in main, which run logs; nil when a
+// test calls run itself.
+var (
+	mitigations   []mitigation.Result
+	mitigationErr error
+)
+
 func main() {
+	// The process mitigations of ADR-0039 before ranz-bgp starts anything
+	mitigations, mitigationErr = mitigation.Apply()
 	os.Exit(run(context.Background(), os.Args[1:], os.Stdout, os.Stderr))
 }
 
@@ -78,6 +88,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		out = f
 	}
 	log := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: &level}))
+	mitigation.Log(log, mitigations, mitigationErr)
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()

@@ -54,7 +54,7 @@ env:
   # flynn/noise end of the session module's interop test (coretest noiseinterop, CORE-F2 #62),
   # ranz-controller and ranz of the default VRF tracer (SDN-3 #179), and the BGP sidecar spike
   # (ranz-bgp.yml, CORE-S7-1)
-  GO_VERSION: '1.27.2'
+  GO_VERSION: '1.27.3'
   # The rqlite release of controller.yml: the store of the controller of the default VRF tracer
   RQLITE_VERSION: 'v10.5.3'
 
@@ -279,6 +279,24 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/sdn-tracer.ps1 -BuildDir build
+    # The exploit-mitigation flags of ADR-0039 decision 1 (SEC-1, #279) on the node, the shipped
+    # executable of the new core, read from the binary with dumpbin: CFG, CET (x64), high-entropy
+    # ASLR, DEP, /GS and /sdl, or an exception that says why not (.github/scripts/binary-hardening.ps1).
+    # ranz-noisepeer, a Go test tool built without them, must fail the gate.
+    - name: Binary hardening
+      shell: pwsh
+      run: |
+        ./.github/scripts/binary-hardening.ps1 -Path build\ranz-node.exe -Unhardened build\ranz-noisepeer.exe
+    # When a step fails: what the build asked the linker for, next to what the gate read from the
+    # binary. The link command of ranz-node (ninja -t commands; its response file holds the objects
+    # and libraries) and the link variables of its build statement in build.ninja.
+    - name: Link command of ranz-node
+      if: failure()
+      shell: pwsh
+      run: |
+        $ninja = (Select-String -LiteralPath build\CMakeCache.txt -Pattern '^CMAKE_MAKE_PROGRAM:\w+=(.+)$').Matches[0].Groups[1].Value
+        & $ninja -C build -t commands ranz-node.exe | Select-Object -Last 1
+        (Select-String -LiteralPath build\build.ninja -Pattern '^build ranz-node\.exe:' -Context 0, 20).Context.PostContext | Where-Object { $_ -match '^\s+LINK_' }
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
@@ -421,7 +439,7 @@ jobs:
         # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
         # certdl has time windows too (it measures the client timeouts); it also runs in build_and_test only.
         # nodesvc installs ranz-node as a service, which would run outside the instrumented process; build_and_test only.
-        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo,node,nodelogin,store,transport
+        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,listeners,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo,node,nodelogin,store,transport
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list. Its output
         # and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a report printed

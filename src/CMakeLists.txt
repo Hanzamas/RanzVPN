@@ -15,9 +15,21 @@ if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
   # clang-cl: docs/adr/0024-clang-cl-spectre.md
   message("Setting QSPECTRE")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Qspectre")
+  # The additional security checks of ADR-0039 decision 1, cl.exe only for the same reason:
+  # clang-cl accepts /sdl and ignores it. Its /GS below is the strong stack protector that /sdl
+  # turns on in cl.exe.
+  message("Setting /sdl")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /sdl")
 else()
   message(STATUS "No /Qspectre with ${CMAKE_C_COMPILER_ID}: docs/adr/0024-clang-cl-spectre.md")
+  message(STATUS "No /sdl with ${CMAKE_C_COMPILER_ID}: it ignores the switch (docs/adr/0039-security-hardening-baseline.md)")
 endif()
+
+# The stack buffer-overrun checks of ADR-0039 decision 1. Both compilers default to /GS; it is named
+# so that a toolchain default cannot drop it. CI checks the shipped executables for every flag of
+# that decision (.github/scripts/binary-hardening.ps1).
+message("Setting /GS")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GS")
 
 #
 # https://msrc-blog.microsoft.com/2020/08/17/control-flow-guard-for-clang-llvm-and-rust/
@@ -29,6 +41,11 @@ set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} /guard:cf /DYNAMICBASE")
 
 message("Setting CETCOMPAT")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /CETCOMPAT")
+
+# Full, high-entropy ASLR and DEP (ADR-0039 decision 1). Both linkers set them by default for a
+# 64-bit executable with /DYNAMICBASE; they are named for the same reason as /GS above.
+message("Setting /HIGHENTROPYVA /NXCOMPAT")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /HIGHENTROPYVA /NXCOMPAT")
 
 # Optimised linking of the executables: /OPT:REF drops unreferenced functions and data, /OPT:ICF
 # folds identical ones. /DEBUG, which the RelWithDebInfo flags keep for the PDBs, turns both off

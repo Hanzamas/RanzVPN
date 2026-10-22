@@ -7,6 +7,9 @@
 bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root);
 void SiLoadLocalBridges(SERVER *s, FOLDER *f);
 void SiLoadListeners(SERVER *s, FOLDER *f);
+void SiLoadHttpListenerCfg(SERVER *s, FOLDER *f);
+void SiWriteHttpListenerCfg(FOLDER *f, SERVER *s);
+void SiFreeHttpListener(SERVER *s);
 void SiWriteServerCfg(FOLDER *f, SERVER *s);
 void SiLoadServerCfg(SERVER *s, FOLDER *f);
 void SiWriteTraffic(FOLDER *parent, char *name, TRAFFIC *t);

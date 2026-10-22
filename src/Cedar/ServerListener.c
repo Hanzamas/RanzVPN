@@ -97,6 +97,10 @@ bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos) {
 	if (s == NULL || port == 0)
 		return false;
 
+	// While the HTTP listener is on, its port is not a VPN listener port
+	if (s->HttpListenerEnabled && s->HttpListenerPort == port)
+		return false;
+
 	for (UINT i = 0; i < LIST_NUM(s->ServerListenerList); i++) {
 		e = LIST_DATA(s->ServerListenerList, i);
 		if (e->Port == port)

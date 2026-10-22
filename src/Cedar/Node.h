@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeOverlay.c, NodeTable.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeTable.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -38,6 +38,12 @@
 
 // The node identity key in the software key storage provider (ADR-0022) without the IdentityKey setting
 #define NODE_IDENTITY_KEY_NAME "Ranz Node"
+
+// The account of the ranzvpnserver service: its virtual account, not LocalSystem (ADR-0039 decision 3). The SID is
+// the one Windows derives from the service name (the SHA-1 of its upper-case UTF-16 form, as sc showsid prints it),
+// so the DACL of the data directory can name it before the service exists.
+#define NODE_SERVICE_ACCOUNT L"NT SERVICE\\ranzvpnserver"
+#define NODE_SERVICE_SID     L"S-1-5-80-2319880895-1939077415-1550474732-530486738-250906376"
 
 // The BGP sidecar ranz-bgp (NodeBgp.c; ADR-0010, CORE-S7-1 #82)
 #define NODE_BGP_EXE_NAME     L"ranz-bgp.exe" // The sidecar, next to the executable of the node (the RanzBgp feature of the MSI)
@@ -220,6 +226,15 @@ struct NODE_BGP_STATUS {
 	UINT NumRoutes;         // The learned routes installed through IP Helper
 	UINT NumErrors;         // Error messages of the sidecar so far
 	char Version[MAX_SIZE]; // What the sidecar named in ready: ranz-bgp and its GoBGP
+	char PipeAcl[MAX_SIZE]; // The DACL of the pipe to the sidecar as the system holds it, in SDDL
+};
+
+// One process mitigation of the node (NodeHarden.c; ADR-0039 decision 2)
+struct NODE_MITIGATION {
+	char *Name;  // Its name in the node log
+	UINT Policy; // The PROCESS_MITIGATION_POLICY of SetProcessMitigationPolicy
+	UINT Flags;  // The bits of the policy structure that the node sets
+	char *Off;   // NULL when the node sets it; else why a feature of the node cannot run under it
 };
 
 // Node.c
@@ -262,6 +277,10 @@ void NodeReaderOnline(NODE *n, NODE_READER *r);
 bool NodeBgpAnnounce(NODE *n, char *prefix, char *next_hop);
 bool NodeBgpWithdraw(NODE *n, char *prefix);
 void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
+
+// NodeHarden.c
+void NodeHarden();
+const NODE_MITIGATION *NodeGetMitigations(UINT *num);
 
 // NodeOverlay.c
 bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg);

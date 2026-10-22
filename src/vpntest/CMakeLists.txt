@@ -40,6 +40,9 @@ ranz_add_executable(vpntest HAMCORE
     logtest.c
     # Named login path tests of PKG-6 (#110)
     login.c
+    # Named listeners test of spec #43: cases 1 to 5, the default listener, REL-3 (#48); case 6, the empty admin
+    # password from loopback only, REL-4 (#49)
+    listeners.c
     # Named packet parser tests of PKG-9 (#113)
     pkttest.c
     # Named PACK decoder bounds test of FND-42 (#114)
@@ -66,6 +69,8 @@ ranz_add_executable(vpntest HAMCORE
     bgptest.c
     # Named transport test of CORE-F4 (#64): the transport interface of the new core and the session layer on it
     transporttest.c
+    # Named HTTP listener test of REL-6 (#51)
+    httplistener.c
     # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz-controller and ping each other
     sdntrace.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c;

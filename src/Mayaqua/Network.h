@@ -184,6 +184,7 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 
 void Disconnect(SOCK *sock);
 SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only);
+bool ListenProbe(UINT port, IP *listen_ip, bool ipv4_only, UINT *error);
 SOCK *Accept(SOCK *sock);
 bool IsTransientAcceptError(UINT err);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);

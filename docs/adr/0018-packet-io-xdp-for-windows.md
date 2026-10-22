@@ -37,6 +37,16 @@ The 2026-10-13 grilling (new-core round; `spike-xdp-result.md`, `spike-xdp-ebpf-
 - **RIO is crossed out** (ADR-0008): the normal datapath is Winsock with IOCP plus USO/URO. Decision 2's text above is corrected.
 - **Ship on the XDP 1.4 rule API now; eBPF later.** The rule API (`XdpCreateProgram`) is the only XDP path that captures the frames the OS sends, and it is supported until 2028-01-29. The **eBPF path is rejected for now**: the `spike/xdp-ebpf` result is conclusive that eBPF for Windows has no TX-inspect hook (every program attaches to `{L2, RX, INSPECT}`, and KM-TEST does not loop TX back to RX), and there is **no production-signed eBPF for Windows runtime** (it needs test signing and Secure Boot off). Finish the eBPF spike in parallel and switch only when eBPF-for-Windows installs cleanly and is production-signed; re-run the spike on every XDP release.
 - **Re-verify the `xdp.sys` signature before decision 4 is final.** The spike ran on hosted runners with test signing on; re-run it on a Server 2022 VM with **Secure Boot on and test signing off** to confirm the nuget.org `xdp.sys` is production-signed (not attestation-signed, which Server refuses) before the loopback design is treated as proven. `signtool verify /kp` already passes on the nuget.org 1.4.0 `xdp.sys`.
-- **Install path:** a separate `Install-RanzXdp.ps1` (wrapping `xdp-setup.ps1`); the MSI does not bundle XDP for v1 (ADR-0022).
+- **Install path:** a separate `Install-RanzXdp.ps1` (wrapping `xdp-setup.ps1`); the MSI does not bundle XDP for v1 (ADR-0022). *(Superseded by the amendment of 2026-10-22 below: the XDP runtime rides in `ranz.exe`.)*
 - **QTIP (decision 5) lands at strangler step 7** (ADR-0022), default port **8443** (both TCP and UDP reserved, configurable), proven with a two-VM spike. *(Superseded by the ADR-0002 amendment of 2026-10-21: two node processes on one CI runner.)*
 - **KM-TEST details (decision 4):** per-adapter locally administered MAC from the node id and network id; forward ARP/IGMP/LLMNR/NetBIOS chatter and rate-limit broadcast per VLAN; add broadcast, multicast and 802.1Q-tagged injection to the spike.
+
+## Amendment 2026-10-22: the XDP runtime ships inside `ranz.exe`
+
+Maintainer decision (Hilmi: one product in one file; ADR-0011 amendment of the same date). The "Install path" bullet of the 2026-10-13 amendment is superseded: there is no separate `Install-RanzXdp.ps1` and no second download.
+
+- **The pinned XDP runtime (`Microsoft.XDP-for-Windows.Runtime`, x64 only) is a payload of `ranz.exe`.** `ranz install` installs it with the Node (ONE-3, #312), and `ranz install --no-xdp` leaves it out on a server that does not want it. The Node reports it as the `xdp` Capability and falls back to SeLow when it is absent or fails at run time (ADR-0002 amendment of 2026-10-21).
+- **The signature check stands:** the shipped `xdp.sys` keeps Microsoft's production signature, which the install CI job verifies with `signtool verify /kp`.
+- **arm64 gets no XDP runtime** (no official arm64 package, ADR-0022): an arm64 node carries Wintun only.
+- **Npcap stays out of the file:** decision 3 stands (never bundled, optional, used only when the administrator installed it).
+- The redistribution terms of the XDP runtime are recorded in the NOTICE file that ships inside `ranz.exe` (ONE-3).
