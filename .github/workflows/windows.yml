@@ -476,10 +476,19 @@ jobs:
         call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
         set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
         rem The clean binaries (vpnserver for the clean-variant check, vpntest for the debugger test) and
-        rem the release-only ranzguard, in one build
-        cmake --preset hardened -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%GITHUB_RUN_NUMBER%
+        rem the release-only ranzguard, in one build. VCPKG_APPLOCAL_DEPS is off: the static triplet copies
+        rem no DLLs, and the per-target applocal step otherwise contends on the installed bin dir when
+        rem several targets link at once ("the process cannot access the file because it is being used by
+        rem another process").
+        cmake --preset hardened -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%GITHUB_RUN_NUMBER% -DVCPKG_APPLOCAL_DEPS=OFF
         if errorlevel 1 exit /b 1
-        cmake --build --preset hardened --target ranzguard vpnserver vpntest
+        rem One target per build call, so the three executables never link at the same moment and never
+        rem contend on an output file
+        cmake --build --preset hardened --target ranzguard
+        if errorlevel 1 exit /b 1
+        cmake --build --preset hardened --target vpnserver
+        if errorlevel 1 exit /b 1
+        cmake --build --preset hardened --target vpntest
       shell: cmd
     - name: Save vcpkg binary cache
       if: ${{ !cancelled() }}
