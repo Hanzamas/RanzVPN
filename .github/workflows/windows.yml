@@ -248,6 +248,14 @@ jobs:
         $hits | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
         if ($hits.Count -gt 0) { throw "coretest links OpenSSL or liboqs: $($hits.Count) lines of build/coretest.map" }
         Write-Host "build/coretest.map (${{ matrix.platform.ARCHITECTURE }}): corecrypto and corenoise linked, no OpenSSL or liboqs object, library or symbol"
+    # The exploit-mitigation flags of ADR-0039 decision 1 (SEC-1, #279) on the node, the shipped
+    # executable of the new core, read from the binary with dumpbin: CFG, CET (x64), high-entropy
+    # ASLR, DEP, /GS and /sdl, or an exception that says why not (.github/scripts/binary-hardening.ps1).
+    # ranz-noisepeer, a Go test tool built without them, must fail the gate.
+    - name: Binary hardening
+      shell: pwsh
+      run: |
+        ./.github/scripts/binary-hardening.ps1 -Path build\ranz-node.exe -Unhardened build\ranz-noisepeer.exe
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
