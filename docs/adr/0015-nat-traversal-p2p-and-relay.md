@@ -11,8 +11,8 @@ An external suggestion Hilmi pasted said: do not write port prediction yourself,
 ## Decision
 
 1. **ICE via libjuice** (C, MIT, CMake, builds on Windows, the ICE agent used by libdatachannel): host and server-reflexive (STUN) candidates, connectivity checks, keepalives. Not libnice (GLib dependency, LGPL). pion/ice only if a Go sidecar exists for other reasons.
-2. **ICE is not port prediction.** ICE handles cone NATs. Peers behind symmetric NAT (carrier-grade NAT, some offices) go straight to the relay. Tailscale-style birthday or port-prediction attacks are **not** written at first; they are added later only if metrics show many symmetric-NAT peer pairs.
-3. **Relay is mandatory and is Ranz's own.** A stateless `relay` role of the node binary speaks the same QUIC / TLS-443 session as the direct path, is policy-aware, and shares one code path with the direct path (this is what the SoftEther hub already does for every session). TURN/coturn is optional for using third-party relay infrastructure, not the baseline: TURN is WebRTC-shaped (per-peer allocations, UDP-centric, short-term credentials).
+2. **ICE is not port prediction; both are in scope.** ICE (libjuice) handles cone NATs. For symmetric NAT (carrier-grade NAT, some offices) the node additionally runs its own **port prediction and birthday-paradox hole punching** in the Tailscale style, so symmetric-NAT peer pairs also get a direct path when the NAT behaviour allows it (Hilmi, 2026-10-21: "gw mau 2 ini"). This is Ranz code on top of libjuice's candidates, not deferred; the relay remains the fallback when it fails.
+3. **Relay is mandatory, is Ranz's own, and is self-hosted.** A stateless `relay` role of the node binary speaks the same QUIC / TLS-443 session as the direct path, is policy-aware, and shares one code path with the direct path (this is what the SoftEther hub already does for every session). Any node with a public address can be a relay: a VPS, a home server with a mapped port, or a hub; the control plane lists the relays of a deployment and nodes pick by latency. TURN/coturn is optional for using third-party relay infrastructure, not the baseline: TURN is WebRTC-shaped (per-peer allocations, UDP-centric, short-term credentials).
 4. **Relay-first, upgrade in the background.** A new peer pair comes up through the relay in one round trip; ICE runs in the background; traffic switches to the direct path once it is validated, and falls back to the relay automatically when the direct path dies. Not a sequential direct, then prediction, then relay wait.
 5. **Port mapping on home gateways** via PCP, NAT-PMP and UPnP using libplum (same author as libjuice, MIT), as Tailscale's portmapper does, so nodes behind home routers obtain a public port without hole punching.
 6. **Signalling:** ICE candidates are exchanged through the control plane and signed with the node keys; relays verify node identity and rate-limit.
@@ -23,7 +23,8 @@ An external suggestion Hilmi pasted said: do not write port prediction yourself,
 - New dependencies: libjuice and libplum (both MIT).
 - A `relay` role in the node binary (ADR-0011), stateless, horizontally scalable.
 - Control-plane messages for candidate exchange and relay assignment.
-- Metrics on the direct-versus-relay ratio per deployment, which decide later whether port prediction for symmetric NAT is worth adding.
+- Metrics on the direct-versus-relay ratio and on port-prediction success per deployment, for capacity planning and for tuning the prediction window.
+- Port prediction and birthday-paradox punching are Ranz's own code (libjuice provides candidates and checks, not this); they need the control plane to coordinate timing between the two peers.
 - STUN servers are needed for server-reflexive candidates; the optional `StunServer` setting from the slim-down spec (ticket #20) is the forerunner of this, and the control plane can point nodes at Ranz-operated or public STUN servers per deployment.
 
 ## Amendment 2026-10-21: libjuice and libplum are MPL-2.0, not MIT
