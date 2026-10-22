@@ -205,12 +205,13 @@ static void noise_rule_tests() {
 	// Every byte of message 1 matters: a change in e, in the encrypted s or in the payload tag fails
 	// the responder, which then refuses to go on
 	UINT positions[] = {0, 40, NOISE_IK_MESSAGE1_SIZE - 1};
+	const char *changed[] = {"a changed e fails message 1, and the responder stops", "a changed s fails message 1", "a changed payload tag fails message 1"};
 	for (UINT i = 0; i < sizeof(positions) / sizeof(positions[0]); i++) {
 		if (noise_vector_init(&init, &resp, NULL, NULL) && NoiseHandshakeWrite(&init, NULL, 0, msg, sizeof(msg), &size)) {
 			msg[positions[i]] ^= 0x01;
 			bool read = NoiseHandshakeRead(&resp, msg, size, out, sizeof(out), &out_size);
 			coretest_check(read == false && resp.Failed && NoiseHandshakeWrite(&resp, NULL, 0, msg2, sizeof(msg2), &size2) == false,
-			               positions[i] == 0 ? "a changed e fails message 1, and the responder stops" : positions[i] == 40 ? "a changed s fails message 1" : "a changed payload tag fails message 1");
+			               changed[i]);
 		}
 		NoiseHandshakeFree(&init);
 		NoiseHandshakeFree(&resp);

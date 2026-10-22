@@ -391,6 +391,7 @@ static void ses_login_tests() {
 		sign[i] = (UCHAR)(i * 13);
 
 	UINT methods[] = {NOISE_LOGIN_ANONYMOUS, NOISE_LOGIN_PASSWORD, NOISE_LOGIN_CERT, NOISE_LOGIN_JOIN};
+	const char *parsed[] = {"anonymous Login: encoded and parsed back", "password Login: encoded and parsed back", "certificate Login: encoded and parsed back", "join Login: encoded and parsed back"};
 	for (UINT m = 0; m < 4; m++) {
 		ZeroMemory(&l, sizeof(l));
 		l.Method = methods[m];
@@ -410,7 +411,7 @@ static void ses_login_tests() {
 			ok = ok && r.CertSize == sizeof(cert) && memcmp(r.Cert, cert, sizeof(cert)) == 0 && r.SignSize == sizeof(sign) && memcmp(r.Sign, sign, sizeof(sign)) == 0;
 		if (l.Method == NOISE_LOGIN_JOIN)
 			ok = ok && memcmp(r.TunnelId, l.TunnelId, sizeof(l.TunnelId)) == 0;
-		coretest_check(ok, m == 0 ? "anonymous Login: encoded and parsed back" : m == 1 ? "password Login: encoded and parsed back" : m == 2 ? "certificate Login: encoded and parsed back" : "join Login: encoded and parsed back");
+		coretest_check(ok, parsed[m]);
 		if (m == 2) {
 			// Every truncation of a valid Login fails, and so does a byte more
 			bool all = true;
