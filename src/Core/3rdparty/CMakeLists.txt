@@ -7,8 +7,9 @@
 
 set(_ranz_juice "${CMAKE_CURRENT_SOURCE_DIR}/libjuice")
 set(_ranz_plum "${CMAKE_CURRENT_SOURCE_DIR}/libplum")
+set(_ranz_nanopb "${CMAKE_CURRENT_SOURCE_DIR}/nanopb")
 
-if(NOT EXISTS "${_ranz_juice}/include/juice/juice.h" OR NOT EXISTS "${_ranz_plum}/include/plum/plum.h")
+if(NOT EXISTS "${_ranz_juice}/include/juice/juice.h" OR NOT EXISTS "${_ranz_plum}/include/plum/plum.h" OR NOT EXISTS "${_ranz_nanopb}/pb.h")
   message(FATAL_ERROR "The submodules of src/Core/3rdparty are not initialized. Run\n\tgit submodule update --init --recursive")
 endif()
 
@@ -124,7 +125,20 @@ set_source_files_properties("${_ranz_plum}/src/util.c"
 
 target_link_libraries(libplum PRIVATE "ws2_32.lib" "iphlpapi.lib" "bcrypt.lib")
 
-foreach(_ranz_target libjuice libplum)
+# nanopb: the protobuf runtime of the C node's control stream (ADR-0022, ADR-0027; SDN-3, #179), zlib licence, a git
+# submodule at the release tag nanopb-0.4.9.2, the one whose generator the nanopb round trip of controller.yml runs.
+# The messages of proto/ranz/control/v1/control.proto are generated at build time (src/Core/CMakeLists.txt). An
+# Update of control.options is larger than 64 kB, so every user of nanopb gets PB_FIELD_32BIT.
+add_library(nanopb STATIC
+  "${_ranz_nanopb}/pb_common.c"
+  "${_ranz_nanopb}/pb_decode.c"
+  "${_ranz_nanopb}/pb_encode.c"
+)
+
+target_include_directories(nanopb PUBLIC "${_ranz_nanopb}")
+target_compile_definitions(nanopb PUBLIC PB_FIELD_32BIT)
+
+foreach(_ranz_target libjuice libplum nanopb)
   set_target_properties(${_ranz_target}
     PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

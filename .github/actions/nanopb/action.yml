@@ -1,0 +1,28 @@
+# The nanopb generator of the C build (src/Core/CMakeLists.txt, SDN-3 #179): protoc on the PATH and
+# the protobuf package of Python, the versions that the nanopb round trip of controller.yml pins
+# (PROTOC_VERSION, PROTOBUF_PY_VERSION). The generator itself is the one of the nanopb submodule.
+# protoc has no Windows arm64 build; the x64 one runs under the emulation of Windows 11 on arm64.
+name: nanopb generator
+description: protoc and the Python protobuf package for the nanopb generator of the C build
+inputs:
+  protoc-version:
+    description: the protoc release (controller.yml PROTOC_VERSION)
+    default: '36.2'
+  protobuf-version:
+    description: the Python protobuf package of that release (controller.yml PROTOBUF_PY_VERSION)
+    default: '7.36.2'
+runs:
+  using: composite
+  steps:
+  - shell: pwsh
+    run: |
+      $zip = Join-Path $env:RUNNER_TEMP 'protoc.zip'
+      $dir = Join-Path $env:RUNNER_TEMP 'protoc'
+      Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v${{ inputs.protoc-version }}/protoc-${{ inputs.protoc-version }}-win64.zip" -OutFile $zip
+      Expand-Archive -Path $zip -DestinationPath $dir -Force
+      & (Join-Path $dir 'bin\protoc.exe') --version
+      if ($LASTEXITCODE -ne 0) { throw "protoc exited with code $LASTEXITCODE" }
+      (Join-Path $dir 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      python -m pip install --disable-pip-version-check "protobuf==${{ inputs.protobuf-version }}"
+      if ($LASTEXITCODE -ne 0) { throw "pip exited with code $LASTEXITCODE" }
+      python -c "import google.protobuf, sys; print(sys.executable, 'protobuf', google.protobuf.__version__)"

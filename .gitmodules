@@ -10,3 +10,6 @@
 [submodule "src/Core/3rdparty/libplum"]
 	path = src/Core/3rdparty/libplum
 	url = https://github.com/paullouisageneau/libplum.git
+[submodule "src/Core/3rdparty/nanopb"]
+	path = src/Core/3rdparty/nanopb
+	url = https://github.com/nanopb/nanopb.git
