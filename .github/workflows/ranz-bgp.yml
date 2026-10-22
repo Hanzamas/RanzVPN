@@ -3,8 +3,12 @@
 #
 # linux: tidies go.mod and go.sum and runs gofmt; then vets (for Linux and for Windows), builds (for Linux,
 # and for Windows on x64 and arm64) and tests the module: the session of the sidecar against GoBGP routers
-# in the test, over an in-memory pipe. Last, the job fails, and prints the diff, if tidy or gofmt changed a
-# committed file.
+# in the test, over an in-memory pipe. Then the job fails, and prints the diff, if tidy or gofmt changed a
+# committed file. Last come the quality gates of ADR-0040 for the module: the tests run with -race
+# (item 4) and -coverprofile, and each package must stay at or above its coverage floor (item 2,
+# .github/quality/coverage-floors.txt); the fuzz tests of .github/quality/fuzz-targets.txt run with
+# go test -fuzz for a short time each (item 1); and staticcheck and govulncheck, for Linux and for
+# Windows, must find nothing (item 3).
 #
 # windows: vets, builds and tests the module on Windows x64 and arm64, with the named pipe of the node
 # (go-winio) in the tests of cmd/ranz-bgp, among them the process mitigations and the System32-only DLL
@@ -37,6 +41,9 @@ env:
   GO_VERSION: '1.27.3'
   # The WiX Toolset of the MSI (ADR-0020; REL-5, #50)
   WIX_VERSION: '5.0.2'
+  # The Go static analysis of ADR-0040 item 3: staticcheck 2026.2.2 and govulncheck, as in controller.yml
+  STATICCHECK_VERSION: 'v0.8.2'
+  GOVULNCHECK_VERSION: 'v1.9.0'
 
 jobs:
   linux:
@@ -66,9 +73,11 @@ jobs:
         GOOS=windows GOARCH=amd64 go build -o "$RUNNER_TEMP/windows-x64/" ./cmd/...
         GOOS=windows GOARCH=arm64 go build -o "$RUNNER_TEMP/windows-arm64/" ./cmd/...
         ls -l "$RUNNER_TEMP/windows-x64" "$RUNNER_TEMP/windows-arm64"
+    # -race is the race detection of ADR-0040 item 4 for the Go code; the profile is read by the
+    # coverage floor step
     - name: Test
       working-directory: ranz-bgp
-      run: go test -race -count=1 ./...
+      run: go test -race -count=1 -coverprofile="$RUNNER_TEMP/cover.out" ./...
     - name: Committed files match tidy and gofmt
       if: ${{ !cancelled() }}
       run: |
@@ -77,6 +86,53 @@ jobs:
           echo "::error::ranz-bgp/ differs from what go mod tidy and gofmt make of it: commit the diff above"
           exit 1
         fi
+    # ADR-0040 item 2: the statement coverage of each package against its floor
+    - name: Coverage floor
+      if: ${{ !cancelled() }}
+      run: python3 .github/scripts/coverage-floor.py go --module ranz-bgp --profile "$RUNNER_TEMP/cover.out"
+    # ADR-0040 item 1: every fuzz test of the module in .github/quality/fuzz-targets.txt, 20 s each. A
+    # crashing input is saved under testdata/fuzz of its package and uploaded below.
+    - name: Fuzz (go test -fuzz)
+      if: ${{ !cancelled() }}
+      working-directory: ranz-bgp
+      run: |
+        targets="$(python3 ../.github/scripts/fuzz-registry.py go-targets ranz-bgp --root ..)"
+        test -n "$targets"
+        failed=0
+        while read -r package target; do
+          echo "::group::$target ($package)"
+          if ! go test -run '^$' -fuzz "^${target}\$" -fuzztime 20s "$package"; then
+            echo "::error::$target of $package found a failing input (testdata/fuzz/$target of the package, in the artifact ranz-bgp-fuzz-inputs)"
+            failed=1
+          fi
+          echo "::endgroup::"
+        done <<< "$targets"
+        exit $failed
+    # ADR-0040 item 3: staticcheck and govulncheck for Linux and for Windows. Any staticcheck finding
+    # fails the job, and so does a vulnerability that the code calls, unless
+    # .github/quality/govulncheck-accepted.txt accepts it for that version. Built for the runner;
+    # GOOS picks the platform they analyze. The two staticcheck runs are merged (-merge), so code
+    # that one platform alone uses is not reported as unused.
+    - name: Static analysis (staticcheck, govulncheck)
+      if: ${{ !cancelled() }}
+      working-directory: ranz-bgp
+      run: |
+        GOBIN="$RUNNER_TEMP/gobin" go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
+        GOBIN="$RUNNER_TEMP/gobin" go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+        "$RUNNER_TEMP/gobin/staticcheck" -version
+        "$RUNNER_TEMP/gobin/staticcheck" -f binary ./... > "$RUNNER_TEMP/staticcheck-linux.bin"
+        GOOS=windows "$RUNNER_TEMP/gobin/staticcheck" -f binary ./... > "$RUNNER_TEMP/staticcheck-windows.bin"
+        "$RUNNER_TEMP/gobin/staticcheck" -merge "$RUNNER_TEMP/staticcheck-linux.bin" "$RUNNER_TEMP/staticcheck-windows.bin"
+        "$RUNNER_TEMP/gobin/govulncheck" -version
+        "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
+        GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"
+        python3 ../.github/scripts/govulncheck-gate.py --accepted ../.github/quality/govulncheck-accepted.txt "$RUNNER_TEMP/govulncheck-linux.json" "$RUNNER_TEMP/govulncheck-windows.json"
+    - uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: ranz-bgp-fuzz-inputs
+        if-no-files-found: ignore
+        path: ranz-bgp/**/testdata/fuzz/
 
   windows:
     strategy:

@@ -16,6 +16,7 @@ set(RANZ_FUZZ_TARGETS
   fuzz_login
   fuzz_peer
   fuzz_noise
+  fuzz_transport
 )
 
 # Console executables without an icon or the hamcore resources (cmake/RanzExecutable.cmake)
@@ -32,3 +33,6 @@ endforeach()
 
 # fuzz_noise: the session module of the new core (CORE-F2, #62) and the crypto module under it
 target_link_libraries(fuzz_noise PRIVATE corenoise corecrypto)
+
+# fuzz_transport: the transport module of the new core (CORE-F4, #64) and the session and crypto modules under it
+target_link_libraries(fuzz_transport PRIVATE coretransport corenoise corecrypto)

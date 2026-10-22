@@ -23,6 +23,10 @@ set(BUILD_DIRECTORY ${CMAKE_BINARY_DIR})
 # AddressSanitizer and libFuzzer builds (RANZ_ASAN, RANZ_FUZZ; both OFF by default)
 include("${TOP_DIRECTORY}/cmake/RanzSanitizers.cmake")
 
+# Source-based code coverage builds (RANZ_COVERAGE, OFF by default). After RanzSanitizers.cmake,
+# whose options it reads.
+include("${TOP_DIRECTORY}/cmake/RanzCoverage.cmake")
+
 # The ranz_warnings target: /W3 and the warning flags that the project's own targets link PRIVATE
 include("${TOP_DIRECTORY}/cmake/RanzWarnings.cmake")
 

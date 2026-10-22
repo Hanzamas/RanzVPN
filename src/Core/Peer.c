@@ -584,7 +584,7 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 			CopyMemory(s.RelayKey, home->Info.Key, PEER_KEY_SIZE);
 			s.Relay = home->Info.Addr;
 
-			if (home->Bound && a->Config.Ice == false) {
+			if (home->Bound && a->Config.Ice == false && s.NumCandidates < PEER_MAX_CANDIDATES) {
 				s.Candidates[s.NumCandidates].Type = PEER_CANDIDATE_SRFLX;
 				s.Candidates[s.NumCandidates].Addr = home->Observed;
 				s.NumCandidates++;
@@ -965,6 +965,9 @@ void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT siz
 // What the ICE session with the peer of key delivered (PeerIce.c): a data datagram on the direct path, through the
 // same checks as one from PeerInput. Anything else is dropped.
 void PeerInputDirect(PEER_AGENT *a, const UCHAR *key, const UCHAR *data, UINT size) {
+	if (a == NULL || key == NULL || data == NULL)
+		return;
+
 	if (size == 0 || size > PEER_MAX_DATAGRAM || data[0] != PEER_MSG_DATA) {
 		PeerDrop(a, PEER_DROP_MALFORMED);
 		return;

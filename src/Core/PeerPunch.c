@@ -216,6 +216,8 @@ void PeerPunchTick(PEER_AGENT *a) {
 	if (a->Config.Punch == false)
 		return;
 
+	ZeroMemory(send, sizeof(send));
+
 	UINT rate = PeerPunchRate(a);
 
 	AcquireSRWLockExclusive(&a->Lock);
@@ -258,12 +260,14 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 	bool connected = false;
 	bool answer = false;
 
-	if (a->Config.Punch == false)
+	if (a->Config.Punch) {
+		if (PeerOpen(a, data, size, sender, payload, sizeof(payload), &len) == false)
+			reason = PEER_DROP_FORGED;
+		else if (len != PEER_PUNCH_PAYLOAD_SIZE || payload[0] != PEER_VERSION)
+			reason = PEER_DROP_MALFORMED;
+	} else {
 		reason = PEER_DROP_MALFORMED;
-	else if (PeerOpen(a, data, size, sender, payload, sizeof(payload), &len) == false)
-		reason = PEER_DROP_FORGED;
-	else if (len != PEER_PUNCH_PAYLOAD_SIZE || payload[0] != PEER_VERSION)
-		reason = PEER_DROP_MALFORMED;
+	}
 
 	if (reason != PEER_OK) {
 		PeerDrop(a, reason);

@@ -1,0 +1,9 @@
+# The vulnerabilities that the govulncheck gate accepts (ADR-0040 item 3, .github/scripts/govulncheck-gate.py),
+# one "<OSV id> <module>@<version> <reason>" per line. Every other vulnerability that the code of
+# controller/ or ranz-bgp/ calls fails the Linux job of its workflow. An entry holds for that version of
+# the module only.
+
+# The advisory lists every version of GoBGP as affected and no fixed one. Its fix, commit 583080a
+# ("server: fix malformed nexthop attribute crash", 2026-03-05, the FIX reference of the advisory), is in
+# v4.10.0: GitHub's compare of the commit with the tag v4.10.0 is "ahead" by 395 commits, "behind" by 0.
+GO-2026-4736 github.com/osrg/gobgp/v4@v4.10.0 the fix (commit 583080a) is in v4.10.0; the advisory records no fixed version

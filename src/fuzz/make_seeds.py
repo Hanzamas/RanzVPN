@@ -836,6 +836,37 @@ def make_noise_seeds():
     write_seed('fuzz_noise', 'login_join.bin', noise_login(3, b'HUB', b'alice', bytes(16)))
 
 
+# ---------------------------------------------------------------------------
+# Transport module (src/Core/Transport.c TransportParseList, src/Core/TransportNoise.c): fallback lists, and the
+# frames that a server node reads from a stream without a channel binding, each the size of its record in 4 bytes
+# (big-endian) and the record: the encrypted golden handshake and records above, which the server node of
+# fuzz_transport.c accepts and decrypts
+# ---------------------------------------------------------------------------
+def transport_frames(records):
+    return b''.join(struct.pack('>I', len(r)) + r for r in records)
+
+
+def make_transport_seeds():
+    g = NOISE_GOLDEN['encrypted']
+    hs1 = bytes.fromhex(g['hs1'])
+    write_seed('fuzz_transport', 'handshake1.bin', transport_frames([hs1]))
+    write_seed('fuzz_transport', 'records.bin', transport_frames([hs1] + [bytes.fromhex(r) for r in g['records']]))
+    # A frame one byte above the largest record (2 + 65535) and an empty frame: the stream ends at either
+    write_seed('fuzz_transport', 'frame_too_large.bin', struct.pack('>I', 2 + 65535 + 1) + hs1)
+    write_seed('fuzz_transport', 'frame_empty.bin', struct.pack('>I', 0) + hs1)
+    # The handshake frame cut inside its record
+    write_seed('fuzz_transport', 'frame_cut.bin', transport_frames([hs1])[:40])
+    # Fallback lists (ADR-0005: QUIC, then TLS-443, then the CDN path): two entries with spaces around them, the 8
+    # entries a list holds at most, an empty entry after the last comma, a transport that is not known, an entry
+    # without an address, and the longest address that fits (255 bytes) before one that does not
+    write_seed('fuzz_transport', 'list.txt', b'quic:vpn.example:443, tls:vpn.example:443')
+    write_seed('fuzz_transport', 'list_full.txt', b','.join(b'cdn:https://edge%d.example/ranz' % i for i in range(8)))
+    write_seed('fuzz_transport', 'list_trailing_comma.txt', b'quic:vpn.example:443,')
+    write_seed('fuzz_transport', 'list_unknown.txt', b'\tquic:vpn.example:443 ,\twss:vpn.example:443')
+    write_seed('fuzz_transport', 'list_no_address.txt', b'tls:vpn.example:443, quic:')
+    write_seed('fuzz_transport', 'list_long_address.txt', b'tls:' + b'a' * 255 + b',tls:' + b'b' * 256)
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     assert len(PEER_SIGNAL) == 99 and len(PEER_SIGNAL_ENVELOPE) == 180 and len(PEER_BIND_ENVELOPE) == 90
@@ -852,3 +883,4 @@ if __name__ == '__main__':
     make_stun_seeds()
     make_peer_seeds()
     make_noise_seeds()
+    make_transport_seeds()

@@ -1,0 +1,20 @@
+# The clang-tidy findings on the new core that the static analysis gate accepts (ADR-0040 item 3,
+# .github/scripts/static-findings.py), one "<file>|<check>|<message>" per line, once for each line of
+# the file that has it. A finding that is not here fails the static-analysis job of windows.yml.
+#
+# The findings of src/Core when the gate started (2026-10-22, the first run of the job):
+# - CryptoCert.c: &data, a BYTE **, passed as the void * of CryptEncodeObjectEx with
+#   CRYPT_ENCODE_ALLOC_FLAG, as the API documents it
+# - Noise.c: the switch of NoiseSuiteName, which returns NULL after it for every other suite
+# - NoiseSession.c: the switch of NoiseLoginParse over the login method, which the parse refused
+#   before it for a value above NOISE_LOGIN_JOIN
+# - Peer.c: PeerOpenSignal drops a malformed envelope and a malformed signal with the same reason,
+#   at two different steps
+# - TransportQuic.c: the credential flags of the client (CLIENT, NO_CERTIFICATE_VALIDATION and
+#   INDICATE_CERTIFICATE_RECEIVED, 21 together) are bit flags of msquic, which its QUIC_CREDENTIAL_FLAGS
+#   enum does not list as one value; msquic's own samples combine them the same way (CORE-S1-1)
+src/Core/CryptoCert.c|bugprone-multi-level-implicit-pointer-conversion|multilevel pointer conversion from 'BYTE **' (aka 'unsigned char **') to 'void *', please use explicit cast
+src/Core/Noise.c|bugprone-switch-missing-default-case|switching on non-enum value without default case may not cover all cases
+src/Core/NoiseSession.c|bugprone-switch-missing-default-case|switching on non-enum value without default case may not cover all cases
+src/Core/Peer.c|bugprone-branch-clone|repeated branch body in conditional chain
+src/Core/TransportQuic.c|clang-analyzer-optin.core.EnumCastOutOfRange|The value '21' provided to the cast expression is not in the valid range of values for 'QUIC_CREDENTIAL_FLAGS'

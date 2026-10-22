@@ -1,0 +1,76 @@
+# The fuzz targets of the new core's parsers and wire-format handlers (ADR-0040 item 1), checked by
+# .github/scripts/fuzz-registry.py in the quality workflow:
+#   <directory> <function> <target> [via <entry point>]
+#   <directory> <function> exempt <reason>
+# A function of the new core whose name looks like a parser's needs a line here: a C function that is
+# not static in src/Core, src/Cedar/Node*.c or src/Cedar/ConfigStore*.c, or an exported Go function or
+# method of controller/ or ranz-bgp/. The target is a libFuzzer target of src/fuzz (C) or a Go fuzz test
+# in the function's package; its source names the function, or the entry point it is reached through.
+# The Go fuzz tests listed here are the ones that the controller and ranz-bgp workflows run with
+# go test -fuzz.
+
+# The crypto module (CORE-F1 #61)
+src/Core  CryptoAeadOpen        fuzz_noise  via NoiseSessionReceive
+src/Core  CryptoCertImportPfx   exempt  Windows parses the PFX (PFXImportCertStore), the operator's own certificate file
+src/Core  CryptoIdentityImport  exempt  puts a 32-byte private scalar into the key storage provider; parses nothing
+src/Core  CryptoIdentityOpen    exempt  opens a node identity key by its name in the key storage provider; reads no peer's bytes
+
+# The session module (CORE-F2 #62): the Noise handshake, the records and the Login
+src/Core  NoiseHandshakeRead    fuzz_noise  via NoiseSessionAccept
+src/Core  NoiseSessionAccept    fuzz_noise
+src/Core  NoiseSessionFinish    fuzz_noise
+src/Core  NoiseSessionReceive   fuzz_noise
+src/Core  NoiseLoginParse       fuzz_noise
+
+# The peer module (CORE-S5-2 #78): datagrams, envelopes and signals; the datagrams of ICE (CORE-S5-3 #79)
+src/Core  PeerInput             fuzz_peer
+src/Core  PeerInputDirect       fuzz_peer
+src/Core  PeerOpenSignal        fuzz_peer
+src/Core  PeerOpen              fuzz_peer  via PeerOpenSignal
+src/Core  PeerEnvelopeOpen      fuzz_peer  via PeerOpenSignal
+src/Core  PeerSignalDecode      fuzz_peer
+src/Core  PeerPunchInput        fuzz_peer  via PeerInput
+src/Core  PeerKeyOpen           exempt  opens the node's static key by its name in the key storage provider; reads no peer's bytes
+
+# The transport module (CORE-F4 #64): the fallback list and the frames of the session layer
+src/Core  TransportParseList     fuzz_transport
+src/Core  TransportNoiseReceive  fuzz_transport
+src/Core  TransportRead          exempt  hands the read of a stream to the Read procedure of its transport; parses nothing (TransportNoiseReceive reads the frames)
+
+# The Node and the configuration store of Cedar (CORE-F5)
+src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
+src/Cedar  CsOpen               exempt  opens the node's own SQLite store (winsqlite3)
+src/Cedar  CsImportForkConfig   exempt  the config importer of CORE-F5, merged before ADR-0040: Cfg parses the bytes of the file (fuzz_cfg) and the importer walks the parsed tree; a fuzz target of its own is still to come
+src/Cedar  NodeOverlayInput     exempt  a packet of the host's own IP stack on the overlay adapter (SDN-3 #179, merged before the gate): NodeOverlayEnds reads the two IPv4 addresses at fixed offsets of a header whose size, version and length it checks, and the packet is sent on unread; a fuzz target of its own is still to come
+
+# The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
+controller/internal/control  Open                  FuzzOpen
+controller/internal/control  Conn.Read             FuzzRead
+controller/internal/control  Conn.SetReadDeadline  exempt  sets the deadline of the next Read; reads nothing
+
+# The intent documents of the API, `ranz apply -f` and `ranz import -f` (SDN-52 #245)
+controller/internal/intent  ParseDocument  FuzzParseDocument
+controller/internal/intent  ParseULA       FuzzParseValues
+controller/internal/intent  ParsePool      FuzzParseValues
+controller/internal/intent  ParseKey       FuzzParseValues
+controller/internal/intent  ParseRelay     FuzzParseValues
+controller/internal/controller  Controller.Import  exempt  takes a document that ParseDocument parsed and intent.Replace checked, which FuzzParseDocument drives; it stores the result as a revision
+controller/internal/api         Client.Import      exempt  the API client of `ranz import`: it sends a parsed document to the controller and reads the controller's own answer
+
+# The licence keys (SDN-30 #206) and the revocation list (SEC-5 #283)
+controller/internal/licence  Parse             FuzzParse
+controller/internal/licence  ParseRevocations  FuzzParseRevocations
+
+# The activation tokens of the licensing server (SEC-7 #284)
+controller/internal/activation  ParseToken  FuzzParseToken
+
+# The sealed Enterprise feature and the offline activation response (SEC-6 #285)
+controller/internal/activation  OpenFeature           FuzzOpenFeature
+controller/internal/activation  Install.OpenFeature   exempt  opens the sealed Enterprise blob with the feature key that the install holds in memory, by calling OpenFeature, which FuzzOpenFeature drives
+controller/internal/activation  OpenOfflineResponse   FuzzOpenOfflineResponse
+
+controller/internal/rbac   ParseRole  exempt  compares the name with the three role names; decodes nothing
+controller/internal/store  Open       exempt  opens the controller's own rqlite store by its URL
+
+# The pipe protocol of the BGP sidecar (CORE-S7-1 #82)
+ranz-bgp/internal/sidecar  Reader.Read  FuzzRead

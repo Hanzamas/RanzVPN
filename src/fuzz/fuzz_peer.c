@@ -2,7 +2,8 @@
 // libFuzzer target: the parsers of the peer layer of the new core (Core/Peer.c, Core/PeerSignal.c, CORE-S5-2 #78)
 // that read what the network and the control plane send. Every input runs as a datagram through PeerInput of a
 // relay that two nodes are bound to, once from the address of a bound node and once from an address that is
-// none; as a signal envelope through PeerOpenSignal; and as the payload of a signal through PeerSignalDecode.
+// none; as a datagram that the ICE session with a bound node delivered, through PeerInputDirect (CORE-S5-3 #79);
+// as a signal envelope through PeerOpenSignal; and as the payload of a signal through PeerSignalDecode.
 // The keys are the fixed ones of coretest (src/coretest/envelope.c), so a seed can be a datagram between the
 // two bound nodes or a known answer of coretest.
 
@@ -15,6 +16,10 @@
 
 // Largest input accepted: the largest datagram of the peer layer; longer inputs are skipped
 #define	FUZZ_MAX_INPUT_SIZE		PEER_MAX_DATAGRAM
+
+// What the ICE session with the peer of key delivered (Core/Peer.c), declared in Core/PeerInternal.h, which only the
+// files of the peer module include
+void PeerInputDirect(PEER_AGENT *a, const UCHAR *key, const UCHAR *data, UINT size);
 
 static PEER_KEY fuzz_relay_key;
 static PEER_KEY fuzz_a_key;
@@ -104,7 +109,8 @@ static bool FuzzPeerSetup()
 	return true;
 }
 
-// One input: a datagram from A and from a stranger, a signal envelope, a signal payload
+// One input: a datagram from A and from a stranger, a datagram of the ICE session with A, a signal envelope, a signal
+// payload
 static void FuzzPeer(const uint8_t *data, size_t size)
 {
 	PEER_SIGNAL sig;
@@ -125,6 +131,7 @@ static void FuzzPeer(const uint8_t *data, size_t size)
 
 	PeerInput(fuzz_relay, &fuzz_a_addr, copy, (UINT)size);
 	PeerInput(fuzz_relay, &fuzz_other_addr, copy, (UINT)size);
+	PeerInputDirect(fuzz_relay, fuzz_a_key.Public, copy, (UINT)size);
 	PeerOpenSignal(fuzz_relay, copy, (UINT)size, &sig);
 	PeerSignalDecode(copy, (UINT)size, &sig);
 

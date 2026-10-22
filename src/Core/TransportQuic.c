@@ -135,7 +135,13 @@ static bool QuicApiOpen() {
 // Count one fewer user; close the API and free the DLL when the last transport is gone
 static void QuicApiClose() {
 	AcquireSRWLockExclusive(&g_quic_lock);
-	if (g_quic_refs != 0 && --g_quic_refs == 0) {
+	bool last = false;
+
+	if (g_quic_refs != 0) {
+		g_quic_refs--;
+		last = (g_quic_refs == 0);
+	}
+	if (last) {
 		g_quic_close(g_quic);
 		FreeLibrary(g_quic_module);
 		g_quic = NULL;
@@ -398,7 +404,7 @@ static void QuicRingPut(QUIC_STREAM *s, const UCHAR *src, UINT size) {
 // The stream callback: it fills the ring from the received buffers, frees a completed send, and
 // marks the end or the abort of the stream. A partial receive holds msquic back until the reader
 // drains the ring and re-enables it.
-static QUIC_STATUS QUIC_API QuicStreamCallback(HQUIC stream, void *context, QUIC_STREAM_EVENT *event) {
+static _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API QuicStreamCallback(HQUIC stream, void *context, QUIC_STREAM_EVENT *event) {
 	QUIC_STREAM *s = (QUIC_STREAM *)context;
 
 	UNREFERENCED_PARAMETER(stream);
@@ -510,9 +516,7 @@ static UINT QuicStreamRead(void *stream, void *buf, UINT size, UINT timeout) {
 			s->Disabled = false;
 			reenable = true;
 		}
-	} else if (s->Aborted) {
-		ret = 0;
-	} else if (s->PeerClosed) {
+	} else if (s->Aborted || s->PeerClosed) {
 		ret = 0;
 	}
 	ReleaseSRWLockExclusive(&s->Lock);
@@ -646,7 +650,7 @@ static void QuicConnRelease(QUIC_CONN *c) {
 
 // The connection callback: it records the certificate's binding, wakes a waiting dial on connect or
 // failure, and closes the connection on shutdown
-static QUIC_STATUS QUIC_API QuicConnCallback(HQUIC connection, void *context, QUIC_CONNECTION_EVENT *event) {
+static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnCallback(HQUIC connection, void *context, QUIC_CONNECTION_EVENT *event) {
 	QUIC_CONN *c = (QUIC_CONN *)context;
 
 	UNREFERENCED_PARAMETER(connection);
@@ -744,7 +748,7 @@ static QUIC_CONN *QuicConnNew(QUIC_NET *net, QUIC_LISTENER *listener, bool want_
 // The listener
 //
 
-static QUIC_STATUS QUIC_API QuicListenerCallback(HQUIC listener, void *context, QUIC_LISTENER_EVENT *event) {
+static _Function_class_(QUIC_LISTENER_CALLBACK) QUIC_STATUS QUIC_API QuicListenerCallback(HQUIC listener, void *context, QUIC_LISTENER_EVENT *event) {
 	QUIC_LISTENER *l = (QUIC_LISTENER *)context;
 
 	UNREFERENCED_PARAMETER(listener);

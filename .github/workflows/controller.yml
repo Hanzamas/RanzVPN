@@ -7,8 +7,12 @@
 # ranz-controller processes, each with its rqlited, on the runner: cmd/ranz-controller). Those
 # tests write every control message they sent or received to a directory, and the nanopb code
 # generated from the same schema decodes each one and encodes it back to the same bytes
-# (tests/control/nanopb_roundtrip.c). Last, the job fails, and prints the diff, if generation,
-# tidy or gofmt changed a committed file.
+# (tests/control/nanopb_roundtrip.c). Then the job fails, and prints the diff, if generation,
+# tidy or gofmt changed a committed file. Last come the quality gates of ADR-0040 for the module:
+# the tests run with -race (item 4) and -coverprofile, and each package must stay at or above its
+# coverage floor (item 2, .github/quality/coverage-floors.txt); the fuzz tests of
+# .github/quality/fuzz-targets.txt run with go test -fuzz for a short time each (item 1); and
+# staticcheck and govulncheck, for Linux and for Windows, must find nothing (item 3).
 #
 # windows: vets, builds and tests the module on Windows (the cluster tests included), with the
 # controller's keys in the Microsoft Software Key Storage Provider, then runs ranz-controller as a
@@ -20,9 +24,11 @@
 # A push to master runs both jobs, with no path filter. A pull request runs them when it changes a
 # path that they read: controller/; proto/, the schema that go generate and the nanopb round trip
 # read; tests/control/, the round trip program; .gitattributes, which sets the line endings of the
-# checkout; this file, .github/scripts/controller-service.ps1 and the binary hardening gate
-# .github/scripts/binary-hardening.ps1, which windows.yml runs too. A pull request that changes
-# none of them (a C change under src/, or docs only) does not run this workflow.
+# checkout; this file, .github/scripts/controller-service.ps1, the binary hardening gate
+# .github/scripts/binary-hardening.ps1, which windows.yml runs too, the fuzz targets, coverage
+# floors and accepted vulnerabilities of .github/quality and the scripts that read them. A pull
+# request that changes none of them (a C change under src/, or docs only) does not run this
+# workflow.
 
 name: controller
 
@@ -37,6 +43,12 @@ on:
     - '.gitattributes'
     - '.github/workflows/controller.yml'
     - '.github/scripts/controller-service.ps1'
+    - '.github/quality/fuzz-targets.txt'
+    - '.github/quality/coverage-floors.txt'
+    - '.github/quality/govulncheck-accepted.txt'
+    - '.github/scripts/fuzz-registry.py'
+    - '.github/scripts/coverage-floor.py'
+    - '.github/scripts/govulncheck-gate.py'
     - '.github/scripts/binary-hardening.ps1'
 
 concurrency:
@@ -54,6 +66,9 @@ env:
   PROTOBUF_PY_VERSION: '7.36.2'
   NANOPB_VERSION: '0.4.9.2'
   RQLITE_VERSION: 'v10.5.3'
+  # The Go static analysis of ADR-0040 item 3: staticcheck 2026.2.2 and govulncheck
+  STATICCHECK_VERSION: 'v0.8.2'
+  GOVULNCHECK_VERSION: 'v1.9.0'
 
 jobs:
   linux:
@@ -87,6 +102,10 @@ jobs:
 
         python -m pip install --disable-pip-version-check "protobuf==${PROTOBUF_PY_VERSION}"
         git clone --quiet --depth 1 --branch "nanopb-${NANOPB_VERSION}" https://github.com/nanopb/nanopb "$RUNNER_TEMP/nanopb"
+
+        # Built for the runner; GOOS of the step that runs them picks the platform they analyze
+        GOBIN="$RUNNER_TEMP/gobin" go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
+        GOBIN="$RUNNER_TEMP/gobin" go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
     - name: Generate, tidy and format
       working-directory: controller
       run: |
@@ -106,11 +125,13 @@ jobs:
         GOOS=windows GOARCH=amd64 go build -o "$RUNNER_TEMP/windows-x64/" ./cmd/...
         GOOS=windows GOARCH=arm64 go build -o "$RUNNER_TEMP/windows-arm64/" ./cmd/...
         ls -l "$RUNNER_TEMP/windows-x64" "$RUNNER_TEMP/windows-arm64"
+    # -race is the race detection of ADR-0040 item 4 for the Go code; the profile is read by the
+    # coverage floor step
     - name: Test
       working-directory: controller
       env:
         RANZ_CONTROL_WIRE: ${{ runner.temp }}/wire
-      run: go test -race -count=1 ./...
+      run: go test -race -count=1 -coverprofile="$RUNNER_TEMP/cover.out" ./...
     # The Hanzcodes activation service and the install side (internal/activation, SEC-7 #284 and
     # SEC-6 #285), in the job log: the service issues a node-locked, time-limited token and refuses
     # an invalid or node-mismatched request, releases the Enterprise feature key only against an
@@ -143,6 +164,51 @@ jobs:
           echo "::error::controller/ differs from what go generate, go mod tidy and gofmt make of it: commit the diff above"
           exit 1
         fi
+    # ADR-0040 item 2: the statement coverage of each package against its floor
+    - name: Coverage floor
+      if: ${{ !cancelled() }}
+      run: python .github/scripts/coverage-floor.py go --module controller --profile "$RUNNER_TEMP/cover.out"
+    # ADR-0040 item 1: every fuzz test of the module in .github/quality/fuzz-targets.txt, 20 s each. A
+    # crashing input is saved under testdata/fuzz of its package and uploaded below.
+    - name: Fuzz (go test -fuzz)
+      if: ${{ !cancelled() }}
+      working-directory: controller
+      run: |
+        targets="$(python ../.github/scripts/fuzz-registry.py go-targets controller --root ..)"
+        test -n "$targets"
+        failed=0
+        while read -r package target; do
+          echo "::group::$target ($package)"
+          if ! go test -run '^$' -fuzz "^${target}\$" -fuzztime 20s "$package"; then
+            echo "::error::$target of $package found a failing input (testdata/fuzz/$target of the package, in the artifact controller-fuzz-inputs)"
+            failed=1
+          fi
+          echo "::endgroup::"
+        done <<< "$targets"
+        exit $failed
+    # ADR-0040 item 3: staticcheck (with the checks of controller/staticcheck.conf) and govulncheck,
+    # for Linux and for Windows. Any staticcheck finding fails the job, and so does a vulnerability
+    # that the code calls, unless .github/quality/govulncheck-accepted.txt accepts it for that version.
+    # The two staticcheck runs are merged (-merge), so code that one platform alone uses is not
+    # reported as unused.
+    - name: Static analysis (staticcheck, govulncheck)
+      if: ${{ !cancelled() }}
+      working-directory: controller
+      run: |
+        "$RUNNER_TEMP/gobin/staticcheck" -version
+        "$RUNNER_TEMP/gobin/staticcheck" -f binary ./... > "$RUNNER_TEMP/staticcheck-linux.bin"
+        GOOS=windows "$RUNNER_TEMP/gobin/staticcheck" -f binary ./... > "$RUNNER_TEMP/staticcheck-windows.bin"
+        "$RUNNER_TEMP/gobin/staticcheck" -merge "$RUNNER_TEMP/staticcheck-linux.bin" "$RUNNER_TEMP/staticcheck-windows.bin"
+        "$RUNNER_TEMP/gobin/govulncheck" -version
+        "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
+        GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"
+        python ../.github/scripts/govulncheck-gate.py --accepted ../.github/quality/govulncheck-accepted.txt "$RUNNER_TEMP/govulncheck-linux.json" "$RUNNER_TEMP/govulncheck-windows.json"
+    - uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: controller-fuzz-inputs
+        if-no-files-found: ignore
+        path: controller/**/testdata/fuzz/
 
   windows:
     name: controller (Windows)

@@ -1,0 +1,48 @@
+# The recorded medians of the performance regression gate (ADR-0040 item 5,
+# .github/scripts/bench-gate.py): <case> <median> <unit> <margin %>.
+# Recorded by bench-gate.py record from 15 CI runs, the margin twice the slowest run's distance
+# from the median, rounded up to 5 %, at least 25 % and at least two units of a time printed
+# in whole units.
+# The BENCH lines of the arm64 jobs of windows.yml (2026-10-21 and 2026-10-22), runs
+# 39681364674 39681461803 39717490167 39719924806 39720149419 39720435521 39721084040 39721301218
+# 39721302598 39721456040 39724089848 39725058111 39728838791 39735879974 39744052311
+accept_table_1024 462 us 25
+accept_table_16384 17904 us 25
+accept_table_4096 2263 us 25
+bench_runtime_ms 24359 ms 25
+cascade_path_fps_1500 8018 frames/s 25
+cascade_path_fps_512 8017 frames/s 25
+cascade_path_fps_64 8022 frames/s 25
+cascade_path_mbps_1500 96.22 Mbit/s 25
+cascade_path_mbps_512 32.84 Mbit/s 25
+cascade_path_mbps_64 4.1 Mbit/s 25
+fifo_cycle 5.67653e+06 ops/s 25
+flood_fps_64 30732 frames/s 25
+flood_fps_8 226912 frames/s 25
+flood_fps_logwait_8 139555 frames/s 40
+ip_table_add_1024 759474 frames/s 25
+ip_table_add_16384 348323 frames/s 25
+ip_table_expire_1024 2 us 100
+ip_table_expire_16384 60 us 25
+ip_table_expire_4096 9 us 70
+ip_table_free_1024 23 us 35
+ip_table_free_16384 350 us 25
+ip_table_free_4096 82 us 25
+pack_decode_enum_session 3513 ops/s 25
+pack_decode_names_500 1406 ops/s 25
+pack_encode_enum_session 3201 ops/s 25
+pack_encode_names_500 1520 ops/s 25
+parse_packet_dns 941532 ops/s 25
+parse_packet_dns_nolog 5.5986e+06 ops/s 25
+parse_packet_http 277895 ops/s 25
+parse_packet_http_nolog 5.73949e+06 ops/s 25
+parse_packet_l2 7.01021e+06 ops/s 25
+parse_packet_l2_nolog 7.07494e+06 ops/s 25
+parse_packet_mix 892855 ops/s 25
+parse_packet_mix_nolog 5.81583e+06 ops/s 25
+parse_packet_tcp 5.66273e+06 ops/s 25
+parse_packet_tcp_nolog 5.74247e+06 ops/s 25
+parse_packet_tls 1.78245e+06 ops/s 25
+parse_packet_tls_nolog 5.74431e+06 ops/s 25
+queue_burst_4096 7377 ops/s 25
+queue_cycle 2.49672e+07 ops/s 25

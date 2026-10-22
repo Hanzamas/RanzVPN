@@ -1,0 +1,27 @@
+# The clang-tidy checks of the static analysis gate (ADR-0040 item 3), run on the new core (src/Core)
+# by the static-analysis job of windows.yml with --config-file. A finding that
+# .github/quality/clang-tidy-baseline.txt does not hold fails the job (.github/scripts/static-findings.py).
+#
+# The path-sensitive analyzer (clang-analyzer-*) and the bug-prone patterns (bugprone-*), without:
+# - DeprecatedOrUnsafeBufferHandling: every memcpy and memset, which the C11 Annex K functions would
+#   replace; the new core bounds its copies itself
+# - optin.performance.Padding: the field order of a struct, a size hint and no bug
+# - casting-through-void: its remedy is C++'s reinterpret_cast; C casts the FARPROC of
+#   GetProcAddress through void * to the function's type
+# - easily-swappable-parameters, implicit-widening-of-multiplication-result, narrowing-conversions:
+#   style, which the code's UINT sizes would trip on every line
+# - assignment-in-if-condition, reserved-identifier: style of the code base
+Checks: >
+  -*,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -clang-analyzer-optin.performance.Padding,
+  bugprone-*,
+  -bugprone-casting-through-void,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-narrowing-conversions,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-reserved-identifier
+HeaderFilterRegex: '.*[/\\]src[/\\]Core[/\\].*'
+WarningsAsErrors: ''
