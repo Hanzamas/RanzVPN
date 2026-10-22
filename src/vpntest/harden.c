@@ -90,13 +90,15 @@ static void HardenReadToken(HANDLE rd, char *token, UINT size)
 	token[used] = 0;
 }
 
-// Pump debug events until the debuggee exits, so a breakpoint never terminates it. A software
-// breakpoint is swallowed with DBG_CONTINUE; any other first-chance exception is passed back to the
-// debuggee's own handlers, and a second-chance exception is counted as a crash.
+// Pump debug events until the debuggee exits, so a breakpoint never terminates it. The first breakpoint
+// is the loader's own and is continued; a later one (ranzguard's own probe) is passed back to the
+// debuggee so its vectored handler takes it, which also avoids re-executing the int3. Any other
+// first-chance exception is passed back too, and a second-chance exception is counted as a crash.
 static bool HardenPumpDebugger(HANDLE process, UINT *exit_code, bool *crashed)
 {
 	DEBUG_EVENT ev;
 	bool exited = false;
+	bool loader_bp_seen = false;
 
 	*exit_code = 0;
 	*crashed = false;
@@ -119,11 +121,17 @@ static bool HardenPumpDebugger(HANDLE process, UINT *exit_code, bool *crashed)
 			DWORD code = ev.u.Exception.ExceptionRecord.ExceptionCode;
 			DWORD first = ev.u.Exception.dwFirstChance;
 
-			if (code == EXCEPTION_BREAKPOINT || code == EXCEPTION_SINGLE_STEP)
+			if (code == EXCEPTION_BREAKPOINT && loader_bp_seen == false)
 			{
-				// Swallow it: the guard's vectored handler then never runs, so its own check sees the
-				// breakpoint taken by a debugger
+				// The loader's initial breakpoint: the debugger consumes it
+				loader_bp_seen = true;
 				cont = DBG_CONTINUE;
+			}
+			else if (code == EXCEPTION_BREAKPOINT || code == EXCEPTION_SINGLE_STEP)
+			{
+				// ranzguard's own breakpoint probe: hand it back so its vectored handler resumes past the
+				// int3, rather than the debugger re-running the same instruction
+				cont = DBG_EXCEPTION_NOT_HANDLED;
 			}
 			else if (first != 0)
 			{

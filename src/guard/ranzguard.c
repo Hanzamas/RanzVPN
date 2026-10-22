@@ -153,10 +153,11 @@ static u64 hash_ascii(const char *s)
 static void *export_by_hash(const u8 *base, u64 needle)
 {
 	u32 e_lfanew = rd32(base, 0x3C);
-	// Optional header follows the 4-byte PE signature and the 20-byte file header
+	// Optional header follows the 4-byte PE signature and the 20-byte file header; for PE32+ the data
+	// directory starts at optional-header offset 0x70, and entry 0 is the export directory
 	u32 opt = e_lfanew + 4 + 20;
-	u32 exp_rva = rd32(base, opt + 0x78);
-	u32 exp_size = rd32(base, opt + 0x7C);
+	u32 exp_rva = rd32(base, opt + 0x70);
+	u32 exp_size = rd32(base, opt + 0x74);
 	if (exp_rva == 0 || exp_size == 0)
 	{
 		return RG_NULL;

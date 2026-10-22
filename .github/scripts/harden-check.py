@@ -39,12 +39,12 @@ class Pe:
 		magic = struct.unpack_from('<H', d, opt)[0]
 		if magic != 0x20B:
 			raise ValueError('not a PE32+ (x64) image (optional header magic 0x%X): %s' % (magic, path))
-		# DataDirectory starts at optional-header offset 0x78 for PE32+; entry 1 is the import directory
-		num_dirs = struct.unpack_from('<I', d, opt + 0x74)[0]
+		# DataDirectory starts at optional-header offset 0x70 for PE32+; entry 1 is the import directory
+		num_dirs = struct.unpack_from('<I', d, opt + 0x6C)[0]
 		self.import_rva = 0
 		self.import_size = 0
 		if num_dirs >= 2:
-			self.import_rva, self.import_size = struct.unpack_from('<II', d, opt + 0x78 + 8 * 1)
+			self.import_rva, self.import_size = struct.unpack_from('<II', d, opt + 0x70 + 8 * 1)
 		self.sections = []
 		sec = opt + size_opt
 		for i in range(self.num_sections):
