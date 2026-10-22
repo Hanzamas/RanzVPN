@@ -144,12 +144,15 @@ try {
 	$before = Get-RuleLines
 	Write-Host "$($before.Count) firewall rules before /install"
 
-	# 1. /install
+	# 1. /install. The entries of the service count from the last entry of the Application log before
+	# it, so that one the service-eventlog step left is not taken for this start.
+	$lastRecord = 0
+	Get-WinEvent -LogName Application -MaxEvents 1 -ErrorAction SilentlyContinue | ForEach-Object { $lastRecord = $_.RecordId }
 	Invoke-Vpnserver '/install'
 	$service = @(Get-InstalledService | ForEach-Object { $_.Name })[0]
 	if (-not $service) { throw "/install registered no service for $exe" }
 	Write-Host "service: $service"
-	$started = Wait-ServiceEvent 1
+	$started = Wait-ServiceEvent 1 $lastRecord
 	if ($null -eq $started) { throw "no 'started' entry (event ID 1) of $service within $waitSeconds s of /install" }
 	Start-Sleep -Seconds $settleSeconds
 
@@ -204,7 +207,7 @@ try {
 
 	# 4. No VBScript
 	$processes = Get-StartedProcesses
-	if (@($processes | Where-Object { $_.Program -eq $exe }).Count -eq 0) { throw "the Security log has no process creation event of $exe: the audit is not on" }
+	if (@($processes | Where-Object { $_.Program -eq $exe }).Count -eq 0) { throw "the Security log has no process creation event of ${exe}: the audit is not on" }
 	$scripts = @($processes | Where-Object { $_.Parent -eq $exe -and (Split-Path -Leaf $_.Program) -in @('cscript.exe', 'wscript.exe') })
 	if ($scripts.Count -gt 0) { throw "vpnserver started $($scripts.Count) script hosts: $(($scripts | ForEach-Object { $_.Program }) -join ', ')" }
 	if (Test-Path $hashKey) { throw "the registry key $hashKey of the VBScript hash guard exists" }
