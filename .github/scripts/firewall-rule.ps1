@@ -10,8 +10,9 @@ $ErrorActionPreference = 'Stop'
 #      added or changed, and no rule names vpncmd.exe or vpntest.exe.
 #   2. A restart of the service, which starts the server again, adds, deletes or changes no rule.
 #   3. /uninstall deletes the rule: the rules are those of before /install again.
-#   4. vpnserver starts no cscript.exe or wscript.exe (process creation events, ID 4688 of the
-#      Security log), and the registry key of the old VBScript hash guard does not exist.
+#   4. vpnserver starts no cscript.exe or wscript.exe (the process start events of an ETW trace
+#      session on the Kernel-Process provider), and the registry key of the old VBScript hash
+#      guard does not exist.
 # MsAddFirewallRule and MsDeleteFirewallRule (src/Mayaqua/MicrosoftFirewall.c) add and delete the
 # rule; MsService (src/Mayaqua/Microsoft.c) calls them for /install and /uninstall.
 
@@ -21,8 +22,10 @@ $ruleName = 'Ranz VPN Server'
 # SOFTETHER_FW_SCRIPT_HASH of the removed VBScript path: "Software\" GC_REG_COMPANY_NAME "\PacketiX VPN\FW ScriptHash"
 $hashKey = 'HKLM:\Software\Hanzcodes\Ranz VPN\PacketiX VPN\FW ScriptHash'
 
-# The Process Creation subcategory of the audit policy, by GUID so that the name's language does not matter
-$auditProcessCreation = '{0CCE922B-69AE-11D9-BED3-505054503030}'
+# Microsoft-Windows-Kernel-Process with keyword WINEVENT_KEYWORD_PROCESS (0x10): ProcessStart (event
+# ID 1) of every process, with its image as a device path and the process ID of its parent
+$traceSession = 'RanzFirewallProcessTrace'
+$traceProvider = '{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}'
 
 # How long an entry may take to appear (s): the service writes "started" once the server runs
 $waitSeconds = 120
@@ -36,6 +39,7 @@ if (Test-Path $root) { Remove-Item -Recurse -Force $root }
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 $zip = Join-Path $root 'ranz-vpn.zip'
 $dir = Join-Path $root 'Ranz VPN'
+$etl = Join-Path $root 'process.etl'
 
 $files = @('vpnserver.exe', 'vpncmd.exe', 'vpntest.exe') | ForEach-Object { (Resolve-Path (Join-Path $BuildDir $_)).Path }
 Compress-Archive -Path $files -DestinationPath $zip
@@ -99,12 +103,13 @@ function Wait-ServiceEvent([int] $id, [long] $afterRecord = 0) {
 	}
 }
 
-# Process creation events since the step started: the program and the program that started it
-function Get-StartedProcesses {
-	@(Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4688; StartTime = $since } -ErrorAction SilentlyContinue | ForEach-Object {
+# The process starts of the stopped trace session: the image (a device path such as
+# \Device\HarddiskVolume3\...), the process ID and the process ID of the parent
+function Get-TracedProcesses {
+	@(Get-WinEvent -Path $etl -Oldest -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 1 } | ForEach-Object {
 			$data = @{}
 			([xml]$_.ToXml()).Event.EventData.Data | ForEach-Object { $data[$_.GetAttribute('Name')] = $_.InnerText }
-			[pscustomobject]@{ Program = $data['NewProcessName']; Parent = $data['ParentProcessName'] }
+			[pscustomobject]@{ Image = $data['ImageName']; Id = [uint32]$data['ProcessID']; Parent = [uint32]$data['ParentProcessID'] }
 		})
 }
 
@@ -123,8 +128,6 @@ function Show-Diagnostics {
 		Write-Host ("  {0}: enabled {1}, {2}, {3}, profile {4}, program {5}, protocol {6}, local port {7}, remote port {8}" -f
 			$_.Name, $_.Enabled, $_.Direction, $_.Action, $_.Profile, $app.Program, $port.Protocol, $port.LocalPort, $port.RemotePort)
 	}
-	Write-Host 'processes that vpnserver started:'
-	Get-StartedProcesses | Where-Object { $_.Parent -eq $exe } | ForEach-Object { Write-Host "  $($_.Program)" }
 	if ($service) {
 		Get-Service -Name $service -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "service ${service}: $($_.Status)" }
 	}
@@ -136,8 +139,10 @@ function Show-Diagnostics {
 	}
 }
 
-& auditpol.exe /set "/subcategory:$auditProcessCreation" /success:enable
-if ($LASTEXITCODE -ne 0) { throw "auditpol could not turn on the audit of process creation (exit code $LASTEXITCODE)" }
+# The hex values are quoted, or PowerShell would pass them on as decimal numbers
+& logman start $traceSession -p $traceProvider '0x10' '0xff' -o $etl -ets
+if ($LASTEXITCODE -ne 0) { throw "logman could not start the process trace session (exit code $LASTEXITCODE)" }
+$tracing = $true
 
 try {
 	if ((Get-NamedRules).Count -ne 0) { throw "a rule named $ruleName is there before /install" }
@@ -205,11 +210,20 @@ try {
 	Assert-SameRules $before (Get-RuleLines) '/install and /uninstall'
 	Write-Host "/uninstall deleted the rule $ruleName; the rules are those of before /install"
 
-	# 4. No VBScript
-	$processes = Get-StartedProcesses
-	if (@($processes | Where-Object { $_.Program -eq $exe }).Count -eq 0) { throw "the Security log has no process creation event of ${exe}: the audit is not on" }
-	$scripts = @($processes | Where-Object { $_.Parent -eq $exe -and (Split-Path -Leaf $_.Program) -in @('cscript.exe', 'wscript.exe') })
-	if ($scripts.Count -gt 0) { throw "vpnserver started $($scripts.Count) script hosts: $(($scripts | ForEach-Object { $_.Program }) -join ', ')" }
+	# 4. No VBScript. The trace names the image by its device path: the path of the unzipped
+	# vpnserver.exe without its drive letter is the end of it.
+	& logman stop $traceSession -ets
+	if ($LASTEXITCODE -ne 0) { throw "logman could not stop the process trace session (exit code $LASTEXITCODE)" }
+	$tracing = $false
+	$processes = Get-TracedProcesses
+	$tail = $exe.Substring(2)
+	$servers = @($processes | Where-Object { $_.Image -and $_.Image.EndsWith($tail, [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { $_.Id })
+	if ($servers.Count -eq 0) { throw "the trace holds $($processes.Count) process starts, none of ${exe}: it recorded nothing" }
+	$children = @($processes | Where-Object { $servers -contains $_.Parent })
+	Write-Host "$($processes.Count) process starts traced, $($servers.Count) of vpnserver.exe, which started $($children.Count) processes"
+	$children | ForEach-Object { Write-Host "  $($_.Image)" }
+	$scripts = @($children | Where-Object { (Split-Path -Leaf $_.Image) -in @('cscript.exe', 'wscript.exe') })
+	if ($scripts.Count -gt 0) { throw "vpnserver started $($scripts.Count) script hosts" }
 	if (Test-Path $hashKey) { throw "the registry key $hashKey of the VBScript hash guard exists" }
 	Write-Host "vpnserver started no cscript.exe or wscript.exe, and $hashKey does not exist"
 
@@ -235,7 +249,7 @@ try {
 	}
 	# By name, not through a pipeline: Remove-NetFirewallRule with no input would delete every rule
 	Remove-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
-	& auditpol.exe /set "/subcategory:$auditProcessCreation" /success:disable | Out-Null
+	if ($tracing) { & logman stop $traceSession -ets | Out-Null }
 	$global:LASTEXITCODE = 0
 }
 
