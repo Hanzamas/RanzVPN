@@ -1,7 +1,40 @@
+# The C build and its checks: x64 and arm64 (build_and_test), fuzz-asan, the x64 and arm64 Debug
+# builds and the format check.
+#
+# A push to master runs every job, with no path filter. A pull request runs them when it changes a
+# path that one of the jobs reads. The filter starts from every path ('**') and takes out the paths
+# that no job here reads:
+# - controller/ and proto/: the Go controller and its control protocol schema (controller.yml). No
+#   CMake file reads proto/ yet: when the C node generates its nanopb code from it in the build,
+#   the '!proto/**' line goes, and a change of the schema runs both workflows.
+# - ranz-bgp/: the Go BGP sidecar of ADR-0010 (not in the tree yet), which the C build does not read.
+# - tests/control/: the nanopb round trip of controller.yml.
+# - docs/ and every *.md file (ADRs, README.md, CONTEXT.md, CLAUDE.md). The files of src/bin/hamcore
+#   are resources of the executables (cmake/RanzResources.cmake), so that directory is taken back
+#   in, whatever its file names.
+# - controller.yml and move-only.yml, and the scripts that only they call.
+# Every other path runs the workflow: src/, cmake/, CMakeLists.txt, CMakePresets.json, vcpkg.json,
+# .gitmodules, .gitattributes, .clang-format, tests/golden/, developer_tools/stbchecker/, this file
+# and the scripts of .github/scripts that the jobs call. A new top-level path also runs it until it
+# is taken out here.
 on:
   push:
     branches: [master]
   pull_request:
+    paths:
+    - '**'
+    - '!controller/**'
+    - '!proto/**'
+    - '!ranz-bgp/**'
+    - '!tests/control/**'
+    - '!docs/**'
+    - '!**.md'
+    - 'src/bin/hamcore/**'
+    - '!.github/workflows/controller.yml'
+    - '!.github/scripts/controller-service.ps1'
+    - '!.github/workflows/move-only.yml'
+    - '!.github/scripts/move-only-check.py'
+    - '!.github/scripts/move-only-check-test.py'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
