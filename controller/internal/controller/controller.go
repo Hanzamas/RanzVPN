@@ -40,6 +40,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
+	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
@@ -158,6 +159,9 @@ type Controller struct {
 	byKey   map[string]string      // node static key to node name
 	// revocations is the revocation list applied last (revocation.go).
 	revocations licence.Revocations
+	// enrolRefusals decides which refusals of a node for its source address are recorded as
+	// events (enrol.go).
+	enrolRefusals event.Throttle
 	// node static key to the Capabilities that the node reported last, kept while a Node
 	// resource holds the key
 	caps   map[string]*controlpb.Capabilities
@@ -671,6 +675,7 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 			c.refuse(n.stream, controlpb.RefuseReason_REFUSE_REASON_UNKNOWN_NODE, "the publicKey of the Node resource %q changed", name)
 		}
 	}
+	c.refuseOutsideSources()
 	c.schedule(force)
 	return result, nil
 }
@@ -867,6 +872,11 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		return
 	}
 	s.name = name
+	if network, from, refused := c.enrolRefused(name, conn.RemoteAddr()); refused {
+		c.mu.Unlock()
+		c.refuseSource(conn, name, network, from)
+		return
+	}
 	n := c.nodes[name]
 	caps := c.report(conn.PeerKey(), name, hello.GetCapabilities())
 	if n == nil {

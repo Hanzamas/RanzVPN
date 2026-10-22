@@ -33,6 +33,15 @@
 // itself, with its data in the rqlite directory under -data; without it, the controller uses the
 // rqlite at -rqlite.
 //
+// The API and the web UI accept connections only from the admin source allowlist (SDN-39, #232),
+// which an admin sets with `ranz admin-sources`: from an address outside it, every request is
+// refused with 403 before its token is looked at, and recorded as an event. Without a list, every
+// address may reach them. A loopback address always passes, so a local administrator always
+// reaches the controller. The control stream of the nodes is not behind it: a Network limits the
+// addresses its Nodes enrol from (its enrolSources). In a cluster, the list must hold the
+// addresses of the members too, because a standby forwards a call to the leader from its own
+// address.
+//
 // Cluster (SDN-17, ADR-0026): a cluster of 3 or 5 members runs one ranz-controller on each host,
 // each with its own rqlited, all started with the same -rqlite-join (the Raft addresses of every
 // member) and -rqlite-expect (the number of members), and each with its own -name and
@@ -112,6 +121,10 @@ const fallbackFile = "listen-fallback"
 // start of the controller creates (rbac.Bootstrap). Only the directory's owner and the
 // administrators can read it (makeDataDir).
 const adminTokenFile = "admin.token"
+
+// adminSourcesTTL is how long a member uses a read of the admin source allowlist: a change of it
+// reaches every member within this time (api.NewSources).
+const adminSourcesTTL = 2 * time.Second
 
 // licenceKeys are the public keys that a licence key must be signed with: nil, for the vendor
 // keys that the release build links in (licence.VendorKeys). No flag sets it; only the cluster
@@ -429,8 +442,10 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		"leader", st0.Cluster.Leader, "schema", st0.Cluster.SchemaVersion, "rqliteJoin", strings.Join(cfg.join, ","))
 	apiHandler := m.Handler()
 	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
-	// The web UI (internal/webui) is served beside the API it calls, at every path outside /api/.
-	tlsPort := &port.Server{TLS: tlsCfg, Control: m.ServeStream, HTTP: webui.Handler(apiHandler), Log: log}
+	// The web UI (internal/webui) is served beside the API it calls, at every path outside /api/,
+	// and both only to the addresses of the admin source allowlist (SDN-39, #232).
+	sources := api.NewSources(st, log, adminSourcesTTL)
+	tlsPort := &port.Server{TLS: tlsCfg, Control: m.ServeStream, HTTP: webHandler(sources, apiHandler), Log: log}
 	defer tlsPort.Close()
 	go func() { errc <- tlsPort.Serve(ln) }()
 	log.Info("TLS port", "address", ln.Addr().String(), "protocols", "ranz-control/1, h2, http/1.1")
@@ -506,6 +521,13 @@ func listenTLS(addr, fallback string, explicit bool, dataDir string) (ln net.Lis
 		return nil, false, fmt.Errorf("recording the fallback to %s: %w", fallbackAddr, werr)
 	}
 	return ln, true, nil
+}
+
+// webHandler is what the TLS port serves besides the control stream: the web UI and the API
+// behind it (apiHandler), both behind the admin source allowlist, so that a request from an
+// address outside it is refused whatever it asks for, the pages of the UI included.
+func webHandler(sources *api.Sources, apiHandler http.Handler) http.Handler {
+	return sources.Restrict(webui.Handler(apiHandler))
 }
 
 // serveHTTP serves srv on l until srv is closed.

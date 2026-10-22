@@ -81,6 +81,9 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		{[]string{"admin-sources", "list"}, http.MethodGet, "/api/v1/admin-sources", "", nil},
+		{[]string{"admin-sources", "set", "192.0.2.0/24", "2001:db8::10"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": ["192.0.2.0/24", "2001:db8::10"]}`, nil},
+		{[]string{"admin-sources", "clear"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": []}`, nil},
 	}
 	callers := []struct {
 		name   string
@@ -168,6 +171,23 @@ func TestNewClientToken(t *testing.T) {
 	}
 	if _, err := newClient("https://127.0.0.1", "", "", "not hex"); err == nil {
 		t.Error("a TLS fingerprint that is not hex was not an error")
+	}
+}
+
+// The admin-sources commands take the arguments they can and print the usage for the others: no
+// subcommand, a set with no prefix (clear says what it does), and a command with more than it
+// takes.
+func TestAdminSourcesUsage(t *testing.T) {
+	for _, args := range [][]string{
+		{"admin-sources"},
+		{"admin-sources", "set"},
+		{"admin-sources", "unknown"},
+		{"admin-sources", "list", "extra"},
+		{"admin-sources", "clear", "extra"},
+	} {
+		if err := do(context.Background(), &api.Client{}, args, io.Discard); !errors.Is(err, errUsage) {
+			t.Errorf("ranz %s: %v, want the usage", strings.Join(args, " "), err)
+		}
 	}
 }
 
