@@ -13,7 +13,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 # way, so the job log shows every vector on x64 and arm64. RANZ_CORE_TESTS (comma list) overrides
 # the list.
 $named = @('rand', 'sha256', 'hmac', 'hkdf', 'aesgcm', 'x25519', 'identity', 'mlkem', 'selfsign', 'pfx', 'certstore', 'schannel',
-	'noise', 'noisehfs', 'noisesession', 'noisetunnel', 'noiseinterop', 'envelope', 'relay', 'relaypolicy', 'iceupgrade', 'icesymmetric')
+	'noise', 'noisehfs', 'noisesession', 'noisetunnel', 'noiseinterop', 'envelope', 'relay', 'relaypolicy', 'iceupgrade', 'icesymmetric', 'punch')
 if ($env:RANZ_CORE_TESTS) { $named = $env:RANZ_CORE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
 
 $failed = @()

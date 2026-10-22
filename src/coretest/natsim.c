@@ -33,7 +33,9 @@ struct NATSIM_NAT {
 	PEER_ADDR Public;                             // The public address, port 0
 	UINT Mapping;                                 // NATSIM_MAP_*
 	UINT Filtering;                               // NATSIM_FILTER_*
-	USHORT NextPort;                              // The next public port it allocates
+	UINT Allocation;                              // NATSIM_ALLOC_*: how it picks the public port of a new mapping
+	UINT32 RandState;                             // The generator of NATSIM_ALLOC_RANDOM, seeded per NAT
+	USHORT NextPort;                              // The next public port it allocates, with NATSIM_ALLOC_SEQUENTIAL
 	UINT NumMappings;                             // Its mappings
 	NATSIM_MAPPING Mappings[NATSIM_MAX_MAPPINGS]; // ... in the order it made them
 	volatile LONG Filtered;                       // Datagrams from outside that its filter dropped
@@ -151,11 +153,20 @@ NATSIM_NAT *NatSimAddNat(NATSIM *s, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, UINT
 		PeerAddrSetV4(&n->Public, b0, b1, b2, b3, 0);
 		n->Mapping = mapping;
 		n->Filtering = filtering;
+		n->Allocation = NATSIM_ALLOC_SEQUENTIAL;
+		n->RandState = 1;
 		n->NextPort = NATSIM_FIRST_PORT;
 	}
 	LeaveCriticalSection(&s->Lock);
 
 	return n;
+}
+
+// Set how the NAT picks the public port of a new mapping (NATSIM_ALLOC_*); seed is the generator of
+// NATSIM_ALLOC_RANDOM, so a test is reproducible
+void NatSimSetAllocation(NATSIM_NAT *n, UINT allocation, UINT32 seed) {
+	n->Allocation = allocation;
+	n->RandState = (seed != 0 ? seed : 1);
 }
 
 // A host with the address addr behind the NAT nat, or on the public side for NULL
@@ -181,6 +192,50 @@ void NatSimAttach(NATSIM_HOST *h, PEER_AGENT *a) {
 	LeaveCriticalSection(&h->Sim->Lock);
 }
 
+// Whether the NAT already has a mapping on the public port, so a new one cannot reuse it
+static bool NatSimPortUsed(NATSIM_NAT *n, USHORT port) {
+	for (UINT i = 0; i < n->NumMappings; i++)
+		if (n->Mappings[i].Port == port)
+			return true;
+
+	return false;
+}
+
+// One step of a seeded xorshift generator (George Marsaglia), for NATSIM_ALLOC_RANDOM
+static UINT32 NatSimRand(NATSIM_NAT *n) {
+	UINT32 x = n->RandState;
+
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	n->RandState = x;
+
+	return x;
+}
+
+// The public port of a new mapping of the NAT for the private address inside, by its allocation (NATSIM_ALLOC_*):
+// the next free port in order, the private port where it is free, or a free port a seeded generator picks. The caller
+// holds the lock.
+static USHORT NatSimAllocPort(NATSIM_NAT *n, const PEER_ADDR *inside) {
+	if (n->Allocation == NATSIM_ALLOC_PRESERVING && NatSimPortUsed(n, inside->Port) == false)
+		return inside->Port;
+
+	if (n->Allocation == NATSIM_ALLOC_RANDOM) {
+		for (UINT i = 0; i < 64; i++) {
+			USHORT port = (USHORT)(NATSIM_FIRST_PORT + NatSimRand(n) % (60000 - NATSIM_FIRST_PORT));
+
+			if (NatSimPortUsed(n, port) == false)
+				return port;
+		}
+	}
+
+	// Sequential, or the fallback of a preserving or random NAT that found no free port: the next port in order
+	while (NatSimPortUsed(n, n->NextPort))
+		n->NextPort++;
+
+	return n->NextPort++;
+}
+
 // The mapping of the NAT for a datagram from the private address inside to remote: the one there is, or a new one.
 // The caller holds the lock.
 static NATSIM_MAPPING *NatSimMap(NATSIM_NAT *n, const PEER_ADDR *inside, const PEER_ADDR *remote) {
@@ -199,7 +254,7 @@ static NATSIM_MAPPING *NatSimMap(NATSIM_NAT *n, const PEER_ADDR *inside, const P
 		m->Inside = *inside;
 		if (n->Mapping != NATSIM_MAP_ENDPOINT_INDEPENDENT)
 			m->Remote = *remote;
-		m->Port = n->NextPort++;
+		m->Port = NatSimAllocPort(n, inside);
 	}
 
 	if (m != NULL) {
