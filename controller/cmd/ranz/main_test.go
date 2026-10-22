@@ -58,6 +58,8 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		{[]string{"export"}, http.MethodGet, "/api/v1/export", "", nil},
+		{[]string{"import", "-f", labFile}, http.MethodPost, "/api/v1/import", lab, nil},
 		{[]string{"rollback", "0"}, http.MethodPost, "/api/v1/rollback", `{"revision": 0}`, nil},
 		{[]string{"get", "revisions"}, http.MethodGet, "/api/v1/revisions", "", nil},
 		{[]string{"get", "revision", "1"}, http.MethodGet, "/api/v1/revisions/1", "", nil},
