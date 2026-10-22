@@ -2,8 +2,9 @@
 // resources of #176 "Resource model" that the controller knows (VRF, Network, Node, Policy, and
 // the Controller members of a controller cluster), their validation, and the values the
 // controller fills in when a resource is first applied, the addresses of the Nodes among them
-// (address.go); the revisions of the intent with the diff between two (revision.go); and the
-// intent of a first install (defaults.go).
+// (address.go); the revisions of the intent with the diff between two (revision.go); the source
+// prefixes that limit where a Node may enrol from (sources.go); and the intent of a first
+// install (defaults.go).
 package intent
 
 import (
@@ -100,6 +101,10 @@ type Network struct {
 	Mode     string `json:"mode,omitempty"` // ModeL3 (the default) or ModeL2
 	IPv4Pool string `json:"ipv4Pool,omitempty"`
 	IPv6Pool string `json:"ipv6Pool,omitempty"`
+	// EnrolSources limits where the Nodes of the Network may open their control stream from
+	// (SDN-39, sources.go): the source prefixes, each a CIDR prefix or one address, that the
+	// stream of a Node of the VRF may come from. Left out, a Node may enrol from any address.
+	EnrolSources []string `json:"enrolSources,omitempty"`
 }
 
 // Node is a node of the overlay, identified by its Noise static key.
@@ -165,6 +170,10 @@ func (in Intent) Clone() Intent {
 	}
 	if out.Controllers == nil {
 		out.Controllers = map[string]Controller{}
+	}
+	for name, n := range in.Networks {
+		n.EnrolSources = slices.Clone(n.EnrolSources)
+		out.Networks[name] = n
 	}
 	for name, n := range in.Nodes {
 		n.VRFs = slices.Clone(n.VRFs)
@@ -431,10 +440,10 @@ func ParseKey(s string) ([]byte, error) {
 }
 
 // complete fills in what the resources of in leave out: the id, ULA and MTU of a VRF, the mode
-// of a Network, the VRFs of a Node that names none (VRF default, when in has it), the order of a
-// Node's VRFs and tags, and the form of its relay address. A VRF keeps the id and ULA it got when
-// prev first held it; they cannot change while it exists. The addresses of the Nodes follow
-// (allocate).
+// of a Network and the form of its source prefixes, the VRFs of a Node that names none (VRF
+// default, when in has it), the order of a Node's VRFs and tags, and the form of its relay
+// address. A VRF keeps the id and ULA it got when prev first held it; they cannot change while
+// it exists. The addresses of the Nodes follow (allocate).
 func (in Intent) complete(prev Intent, random io.Reader) []error {
 	var problems []error
 	names := sortedNames(in.VRFs)
@@ -487,8 +496,9 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	for name, n := range in.Networks {
 		if n.Mode == "" {
 			n.Mode = ModeL3
-			in.Networks[name] = n
 		}
+		n.EnrolSources = normalizeSources(n.EnrolSources)
+		in.Networks[name] = n
 	}
 	_, hasDefault := in.VRFs[DefaultVRF]
 	for name, n := range in.Nodes {
@@ -553,6 +563,9 @@ func (in Intent) validate() []error {
 			if _, err := ParsePool(n.IPv6Pool, 6); err != nil {
 				problems = append(problems, fmt.Errorf("Network %q: ipv6Pool: %w", name, err))
 			}
+		}
+		if _, err := ParseSources(n.EnrolSources); err != nil {
+			problems = append(problems, fmt.Errorf("Network %q: enrolSources: %w", name, err))
 		}
 	}
 	keys := map[string]string{}

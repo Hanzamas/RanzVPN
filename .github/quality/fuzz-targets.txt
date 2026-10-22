@@ -48,12 +48,14 @@ controller/internal/control  Open                  FuzzOpen
 controller/internal/control  Conn.Read             FuzzRead
 controller/internal/control  Conn.SetReadDeadline  exempt  sets the deadline of the next Read; reads nothing
 
-# The intent documents of the API, `ranz apply -f` and `ranz import -f` (SDN-52 #245)
+# The intent documents of the API, `ranz apply -f` and `ranz import -f` (SDN-52 #245), and the source
+# prefixes of a Network and of the admin source allowlist (SDN-39 #232)
 controller/internal/intent  ParseDocument  FuzzParseDocument
 controller/internal/intent  ParseULA       FuzzParseValues
 controller/internal/intent  ParsePool      FuzzParseValues
 controller/internal/intent  ParseKey       FuzzParseValues
 controller/internal/intent  ParseRelay     FuzzParseValues
+controller/internal/intent  ParseSources   FuzzParseValues
 controller/internal/controller  Controller.Import  exempt  takes a document that ParseDocument parsed and intent.Replace checked, which FuzzParseDocument drives; it stores the result as a revision
 controller/internal/api         Client.Import      exempt  the API client of `ranz import`: it sends a parsed document to the controller and reads the controller's own answer
 
