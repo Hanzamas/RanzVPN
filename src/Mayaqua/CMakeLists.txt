@@ -107,7 +107,8 @@ set_target_properties(mayaqua
 
 # Only the libraries Mayaqua sources call. EnumProcesses and GetModuleFileNameEx resolve to
 # the K32 exports of kernel32 (PSAPI_VERSION 2); setupapi.lib: the net-class table of
-# MsNetClassEnum (MicrosoftAdapter.c).
+# MsNetClassEnum (MicrosoftAdapter.c); ole32.lib and oleaut32.lib: the COM calls and BSTRs of the
+# Windows Firewall rule (MicrosoftFirewall.c).
 target_link_libraries(mayaqua
   PRIVATE
     "bcrypt.lib"
@@ -115,6 +116,8 @@ target_link_libraries(mayaqua
     "DbgHelp.Lib"
     "iphlpapi.lib"
     "ntdll.lib"
+    "ole32.lib"
+    "oleaut32.lib"
     "Secur32.Lib"
     "setupapi.lib"
     "shlwapi.lib"
