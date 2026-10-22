@@ -67,7 +67,7 @@ void MsInitProcessCallOnce() {
 	// executable. Statically imported DLLs (the ASan runtime) were loaded before this runs.
 	SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
 	// SetDllDirectory("") also keeps the current directory out of the orders the default directories do not
-	// govern: the standard order of child processes (cscript.exe, Win32Run) and the alternate order of
+	// govern: the standard order of child processes and the alternate order of
 	// LoadLibraryEx with LOAD_WITH_ALTERED_SEARCH_PATH. Empty, it adds no directory to the default ones.
 	SetDllDirectoryW(L"");
 }
@@ -353,13 +353,17 @@ static void MsSvcMsg(bool silent, char *id, ...) {
 	UniPrint(L"%s\n", msg);
 }
 
-UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line) {
-	return MsServiceEx(name, start, stop, cmd_line, false);
+// The service program: the command line argument selects the mode (MsSvcArgToMode). firewall_rule
+// names the inbound rule of Windows Firewall for this program, which /install and /setup_install add
+// before the service starts, and /uninstall and /setup_uninstall delete; NULL for none. The service
+// itself adds no rule when it starts.
+UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule) {
+	return MsServiceEx(name, start, stop, cmd_line, firewall_rule, false);
 }
 
 // MsService, which with virtual_account installs the service to run as its virtual account, NT SERVICE\<service
 // name>, instead of LocalSystem: the least privilege of ADR-0039 decision 3, for the services of the new core
-UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, bool virtual_account) {
+UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule, bool virtual_account) {
 	UINT mode;
 	UINT ret = 0;
 	char *arg;
@@ -471,6 +475,8 @@ UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, ch
 				}
 				if (MsInstallServiceExW(service_name, service_title, service_description, path, virtual_account) == false)
 					ret = 1;
+				if (firewall_rule != NULL)
+					MsAddFirewallRule(firewall_rule, ms->ExeFileNameW);
 				MsStartService(service_name);
 				MsWriteCallingServiceManagerProcessId(service_name, 0);
 				break;
@@ -485,6 +491,8 @@ UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, ch
 					if (MsUninstallService(service_name) == false)
 						ret = 1;
 				}
+				if (firewall_rule != NULL)
+					MsDeleteFirewallRule(firewall_rule);
 				break;
 
 			case SVC_MODE_INSTALL:
@@ -514,6 +522,10 @@ UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, ch
 					break;
 				}
 
+				// The rule is there before the server listens; the service still starts without it
+				if (firewall_rule != NULL && MsAddFirewallRule(firewall_rule, ms->ExeFileNameW) == false)
+					MsSvcMsg(silent, "SVC_FIREWALL_ADD_FAILED", firewall_rule, ms->ExeFileNameW);
+
 				if (MsStartService(service_name) == false) {
 					MsSvcMsg(silent, "SVC_INSTALL_FAILED_2", service_title, service_name, path);
 					break;
@@ -542,6 +554,9 @@ UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, ch
 					MsSvcMsg(silent, "SVC_UNINSTALL_FAILED", service_title, service_name);
 					break;
 				}
+
+				if (firewall_rule != NULL && MsDeleteFirewallRule(firewall_rule) == false)
+					MsSvcMsg(silent, "SVC_FIREWALL_DELETE_FAILED", firewall_rule);
 
 				MsSvcMsg(silent, "SVC_UNINSTALL_OK", service_title, service_name);
 				break;
@@ -854,10 +869,6 @@ bool MsIsAdmin() {
 
 UINT MsGetCurrentProcessId() {
 	return ms->CurrentProcessId;
-}
-
-char *MsGetExeDirName() {
-	return ms->ExeFileDir;
 }
 
 static void MsGetSpecialDirs() {

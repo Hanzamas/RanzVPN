@@ -85,7 +85,7 @@ void EnableProbe(bool enable) {
 static bool is_ham_mode = false;
 static bool minimal_mode = false;
 
-// vpntest: the server starts without registering itself in the Windows firewall
+// vpntest: the memory leak report of PrintKernelStatus names the /memcheck startup option
 void SetHamMode() {
 	is_ham_mode = true;
 }

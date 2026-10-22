@@ -314,14 +314,41 @@ static void PeerGetAddr(PEER_ADDR *a, const UCHAR *p) {
 	a->Port = PeerGetUint16(p + sizeof(a->Ip));
 }
 
+// Whether str of len characters is an ICE username fragment or password of min to max characters: ALPHA, DIGIT,
+// "+" and "/" (ice-char, RFC 8839 section 5.4)
+static bool PeerIceString(const char *str, UINT len, UINT min, UINT max) {
+	if (len < min || len > max)
+		return false;
+
+	for (UINT i = 0; i < len; i++) {
+		char c = str[i];
+
+		if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '+' && c != '/')
+			return false;
+	}
+
+	return true;
+}
+
 // The payload of a signal: PEER_VERSION, the type, the sequence (big-endian), the relay key, the relay address
-// and port, the number of candidates, then each candidate: its type, address and port. Returns its size, 0 when s
-// is not a signal or it does not fit size.
+// and port, the number of candidates, then each candidate: its type, address and port; then, when s carries the
+// credentials of an ICE session, the length and the characters of its username fragment and of its password.
+// Returns its size, 0 when s is not a signal or it does not fit size.
 UINT PeerSignalEncode(const PEER_SIGNAL *s, UCHAR *buf, UINT size) {
+	UINT ufrag = 0;
+	UINT pwd = 0;
+
 	if (s == NULL || buf == NULL || (s->Type != PEER_SIGNAL_OFFER && s->Type != PEER_SIGNAL_ANSWER) || s->NumCandidates > PEER_MAX_CANDIDATES)
 		return 0;
 
-	UINT total = PEER_SIGNAL_FIXED + s->NumCandidates * PEER_CANDIDATE_LEN;
+	if (s->IceUfrag[0] != 0) {
+		ufrag = (UINT)strnlen(s->IceUfrag, sizeof(s->IceUfrag));
+		pwd = (UINT)strnlen(s->IcePwd, sizeof(s->IcePwd));
+		if (PeerIceString(s->IceUfrag, ufrag, 4, PEER_ICE_UFRAG_SIZE - 1) == false || PeerIceString(s->IcePwd, pwd, 22, PEER_ICE_PWD_SIZE - 1) == false)
+			return 0;
+	}
+
+	UINT total = PEER_SIGNAL_FIXED + s->NumCandidates * PEER_CANDIDATE_LEN + (ufrag != 0 ? 2 + ufrag + pwd : 0);
 	if (total > size)
 		return 0;
 
@@ -339,12 +366,22 @@ UINT PeerSignalEncode(const PEER_SIGNAL *s, UCHAR *buf, UINT size) {
 		PeerPutAddr(p + 1, &s->Candidates[i].Addr);
 	}
 
+	if (ufrag != 0) {
+		UCHAR *p = buf + PEER_SIGNAL_FIXED + s->NumCandidates * PEER_CANDIDATE_LEN;
+
+		p[0] = (UCHAR)ufrag;
+		CopyMemory(p + 1, s->IceUfrag, ufrag);
+		p[1 + ufrag] = (UCHAR)pwd;
+		CopyMemory(p + 2 + ufrag, s->IcePwd, pwd);
+	}
+
 	return total;
 }
 
 // Decode the payload of a signal into s. False unless it is exactly one signal of this version, with a known type,
-// no more than PEER_MAX_CANDIDATES candidates of known types, and a port with its relay key. The sender is left
-// zero: PeerOpenSignal sets it from the envelope.
+// no more than PEER_MAX_CANDIDATES candidates of known types, a port with its relay key, and, when it carries the
+// credentials of an ICE session, a username fragment of 4 to 16 and a password of 22 to 32 ice-chars. The sender is
+// left zero: PeerOpenSignal sets it from the envelope.
 bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s) {
 	static const UCHAR zero[PEER_KEY_SIZE] = {0};
 
@@ -356,8 +393,22 @@ bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s) {
 		return false;
 
 	UINT num = buf[60];
-	if (num > PEER_MAX_CANDIDATES || size != PEER_SIGNAL_FIXED + num * PEER_CANDIDATE_LEN)
+	if (num > PEER_MAX_CANDIDATES || size < PEER_SIGNAL_FIXED + num * PEER_CANDIDATE_LEN)
 		return false;
+
+	// The credentials of an ICE session after the candidates, or nothing
+	const UCHAR *ice = buf + PEER_SIGNAL_FIXED + num * PEER_CANDIDATE_LEN;
+	UINT rest = size - (PEER_SIGNAL_FIXED + num * PEER_CANDIDATE_LEN);
+	if (rest != 0) {
+		UINT ufrag = (rest >= 2 ? ice[0] : 0);
+		UINT pwd = (rest >= 2 && ufrag + 2 <= rest ? ice[1 + ufrag] : 0);
+
+		if (rest < 2 || ufrag + 2 > rest || rest != 2 + ufrag + pwd || PeerIceString((const char *)ice + 1, ufrag, 4, PEER_ICE_UFRAG_SIZE - 1) == false || PeerIceString((const char *)ice + 2 + ufrag, pwd, 22, PEER_ICE_PWD_SIZE - 1) == false)
+			return false;
+
+		CopyMemory(s->IceUfrag, ice + 1, ufrag);
+		CopyMemory(s->IcePwd, ice + 2 + ufrag, pwd);
+	}
 
 	s->Type = buf[1];
 	s->Sequence = PeerGetUint64(buf + 2);
@@ -373,7 +424,7 @@ bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s) {
 	for (UINT i = 0; i < num; i++) {
 		const UCHAR *p = buf + PEER_SIGNAL_FIXED + i * PEER_CANDIDATE_LEN;
 
-		if ((p[0] != PEER_CANDIDATE_HOST && p[0] != PEER_CANDIDATE_SRFLX) || PeerGetUint16(p + 17) == 0) {
+		if ((p[0] != PEER_CANDIDATE_HOST && p[0] != PEER_CANDIDATE_SRFLX && p[0] != PEER_CANDIDATE_MAPPED) || PeerGetUint16(p + 17) == 0) {
 			ZeroMemory(s, sizeof(PEER_SIGNAL));
 			return false;
 		}

@@ -1,5 +1,5 @@
 // MicrosoftAdapter.c
-// Windows network adapters and network configuration: adapter list, net-class table, firewall registration
+// Windows network adapters and network configuration: adapter list, net-class table
 
 #define MICROSOFT_C
 
@@ -38,71 +38,6 @@
 #include <intrin.h> // __cpuid() of the VM detection
 #endif              // defined(_M_X64) || defined(_M_IX86)
 #include "MicrosoftInternal.h"
-
-void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir) {
-	char tmp[MAX_PATH];
-	if (title == NULL || exe == NULL)
-		return;
-	if (dir == NULL || IsEmptyStr(dir))
-		dir = MsGetExeDirName();
-
-	ConbinePath(tmp, sizeof(tmp), dir, exe);
-
-	if (IsFileExists(tmp) == false)
-		return;
-
-	MsRegistWindowsFirewallEx(title, tmp);
-}
-void MsRegistWindowsFirewallEx(char *title, char *exe) {
-	char filename[MAX_PATH];
-	char cscript[MAX_PATH];
-	char arg[MAX_PATH];
-	IO *o;
-	char hash[MAX_PATH];
-	UCHAR hashbin[SHA1_SIZE];
-	UCHAR file_hash_bin[SHA1_SIZE];
-	char file_hash_str[MAX_SIZE];
-	if (title == NULL || exe == NULL)
-		return;
-
-	if (MsIsAdmin() == false)
-		return;
-
-	char *data = "Option Explicit\r\n\r\nConst PROFILES_ALL = 7\r\nConst NET_FW_ACTION_ALLOWNET_FW_ACTION_ALLOW = 1\r\n"
-	             "\r\nDim policy2\r\nDim rules\r\nDim new_rule\r\n\r\nOn Error Resume Next\r\n\r\n"
-	             "Set policy2 = CreateObject(\"HNetCfg.FwPolicy2\")\r\nSet rules = policy2.Rules\r\n"
-	             "Set new_rule = CreateObject(\"HNetCfg.FWRule\")\r\nnew_rule.Name = \"$TITLE$\"\r\n"
-	             "new_rule.Description = \"$TITLE$\"\r\nnew_rule.ApplicationName = \"$PATH$\"\r\n"
-	             "new_rule.Enabled = TRUE\r\nnew_rule.Profiles = PROFILES_ALL\r\nnew_rule.Action = "
-	             "NET_FW_ACTION_ALLOWNET_FW_ACTION_ALLOW\r\nrules.Add new_rule\r\n\r\n";
-
-	UINT tmp_size = StrLen(data) * 4;
-	char *tmp = ZeroMalloc(tmp_size);
-
-	Sha1(hashbin, exe, StrLen(exe));
-	BinToStr(hash, sizeof(hash), hashbin, 6);
-
-	ReplaceStrEx(tmp, tmp_size, data, "$TITLE$", title, false);
-	ReplaceStrEx(tmp, tmp_size, tmp, "$PATH$", exe, false);
-
-	Sha1(file_hash_bin, tmp, StrLen(tmp));
-	BinToStr(file_hash_str, sizeof(file_hash_str), file_hash_bin, sizeof(file_hash_bin));
-
-	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SOFTETHER_FW_SCRIPT_HASH, file_hash_str, false) == 0) {
-		Format(filename, sizeof(filename), "%s\\winfire_%s.vbs", MsGetMyTempDir(), hash);
-		o = FileCreate(filename);
-		FileWrite(o, tmp, StrLen(tmp));
-		FileClose(o);
-
-		Format(cscript, sizeof(cscript), "%s\\cscript.exe", MsGetSystem32Dir());
-		Format(arg, sizeof(arg), "\"%s\"", filename);
-
-		if (Win32Run(cscript, arg, true, false))
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SOFTETHER_FW_SCRIPT_HASH, file_hash_str, 1, false);
-	}
-
-	Free(tmp);
-}
 
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid) {
 	MS_ADAPTER *ret = NULL;

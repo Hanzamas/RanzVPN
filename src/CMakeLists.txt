@@ -83,7 +83,7 @@ add_subdirectory(ranz-node)
 # vpntest
 add_subdirectory(vpntest)
 
-# The new core (ADR-0022): the crypto, session and peer modules, and their test program coretest
+# The new core (ADR-0022): the crypto, session, peer and transport modules, and their test program coretest
 add_subdirectory(Core)
 add_subdirectory(coretest)
 
@@ -93,4 +93,4 @@ if(RANZ_FUZZ)
 endif()
 
 # Every target exists now: the new core links no OpenSSL, no liboqs and nothing of the slim fork
-ranz_core_check_links(corecrypto corenoise corepeer coretest)
+ranz_core_check_links(corecrypto corenoise corepeer coretransport coretest)

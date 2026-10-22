@@ -30,6 +30,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 	// The process mitigations and the System32-only DLL search of ADR-0039, before anything starts (NodeHarden.c)
 	NodeHarden();
 
-	// The service runs as its virtual account NT SERVICE\ranzvpnserver, not LocalSystem (ADR-0039 decision 3)
-	return MsServiceEx(GC_SVC_NAME_NODE, StartProcess, StopProcess, CmdLine, true);
+	// The service runs as its virtual account NT SERVICE\ranzvpnserver, not LocalSystem (ADR-0039 decision 3);
+	// /install adds no firewall rule for it
+	return MsServiceEx(GC_SVC_NAME_NODE, StartProcess, StopProcess, CmdLine, NULL, true);
 }

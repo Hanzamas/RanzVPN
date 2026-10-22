@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-page="licence">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Licence | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/licence.js"></script>
+</head>
+<body>
+<ranz-nav></ranz-nav>
+<main>
+<h1>Licence</h1>
+<ranz-problem></ranz-problem>
+<output id="result" aria-live="polite"></output>
+<section aria-labelledby="h-force">
+<h2 id="h-force">In force</h2>
+<div id="licence"></div>
+<div id="remove-box" class="buttons"></div>
+</section>
+<section aria-labelledby="h-install" data-action="installLicence" hidden>
+<h2 id="h-install">Install a licence key</h2>
+<form id="install-form">
+<label for="key">Licence key</label>
+<textarea id="key" name="key" rows="4" spellcheck="false" required></textarea>
+<div class="buttons"><button type="submit">Install</button></div>
+</form>
+</section>
+<ranz-confirm></ranz-confirm>
+</main>
+</body>
+</html>

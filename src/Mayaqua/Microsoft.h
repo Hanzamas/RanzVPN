@@ -50,8 +50,6 @@
 #define SVC_CALLING_SM_PROCESS_ID_KEY   "Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\Service Control\\%s"
 #define SVC_CALLING_SM_PROCESS_ID_VALUE "ProcessId"
 
-#define SOFTETHER_FW_SCRIPT_HASH "Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\FW ScriptHash"
-
 #ifdef MICROSOFT_C
 typedef struct MS {
 	HINSTANCE hInst;
@@ -159,8 +157,8 @@ wchar_t *MsGetMyTempDirW();
 bool MsIsServiceInstalled(char *name);
 bool MsStartService(char *name);
 bool MsIsServiceRunning(char *name);
-UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line);
-UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, bool virtual_account);
+UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule);
+UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, wchar_t *firewall_rule, bool virtual_account);
 const MS_SVC_ARG *MsSvcArgs(UINT *num);
 UINT MsSvcArgToMode(char *arg);
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);
@@ -173,8 +171,6 @@ MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface);
 
 UINT MsGetConsoleWidth();
-
-void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
 
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
 
