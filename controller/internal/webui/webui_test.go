@@ -94,6 +94,8 @@ func TestEveryCallGoesThroughTheActionTable(t *testing.T) {
 	named := regexp.MustCompile(`data-action(?:="|'\s*:\s*')([A-Za-z]+)|\baction: '([A-Za-z]+)'`)
 	scriptTag := regexp.MustCompile(`<script\b[^>]*>`)
 	formTag := regexp.MustCompile(`<form\b[^>]*>`)
+	// The attributes themselves, not data-action, which names the UI action of a form.
+	formSends := regexp.MustCompile(`\s(action|method)=`)
 	inline := regexp.MustCompile(`\s(style|on[a-z]+)=`)
 	for name, text := range embedded(t) {
 		if name != "ui/assets/actions.json" && strings.Contains(text, "/api/") {
@@ -133,7 +135,7 @@ func TestEveryCallGoesThroughTheActionTable(t *testing.T) {
 			}
 		}
 		for _, tag := range formTag.FindAllString(text, -1) {
-			if strings.Contains(tag, "action=") || strings.Contains(tag, "method=") {
+			if formSends.MatchString(tag) {
 				t.Errorf("%s has a form that the browser would send itself: %s", name, tag)
 			}
 		}
