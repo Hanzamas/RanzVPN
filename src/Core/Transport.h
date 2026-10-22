@@ -166,4 +166,54 @@ void TransportNoiseClose(TRANSPORT_NOISE *n);
 TRANSPORT *TransportLoopbackNew(const char *name, UINT dial_delay, bool bound);
 void TransportLoopbackFree(TRANSPORT *t);
 
+// The QUIC transport (TransportQuic.c, CORE-S1-1 #67), on the official signed msquic.dll (the
+// Schannel build, pinned, x64 and arm64). A listener presents as an HTTP/3 server: the ALPN "h3", a
+// real certificate read from the Windows certificate store by its thumbprint, and BBR where the
+// msquic build has it, so its posture equals ordinary Windows HTTP/3. The session layer runs the
+// Noise session over one reliable bidirectional stream of the connection (the handshake, the Login
+// and the control stream); the L2 frames of the data stream enter the existing Hub over the QUIC
+// DATAGRAM frames, which the connection advertises, in CORE-S1-2 (#68). The channel binding of a
+// stream is the tls-server-end-point of the pinned server certificate (RFC 5929, NOISE_BINDING_
+// SERVER_END_POINT): both ends compute it from the certificate msquic presents, because Schannel
+// exposes no RFC 8446 exporter to msquic yet (the CORE-S1-1 spike of ADR-0022, amendment of
+// 2026-10-15). The client pins the server certificate: a connection whose certificate does not
+// match the configured thumbprint is refused, and the system root store is not trusted (ADR-0023).
+//
+// The module links the official import library msquic.lib and loads msquic.dll at the first QUIC
+// call (the link is delay-loaded, so a program that never dials or listens over QUIC needs no DLL).
+// TransportQuicAvailable opens the msquic API once and reports whether the DLL is present.
+#define TRANSPORT_QUIC_ALPN "h3" // The default ALPN: the HTTP/3 posture
+
+// How a QUIC transport is configured
+typedef struct TRANSPORT_QUIC_CONFIG {
+	char Name[TRANSPORT_NAME_SIZE];                  // The transport name in a fallback list ("quic")
+	char Alpn[TRANSPORT_NAME_SIZE];                  // The ALPN it offers; TRANSPORT_QUIC_ALPN for HTTP/3
+	char Thumbprint[2 * CRYPTO_THUMBPRINT_SIZE + 1]; // The server certificate in the store, by its SHA-1 thumbprint
+	bool MachineStore;                               // The LocalMachine\My store (the service); else the current user's
+	bool Bbr;                                        // Ask msquic for BBR; the default congestion control where it has none
+	UINT IdleTimeoutMs;                              // The QUIC idle timeout, 0 for TRANSPORT_QUIC_IDLE_DEFAULT
+	bool BreakBinding;                               // A client that changes the binding it computes: for the mismatch test
+} TRANSPORT_QUIC_CONFIG;
+
+#define TRANSPORT_QUIC_IDLE_DEFAULT 30000 // The QUIC idle timeout without one in the configuration (ms)
+
+// Fill cfg with the defaults: the name "quic", the ALPN "h3", the thumbprint of the server
+// certificate (upper-case hex, spaces and colons ignored) and the store it is in
+void TransportQuicDefaultConfig(TRANSPORT_QUIC_CONFIG *cfg, const char *thumbprint, bool machine_store);
+
+// Whether msquic.dll is present and its API opened: false when the DLL is missing, so a caller
+// tells a configuration error from a transport that cannot run
+bool TransportQuicAvailable();
+
+// A server transport that listens with the certificate cfg names, or a client transport that dials
+// and pins that certificate. Each opens its own msquic registration and configuration. New returns
+// NULL when msquic is absent or the certificate cannot be loaded. The address of Listen and Dial is
+// a host and a port ("vpn.example:443", ":443" to listen on every address); TransportQuicBoundPort
+// gives the port the last listener of a server transport bound, for a listener on port 0. Free
+// closes the transport once its listeners and streams are closed.
+TRANSPORT *TransportQuicServerNew(const TRANSPORT_QUIC_CONFIG *cfg);
+TRANSPORT *TransportQuicClientNew(const TRANSPORT_QUIC_CONFIG *cfg);
+USHORT TransportQuicBoundPort(TRANSPORT *t);
+void TransportQuicFree(TRANSPORT *t);
+
 #endif // CORE_TRANSPORT_H

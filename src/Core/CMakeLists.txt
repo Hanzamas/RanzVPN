@@ -98,6 +98,18 @@ add_library(coretransport STATIC ${SOURCES_CORE_TRANSPORT} ${HEADERS_CORE_TRANSP
 target_link_libraries(coretransport PUBLIC corenoise)
 target_link_libraries(coretransport PRIVATE ranz_core_options ranz_warnings)
 
+# The QUIC transport (TransportQuic.c, CORE-S1-1 #67) needs the msquic headers. It loads msquic.dll
+# at run time through LoadLibrary and MsQuicOpenVersion, so it links no import library and a program
+# that never dials or listens over QUIC needs no DLL. The official signed package (the Schannel
+# build, pinned) is fetched in CI by .github/scripts/fetch-msquic.ps1, which sets RANZ_MSQUIC_DIR.
+set(RANZ_MSQUIC_DIR "$ENV{RANZ_MSQUIC_DIR}" CACHE PATH "The msquic package directory that holds include/msquic.h")
+find_path(RANZ_MSQUIC_INCLUDE_DIR "msquic.h" HINTS "${RANZ_MSQUIC_DIR}/include" "${RANZ_MSQUIC_DIR}")
+if(NOT RANZ_MSQUIC_INCLUDE_DIR)
+  message(FATAL_ERROR "msquic.h was not found. Set RANZ_MSQUIC_DIR to the msquic package directory (CORE-S1-1, #67); CI fetches the pinned signed package with .github/scripts/fetch-msquic.ps1.")
+endif()
+message(STATUS "coretransport: msquic headers at ${RANZ_MSQUIC_INCLUDE_DIR}")
+target_include_directories(coretransport PRIVATE "${RANZ_MSQUIC_INCLUDE_DIR}")
+
 set_target_properties(coretransport
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

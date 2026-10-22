@@ -247,6 +247,7 @@ void NodeGetStatus(NODE *n, NODE_STATUS *st);
 HUB *NodeGetHub(NODE *n, char *name);
 bool NodeAuthenticate(NODE *n, char *hubname, AUTH_REQUEST *req, AUTH_RESULT *ret);
 bool NodeLogin(NODE *n, struct NOISE_LOGIN *login, UCHAR *challenge, AUTH_RESULT *ret);
+bool NodeLoginPinned(NODE *n, struct NOISE_LOGIN *login, UCHAR *challenge, UCHAR *static_key, AUTH_RESULT *ret);
 void NodeSetPeers(NODE *n, PEER_INFO *peers, UINT num);
 UINT NodeParseRoles(char *str, char *unknown, UINT unknown_size);
 void NodeRolesToStr(char *str, UINT size, UINT roles);
