@@ -422,11 +422,14 @@ bool NodeStart(NODE *n) {
 	return ret;
 }
 
-// Stop the node: the BGP sidecar and its learned routes, the roles, last first, the adapter queues that are still
-// attached, the workers and the table snapshot. Every thread of the node is joined before it returns.
+// Stop the node: the overlay, the BGP sidecar and its learned routes, the roles, last first, the adapter queues that
+// are still attached, the workers and the table snapshot. Every thread of the node is joined before it returns. The
+// overlay stops outside the node lock, which its control stream takes to set the peers (NodeSetPeers).
 void NodeStop(NODE *n) {
 	if (n == NULL)
 		return;
+
+	NodeOverlayStop(n);
 
 	Lock(n->Lock);
 	{
