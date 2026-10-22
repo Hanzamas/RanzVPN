@@ -29,6 +29,9 @@
 
 #define SVC_RUN_COMMANDLINE L"\"%s\" /service"
 
+// The account of a service that MsServiceEx installs with its virtual account: this and the service name
+#define SVC_VIRTUAL_ACCOUNT_PREFIX L"NT SERVICE\\"
+
 #define SVC_MODE_NONE            0
 #define SVC_MODE_INSTALL         1
 #define SVC_MODE_UNINSTALL       2
@@ -132,6 +135,7 @@ bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, boo
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename);
 
 bool MsIsAdmin();
+bool MsEnablePrivilege(char *name, bool enable);
 UINT MsGetCurrentProcessId();
 wchar_t *MsCopyProcessArgsW();
 
@@ -156,6 +160,7 @@ bool MsIsServiceInstalled(char *name);
 bool MsStartService(char *name);
 bool MsIsServiceRunning(char *name);
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line);
+UINT MsServiceEx(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line, bool virtual_account);
 const MS_SVC_ARG *MsSvcArgs(UINT *num);
 UINT MsSvcArgToMode(char *arg);
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);

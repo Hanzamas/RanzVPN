@@ -109,7 +109,8 @@ bool PeerKeyFromScalar(PEER_KEY *k, const UCHAR *priv) {
 	return true;
 }
 
-// Whether the process runs elevated, as the ranzvpnserver service does
+// Whether the process runs elevated, as an administrator's does. The ranzvpnserver service does not: it runs as its
+// virtual account (ADR-0039 decision 3).
 static bool PeerElevated() {
 	HANDLE token = NULL;
 	TOKEN_ELEVATION elevation;
@@ -125,8 +126,8 @@ static bool PeerElevated() {
 	return elevated;
 }
 
-// The key set of the identity keys: the machine key set when the process runs elevated, as the service, else the
-// current user's
+// The key set of the identity keys: the machine key set when the process runs elevated, else the current user's,
+// which for the service is the key set of its virtual account
 static UINT PeerKeyScope() {
 	return PeerElevated() ? CRYPTO_MACHINE : 0;
 }

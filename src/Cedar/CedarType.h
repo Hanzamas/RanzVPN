@@ -202,6 +202,7 @@ typedef struct NODE_TABLE NODE_TABLE;
 typedef struct NODE_TABLES NODE_TABLES;
 typedef struct NODE_BGP NODE_BGP;
 typedef struct NODE_BGP_STATUS NODE_BGP_STATUS;
+typedef struct NODE_MITIGATION NODE_MITIGATION;
 
 
 typedef struct CONFIG_STORE CONFIG_STORE;

@@ -16,8 +16,12 @@
 // nodesvc: ranz-node installs as the ranzvpnserver service and, for each role of its configuration, runs it
 // and stops cleanly: the service reports no error, the process exits with code 0, and the node log holds the
 // start and the stop of that role alone. The first run starts without a configuration store: the service creates
-// it under %ProgramData%\Hanzcodes\Ranz VPN, whose DACL is protected and gives SYSTEM and the Administrators
-// alone access (CORE-F5 #65). It needs administrator rights and leaves an installed node alone.
+// it under %ProgramData%\Hanzcodes\Ranz VPN, whose DACL is protected and gives SYSTEM, the Administrators and the
+// service account alone access (CORE-F5 #65). The hardening of ADR-0039 (SEC-1 #279) on the running service: it
+// runs as its virtual account NT SERVICE\ranzvpnserver, not LocalSystem; its process runs with every mitigation of
+// NodeGetMitigations, or the node records why one is off; every DLL it loaded is in System32; and its node log
+// says so. It needs administrator rights, enables SeDebugPrivilege to read the service process, and leaves an
+// installed node alone.
 // Both tests run the relay role under the identity key NODETEST_IDENTITY_KEY, not the one of an installed node,
 // and delete it.
 // Print "NODE TEST OK" and "NODESVC TEST OK" only when every check passes.
@@ -41,6 +45,8 @@
 #include "Mayaqua/Tick64.h"
 
 #include <AclAPI.h>
+#include <psapi.h>
+#include <sddl.h>
 
 #define	NODETEST_BUDGET			300000		// The whole node test (ms): the watchdog ends a hung run
 #define	NODETEST_BOUND			10000		// A bounded wait on observable state (ms)
@@ -1487,8 +1493,127 @@ static bool NodeSvcWaitGone()
 	return true;
 }
 
+// The service runs as its virtual account, not LocalSystem, with an unrestricted service SID, and Windows gives that
+// account NODE_SERVICE_SID, the SID that the DACL of the data directory names (ADR-0039 decision 3)
+static void NodeSvcAccountCase(NODETEST_CTX *ctx)
+{
+	BYTE config_buf[8192];
+	BYTE sid_buf[SECURITY_MAX_SID_SIZE];
+	wchar_t domain[MAX_SIZE];
+	QUERY_SERVICE_CONFIGW *config = (QUERY_SERVICE_CONFIGW *)config_buf;
+	SERVICE_SID_INFO sid_info;
+	DWORD size = 0;
+	DWORD sid_size = sizeof(sid_buf);
+	DWORD domain_size = ARRAYSIZE(domain);
+	SID_NAME_USE use;
+	PSID expected = NULL;
+	bool got_config = false;
+	bool got_sid_type = false;
+
+	Zero(config_buf, sizeof(config_buf));
+	Zero(&sid_info, sizeof(sid_info));
+
+	SC_HANDLE sc = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT);
+	SC_HANDLE service = (sc != NULL ? OpenServiceW(sc, L"" NODESVC_NAME, SERVICE_QUERY_CONFIG) : NULL);
+	if (service != NULL)
+	{
+		got_config = QueryServiceConfigW(service, config, sizeof(config_buf), &size);
+		got_sid_type = QueryServiceConfig2W(service, SERVICE_CONFIG_SERVICE_SID_INFO, (BYTE *)&sid_info, sizeof(sid_info), &size);
+		CloseServiceHandle(service);
+	}
+	if (sc != NULL)
+	{
+		CloseServiceHandle(sc);
+	}
+
+	wchar_t *account = ((got_config && config->lpServiceStartName != NULL) ? config->lpServiceStartName : L"");
+	NodeTestCheck(ctx, UniStrCmpi(account, NODE_SERVICE_ACCOUNT) == 0 && got_sid_type && sid_info.dwServiceSidType == SERVICE_SID_TYPE_UNRESTRICTED,
+		"The service runs as its virtual account NT SERVICE\\" NODESVC_NAME ", not LocalSystem, with an unrestricted service SID",
+		"account \"%S\", service SID type %u", account, (UINT)sid_info.dwServiceSidType);
+
+	bool looked_up = LookupAccountNameW(NULL, NODE_SERVICE_ACCOUNT, (PSID)sid_buf, &sid_size, domain, &domain_size, &use);
+	DWORD err = GetLastError();
+	bool same = (looked_up && ConvertStringSidToSidW(NODE_SERVICE_SID, &expected) && EqualSid((PSID)sid_buf, expected));
+	NodeTestCheck(ctx, same, "Windows gives the virtual account NODE_SERVICE_SID, the SID that the DACL of the data directory names",
+		"LookupAccountNameW %u (error %u)", (UINT)looked_up, (UINT)err);
+
+	if (expected != NULL)
+	{
+		LocalFree(expected);
+	}
+}
+
+// The process of the service runs with each mitigation of NodeGetMitigations that the node sets, and each one that
+// is off has its reason recorded (ADR-0039 decision 2)
+static void NodeSvcMitigationCase(NODETEST_CTX *ctx, HANDLE process, char *role_name)
+{
+	char what[MAX_SIZE];
+	UINT num = 0;
+	const NODE_MITIGATION *m = NodeGetMitigations(&num);
+
+	for (UINT i = 0;i < num;i++)
+	{
+		DWORD flags = 0;
+		bool got = (process != NULL && GetProcessMitigationPolicy(process, (PROCESS_MITIGATION_POLICY)m[i].Policy, &flags, sizeof(flags)));
+
+		if (m[i].Off != NULL)
+		{
+			Format(what, sizeof(what), "Role %s: mitigation %s is off, with the reason recorded: %s", role_name, m[i].Name, m[i].Off);
+			NodeTestCheck(ctx, IsEmptyStr(m[i].Off) == false, what, "no reason");
+		}
+		else
+		{
+			Format(what, sizeof(what), "Role %s: the service process runs with mitigation %s", role_name, m[i].Name);
+			NodeTestCheck(ctx, got && (flags & m[i].Flags) == m[i].Flags, what, "GetProcessMitigationPolicy %u (error %u), flags 0x%x, expected 0x%x",
+				(UINT)got, got ? 0 : (UINT)GetLastError(), (UINT)flags, m[i].Flags);
+		}
+	}
+}
+
+// Every module of the service process but its executable is in System32: the node loads DLLs from System32 only
+// (ADR-0039 decision 3, FIX-4), whatever its role loaded
+static void NodeSvcModulesCase(NODETEST_CTX *ctx, HANDLE process, wchar_t *exe, char *role_name)
+{
+	HMODULE mods[1024];
+	wchar_t sys32[MAX_PATH];
+	wchar_t path[MAX_PATH];
+	char name[MAX_PATH];
+	char what[MAX_SIZE];
+	char others[MAX_SIZE];
+	DWORD size = 0;
+	UINT num_others = 0;
+
+	StrCpy(others, sizeof(others), "");
+	UINT len = GetSystemDirectoryW(sys32, ARRAYSIZE(sys32));
+	UniStrCat(sys32, sizeof(sys32), L"\\");
+
+	bool ok = (process != NULL && len != 0 && EnumProcessModulesEx(process, mods, sizeof(mods), &size, LIST_MODULES_ALL));
+	UINT num = (ok ? MIN((UINT)(size / sizeof(HMODULE)), (UINT)ARRAYSIZE(mods)) : 0);
+
+	for (UINT i = 0;i < num;i++)
+	{
+		if (GetModuleFileNameExW(process, mods[i], path, ARRAYSIZE(path)) == 0)
+		{
+			UniStrCpy(path, sizeof(path), L"(no name)");
+		}
+		else if (UniStrCmpi(path, exe) == 0 || UniStartWith(path, sys32))
+		{
+			continue;
+		}
+
+		num_others++;
+		UniToStr(name, sizeof(name), path);
+		StrCat(others, sizeof(others), " ");
+		StrCat(others, sizeof(others), name);
+	}
+
+	Format(what, sizeof(what), "Role %s: every DLL of the service process is in System32", role_name);
+	NodeTestCheck(ctx, ok && num > 1 && num_others == 0, what, "%u modules, %u from elsewhere:%s", num, num_others, others);
+}
+
 // One service run with the role role alone: install (which starts the service), stop, uninstall. Without a store
-// (no_store) the service starts with the default roles and creates its configuration store.
+// (no_store) the service starts with the default roles and creates its configuration store. While it runs, the
+// hardening of ADR-0039 on its process.
 static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *data_dir, UINT role, bool no_store)
 {
 	wchar_t log_dir[MAX_PATH];
@@ -1511,9 +1636,17 @@ static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *data_dir, 
 
 	NodeSvcRun(exe, "/install");
 	bool running = NodeSvcWaitState(SERVICE_RUNNING, &ss);
-	HANDLE process = (running ? OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ss.dwProcessId) : NULL);
+	HANDLE process = (running ? OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, ss.dwProcessId) : NULL);
 	Format(what, sizeof(what), "Role %s: /install installs the %s service and it runs", role_name, NODESVC_NAME);
 	NodeTestCheck(ctx, running && process != NULL, what, "state %u, process %u", (UINT)ss.dwCurrentState, (UINT)ss.dwProcessId);
+
+	// The hardening of ADR-0039 on the running service: its account, its mitigations and where its DLLs come from
+	if (no_store)
+	{
+		NodeSvcAccountCase(ctx);
+	}
+	NodeSvcMitigationCase(ctx, process, role_name);
+	NodeSvcModulesCase(ctx, process, exe, role_name);
 
 	NodeSvcRun(exe, "/stop");
 	bool stopped = NodeSvcWaitState(SERVICE_STOPPED, &ss);
@@ -1562,10 +1695,38 @@ static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *data_dir, 
 	Format(what, sizeof(what), "Role %s: the node log of the service holds the start and the stop of that role alone", role_name);
 	NodeTestCheck(ctx, ok, what, "%s", log == NULL ? "no node log" : missing);
 
+	// The node log records each mitigation, on or off with its reason, and the System32-only DLL search
+	UINT num_mitigations = 0;
+	const NODE_MITIGATION *m = NodeGetMitigations(&num_mitigations);
+	ok = NodeTestLogHas(log, "DLLs load from System32 only");
+	StrCpy(missing, sizeof(missing), ok ? "" : " no DLL search line");
+
+	for (UINT i = 0;i < num_mitigations;i++)
+	{
+		if (m[i].Off != NULL)
+		{
+			Format(line, sizeof(line), "Mitigation %s off: %s", m[i].Name, m[i].Off);
+		}
+		else
+		{
+			Format(line, sizeof(line), "Mitigation %s on", m[i].Name);
+		}
+
+		if (NodeTestLogHas(log, line) == false)
+		{
+			ok = false;
+			StrCat(missing, sizeof(missing), " no ");
+			StrCat(missing, sizeof(missing), line);
+		}
+	}
+
+	Format(what, sizeof(what), "Role %s: the node log records each mitigation, on or off with its reason, and the DLL search", role_name);
+	NodeTestCheck(ctx, ok, what, "%s", log == NULL ? "no node log" : missing);
+
 	if (no_store)
 	{
 		NodeTestCheck(ctx, NodeTestLogHas(log, "Configuration store ") && NodeTestLogHas(log, "ranz_node.db opened (winsqlite3 ") &&
-			NodeTestLogHas(log, ": SYSTEM and the Administrators only"),
+			NodeTestLogHas(log, ": SYSTEM, the Administrators and the service account only"),
 			"Without a store the service creates it (winsqlite3) in its data directory, which it protects first",
 			"%s", log == NULL ? "no node log" : "a line is missing");
 	}
@@ -1573,23 +1734,34 @@ static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *data_dir, 
 	Free(log);
 }
 
-// Whether the DACL of path gives SYSTEM and the Administrators full control and nobody else anything; for the data
-// directory (dir) also that the DACL is protected, so nothing of ProgramData is inherited, and that no user owns it
-static bool NodeSvcAdminOnly(wchar_t *path, bool dir, char *detail, UINT detail_size)
+// Whether the DACL of path gives SYSTEM, the Administrators and the virtual account of the service (NODE_SERVICE_SID)
+// full control and nobody else anything; for the data directory (dir) also that the DACL is protected, so nothing of
+// ProgramData is inherited, and that no user owns it: SYSTEM, the Administrators or the service account, which owns
+// the directory it created
+static bool NodeSvcNodeOnly(wchar_t *path, bool dir, char *detail, UINT detail_size)
 {
 	PSECURITY_DESCRIPTOR sd = NULL;
 	PACL dacl = NULL;
 	PSID owner = NULL;
+	PSID service_sid = NULL;
 	SECURITY_DESCRIPTOR_CONTROL control = 0;
 	DWORD revision = 0;
 	bool system = false;
 	bool admins = false;
+	bool service = false;
 	UINT others = 0;
+
+	if (ConvertStringSidToSidW(NODE_SERVICE_SID, &service_sid) == FALSE)
+	{
+		Format(detail, detail_size, "ConvertStringSidToSidW: error %u", (UINT)GetLastError());
+		return false;
+	}
 
 	DWORD err = GetNamedSecurityInfoW(path, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, NULL, &dacl, NULL, &sd);
 	if (err != ERROR_SUCCESS)
 	{
 		Format(detail, detail_size, "GetNamedSecurityInfoW: error %u", (UINT)err);
+		LocalFree(service_sid);
 		return false;
 	}
 
@@ -1616,6 +1788,10 @@ static bool NodeSvcAdminOnly(wchar_t *path, bool dir, char *detail, UINT detail_
 		{
 			admins = true;
 		}
+		else if (full && EqualSid(sid, service_sid))
+		{
+			service = true;
+		}
 		else
 		{
 			others++;
@@ -1623,18 +1799,20 @@ static bool NodeSvcAdminOnly(wchar_t *path, bool dir, char *detail, UINT detail_
 	}
 
 	bool is_protected = ((control & SE_DACL_PROTECTED) != 0);
-	bool owned = (owner != NULL && (IsWellKnownSid(owner, WinBuiltinAdministratorsSid) || IsWellKnownSid(owner, WinLocalSystemSid)));
+	bool owned = (owner != NULL && (IsWellKnownSid(owner, WinBuiltinAdministratorsSid) || IsWellKnownSid(owner, WinLocalSystemSid) ||
+		EqualSid(owner, service_sid)));
 
 	LocalFree(sd);
+	LocalFree(service_sid);
 
-	Format(detail, detail_size, "SYSTEM %u, Administrators %u, %u other ACEs, protected %u, owned by SYSTEM or the Administrators %u",
-		(UINT)system, (UINT)admins, others, (UINT)is_protected, (UINT)owned);
+	Format(detail, detail_size, "SYSTEM %u, Administrators %u, service account %u, %u other ACEs, protected %u, owned by SYSTEM, the Administrators or the service account %u",
+		(UINT)system, (UINT)admins, (UINT)service, others, (UINT)is_protected, (UINT)owned);
 
-	return (system && admins && others == 0 && (dir == false || (is_protected && owned)));
+	return (system && admins && service && others == 0 && (dir == false || (is_protected && owned)));
 }
 
-// The data directory of the service and its configuration store: under ProgramData, and for SYSTEM and the
-// Administrators only
+// The data directory of the service and its configuration store: under ProgramData, and for SYSTEM, the
+// Administrators and the service account only
 static void NodeSvcDataDirCase(NODETEST_CTX *ctx, wchar_t *data_dir, wchar_t *store)
 {
 	char detail[MAX_SIZE];
@@ -1642,12 +1820,12 @@ static void NodeSvcDataDirCase(NODETEST_CTX *ctx, wchar_t *data_dir, wchar_t *st
 	NodeTestCheck(ctx, IsFileExistsW(store), "The service created its configuration store in %ProgramData%\\Hanzcodes\\Ranz VPN",
 		"%S is missing", store);
 
-	bool ok = NodeSvcAdminOnly(data_dir, true, detail, sizeof(detail));
-	NodeTestCheck(ctx, ok, "The data directory has a protected DACL: SYSTEM and the Administrators alone have access, and no user owns it",
+	bool ok = NodeSvcNodeOnly(data_dir, true, detail, sizeof(detail));
+	NodeTestCheck(ctx, ok, "The data directory has a protected DACL: SYSTEM, the Administrators and the service account alone have access, and no user owns it",
 		"%s", detail);
 
-	ok = NodeSvcAdminOnly(store, false, detail, sizeof(detail));
-	NodeTestCheck(ctx, ok, "The configuration store inherits it: SYSTEM and the Administrators alone have access", "%s", detail);
+	ok = NodeSvcNodeOnly(store, false, detail, sizeof(detail));
+	NodeTestCheck(ctx, ok, "The configuration store inherits it: SYSTEM, the Administrators and the service account alone have access", "%s", detail);
 }
 
 // Delete a configuration store with the write-ahead log files that a store left open would have
@@ -1690,6 +1868,10 @@ void nodesvc_test(UINT num, char **arg)
 	ready = NodeTestCheck(&ctx, StrCmp(_SS("SVC_" GC_SVC_NAME_NODE "_NAME"), NODESVC_NAME) == 0,
 		"The string table names the service of ranz-node " NODESVC_NAME, "it names \"%s\"", _SS("SVC_" GC_SVC_NAME_NODE "_NAME")) && ready;
 	ready = NodeTestCheck(&ctx, MsIsAdmin(), "vpntest runs with administrator rights, which a service install needs", "not elevated") && ready;
+	// The process of a service that runs as a virtual account gives the Administrators no right to read its
+	// mitigations and modules: the debug privilege of the elevated token does
+	ready = NodeTestCheck(&ctx, MsEnablePrivilege("SeDebugPrivilege", true), "vpntest enables SeDebugPrivilege to read the service process",
+		"error %u", (UINT)GetLastError()) && ready;
 	ready = NodeTestCheck(&ctx, MsIsServiceInstalled(NODESVC_NAME) == false, "No " NODESVC_NAME " service is installed yet",
 		"one is installed: nodesvc leaves an installed node alone") && ready;
 
@@ -1724,7 +1906,8 @@ void nodesvc_test(UINT num, char **arg)
 			FileRenameW(backup, store);
 		}
 
-		// The identity key that the relay role of the service created, in the machine key set
+		// The identity key of the test nodes in the machine key set. The relay role of the service keeps its own in
+		// the key set of its virtual account, out of the reach of vpntest.
 		PeerKeyDelete(L"" NODETEST_IDENTITY_KEY);
 	}
 

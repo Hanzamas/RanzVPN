@@ -15,6 +15,7 @@
 
 #include "NodeInternal.h"
 
+#include <AclAPI.h>
 #include <WinDNS.h>
 #include <bcrypt.h>
 #include <iphlpapi.h>
@@ -22,10 +23,11 @@
 
 #include <cjson/cJSON.h>
 
-// The DACL of the pipe: SYSTEM, the Administrators and the owner (the account of the node), nothing for anyone else.
-// The node creates it before the sidecar starts, as the first and only instance, for local clients only, and takes
-// only its own sidecar as the client (GetNamedPipeClientProcessId).
-#define NODE_BGP_PIPE_SDDL L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;OW)"
+// The strict DACL of the pipe (ADR-0039 decision 3): the owner alone, the account of the node, which its sidecar
+// runs as; not SYSTEM and not the Administrators, and nothing for anyone else. The node creates it before the sidecar
+// starts, as the first and only instance, for local clients only, and takes only its own sidecar as the client
+// (GetNamedPipeClientProcessId).
+#define NODE_BGP_PIPE_SDDL L"D:P(A;;GA;;;OW)"
 
 #define NODE_BGP_CONNECT_WAIT 30000 // How long the node waits for the sidecar to connect to the pipe (ms)
 #define NODE_BGP_WRITE_WAIT   5000  // How long one message may take to reach the pipe (ms)
@@ -54,6 +56,7 @@ struct NODE_BGP {
 	LOCK *WriteLock;            // One message at a time on the pipe
 	wchar_t PipeName[MAX_PATH]; // The name of the pipe
 	HANDLE Pipe;                // The server end of the pipe, overlapped
+	char PipeAcl[MAX_SIZE];     // The DACL of the pipe as the system holds it, in SDDL
 	HANDLE WriteEvent;          // The event of a write
 	HANDLE StopEvent;           // Ends the reader thread
 	HANDLE Job;                 // The job of the sidecar: it ends with the node, also when the node does not stop
@@ -527,6 +530,18 @@ static bool NodeBgpLaunch(NODE_BGP *b) {
 		return false;
 	}
 
+	// The DACL that the pipe got, read back for NodeBgpGetStatus, so that a test sees what the system holds
+	PSECURITY_DESCRIPTOR pipe_sd = NULL;
+	char *pipe_acl = NULL;
+
+	if (GetSecurityInfo(b->Pipe, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, NULL, NULL, &pipe_sd) == ERROR_SUCCESS) {
+		if (ConvertSecurityDescriptorToStringSecurityDescriptorA(pipe_sd, SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &pipe_acl, NULL)) {
+			StrCpy(b->PipeAcl, sizeof(b->PipeAcl), pipe_acl);
+			LocalFree(pipe_acl);
+		}
+		LocalFree(pipe_sd);
+	}
+
 	HANDLE connect_event = CreateEventW(NULL, TRUE, FALSE, NULL);
 	if (connect_event == NULL)
 		return false;
@@ -855,6 +870,7 @@ void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st) {
 				st->NumAnnounced = LIST_NUM(b->Announced);
 				st->NumErrors = b->NumErrors;
 				StrCpy(st->Version, sizeof(st->Version), b->Version);
+				StrCpy(st->PipeAcl, sizeof(st->PipeAcl), b->PipeAcl);
 
 				for (UINT i = 0; i < LIST_NUM(b->Peers); i++) {
 					NODE_BGP_PEER *p = LIST_DATA(b->Peers, i);

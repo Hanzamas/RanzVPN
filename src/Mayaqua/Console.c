@@ -112,6 +112,12 @@ void Win32PrintW(wchar_t *str) {
 	if (str == NULL)
 		return;
 
+	// A GUI program started without a console, such as ranz-node by its service commands, has no standard output.
+	// A write to that handle is an invalid handle reference, which the strict handle checks of the node
+	// (Cedar/NodeHarden.c) raise as an exception.
+	if (hstdout == NULL || hstdout == INVALID_HANDLE_VALUE)
+		return;
+
 	if (WriteConsoleW(hstdout, str, UniStrLen(str), &write_size, NULL) == false)
 		Win32PrintToFileW(str);
 }
