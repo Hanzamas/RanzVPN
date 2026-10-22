@@ -1,0 +1,24 @@
+# Generation 2 of gw after caps-l2-lab.json: the VRF lab and its L2 Network, which gw honours
+# with XDP. The L2 Network corp-dmz of the refused caps-l2-corp.json is not in it.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    vrf: {
+      name: "lab"
+      id: 20
+      ula: {
+        address: "\375\0224Vx\233\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789b::
+        length: 48
+      }
+      mtu: 1280
+    }
+  }
+  set: {
+    network: {
+      name: "lab-l2"
+      vrf_id: 20
+      mode: NETWORK_MODE_L2
+    }
+  }
+}

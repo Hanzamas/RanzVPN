@@ -1,0 +1,70 @@
+# Generation 2 of laptop after caps-core2.json, on a node that reports no Capability at all:
+# every core feature of the intent (its tags, the MTU of corp, the VRF lab, the L3 Networks with
+# their IPv4 and IPv6 pools, and gw as its peer in both VRFs) applies.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    node: {
+      name: "laptop"
+      tags: "branch"
+      tags: "laptop"
+    }
+  }
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\375\0224Vx\232\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1400
+    }
+  }
+  set: {
+    vrf: {
+      name: "lab"
+      id: 20
+      ula: {
+        address: "\375\0224Vx\233\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789b::
+        length: 48
+      }
+      mtu: 1280
+    }
+  }
+  set: {
+    network: {
+      name: "corp-lan"
+      vrf_id: 10
+      mode: NETWORK_MODE_L3
+      ipv4_pool: {
+        address: "\012\012\000\000"  # 10.10.0.0
+        length: 24
+      }
+      ipv6_pool: {
+        address: "\375\0224Vx\232\000\001\000\000\000\000\000\000\000\000"  # fd12:3456:789a:1::
+        length: 64
+      }
+    }
+  }
+  set: {
+    network: {
+      name: "lab-lan"
+      vrf_id: 20
+      mode: NETWORK_MODE_L3
+      ipv4_pool: {
+        address: "\012\036\000\000"  # 10.30.0.0
+        length: 24
+      }
+    }
+  }
+  set: {
+    peer: {
+      name: "gw"
+      public_key: "\007\243|\274\024 \223\310\267U\334\033\020\350l\264&7J\321j\250S\355\013\337\300\262\270m\034|"
+      vrf_ids: 10
+      vrf_ids: 20
+    }
+  }
+}

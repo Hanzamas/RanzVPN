@@ -1,0 +1,5 @@
+{
+  "resources": [
+    {"kind": "Network", "name": "corp-dmz", "spec": {"vrf": "corp", "mode": "L2", "ipv4Pool": "10.20.0.0/24"}}
+  ]
+}

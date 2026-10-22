@@ -1,0 +1,7 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "lab", "spec": {"id": 20, "ula": "fd12:3456:789b::/48"}},
+    {"kind": "Network", "name": "lab-l2", "spec": {"vrf": "lab", "mode": "L2"}},
+    {"kind": "Node", "name": "gw", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp", "lab"]}}
+  ]
+}
