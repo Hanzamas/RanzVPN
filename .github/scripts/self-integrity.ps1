@@ -12,11 +12,15 @@ param(
 #   1. sign every shipped executable and an MSI, and check a signature is present on each;
 #   2. run the self-integrity check on a signed binary (it passes) and on a copy whose .text was changed
 #      (it takes the degrade-or-deceive path of ADR-0036, not a crash);
-#   3. check the shipped binaries carry no symbols and ship no public PDB: the C executables export no
-#      symbols and the MSI holds no PDB, and the Go sidecar built with -trimpath and -ldflags "-s -w" has
-#      no symbol table.
+#   3. check the shipped binaries carry no symbols and ship no public PDB: the C executables embed no
+#      symbol table and the MSI holds no PDB (their symbols stay in a private PDB), and the Go sidecar
+#      built with -trimpath and -ldflags "-s -w" has no symbol table.
 
 $ErrorActionPreference = 'Stop'
+# Native exit codes are checked explicitly below (so "go tool nm", which exits 1 when a binary has no
+# symbols, is read by its output, not treated as a failure). Without this, PowerShell 7.4 and later throw
+# on any non-zero native exit.
+$PSNativeCommandUseErrorActionPreference = $false
 
 # The shipped executables of the current server and the new-core node (ADR-0020). vpntest is a test tool,
 # not shipped; it is signed only to run the self-integrity test against a signed binary.
@@ -54,8 +58,8 @@ function Get-FileBytes([string] $Path) {
 	return [System.IO.File]::ReadAllBytes($Path)
 }
 
-# The PE fields the checks read: the optional-header offset, PE32+ flag, the export data directory and
-# the .text section. Returns a hashtable.
+# The PE fields the checks read: the COFF symbol table (a release executable keeps its symbols in a
+# private PDB, so the table is empty) and the .text section. Returns a hashtable.
 function Get-PeInfo([byte[]] $Bytes) {
 	$lfanew = [System.BitConverter]::ToInt32($Bytes, 0x3C)
 	if ([System.Text.Encoding]::ASCII.GetString($Bytes, $lfanew, 2) -ne 'PE') {
@@ -63,13 +67,10 @@ function Get-PeInfo([byte[]] $Bytes) {
 	}
 	$fileHeader = $lfanew + 4
 	$numSections = [System.BitConverter]::ToUInt16($Bytes, $fileHeader + 2)
+	$symbolTablePtr = [System.BitConverter]::ToUInt32($Bytes, $fileHeader + 8)   # PointerToSymbolTable
+	$numSymbols = [System.BitConverter]::ToUInt32($Bytes, $fileHeader + 12)      # NumberOfSymbols
 	$sizeOfOptional = [System.BitConverter]::ToUInt16($Bytes, $fileHeader + 16)
 	$opt = $fileHeader + 20
-	$magic = [System.BitConverter]::ToUInt16($Bytes, $opt)
-	$plus = ($magic -eq 0x20B)
-	# The data directory array follows the fixed part of the optional header
-	$dirBase = if ($plus) { $opt + 112 } else { $opt + 96 }
-	$exportSize = [System.BitConverter]::ToUInt32($Bytes, $dirBase + 4)   # directory 0, Size
 	# The section table follows the whole optional header
 	$sec = $opt + $sizeOfOptional
 	$text = $null
@@ -84,7 +85,7 @@ function Get-PeInfo([byte[]] $Bytes) {
 			}
 		}
 	}
-	return @{ ExportSize = $exportSize; Text = $text }
+	return @{ SymbolTablePtr = $symbolTablePtr; NumSymbols = $numSymbols; Text = $text }
 }
 
 # Sign a file with the self-signed certificate in the current user's My store (by thumbprint) and check
@@ -188,15 +189,18 @@ if ($out -notmatch 'SELFINTEGRITY TEST OK') { throw 'the changed binary did not 
 Write-Host 'self-integrity: the changed binary degraded without a crash'
 
 # ---------------------------------------------------------------------------------------------------
-# 3. Symbol stripping: the shipped C executables export no symbols, the MSI holds no PDB, and the Go
-#    sidecar built with -trimpath and -ldflags "-s -w" has no symbol table.
+# 3. Symbol stripping: the shipped C executables embed no COFF symbol table, the MSI holds no PDB, and
+#    the Go sidecar built with -trimpath and -ldflags "-s -w" has no symbol table.
 # ---------------------------------------------------------------------------------------------------
 foreach ($pair in @(@{ Dir = $X64Dir; Arch = 'x64' }, @{ Dir = $Arm64Dir; Arch = 'arm64' })) {
 	foreach ($exe in $shipped) {
 		$path = Join-Path $pair.Dir $exe
 		$pe = Get-PeInfo (Get-FileBytes $path)
-		if ($pe.ExportSize -ne 0) { throw "$($pair.Arch) $exe exports symbols (export directory size $($pe.ExportSize))" }
-		Write-Host "$($pair.Arch) $exe exports no symbols"
+		# A release executable keeps its symbols in a private PDB, so it embeds no COFF symbol table
+		if ($pe.SymbolTablePtr -ne 0 -or $pe.NumSymbols -ne 0) {
+			throw "$($pair.Arch) $exe embeds a COFF symbol table (pointer $($pe.SymbolTablePtr), count $($pe.NumSymbols))"
+		}
+		Write-Host "$($pair.Arch) $exe embeds no symbol table"
 	}
 }
 
