@@ -474,6 +474,9 @@ void fifo_test(UINT num, char **arg);
 void node_test(UINT num, char **arg);
 void nodesvc_test(UINT num, char **arg);
 
+// Named node Login test of CORE-F2, #62 (nodelogin.c)
+void nodelogin_test(UINT num, char **arg);
+
 // Named configuration store test of CORE-F5, #65 (storetest.c)
 void store_test(UINT num, char **arg);
 
@@ -624,6 +627,7 @@ TEST_LIST test_list[] =
 	{"fifo", fifo_test, "FIFO and queue: a FIFO that never fully drains stays small and keeps the byte order; the queue ring keeps the item order."},
 	{"node", node_test, "Node: each role from the configuration starts and stops with every thread joined; per-core workers, adapter queues, atomic table swaps; fork Hub and Sam."},
 	{"nodesvc", nodesvc_test, "Node service: ranz-node installs as ranzvpnserver, runs each role of its configuration and stops cleanly (administrator rights)."},
+	{"nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result (administrator rights)."},
 	{"store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords."},
 	{"bgp", bgp_test, "BGP sidecar: ranz-bgp peers with a router (gobgpd, RANZ_GOBGP) on TCP 179, a prefix announced and withdrawn, a learned route installed through IP Helper (administrator rights)."},
 };
