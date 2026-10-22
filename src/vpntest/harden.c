@@ -32,6 +32,7 @@ typedef struct HARDEN_RUN
 {
 	bool Started;		// CreateProcess succeeded and the run finished
 	UINT ExitCode;		// Process exit code
+	UINT LaunchError;	// GetLastError when CreateProcess failed, 0 otherwise
 	bool Crashed;		// An unhandled (second-chance) exception, a crash exit code, or a timeout
 	char Token[64];		// The first line ranzguard printed, trimmed of the newline
 } HARDEN_RUN;
@@ -174,6 +175,7 @@ static void HardenRunGuard(wchar_t *exe, bool as_debuggee, HARDEN_RUN *out)
 	PROCESS_INFORMATION pi;
 	HANDLE rd = NULL;
 	HANDLE wr = NULL;
+	HANDLE nul = INVALID_HANDLE_VALUE;
 
 	Zero(out, sizeof(HARDEN_RUN));
 
@@ -184,15 +186,20 @@ static void HardenRunGuard(wchar_t *exe, bool as_debuggee, HARDEN_RUN *out)
 
 	if (CreatePipe(&rd, &wr, &sa, 0) == FALSE)
 	{
+		out->LaunchError = GetLastError();
 		return;
 	}
 	// The read end stays with this process, so it is not inherited
 	SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
 
+	// A valid, inheritable stdin for the child: the standard input of a non-interactive CI process can be
+	// a closed or non-inheritable handle, and STARTF_USESTDHANDLES with such a handle fails CreateProcess
+	nul = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+
 	Zero(&si, sizeof(si));
 	si.cb = sizeof(si);
 	si.dwFlags = STARTF_USESTDHANDLES;
-	si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+	si.hStdInput = nul;
 	si.hStdOutput = wr;
 	si.hStdError = wr;
 
@@ -201,13 +208,22 @@ static void HardenRunGuard(wchar_t *exe, bool as_debuggee, HARDEN_RUN *out)
 
 	if (CreateProcessW(exe, NULL, NULL, NULL, TRUE, flags, NULL, NULL, &si, &pi) == FALSE)
 	{
+		out->LaunchError = GetLastError();
 		CloseHandle(rd);
 		CloseHandle(wr);
+		if (nul != INVALID_HANDLE_VALUE)
+		{
+			CloseHandle(nul);
+		}
 		return;
 	}
 
-	// The child inherited the write end; this process closes it so the read sees end-of-file
+	// The child inherited the write end and stdin; this process closes them so the read sees end-of-file
 	CloseHandle(wr);
+	if (nul != INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(nul);
+	}
 
 	UINT exit_code = 0;
 	bool crashed = false;
@@ -268,7 +284,7 @@ void harden_test(UINT num, char **arg)
 
 	// Unwatched: the gate is open
 	HardenRunGuard(exe, false, &clean);
-	HardenCheck(&ctx, clean.Started, "ranzguard runs as an ordinary child", "CreateProcess or the run failed");
+	HardenCheck(&ctx, clean.Started, "ranzguard runs as an ordinary child", "CreateProcess error %u", clean.LaunchError);
 	HardenCheck(&ctx, clean.Started && clean.Crashed == false, "unwatched run does not crash", "exit code 0x%X", clean.ExitCode);
 	HardenCheck(&ctx, clean.Started && clean.ExitCode == 0, "unwatched run exits 0", "exit code 0x%X", clean.ExitCode);
 	HardenCheck(&ctx, clean.Started && StrCmpi(clean.Token, HARDEN_TOKEN_UNLOCKED) == 0,
@@ -276,7 +292,7 @@ void harden_test(UINT num, char **arg)
 
 	// Under a debugger: the gate degrades to locked, and still no crash
 	HardenRunGuard(exe, true, &watched);
-	HardenCheck(&ctx, watched.Started, "ranzguard runs under a debugger", "the debug loop did not finish");
+	HardenCheck(&ctx, watched.Started, "ranzguard runs under a debugger", "CreateProcess error %u or the debug loop did not finish", watched.LaunchError);
 	HardenCheck(&ctx, watched.Started && watched.Crashed == false,
 		"no crash under a debugger (degrade or deceive, never crash)", "exit code 0x%X", watched.ExitCode);
 	HardenCheck(&ctx, watched.Started && watched.ExitCode == 0, "debuggee exits 0", "exit code 0x%X", watched.ExitCode);
