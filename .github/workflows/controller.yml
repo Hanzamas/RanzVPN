@@ -111,12 +111,16 @@ jobs:
       env:
         RANZ_CONTROL_WIRE: ${{ runner.temp }}/wire
       run: go test -race -count=1 ./...
-    # The Hanzcodes activation service (internal/activation, SEC-7 #284), in the job log: it issues
-    # a node-locked, time-limited token and refuses an invalid or node-mismatched request, releases
-    # the Enterprise feature key only against an Enterprise token, re-validates on a heartbeat and
-    # serves the revocation list through a software KSP that stands in for the HSM, and resolves to
-    # the Personal tier when no vendor signing key is linked.
-    - name: Activation service and the software KSP
+    # The Hanzcodes activation service and the install side (internal/activation, SEC-7 #284 and
+    # SEC-6 #285), in the job log: the service issues a node-locked, time-limited token and refuses
+    # an invalid or node-mismatched request, releases the Enterprise feature key only against an
+    # Enterprise token, re-validates on a heartbeat and serves the revocation list through a software
+    # KSP that stands in for the HSM, and resolves to the Personal tier when no vendor signing key is
+    # linked; the install activates against the service and unseals the Enterprise feature blob only
+    # with the server-held key, holds its tier for the grace period past a missed heartbeat and
+    # degrades to the Licence in force or Personal past it, and round-trips the offline activation
+    # file with no network.
+    - name: Activation service and the install, with the software KSP
       working-directory: controller
       run: go test -count=1 -v ./internal/activation
     - name: nanopb round trip of the control messages
