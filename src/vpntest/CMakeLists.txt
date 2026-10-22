@@ -79,6 +79,9 @@ ranz_add_executable(vpntest HAMCORE
     httplistener.c
     # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz-controller and ping each other
     sdntrace.c
+    # Named VRF forwarding table test of SDN-4 (#180): the LPM tables of the VRFs against a reference, their swap
+    # under readers, and two VRFs on one range kept apart over the overlay of in-process nodes
+    vrftest.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
   # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked);
   # netapi32: the local account that stands for a domain account (NetUserAdd)
