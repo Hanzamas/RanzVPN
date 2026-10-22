@@ -29,7 +29,7 @@ bool coretest_elevated();
 UINT coretest_scope();
 const char *coretest_scope_name();
 
-// Named tests: kat.c, hybrid.c, cert.c, schannel.c; noise.c, session.c, interop.c; envelope.c, relay.c
+// Named tests: kat.c, hybrid.c, cert.c, schannel.c; noise.c, session.c, interop.c; envelope.c, relay.c; ice.c
 void rand_test();
 void sha256_test();
 void hmac_test();
@@ -50,6 +50,8 @@ void noiseinterop_test();
 void envelope_test();
 void relay_test();
 void relaypolicy_test();
+void iceupgrade_test();
+void icesymmetric_test();
 
 // The NAT simulator (natsim.c): an in-process datagram network of hosts, each on the public side or behind a
 // simulated NAT, that carries the datagrams of the peer layer in place of UDP sockets
@@ -72,6 +74,18 @@ bool NatSimWaitIdle(NATSIM *s, UINT timeout);
 UINT NatSimFiltered(NATSIM_NAT *n);
 UINT NatSimUnroutable(NATSIM *s);
 bool NatSimMapped(NATSIM_NAT *n, const PEER_ADDR *inside, PEER_ADDR *pub);
+
+// The simulated home gateway of the ICE tests (homegw.c): a UPnP Internet Gateway Device that libplum finds with
+// SSDP, and the port forwarding of the mapping it grants, from its WAN side on the IPv4 loopback to the home
+// network on the IPv6 loopback
+typedef struct HOMEGW HOMEGW;
+
+HOMEGW *HomeGwNew();
+void HomeGwFree(HOMEGW *g);
+bool HomeGwMapped(HOMEGW *g, USHORT *external, USHORT *internal);
+void HomeGwSetLink(HOMEGW *g, bool up);
+UINT HomeGwForwarded(HOMEGW *g);
+UINT HomeGwSearches(HOMEGW *g);
 
 // The static key of the X25519 scalar first, first + 1, ..., first + 31: the fixed keys of the peer tests, the same
 // as fixedKey of the controller's tests (controller/internal/controller)

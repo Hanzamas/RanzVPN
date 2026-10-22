@@ -4,3 +4,9 @@
 [submodule "src/Mayaqua/3rdparty/liboqs"]
 	path = src/Mayaqua/3rdparty/liboqs
 	url = https://github.com/open-quantum-safe/liboqs.git
+[submodule "src/Core/3rdparty/libjuice"]
+	path = src/Core/3rdparty/libjuice
+	url = https://github.com/paullouisageneau/libjuice.git
+[submodule "src/Core/3rdparty/libplum"]
+	path = src/Core/3rdparty/libplum
+	url = https://github.com/paullouisageneau/libplum.git

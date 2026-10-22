@@ -52,10 +52,14 @@ set_target_properties(corenoise
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# libjuice and libplum (3rdparty/CMakeLists.txt): ICE and the port mapping of the peer module
+add_subdirectory(3rdparty)
+
 # corepeer: the peer module (Peer.h, Peer*.c; CORE-S5-2, #78): the peer layer of a node, the relay role and the
-# envelopes of binds and signals, on the crypto module and Winsock. The Node module of Cedar links it too, so
-# ranz_core_options and the crypto module stay PRIVATE: a target that links corepeer keeps its own build options
-# and gets the two libraries for the link only.
+# envelopes of binds and signals, on the crypto module and Winsock; ICE and the port mapping of home gateways
+# (PeerIce.c, PeerPortMap.c; CORE-S5-3, #79) on libjuice and libplum. The Node module of Cedar links it too, so
+# ranz_core_options and the libraries stay PRIVATE: a target that links corepeer keeps its own build options and
+# gets the libraries for the link only.
 file(GLOB SOURCES_CORE_PEER "Peer*.c")
 file(GLOB HEADERS_CORE_PEER "Peer*.h")
 
@@ -69,6 +73,8 @@ target_link_libraries(corepeer PRIVATE ranz_core_options ranz_warnings)
 target_link_libraries(corepeer
   PRIVATE
     corecrypto
+    libjuice
+    libplum
     "ws2_32.lib"
 )
 

@@ -221,7 +221,8 @@ jobs:
     # in-memory Schannel TLS 1.3 handshake; and its session module (CORE-F2, #62): the Noise_IK
     # handshake against the cacophony vector, the IKhfs handshake, the golden transcripts of the
     # session, its timers and rekey, the tunnel, and the interop with flynn/noise through
-    # ranz-noisepeer. On x64 and arm64.
+    # ranz-noisepeer. On x64 and arm64. With the peer module's ICE tests (CORE-S5-3, #79), which
+    # wait about 90 s for the consent and check timers of libjuice, the step takes 10 minutes.
     - name: Build the Noise interop peer (flynn/noise)
       shell: pwsh
       working-directory: controller
@@ -229,7 +230,7 @@ jobs:
         go build -o ..\build\ranz-noisepeer.exe ./cmd/ranz-noisepeer
         if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
     - name: Core crypto and session tests
-      timeout-minutes: 5
+      timeout-minutes: 10
       shell: pwsh
       run: |
         . .github/scripts/coretest.ps1
@@ -399,7 +400,7 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
     - name: coretest under ASan
       shell: pwsh
-      timeout-minutes: 5
+      timeout-minutes: 10
       run: |
         # The crypto and session modules' tests of build_and_test (.github/scripts/coretest.ps1) on
         # the instrumented build, output and stderr captured as for vpntest above
