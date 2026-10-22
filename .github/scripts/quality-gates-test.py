@@ -1,10 +1,11 @@
 # Fixtures for the scripts of the ADR-0040 quality gates: fuzz-registry.py, coverage-floor.py,
-# bench-gate.py and static-findings.py.
+# bench-gate.py, static-findings.py and govulncheck-gate.py.
 #
 # Each gate runs on a throwaway tree or input made here and must pass what it should pass and fail
 # what it should fail: a new parser without a fuzz target, a stale registry line, a fuzz target that
 # CI would not run; a module below its floor or without one; a benchmark slower than its margin or
-# missing; a new static analysis finding. So a gate that passes everything fails here first.
+# missing; a new static analysis finding; a vulnerability that the code calls and nothing accepts.
+# So a gate that passes everything fails here first.
 #
 # Usage: python -I quality-gates-test.py
 
@@ -241,10 +242,49 @@ def test_static_findings():
     check('a recorded clang-tidy finding', 0, ['No new clang-tidy finding (1 recorded'], 'clang-tidy', tidy_log, key_tidy)
     check('a moved finding keeps its key', 0, ['No new clang-tidy finding'], 'clang-tidy',
           tidy_log.replace('Noise.c:120:5', 'Noise.c:140:5'), key_tidy)
-    check('a finding no longer found', 0, ['No longer found, take it out'], 'clang-tidy', '', key_tidy)
+    check('a finding no longer found', 0, ['No longer found 1 of 1 times, take it out'], 'clang-tidy', '', key_tidy)
+    check('a recorded finding at a second line', 1, ['src/Core/Noise.c:120, src/Core/Noise.c:300: Value stored',
+                                                     'found 2 times, recorded 1'], 'clang-tidy',
+          tidy_log + tidy_log.replace('Noise.c:120:5', 'Noise.c:300:5'), key_tidy)
+    check('a header line that two files report is one finding', 0, ['No new clang-tidy finding'], 'clang-tidy',
+          tidy_log + tidy_log, key_tidy)
     check('a new /analyze finding', 1, ['src/Core/Peer.c:88: Reading invalid data', '[C6385]'], 'msvc', msvc_log, '')
     check('a recorded /analyze finding, other lines', 0, ['No new msvc finding'], 'msvc',
           msvc_log.replace('Lines: 80, 82, 88', 'Lines: 90, 92'), key_msvc)
+
+
+def test_govulncheck_gate():
+    def finding(osv, module, version, function=None):
+        top = {'module': module, 'version': version, 'package': module + '/pkg'}
+        if function:
+            top['function'] = function
+        own = {'module': 'example.com/own', 'package': 'example.com/own/x', 'function': 'Run',
+               'position': {'filename': 'x/run.go', 'line': 3}}
+        return {'finding': {'osv': osv, 'fixed_version': 'v1.1.0', 'trace': [top, own] if function else [top]}}
+
+    stream = [{'config': {'scanner_name': 'govulncheck'}},
+              {'osv': {'id': 'GO-1', 'summary': 'crash in parser'}},
+              {'osv': {'id': 'GO-2', 'summary': 'race in server'}},
+              finding('GO-1', 'example.com/dep', 'v1.0.0', 'Parse'),
+              finding('GO-1', 'example.com/dep', 'v1.0.0', 'Parse'),
+              finding('GO-3', 'example.com/other', 'v2.0.0')]
+    accepted = '# test\nGO-1 example.com/dep@v1.0.0 fixed upstream, verified\n'
+
+    def check(name, code, texts, messages, accepted_text=accepted):
+        with tempfile.TemporaryDirectory() as root:
+            write(root, 'accepted.txt', accepted_text)
+            # Indented objects one after another, as govulncheck -format json writes them
+            write(root, 'vuln.json', '\n'.join(json.dumps(m, indent=2) for m in messages) + '\n')
+            expect('govulncheck-gate: ' + name, run('govulncheck-gate.py', '--accepted', os.path.join(root, 'accepted.txt'),
+                                                    os.path.join(root, 'vuln.json')), code, *texts)
+
+    check('an accepted vulnerability', 0, ['Accepted: GO-1 in example.com/dep@v1.0.0', 'Not called by the code: GO-3'], stream)
+    check('a called vulnerability', 1, ['GO-2 in example.com/dep@v1.0.0: race in server', 'reaches Serve from x/run.go Run'],
+          stream + [finding('GO-2', 'example.com/dep', 'v1.0.0', 'Serve')])
+    check('an accepted entry of another version', 1, ['GO-1 in example.com/dep@v1.0.0: crash in parser'], stream,
+          accepted_text='GO-1 example.com/dep@v0.9.0 fixed upstream\n')
+    check('an accepted entry no longer found', 0, ['No longer found, take it out', 'GO-9'], stream,
+          accepted_text=accepted + 'GO-9 example.com/gone@v1.0.0 gone\n')
 
 
 if __name__ == '__main__':
@@ -252,6 +292,7 @@ if __name__ == '__main__':
     test_coverage_floor()
     test_bench_gate()
     test_static_findings()
+    test_govulncheck_gate()
     if failures:
         print('\n\n'.join(failures))
         print('%d fixtures failed' % len(failures))

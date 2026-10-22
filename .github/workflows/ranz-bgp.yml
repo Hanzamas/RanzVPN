@@ -106,8 +106,10 @@ jobs:
           echo "::endgroup::"
         done <<< "$targets"
         exit $failed
-    # ADR-0040 item 3: staticcheck and govulncheck for Linux and for Windows; any finding fails the job.
-    # Built for the runner; GOOS picks the platform they analyze.
+    # ADR-0040 item 3: staticcheck and govulncheck for Linux and for Windows. Any staticcheck finding
+    # fails the job, and so does a vulnerability that the code calls, unless
+    # .github/quality/govulncheck-accepted.txt accepts it for that version. Built for the runner;
+    # GOOS picks the platform they analyze.
     - name: Static analysis (staticcheck, govulncheck)
       if: ${{ !cancelled() }}
       working-directory: ranz-bgp
@@ -118,8 +120,9 @@ jobs:
         "$RUNNER_TEMP/gobin/staticcheck" ./...
         GOOS=windows "$RUNNER_TEMP/gobin/staticcheck" ./...
         "$RUNNER_TEMP/gobin/govulncheck" -version
-        "$RUNNER_TEMP/gobin/govulncheck" ./...
-        GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" ./...
+        "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
+        GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"
+        python3 ../.github/scripts/govulncheck-gate.py --accepted ../.github/quality/govulncheck-accepted.txt "$RUNNER_TEMP/govulncheck-linux.json" "$RUNNER_TEMP/govulncheck-windows.json"
     - uses: actions/upload-artifact@v4
       if: failure()
       with:

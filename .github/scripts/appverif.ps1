@@ -6,8 +6,9 @@
 # 1. The planted fault (appverif-fault.exe, .github/scripts/appverif-fault.c) runs under the same
 #    layers first. It must be reported, by a verifier stop that ends the process or by an error entry
 #    in its log; otherwise the verifier is not working and the job fails.
-# 2. coretest runs every test of coretest.ps1 under the layers. A test that fails, a process that a
-#    verifier stop ends, or an error entry in any of coretest's verifier logs fails the job.
+# 2. coretest runs every test it lists under the layers, one process per test through coretest.ps1.
+#    A test that fails, a process that a verifier stop ends, or an error entry in the verifier log
+#    of any test fails the job.
 # The verifier settings of both images are removed at the end. The logs are exported as XML to
 # <BuildDir>\appverif (uploaded by the job).
 #
@@ -54,26 +55,25 @@ function Disable-Verifier([string] $Image) {
 	Write-Host "appverif -disable * -for ${Image}: exit $($r.Code)"
 }
 
-# Every log of the image exported as XML; returns the error entries, one line each
-function Get-VerifierErrors([string] $Image) {
+# The log of the image's last run exported as XML (appverif exports the last log, Log=0, of a
+# process that ran with the layers; older logs are not addressable by index); returns its error
+# entries, one line each
+function Get-VerifierErrors([string] $Image, [string] $Run) {
 	$logs = @(Get-ChildItem -LiteralPath $LogDir -Filter "$Image.*.dat" -ErrorAction SilentlyContinue)
-	Write-Host "${Image}: $($logs.Count) verifier logs in $LogDir"
+	if ($logs.Count -eq 0) { throw "${Image} ($Run): no verifier log in $LogDir, so the layers did not run" }
+	$xml = Join-Path (Resolve-Path $OutDir).Path "$Image.$Run.xml"
+	$r = Invoke-AppVerif @('-export', 'log', '-for', $Image, '-with', "To=$xml", 'Log=0')
+	if (-not (Test-Path -LiteralPath $xml)) {
+		throw "appverif could not export the log of ${Image} ($Run): exit $($r.Code) $($r.Text)"
+	}
 	$errors = @()
-	for ($i = 0; $i -lt $logs.Count; $i++) {
-		$xml = Join-Path (Resolve-Path $OutDir).Path "$Image.$i.xml"
-		# Log=<n> counts back from the last log
-		$r = Invoke-AppVerif @('-export', 'log', '-for', $Image, '-with', "To=$xml", "Log=$i")
-		if (-not (Test-Path -LiteralPath $xml)) {
-			throw "appverif could not export log $i of ${Image}: exit $($r.Code) $($r.Text)"
-		}
-		$text = Get-Content -Raw -LiteralPath $xml
-		foreach ($m in [regex]::Matches($text, '(?s)<avrf:logEntry\b([^>]*)>(.*?)</avrf:logEntry>')) {
-			if ($m.Groups[1].Value -notmatch 'Severity="Error"') { continue }
-			$layer = if ($m.Groups[1].Value -match 'LayerName="([^"]*)"') { $Matches[1] } else { '?' }
-			$stop = if ($m.Groups[1].Value -match 'StopCode="([^"]*)"') { $Matches[1] } else { '?' }
-			$message = if ($m.Groups[2].Value -match '(?s)<avrf:message>(.*?)</avrf:message>') { $Matches[1].Trim() } else { '' }
-			$errors += "log $i, layer $layer, stop $stop`: $message"
-		}
+	$text = Get-Content -Raw -LiteralPath $xml
+	foreach ($m in [regex]::Matches($text, '(?s)<avrf:logEntry\b([^>]*)>(.*?)</avrf:logEntry>')) {
+		if ($m.Groups[1].Value -notmatch 'Severity="Error"') { continue }
+		$layer = if ($m.Groups[1].Value -match 'LayerName="([^"]*)"') { $Matches[1] } else { '?' }
+		$stop = if ($m.Groups[1].Value -match 'StopCode="([^"]*)"') { $Matches[1] } else { '?' }
+		$message = if ($m.Groups[2].Value -match '(?s)<avrf:message>(.*?)</avrf:message>') { $Matches[1].Trim() } else { '' }
+		$errors += "$Run, layer $layer, stop $stop`: $message"
 	}
 	return $errors
 }
@@ -89,7 +89,7 @@ if ($FaultExe) {
 		$code = $LASTEXITCODE
 		Write-Host "${image}: exit code $code"
 		Write-Host $out
-		$errors = @(Get-VerifierErrors $image)
+		$errors = @(Get-VerifierErrors $image 'fault')
 		$errors | ForEach-Object { Write-Host "  $_" }
 		if ($code -eq 0 -and $errors.Count -eq 0) {
 			$failed += "the planted fault of $image went unreported: Application Verifier does not work in this job"
@@ -101,18 +101,28 @@ if ($FaultExe) {
 	}
 }
 
-# 2. The tests of the new core
+# 2. The tests of the new core: every test that coretest lists (its usage, read before the layers
+# are on), each through coretest.ps1 (RANZ_CORE_TESTS) in a process of its own, whose log is read
+# right after it
 $image = 'coretest.exe'
+$usage = (& (Join-Path $BuildDir $image) 2>&1 | Out-String)
+$tests = @([regex]::Matches($usage, "(?m)^ '(\w+)' :") | ForEach-Object { $_.Groups[1].Value })
+if ($tests.Count -eq 0) { throw "coretest lists no test:`n$usage" }
+Write-Host "coretest tests: $($tests -join ', ')"
 Enable-Verifier $image
 try {
-	$out = (cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File .github/scripts/coretest.ps1 -BuildDir $BuildDir 2>&1") | Out-String
-	$code = $LASTEXITCODE
-	Write-Host $out
-	if ($code -ne 0) { $failed += "coretest under Application Verifier failed (exit code $code): a test failed or a verifier stop ended it" }
-	$errors = @(Get-VerifierErrors $image)
-	$errors | ForEach-Object { Write-Host "  $_" }
-	if ($errors.Count -gt 0) { $failed += "Application Verifier reported $($errors.Count) errors in coretest" }
+	foreach ($test in $tests) {
+		$env:RANZ_CORE_TESTS = $test
+		$out = (cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File .github/scripts/coretest.ps1 -BuildDir $BuildDir 2>&1") | Out-String
+		$code = $LASTEXITCODE
+		Write-Host $out
+		if ($code -ne 0) { $failed += "coretest $test under Application Verifier failed (exit code $code): the test failed or a verifier stop ended it" }
+		$errors = @(Get-VerifierErrors $image $test)
+		$errors | ForEach-Object { Write-Host "  $_" }
+		if ($errors.Count -gt 0) { $failed += "Application Verifier reported $($errors.Count) errors in coretest $test" }
+	}
 } finally {
+	Remove-Item Env:RANZ_CORE_TESTS -ErrorAction SilentlyContinue
 	Disable-Verifier $image
 }
 

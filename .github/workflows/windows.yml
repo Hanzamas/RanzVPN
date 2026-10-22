@@ -42,6 +42,8 @@ on:
     - '!.github/scripts/fuzz-registry.py'
     - '!.github/scripts/quality-gates-test.py'
     - '!.github/quality/fuzz-targets.txt'
+    - '!.github/scripts/govulncheck-gate.py'
+    - '!.github/quality/govulncheck-accepted.txt'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -655,12 +657,12 @@ jobs:
           build-msvc/analyze.txt
 
   # Application Verifier (ADR-0040 item 4), x64: the native Windows tool for locks, handles and the
-  # heap, which stands in for ThreadSanitizer (not available on Windows). The runner image has the
-  # Windows SDK without it, so the job adds the SDK's Application Verifier feature, then runs a
-  # planted fault (.github/scripts/appverif-fault.c) and the tests of coretest under the Heaps,
-  # Handles and Locks layers (.github/scripts/appverif.ps1). An unreported planted fault, a failed
-  # test or a verifier error fails the job. go test -race covers the Go code (controller.yml,
-  # ranz-bgp.yml).
+  # heap, which stands in for ThreadSanitizer (not available on Windows). It is a feature of the
+  # Windows SDK, which the runner image has; on an image without it the job adds it with the SDK
+  # installer. The job runs a planted fault (.github/scripts/appverif-fault.c), then the tests of
+  # coretest under the Heaps, Handles and Locks layers (.github/scripts/appverif.ps1). An unreported
+  # planted fault, a failed test or a verifier error fails the job. go test -race covers the Go code
+  # (controller.yml, ranz-bgp.yml).
   appverif:
     runs-on: windows-latest
     name: Application Verifier (new core)
