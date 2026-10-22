@@ -67,6 +67,8 @@ ranz_add_executable(vpntest HAMCORE
     storetest.c
     # Named BGP sidecar test of CORE-S7-1 (#82)
     bgptest.c
+    # Named self-integrity test of SEC-3 (#281)
+    selfint.c
     # Named transport test of CORE-F4 (#64): the transport interface of the new core and the session layer on it
     transporttest.c
     # Named HTTP listener test of REL-6 (#51)

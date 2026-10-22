@@ -551,3 +551,59 @@ jobs:
           echo "::error::Some files are not formatted. Fix: pip install clang-format==${CLANG_FORMAT_VERSION}, then python .github/scripts/format_check.py files | xargs clang-format -i (docs/formatting.md)"
           exit 1
         fi
+
+  # Binary signing and the self-integrity check (SEC-3 #281, ADR-0020 and ADR-0036 amendments of
+  # 2026-10-22). It takes the executables build_and_test produced, signs every shipped one and an MSI with
+  # a self-signed certificate (the production Authenticode certificate is bought near release), checks each
+  # signature is present, runs the self-integrity check on a signed binary (it passes) and on a copy whose
+  # .text was changed (it degrades, not crashes), and checks the shipped binaries carry no symbols and the
+  # package no public PDB. The Go sidecar (ranz-bgp) built with -trimpath and -ldflags "-s -w" has no
+  # symbol table. .github/scripts/self-integrity.ps1.
+  sign_and_integrity:
+    needs: build_and_test
+    runs-on: windows-latest
+    name: sign and self-integrity
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: ranz-bgp/go.sum
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    - name: Download x64 binaries
+      uses: actions/download-artifact@v4
+      with:
+        name: Binaries-x64
+        path: artifacts/x64
+    - name: Download arm64 binaries
+      uses: actions/download-artifact@v4
+      with:
+        name: Binaries-arm64
+        path: artifacts/arm64
+    - name: Install WiX
+      shell: pwsh
+      run: |
+        # The WiX Toolset of the MSI (ADR-0020; REL-5, #50), the same pin as .github/workflows/ranz-bgp.yml
+        dotnet tool install --global wix --version 5.0.2
+        if ($LASTEXITCODE -ne 0) { throw "dotnet tool install exited with code $LASTEXITCODE" }
+        $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
+        $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        & (Join-Path $tools 'wix.exe') --version
+    - name: Sign, self-integrity and symbol strip
+      shell: pwsh
+      run: |
+        . .github/scripts/self-integrity.ps1 -X64Dir artifacts/x64 -Arm64Dir artifacts/arm64 -Wxs .github/signing/signing-proof.wxs -LicenseFile LICENSE -GoModuleDir ranz-bgp -OutDir build/signing
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: signing-proof
+        if-no-files-found: warn
+        retention-days: 14
+        path: |
+          build/signing/*.msi
+          build/signing/*.cer
