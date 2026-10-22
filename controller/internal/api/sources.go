@@ -58,20 +58,26 @@ func NewSources(st SourceStore, log *slog.Logger, ttl time.Duration) *Sources {
 	return &Sources{st: st, log: log, ttl: ttl, now: time.Now}
 }
 
-// Restrict returns h behind the admin source allowlist. While the allowlist holds no prefix, h
-// serves every request. Otherwise h serves the requests from a loopback address, which is the host
-// of the controller itself, and from the addresses that the allowlist holds, and every other
-// request is answered 403 Forbidden and recorded as an event. While the allowlist cannot be read
-// at all, nothing is served: 503 Service Unavailable.
+// Restrict returns h behind the admin source allowlist. A request from a loopback address, which
+// is the host of the controller itself, is always served, before the allowlist is read, so that a
+// list that is damaged or cannot be read never locks the host out. For any other address, h
+// serves every request while the allowlist holds no prefix, and otherwise the requests from the
+// addresses that it holds; every other request is answered 403 Forbidden and recorded as an event.
+// While the allowlist cannot be read at all, nothing but a loopback request is served: 503 Service
+// Unavailable.
 func (s *Sources) Restrict(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		from, _ := intent.SourceAddr(r.RemoteAddr)
+		if from.IsLoopback() {
+			h.ServeHTTP(w, r)
+			return
+		}
 		list, err := s.current(r.Context())
 		if err != nil {
 			s.log.Warn("reading the admin source allowlist", "err", err)
 			reply(w, http.StatusServiceUnavailable, Problem{Error: "the admin source allowlist cannot be read at the moment, so the controller serves nothing: try again in a few seconds"})
 			return
 		}
-		from, _ := intent.SourceAddr(r.RemoteAddr)
 		if len(list) == 0 || adminAllows(list, from) {
 			h.ServeHTTP(w, r)
 			return

@@ -236,6 +236,11 @@ func TestSourcesWhenTheStoreFails(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable || count != 0 || !strings.Contains(w.Body.String(), "cannot be read") || strings.Contains(w.Body.String(), "rqlite") {
 		t.Errorf("before the first read: %d %s, served %d", w.Code, w.Body, count)
 	}
+	// The host of the controller is served without a read of the list
+	failed := st.reads
+	if w := get(h, "127.0.0.1:1", "/api/v1/status"); w.Code != http.StatusNoContent || st.reads != failed {
+		t.Errorf("a loopback request with the store down: %d after %d more reads, want it served with none", w.Code, st.reads-failed)
+	}
 
 	st.readErr = nil
 	if w := get(h, "192.0.2.1:1", "/"); w.Code != http.StatusNoContent {
@@ -263,12 +268,16 @@ func TestSourcesWhenTheStoreFails(t *testing.T) {
 	}
 }
 
-// A list that the store holds and that does not parse is as good as no list: nothing is served.
+// A list that the store holds and that does not parse is as good as no list: nothing is served,
+// except to the host of the controller, which can then set a list that parses.
 func TestSourcesWithAListThatDoesNotParse(t *testing.T) {
 	st := &listStore{list: []string{"not a prefix"}}
 	h := NewSources(st, nil, 0).Restrict(served(new(int)))
 	if w := get(h, "192.0.2.1:1", "/"); w.Code != http.StatusServiceUnavailable {
 		t.Errorf("a list that does not parse: %d, want 503", w.Code)
+	}
+	if w := get(h, "[::1]:1", "/"); w.Code != http.StatusNoContent {
+		t.Errorf("a loopback request with a list that does not parse: %d, want it served", w.Code)
 	}
 }
 

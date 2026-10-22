@@ -13,6 +13,9 @@
 // of the others. Without an Enterprise licence the controller refuses the Enterprise features:
 // the resources of EVPN and BGP, and any change of the intent while its store is a cluster of
 // more than one member (controller high availability).
+//
+// A Network can limit the addresses that its Nodes open their control stream from: the controller
+// refuses a node that comes from another address, and records the refusal (SDN-39, enrol.go).
 package controller
 
 import (
