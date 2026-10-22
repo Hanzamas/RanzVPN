@@ -34,6 +34,7 @@ go  controller/internal/cluster         61
 go  controller/internal/control         76
 go  controller/internal/controller      82
 go  controller/internal/desired         79
+go  controller/internal/export          90
 go  controller/internal/intent          91
 go  controller/internal/keys            71
 go  controller/internal/licence         89
@@ -44,6 +45,7 @@ go  controller/internal/rbac            65
 go  controller/internal/rqlitetest      0
 go  controller/internal/sidecar         0
 go  controller/internal/store           37
+go  controller/internal/telemetry       80
 go  controller/internal/webui           94
 
 # The BGP sidecar (ranz-bgp/)

@@ -104,6 +104,18 @@ type Config struct {
 	// Defaults has the first start of the controller, on a store that holds no revision yet,
 	// create the intent of a first install as revision 1 (ADR-0034, defaults.go).
 	Defaults bool
+	// NodeDownAfter is how long a node that had a control stream may have none before the
+	// controller raises a node-down event (ADR-0030); DefaultNodeDownAfter when zero.
+	NodeDownAfter time.Duration
+	// EventPoll is how often the event feed looks for new events and for webhook deliveries that
+	// are due; telemetry.DefaultPoll when zero. An event raised through Raise wakes it at once.
+	EventPoll time.Duration
+	// ExportInterval is how often an OTLP target is sent the metrics; telemetry.DefaultExportInterval
+	// when zero.
+	ExportInterval time.Duration
+	// TelemetryStale is how long a counter that its node did not report again stays in the exports;
+	// telemetry.DefaultStale when zero.
+	TelemetryStale time.Duration
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -169,6 +181,9 @@ type Controller struct {
 	revision uint64           // the latest revision, 0 before the first
 	pending  *intent.Revision // the revision that waits for confirmation, nil if none
 	timer    *time.Timer      // rolls pending back at its deadline
+
+	// The telemetry and the events (telemetry.go)
+	tel *telemetryState
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -221,6 +236,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if c.log == nil {
 		c.log = slog.New(slog.DiscardHandler)
 	}
+	c.tel = newTelemetryState(cfg)
 	if c.random == nil {
 		c.random = rand.Reader
 	}
@@ -303,6 +319,9 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		if err := c.firstStart(ctx); err != nil {
 			return nil, err
 		}
+	}
+	if err := c.startTelemetry(ctx); err != nil {
+		return nil, err
 	}
 	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision, "schema", int32(c.schema))
 	c.log.Info("licence", "tier", c.force.Tier, "nodes", c.force.Nodes, "state", c.force.State, "message", c.force.Message)
@@ -559,6 +578,7 @@ func (c *Controller) Close() {
 	}
 	c.mu.Unlock()
 	c.wg.Wait()
+	c.stopTelemetry()
 }
 
 // compiled is an intent compiled under a licence: the licence key installed (nil for none), the
@@ -656,6 +676,7 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 			}
 		}
 		delete(c.nodes, name)
+		c.tel.hub.Forget(name)
 	}
 	for _, k := range ch.DeleteCapabilities {
 		delete(c.caps, string(k))
@@ -894,6 +915,7 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 	c.hello(n, s, hello.GetAppliedGeneration())
 	c.wg.Add(1)
 	c.mu.Unlock()
+	c.nodeUp(name)
 	c.log.Info("node connected", "node", name, "remote", conn.RemoteAddr().String(), "applied", hello.GetAppliedGeneration())
 
 	go func() {
@@ -904,12 +926,17 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 	c.readLoop(s)
 	s.shut()
 
+	lost := false
 	c.mu.Lock()
 	if n := c.nodes[name]; n != nil && n.stream == s {
 		n.stream = nil
+		lost = true
 	}
 	c.mu.Unlock()
 	c.log.Info("node disconnected", "node", name)
+	if lost {
+		c.nodeLost(name)
+	}
 }
 
 // hello records where the node of s stands: the generation it applied last. c.mu is held.
@@ -970,8 +997,10 @@ func (c *Controller) readLoop(s *stream) {
 				writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "%v", err))
 				return
 			}
+		case *controlpb.ControlMessage_Telemetry:
+			c.takeTelemetry(s, body.Telemetry)
 		default:
-			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks and Signals after its Hello"))
+			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks, Signals and Telemetry after its Hello"))
 			return
 		}
 	}

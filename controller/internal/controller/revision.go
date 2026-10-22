@@ -240,6 +240,7 @@ func (c *Controller) expire(id uint64) {
 		return
 	}
 	c.settle()
+	c.tel.feed.Poke()
 	c.log.Warn("automatic rollback: "+msg, "revision", res.Revision, "reverts", id, "changed", len(res.Nodes))
 }
 
