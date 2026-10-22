@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" data-page="vrfs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRFs | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/vrfs.js"></script>
+</head>
+<body>
+<ranz-nav></ranz-nav>
+<main>
+<h1>VRFs</h1>
+<p class="lead">Each VRF is a routing domain of its own, with its own ULA /48. Change them on the <a href="/intent">Intent</a> page.</p>
+<ranz-problem></ranz-problem>
+<output id="result" aria-live="polite"></output>
+<ranz-table id="vrfs"></ranz-table>
+<ranz-confirm></ranz-confirm>
+</main>
+</body>
+</html>

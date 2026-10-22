@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" data-page="nodes">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nodes | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/nodes.js"></script>
+</head>
+<body>
+<ranz-nav></ranz-nav>
+<main>
+<h1>Nodes</h1>
+<p class="lead">The Nodes of the Intent, whether each is connected and has acknowledged its latest generation, and the Capabilities its host reported. The controller checks the Intent against them before an apply.</p>
+<ranz-problem></ranz-problem>
+<output id="result" aria-live="polite"></output>
+<ranz-table id="nodes"></ranz-table>
+<ranz-confirm></ranz-confirm>
+</main>
+</body>
+</html>

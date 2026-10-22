@@ -1,0 +1,42 @@
+# The type check of the controller's web UI (controller/internal/webui, SDN-28 #204). The UI is
+# native JavaScript with no build step (ADR-0038): its modules carry JSDoc types and // @ts-check,
+# and this job runs tsc --noEmit over them with the pinned TypeScript, as a development check only.
+# Nothing is compiled and nothing it fetches ships; the repository holds no npm lock file. The
+# Go tests of the UI, with the headless browser, run in controller.yml.
+#
+# A push to master runs it, with no path filter. A pull request runs it when it changes the UI or
+# this file.
+
+name: webui
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths:
+    - 'controller/internal/webui/**'
+    - '.github/workflows/webui.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  TYPESCRIPT_VERSION: '5.9.3'
+
+jobs:
+  typecheck:
+    name: web UI type check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    - name: tsc --noEmit
+      run: npx --yes --package "typescript@${TYPESCRIPT_VERSION}" -- tsc --project controller/internal/webui/tsconfig.json --pretty false
