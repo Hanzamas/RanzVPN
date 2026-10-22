@@ -26,9 +26,13 @@ $ErrorActionPreference = 'Stop'
 #   what a revision changed with `ranz diff`, roll back by itself an apply with -confirm that
 #   nobody confirmed and record the event, return to a revision with `ranz rollback`, and keep
 #   an apply that `ranz confirm` confirmed;
+# - once admin.token is deleted, get a new admin token from `ranz-controller reset-admin`, run by
+#   the runner's elevated account with the flags of the service, while the service runs and while
+#   it is stopped: reset-admin prints the secret, writes it to admin.token, and the API answers
+#   it as admin;
 # - write its starts and stops to the Application log (event IDs 1 and 2 of
-#   cmd/ranz-controller/service_windows.go), a warning for each start on the fallback (4), and no
-#   failure entry (3).
+#   cmd/ranz-controller/service_windows.go), a warning for each start on the fallback (4) and for
+#   each reset-admin (5), and no failure entry (3).
 
 $bin = (Resolve-Path $BinDir).Path
 $controller = Join-Path $bin 'ranz-controller.exe'
@@ -75,6 +79,17 @@ function Assert-Refused([string[]] $argv, [int] $status) {
 	$msg = (Get-Content -LiteralPath $errFile -Raw)
 	if ($code -eq 0 -or $msg -notmatch "\($status ") { throw "ranz $($argv -join ' ') was not refused with ${status} (exit code $code): $msg" }
 	Write-Host "refused: ranz $($argv -join ' '): $($msg.Trim())"
+}
+
+# One reset-admin with the flags of the service, its JSON answer as an object; its messages, and
+# the output of the rqlited it runs while the service is stopped, go to the log
+function Invoke-ResetAdmin {
+	$errFile = Join-Path $work 'reset-admin.err'
+	$out = & $controller reset-admin -data $data -rqlited $env:RQLITED 2> $errFile
+	$code = $LASTEXITCODE
+	Get-Content -LiteralPath $errFile | ForEach-Object { Write-Host "  reset-admin: $_" }
+	if ($code -ne 0) { throw "ranz-controller reset-admin exited with code $code" }
+	return ($out -join "`n") | ConvertFrom-Json
 }
 
 # Wait until the API answers the admin token; the first start writes the token file
@@ -307,14 +322,41 @@ try {
 	if ($operations -ne 'apply,apply,automatic-rollback,rollback,apply') { throw "the revisions are $operations" }
 	Write-Host "revisions: $operations; the unconfirmed apply came back by itself with an event, the confirmed one stays"
 
+	# Offline recovery of the admin access: nobody has admin.token any more, and reset-admin, run
+	# by the runner's elevated account, makes a new admin token in the store of the running service
+	Remove-Item -LiteralPath $tokenFile
+	$reset = Invoke-ResetAdmin
+	if ($reset.role -ne 'admin' -or $reset.name -notmatch '^admin-' -or $reset.token -notmatch '^ranz_') { throw "reset-admin printed $($reset | ConvertTo-Json -Compress)" }
+	if ((Get-Content -LiteralPath $tokenFile -Raw).Trim() -ne $reset.token) { throw 'reset-admin did not write the secret it printed to admin.token' }
+	$me = Invoke-Ranz @('whoami')
+	if ($me.name -ne $reset.name -or $me.role -ne 'admin') { throw "the token of the new admin.token is $($me | ConvertTo-Json -Compress), not $($reset.name)" }
+	$names = ((Invoke-Ranz @('token', 'list')).tokens | ForEach-Object { $_.name }) -join ','
+	Write-Host "reset-admin with the service running: $($reset.name) answers as admin; the tokens are $names"
+	# The same with the service stopped: reset-admin runs the service's rqlited on its data itself
+	Stop-Service -Name $service
+	Remove-Item -LiteralPath $tokenFile
+	$offline = Invoke-ResetAdmin
+	if ($offline.role -ne 'admin' -or $offline.name -eq $reset.name -or $offline.token -notmatch '^ranz_') { throw "reset-admin with the service stopped printed $($offline | ConvertTo-Json -Compress)" }
+	if ((Get-Content -LiteralPath $tokenFile -Raw).Trim() -ne $offline.token) { throw 'reset-admin with the service stopped did not write the secret it printed to admin.token' }
+	Start-Service -Name $service
+	Wait-Api
+	$me = Invoke-Ranz @('whoami')
+	if ($me.name -ne $offline.name -or $me.role -ne 'admin') { throw "after reset-admin with the service stopped, admin.token is $($me | ConvertTo-Json -Compress), not $($offline.name)" }
+	$viewerAfter = (Invoke-Checked $ranz @('-server', $api, '-token-file', $viewerFile, 'whoami')) | ConvertFrom-Json
+	if ($viewerAfter.role -ne 'viewer') { throw "after reset-admin the viewer token is $($viewerAfter | ConvertTo-Json -Compress)" }
+	Write-Host "reset-admin with the service stopped: $($offline.name) answers as admin once the service runs again, and the other tokens stay"
+
 	Stop-Service -Name $service
 	$started = @(Get-ServiceEvents | Where-Object { $_.Id -eq 1 })
 	$stopped = @(Get-ServiceEvents | Where-Object { $_.Id -eq 2 })
 	$failed = @(Get-ServiceEvents | Where-Object { $_.Id -eq 3 })
 	$warned = @(Get-ServiceEvents | Where-Object { $_.Id -eq 4 })
-	if ($started.Count -ne 4 -or $stopped.Count -ne 4) { throw "expected 4 started and 4 stopped entries, found $($started.Count) and $($stopped.Count)" }
-	if ($warned.Count -ne 2) { throw "expected 2 fallback warnings (event ID 4), found $($warned.Count)" }
+	$resets = @(Get-ServiceEvents | Where-Object { $_.Id -eq 5 })
+	if ($started.Count -ne 5 -or $stopped.Count -ne 5) { throw "expected 5 started and 5 stopped entries, found $($started.Count) and $($stopped.Count)" }
+	if ($warned.Count -ne 3) { throw "expected 3 fallback warnings (event ID 4), found $($warned.Count)" }
+	if ($resets.Count -ne 2) { throw "expected 2 reset-admin warnings (event ID 5), found $($resets.Count)" }
 	if ($failed.Count -gt 0) { throw "$service wrote $($failed.Count) failure entries (event ID 3)" }
+	Write-Host "Application log: $($resets[0].Message)"
 
 	Write-Host (Invoke-Checked $controller @('uninstall'))
 	foreach ($p in @($acmePrefix, $redirectPrefix)) {

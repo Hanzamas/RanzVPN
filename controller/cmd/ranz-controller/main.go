@@ -4,9 +4,10 @@
 //
 // Usage:
 //
-//	ranz-controller [flags]            run in the foreground, or as the Windows service
-//	ranz-controller install [flags]    register the Windows service, which runs with these flags
-//	ranz-controller uninstall          remove the Windows service
+//	ranz-controller [flags]              run in the foreground, or as the Windows service
+//	ranz-controller install [flags]      register the Windows service, which runs with these flags
+//	ranz-controller uninstall            remove the Windows service
+//	ranz-controller reset-admin [flags]  create a new admin token, with the flags of the service
 //
 // Ports:
 //
@@ -23,6 +24,12 @@
 // -token-file`. rqlite is the controller's sidecar: with -rqlited the controller runs rqlited
 // itself, with its data in the rqlite directory under -data; without it, the controller uses the
 // rqlite at -rqlite.
+//
+// When nobody holds the secret of an admin token any more, a local administrator of the host
+// (an elevated Administrator on Windows, root elsewhere) runs reset-admin with the flags of the
+// service, while it runs or while it is stopped. reset-admin writes a new admin token to the
+// store directly, prints its secret once, writes it to admin.token as the first start does, and
+// records the reset in the Application log on Windows (event ID 5).
 //
 // The licence key (ADR-0036) is installed with `ranz licence -f FILE` and kept in rqlite. It
 // must be signed with a vendor key that the release build links in (internal/licence); without
@@ -147,6 +154,13 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("ranz-controller %s: done (service %s)\n", args[0], serviceName)
+		return
+	}
+	if len(args) > 0 && args[0] == "reset-admin" {
+		if err := runResetAdmin(args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "ranz-controller reset-admin: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 	cfg, err := parseFlags(args)

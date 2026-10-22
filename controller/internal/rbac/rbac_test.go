@@ -85,6 +85,45 @@ func TestBootstrap(t *testing.T) {
 	}
 }
 
+// A recovery creates a new admin token beside the ones that exist and hands its secret over; a
+// failed hand-over leaves no token behind, also when the store holds no admin token.
+func TestRecover(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	tokens := New(st)
+	if _, err := tokens.Recover(ctx, "admin-lost", func(string) error { return errors.New("disk full") }); err == nil {
+		t.Fatal("a failed hand-over of the secret was not an error")
+	}
+	if ts, err := tokens.List(ctx); err != nil || len(ts) != 0 {
+		t.Fatalf("after a failed hand-over the tokens are %+v, %v", ts, err)
+	}
+
+	if _, err := tokens.Bootstrap(ctx, func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	var secret string
+	tok, err := tokens.Recover(ctx, "admin-20261022-120000", func(s string) error { secret = s; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (Token{Name: "admin-20261022-120000", Role: Admin}); tok.Token != want || tok.Secret != secret || !strings.HasPrefix(secret, secretPrefix) {
+		t.Errorf("the recovery gave %+v with the secret %q handed over, want %+v", tok, secret, want)
+	}
+	if got, err := tokens.Authenticate(ctx, secret); err != nil || got != tok.Token {
+		t.Errorf("the recovered secret authenticates as %+v, %v", got, err)
+	}
+	ts, err := tokens.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []Token{{Name: FirstAdmin, Role: Admin}, tok.Token}; len(ts) != 2 || ts[0] != want[0] || ts[1] != want[1] {
+		t.Errorf("after the recovery the tokens are %+v, want %+v", ts, want)
+	}
+	if _, err := tokens.Recover(ctx, tok.Name, func(string) error { return nil }); !errors.Is(err, ErrExists) {
+		t.Errorf("a recovery with the name of a token gave %v, want ErrExists", err)
+	}
+}
+
 func openStore(t *testing.T) *store.Store {
 	t.Helper()
 	rq := rqlitetest.Start(t)

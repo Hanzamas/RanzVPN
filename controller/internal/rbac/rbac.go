@@ -6,7 +6,8 @@
 // A caller holds a role through an API token, a bearer secret (RFC 6750) that the controller
 // shows once, when it creates the token, and keeps only as its SHA-256 in rqlite beside the
 // Intent: every member of a controller cluster knows a token, and a deleted one stops working at
-// once. The first start of a controller creates the admin token FirstAdmin (Bootstrap). Logins
+// once. The first start of a controller creates the admin token FirstAdmin (Bootstrap), and a
+// local administrator of its host a new one when every admin secret is lost (Recover). Logins
 // of users (SDN-32, #226) and roles scoped to one Network (SDN-38, #231) come later and grant
 // the same roles.
 package rbac
@@ -203,6 +204,24 @@ func (t *Tokens) Bootstrap(ctx context.Context, save func(secret string) error) 
 		return false, err
 	}
 	return true, nil
+}
+
+// Recover creates the admin token name for a local administrator of the controller's host who
+// lost the secret of every admin token (`ranz-controller reset-admin`), and hands its secret to
+// save, as Bootstrap does. The admin tokens that exist stay; the new one may delete them. When
+// save fails, it deletes the token again.
+func (t *Tokens) Recover(ctx context.Context, name string, save func(secret string) error) (NewToken, error) {
+	tok, err := t.Create(ctx, name, Admin)
+	if err != nil {
+		return NewToken{}, err
+	}
+	if err := save(tok.Secret); err != nil {
+		if _, derr := t.st.DeleteToken(ctx, name, ""); derr != nil {
+			return NewToken{}, fmt.Errorf("%w; deleting the token again: %w", err, derr)
+		}
+		return NewToken{}, err
+	}
+	return tok, nil
 }
 
 func token(st store.Token) (Token, error) {
