@@ -40,6 +40,8 @@ struct LISTENER {
 	UINT NumAcceptErrors;      // Transient accept() errors since that log
 
 	bool DisableDos;
+
+	LIST *HttpConnList; // HTTP listener only: HTTP_LISTENER_CONN * of the open connections, joined by StopListener
 };
 
 struct TCP_ACCEPTED_PARAM {
@@ -47,7 +49,15 @@ struct TCP_ACCEPTED_PARAM {
 	SOCK *s;
 };
 
+// One open connection of an HTTP listener, answered by a thread of its own
+struct HTTP_LISTENER_CONN {
+	LISTENER *Listener;
+	SOCK *Sock;
+	THREAD *Thread;
+};
+
 LISTENER *NewListener(CEDAR *cedar, UINT port);
+LISTENER *NewListenerEx(CEDAR *cedar, UINT proto, UINT port);
 void ReleaseListener(LISTENER *r);
 void StopListener(LISTENER *r);
 bool WaitListenerBind(LISTENER *r, UINT timeout);

@@ -81,6 +81,7 @@ void HarnessCmdCases(HARNESS *h);
 // harness.c: in-process server of the named tests in other files (login.c)
 HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *username, bool *ok);
 UINT HarnessCloseServer(HARNESS *h);
+bool HarnessRestartServer(HARNESS *h);
 
 // harness.c: a run whose test starts and stops the server itself, keeping its listeners and its configuration file
 // between starts, or starting it as HarnessOpenServer does (listeners.c); HarnessCloseServer ends it

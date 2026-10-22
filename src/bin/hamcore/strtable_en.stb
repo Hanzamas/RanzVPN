@@ -839,6 +839,13 @@ LS_LISTENER_DOS_TABLE_FULL	The DoS protection table of the TCP Listener (port %u
 LS_NON_SSL_TABLE_FULL	The table of sources that sent non-SSL data has reached its limit of %u source addresses. From now on the least recently seen sources are removed to make room for new ones.
 LS_LISTENER_STOP_1		TCP Listener (port %u) is stopping.
 LS_LISTENER_STOP_2		TCP Listener (port %u) has stopped.
+LS_HTTP_LISTENER_START_1	HTTP listener (port %u) is starting.
+LS_HTTP_LISTENER_START_2	HTTP listener (port %u) has started. It answers with a redirect to HTTPS and with the ACME HTTP-01 challenges of the acme_webroot folder.
+LS_HTTP_LISTENER_START_3	Unable to set port to Listen status for the HTTP listener (port %u). Another program may hold the port. Attempting at fixed intervals until successful.
+LS_HTTP_LISTENER_STOP_1	HTTP listener (port %u) is stopping.
+LS_HTTP_LISTENER_STOP_2	HTTP listener (port %u) has stopped.
+LS_HTTP_ACME_SERVED		HTTP listener (port %u): the ACME challenge "%S" has been served to %S.
+LS_HTTP_ACME_NOT_FOUND	HTTP listener (port %u): there is no ACME challenge for the request from %S (404).
 LS_HUB_START			Virtual Hub "%S" has been started.
 LS_HUB_STOP				Virtual Hub "%S" has been stopped.
 LS_HUB_MAC				The MAC address of Virtual Hub "%S" is "%S".
@@ -925,6 +932,8 @@ LA_CREATE_LISTENER		A new TCP listener (port number %u) has been created.
 LA_DELETE_LISTENER		TCP listener (port number %u) has been deleted.
 LA_ENABLE_LISTENER		TCP listener (port number %u) has been enabled.
 LA_DISABLE_LISTENER		TCP listener (port number %u) has been disabled.
+LA_ENABLE_HTTP_LISTENER	The HTTP listener (port number %u) has been enabled.
+LA_DISABLE_HTTP_LISTENER	The HTTP listener has been disabled.
 LA_SET_SERVER_PASSWORD	The server administrator password has been set.
 LA_SET_SERVER_CERT		The server certificates have been set.
 LA_REGENERATE_SERVER_CERT	The server certificate has been re-generated. The new CN: "%S"
@@ -1212,6 +1221,32 @@ CMD_ListenerDisable_Help	This stops the operation of operating TCP Listeners reg
 CMD_ListenerDisable_Args	ListenerDisable [port]
 CMD_ListenerDisable_[port]	Using an integer, specify the port number of the TCP/IP listener you want to stop.
 CMD_ListenerDisable_PortPrompt	Port number of TCP/IP Listener to start: 
+
+
+# HttpListenerGet command
+CMD_HttpListenerGet		Get the HTTP Listener Setting
+CMD_HttpListenerGet_Help	This shows whether the HTTP listener is enabled, its TCP port number, and whether it is listening now. The HTTP listener answers two things only: a permanent redirect of every request to HTTPS on the same host and path, and the ACME HTTP-01 challenge files of the acme_webroot folder. It carries no VPN sessions and no administration. \nTo execute this command, you must have VPN Server administrator privileges.
+CMD_HttpListenerGet_Args	HttpListenerGet
+CMD_HttpListenerGet_COLUMN_1	HTTP Listener
+CMD_HttpListenerGet_COLUMN_2	Port Number
+CMD_HttpListenerGet_COLUMN_3	Status
+CMD_HttpListenerGet_ON		Enabled
+CMD_HttpListenerGet_OFF		Disabled
+CMD_HttpListenerGet_LISTENING	Listening
+CMD_HttpListenerGet_NOT_LISTENING	Not listening
+
+
+# HttpListenerEnable command
+CMD_HttpListenerEnable		Enable the HTTP Listener
+CMD_HttpListenerEnable_Help	This enables the HTTP listener, on TCP port 80 by default. It answers every request with a permanent redirect to HTTPS on the same host and path, except the requests for ACME HTTP-01 challenges: it serves the challenge files that an ACME client in webroot mode writes into the folder acme_webroot/.well-known/acme-challenge next to the server configuration. The port cannot be the port of a TCP Listener. When another program holds the port, the HTTP listener is enabled but does not listen, and it keeps retrying until the port is free. \nTo execute this command, you must have VPN Server administrator privileges.
+CMD_HttpListenerEnable_Args	HttpListenerEnable [port]
+CMD_HttpListenerEnable_[port]	Using an integer, specify the TCP/IP port number of the HTTP listener, within the range of 1 to 65535. If it is omitted, the saved port number (80 at first) is used.
+
+
+# HttpListenerDisable command
+CMD_HttpListenerDisable		Disable the HTTP Listener
+CMD_HttpListenerDisable_Help	This disables the HTTP listener. Its port number is kept for the next HttpListenerEnable command. \nTo execute this command, you must have VPN Server administrator privileges.
+CMD_HttpListenerDisable_Args	HttpListenerDisable
 
 
 # ServerPasswordSet command

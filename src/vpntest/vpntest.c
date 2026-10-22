@@ -489,6 +489,9 @@ void bgp_test(UINT num, char **arg);
 // Named transport test of CORE-F4, #64 (transporttest.c)
 void transport_test(UINT num, char **arg);
 
+// Named HTTP listener test of REL-6, #51 (httplistener.c)
+void httplistener_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -638,6 +641,7 @@ TEST_LIST test_list[] =
 	{"store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords."},
 	{"bgp", bgp_test, "BGP sidecar: ranz-bgp peers with a router (gobgpd, RANZ_GOBGP) on TCP 179, a prefix announced and withdrawn, a learned route installed through IP Helper (administrator rights)."},
 	{"transport", transport_test, "Transport: a Noise session end to end over the loopback transport, the race of a configured fallback list (the first to connect wins), the same session over a second transport."},
+	{"httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port."},
 };
 
 // Test function

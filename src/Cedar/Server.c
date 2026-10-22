@@ -7,6 +7,7 @@
 #include "BridgeWin32.h"
 #include "BuildInfo.h"
 #include "Connection.h"
+#include "HttpListener.h"
 #include "Link.h"
 #include "Listener.h"
 #include "Protocol.h"
@@ -563,6 +564,8 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root) {
 
 	SiLoadListeners(s, f3);
 
+	SiLoadHttpListenerCfg(s, CfgFindFolder(root, "HttpListener"));
+
 	if (f4 != NULL)
 		SiLoadLocalBridges(s, f4);
 
@@ -731,6 +734,8 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s) {
 	CfgAddInt(root, "ConfigRevision", s->ConfigRevision);
 
 	SiWriteListeners(CfgCreateFolder(root, "ListenerList"), s);
+
+	SiWriteHttpListenerCfg(CfgCreateFolder(root, "HttpListener"), s);
 
 	SiWriteLocalBridges(CfgCreateFolder(root, "LocalBridgeList"), s);
 
@@ -2405,6 +2410,8 @@ static void SiStopAllListener(SERVER *s) {
 	}
 	SiUnlockListenerList(s);
 
+	SiFreeHttpListener(s);
+
 	ReleaseList(s->ServerListenerList);
 }
 
@@ -2504,6 +2511,7 @@ SERVER *SiNewServer(void) {
 	s->IsInVm = MsIsInVm();
 
 	s->ServerListenerList = NewList(CompareServerListener);
+	s->HttpListenerPort = HTTP_LISTENER_DEFAULT_PORT;
 	s->StartTime = SystemTime64();
 
 	PrepareChainCertDir();

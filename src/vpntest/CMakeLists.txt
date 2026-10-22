@@ -69,6 +69,8 @@ ranz_add_executable(vpntest HAMCORE
     bgptest.c
     # Named transport test of CORE-F4 (#64): the transport interface of the new core and the session layer on it
     transporttest.c
+    # Named HTTP listener test of REL-6 (#51)
+    httplistener.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c;
   # netapi32: the local account that stands for a domain account (NetUserAdd)
   LIBRARIES

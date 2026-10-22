@@ -121,12 +121,13 @@ static void HarnessCheckStalePack(HARNESS *h, char *golden_dir);
 	static HARNESS_PACK_TYPE harness_pack_type_##type =										\
 		{#type, sizeof(type), HarnessPackIn_##type, HarnessPackOut_##type, NULL};
 
-// The 52 wire types of the admin RPC dispatch table (Admin.c), RPC_WINVER excepted (login handshake)
+// The 53 wire types of the admin RPC dispatch table (Admin.c), RPC_WINVER excepted (login handshake)
 HARNESS_PACK_TYPE_DEF(RPC_TEST, InRpcTest, OutRpcTest, FreeRpcTest)
 HARNESS_PACK_TYPE_DEF(RPC_SERVER_INFO, InRpcServerInfo, OutRpcServerInfo, FreeRpcServerInfo)
 HARNESS_PACK_TYPE_DEF_NOFREE(RPC_SERVER_STATUS, InRpcServerStatus, OutRpcServerStatus)
 HARNESS_PACK_TYPE_DEF_NOFREE(RPC_LISTENER, InRpcListener, OutRpcListener)
 HARNESS_PACK_TYPE_DEF(RPC_LISTENER_LIST, InRpcListenerList, OutRpcListenerList, FreeRpcListenerList)
+HARNESS_PACK_TYPE_DEF_NOFREE(RPC_HTTP_LISTENER, InRpcHttpListener, OutRpcHttpListener)
 HARNESS_PACK_TYPE_DEF_NOFREE(RPC_SET_PASSWORD, InRpcSetPassword, OutRpcSetPassword)
 HARNESS_PACK_TYPE_DEF(RPC_KEY_PAIR, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)
 HARNESS_PACK_TYPE_DEF(RPC_STR, InRpcStr, OutRpcStr, FreeRpcStr)
@@ -1333,6 +1334,7 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_SYN_CASE("RPC_SERVER_STATUS", RPC_SERVER_STATUS, NULL),
 	HARNESS_PACK_SYN_CASE("RPC_LISTENER", RPC_LISTENER, NULL),
 	HARNESS_PACK_SYN_CASE("RPC_LISTENER_LIST", RPC_LISTENER_LIST, HarnessPackPrepListenerList),
+	HARNESS_PACK_SYN_CASE("RPC_HTTP_LISTENER", RPC_HTTP_LISTENER, NULL),
 	HARNESS_PACK_SYN_CASE("RPC_SET_PASSWORD", RPC_SET_PASSWORD, NULL),
 	HARNESS_PACK_SYN_CASE("RPC_KEY_PAIR", RPC_KEY_PAIR, HarnessPackPrepKeyPair),
 	HARNESS_PACK_SYN_CASE("RPC_STR", RPC_STR, HarnessPackPrepStr),
@@ -1396,6 +1398,7 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_LIVE_CASE("RPC_SERVER_INFO_live", RPC_SERVER_INFO, NULL, "GetServerInfo", NULL),
 	HARNESS_PACK_LIVE_CASE("RPC_SERVER_STATUS_live", RPC_SERVER_STATUS, NULL, "GetServerStatus", NULL),
 	HARNESS_PACK_LIVE_CASE("RPC_LISTENER_LIST_live", RPC_LISTENER_LIST, NULL, "EnumListener", NULL),
+	HARNESS_PACK_LIVE_CASE("RPC_HTTP_LISTENER_live", RPC_HTTP_LISTENER, NULL, "GetHttpListener", NULL),
 	HARNESS_PACK_LIVE_CASE("RPC_KEY_PAIR_live", RPC_KEY_PAIR, NULL, "GetServerCert", NULL),
 	HARNESS_PACK_LIVE_CASE("RPC_STR_live", RPC_STR, NULL, "GetServerCipher", "String"),
 	HARNESS_PACK_LIVE_CASE("RPC_CREATE_HUB_live", RPC_CREATE_HUB, HarnessPackLiveHubA, "GetHub", NULL),
