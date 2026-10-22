@@ -39,7 +39,7 @@ func FuzzParseDocument(f *testing.F) {
 			if _, err := FromResources(in.Resources()); err != nil {
 				t.Fatalf("an applied intent does not load from its own resources: %v", err)
 			}
-			in.Pools()
+			_ = in.Pools()
 			for _, r := range in.Routes() {
 				for name, n := range in.Nodes {
 					for _, held := range []map[string]string{n.Addresses, n.IPv6Addresses} {
@@ -59,9 +59,11 @@ func FuzzParseDocument(f *testing.F) {
 
 // FuzzParseValues reads the input as each value of a resource that has a parser of its own: the
 // ULA of a VRF (ParseULA), the pools of a Network (ParsePool), the public key of a Node (ParseKey)
-// and its relay address (ParseRelay).
+// and its relay address (ParseRelay), and, inside the package, a reservation of a Network
+// (parseReserved) and a LAN subnet of a Node (parseLAN).
 func FuzzParseValues(f *testing.F) {
-	for _, s := range []string{"fd12:3456:789a::/48", "10.0.0.0/24", "2001:db8::/64", key1, "192.0.2.1:4000", "[2001:db8::1]:4000", "[::ffff:192.0.2.1]:1"} {
+	for _, s := range []string{"fd12:3456:789a::/48", "10.0.0.0/24", "2001:db8::/64", key1, "192.0.2.1:4000", "[2001:db8::1]:4000", "[::ffff:192.0.2.1]:1",
+		"10.0.0.1", "192.168.1.0/24", "0.0.0.0/0", "::ffff:10.0.0.0/120"} {
 		f.Add(s)
 	}
 
@@ -79,6 +81,12 @@ func FuzzParseValues(f *testing.F) {
 		}
 		if ap, err := ParseRelay(s); err == nil && (ap.Port() == 0 || ap.Addr().Is4In6()) {
 			t.Errorf("ParseRelay(%q) = %s", s, ap)
+		}
+		if p, err := parseReserved(s); err == nil && (!p.IsValid() || p != p.Masked()) {
+			t.Errorf("parseReserved(%q) = %s, not a prefix without host bits", s, p)
+		}
+		if p, err := parseLAN(s); err == nil && (p != p.Masked() || p.Bits() == 0 || p.Addr().Is4In6()) {
+			t.Errorf("parseLAN(%q) = %s", s, p)
 		}
 	})
 }
