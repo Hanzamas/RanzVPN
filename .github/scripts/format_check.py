@@ -46,7 +46,7 @@ import sys
 SCOPE_DIRS = ['src/Cedar', 'src/Mayaqua', 'src/vpnserver', 'src/vpncmd', 'src/ranz-node', 'src/Core',
               'src/coretest']
 SCOPE_EXTS = ('.c', '.h', '.cpp')
-EXCLUDED_PREFIXES = ['src/Mayaqua/3rdparty/']
+EXCLUDED_PREFIXES = ['src/Mayaqua/3rdparty/', 'src/Core/3rdparty/']
 # Generated files inside SCOPE_DIRS, by path. None are left: the MIDL output (netcfgn.h,
 # netcfgx.h) and the resource editor's resource.h files went with the slim-down.
 EXCLUDED_FILES = set()
