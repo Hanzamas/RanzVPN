@@ -3,7 +3,8 @@
 // that state over the control stream as deltas against the generation each node acknowledged
 // last (#176 "Control protocol"). Every change of the intent is a revision, which can be diffed
 // and rolled back (ADR-0031, revision.go). It keeps the Capabilities each node reports in its
-// Hello and refuses an apply or a rollback that a node cannot honour (ADR-0033).
+// Hello and refuses an apply or a rollback that a node cannot honour (ADR-0033). In a controller
+// cluster the leader runs it (internal/cluster).
 //
 // It also enforces the licence (ADR-0036, SDN-30 #206). The licence in force caps the nodes: an
 // apply or a rollback that adds a Node above the cap is refused, and when the intent holds more
@@ -44,9 +45,9 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/version"
 )
 
-// SchemaVersion is the control schema version of this controller (N). It serves nodes of
+// SchemaVersion is the newest control schema version of this controller (N). It serves nodes of
 // version N and N-1.
-const SchemaVersion = controlpb.SchemaVersion_SCHEMA_VERSION_1
+const SchemaVersion = controlpb.SchemaVersion_SCHEMA_VERSION_2
 
 const (
 	helloTimeout = 10 * time.Second // from the end of the handshake to the Hello
@@ -82,6 +83,12 @@ type Config struct {
 	Key    keys.Static  // the controller's Noise static key
 	Log    *slog.Logger // discarded when nil
 	Random io.Reader    // draws the ULA of a new VRF; crypto/rand when nil
+	// Schema is the control schema version the controller runs as, SchemaVersion when it is
+	// unspecified. In a rolling upgrade of a cluster, the members of the new release run as
+	// SchemaVersion-1, the version of the old release, until every member runs the new one
+	// (SDN-17): they serve the nodes the old release serves, send nothing that version does
+	// not have, and refuse the resources it does not know.
+	Schema controlpb.SchemaVersion
 	// LicenceKeys are the public keys that a licence key must be signed with:
 	// licence.VendorKeys() when nil.
 	LicenceKeys []ed25519.PublicKey
@@ -125,16 +132,18 @@ type Controller struct {
 	key         keys.Static
 	log         *slog.Logger
 	random      io.Reader
+	schema      controlpb.SchemaVersion
 	licenceKeys []ed25519.PublicKey
 	version     string
 
-	mu     sync.Mutex
-	intent intent.Intent
-	lic    *licence.Licence  // what the installed licence key holds, nil without one
-	force  licence.Status    // the licence in force at the last commit
-	expiry *time.Timer       // recompiles the intent when the active licence expires
-	nodes  map[string]*node  // the nodes the licence in force covers
-	byKey  map[string]string // node static key to node name
+	mu      sync.Mutex
+	intent  intent.Intent
+	members *controlpb.Controllers // the Controller resources of the intent, for nodes of version 2
+	lic     *licence.Licence       // what the installed licence key holds, nil without one
+	force   licence.Status         // the licence in force at the last commit
+	expiry  *time.Timer            // recompiles the intent when the active licence expires
+	nodes   map[string]*node       // the nodes the licence in force covers
+	byKey   map[string]string      // node static key to node name
 	// node static key to the Capabilities that the node reported last, kept while a Node
 	// resource holds the key
 	caps   map[string]*controlpb.Capabilities
@@ -166,11 +175,13 @@ type stream struct {
 	once sync.Once
 
 	// Guarded by Controller.mu.
-	known    bool          // base is the state the node holds, at baseGen
-	base     desired.State // nil at baseGen 0
+	version  controlpb.SchemaVersion // of the node's Hello
+	known    bool                    // base is the state the node holds, at baseGen
+	base     desired.State           // nil at baseGen 0
 	baseGen  uint64
-	inflight uint64        // the generation sent and not yet acknowledged, 0 if none
-	sent     desired.State // the state of inflight
+	inflight uint64                 // the generation sent and not yet acknowledged, 0 if none
+	sent     desired.State          // the state of inflight
+	members  *controlpb.Controllers // the Controllers message sent last, nil before the first
 	refusal  *controlpb.Refuse
 	signals  []*controlpb.Signal // Signals of other nodes for this one, waiting for the writer
 }
@@ -185,6 +196,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		key:         cfg.Key,
 		log:         cfg.Log,
 		random:      cfg.Random,
+		schema:      cfg.Schema,
 		licenceKeys: cfg.LicenceKeys,
 		version:     cfg.Version,
 		intent:      intent.New(),
@@ -197,6 +209,12 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	}
 	if c.random == nil {
 		c.random = rand.Reader
+	}
+	if c.schema == controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED {
+		c.schema = SchemaVersion
+	}
+	if c.schema != SchemaVersion && c.schema != SchemaVersion-1 {
+		return nil, fmt.Errorf("controller: schema version %d: this release runs as version %d or %d", int32(c.schema), int32(SchemaVersion), int32(SchemaVersion-1))
 	}
 	if c.version == "" {
 		c.version = version.Version
@@ -262,7 +280,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 			c.await(last, time.Until(last.Confirm.Deadline))
 		}
 	}
-	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision)
+	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision, "schema", int32(c.schema))
 	c.log.Info("licence", "tier", c.force.Tier, "nodes", c.force.Nodes, "state", c.force.State, "message", c.force.Message)
 	return c, nil
 }
@@ -270,6 +288,11 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 // PublicKey returns the controller's static public key, which a node needs to open a stream.
 func (c *Controller) PublicKey() []byte {
 	return c.key.Public()
+}
+
+// Schema returns the control schema version the controller runs as.
+func (c *Controller) Schema() controlpb.SchemaVersion {
+	return c.schema
 }
 
 // Apply applies doc to the intent (`ranz apply -f`) as the next revision. What the licence in
@@ -286,6 +309,9 @@ func (c *Controller) Apply(ctx context.Context, doc intent.Document) (ApplyResul
 func (c *Controller) ApplyConfirm(ctx context.Context, doc intent.Document, confirm time.Duration) (ApplyResult, error) {
 	if confirm != 0 && (confirm < MinConfirm || confirm > MaxConfirm) {
 		return ApplyResult{}, fmt.Errorf("%w: %v is not between %v and %v", ErrBadConfirm, confirm, MinConfirm, MaxConfirm)
+	}
+	if err := c.known(doc.Resources); err != nil {
+		return ApplyResult{}, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -527,6 +553,14 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	}
 
 	c.intent, c.lic, c.force = next, cp.lic, force
+	if m := members(next); !proto.Equal(m, c.members) {
+		c.members = m
+		for _, n := range c.nodes {
+			if n.stream != nil {
+				n.stream.poke()
+			}
+		}
+	}
 	for _, ng := range result {
 		n := c.nodes[ng.Name]
 		if n == nil {
@@ -733,17 +767,17 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "the first frame must be a Hello"))
 		return
 	}
-	if v := hello.GetSchemaVersion(); !served(v) {
+	if v := hello.GetSchemaVersion(); !c.served(v) {
 		c.log.Warn("node refused: schema version", "remote", conn.RemoteAddr().String(), "version", int32(v))
 		writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_SCHEMA_VERSION,
-			"schema version %d is not served: this controller serves version %d and the one before it", int32(v), int32(SchemaVersion)))
+			"schema version %d is not served: this controller serves version %d and the one before it", int32(v), int32(c.schema)))
 		return
 	}
 	if err := conn.SetReadDeadline(time.Time{}); err != nil {
 		return
 	}
 
-	s := &stream{conn: conn, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	s := &stream{conn: conn, wake: make(chan struct{}, 1), done: make(chan struct{}), version: hello.GetSchemaVersion()}
 	c.mu.Lock()
 	name, ok := c.byKey[string(conn.PeerKey())]
 	if !ok || c.closed {
@@ -932,9 +966,11 @@ func (c *Controller) writeLoop(s *stream) {
 		}
 		c.mu.Lock()
 		r := s.refusal
+		var m *controlpb.Controllers
 		var u *controlpb.Update
 		var sigs []*controlpb.Signal
 		if r == nil {
+			m = c.nextMembers(s)
 			u = c.nextUpdate(s)
 			sigs, s.signals = s.signals, nil
 		}
@@ -944,6 +980,14 @@ func (c *Controller) writeLoop(s *stream) {
 			writeRefuse(s.conn, r)
 			s.shut()
 			return
+		}
+		if m != nil {
+			if _, err := s.conn.Write(&controlpb.ControlMessage{Body: &controlpb.ControlMessage_Controllers{Controllers: m}}); err != nil {
+				c.log.Warn("sending the controllers", "node", s.name, "err", err)
+				s.shut()
+				return
+			}
+			c.log.Info("controllers sent", "node", s.name, "controllers", len(m.GetControllers()))
 		}
 		for _, sig := range sigs {
 			if _, err := s.conn.Write(&controlpb.ControlMessage{Body: &controlpb.ControlMessage_Signal{Signal: sig}}); err != nil {
@@ -983,9 +1027,50 @@ func (c *Controller) nextUpdate(s *stream) *controlpb.Update {
 	return u
 }
 
-// served reports whether the controller serves nodes of schema version v: N and N-1.
-func served(v controlpb.SchemaVersion) bool {
-	return v == SchemaVersion || (v == SchemaVersion-1 && v != controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED)
+// nextMembers returns the Controllers message the node of s lacks: none for a node of schema
+// version 1, which does not have the message, and none when the node has the current one.
+// c.mu is held.
+func (c *Controller) nextMembers(s *stream) *controlpb.Controllers {
+	n := c.nodes[s.name]
+	if n == nil || n.stream != s || s.version < controlpb.SchemaVersion_SCHEMA_VERSION_2 ||
+		(s.members != nil && proto.Equal(s.members, c.members)) {
+		return nil
+	}
+	s.members = c.members
+	return c.members
+}
+
+// members returns the Controllers message of in: its Controller resources, ordered by name.
+func members(in intent.Intent) *controlpb.Controllers {
+	m := &controlpb.Controllers{}
+	for _, name := range slices.Sorted(maps.Keys(in.Controllers)) {
+		ct := in.Controllers[name]
+		// Apply validated the key.
+		k, _ := intent.ParseKey(ct.PublicKey)
+		m.Controllers = append(m.Controllers, &controlpb.Controller{Name: name, Address: ct.Address, PublicKey: k})
+	}
+	return m
+}
+
+// known returns an intent.ErrInvalid error when rs has a resource that the schema version the
+// controller runs as does not know: a Controller resource needs version 2.
+func (c *Controller) known(rs []intent.Resource) error {
+	if c.schema >= controlpb.SchemaVersion_SCHEMA_VERSION_2 {
+		return nil
+	}
+	for _, r := range rs {
+		if r.Kind == intent.KindController {
+			return fmt.Errorf("%w: Controller %q: Controller resources need control schema version 2, and this controller runs as version %d until every member of the cluster runs the new release",
+				intent.ErrInvalid, r.Name, int32(c.schema))
+		}
+	}
+	return nil
+}
+
+// served reports whether the controller serves nodes of schema version v: N and N-1, where N is
+// the version the controller runs as.
+func (c *Controller) served(v controlpb.SchemaVersion) bool {
+	return v == c.schema || (v == c.schema-1 && v != controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED)
 }
 
 func (s *stream) poke() {

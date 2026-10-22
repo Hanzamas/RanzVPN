@@ -269,8 +269,12 @@ One L2 switched or L3 routed segment inside exactly one VRF, with its own addres
 _Avoid_: Hub (the slim fork object), VLAN, subnet
 
 **Controller**:
-The `ranz-controller` service: the single authority that stores the Intent, allocates addresses and DNS records, and compiles the desired state of every Node. It runs as one member or as a cluster of 3 or 5.
+The `ranz-controller` service: the single authority that stores the Intent, allocates addresses and DNS records, and compiles the desired state of every Node. It runs as one member or as a cluster of 3 or 5, each member with its own rqlite member as sidecar. A `Controller` resource of the Intent names one member as Nodes reach it.
 _Avoid_: `controller` role (it left the node binary), master, management server
+
+**Leader**:
+The member of a Controller cluster that holds the lease in the store and so runs the Controller: it applies the Intent, pushes desired state and stores the acknowledgements. The other members are standbys: they send Nodes to the leader and forward API calls to it, and one of them takes the lease when the leader is lost (ADR-0026 amendment of 2026-10-22).
+_Avoid_: master, primary, active controller
 
 **Intent**:
 The declared description of the network (VRFs, Networks, Nodes, policy, routes and the other resources) that an administrator applies. Every apply is a revision.
@@ -365,6 +369,7 @@ _Avoid_: lifetime licence, grace period
 - "Capability" is what a Node reports to the Controller. `CAPS` (`ServerCaps.c`) is the slim fork's list of server capabilities for admin clients.
 - "Role" is what a Node does (`server`, `client`, `bridge`, `relay`). The `admin`, `operator` and `viewer` of the Controller's API are API roles, held by an API token; say API role for them.
 - "controller" was a role of the node binary in ADR-0022. Since ADR-0026 the Controller is the separate `ranz-controller` service, and the node has no `controller` role.
+- "Leader" is the member of a Controller cluster that holds the lease. The Raft leader of rqlite is a different thing: any member's rqlite may be it, and rqlite forwards writes to it by itself.
 - "Generation" and "revision" are different versions: a revision is a version of the whole Intent (what `ranz rollback` returns to); a Generation is a version of one Node's desired state.
 - "Licence" is the noun in prose and code (`licence`, `REFUSE_REASON_LICENCE`); "license" is the verb ("licensed") and the name of the `LICENSE` file at the repository root.
 - "Configuration" is the Config file of the slim fork (`ranz_server.config`, Cfg) or the Configuration store of a Node (`ranz_node.db`, ConfigStore). Say which one.

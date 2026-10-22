@@ -5,7 +5,9 @@ package controller_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
+	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
@@ -247,6 +250,47 @@ func TestRollbackCancelsConfirmation(t *testing.T) {
 	}
 	if evs := h.events(); len(evs) != 0 {
 		t.Errorf("a cancelled confirmation raised the events %+v", evs)
+	}
+}
+
+// TestRollbackKeepsToTheSchemaVersion checks that a controller that runs as schema version 1, as
+// the members of a cluster do during a rolling upgrade (SDN-17), refuses a rollback to a
+// revision with Controller resources, which that version does not know, as it refuses an apply
+// of them; a rollback to a revision without them it takes.
+func TestRollbackKeepsToTheSchemaVersion(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.apply("apply1.json")
+	h.apply("controllers1.json")
+	for _, name := range []string{"c1", "c2"} {
+		if _, err := h.api.Delete(ctx, intent.KindController, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.stop()
+	h.schema = controlpb.SchemaVersion_SCHEMA_VERSION_1
+	h.start()
+
+	before := h.resources()
+	var e *api.Error
+	if _, err := h.api.Rollback(ctx, 2); !errors.As(err, &e) || e.Status != http.StatusBadRequest || !strings.Contains(e.Message, "need control schema version 2") {
+		t.Errorf("a rollback to revision 2, which has Controller resources, as schema version 1: %v", err)
+	}
+	if _, err := h.api.Apply(ctx, h.document("controllers1.json")); !errors.As(err, &e) || e.Status != http.StatusBadRequest {
+		t.Errorf("an apply of Controller resources as schema version 1: %v", err)
+	}
+	if after := h.resources(); after != before {
+		t.Errorf("the refused rollback changed the intent:\n--- after\n%s\n--- before\n%s", after, before)
+	}
+	res, err := h.api.Rollback(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Revision != 5 {
+		t.Errorf("the rollback to revision 1 made revision %d, want 5", res.Revision)
+	}
+	if got, want := h.revisionLog(), "1 apply\n2 apply\n3 delete\n4 delete\n5 rollback restores 1\n"; got != want {
+		t.Errorf("the revisions are\n%s\nwant\n%s", got, want)
 	}
 }
 

@@ -50,15 +50,23 @@ func TestApplyRejects(t *testing.T) {
 	base, err := Apply(New(), doc(
 		res(KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48"}`),
 		res(KindNode, "branch-1", `{"publicKey": "`+key1+`", "vrfs": ["corp"]}`),
+		res(KindController, "c1", `{"address": "192.0.2.1:443", "publicKey": "`+key1+`"}`),
 	), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	long := strings.Repeat("a", 250) + ".example:443"
 	for _, c := range []struct {
 		doc  Document
 		want string
 	}{
-		{doc(res("Router", "r1", `{}`)), `Router "r1": the kind must be VRF, Network or Node`},
+		{doc(res("Router", "r1", `{}`)), `Router "r1": the kind must be VRF, Network, Node or Controller`},
+		{doc(res(KindController, "c2", `{"address": "192.0.2.2", "publicKey": "`+key1+`"}`)), `Controller "c2": address "192.0.2.2" is not host:port`},
+		{doc(res(KindController, "c2", `{"address": ":443", "publicKey": "`+key1+`"}`)), `address ":443" is not host:port: there is no host`},
+		{doc(res(KindController, "c2", `{"address": "192.0.2.2:https", "publicKey": "`+key1+`"}`)), `the port "https" is not a number from 1 to 65535`},
+		{doc(res(KindController, "c2", `{"address": "`+long+`", "publicKey": "`+key1+`"}`)), `is longer than 255 characters`},
+		{doc(res(KindController, "c2", `{"address": "192.0.2.1:443", "publicKey": "`+key1+`"}`)), `Controller "c2": the address is already the address of Controller "c1"`},
+		{doc(res(KindController, "c2", `{"address": "192.0.2.2:443", "publicKey": "c2hvcnQ="}`)), `Controller "c2": publicKey "c2hvcnQ=" is not the base64 of a 32-byte key`},
 		{doc(res(KindVRF, "-bad", `{}`)), `VRF "-bad": the name must be`},
 		{doc(res(KindVRF, "a", `{"colour": "red"}`)), `VRF "a": spec: json: unknown field "colour"`},
 		{doc(res(KindVRF, "a", `{}`), res(KindVRF, "a", `{}`)), `VRF "a": declared twice`},
@@ -82,7 +90,8 @@ func TestApplyRejects(t *testing.T) {
 		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%+v: the error is %v, want one with %q", c.doc.Resources, err, c.want)
 		}
-		if len(next.VRFs) != len(base.VRFs) || len(next.Networks) != len(base.Networks) || len(next.Nodes) != len(base.Nodes) {
+		if len(next.VRFs) != len(base.VRFs) || len(next.Networks) != len(base.Networks) || len(next.Nodes) != len(base.Nodes) ||
+			len(next.Controllers) != len(base.Controllers) {
 			t.Errorf("%+v: a failed apply changed the intent", c.doc.Resources)
 		}
 	}
@@ -122,9 +131,13 @@ func TestResourcesRoundTrip(t *testing.T) {
 		res(KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48", "mtu": 1400}`),
 		res(KindNetwork, "lan", `{"vrf": "corp", "mode": "L2", "ipv4Pool": "10.0.0.0/24"}`),
 		res(KindNode, "branch-1", `{"publicKey": "`+key1+`", "vrfs": ["corp"], "tags": ["b", "a"]}`),
+		res(KindController, "c1", `{"address": "ctl1.example:443", "publicKey": "`+key1+`"}`),
 	), nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := Delete(in, KindController, "c2"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleting a Controller that does not exist: %v", err)
 	}
 	back, err := FromResources(in.Resources())
 	if err != nil {
@@ -135,6 +148,9 @@ func TestResourcesRoundTrip(t *testing.T) {
 	}
 	if got := back.Nodes["branch-1"].Tags; strings.Join(got, ",") != "a,b" {
 		t.Errorf("the tags are %v, want them sorted", got)
+	}
+	if got := back.Controllers["c1"].Address; got != "ctl1.example:443" {
+		t.Errorf("the Controller read back has the address %q", got)
 	}
 }
 

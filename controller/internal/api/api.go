@@ -31,6 +31,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
+	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
 // maxBody bounds the body of an apply.
@@ -48,7 +49,26 @@ type Status struct {
 	ControlAddress string       `json:"controlAddress"` // where the controller listens for control streams
 	TLSFingerprint string       `json:"tlsFingerprint"` // hex SHA-256 of the public key of the TLS certificate
 	Capabilities   Capabilities `json:"capabilities"`
+	// Cluster tells which member of the controller cluster answers and which one leads
+	// (internal/cluster). Every member answers the status itself.
+	Cluster *ClusterStatus `json:"cluster,omitempty"`
 }
+
+// ClusterStatus is the cluster part of Status.
+type ClusterStatus struct {
+	Member string `json:"member"` // the name of the member that answers
+	Role   string `json:"role"`   // RoleLeader or RoleStandby
+	Leader string `json:"leader"` // the name of the member that holds the lease, empty while none does
+	Epoch  int64  `json:"epoch"`  // the lease epoch of the leader
+	// SchemaVersion is the control schema version the member runs as (controller.Config.Schema).
+	SchemaVersion int32 `json:"schemaVersion"`
+}
+
+// The roles of a member of a controller cluster.
+const (
+	RoleLeader  = "leader"
+	RoleStandby = "standby"
+)
 
 // Capabilities is what the controller runs with on its host.
 type Capabilities struct {
@@ -149,6 +169,13 @@ type Problem struct {
 // and a licence key that does not verify with 400 Bad Request. status holds the control address
 // and the TLS fingerprint that the status call reports; Handler fills in the public key.
 func Handler(c *controller.Controller, tokens *rbac.Tokens, status Status) http.Handler {
+	return Guard(tokens, Routes(c, tokens, status))
+}
+
+// Routes returns the calls of Handler without the Guard in front of them, for a handler that
+// guards them itself: a member of a controller cluster guards its own calls and the ones it
+// forwards to the leader alike (internal/cluster).
+func Routes(c *controller.Controller, tokens *rbac.Tokens, status Status) *http.ServeMux {
 	status.PublicKey = base64.StdEncoding.EncodeToString(c.PublicKey())
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +369,7 @@ func Handler(c *controller.Controller, tokens *rbac.Tokens, status Status) http.
 		}
 		reply(w, http.StatusOK, tok)
 	})
-	return Guard(tokens, mux)
+	return mux
 }
 
 // confirmParam parses the confirmation time of an apply, for example 5m; empty is none.
@@ -428,6 +455,11 @@ func bearer(r *http.Request) (string, bool) {
 	return token, ok && strings.EqualFold(scheme, "Bearer") && token != ""
 }
 
+// Reply writes v as the JSON answer with the status code code, as every answer of the API.
+func Reply(w http.ResponseWriter, code int, v any) {
+	reply(w, code, v)
+}
+
 func reply(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -449,6 +481,9 @@ func replyError(w http.ResponseWriter, err error) {
 	case errors.Is(err, capability.ErrMissing), errors.Is(err, controller.ErrConflict), errors.Is(err, rbac.ErrExists),
 		errors.Is(err, rbac.ErrLastAdmin):
 		code = http.StatusConflict
+	case errors.Is(err, store.ErrNotLeader):
+		// The member lost the lease during the request; the next leader serves it again.
+		code = http.StatusServiceUnavailable
 	}
 	reply(w, code, Problem{Error: err.Error()})
 }

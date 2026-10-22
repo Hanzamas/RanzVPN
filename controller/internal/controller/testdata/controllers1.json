@@ -1,0 +1,6 @@
+{
+  "resources": [
+    {"kind": "Controller", "name": "c1", "spec": {"address": "192.0.2.1:443", "publicKey": "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8="}},
+    {"kind": "Controller", "name": "c2", "spec": {"address": "192.0.2.2:443", "publicKey": "wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8="}}
+  ]
+}

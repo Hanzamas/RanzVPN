@@ -16,6 +16,11 @@
 // (base_generation 0) or the delta from the generation the node acknowledged last
 // (base_generation) to generation. The node applies it and acknowledges generation; with no
 // controller reachable it keeps forwarding on the last generation it applied.
+//
+// Cluster (SDN-17, ADR-0026): the controller runs as one member or as a cluster of 3 or 5. One
+// member, the leader, serves the control streams; a standby refuses a node with
+// REFUSE_REASON_NOT_LEADER and names the leader. From schema version 2 the leader also sends a
+// node the members of the cluster (Controllers), so the node can open its stream to any of them.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -27,6 +32,8 @@ option go_package = "github.com/Hanzamas/RanzVPN/controller/internal/controlpb";
 enum SchemaVersion {
   SCHEMA_VERSION_UNSPECIFIED = 0;
   SCHEMA_VERSION_1 = 1;
+  // Adds Controllers, and REFUSE_REASON_NOT_LEADER with Refuse.leader.
+  SCHEMA_VERSION_2 = 2;
 }
 
 // One frame of the control stream.
@@ -37,6 +44,9 @@ message ControlMessage {
     Ack ack = 3;        // node to controller
     Refuse refuse = 4;  // controller to node, the last frame before the controller closes
     Signal signal = 5;  // node to controller to node, after the Hello
+    // controller to node, schema version 2: before the first Update of a stream and whenever the
+    // members change
+    Controllers controllers = 6;
   }
 }
 
@@ -83,6 +93,8 @@ message Signal {
 message Refuse {
   RefuseReason reason = 1;
   string message = 2;
+  // With REFUSE_REASON_NOT_LEADER: host:port of the leader's port, empty while no member leads.
+  string leader = 3;
 }
 
 enum RefuseReason {
@@ -98,6 +110,21 @@ enum RefuseReason {
   REFUSE_REASON_CAPABILITY = 4;
   // The licence in force does not cover the node: it is above the node cap (ADR-0036).
   REFUSE_REASON_LICENCE = 5;
+  // The controller is a standby member of a cluster; Refuse.leader names the leader.
+  REFUSE_REASON_NOT_LEADER = 6;
+}
+
+// The members of the controller cluster, from the Controller resources of the intent, ordered by
+// name. A node opens its stream to any of them when the one it has is lost.
+message Controllers {
+  repeated Controller controllers = 1;
+}
+
+// One member of the controller cluster.
+message Controller {
+  string name = 1;
+  string address = 2;     // host:port of its port
+  bytes public_key = 3;   // its Noise static key, 32 bytes
 }
 
 // The kind of an Object. Objects are ordered by it, so a VRF comes before its Networks.

@@ -22,3 +22,11 @@ ADR-0022 fixed how the control plane talks to a node (protobuf encoded with nano
 - The controller conformance seam (ADR-0026) asserts these rules from outside: the node simulator receives golden control messages for Generation 1, only a delta for Generation 2, and acknowledges each Generation it applied.
 - The atomic swap is checked in the vpntest harness (ADR-0025): forwarding during a Generation change sees either the old table or the new one.
 - Tickets: SDN-2 (#178), SDN-3 (#179).
+
+## Amendment 2026-10-22: schema version 2 (SDN-17)
+
+Recorded by SDN-17 (#193), the controller cluster of the ADR-0026 amendment of the same day.
+
+- **Schema version 2** adds the `Controllers` message, which the leader sends a node of version 2 before the first Update of a stream and whenever the Controller resources change, and `REFUSE_REASON_NOT_LEADER` with `Refuse.leader`, the address of the leader. The `Controllers` message is not part of the desired state and has no Generation: the members do not change what a node forwards on.
+- Decision 7 holds: the controller serves nodes of version 2 and 1. A node of version 1 never receives the `Controllers` message.
+- A controller runs as version N, or as N-1 during a rolling upgrade of the cluster (ADR-0026 amendment); it then serves N-1 and N-2.

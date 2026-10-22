@@ -190,6 +190,57 @@ func TestRefusals(t *testing.T) {
 	golden(t, "refuse-schema-version", old.refusal(t))
 }
 
+// TestControllersReachSchema2Nodes checks the Controllers message of schema version 2 (SDN-17):
+// a node of version 2 receives the Controller resources of the intent before its first update
+// and again when they change, without a new generation; a node of version 1, which does not have
+// the message, receives none and the same updates as before.
+func TestControllersReachSchema2Nodes(t *testing.T) {
+	h := newHarness(t)
+	h.apply("apply1.json")
+	h.apply("controllers1.json")
+	b1 := h.newSim("branch-1", keyBranch1)
+	b1.Version = controlpb.SchemaVersion_SCHEMA_VERSION_2
+	b1.start(h)
+	golden(t, "apply1-branch-1", b1.update(t))
+	h.waitNode("branch-1", 1, true)
+	got := received(b1)
+	if len(got) < 2 || got[0].GetControllers() == nil {
+		t.Fatalf("branch-1 received %d frames, and the first is not a Controllers message: %v", len(got), got)
+	}
+	golden(t, "controllers1-branch-1", got[0])
+	if l := b1.Learned(); len(l) != 2 || l[0].Address != "192.0.2.1:443" || l[1].Address != "192.0.2.2:443" {
+		t.Errorf("branch-1 learned the controllers %+v", l)
+	}
+
+	if _, err := h.api.Delete(context.Background(), intent.KindController, "c2"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(waitTimeout)
+	for len(b1.Learned()) != 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("branch-1 did not learn within %v that c2 was deleted: %+v", waitTimeout, b1.Learned())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	got = received(b1)
+	golden(t, "controllers2-branch-1", got[len(got)-1])
+	h.waitNode("branch-1", 1, true)
+
+	h.apply("apply2.json")
+	golden(t, "apply2-branch-1", b1.update(t))
+	b2 := h.sim("branch-2", keyBranch2)
+	golden(t, "apply2-branch-2", b2.update(t))
+	h.waitNode("branch-1", 2, true)
+	h.waitNode("branch-2", 1, true)
+	for _, m := range received(b2) {
+		if m.GetControllers() != nil {
+			t.Errorf("branch-2, a node of schema version 1, received a Controllers message:\n%s", show(m))
+		}
+	}
+	h.checkState(b1)
+	h.checkState(b2)
+}
+
 // TestRelaysAndSignals is CORE-S5-2 (#78) at the controller: a node gets a Relay object for each
 // relay of its VRFs, and the controller carries a Signal from a node to a peer with the bytes of
 // its envelope as they came and the sender's name, drops one for a node that is no peer, and
@@ -322,6 +373,9 @@ type harness struct {
 	api     *api.Client // with the admin token
 	admin   string      // the secret of the admin token rbac.FirstAdmin
 	serve   chan error
+	// schema is the control schema version the controller runs as from its next start,
+	// controller.SchemaVersion when it is unspecified.
+	schema controlpb.SchemaVersion
 }
 
 func newHarness(t *testing.T) *harness {
@@ -353,7 +407,7 @@ func (h *harness) start() {
 		h.t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(testWriter{h.t}, nil))
-	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log,
+	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log, Schema: h.schema,
 		LicenceKeys: []ed25519.PublicKey{testVendor.Public().(ed25519.PublicKey)}, Version: h.version})
 	if err != nil {
 		h.t.Fatal(err)
@@ -598,6 +652,17 @@ func (s *sim) refusal(t *testing.T) *controlpb.ControlMessage {
 		t.Fatalf("%s: the stream ended with %v, not a refusal", s.name, err)
 	}
 	return &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Refuse{Refuse: refused.Refuse}}
+}
+
+// received returns the frames that s received from the controller, in order.
+func received(s *sim) []*controlpb.ControlMessage {
+	var out []*controlpb.ControlMessage
+	for _, f := range s.Frames() {
+		if f.Direction == nodesim.Received {
+			out = append(out, f.Message)
+		}
+	}
+	return out
 }
 
 // golden compares m with testdata/<name>.txtpb, or writes it there under -update.

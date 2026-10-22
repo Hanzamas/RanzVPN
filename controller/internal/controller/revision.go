@@ -148,10 +148,11 @@ func (c *Controller) change(ctx context.Context, next intent.Intent, cp compiled
 
 // restore makes the intent of revision target the intent again as revision rev, together with
 // the further changes of ch. A rollback is checked like an apply: what the licence in force does
-// not allow is refused with an error that wraps licence.ErrRefused (ADR-0036), and an intent that
-// a node cannot honour with one that wraps capability.ErrMissing (ADR-0033). An automatic
-// rollback is not checked: it returns to the intent before an unconfirmed apply, and nothing may
-// keep that apply. c.mu is held.
+// not allow is refused with an error that wraps licence.ErrRefused (ADR-0036), an intent that a
+// node cannot honour with one that wraps capability.ErrMissing (ADR-0033), and a rollback to
+// Controller resources that the schema version the controller runs as does not know (SDN-17). An
+// automatic rollback is not checked: it returns to the intent before an unconfirmed apply, and
+// nothing may keep that apply. c.mu is held.
 func (c *Controller) restore(ctx context.Context, target uint64, rev intent.Revision, ch store.Changes) (ApplyResult, error) {
 	if target > c.revision {
 		return ApplyResult{}, fmt.Errorf("%w: %d, the latest revision is %d", ErrNoRevision, target, c.revision)
@@ -174,6 +175,9 @@ func (c *Controller) restore(ctx context.Context, target uint64, rev intent.Revi
 		}
 		if err := c.checkCap(next, cp.force, "rollback"); err != nil {
 			return ApplyResult{}, err
+		}
+		if err := c.known(rs); err != nil {
+			return ApplyResult{}, fmt.Errorf("revision %d: %w", target, err)
 		}
 		if err := c.honoured(next, cp.states); err != nil {
 			c.log.Warn("rollback refused: capability", "revision", target, "err", err)

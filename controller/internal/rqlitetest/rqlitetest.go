@@ -47,7 +47,11 @@ func start(t testing.TB, id, join string) *sidecar.Rqlited {
 		t.Fatal(err)
 	}
 	addrs := freeAddrs(t, 2)
-	r := &sidecar.Rqlited{Path: path, DataDir: filepath.Join(dir, "data"), HTTPAddr: addrs[0], RaftAddr: addrs[1], NodeID: id, Join: join, Output: out}
+	var joinAddrs []string
+	if join != "" {
+		joinAddrs = []string{join}
+	}
+	r := &sidecar.Rqlited{Path: path, DataDir: filepath.Join(dir, "data"), HTTPAddr: addrs[0], RaftAddr: addrs[1], NodeID: id, Join: joinAddrs, Output: out}
 	t.Cleanup(func() {
 		r.Stop()
 		out.Close()

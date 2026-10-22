@@ -1,6 +1,13 @@
 // Package sidecar runs rqlited, the rqlite server, as a child process of the controller (#176
-// "Controller store": rqlite as a sidecar of each controller). This skeleton runs one member;
-// the 3 and 5 member clusters use the same process with join flags.
+// "Controller store": rqlite as a sidecar of each controller). One code path serves one member
+// and the 3 or 5 members of a cluster: a member of a cluster is the same process with the Raft
+// addresses of the members to join (rqlite's automatic clustering with -join and
+// -bootstrap-expect, https://rqlite.io/docs/clustering/automatic-clustering/).
+//
+// rqlited ends with the controller, also when the controller is killed: on Linux the kernel sends
+// it SIGKILL when the controller exits (Pdeathsig), on Windows it runs in a job object that ends
+// it when the controller's handle to the job closes, as every handle does when a process exits.
+// So a restarted controller finds the ports of its member free.
 package sidecar
 
 import (
@@ -10,6 +17,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,8 +28,10 @@ type Rqlited struct {
 	DataDir  string    // its data directory
 	HTTPAddr string    // host:port of its HTTP API
 	RaftAddr string    // host:port of its Raft transport
+	RaftAdv  string    // host:port of its Raft transport as the other members reach it, RaftAddr when empty
 	NodeID   string    // its Raft node id, "1" when empty
-	Join     string    // the Raft address of a member of the cluster to join; empty for a new cluster
+	Join     []string  // the Raft addresses of the members of the cluster; none for one member
+	Expect   int       // the number of members that form a new cluster (rqlited -bootstrap-expect), 0 to join one
 	Output   io.Writer // its standard output and error, discarded when nil
 
 	cmd  *exec.Cmd
@@ -28,37 +39,56 @@ type Rqlited struct {
 	err  error
 }
 
-// URL returns the URL of the HTTP API.
-func (r *Rqlited) URL() string {
-	return "http://" + r.HTTPAddr
-}
-
-// Start starts rqlited and waits until it serves (its /readyz answers 200), it exits, or ctx
-// ends.
-func (r *Rqlited) Start(ctx context.Context) error {
-	if err := os.MkdirAll(r.DataDir, 0o700); err != nil {
-		return fmt.Errorf("sidecar: %w", err)
-	}
+// args returns the command line of rqlited.
+func (r *Rqlited) args() []string {
 	id := r.NodeID
 	if id == "" {
 		id = "1"
 	}
 	args := []string{"-node-id", id, "-http-addr", r.HTTPAddr, "-raft-addr", r.RaftAddr}
-	if r.Join != "" {
-		args = append(args, "-join", r.Join)
+	if r.RaftAdv != "" {
+		args = append(args, "-raft-adv-addr", r.RaftAdv)
 	}
-	cmd := exec.Command(r.Path, append(args, r.DataDir)...)
+	if len(r.Join) > 0 {
+		args = append(args, "-join", strings.Join(r.Join, ","))
+	}
+	if r.Expect > 0 {
+		args = append(args, "-bootstrap-expect", strconv.Itoa(r.Expect))
+	}
+	return append(args, r.DataDir)
+}
+
+// URL returns the URL of the HTTP API.
+func (r *Rqlited) URL() string {
+	return "http://" + r.HTTPAddr
+}
+
+// Start starts rqlited and waits until it serves (its /readyz answers 200, which needs a Raft
+// leader, so a new cluster serves once its members found each other), it exits, or ctx ends.
+func (r *Rqlited) Start(ctx context.Context) error {
+	if err := os.MkdirAll(r.DataDir, 0o700); err != nil {
+		return fmt.Errorf("sidecar: %w", err)
+	}
+	cmd := exec.Command(r.Path, r.args()...)
 	if r.Output != nil {
 		cmd.Stdout = r.Output
 		cmd.Stderr = r.Output
 	}
+	prepare(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("sidecar: starting %s: %w", r.Path, err)
+	}
+	release, err := bind(cmd.Process)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return fmt.Errorf("sidecar: tying rqlited to the controller: %w", err)
 	}
 	done := make(chan struct{})
 	r.cmd, r.done = cmd, done
 	go func() {
 		r.err = cmd.Wait()
+		release()
 		close(done)
 	}()
 	tick := time.NewTicker(100 * time.Millisecond)

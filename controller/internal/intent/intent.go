@@ -1,7 +1,8 @@
 // Package intent is the declared network that `ranz apply -f` sends to the controller: the
-// resources of #176 "Resource model" that the controller skeleton knows (VRF, Network and Node),
-// their validation, and the values the controller fills in when a resource is first applied;
-// and the revisions of the intent with the diff between two (revision.go).
+// resources of #176 "Resource model" that the controller knows (VRF, Network, Node, and the
+// Controller members of a controller cluster), their validation, and the values the controller
+// fills in when a resource is first applied; and the revisions of the intent with the diff
+// between two (revision.go).
 package intent
 
 import (
@@ -13,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -22,9 +24,10 @@ import (
 
 // The resource kinds.
 const (
-	KindVRF     = "VRF"
-	KindNetwork = "Network"
-	KindNode    = "Node"
+	KindVRF        = "VRF"
+	KindNetwork    = "Network"
+	KindNode       = "Node"
+	KindController = "Controller"
 )
 
 // The network modes.
@@ -41,6 +44,9 @@ const (
 	MaxMTU = 65535
 	// KeySize is the size of a Noise static key (X25519).
 	KeySize = 32
+	// MaxAddress is the length of the longest Controller address; it fits the 256-byte address
+	// field of the C node (proto/ranz/control/v1/control.options).
+	MaxAddress = 255
 )
 
 var (
@@ -59,7 +65,8 @@ type Document struct {
 	Resources []Resource `json:"resources"`
 }
 
-// Resource is one declared object. Spec holds the fields of its kind: VRF, Network or Node.
+// Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node or
+// Controller.
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -94,26 +101,38 @@ type Node struct {
 	Relay string `json:"relay,omitempty"`
 }
 
+// Controller is one member of the controller cluster as nodes reach it (SDN-17, ADR-0026). The
+// leader sends the list of them to nodes of control schema version 2, so a node can open its
+// stream to any member when it loses the one it has.
+type Controller struct {
+	Address   string `json:"address"`   // host:port of the member's port, at most MaxAddress long
+	PublicKey string `json:"publicKey"` // base64 of the member's Noise static key, KeySize bytes
+}
+
 // Intent is the whole declared network, by kind and name.
 type Intent struct {
-	VRFs     map[string]VRF
-	Networks map[string]Network
-	Nodes    map[string]Node
+	VRFs        map[string]VRF
+	Networks    map[string]Network
+	Nodes       map[string]Node
+	Controllers map[string]Controller
 }
 
 // New returns an empty intent.
 func New() Intent {
-	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}}
+	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Controllers: map[string]Controller{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
 func (in Intent) Clone() Intent {
-	out := Intent{VRFs: maps.Clone(in.VRFs), Networks: maps.Clone(in.Networks), Nodes: map[string]Node{}}
+	out := Intent{VRFs: maps.Clone(in.VRFs), Networks: maps.Clone(in.Networks), Nodes: map[string]Node{}, Controllers: maps.Clone(in.Controllers)}
 	if out.VRFs == nil {
 		out.VRFs = map[string]VRF{}
 	}
 	if out.Networks == nil {
 		out.Networks = map[string]Network{}
+	}
+	if out.Controllers == nil {
+		out.Controllers = map[string]Controller{}
 	}
 	for name, n := range in.Nodes {
 		n.VRFs = slices.Clone(n.VRFs)
@@ -172,8 +191,13 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &n); err == nil {
 				next.Nodes[r.Name] = n
 			}
+		case KindController:
+			var c Controller
+			if err = decodeSpec(r.Spec, &c); err == nil {
+				next.Controllers[r.Name] = c
+			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s or %s", KindVRF, KindNetwork, KindNode)
+			err = fmt.Errorf("the kind must be %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindController)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -225,14 +249,19 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.Nodes, name)
+	case KindController:
+		if _, ok := next.Controllers[name]; !ok {
+			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
+		}
+		delete(next.Controllers, name)
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindController, kind)
 	}
 	return next, nil
 }
 
-// Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, each
-// ordered by name.
+// Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
+// Controllers, each ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -243,6 +272,9 @@ func (in Intent) Resources() []Resource {
 	}
 	for _, name := range sortedNames(in.Nodes) {
 		out = append(out, resource(KindNode, name, in.Nodes[name]))
+	}
+	for _, name := range sortedNames(in.Controllers) {
+		out = append(out, resource(KindController, name, in.Controllers[name]))
 	}
 	return out
 }
@@ -266,6 +298,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var n Node
 			err = decodeSpec(r.Spec, &n)
 			in.Nodes[r.Name] = n
+		case KindController:
+			var c Controller
+			err = decodeSpec(r.Spec, &c)
+			in.Controllers[r.Name] = c
 		default:
 			err = errors.New("unknown kind")
 		}
@@ -325,7 +361,7 @@ func ParsePool(s string, family int) (netip.Prefix, error) {
 	return p, nil
 }
 
-// ParseKey parses the public key of a Node.
+// ParseKey parses the public key of a Node or a Controller.
 func ParseKey(s string) ([]byte, error) {
 	k, err := base64.StdEncoding.DecodeString(s)
 	if err != nil || len(k) != KeySize {
@@ -485,7 +521,41 @@ func (in Intent) validate() []error {
 			}
 		}
 	}
+	addresses := map[string]string{}
+	for _, name := range sortedNames(in.Controllers) {
+		c := in.Controllers[name]
+		if err := checkAddress(c.Address); err != nil {
+			problems = append(problems, fmt.Errorf("Controller %q: %w", name, err))
+		} else if other, ok := addresses[c.Address]; ok {
+			problems = append(problems, fmt.Errorf("Controller %q: the address is already the address of Controller %q", name, other))
+		} else {
+			addresses[c.Address] = name
+		}
+		if _, err := ParseKey(c.PublicKey); err != nil {
+			problems = append(problems, fmt.Errorf("Controller %q: %w", name, err))
+		}
+	}
 	return problems
+}
+
+// checkAddress checks the address of a Controller: host:port, with a host and a port number.
+func checkAddress(s string) error {
+	host, port, err := net.SplitHostPort(s)
+	if err == nil && host == "" {
+		err = errors.New("there is no host")
+	}
+	if err == nil {
+		if p, perr := strconv.ParseUint(port, 10, 16); perr != nil || p == 0 {
+			err = fmt.Errorf("the port %q is not a number from 1 to 65535", port)
+		}
+	}
+	if err == nil && len(s) > MaxAddress {
+		err = fmt.Errorf("it is longer than %d characters", MaxAddress)
+	}
+	if err != nil {
+		return fmt.Errorf("address %q is not host:port: %w", s, err)
+	}
+	return nil
 }
 
 // randomULA draws a ULA /48: fd00::/8 followed by a 40-bit random global id (RFC 4193 section 3.2).
