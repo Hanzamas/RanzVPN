@@ -88,7 +88,7 @@ static bool PeerKeyDh(PEER_KEY *k, UCHAR *shared, const UCHAR *peer) {
 
 // Whether kind is the kind of an envelope
 static bool PeerIsEnvelopeKind(UINT kind) {
-	return kind == PEER_MSG_BIND || kind == PEER_MSG_BOUND || kind == PEER_MSG_SIGNAL;
+	return kind == PEER_MSG_BIND || kind == PEER_MSG_BOUND || kind == PEER_MSG_SIGNAL || kind == PEER_MSG_PUNCH;
 }
 
 // The static key of the X25519 scalar priv, held in memory
@@ -422,7 +422,7 @@ bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s) {
 	for (UINT i = 0; i < num; i++) {
 		const UCHAR *p = buf + PEER_SIGNAL_FIXED + i * PEER_CANDIDATE_LEN;
 
-		if ((p[0] != PEER_CANDIDATE_HOST && p[0] != PEER_CANDIDATE_SRFLX && p[0] != PEER_CANDIDATE_MAPPED) || PeerGetUint16(p + 17) == 0) {
+		if ((p[0] != PEER_CANDIDATE_HOST && p[0] != PEER_CANDIDATE_SRFLX && p[0] != PEER_CANDIDATE_MAPPED && p[0] != PEER_CANDIDATE_PREDICTED) || PeerGetUint16(p + 17) == 0) {
 			ZeroMemory(s, sizeof(PEER_SIGNAL));
 			return false;
 		}

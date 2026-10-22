@@ -409,7 +409,8 @@ void PeerSetPeers(PEER_AGENT *a, PEER_INFO *peers, UINT num) {
 
 // Set the relays that the node may use, from the Relay objects of the desired state; the first is its home relay.
 // The node binds to its home relay at once, and to the relay of a peer when a signal of that peer names it. A relay
-// that stays, at the same address, keeps its binding.
+// that stays, at the same address, keeps its binding. With punching on, it also binds a second relay, so that two
+// reflexive observations of its own address let it learn its NAT's port allocation pattern (PeerPunch.c, CORE-S5-4).
 void PeerSetRelays(PEER_AGENT *a, PEER_RELAY_INFO *relays, UINT num) {
 	PEER_RELAY next[PEER_MAX_RELAYS];
 
@@ -431,7 +432,7 @@ void PeerSetRelays(PEER_AGENT *a, PEER_RELAY_INFO *relays, UINT num) {
 
 			next[i].Info = relays[i];
 			next[i].Info.Name[PEER_NAME_SIZE - 1] = 0;
-			next[i].Wanted = (i == 0);
+			next[i].Wanted = (i == 0) || (a->Config.Punch && i < 2);
 		}
 
 		CopyMemory(a->Relays, next, sizeof(next));
@@ -570,6 +571,11 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 				s.Candidates[s.NumCandidates].Addr = a->Hosts[i];
 				s.NumCandidates++;
 			}
+
+			// With punching on, the predicted next port of the node's own NAT, so a symmetric-NAT peer knows where
+			// to aim its probes (PeerPunch.c)
+			if (a->Config.Punch && s.NumCandidates < PEER_MAX_CANDIDATES)
+				s.NumCandidates += PeerPunchCandidate(a, &s.Candidates[s.NumCandidates], 1);
 		}
 
 		if (a->NumRelays != 0) {
@@ -672,6 +678,10 @@ UINT PeerOpenSignal(PEER_AGENT *a, const UCHAR *env, UINT size, PEER_SIGNAL *sig
 
 	if (a->Config.Ice && s.IceUfrag[0] != 0)
 		PeerIceRemote(a, sender, &s);
+
+	// The control plane triggers the symmetric-NAT punch with the signal exchange (PeerPunch.c, CORE-S5-4)
+	if (a->Config.Punch)
+		PeerPunchStart(a, sender);
 
 	if (sig != NULL)
 		*sig = s;
@@ -943,6 +953,9 @@ void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT siz
 	case PEER_MSG_BOUND:
 		PeerInputBound(a, from, data, size);
 		break;
+	case PEER_MSG_PUNCH:
+		PeerPunchInput(a, from, data, size);
+		break;
 	default:
 		PeerDrop(a, PEER_DROP_MALFORMED);
 		break;
@@ -1036,6 +1049,7 @@ void PeerTick(PEER_AGENT *a) {
 	}
 
 	PeerBindWanted(a);
+	PeerPunchTick(a);
 }
 
 // How the node reaches the peer of key; false when key is no peer
@@ -1061,6 +1075,7 @@ bool PeerGetStatus(PEER_AGENT *a, const UCHAR *key, PEER_STATUS *st) {
 			st->Sequence = p->Sequence;
 			if (p->Ice != NULL)
 				st->Ice = (UINT)InterlockedCompareExchange(&p->Ice->State, 0, 0);
+			st->Punch = p->Punch.State;
 			if (p->HasDirect)
 				st->Direct = p->Direct;
 			else if (p->Ice != NULL && PeerIceUp(p->Ice))
@@ -1090,6 +1105,8 @@ void PeerGetStats(PEER_AGENT *a, PEER_STATS *st) {
 	st->Signals = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_SIGNALS]);
 	st->Upgrades = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_UPGRADES]);
 	st->Fallbacks = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_FALLBACKS]);
+	st->PunchAttempts = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_PUNCH_ATTEMPTS]);
+	st->PunchSuccesses = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_PUNCH_SUCCESSES]);
 	for (UINT i = 0; i < PEER_NUM_REASONS; i++)
 		st->Drops[i] = (UINT64)ReadAcquire64(&a->Drops[i]);
 
