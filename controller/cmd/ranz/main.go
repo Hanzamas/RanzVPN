@@ -36,7 +36,8 @@
 // Every call needs the token of a role (SDN-14, #190): viewer reads, operator also applies,
 // deletes, confirms, rolls back and installs or removes the licence key, admin also manages the
 // tokens. The first start of the controller creates the admin token and writes its secret to
-// admin.token in its data directory.
+// admin.token in its data directory; when it is lost, `ranz-controller reset-admin` on the
+// controller's host makes a new one.
 // The controller decides what a token may do, so ranz prints its answer as it is: JSON, the
 // canonical form of the intent, or the controller's refusal. Each apply, delete and rollback
 // prints the revision it made.
