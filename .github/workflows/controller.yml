@@ -14,6 +14,12 @@
 # ranz-nodesim (.github/scripts/controller-service.ps1).
 #
 # Neither job touches the C build, so they run beside windows.yml and add nothing to its time.
+#
+# A push to master runs both jobs, with no path filter. A pull request runs them when it changes a
+# path that they read: controller/; proto/, the schema that go generate and the nanopb round trip
+# read; tests/control/, the round trip program; .gitattributes, which sets the line endings of the
+# checkout; this file and .github/scripts/controller-service.ps1. A pull request that changes
+# none of them (a C change under src/, or docs only) does not run this workflow.
 
 name: controller
 
@@ -21,6 +27,13 @@ on:
   push:
     branches: [master]
   pull_request:
+    paths:
+    - 'controller/**'
+    - 'proto/**'
+    - 'tests/control/**'
+    - '.gitattributes'
+    - '.github/workflows/controller.yml'
+    - '.github/scripts/controller-service.ps1'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
