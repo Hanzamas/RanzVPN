@@ -635,6 +635,21 @@ void FreeRpcListenerList(RPC_LISTENER_LIST *t) {
 	Free(t->Errors);
 }
 
+static const RPC_FIELD rpc_http_listener_fields[] =
+    {
+        RPC_ROW_BOOL(RPC_HTTP_LISTENER, Enabled, "Enabled"),
+        RPC_ROW_INT(RPC_HTTP_LISTENER, Port, "Port"),
+        RPC_ROW_BOOL(RPC_HTTP_LISTENER, Listening, "Listening"),
+        RPC_ROW_END};
+RPC_TABLE_DEF(rpc_http_listener_table, RPC_HTTP_LISTENER, rpc_http_listener_fields);
+
+void InRpcHttpListener(RPC_HTTP_LISTENER *t, PACK *p) {
+	RpcFieldIn(&rpc_http_listener_table, t, p);
+}
+void OutRpcHttpListener(PACK *p, RPC_HTTP_LISTENER *t) {
+	RpcFieldOut(&rpc_http_listener_table, p, t);
+}
+
 void InRpcStr(RPC_STR *t, PACK *p) {
 	UINT size = 65536;
 	char *tmp = Malloc(size);

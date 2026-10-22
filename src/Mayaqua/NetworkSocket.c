@@ -568,12 +568,12 @@ bool IsTransientAcceptError(UINT err) {
 }
 
 // A TCP socket bound to addr. An AF_INET6 socket gets IPV6_V6ONLY from v6only: false makes it dual-stack.
-// bind_failed (may be NULL) tells a failed bind(), a port held or reserved, from a family the stack does not support.
-static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, bool *bind_failed) {
+// *bind_error gets the Windows socket error of a failed bind(), a port held or reserved; it stays 0 for a family the
+// stack does not support.
+static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, UINT *bind_error) {
 	SOCKET s = socket(addr->sa_family, SOCK_STREAM, 0);
 
-	if (bind_failed != NULL)
-		*bind_failed = false;
+	*bind_error = 0;
 
 	if (s == INVALID_SOCKET)
 		return INVALID_SOCKET;
@@ -588,8 +588,7 @@ static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, bool
 	}
 
 	if (bind(s, addr, addr_size) != 0) {
-		if (bind_failed != NULL)
-			*bind_failed = true;
+		*bind_error = WSAGetLastError();
 
 		closesocket(s);
 		return INVALID_SOCKET;
@@ -598,16 +597,17 @@ static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, bool
 	return s;
 }
 
-// One TCP listen socket per port. Without a ListenIP it is a dual-stack AF_INET6 socket on [::]:port, so IPv4 peers
-// arrive as ::ffff:a.b.c.d. AF_INET is used for an IPv4 ListenIP (127.0.0.1 for a local-only socket), ipv4_only or
-// an unsupported IPv6.
-SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only) {
+// The bound TCP socket of a port, not listening yet, without address reuse. Without a ListenIP it is a dual-stack
+// AF_INET6 socket on [::]:port, so IPv4 peers arrive as ::ffff:a.b.c.d. AF_INET is used for an IPv4 ListenIP
+// (127.0.0.1 for a local-only socket), ipv4_only or an unsupported IPv6. *is_ipv6 gets the family; *bind_error gets
+// the Windows socket error of a failed bind(), 0 when no bind failed.
+static SOCKET ListenBindPort(UINT port, IP *listen_ip, bool ipv4_only, bool *is_ipv6, UINT *bind_error) {
 	SOCKET s = INVALID_SOCKET;
 	struct sockaddr_in addr4;
 	struct sockaddr_in6 addr6;
-	bool is_ipv6 = false;
-	if (port == 0 || port >= 65536)
-		return NULL;
+
+	*is_ipv6 = false;
+	*bind_error = 0;
 
 	Zero(&addr4, sizeof(addr4));
 	addr4.sin_family = AF_INET;
@@ -617,30 +617,68 @@ SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only) {
 	addr6.sin6_port = htons((UINT)port);
 
 	if (listen_ip == NULL || IsZeroIP(listen_ip)) {
-		bool held = false;
-
 		if (ipv4_only == false) {
-			s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), false, &held);
-			is_ipv6 = true;
+			s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), false, bind_error);
+			*is_ipv6 = true;
 		}
 
 		// IPv6 is off or unsupported: IPv4 listens. A port another process holds or Windows reserves stays a failed
 		// bind, so the listener reports it and retries instead of listening on one family only.
-		if (s == INVALID_SOCKET && held == false) {
-			s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, NULL);
-			is_ipv6 = false;
+		if (s == INVALID_SOCKET && *bind_error == 0) {
+			s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, bind_error);
+			*is_ipv6 = false;
 		}
 	} else if (IsIP4(listen_ip)) {
 		IPToInAddr(&addr4.sin_addr, listen_ip);
 
-		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, NULL);
+		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, bind_error);
 	} else if (ipv4_only == false) {
 		IPToInAddr6(&addr6.sin6_addr, listen_ip);
 
-		s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true, NULL);
-		is_ipv6 = true;
+		s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true, bind_error);
+		*is_ipv6 = true;
 	}
 
+	return s;
+}
+
+// Whether a TCP listener could bind port now: the bind of Listen, without address reuse, and the socket closed at
+// once. A bind with address reuse could share a port that another program holds and report it free. *error gets the
+// Windows socket error of a failed bind (WSAEADDRINUSE for a held port), 0 when the port is free.
+bool ListenProbe(UINT port, IP *listen_ip, bool ipv4_only, UINT *error) {
+	bool is_ipv6;
+	if (error == NULL)
+		return false;
+
+	*error = 0;
+
+	if (port == 0 || port >= 65536) {
+		*error = WSAEINVAL;
+		return false;
+	}
+
+	SOCKET s = ListenBindPort(port, listen_ip, ipv4_only, &is_ipv6, error);
+	if (s == INVALID_SOCKET) {
+		// No bind failed: the stack has no socket of the family
+		if (*error == 0)
+			*error = WSAEAFNOSUPPORT;
+
+		return false;
+	}
+
+	closesocket(s);
+
+	return true;
+}
+
+// One TCP listen socket per port, bound as ListenBindPort binds it
+SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only) {
+	bool is_ipv6;
+	UINT bind_error;
+	if (port == 0 || port >= 65536)
+		return NULL;
+
+	SOCKET s = ListenBindPort(port, listen_ip, ipv4_only, &is_ipv6, &bind_error);
 	if (s == INVALID_SOCKET)
 		return NULL;
 

@@ -98,6 +98,13 @@ struct RPC_LISTENER_LIST {
 	bool *Errors;
 };
 
+// The HTTP listener setting (GetHttpListener, SetHttpListener). For SetHttpListener, Port 0 keeps the saved port
+struct RPC_HTTP_LISTENER {
+	bool Enabled;
+	UINT Port;
+	bool Listening; // Get only: the port is bound now
+};
+
 struct RPC_STR {
 	char *String;
 };
@@ -528,6 +535,8 @@ UINT ScCreateListener(RPC *r, RPC_LISTENER *t);
 UINT ScEnumListener(RPC *r, RPC_LISTENER_LIST *t);
 UINT ScDeleteListener(RPC *r, RPC_LISTENER *t);
 UINT ScEnableListener(RPC *r, RPC_LISTENER *t);
+UINT ScGetHttpListener(RPC *r, RPC_HTTP_LISTENER *t);
+UINT ScSetHttpListener(RPC *r, RPC_HTTP_LISTENER *t);
 UINT ScSetServerPassword(RPC *r, RPC_SET_PASSWORD *t);
 UINT ScSetServerCert(RPC *r, RPC_KEY_PAIR *t);
 UINT ScGetServerCert(RPC *r, RPC_KEY_PAIR *t);
@@ -673,6 +682,8 @@ void InRpcListener(RPC_LISTENER *t, PACK *p);
 void OutRpcListener(PACK *p, RPC_LISTENER *t);
 void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p);
 void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t);
+void InRpcHttpListener(RPC_HTTP_LISTENER *t, PACK *p);
+void OutRpcHttpListener(PACK *p, RPC_HTTP_LISTENER *t);
 void InRpcStr(RPC_STR *t, PACK *p);
 void OutRpcStr(PACK *p, RPC_STR *t);
 void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p);

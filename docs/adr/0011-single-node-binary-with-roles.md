@@ -1,6 +1,6 @@
 # ADR-0011: One node binary with roles instead of separate vpnserver and vpnclient
 
-**Status:** Accepted (2026-10-11), as part of the dual-mode decision (ADR-0014: "one node binary with both backends"). Hilmi stated the intent himself: "emang murni gw bikin server yang bisa jadi client, gimana itu?"; the concrete consequence for the slim fork is ADR-0012 (Accepted, ticket #23). Amended 2026-10-20 (the controller leaves the node binary, SDN spec #176) and 2026-10-21 (stock SoftEther peers return through `ranz-compat` in the Legacy phase).
+**Status:** Accepted (2026-10-11), as part of the dual-mode decision (ADR-0014: "one node binary with both backends"). Hilmi stated the intent himself: "emang murni gw bikin server yang bisa jadi client, gimana itu?"; the concrete consequence for the slim fork is ADR-0012 (Accepted, ticket #23). Amended 2026-10-20 (the controller leaves the node binary, SDN spec #176), 2026-10-21 (stock SoftEther peers return through `ranz-compat` in the Legacy phase) and 2026-10-22 (the product ships as one `ranz.exe`).
 
 ## Context
 
@@ -39,3 +39,20 @@ Maintainer decision (Hilmi, comment on #177: "stock SE-VPN clients, bridges and 
 - **The node and the new protocol stay free of SE-VPN compatibility**, as the amendment of 2026-10-19 says. The legacy SE-VPN listener still leaves the node in strangler step 8 (ADR-0022).
 - **After v1, `ranz-compat` serves stock SE-VPN clients, bridges and servers:** it is the frozen slim-fork Cedar with OpenSSL, run as a separate process. Clients and bridges connect to it, on TCP 443 through the front door (ADR-0035), and it dials out as a cascade client to stock SoftEther servers (#224).
 - The 2026-10-19 sentence "Ranz is not used with the stock SoftEther client at any point" therefore holds for the node and for v1, not for the Legacy phase.
+
+## Amendment 2026-10-22: the product ships as one `ranz.exe`
+
+Maintainer decision (Hilmi: "jdi 1 exe bisa aio macam windows", then "y" to the design below). Ranz is one product in one file: no second logo, no second download, no step that fetches something else. The amendment of 2026-10-20 stands for processes (the Controller is not a Role and not part of the Node process); this amendment changes the files.
+
+- **One executable per architecture, `ranz.exe`, signed once.** It is a Go multi-call binary: `ranz controller` (the Controller service with its web UI), `ranz bgp` (the BGP sidecar of ADR-0010), `ranz tray` (the laptop tray, SDN-55) and every verb of the CLI. `ranz-controller` and `ranz-bgp` stop being separate files (ONE-1, #310).
+- **`ranz.exe` carries the data plane as a payload.** `ranz-node` (C17) and what the Node needs from outside, the Wintun driver, the SeLow package (x64) and the XDP runtime (x64), are embedded in it. `ranz install` writes them into the Ranz folder under Program Files after checking the Authenticode signature and the hash of each file (ADR-0036), installs the drivers and registers the services; `ranz uninstall` reverses it and keeps the data directory (ADR-0020 decision 3). ONE-2 (#311) and ONE-3 (#312).
+- **The processes stay separate where a boundary matters.** The Node is its own process and service (`ranzvpnserver`, ADR-0020 decision 4). The Controller is another (`ranz controller`), present only where `ranz install --controller` ran. The BGP sidecar is a third (`ranz bgp`, started by the Node over the named pipe of ADR-0010). Node and Controller keep their own virtual service accounts (ADR-0039), so a Controller crash does not stop the data plane. A laptop installs the Node and the tray only.
+- **The rqlite member of a Controller is part of the file too** (ONE-4, #313). ADR-0026 decision 3 stands: rqlite as the sidecar of each controller, one code path for 1, 3 or 5 members.
+- **GPL and MPL parts, and `ranz-compat`, stay separate processes** (ADR-0023, ADR-0036, ADR-0037). The process boundary is the licence boundary and, for `ranz-compat`, the boundary that keeps SE-VPN compatibility and OpenSSL out of the Node. They may ride in `ranz.exe` as optional payloads, but a GPL component enters the file only after its licence terms are checked (ADR-0036).
+- **Not chosen: one process.** Linking the Go and C halves into one process needs cgo with a second toolchain, or a node written in Go, which goes against ADR-0022 (C17, the strangler reuses the Hub in-process), ADR-0024 (clang-cl) and ADR-0039 (hardening). The user still sees one product: Task Manager shows the Node and `ranz.exe` as two entries of it.
+
+Consequences
+- Every installation carries Controller, GoBGP and rqlite code that it may never run, so the file is larger than any one of them; ONE-1 records its size, and each subcommand starts only from its own service or setting.
+- An update replaces one signed file, and its payload is extracted and checked again (SDN-59, #252).
+- The "optional MSI feature" RanzBgp of ADR-0022 is replaced by the subcommand `ranz bgp`. The MSI becomes a thin wrapper that runs `ranz install` (ONE-5, #314; ADR-0020 amendment of the same date). The XDP install path of ADR-0018 changes with it.
+- Tickets ONE-1 to ONE-5 (#310 to #314) sit under #224. New terms for CONTEXT.md: `ranz.exe`, Payload.

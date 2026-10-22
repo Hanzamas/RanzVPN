@@ -429,6 +429,9 @@ void authtype_test(UINT num, char **arg);
 void acpassword_test(UINT num, char **arg);
 void sigleak_test(UINT num, char **arg);
 
+// Named listeners test of spec #43, cases 1 to 5 of REL-3, #48, and case 6 of REL-4, #49 (listeners.c)
+void listeners_test(UINT num, char **arg);
+
 // Named packet parser tests of FND-38, FND-39 and FND-54, #113 and #117 (pkttest.c)
 void pktparse_test(UINT num, char **arg);
 void vlantpid_test(UINT num, char **arg);
@@ -485,6 +488,9 @@ void bgp_test(UINT num, char **arg);
 
 // Named transport test of CORE-F4, #64 (transporttest.c)
 void transport_test(UINT num, char **arg);
+
+// Named HTTP listener test of REL-6, #51 (httplistener.c)
+void httplistener_test(UINT num, char **arg);
 
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
@@ -612,6 +618,7 @@ TEST_LIST test_list[] =
 	{"authtype", authtype_test, "Login authtype: 96 (the former external authentication) and unknown types are refused without a session, 0 to 2 keep their results."},
 	{"acpassword", acpassword_test, "Access list on the 'password' method: a denied address gets ERR_IP_ADDRESS_DENIED before the old password is checked."},
 	{"sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer."},
+	{"listeners", listeners_test, "Listeners and admin access: TCP 443 on a fresh configuration, 5555 when 443 cannot be bound at that first start, kept on later starts; ListenerCreate on any port; an admin login with the empty password gets error 51 from a non-loopback address and passes over loopback."},
 	{"pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236."},
 	{"vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4."},
 	{"icmpv6ns", icmpv6ns_test, "Neighbor Solicitation: BuildNeighborSolicitation gives the bytes of the former builder chain, nothing for a NULL argument."},
@@ -634,6 +641,7 @@ TEST_LIST test_list[] =
 	{"store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords."},
 	{"bgp", bgp_test, "BGP sidecar: ranz-bgp peers with a router (gobgpd, RANZ_GOBGP) on TCP 179, a prefix announced and withdrawn, a learned route installed through IP Helper (administrator rights)."},
 	{"transport", transport_test, "Transport: a Noise session end to end over the loopback transport, the race of a configured fallback list (the first to connect wins), the same session over a second transport."},
+	{"httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port."},
 };
 
 // Test function

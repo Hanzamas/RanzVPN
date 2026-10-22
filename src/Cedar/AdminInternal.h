@@ -97,6 +97,8 @@ UINT StEnableListener(ADMIN *a, RPC_LISTENER *t);
 UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t);
 UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t);
 UINT StCreateListener(ADMIN *a, RPC_LISTENER *t);
+UINT StGetHttpListener(ADMIN *a, RPC_HTTP_LISTENER *t);
+UINT StSetHttpListener(ADMIN *a, RPC_HTTP_LISTENER *t);
 UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t);
 UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t);
 void HashAdminPassword(void *hash, char *password);

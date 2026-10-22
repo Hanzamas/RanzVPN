@@ -8,7 +8,7 @@ The version format is `0.1.N`, where `N` represents the GitHub Actions build run
 
 - Headless binaries: `vpnserver.exe` (runs directly or as a Windows service), `vpncmd.exe` (CLI administration tool), and `vpntest.exe` (diagnostics). No GUI is included.
 - Platform support: Windows 10 and Windows Server 2016 or newer, on x64 and arm64 architectures. 32-bit (x86) and other operating systems are unsupported.
-- Default listening ports: TCP 443 and TCP 5555.
+- Default listening port: TCP 443. A fresh configuration falls back to TCP 5555 when 443 cannot be bound at its first start, logs why, and keeps 5555 on later starts (ADR-0020). Listeners on any other TCP port can be added with `ListenerCreate`.
 - Client compatibility: Emits build version 5.02.5187 and the `SE-VPN4-PROTOCOL` signature, so SE-VPN clients and servers can connect today because the legacy SE-VPN path is unchanged. This is not a guaranteed feature: in the final product, SE-VPN compatibility comes back through the `ranz-compat` sidecar (Legacy phase).
 - Configuration: Loaded exclusively from `ranz_server.config` in the same directory as `vpnserver.exe`. Legacy configuration files (`vpn_server.config`) are ignored.
 - Registry keys: Stored under `Software\Hanzcodes\Ranz VPN`.

@@ -9,6 +9,7 @@ set(RANZ_FUZZ_TARGETS
   fuzz_tcpip
   fuzz_x509
   fuzz_http
+  fuzz_httplistener
   fuzz_dhcp
   fuzz_net
   fuzz_stun

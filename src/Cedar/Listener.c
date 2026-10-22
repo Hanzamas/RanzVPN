@@ -5,6 +5,7 @@
 
 #include "Cedar.h"
 #include "Connection.h"
+#include "HttpListener.h"
 #include "HubLog.h"
 #include "Server.h"
 #include "Session.h"
@@ -46,6 +47,79 @@ void EnableDosProtect() {
 
 void DisableDosProtect() {
 	disable_dos = true;
+}
+
+// The server log key of a listener event: name for a VPN listener, http_name for the HTTP listener
+static char *ListenerLogKey(const LISTENER *r, char *name, char *http_name) {
+	return (r->Protocol == LISTENER_HTTP ? http_name : name);
+}
+
+// One connection of an HTTP listener: HttpListener.c answers its one request, then the connection closes
+static void HttpAcceptedThread(THREAD *t, void *param) {
+	HTTP_LISTENER_CONN *c = (HTTP_LISTENER_CONN *)param;
+	if (t == NULL || c == NULL)
+		return;
+
+	HttpListenerServe(c->Listener->Cedar, c->Sock, c->Listener->Port);
+
+	Disconnect(c->Sock);
+}
+
+// Join and free the connections of an HTTP listener that have ended. With all, every connection: its socket is
+// disconnected first, so that one still waiting for its request ends at once
+static void HttpJoinConnections(LISTENER *r, bool all) {
+	LockList(r->HttpConnList);
+	{
+		HTTP_LISTENER_CONN **conns = ToArray(r->HttpConnList);
+		UINT num = LIST_NUM(r->HttpConnList);
+
+		for (UINT i = 0; i < num; i++) {
+			HTTP_LISTENER_CONN *c = conns[i];
+
+			if (all)
+				Disconnect(c->Sock);
+
+			if (WaitThread(c->Thread, all ? INFINITE : 0) == false)
+				continue;
+
+			Delete(r->HttpConnList, c);
+			ReleaseThread(c->Thread);
+			ReleaseSock(c->Sock);
+			Free(c);
+		}
+
+		Free(conns);
+	}
+	UnlockList(r->HttpConnList);
+}
+
+// A connection accepted by an HTTP listener: the per-source DoS guard of the VPN listeners, a limit on the open
+// connections, then a thread of its own. Ended connections are joined first
+static void HttpAccepted(LISTENER *r, SOCK *s) {
+	char tmp[MAX_SIZE];
+
+	if (disable_dos == false && r->DisableDos == false && CheckDosAttack(r, s) == false) {
+		IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
+		SLog(r->Cedar, "LS_LISTENER_DOS", r->Port, tmp, s->RemotePort);
+		return;
+	}
+
+	HttpJoinConnections(r, false);
+
+	LockList(r->HttpConnList);
+	{
+		if (LIST_NUM(r->HttpConnList) < HTTP_LISTENER_MAX_CONNECTIONS) {
+			HTTP_LISTENER_CONN *c = ZeroMalloc(sizeof(HTTP_LISTENER_CONN));
+
+			c->Listener = r;
+			c->Sock = s;
+			AddRef(s->ref);
+			c->Thread = NewThread(HttpAcceptedThread, c);
+
+			Add(r->HttpConnList, c);
+		}
+	}
+	UnlockList(r->HttpConnList);
 }
 
 static void TCPAcceptedThread(THREAD *t, void *param) {
@@ -91,6 +165,11 @@ static void TCPAccepted(LISTENER *r, SOCK *s) {
 	UINT num_clients_from_this_ip = 0;
 	if (r == NULL || s == NULL)
 		return;
+
+	if (r->Protocol == LISTENER_HTTP) {
+		HttpAccepted(r, s);
+		return;
+	}
 
 	CEDAR *cedar = r->Cedar;
 
@@ -306,13 +385,13 @@ static void ListenerTCPMainLoop(LISTENER *r) {
 				}
 				Unlock(r->lock);
 
-				SLog(r->Cedar, "LS_LISTENER_START_2", r->Port);
+				SLog(r->Cedar, ListenerLogKey(r, "LS_LISTENER_START_2", "LS_HTTP_LISTENER_START_2"), r->Port);
 				break;
 			}
 
 			if (first_failed) {
 				first_failed = false;
-				SLog(r->Cedar, "LS_LISTENER_START_3", r->Port, LISTEN_RETRY_TIME / 1000);
+				SLog(r->Cedar, ListenerLogKey(r, "LS_LISTENER_START_3", "LS_HTTP_LISTENER_START_3"), r->Port, LISTEN_RETRY_TIME / 1000);
 			}
 
 			// Status is LISTENER_STATUS_TRYING: the bind failed, the thread retries after the interval
@@ -379,6 +458,7 @@ static void ListenerThread(THREAD *thread, void *param) {
 
 	switch (r->Protocol) {
 	case LISTENER_TCP:
+	case LISTENER_HTTP:
 		ListenerTCPMainLoop(r);
 		break;
 	}
@@ -412,7 +492,7 @@ void StopListener(LISTENER *r) {
 
 	UINT port = r->Port;
 
-	SLog(r->Cedar, "LS_LISTENER_STOP_1", port);
+	SLog(r->Cedar, ListenerLogKey(r, "LS_LISTENER_STOP_1", "LS_HTTP_LISTENER_STOP_1"), port);
 
 	if (s != NULL) {
 		Disconnect(s);
@@ -424,7 +504,11 @@ void StopListener(LISTENER *r) {
 
 	WaitThread(r->Thread, INFINITE);
 
-	SLog(r->Cedar, "LS_LISTENER_STOP_2", port);
+	// The accept thread has ended: no connection of an HTTP listener starts any more
+	if (r->HttpConnList != NULL)
+		HttpJoinConnections(r, true);
+
+	SLog(r->Cedar, ListenerLogKey(r, "LS_LISTENER_STOP_2", "LS_HTTP_LISTENER_STOP_2"), port);
 }
 
 // Wait until the listener thread has tried to bind the port, at most timeout ms. True when the port is bound;
@@ -450,6 +534,11 @@ static void CleanupListener(LISTENER *r) {
 		Free(d);
 	}
 	ReleaseList(r->DosList);
+
+	if (r->HttpConnList != NULL) {
+		HttpJoinConnections(r, true);
+		ReleaseList(r->HttpConnList);
+	}
 
 	if (r->Sock != NULL)
 		ReleaseSock(r->Sock);
@@ -495,6 +584,11 @@ int CompareListener(void *p1, void *p2) {
 }
 
 LISTENER *NewListener(CEDAR *cedar, UINT port) {
+	return NewListenerEx(cedar, LISTENER_TCP, port);
+}
+
+// A listener on port of the kind proto: LISTENER_TCP for a VPN listener, LISTENER_HTTP for the HTTP listener
+LISTENER *NewListenerEx(CEDAR *cedar, UINT proto, UINT port) {
 	if (port == 0 || cedar == NULL)
 		return NULL;
 
@@ -504,7 +598,7 @@ LISTENER *NewListener(CEDAR *cedar, UINT port) {
 	AddRef(r->Cedar->ref);
 	r->lock = NewLock();
 	r->ref = NewRef();
-	r->Protocol = LISTENER_TCP;
+	r->Protocol = proto;
 	r->Port = port;
 	r->Event = NewEvent();
 	// Manual-reset: every waiter of WaitListenerBind sees the first bind attempt, also after it happened
@@ -512,7 +606,10 @@ LISTENER *NewListener(CEDAR *cedar, UINT port) {
 
 	r->DosList = NewList(CompareDos);
 
-	SLog(cedar, "LS_LISTENER_START_1", port);
+	if (proto == LISTENER_HTTP)
+		r->HttpConnList = NewList(NULL);
+
+	SLog(cedar, ListenerLogKey(r, "LS_LISTENER_START_1", "LS_HTTP_LISTENER_START_1"), port);
 
 	THREAD *t = NewThread(ListenerThread, r);
 	WaitThreadInit(t);
