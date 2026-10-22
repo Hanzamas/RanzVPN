@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -301,6 +302,28 @@ func TestAdminAllows(t *testing.T) {
 	}
 	if adminAllows(nil, netip.Addr{}) {
 		t.Error("the invalid address passes an empty list")
+	}
+}
+
+// The admin source allowlist needs admin for every method, as the tokens do, and a path that only
+// starts like it needs what any other path needs.
+func TestNeedsAdminSources(t *testing.T) {
+	for _, c := range []struct {
+		method string
+		path   string
+		want   rbac.Role
+	}{
+		{http.MethodGet, "/api/v1/admin-sources", rbac.Admin},
+		{http.MethodHead, "/api/v1/admin-sources", rbac.Admin},
+		{http.MethodPut, "/api/v1/admin-sources", rbac.Admin},
+		{http.MethodGet, "/api/v1/admin-sources/", rbac.Admin},
+		{http.MethodGet, "/api/v1/x/../admin-sources", rbac.Admin},
+		{http.MethodGet, "/api/v1/admin-sourcesx", rbac.Viewer},
+		{http.MethodPut, "/api/v1/admin-sourcesx", rbac.Operator},
+	} {
+		if got := Needs(c.method, c.path); got != c.want {
+			t.Errorf("%s %s needs %s, want %s", c.method, c.path, got, c.want)
+		}
 	}
 }
 

@@ -12,9 +12,8 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 )
 
-// Every call of the API needs a role: admin for the tokens and the admin source allowlist, viewer
-// for any other read, and operator for any other change, also for an endpoint that has no rule of
-// its own.
+// Every call of the API needs a role: admin for the tokens, viewer for any other read, and
+// operator for any other change, also for an endpoint that has no rule of its own.
 func TestNeeds(t *testing.T) {
 	for _, c := range []struct {
 		method, path string
@@ -44,10 +43,6 @@ func TestNeeds(t *testing.T) {
 		{http.MethodGet, "/api/v1/x/../tokens", rbac.Admin},
 		{http.MethodGet, "//api/v1//tokens", rbac.Admin},
 		{http.MethodGet, "/api/v1/tokensx", rbac.Viewer},
-		{http.MethodGet, "/api/v1/admin-sources", rbac.Admin},
-		{http.MethodPut, "/api/v1/admin-sources", rbac.Admin},
-		{http.MethodGet, "/api/v1/admin-sources/", rbac.Admin},
-		{http.MethodGet, "/api/v1/admin-sourcesx", rbac.Viewer},
 	} {
 		if got := Needs(c.method, c.path); got != c.want {
 			t.Errorf("%s %s needs %s, want %s", c.method, c.path, got, c.want)

@@ -65,6 +65,9 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 		{[]string{"get", "revision", "1"}, http.MethodGet, "/api/v1/revisions/1", "", nil},
 		{[]string{"diff"}, http.MethodGet, "/api/v1/diff", "", nil},
 		{[]string{"get", "events"}, http.MethodGet, "/api/v1/events", "", nil},
+		{[]string{"admin-sources", "list"}, http.MethodGet, "/api/v1/admin-sources", "", nil},
+		{[]string{"admin-sources", "set", "192.0.2.0/24", "2001:db8::10"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": ["192.0.2.0/24", "2001:db8::10"]}`, nil},
+		{[]string{"admin-sources", "clear"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": []}`, nil},
 		{[]string{"get", "licence"}, http.MethodGet, "/api/v1/licence", "", nil},
 		{[]string{"licence", "-remove"}, http.MethodDelete, "/api/v1/licence", "", nil},
 		{[]string{"token", "list"}, http.MethodGet, "/api/v1/tokens", "", nil},
@@ -81,9 +84,6 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
-		{[]string{"admin-sources", "list"}, http.MethodGet, "/api/v1/admin-sources", "", nil},
-		{[]string{"admin-sources", "set", "192.0.2.0/24", "2001:db8::10"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": ["192.0.2.0/24", "2001:db8::10"]}`, nil},
-		{[]string{"admin-sources", "clear"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": []}`, nil},
 	}
 	callers := []struct {
 		name   string
