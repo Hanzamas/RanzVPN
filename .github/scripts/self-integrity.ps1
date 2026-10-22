@@ -177,13 +177,13 @@ if ($t.VirtualSize -lt $t.SizeOfRawData) {
 	$flip = [int]$t.PointerToRawData + [int]$t.SizeOfRawData - 1     # no padding: the last raw byte
 }
 Write-Host "flipping .text file byte at offset $flip (raw $($t.PointerToRawData), virtual size $($t.VirtualSize), raw size $($t.SizeOfRawData))"
-$bytes[$flip] = $bytes[$flip] -bxor 0xFF
+$bytes[$flip] = [byte]($bytes[$flip] -bxor 0xFF)
 [System.IO.File]::WriteAllBytes($tampered, $bytes)
 
 $out = (& $tampered selfintegrity tampered 2>&1 | Out-String)
 $code = $LASTEXITCODE
 Write-Host $out
-if ($code -ne 0) { throw "the changed binary exited with $code: the check crashed instead of degrading" }
+if ($code -ne 0) { throw "the changed binary exited with ${code} (not 0): the check crashed instead of degrading" }
 if ($out -notmatch 'SELFINTEGRITY TEST OK') { throw 'the changed binary did not take the degrade-or-deceive path' }
 Write-Host 'self-integrity: the changed binary degraded without a crash'
 
