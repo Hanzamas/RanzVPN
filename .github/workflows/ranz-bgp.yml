@@ -109,7 +109,8 @@ jobs:
     # ADR-0040 item 3: staticcheck and govulncheck for Linux and for Windows. Any staticcheck finding
     # fails the job, and so does a vulnerability that the code calls, unless
     # .github/quality/govulncheck-accepted.txt accepts it for that version. Built for the runner;
-    # GOOS picks the platform they analyze.
+    # GOOS picks the platform they analyze. The two staticcheck runs are merged (-merge), so code
+    # that one platform alone uses is not reported as unused.
     - name: Static analysis (staticcheck, govulncheck)
       if: ${{ !cancelled() }}
       working-directory: ranz-bgp
@@ -117,8 +118,9 @@ jobs:
         GOBIN="$RUNNER_TEMP/gobin" go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
         GOBIN="$RUNNER_TEMP/gobin" go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
         "$RUNNER_TEMP/gobin/staticcheck" -version
-        "$RUNNER_TEMP/gobin/staticcheck" ./...
-        GOOS=windows "$RUNNER_TEMP/gobin/staticcheck" ./...
+        "$RUNNER_TEMP/gobin/staticcheck" -f binary ./... > "$RUNNER_TEMP/staticcheck-linux.bin"
+        GOOS=windows "$RUNNER_TEMP/gobin/staticcheck" -f binary ./... > "$RUNNER_TEMP/staticcheck-windows.bin"
+        "$RUNNER_TEMP/gobin/staticcheck" -merge "$RUNNER_TEMP/staticcheck-linux.bin" "$RUNNER_TEMP/staticcheck-windows.bin"
         "$RUNNER_TEMP/gobin/govulncheck" -version
         "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
         GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"

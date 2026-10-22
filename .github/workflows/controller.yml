@@ -175,13 +175,16 @@ jobs:
     # ADR-0040 item 3: staticcheck (with the checks of controller/staticcheck.conf) and govulncheck,
     # for Linux and for Windows. Any staticcheck finding fails the job, and so does a vulnerability
     # that the code calls, unless .github/quality/govulncheck-accepted.txt accepts it for that version.
+    # The two staticcheck runs are merged (-merge), so code that one platform alone uses is not
+    # reported as unused.
     - name: Static analysis (staticcheck, govulncheck)
       if: ${{ !cancelled() }}
       working-directory: controller
       run: |
         "$RUNNER_TEMP/gobin/staticcheck" -version
-        "$RUNNER_TEMP/gobin/staticcheck" ./...
-        GOOS=windows "$RUNNER_TEMP/gobin/staticcheck" ./...
+        "$RUNNER_TEMP/gobin/staticcheck" -f binary ./... > "$RUNNER_TEMP/staticcheck-linux.bin"
+        GOOS=windows "$RUNNER_TEMP/gobin/staticcheck" -f binary ./... > "$RUNNER_TEMP/staticcheck-windows.bin"
+        "$RUNNER_TEMP/gobin/staticcheck" -merge "$RUNNER_TEMP/staticcheck-linux.bin" "$RUNNER_TEMP/staticcheck-windows.bin"
         "$RUNNER_TEMP/gobin/govulncheck" -version
         "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-linux.json"
         GOOS=windows "$RUNNER_TEMP/gobin/govulncheck" -format json ./... > "$RUNNER_TEMP/govulncheck-windows.json"

@@ -336,7 +336,11 @@ func newKSPSigner(h uintptr) (*kspSigner, error) {
 	if magic != magicECDSAPublicP256 || len(parts) != 2 || len(parts[0]) != 32 {
 		return nil, fmt.Errorf("keys: the TLS key is not an ECDSA P-256 key (blob magic %#x)", magic)
 	}
-	pub := &ecdsa.PublicKey{Curve: elliptic.P256(), X: new(big.Int).SetBytes(parts[0]), Y: new(big.Int).SetBytes(parts[1])}
+	// The uncompressed point: 4, then X and Y
+	pub, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), slices.Concat([]byte{4}, parts[0], parts[1]))
+	if err != nil {
+		return nil, fmt.Errorf("keys: the TLS key: %w", err)
+	}
 	return &kspSigner{h: h, pub: pub}, nil
 }
 
