@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
@@ -129,18 +128,20 @@ func TestRolesLimitTheUI(t *testing.T) {
 		{"/licence", "licence"},
 		{"/tokens", "tokens"},
 	}
-	b := newBrowser(t)
+	// control is an element of a page with data-action, and whether it shows.
+	type control struct {
+		Action  string `json:"action"`
+		Visible bool   `json:"visible"`
+	}
+	// One tab, signed in again for each role: the tab in use is never in the background, where
+	// the browser slows its timers down.
+	tab := newBrowser(t)
 	for _, role := range rbac.Roles {
-		tab := b.tab(t)
 		h.signIn(t, tab, secrets[role])
 		seen := map[string]bool{}
 		for _, p := range pages {
 			h.visit(t, tab, p.path, p.page)
-			var controls []struct {
-				Action  string `json:"action"`
-				Visible bool   `json:"visible"`
-			}
-			run(t, tab, chromedp.Evaluate(`[...document.querySelectorAll('[data-action]')].map((e) => ({action: e.dataset.action, visible: e.checkVisibility()}))`, &controls))
+			controls := run(t, tab, chromedp.Evaluate[[]control](`[...document.querySelectorAll('[data-action]')].map((e) => ({action: e.dataset.action, visible: e.checkVisibility()}))`))
 			if len(controls) == 0 {
 				t.Errorf("%s: %s has no control of a UI action", role, p.path)
 			}
@@ -162,8 +163,7 @@ func TestRolesLimitTheUI(t *testing.T) {
 			}
 		}
 		if role != rbac.Admin {
-			var notice string
-			run(t, tab, chromedp.Text("#admin-only", &notice, chromedp.ByQuery))
+			notice := run(t, tab, chromedp.Text(chromedp.CSS("#admin-only")))
 			if !strings.Contains(notice, "needs the role admin") {
 				t.Errorf("%s: the API tokens page says %q", role, notice)
 			}
@@ -179,18 +179,20 @@ func TestTheUIWorksThroughTheAPI(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	nodeKey := newKey(t)
-	viewerSecret := h.token(t, "viewer-1", rbac.Viewer)
-	b := newBrowser(t)
+	viewer := h.token(t, "viewer-1", rbac.Viewer)
+	operator := h.token(t, "operator-1", rbac.Operator)
+	// One tab, signed in again for each role: the tab in use is never in the background, where
+	// the browser slows its timers down.
+	tab := newBrowser(t)
 
-	operator := b.tab(t)
-	h.signIn(t, operator, h.token(t, "operator-1", rbac.Operator))
-	h.visit(t, operator, "/intent", "intent")
+	h.signIn(t, tab, operator)
+	h.visit(t, tab, "/intent", "intent")
 	doc, err := json.Marshal(document(nodeKey))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := h.act(t, operator, chromedp.SetValue("#document", string(doc), chromedp.ByQuery),
-		chromedp.Click(`#apply-form button[type="submit"]`, chromedp.ByQuery)); !strings.Contains(got, "Applied as revision 1.") {
+	if got := h.act(t, tab, chromedp.SetValue(chromedp.CSS("#document"), string(doc)),
+		chromedp.Click(chromedp.CSS(`#apply-form button[type="submit"]`))); !strings.Contains(got, "Applied as revision 1.") {
 		t.Errorf("the apply says %q", got)
 	}
 	revs, err := h.admin.Revisions(ctx)
@@ -213,38 +215,38 @@ func TestTheUIWorksThroughTheAPI(t *testing.T) {
 	})
 	h.waitNode(t, "branch-1", 1)
 
-	viewer := b.tab(t)
-	h.signIn(t, viewer, viewerSecret)
-	h.visit(t, viewer, "/nodes", "nodes")
-	var row string
-	run(t, viewer, chromedp.Text(`//tr[td[1][normalize-space()="branch-1"]]`, &row, chromedp.BySearch))
+	h.signIn(t, tab, viewer)
+	h.visit(t, tab, "/nodes", "nodes")
+	row := run(t, tab, chromedp.Text(chromedp.Search(`//tr[td[1][normalize-space()="branch-1"]]`)))
 	for _, want := range []string{"corp", "yes", "Pro", "x64", "2, WinNAT", "443"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("the row of branch-1 on the Nodes page has no %q: %q", want, row)
 		}
 	}
 
-	h.visit(t, operator, "/intent", "intent")
+	h.signIn(t, tab, operator)
+	h.visit(t, tab, "/intent", "intent")
 	lab, err := json.Marshal(labDocument(nodeKey))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := h.act(t, operator, chromedp.SetValue("#document", string(lab), chromedp.ByQuery),
-		chromedp.Click(`#apply-form button[type="submit"]`, chromedp.ByQuery)); !strings.Contains(got, "Applied as revision 2.") {
+	if got := h.act(t, tab, chromedp.SetValue(chromedp.CSS("#document"), string(lab)),
+		chromedp.Click(chromedp.CSS(`#apply-form button[type="submit"]`))); !strings.Contains(got, "Applied as revision 2.") {
 		t.Errorf("the second apply says %q", got)
 	}
 
-	h.visit(t, viewer, "/revisions?from=1&to=2", "revisions")
-	var changes string
-	run(t, viewer, chromedp.Text("#changes", &changes, chromedp.ByQuery))
+	h.signIn(t, tab, viewer)
+	h.visit(t, tab, "/revisions?from=1&to=2", "revisions")
+	changes := run(t, tab, chromedp.Text(chromedp.CSS("#changes")))
 	if !strings.Contains(changes, "added") || !strings.Contains(changes, "lab") {
 		t.Errorf("the diff from 1 to 2 shows %q", changes)
 	}
 
-	h.visit(t, operator, "/revisions", "revisions")
-	if got := h.act(t, operator, chromedp.Click(`//button[normalize-space()="Roll back to 1"]`, chromedp.BySearch),
-		chromedp.WaitVisible(`dialog[open] button[value="ok"]`, chromedp.ByQuery),
-		chromedp.Click(`dialog[open] button[value="ok"]`, chromedp.ByQuery)); !strings.Contains(got, "Rolled back to revision 1 as revision 3.") {
+	h.signIn(t, tab, operator)
+	h.visit(t, tab, "/revisions", "revisions")
+	if got := h.act(t, tab, chromedp.Click(chromedp.Search(`//button[normalize-space()="Roll back to 1"]`)),
+		chromedp.WaitVisible(chromedp.CSS(`dialog[open] button[value="ok"]`)),
+		chromedp.Click(chromedp.CSS(`dialog[open] button[value="ok"]`))); !strings.Contains(got, "Rolled back to revision 1 as revision 3.") {
 		t.Errorf("the rollback says %q", got)
 	}
 	rev, err := h.admin.Revision(ctx, 3)
@@ -255,22 +257,20 @@ func TestTheUIWorksThroughTheAPI(t *testing.T) {
 		t.Errorf("revision 3 is %+v, want the rollback to 1", rev)
 	}
 
-	admin := b.tab(t)
-	h.signIn(t, admin, h.secret)
-	h.visit(t, admin, "/tokens", "tokens")
-	if got := h.act(t, admin, chromedp.SetValue("#name", "ui-made", chromedp.ByQuery),
-		chromedp.SetValue("#role", "operator", chromedp.ByQuery),
-		chromedp.Click(`#create-form button[type="submit"]`, chromedp.ByQuery)); !strings.Contains(got, "ui-made (operator) is made") {
+	h.signIn(t, tab, h.secret)
+	h.visit(t, tab, "/tokens", "tokens")
+	if got := h.act(t, tab, chromedp.SetValue(chromedp.CSS("#name"), "ui-made"),
+		chromedp.SetValue(chromedp.CSS("#role"), "operator"),
+		chromedp.Click(chromedp.CSS(`#create-form button[type="submit"]`))); !strings.Contains(got, "ui-made (operator) is made") {
 		t.Errorf("making the token says %q", got)
 	}
-	var secret string
-	run(t, admin, chromedp.Text("code.secret", &secret, chromedp.ByQuery))
+	secret := run(t, tab, chromedp.Text(chromedp.CSS("code.secret")))
 	if tok, err := h.client(secret).Whoami(ctx); err != nil || tok != (rbac.Token{Name: "ui-made", Role: rbac.Operator}) {
 		t.Errorf("the secret the UI showed is the token %+v, %v", tok, err)
 	}
-	if got := h.act(t, admin, chromedp.Click(`//tr[td[1][normalize-space()="ui-made"]]//button`, chromedp.BySearch),
-		chromedp.WaitVisible(`dialog[open] button[value="ok"]`, chromedp.ByQuery),
-		chromedp.Click(`dialog[open] button[value="ok"]`, chromedp.ByQuery)); !strings.Contains(got, "ui-made is deleted") {
+	if got := h.act(t, tab, chromedp.Click(chromedp.Search(`//tr[td[1][normalize-space()="ui-made"]]//button`)),
+		chromedp.WaitVisible(chromedp.CSS(`dialog[open] button[value="ok"]`)),
+		chromedp.Click(chromedp.CSS(`dialog[open] button[value="ok"]`))); !strings.Contains(got, "ui-made is deleted") {
 		t.Errorf("deleting the token says %q", got)
 	}
 	if _, err := h.client(secret).Whoami(ctx); httpStatus(err) != http.StatusUnauthorized {
@@ -278,10 +278,10 @@ func TestTheUIWorksThroughTheAPI(t *testing.T) {
 	}
 
 	// A viewer's tab that calls an operator's action anyway gets the API's own refusal.
-	var got string
-	run(t, viewer, chromedp.Evaluate(`import('/assets/api.js').then((m) => m.call('apply', {body: {resources: []}})).then(() => 'allowed', (e) => e.status + ' ' + e.message)`,
-		&got, func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) }))
-	_, err = h.client(viewerSecret).Apply(ctx, intent.Document{Resources: []intent.Resource{}})
+	h.signIn(t, tab, viewer)
+	got := run(t, tab, chromedp.Evaluate[string](`import('/assets/api.js').then((m) => m.call('apply', {body: {resources: []}})).then(() => 'allowed', (e) => e.status + ' ' + e.message)`,
+		chromedp.EvalAwaitPromise))
+	_, err = h.client(viewer).Apply(ctx, intent.Document{Resources: []intent.Resource{}})
 	var e *api.Error
 	if !errors.As(err, &e) {
 		t.Fatalf("the viewer's apply through the API gave %v", err)
@@ -427,13 +427,13 @@ func (h *harness) waitNode(t *testing.T, name string, gen uint64) {
 // signIn signs tab in with the token secret on the sign-in page, which goes on to the overview.
 func (h *harness) signIn(t *testing.T, tab context.Context, secret string) {
 	t.Helper()
-	run(t, tab,
+	run(t, tab, chromedp.Steps(
 		chromedp.Navigate(h.url("/sign-in")),
-		chromedp.WaitVisible("#token", chromedp.ByQuery),
-		chromedp.SetValue("#token", secret, chromedp.ByQuery),
-		chromedp.Click(`#sign-in button[type="submit"]`, chromedp.ByQuery),
-		chromedp.WaitReady(`html[data-page="overview"]`, chromedp.ByQuery),
-	)
+		chromedp.WaitVisible(chromedp.CSS("#token")),
+		chromedp.SetValue(chromedp.CSS("#token"), secret),
+		chromedp.Click(chromedp.CSS(`#sign-in button[type="submit"]`)),
+		chromedp.WaitReady(chromedp.CSS(`html[data-page="overview"]`)),
+	))
 	h.settle(t, tab, "overview")
 }
 
@@ -447,50 +447,42 @@ func (h *harness) visit(t *testing.T, tab context.Context, path, page string) {
 // settle waits until the page page rendered, and fails the test when it shows a problem instead.
 func (h *harness) settle(t *testing.T, tab context.Context, page string) {
 	t.Helper()
-	var state string
-	run(t, tab, chromedp.Poll(fmt.Sprintf(`(() => {
+	state := run(t, tab, chromedp.Poll[string](fmt.Sprintf(`(() => {
 		const html = document.documentElement;
 		return html.dataset.page === %q && ['ready', 'error'].includes(html.dataset.state ?? '') ? html.dataset.state : null;
-	})()`, page), &state, chromedp.WithPollingInterval(pollInterval), chromedp.WithPollingTimeout(waitTimeout)))
+	})()`, page), chromedp.WithPollingInterval(pollInterval), chromedp.WithPollingTimeout(waitTimeout)))
 	if state != "ready" {
-		var problem string
-		run(t, tab, chromedp.Evaluate(`document.querySelector('ranz-problem')?.textContent ?? ''`, &problem))
+		problem := run(t, tab, chromedp.Evaluate[string](`document.querySelector('ranz-problem')?.textContent ?? ''`))
 		t.Fatalf("the page %s did not render: %s", page, problem)
 	}
 }
 
-// act runs actions on the page in tab, which make a change through the API, and returns what
-// the page then says in its #result. A problem that the page shows instead fails the test.
-func (h *harness) act(t *testing.T, tab context.Context, actions ...chromedp.Action) string {
+// act runs steps on the page in tab, which make a change through the API, and returns what the
+// page then says in its #result. A problem that the page shows instead fails the test.
+func (h *harness) act(t *testing.T, tab context.Context, steps ...chromedp.Action[chromedp.Void]) string {
 	t.Helper()
-	var cleared bool
-	run(t, tab, chromedp.Evaluate(`document.querySelector('#result')?.replaceChildren();
-		document.querySelector('ranz-problem')?.replaceChildren();
-		true`, &cleared))
-	run(t, tab, actions...)
-	var out struct {
+	run(t, tab, chromedp.Evaluate[chromedp.Void](`document.querySelector('#result')?.replaceChildren();
+		document.querySelector('ranz-problem')?.replaceChildren();`))
+	run(t, tab, chromedp.Steps(steps...))
+	// said is what the page says after the steps: its #result, or the problem it shows instead.
+	type said struct {
 		Result  string `json:"result"`
 		Problem string `json:"problem"`
 	}
-	run(t, tab, chromedp.Poll(`(() => {
+	out := run(t, tab, chromedp.Poll[said](`(() => {
 		const result = document.querySelector('#result')?.textContent ?? '';
 		const problem = document.querySelector('ranz-problem')?.textContent ?? '';
 		return result || problem ? {result, problem} : null;
-	})()`, &out, chromedp.WithPollingInterval(pollInterval), chromedp.WithPollingTimeout(waitTimeout)))
+	})()`, chromedp.WithPollingInterval(pollInterval), chromedp.WithPollingTimeout(waitTimeout)))
 	if out.Problem != "" {
 		t.Fatalf("the page shows the problem %q", out.Problem)
 	}
 	return out.Result
 }
 
-// browser is a headless Chrome for one test.
-type browser struct {
-	ctx context.Context
-}
-
-// newBrowser starts a headless Chrome, which ends with the test. Without a Chrome on the host the
-// test is skipped, except under CI.
-func newBrowser(t *testing.T) *browser {
+// newBrowser starts a headless Chrome, which ends with the test, and returns its tab. Without a
+// Chrome on the host the test is skipped, except under CI.
+func newBrowser(t *testing.T) context.Context {
 	t.Helper()
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		// The browser only ever opens the test's own controller on the loopback address.
@@ -502,34 +494,26 @@ func newBrowser(t *testing.T) *browser {
 	t.Cleanup(cancel)
 	ctx, cancel := chromedp.NewContext(actx)
 	t.Cleanup(cancel)
-	if err := chromedp.Run(ctx); err != nil {
+	// The first run starts the browser, without a timeout, which would stop the browser with it.
+	if err := chromedp.Do(ctx); err != nil {
 		if (errors.Is(err, exec.ErrNotFound) || strings.Contains(err.Error(), "executable file not found")) && os.Getenv("CI") == "" {
 			t.Skip("no Chrome on this host: install one to run this test")
 		}
 		t.Fatal(err)
 	}
-	return &browser{ctx: ctx}
-}
-
-// tab opens a new tab, which has a sessionStorage, and so a sign-in, of its own.
-func (b *browser) tab(t *testing.T) context.Context {
-	t.Helper()
-	ctx, cancel := chromedp.NewContext(b.ctx)
-	t.Cleanup(cancel)
-	if err := chromedp.Run(ctx); err != nil {
-		t.Fatal(err)
-	}
 	return ctx
 }
 
-// run runs actions in tab within waitTimeout.
-func run(t *testing.T, tab context.Context, actions ...chromedp.Action) {
+// run runs the action in tab within waitTimeout and returns its value.
+func run[T any](t *testing.T, tab context.Context, a chromedp.Action[T]) T {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(tab, waitTimeout)
 	defer cancel()
-	if err := chromedp.Run(ctx, actions...); err != nil {
+	v, err := chromedp.Run(ctx, a)
+	if err != nil {
 		t.Fatal(err)
 	}
+	return v
 }
 
 // httpStatus returns the HTTP status of an error of the API: 200 for no error, 0 for an error
