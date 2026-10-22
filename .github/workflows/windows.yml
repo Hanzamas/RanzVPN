@@ -43,6 +43,7 @@ on:
     - '!.github/workflows/quality.yml'
     - '!.github/scripts/fuzz-registry.py'
     - '!.github/scripts/quality-gates-test.py'
+    - '!.github/scripts/one-binary-check.py'
     - '!.github/quality/fuzz-targets.txt'
     - '!.github/scripts/govulncheck-gate.py'
     - '!.github/quality/govulncheck-accepted.txt'

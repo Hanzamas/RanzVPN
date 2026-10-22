@@ -328,12 +328,38 @@ def test_govulncheck_gate():
           absent=['No longer found'])
 
 
+def test_one_binary():
+    # CI, WiX packages and docs that name an executable of the two programs that ranz replaced (ONE-1, #310)
+    clean = {'.github/workflows/ranz.yml': 'go build -o build ./controller/cmd/ranz\n',
+             'docs/adr/0026.md': 'the service `ranz-controller` runs `ranz controller`, and `ranz bgp` is the sidecar\n',
+             'ranz-bgp/installer/other.txt': 'ranz-bgp.exe outside the scope is not read\n'}
+
+    def check(name, code, texts, files=None):
+        with tempfile.TemporaryDirectory() as root:
+            for path, text in {**clean, **(files or {})}.items():
+                write(root, path, text)
+            expect('one-binary: ' + name, run('one-binary-check.py', '--root', root), code, *texts)
+
+    check('a tree with the one executable', 0, ['name no executable'])
+    check('a workflow that runs an old executable', 1, ['ranz-bgp.exe', 'the file name of an executable'],
+          {'.github/workflows/old.yml': 'run: build\\ranz-bgp.exe -version\n'})
+    check('a script that builds an old main package', 1, ['cmd/ranz-controller', 'the path of a main package'],
+          {'.github/scripts/build.ps1': 'go build ./cmd/ranz-controller\n'})
+    check('a doc that runs an old program', 1, ['ranz-controller reset-admin', 'a command line of a program'],
+          {'docs/guide.md': 'run ranz-controller reset-admin on the host\n'})
+    check('a WiX package that names an old executable', 1, ['ranz-controller.exe'],
+          {'installer/Ranz.wxs': '<File Name="ranz-controller.exe" />\n'})
+    check('the checker itself is not read', 0, ['name no executable'],
+          {'.github/scripts/one-binary-check.py': 'ranz-bgp.exe\n'})
+
+
 if __name__ == '__main__':
     test_fuzz_registry()
     test_coverage_floor()
     test_bench_gate()
     test_static_findings()
     test_govulncheck_gate()
+    test_one_binary()
     if failures:
         print('\n\n'.join(failures))
         print('%d fixtures failed' % len(failures))
