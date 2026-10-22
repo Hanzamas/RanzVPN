@@ -15,7 +15,7 @@ OSPF and BGP do different jobs: OSPF routes inside one organisation's network (e
 3. **Edge routing with customer routers uses BGP through a GoBGP sidecar** (Apache-2.0, a separate process controlled by the daemon; see the 2026-10-13 amendment for the transport, which is a local named pipe with JSON, not gRPC). It announces overlay subnets to the customer's routers and learns theirs, with filters on both sides. GoBGP's route installation is Linux-only, so the daemon installs learned routes into Windows through IP Helper. RRAS BGP is not used.
 4. **OSPF is not implemented.** Customers who run OSPF internally redistribute the BGP-learned Ranz routes into OSPF on their own routers (MikroTik, Cisco, Juniper and pfSense/FRR all can). Routers that speak neither protocol use static routes.
 5. **Router-on-a-stick stays possible**: a VLAN trunk over Local Bridge to a physical NIC lets a customer's router route between Ranz networks.
-6. L2 switched networks (ADR-0014) are subnets like any other from the router's point of view. EVPN remains the matching model if L2 segments are ever stretched between sites with BGP-speaking routers; noted, not decided. *(EVPN type-5 for IP prefixes per VRF is decided in the amendment of 2026-10-20 below; L2 stretch stays after v1.)*
+6. L2 switched networks (ADR-0014) are subnets like any other from the router's point of view. EVPN remains the matching model if L2 segments are ever stretched between sites with BGP-speaking routers; noted, not decided. *(EVPN type-5 for IP prefixes per VRF is decided in the amendment of 2026-10-20 below; L2 stretch stays after v1.)* *(Amended 2026-10-22 below: L2 stretch over EVPN is in scope.)*
 
 ## Consequences
 
@@ -40,7 +40,7 @@ Maintainer decision, from the SDN spec #176 that Hilmi filed ("EVPN type-5 throu
 - **`ranz-bgp` gains EVPN type-5** (IP prefix routes per VRF). GoBGP stays a library inside it, and its named-pipe JSON contract with the node is extended for EVPN routes per VRF. RRAS BGP stays ruled out, and OSPF stays out (decision 4).
 - **The gateway node does VXLAN encapsulation and decapsulation in user space**, because Windows has no VXLAN interface for applications. The same module carries Mirrors to a sensor (ADR-0029).
 - **Overlap-safe handoff is EVPN only.** Overlapping prefixes never reach the single Windows routing table. VRF-lite (one VLAN per VRF) carries non-overlapping prefixes only: on Windows Server through LBFO team interfaces, on client SKUs one VRF per physical NIC.
-- **Decision 6 is settled for L3:** EVPN is decided for IP prefixes per VRF (type-5). EVPN type-2 and L2 stretch over EVPN are after v1.
+- **Decision 6 is settled for L3:** EVPN is decided for IP prefixes per VRF (type-5). EVPN type-2 and L2 stretch over EVPN are after v1. *(Superseded by the amendment of 2026-10-22 below.)*
 - **Decision 2 is now the controller's job:** route advertisement of LAN subnets behind gateways, health checks, gateway HA and optional ECMP are compiled by `ranz-controller` (ADR-0026) and delivered by Generation (ADR-0027). #176 does not mention the approval step for advertised subnets; LAN prefixes are part of the `Gateway` resource in the intent (ADR-0031). *(The approval is settled by the amendment of 2026-10-21 below.)*
 - **Decision 1:** forwarding inside a VRF uses the node's per-VRF tables (ADR-0025). Its WinNAT sentence is replaced by the three egress tiers of the ADR-0008 amendment of 2026-10-20.
 
@@ -49,3 +49,10 @@ Maintainer decision, from the SDN spec #176 that Hilmi filed ("EVPN type-5 throu
 Maintainer decisions (Hilmi: "ya ya ya semua").
 - **Decision 1: inside the overlay, forwarding uses the node's per-VRF tables** (ADR-0025). Windows IP forwarding is used only at a gateway's LAN edge, through the VRF's adapter. Routing between the overlay's networks and VLANs no longer runs through loopback adapters and the Windows IP stack.
 - **Decision 2: declaring LAN prefixes in the `Gateway` resource is the approval** (ADR-0031). Intent always goes through revisions, `ranz diff` and `ranz apply --confirm`, so a prefix is reviewed before it applies and can be rolled back. There is no separate approval step for advertised subnets.
+
+## Amendment 2026-10-22: EVPN type-1 to 4 and L2 stretch are in scope
+
+Maintainer decision (Hilmi, after a grilling round; the full design is the amendment of the same date in ADR-0032).
+- **Decision 6 is settled for L2 as well:** EVPN type-1, 2, 3 and 4 join type-5, so an L2 Network can be stretched to a fabric and two gateways can share an Ethernet segment. This replaces "L2 stretch stays after v1" in decision 6 and "EVPN type-2 and L2 stretch over EVPN are after v1" in the amendment of 2026-10-20.
+- **`ranz-bgp`** carries all five route types over the same named pipe, in batches with a full resync after a reconnect. GoBGP stays a library inside it.
+- A Network with a stretch must not also have a `bridge` role node (router-on-a-stick, decision 5, stays possible on other Networks).
