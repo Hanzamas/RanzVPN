@@ -117,7 +117,7 @@ func Open(ctx context.Context, rawURL string) (*Store, error) {
 		conn, err := gorqlite.Open(u.String())
 		if err == nil {
 			if _, err = conn.WriteContext(ctx, schema); err == nil {
-				return &Store{conn: conn, url: url}, nil
+				return &Store{conn: conn, url: u.String()}, nil
 			}
 			conn.Close()
 		}
