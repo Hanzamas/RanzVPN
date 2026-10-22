@@ -10,6 +10,7 @@
 package controller_test
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -34,6 +35,7 @@ import (
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
+	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
@@ -55,10 +57,15 @@ const waitTimeout = 20 * time.Second
 // The static keys of the simulated nodes: fixed, so the golden files can hold the peer keys.
 // The publicKey of each Node resource in testdata is the X25519 public key of these.
 var (
-	keyBranch1 = fixedKey(1)  // B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=
-	keyBranch2 = fixedKey(33) // WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=
-	keyUnknown = fixedKey(65) // in no Node resource
+	keyBranch1 = fixedKey(1)   // B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=
+	keyBranch2 = fixedKey(33)  // WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=
+	keyUnknown = fixedKey(65)  // in no Node resource
+	keyLab1    = fixedKey(97)  // JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=
+	keyRelay1  = fixedKey(129) // iDGGuAC0HVzwQpaV2ps8xPMo680YSm5IL6V4wQPwbHc=
 )
+
+// quietTimeout is how long a test waits for a frame that must not come.
+const quietTimeout = 300 * time.Millisecond
 
 // TestApplySendsGeneration1 is the first criterion of #178: applying a VRF, a Network and a
 // Node makes the simulator receive generation 1 and acknowledge it.
@@ -181,6 +188,87 @@ func TestRefusals(t *testing.T) {
 	old.Version = 7
 	old.start(h)
 	golden(t, "refuse-schema-version", old.refusal(t))
+}
+
+// TestRelaysAndSignals is CORE-S5-2 (#78) at the controller: a node gets a Relay object for each
+// relay of its VRFs, and the controller carries a Signal from a node to a peer with the bytes of
+// its envelope as they came and the sender's name, drops one for a node that is no peer, and
+// leaves it to the receiver to refuse an altered or forged envelope.
+func TestRelaysAndSignals(t *testing.T) {
+	h := newHarness(t)
+	h.apply("apply-relay.json")
+	b1 := h.sim("branch-1", keyBranch1)
+	b2 := h.sim("branch-2", keyBranch2)
+	lab := h.sim("lab-1", keyLab1)
+	relay := h.sim("relay-1", keyRelay1)
+	golden(t, "relay-branch-1", b1.update(t))
+	b2.update(t)
+	lab.update(t)
+	relay.update(t)
+	for _, name := range []string{"branch-1", "branch-2", "lab-1", "relay-1"} {
+		h.waitNode(name, 1, true)
+	}
+
+	// A signal of branch-1 for lab-1, which shares no VRF with it, is dropped; one for branch-2
+	// arrives as it was sealed, named after its sender.
+	payload := []byte("the relay assignment and the candidates of branch-1")
+	env, err := control.Seal(control.KindSignal, keyBranch1, keyBranch2.Public(), payload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b1.Signal("lab-1", env); err != nil {
+		t.Fatal(err)
+	}
+	if err := b1.Signal("branch-2", env); err != nil {
+		t.Fatal(err)
+	}
+	sig := b2.signal(t)
+	if sig.GetPeer() != "branch-1" || !bytes.Equal(sig.GetEnvelope(), env) {
+		t.Errorf("branch-2 got a Signal from %q of %d bytes, want branch-1's %d bytes as they were sealed", sig.GetPeer(), len(sig.GetEnvelope()), len(env))
+	}
+	from, got, err := control.Open(control.KindSignal, sig.GetEnvelope(), keyBranch2)
+	if err != nil || !bytes.Equal(from, keyBranch1.Public()) || !bytes.Equal(got, payload) {
+		t.Errorf("branch-2 opened sender %x and %q: %v", from, got, err)
+	}
+	lab.quiet(t)
+
+	// The controller passes an altered envelope on as it came; the receiver refuses it.
+	altered := bytes.Clone(env)
+	altered[len(altered)-1] ^= 1
+	if err := b1.Signal("branch-2", altered); err != nil {
+		t.Fatal(err)
+	}
+	sig = b2.signal(t)
+	if !bytes.Equal(sig.GetEnvelope(), altered) {
+		t.Error("the controller changed the bytes of an envelope")
+	}
+	if _, _, err := control.Open(control.KindSignal, sig.GetEnvelope(), keyBranch2); err == nil {
+		t.Error("branch-2 opened an altered envelope")
+	}
+
+	// relay-1 forges a signal in branch-1's name: the controller names its real sender, and the
+	// envelope does not open.
+	forged, err := control.Seal(control.KindSignal, keyRelay1, keyBranch2.Public(), payload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copy(forged[1:33], keyBranch1.Public())
+	if err := relay.Signal("branch-2", forged); err != nil {
+		t.Fatal(err)
+	}
+	sig = b2.signal(t)
+	if sig.GetPeer() != "relay-1" {
+		t.Errorf("the forged Signal came named after %q, not its sender relay-1", sig.GetPeer())
+	}
+	if _, _, err := control.Open(control.KindSignal, sig.GetEnvelope(), keyBranch2); err == nil {
+		t.Error("branch-2 opened an envelope forged in branch-1's name")
+	}
+
+	// A Signal without an envelope ends the stream of its sender.
+	if err := lab.Signal("relay-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "refuse-signal", lab.refusal(t))
 }
 
 // TestApplyRejectsInvalidIntent checks that an invalid intent changes nothing and the answer
@@ -414,7 +502,7 @@ type sim struct {
 
 // newSim returns a simulated node that has no stream yet; start runs one.
 func (h *harness) newSim(name string, key keys.Static) *sim {
-	s := &sim{Node: &nodesim.Node{Key: key, ControllerKey: h.key.Public(), Capabilities: capsServer, Updates: make(chan *controlpb.Update, 16)}, name: name}
+	s := &sim{Node: &nodesim.Node{Key: key, ControllerKey: h.key.Public(), Capabilities: capsServer, Updates: make(chan *controlpb.Update, 16), Signals: make(chan *controlpb.Signal, 16)}, name: name}
 	h.t.Cleanup(func() {
 		s.halt()
 		dumpWire(h.t, s)
@@ -473,6 +561,31 @@ func (s *sim) update(t *testing.T) *controlpb.ControlMessage {
 		t.Fatalf("%s: no update within %v", s.name, waitTimeout)
 	}
 	return nil
+}
+
+// signal waits for the next Signal that the controller forwarded to the node.
+func (s *sim) signal(t *testing.T) *controlpb.Signal {
+	t.Helper()
+	select {
+	case sig := <-s.Signals:
+		return sig
+	case err := <-s.done:
+		s.done = nil
+		t.Fatalf("%s: the stream ended before the next signal: %v", s.name, err)
+	case <-time.After(waitTimeout):
+		t.Fatalf("%s: no signal within %v", s.name, waitTimeout)
+	}
+	return nil
+}
+
+// quiet checks that no Signal reaches the node within quietTimeout.
+func (s *sim) quiet(t *testing.T) {
+	t.Helper()
+	select {
+	case sig := <-s.Signals:
+		t.Errorf("%s: got a Signal from %q that the controller should have dropped", s.name, sig.GetPeer())
+	case <-time.After(quietTimeout):
+	}
 }
 
 // refusal waits for the controller to refuse the node and returns the Refuse as the control

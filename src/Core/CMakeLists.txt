@@ -52,6 +52,35 @@ set_target_properties(corenoise
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# corepeer: the peer module (Peer.h, Peer*.c; CORE-S5-2, #78): the peer layer of a node, the relay role and the
+# envelopes of binds and signals, on the crypto module and Winsock. The Node module of Cedar links it too, so
+# ranz_core_options and the crypto module stay PRIVATE: a target that links corepeer keeps its own build options
+# and gets the two libraries for the link only.
+file(GLOB SOURCES_CORE_PEER "Peer*.c")
+file(GLOB HEADERS_CORE_PEER "Peer*.h")
+
+add_library(corepeer STATIC ${SOURCES_CORE_PEER} ${HEADERS_CORE_PEER})
+
+target_include_directories(corepeer PUBLIC "${TOP_DIRECTORY}/src")
+
+target_link_libraries(corepeer PRIVATE ranz_core_options ranz_warnings)
+
+# The only libraries the module calls
+target_link_libraries(corepeer
+  PRIVATE
+    corecrypto
+    "ws2_32.lib"
+)
+
+set_target_properties(corepeer
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "corepeer"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
 # ranz_core_check_links(<target>...): stops the configure when one of the targets reaches,
 # through any chain of linked targets, the slim fork (mayaqua, cedar), OpenSSL or liboqs, which
 # the new core does not link (ADR-0022; CORE-F1, #61). src/CMakeLists.txt calls it once every

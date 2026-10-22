@@ -11,6 +11,11 @@ ranz.control.v1.Network.name max_size:64
 ranz.control.v1.Peer.name max_size:64
 ranz.control.v1.Peer.public_key max_size:32
 ranz.control.v1.Peer.vrf_ids max_count:16
+ranz.control.v1.Relay.name max_size:64
+ranz.control.v1.Relay.public_key max_size:32
+ranz.control.v1.Relay.address max_size:16
+ranz.control.v1.Signal.peer max_size:64
+ranz.control.v1.Signal.envelope max_size:1024
 ranz.control.v1.Prefix.address max_size:16
 ranz.control.v1.ObjectKey.name max_size:64
 ranz.control.v1.Refuse.message max_size:256

@@ -89,6 +89,9 @@ type Node struct {
 	PublicKey string   `json:"publicKey"` // base64 of the KeySize-byte key
 	VRFs      []string `json:"vrfs,omitempty"`
 	Tags      []string `json:"tags,omitempty"`
+	// Relay is the address and UDP port that the node's relay role listens on, host:port with an
+	// IP address (ADR-0015). Left out, the node is no relay for the others.
+	Relay string `json:"relay,omitempty"`
 }
 
 // Intent is the whole declared network, by kind and name.
@@ -332,8 +335,8 @@ func ParseKey(s string) ([]byte, error) {
 }
 
 // complete fills in what the resources of in leave out: the id, ULA and MTU of a VRF, the mode
-// of a Network, and the order of a Node's VRFs and tags. A VRF keeps the id and ULA it got when
-// prev first held it; they cannot change while it exists.
+// of a Network, the order of a Node's VRFs and tags, and the form of its relay address. A VRF
+// keeps the id and ULA it got when prev first held it; they cannot change while it exists.
 func (in Intent) complete(prev Intent, random io.Reader) []error {
 	var problems []error
 	names := sortedNames(in.VRFs)
@@ -392,9 +395,25 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	for name, n := range in.Nodes {
 		slices.Sort(n.VRFs)
 		slices.Sort(n.Tags)
+		if ap, err := ParseRelay(n.Relay); err == nil {
+			n.Relay = ap.String()
+		}
 		in.Nodes[name] = n
 	}
 	return problems
+}
+
+// ParseRelay parses the relay address of a Node: an IP address and a UDP port other than 0. An
+// IPv4-mapped IPv6 address is taken as the IPv4 address.
+func ParseRelay(s string) (netip.AddrPort, error) {
+	ap, err := netip.ParseAddrPort(s)
+	if err != nil {
+		return netip.AddrPort{}, fmt.Errorf("relay %q is not an IP address and a port: %w", s, err)
+	}
+	if ap.Port() == 0 || !ap.Addr().IsValid() || ap.Addr().Zone() != "" {
+		return netip.AddrPort{}, fmt.Errorf("relay %q needs an IP address without a zone and a port other than 0", s)
+	}
+	return netip.AddrPortFrom(ap.Addr().Unmap(), ap.Port()), nil
 }
 
 // validate checks a completed intent.
@@ -458,6 +477,11 @@ func (in Intent) validate() []error {
 			}
 			if i > 0 && n.Tags[i-1] == t {
 				problems = append(problems, fmt.Errorf("Node %q: tag %q is listed twice", name, t))
+			}
+		}
+		if n.Relay != "" {
+			if _, err := ParseRelay(n.Relay); err != nil {
+				problems = append(problems, fmt.Errorf("Node %q: %w", name, err))
 			}
 		}
 	}

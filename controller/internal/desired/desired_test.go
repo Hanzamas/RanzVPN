@@ -65,6 +65,33 @@ func TestCompile(t *testing.T) {
 	}
 }
 
+// A relay is a Relay object of each node it shares a VRF with, with its key and its address, and
+// of no other node (ADR-0015).
+func TestCompileRelays(t *testing.T) {
+	states := compile(t,
+		res(intent.KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48"}`),
+		res(intent.KindVRF, "lab", `{"id": 20, "ula": "fd12:3456:789b::/48"}`),
+		res(intent.KindNode, "a", `{"publicKey": "`+key1+`", "vrfs": ["corp"]}`),
+		res(intent.KindNode, "b", `{"publicKey": "`+key2+`", "vrfs": ["lab"], "relay": "[2001:db8::7]:7000"}`),
+	)
+	if _, ok := states["a"][Key{controlpb.Kind_KIND_RELAY, "b"}]; ok {
+		t.Error("a, which shares no VRF with the relay b, has a Relay object of it")
+	}
+
+	states = compile(t,
+		res(intent.KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48"}`),
+		res(intent.KindNode, "a", `{"publicKey": "`+key1+`", "vrfs": ["corp"]}`),
+		res(intent.KindNode, "b", `{"publicKey": "`+key2+`", "vrfs": ["corp"], "relay": "[::ffff:192.0.2.10]:7000"}`),
+	)
+	relay := states["a"][Key{controlpb.Kind_KIND_RELAY, "b"}].GetRelay()
+	if relay == nil || len(relay.GetPublicKey()) != 32 || len(relay.GetAddress()) != 4 || relay.GetPort() != 7000 {
+		t.Errorf("the Relay object of b in the state of a is %v, want b's key, the IPv4 address 192.0.2.10 and port 7000", relay)
+	}
+	if _, ok := states["b"][Key{controlpb.Kind_KIND_RELAY, "b"}]; ok {
+		t.Error("the relay b has a Relay object of itself")
+	}
+}
+
 // Apply of the delta from one state to another gives the other, and the delta holds only what
 // changed.
 func TestDeltaApply(t *testing.T) {

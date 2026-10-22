@@ -13,6 +13,7 @@ set(RANZ_FUZZ_TARGETS
   fuzz_net
   fuzz_stun
   fuzz_login
+  fuzz_peer
   fuzz_noise
 )
 

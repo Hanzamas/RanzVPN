@@ -36,6 +36,7 @@ message ControlMessage {
     Update update = 2;  // controller to node
     Ack ack = 3;        // node to controller
     Refuse refuse = 4;  // controller to node, the last frame before the controller closes
+    Signal signal = 5;  // node to controller to node, after the Hello
   }
 }
 
@@ -66,6 +67,18 @@ message Ack {
   uint64 generation = 1;
 }
 
+// Signalling between two peers, which the controller carries (ADR-0015 item 6, ADR-0027 item 8):
+// the relay assignment and the ICE candidates of a node. From a node, peer names the node the
+// signal is for; the controller forwards it to that node, with peer set to the sending node, when
+// the two share a VRF and that node has a stream, and drops it otherwise. The envelope is sealed by
+// the sending node's static key to the receiving node's with the Noise one-way pattern K
+// (src/Core/PeerSignal.c, controller/internal/control), so the controller can read, forge, alter
+// or redirect none of it.
+message Signal {
+  string peer = 1;
+  bytes envelope = 2;  // at most 1024 bytes
+}
+
 // Why the controller closes the stream.
 message Refuse {
   RefuseReason reason = 1;
@@ -94,6 +107,7 @@ enum Kind {
   KIND_VRF = 2;
   KIND_NETWORK = 3;
   KIND_PEER = 4;
+  KIND_RELAY = 5;
 }
 
 // One object of the desired state, identified by its kind and its name.
@@ -103,6 +117,7 @@ message Object {
     Vrf vrf = 2;
     Network network = 3;
     Peer peer = 4;
+    Relay relay = 5;
   }
 }
 
@@ -145,6 +160,16 @@ message Peer {
   string name = 1;
   bytes public_key = 2;         // the Noise static key, 32 bytes
   repeated uint32 vrf_ids = 3;  // the shared VRFs, ascending
+}
+
+// A relay that the node may use (ADR-0015): another node with the relay role that shares a VRF
+// with it. The node binds to the first, in name order, as its home relay, and to the relay that a
+// peer's signal names; a signal that names a relay the node has no Relay object of is refused.
+message Relay {
+  string name = 1;
+  bytes public_key = 2;  // the Noise static key, 32 bytes
+  bytes address = 3;     // the address its relay role listens on: 4 bytes for IPv4, 16 for IPv6
+  uint32 port = 4;       // ... and the UDP port
 }
 
 // An IP prefix: 4 address bytes for IPv4, 16 for IPv6.

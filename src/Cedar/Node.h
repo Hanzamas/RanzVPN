@@ -9,6 +9,8 @@
 
 #include "Mayaqua/MayaType.h"
 
+#include "Core/Peer.h"
+
 // The roles of a node (ADR-0011, ADR-0022). A node runs any set of them, chosen by the configuration
 // and later by the control plane (NodeSetRoles). The controller is not a role: it left the node with #176.
 #define NODE_ROLE_SERVER 0x01 // Hosts the Hubs that the sessions of strangler steps 1 and 2 end in
@@ -27,9 +29,14 @@
 #define NODE_IMPORTED_SUFFIX  L".imported"          // ... and then renames with this suffix
 
 // The settings of a node in its configuration store
-#define NODE_SETTING_ROLES   "Roles"      // A list of role names; without it NODE_DEFAULT_ROLES, "none" for no role
-#define NODE_SETTING_WORKERS "NumWorkers" // The number of workers; without it, or 0, one per core
-#define NODE_SETTING_BGP     "Bgp"        // The BGP settings, one JSON object (NodeBgpStart); without it no BGP sidecar
+#define NODE_SETTING_ROLES        "Roles"       // A list of role names; without it NODE_DEFAULT_ROLES, "none" for no role
+#define NODE_SETTING_WORKERS      "NumWorkers"  // The number of workers; without it, or 0, one per core
+#define NODE_SETTING_RELAY_PORT   "RelayPort"   // The UDP port of the relay role; without it, or 0, one that the system picks
+#define NODE_SETTING_IDENTITY_KEY "IdentityKey" // The name of the node identity key; without it NODE_IDENTITY_KEY_NAME
+#define NODE_SETTING_BGP          "Bgp"         // The BGP settings, one JSON object (NodeBgpStart); without it no BGP sidecar
+
+// The node identity key in the software key storage provider (ADR-0022) without the IdentityKey setting
+#define NODE_IDENTITY_KEY_NAME "Ranz Node"
 
 // The BGP sidecar ranz-bgp (NodeBgp.c; ADR-0010, CORE-S7-1 #82)
 #define NODE_BGP_EXE_NAME     L"ranz-bgp.exe" // The sidecar, next to the executable of the node (the RanzBgp feature of the MSI)
@@ -128,6 +135,17 @@ struct NODE {
 	volatile LONG64 Epoch;        // The table epoch: one more at each swap
 	volatile LONG64 Generation;   // The generation of the current snapshot, 0 while stopped
 	UINT64 LastGeneration;        // The generation of the last snapshot installed, under TableLock
+
+	// The peers and the relay role (CORE-S5-2, #78), under Lock
+	UINT ConfigRelayPort;       // The UDP port of the relay role (RelayPort), 0 for one that the system picks
+	char IdentityKey[MAX_SIZE]; // The name of the identity key (IdentityKey), NODE_IDENTITY_KEY_NAME without the setting
+	PEER_INFO *Peers;           // The peers that the control plane set (NodeSetPeers)
+	UINT NumPeers;              // ... their number
+	PEER_KEY RelayKey;          // The identity key, while the relay role runs
+	PEER_UDP *RelayUdp;         // The UDP socket of the relay role, NULL while it does not run
+	PEER_AGENT *Relay;          // The peer layer of the relay role, NULL while it does not run
+
+	// The BGP sidecar (CORE-S7-1, #82), under Lock
 	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
 	wchar_t BgpSidecar[MAX_PATH]; // The sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
 	NODE_BGP *Bgp;                // The running BGP sidecar (NodeBgp.c), NULL when none runs
@@ -142,6 +160,13 @@ struct NODE_STATUS {
 	UINT NumReaders;   // Registered table readers
 	UINT NumHubs;      // Hubs of the server role
 	UINT64 Generation; // The generation of the current table snapshot, 0 when there is none
+
+	// The relay role
+	USHORT RelayPort;              // Its UDP port, 0 while it does not run
+	UCHAR RelayKey[PEER_KEY_SIZE]; // Its static key: the public half of the identity key
+	UINT RelayBindings;            // The nodes bound to it
+	UINT64 RelayBinds;             // The binds it took
+	UINT64 RelayForwarded;         // The datagrams it forwarded
 };
 
 // The Login of a Noise session of the new core (Core/Noise.h)
@@ -169,6 +194,7 @@ void NodeGetStatus(NODE *n, NODE_STATUS *st);
 HUB *NodeGetHub(NODE *n, char *name);
 bool NodeAuthenticate(NODE *n, char *hubname, AUTH_REQUEST *req, AUTH_RESULT *ret);
 bool NodeLogin(NODE *n, struct NOISE_LOGIN *login, UCHAR *challenge, AUTH_RESULT *ret);
+void NodeSetPeers(NODE *n, PEER_INFO *peers, UINT num);
 UINT NodeParseRoles(char *str, char *unknown, UINT unknown_size);
 void NodeRolesToStr(char *str, UINT size, UINT roles);
 void NodeDefaultDataDir(wchar_t *dir, UINT size);

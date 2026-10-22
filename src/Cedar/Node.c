@@ -3,8 +3,9 @@
 // roles of its configuration over the per-core workers and adapter queues of NodeWorker.c and the table
 // snapshot of NodeTable.c. Its configuration is the SQLite store of ConfigStore.c in its data directory under
 // ProgramData (CORE-F5, #65). It reuses the fork's Hub, Account, Sam and Logging modules in-process, and Cfg
-// for the one-time import of a fork configuration. A node whose configuration names BGP peers also runs the BGP
-// sidecar of NodeBgp.c (CORE-S7-1, #82).
+// for the one-time import of a fork configuration. It runs the relay role on the peer module of the new core
+// (src/Core/Peer.c). A node whose configuration names BGP peers also runs the BGP sidecar of NodeBgp.c
+// (CORE-S7-1, #82).
 
 #include "Node.h"
 
@@ -49,17 +50,19 @@ typedef struct NODE_ROLE_DEF {
 
 static bool NodeServerStart(NODE *n);
 static void NodeServerStop(NODE *n);
+static bool NodeRelayStart(NODE *n);
+static void NodeRelayStop(NODE *n);
 static bool NodeEmptyRoleStart(NODE *n);
 static void NodeEmptyRoleStop(NODE *n);
 
-// The roles in start order; they stop in the reverse order. The client, bridge and relay roles hold nothing
-// yet: their adapter queues and transports come with CORE-S3-1 (#71), CORE-S3-3 (#73) and CORE-S5-2 (#78).
+// The roles in start order; they stop in the reverse order. The client and bridge roles hold nothing yet: their
+// adapter queues and transports come with CORE-S3-1 (#71) and CORE-S3-3 (#73).
 static NODE_ROLE_DEF node_roles[] =
     {
         {NODE_ROLE_SERVER, "server", NodeServerStart, NodeServerStop},
         {NODE_ROLE_CLIENT, "client", NodeEmptyRoleStart, NodeEmptyRoleStop},
         {NODE_ROLE_BRIDGE, "bridge", NodeEmptyRoleStart, NodeEmptyRoleStop},
-        {NODE_ROLE_RELAY, "relay", NodeEmptyRoleStart, NodeEmptyRoleStop},
+        {NODE_ROLE_RELAY, "relay", NodeRelayStart, NodeRelayStop},
 };
 
 #define NODE_NUM_ROLES ((UINT)(sizeof(node_roles) / sizeof(node_roles[0])))
@@ -232,17 +235,21 @@ static void NodeImportForkConfig(NODE *n) {
 
 // Open the configuration store (CS_FILE_NAME in the data directory), import a fork configuration into it once,
 // then read the settings: Roles (NODE_SETTING_ROLES; without it NODE_DEFAULT_ROLES, "none" for no role),
-// NumWorkers (NODE_SETTING_WORKERS; 0 for one per core) and Bgp (NODE_SETTING_BGP; none for no BGP sidecar). The
-// networks are read by the server role.
+// NumWorkers (NODE_SETTING_WORKERS; 0 for one per core), RelayPort (NODE_SETTING_RELAY_PORT; without it, or 0, a
+// port that the system picks), IdentityKey (NODE_SETTING_IDENTITY_KEY; without it NODE_IDENTITY_KEY_NAME) and Bgp
+// (NODE_SETTING_BGP; none for no BGP sidecar). The networks are read by the server role.
 static void NodeLoadConfig(NODE *n) {
 	wchar_t path[MAX_PATH];
 	char roles[MAX_SIZE];
 	char unknown[MAX_SIZE];
 	char workers[MAX_SIZE];
+	char relay_port[MAX_SIZE];
 	char *bgp;
 
 	n->ConfigRoles = NODE_DEFAULT_ROLES;
 	n->ConfigWorkers = 0;
+	n->ConfigRelayPort = 0;
+	StrCpy(n->IdentityKey, sizeof(n->IdentityKey), NODE_IDENTITY_KEY_NAME);
 
 	ConbinePathW(path, sizeof(path), n->DataDir, CS_FILE_NAME);
 	n->Store = CsOpen(path);
@@ -267,6 +274,14 @@ static void NodeLoadConfig(NODE *n) {
 		UINT num_workers = ToInt(workers);
 		n->ConfigWorkers = MIN(num_workers, NODE_MAX_WORKERS);
 	}
+
+	if (CsGetSetting(n->Store, NODE_SETTING_RELAY_PORT, relay_port, sizeof(relay_port))) {
+		UINT port = ToInt(relay_port);
+		n->ConfigRelayPort = (port <= 65535 ? port : 0);
+	}
+
+	if (CsGetSetting(n->Store, NODE_SETTING_IDENTITY_KEY, n->IdentityKey, sizeof(n->IdentityKey)) == false || IsEmptyStr(n->IdentityKey))
+		StrCpy(n->IdentityKey, sizeof(n->IdentityKey), NODE_IDENTITY_KEY_NAME);
 
 	bgp = ZeroMalloc(NODE_BGP_MAX_LINE);
 	if (CsGetSetting(n->Store, NODE_SETTING_BGP, bgp, NODE_BGP_MAX_LINE) && IsEmptyStr(bgp) == false)
@@ -335,6 +350,7 @@ void FreeNode(NODE *n) {
 	ReleaseList(n->HubList);
 	ReleaseList(n->QueueList);
 	ReleaseList(n->ReaderList);
+	Free(n->Peers);
 
 	DeleteLock(n->TableLock);
 	DeleteLock(n->Lock);
@@ -473,6 +489,17 @@ void NodeGetStatus(NODE *n, NODE_STATUS *st) {
 		st->NumWorkers = n->NumWorkers;
 		st->NumQueues = LIST_NUM(n->QueueList);
 		st->NumHubs = LIST_NUM(n->HubList);
+
+		if (n->Relay != NULL) {
+			PEER_STATS ps;
+
+			PeerGetStats(n->Relay, &ps);
+			st->RelayPort = PeerUdpPort(n->RelayUdp);
+			Copy(st->RelayKey, PeerPublicKey(n->Relay), PEER_KEY_SIZE);
+			st->RelayBindings = ps.NumBindings;
+			st->RelayBinds = ps.Binds;
+			st->RelayForwarded = ps.Forwarded;
+		}
 	}
 	Unlock(n->Lock);
 
@@ -541,6 +568,78 @@ static void NodeServerStop(NODE *n) {
 	}
 
 	DeleteAll(n->HubList);
+}
+
+// The relay role (ADR-0015, CORE-S5-2 #78): the peer layer of the node with the relay role, on a UDP socket of
+// RelayPort, under the node identity key. It binds the nodes of its VRFs and forwards between two of them that
+// share a VRF, by the peers that the control plane set (NodeSetPeers); it holds no state beyond the bindings that
+// its nodes renew. The socket stands in for the QUIC listener of CORE-S1-1 (#67) on UDP 443. The caller holds the
+// node lock.
+static bool NodeRelayStart(NODE *n) {
+	wchar_t name[MAX_SIZE];
+	PEER_CONFIG c;
+
+	StrToUni(name, sizeof(name), n->IdentityKey);
+	if (PeerKeyOpen(&n->RelayKey, name) == false) {
+		NodeLog(n, "Role relay: the identity key \"%s\" cannot be opened or created", n->IdentityKey);
+		return false;
+	}
+
+	n->RelayUdp = PeerUdpNew((USHORT)n->ConfigRelayPort);
+	if (n->RelayUdp == NULL) {
+		NodeLog(n, "Role relay: UDP port %u cannot be bound", n->ConfigRelayPort);
+		PeerKeyClose(&n->RelayKey);
+		return false;
+	}
+
+	PeerDefaultConfig(&c);
+	c.Relay = true;
+
+	n->Relay = PeerNew(&n->RelayKey, &c, PeerUdpSend, n->RelayUdp, NULL, NULL);
+	if (n->Relay != NULL)
+		PeerSetPeers(n->Relay, n->Peers, n->NumPeers);
+
+	if (n->Relay == NULL || PeerUdpStart(n->RelayUdp, n->Relay) == false) {
+		NodeLog(n, "Role relay: its peer layer could not start");
+		NodeRelayStop(n);
+		return false;
+	}
+
+	NodeLog(n, "Relay listening on UDP port %u, %u peers", (UINT)PeerUdpPort(n->RelayUdp), n->NumPeers);
+
+	return true;
+}
+
+// Stop the relay role: its receive thread first, which is what calls into its peer layer, then the layer and the
+// key. The caller holds the node lock.
+static void NodeRelayStop(NODE *n) {
+	PeerUdpFree(n->RelayUdp);
+	n->RelayUdp = NULL;
+
+	PeerFree(n->Relay);
+	n->Relay = NULL;
+
+	PeerKeyClose(&n->RelayKey);
+}
+
+// Set the peers of the node, from the Peer objects of the desired state, as the control plane does: for the relay
+// role, the nodes it binds and the VRFs it forwards between them in
+void NodeSetPeers(NODE *n, PEER_INFO *peers, UINT num) {
+	if (n == NULL || (peers == NULL && num != 0))
+		return;
+
+	Lock(n->Lock);
+	{
+		Free(n->Peers);
+		n->Peers = (num != 0 ? Clone(peers, sizeof(PEER_INFO) * num) : NULL);
+		n->NumPeers = num;
+
+		if (n->Relay != NULL)
+			PeerSetPeers(n->Relay, n->Peers, n->NumPeers);
+	}
+	Unlock(n->Lock);
+
+	NodeLog(n, "Peers set: %u", num);
 }
 
 // A role that holds nothing yet: it starts and stops at once

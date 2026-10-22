@@ -1,0 +1,43 @@
+# Generation 1 of branch-1 after apply-relay.json: its peers in corp, branch-2 and relay-1, and
+# relay-1, a node with the relay role in corp, as a Relay object too. lab-1 shares no VRF with it.
+update: {
+  generation: 1
+  set: {
+    node: {
+      name: "branch-1"
+    }
+  }
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\375\0224Vx\232\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1280
+    }
+  }
+  set: {
+    peer: {
+      name: "branch-2"
+      public_key: "\x58\x69\xaf\xf4\x50\x54\x97\x32\xcb\xaa\xed\x5e\x5d\xf9\xb3\x0a\x6d\xa3\x1c\xb0\xe5\x74\x2b\xad\x5a\xd4\xa1\xa7\x68\xf1\xa6\x7b"
+      vrf_ids: 10
+    }
+  }
+  set: {
+    peer: {
+      name: "relay-1"
+      public_key: "\x88\x31\x86\xb8\x00\xb4\x1d\x5c\xf0\x42\x96\x95\xda\x9b\x3c\xc4\xf3\x28\xeb\xcd\x18\x4a\x6e\x48\x2f\xa5\x78\xc1\x03\xf0\x6c\x77"
+      vrf_ids: 10
+    }
+  }
+  set: {
+    relay: {
+      name: "relay-1"
+      public_key: "\x88\x31\x86\xb8\x00\xb4\x1d\x5c\xf0\x42\x96\x95\xda\x9b\x3c\xc4\xf3\x28\xeb\xcd\x18\x4a\x6e\x48\x2f\xa5\x78\xc1\x03\xf0\x6c\x77"
+      address: "\xc0\x00\x02\x0a"  # 192.0.2.10
+      port: 7000
+    }
+  }
+}

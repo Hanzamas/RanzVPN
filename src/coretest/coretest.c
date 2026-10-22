@@ -1,8 +1,9 @@
 // coretest.c
 // Test program of the new core: the known-answer and certificate tests of the crypto module
-// (src/Core; CORE-F1, #61) and the tests of the session module, its handshake, session and tunnel
-// (CORE-F2, #62), in a program that links the two modules and nothing of the slim fork, so that it
-// also shows that they need no OpenSSL and no liboqs.
+// (src/Core; CORE-F1, #61), the tests of the session module, its handshake, session and tunnel
+// (CORE-F2, #62), and the tests of the peer module on the NAT simulator of natsim.c (CORE-S5-2,
+// #78), in a program that links these modules and nothing of the slim fork, so that it also shows
+// that they need no OpenSSL and no liboqs.
 //
 // Usage: coretest <test> | coretest all. Each named test prints "<TEST> TEST OK" or
 // "<TEST> TEST FAILED" (.github/scripts/coretest.ps1 looks for the first) and the exit code is
@@ -157,6 +158,9 @@ static TEST_LIST test_list[] = {
     {"noisesession", noisesession_test, "Noise session: golden transcripts, channel binding, Login, keepalive, dead timeout, rekey on a schedule."},
     {"noisetunnel", noisetunnel_test, "Tunnel: flows over N = 1 and N = 4 connections, a lost connection's flows move, independent rekey."},
     {"noiseinterop", noiseinterop_test, "Interop with flynn/noise (ranz-noisepeer): both roles, rekey, handshake hash; another prologue or key fails."},
+    {"envelope", envelope_test, "Signal and bind envelopes (Noise_K_25519_AESGCM_SHA256) against their known answers, in memory and in the KSP; every altered bit refused."},
+    {"relay", relay_test, "Two nodes behind symmetric NATs come up through a relay in one round trip and their traffic flows at once; the direct path is blocked."},
+    {"relaypolicy", relaypolicy_test, "Forged, altered, replayed and redirected signals and binds refused; the relay's VRF policy and rate; one ingress for direct and relayed; relay restart."},
 };
 
 #define NUM_TESTS (sizeof(test_list) / sizeof(test_list[0]))
