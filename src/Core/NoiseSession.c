@@ -2,7 +2,7 @@
 // The Noise session of the session module: the handshake records with the channel binding in the
 // prologue, the records of the data and control streams, keepalive, rekey on a schedule and the
 // dead-peer timeout; the Login of the first control record; and the tunnel of several
-// connections to one peer node.
+// connections to one peer node, with the flow hash that spreads the frames over them.
 //
 // A record is its type (one byte), then its body: the payload on a bound session, or on an
 // encrypted session the Noise transport message of the payload under the sender's key, with the
@@ -16,6 +16,10 @@
 // What the handshake hash keys (HMAC-SHA256) for the values derived from it
 static const char noise_challenge_label[] = "ranz login challenge";
 static const char noise_tunnel_label[] = "ranz tunnel id";
+
+// The flow hash of NoiseTunnelFlowHash: FNV-1a (32 bits) over the fields of a flow
+#define NOISE_FLOW_BASIS 2166136261u // The offset basis ...
+#define NOISE_FLOW_PRIME 16777619u   // ... and the prime
 
 UINT NoisePrologue(UCHAR *dst, UINT max, UINT binding_type, const UCHAR *binding, UINT binding_size) {
 	UINT label = sizeof(NOISE_PROLOGUE_LABEL) - 1;
@@ -651,4 +655,102 @@ NOISE_SESSION *NoiseTunnelRoute(const NOISE_TUNNEL *t, UINT flow_hash) {
 	}
 
 	return NULL;
+}
+
+// size bytes of p into the FNV-1a hash h. Windows has no flow hash for a program: the Toeplitz hash
+// of RSS is the NIC's and NDIS's.
+static UINT NoiseFlowMix(UINT h, const UCHAR *p, UINT size) {
+	for (UINT i = 0; i < size; i++) {
+		h ^= p[i];
+		h *= NOISE_FLOW_PRIME;
+	}
+
+	return h;
+}
+
+// The two ends of a flow into h, the lower one first, so that both directions of the flow give the
+// same hash: an end is size bytes of address, then its port (2 bytes) where the ports are not NULL
+static UINT NoiseFlowEnds(UINT h, const UCHAR *a, const UCHAR *a_port, const UCHAR *b, const UCHAR *b_port, UINT size) {
+	int order = memcmp(a, b, size);
+
+	if (order == 0 && a_port != NULL && b_port != NULL)
+		order = memcmp(a_port, b_port, 2);
+	if (order > 0) {
+		const UCHAR *swap = a;
+		a = b;
+		b = swap;
+		swap = a_port;
+		a_port = b_port;
+		b_port = swap;
+	}
+
+	h = NoiseFlowMix(h, a, size);
+	if (a_port != NULL)
+		h = NoiseFlowMix(h, a_port, 2);
+	h = NoiseFlowMix(h, b, size);
+	if (b_port != NULL)
+		h = NoiseFlowMix(h, b_port, 2);
+
+	return h;
+}
+
+// The finalizer of MurmurHash3 (fmix32): every bit of h reaches the low bits that the modulo of
+// the tunnel takes
+static UINT NoiseFlowFinal(UINT h) {
+	h ^= h >> 16;
+	h *= 0x85EBCA6Bu;
+	h ^= h >> 13;
+	h *= 0xC2B2AE35u;
+	h ^= h >> 16;
+
+	return h;
+}
+
+UINT NoiseTunnelFlowHash(const UCHAR *frame, UINT size) {
+	UINT h = NOISE_FLOW_BASIS;
+	UINT pos = 12;
+
+	if (frame == NULL || size < 14)
+		return 0;
+
+	// The 802.1Q and 802.1ad tags, outer first: the VLAN id of each counts, its priority does not
+	UINT type = ((UINT)frame[pos] << 8) | frame[pos + 1];
+	while ((type == 0x8100 || type == 0x88A8) && size - pos >= 6) {
+		UCHAR vid[2] = {(UCHAR)(frame[pos + 2] & 0x0F), frame[pos + 3]};
+
+		h = NoiseFlowMix(h, vid, sizeof(vid));
+		pos += 4;
+		type = ((UINT)frame[pos] << 8) | frame[pos + 1];
+	}
+
+	// The EtherType counts, then the IP header after it
+	h = NoiseFlowMix(h, frame + pos, 2);
+	const UCHAR *ip = frame + pos + 2;
+	UINT ip_size = size - pos - 2;
+
+	// IPv4: the addresses and the protocol, and the ports of TCP and UDP outside a fragment, whose
+	// later parts carry no ports
+	if (type == 0x0800 && ip_size >= 20 && (ip[0] >> 4) == 4) {
+		UINT header = (UINT)(ip[0] & 0x0F) * 4;
+		bool fragment = (((((UINT)ip[6] << 8) | ip[7]) & 0x3FFF) != 0);
+		bool ports = ((ip[9] == 6 || ip[9] == 17) && fragment == false && header >= 20 && ip_size >= header + 4);
+
+		h = NoiseFlowMix(h, ip + 9, 1);
+		h = NoiseFlowEnds(h, ip + 12, ports ? ip + header : NULL, ip + 16, ports ? ip + header + 2 : NULL, 4);
+		return NoiseFlowFinal(h);
+	}
+
+	// IPv6: the addresses and the next header, and the ports of TCP and UDP right after the fixed
+	// header; a fragment or another extension header gives the next header without ports
+	if (type == 0x86DD && ip_size >= 40 && (ip[0] >> 4) == 6) {
+		bool ports = ((ip[6] == 6 || ip[6] == 17) && ip_size >= 44);
+
+		h = NoiseFlowMix(h, ip + 6, 1);
+		h = NoiseFlowEnds(h, ip + 8, ports ? ip + 40 : NULL, ip + 24, ports ? ip + 42 : NULL, 16);
+		return NoiseFlowFinal(h);
+	}
+
+	// Any other frame: its MAC pair
+	h = NoiseFlowEnds(h, frame, NULL, frame + 6, NULL, 6);
+	return NoiseFlowFinal(h);
 }
