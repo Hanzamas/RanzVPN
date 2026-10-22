@@ -1,0 +1,7 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "default", "spec": {"id": 1, "ula": "fd12:3456:789a::/48", "mtu": 1280, "dns": true}},
+    {"kind": "Network", "name": "default", "spec": {"vrf": "default", "mode": "L3", "ipv4Pool": "100.64.0.0/10"}},
+    {"kind": "Policy", "name": "default-allow-all", "spec": {"vrf": "default", "action": "allow"}}
+  ]
+}

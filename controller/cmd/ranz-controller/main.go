@@ -26,7 +26,10 @@
 //
 // Every call of the API needs the bearer token of a role (SDN-14, #190). The first start creates
 // the admin token and writes its secret to admin.token in the data directory, for `ranz
-// -token-file`. rqlite is the controller's sidecar: with -rqlited the controller runs rqlited
+// -token-file`. It also creates the intent of a first install as revision 1 (ADR-0034, SDN-3
+// #179): VRF default with overlay DNS on, its Network default with the automatic IPv4 pool
+// 100.64.0.0/10, and the starter rule default-allow-all; a Node that names no VRF joins VRF
+// default. rqlite is the controller's sidecar: with -rqlited the controller runs rqlited
 // itself, with its data in the rqlite directory under -data; without it, the controller uses the
 // rqlite at -rqlite.
 //
@@ -403,6 +406,8 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 			TLSFingerprint: keys.Fingerprint(cert),
 			Capabilities:   api.Capabilities{TLSPort: tlsPortValue, TLSPortFallback: fell, PlainHTTP: plainWhere},
 		},
+		// The first start creates VRF default and the starter rule (ADR-0034)
+		Defaults: true,
 	})
 	if err != nil {
 		return err

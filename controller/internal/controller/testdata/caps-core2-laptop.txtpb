@@ -1,6 +1,7 @@
 # Generation 2 of laptop after caps-core2.json, on a node that reports no Capability at all:
-# every core feature of the intent (its tags, the MTU of corp, the VRF lab, the L3 Networks with
-# their IPv4 and IPv6 pools, and gw as its peer in both VRFs) applies.
+# every core feature of the intent (its tags and its addresses, the MTU of corp, the VRF lab, the
+# L3 Networks with their IPv4 and IPv6 pools, and gw as its peer in both VRFs) applies. gw comes
+# first in name order, so it holds the first address of each pool and laptop the second.
 update: {
   generation: 2
   base_generation: 1
@@ -9,6 +10,22 @@ update: {
       name: "laptop"
       tags: "branch"
       tags: "laptop"
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\012\012\000\002"  # 10.10.0.2
+          length: 24
+        }
+      }
+      addresses: {
+        network: "lab-lan"
+        vrf_id: 20
+        prefix: {
+          address: "\012\036\000\002"  # 10.30.0.2
+          length: 24
+        }
+      }
     }
   }
   set: {
@@ -65,6 +82,22 @@ update: {
       public_key: "\007\243|\274\024 \223\310\267U\334\033\020\350l\264&7J\321j\250S\355\013\337\300\262\270m\034|"
       vrf_ids: 10
       vrf_ids: 20
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\012\012\000\001"  # 10.10.0.1
+          length: 24
+        }
+      }
+      addresses: {
+        network: "lab-lan"
+        vrf_id: 20
+        prefix: {
+          address: "\012\036\000\001"  # 10.30.0.1
+          length: 24
+        }
+      }
     }
   }
 }

@@ -6,6 +6,10 @@
 # 64 objects is larger than 64 kB, so the C build defines PB_FIELD_32BIT.
 ranz.control.v1.NodeConfig.name max_size:64
 ranz.control.v1.NodeConfig.tags max_count:16 max_size:64
+# One address per L3 Network of a node's VRFs, and a node is in at most 16 VRFs (Peer.vrf_ids)
+ranz.control.v1.NodeConfig.addresses max_count:16
+ranz.control.v1.Peer.addresses max_count:16
+ranz.control.v1.Address.network max_size:64
 ranz.control.v1.Vrf.name max_size:64
 ranz.control.v1.Network.name max_size:64
 ranz.control.v1.Peer.name max_size:64

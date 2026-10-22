@@ -1,0 +1,36 @@
+{
+  "nodes": [
+    {
+      "name": "node-a",
+      "generation": 1,
+      "ackedGeneration": 1,
+      "connected": true,
+      "capabilities": {
+        "sku": "Server",
+        "architecture": "x64",
+        "hyperV": true,
+        "lbfo": true,
+        "selow": true,
+        "xdp": true,
+        "egressTier": 1,
+        "tlsPortFallback": false
+      }
+    },
+    {
+      "name": "node-b",
+      "generation": 1,
+      "ackedGeneration": 1,
+      "connected": true,
+      "capabilities": {
+        "sku": "Server",
+        "architecture": "x64",
+        "hyperV": true,
+        "lbfo": true,
+        "selow": true,
+        "xdp": true,
+        "egressTier": 1,
+        "tlsPortFallback": false
+      }
+    }
+  ]
+}

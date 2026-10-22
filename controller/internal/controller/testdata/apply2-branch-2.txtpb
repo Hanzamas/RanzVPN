@@ -1,10 +1,18 @@
-# Generation 1 of branch-2 after apply1.json and apply2.json: its full state, with branch-1 as
-# its peer in corp.
+# Generation 1 of branch-2 after apply1.json and apply2.json: its full state, at the second
+# address of corp-lan, with branch-1 as its peer in corp at the first.
 update: {
   generation: 1
   set: {
     node: {
       name: "branch-2"
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\012\012\000\002"  # 10.10.0.2
+          length: 24
+        }
+      }
     }
   }
   set: {
@@ -49,6 +57,14 @@ update: {
       name: "branch-1"
       public_key: "\007\243|\274\024 \223\310\267U\334\033\020\350l\264&7J\321j\250S\355\013\337\300\262\270m\034|"
       vrf_ids: 10
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\012\012\000\001"  # 10.10.0.1
+          length: 24
+        }
+      }
     }
   }
 }
