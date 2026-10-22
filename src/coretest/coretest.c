@@ -1,8 +1,9 @@
 // coretest.c
-// Test program of the new core (CORE-F1, #61): the known-answer and certificate tests of the
-// crypto module (src/Core), in a program that links the crypto module and nothing of the slim
-// fork, so that it also shows that the module needs no OpenSSL and no liboqs. The tests of the
-// peer module (CORE-S5-2, #78) run here too, on the NAT simulator of natsim.c.
+// Test program of the new core: the known-answer and certificate tests of the crypto module
+// (src/Core; CORE-F1, #61), the tests of the session module, its handshake, session and tunnel
+// (CORE-F2, #62), and the tests of the peer module on the NAT simulator of natsim.c (CORE-S5-2,
+// #78), in a program that links these modules and nothing of the slim fork, so that it also shows
+// that they need no OpenSSL and no liboqs.
 //
 // Usage: coretest <test> | coretest all. Each named test prints "<TEST> TEST OK" or
 // "<TEST> TEST FAILED" (.github/scripts/coretest.ps1 looks for the first) and the exit code is
@@ -152,6 +153,11 @@ static TEST_LIST test_list[] = {
     {"pfx", pfx_test, "PFX of OpenSSL 3 defaults (PBES2, AES-256-CBC, SHA-256 MAC) into the KSP; wrong password and no PFX refused."},
     {"certstore", certstore_test, "Certificate store: add, find by thumbprint, remove; malformed thumbprints refused."},
     {"schannel", schannel_test, "Schannel TLS 1.3 in memory with the server key in the KSP: store certificate and PFX, data both ways."},
+    {"noise", noise_test, "Noise_IK_25519_AESGCM_SHA256 against the cacophony vector, static keys as scalars and in the KSP; rekey; the rules."},
+    {"noisehfs", noisehfs_test, "Noise_IKhfs_25519+MLKEM768_AESGCM_SHA256 where the OS has ML-KEM: both sides, sizes, a changed e1 or ekem1."},
+    {"noisesession", noisesession_test, "Noise session: golden transcripts, channel binding, Login, keepalive, dead timeout, rekey on a schedule."},
+    {"noisetunnel", noisetunnel_test, "Tunnel: flows over N = 1 and N = 4 connections, a lost connection's flows move, independent rekey."},
+    {"noiseinterop", noiseinterop_test, "Interop with flynn/noise (ranz-noisepeer): both roles, rekey, handshake hash; another prologue or key fails."},
     {"envelope", envelope_test, "Signal and bind envelopes (Noise_K_25519_AESGCM_SHA256) against their known answers, in memory and in the KSP; every altered bit refused."},
     {"relay", relay_test, "Two nodes behind symmetric NATs come up through a relay in one round trip and their traffic flows at once; the direct path is blocked."},
     {"relaypolicy", relaypolicy_test, "Forged, altered, replayed and redirected signals and binds refused; the relay's VRF policy and rate; one ingress for direct and relayed; relay restart."},

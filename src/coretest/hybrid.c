@@ -63,6 +63,12 @@ void mlkem_test() {
 		coretest_check(CryptoHybridRespond(server_share, secret1, client_share) == false && memcmp(secret1, zero, sizeof(secret1)) == 0,
 		               "Respond fails cleanly, the secret zeroed");
 		coretest_check(CryptoHybridFinish(&h, secret1, server_share) == false, "Finish fails cleanly");
+
+		CRYPTO_MLKEM k;
+		FillMemory(&k, sizeof(k), 0x55);
+		coretest_check(CryptoMlKemGenerate(&k, client_share) == false && k.Key == NULL &&
+		                   CryptoMlKemEncapsulate(server_share, secret1, client_share) == false && memcmp(secret1, zero, CRYPTO_MLKEM_SECRET_SIZE) == 0,
+		               "ML-KEM alone fails cleanly");
 		return;
 	}
 
@@ -107,4 +113,16 @@ void mlkem_test() {
 	}
 
 	coretest_check(CryptoHybridRespond(server_share, secret1, NULL) == false && memcmp(secret1, zero, sizeof(secret1)) == 0, "no client share is refused");
+
+	// ML-KEM-768 alone, the KEM of the Noise hfs handshake: the two sides agree, and the key pair is
+	// released by the decapsulation
+	CRYPTO_MLKEM k;
+	if (coretest_check(CryptoMlKemGenerate(&k, client_share) && k.Key != NULL, "ML-KEM alone: key pair and 1184-byte encapsulation key")) {
+		coretest_check(CryptoMlKemEncapsulate(server_share, secret1, client_share), "encapsulation: 1088-byte ciphertext and a 32-byte secret");
+		coretest_check(CryptoMlKemDecapsulate(&k, secret2, server_share) && k.Key == NULL && memcmp(secret1, secret2, CRYPTO_MLKEM_SECRET_SIZE) == 0 &&
+		                   memcmp(secret1, zero, CRYPTO_MLKEM_SECRET_SIZE) != 0,
+		               "decapsulation gives the same secret, and releases the key pair");
+	}
+	CryptoMlKemFree(&k);
+	coretest_check(CryptoMlKemDecapsulate(&k, secret2, server_share) == false && memcmp(secret2, zero, CRYPTO_MLKEM_SECRET_SIZE) == 0, "no key pair: decapsulation fails");
 }

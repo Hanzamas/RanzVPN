@@ -1,6 +1,6 @@
 # ADR-0020: Release packaging and listener defaults for the current server
 
-**Status:** Accepted (2026-10-13). Hilmi decided each point in the release grilling of 2026-10-13; his answer is quoted under each decision. Since the same day the repository is private and the product is proprietary (Hanzcodes), for personal use and as a portfolio piece (Hilmi: "buat ini portofolio pribadi dan penggunaan pribadi gw").
+**Status:** Accepted (2026-10-13). Hilmi decided each point in the release grilling of 2026-10-13; his answer is quoted under each decision. Since the same day the repository is private and the product is proprietary (Hanzcodes), for personal use and as a portfolio piece (Hilmi: "buat ini portofolio pribadi dan penggunaan pribadi gw"). Amended 2026-10-22: releases are Authenticode code-signed (Hilmi: "Ya").
 
 ## Context
 
@@ -21,7 +21,7 @@ Listener facts, from the current tree:
 
 ## Decision
 
-1. **MSI built in CI, unsigned.** CI builds the MSI with WiX for x64 and arm64. Neither the executable nor the MSI is code-signed. A user who downloads it passes the SmartScreen warning by choosing "Run anyway". Hilmi: "MSI dibuat otomatis di CI, tanpa signing".
+1. **MSI built in CI, unsigned.** CI builds the MSI with WiX for x64 and arm64. Neither the executable nor the MSI is code-signed. A user who downloads it passes the SmartScreen warning by choosing "Run anyway". Hilmi: "MSI dibuat otomatis di CI, tanpa signing". *(Superseded by the amendment of 2026-10-22 below: the shipped executables and the MSI are Authenticode code-signed; CI signs with a self-signed certificate during development.)*
 2. **Data stays next to the executable.** The config, its backups and the logs stay in the install directory under Program Files, where the server writes them today, so no code changes. The service runs as LocalSystem and can write there. ProgramData is used only by the new core. Hilmi: "(a) untuk sekarang. Service jalan sebagai SYSTEM jadi tetap bisa menulis di sana. ProgramData baru dipakai di core baru."
 3. **Uninstall keeps config and logs.** Uninstall removes the binaries and the service, keeps the config, its backups and the logs, and removes the firewall rule "Ranz VPN Server" and the registry key `HKLM\SOFTWARE\Hanzcodes\Ranz VPN`. An upgrade or a reinstall starts from the existing configuration. Hilmi: "Upgrade dan install ulang tidak kehilangan konfigurasi."
 4. **Service name `ranzvpnserver`.** The internal service name changes from `sevpnserverdev` to `ranzvpnserver`. The display name stays "Ranz VPN Server". The MSI and the server's own install command register the same name. On install, the MSI stops and deletes an existing `sevpnserverdev` service, so a machine that was set up by hand moves to the MSI without a manual step. Hilmi, correcting the proposed `RanzVPNServer`: "Ganti jadi ranzvpnserver. MSI otomatis mematikan dan menghapus service lama." _Supersedes part of ADR-0001's amendment of 2026-10-12, which kept internal service names unchanged; for the server's service, this decision replaces it._
@@ -41,3 +41,11 @@ Listener facts, from the current tree:
 - Windows Installer orders upgrades by product version. The spike took the version from the CI run number, which counts per workflow. The release spec must take it from one counter that only grows, within the MSI limit of 65535 for the third field.
 - Open items for the release spec: the arm64 MSI has never been installed; an upgrade from one version to the next has never been tested; the spike's MSI does not include vpncmd, so until the planned web admin exists, an MSI-installed server is administered with vpncmd from elsewhere.
 - ADR-0008 names MSIX or winget as the installer for the new core; this ADR covers the current server only. While the repository is private, release assets need a signed-in download, so winget is not an option.
+
+## Amendment 2026-10-22: releases are Authenticode code-signed
+
+Maintainer decision (Hilmi: "Ya"). Decision 1, "MSI built in CI, unsigned", is superseded. The shipped executables and the MSI are signed with an Authenticode certificate, OV or EV. The certificate is bought near release, not now, because there is no release yet. During development, CI signs with a self-signed certificate, so the signing and the self-integrity path (ADR-0036 amendment of 2026-10-22) are exercised on every build.
+
+- The release build signs every shipped executable and the MSI with the Authenticode certificate. A signed download no longer shows the SmartScreen "unknown publisher" warning, and an EV certificate also satisfies Smart App Control.
+- Until the certificate is bought, CI signs with a self-signed certificate. That signature does not chain to a trusted root, so a self-signed build still shows SmartScreen, but the signing step and the self-integrity check that reads the signature run on every build.
+- The self-integrity check at start (WinVerifyTrust plus a hash of the .text section) is specified in ADR-0036; it needs the binary to be signed, which is why CI signs even during development.

@@ -169,6 +169,9 @@ struct NODE_STATUS {
 	UINT64 RelayForwarded;         // The datagrams it forwarded
 };
 
+// The Login of a Noise session of the new core (Core/Noise.h)
+struct NOISE_LOGIN;
+
 // What NodeBgpGetStatus reports
 struct NODE_BGP_STATUS {
 	bool Running;           // The sidecar runs and BGP started (it sent ready)
@@ -190,6 +193,7 @@ UINT NodeSetRoles(NODE *n, UINT roles);
 void NodeGetStatus(NODE *n, NODE_STATUS *st);
 HUB *NodeGetHub(NODE *n, char *name);
 bool NodeAuthenticate(NODE *n, char *hubname, AUTH_REQUEST *req, AUTH_RESULT *ret);
+bool NodeLogin(NODE *n, struct NOISE_LOGIN *login, UCHAR *challenge, AUTH_RESULT *ret);
 void NodeSetPeers(NODE *n, PEER_INFO *peers, UINT num);
 UINT NodeParseRoles(char *str, char *unknown, UINT unknown_size);
 void NodeRolesToStr(char *str, UINT size, UINT roles);

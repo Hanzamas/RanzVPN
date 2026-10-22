@@ -29,7 +29,7 @@ bool coretest_elevated();
 UINT coretest_scope();
 const char *coretest_scope_name();
 
-// Named tests: kat.c, hybrid.c, cert.c, schannel.c, envelope.c, relay.c
+// Named tests: kat.c, hybrid.c, cert.c, schannel.c; noise.c, session.c, interop.c; envelope.c, relay.c
 void rand_test();
 void sha256_test();
 void hmac_test();
@@ -42,6 +42,11 @@ void selfsign_test();
 void pfx_test();
 void certstore_test();
 void schannel_test();
+void noise_test();
+void noisehfs_test();
+void noisesession_test();
+void noisetunnel_test();
+void noiseinterop_test();
 void envelope_test();
 void relay_test();
 void relaypolicy_test();

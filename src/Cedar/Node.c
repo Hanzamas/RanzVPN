@@ -15,11 +15,14 @@
 #include "Sam.h"
 #include "Server.h"
 
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
+
+#include "Core/Noise.h"
 
 #include "NodeInternal.h"
 
@@ -674,7 +677,7 @@ HUB *NodeGetHub(NODE *n, char *name) {
 
 // The credential gate of the node: req checked against the users of the Hub hubname of the server role by the
 // fork's Sam (SamAuthenticate). The session layer (CORE-F2, #62) passes the credentials of the first control
-// message. ret->Error is ERR_HUB_NOT_FOUND when the server role does not run that hub.
+// message through NodeLogin. ret->Error is ERR_HUB_NOT_FOUND when the server role does not run that hub.
 bool NodeAuthenticate(NODE *n, char *hubname, AUTH_REQUEST *req, AUTH_RESULT *ret) {
 	if (ret == NULL)
 		return false;
@@ -691,4 +694,57 @@ bool NodeAuthenticate(NODE *n, char *hubname, AUTH_REQUEST *req, AUTH_RESULT *re
 	ReleaseHub(h);
 
 	return ret->Ok;
+}
+
+// The Login of a session of the new core (CORE-F2, #62): the credentials of the first control message of a
+// Noise session, checked by NodeAuthenticate as the SE-VPN login has Sam check them. The password reaches the
+// node inside the encrypted session, so it goes to Sam as a plain password, which Sam checks against a password
+// user or, for a user of a Windows domain, with the domain; a certificate Login signed challenge, the
+// NOISE_LOGIN_CHALLENGE_SIZE (SHA1_SIZE) bytes of NoiseSessionChallenge, where the SE-VPN login signs the random
+// of its hello. ret->Error is ERR_AUTHTYPE_NOT_SUPPORTED for a join Login, which names a tunnel, not a user.
+bool NodeLogin(NODE *n, NOISE_LOGIN *login, UCHAR *challenge, AUTH_RESULT *ret) {
+	AUTH_REQUEST req;
+
+	if (ret == NULL)
+		return false;
+
+	Zero(ret, sizeof(AUTH_RESULT));
+	ret->Error = ERR_AUTH_FAILED;
+	if (login == NULL || challenge == NULL)
+		return false;
+
+	Zero(&req, sizeof(req));
+	req.Username = login->UserName;
+	req.Random = challenge;
+
+	switch (login->Method) {
+	case NOISE_LOGIN_ANONYMOUS:
+		req.AuthType = CLIENT_AUTHTYPE_ANONYMOUS;
+		break;
+
+	case NOISE_LOGIN_PASSWORD:
+		req.AuthType = CLIENT_AUTHTYPE_PLAIN_PASSWORD;
+		req.PlainPassword = login->Password;
+		break;
+
+	case NOISE_LOGIN_CERT: {
+		BUF *b = NewBuf();
+		WriteBuf(b, (void *)login->Cert, login->CertSize);
+		req.AuthType = CLIENT_AUTHTYPE_CERT;
+		req.Cert = BufToX(b, false);
+		req.Sign = (UCHAR *)login->Sign;
+		req.SignSize = login->SignSize;
+		FreeBuf(b);
+		break;
+	}
+
+	default:
+		ret->Error = ERR_AUTHTYPE_NOT_SUPPORTED;
+		return false;
+	}
+
+	bool ok = NodeAuthenticate(n, login->HubName, &req, ret);
+	FreeX(req.Cert);
+
+	return ok;
 }
