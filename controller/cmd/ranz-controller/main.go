@@ -8,6 +8,10 @@
 //	ranz-controller install [flags]      register the Windows service, which runs with these flags
 //	ranz-controller uninstall            remove the Windows service
 //	ranz-controller reset-admin [flags]  create a new admin token, with the flags of the service
+//	ranz-controller backup -o FILE [flags]
+//	                                     write a backup of the whole store to FILE, with the flags of the service
+//	ranz-controller restore -f FILE [flags]
+//	                                     replace the whole store with the backup in FILE, with the flags of the service
 //
 // Ports:
 //
@@ -39,6 +43,13 @@
 // service, while it runs or while it is stopped. reset-admin writes a new admin token to the
 // store directly, prints its secret once, writes it to admin.token as the first start does, and
 // records the reset in the Application log on Windows (event ID 5).
+//
+// A local administrator of the host also backs up the whole store (the intent with every
+// revision, the node states, the events, the tokens and the licence key) with backup, and puts a
+// backup back with restore (SDN-52, #245), with the flags of the service, while it runs or while
+// it is stopped. A restore under a running controller first takes the lease of the leader for a
+// lease duration, so the leader steps down, and then the next leader loads the restored store. In
+// a cluster, restore runs while the members run: rqlite loads the backup into every member.
 //
 // The licence key (ADR-0036) is installed with `ranz licence -f FILE` and kept in rqlite. It
 // must be signed with a vendor key that the release build links in (internal/licence); without
@@ -241,6 +252,17 @@ func main() {
 	if len(args) > 0 && args[0] == "reset-admin" {
 		if err := runResetAdmin(args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "ranz-controller reset-admin: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(args) > 0 && (args[0] == "backup" || args[0] == "restore") {
+		cmd := runBackup
+		if args[0] == "restore" {
+			cmd = runRestore
+		}
+		if err := cmd(args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "ranz-controller %s: %v\n", args[0], err)
 			os.Exit(1)
 		}
 		return
