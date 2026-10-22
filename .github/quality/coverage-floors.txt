@@ -13,13 +13,14 @@
 c  corecrypto     85  src/Core/Crypto*.c
 c  corenoise      86  src/Core/Noise*.c
 c  corepeer       72  src/Core/Peer*.c
-c  coretransport   0  src/Core/Transport*.c
+c  coretransport  85  src/Core/Transport*.c
 
 # The controller (controller/)
 go  controller/cmd/ranz                 67
 go  controller/cmd/ranz-controller      49
 go  controller/cmd/ranz-nodesim         0
 go  controller/cmd/ranz-noisepeer       0
+go  controller/internal/activation      81
 go  controller/internal/api             16
 go  controller/internal/capability      95
 go  controller/internal/cluster         61
@@ -35,6 +36,7 @@ go  controller/internal/rbac            65
 go  controller/internal/rqlitetest      0
 go  controller/internal/sidecar         0
 go  controller/internal/store           37
+go  controller/internal/webui           94
 
 # The BGP sidecar (ranz-bgp/)
 go  ranz-bgp/cmd/ranz-bgp          68

@@ -11,3 +11,8 @@
 src/Core/Crypto.c|C6031|Return value ignored: 'BCryptSetProperty'.
 src/Core/CryptoMlKem.c|C6031|Return value ignored: 'BCryptSetProperty'.
 src/Core/CryptoCert.c|C6001|Using uninitialized memory 'ext.Value.pbData'.
+
+# The findings of the transport module (CORE-F4 #64) when the gate first ran on it (2026-10-22):
+# - Transport.c: TransportParseList writes entry num of targets only after it checked num against
+#   max for that entry, which the analysis does not carry into the second entry of a list
+src/Core/Transport.c|C6385|Reading invalid data from 'targets':  the readable size is '_Old_2`sizeof(TRANSPORT_TARGET)*max' bytes, but '528' bytes may be read.
