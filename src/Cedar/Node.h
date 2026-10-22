@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeTable.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeTable.c, NodeVrf.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -63,13 +63,21 @@
 #define NODE_OVERLAY_REDIAL        1000 // ms before a peer is dialled again
 #define NODE_OVERLAY_IDLE          10   // ms that the thread of the overlay sleeps when it found nothing to do
 #define NODE_OVERLAY_BATCH         64   // Records that the thread takes from one session in one pass
+#define NODE_OVERLAY_VRF_TAG       4    // Bytes of a data record before its IP packet: the VRF id, big-endian (SDN-4, #180)
+#define NODE_OVERLAY_RECORD        2048 // Bytes of a data record that NodeOverlayInput builds on its stack; a larger one is allocated
+
+// The forwarding tables of the VRFs of a node (NodeVrf.c; SDN-4, #180)
+#define NODE_VRF_LOCAL      0x3FFFFFFF // The next hop of an address of the node itself: the host
+#define NODE_VRF_NONE       0xFFFFFFFF // What a lookup gives for an address that no route of the VRF holds
+#define NODE_VRF_MAX_ROUTES 65536      // Routes of the tables of one Generation at most
+#define NODE_VRF_MAX_HOPS   65536      // Next hops of those tables at most
 
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
 // Drains an adapter queue on its I/O thread, to completion (NodeAddQueue)
 typedef void(NODE_QUEUE_PROC)(NODE_QUEUE *q, void *param);
-// Takes an IP packet of the overlay for the host (NodeOverlayStart), on the thread of the overlay
-typedef void(NODE_ADAPTER_PROC)(NODE *n, void *param, const UCHAR *packet, UINT size);
+// Takes an IP packet of the overlay for the host in the VRF vrf_id (NodeOverlayStart), on the thread of the overlay
+typedef void(NODE_ADAPTER_PROC)(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size);
 
 // A thread that reads the table snapshot: a worker, the I/O thread of an adapter queue, or a thread that
 // registered itself. It holds a snapshot only between two quiescent points and none while it is offline,
@@ -91,13 +99,36 @@ struct NODE_TABLE {
 	NODE_TABLE_ENTRY *Entries; // The entries, sorted by key
 };
 
-// The table snapshot of a node: the MAC, route and policy tables that the data path reads without a lock.
-// A new snapshot is built off the data path; NodeSwapTables installs it by pointer.
+// The table snapshot of a node: the MAC, route and policy tables and the forwarding tables of the VRFs that the data
+// path reads without a lock. A new snapshot is built off the data path; NodeSwapTables installs it by pointer, and
+// NodeSwapVrfs installs one with new forwarding tables of the VRFs and the other tables of the current one.
 struct NODE_TABLES {
-	UINT64 Generation;  // Set by NodeSwapTables: one more than the snapshot it replaced
-	NODE_TABLE *Mac;    // The VLAN-aware MAC table: key NodeMacKey, value the port
-	NODE_TABLE *Route;  // The route table; its compiled form comes with the routed networks (CORE-S6-1, #80)
-	NODE_TABLE *Policy; // The policy table; its compiled form comes with the policy engine (CORE-S4-2, #75)
+	UINT64 Generation;     // Set by NodeSwapTables and NodeSwapVrfs: one more than the snapshot it replaced
+	NODE_TABLE *Mac;       // The VLAN-aware MAC table: key NodeMacKey, value the port
+	NODE_TABLE *Route;     // The route table; its compiled form comes with the routed networks (CORE-S6-1, #80)
+	NODE_TABLE *Policy;    // The policy table; its compiled form comes with the policy engine (CORE-S4-2, #75)
+	NODE_VRF_TABLES *Vrfs; // The forwarding tables of the VRFs (NodeVrf.c; SDN-4, #180), NULL for none
+};
+
+// One route of the forwarding tables of the VRFs (NodeNewVrfTables)
+struct NODE_VRF_ROUTE {
+	UINT VrfId;        // The VRF
+	UCHAR Address[16]; // The prefix: 4 bytes for IPv4, 16 for IPv6, in network byte order; its host bits are ignored
+	UINT AddressSize;  // ... their number
+	UINT Length;       // The prefix length: 0 to 32 for IPv4, 0 to 128 for IPv6
+	UINT NextHop;      // What it leads to: an index of the next hops, or NODE_VRF_LOCAL for the host
+};
+
+// The forwarding tables of the VRFs of a node for one Generation of its desired state (NodeVrf.c; SDN-4, #180): one
+// immutable longest-prefix-match table per VRF, DIR-24-8 for IPv4 and a trie for IPv6, built beside the live ones and
+// installed with them by NodeSwapVrfs. A route leads to the host or to one of the next hops, objects that the builder
+// owns and keeps until the tables are freed.
+struct NODE_VRF_TABLES {
+	UINT64 Generation;     // The Generation of the desired state they were built from
+	UINT NumVrfs;          // Number of VRFs
+	NODE_VRF_TABLE **Vrfs; // The table of each, by VRF id
+	UINT NumHops;          // Number of next hops
+	void **Hops;           // The next hops: what next hop i of a route leads to
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -172,7 +203,7 @@ struct NODE {
 
 // How the overlay of a node runs (NodeOverlayStart)
 struct NODE_OVERLAY_CONFIG {
-	TRANSPORT *Control;                      // The transport of the control stream to the controller (Core/Control.h)
+	TRANSPORT *Control;                      // The transport of the control stream to the controller (Core/Control.h), NULL for none: NodeOverlayApply then applies the states
 	char Controller[TRANSPORT_ADDRESS_SIZE]; // The controller's address on it
 	UCHAR ControllerKey[PEER_KEY_SIZE];      // ... and its static key
 	TRANSPORT *Data;                         // The transport of the Noise sessions to the peers, which finds a peer by its node name
@@ -188,6 +219,8 @@ struct NODE_OVERLAY_STATUS {
 	char Name[PEER_NAME_SIZE];                  // The node's name in the intent
 	UINT NumAddresses;                          // Its IPv4 addresses in the L3 Networks of its VRFs
 	UINT Addresses[NODE_OVERLAY_MAX_ADDRESSES]; // ... in network byte order
+	UINT VrfIds[NODE_OVERLAY_MAX_ADDRESSES];    // ... and the VRF of each
+	UINT NumVrfs;                               // The VRFs of its forwarding tables
 	UINT NumPeers;                              // Its peers
 	UINT NumLinks;                              // ... with a Noise session up
 	UINT64 Forwarded;                           // Packets of the host sent to a peer
@@ -215,6 +248,9 @@ struct NODE_STATUS {
 
 // The Login of a Noise session of the new core (Core/Noise.h)
 struct NOISE_LOGIN;
+
+// A desired state of a node as the control stream applies it (Core/Control.h)
+struct CONTROL_STATE;
 
 // What NodeBgpGetStatus reports
 struct NODE_BGP_STATUS {
@@ -268,6 +304,7 @@ NODE_TABLES *NodeNewTables(NODE_TABLE *mac, NODE_TABLE *route, NODE_TABLE *polic
 void NodeFreeTables(NODE_TABLES *t);
 NODE_TABLES *NodeGetTables(NODE *n);
 bool NodeSwapTables(NODE *n, NODE_TABLES *t);
+bool NodeSwapVrfs(NODE *n, NODE_VRF_TABLES *v);
 void NodeReaderRegister(NODE *n, NODE_READER *r);
 void NodeReaderUnregister(NODE *n, NODE_READER *r);
 void NodeReaderQuiescent(NODE *n, NODE_READER *r);
@@ -283,10 +320,17 @@ void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
 void NodeHarden();
 const NODE_MITIGATION *NodeGetMitigations(UINT *num);
 
+// NodeVrf.c
+NODE_VRF_TABLES *NodeNewVrfTables(UINT64 generation, const NODE_VRF_ROUTE *routes, UINT num, void **hops, UINT num_hops);
+void NodeFreeVrfTables(NODE_VRF_TABLES *v);
+NODE_VRF_TABLE *NodeGetVrfTable(NODE_VRF_TABLES *v, UINT vrf_id);
+UINT NodeVrfLookup(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size);
+
 // NodeOverlay.c
 bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg);
 void NodeOverlayStop(NODE *n);
-bool NodeOverlayInput(NODE *n, const UCHAR *packet, UINT size);
+bool NodeOverlayApply(NODE *n, const struct CONTROL_STATE *st);
+bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size);
 void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
 
 #endif // NODE_H

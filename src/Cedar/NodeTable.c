@@ -2,7 +2,8 @@
 // The table snapshot of a node: the read-mostly MAC, route and policy tables that the data path reads without
 // a lock, swapped by pointer (ADR-0022, Threading). A swap frees the old snapshot after a grace period: once
 // every online reader has passed a quiescent point, none can still hold it (quiescent-state-based reclamation,
-// which suits run-to-completion loops: a reader keeps no snapshot from one batch to the next).
+// which suits run-to-completion loops: a reader keeps no snapshot from one batch to the next). The forwarding
+// tables of the VRFs (NodeVrf.c; SDN-4, #180) are part of the snapshot and swapped the same way, on their own.
 
 #include "Node.h"
 
@@ -81,7 +82,8 @@ void NodeMacKey(UCHAR *key, UINT vlan_id, UCHAR *mac) {
 		Copy(key + 2, mac, 6);
 }
 
-// A snapshot of the three tables, which it takes over; a NULL table becomes an empty one
+// A snapshot of the three tables, which it takes over; a NULL table becomes an empty one. It holds no forwarding
+// tables of VRFs: NodeSwapTables keeps the ones installed.
 NODE_TABLES *NodeNewTables(NODE_TABLE *mac, NODE_TABLE *route, NODE_TABLE *policy) {
 	NODE_TABLES *t = ZeroMalloc(sizeof(NODE_TABLES));
 
@@ -100,6 +102,7 @@ void NodeFreeTables(NODE_TABLES *t) {
 	NodeFreeTable(t->Mac);
 	NodeFreeTable(t->Route);
 	NodeFreeTable(t->Policy);
+	NodeFreeVrfTables(t->Vrfs);
 
 	Zero(t, sizeof(NODE_TABLES));
 	Free(t);
@@ -209,8 +212,9 @@ static void NodeWaitGracePeriod(NODE *n, LONG64 target) {
 }
 
 // Install the snapshot t (which the node takes over) in place of the current one, which is freed after the
-// grace period. False, and t stays the caller's, while the node is stopped or when the calling thread is an
-// online reader. Never call it with a lock that a reader takes: the data path takes none.
+// grace period. The forwarding tables of the VRFs of the current one carry over: NodeSwapVrfs replaces them.
+// False, and t stays the caller's, while the node is stopped or when the calling thread is an online reader.
+// Never call it with a lock that a reader takes: the data path takes none.
 bool NodeSwapTables(NODE *n, NODE_TABLES *t) {
 	bool ret = false;
 	if (n == NULL || t == NULL)
@@ -220,12 +224,55 @@ bool NodeSwapTables(NODE *n, NODE_TABLES *t) {
 	{
 		if (n->Tables != NULL && NodeIsReaderThread(n) == false) {
 			t->Generation = ++n->LastGeneration;
+			t->Vrfs = n->Tables->Vrfs;
 
 			NODE_TABLES *old = InterlockedExchangePointer((PVOID volatile *)&n->Tables, t);
 			WriteRelease64(&n->Generation, (LONG64)t->Generation);
 
 			NodeWaitGracePeriod(n, InterlockedIncrement64(&n->Epoch));
 
+			old->Vrfs = NULL;
+			NodeFreeTables(old);
+			ret = true;
+		}
+	}
+	Unlock(n->TableLock);
+
+	return ret;
+}
+
+// Install the forwarding tables v of the VRFs (NodeVrf.c), which the node takes over, in a new snapshot that keeps
+// the MAC, route and policy tables of the current one; the forwarding tables before are freed after the grace
+// period, so a reader sees either them or v, and none of them half-built. v may be NULL: no forwarding tables. False,
+// and v stays the caller's, while the node is stopped or when the calling thread is an online reader. Never call it
+// with a lock that a reader takes.
+bool NodeSwapVrfs(NODE *n, NODE_VRF_TABLES *v) {
+	bool ret = false;
+	if (n == NULL)
+		return false;
+
+	Lock(n->TableLock);
+	{
+		NODE_TABLES *old = n->Tables;
+
+		if (old != NULL && NodeIsReaderThread(n) == false) {
+			NODE_TABLES *t = ZeroMalloc(sizeof(NODE_TABLES));
+
+			t->Generation = ++n->LastGeneration;
+			t->Mac = old->Mac;
+			t->Route = old->Route;
+			t->Policy = old->Policy;
+			t->Vrfs = v;
+
+			InterlockedExchangePointer((PVOID volatile *)&n->Tables, t);
+			WriteRelease64(&n->Generation, (LONG64)t->Generation);
+
+			NodeWaitGracePeriod(n, InterlockedIncrement64(&n->Epoch));
+
+			// The new snapshot holds the MAC, route and policy tables now; the old forwarding tables go with the old one
+			old->Mac = NULL;
+			old->Route = NULL;
+			old->Policy = NULL;
 			NodeFreeTables(old);
 			ret = true;
 		}
