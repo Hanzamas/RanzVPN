@@ -55,6 +55,15 @@
       }
     },
     {
+      "name": "hardened",
+      "displayName": "x64 hardened (ranzguard)",
+      "description": "x64 with RANZ_HARDENED (ADR-0036): builds the release-only hardened ranzguard binary alongside the clean binaries; the harden CI job",
+      "inherits": "x64",
+      "cacheVariables": {
+        "RANZ_HARDENED": "ON"
+      }
+    },
+    {
       "name": "debug",
       "displayName": "x64 Debug",
       "description": "x64 Debug configuration: code that RelWithDebInfo never compiles (_DEBUG)",
@@ -78,6 +87,7 @@
     { "name": "arm64", "configurePreset": "arm64" },
     { "name": "asan", "configurePreset": "asan" },
     { "name": "coverage", "configurePreset": "coverage" },
+    { "name": "hardened", "configurePreset": "hardened" },
     { "name": "debug", "configurePreset": "debug" },
     { "name": "debug-arm64", "configurePreset": "debug-arm64" }
   ]

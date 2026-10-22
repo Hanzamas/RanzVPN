@@ -473,6 +473,9 @@ void svcargs_test(UINT num, char **arg);
 // Named FIFO and queue test of FND-215, #174 (fifo.c)
 void fifo_test(UINT num, char **arg);
 
+// Named hardened licence gate test of SEC-4, #282 (harden.c)
+void harden_test(UINT num, char **arg);
+
 // Named node tests of CORE-F3, #63 (nodetest.c)
 void node_test(UINT num, char **arg);
 void nodesvc_test(UINT num, char **arg);
@@ -485,6 +488,9 @@ void store_test(UINT num, char **arg);
 
 // Named BGP sidecar test of CORE-S7-1, #82 (bgptest.c)
 void bgp_test(UINT num, char **arg);
+
+// Named self-integrity test of SEC-3, #281 (selfint.c)
+void selfint_test(UINT num, char **arg);
 
 // Named transport test of CORE-F4, #64 (transporttest.c)
 void transport_test(UINT num, char **arg);
@@ -640,7 +646,9 @@ TEST_LIST test_list[] =
 	{"nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result (administrator rights)."},
 	{"store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords."},
 	{"bgp", bgp_test, "BGP sidecar: ranz-bgp peers with a router (gobgpd, RANZ_GOBGP) on TCP 179, a prefix announced and withdrawn, a learned route installed through IP Helper (administrator rights)."},
+	{"selfintegrity", selfint_test, "Self-integrity: WinVerifyTrust and the .text hash of the running binary; OK when signed and intact, the degrade-or-deceive response when changed (SEC-3; run on a signed binary by self-integrity.ps1)."},
 	{"transport", transport_test, "Transport: a Noise session end to end over the loopback transport, the race of a configured fallback list (the first to connect wins), the same session over a second transport."},
+	{"harden", harden_test, "Hardened licence gate: ranzguard reports unlocked unwatched and degrades to locked under a debugger, never crashing (skips when ranzguard.exe is absent)."},
 	{"httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port."},
 };
 

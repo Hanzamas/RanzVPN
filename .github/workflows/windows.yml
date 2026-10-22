@@ -784,6 +784,104 @@ jobs:
         if-no-files-found: ignore
         path: build/appverif/
 
+  # The release-only hardened variant (SEC-4 #282, ADR-0036), x64 only. Builds with RANZ_HARDENED=ON so
+  # ranzguard is built next to the clean binaries, then asserts the four acceptance criteria of #282 in
+  # CI: both variants build; the release variant has an empty import table and no RWX page and never
+  # writes into ntdll; the VMProtect markers wrap only the licence-gate and key-handling routines; and
+  # the release variant degrades or deceives under a debugger instead of crashing.
+  harden:
+    runs-on: windows-latest
+    name: harden (ranzguard)
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-
+    - name: Build (RANZ_HARDENED=ON)
+      run: |
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
+
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        if "%VSINSTALL%"=="" (
+          echo Visual Studio installation was not found.
+          exit /b 1
+        )
+
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
+        rem The clean binaries (vpnserver for the clean-variant check, vpntest for the debugger test) and
+        rem the release-only ranzguard, in one build. VCPKG_APPLOCAL_DEPS is off: the static triplet copies
+        rem no DLLs, and the per-target applocal step otherwise contends on the installed bin dir when
+        rem several targets link at once ("the process cannot access the file because it is being used by
+        rem another process").
+        cmake --preset hardened -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%GITHUB_RUN_NUMBER% -DVCPKG_APPLOCAL_DEPS=OFF
+        if errorlevel 1 exit /b 1
+        rem One target per build call, so the three executables never link at the same moment and never
+        rem contend on an output file
+        cmake --build --preset hardened --target ranzguard
+        if errorlevel 1 exit /b 1
+        cmake --build --preset hardened --target vpnserver
+        if errorlevel 1 exit /b 1
+        cmake --build --preset hardened --target vpntest
+      shell: cmd
+    - name: Save vcpkg binary cache
+      if: ${{ !cancelled() }}
+      uses: actions/cache/save@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-bincache/**') }}
+    # Acceptance criterion 2: the release variant has an empty import table (dynamic API resolution) and
+    # no section that is both executable and writable (the RWX page that trips HVCI and EDR)
+    - name: ranzguard is hardened (empty import table, no RWX)
+      shell: pwsh
+      run: |
+        python .github/scripts/harden-check.py pe --binary build/ranzguard.exe
+        if ($LASTEXITCODE -ne 0) { throw "ranzguard.exe failed the hardened PE checks (exit $LASTEXITCODE)" }
+    # Acceptance criterion 2 (the ntdll and RWX properties at the source) and criterion 4 (selective
+    # VMProtect): the source allocates no RWX page and writes into no module, and the markers wrap only
+    # the two protected routines
+    - name: ranzguard source safety and VMProtect marker placement
+      shell: pwsh
+      run: |
+        python .github/scripts/harden-check.py safety --source src/guard/ranzguard.c
+        if ($LASTEXITCODE -ne 0) { throw "ranzguard source safety check failed (exit $LASTEXITCODE)" }
+        python .github/scripts/harden-check.py markers --source src/guard/ranzguard.c
+        if ($LASTEXITCODE -ne 0) { throw "ranzguard VMProtect marker check failed (exit $LASTEXITCODE)" }
+    # Acceptance criterion 1: the clean variant carries no obfuscation (an ordinary import table, no
+    # VMProtect section)
+    - name: Clean variant carries no obfuscation
+      shell: pwsh
+      run: |
+        python .github/scripts/harden-check.py clean --binary build/vpnserver.exe
+        if ($LASTEXITCODE -ne 0) { throw "vpnserver.exe is not a clean, unobfuscated binary (exit $LASTEXITCODE)" }
+    # Acceptance criterion 3: run the release variant under a debugger and assert the degrade-or-deceive
+    # response (it reports locked, never crashes), and that it reports unlocked when unwatched. The
+    # harden self-test of vpntest drives both paths through the Win32 debug API.
+    - name: Degrade-or-deceive under a debugger
+      timeout-minutes: 10
+      shell: pwsh
+      env:
+        RANZ_SMOKE_TESTS: harden
+      run: |
+        . .github/scripts/vpntest.ps1
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        if-no-files-found: warn
+        name: ranzguard-x64
+        path: |
+          build/ranzguard.exe
+          build/ranzguard.pdb
+
   # Debug configuration, built without running anything: the code that build_and_test
   # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c and vpncmd.c) and without
   # WIN32_NO_DEBUG_HELP_DLL (the DbgHelp call stacks of Win32.c), with the Debug definitions of
@@ -867,3 +965,59 @@ jobs:
           echo "::error::Some files are not formatted. Fix: pip install clang-format==${CLANG_FORMAT_VERSION}, then python .github/scripts/format_check.py files | xargs clang-format -i (docs/formatting.md)"
           exit 1
         fi
+
+  # Binary signing and the self-integrity check (SEC-3 #281, ADR-0020 and ADR-0036 amendments of
+  # 2026-10-22). It takes the executables build_and_test produced, signs every shipped one and an MSI with
+  # a self-signed certificate (the production Authenticode certificate is bought near release), checks each
+  # signature is present, runs the self-integrity check on a signed binary (it passes) and on a copy whose
+  # .text was changed (it degrades, not crashes), and checks the shipped binaries carry no symbols and the
+  # package no public PDB. The Go sidecar (ranz-bgp) built with -trimpath and -ldflags "-s -w" has no
+  # symbol table. .github/scripts/self-integrity.ps1.
+  sign_and_integrity:
+    needs: build_and_test
+    runs-on: windows-latest
+    name: sign and self-integrity
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: ranz-bgp/go.sum
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    - name: Download x64 binaries
+      uses: actions/download-artifact@v4
+      with:
+        name: Binaries-x64
+        path: artifacts/x64
+    - name: Download arm64 binaries
+      uses: actions/download-artifact@v4
+      with:
+        name: Binaries-arm64
+        path: artifacts/arm64
+    - name: Install WiX
+      shell: pwsh
+      run: |
+        # The WiX Toolset of the MSI (ADR-0020; REL-5, #50), the same pin as .github/workflows/ranz-bgp.yml
+        dotnet tool install --global wix --version 5.0.2
+        if ($LASTEXITCODE -ne 0) { throw "dotnet tool install exited with code $LASTEXITCODE" }
+        $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
+        $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        & (Join-Path $tools 'wix.exe') --version
+    - name: Sign, self-integrity and symbol strip
+      shell: pwsh
+      run: |
+        . .github/scripts/self-integrity.ps1 -X64Dir artifacts/x64 -Arm64Dir artifacts/arm64 -Wxs .github/signing/signing-proof.wxs -LicenseFile LICENSE -GoModuleDir ranz-bgp -OutDir build/signing
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: signing-proof
+        if-no-files-found: warn
+        retention-days: 14
+        path: |
+          build/signing/*.msi
+          build/signing/*.cer

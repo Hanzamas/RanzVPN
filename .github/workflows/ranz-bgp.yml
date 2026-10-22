@@ -203,7 +203,9 @@ jobs:
       env:
         GOARCH: ${{ matrix.platform.GOARCH }}
       run: |
-        go build -trimpath -o ..\build\msi\ranz-bgp.exe ./cmd/ranz-bgp
+        # -trimpath and -ldflags "-s -w" strip the paths and the symbol table from the shipped sidecar
+        # (SEC-3 #281, ADR-0036 amendment of 2026-10-22; checked by .github/scripts/self-integrity.ps1)
+        go build -trimpath -ldflags '-s -w' -o ..\build\msi\ranz-bgp.exe ./cmd/ranz-bgp
         if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
         # The licence of the GoBGP that go.mod pins, from the module cache
         $dir = (go list -m -f '{{.Dir}}' github.com/osrg/gobgp/v4 | Out-String).Trim()

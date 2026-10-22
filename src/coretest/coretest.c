@@ -164,6 +164,7 @@ static TEST_LIST test_list[] = {
     {"relaypolicy", relaypolicy_test, "Forged, altered, replayed and redirected signals and binds refused; the relay's VRF policy and rate; one ingress for direct and relayed; relay restart."},
     {"iceupgrade", iceupgrade_test, "A home gateway grants a public port through libplum; a relayed pair moves to the direct path that ICE validates with no datagram missing, and back when it fails."},
     {"icesymmetric", icesymmetric_test, "A pair behind two symmetric NATs: every ICE check fails and the pair stays on the relay, with its traffic flowing throughout."},
+    {"punch", punch_test, "Symmetric-NAT traversal: two sequential NATs meet by port prediction, a cone and a random NAT by birthday punching, two random NATs fall back to the relay within the probe budget."},
 };
 
 #define NUM_TESTS (sizeof(test_list) / sizeof(test_list[0]))
