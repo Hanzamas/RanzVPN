@@ -486,6 +486,9 @@ void bgp_test(UINT num, char **arg);
 // Named transport test of CORE-F4, #64 (transporttest.c)
 void transport_test(UINT num, char **arg);
 
+// Named QUIC transport test of CORE-S1-1, #67 (quictest.c)
+void quic_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -634,6 +637,7 @@ TEST_LIST test_list[] =
 	{"store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords."},
 	{"bgp", bgp_test, "BGP sidecar: ranz-bgp peers with a router (gobgpd, RANZ_GOBGP) on TCP 179, a prefix announced and withdrawn, a learned route installed through IP Helper (administrator rights)."},
 	{"transport", transport_test, "Transport: a Noise session end to end over the loopback transport, the race of a configured fallback list (the first to connect wins), the same session over a second transport."},
+	{"quic", quic_test, "QUIC: a client completes the QUIC handshake against the HTTP/3 listener on msquic, the Noise session comes up, Sam checks the Login, and the client's static key is pinned on first login (trust on first use)."},
 };
 
 // Test function

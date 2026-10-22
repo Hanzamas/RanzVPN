@@ -66,7 +66,10 @@ ranz_add_executable(vpntest HAMCORE
     bgptest.c
     # Named transport test of CORE-F4 (#64): the transport interface of the new core and the session layer on it
     transporttest.c
-  # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c;
+    # Named QUIC transport test of CORE-S1-1 (#67): the msquic listener, the Noise session, Sam and the key pinning
+    quictest.c
+  # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
+  # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked);
   # netapi32: the local account that stands for a domain account (NetUserAdd)
   LIBRARIES
     coretransport
