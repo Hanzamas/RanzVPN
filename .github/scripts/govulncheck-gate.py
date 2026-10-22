@@ -7,6 +7,10 @@
 # checked again. The vulnerabilities of imported packages or required modules that the code does
 # not call are listed and do not fail the job, as govulncheck's own exit status has it.
 #
+# controller/ and ranz-bgp/ share the accepted file. An entry that the code no longer calls is
+# reported to be taken out only when its module is one of the scan's (govulncheck's SBOM message);
+# an entry of a module outside the scan is the other Go module's, and is only listed.
+#
 # Usage: python govulncheck-gate.py [--accepted FILE] JSON...
 # JSON is the output of govulncheck -format json (a stream of JSON objects).
 #
@@ -57,9 +61,11 @@ def main():
     args = ap.parse_args()
 
     accepted, problems = read_accepted(args.accepted)
-    summaries, called, uncalled = {}, {}, set()
+    summaries, called, uncalled, scanned = {}, {}, set(), set()
     for path in args.json:
         for m in messages(path):
+            for module in (m.get('SBOM') or {}).get('modules') or []:
+                scanned.add(module.get('path'))
             if 'osv' in m:
                 summaries[m['osv']['id']] = m['osv'].get('summary', '')
             finding = m.get('finding')
@@ -87,6 +93,11 @@ def main():
         else:
             problems.append(text)
     for key in sorted(set(accepted) - set(called)):
+        # Every scan has the standard library; a stream without an SBOM message names no module
+        module = key[1].rsplit('@', 1)[0]
+        if scanned and module != 'stdlib' and module not in scanned:
+            print('For a module outside this scan: %s %s' % key)
+            continue
         print('No longer found, take it out of %s: %s %s' % (args.accepted, key[0], key[1]))
 
     for p in problems:

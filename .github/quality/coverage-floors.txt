@@ -1,7 +1,8 @@
 # The per-module coverage floors of the new core (ADR-0040 item 2), checked by
 # .github/scripts/coverage-floor.py: a module below its floor, or a module without a line here, fails
 # the job.
-#   c   <module> <floor %> <files>   line coverage (llvm-cov) of coretest's tests: the coverage job of windows.yml
+#   c   <module> <floor %> <files>   line coverage (llvm-cov) of coretest's tests and vpntest's transport test:
+#                                    the coverage job of windows.yml
 #   go  <package> <floor %>          statement coverage (go test -coverprofile) of the Linux jobs of
 #                                    controller.yml and ranz-bgp.yml
 # A floor is the coverage measured in CI when it was recorded, rounded down to a whole percent, less
@@ -9,9 +10,10 @@
 # change that lowers one says why in its pull request.
 
 # The new core (src/Core, ADR-0022)
-c  corecrypto  85  src/Core/Crypto*.c
-c  corenoise   86  src/Core/Noise*.c
-c  corepeer    72  src/Core/Peer*.c
+c  corecrypto     85  src/Core/Crypto*.c
+c  corenoise      86  src/Core/Noise*.c
+c  corepeer       72  src/Core/Peer*.c
+c  coretransport   0  src/Core/Transport*.c
 
 # The controller (controller/)
 go  controller/cmd/ranz                 67

@@ -26,11 +26,13 @@ def run(script, *args):
     return p.returncode, p.stdout.decode('utf-8', errors='replace')
 
 
-def expect(name, result, code, *texts):
+def expect(name, result, code, *texts, absent=()):
     got, out = result
     missing = [t for t in texts if t not in out]
-    if got != code or missing:
-        failures.append('%s: exit %d, want %d%s\n%s' % (name, got, code, ', missing %r' % missing if missing else '', out))
+    present = [t for t in absent if t in out]
+    if got != code or missing or present:
+        failures.append('%s: exit %d, want %d%s%s\n%s' % (name, got, code, ', missing %r' % missing if missing else '',
+                                                        ', unwanted %r' % present if present else '', out))
         print('FAIL', name)
     else:
         print('ok  ', name)
@@ -230,12 +232,12 @@ def test_static_findings():
     key_tidy = "src/Core/Noise.c|clang-analyzer-deadcode.DeadStores|Value stored to 'n' is never read\n"
     key_msvc = "src/Core/Peer.c|C6385|Reading invalid data from 'buf'.\n"
 
-    def check(name, code, texts, tool, log, baseline):
+    def check(name, code, texts, tool, log, baseline, options=()):
         with tempfile.TemporaryDirectory() as root:
             write(root, 'log.txt', log)
             write(root, 'baseline.txt', '# baseline\n' + baseline)
             expect('static-findings: ' + name, run('static-findings.py', '--tool', tool, '--log', os.path.join(root, 'log.txt'),
-                                                   '--baseline', os.path.join(root, 'baseline.txt'), '--root', 'C:\\w'),
+                                                   '--baseline', os.path.join(root, 'baseline.txt'), '--root', 'C:\\w', *options),
                    code, *texts)
 
     check('a new clang-tidy finding', 1, ['src/Core/Noise.c:120: Value stored', '1 new findings'], 'clang-tidy', tidy_log, '')
@@ -251,6 +253,11 @@ def test_static_findings():
     check('a new /analyze finding', 1, ['src/Core/Peer.c:88: Reading invalid data', '[C6385]'], 'msvc', msvc_log, '')
     check('a recorded /analyze finding, other lines', 0, ['No new msvc finding'], 'msvc',
           msvc_log.replace('Lines: 80, 82, 88', 'Lines: 90, 92'), key_msvc)
+    juice_log = msvc_log + 'C:\\w\\src\\Core\\3rdparty\\libjuice\\src\\agent.c(120) : warning C6011: Dereferencing NULL pointer \'a\'.\n'
+    check('a third-party finding in the scope', 1, ['src/Core/3rdparty/libjuice/src/agent.c:120: Dereferencing NULL pointer'],
+          'msvc', juice_log, key_msvc)
+    check('a third-party finding under --exclude', 0, ['No new msvc finding'], 'msvc', juice_log, key_msvc,
+          options=('--scope', 'src/Core', '--exclude', 'src/Core/3rdparty'))
 
 
 def test_govulncheck_gate():
@@ -270,13 +277,13 @@ def test_govulncheck_gate():
               finding('GO-3', 'example.com/other', 'v2.0.0')]
     accepted = '# test\nGO-1 example.com/dep@v1.0.0 fixed upstream, verified\n'
 
-    def check(name, code, texts, messages, accepted_text=accepted):
+    def check(name, code, texts, messages, accepted_text=accepted, absent=()):
         with tempfile.TemporaryDirectory() as root:
             write(root, 'accepted.txt', accepted_text)
             # Indented objects one after another, as govulncheck -format json writes them
             write(root, 'vuln.json', '\n'.join(json.dumps(m, indent=2) for m in messages) + '\n')
             expect('govulncheck-gate: ' + name, run('govulncheck-gate.py', '--accepted', os.path.join(root, 'accepted.txt'),
-                                                    os.path.join(root, 'vuln.json')), code, *texts)
+                                                    os.path.join(root, 'vuln.json')), code, *texts, absent=absent)
 
     check('an accepted vulnerability', 0, ['Accepted: GO-1 in example.com/dep@v1.0.0', 'Not called by the code: GO-3'], stream)
     check('a called vulnerability', 1, ['GO-2 in example.com/dep@v1.0.0: race in server', 'reaches Serve from x/run.go Run'],
@@ -285,6 +292,18 @@ def test_govulncheck_gate():
           accepted_text='GO-1 example.com/dep@v0.9.0 fixed upstream\n')
     check('an accepted entry no longer found', 0, ['No longer found, take it out', 'GO-9'], stream,
           accepted_text=accepted + 'GO-9 example.com/gone@v1.0.0 gone\n')
+
+    # The modules of the scan, as the SBOM message of govulncheck lists them: the accepted file is shared by
+    # controller/ and ranz-bgp/, so an entry of a module that this scan does not have is the other one's
+    sbom = {'SBOM': {'go_version': 'go1.27.3', 'modules': [{'path': 'example.com/own'},
+                                                          {'path': 'example.com/dep', 'version': 'v1.0.0'},
+                                                          {'path': 'example.com/other', 'version': 'v2.0.0'}]}}
+    check('an accepted entry of a module in the scan, no longer found', 0,
+          ['No longer found, take it out', 'GO-8 example.com/other@v1.0.0', 'GO-7 stdlib@v1.27.2'], [sbom] + stream,
+          accepted_text=accepted + 'GO-8 example.com/other@v1.0.0 fixed in v2.0.0\nGO-7 stdlib@v1.27.2 fixed in go1.27.3\n')
+    check('an accepted entry of a module outside the scan', 0, ['For a module outside this scan: GO-9 example.com/gone@v1.0.0'],
+          [sbom] + stream, accepted_text=accepted + 'GO-9 example.com/gone@v1.0.0 the other module\'s\n',
+          absent=['No longer found'])
 
 
 if __name__ == '__main__':

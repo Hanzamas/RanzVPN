@@ -7,11 +7,13 @@
 # clang-tidy check name, or the MSVC warning number C6xxx, C26xxx or C28xxx) and the message without
 # its line numbers, so that a finding keeps its key when the code around it moves. A key found at n
 # distinct lines is n findings, and the baseline holds it n times; a header that several files
-# include reports the same line once. Only files under the --scope directories count.
+# include reports the same line once. Only files under the --scope directories count, and of them
+# none under an --exclude directory: the third-party libraries of src/Core/3rdparty, which the
+# build of the peer module compiles too.
 #
 # Usage:
-#   python static-findings.py --tool clang-tidy|msvc --log FILE --baseline FILE [--scope DIR]...
-#   python static-findings.py --tool clang-tidy|msvc --log FILE --write-baseline FILE [--scope DIR]...
+#   python static-findings.py --tool clang-tidy|msvc --log FILE --baseline FILE [--scope DIR]... [--exclude DIR]...
+#   python static-findings.py --tool clang-tidy|msvc --log FILE --write-baseline FILE [--scope DIR]... [--exclude DIR]...
 #
 # Standard library only.
 
@@ -38,7 +40,11 @@ def relative(path, root):
     return path
 
 
-def findings(tool, log, root, scopes):
+def under(path, dirs):
+    return any(path == d or path.startswith(d.rstrip('/') + '/') for d in dirs)
+
+
+def findings(tool, log, root, scopes, excludes):
     # key -> the "path:line" places it was found at, each once
     found = {}
     with open(log, encoding='utf-8', errors='replace') as f:
@@ -48,7 +54,7 @@ def findings(tool, log, root, scopes):
             if not m:
                 continue
             path = relative(m.group('path'), root)
-            if not any(path == s or path.startswith(s.rstrip('/') + '/') for s in scopes):
+            if not under(path, scopes) or under(path, excludes):
                 continue
             msg = m.group('msg')
             if tool == 'msvc':
@@ -76,6 +82,7 @@ def main():
     ap.add_argument('--tool', required=True, choices=['clang-tidy', 'msvc'])
     ap.add_argument('--log', required=True)
     ap.add_argument('--scope', action='append', default=[])
+    ap.add_argument('--exclude', action='append', default=[])
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument('--baseline')
     group.add_argument('--write-baseline')
@@ -84,8 +91,9 @@ def main():
     root = args.root
     scopes = args.scope or ['src/Core']
 
-    found = findings(args.tool, args.log, root, scopes)
-    print('%s: %d findings in %s' % (args.tool, sum(len(p) for p in found.values()), ', '.join(scopes)))
+    found = findings(args.tool, args.log, root, scopes, args.exclude)
+    print('%s: %d findings in %s%s' % (args.tool, sum(len(p) for p in found.values()), ', '.join(scopes),
+                                       ' without ' + ', '.join(args.exclude) if args.exclude else ''))
 
     if args.write_baseline:
         with open(args.write_baseline, 'w', encoding='utf-8', newline='\n') as f:
