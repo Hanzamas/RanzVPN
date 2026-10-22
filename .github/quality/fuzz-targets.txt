@@ -62,6 +62,11 @@ controller/internal/licence  ParseRevocations  FuzzParseRevocations
 # The activation tokens of the licensing server (SEC-7 #284)
 controller/internal/activation  ParseToken  FuzzParseToken
 
+# The sealed Enterprise feature and the offline activation response (SEC-6 #285)
+controller/internal/activation  OpenFeature           FuzzOpenFeature
+controller/internal/activation  Install.OpenFeature   exempt  opens the sealed Enterprise blob with the feature key that the install holds in memory, by calling OpenFeature, which FuzzOpenFeature drives
+controller/internal/activation  OpenOfflineResponse   FuzzOpenOfflineResponse
+
 controller/internal/rbac   ParseRole  exempt  compares the name with the three role names; decodes nothing
 controller/internal/store  Open       exempt  opens the controller's own rqlite store by its URL
 
