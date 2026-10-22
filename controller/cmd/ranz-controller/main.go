@@ -18,9 +18,11 @@
 //	-api-listen      off; plain HTTP on a loopback address for the API only, for development
 //	-rqlite          127.0.0.1:4001, and -rqlite-raft 127.0.0.1:4002: rqlite, host-internal
 //
-// The API answers clients on the loopback interface only until RBAC (SDN-14, #190). rqlite is
-// the controller's sidecar: with -rqlited the controller runs rqlited itself, with its data in
-// the rqlite directory under -data; without it, the controller uses the rqlite at -rqlite.
+// Every call of the API needs the bearer token of a role (SDN-14, #190). The first start creates
+// the admin token and writes its secret to admin.token in the data directory, for `ranz
+// -token-file`. rqlite is the controller's sidecar: with -rqlited the controller runs rqlited
+// itself, with its data in the rqlite directory under -data; without it, the controller uses the
+// rqlite at -rqlite.
 //
 // The licence key (ADR-0036) is installed with `ranz licence -f FILE` and kept in rqlite. It
 // must be signed with a vendor key that the release build links in (internal/licence); without
@@ -51,6 +53,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
@@ -66,6 +69,11 @@ const fallbackPort = "5555"
 // Like the server of ADR-0020, the controller then keeps that port, also once 443 is free again,
 // until the operator asks for 443 with an explicit -listen.
 const fallbackFile = "listen-fallback"
+
+// adminTokenFile, in the data directory, holds the secret of the admin token that the first
+// start of the controller creates (rbac.Bootstrap). Only the directory's owner and the
+// administrators can read it (makeDataDir).
+const adminTokenFile = "admin.token"
 
 type config struct {
 	dataDir       string
@@ -102,7 +110,7 @@ func parseFlags(args []string) (config, error) {
 		}
 	})
 	if cfg.apiListen != "" && !loopbackAddr(cfg.apiListen) {
-		err := fmt.Errorf("-api-listen %q is not a loopback address: the API has no authentication yet (RBAC, SDN-14)", cfg.apiListen)
+		err := fmt.Errorf("-api-listen %q is not a loopback address: plain HTTP would carry the bearer tokens of the API in clear text", cfg.apiListen)
 		fmt.Fprintln(flags.Output(), err)
 		return config{}, err
 	}
@@ -219,6 +227,17 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		return err
 	}
 	defer c.Close()
+	tokens := rbac.New(st)
+	tokenFile := filepath.Join(cfg.dataDir, adminTokenFile)
+	created, err := tokens.Bootstrap(ctx, func(secret string) error {
+		return os.WriteFile(tokenFile, []byte(secret+"\n"), 0o600)
+	})
+	if err != nil {
+		return fmt.Errorf("the first admin token: %w", err)
+	}
+	if created {
+		log.Info("first start: the admin token is created, its secret is in the data directory", "token", rbac.FirstAdmin, "file", tokenFile)
+	}
 
 	errc := make(chan error, 4)
 	ln, fell, err := listenTLS(cfg.listen, fallbackPort, cfg.listenSet, cfg.dataDir)
@@ -249,7 +268,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	}
 
 	tlsPortValue, _ := strconv.Atoi(tlsPortNumber)
-	apiHandler := api.Handler(c, api.Status{
+	apiHandler := api.Handler(c, tokens, api.Status{
 		ControlAddress: ln.Addr().String(),
 		TLSFingerprint: keys.Fingerprint(cert),
 		Capabilities:   api.Capabilities{TLSPort: tlsPortValue, TLSPortFallback: fell, PlainHTTP: plainWhere},

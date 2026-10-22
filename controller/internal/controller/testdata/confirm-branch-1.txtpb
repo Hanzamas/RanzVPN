@@ -1,0 +1,17 @@
+# Generation 2 of branch-1 after apply3.json with a confirmation time (revision 2, which waits
+# for confirmation): the delta from generation 1 that raises the MTU of corp to 1500.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\375\0224Vx\232\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1500
+    }
+  }
+}

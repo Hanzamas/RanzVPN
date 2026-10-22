@@ -258,6 +258,14 @@ _Avoid_: config, configuration (the slim fork's Config file)
 The number of one version of a Node's desired state. The Controller sends the changes since the Generation the Node last acknowledged, and the Node acknowledges each Generation it applied.
 _Avoid_: revision (a version of the whole Intent), version, epoch
 
+**Revision**:
+The number of one version of the whole Intent, from 1. Every apply, delete and rollback makes the next one, and the Controller stores each with its whole Intent; revision 0 is the empty Intent before the first apply. `ranz diff` shows the resource changes between two, and `ranz rollback` makes the Intent of an earlier one the Intent again, as a new revision. An apply with `--confirm` makes a revision that waits for `ranz confirm`; without it in time, the Controller rolls it back by itself (an automatic rollback) and raises an Event. While a revision waits, the Controller takes no other change but a rollback.
+_Avoid_: Generation (a version of one Node's desired state), version, commit
+
+**Event**:
+A condition the Controller reports to operators (ADR-0030), kept with the change that raised it and listed by the API (`ranz get events`): so far the automatic rollback of an unconfirmed revision. SDN-16 delivers them by webhook and as metrics.
+_Avoid_: alert, log entry, ETW event (a local Node event)
+
 **4via6**:
 The mapping of an IPv4 address of a VRF into an IPv6 address inside that VRF's ULA prefix, so a host that joins two VRFs with overlapping IPv4 can tell the two addresses apart.
 _Avoid_: NAT64, 6to4
@@ -274,12 +282,16 @@ _Avoid_: tap, SPAN, monitor (the Local Bridge `Monitor` flag is a different thin
 The TCP 443 listener of a Node that reads the first bytes of each connection and hands the socket to the process that owns that protocol.
 _Avoid_: port sharing, reverse proxy, demultiplexer (the opt-in UDP 443 demultiplexer is a different thing)
 
+**API token**:
+A bearer secret that a caller of the Controller's API presents, holding one of the three global API roles: `viewer` reads, `operator` also applies Intent, `admin` also manages the API tokens (ADR-0031). The Controller keeps only its SHA-256; the first start creates the `admin` token.
+_Avoid_: API key, password, session (a user login of SDN-32 is a different thing)
+
 **Egress tier**:
 How a Node that is an internet exit for a VRF translates its traffic: tier 1 is RRAS NAT, tier 2 is WinNAT, tier 3 is a proxy on the Windows TCP/IP stack.
 _Avoid_: SecureNAT, NAT mode
 
 **Capability**:
-A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier), against which the Controller checks the Intent before an apply.
+A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier, the fallback to 5555), against which the Controller checks the Intent before an apply. Only a gateway or edge feature, or one a platform cannot carry (an L2 Network on arm64), needs one.
 _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
 
 **Licence key**:
@@ -310,6 +322,7 @@ _Avoid_: lifetime licence, grace period
 - "Network" names three things: the SDN resource (a segment inside a VRF, the successor of the Hub), the Mayaqua Network module (sockets), and a word the Hub entry tells you to avoid. In slim-fork text say Hub; say Network only for the SDN resource.
 - "Node" is a new-core host running `ranz-node`, the new core's binary, and its `NODE` object. `NODE_INFO` (Session) is unrelated: the record of a connecting client's host details that a SE-VPN login sends, not a Node.
 - "Capability" is what a Node reports to the Controller. `CAPS` (`ServerCaps.c`) is the slim fork's list of server capabilities for admin clients.
+- "Role" is what a Node does (`server`, `client`, `bridge`, `relay`). The `admin`, `operator` and `viewer` of the Controller's API are API roles, held by an API token; say API role for them.
 - "controller" was a role of the node binary in ADR-0022. Since ADR-0026 the Controller is the separate `ranz-controller` service, and the node has no `controller` role.
 - "Generation" and "revision" are different versions: a revision is a version of the whole Intent (what `ranz rollback` returns to); a Generation is a version of one Node's desired state.
 - "Licence" is the noun in prose and code (`licence`, `REFUSE_REASON_LICENCE`); "license" is the verb ("licensed") and the name of the `LICENSE` file at the repository root.

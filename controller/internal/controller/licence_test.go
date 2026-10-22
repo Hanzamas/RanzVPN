@@ -12,8 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -83,6 +82,33 @@ func TestPersonalKeyRefusesNodesAboveItsCap(t *testing.T) {
 	}
 	n3.start(h)
 	golden(t, "refuse-licence-cap", n3.refusal(t))
+}
+
+// TestRollbackRefusesNodesAboveTheCap checks a rollback against the node cap like an apply
+// (SDN-13 #189 with ADR-0036): a rollback to a revision with more Nodes than the licence in force
+// allows, made under a larger licence, is refused with a message that names the cap and the
+// node, and makes no revision.
+func TestRollbackRefusesNodesAboveTheCap(t *testing.T) {
+	h := newHarness(t)
+	h.setLicence(licence.Licence{ID: "business-1", Licensee: "Test", Tier: licence.Business, Nodes: 3, Expires: time.Now().Add(year)})
+	h.applyDoc(nodesDoc(3))
+	if _, err := h.api.Delete(context.Background(), intent.KindNode, nodeName(3)); err != nil {
+		t.Fatal(err)
+	}
+	h.setLicence(licence.Licence{ID: "personal-1", Licensee: "Test", Tier: licence.Personal, Nodes: 2, Expires: time.Now().Add(year)})
+	before := h.resources()
+
+	_, err := h.api.Rollback(context.Background(), 1)
+	want := `refused by the licence: the Personal licence in force allows 2 nodes, and this rollback would make 3 (new: Node "node-03"); a Business or Enterprise licence key raises the cap`
+	if httpStatus(err) != http.StatusForbidden || !strings.Contains(err.Error(), want) {
+		t.Errorf("a rollback above the cap gave %v, want a 403 that says %q", err, want)
+	}
+	if after := h.resources(); after != before {
+		t.Errorf("a rollback above the cap changed the intent:\n--- after\n%s\n--- before\n%s", after, before)
+	}
+	if got, want := h.revisionLog(), "1 apply\n2 delete\n"; got != want {
+		t.Errorf("the revisions are\n%s\nwant\n%s", got, want)
+	}
 }
 
 // TestEnterpriseFeaturesNeedEnterpriseKey is the second criterion of SDN-30 for EVPN and BGP:
@@ -321,28 +347,4 @@ func (h *harness) waitMembers(n int) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-}
-
-// applyDoc applies doc and fails the test if it is refused.
-func (h *harness) applyDoc(doc intent.Document) controller.ApplyResult {
-	h.t.Helper()
-	res, err := h.api.Apply(context.Background(), doc)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	return res
-}
-
-// document returns the intent document testdata/file.
-func (h *harness) document(file string) intent.Document {
-	h.t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", file))
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	doc, err := intent.ParseDocument(b)
-	if err != nil {
-		h.t.Fatalf("%s: %v", file, err)
-	}
-	return doc
 }

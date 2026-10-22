@@ -1,0 +1,6 @@
+# A node whose desired state needs a Capability that its Hello does not report is refused,
+# naming the node and the Capability, and receives nothing of that state.
+refuse: {
+  reason: REFUSE_REASON_CAPABILITY
+  message: "Node \"laptop\" (Home, arm64): L2 Network \"corp-dmz\" needs XDP or SeLow, which the node does not report"
+}

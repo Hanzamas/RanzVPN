@@ -1,6 +1,7 @@
 // Package intent is the declared network that `ranz apply -f` sends to the controller: the
 // resources of #176 "Resource model" that the controller skeleton knows (VRF, Network and Node),
-// their validation, and the values the controller fills in when a resource is first applied.
+// their validation, and the values the controller fills in when a resource is first applied;
+// and the revisions of the intent with the diff between two (revision.go).
 package intent
 
 import (
