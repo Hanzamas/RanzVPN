@@ -216,6 +216,8 @@ void PeerPunchTick(PEER_AGENT *a) {
 	if (a->Config.Punch == false)
 		return;
 
+	ZeroMemory(send, sizeof(send));
+
 	UINT rate = PeerPunchRate(a);
 
 	AcquireSRWLockExclusive(&a->Lock);

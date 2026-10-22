@@ -151,6 +151,8 @@ static const char *ControlObjectName(const ranz_control_v1_Object *o) {
 		return o->kind.peer.name;
 	case ranz_control_v1_Object_relay_tag:
 		return o->kind.relay.name;
+	default:
+		break;
 	}
 
 	return NULL;
@@ -332,6 +334,9 @@ static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
 	case ranz_control_v1_ControlMessage_controllers_tag:
 	case ranz_control_v1_ControlMessage_signal_tag:
 		return true;
+
+	default:
+		break;
 	}
 
 	// A Hello or an Ack goes from a node to the controller, never back
