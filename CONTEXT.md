@@ -304,6 +304,18 @@ _Avoid_: service, port forward; "endpoint" for the end of a connection (say peer
 A rate-limited copy of matching overlay traffic, sent to a sensor over VXLAN.
 _Avoid_: tap, SPAN, monitor (the Local Bridge `Monitor` flag is a different thing)
 
+**Stretch**:
+The binding of one Gateway to one L2 Network that extends the Network into a data-centre fabric over EVPN and VXLAN (ADR-0032 amendment of 2026-10-22). It holds the L2 VNI, the route targets, the ESI, the BUM rate limit, the MAC import limit, the stale timer and the `irb` flag. A Network has one Stretch gateway unless an ESI is set.
+_Avoid_: L2 extension, bridge (the Local Bridge and the `bridge` Role are different things), tunnel
+
+**VNI**:
+The VXLAN network identifier. An L2 VNI belongs to one stretched Network and is set in its Stretch; an L3 VNI belongs to one VRF and is set in its `EvpnPeer`, where type-5 routes and IRB use it. The administrator of the fabric fixes the values and the Controller only validates them.
+_Avoid_: VLAN id, segment id
+
+**ESI**:
+The Ethernet segment identifier that two gateways of one Network share for active-active multihoming (EVPN type-1 and type-4). The administrator sets it in the Stretch; the Node elects the designated forwarder.
+_Avoid_: LAG, bond, team
+
 **Front door**:
 The TCP 443 listener of a Node that reads the first bytes of each connection and hands the socket to the process that owns that protocol.
 _Avoid_: port sharing, reverse proxy, demultiplexer (the opt-in UDP 443 demultiplexer is a different thing)
