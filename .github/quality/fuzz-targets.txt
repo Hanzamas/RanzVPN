@@ -29,6 +29,7 @@ src/Core  PeerOpenSignal        fuzz_peer
 src/Core  PeerOpen              fuzz_peer  via PeerOpenSignal
 src/Core  PeerEnvelopeOpen      fuzz_peer  via PeerOpenSignal
 src/Core  PeerSignalDecode      fuzz_peer
+src/Core  PeerPunchInput        fuzz_peer  via PeerInput
 src/Core  PeerKeyOpen           exempt  opens the node's static key by its name in the key storage provider; reads no peer's bytes
 
 # The transport module (CORE-F4 #64): the fallback list and the frames of the session layer

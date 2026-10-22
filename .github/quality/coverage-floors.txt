@@ -5,6 +5,8 @@
 #                                    the coverage job of windows.yml
 #   go  <package> <floor %>          statement coverage (go test -coverprofile) of the Linux jobs of
 #                                    controller.yml and ranz-bgp.yml
+# The mitigation packages (SEC-1 #279) hold Windows-only process mitigation policies, so the Linux jobs
+# measure none of their code and their floor is 0.
 # A floor is the coverage measured in CI when it was recorded, rounded down to a whole percent, less
 # two points for the tests whose paths depend on timing. Raise a floor when a module gains tests; a
 # change that lowers one says why in its pull request.
@@ -30,6 +32,7 @@ go  controller/internal/desired         79
 go  controller/internal/intent          91
 go  controller/internal/keys            71
 go  controller/internal/licence         89
+go  controller/internal/mitigation      0
 go  controller/internal/nodesim         0
 go  controller/internal/port            69
 go  controller/internal/rbac            65
@@ -40,4 +43,5 @@ go  controller/internal/webui           94
 
 # The BGP sidecar (ranz-bgp/)
 go  ranz-bgp/cmd/ranz-bgp          68
+go  ranz-bgp/internal/mitigation      0
 go  ranz-bgp/internal/sidecar      83
