@@ -1,7 +1,9 @@
 // Package controller is the controller of #176: the single authority that keeps the intent in
 // rqlite, compiles it into the desired state of each node with a generation number, and pushes
 // that state over the control stream as deltas against the generation each node acknowledged
-// last (#176 "Control protocol"). In a controller cluster the leader runs it (internal/cluster).
+// last (#176 "Control protocol"). Every change of the intent is a revision, which can be diffed
+// and rolled back (ADR-0031, revision.go). In a controller cluster the leader runs it
+// (internal/cluster).
 package controller
 
 import (
@@ -60,10 +62,14 @@ type NodeGeneration struct {
 	Generation uint64 `json:"generation"`
 }
 
-// ApplyResult lists the nodes whose desired state an apply or a delete changed, with their new
-// generations.
+// ApplyResult is the answer to a change of the intent (an apply, a delete or a rollback): the
+// revision it made, and the nodes whose desired state it changed, with their new generations.
 type ApplyResult struct {
-	Nodes []NodeGeneration `json:"nodes"`
+	Revision uint64           `json:"revision"`
+	Nodes    []NodeGeneration `json:"nodes"`
+	// ConfirmBy is set for an apply with a confirmation time: the controller rolls the revision
+	// back then unless it is confirmed first.
+	ConfirmBy time.Time `json:"confirmBy,omitzero"`
 }
 
 // NodeStatus is what the controller knows about one node.
@@ -90,6 +96,11 @@ type Controller struct {
 	conns   map[net.Conn]struct{}
 	closed  bool
 	wg      sync.WaitGroup
+
+	// The revisions, guarded by mu.
+	revision uint64           // the latest revision, 0 before the first
+	pending  *intent.Revision // the revision that waits for confirmation, nil if none
+	timer    *time.Timer      // rolls pending back at its deadline
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -121,7 +132,9 @@ type stream struct {
 }
 
 // New loads the intent and the node states from the store and reconciles them: a node whose
-// compiled state differs from its stored one gets a new generation.
+// compiled state differs from its stored one gets a new generation. A revision that waited for
+// confirmation when the controller stopped waits again until its deadline, or is rolled back at
+// once if the deadline passed.
 func New(ctx context.Context, cfg Config) (*Controller, error) {
 	c := &Controller{
 		store:  cfg.Store,
@@ -169,10 +182,20 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	c.intent = in
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, err := c.commit(ctx, in); err != nil {
+	if _, err := c.commit(ctx, in, store.Changes{}); err != nil {
 		return nil, err
 	}
-	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "schema", int32(c.schema))
+	last, ok, err := c.store.LastRevision(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		c.revision = last.ID
+		if last.Confirm != nil && last.Confirm.State == intent.ConfirmPending {
+			c.await(last, time.Until(last.Confirm.Deadline))
+		}
+	}
+	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision, "schema", int32(c.schema))
 	return c, nil
 }
 
@@ -186,44 +209,63 @@ func (c *Controller) Schema() controlpb.SchemaVersion {
 	return c.schema
 }
 
-// Apply applies doc to the intent (`ranz apply -f`).
+// Apply applies doc to the intent (`ranz apply -f`) as the next revision.
 func (c *Controller) Apply(ctx context.Context, doc intent.Document) (ApplyResult, error) {
-	if c.schema < controlpb.SchemaVersion_SCHEMA_VERSION_2 {
-		for _, r := range doc.Resources {
-			if r.Kind == intent.KindController {
-				return ApplyResult{}, fmt.Errorf("%w: Controller %q: Controller resources need control schema version 2, and this controller runs as version %d until every member of the cluster runs the new release",
-					intent.ErrInvalid, r.Name, int32(c.schema))
-			}
-		}
+	return c.ApplyConfirm(ctx, doc, 0)
+}
+
+// ApplyConfirm applies doc to the intent as the next revision. With a confirm above 0
+// (`ranz apply --confirm`), the controller rolls that revision back by itself after confirm,
+// unless Confirm confirms it first; until then it takes no other change but a rollback.
+func (c *Controller) ApplyConfirm(ctx context.Context, doc intent.Document, confirm time.Duration) (ApplyResult, error) {
+	if confirm != 0 && (confirm < MinConfirm || confirm > MaxConfirm) {
+		return ApplyResult{}, fmt.Errorf("%w: %v is not between %v and %v", ErrBadConfirm, confirm, MinConfirm, MaxConfirm)
+	}
+	if err := c.known(doc.Resources); err != nil {
+		return ApplyResult{}, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.unconfirmed(); err != nil {
+		return ApplyResult{}, err
+	}
 	next, err := intent.Apply(c.intent, doc, c.random)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	nodes, err := c.commit(ctx, next)
+	rev := c.nextRevision(intent.OpApply)
+	if confirm > 0 {
+		rev.Confirm = &intent.Confirmation{Deadline: rev.Time.Add(confirm), State: intent.ConfirmPending}
+	}
+	res, err := c.change(ctx, next, rev, store.Changes{})
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	c.log.Info("intent applied", "resources", len(doc.Resources), "changed", len(nodes))
-	return ApplyResult{Nodes: nodes}, nil
+	if confirm > 0 {
+		c.await(rev, confirm)
+		res.ConfirmBy = rev.Confirm.Deadline
+	}
+	c.log.Info("intent applied", "revision", res.Revision, "resources", len(doc.Resources), "changed", len(res.Nodes), "confirm", confirm)
+	return res, nil
 }
 
-// Delete deletes the resource kind/name from the intent.
+// Delete deletes the resource kind/name from the intent as the next revision.
 func (c *Controller) Delete(ctx context.Context, kind, name string) (ApplyResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.unconfirmed(); err != nil {
+		return ApplyResult{}, err
+	}
 	next, err := intent.Delete(c.intent, kind, name)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	nodes, err := c.commit(ctx, next)
+	res, err := c.change(ctx, next, c.nextRevision(intent.OpDelete), store.Changes{})
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	c.log.Info("resource deleted", "kind", kind, "name", name, "changed", len(nodes))
-	return ApplyResult{Nodes: nodes}, nil
+	c.log.Info("resource deleted", "kind", kind, "name", name, "revision", res.Revision, "changed", len(res.Nodes))
+	return res, nil
 }
 
 // Resources returns the intent.
@@ -271,6 +313,9 @@ func (c *Controller) ServeStream(tc *tls.Conn) {
 func (c *Controller) Close() {
 	c.mu.Lock()
 	c.closed = true
+	if c.timer != nil {
+		c.timer.Stop()
+	}
 	for raw := range c.conns {
 		raw.Close()
 	}
@@ -280,13 +325,13 @@ func (c *Controller) Close() {
 
 // commit makes next the intent: it compiles the desired state of every node, gives each node
 // whose state changed the next generation, writes the intent and those states to the store in
-// one transaction, and then wakes the streams of the changed nodes. c.mu is held.
-func (c *Controller) commit(ctx context.Context, next intent.Intent) ([]NodeGeneration, error) {
+// one transaction together with the further changes of ch, and then wakes the streams of the
+// changed nodes. c.mu is held.
+func (c *Controller) commit(ctx context.Context, next intent.Intent, ch store.Changes) ([]NodeGeneration, error) {
 	states, err := desired.Compile(next)
 	if err != nil {
 		return nil, err
 	}
-	var ch store.Changes
 	ch.PutResources, ch.DeleteResources = intent.Changed(c.intent, next)
 	result := []NodeGeneration{}
 	for _, name := range slices.Sorted(maps.Keys(states)) {
@@ -602,6 +647,21 @@ func members(in intent.Intent) *controlpb.Controllers {
 		m.Controllers = append(m.Controllers, &controlpb.Controller{Name: name, Address: ct.Address, PublicKey: k})
 	}
 	return m
+}
+
+// known returns an intent.ErrInvalid error when rs has a resource that the schema version the
+// controller runs as does not know: a Controller resource needs version 2.
+func (c *Controller) known(rs []intent.Resource) error {
+	if c.schema >= controlpb.SchemaVersion_SCHEMA_VERSION_2 {
+		return nil
+	}
+	for _, r := range rs {
+		if r.Kind == intent.KindController {
+			return fmt.Errorf("%w: Controller %q: Controller resources need control schema version 2, and this controller runs as version %d until every member of the cluster runs the new release",
+				intent.ErrInvalid, r.Name, int32(c.schema))
+		}
+	}
+	return nil
 }
 
 // served reports whether the controller serves nodes of schema version v: N and N-1, where N is

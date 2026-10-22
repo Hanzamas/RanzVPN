@@ -58,6 +58,11 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		{[]string{"rollback", "0"}, http.MethodPost, "/api/v1/rollback", `{"revision": 0}`, nil},
+		{[]string{"get", "revisions"}, http.MethodGet, "/api/v1/revisions", "", nil},
+		{[]string{"get", "revision", "1"}, http.MethodGet, "/api/v1/revisions/1", "", nil},
+		{[]string{"diff"}, http.MethodGet, "/api/v1/diff", "", nil},
+		{[]string{"get", "events"}, http.MethodGet, "/api/v1/events", "", nil},
 		{[]string{"token", "list"}, http.MethodGet, "/api/v1/tokens", "", nil},
 		{[]string{"token", "create", "-role", "viewer", "spare"}, http.MethodPost, "/api/v1/tokens", `{"name": "spare", "role": "viewer"}`, func() {
 			if _, err := tokens.Delete(ctx, "spare"); err != nil && !errors.Is(err, rbac.ErrNotFound) {
@@ -233,7 +238,8 @@ func direct(t *testing.T, srv *httptest.Server, secret, method, path, body strin
 }
 
 // answer decodes the JSON answer b, with the secret of a created token replaced, since each
-// creation draws a new one.
+// creation draws a new one, and the revision of a change of the intent, since each change makes
+// the next one.
 func answer(t *testing.T, b []byte) any {
 	t.Helper()
 	var v any
@@ -243,6 +249,9 @@ func answer(t *testing.T, b []byte) any {
 	if m, ok := v.(map[string]any); ok {
 		if s, ok := m["token"].(string); ok && strings.HasPrefix(s, "ranz_") {
 			m["token"] = "a new secret"
+		}
+		if _, ok := m["revision"].(float64); ok {
+			m["revision"] = "the next revision"
 		}
 	}
 	return v

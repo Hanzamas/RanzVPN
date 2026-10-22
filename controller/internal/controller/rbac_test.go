@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
@@ -32,6 +33,7 @@ func TestRolesAllowAndRefuseExactlyTheirActions(t *testing.T) {
 	h.apply("apply1.json")
 	viewer := h.client(h.token("viewer-1", rbac.Viewer))
 	operator := h.client(h.token("operator-1", rbac.Operator))
+	var pending uint64 // the revision that waits for confirmation, for the confirm action
 
 	actions := []struct {
 		name  string
@@ -47,6 +49,27 @@ func TestRolesAllowAndRefuseExactlyTheirActions(t *testing.T) {
 			func(c *api.Client) error { _, err := c.Apply(ctx, labVRF); return err }},
 		{"delete a resource", rbac.Operator, func() { h.applyDoc(labVRF) },
 			func(c *api.Client) error { _, err := c.Delete(ctx, intent.KindVRF, "lab"); return err }},
+		{"get revisions", rbac.Viewer, nil, func(c *api.Client) error { _, err := c.Revisions(ctx); return err }},
+		{"get a revision", rbac.Viewer, nil, func(c *api.Client) error { _, err := c.Revision(ctx, 1); return err }},
+		{"diff", rbac.Viewer, nil, func(c *api.Client) error { _, err := c.Diff(ctx); return err }},
+		{"get events", rbac.Viewer, nil, func(c *api.Client) error { _, err := c.Events(ctx); return err }},
+		{"rollback", rbac.Operator, nil, func(c *api.Client) error { _, err := c.Rollback(ctx, 1); return err }},
+		{"confirm", rbac.Operator, func() {
+			if pending == 0 {
+				h.deleteIfThere(intent.KindVRF, "lab")
+				res, err := h.api.ApplyConfirm(ctx, labVRF, time.Hour)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pending = res.Revision
+			}
+		}, func(c *api.Client) error {
+			_, err := c.Confirm(ctx, pending)
+			if err == nil {
+				pending = 0
+			}
+			return err
+		}},
 		{"list the tokens", rbac.Admin, nil, func(c *api.Client) error { _, err := c.Tokens(ctx); return err }},
 		{"create a token", rbac.Admin, func() { h.deleteTokenIfThere("spare") },
 			func(c *api.Client) error { _, err := c.CreateToken(ctx, "spare", rbac.Viewer); return err }},

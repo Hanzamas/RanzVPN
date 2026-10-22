@@ -281,6 +281,9 @@ type harness struct {
 	api    *api.Client // with the admin token
 	admin  string      // the secret of the admin token rbac.FirstAdmin
 	serve  chan error
+	// schema is the control schema version the controller runs as from its next start,
+	// controller.SchemaVersion when it is unspecified.
+	schema controlpb.SchemaVersion
 }
 
 func newHarness(t *testing.T) *harness {
@@ -306,7 +309,7 @@ func (h *harness) start() {
 		h.t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(testWriter{h.t}, nil))
-	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log})
+	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log, Schema: h.schema})
 	if err != nil {
 		h.t.Fatal(err)
 	}
