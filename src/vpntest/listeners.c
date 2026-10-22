@@ -1,11 +1,12 @@
 // listeners.c
 // Named default listener test of vpntest (REL-3 #48)
 //
-// "listeners": the VPN listener of a default configuration (ADR-0020 decision 6). Each case runs the in-process server
-// of the harness (HarnessOpenRun, HarnessStartServerKeep: the test listener on TCP 39555 and the admin RPC), from a
-// fresh configuration or from the one an earlier start of the case saved, and keeps the default listener, which is
-// what the case reads through ListenerList. The test holds a port as another program would: a dual-stack socket bound
-// with SO_EXCLUSIVEADDRUSE and listening.
+// "listeners": the VPN listener of a default configuration (ADR-0020 decision 6), cases 1 to 5 of spec #43. Each case
+// runs the in-process server of the harness (HarnessOpenRun, HarnessStartServerKeep: the test listener on TCP 39555 and
+// the admin RPC), from a fresh configuration or from the one an earlier start of the case saved, and keeps the default
+// listener, which is what the case reads through ListenerList. The test holds a port as another program would: a
+// dual-stack socket bound with SO_EXCLUSIVEADDRUSE and listening. A case that needs 443 or 5555 free checks that
+// first and fails with a check that names the port.
 // 1. Default on 443: with 443 and 5555 free, ListenerList holds 443 enabled and the test listener, no 5555, and 443
 //    reaches Listening within LISTENERS_LISTEN_WAIT ms.
 // 2. Fallback: with 443 held, ListenerList holds 5555 listening and no 443, and the server log has the fallback line.
@@ -16,9 +17,9 @@
 //    error state, no 5555 and no fallback line.
 // 5. Any port: ListenerCreate on the free TCP LISTENERS_ANY_PORT listens and admits an admin connection, and
 //    ListenerDelete removes it.
-// 6. The first-start probe (ListenProbe): a port that a socket without address reuse holds is taken (WSAEADDRINUSE),
-//    where a probe with SO_REUSEADDR would share it; right after the probe of a free port, an exclusive bind of that
-//    port succeeds, so the probe has closed its socket.
+// Then the first-start probe itself (ListenProbe), which no admin RPC shows: a port that a socket without address reuse
+// holds is taken (WSAEADDRINUSE), where a probe with SO_REUSEADDR would share it; right after the probe of a free port,
+// an exclusive bind of that port succeeds, so the probe has closed its socket.
 // The two log lines are the one text check: the test formats them from the string table as SLog does and looks for
 // them in what the server log files got during the case. HarnessStartServer of the other tests deletes the default
 // listener, so the ListenerList goldens keep the test listener only.
@@ -420,6 +421,11 @@ static void ListenersFallback(HARNESS *h)
 	Print("[2: TCP %u held, fallback to TCP %u]\n", LISTENERS_PORT_DEFAULT, LISTENERS_PORT_FALLBACK);
 	HarnessSetPhase("listeners", "fallback");
 
+	if (ListenersCheckFree(h, LISTENERS_PORT_FALLBACK) == false)
+	{
+		return;
+	}
+
 	SOCKET held = ListenersHoldCheck(h, LISTENERS_PORT_DEFAULT);
 	if (held == INVALID_SOCKET)
 	{
@@ -540,6 +546,11 @@ static void ListenersNoFallback(HARNESS *h)
 	Print("[4: saved configuration with TCP %u, then TCP %u held]\n", LISTENERS_PORT_DEFAULT, LISTENERS_PORT_DEFAULT);
 	HarnessSetPhase("listeners", "no fallback");
 
+	if (ListenersCheckFree(h, LISTENERS_PORT_DEFAULT) == false)
+	{
+		return;
+	}
+
 	bool ok = HarnessStartServerKeep(h, true);
 	if (ok)
 	{
@@ -631,13 +642,13 @@ static void ListenersAnyPort(HARNESS *h)
 	HarnessStopServerKeep(h);
 }
 
-// 6. ListenProbe binds without address reuse and closes its socket at once
+// The first-start probe: ListenProbe binds without address reuse and closes its socket at once
 static void ListenersProbe(HARNESS *h)
 {
 	char tmp[MAX_SIZE];
 	UINT err;
 
-	Print("[6: ListenProbe on TCP %u]\n", LISTENERS_PROBE_PORT);
+	Print("[probe: ListenProbe on TCP %u]\n", LISTENERS_PROBE_PORT);
 	HarnessSetPhase("listeners", "probe");
 
 	// The bind of the server's listener (no SO_REUSEADDR, no SO_EXCLUSIVEADDRUSE). A bind with SO_REUSEADDR in the
