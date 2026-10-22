@@ -1,10 +1,19 @@
-# Generation 1 of branch-1 after apply1.json: its full state.
+# Generation 1 of branch-1 after apply1.json: its full state, with the first address of the pool
+# of the L3 Network corp-lan.
 update: {
   generation: 1
   set: {
     node: {
       name: "branch-1"
       tags: "branch"
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\012\012\000\001"  # 10.10.0.1
+          length: 24
+        }
+      }
     }
   }
   set: {

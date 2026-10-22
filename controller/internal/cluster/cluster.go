@@ -83,6 +83,9 @@ type Config struct {
 	Log *slog.Logger
 	// Status is what GET /api/v1/status reports besides the public key and the cluster part.
 	Status api.Status
+	// Defaults has the first leader of an empty store create the intent of a first install
+	// (controller.Config.Defaults).
+	Defaults bool
 }
 
 // Member is one member of a controller cluster.
@@ -291,7 +294,8 @@ func (m *Member) campaign(ctx context.Context) {
 // the intent and the node states from the store, and every write it makes is fenced by the
 // epoch of l.
 func (m *Member) lead(ctx context.Context, l store.Lease) {
-	c, err := controller.New(ctx, controller.Config{Store: m.cfg.Store.Fenced(l.Epoch), Key: m.cfg.Key, Log: m.log, Schema: m.cfg.Schema, LicenceKeys: m.cfg.LicenceKeys})
+	c, err := controller.New(ctx, controller.Config{Store: m.cfg.Store.Fenced(l.Epoch), Key: m.cfg.Key, Log: m.log, Schema: m.cfg.Schema, LicenceKeys: m.cfg.LicenceKeys,
+		Defaults: m.cfg.Defaults})
 	if err != nil {
 		m.log.Error("taking the lead", "epoch", l.Epoch, "err", err)
 		m.release(l.Epoch)

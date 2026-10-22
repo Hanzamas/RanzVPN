@@ -31,12 +31,13 @@ const (
 )
 
 // Revision is one version of the whole intent (ADR-0031 decision 3): every apply, delete,
-// rollback and import makes the next one, numbered from 1. Revision 0 is the empty intent that the
-// controller starts from; it is not stored.
+// rollback and import makes the next one, numbered from 1, and so does the first start of a
+// controller (OpFirstStart). Revision 0 is the empty intent that the controller starts from; it is
+// not stored.
 type Revision struct {
 	ID        uint64    `json:"id"`
 	Time      time.Time `json:"time"`
-	Operation string    `json:"operation"` // OpApply, OpDelete, OpRollback, OpAutomaticRollback or OpImport
+	Operation string    `json:"operation"` // OpApply, OpDelete, OpRollback, OpAutomaticRollback, OpImport or OpFirstStart
 	// Restores is the revision whose intent a rollback made the intent again.
 	Restores *uint64 `json:"restores,omitempty"`
 	// Reverts is the revision that an automatic rollback undid.
@@ -129,5 +130,5 @@ func changedFields(a, b json.RawMessage) []string {
 
 // kindOrder is the place of kind in the order of Resources.
 func kindOrder(kind string) int {
-	return slices.Index([]string{KindVRF, KindNetwork, KindNode, KindController}, kind)
+	return slices.Index([]string{KindVRF, KindNetwork, KindNode, KindPolicy, KindController}, kind)
 }

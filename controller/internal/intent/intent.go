@@ -1,8 +1,9 @@
 // Package intent is the declared network that `ranz apply -f` sends to the controller: the
-// resources of #176 "Resource model" that the controller knows (VRF, Network, Node, and the
-// Controller members of a controller cluster), their validation, and the values the controller
-// fills in when a resource is first applied; and the revisions of the intent with the diff
-// between two (revision.go).
+// resources of #176 "Resource model" that the controller knows (VRF, Network, Node, Policy, and
+// the Controller members of a controller cluster), their validation, and the values the
+// controller fills in when a resource is first applied, the addresses of the Nodes among them
+// (address.go); the revisions of the intent with the diff between two (revision.go); and the
+// intent of a first install (defaults.go).
 package intent
 
 import (
@@ -27,7 +28,14 @@ const (
 	KindVRF        = "VRF"
 	KindNetwork    = "Network"
 	KindNode       = "Node"
+	KindPolicy     = "Policy"
 	KindController = "Controller"
+)
+
+// The actions of a Policy.
+const (
+	PolicyAllow = "allow"
+	PolicyDeny  = "deny"
 )
 
 // The network modes.
@@ -65,8 +73,8 @@ type Document struct {
 	Resources []Resource `json:"resources"`
 }
 
-// Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node or
-// Controller.
+// Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy
+// or Controller.
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -81,6 +89,9 @@ type VRF struct {
 	ULA string `json:"ula,omitempty"`
 	// MTU of the VRF, DefaultMTU when it is left out.
 	MTU uint32 `json:"mtu,omitempty"`
+	// DNS turns on overlay DNS in the VRF (ADR-0028): a zone of its own, which SDN-11 (#187)
+	// serves on its members. The first start sets it for VRF default (ADR-0034).
+	DNS bool `json:"dns,omitempty"`
 }
 
 // Network belongs to one VRF.
@@ -93,12 +104,17 @@ type Network struct {
 
 // Node is a node of the overlay, identified by its Noise static key.
 type Node struct {
-	PublicKey string   `json:"publicKey"` // base64 of the KeySize-byte key
-	VRFs      []string `json:"vrfs,omitempty"`
-	Tags      []string `json:"tags,omitempty"`
+	PublicKey string `json:"publicKey"` // base64 of the KeySize-byte key
+	// VRFs are the VRFs the node is a member of. Left out, the node joins VRF default when the
+	// intent has it (ADR-0034).
+	VRFs []string `json:"vrfs,omitempty"`
+	Tags []string `json:"tags,omitempty"`
 	// Relay is the address and UDP port that the node's relay role listens on, host:port with an
 	// IP address (ADR-0015). Left out, the node is no relay for the others.
 	Relay string `json:"relay,omitempty"`
+	// Addresses holds the address of the node in each L3 Network of its VRFs that has an IPv4
+	// pool, by Network name (ADR-0028, address.go). One left out is allocated by the controller.
+	Addresses map[string]string `json:"addresses,omitempty"`
 }
 
 // Controller is one member of the controller cluster as nodes reach it (SDN-17, ADR-0026). The
@@ -109,27 +125,43 @@ type Controller struct {
 	PublicKey string `json:"publicKey"` // base64 of the member's Noise static key, KeySize bytes
 }
 
+// Policy is one rule of the policy of a VRF (ADR-0029). The policy engine of the nodes is
+// default deny, and a rule with the action PolicyAllow lets traffic through; the first start
+// creates the starter rule "allow all inside VRF default" (ADR-0034). So far a rule matches
+// every flow between the Nodes of its VRF: the tags, protocols and ports it matches, and its
+// compilation into the policy engine of the nodes, come with SDN-8 (#184).
+type Policy struct {
+	VRF    string `json:"vrf"`
+	Action string `json:"action"` // PolicyAllow or PolicyDeny
+}
+
 // Intent is the whole declared network, by kind and name.
 type Intent struct {
 	VRFs        map[string]VRF
 	Networks    map[string]Network
 	Nodes       map[string]Node
+	Policies    map[string]Policy
 	Controllers map[string]Controller
 }
 
 // New returns an empty intent.
 func New() Intent {
-	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Controllers: map[string]Controller{}}
+	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: map[string]Policy{},
+		Controllers: map[string]Controller{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
 func (in Intent) Clone() Intent {
-	out := Intent{VRFs: maps.Clone(in.VRFs), Networks: maps.Clone(in.Networks), Nodes: map[string]Node{}, Controllers: maps.Clone(in.Controllers)}
+	out := Intent{VRFs: maps.Clone(in.VRFs), Networks: maps.Clone(in.Networks), Nodes: map[string]Node{}, Policies: maps.Clone(in.Policies),
+		Controllers: maps.Clone(in.Controllers)}
 	if out.VRFs == nil {
 		out.VRFs = map[string]VRF{}
 	}
 	if out.Networks == nil {
 		out.Networks = map[string]Network{}
+	}
+	if out.Policies == nil {
+		out.Policies = map[string]Policy{}
 	}
 	if out.Controllers == nil {
 		out.Controllers = map[string]Controller{}
@@ -137,6 +169,7 @@ func (in Intent) Clone() Intent {
 	for name, n := range in.Nodes {
 		n.VRFs = slices.Clone(n.VRFs)
 		n.Tags = slices.Clone(n.Tags)
+		n.Addresses = maps.Clone(n.Addresses)
 		out.Nodes[name] = n
 	}
 	return out
@@ -191,13 +224,18 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &n); err == nil {
 				next.Nodes[r.Name] = n
 			}
+		case KindPolicy:
+			var p Policy
+			if err = decodeSpec(r.Spec, &p); err == nil {
+				next.Policies[r.Name] = p
+			}
 		case KindController:
 			var c Controller
 			if err = decodeSpec(r.Spec, &c); err == nil {
 				next.Controllers[r.Name] = c
 			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindController)
+			err = fmt.Errorf("the kind must be %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindController)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -205,6 +243,9 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 	}
 	if len(problems) == 0 {
 		problems = next.complete(in, random)
+	}
+	if len(problems) == 0 {
+		problems = next.allocate(in, seen)
 	}
 	if len(problems) == 0 {
 		problems = next.validate()
@@ -216,7 +257,8 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 }
 
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
-// Network or a Node uses cannot be deleted.
+// Network, a Node or a Policy uses cannot be deleted. The Nodes lose their addresses in a deleted
+// Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -235,6 +277,11 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 				users = append(users, KindNode+" "+strconv.Quote(n))
 			}
 		}
+		for _, n := range sortedNames(next.Policies) {
+			if next.Policies[n].VRF == name {
+				users = append(users, KindPolicy+" "+strconv.Quote(n))
+			}
+		}
 		if len(users) > 0 {
 			return in, fmt.Errorf("%w: VRF %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
@@ -244,24 +291,30 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.Networks, name)
+		next.release(name)
 	case KindNode:
 		if _, ok := next.Nodes[name]; !ok {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.Nodes, name)
+	case KindPolicy:
+		if _, ok := next.Policies[name]; !ok {
+			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
+		}
+		delete(next.Policies, name)
 	case KindController:
 		if _, ok := next.Controllers[name]; !ok {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.Controllers, name)
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindController, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindController, kind)
 	}
 	return next, nil
 }
 
 // Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
-// Controllers, each ordered by name.
+// Policies, then the Controllers, each ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -272,6 +325,9 @@ func (in Intent) Resources() []Resource {
 	}
 	for _, name := range sortedNames(in.Nodes) {
 		out = append(out, resource(KindNode, name, in.Nodes[name]))
+	}
+	for _, name := range sortedNames(in.Policies) {
+		out = append(out, resource(KindPolicy, name, in.Policies[name]))
 	}
 	for _, name := range sortedNames(in.Controllers) {
 		out = append(out, resource(KindController, name, in.Controllers[name]))
@@ -298,6 +354,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var n Node
 			err = decodeSpec(r.Spec, &n)
 			in.Nodes[r.Name] = n
+		case KindPolicy:
+			var p Policy
+			err = decodeSpec(r.Spec, &p)
+			in.Policies[r.Name] = p
 		case KindController:
 			var c Controller
 			err = decodeSpec(r.Spec, &c)
@@ -371,8 +431,10 @@ func ParseKey(s string) ([]byte, error) {
 }
 
 // complete fills in what the resources of in leave out: the id, ULA and MTU of a VRF, the mode
-// of a Network, the order of a Node's VRFs and tags, and the form of its relay address. A VRF
-// keeps the id and ULA it got when prev first held it; they cannot change while it exists.
+// of a Network, the VRFs of a Node that names none (VRF default, when in has it), the order of a
+// Node's VRFs and tags, and the form of its relay address. A VRF keeps the id and ULA it got when
+// prev first held it; they cannot change while it exists. The addresses of the Nodes follow
+// (allocate).
 func (in Intent) complete(prev Intent, random io.Reader) []error {
 	var problems []error
 	names := sortedNames(in.VRFs)
@@ -428,7 +490,11 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 			in.Networks[name] = n
 		}
 	}
+	_, hasDefault := in.VRFs[DefaultVRF]
 	for name, n := range in.Nodes {
+		if len(n.VRFs) == 0 && hasDefault {
+			n.VRFs = []string{DefaultVRF}
+		}
 		slices.Sort(n.VRFs)
 		slices.Sort(n.Tags)
 		if ap, err := ParseRelay(n.Relay); err == nil {
@@ -521,6 +587,15 @@ func (in Intent) validate() []error {
 			}
 		}
 	}
+	for _, name := range sortedNames(in.Policies) {
+		p := in.Policies[name]
+		if _, ok := in.VRFs[p.VRF]; !ok {
+			problems = append(problems, fmt.Errorf("Policy %q: VRF %q does not exist", name, p.VRF))
+		}
+		if p.Action != PolicyAllow && p.Action != PolicyDeny {
+			problems = append(problems, fmt.Errorf("Policy %q: the action must be %s or %s, not %q", name, PolicyAllow, PolicyDeny, p.Action))
+		}
+	}
 	addresses := map[string]string{}
 	for _, name := range sortedNames(in.Controllers) {
 		c := in.Controllers[name]
@@ -583,7 +658,8 @@ func decodeSpec(spec json.RawMessage, v any) error {
 
 // resource returns the Resource of kind/name with spec as its JSON.
 func resource(kind, name string, spec any) Resource {
-	// The spec types hold only strings, numbers and string slices, so Marshal cannot fail.
+	// The spec types hold only strings, numbers, booleans, string slices and string maps, so
+	// Marshal cannot fail.
 	b, _ := json.Marshal(spec)
 	return Resource{Kind: kind, Name: name, Spec: b}
 }

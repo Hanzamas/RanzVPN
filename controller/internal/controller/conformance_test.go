@@ -22,6 +22,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -379,6 +380,10 @@ type harness struct {
 	// revPath is the update channel's path for the signed revocation list (ADR-0036, SEC-5 #283),
 	// empty when the harness delivers none.
 	revPath string
+	// defaults has the first start create the intent of a first install (SDN-3 #179), with the
+	// ULA of VRF default drawn from random.
+	defaults bool
+	random   io.Reader
 }
 
 func newHarness(t *testing.T) *harness {
@@ -427,7 +432,8 @@ func (h *harness) start() {
 	}
 	log := slog.New(slog.NewTextHandler(testWriter{h.t}, nil))
 	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log, Schema: h.schema,
-		LicenceKeys: []ed25519.PublicKey{testVendor.Public().(ed25519.PublicKey)}, Version: h.version, Revocations: h.revPath})
+		LicenceKeys: []ed25519.PublicKey{testVendor.Public().(ed25519.PublicKey)}, Version: h.version, Revocations: h.revPath,
+		Defaults: h.defaults, Random: h.random})
 	if err != nil {
 		h.t.Fatal(err)
 	}

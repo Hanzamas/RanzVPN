@@ -16,6 +16,8 @@ $ErrorActionPreference = 'Stop'
 #   another HTTP.sys user held that catch-all first (on the runner one does), nothing else;
 # - create the admin token at its first start, with its secret in admin.token in the data
 #   directory, and keep it across restarts (SDN-14, #190);
+# - create the intent of a first install at its first start as revision 1: VRF default, its
+#   Network with the automatic pool and the starter rule (ADR-0034, SDN-3 #179);
 # - refuse a call without a token (401) and an apply with a viewer token (403), and answer the
 #   admin token from an address of the host that is not loopback, with the TLS fingerprint of
 #   its status pinned, while a wrong fingerprint fails;
@@ -280,8 +282,13 @@ try {
 	}
 	$file = Join-Path $work 'intent.json'
 	$intent | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $file -Encoding utf8NoBOM
+	# The first start made the intent of a first install
+	$firstInstall = 'VRF/default,Network/default,Policy/default-allow-all'
+	$first = @((Invoke-Ranz @('get', 'resources')).resources)
+	if ((($first | ForEach-Object { "$($_.kind)/$($_.name)" }) -join ',') -ne $firstInstall) { throw "the first start made the intent $($first | ConvertTo-Json -Compress -Depth 6)" }
+	Write-Host "first start: $($first | ConvertTo-Json -Compress -Depth 6)"
 	Assert-Refused @('-server', $api, '-token-file', $viewerFile, 'apply', '-f', $file) 403
-	if (@((Invoke-Ranz @('get', 'resources')).resources).Count -ne 0) { throw "the refused apply of the viewer changed the intent" }
+	if ((((Invoke-Ranz @('get', 'resources')).resources | ForEach-Object { "$($_.kind)/$($_.name)" }) -join ',') -ne $firstInstall) { throw "the refused apply of the viewer changed the intent" }
 	$applied = Invoke-Ranz @('apply', '-f', $file)
 	Write-Host "applied: $($applied | ConvertTo-Json -Compress)"
 	if (@($applied.nodes).Count -ne 1 -or $applied.nodes[0].name -ne 'branch-1' -or $applied.nodes[0].generation -ne 1) {
@@ -293,7 +300,7 @@ try {
 	Restart-Service -Name $service
 	Wait-Api
 	$names = (Invoke-Ranz @('get', 'resources')).resources | ForEach-Object { "$($_.kind)/$($_.name)" }
-	if (($names -join ',') -ne 'VRF/corp,Network/corp-lan,Node/branch-1') { throw "the intent after the restart is $($names -join ', ')" }
+	if (($names -join ',') -ne 'VRF/corp,VRF/default,Network/corp-lan,Network/default,Node/branch-1,Policy/default-allow-all') { throw "the intent after the restart is $($names -join ', ')" }
 	$node = Wait-Acked 'branch-1' 1
 	if ($node.generation -ne 1) { throw "branch-1 is at generation $($node.generation) after the restart, not 1" }
 	$after = Invoke-Ranz @('status')
@@ -328,41 +335,42 @@ try {
 	if ($kept.capabilities.tlsPort -ne 5555 -or -not $kept.capabilities.tlsPortFallback) { throw 'with 443 free again the controller left its fallback' }
 	Write-Host 'the TLS port fell back to 5555 with 443 taken, and stays there with 443 free again'
 
-	# Revisions: the apply above is revision 1, also after the restarts
+	# Revisions: the first start is revision 1 and the apply above revision 2, also after the
+	# restarts
 	$revisions = @((Invoke-Ranz @('get', 'revisions')).revisions)
-	if ($revisions.Count -ne 1 -or $revisions[0].operation -ne 'apply') { throw "the revisions are not the one apply: $($revisions | ConvertTo-Json -Compress -Depth 4)" }
+	if ($revisions.Count -ne 2 -or $revisions[0].operation -ne 'first-start' -or $revisions[1].operation -ne 'apply') { throw "the revisions are not the first start and the one apply: $($revisions | ConvertTo-Json -Compress -Depth 4)" }
 	$intent.resources[0].spec.mtu = 1400
 	$mtuFile = Join-Path $work 'intent-mtu.json'
 	$intent | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $mtuFile -Encoding utf8NoBOM
 	$trial = Invoke-Ranz @('apply', '-f', $mtuFile, '-confirm', '5s')
-	if ($trial.revision -ne 2 -or -not $trial.confirmBy) { throw "apply -confirm did not make revision 2 with a deadline: $($trial | ConvertTo-Json -Compress)" }
-	$diff = Invoke-Ranz @('diff', '1', '2')
+	if ($trial.revision -ne 3 -or -not $trial.confirmBy) { throw "apply -confirm did not make revision 3 with a deadline: $($trial | ConvertTo-Json -Compress)" }
+	$diff = Invoke-Ranz @('diff', '2', '3')
 	$changes = @($diff.changes)
 	if ($changes.Count -ne 1 -or $changes[0].action -ne 'changed' -or $changes[0].kind -ne 'VRF' -or (@($changes[0].fields) -join ',') -ne 'mtu') {
-		throw "ranz diff 1 2 is not the MTU change of VRF corp: $($diff | ConvertTo-Json -Compress -Depth 6)"
+		throw "ranz diff 2 3 is not the MTU change of VRF corp: $($diff | ConvertTo-Json -Compress -Depth 6)"
 	}
-	# Nobody confirms revision 2, so the service rolls it back by itself after 5 s
+	# Nobody confirms revision 3, so the service rolls it back by itself after 5 s
 	$end = (Get-Date).AddSeconds($waitSeconds)
 	while (@((Invoke-Ranz @('get', 'events')).events).Count -eq 0) {
 		if ((Get-Date) -ge $end) { throw "no automatic rollback within $waitSeconds s of the unconfirmed apply" }
 		Start-Sleep -Milliseconds 500
 	}
 	$events = @((Invoke-Ranz @('get', 'events')).events)
-	if ($events.Count -ne 1 -or $events[0].type -ne 'automatic-rollback' -or $events[0].revision -ne 3 -or $events[0].reverts -ne 2) {
-		throw "the events are not the automatic rollback of revision 2: $($events | ConvertTo-Json -Compress)"
+	if ($events.Count -ne 1 -or $events[0].type -ne 'automatic-rollback' -or $events[0].revision -ne 4 -or $events[0].reverts -ne 3) {
+		throw "the events are not the automatic rollback of revision 3: $($events | ConvertTo-Json -Compress)"
 	}
 	Write-Host "event: $($events[0].message)"
 	# A rollback changes the intent, so it needs operator: the viewer token is refused
-	Assert-Refused @('-server', $api, '-token-file', $viewerFile, 'rollback', '2') 403
-	$back = Invoke-Ranz @('rollback', '2')
-	if ($back.revision -ne 4) { throw "ranz rollback 2 made revision $($back.revision), not 4" }
-	$vrf = (Invoke-Ranz @('get', 'resources')).resources | Where-Object { $_.kind -eq 'VRF' }
-	if ($vrf.spec.mtu -ne 1400) { throw "after ranz rollback 2 the MTU of corp is $($vrf.spec.mtu), not the 1400 of revision 2" }
+	Assert-Refused @('-server', $api, '-token-file', $viewerFile, 'rollback', '3') 403
+	$back = Invoke-Ranz @('rollback', '3')
+	if ($back.revision -ne 5) { throw "ranz rollback 3 made revision $($back.revision), not 5" }
+	$vrf = (Invoke-Ranz @('get', 'resources')).resources | Where-Object { $_.kind -eq 'VRF' -and $_.name -eq 'corp' }
+	if ($vrf.spec.mtu -ne 1400) { throw "after ranz rollback 3 the MTU of corp is $($vrf.spec.mtu), not the 1400 of revision 3" }
 	$confirmApply = Invoke-Ranz @('apply', '-f', $file, '-confirm', '60s')
 	$confirmed = Invoke-Ranz @('confirm', "$($confirmApply.revision)")
 	if ($confirmed.confirm.state -ne 'confirmed') { throw "ranz confirm $($confirmApply.revision) answered $($confirmed | ConvertTo-Json -Compress -Depth 4)" }
 	$operations = ((Invoke-Ranz @('get', 'revisions')).revisions | ForEach-Object { $_.operation }) -join ','
-	if ($operations -ne 'apply,apply,automatic-rollback,rollback,apply') { throw "the revisions are $operations" }
+	if ($operations -ne 'first-start,apply,apply,automatic-rollback,rollback,apply') { throw "the revisions are $operations" }
 	Write-Host "revisions: $operations; the unconfirmed apply came back by itself with an event, the confirmed one stays"
 
 	# Offline recovery of the admin access: nobody has admin.token any more, and reset-admin, run
