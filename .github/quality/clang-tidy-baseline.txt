@@ -1,0 +1,3 @@
+# The clang-tidy findings on the new core that the static analysis gate accepts (ADR-0040 item 3,
+# .github/scripts/static-findings.py), one "<file>|<check>|<message>" per line. A finding that is not
+# here fails the static-analysis job of windows.yml.

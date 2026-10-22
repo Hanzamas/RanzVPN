@@ -3,8 +3,10 @@ param([string] $BuildDir = 'build')
 $ErrorActionPreference = 'Stop'
 
 # Benchmark results: every "BENCH ..." line of the named tests is printed, also when the test passes, and
-# saved to harness-out\bench-<arch>.txt (uploaded with the harness-out artifact). Informational, never a gate.
-# ARCHITECTURE (x64, arm64) names the file; without it the architecture of the machine does.
+# saved to harness-out\bench-<arch>.txt (uploaded with the harness-out artifact). This script does not judge
+# them; the performance regression gate of windows.yml (.github/scripts/bench-gate.py, ADR-0040 item 5)
+# compares the file with the recorded medians. ARCHITECTURE (x64, arm64) names the file; without it the
+# architecture of the machine does.
 if ($env:ARCHITECTURE) {
 	$benchArch = $env:ARCHITECTURE
 } elseif ($env:PROCESSOR_ARCHITEW6432) {

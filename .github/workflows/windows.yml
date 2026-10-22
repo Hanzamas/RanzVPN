@@ -1,5 +1,8 @@
 # The C build and its checks: x64 and arm64 (build_and_test), fuzz-asan, the x64 and arm64 Debug
-# builds and the format check.
+# builds and the format check, and the quality gates of ADR-0040 for the C code: the performance
+# regression gate in build_and_test, the coverage floor of the new core (coverage), clang-tidy and
+# MSVC /analyze (static-analysis) and Application Verifier (appverif). The fuzz targets run in
+# fuzz-asan; quality.yml checks that every parser has one.
 #
 # A push to master runs every job, with no path filter. A pull request runs them when it changes a
 # path that one of the jobs reads. The filter starts from every path ('**') and takes out the paths
@@ -12,11 +15,11 @@
 # - docs/ and every *.md file (ADRs, README.md, CONTEXT.md, CLAUDE.md). The files of src/bin/hamcore
 #   are resources of the executables (cmake/RanzResources.cmake), so that directory is taken back
 #   in, whatever its file names.
-# - controller.yml and move-only.yml, and the scripts that only they call.
+# - controller.yml, move-only.yml and quality.yml, and the scripts that only they call.
 # Every other path runs the workflow: src/, cmake/, CMakeLists.txt, CMakePresets.json, vcpkg.json,
-# .gitmodules, .gitattributes, .clang-format, tests/golden/, developer_tools/stbchecker/, this file
-# and the scripts of .github/scripts that the jobs call. A new top-level path also runs it until it
-# is taken out here.
+# .gitmodules, .gitattributes, .clang-format, tests/golden/, developer_tools/stbchecker/, this file,
+# the scripts of .github/scripts that the jobs call and the files of .github/quality that they read.
+# A new top-level path also runs it until it is taken out here.
 on:
   push:
     branches: [master]
@@ -35,6 +38,10 @@ on:
     - '!.github/workflows/move-only.yml'
     - '!.github/scripts/move-only-check.py'
     - '!.github/scripts/move-only-check-test.py'
+    - '!.github/workflows/quality.yml'
+    - '!.github/scripts/fuzz-registry.py'
+    - '!.github/scripts/quality-gates-test.py'
+    - '!.github/quality/fuzz-targets.txt'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -216,6 +223,16 @@ jobs:
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
       run: |
         . .github/scripts/vpntest.ps1
+    # The performance regression gate (ADR-0040 item 5): every BENCH case of this run (vpntest bench and
+    # the other tests that print BENCH lines) against its median recorded from earlier CI runs of the
+    # same architecture (.github/quality/bench-<arch>.txt). A case slower than its median by more than
+    # its margin fails the job; .github/scripts/bench-gate.py record makes the file anew.
+    - name: Performance regression gate
+      shell: pwsh
+      run: |
+        $arch = '${{ matrix.platform.ARCHITECTURE }}'
+        python .github/scripts/bench-gate.py compare --medians ".github/quality/bench-$arch.txt" "build/harness-out/bench-$arch.txt"
+        if ($LASTEXITCODE -ne 0) { throw "a benchmark is slower than its recorded median allows (exit code $LASTEXITCODE)" }
     # The new core's crypto module (CORE-F1, #61): known-answer tests of X25519, AES-GCM, SHA-256,
     # HMAC, HKDF and the RNG, the identity key, the ML-KEM hybrid, the certificate path and an
     # in-memory Schannel TLS 1.3 handshake; and its session module (CORE-F2, #62): the Noise_IK
@@ -440,6 +457,294 @@ jobs:
           build/vpntest.exe
           build/vpntest.pdb
           build/clang_rt.asan_dynamic*.dll
+
+  # The coverage floor of the new core (ADR-0040 item 2), x64: coretest built with RANZ_COVERAGE
+  # (cmake/RanzCoverage.cmake, the coverage preset) runs the tests of .github/scripts/coretest.ps1,
+  # llvm-cov counts the lines of each module of src/Core, and a module below its floor in
+  # .github/quality/coverage-floors.txt, or a file of src/Core in no module, fails the job.
+  coverage:
+    runs-on: windows-latest
+    name: coverage (new core)
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: controller/go.sum
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-
+    - name: Pick clang-cl with llvm-profdata, llvm-cov and the profile runtime
+      shell: pwsh
+      run: |
+        # Visual Studio's clang-cl first (the compiler of build_and_test), the runner's standalone LLVM
+        # second. A toolchain is taken only if its bin directory has llvm-profdata and llvm-cov, which
+        # must be of the compiler's release to read its profiles, and its runtime directory has the
+        # profile runtime that cmake/RanzCoverage.cmake links.
+        $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+        foreach ($cc in @("$vs\VC\Tools\Llvm\x64\bin\clang-cl.exe", "$env:ProgramFiles\LLVM\bin\clang-cl.exe")) {
+          if (-not (Test-Path -LiteralPath $cc)) { continue }
+          $bin = Split-Path -Parent $cc
+          $tools = @(@('llvm-profdata.exe', 'llvm-cov.exe') | Where-Object { -not (Test-Path -LiteralPath (Join-Path $bin $_)) })
+          $dirs = @((& $cc -print-runtime-dir | Out-String).Trim(), (Join-Path (& $cc -print-resource-dir | Out-String).Trim() 'lib\windows'))
+          foreach ($rt in $dirs) {
+            if (-not (Test-Path -LiteralPath $rt)) { Write-Host "$cc -> $rt (does not exist)"; continue }
+            $lib = @(@('clang_rt.profile-x86_64.lib', 'clang_rt.profile.lib') | Where-Object { Test-Path -LiteralPath (Join-Path $rt $_) })
+            Write-Host "$cc -> $rt (profile runtime: $($lib -join ', '); missing tools: $($tools -join ', '))"
+            if ($lib.Count -gt 0 -and $tools.Count -eq 0) {
+              & $cc --version
+              "COMPILER_PATH=$cc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              "RANZ_RT_DIR=$rt" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              "LLVM_BIN=$bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              exit 0
+            }
+          }
+        }
+        throw 'No clang-cl with llvm-profdata, llvm-cov and the profile runtime found'
+    - name: Build coretest (RANZ_COVERAGE=ON)
+      run: |
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
+
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        if "%VSINSTALL%"=="" (
+          echo Visual Studio installation was not found.
+          exit /b 1
+        )
+
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        rem COMPILER_PATH is the clang-cl picked by the step above
+        cmake --preset coverage -DCMAKE_C_COMPILER="%COMPILER_PATH%"
+        if errorlevel 1 exit /b 1
+        cmake --build --preset coverage --target coretest
+      shell: cmd
+    - name: Build the Noise interop peer (flynn/noise)
+      shell: pwsh
+      working-directory: controller
+      run: |
+        go build -o ..\build\ranz-noisepeer.exe ./cmd/ranz-noisepeer
+        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
+    - name: Core tests with coverage
+      shell: pwsh
+      timeout-minutes: 10
+      run: |
+        $dir = Join-Path $PWD 'build\coverage'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        # One profile per coretest process (%p, the process id): coretest.ps1 runs each test in a process of its own
+        $env:LLVM_PROFILE_FILE = Join-Path $dir 'coretest-%p.profraw'
+        . .github/scripts/coretest.ps1
+    - name: Coverage floor
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      run: |
+        $raw = @(Get-ChildItem -LiteralPath build\coverage -Filter '*.profraw' | ForEach-Object { $_.FullName })
+        if ($raw.Count -eq 0) { throw 'coretest wrote no .profraw file' }
+        & "$env:LLVM_BIN\llvm-profdata.exe" merge -sparse @raw -o build\coverage\coretest.profdata
+        if ($LASTEXITCODE -ne 0) { throw "llvm-profdata exited with code $LASTEXITCODE" }
+        # The lines of each file of the new core in the job log, then the JSON that the floor check reads
+        & "$env:LLVM_BIN\llvm-cov.exe" report -instr-profile build\coverage\coretest.profdata build\coretest.exe src\Core
+        & "$env:LLVM_BIN\llvm-cov.exe" export -summary-only -instr-profile build\coverage\coretest.profdata build\coretest.exe | Set-Content -LiteralPath build\coverage\coretest.json -Encoding utf8NoBOM
+        if ($LASTEXITCODE -ne 0) { throw "llvm-cov exited with code $LASTEXITCODE" }
+        python .github/scripts/coverage-floor.py llvm --export build/coverage/coretest.json --scope src/Core
+        if ($LASTEXITCODE -ne 0) { throw "a module of the new core is below its coverage floor (exit code $LASTEXITCODE)" }
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: coverage-core
+        if-no-files-found: ignore
+        path: |
+          build/coverage/coretest.json
+          build/coverage/coretest.profdata
+
+  # The C static analysis of the new core (ADR-0040 item 3), x64: clang-tidy with the checks of
+  # .github/quality/clang-tidy.yaml on every .c file of src/Core, over the compile commands of the x64
+  # build, and MSVC /analyze, which checks the SAL annotations of the Windows SDK and of the code, on a
+  # cl.exe build of the new core's modules (corecrypto, corenoise, corepeer). A finding that the
+  # baseline of its tool in .github/quality does not hold fails the job (.github/scripts/static-findings.py).
+  static-analysis:
+    runs-on: windows-latest
+    name: static analysis (new core)
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-
+    - name: clang-tidy
+      run: |
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
+
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        if "%VSINSTALL%"=="" (
+          echo Visual Studio installation was not found.
+          exit /b 1
+        )
+
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        set "CLANG_TIDY=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-tidy.exe"
+        "%CLANG_TIDY%" --version
+        if errorlevel 1 exit /b 1
+        rem The compile commands of the x64 build (build_and_test's compiler); configured, not built
+        cmake --preset x64 -DCMAKE_C_COMPILER="%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        if errorlevel 1 exit /b 1
+
+        rem The planted finding (.github\scripts\static-fault.c) must be reported as new
+        "%CLANG_TIDY%" --config-file=.github\quality\clang-tidy.yaml .github\scripts\static-fault.c -- -std=c17 > build\clang-tidy-planted.txt 2>&1
+        python .github\scripts\static-findings.py --tool clang-tidy --log build\clang-tidy-planted.txt --baseline .github\quality\clang-tidy-baseline.txt --scope .github/scripts
+        if not errorlevel 1 (
+          type build\clang-tidy-planted.txt
+          echo ::error::clang-tidy did not report the planted finding of .github\scripts\static-fault.c
+          exit /b 1
+        )
+
+        if exist build\clang-tidy.txt del build\clang-tidy.txt
+        for %%f in (src\Core\*.c) do (
+          echo clang-tidy %%f
+          "%CLANG_TIDY%" -p build --config-file=.github\quality\clang-tidy.yaml "%%f" >> build\clang-tidy.txt 2>&1
+        )
+        type build\clang-tidy.txt
+        rem A file that clang-tidy could not process gives no findings: that fails too
+        findstr /C:"Error while" build\clang-tidy.txt
+        if not errorlevel 1 exit /b 1
+        python .github\scripts\static-findings.py --tool clang-tidy --log build\clang-tidy.txt --baseline .github\quality\clang-tidy-baseline.txt --scope src/Core
+      shell: cmd
+    - name: MSVC /analyze
+      if: ${{ !cancelled() }}
+      run: |
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        if not exist build-msvc mkdir build-msvc
+
+        rem The planted finding (.github\scripts\static-fault.c) must be reported as new
+        cl /nologo /analyze /c /Fobuild-msvc\static-fault.obj .github\scripts\static-fault.c > build-msvc\analyze-planted.txt 2>&1
+        python .github\scripts\static-findings.py --tool msvc --log build-msvc\analyze-planted.txt --baseline .github\quality\msvc-analyze-baseline.txt --scope .github/scripts
+        if not errorlevel 1 (
+          type build-msvc\analyze-planted.txt
+          echo ::error::MSVC /analyze did not report the planted finding of .github\scripts\static-fault.c
+          exit /b 1
+        )
+
+        rem cl.exe in a build directory of its own, with CMake's default C flags and /analyze, which
+        rem defines _PREFAST_ and so checks the SAL annotations
+        cmake -S . -B build-msvc -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_C_COMPILER=cl -DBUILD_NUMBER=0 "-DCMAKE_C_FLAGS=/DWIN32 /D_WINDOWS /analyze"
+        if errorlevel 1 exit /b 1
+
+        cmake --build build-msvc --target corecrypto corenoise corepeer > build-msvc\analyze.txt 2>&1
+        set BUILD_EXIT=%ERRORLEVEL%
+        type build-msvc\analyze.txt
+        if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
+        python .github\scripts\static-findings.py --tool msvc --log build-msvc\analyze.txt --baseline .github\quality\msvc-analyze-baseline.txt --scope src/Core
+      shell: cmd
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: static-analysis
+        if-no-files-found: ignore
+        path: |
+          build/clang-tidy.txt
+          build-msvc/analyze.txt
+
+  # Application Verifier (ADR-0040 item 4), x64: the native Windows tool for locks, handles and the
+  # heap, which stands in for ThreadSanitizer (not available on Windows). The runner image has the
+  # Windows SDK without it, so the job adds the SDK's Application Verifier feature, then runs a
+  # planted fault (.github/scripts/appverif-fault.c) and the tests of coretest under the Heaps,
+  # Handles and Locks layers (.github/scripts/appverif.ps1). An unreported planted fault, a failed
+  # test or a verifier error fails the job. go test -race covers the Go code (controller.yml,
+  # ranz-bgp.yml).
+  appverif:
+    runs-on: windows-latest
+    name: Application Verifier (new core)
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: controller/go.sum
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-
+    - name: Build coretest and the planted fault
+      run: |
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
+
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        if "%VSINSTALL%"=="" (
+          echo Visual Studio installation was not found.
+          exit /b 1
+        )
+
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        cmake --preset x64 -DCMAKE_C_COMPILER="%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
+        if errorlevel 1 exit /b 1
+        cmake --build --preset x64 --target coretest
+        if errorlevel 1 exit /b 1
+        cl /nologo /W3 /Fobuild\appverif-fault.obj /Febuild\appverif-fault.exe .github\scripts\appverif-fault.c
+      shell: cmd
+    - name: Build the Noise interop peer (flynn/noise)
+      shell: pwsh
+      working-directory: controller
+      run: |
+        go build -o ..\build\ranz-noisepeer.exe ./cmd/ranz-noisepeer
+        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
+    - name: Install Application Verifier
+      shell: pwsh
+      timeout-minutes: 15
+      run: |
+        $appverif = Join-Path $env:windir 'System32\appverif.exe'
+        if (-not (Test-Path -LiteralPath $appverif)) {
+          # The Application Verifier feature of the Windows SDK (OptionId.AvrfExternal), added with the
+          # SDK installer that the runner image keeps in its package cache, as the image adds the
+          # debuggers feature; without one, with the installer of the SDK that the image installs
+          $sdk = Get-ItemProperty 'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' |
+            Where-Object { $_.BundleCachePath -and $_.DisplayName -like 'Windows Software Development Kit*' } |
+            Sort-Object -Property DisplayVersion -Descending | Select-Object -First 1
+          $installer = if ($sdk -and (Test-Path -LiteralPath $sdk.BundleCachePath)) { $sdk.BundleCachePath } else { $null }
+          if (-not $installer) {
+            $installer = Join-Path $env:RUNNER_TEMP 'winsdksetup.exe'
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=2349110' -OutFile $installer
+          }
+          $signature = Get-AuthenticodeSignature -FilePath $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+            throw "$installer is not signed by Microsoft ($($signature.Status), $($signature.SignerCertificate.Subject))"
+          }
+          Write-Host "Adding OptionId.AvrfExternal with $installer ($($sdk.DisplayName) $($sdk.DisplayVersion))"
+          $p = Start-Process -FilePath $installer -ArgumentList '/features', 'OptionId.AvrfExternal', '/q', '/norestart', '/ceip', 'off' -Wait -PassThru
+          Write-Host "The SDK installer exited with code $($p.ExitCode)"
+          if (-not (Test-Path -LiteralPath $appverif)) {
+            Get-ChildItem -Path $env:TEMP -Recurse -Filter '*.log' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'sdk|Avrf|Verifier' } |
+              Sort-Object LastWriteTime -Descending | Select-Object -First 2 | ForEach-Object { Write-Host "== $($_.FullName)"; Get-Content $_.FullName -Tail 40 }
+            throw "$appverif is not there after the SDK installer"
+          }
+        }
+        (Get-Item -LiteralPath $appverif).VersionInfo | Format-List FileVersion, ProductName
+    - name: coretest under Application Verifier
+      shell: pwsh
+      timeout-minutes: 20
+      run: |
+        ./.github/scripts/appverif.ps1 -BuildDir build -FaultExe build\appverif-fault.exe
+        if ($LASTEXITCODE -ne 0) { throw "Application Verifier gate failed (exit code $LASTEXITCODE)" }
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: appverif-logs
+        if-no-files-found: ignore
+        path: build/appverif/
 
   # Debug configuration, built without running anything: the code that build_and_test
   # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c and vpncmd.c) and without

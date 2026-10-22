@@ -1,0 +1,41 @@
+# The per-module coverage floors of the new core (ADR-0040 item 2), checked by
+# .github/scripts/coverage-floor.py: a module below its floor, or a module without a line here, fails
+# the job.
+#   c   <module> <floor %> <files>   line coverage (llvm-cov) of coretest's tests: the coverage job of windows.yml
+#   go  <package> <floor %>          statement coverage (go test -coverprofile) of the Linux jobs of
+#                                    controller.yml and ranz-bgp.yml
+# A floor is the coverage measured in CI when it was recorded, rounded down to a whole percent, less
+# two points for the tests whose paths depend on timing. Raise a floor when a module gains tests; a
+# change that lowers one says why in its pull request.
+
+# The new core (src/Core, ADR-0022)
+c  corecrypto  0  src/Core/Crypto*.c
+c  corenoise   0  src/Core/Noise*.c
+c  corepeer    0  src/Core/Peer*.c
+
+# The controller (controller/)
+go  controller/cmd/ranz                 0
+go  controller/cmd/ranz-controller      0
+go  controller/cmd/ranz-nodesim         0
+go  controller/cmd/ranz-noisepeer       0
+go  controller/internal/api             0
+go  controller/internal/capability      0
+go  controller/internal/cluster         0
+go  controller/internal/control         0
+go  controller/internal/controller      0
+go  controller/internal/desired         0
+go  controller/internal/event           0
+go  controller/internal/intent          0
+go  controller/internal/keys            0
+go  controller/internal/licence         0
+go  controller/internal/nodesim         0
+go  controller/internal/port            0
+go  controller/internal/rbac            0
+go  controller/internal/rqlitetest      0
+go  controller/internal/sidecar         0
+go  controller/internal/store           0
+go  controller/internal/version         0
+
+# The BGP sidecar (ranz-bgp/)
+go  ranz-bgp/cmd/ranz-bgp          0
+go  ranz-bgp/internal/sidecar      0

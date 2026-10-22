@@ -46,6 +46,15 @@
       }
     },
     {
+      "name": "coverage",
+      "displayName": "x64 source-based code coverage",
+      "description": "x64 with RANZ_COVERAGE (cmake/RanzCoverage.cmake): the coverage CI job",
+      "inherits": "x64",
+      "cacheVariables": {
+        "RANZ_COVERAGE": "ON"
+      }
+    },
+    {
       "name": "debug",
       "displayName": "x64 Debug",
       "description": "x64 Debug configuration: code that RelWithDebInfo never compiles (_DEBUG)",
@@ -68,6 +77,7 @@
     { "name": "x64", "configurePreset": "x64" },
     { "name": "arm64", "configurePreset": "arm64" },
     { "name": "asan", "configurePreset": "asan" },
+    { "name": "coverage", "configurePreset": "coverage" },
     { "name": "debug", "configurePreset": "debug" },
     { "name": "debug-arm64", "configurePreset": "debug-arm64" }
   ]
