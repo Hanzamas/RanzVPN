@@ -584,7 +584,7 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 			CopyMemory(s.RelayKey, home->Info.Key, PEER_KEY_SIZE);
 			s.Relay = home->Info.Addr;
 
-			if (home->Bound && a->Config.Ice == false) {
+			if (home->Bound && a->Config.Ice == false && s.NumCandidates < PEER_MAX_CANDIDATES) {
 				s.Candidates[s.NumCandidates].Type = PEER_CANDIDATE_SRFLX;
 				s.Candidates[s.NumCandidates].Addr = home->Observed;
 				s.NumCandidates++;

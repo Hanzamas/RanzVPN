@@ -1,0 +1,6 @@
+{
+  "resources": [
+    {"kind": "Node", "name": "node-a", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw="}},
+    {"kind": "Node", "name": "node-b", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns="}}
+  ]
+}

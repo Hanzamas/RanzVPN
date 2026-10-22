@@ -43,10 +43,10 @@ func KeyOf(o *controlpb.Object) Key {
 	return Key{}
 }
 
-// Compile returns the desired state of every Node of in, by node name. A node gets itself, the
-// VRFs it is a member of with their Networks, a Peer for every other node that shares one of
-// those VRFs (full mesh), and a Relay for every such node that is a relay (ADR-0015). in must be
-// an intent that intent.Apply returned.
+// Compile returns the desired state of every Node of in, by node name. A node gets itself with
+// its addresses, the VRFs it is a member of with their Networks, a Peer for every other node
+// that shares one of those VRFs (full mesh) with that node's addresses in them, and a Relay for
+// every such node that is a relay (ADR-0015). in must be an intent that intent.Apply returned.
 func Compile(in intent.Intent) (map[string]State, error) {
 	vrfs := map[string]*controlpb.Vrf{}
 	for name, v := range in.VRFs {
@@ -86,7 +86,6 @@ func Compile(in intent.Intent) (map[string]State, error) {
 	out := map[string]State{}
 	for name, n := range in.Nodes {
 		s := State{}
-		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: &controlpb.NodeConfig{Name: name, Tags: slices.Clone(n.Tags)}}})
 		member := map[string]bool{}
 		for _, v := range n.VRFs {
 			member[v] = true
@@ -95,21 +94,26 @@ func Compile(in intent.Intent) (map[string]State, error) {
 				s.add(&controlpb.Object{Kind: &controlpb.Object_Network{Network: nw}})
 			}
 		}
+		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(n.Tags), Addresses: addresses(in, name, vrfs, member)}
+		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {
 				continue
 			}
 			var shared []uint32
+			sharedVRFs := map[string]bool{}
 			for _, v := range o.VRFs {
 				if member[v] {
 					shared = append(shared, vrfs[v].GetId())
+					sharedVRFs[v] = true
 				}
 			}
 			if len(shared) == 0 {
 				continue
 			}
 			slices.Sort(shared)
-			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared}}})
+			peer := &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared, Addresses: addresses(in, other, vrfs, sharedVRFs)}
+			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})
 			if o.Relay != "" {
 				ap, err := intent.ParseRelay(o.Relay)
 				if err != nil {
@@ -216,6 +220,20 @@ func (s State) keys() []Key {
 
 func prefix(p netip.Prefix) *controlpb.Prefix {
 	return &controlpb.Prefix{Address: p.Addr().AsSlice(), Length: uint32(p.Bits())}
+}
+
+// addresses returns the addresses of the Node node in the Networks of the VRFs in vrfNames, each
+// with the id of its VRF from vrfs, ordered by Network name.
+func addresses(in intent.Intent, node string, vrfs map[string]*controlpb.Vrf, vrfNames map[string]bool) []*controlpb.Address {
+	var out []*controlpb.Address
+	for _, network := range slices.Sorted(maps.Keys(in.Nodes[node].Addresses)) {
+		p, ok := in.NodeAddress(node, network)
+		if !ok || !vrfNames[in.Networks[network].VRF] {
+			continue
+		}
+		out = append(out, &controlpb.Address{Network: network, VrfId: vrfs[in.Networks[network].VRF].GetId(), Prefix: prefix(p)})
+	}
+	return out
 }
 
 func mode(m string) controlpb.NetworkMode {

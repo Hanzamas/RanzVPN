@@ -71,11 +71,16 @@ ranz_add_executable(vpntest HAMCORE
     selfint.c
     # Named transport test of CORE-F4 (#64): the transport interface of the new core and the session layer on it
     transporttest.c
+    # Named QUIC transport test of CORE-S1-1 (#67): the msquic listener, the Noise session, Sam and the key pinning
+    quictest.c
     # Named hardened licence gate test of SEC-4 (#282): drives ranzguard under the Win32 debug API
     harden.c
     # Named HTTP listener test of REL-6 (#51)
     httplistener.c
-  # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c;
+    # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz-controller and ping each other
+    sdntrace.c
+  # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
+  # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked);
   # netapi32: the local account that stands for a domain account (NetUserAdd)
   LIBRARIES
     coretransport
@@ -88,7 +93,8 @@ ranz_add_executable(vpntest HAMCORE
     "RANZ_HAMCORE_SOURCE_DIR=\"${TOP_DIRECTORY}/src/bin/hamcore\""
 )
 
-# The X.509 test (x509test.c) builds its certificates with the OpenSSL API itself, and the crypto
-# test (crypto.c) checks the DH groups against OpenSSL's own primes; Mayaqua no longer exports the
-# OpenSSL include path, so these files get it
-set_source_files_properties(x509test.c crypto.c PROPERTIES INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIR}")
+# The X.509 test (x509test.c) builds its certificates with the OpenSSL API itself, the crypto
+# test (crypto.c) checks the DH groups against OpenSSL's own primes, and the default VRF tracer
+# (sdntrace.c) runs the TLS of the control stream on it until the Schannel transport of CORE-S2-1
+# (#69) does; Mayaqua no longer exports the OpenSSL include path, so these files get it
+set_source_files_properties(x509test.c crypto.c sdntrace.c PROPERTIES INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIR}")

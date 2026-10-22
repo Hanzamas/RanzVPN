@@ -426,11 +426,14 @@ bool NodeStart(NODE *n) {
 	return ret;
 }
 
-// Stop the node: the BGP sidecar and its learned routes, the roles, last first, the adapter queues that are still
-// attached, the workers and the table snapshot. Every thread of the node is joined before it returns.
+// Stop the node: the overlay, the BGP sidecar and its learned routes, the roles, last first, the adapter queues that
+// are still attached, the workers and the table snapshot. Every thread of the node is joined before it returns. The
+// overlay stops outside the node lock, which its control stream takes to set the peers (NodeSetPeers).
 void NodeStop(NODE *n) {
 	if (n == NULL)
 		return;
+
+	NodeOverlayStop(n);
 
 	Lock(n->Lock);
 	{
@@ -751,4 +754,34 @@ bool NodeLogin(NODE *n, NOISE_LOGIN *login, UCHAR *challenge, AUTH_RESULT *ret) 
 	FreeX(req.Cert);
 
 	return ok;
+}
+
+// The Login with trust on first use (CORE-S1-1, #67): NodeLogin checks the credentials through Sam,
+// and then the client node's Noise static key (static_key, NOISE_KEY_SIZE bytes, learnt in the
+// handshake as NOISE_SESSION.RemoteStatic) is pinned to the user on the first login and must be the
+// same on every later login. A login whose credentials Sam accepts but whose key does not match the
+// pinned one is refused (ret->Ok is cleared, ret->Error is ERR_AUTH_FAILED), so a stolen password
+// alone does not let an attacker impersonate an enrolled node (ADR-0022, ADR-0023). A user that the
+// configuration store does not keep (a domain account, an anonymous login) is not pinned.
+bool NodeLoginPinned(NODE *n, NOISE_LOGIN *login, UCHAR *challenge, UCHAR *static_key, AUTH_RESULT *ret) {
+	if (NodeLogin(n, login, challenge, ret) == false)
+		return false;
+
+	// Only a named user with a key pins one; a join or anonymous login names no user to pin to
+	if (static_key == NULL || n->Store == NULL || login == NULL ||
+	    (login->Method != NOISE_LOGIN_PASSWORD && login->Method != NOISE_LOGIN_CERT))
+		return true;
+
+	UINT pin = CsPinUserKey(n->Store, login->HubName, login->UserName, static_key);
+
+	if (pin == CS_KEY_MISMATCH) {
+		NodeLog(n, "Login of %s on %s refused: the Noise static key is not the pinned one", login->UserName, login->HubName);
+		ret->Ok = false;
+		ret->Error = ERR_AUTH_FAILED;
+		return false;
+	}
+
+	// CS_KEY_PINNED (the first login) and CS_KEY_MATCH (a later one) pass. CS_KEY_ERROR is a user the
+	// store does not keep, which the hub's Sam authenticated: it is not pinned here.
+	return true;
 }

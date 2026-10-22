@@ -16,6 +16,9 @@ c  corecrypto     85  src/Core/Crypto*.c
 c  corenoise      86  src/Core/Noise*.c
 c  corepeer       72  src/Core/Peer*.c
 c  coretransport  85  src/Core/Transport*.c
+# corecontrol (SDN-3 #179) is exercised by vpntest's sdntrace, which needs the controller and rqlite and runs in
+# build_and_test, not in this job, so its floor is 0 until this job runs it
+c  corecontrol    0  src/Core/Control*.c
 
 # The controller (controller/)
 go  controller/cmd/ranz                 67

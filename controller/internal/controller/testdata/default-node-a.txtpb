@@ -1,0 +1,56 @@
+# Generation 1 of node-a after apply-default.json on a controller after its first start: node-a
+# names no VRF, so it joins VRF default and holds the first address of its automatic pool;
+# node-b, which joined with it, is its peer at the second.
+update: {
+  generation: 1
+  set: {
+    node: {
+      name: "node-a"
+      addresses: {
+        network: "default"
+        vrf_id: 1
+        prefix: {
+          address: "d@\000\001"  # 100.64.0.1
+          length: 10
+        }
+      }
+    }
+  }
+  set: {
+    vrf: {
+      name: "default"
+      id: 1
+      ula: {
+        address: "\375\0224Vx\232\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1280
+    }
+  }
+  set: {
+    network: {
+      name: "default"
+      vrf_id: 1
+      mode: NETWORK_MODE_L3
+      ipv4_pool: {
+        address: "d@\000\000"  # 100.64.0.0
+        length: 10
+      }
+    }
+  }
+  set: {
+    peer: {
+      name: "node-b"
+      public_key: "Xi\257\364PT\2272\313\252\355^]\371\263\012m\243\034\260\345t+\255Z\324\241\247h\361\246{"
+      vrf_ids: 1
+      addresses: {
+        network: "default"
+        vrf_id: 1
+        prefix: {
+          address: "d@\000\002"  # 100.64.0.2
+          length: 10
+        }
+      }
+    }
+  }
+}

@@ -98,12 +98,65 @@ add_library(coretransport STATIC ${SOURCES_CORE_TRANSPORT} ${HEADERS_CORE_TRANSP
 target_link_libraries(coretransport PUBLIC corenoise)
 target_link_libraries(coretransport PRIVATE ranz_core_options ranz_warnings)
 
+# The QUIC transport (TransportQuic.c, CORE-S1-1 #67) needs the msquic headers. It loads msquic.dll
+# at run time through LoadLibrary and MsQuicOpenVersion, so it links no import library and a program
+# that never dials or listens over QUIC needs no DLL. The official signed package (the Schannel
+# build, pinned) is fetched in CI by .github/scripts/fetch-msquic.ps1, which sets RANZ_MSQUIC_DIR.
+set(RANZ_MSQUIC_DIR "$ENV{RANZ_MSQUIC_DIR}" CACHE PATH "The msquic package directory that holds include/msquic.h")
+find_path(RANZ_MSQUIC_INCLUDE_DIR "msquic.h" HINTS "${RANZ_MSQUIC_DIR}/include" "${RANZ_MSQUIC_DIR}")
+if(NOT RANZ_MSQUIC_INCLUDE_DIR)
+  message(FATAL_ERROR "msquic.h was not found. Set RANZ_MSQUIC_DIR to the msquic package directory (CORE-S1-1, #67); CI fetches the pinned signed package with .github/scripts/fetch-msquic.ps1.")
+endif()
+message(STATUS "coretransport: msquic headers at ${RANZ_MSQUIC_INCLUDE_DIR}")
+target_include_directories(coretransport PRIVATE "${RANZ_MSQUIC_INCLUDE_DIR}")
+
 set_target_properties(coretransport
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   COMPILE_PDB_NAME "coretransport"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
+# corecontrol: the control module (Control.h, Control.c; SDN-3, #179): the node's end of the control stream to the
+# controller, over the transport module, with the messages that nanopb generates at build time from the one schema of
+# the node and the controller, proto/ranz/control/v1/control.proto with its control.options (ADR-0027 decision 1).
+# The generator is the one of the nanopb submodule (3rdparty/CMakeLists.txt); it needs Python with the protobuf
+# package and protoc on the PATH, as the nanopb round trip of controller.yml does (CI: .github/actions/nanopb). It
+# builds its nanopb_pb2.py in the build tree, not in the submodule.
+find_program(RANZ_PYTHON NAMES python python3 REQUIRED)
+set(_ranz_proto "${TOP_DIRECTORY}/proto/ranz/control/v1")
+set(_ranz_controlpb "${CMAKE_CURRENT_BINARY_DIR}/controlpb")
+add_custom_command(
+  OUTPUT "${_ranz_controlpb}/ranz/control/v1/control.pb.c" "${_ranz_controlpb}/ranz/control/v1/control.pb.h"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${_ranz_controlpb}/pb2"
+  COMMAND "${CMAKE_COMMAND}" -E env "NANOPB_PB2_TEMP_DIR=${_ranz_controlpb}/pb2"
+    "${RANZ_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/nanopb/generator/nanopb_generator.py"
+    --error-on-unmatched -I proto -D "${_ranz_controlpb}" ranz/control/v1/control.proto
+  WORKING_DIRECTORY "${TOP_DIRECTORY}"
+  DEPENDS "${_ranz_proto}/control.proto" "${_ranz_proto}/control.options"
+  COMMENT "nanopb: the messages of proto/ranz/control/v1/control.proto"
+  VERBATIM
+)
+
+add_library(corecontrol STATIC
+  Control.c
+  Control.h
+  "${_ranz_controlpb}/ranz/control/v1/control.pb.c"
+  "${_ranz_controlpb}/ranz/control/v1/control.pb.h"
+)
+
+target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")
+target_link_libraries(corecontrol PUBLIC coretransport)
+target_link_libraries(corecontrol PRIVATE nanopb ranz_core_options ranz_warnings)
+
+set_target_properties(corecontrol
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "corecontrol"
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 

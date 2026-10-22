@@ -1,0 +1,477 @@
+// Control.c
+// The node's end of the control stream (Core/Control.h). The thread of a client opens the stream,
+// runs the handshake, says Hello, and then reads the frames of the controller: it applies each
+// Update to the objects it holds, hands the state to its owner and acknowledges the Generation.
+// A Refuse, a frame it cannot take, a failed write or the end of the stream close the stream, and
+// the thread opens it again after CONTROL_RETRY. The objects stay as they were applied last.
+
+#include "Core/Control.h"
+
+#include <pb_decode.h>
+#include <pb_encode.h>
+
+#include "ranz/control/v1/control.pb.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+#define CONTROL_FRAME_HEADER 4    // The size of a frame, big-endian, before its message
+#define CONTROL_OUT_SIZE     1024 // The frames the client writes: the handshake, the Hello and the Acks
+#define CONTROL_POLL         100  // ms that one read waits, between two looks at the halt event
+
+// What a read of a frame gave
+#define CONTROL_FRAME_DONE  0 // A whole frame is in Frame
+#define CONTROL_FRAME_LATER 1 // Not within the timeout: the bytes read so far stay in Frame
+#define CONTROL_FRAME_END   2 // The stream ended, or its next frame is larger than allowed
+
+// The client of one node
+struct CONTROL_CLIENT {
+	CONTROL_CONFIG Config;                   // Its configuration; StaticKey points at Key
+	UCHAR Key[NOISE_KEY_SIZE];               // The node's static scalar, when the configuration gives one
+	HANDLE Thread;                           // The thread of the client
+	HANDLE Halt;                             // Set by ControlStop (a manual-reset event)
+	SRWLOCK Lock;                            // Status
+	CONTROL_STATUS Status;                   // How the client stands
+	ranz_control_v1_Object *Objects;         // The desired state at Status.Applied: its objects, one per kind and name
+	UINT NumObjects;                         // ... their number
+	ranz_control_v1_ControlMessage *Message; // The message that was read last, or that is written
+	UCHAR *Frame;                            // The frame being read: its size, then its message
+	UINT FrameSize;                          // ... its bytes read so far
+	UCHAR *Out;                              // The frame being written
+};
+
+static void *ControlAlloc(SIZE_T size) {
+	return HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size);
+}
+
+// Wipe and free size bytes at p, which may be NULL
+static void ControlRelease(void *p, SIZE_T size) {
+	if (p == NULL)
+		return;
+
+	SecureZeroMemory(p, size);
+	HeapFree(GetProcessHeap(), 0, p);
+}
+
+static void ControlFree(CONTROL_CLIENT *c) {
+	if (c->Halt != NULL)
+		CloseHandle(c->Halt);
+	ControlRelease(c->Objects, sizeof(ranz_control_v1_Object) * (c->NumObjects != 0 ? c->NumObjects : 1));
+	ControlRelease(c->Message, sizeof(ranz_control_v1_ControlMessage));
+	ControlRelease(c->Frame, CONTROL_FRAME_HEADER + CONTROL_MAX_FRAME);
+	ControlRelease(c->Out, CONTROL_OUT_SIZE);
+	ControlRelease(c, sizeof(CONTROL_CLIENT));
+}
+
+static bool ControlHalted(CONTROL_CLIENT *c) {
+	return WaitForSingleObject(c->Halt, 0) != WAIT_TIMEOUT;
+}
+
+//
+// The frames
+//
+
+// Write size bytes at Out after the frame header, as one frame
+static bool ControlWriteFrame(CONTROL_CLIENT *c, TRANSPORT_STREAM *s, UINT size) {
+	c->Out[0] = (UCHAR)(size >> 24);
+	c->Out[1] = (UCHAR)(size >> 16);
+	c->Out[2] = (UCHAR)(size >> 8);
+	c->Out[3] = (UCHAR)size;
+
+	return TransportWrite(s, c->Out, CONTROL_FRAME_HEADER + size);
+}
+
+// Write Message as one frame
+static bool ControlWrite(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
+	pb_ostream_t os = pb_ostream_from_buffer(c->Out + CONTROL_FRAME_HEADER, CONTROL_OUT_SIZE - CONTROL_FRAME_HEADER);
+
+	if (pb_encode(&os, ranz_control_v1_ControlMessage_fields, c->Message) == false)
+		return false;
+
+	return ControlWriteFrame(c, s, (UINT)os.bytes_written);
+}
+
+// Read the next frame, of max bytes at most, into Frame within timeout. A frame that the timeout
+// cut short stays in Frame for the next read; the caller empties Frame (FrameSize = 0) once it took
+// a whole frame.
+static UINT ControlRead(CONTROL_CLIENT *c, TRANSPORT_STREAM *s, UINT max, UINT timeout) {
+	UINT64 end = GetTickCount64() + timeout;
+
+	while (true) {
+		UINT need = CONTROL_FRAME_HEADER;
+
+		if (c->FrameSize >= CONTROL_FRAME_HEADER) {
+			UINT size = ((UINT)c->Frame[0] << 24) | ((UINT)c->Frame[1] << 16) | ((UINT)c->Frame[2] << 8) | c->Frame[3];
+			if (size == 0 || size > max)
+				return CONTROL_FRAME_END;
+			need += size;
+			if (c->FrameSize == need)
+				return CONTROL_FRAME_DONE;
+		}
+
+		UINT64 now = GetTickCount64();
+		UINT got = TransportRead(s, c->Frame + c->FrameSize, need - c->FrameSize, (now >= end ? 0 : (UINT)(end - now)));
+		if (got == TRANSPORT_LATER)
+			return CONTROL_FRAME_LATER;
+		if (got == 0 || got > need - c->FrameSize)
+			return CONTROL_FRAME_END;
+		c->FrameSize += got;
+	}
+}
+
+// Read a whole frame of max bytes at most within timeout, unless the client halts first
+static bool ControlReadWhole(CONTROL_CLIENT *c, TRANSPORT_STREAM *s, UINT max, UINT timeout) {
+	UINT64 end = GetTickCount64() + timeout;
+
+	while (ControlHalted(c) == false && GetTickCount64() < end) {
+		UINT r = ControlRead(c, s, max, CONTROL_POLL);
+		if (r == CONTROL_FRAME_DONE)
+			return true;
+		if (r == CONTROL_FRAME_END)
+			return false;
+	}
+
+	return false;
+}
+
+//
+// The desired state
+//
+
+// The name of an object, NULL for an object of no kind the client knows
+static const char *ControlObjectName(const ranz_control_v1_Object *o) {
+	switch (o->which_kind) {
+	case ranz_control_v1_Object_node_tag:
+		return o->kind.node.name;
+	case ranz_control_v1_Object_vrf_tag:
+		return o->kind.vrf.name;
+	case ranz_control_v1_Object_network_tag:
+		return o->kind.network.name;
+	case ranz_control_v1_Object_peer_tag:
+		return o->kind.peer.name;
+	case ranz_control_v1_Object_relay_tag:
+		return o->kind.relay.name;
+	}
+
+	return NULL;
+}
+
+// The index of the object of kind and name among num objects, num when there is none. The tags of
+// the kinds of an Object are the values of Kind (control.proto).
+static UINT ControlFind(const ranz_control_v1_Object *objects, UINT num, UINT kind, const char *name) {
+	for (UINT i = 0; i < num; i++)
+		if (objects[i].which_kind == kind && strcmp(ControlObjectName(&objects[i]), name) == 0)
+			return i;
+
+	return num;
+}
+
+// Apply u to the objects: a full state replaces them, a delta from the Generation applied last
+// takes its removed objects away and sets the others. false for an Update that does not apply,
+// which leaves the objects as they were.
+static bool ControlApply(CONTROL_CLIENT *c, const ranz_control_v1_Update *u) {
+	bool delta = (u->base_generation != 0);
+	UINT num = 0;
+
+	if (u->generation == 0 || (delta && u->base_generation != c->Status.Applied))
+		return false;
+
+	UINT max = (delta ? c->NumObjects : 0) + u->set_count;
+	ranz_control_v1_Object *next = ControlAlloc(sizeof(ranz_control_v1_Object) * (max != 0 ? max : 1));
+	if (next == NULL)
+		return false;
+
+	for (UINT i = 0; delta && i < c->NumObjects; i++) {
+		const ranz_control_v1_Object *o = &c->Objects[i];
+		bool removed = false;
+
+		for (UINT j = 0; j < u->remove_count && removed == false; j++)
+			removed = ((UINT)u->remove[j].kind == o->which_kind && strcmp(u->remove[j].name, ControlObjectName(o)) == 0);
+		if (removed == false)
+			CopyMemory(&next[num++], o, sizeof(ranz_control_v1_Object));
+	}
+
+	for (UINT i = 0; i < u->set_count; i++) {
+		const ranz_control_v1_Object *o = &u->set[i];
+		const char *name = ControlObjectName(o);
+
+		if (name == NULL) {
+			ControlRelease(next, sizeof(ranz_control_v1_Object) * (max != 0 ? max : 1));
+			return false;
+		}
+
+		UINT k = ControlFind(next, num, o->which_kind, name);
+		CopyMemory(&next[k], o, sizeof(ranz_control_v1_Object));
+		if (k == num)
+			num++;
+	}
+
+	// The allocation of the objects is their number from here on
+	ranz_control_v1_Object *objects = ControlAlloc(sizeof(ranz_control_v1_Object) * (num != 0 ? num : 1));
+	if (objects == NULL) {
+		ControlRelease(next, sizeof(ranz_control_v1_Object) * (max != 0 ? max : 1));
+		return false;
+	}
+	CopyMemory(objects, next, sizeof(ranz_control_v1_Object) * num);
+	ControlRelease(next, sizeof(ranz_control_v1_Object) * (max != 0 ? max : 1));
+
+	ControlRelease(c->Objects, sizeof(ranz_control_v1_Object) * (c->NumObjects != 0 ? c->NumObjects : 1));
+	c->Objects = objects;
+	c->NumObjects = num;
+
+	return true;
+}
+
+static void ControlCopyAddresses(CONTROL_ADDRESS *dst, UINT *num, const ranz_control_v1_Address *src, pb_size_t count) {
+	*num = 0;
+
+	for (pb_size_t i = 0; i < count && *num < CONTROL_MAX_ADDRESSES; i++) {
+		CONTROL_ADDRESS *a = &dst[*num];
+
+		if (src[i].has_prefix == false || src[i].prefix.address.size > sizeof(a->Address))
+			continue;
+
+		ZeroMemory(a, sizeof(CONTROL_ADDRESS));
+		strncpy_s(a->Network, sizeof(a->Network), src[i].network, _TRUNCATE);
+		a->VrfId = src[i].vrf_id;
+		CopyMemory(a->Address, src[i].prefix.address.bytes, src[i].prefix.address.size);
+		a->AddressSize = src[i].prefix.address.size;
+		a->Length = src[i].prefix.length;
+		(*num)++;
+	}
+}
+
+static int ControlComparePeers(const void *a, const void *b) {
+	return strcmp(((const CONTROL_PEER *)a)->Name, ((const CONTROL_PEER *)b)->Name);
+}
+
+// Hand the objects, which are at Generation gen, to the owner
+static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
+	CONTROL_STATE st;
+	UINT num_peers = 0;
+
+	ZeroMemory(&st, sizeof(st));
+	st.Generation = gen;
+
+	for (UINT i = 0; i < c->NumObjects; i++)
+		if (c->Objects[i].which_kind == ranz_control_v1_Object_peer_tag)
+			num_peers++;
+
+	st.Peers = ControlAlloc(sizeof(CONTROL_PEER) * (num_peers != 0 ? num_peers : 1));
+	if (st.Peers == NULL)
+		return;
+
+	for (UINT i = 0; i < c->NumObjects; i++) {
+		const ranz_control_v1_Object *o = &c->Objects[i];
+
+		if (o->which_kind == ranz_control_v1_Object_node_tag) {
+			strncpy_s(st.Name, sizeof(st.Name), o->kind.node.name, _TRUNCATE);
+			ControlCopyAddresses(st.Addresses, &st.NumAddresses, o->kind.node.addresses, o->kind.node.addresses_count);
+		} else if (o->which_kind == ranz_control_v1_Object_peer_tag && o->kind.peer.public_key.size == NOISE_KEY_SIZE) {
+			CONTROL_PEER *p = &st.Peers[st.NumPeers++];
+
+			strncpy_s(p->Name, sizeof(p->Name), o->kind.peer.name, _TRUNCATE);
+			CopyMemory(p->Key, o->kind.peer.public_key.bytes, NOISE_KEY_SIZE);
+			for (pb_size_t j = 0; j < o->kind.peer.vrf_ids_count && p->NumVrfs < CONTROL_MAX_VRFS; j++)
+				p->VrfIds[p->NumVrfs++] = o->kind.peer.vrf_ids[j];
+			ControlCopyAddresses(p->Addresses, &p->NumAddresses, o->kind.peer.addresses, o->kind.peer.addresses_count);
+		}
+	}
+
+	// A delta appends the objects it adds, so the peers are sorted again
+	qsort(st.Peers, st.NumPeers, sizeof(CONTROL_PEER), ControlComparePeers);
+
+	if (c->Config.Proc != NULL)
+		c->Config.Proc(c->Config.Param, &st);
+
+	ControlRelease(st.Peers, sizeof(CONTROL_PEER) * (num_peers != 0 ? num_peers : 1));
+}
+
+//
+// The stream
+//
+
+// Take the frame that Frame holds: an Update is applied, handed to the owner and acknowledged; the
+// members of a cluster and the Signals of the peers come with the modules that use them. false
+// ends the stream: a Refuse, a frame that does not decode or does not apply, or a failed write.
+static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
+	ranz_control_v1_ControlMessage *m = c->Message;
+	pb_istream_t is = pb_istream_from_buffer(c->Frame + CONTROL_FRAME_HEADER, c->FrameSize - CONTROL_FRAME_HEADER);
+
+	ZeroMemory(m, sizeof(ranz_control_v1_ControlMessage));
+	if (pb_decode(&is, ranz_control_v1_ControlMessage_fields, m) == false)
+		return false;
+
+	switch (m->which_body) {
+	case ranz_control_v1_ControlMessage_update_tag: {
+		UINT64 gen = m->body.update.generation;
+
+		if (ControlApply(c, &m->body.update) == false)
+			return false;
+
+		ControlDeliver(c, gen);
+
+		AcquireSRWLockExclusive(&c->Lock);
+		c->Status.Applied = gen;
+		c->Status.NumUpdates++;
+		ReleaseSRWLockExclusive(&c->Lock);
+
+		ZeroMemory(m, sizeof(ranz_control_v1_ControlMessage));
+		m->which_body = ranz_control_v1_ControlMessage_ack_tag;
+		m->body.ack.generation = gen;
+		return ControlWrite(c, s);
+	}
+
+	case ranz_control_v1_ControlMessage_refuse_tag:
+		AcquireSRWLockExclusive(&c->Lock);
+		c->Status.LastRefuse = (UINT)m->body.refuse.reason;
+		strncpy_s(c->Status.LastMessage, sizeof(c->Status.LastMessage), m->body.refuse.message, _TRUNCATE);
+		ReleaseSRWLockExclusive(&c->Lock);
+		return false;
+
+	case ranz_control_v1_ControlMessage_controllers_tag:
+	case ranz_control_v1_ControlMessage_signal_tag:
+		return true;
+	}
+
+	// A Hello or an Ack goes from a node to the controller, never back
+	return false;
+}
+
+// One stream: the dial, the handshake bound to the exporter of the TLS session, the Hello, then
+// the frames of the controller until the stream ends or the client halts
+static void ControlRun(CONTROL_CLIENT *c) {
+	UCHAR prologue[sizeof(CONTROL_PROLOGUE_LABEL) - 1 + CONTROL_EXPORTER_SIZE];
+	UCHAR binding[NOISE_MAX_BINDING];
+	NOISE_HANDSHAKE hs;
+	UINT size = 0;
+	UINT payload_size = 0;
+
+	TRANSPORT_STREAM *s = TransportDial(c->Config.Transport, c->Config.Address, c->Halt);
+	if (s == NULL)
+		return;
+
+	// The handshake messages go in frames of their own, as the controller reads them
+	c->FrameSize = 0;
+	bool ok = (TransportBinding(s, binding, sizeof(binding), &size) == NOISE_BINDING_EXPORTER && size == CONTROL_EXPORTER_SIZE);
+	if (ok) {
+		CopyMemory(prologue, CONTROL_PROLOGUE_LABEL, sizeof(CONTROL_PROLOGUE_LABEL) - 1);
+		CopyMemory(prologue + sizeof(CONTROL_PROLOGUE_LABEL) - 1, binding, CONTROL_EXPORTER_SIZE);
+		ok = NoiseHandshakeInit(&hs, NOISE_SUITE_IK, true, prologue, sizeof(prologue), c->Config.StaticKey, c->Config.Identity, c->Config.ControllerKey);
+	} else {
+		ZeroMemory(&hs, sizeof(hs));
+	}
+	if (ok)
+		ok = NoiseHandshakeWrite(&hs, NULL, 0, c->Out + CONTROL_FRAME_HEADER, CONTROL_OUT_SIZE - CONTROL_FRAME_HEADER, &size) && ControlWriteFrame(c, s, size);
+	if (ok)
+		ok = ControlReadWhole(c, s, NOISE_MAX_MESSAGE, CONTROL_TIMEOUT) &&
+		     NoiseHandshakeRead(&hs, c->Frame + CONTROL_FRAME_HEADER, c->FrameSize - CONTROL_FRAME_HEADER, NULL, 0, &payload_size);
+	NoiseHandshakeFree(&hs);
+	SecureZeroMemory(binding, sizeof(binding));
+	SecureZeroMemory(prologue, sizeof(prologue));
+	c->FrameSize = 0;
+
+	// The Hello, with the Generation applied last
+	if (ok) {
+		ZeroMemory(c->Message, sizeof(ranz_control_v1_ControlMessage));
+		c->Message->which_body = ranz_control_v1_ControlMessage_hello_tag;
+		c->Message->body.hello.schema_version = ranz_control_v1_SchemaVersion_SCHEMA_VERSION_2;
+		c->Message->body.hello.applied_generation = c->Status.Applied;
+		ok = ControlWrite(c, s);
+	}
+
+	if (ok) {
+		AcquireSRWLockExclusive(&c->Lock);
+		c->Status.Connected = true;
+		c->Status.NumStreams++;
+		ReleaseSRWLockExclusive(&c->Lock);
+	}
+
+	while (ok && ControlHalted(c) == false) {
+		UINT r = ControlRead(c, s, CONTROL_MAX_FRAME, CONTROL_POLL);
+		if (r == CONTROL_FRAME_END)
+			break;
+		if (r == CONTROL_FRAME_DONE) {
+			ok = ControlTake(c, s);
+			c->FrameSize = 0;
+		}
+	}
+
+	AcquireSRWLockExclusive(&c->Lock);
+	c->Status.Connected = false;
+	ReleaseSRWLockExclusive(&c->Lock);
+
+	TransportClose(s);
+}
+
+static DWORD WINAPI ControlThread(LPVOID param) {
+	CONTROL_CLIENT *c = (CONTROL_CLIENT *)param;
+
+	while (ControlHalted(c) == false) {
+		ControlRun(c);
+		WaitForSingleObject(c->Halt, CONTROL_RETRY);
+	}
+
+	return 0;
+}
+
+//
+// The client
+//
+
+CONTROL_CLIENT *ControlStart(const CONTROL_CONFIG *cfg) {
+	if (cfg == NULL || cfg->Transport == NULL || cfg->Address[0] == 0 || (cfg->StaticKey == NULL) == (cfg->Identity == NULL))
+		return NULL;
+
+	CONTROL_CLIENT *c = ControlAlloc(sizeof(CONTROL_CLIENT));
+	if (c == NULL)
+		return NULL;
+
+	CopyMemory(&c->Config, cfg, sizeof(CONTROL_CONFIG));
+	c->Config.Address[TRANSPORT_ADDRESS_SIZE - 1] = 0;
+	if (cfg->StaticKey != NULL) {
+		CopyMemory(c->Key, cfg->StaticKey, NOISE_KEY_SIZE);
+		c->Config.StaticKey = c->Key;
+	}
+	InitializeSRWLock(&c->Lock);
+
+	c->Message = ControlAlloc(sizeof(ranz_control_v1_ControlMessage));
+	c->Frame = ControlAlloc(CONTROL_FRAME_HEADER + CONTROL_MAX_FRAME);
+	c->Out = ControlAlloc(CONTROL_OUT_SIZE);
+	c->Halt = CreateEventW(NULL, TRUE, FALSE, NULL);
+	if (c->Message == NULL || c->Frame == NULL || c->Out == NULL || c->Halt == NULL) {
+		ControlFree(c);
+		return NULL;
+	}
+
+	c->Thread = CreateThread(NULL, 0, ControlThread, c, 0, NULL);
+	if (c->Thread == NULL) {
+		ControlFree(c);
+		return NULL;
+	}
+
+	return c;
+}
+
+void ControlStop(CONTROL_CLIENT *c) {
+	if (c == NULL)
+		return;
+
+	SetEvent(c->Halt);
+	WaitForSingleObject(c->Thread, INFINITE);
+	CloseHandle(c->Thread);
+	ControlFree(c);
+}
+
+void ControlGetStatus(CONTROL_CLIENT *c, CONTROL_STATUS *st) {
+	if (st == NULL)
+		return;
+
+	ZeroMemory(st, sizeof(CONTROL_STATUS));
+	if (c == NULL)
+		return;
+
+	AcquireSRWLockShared(&c->Lock);
+	CopyMemory(st, &c->Status, sizeof(CONTROL_STATUS));
+	ReleaseSRWLockShared(&c->Lock);
+}

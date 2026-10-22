@@ -1,0 +1,161 @@
+param([string] $BuildDir = 'build')
+
+$ErrorActionPreference = 'Stop'
+
+# The default VRF tracer (SDN-3, #179). A ranz-controller with rqlited as its sidecar, on test ports,
+# and two real nodes of the new core in vpntest (sdntrace, src/vpntest/sdntrace.c). The controller
+# must:
+# - create VRF default, its Network default with the automatic pool and the starter rule
+#   default-allow-all at its first start (ADR-0034), and report them through the API;
+# - give the two Node resources, which name no VRF, VRF default and an address each from its pool.
+# The nodes must open their control streams to it, apply their state and acknowledge its
+# Generation, which the API shows, and exchange ICMP echo over the in-process loopback transport;
+# once the controller stopped, they must still exchange it: they forward on the state they applied
+# last. vpntest creates the file $pinged after the first echoes and waits for the control streams
+# to go down; this script then checks the API and stops the controller. The output of the processes
+# is read once they ended.
+
+$bin = (Resolve-Path $BuildDir).Path
+$controller = Join-Path $bin 'ranz-controller.exe'
+$ranz = Join-Path $bin 'ranz.exe'
+$vpntest = Join-Path $bin 'vpntest.exe'
+
+$work = Join-Path $env:RUNNER_TEMP 'sdn-tracer'
+$data = Join-Path $work 'data'
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+# adminTokenFile of cmd/ranz-controller: the secret of the admin token of the first start
+$tokenFile = Join-Path $data 'admin.token'
+$controllerOut = Join-Path $work 'controller.out'
+$controllerErr = Join-Path $work 'controller.err'
+$traceOut = Join-Path $work 'vpntest.out'
+$traceErr = Join-Path $work 'vpntest.err'
+$pinged = Join-Path $work 'pinged'
+
+# Test ports, never 443: the TLS port of the controller (the control stream and the API) and its rqlited
+$tls = '127.0.0.1:39443'
+$api = "https://$tls"
+$rqliteHttp = '127.0.0.1:39401'
+$rqliteRaft = '127.0.0.1:39402'
+
+# The static keys of node-a and node-b in sdntrace.c: the X25519 public keys of the scalars 1 to 32 and
+# 33 to 64, the keys of the controller conformance tests
+$nodes = [ordered]@{ 'node-a' = 'B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw='; 'node-b' = 'WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=' }
+
+# How long the controller may take to serve, the nodes to join, and vpntest to finish (s)
+$waitSeconds = 120
+
+# One ranz call with the admin token, its JSON answer as an object
+function Invoke-Ranz([string[]] $argv) {
+	$out = & $ranz (@('-server', $api, '-token-file', $tokenFile) + $argv)
+	if ($LASTEXITCODE -ne 0) { throw "ranz $($argv -join ' ') exited with code $LASTEXITCODE" }
+	return ($out -join "`n") | ConvertFrom-Json
+}
+
+function Show-Output([string] $what, [string] $file, [int] $tail) {
+	if (Test-Path -LiteralPath $file) {
+		Write-Host "--- ${what}:"
+		Get-Content -LiteralPath $file -Tail $tail -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
+	}
+}
+
+# Stop the processes of the check that still run, and the rqlited of the controller
+function Stop-All {
+	if ($trace -and -not $trace.HasExited) { Stop-Process -Id $trace.Id -Force -ErrorAction SilentlyContinue; $trace.WaitForExit() }
+	if ($ctl -and -not $ctl.HasExited) { Stop-Process -Id $ctl.Id -Force -ErrorAction SilentlyContinue; $ctl.WaitForExit() }
+	Get-Process -Name 'rqlited' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+$ctl = $null
+$trace = $null
+try {
+	$ctl = Start-Process -FilePath $controller -PassThru -NoNewWindow -RedirectStandardOutput $controllerOut -RedirectStandardError $controllerErr -ArgumentList @(
+		'-data', $data, '-listen', $tls, '-name', 'tracer', '-rqlited', $env:RQLITED, '-rqlite', "http://$rqliteHttp", '-rqlite-raft', $rqliteRaft)
+	# The handle keeps the exit code of the process for ExitCode
+	$null = $ctl.Handle
+
+	# The first start writes the admin token, then the API answers it
+	$end = (Get-Date).AddSeconds($waitSeconds)
+	while ($true) {
+		if ($ctl.HasExited) { throw "ranz-controller exited with code $($ctl.ExitCode) before it served" }
+		if ((Test-Path -LiteralPath $tokenFile) -and ((Get-Content -LiteralPath $tokenFile -Raw) -match "`n$")) {
+			& $ranz -server $api -token-file $tokenFile status 2>$null | Out-Null
+			if ($LASTEXITCODE -eq 0) { break }
+		}
+		if ((Get-Date) -ge $end) { throw "ranz-controller did not serve on $api within $waitSeconds s" }
+		Start-Sleep -Milliseconds 500
+	}
+	$status = Invoke-Ranz @('status')
+	Write-Host "controller: $($status | ConvertTo-Json -Compress -Depth 4)"
+
+	# The intent of the first start
+	$resources = @((Invoke-Ranz @('get', 'resources')).resources)
+	Write-Host "first start: $($resources | ConvertTo-Json -Compress -Depth 6)"
+	$names = ($resources | ForEach-Object { "$($_.kind)/$($_.name)" }) -join ','
+	if ($names -ne 'VRF/default,Network/default,Policy/default-allow-all') { throw "the first start made the intent $names" }
+	$vrf = $resources[0].spec
+	$network = $resources[1].spec
+	$rule = $resources[2].spec
+	if (-not $vrf.dns -or $vrf.mtu -ne 1280 -or $network.vrf -ne 'default' -or $network.mode -ne 'L3' -or $network.ipv4Pool -ne '100.64.0.0/10' -or
+		$rule.vrf -ne 'default' -or $rule.action -ne 'allow') {
+		throw "VRF default, its Network or the starter rule is not the one of a first install"
+	}
+	$revisions = @((Invoke-Ranz @('get', 'revisions')).revisions)
+	if ($revisions.Count -ne 1 -or $revisions[0].operation -ne 'first-start') { throw "the revisions of the first start are $($revisions | ConvertTo-Json -Compress -Depth 4)" }
+
+	# The two nodes, which name no VRF
+	$intent = @{ resources = @($nodes.Keys | ForEach-Object { @{ kind = 'Node'; name = $_; spec = @{ publicKey = $nodes[$_] } } }) }
+	$file = Join-Path $work 'nodes.json'
+	$intent | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $file -Encoding utf8NoBOM
+	$applied = Invoke-Ranz @('apply', '-f', $file)
+	Write-Host "applied: $($applied | ConvertTo-Json -Compress -Depth 4)"
+	$joined = (Invoke-Ranz @('get', 'resources')).resources | Where-Object { $_.kind -eq 'Node' }
+	foreach ($n in $joined) {
+		Write-Host "Node $($n.name): VRFs $(@($n.spec.vrfs) -join ','), addresses $($n.spec.addresses | ConvertTo-Json -Compress)"
+		if ((@($n.spec.vrfs) -join ',') -ne 'default' -or $n.spec.addresses.default -notmatch '^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.') {
+			throw "Node $($n.name) did not join VRF default with an address of its pool"
+		}
+	}
+
+	# The real nodes join, apply their state and ping each other
+	$trace = Start-Process -FilePath $vpntest -PassThru -NoNewWindow -RedirectStandardOutput $traceOut -RedirectStandardError $traceErr -ArgumentList @(
+		'sdntrace', $tls, $status.publicKey, $pinged)
+	$null = $trace.Handle
+	$end = (Get-Date).AddSeconds($waitSeconds)
+	while (-not (Test-Path -LiteralPath $pinged)) {
+		if ($trace.HasExited) { throw "vpntest sdntrace exited with code $($trace.ExitCode) before the first echoes" }
+		if ((Get-Date) -ge $end) { throw "vpntest sdntrace did not ping within $waitSeconds s" }
+		Start-Sleep -Milliseconds 500
+	}
+
+	# The API shows the Generation each node acknowledged
+	$end = (Get-Date).AddSeconds($waitSeconds)
+	while ($true) {
+		$states = @((Invoke-Ranz @('get', 'nodes')).nodes)
+		$acked = @($states | Where-Object { $nodes.Contains($_.name) -and $_.connected -and $_.generation -ge 1 -and $_.ackedGeneration -eq $_.generation })
+		if ($acked.Count -eq $nodes.Count) { break }
+		if ((Get-Date) -ge $end) { throw "the API does not show both nodes connected at their acknowledged generation: $($states | ConvertTo-Json -Compress -Depth 4)" }
+		Start-Sleep -Milliseconds 500
+	}
+	foreach ($s in $states) { Write-Host "API: node $($s.name) at generation $($s.generation), acknowledged $($s.ackedGeneration), connected $($s.connected)" }
+
+	# The controller stops; the nodes ping each other again on the state they applied
+	Stop-Process -Id $ctl.Id -Force
+	$ctl.WaitForExit()
+	Get-Process -Name 'rqlited' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+	Write-Host 'the controller and its rqlited stopped'
+
+	if (-not $trace.WaitForExit($waitSeconds * 1000)) { throw "vpntest sdntrace did not finish within $waitSeconds s of the stop of the controller" }
+	$out = Get-Content -LiteralPath $traceOut -Raw
+	Write-Host $out
+	if ($out -notmatch 'SDNTRACE TEST OK') { throw 'vpntest sdntrace failed' }
+	if ($out -notmatch 'NO MEMORY LEAKS') { throw 'vpntest sdntrace leaked memory' }
+	Write-Host 'ok'
+} catch {
+	Stop-All
+	Show-Output 'vpntest sdntrace' $traceOut 200
+	Show-Output 'vpntest sdntrace (stderr)' $traceErr 50
+	Show-Output 'ranz-controller' $controllerErr 120
+	throw
+} finally {
+	Stop-All
+}
