@@ -151,3 +151,22 @@ func TestResourcesRoundTrip(t *testing.T) {
 		t.Errorf("the Controller read back has the address %q", got)
 	}
 }
+
+// A node cap keeps the first Nodes in name order and leaves the intent it was given unchanged.
+func TestCapped(t *testing.T) {
+	in := New()
+	for _, name := range []string{"c", "a", "b"} {
+		in.Nodes[name] = Node{PublicKey: key1}
+	}
+	for _, c := range []struct {
+		n    int
+		want string
+	}{{0, ""}, {2, "a,b"}, {3, "a,b,c"}, {10, "a,b,c"}} {
+		if got := strings.Join(sortedNames(in.Capped(c.n).Nodes), ","); got != c.want {
+			t.Errorf("a cap of %d keeps %q, want %q", c.n, got, c.want)
+		}
+	}
+	if len(in.Nodes) != 3 {
+		t.Errorf("Capped changed the intent it was given: %v", in.Nodes)
+	}
+}

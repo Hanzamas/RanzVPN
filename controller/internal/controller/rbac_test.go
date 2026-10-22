@@ -15,6 +15,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 )
 
@@ -34,6 +35,10 @@ func TestRolesAllowAndRefuseExactlyTheirActions(t *testing.T) {
 	viewer := h.client(h.token("viewer-1", rbac.Viewer))
 	operator := h.client(h.token("operator-1", rbac.Operator))
 	var pending uint64 // the revision that waits for confirmation, for the confirm action
+	businessKey, err := licence.Sign(testVendor, licence.Licence{ID: "business-1", Licensee: "Test", Tier: licence.Business, Nodes: 20, Expires: time.Now().Add(year)})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	actions := []struct {
 		name  string
@@ -70,6 +75,9 @@ func TestRolesAllowAndRefuseExactlyTheirActions(t *testing.T) {
 			}
 			return err
 		}},
+		{"get the licence", rbac.Viewer, nil, func(c *api.Client) error { _, err := c.Licence(ctx); return err }},
+		{"install a licence key", rbac.Operator, nil, func(c *api.Client) error { _, err := c.SetLicence(ctx, businessKey); return err }},
+		{"remove the licence key", rbac.Operator, nil, func(c *api.Client) error { _, err := c.RemoveLicence(ctx); return err }},
 		{"list the tokens", rbac.Admin, nil, func(c *api.Client) error { _, err := c.Tokens(ctx); return err }},
 		{"create a token", rbac.Admin, func() { h.deleteTokenIfThere("spare") },
 			func(c *api.Client) error { _, err := c.CreateToken(ctx, "spare", rbac.Viewer); return err }},
@@ -305,7 +313,7 @@ func (h *harness) deleteTokenIfThere(name string) {
 }
 
 // snapshot returns what an action can change, as the admin token reads it: the intent, the
-// nodes and the tokens.
+// nodes, the tokens and the licence in force.
 func (h *harness) snapshot() string {
 	h.t.Helper()
 	ctx := context.Background()
@@ -317,7 +325,11 @@ func (h *harness) snapshot() string {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	b, err := json.MarshalIndent(map[string]any{"nodes": nodes, "tokens": tokens}, "", "  ")
+	lic, err := h.api.Licence(ctx)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	b, err := json.MarshalIndent(map[string]any{"nodes": nodes, "tokens": tokens, "licence": lic}, "", "  ")
 	if err != nil {
 		h.t.Fatal(err)
 	}

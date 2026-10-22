@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The package of the MSI job of .github/workflows/ranz-bgp.yml (CORE-S7-1 #82): the RanzBgp feature of
+  RanzBgp.wxs beside a required Node feature, in the Ranz VPN folder under Program Files (ADR-0020), for x64 or
+  arm64 (wix build -arch). It proves the optional feature in CI until the MSI of the node exists (REL-5, #50), which
+  takes RanzBgp.wxs with the same FeatureRef. Until then the Node feature holds only the licence of Ranz VPN, so
+  that a default install has something to install. CI builds carry 0.1.0.<run> (REL-5); nothing here is released.
+
+  Preprocessor variables: Version, LicenseFile (the LICENSE of this repository), RanzBgpExe and GoBgpLicense
+  (RanzBgp.wxs).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Ranz VPN node (CI, RanzBgp feature)" Manufacturer="Hanzcodes" Version="$(var.Version)" UpgradeCode="{E5357DD9-E6D3-4EE8-BC45-6901FA78E551}" Scope="perMachine" Language="1033">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of this package is installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Ranz VPN" />
+    </StandardDirectory>
+
+    <Feature Id="Node" Title="Node" Level="1" AllowAbsent="no">
+      <Component Id="NodeLicense" Directory="INSTALLFOLDER">
+        <File Id="NodeLicense" Source="$(var.LicenseFile)" Name="LICENSE.txt" KeyPath="yes" />
+      </Component>
+    </Feature>
+
+    <FeatureRef Id="RanzBgp" />
+  </Package>
+</Wix>

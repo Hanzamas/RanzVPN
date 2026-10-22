@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
@@ -269,26 +270,34 @@ func TestApplyRejectsInvalidIntent(t *testing.T) {
 }
 
 // harness is one controller on its own rqlite, with the control stream and the HTTP API on one
-// TLS port, as ranz-controller runs them.
+// TLS port, as ranz-controller runs them. Its controller verifies licence keys that testVendor
+// signed (licence_test.go).
 type harness struct {
-	t      *testing.T
-	rq     *sidecar.Rqlited
-	key    *keys.Soft    // the controller's Noise static key
-	tlsKey crypto.Signer // the key of its TLS certificate
-	st     *store.Store
-	c      *controller.Controller
-	ln     net.Listener
-	port   *port.Server
-	api    *api.Client // with the admin token
-	admin  string      // the secret of the admin token rbac.FirstAdmin
-	serve  chan error
+	t       *testing.T
+	rq      *sidecar.Rqlited
+	key     *keys.Soft    // the controller's Noise static key
+	tlsKey  crypto.Signer // the key of its TLS certificate
+	version string        // of the controller, version.Version when empty
+	st      *store.Store
+	c       *controller.Controller
+	ln      net.Listener
+	port    *port.Server
+	api     *api.Client // with the admin token
+	admin   string      // the secret of the admin token rbac.FirstAdmin
+	serve   chan error
 	// schema is the control schema version the controller runs as from its next start,
 	// controller.SchemaVersion when it is unspecified.
 	schema controlpb.SchemaVersion
 }
 
 func newHarness(t *testing.T) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t)}
+	return newHarnessAt(t, "")
+}
+
+// newHarnessAt returns a harness whose controller is of version v, which the fallback licence
+// of an expired subscription must cover.
+func newHarnessAt(t *testing.T, v string) *harness {
+	h := &harness{t: t, rq: rqlitetest.Start(t), version: v}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
@@ -310,7 +319,8 @@ func (h *harness) start() {
 		h.t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(testWriter{h.t}, nil))
-	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log, Schema: h.schema})
+	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log, Schema: h.schema,
+		LicenceKeys: []ed25519.PublicKey{testVendor.Public().(ed25519.PublicKey)}, Version: h.version})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -421,7 +431,8 @@ func (h *harness) waitNode(name string, gen uint64, connected bool) {
 }
 
 // checkState checks that the state the simulated node built from its updates is the full state
-// that the controller's intent compiles to for it.
+// that the controller's intent compiles to for it, with the Nodes that the licence in force
+// covers.
 func (h *harness) checkState(s *sim) {
 	h.t.Helper()
 	rs, err := h.api.Resources(context.Background())
@@ -432,7 +443,11 @@ func (h *harness) checkState(s *sim) {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	states, err := desired.Compile(in)
+	lic, err := h.api.Licence(context.Background())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	states, err := desired.Compile(in.Capped(lic.Nodes))
 	if err != nil {
 		h.t.Fatal(err)
 	}

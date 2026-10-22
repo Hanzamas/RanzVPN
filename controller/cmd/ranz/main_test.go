@@ -63,6 +63,8 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 		{[]string{"get", "revision", "1"}, http.MethodGet, "/api/v1/revisions/1", "", nil},
 		{[]string{"diff"}, http.MethodGet, "/api/v1/diff", "", nil},
 		{[]string{"get", "events"}, http.MethodGet, "/api/v1/events", "", nil},
+		{[]string{"get", "licence"}, http.MethodGet, "/api/v1/licence", "", nil},
+		{[]string{"licence", "-remove"}, http.MethodDelete, "/api/v1/licence", "", nil},
 		{[]string{"token", "list"}, http.MethodGet, "/api/v1/tokens", "", nil},
 		{[]string{"token", "create", "-role", "viewer", "spare"}, http.MethodPost, "/api/v1/tokens", `{"name": "spare", "role": "viewer"}`, func() {
 			if _, err := tokens.Delete(ctx, "spare"); err != nil && !errors.Is(err, rbac.ErrNotFound) {
