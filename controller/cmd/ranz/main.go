@@ -10,7 +10,7 @@
 //	                                           out); with no revision, the changes of the latest revision
 //	ranz [flags] rollback REVISION             make the intent of REVISION the intent again, as a new revision (0 is the empty intent)
 //	ranz [flags] get resources                 print the intent
-//	ranz [flags] get nodes                     print the generation of each node and the one it acknowledged
+//	ranz [flags] get nodes                     print the generation of each node, the one it acknowledged and its Capabilities
 //	ranz [flags] get revisions                 print every revision of the intent
 //	ranz [flags] get revision ID               print one revision with its resources
 //	ranz [flags] get events                    print the events, such as an automatic rollback

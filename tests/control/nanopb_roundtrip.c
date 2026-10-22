@@ -80,8 +80,14 @@ static int roundtrip(const char *path) {
 			   (unsigned)msg.body.update.set_count, (unsigned)msg.body.update.remove_count, n);
 		break;
 	case ranz_control_v1_ControlMessage_hello_tag:
-		printf("%s: Hello schema %d applied %llu\n", path, (int)msg.body.hello.schema_version,
+		printf("%s: Hello schema %d applied %llu", path, (int)msg.body.hello.schema_version,
 			   (unsigned long long)msg.body.hello.applied_generation);
+		if (msg.body.hello.has_capabilities) {
+			const ranz_control_v1_Capabilities *c = &msg.body.hello.capabilities;
+			printf(", Capabilities sku %d architecture %d egress tier %d xdp %d selow %d", (int)c->sku,
+				   (int)c->architecture, (int)c->egress_tier, (int)c->xdp, (int)c->selow);
+		}
+		printf("\n");
 		break;
 	case ranz_control_v1_ControlMessage_ack_tag:
 		printf("%s: Ack generation %llu\n", path, (unsigned long long)msg.body.ack.generation);

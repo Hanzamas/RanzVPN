@@ -54,6 +54,9 @@ message Hello {
   SchemaVersion schema_version = 1;
   // The last generation the node applied, 0 if it has applied none.
   uint64 applied_generation = 2;
+  // What the node's host can do. A node reports them in every Hello, so a node whose
+  // Capabilities change opens a new stream.
+  Capabilities capabilities = 3;
 }
 
 // Desired state of one node.
@@ -89,8 +92,11 @@ enum RefuseReason {
   REFUSE_REASON_SCHEMA_VERSION = 2;
   // An unexpected or malformed frame.
   REFUSE_REASON_PROTOCOL = 3;
+  // The desired state of the node needs a Capability that its Hello does not report. The node
+  // keeps forwarding on the last generation it applied.
+  REFUSE_REASON_CAPABILITY = 4;
   // The controller is a standby member of a cluster; Refuse.leader names the leader.
-  REFUSE_REASON_NOT_LEADER = 4;
+  REFUSE_REASON_NOT_LEADER = 5;
 }
 
 // The members of the controller cluster, from the Controller resources of the intent, ordered by
@@ -170,4 +176,45 @@ message Peer {
 message Prefix {
   bytes address = 1;
   uint32 length = 2;
+}
+
+// The Capabilities of a node: facts about its host (ADR-0033). The controller checks the desired
+// state of the node against them before an apply and refuses an intent that needs one the node
+// does not report. Only gateway and edge features need a Capability; every core feature runs on
+// every host. A Capability the node leaves out counts as missing.
+message Capabilities {
+  Sku sku = 1;
+  Architecture architecture = 2;
+  bool hyper_v = 3;  // Hyper-V is present
+  bool lbfo = 4;     // LBFO team interfaces can be created (Windows Server)
+  bool selow = 5;    // the SeLow driver is installed (x64 only)
+  bool xdp = 6;      // the XDP for Windows runtime is installed
+  EgressTier egress_tier = 7;
+  // TCP 443 was taken, so the node listens on 5555 instead (ADR-0035 amendment of 2026-10-21).
+  bool tls_port_fallback = 8;
+}
+
+// The Windows edition of a node's host.
+enum Sku {
+  SKU_UNSPECIFIED = 0;
+  SKU_HOME = 1;
+  SKU_PRO = 2;         // also Pro for Workstations and Pro Education
+  SKU_ENTERPRISE = 3;  // also Education and IoT Enterprise
+  SKU_SERVER = 4;      // Windows Server 2022 or later
+}
+
+// The processor architecture of a node's host.
+enum Architecture {
+  ARCHITECTURE_UNSPECIFIED = 0;
+  ARCHITECTURE_X64 = 1;
+  ARCHITECTURE_ARM64 = 2;
+}
+
+// How the node translates the traffic of a VRF it is the internet exit of: the first tier its
+// host supports (ADR-0025). Tier 3 runs on every host, so any node can be an exit.
+enum EgressTier {
+  EGRESS_TIER_UNSPECIFIED = 0;
+  EGRESS_TIER_RRAS_NAT = 1;  // tier 1: RRAS NAT on Windows Server
+  EGRESS_TIER_WINNAT = 2;    // tier 2: WinNAT, where Hyper-V is present and no NetNat exists
+  EGRESS_TIER_PROXY = 3;     // tier 3: a proxy on the Windows TCP/IP stack
 }

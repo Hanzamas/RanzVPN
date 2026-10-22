@@ -1,8 +1,8 @@
 // Package nodesim is the node simulator of #176 "Testing Decisions": a protocol-only node, with
-// no Wintun and no data plane, that opens the control stream to the controller, applies the
-// updates it receives to the state it holds and acknowledges each generation. It is the test
-// seam of every controller ticket: tests apply intent through the API and assert the control
-// messages each simulated node receives.
+// no Wintun and no data plane, that opens the control stream to the controller, reports the
+// Capabilities of the host it simulates, applies the updates it receives to the state it holds
+// and acknowledges each generation. It is the test seam of every controller ticket: tests apply
+// intent through the API and assert the control messages each simulated node receives.
 //
 // Against a controller cluster (SDN-17), Serve keeps the node on a stream as a node does: it
 // goes from member to member until one leads, and keeps its state while no member is reachable.
@@ -67,6 +67,9 @@ type Node struct {
 	// Version is the schema version of the Hello, SCHEMA_VERSION_1 when it is unspecified. It
 	// may change between two streams only, as a node that was upgraded.
 	Version controlpb.SchemaVersion
+	// Capabilities are the ones the Hello reports for the simulated host (ADR-0033); nil
+	// reports none.
+	Capabilities *controlpb.Capabilities
 	// Updates receives every update the node applied, after the node sent its Ack. When it is
 	// nil, nothing is delivered.
 	Updates chan *controlpb.Update
@@ -142,7 +145,7 @@ func (n *Node) run(ctx context.Context, ep Endpoint) error {
 
 	version := n.version()
 	n.mu.Lock()
-	hello := &controlpb.Hello{SchemaVersion: version, AppliedGeneration: n.gen}
+	hello := &controlpb.Hello{SchemaVersion: version, AppliedGeneration: n.gen, Capabilities: n.Capabilities}
 	n.mu.Unlock()
 	if err := n.send(conn, &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Hello{Hello: hello}}); err != nil {
 		return err

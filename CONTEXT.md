@@ -295,7 +295,7 @@ How a Node that is an internet exit for a VRF translates its traffic: tier 1 is 
 _Avoid_: SecureNAT, NAT mode
 
 **Capability**:
-A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier), against which the Controller checks the Intent before an apply.
+A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier, the fallback to 5555), against which the Controller checks the Intent before an apply. Only a gateway or edge feature, or one a platform cannot carry (an L2 Network on arm64), needs one.
 _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
 
 ## Flagged ambiguities

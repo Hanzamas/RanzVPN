@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
@@ -85,7 +86,8 @@ type ResourceList struct {
 	Resources []intent.Resource `json:"resources"`
 }
 
-// NodeList is the answer of GET /api/v1/nodes.
+// NodeList is the answer of GET /api/v1/nodes: for each node its generations and the
+// Capabilities it reported (ADR-0033).
 type NodeList struct {
 	Nodes []controller.NodeStatus `json:"nodes"`
 }
@@ -153,8 +155,9 @@ type Problem struct {
 //	POST   /api/v1/tokens                  a TokenRequest; an rbac.NewToken             admin
 //	DELETE /api/v1/tokens/{name}           the rbac.Token deleted                       admin
 //
-// status holds the control address and the TLS fingerprint that the status call reports;
-// Handler fills in the public key.
+// An apply or a rollback that a node cannot honour answers 409 Conflict, naming the node and the
+// Capability it lacks. status holds the control address and the TLS fingerprint that the status
+// call reports; Handler fills in the public key.
 func Handler(c *controller.Controller, tokens *rbac.Tokens, status Status) http.Handler {
 	return Guard(tokens, Routes(c, tokens, status))
 }
@@ -432,7 +435,8 @@ func replyError(w http.ResponseWriter, err error) {
 		code = http.StatusNotFound
 	case errors.Is(err, intent.ErrInvalid), errors.Is(err, controller.ErrBadConfirm), errors.Is(err, rbac.ErrInvalid):
 		code = http.StatusBadRequest
-	case errors.Is(err, controller.ErrConflict), errors.Is(err, rbac.ErrExists), errors.Is(err, rbac.ErrLastAdmin):
+	case errors.Is(err, capability.ErrMissing), errors.Is(err, controller.ErrConflict), errors.Is(err, rbac.ErrExists),
+		errors.Is(err, rbac.ErrLastAdmin):
 		code = http.StatusConflict
 	case errors.Is(err, store.ErrNotLeader):
 		// The member lost the lease during the request; the next leader serves it again.
@@ -525,7 +529,7 @@ func (c *Client) Resources(ctx context.Context) ([]intent.Resource, error) {
 	return l.Resources, err
 }
 
-// Nodes returns the status of every node.
+// Nodes returns the status of every node, with the Capabilities it reported.
 func (c *Client) Nodes(ctx context.Context) ([]controller.NodeStatus, error) {
 	var l NodeList
 	err := c.do(ctx, http.MethodGet, "/api/v1/nodes", nil, &l)

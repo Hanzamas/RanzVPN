@@ -71,6 +71,12 @@ func TestLeaseAndFence(t *testing.T) {
 	if err := fa.SaveAck(ctx, "branch-1", 1, &controlpb.Update{Generation: 1}); !errors.Is(err, store.ErrNotLeader) {
 		t.Errorf("an acknowledgement stored by a after b took over: %v, want ErrNotLeader", err)
 	}
+	if err := fa.SaveCapabilities(ctx, make([]byte, 32), &controlpb.Capabilities{Xdp: true}); !errors.Is(err, store.ErrNotLeader) {
+		t.Errorf("Capabilities stored by a after b took over: %v, want ErrNotLeader", err)
+	}
+	if caps, err := st.LoadCapabilities(ctx); err != nil || len(caps) != 0 {
+		t.Errorf("the stored Capabilities are %v, %v: the old leader's write went through", caps, err)
+	}
 	if ok, err := st.Renew(ctx, held.Epoch); err != nil || ok {
 		t.Errorf("a renewed the lease after b took it over: %v, %v", ok, err)
 	}
