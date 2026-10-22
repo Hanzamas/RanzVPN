@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
 	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
 )
 
@@ -44,8 +46,14 @@ const clusterLease = 6 * time.Second
 // reconnects, an update.
 const clusterTimeout = 90 * time.Second
 
+// clusterVendor stands in for the vendor key that release builds verify licence keys with. The
+// member processes trust it (licenceKeys), and newCluster installs an Enterprise licence key
+// that it signed: controller high availability is an Enterprise feature (ADR-0036).
+var clusterVendor = ed25519.NewKeyFromSeed(slices.Repeat([]byte{0x17}, ed25519.SeedSize))
+
 func TestMain(m *testing.M) {
 	if os.Getenv(processEnv) != "" {
+		licenceKeys = []ed25519.PublicKey{clusterVendor.Public().(ed25519.PublicKey)}
 		main()
 		os.Exit(0)
 	}
@@ -303,7 +311,23 @@ func newCluster(t *testing.T, schema int) []*member {
 		m.waitUp(t)
 	}
 	waitLeader(t, ms, "")
+	installLicence(t, ms[0])
 	return ms
+}
+
+// installLicence installs an Enterprise licence key, signed with clusterVendor, through m. A
+// store of three members takes no change of the intent without it (controller.checkCluster).
+func installLicence(t *testing.T, m *member) {
+	t.Helper()
+	key, err := licence.Sign(clusterVendor, licence.Licence{ID: "cluster-test", Licensee: "Test", Tier: licence.Enterprise, Nodes: 100, Expires: time.Now().Add(365 * 24 * time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), clusterTimeout)
+	defer cancel()
+	if _, err := m.api.SetLicence(ctx, key); err != nil {
+		t.Fatalf("installing the Enterprise licence through %s: %v", m.name, err)
+	}
 }
 
 // waitAdminToken waits until the member that started first has written the secret of the admin

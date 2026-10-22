@@ -138,7 +138,7 @@ func (s *Store) Close() {
 // and each of its writes fails with ErrNotLeader, and writes nothing, once the lease has another
 // epoch.
 func (s *Store) Fenced(epoch int64) *Store {
-	return &Store{conn: s.conn, epoch: epoch}
+	return &Store{conn: s.conn, epoch: epoch, url: s.url}
 }
 
 // Lease returns the lease of the leader.

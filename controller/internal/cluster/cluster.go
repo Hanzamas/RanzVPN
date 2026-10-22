@@ -18,6 +18,7 @@ package cluster
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -73,6 +74,9 @@ type Config struct {
 	Key keys.Static
 	// Schema is the control schema version the controller runs as (controller.Config.Schema).
 	Schema controlpb.SchemaVersion
+	// LicenceKeys are the public keys that a licence key must be signed with
+	// (controller.Config.LicenceKeys): licence.VendorKeys() when nil.
+	LicenceKeys []ed25519.PublicKey
 	// Lease is the lease duration, DefaultLease when it is 0.
 	Lease time.Duration
 	// Log is discarded when it is nil.
@@ -287,7 +291,7 @@ func (m *Member) campaign(ctx context.Context) {
 // the intent and the node states from the store, and every write it makes is fenced by the
 // epoch of l.
 func (m *Member) lead(ctx context.Context, l store.Lease) {
-	c, err := controller.New(ctx, controller.Config{Store: m.cfg.Store.Fenced(l.Epoch), Key: m.cfg.Key, Log: m.log, Schema: m.cfg.Schema})
+	c, err := controller.New(ctx, controller.Config{Store: m.cfg.Store.Fenced(l.Epoch), Key: m.cfg.Key, Log: m.log, Schema: m.cfg.Schema, LicenceKeys: m.cfg.LicenceKeys})
 	if err != nil {
 		m.log.Error("taking the lead", "epoch", l.Epoch, "err", err)
 		m.release(l.Epoch)
