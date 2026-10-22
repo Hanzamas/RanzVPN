@@ -9,6 +9,11 @@ $ErrorActionPreference = 'Stop'
 # - serve port 80 through HTTP.sys, which the runner's system holds already: its own answer on
 #   the ACME HTTP-01 path, and a 301 to HTTPS on the TLS port for the rest of the port unless
 #   another HTTP.sys user held that catch-all first (on the runner one does), nothing else;
+# - create the admin token at its first start, with its secret in admin.token in the data
+#   directory, and keep it across restarts (SDN-14, #190);
+# - refuse a call without a token (401) and an apply with a viewer token (403), and answer the
+#   admin token from an address of the host that is not loopback, with the TLS fingerprint of
+#   its status pinned, while a wrong fingerprint fails;
 # - take an intent from `ranz apply`, push generation 1 to a simulated node (ranz-nodesim) and
 #   record its acknowledgement;
 # - keep the intent, the acknowledged generation and its keys across a restart of the service:
@@ -16,6 +21,10 @@ $ErrorActionPreference = 'Stop'
 #   key (the same fingerprint) from the key storage provider;
 # - fall back to TCP 5555 when 443 is taken, warn about it in the Application log, report it in
 #   its capabilities, and keep 5555 after 443 is free again (ADR-0020);
+# - keep each apply as a revision across those restarts, and through `ranz` (SDN-13, #189): show
+#   what a revision changed with `ranz diff`, roll back by itself an apply with -confirm that
+#   nobody confirmed and record the event, return to a revision with `ranz rollback`, and keep
+#   an apply that `ranz confirm` confirmed;
 # - write its starts and stops to the Application log (event IDs 1 and 2 of
 #   cmd/ranz-controller/service_windows.go), a warning for each start on the fallback (4), and no
 #   failure entry (3).
@@ -34,6 +43,8 @@ $acmePrefix = 'http://+:80/.well-known/acme-challenge/'
 $redirectPrefix = 'http://*:80/'
 
 $data = Join-Path $env:RUNNER_TEMP 'ranz-controller-data'
+# adminTokenFile of cmd/ranz-controller: the secret of the admin token of the first start
+$tokenFile = Join-Path $data 'admin.token'
 $work = Join-Path $env:RUNNER_TEMP 'ranz-controller-check'
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 
@@ -49,15 +60,27 @@ function Invoke-Checked([string] $exe, [string[]] $argv) {
 	return ($out -join "`n")
 }
 
-# One ranz call, its JSON answer as an object
+# One ranz call with the admin token, its JSON answer as an object
 function Invoke-Ranz([string[]] $argv) {
-	return (Invoke-Checked $ranz (@('-server', $api) + $argv)) | ConvertFrom-Json
+	return (Invoke-Checked $ranz (@('-server', $api, '-token-file', $tokenFile) + $argv)) | ConvertFrom-Json
 }
 
+# One ranz call that the controller must refuse with the HTTP status $status; ranz prints the
+# status after the controller's error
+function Assert-Refused([string[]] $argv, [int] $status) {
+	$errFile = Join-Path $work 'ranz.err'
+	& $ranz @argv 2> $errFile | Out-Null
+	$code = $LASTEXITCODE
+	$msg = (Get-Content -LiteralPath $errFile -Raw)
+	if ($code -eq 0 -or $msg -notmatch "\($status ") { throw "ranz $($argv -join ' ') was not refused with ${status} (exit code $code): $msg" }
+	Write-Host "refused: ranz $($argv -join ' '): $($msg.Trim())"
+}
+
+# Wait until the API answers the admin token; the first start writes the token file
 function Wait-Api {
 	$end = (Get-Date).AddSeconds($waitSeconds)
 	while ($true) {
-		& $ranz -server $api status 2>$null | Out-Null
+		& $ranz -server $api -token-file $tokenFile status 2>$null | Out-Null
 		if ($LASTEXITCODE -eq 0) { return }
 		if ((Get-Date) -ge $end) { throw "the API of $service did not answer on $api within $waitSeconds s" }
 		Start-Sleep -Milliseconds 500
@@ -154,6 +177,28 @@ try {
 		Write-Host "another HTTP.sys user holds $redirectPrefix on this host: the controller shares port 80 with it and keeps the ACME path"
 	}
 
+	# RBAC: the first start created the admin token, a call without a token is refused, and the
+	# API answers a client on an address of the host that is not loopback, which the controller
+	# refused before it had roles; that client checks the certificate by its TLS fingerprint
+	$adminSecret = (Get-Content -LiteralPath $tokenFile -Raw).Trim()
+	$me = Invoke-Ranz @('whoami')
+	if ($me.name -ne 'admin' -or $me.role -ne 'admin') { throw "the token of admin.token is $($me | ConvertTo-Json -Compress), not the admin token" }
+	Assert-Refused @('-server', $api, 'status') 401
+	$hostAddr = (Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred |
+		Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } | Select-Object -First 1).IPAddress
+	if (-not $hostAddr) { throw 'the runner has no IPv4 address outside loopback' }
+	$hostApi = "https://$hostAddr"
+	$remote = (Invoke-Checked $ranz @('-server', $hostApi, '-token-file', $tokenFile, '-tls-fingerprint', $status.tlsFingerprint, 'whoami')) | ConvertFrom-Json
+	if ($remote.role -ne 'admin') { throw "the API on $hostApi did not answer the admin token: $($remote | ConvertTo-Json -Compress)" }
+	Write-Host "the API on $hostApi (not loopback) answers the admin token: $($remote | ConvertTo-Json -Compress)"
+	Assert-Refused @('-server', $hostApi, '-tls-fingerprint', $status.tlsFingerprint, 'whoami') 401
+	& $ranz -server $hostApi -token-file $tokenFile -tls-fingerprint ('00' * 32) whoami 2>$null | Out-Null
+	if ($LASTEXITCODE -eq 0) { throw "ranz accepted the certificate of $hostApi with a wrong TLS fingerprint" }
+	$viewer = Invoke-Ranz @('token', 'create', '-role', 'viewer', 'ci-viewer')
+	if ($viewer.role -ne 'viewer' -or $viewer.token -notmatch '^ranz_') { throw "the viewer token is $($viewer | ConvertTo-Json -Compress)" }
+	$viewerFile = Join-Path $work 'viewer.token'
+	Set-Content -LiteralPath $viewerFile -Value $viewer.token -Encoding ascii
+
 	Test-Redirect 'https://127.0.0.1/api/v1/status'
 	$acmeBody = Join-Path $work 'acme.txt'
 	$acmeCode = (& curl.exe -s -o $acmeBody -w '%{http_code}' 'http://127.0.0.1/.well-known/acme-challenge/none')
@@ -172,6 +217,8 @@ try {
 	}
 	$file = Join-Path $work 'intent.json'
 	$intent | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $file -Encoding utf8NoBOM
+	Assert-Refused @('-server', $api, '-token-file', $viewerFile, 'apply', '-f', $file) 403
+	if (@((Invoke-Ranz @('get', 'resources')).resources).Count -ne 0) { throw "the refused apply of the viewer changed the intent" }
 	$applied = Invoke-Ranz @('apply', '-f', $file)
 	Write-Host "applied: $($applied | ConvertTo-Json -Compress)"
 	if (@($applied.nodes).Count -ne 1 -or $applied.nodes[0].name -ne 'branch-1' -or $applied.nodes[0].generation -ne 1) {
@@ -189,8 +236,11 @@ try {
 	$after = Invoke-Ranz @('status')
 	if ($after.publicKey -ne $status.publicKey) { throw "the Noise static key changed across the restart: $($status.publicKey), then $($after.publicKey)" }
 	if ($after.tlsFingerprint -ne $status.tlsFingerprint) { throw "the TLS key changed across the restart: $($status.tlsFingerprint), then $($after.tlsFingerprint)" }
+	if ((Get-Content -LiteralPath $tokenFile -Raw).Trim() -ne $adminSecret) { throw 'the restart wrote a new admin token' }
+	$viewerAfter = (Invoke-Checked $ranz @('-server', $api, '-token-file', $viewerFile, 'whoami')) | ConvertFrom-Json
+	if ($viewerAfter.role -ne 'viewer') { throw "the viewer token after the restart is $($viewerAfter | ConvertTo-Json -Compress)" }
 	Test-Node $control $status.publicKey | Out-Null
-	Write-Host 'after the restart: the same intent, generation, Noise static key and TLS key, and the node connects with the key it knew'
+	Write-Host 'after the restart: the same intent, generation, Noise static key, TLS key and tokens, and the node connects with the key it knew'
 
 	# Hold TCP 443 (IPv4 and IPv6) and start again: the controller falls back to 5555
 	Stop-Service -Name $service
@@ -214,6 +264,43 @@ try {
 	$kept = Invoke-Ranz @('status')
 	if ($kept.capabilities.tlsPort -ne 5555 -or -not $kept.capabilities.tlsPortFallback) { throw 'with 443 free again the controller left its fallback' }
 	Write-Host 'the TLS port fell back to 5555 with 443 taken, and stays there with 443 free again'
+
+	# Revisions: the apply above is revision 1, also after the restarts
+	$revisions = @((Invoke-Ranz @('get', 'revisions')).revisions)
+	if ($revisions.Count -ne 1 -or $revisions[0].operation -ne 'apply') { throw "the revisions are not the one apply: $($revisions | ConvertTo-Json -Compress -Depth 4)" }
+	$intent.resources[0].spec.mtu = 1400
+	$mtuFile = Join-Path $work 'intent-mtu.json'
+	$intent | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $mtuFile -Encoding utf8NoBOM
+	$trial = Invoke-Ranz @('apply', '-f', $mtuFile, '-confirm', '5s')
+	if ($trial.revision -ne 2 -or -not $trial.confirmBy) { throw "apply -confirm did not make revision 2 with a deadline: $($trial | ConvertTo-Json -Compress)" }
+	$diff = Invoke-Ranz @('diff', '1', '2')
+	$changes = @($diff.changes)
+	if ($changes.Count -ne 1 -or $changes[0].action -ne 'changed' -or $changes[0].kind -ne 'VRF' -or (@($changes[0].fields) -join ',') -ne 'mtu') {
+		throw "ranz diff 1 2 is not the MTU change of VRF corp: $($diff | ConvertTo-Json -Compress -Depth 6)"
+	}
+	# Nobody confirms revision 2, so the service rolls it back by itself after 5 s
+	$end = (Get-Date).AddSeconds($waitSeconds)
+	while (@((Invoke-Ranz @('get', 'events')).events).Count -eq 0) {
+		if ((Get-Date) -ge $end) { throw "no automatic rollback within $waitSeconds s of the unconfirmed apply" }
+		Start-Sleep -Milliseconds 500
+	}
+	$events = @((Invoke-Ranz @('get', 'events')).events)
+	if ($events.Count -ne 1 -or $events[0].type -ne 'automatic-rollback' -or $events[0].revision -ne 3 -or $events[0].reverts -ne 2) {
+		throw "the events are not the automatic rollback of revision 2: $($events | ConvertTo-Json -Compress)"
+	}
+	Write-Host "event: $($events[0].message)"
+	# A rollback changes the intent, so it needs operator: the viewer token is refused
+	Assert-Refused @('-server', $api, '-token-file', $viewerFile, 'rollback', '2') 403
+	$back = Invoke-Ranz @('rollback', '2')
+	if ($back.revision -ne 4) { throw "ranz rollback 2 made revision $($back.revision), not 4" }
+	$vrf = (Invoke-Ranz @('get', 'resources')).resources | Where-Object { $_.kind -eq 'VRF' }
+	if ($vrf.spec.mtu -ne 1400) { throw "after ranz rollback 2 the MTU of corp is $($vrf.spec.mtu), not the 1400 of revision 2" }
+	$confirmApply = Invoke-Ranz @('apply', '-f', $file, '-confirm', '60s')
+	$confirmed = Invoke-Ranz @('confirm', "$($confirmApply.revision)")
+	if ($confirmed.confirm.state -ne 'confirmed') { throw "ranz confirm $($confirmApply.revision) answered $($confirmed | ConvertTo-Json -Compress -Depth 4)" }
+	$operations = ((Invoke-Ranz @('get', 'revisions')).revisions | ForEach-Object { $_.operation }) -join ','
+	if ($operations -ne 'apply,apply,automatic-rollback,rollback,apply') { throw "the revisions are $operations" }
+	Write-Host "revisions: $operations; the unconfirmed apply came back by itself with an event, the confirmed one stays"
 
 	Stop-Service -Name $service
 	$started = @(Get-ServiceEvents | Where-Object { $_.Id -eq 1 })

@@ -1,0 +1,32 @@
+{
+  "from": 1,
+  "to": 3,
+  "changes": [
+    {
+      "action": "changed",
+      "kind": "VRF",
+      "name": "corp",
+      "fields": ["mtu"],
+      "from": {"id": 10, "ula": "fd12:3456:789a::/48", "mtu": 1280},
+      "to": {"id": 10, "ula": "fd12:3456:789a::/48", "mtu": 1400}
+    },
+    {
+      "action": "added",
+      "kind": "Network",
+      "name": "corp-dmz",
+      "to": {"vrf": "corp", "mode": "L2", "ipv4Pool": "10.20.0.0/24"}
+    },
+    {
+      "action": "removed",
+      "kind": "Network",
+      "name": "corp-lan",
+      "from": {"vrf": "corp", "mode": "L3", "ipv4Pool": "10.10.0.0/24", "ipv6Pool": "fd12:3456:789a:1::/64"}
+    },
+    {
+      "action": "added",
+      "kind": "Node",
+      "name": "branch-2",
+      "to": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"]}
+    }
+  ]
+}

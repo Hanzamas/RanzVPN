@@ -477,6 +477,9 @@ void nodesvc_test(UINT num, char **arg);
 // Named node Login test of CORE-F2, #62 (nodelogin.c)
 void nodelogin_test(UINT num, char **arg);
 
+// Named configuration store test of CORE-F5, #65 (storetest.c)
+void store_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -622,6 +625,7 @@ TEST_LIST test_list[] =
 	{"node", node_test, "Node: each role from the configuration starts and stops with every thread joined; per-core workers, adapter queues, atomic table swaps; fork Hub and Sam."},
 	{"nodesvc", nodesvc_test, "Node service: ranz-node installs as ranzvpnserver, runs each role of its configuration and stops cleanly (administrator rights)."},
 	{"nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result (administrator rights)."},
+	{"store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords."},
 };
 
 // Test function

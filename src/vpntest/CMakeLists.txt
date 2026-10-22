@@ -60,6 +60,8 @@ ranz_add_executable(vpntest HAMCORE
     nodetest.c
     # Named node Login test of CORE-F2 (#62): the session module of the new core against the SE-VPN login
     nodelogin.c
+    # Named configuration store test of CORE-F5 (#65)
+    storetest.c
   # The session and crypto modules of the new core for nodelogin.c; netapi32: the local account that stands for
   # a domain account (NetUserAdd)
   LIBRARIES

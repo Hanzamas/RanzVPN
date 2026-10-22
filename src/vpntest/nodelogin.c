@@ -18,13 +18,13 @@
 #include "Cedar/Account.h"
 #include "Cedar/Admin.h"
 #include "Cedar/Cedar.h"
+#include "Cedar/ConfigStore.h"
 #include "Cedar/Hub.h"
 #include "Cedar/Node.h"
 #include "Cedar/Protocol.h"
 #include "Cedar/Sam.h"
 #include "Cedar/Server.h"
 
-#include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
@@ -438,8 +438,8 @@ END:
 // The node
 //
 
-// A new empty data directory under the temp directory of the process, with the configuration of the server role
-// and its hub
+// A new empty data directory under the temp directory of the process, with the configuration store of the server
+// role (ConfigStore, CORE-F5 #65): one worker and the hub as an online L2 network
 static void NodeLoginNewDir(wchar_t *dir, UINT size)
 {
 	wchar_t tmp[MAX_PATH];
@@ -449,16 +449,18 @@ static void NodeLoginNewDir(wchar_t *dir, UINT size)
 	ConbinePathW(dir, size, MsGetMyTempDirW(), tmp);
 	MakeDirExW(dir);
 
-	FOLDER *root = CfgCreateFolder(NULL, TAG_ROOT);
-	CfgAddStr(root, "Roles", "server");
-	CfgAddInt(root, "NumWorkers", 1);
-	CfgCreateFolder(CfgCreateFolder(root, "Hubs"), NODELOGIN_HUB);
+	ConbinePathW(path, sizeof(path), dir, CS_FILE_NAME);
+	CONFIG_STORE *s = CsOpen(path);
+	if (s == NULL)
+	{
+		Print("  configuration store %S cannot be opened\n", path);
+		return;
+	}
 
-	BUF *b = CfgFolderToBuf(root);
-	ConbinePathW(path, sizeof(path), dir, NODE_CONFIG_FILE_NAME);
-	DumpBufW(b, path);
-	FreeBuf(b);
-	CfgDeleteFolder(root);
+	CsSetSetting(s, NODE_SETTING_ROLES, "server");
+	CsSetSetting(s, NODE_SETTING_WORKERS, "1");
+	CsAddNetwork(s, NODELOGIN_HUB, CS_MODE_L2, true);
+	CsClose(s);
 }
 
 // Delete the files of a directory, then the directory (it holds no subdirectory)
