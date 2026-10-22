@@ -239,3 +239,9 @@ try {
 }
 
 Write-Host 'self-integrity.ps1: signing, the self-integrity check and symbol stripping all passed'
+
+# The last native command above is "go tool nm" on a stripped binary, which exits 1 when it finds no
+# symbols. That is the success case here, but the non-zero code lingers in $LASTEXITCODE, and the pwsh
+# step wrapper returns $LASTEXITCODE as the step result. Every real failure throws above (ErrorAction is
+# Stop), so reaching this line means success. Exit 0 so the step passes.
+exit 0
