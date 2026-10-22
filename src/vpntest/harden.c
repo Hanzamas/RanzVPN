@@ -16,6 +16,7 @@
 
 #define HARDEN_GUARD_EXE L"ranzguard.exe"
 #define HARDEN_WAIT_MS 30000 // longest a single ranzguard run or debug step may take
+#define HARDEN_POLL_MS 200	 // debug-pump poll step: between events, check whether the debuggee has exited
 #define HARDEN_TOKEN_UNLOCKED "RANZGUARD UNLOCKED"
 #define HARDEN_TOKEN_LOCKED "RANZGUARD LOCKED"
 #define HARDEN_CRASH_STATUS 0xC0000000 // the NTSTATUS error range: an exit code here is a crash
@@ -94,22 +95,43 @@ static void HardenReadToken(HANDLE rd, char *token, UINT size)
 // is the loader's own and is continued; a later one (ranzguard's own probe) is passed back to the
 // debuggee so its vectored handler takes it, which also avoids re-executing the int3. Any other
 // first-chance exception is passed back too, and a second-chance exception is counted as a crash.
+//
+// ranzguard sets NtSetInformationThread(ThreadHideFromDebugger) on its only thread, so the kernel stops
+// sending that thread's debug events: the debuggee's own int3 and, importantly, its exit event never
+// reach this loop. A plain WaitForDebugEvent would then block for the whole timeout although the process
+// has already terminated. So the wait is one short poll step, and between events the process handle is
+// the authority on termination: once it is signaled the run is finished and the real exit code is read.
+// The deadline measures time since the last event, so a genuinely hung debuggee is still terminated.
 static bool HardenPumpDebugger(HANDLE process, UINT *exit_code, bool *crashed)
 {
 	DEBUG_EVENT ev;
 	bool exited = false;
 	bool loader_bp_seen = false;
+	UINT64 deadline = Tick64() + HARDEN_WAIT_MS;
 
 	*exit_code = 0;
 	*crashed = false;
 
 	for (;;)
 	{
-		if (WaitForDebugEvent(&ev, HARDEN_WAIT_MS) == FALSE)
+		if (WaitForDebugEvent(&ev, HARDEN_POLL_MS) == FALSE)
 		{
-			TerminateProcess(process, 1);
-			*crashed = true;
-			return false;
+			// No event this step. The exit event may be suppressed (ThreadHideFromDebugger), so let the
+			// process handle decide: if it has terminated, read its real exit code and finish.
+			if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0)
+			{
+				DWORD code = 0;
+				GetExitCodeProcess(process, &code);
+				*exit_code = code;
+				return true;
+			}
+			if (Tick64() >= deadline)
+			{
+				TerminateProcess(process, 1);
+				*crashed = true;
+				return false;
+			}
+			continue;
 		}
 
 		DWORD cont = DBG_CONTINUE;
@@ -165,6 +187,9 @@ static bool HardenPumpDebugger(HANDLE process, UINT *exit_code, bool *crashed)
 		}
 
 		ContinueDebugEvent(ev.dwProcessId, ev.dwThreadId, cont);
+
+		// An event arrived and was handled: push the no-event deadline out from now
+		deadline = Tick64() + HARDEN_WAIT_MS;
 
 		if (exited)
 		{
