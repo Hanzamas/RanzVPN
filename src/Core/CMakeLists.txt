@@ -81,6 +81,26 @@ set_target_properties(corepeer
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# coretransport: the transport module (Transport.h, Transport*.c; CORE-F4, #64): the transport interface, the
+# session layer on it, the race of a client's fallback list and the in-process loopback transport, over the
+# session module, which brings the crypto module. Its threads are those of the Windows thread pool.
+file(GLOB SOURCES_CORE_TRANSPORT "Transport*.c")
+file(GLOB HEADERS_CORE_TRANSPORT "Transport*.h")
+
+add_library(coretransport STATIC ${SOURCES_CORE_TRANSPORT} ${HEADERS_CORE_TRANSPORT})
+
+target_link_libraries(coretransport PUBLIC corenoise)
+target_link_libraries(coretransport PRIVATE ranz_core_options ranz_warnings)
+
+set_target_properties(coretransport
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "coretransport"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
 # ranz_core_check_links(<target>...): stops the configure when one of the targets reaches,
 # through any chain of linked targets, the slim fork (mayaqua, cedar), OpenSSL or liboqs, which
 # the new core does not link (ADR-0022; CORE-F1, #61). src/CMakeLists.txt calls it once every
