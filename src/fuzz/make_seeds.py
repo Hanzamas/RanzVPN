@@ -703,8 +703,90 @@ def make_stun_seeds():
         write_seed('fuzz_stun', name, text)
 
 
+# ---------------------------------------------------------------------------
+# Peer layer of the new core (Core/Peer.c PeerInput, Core/PeerSignal.c PeerOpenSignal and PeerSignalDecode)
+# ---------------------------------------------------------------------------
+# The public keys of the fixed scalars of fuzz_peer.c and coretest: A (1, 2, ...), B (33, 34, ...), the relay
+# (129, 130, ...). X25519 is not in the standard library, so they are written out (src/coretest/envelope.c).
+PEER_A = bytes.fromhex('07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c')
+PEER_B = bytes.fromhex('5869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b')
+PEER_RELAY = bytes.fromhex('883186b800b41d5cf0429695da9b3cc4f328ebcd184a6e482fa578c103f06c77')
+# The known answers of coretest's envelope test: a signal payload, its envelope from A to B, a bind from A to the
+# relay
+PEER_SIGNAL = bytes.fromhex(
+    '01010102030405060708883186b800b41d5cf0429695da9b3cc4f328ebcd184a6e482fa578c103f06c7700000000000000000000'
+    'ffffc000020a1b58020100000000000000000000ffff0a00000213880200000000000000000000ffffc63364079c41')
+PEER_SIGNAL_ENVELOPE = bytes.fromhex(
+    '0407a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c244fe3b963e899dd295baffce248d3530f3a9a74'
+    '79ba063002680ebfe7adad49529bf345ba812669a43343fe55f5bdebfa1fd20846a6b5d96b0efe2ebaabc1b2f8e61fd05853d2e30e'
+    'daa0107cab08f15d22975a1970ba0956de502d94c629a92543f49c5206a51e61b47e1c6263a7345cae0aa14d13bfd2d6f1f2049ea5'
+    'a1ef584e6d2014829b4ea20ba9afc1f865290e2a82')
+PEER_BIND_ENVELOPE = bytes.fromhex(
+    '0207a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c244fe3b963e899dd295baffce248d3530f3a9a74'
+    '79ba063002680ebfe7adad498b4b5ccb906d23b5b95c9a9b3beeb6779a7126787517d53658')
+
+
+def make_peer_seeds():
+    write_seed('fuzz_peer', 'data_a_to_b.bin', b'\x01' + PEER_A + PEER_B + b'hello through the relay')
+    write_seed('fuzz_peer', 'data_a_to_relay.bin', b'\x01' + PEER_A + PEER_RELAY + b'ping')
+    write_seed('fuzz_peer', 'data_short.bin', b'\x01' + PEER_A[:20])
+    write_seed('fuzz_peer', 'signal_payload.bin', PEER_SIGNAL)
+    # No candidate, no relay: the smallest signal
+    write_seed('fuzz_peer', 'signal_payload_empty.bin', b'\x01\x02' + struct.pack('>Q', 7) + b'\0' * 50 + b'\0')
+    write_seed('fuzz_peer', 'signal_envelope.bin', PEER_SIGNAL_ENVELOPE)
+    write_seed('fuzz_peer', 'bind_envelope.bin', PEER_BIND_ENVELOPE)
+    # A bound with the header of an envelope and a ciphertext that opens for no one
+    write_seed('fuzz_peer', 'bound_garbage.bin', b'\x03' + PEER_RELAY + PEER_A + b'\0' * 43)
+
+
+# ---------------------------------------------------------------------------
+# Noise session (src/Core/NoiseSession.c): the records of the golden transcripts of coretest
+# noisesession (src/coretest/session.c), made with the keys of the cacophony IK vector, which
+# fuzz_noise.c uses too. Bound: the TLS exporter 00 .. 1f, records in clear; encrypted: no binding,
+# records under the Noise keys, rekey after 4.
+# ---------------------------------------------------------------------------
+NOISE_GOLDEN = {
+    'bound': {
+        'hs1': '0001ca35def5ae56cec33dc2036731ab14896bc4c75dbb07a61f879f8e3afa4c79444e417bc55c7a8166c993356c1be41ef67818a292426f301556c7f26b21d25ddb50901f6c0fe1e7ad5e23084c93002377d265fcde584d2a7bee488866fe3d6a96',
+        'hs2': '000195ebc60d2b1fa672c1f46a8aa265ef51bfe38e7ccb39ec5be34069f1448088435e02bac3ee97e3ac27fdd5f32aad4e05',
+        'records': ['0201010348554205616c69636500067365637265740000',
+                    '01000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b',
+                    '03', '0172656b65792031', '0172656b65792032', '04'],
+    },
+    'encrypted': {
+        'hs1': '0001ca35def5ae56cec33dc2036731ab14896bc4c75dbb07a61f879f8e3afa4c79444e417bc55c7a8166c993356c1be41ef67818a292426f301556c7f26b21d25ddbab78f691bedb2016cad0d55ed4bc463368c1ed3ba8c9906fedeb321c1431d854',
+        'hs2': '000195ebc60d2b1fa672c1f46a8aa265ef51bfe38e7ccb39ec5be34069f144808843369f326da14e1d270d0629a34a4a68e5',
+        'records': ['022183df9b987b30e1738c9674856828c0538701253acadf7ad43a1e13c85906b77531983c9a40',
+                    '010df1c02f1c17afc87c5812abff8ebfa905eeb568befbed9f5459d37710a31dacd0ab6e18b17f6a80c0461d63b8f1bc4d306340776a6b80186c7d0decd694ee2765af5683a494d6387cdc6c84',
+                    '037910fa9329022aa1d6d5c94aba0eadf8', '81862aea81d5cff4afc5fdc3684e80756a8700f0a2852641',
+                    '01e9cb26864bae94ffc40a1aa46694bff1c6508fbdb27285', '04795896313c9804601a8fb9cf8654be0d'],
+    },
+}
+
+
+def noise_login(method, hub, user, secret=b'', sign=b''):
+    # NoiseLoginEncode: version, method, hub and user (1-byte sizes), secret and signature (2-byte sizes)
+    return (bytes([1, method, len(hub)]) + hub + bytes([len(user)]) + user +
+            struct.pack('>H', len(secret)) + secret + struct.pack('>H', len(sign)) + sign)
+
+
+def make_noise_seeds():
+    for mode, g in NOISE_GOLDEN.items():
+        write_seed('fuzz_noise', 'handshake1_%s.bin' % mode, bytes.fromhex(g['hs1']))
+        write_seed('fuzz_noise', 'handshake2_%s.bin' % mode, bytes.fromhex(g['hs2']))
+        stream = b''.join(struct.pack('>H', len(bytes.fromhex(r))) + bytes.fromhex(r) for r in g['records'])
+        write_seed('fuzz_noise', 'records_%s.bin' % mode, stream)
+    # A first record of IKhfs (suite 2): the size of its message 1 with an empty payload, 1296 bytes
+    rng = random.Random(62)
+    write_seed('fuzz_noise', 'handshake1_ikhfs.bin', bytes([0, 2]) + bytes(rng.getrandbits(8) for _ in range(1296)))
+    write_seed('fuzz_noise', 'login_password.bin', noise_login(1, b'HUB', b'alice', b'secret'))
+    write_seed('fuzz_noise', 'login_cert.bin', noise_login(2, b'HUB', b'alice', bytes(range(200)), bytes(256)))
+    write_seed('fuzz_noise', 'login_join.bin', noise_login(3, b'HUB', b'alice', bytes(16)))
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
+    assert len(PEER_SIGNAL) == 99 and len(PEER_SIGNAL_ENVELOPE) == 180 and len(PEER_BIND_ENVELOPE) == 90
     make_pack_seeds()
     make_pack_bad_seeds()
     make_login_seeds()
@@ -715,3 +797,5 @@ if __name__ == '__main__':
     make_dhcp_seeds()
     make_net_seeds()
     make_stun_seeds()
+    make_peer_seeds()
+    make_noise_seeds()

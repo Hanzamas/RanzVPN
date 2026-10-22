@@ -38,6 +38,10 @@ find_path(RANZ_CJSON_INCLUDE_DIR "cjson/cJSON.h" REQUIRED)
 target_include_directories(cedar PRIVATE "${RANZ_CJSON_INCLUDE_DIR}")
 target_link_libraries(cedar PRIVATE cjson)
 
+# The peer module of the new core (src/Core/CMakeLists.txt), which the relay role of the Node module runs
+# (CORE-S5-2, #78). It keeps the build options of the new core to itself, so Cedar compiles with its own.
+target_link_libraries(cedar PRIVATE corepeer)
+
 # Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that
 # print it include it (Cedar.c, Admin.c, Server.c, Command.c), so a new stamp rebuilds those four
 # and not the whole library. configure_file leaves the header alone when its content is the same.

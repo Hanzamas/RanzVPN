@@ -1,9 +1,12 @@
 // CryptoCert.c
 // Certificates through CryptoAPI: the self-signed ECDSA P-256 certificate on a CNG key, PFX
-// import into the CNG key storage provider, and the system certificate stores, where the
-// Schannel server certificate is found by its thumbprint (LocalMachine\My)
+// import into the CNG key storage provider, the system certificate stores, where the Schannel
+// server certificate is found by its thumbprint (LocalMachine\My), and the tls-server-end-point
+// channel binding of a certificate (RFC 5929)
 
 #include "Core/CryptoInternal.h"
+
+#include <string.h>
 
 // Certificate encoding of every function here
 #define CRYPTO_CERT_ENCODING (X509_ASN_ENCODING | PKCS_7_ASN_ENCODING)
@@ -273,6 +276,55 @@ bool CryptoCertThumbprintStr(PCCERT_CONTEXT cert, char *str, UINT size) {
 	}
 	str[2 * CRYPTO_THUMBPRINT_SIZE] = 0;
 
+	return true;
+}
+
+// The hash of tls-server-end-point for a signature algorithm (RFC 5929 section 4.1): the hash of
+// the algorithm, SHA-256 in place of MD5 and SHA-1. Size is the hash size in bytes.
+typedef struct CRYPTO_END_POINT_HASH {
+	const char *Oid;
+	UINT Size;
+} CRYPTO_END_POINT_HASH;
+
+static const CRYPTO_END_POINT_HASH crypto_end_point_hashes[] = {
+    {szOID_RSA_MD5RSA, 32},
+    {szOID_RSA_SHA1RSA, 32},
+    {szOID_ECDSA_SHA1, 32},
+    {szOID_RSA_SHA256RSA, 32},
+    {szOID_ECDSA_SHA256, 32},
+    {szOID_RSA_SHA384RSA, 48},
+    {szOID_ECDSA_SHA384, 48},
+    {szOID_RSA_SHA512RSA, 64},
+    {szOID_ECDSA_SHA512, 64},
+};
+
+bool CryptoCertEndPoint(PCCERT_CONTEXT cert, UCHAR *hash, UINT *size) {
+	UINT hash_size = 0;
+
+	if (size != NULL)
+		*size = 0;
+	if (hash == NULL || size == NULL)
+		return false;
+
+	if (cert != NULL && cert->pCertInfo != NULL && cert->pCertInfo->SignatureAlgorithm.pszObjId != NULL) {
+		for (UINT i = 0; i < sizeof(crypto_end_point_hashes) / sizeof(crypto_end_point_hashes[0]); i++)
+			if (strcmp(cert->pCertInfo->SignatureAlgorithm.pszObjId, crypto_end_point_hashes[i].Oid) == 0)
+				hash_size = crypto_end_point_hashes[i].Size;
+	}
+
+	// The pseudo-handles of the three hashes need no opening
+	BCRYPT_ALG_HANDLE alg = BCRYPT_SHA256_ALG_HANDLE;
+	if (hash_size == 48)
+		alg = BCRYPT_SHA384_ALG_HANDLE;
+	else if (hash_size == 64)
+		alg = BCRYPT_SHA512_ALG_HANDLE;
+
+	if (hash_size == 0 || CNG_SUCCESS(BCryptHash(alg, NULL, 0, cert->pbCertEncoded, cert->cbCertEncoded, hash, hash_size)) == false) {
+		SecureZeroMemory(hash, CRYPTO_END_POINT_MAX_SIZE);
+		return false;
+	}
+
+	*size = hash_size;
 	return true;
 }
 

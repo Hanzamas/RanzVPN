@@ -56,6 +56,9 @@ const (
 	// maxRefuseMessage is the size of Refuse.message on the C node (control.options), without
 	// the terminating NUL.
 	maxRefuseMessage = 255
+	// maxQueuedSignals bounds the Signals waiting for the writer of one stream; the oldest goes
+	// first. A node signals again when a peer does not answer, so a dropped one is not lost.
+	maxQueuedSignals = 64
 	// expiryRetry is the wait before the controller tries again to apply the expiry of the
 	// licence when the store failed.
 	expiryRetry = 10 * time.Second
@@ -180,6 +183,7 @@ type stream struct {
 	sent     desired.State          // the state of inflight
 	members  *controlpb.Controllers // the Controllers message sent last, nil before the first
 	refusal  *controlpb.Refuse
+	signals  []*controlpb.Signal // Signals of other nodes for this one, waiting for the writer
 }
 
 // New loads the intent, the node states and the licence key from the store and reconciles them:
@@ -862,28 +866,68 @@ func (c *Controller) hello(n *node, s *stream, applied uint64) {
 	}
 }
 
-// readLoop reads the node's Acks until the stream ends.
+// readLoop reads the node's Acks and Signals until the stream ends.
 func (c *Controller) readLoop(s *stream) {
 	for {
 		m, _, err := s.conn.Read()
 		if err != nil {
 			return
 		}
-		ack := m.GetAck()
-		if ack == nil {
-			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks after its Hello"))
+		switch body := m.GetBody().(type) {
+		case *controlpb.ControlMessage_Ack:
+			c.mu.Lock()
+			err = c.ack(s, body.Ack.GetGeneration())
+			c.mu.Unlock()
+			if err != nil {
+				c.log.Warn("node refused: bad Ack", "node", s.name, "err", err)
+				writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "%v", err))
+				return
+			}
+			s.poke()
+		case *controlpb.ControlMessage_Signal:
+			if err := c.signal(s, body.Signal); err != nil {
+				c.log.Warn("node refused: bad Signal", "node", s.name, "err", err)
+				writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "%v", err))
+				return
+			}
+		default:
+			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks and Signals after its Hello"))
 			return
 		}
-		c.mu.Lock()
-		err = c.ack(s, ack.GetGeneration())
-		c.mu.Unlock()
-		if err != nil {
-			c.log.Warn("node refused: bad Ack", "node", s.name, "err", err)
-			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "%v", err))
-			return
-		}
-		s.poke()
 	}
+}
+
+// signal forwards a Signal of the node of s to the node it names, with peer set to the sender,
+// when that node is a Peer of the sender (the two share a VRF) and has a stream; otherwise it
+// drops it. The envelope stays closed: it is sealed for the receiving node alone (ADR-0015), so
+// the controller passes on its bytes as they came. An empty envelope, or one larger than
+// control.MaxEnvelope, is an error.
+func (c *Controller) signal(s *stream, sig *controlpb.Signal) error {
+	if n := len(sig.GetEnvelope()); n == 0 || n > control.MaxEnvelope {
+		return fmt.Errorf("a Signal with an envelope of %d bytes, not 1 to %d", n, control.MaxEnvelope)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	from := c.nodes[s.name]
+	if from == nil || from.stream != s {
+		return nil
+	}
+	if _, ok := from.state[desired.Key{Kind: controlpb.Kind_KIND_PEER, Name: sig.GetPeer()}]; !ok {
+		c.log.Info("signal dropped: no peer of the node", "node", s.name, "peer", sig.GetPeer())
+		return nil
+	}
+	to := c.nodes[sig.GetPeer()]
+	if to == nil || to.stream == nil {
+		c.log.Info("signal dropped: the peer has no stream", "node", s.name, "peer", sig.GetPeer())
+		return nil
+	}
+	t := to.stream
+	if len(t.signals) >= maxQueuedSignals {
+		t.signals = t.signals[1:]
+	}
+	t.signals = append(t.signals, &controlpb.Signal{Peer: s.name, Envelope: sig.GetEnvelope()})
+	t.poke()
+	return nil
 }
 
 // ack records that the node of s applied generation gen. c.mu is held.
@@ -910,8 +954,9 @@ func (c *Controller) saveAck(name string, n *node, gen uint64, state desired.Sta
 	}
 }
 
-// writeLoop sends the node of s the updates it lacks, one at a time: the next one after the Ack
-// of the one before. It ends with the stream, or after sending a Refuse.
+// writeLoop sends the node of s the Signals of other nodes for it, and the updates it lacks, one
+// at a time: the next one after the Ack of the one before. It ends with the stream, or after
+// sending a Refuse.
 func (c *Controller) writeLoop(s *stream) {
 	for {
 		select {
@@ -923,9 +968,11 @@ func (c *Controller) writeLoop(s *stream) {
 		r := s.refusal
 		var m *controlpb.Controllers
 		var u *controlpb.Update
+		var sigs []*controlpb.Signal
 		if r == nil {
 			m = c.nextMembers(s)
 			u = c.nextUpdate(s)
+			sigs, s.signals = s.signals, nil
 		}
 		c.mu.Unlock()
 		if r != nil {
@@ -941,6 +988,14 @@ func (c *Controller) writeLoop(s *stream) {
 				return
 			}
 			c.log.Info("controllers sent", "node", s.name, "controllers", len(m.GetControllers()))
+		}
+		for _, sig := range sigs {
+			if _, err := s.conn.Write(&controlpb.ControlMessage{Body: &controlpb.ControlMessage_Signal{Signal: sig}}); err != nil {
+				c.log.Warn("sending a signal", "node", s.name, "from", sig.GetPeer(), "err", err)
+				s.shut()
+				return
+			}
+			c.log.Info("signal forwarded", "node", s.name, "from", sig.GetPeer(), "bytes", len(sig.GetEnvelope()))
 		}
 		if u == nil {
 			continue

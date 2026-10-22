@@ -1,0 +1,1023 @@
+// Peer.c
+// The peer layer of a node (ADR-0015): the peer table and the relays that the control plane sets, the binding of
+// the node to its relays, the paths to each peer, the relay role, and PeerInput, the one ingress of every datagram,
+// which delivers a datagram for the node and forwards one for another node through the same policy check
+
+#include "Core/PeerInternal.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+// The clock of bindings and binds (ms), monotonic
+static UINT64 PeerNow() {
+	return GetTickCount64();
+}
+
+void PeerCount(PEER_AGENT *a, UINT counter) {
+	InterlockedIncrement64(&a->Counters[counter]);
+}
+
+void PeerDrop(PEER_AGENT *a, UINT reason) {
+	if (reason < PEER_NUM_REASONS)
+		InterlockedIncrement64(&a->Drops[reason]);
+}
+
+void PeerPutUint64(UCHAR *p, UINT64 v) {
+	for (UINT i = 0; i < 8; i++)
+		p[i] = (UCHAR)(v >> (56 - 8 * i));
+}
+
+UINT64 PeerGetUint64(const UCHAR *p) {
+	UINT64 v = 0;
+
+	for (UINT i = 0; i < 8; i++)
+		v = (v << 8) | p[i];
+
+	return v;
+}
+
+void PeerPutUint16(UCHAR *p, USHORT v) {
+	p[0] = (UCHAR)(v >> 8);
+	p[1] = (UCHAR)v;
+}
+
+USHORT PeerGetUint16(const UCHAR *p) {
+	return (USHORT)((p[0] << 8) | p[1]);
+}
+
+// The next sequence of a bind or a signal of the node: the wall clock in 100 ns units, or one more than the last
+// sequence when the clock did not move on. It grows across restarts of the node too, so a receiver that keeps the
+// last sequence of each node refuses every replay, as WireGuard does with the timestamp of a handshake initiation.
+UINT64 PeerNextSequence(PEER_AGENT *a) {
+	FILETIME ft;
+
+	GetSystemTimePreciseAsFileTime(&ft);
+	UINT64 now = ((UINT64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+
+	while (true) {
+		LONG64 last = ReadAcquire64(&a->Sequence);
+		UINT64 next = ((UINT64)last + 1 > now) ? (UINT64)last + 1 : now;
+
+		if (InterlockedCompareExchange64(&a->Sequence, (LONG64)next, last) == last)
+			return next;
+	}
+}
+
+void PeerDefaultConfig(PEER_CONFIG *c) {
+	if (c == NULL)
+		return;
+
+	ZeroMemory(c, sizeof(PEER_CONFIG));
+	c->RelayRate = PEER_DEFAULT_RELAY_RATE;
+	c->RelayBurst = PEER_DEFAULT_RELAY_BURST;
+	c->BindInterval = PEER_DEFAULT_BIND;
+	c->BindRetry = PEER_DEFAULT_BIND_RETRY;
+	c->BindExpiry = PEER_DEFAULT_BIND_EXPIRY;
+}
+
+// The peer layer of a node with the static key key (an identity key in it stays owned by the caller and must
+// outlive the layer) and the configuration c (NULL for PeerDefaultConfig). send sends its datagrams; recv takes
+// the data datagrams for the node and may be NULL. NULL when the crypto module cannot start.
+PEER_AGENT *PeerNew(PEER_KEY *key, PEER_CONFIG *c, PEER_SEND_PROC *send, void *send_param, PEER_RECV_PROC *recv, void *recv_param) {
+	LARGE_INTEGER freq;
+
+	if (key == NULL || send == NULL || CryptoInit() == false)
+		return NULL;
+
+	PEER_AGENT *a = (PEER_AGENT *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PEER_AGENT));
+	if (a == NULL)
+		return NULL;
+
+	a->Key = *key;
+	InitializeSRWLock(&a->KeyLock);
+	InitializeSRWLock(&a->Lock);
+
+	if (c != NULL)
+		a->Config = *c;
+	else
+		PeerDefaultConfig(&a->Config);
+
+	if (a->Config.RelayRate == 0)
+		a->Config.RelayRate = PEER_DEFAULT_RELAY_RATE;
+	if (a->Config.RelayBurst == 0)
+		a->Config.RelayBurst = 1;
+	if (a->Config.BindInterval == 0)
+		a->Config.BindInterval = PEER_DEFAULT_BIND;
+	if (a->Config.BindRetry == 0)
+		a->Config.BindRetry = PEER_DEFAULT_BIND_RETRY;
+	if (a->Config.BindExpiry == 0)
+		a->Config.BindExpiry = PEER_DEFAULT_BIND_EXPIRY;
+
+	a->Send = send;
+	a->SendParam = send_param;
+	a->Recv = recv;
+	a->RecvParam = recv_param;
+
+	QueryPerformanceFrequency(&freq);
+	a->RateInterval = freq.QuadPart / a->Config.RelayRate;
+	if (a->RateInterval == 0)
+		a->RateInterval = 1;
+	a->RateTolerance = a->RateInterval * (LONG64)(a->Config.RelayBurst - 1);
+
+	return a;
+}
+
+// Free the peer layer. The I/O that calls PeerInput must have stopped before.
+void PeerFree(PEER_AGENT *a) {
+	if (a == NULL)
+		return;
+
+	if (a->Peers != NULL)
+		HeapFree(GetProcessHeap(), 0, a->Peers);
+	if (a->Bindings != NULL)
+		HeapFree(GetProcessHeap(), 0, a->Bindings);
+
+	SecureZeroMemory(a, sizeof(PEER_AGENT));
+	HeapFree(GetProcessHeap(), 0, a);
+}
+
+const UCHAR *PeerPublicKey(PEER_AGENT *a) {
+	return (a != NULL ? a->Key.Public : NULL);
+}
+
+// The peer of key in the table, NULL for none. The caller holds the lock.
+static PEER *PeerFind(PEER_AGENT *a, const UCHAR *key) {
+	UINT lo = 0;
+	UINT hi = a->NumPeers;
+
+	while (lo < hi) {
+		UINT mid = lo + (hi - lo) / 2;
+		int c = memcmp(key, a->Peers[mid].Info.Key, PEER_KEY_SIZE);
+
+		if (c == 0)
+			return &a->Peers[mid];
+		if (c < 0)
+			hi = mid;
+		else
+			lo = mid + 1;
+	}
+
+	return NULL;
+}
+
+// Where the binding of key is in the bindings of the relay role, or would be; *found tells which. The caller holds
+// the lock.
+static UINT PeerBindingIndex(PEER_AGENT *a, const UCHAR *key, bool *found) {
+	UINT lo = 0;
+	UINT hi = a->NumBindings;
+
+	*found = false;
+	while (lo < hi) {
+		UINT mid = lo + (hi - lo) / 2;
+		int c = memcmp(key, a->Bindings[mid].Key, PEER_KEY_SIZE);
+
+		if (c == 0) {
+			*found = true;
+			return mid;
+		}
+		if (c < 0)
+			hi = mid;
+		else
+			lo = mid + 1;
+	}
+
+	return lo;
+}
+
+static PEER_BINDING *PeerFindBinding(PEER_AGENT *a, const UCHAR *key) {
+	bool found;
+	UINT i = PeerBindingIndex(a, key, &found);
+
+	return (found ? &a->Bindings[i] : NULL);
+}
+
+// Add a binding for key, or return the one there is. NULL when there is no memory for it. The caller holds the lock
+// exclusively.
+static PEER_BINDING *PeerAddBinding(PEER_AGENT *a, const UCHAR *key) {
+	bool found;
+	UINT i = PeerBindingIndex(a, key, &found);
+
+	if (found)
+		return &a->Bindings[i];
+
+	if (a->NumBindings == a->MaxBindings) {
+		UINT max = (a->MaxBindings == 0 ? 16 : a->MaxBindings * 2);
+		PEER_BINDING *b;
+
+		if (a->Bindings == NULL)
+			b = (PEER_BINDING *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PEER_BINDING) * max);
+		else
+			b = (PEER_BINDING *)HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, a->Bindings, sizeof(PEER_BINDING) * max);
+		if (b == NULL)
+			return NULL;
+
+		a->Bindings = b;
+		a->MaxBindings = max;
+	}
+
+	MoveMemory(&a->Bindings[i + 1], &a->Bindings[i], sizeof(PEER_BINDING) * (a->NumBindings - i));
+	ZeroMemory(&a->Bindings[i], sizeof(PEER_BINDING));
+	CopyMemory(a->Bindings[i].Key, key, PEER_KEY_SIZE);
+	a->NumBindings++;
+
+	return &a->Bindings[i];
+}
+
+// Drop the bindings of nodes that are no peer: a relay binds the nodes of its VRFs only. The caller holds the lock
+// exclusively.
+static void PeerPruneBindings(PEER_AGENT *a) {
+	UINT n = 0;
+
+	for (UINT i = 0; i < a->NumBindings; i++) {
+		if (PeerFind(a, a->Bindings[i].Key) == NULL)
+			continue;
+		if (n != i)
+			a->Bindings[n] = a->Bindings[i];
+		n++;
+	}
+
+	a->NumBindings = n;
+}
+
+// The relay of key among the relays of the node, NULL for none. The caller holds the lock.
+static PEER_RELAY *PeerFindRelay(PEER_AGENT *a, const UCHAR *key) {
+	for (UINT i = 0; i < a->NumRelays; i++)
+		if (memcmp(a->Relays[i].Info.Key, key, PEER_KEY_SIZE) == 0)
+			return &a->Relays[i];
+
+	return NULL;
+}
+
+// Send one datagram and count it
+static bool PeerSendRaw(PEER_AGENT *a, const PEER_ADDR *to, const void *data, UINT size) {
+	if (a->Send(a->SendParam, to, data, size)) {
+		PeerCount(a, PEER_COUNT_SENT);
+		return true;
+	}
+
+	PeerDrop(a, PEER_DROP_SEND);
+	return false;
+}
+
+// Bind the node to the relay of relay_key: a bind envelope with the next sequence, which the relay answers with a
+// bound. Without the lock.
+static void PeerBind(PEER_AGENT *a, const UCHAR *relay_key) {
+	UCHAR payload[PEER_BIND_SIZE];
+	UCHAR env[PEER_ENVELOPE_HEADER + PEER_BIND_SIZE + PEER_ENVELOPE_TAG];
+	PEER_ADDR to;
+	bool found = false;
+
+	UINT64 seq = PeerNextSequence(a);
+	payload[0] = PEER_VERSION;
+	PeerPutUint64(payload + 1, seq);
+
+	UINT size = PeerSeal(a, relay_key, PEER_MSG_BIND, payload, sizeof(payload), env, sizeof(env));
+	if (size == 0)
+		return;
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		PEER_RELAY *r = PeerFindRelay(a, relay_key);
+
+		if (r != NULL) {
+			r->Binding = true;
+			r->BindSequence = seq;
+			r->BindTick = PeerNow();
+			to = r->Info.Addr;
+			found = true;
+		}
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+
+	if (found)
+		PeerSendRaw(a, &to, env, size);
+}
+
+// Bind to every relay that the node wants and has no fresh binding to: a first bind, a renewal after BindInterval,
+// or a retry after BindRetry when the last bind had no answer
+static void PeerBindWanted(PEER_AGENT *a) {
+	UCHAR keys[PEER_MAX_RELAYS][PEER_KEY_SIZE];
+	UINT num = 0;
+	UINT64 now = PeerNow();
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		for (UINT i = 0; i < a->NumRelays; i++) {
+			PEER_RELAY *r = &a->Relays[i];
+			bool due = (r->Binding == false) || (r->Bound && now - r->BindTick >= a->Config.BindInterval) || (r->Bound == false && now - r->BindTick >= a->Config.BindRetry);
+
+			if (r->Wanted && due)
+				CopyMemory(keys[num++], r->Info.Key, PEER_KEY_SIZE);
+		}
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	for (UINT i = 0; i < num; i++)
+		PeerBind(a, keys[i]);
+}
+
+static int PeerComparePeer(const void *p1, const void *p2) {
+	return memcmp(((const PEER *)p1)->Info.Key, ((const PEER *)p2)->Info.Key, PEER_KEY_SIZE);
+}
+
+// Set the peer table, from the Peer objects of the desired state. A peer that stays keeps its signal and its paths;
+// the relay role drops the bindings of the nodes that are no peer any more.
+void PeerSetPeers(PEER_AGENT *a, PEER_INFO *peers, UINT num) {
+	PEER *t = NULL;
+	UINT n = 0;
+
+	if (a == NULL || (peers == NULL && num != 0))
+		return;
+
+	if (num != 0) {
+		t = (PEER *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PEER) * num);
+		if (t == NULL)
+			return;
+	}
+
+	for (UINT i = 0; i < num; i++) {
+		t[i].Info = peers[i];
+		t[i].Info.Name[PEER_NAME_SIZE - 1] = 0;
+		if (t[i].Info.NumVrfs > PEER_MAX_VRFS)
+			t[i].Info.NumVrfs = PEER_MAX_VRFS;
+	}
+
+	if (num > 1)
+		qsort(t, num, sizeof(PEER), PeerComparePeer);
+
+	// One entry per key
+	for (UINT i = 0; i < num; i++) {
+		if (n != 0 && memcmp(t[n - 1].Info.Key, t[i].Info.Key, PEER_KEY_SIZE) == 0)
+			continue;
+		t[n++] = t[i];
+	}
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		for (UINT i = 0; i < n; i++) {
+			PEER *old = PeerFind(a, t[i].Info.Key);
+
+			if (old != NULL) {
+				PEER_INFO info = t[i].Info;
+
+				t[i] = *old;
+				t[i].Info = info;
+			}
+		}
+
+		PEER *old_table = a->Peers;
+		a->Peers = t;
+		a->NumPeers = n;
+		t = old_table;
+
+		PeerPruneBindings(a);
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+
+	if (t != NULL)
+		HeapFree(GetProcessHeap(), 0, t);
+}
+
+// Set the relays that the node may use, from the Relay objects of the desired state; the first is its home relay.
+// The node binds to its home relay at once, and to the relay of a peer when a signal of that peer names it. A relay
+// that stays, at the same address, keeps its binding.
+void PeerSetRelays(PEER_AGENT *a, PEER_RELAY_INFO *relays, UINT num) {
+	PEER_RELAY next[PEER_MAX_RELAYS];
+
+	if (a == NULL || (relays == NULL && num != 0))
+		return;
+
+	if (num > PEER_MAX_RELAYS)
+		num = PEER_MAX_RELAYS;
+
+	ZeroMemory(next, sizeof(next));
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		for (UINT i = 0; i < num; i++) {
+			PEER_RELAY *old = PeerFindRelay(a, relays[i].Key);
+
+			if (old != NULL && PeerAddrEqual(&old->Info.Addr, &relays[i].Addr))
+				next[i] = *old;
+
+			next[i].Info = relays[i];
+			next[i].Info.Name[PEER_NAME_SIZE - 1] = 0;
+			next[i].Wanted = (i == 0);
+		}
+
+		CopyMemory(a->Relays, next, sizeof(next));
+		a->NumRelays = num;
+
+		// The relay of every peer that named one stays wanted
+		for (UINT i = 0; i < a->NumPeers; i++) {
+			PEER_RELAY *r = (a->Peers[i].HasRelay ? PeerFindRelay(a, a->Peers[i].RelayKey) : NULL);
+
+			if (r != NULL)
+				r->Wanted = true;
+		}
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+
+	PeerBindWanted(a);
+}
+
+// Set the host candidates of the node: the addresses of its own that its signals offer
+void PeerSetHostCandidates(PEER_AGENT *a, PEER_ADDR *addrs, UINT num) {
+	if (a == NULL || (addrs == NULL && num != 0))
+		return;
+
+	if (num > PEER_MAX_CANDIDATES - 1)
+		num = PEER_MAX_CANDIDATES - 1;
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		if (num != 0)
+			CopyMemory(a->Hosts, addrs, sizeof(PEER_ADDR) * num);
+		a->NumHosts = num;
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+}
+
+// Set the direct path to the peer of key, which ICE validated (CORE-S5-3, #79), or remove it with addr NULL: the
+// peer then goes back to the relay path. False when key is no peer.
+bool PeerSetDirect(PEER_AGENT *a, const UCHAR *key, const PEER_ADDR *addr) {
+	bool ret = false;
+
+	if (a == NULL || key == NULL)
+		return false;
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		PEER *p = PeerFind(a, key);
+
+		if (p != NULL) {
+			p->HasDirect = (addr != NULL);
+			if (addr != NULL)
+				p->Direct = *addr;
+			else
+				ZeroMemory(&p->Direct, sizeof(PEER_ADDR));
+			ret = true;
+		}
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+
+	return ret;
+}
+
+// The path that PeerSend takes to the peer p now: the direct path once ICE validated one, else the relay of its
+// last signal while the node has a binding to that relay. The caller holds the lock.
+static UINT PeerPathOf(PEER_AGENT *a, PEER *p) {
+	if (p->HasDirect)
+		return PEER_PATH_DIRECT;
+
+	if (p->HasRelay) {
+		PEER_RELAY *r = PeerFindRelay(a, p->RelayKey);
+
+		if (r != NULL && (r->Binding || r->Bound))
+			return PEER_PATH_RELAY;
+	}
+
+	return PEER_PATH_NONE;
+}
+
+// Seal a signal of type (PEER_SIGNAL_OFFER or PEER_SIGNAL_ANSWER) for the peer of key, for the control plane to
+// carry: the relay assignment of the node (its home relay) and its candidates (the host candidates, and the server
+// reflexive one that its home relay reported). Returns the size of the envelope in buf, 0 when peer is no peer or
+// the envelope does not fit size.
+UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UINT size) {
+	PEER_SIGNAL s;
+	UCHAR payload[PEER_MAX_SIGNAL];
+	bool known = false;
+
+	if (a == NULL || peer == NULL || buf == NULL)
+		return 0;
+
+	ZeroMemory(&s, sizeof(s));
+	s.Type = type;
+	s.Sequence = PeerNextSequence(a);
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		known = (PeerFind(a, peer) != NULL);
+
+		for (UINT i = 0; i < a->NumHosts; i++) {
+			s.Candidates[s.NumCandidates].Type = PEER_CANDIDATE_HOST;
+			s.Candidates[s.NumCandidates].Addr = a->Hosts[i];
+			s.NumCandidates++;
+		}
+
+		if (a->NumRelays != 0) {
+			PEER_RELAY *home = &a->Relays[0];
+
+			CopyMemory(s.RelayKey, home->Info.Key, PEER_KEY_SIZE);
+			s.Relay = home->Info.Addr;
+
+			if (home->Bound) {
+				s.Candidates[s.NumCandidates].Type = PEER_CANDIDATE_SRFLX;
+				s.Candidates[s.NumCandidates].Addr = home->Observed;
+				s.NumCandidates++;
+			}
+		}
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	if (known == false)
+		return 0;
+
+	UINT len = PeerSignalEncode(&s, payload, sizeof(payload));
+	if (len == 0)
+		return 0;
+
+	return PeerSeal(a, peer, PEER_MSG_SIGNAL, payload, len, buf, size);
+}
+
+// Take a signal that the control plane carried: open the envelope, check that its sender is a peer, that its
+// sequence is above the last one taken from that peer, and that it names a relay that the control plane assigned,
+// at the assigned address. Then the peer is reached through that relay, and the node binds to it if it has no
+// binding yet. sig, when not NULL, receives the signal, so that the caller answers an offer. Returns PEER_OK or the
+// reason the signal was dropped.
+UINT PeerOpenSignal(PEER_AGENT *a, const UCHAR *env, UINT size, PEER_SIGNAL *sig) {
+	static const UCHAR zero[PEER_KEY_SIZE] = {0};
+	UCHAR sender[PEER_KEY_SIZE];
+	UCHAR payload[PEER_MAX_SIGNAL];
+	UINT len = 0;
+	PEER_SIGNAL s;
+	UINT reason = PEER_OK;
+	bool bind = false;
+
+	ZeroMemory(&s, sizeof(s));
+	if (sig != NULL)
+		ZeroMemory(sig, sizeof(PEER_SIGNAL));
+	if (a == NULL)
+		return PEER_DROP_MALFORMED;
+
+	if (env == NULL || size < 1 || env[0] != PEER_MSG_SIGNAL)
+		reason = PEER_DROP_MALFORMED;
+	else if (PeerOpen(a, env, size, sender, payload, sizeof(payload), &len) == false)
+		reason = PEER_DROP_FORGED;
+	else if (PeerSignalDecode(payload, len, &s) == false)
+		reason = PEER_DROP_MALFORMED;
+
+	if (reason != PEER_OK) {
+		PeerDrop(a, reason);
+		return reason;
+	}
+
+	CopyMemory(s.Sender, sender, PEER_KEY_SIZE);
+	bool has_relay = (memcmp(s.RelayKey, zero, PEER_KEY_SIZE) != 0);
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		PEER *p = PeerFind(a, sender);
+		PEER_RELAY *r = (has_relay ? PeerFindRelay(a, s.RelayKey) : NULL);
+
+		if (p == NULL)
+			reason = PEER_DROP_POLICY;
+		else if (s.Sequence <= p->Sequence)
+			reason = PEER_DROP_REPLAY;
+		else if (has_relay && (r == NULL || PeerAddrEqual(&r->Info.Addr, &s.Relay) == false))
+			reason = PEER_DROP_RELAY;
+		else {
+			p->Sequence = s.Sequence;
+			p->HasRelay = has_relay;
+			CopyMemory(p->RelayKey, s.RelayKey, PEER_KEY_SIZE);
+			p->NumCandidates = s.NumCandidates;
+			CopyMemory(p->Candidates, s.Candidates, sizeof(p->Candidates));
+
+			if (r != NULL) {
+				r->Wanted = true;
+				bind = (r->Binding == false);
+			}
+		}
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+
+	if (reason != PEER_OK) {
+		PeerDrop(a, reason);
+		return reason;
+	}
+
+	PeerCount(a, PEER_COUNT_SIGNALS);
+
+	if (bind)
+		PeerBind(a, s.RelayKey);
+
+	if (sig != NULL)
+		*sig = s;
+
+	return PEER_OK;
+}
+
+// The path that a data datagram from the address from, naming the source src, came on: from a relay that the node
+// is bound to, which checked the source at its own ingress; from a node bound to the relay role, at the address of
+// its binding; or on the direct path of the peer src. PEER_PATH_NONE when from is none of them. The caller holds the
+// lock.
+static UINT PeerSourcePath(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *src) {
+	for (UINT i = 0; i < a->NumRelays; i++) {
+		PEER_RELAY *r = &a->Relays[i];
+
+		if ((r->Binding || r->Bound) && PeerAddrEqual(&r->Info.Addr, from))
+			return PEER_PATH_RELAY;
+	}
+
+	if (a->Config.Relay) {
+		PEER_BINDING *b = PeerFindBinding(a, src);
+
+		if (b != NULL && PeerAddrEqual(&b->Addr, from))
+			return PEER_PATH_BOUND;
+	}
+
+	PEER *p = PeerFind(a, src);
+	if (p != NULL && p->HasDirect && PeerAddrEqual(&p->Direct, from))
+		return PEER_PATH_DIRECT;
+
+	return PEER_PATH_NONE;
+}
+
+// Whether two peers share a VRF
+static bool PeerShareVrf(PEER_INFO *x, PEER_INFO *y) {
+	for (UINT i = 0; i < x->NumVrfs; i++)
+		for (UINT j = 0; j < y->NumVrfs; j++)
+			if (x->VrfIds[i] == y->VrfIds[j])
+				return true;
+
+	return false;
+}
+
+// The policy of the peer layer, one check for every data datagram, whether the node takes it in or its relay role
+// forwards it: the source is a peer, and the destination is the node itself or a peer that shares a VRF with the
+// source. A relay's peers are the nodes of its VRFs, each with the VRFs it shares with the relay, so the relay
+// forwards between two nodes only inside a VRF of both. The caller holds the lock.
+static UINT PeerPolicy(PEER_AGENT *a, const UCHAR *src, const UCHAR *dst) {
+	PEER *s = PeerFind(a, src);
+
+	if (s == NULL)
+		return PEER_DROP_POLICY;
+
+	if (memcmp(dst, a->Key.Public, PEER_KEY_SIZE) == 0)
+		return PEER_OK;
+
+	PEER *d = PeerFind(a, dst);
+	if (d == NULL || PeerShareVrf(&s->Info, &d->Info) == false)
+		return PEER_DROP_POLICY;
+
+	return PEER_OK;
+}
+
+// GCRA (the generic cell rate algorithm of ITU-T I.371) on the binding of a source: a datagram passes unless it
+// comes more than the burst tolerance before its theoretical arrival time, which then moves on by one interval. It
+// takes no lock, so ingress threads that run at the same time count each datagram once.
+static bool PeerRateAllow(PEER_AGENT *a, PEER_BINDING *b) {
+	LARGE_INTEGER now;
+
+	QueryPerformanceCounter(&now);
+
+	while (true) {
+		LONG64 tat = ReadAcquire64(&b->Tat);
+		LONG64 start = (tat > now.QuadPart ? tat : now.QuadPart);
+
+		if (start - now.QuadPart > a->RateTolerance)
+			return false;
+
+		if (InterlockedCompareExchange64(&b->Tat, start + a->RateInterval, tat) == tat)
+			return true;
+	}
+}
+
+// A data datagram: delivered when it is for the node, forwarded when it is for a node bound to the relay role,
+// after one policy check either way
+static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
+	PEER_ADDR to;
+	UINT reason = PEER_OK;
+	UINT path = PEER_PATH_NONE;
+	bool forward = false;
+
+	if (size < PEER_DATA_HEADER_SIZE) {
+		PeerDrop(a, PEER_DROP_MALFORMED);
+		return;
+	}
+
+	const UCHAR *src = data + 1;
+	const UCHAR *dst = data + 1 + PEER_KEY_SIZE;
+	bool to_self = (memcmp(dst, a->Key.Public, PEER_KEY_SIZE) == 0);
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		path = PeerSourcePath(a, from, src);
+		reason = (path == PEER_PATH_NONE ? PEER_DROP_SOURCE : PeerPolicy(a, src, dst));
+
+		if (reason == PEER_OK && to_self == false) {
+			// For another node: only the relay role forwards, and only from a node bound to it to another one
+			PEER_BINDING *s = (path == PEER_PATH_BOUND ? PeerFindBinding(a, src) : NULL);
+			PEER_BINDING *d = (s != NULL ? PeerFindBinding(a, dst) : NULL);
+
+			if (s == NULL) {
+				reason = PEER_DROP_NOT_RELAY;
+			} else if (d == NULL) {
+				reason = PEER_DROP_NOT_BOUND;
+			} else if (PeerRateAllow(a, s) == false) {
+				reason = PEER_DROP_RATE;
+			} else {
+				to = d->Addr;
+				forward = true;
+			}
+		}
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	if (reason != PEER_OK) {
+		PeerDrop(a, reason);
+		return;
+	}
+
+	if (forward) {
+		// As it came: the source stays the one the relay checked
+		if (PeerSendRaw(a, &to, data, size))
+			PeerCount(a, PEER_COUNT_FORWARDED);
+		return;
+	}
+
+	PeerCount(a, PEER_COUNT_DELIVERED);
+	if (path == PEER_PATH_RELAY)
+		PeerCount(a, PEER_COUNT_DELIVERED_RELAY);
+
+	if (a->Recv != NULL)
+		a->Recv(a, a->RecvParam, src, (path == PEER_PATH_RELAY ? PEER_PATH_RELAY : PEER_PATH_DIRECT), data + PEER_DATA_HEADER_SIZE, size - PEER_DATA_HEADER_SIZE);
+}
+
+// A bind, at the relay role: a node that holds the key of a peer binds to the address the bind came from, unless
+// the bind is older than the last one of that node. The relay answers with a bound, which tells the node the
+// address it saw: its server reflexive candidate.
+static void PeerInputBind(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
+	UCHAR sender[PEER_KEY_SIZE];
+	UCHAR payload[PEER_BOUND_SIZE];
+	UCHAR env[PEER_ENVELOPE_HEADER + PEER_BOUND_SIZE + PEER_ENVELOPE_TAG];
+	UINT len = 0;
+	UINT reason = PEER_OK;
+
+	if (a->Config.Relay == false)
+		reason = PEER_DROP_NOT_RELAY;
+	else if (PeerOpen(a, data, size, sender, payload, sizeof(payload), &len) == false)
+		reason = PEER_DROP_FORGED;
+	else if (len != PEER_BIND_SIZE || payload[0] != PEER_VERSION)
+		reason = PEER_DROP_MALFORMED;
+
+	if (reason != PEER_OK) {
+		PeerDrop(a, reason);
+		return;
+	}
+
+	UINT64 seq = PeerGetUint64(payload + 1);
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		PEER_BINDING *b = PeerFindBinding(a, sender);
+
+		if (PeerFind(a, sender) == NULL) {
+			reason = PEER_DROP_POLICY;
+		} else if (b != NULL && seq <= b->Sequence) {
+			reason = PEER_DROP_REPLAY;
+		} else {
+			b = PeerAddBinding(a, sender);
+			if (b == NULL) {
+				reason = PEER_DROP_SEND;
+			} else {
+				b->Addr = *from;
+				b->Sequence = seq;
+				b->Tick = PeerNow();
+			}
+		}
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+
+	if (reason != PEER_OK) {
+		PeerDrop(a, reason);
+		return;
+	}
+
+	PeerCount(a, PEER_COUNT_BINDS);
+
+	payload[0] = PEER_VERSION;
+	PeerPutUint64(payload + 1, seq);
+	CopyMemory(payload + 9, from->Ip, sizeof(from->Ip));
+	PeerPutUint16(payload + 25, from->Port);
+
+	UINT env_size = PeerSeal(a, sender, PEER_MSG_BOUND, payload, PEER_BOUND_SIZE, env, sizeof(env));
+	if (env_size != 0)
+		PeerSendRaw(a, from, env, env_size);
+}
+
+// A bound, at a node: the answer of one of its relays, from that relay's address, to the last bind the node sent
+static void PeerInputBound(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
+	UCHAR sender[PEER_KEY_SIZE];
+	UCHAR payload[PEER_BOUND_SIZE];
+	UINT len = 0;
+	UINT reason = PEER_OK;
+
+	if (PeerOpen(a, data, size, sender, payload, sizeof(payload), &len) == false)
+		reason = PEER_DROP_FORGED;
+	else if (len != PEER_BOUND_SIZE || payload[0] != PEER_VERSION)
+		reason = PEER_DROP_MALFORMED;
+
+	if (reason != PEER_OK) {
+		PeerDrop(a, reason);
+		return;
+	}
+
+	UINT64 seq = PeerGetUint64(payload + 1);
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		PEER_RELAY *r = PeerFindRelay(a, sender);
+
+		if (r == NULL || PeerAddrEqual(&r->Info.Addr, from) == false) {
+			reason = PEER_DROP_RELAY;
+		} else if (r->Binding == false || seq != r->BindSequence) {
+			reason = PEER_DROP_REPLAY;
+		} else {
+			r->Bound = true;
+			CopyMemory(r->Observed.Ip, payload + 9, sizeof(r->Observed.Ip));
+			r->Observed.Port = PeerGetUint16(payload + 25);
+		}
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+
+	if (reason != PEER_OK)
+		PeerDrop(a, reason);
+}
+
+// The one ingress of the peer layer: every datagram that the node receives, on any path, from the address from.
+// A signal never comes as a datagram: the control plane carries it to PeerOpenSignal.
+void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
+	if (a == NULL || from == NULL || data == NULL)
+		return;
+
+	if (size == 0 || size > PEER_MAX_DATAGRAM) {
+		PeerDrop(a, PEER_DROP_MALFORMED);
+		return;
+	}
+
+	switch (data[0]) {
+	case PEER_MSG_DATA:
+		PeerInputData(a, from, data, size);
+		break;
+	case PEER_MSG_BIND:
+		PeerInputBind(a, from, data, size);
+		break;
+	case PEER_MSG_BOUND:
+		PeerInputBound(a, from, data, size);
+		break;
+	default:
+		PeerDrop(a, PEER_DROP_MALFORMED);
+		break;
+	}
+}
+
+// Send one datagram of data to the peer of dst on its path now (PeerGetStatus): the direct path once ICE validated
+// one, else the relay of the peer's last signal. False when dst is no peer, has no path yet or size is above
+// PEER_MAX_PAYLOAD.
+bool PeerSend(PEER_AGENT *a, const UCHAR *dst, const void *data, UINT size) {
+	UCHAR buf[PEER_MAX_DATAGRAM];
+	PEER_ADDR to;
+	UINT path = PEER_PATH_NONE;
+
+	if (a == NULL || dst == NULL || (data == NULL && size != 0) || size > PEER_MAX_PAYLOAD)
+		return false;
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		PEER *p = PeerFind(a, dst);
+
+		if (p != NULL) {
+			path = PeerPathOf(a, p);
+			if (path == PEER_PATH_DIRECT)
+				to = p->Direct;
+			else if (path == PEER_PATH_RELAY)
+				to = PeerFindRelay(a, p->RelayKey)->Info.Addr;
+		}
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	if (path == PEER_PATH_NONE)
+		return false;
+
+	buf[0] = PEER_MSG_DATA;
+	CopyMemory(buf + 1, a->Key.Public, PEER_KEY_SIZE);
+	CopyMemory(buf + 1 + PEER_KEY_SIZE, dst, PEER_KEY_SIZE);
+	if (size != 0)
+		CopyMemory(buf + PEER_DATA_HEADER_SIZE, data, size);
+
+	return PeerSendRaw(a, &to, buf, PEER_DATA_HEADER_SIZE + size);
+}
+
+// The timer of the peer layer, at least once a second: the relay role drops the bindings that were not renewed in
+// BindExpiry, and the node renews or retries its own binds
+void PeerTick(PEER_AGENT *a) {
+	if (a == NULL)
+		return;
+
+	if (a->Config.Relay) {
+		UINT64 now = PeerNow();
+
+		AcquireSRWLockExclusive(&a->Lock);
+		{
+			UINT n = 0;
+
+			for (UINT i = 0; i < a->NumBindings; i++) {
+				if (now - a->Bindings[i].Tick >= a->Config.BindExpiry)
+					continue;
+				if (n != i)
+					a->Bindings[n] = a->Bindings[i];
+				n++;
+			}
+
+			a->NumBindings = n;
+		}
+		ReleaseSRWLockExclusive(&a->Lock);
+	}
+
+	PeerBindWanted(a);
+}
+
+// How the node reaches the peer of key; false when key is no peer
+bool PeerGetStatus(PEER_AGENT *a, const UCHAR *key, PEER_STATUS *st) {
+	bool ret = false;
+
+	if (st == NULL)
+		return false;
+
+	ZeroMemory(st, sizeof(PEER_STATUS));
+	if (a == NULL || key == NULL)
+		return false;
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		PEER *p = PeerFind(a, key);
+
+		if (p != NULL) {
+			st->Path = PeerPathOf(a, p);
+			if (p->HasRelay)
+				CopyMemory(st->RelayKey, p->RelayKey, PEER_KEY_SIZE);
+			st->NumCandidates = p->NumCandidates;
+			st->Sequence = p->Sequence;
+			ret = true;
+		}
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	return ret;
+}
+
+// The counters of the peer layer
+void PeerGetStats(PEER_AGENT *a, PEER_STATS *st) {
+	if (st == NULL)
+		return;
+
+	ZeroMemory(st, sizeof(PEER_STATS));
+	if (a == NULL)
+		return;
+
+	st->Sent = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_SENT]);
+	st->Delivered = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_DELIVERED]);
+	st->DeliveredRelay = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_DELIVERED_RELAY]);
+	st->Forwarded = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_FORWARDED]);
+	st->Binds = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_BINDS]);
+	st->Signals = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_SIGNALS]);
+	for (UINT i = 0; i < PEER_NUM_REASONS; i++)
+		st->Drops[i] = (UINT64)ReadAcquire64(&a->Drops[i]);
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		st->NumBindings = a->NumBindings;
+		for (UINT i = 0; i < a->NumRelays; i++)
+			if (a->Relays[i].Bound)
+				st->NumBound++;
+	}
+	ReleaseSRWLockShared(&a->Lock);
+}
+
+// An IPv4 address b0.b1.b2.b3 and a port, as an IPv4-mapped IPv6 address
+void PeerAddrSetV4(PEER_ADDR *a, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, USHORT port) {
+	if (a == NULL)
+		return;
+
+	ZeroMemory(a, sizeof(PEER_ADDR));
+	a->Ip[10] = 0xFF;
+	a->Ip[11] = 0xFF;
+	a->Ip[12] = b0;
+	a->Ip[13] = b1;
+	a->Ip[14] = b2;
+	a->Ip[15] = b3;
+	a->Port = port;
+}
+
+bool PeerAddrEqual(const PEER_ADDR *a, const PEER_ADDR *b) {
+	return a->Port == b->Port && memcmp(a->Ip, b->Ip, sizeof(a->Ip)) == 0;
+}
+
+// The name of a reason of PEER_DROP_* in the counters, for logs and tests
+const char *PeerReasonName(UINT reason) {
+	static const char *names[PEER_NUM_REASONS] = {"ok", "malformed", "forged", "replay", "policy", "source", "not a relay", "not bound", "rate", "relay", "send"};
+
+	return (reason < PEER_NUM_REASONS ? names[reason] : "unknown");
+}

@@ -1,0 +1,5 @@
+# A Signal without an envelope ends the stream of the node that sent it.
+refuse: {
+  reason: REFUSE_REASON_PROTOCOL
+  message: "a Signal with an envelope of 0 bytes, not 1 to 1024"
+}

@@ -34,6 +34,8 @@ static const char *body_name(pb_size_t which) {
 		return "Ack";
 	case ranz_control_v1_ControlMessage_refuse_tag:
 		return "Refuse";
+	case ranz_control_v1_ControlMessage_signal_tag:
+		return "Signal";
 	case ranz_control_v1_ControlMessage_controllers_tag:
 		return "Controllers";
 	default:
@@ -98,6 +100,9 @@ static int roundtrip(const char *path) {
 		break;
 	case ranz_control_v1_ControlMessage_controllers_tag:
 		printf("%s: Controllers, %u members\n", path, (unsigned)msg.body.controllers.controllers_count);
+		break;
+	case ranz_control_v1_ControlMessage_signal_tag:
+		printf("%s: Signal peer \"%s\", %u bytes of envelope\n", path, msg.body.signal.peer, (unsigned)msg.body.signal.envelope.size);
 		break;
 	default:
 		fprintf(stderr, "%s: a control message with no body\n", path);

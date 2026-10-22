@@ -10,10 +10,11 @@ add_library(corecrypto STATIC ${SOURCES_CORE_CRYPTO} ${HEADERS_CORE_CRYPTO})
 # The src root: a unit includes "Core/Crypto.h"
 target_include_directories(corecrypto PUBLIC "${TOP_DIRECTORY}/src")
 
-# The new core's build options (cmake/RanzOptions.cmake) for the module and every target that
-# links it; the warning flags stay on the module (cmake/RanzWarnings.cmake)
-target_link_libraries(corecrypto PUBLIC ranz_core_options)
-target_link_libraries(corecrypto PRIVATE ranz_warnings)
+# The new core's build options (cmake/RanzOptions.cmake) and the warning flags
+# (cmake/RanzWarnings.cmake) stay on the module. A program of the new core gets the options from
+# ranz_add_executable(CORE); a program of the slim fork that links the module, vpntest for the
+# node's Login (CORE-F2, #62), keeps the API level of ranz_options.
+target_link_libraries(corecrypto PRIVATE ranz_core_options ranz_warnings)
 
 # The only libraries the module calls
 target_link_libraries(corecrypto
@@ -29,6 +30,54 @@ set_target_properties(corecrypto
   LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   COMPILE_PDB_NAME "corecrypto"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
+# corenoise: the session module (Noise.h, Noise*.c; CORE-F2, #62), the Noise_IK handshake, the
+# Noise session and the tunnel over the crypto module, which is all it links
+file(GLOB SOURCES_CORE_NOISE "Noise*.c")
+file(GLOB HEADERS_CORE_NOISE "Noise*.h")
+
+add_library(corenoise STATIC ${SOURCES_CORE_NOISE} ${HEADERS_CORE_NOISE})
+
+target_link_libraries(corenoise PUBLIC corecrypto)
+target_link_libraries(corenoise PRIVATE ranz_core_options ranz_warnings)
+
+set_target_properties(corenoise
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "corenoise"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
+# corepeer: the peer module (Peer.h, Peer*.c; CORE-S5-2, #78): the peer layer of a node, the relay role and the
+# envelopes of binds and signals, on the crypto module and Winsock. The Node module of Cedar links it too, so
+# ranz_core_options and the crypto module stay PRIVATE: a target that links corepeer keeps its own build options
+# and gets the two libraries for the link only.
+file(GLOB SOURCES_CORE_PEER "Peer*.c")
+file(GLOB HEADERS_CORE_PEER "Peer*.h")
+
+add_library(corepeer STATIC ${SOURCES_CORE_PEER} ${HEADERS_CORE_PEER})
+
+target_include_directories(corepeer PUBLIC "${TOP_DIRECTORY}/src")
+
+target_link_libraries(corepeer PRIVATE ranz_core_options ranz_warnings)
+
+# The only libraries the module calls
+target_link_libraries(corepeer
+  PRIVATE
+    corecrypto
+    "ws2_32.lib"
+)
+
+set_target_properties(corepeer
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "corepeer"
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 

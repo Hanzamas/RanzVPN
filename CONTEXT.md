@@ -4,7 +4,7 @@ Slimmed fork of SoftEther VPN (C, CMake): native SE-VPN protocol only, Windows 1
 
 ## Module map
 
-A module is one `X.c` / `X.h` pair under `src/Mayaqua`, `src/Cedar` or `src/Core` (the new core). The files split out of a god file (#29) belong to that file's module and use its header as their API header. Declarations that only those files need are in the module-internal header `XInternal.h`, which only the module's own files include. Encrypt is named differently: its API header is `Encrypt.h`, its code is `src/Mayaqua/Crypto/*.c` and its internal header is `Crypto/Cng.h`. The tree has 53 modules (23 in Mayaqua, 29 in Cedar, 1 in Core) and four headers without code: MayaType.h, Platform.h, CedarType.h, and `src/GlobalConst.h` (the product name strings, included by Cedar.h, FileIO, Mayaqua and Microsoft).
+A module is one `X.c` / `X.h` pair under `src/Mayaqua`, `src/Cedar` or `src/Core` (the new core). The files split out of a god file (#29) belong to that file's module and use its header as their API header. Declarations that only those files need are in the module-internal header `XInternal.h`, which only the module's own files include. Encrypt is named differently: its API header is `Encrypt.h`, its code is `src/Mayaqua/Crypto/*.c` and its internal header is `Crypto/Cng.h`. The tree has 55 modules (23 in Mayaqua, 29 in Cedar, 3 in Core) and four headers without code: MayaType.h, Platform.h, CedarType.h, and `src/GlobalConst.h` (the product name strings, included by Cedar.h, FileIO, Mayaqua and Microsoft).
 
 The Uses and Used by columns are generated from the tree, not written by hand:
 
@@ -18,9 +18,9 @@ Executables:
 - `vpnserver` uses, in Cedar: Cedar, Server; in Mayaqua: Mayaqua, Microsoft.
 - `vpncmd` uses, in Cedar: Cedar, Command; in Mayaqua: Internat, Kernel, Mayaqua, Memory, Microsoft.
 - `ranz-node` uses, in Cedar: Cedar, Node; in Mayaqua: Mayaqua, Microsoft.
-- `vpntest` uses, in Cedar: all except Bridge, Link, RpcField, Win32Com (Sam for its types and macros only); in Mayaqua: all except Tracking.
-- `fuzz` uses, in Cedar: Protocol; in Mayaqua: Cfg, Encrypt, HTTP, IpAddr, Mayaqua, Memory, Network, Pack, Stun, TcpIp.
-- `coretest` uses, in Core: Crypto; nothing of Cedar or Mayaqua.
+- `vpntest` uses, in Cedar: all except Bridge, Link, RpcField, Win32Com (Sam for its types and macros only); in Mayaqua: all except Tracking; in Core: Crypto, Noise, Peer.
+- `fuzz` uses, in Cedar: Protocol; in Mayaqua: Cfg, Encrypt, HTTP, IpAddr, Mayaqua, Memory, Network, Pack, Stun, TcpIp; in Core: Noise, Peer.
+- `coretest` uses, in Core: Crypto, Noise, Peer; nothing of Cedar or Mayaqua.
 
 ### Mayaqua (`src/Mayaqua`)
 
@@ -38,7 +38,7 @@ Executables:
 | Str | ANSI and UTF-8 string helpers, formatting, tokenising and `Debug()` | `TOKEN_LIST` | Internat, Mayaqua, Memory, Trace | In Mayaqua: all. In Cedar: all except Tunables. Programs: `vpntest` |
 | Internat | Wide-string (`Uni*`) helpers and conversion between UTF-16, UTF-8 and the ANSI code page | `UNI_TOKEN_LIST` | Mayaqua, Memory, Str, Win32 | In Mayaqua: Cfg, Encrypt, FileIO, HTTP, Kernel, Memory, Microsoft, Pack, Str, Table, Win32. In Cedar: Account, Admin, BridgeWin32, Cedar, Command, ConfigStore, Console, Eraser, Hub, HubLog, Link, LogWriter, Node, PacketLog, Protocol, Sam, SeLowUser, Server, Syslog. Programs: `vpncmd`, `vpntest` |
 | FileIO | Files, directories and paths, the executable name, and hamcore (`|name` files from PE resources or a loose folder); it also defines the `Win32*` file functions of Win32.h and Platform.h | `IO`, `DIRENT`, `DIRLIST`, `HC` | Internat, Kernel, Mayaqua, Memory, Str, Win32 | In Mayaqua: Cfg, Mayaqua, Memory, Microsoft, Network, Win32. In Cedar: Admin, Cedar, Command, ConfigStore, Console, Eraser, Hub, HubLog, LogWriter, Node, Protocol, SeLowUser, Server, Win32Com. Programs: `vpntest` |
-| Encrypt: `Encrypt.h`, `Crypto/*.c` (9 files), `Crypto/Cng.h` | Cryptography: hashes, random numbers and RC4 on CNG; AEAD, RSA, DH, X.509 and PEM on OpenSSL; SHA-0 own code; the start-up of both libraries | `X`, `K`, `NAME`, `X_SERIAL`, `CIPHER`, `CRYPT`, `DH_CTX` | Internat, Kernel, Memory, Str, Trace, Win32; types and macros only: Mayaqua | In Mayaqua: Cfg, Kernel, Mayaqua, Memory, Microsoft, Network, Pack, Stun. In Cedar: Account, Admin, BridgeWin32, Cedar, Command, ConfigStore, Connection, Hub, Link, Protocol, Sam, SeLowUser, Server, Session, UdpAccel, WaterMark; types and macros only: Remote. Programs: `vpntest`, `fuzz` |
+| Encrypt: `Encrypt.h`, `Crypto/*.c` (9 files), `Crypto/Cng.h` | Cryptography: hashes, random numbers and RC4 on CNG; AEAD, RSA, DH, X.509 and PEM on OpenSSL; SHA-0 own code; the start-up of both libraries | `X`, `K`, `NAME`, `X_SERIAL`, `CIPHER`, `CRYPT`, `DH_CTX` | Internat, Kernel, Memory, Str, Trace, Win32; types and macros only: Mayaqua | In Mayaqua: Cfg, Kernel, Mayaqua, Memory, Microsoft, Network, Pack, Stun. In Cedar: Account, Admin, BridgeWin32, Cedar, Command, ConfigStore, Connection, Hub, Link, Node, Protocol, Sam, SeLowUser, Server, Session, UdpAccel, WaterMark; types and macros only: Remote. Programs: `vpntest`, `fuzz` |
 | Mayaqua | Library start-up and shut-down in a fixed order, the fatal exit, minimal mode, OS information and the kernel status counters (`KS_*`) | none | Encrypt, FileIO, Kernel, Memory, Microsoft, Network, Object, Str, Table, Tick64, Trace, Tracking, Win32 | In Mayaqua: FileIO, Internat, Kernel, Memory, Microsoft, Object, Str, Table, Tracking; types and macros only: Encrypt, Win32. In Cedar: Admin, Cedar, Command, Protocol, Server, WaterMark; types and macros only: Eraser, HubLog. Programs: `vpnserver`, `vpncmd`, `ranz-node`, `vpntest`, `fuzz` |
 | Cfg | The text configuration tree and its reader and writer, with the staged save and the set-aside of a bad file | `FOLDER`, `ITEM`, `CFG_RW` | Encrypt, FileIO, Internat, IpAddr, Kernel, Memory, Object, Str | In Mayaqua: Network, Table, TcpIp. In Cedar: Account, Admin, Cedar, ConfigStore, Console, Hub, SeLowUser, Server, Tunables. Programs: `vpntest`, `fuzz` |
 | Table | The string table (`_SS`, `_UU`, `_II`, `_E`), the language list and `$lang.config` | `TABLE`, `LANGLIST` | Cfg, Internat, Kernel, Mayaqua, Memory, Microsoft, Str | In Mayaqua: Mayaqua; types and macros only: Microsoft. In Cedar: Admin, Command, Connection, Protocol, Session; types and macros only: Account, Cedar, Console, Hub, HubLog, LogWriter, Server. Programs: `vpntest` |
@@ -84,7 +84,7 @@ Executables:
 | PacketLog | The packet log of a Hub: which frames are logged, and their CSV line | `PACKET_LOG` | Cedar, Hub, LogWriter, Server, Session; types and macros only: HubLog | Internat, IpAddr, Kernel, Memory, Object, Str, TcpIp | Hub. Programs: `vpntest` |
 | Syslog | The syslog sender: one UDP datagram per log line | `SLOG` | LogWriter | DNS, Internat, IpAddr, Memory, Network, Object, Str, Tick64 | Server; types and macros only: Command. Programs: `vpntest` |
 | Eraser | Deletes the oldest log files while the free disk space is below the minimum | `ERASER` | LogWriter | FileIO, Internat, Kernel, Memory, Object, Str; types and macros only: Mayaqua | Server. Programs: `vpntest` |
-| Node: `Node.c`, `NodeBgp.c`, `NodeTable.c`, `NodeWorker.c`, `NodeInternal.h` | The Node of the new core (`ranz-node`, service `ranzvpnserver`): its data directory under ProgramData with a protected DACL, Roles from its Configuration store and the control plane (`NodeSetRoles`), the one-time import of a fork Config file found there, one Worker per core, one I/O thread per Adapter queue, the Table snapshot swapped by pointer, the Hubs of the server role and their credential gate through Sam (`NodeAuthenticate`), and the BGP sidecar with its learned routes in the Windows routing table through IP Helper (`NodeBgp.c`) | `NODE`, `NODE_WORKER`, `NODE_QUEUE`, `NODE_READER`, `NODE_TABLES`, `NODE_BGP` | Cedar, ConfigStore, Hub, LogWriter, Sam, Server | FileIO, Internat, Memory, Object, Str | Programs: `ranz-node`, `vpntest` |
+| Node: `Node.c`, `NodeBgp.c`, `NodeTable.c`, `NodeWorker.c`, `NodeInternal.h` | The Node of the new core (`ranz-node`, service `ranzvpnserver`): its data directory under ProgramData with a protected DACL, Roles from its Configuration store and the control plane (`NodeSetRoles`), the one-time import of a fork Config file found there, one Worker per core, one I/O thread per Adapter queue, the Table snapshot swapped by pointer, the Hubs of the server role and their credential gate through Sam (`NodeAuthenticate`), which checks the Login of a Noise session (`NodeLogin`), the relay role on the Peer module of the new core, under the node identity key, with the peers that the control plane sets (`NodeSetPeers`), and the BGP sidecar with its learned routes in the Windows routing table through IP Helper (`NodeBgp.c`) | `NODE`, `NODE_WORKER`, `NODE_QUEUE`, `NODE_READER`, `NODE_TABLES`, `NODE_BGP` | Cedar, ConfigStore, Hub, LogWriter, Sam, Server; in Core: Peer; in Core, types and macros only: Noise | Encrypt, FileIO, Internat, Memory, Object, Str | Programs: `ranz-node`, `vpntest` |
 | ConfigStore: `ConfigStore.c`, `ConfigStoreImport.c`, `ConfigStoreInternal.h` | The Configuration store of the new core: a SQLite database through the `winsqlite3.dll` of System32 (settings, networks, users with PBKDF2 password hashes and pinned keys, listeners, certificates, named admin accounts with roles), its text dump, and the one-time import of a fork Config file (`CsImportForkConfig`) | `CONFIG_STORE`, `CS_NETWORK`, `CS_USER`, `CS_ADMIN`, `CS_IMPORT` | Account; types and macros only: Cedar | Cfg, Encrypt, FileIO, Internat, Kernel, Memory, Object, Str | Node. Programs: `vpntest` |
 
 ### Core (`src/Core`)
@@ -93,7 +93,9 @@ The new core (ADR-0022). Each of its modules is a static library of its own that
 
 | Module | Contract | Main types | Uses | Used by |
 |---|---|---|---|---|
-| Crypto: `Crypto.h`, `Crypto.c`, `CryptoX25519.c`, `CryptoMlKem.c`, `CryptoCert.c`, `CryptoInternal.h` (library `corecrypto`) | X25519, AES-GCM, SHA-256, HMAC-SHA256, HKDF and random bytes on CNG; the X25519MLKEM768 hybrid where CNG has ML-KEM; the node identity key in the Microsoft Software Key Storage Provider; self-signed ECDSA P-256 certificates, PFX import and the certificate stores through CryptoAPI | `CRYPTO_SHA256`, `CRYPTO_AEAD`, `CRYPTO_IDENTITY`, `CRYPTO_HYBRID` | none (the system libraries bcrypt, ncrypt and crypt32) | Programs: `coretest` |
+| Crypto: `Crypto.h`, `Crypto.c`, `CryptoX25519.c`, `CryptoMlKem.c`, `CryptoCert.c`, `CryptoInternal.h` (library `corecrypto`) | X25519, AES-GCM, SHA-256, HMAC-SHA256, HKDF and random bytes on CNG; the X25519MLKEM768 hybrid where CNG has ML-KEM; the node identity key in the Microsoft Software Key Storage Provider; self-signed ECDSA P-256 certificates, PFX import and the certificate stores through CryptoAPI | `CRYPTO_SHA256`, `CRYPTO_AEAD`, `CRYPTO_IDENTITY`, `CRYPTO_HYBRID`, `CRYPTO_MLKEM` | none (the system libraries bcrypt, ncrypt and crypt32) | In Core: Noise, Peer. Programs: `coretest`, `vpntest`, `fuzz` |
+| Noise: `Noise.h`, `Noise.c`, `NoiseSession.c` (library `corenoise`) | The session module: the Noise_IK handshake (`Noise_IK_25519_AESGCM_SHA256`, and `Noise_IKhfs_25519+MLKEM768_AESGCM_SHA256` where CNG has ML-KEM); the Noise session over it, bound to its outer TLS or QUIC session by the Channel binding, with a data stream and a control stream, keepalive, rekey on a schedule and the dead-peer timeout; the Login; the Tunnel | `NOISE_CIPHER`, `NOISE_HANDSHAKE`, `NOISE_SESSION`, `NOISE_LOGIN`, `NOISE_TUNNEL` | Crypto | Programs: `coretest`, `vpntest`, `fuzz`; types and macros only: Node |
+| Peer: `Peer.h`, `Peer.c`, `PeerSignal.c`, `PeerUdp.c`, `PeerInternal.h` (library `corepeer`) | The peer layer of a node (ADR-0015): the peer table and the Relays that the control plane sets, the Bindings of the node to its relays, the Path to each peer, the relay role, and `PeerInput`, the one ingress of every datagram with one policy check for a datagram the node takes and one its relay role forwards; Signals and binds sealed with the Noise one-way pattern K between node static keys; a UDP socket on Winsock that stands in for the QUIC datagrams of CORE-S1-1 | `PEER_AGENT`, `PEER_KEY`, `PEER_INFO`, `PEER_RELAY_INFO`, `PEER_SIGNAL`, `PEER_UDP` | Crypto (and the system library ws2_32) | In Cedar: Node. Programs: `coretest`, `vpntest`, `fuzz` |
 
 ### Dependency cycles
 
@@ -216,7 +218,7 @@ The 20 bytes that `GenerateMachineUniqueHash` returns for a server: a hash of th
 _Avoid_: machine ID (Windows' name for the MachineGuid), `UniqueId` (a random value per `CEDAR`, copied into `NODE_INFO`)
 
 **Node**:
-One Windows host running `ranz-node`, the data plane, in one or more Roles (`server`, `client`, `bridge`, `relay`). It joins VRFs and applies the desired state that the Controller sends it. `ranz-node` is the new core's one binary, installed as the `ranzvpnserver` service (ADR-0011, ADR-0020 decision 4), and its in-process object is `NODE` (the Node module): the Roles of its configuration, one Worker per core, one I/O thread per Adapter queue and the Table snapshot. It reuses the fork's Hub, Account, Sam and Logging in-process, and Cfg for the one-time import of a fork Config file. Its data directory is `%ProgramData%\Hanzcodes\Ranz VPN` (`NodeDefaultDataDir`), whose protected DACL lets only SYSTEM and the Administrators in (`NodeMakeDataDir`); it holds the Configuration store `ranz_node.db` and `node_log`.
+One Windows host running `ranz-node`, the data plane, in one or more Roles (`server`, `client`, `bridge`, `relay`). It joins VRFs and applies the desired state that the Controller sends it. `ranz-node` is the new core's one binary, installed as the `ranzvpnserver` service (ADR-0011, ADR-0020 decision 4), and its in-process object is `NODE` (the Node module): the Roles of its configuration, one Worker per core, one I/O thread per Adapter queue and the Table snapshot. It reuses the fork's Hub, Account, Sam and Logging in-process, and Cfg for the one-time import of a fork Config file. Its data directory is `%ProgramData%\Hanzcodes\Ranz VPN` (`NodeDefaultDataDir`), whose protected DACL lets only SYSTEM and the Administrators in (`NodeMakeDataDir`); it holds the Configuration store `ranz_node.db` and `node_log`. Its identity key, the Noise static key, is a key of the software KSP named by the `IdentityKey` setting of the Configuration store (`Ranz Node` without it), in the machine key set when the process runs elevated, as the service does.
 _Avoid_: agent, server (the slim fork's `vpnserver`, or the server Role), peer (the other end of a link), client product
 
 **Role**:
@@ -234,9 +236,25 @@ One queue of an adapter (the Wintun ring, the AF_XDP queue of a KM-TEST adapter)
 The read-mostly MAC, route and policy tables of a Node (`NODE_TABLES`), rebuilt off the data path and installed by pointer (`NodeSwapTables`). Readers (Workers, Adapter queue threads) read it without a lock between two quiescent points; a swap frees the old snapshot only after every online reader passed one (the grace period), so no reader sees a torn or freed table.
 _Avoid_: MAC table (the Hub's `MAC_TABLE_ENTRY` hash list), routing table (the Windows one)
 
+**Noise session**:
+One connection between two Nodes after a Noise_IK handshake that authenticated both by their node identity keys (`NOISE_SESSION`, the Noise module): the records of a data stream and a control stream, keepalive, rekey on a schedule and the dead-peer timeout. The Channel binding ties it to the outer TLS or QUIC session, which encrypts its records once (ADR-0023); only a session that nothing binds, the CDN path of phase 2, encrypts its records under the Noise keys.
+_Avoid_: Session (the Hub's `SESSION`), Connection (`CONNECTION`), Tunnel (several connections)
+
+**Channel binding**:
+The value of the outer TLS or QUIC session in the prologue of a Noise handshake: its TLS exporter, or `tls-server-end-point` (the hash of the pinned server certificate) where the stack has no exporter. A handshake whose two sides saw different values fails, so an outer session that a third party terminates is closed.
+
+**Login**:
+The first control message of a Noise session (`NOISE_LOGIN`): the hub, the user and a password, or a certificate with its signature of the session's challenge. The server Role's Sam checks it (`NodeLogin`); a further connection of a Tunnel sends the Tunnel's id instead.
+_Avoid_: the SE-VPN login (`ServerAccept`), which the Login replaces in the new core
+
+**Tunnel**:
+The Noise sessions of up to 16 connections between the same two Nodes (`NOISE_TUNNEL`), each bound to its own outer session. Inner flows are spread over them by a flow hash, so one flow keeps its order; a lost connection's flows move to the others, and the Tunnel stays up while one connection is left.
+_Avoid_: Cascade, link
+
 **BGP sidecar**:
 `ranz-bgp` (`ranz-bgp/`, Go), a separate process that embeds GoBGP as a library and peers with the operator's own routers on TCP 179 (ADR-0010, ADR-0022). A Node starts it only when its `Bgp` setting names peers (`NodeBgp.c`), talks to it over a named pipe with JSON messages, one per line (start, announce and withdraw from the Node; ready, peer, learned, withdrawn and error from the sidecar), and installs the learned routes into the Windows routing table through IP Helper; the sidecar installs none itself. It is the optional RanzBgp feature of the MSI.
 _Avoid_: BGP daemon, BGP role (it is no Role), RRAS BGP
+
 
 ## SDN language (new core)
 
@@ -302,6 +320,22 @@ _Avoid_: SecureNAT, NAT mode
 A fact that a Node reports about its host (SKU, architecture, Hyper-V, LBFO, SeLow, XDP, Egress tier, the fallback to 5555), against which the Controller checks the Intent before an apply. Only a gateway or edge feature, or one a platform cannot carry (an L2 Network on arm64), needs one.
 _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
 
+**Relay**:
+A Node with the relay Role (ADR-0015). It binds the nodes of its VRFs and forwards a datagram from one of them to another only when the two share a VRF, through `PeerInput`, the same ingress where a node takes its own datagrams. It holds no state beyond the Bindings that its nodes renew, so a restart loses nothing for good. The Relay objects of a node's desired state are the relays it may use; the first one is its home relay. The `relay` item of a Node resource is the address its relay role listens on.
+_Avoid_: TURN server, DERP (the systems it is modelled on), hub
+
+**Binding**:
+The soft state of one node at a Relay: the address that the node's last bind came from. A bind is an envelope sealed with the node's static key; the node renews it every 25 s and the relay drops it after 90 s without one. The relay's answer tells the node the address it saw: the node's server reflexive candidate.
+_Avoid_: allocation (TURN), session
+
+**Path**:
+How a node reaches a peer: the relay path through a Relay, up as soon as the two have exchanged one Signal each (relay-first), or the direct path that ICE validates later (CORE-S5-3). The session layer moves between them (ADR-0015 item 7).
+_Avoid_: route (a route of a VRF), connection
+
+**Signal**:
+A message from a node to one peer that the Controller carries (`Signal` of the control protocol): the relay assignment (the node's home relay) and the node's ICE candidates, as an offer or an answer. It is sealed by the node's static key to the peer's with the Noise one-way pattern K (`PeerSealSignal`), so the Controller can neither forge, alter nor redirect it, and a sequence that grows with the clock makes a replay fail.
+_Avoid_: signature (it is authenticated encryption, which only the receiver checks), SDP offer
+
 **Licence key**:
 The vendor-signed key of one installation that names its Tier, its node cap, its expiry and the version of its Perpetual fallback licence (ADR-0036). Only the Controller checks it (`internal/licence`), and it caps the Nodes in name order: a Node above the cap gets no desired state and its control stream is refused. Without a key the Personal Tier of 10 Nodes is in force.
 _Avoid_: licence file, serial, activation code
@@ -313,6 +347,7 @@ _Avoid_: plan, edition, SKU (a Windows SKU is a Capability)
 **Perpetual fallback licence**:
 What a subscription leaves after 12 paid months: once it expires, the version its Licence key names (major.minor, with its bugfix releases and every older version) stays licensed with the Tier and node cap of the subscription. A subscription that expires without one for the running version leaves the Personal Tier.
 _Avoid_: lifetime licence, grace period
+
 
 ## Flagged ambiguities
 
@@ -329,6 +364,8 @@ _Avoid_: lifetime licence, grace period
 - PACK over HTTP (`PackHttp.c`) is part of HTTP, not of Pack.
 - "Network" names three things: the SDN resource (a segment inside a VRF, the successor of the Hub), the Mayaqua Network module (sockets), and a word the Hub entry tells you to avoid. In slim-fork text say Hub; say Network only for the SDN resource.
 - "Node" is a new-core host running `ranz-node`, the new core's binary, and its `NODE` object. `NODE_INFO` (Session) is unrelated: the record of a connecting client's host details that a SE-VPN login sends, not a Node.
+- "Session" is the slim fork's `SESSION`, one peer attached to a Hub. The new core's connection between two Nodes is the Noise session (`NOISE_SESSION`); say Noise session for it.
+- "Login" is the Login of a Noise session (`NOISE_LOGIN`). The slim fork's login is the SE-VPN login (`ServerAccept`, `ClientUploadAuth`); both end in Sam.
 - "Capability" is what a Node reports to the Controller. `CAPS` (`ServerCaps.c`) is the slim fork's list of server capabilities for admin clients.
 - "Role" is what a Node does (`server`, `client`, `bridge`, `relay`). The `admin`, `operator` and `viewer` of the Controller's API are API roles, held by an API token; say API role for them.
 - "controller" was a role of the node binary in ADR-0022. Since ADR-0026 the Controller is the separate `ranz-controller` service, and the node has no `controller` role.
@@ -337,3 +374,5 @@ _Avoid_: lifetime licence, grace period
 - "Licence" is the noun in prose and code (`licence`, `REFUSE_REASON_LICENCE`); "license" is the verb ("licensed") and the name of the `LICENSE` file at the repository root.
 - "Configuration" is the Config file of the slim fork (`ranz_server.config`, Cfg) or the Configuration store of a Node (`ranz_node.db`, ConfigStore). Say which one.
 - "Server" names the slim fork's `vpnserver` and its `SERVER` object, and the server Role of a Node. The service of the Node is `ranzvpnserver`; the one of `vpnserver` is still `sevpnserverdev`.
+- "Peer" names the other end of a link, the Peer object of a node's desired state (another node that shares a VRF with it), and the Peer module of the new core (`src/Core/Peer*.c`), which keeps a node's peers.
+- "Relay" names the relay Role, a Node that runs it, and the Relay object of the desired state, which tells a node about such a Node.

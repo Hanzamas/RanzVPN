@@ -1,7 +1,8 @@
 // CryptoMlKem.c
-// ML-KEM-768 on CNG where the OS has it (Windows 11 24H2, Windows Server 2025 and later), and the
-// X25519MLKEM768 hybrid of draft-ietf-tls-ecdhe-mlkem on top of it. Where CNG has no ML-KEM the
-// hybrid is not offered (CryptoKeyExchangeGroups) and its functions fail without side effects.
+// ML-KEM-768 on CNG where the OS has it (Windows 11 24H2, Windows Server 2025 and later): alone,
+// for the Noise hfs handshake, and in the X25519MLKEM768 hybrid of draft-ietf-tls-ecdhe-mlkem.
+// Where CNG has no ML-KEM the hybrid is not offered (CryptoKeyExchangeGroups) and the functions
+// fail without side effects.
 
 #include "Core/CryptoInternal.h"
 
@@ -67,7 +68,7 @@ static void CryptoMlKemBlobFromKey(UCHAR *blob, const UCHAR *encaps_key) {
 
 // A new ML-KEM-768 key pair and its raw encapsulation key. The parameter set is set on the key
 // and, by CryptoInit(), on the provider; the exported blob must name 768 either way.
-static BCRYPT_KEY_HANDLE CryptoMlKemGenerate(UCHAR *encaps_key) {
+static BCRYPT_KEY_HANDLE CryptoMlKemNewKey(UCHAR *encaps_key) {
 	UCHAR blob[CRYPTO_MLKEM_PUBLIC_BLOB_SIZE];
 	BCRYPT_KEY_HANDLE key = NULL;
 	ULONG size = 0;
@@ -85,6 +86,85 @@ static BCRYPT_KEY_HANDLE CryptoMlKemGenerate(UCHAR *encaps_key) {
 	return NULL;
 }
 
+bool CryptoMlKemGenerate(CRYPTO_MLKEM *k, UCHAR *encaps_key) {
+	if (k == NULL)
+		return false;
+
+	k->Key = NULL;
+	if (encaps_key == NULL || CryptoMlKemAvailable() == false)
+		return false;
+
+	k->Key = CryptoMlKemNewKey(encaps_key);
+	if (k->Key == NULL) {
+		ZeroMemory(encaps_key, CRYPTO_MLKEM768_ENCAPS_KEY_SIZE);
+		return false;
+	}
+
+	return true;
+}
+
+bool CryptoMlKemEncapsulate(UCHAR *ciphertext, UCHAR *secret, const UCHAR *encaps_key) {
+	UCHAR blob[CRYPTO_MLKEM_PUBLIC_BLOB_SIZE];
+	BCRYPT_KEY_HANDLE key = NULL;
+	ULONG secret_size = 0;
+	ULONG ciphertext_size = 0;
+	bool ok = false;
+
+	if (ciphertext == NULL || secret == NULL)
+		return false;
+
+	if (encaps_key != NULL && CryptoMlKemAvailable()) {
+		CryptoMlKemBlobFromKey(blob, encaps_key);
+		if (CNG_SUCCESS(BCryptImportKeyPair(crypto_mlkem, NULL, CRYPTO_MLKEM_PUBLIC_BLOB, &key, blob, sizeof(blob), 0))) {
+			if (CNG_SUCCESS(crypto_encapsulate(key, secret, CRYPTO_MLKEM_SECRET_SIZE, &secret_size,
+			                                   ciphertext, CRYPTO_MLKEM768_CIPHERTEXT_SIZE, &ciphertext_size, 0)) &&
+			    secret_size == CRYPTO_MLKEM_SECRET_SIZE && ciphertext_size == CRYPTO_MLKEM768_CIPHERTEXT_SIZE)
+				ok = true;
+			BCryptDestroyKey(key);
+		}
+	}
+
+	if (ok == false) {
+		SecureZeroMemory(secret, CRYPTO_MLKEM_SECRET_SIZE);
+		ZeroMemory(ciphertext, CRYPTO_MLKEM768_CIPHERTEXT_SIZE);
+	}
+
+	return ok;
+}
+
+bool CryptoMlKemDecapsulate(CRYPTO_MLKEM *k, UCHAR *secret, const UCHAR *ciphertext) {
+	ULONG secret_size = 0;
+	bool ok = false;
+
+	if (secret == NULL) {
+		CryptoMlKemFree(k);
+		return false;
+	}
+
+	// A ciphertext that was tampered with decapsulates to an unrelated secret (FIPS 203 implicit
+	// rejection), so the exchange fails later, at the first message under the secret
+	if (k != NULL && k->Key != NULL && ciphertext != NULL && crypto_decapsulate != NULL &&
+	    CNG_SUCCESS(crypto_decapsulate(k->Key, (PUCHAR)ciphertext, CRYPTO_MLKEM768_CIPHERTEXT_SIZE,
+	                                   secret, CRYPTO_MLKEM_SECRET_SIZE, &secret_size, 0)) &&
+	    secret_size == CRYPTO_MLKEM_SECRET_SIZE)
+		ok = true;
+
+	CryptoMlKemFree(k);
+	if (ok == false)
+		SecureZeroMemory(secret, CRYPTO_MLKEM_SECRET_SIZE);
+
+	return ok;
+}
+
+void CryptoMlKemFree(CRYPTO_MLKEM *k) {
+	if (k == NULL)
+		return;
+
+	if (k->Key != NULL)
+		BCryptDestroyKey(k->Key);
+	k->Key = NULL;
+}
+
 bool CryptoHybridBegin(CRYPTO_HYBRID *h, UCHAR *client_share) {
 	UCHAR x25519_pub[CRYPTO_X25519_SIZE];
 
@@ -96,7 +176,7 @@ bool CryptoHybridBegin(CRYPTO_HYBRID *h, UCHAR *client_share) {
 	if (client_share == NULL || CryptoMlKemAvailable() == false)
 		return false;
 
-	BCRYPT_KEY_HANDLE key = CryptoMlKemGenerate(client_share);
+	BCRYPT_KEY_HANDLE key = CryptoMlKemNewKey(client_share);
 	if (key == NULL)
 		return false;
 
@@ -113,28 +193,17 @@ bool CryptoHybridBegin(CRYPTO_HYBRID *h, UCHAR *client_share) {
 }
 
 bool CryptoHybridRespond(UCHAR *server_share, UCHAR *secret, const UCHAR *client_share) {
-	UCHAR blob[CRYPTO_MLKEM_PUBLIC_BLOB_SIZE];
 	UCHAR x25519_key[CRYPTO_X25519_SIZE];
-	BCRYPT_KEY_HANDLE encaps_key = NULL;
-	ULONG secret_size = 0;
-	ULONG ciphertext_size = 0;
 	bool ok = false;
 
 	if (server_share == NULL || secret == NULL)
 		return false;
 
-	if (client_share != NULL && CryptoMlKemAvailable()) {
-		CryptoMlKemBlobFromKey(blob, client_share);
-		if (CNG_SUCCESS(BCryptImportKeyPair(crypto_mlkem, NULL, CRYPTO_MLKEM_PUBLIC_BLOB, &encaps_key, blob, sizeof(blob), 0))) {
-			if (CNG_SUCCESS(crypto_encapsulate(encaps_key, secret, CRYPTO_MLKEM_SECRET_SIZE, &secret_size,
-			                                   server_share, CRYPTO_MLKEM768_CIPHERTEXT_SIZE, &ciphertext_size, 0)) &&
-			    secret_size == CRYPTO_MLKEM_SECRET_SIZE && ciphertext_size == CRYPTO_MLKEM768_CIPHERTEXT_SIZE &&
-			    CryptoX25519GenerateKey(x25519_key, server_share + CRYPTO_MLKEM768_CIPHERTEXT_SIZE) &&
-			    CryptoX25519(secret + CRYPTO_MLKEM_SECRET_SIZE, x25519_key, client_share + CRYPTO_MLKEM768_ENCAPS_KEY_SIZE))
-				ok = true;
-			BCryptDestroyKey(encaps_key);
-		}
-	}
+	SecureZeroMemory(x25519_key, sizeof(x25519_key));
+	if (client_share != NULL && CryptoMlKemEncapsulate(server_share, secret, client_share) &&
+	    CryptoX25519GenerateKey(x25519_key, server_share + CRYPTO_MLKEM768_CIPHERTEXT_SIZE) &&
+	    CryptoX25519(secret + CRYPTO_MLKEM_SECRET_SIZE, x25519_key, client_share + CRYPTO_MLKEM768_ENCAPS_KEY_SIZE))
+		ok = true;
 
 	SecureZeroMemory(x25519_key, sizeof(x25519_key));
 	if (ok == false) {

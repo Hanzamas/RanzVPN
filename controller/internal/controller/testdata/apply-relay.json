@@ -1,0 +1,10 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48"}},
+    {"kind": "VRF", "name": "lab", "spec": {"id": 20, "ula": "fd12:3456:789b::/48"}},
+    {"kind": "Node", "name": "branch-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"]}},
+    {"kind": "Node", "name": "branch-2", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"]}},
+    {"kind": "Node", "name": "lab-1", "spec": {"publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "vrfs": ["lab"]}},
+    {"kind": "Node", "name": "relay-1", "spec": {"publicKey": "iDGGuAC0HVzwQpaV2ps8xPMo680YSm5IL6V4wQPwbHc=", "vrfs": ["corp", "lab"], "relay": "192.0.2.10:7000"}}
+  ]
+}
