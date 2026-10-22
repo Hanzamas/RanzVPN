@@ -1,13 +1,13 @@
 //go:build !windows
 
-package main
+package controllercmd
 
 import "errors"
 
 // serviceName is the name of the Windows service.
 const serviceName = "ranz-controller"
 
-var errNotWindows = errors.New("the Windows service exists only on Windows; on Linux run ranz-controller under the init system, for example as a systemd unit")
+var errNotWindows = errors.New("the Windows service exists only on Windows; on Linux run `ranz controller` under the init system, for example as a systemd unit")
 
 func defaultDataDir() string {
 	return "/var/lib/ranz-controller"

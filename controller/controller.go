@@ -1,16 +1,18 @@
-// Command ranz-controller is the Ranz controller (#176): a Windows or Linux service that keeps
-// the intent in rqlite and serves, on one TLS port (TCP 443 by default), the Noise control
-// stream of the nodes and the HTTP API that `ranz` calls, told apart by their ALPN protocol.
+// Package controllercmd is `ranz controller`, the Ranz controller (#176): a Windows or Linux
+// service that keeps the intent in rqlite and serves, on one TLS port (TCP 443 by default), the
+// Noise control stream of the nodes and the HTTP API that `ranz` calls, told apart by their ALPN
+// protocol. Since ONE-1 (#310) it is a subcommand of the one executable ranz
+// (controller/cmd/ranz), not a program of its own: Main runs it.
 //
 // Usage:
 //
-//	ranz-controller [flags]              run in the foreground, or as the Windows service
-//	ranz-controller install [flags]      register the Windows service, which runs with these flags
-//	ranz-controller uninstall            remove the Windows service
-//	ranz-controller reset-admin [flags]  create a new admin token, with the flags of the service
-//	ranz-controller backup -o FILE [flags]
+//	ranz controller [flags]              run in the foreground, or as the Windows service
+//	ranz controller install [flags]      register the Windows service, which runs with these flags
+//	ranz controller uninstall            remove the Windows service
+//	ranz controller reset-admin [flags]  create a new admin token, with the flags of the service
+//	ranz controller backup -o FILE [flags]
 //	                                     write a backup of the whole store to FILE, with the flags of the service
-//	ranz-controller restore -f FILE [flags]
+//	ranz controller restore -f FILE [flags]
 //	                                     replace the whole store with the backup in FILE, with the flags of the service
 //
 // Ports:
@@ -33,7 +35,7 @@
 // itself, with its data in the rqlite directory under -data; without it, the controller uses the
 // rqlite at -rqlite.
 //
-// Cluster (SDN-17, ADR-0026): a cluster of 3 or 5 members runs one ranz-controller on each host,
+// Cluster (SDN-17, ADR-0026): a cluster of 3 or 5 members runs one `ranz controller` on each host,
 // each with its own rqlited, all started with the same -rqlite-join (the Raft addresses of every
 // member) and -rqlite-expect (the number of members), and each with its own -name and
 // -advertise. The members elect a leader by a lease in rqlite (internal/cluster); the others are
@@ -58,7 +60,7 @@
 // The licence key (ADR-0036) is installed with `ranz licence -f FILE` and kept in rqlite. It
 // must be signed with a vendor key that the release build links in (internal/licence); without
 // one, the Personal tier is in force.
-package main
+package controllercmd
 
 import (
 	"context"
@@ -139,7 +141,7 @@ type config struct {
 }
 
 func parseFlags(args []string) (config, error) {
-	flags := flag.NewFlagSet("ranz-controller", flag.ContinueOnError)
+	flags := flag.NewFlagSet("ranz controller", flag.ContinueOnError)
 	var cfg config
 	var join string
 	var schema int
@@ -236,17 +238,19 @@ func loopbackAddr(addr string) bool {
 	return err == nil && a.IsLoopback()
 }
 
-// mitigations and mitigationErr are what mitigation.Apply did in main, which run logs; nil when a
+// mitigations and mitigationErr are what mitigation.Apply did in Main, which run logs; nil when a
 // test calls run itself.
 var (
 	mitigations   []mitigation.Result
 	mitigationErr error
 )
 
-func main() {
+// Main is `ranz controller` with the arguments after the subcommand. It returns the exit code of
+// the process: 0 when the controller stopped or the command did what it was asked, 1 when either
+// failed, and 2 for flags that are wrong.
+func Main(args []string) int {
 	// The process mitigations of ADR-0039 before the controller starts anything
 	mitigations, mitigationErr = mitigation.Apply()
-	args := os.Args[1:]
 	if len(args) > 0 && (args[0] == "install" || args[0] == "uninstall") {
 		var err error
 		if args[0] == "install" {
@@ -258,18 +262,18 @@ func main() {
 			err = uninstall()
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "ranz-controller %s: %v\n", args[0], err)
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "ranz controller %s: %v\n", args[0], err)
+			return 1
 		}
-		fmt.Printf("ranz-controller %s: done (service %s)\n", args[0], serviceName)
-		return
+		fmt.Printf("ranz controller %s: done (service %s)\n", args[0], serviceName)
+		return 0
 	}
 	if len(args) > 0 && args[0] == "reset-admin" {
 		if err := runResetAdmin(args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "ranz-controller reset-admin: %v\n", err)
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "ranz controller reset-admin: %v\n", err)
+			return 1
 		}
-		return
+		return 0
 	}
 	if len(args) > 0 && (args[0] == "backup" || args[0] == "restore") {
 		cmd := runBackup
@@ -277,31 +281,32 @@ func main() {
 			cmd = runRestore
 		}
 		if err := cmd(args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "ranz-controller %s: %v\n", args[0], err)
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "ranz controller %s: %v\n", args[0], err)
+			return 1
 		}
-		return
+		return 0
 	}
 	cfg, err := parseFlags(args)
 	if errors.Is(err, flag.ErrHelp) {
-		return
+		return 0
 	}
 	if err != nil {
-		os.Exit(2)
+		return 2
 	}
 	if isService() {
 		if err := runService(cfg); err != nil {
-			os.Exit(1)
+			return 1
 		}
-		return
+		return 0
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, cfg, log, os.Stderr, hooks{}); err != nil {
 		log.Error("controller failed", "err", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 // hooks are what the Windows service adds to a run.

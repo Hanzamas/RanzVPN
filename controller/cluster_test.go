@@ -1,10 +1,10 @@
-package main
+package controllercmd
 
 // The controller cluster of SDN-17 (#193, ADR-0026), checked with real processes on one host:
-// each test starts three members, each a ranz-controller process with its own rqlited sidecar,
+// each test starts three members, each a `ranz controller` process with its own rqlited sidecar,
 // joined into one cluster, and drives them through their API with simulated nodes
 // (internal/nodesim) that open their control streams to the members. The member processes are
-// this test binary, which runs main() when processEnv is set (TestMain). With RANZ_CONTROL_WIRE
+// this test binary, which runs Main when processEnv is set (TestMain). With RANZ_CONTROL_WIRE
 // set to a directory, the tests write every frame of the simulated nodes there too, for the
 // nanopb round trip of CI.
 
@@ -35,7 +35,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
 )
 
-// processEnv makes the test binary run as ranz-controller.
+// processEnv makes the test binary run as `ranz controller`.
 const processEnv = "RANZ_CONTROLLER_PROCESS"
 
 // clusterLease is the lease duration of the members: short, so that a take-over does not take
@@ -54,8 +54,7 @@ var clusterVendor = ed25519.NewKeyFromSeed(slices.Repeat([]byte{0x17}, ed25519.S
 func TestMain(m *testing.M) {
 	if os.Getenv(processEnv) != "" {
 		licenceKeys = []ed25519.PublicKey{clusterVendor.Public().(ed25519.PublicKey)}
-		main()
-		os.Exit(0)
+		os.Exit(Main(os.Args[1:]))
 	}
 	os.Exit(m.Run())
 }
@@ -249,7 +248,7 @@ func apply(t *testing.T, m *member, doc intent.Document) controller.ApplyResult 
 	return res
 }
 
-// member is one member of the cluster of a test: a ranz-controller process with its rqlited.
+// member is one member of the cluster of a test: a `ranz controller` process with its rqlited.
 type member struct {
 	name   string
 	dir    string

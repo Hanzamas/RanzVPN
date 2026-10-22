@@ -1,4 +1,4 @@
-package main
+package controllercmd
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 )
 
 // The backup and the restore of the controller's store (SDN-52, #245): a local administrator of
-// the controller's host writes a backup of the whole store with `ranz-controller backup -o FILE`
-// and puts it back with `ranz-controller restore -f FILE`, with the flags of the service, while
+// the controller's host writes a backup of the whole store with `ranz controller backup -o FILE`
+// and puts it back with `ranz controller restore -f FILE`, with the flags of the service, while
 // it runs or while it is stopped, as reset-admin does. A backup holds the hashes of the API tokens
 // and the licence key, so like reset-admin both need the rights of a local administrator and work
 // on the store directly, not through the API. The intent alone moves through the API instead
@@ -26,7 +26,7 @@ import (
 // the wait for the leader to step down, and the transfer of the store.
 const backupTimeout = 10 * time.Minute
 
-// runBackup runs `ranz-controller backup -o FILE [flags]`, with the flags of the service.
+// runBackup runs `ranz controller backup -o FILE [flags]`, with the flags of the service.
 func runBackup(args []string) error {
 	file, rest := fileFlag(args, "o")
 	cfg, err := parseFlags(rest)
@@ -37,7 +37,7 @@ func runBackup(args []string) error {
 		return err
 	}
 	if file == "" {
-		return errors.New("-o FILE names no file: ranz-controller backup -o FILE [flags of the service]")
+		return errors.New("-o FILE names no file: ranz controller backup -o FILE [flags of the service]")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), backupTimeout)
 	defer cancel()
@@ -45,11 +45,11 @@ func runBackup(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "ranz-controller backup: the store is in %s (%d bytes); it holds the hashes of the API tokens and the licence key, so keep it as safe as the data directory\n", file, size)
+	fmt.Fprintf(os.Stderr, "ranz controller backup: the store is in %s (%d bytes); it holds the hashes of the API tokens and the licence key, so keep it as safe as the data directory\n", file, size)
 	return nil
 }
 
-// runRestore runs `ranz-controller restore -f FILE [flags]`, with the flags of the service.
+// runRestore runs `ranz controller restore -f FILE [flags]`, with the flags of the service.
 func runRestore(args []string) error {
 	file, rest := fileFlag(args, "f")
 	cfg, err := parseFlags(rest)
@@ -60,14 +60,14 @@ func runRestore(args []string) error {
 		return err
 	}
 	if file == "" {
-		return errors.New("-f FILE names no file: ranz-controller restore -f FILE [flags of the service]")
+		return errors.New("-f FILE names no file: ranz controller restore -f FILE [flags of the service]")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), backupTimeout)
 	defer cancel()
 	if err := restore(ctx, cfg, file, adminRights, os.Stderr); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "ranz-controller restore: the store is the backup in %s; the leader loads it\n", file)
+	fmt.Fprintf(os.Stderr, "ranz controller restore: the store is the backup in %s; the leader loads it\n", file)
 	return nil
 }
 

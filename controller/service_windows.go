@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package controllercmd
 
 import (
 	"context"
@@ -163,10 +163,10 @@ func (s *service) openLog() (*os.File, error) {
 }
 
 // install registers the Windows service, started automatically as its virtual account and running
-// this executable with args, the event source of its Application log entries, and, with
-// -http-listen, the HTTP.sys URL reservations of the plain-HTTP port. It creates the data
-// directory, or sets the ACL of the one that exists, so that the service's account, which is not
-// an administrator, has it.
+// this executable as `ranz controller` with args, the event source of its Application log
+// entries, and, with -http-listen, the HTTP.sys URL reservations of the plain-HTTP port. It
+// creates the data directory, or sets the ACL of the one that exists, so that the service's
+// account, which is not an administrator, has it.
 func install(args []string, cfg config) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -193,7 +193,7 @@ func install(args []string, cfg config) error {
 		StartType:        mgr.StartAutomatic,
 		ServiceStartName: serviceAccount,
 		SidType:          windows.SERVICE_SID_TYPE_UNRESTRICTED,
-	}, args...)
+	}, append([]string{"controller"}, args...)...)
 	if err != nil {
 		return err
 	}
