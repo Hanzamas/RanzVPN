@@ -1,4 +1,4 @@
-param([string] $BinDir = 'build\controller')
+param([string] $BinDir = 'build\ranz')
 
 $ErrorActionPreference = 'Stop'
 
