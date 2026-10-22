@@ -345,12 +345,10 @@ ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err) {
 	SecurePassword(secure_null_password, null_password, login->Random);
 
 	if (Cmp(secure_null_password, login->SecurePassword, SHA1_SIZE) == 0) {
+		// Refuse a blank server admin or Hub admin password from any address but loopback (127.0.0.0/8, ::1)
 		if (IsLocalHostIP(&login->RemoteIP) == false) {
-			// Refuse a blank hub admin password from a remote client
-			if (hub_scope) {
-				*err = ERR_NULL_PASSWORD_LOCAL_ONLY;
-				return NULL;
-			}
+			*err = ERR_NULL_PASSWORD_LOCAL_ONLY;
+			return NULL;
 		}
 	}
 

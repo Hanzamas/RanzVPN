@@ -40,6 +40,8 @@ ranz_add_executable(vpntest HAMCORE
     logtest.c
     # Named login path tests of PKG-6 (#110)
     login.c
+    # Named listeners test of spec #43: case 6, the empty admin password from loopback only, REL-4 (#49)
+    listeners.c
     # Named packet parser tests of PKG-9 (#113)
     pkttest.c
     # Named PACK decoder bounds test of FND-42 (#114)
