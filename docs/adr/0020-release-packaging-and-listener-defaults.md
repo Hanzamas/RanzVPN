@@ -1,6 +1,6 @@
 # ADR-0020: Release packaging and listener defaults for the current server
 
-**Status:** Accepted (2026-10-13). Hilmi decided each point in the release grilling of 2026-10-13; his answer is quoted under each decision. Since the same day the repository is private and the product is proprietary (Hanzcodes), for personal use and as a portfolio piece (Hilmi: "buat ini portofolio pribadi dan penggunaan pribadi gw"). Amended 2026-10-22: releases are Authenticode code-signed (Hilmi: "Ya").
+**Status:** Accepted (2026-10-13). Hilmi decided each point in the release grilling of 2026-10-13; his answer is quoted under each decision. Since the same day the repository is private and the product is proprietary (Hanzcodes), for personal use and as a portfolio piece (Hilmi: "buat ini portofolio pribadi dan penggunaan pribadi gw"). Amended 2026-10-22: releases are Authenticode code-signed (Hilmi: "Ya"); amended again 2026-10-22: the new product ships as one `ranz.exe` with a thin MSI.
 
 ## Context
 
@@ -49,3 +49,13 @@ Maintainer decision (Hilmi: "Ya"). Decision 1, "MSI built in CI, unsigned", is s
 - The release build signs every shipped executable and the MSI with the Authenticode certificate. A signed download no longer shows the SmartScreen "unknown publisher" warning, and an EV certificate also satisfies Smart App Control.
 - Until the certificate is bought, CI signs with a self-signed certificate. That signature does not chain to a trusted root, so a self-signed build still shows SmartScreen, but the signing step and the self-integrity check that reads the signature run on every build.
 - The self-integrity check at start (WinVerifyTrust plus a hash of the .text section) is specified in ADR-0036; it needs the binary to be signed, which is why CI signs even during development.
+
+## Amendment 2026-10-22: the new product ships as one `ranz.exe` with a thin MSI
+
+Maintainer decision (ADR-0011 amendment of the same date). This ADR still covers the current server, the slim-fork `vpnserver`, and decisions 1 to 8 stay for it until it is retired (CORE-S8-1, #84). The package of the new product differs:
+
+- **The artifact is one signed `ranz.exe` per architecture**, which carries the Node and its drivers (ADR-0011 amendment). `ranz install` and `ranz uninstall` do what the MSI of the spike did: the files under Program Files with a restricted access list, the services, and the data directory kept on uninstall (decision 3). ONE-2 (#311).
+- **The MSI is a thin wrapper** (ONE-5, #314). Its only payload is `ranz.exe` and its actions run `ranz install` and `ranz uninstall`, so Group Policy and Intune deploy the one file the usual way. CI builds it with the pinned WiX for x64 and arm64 and signs it like the executable.
+- **Tag-driven releases** (decision 5) will publish the signed `ranz.exe` and the MSI per architecture instead of the three assets named there, and the zip falls away. No release is made before the product is complete.
+- **Updates replace the one file** (SDN-59, #252), not an MSI.
+- **Service names:** `ranzvpnserver` (decision 4) stays the name of the Node service; the Controller keeps its own service name.
