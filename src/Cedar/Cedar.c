@@ -865,16 +865,6 @@ void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain
 	Unlock(c->lock);
 }
 
-void RegistWindowsFirewallAll() {
-	char exedir[MAX_SIZE];
-
-	GetExeDir(exedir, sizeof(exedir));
-
-	MsRegistWindowsFirewallEx2(CEDAR_SERVER_STR, "vpnserver.exe", exedir);
-	MsRegistWindowsFirewallEx2(CEDAR_CUI_STR, "vpncmd.exe", exedir);
-	MsRegistWindowsFirewallEx2(CEDAR_PRODUCT_STR, "vpntest.exe", exedir);
-}
-
 CEDAR *NewCedar(X *server_x, K *server_k) {
 	char tmp[MAX_SIZE];
 

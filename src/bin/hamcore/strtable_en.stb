@@ -551,6 +551,8 @@ SVC_STOP_FAILED			The "%s" service (service name: %S) failed to stop.
 SVC_ALREADY_STOP		The "%s" service (service name: %S) is already stopped.
 SVC_UNINSTALL_OK		The "%s" service (Service name: %S) has been uninstalled successfully.
 SVC_UNINSTALL_FAILED	The uninstallation of the "%s" service (service name: %S) failed.
+SVC_FIREWALL_ADD_FAILED	The inbound rule "%s" of Windows Firewall for %s could not be added. Other computers may be unable to connect to the service.
+SVC_FIREWALL_DELETE_FAILED	The inbound rule "%s" of Windows Firewall could not be deleted. Delete it in Windows Defender Firewall with Advanced Security.
 SVC_NOT_FOUND			Unable to find information related to service %S from the string table.
 SVC_NOT_ADMIN			To install, uninstall, start or stop the service you must have administrator privileges for this computer. \r\n\r\nIf you have an administrators account for this computer, log out and log on as an administrator. \r\nIf you are unclear about administrators accounts, contact your system administrator.
 SVC_TEST_MSG			The "%s" service is started in test mode. \r\n\r\nClick OK to exit the service.

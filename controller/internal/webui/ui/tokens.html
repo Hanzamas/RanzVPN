@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en" data-page="tokens">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API tokens | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/tokens.js"></script>
+</head>
+<body>
+<ranz-nav></ranz-nav>
+<main>
+<h1>API tokens</h1>
+<p class="lead">Each API token holds one role: a viewer reads, an operator also applies Intent, an admin also manages the API tokens. The controller keeps only a hash of each secret, so a secret shows once, when its token is made.</p>
+<ranz-problem></ranz-problem>
+<p id="admin-only" class="notice" hidden></p>
+<output id="result" aria-live="polite"></output>
+<section aria-labelledby="h-tokens" data-action="tokens" hidden>
+<h2 id="h-tokens">Tokens</h2>
+<ranz-table id="tokens"></ranz-table>
+</section>
+<section aria-labelledby="h-create" data-action="createToken" hidden>
+<h2 id="h-create">Make a token</h2>
+<form id="create-form" class="inline">
+<label for="name">Name</label>
+<input id="name" name="name" required pattern="[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?" size="24" spellcheck="false">
+<label for="role">Role</label>
+<select id="role" name="role">
+<option value="viewer">viewer</option>
+<option value="operator">operator</option>
+<option value="admin">admin</option>
+</select>
+<button type="submit">Make</button>
+</form>
+</section>
+<ranz-confirm></ranz-confirm>
+</main>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" data-page="revisions">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Revisions | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/revisions.js"></script>
+</head>
+<body>
+<ranz-nav></ranz-nav>
+<main>
+<h1>Revisions</h1>
+<p class="lead">Every apply, delete and rollback makes the next revision of the whole Intent. A rollback makes the Intent of an earlier revision the Intent again, as a new revision. A revision applied with a confirmation time waits for its confirmation; without it in time, the controller rolls it back by itself.</p>
+<ranz-problem></ranz-problem>
+<output id="result" aria-live="polite"></output>
+<section aria-labelledby="h-list">
+<h2 id="h-list">History</h2>
+<ranz-table id="revisions"></ranz-table>
+</section>
+<section id="revision" aria-labelledby="h-revision" hidden>
+<h2 id="h-revision">Revision</h2>
+<div id="revision-facts"></div>
+<ranz-table id="revision-resources"></ranz-table>
+</section>
+<section aria-labelledby="h-diff">
+<h2 id="h-diff">Diff</h2>
+<form id="diff-form" class="inline" data-action="diff" hidden>
+<label for="from">From revision</label>
+<input id="from" name="from" type="number" min="0" step="1" size="6">
+<label for="to">to revision</label>
+<input id="to" name="to" type="number" min="0" step="1" size="6">
+<button type="submit">Show the diff</button>
+</form>
+<p id="diff-title"></p>
+<ranz-table id="changes"></ranz-table>
+</section>
+<ranz-confirm></ranz-confirm>
+</main>
+</body>
+</html>

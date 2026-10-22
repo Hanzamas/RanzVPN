@@ -18,10 +18,11 @@ static void StopProcess() {
 	FreeCedar();
 }
 
-// The GUI-subsystem entry point: CmdLine holds the arguments without the program name
+// The GUI-subsystem entry point: CmdLine holds the arguments without the program name. /install adds
+// the inbound rule "Ranz VPN Server" of Windows Firewall for this program and /uninstall deletes it.
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow) {
 	InitProcessCallOnce();
 
-	return MsService(GC_SVC_NAME_VPNSERVER, StartProcess, StopProcess, CmdLine);
+	return MsService(GC_SVC_NAME_VPNSERVER, StartProcess, StopProcess, CmdLine, L"" CEDAR_SERVER_STR);
 }
 

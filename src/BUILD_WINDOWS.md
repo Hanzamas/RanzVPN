@@ -20,7 +20,8 @@ library versions, move the baseline with `vcpkg x-update-baseline` and commit th
 
 ## Building
 
-1. Clone with submodules (liboqs and oqs-provider):
+1. Clone with submodules (liboqs and oqs-provider; libjuice and libplum, the ICE and port mapping libraries of
+   the new core):
 
    `git clone --recursive <repository>` or, in an existing clone, `git submodule update --init --recursive`
 

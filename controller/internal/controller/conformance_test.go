@@ -376,6 +376,9 @@ type harness struct {
 	// schema is the control schema version the controller runs as from its next start,
 	// controller.SchemaVersion when it is unspecified.
 	schema controlpb.SchemaVersion
+	// revPath is the update channel's path for the signed revocation list (ADR-0036, SEC-5 #283),
+	// empty when the harness delivers none.
+	revPath string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -398,6 +401,22 @@ func newHarnessAt(t *testing.T, v string) *harness {
 	return h
 }
 
+// newHarnessRevocations returns a harness whose controller reads the signed revocation list the
+// update channel delivers to h.revPath (ADR-0036, SEC-5 #283); the file need not exist yet.
+func newHarnessRevocations(t *testing.T) *harness {
+	h := &harness{t: t, rq: rqlitetest.Start(t), revPath: filepath.Join(t.TempDir(), "revocations.sig")}
+	var err error
+	if h.key, err = keys.GenerateSoft(); err != nil {
+		t.Fatal(err)
+	}
+	if h.tlsKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader); err != nil {
+		t.Fatal(err)
+	}
+	h.start()
+	t.Cleanup(h.stop)
+	return h
+}
+
 func (h *harness) start() {
 	h.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
@@ -408,7 +427,7 @@ func (h *harness) start() {
 	}
 	log := slog.New(slog.NewTextHandler(testWriter{h.t}, nil))
 	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log, Schema: h.schema,
-		LicenceKeys: []ed25519.PublicKey{testVendor.Public().(ed25519.PublicKey)}, Version: h.version})
+		LicenceKeys: []ed25519.PublicKey{testVendor.Public().(ed25519.PublicKey)}, Version: h.version, Revocations: h.revPath})
 	if err != nil {
 		h.t.Fatal(err)
 	}

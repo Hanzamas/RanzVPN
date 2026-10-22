@@ -23,9 +23,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"net"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -95,6 +97,10 @@ type Config struct {
 	// Version is the version of the controller that the fallback licence of an expired
 	// subscription must cover: version.Version when empty.
 	Version string
+	// Revocations is the path the update channel delivers the signed revocation list to (ADR-0036,
+	// SEC-5 #283); empty when none is delivered. The controller reads and verifies it at start and
+	// when ReloadRevocations is called.
+	Revocations string
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -135,6 +141,9 @@ type Controller struct {
 	schema      controlpb.SchemaVersion
 	licenceKeys []ed25519.PublicKey
 	version     string
+	// revocationsPath is the update channel's path for the signed revocation list, set once at
+	// New and never changed (ADR-0036, SEC-5 #283).
+	revocationsPath string
 
 	mu      sync.Mutex
 	intent  intent.Intent
@@ -144,6 +153,8 @@ type Controller struct {
 	expiry  *time.Timer            // recompiles the intent when the active licence expires
 	nodes   map[string]*node       // the nodes the licence in force covers
 	byKey   map[string]string      // node static key to node name
+	// revocations is the revocation list applied last (revocation.go).
+	revocations licence.Revocations
 	// node static key to the Capabilities that the node reported last, kept while a Node
 	// resource holds the key
 	caps   map[string]*controlpb.Capabilities
@@ -225,6 +236,12 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 			return nil, err
 		}
 	}
+	c.revocationsPath = cfg.Revocations
+	revocations, err := c.loadRevocations(c.revocationsPath)
+	if err != nil {
+		return nil, err
+	}
+	c.revocations = revocations
 	rs, stored, err := c.store.Load(ctx)
 	if err != nil {
 		return nil, err
@@ -407,6 +424,10 @@ func (c *Controller) SetLicence(ctx context.Context, key string) (licence.Status
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if lic != nil && c.revocations.Revokes(*lic) {
+		return licence.Status{}, fmt.Errorf("%w: the %s licence key %s of %s is on the revocation list and cannot be installed (watermark %s)",
+			licence.ErrRefused, lic.Tier, lic.ID, lic.Licensee, lic.Watermark)
+	}
 	cp, err := c.compile(c.intent, lic)
 	if err != nil {
 		return licence.Status{}, err
@@ -416,6 +437,53 @@ func (c *Controller) SetLicence(ctx context.Context, key string) (licence.Status
 	}
 	c.log.Info("licence key changed", "tier", c.force.Tier, "nodes", c.force.Nodes, "state", c.force.State, "message", c.force.Message)
 	return c.force, nil
+}
+
+// ReloadRevocations re-reads the signed revocation list the update channel delivered (ADR-0036,
+// SEC-5 #283), verifies it and applies it: a licence key that the list now revokes drops the
+// install to the Personal tier, and the nodes it no longer covers lose their desired state. It
+// makes no revision, since the intent does not change, and returns the licence in force then. A
+// list that does not verify is ignored, so a forged or corrupt one never bricks the controller.
+func (c *Controller) ReloadRevocations(ctx context.Context) (licence.Status, error) {
+	revocations, err := c.loadRevocations(c.revocationsPath)
+	if err != nil {
+		return licence.Status{}, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.revocations = revocations
+	cp, err := c.compile(c.intent, c.lic)
+	if err != nil {
+		return licence.Status{}, err
+	}
+	if _, err := c.commit(ctx, c.intent, cp, store.Changes{}); err != nil {
+		return licence.Status{}, err
+	}
+	c.log.Info("revocation list applied", "revoked", len(revocations.IDs), "tier", c.force.Tier, "state", c.force.State, "message", c.force.Message)
+	return c.force, nil
+}
+
+// loadRevocations reads and verifies the signed revocation list the update channel delivered to
+// path (ADR-0036, SEC-5 #283). It returns an empty list when path is empty or the file is absent.
+// A file that does not verify is ignored with a warning, so a forged or corrupt list never bricks
+// the controller; a file that cannot be read is an error.
+func (c *Controller) loadRevocations(path string) (licence.Revocations, error) {
+	if path == "" {
+		return licence.Revocations{}, nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return licence.Revocations{}, nil
+	}
+	if err != nil {
+		return licence.Revocations{}, fmt.Errorf("controller: reading the revocation list %s: %w", path, err)
+	}
+	r, err := licence.ParseRevocations(string(b), c.licenceKeys)
+	if err != nil {
+		c.log.Warn("the delivered revocation list does not verify, so it is ignored", "path", path, "err", err)
+		return licence.Revocations{}, nil
+	}
+	return r, nil
 }
 
 // Resources returns the intent.
@@ -600,8 +668,13 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	return result, nil
 }
 
-// evaluate returns the licence in force now with lic installed (nil for none).
+// evaluate returns the licence in force now with lic installed (nil for none): the Personal tier
+// when lic is on the revocation list (ADR-0036, SEC-5 #283), and otherwise what the key sells. c.mu
+// is held.
 func (c *Controller) evaluate(lic *licence.Licence) licence.Status {
+	if lic != nil && c.revocations.Revokes(*lic) {
+		return licence.Revoked(lic, c.version)
+	}
 	return licence.Evaluate(lic, time.Now(), c.version)
 }
 

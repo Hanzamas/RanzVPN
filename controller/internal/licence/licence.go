@@ -17,7 +17,9 @@ package licence
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,6 +66,7 @@ const (
 	StateActive   State = "active"   // the licence key, until it expires
 	StateFallback State = "fallback" // the expired subscription's fallback licence covers this version
 	StateExpired  State = "expired"  // the subscription expired without a fallback licence for this version: the Personal tier
+	StateRevoked  State = "revoked"  // the licence key is on the revocation list: the Personal tier (revocation.go)
 )
 
 var (
@@ -86,6 +89,10 @@ type Licence struct {
 	// FallbackVersion is the version (major.minor) of the perpetual fallback licence; empty
 	// before the subscription was paid for 12 months.
 	FallbackVersion string `json:"fallbackVersion,omitempty"`
+	// Watermark is the per-customer mark (ADR-0036, SEC-5 #283), so a leaked key names the
+	// customer it was issued to. Sign fills it from the licensee when a key is signed without one;
+	// it is part of the signed licence, so it round-trips through Parse.
+	Watermark string `json:"watermark,omitempty"`
 }
 
 // Status is the licence in force.
@@ -150,8 +157,20 @@ func VendorKeys() ([]ed25519.PublicKey, error) {
 	return out, nil
 }
 
-// Sign returns the licence key that holds l, signed with the vendor's private key.
+// WatermarkFor returns the per-customer watermark of a licensee (ADR-0036, SEC-5 #283): a short,
+// stable mark derived from the licensee, so every key issued to one customer carries the same one.
+// Sign embeds it when a key is signed without an explicit watermark.
+func WatermarkFor(licensee string) string {
+	sum := sha256.Sum256([]byte("ranz/watermark/" + licensee))
+	return hex.EncodeToString(sum[:8])
+}
+
+// Sign returns the licence key that holds l, signed with the vendor's private key. It embeds the
+// per-customer watermark of the licensee when l carries none, so every signed key has one.
 func Sign(vendor ed25519.PrivateKey, l Licence) (string, error) {
+	if l.Watermark == "" {
+		l.Watermark = WatermarkFor(l.Licensee)
+	}
 	if err := l.validate(); err != nil {
 		return "", fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
@@ -222,6 +241,18 @@ func Evaluate(l *Licence, now time.Time, v string) Status {
 			l.Tier, l.ID, l.Licensee, stamp(l.Expires), why, Personal, PersonalNodes)
 	}
 	return in
+}
+
+// Revoked is the licence in force when the installed licence key l is on the revocation list
+// (ADR-0036, SEC-5 #283): the key is refused, so the Personal tier is in force, while the core
+// tunnel keeps working. v is the controller's version.
+func Revoked(l *Licence, v string) Status {
+	key := *l
+	return Status{
+		Tier: Personal, Nodes: PersonalNodes, Features: Personal.Features(), State: StateRevoked, Version: v, Key: &key,
+		Message: fmt.Sprintf("the %s licence %s of %s is revoked (watermark %s): the %s tier is in force, up to %d nodes",
+			l.Tier, l.ID, l.Licensee, l.Watermark, Personal, PersonalNodes),
+	}
 }
 
 // validate checks what a licence key holds.

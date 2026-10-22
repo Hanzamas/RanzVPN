@@ -3,7 +3,8 @@
 // and signals sealed by one node's static key to another's with Noise_K_25519_AESGCM_SHA256. The known answers
 // were computed by an implementation of the Noise framework independent of the module (Python with the
 // cryptography package); the controller's test of the same envelopes (controller/internal/control, flynn/noise)
-// holds them too, so the C node and the Go controller seal and open the same bytes.
+// holds them too, so the C node and the Go controller seal and open the same bytes. A signal of a node with ICE on
+// also carries the credentials of its ICE session (CORE-S5-3, #79).
 
 #include "coretest.h"
 
@@ -232,6 +233,24 @@ void envelope_test() {
 	payload[58] = 0;
 	payload[59] = 0;
 	coretest_check(PeerSignalDecode(payload, payload_size, &got) == false, "A signal that names a relay without its port does not decode");
+
+	// The credentials of an ICE session (CORE-S5-3, #79): after the candidates, the length and the characters of
+	// the username fragment, then those of the password
+	envelope_signal(&s, relay.Public);
+	s.Candidates[1].Type = PEER_CANDIDATE_MAPPED;
+	strcpy_s(s.IceUfrag, sizeof(s.IceUfrag), "Ab1+");
+	strcpy_s(s.IcePwd, sizeof(s.IcePwd), "abcdefghijklmnopqrstu/");
+	payload_size = PeerSignalEncode(&s, payload, sizeof(payload));
+	coretest_check(payload_size == 99 + 2 + 4 + 22 && payload[99] == 4 && memcmp(payload + 100, "Ab1+", 4) == 0 && payload[104] == 22, "A signal with the credentials of an ICE session carries them after its candidates, each with its length");
+	coretest_check(PeerSignalDecode(payload, payload_size, &got) && envelope_same_signal(&got, &s) && strcmp(got.IceUfrag, s.IceUfrag) == 0 && strcmp(got.IcePwd, s.IcePwd) == 0, "... and decodes back to the same signal and credentials, with the public port of a home gateway as a candidate");
+	coretest_check(PeerSignalDecode(payload, payload_size - 1, &got) == false && PeerSignalDecode(payload, payload_size + 1, &got) == false, "... but not with a byte too few or too many");
+	payload[100] = '-';
+	coretest_check(PeerSignalDecode(payload, payload_size, &got) == false, "A username fragment with a character that is no ice-char does not decode");
+	payload[100] = 'A';
+	payload[99] = 3;
+	coretest_check(PeerSignalDecode(payload, payload_size, &got) == false, "Credentials whose lengths do not add up to the rest of the payload do not decode");
+	s.IcePwd[21] = 0;
+	coretest_check(PeerSignalEncode(&s, payload, sizeof(payload)) == 0, "A password shorter than 22 characters is not encoded");
 
 	envelope_signal(&s, relay.Public);
 	payload_size = PeerSignalEncode(&s, payload, sizeof(payload));

@@ -14,6 +14,8 @@ ranz_add_executable(coretest CORE
     noise.c session.c interop.c
     # Envelopes, the relay role and the relay-first bring-up on the NAT simulator, CORE-S5-2 (#78)
     envelope.c relay.c natsim.c
+    # ICE and the port mapping of home gateways, with the simulated gateway, CORE-S5-3 (#79)
+    ice.c homegw.c
   LIBRARIES
     corenoise
     corepeer
@@ -22,6 +24,7 @@ ranz_add_executable(coretest CORE
     "bcrypt.lib"
     "crypt32.lib"
     "Secur32.Lib"
+    "iphlpapi.lib"
   LINK_OPTIONS
     "/MAP:${BUILD_DIRECTORY}/coretest.map"
 )
