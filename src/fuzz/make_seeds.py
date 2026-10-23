@@ -928,6 +928,45 @@ def make_switch_seeds():
     write_seed('fuzz_switch', 'no_member.bin', switch_input(3, 0, eth(BROADCAST, MAC_A, 0x88B5, b'SW\x00\x04')))
 
 
+# ---------------------------------------------------------------------------
+# Front door of the new core (src/Core/FrontDoorHello.c FrontDoorParseHello, FrontDoorRoute, FrontDoorHandoffDecode): the
+# first bytes of a connection to TCP 443, a ClientHello in one record or in many, a signature, a plain HTTP request and
+# the start of a TLS record; and the handoff message that an owner process reads, FRONT_DOOR_HANDOFF: the magic "RFD1",
+# its size and a WSAPROTOCOL_INFOW of 628 bytes, whose address family, socket type and protocol are at 76, 88 and 92.
+# fuzz_frontdoor.c routes by the owner table of coretest frontdoor.
+# ---------------------------------------------------------------------------
+def alpn_extension(protocols):
+    names = b''.join(bytes([len(p)]) + p for p in protocols)
+    data = struct.pack('>H', len(names)) + names
+    return struct.pack('>HH', 16, len(data)) + data
+
+
+def tls_records(hello, fragment):
+    # A ClientHello made by client_hello, its handshake message cut into records of fragment bytes
+    message = hello[5:]
+    return b''.join(b'\x16\x03\x01' + struct.pack('>H', len(message[i:i + fragment])) + message[i:i + fragment]
+                    for i in range(0, len(message), fragment))
+
+
+def make_frontdoor_seeds():
+    versions = struct.pack('>HHB', 43, 3, 2) + b'\x03\x04'
+    controller = client_hello(versions + sni_extension(b'node.frontdoor.test') + alpn_extension([b'h2', b'http/1.1']))
+    write_seed('fuzz_frontdoor', 'hello_alpn_h2.bin', controller)
+    write_seed('fuzz_frontdoor', 'hello_records_of_7.bin', tls_records(controller, 7))
+    write_seed('fuzz_frontdoor', 'hello_web_ui.bin', client_hello(versions + sni_extension(b'eu.admin.frontdoor.test')))
+    write_seed('fuzz_frontdoor', 'hello_node.bin', client_hello(versions))
+    write_seed('fuzz_frontdoor', 'hello_absent_owner.bin', client_hello(versions + alpn_extension([b'ranz-absent/1'])))
+    write_seed('fuzz_frontdoor', 'hello_cut.bin', controller[:40])
+    write_seed('fuzz_frontdoor', 'signature.txt', b'RANZ-FRONT-DOOR-TEST and then the owner\'s own protocol')
+    write_seed('fuzz_frontdoor', 'http.txt', b'GET / HTTP/1.1\r\nHost: admin.frontdoor.test\r\n\r\n')
+    write_seed('fuzz_frontdoor', 'record_start.bin', b'\x16\x03\x01')
+    info = bytearray(628)
+    info[76:80] = struct.pack('<i', 2)
+    info[88:92] = struct.pack('<i', 1)
+    info[92:96] = struct.pack('<i', 6)
+    write_seed('fuzz_frontdoor', 'handoff.bin', struct.pack('<II', 0x31444652, 8 + len(info)) + bytes(info))
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     assert len(PEER_SIGNAL) == 99 and len(PEER_SIGNAL_ENVELOPE) == 180 and len(PEER_BIND_ENVELOPE) == 90
@@ -947,3 +986,4 @@ if __name__ == '__main__':
     make_transport_seeds()
     make_vxlan_seeds()
     make_switch_seeds()
+    make_frontdoor_seeds()

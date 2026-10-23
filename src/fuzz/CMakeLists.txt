@@ -19,6 +19,7 @@ set(RANZ_FUZZ_TARGETS
   fuzz_transport
   fuzz_vxlan
   fuzz_switch
+  fuzz_frontdoor
 )
 
 # Console executables without an icon or the hamcore resources (cmake/RanzExecutable.cmake)
@@ -44,3 +45,6 @@ target_link_libraries(fuzz_vxlan PRIVATE corevxlan)
 
 # fuzz_switch: the switch module of the new core (CORE-S4-1, #74)
 target_link_libraries(fuzz_switch PRIVATE coreswitch)
+
+# fuzz_frontdoor: the front door of the new core (SDN-29, #205): the first bytes of a connection and the handoff message
+target_link_libraries(fuzz_frontdoor PRIVATE corefrontdoor)

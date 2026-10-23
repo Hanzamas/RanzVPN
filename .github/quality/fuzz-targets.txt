@@ -48,6 +48,12 @@ src/Core  VxlanInput  fuzz_vxlan
 # The switch module (CORE-S4-1 #74): the frames that the members of a Network send
 src/Core  SwitchInput  fuzz_switch
 
+# The front door (SDN-29 #205): the first bytes that any peer sends to TCP 443, and the handoff message that an owner
+# process reads from its pipe. FrontDoorRoute has no parser word in its name and reads the same bytes.
+src/Core  FrontDoorParseHello     fuzz_frontdoor
+src/Core  FrontDoorRoute          fuzz_frontdoor
+src/Core  FrontDoorHandoffDecode  fuzz_frontdoor
+
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
 src/Cedar  CsOpen               exempt  opens the node's own SQLite store (winsqlite3)
