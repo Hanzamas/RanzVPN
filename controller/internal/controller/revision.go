@@ -144,6 +144,9 @@ func (c *Controller) change(ctx context.Context, next intent.Intent, cp compiled
 		return ApplyResult{}, err
 	}
 	c.revision = rev.ID
+	if len(ch.AddEvents) > 0 {
+		c.tel.feed.Poke()
+	}
 	return ApplyResult{Revision: rev.ID, Nodes: nodes}, nil
 }
 
