@@ -252,7 +252,8 @@ try {
 	foreach ($pair in @(@{ Dir = $X64Dir; Arch = 'x64'; Goarch = 'amd64' }, @{ Dir = $Arm64Dir; Arch = 'arm64'; Goarch = 'arm64' })) {
 		$goarch = $pair.Goarch
 		$placeholder = Join-Path (Get-Location).Path "controller/internal/payload/node_$goarch.exe"
-		$nodeBytes = Get-FileBytes (Join-Path $pair.Dir 'ranz-node.exe')
+		# Read by the .NET method itself: a function would hand the array over one byte at a time
+		[byte[]] $nodeBytes = [System.IO.File]::ReadAllBytes((Join-Path $pair.Dir 'ranz-node.exe'))
 		$env:GOOS = 'windows'
 		$env:GOARCH = $goarch
 		$env:CGO_ENABLED = '0'
