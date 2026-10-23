@@ -37,6 +37,9 @@ src/Core  TransportParseList     fuzz_transport
 src/Core  TransportNoiseReceive  fuzz_transport
 src/Core  TransportRead          exempt  hands the read of a stream to the Read procedure of its transport; parses nothing (TransportNoiseReceive reads the frames)
 
+# The VXLAN module (SDN-62 #289): the datagrams of VTEPs
+src/Core  VxlanInput  fuzz_vxlan
+
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
 src/Cedar  CsOpen               exempt  opens the node's own SQLite store (winsqlite3)

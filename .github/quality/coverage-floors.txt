@@ -21,6 +21,9 @@ c  coretransport  81  src/Core/Transport*.c
 # corecontrol (SDN-3 #179) is exercised by vpntest's sdntrace, which needs the controller and rqlite and runs in
 # build_and_test, not in this job, so its floor is 0 until this job runs it
 c  corecontrol    0  src/Core/Control*.c
+# corevxlan (SDN-62 #289) is exercised by vpntest's vxlan test, which this job runs with transport and quic: 88.3%
+# measured, less two points for the flood list that changes during a burst from another thread
+c  corevxlan      86  src/Core/Vxlan*.c
 
 # The controller (controller/)
 go  controller/cmd/ranz                 67

@@ -160,6 +160,31 @@ set_target_properties(corecontrol
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# corevxlan: the VXLAN module (Vxlan.h, Vxlan*.c; SDN-62, #289): a frame encapsulated with its VNI towards one VTEP or
+# each VTEP of a flood list, and decapsulated by VNI, on Winsock, which is all it links. It is written once for the
+# Mirrors (SDN-23) and the EVPN gateway (SDN-25) of the Node module, so ranz_core_options and the library stay PRIVATE,
+# as for corepeer.
+file(GLOB SOURCES_CORE_VXLAN "Vxlan*.c")
+file(GLOB HEADERS_CORE_VXLAN "Vxlan*.h")
+
+add_library(corevxlan STATIC ${SOURCES_CORE_VXLAN} ${HEADERS_CORE_VXLAN})
+
+target_include_directories(corevxlan PUBLIC "${TOP_DIRECTORY}/src")
+
+target_link_libraries(corevxlan PRIVATE ranz_core_options ranz_warnings)
+
+# The only library the module calls
+target_link_libraries(corevxlan PRIVATE "ws2_32.lib")
+
+set_target_properties(corevxlan
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "corevxlan"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
 # ranz_core_check_links(<target>...): stops the configure when one of the targets reaches,
 # through any chain of linked targets, the slim fork (mayaqua, cedar), OpenSSL or liboqs, which
 # the new core does not link (ADR-0022; CORE-F1, #61). src/CMakeLists.txt calls it once every
