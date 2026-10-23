@@ -510,6 +510,10 @@ void sdntrace_test(UINT num, char **arg);
 // Named VXLAN test of SDN-62, #289 (vxlantest.c)
 void vxlan_test(UINT num, char **arg);
 
+// Named switch test and switch benchmark of CORE-S4-1, #74 (switchtest.c)
+void switch_test(UINT num, char **arg);
+void switchbench_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -666,6 +670,8 @@ TEST_LIST test_list[] =
 	{"httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port."},
 	{"sdntrace", sdntrace_test, "Default VRF tracer: sdntrace <host:port> <key> [<file>]: two nodes join VRF default of a running ranz controller, get addresses from its pool and ping each other over the loopback transport, also once the controller stopped (.github/scripts/sdn-tracer.ps1)."},
 	{"vxlan", vxlan_test, "VXLAN: a frame, VLAN-tagged or not, goes out with its VNI and reaches a harness VTEP identical, and back to the module; a flood list of three VTEPs gets every frame and changes while the module runs; a datagram on an unknown VNI is dropped and counted."},
+	{"switch", switch_test, "Switch: frames between members of different VLANs across access, trunk and native ports, VLAN-aware learning, broadcast and multicast by group subscription, non-IP EtherTypes, per-VLAN limits and counters and the TPID of a Network against golden files (golden family switch); ports that change while threads forward."},
+	{"switchbench", switchbench_test, "Switch benchmark: the forwarding of the L2 switch on one thread, on one thread per core and behind one lock as the Hub; it fails when the threads do not scale (BENCH lines)."},
 };
 
 // Test function

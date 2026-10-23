@@ -18,6 +18,7 @@ set(RANZ_FUZZ_TARGETS
   fuzz_noise
   fuzz_transport
   fuzz_vxlan
+  fuzz_switch
 )
 
 # Console executables without an icon or the hamcore resources (cmake/RanzExecutable.cmake)
@@ -40,3 +41,6 @@ target_link_libraries(fuzz_transport PRIVATE coretransport corenoise corecrypto)
 
 # fuzz_vxlan: the VXLAN module of the new core (SDN-62, #289)
 target_link_libraries(fuzz_vxlan PRIVATE corevxlan)
+
+# fuzz_switch: the switch module of the new core (CORE-S4-1, #74)
+target_link_libraries(fuzz_switch PRIVATE coreswitch)
