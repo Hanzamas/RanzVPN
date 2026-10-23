@@ -31,9 +31,14 @@
 // -token-file`. It also creates the intent of a first install as revision 1 (ADR-0034, SDN-3
 // #179): VRF default with overlay DNS on, its Network default with the automatic IPv4 pool
 // 100.64.0.0/10, and the starter rule default-allow-all; a Node that names no VRF joins VRF
-// default. rqlite is the controller's sidecar: with -rqlited the controller runs rqlited
-// itself, with its data in the rqlite directory under -data; without it, the controller uses the
-// rqlite at -rqlite.
+// default. rqlite is the controller's sidecar, and the controller runs a member of its own: the
+// rqlited.exe that ranz.exe carries as a Payload (ONE-4, #313), which it writes as
+// payload\rqlited.exe in the data directory, again whenever it is missing or differs, after the
+// check of its hash and its signature. With -rqlited PATH it runs that rqlited instead, and with
+// -rqlite-external none: the rqlite at -rqlite is then another process's. A build with no member
+// (Linux) uses the rqlite at -rqlite unless -rqlited names an rqlited. The member of the arm64
+// build is the x64 rqlited.exe, which Windows 11 on ARM runs under emulation, as rqlite has no
+// Windows build for arm64. The member keeps its data in the rqlite directory under -data.
 //
 // The API and the web UI accept connections only from the admin source allowlist (SDN-39, #232),
 // which an admin sets with `ranz admin-sources`: from an address outside it, every request is
@@ -73,7 +78,6 @@ package controllercmd
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
@@ -101,6 +105,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/mitigation"
+	"github.com/Hanzamas/RanzVPN/controller/internal/payload"
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
@@ -129,11 +134,6 @@ const adminTokenFile = "admin.token"
 // reaches every member within this time (api.NewSources).
 const adminSourcesTTL = 2 * time.Second
 
-// licenceKeys are the public keys that a licence key must be signed with: nil, for the vendor
-// keys that the release build links in (licence.VendorKeys). No flag sets it; only the cluster
-// tests do, to a test vendor key, in the member processes they start (TestMain).
-var licenceKeys []ed25519.PublicKey
-
 type config struct {
 	dataDir       string
 	listen        string
@@ -143,6 +143,7 @@ type config struct {
 	apiListen     string
 	rqliteURL     string
 	rqlited       string
+	external      bool // -rqlite-external: no member of its own, the rqlite at -rqlite is another process's
 	raftAddr      string
 	raftAdv       string
 	rqliteID      string
@@ -166,7 +167,8 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.controlListen, "control-listen", "", "for development: a second TLS address for the control stream only, for example 127.0.0.1:7443")
 	flags.StringVar(&cfg.apiListen, "api-listen", "", "for development: a loopback address for the API over plain HTTP, for example 127.0.0.1:7080")
 	flags.StringVar(&cfg.rqliteURL, "rqlite", "http://127.0.0.1:4001", "the URL of the rqlite HTTP API; with -rqlited, rqlited listens on its host:port")
-	flags.StringVar(&cfg.rqlited, "rqlited", "", "the path of rqlited, to run it as the controller's sidecar")
+	flags.StringVar(&cfg.rqlited, "rqlited", "", "the path of rqlited, to run it as the controller's sidecar instead of the one that this executable carries (Windows)")
+	flags.BoolVar(&cfg.external, "rqlite-external", false, "run no rqlite member of its own: the rqlite at -rqlite is another process's")
 	flags.StringVar(&cfg.raftAddr, "rqlite-raft", "127.0.0.1:4002", "the TCP address of the Raft transport of -rqlited; in a cluster, one the other members reach")
 	flags.StringVar(&cfg.raftAdv, "rqlite-raft-adv", "", "the Raft address of -rqlited as the other members reach it, when -rqlite-raft is not one (for example 0.0.0.0:4002)")
 	flags.StringVar(&cfg.rqliteID, "rqlite-id", "", "the Raft node id of -rqlited: 1 for a single controller, -name in a cluster when it is empty")
@@ -207,6 +209,8 @@ func parseFlags(args []string) (config, error) {
 		problem = fmt.Errorf("-advertise is longer than %d characters", intent.MaxAddress)
 	case cfg.expect > 0 && len(cfg.join) == 0:
 		problem = errors.New("-rqlite-expect needs -rqlite-join")
+	case cfg.external && cfg.rqlited != "":
+		problem = errors.New("-rqlite-external and -rqlited exclude each other")
 	}
 	if problem != nil {
 		fmt.Fprintln(flags.Output(), problem)
@@ -225,6 +229,25 @@ func (cfg config) rqliteNodeID() string {
 		return "1"
 	}
 	return cfg.name
+}
+
+// payloadDir is the directory under the data directory where the controller writes the files that
+// its executable carries (internal/payload): the rqlited.exe of its rqlite member.
+const payloadDir = "payload"
+
+// rqlitedExe returns the rqlited that the controller runs as its sidecar: the one that -rqlited
+// names, else the rqlite member that this executable carries as a Payload (ONE-4, #313), which
+// payload.Ensure writes under the data directory when the file is missing or differs, after the
+// check of its hash and its signature. It returns "" when the controller runs no rqlited of its
+// own and uses the rqlite at -rqlite: with -rqlite-external, or in a build that carries no member.
+func (cfg config) rqlitedExe() (string, error) {
+	switch {
+	case cfg.rqlited != "":
+		return cfg.rqlited, nil
+	case cfg.external || len(payload.Rqlited.Data) == 0:
+		return "", nil
+	}
+	return payload.Ensure(filepath.Join(cfg.dataDir, payloadDir), payload.Rqlited)
 }
 
 // advertised returns the address of the TLS port as nodes and the other members reach it:
@@ -346,13 +369,17 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	}
 	log.Info("controller keys", "publicKey", base64.StdEncoding.EncodeToString(static.Public()), "tlsFingerprint", keys.Fingerprint(cert))
 
-	if cfg.rqlited != "" {
+	rqlited, err := cfg.rqlitedExe()
+	if err != nil {
+		return fmt.Errorf("the rqlite member: %w", err)
+	}
+	if rqlited != "" {
 		u, err := url.Parse(cfg.rqliteURL)
 		if err != nil || u.Host == "" {
 			return fmt.Errorf("-rqlite %q is not a URL with a host:port", cfg.rqliteURL)
 		}
 		rq := &sidecar.Rqlited{
-			Path:     cfg.rqlited,
+			Path:     rqlited,
 			DataDir:  filepath.Join(cfg.dataDir, "rqlite"),
 			HTTPAddr: u.Host,
 			RaftAddr: cfg.raftAddr,
@@ -369,7 +396,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 			return err
 		}
 		defer rq.Stop()
-		log.Info("rqlited started", "url", rq.URL())
+		log.Info("rqlited started", "url", rq.URL(), "path", rqlited)
 	}
 
 	sctx, cancel := context.WithTimeout(ctx, startTimeout)
@@ -428,7 +455,6 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		Tokens:      tokens,
 		Key:         static,
 		Schema:      cfg.schema,
-		LicenceKeys: licenceKeys,
 		Lease:       cfg.lease,
 		Log:         log,
 		Status: api.Status{

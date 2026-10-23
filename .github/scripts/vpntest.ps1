@@ -42,7 +42,7 @@ if (Test-Path $benchFile) { Remove-Item $benchFile }
 }
 
 # Named self-tests: must print their OK marker and no leak. RANZ_SMOKE_TESTS (comma list) overrides the list.
-$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'tls', 'lossylink', 'noisehub', 'vrf', 'vxlan', 'switch', 'switchbench')
+$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'tls', 'lossylink', 'noisehub', 'vrf', 'vxlan', 'nat', 'shape', 'switch', 'switchbench')
 if ($env:RANZ_SMOKE_TESTS) { $named = $env:RANZ_SMOKE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
 
 # The TLS transport (CORE-S2-1 #69) puts its key exchange groups first in the machine's Schannel group list, which an
@@ -131,6 +131,13 @@ $named | % {
 	if ($test -eq 'vrf' -and $env:RANZ_UPDATE_GOLDEN -ne '1' -and ($full | Select-String -Pattern 'VRF GOLDEN MODE compare' -SimpleMatch -CaseSensitive).Count -ne 1) {
 		$full
 		Write-Error 'vrf golden files not compared (missing: VRF GOLDEN MODE compare)'
+		return $false
+	}
+
+	# ... and the NAT test where the packets of its 4via6 and its 1:1 NAT arrive, and as what (golden family "nat", SDN-6 #182)
+	if ($test -eq 'nat' -and $env:RANZ_UPDATE_GOLDEN -ne '1' -and ($full | Select-String -Pattern 'NAT GOLDEN MODE compare' -SimpleMatch -CaseSensitive).Count -ne 1) {
+		$full
+		Write-Error 'nat golden files not compared (missing: NAT GOLDEN MODE compare)'
 		return $false
 	}
 

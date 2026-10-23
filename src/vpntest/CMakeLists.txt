@@ -92,6 +92,12 @@ ranz_add_executable(vpntest HAMCORE
     vrftest.c
     # Named VXLAN test of SDN-62 (#289): the VXLAN module of the new core against harness VTEPs
     vxlantest.c
+    # Named 1:1 NAT and 4via6 test of SDN-6 (#182): the translations of the data plane against packets that the test
+    # builds, and two VRFs on one range reached through 4via6 and a LAN behind 1:1 NAT over the overlay
+    nattest.c
+    # Named shaping test of SDN-20 (#196): the MTU of each VRF on its adapter, the TCP MSS clamp, DSCP and the rate
+    # limits of a VRF and of the node over the overlay of in-process nodes
+    shapetest.c
     # Named switch test and switch benchmark of CORE-S4-1 (#74): the L2 switch of the new core against golden frames
     switchtest.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c,
