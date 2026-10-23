@@ -39,11 +39,16 @@ go  controller/internal/control         76
 go  controller/internal/controller      82
 go  controller/internal/desired         79
 go  controller/internal/export          90
+go  controller/internal/install         0
 go  controller/internal/intent          91
 go  controller/internal/keys            71
 go  controller/internal/licence         89
 go  controller/internal/mitigation      0
 go  controller/internal/nodesim         0
+# payload (ONE-2 #311) has real logic tested on every OS (payload_test.go: the hash check, the
+# write and its cleanup), but verifyAuthenticode itself is Windows only (verify_windows_test.go,
+# run by the Windows job of ranz.yml) and never runs on the Linux job, which measures this floor
+go  controller/internal/payload         35
 go  controller/internal/port            69
 go  controller/internal/rbac            65
 go  controller/internal/rqlitetest      0

@@ -15,6 +15,11 @@ param(
 #   3. check the shipped binaries carry no symbols and ship no public PDB: the C executables embed no
 #      symbol table and the MSI holds no PDB (their symbols stay in a private PDB), and ranz, the one
 #      Go executable (ONE-1, #310), built with -trimpath and -ldflags "-s -w" has no symbol table.
+#
+# It also copies the now-signed ranz-node.exe of each architecture to $OutDir as ranz-node-<arch>.exe
+# (ONE-2, #311): the install job of windows.yml uploads them, with the .cer of the self-signed
+# certificate this script makes, as the Payload that a ranz.exe it builds for that architecture
+# carries and ranz install writes out.
 
 $ErrorActionPreference = 'Stop'
 # Native exit codes are checked explicitly below (so "go tool nm", which exits 1 when a binary has no
@@ -128,6 +133,12 @@ foreach ($pair in @(@{ Dir = $X64Dir; Arch = 'x64' }, @{ Dir = $Arm64Dir; Arch =
 		Protect-File $signtool $thumb $path
 	}
 }
+
+# ONE-2 (#311): the now-signed ranz-node.exe of each architecture, copied out under its
+# architecture in its name, for the install job of windows.yml to embed into a ranz.exe it builds
+# for that architecture and run ranz install with.
+Copy-Item -LiteralPath (Join-Path $X64Dir 'ranz-node.exe') -Destination (Join-Path $OutDir 'ranz-node-x64.exe') -Force
+Copy-Item -LiteralPath (Join-Path $Arm64Dir 'ranz-node.exe') -Destination (Join-Path $OutDir 'ranz-node-arm64.exe') -Force
 
 # ---------------------------------------------------------------------------------------------------
 # 1 (continued). Build an MSI that packages the signed x64 vpnserver.exe, sign it and verify it.

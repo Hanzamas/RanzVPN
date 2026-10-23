@@ -276,3 +276,18 @@ func uninstall() error {
 	}
 	return errors.Join(errs...)
 }
+
+// Install registers the Windows service with its default data directory and no plain HTTP
+// reservation (install reads only cfg.dataDir and cfg.httpListen; the service picks up every
+// other default, such as its TLS port, from its own flags the next time it runs). It does not
+// start the service, as install does not either; `ranz install -controller` (internal/install,
+// ONE-2 #311) starts it itself, alongside the Node service.
+func Install() error {
+	return install(nil, config{dataDir: defaultDataDir()})
+}
+
+// Uninstall removes the Windows service. The service must be stopped first, as uninstall needs;
+// `ranz uninstall` (internal/install, ONE-2 #311) stops it itself before calling this.
+func Uninstall() error {
+	return uninstall()
+}
