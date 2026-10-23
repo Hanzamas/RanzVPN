@@ -27,6 +27,10 @@
 // summary and the events of its own that the controller turns into Events (Telemetry). No schema
 // version changes with it: a controller of an older release answers the first one with
 // REFUSE_REASON_PROTOCOL.
+//
+// 1:1 NAT (SDN-6, ADR-0025): a node gets the 1:1 NAT rules that it applies, its 4via6 among them,
+// in its NodeConfig, and the outside prefixes of the rules of a peer as routes of that Peer. No
+// schema version changes with them: a node of an older release skips the fields it does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -162,12 +166,14 @@ message ObjectKey {
   string name = 2;
 }
 
-// The node itself, with its addresses in the L3 Networks of its VRFs, ordered by Network name.
-// Every state holds exactly one.
+// The node itself, with its addresses in the L3 Networks of its VRFs, ordered by Network name, and
+// the 1:1 NAT rules that it applies, ordered by VRF id, then inside prefix. Every state holds
+// exactly one.
 message NodeConfig {
   string name = 1;
   repeated string tags = 2;  // sorted
   repeated Address addresses = 3;
+  repeated Nat nat = 4;
 }
 
 // A VRF the node is a member of.
@@ -194,12 +200,14 @@ message Network {
 }
 
 // Another node that shares at least one VRF with this one (full mesh), with its addresses in the
-// L3 Networks of the shared VRFs, ordered by Network name.
+// L3 Networks of the shared VRFs, ordered by Network name, and the routes of those VRFs that lead
+// to it besides them: the outside prefixes of its 1:1 NAT rules, ordered by VRF id, then prefix.
 message Peer {
   string name = 1;
   bytes public_key = 2;         // the Noise static key, 32 bytes
   repeated uint32 vrf_ids = 3;  // the shared VRFs, ascending
   repeated Address addresses = 4;
+  repeated Route routes = 5;
 }
 
 // A relay that the node may use (ADR-0015): another node with the relay role that shares a VRF
@@ -341,4 +349,24 @@ message NodeEvent {
 enum NodeEventType {
   NODE_EVENT_TYPE_UNSPECIFIED = 0;
   NODE_EVENT_TYPE_GATEWAY_FAILOVER = 1;
+}
+
+// A 1:1 NAT rule of a node in one of its VRFs (ADR-0025 decisions 4 and 5, SDN-6): the host of
+// the node sees the addresses of inside, the VRF the addresses of outside, one for one, the host
+// bits kept. In a packet from its host into the overlay the node writes each address of inside as
+// the one of outside, in a packet from the overlay to its host each address of outside as the one
+// of inside, the addresses of the packet that an ICMP error quotes too. The two prefixes are of
+// one family and length, or they are the 4via6 of the VRF: the IPv6 /96 at the start of the 4via6
+// /64 of its ULA inside and the IPv4 0.0.0.0/0 outside, between which the node translates the
+// packet from IPv6 to IPv4 and back, the IPv4 address in the last 32 bits of the IPv6 one.
+message Nat {
+  uint32 vrf_id = 1;
+  Prefix inside = 2;
+  Prefix outside = 3;
+}
+
+// A prefix of a VRF that leads to a peer besides its addresses (Peer.routes).
+message Route {
+  uint32 vrf_id = 1;
+  Prefix prefix = 2;
 }
