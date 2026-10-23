@@ -116,6 +116,9 @@ type Network struct {
 	// PoolThreshold is the percentage of a pool in use at which the controller raises the pool
 	// event, from 1 to 100. Left out, it is DefaultPoolThreshold.
 	PoolThreshold uint32 `json:"poolThreshold,omitempty"`
+	// DHCP is the DHCP responder of an L2 Network (SDN-43, dhcp.go): a Node that answers DHCP from
+	// the IPv4 pool when the bridged LAN has no DHCP server. Left out, the responder is off.
+	DHCP *DHCP `json:"dhcp,omitempty"`
 }
 
 // Node is a node of the overlay, identified by its Noise static key.
@@ -198,6 +201,7 @@ func (in Intent) Clone() Intent {
 	for name, n := range in.Networks {
 		n.EnrolSources = slices.Clone(n.EnrolSources)
 		n.Reserved = slices.Clone(n.Reserved)
+		n.DHCP = n.DHCP.clone()
 		out.Networks[name] = n
 	}
 	for name, n := range in.Nodes {
@@ -298,8 +302,8 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 }
 
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
-// Network, a Node, a Policy or a NAT uses cannot be deleted, nor can a Node that a NAT uses. The
-// Nodes lose their addresses in a deleted Network.
+// Network, a Node, a Policy or a NAT uses cannot be deleted, nor can a Node that a NAT uses or that
+// answers DHCP for a Network. The Nodes lose their addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -340,6 +344,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		}
 		if users := next.natUsers("", name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
+		// The DHCP responder of a Network (SDN-43, dhcp.go)
+		if users := next.dhcpUsers(name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q answers DHCP for %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
 		delete(next.Nodes, name)
 	case KindPolicy:
@@ -564,6 +572,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 		in.Nodes[name] = n
 	}
 	in.completeNAT()
+	in.completeDHCP(prev)
 	return problems
 }
 
@@ -676,6 +685,7 @@ func (in Intent) validate() []error {
 		}
 	}
 	problems = append(problems, in.validateNAT()...)
+	problems = append(problems, in.validateDHCP()...)
 	return append(problems, in.validateIPAM()...)
 }
 

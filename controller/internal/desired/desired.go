@@ -85,6 +85,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		keys[name] = k
 	}
 	nat := natRules(in, vrfs)
+	responders := in.Responders()
 	out := map[string]State{}
 	for name, n := range in.Nodes {
 		s := State{}
@@ -93,7 +94,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			member[v] = true
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Vrf{Vrf: vrfs[v]}})
 			for _, nw := range networks[v] {
-				s.add(&controlpb.Object{Kind: &controlpb.Object_Network{Network: nw}})
+				// The node that answers DHCP for an L2 Network gets its responder (dhcp.go)
+				s.add(&controlpb.Object{Kind: &controlpb.Object_Network{Network: withDHCP(nw, responders, name)}})
 			}
 		}
 		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(n.Tags), Addresses: addresses(in, name, vrfs, member), RateLimit: n.RateLimit}
