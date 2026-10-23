@@ -59,6 +59,11 @@ if ($env:GITHUB_ACTIONS -eq 'true') {
 			Write-Host ('ECC Curve Order policy of the runner image (' + ($eccCurves -join ', ') + ') could not be taken off: ' + $_)
 		}
 	}
+
+	# The congestion control of the outer TCP of the TLS transport (the TCP-over-TCP amendment of ADR-0022: BBR2 where
+	# Windows offers it). Windows has no choice per socket: each TCP setting template of the machine has its provider.
+	# What this runner's templates use, for the record of each CI run.
+	Get-NetTCPSetting -ErrorAction SilentlyContinue | % { Write-Host ('TCP setting template ' + $_.SettingName + ': congestion provider ' + $_.CongestionProvider) }
 }
 $named | % {
 
