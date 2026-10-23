@@ -248,6 +248,7 @@ SOFTWARE.
 The release binary also holds SQLite, which is in the public domain, and the Go libraries that the
 go.mod of its tag lists (https://github.com/rqlite/rqlite/blob/v10.5.3/go.mod), each under its own
 licence. Among them are libraries of HashiCorp under the Mozilla Public License 2.0 (hashicorp/raft
-and others) and libraries under the Apache License, Version 2.0, whose text is above. None of them
-is modified, so the source of each is the source of the version that go.mod names: for hashicorp/raft
-at https://github.com/hashicorp/raft, and for the others at the address of the module.
+and others), whose text is at https://www.mozilla.org/MPL/2.0/, and libraries under the Apache
+License, Version 2.0, whose text is above. None of them is modified, so the source of each is the
+source of the version that go.mod names: for hashicorp/raft at https://github.com/hashicorp/raft,
+and for the others at the address of the module.
