@@ -584,7 +584,7 @@ static UINT NodeNatProtocol(const NODE_NAT_IP *ip) {
 // upper layer of length bytes, at dst: its size. The traffic class and the hop limit go with it; IPv4 gets Don't
 // Fragment, as from a host that discovers the path MTU (RFC 7915 section 5.1).
 static UINT NodeNatHeader(UCHAR *dst, const NODE_NAT_IP *ip, UINT version, UINT length) {
-	UINT tos = (ip->Version == 4 ? ip->Data[1] : ((ip->Data[0] & 0x0F) << 4) | (ip->Data[1] >> 4));
+	UINT tos = (ip->Version == 4 ? ip->Data[1] : (((ip->Data[0] & 0x0F) << 4) | (ip->Data[1] >> 4)));
 	UINT ttl = ip->Data[ip->Version == 4 ? 8 : 7];
 
 	if (version == 4) {
