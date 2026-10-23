@@ -253,15 +253,20 @@ static void TlsCngString(UNICODE_STRING *u, const wchar_t *name) {
 // The key exchange groups of the machine
 //
 
-// Add a group to a REG_MULTI_SZ list being built, if it fits with the NUL that ends the list
-static void TlsAddGroup(wchar_t *list, UINT *pos, const wchar_t *group) {
-	UINT len = (UINT)wcslen(group);
-
+// Add a group of len characters to a REG_MULTI_SZ list being built, with its NUL, if it fits with the NUL that ends
+// the list
+static void TlsAddGroup(wchar_t *list, UINT *pos, const wchar_t *group, UINT len) {
 	if (*pos + len + 2 > TLS_GROUPS_SIZE)
 		return;
 
-	CopyMemory(list + *pos, group, (len + 1) * sizeof(wchar_t));
+	CopyMemory(list + *pos, group, len * sizeof(wchar_t));
+	list[*pos + len] = 0;
 	*pos += len + 1;
+}
+
+// Whether a group of len characters of a list is the group name, whose case Schannel ignores
+static bool TlsSameGroup(const wchar_t *group, UINT len, const wchar_t *name) {
+	return (CompareStringOrdinal(group, (int)len, name, -1, TRUE) == CSTR_EQUAL);
 }
 
 UINT TransportTlsSetGroups() {
@@ -288,14 +293,19 @@ UINT TransportTlsSetGroups() {
 		return TRANSPORT_TLS_GROUPS_FAILED;
 	}
 
-	// The transport's groups first, the hybrid only where the OS has ML-KEM; the others after them
+	// The transport's groups first, the hybrid only where the OS has ML-KEM; the others after them. Each group of the
+	// old list is read within the buffer, whose last two characters stay NUL.
 	ZeroMemory(list, sizeof(list));
 	if (CryptoMlKemAvailable())
-		TlsAddGroup(list, &pos, TLS_GROUP_HYBRID);
-	TlsAddGroup(list, &pos, TLS_GROUP_X25519);
-	for (const wchar_t *g = old; *g != 0; g += wcslen(g) + 1)
-		if (_wcsicmp(g, TLS_GROUP_HYBRID) != 0 && _wcsicmp(g, TLS_GROUP_X25519) != 0)
-			TlsAddGroup(list, &pos, g);
+		TlsAddGroup(list, &pos, TLS_GROUP_HYBRID, (UINT)wcslen(TLS_GROUP_HYBRID));
+	TlsAddGroup(list, &pos, TLS_GROUP_X25519, (UINT)wcslen(TLS_GROUP_X25519));
+	for (UINT i = 0; i < TLS_GROUPS_SIZE && old[i] != 0;) {
+		UINT len = (UINT)wcsnlen(old + i, TLS_GROUPS_SIZE - i);
+
+		if (TlsSameGroup(old + i, len, TLS_GROUP_HYBRID) == false && TlsSameGroup(old + i, len, TLS_GROUP_X25519) == false)
+			TlsAddGroup(list, &pos, old + i, len);
+		i += len + 1;
+	}
 
 	// Each group with its NUL, and the NUL that ends the list; a list that has it already stays
 	DWORD list_size = (DWORD)((pos + 1) * sizeof(wchar_t));
