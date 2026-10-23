@@ -2,7 +2,7 @@ param(
 	[string] $Ranz,        # The signed ranz.exe of this architecture, with the signed ranz-node.exe as its Payload
 	[string] $Tampered,    # The same ranz.exe, signed too, with one byte of its Payload changed
 	[string] $NodeSha256,  # The SHA-256 of that signed ranz-node.exe
-	[string] $Rqlited      # rqlited.exe, the store of the Controller service until ONE-4 (#313) puts an rqlite member in ranz.exe
+	[string] $MemberSha256 # The SHA-256 of the signed rqlited.exe that ranz.exe carries as the rqlite member of a Controller (ONE-4, #313)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,8 +24,10 @@ $PSNativeCommandUseErrorActionPreference = $false
 #   counts), and so is the ranz.exe that sits next to it, where the Node looks for ranz.exe bgp and where
 #   the Controller service runs ranz.exe controller from: a copy of the ranz.exe that ran ranz install;
 # - no ranz-controller service exists after ranz install, and ranz install --controller registers it, as
-#   its virtual account, to run the ranz.exe of the Ranz VPN folder as ranz.exe controller, and starts it
-#   (with the rqlite that it stores its intent in, which this script runs);
+#   its virtual account, to run the ranz.exe of the Ranz VPN folder as ranz.exe controller, and starts it;
+#   the Controller brings its own rqlite member (ONE-4, #313): it writes the rqlited.exe that ranz.exe
+#   carries to payload\rqlited.exe under its data directory, byte for byte the signed rqlited.exe (its
+#   SHA-256) with a valid signature, and runs that file, with no rqlited installed or started here;
 # - ranz install again leaves one service of each name, both Running, and starts a Node that was stopped;
 # - ranz uninstall removes both services and the Ranz VPN folder, and keeps the data directories of the
 #   Node and of the Controller; a reinstall opens the Configuration store that the Node left (which names
@@ -36,7 +38,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 $ranzFile = (Resolve-Path -LiteralPath $Ranz).Path
 $tamperedFile = (Resolve-Path -LiteralPath $Tampered).Path
 if ($NodeSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-NodeSha256 is not a SHA-256: '$NodeSha256'" }
-$rqlitedFile = (Resolve-Path -LiteralPath $Rqlited).Path
+if ($MemberSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-MemberSha256 is not a SHA-256: '$MemberSha256'" }
 
 $nodeService = 'ranzvpnserver'
 $controllerService = 'ranz-controller'
@@ -51,10 +53,8 @@ $dataDir = Join-Path $env:ProgramData 'Hanzcodes\Ranz VPN'
 $store = Join-Path $dataDir 'ranz_node.db'
 $logDir = Join-Path $dataDir 'node_log'
 $controllerData = Join-Path $env:ProgramData 'Ranz\controller'
-$rqliteData = Join-Path $env:RUNNER_TEMP 'ranz-install-rqlite'
-$rqliteOut = Join-Path $env:RUNNER_TEMP 'ranz-install-rqlited.out'
-$rqliteErr = Join-Path $env:RUNNER_TEMP 'ranz-install-rqlited.err'
-$script:rqlite = $null
+# Where the Controller writes its rqlite member: payloadDir of controller/ and the name of the Payload
+$memberFile = Join-Path $controllerData 'payload\rqlited.exe'
 
 # A clean folder that holds only the ranz.exe of $exe, which the job then runs from: nowhere near the
 # folders of the artifacts, so that it cannot find a second file next to it
@@ -141,30 +141,17 @@ function Get-NodeStarts {
 	return @(Get-ChildItem -LiteralPath $logDir -File -Recurse -ErrorAction SilentlyContinue | Select-String -Pattern 'Node started' -SimpleMatch).Count
 }
 
-# The rqlite that the Controller service stores its intent in, at the address that the Controller uses
-# when it is given no -rqlited: 127.0.0.1:4001
-function Start-Rqlite {
-	Remove-Item -LiteralPath $rqliteData -Recurse -Force -ErrorAction SilentlyContinue
-	New-Item -ItemType Directory -Force -Path $rqliteData | Out-Null
-	$script:rqlite = Start-Process -FilePath $rqlitedFile -PassThru -WindowStyle Hidden -RedirectStandardOutput $rqliteOut -RedirectStandardError $rqliteErr `
-		-ArgumentList @('-node-id', '1', '-http-addr', '127.0.0.1:4001', '-raft-addr', '127.0.0.1:4002', $rqliteData)
-	$end = (Get-Date).AddSeconds(60)
-	while ($true) {
-		try {
-			$ready = Invoke-WebRequest -Uri 'http://127.0.0.1:4001/readyz' -UseBasicParsing -TimeoutSec 2
-			if ($ready.StatusCode -eq 200) { break }
-		} catch {
-			# not ready yet
-		}
-		if ($script:rqlite.HasExited) { throw "rqlited exited with code $($script:rqlite.ExitCode) before it was ready" }
-		if ((Get-Date) -ge $end) { throw 'rqlited is not ready within 60 s' }
-		Start-Sleep -Milliseconds 500
-	}
-	Write-Host "rqlited is ready (process $($script:rqlite.Id))"
-}
-
-function Stop-Rqlite {
-	if ($script:rqlite -and -not $script:rqlite.HasExited) { Stop-Process -Id $script:rqlite.Id -Force -ErrorAction SilentlyContinue }
+# The rqlite member of the Controller (ONE-4, #313): the file that the Controller wrote under its data
+# directory is byte for byte the signed rqlited.exe that ranz.exe carries (its SHA-256), has a valid
+# Authenticode signature, and is the file that the one rqlited.exe process runs
+function Assert-Member {
+	if (-not (Test-Path -LiteralPath $memberFile)) { throw "the Controller did not write its rqlite member to $memberFile" }
+	if ((Get-Sha256 $memberFile) -ne $MemberSha256) { throw "$memberFile is not byte for byte the signed rqlited.exe (SHA-256 $MemberSha256)" }
+	$sig = Get-AuthenticodeSignature -FilePath $memberFile
+	if ($sig.Status -ne 'Valid') { throw "$memberFile has signature status $($sig.Status), not Valid" }
+	$running = @(Get-CimInstance Win32_Process -Filter "Name='rqlited.exe'" | Where-Object { $_.ExecutablePath -eq $memberFile })
+	if ($running.Count -ne 1) { throw "expected one rqlited.exe process that runs $memberFile, found $($running.Count)" }
+	Write-Host "the Controller wrote its rqlite member, $memberFile, byte for byte the signed rqlited.exe and with a valid signature, and runs it as process $($running[0].ProcessId)"
 }
 
 # What a failed step needs to be read from the log alone
@@ -196,11 +183,10 @@ function Show-Diagnostics {
 		Write-Host "last lines of ${controllerLog}:"
 		Get-Content -LiteralPath $controllerLog -Tail 40 | ForEach-Object { Write-Host "  $_" }
 	}
-	foreach ($log in @($rqliteOut, $rqliteErr)) {
-		if (Test-Path -LiteralPath $log) {
-			Write-Host "last lines of ${log}:"
-			Get-Content -LiteralPath $log -Tail 20 | ForEach-Object { Write-Host "  $_" }
-		}
+	if (Test-Path -LiteralPath $memberFile) {
+		Write-Host "the rqlite member: $memberFile, $((Get-Item -LiteralPath $memberFile).Length) bytes, signature $((Get-AuthenticodeSignature -FilePath $memberFile).Status)"
+	} else {
+		Write-Host "the rqlite member: $memberFile is not there"
 	}
 }
 
@@ -267,8 +253,8 @@ try {
 	if (Get-Service -Name $controllerService -ErrorAction SilentlyContinue) { throw "$controllerService exists although ranz install ran without --controller" }
 	Write-Host "no $controllerService without --controller"
 
-	# 4. ranz install --controller also registers and starts the Controller service
-	Start-Rqlite
+	# 4. ranz install --controller also registers and starts the Controller service, which brings its
+	#    own rqlite member: nothing else is installed or started for its store
 	$r = Invoke-Ranz $goodExe @('install', '--controller')
 	if ($r.Code -ne 0) { throw "ranz install --controller exited with code $($r.Code)" }
 	Wait-ServiceState $controllerService 'Running'
@@ -280,6 +266,7 @@ try {
 	Assert-Access $installDir $controllerAccount 'ReadAndExecute'
 	Wait-ServiceState $nodeService 'Running'
 	Write-Host "$controllerService is Running as $controllerAccount, from $($csvc.PathName); $nodeService still runs"
+	Assert-Member
 
 	# 5. Idempotent: install again leaves one service of each name, both Running, and a Node that was
 	#    stopped runs again
@@ -338,7 +325,6 @@ try {
 	Show-Diagnostics
 	throw
 } finally {
-	Stop-Rqlite
 	Remove-InstalledState
 }
 
