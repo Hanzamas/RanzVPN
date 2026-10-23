@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
+	"github.com/Hanzamas/RanzVPN/controller/internal/audit"
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
@@ -97,6 +98,9 @@ type Member struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 
+	// audit records the calls that this member's Guard refuses as unauthenticated (SDN-49).
+	audit *audit.Log
+
 	// Used by the lease loop only.
 	seen      store.Lease // the lease as this member saw it last
 	seenSince time.Time   // since when it is unchanged
@@ -126,6 +130,7 @@ func Start(cfg Config) (*Member, error) {
 		m.log = slog.New(slog.DiscardHandler)
 	}
 	m.log = m.log.With("member", cfg.Name)
+	m.audit = audit.NewLog(cfg.Store, m.log)
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	m.step(ctx)
@@ -182,14 +187,16 @@ func (m *Member) ServeStream(tc *tls.Conn) {
 // Handler returns the member's HTTP API: GET /api/v1/status answers for this member, every other
 // call goes to the controller of the leader, here or forwarded to the member that leads with the
 // caller's bearer token, which the leader checks again. Every call needs the role that the API
-// asks for it (api.Guard): the tokens are in the store, so every member knows them.
+// asks for it (api.Guard): the tokens are in the store, so every member knows them. A call that
+// the Guard of a member refuses as unauthenticated is a failed authentication in the audit log
+// (api.AuditRefusals); the calls that change something are recorded by the leader that serves them.
 func (m *Member) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, r *http.Request) {
 		api.Reply(w, http.StatusOK, m.Status())
 	})
 	mux.HandleFunc("/", m.serveAPI)
-	return api.Guard(m.cfg.Tokens, mux)
+	return api.AuditRefusals(m.audit, api.Guard(m.cfg.Tokens, mux))
 }
 
 // Status returns the answer of GET /api/v1/status of this member.
@@ -301,7 +308,7 @@ func (m *Member) lead(ctx context.Context, l store.Lease) {
 		m.release(l.Epoch)
 		return
 	}
-	h := api.Routes(c, m.cfg.Tokens, m.cfg.Status)
+	h := api.AuditCalls(c, api.Routes(c, m.cfg.Tokens, m.cfg.Status))
 	m.mu.Lock()
 	m.active, m.handler, m.lease = c, h, l
 	m.proxy, m.proxyFor = nil, store.Lease{}
