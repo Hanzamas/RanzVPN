@@ -105,6 +105,13 @@ $named | % {
 		return $false
 	}
 
+	# ... and the NAT test where the packets of its 4via6 and its 1:1 NAT arrive, and as what (golden family "nat", SDN-6 #182)
+	if ($test -eq 'nat' -and $env:RANZ_UPDATE_GOLDEN -ne '1' -and ($full | Select-String -Pattern 'NAT GOLDEN MODE compare' -SimpleMatch -CaseSensitive).Count -ne 1) {
+		$full
+		Write-Error 'nat golden files not compared (missing: NAT GOLDEN MODE compare)'
+		return $false
+	}
+
 	# ... and the switch test its frames, limits and counters (golden family "switch", CORE-S4-1 #74)
 	if ($test -eq 'switch' -and $env:RANZ_UPDATE_GOLDEN -ne '1' -and ($full | Select-String -Pattern 'SWITCH GOLDEN MODE compare' -SimpleMatch -CaseSensitive).Count -ne 1) {
 		$full
