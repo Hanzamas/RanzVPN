@@ -14,8 +14,10 @@
 #   llvm --export FILE [--scope DIR]   FILE is the JSON of llvm-cov export -summary-only. Every .c file
 #                                      of DIR (src/Core) must belong to one C module.
 #   go --module DIR --profile FILE     FILE is the profile of go test -coverprofile run in the Go module
-#                                      DIR (controller, ranz-bgp); every package of DIR in it with
-#                                      statements needs a floor.
+#                                      in DIR ("." for the module at the repository root, which holds
+#                                      controller/ and ranz-bgp/); every package of the module in it
+#                                      with statements needs a floor, named by its path from the
+#                                      repository root.
 # The table of modules goes to the job log and to $GITHUB_STEP_SUMMARY. Exit status 1 when a module
 # is below its floor, has no floor, or a floor names a module that has no coverage data.
 #
@@ -133,6 +135,8 @@ _PROFILE_RE = re.compile(r'^(.+\.go):(\d+)\.(\d+),(\d+)\.(\d+) (\d+) (\d+)$')
 def go(args, root):
     _, floors, problems = read_floors(os.path.join(root, FLOORS))
     module_dir = args.module.strip('/')
+    # A package of the module at the repository root is named by its path from the root
+    prefix = '' if module_dir == '.' else module_dir + '/'
     module_path = None
     with open(os.path.join(root, module_dir, 'go.mod'), encoding='utf-8') as f:
         for line in f:
@@ -157,8 +161,7 @@ def go(args, root):
     for (path, *_), (statements, count) in blocks.items():
         if not path.startswith(module_path + '/'):
             continue
-        package = module_dir + '/' + os.path.dirname(path[len(module_path) + 1:])
-        package = package.rstrip('/')
+        package = (prefix + os.path.dirname(path[len(module_path) + 1:])).rstrip('/')
         covered, total = packages.get(package, (0, 0))
         packages[package] = (covered + (statements if count > 0 else 0), total + statements)
 
@@ -169,7 +172,7 @@ def go(args, root):
             continue
         rows.append((package, covered, total, floors.get(package)))
     for package in sorted(floors):
-        if (package == module_dir or package.startswith(module_dir + '/')) and package not in packages:
+        if (module_dir == '.' or package == module_dir or package.startswith(module_dir + '/')) and package not in packages:
             problems.append('%s: a floor in %s and no coverage data: a package that no longer exists?' % (package, FLOORS))
     return report('Go', rows, problems)
 

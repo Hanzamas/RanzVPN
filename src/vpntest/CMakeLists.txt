@@ -77,7 +77,7 @@ ranz_add_executable(vpntest HAMCORE
     harden.c
     # Named HTTP listener test of REL-6 (#51)
     httplistener.c
-    # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz-controller and ping each other
+    # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz controller and ping each other
     sdntrace.c
     # Named VXLAN test of SDN-62 (#289): the VXLAN module of the new core against harness VTEPs
     vxlantest.c

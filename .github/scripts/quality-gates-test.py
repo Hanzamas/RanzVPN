@@ -71,7 +71,7 @@ def fuzz_tree(root, **changes):
         'src/fuzz/corpus/fuzz_x/seed.bin': 'x',
         'controller/internal/wire/wire.go': GO_SRC,
         'controller/internal/wire/wire_test.go': GO_TEST,
-        'ranz-bgp/go.mod': 'module example.com/ranz-bgp\n',
+        'go.mod': 'module example.com/ranz\n',
         '.github/quality/fuzz-targets.txt': REGISTRY,
     }
     files.update(changes)
@@ -129,8 +129,11 @@ def test_fuzz_registry():
 
     with tempfile.TemporaryDirectory() as root:
         fuzz_tree(root)
-        expect('fuzz-registry: go-targets', run('fuzz-registry.py', 'go-targets', 'controller', '--root', root), 0,
+        expect('fuzz-registry: go-targets of a module in a directory', run('fuzz-registry.py', 'go-targets', 'controller', '--root', root), 0,
                './internal/wire FuzzDecode')
+        # The module at the repository root names its packages by their path from the root
+        expect('fuzz-registry: go-targets of the module at the root', run('fuzz-registry.py', 'go-targets', '.', '--root', root), 0,
+               './controller/internal/wire FuzzDecode', absent=['src/Core', 'fuzz_x'])
 
 
 def test_coverage_floor():
@@ -179,6 +182,25 @@ def test_coverage_floor():
        base + 'example.com/controller/internal/y/y.go:1.1,2.2 1 1\n')
     go('a floor of a package that is gone', 1, ['controller/cmd/tool: a floor', 'no coverage data'],
        base.replace('example.com/controller/cmd/tool/main.go:1.1,2.2 3 0\n', ''))
+
+    # The module at the repository root (ONE-1): its packages are named by their path from the root
+    def go_root(name, code, texts, profile):
+        with tempfile.TemporaryDirectory() as root:
+            write(root, '.github/quality/coverage-floors.txt', floors)
+            write(root, 'go.mod', 'module example.com/ranz\n\ngo 1.26.0\n')
+            write(root, 'cover.out', 'mode: atomic\n' + profile)
+            expect('coverage-floor go, module at the root: ' + name,
+                   run('coverage-floor.py', 'go', '--module', '.', '--profile', os.path.join(root, 'cover.out'),
+                       '--root', root), code, *texts)
+
+    root_base = base.replace('example.com/controller/', 'example.com/ranz/controller/')
+    go_root('packages at their floors', 0, ['| controller/internal/x | 6 | 10 | 60.0% | 60.0% | ok |'], root_base)
+    go_root('a package below its floor', 1, ['controller/internal/x: 50.0% covered, below its floor of 60.0%'],
+            root_base.replace(':1.1,2.2 6 1', ':1.1,2.2 4 1'))
+    go_root('a package of the other tree without a floor', 1, ['ranz-bgp/internal/y: 100.0% covered and no floor'],
+            root_base + 'example.com/ranz/ranz-bgp/internal/y/y.go:1.1,2.2 1 1\n')
+    go_root('a floor of a package that is gone', 1, ['controller/cmd/tool: a floor', 'no coverage data'],
+            root_base.replace('example.com/ranz/controller/cmd/tool/main.go:1.1,2.2 3 0\n', ''))
 
 
 def test_bench_gate():
@@ -306,12 +328,38 @@ def test_govulncheck_gate():
           absent=['No longer found'])
 
 
+def test_one_binary():
+    # CI, WiX packages and docs that name an executable of the two programs that ranz replaced (ONE-1, #310)
+    clean = {'.github/workflows/ranz.yml': 'go build -o build ./controller/cmd/ranz\n',
+             'docs/adr/0026.md': 'the service `ranz-controller` runs `ranz controller`, and `ranz bgp` is the sidecar\n',
+             'ranz-bgp/installer/other.txt': 'ranz-bgp.exe outside the scope is not read\n'}
+
+    def check(name, code, texts, files=None):
+        with tempfile.TemporaryDirectory() as root:
+            for path, text in {**clean, **(files or {})}.items():
+                write(root, path, text)
+            expect('one-binary: ' + name, run('one-binary-check.py', '--root', root), code, *texts)
+
+    check('a tree with the one executable', 0, ['name no executable'])
+    check('a workflow that runs an old executable', 1, ['ranz-bgp.exe', 'the file name of an executable'],
+          {'.github/workflows/old.yml': 'run: build\\ranz-bgp.exe -version\n'})
+    check('a script that builds an old main package', 1, ['cmd/ranz-controller', 'the path of a main package'],
+          {'.github/scripts/build.ps1': 'go build ./cmd/ranz-controller\n'})
+    check('a doc that runs an old program', 1, ['ranz-controller reset-admin', 'a command line of a program'],
+          {'docs/guide.md': 'run ranz-controller reset-admin on the host\n'})
+    check('a WiX package that names an old executable', 1, ['ranz-controller.exe'],
+          {'installer/Ranz.wxs': '<File Name="ranz-controller.exe" />\n'})
+    check('the checker itself is not read', 0, ['name no executable'],
+          {'.github/scripts/one-binary-check.py': 'ranz-bgp.exe\n'})
+
+
 if __name__ == '__main__':
     test_fuzz_registry()
     test_coverage_floor()
     test_bench_gate()
     test_static_findings()
     test_govulncheck_gate()
+    test_one_binary()
     if failures:
         print('\n\n'.join(failures))
         print('%d fixtures failed' % len(failures))

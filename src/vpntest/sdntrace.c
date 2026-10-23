@@ -1,7 +1,7 @@
 // sdntrace.c
 // Named default VRF tracer of vpntest ("sdntrace" command, SDN-3 #179)
 //
-// Two real nodes of the new core join the VRF default that the first start of a ranz-controller created, and ping
+// Two real nodes of the new core join the VRF default that the first start of a ranz controller created, and ping
 // each other over the overlay. .github/scripts/sdn-tracer.ps1 runs the controller with its rqlited, applies the Node
 // resources node-a and node-b with the static keys of this test (they name no VRF, so they join VRF default), and runs
 // "vpntest sdntrace <address> <key> [<file>]": the address of the controller's TLS port, its static key in base64, and

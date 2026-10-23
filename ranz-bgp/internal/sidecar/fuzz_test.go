@@ -6,7 +6,7 @@ import (
 )
 
 // The fuzz test of the sidecar package (ADR-0040 item 1, .github/quality/fuzz-targets.txt), which
-// the ranz-bgp workflow runs with go test -fuzz.
+// the ranz workflow runs with go test -fuzz.
 
 // FuzzRead reads the input as what the node writes into the pipe (Reader.Read), message after
 // message until the first error, and checks the settings of each start message as the session

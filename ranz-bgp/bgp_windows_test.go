@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package bgpcmd
 
 import (
 	"context"
@@ -23,24 +23,23 @@ import (
 
 // nodePipeSDDL is the strict DACL that the node gives its pipe (NODE_BGP_PIPE_SDDL,
 // src/Cedar/NodeBgp.c; ADR-0039 decision 3): the owner alone, the account of the node, which
-// ranz-bgp runs as.
+// the sidecar runs as.
 const nodePipeSDDL = "D:P(A;;GA;;;OW)"
 
 const pipeTimeout = 30 * time.Second
 
-// mainEnv makes the test binary run main itself, on the pipe it names: the ranz-bgp process of
+// mainEnv makes the test binary run Main itself, on the pipe it names: the `ranz bgp` process of
 // TestMitigations.
 const mainEnv = "RANZ_BGP_TEST_MAIN"
 
 func TestMain(m *testing.M) {
 	if pipe := os.Getenv(mainEnv); pipe != "" {
-		os.Args = []string{os.Args[0], "-pipe", pipe, "-log", os.Getenv(mainEnv + "_LOG")}
-		main()
+		os.Exit(Main([]string{"-pipe", pipe, "-log", os.Getenv(mainEnv + "_LOG")}))
 	}
 	os.Exit(m.Run())
 }
 
-// ranz-bgp, its main in a process of its own as the node starts it, sets its process mitigations
+// `ranz bgp`, its Main in a process of its own as the node starts it, sets its process mitigations
 // before it connects to the pipe of the node (internal/mitigation) and runs BGP under them: read
 // from outside once BGP started, the process has every one that is not off, and each DLL it
 // loaded is in System32. Its log says which mitigations are on, and it exits with 0 when the pipe
@@ -65,7 +64,7 @@ func TestMitigations(t *testing.T) {
 	if err != nil {
 		cmd.Process.Kill()
 		cmd.Wait()
-		t.Fatalf("ranz-bgp did not connect to %s: %v", name, err)
+		t.Fatalf("ranz bgp did not connect to %s: %v", name, err)
 	}
 	err = sidecar.NewWriter(conn).Write(sidecar.Message{
 		Type:       sidecar.TypeStart,
@@ -89,12 +88,12 @@ func TestMitigations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, lack := range lacks {
-		t.Errorf("ranz-bgp: %s", lack)
+		t.Errorf("ranz bgp: %s", lack)
 	}
 
 	conn.Close()
 	if err := cmd.Wait(); err != nil {
-		t.Errorf("ranz-bgp did not exit with 0 after the node closed the pipe: %v", err)
+		t.Errorf("ranz bgp did not exit with 0 after the node closed the pipe: %v", err)
 	}
 	log, err := os.ReadFile(logPath)
 	if err != nil {
@@ -129,7 +128,7 @@ func read(t *testing.T, conn net.Conn, r *sidecar.Reader, typ string) sidecar.Me
 	}
 }
 
-// ranz-bgp on a named pipe that the test creates the way the node does: it connects, starts BGP
+// `ranz bgp` on a named pipe that the test creates the way the node does: it connects, starts BGP
 // with the settings of start, answers a message it cannot apply with an error, and exits with 0
 // when the pipe closes.
 func TestPipe(t *testing.T) {
@@ -145,12 +144,12 @@ func TestPipe(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "ranz-bgp.log")
 	done := make(chan int, 1)
 	go func() {
-		done <- run(context.Background(), []string{"-pipe", name, "-log", logPath}, io.Discard, io.Discard)
+		done <- run(context.Background(), []string{"-pipe", name, "-log", logPath}, io.Discard)
 	}()
 
 	conn, err := l.Accept()
 	if err != nil {
-		t.Fatalf("ranz-bgp did not connect to %s: %v", name, err)
+		t.Fatalf("ranz bgp did not connect to %s: %v", name, err)
 	}
 	r := sidecar.NewReader(conn)
 	w := sidecar.NewWriter(conn)
@@ -181,10 +180,10 @@ func TestPipe(t *testing.T) {
 	select {
 	case code := <-done:
 		if code != 0 {
-			t.Errorf("ranz-bgp exited with %d after the node closed the pipe, want 0", code)
+			t.Errorf("ranz bgp exited with %d after the node closed the pipe, want 0", code)
 		}
 	case <-time.After(pipeTimeout):
-		t.Fatal("ranz-bgp did not exit after the node closed the pipe")
+		t.Fatal("ranz bgp did not exit after the node closed the pipe")
 	}
 
 	log, err := os.ReadFile(logPath)
@@ -198,10 +197,10 @@ func TestPipe(t *testing.T) {
 	}
 }
 
-// Without the pipe of the node, ranz-bgp exits with 1.
+// Without the pipe of the node, `ranz bgp` exits with 1.
 func TestNoPipe(t *testing.T) {
 	name := fmt.Sprintf(`\\.\pipe\ranz-bgp-missing-%d`, os.Getpid())
-	if code := run(context.Background(), []string{"-pipe", name}, io.Discard, io.Discard); code != 1 {
+	if code := run(context.Background(), []string{"-pipe", name}, io.Discard); code != 1 {
 		t.Errorf("exit code %d without the pipe of the node, want 1", code)
 	}
 }

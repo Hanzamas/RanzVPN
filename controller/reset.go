@@ -1,4 +1,4 @@
-package main
+package controllercmd
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 
 // The offline recovery of the admin access (SDN-14 follow-up of #190, decision of 2026-10-22):
 // when nobody holds the secret of an admin token any more, a local administrator of the
-// controller's host creates a new admin token with `ranz-controller reset-admin`, which writes
+// controller's host creates a new admin token with `ranz controller reset-admin`, which writes
 // it to the store directly, not through the API, so it needs no token.
 
 // resetTimeout bounds a reset-admin: the start of rqlited while the service is stopped, the
@@ -31,7 +31,7 @@ const resetTimeout = 2 * time.Minute
 // rqlited itself (-rqlited).
 const probeTimeout = 3 * time.Second
 
-// runResetAdmin runs `ranz-controller reset-admin [flags]`, with the flags of the service. It
+// runResetAdmin runs `ranz controller reset-admin [flags]`, with the flags of the service. It
 // prints the new admin token as JSON with its secret, which it shows this once, and records the
 // reset in the Application log on Windows.
 func runResetAdmin(args []string) error {
@@ -54,14 +54,14 @@ func runResetAdmin(args []string) error {
 	}
 	msg := fmt.Sprintf("%s: %s created the admin token %q with reset-admin; its secret is in %s", serviceName, who, tok.Name, file)
 	if err := noteReset(msg); err != nil {
-		fmt.Fprintf(os.Stderr, "ranz-controller reset-admin: recording the reset in the Application log: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ranz controller reset-admin: recording the reset in the Application log: %v\n", err)
 	}
 	b, err := json.MarshalIndent(tok, "", "  ")
 	if err != nil {
 		return err
 	}
 	fmt.Println(string(b))
-	fmt.Fprintf(os.Stderr, "ranz-controller reset-admin: the secret of the admin token %q is shown above this once, and is in %s\n", tok.Name, file)
+	fmt.Fprintf(os.Stderr, "ranz controller reset-admin: the secret of the admin token %q is shown above this once, and is in %s\n", tok.Name, file)
 	return nil
 }
 

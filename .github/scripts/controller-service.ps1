@@ -1,11 +1,13 @@
-param([string] $BinDir = 'build\controller')
+param([string] $BinDir = 'build\ranz')
 
 $ErrorActionPreference = 'Stop'
 
-# ranz-controller as a Windows service (SDN-2, #178). Installed with rqlited as its sidecar and
-# with plain HTTP on port 80, the service must:
+# ranz controller as a Windows service (SDN-2, #178; ONE-1, #310: the controller is a subcommand of
+# the one executable ranz, and the service runs ranz.exe controller). Installed with rqlited as its
+# sidecar and with plain HTTP on port 80, the service must:
 # - run as its virtual account NT SERVICE\ranz-controller, not LocalSystem, with an unrestricted
-#   service SID that is the serviceSID of cmd/ranz-controller/service_windows.go; run with the
+#   service SID that is the serviceSID of controller/service_windows.go, from the command line
+#   ranz.exe controller with the flags it was installed with; run with the
 #   process mitigations of internal/mitigation and load DLLs from System32 only, as go test reads
 #   its process from outside (TestProcess), and say so in its log (ADR-0039, SEC-1 #279);
 # - reserve the URL prefixes of port 80 in HTTP.sys for that account at install, and remove them
@@ -33,21 +35,20 @@ $ErrorActionPreference = 'Stop'
 #   what a revision changed with `ranz diff`, roll back by itself an apply with -confirm that
 #   nobody confirmed and record the event, return to a revision with `ranz rollback`, and keep
 #   an apply that `ranz confirm` confirmed;
-# - once admin.token is deleted, get a new admin token from `ranz-controller reset-admin`, run by
+# - once admin.token is deleted, get a new admin token from `ranz controller reset-admin`, run by
 #   the runner's elevated account with the flags of the service, while the service runs and while
 #   it is stopped: reset-admin prints the secret, writes it to admin.token, and the API answers
 #   it as admin;
 # - write its starts and stops to the Application log (event IDs 1 and 2 of
-#   cmd/ranz-controller/service_windows.go), a warning for each start on the fallback (4) and for
+#   controller/service_windows.go), a warning for each start on the fallback (4) and for
 #   each reset-admin (5), and no failure entry (3).
 
 $bin = (Resolve-Path $BinDir).Path
-$controller = Join-Path $bin 'ranz-controller.exe'
 $ranz = Join-Path $bin 'ranz.exe'
 $nodesim = Join-Path $bin 'ranz-nodesim.exe'
 
-# serviceName of cmd/ranz-controller, its TLS port (the default -listen, and the fallback), and
-# the prefixes that port.PlainPrefixes makes of -http-listen :80
+# serviceName of controller (the package of ranz controller), its TLS port (the default -listen,
+# and the fallback), and the prefixes that port.PlainPrefixes makes of -http-listen :80
 $service = 'ranz-controller'
 $api = 'https://127.0.0.1'
 $control = '127.0.0.1:443'
@@ -58,7 +59,7 @@ $account = "NT SERVICE\$service"
 $serviceSid = 'S-1-5-80-3572785604-795126647-2475823641-2319294638-1653438898'
 
 $data = Join-Path $env:RUNNER_TEMP 'ranz-controller-data'
-# adminTokenFile of cmd/ranz-controller: the secret of the admin token of the first start
+# adminTokenFile of controller: the secret of the admin token of the first start
 $tokenFile = Join-Path $data 'admin.token'
 $work = Join-Path $env:RUNNER_TEMP 'ranz-controller-check'
 New-Item -ItemType Directory -Force -Path $work | Out-Null
@@ -95,10 +96,10 @@ function Assert-Refused([string[]] $argv, [int] $status) {
 # the output of the rqlited it runs while the service is stopped, go to the log
 function Invoke-ResetAdmin {
 	$errFile = Join-Path $work 'reset-admin.err'
-	$out = & $controller reset-admin -data $data -rqlited $env:RQLITED 2> $errFile
+	$out = & $ranz controller reset-admin -data $data -rqlited $env:RQLITED 2> $errFile
 	$code = $LASTEXITCODE
 	Get-Content -LiteralPath $errFile | ForEach-Object { Write-Host "  reset-admin: $_" }
-	if ($code -ne 0) { throw "ranz-controller reset-admin exited with code $code" }
+	if ($code -ne 0) { throw "ranz controller reset-admin exited with code $code" }
 	return ($out -join "`n") | ConvertFrom-Json
 }
 
@@ -164,10 +165,13 @@ function Test-Hardening {
 	$sid = (& sc.exe showsid $service | Out-String)
 	if ($sid -notmatch [regex]::Escape($serviceSid)) { throw "Windows gives $account another SID than serviceSID ($serviceSid):`n$sid" }
 	Write-Host "$service runs as $account ($serviceSid), process $($svc.ProcessId)"
-	Push-Location (Join-Path $PSScriptRoot '..\..\controller')
+	# The service is the controller subcommand of the one executable (ONE-1): ranz.exe controller
+	if ($svc.PathName -notmatch '\\ranz\.exe"? controller ') { throw "$service runs '$($svc.PathName)', not ranz.exe controller with its flags" }
+	Write-Host "$service runs $($svc.PathName)"
+	Push-Location (Join-Path $PSScriptRoot '..\..')
 	try {
 		$env:RANZ_MITIGATION_PID = "$($svc.ProcessId)"
-		go test -count=1 -v -run '^TestProcess$' ./internal/mitigation
+		go test -count=1 -v -run '^TestProcess$' ./controller/internal/mitigation
 		$code = $LASTEXITCODE
 	} finally {
 		Remove-Item Env:RANZ_MITIGATION_PID -ErrorAction SilentlyContinue
@@ -207,7 +211,7 @@ Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue |
 
 $hold = $null
 try {
-	Write-Host (Invoke-Checked $controller @('install', '-data', $data, '-rqlited', $env:RQLITED, '-http-listen', ':80'))
+	Write-Host (Invoke-Checked $ranz @('controller', 'install', '-data', $data, '-rqlited', $env:RQLITED, '-http-listen', ':80'))
 	foreach ($p in @($acmePrefix, $redirectPrefix)) {
 		$acl = Get-URLReservation $p
 		if ($acl -notmatch [regex]::Escape($p) -or $acl -notmatch [regex]::Escape($account)) { throw "install made no URL reservation of $p for ${account}:`n$acl" }
@@ -409,7 +413,7 @@ try {
 	if ($failed.Count -gt 0) { throw "$service wrote $($failed.Count) failure entries (event ID 3)" }
 	Write-Host "Application log: $($resets[0].Message)"
 
-	Write-Host (Invoke-Checked $controller @('uninstall'))
+	Write-Host (Invoke-Checked $ranz @('controller', 'uninstall'))
 	foreach ($p in @($acmePrefix, $redirectPrefix)) {
 		$acl = Get-URLReservation $p
 		if ($acl -match [regex]::Escape($p)) { throw "uninstall left the URL reservation of ${p}:`n$acl" }

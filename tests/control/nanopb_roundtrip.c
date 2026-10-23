@@ -2,7 +2,7 @@
 // The C side of the control protocol schema (SDN-2, #178)
 //
 // Every control message that the controller conformance tests sent or received
-// (controller/internal/controller and the cluster tests of controller/cmd/ranz-controller, written
+// (controller/internal/controller and the cluster tests of controller/cluster_test.go, written
 // with RANZ_CONTROL_WIRE) is decoded with the code that nanopb generates from
 // proto/ranz/control/v1/control.proto and control.options, then encoded again. The bytes must come out the same, so the C node and the controller agree on every field
 // of the messages the controller sends and of the ones a node sends.

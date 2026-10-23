@@ -56,3 +56,11 @@ Maintainer decision (Hilmi, after a grilling round; the full design is the amend
 - **Decision 6 is settled for L2 as well:** EVPN type-1, 2, 3 and 4 join type-5, so an L2 Network can be stretched to a fabric and two gateways can share an Ethernet segment. This replaces "L2 stretch stays after v1" in decision 6 and "EVPN type-2 and L2 stretch over EVPN are after v1" in the amendment of 2026-10-20.
 - **`ranz-bgp`** carries all five route types over the same named pipe, in batches with a full resync after a reconnect. GoBGP stays a library inside it.
 - A Network with a stretch must not also have a `bridge` role node (router-on-a-stick, decision 5, stays possible on other Networks).
+
+## Amendment 2026-10-23: `ranz-bgp` is the subcommand `ranz bgp` (ONE-1)
+
+Recorded by ONE-1 (#310), from the ADR-0011 amendment of 2026-10-22 (the product ships as one `ranz.exe`).
+
+- **The sidecar is no executable of its own.** It is the subcommand `ranz bgp` of the one Go executable `ranz`. The node starts it as `ranz.exe bgp -pipe NAME -log FILE` from the folder of its own executable when its configuration names BGP peers, as it started the separate file before. The named pipe, its strict DACL, the JSON messages, the filters and the sidecar's own log (`ranz-bgp.log` in the node log directory) are unchanged, and so are the packages `ranz-bgp` and `ranz-bgp/internal/sidecar`. The ready message names `ranz bgp` and its GoBGP; `ranz version` prints the one version of the executable.
+- **The optional MSI feature of the amendment of 2026-10-13 is replaced by the executable.** GoBGP's Apache-2.0 licence text, which section 4 of that licence asks to ship with the binary, is inside `ranz.exe`: `ranz notice` prints the NOTICE file that holds it, and a test compares it with the licence of the GoBGP that `go.mod` pins. The other components that ONE-3 (#312) and ONE-4 (#313) add to the file go into the same NOTICE.
+- **The node's test proves it:** `vpntest bgp` starts a node with BGP peers and reads the command line of the sidecar from the sidecar's own log, which must be `ranz.exe bgp -pipe`.
