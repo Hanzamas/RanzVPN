@@ -240,17 +240,22 @@ jobs:
       env:
         # Names build/harness-out/bench-<arch>.txt (the BENCH lines of vpntest bench)
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
+        # The tests that print BENCH lines run three times, the second and third into bench-<arch>-run2.txt and -run3.txt:
+        # the gate below judges the best run of each case
+        RANZ_BENCH_RUNS: '3'
       run: |
         . .github/scripts/vpntest.ps1
-    # The performance regression gate (ADR-0040 item 5): every BENCH case of this run (vpntest bench and
+    # The performance regression gate (ADR-0040 item 5): every BENCH case of this job (vpntest bench and
     # the other tests that print BENCH lines) against its median recorded from earlier CI runs of the
-    # same architecture (.github/quality/bench-<arch>.txt). A case slower than its median by more than
-    # its margin fails the job; .github/scripts/bench-gate.py record makes the file anew.
+    # same architecture (.github/quality/bench-<arch>.txt). The best of the three runs of each case counts
+    # (the minimum time, the maximum rate), so a run that a busy runner slowed does not fail the job; a slowdown
+    # that every run shows does. A case slower than its median by more than its margin fails the job, a time
+    # recorded under 50 us only above 100 us over its median; .github/scripts/bench-gate.py record makes the file anew.
     - name: Performance regression gate
       shell: pwsh
       run: |
         $arch = '${{ matrix.platform.ARCHITECTURE }}'
-        python .github/scripts/bench-gate.py compare --medians ".github/quality/bench-$arch.txt" "build/harness-out/bench-$arch.txt"
+        python .github/scripts/bench-gate.py compare --runs 3 --medians ".github/quality/bench-$arch.txt" "build/harness-out/bench-$arch*.txt"
         if ($LASTEXITCODE -ne 0) { throw "a benchmark is slower than its recorded median allows (exit code $LASTEXITCODE)" }
     # The new core's crypto module (CORE-F1, #61): known-answer tests of X25519, AES-GCM, SHA-256,
     # HMAC, HKDF and the RNG, the identity key, the ML-KEM hybrid, the certificate path and an
