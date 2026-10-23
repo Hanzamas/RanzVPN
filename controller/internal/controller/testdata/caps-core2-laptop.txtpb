@@ -19,6 +19,14 @@ update: {
         }
       }
       addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\375\0224Vx\232\000\001\000\000\000\000\000\000\000\002"  # fd12:3456:789a:1::2
+          length: 64
+        }
+      }
+      addresses: {
         network: "lab-lan"
         vrf_id: 20
         prefix: {
@@ -88,6 +96,14 @@ update: {
         prefix: {
           address: "\012\012\000\001"  # 10.10.0.1
           length: 24
+        }
+      }
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\375\0224Vx\232\000\001\000\000\000\000\000\000\000\001"  # fd12:3456:789a:1::1
+          length: 64
         }
       }
       addresses: {
