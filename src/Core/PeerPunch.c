@@ -17,8 +17,9 @@
 // each aims its first probe at the other's predicted port, so their two mappings address each other; a cone paired
 // with a random NAT meets because the random side reaches the cone's one predictable port and the cone learns the
 // random side's mapping from that probe and answers it. Two random NATs predict nothing, so the probes miss until
-// the budget runs out and the pair stays on the relay. On a meeting the peer moves to the direct path (HasDirect, as
-// PeerSetDirect sets it), with the relay still carrying its traffic until then, so nothing is interrupted.
+// the budget runs out and the pair stays on the relay. On the first meeting the peer moves to the direct path
+// (HasDirect, as PeerSetDirect sets it), with the relay still carrying its traffic until then, so nothing is
+// interrupted; the path stays on the pair of mappings that meeting and its answer used.
 //
 // Locks: PeerPunchStart, PeerPunchInput and PeerPunchTick take the lock of the layer to read and change the punch of
 // a peer; they seal and send the probes without it, as the rest of the layer does. PeerPunchCandidate reads the
@@ -249,9 +250,11 @@ void PeerPunchTick(PEER_AGENT *a) {
 }
 
 // A probe that arrived from the address from: open it, check it is from a peer the node is punching and is not a
-// replay, then make from the direct path of that peer, as its own mapping now reaches it. The node answers the first
-// probe it takes, so the peer learns the node's mapping too, and counts the meeting a prediction success. Called from
-// PeerInput for a PEER_MSG_PUNCH datagram.
+// replay. The first one the node takes makes from the direct path of that peer, as its own mapping now reaches it: the
+// node answers it once, so the peer learns the node's mapping of the same pair, and counts the meeting a prediction
+// success. A later one, such as the rest of a burst the peer sent before it took that answer, leaves the direct path
+// on that pair: the peer takes the node's data only from the mapping the answer came from. Called from PeerInput for a
+// PEER_MSG_PUNCH datagram.
 void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
 	UCHAR sender[PEER_KEY_SIZE];
 	UCHAR payload[PEER_PUNCH_PAYLOAD_SIZE];
@@ -289,10 +292,12 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 			reason = PEER_DROP_REPLAY;
 		} else {
 			punch->LastSeq = seq;
-			p->HasDirect = true;
-			p->Direct = *from;
 			connected = (punch->State != PEER_PUNCH_CONNECTED);
-			punch->State = PEER_PUNCH_CONNECTED;
+			if (connected) {
+				p->HasDirect = true;
+				p->Direct = *from;
+				punch->State = PEER_PUNCH_CONNECTED;
+			}
 			answer = connected;
 		}
 	}
