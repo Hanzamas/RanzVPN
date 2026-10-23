@@ -11,3 +11,7 @@ tests/golden/** -text
 # The NOTICE is embedded into ranz byte for byte (controller/cmd/ranz/notice.go): no EOL conversion
 # on checkout or commit, so the embedded bytes do not depend on core.autocrlf.
 controller/cmd/ranz/NOTICE -text
+# Placeholders that go:embed reads byte for byte (controller/internal/payload/node_*.go, ONE-2
+# #311): empty in the committed tree, and never text-converted even once a job of windows.yml
+# writes the signed ranz-node.exe of its architecture there before building.
+controller/internal/payload/*.exe -text

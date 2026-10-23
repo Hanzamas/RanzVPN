@@ -8,8 +8,20 @@
 //	ranz controller [flags]   the Controller service with its web UI: run, install, uninstall,
 //	                          reset-admin, backup and restore (package controllercmd)
 //	ranz bgp -pipe NAME       the BGP sidecar of a Node, which the Node starts (package bgpcmd)
+//	ranz install [-controller]
+//	                          write the Node payload into Program Files, register and start the
+//	                          Node service, and, with -controller, the Controller service too
+//	                          (package install, ONE-2 #311)
+//	ranz uninstall            stop and remove the services and the files install made, keeping the
+//	                          Node's data directory (package install, ONE-2 #311)
 //	ranz notice               print the NOTICE: the licence texts of what ranz carries
 //	ranz version              print the version, which is the same for every subcommand
+//	ranz cert [flags]         make a self-signed or CA-signed certificate and its key, in files or in the
+//	                          key storage provider (SDN-53, #246; the successor of vpncmd MakeCert)
+//	ranz test throughput ...  measure the rate between two nodes: -listen runs the test server on one,
+//	                          a host and port runs the client on another (the successor of vpncmd
+//	                          TrafficServer and TrafficClient)
+//	ranz doctor               run the system check (the successor of vpncmd Check)
 //
 // Usage of the CLI:
 //
@@ -87,8 +99,14 @@ import (
 const usage = `usage:
   ranz controller [flags]
   ranz bgp -pipe NAME [-log FILE] [-log-level LEVEL]
+  ranz install [-controller]
+  ranz uninstall
   ranz notice
   ranz version
+  ranz cert -cn NAME (-savecert FILE -savekey FILE | -ksp NAME) [flags]
+  ranz test throughput -listen ADDRESS
+  ranz test throughput [flags] HOST[:PORT]
+  ranz doctor
   ranz [flags] apply -f FILE [-confirm DURATION]
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]

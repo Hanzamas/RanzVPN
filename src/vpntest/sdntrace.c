@@ -14,7 +14,10 @@
 // request from the address of one node reaches the host of the other, and the echo reply comes back.
 // The test then prints "SDNTRACE PINGED" and creates the file; the script checks that the API shows the Generation
 // each node acknowledged and stops the controller. Once both control streams are down, the echo goes both ways again:
-// the nodes forward on the state they applied last. Print "SDNTRACE TEST OK" only when every check passes.
+// the nodes forward on the state they applied last. Then a stream of UDP datagrams from the host of each node to the host
+// of the other, for two seconds each, gives the rate that the overlay carries between the two nodes (SDN-53, #246): the
+// figure that ranz test throughput reports between two hosts, here between two harness nodes, whose hosts have no TCP/IP
+// stack. Print "SDNTRACE TEST OK" only when every check passes.
 
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
@@ -50,6 +53,10 @@
 #define	SDNTRACE_POLL			100			// Poll interval of the state of the nodes (ms)
 #define	SDNTRACE_PAYLOAD		32			// The data of an ICMP echo
 #define	SDNTRACE_NUM_NODES		2
+#define	SDNTRACE_RATE_SPAN		2000		// The stream of a rate case runs this long (ms)
+#define	SDNTRACE_RATE_DATA		1200		// The data of a datagram of that stream
+#define	SDNTRACE_RATE_PORT		9821		// Its UDP port, the port of the traffic test of vpncmd and of ranz test throughput
+#define	SDNTRACE_RATE_CHECK		64			// The sender looks at the clock once in this many datagrams
 
 // The two nodes: their names in the intent, and the X25519 public keys of their static scalars 1, 2, ... 32 and 33,
 // 34, ... 64, which the controller conformance tests use as well (controller/internal/controller)
@@ -77,6 +84,8 @@ typedef struct SDNTRACE_NODE
 	UINT Size;
 	UINT MtuVrf;						// The VRF whose MTU the adapter took last (SDN-20, #196) ...
 	UINT Mtu;							// ... and the MTU
+	volatile LONG Counting;				// A rate case runs: the adapter counts the packets it takes and keeps none
+	volatile LONG64 Counted;			// The packets that it counted
 } SDNTRACE_NODE;
 
 // A stream of the TLS transport: a TLS 1.3 client on a TCP socket, and the exporter of its session
@@ -381,6 +390,13 @@ static void SdnTraceAdapter(NODE *n, void *param, UINT vrf_id, const UCHAR *pack
 {
 	SDNTRACE_NODE *t = (SDNTRACE_NODE *)param;
 
+	// The packets of a rate case are only counted: to keep the last one and to wake the test would be what it measures
+	if (ReadAcquire(&t->Counting) != 0)
+	{
+		InterlockedIncrement64(&t->Counted);
+		return;
+	}
+
 	AcquireSRWLockExclusive(&t->Lock);
 	t->Size = MIN(size, (UINT)sizeof(t->Packet));
 	Copy(t->Packet, packet, t->Size);
@@ -560,6 +576,102 @@ static void SdnTracePing(SDNTRACE_CTX *ctx, SDNTRACE_NODE *a, SDNTRACE_NODE *b, 
 	sent = SdnTraceSend(b, reply, size);
 	Format(what, sizeof(what), "%s: the echo reply of %s reaches the host of %s", when, b->Name, a->Name);
 	SdnTraceCheck(ctx, sent && SdnTraceArrived(a, reply, size), what, "sent %u", (UINT)sent);
+}
+
+// A UDP datagram from src to dst with SDNTRACE_RATE_DATA bytes of data: an IPv4 header with its checksum, and a UDP header
+// with the checksum 0, which IPv4 allows. Its size
+static UINT SdnTraceDatagram(UCHAR *buf, UINT src, UINT dst)
+{
+	UINT udp_size = 8 + SDNTRACE_RATE_DATA;
+	UINT size = 20 + udp_size;
+	USHORT sum;
+
+	Zero(buf, size);
+	buf[0] = 0x45;
+	buf[2] = (UCHAR)(size >> 8);
+	buf[3] = (UCHAR)size;
+	buf[8] = 64;
+	buf[9] = IP_PROTO_UDP;
+	Copy(buf + 12, &src, 4);
+	Copy(buf + 16, &dst, 4);
+	sum = IpChecksum(buf, 20);
+	Copy(buf + 10, &sum, 2);
+
+	UCHAR *udp = buf + 20;
+	udp[0] = (UCHAR)(SDNTRACE_RATE_PORT >> 8);
+	udp[1] = (UCHAR)SDNTRACE_RATE_PORT;
+	udp[2] = udp[0];
+	udp[3] = udp[1];
+	udp[4] = (UCHAR)(udp_size >> 8);
+	udp[5] = (UCHAR)udp_size;
+	for (UINT i = 0;i < SDNTRACE_RATE_DATA;i++)
+	{
+		udp[8 + i] = (UCHAR)('a' + i % 26);
+	}
+
+	return size;
+}
+
+// A stream of datagrams from the host of a to the host of b for SDNTRACE_RATE_SPAN ms, which the adapter of b counts: the
+// rate that the overlay carries between the two nodes, as ranz test throughput measures it between two hosts. The
+// loopback transport under the Noise session holds a sender back while its stream is full and drops nothing, so every
+// datagram that the overlay took arrives; the rate is the bytes of those datagrams over the time to the last one
+static void SdnTraceRate(SDNTRACE_CTX *ctx, SDNTRACE_NODE *a, SDNTRACE_NODE *b, char *when)
+{
+	UCHAR packet[2048];
+	char what[MAX_SIZE];
+	UINT addr_a = SdnTraceAddress(a), addr_b = SdnTraceAddress(b);
+	UINT vrf = SdnTraceVrf(a);
+	UINT size = SdnTraceDatagram(packet, addr_a, addr_b);
+	UINT64 sent = 0, refused = 0;
+
+	InterlockedExchange64(&b->Counted, 0);
+	InterlockedExchange(&b->Counting, 1);
+
+	UINT64 start = Tick64();
+	UINT64 end = start + SDNTRACE_RATE_SPAN;
+
+	NodeReaderOnline(a->Node, &a->Reader);
+	do
+	{
+		for (UINT i = 0;i < SDNTRACE_RATE_CHECK;i++)
+		{
+			if (NodeOverlayInput(a->Node, vrf, packet, size))
+			{
+				sent++;
+			}
+			else
+			{
+				refused++;
+			}
+		}
+	}
+	while (Tick64() < end);
+	NodeReaderOffline(&a->Reader);
+
+	// The datagrams on their way arrive
+	UINT64 deadline = Tick64() + SDNTRACE_ARRIVE;
+	while ((UINT64)ReadAcquire64(&b->Counted) < sent && Tick64() < deadline)
+	{
+		SleepThread(1);
+	}
+	UINT64 elapsed = Tick64() - start;
+	UINT64 arrived = (UINT64)ReadAcquire64(&b->Counted);
+	InterlockedExchange(&b->Counting, 0);
+
+	if (elapsed == 0)
+	{
+		elapsed = 1;
+	}
+
+	// Hundredths of Mbit/s: bits over (elapsed ms * 1000)
+	UINT64 centi = sent * (UINT64)size * 800 / (elapsed * 1000);
+
+	Print("  [INFO] %s: %s to %s: %I64u datagrams of %u bytes in %I64u ms, %I64u arrived, %I64u refused: %I64u.%02u Mbit/s\n",
+		when, a->Name, b->Name, sent, size, elapsed, arrived, refused, centi / 100, (UINT)(centi % 100));
+
+	Format(what, sizeof(what), "%s: the host of %s sends a stream of datagrams to the host of %s over the overlay, which carries every one", when, a->Name, b->Name);
+	SdnTraceCheck(ctx, sent != 0 && arrived == sent, what, "sent %I64u, arrived %I64u", sent, arrived);
 }
 
 // Whether every node is connected (or every node is not) within timeout, with a state applied
@@ -767,6 +879,8 @@ void sdntrace_test(UINT num, char **arg)
 			{
 				SdnTracePing(ctx, &nodes[0], &nodes[1], 3, "without the controller");
 				SdnTracePing(ctx, &nodes[1], &nodes[0], 4, "without the controller");
+				SdnTraceRate(ctx, &nodes[0], &nodes[1], "without the controller");
+				SdnTraceRate(ctx, &nodes[1], &nodes[0], "without the controller");
 				SdnTraceShowNodes(nodes);
 			}
 		}

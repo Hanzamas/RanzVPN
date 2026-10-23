@@ -72,6 +72,10 @@ controller/internal/api         Client.Import      exempt  the API client of `ra
 # The export targets that an operator sets through the API: webhooks, OTLP endpoints and IPFIX collectors (SDN-16 #192)
 controller/internal/export  Target.Validate  FuzzValidate
 
+# The audit log (SDN-49 #242): the filter of GET /api/v1/audit, and the audit targets (webhooks and syslog receivers) that an operator sets through the API
+controller/internal/audit   ParseFilter           FuzzParseFilter
+controller/internal/export  Target.ValidateAudit  FuzzValidateAudit
+
 # The licence keys (SDN-30 #206) and the revocation list (SEC-5 #283)
 controller/internal/licence  Parse             FuzzParse
 controller/internal/licence  ParseRevocations  FuzzParseRevocations
@@ -86,6 +90,16 @@ controller/internal/activation  OpenOfflineResponse   FuzzOpenOfflineResponse
 
 controller/internal/rbac   ParseRole  exempt  compares the name with the three role names; decodes nothing
 controller/internal/store  Open       exempt  opens the controller's own rqlite store by its URL
+
+# The CA certificate and key files of `ranz cert -signcert` and -signkey (SDN-53 #246): the operator's own files, which
+# LoadAuthority reads as PEM
+controller/internal/certgen  LoadAuthority  FuzzLoadAuthority
+
+# The traffic test of `ranz test throughput` (SDN-53 #246): what a peer sends to a test server (the request, and the frames
+# of an upload) and to a test client (the frames of a download, the report of an upload)
+controller/internal/throughput  ReadRequest     FuzzRead
+controller/internal/throughput  ReadReport      FuzzRead
+controller/internal/throughput  Receiver.Input  FuzzRead
 
 # The pipe protocol of the BGP sidecar (CORE-S7-1 #82)
 ranz-bgp/internal/sidecar  Reader.Read  FuzzRead
