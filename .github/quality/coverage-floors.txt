@@ -33,6 +33,7 @@ go  controller/cmd/ranz-nodesim         0
 go  controller/cmd/ranz-noisepeer       0
 go  controller/internal/activation      81
 go  controller/internal/api             28
+go  controller/internal/audit           85
 go  controller/internal/capability      95
 go  controller/internal/cluster         61
 go  controller/internal/control         76
