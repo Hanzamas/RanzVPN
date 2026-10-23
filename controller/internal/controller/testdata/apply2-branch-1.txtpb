@@ -1,6 +1,6 @@
 # Generation 2 of branch-1 after apply2.json: only the delta from generation 1. The MTU of corp
-# changed, the Network corp-dmz and the Node branch-2, at the second address of corp-lan, are
-# new; the node itself and corp-lan are unchanged and not sent again.
+# changed, the Network corp-dmz and the Node branch-2, at the second address of each pool of
+# corp-lan, are new; the node itself and corp-lan are unchanged and not sent again.
 update: {
   generation: 2
   base_generation: 1
@@ -37,6 +37,14 @@ update: {
         prefix: {
           address: "\012\012\000\002"  # 10.10.0.2
           length: 24
+        }
+      }
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\375\0224Vx\232\000\001\000\000\000\000\000\000\000\002"  # fd12:3456:789a:1::2
+          length: 64
         }
       }
     }

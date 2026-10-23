@@ -1,5 +1,5 @@
 # Generation 1 of branch-2 after apply1.json and apply2.json: its full state, at the second
-# address of corp-lan, with branch-1 as its peer in corp at the first.
+# address of each pool of corp-lan, with branch-1 as its peer in corp at the first.
 update: {
   generation: 1
   set: {
@@ -11,6 +11,14 @@ update: {
         prefix: {
           address: "\012\012\000\002"  # 10.10.0.2
           length: 24
+        }
+      }
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\375\0224Vx\232\000\001\000\000\000\000\000\000\000\002"  # fd12:3456:789a:1::2
+          length: 64
         }
       }
     }
@@ -63,6 +71,14 @@ update: {
         prefix: {
           address: "\012\012\000\001"  # 10.10.0.1
           length: 24
+        }
+      }
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\375\0224Vx\232\000\001\000\000\000\000\000\000\000\001"  # fd12:3456:789a:1::1
+          length: 64
         }
       }
     }
