@@ -267,37 +267,6 @@ static bool punch_candidate(PEER_SIGNAL *s, UINT type, PEER_ADDR *addr) {
 	return false;
 }
 
-// What the network did, when a check of the direct path fails: the counters of every node and what it dropped by
-// reason, what each node received, the path, the punch and the direct address of each end towards the other, and
-// what the NATs filtered
-static void punch_report(PUNCH_WORLD *w) {
-	PUNCH_NODE *nodes[] = {&w->R, &w->R2, &w->A, &w->B};
-	char text[64];
-
-	for (UINT i = 0; i < sizeof(nodes) / sizeof(nodes[0]); i++) {
-		PUNCH_NODE *n = nodes[i];
-		PEER_STATS st;
-
-		PeerGetStats(n->Agent, &st);
-		coretest_info("%s: sent %llu, delivered %llu (%llu through a relay), forwarded %llu, punches met %llu of %llu; received %ld (%ld direct, %ld relayed)", n->Name, st.Sent, st.Delivered, st.DeliveredRelay, st.Forwarded, st.PunchSuccesses, st.PunchAttempts, n->Received, n->ReceivedDirect, n->ReceivedRelay);
-		for (UINT r = PEER_DROP_MALFORMED; r < PEER_NUM_REASONS; r++)
-			if (st.Drops[r] != 0)
-				coretest_info("%s dropped %llu: %s", n->Name, st.Drops[r], PeerReasonName(r));
-	}
-
-	for (UINT i = 0; i < 2; i++) {
-		PUNCH_NODE *from = (i == 0 ? &w->A : &w->B);
-		PUNCH_NODE *to = (i == 0 ? &w->B : &w->A);
-		PEER_STATUS ps;
-
-		PeerGetStatus(from->Agent, to->Key.Public, &ps);
-		PeerAddrToStr(text, sizeof(text), &ps.Direct);
-		coretest_info("%s to %s: path %u, punch %u, direct %s", from->Name, to->Name, ps.Path, ps.Punch, text);
-	}
-
-	coretest_info("NAT A filtered %u, NAT B filtered %u, unroutable %u", NatSimFiltered(w->NatA), NatSimFiltered(w->NatB), NatSimUnroutable(w->Sim));
-}
-
 // The drops of a node, all reasons
 static UINT64 punch_drops(PUNCH_NODE *n) {
 	PEER_STATS st;
@@ -381,8 +350,7 @@ static void punch_sequential() {
 	sent = punch_send(&w.A, &w.B, "ping direct");
 	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
 	PeerGetStats(w.R.Agent, &st_r);
-	if (coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedDirect == a_direct + 1 && st_r.Forwarded == forwarded, "A's ping and B's pong both take the direct path; R forwards neither") == false)
-		punch_report(&w);
+	coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedDirect == a_direct + 1 && st_r.Forwarded == forwarded, "A's ping and B's pong both take the direct path; R forwards neither");
 
 	PeerGetStats(w.A.Agent, &st_a);
 	PeerGetStats(w.B.Agent, &st_b);
@@ -406,8 +374,7 @@ static void punch_sequential() {
 	sent = punch_send(&w.A, &w.B, "ping after the late probe");
 	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
 	PeerGetStats(w.R.Agent, &st_r);
-	if (coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedDirect == a_direct + 1 && st_r.Forwarded == forwarded, "After it, A's ping and B's pong still take the direct path: A stays on the pair it met B on, whose mapping B took A's answer from") == false)
-		punch_report(&w);
+	coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedDirect == a_direct + 1 && st_r.Forwarded == forwarded, "After it, A's ping and B's pong still take the direct path: A stays on the pair it met B on, whose mapping B took A's answer from");
 
 	punch_world_stop(&w);
 }
