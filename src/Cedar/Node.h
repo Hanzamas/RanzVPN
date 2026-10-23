@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeSession.c, NodeTable.c, NodeVrf.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeTable.c, NodeVrf.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -72,6 +72,9 @@
 #define NODE_VRF_MAX_ROUTES 65536      // Routes of the tables of one Generation at most
 #define NODE_VRF_MAX_HOPS   65536      // Next hops of those tables at most
 
+// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182)
+#define NODE_NAT_GROWTH 40 // Bytes that the translation of a packet of a peer adds at most: from IPv4 to IPv6, 20 to its header and 20 to the one that an ICMP error quotes
+
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
 // Drains an adapter queue on its I/O thread, to completion (NodeAddQueue)
@@ -129,6 +132,7 @@ struct NODE_VRF_TABLES {
 	NODE_VRF_TABLE **Vrfs; // The table of each, by VRF id
 	UINT NumHops;          // Number of next hops
 	void **Hops;           // The next hops: what next hop i of a route leads to
+	NODE_NAT *Nat;         // The 1:1 NAT rules of the same Generation (NodeNat.c; SDN-6, #182), NULL for none
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -325,6 +329,14 @@ NODE_VRF_TABLES *NodeNewVrfTables(UINT64 generation, const NODE_VRF_ROUTE *route
 void NodeFreeVrfTables(NODE_VRF_TABLES *v);
 NODE_VRF_TABLE *NodeGetVrfTable(NODE_VRF_TABLES *v, UINT vrf_id);
 UINT NodeVrfLookup(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size);
+
+// NodeNat.c
+NODE_NAT *NodeNewNat(const struct CONTROL_STATE *st);
+void NodeFreeNat(NODE_NAT *nat);
+UINT NodeNatRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);
+bool NodeNatEnds(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, UCHAR *src, UCHAR *dst, UINT *addr_size);
+UINT NodeNatCopy(NODE_VRF_TABLES *v, UINT vrf_id, UCHAR *dst, const UCHAR *packet, UINT size);
+bool NodeNatInbound(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR **packet, UINT *size, UCHAR *buf, UINT buf_size);
 
 // NodeOverlay.c
 bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg);

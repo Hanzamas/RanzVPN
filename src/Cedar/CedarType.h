@@ -208,6 +208,7 @@ typedef struct NODE_TABLES NODE_TABLES;
 typedef struct NODE_VRF_ROUTE NODE_VRF_ROUTE;
 typedef struct NODE_VRF_TABLE NODE_VRF_TABLE;
 typedef struct NODE_VRF_TABLES NODE_VRF_TABLES;
+typedef struct NODE_NAT NODE_NAT;
 typedef struct NODE_BGP NODE_BGP;
 typedef struct NODE_BGP_STATUS NODE_BGP_STATUS;
 typedef struct NODE_MITIGATION NODE_MITIGATION;
