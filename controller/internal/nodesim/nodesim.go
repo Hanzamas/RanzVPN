@@ -253,6 +253,17 @@ func (n *Node) Signal(peer string, envelope []byte) error {
 	return n.send(conn, &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Signal{Signal: &controlpb.Signal{Peer: peer, Envelope: envelope}}})
 }
 
+// Telemetry sends the controller the summary t (SDN-16) on the stream that Run serves.
+func (n *Node) Telemetry(t *controlpb.Telemetry) error {
+	n.mu.Lock()
+	conn := n.conn
+	n.mu.Unlock()
+	if conn == nil {
+		return errors.New("nodesim: no stream to send Telemetry on")
+	}
+	return n.send(conn, &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Telemetry{Telemetry: t}})
+}
+
 // State returns the generation the node applied last and its state then.
 func (n *Node) State() (uint64, desired.State) {
 	n.mu.Lock()

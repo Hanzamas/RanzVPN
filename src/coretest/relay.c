@@ -560,6 +560,11 @@ static void relay_policy_forwarding(RELAY_WORLD *w) {
 	UINT64 limited = relay_drops(&w->R, PEER_DROP_RATE) - rate_before;
 	coretest_info("of 400 datagrams that A sent at once, R forwarded %llu and limited %llu", forwarded, limited);
 	coretest_check(forwarded + limited == 400 && forwarded >= 20 && limited != 0 && (UINT64)(w->B.Received - b_received) == forwarded, "R forwards a burst of 20 from one source and limits the rest of a flood; every datagram is forwarded or limited");
+
+	// The flood spent A's burst at R, whose rate forwards A's next datagram only 10 ms after the flood began: a fast
+	// machine gets to the datagram that relay_policy_paths sends from A through R sooner. A has its whole burst again
+	// after 200 ms
+	Sleep(300);
 }
 
 // A direct and a relayed datagram go through the one ingress and the one policy check
