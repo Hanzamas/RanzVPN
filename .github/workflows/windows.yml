@@ -480,7 +480,7 @@ jobs:
         # certdl has time windows too (it measures the client timeouts); it also runs in build_and_test only.
         # nodesvc installs ranz-node as a service, which would run outside the instrumented process; build_and_test only.
         # noisehub runs its loopback part here; its QUIC part needs msquic.dll, which this job does not fetch.
-        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,listeners,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo,node,nodelogin,store,transport,noisehub,vxlan
+        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,listeners,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo,node,nodelogin,store,transport,noisehub,vrf,vxlan
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list. Its output
         # and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a report printed

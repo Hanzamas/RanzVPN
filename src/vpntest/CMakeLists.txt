@@ -81,6 +81,9 @@ ranz_add_executable(vpntest HAMCORE
     httplistener.c
     # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz controller and ping each other
     sdntrace.c
+    # Named VRF forwarding table test of SDN-4 (#180): the LPM tables of the VRFs against a reference, their swap
+    # under readers, and two VRFs on one range kept apart over the overlay of in-process nodes
+    vrftest.c
     # Named VXLAN test of SDN-62 (#289): the VXLAN module of the new core against harness VTEPs
     vxlantest.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and

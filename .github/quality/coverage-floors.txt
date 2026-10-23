@@ -39,6 +39,7 @@ go  controller/internal/cluster         61
 go  controller/internal/control         76
 go  controller/internal/controller      82
 go  controller/internal/desired         79
+go  controller/internal/event           90
 go  controller/internal/export          90
 go  controller/internal/intent          91
 go  controller/internal/keys            71

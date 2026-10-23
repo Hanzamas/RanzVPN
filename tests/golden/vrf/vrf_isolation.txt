@@ -1,0 +1,29 @@
+# VRFs red (101) and blue (202) both use 10.0.0.0/24 and fd00::/64; green (303) is a VRF of no node
+red: node-a 10.0.0.1 > 10.0.0.2: delivered to node-b in red
+blue: node-a 10.0.0.1 > 10.0.0.2: delivered to node-c in blue
+red: node-a 10.0.0.1 > 10.0.0.3: dropped by node-a
+blue: node-a 10.0.0.1 > 10.0.0.3: delivered to node-b in blue
+red: node-b 10.0.0.2 > 10.0.0.1: delivered to node-a in red
+blue: node-b 10.0.0.3 > 10.0.0.1: delivered to node-a in blue
+blue: node-b 10.0.0.3 > 10.0.0.2: delivered to node-c in blue
+blue: node-c 10.0.0.2 > 10.0.0.1: delivered to node-a in blue
+red: node-c 10.0.0.2 > 10.0.0.1: dropped by node-c
+blue: node-c 10.0.0.2 > 10.0.0.3: delivered to node-b in blue
+red: node-b 10.0.0.2 > 10.0.0.4: dropped by node-b
+red: node-a 10.0.0.9 > 10.0.0.2: dropped by node-a
+blue: node-b 10.0.0.2 > 10.0.0.1: dropped by node-b
+red: node-a fd00::1 > fd00::2: delivered to node-b in red
+blue: node-a fd00::1 > fd00::2: delivered to node-c in blue
+red: node-b fd00::2 > fd00::1: delivered to node-a in red
+blue: node-c fd00::2 > fd00::1: delivered to node-a in blue
+blue: node-c fd00::2 > fd00::3: dropped by node-c
+blue: node-x 10.0.0.5 > 10.0.0.1: delivered to node-a in blue
+red: node-x 10.0.0.5 > 10.0.0.1: dropped by node-a
+blue: node-x 10.0.0.2 > 10.0.0.1: dropped by node-a
+green: node-x 10.0.0.5 > 10.0.0.1: dropped by node-a
+blue: node-x 10.0.0.5 > 10.0.0.3: dropped by node-a
+blue: node-x 10.0.0.5 > 10.0.0.1 (2 bytes of the record): dropped by node-a
+blue: node-x 10.0.0.5 > 10.0.0.1 (14 bytes of the record): dropped by node-a
+node-a: forwarded 5, delivered 6, dropped 8, VRFs 2
+node-b: forwarded 4, delivered 4, dropped 2, VRFs 2
+node-c: forwarded 3, delivered 3, dropped 2, VRFs 1
