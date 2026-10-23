@@ -1,0 +1,53 @@
+1 broadcast_vlan10: B got FFFFFFFFFFFF02000000000A88B553570001
+1 broadcast_vlan10: T got FFFFFFFFFFFF02000000000A8100000A88B553570001
+1 broadcast_vlan10: U got FFFFFFFFFFFF02000000000A88B553570001
+2 unicast_to_learnt_vlan10: A got 02000000000A02000000000B88B553570002
+3 broadcast_vlan20: T got FFFFFFFFFFFF02000000000C8100001488B553570003
+3 broadcast_vlan20: U got FFFFFFFFFFFF02000000000C8100001488B553570003
+4 trunk_vlan20_to_access: C got 02000000000C02000000001E88B553570004
+5 trunk_vlan10_to_access: A got 02000000000A02000000001E88B553570005
+6 native_untagged_from_trunk: B got 02000000000B02000000009988B553570006
+7 same_mac_in_vlan20: T got FFFFFFFFFFFF0200000000998100001488B553570007
+7 same_mac_in_vlan20: U got FFFFFFFFFFFF0200000000998100001488B553570007
+8 to_shared_mac_in_vlan10: U got 02000000009902000000001E88B553570008
+9 to_shared_mac_in_vlan20: C got 02000000009902000000001E88B553570009
+10 unknown_unicast_vlan10: B got 0200000000FF02000000000A88B55357000A
+10 unknown_unicast_vlan10: T got 0200000000FF02000000000A8100000A88B55357000A
+10 unknown_unicast_vlan10: U got 0200000000FF02000000000A88B55357000A
+11 unknown_unicast_vlan30: nothing
+12 broadcast_from_unsubscribed_member: T got FFFFFFFFFFFF02000000000D8100001E88B55357000C
+13 unicast_to_unsubscribed_member: D got 02000000000D02000000001E88B55357000D
+14 multicast_subscribed_group: B got 01005E0000FB02000000000A88B55357000E
+15 multicast_every_group_subscriber: T got 01005E0000FC02000000000C8100001488B55357000F
+16 priority_tagged_broadcast: B got FFFFFFFFFFFF02000000000A8100A00088B553570010
+16 priority_tagged_broadcast: T got FFFFFFFFFFFF02000000000A8100A00A88B553570010
+16 priority_tagged_broadcast: U got FFFFFFFFFFFF02000000000A8100A00088B553570010
+17 access_tag_of_own_vlan: B got 02000000000B02000000000A88B553570011
+18 access_tag_of_other_vlan: nothing
+19 trunk_untagged_without_native: nothing
+20 trunk_vlan_not_allowed: nothing
+21 trunk_tag_of_native_vlan: B got 02000000000B02000000001F88B553570015
+22 vlan_id_4095: nothing
+23 group_source_address: nothing
+24 frame_too_short: nothing
+25 tag_cut_short: nothing
+26 back_to_own_port: nothing
+27 station_moves: A got FFFFFFFFFFFF02000000000A88B55357001B
+27 station_moves: T got FFFFFFFFFFFF02000000000A8100000A88B55357001B
+27 station_moves: U got FFFFFFFFFFFF02000000000A88B55357001B
+28 unicast_after_move: B got 02000000000A02000000001E88B55357001C
+29 port_without_member: nothing
+mac 10 02-00-00-00-00-0A: B
+mac 10 02-00-00-00-00-0B: B
+mac 10 02-00-00-00-00-1E: T
+mac 10 02-00-00-00-00-1F: U
+mac 10 02-00-00-00-00-99: U
+mac 20 02-00-00-00-00-0C: C
+mac 20 02-00-00-00-00-1E: T
+mac 20 02-00-00-00-00-99: C
+mac 30 02-00-00-00-00-0D: D
+mac 30 02-00-00-00-00-1E: T
+vlan 10: in 13 frames 258 bytes; unicast 7, flooded 1, broadcast 3, multicast 1, limit drops 0, filtered 1; out 20 frames 384 bytes; limits broadcast 0/s, multicast 0/s
+vlan 20: in 5 frames 98 bytes; unicast 2, flooded 0, broadcast 2, multicast 1, limit drops 0, filtered 0; out 7 frames 146 bytes; limits broadcast 0/s, multicast 0/s
+vlan 30: in 3 frames 62 bytes; unicast 1, flooded 0, broadcast 1, multicast 0, limit drops 0, filtered 1; out 2 frames 40 bytes; limits broadcast 0/s, multicast 0/s
+switch: ports 6, macs 10, vlans 3, learnt 10, moved 1, refused 0; drops malformed 2, port 1, vlan 4, source 1
