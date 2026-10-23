@@ -33,3 +33,13 @@ func install([]string, config) error {
 func uninstall() error {
 	return errNotWindows
 }
+
+// Install is install: there is no Windows service on this OS (ONE-2, #311).
+func Install(string) error {
+	return install(nil, config{})
+}
+
+// Uninstall is uninstall: there is no Windows service on this OS (ONE-2, #311).
+func Uninstall() error {
+	return uninstall()
+}

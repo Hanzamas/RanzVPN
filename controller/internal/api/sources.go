@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/audit"
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
@@ -45,6 +46,8 @@ type Sources struct {
 	list     []netip.Prefix // the allowlist as it was read last, nil before the first read
 	loaded   time.Time      // when it was read, the zero time before the first read
 	refusals event.Throttle
+	// audit is the audit log that a refusal is recorded in as well, nil for none (WithAudit).
+	audit *audit.Log
 }
 
 // NewSources returns the restriction to the admin source allowlist that st holds. A read of the
@@ -56,6 +59,13 @@ func NewSources(st SourceStore, log *slog.Logger, ttl time.Duration) *Sources {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Sources{st: st, log: log, ttl: ttl, now: time.Now}
+}
+
+// WithAudit makes s record each refusal that it records as an event in the audit log l as well,
+// as a failed authentication from the address that was refused (SDN-49, #242), and returns s.
+func (s *Sources) WithAudit(l *audit.Log) *Sources {
+	s.audit = l
+	return s
 }
 
 // Restrict returns h behind the admin source allowlist. A request from a loopback address, which
@@ -148,6 +158,9 @@ func (s *Sources) refuse(r *http.Request, from netip.Addr) {
 	defer cancel()
 	if err := s.st.Commit(ctx, store.Changes{AddEvents: []event.Event{ev}}); err != nil {
 		s.log.Error("recording a refused admin access", "err", err)
+	}
+	if s.audit != nil {
+		_ = s.audit.Record(ctx, audit.Record{Kind: audit.AuthFailed, Actor: audit.ActorUnknown, Source: from.String(), Outcome: audit.Failure, Message: msg})
 	}
 }
 
