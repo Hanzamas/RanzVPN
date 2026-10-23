@@ -468,8 +468,9 @@ jobs:
           -NotAfter (Get-Date).AddYears(1)
         $cer = Join-Path $work 'ranz-ci-rqlite.cer'
         Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+        # The root store only: the signature of a file chains to a trusted root, and nothing here asks
+        # for a trusted publisher (the arm64 runner refuses that store to its user)
         Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
-        Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
         $result = Set-AuthenticodeSignature -FilePath $signed -Certificate $cert -HashAlgorithm SHA256
         if ($result.Status -ne 'Valid') { throw "signing $signed left the status $($result.Status): $($result.StatusMessage)" }
         $check = Get-AuthenticodeSignature -FilePath $signed
