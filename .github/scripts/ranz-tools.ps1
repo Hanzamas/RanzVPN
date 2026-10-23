@@ -10,11 +10,13 @@ $ErrorActionPreference = 'Stop'
 #   which stand in for two nodes, and the client must report a rate in both directions and, for a
 #   test of one direction, in that one;
 # - ranz cert makes a CA and a certificate that it signs with their keys in the Microsoft Software
-#   Key Storage Provider, the certificates in the My store of the user, linked to their keys. The
-#   native side then judges them: certutil finds the key of each certificate in the provider and
-#   makes its own test of it, a TLS handshake over Schannel serves with the certificate of the store,
-#   and the client trusts nothing but the CA, whose certificate is the only root of its chain policy
-#   in the chain engine of Windows (CryptoAPI). A client that trusts another CA must refuse it.
+#   Key Storage Provider, the certificates in the My store of the user, linked to their keys, and one
+#   more with -machine, in the LocalMachine\My store with its key in the machine key set, where a node
+#   looks for the certificate of its listener. The native side then judges them: certutil finds the
+#   key of each certificate in the provider and makes its own test of it, a TLS handshake over
+#   Schannel serves with the certificate of the store, and the client trusts nothing but the CA, whose
+#   certificate is the only root of its chain policy in the chain engine of Windows (CryptoAPI). A
+#   client that trusts another CA must refuse it.
 
 $Ranz = (Resolve-Path -LiteralPath $Ranz).Path
 $work = Join-Path $env:RUNNER_TEMP 'ranz-tools'
@@ -157,7 +159,9 @@ $suffix = [guid]::NewGuid().ToString('N').Substring(0, 12)
 $caKey = "Ranz CI CA $suffix"
 $nodeKey = "Ranz CI node $suffix"
 $otherKey = "Ranz CI other $suffix"
+$machineKey = "Ranz CI machine $suffix"
 $thumbprints = @()
+$machineThumbprints = @()
 try {
 	# A CA, and a certificate that it signs, each with its key in the provider and its certificate in
 	# the My store of the user, linked to the key
@@ -197,12 +201,34 @@ try {
 	$why = Test-TlsHandshake $nodeCert $caCert 'other.example'
 	if (-not $why) { throw 'a client accepted the certificate for another host name' }
 	Write-Host "a client that asked for another host name refused it: $why"
+
+	# The certificate of the listener of a node is in the LocalMachine\My store with its key in the machine key set, where
+	# the node finds it by its thumbprint (CryptoCertFindByThumbprint): -machine puts both there, which takes an
+	# administrator, as a runner is. This one is signed by the CA whose key is in a file.
+	$machineOut = Invoke-Cert @('-cn', 'localhost', '-signcert', (Join-Path $work 'other-ca.pem'), '-signkey', (Join-Path $work 'other-ca.key'), '-ksp', $machineKey, '-machine', '-savecert', (Join-Path $work 'machine.pem'))
+	$machineThumbprint = Get-Thumbprint $machineOut
+	$machineThumbprints += $machineThumbprint
+	if ($machineOut -notmatch [regex]::Escape('Store        LocalMachine\My, linked to its key')) { throw "ranz cert -machine did not put the certificate into the LocalMachine\My store:`n$machineOut" }
+	$machineCert = Get-Item -LiteralPath "Cert:\LocalMachine\My\$machineThumbprint"
+	if (-not $machineCert.HasPrivateKey) { throw "the certificate $machineThumbprint in the LocalMachine\My store has no private key" }
+	$store = (& certutil -store My $machineThumbprint | Out-String)
+	if ($LASTEXITCODE -ne 0) { throw "certutil -store exited with code $LASTEXITCODE for $machineThumbprint`n$store" }
+	if ($store -notmatch 'Provider = Microsoft Software Key Storage Provider') { throw "certutil does not find the key of $machineThumbprint in the Microsoft Software Key Storage Provider:`n$store" }
+	if ($store -notmatch 'test passed') { throw "certutil's own test of the key of $machineThumbprint did not pass:`n$store" }
+	Write-Host "certificate ${machineThumbprint}: in the LocalMachine store, its key is in the Microsoft Software Key Storage Provider, and certutil's test of it passed"
+	$why = Test-TlsHandshake $machineCert $otherCa 'localhost'
+	if ($why) { throw "a TLS handshake with the certificate of the LocalMachine store, a client that trusts its CA: $why" }
+	Write-Host 'Schannel served with the certificate of the LocalMachine store, and a client whose only root is its CA accepted it'
 	Write-Host 'ok'
 } finally {
 	foreach ($t in $thumbprints) {
 		Remove-Item -LiteralPath "Cert:\CurrentUser\My\$t" -ErrorAction SilentlyContinue
 	}
+	foreach ($t in $machineThumbprints) {
+		Remove-Item -LiteralPath "Cert:\LocalMachine\My\$t" -ErrorAction SilentlyContinue
+	}
 	foreach ($k in $caKey, $nodeKey, $otherKey) {
 		& certutil -user -delkey -csp 'Microsoft Software Key Storage Provider' $k 2>&1 | Out-Null
 	}
+	& certutil -delkey -csp 'Microsoft Software Key Storage Provider' $machineKey 2>&1 | Out-Null
 }

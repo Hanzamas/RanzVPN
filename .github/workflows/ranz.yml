@@ -463,7 +463,8 @@ jobs:
     # The tools of SDN-53 (#246) as processes, natively on this architecture: ranz doctor passes its
     # six checks, ranz test throughput reports a rate between its server and its client, which are two
     # processes of the runner, and ranz cert makes a CA and a certificate that it signs with their keys
-    # in the Microsoft Software Key Storage Provider and the certificates in the My store. certutil
+    # in the Microsoft Software Key Storage Provider and the certificates in the My store of the user, and
+    # one more in the LocalMachine\My store, where a node looks for its listener's certificate. certutil
     # finds their keys, Schannel serves with the certificate of the store, and the chain engine of
     # Windows takes it for a client whose only root is the CA (.github/scripts/ranz-tools.ps1).
     - name: The tools ranz cert, ranz doctor and ranz test throughput

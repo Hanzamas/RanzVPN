@@ -288,8 +288,9 @@ jobs:
     # The default VRF tracer (SDN-3, #179): ranz controller on a test port with rqlited as its sidecar,
     # whose first start creates VRF default and the starter rule, and two nodes of vpntest (sdntrace)
     # that join it over the control stream, get their addresses from its automatic pool and exchange
-    # ICMP echo over the in-process loopback transport, also once the controller stopped; the API
-    # shows the Generation each node acknowledged (.github/scripts/sdn-tracer.ps1)
+    # ICMP echo over the in-process loopback transport, also once the controller stopped, and report the
+    # rate of a stream of UDP datagrams each way between them (SDN-53, #246); the API shows the
+    # Generation each node acknowledged (.github/scripts/sdn-tracer.ps1)
     - name: Build ranz for the default VRF tracer
       shell: pwsh
       working-directory: controller
