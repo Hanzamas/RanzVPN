@@ -132,13 +132,14 @@ func Routes(c *controller.Controller, tokens *rbac.Tokens, status Status) *http.
 }
 
 // Needs returns the least role that may make a request with method to urlPath. Everything under
-// /api/v1/tokens, which says who holds which role, needs admin; any other read (GET or HEAD)
-// needs viewer; every other request changes the Intent and needs operator. An endpoint added
-// later is so guarded from the start, by what its method does.
+// /api/v1/tokens, which says who holds which role, and the admin source allowlist, which says
+// where the console may be reached from, need admin; any other read (GET or HEAD) needs viewer;
+// every other request changes the Intent and needs operator. An endpoint added later is so
+// guarded from the start, by what its method does.
 func Needs(method, urlPath string) rbac.Role {
 	p := path.Clean("/" + urlPath)
 	switch {
-	case p == tokensPath || strings.HasPrefix(p, tokensPath+"/"):
+	case p == tokensPath || strings.HasPrefix(p, tokensPath+"/") || p == adminSourcesPath:
 		return rbac.Admin
 	case method == http.MethodGet || method == http.MethodHead:
 		return rbac.Viewer

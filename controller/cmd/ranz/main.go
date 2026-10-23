@@ -39,6 +39,12 @@
 //	ranz [flags] token list                    print the API tokens, without their secrets
 //	ranz [flags] token create -role ROLE NAME  create an API token with the role viewer, operator or admin, and print its secret
 //	ranz [flags] token delete NAME             delete an API token
+//	ranz [flags] admin-sources list            print the admin source allowlist: the prefixes that the API and the web UI accept
+//	                                           connections from (none: any address)
+//	ranz [flags] admin-sources set PREFIX...   replace the allowlist with these prefixes, each a CIDR prefix such as 203.0.113.0/24
+//	                                           or one address; a list without the address of the call is refused, and a loopback
+//	                                           address, the host of the controller itself, always passes
+//	ranz [flags] admin-sources clear           remove the allowlist, so that any address may reach the API and the web UI
 //
 // Flags:
 //
@@ -51,7 +57,8 @@
 //
 // Every call needs the token of a role (SDN-14, #190): viewer reads and exports, operator also
 // applies, imports, deletes, confirms, rolls back and installs or removes the licence key, admin
-// also manages the tokens. The first start of the controller creates the admin token and writes its secret to
+// also manages the tokens and the admin source allowlist (SDN-39, #232). The first start of the
+// controller creates the admin token and writes its secret to
 // admin.token in its data directory; when it is lost, `ranz controller reset-admin` on the
 // controller's host makes a new one.
 // The controller decides what a token may do, so ranz prints its answer as it is: JSON, the
@@ -97,6 +104,9 @@ const usage = `usage:
   ranz [flags] token list
   ranz [flags] token create -role viewer|operator|admin NAME
   ranz [flags] token delete NAME
+  ranz [flags] admin-sources list
+  ranz [flags] admin-sources set PREFIX...
+  ranz [flags] admin-sources clear
 `
 
 var errUsage = errors.New("bad arguments")
@@ -337,6 +347,24 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 			return err
 		}
 		return show(out, tok)
+	case len(args) == 2 && args[0] == "admin-sources" && args[1] == "list":
+		prefixes, err := c.AdminSources(ctx)
+		if err != nil {
+			return err
+		}
+		return show(out, api.AdminSourceList{Prefixes: prefixes})
+	case len(args) >= 3 && args[0] == "admin-sources" && args[1] == "set":
+		prefixes, err := c.SetAdminSources(ctx, args[2:])
+		if err != nil {
+			return err
+		}
+		return show(out, api.AdminSourceList{Prefixes: prefixes})
+	case len(args) == 2 && args[0] == "admin-sources" && args[1] == "clear":
+		prefixes, err := c.SetAdminSources(ctx, nil)
+		if err != nil {
+			return err
+		}
+		return show(out, api.AdminSourceList{Prefixes: prefixes})
 	case len(args) == 2 && args[0] == "get" && args[1] == "licence":
 		st, err := c.Licence(ctx)
 		if err != nil {

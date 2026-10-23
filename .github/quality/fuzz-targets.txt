@@ -54,6 +54,9 @@ controller/internal/control  Open                  FuzzOpen
 controller/internal/control  Conn.Read             FuzzRead
 controller/internal/control  Conn.SetReadDeadline  exempt  sets the deadline of the next Read; reads nothing
 
+# The source prefixes of a Network and of the admin source allowlist (SDN-39 #232)
+controller/internal/intent  ParseSources  FuzzParseSources
+
 # The intent documents of the API, `ranz apply -f` and `ranz import -f` (SDN-52 #245)
 controller/internal/intent  ParseDocument  FuzzParseDocument
 controller/internal/intent  ParseULA       FuzzParseValues
