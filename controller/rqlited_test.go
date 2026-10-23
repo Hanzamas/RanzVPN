@@ -1,12 +1,15 @@
 package controllercmd
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/payload"
+	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
 )
 
 // The rqlite member of ONE-4 (#313): which rqlited the controller runs as its sidecar.
@@ -89,6 +92,33 @@ func TestRqlitedExeRefusesAMemberThatFailsItsCheck(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, payloadDir, member.Name)); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a member that failed its check was written (%v)", err)
 	}
+}
+
+// The rqlite member that a test binary carries (the Windows jobs of ranz.yml embed one) is written
+// under a data directory by rqlitedExe, and the rqlited that it is starts and serves: on arm64 it
+// is the x64 rqlited.exe of the release, which runs under emulation.
+func TestRqlitedMemberRuns(t *testing.T) {
+	if len(payload.Rqlited.Data) == 0 {
+		t.Skip("this test binary carries no rqlite member: the Windows jobs of ranz.yml embed one")
+	}
+	dir := t.TempDir()
+	cfg, err := parseFlags([]string{"-data", dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe, err := cfg.rqlitedExe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	addrs := freeAddrs(t, 2)
+	var out bytes.Buffer
+	rq := &sidecar.Rqlited{Path: exe, DataDir: filepath.Join(dir, "rqlite"), HTTPAddr: addrs[0], RaftAddr: addrs[1], Output: &out}
+	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
+	defer cancel()
+	if err := rq.Start(ctx); err != nil {
+		t.Fatalf("the rqlite member does not start: %v\n%s", err, out.String())
+	}
+	rq.Stop()
 }
 
 // -rqlite-external and -rqlited say opposite things about the rqlite that the controller uses.

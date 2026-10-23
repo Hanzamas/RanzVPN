@@ -9,9 +9,9 @@ package controllercmd
 // nanopb round trip of CI.
 //
 // The rqlited of each member is the one that RQLITED names, or, in a test binary that carries the
-// rqlite member of a Controller as a Payload (the Windows x64 job of ranz.yml embeds it, ONE-4
-// #313), the member that each process writes from the Payload under its own data directory, with
-// no -rqlited and no rqlited beside the executable.
+// rqlite member of a Controller as a Payload (the Windows jobs of ranz.yml embed it, ONE-4 #313),
+// the member that each process writes from the Payload under its own data directory, with no
+// -rqlited and no rqlited beside the executable.
 
 import (
 	"context"
@@ -226,10 +226,10 @@ func TestRollingUpgrade(t *testing.T) {
 // TestRqlitedWrittenAgain is the fourth criterion of ONE-4 (#313): a member whose rqlited was
 // deleted while it was stopped writes it again at its next start, after the check of its hash and
 // its signature, and the cluster takes it back. It needs a test binary that carries the rqlite
-// member, which the Windows x64 job of ranz.yml builds.
+// member, which the Windows jobs of ranz.yml build.
 func TestRqlitedWrittenAgain(t *testing.T) {
 	if len(payload.Rqlited.Data) == 0 {
-		t.Skip("this test binary carries no rqlite member: the Windows x64 job of ranz.yml embeds one")
+		t.Skip("this test binary carries no rqlite member: the Windows jobs of ranz.yml embed one")
 	}
 	ms := newCluster(t, 0)
 	m := ms[1]

@@ -27,19 +27,19 @@
 # controller as a Windows service on TCP 443 (and plain HTTP for the redirect) with its own rqlite
 # member as its sidecar: install, start, stop, reset-admin and uninstall, driven with ranz and
 # ranz-nodesim (.github/scripts/controller-service.ps1). The rqlite member of a Controller is a
-# Payload of ranz (ONE-4, #313; ADR-0026 amendment of 2026-10-23): the x64 job signs the rqlited.exe
-# of the pinned release with a self-signed certificate that it trusts and embeds it over the
-# placeholder of controller/internal/payload before it builds, so its cluster tests, its ranz.exe
-# and the service run with members that ranz writes out under the data directory itself, with no
-# rqlited beside it, also again after a deletion. On both
-# architectures it runs the sidecar on the named pipe of the node, among them the process
-# mitigations and the System32-only DLL search of ranz read from outside its process (ADR-0039,
-# SEC-1 #279), runs the executable for its contract, and checks its flags
-# (.github/scripts/binary-hardening.ps1). The arm64 runner has no rqlited, and
-# rqlite publishes no Windows build for arm64, so ranz for arm64 carries no member and the job tests
-# the sidecar only. The NOTICE holds the licence text of the pinned rqlite tag word for word
-# (TestNoticeHasTheRqliteLicence of controller/cmd/ranz), and each rqlite archive that a job
-# downloads has the SHA-256 of the pinned release.
+# Payload of ranz (ONE-4, #313; ADR-0026 amendment of 2026-10-23): each Windows job signs the
+# rqlited.exe of the pinned release with a self-signed certificate that it trusts and embeds it
+# over the placeholder of controller/internal/payload before it builds, so the x64 job's cluster
+# tests, its ranz.exe and its service run with members that ranz writes out under the data
+# directory itself, with no rqlited beside it, also again after a deletion. rqlite publishes no
+# Windows build for arm64: the member of ranz for arm64 is the x64 rqlited.exe, which Windows 11 on
+# ARM runs under emulation, and the arm64 job writes it out and starts it (TestRqlitedMemberRuns).
+# On both architectures the job runs the sidecar on the named pipe of the node, among them the
+# process mitigations and the System32-only DLL search of ranz read from outside its process
+# (ADR-0039, SEC-1 #279), runs the executable for its contract, and checks its flags
+# (.github/scripts/binary-hardening.ps1). The NOTICE holds the licence text of the pinned rqlite tag
+# word for word (TestNoticeHasTheRqliteLicence of controller/cmd/ranz), and each rqlite archive
+# that a job downloads has the SHA-256 of the pinned release.
 #
 # The spike with the node (BGP on TCP 179, a prefix announced and withdrawn, a learned route
 # installed through IP Helper, the node starting ranz bgp) needs the C build and runs in
@@ -318,8 +318,8 @@ jobs:
       fail-fast: false
       matrix:
         platform: [
-          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
-          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+          { ARCHITECTURE: x64, GOARCH: amd64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, GOARCH: arm64, RUNNER: "windows-11-arm" }
         ]
     name: ranz (Windows ${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
@@ -333,8 +333,9 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
+    # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
+    # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64
     - name: Install rqlited
-      if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
       run: |
         $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
@@ -362,12 +363,12 @@ jobs:
     # below carries it: the cluster tests run members that write their own rqlited from it, ranz.exe
     # carries it as it ships, and the service check runs with no rqlited beside ranz.exe. RQLITED
     # stays for the tests that start an rqlite of their own (rqlitetest), and RQLITED_SIGNED is the
-    # signed file, which the service check compares what the controller writes out with.
+    # signed file, which the service check compares what the controller writes out with. On the
+    # arm64 runner the member is the x64 rqlited.exe (rqlited_arm64.exe is its placeholder).
     - name: Sign the rqlite member and embed it as the Payload
-      if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
       run: |
-        $embed = (Resolve-Path controller\internal\payload\rqlited_amd64.exe).Path
+        $embed = (Resolve-Path controller\internal\payload\rqlited_${{ matrix.platform.GOARCH }}.exe).Path
         $work = Join-Path $env:RUNNER_TEMP 'rqlited-payload'
         New-Item -ItemType Directory -Force -Path $work | Out-Null
         $signed = Join-Path $work 'rqlited.exe'
@@ -422,6 +423,14 @@ jobs:
       shell: pwsh
       run: |
         go test -count=1 ./ranz-bgp/...
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    # The member of ranz for arm64 (ONE-4, #313): the x64 rqlited.exe written out and started under
+    # emulation, and the choice of the rqlited that the controller runs
+    - name: Test the rqlite member
+      if: matrix.platform.ARCHITECTURE != 'x64'
+      shell: pwsh
+      run: |
+        go test -count=1 -v -run '^(TestRqlitedMemberRuns|TestRqlitedExe.*|TestParseFlagsRqliteExternal)$' ./controller
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     # The contract of the one executable, read from outside and natively on this architecture
     # (ONE-1): one version for every subcommand, the subcommands, the NOTICE

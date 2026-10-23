@@ -36,8 +36,9 @@
 // payload\rqlited.exe in the data directory, again whenever it is missing or differs, after the
 // check of its hash and its signature. With -rqlited PATH it runs that rqlited instead, and with
 // -rqlite-external none: the rqlite at -rqlite is then another process's. A build with no member
-// (Linux, Windows arm64) uses the rqlite at -rqlite unless -rqlited names an rqlited. The member
-// keeps its data in the rqlite directory under -data.
+// (Linux) uses the rqlite at -rqlite unless -rqlited names an rqlited. The member of the arm64
+// build is the x64 rqlited.exe, which Windows 11 on ARM runs under emulation, as rqlite has no
+// Windows build for arm64. The member keeps its data in the rqlite directory under -data.
 //
 // The API and the web UI accept connections only from the admin source allowlist (SDN-39, #232),
 // which an admin sets with `ranz admin-sources`: from an address outside it, every request is
@@ -172,7 +173,7 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.controlListen, "control-listen", "", "for development: a second TLS address for the control stream only, for example 127.0.0.1:7443")
 	flags.StringVar(&cfg.apiListen, "api-listen", "", "for development: a loopback address for the API over plain HTTP, for example 127.0.0.1:7080")
 	flags.StringVar(&cfg.rqliteURL, "rqlite", "http://127.0.0.1:4001", "the URL of the rqlite HTTP API; with -rqlited, rqlited listens on its host:port")
-	flags.StringVar(&cfg.rqlited, "rqlited", "", "the path of rqlited, to run it as the controller's sidecar instead of the one that this executable carries (Windows x64)")
+	flags.StringVar(&cfg.rqlited, "rqlited", "", "the path of rqlited, to run it as the controller's sidecar instead of the one that this executable carries (Windows)")
 	flags.BoolVar(&cfg.external, "rqlite-external", false, "run no rqlite member of its own: the rqlite at -rqlite is another process's")
 	flags.StringVar(&cfg.raftAddr, "rqlite-raft", "127.0.0.1:4002", "the TCP address of the Raft transport of -rqlited; in a cluster, one the other members reach")
 	flags.StringVar(&cfg.raftAdv, "rqlite-raft-adv", "", "the Raft address of -rqlited as the other members reach it, when -rqlite-raft is not one (for example 0.0.0.0:4002)")
