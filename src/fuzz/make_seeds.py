@@ -867,6 +867,33 @@ def make_transport_seeds():
     write_seed('fuzz_transport', 'list_long_address.txt', b'tls:' + b'a' * 255 + b',tls:' + b'b' * 256)
 
 
+# ---------------------------------------------------------------------------
+# VXLAN module of the new core (src/Core/Vxlan.c VxlanInput, RFC 7348 section 5): the datagrams of VTEPs, the 8 bytes
+# of the VXLAN header (the flags, 3 reserved bytes, the VNI in 3 bytes, 1 reserved byte) and an Ethernet frame.
+# fuzz_vxlan.c carries VNI 5001 and VNI 16777215 (0xFFFFFF); VNI 7777 is none of its VNIs.
+# ---------------------------------------------------------------------------
+def vxlan(vni, frame, flags=0x08, reserved=b'\0\0\0', last=0):
+    return bytes([flags]) + reserved + struct.pack('>I', vni)[1:] + bytes([last]) + frame
+
+
+def make_vxlan_seeds():
+    a, b = [10, 0, 0, 1], [10, 0, 0, 2]
+    echo = struct.pack('>BBHHH', 8, 0, 0, 0x4242, 1) + b'ranz-vxlan-ping'
+    echo = echo[:2] + struct.pack('>H', csum(echo)) + echo[4:]
+    untagged = eth(MAC_B, MAC_A, 0x0800, ipv4(a, b, 1, echo, 7))
+    tagged = eth(MAC_B, MAC_A, 0x8100, struct.pack('>HH', 10, 0x0800) + ipv4(a, b, 1, echo, 8))
+    arp = struct.pack('>HHBBH', 1, 0x0800, 6, 4, 1) + MAC_A + bytes(a) + b'\0' * 6 + bytes(b)
+    write_seed('fuzz_vxlan', 'untagged.bin', vxlan(5001, untagged))
+    write_seed('fuzz_vxlan', 'vlan_tagged.bin', vxlan(5001, tagged))
+    write_seed('fuzz_vxlan', 'vni_max_arp.bin', vxlan(0xFFFFFF, eth(BROADCAST, MAC_A, 0x0806, arp)))
+    write_seed('fuzz_vxlan', 'unknown_vni.bin', vxlan(7777, untagged))
+    # Every reserved bit set, which a receiver ignores; no I flag, which it drops; one byte short of the header and an
+    # Ethernet header
+    write_seed('fuzz_vxlan', 'reserved_bits.bin', vxlan(5001, untagged, flags=0xFF, reserved=b'\xff\xff\xff', last=0xFF))
+    write_seed('fuzz_vxlan', 'no_vni_flag.bin', vxlan(5001, untagged, flags=0x00))
+    write_seed('fuzz_vxlan', 'short.bin', vxlan(5001, untagged[:13]))
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     assert len(PEER_SIGNAL) == 99 and len(PEER_SIGNAL_ENVELOPE) == 180 and len(PEER_BIND_ENVELOPE) == 90
@@ -884,3 +911,4 @@ if __name__ == '__main__':
     make_peer_seeds()
     make_noise_seeds()
     make_transport_seeds()
+    make_vxlan_seeds()

@@ -37,6 +37,9 @@ src/Core  TransportParseList     fuzz_transport
 src/Core  TransportNoiseReceive  fuzz_transport
 src/Core  TransportRead          exempt  hands the read of a stream to the Read procedure of its transport; parses nothing (TransportNoiseReceive reads the frames)
 
+# The VXLAN module (SDN-62 #289): the datagrams of VTEPs
+src/Core  VxlanInput  fuzz_vxlan
+
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
 src/Cedar  CsOpen               exempt  opens the node's own SQLite store (winsqlite3)
@@ -59,6 +62,9 @@ controller/internal/intent  ParseKey       FuzzParseValues
 controller/internal/intent  ParseRelay     FuzzParseValues
 controller/internal/controller  Controller.Import  exempt  takes a document that ParseDocument parsed and intent.Replace checked, which FuzzParseDocument drives; it stores the result as a revision
 controller/internal/api         Client.Import      exempt  the API client of `ranz import`: it sends a parsed document to the controller and reads the controller's own answer
+
+# The export targets that an operator sets through the API: webhooks, OTLP endpoints and IPFIX collectors (SDN-16 #192)
+controller/internal/export  Target.Validate  FuzzValidate
 
 # The licence keys (SDN-30 #206) and the revocation list (SEC-5 #283)
 controller/internal/licence  Parse             FuzzParse
