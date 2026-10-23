@@ -7,7 +7,9 @@
 //   a time: the frame of the first handshake record (TransportNoiseAccept), then the frames of the records of the
 //   session, which the stream's lack of a binding encrypts (TransportNoiseReceive), each frame the size of its record
 //   in 4 bytes (big-endian) and the record. A control record that holds a Login is checked as the server's owner
-//   checks it (NoiseLoginParse) and opens the data stream.
+//   checks it (NoiseLoginParse) and opens the data stream;
+// - the first records that a TLS client of the TLS transport reads from a server (TransportTlsParseHello, CORE-S2-1
+//   #69): what it takes from a ServerHello must be a version it knows.
 // The server node has the static key and the ephemeral key of the cacophony IK vector, as in fuzz_noise.c, so that
 // the frames of the encrypted golden records of coretest noisesession get through the handshake and decrypt.
 
@@ -139,6 +141,28 @@ static void FuzzList(const UCHAR *data, UINT size)
 	}
 }
 
+// The input as the first records that a TLS client reads from a server: a ServerHello it takes has a version it knows,
+// and a group only with TLS 1.3
+static void FuzzHello(const UCHAR *data, UINT size)
+{
+	TRANSPORT_TLS_INFO info;
+
+	memset(&info, 0, sizeof(info));
+	if (TransportTlsParseHello(data, size, &info) == false)
+	{
+		return;
+	}
+
+	if (info.Version != TRANSPORT_TLS_12 && info.Version != TRANSPORT_TLS_13)
+	{
+		FuzzFail("TransportTlsParseHello took a ServerHello of a version it does not know");
+	}
+	if (info.Version == TRANSPORT_TLS_12 && info.Group != 0)
+	{
+		FuzzFail("TransportTlsParseHello gave a group of TLS 1.2");
+	}
+}
+
 // The input as what a server node reads from a stream, step bytes at a time at most
 static void FuzzStream(FUZZ_TRANSPORT *f, const UCHAR *data, UINT size, UINT step)
 {
@@ -192,7 +216,7 @@ static void FuzzStream(FUZZ_TRANSPORT *f, const UCHAR *data, UINT size, UINT ste
 	TransportNoiseClose(&n);
 }
 
-// One input: the fallback list, then the stream as it comes and a byte at a time
+// One input: the fallback list, the stream as it comes and a byte at a time, then the records of a TLS server
 static void FuzzTransport(const uint8_t *data, size_t size)
 {
 	FUZZ_TRANSPORT *f;
@@ -220,6 +244,7 @@ static void FuzzTransport(const uint8_t *data, size_t size)
 	FuzzList(in, (UINT)size);
 	FuzzStream(f, in, (UINT)size, (UINT)size);
 	FuzzStream(f, in, (UINT)size, 1);
+	FuzzHello(in, (UINT)size);
 
 	SecureZeroMemory(f, sizeof(FUZZ_TRANSPORT));
 	free(f);

@@ -110,6 +110,15 @@ endif()
 message(STATUS "coretransport: msquic headers at ${RANZ_MSQUIC_INCLUDE_DIR}")
 target_include_directories(coretransport PRIVATE "${RANZ_MSQUIC_INCLUDE_DIR}")
 
+# The TLS transport (TransportTls.c, CORE-S2-1 #69): Schannel through SSPI (secur32) over Winsock, and the
+# machine's Schannel group list in the registry (advapi32). A program that links the module gets them for the link.
+target_link_libraries(coretransport
+  PRIVATE
+    "secur32.lib"
+    "ws2_32.lib"
+    "advapi32.lib"
+)
+
 set_target_properties(coretransport
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

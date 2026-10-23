@@ -9,7 +9,8 @@
 // - The session layer (TransportNoise.c): a Noise session over a stream of any transport. Each
 //   record goes as a frame, its size in 4 bytes (big-endian) and then the record, as on the
 //   control stream. The stream's channel binding goes into the handshake; a stream that nothing
-//   binds gets an encrypted session (NOISE_SESSION_ENCRYPT).
+//   binds gets an encrypted session (NOISE_SESSION_ENCRYPT). On a transport over TCP the data
+//   records wait in the ingress queue of the session (TransportQueue.c), which CoDel runs.
 // - The race (Transport.c): a client dials the transports of its fallback list (QUIC, then TLS-443,
 //   then the CDN path, ADR-0005) happy-eyeballs style, after RFC 8305: an attempt starts the attempt
 //   delay after the one before it, or at once when every attempt so far failed; the first stream
@@ -75,6 +76,7 @@ typedef struct TRANSPORT {
 	TRANSPORT_CLOSE_PROC *Close;                  // Close a stream
 	TRANSPORT_BINDING_PROC *Binding;              // The channel binding of a stream, or NULL
 	TRANSPORT_REKEY_PROC *Rekey;                  // Update the outer keys of a stream, or NULL
+	UINT Queue;                                   // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it, NONE for none
 } TRANSPORT;
 
 // One entry of a fallback list: a transport and the address it dials
@@ -91,20 +93,79 @@ typedef struct TRANSPORT_RACE {
 	UINT64 Elapsed;  // ms from the start to the winner's connect, or to the end of a race that none won
 } TRANSPORT_RACE;
 
+// The ingress queue (TransportQueue.c; CORE-S2-1 #69, the ADR-0022 amendment of 2026-10-15 on the
+// TCP-over-TCP meltdown). On a transport over TCP (TLS-443) an outer segment that the network lost
+// holds up every byte behind it until the outer TCP sends it again, so an inner TCP flow that
+// waits behind it times out and sends again into the same stalled stream. The data records of a
+// session over such a transport (TRANSPORT.Queue) wait in a queue in front of the stream instead:
+// Send queues a data record and returns, and a writer on the Windows thread pool writes the
+// records that the queue lets out. CoDel (RFC 8289) runs the queue: once the records waited longer
+// than the target for an interval, it drops records at the head, at a rate that grows while they
+// still wait too long, so that an inner TCP flow backs off at the first drop instead of filling a
+// buffer. A FIFO queue drops only at its limit, at the tail, as a full buffer does. Control,
+// keepalive and close records never wait in it. Times are microseconds (TransportQueueNow).
+#define TRANSPORT_QUEUE_NONE  0 // Send writes each record to the stream at once: QUIC, the loopback transport
+#define TRANSPORT_QUEUE_FIFO  1 // The data records wait in a queue that drops only at its limit
+#define TRANSPORT_QUEUE_CODEL 2 // ... which CoDel runs
+
+#define TRANSPORT_QUEUE_TARGET   5000   // The target of the time a record waits (us), as RFC 8289 recommends
+#define TRANSPORT_QUEUE_INTERVAL 100000 // The interval (us), as RFC 8289 recommends
+#define TRANSPORT_QUEUE_LIMIT    1000   // Records that wait at most: the limit of the Linux codel queue discipline
+
+// An ingress queue: the records that wait, oldest first, the state of CoDel and the counters
+typedef struct TRANSPORT_QUEUE_ITEM TRANSPORT_QUEUE_ITEM;
+typedef struct TRANSPORT_QUEUE {
+	UINT Mode;                  // TRANSPORT_QUEUE_FIFO or TRANSPORT_QUEUE_CODEL
+	UINT Limit;                 // Records that wait at most: one pushed above it is dropped
+	UINT64 Target;              // CoDel: the target of the sojourn time (us)
+	UINT64 Interval;            // CoDel: the interval (us)
+	TRANSPORT_QUEUE_ITEM *Head; // The oldest record ...
+	TRANSPORT_QUEUE_ITEM *Tail; // ... and the newest
+	UINT NumRecords;            // The records that wait ...
+	UINT64 Bytes;               // ... and their bytes
+	UINT MaxRecord;             // The largest record pushed: CoDel drops nothing while no more bytes wait
+	UINT64 FirstAbove;          // CoDel: when the sojourn time will have stayed above the target for an interval, 0 below it
+	UINT64 DropNext;            // CoDel, dropping: when the next record is dropped
+	UINT Count;                 // CoDel: the records dropped since the dropping state began ...
+	UINT LastCount;             // ... and their number when it began
+	bool Dropping;              // CoDel: the dropping state
+	UINT64 NumPushed;           // Records pushed
+	UINT64 NumPopped;           // ... that left to be written
+	UINT64 NumDropped;          // ... that CoDel dropped at the head
+	UINT64 NumOverflow;         // ... dropped at the tail: pushed while the queue was at its limit
+} TRANSPORT_QUEUE;
+
+// What the ingress queue of a session did (TransportNoiseQueueStatus)
+typedef struct TRANSPORT_QUEUE_STATUS {
+	UINT NumRecords;    // Records that wait
+	UINT64 NumPushed;   // Records pushed
+	UINT64 NumPopped;   // ... written
+	UINT64 NumDropped;  // ... dropped by CoDel
+	UINT64 NumOverflow; // ... dropped at the limit
+} TRANSPORT_QUEUE_STATUS;
+
 // The frame of a record on a stream: the size of the record (4 bytes, big-endian), then the record
 #define TRANSPORT_FRAME_HEADER 4
 #define TRANSPORT_MAX_FRAME    (TRANSPORT_FRAME_HEADER + NOISE_MAX_RECORD)
 
 // A Noise session over a stream of a transport
 typedef struct TRANSPORT_NOISE {
-	TRANSPORT_STREAM *Stream; // The stream: NULL before Connect or Accept, and after Close
-	NOISE_SESSION Session;    // The Noise session
-	SRWLOCK Lock;             // Serialises the session and the writes of the stream, so that Send runs beside Receive
-	UCHAR *In;                // The frame being read, TRANSPORT_MAX_FRAME bytes ...
-	UINT InSize;              // ... and its bytes read so far
-	UCHAR *Out;               // The frame being written, under Lock
-	UINT64 NumSent;           // Records written to the stream
-	UINT64 NumReceived;       // Records read from it
+	TRANSPORT_STREAM *Stream;   // The stream: NULL before Connect or Accept, and after Close
+	NOISE_SESSION Session;      // The Noise session
+	SRWLOCK Lock;               // Serialises the session and the writes of the stream, so that Send runs beside Receive
+	UCHAR *In;                  // The frame being read, TRANSPORT_MAX_FRAME bytes ...
+	UINT InSize;                // ... and its bytes read so far
+	UCHAR *Out;                 // The frame being written, under Lock
+	UINT64 NumSent;             // Records written to the stream
+	UINT64 NumReceived;         // Records read from it
+	TRANSPORT_QUEUE *Queue;     // The ingress queue of the data records (TRANSPORT.Queue), NULL for none
+	SRWLOCK QueueLock;          // The queue and the writer's flags below
+	CONDITION_VARIABLE Written; // The writer stopped
+	PTP_WORK Writer;            // The writer: a work of the Windows thread pool
+	UCHAR *Pending;             // The record that the writer writes, NOISE_MAX_PAYLOAD bytes
+	bool Writing;               // The writer was submitted and did not stop yet
+	bool Closing;               // Close runs: the queue takes no record any more
+	bool Failed;                // The session closed or its stream failed: the queue takes no record any more
 } TRANSPORT_NOISE;
 
 // The transport interface (Transport.c): each call goes to the procedure of the transport of the
@@ -149,12 +210,30 @@ TRANSPORT_STREAM *TransportRace(const TRANSPORT_TARGET *targets, UINT num, UINT 
 // Send may run on one thread while Receive runs on another. AcceptLogin opens the data stream
 // after the owner checked the Login (NoiseSessionAcceptLogin). Close sends the close record while
 // the session is open, closes the stream and wipes the session, once no other call runs on it.
+// On a transport with an ingress queue, Send queues a data record for the writer and returns: it
+// fails when the session took its last record (it is closing, closed or its stream failed) or the
+// queue dropped the record at its limit; Close lets the writer write the records that wait first.
+// QueueStatus tells what the ingress queue did, false for a session without one.
 bool TransportNoiseConnect(TRANSPORT_NOISE *n, TRANSPORT_STREAM *s, const NOISE_SESSION_CONFIG *cfg, UINT timeout);
 bool TransportNoiseAccept(TRANSPORT_NOISE *n, TRANSPORT_STREAM *s, const NOISE_SESSION_CONFIG *cfg, UINT timeout);
 bool TransportNoiseSend(TRANSPORT_NOISE *n, UINT type, const void *data, UINT size);
 UINT TransportNoiseReceive(TRANSPORT_NOISE *n, void *data, UINT max, UINT *size, UINT timeout);
 void TransportNoiseAcceptLogin(TRANSPORT_NOISE *n);
 void TransportNoiseClose(TRANSPORT_NOISE *n);
+bool TransportNoiseQueueStatus(TRANSPORT_NOISE *n, TRANSPORT_QUEUE_STATUS *st);
+
+// The ingress queue (TransportQueue.c), on its own: the session layer serialises its calls. Init
+// makes an empty queue of a mode (TRANSPORT_QUEUE_FIFO or TRANSPORT_QUEUE_CODEL) with the target,
+// the interval and the limit above. Push queues a copy of size bytes that came at now: false, with
+// the record dropped, while the queue is at its limit. Pop gives the next record that leaves at now
+// into data (max bytes) and *size, false when none waits; the records that CoDel drops on the way
+// are gone, as is one larger than max. Free drops every record that waits. Now gives the time of
+// the queue, microseconds of QueryPerformanceCounter.
+void TransportQueueInit(TRANSPORT_QUEUE *q, UINT mode);
+bool TransportQueuePush(TRANSPORT_QUEUE *q, UINT64 now, const void *data, UINT size);
+bool TransportQueuePop(TRANSPORT_QUEUE *q, UINT64 now, void *data, UINT max, UINT *size);
+void TransportQueueFree(TRANSPORT_QUEUE *q);
+UINT64 TransportQueueNow();
 
 // The loopback transport (TransportLoopback.c). New makes one, with a network of its own: its
 // listeners take any name as their address, and its dialler finds them by it. A dial waits
@@ -216,5 +295,90 @@ TRANSPORT *TransportQuicServerNew(const TRANSPORT_QUIC_CONFIG *cfg);
 TRANSPORT *TransportQuicClientNew(const TRANSPORT_QUIC_CONFIG *cfg);
 USHORT TransportQuicBoundPort(TRANSPORT *t);
 void TransportQuicFree(TRANSPORT *t);
+
+// The TLS transport (TransportTls.c, CORE-S2-1 #69), on Schannel through SSPI: TLS 1.3 and 1.2 over
+// TCP on the Windows TCP stack, for a client that cannot use UDP (TLS-443 in a fallback list,
+// ADR-0005). The server credential (SCH_CREDENTIALS) presents a certificate read from the Windows
+// certificate store by its thumbprint, whose private key must be in a CNG key storage provider: a
+// PFX is imported into the KSP (CryptoCertImportPfx), and a certificate whose key sits in a legacy
+// CryptoAPI provider (CSP) is refused, so Schannel never meets one (ADR-0022, amendment of
+// 2026-10-21). Both ends allow AES-GCM only (no ChaCha20-Poly1305, no CBC or CCM) and an ephemeral
+// key exchange only (no static RSA, no finite-field DHE). The session layer runs the Noise session
+// over a stream unchanged: the handshake, the Login and the data stream whose L2 frames enter the
+// Hub (CORE-S1-2 #68). The channel binding of a stream is the TLS exporter of its session (RFC 8446
+// section 7.5, RFC 5705 for TLS 1.2; NOISE_BINDING_EXPORTER), which Schannel gives through
+// SECPKG_ATTR_KEYING_MATERIAL. The client pins the server certificate: a certificate whose
+// thumbprint is not the configured one is refused, and the system root store is not trusted
+// (ADR-0023). Every handshake is a full one: the server keeps no session for a resumption. The data
+// records of a session over the transport wait in its ingress queue, which CoDel runs by default.
+//
+// The key exchange groups: X25519MLKEM768 first where the OS has ML-KEM, X25519 as the fallback.
+// Schannel takes no list of groups per credential (SCH_CREDENTIALS and TLS_PARAMETERS can only
+// disable algorithms), and builds 26100 and 26200 do not offer the hybrid by default, so
+// TransportTlsSetGroups sets the machine's Schannel group list, the one that Enable-TlsEccCurve
+// writes and Schannel reads: the value EccCurves of the key
+// HKLM\SYSTEM\CurrentControlSet\Control\Cryptography\Configuration\Local\SSL\00010002, with the
+// transport's groups first and the groups the list had after them. An ECC Curve Order group policy
+// overrides that list where one is set; the transport leaves it as the administrator set it.
+#define TRANSPORT_TLS_12 0x00000001 // TLS 1.2
+#define TRANSPORT_TLS_13 0x00000002 // TLS 1.3
+
+// What TransportTlsSetGroups did
+#define TRANSPORT_TLS_GROUPS_SET    0 // The machine's list starts with the transport's groups
+#define TRANSPORT_TLS_GROUPS_POLICY 1 // An ECC Curve Order policy governs the list, which stays as it is
+#define TRANSPORT_TLS_GROUPS_FAILED 2 // The list could not be read or written (administrator rights)
+
+// How a TLS transport is configured
+typedef struct TRANSPORT_TLS_CONFIG {
+	char Name[TRANSPORT_NAME_SIZE];              // The transport name in a fallback list ("tls")
+	char Thumbprint[3 * CRYPTO_THUMBPRINT_SIZE]; // The server certificate in the store, by its SHA-1 thumbprint
+	bool MachineStore;                           // The LocalMachine\My store (the service); else the current user's
+	UINT Versions;                               // TRANSPORT_TLS_12, TRANSPORT_TLS_13 or both: the versions it negotiates
+	bool SetGroups;                              // New sets the key exchange groups of the machine (TransportTlsSetGroups)
+	bool BreakBinding;                           // A client that changes the binding it computes: for the mismatch test
+	UINT Queue;                                  // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it (CODEL)
+} TRANSPORT_TLS_CONFIG;
+
+// What a TLS handshake gave: the version, the cipher suite and the key exchange group that the
+// server chose. The group is the one of the ServerHello on the wire (TransportTlsParseHello), which
+// the client reads among the server's records and the server among its own.
+typedef struct TRANSPORT_TLS_INFO {
+	UINT Version;     // TRANSPORT_TLS_12 or TRANSPORT_TLS_13
+	UINT CipherSuite; // The TLS cipher suite (0x1302 TLS_AES_256_GCM_SHA384, ...)
+	UINT Group;       // The key exchange group of TLS 1.3 (CRYPTO_GROUP_*), 0 for TLS 1.2
+	bool Retried;     // The server asked for a key share of another group first (a HelloRetryRequest)
+} TRANSPORT_TLS_INFO;
+
+// Fill cfg with the defaults: the name "tls", TLS 1.2 and 1.3, the groups set, the ingress queue
+// that CoDel runs, the thumbprint of the server certificate (hex, spaces and colons ignored) and the
+// store it is in
+void TransportTlsDefaultConfig(TRANSPORT_TLS_CONFIG *cfg, const char *thumbprint, bool machine_store);
+
+// A server transport that listens with the certificate cfg names, or a client transport that dials
+// and pins that certificate; each acquires its own Schannel credential. New returns NULL when the
+// thumbprint is malformed, or the server's certificate is not in the store or has no key in a KSP.
+// The address of Listen and Dial is a host and a port ("vpn.example:443", "[::1]:443", ":443" to
+// listen on every address of both families); TransportTlsBoundPort gives the port the last listener
+// of a server transport bound, for a listener on port 0. LastHandshake gives what the last handshake
+// that completed on the transport gave, false before there was one. Free closes the transport once
+// its listeners and streams are closed.
+TRANSPORT *TransportTlsServerNew(const TRANSPORT_TLS_CONFIG *cfg);
+TRANSPORT *TransportTlsClientNew(const TRANSPORT_TLS_CONFIG *cfg);
+USHORT TransportTlsBoundPort(TRANSPORT *t);
+bool TransportTlsLastHandshake(TRANSPORT *t, TRANSPORT_TLS_INFO *info);
+void TransportTlsFree(TRANSPORT *t);
+
+// Put the transport's key exchange groups first in the machine's Schannel group list:
+// X25519MLKEM768 where the OS has ML-KEM (CryptoMlKemAvailable), then X25519, then the other groups
+// of the list in their order (the list of Windows 11 24H2 where the machine has none of its own). It
+// needs administrator rights and gives TRANSPORT_TLS_GROUPS_*.
+UINT TransportTlsSetGroups();
+
+// Read the first ServerHello, or HelloRetryRequest, of data: size bytes of the TLS records a server
+// sends, ChangeCipherSpec records before it skipped. It fills info with the version (that of
+// supported_versions where it is there), the cipher suite, the group of key_share (TLS 1.3) and
+// whether it is a HelloRetryRequest; false, with info untouched, when data does not start with a
+// whole record holding a whole ServerHello.
+bool TransportTlsParseHello(const UCHAR *data, UINT size, TRANSPORT_TLS_INFO *info);
 
 #endif // CORE_TRANSPORT_H
