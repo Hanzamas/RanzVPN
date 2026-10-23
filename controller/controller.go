@@ -98,6 +98,7 @@ import (
 	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
+	"github.com/Hanzamas/RanzVPN/controller/internal/audit"
 	"github.com/Hanzamas/RanzVPN/controller/internal/cluster"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
@@ -481,7 +482,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
 	// The web UI (internal/webui) is served beside the API it calls, at every path outside /api/,
 	// and both only to the addresses of the admin source allowlist (SDN-39, #232).
-	sources := api.NewSources(st, log, adminSourcesTTL)
+	sources := api.NewSources(st, log, adminSourcesTTL).WithAudit(audit.NewLog(st, log))
 	tlsPort := &port.Server{TLS: tlsCfg, Control: m.ServeStream, HTTP: webHandler(sources, apiHandler), Log: log}
 	defer tlsPort.Close()
 	go func() { errc <- tlsPort.Serve(ln) }()
