@@ -173,7 +173,7 @@ message NodeConfig {
   string name = 1;
   repeated string tags = 2;  // sorted
   repeated Address addresses = 3;
-  repeated Nat nat = 4;
+  repeated Nat nat = 5;
 }
 
 // A VRF the node is a member of.
