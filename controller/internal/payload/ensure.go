@@ -1,9 +1,7 @@
 package payload
 
 import (
-	"crypto/sha256"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 )
@@ -16,12 +14,17 @@ import (
 // and its Authenticode signature before anything reaches dir. So deleting the file between two
 // starts does not break the next one, and a file that someone changed is replaced by the one that
 // the executable carries. dir is created if it does not exist.
+//
+// Install asks for a directory that only SYSTEM and the Administrators can write. The directory of
+// Ensure is the one under the data directory of the program that runs the file, which only the
+// accounts that may run it can write too (the ACL of the data directory): a program that could not
+// write its own file could not write it again at its next start.
 func Ensure(dir string, p Payload) (string, error) {
 	if len(p.Data) == 0 {
 		return "", fmt.Errorf("payload: %s carries no data (a build without the real payload embedded)", p.Name)
 	}
 	dest := filepath.Join(dir, p.Name)
-	if hasSum(dest, p.SHA256) {
+	if sum, err := fileSHA256(dest); err == nil && sum == p.SHA256 {
 		return dest, nil
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -31,18 +34,4 @@ func Ensure(dir string, p Payload) (string, error) {
 		return "", err
 	}
 	return dest, nil
-}
-
-// hasSum reports whether the file at path exists and has the SHA-256 sum.
-func hasSum(path string, sum [32]byte) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return false
-	}
-	return [32]byte(h.Sum(nil)) == sum
 }
