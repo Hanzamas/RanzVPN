@@ -212,3 +212,43 @@ GoBGP is licensed under the Apache License, Version 2.0, whose text follows.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+
+rqlite
+------
+
+The Controller (`ranz controller`) keeps its data in rqlite (https://rqlite.io), and ranz.exe carries
+the rqlite member of a Controller as a Payload: the rqlited.exe of the rqlite release v10.5.3,
+unmodified apart from the Authenticode signature that Ranz adds, which the Controller writes under
+its data directory and runs as a separate process. rqlite is licensed under the MIT License, whose
+text follows.
+
+The MIT License (MIT)
+
+Copyright (c) Philip O'Toole (https://www.philipotoole.com) 2015 - 2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The release binary also holds SQLite, which is in the public domain, and the Go libraries that the
+go.mod of its tag lists (https://github.com/rqlite/rqlite/blob/v10.5.3/go.mod), each under its own
+licence. Among them are libraries of HashiCorp under the Mozilla Public License 2.0 (hashicorp/raft
+and others), whose text is at https://www.mozilla.org/MPL/2.0/, and libraries under the Apache
+License, Version 2.0, whose text is above. None of them is modified, so the source of each is the
+source of the version that go.mod names: for hashicorp/raft at https://github.com/hashicorp/raft,
+and for the others at the address of the module.

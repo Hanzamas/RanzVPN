@@ -52,7 +52,15 @@ src/Core  SwitchInput  fuzz_switch
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
 src/Cedar  CsOpen               exempt  opens the node's own SQLite store (winsqlite3)
 src/Cedar  CsImportForkConfig   exempt  the config importer of CORE-F5, merged before ADR-0040: Cfg parses the bytes of the file (fuzz_cfg) and the importer walks the parsed tree; a fuzz target of its own is still to come
-src/Cedar  NodeOverlayInput     exempt  a packet of the host's own IP stack on the overlay adapter of a VRF (SDN-3 #179, merged before the gate; SDN-4 #180): NodeOverlayEnds reads the two addresses at fixed offsets of an IPv4 or IPv6 header whose size and version it checks, the forwarding table of the VRF looks them up, and the packet is sent on unread after the VRF id; a fuzz target of its own is still to come
+src/Cedar  NodeOverlayInput     exempt  a packet of the host's own IP stack on the overlay adapter of a VRF (SDN-3 #179, merged before the gate; SDN-4 #180; SDN-6 #182): NodeNatEnds (fuzz_nat) reads its two addresses as the overlay sees them, the forwarding table of the VRF looks them up, and NodeNatCopy (fuzz_nat) writes the packet after the VRF id; a fuzz target of its own is still to come
+# The 1:1 NAT and 4via6 of the Node (SDN-6 #182) read the packets of the host and of the peers, ICMP errors and the
+# packets they quote among them: no parser word in their names, listed as the readers of packets that they are
+src/Cedar  NodeNatEnds     fuzz_nat
+src/Cedar  NodeNatCopy     fuzz_nat
+src/Cedar  NodeNatInbound  fuzz_nat
+# The shaping of the overlay (SDN-20 #196) reads the packet of the host that NodeOverlayInput copied: no parser word in
+# its name, listed as a parser
+src/Cedar  NodeShapeOutput      exempt  only AdjustTcpMssL3 of TcpIp reads the bytes, to clamp the MSS of a TCP SYN, and fuzz_tcpip drives it through AdjustTcpMssL2; the rate limits take the size of the packet alone
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen

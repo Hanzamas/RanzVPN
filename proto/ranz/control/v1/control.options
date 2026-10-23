@@ -52,3 +52,8 @@ ranz.control.v1.Flow.src max_size:16
 ranz.control.v1.Flow.dst max_size:16
 ranz.control.v1.NodeEvent.subject max_size:64
 ranz.control.v1.NodeEvent.message max_size:256
+# The 1:1 NAT rules that a node applies, its 4via6 among them, and the routes of a peer, which are
+# the outside prefixes of its rules (SDN-6): 16 each, the most the controller lets one node have
+# (controller/internal/intent MaxNATRules).
+ranz.control.v1.NodeConfig.nat max_count:16
+ranz.control.v1.Peer.routes max_count:16

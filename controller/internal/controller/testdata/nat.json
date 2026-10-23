@@ -1,0 +1,12 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "red", "spec": {"id": 101, "ula": "fd00:101::/48"}},
+    {"kind": "VRF", "name": "blue", "spec": {"id": 202, "ula": "fd00:202::/48"}},
+    {"kind": "Network", "name": "red-lan", "spec": {"vrf": "red", "ipv4Pool": "10.0.0.0/24"}},
+    {"kind": "Network", "name": "blue-lan", "spec": {"vrf": "blue", "ipv4Pool": "10.0.0.0/24"}},
+    {"kind": "Node", "name": "branch-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["red", "blue"]}},
+    {"kind": "Node", "name": "branch-2", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["red"]}},
+    {"kind": "Node", "name": "lab-1", "spec": {"publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "vrfs": ["blue"]}},
+    {"kind": "NAT", "name": "branch-2-lan", "spec": {"vrf": "red", "node": "branch-2", "inside": "192.168.1.0/24", "outside": "10.99.1.0/24"}}
+  ]
+}
