@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeTable.c, NodeVrf.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeSession.c, NodeTable.c, NodeVrf.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -45,8 +45,8 @@
 #define NODE_SERVICE_ACCOUNT L"NT SERVICE\\ranzvpnserver"
 #define NODE_SERVICE_SID     L"S-1-5-80-2319880895-1939077415-1550474732-530486738-250906376"
 
-// The BGP sidecar ranz-bgp (NodeBgp.c; ADR-0010, CORE-S7-1 #82)
-#define NODE_BGP_EXE_NAME     L"ranz-bgp.exe" // The sidecar, next to the executable of the node (the RanzBgp feature of the MSI)
+// The BGP sidecar, the subcommand bgp of ranz.exe (NodeBgp.c; ADR-0010, CORE-S7-1 #82, ONE-1 #310)
+#define NODE_BGP_EXE_NAME     L"ranz.exe"     // The executable that holds the sidecar, next to the executable of the node; the node starts it as ranz.exe bgp
 #define NODE_BGP_LOG_NAME     L"ranz-bgp.log" // Its log, in the node log directory
 #define NODE_BGP_MAX_LINE     65536           // Bytes of one message of the pipe at most, with its newline (sidecar.MaxLine)
 #define NODE_BGP_MAX_ROUTES   65536           // Learned routes that a node installs at most
@@ -194,7 +194,7 @@ struct NODE {
 
 	// The BGP sidecar (CORE-S7-1, #82), under Lock
 	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
-	wchar_t BgpSidecar[MAX_PATH]; // The sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
+	wchar_t BgpSidecar[MAX_PATH]; // The executable that holds the sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
 	NODE_BGP *Bgp;                // The running BGP sidecar (NodeBgp.c), NULL when none runs
 
 	// The overlay (NodeOverlay.c; SDN-3, #179), NULL while it does not run
@@ -261,7 +261,7 @@ struct NODE_BGP_STATUS {
 	UINT NumAnnounced;      // The prefixes the node announces
 	UINT NumRoutes;         // The learned routes installed through IP Helper
 	UINT NumErrors;         // Error messages of the sidecar so far
-	char Version[MAX_SIZE]; // What the sidecar named in ready: ranz-bgp and its GoBGP
+	char Version[MAX_SIZE]; // What the sidecar named in ready: ranz bgp and its GoBGP
 	char PipeAcl[MAX_SIZE]; // The DACL of the pipe to the sidecar as the system holds it, in SDDL
 };
 
@@ -332,5 +332,8 @@ void NodeOverlayStop(NODE *n);
 bool NodeOverlayApply(NODE *n, const struct CONTROL_STATE *st);
 bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size);
 void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
+
+// NodeSession.c
+UINT NodeAcceptSession(NODE *n, TRANSPORT_NOISE *s, UINT timeout);
 
 #endif // NODE_H

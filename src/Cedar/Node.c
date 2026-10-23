@@ -540,7 +540,7 @@ static void NodeAddHub(NODE *n, char *name, bool online) {
 
 // The server role: a Hub for each L2 network of the configuration store, or the DEFAULT hub when the store has no
 // network. The L3 networks come with the routed networks (CORE-S6-1, #80). The sessions of the QUIC and TLS
-// transports (CORE-S1-1 #67, CORE-S2-1 #69) end in the Hubs.
+// transports (CORE-S1-1 #67, CORE-S2-1 #69) end in the Hubs, as Sessions of a Tunnel (NodeAcceptSession, CORE-S1-2 #68).
 static bool NodeServerStart(NODE *n) {
 	LIST *o = CsEnumNetworks(n->Store);
 

@@ -1,9 +1,10 @@
 // NodeBgp.c
-// The BGP sidecar of a node (ADR-0010, ADR-0022; CORE-S7-1, #82): ranz-bgp, a Go program that embeds GoBGP as a
-// library and peers with the operator's own routers. The node starts it when its configuration names BGP peers,
-// talks to it over a named pipe with JSON messages, one per line (the protocol of ranz-bgp/internal/sidecar), and
-// installs the routes it learns into Windows through IP Helper. There is no BGP in the node and no RRAS; a node
-// without BGP peers never starts the sidecar, and a node without the RanzBgp feature of the MSI has none to start.
+// The BGP sidecar of a node (ADR-0010, ADR-0022; CORE-S7-1, #82; ONE-1, #310): ranz bgp, the subcommand of the one Go
+// executable ranz.exe, which embeds GoBGP as a library and peers with the operator's own routers. The node starts
+// it as ranz.exe bgp, from the folder of its own executable, when its configuration names BGP peers, talks to it over
+// a named pipe with JSON messages, one per line (the protocol of ranz-bgp/internal/sidecar), and installs the routes
+// it learns into Windows through IP Helper. There is no BGP in the node and no RRAS; a node without BGP peers never
+// starts the sidecar, and a node without ranz.exe next to it has none to start.
 
 #include "Node.h"
 
@@ -571,7 +572,7 @@ static bool NodeBgpLaunch(NODE_BGP *b) {
 	} else {
 		ConbinePathW(log_path, sizeof(log_path), n->DataDir, NODE_LOG_DIR_NAME);
 		ConbinePathW(log_path, sizeof(log_path), log_path, NODE_BGP_LOG_NAME);
-		UniFormat(cmd, sizeof(cmd), L"\"%s\" -pipe %s -log \"%s\"", n->BgpSidecar, b->PipeName, log_path);
+		UniFormat(cmd, sizeof(cmd), L"\"%s\" bgp -pipe %s -log \"%s\"", n->BgpSidecar, b->PipeName, log_path);
 
 		Zero(&si, sizeof(si));
 		si.cb = sizeof(si);
@@ -648,7 +649,7 @@ void NodeBgpStart(NODE *n) {
 	}
 
 	if (IsFileExistsW(n->BgpSidecar) == false) {
-		NodeLog(n, "BGP not started: the sidecar %S is not installed (the RanzBgp feature of the MSI)", n->BgpSidecar);
+		NodeLog(n, "BGP not started: ranz.exe, which holds the sidecar, is not installed at %S", n->BgpSidecar);
 		cJSON_Delete(cfg);
 		return;
 	}
@@ -693,7 +694,7 @@ void NodeBgpStart(NODE *n) {
 			NodeBgpFree(b);
 		} else {
 			n->Bgp = b;
-			NodeLog(n, "BGP sidecar %S started: process %u, %u peers, pipe %S", n->BgpSidecar, b->ProcessId, LIST_NUM(b->Peers), b->PipeName);
+			NodeLog(n, "BGP sidecar %S bgp started: process %u, %u peers, pipe %S", n->BgpSidecar, b->ProcessId, LIST_NUM(b->Peers), b->PipeName);
 
 			for (cJSON *a = (cJSON_IsArray(announce) ? announce->child : NULL); a != NULL; a = a->next) {
 				if (cJSON_IsString(a))

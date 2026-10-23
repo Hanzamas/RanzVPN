@@ -3,9 +3,10 @@
 #
 # - Pins: vcpkg.json pins the vcpkg ports tree with its builtin-baseline, a commit of
 #   microsoft/vcpkg, so every runner builds the same port versions; the job checks that it is a
-#   full commit hash that the runner's vcpkg checkout has. Each Go module (controller/, ranz-bgp/)
-#   pins its modules in go.sum: go mod verify checks the modules in the module cache against it,
-#   and go list -mod=readonly fails when go.mod needs a module that go.sum does not pin.
+#   full commit hash that the runner's vcpkg checkout has. The Go module (go.mod and go.sum at the
+#   repository root, which hold controller/ and ranz-bgp/: ONE-1, #310) pins its modules in go.sum:
+#   go mod verify checks the modules in the module cache against it, and go list -mod=readonly
+#   fails when go.mod needs a module that go.sum does not pin.
 # - govulncheck: the known vulnerabilities of the Go vulnerability database that the code of each
 #   Go module reaches, in its modules or in the standard library of GO_VERSION, for Windows. One
 #   that .github/scripts/govulncheck.ps1 does not accept, with the reason, fails the job.
@@ -40,8 +41,8 @@ env:
   VCPKG_ROOT: C:\vcpkg
   VCPKG_BINCACHE: ${{ github.workspace }}\vcpkg-bincache
   VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-bincache,readwrite
-  # The Go of controller.yml, ranz-bgp.yml and windows.yml, which builds the executables that
-  # govulncheck checks against the standard library
+  # The Go of ranz.yml and windows.yml, which builds the executables that govulncheck checks against
+  # the standard library
   GO_VERSION: '1.27.3'
   GOVULNCHECK_VERSION: 'v1.8.0'
   SBOM_TOOL_VERSION: 'v4.1.5'
@@ -56,9 +57,7 @@ jobs:
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
-        cache-dependency-path: |
-          controller/go.sum
-          ranz-bgp/go.sum
+        cache-dependency-path: go.sum
     - name: Restore vcpkg binary cache
       uses: actions/cache/restore@v4
       with:
@@ -73,18 +72,14 @@ jobs:
         $type = (& git -C $env:VCPKG_ROOT cat-file -t $baseline 2>$null | Out-String).Trim()
         if ($type -ne 'commit') { throw "vcpkg.json: the vcpkg checkout $env:VCPKG_ROOT has no commit $baseline" }
         Write-Host "vcpkg.json: the ports tree of microsoft/vcpkg $baseline"
-        foreach ($module in 'controller', 'ranz-bgp') {
-          Push-Location $module
-          if (-not (Test-Path -LiteralPath go.sum)) { throw "${module}: no go.sum" }
-          go mod download
-          if ($LASTEXITCODE -ne 0) { throw "${module}: go mod download exited with code $LASTEXITCODE" }
-          go mod verify
-          if ($LASTEXITCODE -ne 0) { throw "${module}: go mod verify exited with code $LASTEXITCODE" }
-          $n = @(go list -mod=readonly -m all).Count
-          if ($LASTEXITCODE -ne 0) { throw "${module}: go.sum does not pin every module that go.mod needs" }
-          Write-Host "${module}: $n modules, each pinned by go.sum"
-          Pop-Location
-        }
+        if (-not (Test-Path -LiteralPath go.sum)) { throw 'no go.sum' }
+        go mod download
+        if ($LASTEXITCODE -ne 0) { throw "go mod download exited with code $LASTEXITCODE" }
+        go mod verify
+        if ($LASTEXITCODE -ne 0) { throw "go mod verify exited with code $LASTEXITCODE" }
+        $n = @(go list -mod=readonly -m all).Count
+        if ($LASTEXITCODE -ne 0) { throw 'go.sum does not pin every module that go.mod needs' }
+        Write-Host "go.mod: $n modules, each pinned by go.sum"
     - name: govulncheck
       shell: pwsh
       run: |
@@ -98,16 +93,13 @@ jobs:
         & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows-static --x-install-root build\vcpkg_installed
         if ($LASTEXITCODE -ne 0) { throw "vcpkg install exited with code $LASTEXITCODE" }
         Get-ChildItem -Path build\vcpkg_installed -Recurse -Filter vcpkg.spdx.json | ForEach-Object { Write-Host $_.FullName }
-    # The shipped ones: the controller, its CLI and the BGP sidecar, not the test tools of cmd/
-    - name: Build the Go executables
+    # The shipped one: ranz, which holds the controller, its CLI and the BGP sidecar (ONE-1), not the
+    # test tools of controller/cmd
+    - name: Build the Go executable
       shell: pwsh
       run: |
-        foreach ($build in @(@('controller', './cmd/ranz-controller', './cmd/ranz'), @('ranz-bgp', './cmd/ranz-bgp'))) {
-          Push-Location $build[0]
-          go build -trimpath -o ..\build\sbom\ @($build | Select-Object -Skip 1)
-          if ($LASTEXITCODE -ne 0) { throw "$($build[0]): go build exited with code $LASTEXITCODE" }
-          Pop-Location
-        }
+        go build -trimpath -o build\sbom\ ./controller/cmd/ranz
+        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
         Get-ChildItem build\sbom | Format-Table Name, Length
     - name: Generate the SBOM
       shell: pwsh

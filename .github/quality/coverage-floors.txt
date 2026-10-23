@@ -3,8 +3,8 @@
 # the job.
 #   c   <module> <floor %> <files>   line coverage (llvm-cov) of coretest's tests and vpntest's transport test:
 #                                    the coverage job of windows.yml
-#   go  <package> <floor %>          statement coverage (go test -coverprofile) of the Linux jobs of
-#                                    controller.yml and ranz-bgp.yml
+#   go  <package> <floor %>          statement coverage (go test -coverprofile) of the Linux job of
+#                                    ranz.yml, which runs every package of the one Go module
 # The mitigation packages (SEC-1 #279) hold Windows-only process mitigation policies, so the Linux jobs
 # measure none of their code and their floor is 0.
 # A floor is the coverage measured in CI when it was recorded, rounded down to a whole percent, less
@@ -25,9 +25,10 @@ c  corecontrol    0  src/Core/Control*.c
 # measured, less two points for the flood list that changes during a burst from another thread
 c  corevxlan      86  src/Core/Vxlan*.c
 
-# The controller (controller/)
+# The controller (controller/): the package of `ranz controller` is controller itself, and the
+# executable ranz, with its subcommands, is controller/cmd/ranz
+go  controller                          49
 go  controller/cmd/ranz                 67
-go  controller/cmd/ranz-controller      49
 go  controller/cmd/ranz-nodesim         0
 go  controller/cmd/ranz-noisepeer       0
 go  controller/internal/activation      81
@@ -51,7 +52,7 @@ go  controller/internal/store           37
 go  controller/internal/telemetry       80
 go  controller/internal/webui           94
 
-# The BGP sidecar (ranz-bgp/)
-go  ranz-bgp/cmd/ranz-bgp          68
+# The BGP sidecar (ranz-bgp/): the package of `ranz bgp` is ranz-bgp itself
+go  ranz-bgp                       68
 go  ranz-bgp/internal/mitigation      0
 go  ranz-bgp/internal/sidecar      83

@@ -39,6 +39,8 @@ typedef struct TCP TCP;
 typedef struct BLOCK BLOCK;
 typedef struct CONNECTION CONNECTION;
 typedef struct CONNECTION_INFO CONNECTION_INFO;
+typedef struct TUNNEL TUNNEL;
+typedef struct TUNNEL_STATUS TUNNEL_STATUS;
 
 
 typedef struct NODE_INFO NODE_INFO;

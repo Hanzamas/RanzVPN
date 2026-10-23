@@ -17,7 +17,7 @@
 //   (NodeLogin, Cedar/Node.c).
 // - The tunnel (NoiseSession.c): the sessions of up to NOISE_TUNNEL_MAX_CONNECTIONS connections
 //   to one peer node, each bound to its own outer session, with the inner flows spread over them
-//   and moved off a connection that is lost (ADR-0022, multi-connection tunnels).
+//   by a flow hash and moved off a connection that is lost (ADR-0022, multi-connection tunnels).
 //
 // The module has no state of its own and allocates no memory: every object is the caller's, and
 // the caller serialises the calls on one object. Times are milliseconds of the caller's clock,
@@ -302,5 +302,14 @@ void NoiseTunnelLose(NOISE_TUNNEL *t, UINT index);
 NOISE_SESSION *NoiseTunnelRoute(const NOISE_TUNNEL *t, UINT flow_hash);
 UINT NoiseTunnelNumAlive(const NOISE_TUNNEL *t);
 bool NoiseTunnelId(const NOISE_SESSION *s, UCHAR *id);
+
+// The flow hash of an Ethernet frame of the data stream, for Route (NoiseSession.c; CORE-S1-2, #68):
+// the frames of one inner flow get the same hash, so they go over one connection and keep their
+// order, never spread packet by packet (ADR-0022, multi-connection tunnels). An IPv4 or IPv6 frame
+// hashes its addresses, its protocol and, for TCP and UDP outside a fragment, its ports (the IP
+// 5-tuple); any other frame its MAC pair. The EtherType and the VLAN id of each 802.1Q or 802.1ad
+// tag count too. Both directions of a flow give the same hash. 0 for a frame shorter than an
+// Ethernet header.
+UINT NoiseTunnelFlowHash(const UCHAR *frame, UINT size);
 
 #endif // CORE_NOISE_H

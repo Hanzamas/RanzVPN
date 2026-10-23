@@ -3,7 +3,8 @@
 // #62): a fixed golden transcript of a bound and of an encrypted session, the channel binding
 // (TLS exporter and tls-server-end-point), the Login and its gate, keepalive and the dead-peer
 // timeout, rekey on a schedule, and the tunnel's flows over N = 1 and N = 4 connections with a
-// lost connection. Time is a simulated clock, so the timers run in milliseconds of test time.
+// lost connection, with the flow hash of the frames (CORE-S1-2, #68). Time is a simulated clock,
+// so the timers run in milliseconds of test time.
 
 #include "coretest.h"
 
@@ -686,6 +687,117 @@ static void tun_map(const NOISE_TUNNEL *t, SES_PAIR **pairs, UINT n, UINT *map) 
 	}
 }
 
+// The frames of the flow hash tests: a UDP datagram over IPv4 from 10.0.0.1:40000 to 10.0.0.2:40001,
+// a TCP segment over IPv6 from [fd00::1]:443 to [fd00::2]:50000, a frame of EtherType 0x88B5
+static const char tun_udp4[] = "02000000000202000000000108004500002400010000401100000a0000010a0000029c409c4100100000a0a1a2a3a4a5a6a7";
+static const char tun_tcp6[] = "02000000000202000000000186dd6000000000140640fd000000000000000000000000000001fd00000000000000000000000000000201bbc35000000001000000005002000000000000";
+static const char tun_raw[] = "02000000000202000000000188b500010203";
+
+#define TUN_FRAME 128 // Bytes of a frame of the flow hash tests at most
+
+// A frame of the flow hash tests from its hex; its size
+static UINT tun_frame(UCHAR *frame, const char *hex) {
+	ZeroMemory(frame, TUN_FRAME);
+	return coretest_unhex(frame, TUN_FRAME, hex);
+}
+
+// Swap size bytes at a with size bytes at b
+static void tun_swap(UCHAR *a, UCHAR *b, UINT size) {
+	for (UINT i = 0; i < size; i++) {
+		UCHAR x = a[i];
+		a[i] = b[i];
+		b[i] = x;
+	}
+}
+
+// The frame of the other direction: the MAC addresses swapped, the IP addresses (size bytes from
+// addr) and the ports (from port)
+static void tun_reverse(UCHAR *frame, UINT addr, UINT size, UINT port) {
+	tun_swap(frame, frame + 6, 6);
+	tun_swap(frame + addr, frame + addr + size, size);
+	tun_swap(frame + port, frame + port + 2, 2);
+}
+
+// An 802.1Q tag of VLAN vid with the priority pcp after the MAC addresses of a frame of size bytes;
+// the frame's new size
+static UINT tun_tag(UCHAR *frame, UINT size, UINT vid, UINT pcp) {
+	MoveMemory(frame + 16, frame + 12, size - 12);
+	frame[12] = 0x81;
+	frame[13] = 0x00;
+	frame[14] = (UCHAR)((pcp << 5) | (vid >> 8));
+	frame[15] = (UCHAR)vid;
+
+	return size + 4;
+}
+
+// The flow hash of a frame (NoiseTunnelFlowHash, CORE-S1-2 #68): the same for every packet of a
+// flow and for both directions of it, another one for another flow
+static void tun_flow_hash() {
+	UCHAR a[TUN_FRAME], b[TUN_FRAME];
+	UINT a_size = tun_frame(a, tun_udp4);
+	UINT b_size = tun_frame(b, tun_udp4);
+
+	coretest_check(NoiseTunnelFlowHash(NULL, 14) == 0 && NoiseTunnelFlowHash(a, 13) == 0, "a frame shorter than an Ethernet header hashes to 0");
+
+	UINT h = NoiseTunnelFlowHash(a, a_size);
+	tun_reverse(b, 26, 4, 34);
+	coretest_check(NoiseTunnelFlowHash(b, b_size) == h, "IPv4: both directions of a UDP flow give the same hash");
+
+	tun_frame(b, tun_udp4);
+	b[19] = 0x99;
+	b[22] = 0x01;
+	FillMemory(b + 42, 8, 0xFF);
+	coretest_check(NoiseTunnelFlowHash(b, b_size) == h, "IPv4: another packet of the flow (its id, TTL and payload) gives the same hash");
+
+	tun_frame(b, tun_udp4);
+	b[35] = 0x42;
+	bool port = (NoiseTunnelFlowHash(b, b_size) != h);
+	tun_frame(b, tun_udp4);
+	b[23] = 6;
+	coretest_check(port && NoiseTunnelFlowHash(b, b_size) != h, "IPv4: another port or another protocol is another flow");
+
+	// The first fragment of a datagram (more fragments) and a later one (offset 185), whose payload
+	// holds no ports
+	tun_frame(b, tun_udp4);
+	b[20] = 0x20;
+	UINT first = NoiseTunnelFlowHash(b, b_size);
+	tun_frame(b, tun_udp4);
+	b[21] = 0xB9;
+	FillMemory(b + 34, 4, 0x55);
+	coretest_check(NoiseTunnelFlowHash(b, b_size) == first && first != h, "IPv4: the fragments of a datagram share one hash, without the ports");
+
+	// 802.1Q: the VLAN id counts, its priority bits do not
+	b_size = tun_frame(b, tun_udp4);
+	b_size = tun_tag(b, b_size, 10, 0);
+	UINT v10 = NoiseTunnelFlowHash(b, b_size);
+	b_size = tun_frame(b, tun_udp4);
+	tun_reverse(b, 26, 4, 34);
+	b_size = tun_tag(b, b_size, 10, 5);
+	bool priority = (NoiseTunnelFlowHash(b, b_size) == v10);
+	b_size = tun_frame(b, tun_udp4);
+	b_size = tun_tag(b, b_size, 20, 0);
+	coretest_check(v10 != h && priority && NoiseTunnelFlowHash(b, b_size) != v10, "802.1Q: the VLAN id of the tag counts, its priority bits do not, both directions agree");
+
+	// IPv6
+	a_size = tun_frame(a, tun_tcp6);
+	UINT h6 = NoiseTunnelFlowHash(a, a_size);
+	b_size = tun_frame(b, tun_tcp6);
+	tun_reverse(b, 22, 16, 54);
+	bool both = (NoiseTunnelFlowHash(b, b_size) == h6);
+	tun_frame(b, tun_tcp6);
+	b[57] = 0x51;
+	coretest_check(both && NoiseTunnelFlowHash(b, b_size) != h6, "IPv6: both directions of a TCP flow give the same hash, another port another one");
+
+	// Not IP: the MAC pair and the EtherType
+	a_size = tun_frame(a, tun_raw);
+	b_size = tun_frame(b, tun_raw);
+	tun_swap(b, b + 6, 6);
+	FillMemory(b + 14, 4, 0x77);
+	bool pair = (NoiseTunnelFlowHash(b, b_size) == NoiseTunnelFlowHash(a, a_size));
+	b[13] = 0xB6;
+	coretest_check(pair && NoiseTunnelFlowHash(b, b_size) != NoiseTunnelFlowHash(a, a_size), "not IP: both directions of a MAC pair give the same hash, another EtherType another one");
+}
+
 void noisetunnel_test() {
 	SES_PAIR *pairs[5];
 	NOISE_TUNNEL t, t1;
@@ -694,6 +806,7 @@ void noisetunnel_test() {
 	UCHAR id[NOISE_TUNNEL_ID_SIZE];
 
 	ZeroMemory(pairs, sizeof(pairs));
+	tun_flow_hash();
 	if (coretest_check(map != NULL && tun_open(pairs, 4), "four connections of one client node to one server node, each bound to its own TLS session") == false)
 		goto END;
 	UINT *before = map, *after = map + TUN_FLOWS, *back = map + 2 * TUN_FLOWS;
@@ -723,6 +836,24 @@ void noisetunnel_test() {
 	coretest_check(count[0] == 250 && count[1] == 250 && count[2] == 250 && count[3] == 250, "N = 4: the flows spread evenly over the four");
 	tun_map(&t, pairs, 4, after);
 	coretest_check(memcmp(before, after, TUN_FLOWS * sizeof(UINT)) == 0, "a flow keeps its connection, so its packets keep their order");
+
+	// Real frames: TUN_FLOWS UDP flows from the source ports 20000 and up, routed by their flow hash
+	UCHAR frame[TUN_FRAME];
+	UINT frame_size = tun_frame(frame, tun_udp4);
+	ZeroMemory(count, sizeof(count));
+	for (UINT f = 0; f < TUN_FLOWS; f++) {
+		frame[34] = (UCHAR)((20000 + f) >> 8);
+		frame[35] = (UCHAR)(20000 + f);
+		NOISE_SESSION *s = NoiseTunnelRoute(&t, NoiseTunnelFlowHash(frame, frame_size));
+		for (UINT i = 0; i < 4; i++)
+			if (s == &pairs[i]->Client)
+				count[i]++;
+	}
+	coretest_info("N = 4: the flows of real frames per connection %u %u %u %u", count[0], count[1], count[2], count[3]);
+	all = true;
+	for (UINT i = 0; i < 4; i++)
+		all = all && count[i] >= 200 && count[i] <= 300;
+	coretest_check(all, "N = 4: the flow hash of real frames spreads the flows over the four, about a quarter each");
 
 	// Connection 2 is lost: only its flows move, over the three left
 	NoiseTunnelLose(&t, 2);

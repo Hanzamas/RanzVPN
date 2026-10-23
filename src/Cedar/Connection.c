@@ -23,6 +23,8 @@
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
+#include "ConnectionInternal.h"
+
 #define IS_SEND_TCP_SOCK(ts) \
 	((ts->Direction == TCP_BOTH) || ((ts->Direction == TCP_SERVER_TO_CLIENT) && (s->ServerMode)) || ((ts->Direction == TCP_CLIENT_TO_SERVER) && (s->ServerMode == false)))
 
@@ -348,6 +350,8 @@ void ConnectionSend(CONNECTION *c, UINT64 now) {
 		}
 	} else if (c->Protocol == CONNECTION_HUB_BRIDGE) {
 		BrSendBlocks(c);
+	} else if (c->Protocol == CONNECTION_NOISE) {
+		TunnelSendBlocks(c);
 	}
 }
 
@@ -678,6 +682,8 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
 		}
 	} else if (c->Protocol == CONNECTION_HUB_BRIDGE) {
 		BrReceiveBlocks(c, c1, c2);
+	} else if (c->Protocol == CONNECTION_NOISE) {
+		TunnelReceiveBlocks(c, c1, c2);
 	}
 }
 
@@ -1013,6 +1019,7 @@ static void CleanupConnection(CONNECTION *c) {
 	ReleaseCedar(c->Cedar);
 
 	DisconnectTcpSockets(c);
+	FreeTunnel(c);
 
 	ReleaseList(c->Tcp->TcpSockList);
 	Free(c->Tcp);

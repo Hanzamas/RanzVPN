@@ -126,7 +126,7 @@ set_source_files_properties("${_ranz_plum}/src/util.c"
 target_link_libraries(libplum PRIVATE "ws2_32.lib" "iphlpapi.lib" "bcrypt.lib")
 
 # nanopb: the protobuf runtime of the C node's control stream (ADR-0022, ADR-0027; SDN-3, #179), zlib licence, a git
-# submodule at the release tag nanopb-0.4.9.2, the one whose generator the nanopb round trip of controller.yml runs.
+# submodule at the release tag nanopb-0.4.9.2, the one whose generator the nanopb round trip of ranz.yml runs.
 # The messages of proto/ranz/control/v1/control.proto are generated at build time (src/Core/CMakeLists.txt). An
 # Update of control.options is larger than 64 kB, so every user of nanopb gets PB_FIELD_32BIT.
 add_library(nanopb STATIC

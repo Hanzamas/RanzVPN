@@ -7,8 +7,9 @@ $ErrorActionPreference = 'Stop'
 
 # The SBOM of the supply-chain workflow (ADR-0039 decision 4; SEC-1, #279) must name every port of
 # vcpkg.json, which vcpkg installed at the builtin-baseline with an SPDX document of its own, and
-# every module that the go.mod of a Go module of the new core requires, at the version go.mod
-# pins. Prints what it found either way; fails when one is missing.
+# every module that the go.mod of the repository requires (the one Go module, which holds the
+# controller and the BGP sidecar: ONE-1, #310), at the version go.mod pins. Prints what it found
+# either way; fails when one is missing.
 
 $doc = Get-Content -Raw -LiteralPath $Sbom | ConvertFrom-Json
 $packages = @($doc.packages)
@@ -32,18 +33,14 @@ foreach ($port in $ports) {
 	}
 }
 
-# The modules that each go.mod requires, direct and indirect, at its version
-foreach ($module in 'controller', 'ranz-bgp') {
-	Push-Location $module
-	$mod = (go mod edit -json | Out-String) | ConvertFrom-Json
-	Pop-Location
-	foreach ($r in @($mod.Require)) {
-		if ($have.ContainsKey($r.Path) -and $have[$r.Path] -contains $r.Version) {
-			Write-Host "${module}: $($r.Path) $($r.Version)"
-		} else {
-			$found = if ($have.ContainsKey($r.Path)) { " (the SBOM has $($have[$r.Path] -join ', '))" } else { '' }
-			$missing += "${module}: Go module $($r.Path) $($r.Version)$found"
-		}
+# The modules that go.mod requires, direct and indirect, at its version
+$mod = (go mod edit -json | Out-String) | ConvertFrom-Json
+foreach ($r in @($mod.Require)) {
+	if ($have.ContainsKey($r.Path) -and $have[$r.Path] -contains $r.Version) {
+		Write-Host "go.mod: $($r.Path) $($r.Version)"
+	} else {
+		$found = if ($have.ContainsKey($r.Path)) { " (the SBOM has $($have[$r.Path] -join ', '))" } else { '' }
+		$missing += "go.mod: Go module $($r.Path) $($r.Version)$found"
 	}
 }
 
@@ -53,4 +50,4 @@ if ($missing.Count -gt 0) {
 	$missing | ForEach-Object { Write-Host "::error::not in the SBOM: $_" }
 	throw "$($missing.Count) dependencies are not in the SBOM"
 }
-Write-Host "The SBOM names every vcpkg port of vcpkg.json and every module that a go.mod requires"
+Write-Host "The SBOM names every vcpkg port of vcpkg.json and every module that go.mod requires"
