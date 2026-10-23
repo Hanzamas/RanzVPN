@@ -72,6 +72,8 @@ env:
   GO_VERSION: '1.27.3'
   # The rqlite release of ranz.yml: the store of the controller of the default VRF tracer
   RQLITE_VERSION: 'v10.5.3'
+  # The SHA-256 of its Windows archive, which ranz.yml pins too (ONE-4, #313)
+  RQLITE_WIN64_SHA256: '0f4a65a603b89b9a3c2607c5de64445236856884c83aa2e865ec9142fd184118'
 
 jobs:
   build_and_test:
@@ -307,6 +309,8 @@ jobs:
         $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
         $dir = Join-Path $env:RUNNER_TEMP 'rqlite'
         Invoke-WebRequest -Uri "https://github.com/rqlite/rqlite/releases/download/$env:RQLITE_VERSION/rqlite-$env:RQLITE_VERSION-win64.zip" -OutFile $zip
+        $sum = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
+        if ($sum -ne $env:RQLITE_WIN64_SHA256) { throw "rqlite-$env:RQLITE_VERSION-win64.zip has the SHA-256 $sum, not the pinned $env:RQLITE_WIN64_SHA256" }
         Expand-Archive -Path $zip -DestinationPath $dir
         $exe = Get-ChildItem -Path $dir -Recurse -Filter 'rqlited.exe' | Select-Object -First 1
         if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
@@ -1079,18 +1083,21 @@ jobs:
   # .text was changed (it degrades, not crashes), and checks the shipped binaries carry no symbols and the
   # package no public PDB. The Go executable ranz built with -trimpath and -ldflags "-s -w" has no
   # symbol table. It also builds the signed ranz.exe of each architecture with the signed ranz-node.exe
-  # as its Payload, and the same with one byte of the Payload changed, for the install job (ONE-2, #311).
-  # .github/scripts/self-integrity.ps1.
+  # as its Payload, and the same with one byte of the Payload changed, for the install job (ONE-2, #311);
+  # both carry the signed rqlited.exe of the pinned rqlite release too, the rqlite member of a Controller
+  # (ONE-4, #313). .github/scripts/self-integrity.ps1.
   sign_and_integrity:
     needs: build_and_test
     runs-on: windows-latest
     name: sign and self-integrity
     timeout-minutes: 30
     # The SHA-256 of the signed ranz-node.exe of each architecture (ONE-2, #311), which the install job
-    # compares with the file that ranz install writes
+    # compares with the file that ranz install writes, and of the signed rqlited.exe (ONE-4, #313),
+    # which it compares with the file that the Controller writes under its data directory
     outputs:
       node-sha256-x64: ${{ steps.signing.outputs.node-sha256-x64 }}
       node-sha256-arm64: ${{ steps.signing.outputs.node-sha256-arm64 }}
+      member-sha256: ${{ steps.signing.outputs.member-sha256 }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -1121,11 +1128,25 @@ jobs:
         $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
         $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         & (Join-Path $tools 'wix.exe') --version
+    # The rqlite member of a Controller (ONE-4, #313): the rqlited.exe of the pinned release, which
+    # self-integrity.ps1 signs and embeds as a Payload of the ranz.exe of each architecture
+    - name: Download the rqlite member
+      shell: pwsh
+      run: |
+        $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
+        $dir = Join-Path $env:RUNNER_TEMP 'rqlite'
+        Invoke-WebRequest -Uri "https://github.com/rqlite/rqlite/releases/download/$env:RQLITE_VERSION/rqlite-$env:RQLITE_VERSION-win64.zip" -OutFile $zip
+        $sum = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
+        if ($sum -ne $env:RQLITE_WIN64_SHA256) { throw "rqlite-$env:RQLITE_VERSION-win64.zip has the SHA-256 $sum, not the pinned $env:RQLITE_WIN64_SHA256" }
+        Expand-Archive -Path $zip -DestinationPath $dir
+        $exe = Get-ChildItem -Path $dir -Recurse -Filter 'rqlited.exe' | Select-Object -First 1
+        if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
+        "RQLITED=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     - name: Sign, self-integrity and symbol strip
       id: signing
       shell: pwsh
       run: |
-        . .github/scripts/self-integrity.ps1 -X64Dir artifacts/x64 -Arm64Dir artifacts/arm64 -Wxs .github/signing/signing-proof.wxs -LicenseFile LICENSE -GoModuleDir . -OutDir build/signing
+        . .github/scripts/self-integrity.ps1 -X64Dir artifacts/x64 -Arm64Dir artifacts/arm64 -Wxs .github/signing/signing-proof.wxs -LicenseFile LICENSE -GoModuleDir . -OutDir build/signing -Rqlited $env:RQLITED
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
@@ -1182,9 +1203,9 @@ jobs:
   # ranz-node.exe beside it and no second download. It copies the same ranz.exe with one byte of its
   # Payload changed too, which ranz install must refuse, writing nothing under Program Files and
   # starting nothing. Besides ranz.exe a runner needs the certificate that signed both, so that their
-  # signatures chain to a trusted root (this is another machine than the one that signed), and, until
-  # ONE-4 (#313) puts an rqlite member in ranz.exe, the rqlited that the Controller service stores its
-  # intent in. .github/scripts/install.ps1.
+  # signatures chain to a trusted root (this is another machine than the one that signed). The Controller
+  # service that ranz install --controller starts runs the rqlite member that ranz.exe carries (ONE-4,
+  # #313): no rqlited is installed or started by the job. .github/scripts/install.ps1.
   install:
     needs: sign_and_integrity
     strategy:
@@ -1223,21 +1244,11 @@ jobs:
         if (-not $cer) { throw 'no .cer file in the ci-signing-certificate artifact' }
         Import-Certificate -FilePath $cer.FullName -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
         Write-Host "trusted $($cer.FullName) as a root"
-    - name: Install rqlited
-      shell: pwsh
-      run: |
-        $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
-        $dir = Join-Path $env:RUNNER_TEMP 'rqlite'
-        Invoke-WebRequest -Uri "https://github.com/rqlite/rqlite/releases/download/$env:RQLITE_VERSION/rqlite-$env:RQLITE_VERSION-win64.zip" -OutFile $zip
-        Expand-Archive -Path $zip -DestinationPath $dir
-        $exe = Get-ChildItem -Path $dir -Recurse -Filter 'rqlited.exe' | Select-Object -First 1
-        if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
-        & $exe.FullName -version
-        "RQLITED=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     - name: ranz install, checked from outside, then ranz uninstall
       shell: pwsh
       timeout-minutes: 15
       env:
         NODE_SHA256: ${{ needs.sign_and_integrity.outputs[format('node-sha256-{0}', matrix.platform.ARCHITECTURE)] }}
+        MEMBER_SHA256: ${{ needs.sign_and_integrity.outputs.member-sha256 }}
       run: |
-        . .github/scripts/install.ps1 -Ranz artifacts\ranz\ranz.exe -Tampered artifacts\ranz-tampered\ranz.exe -NodeSha256 $env:NODE_SHA256 -Rqlited $env:RQLITED
+        . .github/scripts/install.ps1 -Ranz artifacts\ranz\ranz.exe -Tampered artifacts\ranz-tampered\ranz.exe -NodeSha256 $env:NODE_SHA256 -MemberSha256 $env:MEMBER_SHA256
