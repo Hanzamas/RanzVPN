@@ -13,6 +13,8 @@
 // empty, with a NULL item ignored.
 // Prints "FIFO TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
 
@@ -274,6 +276,7 @@ static void FifoTestQueue()
 	ReleaseQueue(q);
 }
 
+RANZ_TEST("fifo", fifo_test, "FIFO and queue: a FIFO that never fully drains stays small and keeps the byte order; the queue ring keeps the item order.");
 void fifo_test(UINT num, char **arg)
 {
 	fifo_test_failed = 0;

@@ -17,6 +17,7 @@
 // A test prints "<NAME> TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/Account.h"
 #include "Cedar/Admin.h"
@@ -170,6 +171,7 @@ static void LoginReport(char *name, UINT num_fail)
 }
 
 // "authtype": the authentication types of a login (FND-26)
+RANZ_TEST("authtype", authtype_test, "Login authtype: 96 (the former external authentication) and unknown types are refused without a session, 0 to 2 keep their results.");
 void authtype_test(UINT num, char **arg)
 {
 	bool ok;
@@ -335,6 +337,7 @@ static void LoginExpectPassword(HARNESS *h, char *what, UINT err, UINT expected_
 }
 
 // "acpassword": the access list of the hub applies to the 'password' method (FND-27)
+RANZ_TEST("acpassword", acpassword_test, "Access list on the 'password' method: a denied address gets ERR_IP_ADDRESS_DENIED before the old password is checked.");
 void acpassword_test(UINT num, char **arg)
 {
 	bool ok;
@@ -460,6 +463,7 @@ static void LoginSigExpect(HARNESS *h, char *what, UINT status, UINT expected_st
 }
 
 // "sigleak": every POST of the signature exchange frees its body (FND-28)
+RANZ_TEST("sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer.");
 void sigleak_test(UINT num, char **arg)
 {
 	bool ok;

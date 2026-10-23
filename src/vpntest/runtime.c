@@ -6,6 +6,8 @@
 // check passes, and frees everything it allocates, so that the run still ends with
 // "NO MEMORY LEAKS". The [PASS] lines carry no measured values; the [FAIL] details do.
 
+#include "testlist.h"
+
 #include "Mayaqua/DNS.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
@@ -93,6 +95,7 @@ static UINT64 RtFileTime64(FILETIME *ft)
 
 // tickorigin: Tick64 counts from its first call in this process, so a value read at the
 // start of the test is at least 1 and at most the age of the process
+RANZ_TEST("tickorigin", tickorigin_test, "Tick64 origin: the first value is at least 1 and at most the process age.");
 void tickorigin_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -405,6 +408,7 @@ static void RtCheckZoneOffset(RT_CTX *ctx)
 // 1971-01-11 encode as 0, local time is UTC plus the OS time zone offset, Tick64ToTime64
 // maps a tick to that encoding, and RFC 3339 strings carry the offset from UTC as +HH:MM,
 // -HH:MM or Z
+RANZ_TEST("timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions, RFC 3339 strings.");
 void timeenc_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -520,6 +524,7 @@ void timeenc_test(UINT num, char **arg)
 #define	RT_EVENT_NO_HANDLE_WAIT	1000		// Timeout given to Wait on an EVENT without a handle (ms)
 
 // nullsafe: the LOCK, LIST, COUNTER, REF and EVENT functions accept NULL and do nothing
+RANZ_TEST("nullsafe", nullsafe_test, "NULL safety of the LOCK, LIST, COUNTER, REF and EVENT functions.");
 void nullsafe_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -1759,6 +1764,7 @@ static void RtCharsetAnsiOracle(RT_CTX *ctx)
 
 // charset: the UTF-8 and ANSI conversions of Internat.c against fixed vectors (valid, invalid
 // and boundary sequences) and against a reference of the UTF-8 coding Mayaqua has always done
+RANZ_TEST("charset", charset_test, "Charset: UTF-8 and ANSI conversions against fixed vectors and the historic UTF-8 coding.");
 void charset_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -2042,6 +2048,7 @@ static void RtFileioDir(RT_CTX *ctx, wchar_t *dir_path)
 
 // fileio: the "@", "$" and "|" prefixes, the path separator, the sharing modes, the
 // all-or-nothing reads, and the create, seek, date, rename and directory semantics of FileIO
+RANZ_TEST("fileio", fileio_test, "FileIO: @, $ and | prefixes, path separator, sharing modes, reads past the end.");
 void fileio_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -2330,6 +2337,7 @@ static BOOL CALLBACK RtResourceCompare(HMODULE module, LPCSTR type, LPSTR name, 
 // new buffer for each read, a loose "hamcore" folder next to the executable winning over the
 // built-in file, no hamcore.se2 archive next to the executable, and vpnserver.exe and
 // vpncmd.exe carrying the same resources as vpntest.exe (#89)
+RANZ_TEST("resources", resources_test, "Resources: every hamcore file through ReadHamcore and |, the loose hamcore folder, no hamcore.se2, the same resources in vpnserver and vpncmd.");
 void resources_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -2615,6 +2623,7 @@ static void RtPoolLateThread(THREAD *t, void *param)
 // normal priority, several threads can wait on one THREAD, a host thread (NewThreadInternal)
 // ends with its handle closed, and the process exit waits for a job that outlives the test
 // and for the job that it starts during the exit (shown by "NO MEMORY LEAKS" after the test)
+RANZ_TEST("threadpool", threadpool_test, "Thread pool: job pickup, host thread id and COM, idle reuse, many waiters, host handles.");
 void threadpool_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -2834,6 +2843,7 @@ static void RtDnsCheckImmediate(RT_CTX *ctx, const char *hostname, IP *expect6, 
 
 // dns: "localhost" and IP literals are answered at once, without a resolver thread, so they
 // resolve even with a timeout of 1 ms; the computer name resolves through the resolver thread
+RANZ_TEST("dns", dns_test, "DNS: localhost and IP literals answered at once, the computer name through the resolver thread.");
 void dns_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -2926,6 +2936,7 @@ void dns_test(UINT num, char **arg)
 // goes out with debug output on and one with it off. Run as "trace listening" inside the CI
 // trace session, both probes must reach the session's .etl file; before the provider existed,
 // neither did.
+RANZ_TEST("trace", trace_test, "ETW trace: Debug() output unchanged, messages to the TraceLogging provider: trace [listening].");
 void trace_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -3032,6 +3043,7 @@ static bool RtEventLogFind(const char *source, UINT type, UINT event_id, const c
 // eventlog: MsWriteEventLog() writes an Application log entry that the Event Log gives back with
 // its source, type, event ID and message, the way the service writes its start and stop entries
 // (ticket #92); a NULL source or message writes nothing
+RANZ_TEST("eventlog", eventlog_test, "Event Log: MsWriteEventLog entries read back from the Application log.");
 void eventlog_test(UINT num, char **arg)
 {
 	RT_CTX ctx;

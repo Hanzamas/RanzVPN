@@ -16,6 +16,8 @@
 // RANZ_GOBGP names the gobgp command of the router (GoBGP's CLI on the gRPC API of gobgpd, 127.0.0.1:50051).
 // Print "BGP TEST OK" only when every check passes. Needs administrator rights (CreateIpForwardEntry2).
 
+#include "testlist.h"
+
 #include "Cedar/Cedar.h"
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
@@ -673,6 +675,7 @@ static void BgpTestSpike(BGPTEST_CTX *ctx)
 }
 
 // bgp: the node with its BGP sidecar
+RANZ_TEST("bgp", bgp_test, "BGP sidecar: ranz bgp peers with a router (gobgpd, RANZ_GOBGP) on TCP 179, a prefix announced and withdrawn, a learned route installed through IP Helper (administrator rights).");
 void bgp_test(UINT num, char **arg)
 {
 	BGPTEST_CTX ctx;

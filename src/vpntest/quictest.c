@@ -14,6 +14,8 @@
 // file of the oracle. Print "QUIC TEST OK" only when every check passes; skip, passing, where
 // msquic.dll is not present (a build without the runtime fetched), so the suite still runs.
 
+#include "testlist.h"
+
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/ConfigStore.h"
@@ -332,6 +334,7 @@ static void QuicTestDeleteFiles(wchar_t *dir)
 	DeleteDirW(dir);
 }
 
+RANZ_TEST_TAGS("quic", quic_test, "core", "QUIC: a client completes the QUIC handshake against the HTTP/3 listener on msquic, the Noise session comes up, Sam checks the Login, and the client's static key is pinned on first login (trust on first use).");
 void quic_test(UINT num, char **arg)
 {
 	QUICTEST_CTX *ctx = ZeroMalloc(sizeof(QUICTEST_CTX));

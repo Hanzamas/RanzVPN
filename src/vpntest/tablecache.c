@@ -11,6 +11,8 @@
 // the LCIDs. Prints "TABLECACHE TEST OK" only when every check passes, removes the planted files and
 // frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
@@ -148,6 +150,7 @@ static bool TableCacheResourceInUse(UINT lang_id)
 
 // tablecache: the string table comes from the resource only: a table_name.txt beside the exe that
 // names a crafted table is ignored, and loading a table writes no cache file
+RANZ_TEST("tablecache", tablecache_test, "String table: loaded from the resource only, a planted table_name.txt beside the exe is ignored, no cache file is written.");
 void tablecache_test(UINT num, char **arg)
 {
 	TABLECACHE_CTX ctx;

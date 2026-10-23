@@ -19,6 +19,8 @@
 // figure that ranz test throughput reports between two hosts, here between two harness nodes, whose hosts have no TCP/IP
 // stack. Print "SDNTRACE TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
 
@@ -740,6 +742,7 @@ static void SdnTraceShowNodes(SDNTRACE_NODE *nodes)
 	}
 }
 
+RANZ_TEST("sdntrace", sdntrace_test, "Default VRF tracer: sdntrace <host:port> <key> [<file>]: two nodes join VRF default of a running ranz controller, get addresses from its pool and ping each other over the loopback transport, also once the controller stopped (.github/scripts/sdn-tracer.ps1).");
 void sdntrace_test(UINT num, char **arg)
 {
 	SDNTRACE_CTX *ctx = ZeroMalloc(sizeof(SDNTRACE_CTX));

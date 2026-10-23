@@ -23,6 +23,8 @@
 // they are skipped. Prints "SELOW TEST OK" only when every check passes, and frees everything it
 // allocates, so that the run still ends with "NO MEMORY LEAKS".
 
+#include "testlist.h"
+
 #include "Cedar/BridgeWin32.h"
 #include "Cedar/SeLowUser.h"
 
@@ -350,6 +352,7 @@ static void SelowTestNetClass(SELOWTEST_CTX *ctx)
 }
 
 // selow: read-only capability query, explicit driver install, one adapter-list read (FIX-2 #98)
+RANZ_TEST("selow", selow_test, "SeLow: the capability query installs nothing, a Local Bridge reaches the driver install, one adapter-list read.");
 void selow_test(UINT num, char **arg)
 {
 	SELOWTEST_CTX ctx;

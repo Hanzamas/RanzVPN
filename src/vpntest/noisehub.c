@@ -21,6 +21,7 @@
 // "NOISEHUB TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
@@ -1355,6 +1356,7 @@ static void NoiseHubQuic(NOISEHUB_CTX *ctx)
 	}
 }
 
+RANZ_TEST("noisehub", noisehub_test, "Noise to Hub: the L2 frames of a Noise session enter a Hub as a Session of type CONNECTION_NOISE and come out as the oracle's (golden family noisehub); a Tunnel of four connections keeps each flow in order and spreads the flows over all four.");
 void noisehub_test(UINT num, char **arg)
 {
 	NOISEHUB_CTX *ctx = ZeroMalloc(sizeof(NOISEHUB_CTX));

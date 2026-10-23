@@ -12,6 +12,8 @@
 // Then it prints the accept rate of a context per connection against the shared context (informational).
 // Prints "TLSCTX TEST OK" only when every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Cedar/Cedar.h"
 
 #include "Mayaqua/Memory.h"
@@ -280,6 +282,7 @@ static X *TlsCtxNewCert(wchar_t *name, K **priv)
 }
 
 // tlsctx: certificate, cipher and settings changes reach the next connection of the one shared server context
+RANZ_TEST("tlsctx", tlsctx_test, "Shared server SSL_CTX: a new certificate, cipher list or SslAcceptSettings reaches the next connection; accept rate (informational).");
 void tlsctx_test(UINT num, char **arg)
 {
 	TLSCTX_TEST t;

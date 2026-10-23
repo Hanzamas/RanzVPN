@@ -1,7 +1,7 @@
 // vpntest.c
 // VPN Server test program
 
-#include "harness.h"
+#include "testlist.h"
 #include "Cedar/Command.h"
 #include "Cedar/Account.h"
 #include "Cedar/Server.h"
@@ -16,6 +16,7 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Stun.h"
 
+RANZ_TEST("s", server_test, "VPN Server in Test Mode, enter key to graceful stop.");
 void server_test(UINT num, char **arg)
 {
 	Print("VPN Server Test. Press Enter key to stop the VPN Server .\n");
@@ -31,6 +32,7 @@ void server_test(UINT num, char **arg)
 	StFree();
 }
 
+RANZ_TEST("memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc().");
 void memory_leak_test(UINT num, char **arg)
 {
 	char *a = Malloc(1);
@@ -61,6 +63,7 @@ static void nthash_test_check(bool *ok, char *password, char *expect_hex)
 }
 
 // NT-hash (MD4 of the UTF-16LE password, the value stored as AuthNtLmSecureHash) known-answer test
+RANZ_TEST("nthash", nthash_test, "NT-hash (MD4 of the UTF-16LE password) against known-answer vectors.");
 void nthash_test(UINT num, char **arg)
 {
 	bool ok = true;
@@ -139,6 +142,7 @@ bool stun_test_parse(UCHAR *buf, UINT size, UCHAR *transaction_id, IP *expect_ip
 }
 
 // STUN Binding Request / Response helpers test (RFC 5389, RFC 5769 sample messages, no network access)
+RANZ_TEST("stun", stun_test, "STUN Binding Request / Response helpers against RFC 5769 sample messages.");
 void stun_test(UINT num, char **arg)
 {
 	// Transaction ID of the RFC 5769 sample messages
@@ -360,168 +364,12 @@ void stun_test(UINT num, char **arg)
 	}
 }
 
-// Known-answer tests of the hash, cipher and random primitives, ticket #87 (crypto.c)
-void crypto_test(UINT num, char **arg);
-
-// Mayaqua runtime stress test (stress.c)
-void stress_test(UINT num, char **arg);
-
-// Named runtime tests of the Windows-native runtime, spec #30 (runtime.c)
-void tickorigin_test(UINT num, char **arg);
-void timeenc_test(UINT num, char **arg);
-void nullsafe_test(UINT num, char **arg);
-void charset_test(UINT num, char **arg);
-void fileio_test(UINT num, char **arg);
-void resources_test(UINT num, char **arg);
-void threadpool_test(UINT num, char **arg);
-void dns_test(UINT num, char **arg);
-void trace_test(UINT num, char **arg);
-void eventlog_test(UINT num, char **arg);
-
-// Named string test of NAT-4, #90 (strtest.c)
-void str_test(UINT num, char **arg);
-
-// Named UDP Acceleration receive test of FIX-1, #97 (udpaccel.c)
-void udpaccel_test(UINT num, char **arg);
-
-// Named SeLow test of FIX-2, #98 (selowtest.c)
-void selow_test(UINT num, char **arg);
-
-// Named DLL search order test of FIX-4, #100 (dllsearch.c)
-void dllsearch_test(UINT num, char **arg);
-
-// Named machine identity test of FIX-5, #101 (machineid.c)
-void machineid_test(UINT num, char **arg);
-
-// Named VM detection test of FIX-7, #103 (vmdetect.c)
-void vmdetect_test(UINT num, char **arg);
-
-// Named TCP/IP packet test of SEC-1, #96 (tcpiptest.c)
-void tcpip_test(UINT num, char **arg);
-
-// Named X.509 and certificate signature test of SEC-2, #96 (x509test.c)
-void x509_test(UINT num, char **arg);
-
-// Named BUF and binary configuration bounds test of SEC-3, #96 (bufbounds.c)
-void bufbounds_test(UINT num, char **arg);
-
-// Named keepalive span and client Pack size cap tests of SEC-4, #96 (keepalive.c, packcap.c)
-void keepalive_test(UINT num, char **arg);
-void packcap_test(UINT num, char **arg);
-
-// Named StorePacket test of SEC-5, #96 (storepacket.c)
-void storepacket_test(UINT num, char **arg);
-
-// Named console input test of SEC-7, #96 (consoleline.c)
-void consoleline_test(UINT num, char **arg);
-
-// Named temp directory and string table test of SEC-8, #96 (tempdir.c)
-void tempdir_test(UINT num, char **arg);
-
-// Named log writer, syslog and eraser tests of PKG-4, #108 (logtest.c)
-void logwriter_test(UINT num, char **arg);
-void logbound_test(UINT num, char **arg);
-void slog_test(UINT num, char **arg);
-void eraser_test(UINT num, char **arg);
-
-// Named login path tests of PKG-6, #110 (login.c)
-void authtype_test(UINT num, char **arg);
-void acpassword_test(UINT num, char **arg);
-void sigleak_test(UINT num, char **arg);
-
-// Named listeners test of spec #43, cases 1 to 5 of REL-3, #48, and case 6 of REL-4, #49 (listeners.c)
-void listeners_test(UINT num, char **arg);
-
-// Named packet parser tests of FND-38, FND-39 and FND-54, #113 and #117 (pkttest.c)
-void pktparse_test(UINT num, char **arg);
-void vlantpid_test(UINT num, char **arg);
-void icmpv6ns_test(UINT num, char **arg);
-
-// Named PACK decoder bounds test of FND-42, #114 (packdecode.c)
-void pack_decode_bounds_test(UINT num, char **arg);
-
-// Named string table loader test of FND-43, #114 (tablecache.c)
-void tablecache_test(UINT num, char **arg);
-
-// Named registry test of FND-64, #121 (registry.c)
-void registry_test(UINT num, char **arg);
-
-// Named certificate signature test of FND-80, #127 (x509test.c)
-void certsig_test(UINT num, char **arg);
-
-// Named root certificate and X509ToX ownership test of FND-81, #127 (x509test.c)
-void x509root_test(UINT num, char **arg);
-
-// Named RSA client certificate signature test of FND-83, #127 (x509test.c)
-void rsasig_test(UINT num, char **arg);
-
-// Named chain_certs cache test of FND-139, #145 (chaincerts.c)
-void chaincerts_test(UINT num, char **arg);
-
-// Named shared server SSL_CTX test of FND-140, #145 (tlsctx.c)
-void tlsctx_test(UINT num, char **arg);
-
-// Named OS information test of FND-203, #166 (osinfo.c)
-void osinfo_test(UINT num, char **arg);
-
-// Named byte-order test of FND-152, #149 (endian.c)
-void endian_test(UINT num, char **arg);
-
-// Named service argument test of FND-205, #167 (svcargs.c)
-void svcargs_test(UINT num, char **arg);
-
-// Named FIFO and queue test of FND-215, #174 (fifo.c)
-void fifo_test(UINT num, char **arg);
-
-// Named hardened licence gate test of SEC-4, #282 (harden.c)
-void harden_test(UINT num, char **arg);
-
-// Named node tests of CORE-F3, #63 (nodetest.c)
-void node_test(UINT num, char **arg);
-void nodesvc_test(UINT num, char **arg);
-
-// Named node Login test of CORE-F2, #62 (nodelogin.c)
-void nodelogin_test(UINT num, char **arg);
-
-// Named configuration store test of CORE-F5, #65 (storetest.c)
-void store_test(UINT num, char **arg);
-
-// Named BGP sidecar test of CORE-S7-1, #82 (bgptest.c)
-void bgp_test(UINT num, char **arg);
-
-// Named self-integrity test of SEC-3, #281 (selfint.c)
-void selfint_test(UINT num, char **arg);
-
-// Named transport test of CORE-F4, #64 (transporttest.c)
-void transport_test(UINT num, char **arg);
-
-// Named QUIC transport test of CORE-S1-1, #67 (quictest.c)
-void quic_test(UINT num, char **arg);
-
-// Named Noise-to-Hub test of CORE-S1-2, #68 (noisehub.c)
-void noisehub_test(UINT num, char **arg);
-
-// Named HTTP listener test of REL-6, #51 (httplistener.c)
-void httplistener_test(UINT num, char **arg);
-
-// Named default VRF tracer of SDN-3, #179 (sdntrace.c)
-void sdntrace_test(UINT num, char **arg);
-
-// Named VRF forwarding table test of SDN-4, #180 (vrftest.c)
-void vrf_test(UINT num, char **arg);
-
-// Named VXLAN test of SDN-62, #289 (vxlantest.c)
-void vxlan_test(UINT num, char **arg);
-
-// Named switch test and switch benchmark of CORE-S4-1, #74 (switchtest.c)
-void switch_test(UINT num, char **arg);
-void switchbench_test(UINT num, char **arg);
-
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
 
 // Watermark test: the hamcore file must hold the bytes of the former WaterMark[] C array
+RANZ_TEST("watermark", watermark_test, "Watermark: hamcore watermark.bin size and SHA-256 against the former C array.");
 void watermark_test(UINT num, char **arg)
 {
 	UINT expect_size = watermark_expect_size;
@@ -587,96 +435,47 @@ void watermark_test(UINT num, char **arg)
 	}
 }
 
-// The list of test functions
-// Test function definition list
-typedef void (TEST_PROC)(UINT num, char **arg);
+// The registered tests (testlist.h): the linker puts the registrations of every test file between these two markers
+__declspec(allocate(".rztest$a")) const TEST_LIST *const ranz_test_first = NULL;
+__declspec(allocate(".rztest$z")) const TEST_LIST *const ranz_test_last = NULL;
 
-typedef struct TEST_LIST
+// The registered tests in an array that the caller frees, sorted by name. A NULL between two registrations is padding
+// that the linker left. The markers are two objects: their addresses go through volatile pointers, so that the
+// compiler does not take the registrations between them for a read past the end of the first object
+static const TEST_LIST **TestListCollect(UINT *num_tests)
 {
-	char *command_str;
-	TEST_PROC *proc;
-	char *help;
-} TEST_LIST;
+	const TEST_LIST *const *volatile first_marker = &ranz_test_first;
+	const TEST_LIST *const *volatile last_marker = &ranz_test_last;
+	const TEST_LIST *const *p = (const TEST_LIST *const *)first_marker + 1;
+	const TEST_LIST *const *end = (const TEST_LIST *const *)last_marker;
+	UINT max_tests = end > p ? (UINT)(end - p) : 0;
+	const TEST_LIST **list = Malloc(sizeof(TEST_LIST *) * (max_tests + 1));
+	UINT num = 0;
 
-TEST_LIST test_list[] =
-{
-	{"s", server_test, "VPN Server in Test Mode, enter key to graceful stop."},
-	{"memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc()."},
-	{"nthash", nthash_test, "NT-hash (MD4 of the UTF-16LE password) against known-answer vectors."},
-	{"crypto", crypto_test, "MD4, MD5, SHA-0, SHA-1, SHA-256, RC4 and Rand against known-answer vectors."},
-	{"stun", stun_test, "STUN Binding Request / Response helpers against RFC 5769 sample messages."},
-	{"harness", harness_test, "In-process server: hubs, cascade, frames, vpncmd golden outputs, config round-trip."},
-	{"bench", bench_test, "Cascade frame throughput and Pack encode/decode benchmark (informational)."},
-	{"stress", stress_test, "Mayaqua runtime stress test: stress [timing] [case ...]."},
-	{"watermark", watermark_test, "Watermark: hamcore watermark.bin size and SHA-256 against the former C array."},
-	{"tickorigin", tickorigin_test, "Tick64 origin: the first value is at least 1 and at most the process age."},
-	{"timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions, RFC 3339 strings."},
-	{"nullsafe", nullsafe_test, "NULL safety of the LOCK, LIST, COUNTER, REF and EVENT functions."},
-	{"charset", charset_test, "Charset: UTF-8 and ANSI conversions against fixed vectors and the historic UTF-8 coding."},
-	{"fileio", fileio_test, "FileIO: @, $ and | prefixes, path separator, sharing modes, reads past the end."},
-	{"resources", resources_test, "Resources: every hamcore file through ReadHamcore and |, the loose hamcore folder, no hamcore.se2, the same resources in vpnserver and vpncmd."},
-	{"threadpool", threadpool_test, "Thread pool: job pickup, host thread id and COM, idle reuse, many waiters, host handles."},
-	{"dns", dns_test, "DNS: localhost and IP literals answered at once, the computer name through the resolver thread."},
-	{"trace", trace_test, "ETW trace: Debug() output unchanged, messages to the TraceLogging provider: trace [listening]."},
-	{"eventlog", eventlog_test, "Event Log: MsWriteEventLog entries read back from the Application log."},
-	{"certdl", certdl_test, "SetServerCert downloads the issuer certificate from a loopback listener (DownloadCert)."},
-	{"str", str_test, "String functions: truncation and return values of copy, concatenate, format, search, tokens, compare."},
-	{"udpaccel", udpaccel_test, "UDP Acceleration: receive budget per poll and per tick, header check before decryption, drop counters and their log."},
-	{"selow", selow_test, "SeLow: the capability query installs nothing, a Local Bridge reaches the driver install, one adapter-list read."},
-	{"listenerbind", listenerbind_test, "ListenerCreate and ListenerEnable wait for the bind and report a port that cannot be bound."},
-	{"dllsearch", dllsearch_test, "DLL search order: next to the executable, System32 and AddDllDirectory, never the current directory or PATH."},
-	{"machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts, the salt in the config."},
-	{"vmdetect", vmdetect_test, "VM detection: MsIsInVm writes no script, starts no process, answers at once, reports a VM on a GitHub-hosted runner."},
-	{"tcpip", tcpip_test, "TCP/IP packets: DhcpModify reads the cookie at offset 236 and nothing past the payload, the MSS clamp walks the TCP options."},
-	{"x509", x509_test, "X.509: long name fields, certificate times in UTC, PKCS#1 v1.5 signature length, PEM bundle with an unknown key."},
-	{"bufbounds", bufbounds_test, "BUF bounds: ReadBuf, ReadBufStr and WriteBuf near 2^32, the binary configuration reader against counts and sizes past the end."},
-	{"keepalive", keepalive_test, "Keepalive span: a session timeout out of bounds, also 0 or 1 from a server, gives the span of the clamped timeout."},
-	{"packcap", packcap_test, "Client Pack size cap: a 1 MiB hello or welcome Pack from a loopback peer is refused, the longest real welcome Pack is read."},
-	{"storepacket", storepacket_test, "StorePacket: the broadcast storm list of a session stays at its cap, access list delay and jitter never divide by zero."},
-	{"consoleline", consoleline_test, "Console input: a prompt line longer than its buffer, Ctrl+D and Ctrl+Z, the /IN file reader, UniToInt on a long string."},
-	{"tempdir", tempdir_test, "Temp directory: 64-bit random name, protected DACL; loading a string table writes no cache file."},
-	{"adminaudit", adminaudit_test, "Admin audit: audit lines only after a successful call and with the right key, the configuration revision only after a change."},
-	{"logwriter", logwriter_test, "Log writer: one file open per LOG for 1000 records, every record in order, one size switch named as before."},
-	{"logbound", logbound_test, "Log writer without a file: bounded record queue and buffer, dropped records released and counted in one line."},
-	{"slog", slog_test, "Syslog: the next resolve is a tick deadline, a second sender does not wait for a slow resolve, datagram content."},
-	{"eraser", eraser_test, "Eraser: a check interval of 1 s gives at most 4 free space checks in 3 s; the configuration keeps seconds."},
-	{"authtype", authtype_test, "Login authtype: 96 (the former external authentication) and unknown types are refused without a session, 0 to 2 keep their results."},
-	{"acpassword", acpassword_test, "Access list on the 'password' method: a denied address gets ERR_IP_ADDRESS_DENIED before the old password is checked."},
-	{"sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer."},
-	{"listeners", listeners_test, "Listeners and admin access: TCP 443 on a fresh configuration, 5555 when 443 cannot be bound at that first start, kept on later starts; ListenerCreate on any port; an admin login with the empty password gets error 51 from a non-loopback address and passes over loopback."},
-	{"pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236."},
-	{"vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4."},
-	{"icmpv6ns", icmpv6ns_test, "Neighbor Solicitation: BuildNeighborSolicitation gives the bytes of the former builder chain, nothing for a NULL argument."},
-	{"pack_decode_bounds", pack_decode_bounds_test, "PACK decoder: value counts and sizes past the bytes present, unknown types and values cut short are rejected before they allocate."},
-	{"tablecache", tablecache_test, "String table: loaded from the resource only, a planted table_name.txt beside the exe is ignored, no cache file is written."},
-	{"registry", registry_test, "Registry: empty and 1-byte REG_SZ read as empty strings, a REG_MULTI_SZ as its first string, writes and deletes need no KEY_ALL_ACCESS."},
-	{"certsig", certsig_test, "Certificate signatures: only X509_verify() == 1 is valid; an unknown signature algorithm fails CheckXEx and GetIssuerFromList."},
-	{"x509root", x509root_test, "Root certificates: root_cert only for a verified self-signature; X509ToX leaves a certificate it refuses to its caller."},
-	{"rsasig", rsasig_test, "RSA client certificate signatures: PKCS#1 v1.5 SHA-1, a destination smaller than the key refused, a signature of another length rejected."},
-	{"chaincerts", chaincerts_test, "chain_certs: the folder is scanned once for many connections, again after a certificate is added, removed or saved."},
-	{"tlsctx", tlsctx_test, "Shared server SSL_CTX: a new certificate, cipher list or SslAcceptSettings reaches the next connection; accept rate (informational)."},
-	{"ptrkey", ptrkey_test, "Pointer keys: POINTER_TO_KEY keys a block by its address; AccessDelete by UniqueId removes that entry after the Ids are renumbered."},
-	{"osinfo", osinfo_test, "OS information: Windows 10 and 11, Server 2016, 2019, 2022 and 2025 by build number; a GitHub-hosted runner is Server 2022 or later or Windows 11."},
-	{"endian", endian_test, "Byte order: Endian16/32/64 reverse the bytes as htons and htonl do, READ_* and WRITE_* are big-endian at unaligned addresses."},
-	{"svcargs", svcargs_test, "Service arguments: each argument of SVC_HELP selects its mode, /usermode_showtray and /usermode_hidetray select none."},
-	{"fifo", fifo_test, "FIFO and queue: a FIFO that never fully drains stays small and keeps the byte order; the queue ring keeps the item order."},
-	{"node", node_test, "Node: each role from the configuration starts and stops with every thread joined; per-core workers, adapter queues, atomic table swaps; fork Hub and Sam."},
-	{"nodesvc", nodesvc_test, "Node service: ranz-node installs as ranzvpnserver, runs each role of its configuration and stops cleanly (administrator rights)."},
-	{"nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result (administrator rights)."},
-	{"store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords."},
-	{"bgp", bgp_test, "BGP sidecar: ranz bgp peers with a router (gobgpd, RANZ_GOBGP) on TCP 179, a prefix announced and withdrawn, a learned route installed through IP Helper (administrator rights)."},
-	{"selfintegrity", selfint_test, "Self-integrity: WinVerifyTrust and the .text hash of the running binary; OK when signed and intact, the degrade-or-deceive response when changed (SEC-3; run on a signed binary by self-integrity.ps1)."},
-	{"transport", transport_test, "Transport: a Noise session end to end over the loopback transport, the race of a configured fallback list (the first to connect wins), the same session over a second transport."},
-	{"quic", quic_test, "QUIC: a client completes the QUIC handshake against the HTTP/3 listener on msquic, the Noise session comes up, Sam checks the Login, and the client's static key is pinned on first login (trust on first use)."},
-	{"noisehub", noisehub_test, "Noise to Hub: the L2 frames of a Noise session enter a Hub as a Session of type CONNECTION_NOISE and come out as the oracle's (golden family noisehub); a Tunnel of four connections keeps each flow in order and spreads the flows over all four."},
-	{"harden", harden_test, "Hardened licence gate: ranzguard reports unlocked unwatched and degrades to locked under a debugger, never crashing (skips when ranzguard.exe is absent)."},
-	{"httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port."},
-	{"sdntrace", sdntrace_test, "Default VRF tracer: sdntrace <host:port> <key> [<file>]: two nodes join VRF default of a running ranz controller, get addresses from its pool and ping each other over the loopback transport, also once the controller stopped (.github/scripts/sdn-tracer.ps1)."},
-	{"vrf", vrf_test, "VRF forwarding tables: DIR-24-8 and trie lookups against a reference on random routes, swaps under readers, two VRFs on 10.0.0.0/24 kept apart over the overlay (golden family vrf), a stream that loses no packet while the tables swap."},
-	{"vxlan", vxlan_test, "VXLAN: a frame, VLAN-tagged or not, goes out with its VNI and reaches a harness VTEP identical, and back to the module; a flood list of three VTEPs gets every frame and changes while the module runs; a datagram on an unknown VNI is dropped and counted."},
-	{"switch", switch_test, "Switch: frames between members of different VLANs across access, trunk and native ports, VLAN-aware learning, broadcast and multicast by group subscription, non-IP EtherTypes, per-VLAN limits and counters and the TPID of a Network against golden files (golden family switch); ports that change while threads forward."},
-	{"switchbench", switchbench_test, "Switch benchmark: the forwarding of the L2 switch on one thread, on one thread per core and behind one lock as the Hub; it fails when the threads do not scale (BENCH lines)."},
-};
+	for (;p < end;p++)
+	{
+		const TEST_LIST *t = *p;
+		UINT i = num;
+
+		if (t == NULL)
+		{
+			continue;
+		}
+
+		// Insertion sort: the tests are few
+		while (i > 0 && StrCmpi(list[i - 1]->command_str, t->command_str) > 0)
+		{
+			list[i] = list[i - 1];
+			i--;
+		}
+		list[i] = t;
+		num++;
+	}
+
+	*num_tests = num;
+
+	return list;
+}
 
 // Test function
 int TestMain(char *cmd)
@@ -685,13 +484,27 @@ int TestMain(char *cmd)
 	bool first = true;
 	bool exit_now = false;
 	int status = 0;
+	UINT num_tests = 0;
+	const TEST_LIST **tests = TestListCollect(&num_tests);
 
 	Print("Ranz VPN\n");
 	Print("vpntest: VPN Server test program\n");
 	Print("Usage: vpntest [/memcheck] [command]\n\n");
 	Print("Enter '?' or 'help' to show the command list.\n");
+	Print("Enter 'list' to print the tests one per line (for .github/scripts/vpntest.ps1).\n");
 	Print("Enter 'q' or 'exit' to exit the process.\n\n");
 	Print("   - In Jurassic Park: \"It's a UNIX system! I know this!\"\n\n");
+
+	// Two tests under one name could not be told apart
+	for (UINT i = 1;i < num_tests;i++)
+	{
+		if (StrCmpi(tests[i - 1]->command_str, tests[i]->command_str) == 0)
+		{
+			Print("ERROR: two tests are registered under the name %s\n", tests[i]->command_str);
+			Free(tests);
+			return 2;
+		}
+	}
 
 	while (true)
 	{
@@ -723,15 +536,15 @@ int TestMain(char *cmd)
 			{
 				UINT max_len = 0;
 				Print("Available commands:\n\n");
-				num = sizeof(test_list) / sizeof(TEST_LIST);
+				num = num_tests;
 				for (UINT i = 0;i < num;i++)
 				{
-					TEST_LIST *t = &test_list[i];
+					const TEST_LIST *t = tests[i];
 					max_len = MAX(max_len, StrLen(t->command_str));
 				}
 				for (UINT i = 0;i < num;i++)
 				{
-					TEST_LIST *t = &test_list[i];
+					const TEST_LIST *t = tests[i];
 					UINT len = StrLen(t->command_str);
 					char *pad = NULL;
 					if (len < max_len)
@@ -747,6 +560,14 @@ int TestMain(char *cmd)
 				}
 				Print("\n");
 			}
+			else if (StrCmpi(cmd, "list") == 0)
+			{
+				// One line per test: TESTLIST <name> <tags, comma-separated, or - for none>
+				for (UINT i = 0;i < num_tests;i++)
+				{
+					Print("TESTLIST %s %s\n", tests[i]->command_str, StrLen(tests[i]->tags) == 0 ? "-" : tests[i]->tags);
+				}
+			}
 			else if (StartWith(tmp, "vpncmd"))
 			{
 				wchar_t *s = CopyStrToUni(tmp);
@@ -755,17 +576,17 @@ int TestMain(char *cmd)
 			}
 			else
 			{
-				num = sizeof(test_list) / sizeof(TEST_LIST);
+				num = num_tests;
 				for (UINT i = 0;i < num;i++)
 				{
-					if (!StrCmpi(test_list[i].command_str, cmd))
+					if (!StrCmpi(tests[i]->command_str, cmd))
 					{
 						char **arg = Malloc(sizeof(char *) * (token->NumTokens - 1));
 						for (UINT j = 0;j < token->NumTokens - 1;j++)
 						{
 							arg[j] = CopyStr(token->Token[j + 1]);
 						}
-						test_list[i].proc(token->NumTokens - 1, arg);
+						tests[i]->proc(token->NumTokens - 1, arg);
 						for (UINT j = 0;j < token->NumTokens - 1;j++)
 						{
 							Free(arg[j]);
@@ -790,6 +611,7 @@ int TestMain(char *cmd)
 			}
 		}
 	}
+	Free(tests);
 	Print("Exiting...\n\n");
 	return status;
 }
