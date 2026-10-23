@@ -228,11 +228,26 @@ bool CryptoCertHasKspKey(PCCERT_CONTEXT cert) {
 	HCRYPTPROV_OR_NCRYPT_KEY_HANDLE key = 0;
 	DWORD key_spec = 0;
 	BOOL must_free = FALSE;
+	DWORD size = 0;
 
 	if (cert == NULL)
 		return false;
 
-	// ONLY_NCRYPT refuses a key of a legacy CryptoAPI provider (CSP)
+	// A key of a legacy CryptoAPI provider (CSP) has the type of its provider in the key provider information,
+	// a key of a KSP has 0. CNG opens the RSA keys of the CSPs through the software KSP as well, so the key handle
+	// that ONLY_NCRYPT gives does not tell them apart.
+	if (CertGetCertificateContextProperty(cert, CERT_KEY_PROV_INFO_PROP_ID, NULL, &size) && size >= sizeof(CRYPT_KEY_PROV_INFO)) {
+		CRYPT_KEY_PROV_INFO *info = (CRYPT_KEY_PROV_INFO *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size);
+		if (info == NULL)
+			return false;
+
+		bool csp = (CertGetCertificateContextProperty(cert, CERT_KEY_PROV_INFO_PROP_ID, info, &size) == false || info->dwProvType != 0);
+		HeapFree(GetProcessHeap(), 0, info);
+		if (csp)
+			return false;
+	}
+
+	// ONLY_NCRYPT refuses a key that CNG cannot reach
 	if (CryptAcquireCertificatePrivateKey(cert, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG | CRYPT_ACQUIRE_SILENT_FLAG, NULL, &key, &key_spec, &must_free) == false)
 		return false;
 

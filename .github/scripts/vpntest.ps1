@@ -42,8 +42,37 @@ if (Test-Path $benchFile) { Remove-Item $benchFile }
 }
 
 # Named self-tests: must print their OK marker and no leak. RANZ_SMOKE_TESTS (comma list) overrides the list.
-$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'noisehub', 'vrf', 'vxlan', 'shape', 'switch', 'switchbench')
+$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'tls', 'lossylink', 'noisehub', 'vrf', 'vxlan', 'shape', 'switch', 'switchbench')
 if ($env:RANZ_SMOKE_TESTS) { $named = $env:RANZ_SMOKE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
+
+# The TLS transport (CORE-S2-1 #69) puts its key exchange groups first in the machine's Schannel group list, which an
+# ECC Curve Order policy overrides. The runner image sets one (NistP384, NistP256): a CI run takes it off, so the list
+# that the transport sets governs, as on a node without that policy. Only on a runner, whose machine goes after the job.
+if ($env:GITHUB_ACTIONS -eq 'true') {
+	$eccPolicy = 'HKLM:\SOFTWARE\Policies\Microsoft\Cryptography\Configuration\SSL\00010002'
+	$eccCurves = (Get-ItemProperty -LiteralPath $eccPolicy -Name 'EccCurves' -ErrorAction SilentlyContinue).EccCurves
+	if ($eccCurves) {
+		try {
+			Remove-ItemProperty -LiteralPath $eccPolicy -Name 'EccCurves' -ErrorAction Stop
+			Write-Host ('ECC Curve Order policy of the runner image (' + ($eccCurves -join ', ') + ') taken off for the TLS transport')
+		} catch {
+			Write-Host ('ECC Curve Order policy of the runner image (' + ($eccCurves -join ', ') + ') could not be taken off: ' + $_)
+		}
+	}
+
+	# The congestion control of the outer TCP of the TLS transport (the TCP-over-TCP amendment of ADR-0022: BBR2 where
+	# Windows offers it). Windows has no choice per socket: each TCP setting template of the machine has its provider.
+	# What this runner's templates use, for the record of each CI run, and whether Windows offers BBR2: the
+	# InternetCustom template, which no connection uses without a transport filter, takes it and then gets its own back.
+	Get-NetTCPSetting -ErrorAction SilentlyContinue | % { Write-Host ('TCP setting template ' + $_.SettingName + ': congestion provider ' + $_.CongestionProvider) }
+	$custom = (Get-NetTCPSetting -SettingName InternetCustom -ErrorAction SilentlyContinue).CongestionProvider
+	$answer = (netsh int tcp set supplemental template=internetcustom congestionprovider=bbr2 | Out-String).Trim()
+	$taken = (Get-NetTCPSetting -SettingName InternetCustom -ErrorAction SilentlyContinue).CongestionProvider
+	Write-Host ('BBR2 on this runner: the InternetCustom template took "' + $taken + '" (netsh: ' + $answer + ')')
+	if ($custom -and "$taken" -ne "$custom") {
+		netsh int tcp set supplemental template=internetcustom congestionprovider=$custom | Out-Null
+	}
+}
 $named | % {
 
 	[String] $test = $_
@@ -110,6 +139,16 @@ $named | % {
 		$full
 		Write-Error 'switch golden files not compared (missing: SWITCH GOLDEN MODE compare)'
 		return $false
+	}
+
+	# The TLS transport and the lossy-link case (CORE-S2-1 #69) put what they measured into the job log: the build, the
+	# Schannel group list and the version, suite and group of each handshake; the ingress queue on TLS-443; the goodput
+	# of an inner TCP with CoDel and without
+	if ($test -eq 'tls') {
+		$full | ? { $_ -cmatch "^  Windows build|^  the machine's list|^  client: |records sent: " } | % { Write-Host $_ }
+	}
+	if ($test -eq 'lossylink') {
+		$full | ? { $_ -cmatch '^\[the lossy link|^  the (outer|inner) TCP|dropped at \(ms\)' } | % { Write-Host $_ }
 	}
 
 	Write-Host 'ok'

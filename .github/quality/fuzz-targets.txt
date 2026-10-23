@@ -39,6 +39,8 @@ src/Core  PeerKeyOpen           exempt  opens the node's static key by its name 
 src/Core  TransportParseList     fuzz_transport
 src/Core  TransportNoiseReceive  fuzz_transport
 src/Core  TransportRead          exempt  hands the read of a stream to the Read procedure of its transport; parses nothing (TransportNoiseReceive reads the frames)
+# The TLS transport (CORE-S2-1 #69): the ServerHello among the first records of a TLS server
+src/Core  TransportTlsParseHello  fuzz_transport
 
 # The VXLAN module (SDN-62 #289): the datagrams of VTEPs
 src/Core  VxlanInput  fuzz_vxlan

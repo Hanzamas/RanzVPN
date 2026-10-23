@@ -75,6 +75,12 @@ ranz_add_executable(vpntest HAMCORE
     quictest.c
     # Named Noise-to-Hub test of CORE-S1-2 (#68): the frames of a Noise session in the existing Hub, against the oracle
     noisehub.c
+    # Named TLS transport test of CORE-S2-1 (#69): the Schannel TLS-443 listener, its key exchange groups, the Noise
+    # session over it, the pin and the fallback when UDP is blocked
+    tlstest.c
+    # Named lossy-link test of CORE-S2-1 (#69): the ingress queue (CoDel) and an inner TCP over the TLS-443 path on a
+    # simulated lossy link
+    lossylink.c
     # Named hardened licence gate test of SEC-4 (#282): drives ranzguard under the Win32 debug API
     harden.c
     # Named HTTP listener test of REL-6 (#51)
@@ -91,10 +97,10 @@ ranz_add_executable(vpntest HAMCORE
     shapetest.c
     # Named switch test and switch benchmark of CORE-S4-1 (#74): the L2 switch of the new core against golden frames
     switchtest.c
-  # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
-  # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN module for
-  # vxlantest.c, the switch module for switchtest.c; netapi32: the local account that stands for a domain account
-  # (NetUserAdd)
+  # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c,
+  # quictest.c and tlstest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN
+  # module for vxlantest.c, the switch module for switchtest.c; netapi32: the local account that stands for a domain
+  # account (NetUserAdd)
   LIBRARIES
     coretransport
     corenoise
