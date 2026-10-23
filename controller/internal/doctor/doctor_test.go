@@ -181,7 +181,7 @@ func TestNetwork(t *testing.T) {
 	if err := network(context.Background(), "127.0.0.1:0", 8, 128); err != nil {
 		t.Errorf("the network check of this host: %v", err)
 	}
-	if err := network(context.Background(), "300.1.1.1:0", 2, 4); err == nil || !strings.Contains(err.Error(), "listening on") {
+	if err := network(context.Background(), "127.0.0.1:99999", 2, 4); err == nil || !strings.Contains(err.Error(), "listening on") {
 		t.Errorf("an address that cannot be listened on: %v", err)
 	}
 	canceled, cancel := context.WithCancel(context.Background())

@@ -467,7 +467,7 @@ func TestThroughputArguments(t *testing.T) {
 		{[]string{"-nope"}, 2, "flag provided but not defined"},
 		{[]string{"127.0.0.1:99999"}, 2, "is no port"},
 		{[]string{"-connections", "3", "127.0.0.1:9821"}, 1, "both ways"},
-		{[]string{"-listen", "256.1.1.1:9"}, 1, "listen"},
+		{[]string{"-listen", "127.0.0.1:99999"}, 1, "listen"},
 		{[]string{"-connections", "2", "-span", "200ms", deadAddr}, 1, "connection "},
 	} {
 		var out, errOut bytes.Buffer
