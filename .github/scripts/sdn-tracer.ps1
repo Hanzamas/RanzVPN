@@ -12,8 +12,10 @@ $ErrorActionPreference = 'Stop'
 # Generation, which the API shows, and exchange ICMP echo over the in-process loopback transport;
 # once the controller stopped, they must still exchange it: they forward on the state they applied
 # last. vpntest creates the file $pinged after the first echoes and waits for the control streams
-# to go down; this script then checks the API and stops the controller. The output of the processes
-# is read once they ended.
+# to go down; this script then checks the API and stops the controller. Once it stopped, vpntest also
+# sends a stream of UDP datagrams from the host of each node to the host of the other and reports the
+# rate that the overlay carried each way (SDN-53, #246). The output of the processes is read once
+# they ended.
 
 $bin = (Resolve-Path $BuildDir).Path
 $ranz = Join-Path $bin 'ranz.exe'
@@ -148,6 +150,12 @@ try {
 	Write-Host $out
 	if ($out -notmatch 'SDNTRACE TEST OK') { throw 'vpntest sdntrace failed' }
 	if ($out -notmatch 'NO MEMORY LEAKS') { throw 'vpntest sdntrace leaked memory' }
+	# The rate between the two nodes, each way, once the controller stopped (SDN-53, #246)
+	foreach ($pair in 'node-a to node-b', 'node-b to node-a') {
+		if ($out -notmatch "(?m)^  \[INFO\] without the controller: ${pair}: [1-9][0-9]* datagrams of [0-9]+ bytes in [0-9]+ ms, [0-9]+ arrived, [0-9]+ refused: [0-9]+\.[0-9][0-9] Mbit/s") {
+			throw "vpntest sdntrace reports no rate from $pair"
+		}
+	}
 	Write-Host 'ok'
 } catch {
 	Stop-All
