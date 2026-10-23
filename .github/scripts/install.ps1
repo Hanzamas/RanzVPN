@@ -15,10 +15,10 @@ $PSNativeCommandUseErrorActionPreference = $false
 # - a ranz.exe whose Payload has one byte changed is refused, with a message that names ranz-node.exe and
 #   its Authenticode signature: no service is registered and no Ranz VPN folder is left;
 # - ranz install exits 0, ranzvpnserver is Running as its virtual account NT SERVICE\ranzvpnserver with an
-#   unrestricted service SID, from ranz-node.exe in the Ranz VPN folder, and the folder grants nothing to
-#   Users, Everyone or Authenticated Users: only SYSTEM and the Administrators have full control, and the
-#   virtual accounts of the two services may read and run what is in it (a service has no right to its own
-#   executable otherwise);
+#   unrestricted service SID, from ranz-node.exe in the Ranz VPN folder, and is restarted by the Service
+#   Control Manager when it fails. The folder grants nothing to Users, Everyone or Authenticated Users:
+#   only SYSTEM and the Administrators have full control, and the virtual accounts of the two services may
+#   read and run what is in it (a service has no right to its own executable otherwise);
 # - the installed ranz-node.exe is byte for byte the signed ranz-node.exe of sign_and_integrity (its
 #   SHA-256), with a valid Authenticode signature (the CI self-signed certificate, trusted on this runner,
 #   counts), and so is the ranz.exe that sits next to it, where the Node looks for ranz.exe bgp and where
@@ -218,7 +218,9 @@ try {
 	if ($sidType -notmatch 'UNRESTRICTED') { throw "the service SID type of $nodeService is not unrestricted:`n$sidType" }
 	$sid = (& sc.exe showsid $nodeService | Out-String)
 	if ($sid -notmatch [regex]::Escape($nodeSid)) { throw "Windows gives $nodeAccount another SID than $nodeSid`:`n$sid" }
-	Write-Host "$nodeService is Running as $nodeAccount ($nodeSid) with an unrestricted service SID, from $($svc.PathName)"
+	$failure = (& sc.exe qfailure $nodeService | Out-String)
+	if ($failure -notmatch 'RESTART') { throw "$nodeService is not restarted when it fails:`n$failure" }
+	Write-Host "$nodeService is Running as $nodeAccount ($nodeSid) with an unrestricted service SID, from $($svc.PathName), and is restarted when it fails"
 
 	if (-not (Test-Path -LiteralPath $installDir)) { throw "$installDir was not made" }
 	Assert-NoUsersAccess $installDir
