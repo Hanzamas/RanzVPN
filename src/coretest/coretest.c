@@ -157,7 +157,7 @@ static TEST_LIST test_list[] = {
     {"noise", noise_test, "Noise_IK_25519_AESGCM_SHA256 against the cacophony vector, static keys as scalars and in the KSP; rekey; the rules."},
     {"noisehfs", noisehfs_test, "Noise_IKhfs_25519+MLKEM768_AESGCM_SHA256 where the OS has ML-KEM: both sides, sizes, a changed e1 or ekem1."},
     {"noisesession", noisesession_test, "Noise session: golden transcripts, channel binding, Login, keepalive, dead timeout, rekey on a schedule."},
-    {"noisetunnel", noisetunnel_test, "Tunnel: flows over N = 1 and N = 4 connections, a lost connection's flows move, independent rekey."},
+    {"noisetunnel", noisetunnel_test, "Tunnel: flows over N = 1 and N = 4 connections, a lost connection's flows move, independent rekey; the flow hash of a frame."},
     {"noiseinterop", noiseinterop_test, "Interop with flynn/noise (ranz-noisepeer): both roles, rekey, handshake hash; another prologue or key fails."},
     {"envelope", envelope_test, "Signal and bind envelopes (Noise_K_25519_AESGCM_SHA256) against their known answers, in memory and in the KSP; every altered bit refused."},
     {"relay", relay_test, "Two nodes behind symmetric NATs come up through a relay in one round trip and their traffic flows at once; the direct path is blocked."},

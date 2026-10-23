@@ -498,6 +498,9 @@ void transport_test(UINT num, char **arg);
 // Named QUIC transport test of CORE-S1-1, #67 (quictest.c)
 void quic_test(UINT num, char **arg);
 
+// Named Noise-to-Hub test of CORE-S1-2, #68 (noisehub.c)
+void noisehub_test(UINT num, char **arg);
+
 // Named HTTP listener test of REL-6, #51 (httplistener.c)
 void httplistener_test(UINT num, char **arg);
 
@@ -658,6 +661,7 @@ TEST_LIST test_list[] =
 	{"selfintegrity", selfint_test, "Self-integrity: WinVerifyTrust and the .text hash of the running binary; OK when signed and intact, the degrade-or-deceive response when changed (SEC-3; run on a signed binary by self-integrity.ps1)."},
 	{"transport", transport_test, "Transport: a Noise session end to end over the loopback transport, the race of a configured fallback list (the first to connect wins), the same session over a second transport."},
 	{"quic", quic_test, "QUIC: a client completes the QUIC handshake against the HTTP/3 listener on msquic, the Noise session comes up, Sam checks the Login, and the client's static key is pinned on first login (trust on first use)."},
+	{"noisehub", noisehub_test, "Noise to Hub: the L2 frames of a Noise session enter a Hub as a Session of type CONNECTION_NOISE and come out as the oracle's (golden family noisehub); a Tunnel of four connections keeps each flow in order and spreads the flows over all four."},
 	{"harden", harden_test, "Hardened licence gate: ranzguard reports unlocked unwatched and degrades to locked under a debugger, never crashing (skips when ranzguard.exe is absent)."},
 	{"httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port."},
 	{"sdntrace", sdntrace_test, "Default VRF tracer: sdntrace <host:port> <key> [<file>]: two nodes join VRF default of a running ranz controller, get addresses from its pool and ping each other over the loopback transport, also once the controller stopped (.github/scripts/sdn-tracer.ps1)."},

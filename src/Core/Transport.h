@@ -170,9 +170,10 @@ void TransportLoopbackFree(TRANSPORT *t);
 // Schannel build, pinned, x64 and arm64). A listener presents as an HTTP/3 server: the ALPN "h3", a
 // real certificate read from the Windows certificate store by its thumbprint, and BBR where the
 // msquic build has it, so its posture equals ordinary Windows HTTP/3. The session layer runs the
-// Noise session over one reliable bidirectional stream of the connection (the handshake, the Login
-// and the control stream); the L2 frames of the data stream enter the existing Hub over the QUIC
-// DATAGRAM frames, which the connection advertises, in CORE-S1-2 (#68). The channel binding of a
+// Noise session over one reliable bidirectional stream of the connection (the handshake, the Login,
+// the control stream and the data stream, whose L2 frames enter the existing Hub as the Session of a
+// Tunnel, CORE-S1-2 #68). The connection advertises QUIC DATAGRAM frames, which no data path takes
+// yet. The channel binding of a
 // stream is the tls-server-end-point of the pinned server certificate (RFC 5929, NOISE_BINDING_
 // SERVER_END_POINT): both ends compute it from the certificate msquic presents, because Schannel
 // exposes no RFC 8446 exporter to msquic yet (the CORE-S1-1 spike of ADR-0022, amendment of

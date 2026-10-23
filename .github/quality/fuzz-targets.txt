@@ -21,6 +21,9 @@ src/Core  NoiseSessionAccept    fuzz_noise
 src/Core  NoiseSessionFinish    fuzz_noise
 src/Core  NoiseSessionReceive   fuzz_noise
 src/Core  NoiseLoginParse       fuzz_noise
+# The flow hash of the tunnel (CORE-S1-2 #68) reads the Ethernet and IP headers of a peer's frame: no parser word
+# in its name, listed as a parser
+src/Core  NoiseTunnelFlowHash   fuzz_noise
 
 # The peer module (CORE-S5-2 #78): datagrams, envelopes and signals; the datagrams of ICE (CORE-S5-3 #79)
 src/Core  PeerInput             fuzz_peer

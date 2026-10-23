@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeTable.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeSession.c, NodeTable.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -288,5 +288,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg);
 void NodeOverlayStop(NODE *n);
 bool NodeOverlayInput(NODE *n, const UCHAR *packet, UINT size);
 void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
+
+// NodeSession.c
+UINT NodeAcceptSession(NODE *n, TRANSPORT_NOISE *s, UINT timeout);
 
 #endif // NODE_H

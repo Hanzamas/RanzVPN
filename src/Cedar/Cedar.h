@@ -124,6 +124,7 @@
 #define CONNECTION_TCP             0
 #define CONNECTION_HUB_BRIDGE      7
 #define CONNECTION_HUB_LINK_SERVER 9
+#define CONNECTION_NOISE           10 // The Tunnel of Noise sessions of a node of the new core (ConnectionTunnel.c)
 
 
 #define CONNECTION_STATUS_ACCEPTED    0

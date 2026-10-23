@@ -8,8 +8,10 @@
 //   vector's keys and ephemeral key, so that a seed of the matching second record completes the handshake;
 // - a stream of records into an open session, bound and encrypted, on both nodes: each record a 2-byte
 //   big-endian size and the record; a control record that holds a Login is checked as the server's owner
-//   checks it (NoiseLoginParse) and opens the data stream;
-// - a Login (NoiseLoginParse).
+//   checks it (NoiseLoginParse) and opens the data stream, and the payload of a data record is hashed as the
+//   frame the tunnel routes (NoiseTunnelFlowHash, CORE-S1-2 #68);
+// - a Login (NoiseLoginParse);
+// - an Ethernet frame for the flow hash of the tunnel (NoiseTunnelFlowHash).
 // The sessions are those of the golden transcripts of coretest noisesession, so that their seeds decrypt.
 
 #include "fuzz_common.h"
@@ -129,6 +131,10 @@ static void FuzzRecords(FUZZ_NOISE *f, NOISE_SESSION *s, const UCHAR *data, UINT
 		{
 			NoiseSessionAcceptLogin(s);
 		}
+		else if (ret == NOISE_RECEIVE_DATA)
+		{
+			NoiseTunnelFlowHash(f->Data, data_size);
+		}
 	}
 }
 
@@ -198,6 +204,7 @@ static void FuzzNoise(const uint8_t *data, size_t size)
 	}
 
 	NoiseLoginParse(&l, in, (UINT)size);
+	NoiseTunnelFlowHash(in, (UINT)size);
 
 	SecureZeroMemory(f, sizeof(FUZZ_NOISE));
 	free(f);
