@@ -7,7 +7,9 @@
 // session: a write encrypts the bytes into records of at most the largest message of the session, a
 // read decrypts the records that came. The channel binding of a stream is the TLS exporter of its
 // session, which Schannel gives through SECPKG_ATTR_KEYING_MATERIAL. The client pins the server
-// certificate and does not trust the system root store (ADR-0023).
+// certificate and does not trust the system root store (ADR-0023). The data records of a session
+// over the transport wait in the ingress queue of the session layer, which CoDel runs, so that an
+// outer TCP that stalls on a loss makes the inner TCP back off instead of time out (TransportQueue.c).
 //
 // A listener accepts on a wait of the Windows thread pool and runs each TLS handshake on a callback
 // of the pool, so that a peer that never completes its handshake holds no other back; a stream whose
@@ -299,9 +301,11 @@ UINT TransportTlsSetGroups() {
 	if (CryptoMlKemAvailable())
 		TlsAddGroup(list, &pos, TLS_GROUP_HYBRID, (UINT)wcslen(TLS_GROUP_HYBRID));
 	TlsAddGroup(list, &pos, TLS_GROUP_X25519, (UINT)wcslen(TLS_GROUP_X25519));
-	for (UINT i = 0; i < TLS_GROUPS_SIZE && old[i] != 0;) {
-		UINT len = (UINT)wcsnlen(old + i, TLS_GROUPS_SIZE - i);
+	for (UINT i = 0; i < TLS_GROUPS_SIZE - 1 && old[i] != 0;) {
+		UINT len = 0;
 
+		while (len < TLS_GROUPS_SIZE - 1 - i && old[i + len] != 0)
+			len++;
 		if (TlsSameGroup(old + i, len, TLS_GROUP_HYBRID) == false && TlsSameGroup(old + i, len, TLS_GROUP_X25519) == false)
 			TlsAddGroup(list, &pos, old + i, len);
 		i += len + 1;
@@ -1391,6 +1395,7 @@ static void TlsFill(TRANSPORT *t, TLS_NET *net) {
 	t->Close = TlsStreamClose;
 	t->Binding = TlsStreamBinding;
 	t->Rekey = TlsStreamRekey;
+	t->Queue = net->Cfg.Queue;
 }
 
 void TransportTlsDefaultConfig(TRANSPORT_TLS_CONFIG *cfg, const char *thumbprint, bool machine_store) {
@@ -1405,6 +1410,7 @@ void TransportTlsDefaultConfig(TRANSPORT_TLS_CONFIG *cfg, const char *thumbprint
 	cfg->MachineStore = machine_store;
 	cfg->Versions = TRANSPORT_TLS_12 | TRANSPORT_TLS_13;
 	cfg->SetGroups = true;
+	cfg->Queue = TRANSPORT_QUEUE_CODEL;
 }
 
 // A server or a client transport. The server loads its certificate, whose key must be in a CNG key
@@ -1431,6 +1437,8 @@ static TRANSPORT *TransportTlsNew(const TRANSPORT_TLS_CONFIG *cfg, bool server) 
 		strcpy_s(net->Cfg.Name, sizeof(net->Cfg.Name), "tls");
 	if ((net->Cfg.Versions & (TRANSPORT_TLS_12 | TRANSPORT_TLS_13)) == 0)
 		net->Cfg.Versions = TRANSPORT_TLS_12 | TRANSPORT_TLS_13;
+	if (net->Cfg.Queue > TRANSPORT_QUEUE_CODEL)
+		net->Cfg.Queue = TRANSPORT_QUEUE_CODEL;
 	net->Server = server;
 	InitializeSRWLock(&net->Lock);
 
