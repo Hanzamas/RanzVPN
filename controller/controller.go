@@ -78,7 +78,6 @@ package controllercmd
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
@@ -134,11 +133,6 @@ const adminTokenFile = "admin.token"
 // adminSourcesTTL is how long a member uses a read of the admin source allowlist: a change of it
 // reaches every member within this time (api.NewSources).
 const adminSourcesTTL = 2 * time.Second
-
-// licenceKeys are the public keys that a licence key must be signed with: nil, for the vendor
-// keys that the release build links in (licence.VendorKeys). No flag sets it; only the cluster
-// tests do, to a test vendor key, in the member processes they start (TestMain).
-var licenceKeys []ed25519.PublicKey
 
 type config struct {
 	dataDir       string
@@ -461,7 +455,6 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		Tokens:      tokens,
 		Key:         static,
 		Schema:      cfg.schema,
-		LicenceKeys: licenceKeys,
 		Lease:       cfg.lease,
 		Log:         log,
 		Status: api.Status{

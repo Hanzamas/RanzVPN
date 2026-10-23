@@ -31,7 +31,9 @@
 # rqlited.exe of the pinned release with a self-signed certificate that it trusts and embeds it
 # over the placeholder of controller/internal/payload before it builds, so the x64 job's cluster
 # tests, its ranz.exe and its service run with members that ranz writes out under the data
-# directory itself, with no rqlited beside it, also again after a deletion. rqlite publishes no
+# directory itself, with no rqlited beside it, also again after a deletion. The cluster tests run
+# the executable ranz as each member: they build it from the checkout with the vendor key of the
+# tests linked in, as a release links its own (controller/cluster_test.go). rqlite publishes no
 # Windows build for arm64: the member of ranz for arm64 is the x64 rqlited.exe, which Windows 11 on
 # ARM runs under emulation, and the arm64 job writes it out and starts it (TestRqlitedMemberRuns).
 # On both architectures the job runs the sidecar on the named pipe of the node, among them the
@@ -447,12 +449,13 @@ jobs:
     # self-signed code-signing certificate that it makes and trusts on this runner, as
     # .github/scripts/self-integrity.ps1 does for the executables of the C build (the certificate of
     # the release signs the Payload at release, as it signs ranz-node.exe), and writes it over the
-    # placeholder of controller/internal/payload, so that every build and test binary of the steps
-    # below carries it: the cluster tests run members that write their own rqlited from it, ranz.exe
-    # carries it as it ships, and the service check runs with no rqlited beside ranz.exe. RQLITED
-    # stays for the tests that start an rqlite of their own (rqlitetest), and RQLITED_SIGNED is the
-    # signed file, which the service check compares what the controller writes out with. On the
-    # arm64 runner the member is the x64 rqlited.exe (rqlited_arm64.exe is its placeholder).
+    # placeholder of controller/internal/payload, so that every build of the steps below carries it:
+    # the cluster tests run members, each a ranz that they build, that write their own rqlited from
+    # it, ranz.exe carries it as it ships, and the service check runs with no rqlited beside
+    # ranz.exe. RQLITED stays for the tests that start an rqlite of their own (rqlitetest), and
+    # RQLITED_SIGNED is the signed file, which the service check compares what the controller writes
+    # out with. On the arm64 runner the member is the x64 rqlited.exe (rqlited_arm64.exe is its
+    # placeholder).
     - name: Sign the rqlite member and embed it as the Payload
       shell: pwsh
       run: |
