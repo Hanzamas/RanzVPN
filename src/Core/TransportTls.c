@@ -162,7 +162,7 @@ typedef struct TLS_READER {
 // Memory, names and addresses
 //
 
-static void *TlsAlloc(UINT size) {
+static void *TlsZeroAlloc(UINT size) {
 	return HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size);
 }
 
@@ -600,7 +600,7 @@ static void TlsStreamFree(TLS_STREAM *s) {
 // A new stream of a transport on a connected socket, which it takes: NULL, with the socket closed,
 // when there is no memory
 static TLS_STREAM *TlsStreamNew(TLS_NET *net, SOCKET sock) {
-	TLS_STREAM *s = (TLS_STREAM *)TlsAlloc(sizeof(TLS_STREAM));
+	TLS_STREAM *s = (TLS_STREAM *)TlsZeroAlloc(sizeof(TLS_STREAM));
 
 	if (s == NULL) {
 		closesocket(sock);
@@ -611,8 +611,8 @@ static TLS_STREAM *TlsStreamNew(TLS_NET *net, SOCKET sock) {
 	s->Socket = sock;
 	InitializeSRWLock(&s->SendLock);
 	InitializeSRWLock(&s->CtxLock);
-	s->In = (UCHAR *)TlsAlloc(TLS_IN_SIZE);
-	s->Plain = (UCHAR *)TlsAlloc(TLS_RECORD_MAX);
+	s->In = (UCHAR *)TlsZeroAlloc(TLS_IN_SIZE);
+	s->Plain = (UCHAR *)TlsZeroAlloc(TLS_RECORD_MAX);
 	if (s->In == NULL || s->Plain == NULL) {
 		TlsStreamFree(s);
 		return NULL;
@@ -785,7 +785,7 @@ static bool TlsOpen(TLS_STREAM *s) {
 		s->Info.Group = 0;
 
 	s->OutSize = s->Sizes.cbHeader + s->Sizes.cbMaximumMessage + s->Sizes.cbTrailer;
-	s->Out = (UCHAR *)TlsAlloc(s->OutSize);
+	s->Out = (UCHAR *)TlsZeroAlloc(s->OutSize);
 	if (s->Out == NULL || TlsExporter(s) == false)
 		return false;
 
@@ -1128,7 +1128,7 @@ static void CALLBACK TlsHandshakeCallback(PTP_CALLBACK_INSTANCE instance, void *
 // closed when it cannot start. The connection takes none of the listener's event selection and
 // blocks, as a dialled one.
 static void TlsStartHandshake(TLS_LISTENER *l, SOCKET s) {
-	TLS_ACCEPTED *a = (TLS_ACCEPTED *)TlsAlloc(sizeof(TLS_ACCEPTED));
+	TLS_ACCEPTED *a = (TLS_ACCEPTED *)TlsZeroAlloc(sizeof(TLS_ACCEPTED));
 
 	if (a == NULL || WSAEventSelect(s, NULL, 0) != 0 || TlsSocketReady(s) == false) {
 		closesocket(s);
@@ -1182,7 +1182,7 @@ static bool TlsListen(void *param, const char *address, void **listener) {
 	if (net->Server == false || TlsSplitAddress(address, host, sizeof(host), port, sizeof(port)) == false)
 		return false;
 
-	TLS_LISTENER *l = (TLS_LISTENER *)TlsAlloc(sizeof(TLS_LISTENER));
+	TLS_LISTENER *l = (TLS_LISTENER *)TlsZeroAlloc(sizeof(TLS_LISTENER));
 	if (l == NULL)
 		return false;
 	l->Net = net;
@@ -1406,8 +1406,8 @@ static TRANSPORT *TransportTlsNew(const TRANSPORT_TLS_CONFIG *cfg, bool server) 
 	if (cfg == NULL)
 		return NULL;
 
-	TLS_NET *net = (TLS_NET *)TlsAlloc(sizeof(TLS_NET));
-	TRANSPORT *t = (TRANSPORT *)TlsAlloc(sizeof(TRANSPORT));
+	TLS_NET *net = (TLS_NET *)TlsZeroAlloc(sizeof(TLS_NET));
+	TRANSPORT *t = (TRANSPORT *)TlsZeroAlloc(sizeof(TRANSPORT));
 	if (net == NULL || t == NULL) {
 		TlsRelease(net, sizeof(TLS_NET));
 		TlsRelease(t, sizeof(TRANSPORT));
