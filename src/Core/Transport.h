@@ -217,4 +217,86 @@ TRANSPORT *TransportQuicClientNew(const TRANSPORT_QUIC_CONFIG *cfg);
 USHORT TransportQuicBoundPort(TRANSPORT *t);
 void TransportQuicFree(TRANSPORT *t);
 
+// The TLS transport (TransportTls.c, CORE-S2-1 #69), on Schannel through SSPI: TLS 1.3 and 1.2 over
+// TCP on the Windows TCP stack, for a client that cannot use UDP (TLS-443 in a fallback list,
+// ADR-0005). The server credential (SCH_CREDENTIALS) presents a certificate read from the Windows
+// certificate store by its thumbprint, whose private key must be in a CNG key storage provider: a
+// PFX is imported into the KSP (CryptoCertImportPfx), and a certificate whose key sits in a legacy
+// CryptoAPI provider (CSP) is refused, so Schannel never meets one (ADR-0022, amendment of
+// 2026-10-21). Both ends allow AES-GCM only (no ChaCha20-Poly1305, no CBC or CCM) and an ephemeral
+// key exchange only (no static RSA, no finite-field DHE). The session layer runs the Noise session
+// over a stream unchanged: the handshake, the Login and the data stream whose L2 frames enter the
+// Hub (CORE-S1-2 #68). The channel binding of a stream is the TLS exporter of its session (RFC 8446
+// section 7.5, RFC 5705 for TLS 1.2; NOISE_BINDING_EXPORTER), which Schannel gives through
+// SECPKG_ATTR_KEYING_MATERIAL. The client pins the server certificate: a certificate whose
+// thumbprint is not the configured one is refused, and the system root store is not trusted
+// (ADR-0023). Every handshake is a full one: the server keeps no session for a resumption.
+//
+// The key exchange groups: X25519MLKEM768 first where the OS has ML-KEM, X25519 as the fallback.
+// Schannel takes no list of groups per credential (SCH_CREDENTIALS and TLS_PARAMETERS can only
+// disable algorithms), and builds 26100 and 26200 do not offer the hybrid by default, so
+// TransportTlsSetGroups sets the machine's Schannel group list, the one that Enable-TlsEccCurve
+// writes and Schannel reads: the value EccCurves of the key
+// HKLM\SYSTEM\CurrentControlSet\Control\Cryptography\Configuration\Local\SSL\00010002, with the
+// transport's groups first and the groups the list had after them. An ECC Curve Order group policy
+// overrides that list where one is set; the transport leaves it as the administrator set it.
+#define TRANSPORT_TLS_12 0x00000001 // TLS 1.2
+#define TRANSPORT_TLS_13 0x00000002 // TLS 1.3
+
+// What TransportTlsSetGroups did
+#define TRANSPORT_TLS_GROUPS_SET    0 // The machine's list starts with the transport's groups
+#define TRANSPORT_TLS_GROUPS_POLICY 1 // An ECC Curve Order policy governs the list, which stays as it is
+#define TRANSPORT_TLS_GROUPS_FAILED 2 // The list could not be read or written (administrator rights)
+
+// How a TLS transport is configured
+typedef struct TRANSPORT_TLS_CONFIG {
+	char Name[TRANSPORT_NAME_SIZE];              // The transport name in a fallback list ("tls")
+	char Thumbprint[3 * CRYPTO_THUMBPRINT_SIZE]; // The server certificate in the store, by its SHA-1 thumbprint
+	bool MachineStore;                           // The LocalMachine\My store (the service); else the current user's
+	UINT Versions;                               // TRANSPORT_TLS_12, TRANSPORT_TLS_13 or both: the versions it negotiates
+	bool SetGroups;                              // New sets the key exchange groups of the machine (TransportTlsSetGroups)
+	bool BreakBinding;                           // A client that changes the binding it computes: for the mismatch test
+} TRANSPORT_TLS_CONFIG;
+
+// What a TLS handshake gave: the version, the cipher suite and the key exchange group that the
+// server chose. The group is the one of the ServerHello on the wire (TransportTlsParseHello), which
+// the client reads among the server's records and the server among its own.
+typedef struct TRANSPORT_TLS_INFO {
+	UINT Version;     // TRANSPORT_TLS_12 or TRANSPORT_TLS_13
+	UINT CipherSuite; // The TLS cipher suite (0x1302 TLS_AES_256_GCM_SHA384, ...)
+	UINT Group;       // The key exchange group of TLS 1.3 (CRYPTO_GROUP_*), 0 for TLS 1.2
+	bool Retried;     // The server asked for a key share of another group first (a HelloRetryRequest)
+} TRANSPORT_TLS_INFO;
+
+// Fill cfg with the defaults: the name "tls", TLS 1.2 and 1.3, the groups set, the thumbprint of the
+// server certificate (hex, spaces and colons ignored) and the store it is in
+void TransportTlsDefaultConfig(TRANSPORT_TLS_CONFIG *cfg, const char *thumbprint, bool machine_store);
+
+// A server transport that listens with the certificate cfg names, or a client transport that dials
+// and pins that certificate; each acquires its own Schannel credential. New returns NULL when the
+// thumbprint is malformed, or the server's certificate is not in the store or has no key in a KSP.
+// The address of Listen and Dial is a host and a port ("vpn.example:443", "[::1]:443", ":443" to
+// listen on every address of both families); TransportTlsBoundPort gives the port the last listener
+// of a server transport bound, for a listener on port 0. LastHandshake gives what the last handshake
+// that completed on the transport gave, false before there was one. Free closes the transport once
+// its listeners and streams are closed.
+TRANSPORT *TransportTlsServerNew(const TRANSPORT_TLS_CONFIG *cfg);
+TRANSPORT *TransportTlsClientNew(const TRANSPORT_TLS_CONFIG *cfg);
+USHORT TransportTlsBoundPort(TRANSPORT *t);
+bool TransportTlsLastHandshake(TRANSPORT *t, TRANSPORT_TLS_INFO *info);
+void TransportTlsFree(TRANSPORT *t);
+
+// Put the transport's key exchange groups first in the machine's Schannel group list:
+// X25519MLKEM768 where the OS has ML-KEM (CryptoMlKemAvailable), then X25519, then the other groups
+// of the list in their order (the list of Windows 11 24H2 where the machine has none of its own). It
+// needs administrator rights and gives TRANSPORT_TLS_GROUPS_*.
+UINT TransportTlsSetGroups();
+
+// Read the first ServerHello, or HelloRetryRequest, of data: size bytes of the TLS records a server
+// sends, ChangeCipherSpec records before it skipped. It fills info with the version (that of
+// supported_versions where it is there), the cipher suite, the group of key_share (TLS 1.3) and
+// whether it is a HelloRetryRequest; false, with info untouched, when data does not start with a
+// whole record holding a whole ServerHello.
+bool TransportTlsParseHello(const UCHAR *data, UINT size, TRANSPORT_TLS_INFO *info);
+
 #endif // CORE_TRANSPORT_H
