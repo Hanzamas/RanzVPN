@@ -23,8 +23,9 @@ import (
 // configured, over OTLP; it sends the flow records to the IPFIX targets; and it raises Events,
 // which the event feed (telemetry.Feed) delivers to the webhook targets and counts: a node that
 // has lost its control stream for NodeDownAfter, a node that reports a gateway failover, the
-// automatic rollback of an unconfirmed revision (revision.go), and whatever a feature raises with
-// Raise, such as the IPAM pool that nears exhaustion (SDN-10).
+// automatic rollback of an unconfirmed revision (revision.go) and the IPAM pool that a change of
+// the intent takes to its threshold (ipam.go, SDN-10). The last two are stored in the transaction
+// of the change that makes them; the first two are raised with Raise.
 
 // DefaultNodeDownAfter is how long a node that had a control stream may have none before the
 // controller raises a NodeDown event. A node opens a new stream within seconds when its old one
@@ -109,9 +110,10 @@ func plain(stored []export.Stored) []export.Target {
 }
 
 // Raise records ev as an event (ADR-0030 decision 5): the store keeps it, `ranz get events` lists
-// it, and the event feed delivers it to the webhooks and counts it in ranz_events_total. A feature
-// that detects a condition raises it here, for example the IPAM pool that nears exhaustion
-// (event.PoolNearExhaustion). The time of ev is now when it is left out.
+// it, and the event feed delivers it to the webhooks and counts it in ranz_events_total. A
+// condition that no change of the intent makes is raised here, for example a node that went down
+// (event.NodeDown); the event of a change of the intent is stored with the change instead. The time
+// of ev is now when it is left out.
 func (c *Controller) Raise(ctx context.Context, ev event.Event) error {
 	if ev.Type == "" {
 		return fmt.Errorf("%w: an event needs a type", intent.ErrInvalid)

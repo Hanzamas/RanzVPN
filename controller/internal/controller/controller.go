@@ -108,7 +108,8 @@ type Config struct {
 	// controller raises a node-down event (ADR-0030); DefaultNodeDownAfter when zero.
 	NodeDownAfter time.Duration
 	// EventPoll is how often the event feed looks for new events and for webhook deliveries that
-	// are due; telemetry.DefaultPoll when zero. An event raised through Raise wakes it at once.
+	// are due; telemetry.DefaultPoll when zero. An event that Raise or a change of the intent
+	// records wakes it at once.
 	EventPoll time.Duration
 	// ExportInterval is how often an OTLP target is sent the metrics; telemetry.DefaultExportInterval
 	// when zero.

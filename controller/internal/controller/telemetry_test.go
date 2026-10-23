@@ -35,6 +35,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/export"
+	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
@@ -266,18 +267,24 @@ func TestEventsReachWebhookAndMetrics(t *testing.T) {
 		t.Errorf("Content-Type is %q", got)
 	}
 
-	// An IPAM pool that nears exhaustion, which SDN-10 raises through Raise
-	if err := h.c.Raise(context.Background(), event.Event{Type: event.PoolNearExhaustion, Subject: "corp-lan", Message: "the pool 10.10.0.0/24 of Network corp-lan is 91% used"}); err != nil {
+	// An IPAM pool that nears exhaustion: a change of the intent takes the pool of a new Network to
+	// its threshold, 3 of its 6 addresses, and SDN-10 stores the event with the change
+	pool, err := h.api.Apply(context.Background(), intent.Document{Resources: []intent.Resource{
+		{Kind: intent.KindNetwork, Name: "lan", Spec: json.RawMessage(`{"vrf": "corp", "ipv4Pool": "10.60.0.0/29", "poolThreshold": 50}`)},
+		ipamNode(nodeName(2), nodeKey(2), `"vrfs": ["corp"]`),
+		ipamNode(nodeName(3), nodeKey(3), `"vrfs": ["corp"]`),
+	}})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if ev, _ := w.next(t); ev.Type != event.PoolNearExhaustion || ev.Subject != "corp-lan" {
-		t.Errorf("the webhook got %+v for the pool", ev)
+	if ev, _ := w.next(t); ev.Type != event.PoolNearExhaustion || ev.Revision != pool.Revision || !strings.Contains(ev.Message, `Network "lan"`) {
+		t.Errorf("the webhook got %+v for the pool of revision %d", ev, pool.Revision)
 	}
 
 	// An apply that nobody confirms is rolled back by the controller
 	h.applyConfirm("apply3.json", time.Second)
 	ev, _ = w.next(t)
-	if ev.Type != event.AutomaticRollback || ev.Reverts != 2 || ev.Revision != 3 {
+	if ev.Type != event.AutomaticRollback || ev.Reverts != pool.Revision+1 || ev.Revision != pool.Revision+2 {
 		t.Errorf("the webhook got %+v for the automatic rollback", ev)
 	}
 
@@ -321,15 +328,15 @@ func TestWebhookIsTriedAgain(t *testing.T) {
 	w := newWebhook(t)
 	w.fail.Store(1)
 	h.putTarget(export.Target{Name: "alerts", Kind: export.KindWebhook, URL: w.URL})
-	for _, subject := range []string{"corp-lan", "corp-dmz"} {
-		if err := h.c.Raise(context.Background(), event.Event{Type: event.PoolNearExhaustion, Subject: subject, Message: subject + " is nearly full"}); err != nil {
+	for _, subject := range []string{"gw-1", "gw-2"} {
+		if err := h.c.Raise(context.Background(), event.Event{Type: event.GatewayFailover, Node: "branch-1", Subject: subject, Message: "traffic moved to " + subject}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	first, call := w.next(t)
 	second, _ := w.next(t)
-	if first.Subject != "corp-lan" || second.Subject != "corp-dmz" {
-		t.Errorf("the webhook got %q and then %q, want corp-lan and then corp-dmz", first.Subject, second.Subject)
+	if first.Subject != "gw-1" || second.Subject != "gw-2" {
+		t.Errorf("the webhook got %q and then %q, want gw-1 and then gw-2", first.Subject, second.Subject)
 	}
 	if call.header.Get("X-Ranz-Signature") != "" {
 		t.Errorf("a webhook with no secret got the signature %q", call.header.Get("X-Ranz-Signature"))
