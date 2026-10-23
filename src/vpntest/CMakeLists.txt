@@ -78,6 +78,9 @@ ranz_add_executable(vpntest HAMCORE
     # Named TLS transport test of CORE-S2-1 (#69): the Schannel TLS-443 listener, its key exchange groups, the Noise
     # session over it, the pin and the fallback when UDP is blocked
     tlstest.c
+    # Named lossy-link test of CORE-S2-1 (#69): the ingress queue (CoDel) and an inner TCP over the TLS-443 path on a
+    # simulated lossy link
+    lossylink.c
     # Named hardened licence gate test of SEC-4 (#282): drives ranzguard under the Win32 debug API
     harden.c
     # Named HTTP listener test of REL-6 (#51)

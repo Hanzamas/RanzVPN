@@ -20,6 +20,10 @@
 //   with its listener, and a dial where nothing listens, a cancelled one and malformed addresses fail;
 // - the fallback: of a client's list with a QUIC entry that never connects (UDP blocked) and the TLS entry, TLS wins
 //   the race and carries the session;
+// - the ingress queue (the TCP-over-TCP amendment of ADR-0022): the data records of a session over TLS-443 wait in a
+//   queue that CoDel runs. While the server reads nothing, the records stand in the queue and Send does not wait for
+//   the stream; while it reads slowly, CoDel drops records at the head; every record that the queue lets out reaches
+//   the server, in order;
 // - the ServerHello parser on records made here: TLS 1.3, after a ChangeCipherSpec, a HelloRetryRequest, TLS 1.2, and
 //   records that are cut short or are no ServerHello.
 // The group list is the machine's: the test needs administrator rights, and an ECC Curve Order policy must not override
@@ -55,6 +59,17 @@
 #define	TLSTEST_GROUPS_KEY	L"SYSTEM\\CurrentControlSet\\Control\\Cryptography\\Configuration\\Local\\SSL\\00010002"
 #define	TLSTEST_POLICY_KEY	L"SOFTWARE\\Policies\\Microsoft\\Cryptography\\Configuration\\SSL\\00010002"
 #define	TLSTEST_GROUPS_SIZE	2048				// Characters of a group list
+#define	TLSTEST_QUEUE_RECORD	4096			// Bytes of a data record of the queue case
+#define	TLSTEST_FILL		10000				// The queue case fills the buffers of the stream within this time (ms) ...
+#define	TLSTEST_SLOW_PHASE	1000				// ... then the server reads slowly for this long (ms) ...
+#define	TLSTEST_SLOW_READ	5					// ... at most a record every this many ms
+#define	TLSTEST_STANDING	100					// Records that stand in the queue once the stream stalled
+#define	TLSTEST_SEND_MAX	250					// A Send never takes this long (ms): it does not wait for the stream
+
+// How the server of the queue case reads
+#define	TLSTEST_PAUSE		0					// Nothing
+#define	TLSTEST_SLOW		1					// At most a record every TLSTEST_SLOW_READ ms
+#define	TLSTEST_FAST		2					// As fast as the records come
 
 // The state of the test
 typedef struct TLSTEST_CTX
@@ -85,6 +100,20 @@ typedef struct TLSTEST_RESULT
 	TRANSPORT_TLS_INFO Client;			// What the client's handshake gave
 	TRANSPORT_TLS_INFO Server;			// ... and the server's
 } TLSTEST_RESULT;
+
+// The server end of the queue case, on a thread of its own: it accepts one stream, runs the responder, opens the data
+// stream and reads the client's data records as the client tells it (Pace), until the client closes
+typedef struct TLSTEST_QUEUE_SERVER
+{
+	TRANSPORT_LISTENER *Listener;		// It accepts one stream here
+	UCHAR Key[NOISE_KEY_SIZE];			// The responder's static key
+	UCHAR Pub[NOISE_KEY_SIZE];			// ... and its public half
+	volatile LONG Pace;					// TLSTEST_PAUSE, TLSTEST_SLOW or TLSTEST_FAST
+	bool Accepted;						// The Noise handshake completed
+	UINT64 NumReceived;					// The data records it received ...
+	bool InOrder;						// ... each of the size the client sends, with a number above the one before
+	bool Closed;						// The client's close record came
+} TLSTEST_QUEUE_SERVER;
 
 static bool TlsTestCheck(TLSTEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
 static bool TlsTestCheck(TLSTEST_CTX *ctx, bool ok, char *what, char *fmt, ...)
@@ -997,6 +1026,183 @@ static void TlsTestFallback(TLSTEST_CTX *ctx, TRANSPORT *server, TRANSPORT *clie
 	Free(srv);
 }
 
+// The server thread of the queue case: it reads nothing while the client says so, then a record every TLSTEST_SLOW_READ
+// ms at most, then as fast as they come, until the close record
+static void TlsTestQueueServerThread(THREAD *thread, void *param)
+{
+	TLSTEST_QUEUE_SERVER *srv = (TLSTEST_QUEUE_SERVER *)param;
+	TRANSPORT_NOISE *n = ZeroMalloc(sizeof(TRANSPORT_NOISE));
+	UCHAR *buf = ZeroMalloc(NOISE_MAX_PAYLOAD);
+	NOISE_SESSION_CONFIG c;
+	UINT last = 0;
+
+	TlsTestConfig(&c, srv->Key, NULL);
+	srv->InOrder = true;
+	srv->Accepted = TransportNoiseAccept(n, TransportAccept(srv->Listener, TLSTEST_TIMEOUT), &c, TLSTEST_TIMEOUT);
+	if (srv->Accepted)
+	{
+		TransportNoiseAcceptLogin(n);
+	}
+
+	while (srv->Accepted)
+	{
+		LONG pace = InterlockedCompareExchange(&srv->Pace, 0, 0);
+		UINT size = 0, seq = 0;
+
+		if (pace == TLSTEST_PAUSE)
+		{
+			SleepThread(10);
+			continue;
+		}
+
+		UINT ret = TransportNoiseReceive(n, buf, NOISE_MAX_PAYLOAD, &size, TLSTEST_TIMEOUT);
+		if (ret == NOISE_RECEIVE_CLOSE)
+		{
+			srv->Closed = true;
+		}
+		if (ret != NOISE_RECEIVE_DATA)
+		{
+			break;
+		}
+
+		Copy(&seq, buf, sizeof(seq));
+		if (size != TLSTEST_QUEUE_RECORD || (srv->NumReceived != 0 && seq <= last))
+		{
+			srv->InOrder = false;
+		}
+		last = seq;
+		srv->NumReceived++;
+
+		if (pace == TLSTEST_SLOW)
+		{
+			SleepThread(TLSTEST_SLOW_READ);
+		}
+	}
+
+	TransportNoiseClose(n);
+	Free(buf);
+	Free(n);
+}
+
+// Send data record seq of the queue case, and keep the longest time a Send took (us)
+static void TlsTestQueueSend(TRANSPORT_NOISE *n, UCHAR *record, UINT seq, UINT64 *longest)
+{
+	Copy(record, &seq, sizeof(seq));
+
+	UINT64 start = TransportQueueNow();
+	TransportNoiseSend(n, NOISE_RECORD_DATA, record, TLSTEST_QUEUE_RECORD);
+	UINT64 took = TransportQueueNow() - start;
+
+	if (took > *longest)
+	{
+		*longest = took;
+	}
+}
+
+// The ingress queue of a session over TLS-443 (the TCP-over-TCP amendment of ADR-0022): the server first reads nothing,
+// so the stream stalls once its buffers are full and the client's records stand in the queue, while Send keeps
+// returning at once; then it reads slowly, so the records that leave the queue waited far longer than the target of
+// CoDel, which drops records at the head; then it reads as fast as they come, so the queue empties. Every record that
+// the queue let out reaches the server, in order, and every record sent is one that left, one that CoDel dropped or
+// one dropped at the limit of the queue.
+static void TlsTestQueue(TLSTEST_CTX *ctx, TRANSPORT *server, TRANSPORT *client)
+{
+	TLSTEST_QUEUE_SERVER *srv = ZeroMalloc(sizeof(TLSTEST_QUEUE_SERVER));
+	TRANSPORT_NOISE *n = ZeroMalloc(sizeof(TRANSPORT_NOISE));
+	UCHAR *record = ZeroMalloc(TLSTEST_QUEUE_RECORD);
+	UCHAR key[NOISE_KEY_SIZE], pub[NOISE_KEY_SIZE];
+	char address[TRANSPORT_ADDRESS_SIZE];
+	NOISE_SESSION_CONFIG c;
+	TRANSPORT_QUEUE_STATUS st;
+	UINT64 longest = 0, dropped = 0;
+	UINT seq = 0;
+
+	Print("[the ingress queue on TLS-443: a server that reads slower than the client sends]\n");
+
+	Zero(&st, sizeof(st));
+	CryptoX25519GenerateKey(srv->Key, srv->Pub);
+	CryptoX25519GenerateKey(key, pub);
+	TlsTestConfig(&c, key, srv->Pub);
+	srv->Pace = TLSTEST_PAUSE;
+	srv->Listener = TransportListen(server, TLSTEST_LISTEN);
+	THREAD *thread = (srv->Listener != NULL ? NewThread(TlsTestQueueServerThread, srv) : NULL);
+	Format(address, sizeof(address), "127.0.0.1:%u", (UINT)TransportTlsBoundPort(server));
+
+	bool connected = (thread != NULL && TransportNoiseConnect(n, TransportDial(client, address, NULL), &c, TLSTEST_TIMEOUT));
+	bool queued = (connected && TransportNoiseQueueStatus(n, &st));
+	if (TlsTestCheck(ctx, connected && queued, "  the session over TLS-443 has an ingress queue", "connected %u, queue %u", (UINT)connected, (UINT)queued))
+	{
+		// The server reads nothing: the buffers of the stream fill, and the records stand in the queue
+		UINT64 end = Tick64() + TLSTEST_FILL;
+		bool standing = false;
+		while (standing == false && Tick64() < end)
+		{
+			TlsTestQueueSend(n, record, seq++, &longest);
+			if (seq % 16 == 0)
+			{
+				SleepThread(1);
+				TransportNoiseQueueStatus(n, &st);
+				standing = (st.NumRecords >= TLSTEST_STANDING);
+			}
+		}
+		TlsTestCheck(ctx, standing, "  while the server reads nothing, the records stand in the queue and Send keeps returning", "%u records wait after %u sent",
+			st.NumRecords, seq);
+
+		// The server reads slowly: the records leave far later than the target, and CoDel drops some at the head
+		InterlockedExchange(&srv->Pace, TLSTEST_SLOW);
+		end = Tick64() + TLSTEST_SLOW_PHASE;
+		while (Tick64() < end)
+		{
+			TlsTestQueueSend(n, record, seq++, &longest);
+			if (seq % 16 == 0)
+			{
+				SleepThread(1);
+			}
+		}
+		TransportNoiseQueueStatus(n, &st);
+		dropped = st.NumDropped;
+
+		// The server reads as fast as the records come: the queue empties
+		InterlockedExchange(&srv->Pace, TLSTEST_FAST);
+		end = Tick64() + TLSTEST_TIMEOUT;
+		do
+		{
+			SleepThread(10);
+			TransportNoiseQueueStatus(n, &st);
+		}
+		while (st.NumRecords != 0 && Tick64() < end);
+
+		Print("  %u records sent: %I64u left the queue, %I64u dropped by CoDel (%I64u of them while the server read slowly), %I64u at the limit; "
+			"the longest Send took %I64u us\n", seq, st.NumPopped, st.NumDropped, dropped, st.NumOverflow, longest);
+		TlsTestCheck(ctx, dropped != 0, "  while the server reads slowly, CoDel drops records at the head of the queue", "none dropped");
+		TlsTestCheck(ctx, longest < (UINT64)TLSTEST_SEND_MAX * 1000, "  Send never waits for the stream", "the longest took %I64u us", longest);
+		TlsTestCheck(ctx, st.NumRecords == 0 && st.NumPushed == seq && st.NumPushed == st.NumPopped + st.NumDropped + st.NumOverflow,
+			"  every record sent left the queue, was dropped by CoDel or was dropped at the limit", "%u wait, %I64u pushed", st.NumRecords, st.NumPushed);
+	}
+
+	// The close record comes after the records that wait
+	TransportNoiseClose(n);
+	if (thread != NULL)
+	{
+		WaitThread(thread, INFINITE);
+		ReleaseThread(thread);
+	}
+	TransportCloseListener(srv->Listener);
+
+	if (connected && queued)
+	{
+		TlsTestCheck(ctx, srv->Accepted && srv->Closed && srv->InOrder && srv->NumReceived == st.NumPopped,
+			"  every record that left the queue reached the server, in order, and the close record after them", "received %I64u of %I64u, in order %u, closed %u",
+			srv->NumReceived, st.NumPopped, (UINT)srv->InOrder, (UINT)srv->Closed);
+	}
+
+	Zero(key, sizeof(key));
+	Zero(srv->Key, sizeof(srv->Key));
+	Free(record);
+	Free(n);
+	Free(srv);
+}
+
 // A certificate that a PFX brought: imported into the KSP (CryptoCertImportPfx), put in the store, and served with
 // TLS 1.3
 static void TlsTestPfxServer(TLSTEST_CTX *ctx)
@@ -1094,6 +1300,7 @@ void tls_test(UINT num, char **arg)
 				TlsTestPin(ctx, server, pinner, breaker);
 				TlsTestListener(ctx, server, client);
 				TlsTestFallback(ctx, server, client);
+				TlsTestQueue(ctx, server, client);
 				TlsTestPfxServer(ctx);
 			}
 
