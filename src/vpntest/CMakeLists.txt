@@ -79,13 +79,16 @@ ranz_add_executable(vpntest HAMCORE
     httplistener.c
     # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz controller and ping each other
     sdntrace.c
+    # Named VXLAN test of SDN-62 (#289): the VXLAN module of the new core against harness VTEPs
+    vxlantest.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
-  # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked);
-  # netapi32: the local account that stands for a domain account (NetUserAdd)
+  # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN module for
+  # vxlantest.c; netapi32: the local account that stands for a domain account (NetUserAdd)
   LIBRARIES
     coretransport
     corenoise
     corecrypto
+    corevxlan
     "netapi32.lib"
   # The resources test (runtime.c) compares every hamcore file the executable serves with its source
   # file. A C-only definition, so the resource scripts of vpntest do not get the quoted path.

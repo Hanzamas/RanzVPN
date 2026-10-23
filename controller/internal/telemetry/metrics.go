@@ -1,0 +1,62 @@
+package telemetry
+
+import "strings"
+
+// Kind tells how a metric moves.
+type Kind int
+
+const (
+	// Counter only grows, except when the node that reports it restarts (a counter reset).
+	Counter Kind = iota
+	// Gauge goes up and down.
+	Gauge
+)
+
+// Metric is one metric of the export. Its Name is the one of both exports: Prometheus calls a
+// counter ranz_<name>_total and a gauge ranz_<name>, and OTLP calls it ranz.<name> with the
+// underscores as dots. Labels are the names of the labels of its series, which Prometheus
+// writes as labels and OTLP as attributes.
+type Metric struct {
+	Name   string
+	Help   string
+	Unit   string
+	Kind   Kind
+	Labels []string
+}
+
+// Metrics is every metric that the controller exports. The counters of the nodes (ADR-0030
+// decision 1) come from the summaries that the nodes push; node_connected, events and
+// webhook_deliveries are the controller's own.
+var Metrics = []Metric{
+	{Name: "peer_packets", Help: "Packets of a node with a peer: tx from the node's host to the peer, rx from the peer to the node's host.", Unit: "{packet}", Kind: Counter, Labels: []string{"node", "peer", "direction"}},
+	{Name: "peer_bytes", Help: "Bytes of the packets of a node with a peer: tx from the node's host to the peer, rx from the peer to the node's host.", Unit: "By", Kind: Counter, Labels: []string{"node", "peer", "direction"}},
+	{Name: "vrf_packets", Help: "Packets of a node in a VRF: tx from the node's host into the overlay, rx from the overlay to the node's host.", Unit: "{packet}", Kind: Counter, Labels: []string{"node", "vrf", "direction"}},
+	{Name: "vrf_bytes", Help: "Bytes of the packets of a node in a VRF: tx from the node's host into the overlay, rx from the overlay to the node's host.", Unit: "By", Kind: Counter, Labels: []string{"node", "vrf", "direction"}},
+	{Name: "vrf_dropped_packets", Help: "Packets that a node dropped in a VRF.", Unit: "{packet}", Kind: Counter, Labels: []string{"node", "vrf"}},
+	{Name: "rule_packets", Help: "Packets that a policy rule matched on a node.", Unit: "{packet}", Kind: Counter, Labels: []string{"node", "vrf", "rule"}},
+	{Name: "rule_bytes", Help: "Bytes of the packets that a policy rule matched on a node.", Unit: "By", Kind: Counter, Labels: []string{"node", "vrf", "rule"}},
+	{Name: "node_connected", Help: "Whether a node has a control stream to the controller: 1 when it has, 0 when it has not.", Unit: "1", Kind: Gauge, Labels: []string{"node"}},
+	{Name: "events", Help: "Events that the controller raised, by type.", Unit: "{event}", Kind: Counter, Labels: []string{"type"}},
+	{Name: "webhook_deliveries", Help: "Deliveries of events to webhooks, by result: ok, failed (tried again later) or dropped (given up).", Unit: "{delivery}", Kind: Counter, Labels: []string{"webhook", "result"}},
+}
+
+// Sample is one series of a metric: its label values, in the order of the Labels of the metric
+// that Metric names, and its value.
+type Sample struct {
+	Metric string
+	Labels []string
+	Value  uint64
+}
+
+// PrometheusName is the name of m in the Prometheus text format.
+func (m Metric) PrometheusName() string {
+	if m.Kind == Counter {
+		return "ranz_" + m.Name + "_total"
+	}
+	return "ranz_" + m.Name
+}
+
+// OTLPName is the name of m in OTLP.
+func (m Metric) OTLPName() string {
+	return "ranz." + strings.ReplaceAll(m.Name, "_", ".")
+}

@@ -384,6 +384,9 @@ type harness struct {
 	// ULA of VRF default drawn from random.
 	defaults bool
 	random   io.Reader
+	// tune changes the Config of the controller before each start, for a test that needs a
+	// setting the others leave at its default (telemetry_test.go).
+	tune func(*controller.Config)
 }
 
 func newHarness(t *testing.T) *harness {
@@ -431,9 +434,13 @@ func (h *harness) start() {
 		h.t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(testWriter{h.t}, nil))
-	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key, Log: log, Schema: h.schema,
+	cfg := controller.Config{Store: st, Key: h.key, Log: log, Schema: h.schema,
 		LicenceKeys: []ed25519.PublicKey{testVendor.Public().(ed25519.PublicKey)}, Version: h.version, Revocations: h.revPath,
-		Defaults: h.defaults, Random: h.random})
+		Defaults: h.defaults, Random: h.random}
+	if h.tune != nil {
+		h.tune(&cfg)
+	}
+	c, err := controller.New(ctx, cfg)
 	if err != nil {
 		h.t.Fatal(err)
 	}
