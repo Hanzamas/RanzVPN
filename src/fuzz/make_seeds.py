@@ -965,6 +965,40 @@ def make_nat_seeds():
     seed('short_out.bin', vrf1 | out, ipv6(a6, b6, 58, icmp6(a6, b6, 128, 0, 0x4E410001, data))[:30])
 
 
+# ---------------------------------------------------------------------------
+# Switch module of the new core (src/Core/Switch.c SwitchInput): the first byte chooses the port of fuzz_switch.c (0 the
+# access port of VLAN 10, 1 the trunk port of VLANs 10, 20 and 30, 2 the trunk port of VLAN 20 with the native VLAN 10,
+# 3 a port without a member), the second moves its clock on by tens of ms (0xFF ages the MAC table after the frame, 0xFE
+# clears it), the rest is the frame
+# ---------------------------------------------------------------------------
+def switch_input(port, clock, frame):
+    return bytes([port, clock]) + frame
+
+
+def make_switch_seeds():
+    a, b = [10, 0, 0, 1], [10, 0, 0, 2]
+    arp = struct.pack('>HHBBH', 1, 0x0800, 6, 4, 1) + MAC_A + bytes(a) + b'\0' * 6 + bytes(b)
+    dgram = ipv4(a, b, 17, udp(a, b, 40000, 40001, b'ranz-switch'), 9)
+    mdns = bytes.fromhex('01005e0000fb')
+    netbios = bytes.fromhex('030000000001')
+    netbeui = (b'\xf0\xf0\x03' + bytes.fromhex('2c00ffef0a00000000000100') + b'RANZ-SERVER     ' + b'RANZ-CLIENT     ')
+    profinet = bytes.fromhex('8000') + b'\x80' * 8 + bytes.fromhex('12343500')
+    write_seed('fuzz_switch', 'access_broadcast_arp.bin', switch_input(0, 1, eth(BROADCAST, MAC_A, 0x0806, arp)))
+    write_seed('fuzz_switch', 'access_unicast_then_age.bin', switch_input(0, 0xFF, eth(MAC_B, MAC_A, 0x88B5, b'SW\x00\x01')))
+    write_seed('fuzz_switch', 'access_netbeui.bin', switch_input(0, 3, eth(netbios, MAC_A, len(netbeui), netbeui)))
+    write_seed('fuzz_switch', 'trunk_vlan20_udp.bin',
+               switch_input(1, 1, eth(MAC_B, MAC_A, 0x8100, struct.pack('>HH', 20, 0x0800) + dgram)))
+    write_seed('fuzz_switch', 'trunk_vlan30_then_clear.bin',
+               switch_input(1, 0xFE, eth(BROADCAST, MAC_B, 0x8100, struct.pack('>HH', 30, 0x88B5) + b'SW\x00\x02')))
+    write_seed('fuzz_switch', 'trunk_vlan_4095.bin',
+               switch_input(1, 0, eth(BROADCAST, MAC_B, 0x8100, struct.pack('>HH', 0x0FFF, 0x88B5) + b'SW\x00\x03')))
+    write_seed('fuzz_switch', 'trunk_tag_cut_short.bin', switch_input(1, 0, MAC_B + MAC_A + bytes.fromhex('8100001408')))
+    write_seed('fuzz_switch', 'native_multicast.bin', switch_input(2, 2, eth(mdns, MAC_B, 0x0800, dgram)))
+    write_seed('fuzz_switch', 'native_priority_tag_profinet.bin',
+               switch_input(2, 0, eth(MAC_A, MAC_B, 0x8100, struct.pack('>HH', 0xC000, 0x8892) + profinet)))
+    write_seed('fuzz_switch', 'no_member.bin', switch_input(3, 0, eth(BROADCAST, MAC_A, 0x88B5, b'SW\x00\x04')))
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     assert len(PEER_SIGNAL) == 99 and len(PEER_SIGNAL_ENVELOPE) == 180 and len(PEER_BIND_ENVELOPE) == 90
@@ -984,3 +1018,4 @@ if __name__ == '__main__':
     make_transport_seeds()
     make_vxlan_seeds()
     make_nat_seeds()
+    make_switch_seeds()
