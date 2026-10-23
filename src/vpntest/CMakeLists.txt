@@ -86,6 +86,9 @@ ranz_add_executable(vpntest HAMCORE
     vrftest.c
     # Named VXLAN test of SDN-62 (#289): the VXLAN module of the new core against harness VTEPs
     vxlantest.c
+    # Named 1:1 NAT and 4via6 test of SDN-6 (#182): the translations of the data plane against packets that the test
+    # builds, and two VRFs on one range reached through 4via6 and a LAN behind 1:1 NAT over the overlay
+    nattest.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
   # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN module for
   # vxlantest.c; netapi32: the local account that stands for a domain account (NetUserAdd)
