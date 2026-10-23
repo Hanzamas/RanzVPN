@@ -32,6 +32,14 @@
 # checks its flags (.github/scripts/binary-hardening.ps1). The arm64 runner has no rqlited, so it
 # tests the sidecar only.
 #
+# The three tools that succeed the vpncmd tools (SDN-53, #246) run as processes in both jobs, read
+# from outside: ranz doctor passes its six checks; ranz test throughput runs the test server and the
+# test client as two processes of the runner, which stand in for two nodes, and reports a rate; ranz
+# cert makes a CA and certificates that it signs. On Linux OpenSSL, an implementation of its own,
+# takes those certificates as a listener and as a trust store would. On Windows the certificates have
+# their keys in the Microsoft Software Key Storage Provider and their certificates in the My store,
+# and Schannel and the chain engine of Windows take them (.github/scripts/ranz-tools.ps1).
+#
 # The spike with the node (BGP on TCP 179, a prefix announced and withdrawn, a learned route
 # installed through IP Helper, the node starting ranz bgp) needs the C build and runs in
 # windows.yml (.github/scripts/bgp-spike.ps1).
@@ -42,7 +50,7 @@
 # path that they read: controller/ and ranz-bgp/, the two trees of the module; go.mod and go.sum;
 # proto/, the schema that go generate and the nanopb round trip read; tests/control/, the round
 # trip program; .gitattributes, which sets the line endings of the checkout; this file,
-# .github/scripts/controller-service.ps1, the binary hardening gate
+# .github/scripts/controller-service.ps1, .github/scripts/ranz-tools.ps1, the binary hardening gate
 # .github/scripts/binary-hardening.ps1, which windows.yml runs too, the fuzz targets, coverage
 # floors and accepted vulnerabilities of .github/quality and the scripts that read them. A pull
 # request that changes none of them (a C change under src/, or docs only) does not run this
@@ -64,6 +72,7 @@ on:
     - '.gitattributes'
     - '.github/workflows/ranz.yml'
     - '.github/scripts/controller-service.ps1'
+    - '.github/scripts/ranz-tools.ps1'
     - '.github/quality/fuzz-targets.txt'
     - '.github/quality/coverage-floors.txt'
     - '.github/quality/govulncheck-accepted.txt'
@@ -202,6 +211,85 @@ jobs:
         grep -q 'GoBGP' "$RUNNER_TEMP/NOTICE"
         grep -q 'Apache License' "$RUNNER_TEMP/NOTICE"
         cmp "$RUNNER_TEMP/NOTICE" controller/cmd/ranz/NOTICE
+    # The tools of SDN-53 (#246), read from outside. ranz cert makes a CA and the certificates that it
+    # signs, and OpenSSL takes them: openssl verify builds their chain (the trust store), an openssl
+    # s_server with a certificate (the listener) is accepted by an openssl s_client that trusts the CA
+    # only, and one that asks for a client certificate takes the one that ranz cert made. ranz doctor
+    # runs the six checks of the vpncmd Check command. ranz test throughput runs its server and its
+    # client as two processes of the runner, which stand in for two nodes, and reports a rate.
+    - name: The tools ranz cert, ranz doctor and ranz test throughput
+      run: |
+        ranz="$RUNNER_TEMP/linux-x64/ranz"
+        tools="$RUNNER_TEMP/tools"
+        mkdir -p "$tools"
+
+        "$ranz" cert -ca -cn "Ranz CI CA" -savecert "$tools/ca.pem" -savekey "$tools/ca.key"
+        "$ranz" cert -cn localhost -signcert "$tools/ca.pem" -signkey "$tools/ca.key" -savecert "$tools/server.pem" -savekey "$tools/server.key"
+        "$ranz" cert -cn ranz-client -signcert "$tools/ca.pem" -signkey "$tools/ca.key" -savecert "$tools/client.pem" -savekey "$tools/client.key"
+        "$ranz" cert -cn localhost -rsa 2048 -signcert "$tools/ca.pem" -signkey "$tools/ca.key" -savecert "$tools/rsa.pem" -savekey "$tools/rsa.key"
+        "$ranz" cert -ca -cn "Another CA" -savecert "$tools/other-ca.pem" -savekey "$tools/other-ca.key"
+        test "$(stat -c %a "$tools/server.key")" = 600
+
+        # The trust store: the chain of each certificate to the CA, and not to another one
+        openssl verify -CAfile "$tools/ca.pem" "$tools/server.pem" "$tools/client.pem" "$tools/rsa.pem"
+        if openssl verify -CAfile "$tools/other-ca.pem" "$tools/server.pem"; then
+          echo "::error::openssl verified a certificate of ranz cert against another CA"
+          exit 1
+        fi
+
+        # The listener: an OpenSSL server with a certificate and its key takes one connection, and an
+        # OpenSSL client with the arguments after the fourth tries it until the server is up
+        try_tls() {
+          port="$1"; cert="$2"; key="$3"; server_args="$4"; shift 4
+          openssl s_server -accept "127.0.0.1:$port" -cert "$cert" -key "$key" $server_args -naccept 1 -quiet > "$tools/s_server-$port.out" 2>&1 &
+          server=$!
+          ok=1
+          for i in $(seq 1 20); do
+            if openssl s_client -connect "127.0.0.1:$port" "$@" -brief < /dev/null > "$tools/s_client-$port.out" 2>&1; then
+              ok=0
+              break
+            fi
+            sleep 0.5
+          done
+          cat "$tools/s_client-$port.out"
+          kill "$server" 2> /dev/null || true
+          wait "$server" 2> /dev/null || true
+          return $ok
+        }
+        try_tls 19443 "$tools/server.pem" "$tools/server.key" "" -CAfile "$tools/ca.pem" -verify_return_error -verify_hostname localhost
+        grep -q 'Verification: OK' "$tools/s_client-19443.out"
+        try_tls 19444 "$tools/rsa.pem" "$tools/rsa.key" "" -CAfile "$tools/ca.pem" -verify_return_error -verify_hostname localhost
+        grep -q 'Verification: OK' "$tools/s_client-19444.out"
+        # The listener asks for a client certificate and takes the one of ranz cert. TLS 1.2 tells the
+        # client at once if the server refused its certificate.
+        try_tls 19445 "$tools/server.pem" "$tools/server.key" "-Verify 1 -verify_return_error -CAfile $tools/ca.pem -tls1_2" \
+          -CAfile "$tools/ca.pem" -verify_return_error -verify_hostname localhost -cert "$tools/client.pem" -key "$tools/client.key" -tls1_2
+        grep -q 'Verification: OK' "$tools/s_client-19445.out"
+
+        "$ranz" doctor > "$tools/doctor.out"
+        cat "$tools/doctor.out"
+        for title in "Kernel System" "Memory Operation System" "ANSI / Unicode string processing system" "File system" "Thread processing system" "Network system"; do
+          grep -q "Checking '$title'... Pass" "$tools/doctor.out"
+        done
+        grep -q 'All checks passed' "$tools/doctor.out"
+
+        "$ranz" test throughput -listen 127.0.0.1:19821 > "$tools/throughput-server.out" 2>&1 &
+        server=$!
+        for i in $(seq 1 50); do
+          grep -q 'serving on' "$tools/throughput-server.out" && break
+          sleep 0.2
+        done
+        grep -q 'serving on' "$tools/throughput-server.out"
+        "$ranz" test throughput -connections 8 -span 3s 127.0.0.1:19821 > "$tools/throughput.out"
+        cat "$tools/throughput.out"
+        for row in Download Upload Total; do
+          grep -Eq "^ +$row +[0-9]+ +[0-9,]+ bytes +[0-9.]+ [KMGT]?bps" "$tools/throughput.out"
+        done
+        "$ranz" test throughput -json -type upload -connections 2 -span 1s 127.0.0.1:19821 > "$tools/throughput.json"
+        python -c 'import json, sys; r = json.load(open(sys.argv[1])); assert r["upload"]["connections"] == 2 and r["upload"]["bytes"] > 0 and r["upload"]["bps"] > 0 and r["download"]["connections"] == 0, r' "$tools/throughput.json"
+        kill -TERM "$server"
+        wait "$server"
+        cat "$tools/throughput-server.out"
     # -race is the race detection of ADR-0040 item 4 for the Go code; the profile is read by the
     # coverage floor step
     - name: Test
@@ -372,6 +460,17 @@ jobs:
         $notice = (& $ranz notice | Out-String)
         if ($LASTEXITCODE -ne 0 -or $notice -notmatch 'GoBGP' -or $notice -notmatch 'Apache License') { throw 'ranz notice does not print the licence of GoBGP' }
         Write-Host 'ranz: one version for every subcommand, the subcommands answer, the NOTICE has the licence of GoBGP'
+    # The tools of SDN-53 (#246) as processes, natively on this architecture: ranz doctor passes its
+    # six checks, ranz test throughput reports a rate between its server and its client, which are two
+    # processes of the runner, and ranz cert makes a CA and a certificate that it signs with their keys
+    # in the Microsoft Software Key Storage Provider and the certificates in the My store. certutil
+    # finds their keys, Schannel serves with the certificate of the store, and the chain engine of
+    # Windows takes it for a client whose only root is the CA (.github/scripts/ranz-tools.ps1).
+    - name: The tools ranz cert, ranz doctor and ranz test throughput
+      shell: pwsh
+      timeout-minutes: 10
+      run: |
+        ./.github/scripts/ranz-tools.ps1 -Ranz build\ranz\ranz.exe
     # The exploit-mitigation flags of ADR-0039 decision 1 (SEC-1, #279) on the shipped executable,
     # read with dumpbin (.github/scripts/binary-hardening.ps1): the Go toolchain gives them ASLR and
     # DEP, and the exceptions of the script say why not CFG, CET, /GS and /sdl. ranz-nodesim, a

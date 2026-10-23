@@ -37,6 +37,7 @@ on:
     - 'src/bin/hamcore/**'
     - '!.github/workflows/ranz.yml'
     - '!.github/scripts/controller-service.ps1'
+    - '!.github/scripts/ranz-tools.ps1'
     - '!.github/workflows/move-only.yml'
     - '!.github/scripts/move-only-check.py'
     - '!.github/scripts/move-only-check-test.py'
