@@ -50,9 +50,9 @@ type Options struct {
 	started func(*server.BgpServer)
 }
 
-// Version names ranz-bgp and the GoBGP it embeds.
+// Version names ranz bgp, the program that runs the sidecar, and the GoBGP it embeds.
 func Version() string {
-	v := "ranz-bgp"
+	v := "ranz bgp"
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		for _, d := range bi.Deps {
 			if d.Path == "github.com/osrg/gobgp/v4" {

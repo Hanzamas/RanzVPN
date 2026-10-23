@@ -3,7 +3,7 @@ param(
 	[string] $Arm64Dir,     # The Binaries-arm64 artifact (the same executables for arm64)
 	[string] $Wxs,          # .github/signing/signing-proof.wxs
 	[string] $LicenseFile,  # The LICENSE of the repository (unused payload, kept for parity with the release spec)
-	[string] $GoModuleDir,  # ranz-bgp/ (the shipped Go sidecar, for the symbol-strip check)
+	[string] $GoModuleDir,  # The Go module, the repository root (ranz, the shipped Go executable, for the symbol-strip check)
 	[string] $OutDir        # Work directory: the signed copies and the MSI
 )
 
@@ -13,8 +13,8 @@ param(
 #   2. run the self-integrity check on a signed binary (it passes) and on a copy whose .text was changed
 #      (it takes the degrade-or-deceive path of ADR-0036, not a crash);
 #   3. check the shipped binaries carry no symbols and ship no public PDB: the C executables embed no
-#      symbol table and the MSI holds no PDB (their symbols stay in a private PDB), and the Go sidecar
-#      built with -trimpath and -ldflags "-s -w" has no symbol table.
+#      symbol table and the MSI holds no PDB (their symbols stay in a private PDB), and ranz, the one
+#      Go executable (ONE-1, #310), built with -trimpath and -ldflags "-s -w" has no symbol table.
 
 $ErrorActionPreference = 'Stop'
 # Native exit codes are checked explicitly below (so "go tool nm", which exits 1 when a binary has no
@@ -219,19 +219,19 @@ while ($null -ne ($rec = $view.Fetch())) {
 if ($pdbInMsi.Count -gt 0) { throw "the MSI ships a PDB: $($pdbInMsi -join ', ')" }
 Write-Host 'the MSI ships no PDB (the C PDB is kept private)'
 
-# The Go sidecar: built with -trimpath and -ldflags "-s -w", go tool nm reports no symbol table
+# ranz, the one Go executable: built with -trimpath and -ldflags "-s -w", go tool nm reports no symbol table
 Push-Location $GoModuleDir
 try {
 	foreach ($goarch in @('amd64', 'arm64')) {
-		$goexe = Join-Path $OutDir "ranz-bgp-$goarch.exe"
+		$goexe = Join-Path $OutDir "ranz-$goarch.exe"
 		$env:GOOS = 'windows'
 		$env:GOARCH = $goarch
 		$env:CGO_ENABLED = '0'
-		go build -trimpath -ldflags '-s -w' -o $goexe ./cmd/ranz-bgp
+		go build -trimpath -ldflags '-s -w' -o $goexe ./controller/cmd/ranz
 		if ($LASTEXITCODE -ne 0) { throw "go build (-trimpath -ldflags '-s -w') failed for $goarch (exit $LASTEXITCODE)" }
 		$nm = (go tool nm $goexe 2>&1 | Out-String)
-		if ($nm -notmatch 'no symbols') { throw "ranz-bgp ($goarch) still has a symbol table after -ldflags '-s -w':`n$nm" }
-		Write-Host "ranz-bgp ($goarch): -trimpath -ldflags '-s -w', no symbol table"
+		if ($nm -notmatch 'no symbols') { throw "ranz ($goarch) still has a symbol table after -ldflags '-s -w':`n$nm" }
+		Write-Host "ranz ($goarch): -trimpath -ldflags '-s -w', no symbol table"
 	}
 } finally {
 	Pop-Location

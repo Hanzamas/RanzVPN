@@ -1,6 +1,6 @@
-// Package sidecar is ranz-bgp, the BGP sidecar of a Ranz node (ADR-0010, ADR-0022, CORE-S7-1 #82):
-// GoBGP as a library, peering with the operator's own routers, driven by the node over a local
-// named pipe. The node installs the learned routes into Windows through IP Helper; the sidecar
+// Package sidecar is `ranz bgp`, the BGP sidecar of a Ranz node (ADR-0010, ADR-0022, CORE-S7-1
+// #82): GoBGP as a library, peering with the operator's own routers, driven by the node over a
+// local named pipe. The node installs the learned routes into Windows through IP Helper; the sidecar
 // installs nothing (no FIB), so there is no BGP in the node and no RRAS.
 //
 // The protocol is JSON, one object per line (UTF-8, at most MaxLine bytes with its newline), and
@@ -19,7 +19,7 @@
 //
 // From the sidecar:
 //
-//	ready      BGP runs with the settings of start: version (of ranz-bgp and GoBGP) and protocol
+//	ready      BGP runs with the settings of start: version (of ranz bgp and GoBGP) and protocol
 //	peer       the session with peer (and its asn) is now in state: idle, connect, active,
 //	           opensent, openconfirm or established
 //	learned    the best route of the peers to prefix is now via next_hop, learned from peer

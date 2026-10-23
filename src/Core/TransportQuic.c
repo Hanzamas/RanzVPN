@@ -3,9 +3,10 @@
 // signed msquic.dll (the Schannel build). A listener presents as an HTTP/3 server, the ALPN "h3",
 // a real certificate and BBR where the build has it, so its posture equals ordinary Windows
 // HTTP/3. One reliable bidirectional stream of a connection carries the session layer, so the
-// Noise session (TransportNoise.c) runs over it unchanged: the handshake, the Login and the
-// control stream. The data stream of CORE-S1-2 (#68) rides the QUIC DATAGRAM frames, which the
-// connection advertises here. The channel binding of a stream is the tls-server-end-point of the
+// Noise session (TransportNoise.c) runs over it unchanged: the handshake, the Login, the control
+// stream and the data stream, whose frames enter the Hub (CORE-S1-2, #68). The connection
+// advertises the QUIC DATAGRAM frames here, which no data path takes yet. The channel binding of
+// a stream is the tls-server-end-point of the
 // pinned server certificate (RFC 5929): both ends compute it from the certificate msquic presents,
 // because Schannel exposes no RFC 8446 exporter to msquic yet (the CORE-S1-1 spike of ADR-0022,
 // amendment of 2026-10-15). The client pins the server certificate and refuses any other, and the
@@ -269,7 +270,7 @@ static bool QuicCertBinding(PCCERT_CONTEXT cert, UCHAR *binding, UINT *size) {
 //
 
 // Fill a QUIC_SETTINGS for the transport: the idle timeout, the peer stream limit so the client may
-// open the control stream, the datagram receive the data path of CORE-S1-2 uses, and BBR when bbr
+// open the control stream, the datagram receive that the connection advertises, and BBR when bbr
 // is set. The CongestionControlAlgorithm field takes the BBR value (1) directly, so no preview build
 // of the header is needed; a msquic without BBR fails the open, and the caller retries without it.
 static void QuicMakeSettings(QUIC_NET *net, bool bbr, QUIC_SETTINGS *settings) {
@@ -625,7 +626,7 @@ static UINT QuicStreamBinding(void *stream, UCHAR *binding, UINT max, UINT *size
 
 static bool QuicStreamRekey(void *stream) {
 	// QUIC holds the keys; the outer key update is QUIC_PARAM_CONN_FORCE_KEY_UPDATE of the private
-	// header, which the data path of CORE-S1-2 drives. The session asks for it on its schedule, and
+	// header, which this transport does not set yet. The session asks for it on its schedule, and
 	// a missing update does not fail the session here.
 	UNREFERENCED_PARAMETER(stream);
 	return true;

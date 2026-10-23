@@ -1,11 +1,12 @@
 // bgptest.c
 // Named BGP sidecar test of vpntest ("bgp" command, CORE-S7-1 #82)
 //
-// bgp: the node with its BGP sidecar ranz-bgp (Cedar/NodeBgp.c, ranz-bgp/), the Windows spike of ADR-0010. A node
-// whose configuration names no BGP peers starts no sidecar, and a node whose sidecar is not installed runs without
-// one. The spike: the node starts ranz-bgp.exe from the directory of vpntest, which listens on TCP 179 of 127.0.0.1
-// and peers with a router of the operator: GoBGP's own daemon gobgpd, AS 65002, which dials 127.0.0.1:179
-// (.github/scripts/ranz-bgp-spike.ps1 starts it). The prefix that the configuration announces reaches the router;
+// bgp: the node with its BGP sidecar, the subcommand bgp of ranz.exe (Cedar/NodeBgp.c, ranz-bgp/), the Windows spike
+// of ADR-0010 (ONE-1, #310). A node whose configuration names no BGP peers starts no sidecar, and a node without
+// ranz.exe next to it runs without one. The spike: the node starts ranz.exe bgp from the directory of vpntest, and the
+// test reads from the sidecar's own log that its command line was ranz.exe bgp. The sidecar listens on TCP 179 of
+// 127.0.0.1 and peers with a router of the operator: GoBGP's own daemon gobgpd, AS 65002, which dials 127.0.0.1:179
+// (.github/scripts/bgp-spike.ps1 starts it). The prefix that the configuration announces reaches the router;
 // the node withdraws it and the router loses it, announces it again and the router has it again. The router
 // announces a prefix inside the accept list of the node via the default gateway of the machine, and the node
 // installs the route into the Windows routing table through IP Helper, on the interface of that gateway; a prefix
@@ -36,7 +37,7 @@
 #define	BGPTEST_SETTLE			3000		// How long the test waits before it checks that something did not happen (ms)
 #define	BGPTEST_RUN_WAIT		30000		// A run of the gobgp command ends within this time (ms)
 #define	BGPTEST_PORT			179			// The BGP port of the sidecar
-#define	BGPTEST_ROUTER_ASN		65002		// The AS of the router (.github/scripts/ranz-bgp-spike.ps1)
+#define	BGPTEST_ROUTER_ASN		65002		// The AS of the router (.github/scripts/bgp-spike.ps1)
 #define	BGPTEST_ANNOUNCE		"203.0.113.0/24"	// The prefix the node announces (TEST-NET-3)
 #define	BGPTEST_LEARN			"198.51.100.0/24"	// The prefix the router announces inside accept (TEST-NET-2)
 #define	BGPTEST_LEARN_ADDR		"198.51.100.0"
@@ -191,7 +192,7 @@ static bool BgpTestHas(char *text, char *part)
 	return (text != NULL && SearchStrEx(text, part, 0, true) != INFINITE);
 }
 
-// The number of running ranz-bgp.exe processes
+// The number of running ranz.exe processes, which hold the sidecar
 static UINT BgpTestNumSidecars()
 {
 	PROCESSENTRY32W e;
@@ -457,7 +458,7 @@ static void BgpTestNoSidecar(BGPTEST_CTX *ctx)
 		{"no Bgp setting", NULL, false, NULL},
 		{"a Bgp setting without peers", "{\"asn\":65001,\"router_id\":\"192.0.2.1\",\"peers\":[]}", false, "BGP not started: the Bgp setting names no peers"},
 		{"a Bgp setting that is not JSON", "asn=65001", false, "BGP not started: the Bgp setting is not a JSON object"},
-		{"a node without the sidecar", BGPTEST_SETTINGS, true, "is not installed (the RanzBgp feature of the MSI)"},
+		{"a node without ranz.exe", BGPTEST_SETTINGS, true, "ranz.exe, which holds the sidecar, is not installed at"},
 	};
 	char what[MAX_SIZE];
 	NODE_STATUS st;
@@ -485,7 +486,7 @@ static void BgpTestNoSidecar(BGPTEST_CTX *ctx)
 
 		Format(what, sizeof(what), "%s: the node runs, without a sidecar process, and announces nothing", cases[i].Name);
 		BgpTestCheck(ctx, started && st.Running && bst.Running == false && bst.ProcessId == 0 && during == before && announced == false, what,
-			"started %u, running %u, sidecar running %u, process %u, %u ranz-bgp processes before and %u while it runs, announce %u",
+			"started %u, running %u, sidecar running %u, process %u, %u ranz.exe processes before and %u while it runs, announce %u",
 			(UINT)started, (UINT)st.Running, (UINT)bst.Running, bst.ProcessId, before, during, (UINT)announced);
 
 		NodeStop(n);
@@ -544,7 +545,7 @@ static void BgpTestSpike(BGPTEST_CTX *ctx)
 	BgpTestWriteConfig(dir, BGPTEST_SETTINGS);
 
 	NODE *n = NewNode(dir);
-	BgpTestCheck(ctx, IsFileExistsW(n->BgpSidecar), "ranz-bgp.exe is next to vpntest.exe", "%S is missing", n->BgpSidecar);
+	BgpTestCheck(ctx, IsFileExistsW(n->BgpSidecar), "ranz.exe is next to vpntest.exe", "%S is missing", n->BgpSidecar);
 
 	NodeStart(n);
 	bool established = BgpTestWaitEstablished(n, &bst);
@@ -629,13 +630,14 @@ static void BgpTestSpike(BGPTEST_CTX *ctx)
 	char removed_line[MAX_SIZE];
 	char *lines[] =
 	{
-		"BGP sidecar ready: ranz-bgp, GoBGP",
+		"BGP sidecar ready: ranz bgp, GoBGP",
 		"BGP peer 127.0.0.1 (AS 65002): established",
 		"BGP prefix 203.0.113.0/24 announced",
 		"BGP prefix 203.0.113.0/24 withdrawn",
 		NULL,
 		NULL,
 		"BGP stopped: the sidecar exited with code 0",
+		"ranz.exe bgp started: process",
 	};
 	Format(line, sizeof(line), "BGP route %s via %s from 127.0.0.1 installed on interface %u", BGPTEST_LEARN, gateway, (UINT)best.InterfaceIndex);
 	Format(removed_line, sizeof(removed_line), "BGP route %s via %s removed", BGPTEST_LEARN, gateway);
@@ -659,6 +661,13 @@ static void BgpTestSpike(BGPTEST_CTX *ctx)
 		"missing:%s", missing);
 	Free(log);
 
+	// The sidecar's own log says how its process was started: the node started ranz.exe bgp, the subcommand of the
+	// one executable, with the pipe it made (ONE-1, #310)
+	char *sidecar_log = BgpTestReadLog(dir, NODE_BGP_LOG_NAME);
+	BgpTestCheck(ctx, BgpTestHas(sidecar_log, "ranz.exe bgp -pipe"), "The log of the sidecar itself shows its command line: ranz.exe bgp -pipe",
+		"the log has no command line of ranz.exe bgp: %s", sidecar_log == NULL ? "there is no log" : "see the log below");
+	Free(sidecar_log);
+
 	BgpTestPrintSidecarLog(dir);
 	BgpTestDeleteDir(dir);
 }
@@ -670,7 +679,7 @@ void bgp_test(UINT num, char **arg)
 
 	Zero(&ctx, sizeof(ctx));
 
-	Print("BGP test: the sidecar ranz-bgp of the node, BGP on TCP 179 with a router, learned routes through IP Helper\n");
+	Print("BGP test: the sidecar of the node (ranz bgp), BGP on TCP 179 with a router, learned routes through IP Helper\n");
 
 	BgpTestNoSidecar(&ctx);
 	BgpTestSpike(&ctx);

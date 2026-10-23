@@ -127,6 +127,7 @@ struct CONNECTION {
 	UINT LastPacketQueueSize;
 	UINT LastRecvFifoTotalSize;
 	UINT LastRecvBlocksNum;
+	TUNNEL *Tunnel; // CONNECTION_NOISE: the Tunnel that the connection carries (ConnectionTunnel.c)
 };
 
 // What the admin RPCs report about one connection, copied by ConnectionGetInfo under the connection's lock
@@ -143,6 +144,20 @@ struct CONNECTION_INFO {
 	char ClientStr[MAX_CLIENT_STR_LEN + 1];
 	UINT ClientVer;
 	UINT ClientBuild;
+};
+
+// The Tunnel of a Connection of type CONNECTION_NOISE (ConnectionTunnel.c; CORE-S1-2, #68): the Noise sessions
+// of the new core between one client node and the server role, whose data records carry the Ethernet frames of the
+// Connection's Session. The type of a Noise session is in Core/Transport.h.
+#define TUNNEL_MAX_CONNECTIONS 16 // The connections of a Tunnel at most: NOISE_TUNNEL_MAX_CONNECTIONS of Core/Noise.h
+
+struct TRANSPORT_NOISE;
+
+// What TunnelGetStatus reports about the Tunnel of a Connection
+struct TUNNEL_STATUS {
+	UINT NumConnections;                     // Its connections that are up
+	UINT64 Received[TUNNEL_MAX_CONNECTIONS]; // The frames received on connection i
+	UINT64 Sent[TUNNEL_MAX_CONNECTIONS];     // The frames sent on connection i
 };
 
 
@@ -167,6 +182,10 @@ void StopAllAdditionalConnectThread(CONNECTION *c);
 UINT GenNextKeepAliveSpan(CONNECTION *c);
 void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block);
 void ConnectionGetInfo(CONNECTION *c, CONNECTION_INFO *info);
+bool TunnelStart(CONNECTION *c, struct TRANSPORT_NOISE *first);
+bool TunnelJoin(CONNECTION *c, const UCHAR *id, struct TRANSPORT_NOISE *n);
+void TunnelStop(CONNECTION *c);
+void TunnelGetStatus(CONNECTION *c, TUNNEL_STATUS *st);
 
 
 #endif

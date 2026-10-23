@@ -9,8 +9,8 @@
 #
 # The gates themselves run where their code is built: the fuzzers, the coverage floors, the static
 # analysis, Application Verifier and the performance gate of the C build in windows.yml; go test
-# -fuzz, -race, the coverage floors, staticcheck and govulncheck of the Go modules in controller.yml
-# and ranz-bgp.yml.
+# -fuzz, -race, the coverage floors, staticcheck and govulncheck of the Go module, which holds
+# controller/ and ranz-bgp/ and builds the one executable ranz, in ranz.yml.
 #
 # It needs only Python and reads every part of the tree, so it has no path filter: it runs on every
 # pull request and on every push to master.
@@ -43,3 +43,18 @@ jobs:
       run: python -I .github/scripts/quality-gates-test.py
     - name: Every parser has a fuzz target that runs in CI
       run: python .github/scripts/fuzz-registry.py check
+
+  # ONE-1 (#310): the Go programs ship as one executable, ranz. CI, the WiX packages and the docs
+  # name no executable ranz-controller or ranz-bgp (.github/scripts/one-binary-check.py); the
+  # fixtures of that script run with the other gate scripts above.
+  one_binary:
+    name: no separate Go executable
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: CI, WiX packages and docs name no executable that ranz replaces
+      run: python .github/scripts/one-binary-check.py

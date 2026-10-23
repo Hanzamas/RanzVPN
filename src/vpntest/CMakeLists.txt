@@ -73,11 +73,13 @@ ranz_add_executable(vpntest HAMCORE
     transporttest.c
     # Named QUIC transport test of CORE-S1-1 (#67): the msquic listener, the Noise session, Sam and the key pinning
     quictest.c
+    # Named Noise-to-Hub test of CORE-S1-2 (#68): the frames of a Noise session in the existing Hub, against the oracle
+    noisehub.c
     # Named hardened licence gate test of SEC-4 (#282): drives ranzguard under the Win32 debug API
     harden.c
     # Named HTTP listener test of REL-6 (#51)
     httplistener.c
-    # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz-controller and ping each other
+    # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz controller and ping each other
     sdntrace.c
     # Named VXLAN test of SDN-62 (#289): the VXLAN module of the new core against harness VTEPs
     vxlantest.c

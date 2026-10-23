@@ -8,3 +8,6 @@
 # are stored as they are embedded (text files with CRLF).
 src/bin/hamcore/** -text
 tests/golden/** -text
+# The NOTICE is embedded into ranz byte for byte (controller/cmd/ranz/notice.go): no EOL conversion
+# on checkout or commit, so the embedded bytes do not depend on core.autocrlf.
+controller/cmd/ranz/NOTICE -text

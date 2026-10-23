@@ -1,6 +1,17 @@
-// Command ranz is the command-line client of the controller's HTTP API (#176 "Intent API").
+// Command ranz is the one executable of the Ranz Go programs (ADR-0011 amendment of 2026-10-22,
+// ONE-1 #310). It is a multi-call binary: when the first argument names a subcommand, ranz runs
+// that, and otherwise the arguments are a command of the controller's HTTP API (#176 "Intent
+// API"), the CLI below.
 //
-// Usage:
+// Subcommands, each registered by a file of its own (subcommand.go):
+//
+//	ranz controller [flags]   the Controller service with its web UI: run, install, uninstall,
+//	                          reset-admin, backup and restore (package controllercmd)
+//	ranz bgp -pipe NAME       the BGP sidecar of a Node, which the Node starts (package bgpcmd)
+//	ranz notice               print the NOTICE: the licence texts of what ranz carries
+//	ranz version              print the version, which is the same for every subcommand
+//
+// Usage of the CLI:
 //
 //	ranz [flags] apply -f FILE                 apply the resources of an intent document (YAML or JSON, - for standard input)
 //	ranz [flags] apply -f FILE -confirm DURATION
@@ -48,12 +59,12 @@
 // applies, imports, deletes, confirms, rolls back and installs or removes the licence key, admin
 // also manages the tokens and the admin source allowlist (SDN-39, #232). The first start of the
 // controller creates the admin token and writes its secret to
-// admin.token in its data directory; when it is lost, `ranz-controller reset-admin` on the
+// admin.token in its data directory; when it is lost, `ranz controller reset-admin` on the
 // controller's host makes a new one.
 // The controller decides what a token may do, so ranz prints its answer as it is: JSON, the
 // canonical form of the intent, or the controller's refusal. Each apply, import, delete and
 // rollback prints the revision it made. An export moves the intent alone; the whole store, with
-// the revisions, is backed up with `ranz-controller backup` on the controller's host.
+// the revisions, is backed up with `ranz controller backup` on the controller's host.
 package main
 
 import (
@@ -74,6 +85,10 @@ import (
 )
 
 const usage = `usage:
+  ranz controller [flags]
+  ranz bgp -pipe NAME [-log FILE] [-log-level LEVEL]
+  ranz notice
+  ranz version
   ranz [flags] apply -f FILE [-confirm DURATION]
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]
@@ -97,6 +112,18 @@ const usage = `usage:
 var errUsage = errors.New("bad arguments")
 
 func main() {
+	args := os.Args[1:]
+	if len(args) > 0 {
+		if run, ok := subcommands[args[0]]; ok {
+			os.Exit(run(args[1:]))
+		}
+	}
+	runCLI(args)
+}
+
+// runCLI runs the command of the controller's HTTP API that args hold, the arguments of ranz that
+// no subcommand took, and exits with the code of a command that failed.
+func runCLI(args []string) {
 	flags := flag.NewFlagSet("ranz", flag.ExitOnError)
 	server := os.Getenv("RANZ_SERVER")
 	if server == "" {
@@ -109,7 +136,7 @@ func main() {
 		fmt.Fprint(os.Stderr, usage)
 		flags.PrintDefaults()
 	}
-	_ = flags.Parse(os.Args[1:])
+	_ = flags.Parse(args)
 	c, err := newClient(server, *tokenFile, os.Getenv("RANZ_TOKEN"), *fingerprint)
 	if err == nil {
 		err = do(context.Background(), c, flags.Args(), os.Stdout)
