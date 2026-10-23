@@ -2,12 +2,15 @@
 
 package install
 
-import "errors"
+import (
+	"errors"
+	"io"
+)
 
 var errNotWindows = errors.New("install: the Ranz VPN Node and Controller install as Windows services; there is nothing to install on this OS")
 
-// Install is Install: there is no Windows service on this OS.
-func Install(bool) error { return errNotWindows }
+// Install refuses: there is no Windows service on this OS.
+func Install(io.Writer, bool) error { return errNotWindows }
 
-// Uninstall is Uninstall: there is no Windows service on this OS.
-func Uninstall() error { return errNotWindows }
+// Uninstall refuses: there is no Windows service on this OS.
+func Uninstall(io.Writer) error { return errNotWindows }

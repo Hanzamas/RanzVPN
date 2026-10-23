@@ -65,8 +65,10 @@ const (
 	wtdStateActionClose      = 2      // WTD_STATEACTION_CLOSE
 	wtdCacheOnlyURLRetrieval = 0x1000 // WTD_CACHE_ONLY_URL_RETRIEVAL: never fetch a revocation list over the network
 
-	trustOK          = 0          // S_OK: the signature verifies and chains to a trusted root
-	trustNoSignature = 0x800B0100 // TRUST_E_NOSIGNATURE
+	trustOK           = 0          // S_OK: the signature verifies and chains to a trusted root
+	trustNoSignature  = 0x800B0100 // TRUST_E_NOSIGNATURE
+	trustBadDigest    = 0x80096010 // TRUST_E_BAD_DIGEST: the file is not the one that was signed
+	certUntrustedRoot = 0x800B0109 // CERT_E_UNTRUSTEDROOT: the chain ends in a root that is not trusted
 )
 
 var (
@@ -106,11 +108,21 @@ func verifyAuthenticode(path string) error {
 	data.stateAction = wtdStateActionClose
 	procWinVerifyTrust.Call(0, uintptr(unsafe.Pointer(&action)), uintptr(unsafe.Pointer(&data)))
 
-	switch code := uint32(r); code {
+	return trustError(uint32(r))
+}
+
+// trustError is the verdict of WinVerifyTrust, code, as an error, nil for a signature that
+// verifies. The message names the cause that an operator can act on, and always the code.
+func trustError(code uint32) error {
+	switch code {
 	case trustOK:
 		return nil
 	case trustNoSignature:
 		return errors.New("it carries no Authenticode signature")
+	case trustBadDigest:
+		return fmt.Errorf("its Authenticode signature does not verify: the file is not the one that was signed (WinVerifyTrust %#08x)", code)
+	case certUntrustedRoot:
+		return fmt.Errorf("its Authenticode signature does not verify: the certificate does not chain to a trusted root (WinVerifyTrust %#08x)", code)
 	default:
 		return fmt.Errorf("its Authenticode signature does not verify (WinVerifyTrust %#08x)", code)
 	}

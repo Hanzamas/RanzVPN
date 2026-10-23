@@ -172,6 +172,13 @@ func install(args []string, cfg config) error {
 	if err != nil {
 		return err
 	}
+	return installService(exe, args, cfg)
+}
+
+// installService is install for the executable exe, which the service runs as `exe controller`
+// with args: `ranz install` (internal/install, ONE-2 #311) names the ranz.exe that it copied into
+// the Ranz folder, so that the service does not run from wherever the download was left.
+func installService(exe string, args []string, cfg config) error {
 	if err := os.MkdirAll(cfg.dataDir, 0o700); err != nil {
 		return err
 	}
@@ -277,13 +284,14 @@ func uninstall() error {
 	return errors.Join(errs...)
 }
 
-// Install registers the Windows service with its default data directory and no plain HTTP
-// reservation (install reads only cfg.dataDir and cfg.httpListen; the service picks up every
-// other default, such as its TLS port, from its own flags the next time it runs). It does not
-// start the service, as install does not either; `ranz install -controller` (internal/install,
-// ONE-2 #311) starts it itself, alongside the Node service.
-func Install() error {
-	return install(nil, config{dataDir: defaultDataDir()})
+// Install registers the Windows service so that it runs the executable exe as `exe controller`,
+// with its default data directory and no plain HTTP reservation (installService reads only
+// cfg.dataDir and cfg.httpListen; the service picks up every other default, such as its TLS port,
+// from its own flags the next time it runs). It does not start the service, as install does not
+// either; `ranz install -controller` (internal/install, ONE-2 #311) starts it itself, alongside
+// the Node service.
+func Install(exe string) error {
+	return installService(exe, nil, config{dataDir: defaultDataDir()})
 }
 
 // Uninstall removes the Windows service. The service must be stopped first, as uninstall needs;

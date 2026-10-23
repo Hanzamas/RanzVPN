@@ -1073,12 +1073,19 @@ jobs:
   # signature is present, runs the self-integrity check on a signed binary (it passes) and on a copy whose
   # .text was changed (it degrades, not crashes), and checks the shipped binaries carry no symbols and the
   # package no public PDB. The Go executable ranz built with -trimpath and -ldflags "-s -w" has no
-  # symbol table. .github/scripts/self-integrity.ps1.
+  # symbol table. It also builds the signed ranz.exe of each architecture with the signed ranz-node.exe
+  # as its Payload, and the same with one byte of the Payload changed, for the install job (ONE-2, #311).
+  # .github/scripts/self-integrity.ps1.
   sign_and_integrity:
     needs: build_and_test
     runs-on: windows-latest
     name: sign and self-integrity
     timeout-minutes: 30
+    # The SHA-256 of the signed ranz-node.exe of each architecture (ONE-2, #311), which the install job
+    # compares with the file that ranz install writes
+    outputs:
+      node-sha256-x64: ${{ steps.signing.outputs.node-sha256-x64 }}
+      node-sha256-arm64: ${{ steps.signing.outputs.node-sha256-arm64 }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -1110,6 +1117,7 @@ jobs:
         $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         & (Join-Path $tools 'wix.exe') --version
     - name: Sign, self-integrity and symbol strip
+      id: signing
       shell: pwsh
       run: |
         . .github/scripts/self-integrity.ps1 -X64Dir artifacts/x64 -Arm64Dir artifacts/arm64 -Wxs .github/signing/signing-proof.wxs -LicenseFile LICENSE -GoModuleDir . -OutDir build/signing
@@ -1122,95 +1130,109 @@ jobs:
         path: |
           build/signing/*.msi
           build/signing/*.cer
-    # The signed ranz-node.exe of each architecture (ONE-2, #311), for the install job below, which
-    # embeds one of them into a ranz.exe it builds for that architecture
+    # The signed ranz.exe of each architecture, with the signed ranz-node.exe as its Payload, and the
+    # same ranz.exe with one byte of its Payload changed (ONE-2, #311), each in an artifact of its own
+    # that holds that one file, for the install job below. The certificate that signed them is the
+    # one thing besides ranz.exe that a runner needs, to trust it.
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
-        name: signed-ranz-node
+        name: ranz-x64
         if-no-files-found: warn
         retention-days: 14
-        path: |
-          build/signing/ranz-node-x64.exe
-          build/signing/ranz-node-arm64.exe
+        path: build/signing/x64/ranz.exe
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: ranz-arm64
+        if-no-files-found: warn
+        retention-days: 14
+        path: build/signing/arm64/ranz.exe
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: ranz-tampered-x64
+        if-no-files-found: warn
+        retention-days: 14
+        path: build/signing/x64-tampered/ranz.exe
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: ranz-tampered-arm64
+        if-no-files-found: warn
+        retention-days: 14
+        path: build/signing/arm64-tampered/ranz.exe
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: ci-signing-certificate
+        if-no-files-found: warn
+        retention-days: 14
+        path: build/signing/ranz-ci-signing.cer
 
   # ranz install and ranz uninstall (ONE-2, #311; ADR-0011 and ADR-0020 amendments of 2026-10-22), on
-  # windows-latest (x64) and windows-11-arm (arm64), checked from outside the running process: the
-  # job's own folder gets the one ranz.exe (the one-executable product: no second file, no second
-  # download), built here for the matrix architecture with the Authenticode-signed ranz-node.exe of
-  # sign_and_integrity embedded as its Payload (internal/payload) over the committed placeholder, so
-  # ranz install also proves the payload's hash and signature check: a second ranz.exe built from a
-  # one-byte-flipped copy of the same signed ranz-node.exe (the technique of self-integrity.ps1) must
-  # be refused, write nothing under Program Files and start nothing. .github/scripts/install.ps1.
+  # windows-latest (x64) and windows-11-arm (arm64), checked from outside the running process. The
+  # job copies one file of the product to its runner: the signed ranz.exe of its architecture that
+  # sign_and_integrity built with the signed ranz-node.exe as its Payload (internal/payload), with no
+  # ranz-node.exe beside it and no second download. It copies the same ranz.exe with one byte of its
+  # Payload changed too, which ranz install must refuse, writing nothing under Program Files and
+  # starting nothing. Besides ranz.exe a runner needs the certificate that signed both, so that their
+  # signatures chain to a trusted root (this is another machine than the one that signed), and, until
+  # ONE-4 (#313) puts an rqlite member in ranz.exe, the rqlited that the Controller service stores its
+  # intent in. .github/scripts/install.ps1.
   install:
     needs: sign_and_integrity
     strategy:
       fail-fast: false
       matrix:
         platform: [
-          { ARCHITECTURE: x64, GOARCH: amd64, RUNNER: "windows-latest" },
-          { ARCHITECTURE: arm64, GOARCH: arm64, RUNNER: "windows-11-arm" }
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
         ]
     name: install (${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache-dependency-path: go.sum
-    - name: Download the signed ranz-node payload
+    - name: Download ranz.exe
       uses: actions/download-artifact@v4
       with:
-        name: signed-ranz-node
-        path: artifacts/signed-ranz-node
+        name: ranz-${{ matrix.platform.ARCHITECTURE }}
+        path: artifacts/ranz
+    - name: Download ranz.exe with a changed Payload
+      uses: actions/download-artifact@v4
+      with:
+        name: ranz-tampered-${{ matrix.platform.ARCHITECTURE }}
+        path: artifacts/ranz-tampered
     - name: Download the CI signing certificate
       uses: actions/download-artifact@v4
       with:
-        name: signing-proof
-        path: artifacts/signing-proof
-    # This runner is not the one sign_and_integrity trusted the self-signed certificate on: without
-    # this, WinVerifyTrust (ranz install's own check, and Get-AuthenticodeSignature below) would see
-    # a signature present but not chained to a trusted root.
+        name: ci-signing-certificate
+        path: artifacts/certificate
+    # The root store only: the signature of a file chains to a trusted root, and nothing here asks for
+    # a trusted publisher
     - name: Trust the CI signing certificate on this runner
       shell: pwsh
       run: |
-        $cer = Get-ChildItem -Path artifacts/signing-proof -Filter '*.cer' | Select-Object -First 1
-        if (-not $cer) { throw 'no .cer file in the signing-proof artifact' }
+        $cer = Get-ChildItem -Path artifacts/certificate -Filter '*.cer' | Select-Object -First 1
+        if (-not $cer) { throw 'no .cer file in the ci-signing-certificate artifact' }
         Import-Certificate -FilePath $cer.FullName -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
-        Import-Certificate -FilePath $cer.FullName -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
-        Write-Host "trusted $($cer.FullName) as a root and a trusted publisher"
-    - name: Embed the signed payload and build ranz.exe, and a tampered copy
+        Write-Host "trusted $($cer.FullName) as a root"
+    - name: Install rqlited
       shell: pwsh
-      env:
-        CGO_ENABLED: '0'
-        GOOS: windows
-        GOARCH: ${{ matrix.platform.GOARCH }}
       run: |
-        $node = (Resolve-Path "artifacts/signed-ranz-node/ranz-node-${{ matrix.platform.ARCHITECTURE }}.exe").Path
-        $embed = "controller/internal/payload/node_${{ matrix.platform.GOARCH }}.exe"
-        New-Item -ItemType Directory -Force -Path build\install | Out-Null
-
-        Copy-Item -LiteralPath $node -Destination $embed -Force
-        go build -trimpath -ldflags "-s -w -X main.build=$env:GITHUB_RUN_NUMBER" -o build\install\ranz.exe ./controller/cmd/ranz
-        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
-
-        # A second, otherwise identical ranz.exe whose embedded ranz-node.exe has one byte flipped
-        # well inside it (never the MS-DOS/PE header, so it is still read as a PE): its Authenticode
-        # signature no longer verifies, and ranz install must refuse it.
-        $bytes = [System.IO.File]::ReadAllBytes($node)
-        $mid = [int]($bytes.Length / 2)
-        $bytes[$mid] = $bytes[$mid] -bxor 0xFF
-        [System.IO.File]::WriteAllBytes($embed, $bytes)
-        go build -trimpath -ldflags "-s -w -X main.build=$env:GITHUB_RUN_NUMBER" -o build\install\ranz-tampered.exe ./controller/cmd/ranz
-        if ($LASTEXITCODE -ne 0) { throw "go build (tampered) exited with code $LASTEXITCODE" }
-
-        # Leave the committed placeholder alone; only this job's own checkout changed.
-        Copy-Item -LiteralPath $node -Destination $embed -Force
-        Get-ChildItem build\install | Format-Table Name, Length
+        $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
+        $dir = Join-Path $env:RUNNER_TEMP 'rqlite'
+        Invoke-WebRequest -Uri "https://github.com/rqlite/rqlite/releases/download/$env:RQLITE_VERSION/rqlite-$env:RQLITE_VERSION-win64.zip" -OutFile $zip
+        Expand-Archive -Path $zip -DestinationPath $dir
+        $exe = Get-ChildItem -Path $dir -Recurse -Filter 'rqlited.exe' | Select-Object -First 1
+        if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
+        & $exe.FullName -version
+        "RQLITED=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     - name: ranz install, checked from outside, then ranz uninstall
       shell: pwsh
       timeout-minutes: 15
+      env:
+        NODE_SHA256: ${{ needs.sign_and_integrity.outputs[format('node-sha256-{0}', matrix.platform.ARCHITECTURE)] }}
       run: |
-        . .github/scripts/install.ps1 -BuildDir build\install -ReferenceNode "artifacts/signed-ranz-node/ranz-node-${{ matrix.platform.ARCHITECTURE }}.exe"
+        . .github/scripts/install.ps1 -Ranz artifacts\ranz\ranz.exe -Tampered artifacts\ranz-tampered\ranz.exe -NodeSha256 $env:NODE_SHA256 -Rqlited $env:RQLITED

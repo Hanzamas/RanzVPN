@@ -35,7 +35,7 @@ func uninstall() error {
 }
 
 // Install is install: there is no Windows service on this OS (ONE-2, #311).
-func Install() error {
+func Install(string) error {
 	return install(nil, config{})
 }
 

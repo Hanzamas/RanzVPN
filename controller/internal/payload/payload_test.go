@@ -2,9 +2,11 @@ package payload
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +17,15 @@ func withVerify(t *testing.T, f func(string) error) {
 	old := verify
 	verify = f
 	t.Cleanup(func() { verify = old })
+}
+
+// withHashFile substitutes hashFile for the life of the test, so Install can be given a file that
+// was written wrong.
+func withHashFile(t *testing.T, f func(string) ([32]byte, error)) {
+	t.Helper()
+	old := hashFile
+	hashFile = f
+	t.Cleanup(func() { hashFile = old })
 }
 
 func TestInstallWritesTheExactBytes(t *testing.T) {
@@ -37,12 +48,40 @@ func TestInstallWritesTheExactBytes(t *testing.T) {
 	}
 }
 
+func TestInstallReplacesAFileThatIsThere(t *testing.T) {
+	dir := t.TempDir()
+	withVerify(t, func(string) error { return nil })
+	dest := filepath.Join(dir, "thing.bin")
+	if err := os.WriteFile(dest, []byte("the old bytes"), 0o600); err != nil {
+		t.Fatalf("writing the old file: %v", err)
+	}
+
+	if err := Install(dir, New("thing.bin", []byte("the new bytes"))); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if got, _ := os.ReadFile(dest); string(got) != "the new bytes" {
+		t.Fatalf("the installed file is %q, not the new bytes", got)
+	}
+}
+
 func TestInstallRefusesEmptyData(t *testing.T) {
 	dir := t.TempDir()
 	withVerify(t, func(string) error { return nil })
 
 	if err := Install(dir, Payload{Name: "thing.bin"}); err == nil {
 		t.Fatal("Install of a payload with no data did not fail")
+	}
+	assertEmpty(t, dir)
+}
+
+func TestInstallRefusesANameThatIsNoPlainFileName(t *testing.T) {
+	dir := t.TempDir()
+	withVerify(t, func(string) error { t.Fatal("verify ran for a name that is no file name"); return nil })
+
+	for _, name := range []string{"", ".", "..", "sub/thing.bin", "../thing.bin"} {
+		if err := Install(dir, New(name, []byte("bytes"))); err == nil {
+			t.Errorf("Install of a payload named %q did not fail", name)
+		}
 	}
 	assertEmpty(t, dir)
 }
@@ -59,6 +98,31 @@ func TestInstallRefusesAMismatchedHash(t *testing.T) {
 	assertEmpty(t, dir)
 }
 
+func TestInstallRefusesAFileThatWasWrittenWrong(t *testing.T) {
+	dir := t.TempDir()
+	// The signature check must never run on a file whose hash is wrong
+	withVerify(t, func(string) error { t.Fatal("verify ran although the file does not match the hash"); return nil })
+	withHashFile(t, func(string) ([32]byte, error) { return sha256.Sum256([]byte("other bytes")), nil })
+
+	err := Install(dir, New("thing.bin", []byte("real bytes")))
+	if err == nil || !strings.Contains(err.Error(), "does not match the hash") {
+		t.Fatalf("Install of a file that was written wrong = %v, want a refusal for its hash", err)
+	}
+	assertEmpty(t, dir)
+}
+
+func TestInstallRefusesAFileThatCannotBeHashed(t *testing.T) {
+	dir := t.TempDir()
+	wantErr := errors.New("disk gone")
+	withVerify(t, func(string) error { t.Fatal("verify ran although the file cannot be hashed"); return nil })
+	withHashFile(t, func(string) ([32]byte, error) { return [32]byte{}, wantErr })
+
+	if err := Install(dir, New("thing.bin", []byte("real bytes"))); !errors.Is(err, wantErr) {
+		t.Fatalf("Install of a file that cannot be hashed = %v, want it to wrap %v", err, wantErr)
+	}
+	assertEmpty(t, dir)
+}
+
 func TestInstallRefusesAFailedSignature(t *testing.T) {
 	dir := t.TempDir()
 	wantErr := errors.New("bad signature")
@@ -70,8 +134,30 @@ func TestInstallRefusesAFailedSignature(t *testing.T) {
 	assertEmpty(t, dir)
 }
 
+func TestInstallLeavesTheFileThatIsThereWhenACheckFails(t *testing.T) {
+	dir := t.TempDir()
+	withVerify(t, func(string) error { return errors.New("bad signature") })
+	dest := filepath.Join(dir, "thing.bin")
+	if err := os.WriteFile(dest, []byte("the old bytes"), 0o600); err != nil {
+		t.Fatalf("writing the old file: %v", err)
+	}
+
+	if err := Install(dir, New("thing.bin", []byte("the new bytes"))); err == nil {
+		t.Fatal("Install with a failed signature check did not fail")
+	}
+	if got, _ := os.ReadFile(dest); string(got) != "the old bytes" {
+		t.Fatalf("a refused Install changed the file that was there: %q", got)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("a refused Install left %d files in %s, not 1", len(entries), dir)
+	}
+}
+
 func TestNewRecordsTheHashOfItsData(t *testing.T) {
 	p := New("thing.bin", []byte("x"))
+	if p.SHA256 != sha256.Sum256([]byte("x")) {
+		t.Fatalf("New recorded the hash %x, not the SHA-256 of its data", p.SHA256)
+	}
 	dir := t.TempDir()
 	calledWith := ""
 	withVerify(t, func(path string) error { calledWith = path; return nil })
@@ -80,6 +166,24 @@ func TestNewRecordsTheHashOfItsData(t *testing.T) {
 	}
 	if calledWith == "" || filepath.Dir(calledWith) != dir {
 		t.Fatalf("verify was called with %q, not a file inside %s", calledWith, dir)
+	}
+}
+
+func TestFileSHA256(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "thing.bin")
+	data := []byte("some bytes to hash")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("writing the file: %v", err)
+	}
+	got, err := fileSHA256(path)
+	if err != nil {
+		t.Fatalf("fileSHA256: %v", err)
+	}
+	if got != sha256.Sum256(data) {
+		t.Fatalf("fileSHA256 = %x, not the SHA-256 of the file", got)
+	}
+	if _, err := fileSHA256(filepath.Join(filepath.Dir(path), "missing.bin")); err == nil {
+		t.Fatal("fileSHA256 of a file that is not there did not fail")
 	}
 }
 

@@ -16,10 +16,12 @@ param(
 #      symbol table and the MSI holds no PDB (their symbols stay in a private PDB), and ranz, the one
 #      Go executable (ONE-1, #310), built with -trimpath and -ldflags "-s -w" has no symbol table.
 #
-# It also copies the now-signed ranz-node.exe of each architecture to $OutDir as ranz-node-<arch>.exe
-# (ONE-2, #311): the install job of windows.yml uploads them, with the .cer of the self-signed
-# certificate this script makes, as the Payload that a ranz.exe it builds for that architecture
-# carries and ranz install writes out.
+# ONE-2 (#311) adds the signed ranz.exe of each architecture, which carries the signed ranz-node.exe of
+# that architecture as its Payload (controller/internal/payload) and is signed once, and a second one
+# whose Payload has one byte changed, for the install job of windows.yml: ranz install must refuse it.
+# They are written as $OutDir\<arch>\ranz.exe and $OutDir\<arch>-tampered\ranz.exe, and the SHA-256 of
+# each signed ranz-node.exe goes to GITHUB_OUTPUT, so that the install job copies one ranz.exe to its
+# runner and compares what ranz install wrote with a hash, not with a second file.
 
 $ErrorActionPreference = 'Stop'
 # Native exit codes are checked explicitly below (so "go tool nm", which exits 1 when a binary has no
@@ -134,11 +136,16 @@ foreach ($pair in @(@{ Dir = $X64Dir; Arch = 'x64' }, @{ Dir = $Arm64Dir; Arch =
 	}
 }
 
-# ONE-2 (#311): the now-signed ranz-node.exe of each architecture, copied out under its
-# architecture in its name, for the install job of windows.yml to embed into a ranz.exe it builds
-# for that architecture and run ranz install with.
-Copy-Item -LiteralPath (Join-Path $X64Dir 'ranz-node.exe') -Destination (Join-Path $OutDir 'ranz-node-x64.exe') -Force
-Copy-Item -LiteralPath (Join-Path $Arm64Dir 'ranz-node.exe') -Destination (Join-Path $OutDir 'ranz-node-arm64.exe') -Force
+# ONE-2 (#311): the SHA-256 of the now-signed ranz-node.exe of each architecture, as an output of the
+# step (GITHUB_OUTPUT). The install job checks that the ranz-node.exe that ranz install wrote is this
+# file byte for byte, so that it needs no copy of the file.
+if ($env:GITHUB_OUTPUT) {
+	foreach ($pair in @(@{ Dir = $X64Dir; Arch = 'x64' }, @{ Dir = $Arm64Dir; Arch = 'arm64' })) {
+		$hash = (Get-FileHash -LiteralPath (Join-Path $pair.Dir 'ranz-node.exe') -Algorithm SHA256).Hash
+		Write-Host "signed ranz-node.exe ($($pair.Arch)): SHA-256 $hash"
+		"node-sha256-$($pair.Arch)=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+	}
+}
 
 # ---------------------------------------------------------------------------------------------------
 # 1 (continued). Build an MSI that packages the signed x64 vpnserver.exe, sign it and verify it.
@@ -230,21 +237,49 @@ while ($null -ne ($rec = $view.Fetch())) {
 if ($pdbInMsi.Count -gt 0) { throw "the MSI ships a PDB: $($pdbInMsi -join ', ')" }
 Write-Host 'the MSI ships no PDB (the C PDB is kept private)'
 
-# ranz, the one Go executable: built with -trimpath and -ldflags "-s -w", go tool nm reports no symbol table
+# ranz, the one Go executable (ONE-1, #310; ONE-2, #311), built as it ships: -trimpath and -ldflags "-s -w",
+# so go tool nm reports no symbol table, and the run number as the build number of its one version. It
+# carries the signed ranz-node.exe of its architecture as its Payload. The committed
+# controller/internal/payload/node_<arch>.exe is an empty placeholder, which this step overwrites in its own
+# checkout before it builds, and writes empty again after. ranz.exe is then signed once, like every shipped
+# executable. A second build carries a copy of that payload with one byte changed well inside it, never its
+# MS-DOS or PE header, and is signed too: only its Payload is wrong, so ranz install must refuse it for
+# that and for no other reason.
+$build = $env:GITHUB_RUN_NUMBER
+if (-not $build) { $build = '0' }
 Push-Location $GoModuleDir
 try {
-	foreach ($goarch in @('amd64', 'arm64')) {
-		$goexe = Join-Path $OutDir "ranz-$goarch.exe"
+	foreach ($pair in @(@{ Dir = $X64Dir; Arch = 'x64'; Goarch = 'amd64' }, @{ Dir = $Arm64Dir; Arch = 'arm64'; Goarch = 'arm64' })) {
+		$goarch = $pair.Goarch
+		$placeholder = Join-Path (Get-Location).Path "controller/internal/payload/node_$goarch.exe"
+		$nodeBytes = Get-FileBytes (Join-Path $pair.Dir 'ranz-node.exe')
 		$env:GOOS = 'windows'
 		$env:GOARCH = $goarch
 		$env:CGO_ENABLED = '0'
-		go build -trimpath -ldflags '-s -w' -o $goexe ./controller/cmd/ranz
-		if ($LASTEXITCODE -ne 0) { throw "go build (-trimpath -ldflags '-s -w') failed for $goarch (exit $LASTEXITCODE)" }
-		$nm = (go tool nm $goexe 2>&1 | Out-String)
-		if ($nm -notmatch 'no symbols') { throw "ranz ($goarch) still has a symbol table after -ldflags '-s -w':`n$nm" }
-		Write-Host "ranz ($goarch): -trimpath -ldflags '-s -w', no symbol table"
+		foreach ($variant in @('', '-tampered')) {
+			$payload = $nodeBytes.Clone()
+			if ($variant -ne '') {
+				$mid = [int]($payload.Length / 2)
+				$payload[$mid] = [byte]($payload[$mid] -bxor 0xFF)
+			}
+			[System.IO.File]::WriteAllBytes($placeholder, $payload)
+			$exeDir = Join-Path $OutDir "$($pair.Arch)$variant"
+			New-Item -ItemType Directory -Force -Path $exeDir | Out-Null
+			$goexe = Join-Path $exeDir 'ranz.exe'
+			go build -trimpath -ldflags "-s -w -X main.build=$build" -o $goexe ./controller/cmd/ranz
+			if ($LASTEXITCODE -ne 0) { throw "go build failed for $goarch$variant (exit $LASTEXITCODE)" }
+			if ($variant -eq '') {
+				$nm = (go tool nm $goexe 2>&1 | Out-String)
+				if ($nm -notmatch 'no symbols') { throw "ranz ($goarch) still has a symbol table after -ldflags '-s -w':`n$nm" }
+				Write-Host "ranz ($goarch): -trimpath -ldflags '-s -w', no symbol table, ranz-node.exe ($($nodeBytes.Length) bytes) as its Payload"
+			}
+			Protect-File $signtool $thumb $goexe
+		}
 	}
 } finally {
+	foreach ($goarch in @('amd64', 'arm64')) {
+		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/node_$goarch.exe"), [byte[]]@())
+	}
 	Pop-Location
 	Remove-Item Env:\GOOS, Env:\GOARCH, Env:\CGO_ENABLED -ErrorAction SilentlyContinue
 }
