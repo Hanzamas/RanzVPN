@@ -50,12 +50,15 @@ src/Core  SwitchInput  fuzz_switch
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
 src/Cedar  CsOpen               exempt  opens the node's own SQLite store (winsqlite3)
 src/Cedar  CsImportForkConfig   exempt  the config importer of CORE-F5, merged before ADR-0040: Cfg parses the bytes of the file (fuzz_cfg) and the importer walks the parsed tree; a fuzz target of its own is still to come
-src/Cedar  NodeOverlayInput     exempt  a packet of the host's own IP stack on the overlay adapter (SDN-3 #179, merged before the gate): NodeOverlayEnds reads the two IPv4 addresses at fixed offsets of a header whose size, version and length it checks, and the packet is sent on unread; a fuzz target of its own is still to come
+src/Cedar  NodeOverlayInput     exempt  a packet of the host's own IP stack on the overlay adapter of a VRF (SDN-3 #179, merged before the gate; SDN-4 #180): NodeOverlayEnds reads the two addresses at fixed offsets of an IPv4 or IPv6 header whose size and version it checks, the forwarding table of the VRF looks them up, and the packet is sent on unread after the VRF id; a fuzz target of its own is still to come
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
 controller/internal/control  Conn.Read             FuzzRead
 controller/internal/control  Conn.SetReadDeadline  exempt  sets the deadline of the next Read; reads nothing
+
+# The source prefixes of a Network and of the admin source allowlist (SDN-39 #232)
+controller/internal/intent  ParseSources  FuzzParseSources
 
 # The intent documents of the API, `ranz apply -f` and `ranz import -f` (SDN-52 #245)
 controller/internal/intent  ParseDocument  FuzzParseDocument

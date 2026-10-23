@@ -102,6 +102,10 @@ type Network struct {
 	Mode     string `json:"mode,omitempty"` // ModeL3 (the default) or ModeL2
 	IPv4Pool string `json:"ipv4Pool,omitempty"`
 	IPv6Pool string `json:"ipv6Pool,omitempty"`
+	// EnrolSources limits where the Nodes of the Network may open their control stream from
+	// (SDN-39, sources.go): the source prefixes, each a CIDR prefix or one address, that the
+	// stream of a Node of the VRF may come from. Left out, a Node may enrol from any address.
+	EnrolSources []string `json:"enrolSources,omitempty"`
 	// Reserved holds prefixes of the pools, or single addresses, that the allocation never gives a
 	// Node: the gateway of a LAN, a static host. It counts as in use for the pool event.
 	Reserved []string `json:"reserved,omitempty"`
@@ -180,6 +184,7 @@ func (in Intent) Clone() Intent {
 		out.Controllers = map[string]Controller{}
 	}
 	for name, n := range in.Networks {
+		n.EnrolSources = slices.Clone(n.EnrolSources)
 		n.Reserved = slices.Clone(n.Reserved)
 		out.Networks[name] = n
 	}
@@ -507,6 +512,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 		if n.Mode == "" {
 			n.Mode = ModeL3
 		}
+		// The source prefixes as prefixes, in order (sources.go)
+		n.EnrolSources = normalizeSources(n.EnrolSources)
 		n.Reserved = canonicalReserved(n.Reserved)
 		in.Networks[name] = n
 	}
@@ -574,6 +581,9 @@ func (in Intent) validate() []error {
 			if _, err := ParsePool(n.IPv6Pool, 6); err != nil {
 				problems = append(problems, fmt.Errorf("Network %q: ipv6Pool: %w", name, err))
 			}
+		}
+		if _, err := ParseSources(n.EnrolSources); err != nil {
+			problems = append(problems, fmt.Errorf("Network %q: enrolSources: %w", name, err))
 		}
 	}
 	keys := map[string]string{}
