@@ -210,10 +210,16 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 
 	// Built beside the live tables, then in their place: the swap returns once no reader holds the tables before
 	NODE_VRF_TABLES *v = NodeOverlayTables(st, hops);
+	// The MTU and the rate limits of the Generation go in with its tables (NodeShape.c)
+	NodeShapeAttach(ov->Node, v, st);
 	UINT num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
 	if (v != NULL && swapped == false)
 		NodeFreeVrfTables(v);
+
+	// The host's adapter of each VRF takes the MTU of the Generation that went in, before the overlay reports it
+	if (swapped)
+		NodeShapeApplied(ov->Node, st);
 
 	Lock(ov->Lock);
 	{
@@ -562,6 +568,7 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	ov->Lock = NewLock();
 	ov->Peers = NewListFast(NULL);
 	ov->Buf = Malloc(NOISE_MAX_PAYLOAD);
+	NodeShapeStart(n, cfg);
 	n->Overlay = ov;
 
 	Zero(&cc, sizeof(cc));
@@ -601,6 +608,7 @@ void NodeOverlayStop(NODE *n) {
 
 	ControlStop(ov->Control);
 	NodeSwapVrfs(n, NULL);
+	NodeShapeStop(n);
 	ov->Halt = true;
 	if (ov->Thread != NULL) {
 		WaitForSingleObject(ov->Thread, INFINITE);
@@ -665,7 +673,8 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	// Counted on the peer before it reads the session, so the thread does not close the session under the send
 	InterlockedIncrement(&peer->Senders);
 	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&peer->Session);
-	bool ok = (s != NULL && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG));
+	// The MTU of the VRF clamps the MSS of a TCP SYN, and the rate limits of the VRF and the node may drop it (NodeShape.c)
+	bool ok = (s != NULL && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG));
 	InterlockedDecrement(&peer->Senders);
 
 	if (record != buf)

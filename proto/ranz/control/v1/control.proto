@@ -168,6 +168,7 @@ message NodeConfig {
   string name = 1;
   repeated string tags = 2;  // sorted
   repeated Address addresses = 3;
+  uint64 rate_limit = 4;  // bits per second that the node sends into the overlay, 0 for no limit (SDN-20)
 }
 
 // A VRF the node is a member of.
@@ -176,6 +177,7 @@ message Vrf {
   uint32 id = 2;
   Prefix ula = 3;  // the ULA /48 of the VRF (RFC 4193)
   uint32 mtu = 4;
+  uint64 rate_limit = 5;  // bits per second that each node sends in the VRF, 0 for no limit (SDN-20)
 }
 
 enum NetworkMode {

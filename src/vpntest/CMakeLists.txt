@@ -86,6 +86,9 @@ ranz_add_executable(vpntest HAMCORE
     vrftest.c
     # Named VXLAN test of SDN-62 (#289): the VXLAN module of the new core against harness VTEPs
     vxlantest.c
+    # Named shaping test of SDN-20 (#196): the MTU of each VRF on its adapter, the TCP MSS clamp, DSCP and the rate
+    # limits of a VRF and of the node over the overlay of in-process nodes
+    shapetest.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
   # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN module for
   # vxlantest.c; netapi32: the local account that stands for a domain account (NetUserAdd)

@@ -54,7 +54,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		if err != nil {
 			return nil, fmt.Errorf("VRF %q: %w", name, err)
 		}
-		vrfs[name] = &controlpb.Vrf{Name: name, Id: v.ID, Ula: prefix(ula), Mtu: v.MTU}
+		vrfs[name] = &controlpb.Vrf{Name: name, Id: v.ID, Ula: prefix(ula), Mtu: v.MTU, RateLimit: v.RateLimit}
 	}
 	networks := map[string][]*controlpb.Network{} // by VRF name
 	for name, n := range in.Networks {
@@ -94,7 +94,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 				s.add(&controlpb.Object{Kind: &controlpb.Object_Network{Network: nw}})
 			}
 		}
-		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(n.Tags), Addresses: addresses(in, name, vrfs, member)}
+		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(n.Tags), Addresses: addresses(in, name, vrfs, member), RateLimit: n.RateLimit}
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {
