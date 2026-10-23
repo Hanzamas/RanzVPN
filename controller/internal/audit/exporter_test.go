@@ -381,12 +381,13 @@ func TestExporterSendsSyslog(t *testing.T) {
 func TestExporterFailsATargetItCannotSendTo(t *testing.T) {
 	s := &memStore{}
 	s.add(Login)
-	names := []string{"odd", "bad-url", "bad-scheme", "refused"}
+	names := []string{"odd", "bad-url", "bad-scheme", "refused", "bad-webhook"}
 	for i, tg := range []export.Target{
 		{Kind: "carrier-pigeon", URL: "http://127.0.0.1:1"},
 		{Kind: export.KindSyslog, URL: "%zz"},
 		{Kind: export.KindSyslog, URL: "http://127.0.0.1:1"},
 		{Kind: export.KindSyslog, URL: "tcp://127.0.0.1:1"},
+		{Kind: export.KindWebhook, URL: "http://[::1"},
 	} {
 		tg.Name = names[i]
 		s.put(tg, 0)

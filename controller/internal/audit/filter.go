@@ -53,8 +53,9 @@ func ParseFilter(q url.Values) (Filter, error) {
 			continue
 		}
 		t, err := time.Parse(time.RFC3339, s)
-		if err != nil {
-			problems = append(problems, fmt.Errorf("%s %q is not a time in RFC 3339, for example 2026-10-23T08:00:00Z", p.name, s))
+		// A year that RFC 3339 has no four digits for, once the offset is applied, is no time of it
+		if err != nil || t.UTC().Year() < 1 || t.UTC().Year() > 9999 {
+			problems = append(problems, fmt.Errorf("%s %q is not a time in RFC 3339 (years 1 to 9999), for example 2026-10-23T08:00:00Z", p.name, s))
 			continue
 		}
 		*p.to = t.UTC()

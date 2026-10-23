@@ -194,6 +194,7 @@ func TestAuditRecordsTheStreamsOfNodes(t *testing.T) {
 	b1.update(t)
 	h.waitNode("branch-1", 1, true)
 	b1.halt()
+	h.waitNode("branch-1", 1, false)
 	b1.start(h)
 	h.waitNode("branch-1", 1, true)
 	b1.halt()
