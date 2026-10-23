@@ -1258,6 +1258,7 @@ type NodeConfig struct {
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Tags          []string               `protobuf:"bytes,2,rep,name=tags,proto3" json:"tags,omitempty"` // sorted
 	Addresses     []*Address             `protobuf:"bytes,3,rep,name=addresses,proto3" json:"addresses,omitempty"`
+	RateLimit     uint64                 `protobuf:"varint,4,opt,name=rate_limit,json=rateLimit,proto3" json:"rate_limit,omitempty"` // bits per second that the node sends into the overlay, 0 for no limit (SDN-20)
 	Nat           []*Nat                 `protobuf:"bytes,5,rep,name=nat,proto3" json:"nat,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1312,6 +1313,13 @@ func (x *NodeConfig) GetAddresses() []*Address {
 		return x.Addresses
 	}
 	return nil
+}
+
+func (x *NodeConfig) GetRateLimit() uint64 {
+	if x != nil {
+		return x.RateLimit
+	}
+	return 0
 }
 
 func (x *NodeConfig) GetNat() []*Nat {
@@ -2518,13 +2526,15 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04kind\"J\n" +
 	"\tObjectKey\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.ranz.control.v1.KindR\x04kind\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x94\x01\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xb3\x01\n" +
 	"\n" +
 	"NodeConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04tags\x18\x02 \x03(\tR\x04tags\x126\n" +
-	"\taddresses\x18\x03 \x03(\v2\x18.ranz.control.v1.AddressR\taddresses\x12&\n" +
-	"\x03nat\x18\x05 \x03(\v2\x14.ranz.control.v1.NatR\x03nat\"f\n" +
+	"\taddresses\x18\x03 \x03(\v2\x18.ranz.control.v1.AddressR\taddresses\x12\x1d\n" +
+	"\n" +
+	"rate_limit\x18\x04 \x01(\x04R\trateLimit\x12&\n" +
+	"\x03nat\x18\x05 \x03(\v2\x14.ranz.control.v1.NatR\x03nat\"\x85\x01\n" +
 	"\x03Vrf\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\rR\x02id\x12)\n" +
