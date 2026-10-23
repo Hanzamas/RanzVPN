@@ -152,7 +152,7 @@ try {
 	if ($out -notmatch 'NO MEMORY LEAKS') { throw 'vpntest sdntrace leaked memory' }
 	# The rate between the two nodes, each way, once the controller stopped (SDN-53, #246)
 	foreach ($pair in 'node-a to node-b', 'node-b to node-a') {
-		if ($out -notmatch "(?m)^  \[INFO\] without the controller: $pair: [1-9][0-9]* datagrams of [0-9]+ bytes in [0-9]+ ms, [0-9]+ arrived, [0-9]+ refused: [0-9]+\.[0-9][0-9] Mbit/s") {
+		if ($out -notmatch "(?m)^  \[INFO\] without the controller: ${pair}: [1-9][0-9]* datagrams of [0-9]+ bytes in [0-9]+ ms, [0-9]+ arrived, [0-9]+ refused: [0-9]+\.[0-9][0-9] Mbit/s") {
 			throw "vpntest sdntrace reports no rate from $pair"
 		}
 	}
