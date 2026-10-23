@@ -66,9 +66,8 @@
 #define	NOISEHUB_IP_SENDER		0x0A440001			// 10.68.0.1
 #define	NOISEHUB_IP_RECEIVER	0x0A440002			// 10.68.0.2
 #define	NOISEHUB_IP_UNKNOWN		0x0A440009			// 10.68.0.9, behind the MAC that no session has
-#define	NOISEHUB_FLOW_NET		0x0A440100			// 10.68.1.f: the client end of inner flow f ...
-#define	NOISEHUB_FLOW_PORT		20000				// ... port 20000 + f, to the receiver's port 30000
-#define	NOISEHUB_RECEIVER_PORT	30000
+#define	NOISEHUB_FLOW_PORT		20000				// The client end of inner flow f: the sender's port 20000 + f, ...
+#define	NOISEHUB_RECEIVER_PORT	30000				// ... to the receiver's port 30000
 #define	NOISEHUB_CONNECTIONS	4					// The connections of the Tunnel case
 #define	NOISEHUB_FLOWS			64					// Its inner flows ...
 #define	NOISEHUB_FLOW_FRAMES	8					// ... and the frames of each, both ways
@@ -273,8 +272,10 @@ static bool NoiseHubIsMarker(UCHAR *frame, UINT size, UINT seq)
 	return size >= 22 && frame[12] == 0x88 && frame[13] == 0xB5 && Cmp(frame + 14, "NHMK", 4) == 0 && Cmp(frame + 18, expect, 4) == 0;
 }
 
-// Frame seq of inner flow f: a UDP datagram over IPv4 from the client end 10.68.1.f:(20000 + f) to the receiver's port
-// 30000, or back the other way; its size
+// Frame seq of inner flow f: a UDP datagram over IPv4 from the sender's address, port 20000 + f, to the receiver's port
+// 30000, or back the other way; its size. The flows differ by their port alone, as the flows of one client do: the
+// Session of a client node asks for no routing, so the Hub learns IP_MIN_LIMIT_COUNT IPv4 addresses of it at most and
+// drops a frame from another (IpTableSessionAtLimit), as it does for the oracle.
 static UINT NoiseHubFlowFrame(UCHAR *buf, UINT f, UINT seq, bool back)
 {
 	UINT tag = (f << 16) | seq;
@@ -282,10 +283,10 @@ static UINT NoiseHubFlowFrame(UCHAR *buf, UINT f, UINT seq, bool back)
 	if (back)
 	{
 		return NoiseHubUdp(buf, noisehub_mac_sender, noisehub_mac_receiver, NOISEHUB_IP_RECEIVER, NOISEHUB_RECEIVER_PORT,
-			NOISEHUB_FLOW_NET + f, NOISEHUB_FLOW_PORT + f, tag, true);
+			NOISEHUB_IP_SENDER, NOISEHUB_FLOW_PORT + f, tag, true);
 	}
 
-	return NoiseHubUdp(buf, noisehub_mac_receiver, noisehub_mac_sender, NOISEHUB_FLOW_NET + f, NOISEHUB_FLOW_PORT + f,
+	return NoiseHubUdp(buf, noisehub_mac_receiver, noisehub_mac_sender, NOISEHUB_IP_SENDER, NOISEHUB_FLOW_PORT + f,
 		NOISEHUB_IP_RECEIVER, NOISEHUB_RECEIVER_PORT, tag, true);
 }
 
@@ -825,7 +826,7 @@ static bool NoiseHubCollect(NOISEHUB_PATH *p, bool sender, UINT seq, char *name,
 		{
 			BinToStr(hex, sizeof(hex), buf, MIN(size, NOISEHUB_FRAME_MAX));
 			Format(line, sizeof(line), "%u %s: %s got %s\n", seq, name, side, hex);
-			WriteBufStr(report, line);
+			WriteBuf(report, line, StrLen(line));
 			num++;
 		}
 	}
@@ -833,7 +834,7 @@ static bool NoiseHubCollect(NOISEHUB_PATH *p, bool sender, UINT seq, char *name,
 	if (num == 0)
 	{
 		Format(line, sizeof(line), "%u %s: %s got nothing\n", seq, name, side);
-		WriteBufStr(report, line);
+		WriteBuf(report, line, StrLen(line));
 	}
 
 	Free(buf);
@@ -869,7 +870,7 @@ static void NoiseHubSessionLine(SESSION *s, BUF *report)
 	Format(line, sizeof(line), "sender: user %s, group %s, Access %u, NoBridge %u, NoRouting %u, MonitorPort %u, MaxConnection %u, TimeOut %u, VLanId %u, bridge mode %u, monitor mode %u\n",
 		s->Username, IsEmptyStr(s->GroupName) ? "-" : s->GroupName, (UINT)y->Access, (UINT)y->NoBridge, (UINT)y->NoRouting,
 		(UINT)y->MonitorPort, y->MaxConnection, y->TimeOut, y->VLanId, (UINT)s->IsBridgeMode, (UINT)s->IsMonitorMode);
-	WriteBufStr(report, line);
+	WriteBuf(report, line, StrLen(line));
 }
 
 // The MAC table of the Hub of the path, sorted: each address, its VLAN and the side whose session the Hub learnt it on
@@ -902,7 +903,7 @@ static void NoiseHubMacLines(NOISEHUB_PATH *p, BUF *report)
 	{
 		char *line = LIST_DATA(lines, i);
 
-		WriteBufStr(report, line);
+		WriteBuf(report, line, StrLen(line));
 		Free(line);
 	}
 
