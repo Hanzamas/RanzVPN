@@ -41,13 +41,18 @@ type wintrustData struct {
 	uiChoice           uint32
 	revocationChecks   uint32
 	unionChoice        uint32
-	file               uintptr // the union of pFile/pCatalog/pBlob/pSgnr/pCert; only pFile is used
-	stateAction        uint32
-	wvtStateData       windows.Handle
-	urlReference       *uint16
-	provFlags          uint32
-	uiContext          uint32
-	signatureSettings  uintptr
+	// file is the union of pFile/pCatalog/pBlob/pSgnr/pCert; only pFile is used. It is
+	// unsafe.Pointer, not uintptr, so the garbage collector keeps tracking *wintrustFileInfo
+	// through it: a uintptr here would let the collector move or free that struct out from under
+	// WinVerifyTrust (the unsafe package's uintptr rule is for a Pointer converted in the call
+	// expression itself, not for one kept in a field read later).
+	file              unsafe.Pointer
+	stateAction       uint32
+	wvtStateData      windows.Handle
+	urlReference      *uint16
+	provFlags         uint32
+	uiContext         uint32
+	signatureSettings uintptr
 }
 
 // The WTD_* and TRUST_E_* values of wintrust.h this file uses, named as the Windows SDK names
@@ -60,8 +65,8 @@ const (
 	wtdStateActionClose      = 2      // WTD_STATEACTION_CLOSE
 	wtdCacheOnlyURLRetrieval = 0x1000 // WTD_CACHE_ONLY_URL_RETRIEVAL: never fetch a revocation list over the network
 
-	trustOK            = 0          // S_OK: the signature verifies and chains to a trusted root
-	trustNoSignature   = 0x800B0100 // TRUST_E_NOSIGNATURE
+	trustOK          = 0          // S_OK: the signature verifies and chains to a trusted root
+	trustNoSignature = 0x800B0100 // TRUST_E_NOSIGNATURE
 )
 
 var (
@@ -89,7 +94,7 @@ func verifyAuthenticode(path string) error {
 		uiChoice:         wtdUINone,
 		revocationChecks: wtdRevokeNone,
 		unionChoice:      wtdChoiceFile,
-		file:             uintptr(unsafe.Pointer(&file)),
+		file:             unsafe.Pointer(&file),
 		stateAction:      wtdStateActionVerify,
 		provFlags:        wtdCacheOnlyURLRetrieval,
 	}
