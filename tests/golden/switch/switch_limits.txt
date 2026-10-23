@@ -1,0 +1,30 @@
+1 broadcast_within_limit: P2 got FFFFFFFFFFFF0200000000A188A8006488B553570001
+2 broadcast_within_limit: P2 got FFFFFFFFFFFF0200000000A188A8006488B553570002
+3 broadcast_within_limit: P2 got FFFFFFFFFFFF0200000000A188A8006488B553570003
+4 broadcast_within_limit: P2 got FFFFFFFFFFFF0200000000A188A8006488B553570004
+5 broadcast_over_limit: nothing
+6 broadcast_over_limit: nothing
+7 broadcast_after_250_ms: P2 got FFFFFFFFFFFF0200000000A188A8006488B553570007
+8 broadcast_over_limit: nothing
+9 unknown_unicast_under_broadcast_limit: P2 got 0200000000FF0200000000A188A8006488B553570009
+10 unknown_unicast_over_limit: nothing
+11 multicast_within_vlan200_limit: P2 got 01005E0000010200000000A388A800C888B55357000B
+12 multicast_within_vlan200_limit: P2 got 01005E0000010200000000A388A800C888B55357000C
+13 multicast_within_vlan200_limit: P2 got 01005E0000010200000000A388A800C888B55357000D
+14 multicast_over_vlan200_limit: nothing
+15 broadcast_within_vlan200_limit: P2 got FFFFFFFFFFFF0200000000A388A800C888B55357000F
+16 broadcast_within_vlan200_limit: P2 got FFFFFFFFFFFF0200000000A388A800C888B553570010
+17 broadcast_over_vlan200_limit: nothing
+18 broadcast_after_refill: P2 got FFFFFFFFFFFF0200000000A388A800C888B553570012
+19 tpid_88a8_tag_from_trunk: P3 got 0200000000A30200000000A288B553570013
+20 tpid_8100_tag_is_no_tag: nothing
+21 inner_8100_tag_stays: P2 got FFFFFFFFFFFF0200000000A188A800648100000788B553570015
+22 multicast_vlan100: P2 got 01005E0000010200000000A188A8006488B553570016
+23 multicast_only_to_own_port: nothing
+mac 100 02-00-00-00-00-A1: P1
+mac 100 02-00-00-00-00-A2: P2
+mac 200 02-00-00-00-00-A2: P2
+mac 200 02-00-00-00-00-A3: P3
+vlan 100: in 13 frames 242 bytes; unicast 0, flooded 1, broadcast 6, multicast 1, limit drops 4, filtered 1; out 8 frames 180 bytes; limits broadcast 4/s, multicast 2/s
+vlan 200: in 9 frames 166 bytes; unicast 1, flooded 0, broadcast 3, multicast 3, limit drops 2, filtered 0; out 7 frames 150 bytes; limits broadcast 2/s, multicast 3/s
+switch: ports 3, macs 4, vlans 2, learnt 4, moved 0, refused 0; drops malformed 0, port 0, vlan 1, source 0

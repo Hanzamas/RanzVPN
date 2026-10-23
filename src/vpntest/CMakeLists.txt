@@ -89,14 +89,18 @@ ranz_add_executable(vpntest HAMCORE
     # Named shaping test of SDN-20 (#196): the MTU of each VRF on its adapter, the TCP MSS clamp, DSCP and the rate
     # limits of a VRF and of the node over the overlay of in-process nodes
     shapetest.c
+    # Named switch test and switch benchmark of CORE-S4-1 (#74): the L2 switch of the new core against golden frames
+    switchtest.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
   # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN module for
-  # vxlantest.c; netapi32: the local account that stands for a domain account (NetUserAdd)
+  # vxlantest.c, the switch module for switchtest.c; netapi32: the local account that stands for a domain account
+  # (NetUserAdd)
   LIBRARIES
     coretransport
     corenoise
     corecrypto
     corevxlan
+    coreswitch
     "netapi32.lib"
   # The resources test (runtime.c) compares every hamcore file the executable serves with its source
   # file. A C-only definition, so the resource scripts of vpntest do not get the quoted path.

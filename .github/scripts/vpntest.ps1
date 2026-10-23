@@ -42,7 +42,7 @@ if (Test-Path $benchFile) { Remove-Item $benchFile }
 }
 
 # Named self-tests: must print their OK marker and no leak. RANZ_SMOKE_TESTS (comma list) overrides the list.
-$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'noisehub', 'vrf', 'vxlan', 'shape')
+$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'noisehub', 'vrf', 'vxlan', 'shape', 'switch', 'switchbench')
 if ($env:RANZ_SMOKE_TESTS) { $named = $env:RANZ_SMOKE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
 $named | % {
 
@@ -102,6 +102,13 @@ $named | % {
 	if ($test -eq 'vrf' -and $env:RANZ_UPDATE_GOLDEN -ne '1' -and ($full | Select-String -Pattern 'VRF GOLDEN MODE compare' -SimpleMatch -CaseSensitive).Count -ne 1) {
 		$full
 		Write-Error 'vrf golden files not compared (missing: VRF GOLDEN MODE compare)'
+		return $false
+	}
+
+	# ... and the switch test its frames, limits and counters (golden family "switch", CORE-S4-1 #74)
+	if ($test -eq 'switch' -and $env:RANZ_UPDATE_GOLDEN -ne '1' -and ($full | Select-String -Pattern 'SWITCH GOLDEN MODE compare' -SimpleMatch -CaseSensitive).Count -ne 1) {
+		$full
+		Write-Error 'switch golden files not compared (missing: SWITCH GOLDEN MODE compare)'
 		return $false
 	}
 
