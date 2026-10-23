@@ -2,13 +2,20 @@
 # Writes the seed corpus of the libFuzzer targets into src/fuzz/corpus/<target>/.
 # Python standard library only; deterministic (same bytes on every run).
 #
+# The seeds of the targets up to fuzz_switch are made by the make_<name>_seeds() functions below. A new target has its
+# own file src/fuzz/seeds/<target>.py, which defines make_seeds(h) and is run after them, so that no function and no line
+# of the main block here is added: h is this module, with write_seed(target, name, data) and the helpers (ipv4, udp,
+# eth, der, ...). Files whose name starts with an underscore are not run.
+#
 # Usage: python -I src/fuzz/make_seeds.py
 
 import base64
 import hashlib
+import importlib.util
 import os
 import random
 import struct
+import sys
 
 CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'corpus')
 
@@ -928,6 +935,21 @@ def make_switch_seeds():
     write_seed('fuzz_switch', 'no_member.bin', switch_input(3, 0, eth(BROADCAST, MAC_A, 0x88B5, b'SW\x00\x04')))
 
 
+def make_module_seeds():
+    # src/fuzz/seeds/<target>.py, in the order of their names: each has make_seeds(h), h being this module. The directory
+    # is not on the module path under python -I, so the files are loaded by their path.
+    directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'seeds')
+    if not os.path.isdir(directory):
+        return
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith('.py') or name.startswith('_'):
+            continue
+        spec = importlib.util.spec_from_file_location('seeds_' + name[:-3], os.path.join(directory, name))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.make_seeds(sys.modules[__name__])
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     assert len(PEER_SIGNAL) == 99 and len(PEER_SIGNAL_ENVELOPE) == 180 and len(PEER_BIND_ENVELOPE) == 90
@@ -947,3 +969,4 @@ if __name__ == '__main__':
     make_transport_seeds()
     make_vxlan_seeds()
     make_switch_seeds()
+    make_module_seeds()

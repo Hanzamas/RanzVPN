@@ -4,6 +4,9 @@
 // a flood list of two VTEPs and VNI 16777215 (0xFFFFFF) without one. The receiver sends every frame that the ingress
 // takes back to the VTEP it came from and to the flood list of its VNI, so the encapsulation reads the frame to its
 // last byte and AddressSanitizer reports a frame that runs past the input.
+//
+// fuzz-max-len: 9217
+// fuzz-libs: corevxlan
 
 #include "fuzz_common.h"
 
