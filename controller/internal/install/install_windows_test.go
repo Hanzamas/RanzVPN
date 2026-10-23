@@ -35,8 +35,9 @@ func TestProtectDirSetsTheAccessList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the access list of %s: %v", dir, err)
 	}
+	// The string holds the parts that the descriptor has, and the owner may be one of them
 	got := sd.String()
-	if !strings.HasPrefix(got, "D:P") {
+	if !strings.Contains(got, "D:P") {
 		t.Errorf("the access list %s is not protected", got)
 	}
 	for _, trustee := range []string{"BU", "WD", "AU", "IU"} {

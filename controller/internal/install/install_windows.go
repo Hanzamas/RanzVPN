@@ -264,7 +264,7 @@ func writeFiles(w io.Writer, dir, self string, onlyMissing bool) error {
 		if err := payload.Install(dir, node); err != nil {
 			return fmt.Errorf("the Node payload: %w", err)
 		}
-		fmt.Fprintf(w, "install: %s written, after its hash and its Authenticode signature checked\n", nodePath)
+		fmt.Fprintf(w, "install: %s written (SHA-256 %x), after its hash and its Authenticode signature checked\n", nodePath, node.SHA256)
 	}
 	return writeSelf(w, dir, self, onlyMissing)
 }
@@ -281,10 +281,11 @@ func writeSelf(w io.Writer, dir, self string, onlyMissing bool) error {
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", self, err)
 	}
-	if err := payload.Install(dir, payload.New(ranzExeName, data)); err != nil {
+	p := payload.New(ranzExeName, data)
+	if err := payload.Install(dir, p); err != nil {
 		return fmt.Errorf("the copy of ranz.exe: %w", err)
 	}
-	fmt.Fprintf(w, "install: %s written, after its hash and its Authenticode signature checked\n", dest)
+	fmt.Fprintf(w, "install: %s written (SHA-256 %x), after its hash and its Authenticode signature checked\n", dest, p.SHA256)
 	return nil
 }
 
@@ -305,11 +306,31 @@ func createNode(w io.Writer, m *mgr.Mgr, dir string) error {
 		return fmt.Errorf("registering the %s service: %w", nodeServiceName, err)
 	}
 	defer s.Close()
+	if err := setRecovery(s); err != nil {
+		_ = s.Delete()
+		return fmt.Errorf("registering the %s service: %w", nodeServiceName, err)
+	}
 	fmt.Fprintf(w, "install: the %s service is registered, to run as %s\n", nodeServiceName, nodeAccount)
 	if err := startService(s, nodeServiceName); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "install: the %s service is running\n", nodeServiceName)
+	return nil
+}
+
+// recoveryResetSeconds is how long a service runs without a failure before its failure count starts
+// from zero again: a day, as the service program of src/Mayaqua/MicrosoftService.c sets it.
+const recoveryResetSeconds = 24 * 60 * 60
+
+// setRecovery has the Service Control Manager restart the service 10 seconds after each of its
+// first three failures, as MsSetServiceRecovery of src/Mayaqua/MicrosoftService.c does for a service
+// that it installs itself.
+func setRecovery(s *mgr.Service) error {
+	restart := mgr.RecoveryAction{Type: mgr.ServiceRestart, Delay: 10 * time.Second}
+	err := s.SetRecoveryActions([]mgr.RecoveryAction{restart, restart, restart}, recoveryResetSeconds)
+	if err != nil {
+		return fmt.Errorf("its recovery actions: %w", err)
+	}
 	return nil
 }
 
