@@ -32,3 +32,18 @@ ranz.control.v1.Controllers.controllers max_count:8
 ranz.control.v1.Controller.name max_size:64
 ranz.control.v1.Controller.address max_size:256
 ranz.control.v1.Controller.public_key max_size:32
+# One Telemetry (SDN-16): a node holds at most 64 objects (Update.set), so it has at most 64 peers,
+# and it is in at most 16 VRFs (Peer.vrf_ids) with one rule each until SDN-8 compiles the rules of
+# the intent, so 32 rules leave room. A node that has more flow records or events than one message
+# holds sends more messages. Names are DNS labels of at most 63 characters.
+ranz.control.v1.Telemetry.peers max_count:64
+ranz.control.v1.Telemetry.vrfs max_count:16
+ranz.control.v1.Telemetry.rules max_count:32
+ranz.control.v1.Telemetry.flows max_count:32
+ranz.control.v1.Telemetry.events max_count:8
+ranz.control.v1.PeerCounters.peer max_size:64
+ranz.control.v1.RuleCounters.rule max_size:64
+ranz.control.v1.Flow.src max_size:16
+ranz.control.v1.Flow.dst max_size:16
+ranz.control.v1.NodeEvent.subject max_size:64
+ranz.control.v1.NodeEvent.message max_size:256
