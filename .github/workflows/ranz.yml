@@ -9,16 +9,16 @@
 # protoc-gen-go, tidies go.mod and go.sum and runs gofmt; then vets (for Linux and for Windows),
 # builds every package and ranz for Linux x64, Windows x64 and Windows arm64 as it ships, records
 # the size of each, runs the Linux executable for its contract (one version for every subcommand,
-# the subcommands, the NOTICE with the licence of GoBGP), and tests the module, with rqlited of the
-# pinned rqlite release for the controller conformance tests and the cluster tests of SDN-17 (three
-# controller processes, each with its rqlited, on the runner: controller/cluster_test.go), and the
-# session of the BGP sidecar against GoBGP routers over an in-memory pipe. The controller tests
-# write every control message they sent or received to a directory, and the nanopb code generated
-# from the same schema decodes each one and encodes it back to the same bytes
-# (tests/control/nanopb_roundtrip.c). Then the job fails, and prints the diff, if generation, tidy
-# or gofmt changed a committed file. Last come the quality gates of ADR-0040 for the module: the
-# tests run with -race (item 4) and -coverprofile, and each package must stay at or above its
-# coverage floor (item 2, .github/quality/coverage-floors.txt); the fuzz tests of
+# the subcommands, the NOTICE with the licences of GoBGP and rqlite), and tests the module, with
+# rqlited of the pinned rqlite release for the controller conformance tests and the cluster tests of
+# SDN-17 (three controller processes, each with its rqlited, on the runner:
+# controller/cluster_test.go), and the session of the BGP sidecar against GoBGP routers over an
+# in-memory pipe. The controller tests write every control message they sent or received to a
+# directory, and the nanopb code generated from the same schema decodes each one and encodes it back
+# to the same bytes (tests/control/nanopb_roundtrip.c). Then the job fails, and prints the diff, if
+# generation, tidy or gofmt changed a committed file. Last come the quality gates of ADR-0040 for
+# the module: the tests run with -race (item 4) and -coverprofile, and each package must stay at or
+# above its coverage floor (item 2, .github/quality/coverage-floors.txt); the fuzz tests of
 # .github/quality/fuzz-targets.txt run with go test -fuzz for a short time each (item 1); and
 # staticcheck and govulncheck, for Linux and for Windows, must find nothing (item 3).
 #

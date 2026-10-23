@@ -82,7 +82,9 @@ func TestMain(m *testing.M) {
 // vendor can sign licence keys for. So the members are the one executable that ships, with the
 // rqlite member that the checkout embeds (ONE-4, #313), and nothing of rqlite is beside it, since
 // the build has a directory of its own. A test binary with the race detector builds ranz with it
-// too, so that the members run under it as they always did.
+// too, so that the members run under it as they always did, and so does a run with coverage: go
+// test sets GOCOVERDIR for it, the members write what they covered there when they exit, and go
+// test adds that to the profile, as it did when the members were this test binary.
 func clusterRanz(t *testing.T) string {
 	t.Helper()
 	clusterBuild.once.Do(func() {
@@ -100,6 +102,9 @@ func clusterRanz(t *testing.T) string {
 		args := []string{"build", "-o", exe, "-ldflags", "-X " + vendorKeysVar + "=" + vendor}
 		if raceEnabled {
 			args = append(args, "-race")
+		}
+		if mode := testing.CoverMode(); mode != "" {
+			args = append(args, "-cover", "-covermode="+mode)
 		}
 		args = append(args, "github.com/Hanzamas/RanzVPN/controller/cmd/ranz")
 		if out, err := exec.Command("go", args...).CombinedOutput(); err != nil {
