@@ -6,21 +6,22 @@ package event
 
 import "time"
 
-// AutomaticRollback: an apply with a confirmation time was not confirmed in time, and the
-// controller rolled it back (ADR-0031 decision 4).
-const AutomaticRollback = "automatic-rollback"
-
-// NodeDown: a node that had a control stream has had none for the grace period of the controller
-// (controller.Config.NodeDownAfter).
-const NodeDown = "node-down"
-
-// GatewayFailover: a node moved its traffic from one gateway to another. The node reports it in its
-// telemetry (SDN-19, #195, makes the node detect it); Subject is the gateway it moved to.
-const GatewayFailover = "gateway-failover"
-
-// PoolNearExhaustion: an IPAM pool reached its alert threshold (ADR-0028 decision 2). SDN-10
-// (#186) raises it with controller.Raise; Subject is the Network of the pool.
-const PoolNearExhaustion = "ipam-pool-near-exhaustion"
+// The types of an event.
+const (
+	// AutomaticRollback: an apply with a confirmation time was not confirmed in time, and the
+	// controller rolled it back (ADR-0031 decision 4).
+	AutomaticRollback = "automatic-rollback"
+	// NodeDown: a node that had a control stream has had none for the grace period of the controller
+	// (controller.Config.NodeDownAfter).
+	NodeDown = "node-down"
+	// GatewayFailover: a node moved its traffic from one gateway to another. The node reports it in
+	// its telemetry (SDN-19, #195, makes the node detect it); Subject is the gateway it moved to.
+	GatewayFailover = "gateway-failover"
+	// PoolNearExhaustion: a change of the intent took a pool of a Network to the percentage of its
+	// addresses in use that the Network sets as its threshold, so the controller reports the pool
+	// before it runs out (ADR-0028 decision 2, ADR-0030 decision 5).
+	PoolNearExhaustion = "ipam-pool-near-exhaustion"
+)
 
 // Types lists the types of event, in the order that the metrics list them.
 var Types = []string{AutomaticRollback, NodeDown, GatewayFailover, PoolNearExhaustion}
@@ -31,13 +32,13 @@ type Event struct {
 	Time    time.Time `json:"time"`
 	Type    string    `json:"type"`
 	Message string    `json:"message"`
-	// Revision is the revision the event made: for AutomaticRollback, the rollback.
+	// Revision is the revision the event made: for AutomaticRollback, the rollback; for
+	// PoolNearExhaustion, the change that took the pool to its threshold.
 	Revision uint64 `json:"revision,omitempty"`
 	// Reverts is the revision that an AutomaticRollback undid.
 	Reverts uint64 `json:"reverts,omitempty"`
 	// Node is the node the event is about, for NodeDown and GatewayFailover.
 	Node string `json:"node,omitempty"`
-	// Subject is what else the event is about: the gateway of a GatewayFailover, the Network of a
-	// PoolNearExhaustion.
+	// Subject is what else the event is about: the gateway of a GatewayFailover.
 	Subject string `json:"subject,omitempty"`
 }

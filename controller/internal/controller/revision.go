@@ -138,6 +138,7 @@ func (c *Controller) Events(ctx context.Context) ([]event.Event, error) {
 func (c *Controller) change(ctx context.Context, next intent.Intent, cp compiled, rev intent.Revision, ch store.Changes) (ApplyResult, error) {
 	rev.Resources = next.Resources()
 	ch.AddRevision = &rev
+	ch.AddEvents = append(ch.AddEvents, poolEvents(c.intent, next, rev)...)
 	nodes, err := c.commit(ctx, next, cp, ch)
 	if err != nil {
 		return ApplyResult{}, err
