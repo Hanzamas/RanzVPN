@@ -1,0 +1,7 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48", "mtu": 1400, "rateLimit": 8000000}},
+    {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24", "ipv6Pool": "fd12:3456:789a:1::/64"}},
+    {"kind": "Node", "name": "branch-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "tags": ["branch"], "rateLimit": 2000000}}
+  ]
+}

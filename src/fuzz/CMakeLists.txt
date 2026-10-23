@@ -18,6 +18,7 @@ set(RANZ_FUZZ_TARGETS
   fuzz_noise
   fuzz_transport
   fuzz_vxlan
+  fuzz_nat
   fuzz_switch
 )
 

@@ -243,8 +243,54 @@ static void ControlCopyAddresses(CONTROL_ADDRESS *dst, UINT *num, const ranz_con
 	}
 }
 
+// Copy the prefix p into addr (16 bytes), with the number of its bytes and its length: false for a prefix that is
+// neither IPv4 nor IPv6, or longer than its address
+static bool ControlCopyPrefix(UCHAR *addr, UINT *size, UINT *length, const ranz_control_v1_Prefix *p) {
+	if ((p->address.size != 4 && p->address.size != 16) || p->length > (uint32_t)p->address.size * 8)
+		return false;
+
+	ZeroMemory(addr, 16);
+	CopyMemory(addr, p->address.bytes, p->address.size);
+	*size = p->address.size;
+	*length = p->length;
+
+	return true;
+}
+
+// The 1:1 NAT rules of a NodeConfig (SDN-6, #182); a rule without both prefixes is left out
+static void ControlCopyNats(CONTROL_NAT *dst, UINT *num, const ranz_control_v1_Nat *src, pb_size_t count) {
+	*num = 0;
+
+	for (pb_size_t i = 0; i < count && *num < CONTROL_MAX_NATS; i++) {
+		CONTROL_NAT *n = &dst[*num];
+
+		ZeroMemory(n, sizeof(CONTROL_NAT));
+		n->VrfId = src[i].vrf_id;
+		if (src[i].has_inside && src[i].has_outside && ControlCopyPrefix(n->Inside, &n->InsideSize, &n->InsideLength, &src[i].inside) && ControlCopyPrefix(n->Outside, &n->OutsideSize, &n->OutsideLength, &src[i].outside))
+			(*num)++;
+	}
+}
+
+// The routes of a Peer (SDN-6, #182); a route without a prefix is left out
+static void ControlCopyRoutes(CONTROL_ROUTE *dst, UINT *num, const ranz_control_v1_Route *src, pb_size_t count) {
+	*num = 0;
+
+	for (pb_size_t i = 0; i < count && *num < CONTROL_MAX_ROUTES; i++) {
+		CONTROL_ROUTE *r = &dst[*num];
+
+		ZeroMemory(r, sizeof(CONTROL_ROUTE));
+		r->VrfId = src[i].vrf_id;
+		if (src[i].has_prefix && ControlCopyPrefix(r->Address, &r->AddressSize, &r->Length, &src[i].prefix))
+			(*num)++;
+	}
+}
+
 static int ControlComparePeers(const void *a, const void *b) {
 	return strcmp(((const CONTROL_PEER *)a)->Name, ((const CONTROL_PEER *)b)->Name);
+}
+
+static int ControlCompareVrfs(const void *a, const void *b) {
+	return strcmp(((const CONTROL_VRF *)a)->Name, ((const CONTROL_VRF *)b)->Name);
 }
 
 // Hand the objects, which are at Generation gen, to the owner
@@ -269,6 +315,15 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 		if (o->which_kind == ranz_control_v1_Object_node_tag) {
 			strncpy_s(st.Name, sizeof(st.Name), o->kind.node.name, _TRUNCATE);
 			ControlCopyAddresses(st.Addresses, &st.NumAddresses, o->kind.node.addresses, o->kind.node.addresses_count);
+			st.RateLimit = o->kind.node.rate_limit;
+			ControlCopyNats(st.Nats, &st.NumNats, o->kind.node.nat, o->kind.node.nat_count);
+		} else if (o->which_kind == ranz_control_v1_Object_vrf_tag && st.NumVrfs < CONTROL_MAX_VRFS) {
+			CONTROL_VRF *v = &st.Vrfs[st.NumVrfs++];
+
+			strncpy_s(v->Name, sizeof(v->Name), o->kind.vrf.name, _TRUNCATE);
+			v->Id = o->kind.vrf.id;
+			v->Mtu = o->kind.vrf.mtu;
+			v->RateLimit = o->kind.vrf.rate_limit;
 		} else if (o->which_kind == ranz_control_v1_Object_peer_tag && o->kind.peer.public_key.size == NOISE_KEY_SIZE) {
 			CONTROL_PEER *p = &st.Peers[st.NumPeers++];
 
@@ -277,10 +332,12 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 			for (pb_size_t j = 0; j < o->kind.peer.vrf_ids_count && p->NumVrfs < CONTROL_MAX_VRFS; j++)
 				p->VrfIds[p->NumVrfs++] = o->kind.peer.vrf_ids[j];
 			ControlCopyAddresses(p->Addresses, &p->NumAddresses, o->kind.peer.addresses, o->kind.peer.addresses_count);
+			ControlCopyRoutes(p->Routes, &p->NumRoutes, o->kind.peer.routes, o->kind.peer.routes_count);
 		}
 	}
 
-	// A delta appends the objects it adds, so the peers are sorted again
+	// A delta appends the objects it adds, so the VRFs and the peers are sorted again
+	qsort(st.Vrfs, st.NumVrfs, sizeof(CONTROL_VRF), ControlCompareVrfs);
 	qsort(st.Peers, st.NumPeers, sizeof(CONTROL_PEER), ControlComparePeers);
 
 	if (c->Config.Proc != NULL)

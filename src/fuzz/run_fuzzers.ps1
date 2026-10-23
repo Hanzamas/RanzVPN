@@ -23,7 +23,7 @@ param(
 	[string] $BuildDir = 'build',
 	[int] $Seconds = 60,
 	[int] $Seed = 1,
-	[string[]] $Targets = @('fuzz_pack', 'fuzz_cfg', 'fuzz_tcpip', 'fuzz_x509', 'fuzz_http', 'fuzz_httplistener', 'fuzz_dhcp', 'fuzz_net', 'fuzz_stun', 'fuzz_login', 'fuzz_peer', 'fuzz_noise', 'fuzz_transport', 'fuzz_vxlan', 'fuzz_switch')
+	[string[]] $Targets = @('fuzz_pack', 'fuzz_cfg', 'fuzz_tcpip', 'fuzz_x509', 'fuzz_http', 'fuzz_httplistener', 'fuzz_dhcp', 'fuzz_net', 'fuzz_stun', 'fuzz_login', 'fuzz_peer', 'fuzz_noise', 'fuzz_transport', 'fuzz_vxlan', 'fuzz_nat', 'fuzz_switch')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,13 +32,13 @@ $ErrorActionPreference = 'Stop'
 # WIN32_USE_HEAP_API_FOR_MEMORY undefined), which AddressSanitizer checks without extra ASAN_OPTIONS.
 
 # Largest input per target (-max_len); fuzz_tcpip and fuzz_dhcp match their FUZZ_MAX_FRAME_SIZE,
-# fuzz_net, fuzz_stun, fuzz_peer, fuzz_noise, fuzz_transport, fuzz_vxlan and fuzz_switch their FUZZ_MAX_INPUT_SIZE,
+# fuzz_net, fuzz_stun, fuzz_peer, fuzz_noise, fuzz_transport, fuzz_vxlan, fuzz_nat and fuzz_switch their FUZZ_MAX_INPUT_SIZE,
 # fuzz_http is above twice HTTP_HEADER_LINE_MAX_SIZE (4096) so that over-long lines are reached,
 # fuzz_httplistener above HTTP_LISTENER_MAX_REQUEST (16384) so that a request over that limit is
 # reached
 $MaxLen = @{ 'fuzz_pack' = 4096; 'fuzz_cfg' = 4096; 'fuzz_tcpip' = 1600; 'fuzz_x509' = 4096; 'fuzz_http' = 10240;
 	'fuzz_httplistener' = 20480; 'fuzz_dhcp' = 1600; 'fuzz_net' = 4096; 'fuzz_stun' = 2048; 'fuzz_login' = 4096;
-	'fuzz_peer' = 2048; 'fuzz_noise' = 4096; 'fuzz_transport' = 4096; 'fuzz_vxlan' = 9217; 'fuzz_switch' = 9219 }
+	'fuzz_peer' = 2048; 'fuzz_noise' = 4096; 'fuzz_transport' = 4096; 'fuzz_vxlan' = 9217; 'fuzz_nat' = 9217; 'fuzz_switch' = 9219 }
 
 $BuildDir = (Resolve-Path $BuildDir).Path
 $CorpusRoot = Join-Path $PSScriptRoot 'corpus'
