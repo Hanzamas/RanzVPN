@@ -292,6 +292,10 @@ jobs:
     - name: Build ranz for the default VRF tracer
       shell: pwsh
       working-directory: controller
+      env:
+        # ranz is pure Go; the gcc of the arm64 runner builds x64 code only, so a build with cgo fails
+        # there while it assembles runtime/cgo
+        CGO_ENABLED: '0'
       run: |
         go build -o ..\build\ ./cmd/ranz
         if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
