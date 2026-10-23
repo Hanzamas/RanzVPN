@@ -284,11 +284,13 @@ NODE_VRF_TABLES *NodeNewVrfTables(UINT64 generation, const NODE_VRF_ROUTE *route
 	return v;
 }
 
-// Free the tables of the VRFs, wiped first as NodeFreeTable does; the objects of the next hops stay the caller's
+// Free the tables of the VRFs and the Mirrors installed with them, wiped first as NodeFreeTable does; the objects of
+// the next hops stay the caller's
 void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 	if (v == NULL)
 		return;
 
+	NodeFreeMirrorTable(v->Mirror);
 	for (UINT i = 0; i < v->NumVrfs; i++)
 		NodeFreeVrfTable(v->Vrfs[i]);
 

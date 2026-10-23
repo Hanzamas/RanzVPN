@@ -46,6 +46,10 @@ target_link_libraries(cedar PRIVATE corepeer)
 # #179), with the transport and session modules it runs on. Its nanopb messages stay inside it.
 target_link_libraries(cedar PRIVATE corecontrol)
 
+# The VXLAN module of the new core, which sends the copies of the Mirrors of the Node module to their sensors
+# (NodeMirror.c; SDN-23, #199)
+target_link_libraries(cedar PRIVATE corevxlan)
+
 # Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that
 # print it include it (Cedar.c, Admin.c, Server.c, Command.c), so a new stamp rebuilds those four
 # and not the whole library. configure_file leaves the header alone when its content is the same.

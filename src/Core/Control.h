@@ -29,6 +29,21 @@
 #define CONTROL_MAX_FRAME      (1 << 20)                     // The largest frame the client reads
 #define CONTROL_TIMEOUT        10000                         // ms for the handshake, and for a frame to come whole
 #define CONTROL_RETRY          1000                          // ms between two attempts to open the stream
+#define CONTROL_MAX_MIRRORS    16                            // The Mirrors of a node (NodeConfig.mirrors of control.options)
+
+// A Mirror that the node applies (Mirror of the control protocol; SDN-23, #199): the node copies the packets of the
+// overlay that match it to the sensor, in VXLAN
+typedef struct CONTROL_MIRROR {
+	char Name[CONTROL_NAME_SIZE]; // Its name
+	UINT VrfId;                   // The VRF of the packets, 0 for every VRF of the node
+	UINT Protocol;                // Their IP protocol, 0 for any; 1 (ICMP) takes ICMPv6 in IPv6 packets
+	UINT Port;                    // Their source or destination port, of TCP or UDP; 0 for any
+	UCHAR Sensor[16];             // The sensor's address: 4 bytes for IPv4, 16 for IPv6
+	UINT SensorSize;              // ... their number
+	UINT SensorPort;              // ... and its UDP port
+	UINT Vni;                     // The VNI of the copies, 0 for the VRF id of each packet
+	UINT64 RateLimit;             // Bits per second of VXLAN datagrams that the node sends the sensor at most, 0 for no limit
+} CONTROL_MIRROR;
 
 // An address of a node in an L3 Network of one of its VRFs (Address of the control protocol)
 typedef struct CONTROL_ADDRESS {
@@ -58,6 +73,8 @@ typedef struct CONTROL_STATE {
 	CONTROL_ADDRESS Addresses[CONTROL_MAX_ADDRESSES]; // ... ordered by Network name
 	UINT NumPeers;                                    // Its peers
 	CONTROL_PEER *Peers;                              // ... in name order
+	UINT NumMirrors;                                  // The Mirrors that it applies (SDN-23, #199)
+	CONTROL_MIRROR Mirrors[CONTROL_MAX_MIRRORS];      // ... in name order
 } CONTROL_STATE;
 
 // Takes each state that the client applied, before the client acknowledges its Generation. It runs

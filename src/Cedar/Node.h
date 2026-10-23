@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeSession.c, NodeTable.c, NodeVrf.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeMirror.c, NodeOverlay.c, NodeSession.c, NodeTable.c, NodeVrf.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -11,6 +11,7 @@
 
 #include "Core/Peer.h"
 #include "Core/Transport.h"
+#include "Core/Vxlan.h"
 
 // The roles of a node (ADR-0011, ADR-0022). A node runs any set of them, chosen by the configuration
 // and later by the control plane (NodeSetRoles). The controller is not a role: it left the node with #176.
@@ -65,6 +66,11 @@
 #define NODE_OVERLAY_BATCH         64   // Records that the thread takes from one session in one pass
 #define NODE_OVERLAY_VRF_TAG       4    // Bytes of a data record before its IP packet: the VRF id, big-endian (SDN-4, #180)
 #define NODE_OVERLAY_RECORD        2048 // Bytes of a data record that NodeOverlayInput builds on its stack; a larger one is allocated
+
+// The Mirrors of a node (NodeMirror.c; SDN-23, #199)
+#define NODE_MIRROR_ETHER     14                 // Bytes of the Ethernet header in front of the IP packet of a copy
+#define NODE_MIRROR_BURST     50                 // ms of its rate that the token bucket of a Mirror holds ...
+#define NODE_MIRROR_MIN_BURST VXLAN_MAX_DATAGRAM // ... and bytes at least: the largest datagram of the VXLAN module
 
 // The forwarding tables of the VRFs of a node (NodeVrf.c; SDN-4, #180)
 #define NODE_VRF_LOCAL      0x3FFFFFFF // The next hop of an address of the node itself: the host
@@ -129,6 +135,8 @@ struct NODE_VRF_TABLES {
 	NODE_VRF_TABLE **Vrfs; // The table of each, by VRF id
 	UINT NumHops;          // Number of next hops
 	void **Hops;           // The next hops: what next hop i of a route leads to
+	// The Mirrors of the same Generation (NodeMirror.c; SDN-23, #199), NULL for none
+	NODE_MIRROR_TABLE *Mirror;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -199,6 +207,10 @@ struct NODE {
 
 	// The overlay (NodeOverlay.c; SDN-3, #179), NULL while it does not run
 	NODE_OVERLAY *Overlay;
+
+	// The VXLAN module that sends the copies of the Mirrors (NodeMirror.c; SDN-23, #199), NULL until a Generation of
+	// the overlay has a Mirror
+	NODE_MIRROR *volatile Mirror;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -273,6 +285,13 @@ struct NODE_MITIGATION {
 	char *Off;   // NULL when the node sets it; else why a feature of the node cannot run under it
 };
 
+// What NodeMirrorGetStatus reports: the copies of the Mirrors since the first Generation of the overlay that had one
+struct NODE_MIRROR_STATUS {
+	UINT64 Copied;  // Copies that went to a sensor
+	UINT64 Limited; // Copies that the rate limit of their Mirror dropped
+	UINT64 Failed;  // Copies that could not go: a packet too large for a VXLAN frame, a VNI of more than 24 bits, a failed send
+};
+
 // Node.c
 NODE *NewNode(wchar_t *data_dir);
 void FreeNode(NODE *n);
@@ -319,6 +338,14 @@ void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
 // NodeHarden.c
 void NodeHarden();
 const NODE_MITIGATION *NodeGetMitigations(UINT *num);
+
+// NodeMirror.c
+NODE_MIRROR *NodeNewMirror(VXLAN_SEND_PROC *send, void *send_param);
+void NodeFreeMirror(NODE_MIRROR *m);
+NODE_MIRROR_TABLE *NodeNewMirrorTable(NODE_MIRROR *m, const struct CONTROL_STATE *st);
+void NodeFreeMirrorTable(NODE_MIRROR_TABLE *t);
+void NodeMirrorCopy(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, bool from_host);
+void NodeMirrorGetStatus(NODE *n, NODE_MIRROR_STATUS *st);
 
 // NodeVrf.c
 NODE_VRF_TABLES *NodeNewVrfTables(UINT64 generation, const NODE_VRF_ROUTE *routes, UINT num, void **hops, UINT num_hops);

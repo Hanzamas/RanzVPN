@@ -10,6 +10,8 @@ void NodeStopWorkers(NODE *n);
 UINT NodeDelAllQueues(NODE *n);
 void NodeTablesStart(NODE *n);
 void NodeTablesStop(NODE *n);
+void NodeMirrorAttach(NODE *n, NODE_VRF_TABLES *v, const struct CONTROL_STATE *st);
+void NodeMirrorStop(NODE *n);
 void NodeBgpInit();
 void NodeBgpStart(NODE *n);
 void NodeBgpStop(NODE *n);
