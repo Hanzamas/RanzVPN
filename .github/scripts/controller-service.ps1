@@ -39,6 +39,10 @@ $ErrorActionPreference = 'Stop'
 #   the runner's elevated account with the flags of the service, while the service runs and while
 #   it is stopped: reset-admin prints the secret, writes it to admin.token, and the API answers
 #   it as admin;
+# - refuse the API from an address outside the admin source allowlist (SDN-39, #232): with the
+#   list set to documentation addresses, the runner's own address, which is not loopback, gets 403
+#   and an admin-access-refused event while loopback still passes, and with the list removed the
+#   address passes again;
 # - write its starts and stops to the Application log (event IDs 1 and 2 of
 #   controller/service_windows.go), a warning for each start on the fallback (4) and for
 #   each reset-admin (5), and no failure entry (3).
@@ -400,6 +404,28 @@ try {
 	$viewerAfter = (Invoke-Checked $ranz @('-server', $api, '-token-file', $viewerFile, 'whoami')) | ConvertFrom-Json
 	if ($viewerAfter.role -ne 'viewer') { throw "after reset-admin the viewer token is $($viewerAfter | ConvertTo-Json -Compress)" }
 	Write-Host "reset-admin with the service stopped: $($offline.name) answers as admin once the service runs again, and the other tokens stay"
+
+	# The admin source allowlist (SDN-39, #232). The service reads the list once in 2 s, so each
+	# change gets a wait. With the list set to documentation addresses, the runner's own address,
+	# which is not loopback, is refused with 403 before its token is looked at, and the refusal is
+	# an event; loopback still passes, and with the list removed the address passes again.
+	$hostApi = "https://${hostAddr}:5555"
+	$viaHost = @('-server', $hostApi, '-token-file', $tokenFile, '-tls-fingerprint', $status.tlsFingerprint)
+	$listed = Invoke-Ranz @('admin-sources', 'set', '192.0.2.0/24')
+	if (@($listed.prefixes).Count -ne 1 -or $listed.prefixes[0] -ne '192.0.2.0/24') { throw "ranz admin-sources set printed $($listed | ConvertTo-Json -Compress)" }
+	Start-Sleep -Seconds 4
+	Assert-Refused ($viaHost + @('whoami')) 403
+	$me = Invoke-Ranz @('whoami')
+	if ($me.role -ne 'admin') { throw "loopback is not served while the allowlist holds documentation addresses: $($me | ConvertTo-Json -Compress)" }
+	$refusals = @((Invoke-Ranz @('get', 'events')).events | Where-Object { $_.type -eq 'admin-access-refused' })
+	if ($refusals.Count -lt 1) { throw "the refusal of the address of the runner, ${hostAddr}, is no event" }
+	Write-Host "event: $($refusals[0].message)"
+	$cleared = Invoke-Ranz @('admin-sources', 'clear')
+	if (@($cleared.prefixes).Count -ne 0) { throw "ranz admin-sources clear printed $($cleared | ConvertTo-Json -Compress)" }
+	Start-Sleep -Seconds 4
+	$remote = (Invoke-Checked $ranz ($viaHost + @('whoami'))) | ConvertFrom-Json
+	if ($remote.role -ne 'admin') { throw "the address of the runner is not served with the allowlist removed: $($remote | ConvertTo-Json -Compress)" }
+	Write-Host "admin source allowlist: ${hostAddr} is refused while the list holds documentation addresses only, loopback passes, and the address passes again once the list is removed"
 
 	Stop-Service -Name $service
 	$started = @(Get-ServiceEvents | Where-Object { $_.Id -eq 1 })
