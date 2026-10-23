@@ -39,6 +39,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/audit"
 	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
@@ -121,6 +122,9 @@ type Config struct {
 	// TelemetryStale is how long a counter that its node did not report again stays in the exports;
 	// telemetry.DefaultStale when zero.
 	TelemetryStale time.Duration
+	// Audit configures the audit log (SDN-49, audit.go): how often the exporter of the audit targets
+	// looks for records and how often the old ones are removed. Its zero value is the defaults.
+	Audit audit.Config
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -192,6 +196,9 @@ type Controller struct {
 
 	// The telemetry and the events (telemetry.go)
 	tel *telemetryState
+
+	// The audit log (audit.go)
+	aud *auditState
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -245,6 +252,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		c.log = slog.New(slog.DiscardHandler)
 	}
 	c.tel = newTelemetryState(cfg)
+	c.aud = newAuditState(cfg, c.store, c.log)
 	if c.random == nil {
 		c.random = rand.Reader
 	}
@@ -331,6 +339,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if err := c.startTelemetry(ctx); err != nil {
 		return nil, err
 	}
+	c.startAudit()
 	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision, "schema", int32(c.schema))
 	c.log.Info("licence", "tier", c.force.Tier, "nodes", c.force.Nodes, "state", c.force.State, "message", c.force.Message)
 	return c, nil
@@ -587,6 +596,7 @@ func (c *Controller) Close() {
 	c.mu.Unlock()
 	c.wg.Wait()
 	c.stopTelemetry()
+	c.stopAudit()
 }
 
 // compiled is an intent compiled under a licence: the licence key installed (nil for none), the
@@ -864,6 +874,7 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		return
 	}
 	defer conn.Close()
+	remote := conn.RemoteAddr()
 	if err := conn.SetReadDeadline(time.Now().Add(helloTimeout)); err != nil {
 		return
 	}
@@ -891,7 +902,11 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 	c.mu.Lock()
 	name, ok := c.byKey[string(conn.PeerKey())]
 	if !ok || c.closed {
+		closing := c.closed
 		c.mu.Unlock()
+		if !closing {
+			c.auditNode(audit.AuthFailed, audit.ActorKey(conn.PeerKey()), audit.Failure, "no Node resource has the static key of this node", remote)
+		}
 		c.log.Warn("node refused: unknown static key", "remote", conn.RemoteAddr().String())
 		writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_UNKNOWN_NODE, "no Node resource has the static key of this node"))
 		return
@@ -903,7 +918,12 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		return
 	}
 	n := c.nodes[name]
+	_, seen := c.caps[string(conn.PeerKey())]
 	caps := c.report(conn.PeerKey(), name, hello.GetCapabilities())
+	if !seen {
+		// The first Hello of this key is rare, and report writes to the store here as well
+		c.auditNode(audit.Enrolment, audit.ActorNode(name), audit.Success, "the first control stream of the static key of this node", remote)
+	}
 	if n == nil {
 		// The Node resource exists, but the licence in force does not cover it.
 		force := c.force
@@ -930,6 +950,7 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 	c.wg.Add(1)
 	c.mu.Unlock()
 	c.nodeUp(name)
+	c.auditNode(audit.Login, audit.ActorNode(name), audit.Success, "", remote)
 	c.log.Info("node connected", "node", name, "remote", conn.RemoteAddr().String(), "applied", hello.GetAppliedGeneration())
 
 	go func() {
@@ -942,12 +963,17 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 
 	lost := false
 	c.mu.Lock()
+	closing := c.closed
 	if n := c.nodes[name]; n != nil && n.stream == s {
 		n.stream = nil
 		lost = true
 	}
 	c.mu.Unlock()
 	c.log.Info("node disconnected", "node", name)
+	if !closing {
+		// A controller that closes ends every stream, which is no logout of a node
+		c.auditNode(audit.Logout, audit.ActorNode(name), audit.Success, "", remote)
+	}
 	if lost {
 		c.nodeLost(name)
 	}

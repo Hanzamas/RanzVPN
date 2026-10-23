@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/audit"
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
@@ -66,6 +67,8 @@ func (c *Controller) recordEnrolRefusal(name, network string, from netip.Addr) {
 	if err := c.store.Commit(ctx, store.Changes{AddEvents: []event.Event{ev}}); err != nil {
 		c.log.Error("recording a refused enrolment", "node", name, "err", err)
 	}
+	// The audit log records it as a failed enrolment, as often as the event (SDN-49, audit.go)
+	_ = c.RecordAudit(ctx, audit.Record{Kind: audit.Enrolment, Actor: audit.ActorNode(name), Source: from.String(), Outcome: audit.Failure, Message: msg})
 }
 
 // refuseOutsideSources refuses the stream of each node whose source address the Networks of the
