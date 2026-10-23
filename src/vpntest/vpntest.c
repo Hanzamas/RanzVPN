@@ -510,6 +510,9 @@ void httplistener_test(UINT num, char **arg);
 // Named default VRF tracer of SDN-3, #179 (sdntrace.c)
 void sdntrace_test(UINT num, char **arg);
 
+// Named VRF forwarding table test of SDN-4, #180 (vrftest.c)
+void vrf_test(UINT num, char **arg);
+
 // Named VXLAN test of SDN-62, #289 (vxlantest.c)
 void vxlan_test(UINT num, char **arg);
 
@@ -669,6 +672,7 @@ TEST_LIST test_list[] =
 	{"harden", harden_test, "Hardened licence gate: ranzguard reports unlocked unwatched and degrades to locked under a debugger, never crashing (skips when ranzguard.exe is absent)."},
 	{"httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port."},
 	{"sdntrace", sdntrace_test, "Default VRF tracer: sdntrace <host:port> <key> [<file>]: two nodes join VRF default of a running ranz controller, get addresses from its pool and ping each other over the loopback transport, also once the controller stopped (.github/scripts/sdn-tracer.ps1)."},
+	{"vrf", vrf_test, "VRF forwarding tables: DIR-24-8 and trie lookups against a reference on random routes, swaps under readers, two VRFs on 10.0.0.0/24 kept apart over the overlay (golden family vrf), a stream that loses no packet while the tables swap."},
 	{"vxlan", vxlan_test, "VXLAN: a frame, VLAN-tagged or not, goes out with its VNI and reaches a harness VTEP identical, and back to the module; a flood list of three VTEPs gets every frame and changes while the module runs; a datagram on an unknown VNI is dropped and counted."},
 };
 

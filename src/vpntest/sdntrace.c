@@ -70,6 +70,7 @@ typedef struct SDNTRACE_NODE
 	wchar_t Dir[MAX_PATH];				// Its data directory
 	PEER_KEY Key;						// Its static key
 	NODE *Node;
+	NODE_READER Reader;					// The test thread as a reader of the node's forwarding tables, online while it sends
 	HANDLE Arrived;						// The adapter took a packet (auto-reset)
 	SRWLOCK Lock;						// Packet and Size
 	UCHAR Packet[2048];					// The packet that the adapter took last
@@ -373,8 +374,8 @@ static void SdnTraceTlsInit(TRANSPORT *t)
 // The nodes and their hosts
 //
 
-// The fake adapter of a host: it keeps the packet that the overlay delivered last
-static void SdnTraceAdapter(NODE *n, void *param, const UCHAR *packet, UINT size)
+// The fake adapter of a host: it keeps the packet that the overlay delivered last, in VRF default
+static void SdnTraceAdapter(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size)
 {
 	SDNTRACE_NODE *t = (SDNTRACE_NODE *)param;
 
@@ -495,6 +496,29 @@ static UINT SdnTraceAddress(SDNTRACE_NODE *t)
 	return (st.NumAddresses != 0 ? st.Addresses[0] : 0);
 }
 
+// The VRF of that address: VRF default
+static UINT SdnTraceVrf(SDNTRACE_NODE *t)
+{
+	NODE_OVERLAY_STATUS st;
+
+	NodeOverlayGetStatus(t->Node, &st);
+
+	return (st.NumAddresses != 0 ? st.VrfIds[0] : 0);
+}
+
+// A packet of the host of t in VRF default, sent while the test thread is an online reader of the node's forwarding
+// tables
+static bool SdnTraceSend(SDNTRACE_NODE *t, UCHAR *packet, UINT size)
+{
+	UINT vrf = SdnTraceVrf(t);
+
+	NodeReaderOnline(t->Node, &t->Reader);
+	bool sent = NodeOverlayInput(t->Node, vrf, packet, size);
+	NodeReaderOffline(&t->Reader);
+
+	return sent;
+}
+
 // An echo request from the host of a to the host of b and its reply back: both arrive byte for byte
 static void SdnTracePing(SDNTRACE_CTX *ctx, SDNTRACE_NODE *a, SDNTRACE_NODE *b, USHORT seq, char *when)
 {
@@ -509,7 +533,7 @@ static void SdnTracePing(SDNTRACE_CTX *ctx, SDNTRACE_NODE *a, SDNTRACE_NODE *b, 
 	b->Size = 0;
 	ReleaseSRWLockExclusive(&b->Lock);
 	UINT size = SdnTraceEcho(request, addr_a, addr_b, 8, seq);
-	bool sent = NodeOverlayInput(a->Node, request, size);
+	bool sent = SdnTraceSend(a, request, size);
 	Format(what, sizeof(what), "%s: the echo request of %s (%s) reaches the host of %s (%s) over the overlay", when, a->Name, from, b->Name, to);
 	if (SdnTraceCheck(ctx, sent && SdnTraceArrived(b, request, size), what, "sent %u", (UINT)sent) == false)
 	{
@@ -520,7 +544,7 @@ static void SdnTracePing(SDNTRACE_CTX *ctx, SDNTRACE_NODE *a, SDNTRACE_NODE *b, 
 	a->Size = 0;
 	ReleaseSRWLockExclusive(&a->Lock);
 	size = SdnTraceEcho(reply, addr_b, addr_a, 0, seq);
-	sent = NodeOverlayInput(b->Node, reply, size);
+	sent = SdnTraceSend(b, reply, size);
 	Format(what, sizeof(what), "%s: the echo reply of %s reaches the host of %s", when, b->Name, a->Name);
 	SdnTraceCheck(ctx, sent && SdnTraceArrived(a, reply, size), what, "sent %u", (UINT)sent);
 }
@@ -668,6 +692,8 @@ void sdntrace_test(UINT num, char **arg)
 		SdnTraceNewDir(t->Dir, sizeof(t->Dir), t->Name);
 		t->Node = NewNode(t->Dir);
 		NodeStart(t->Node);
+		NodeReaderRegister(t->Node, &t->Reader);
+		NodeReaderOffline(&t->Reader);
 
 		Zero(&c, sizeof(c));
 		c.Control = tls;
@@ -728,6 +754,7 @@ void sdntrace_test(UINT num, char **arg)
 			continue;
 		}
 
+		NodeReaderUnregister(t->Node, &t->Reader);
 		NodeStop(t->Node);
 		FreeNode(t->Node);
 		PeerKeyClose(&t->Key);
