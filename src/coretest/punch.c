@@ -8,6 +8,7 @@
 //   through the relay R and then try the punch, which the control plane triggers with the signal exchange:
 //   - two sequential-allocation symmetric NATs meet by port prediction: each aims its first probe at the next port
 //     the other predicted of itself, so the two mappings address each other, and the pair moves to the direct path;
+//     a late probe of one end's burst, which reaches the other end after the pair met, leaves the pair on that path;
 //   - a full-cone NAT and a random-allocation symmetric NAT meet by birthday punching: the random side reaches the
 //     cone's one predictable port, and the cone learns the random side's mapping from that probe and answers it;
 //   - two random-allocation symmetric NATs predict nothing, so the probes miss until the budget runs out and the
@@ -266,6 +267,38 @@ static bool punch_candidate(PEER_SIGNAL *s, UINT type, PEER_ADDR *addr) {
 	return false;
 }
 
+// The drops of a node, all reasons
+static UINT64 punch_drops(PUNCH_NODE *n) {
+	PEER_STATS st;
+	UINT64 sum = 0;
+
+	PeerGetStats(n->Agent, &st);
+	for (UINT r = PEER_DROP_MALFORMED; r < PEER_NUM_REASONS; r++)
+		sum += st.Drops[r];
+
+	return sum;
+}
+
+// A probe of B for A, as PeerPunchTick seals one (version 1, then the sequence), sent from B's host to the address to,
+// so it leaves through B's mapping towards to. Its sequence is the wall clock in 100 ns units, as PeerNextSequence
+// draws one, so it is above every sequence B sent before.
+static void punch_probe_from_b(PUNCH_WORLD *w, const PEER_ADDR *to) {
+	FILETIME ft;
+	UCHAR probe[9];
+	UCHAR env[PEER_MAX_ENVELOPE];
+
+	GetSystemTimePreciseAsFileTime(&ft);
+	UINT64 seq = ((UINT64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+
+	probe[0] = 1;
+	for (UINT i = 0; i < 8; i++)
+		probe[1 + i] = (UCHAR)(seq >> (56 - 8 * i));
+
+	UINT size = PeerEnvelopeSeal(&w->B.Key, w->A.Key.Public, PEER_MSG_PUNCH, NULL, probe, sizeof(probe), env, sizeof(env));
+	NatSimSend(w->B.Host, to, env, size);
+	NatSimWaitIdle(w->Sim, PUNCH_WAIT);
+}
+
 // Two sequential symmetric NATs: the pair moves to the direct path by port prediction
 static void punch_sequential() {
 	PUNCH_WORLD w;
@@ -294,6 +327,7 @@ static void punch_sequential() {
 	coretest_check(st_a.PunchAttempts == 1 && st_b.PunchAttempts == 1, "The punch begins only once the signals are exchanged: its timing comes from the control plane");
 
 	// A's signal carries the predicted next port of its NAT
+	ZeroMemory(&predicted, sizeof(predicted));
 	UINT r = punch_signal(&w.A, &w.B, PEER_SIGNAL_OFFER, &offer);
 	coretest_check(r == PEER_OK && punch_candidate(&offer, PEER_CANDIDATE_PREDICTED, &predicted) && predicted.Port != 0, "A's offer carries the predicted next port of its NAT");
 
@@ -322,6 +356,25 @@ static void punch_sequential() {
 	PeerGetStats(w.B.Agent, &st_b);
 	coretest_check(st_a.PunchSuccesses == 1 && st_b.PunchSuccesses == 1 && st_a.PunchAttempts == 1, "Each end's prediction success rate is one of one: the metric is exported");
 	coretest_check(st_a.DeliveredRelay >= 1 && st_a.Delivered > st_a.DeliveredRelay, "The direct-versus-relay split is a metric: A took its first datagram through R and its later one directly");
+
+	// A late probe of B's burst. B sends a burst of probes in one tick and can take A's answer while it still sends
+	// them, so the rest of the burst reaches A after the pair met, each probe from another of B's mappings. This one
+	// comes from B's mapping towards A's second mapping, one port above A's predicted one, where B's second probe went.
+	PEER_ADDR late = predicted;
+	late.Port++;
+	UINT filtered = NatSimFiltered(w.NatA);
+	UINT64 drops = punch_drops(&w.A);
+	punch_probe_from_b(&w, &late);
+	coretest_check(NatSimFiltered(w.NatA) == filtered && punch_drops(&w.A) == drops, "A late probe of B's burst, from B's mapping towards A's second mapping, reaches A, which takes it");
+
+	received = w.A.Received;
+	a_direct = w.A.ReceivedDirect;
+	PeerGetStats(w.R.Agent, &st_r);
+	forwarded = st_r.Forwarded;
+	sent = punch_send(&w.A, &w.B, "ping after the late probe");
+	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
+	PeerGetStats(w.R.Agent, &st_r);
+	coretest_check(sent && w.A.Received == received + 1 && w.A.ReceivedDirect == a_direct + 1 && st_r.Forwarded == forwarded, "After it, A's ping and B's pong still take the direct path: A stays on the pair it met B on, whose mapping B took A's answer from");
 
 	punch_world_stop(&w);
 }
