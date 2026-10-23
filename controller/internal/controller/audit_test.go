@@ -216,6 +216,64 @@ func TestAuditRecordsTheStreamsOfNodes(t *testing.T) {
 	}
 }
 
+// The refusals of the source restrictions of SDN-39 are failed authentications and enrolments in the
+// audit log too: a node that a Network does not allow to enrol from its address is an enrolment with
+// the outcome failure, which a later enrolment that is allowed follows, and a request from an address
+// outside the admin source allowlist is a failed authentication of an actor that is not known.
+func TestAuditRecordsTheRefusalsOfTheSourceRestrictions(t *testing.T) {
+	h := newAuditHarness(t)
+	admin := h.auditedAPI(h.admin)
+	ctx := context.Background()
+	h.apply("apply1.json")
+
+	// corp-lan allows documentation addresses only; the node of the VRF comes from 127.0.0.1
+	if _, err := h.api.Apply(ctx, corpLan(t, "203.0.113.0/24")); err != nil {
+		t.Fatal(err)
+	}
+	b1 := h.sim("branch-1", keyBranch1)
+	b1.refusal(t)
+	recs := h.waitAudit(admin, "the refused enrolment", func(rs []audit.Record) bool { return len(auditOfKind(rs, audit.Enrolment)) == 1 })
+	refused := auditOfKind(recs, audit.Enrolment)[0]
+	if refused.Outcome != audit.Failure || refused.Actor != "node:branch-1" || refused.Source != "127.0.0.1" ||
+		!strings.Contains(refused.Message, `which Network "corp-lan" does not allow to enrol`) {
+		t.Errorf("the refused enrolment is %+v, want a failure of branch-1 from 127.0.0.1 that names the Network", refused)
+	}
+	if n := len(auditOfKind(recs, audit.Login)); n != 0 {
+		t.Errorf("a node that was refused made %d logins", n)
+	}
+
+	// A Network that allows the address admits the node: its first Hello is an enrolment that succeeded
+	if _, err := h.api.Apply(ctx, corpLan(t)); err != nil {
+		t.Fatal(err)
+	}
+	b1.start(h)
+	h.waitNode("branch-1", 1, true)
+	recs = h.waitAudit(admin, "the enrolment that succeeded", func(rs []audit.Record) bool { return len(auditOfKind(rs, audit.Enrolment)) == 2 })
+	if second := auditOfKind(recs, audit.Enrolment)[1]; second.Outcome != audit.Success || second.Actor != "node:branch-1" {
+		t.Errorf("the second enrolment is %+v, want the first Hello of the node, that succeeded", second)
+	}
+
+	// The admin source allowlist refuses a request from outside it: no token is looked at
+	if _, err := h.api.SetAdminSources(ctx, []string{"192.0.2.0/24"}); err != nil {
+		t.Fatal(err)
+	}
+	web := api.NewSources(h.st, nil, 0).WithAudit(audit.NewLog(h.st, nil)).Restrict(h.port.HTTP)
+	req := httptest.NewRequest(http.MethodGet, "https://ctl.example/api/v1/status", nil)
+	req.RemoteAddr = "198.51.100.9:40000"
+	req.Header.Set("Authorization", "Bearer "+h.admin)
+	w := httptest.NewRecorder()
+	web.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("a request from outside the admin source allowlist was not refused: %d", w.Code)
+	}
+	recs = h.waitAudit(admin, "the refused request", func(rs []audit.Record) bool { return len(auditOfKind(rs, audit.AuthFailed)) == 1 })
+	denied := auditOfKind(recs, audit.AuthFailed)[0]
+	if denied.Outcome != audit.Failure || denied.Actor != audit.ActorUnknown || denied.Source != "198.51.100.9" ||
+		!strings.Contains(denied.Message, "the address is outside the admin source allowlist") {
+		t.Errorf("the refused request is %+v, want a failed authentication of an unknown actor from 198.51.100.9", denied)
+	}
+}
+
 // Every revision of the intent has one record: an apply, a delete, a rollback, an apply that nobody
 // confirms and the automatic rollback that follows it, with the revision each made, the token that
 // asked for it, and the system for the automatic rollback. An apply that is refused is a record too,

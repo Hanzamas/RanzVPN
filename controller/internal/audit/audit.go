@@ -34,11 +34,13 @@ const (
 	Login = "login"
 	// Logout: a session ended, today the control stream of a node.
 	Logout = "logout"
-	// AuthFailed: a credential was refused: an API call whose bearer token is missing or is not one
-	// of the controller's, or a node whose static key no Node resource holds.
+	// AuthFailed: a credential or a source was refused: an API call whose bearer token is missing or
+	// is not one of the controller's, a request for the API or the web UI from an address outside the
+	// admin source allowlist (SDN-39), or a node whose static key no Node resource holds.
 	AuthFailed = "auth-failed"
 	// Enrolment: the static key of a node reached the controller for the first time, in the first
-	// Hello of its control stream.
+	// Hello of its control stream. With the outcome Failure, a node that a Network refused to enrol
+	// because of the address it came from (the enrolSources of SDN-39).
 	Enrolment = "enrolment"
 	// IntentChange: a change of the intent. Revision is the revision that it made and Action the
 	// operation of that revision (apply, delete, rollback, import, automatic-rollback or
