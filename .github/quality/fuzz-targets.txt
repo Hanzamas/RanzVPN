@@ -41,6 +41,10 @@ src/Core  TransportNoiseReceive  fuzz_transport
 src/Core  TransportRead          exempt  hands the read of a stream to the Read procedure of its transport; parses nothing (TransportNoiseReceive reads the frames)
 # The TLS transport (CORE-S2-1 #69): the ServerHello among the first records of a TLS server
 src/Core  TransportTlsParseHello  fuzz_transport
+# The outbound path (SDN-61 #254): what an HTTP or SOCKS5 proxy answers, and the proxy list that a PAC script gives
+src/Core  TransportProxyParseHttp   fuzz_transport
+src/Core  TransportProxyParseSocks  fuzz_transport
+src/Core  TransportProxyParseList   fuzz_transport
 
 # The VXLAN module (SDN-62 #289): the datagrams of VTEPs
 src/Core  VxlanInput  fuzz_vxlan

@@ -245,6 +245,63 @@ UINT64 TransportQueueNow();
 TRANSPORT *TransportLoopbackNew(const char *name, UINT dial_delay, bool bound);
 void TransportLoopbackFree(TRANSPORT *t);
 
+// The outbound path of a client transport (TransportPath.c, SDN-61 #254): how its connection reaches the server. A
+// dial of TLS-443 goes direct, or through an outbound proxy: the system's, which WinHTTP finds for the server's URL
+// (https, its host and port) from the PAC script whose URL ProxyAddress holds, else from the current user's settings
+// (auto-detect and the PAC script they name first, then their proxy and its bypass list), else from the WinHTTP
+// default that netsh winhttp sets; or the HTTP proxy, through CONNECT, or the SOCKS5 proxy, without authentication, at
+// the host and port of ProxyAddress. A proxy resolves the server's name itself. QUIC goes direct: a proxy of TCP
+// carries no UDP. Interface and Local bind the underlay of both: the connection, to the server or to the proxy, leaves
+// through that interface (its alias, as Get-NetAdapter names it, or its index) and from that local address. A dial
+// fails when the path names an interface or a local address that the machine does not have, or when the proxy refuses
+// the server or does not answer within its time. A zeroed path dials direct.
+#define TRANSPORT_PROXY_NONE   0 // Direct
+#define TRANSPORT_PROXY_SYSTEM 1 // The proxy that WinHTTP finds for the server, or direct
+#define TRANSPORT_PROXY_HTTP   2 // An HTTP proxy: CONNECT
+#define TRANSPORT_PROXY_SOCKS5 3 // A SOCKS5 proxy
+
+// The outbound path of a client transport
+typedef struct TRANSPORT_PATH {
+	UINT Proxy;                                // TRANSPORT_PROXY_*
+	char ProxyAddress[TRANSPORT_ADDRESS_SIZE]; // HTTP and SOCKS5: the proxy's host and port; SYSTEM: the URL of a PAC script, or empty for the settings
+	char Interface[TRANSPORT_ADDRESS_SIZE];    // The interface of the underlay, by its alias or its index; empty for the route's
+	char Local[TRANSPORT_ADDRESS_SIZE];        // The local address of the underlay ("192.0.2.10", "fe80::1%12"); empty for the route's
+} TRANSPORT_PATH;
+
+// What a proxy answered (TransportProxyParseHttp, TransportProxyParseSocks)
+#define TRANSPORT_PROXY_MORE 0 // Not the whole answer yet
+#define TRANSPORT_PROXY_DONE 1 // The whole answer: its size and its code
+#define TRANSPORT_PROXY_BAD  2 // No answer of the protocol, or one too long
+
+// The bytes of an HTTP proxy's answer at most: its status line and its header lines
+#define TRANSPORT_PROXY_ANSWER_MAX 4096
+
+// Read the answer of an HTTP proxy to CONNECT in the first size bytes that it sent: its status line ("HTTP/1.1 200
+// Connection established"), its header lines and the empty line after them, each line ending with CRLF or LF. It gives
+// TRANSPORT_PROXY_DONE with the size of the answer in *used and its status code in *code, TRANSPORT_PROXY_MORE while the
+// empty line has not come, or TRANSPORT_PROXY_BAD for bytes that are no such answer, or an answer longer than
+// TRANSPORT_PROXY_ANSWER_MAX. A proxy that opened the tunnel answers with a 2xx code.
+UINT TransportProxyParseHttp(const UCHAR *data, UINT size, UINT *used, UINT *code);
+
+// Read the reply of a SOCKS5 proxy to CONNECT (RFC 1928 section 6) in the first size bytes that it sent: the version 5,
+// the reply code, a reserved byte, the type of the bound address, the address and its port. It gives
+// TRANSPORT_PROXY_DONE with the size of the reply in *used and the reply code in *code (0: succeeded),
+// TRANSPORT_PROXY_MORE while the reply is not whole, or TRANSPORT_PROXY_BAD for another version or address type.
+UINT TransportProxyParseSocks(const UCHAR *data, UINT size, UINT *used, UINT *code);
+
+// Find the proxy of a TLS connection in a proxy list of WinHTTP, the list of the settings or the one that a PAC script
+// gave: entries separated by semicolons or white space, each a host with an optional port ("proxy.example:8080",
+// "[2001:db8::1]:3128"), an optional scheme before it ("https=proxy.example:443") and an optional http:// in front of
+// the host. The first entry for https is taken, else the first one without a scheme; an entry for another scheme does
+// not apply. It writes the host (host_max bytes with its NUL; an IPv6 address without its brackets) and the port
+// (port_max bytes; "80" where the entry has none) and gives true, or false when no entry applies.
+bool TransportProxyParseList(const char *list, char *host, UINT host_max, char *port, UINT port_max);
+
+// Whether the bypass list of WinHTTP settings ("<local>;*.example.com;10.*"), which may be NULL, sends host direct:
+// an entry that matches the host, * standing for any characters and case ignored, or "<local>" for a name without a
+// dot. A loopback host (localhost, 127.0.0.0/8, ::1) goes direct unless the list holds "<-loopback>", as in WinINet.
+bool TransportProxyBypass(const char *bypass, const char *host);
+
 // The QUIC transport (TransportQuic.c, CORE-S1-1 #67), on the official signed msquic.dll (the
 // Schannel build, pinned, x64 and arm64). A listener presents as an HTTP/3 server: the ALPN "h3", a
 // real certificate read from the Windows certificate store by its thumbprint, and BBR where the
@@ -337,6 +394,7 @@ typedef struct TRANSPORT_TLS_CONFIG {
 	bool SetGroups;                              // New sets the key exchange groups of the machine (TransportTlsSetGroups)
 	bool BreakBinding;                           // A client that changes the binding it computes: for the mismatch test
 	UINT Queue;                                  // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it (CODEL)
+	TRANSPORT_PATH Path;                         // A client: the outbound path it dials along, its proxy and its underlay
 } TRANSPORT_TLS_CONFIG;
 
 // What a TLS handshake gave: the version, the cipher suite and the key exchange group that the

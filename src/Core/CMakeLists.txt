@@ -119,6 +119,14 @@ target_link_libraries(coretransport
     "advapi32.lib"
 )
 
+# The outbound path (TransportPath.c, SDN-61 #254): the system's proxy through WinHTTP, and the interface of the underlay
+# by its alias or its index through IP Helper
+target_link_libraries(coretransport
+  PRIVATE
+    "winhttp.lib"
+    "iphlpapi.lib"
+)
+
 set_target_properties(coretransport
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

@@ -865,6 +865,24 @@ def make_transport_seeds():
     write_seed('fuzz_transport', 'list_unknown.txt', b'\tquic:vpn.example:443 ,\twss:vpn.example:443')
     write_seed('fuzz_transport', 'list_no_address.txt', b'tls:vpn.example:443, quic:')
     write_seed('fuzz_transport', 'list_long_address.txt', b'tls:' + b'a' * 255 + b',tls:' + b'b' * 256)
+    make_proxy_seeds()
+
+
+# What a proxy answers a client of the TLS transport (src/Core/TransportPath.c, SDN-61 #254): an HTTP proxy's 200 to
+# CONNECT, a 407 with header lines, an answer with LF line ends and one cut short; the replies of a SOCKS5 proxy with an
+# IPv4 address, a name and an IPv6 address; and a proxy list and a bypass list of WinHTTP
+def make_proxy_seeds():
+    write_seed('fuzz_transport', 'proxy_http_200.bin', b'HTTP/1.1 200 Connection established\r\n\r\n')
+    write_seed('fuzz_transport', 'proxy_http_407.bin',
+               b'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="proxy"\r\n'
+               b'Content-Length: 0\r\n\r\n')
+    write_seed('fuzz_transport', 'proxy_http_lf.bin', b'HTTP/1.0 200 OK\nProxy-Agent: ranz-test\n\n')
+    write_seed('fuzz_transport', 'proxy_http_cut.bin', b'HTTP/1.1 200 Connection est')
+    write_seed('fuzz_transport', 'proxy_socks_ipv4.bin', bytes([5, 0, 0, 1, 127, 0, 0, 1]) + struct.pack('>H', 1080))
+    write_seed('fuzz_transport', 'proxy_socks_name.bin', bytes([5, 0, 0, 3, 11]) + b'vpn.example' + struct.pack('>H', 443))
+    write_seed('fuzz_transport', 'proxy_socks_ipv6.bin', bytes([5, 4, 0, 4]) + bytes(15) + b'\x01' + struct.pack('>H', 0))
+    write_seed('fuzz_transport', 'proxy_list.txt', b'http=proxy.example:80;https=[2001:db8::1]:3128 socks=s.example:1080')
+    write_seed('fuzz_transport', 'proxy_bypass.txt', b'<local>;*.example.com;10.*;<-loopback>')
 
 
 # ---------------------------------------------------------------------------
