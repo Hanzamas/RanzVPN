@@ -147,6 +147,7 @@ func (c *Controller) change(ctx context.Context, next intent.Intent, cp compiled
 	if len(ch.AddEvents) > 0 {
 		c.tel.feed.Poke()
 	}
+	c.auditRevision(ctx, rev)
 	return ApplyResult{Revision: rev.ID, Nodes: nodes}, nil
 }
 

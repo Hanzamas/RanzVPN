@@ -28,29 +28,40 @@ c  corevxlan      86  src/Core/Vxlan*.c
 # The controller (controller/): the package of `ranz controller` is controller itself, and the
 # executable ranz, with its subcommands, is controller/cmd/ranz
 go  controller                          49
-go  controller/cmd/ranz                 67
+go  controller/cmd/ranz                 77
 go  controller/cmd/ranz-nodesim         0
 go  controller/cmd/ranz-noisepeer       0
 go  controller/internal/activation      81
 go  controller/internal/api             28
+go  controller/internal/audit           85
 go  controller/internal/capability      95
+go  controller/internal/certgen         92
 go  controller/internal/cluster         61
 go  controller/internal/control         76
 go  controller/internal/controller      82
 go  controller/internal/desired         79
+go  controller/internal/doctor          88
 go  controller/internal/event           90
 go  controller/internal/export          90
+# install (ONE-2 #311): the Linux job measures names.go and files.go (the SIDs, the access list, the
+# removal of the folder), not install_windows.go, whose services the install job of windows.yml runs
+go  controller/internal/install         80
 go  controller/internal/intent          91
 go  controller/internal/keys            71
 go  controller/internal/licence         89
 go  controller/internal/mitigation      0
 go  controller/internal/nodesim         0
+# payload (ONE-2 #311) has real logic tested on every OS (payload_test.go: the hash checks, the
+# write and its cleanup), but verifyAuthenticode itself is Windows only (verify_windows_test.go,
+# run by the Windows job of ranz.yml) and never runs on the Linux job, which measures this floor
+go  controller/internal/payload         60
 go  controller/internal/port            69
 go  controller/internal/rbac            65
 go  controller/internal/rqlitetest      0
 go  controller/internal/sidecar         0
 go  controller/internal/store           37
 go  controller/internal/telemetry       80
+go  controller/internal/throughput      89
 go  controller/internal/webui           94
 
 # The BGP sidecar (ranz-bgp/): the package of `ranz bgp` is ranz-bgp itself
