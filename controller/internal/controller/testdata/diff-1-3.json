@@ -26,8 +26,8 @@
       "action": "changed",
       "kind": "Node",
       "name": "branch-1",
-      "fields": ["addresses"],
-      "from": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "tags": ["branch"], "addresses": {"corp-lan": "10.10.0.1"}},
+      "fields": ["addresses", "ipv6Addresses"],
+      "from": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "tags": ["branch"], "addresses": {"corp-lan": "10.10.0.1"}, "ipv6Addresses": {"corp-lan": "fd12:3456:789a:1::1"}},
       "to": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "tags": ["branch"]}
     },
     {
