@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/payload"
 	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
 )
@@ -119,6 +124,90 @@ func TestRqlitedMemberRuns(t *testing.T) {
 		t.Fatalf("the rqlite member does not start: %v\n%s", err, out.String())
 	}
 	rq.Stop()
+}
+
+// ranz controller run in this process with one member, the first criterion of ONE-4 (#313): it
+// starts its rqlite, which is the member that the checkout embeds, written under its data
+// directory with no -rqlited and no rqlited beside the test binary, or else the rqlited that
+// RQLITED names; it serves the API on its TLS port and on its plain loopback port, and the control
+// stream on a port of its own; and its rqlited ends with it. The members of the cluster tests run
+// this code in processes of their own, which the coverage profile of this package does not see,
+// so this test is what the profile has of it.
+func TestRunServesWithItsRqliteMember(t *testing.T) {
+	rqlited := memberRqlited(t)
+	addrs := freeAddrs(t, 5)
+	tlsAddr, controlAddr, plainAddr, rqliteHTTP, rqliteRaft := addrs[0], addrs[1], addrs[2], addrs[3], addrs[4]
+	dir := t.TempDir()
+	cfg, err := parseFlags(append([]string{
+		"-data", dir, "-listen", tlsAddr, "-control-listen", controlAddr, "-api-listen", plainAddr, "-name", "c1",
+		"-rqlite", "http://" + rqliteHTTP, "-rqlite-raft", rqliteRaft,
+	}, rqlited...))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var logs, rqliteOut bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, cfg, slog.New(slog.NewTextHandler(&logs, nil)), &rqliteOut, hooks{ready: func() { close(ready) }})
+	}()
+	// stop ends the controller and returns how run ended. A test that fails ends it too, so that its
+	// rqlited does not outlive the test.
+	stopped := false
+	stop := func() error {
+		stopped = true
+		cancel()
+		return <-done
+	}
+	defer func() {
+		if !stopped {
+			_ = stop()
+		}
+	}()
+	select {
+	case <-ready:
+	case err := <-done:
+		stopped = true
+		t.Fatalf("the controller ended before it served: %v\n%s%s", err, logs.String(), rqliteOut.String())
+	case <-time.After(clusterTimeout):
+		_ = stop()
+		t.Fatalf("the controller did not serve within %v\n%s%s", clusterTimeout, logs.String(), rqliteOut.String())
+	}
+
+	secret, err := os.ReadFile(filepath.Join(dir, adminTokenFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, base := range []string{"https://" + tlsAddr, "http://" + plainAddr} {
+		c := api.NewClient(base)
+		c.Token = strings.TrimSpace(string(secret))
+		callCtx, callCancel := context.WithTimeout(ctx, 10*time.Second)
+		s, err := c.Status(callCtx)
+		callCancel()
+		if err != nil {
+			t.Fatalf("the status at %s: %v", base, err)
+		}
+		if s.ControlAddress != tlsAddr {
+			t.Errorf("the status at %s names the control address %s, want %s", base, s.ControlAddress, tlsAddr)
+		}
+	}
+	conn, err := net.DialTimeout("tcp", controlAddr, 5*time.Second)
+	if err != nil {
+		t.Fatalf("the control stream port: %v", err)
+	}
+	conn.Close()
+	wantRqlitedFromPayload(t, "the controller", filepath.Join(dir, payloadDir, payload.Rqlited.Name))
+
+	if err := stop(); err != nil {
+		t.Errorf("the controller ended with %v after its context ended\n%s", err, logs.String())
+	}
+	if conn, err := net.DialTimeout("tcp", rqliteHTTP, time.Second); err == nil {
+		conn.Close()
+		t.Errorf("the rqlited of the controller still answers at %s after the controller ended", rqliteHTTP)
+	}
 }
 
 // -rqlite-external and -rqlited say opposite things about the rqlite that the controller uses.

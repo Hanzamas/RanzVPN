@@ -82,9 +82,10 @@ func TestMain(m *testing.M) {
 // vendor can sign licence keys for. So the members are the one executable that ships, with the
 // rqlite member that the checkout embeds (ONE-4, #313), and nothing of rqlite is beside it, since
 // the build has a directory of its own. A test binary with the race detector builds ranz with it
-// too, so that the members run under it as they always did, and so does a run with coverage: go
-// test sets GOCOVERDIR for it, the members write what they covered there when they exit, and go
-// test adds that to the profile, as it did when the members were this test binary.
+// too, so that the members run under it as they always did. What the members run is not in the
+// coverage profile of the run, which go test makes from the instrumented test binary only: the
+// code of ranz controller that the members used to give the profile, while they were this test
+// binary, is run by TestRunServesWithItsRqliteMember in this process.
 func clusterRanz(t *testing.T) string {
 	t.Helper()
 	clusterBuild.once.Do(func() {
@@ -102,9 +103,6 @@ func clusterRanz(t *testing.T) string {
 		args := []string{"build", "-o", exe, "-ldflags", "-X " + vendorKeysVar + "=" + vendor}
 		if raceEnabled {
 			args = append(args, "-race")
-		}
-		if mode := testing.CoverMode(); mode != "" {
-			args = append(args, "-cover", "-covermode="+mode)
 		}
 		args = append(args, "github.com/Hanzamas/RanzVPN/controller/cmd/ranz")
 		if out, err := exec.Command("go", args...).CombinedOutput(); err != nil {
@@ -378,20 +376,26 @@ func (m *member) memberFile() string {
 	return filepath.Join(m.dir, "data", payloadDir, payload.Rqlited.Name)
 }
 
-// wantMemberWritten checks, when the checkout embeds the rqlite member, that m runs the rqlited
-// that it wrote from the Payload under its own data directory, byte for byte.
-func (m *member) wantMemberWritten(t *testing.T) {
+// wantRqlitedFromPayload checks, when the checkout embeds the rqlite member, that the controller
+// who wrote the rqlited of the Payload to file, byte for byte.
+func wantRqlitedFromPayload(t *testing.T, who, file string) {
 	t.Helper()
 	if len(payload.Rqlited.Data) == 0 {
 		return
 	}
-	b, err := os.ReadFile(m.memberFile())
+	b, err := os.ReadFile(file)
 	if err != nil {
-		t.Fatalf("%s did not write its rqlited from the Payload: %v", m.name, err)
+		t.Fatalf("%s did not write its rqlited from the Payload: %v", who, err)
 	}
 	if sha256.Sum256(b) != payload.Rqlited.SHA256 {
-		t.Errorf("%s runs an rqlited that is not the Payload", m.name)
+		t.Errorf("%s runs an rqlited that is not the Payload", who)
 	}
+}
+
+// wantMemberWritten checks that m wrote the rqlited of the Payload under its own data directory.
+func (m *member) wantMemberWritten(t *testing.T) {
+	t.Helper()
+	wantRqlitedFromPayload(t, m.name, m.memberFile())
 }
 
 // newCluster starts a cluster of three members that run as schema version schema (0 for the
