@@ -483,7 +483,8 @@ jobs:
         # nodesvc installs ranz-node as a service, which would run outside the instrumented process; build_and_test only.
         # noisehub runs its loopback and TLS-443 parts here; its QUIC part needs msquic.dll, which this job does not fetch.
         # tls (CORE-S2-1 #69) runs on Schannel, which needs no DLL of its own; lossylink runs in virtual time.
-        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,listeners,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo,node,nodelogin,store,transport,tls,lossylink,noisehub,vrf,vxlan
+        # switchbench measures how forwarding scales across cores, which AddressSanitizer distorts; build_and_test only.
+        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,listeners,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo,node,nodelogin,store,transport,tls,lossylink,noisehub,vrf,vxlan,switch
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list. Its output
         # and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a report printed
@@ -547,9 +548,10 @@ jobs:
   # The coverage floor of the new core (ADR-0040 item 2), x64: coretest and vpntest built with
   # RANZ_COVERAGE (cmake/RanzCoverage.cmake, the coverage preset) run the tests of
   # .github/scripts/coretest.ps1 and the transport test of vpntest (the transport module's, CORE-F4
-  # #64) and its vxlan test (the VXLAN module's, SDN-62 #289), llvm-cov counts the lines of each module
-  # of src/Core over both programs, and a module below its floor in .github/quality/coverage-floors.txt,
-  # or a file of src/Core in no module, fails the job.
+  # #64), its vxlan test (the VXLAN module's, SDN-62 #289) and its switch test (the switch module's,
+  # CORE-S4-1 #74), llvm-cov counts the lines of each module of src/Core over both programs, and a
+  # module below its floor in .github/quality/coverage-floors.txt, or a file of src/Core in no module,
+  # fails the job.
   coverage:
     runs-on: windows-latest
     name: coverage (new core)
@@ -636,9 +638,9 @@ jobs:
         $env:LLVM_PROFILE_FILE = Join-Path $dir 'coretest-%p.profraw'
         . .github/scripts/coretest.ps1
         # The transport module's tests are vpntest's (transport, quic over msquic, tls over Schannel and lossylink, the
-        # ingress queue), as is the VXLAN module's (vxlan), run by its smoke test script
+        # ingress queue), as are the VXLAN module's (vxlan) and the switch module's (switch), run by its smoke test script
         $env:LLVM_PROFILE_FILE = Join-Path $dir 'vpntest-%p.profraw'
-        $env:RANZ_SMOKE_TESTS = 'transport,quic,tls,lossylink,vxlan'
+        $env:RANZ_SMOKE_TESTS = 'transport,quic,tls,lossylink,vxlan,switch'
         . .github/scripts/vpntest.ps1
     - name: Coverage floor
       if: ${{ !cancelled() }}
@@ -667,7 +669,7 @@ jobs:
   # The C static analysis of the new core (ADR-0040 item 3), x64: clang-tidy with the checks of
   # .github/quality/clang-tidy.yaml on every .c file of src/Core, over the compile commands of the x64
   # build, and MSVC /analyze, which checks the SAL annotations of the Windows SDK and of the code, on a
-  # cl.exe build of the new core's modules (corecrypto, corenoise, corepeer, coretransport, corevxlan). A finding
+  # cl.exe build of the new core's modules (corecrypto, corenoise, corepeer, coretransport, corevxlan, coreswitch). A finding
   # that the baseline of its tool in .github/quality does not hold fails the job
   # (.github/scripts/static-findings.py). The third-party libraries of the peer module
   # (src/Core/3rdparty: libjuice, libplum), which that build compiles too, are not the new core's code
@@ -756,7 +758,7 @@ jobs:
         cmake -S . -B build-msvc -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_C_COMPILER=cl -DBUILD_NUMBER=0 "-DCMAKE_C_FLAGS=/DWIN32 /D_WINDOWS /analyze"
         if errorlevel 1 exit /b 1
 
-        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan > build-msvc\analyze.txt 2>&1
+        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan coreswitch > build-msvc\analyze.txt 2>&1
         set BUILD_EXIT=%ERRORLEVEL%
         type build-msvc\analyze.txt
         if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%

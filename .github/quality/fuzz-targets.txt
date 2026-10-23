@@ -45,6 +45,9 @@ src/Core  TransportTlsParseHello  fuzz_transport
 # The VXLAN module (SDN-62 #289): the datagrams of VTEPs
 src/Core  VxlanInput  fuzz_vxlan
 
+# The switch module (CORE-S4-1 #74): the frames that the members of a Network send
+src/Core  SwitchInput  fuzz_switch
+
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
 src/Cedar  CsOpen               exempt  opens the node's own SQLite store (winsqlite3)

@@ -194,6 +194,31 @@ set_target_properties(corevxlan
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# coreswitch: the switch module (Switch.h, Switch*.c; CORE-S4-1, #74): the VLAN-aware L2 switch of an L2 Network, the
+# forwarding plane of the new core in place of the forwarding of the Hub and its hub-wide lock. It calls bcrypt for the
+# random key of its MAC table and nothing else. The programs of the slim fork that link it (vpntest, the fuzz targets)
+# keep their own build options, so ranz_core_options and the library stay PRIVATE, as for corepeer.
+file(GLOB SOURCES_CORE_SWITCH "Switch*.c")
+file(GLOB HEADERS_CORE_SWITCH "Switch*.h")
+
+add_library(coreswitch STATIC ${SOURCES_CORE_SWITCH} ${HEADERS_CORE_SWITCH})
+
+target_include_directories(coreswitch PUBLIC "${TOP_DIRECTORY}/src")
+
+target_link_libraries(coreswitch PRIVATE ranz_core_options ranz_warnings)
+
+# The only library the module calls
+target_link_libraries(coreswitch PRIVATE "bcrypt.lib")
+
+set_target_properties(coreswitch
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "coreswitch"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
 # ranz_core_check_links(<target>...): stops the configure when one of the targets reaches,
 # through any chain of linked targets, the slim fork (mayaqua, cedar), OpenSSL or liboqs, which
 # the new core does not link (ADR-0022; CORE-F1, #61). src/CMakeLists.txt calls it once every

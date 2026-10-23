@@ -24,6 +24,9 @@ c  corecontrol    0  src/Core/Control*.c
 # corevxlan (SDN-62 #289) is exercised by vpntest's vxlan test, which this job runs with transport and quic: 88.3%
 # measured, less two points for the flood list that changes during a burst from another thread
 c  corevxlan      86  src/Core/Vxlan*.c
+# coreswitch (CORE-S4-1 #74) is exercised by vpntest's switch test, which this job runs with the tests above: 94.6%
+# measured, less two points for the threads that forward while ports change and for the random key of the MAC table
+c  coreswitch     92  src/Core/Switch*.c
 
 # The controller (controller/): the package of `ranz controller` is controller itself, and the
 # executable ranz, with its subcommands, is controller/cmd/ranz
