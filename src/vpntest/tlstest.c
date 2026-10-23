@@ -674,6 +674,27 @@ static BUF *TlsTestPfx()
 	return ret;
 }
 
+// The provider type of a certificate's key: that of its CSP, 0 for a key of a KSP, INFINITE without key provider
+// information
+static UINT TlsTestProvType(PCCERT_CONTEXT cert)
+{
+	DWORD size = 0;
+	UINT type = INFINITE;
+
+	if (cert != NULL && CertGetCertificateContextProperty(cert, CERT_KEY_PROV_INFO_PROP_ID, NULL, &size) && size >= sizeof(CRYPT_KEY_PROV_INFO))
+	{
+		CRYPT_KEY_PROV_INFO *info = ZeroMalloc(size);
+
+		if (CertGetCertificateContextProperty(cert, CERT_KEY_PROV_INFO_PROP_ID, info, &size))
+		{
+			type = info->dwProvType;
+		}
+		Free(info);
+	}
+
+	return type;
+}
+
 // The server certificate's key: one in a legacy CSP is refused, so the question of Schannel and a CSP key does not
 // arise; so are a thumbprint that is in no store, a malformed one and no configuration
 static void TlsTestServerKeys(TLSTEST_CTX *ctx)
@@ -687,8 +708,10 @@ static void TlsTestServerKeys(TLSTEST_CTX *ctx)
 	StrCpy(thumbprint, sizeof(thumbprint), "");
 	PCCERT_CONTEXT cert = TlsTestCspCert();
 	bool have = (cert != NULL && CryptoCertThumbprintStr(cert, thumbprint, sizeof(thumbprint)) && CryptoCertAddToStore(cert, NULL, scope));
-	if (TlsTestCheck(ctx, have && CryptoCertHasKspKey(cert) == false, "  a certificate in the My store whose key sits in a legacy CSP (no KSP key)",
-		"the certificate could not be made, or its key is in a KSP"))
+	UINT type = TlsTestProvType(cert);
+	TlsTestCheck(ctx, have && type == PROV_RSA_AES, "  a certificate in the My store whose key sits in a legacy CSP (the Microsoft Enhanced RSA and AES provider)",
+		"made %u, provider type %u", (UINT)have, type);
+	if (TlsTestCheck(ctx, have && CryptoCertHasKspKey(cert) == false, "  the crypto module does not take its key for a key of a KSP", "it does"))
 	{
 		TransportTlsDefaultConfig(&cfg, thumbprint, false);
 		TRANSPORT *t = TransportTlsServerNew(&cfg);
