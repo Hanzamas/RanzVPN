@@ -90,6 +90,10 @@ type VRF struct {
 	ULA string `json:"ula,omitempty"`
 	// MTU of the VRF, DefaultMTU when it is left out.
 	MTU uint32 `json:"mtu,omitempty"`
+	// RateLimit is the rate in bits per second that each Node sends into the overlay in the VRF at
+	// most, which a token bucket on the Node keeps (ADR-0025 decision 17, SDN-20). Left out, the
+	// VRF has no limit.
+	RateLimit uint64 `json:"rateLimit,omitempty"`
 	// DNS turns on overlay DNS in the VRF (ADR-0028): a zone of its own, which SDN-11 (#187)
 	// serves on its members. The first start sets it for VRF default (ADR-0034).
 	DNS bool `json:"dns,omitempty"`
@@ -135,6 +139,10 @@ type Node struct {
 	// an allocation, so no pool of the VRF covers one. Two gateways may advertise the same subnet
 	// (ADR-0025 decision 12).
 	LANSubnets map[string][]string `json:"lanSubnets,omitempty"`
+	// RateLimit is the rate in bits per second that the node sends into the overlay at most, in all
+	// its VRFs together, which a token bucket on the node keeps (ADR-0025 decision 17, SDN-20).
+	// Left out, the node has no limit.
+	RateLimit uint64 `json:"rateLimit,omitempty"`
 }
 
 // Controller is one member of the controller cluster as nodes reach it (SDN-17, ADR-0026). The

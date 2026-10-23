@@ -56,6 +56,9 @@ src/Cedar  NodeOverlayInput     exempt  a packet of the host's own IP stack on t
 src/Cedar  NodeNatEnds     fuzz_nat
 src/Cedar  NodeNatCopy     fuzz_nat
 src/Cedar  NodeNatInbound  fuzz_nat
+# The shaping of the overlay (SDN-20 #196) reads the packet of the host that NodeOverlayInput copied: no parser word in
+# its name, listed as a parser
+src/Cedar  NodeShapeOutput      exempt  only AdjustTcpMssL3 of TcpIp reads the bytes, to clamp the MSS of a TCP SYN, and fuzz_tcpip drives it through AdjustTcpMssL2; the rate limits take the size of the packet alone
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen

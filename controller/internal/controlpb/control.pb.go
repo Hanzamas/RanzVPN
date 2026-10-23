@@ -1328,6 +1328,7 @@ type Vrf struct {
 	Id            uint32                 `protobuf:"varint,2,opt,name=id,proto3" json:"id,omitempty"`
 	Ula           *Prefix                `protobuf:"bytes,3,opt,name=ula,proto3" json:"ula,omitempty"` // the ULA /48 of the VRF (RFC 4193)
 	Mtu           uint32                 `protobuf:"varint,4,opt,name=mtu,proto3" json:"mtu,omitempty"`
+	RateLimit     uint64                 `protobuf:"varint,5,opt,name=rate_limit,json=rateLimit,proto3" json:"rate_limit,omitempty"` // bits per second that each node sends in the VRF, 0 for no limit (SDN-20)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1386,6 +1387,13 @@ func (x *Vrf) GetUla() *Prefix {
 func (x *Vrf) GetMtu() uint32 {
 	if x != nil {
 		return x.Mtu
+	}
+	return 0
+}
+
+func (x *Vrf) GetRateLimit() uint64 {
+	if x != nil {
+		return x.RateLimit
 	}
 	return 0
 }
@@ -2521,7 +2529,9 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\rR\x02id\x12)\n" +
 	"\x03ula\x18\x03 \x01(\v2\x17.ranz.control.v1.PrefixR\x03ula\x12\x10\n" +
-	"\x03mtu\x18\x04 \x01(\rR\x03mtu\"\xd2\x01\n" +
+	"\x03mtu\x18\x04 \x01(\rR\x03mtu\x12\x1d\n" +
+	"\n" +
+	"rate_limit\x18\x05 \x01(\x04R\trateLimit\"\xd2\x01\n" +
 	"\aNetwork\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x15\n" +
 	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x120\n" +

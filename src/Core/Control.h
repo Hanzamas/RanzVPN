@@ -24,7 +24,7 @@
 #define CONTROL_EXPORTER_SIZE  32                            // ... and its size, with no context
 #define CONTROL_PROLOGUE_LABEL "ranz control stream 1"       // The prologue of the handshake, before the exporter
 #define CONTROL_NAME_SIZE      64                            // A name with its terminating NUL (control.options)
-#define CONTROL_MAX_VRFS       16                            // The VRFs of a peer (Peer.vrf_ids of control.options)
+#define CONTROL_MAX_VRFS       16                            // The VRFs of a node and of a peer (Peer.vrf_ids of control.options)
 #define CONTROL_MAX_ADDRESSES  16                            // The addresses of a node (NodeConfig.addresses, Peer.addresses)
 #define CONTROL_MAX_NATS       16                            // The 1:1 NAT rules of a node (NodeConfig.nat of control.options)
 #define CONTROL_MAX_ROUTES     16                            // The routes of a peer (Peer.routes of control.options)
@@ -75,15 +75,27 @@ typedef struct CONTROL_PEER {
 	CONTROL_ROUTE Routes[CONTROL_MAX_ROUTES];         // ... ordered by VRF id
 } CONTROL_PEER;
 
-// The desired state that the client applied, as its owner takes it (CONTROL_STATE_PROC). The VRFs,
+// A VRF that the node is a member of (Vrf of the control protocol): the MTU and the rate limit of
+// the overlay in it (SDN-20, #196)
+typedef struct CONTROL_VRF {
+	char Name[CONTROL_NAME_SIZE]; // Its name
+	UINT Id;                      // Its id
+	UINT Mtu;                     // Its MTU
+	UINT64 RateLimit;             // Bits per second that each node sends in it, 0 for no limit
+} CONTROL_VRF;
+
+// The desired state that the client applied, as its owner takes it (CONTROL_STATE_PROC). The
 // Networks and Relays of the state stay in the client until a module of the node needs them.
 typedef struct CONTROL_STATE {
 	UINT64 Generation;                                // The Generation of the state
 	char Name[CONTROL_NAME_SIZE];                     // The node's name in the intent
 	UINT NumAddresses;                                // Its addresses in the L3 Networks of its VRFs
 	CONTROL_ADDRESS Addresses[CONTROL_MAX_ADDRESSES]; // ... ordered by Network name
+	UINT64 RateLimit;                                 // Bits per second that it sends into the overlay, 0 for no limit
 	UINT NumNats;                                     // The 1:1 NAT rules that it applies, its 4via6 among them
 	CONTROL_NAT Nats[CONTROL_MAX_NATS];               // ... ordered by VRF id
+	UINT NumVrfs;                                     // The VRFs it is a member of
+	CONTROL_VRF Vrfs[CONTROL_MAX_VRFS];               // ... in name order
 	UINT NumPeers;                                    // Its peers
 	CONTROL_PEER *Peers;                              // ... in name order
 } CONTROL_STATE;

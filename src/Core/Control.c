@@ -289,6 +289,10 @@ static int ControlComparePeers(const void *a, const void *b) {
 	return strcmp(((const CONTROL_PEER *)a)->Name, ((const CONTROL_PEER *)b)->Name);
 }
 
+static int ControlCompareVrfs(const void *a, const void *b) {
+	return strcmp(((const CONTROL_VRF *)a)->Name, ((const CONTROL_VRF *)b)->Name);
+}
+
 // Hand the objects, which are at Generation gen, to the owner
 static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	CONTROL_STATE st;
@@ -311,7 +315,15 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 		if (o->which_kind == ranz_control_v1_Object_node_tag) {
 			strncpy_s(st.Name, sizeof(st.Name), o->kind.node.name, _TRUNCATE);
 			ControlCopyAddresses(st.Addresses, &st.NumAddresses, o->kind.node.addresses, o->kind.node.addresses_count);
+			st.RateLimit = o->kind.node.rate_limit;
 			ControlCopyNats(st.Nats, &st.NumNats, o->kind.node.nat, o->kind.node.nat_count);
+		} else if (o->which_kind == ranz_control_v1_Object_vrf_tag && st.NumVrfs < CONTROL_MAX_VRFS) {
+			CONTROL_VRF *v = &st.Vrfs[st.NumVrfs++];
+
+			strncpy_s(v->Name, sizeof(v->Name), o->kind.vrf.name, _TRUNCATE);
+			v->Id = o->kind.vrf.id;
+			v->Mtu = o->kind.vrf.mtu;
+			v->RateLimit = o->kind.vrf.rate_limit;
 		} else if (o->which_kind == ranz_control_v1_Object_peer_tag && o->kind.peer.public_key.size == NOISE_KEY_SIZE) {
 			CONTROL_PEER *p = &st.Peers[st.NumPeers++];
 
@@ -324,7 +336,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 		}
 	}
 
-	// A delta appends the objects it adds, so the peers are sorted again
+	// A delta appends the objects it adds, so the VRFs and the peers are sorted again
+	qsort(st.Vrfs, st.NumVrfs, sizeof(CONTROL_VRF), ControlCompareVrfs);
 	qsort(st.Peers, st.NumPeers, sizeof(CONTROL_PEER), ControlComparePeers);
 
 	if (c->Config.Proc != NULL)
