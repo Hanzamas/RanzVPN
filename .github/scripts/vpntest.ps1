@@ -111,6 +111,39 @@ if ($env:RANZ_SMOKE_TESTS) {
 	if ($named.Count -eq 0) { Write-Error "no test to run (the tag is '$tag')" }
 }
 
+# The TLS transport (CORE-S2-1 #69) puts its key exchange groups first in the machine's Schannel group list, which an
+# ECC Curve Order policy overrides. The runner image sets one (NistP384, NistP256): a CI run takes it off, so the list
+# that the transport sets governs, as on a node without that policy. Only on a runner, whose machine goes after the job.
+if ($env:GITHUB_ACTIONS -eq 'true') {
+	$eccPolicy = 'HKLM:\SOFTWARE\Policies\Microsoft\Cryptography\Configuration\SSL\00010002'
+	$eccCurves = (Get-ItemProperty -LiteralPath $eccPolicy -Name 'EccCurves' -ErrorAction SilentlyContinue).EccCurves
+	if ($eccCurves) {
+		try {
+			Remove-ItemProperty -LiteralPath $eccPolicy -Name 'EccCurves' -ErrorAction Stop
+			Write-Host ('ECC Curve Order policy of the runner image (' + ($eccCurves -join ', ') + ') taken off for the TLS transport')
+		} catch {
+			Write-Host ('ECC Curve Order policy of the runner image (' + ($eccCurves -join ', ') + ') could not be taken off: ' + $_)
+		}
+	}
+
+	# The congestion control of the outer TCP of the TLS transport (the TCP-over-TCP amendment of ADR-0022: BBR2 where
+	# Windows offers it). Windows has no choice per socket: each TCP setting template of the machine has its provider.
+	# What this runner's templates use, for the record of each CI run, and whether Windows offers BBR2: the
+	# InternetCustom template, which no connection uses without a transport filter, takes it and then gets its own back.
+	Get-NetTCPSetting -ErrorAction SilentlyContinue | % { Write-Host ('TCP setting template ' + $_.SettingName + ': congestion provider ' + $_.CongestionProvider) }
+	$custom = (Get-NetTCPSetting -SettingName InternetCustom -ErrorAction SilentlyContinue).CongestionProvider
+	$answer = (netsh int tcp set supplemental template=internetcustom congestionprovider=bbr2 | Out-String).Trim()
+	$taken = (Get-NetTCPSetting -SettingName InternetCustom -ErrorAction SilentlyContinue).CongestionProvider
+	Write-Host ('BBR2 on this runner: the InternetCustom template took "' + $taken + '" (netsh: ' + $answer + ')')
+	if ($custom -and "$taken" -ne "$custom") {
+		netsh int tcp set supplemental template=internetcustom congestionprovider=$custom | Out-Null
+	}
+}
+
+# A test whose output the job log should show besides its result has a script vpntest.d\<test>.ps1 here, which runs
+# after the checks with the output of the test in $full and writes what it wants shown
+$hooksDir = Join-Path $PSScriptRoot 'vpntest.d'
+
 # Runs one test and checks it: its OK marker once, no leak, no golden file recorded in place of a comparison. The BENCH
 # lines of run number $run go to the bench file of that run; $script:printedBench says whether there were any.
 function Invoke-SmokeTest([string] $test, [int] $run) {
@@ -149,6 +182,9 @@ function Invoke-SmokeTest([string] $test, [int] $run) {
 			Write-Error ("$test recorded golden files in place of comparing them ('" + (($updating | % { $_.Trim() }) -join "', '") + "'). A deliberate update runs with RANZ_UPDATE_GOLDEN=1")
 		}
 	}
+
+	$hook = Join-Path $hooksDir "$test.ps1"
+	if (Test-Path -LiteralPath $hook) { . $hook }
 
 	Write-Host 'ok'
 }

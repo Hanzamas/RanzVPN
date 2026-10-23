@@ -11,10 +11,10 @@ ranz_add_executable(vpntest HAMCORE
   ICON "vpntest.ico"
   SOURCES
     ${RANZ_VPNTEST_SOURCES}
-  # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c and
-  # quictest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN module for
-  # vxlantest.c, the switch module for switchtest.c; netapi32: the local account that stands for a domain account
-  # (NetUserAdd)
+  # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c,
+  # quictest.c and tlstest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN
+  # module for vxlantest.c, the switch module for switchtest.c; netapi32: the local account that stands for a domain
+  # account (NetUserAdd)
   LIBRARIES
     coretransport
     corenoise

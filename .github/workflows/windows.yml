@@ -481,7 +481,8 @@ jobs:
         # Every test that vpntest lists runs, except the ones in .github/quality/smoke-exclude.txt and in
         # .github/quality/asan-exclude.txt, which gives the reason of each (a time budget that AddressSanitizer would
         # exceed, a service outside the instrumented process, msquic.dll that this job does not fetch). A new test
-        # runs here without a line anywhere.
+        # runs here without a line anywhere. noisehub runs its loopback and TLS-443 parts here; its QUIC part needs
+        # msquic.dll. tls (CORE-S2-1 #69) runs on Schannel, which needs no DLL of its own; lossylink runs in virtual time.
         RANZ_SMOKE_EXCLUDE: asan
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same tests but the ones in
@@ -635,9 +636,9 @@ jobs:
         # One profile per process (%p, the process id): coretest.ps1 runs each test in a process of its own
         $env:LLVM_PROFILE_FILE = Join-Path $dir 'coretest-%p.profraw'
         . .github/scripts/coretest.ps1
-        # The tests of the new core's modules that vpntest has (transport, and quic over msquic; vxlan; switch) carry the
-        # tag core (RANZ_TEST_TAGS, src/vpntest/testlist.h), which its smoke test script selects; a new one is tagged in
-        # its own file
+        # The tests of the new core's modules that vpntest has (transport, quic over msquic, tls over Schannel and
+        # lossylink, the ingress queue; vxlan; switch) carry the tag core (RANZ_TEST_TAGS, src/vpntest/testlist.h), which
+        # its smoke test script selects; a new one is tagged in its own file
         $env:LLVM_PROFILE_FILE = Join-Path $dir 'vpntest-%p.profraw'
         $env:RANZ_SMOKE_TAG = 'core'
         . .github/scripts/vpntest.ps1
