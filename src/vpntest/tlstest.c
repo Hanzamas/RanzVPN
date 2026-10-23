@@ -1180,7 +1180,8 @@ static void TlsTestQueue(TLSTEST_CTX *ctx, TRANSPORT *server, TRANSPORT *client)
 			"  every record sent left the queue, was dropped by CoDel or was dropped at the limit", "%u wait, %I64u pushed", st.NumRecords, st.NumPushed);
 	}
 
-	// The close record comes after the records that wait
+	// The close record comes after the records that wait; the server reads it whatever happened before
+	InterlockedExchange(&srv->Pace, TLSTEST_FAST);
 	TransportNoiseClose(n);
 	if (thread != NULL)
 	{

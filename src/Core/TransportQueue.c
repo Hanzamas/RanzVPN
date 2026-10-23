@@ -64,7 +64,7 @@ bool TransportQueuePush(TRANSPORT_QUEUE *q, UINT64 now, const void *data, UINT s
 		return false;
 	}
 
-	if (copy != NULL)
+	if (copy != NULL && data != NULL)
 		CopyMemory(copy, data, size);
 	item->Time = now;
 	item->Size = size;
@@ -202,9 +202,10 @@ void TransportQueueFree(TRANSPORT_QUEUE *q) {
 UINT64 TransportQueueNow() {
 	LARGE_INTEGER frequency, count;
 
-	// Both never fail on Windows XP and later; the frequency is fixed at boot
-	QueryPerformanceFrequency(&frequency);
-	QueryPerformanceCounter(&count);
+	// Neither fails on Windows XP and later, and the frequency is fixed at boot; the tick count of the system stands in
+	// should one fail
+	if (QueryPerformanceFrequency(&frequency) == FALSE || frequency.QuadPart <= 0 || QueryPerformanceCounter(&count) == FALSE || count.QuadPart < 0)
+		return GetTickCount64() * 1000;
 
 	// Whole seconds, then the rest, so that the product does not overflow
 	return (UINT64)(count.QuadPart / frequency.QuadPart) * 1000000 + (UINT64)(count.QuadPart % frequency.QuadPart) * 1000000 / (UINT64)frequency.QuadPart;

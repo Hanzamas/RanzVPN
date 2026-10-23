@@ -607,6 +607,7 @@ static void LossyLinkInnerTransmit(LOSSYLINK_SIM *sim, UINT64 now, UINT index, U
 	LOSSYLINK_PAYLOAD p;
 
 	Zero(sim->Record, LOSSYLINK_RECORD);
+	Zero(&p, sizeof(p));
 	p.Segment = index;
 	p.Sent = now;
 	Copy(sim->Record, &p, sizeof(p));
@@ -888,7 +889,7 @@ static void LossyLinkCase(LOSSYLINK_CTX *ctx, UINT loss_bp)
 
 	LossyLinkCheck(ctx, alone.Full == false && codel.Full == false && fifo.Full == false && alone.Kbps != 0, "  the runs stay within their arrays",
 		"a run went past them");
-	Format(what, sizeof(what), "  no collapse with the active queue: the inner TCP keeps at least %u%% of what the link carries", LOSSYLINK_FLOOR);
+	Format(what, sizeof(what), "  no collapse with the active queue: the inner TCP keeps at least %u%% of what the link carries", (UINT)LOSSYLINK_FLOOR);
 	LossyLinkCheck(ctx, codel_pct >= LOSSYLINK_FLOOR, what, "%u%%", codel_pct);
 	LossyLinkCheck(ctx, codel.Wait50 < TRANSPORT_QUEUE_TARGET, "  the active queue keeps the median wait below its target of 5 ms", "%I64u us", codel.Wait50);
 }

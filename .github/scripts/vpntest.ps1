@@ -62,8 +62,16 @@ if ($env:GITHUB_ACTIONS -eq 'true') {
 
 	# The congestion control of the outer TCP of the TLS transport (the TCP-over-TCP amendment of ADR-0022: BBR2 where
 	# Windows offers it). Windows has no choice per socket: each TCP setting template of the machine has its provider.
-	# What this runner's templates use, for the record of each CI run.
+	# What this runner's templates use, for the record of each CI run, and whether Windows offers BBR2: the
+	# InternetCustom template, which no connection uses without a transport filter, takes it and then gets its own back.
 	Get-NetTCPSetting -ErrorAction SilentlyContinue | % { Write-Host ('TCP setting template ' + $_.SettingName + ': congestion provider ' + $_.CongestionProvider) }
+	$custom = (Get-NetTCPSetting -SettingName InternetCustom -ErrorAction SilentlyContinue).CongestionProvider
+	$answer = (netsh int tcp set supplemental template=internetcustom congestionprovider=bbr2 | Out-String).Trim()
+	$taken = (Get-NetTCPSetting -SettingName InternetCustom -ErrorAction SilentlyContinue).CongestionProvider
+	Write-Host ('BBR2 on this runner: the InternetCustom template took "' + $taken + '" (netsh: ' + $answer + ')')
+	if ($custom -and "$taken" -ne "$custom") {
+		netsh int tcp set supplemental template=internetcustom congestionprovider=$custom | Out-Null
+	}
 }
 $named | % {
 
@@ -124,6 +132,16 @@ $named | % {
 		$full
 		Write-Error 'vrf golden files not compared (missing: VRF GOLDEN MODE compare)'
 		return $false
+	}
+
+	# The TLS transport and the lossy-link case (CORE-S2-1 #69) put what they measured into the job log: the build, the
+	# Schannel group list and the version, suite and group of each handshake; the ingress queue on TLS-443; the goodput
+	# of an inner TCP with CoDel and without
+	if ($test -eq 'tls') {
+		$full | ? { $_ -cmatch "^  Windows build|^  the machine's list|^  client: |records sent: " } | % { Write-Host $_ }
+	}
+	if ($test -eq 'lossylink') {
+		$full | ? { $_ -cmatch '^\[the lossy link|^  the (outer|inner) TCP|dropped at \(ms\)' } | % { Write-Host $_ }
 	}
 
 	Write-Host 'ok'
