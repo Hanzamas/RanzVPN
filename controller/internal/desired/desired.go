@@ -44,9 +44,10 @@ func KeyOf(o *controlpb.Object) Key {
 }
 
 // Compile returns the desired state of every Node of in, by node name. A node gets itself with
-// its addresses, the VRFs it is a member of with their Networks, a Peer for every other node
-// that shares one of those VRFs (full mesh) with that node's addresses in them, and a Relay for
-// every such node that is a relay (ADR-0015). in must be an intent that intent.Apply returned.
+// its addresses and its 1:1 NAT rules (nat.go), the VRFs it is a member of with their Networks, a
+// Peer for every other node that shares one of those VRFs (full mesh) with that node's addresses
+// and routes in them, and a Relay for every such node that is a relay (ADR-0015). in must be an
+// intent that intent.Apply returned.
 func Compile(in intent.Intent) (map[string]State, error) {
 	vrfs := map[string]*controlpb.Vrf{}
 	for name, v := range in.VRFs {
@@ -83,6 +84,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		}
 		keys[name] = k
 	}
+	nat := natRules(in, vrfs)
 	out := map[string]State{}
 	for name, n := range in.Nodes {
 		s := State{}
@@ -95,6 +97,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			}
 		}
 		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(n.Tags), Addresses: addresses(in, name, vrfs, member)}
+		self.Nat = nat[name]
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {
@@ -113,6 +116,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			}
 			slices.Sort(shared)
 			peer := &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared, Addresses: addresses(in, other, vrfs, sharedVRFs)}
+			peer.Routes = peerRoutes(nat[other], shared)
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})
 			if o.Relay != "" {
 				ap, err := intent.ParseRelay(o.Relay)
