@@ -236,6 +236,19 @@ One queue of an adapter (the Wintun ring, the AF_XDP queue of a KM-TEST adapter)
 The read-mostly MAC, route and policy tables of a Node (`NODE_TABLES`), rebuilt off the data path and installed by pointer (`NodeSwapTables`). Readers (Workers, Adapter queue threads) read it without a lock between two quiescent points; a swap frees the old snapshot only after every online reader passed one (the grace period), so no reader sees a torn or freed table.
 _Avoid_: MAC table (the Hub's `MAC_TABLE_ENTRY` hash list), routing table (the Windows one)
 
+**Forwarding table**:
+The immutable longest-prefix-match table of one VRF in a Node (`NODE_VRF_TABLE`, `NodeVrf.c`): DIR-24-8 for IPv4, a trie for IPv6. It is built for each Generation and installed together with the other tables of that Generation (`NodeSwapVrfs`), so two VRFs can use the same range and a lookup never sees a half-built table.
+_Avoid_: routing table (the Windows one), MAC table
+
+**Next hop**:
+What a route of a Forwarding table leads to: the host (`NODE_VRF_LOCAL`) or one of the next hops of its Generation, a peer reached over the overlay.
+
+**VRF tag**:
+The VRF id, 4 bytes big-endian, before the IP packet in a data record of the overlay (`NODE_OVERLAY_VRF_TAG`), so the receiving Node looks the packet up in the Forwarding table of the right VRF.
+
+**Overlay** (of a Node):
+The part of a Node (`NodeOverlay.c`) that joins its VRFs: the control stream to the Controller, the Noise sessions to its peers and the packets of the host's own IP stack on the overlay adapter.
+
 **Noise session**:
 One connection between two Nodes after a Noise_IK handshake that authenticated both by their node identity keys (`NOISE_SESSION`, the Noise module): the records of a data stream and a control stream, keepalive, rekey on a schedule and the dead-peer timeout. The Channel binding ties it to the outer TLS or QUIC session, which encrypts its records once (ADR-0023); only a session that nothing binds, the CDN path of phase 2, encrypts its records under the Noise keys.
 _Avoid_: Session (the Hub's `SESSION`), Connection (`CONNECTION`), Tunnel (several connections)
@@ -243,25 +256,76 @@ _Avoid_: Session (the Hub's `SESSION`), Connection (`CONNECTION`), Tunnel (sever
 **Channel binding**:
 The value of the outer TLS or QUIC session in the prologue of a Noise handshake: its TLS exporter, or `tls-server-end-point` (the hash of the pinned server certificate) where the stack has no exporter. A handshake whose two sides saw different values fails, so an outer session that a third party terminates is closed.
 
+**Transport**:
+A pluggable carrier of streams between two Nodes (`TRANSPORT`): dial, listen, accept, stream read and write, close, and optionally the Channel binding and the rekey of an outer TLS or QUIC session. QUIC, TLS-443 and the phase-2 transports each implement one; the Noise session above it does not change.
+
+**Fallback list**:
+A client's configured, ordered list of Transport and address entries (`TRANSPORT_TARGET`), raced happy-eyeballs style: the first Transport to connect wins.
+
+**Loopback transport**:
+The in-process Transport of the vpntest harness (`TransportLoopbackNew`): in-memory streams between a dialler and a listener of one process.
+
 **Login**:
 The first control message of a Noise session (`NOISE_LOGIN`): the hub, the user and a password, or a certificate with its signature of the session's challenge. The server Role's Sam checks it (`NodeLogin`); a further connection of a Tunnel sends the Tunnel's id instead.
 _Avoid_: the SE-VPN login (`ServerAccept`), which the Login replaces in the new core
 
 **Tunnel**:
-The Noise sessions of up to 16 connections between the same two Nodes (`NOISE_TUNNEL`), each bound to its own outer session. Inner flows are spread over them by a flow hash, so one flow keeps its order; a lost connection's flows move to the others, and the Tunnel stays up while one connection is left.
+The Noise sessions of up to 16 connections between the same two Nodes (`NOISE_TUNNEL`), each bound to its own outer session. Inner flows are spread over them by a flow hash, so one flow keeps its order; a lost connection's flows move to the others, and the Tunnel stays up while one connection is left. In the Hub, a Connection of type `CONNECTION_NOISE` (`CONNECTION.Protocol`) carries the Tunnel of a client Node of the new core, and the Cedar object around the `NOISE_TUNNEL` is a `TUNNEL`: its Noise sessions, their readers and the frames queued for the Session (CORE-S1-2).
 _Avoid_: Cascade, link
 
+**Flow hash**:
+The hash of a frame that picks its connection in a Tunnel (`NoiseTunnelFlowHash`): over the IP 5-tuple, else over the MAC pair, with the EtherType and the VLAN ids. It is symmetric, so both directions of a flow take the same connection and keep their order.
+
 **BGP sidecar**:
-`ranz-bgp` (`ranz-bgp/`, Go), a separate process that embeds GoBGP as a library and peers with the operator's own routers on TCP 179 (ADR-0010, ADR-0022). A Node starts it only when its `Bgp` setting names peers (`NodeBgp.c`), talks to it over a named pipe with JSON messages, one per line (start, announce and withdraw from the Node; ready, peer, learned, withdrawn and error from the sidecar), and installs the learned routes into the Windows routing table through IP Helper; the sidecar installs none itself. It is the optional RanzBgp feature of the MSI until ONE-1 (#310) makes it the subcommand `ranz bgp` of `ranz.exe` (ADR-0011 amendment of 2026-10-22).
+`ranz-bgp` (`ranz-bgp/`, Go), a separate process that embeds GoBGP as a library and peers with the operator's own routers on TCP 179 (ADR-0010, ADR-0022). A Node starts it only when its `Bgp` setting names peers (`NodeBgp.c`), talks to it over a named pipe with JSON messages, one per line (start, announce and withdraw from the Node; ready, peer, learned, withdrawn and error from the sidecar), and installs the learned routes into the Windows routing table through IP Helper; the sidecar installs none itself. Since ONE-1 (#310) it is the subcommand `ranz bgp` of `ranz.exe` (ADR-0011 amendment of 2026-10-22), which the Node starts as a process of its own.
 _Avoid_: BGP daemon, BGP role (it is no Role), RRAS BGP
 
 **ranz.exe**:
-The one signed executable of the product, one per architecture (ADR-0011 amendment of 2026-10-22): a Go multi-call binary (`ranz controller`, `ranz bgp`, `ranz tray` and the CLI verbs) that carries the Node and what it needs as Payloads. `ranz install` unpacks and registers them and `ranz uninstall` reverses it. Decided and ticketed (ONE-1 to ONE-5, #310 to #314), not built yet; until then `ranz-controller`, `ranz-bgp` and `ranz-node` are separate files.
+The one signed executable of the product, one per architecture (ADR-0011 amendment of 2026-10-22): a Go multi-call binary (`ranz controller`, `ranz bgp`, `ranz tray` and the CLI verbs) that carries the Node and what it needs as Payloads. `ranz install` unpacks and registers them and `ranz uninstall` reverses it. Decided and ticketed (ONE-1 to ONE-5, #310 to #314). ONE-1 built the Go part: `ranz controller`, `ranz bgp`, `ranz notice`, `ranz version` and the CLI verbs are one executable. The Payloads, `ranz install` and the thin MSI come with ONE-2 to ONE-5; until then `ranz-node` is a separate file.
 _Avoid_: installer (the MSI is only a thin wrapper that runs `ranz install`), launcher, bundle
 
 **Payload**:
 A file embedded in `ranz.exe` that `ranz install` writes out after checking its Authenticode signature and its hash: `ranz-node`, the Wintun driver, the SeLow package, the XDP runtime and the rqlite member of a Controller. A component under the GPL or MPL stays a separate process; it enters the file only as an optional Payload, after its licence terms are checked (ADR-0036).
 _Avoid_: resource (an Intent resource is a different thing), plugin, dependency
+
+**Subcommand**:
+A command that `ranz` runs when its name is the first argument (`controller`, `bgp`, `notice`, `version`); every other first argument starts a command of the Controller's API. A subcommand registers itself from its own file.
+
+**NOTICE**:
+The file of licence texts of the components inside `ranz` (today GoBGP), embedded in the executable and printed by `ranz notice`.
+
+**Self-integrity check**:
+The start-up check of the running executable: WinVerifyTrust plus a hash of its `.text` section (SEC-3).
+
+**Degrade or deceive**:
+The response to a detection (ADR-0036): lock a feature, return wrong data, or fail later, never an instant crash.
+
+**Authenticode signing**:
+The code signing of the shipped executables and of the MSI.
+
+**Symbol stripping**:
+Go `-trimpath -ldflags "-s -w"` and a private PDB for the C binaries, so a shipped binary carries no symbols.
+
+**ranzguard**:
+The release-only hardened licence-gate and key-handling binary.
+
+**Hardened variant** (`RANZ_HARDENED`):
+The x64 release-only build that adds the anti-debug and anti-RE cover. It is off by default.
+
+**VMProtect marker** (`RANZ_VMP_BEGIN`, `RANZ_VMP_END`):
+The markers around the two routines that the selective virtualization protects.
+
+**Virtual service account**:
+`NT SERVICE\<service>`, the account that each new-core service runs as.
+
+**Process mitigation**:
+One `SetProcessMitigationPolicy` policy of a new-core process (`NODE_MITIGATION`, `mitigation.Policy`).
+
+**Binary hardening gate**:
+The dumpbin check of the shipped binaries in CI, with its recorded exceptions.
+
+**SBOM**:
+The SPDX bill of materials that the supply-chain job produces.
 
 
 ## SDN language (new core)
@@ -275,6 +339,35 @@ _Avoid_: tenant, routing compartment, segment
 **Network**:
 One L2 switched or L3 routed segment inside exactly one VRF, with its own address pools; the successor of the Hub.
 _Avoid_: Hub (the slim fork object), VLAN, subnet
+
+**Policy**:
+The resource kind of one rule of a VRF's policy (its VRF, its action, what it matches).
+_Avoid_: `POLICY` (the slim fork's per-Session policy of a Hub user or group)
+
+**Starter rule**:
+The Policy `default-allow-all` that the first start creates: allow all inside VRF `default` (ADR-0034).
+
+**First start**:
+The revision 1 that a Controller makes on an empty store (revision operation `first-start`): VRF `default`, its Network `default` with the Automatic pool, and the Starter rule (ADR-0034).
+
+**Automatic pool**:
+The IPv4 pool `100.64.0.0/10` of Network `default`.
+
+**Node address**:
+The address of a Node in an L3 Network, allocated by the Controller (`addresses` of the Node spec, `Address` of the control protocol).
+
+**Reservation**:
+A prefix or an address of a Network's pools (`Network.reserved`) that the Controller never gives a Node.
+
+**LAN subnet**:
+A prefix behind a gateway Node (`Node.lanSubnets`, by VRF). It is a Route, never an allocation.
+
+**Route**:
+A LAN subnet that a gateway Node advertises in a VRF (`intent.Route`, listed by `GET /api/v1/ipam`).
+_Avoid_: Path (how a Node reaches a peer), the Windows routing table
+
+**Pool threshold**:
+The percentage of a pool in use at which the pool Event fires (`Network.poolThreshold`, 80 by default).
 
 **Controller**:
 The `ranz-controller` service: the single authority that stores the Intent, allocates addresses and DNS records, and compiles the desired state of every Node. It runs as one member or as a cluster of 3 or 5, each member with its own rqlite member as sidecar. A `Controller` resource of the Intent names one member as Nodes reach it.
@@ -300,6 +393,14 @@ _Avoid_: revision (a version of the whole Intent), version, epoch
 The number of one version of the whole Intent, from 1. Every apply, delete and rollback makes the next one, and the Controller stores each with its whole Intent; revision 0 is the empty Intent before the first apply. `ranz diff` shows the resource changes between two, and `ranz rollback` makes the Intent of an earlier one the Intent again, as a new revision. An apply with `--confirm` makes a revision that waits for `ranz confirm`; without it in time, the Controller rolls it back by itself (an automatic rollback) and raises an Event. While a revision waits, the Controller takes no other change but a rollback.
 _Avoid_: Generation (a version of one Node's desired state), version, commit
 
+**Intent export**:
+The whole Intent as one intent document, with the values the Controller filled in (the id and the ULA of each VRF), taken with `ranz export`. `ranz import` makes such a document the whole Intent again, as a new Revision, and deletes the resources it leaves out.
+_Avoid_: dump, backup (the Store backup), snapshot
+
+**Store backup**:
+The rqlite backup of the Controller's whole store: the Intent with every Revision, the Node states, Capabilities, Events, API tokens, the Licence key and the lease. `ranz controller backup` writes it and `ranz controller restore` puts it back, on the Controller's host. A restore under a running cluster first takes the lease, so the Leader steps down.
+_Avoid_: snapshot (a Table snapshot of a Node), dump, export (the Intent alone)
+
 **Event**:
 A condition the Controller reports to operators (ADR-0030), kept with the change that raised it and listed by the API (`ranz get events`): so far the automatic rollback of an unconfirmed revision. SDN-16 delivers them by webhook and as metrics.
 _Avoid_: alert, log entry, ETW event (a local Node event)
@@ -308,6 +409,9 @@ _Avoid_: alert, log entry, ETW event (a local Node event)
 The mapping of an IPv4 address of a VRF into an IPv6 address inside that VRF's ULA prefix, so a host that joins two VRFs with overlapping IPv4 can tell the two addresses apart.
 _Avoid_: NAT64, 6to4
 
+**4via6 subnet**:
+The last /64 of a VRF's ULA, reserved for 4via6 and outside every pool.
+
 **Endpoint**:
 One service (an IP address and port) of a source VRF published into a consumer VRF, so the consumer reaches only that service.
 _Avoid_: service, port forward; "endpoint" for the end of a connection (say peer or address)
@@ -315,6 +419,12 @@ _Avoid_: service, port forward; "endpoint" for the end of a connection (say peer
 **Mirror**:
 A rate-limited copy of matching overlay traffic, sent to a sensor over VXLAN.
 _Avoid_: tap, SPAN, monitor (the Local Bridge `Monitor` flag is a different thing)
+
+**VTEP**:
+A VXLAN tunnel endpoint: an IP address and UDP port that sends and receives VXLAN datagrams. The Node's VXLAN module is one; the VTEPs of a fabric and the sensor of a Mirror are others.
+
+**Flood list**:
+The VTEPs of one VNI that each get a copy of a frame the VXLAN module sends on that VNI (ingress replication). For the EVPN gateway, the type-3 routes of the fabric fill it.
 
 **Stretch**:
 The binding of one Gateway to one L2 Network that extends the Network into a data-centre fabric over EVPN and VXLAN (ADR-0032 amendment of 2026-10-22). It holds the L2 VNI, the route targets, the ESI, the BUM rate limit, the MAC import limit, the stale timer and the `irb` flag. A Network has one Stretch gateway unless an ESI is set.
@@ -332,9 +442,39 @@ _Avoid_: LAG, bond, team
 The TCP 443 listener of a Node that reads the first bytes of each connection and hands the socket to the process that owns that protocol.
 _Avoid_: port sharing, reverse proxy, demultiplexer (the opt-in UDP 443 demultiplexer is a different thing)
 
+**Default VPN listener**:
+The one listener that a fresh configuration registers: TCP 443, or 5555 after a fallback (ADR-0020).
+
+**First-start probe**:
+The bind test of 443, then 5555, that a server makes only when it creates its default configuration (`ListenProbe`).
+
+**HTTP listener**:
+The listener kind, on port 80 by default, that answers only the HTTPS redirect and ACME HTTP-01 challenges, never VPN sessions or the Admin RPC.
+
+**VPN listener**:
+A TCP listener of the SE-VPN protocol and the Admin RPC (the `ListenerCreate` kind), as opposed to the HTTP listener.
+
+**HTTP responder**:
+The pure function of the HTTP listener that turns one parsed request into one answer.
+
+**ACME webroot** (`acme_webroot`):
+The folder in the data directory whose `.well-known/acme-challenge` holds one challenge file per token.
+
 **API token**:
 A bearer secret that a caller of the Controller's API presents, holding one of the three global API roles: `viewer` reads, `operator` also applies Intent, `admin` also manages the API tokens (ADR-0031). The Controller keeps only its SHA-256; the first start creates the `admin` token.
 _Avoid_: API key, password, session (a user login of SDN-32 is a different thing)
+
+**Admin source allowlist**:
+The source prefixes (CIDR prefixes or single addresses, at most 256) that the Controller's API and web UI accept connections from (`api.Sources`). Empty means no restriction, and a loopback address always passes, before the list is read. It is kept in the store, not in the Intent, and an admin sets it with `ranz admin-sources`. A request from outside it is answered 403 before its token is looked at and is recorded as an Event.
+_Avoid_: IP filter, firewall rule, `$adminip.txt`
+
+**Enrolment sources**:
+The `enrolSources` of a Network: the source prefixes that its Nodes may open their control stream from. The Controller checks every stream against the Networks of the VRFs of its Node and refuses one that a Network does not allow.
+_Avoid_: source IP access control (the Hub's AC list of the slim fork), allowed prefixes
+
+**UI action**:
+One call of the public API that the web UI makes, named in the action table `controller/internal/webui/ui/assets/actions.json` with its method, path pattern and the least API role it needs (the role `api.Needs` gives the call). Every control of the UI names its UI action in `data-action` and shows only to a role that allows it.
+_Avoid_: endpoint, route (the API's side of the call)
 
 **Egress tier**:
 How a Node that is an internet exit for a VRF translates its traffic: tier 1 is RRAS NAT, tier 2 is WinNAT, tier 3 is a proxy on the Windows TCP/IP stack.
@@ -360,6 +500,30 @@ _Avoid_: route (a route of a VRF), connection
 A message from a node to one peer that the Controller carries (`Signal` of the control protocol): the relay assignment (the node's home relay) and the node's ICE candidates, as an offer or an answer. It is sealed by the node's static key to the peer's with the Noise one-way pattern K (`PeerSealSignal`), so the Controller can neither forge, alter nor redirect it, and a sequence that grows with the clock makes a replay fail.
 _Avoid_: signature (it is authenticated encryption, which only the receiver checks), SDP offer
 
+**ICE socket**:
+The one UDP socket of a Node on which all of its ICE sessions run (libjuice's mux mode), so one NAT mapping and one gateway port serve every peer.
+_Avoid_: ICE port (the port alone), relay socket
+
+**ICE session**:
+A Node's ICE agent with one peer, which checks candidate pairs in the background while the Path stays on the Relay. The Node's offer starts it controlling, and the peer's offer starts it controlled. It ends when the peer goes, and a new offer replaces it after it failed.
+_Avoid_: ICE connection, P2P session
+
+**Mapped candidate**:
+The public port that a Node's home gateway granted to its ICE socket through PCP, NAT-PMP or UPnP (`PEER_CANDIDATE_MAPPED`). It goes first in the Node's Signals.
+_Avoid_: port forward, UPnP candidate
+
+**Upgrade** and **Fallback**:
+A Path moving from the Relay to the direct path once an ICE session validates a pair (Upgrade), and back when consent freshness fails it (Fallback). Both are counted per Node in `PEER_STATS`.
+_Avoid_: switchover, failover
+
+**Punch**:
+A Node's attempt at a direct path to a symmetric-NAT peer that ICE leaves on the Relay: it predicts the peer's next mapping port and sends authenticated probes to it on the peer layer's own socket (`PeerPunch.c`, `PEER_MSG_PUNCH`). The Controller triggers it with the Signal exchange, and on a meeting the Path moves off the Relay.
+_Avoid_: ICE restart, STUN check
+
+**Predicted candidate**:
+The public port that a Node's own NAT will give its next mapping, learned from two reflexive observations and offered in the Node's Signals (`PEER_CANDIDATE_PREDICTED`), so a symmetric-NAT peer knows where to aim its probes.
+_Avoid_: next port, guessed candidate
+
 **Licence key**:
 The vendor-signed key of one installation that names its Tier, its node cap, its expiry and the version of its Perpetual fallback licence (ADR-0036). Only the Controller checks it (`internal/licence`), and it caps the Nodes in name order: a Node above the cap gets no desired state and its control stream is refused. Without a key the Personal Tier of 10 Nodes is in force.
 _Avoid_: licence file, serial, activation code
@@ -371,6 +535,30 @@ _Avoid_: plan, edition, SKU (a Windows SKU is a Capability)
 **Perpetual fallback licence**:
 What a subscription leaves after 12 paid months: once it expires, the version its Licence key names (major.minor, with its bugfix releases and every older version) stays licensed with the Tier and node cap of the subscription. A subscription that expires without one for the running version leaves the Personal Tier.
 _Avoid_: lifetime licence, grace period
+
+**Watermark**:
+The per-customer mark embedded in a Licence key, so a leaked key names the customer it was issued to.
+
+**Revocation list**:
+The vendor-signed list of revoked Licence ids that the Controller reads from the update channel and refuses keys against. The Activation service distributes it.
+
+**Activation token**:
+A vendor-signed, node-locked, time-limited grant of a Tier and its features for one installation, issued by the Activation service. It is distinct from the Licence key, which the Controller checks offline.
+
+**Machine fingerprint**:
+The per-install identity that an Activation token is locked to. It derives from the Machine identity (the MachineGuid, FIX-5).
+
+**Activation service**:
+The vendor server (the Hanzcodes licensing server) that issues Activation tokens, holds the Enterprise feature key and distributes the Revocation list.
+
+**Heartbeat**:
+The periodic re-validation that renews an Activation token.
+
+**Enterprise feature key**:
+The in-memory key that the Activation service releases only against an Enterprise token, and that unlocks the Enterprise feature blob.
+
+**Software KSP**:
+The in-memory `crypto.Signer` that stands in for the HSM or the CNG KSP in CI.
 
 
 ## Flagged ambiguities
@@ -400,3 +588,6 @@ _Avoid_: lifetime licence, grace period
 - "Server" names the slim fork's `vpnserver` and its `SERVER` object, and the server Role of a Node. The service of the Node is `ranzvpnserver`; the one of `vpnserver` is still `sevpnserverdev`.
 - "Peer" names the other end of a link, the Peer object of a node's desired state (another node that shares a VRF with it), and the Peer module of the new core (`src/Core/Peer*.c`), which keeps a node's peers.
 - "Relay" names the relay Role, a Node that runs it, and the Relay object of the desired state, which tells a node about such a Node.
+- "Policy" is the SDN resource kind, one rule of a VRF's policy. The slim fork's `POLICY` is the per-Session policy of a Hub user or group, a different thing.
+- "Route" is a LAN subnet that a gateway Node advertises in a VRF (`intent.Route`). A route inside a Forwarding table, a route of the Windows routing table and the Path of a peer are different things.
+- "Tunnel" is the Noise sessions of up to 16 connections between two Nodes (`NOISE_TUNNEL`), and the Cedar `TUNNEL` is the object around one, held by a Connection of type `CONNECTION_NOISE`. A Cascade is not a Tunnel.
