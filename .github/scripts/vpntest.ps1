@@ -42,8 +42,24 @@ if (Test-Path $benchFile) { Remove-Item $benchFile }
 }
 
 # Named self-tests: must print their OK marker and no leak. RANZ_SMOKE_TESTS (comma list) overrides the list.
-$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'noisehub', 'vxlan')
+$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'tls', 'noisehub', 'vxlan')
 if ($env:RANZ_SMOKE_TESTS) { $named = $env:RANZ_SMOKE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
+
+# The TLS transport (CORE-S2-1 #69) puts its key exchange groups first in the machine's Schannel group list, which an
+# ECC Curve Order policy overrides. The runner image sets one (NistP384, NistP256): a CI run takes it off, so the list
+# that the transport sets governs, as on a node without that policy. Only on a runner, whose machine goes after the job.
+if ($env:GITHUB_ACTIONS -eq 'true') {
+	$eccPolicy = 'HKLM:\SOFTWARE\Policies\Microsoft\Cryptography\Configuration\SSL\00010002'
+	$eccCurves = (Get-ItemProperty -LiteralPath $eccPolicy -Name 'EccCurves' -ErrorAction SilentlyContinue).EccCurves
+	if ($eccCurves) {
+		try {
+			Remove-ItemProperty -LiteralPath $eccPolicy -Name 'EccCurves' -ErrorAction Stop
+			Write-Host ('ECC Curve Order policy of the runner image (' + ($eccCurves -join ', ') + ') taken off for the TLS transport')
+		} catch {
+			Write-Host ('ECC Curve Order policy of the runner image (' + ($eccCurves -join ', ') + ') could not be taken off: ' + $_)
+		}
+	}
+}
 $named | % {
 
 	[String] $test = $_

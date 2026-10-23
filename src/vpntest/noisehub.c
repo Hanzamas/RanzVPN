@@ -11,8 +11,8 @@
 //   table and the results of the access list make one report per Hub, and both reports must be the golden file
 //   noisehub/noisehub_frames.txt, the Hub output of the oracle (golden family "noisehub"). The Hub fills in the IPv4
 //   header checksum 0 of one frame, so a golden frame is the oracle's output, not its input.
-// - The Noise path runs over the bound loopback transport, and over the QUIC transport (CORE-S1-1, #67) where
-//   msquic.dll is present.
+// - The Noise path runs over the bound loopback transport, over the QUIC transport (CORE-S1-1, #67) where msquic.dll is
+//   present, and over the TLS transport on Schannel (TLS-443, CORE-S2-1 #69) on a test port of the loopback interface.
 // - A Tunnel of four connections carries many inner flows both ways: the frames of each flow arrive complete, in order
 //   and over one connection, and the flows spread over all four (ADR-0022, multi-connection tunnels).
 // - A wrong password and a join Login of a Tunnel that no Session carries are refused, and the Session of a Tunnel
@@ -59,6 +59,7 @@
 #define	NOISEHUB_ACCEPT			100					// ms that the accept thread waits for a stream before it looks at its halt
 #define	NOISEHUB_LOOPBACK		"noisehub-node"		// The address of the node on the loopback transport
 #define	NOISEHUB_QUIC			"127.0.0.1:0"		// ... and on QUIC: an ephemeral port of the loopback interface
+#define	NOISEHUB_TLS			"127.0.0.1:0"		// ... and on TLS-443: an ephemeral TCP port of the loopback interface, never 443
 #define	NOISEHUB_CN				L"CN=localhost"		// The subject of the QUIC server certificate
 #define	NOISEHUB_SAN			L"localhost"		// Its subject alternative name
 #define	NOISEHUB_FRAME_MAX		128					// Bytes of a test frame at most
@@ -1279,9 +1280,9 @@ static void NoiseHubTunnel(NOISEHUB_CTX *ctx, TRANSPORT *client, char *address, 
 	}
 }
 
-// The Noise path over one transport: the cases of the golden file, the refused Logins and the Tunnel case. quic: the
-// listener takes the port the system picks, which the client dials.
-static void NoiseHubRun(NOISEHUB_CTX *ctx, TRANSPORT *server, TRANSPORT *client, char *listen, bool quic, char *what)
+// The Noise path over one transport: the cases of the golden file, the refused Logins and the Tunnel case. bound_port,
+// for QUIC and TLS: the listener takes the port the system picks, which bound_port gives and the client dials.
+static void NoiseHubRun(NOISEHUB_CTX *ctx, TRANSPORT *server, TRANSPORT *client, char *listen, USHORT (*bound_port)(TRANSPORT *t), char *what)
 {
 	char address[TRANSPORT_ADDRESS_SIZE];
 	char tmp[MAX_SIZE];
@@ -1295,9 +1296,9 @@ static void NoiseHubRun(NOISEHUB_CTX *ctx, TRANSPORT *server, TRANSPORT *client,
 		return;
 	}
 
-	if (quic)
+	if (bound_port != NULL)
 	{
-		Format(address, sizeof(address), "127.0.0.1:%u", (UINT)TransportQuicBoundPort(server));
+		Format(address, sizeof(address), "127.0.0.1:%u", (UINT)bound_port(server));
 	}
 	else
 	{
@@ -1340,11 +1341,50 @@ static void NoiseHubQuic(NOISEHUB_CTX *ctx)
 
 		if (NoiseHubCheck(ctx, server != NULL && client != NULL, "QUIC: the server and client transports open on msquic", "a transport could not open"))
 		{
-			NoiseHubRun(ctx, server, client, NOISEHUB_QUIC, true, "QUIC");
+			NoiseHubRun(ctx, server, client, NOISEHUB_QUIC, TransportQuicBoundPort, "QUIC");
 		}
 
 		TransportQuicFree(client);
 		TransportQuicFree(server);
+	}
+
+	if (cert != NULL)
+	{
+		CryptoCertRemoveFromStore(thumbprint, NULL, scope);
+		CryptoCertDeleteKey(cert);
+		CryptoCertFree(cert);
+	}
+}
+
+// The Noise path over TLS-443 (CORE-S2-1) on Schannel, for a client that cannot use UDP: the listener of the node, on a
+// test port of the loopback interface, presents a real certificate of the store whose key is in the CNG key storage
+// provider, and the client pins it
+static void NoiseHubTls(NOISEHUB_CTX *ctx)
+{
+	char thumbprint[MAX_SIZE];
+	UINT scope = 0;
+
+	StrCpy(thumbprint, sizeof(thumbprint), "");
+	PCCERT_CONTEXT cert = CryptoCertCreateSelfSigned(NOISEHUB_CN, NOISEHUB_SAN, NULL, 30, scope);
+	bool have_cert = (cert != NULL && CryptoCertThumbprintStr(cert, thumbprint, sizeof(thumbprint)) && CryptoCertAddToStore(cert, NULL, scope));
+
+	if (NoiseHubCheck(ctx, have_cert, "TLS-443: a self-signed ECDSA P-256 certificate in the My store, by its thumbprint", "CryptoCertCreateSelfSigned or the store failed"))
+	{
+		TRANSPORT_TLS_CONFIG server_cfg, client_cfg;
+
+		TransportTlsDefaultConfig(&server_cfg, thumbprint, false);
+		TransportTlsDefaultConfig(&client_cfg, thumbprint, false);
+
+		TRANSPORT *server = TransportTlsServerNew(&server_cfg);
+		TRANSPORT *client = TransportTlsClientNew(&client_cfg);
+
+		if (NoiseHubCheck(ctx, server != NULL && client != NULL, "TLS-443: the server and client transports open on Schannel", "a transport could not open"))
+		{
+			NoiseHubRun(ctx, server, client, NOISEHUB_TLS, TransportTlsBoundPort, "TLS-443");
+		}
+
+		TransportTlsFree(client);
+		TransportTlsFree(server);
 	}
 
 	if (cert != NULL)
@@ -1385,10 +1425,11 @@ void noisehub_test(UINT num, char **arg)
 		{
 			// The bound loopback transport: each stream has a binding of its own, as an outer TLS or QUIC session gives
 			TRANSPORT *loopback = TransportLoopbackNew("loopback", 0, true);
-			NoiseHubRun(ctx, loopback, loopback, NOISEHUB_LOOPBACK, false, "loopback");
+			NoiseHubRun(ctx, loopback, loopback, NOISEHUB_LOOPBACK, NULL, "loopback");
 			TransportLoopbackFree(loopback);
 
 			NoiseHubQuic(ctx);
+			NoiseHubTls(ctx);
 		}
 
 		ReleaseHub(ctx->HubO);

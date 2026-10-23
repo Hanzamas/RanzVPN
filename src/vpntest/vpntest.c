@@ -501,6 +501,9 @@ void quic_test(UINT num, char **arg);
 // Named Noise-to-Hub test of CORE-S1-2, #68 (noisehub.c)
 void noisehub_test(UINT num, char **arg);
 
+// Named TLS transport test of CORE-S2-1, #69 (tlstest.c)
+void tls_test(UINT num, char **arg);
+
 // Named HTTP listener test of REL-6, #51 (httplistener.c)
 void httplistener_test(UINT num, char **arg);
 
@@ -662,6 +665,7 @@ TEST_LIST test_list[] =
 	{"transport", transport_test, "Transport: a Noise session end to end over the loopback transport, the race of a configured fallback list (the first to connect wins), the same session over a second transport."},
 	{"quic", quic_test, "QUIC: a client completes the QUIC handshake against the HTTP/3 listener on msquic, the Noise session comes up, Sam checks the Login, and the client's static key is pinned on first login (trust on first use)."},
 	{"noisehub", noisehub_test, "Noise to Hub: the L2 frames of a Noise session enter a Hub as a Session of type CONNECTION_NOISE and come out as the oracle's (golden family noisehub); a Tunnel of four connections keeps each flow in order and spreads the flows over all four."},
+	{"tls", tls_test, "TLS-443: a client completes a Schannel TLS 1.3 handshake on a test port, the Noise session comes up bound to the TLS exporter; X25519MLKEM768 first where the OS has ML-KEM, AES-GCM only, the server key in the KSP, the pin, the fallback when UDP is blocked (administrator rights)."},
 	{"harden", harden_test, "Hardened licence gate: ranzguard reports unlocked unwatched and degrades to locked under a debugger, never crashing (skips when ranzguard.exe is absent)."},
 	{"httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port."},
 	{"sdntrace", sdntrace_test, "Default VRF tracer: sdntrace <host:port> <key> [<file>]: two nodes join VRF default of a running ranz controller, get addresses from its pool and ping each other over the loopback transport, also once the controller stopped (.github/scripts/sdn-tracer.ps1)."},
