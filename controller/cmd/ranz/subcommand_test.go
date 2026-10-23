@@ -12,7 +12,7 @@ import (
 // Every subcommand of the one executable (ONE-1, #310) is registered under the name that the Node,
 // the Windows service and the operator type.
 func TestSubcommandsAreRegistered(t *testing.T) {
-	for _, name := range []string{"controller", "bgp", "notice", "version", "-version", "--version"} {
+	for _, name := range []string{"controller", "bgp", "install", "uninstall", "notice", "version", "-version", "--version"} {
 		if subcommands[name] == nil {
 			t.Errorf("ranz has no subcommand %q", name)
 		}

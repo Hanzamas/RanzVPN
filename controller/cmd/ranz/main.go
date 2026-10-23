@@ -8,6 +8,12 @@
 //	ranz controller [flags]   the Controller service with its web UI: run, install, uninstall,
 //	                          reset-admin, backup and restore (package controllercmd)
 //	ranz bgp -pipe NAME       the BGP sidecar of a Node, which the Node starts (package bgpcmd)
+//	ranz install [-controller]
+//	                          write the Node payload into Program Files, register and start the
+//	                          Node service, and, with -controller, the Controller service too
+//	                          (package install, ONE-2 #311)
+//	ranz uninstall            stop and remove the services and the files install made, keeping the
+//	                          Node's data directory (package install, ONE-2 #311)
 //	ranz notice               print the NOTICE: the licence texts of what ranz carries
 //	ranz version              print the version, which is the same for every subcommand
 //
@@ -87,6 +93,8 @@ import (
 const usage = `usage:
   ranz controller [flags]
   ranz bgp -pipe NAME [-log FILE] [-log-level LEVEL]
+  ranz install [-controller]
+  ranz uninstall
   ranz notice
   ranz version
   ranz [flags] apply -f FILE [-confirm DURATION]
