@@ -2,8 +2,9 @@
 // resources of #176 "Resource model" that the controller knows (VRF, Network, Node, Policy, and
 // the Controller members of a controller cluster), their validation, and the values the
 // controller fills in when a resource is first applied, the addresses of the Nodes among them
-// (address.go); the revisions of the intent with the diff between two (revision.go); and the
-// intent of a first install (defaults.go).
+// (address.go, with the rules of the pools, the reservations and the LAN subnets in ipam.go); the
+// revisions of the intent with the diff between two (revision.go); and the intent of a first
+// install (defaults.go).
 package intent
 
 import (
@@ -94,7 +95,8 @@ type VRF struct {
 	DNS bool `json:"dns,omitempty"`
 }
 
-// Network belongs to one VRF.
+// Network belongs to one VRF. Its pools are the controller's to allocate from (ADR-0028,
+// ipam.go): the IPv6 pool lies in the ULA /48 of the VRF, and no pool of a VRF overlaps another.
 type Network struct {
 	VRF      string `json:"vrf"`
 	Mode     string `json:"mode,omitempty"` // ModeL3 (the default) or ModeL2
@@ -104,6 +106,12 @@ type Network struct {
 	// (SDN-39, sources.go): the source prefixes, each a CIDR prefix or one address, that the
 	// stream of a Node of the VRF may come from. Left out, a Node may enrol from any address.
 	EnrolSources []string `json:"enrolSources,omitempty"`
+	// Reserved holds prefixes of the pools, or single addresses, that the allocation never gives a
+	// Node: the gateway of a LAN, a static host. It counts as in use for the pool event.
+	Reserved []string `json:"reserved,omitempty"`
+	// PoolThreshold is the percentage of a pool in use at which the controller raises the pool
+	// event, from 1 to 100. Left out, it is DefaultPoolThreshold.
+	PoolThreshold uint32 `json:"poolThreshold,omitempty"`
 }
 
 // Node is a node of the overlay, identified by its Noise static key.
@@ -119,6 +127,14 @@ type Node struct {
 	// Addresses holds the address of the node in each L3 Network of its VRFs that has an IPv4
 	// pool, by Network name (ADR-0028, address.go). One left out is allocated by the controller.
 	Addresses map[string]string `json:"addresses,omitempty"`
+	// IPv6Addresses holds the IPv6 address of the node in each L3 Network of its VRFs that has an
+	// IPv6 pool, by Network name, as Addresses holds the IPv4 ones.
+	IPv6Addresses map[string]string `json:"ipv6Addresses,omitempty"`
+	// LANSubnets holds the LAN subnets behind the node, by VRF name: the node is their gateway and
+	// advertises each as a route in that VRF (ADR-0028 decision 4, ipam.go). A LAN subnet is never
+	// an allocation, so no pool of the VRF covers one. Two gateways may advertise the same subnet
+	// (ADR-0025 decision 12).
+	LANSubnets map[string][]string `json:"lanSubnets,omitempty"`
 }
 
 // Controller is one member of the controller cluster as nodes reach it (SDN-17, ADR-0026). The
@@ -156,13 +172,10 @@ func New() Intent {
 
 // Clone returns a copy of in that shares nothing with it.
 func (in Intent) Clone() Intent {
-	out := Intent{VRFs: maps.Clone(in.VRFs), Networks: maps.Clone(in.Networks), Nodes: map[string]Node{}, Policies: maps.Clone(in.Policies),
+	out := Intent{VRFs: maps.Clone(in.VRFs), Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: maps.Clone(in.Policies),
 		Controllers: maps.Clone(in.Controllers)}
 	if out.VRFs == nil {
 		out.VRFs = map[string]VRF{}
-	}
-	if out.Networks == nil {
-		out.Networks = map[string]Network{}
 	}
 	if out.Policies == nil {
 		out.Policies = map[string]Policy{}
@@ -172,12 +185,15 @@ func (in Intent) Clone() Intent {
 	}
 	for name, n := range in.Networks {
 		n.EnrolSources = slices.Clone(n.EnrolSources)
+		n.Reserved = slices.Clone(n.Reserved)
 		out.Networks[name] = n
 	}
 	for name, n := range in.Nodes {
 		n.VRFs = slices.Clone(n.VRFs)
 		n.Tags = slices.Clone(n.Tags)
 		n.Addresses = maps.Clone(n.Addresses)
+		n.IPv6Addresses = maps.Clone(n.IPv6Addresses)
+		n.LANSubnets = cloneLANs(n.LANSubnets)
 		out.Nodes[name] = n
 	}
 	return out
@@ -440,9 +456,9 @@ func ParseKey(s string) ([]byte, error) {
 
 // complete fills in what the resources of in leave out: the id, ULA and MTU of a VRF, the mode
 // of a Network, the VRFs of a Node that names none (VRF default, when in has it), the order of a
-// Node's VRFs and tags, and the form of its relay address. A VRF keeps the id and ULA it got when
-// prev first held it; they cannot change while it exists. The addresses of the Nodes follow
-// (allocate).
+// Node's VRFs and tags, the form of its relay address, and the one form of the reservations of a
+// Network and of the LAN subnets of a Node. A VRF keeps the id and ULA it got when prev first held
+// it; they cannot change while it exists. The addresses of the Nodes follow (allocate).
 func (in Intent) complete(prev Intent, random io.Reader) []error {
 	var problems []error
 	names := sortedNames(in.VRFs)
@@ -498,6 +514,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 		}
 		// The source prefixes as prefixes, in order (sources.go)
 		n.EnrolSources = normalizeSources(n.EnrolSources)
+		n.Reserved = canonicalReserved(n.Reserved)
 		in.Networks[name] = n
 	}
 	_, hasDefault := in.VRFs[DefaultVRF]
@@ -510,6 +527,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 		if ap, err := ParseRelay(n.Relay); err == nil {
 			n.Relay = ap.String()
 		}
+		n.LANSubnets = canonicalLANs(n.LANSubnets)
 		in.Nodes[name] = n
 	}
 	return problems
@@ -623,7 +641,7 @@ func (in Intent) validate() []error {
 			problems = append(problems, fmt.Errorf("Controller %q: %w", name, err))
 		}
 	}
-	return problems
+	return append(problems, in.validateIPAM()...)
 }
 
 // checkAddress checks the address of a Controller: host:port, with a host and a port number.

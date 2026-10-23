@@ -13,7 +13,8 @@
 //	ranz [flags] get nodes                     print the generation of each node, the one it acknowledged and its Capabilities
 //	ranz [flags] get revisions                 print every revision of the intent
 //	ranz [flags] get revision ID               print one revision with its resources
-//	ranz [flags] get events                    print the events, such as an automatic rollback
+//	ranz [flags] get events                    print the events, such as an automatic rollback or a pool near exhaustion
+//	ranz [flags] get ipam                      print how full each address pool is, and the routes of the gateway LAN subnets
 //	ranz [flags] delete KIND NAME              delete one resource
 //	ranz [flags] export [-o json|yaml]         print the whole intent as one intent document, with the values the controller
 //	                                           filled in, such as the id and the ULA of each VRF; JSON unless -o yaml
@@ -77,7 +78,7 @@ const usage = `usage:
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]
   ranz [flags] rollback REVISION
-  ranz [flags] get resources|nodes|revisions|events|licence
+  ranz [flags] get resources|nodes|revisions|events|ipam|licence
   ranz [flags] get revision ID
   ranz [flags] delete KIND NAME
   ranz [flags] export [-o json|yaml]
@@ -226,6 +227,12 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 			return err
 		}
 		return show(out, api.EventList{Events: evs})
+	case len(args) == 2 && args[0] == "get" && args[1] == "ipam":
+		ipam, err := c.IPAM(ctx)
+		if err != nil {
+			return err
+		}
+		return show(out, ipam)
 	case len(args) == 2 && args[0] == "get" && args[1] == "resources":
 		rs, err := c.Resources(ctx)
 		if err != nil {

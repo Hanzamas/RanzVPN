@@ -78,9 +78,9 @@ func TestDiffShowsResourceChanges(t *testing.T) {
 	// Without revisions, the change of the latest one: the Network is gone, and with it the
 	// addresses of the Nodes in it; from the empty revision 0, every resource is added; and the
 	// way back is the other way round.
-	h.checkDiff([]uint64{}, "2 3: removed Network corp-lan, changed Node branch-1 [addresses], changed Node branch-2 [addresses]")
+	h.checkDiff([]uint64{}, "2 3: removed Network corp-lan, changed Node branch-1 [addresses ipv6Addresses], changed Node branch-2 [addresses ipv6Addresses]")
 	h.checkDiff([]uint64{0, 1}, "0 1: added VRF corp, added Network corp-lan, added Node branch-1")
-	h.checkDiff([]uint64{3, 1}, "3 1: changed VRF corp [mtu], removed Network corp-dmz, added Network corp-lan, changed Node branch-1 [addresses], removed Node branch-2")
+	h.checkDiff([]uint64{3, 1}, "3 1: changed VRF corp [mtu], removed Network corp-dmz, added Network corp-lan, changed Node branch-1 [addresses ipv6Addresses], removed Node branch-2")
 	h.checkDiff([]uint64{2, 2}, "2 2: ")
 	if _, err := h.api.Diff(context.Background(), 1, 4); err == nil || !strings.Contains(err.Error(), "no such revision") {
 		t.Errorf("a diff to revision 4, which does not exist: %v", err)
