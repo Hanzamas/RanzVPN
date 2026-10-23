@@ -44,9 +44,10 @@ func KeyOf(o *controlpb.Object) Key {
 }
 
 // Compile returns the desired state of every Node of in, by node name. A node gets itself with
-// its addresses, the VRFs it is a member of with their Networks, a Peer for every other node
-// that shares one of those VRFs (full mesh) with that node's addresses in them, and a Relay for
-// every such node that is a relay (ADR-0015). in must be an intent that intent.Apply returned.
+// its addresses and the Mirrors that select it (mirror.go), the VRFs it is a member of with their
+// Networks, a Peer for every other node that shares one of those VRFs (full mesh) with that
+// node's addresses in them, and a Relay for every such node that is a relay (ADR-0015). in must be
+// an intent that intent.Apply returned.
 func Compile(in intent.Intent) (map[string]State, error) {
 	vrfs := map[string]*controlpb.Vrf{}
 	for name, v := range in.VRFs {
@@ -95,6 +96,12 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			}
 		}
 		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(n.Tags), Addresses: addresses(in, name, vrfs, member)}
+		// The Mirrors that select the node (mirror.go; SDN-23)
+		ms, err := mirrors(in, name, vrfs)
+		if err != nil {
+			return nil, err
+		}
+		self.Mirrors = ms
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {

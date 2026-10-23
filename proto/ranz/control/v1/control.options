@@ -8,6 +8,11 @@ ranz.control.v1.NodeConfig.name max_size:64
 ranz.control.v1.NodeConfig.tags max_count:16 max_size:64
 # One address per L3 Network of a node's VRFs, and a node is in at most 16 VRFs (Peer.vrf_ids)
 ranz.control.v1.NodeConfig.addresses max_count:16
+# The Mirrors of a node (SDN-23): 16, the most the controller lets one node have
+# (controller/internal/intent MaxMirrors)
+ranz.control.v1.NodeConfig.mirrors max_count:16
+ranz.control.v1.Mirror.name max_size:64
+ranz.control.v1.Mirror.sensor max_size:16
 ranz.control.v1.Peer.addresses max_count:16
 ranz.control.v1.Address.network max_size:64
 ranz.control.v1.Vrf.name max_size:64

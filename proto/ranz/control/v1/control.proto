@@ -168,6 +168,9 @@ message NodeConfig {
   string name = 1;
   repeated string tags = 2;  // sorted
   repeated Address addresses = 3;
+  // The Mirrors that the node applies, ordered by name (SDN-23). No schema version changes with
+  // them: a node of an older release skips the field.
+  repeated Mirror mirrors = 6;
 }
 
 // A VRF the node is a member of.
@@ -341,4 +344,20 @@ message NodeEvent {
 enum NodeEventType {
   NODE_EVENT_TYPE_UNSPECIFIED = 0;
   NODE_EVENT_TYPE_GATEWAY_FAILOVER = 1;
+}
+
+// A Mirror that a node applies (ADR-0029 decision 9, SDN-23): the node copies the IP packets of the
+// overlay that match it, those that it sends to its peers and those that it delivers to its host,
+// to the sensor in VXLAN (RFC 7348), each packet behind an Ethernet header. The controller gives a
+// node the Mirrors whose source selects it: a tag of the node, the node itself or a VRF of the node.
+message Mirror {
+  string name = 1;
+  uint32 vrf_id = 2;    // the VRF of the packets, 0 for every VRF of the node
+  uint32 protocol = 3;  // their IP protocol, 0 for any; 1 (ICMP) takes ICMPv6 in IPv6 packets
+  uint32 port = 4;      // their source or destination port, of TCP or UDP; 0 for any
+  bytes sensor = 5;     // the sensor's address: 4 bytes for IPv4, 16 for IPv6
+  uint32 sensor_port = 6;  // ... and its UDP port
+  uint32 vni = 7;       // the VNI of the copies, 0 for the VRF id of each packet
+  // Bits per second of VXLAN datagrams that the node sends the sensor at most, 0 for no limit
+  uint64 rate_limit = 8;
 }
