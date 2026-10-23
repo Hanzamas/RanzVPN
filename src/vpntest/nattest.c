@@ -617,7 +617,7 @@ static void NatTestDescribe(char *str, UINT str_size, const UCHAR *packet, UINT 
 			Format(what, sizeof(what), "%s %u/%u", name, type, code);
 			if (v == 4 && type == 3 && code == 4)
 			{
-				Format(what, sizeof(what), "%s fragmentation-needed mtu %u", name, READ_USHORT(l4 + 6));
+				Format(what, sizeof(what), "%s fragmentation-needed mtu %u", name, (UINT)READ_USHORT(l4 + 6));
 			}
 			else if (v == 6 && type == 2)
 			{
@@ -643,11 +643,11 @@ static void NatTestDescribe(char *str, UINT str_size, const UCHAR *packet, UINT 
 	}
 	else if (protocol == IP_PROTO_UDP && room >= 8)
 	{
-		Format(what, sizeof(what), "udp %u > %u%s", READ_USHORT(l4), READ_USHORT(l4 + 2), (READ_USHORT(l4 + 6) == 0 ? " without checksum" : ""));
+		Format(what, sizeof(what), "udp %u > %u%s", (UINT)READ_USHORT(l4), (UINT)READ_USHORT(l4 + 2), (READ_USHORT(l4 + 6) == 0 ? " without checksum" : ""));
 	}
 	else if (protocol == IP_PROTO_TCP && room >= 14)
 	{
-		Format(what, sizeof(what), "tcp %u > %u%s", READ_USHORT(l4), READ_USHORT(l4 + 2), ((l4[13] & TCP_SYN) != 0 ? " syn" : ""));
+		Format(what, sizeof(what), "tcp %u > %u%s", (UINT)READ_USHORT(l4), (UINT)READ_USHORT(l4 + 2), ((l4[13] & TCP_SYN) != 0 ? " syn" : ""));
 	}
 	else
 	{
