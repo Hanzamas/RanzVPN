@@ -11,6 +11,7 @@ Files:
 | `tests/formal/variants.tsv` | the files that make each variant, in the order in which `formal.py` joins them |
 | `tests/formal/expected.tsv` | what each query must give in each variant: `holds`, `attack`, `fails` or `reach` |
 | `tests/formal/model-to-code.tsv` | the table from the model to the code: every name, message and field of the models, with the file, the function and the field of the code |
+| `src/vpntest/formaltable.c` | the vpntest test `formaltable`: it refers to every C function of the table that is not static, so a function that the code loses or renames breaks the build of vpntest, and it pins the facts of the code that the models take (the suite name, the layout of the prologue, the exporter labels, TLS 1.2 by default) |
 | `.github/scripts/formal.py` | `check` (the table and the expectations, no prover), `run` (ProVerif on every variant), `selftest` |
 | `.github/workflows/formal.yml` | the Linux job of the full set that builds ProVerif 2.05, pinned by the SHA-256 of its archive, and runs it |
 
@@ -57,6 +58,7 @@ The attacker is the network (the Dolev-Yao attacker of ProVerif): it reads, drop
 | `fs-data` | forward secrecy: a leak of every long-term key after the session gives nothing that a leak before it does not |
 | `auth-server` | the server takes the handshake of the client only if the client started it, in the TLS session that the server is in (the transcript of the TLS session is its identity) |
 | `auth-client`, `auth-client-both` | the client takes the answer only if the server with the key that it pinned made it, in its TLS session and with the same handshake hash, unless the Noise key (or both keys) of the server is leaked |
+| `data-auth` | what the client takes from the server after the handshake (a record of the data stream, or the Update of the controller) is what the server sent, unless the Noise key of the server is leaked |
 | `negotiation` | the version and the Capabilities that the server settles on are the ones that the client offered: the attacker cannot lower them |
 | `suite` | the suite that the server runs is the one that the client chose: the suite is in the protocol name that the hash of the handshake holds |
 | `replay-server`, `replay-client` | no replay: each handshake that the server takes, and each answer that the client takes, is one that was sent once; these hold where no key leaks |
@@ -85,7 +87,7 @@ Each of these is an attack that the prover finds and a negative or positive resu
 
 ### F2: the data datagrams of the peer layer have no confidentiality and no authentication
 
-`peer-leaks` and `peer-honest`: `pd-secret` and `pd-forgery` fail with no key leaked. `PeerSend` writes the tag, the key of the source, the key of the destination and the payload in the clear, and `PeerInputData` delivers a datagram whose source address is a path of its source (a relay, a binding or a direct path) and whose source is a peer: no key is checked, and a UDP source address is not authentication. Anyone on the path reads the payload and sends a datagram in the name of any peer. ADR-0015 items 3 and 7 and ADR-0023 have the data in the session of QUIC or TLS (D4); the overlay of `NodeOverlay.c` does use a Noise session over a data transport, but nothing in the node calls the peer layer yet: its data datagrams are exercised only by `coretest`, `vpntest` and the fuzz target.
+`peer-leaks` and `peer-honest`: `pd-secret` and `pd-forgery` fail with no key leaked. `PeerSend` writes the tag, the key of the source, the key of the destination and the payload in the clear, and `PeerInputData` delivers a datagram whose source address is a path of its source (a relay, a binding or a direct path) and whose source is a peer: no key is checked, and a UDP source address is not authentication. Anyone on the path reads the payload and sends a datagram in the name of any peer. ADR-0015 items 3 and 7 and ADR-0023 have the data in the session of QUIC or TLS (D4). A node with the relay role runs the peer layer on a UDP socket of its own (`NodeRelayStart`): it takes the binds of its nodes and forwards their data datagrams. The overlay of `NodeOverlay.c` does not use the peer layer, it runs a Noise session over a data transport to each peer, so no node sends peer datagrams to a relay yet, and the exposure today is the UDP port of the relay role and the harness.
 
 ### F3: a relay binds the node to the address of the datagram, and the replay check forgets
 

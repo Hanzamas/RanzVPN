@@ -11,7 +11,9 @@
 #          table. Every file that the table names exists, every function that it names is defined in that file
 #          (a C function with its body, a Go func), every field is in the file, every name that a model declares
 #          has a row and every row names a name that its model declares, and the differences it cites (D1, D2,
-#          ...) are the ones that docs/formal-model.md describes. quality.yml runs it on every pull request.
+#          ...) are the ones that docs/formal-model.md describes. src/vpntest/formaltable.c refers to the C
+#          functions of the table that are not static, and check keeps its list equal to them, in both
+#          directions. quality.yml runs it on every pull request.
 # run      runs the pinned ProVerif on each variant and compares every result with expected.tsv. It fails on a
 #          query that must hold and does not, on a negative control or a finding that stops showing its attack,
 #          on an error of ProVerif or a timeout, and on any result that expected.tsv does not name.
@@ -20,7 +22,8 @@
 #
 # Usage:
 #   python formal.py check [--root DIR]
-#   python formal.py run [--root DIR] [--proverif PATH] [--version V] [--out DIR] [--jobs N] [--timeout S] [VARIANT ...]
+#   python formal.py run [--root DIR] [--proverif PATH] [--version V] [--out DIR] [--jobs N] [--timeout S]
+#                        [--trace-lines N] [VARIANT ...]
 #   python formal.py selftest
 #
 # Standard library only.
@@ -39,6 +42,7 @@ VARIANTS = MODEL_DIR + '/variants.tsv'
 EXPECTED = MODEL_DIR + '/expected.tsv'
 TABLE = MODEL_DIR + '/model-to-code.tsv'
 DOC = 'docs/formal-model.md'
+VPNTEST = 'src/vpntest/formaltable.c'
 
 # What an expectation of expected.tsv accepts of the answer of ProVerif: "is true" (true), "is false" (false:
 # an attack, with its trace) and "cannot be proved" (unproved)
@@ -179,6 +183,21 @@ def parse_results(output):
     return results
 
 
+def query_sections(output):
+    # [lines] of each query in the output of ProVerif, in order: from its "Starting query" line to its RESULT line,
+    # which is the derivation or the trace of an attack, or [] for every query when the two do not pair up
+    starts, ends = [], []
+    lines = output.split('\n')
+    for i, line in enumerate(lines):
+        if line.startswith('Starting query '):
+            starts.append(i)
+        elif RESULT_RE.match(line.rstrip('\r')):
+            ends.append(i)
+    if len(starts) != len(ends) or any(s > e for s, e in zip(starts, ends)):
+        return [[] for _ in ends]
+    return [lines[s:e + 1] for s, e in zip(starts, ends)]
+
+
 def compare(name, queries, results, expected):
     # [(query id, expect, verdict, ok)] of one variant: the n-th result is the n-th query. A count or a kind
     # that differs means that ProVerif did not answer the queries that were asked, in the order that they were
@@ -254,46 +273,67 @@ def run(args):
             f.write(texts[n])
 
     expected = load_expected(root)
-    failed = 0
     summary = ['### Formal model: ProVerif %s' % version, '']
+
+    def finish(n, output, code, seconds):
+        # What one variant gave, against expected.tsv: whether it is as expected, and its lines of the summary
+        with open(os.path.join(args.out, n + '.log'), 'w', encoding='utf-8', newline='\n') as f:
+            f.write(output)
+        results = parse_results(output)
+        if code is None:
+            annotate('error', '%s: ProVerif did not finish in %d s' % (n, args.timeout))
+            return False, ['- **%s**: timeout after %d s' % (n, args.timeout)]
+        if code != 0 and not results:
+            tail = '\n'.join(output.strip().split('\n')[-25:])
+            annotate('error', '%s: ProVerif exited with %d:\n%s' % (n, code, tail))
+            return False, ['- **%s**: ProVerif exited with %d' % (n, code)]
+        try:
+            rows = compare(n, queries[n], results, expected)
+        except Problem as e:
+            annotate('error', str(e))
+            return False, ['- **%s**: %s' % (n, e)]
+        bad = [r for r in rows if not r[3]]
+        print('%s: %d queries in %.0f s, %d not as expected' % (n, len(rows), seconds, len(bad)))
+        # The derivation or the trace of each attack that the variant must show, in the log of the job (a group per
+        # variant) and in the file <variant>.attacks.txt of the artifact
+        sections = query_sections(output)
+        attacks = [('=== %s %s ===' % (n, rows[i][0]), sections[i]) for i in range(len(rows))
+                   if rows[i][1] == 'attack' and rows[i][2] == 'false' and sections[i]]
+        if attacks:
+            with open(os.path.join(args.out, n + '.attacks.txt'), 'w', encoding='utf-8', newline='\n') as f:
+                f.write('\n'.join('%s\n%s\n' % (head, '\n'.join(body[-400:])) for head, body in attacks))
+            if args.trace_lines > 0:
+                print('::group::attacks of %s (the last %d lines of each)' % (n, args.trace_lines))
+                print('\n'.join('%s\n%s\n' % (head, '\n'.join(body[-args.trace_lines:])) for head, body in attacks))
+                print('::endgroup::')
+        lines = ['#### %s (%.0f s)' % (n, seconds), '', '| query | expected | ProVerif | |', '|---|---|---|---|']
+        for qid, expect, verdict, ok in rows:
+            line = '%-22s expected %-7s ProVerif %s' % (qid, expect, VERDICT_TEXT[verdict])
+            print('  %s%s' % (line, '' if ok else '   <-- NOT AS EXPECTED'))
+            lines.append('| %s | %s | %s | %s |' % (qid, expect, VERDICT_TEXT[verdict], 'ok' if ok else '**not as expected**'))
+        lines.append('')
+        for qid, expect, verdict, _ in bad:
+            note = expected[(n, qid)][1]
+            annotate('error', '%s: %s must give %s (%s), and ProVerif says %s%s'
+                     % (n, qid, expect, ' or '.join(EXPECT[expect]), VERDICT_TEXT[verdict], ' [%s]' % note if note else ''))
+        return not bad, lines
+
+    failed = 0
+    start = time.monotonic()
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
-        futures = {n: pool.submit(run_proverif, args.proverif, paths[n], args.timeout) for n in names}
-        for n in names:
-            output, code, seconds = futures[n].result()
-            with open(os.path.join(args.out, n + '.log'), 'w', encoding='utf-8', newline='\n') as f:
-                f.write(output)
-            results = parse_results(output)
-            if code is None:
-                annotate('error', '%s: ProVerif did not finish in %d s' % (n, args.timeout))
-                failed += 1
-                summary += ['- **%s**: timeout after %d s' % (n, args.timeout)]
+        pending = {pool.submit(run_proverif, args.proverif, paths[n], args.timeout): n for n in names}
+        # A variant is reported when it is done, and a minute without one says which are still to come
+        while pending:
+            done, _ = concurrent.futures.wait(list(pending), timeout=60, return_when=concurrent.futures.FIRST_COMPLETED)
+            if not done:
+                print('%.0f s: %d variants to come: %s' % (time.monotonic() - start, len(pending), ', '.join(sorted(pending.values()))), flush=True)
                 continue
-            if code != 0 and not results:
-                tail = '\n'.join(output.strip().split('\n')[-12:])
-                annotate('error', '%s: ProVerif exited with %d:\n%s' % (n, code, tail))
-                failed += 1
-                summary += ['- **%s**: ProVerif exited with %d' % (n, code)]
-                continue
-            try:
-                rows = compare(n, queries[n], results, expected)
-            except Problem as e:
-                annotate('error', str(e))
-                failed += 1
-                summary += ['- **%s**: %s' % (n, e)]
-                continue
-            bad = [r for r in rows if not r[3]]
-            print('%s: %d queries in %.0f s, %d not as expected' % (n, len(rows), seconds, len(bad)))
-            summary += ['#### %s (%.0f s)' % (n, seconds), '', '| query | expected | ProVerif | |', '|---|---|---|---|']
-            for qid, expect, verdict, ok in rows:
-                line = '%-22s expected %-7s ProVerif %s' % (qid, expect, VERDICT_TEXT[verdict])
-                print('  %s%s' % (line, '' if ok else '   <-- NOT AS EXPECTED'))
-                summary.append('| %s | %s | %s | %s |' % (qid, expect, VERDICT_TEXT[verdict], 'ok' if ok else '**not as expected**'))
-            summary.append('')
-            for qid, expect, verdict, _ in bad:
-                note = expected[(n, qid)][1]
-                annotate('error', '%s: %s must give %s (%s), and ProVerif says %s%s'
-                         % (n, qid, expect, ' or '.join(EXPECT[expect]), VERDICT_TEXT[verdict], ' [%s]' % note if note else ''))
-            failed += 1 if bad else 0
+            for future in done:
+                n = pending.pop(future)
+                ok, lines = finish(n, *future.result())
+                summary += lines
+                failed += 0 if ok else 1
+                sys.stdout.flush()
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8', newline='\n') as f:
             f.write('\n'.join(summary) + '\n')
@@ -341,9 +381,9 @@ def has_word(text, word):
     return re.search(r'(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])' % re.escape(word), text) is not None
 
 
-def c_defines(text, name):
-    # Whether a C file defines the function, with a body: a line that starts at the margin and holds the name
-    # followed by a parameter list, which a left brace follows. A prototype and a call are not that.
+def c_definition(text, name):
+    # The first line of the definition of a function in a C file, or None: a line that starts at the margin and holds
+    # the name followed by a parameter list, which a left brace follows. A prototype and a call are not that.
     for m in re.finditer(r'(?<![A-Za-z0-9_])%s\s*\(' % re.escape(name), text):
         line_start = text.rfind('\n', 0, m.start()) + 1
         if not re.match(r'[A-Za-z_]', text[line_start:line_start + 1]) or re.match(r'(return|if|else|for|while|switch|case|goto|typedef)\b', text[line_start:]):
@@ -359,8 +399,13 @@ def c_defines(text, name):
             i += 1
         rest = text[i + 1:]
         if re.match(r'\s*(?://[^\n]*\n\s*)*\{', rest):
-            return True
-    return False
+            end = text.find('\n', line_start)
+            return text[line_start:end if end >= 0 else len(text)]
+    return None
+
+
+def c_defines(text, name):
+    return c_definition(text, name) is not None
 
 
 def go_defines(text, name):
@@ -392,6 +437,7 @@ def check_table(root, variants):
     differences = doc_differences(root)
     cited = set()
     mapped = set()
+    public = set()
     cache = {}
 
     for number, f in read_tsv(os.path.join(root, TABLE), 8):
@@ -438,6 +484,8 @@ def check_table(root, variants):
         for fn in [x.strip() for x in function.split(',')]:
             if not defines(file, text, fn):
                 problems.append('%s: %s defines no function %s' % (where, file, fn))
+            elif file.endswith('.c') and not c_definition(text, fn).lstrip().startswith('static'):
+                public.add(fn)
         for fd in [x.strip() for x in field.split(',')]:
             if not has_word(text, fd):
                 problems.append('%s: %s has no %s' % (where, file, fd))
@@ -448,6 +496,21 @@ def check_table(root, variants):
                 problems.append('%s declares %s, which no row of %s maps to the code' % (model, name, TABLE))
     for d in sorted(differences - cited):
         problems.append('%s describes %s, which no row of %s cites' % (DOC, d, TABLE))
+    problems += check_vpntest(root, public)
+    return problems
+
+
+def check_vpntest(root, public):
+    # The public C functions of the table are the ones that src/vpntest/formaltable.c refers to, in both directions
+    path = os.path.join(root, VPNTEST)
+    if not os.path.isfile(path):
+        return ['%s does not exist: the vpntest test that refers to the public C functions of the table' % VPNTEST]
+    listed = set(re.findall(r'^\s*FORMAL\((\w+)\)', read(path), re.M))
+    problems = []
+    for name in sorted(public - listed):
+        problems.append('%s does not refer to %s, a C function of %s that is not static' % (VPNTEST, name, TABLE))
+    for name in sorted(listed - public):
+        problems.append('%s refers to %s, which %s does not name as a C function that is not static' % (VPNTEST, name, TABLE))
     return problems
 
 
@@ -489,6 +552,9 @@ Query not event(ServerLoginOk(bob,alice,t)) is false.
     got = parse_results(sample)
     assert [v for v, _ in got] == ['false', 'unproved', 'true', 'true'], got
     assert [kind_of(t) for _, t in got] == ['reach', 'attacker', 'corr', 'inj'], got
+    assert query_sections(sample) == [[], [], [], []], 'one start for four results'
+    two = 'Starting query a\nderivation\nRESULT a is true.\nStarting query b\nRESULT b is false.\n'
+    assert query_sections(two) == [['Starting query a', 'derivation', 'RESULT a is true.'], ['Starting query b', 'RESULT b is false.']]
 
     text = '''
 (* a comment with query in it *)
@@ -582,7 +648,8 @@ bool NoiseProto(void);
         put(MODEL_DIR + '/m.pvl', 'const alice: principal.\nlet Client(me: principal) =\n  event Start(me).\nevent Start(principal).\n')
         put(MODEL_DIR + '/p.pv', 'process 0\n')
         put(VARIANTS, '# v\nv\tm.pvl,p.pv\tthe variant\n')
-        put('src/Core/Noise.c', 'bool NoiseSessionConnect(NOISE_SESSION *s) {\n\tCopyMemory(s->HandshakeHash, 1);\n}\n')
+        put('src/Core/Noise.c', 'bool NoiseSessionConnect(NOISE_SESSION *s) {\n\tCopyMemory(s->HandshakeHash, 1);\n}\n\nstatic void NoiseHidden(void) {\n}\n')
+        put(VPNTEST, 'static FORMAL_ENTRY formal_functions[] = {\n\tFORMAL(NoiseSessionConnect),\n};\n')
         put('docs/formal-model.md', '# The formal model\n\n### D1: a difference\n')
         rows = ['m.pvl\talice\tmodel\t-\t-\t-\t-\ta role of the model',
                 'm.pvl\tClient\tprocess\tsrc/Core/Noise.c\tNoiseSessionConnect\tHandshakeHash\tD1\t',
@@ -609,6 +676,16 @@ bool NoiseProto(void);
         assert any('no note' in p for p in table_problems([ok[0].replace('a role of the model', '')] + ok[1:]))
         assert any('is in no variant' in p for p in table_problems(ok + ['x.pvl\talice\tmodel\t-\t-\t-\t-\tx']))
         assert any('Process:name' in p for p in table_problems(ok[:2] + ['m.pvl\tClient\tmessage\tsrc/Core/Noise.c\tNoiseSessionConnect\tHandshakeHash\t-\t'] + ok[3:]))
+        static = 'm.pvl\tClient:me\tfield\tsrc/Core/Noise.c\tNoiseHidden\tHandshakeHash\t-\t'
+        put(VPNTEST, '')
+        assert any('does not refer to NoiseSessionConnect' in p for p in table_problems(ok))
+        put(VPNTEST, '\tFORMAL(NoiseSessionConnect),\n\tFORMAL(NoiseHidden),\n\tFORMAL(NoiseOther),\n')
+        found = table_problems(ok + [static])
+        assert any('refers to NoiseOther' in p for p in found) and any('refers to NoiseHidden' in p for p in found), found
+        os.remove(os.path.join(root, VPNTEST))
+        assert any('does not exist' in p and 'formaltable' in p for p in table_problems(ok))
+        put(VPNTEST, '\tFORMAL(NoiseSessionConnect),\n')
+        assert table_problems(ok + [static]) == [], 'a static function needs no entry'
         put(TABLE, '\n'.join(ok[:1] + ['too\tfew']) + '\n')
         try:
             check_table(root, variants)
@@ -616,6 +693,49 @@ bool NoiseProto(void);
             pass
         else:
             raise AssertionError('a row with too few fields was accepted')
+
+    # run, with the prover made up: the variants, the order of the results, and each way that a run fails
+    with tempfile.TemporaryDirectory() as root:
+        def put(path, content):
+            full = os.path.join(root, path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(content)
+
+        put(MODEL_DIR + '/q.pvl', '(* @query one *)\nquery event(A).\n(* @query two *)\nquery attacker(s).\n')
+        put(MODEL_DIR + '/p.pv', 'process 0\n')
+        put(VARIANTS, 'v\tq.pvl,p.pv\tthe variant\nw\tq.pvl,p.pv\tanother\n')
+        put(EXPECTED, 'v\tone\treach\nv\ttwo\tholds\nw\tone\treach\nw\ttwo\tattack\tF9\n')
+        reach = 'Starting query not event(A)\nRESULT not event(A) is false.\n'
+        secret = 'Starting query not attacker(s)\nRESULT not attacker(s) is %s.\n'
+        canned = {'v': (reach + secret % 'true', 0, 1.0), 'w': (reach + secret % 'false', 0, 2.0)}
+        real = (run_proverif, proverif_version)
+        try:
+            globals()['run_proverif'] = lambda proverif, path, timeout: canned[os.path.basename(path)[:-3]]
+            globals()['proverif_version'] = lambda proverif: '2.05'
+            args = argparse.Namespace(root=root, variants=[], proverif='proverif', version='2.05', out=os.path.join(root, 'out'),
+                                      jobs=2, timeout=5, trace_lines=5)
+            assert run(args) == 0, 'every result as expected'
+            assert os.path.exists(os.path.join(root, 'out', 'w.attacks.txt')) and not os.path.exists(os.path.join(root, 'out', 'v.attacks.txt'))
+            args.variants = ['w']
+            assert run(args) == 0, 'one variant'
+            args.variants = []
+            canned['w'] = (reach + secret % 'true', 0, 2.0)
+            assert run(args) == 1, 'an attack that must show and does not'
+            canned['w'] = (reach + secret % 'false', 0, 2.0)
+            canned['v'] = (reach + secret % 'unproved'.replace('unproved', 'false'), 0, 1.0)
+            assert run(args) == 1, 'a query that must hold and does not'
+            canned['v'] = ('', None, 5.0)
+            assert run(args) == 1, 'a timeout'
+            canned['v'] = ('Error: syntax error\n', 2, 0.1)
+            assert run(args) == 1, 'an error of the prover'
+            canned['v'] = (reach, 0, 1.0)
+            assert run(args) == 1, 'a result missing'
+            canned['v'] = (reach + secret % 'true', 0, 1.0)
+            args.version = '2.04'
+            assert run(args) == 1, 'the wrong version'
+        finally:
+            globals()['run_proverif'], globals()['proverif_version'] = real
     print('formal selftest: ok')
     return 0
 
@@ -630,6 +750,7 @@ def main():
     ap.add_argument('--out', default='build/formal', help='run: where the inputs and the logs go')
     ap.add_argument('--jobs', type=int, default=4, help='run: how many variants run at once')
     ap.add_argument('--timeout', type=int, default=1800, help='run: seconds that one variant may take')
+    ap.add_argument('--trace-lines', type=int, default=0, help='run: print the last N lines of the trace of each attack that must show')
     args = ap.parse_args()
     try:
         if args.mode == 'selftest':

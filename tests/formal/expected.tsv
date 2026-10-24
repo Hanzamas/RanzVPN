@@ -24,6 +24,7 @@ tls443	fs-data	holds	forward secrecy
 tls443	auth-server	holds
 tls443	auth-client	holds
 tls443	auth-client-both	holds
+tls443	data-auth	holds
 tls443	negotiation	holds
 tls443	suite	holds
 tls443	replay-server	fails	a leaked key lets the attacker start sessions
@@ -41,6 +42,7 @@ tls443-honest	fs-data	holds
 tls443-honest	auth-server	holds
 tls443-honest	auth-client	holds
 tls443-honest	auth-client-both	holds
+tls443-honest	data-auth	holds
 tls443-honest	negotiation	holds
 tls443-honest	suite	holds
 tls443-honest	replay-server	holds
@@ -59,6 +61,7 @@ quic	fs-data	holds	forward secrecy
 quic	auth-server	attack	F1: the handshake of alice is accepted in another TLS session
 quic	auth-client	attack	F1
 quic	auth-client-both	attack	F1
+quic	data-auth	attack	F1: the middlebox rewrites what the server sends
 quic	negotiation	attack	F1: the middlebox can lower the version
 quic	suite	holds	the suite is in the hash of the handshake, not in the binding
 quic	replay-server	fails	a leaked key lets the attacker start sessions
@@ -75,6 +78,7 @@ quic-honest	fs-data	holds
 quic-honest	auth-server	holds
 quic-honest	auth-client	holds
 quic-honest	auth-client-both	holds
+quic-honest	data-auth	holds
 quic-honest	negotiation	holds
 quic-honest	suite	holds
 quic-honest	replay-server	holds
@@ -92,6 +96,7 @@ tls443-nobinding	fs-data	holds	forward secrecy
 tls443-nobinding	auth-server	attack	NC1
 tls443-nobinding	auth-client	attack	NC1
 tls443-nobinding	auth-client-both	attack	NC1
+tls443-nobinding	data-auth	attack	NC1
 tls443-nobinding	negotiation	attack	NC1
 tls443-nobinding	suite	holds
 tls443-nobinding	replay-server	fails	a leaked key lets the attacker start sessions
@@ -109,6 +114,7 @@ tls443-nopin	fs-data	holds	forward secrecy
 tls443-nopin	auth-server	holds
 tls443-nopin	auth-client	holds
 tls443-nopin	auth-client-both	attack	NC2
+tls443-nopin	data-auth	holds
 tls443-nopin	negotiation	holds
 tls443-nopin	suite	holds
 tls443-nopin	replay-server	fails	a leaked key lets the attacker start sessions
@@ -126,6 +132,7 @@ tls443-neither-honest	fs-data	attack	NC3
 tls443-neither-honest	auth-server	attack	NC3
 tls443-neither-honest	auth-client	attack	NC3
 tls443-neither-honest	auth-client-both	attack	NC3
+tls443-neither-honest	data-auth	attack	NC3
 tls443-neither-honest	negotiation	attack	NC3: the middlebox can lower the version
 tls443-neither-honest	suite	holds	the suite is in the hash of the handshake, whatever the outer session
 tls443-neither-honest	replay-server	attack	NC3
@@ -143,6 +150,7 @@ control-node	fs-data	holds	forward secrecy
 control-node	auth-server	holds
 control-node	auth-client	holds
 control-node	auth-client-both	holds
+control-node	data-auth	holds	the Update that the node applies is the controller's
 control-node	negotiation	holds	the Hello (version and Capabilities) cannot be lowered
 control-node	suite	holds
 control-node	replay-server	fails	a leaked key lets the attacker start sessions
@@ -160,6 +168,7 @@ control-go	fs-data	holds	forward secrecy
 control-go	auth-server	holds
 control-go	auth-client	holds
 control-go	auth-client-both	attack	C1
+control-go	data-auth	holds
 control-go	negotiation	holds
 control-go	suite	holds
 control-go	replay-server	fails	a leaked key lets the attacker start sessions

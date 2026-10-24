@@ -47,6 +47,11 @@ query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)) ==> event(
 (* @query auth-client-both *)
 query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)) ==> event(ServerReply(bob, alice, t, h)) || (event(LeakS(phase0, bob)) && event(LeakCert(phase0, bob))).
 
+(* What the client takes from the server after the handshake (a record of the data stream, or the Update of the
+   controller) is what the server sent, unless the Noise key of the server is leaked *)
+(* @query data-auth *)
+query d: bitstring; event(ClientGotData(alice, bob, d)) ==> event(ServerSentData(bob, alice, d)) || event(LeakS(phase0, bob)).
+
 (* The version and the capabilities that the server settles on are the ones that the client offered, so the
    attacker cannot lower them, and the suite that the server runs is the one that the client chose *)
 (* @query negotiation *)

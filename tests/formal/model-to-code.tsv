@@ -202,7 +202,7 @@ peer-lib.pvl	PeerSeal:kind	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	kind	-	t
 peer-lib.pvl	PeerSeal:SI	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	PEER_KEY_SIZE	-	the static key of the sender, in the clear after the kind
 peer-lib.pvl	PeerSeal:E	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	e_pub	-	the ephemeral key of the envelope
 peer-lib.pvl	PeerSeal:ct	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	PEER_ENVELOPE_TAG	-	the ciphertext of the payload with its tag
-peer-lib.pvl	PeerSeal:sq	field	src/Core/Peer.c	PeerNextSequence	Sequence	-	the sequence, the wall clock in 100 ns that grows with every bind and signal
+peer-lib.pvl	PeerSeal:sq	field	src/Core/Peer.c	PeerSealSignal	Sequence	-	the sequence, the wall clock in 100 ns that grows with every bind and signal (PeerNextSequence)
 peer-lib.pvl	PeerSeal:pl	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	payload_size	-	the payload of the envelope
 peer-lib.pvl	PeerOpen:a	field	src/Core/Peer.c	PeerInputBind	from	D4	the address that the datagram came from
 peer-lib.pvl	PeerOpen:SI	check	src/Core/PeerSignal.c	PeerEnvelopeOpen	sender	-	the sender is read from the envelope, and the caller checks that it is a peer (PeerFind)

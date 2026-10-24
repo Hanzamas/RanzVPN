@@ -102,7 +102,7 @@ jobs:
         cp ./proverif "$HOME/proverif/proverif"
     - name: ProVerif on every variant
       run: |
-        python -I .github/scripts/formal.py run --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION" --out build/formal --jobs 4 --timeout 2400
+        python -u -I .github/scripts/formal.py run --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION" --out build/formal --jobs 4 --timeout 900 --trace-lines 150
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
