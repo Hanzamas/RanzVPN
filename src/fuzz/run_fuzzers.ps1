@@ -17,13 +17,17 @@
 #
 # libFuzzer flags: https://llvm.org/docs/LibFuzzer.html#options
 #
+# Without -Targets, every fuzz_<name>.c of src/fuzz but fuzz_common.c is a target, built as fuzz_<name>.exe
+# (src/fuzz/CMakeLists.txt): a new target is a new file and needs no line here. Its source gives the largest input,
+# the -max_len of libFuzzer, in a line "// fuzz-max-len: <bytes>"; the target is not run without one.
+#
 # Usage: pwsh -File src/fuzz/run_fuzzers.ps1 [-BuildDir build] [-Seconds 60] [-Seed 1] [-Targets fuzz_pack,...]
 
 param(
 	[string] $BuildDir = 'build',
 	[int] $Seconds = 60,
 	[int] $Seed = 1,
-	[string[]] $Targets = @('fuzz_pack', 'fuzz_cfg', 'fuzz_tcpip', 'fuzz_x509', 'fuzz_http', 'fuzz_httplistener', 'fuzz_dhcp', 'fuzz_net', 'fuzz_stun', 'fuzz_login', 'fuzz_peer', 'fuzz_noise', 'fuzz_transport', 'fuzz_vxlan', 'fuzz_switch')
+	[string[]] $Targets = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,14 +35,19 @@ $ErrorActionPreference = 'Stop'
 # RANZ_ASAN builds allocate from the CRT heap (cmake/RanzOptions.cmake leaves
 # WIN32_USE_HEAP_API_FOR_MEMORY undefined), which AddressSanitizer checks without extra ASAN_OPTIONS.
 
-# Largest input per target (-max_len); fuzz_tcpip and fuzz_dhcp match their FUZZ_MAX_FRAME_SIZE,
-# fuzz_net, fuzz_stun, fuzz_peer, fuzz_noise, fuzz_transport, fuzz_vxlan and fuzz_switch their FUZZ_MAX_INPUT_SIZE,
-# fuzz_http is above twice HTTP_HEADER_LINE_MAX_SIZE (4096) so that over-long lines are reached,
-# fuzz_httplistener above HTTP_LISTENER_MAX_REQUEST (16384) so that a request over that limit is
-# reached
-$MaxLen = @{ 'fuzz_pack' = 4096; 'fuzz_cfg' = 4096; 'fuzz_tcpip' = 1600; 'fuzz_x509' = 4096; 'fuzz_http' = 10240;
-	'fuzz_httplistener' = 20480; 'fuzz_dhcp' = 1600; 'fuzz_net' = 4096; 'fuzz_stun' = 2048; 'fuzz_login' = 4096;
-	'fuzz_peer' = 2048; 'fuzz_noise' = 4096; 'fuzz_transport' = 4096; 'fuzz_vxlan' = 9217; 'fuzz_switch' = 9219 }
+if ($Targets.Count -eq 0) {
+	$Targets = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'fuzz_*.c' | Where-Object { $_.BaseName -ne 'fuzz_common' } |
+		ForEach-Object { $_.BaseName } | Sort-Object)
+	if ($Targets.Count -eq 0) { throw "no fuzz_<name>.c in $PSScriptRoot" }
+}
+
+# Largest input per target (-max_len): the "// fuzz-max-len: <bytes>" line of its source
+function Get-MaxLen([string] $Target) {
+	$source = Join-Path $PSScriptRoot "$Target.c"
+	$found = @(Select-String -LiteralPath $source -CaseSensitive -Pattern '^//\s*fuzz-max-len:\s*(\d+)\s*$' | Select-Object -First 1)
+	if ($found.Count -eq 0) { throw "$source has no line '// fuzz-max-len: <bytes>'" }
+	return [int] $found[0].Matches[0].Groups[1].Value
+}
 
 $BuildDir = (Resolve-Path $BuildDir).Path
 $CorpusRoot = Join-Path $PSScriptRoot 'corpus'
@@ -101,7 +110,7 @@ foreach ($target in $Targets) {
 	New-Item -ItemType Directory -Force -Path $work | Out-Null
 	if (-not (Test-Path $exe)) { throw "$exe not found (configure with -DRANZ_FUZZ=ON)" }
 
-	$common = @("-max_len=$($MaxLen[$target])", '-timeout=25', '-rss_limit_mb=2048',
+	$common = @("-max_len=$(Get-MaxLen $target)", '-timeout=25', '-rss_limit_mb=2048',
 		('-artifact_prefix=' + (Join-Path $ArtifactDir "$($target)-")))
 
 	# 1. Replay the seed corpus

@@ -2,6 +2,8 @@
 // libFuzzer target: X.509 certificate loading from a buffer (BufToX), DER and PEM, PEM
 // certificate bundles (BufToXList, as for a chain file), and the conversion of the parsed
 // certificates into Mayaqua's X (X509ToX)
+//
+// fuzz-max-len: 4096
 
 #include "fuzz_common.h"
 

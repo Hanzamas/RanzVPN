@@ -32,6 +32,8 @@
 //   once, and the hub lock is free during the wait. The old hub waited under its lock.
 // Prints "STOREPACKET TEST OK" only when every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
@@ -1501,6 +1503,7 @@ static void StorePacketTestLogWait(STOREPACKET_TEST *t)
 }
 
 // storepacket: bounded broadcast storm list, access list delay and jitter without a divide by zero
+RANZ_TEST("storepacket", storepacket_test, "StorePacket: the broadcast storm list of a session stays at its cap, access list delay and jitter never divide by zero.");
 void storepacket_test(UINT num, char **arg)
 {
 	STOREPACKET_TEST t;

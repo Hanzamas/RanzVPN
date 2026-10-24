@@ -42,6 +42,34 @@ func TestNoticeHasTheGoBGPLicence(t *testing.T) {
 	}
 }
 
+// The NOTICE holds the licence text of the rqlite release that CI pins, word for word (ONE-4,
+// #313): ranz carries the rqlited.exe of that release as the rqlite member of a Controller, and the
+// MIT License asks for its text with every copy. rqlite is no module of ranz, so its LICENSE is not
+// in the module cache: the test reads the file that RQLITE_LICENSE names, which the jobs of ranz.yml
+// download from the pinned tag, and compares it as the test above does. A new version of rqlite,
+// whose licence text may change, so fails here until the NOTICE follows it.
+func TestNoticeHasTheRqliteLicence(t *testing.T) {
+	file := os.Getenv("RQLITE_LICENSE")
+	if file == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatal("RQLITE_LICENSE is not set: CI must provide the LICENSE of the pinned rqlite tag")
+		}
+		t.Skip("RQLITE_LICENSE is not set: set it to the LICENSE file of the pinned rqlite tag to run this test")
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Fields(string(b))
+	if len(want) == 0 {
+		t.Fatalf("%s holds no words", file)
+	}
+	have := strings.Fields(notice)
+	if !strings.Contains(strings.Join(have, " "), strings.Join(want, " ")) {
+		t.Errorf("the NOTICE does not hold the licence text of rqlite word for word: %s", firstDifference(have, want))
+	}
+}
+
 // firstDifference tells where the words of want stop matching the words of have, for the failure
 // message. It aligns the two at the first run of ten words that they share, because the NOTICE has
 // a heading of its own before the licence text.

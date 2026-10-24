@@ -13,6 +13,9 @@
 // - a Login (NoiseLoginParse);
 // - an Ethernet frame for the flow hash of the tunnel (NoiseTunnelFlowHash).
 // The sessions are those of the golden transcripts of coretest noisesession, so that their seeds decrypt.
+//
+// fuzz-max-len: 4096
+// fuzz-libs: corenoise corecrypto
 
 #include "fuzz_common.h"
 
@@ -23,7 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Largest input accepted (run_fuzzers.ps1 -max_len): longer inputs are skipped
+// Largest input accepted (fuzz-max-len above, for run_fuzzers.ps1): longer inputs are skipped
 #define	FUZZ_MAX_INPUT_SIZE		4096
 
 // The keys of the cacophony IK vector: the client node and the server node of the goldens

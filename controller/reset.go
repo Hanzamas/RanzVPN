@@ -69,8 +69,9 @@ func runResetAdmin(args []string) error {
 // admin.token in the data directory, as the first start does (rbac.Bootstrap), and returns the
 // token with its secret and that file. It runs on the controller's host only: rights must
 // allow it (adminRights), and the data directory of cfg must exist. While the service runs,
-// its rqlite answers at -rqlite; while it is stopped, resetAdmin runs the rqlited of -rqlited on
-// the service's data for as long as it takes. out receives the output of that rqlited.
+// its rqlite answers at -rqlite; while it is stopped, resetAdmin runs the rqlited of the service
+// (-rqlited, or the member of this executable) on the service's data for as long as it takes. out
+// receives the output of that rqlited.
 func resetAdmin(ctx context.Context, cfg config, rights func() error, out io.Writer) (rbac.NewToken, string, error) {
 	if err := rights(); err != nil {
 		return rbac.NewToken{}, "", err
@@ -95,8 +96,8 @@ func resetAdmin(ctx context.Context, cfg config, rights func() error, out io.Wri
 }
 
 // openStore connects to the controller's rqlite: the one that answers at -rqlite, which is the
-// service's while it runs, or else, with -rqlited, an rqlited of its own on the service's data,
-// which stop stops again.
+// service's while it runs, or else an rqlited of its own on the service's data, which stop stops
+// again: the one that -rqlited names, or the member that this executable carries (rqlitedExe).
 func openStore(ctx context.Context, cfg config, out io.Writer) (st *store.Store, stop func(), err error) {
 	pctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	st, err = store.Open(pctx, cfg.rqliteURL)
@@ -104,7 +105,11 @@ func openStore(ctx context.Context, cfg config, out io.Writer) (st *store.Store,
 	if err == nil {
 		return st, st.Close, nil
 	}
-	if cfg.rqlited == "" {
+	rqlited, perr := cfg.rqlitedExe()
+	if perr != nil {
+		return nil, nil, fmt.Errorf("%w: the rqlite member: %w", err, perr)
+	}
+	if rqlited == "" {
 		return nil, nil, fmt.Errorf("%w: while the service is stopped, give the -rqlited it runs with", err)
 	}
 	u, err := url.Parse(cfg.rqliteURL)
@@ -112,7 +117,7 @@ func openStore(ctx context.Context, cfg config, out io.Writer) (st *store.Store,
 		return nil, nil, fmt.Errorf("-rqlite %q is not a URL with a host:port", cfg.rqliteURL)
 	}
 	rq := &sidecar.Rqlited{
-		Path:     cfg.rqlited,
+		Path:     rqlited,
 		DataDir:  filepath.Join(cfg.dataDir, "rqlite"),
 		HTTPAddr: u.Host,
 		RaftAddr: cfg.raftAddr,

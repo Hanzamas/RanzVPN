@@ -4,6 +4,8 @@
 // payload with DhcpModify(), which reads the options with ParseDhcpOptions(). Every input runs as an
 // Ethernet frame (DhcpModifyIPv4), as a DHCP payload (DhcpModify) and as DHCP options
 // (ParseDhcpOptions). DhcpParseClasslessRouteData() is not driven on its own: FND-52 deletes it.
+//
+// fuzz-max-len: 1600
 
 #include "fuzz_common.h"
 

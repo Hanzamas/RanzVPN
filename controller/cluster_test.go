@@ -4,13 +4,20 @@ package controllercmd
 // each test starts three members, each a `ranz controller` process with its own rqlited sidecar,
 // joined into one cluster, and drives them through their API with simulated nodes
 // (internal/nodesim) that open their control streams to the members. The member processes are
-// this test binary, which runs Main when processEnv is set (TestMain). With RANZ_CONTROL_WIRE
-// set to a directory, the tests write every frame of the simulated nodes there too, for the
-// nanopb round trip of CI.
+// the executable ranz itself (ONE-4, #313), which the tests build from this checkout with the
+// vendor key of the tests linked in, as a release links its own (clusterRanz). With
+// RANZ_CONTROL_WIRE set to a directory, the tests write every frame of the simulated nodes there
+// too, for the nanopb round trip of CI.
+//
+// The rqlited of each member is the one that RQLITED names, or, when the checkout embeds the
+// rqlite member of a Controller as a Payload (the Windows jobs of ranz.yml do), the member that
+// each ranz writes from its Payload under its own data directory, with no -rqlited and no
+// rqlited beside the executable.
 
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -22,6 +29,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,10 +41,8 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
 	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
+	"github.com/Hanzamas/RanzVPN/controller/internal/payload"
 )
-
-// processEnv makes the test binary run as `ranz controller`.
-const processEnv = "RANZ_CONTROLLER_PROCESS"
 
 // clusterLease is the lease duration of the members: short, so that a take-over does not take
 // long, and long enough for the -race build on a busy runner.
@@ -47,16 +53,68 @@ const clusterLease = 6 * time.Second
 const clusterTimeout = 90 * time.Second
 
 // clusterVendor stands in for the vendor key that release builds verify licence keys with. The
-// member processes trust it (licenceKeys), and newCluster installs an Enterprise licence key
-// that it signed: controller high availability is an Enterprise feature (ADR-0036).
+// ranz of the members is built to trust it (clusterRanz), and newCluster installs an Enterprise
+// licence key that it signed: controller high availability is an Enterprise feature (ADR-0036).
 var clusterVendor = ed25519.NewKeyFromSeed(slices.Repeat([]byte{0x17}, ed25519.SeedSize))
 
+// vendorKeysVar is the variable that a release build links its vendor keys into
+// (licence.vendorKeys, which names the go build command that sets it).
+const vendorKeysVar = "github.com/Hanzamas/RanzVPN/controller/internal/licence.vendorKeys"
+
+// clusterBuild is the ranz of the members of every cluster test, built once.
+var clusterBuild struct {
+	once sync.Once
+	dir  string // holds nothing but the executable
+	exe  string
+	err  error
+}
+
 func TestMain(m *testing.M) {
-	if os.Getenv(processEnv) != "" {
-		licenceKeys = []ed25519.PublicKey{clusterVendor.Public().(ed25519.PublicKey)}
-		os.Exit(Main(os.Args[1:]))
+	code := m.Run()
+	if clusterBuild.dir != "" {
+		os.RemoveAll(clusterBuild.dir)
 	}
-	os.Exit(m.Run())
+	os.Exit(code)
+}
+
+// clusterRanz returns the executable that the members run: ranz as go build makes it from this
+// checkout, with the vendor key of the tests in place of the one of a release, which only the
+// vendor can sign licence keys for. So the members are the one executable that ships, with the
+// rqlite member that the checkout embeds (ONE-4, #313), and nothing of rqlite is beside it, since
+// the build has a directory of its own. A test binary with the race detector builds ranz with it
+// too, so that the members run under it as they always did. What the members run is not in the
+// coverage profile of the run, which go test makes from the instrumented test binary only: the
+// code of ranz controller that the members used to give the profile, while they were this test
+// binary, is run by TestRunServesWithItsRqliteMember in this process.
+func clusterRanz(t *testing.T) string {
+	t.Helper()
+	clusterBuild.once.Do(func() {
+		dir, err := os.MkdirTemp("", "ranz-cluster-")
+		if err != nil {
+			clusterBuild.err = err
+			return
+		}
+		clusterBuild.dir = dir
+		exe := filepath.Join(dir, "ranz")
+		if runtime.GOOS == "windows" {
+			exe += ".exe"
+		}
+		vendor := base64.StdEncoding.EncodeToString(clusterVendor.Public().(ed25519.PublicKey))
+		args := []string{"build", "-o", exe, "-ldflags", "-X " + vendorKeysVar + "=" + vendor}
+		if raceEnabled {
+			args = append(args, "-race")
+		}
+		args = append(args, "github.com/Hanzamas/RanzVPN/controller/cmd/ranz")
+		if out, err := exec.Command("go", args...).CombinedOutput(); err != nil {
+			clusterBuild.err = fmt.Errorf("go %s: %w\n%s", strings.Join(args, " "), err, out)
+			return
+		}
+		clusterBuild.exe = exe
+	})
+	if clusterBuild.err != nil {
+		t.Fatalf("building ranz for the members: %v", clusterBuild.err)
+	}
+	return clusterBuild.exe
 }
 
 // The static keys of the simulated nodes, as in the conformance tests of internal/controller.
@@ -216,6 +274,34 @@ func TestRollingUpgrade(t *testing.T) {
 	checkState(t, live(t, ms), b2)
 }
 
+// TestRqlitedWrittenAgain is the fourth criterion of ONE-4 (#313): a member whose rqlited was
+// deleted while it was stopped writes it again at its next start, after the check of its hash and
+// its signature, and the cluster takes it back. It needs a checkout that embeds the rqlite member,
+// which the Windows jobs of ranz.yml make.
+func TestRqlitedWrittenAgain(t *testing.T) {
+	if len(payload.Rqlited.Data) == 0 {
+		t.Skip("this checkout embeds no rqlite member: the Windows jobs of ranz.yml embed one")
+	}
+	ms := newCluster(t, 0)
+	m := ms[1]
+	m.stop(t)
+	// The process that ran the file may hold it for a moment after it exited
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+		err := os.Remove(m.memberFile())
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("deleting the rqlited of %s: %v", m.name, err)
+		}
+	}
+
+	m.start(t)
+	m.waitUp(t)
+	m.wantMemberWritten(t)
+	waitLeader(t, ms, "")
+}
+
 // clusterIntent returns the intent of the cluster tests: VRF corp with the MTU mtu, its Network,
 // the two nodes, and a Controller resource for each member of controllers.
 func clusterIntent(mtu int, controllers []*member) intent.Document {
@@ -265,17 +351,59 @@ type member struct {
 	err    error // how the process exited, once exited is closed
 }
 
-// newCluster starts a cluster of three members that run as schema version schema (0 for the
-// default) and waits until they serve and agree on a leader. The members are killed when the
-// test ends, and their output goes to the test log if it failed.
-func newCluster(t *testing.T, schema int) []*member {
+// memberRqlited returns the -rqlited arguments of the member processes of a test: none when the
+// checkout embeds the rqlite member of a Controller as a Payload (ONE-4, #313), which each ranz
+// then writes under its own data directory, as ranz controller does with no rqlited beside it,
+// and otherwise the rqlited that RQLITED names. Without either it skips the test, or fails it
+// under CI.
+func memberRqlited(t *testing.T) []string {
 	t.Helper()
-	if os.Getenv("RQLITED") == "" {
+	if len(payload.Rqlited.Data) > 0 {
+		return nil
+	}
+	path := os.Getenv("RQLITED")
+	if path == "" {
 		if os.Getenv("CI") != "" {
 			t.Fatal("RQLITED is not set: CI must provide rqlited")
 		}
 		t.Skip("RQLITED is not set: set it to the path of rqlited to run this test")
 	}
+	return []string{"-rqlited", path}
+}
+
+// memberFile is where the member writes the rqlited of the Payload, under its data directory.
+func (m *member) memberFile() string {
+	return filepath.Join(m.dir, "data", payloadDir, payload.Rqlited.Name)
+}
+
+// wantRqlitedFromPayload checks, when the checkout embeds the rqlite member, that the controller
+// who wrote the rqlited of the Payload to file, byte for byte.
+func wantRqlitedFromPayload(t *testing.T, who, file string) {
+	t.Helper()
+	if len(payload.Rqlited.Data) == 0 {
+		return
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("%s did not write its rqlited from the Payload: %v", who, err)
+	}
+	if sha256.Sum256(b) != payload.Rqlited.SHA256 {
+		t.Errorf("%s runs an rqlited that is not the Payload", who)
+	}
+}
+
+// wantMemberWritten checks that m wrote the rqlited of the Payload under its own data directory.
+func (m *member) wantMemberWritten(t *testing.T) {
+	t.Helper()
+	wantRqlitedFromPayload(t, m.name, m.memberFile())
+}
+
+// newCluster starts a cluster of three members that run as schema version schema (0 for the
+// default) and waits until they serve and agree on a leader. The members are killed when the
+// test ends, and their output goes to the test log if it failed.
+func newCluster(t *testing.T, schema int) []*member {
+	t.Helper()
+	memberRqlited(t)
 	addrs := freeAddrs(t, 9)
 	var raft []string
 	for i := range 3 {
@@ -308,6 +436,7 @@ func newCluster(t *testing.T, schema int) []*member {
 	}
 	for _, m := range ms {
 		m.waitUp(t)
+		m.wantMemberWritten(t)
 	}
 	waitLeader(t, ms, "")
 	installLicence(t, ms[0])
@@ -358,18 +487,16 @@ func (m *member) logPath() string {
 	return filepath.Join(m.dir, "process.log")
 }
 
-// start starts the member's process, with its rqlited and its data in m.dir.
+// start starts the member's process, ranz controller, with its rqlited and its data in m.dir.
 func (m *member) start(t *testing.T) {
 	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
+	exe := clusterRanz(t)
 	args := []string{
-		"-data", filepath.Join(m.dir, "data"), "-listen", m.tls, "-name", m.name,
-		"-rqlited", os.Getenv("RQLITED"), "-rqlite", "http://" + m.http, "-rqlite-raft", m.raft,
+		"controller", "-data", filepath.Join(m.dir, "data"), "-listen", m.tls, "-name", m.name,
+		"-rqlite", "http://" + m.http, "-rqlite-raft", m.raft,
 		"-rqlite-join", m.join, "-rqlite-expect", "3", "-lease", clusterLease.String(),
 	}
+	args = append(args, memberRqlited(t)...)
 	if m.schema != 0 {
 		args = append(args, "-schema-version", strconv.Itoa(m.schema))
 	}
@@ -379,7 +506,6 @@ func (m *member) start(t *testing.T) {
 	}
 	fmt.Fprintf(out, "--- %s: start, schema version %d\n", time.Now().Format(time.RFC3339Nano), m.schema)
 	cmd := exec.Command(exe, args...)
-	cmd.Env = append(os.Environ(), processEnv+"=1")
 	cmd.Stdout, cmd.Stderr = out, out
 	if err := cmd.Start(); err != nil {
 		out.Close()
