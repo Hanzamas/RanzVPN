@@ -158,7 +158,8 @@ function Get-NodeCapsLines {
 function Wait-NodeCaps([int] $before, [int] $seconds = 60) {
 	$end = (Get-Date).AddSeconds($seconds)
 	while ($true) {
-		$lines = Get-NodeCapsLines
+		# @(): a function that returns one line gives a string, and [-1] of a string is its last character
+		$lines = @(Get-NodeCapsLines)
 		if ($lines.Count -gt $before -and $lines[-1] -match 'Capabilities: architecture (\S+), SeLow (yes|no), XDP (yes|no)') {
 			return [pscustomobject]@{ Architecture = $Matches[1]; SeLow = ($Matches[2] -eq 'yes'); Xdp = ($Matches[3] -eq 'yes') }
 		}
