@@ -10,8 +10,8 @@
 # - The full set, every job here and both architectures of build_and_test and debug: on a push to master
 #   or integration, every night (a schedule runs on the default branch, master), on workflow_dispatch, on a
 #   pull request with the label full-ci and on a pull request that changes src/Core/Crypto*,
-#   src/Core/Noise*, src/SeLow, .github/scripts/self-integrity.ps1, .github/scripts/install.ps1 or
-#   .github/signing (SENSITIVE in ci-plan.py).
+#   src/Core/Noise*, src/SeLow, .github/scripts/self-integrity.ps1, .github/scripts/install.ps1,
+#   .github/signing, .github/msi or .github/scripts/msi-* (SENSITIVE in ci-plan.py).
 # A job that only the full set runs has needs: plan and if: needs.plan.outputs.full == 'true' (install
 # follows sign_and_integrity, which it needs), and a pull request shows it as skipped. A new job
 # without them runs on every pull request. A leg of a matrix that a pull request does not run is not
@@ -1293,8 +1293,11 @@ jobs:
   # (.github/msi/standin-ranz.go) logs each call and writes and removes a ranz-node.exe beside itself; the
   # package is built from .github/msi/ranz.wxs with the pinned WiX, as the real one, at two versions. The
   # next job runs the packages on both architectures (.github/scripts/msi-install.ps1 -StandIn), and the msi
-  # job, after sign_and_integrity, runs the same steps with the real signed ranz.exe.
+  # job, after sign_and_integrity, runs the same steps with the real signed ranz.exe. A pull request that
+  # changes the package or its scripts runs the full set (SENSITIVE in ci-plan.py), and this job with it.
   msi_standin_build:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: MSI with a stand-in ranz.exe (build)
     timeout-minutes: 15
