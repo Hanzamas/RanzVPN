@@ -10,6 +10,8 @@
 // running, and the next frame reaches the new list only. A datagram on a VNI that the module does not carry, or one
 // that is no VXLAN datagram, is dropped and counted. Print "VXLAN TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
@@ -674,6 +676,7 @@ static void VxlanTestClose(VXLANTEST_CTX *ctx)
 	}
 }
 
+RANZ_TEST_TAGS("vxlan", vxlan_test, "core", "VXLAN: a frame, VLAN-tagged or not, goes out with its VNI and reaches a harness VTEP identical, and back to the module; a flood list of three VTEPs gets every frame and changes while the module runs; a datagram on an unknown VNI is dropped and counted.");
 void vxlan_test(UINT num, char **arg)
 {
 	VXLANTEST_CTX *ctx = ZeroMalloc(sizeof(VXLANTEST_CTX));

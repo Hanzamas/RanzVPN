@@ -19,6 +19,7 @@
 // Print "STORE TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/Cedar.h"
 #include "Cedar/ConfigStore.h"
@@ -833,6 +834,7 @@ static void StoreTestNodeImport(STORETEST_CTX *ctx)
 }
 
 // store: the configuration store of the new core
+RANZ_TEST("store", store_test, "Configuration store: SQLite through the winsqlite3.dll of System32, a fork configuration import matching its golden dump, named admin roles, PBKDF2 passwords.");
 void store_test(UINT num, char **arg)
 {
 	STORETEST_CTX ctx;

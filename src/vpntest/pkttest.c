@@ -29,6 +29,8 @@
 // a read past its end. Each command prints "<COMMAND> TEST OK" only when every check passes, and
 // frees everything it allocates. The [PASS] lines carry no values; the [FAIL] details do.
 
+#include "testlist.h"
+
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
@@ -454,6 +456,7 @@ static void PktTestOpCode(PKTTEST_CTX *ctx)
 }
 
 // pktparse: DNS opcode mask and label limits, DHCP Pad, whole option bodies, the cookie at offset 236
+RANZ_TEST("pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236.");
 void pktparse_test(UINT num, char **arg)
 {
 	PKTTEST_CTX ctx;
@@ -682,6 +685,7 @@ static void PktTestTpidHub(PKTTEST_CTX *ctx)
 }
 
 // vlantpid: the parser honours the VLAN TPID of the hub, the access list of a hub with a custom TPID
+RANZ_TEST("vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4.");
 void vlantpid_test(UINT num, char **arg)
 {
 	PKTTEST_CTX ctx;
@@ -722,6 +726,7 @@ static UCHAR pkttest_ns_golden[72] =
 	0x01, 0x01, 0x5E, 0x00, 0x53, 0x00, 0x00, 0x01,
 };
 
+RANZ_TEST("icmpv6ns", icmpv6ns_test, "Neighbor Solicitation: BuildNeighborSolicitation gives the bytes of the former builder chain, nothing for a NULL argument.");
 void icmpv6ns_test(UINT num, char **arg)
 {
 	PKTTEST_CTX ctx;

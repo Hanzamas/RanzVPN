@@ -6,6 +6,9 @@
 // serves one fixed token from memory, the VPN listener ports are fixed. The answer must keep its shape whatever the
 // request holds: one status line and the header lines of the responder only, so that no request adds a header line
 // (abort() otherwise). Seeds: the requests of the vpntest test httplistener.
+//
+// The largest input is above HTTP_LISTENER_MAX_REQUEST (16384), so that a request over that limit is reached
+// fuzz-max-len: 20480
 
 #include "fuzz_common.h"
 
