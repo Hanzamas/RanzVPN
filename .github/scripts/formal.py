@@ -14,6 +14,8 @@
 #          ...) are the ones that docs/formal-model.md describes. src/vpntest/formaltable.c refers to the C
 #          functions of the table that are not static, and check keeps its list equal to them, in both
 #          directions. quality.yml runs it on every pull request.
+# list     prints the names of the variants as names=[...], for the matrix of formal.yml.
+# version  says which ProVerif runs, and fails when it is not the pinned version.
 # run      runs the pinned ProVerif on each variant and compares every result with expected.tsv. It fails on a
 #          query that must hold and does not, on a negative control or a finding that stops showing its attack,
 #          on an error of ProVerif or a timeout, and on any result that expected.tsv does not name.
@@ -22,6 +24,8 @@
 #
 # Usage:
 #   python formal.py check [--root DIR]
+#   python formal.py list [--root DIR]
+#   python formal.py version [--proverif PATH] [--version V]
 #   python formal.py run [--root DIR] [--proverif PATH] [--version V] [--out DIR] [--jobs N] [--timeout S]
 #                        [--trace-lines N] [VARIANT ...]
 #   python formal.py selftest
@@ -30,6 +34,9 @@
 
 import argparse
 import concurrent.futures
+import contextlib
+import io
+import json
 import os
 import re
 import subprocess
@@ -255,11 +262,9 @@ def run(args):
             annotate('error', p)
         return 1
 
-    version = proverif_version(args.proverif)
-    print('ProVerif %s' % version)
-    if args.version and version != args.version:
-        annotate('error', 'ProVerif %s runs, and the pinned version is %s' % (version, args.version))
+    if version_check(args) != 0:
         return 1
+    version = proverif_version(args.proverif)
 
     names = args.variants or list(variants)
     for n in names:
@@ -514,6 +519,22 @@ def check_vpntest(root, public):
     return problems
 
 
+def version_check(args):
+    # Which ProVerif runs, and whether it is the pinned version
+    version = proverif_version(args.proverif)
+    print('ProVerif %s' % version)
+    if args.version and version != args.version:
+        annotate('error', 'ProVerif %s runs, and the pinned version is %s' % (version, args.version))
+        return 1
+    return 0
+
+
+def list_variants(args):
+    # The names of the variants as one line of a workflow output, names=["tls443","quic",...], for the matrix of formal.yml
+    print('names=' + json.dumps(list(load_variants(args.root)), separators=(',', ':')))
+    return 0
+
+
 def check(args):
     root = args.root
     try:
@@ -713,6 +734,10 @@ bool NoiseProto(void);
         try:
             globals()['run_proverif'] = lambda proverif, path, timeout: canned[os.path.basename(path)[:-3]]
             globals()['proverif_version'] = lambda proverif: '2.05'
+            listing = io.StringIO()
+            with contextlib.redirect_stdout(listing):
+                assert list_variants(argparse.Namespace(root=root)) == 0
+            assert listing.getvalue() == 'names=["v","w"]\n', listing.getvalue()
             args = argparse.Namespace(root=root, variants=[], proverif='proverif', version='2.05', out=os.path.join(root, 'out'),
                                       jobs=2, timeout=5, trace_lines=5)
             assert run(args) == 0, 'every result as expected'
@@ -741,8 +766,8 @@ bool NoiseProto(void);
 
 
 def main():
-    ap = argparse.ArgumentParser(description='The formal model of the session handshake: check, run, selftest')
-    ap.add_argument('mode', choices=['check', 'run', 'selftest'])
+    ap = argparse.ArgumentParser(description='The formal model of the session handshake: check, list, version, run, selftest')
+    ap.add_argument('mode', choices=['check', 'list', 'version', 'run', 'selftest'])
     ap.add_argument('variants', nargs='*', help='run: the variants to run, all by default')
     ap.add_argument('--root', default=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     ap.add_argument('--proverif', default='proverif', help='run: the ProVerif executable')
@@ -757,6 +782,10 @@ def main():
             return selftest()
         if args.mode == 'check':
             return check(args)
+        if args.mode == 'list':
+            return list_variants(args)
+        if args.mode == 'version':
+            return version_check(args)
         return run(args)
     except Problem as e:
         annotate('error', str(e))
