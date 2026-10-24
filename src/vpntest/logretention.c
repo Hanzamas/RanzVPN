@@ -15,11 +15,17 @@
 // of the limit); at the end they hold the newest records and not the first one, and the log tells that it deleted
 // files.
 //
+// Node. A Node whose configuration store has the settings LogDays and LogMB takes them (NodeGetLogLimits) and applies
+// them to its log at its start: the file of its node log that is older than the age limit is deleted, and one within it
+// stays.
+//
 // The test prints "LOGRETENTION TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "testlist.h"
 
+#include "Cedar/ConfigStore.h"
 #include "Cedar/LogWriter.h"
+#include "Cedar/Node.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
@@ -267,7 +273,7 @@ static bool LogRetentionWaitGone(char *dir, char *name)
 	return true;
 }
 
-// Delete the files and the folders of dir (they hold no folder of their own), then dir
+// Delete the files and the folders of dir, then dir
 static void LogRetentionDelete(char *dir)
 {
 	DIRLIST *d = EnumDir(dir);
@@ -281,10 +287,7 @@ static void LogRetentionDelete(char *dir)
 
 		if (e->Folder)
 		{
-			wchar_t *path_w = CopyStrToUni(path);
-
-			DeleteDirW(path_w);
-			Free(path_w);
+			LogRetentionDelete(path);
 		}
 		else
 		{
@@ -440,7 +443,61 @@ static void LogRetentionDisk(LOGRETENTION_CTX *ctx)
 	LogRetentionDelete(dir);
 }
 
-RANZ_TEST("logretention", logretention_test, "Log retention: the files of a LOG stay within an age limit and a disk limit, and the open file is never deleted (SDN-54).");
+// The Node takes its limits from the settings of its configuration store and applies them to its log
+static void LogRetentionNode(LOGRETENTION_CTX *ctx)
+{
+	char dir[MAX_SIZE];
+	char log_dir[MAX_SIZE];
+	char detail[MAX_SIZE];
+	wchar_t store_path[MAX_PATH];
+
+	LogRetentionNewDir(dir, sizeof(dir), "logretention_node");
+	LogRetentionPath(log_dir, sizeof(log_dir), dir, "node_log");
+	MakeDirEx(log_dir);
+
+	wchar_t *dir_w = CopyStrToUni(dir);
+
+	ConbinePathW(store_path, sizeof(store_path), dir_w, CS_FILE_NAME);
+
+	// The settings LogDays and LogMB of the node
+	CONFIG_STORE *s = CsOpen(store_path);
+
+	if (s == NULL)
+	{
+		LogRetentionCheck(ctx, false, "The configuration store of the node opens", "it cannot be opened");
+		Free(dir_w);
+		LogRetentionDelete(dir);
+
+		return;
+	}
+
+	CsSetSetting(s, NODE_SETTING_ROLES, "none");
+	CsSetSetting(s, NODE_SETTING_LOG_DAYS, "7");
+	CsSetSetting(s, NODE_SETTING_LOG_MB, "2");
+	CsClose(s);
+
+	// A file of the node log from a year ago, and one from yesterday
+	LogRetentionPlant(log_dir, "node_20200101.log", "an old line\r\n", LOGRETENTION_OLD_DAYS);
+	LogRetentionPlant(log_dir, "node_20200102.log", "a line from yesterday\r\n", 1);
+
+	NODE *n = NewNode(dir_w);
+	UINT days = 0;
+	UINT mb = 0;
+
+	NodeGetLogLimits(n, &days, &mb);
+	Format(detail, sizeof(detail), "%u days and %u MB", days, mb);
+	LogRetentionCheck(ctx, days == 7 && mb == 2, "The node takes its limits from the settings LogDays and LogMB", detail);
+
+	LogRetentionCheck(ctx, LogRetentionWaitGone(log_dir, "node_20200101.log"), "The file of the node log that is older than its age limit is deleted at the start", "node_20200101.log is still there");
+	LogRetentionCheck(ctx, LogRetentionExists(log_dir, "node_20200102.log"), "The file of the node log that is within its age limit stays", "node_20200102.log is gone");
+
+	FreeNode(n);
+	Free(dir_w);
+
+	LogRetentionDelete(dir);
+}
+
+RANZ_TEST("logretention", logretention_test, "Log retention: the files of a LOG stay within an age limit and a disk limit, the open file is never deleted, and a Node reads its limits from its settings (SDN-54).");
 void logretention_test(UINT num, char **arg)
 {
 	LOGRETENTION_CTX ctx;
@@ -451,6 +508,7 @@ void logretention_test(UINT num, char **arg)
 
 	LogRetentionAge(&ctx);
 	LogRetentionDisk(&ctx);
+	LogRetentionNode(&ctx);
 
 	if (ctx.NumFailed == 0)
 	{
