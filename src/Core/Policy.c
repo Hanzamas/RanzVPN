@@ -207,7 +207,7 @@ static POLICY_NET *PolicyNetOf(POLICY_ENGINE *p, const char *name, bool create) 
 
 	// The pointer before the number, so that a reader of the number finds the Network
 	p->Nets[num] = net;
-	WriteRelease(&p->NumNets, (LONG)(num + 1));
+	WriteRelease(&p->NumNets, (LONG)num + 1);
 
 	return net;
 }
@@ -276,9 +276,13 @@ void PolicyFree(POLICY_ENGINE *p) {
 			HeapFree(GetProcessHeap(), 0, rec);
 	}
 
+	// Each Network leaves its place before it is freed, so that no place of the array holds a freed Network
 	for (UINT i = 0; i < (UINT)p->NumNets && i < POLICY_MAX_NETWORKS; i++) {
 		POLICY_NET *net = p->Nets[i];
 
+		p->Nets[i] = NULL;
+		if (net == NULL)
+			continue;
 		if (net->Owners != NULL)
 			HeapFree(GetProcessHeap(), 0, net->Owners);
 		HeapFree(GetProcessHeap(), 0, net);
@@ -545,13 +549,15 @@ UINT PolicyAddMember(POLICY_ENGINE *p, const POLICY_MEMBER_CONFIG *cfg) {
 // the number. When it returns, no frame of the member or to it is still being judged.
 bool PolicyDelMember(POLICY_ENGINE *p, UINT member) {
 	POLICY_RECORD *rec = NULL;
+	bool found = false;
 
 	if (p == NULL || member >= p->MaxMembers)
 		return false;
 
 	AcquireSRWLockExclusive(&p->ConfigLock);
 	rec = p->Slots[member].Record;
-	if (rec != NULL) {
+	found = (rec != NULL);
+	if (found) {
 		POLICY_NET *net = rec->Net;
 
 		InterlockedExchangePointer((PVOID volatile *)&p->Slots[member].Record, NULL);
@@ -568,7 +574,7 @@ bool PolicyDelMember(POLICY_ENGINE *p, UINT member) {
 	}
 	ReleaseSRWLockExclusive(&p->ConfigLock);
 
-	return rec != NULL;
+	return found;
 }
 
 // Give a member an address of a kind; false when no member has the number, or PolicyOwnerAdd refuses
@@ -643,13 +649,10 @@ static bool PolicyParseTransport(POLICY_PACKET *pk) {
 		}
 
 		// DHCP (UDP 68 to 67, 67 to 68 or 67) and DHCPv6 (UDP 546 to 547, 547 to 546)
-		if (pk->Family == POLICY_IPV4 && pk->SrcPort == 68 && pk->DstPort == 67)
+		bool v4 = (pk->Family == POLICY_IPV4);
+		if ((v4 && pk->SrcPort == 68 && pk->DstPort == 67) || (v4 == false && pk->SrcPort == 546 && pk->DstPort == 547))
 			pk->Control = POLICY_CTL_DHCP;
-		else if (pk->Family == POLICY_IPV4 && pk->SrcPort == 67 && (pk->DstPort == 68 || pk->DstPort == 67))
-			pk->Control = POLICY_CTL_DHCP_SERVER;
-		else if (pk->Family == POLICY_IPV6 && pk->SrcPort == 546 && pk->DstPort == 547)
-			pk->Control = POLICY_CTL_DHCP;
-		else if (pk->Family == POLICY_IPV6 && pk->SrcPort == 547 && pk->DstPort == 546)
+		else if ((v4 && pk->SrcPort == 67 && (pk->DstPort == 68 || pk->DstPort == 67)) || (v4 == false && pk->SrcPort == 547 && pk->DstPort == 546))
 			pk->Control = POLICY_CTL_DHCP_SERVER;
 		return true;
 	}

@@ -624,7 +624,7 @@ static bool PolicyParseRule(POLICY_PARSER *ps, const cJSON *item, UINT index, PO
 		return false;
 
 	// Its name, which no rule before it has
-	if (PolicyRequiredName(ps, item, where, "name", &name) == false)
+	if (PolicyRequiredName(ps, item, where, "name", &name) == false || name == NULL)
 		return false;
 	for (UINT i = 0; i < index; i++) {
 		if (strcmp(ps->Doc->Rules[i].Name, name) == 0) {
@@ -727,7 +727,7 @@ static bool PolicyParseNetwork(POLICY_PARSER *ps, const cJSON *item, UINT index,
 		return false;
 
 	// Its name, which no Network before it has
-	if (PolicyRequiredName(ps, item, where, "name", &name) == false)
+	if (PolicyRequiredName(ps, item, where, "name", &name) == false || name == NULL)
 		return false;
 	for (UINT i = 0; i < index; i++) {
 		if (strcmp(ps->Doc->Nets[i].Name, name) == 0) {
@@ -764,7 +764,7 @@ static bool PolicyParseAddrGroup(POLICY_PARSER *ps, const cJSON *item, UINT inde
 	if (PolicyKeys(ps, item, where, keys, ARRAYSIZE(keys)) == false)
 		return false;
 
-	if (PolicyRequiredName(ps, item, where, "name", &name) == false)
+	if (PolicyRequiredName(ps, item, where, "name", &name) == false || name == NULL)
 		return false;
 	if (PolicyAddrGroupOf(ps->Doc, name) != NULL) {
 		snprintf(at, sizeof(at), "%s.name", where);
