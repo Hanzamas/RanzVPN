@@ -235,21 +235,31 @@ static void NodeImportForkConfig(NODE *n) {
 	FileRenameW(path, done);
 }
 
-// Keep the node log within its age and disk limits (SDN-54, #247): the LogDays and LogMB settings of the configuration
-// store, in days and megabytes, NODE_LOG_DEFAULT_DAYS and NODE_LOG_DEFAULT_MB without them, 0 for no limit. The
-// limits reach the files that earlier runs left in the node log directory as well.
-static void NodeLoadLogLimits(NODE *n) {
-	UINT days = NODE_LOG_DEFAULT_DAYS;
-	UINT mb = NODE_LOG_DEFAULT_MB;
+// The age limit in days and the disk limit in megabytes of the logs of the node (SDN-54, #247): the LogDays and LogMB
+// settings of the configuration store, NODE_LOG_DEFAULT_DAYS and NODE_LOG_DEFAULT_MB without them, 0 for no limit.
+// The node log and the log of the BGP sidecar keep within them.
+void NodeGetLogLimits(NODE *n, UINT *days, UINT *mb) {
 	char value[MAX_SIZE];
+
+	*days = NODE_LOG_DEFAULT_DAYS;
+	*mb = NODE_LOG_DEFAULT_MB;
 
 	if (n->Store != NULL) {
 		if (CsGetSetting(n->Store, NODE_SETTING_LOG_DAYS, value, sizeof(value)) && IsEmptyStr(value) == false)
-			days = MIN(ToInt(value), NODE_LOG_MAX_DAYS);
+			*days = MIN(ToInt(value), NODE_LOG_MAX_DAYS);
 
 		if (CsGetSetting(n->Store, NODE_SETTING_LOG_MB, value, sizeof(value)) && IsEmptyStr(value) == false)
-			mb = MIN(ToInt(value), NODE_LOG_MAX_MB);
+			*mb = MIN(ToInt(value), NODE_LOG_MAX_MB);
 	}
+}
+
+// Keep the node log within its limits (NodeGetLogLimits). The limits reach the files that earlier runs left in the node
+// log directory as well.
+static void NodeLoadLogLimits(NODE *n) {
+	UINT days;
+	UINT mb;
+
+	NodeGetLogLimits(n, &days, &mb);
 
 	SetLogLimits(n->Log, days, (UINT64)mb * 1024ULL * 1024ULL);
 }

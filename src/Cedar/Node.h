@@ -384,6 +384,7 @@ bool NodeAuthenticate(NODE *n, char *hubname, AUTH_REQUEST *req, AUTH_RESULT *re
 bool NodeLogin(NODE *n, struct NOISE_LOGIN *login, UCHAR *challenge, AUTH_RESULT *ret);
 bool NodeLoginPinned(NODE *n, struct NOISE_LOGIN *login, UCHAR *challenge, UCHAR *static_key, AUTH_RESULT *ret);
 void NodeSetPeers(NODE *n, PEER_INFO *peers, UINT num);
+void NodeGetLogLimits(NODE *n, UINT *days, UINT *mb);
 UINT NodeParseRoles(char *str, char *unknown, UINT unknown_size);
 void NodeRolesToStr(char *str, UINT size, UINT roles);
 void NodeDefaultDataDir(wchar_t *dir, UINT size);
