@@ -320,6 +320,9 @@ function Show-Diagnostics {
 	Write-Host '--- adapters and addresses'
 	Get-NetAdapter -ErrorAction SilentlyContinue | Format-Table Name, InterfaceDescription, Status | Out-String | Write-Host
 	Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-Table InterfaceAlias, IPAddress, PrefixLength | Out-String | Write-Host
+	Write-Host '--- routes of the adapter and the network profiles'
+	Get-NetRoute -InterfaceAlias $adapterName -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-Table DestinationPrefix, NextHop, RouteMetric | Out-String | Write-Host
+	Get-NetConnectionProfile -ErrorAction SilentlyContinue | Format-Table InterfaceAlias, NetworkCategory, IPv4Connectivity | Out-String | Write-Host
 }
 
 # A source file that the Gap steps read: whether a pattern is in the files of a folder, tests left out
