@@ -109,6 +109,12 @@ jobs:
       shell: pwsh
       run: |
         .github/scripts/fetch-msquic.ps1 -Arch ${{ matrix.platform.ARCHITECTURE }} -DllDir "${{ github.workspace }}\build"
+    # The pinned Wintun release (THIRD_PARTY.TXT) for the client role of the node (CORE-S3-1, #71): wintun.dll of the
+    # architecture next to vpntest, whose client test brings up Wintun adapters (the runners have administrator rights)
+    - name: Fetch Wintun
+      shell: pwsh
+      run: |
+        .github/scripts/fetch-wintun.ps1 -Arch ${{ matrix.platform.ARCHITECTURE }} -DllDir "${{ github.workspace }}\build"
     - name: Install the nanopb generator
       uses: ./.github/actions/nanopb
     - name: Build
@@ -461,6 +467,11 @@ jobs:
       shell: pwsh
       run: |
         .github/scripts/fetch-msquic.ps1 -Arch x64
+    # wintun.dll next to vpntest for the client test (CORE-S3-1, #71), which runs here over TLS-443 (no msquic.dll)
+    - name: Fetch Wintun
+      shell: pwsh
+      run: |
+        .github/scripts/fetch-wintun.ps1 -Arch x64 -DllDir "${{ github.workspace }}\build"
     - name: Install the nanopb generator
       uses: ./.github/actions/nanopb
     - name: Build (RANZ_ASAN=ON, RANZ_FUZZ=ON)
@@ -769,7 +780,7 @@ jobs:
         cmake -S . -B build-msvc -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_C_COMPILER=cl -DBUILD_NUMBER=0 "-DCMAKE_C_FLAGS=/DWIN32 /D_WINDOWS /analyze"
         if errorlevel 1 exit /b 1
 
-        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan coreswitch > build-msvc\analyze.txt 2>&1
+        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan coreswitch corefrontdoor > build-msvc\analyze.txt 2>&1
         set BUILD_EXIT=%ERRORLEVEL%
         type build-msvc\analyze.txt
         if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
