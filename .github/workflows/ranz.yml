@@ -57,10 +57,17 @@
 #
 # Neither job touches the C build, so they run beside windows.yml and add nothing to its time.
 #
-# A push to master runs both jobs, with no path filter. A pull request runs them when it changes a
-# path that they read: controller/ and ranz-bgp/, the two trees of the module; go.mod and go.sum;
-# proto/, the schema that go generate and the nanopb round trip read; tests/control/, the round
-# trip program; .gitattributes, which sets the line endings of the checkout; this file,
+# Two sets of jobs, which the plan job chooses (ci-plan.yml, .github/scripts/ci-plan.py; windows.yml
+# says when each runs). A pull request runs linux and windows for x64. The full set also runs windows
+# for arm64, which a pull request does not create, since GitHub cannot skip one leg of a matrix: it
+# runs on a push to master or integration, every night, on workflow_dispatch, and on a pull request
+# with the label full-ci or with a sensitive path of ci-plan.py.
+#
+# A push to master or integration, a scheduled run and a run by hand run both jobs, with no path
+# filter. A pull request runs them when it changes a path that they read: controller/ and
+# ranz-bgp/, the two trees of the module; go.mod and go.sum; proto/, the schema that go generate
+# and the nanopb round trip read; tests/control/, the round trip program; .gitattributes, which
+# sets the line endings of the checkout; this file, the plan (ci-plan.yml and ci-plan.py),
 # .github/scripts/controller-service.ps1, .github/scripts/ranz-tools.ps1, the binary hardening gate
 # .github/scripts/binary-hardening.ps1, which windows.yml runs too, the fuzz targets, coverage
 # floors and accepted vulnerabilities of .github/quality and the scripts that read them. A pull
@@ -71,8 +78,13 @@ name: ranz
 
 on:
   push:
-    branches: [master]
+    branches: [master, integration]
+  schedule:
+  - cron: '23 20 * * *'
+  workflow_dispatch:
   pull_request:
+    # labeled: the label full-ci starts the full set on a pull request that is open
+    types: [opened, synchronize, reopened, labeled]
     paths:
     - 'controller/**'
     - 'ranz-bgp/**'
@@ -82,6 +94,8 @@ on:
     - 'tests/control/**'
     - '.gitattributes'
     - '.github/workflows/ranz.yml'
+    - '.github/workflows/ci-plan.yml'
+    - '.github/scripts/ci-plan.py'
     - '.github/scripts/controller-service.ps1'
     - '.github/scripts/ranz-tools.ps1'
     - '.github/quality/fuzz-targets.txt'
@@ -91,6 +105,9 @@ on:
     - '.github/scripts/coverage-floor.py'
     - '.github/scripts/govulncheck-gate.py'
     - '.github/scripts/binary-hardening.ps1'
+
+# A run that is not a pull request is the full set, and its name says so: Full CI: push on integration
+run-name: "${{ github.event_name == 'pull_request' && github.event.pull_request.title || format('Full CI: {0} on {1}', github.event_name, github.ref_name) }}"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -117,6 +134,13 @@ env:
   GOVULNCHECK_VERSION: 'v1.9.0'
 
 jobs:
+  # The fast set or the full set (ci-plan.yml); windows reads the legs of its matrix from it
+  plan:
+    uses: ./.github/workflows/ci-plan.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   linux:
     name: ranz (Linux)
     runs-on: ubuntu-24.04
@@ -404,13 +428,12 @@ jobs:
           ranz-bgp/**/testdata/fuzz/
 
   windows:
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        platform: [
-          { ARCHITECTURE: x64, GOARCH: amd64, RUNNER: "windows-latest" },
-          { ARCHITECTURE: arm64, GOARCH: arm64, RUNNER: "windows-11-arm" }
-        ]
+        # x64 on a pull request, x64 and arm64 in the full set (MATRICES in ci-plan.py)
+        platform: ${{ fromJSON(needs.plan.outputs.ranz_windows_matrix) }}
     name: ranz (Windows ${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
     timeout-minutes: 40
