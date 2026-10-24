@@ -6,6 +6,8 @@
 // as a signal envelope through PeerOpenSignal; and as the payload of a signal through PeerSignalDecode.
 // The keys are the fixed ones of coretest (src/coretest/envelope.c), so a seed can be a datagram between the
 // two bound nodes or a known answer of coretest.
+//
+// fuzz-max-len: 2048
 
 #include "fuzz_common.h"
 

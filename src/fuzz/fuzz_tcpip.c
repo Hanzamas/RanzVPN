@@ -2,6 +2,8 @@
 // libFuzzer target: Ethernet frame parsing (ParsePacketEx4), the parser the virtual hub runs
 // on every frame it receives (StorePacket() in Cedar/Hub.c), and the MSS clamp of a SYN
 // (AdjustTcpMssL2) the hub runs on the frames it hands to a session
+//
+// fuzz-max-len: 1600
 
 #include "fuzz_common.h"
 

@@ -15,6 +15,9 @@
 //   TransportProxyParseList takes has a host and a port; TransportProxyBypass reads the input as a list and as a host.
 // The server node has the static key and the ephemeral key of the cacophony IK vector, as in fuzz_noise.c, so that
 // the frames of the encrypted golden records of coretest noisesession get through the handshake and decrypt.
+//
+// fuzz-max-len: 4096
+// fuzz-libs: coretransport corenoise corecrypto
 
 #include "fuzz_common.h"
 
@@ -24,7 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Largest input accepted (run_fuzzers.ps1 -max_len): longer inputs are skipped
+// Largest input accepted (fuzz-max-len above, for run_fuzzers.ps1): longer inputs are skipped
 #define	FUZZ_MAX_INPUT_SIZE		4096
 
 // The keys of the server node of the cacophony IK vector (fuzz_noise.c)

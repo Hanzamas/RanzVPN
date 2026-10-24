@@ -2,13 +2,20 @@
 # Writes the seed corpus of the libFuzzer targets into src/fuzz/corpus/<target>/.
 # Python standard library only; deterministic (same bytes on every run).
 #
+# The seeds of the targets up to fuzz_switch are made by the make_<name>_seeds() functions below. A new target has its
+# own file src/fuzz/seeds/<target>.py, which defines make_seeds(h) and is run after them, so that no function and no line
+# of the main block here is added: h is this module, with write_seed(target, name, data) and the helpers (ipv4, udp,
+# eth, der, ...). Files whose name starts with an underscore are not run.
+#
 # Usage: python -I src/fuzz/make_seeds.py
 
 import base64
 import hashlib
+import importlib.util
 import os
 import random
 import struct
+import sys
 
 CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'corpus')
 
@@ -913,6 +920,77 @@ def make_vxlan_seeds():
 
 
 # ---------------------------------------------------------------------------
+# 1:1 NAT and 4via6 of the Node module (src/Cedar/NodeNat.c, SDN-6 #182): the first byte picks the VRF (its two low
+# bits) and the way (bit 2: into the overlay), the rest is an IP packet. fuzz_nat.c has no rule in VRF 0, the 4via6
+# of fd00:1:0:ffff::/96 in VRF 1, 192.168.1.0/24 as 10.99.1.0/24 and fd00:7::/64 as fd00:2:0:99::/64 in VRF 2, and
+# the 4via6 of fd00:3:0:ffff::/96 with 10.4.0.0/24 as 10.204.0.0/24 behind it in VRF 3.
+# ---------------------------------------------------------------------------
+def ipv6(src, dst, nh, payload, ext=b''):
+    # With ext, a hop-by-hop options header, the IPv6 header names it as the next header
+    return struct.pack('>IHBB', 6 << 28, len(ext) + len(payload), 0 if ext else nh, 64) + bytes(src) + bytes(dst) + ext + payload
+
+
+def l6_csum(src, dst, nh, segment):
+    pseudo = bytes(src) + bytes(dst) + struct.pack('>I3xB', len(segment), nh)
+    return csum(pseudo + segment)
+
+
+def icmp4(icmp_type, code, rest, data):
+    msg = struct.pack('>BBHI', icmp_type, code, 0, rest) + data
+    return msg[:2] + struct.pack('>H', csum(msg)) + msg[4:]
+
+
+def icmp6(src, dst, icmp_type, code, rest, data):
+    msg = struct.pack('>BBHI', icmp_type, code, 0, rest) + data
+    return msg[:2] + struct.pack('>H', l6_csum(src, dst, 58, msg)) + msg[4:]
+
+
+def udp6(src, dst, sport, dport, payload):
+    seg = struct.pack('>HHHH', sport, dport, 8 + len(payload), 0) + payload
+    return seg[:6] + struct.pack('>H', l6_csum(src, dst, 17, seg)) + seg[8:]
+
+
+def tcp6_syn(src, dst, sport, dport, seq):
+    seg = struct.pack('>HHIIBBHHH', sport, dport, seq, 0, 5 << 4, 0x02, 65535, 0, 0)
+    return seg[:16] + struct.pack('>H', l6_csum(src, dst, 6, seg)) + seg[18:]
+
+
+def make_nat_seeds():
+    out, vrf1, vrf2, vrf3 = 0x04, 1, 2, 3
+    a, b, gw = [10, 0, 0, 1], [10, 0, 0, 5], [10, 0, 0, 9]
+    a6, b6, gw6 = (bytes.fromhex('fd0000010000ffff00000000') + bytes(x) for x in (a, b, gw))
+    data = b'ranz-nat-data'
+
+    def seed(name, way, packet):
+        write_seed('fuzz_nat', name, bytes([way]) + packet)
+
+    # The 4via6 of VRF 1: Echo, UDP and TCP each way, a UDP datagram without a checksum, ICMP errors with the packet
+    # that they quote, an extension header and a fragment, which it drops
+    seed('4via6_echo_out.bin', vrf1 | out, ipv6(a6, b6, 58, icmp6(a6, b6, 128, 0, 0x4E410001, data)))
+    seed('4via6_udp_in.bin', vrf1, ipv4(b, a, 17, udp(b, a, 53, 40000, data)))
+    seed('4via6_udp0_in.bin', vrf1, ipv4(b, a, 17, struct.pack('>HHHH', 53, 40000, 8 + len(data), 0) + data))
+    seed('4via6_tcp_out.bin', vrf1 | out, ipv6(a6, b6, 6, tcp6_syn(a6, b6, 40001, 80, 0x01020304)))
+    seed('4via6_unreachable_in.bin', vrf1, ipv4(gw, a, 1, icmp4(3, 3, 0, ipv4(a, b, 17, udp(a, b, 40000, 53, data)))))
+    seed('4via6_too_big_out.bin', vrf1 | out, ipv6(a6, b6, 58, icmp6(a6, b6, 2, 0, 1500, ipv6(b6, a6, 17, udp6(b6, a6, 53, 40000, data)))))
+    seed('4via6_time_exceeded_in.bin', vrf1, ipv4(gw, a, 1, icmp4(11, 0, 0, ipv4(a, b, 1, icmp4(8, 0, 0x4E410001, data))[:28])))
+    seed('4via6_hop_by_hop_out.bin', vrf1 | out, ipv6(a6, gw6, 17, udp6(a6, gw6, 40000, 53, data), ext=bytes([17, 0, 1, 4, 0, 0, 0, 0])))
+    frag = struct.pack('>BBHHHBBH4s4s', 0x45, 0, 28 + len(data), 1, 0x2000, 64, 17, 0, bytes(b), bytes(a))
+    seed('4via6_fragment_in.bin', vrf1, frag[:10] + struct.pack('>H', csum(frag)) + frag[12:] + udp(b, a, 53, 40000, data))
+    # 1:1 NAT of VRF 2, IPv4 and IPv6: the destination on the way in, the source on the way out, an ICMP error with
+    # the packet that it quotes
+    lan, lan_out, peer = [192, 168, 1, 7], [10, 99, 1, 7], [10, 3, 0, 1]
+    lan6, peer6 = bytes.fromhex('fd000007000000000000000000000007'), bytes.fromhex('fd000002000000010000000000000001')
+    seed('nat_tcp_in.bin', vrf2, ipv4(peer, lan_out, 6, tcp(peer, lan_out, 40001, 80, 0x01020304, 0, 0x02, b'')))
+    seed('nat_unreachable_out.bin', vrf2 | out, ipv4(lan, peer, 1, icmp4(3, 3, 0, ipv4(peer, lan, 17, udp(peer, lan, 40000, 53, data)))))
+    seed('nat_echo6_out.bin', vrf2 | out, ipv6(lan6, peer6, 58, icmp6(lan6, peer6, 128, 0, 0x4E410001, data)))
+    # The 4via6 of VRF 3 with a 1:1 NAT rule behind it, a VRF without rules, and a packet cut short
+    c7, c5 = (bytes.fromhex('fd0000030000ffff00000000') + bytes(x) for x in ([10, 4, 0, 7], b))
+    seed('combo_echo_out.bin', vrf3 | out, ipv6(c7, c5, 58, icmp6(c7, c5, 128, 0, 0x4E410001, data)))
+    seed('none_udp_in.bin', 0, ipv4(b, a, 17, udp(b, a, 53, 40000, data)))
+    seed('short_out.bin', vrf1 | out, ipv6(a6, b6, 58, icmp6(a6, b6, 128, 0, 0x4E410001, data))[:30])
+
+
+# ---------------------------------------------------------------------------
 # Switch module of the new core (src/Core/Switch.c SwitchInput): the first byte chooses the port of fuzz_switch.c (0 the
 # access port of VLAN 10, 1 the trunk port of VLANs 10, 20 and 30, 2 the trunk port of VLAN 20 with the native VLAN 10,
 # 3 a port without a member), the second moves its clock on by tens of ms (0xFF ages the MAC table after the frame, 0xFE
@@ -946,6 +1024,21 @@ def make_switch_seeds():
     write_seed('fuzz_switch', 'no_member.bin', switch_input(3, 0, eth(BROADCAST, MAC_A, 0x88B5, b'SW\x00\x04')))
 
 
+def make_module_seeds():
+    # src/fuzz/seeds/<target>.py, in the order of their names: each has make_seeds(h), h being this module. The directory
+    # is not on the module path under python -I, so the files are loaded by their path.
+    directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'seeds')
+    if not os.path.isdir(directory):
+        return
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith('.py') or name.startswith('_'):
+            continue
+        spec = importlib.util.spec_from_file_location('seeds_' + name[:-3], os.path.join(directory, name))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.make_seeds(sys.modules[__name__])
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     assert len(PEER_SIGNAL) == 99 and len(PEER_SIGNAL_ENVELOPE) == 180 and len(PEER_BIND_ENVELOPE) == 90
@@ -964,4 +1057,6 @@ if __name__ == '__main__':
     make_noise_seeds()
     make_transport_seeds()
     make_vxlan_seeds()
+    make_nat_seeds()
     make_switch_seeds()
+    make_module_seeds()

@@ -19,6 +19,8 @@
 // figure that ranz test throughput reports between two hosts, here between two harness nodes, whose hosts have no TCP/IP
 // stack. Print "SDNTRACE TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
 
@@ -79,9 +81,11 @@ typedef struct SDNTRACE_NODE
 	NODE *Node;
 	NODE_READER Reader;					// The test thread as a reader of the node's forwarding tables, online while it sends
 	HANDLE Arrived;						// The adapter took a packet (auto-reset)
-	SRWLOCK Lock;						// Packet and Size
+	SRWLOCK Lock;						// Packet, Size, MtuVrf and Mtu
 	UCHAR Packet[2048];					// The packet that the adapter took last
 	UINT Size;
+	UINT MtuVrf;						// The VRF whose MTU the adapter took last (SDN-20, #196) ...
+	UINT Mtu;							// ... and the MTU
 	volatile LONG Counting;				// A rate case runs: the adapter counts the packets it takes and keeps none
 	volatile LONG64 Counted;			// The packets that it counted
 } SDNTRACE_NODE;
@@ -401,6 +405,17 @@ static void SdnTraceAdapter(NODE *n, void *param, UINT vrf_id, const UCHAR *pack
 	ReleaseSRWLockExclusive(&t->Lock);
 
 	SetEvent(t->Arrived);
+}
+
+// The MTU of a VRF for the fake adapter of a host, as the controller set it in the VRF
+static void SdnTraceAdapterMtu(NODE *n, void *param, UINT vrf_id, UINT mtu)
+{
+	SDNTRACE_NODE *t = (SDNTRACE_NODE *)param;
+
+	AcquireSRWLockExclusive(&t->Lock);
+	t->MtuVrf = vrf_id;
+	t->Mtu = mtu;
+	ReleaseSRWLockExclusive(&t->Lock);
 }
 
 // A new empty data directory under the temp directory of the process, with a configuration store that runs no role
@@ -740,6 +755,7 @@ static void SdnTraceShowNodes(SDNTRACE_NODE *nodes)
 	}
 }
 
+RANZ_TEST("sdntrace", sdntrace_test, "Default VRF tracer: sdntrace <host:port> <key> [<file>]: two nodes join VRF default of a running ranz controller, get addresses from its pool and ping each other over the loopback transport, also once the controller stopped (.github/scripts/sdn-tracer.ps1).");
 void sdntrace_test(UINT num, char **arg)
 {
 	SDNTRACE_CTX *ctx = ZeroMalloc(sizeof(SDNTRACE_CTX));
@@ -814,6 +830,7 @@ void sdntrace_test(UINT num, char **arg)
 		c.Data = loopback;
 		c.Key = &t->Key;
 		c.Adapter = SdnTraceAdapter;
+		c.AdapterMtu = SdnTraceAdapterMtu;
 		c.AdapterParam = t;
 		Format(what, sizeof(what), "%s: its overlay runs, with its control stream to %s", t->Name, arg[0]);
 		SdnTraceCheck(ctx, NodeOverlayStart(t->Node, &c), what, "NodeOverlayStart failed");
@@ -827,6 +844,20 @@ void sdntrace_test(UINT num, char **arg)
 		SdnTraceCheck(ctx, joined && SdnTraceWaitConnected(nodes, true, SDNTRACE_ARRIVE), "both nodes applied their state from the controller, with an address, and their Noise session is up",
 			"not within %u ms", SDNTRACE_JOIN);
 		SdnTraceCheck(ctx, SdnTraceAddress(&nodes[0]) != SdnTraceAddress(&nodes[1]) && SdnTraceAddress(&nodes[0]) != 0, "the two addresses differ", "the same address");
+
+		// The MTU of VRF default from the controller, which the intent leaves at its default, on the adapter of each host
+		for (UINT i = 0;i < SDNTRACE_NUM_NODES && joined;i++)
+		{
+			SDNTRACE_NODE *t = &nodes[i];
+			char what[MAX_SIZE];
+
+			AcquireSRWLockExclusive(&t->Lock);
+			UINT mtu_vrf = t->MtuVrf, mtu = t->Mtu;
+			ReleaseSRWLockExclusive(&t->Lock);
+
+			Format(what, sizeof(what), "%s: the adapter of VRF default took the MTU %u that the controller gives a VRF by default", t->Name, (UINT)NODE_SHAPE_DEFAULT_MTU);
+			SdnTraceCheck(ctx, mtu_vrf == SdnTraceVrf(t) && mtu == NODE_SHAPE_DEFAULT_MTU, what, "VRF %u, MTU %u", mtu_vrf, mtu);
+		}
 
 		if (joined)
 		{
