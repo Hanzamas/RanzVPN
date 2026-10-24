@@ -93,4 +93,4 @@ if(RANZ_FUZZ)
 endif()
 
 # Every target exists now: the new core links no OpenSSL, no liboqs and nothing of the slim fork
-ranz_core_check_links(corecrypto corenoise corepeer coretransport corecontrol corevxlan coreswitch corefrontdoor coretest)
+ranz_core_check_links(corecrypto corenoise corepeer coretransport corecontrol corevxlan coreswitch corepolicy corefrontdoor coretest)

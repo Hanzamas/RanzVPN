@@ -1,0 +1,78 @@
+1 user_without_case_to_a_tag: pass pass-rule ann-ssh doc 1
+2 another_user_denied_by_a_group: drop drop-rule guests-no-dmz doc 1
+3 group_to_an_address_group: pass pass-rule staff-web doc 1
+4 first_port_of_a_range: pass pass-rule staff-web doc 1
+5 last_port_of_a_range: pass pass-rule staff-web doc 1
+6 port_after_a_range: drop drop-default default:deny doc 1
+7 deny_before_allow: drop drop-rule guests-no-dmz doc 1
+8 allow_outside_the_address_group: pass pass-rule guests-web doc 1
+9 tag_of_the_destination: pass pass-rule print doc 1
+10 vlan_of_the_rule: pass pass-rule vlan-20 doc 1
+11 another_vlan: drop drop-default default:deny doc 1
+12 no_vlan: drop drop-default default:deny doc 1
+13 both_from_its_from_end: pass pass-rule snmp doc 1
+14 both_from_its_to_end: pass pass-rule snmp doc 1
+15 same_priority_first_in_the_document: drop drop-rule tie-deny doc 1
+16 ipv6_prefix_of_an_address_group: pass pass-rule staff-web doc 1
+17 addresses_of_an_end_outside: pass pass-rule outside doc 1
+18 not_ip_by_a_rule_of_any_protocol: pass pass-rule server-any doc 1
+19 not_ip_without_a_rule: drop drop-default default:deny doc 1
+20 group_without_case: pass pass-rule admins doc 1
+21 rule_of_another_network: drop drop-default default:deny doc 1
+network corp: l2, default deny, rules 11, members 4, flows 11 of 65536, tracked 11, evicted 0, expired 0
+network ops: l3, default deny, rules 9, members 2, flows 1 of 65536, tracked 1, evicted 0, expired 0
+counter corp ann-ssh: priority 1, allow, flows 1, packets 1, bytes 54
+counter corp staff-web: priority 5, allow, flows 4, packets 4, bytes 236
+counter corp guests-no-dmz: priority 6, deny, flows 0, packets 2, bytes 108
+counter corp guests-web: priority 7, allow, flows 1, packets 1, bytes 54
+counter corp vlan-20: priority 8, allow, flows 1, packets 1, bytes 50
+counter corp print: priority 9, allow, flows 1, packets 1, bytes 54
+counter corp snmp: priority 12, allow, flows 2, packets 2, bytes 92
+counter corp server-any: priority 30, allow, flows 0, packets 1, bytes 20
+counter corp tie-deny: priority 40, deny, flows 0, packets 1, bytes 46
+counter corp tie-allow: priority 40, allow, flows 0, packets 0, bytes 0
+counter corp outside: priority 50, allow, flows 1, packets 1, bytes 54
+counter corp default:deny: priority -, deny, flows 0, packets 4, bytes 170
+counter ops ann-ssh: priority 1, allow, flows 0, packets 0, bytes 0
+counter ops staff-web: priority 5, allow, flows 0, packets 0, bytes 0
+counter ops guests-no-dmz: priority 6, deny, flows 0, packets 0, bytes 0
+counter ops guests-web: priority 7, allow, flows 0, packets 0, bytes 0
+counter ops admins: priority 10, allow, flows 1, packets 1, bytes 40
+counter ops snmp: priority 12, allow, flows 0, packets 0, bytes 0
+counter ops tie-deny: priority 40, deny, flows 0, packets 0, bytes 0
+counter ops tie-allow: priority 40, allow, flows 0, packets 0, bytes 0
+counter ops outside: priority 50, allow, flows 0, packets 0, bytes 0
+counter ops default:deny: priority -, deny, flows 0, packets 1, bytes 40
+engine: members 6, networks 2, document 1, frames 21
+frames pass-rule: 13
+frames drop-rule: 3
+frames drop-default: 5
+admin api:
+{"document":1,"networks":[{"name":"corp","mode":"l2","defaultAction":"deny","members":4,"flows":11,"maxFlows":65536,"tracked":11,"evicted":0,"expired":0,"rules":[{"name":"ann-ssh","priority":1,"action":"allow","flows":1,"packets":1,"bytes":54},{"name":"staff-web","priority":5,"action":"allow","flows":4,"packets":4,"bytes":236},{"name":"guests-no-dmz","priority":6,"action":"deny","flows":0,"packets":2,"bytes":108},{"name":"guests-web","priority":7,"action":"allow","flows":1,"packets":1,"bytes":54},{"name":"vlan-20","priority":8,"action":"allow","flows":1,"packets":1,"bytes":50},{"name":"print","priority":9,"action":"allow","flows":1,"packets":1,"bytes":54},{"name":"snmp","priority":12,"action":"allow","flows":2,"packets":2,"bytes":92},{"name":"server-any","priority":30,"action":"allow","flows":0,"packets":1,"bytes":20},{"name":"tie-deny","priority":40,"action":"deny","flows":0,"packets":1,"bytes":46},{"name":"tie-allow","priority":40,"action":"allow","flows":0,"packets":0,"bytes":0},{"name":"outside","priority":50,"action":"allow","flows":1,"packets":1,"bytes":54},{"name":"default:deny","default":true,"action":"deny","flows":0,"packets":4,"bytes":170}]},{"name":"ops","mode":"l3","defaultAction":"deny","members":2,"flows":1,"maxFlows":65536,"tracked":1,"evicted":0,"expired":0,"rules":[{"name":"ann-ssh","priority":1,"action":"allow","flows":0,"packets":0,"bytes":0},{"name":"staff-web","priority":5,"action":"allow","flows":0,"packets":0,"bytes":0},{"name":"guests-no-dmz","priority":6,"action":"deny","flows":0,"packets":0,"bytes":0},{"name":"guests-web","priority":7,"action":"allow","flows":0,"packets":0,"bytes":0},{"name":"admins","priority":10,"action":"allow","flows":1,"packets":1,"bytes":40},{"name":"snmp","priority":12,"action":"allow","flows":0,"packets":0,"bytes":0},{"name":"tie-deny","priority":40,"action":"deny","flows":0,"packets":0,"bytes":0},{"name":"tie-allow","priority":40,"action":"allow","flows":0,"packets":0,"bytes":0},{"name":"outside","priority":50,"action":"allow","flows":0,"packets":0,"bytes":0},{"name":"default:deny","default":true,"action":"deny","flows":0,"packets":1,"bytes":40}]}]}
+cli:
+network corp: l2, default action deny, 4 members, 11 of 65536 flows (tracked 11, evicted 0, expired 0)
+  priority  rule           action  flows     packets   bytes
+  1         ann-ssh        allow   1         1         54
+  5         staff-web      allow   4         4         236
+  6         guests-no-dmz  deny    0         2         108
+  7         guests-web     allow   1         1         54
+  8         vlan-20        allow   1         1         50
+  9         print          allow   1         1         54
+  12        snmp           allow   2         2         92
+  30        server-any     allow   0         1         20
+  40        tie-deny       deny    0         1         46
+  40        tie-allow      allow   0         0         0
+  50        outside        allow   1         1         54
+  -         default:deny   deny    0         4         170
+network ops: l3, default action deny, 2 members, 1 of 65536 flows (tracked 1, evicted 0, expired 0)
+  priority  rule           action  flows     packets   bytes
+  1         ann-ssh        allow   0         0         0
+  5         staff-web      allow   0         0         0
+  6         guests-no-dmz  deny    0         0         0
+  7         guests-web     allow   0         0         0
+  10        admins         allow   1         1         40
+  12        snmp           allow   0         0         0
+  40        tie-deny       deny    0         0         0
+  40        tie-allow      allow   0         0         0
+  50        outside        allow   0         0         0
+  -         default:deny   deny    0         1         40

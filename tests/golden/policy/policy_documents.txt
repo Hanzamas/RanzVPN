@@ -1,0 +1,60 @@
+1 minimal: accepted
+2 every_key: accepted
+3 empty: refused: the document: is empty, or longer than 1048576 bytes
+4 not_json: refused: the document: is not JSON
+5 not_an_object: refused: the document: is not a JSON object
+6 unknown_key: refused: the document: has the key "rulez", which is none of its keys
+7 key_twice: refused: networks[0]: has the key "name" twice
+8 more_keys_than_it_has: refused: networks[0]: has more keys than it may have
+9 networks_not_an_array: refused: networks: is not an array
+10 network_not_an_object: refused: networks[0]: is not an object
+11 network_without_name: refused: networks[0].name: is missing
+12 network_name_not_a_string: refused: networks[0].name: is not a string
+13 network_name_with_a_space: refused: networks[0].name: is not a name: 1 to 63 letters, digits, '.', '-' and '_'
+14 network_twice: refused: networks[1].name: is the name of a Network before it
+15 default_action: refused: networks[0]: has the key "defaultAction", which is none of its keys
+16 mode_unknown: refused: networks[0].mode: is none of the values it may have
+17 max_flows_zero: refused: networks[0].maxFlows: is not a whole number from 1 to 1048576
+18 max_flows_over_the_bound: refused: networks[0].maxFlows: is not a whole number from 1 to 1048576
+19 max_flows_not_whole: refused: networks[0].maxFlows: is not a whole number from 1 to 1048576
+20 timeouts_not_an_object: refused: networks[0].timeouts: is not an object
+21 timeout_unknown: refused: networks[0].timeouts: has the key "sctp", which is none of its keys
+22 timeout_over_a_week: refused: networks[0].timeouts.udp: is not a whole number from 1 to 604800
+23 address_group_without_name: refused: addressGroups[0].name: is missing
+24 address_group_twice: refused: addressGroups[1].name: is the name of an address group before it
+25 address_not_a_string: refused: addressGroups[0].addresses[0]: is not a string
+26 prefix_too_long: refused: addressGroups[0].addresses[0]: is not an IPv4 or IPv6 address, or one with /length
+27 prefix_without_length: refused: addressGroups[0].addresses[0]: is not an IPv4 or IPv6 address, or one with /length
+28 prefix_of_four_digits: refused: addressGroups[0].addresses[0]: is not an IPv4 or IPv6 address, or one with /length
+29 address_not_an_address: refused: addressGroups[0].addresses[0]: is not an IPv4 or IPv6 address, or one with /length
+30 rule_without_action: refused: rules[0].action: is missing
+31 action_unknown: refused: rules[0].action: is none of the values it may have
+32 rule_twice: refused: rules[1].name: is the name of a rule before it
+33 priority_negative: refused: rules[0].priority: is not a whole number from 0 to 1000000
+34 priority_over_the_bound: refused: rules[0].priority: is not a whole number from 0 to 1000000
+35 rule_of_an_unknown_network: refused: rules[0].networks[0]: is not the name of a Network of the document
+36 vlans_not_an_array: refused: rules[0].vlans: is not an array
+37 vlan_4095: refused: rules[0].vlans[0]: is not a whole number from 1 to 4094
+38 vlan_zero: refused: rules[0].vlans[0]: is not a whole number from 1 to 4094
+39 ports_without_protocol: refused: rules[0].ports: are for a rule of the protocol tcp or udp only
+40 ports_of_icmp: refused: rules[0].ports: are for a rule of the protocol tcp or udp only
+41 port_range_backwards: refused: rules[0].ports[0]: is not a port from 0 to 65535, or a range of them as "low-high"
+42 port_range_open: refused: rules[0].ports[0]: is not a port from 0 to 65535, or a range of them as "low-high"
+43 port_over_the_bound: refused: rules[0].ports[0]: is not a port from 0 to 65535, or a range of them as "low-high"
+44 port_of_six_digits: refused: rules[0].ports[0]: is not a port from 0 to 65535, or a range of them as "low-high"
+45 protocol_over_the_bound: refused: rules[0].protocol: is not a whole number from 0 to 255
+46 protocol_unknown: refused: rules[0].protocol: is none of the values it may have
+47 end_not_an_object: refused: rules[0].from: is not an object
+48 end_unknown_key: refused: rules[0].from: has the key "user", which is none of its keys
+49 identity_with_a_space: refused: rules[0].from.users[0]: is not the name of a user, a group or a tag
+50 address_group_unknown: refused: rules[0].to.addressGroups[0]: is not the name of an address group of the document
+51 direction_unknown: refused: rules[0].direction: is none of the values it may have
+52 network_name_of_63_bytes: accepted
+53 network_name_of_64_bytes: refused: networks[0].name: is not a name: 1 to 63 letters, digits, '.', '-' and '_'
+54 group_name_of_64_bytes: refused: rules[0].from.groups[0]: is not the name of a user, a group or a tag
+55 networks_over_the_bound: refused: networks: has more than 64 values
+56 values_over_the_bound: refused: rules[0].vlans: has more than 64 values
+57 longer_than_a_document: refused: the document: is empty, or longer than 1048576 bytes
+58 indexes_over_the_bound: refused: networks[0]: its rules and ports take more than 4194304 entries of the indexes of a table, or more memory than there is
+59 engine_with_every_network: accepted by PolicyParseRules, refused by PolicySetRules: networks[0]: the engine has 64 Networks, or no memory for one more
+document in force: 3
