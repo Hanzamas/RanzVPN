@@ -1,0 +1,1 @@
+{"networks": [{"name": "lab"}], "rules": [{"name": "r", "action": "allow", "protocol": "udp", "ports": ["90-80"]}]}

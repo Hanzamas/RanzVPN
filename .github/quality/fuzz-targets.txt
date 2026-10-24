@@ -41,12 +41,25 @@ src/Core  TransportNoiseReceive  fuzz_transport
 src/Core  TransportRead          exempt  hands the read of a stream to the Read procedure of its transport; parses nothing (TransportNoiseReceive reads the frames)
 # The TLS transport (CORE-S2-1 #69): the ServerHello among the first records of a TLS server
 src/Core  TransportTlsParseHello  fuzz_transport
+# The Trojan posture (CORE-S2-2 #70): the first bytes a server with a decoy reads after the TLS handshake, and the
+# server name in the ClientHello that a client splits; no parser word in their names, listed as parsers.
+# TransportDecoyProxy relays bytes between the prober and the backend and decodes none, so it is not a parser.
+src/Core  TransportDecoyIsHandshake   fuzz_transport
+src/Core  TransportDecoyAuthenticate  fuzz_transport
+src/Core  TransportTlsHelloName       fuzz_transport
 
 # The VXLAN module (SDN-62 #289): the datagrams of VTEPs
 src/Core  VxlanInput  fuzz_vxlan
 
 # The switch module (CORE-S4-1 #74): the frames that the members of a Network send
 src/Core  SwitchInput  fuzz_switch
+
+# The policy engine (CORE-S4-2 #75): the JSON documents of rules, and the frames that the members of a Network send.
+# PolicyNewDoc and PolicySetRules have no parser word in their names and are listed as the parsers they are.
+src/Core  PolicyParseRules  fuzz_policy
+src/Core  PolicyNewDoc      fuzz_policy  via PolicyParseRules
+src/Core  PolicySetRules    fuzz_policy
+src/Core  PolicyInput       fuzz_policy
 
 # The front door (SDN-29 #205): the first bytes that any peer sends to TCP 443, and the handoff message that an owner
 # process reads from its pipe. FrontDoorRoute has no parser word in its name and reads the same bytes.
@@ -121,3 +134,9 @@ controller/internal/throughput  Receiver.Input  FuzzRead
 
 # The pipe protocol of the BGP sidecar (CORE-S7-1 #82)
 ranz-bgp/internal/sidecar  Reader.Read  FuzzRead
+
+# The mimicry sidecar (CORE-P2-1 #85): the messages that the node writes into its control pipe, and the frames that the
+# other sidecar sends through the TLS session (frameConn reads them through frameReader)
+controller/internal/mimic  Reader.Read       FuzzRead
+controller/internal/mimic  frameReader.Read  FuzzFrame
+controller/internal/mimic  frameConn.Read    FuzzFrame  via frameReader
