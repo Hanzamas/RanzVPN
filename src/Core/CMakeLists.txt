@@ -165,6 +165,9 @@ add_library(corecontrol STATIC
   ControlInternal.h
   "${_ranz_controlpb}/ranz/control/v1/control.pb.c"
   "${_ranz_controlpb}/ranz/control/v1/control.pb.h"
+  # The policy of the VRFs in a desired state (SDN-8, #184)
+  ControlPolicy.c
+  ControlPolicy.h
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

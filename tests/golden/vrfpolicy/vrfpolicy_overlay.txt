@@ -1,0 +1,81 @@
+the rules of node-a in generation 1:
+{"networks":[{"name":"blue","mode":"l3","maxFlows":1024,"timeouts":{"tcpEstablished":10,"tcpTransitory":3,"udp":5,"icmp":2,"other":4}},{"name":"default","mode":"l3"},{"name":"red","mode":"l3","maxFlows":4}],"rules":[{"name":"no-8080","action":"deny","priority":50,"networks":["red"],"to":{"addresses":["10.0.0.2/32"]},"protocol":6,"ports":[8080]},{"name":"web-to-db","action":"allow","priority":100,"networks":["red"],"from":{"tags":["web"]},"to":{"tags":["db"]},"protocol":6,"ports":[5432,"8000-8100"]},{"name":"blue-web","action":"allow","priority":1000,"networks":["blue"],"from":{"tags":["web"]}},{"name":"db-syslog","action":"allow","priority":1000,"networks":["red"],"from":{"tags":["db"]},"to":{"addresses":["10.0.0.1/32"]},"protocol":17,"ports":[514]},{"name":"default-allow-all","action":"allow","priority":1000,"networks":["default"]}]}
+the rules of node-b in generation 1:
+{"networks":[{"name":"blue","mode":"l3","maxFlows":1024,"timeouts":{"tcpEstablished":10,"tcpTransitory":3,"udp":5,"icmp":2,"other":4}},{"name":"default","mode":"l3"},{"name":"red","mode":"l3","maxFlows":4}],"rules":[{"name":"no-8080","action":"deny","priority":50,"networks":["red"],"to":{"addresses":["10.0.0.2/32"]},"protocol":6,"ports":[8080]},{"name":"web-to-db","action":"allow","priority":100,"networks":["red"],"from":{"tags":["web"]},"to":{"tags":["db"]},"protocol":6,"ports":[5432,"8000-8100"]},{"name":"blue-web","action":"allow","priority":1000,"networks":["blue"],"from":{"tags":["web"]}},{"name":"db-syslog","action":"allow","priority":1000,"networks":["red"],"from":{"tags":["db"]},"to":{"addresses":["10.0.0.1/32"]},"protocol":17,"ports":[514]},{"name":"default-allow-all","action":"allow","priority":1000,"networks":["default"]}]}
+t+0.000 default node-a 100.64.0.1 > node-b 100.64.0.2 ICMP echo id 1: delivered to node-b
+t+0.000 default node-b 100.64.0.2 > node-a 100.64.0.1 ICMP echo reply id 1: delivered to node-a
+t+0.000 default node-b 100.64.0.2 > node-a 100.64.0.1 ICMP echo id 2: delivered to node-a
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 UDP 40000 > 53: dropped by node-a
+t+0.000 red node-b 10.0.0.2 > node-a 10.0.0.1 TCP SYN 40001 > 80: dropped by node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 40002 > 5432: delivered to node-b
+t+0.000 red node-b 10.0.0.2 > node-a 10.0.0.1 TCP SYN-ACK 5432 > 40002: delivered to node-a
+t+0.000 red node-b 10.0.0.2 > node-a 10.0.0.1 TCP SYN 40003 > 5432: dropped by node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 40004 > 22: dropped by node-a
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 40005 > 8080: dropped by node-a
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 40006 > 8081: delivered to node-b
+t+0.000 red node-b 10.0.0.2 > node-a 10.0.0.1 UDP 40007 > 514: delivered to node-a
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 UDP 40008 > 514: dropped by node-a
+generation 2: node-a has the rule a-only, which node-b does not have
+the rules of node-a in generation 2:
+{"networks":[{"name":"blue","mode":"l3","maxFlows":1024,"timeouts":{"tcpEstablished":10,"tcpTransitory":3,"udp":5,"icmp":2,"other":4}},{"name":"default","mode":"l3"},{"name":"red","mode":"l3","maxFlows":4}],"rules":[{"name":"no-8080","action":"deny","priority":50,"networks":["red"],"to":{"addresses":["10.0.0.2/32"]},"protocol":6,"ports":[8080]},{"name":"web-to-db","action":"allow","priority":100,"networks":["red"],"from":{"tags":["web"]},"to":{"tags":["db"]},"protocol":6,"ports":[5432,"8000-8100"]},{"name":"a-only","action":"allow","priority":200,"networks":["red"],"from":{"tags":["web"]},"to":{"tags":["db"]},"protocol":17,"ports":[9999]},{"name":"blue-web","action":"allow","priority":1000,"networks":["blue"],"from":{"tags":["web"]}},{"name":"db-syslog","action":"allow","priority":1000,"networks":["red"],"from":{"tags":["db"]},"to":{"addresses":["10.0.0.1/32"]},"protocol":17,"ports":[514]},{"name":"default-allow-all","action":"allow","priority":1000,"networks":["default"]}]}
+the rules of node-b in generation 2:
+{"networks":[{"name":"blue","mode":"l3","maxFlows":1024,"timeouts":{"tcpEstablished":10,"tcpTransitory":3,"udp":5,"icmp":2,"other":4}},{"name":"default","mode":"l3"},{"name":"red","mode":"l3","maxFlows":4}],"rules":[{"name":"no-8080","action":"deny","priority":50,"networks":["red"],"to":{"addresses":["10.0.0.2/32"]},"protocol":6,"ports":[8080]},{"name":"web-to-db","action":"allow","priority":100,"networks":["red"],"from":{"tags":["web"]},"to":{"tags":["db"]},"protocol":6,"ports":[5432,"8000-8100"]},{"name":"blue-web","action":"allow","priority":1000,"networks":["blue"],"from":{"tags":["web"]}},{"name":"db-syslog","action":"allow","priority":1000,"networks":["red"],"from":{"tags":["db"]},"to":{"addresses":["10.0.0.1/32"]},"protocol":17,"ports":[514]},{"name":"default-allow-all","action":"allow","priority":1000,"networks":["default"]}]}
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 UDP 40009 > 9999: dropped by node-b
+t+0.000 blue node-a 10.0.0.1 > node-b 10.0.0.2 UDP 40010 > 7000: delivered to node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 41000 > 5432: delivered to node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 41001 > 5432: delivered to node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 41002 > 5432: delivered to node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 41003 > 5432: delivered to node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 41004 > 5432: delivered to node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 41005 > 5432: delivered to node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 41006 > 5432: delivered to node-b
+t+0.000 red node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 41007 > 5432: delivered to node-b
+t+0.000 blue node-b 10.0.0.2 > node-a 10.0.0.1 UDP 7000 > 40010: delivered to node-a
+t+0.000 red node-b 10.0.0.2 > node-a 10.0.0.1 TCP SYN-ACK 5432 > 40002: dropped by node-b
+t+100.000 blue node-a 10.0.0.1 > node-b 10.0.0.2 UDP 42000 > 5000: delivered to node-b
+t+100.000 blue node-a 10.0.0.1 > node-b 10.0.0.2 ICMP echo id 300: delivered to node-b
+t+100.000 blue node-a 10.0.0.1 > node-b 10.0.0.2 GRE: delivered to node-b
+t+100.000 blue node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 42001 > 443: delivered to node-b
+t+102.500 blue node-b 10.0.0.2 > node-a 10.0.0.1 ICMP echo reply id 300: dropped by node-b
+t+102.500 blue node-b 10.0.0.2 > node-a 10.0.0.1 TCP SYN-ACK 443 > 42001: delivered to node-a
+t+102.500 blue node-b 10.0.0.2 > node-a 10.0.0.1 GRE: delivered to node-a
+t+102.500 blue node-b 10.0.0.2 > node-a 10.0.0.1 UDP 5000 > 42000: delivered to node-a
+t+107.000 blue node-b 10.0.0.2 > node-a 10.0.0.1 GRE: dropped by node-b
+t+107.000 blue node-b 10.0.0.2 > node-a 10.0.0.1 UDP 5000 > 42000: delivered to node-a
+t+107.000 blue node-b 10.0.0.2 > node-a 10.0.0.1 TCP ACK 443 > 42001: delivered to node-a
+t+113.000 blue node-b 10.0.0.2 > node-a 10.0.0.1 UDP 5000 > 42000: dropped by node-b
+t+113.000 blue node-b 10.0.0.2 > node-a 10.0.0.1 TCP ACK 443 > 42001: delivered to node-a
+t+124.000 blue node-b 10.0.0.2 > node-a 10.0.0.1 TCP ACK 443 > 42001: dropped by node-b
+t+124.000 blue node-a 10.0.0.1 > node-b 10.0.0.2 TCP SYN 42002 > 443: delivered to node-b
+t+127.500 blue node-b 10.0.0.2 > node-a 10.0.0.1 TCP SYN-ACK 443 > 42002: dropped by node-b
+the policy of node-a:
+network blue: l3, default action deny, 3 members, 6 of 1024 flows (tracked 6, evicted 0, expired 0)
+  priority  rule          action  flows     packets   bytes
+  1000      blue-web      allow   6         13        464
+  -         default:deny  deny    0         0         0
+network default: l3, default action deny, 3 members, 2 of 65536 flows (tracked 2, evicted 0, expired 0)
+  priority  rule               action  flows     packets   bytes
+  1000      default-allow-all  allow   2         3         108
+  -         default:deny       deny    0         0         0
+network red: l3, default action deny, 3 members, 4 of 4 flows (tracked 12, evicted 8, expired 0)
+  priority  rule          action  flows     packets   bytes
+  50        no-8080       deny    0         1         40
+  100       web-to-db     allow   10        11        440
+  200       a-only        allow   1         1         36
+  1000      db-syslog     allow   1         1         36
+  -         default:deny  deny    0         3         112
+the policy of node-b:
+network blue: l3, default action deny, 3 members, 1 of 1024 flows (tracked 6, evicted 0, expired 5)
+  priority  rule          action  flows     packets   bytes
+  1000      blue-web      allow   6         13        464
+  -         default:deny  deny    0         5         176
+network default: l3, default action deny, 3 members, 2 of 65536 flows (tracked 2, evicted 0, expired 0)
+  priority  rule               action  flows     packets   bytes
+  1000      default-allow-all  allow   2         3         108
+  -         default:deny       deny    0         0         0
+network red: l3, default action deny, 3 members, 4 of 4 flows (tracked 11, evicted 7, expired 0)
+  priority  rule          action  flows     packets   bytes
+  50        no-8080       deny    0         0         0
+  100       web-to-db     allow   10        11        440
+  1000      db-syslog     allow   1         1         36
+  -         default:deny  deny    0         4         156
