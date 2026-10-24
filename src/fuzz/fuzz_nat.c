@@ -7,6 +7,8 @@
 // them, so Mayaqua's leak check finds nothing left. The packet is copied into a buffer of its size exactly, so that
 // AddressSanitizer reports a read past it; a packet that NodeNatEnds takes goes into a record of its own size, which
 // the translation must not outgrow, and one of a peer into a buffer of its size and NODE_NAT_GROWTH.
+//
+// fuzz-max-len: 9217
 
 #include "fuzz_common.h"
 

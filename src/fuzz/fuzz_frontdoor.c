@@ -7,6 +7,9 @@
 //   (FrontDoorRoute), on the whole input as the bytes so far and as the last ones, and on its first half, as the front
 //   door peeks again while more come; the owner it gives must be one of the table;
 // - a handoff message (FrontDoorHandoffDecode), which must give a TCP socket of IPv4 or IPv6 when it gives one.
+//
+// fuzz-max-len: 4096
+// fuzz-libs: corefrontdoor
 
 #include "fuzz_common.h"
 

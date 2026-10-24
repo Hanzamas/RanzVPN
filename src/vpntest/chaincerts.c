@@ -11,6 +11,8 @@
 // - InvalidateChainCertCache() makes the next connection scan.
 // Prints "CHAINCERTS TEST OK" only when every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Cedar/Cedar.h"
 
 #include "Mayaqua/FileIO.h"
@@ -136,6 +138,7 @@ static UINT ChainCertsConnections(UINT *wrong_count, UINT expect)
 }
 
 // chaincerts: the chain_certs folder is scanned once for many connections and again when it changes
+RANZ_TEST("chaincerts", chaincerts_test, "chain_certs: the folder is scanned once for many connections, again after a certificate is added, removed or saved.");
 void chaincerts_test(UINT num, char **arg)
 {
 	CHAINCERTS_TEST t;

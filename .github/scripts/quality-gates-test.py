@@ -49,9 +49,12 @@ def write(root, path, text):
 CORE_C = ('// X.c\n#include "X.h"\n\nstatic bool XParseInner(const UCHAR *p) {\n\treturn p != NULL;\n}\n\n'
           'bool XDecode(const UCHAR *p, UINT size) {\n\treturn XParseInner(p);\n}\n\n'
           'void XFree(X *x,\n           UINT flags) {\n}\n')
-FUZZ_C = '// fuzz_x.c\n// libFuzzer target: XDecode\nint LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {\n\tXDecode(data, size);\n\treturn 0;\n}\n'
-CMAKE = 'set(RANZ_FUZZ_TARGETS\n  fuzz_x\n)\n'
-RUN_FUZZERS = "param(\n\t[string[]] $Targets = @('fuzz_x')\n)\n$MaxLen = @{ 'fuzz_x' = 4096 }\n"
+FUZZ_C = ('// fuzz_x.c\n// libFuzzer target: XDecode\n//\n// fuzz-max-len: 4096\n'
+          'int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {\n\tXDecode(data, size);\n\treturn 0;\n}\n')
+CMAKE = ('file(GLOB RANZ_FUZZ_SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS '
+         '"${CMAKE_CURRENT_SOURCE_DIR}/fuzz_*.c")\nlist(REMOVE_ITEM RANZ_FUZZ_SOURCES "fuzz_common.c")\n')
+RUN_FUZZERS = ("param(\n\t[string[]] $Targets = @()\n)\n"
+               "if ($Targets.Count -eq 0) { $Targets = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'fuzz_*.c') }\n")
 GO_SRC = ('package wire\n\n// Decode decodes.\nfunc Decode(b []byte) error { return nil }\n\n'
           'func (r *Reader) Read() error { return nil }\n\nfunc parseInner(b []byte) {}\n')
 GO_TEST = ('package wire\n\nimport "testing"\n\nfunc FuzzDecode(f *testing.F) {\n\tf.Fuzz(func(t *testing.T, b []byte) {\n'
@@ -118,10 +121,16 @@ def test_fuzz_registry():
           **{'.github/quality/fuzz-targets.txt': REGISTRY.replace('XDecode  fuzz_x', 'XDecode  fuzz_y')})
     check('a missing Go fuzz test', 1, 'no func FuzzOther',
           **{'.github/quality/fuzz-targets.txt': REGISTRY.replace('Decode       FuzzDecode', 'Decode       FuzzOther')})
-    check('a C target that run_fuzzers.ps1 does not run', 1, 'not in the default -Targets',
-          **{'src/fuzz/run_fuzzers.ps1': "param(\n\t[string[]] $Targets = @()\n)\n$MaxLen = @{ 'fuzz_x' = 4096 }\n"})
-    check('a C target that CMake does not build', 1, 'not in RANZ_FUZZ_TARGETS',
-          **{'src/fuzz/CMakeLists.txt': 'set(RANZ_FUZZ_TARGETS\n)\n'})
+    check('a run_fuzzers.ps1 with a list of targets', 1, 'has a default list of -Targets',
+          **{'src/fuzz/run_fuzzers.ps1': RUN_FUZZERS + "param(\n\t[string[]] $Targets = @('fuzz_x')\n)\n"})
+    check('a run_fuzzers.ps1 that does not find the targets', 1, "does not find the targets by -Filter 'fuzz_*.c'",
+          **{'src/fuzz/run_fuzzers.ps1': "param(\n\t[string[]] $Targets = @()\n)\n"})
+    check('a CMakeLists.txt that does not find the targets', 1, 'does not find the targets by file(GLOB',
+          **{'src/fuzz/CMakeLists.txt': 'set(RANZ_FUZZ_TARGETS\n  fuzz_x\n)\n'})
+    check('a C target without a max length', 1, 'src/fuzz/fuzz_x.c: no line "// fuzz-max-len: <bytes>"',
+          **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('// fuzz-max-len: 4096\n', '')})
+    check('a max length that is no number', 1, 'no line "// fuzz-max-len: <bytes>"',
+          **{'src/fuzz/fuzz_x.c': FUZZ_C.replace('4096', 'big')})
     check('a C target without seeds', 1, 'no seed corpus', **{'src/fuzz/corpus/fuzz_x/seed.bin': None,
                                                               'src/fuzz/corpus/fuzz_z/seed.bin': 'z'})
     check('a Go fuzz test that no line names', 1, 'FuzzLonely is listed for no function',
@@ -204,26 +213,63 @@ def test_coverage_floor():
 
 
 def test_bench_gate():
-    medians = ('# test medians\nflood_fps_8 1000 frames/s 25\nexpire_1024 10 us 50\n')
-    results = ('BENCH flood_fps_8 %s frames/s\nBENCH flood_fps_8_runs 1,2,3 frames/s\nBENCH expire_1024 %s us\n'
-               'BENCH pack_bytes 7758 bytes\nBENCH new_case 5 ops/s\n')
+    # A rate, a time of 200 us, a time of 2 us (under 50 us) and a time of 50 us (not under it)
+    medians = ('# test medians\nflood_fps_8 1000 frames/s 25\nexpire_1024 200 us 50\ntiny_expire 2 us 100\nmid_case 50 us 25\n')
+    template = ('BENCH flood_fps_8 %s frames/s\nBENCH flood_fps_8_runs 1,2,3 frames/s\nBENCH expire_1024 %s us\n'
+                'BENCH tiny_expire %s us\nBENCH mid_case %s us\nBENCH pack_bytes 7758 bytes\nBENCH new_case 5 ops/s\n')
 
-    def compare(name, code, texts, fps, us, medians_text=medians):
+    def bench(fps='1000', us='200', tiny='2', mid='50'):
+        # The text of one result file, one run of the benchmark
+        return template % (fps, us, tiny, mid)
+
+    def compare(name, code, texts, results, medians_text=medians, gate_args=(), wildcard=False):
+        # results: the text of one result file per run
         with tempfile.TemporaryDirectory() as root:
             write(root, 'medians.txt', medians_text)
-            write(root, 'bench.txt', results % (fps, us))
+            paths = []
+            for i, text in enumerate(results):
+                write(root, 'bench-run%d.txt' % i, text)
+                paths.append(os.path.join(root, 'bench-run%d.txt' % i))
+            if wildcard:
+                paths = [os.path.join(root, 'bench-run*.txt')]
             expect('bench-gate: ' + name, run('bench-gate.py', 'compare', '--medians', os.path.join(root, 'medians.txt'),
-                                              os.path.join(root, 'bench.txt')), code, *texts)
+                                              *gate_args, *paths), code, *texts)
 
-    compare('within the margins', 0, ['2 benchmark cases within their margin', 'Not compared, no recorded median', 'new_case'],
-            '850', '14')
-    compare('a rate slower than its margin', 1, ['flood_fps_8: 790 frames/s, 26.6% slower'], '790', '10')
-    compare('a time slower than its margin', 1, ['expire_1024: 16 us, 60.0% slower'], '1000', '16')
-    compare('faster is no regression', 0, ['within their margin'], '5000', '1')
-    compare('a recorded case that did not run', 1, ['gone_case: recorded'], '1000', '10',
+    compare('within the margins', 0, ['4 benchmark cases within their margin', 'Not compared, no recorded median', 'new_case'],
+            [bench(fps='850', us='220')])
+    compare('a rate slower than its margin', 1, ['flood_fps_8: 790 frames/s, 26.6% slower'], [bench(fps='790')])
+    compare('a time slower than its margin', 1, ['expire_1024: 320 us, 60.0% slower'], [bench(us='320')])
+    compare('faster is no regression', 0, ['within their margin'], [bench(fps='5000', us='1', tiny='1', mid='1')])
+    compare('a recorded case that did not run', 1, ['gone_case: recorded'], [bench()],
             medians_text=medians + 'gone_case 3 ops/s 25\n')
-    compare('a malformed median', 1, ['is not "<case> <median> <unit> <margin %>"'], '1000', '10',
+    compare('a malformed median', 1, ['is not "<case> <median> <unit> <margin %>"'], [bench()],
             medians_text=medians + 'broken 0 ops/s 25\n')
+
+    # The best of the runs is judged: a run that a busy machine slowed is noise, a slowdown that every run shows is real
+    compare('one slow run in three is noise', 0, ['within their margin of the recorded median (best of 3 runs)'],
+            [bench(fps='700', us='400'), bench(fps='990', us='210'), bench(fps='600', us='350')], gate_args=('--runs', '3'))
+    compare('the best run counts, not the first', 0, ['best of 3 runs'],
+            [bench(fps='100', us='900'), bench(fps='100', us='900'), bench(fps='1000', us='200')])
+    compare('a rate that every run shows slower fails', 1, ['flood_fps_8: 760 frames/s, 31.6% slower'],
+            [bench(fps='700'), bench(fps='760'), bench(fps='730')], gate_args=('--runs', '3'))
+    compare('a time that every run shows slower fails', 1, ['expire_1024: 330 us, 65.0% slower'],
+            [bench(us='400'), bench(us='330'), bench(us='350')], gate_args=('--runs', '3'))
+    compare('fewer result files than the runs asked for', 1, ['1 result files given, and the gate judges the best of 3 runs'],
+            [bench()], gate_args=('--runs', '3'))
+    compare('a wildcard names every result file', 0, ['best of 3 runs'],
+            [bench(fps='100'), bench(fps='990'), bench(fps='100')], wildcard=True)
+    compare('a wildcard that names no file', 1, ['no result file matches'], [], wildcard=True)
+
+    # A time case whose recorded median is under 50 us fails only when it is slower by more than 100 us
+    compare('a time under 50 us is not judged by its margin', 0, ['ok, under 50 us'], [bench(tiny='6')])
+    compare('a time under 50 us that is 100 us slower passes', 0, ['within their margin'], [bench(tiny='102')])
+    compare('a time under 50 us that is more than 100 us slower fails', 1,
+            ['tiny_expire: 105 us, 103 us slower than the recorded median 2 us'], [bench(tiny='105')])
+    compare('a time of 50 us keeps its margin', 1, ['mid_case: 70 us, 40.0% slower'], [bench(mid='70')])
+    compare('a time under 50 us in milliseconds, passing', 0, ['within their margin'], [bench() + 'BENCH tiny_ms 0.1 ms\n'],
+            medians_text=medians + 'tiny_ms 0.04 ms 50\n')
+    compare('a time under 50 us in milliseconds, failing', 1, ['tiny_ms: 0.2 ms, 160 us slower than the recorded median 0.04 ms'],
+            [bench() + 'BENCH tiny_ms 0.2 ms\n'], medians_text=medians + 'tiny_ms 0.04 ms 50\n')
 
     with tempfile.TemporaryDirectory() as root:
         runs = []

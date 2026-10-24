@@ -11,6 +11,8 @@
 // It also pins snprintf as a unit that includes Mayaqua.h sees it: the C99 snprintf of the CRT,
 // which ends a truncated result in NUL (FND-2, #105).
 
+#include "testlist.h"
+
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Mayaqua.h"
@@ -774,6 +776,7 @@ static void StrTestFast(STRTEST_CTX *ctx)
 }
 
 // str: truncation and return values of the string functions
+RANZ_TEST("str", str_test, "String functions: truncation and return values of copy, concatenate, format, search, tokens, compare.");
 void str_test(UINT num, char **arg)
 {
 	STRTEST_CTX ctx;

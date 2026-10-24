@@ -26,6 +26,8 @@
 // UniToInt case overran the stack of this process, so it runs last. Prints "CONSOLELINE TEST OK"
 // only when every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Cedar/Console.h"
 
 #include "Mayaqua/FileIO.h"
@@ -495,6 +497,7 @@ static void ConsoleLineParseCmd(CONSOLELINE_CTX *ctx)
 }
 
 // consoleline: console line readers and UniToInt on input longer than their buffers
+RANZ_TEST("consoleline", consoleline_test, "Console input: a prompt line longer than its buffer, Ctrl+D and Ctrl+Z, the /IN file reader, UniToInt on a long string.");
 void consoleline_test(UINT num, char **arg)
 {
 	CONSOLELINE_CTX ctx;

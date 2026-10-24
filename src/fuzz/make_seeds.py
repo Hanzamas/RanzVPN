@@ -2,13 +2,20 @@
 # Writes the seed corpus of the libFuzzer targets into src/fuzz/corpus/<target>/.
 # Python standard library only; deterministic (same bytes on every run).
 #
+# The seeds of the targets up to fuzz_switch are made by the make_<name>_seeds() functions below. A new target has its
+# own file src/fuzz/seeds/<target>.py, which defines make_seeds(h) and is run after them, so that no function and no line
+# of the main block here is added: h is this module, with write_seed(target, name, data) and the helpers (ipv4, udp,
+# eth, der, ...). Files whose name starts with an underscore are not run.
+#
 # Usage: python -I src/fuzz/make_seeds.py
 
 import base64
 import hashlib
+import importlib.util
 import os
 import random
 import struct
+import sys
 
 CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'corpus')
 
@@ -999,43 +1006,19 @@ def make_switch_seeds():
     write_seed('fuzz_switch', 'no_member.bin', switch_input(3, 0, eth(BROADCAST, MAC_A, 0x88B5, b'SW\x00\x04')))
 
 
-# ---------------------------------------------------------------------------
-# Front door of the new core (src/Core/FrontDoorHello.c FrontDoorParseHello, FrontDoorRoute, FrontDoorHandoffDecode): the
-# first bytes of a connection to TCP 443, a ClientHello in one record or in many, a signature, a plain HTTP request and
-# the start of a TLS record; and the handoff message that an owner process reads, FRONT_DOOR_HANDOFF: the magic "RFD1",
-# its size and a WSAPROTOCOL_INFOW of 628 bytes, whose address family, socket type and protocol are at 76, 88 and 92.
-# fuzz_frontdoor.c routes by the owner table of coretest frontdoor.
-# ---------------------------------------------------------------------------
-def alpn_extension(protocols):
-    names = b''.join(bytes([len(p)]) + p for p in protocols)
-    data = struct.pack('>H', len(names)) + names
-    return struct.pack('>HH', 16, len(data)) + data
-
-
-def tls_records(hello, fragment):
-    # A ClientHello made by client_hello, its handshake message cut into records of fragment bytes
-    message = hello[5:]
-    return b''.join(b'\x16\x03\x01' + struct.pack('>H', len(message[i:i + fragment])) + message[i:i + fragment]
-                    for i in range(0, len(message), fragment))
-
-
-def make_frontdoor_seeds():
-    versions = struct.pack('>HHB', 43, 3, 2) + b'\x03\x04'
-    controller = client_hello(versions + sni_extension(b'node.frontdoor.test') + alpn_extension([b'h2', b'http/1.1']))
-    write_seed('fuzz_frontdoor', 'hello_alpn_h2.bin', controller)
-    write_seed('fuzz_frontdoor', 'hello_records_of_7.bin', tls_records(controller, 7))
-    write_seed('fuzz_frontdoor', 'hello_web_ui.bin', client_hello(versions + sni_extension(b'eu.admin.frontdoor.test')))
-    write_seed('fuzz_frontdoor', 'hello_node.bin', client_hello(versions))
-    write_seed('fuzz_frontdoor', 'hello_absent_owner.bin', client_hello(versions + alpn_extension([b'ranz-absent/1'])))
-    write_seed('fuzz_frontdoor', 'hello_cut.bin', controller[:40])
-    write_seed('fuzz_frontdoor', 'signature.txt', b'RANZ-FRONT-DOOR-TEST and then the owner\'s own protocol')
-    write_seed('fuzz_frontdoor', 'http.txt', b'GET / HTTP/1.1\r\nHost: admin.frontdoor.test\r\n\r\n')
-    write_seed('fuzz_frontdoor', 'record_start.bin', b'\x16\x03\x01')
-    info = bytearray(628)
-    info[76:80] = struct.pack('<i', 2)
-    info[88:92] = struct.pack('<i', 1)
-    info[92:96] = struct.pack('<i', 6)
-    write_seed('fuzz_frontdoor', 'handoff.bin', struct.pack('<II', 0x31444652, 8 + len(info)) + bytes(info))
+def make_module_seeds():
+    # src/fuzz/seeds/<target>.py, in the order of their names: each has make_seeds(h), h being this module. The directory
+    # is not on the module path under python -I, so the files are loaded by their path.
+    directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'seeds')
+    if not os.path.isdir(directory):
+        return
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith('.py') or name.startswith('_'):
+            continue
+        spec = importlib.util.spec_from_file_location('seeds_' + name[:-3], os.path.join(directory, name))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.make_seeds(sys.modules[__name__])
 
 
 if __name__ == '__main__':
@@ -1058,4 +1041,4 @@ if __name__ == '__main__':
     make_vxlan_seeds()
     make_nat_seeds()
     make_switch_seeds()
-    make_frontdoor_seeds()
+    make_module_seeds()
