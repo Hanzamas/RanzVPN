@@ -555,7 +555,7 @@ try {
 	#    download and runs no PowerShell
 	$goodExe = New-OneFileFolder $ranzFile
 	$before = (Get-NodeCapsLines).Count
-	Block-Network $goodExe
+	Soft 'Windows Firewall blocks the outbound network for ranz.exe' { Block-Network $goodExe }
 	Start-ProcessWatch
 	try {
 		$r = Invoke-Ranz $goodExe @('install')
