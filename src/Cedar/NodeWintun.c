@@ -318,8 +318,12 @@ bool NodeWintunSend(NODE_WINTUN *w, const UCHAR *packet, UINT size) {
 	}
 
 	Copy(p, packet, size);
-	node_wintun.SendPacket(w->Session, p);
+
+	// Counted before WintunSendPacket, which cannot fail for a packet that was allocated: the host takes the packet from the
+	// ring at once and may answer it before this thread runs again, and whoever reads the counters on that answer finds it
+	// counted (NodeWintunDrain counts FromHost before it hands a packet on, for the same reason)
 	InterlockedIncrement64(&w->ToHost);
+	node_wintun.SendPacket(w->Session, p);
 
 	return true;
 }
