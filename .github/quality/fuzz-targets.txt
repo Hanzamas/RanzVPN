@@ -82,6 +82,8 @@ controller/internal/intent  ParseULA       FuzzParseValues
 controller/internal/intent  ParsePool      FuzzParseValues
 controller/internal/intent  ParseKey       FuzzParseValues
 controller/internal/intent  ParseRelay     FuzzParseValues
+# The route targets of a VRF (SDN-7 #183)
+controller/internal/intent  ParseRouteTarget  FuzzParseValues
 controller/internal/controller  Controller.Import  exempt  takes a document that ParseDocument parsed and intent.Replace checked, which FuzzParseDocument drives; it stores the result as a revision
 controller/internal/api         Client.Import      exempt  the API client of `ranz import`: it sends a parsed document to the controller and reads the controller's own answer
 

@@ -97,6 +97,13 @@ type VRF struct {
 	// DNS turns on overlay DNS in the VRF (ADR-0028): a zone of its own, which SDN-11 (#187)
 	// serves on its members. The first start sets it for VRF default (ADR-0034).
 	DNS bool `json:"dns,omitempty"`
+	// ImportTargets are the route targets that the VRF imports: the routes of every other VRF
+	// that exports one of them leak into it (ADR-0025 decision 7, leak.go). Left out, it imports
+	// none.
+	ImportTargets []string `json:"importTargets,omitempty"`
+	// ExportTargets are the route targets that the VRF exports: its routes leak into every other
+	// VRF that imports one of them. Left out, it exports none.
+	ExportTargets []string `json:"exportTargets,omitempty"`
 }
 
 // Network belongs to one VRF. Its pools are the controller's to allocate from (ADR-0028,
@@ -186,6 +193,7 @@ func (in Intent) Clone() Intent {
 	if out.VRFs == nil {
 		out.VRFs = map[string]VRF{}
 	}
+	cloneRouteTargets(out.VRFs)
 	if out.Policies == nil {
 		out.Policies = map[string]Policy{}
 	}
@@ -564,6 +572,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 		in.Nodes[name] = n
 	}
 	in.completeNAT()
+	in.completeLeaks()
 	return problems
 }
 
@@ -676,6 +685,7 @@ func (in Intent) validate() []error {
 		}
 	}
 	problems = append(problems, in.validateNAT()...)
+	problems = append(problems, in.validateLeaks()...)
 	return append(problems, in.validateIPAM()...)
 }
 
