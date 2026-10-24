@@ -414,7 +414,7 @@ typedef struct TRANSPORT_TLS_CONFIG {
 	bool BreakBinding;                           // A client that changes the binding it computes: for the mismatch test
 	UINT Queue;                                  // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it (CODEL)
 	TRANSPORT_PATH Path;                         // A client: the outbound path it dials along, its proxy and its underlay
-	char Decoy[TRANSPORT_ADDRESS_SIZE];         // The own-decoy backend a prober is reverse-proxied to ("127.0.0.1:port"); empty for none (server)
+	char Decoy[TRANSPORT_ADDRESS_SIZE];          // The own-decoy backend a prober is reverse-proxied to ("127.0.0.1:port"); empty for none (server)
 	const UCHAR *DecoyKey;                       // With a decoy: the static key of the sessions over the server, a scalar ...
 	CRYPTO_IDENTITY *DecoyIdentity;              // ... or the node identity in the KSP, exactly one, kept by the owner while the transport lives
 	bool SplitClientHello;                       // The client splits its ClientHello into two TCP segments (client)
