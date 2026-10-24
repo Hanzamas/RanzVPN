@@ -25,6 +25,10 @@ import (
 // configuration, and the adapters rebind under it, which takes a while on a busy machine.
 const toolWait = 3 * time.Minute
 
+// driverWait is how long removeDriver waits for the service of a driver to go once the driver is
+// taken out.
+const driverWait = 20 * time.Second
+
 // installRecordKey is the registry key of the install record (HKEY_LOCAL_MACHINE): one string
 // value for each driver that ranz install put on the machine, which holds the name that Windows
 // published its INF under (oemNN.inf). ranz uninstall removes the drivers that the record names and
@@ -171,46 +175,58 @@ func forgetDriver(record string) {
 }
 
 // installDrivers puts the drivers that this build carries on the machine, one after the other, and
-// reports each step to w. The Node does not need a driver to run: one that fails to install is taken
-// out again and reported as a warning, and the Node then reports its Capability as missing and falls
-// back to the next L2 backend (ADR-0002 amendment of 2026-10-21). A machine that has a driver
-// already keeps it, and ranz uninstall leaves it.
-func installDrivers(w io.Writer, m *mgr.Mgr, dir string, opts Options) {
+// reports each step to w. It returns how many it installed. The Node does not need a driver to run:
+// one that fails to install is taken out again and reported as a warning, and the Node then reports
+// its Capability as missing and falls back to the next L2 backend (ADR-0002 amendment of
+// 2026-10-21). A machine that has a driver already keeps it, and ranz uninstall leaves it unless
+// an earlier ranz install put it there.
+func installDrivers(w io.Writer, m *mgr.Mgr, dir string, opts Options) int {
 	if len(payload.SeLowPackage) == 0 && len(payload.XdpPackage) == 0 {
 		fmt.Fprintln(w, "install: this build carries Wintun only (arm64 has no SeLow driver and no XDP runtime): the Node reports neither of them, and an L2 Network is refused for it (ADR-0022)")
-		return
+		return 0
 	}
 	if opts.NoXDP {
 		fmt.Fprintln(w, "install: the XDP runtime is left out (--no-xdp): the Node falls back to SeLow")
 	}
+	installed := 0
 	for _, d := range selectDrivers(payload.SeLowPackage, payload.XdpPackage, opts.NoXDP) {
-		if err := installDriver(w, m, dir, d); err != nil {
+		done, err := installDriver(w, m, dir, d)
+		if err != nil {
 			fmt.Fprintf(w, "install: warning: %s was not installed: %v\n", d.label, err)
 		}
+		if done {
+			installed++
+		}
 	}
+	return installed
 }
 
 // installDriver puts the driver d on the machine: its package is written under the Ranz folder,
 // published to the driver store, its network component is installed, its driver started, and the
-// install recorded. A step that fails takes out what the steps before it did.
-func installDriver(w io.Writer, m *mgr.Mgr, dir string, d driver) error {
+// install recorded. A step that fails takes out what the steps before it did. It reports whether
+// it installed the driver: a driver that is there already is left as it is.
+func installDriver(w io.Writer, m *mgr.Mgr, dir string, d driver) (bool, error) {
 	exists, err := serviceExists(m, d.service)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if exists {
-		fmt.Fprintf(w, "install: %s is on this machine already (the %s service): ranz leaves it as it is, and uninstall leaves it too\n", d.label, d.service)
-		return nil
+		if _, recorded := recordedDriver(d.record); recorded {
+			fmt.Fprintf(w, "install: %s is installed already, by an earlier ranz install: it stays as it is\n", d.label)
+		} else {
+			fmt.Fprintf(w, "install: %s is on this machine already (the %s service), and ranz install did not put it there: ranz leaves it as it is, and uninstall leaves it too\n", d.label, d.service)
+		}
+		return false, nil
 	}
 
 	pkg := filepath.Join(dir, driversFolder, d.record)
 	if err := os.MkdirAll(pkg, 0o755); err != nil {
-		return fmt.Errorf("the folder %s: %w", pkg, err)
+		return false, fmt.Errorf("the folder %s: %w", pkg, err)
 	}
 	for _, p := range d.files {
 		if err := payload.Install(pkg, p); err != nil {
 			_ = os.RemoveAll(pkg)
-			return err
+			return false, err
 		}
 	}
 	fmt.Fprintf(w, "install: the files of %s are written to %s, each after its hash checked, and its Authenticode signature where it carries one\n", d.label, pkg)
@@ -218,16 +234,16 @@ func installDriver(w io.Writer, m *mgr.Mgr, dir string, d driver) error {
 	published, err := publishINF(filepath.Join(pkg, d.inf))
 	if err != nil {
 		_ = os.RemoveAll(pkg)
-		return err
+		return false, err
 	}
 	if err := installComponent(m, pkg, d, published); err != nil {
 		if undoErr := removeDriver(w, m, dir, d, published, "install"); undoErr != nil {
 			fmt.Fprintf(w, "install: taking %s out again: %v\n", d.label, undoErr)
 		}
-		return err
+		return false, err
 	}
 	fmt.Fprintf(w, "install: %s is installed and runs (the INF is published as %s, the service is %s)\n", d.label, published, d.service)
-	return nil
+	return true, nil
 }
 
 // installComponent installs the network component of d from the package that is published, as
@@ -310,15 +326,30 @@ func removeDriver(w io.Writer, m *mgr.Mgr, dir string, d driver, published, verb
 		}
 	}
 
-	exists, err := serviceExists(m, d.service)
-	if err != nil {
+	if err := waitServiceGone(m, d.service, driverWait); err != nil {
 		return err
-	}
-	if exists {
-		return fmt.Errorf("the %s service is still registered", d.service)
 	}
 	forgetDriver(d.record)
 	return nil
+}
+
+// waitServiceGone waits up to wait for the service name to leave the Service Control Manager. A
+// driver that was running unloads first, and its service goes with it.
+func waitServiceGone(m *mgr.Mgr, name string, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
+	for {
+		exists, err := serviceExists(m, name)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the %s service is still registered %s after the driver was taken out", name, wait)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 // removeLeftover deletes the file path that the INF of a driver copied into System32. A file that

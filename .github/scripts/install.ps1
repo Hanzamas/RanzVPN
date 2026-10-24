@@ -1,8 +1,14 @@
 param(
-	[string] $Ranz,        # The signed ranz.exe of this architecture, with the signed ranz-node.exe as its Payload
-	[string] $Tampered,    # The same ranz.exe, signed too, with one byte of its Payload changed
-	[string] $NodeSha256,  # The SHA-256 of that signed ranz-node.exe
-	[string] $MemberSha256 # The SHA-256 of the signed rqlited.exe that ranz.exe carries as the rqlite member of a Controller (ONE-4, #313)
+	[string] $Ranz,         # The signed ranz.exe of this architecture, with the signed ranz-node.exe as its Payload
+	[string] $Tampered,     # The same ranz.exe, signed too, with one byte of its Payload changed
+	[string] $XdpFail,      # x64 only: the same ranz.exe, signed too, with one byte of the XDP driver of its Payload changed (ONE-3, #312)
+	[ValidateSet('x64', 'arm64')]
+	[string] $Architecture, # The architecture of this runner
+	[string] $NodeSha256,   # The SHA-256 of that signed ranz-node.exe
+	[string] $MemberSha256, # The SHA-256 of the signed rqlited.exe that ranz.exe carries as the rqlite member of a Controller (ONE-4, #313)
+	[string] $WintunSha256, # The SHA-256 of the wintun.dll of this architecture that ranz.exe carries, as WireGuard LLC signed it (ONE-3, #312)
+	[string] $XdpSysSha256, # x64 only: the SHA-256 of the xdp.sys of the XDP runtime that ranz.exe carries, as Microsoft signed it (ONE-3, #312)
+	[string] $XdpApiSha256  # ... and of its xdpapi.dll
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,11 +40,38 @@ $PSNativeCommandUseErrorActionPreference = $false
 #   the Node identity key), byte for byte unchanged, and logs to the node log that it kept;
 # - ranz uninstall, run from the ranz.exe in the Ranz VPN folder, removes the services and the files too:
 #   the running ranz.exe goes at the next restart.
+#
+# ONE-3 (#312) adds the drivers that the same ranz.exe carries and installs, read from outside as well:
+# - ranz install writes wintun.dll of this architecture as WireGuard LLC signed it (its SHA-256, a valid signature
+#   of that signer) and the NOTICE beside it, whose words are those of ranz notice. It runs on a runner whose
+#   Windows Firewall blocks the outbound network for that ranz.exe, and the processes that it starts are recorded:
+#   no PowerShell and no download is involved, which is what a ranz.exe alone in its folder can do;
+# - on x64 it also installs SeLow and the XDP runtime: each package under drivers\ in the Ranz VPN folder, each file
+#   as it is (the SeLow package of the repository, the XDP files by their SHA-256), the service of each running, the
+#   files that the INF of each copies into System32, and an install record. The XDP files keep the production
+#   signature of Microsoft: signtool verify /kp passes on xdp.sys, in System32 and in the package;
+# - the Node reports what is there as its Capabilities, in the line "Capabilities:" of its node log (the Hello of its
+#   control stream carries the same, which the default VRF tracer of windows.yml reads from the API): x64 with SeLow
+#   and XDP after ranz install, arm64 with neither;
+# - a ranz.exe whose xdp.sys has one byte changed installs the Node and SeLow all the same, warns that the XDP runtime
+#   was not installed, leaves no trace of it, and the Node reports XDP as absent and SeLow as the fallback; so does
+#   ranz install --no-xdp, which leaves the XDP runtime out on purpose, and a later ranz install adds it;
+# - on arm64 only Wintun is installed: no SeLow and no XDP service, no drivers folder, and the Node reports neither;
+# - ranz uninstall removes the drivers that ranz install put on the machine, and leaves a SeLow that was there before
+#   (this job installs it by hand from the package of the repository first).
 
 $ranzFile = (Resolve-Path -LiteralPath $Ranz).Path
 $tamperedFile = (Resolve-Path -LiteralPath $Tampered).Path
+if (-not $Architecture) { throw '-Architecture names no architecture' }
+$x64 = ($Architecture -eq 'x64')
 if ($NodeSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-NodeSha256 is not a SHA-256: '$NodeSha256'" }
 if ($MemberSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-MemberSha256 is not a SHA-256: '$MemberSha256'" }
+if ($WintunSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-WintunSha256 is not a SHA-256: '$WintunSha256'" }
+if ($x64) {
+	if ($XdpSysSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-XdpSysSha256 is not a SHA-256: '$XdpSysSha256'" }
+	if ($XdpApiSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-XdpApiSha256 is not a SHA-256: '$XdpApiSha256'" }
+	$xdpFailFile = (Resolve-Path -LiteralPath $XdpFail).Path
+}
 
 $nodeService = 'ranzvpnserver'
 $controllerService = 'ranz-controller'
@@ -55,6 +88,19 @@ $logDir = Join-Path $dataDir 'node_log'
 $controllerData = Join-Path $env:ProgramData 'Ranz\controller'
 # Where the Controller writes its rqlite member: payloadDir of controller/ and the name of the Payload
 $memberFile = Join-Path $controllerData 'payload\rqlited.exe'
+
+# The drivers (ONE-3, #312). The packages go under drivers\ in the Ranz VPN folder, a folder for each; the INF of each
+# copies its files into System32 and registers its service; the install record, one value for each driver that ranz
+# install put on the machine, is the key of controller/internal/install/drivers_windows.go
+$driversDir = Join-Path $installDir 'drivers'
+$system32 = Join-Path $env:SystemRoot 'System32'
+$recordKey = 'HKLM:\SOFTWARE\Hanzcodes\Ranz VPN\Drivers'
+$selowSys = Join-Path $system32 'drivers\SeLow_x64.sys'
+$xdpSys = Join-Path $system32 'drivers\xdp.sys'
+$xdpApi = Join-Path $system32 'xdpapi.dll'
+# The SeLow package that ranz carries, as the repository holds it: the job runs in a checkout
+$selowPackage = Join-Path (Get-Location).Path 'src\bin\hamcore\DriverPackages\SeLow_Win10\x64'
+$firewallRule = 'ranz-install-no-network'
 
 # A clean folder that holds only the ranz.exe of $exe, which the job then runs from: nowhere near the
 # folders of the artifacts, so that it cannot find a second file next to it
@@ -79,7 +125,210 @@ function Invoke-Ranz([string] $exe, [string[]] $argv) {
 	return [pscustomobject]@{ Code = $code; Out = $out }
 }
 
+# The state of a driver or a service as sc.exe names it (RUNNING, STOPPED), $null when it is not registered
+function Get-DriverState([string] $name) {
+	$out = (& sc.exe query $name 2>&1 | Out-String)
+	$global:LASTEXITCODE = 0
+	if ($out -match 'STATE\s*:\s*\d+\s+(\w+)') { return $Matches[1] }
+	return $null
+}
+
+# Neither SeLow nor the XDP runtime is on the machine: no service, no install record, no file of the XDP runtime
+function Assert-NoDrivers([string] $when) {
+	foreach ($name in @('SeLow', 'xdp')) {
+		$state = Get-DriverState $name
+		if ($state) { throw "$when the service $name is registered ($state)" }
+	}
+	foreach ($file in @($xdpSys, $xdpApi)) {
+		if (Test-Path -LiteralPath $file) { throw "$when $file is there" }
+	}
+	if (Test-Path -LiteralPath $recordKey) { throw "$when the install record $recordKey is there" }
+	if (Test-Path -LiteralPath $driversDir) { throw "$when $driversDir is there" }
+}
+
+# The lines "Capabilities: ..." of the node log of the data directory, one for each time that a Node started
+function Get-NodeCapsLines {
+	return @(Get-ChildItem -LiteralPath $logDir -File -Recurse -ErrorAction SilentlyContinue | Sort-Object Name |
+		Select-String -Pattern 'Capabilities: architecture \S+, SeLow (yes|no), XDP (yes|no)' | ForEach-Object { $_.Line })
+}
+
+# The Capabilities that the Node reported to its node log in a line after the first $before ones: the node log is
+# written a moment after the Node starts
+function Wait-NodeCaps([int] $before, [int] $seconds = 60) {
+	$end = (Get-Date).AddSeconds($seconds)
+	while ($true) {
+		$lines = Get-NodeCapsLines
+		if ($lines.Count -gt $before -and $lines[-1] -match 'Capabilities: architecture (\S+), SeLow (yes|no), XDP (yes|no)') {
+			return [pscustomobject]@{ Architecture = $Matches[1]; SeLow = ($Matches[2] -eq 'yes'); Xdp = ($Matches[3] -eq 'yes') }
+		}
+		if ((Get-Date) -ge $end) { throw "the Node wrote no new line of Capabilities to its node log within $seconds s ($($lines.Count) lines, $before before)" }
+		Start-Sleep -Milliseconds 500
+	}
+}
+
+# The Node that started after the first $before lines of Capabilities reports this architecture, SeLow and XDP
+function Assert-NodeCaps([int] $before, [bool] $selow, [bool] $xdp) {
+	$caps = Wait-NodeCaps $before
+	if ($caps.Architecture -ne $Architecture) { throw "the Node reports the architecture $($caps.Architecture) on a $Architecture runner" }
+	if ($caps.SeLow -ne $selow) { throw "the Node reports SeLow $($caps.SeLow), not $selow" }
+	if ($caps.Xdp -ne $xdp) { throw "the Node reports XDP $($caps.Xdp), not $xdp" }
+	Write-Host "the Node reports its Capabilities: architecture $($caps.Architecture), SeLow $($caps.SeLow), XDP $($caps.Xdp)"
+}
+
+# Windows Firewall blocks the outbound network of the program $program: what ranz install needs is in the file
+function Block-Network([string] $program) {
+	New-NetFirewallRule -DisplayName $firewallRule -Direction Outbound -Program $program -Action Block -Profile Any | Out-Null
+	Write-Host "the outbound network is blocked for $program"
+}
+
+function Unblock-Network {
+	Remove-NetFirewallRule -DisplayName $firewallRule -ErrorAction SilentlyContinue
+}
+
+# Record the processes that start, with the process that started each (a Windows Management Instrumentation event of
+# Windows), until Stop-ProcessWatch gives them
+function Start-ProcessWatch {
+	try {
+		Register-CimIndicationEvent -Query 'SELECT * FROM Win32_ProcessStartTrace' -SourceIdentifier 'ranz-processes' | Out-Null
+	} catch {
+		Write-Host "the process watch could not start: $($_.Exception.Message)"
+	}
+}
+
+function Stop-ProcessWatch {
+	# An event comes to the queue a moment after the process started
+	Start-Sleep -Seconds 3
+	$started = @(Get-Event -SourceIdentifier 'ranz-processes' -ErrorAction SilentlyContinue | ForEach-Object { $_.SourceEventArgs.NewEvent })
+	Unregister-Event -SourceIdentifier 'ranz-processes' -ErrorAction SilentlyContinue
+	Get-Event -SourceIdentifier 'ranz-processes' -ErrorAction SilentlyContinue | Remove-Event -ErrorAction SilentlyContinue
+	return $started
+}
+
+# What ranz.exe started, from the processes of Start-ProcessWatch (ranz.exe of this script is the child of this
+# process): none of it is PowerShell
+function Assert-NoPowerShell([object[]] $started) {
+	$ranzIds = @($started | Where-Object { $_.ProcessName -eq 'ranz.exe' -and $_.ParentProcessID -eq $PID } | ForEach-Object { $_.ProcessID })
+	if ($ranzIds.Count -eq 0) {
+		Write-Host "the process watch saw $($started.Count) processes start and no ranz.exe of this job among them: what it started is not read"
+		return
+	}
+	$children = @($started | Where-Object { $ranzIds -contains $_.ParentProcessID })
+	Write-Host "ranz.exe started $(@($children | ForEach-Object { $_.ProcessName }) -join ', ')"
+	$shells = @($children | Where-Object { $_.ProcessName -match '^(powershell|pwsh)(\.exe)?$' })
+	if ($shells.Count -gt 0) { throw "ranz.exe started PowerShell: $(@($shells | ForEach-Object { $_.ProcessName }) -join ', ')" }
+}
+
+# signtool.exe of the Windows SDK: the highest version under the Windows Kits, x64 build
+function Get-SignTool {
+	$roots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "${env:ProgramFiles}\Windows Kits\10\bin")
+	$found = foreach ($r in $roots) {
+		if (Test-Path -LiteralPath $r) {
+			Get-ChildItem -LiteralPath $r -Recurse -Filter 'signtool.exe' -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' }
+		}
+	}
+	$tool = $found | Sort-Object FullName -Descending | Select-Object -First 1
+	if (-not $tool) { throw 'signtool.exe was not found under the Windows Kits' }
+	return $tool.FullName
+}
+
+# $file has a valid Authenticode signature of a signer whose name matches $signer
+function Assert-Signer([string] $file, [string] $signer) {
+	$sig = Get-AuthenticodeSignature -FilePath $file
+	if ($sig.Status -ne 'Valid') { throw "$file has signature status $($sig.Status), not Valid" }
+	if ($sig.SignerCertificate.Subject -notmatch $signer) { throw "$file is signed by $($sig.SignerCertificate.Subject), not by $signer" }
+}
+
+# signtool verify /kp: the kernel-mode driver signing policy accepts $file, which is what a production-signed driver passes
+function Assert-KernelSignature([string] $file) {
+	$out = (& $signtool verify /kp /v $file 2>&1 | Out-String)
+	if ($LASTEXITCODE -ne 0) { throw "signtool verify /kp does not pass for ${file}:`n$out" }
+	Write-Host "signtool verify /kp passes for $file"
+}
+
+# The install record of ranz install names the INF that Windows published for the driver $name (oemNN.inf), or none
+function Get-RecordedInf([string] $name) {
+	$record = Get-ItemProperty -LiteralPath $recordKey -ErrorAction SilentlyContinue
+	if ($record) { return $record.$name }
+	return $null
+}
+
+# What ranz install leaves of SeLow on x64: its package under drivers\SeLow, each file byte for byte as the repository
+# holds it, the service SeLow running, the driver that the INF copied into System32, and the record
+function Assert-SeLowInstalled {
+	$pkg = Join-Path $driversDir 'SeLow'
+	foreach ($name in @('SeLow_x64.sys', 'SeLow_Win10_x64.cat', 'SeLow_x64.inf')) {
+		$file = Join-Path $pkg $name
+		if (-not (Test-Path -LiteralPath $file)) { throw "ranz install did not write $file" }
+		if ((Get-Sha256 $file) -ne (Get-Sha256 (Join-Path $selowPackage $name))) { throw "$file is not byte for byte the file of the SeLow package of the repository" }
+	}
+	$state = Get-DriverState 'SeLow'
+	if ($state -ne 'RUNNING') { throw "the service SeLow is '$state' after ranz install, not RUNNING" }
+	if (-not (Test-Path -LiteralPath $selowSys)) { throw "$selowSys is not there: the INF of the SeLow package did not copy the driver" }
+	if ((Get-Sha256 $selowSys) -ne (Get-Sha256 (Join-Path $selowPackage 'SeLow_x64.sys'))) { throw "$selowSys is not the driver of the SeLow package" }
+	$inf = Get-RecordedInf 'SeLow'
+	if ($inf -notmatch '^oem\d+\.inf$') { throw "the install record does not name the INF that Windows published for SeLow: '$inf'" }
+	Write-Host "SeLow is installed by ranz install: the service runs, $selowSys is the driver of the package, and the install record names $inf"
+}
+
+# What ranz install leaves of the XDP runtime on x64: its package under drivers\xdp with the files as Microsoft signed
+# them, the service xdp running, the driver and the API library that the INF copied into System32, and the record. The
+# files keep the production signature of Microsoft, which signtool verify /kp checks on the driver.
+function Assert-XdpInstalled {
+	$pkg = Join-Path $driversDir 'xdp'
+	foreach ($name in @('xdp.sys', 'xdpapi.dll', 'xdp.cat', 'xdp.inf', 'xdppcw.man')) {
+		if (-not (Test-Path -LiteralPath (Join-Path $pkg $name))) { throw "ranz install did not write $(Join-Path $pkg $name)" }
+	}
+	foreach ($pair in @(@($pkg, 'xdp.sys', $XdpSysSha256), @($pkg, 'xdpapi.dll', $XdpApiSha256), @($system32, 'xdpapi.dll', $XdpApiSha256), @((Join-Path $system32 'drivers'), 'xdp.sys', $XdpSysSha256))) {
+		$file = Join-Path $pair[0] $pair[1]
+		if ((Get-Sha256 $file) -ne $pair[2]) { throw "$file is not byte for byte the file of the pinned XDP runtime (SHA-256 $($pair[2]))" }
+	}
+	$state = Get-DriverState 'xdp'
+	if ($state -ne 'RUNNING') { throw "the service xdp is '$state' after ranz install, not RUNNING" }
+	foreach ($file in @((Join-Path $pkg 'xdp.sys'), $xdpSys)) {
+		Assert-Signer $file 'Microsoft'
+		Assert-KernelSignature $file
+	}
+	foreach ($file in @((Join-Path $pkg 'xdpapi.dll'), $xdpApi, (Join-Path $pkg 'xdp.cat'))) { Assert-Signer $file 'Microsoft' }
+	$inf = Get-RecordedInf 'xdp'
+	if ($inf -notmatch '^oem\d+\.inf$') { throw "the install record does not name the INF that Windows published for the XDP runtime: '$inf'" }
+	Write-Host "the XDP runtime is installed by ranz install: the service runs, its files are the pinned ones with the signature of Microsoft, and the install record names $inf"
+}
+
+# The drivers are there as ranz install leaves them on this architecture: on x64 SeLow, and the XDP runtime unless $withXdp is false
+function Assert-DriversInstalled([bool] $withXdp) {
+	if (-not $x64) {
+		Assert-NoDrivers 'on arm64 only Wintun is installed, but'
+		return
+	}
+	Assert-SeLowInstalled
+	if ($withXdp) {
+		Assert-XdpInstalled
+	} else {
+		if (Get-DriverState 'xdp') { throw 'the service xdp is registered, and the XDP runtime was left out' }
+		foreach ($file in @($xdpSys, $xdpApi, (Join-Path $driversDir 'xdp'))) {
+			if (Test-Path -LiteralPath $file) { throw "$file is there, and the XDP runtime was left out" }
+		}
+		if (Get-RecordedInf 'xdp') { throw 'the install record names the XDP runtime, which was left out' }
+		Write-Host 'the XDP runtime is not installed, and has left no trace'
+	}
+}
+
+# ranz uninstall took off the drivers that ranz install put on the machine: no service, no record, no folder, and no
+# file in System32 but one that a running driver holds, which Windows removes at the next restart and ranz uninstall said so
+function Assert-DriversRemoved([string] $output) {
+	foreach ($name in @('SeLow', 'xdp')) {
+		if (Get-DriverState $name) { throw "ranz uninstall left the service $name" }
+	}
+	if (Test-Path -LiteralPath $recordKey) { throw "ranz uninstall left the install record $recordKey" }
+	if (Test-Path -LiteralPath $driversDir) { throw "ranz uninstall left $driversDir" }
+	foreach ($file in @($selowSys, $xdpSys, $xdpApi)) {
+		if ((Test-Path -LiteralPath $file) -and $output -notmatch [regex]::Escape("$file is in use")) { throw "ranz uninstall left $file" }
+	}
+	Write-Host 'ranz uninstall took off the drivers that ranz install put on the machine'
+}
+
 function Remove-InstalledState {
+	Unblock-Network
 	foreach ($name in @($nodeService, $controllerService)) {
 		if (Get-Service -Name $name -ErrorAction SilentlyContinue) {
 			& sc.exe stop $name | Out-Null
@@ -171,6 +420,20 @@ function Show-Diagnostics {
 	} else {
 		Write-Host "${installDir}: not there"
 	}
+	foreach ($name in @('SeLow', 'xdp')) {
+		$state = Get-DriverState $name
+		Write-Host "driver ${name}: $(if ($state) { $state } else { 'not registered' })"
+	}
+	$record = Get-ItemProperty -LiteralPath $recordKey -ErrorAction SilentlyContinue
+	if ($record) {
+		Write-Host "install record: $(@($record.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ', ')"
+	} else {
+		Write-Host 'install record: none'
+	}
+	if (Test-Path -LiteralPath $driversDir) {
+		Get-ChildItem -LiteralPath $driversDir -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName) $($_.Length) bytes" }
+	}
+	foreach ($line in @(Get-NodeCapsLines)) { Write-Host "node log: $line" }
 	Write-Host 'Service Control Manager events since the start of the job:'
 	Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $since } -ErrorAction SilentlyContinue |
 		Sort-Object RecordId | ForEach-Object { Write-Host ("  {0:u} id {1}: {2}" -f $_.TimeCreated, $_.Id, ($_.Message -replace '\s+', ' ')) }
@@ -192,9 +455,14 @@ function Show-Diagnostics {
 
 Remove-InstalledState
 $since = Get-Date
+if ($x64) { $signtool = Get-SignTool }
 try {
+	# 0. This runner holds neither SeLow nor the XDP runtime, so what ranz install puts there is its own
+	Assert-NoDrivers 'this runner holds drivers before ranz install:'
+	Write-Host "this $Architecture runner holds neither SeLow nor the XDP runtime"
+
 	# 1. A ranz.exe whose Payload was changed: refused with a message that names the file and its
-	#    signature, nothing registered, nothing left under Program Files.
+	#    signature, nothing registered, nothing left under Program Files, no driver installed.
 	$tamperedExe = New-OneFileFolder $tamperedFile
 	$r = Invoke-Ranz $tamperedExe @('install')
 	if ($r.Code -eq 0) { throw 'ranz install with a changed Payload exited 0' }
@@ -203,12 +471,46 @@ try {
 	}
 	if (Get-Service -Name $nodeService -ErrorAction SilentlyContinue) { throw "a changed Payload still registered $nodeService" }
 	if (Test-Path -LiteralPath $installDir) { throw "a changed Payload still left $installDir" }
-	Write-Host "a changed Payload is refused: no service is registered and $installDir is not left"
+	Assert-NoDrivers 'a changed Payload still left a driver:'
+	Write-Host "a changed Payload is refused: no service is registered, no driver is installed and $installDir is not left"
 
-	# 2. ranz install: the Node service, the folder, the files
+	# 1b. x64: a ranz.exe whose xdp.sys has one byte changed. The XDP runtime is refused for the signature of its
+	#     driver and leaves no trace; the Node and SeLow are installed all the same, and the Node reports the xdp
+	#     Capability as absent, with SeLow as the fallback (ADR-0002 amendment of 2026-10-21)
+	if ($x64) {
+		$failExe = New-OneFileFolder $xdpFailFile
+		$before = (Get-NodeCapsLines).Count
+		$r = Invoke-Ranz $failExe @('install')
+		if ($r.Code -ne 0) { throw "ranz install with a changed XDP driver exited with code $($r.Code): a driver that fails to install leaves the Node installed" }
+		if ($r.Out -notmatch 'the XDP runtime was not installed' -or $r.Out -notmatch 'xdp\.sys' -or $r.Out -notmatch 'Authenticode signature') {
+			throw "ranz install did not warn that the XDP runtime was refused for the Authenticode signature of xdp.sys:`n$($r.Out)"
+		}
+		Wait-ServiceState $nodeService 'Running'
+		Assert-DriversInstalled $false
+		Assert-NodeCaps $before $true $false
+		$r = Invoke-Ranz $failExe @('uninstall')
+		if ($r.Code -ne 0) { throw "ranz uninstall after the XDP runtime that was refused exited with code $($r.Code)" }
+		Wait-ServiceGone $nodeService
+		Assert-DriversRemoved $r.Out
+		Write-Host 'a changed XDP driver is refused and leaves no trace: the Node is installed with SeLow, and reports XDP as absent'
+	}
+
+	# 2. ranz install: the Node service, the folder, the files, and the drivers of this architecture. Windows Firewall
+	#    blocks the outbound network for this ranz.exe, and the processes that it starts are recorded: it needs no
+	#    download and runs no PowerShell
 	$goodExe = New-OneFileFolder $ranzFile
-	$r = Invoke-Ranz $goodExe @('install')
+	$before = (Get-NodeCapsLines).Count
+	Block-Network $goodExe
+	Start-ProcessWatch
+	try {
+		$r = Invoke-Ranz $goodExe @('install')
+	} finally {
+		$started = Stop-ProcessWatch
+		Unblock-Network
+	}
 	if ($r.Code -ne 0) { throw "ranz install exited with code $($r.Code)" }
+	Assert-NoPowerShell $started
+	if (-not $x64 -and $r.Out -notmatch 'carries Wintun only') { throw "ranz install on arm64 did not say that Wintun is the only driver:`n$($r.Out)" }
 
 	Wait-ServiceState $nodeService 'Running'
 	$svc = Get-CimInstance Win32_Service -Filter "Name='$nodeService'"
@@ -232,13 +534,19 @@ try {
 	if (@($acl.Access).Count -ne 4) { throw "the access list of $installDir has $(@($acl.Access).Count) entries, not SYSTEM, the Administrators and the two service accounts:`n$($acl.AccessToString)" }
 	Write-Host "the access list of ${installDir}: $($acl.AccessToString -replace '\s+', ' ')"
 
+	# The files of the Ranz VPN folder: the Node, ranz.exe, the Wintun DLL and the NOTICE that holds its licence, and
+	# on x64 the folder of the packages of the drivers; every executable and DLL has a valid Authenticode signature
+	$expected = @('NOTICE.txt', 'ranz-node.exe', 'ranz.exe', 'wintun.dll')
+	if ($x64) { $expected += 'drivers' }
 	$names = @(Get-ChildItem -LiteralPath $installDir -Force | ForEach-Object { $_.Name })
-	if ($names.Count -ne 2 -or $names -notcontains 'ranz-node.exe' -or $names -notcontains 'ranz.exe') { throw "$installDir holds $($names -join ', '), not ranz-node.exe and ranz.exe" }
+	if (Compare-Object -ReferenceObject $expected -DifferenceObject $names) { throw "$installDir holds $($names -join ', '), not $($expected -join ', ')" }
 	foreach ($name in $names) {
 		$file = Join-Path $installDir $name
 		Assert-NoUsersAccess $file
-		$sig = Get-AuthenticodeSignature -FilePath $file
-		if ($sig.Status -ne 'Valid') { throw "$file has signature status $($sig.Status), not Valid" }
+		if ($name -match '\.(exe|dll)$') {
+			$sig = Get-AuthenticodeSignature -FilePath $file
+			if ($sig.Status -ne 'Valid') { throw "$file has signature status $($sig.Status), not Valid" }
+		}
 	}
 	$installedNode = Join-Path $installDir 'ranz-node.exe'
 	if ((Get-Sha256 $installedNode) -ne $NodeSha256) { throw "$installedNode is not byte for byte the signed ranz-node.exe (SHA-256 $NodeSha256)" }
@@ -248,6 +556,23 @@ try {
 	$version = (& $installedRanz version | Out-String).Trim()
 	if ($LASTEXITCODE -ne 0 -or $version -notmatch '^ranz \d+\.\d+\.\d+$') { throw "$installedRanz version printed '$version' (exit code $LASTEXITCODE)" }
 	Write-Host "the installed ranz.exe runs: $version"
+
+	# The Wintun DLL as WireGuard LLC signed it (its licence lets it be redistributed unmodified only), and the NOTICE
+	# beside it, which holds the words of ranz notice and so the licence of Wintun
+	$installedWintun = Join-Path $installDir 'wintun.dll'
+	if ((Get-Sha256 $installedWintun) -ne $WintunSha256) { throw "$installedWintun is not byte for byte the wintun.dll that ranz.exe carries (SHA-256 $WintunSha256)" }
+	Assert-Signer $installedWintun 'WireGuard LLC'
+	$noticeFile = Join-Path $installDir 'NOTICE.txt'
+	$installedNotice = ((Get-Content -Raw -LiteralPath $noticeFile) -split '\s+' | Where-Object { $_ }) -join ' '
+	$printedNotice = ((& $installedRanz notice | Out-String) -split '\s+' | Where-Object { $_ }) -join ' '
+	if (-not $printedNotice -or $installedNotice -ne $printedNotice) { throw "$noticeFile does not hold the words of ranz notice" }
+	if ($installedNotice -notmatch 'Wintun') { throw "$noticeFile does not hold the licence of Wintun" }
+	Write-Host "$installedWintun is the wintun.dll that ranz.exe carries, signed by WireGuard LLC, and $noticeFile holds the NOTICE with its licence"
+
+	# The drivers of this architecture, and the Node that started after them reports them as its Capabilities: on x64
+	# SeLow and the XDP runtime, on arm64 neither
+	Assert-DriversInstalled $true
+	Assert-NodeCaps $before $x64 $x64
 
 	if (-not (Test-Path -LiteralPath $store)) { throw "$store (the Configuration store of the Node) was not made" }
 
@@ -274,6 +599,11 @@ try {
 	#    stopped runs again
 	$r = Invoke-Ranz $goodExe @('install', '-controller')
 	if ($r.Code -ne 0) { throw "the second ranz install -controller exited with code $($r.Code)" }
+	# The drivers that it put there are not installed again, and are still its own, so that uninstall removes them
+	if ($x64 -and ($r.Out -notmatch 'the SeLow driver is installed already' -or $r.Out -notmatch 'the XDP runtime is installed already')) {
+		throw "the second ranz install did not say that SeLow and the XDP runtime are installed already:`n$($r.Out)"
+	}
+	Assert-DriversInstalled $true
 	foreach ($name in @($nodeService, $controllerService)) {
 		$count = @(Get-CimInstance Win32_Service -Filter "Name='$name'").Count
 		if ($count -ne 1) { throw "$count services are named $name after ranz install ran twice" }
@@ -291,6 +621,7 @@ try {
 	if ($r.Code -ne 0) { throw "ranz uninstall exited with code $($r.Code)" }
 	foreach ($name in @($nodeService, $controllerService)) { Wait-ServiceGone $name }
 	if (Test-Path -LiteralPath $installDir) { throw "ranz uninstall left $installDir" }
+	Assert-DriversRemoved $r.Out
 	if (-not (Test-Path -LiteralPath $store)) { throw "ranz uninstall removed the Configuration store of the Node, $store" }
 	$starts = Get-NodeStarts
 	if ($starts -lt 1) { throw "ranz uninstall removed the node log in $logDir" }
@@ -304,9 +635,12 @@ try {
 	# 7. A reinstall resumes with the Configuration store that the Node left, which names its identity
 	#    key (CONTEXT.md, Node): unchanged, and logged to the node log that was kept. Install and
 	#    uninstall never touch the key storage provider that holds the key.
+	$before = (Get-NodeCapsLines).Count
 	$r = Invoke-Ranz $goodExe @('install')
 	if ($r.Code -ne 0) { throw "the reinstall exited with code $($r.Code)" }
 	Wait-ServiceState $nodeService 'Running'
+	Assert-DriversInstalled $true
+	Assert-NodeCaps $before $x64 $x64
 	# Stopping the Node closes its store and its log
 	Stop-Service -Name $nodeService
 	if ((Get-Sha256 $store) -ne $storeHash) { throw "a reinstall changed the Configuration store of the Node, which names its identity key" }
@@ -321,7 +655,62 @@ try {
 	foreach ($name in @($nodeService, $controllerService)) { Wait-ServiceGone $name }
 	$left = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
 	if ($left.Count -gt 1 -or ($left.Count -eq 1 -and $left[0] -ne 'ranz.exe')) { throw "ranz uninstall from $installedRanz left $($left -join ', ') in $installDir" }
-	Write-Host "ranz uninstall from $installedRanz removed the services and the other files; what is left in ${installDir}: $($left -join ', ')"
+	Assert-DriversRemoved $r.Out
+	Write-Host "ranz uninstall from $installedRanz removed the services, the drivers and the other files; what is left in ${installDir}: $($left -join ', ')"
+
+	# 9. ranz install --no-xdp leaves the XDP runtime out on purpose: the Node reports no xdp Capability and SeLow is
+	#    its L2 backend (on arm64 the flag changes nothing, there is no XDP runtime to leave out). A ranz install after
+	#    it adds the XDP runtime, and the Node that ran restarts, so that it reports it.
+	Remove-InstalledState
+	$before = (Get-NodeCapsLines).Count
+	$r = Invoke-Ranz $goodExe @('install', '--no-xdp')
+	if ($r.Code -ne 0) { throw "ranz install --no-xdp exited with code $($r.Code)" }
+	if ($x64 -and $r.Out -notmatch '--no-xdp') { throw "ranz install --no-xdp did not say that it left the XDP runtime out:`n$($r.Out)" }
+	Wait-ServiceState $nodeService 'Running'
+	Assert-DriversInstalled $false
+	Assert-NodeCaps $before $x64 $false
+	if ($x64) {
+		$before = (Get-NodeCapsLines).Count
+		$r = Invoke-Ranz $goodExe @('install')
+		if ($r.Code -ne 0) { throw "ranz install after --no-xdp exited with code $($r.Code)" }
+		Wait-ServiceState $nodeService 'Running'
+		Assert-DriversInstalled $true
+		Assert-NodeCaps $before $true $true
+	}
+	$r = Invoke-Ranz $goodExe @('uninstall')
+	if ($r.Code -ne 0) { throw "ranz uninstall after --no-xdp exited with code $($r.Code)" }
+	Wait-ServiceGone $nodeService
+	Assert-DriversRemoved $r.Out
+	Write-Host 'ranz install --no-xdp leaves the XDP runtime out, and a ranz install after it adds it'
+
+	# 10. x64: a SeLow that was on the machine before ranz install stays at ranz uninstall. This job installs it as the
+	#     fork does, by hand from its package; ranz install does not take it for its own, installs the XDP runtime beside
+	#     it, and ranz uninstall removes the XDP runtime and leaves SeLow.
+	if ($x64) {
+		Remove-InstalledState
+		$netcfg = Join-Path $system32 'netcfg.exe'
+		& $netcfg -v -l (Join-Path $selowPackage 'SeLow_x64.inf') -c p -i SeLow | Out-Host
+		if ($LASTEXITCODE -ne 0) { throw "netcfg could not install SeLow by hand: exit code $LASTEXITCODE" }
+		if (-not (Get-DriverState 'SeLow')) { throw 'SeLow was installed by hand, and its service is not registered' }
+		$r = Invoke-Ranz $goodExe @('install')
+		if ($r.Code -ne 0) { throw "ranz install over a SeLow that was there before exited with code $($r.Code)" }
+		if ($r.Out -notmatch 'the SeLow driver is on this machine already') { throw "ranz install did not say that SeLow was on the machine already:`n$($r.Out)" }
+		if (Get-RecordedInf 'SeLow') { throw 'the install record names the SeLow that was there before ranz install' }
+		Wait-ServiceState $nodeService 'Running'
+		Assert-XdpInstalled
+		$r = Invoke-Ranz $goodExe @('uninstall')
+		if ($r.Code -ne 0) { throw "ranz uninstall over a SeLow that was there before exited with code $($r.Code)" }
+		Wait-ServiceGone $nodeService
+		if ($r.Out -notmatch 'the SeLow driver was on this machine before ranz install') { throw "ranz uninstall did not say that SeLow stays:`n$($r.Out)" }
+		if (-not (Get-DriverState 'SeLow')) { throw 'ranz uninstall removed the SeLow that was on the machine before ranz install' }
+		foreach ($path in @($xdpSys, $xdpApi, $recordKey)) {
+			if (Test-Path -LiteralPath $path) { throw "ranz uninstall left $path, which it put there" }
+		}
+		if (Get-DriverState 'xdp') { throw 'ranz uninstall left the service xdp, which it installed' }
+		Write-Host 'ranz uninstall removed the XDP runtime that it installed and left the SeLow that was there before'
+		& $netcfg -u SeLow | Out-Host
+		$global:LASTEXITCODE = 0
+	}
 } catch {
 	Write-Host "failed: $($_.Exception.Message)"
 	Show-Diagnostics

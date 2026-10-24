@@ -250,8 +250,16 @@ func installNode(w io.Writer, m *mgr.Mgr, dir, self string, opts Options) error 
 		}
 		return err
 	}
-	installDrivers(w, m, dir, opts)
+	installed := installDrivers(w, m, dir, opts)
 	if exists {
+		// A Node that runs has read what the machine holds at its start, so a driver that this call put there
+		// reaches the controller as a Capability only after the Node starts again
+		if installed > 0 {
+			fmt.Fprintf(w, "install: the %s service restarts, so that the Node reports the drivers that were just installed as its Capabilities\n", nodeServiceName)
+			if err := stopService(m, nodeServiceName); err != nil {
+				return err
+			}
+		}
 		return ensureRunning(w, m, nodeServiceName)
 	}
 	return createNode(w, m, dir)

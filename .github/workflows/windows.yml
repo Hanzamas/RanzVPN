@@ -297,7 +297,9 @@ jobs:
     # that join it over the control stream, get their addresses from its automatic pool and exchange
     # ICMP echo over the in-process loopback transport, also once the controller stopped, and report the
     # rate of a stream of UDP datagrams each way between them (SDN-53, #246); the API shows the
-    # Generation each node acknowledged (.github/scripts/sdn-tracer.ps1)
+    # Generation each node acknowledged and the Capabilities that its Hello carried: the architecture
+    # of the runner and the SeLow and XDP runtime that it holds (ONE-3, #312;
+    # .github/scripts/sdn-tracer.ps1)
     - name: Build ranz for the default VRF tracer
       shell: pwsh
       working-directory: controller
@@ -325,7 +327,7 @@ jobs:
       timeout-minutes: 10
       shell: pwsh
       run: |
-        . .github/scripts/sdn-tracer.ps1 -BuildDir build
+        . .github/scripts/sdn-tracer.ps1 -BuildDir build -Architecture ${{ matrix.platform.ARCHITECTURE }}
     # The exploit-mitigation flags of ADR-0039 decision 1 (SEC-1, #279) on the node, the shipped
     # executable of the new core, read from the binary with dumpbin: CFG, CET (x64), high-entropy
     # ASLR, DEP, /GS and /sdl, or an exception that says why not (.github/scripts/binary-hardening.ps1).
@@ -1272,7 +1274,7 @@ jobs:
         ]
     name: install (${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
     - name: Download ranz.exe
@@ -1307,7 +1309,7 @@ jobs:
         Write-Host "trusted $($cer.FullName) as a root"
     - name: ranz install, checked from outside, then ranz uninstall
       shell: pwsh
-      timeout-minutes: 15
+      timeout-minutes: 30
       env:
         NODE_SHA256: ${{ needs.sign_and_integrity.outputs[format('node-sha256-{0}', matrix.platform.ARCHITECTURE)] }}
         MEMBER_SHA256: ${{ needs.sign_and_integrity.outputs.member-sha256 }}

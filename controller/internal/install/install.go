@@ -35,7 +35,9 @@
 // Running Install again is safe. A service that exists is not made again, and a file that is
 // there is not written again, because the running service holds it open: the call only writes a
 // file that is missing and starts a service that does not run. A driver that is there is not
-// installed again. Uninstall can run twice too.
+// installed again; one that this call does install (after ranz install --no-xdp, say) makes a Node
+// that runs start again, because the Node reads what the machine holds at its start and reports it
+// as its Capabilities (src/Cedar/NodeCaps.c). Uninstall can run twice too.
 //
 // The Windows part is install_windows.go and drivers_windows.go; every other OS refuses
 // (install_other.go).
