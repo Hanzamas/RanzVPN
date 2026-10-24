@@ -136,8 +136,9 @@ set_target_properties(coretransport
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
-# corecontrol: the control module (Control.h, Control.c; SDN-3, #179): the node's end of the control stream to the
-# controller, over the transport module, with the messages that nanopb generates at build time from the one schema of
+# corecontrol: the control module (Control.h, Control*.c; SDN-3, #179): the node's end of the control stream to the
+# controller, with the DHCP responders of a state and their leases (ControlDhcp.c; SDN-43, #236), over the transport
+# module, with the messages that nanopb generates at build time from the one schema of
 # the node and the controller, proto/ranz/control/v1/control.proto with its control.options (ADR-0027 decision 1).
 # The generator is the one of the nanopb submodule (3rdparty/CMakeLists.txt); it needs Python with the protobuf
 # package and protoc on the PATH, as the nanopb round trip of ranz.yml does (CI: .github/actions/nanopb). It
@@ -160,6 +161,8 @@ add_custom_command(
 add_library(corecontrol STATIC
   Control.c
   Control.h
+  ControlDhcp.c
+  ControlInternal.h
   "${_ranz_controlpb}/ranz/control/v1/control.pb.c"
   "${_ranz_controlpb}/ranz/control/v1/control.pb.h"
 )

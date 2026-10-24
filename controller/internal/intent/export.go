@@ -69,6 +69,11 @@ func Replace(in Intent, doc Document, random io.Reader) (Intent, error) {
 			delete(base.Policies, name)
 		}
 	}
+	for name := range base.Mirrors {
+		if _, ok := declared[KindMirror+"/"+name]; !ok {
+			delete(base.Mirrors, name)
+		}
+	}
 	for name := range base.Controllers {
 		if _, ok := declared[KindController+"/"+name]; !ok {
 			delete(base.Controllers, name)

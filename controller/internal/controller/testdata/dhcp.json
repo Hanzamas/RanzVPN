@@ -1,0 +1,9 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48"}},
+    {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}},
+    {"kind": "Network", "name": "corp-dmz", "spec": {"vrf": "corp", "mode": "L2", "ipv4Pool": "10.20.0.0/24", "reserved": ["10.20.0.0/29"], "dhcp": {"mode": "pool", "node": "branch-1", "gateway": "10.20.0.1", "dns": ["10.20.0.1"], "leaseTime": 3600}}},
+    {"kind": "Node", "name": "branch-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"]}},
+    {"kind": "Node", "name": "branch-2", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"]}}
+  ]
+}
