@@ -10,8 +10,8 @@
 # - The full set, every job here and both architectures of build_and_test and debug: on a push to master
 #   or integration, every night (a schedule runs on the default branch, master), on workflow_dispatch, on a
 #   pull request with the label full-ci and on a pull request that changes src/Core/Crypto*,
-#   src/Core/Noise*, src/SeLow, .github/scripts/self-integrity.ps1, .github/scripts/install.ps1 or
-#   .github/signing (SENSITIVE in ci-plan.py).
+#   src/Core/Noise*, src/SeLow, .github/scripts/self-integrity.ps1, .github/scripts/install.ps1,
+#   .github/signing, docs/first-test.md or .github/scripts/first-test.ps1 (SENSITIVE in ci-plan.py).
 # A job that only the full set runs has needs: plan and if: needs.plan.outputs.full == 'true' (install
 # follows sign_and_integrity, which it needs, and first_test follows build_and_test and sign_and_integrity),
 # and a pull request shows it as skipped. A new job
@@ -30,7 +30,8 @@
 # - tests/control/: the nanopb round trip of ranz.yml.
 # - docs/ and every *.md file (ADRs, README.md, CONTEXT.md, CLAUDE.md). The files of src/bin/hamcore
 #   are resources of the executables (cmake/RanzResources.cmake), so that directory is taken back
-#   in, whatever its file names.
+#   in, whatever its file names. So is docs/first-test.md: the job first_test runs the commands that
+#   it holds.
 # - ranz.yml, move-only.yml and quality.yml, and the scripts that only they call.
 # Every other path runs the workflow: src/, proto/, cmake/, CMakeLists.txt, CMakePresets.json, vcpkg.json,
 # .gitmodules, .gitattributes, .clang-format, tests/golden/, developer_tools/stbchecker/, this file,
@@ -55,6 +56,7 @@ on:
     - '!docs/**'
     - '!**.md'
     - 'src/bin/hamcore/**'
+    - 'docs/first-test.md'
     - '!.github/workflows/ranz.yml'
     - '!.github/scripts/controller-service.ps1'
     - '!.github/scripts/ranz-tools.ps1'

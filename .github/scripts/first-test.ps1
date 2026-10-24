@@ -232,7 +232,8 @@ function Invoke-Doc {
 			$global:LASTEXITCODE = 0
 			$out = (& ([scriptblock]::Create($command)) | Out-String)
 			$code = $LASTEXITCODE
-			if ($out.Trim()) { Write-Host $out.TrimEnd() }
+			# The secret of a token that a command prints is not printed to the log of the job
+			if ($out.Trim()) { Write-Host ($out.TrimEnd() -replace 'ranz_[A-Za-z0-9_\-]{8,}', 'ranz_***') }
 			if ($code -ne 0) { throw "the command exited with code ${code}: $(Expand-Values $line $true)" }
 			$null = $all.AppendLine($out)
 		}
@@ -583,9 +584,10 @@ try {
 	}
 
 	Gap 'gap-node-service' {
-		# The document says what is missing. The sources must still say so, or the Gap is closed.
-		Assert-Gap 'Gap 1' (Test-Source 'src\Cedar' 'NodeClient.c' 'the overlay without a control stream') 'the client role of the Node starts its overlay without a control stream'
-		Assert-Gap 'Gap 2' (-not (Test-Source 'src\Cedar' 'NodeClient.c' 'AddStringToObject\(o, "key"')) 'the status of the client role does not give the static key of the Node'
+		# The document says what is missing. The sources must still say so, or the Gap is closed. Gaps 2, 6 and 7 are not
+		# read from the sources: nothing in them says that a verb or a setting is missing.
+		$controls = (Test-Source 'src\Cedar' 'Node*.c' '\.Control\s*=') -or (Test-Source 'src\ranz-node' '*.c' '\.Control\s*=')
+		Assert-Gap 'Gap 1' (-not $controls) 'no code of the Node service sets the control stream of its overlay (NODE_OVERLAY_CONFIG.Control): only the vpntest harness does'
 		$listens = (Test-Source 'src\Cedar' 'Node*.c' 'TransportTlsServerNew|TransportQuicServerNew|FrontDoorStart') -or (Test-Source 'src\ranz-node' '*.c' 'TransportTlsServerNew|TransportQuicServerNew|FrontDoorStart')
 		Assert-Gap 'Gap 3' (-not $listens) 'the Node service starts no QUIC listener, no TLS listener and no front door'
 		Assert-Gap 'Gap 4' (-not (Test-Source 'controller\internal\install' '*.go' '(?i)firewall')) 'ranz install knows no firewall'
@@ -645,6 +647,8 @@ try {
 	}
 
 	Step 'clean-up' {
+		# The rqlite member of the Controller ends with its service, and a moment later its files can go
+		$null = Wait-Until { $null -eq (Get-Process -Name 'rqlited', 'ranz-node' -ErrorAction SilentlyContinue) } 'the processes of the services to end' 30
 		$null = Invoke-Doc
 		if (Get-NetFirewallRule -DisplayName $firewallRule -ErrorAction SilentlyContinue) { throw 'the firewall rule is still there' }
 		if (@(Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like 'CN=Ranz VPN CI signing*' }).Count -ne 0) { throw 'the CI certificate is still trusted' }

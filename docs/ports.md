@@ -24,6 +24,7 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 | UDP 4789 | VXLAN | the VXLAN module of the Node (SDN-62) | Toward a fabric or a sensor. The Node is a VTEP. |
 | UDP 67 and 68 | DHCP | the DHCP responder of the Node (SDN-43, in progress) | Only on an L2 Network whose bridged LAN has no DHCP server. |
 | 53 | DNS | overlay DNS (SDN-11, planned) | Inside the overlay and the NRPT rules of the host. |
+| TCP 9821 | the traffic test | `ranz test throughput -listen`, started by hand (SDN-53) | Only while a test runs, on the address that it is given. `docs/first-test.md` uses it between two PCs. |
 
 ## Outgoing only
 

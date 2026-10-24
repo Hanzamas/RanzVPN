@@ -8,14 +8,14 @@ Read this first. The Node service of a PC cannot join a Controller yet (see Gaps
 
 - **Real.** The product does it: install, the Controller and its certificate, the web UI, the default Intent, PC B reaching the Controller, the link between the PCs, the Node resources and their addresses, `ranz doctor`, the logs, uninstall. Most steps are real.
 - **Stand-in.** `vpntest firsttest`, a test program that is built in CI, plays the Nodes. It enrols two Nodes at the Controller of PC A over the real network, gives one of them a real Wintun adapter and answers a ping for the other. Steps 17, 19 and 23.
-- **Gap.** The thing the test is really for, two Node services that enrol and ping each other, does not work yet. Step 19 says what is missing.
+- **Gap.** The thing the test is really for, two Node services that enrol and ping each other, does not work yet. Step 20 says what is missing.
 
 ## The two PCs and the values you copy
 
 | Name | What it is |
 |---|---|
-| PC A | Runs the Controller (the Intent, the web UI, the API) and a Node. |
-| PC B | Runs a Node, and in steps 16 to 18 the stand-in. |
+| PC A | Runs the Controller (the Intent, the web UI, the API) and a Node service, which has nothing to do yet (Gap 1). |
+| PC B | Runs a Node service, which has nothing to do yet either, and in steps 17 to 19 the stand-in. |
 
 Use test PCs or virtual machines that you can reinstall. `ranz install` puts drivers on the PC (Wintun on both architectures, SeLow and the XDP runtime on x64), and `ranz uninstall` takes them out again.
 
@@ -72,7 +72,7 @@ The step numbers in the headings below are the ones of this table. The text of e
 
 <!-- step: download pc=both -->
 
-Both PCs need the same build. Open the Actions tab of `Hanzamas/RanzVPN` and take the newest successful run that is named `Full CI: push on integration`. A run keeps its files for 14 days. In the list of artifacts of the run, download:
+Both PCs need the same build. Open the Actions tab of `Hanzamas/RanzVPN` and take the newest successful run that is named `Full CI: push on integration`. The signed `ranz.exe` and the certificate stay for 14 days after a run. In the list of artifacts of the run, download:
 
 | Artifact | What it holds | Where it goes |
 |---|---|---|
@@ -199,7 +199,7 @@ You see this, with your own values:
 
 Write down `publicKey` as `<CONTROLLER-KEY>`, `tlsFingerprint` as `<FINGERPRINT>` and `tlsPort` as `<PORT>`. If `tlsPort` is `5555`, the Controller fell back and `tlsPortFallback` is `true`.
 
-`ranz` on PC A does not check the certificate: loopback is the host itself. On any other PC it checks the fingerprint (step 13). A browser cannot check it, so it warns.
+`ranz` on PC A does not check the certificate: loopback is the host itself. On any other PC, `ranz` accepts the certificate only with the fingerprint (step 13). A browser cannot check the fingerprint, so it warns. The certificate cannot be replaced by one that a browser trusts yet (Gap 7).
 
 ### 8. The web UI (web-ui)
 
@@ -509,12 +509,13 @@ Then delete `C:\ranz-test`. Windows keeps the two keys of the Controller (`Ranz 
 
 A Gap is something that the runbook needs and the code does not have. Nothing here was built for this runbook. Where a safe workaround exists the steps above use it.
 
-1. **The Node service does not join a Controller.** The Configuration store of the Node (`ranz_node.db`) has no setting for the address, the static key and the TLS fingerprint of a Controller, and the service never opens a control stream. The client role (CORE-S3-1, #71) and one adapter per VRF (SDN-5, #181) exist, but the client role starts its overlay "without a control stream" (`NodeClientOverlayStart` in `src/Cedar/NodeClient.c`): its states come from the `vpntest` harness, not from a Controller. No verb sets any setting of a Node. Only `vpntest` opens the control stream (`NodeOverlayStart`, as `sdntrace` and `firsttest` do). **No ticket carries it.** The nearest is SDN-32 (#226), which is about who may enrol, not about the connection itself. Workaround: the stand-in of step 17.
+1. **The Node service does not join a Controller.** The Configuration store of the Node (`ranz_node.db`) has no setting for the address, the static key and the TLS fingerprint of a Controller, and the service never opens a control stream. The client role (CORE-S3-1, #71) and one adapter per VRF (SDN-5, #181) exist, but the client role starts its overlay "without a control stream" (`NodeClientOverlayStart` in `src/Cedar/NodeClient.c`): its states come from the `vpntest` harness, not from a Controller. No verb sets any setting of a Node. Only `vpntest` opens the control stream (`NodeOverlayStart`, as `sdntrace` and `firsttest` do). **No ticket carries it.** The nearest are SDN-32 (#226) and SDN-55 (#248, "the node enrols"), which decide how a Node proves who it is, not how the service finds its Controller and opens its stream. Workaround: the stand-in of step 17.
 2. **The static key of a Node cannot be read.** The identity key of a Node is made in Windows key storage when a role first needs it, and no verb or log line prints its public half. The Controller needs it as `publicKey` of the Node resource. **No ticket carries it.** When a Node with an unknown key does open a stream, the audit log of the Controller records the key as the actor `key:<base64>`, "so that an operator can write the Node resource for it", but a Node cannot open one yet (Gap 1). Workaround: the two public test keys of step 15.
 3. **The Node service listens on no port.** `TransportQuicServerNew`, `TransportTlsServerNew` and the front door (`FrontDoorStart`, SDN-29, #205) are called by tests only, and the relay role binds a UDP socket only when its Roles setting asks for it. With the default settings two Node services cannot form a Noise session, even once Gap 1 is closed. **No open ticket carries it:** CORE-S1-1 (#67), CORE-S2-1 (#69) and SDN-29 (#205) delivered the modules and not their wiring into the service. Workaround: the two stand-in Nodes run their session in memory.
 4. **`ranz install` opens no firewall port.** The runbook adds and removes one rule by hand (steps 4 and 26). **No ticket carries it.** (REL-2, #47, did this for the slim fork.)
 5. **No `ranz` verb for the audit log.** The API has it (SDN-49, #242, `GET /api/v1/audit`), the CLI does not. Step 18 uses `curl.exe`. **No ticket carries it.**
 6. **No verb shows a Node's own state on its PC.** Its adapters, its sessions and its control stream show only in `ranz get nodes` on the Controller side and in the node log. `ranz doctor` checks the PC, not the Node. The nearest is SDN-55 (#248), the tray, which talks to the Node over a pipe. No verb is promised there.
+7. **The certificate of the Controller cannot be replaced.** It is always its own self-signed one (step 7), so a browser warns and `ranz` on another PC needs the fingerprint. `ranz cert` makes certificates, but the Controller has no setting to use one. SDN-45 (#238) gives a Node a certificate source (file, key storage or ACME); **no ticket names the Controller's certificate.**
 
 ## Troubleshooting
 
@@ -534,7 +535,7 @@ These are the ways this test fails, with what the code says.
 - **The stand-in says `not within 90000 ms`.** The Controller did not take the two Nodes. The stand-in does not print the reason of a refusal, so read `controller.log` on PC A: `node refused: unknown static key` means that no Node resource has the key (step 15), and `source address outside the source prefixes of its Network` means that a Network limits the addresses that Nodes may enrol from. No line at all means that the stream did not arrive: look at the firewall and at `<CONTROLLER>`.
 - **`FIRSTTEST TEST FAILED` after the stop.** The line that failed says what: no echo request reached `pc-a` (you did not ping in time, or the ping went another way), or the replies did not come back.
 - **The ping gets no reply.** `Get-NetRoute -InterfaceAlias "Ranz default"` must show `100.64.0.0/10`. Another VPN may own that range. Tailscale uses `100.64.0.0/10`; stop it for this test.
-- **An adapter `Ranz default` is left after the stand-in crashed or was killed.** Start the stand-in again and stop it with the stop file: it creates the adapter with a fixed identity, takes the old one over, and removes it.
+- **The stand-in prints `Wintun adapter Ranz default not created: error N`.** The adapter could not come up. Look for an older adapter of that name with `Get-NetAdapter -Name "Ranz default"`, for example one that a stand-in left when it was killed instead of stopped. The stand-in waits 5 seconds for an old adapter of the same name to go before it gives up.
 
 ## How CI proves it
 
@@ -543,4 +544,5 @@ The job `first_test` of `.github/workflows/windows.yml` runs on `windows-latest`
 - **The script reads this file.** The markers `<!-- step: ... -->` and `<!-- gap: ... -->` give the ids in order. A step of the script that is not the next one in the file fails, and so does a step of the file that the script never ran. So the order and the set of steps cannot drift.
 - **The commands are the commands of this file.** A block `powershell run` is run by the script, line by line, in the folder and the PowerShell of the runner, after it fills in the values in angle brackets from what it measured. A block `powershell background` is started and left running, and the script stops it at the end of its step. A command that exits with an error fails the step. The script then checks what the step says you see: the services, the files, the JSON of the API, the pages of the web UI, the audit records, the ping.
 - **One machine plays both PCs.** The runner is PC A and PC B. It switches the `RANZ_*` variables of the window when the PC changes, so that PC B reads the Controller through the address of the runner and the fingerprint, as a second PC would. `<PC-A>` is the address of the runner that is not loopback. Step 10 finds the install of step 5 there already, which is safe.
+- **A Gap is read from the sources.** At the Gap step the script looks in the sources for what the document says is missing: code of the Node service that sets the control stream of its overlay (Gap 1), a listener or a front door in the Node service (Gap 3), a firewall rule in `ranz install` (Gap 4), a verb for the audit log in the CLI (Gap 5). When one is there, the job fails, until this file has real steps for it.
 - **What CI cannot do.** It cannot try two PCs, a browser, or the Gaps. The web UI is checked by its pages and by the API calls that the pages make. The overlay is the stand-in, with one real Wintun adapter and a fake host.

@@ -93,7 +93,8 @@ def test_labels():
 def test_paths():
     for path in ['src/Core/Crypto.c', 'src/Core/CryptoX25519.c', 'src/Core/CryptoInternal.h', 'src/Core/Noise.c',
                  'src/Core/NoiseSession.c', 'src/SeLow/SeLow.c', 'src/SeLow/SeLow.rc', '.github/scripts/self-integrity.ps1',
-                 '.github/signing/signing-proof.wxs', '.github/scripts/install.ps1']:
+                 '.github/signing/signing-proof.wxs', '.github/scripts/install.ps1', 'docs/first-test.md',
+                 '.github/scripts/first-test.ps1']:
         values = expect_set('a pull request that changes ' + path, True, 'pull_request', files=['docs/ports.md', path])
         check('the reason names ' + path, path in values['reason'], values['reason'])
     for path in ['src/Core/Peer.c', 'src/Core/Transport.c', 'src/Core/CMakeLists.txt', 'src/Cedar/Node.c',

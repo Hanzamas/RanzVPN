@@ -43,6 +43,8 @@ SENSITIVE = [
     (r'\.github/scripts/self-integrity\.ps1$', 'the signing script'),
     (r'\.github/signing/', 'the signing package'),
     (r'\.github/scripts/install\.ps1$', 'the install script'),
+    (r'docs/first-test\.md$', 'the runbook of the first test'),
+    (r'\.github/scripts/first-test\.ps1$', 'the script that proves the runbook'),
 ]
 
 X64 = {'ARCHITECTURE': 'x64', 'VCPKG_TRIPLET': 'x64-windows-static', 'RUNNER': 'windows-latest'}
