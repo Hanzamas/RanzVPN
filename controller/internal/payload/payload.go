@@ -1,16 +1,17 @@
 // Package payload is the mechanism that writes a file embedded in ranz.exe out to disk (ADR-0011
-// amendment of 2026-10-22, ONE-2 #311; the Payload entry of CONTEXT.md): ranz-node.exe today, and
-// the Wintun driver, the SeLow package, the XDP runtime and the rqlite member of a Controller of
-// ONE-3 and ONE-4 later. A Payload carries its own data and the SHA-256 recorded for it. Install
-// writes the data to a temporary file beside the destination and checks that file, its hash and
-// its Authenticode signature, before it takes the place of the destination by a rename: a payload
-// that fails either check is never written to its destination and never started. The signature
-// check is Windows only (verify_windows.go); on another OS it always refuses (verify_other.go), so
-// Install never produces a file that nothing has verified.
+// amendment of 2026-10-22, ONE-2 #311; the Payload entry of CONTEXT.md): ranz-node.exe, the rqlite
+// member of a Controller (ONE-4 #313, which Ensure writes again when it is missing), and the
+// Wintun driver, the SeLow package and the XDP runtime of ONE-3 later. A Payload carries its own
+// data and the SHA-256 recorded for it. Install writes the data to a temporary file beside the
+// destination and checks that file, its hash and its Authenticode signature, before it takes the
+// place of the destination by a rename: a payload that fails either check is never written to its
+// destination and never started. The signature check is Windows only (verify_windows.go); on
+// another OS it always refuses (verify_other.go), so Install never produces a file that nothing
+// has verified.
 //
 // The directory that Install writes to must be one that only SYSTEM and the Administrators can
 // write to. Otherwise another account could replace the temporary file between the check and the
-// rename.
+// rename. Ensure, which writes a file for the program that runs it, has its own rule (ensure.go).
 package payload
 
 import (

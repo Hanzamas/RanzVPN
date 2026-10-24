@@ -12,6 +12,8 @@
 // UDP_ACCEL: YourCookie is never 0 and never MyCookie (FND-60). Prints "UDPACCEL TEST OK" only when
 // every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
 #include "Cedar/UdpAccel.h"
@@ -340,6 +342,7 @@ static void UdpAccelTestCookies(UDPACCEL_TEST *t)
 }
 
 // udpaccel: bounded receive loop and drop counters of the UDP Acceleration
+RANZ_TEST("udpaccel", udpaccel_test, "UDP Acceleration: receive budget per poll and per tick, header check before decryption, drop counters and their log.");
 void udpaccel_test(UINT num, char **arg)
 {
 	UDPACCEL_TEST t;

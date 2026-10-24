@@ -12,6 +12,7 @@
 // It prints "HTTPLISTENER TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/Admin.h"
 #include "Cedar/Cedar.h"
@@ -843,6 +844,7 @@ static void HttpTestPortTaken(HTTPLISTENER_TEST *t)
 }
 
 // "httplistener": the HTTP listener on a test port, REL-6 (#51)
+RANZ_TEST("httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port.");
 void httplistener_test(UINT num, char **arg)
 {
 	HTTPLISTENER_TEST t;

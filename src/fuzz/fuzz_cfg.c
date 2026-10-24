@@ -6,6 +6,8 @@
 // and rejects a short or malformed input (SEC-3 #96), so mutated binary inputs are fuzzed as
 // text inputs are. The hash is not checked: libFuzzer's memcmp hooks can learn the expected hash
 // and pass a hash check, and CfgReadW() checks it before the parser runs.
+//
+// fuzz-max-len: 4096
 
 #include "fuzz_common.h"
 

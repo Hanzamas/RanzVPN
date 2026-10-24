@@ -24,6 +24,7 @@
 // (.github/scripts/fetch-wintun.ps1).
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
@@ -2196,6 +2197,7 @@ static void ClientTestWintun(CLIENTTEST_CTX *ctx, char *out_dir, char *golden_di
 	Free(s);
 }
 
+RANZ_TEST("client", client_test, "Client role: a node on a Wintun adapter reaches a server node over QUIC and TLS-443, sets routes and DNS, routes the runner's own packets as the oracle does (golden family client), is driven by the logged-in user through its pipe, and survives sleep and roaming (administrator rights, wintun.dll).");
 void client_test(UINT num, char **arg)
 {
 	CLIENTTEST_CTX ctx;

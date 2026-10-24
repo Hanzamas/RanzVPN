@@ -16,6 +16,8 @@
 // decodes and encodes to the same bytes. Prints "PACK_DECODE_BOUNDS TEST OK" only when every check
 // passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
@@ -222,6 +224,7 @@ static void PackDecodeTestValid(PACKDECODE_CTX *ctx)
 }
 
 // pack_decode_bounds: the PACK decoder against counts and sizes past the bytes present
+RANZ_TEST("pack_decode_bounds", pack_decode_bounds_test, "PACK decoder: value counts and sizes past the bytes present, unknown types and values cut short are rejected before they allocate.");
 void pack_decode_bounds_test(UINT num, char **arg)
 {
 	PACKDECODE_CTX ctx;

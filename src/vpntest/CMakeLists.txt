@@ -1,101 +1,16 @@
 # vpntest (cmake/RanzExecutable.cmake): a console executable with the hamcore files as resources
+#
+# Every .c file of this directory is a source of vpntest, so a new test is a new file and this file does not change. The
+# test registers itself with RANZ_TEST (testlist.h); "vpntest list" prints the registered tests and
+# .github/scripts/vpntest.ps1 runs each of them. CONFIGURE_DEPENDS makes the build check the directory, so a file that
+# was added or removed is picked up without a new configure.
+file(GLOB RANZ_VPNTEST_SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
+
 ranz_add_executable(vpntest HAMCORE
   DESCRIPTION "Testing Utility"
   ICON "vpntest.ico"
   SOURCES
-    vpntest.c harness.c harness_pack.c stress.c runtime.c crypto.c
-    # Named string test of NAT-4 (#90)
-    strtest.c
-    # Named UDP Acceleration receive test of FIX-1 (#97)
-    udpaccel.c
-    # Named SeLow test of FIX-2 (#98)
-    selowtest.c
-    # Named DLL search order test of FIX-4 (#100)
-    dllsearch.c
-    # Named machine identity test of FIX-5 (#101)
-    machineid.c
-    # Named VM detection test of FIX-7 (#103)
-    vmdetect.c
-    # Named TCP/IP packet test of SEC-1 (#96)
-    tcpiptest.c
-    # Named X.509 and certificate signature test of SEC-2 (#96)
-    x509test.c
-    # Named BUF and binary configuration bounds test of SEC-3 (#96)
-    bufbounds.c
-    # Named keepalive span and client Pack size cap tests of SEC-4 (#96)
-    keepalive.c packcap.c
-    # Named StorePacket test of SEC-5 (#96)
-    storepacket.c
-    # Named console input test of SEC-7 (#96)
-    consoleline.c
-    # Named temp directory and string table test of SEC-8 (#96)
-    tempdir.c
-    # Named chain_certs cache test of FND-139 (#145)
-    chaincerts.c
-    # Named shared server SSL_CTX test of FND-140 (#145)
-    tlsctx.c
-    # vpncmd command cases of the harness (golden family "cmd"), PKG-2 (#106)
-    harness_cmd.c
-    # Named log writer, syslog and eraser tests of PKG-4 (#108)
-    logtest.c
-    # Named login path tests of PKG-6 (#110)
-    login.c
-    # Named listeners test of spec #43: cases 1 to 5, the default listener, REL-3 (#48); case 6, the empty admin
-    # password from loopback only, REL-4 (#49)
-    listeners.c
-    # Named packet parser tests of PKG-9 (#113)
-    pkttest.c
-    # Named PACK decoder bounds test of FND-42 (#114)
-    packdecode.c
-    # Named string table loader test of FND-43 (#114)
-    tablecache.c
-    # Named registry test of FND-64 (#121)
-    registry.c
-    # Named byte-order test of FND-152 (#149)
-    endian.c
-    # Named service argument test of FND-205 (#167)
-    svcargs.c
-    # Named OS information test of FND-203 (#166)
-    osinfo.c
-    # Named FIFO and queue test of FND-215 (#174)
-    fifo.c
-    # Named node tests of CORE-F3 (#63)
-    nodetest.c
-    # Named node Login test of CORE-F2 (#62): the session module of the new core against the SE-VPN login
-    nodelogin.c
-    # Named configuration store test of CORE-F5 (#65)
-    storetest.c
-    # Named BGP sidecar test of CORE-S7-1 (#82)
-    bgptest.c
-    # Named self-integrity test of SEC-3 (#281)
-    selfint.c
-    # Named transport test of CORE-F4 (#64): the transport interface of the new core and the session layer on it
-    transporttest.c
-    # Named QUIC transport test of CORE-S1-1 (#67): the msquic listener, the Noise session, Sam and the key pinning
-    quictest.c
-    # Named Noise-to-Hub test of CORE-S1-2 (#68): the frames of a Noise session in the existing Hub, against the oracle
-    noisehub.c
-    # Named TLS transport test of CORE-S2-1 (#69): the Schannel TLS-443 listener, its key exchange groups, the Noise
-    # session over it, the pin and the fallback when UDP is blocked
-    tlstest.c
-    # Named lossy-link test of CORE-S2-1 (#69): the ingress queue (CoDel) and an inner TCP over the TLS-443 path on a
-    # simulated lossy link
-    lossylink.c
-    # Named hardened licence gate test of SEC-4 (#282): drives ranzguard under the Win32 debug API
-    harden.c
-    # Named HTTP listener test of REL-6 (#51)
-    httplistener.c
-    # Named default VRF tracer of SDN-3 (#179): two nodes join VRF default of a ranz controller and ping each other
-    sdntrace.c
-    # Named VRF forwarding table test of SDN-4 (#180): the LPM tables of the VRFs against a reference, their swap
-    # under readers, and two VRFs on one range kept apart over the overlay of in-process nodes
-    vrftest.c
-    # Named VXLAN test of SDN-62 (#289): the VXLAN module of the new core against harness VTEPs
-    vxlantest.c
-    # Named switch test and switch benchmark of CORE-S4-1 (#74): the L2 switch of the new core against golden frames
-    switchtest.c
-    # Named client role test of CORE-S3-1 (#71): the client role on a Wintun adapter against a server node and the oracle
-    clienttest.c
+    ${RANZ_VPNTEST_SOURCES}
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c,
   # quictest.c and tlstest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN
   # module for vxlantest.c, the switch module for switchtest.c; netapi32: the local account that stands for a domain

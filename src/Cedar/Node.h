@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeOverlay.c, NodeSession.c, NodeTable.c, NodeVrf.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -96,12 +96,25 @@
 #define NODE_VRF_MAX_ROUTES 65536      // Routes of the tables of one Generation at most
 #define NODE_VRF_MAX_HOPS   65536      // Next hops of those tables at most
 
+// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182)
+#define NODE_NAT_GROWTH 40 // Bytes that the translation of a packet of a peer adds at most: from IPv4 to IPv6, 20 to its header and 20 to the one that an ICMP error quotes
+
+// The MTU, the MSS clamp and the rate limits of the overlay of a node (NodeShape.c; SDN-20, #196)
+#define NODE_SHAPE_DEFAULT_MTU 1280  // The MTU of a VRF that the desired state gives none, the least that IPv6 allows (ADR-0025 decision 16)
+#define NODE_SHAPE_MAX_MTU     65535 // The largest MTU of a VRF (MaxMTU of the controller's intent)
+#define NODE_SHAPE_MSS_HEADERS 40    // Bytes of the IPv4 and TCP headers between the MTU of a VRF and the MSS of a TCP SYN in it
+#define NODE_SHAPE_BURST       50    // ms of its rate that a token bucket holds ...
+#define NODE_SHAPE_MIN_BURST   65536 // ... and bytes at least: more than the largest IP packet
+
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
 // Drains an adapter queue on its I/O thread, to completion (NodeAddQueue)
 typedef void(NODE_QUEUE_PROC)(NODE_QUEUE *q, void *param);
 // Takes an IP packet of the overlay for the host in the VRF vrf_id (NodeOverlayStart), on the thread of the overlay
 typedef void(NODE_ADAPTER_PROC)(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size);
+// Takes the MTU of the VRF vrf_id for the host's adapter of that VRF (NodeOverlayStart), on the thread that applied
+// the Generation
+typedef void(NODE_ADAPTER_MTU_PROC)(NODE *n, void *param, UINT vrf_id, UINT mtu);
 // Stops the packets of the host into the overlay, first thing in NodeOverlayStop (NodeOverlayStart)
 typedef void(NODE_ADAPTER_STOP_PROC)(NODE *n, void *param);
 // Takes a desired state that the overlay applied, once its forwarding tables are in (NodeOverlayStart)
@@ -160,6 +173,9 @@ struct NODE_VRF_TABLES {
 	NODE_VRF_TABLE **Vrfs; // The table of each, by VRF id
 	UINT NumHops;          // Number of next hops
 	void **Hops;           // The next hops: what next hop i of a route leads to
+	NODE_NAT *Nat;         // The 1:1 NAT rules of the same Generation (NodeNat.c; SDN-6, #182), NULL for none
+	// The MTU and the rate limits of the VRFs of the same Generation (NodeShape.c; SDN-20, #196), NULL for the defaults
+	NODE_SHAPE_TABLE *Shape;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -233,6 +249,9 @@ struct NODE {
 
 	// The overlay (NodeOverlay.c; SDN-3, #179), NULL while it does not run
 	NODE_OVERLAY *Overlay;
+
+	// The MTU, the MSS clamp and the rate limits of the overlay (NodeShape.c; SDN-20, #196), NULL while it does not run
+	NODE_SHAPE *Shape;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -244,6 +263,7 @@ struct NODE_OVERLAY_CONFIG {
 	PEER_KEY *Key;                           // The node's static key, which must outlive the overlay
 	NODE_ADAPTER_PROC *Adapter;              // Takes the packets for the host, NULL for none
 	void *AdapterParam;                      // ... and its second parameter, which AdapterStop and State take too
+	NODE_ADAPTER_MTU_PROC *AdapterMtu;       // Takes the MTU of each VRF for the host's adapter of the VRF, NULL for none; with AdapterParam
 	NODE_ADAPTER_STOP_PROC *AdapterStop;     // Stops the packets of the host first thing in NodeOverlayStop, NULL when the caller stops them before
 	NODE_STATE_PROC *State;                  // Takes each state applied, once its forwarding tables are in, NULL for none
 	bool Dialler;                            // The node dials every peer, whatever the order of the keys, as a client does (CORE-S3-1)
@@ -290,6 +310,12 @@ struct NODE_CLIENT_STATUS {
 	UINT64 NumRoams;                      // Settled address changes on other interfaces
 	UINT64 FromHost;                      // Packets of the host taken from the adapter
 	UINT64 ToHost;                        // Packets put into the adapter for the host
+};
+
+// What NodeShapeGetStatus reports
+struct NODE_SHAPE_STATUS {
+	UINT64 Clamped; // TCP SYNs of the host that left with their MSS clamped to the MTU of their VRF
+	UINT64 Limited; // Packets of the host that a rate limit dropped
 };
 
 // What NodeGetStatus reports
@@ -390,6 +416,14 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v);
 NODE_VRF_TABLE *NodeGetVrfTable(NODE_VRF_TABLES *v, UINT vrf_id);
 UINT NodeVrfLookup(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size);
 
+// NodeNat.c
+NODE_NAT *NodeNewNat(const struct CONTROL_STATE *st);
+void NodeFreeNat(NODE_NAT *nat);
+UINT NodeNatRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);
+bool NodeNatEnds(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, UCHAR *src, UCHAR *dst, UINT *addr_size);
+UINT NodeNatCopy(NODE_VRF_TABLES *v, UINT vrf_id, UCHAR *dst, const UCHAR *packet, UINT size);
+bool NodeNatInbound(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR **packet, UINT *size, UCHAR *buf, UINT buf_size);
+
 // NodeOverlay.c
 bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg);
 void NodeOverlayStop(NODE *n);
@@ -417,5 +451,9 @@ void NodeWintunCounters(NODE_WINTUN *w, UINT64 *from_host, UINT64 *to_host, UINT
 bool NodeWintunSetAddresses(NODE_WINTUN *w, const NODE_PREFIX *addrs, UINT num);
 bool NodeWintunSetRoutes(NODE_WINTUN *w, const NODE_PREFIX *routes, UINT num);
 bool NodeWintunSetDns(NODE_WINTUN *w, const char *servers, const char *suffix);
+
+// NodeShape.c
+void NodeShapeFreeTable(NODE_SHAPE_TABLE *t);
+void NodeShapeGetStatus(NODE *n, NODE_SHAPE_STATUS *st);
 
 #endif // NODE_H

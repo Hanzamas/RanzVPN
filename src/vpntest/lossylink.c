@@ -23,6 +23,8 @@
 // LOSSYLINK_FLOOR percent of what the link carries (no collapse), and the median wait below the target.
 // Print "LOSSYLINK TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
 
@@ -894,6 +896,7 @@ static void LossyLinkCase(LOSSYLINK_CTX *ctx, UINT loss_bp)
 	LossyLinkCheck(ctx, codel.Wait50 < TRANSPORT_QUEUE_TARGET, "  the active queue keeps the median wait below its target of 5 ms", "%I64u us", codel.Wait50);
 }
 
+RANZ_TEST_TAGS("lossylink", lossylink_test, "core", "Lossy link: the ingress queue of the session layer (FIFO, CoDel's drops), and an inner TCP over the TLS-443 path on a simulated link of 1% and 2% loss and 50 ms round trip, over CoDel and over FIFO: no collapse with CoDel.");
 void lossylink_test(UINT num, char **arg)
 {
 	LOSSYLINK_CTX *ctx = ZeroMalloc(sizeof(LOSSYLINK_CTX));

@@ -52,6 +52,24 @@ function Invoke-TraceTest([string[]] $testArgs) {
 # 1. No trace session
 Invoke-TraceTest @('trace')
 
+# logman stop now and then fails with the WMI GUID error, HRESULT 0x80071068 (exit code -2147020696), while the session
+# is there: on the arm64 runners, with no change to the code under test. The next stop finds the session. This stops it
+# up to 3 times, 2 seconds apart, while that error comes back; any other exit code is the answer at once. Returns the
+# exit code of the last stop.
+function Stop-TraceSession([string] $name) {
+	$wmiGuidError = -2147020696
+	for ($attempt = 1; $attempt -le 3; $attempt++) {
+		& logman stop $name -ets | Out-Host
+		$code = $LASTEXITCODE
+		if ($code -ne $wmiGuidError) { return $code }
+		if ($attempt -lt 3) {
+			Write-Host "logman stop failed with the WMI GUID error (attempt $attempt of 3), again in 2 s"
+			Start-Sleep -Seconds 2
+		}
+	}
+	return $code
+}
+
 # 2. A trace session on the provider: every keyword, every level. The hex values are quoted, or
 # PowerShell would pass them on as decimal numbers (0xffffffffffffffff as -1).
 & logman start $session -p $providerGuid '0xffffffffffffffff' '0xff' -o $etl -ets
@@ -59,8 +77,7 @@ if ($LASTEXITCODE -ne 0) { throw "logman could not start the trace session (exit
 try {
 	Invoke-TraceTest @('trace', 'listening')
 } finally {
-	& logman stop $session -ets
-	$stopCode = $LASTEXITCODE
+	$stopCode = Stop-TraceSession $session
 }
 if ($stopCode -ne 0) { throw "logman could not stop the trace session (exit code $stopCode)" }
 

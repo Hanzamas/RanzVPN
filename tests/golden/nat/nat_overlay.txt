@@ -1,0 +1,26 @@
+# red (101, 4via6 fd00:101:0:ffff::/96) and blue (202, 4via6 fd00:202:0:ffff::/96) both use 10.0.0.0/24; in lab (303) node-d presents 192.168.1.0/24 as 10.99.1.0/24
+red: node-a fd00:101:0:ffff::a00:1 > fd00:101:0:ffff::a00:5 icmpv6 echo-request: delivered to node-b in red as 10.0.0.1 > 10.0.0.5 icmp echo-request, the packet expected
+blue: node-a fd00:202:0:ffff::a00:1 > fd00:202:0:ffff::a00:5 icmpv6 echo-request: delivered to node-c in blue as 10.0.0.1 > 10.0.0.5 icmp echo-request, the packet expected
+red: node-b 10.0.0.5 > 10.0.0.1 icmp echo-reply: delivered to node-a in red as fd00:101:0:ffff::a00:5 > fd00:101:0:ffff::a00:1 icmpv6 echo-reply, the packet expected
+blue: node-c 10.0.0.5 > 10.0.0.1 icmp echo-reply: delivered to node-a in blue as fd00:202:0:ffff::a00:5 > fd00:202:0:ffff::a00:1 icmpv6 echo-reply, the packet expected
+red: node-a fd00:101:0:ffff::a00:1 > fd00:101:0:ffff::a00:5 udp 40000 > 53: delivered to node-b in red as 10.0.0.1 > 10.0.0.5 udp 40000 > 53, the packet expected
+blue: node-c 10.0.0.5 > 10.0.0.1 udp 40000 > 53: delivered to node-a in blue as fd00:202:0:ffff::a00:5 > fd00:202:0:ffff::a00:1 udp 40000 > 53, the packet expected
+blue: node-a fd00:202:0:ffff::a00:1 > fd00:202:0:ffff::a00:5 tcp 40001 > 80 syn: delivered to node-c in blue as 10.0.0.1 > 10.0.0.5 tcp 40001 > 80 syn, the packet expected
+red: node-b 10.0.0.5 > 10.0.0.1 icmp port-unreachable, quoting 10.0.0.1 > 10.0.0.5 udp 40000 > 53: delivered to node-a in red as fd00:101:0:ffff::a00:5 > fd00:101:0:ffff::a00:1 icmpv6 port-unreachable, quoting fd00:101:0:ffff::a00:1 > fd00:101:0:ffff::a00:5 udp 40000 > 53, the packet expected
+blue: node-a fd00:202:0:ffff::a00:1 > fd00:202:0:ffff::a00:5 icmpv6 time-exceeded, quoting fd00:202:0:ffff::a00:5 > fd00:202:0:ffff::a00:1 icmpv6 echo-request: delivered to node-c in blue as 10.0.0.1 > 10.0.0.5 icmp time-exceeded, quoting 10.0.0.5 > 10.0.0.1 icmp echo-request, the packet expected
+red: node-a fd00:101:0:1::1 > fd00:101:0:ffff::a00:5 icmpv6 echo-request: dropped by node-a
+red: node-a fd00:202:0:ffff::a00:1 > fd00:202:0:ffff::a00:5 icmpv6 echo-request: dropped by node-a
+red: node-a 10.0.0.1 > 10.0.0.5 icmp echo-request: delivered to node-b in red as 10.0.0.1 > 10.0.0.5 icmp echo-request, the packet expected
+lab: node-a 10.3.0.1 > 10.99.1.7 udp 40000 > 53: delivered to node-d in lab as 10.3.0.1 > 192.168.1.7 udp 40000 > 53, the packet expected
+lab: node-d 192.168.1.7 > 10.3.0.1 udp 40000 > 53: delivered to node-a in lab as 10.99.1.7 > 10.3.0.1 udp 40000 > 53, the packet expected
+lab: node-a 10.3.0.1 > 10.99.1.7 tcp 40001 > 80 syn: delivered to node-d in lab as 10.3.0.1 > 192.168.1.7 tcp 40001 > 80 syn, the packet expected
+lab: node-d 192.168.1.7 > 10.3.0.1 icmp port-unreachable, quoting 10.3.0.1 > 192.168.1.7 udp 40000 > 53: delivered to node-a in lab as 10.99.1.7 > 10.3.0.1 icmp port-unreachable, quoting 10.3.0.1 > 10.99.1.7 udp 40000 > 53, the packet expected
+lab: node-a 10.3.0.1 > 10.99.1.7 icmp port-unreachable, quoting 10.99.1.7 > 10.3.0.1 udp 40000 > 53: delivered to node-d in lab as 10.3.0.1 > 192.168.1.7 icmp port-unreachable, quoting 192.168.1.7 > 10.3.0.1 udp 40000 > 53, the packet expected
+lab: node-d 192.168.1.7 > 10.3.0.1 icmp echo-request: delivered to node-a in lab as 10.99.1.7 > 10.3.0.1 icmp echo-request, the packet expected
+lab: node-d 10.3.0.4 > 10.3.0.1 icmp echo-request: delivered to node-a in lab as 10.3.0.4 > 10.3.0.1 icmp echo-request, the packet expected
+lab: node-d 192.168.2.7 > 10.3.0.1 icmp echo-request: dropped by node-d
+lab: node-a 10.3.0.1 > 192.168.1.7 icmp echo-request: dropped by node-a
+node-a: forwarded 9, delivered 8, dropped 3, VRFs 3
+node-b: forwarded 2, delivered 3, dropped 0, VRFs 1
+node-c: forwarded 2, delivered 3, dropped 0, VRFs 1
+node-d: forwarded 4, delivered 3, dropped 1, VRFs 1

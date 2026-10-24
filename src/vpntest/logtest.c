@@ -32,6 +32,8 @@
 //
 // Each test prints "<NAME> TEST OK" only when every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Cedar/Cedar.h"
 #include "Cedar/Eraser.h"
 #include "Cedar/LogWriter.h"
@@ -280,6 +282,7 @@ static UINT LogWriterCountLines(char *text, UINT *in_order)
 }
 
 // "logwriter": one file open per LOG, every record in order, one size switch named as before
+RANZ_TEST("logwriter", logwriter_test, "Log writer: one file open per LOG for 1000 records, every record in order, one size switch named as before.");
 void logwriter_test(UINT num, char **arg)
 {
 	LOGTEST_CTX ctx;
@@ -571,6 +574,7 @@ static void LogBoundCheckFile(LOGTEST_CTX *ctx, char *path)
 }
 
 // "logbound": bounded record queue and buffer while the log file cannot be opened, one dropped-records line
+RANZ_TEST("logbound", logbound_test, "Log writer without a file: bounded record queue and buffer, dropped records released and counted in one line.");
 void logbound_test(UINT num, char **arg)
 {
 	LOGTEST_CTX ctx;
@@ -743,6 +747,7 @@ static void SlogFirstSenderThread(THREAD *thread, void *param)
 }
 
 // "slog": tick deadline of the next resolve, a second sender while the first one resolves, unchanged datagrams
+RANZ_TEST("slog", slog_test, "Syslog: the next resolve is a tick deadline, a second sender does not wait for a slow resolve, datagram content.");
 void slog_test(UINT num, char **arg)
 {
 	LOGTEST_CTX ctx;
@@ -857,6 +862,7 @@ void slog_test(UINT num, char **arg)
 // eraser (FND-20)
 
 // "eraser": the eraser thread waits its check interval in milliseconds; the configuration keeps seconds
+RANZ_TEST("eraser", eraser_test, "Eraser: a check interval of 1 s gives at most 4 free space checks in 3 s; the configuration keeps seconds.");
 void eraser_test(UINT num, char **arg)
 {
 	LOGTEST_CTX ctx;

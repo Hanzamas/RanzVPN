@@ -1,10 +1,19 @@
-param([string] $BinDir = 'build\ranz')
+param(
+	[string] $BinDir = 'build\ranz',
+	# The signed rqlited.exe that this ranz.exe carries as its Payload (the signing step of ranz.yml)
+	[string] $Member = $env:RQLITED_SIGNED
+)
 
 $ErrorActionPreference = 'Stop'
 
 # ranz controller as a Windows service (SDN-2, #178; ONE-1, #310: the controller is a subcommand of
-# the one executable ranz, and the service runs ranz.exe controller). Installed with rqlited as its
-# sidecar and with plain HTTP on port 80, the service must:
+# the one executable ranz, and the service runs ranz.exe controller). Installed with its own rqlite
+# member as its sidecar (ONE-4, #313: the rqlited.exe that ranz.exe carries as a Payload, with no
+# -rqlited flag and no rqlited beside ranz.exe) and with plain HTTP on port 80, the service must:
+# - write its rqlite member as payload\rqlited.exe in its data directory, with the bytes of the
+#   signed Payload and a valid Authenticode signature, and run that file; write it again at the next
+#   start when it was deleted while the service was stopped, and, while the service is stopped, let
+#   reset-admin write it again and run it;
 # - run as its virtual account NT SERVICE\ranz-controller, not LocalSystem, with an unrestricted
 #   service SID that is the serviceSID of controller/service_windows.go, from the command line
 #   ranz.exe controller with the flags it was installed with; run with the
@@ -50,6 +59,9 @@ $ErrorActionPreference = 'Stop'
 $bin = (Resolve-Path $BinDir).Path
 $ranz = Join-Path $bin 'ranz.exe'
 $nodesim = Join-Path $bin 'ranz-nodesim.exe'
+if (-not $Member -or -not (Test-Path -LiteralPath $Member)) {
+	throw 'the signed rqlited.exe of the Payload is not named: pass -Member, or set RQLITED_SIGNED as the signing step of ranz.yml does'
+}
 
 # serviceName of controller (the package of ranz controller), its TLS port (the default -listen,
 # and the fallback), and the prefixes that port.PlainPrefixes makes of -http-listen :80
@@ -65,6 +77,8 @@ $serviceSid = 'S-1-5-80-3572785604-795126647-2475823641-2319294638-1653438898'
 $data = Join-Path $env:RUNNER_TEMP 'ranz-controller-data'
 # adminTokenFile of controller: the secret of the admin token of the first start
 $tokenFile = Join-Path $data 'admin.token'
+# Where the controller writes its rqlite member: payloadDir of controller/ and the name of the Payload
+$memberFile = Join-Path $data 'payload\rqlited.exe'
 $work = Join-Path $env:RUNNER_TEMP 'ranz-controller-check'
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 
@@ -100,7 +114,7 @@ function Assert-Refused([string[]] $argv, [int] $status) {
 # the output of the rqlited it runs while the service is stopped, go to the log
 function Invoke-ResetAdmin {
 	$errFile = Join-Path $work 'reset-admin.err'
-	$out = & $ranz controller reset-admin -data $data -rqlited $env:RQLITED 2> $errFile
+	$out = & $ranz controller reset-admin -data $data 2> $errFile
 	$code = $LASTEXITCODE
 	Get-Content -LiteralPath $errFile | ForEach-Object { Write-Host "  reset-admin: $_" }
 	if ($code -ne 0) { throw "ranz controller reset-admin exited with code $code" }
@@ -188,6 +202,45 @@ function Test-Hardening {
 	}
 }
 
+# The rqlite member of the controller (ONE-4, #313): no file of rqlite beside ranz.exe, and the file
+# that the controller wrote under its data directory has the bytes of the signed Payload and a valid
+# Authenticode signature
+function Test-MemberFile {
+	$beside = @(Get-ChildItem -LiteralPath $bin -Filter 'rqlite*' -ErrorAction SilentlyContinue)
+	if ($beside.Count -gt 0) { throw "ranz.exe has files of rqlite beside it: $($beside.Name -join ', ')" }
+	if (-not (Test-Path -LiteralPath $memberFile)) { throw "the controller did not write its rqlite member to ${memberFile}" }
+	$want = (Get-FileHash -Algorithm SHA256 -LiteralPath $Member).Hash
+	$have = (Get-FileHash -Algorithm SHA256 -LiteralPath $memberFile).Hash
+	if ($have -ne $want) { throw "the rqlite member in $memberFile has the SHA-256 $have, not the $want of the Payload" }
+	$sig = Get-AuthenticodeSignature -FilePath $memberFile
+	if ($sig.Status -ne 'Valid') { throw "the rqlite member in $memberFile has the signature status $($sig.Status): $($sig.StatusMessage)" }
+	Write-Host "rqlite member: $memberFile has the bytes of the signed Payload ($have) and a valid signature of $($sig.SignerCertificate.Subject)"
+}
+
+# The same, and the rqlited.exe process that runs is that file
+function Test-Member {
+	Test-MemberFile
+	$running = @(Get-CimInstance Win32_Process -Filter "Name='rqlited.exe'" | Where-Object { $_.ExecutablePath -eq $memberFile })
+	if ($running.Count -ne 1) { throw "expected one rqlited.exe process that runs $memberFile, found $($running.Count)" }
+	Write-Host "rqlite member: process $($running[0].ProcessId) runs it"
+}
+
+# Delete the rqlite member while the service is stopped. The process that ran it may hold the file
+# for a moment after the service reported Stopped.
+function Remove-Member {
+	$end = (Get-Date).AddSeconds(10)
+	while ($true) {
+		try {
+			Remove-Item -LiteralPath $memberFile -ErrorAction Stop
+			break
+		} catch {
+			if ((Get-Date) -ge $end) { throw "could not delete ${memberFile}: $_" }
+			Start-Sleep -Milliseconds 200
+		}
+	}
+	Write-Host "rqlite member: $memberFile deleted while the service is stopped"
+}
+
 function Get-ServiceEvents {
 	@(Get-WinEvent -LogName Application -FilterXPath "*[System[Provider[@Name='$service']]]" -ErrorAction SilentlyContinue |
 		Where-Object { $_.TimeCreated -ge $since } | Sort-Object RecordId)
@@ -215,22 +268,22 @@ Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue |
 
 $hold = $null
 try {
-	Write-Host (Invoke-Checked $ranz @('controller', 'install', '-data', $data, '-rqlited', $env:RQLITED, '-http-listen', ':80'))
+	Write-Host (Invoke-Checked $ranz @('controller', 'install', '-data', $data, '-http-listen', ':80'))
 	foreach ($p in @($acmePrefix, $redirectPrefix)) {
 		$acl = Get-URLReservation $p
 		if ($acl -notmatch [regex]::Escape($p) -or $acl -notmatch [regex]::Escape($account)) { throw "install made no URL reservation of $p for ${account}:`n$acl" }
 	}
 	Write-Host "install reserved both URL prefixes of port 80 for $account"
-	# The virtual account, unlike LocalSystem, has no right to the runner's directories of the
-	# executables: it gets read and execute there, as every account has in Program Files
-	foreach ($dir in @($bin, (Split-Path -Parent $env:RQLITED))) {
-		& icacls $dir /grant "${account}:(OI)(CI)RX" | Out-Null
-		if ($LASTEXITCODE -ne 0) { throw "icacls $dir exited with code $LASTEXITCODE" }
-	}
+	# The virtual account, unlike LocalSystem, has no right to the runner's directory of the
+	# executable: it gets read and execute there, as every account has in Program Files. It needs
+	# nothing for rqlited: the controller writes it under its own data directory (ONE-4, #313).
+	& icacls $bin /grant "${account}:(OI)(CI)RX" | Out-Null
+	if ($LASTEXITCODE -ne 0) { throw "icacls $bin exited with code $LASTEXITCODE" }
 
 	Start-Service -Name $service
 	Wait-Api
 	Test-Hardening
+	Test-Member
 	$status = Invoke-Ranz @('status')
 	Write-Host "status: $($status | ConvertTo-Json -Compress -Depth 4)"
 	if (-not $status.tlsFingerprint) { throw 'the status names no TLS fingerprint' }
@@ -320,14 +373,21 @@ try {
 	Test-Node $control $status.publicKey | Out-Null
 	Write-Host 'after the restart: the same intent, generation, Noise static key, TLS key and tokens, and the node connects with the key it knew'
 
-	# Hold TCP 443 (IPv4 and IPv6) and start again: the controller falls back to 5555
+	# Hold TCP 443 (IPv4 and IPv6) and start again: the controller falls back to 5555. The rqlite
+	# member is deleted from disk while the service is stopped (ONE-4, #313): the next start must
+	# write it again, after the check of its hash and its signature, and the store is as it was.
 	Stop-Service -Name $service
+	Remove-Member
 	$hold = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::IPv6Any, 443)
 	$hold.Server.DualMode = $true
 	$hold.Start()
 	Start-Service -Name $service
 	$api = 'https://127.0.0.1:5555'
 	Wait-Api
+	Test-Member
+	$names = (Invoke-Ranz @('get', 'resources')).resources | ForEach-Object { "$($_.kind)/$($_.name)" }
+	if (($names -join ',') -ne 'VRF/corp,VRF/default,Network/corp-lan,Network/default,Node/branch-1,Policy/default-allow-all') { throw "the intent after the member was written again is $($names -join ', ')" }
+	Write-Host 'the member was written again after it was deleted while the service was stopped, and the intent is as it was'
 	$fallback = Invoke-Ranz @('status')
 	Write-Host "status with 443 taken: $($fallback | ConvertTo-Json -Compress -Depth 4)"
 	if ($fallback.capabilities.tlsPort -ne 5555 -or -not $fallback.capabilities.tlsPortFallback) { throw 'with 443 taken the controller does not report the fallback to 5555' }
@@ -391,10 +451,14 @@ try {
 	if ($me.name -ne $reset.name -or $me.role -ne 'admin') { throw "the token of the new admin.token is $($me | ConvertTo-Json -Compress), not $($reset.name)" }
 	$names = ((Invoke-Ranz @('token', 'list')).tokens | ForEach-Object { $_.name }) -join ','
 	Write-Host "reset-admin with the service running: $($reset.name) answers as admin; the tokens are $names"
-	# The same with the service stopped: reset-admin runs the service's rqlited on its data itself
+	# The same with the service stopped: reset-admin runs the service's rqlited on its data itself.
+	# With the member deleted too (ONE-4, #313), reset-admin writes it again, after the check of its
+	# hash and its signature, and runs it.
 	Stop-Service -Name $service
 	Remove-Item -LiteralPath $tokenFile
+	Remove-Member
 	$offline = Invoke-ResetAdmin
+	Test-MemberFile
 	if ($offline.role -ne 'admin' -or $offline.name -eq $reset.name -or $offline.token -notmatch '^ranz_') { throw "reset-admin with the service stopped printed $($offline | ConvertTo-Json -Compress)" }
 	if ((Get-Content -LiteralPath $tokenFile -Raw).Trim() -ne $offline.token) { throw 'reset-admin with the service stopped did not write the secret it printed to admin.token' }
 	Start-Service -Name $service

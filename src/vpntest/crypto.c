@@ -15,6 +15,8 @@
 // SHA-1, of fixed bytes with a fixed RSA-2048 key. PKCS#1 v1.5 signing is deterministic, so the
 // signature must stay byte for byte what RSA_private_encrypt() over the DigestInfo made.
 
+#include "testlist.h"
+
 #include "Cedar/Account.h"
 
 #include "Mayaqua/Encrypt.h"
@@ -606,6 +608,7 @@ static void KatDhParams(KAT_CTX *ctx)
 }
 
 // Crypto known-answer test
+RANZ_TEST("crypto", crypto_test, "MD4, MD5, SHA-0, SHA-1, SHA-256, RC4 and Rand against known-answer vectors.");
 void crypto_test(UINT num, char **arg)
 {
 	KAT_CTX ctx;
