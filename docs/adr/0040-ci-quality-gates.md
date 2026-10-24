@@ -24,3 +24,11 @@ The new core parses attacker-reachable wire formats (the Noise handshake, the na
 - The coverage floor is per module, so a large change cannot dilute one module's coverage behind a higher project-wide number.
 - Application Verifier stands in for ThreadSanitizer on Windows; `go test -race` keeps race detection on the Go side.
 - The performance gate compares against a recorded median with a margin, so the absolute throughput targets stay estimates (ADR-0002 amendment of 2026-10-21) while a regression still fails the build.
+
+## Amendment 2026-10-24: the gates run in the full set, not on every pull request
+
+Maintainer decision in chat. A CI cycle of a pull request took about 25 minutes and about 100 job-minutes, and a ticket needs two or three cycles. Every gate above still runs, in the **full set** of `windows.yml` and `ranz.yml` (the plan job, `ci-plan.yml`, chooses the set): on every push to `integration` and `master`, every night, on `workflow_dispatch`, on a pull request that carries the label `full-ci`, and on a pull request that changes `src/Core/Crypto*`, `src/Core/Noise*`, `src/SeLow` or the signing and install scripts. Any other pull request runs the **fast set**: the format check, the move-only check, the fuzz target registry, the pins, `govulncheck` and SBOM job, `ranz` on Linux (with `go test -race`, the Go coverage floors, `go test -fuzz`, `staticcheck` and `govulncheck`) and on Windows x64, the x64 build with its `vpntest` and `coretest` tests and its performance gate, and the arm64 Debug build as a compile check.
+
+- Decision 1 holds at merge: a new parser needs its fuzz target in the registry on the pull request, and the Go fuzz tests run there. The libFuzzer targets of the C code run under AddressSanitizer in the full set.
+- For the C code, decisions 2 to 5 (the coverage floor, clang-tidy and MSVC `/analyze`, Application Verifier, the arm64 performance gate) run in the full set. A change that breaks one is found when it reaches `integration`, not before; the label `full-ci` runs them on the pull request.
+- This also amends the arm64 line of the ADR-0002 amendment of 2026-10-21: every pull request still builds arm64 (the Debug configuration), and the arm64 tests run in the full set.
