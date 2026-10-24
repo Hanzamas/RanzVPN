@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The thin MSI of the one ranz.exe (ONE-5, #314; ADR-0011 and ADR-0020 amendments of 2026-10-22). Its only
+  payload is ranz.exe, which it puts in the Ranz VPN folder under Program Files, and its actions run
+  ranz install and ranz uninstall, so Group Policy and Intune can deploy the one file the usual way. The
+  rest of the product is not in the package: ranz install writes ranz-node.exe and the drivers, sets the
+  access list of the folder and registers the services, and ranz uninstall takes them out again, so the
+  package never has to know them.
+
+  Install: Windows Installer writes ranz.exe, then a deferred action, as SYSTEM, runs ranz.exe install. As
+  it runs from the Ranz VPN folder, ranz install does not copy itself there. When it fails, the package
+  rolls back, and a rollback action runs ranz uninstall, so that nothing of the half-done install stays.
+
+  Uninstall: before Windows Installer removes ranz.exe, a deferred action runs ranz.exe uninstall
+  -keep-ranz: the services and the files that ranz install made go, the data directory stays (ADR-0020
+  decision 3), and ranz.exe and the folder are left for Windows Installer, which removes them once the
+  process has ended. Without the flag, ranz uninstall, run by the ranz.exe in the folder, would have
+  Windows remove that file and the folder at the next restart, and the restart would take away the
+  ranz.exe that an upgrade installs right after. A rollback of the uninstall runs ranz install, which puts
+  the services back.
+
+  Upgrade: a major upgrade removes the old product first (its ranz uninstall, then its ranz.exe) and then
+  installs the new one (ranz.exe, ranz install), so the data directory and the Configuration store, which
+  names the Node identity key, carry over. A package of a lower version than the installed one is refused
+  with the message below, and msiexec exits 1603.
+
+  Version: Windows Installer orders upgrades by the first three parts. They are the major.minor of
+  CMakeLists.txt and the build number that every shipped file of a windows.yml run carries, the run number
+  of the workflow, the one counter that only grows (ADR-0020 consequences). It is at most 65535, the
+  largest third part of an MSI version, and ranz version prints the version of the package.
+
+  Architecture: the x64 package refuses an ARM64 computer with a message that names the arm64 package. The
+  arm64 package needs no condition of its own: Windows Installer refuses it on any other computer (1633).
+
+  Preprocessor variables (wix build -d): Version (major.minor.build), PackageArch (x64 or arm64), OtherArch
+  (the other one) and RanzExe (the ranz.exe to carry).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Ranz VPN" Manufacturer="Hanzcodes" Version="$(var.Version)" UpgradeCode="{E9AFDF47-2941-4293-B2E0-1238B4A05A64}" Scope="perMachine" Language="1033">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Ranz VPN is installed. Uninstall it before installing an older one." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Apps and Features offers Uninstall only: Modify and Repair would run no package of ours -->
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <?if $(var.PackageArch) = "x64" ?>
+    <Launch Condition="Installed OR NativeMachine &lt;&gt; 43620" Message="This is the x64 package of Ranz VPN, and this computer is an ARM64 computer. Install the arm64 package of Ranz VPN instead." />
+    <?endif?>
+
+    <!-- The Ranz folder is fixed (ranz install names it too): its id has lower case letters, so it is not a public property that a command line could set -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="RanzFolder" Name="Ranz VPN" />
+    </StandardDirectory>
+
+    <Feature Id="Ranz" Title="Ranz VPN" Level="1" AllowAbsent="no">
+      <Component Id="RanzExe" Directory="RanzFolder">
+        <File Id="RanzExe" Source="$(var.RanzExe)" Name="ranz.exe" KeyPath="yes" />
+        <RemoveFolder Id="RemoveRanzFolder" Directory="RanzFolder" On="uninstall" />
+      </Component>
+    </Feature>
+
+    <CustomAction Id="RanzInstall" FileRef="RanzExe" ExeCommand="install" Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="RanzInstallRollback" FileRef="RanzExe" ExeCommand="uninstall -keep-ranz" Execute="rollback" Impersonate="no" Return="ignore" />
+    <CustomAction Id="RanzUninstall" FileRef="RanzExe" ExeCommand="uninstall -keep-ranz" Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="RanzUninstallRollback" FileRef="RanzExe" ExeCommand="install" Execute="rollback" Impersonate="no" Return="ignore" />
+
+    <!-- A rollback action is scheduled before the action that it undoes, so that it is in the script when that action fails -->
+    <InstallExecuteSequence>
+      <Custom Action="RanzInstallRollback" After="InstallFiles" Condition="NOT (REMOVE=&quot;ALL&quot;)" />
+      <Custom Action="RanzInstall" After="RanzInstallRollback" Condition="NOT (REMOVE=&quot;ALL&quot;)" />
+      <Custom Action="RanzUninstallRollback" Before="RanzUninstall" Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="RanzUninstall" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>
