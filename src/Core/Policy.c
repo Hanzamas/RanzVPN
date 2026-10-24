@@ -262,6 +262,14 @@ static void PolicyFreeState(POLICY_STATE *st, const POLICY_STATE *keep) {
 	HeapFree(GetProcessHeap(), 0, st);
 }
 
+// Free a Network of the engine with the addresses that its members own
+static void PolicyFreeNet(POLICY_NET *net) {
+	if (net->Owners != NULL)
+		HeapFree(GetProcessHeap(), 0, net->Owners);
+
+	HeapFree(GetProcessHeap(), 0, net);
+}
+
 // Free a policy engine. No thread may use it any more.
 void PolicyFree(POLICY_ENGINE *p) {
 	if (p == NULL)
@@ -276,17 +284,10 @@ void PolicyFree(POLICY_ENGINE *p) {
 			HeapFree(GetProcessHeap(), 0, rec);
 	}
 
-	// Each Network leaves its place before it is freed, so that no place of the array holds a freed Network
-	for (UINT i = 0; i < (UINT)p->NumNets && i < POLICY_MAX_NETWORKS; i++) {
-		POLICY_NET *net = p->Nets[i];
-
-		p->Nets[i] = NULL;
-		if (net == NULL)
-			continue;
-		if (net->Owners != NULL)
-			HeapFree(GetProcessHeap(), 0, net->Owners);
-		HeapFree(GetProcessHeap(), 0, net);
-	}
+	// Each Network through PolicyFreeNet: HeapFree invalidates the Network that it is given, which /analyze would then
+	// see in every place of the array
+	for (UINT i = 0; i < (UINT)p->NumNets && i < POLICY_MAX_NETWORKS; i++)
+		PolicyFreeNet(p->Nets[i]);
 
 	HeapFree(GetProcessHeap(), 0, p->SlotBlock);
 	HeapFree(GetProcessHeap(), 0, p->Block);
