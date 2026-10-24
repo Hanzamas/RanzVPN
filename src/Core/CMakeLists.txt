@@ -219,6 +219,44 @@ set_target_properties(coreswitch
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# corepolicy: the policy engine (Policy.h, Policy*.c; CORE-S4-2, #75): the stateful, identity-based firewall of the
+# Networks of a Node, with the isolation set of the fork, beside the switch module. It parses its JSON documents of rules
+# with cJSON (vcpkg, MIT), as Cedar parses the pipe of the BGP sidecar: Windows has no JSON parser for C outside the
+# Windows Runtime. It reads the addresses of the rules with Winsock's inet_pton and calls bcrypt for the random key of
+# its conntrack tables. The programs of the slim fork that link it (vpntest, the fuzz targets) keep their own build
+# options, so ranz_core_options and the libraries stay PRIVATE, as for coreswitch.
+file(GLOB SOURCES_CORE_POLICY "Policy*.c")
+file(GLOB HEADERS_CORE_POLICY "Policy*.h")
+
+add_library(corepolicy STATIC ${SOURCES_CORE_POLICY} ${HEADERS_CORE_POLICY})
+
+target_include_directories(corepolicy PUBLIC "${TOP_DIRECTORY}/src")
+
+target_link_libraries(corepolicy PRIVATE ranz_core_options ranz_warnings)
+
+# The include directory is found from the header, so the include line is <cjson/cJSON.h> whatever directory the
+# package config exports (src/Cedar/CMakeLists.txt does the same)
+find_package(cJSON CONFIG REQUIRED)
+find_path(RANZ_CJSON_INCLUDE_DIR "cjson/cJSON.h" REQUIRED)
+target_include_directories(corepolicy PRIVATE "${RANZ_CJSON_INCLUDE_DIR}")
+
+# The only libraries the module calls
+target_link_libraries(corepolicy
+  PRIVATE
+    cjson
+    "bcrypt.lib"
+    "ws2_32.lib"
+)
+
+set_target_properties(corepolicy
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "corepolicy"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
 # corefrontdoor: the front door (FrontDoor.h, FrontDoor*.c; SDN-29, #205; ADR-0035): the TCP listener of a node, on 443
 # in a deployment, that peeks the first bytes of each connection, routes it by its ClientHello or its first bytes and
 # hands the socket to its owner, in this process or in another through the owner's handoff pipe (WSADuplicateSocketW),
