@@ -230,6 +230,12 @@ static UINT64 VpTestClock(NODE *n, void *param)
 	return (UINT64)ReadAcquire64(&vptest_now);
 }
 
+// Append a text to the report
+static void VpTestWrite(BUF *b, char *s)
+{
+	WriteBuf(b, s, StrLen(s));
+}
+
 // The fake adapter of a host: it counts the packets it takes, and those of another VRF than the one sent in last
 static void VpTestAdapter(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size)
 {
@@ -278,8 +284,8 @@ static UINT VpTestPacket(UCHAR *buf, VPTEST_STEP *s)
 		WRITE_USHORT(l4 + 2, s->Dst);
 		WRITE_UINT(l4 + 4, 0x1000);
 		WRITE_UINT(l4 + 8, (s->Kind == VPTEST_SYN ? 0 : 0x2000));
-		l4[12] = 5 << 4;
-		l4[13] = (s->Kind == VPTEST_SYN ? TCP_SYN : (s->Kind == VPTEST_SYNACK ? TCP_SYN | TCP_ACK : TCP_ACK));
+		l4[12] = (UCHAR)(5 << 4);
+		l4[13] = (UCHAR)(s->Kind == VPTEST_SYN ? TCP_SYN : (s->Kind == VPTEST_SYNACK ? TCP_SYN | TCP_ACK : TCP_ACK));
 		WRITE_USHORT(l4 + 14, 64240);
 		break;
 
@@ -295,7 +301,7 @@ static UINT VpTestPacket(UCHAR *buf, VPTEST_STEP *s)
 	case VPTEST_REPLY:
 		proto = IP_PROTO_ICMPV4;
 		l4_size = 16;
-		l4[0] = (s->Kind == VPTEST_ECHO ? 8 : 0);
+		l4[0] = (UCHAR)(s->Kind == VPTEST_ECHO ? 8 : 0);
 		WRITE_USHORT(l4 + 4, s->Src);
 		WRITE_USHORT(l4 + 6, 1);
 		break;
@@ -563,9 +569,9 @@ static bool VpTestApply(VPTEST_NODE *nodes, UINT64 g, BUF *report)
 		char line[MAX_SIZE];
 
 		Format(line, sizeof(line), "the rules of %s in generation %I64u:\n", nodes[i].Name, g);
-		WriteBufStr(report, line);
-		WriteBufStr(report, (doc != NULL ? doc : "(none)"));
-		WriteBufStr(report, "\n");
+		VpTestWrite(report, line);
+		VpTestWrite(report, (doc != NULL ? doc : "(none)"));
+		VpTestWrite(report, "\n");
 		Free(doc);
 
 		ok = NodeOverlayApply(nodes[i].Node, st) && ok;
@@ -681,7 +687,7 @@ static void VpTestSteps(VPTEST_CTX *ctx, VPTEST_NODE *nodes, VPTEST_STEP *steps,
 		}
 
 		Format(line, sizeof(line), "t+%I64u.%03I64u %s: %s\n", s->Time / 1000, s->Time % 1000, desc, outcome);
-		WriteBufStr(report, line);
+		VpTestWrite(report, line);
 
 		Format(line, sizeof(line), "%s (%s)", s->What, desc);
 		VpTestCheck(ctx, got == s->Expect, line, "%s", outcome);
@@ -725,8 +731,8 @@ static void VpTestCounters(VPTEST_CTX *ctx, VPTEST_NODE *nodes, BUF *report)
 		char what[MAX_SIZE];
 
 		Format(line, sizeof(line), "the policy of %s:\n", nodes[i].Name);
-		WriteBufStr(report, line);
-		WriteBufStr(report, (text != NULL ? text : "(none)\n"));
+		VpTestWrite(report, line);
+		VpTestWrite(report, (text != NULL ? text : "(none)\n"));
 		Free(text);
 
 		Format(what, sizeof(what), "%s: VRF default has the quota of a VRF that declares none, 65536 flows, and its 3 members", nodes[i].Name);
@@ -797,7 +803,7 @@ void vrfpolicy_test(UINT num, char **arg)
 	{
 		VpTestSteps(&ctx, nodes, vptest_rules, sizeof(vptest_rules) / sizeof(vptest_rules[0]), report);
 
-		WriteBufStr(report, "generation 2: node-a has the rule a-only, which node-b does not have\n");
+		VpTestWrite(report, "generation 2: node-a has the rule a-only, which node-b does not have\n");
 		VpTestCheck(&ctx, VpTestApply(nodes, 2, report), "Both nodes apply Generation 2", "not applied");
 		VpTestSteps(&ctx, nodes, vptest_ends, sizeof(vptest_ends) / sizeof(vptest_ends[0]), report);
 
