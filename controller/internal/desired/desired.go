@@ -121,7 +121,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			peer.Routes = peerRoutes(nat[other], shared)
 			peer.Routes = withLeaks(peer.Routes, leaked.routes[name][other])
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})
-			if o.Relay != "" {
+			// A relay forwards only between nodes that share a VRF with it, so a peer that only a leak joins is none
+			if o.Relay != "" && len(shared) > 0 {
 				ap, err := intent.ParseRelay(o.Relay)
 				if err != nil {
 					return nil, fmt.Errorf("Node %q: %w", other, err)

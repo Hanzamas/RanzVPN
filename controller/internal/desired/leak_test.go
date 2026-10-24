@@ -24,7 +24,7 @@ func TestCompileLeaks(t *testing.T) {
 		res(intent.KindNetwork, "shared-lan", `{"vrf": "shared", "ipv4Pool": "10.10.0.0/24"}`),
 		res(intent.KindNetwork, "red-lan", `{"vrf": "red", "ipv4Pool": "10.1.0.0/24"}`),
 		res(intent.KindNetwork, "blue-lan", `{"vrf": "blue", "ipv4Pool": "10.2.0.0/24"}`),
-		res(intent.KindNode, "dns", `{"publicKey": "`+key1+`", "vrfs": ["shared"]}`),
+		res(intent.KindNode, "dns", `{"publicKey": "`+key1+`", "vrfs": ["shared"], "relay": "192.0.2.53:7000"}`),
 		res(intent.KindNode, "r", `{"publicKey": "`+key2+`", "vrfs": ["red"]}`),
 		res(intent.KindNode, "r2", `{"publicKey": "`+key4+`", "vrfs": ["red"]}`),
 		res(intent.KindNode, "b", `{"publicKey": "`+key3+`", "vrfs": ["blue"]}`),
@@ -59,6 +59,10 @@ func TestCompileLeaks(t *testing.T) {
 	}
 	if n := len(states["dns"][Key{controlpb.Kind_KIND_PEER, "r"}].GetPeer().GetAddresses()); n != 0 {
 		t.Errorf("the Peer r of dns has %d addresses, want none: they share no VRF, and its address is a leaked route", n)
+	}
+	// dns is a relay, but of no VRF of r: r gets no Relay of it
+	if _, ok := states["r"][Key{controlpb.Kind_KIND_RELAY, "dns"}]; ok {
+		t.Error("r got the relay dns, which shares no VRF with it")
 	}
 }
 

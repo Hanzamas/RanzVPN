@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// key4 is a fourth Node key, the X25519 public key of the relay of the conformance tests.
-const key4 = "iDGGuAC0HVzwQpaV2ps8xPMo680YSm5IL6V4wQPwbHc="
-
 // leakLines returns the leaks as "from > to route-targets", one per leak.
 func leakLines(leaks []Leak) string {
 	var lines []string
