@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -30,7 +31,7 @@ func TestApplyCompletesVRF(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := VRF{ID: 2, ULA: "fd11:1213:1415::/48", MTU: DefaultMTU}
-	if got := in.VRFs["new"]; got != want {
+	if got := in.VRFs["new"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("the completed VRF is %+v, want %+v", got, want)
 	}
 	again, err := Apply(in, doc(res(KindVRF, "new", `{"mtu": 1400}`)), bytes.NewReader(nil))
@@ -38,7 +39,7 @@ func TestApplyCompletesVRF(t *testing.T) {
 		t.Fatal(err)
 	}
 	want.MTU = 1400
-	if got := again.VRFs["new"]; got != want {
+	if got := again.VRFs["new"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("the VRF applied again is %+v, want %+v", got, want)
 	}
 	if _, err := Apply(again, doc(res(KindVRF, "new", `{"id": 9}`)), nil); err == nil || !strings.Contains(err.Error(), "cannot change") {

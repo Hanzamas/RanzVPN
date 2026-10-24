@@ -28,6 +28,11 @@ import (
 // no node and gives the same answer each time.
 const lab = `{"resources": [{"kind": "VRF", "name": "lab", "spec": {"id": 99, "ula": "fd99:1:2::/48"}}]}`
 
+// labs is lab and a second VRF that no node joins, neither of them with a route target, so
+// connecting them (SDN-7) gives the same answer each time.
+const labs = `{"resources": [{"kind": "VRF", "name": "lab", "spec": {"id": 99, "ula": "fd99:1:2::/48"}},
+  {"kind": "VRF", "name": "lab-2", "spec": {"id": 98, "ula": "fd98:1:2::/48"}}]}`
+
 // TestCLIGetsTheSameAnswersAsTheAPI is the second criterion of SDN-14 (#190): every command of
 // ranz, run with each role and with no token, gets the answer that the same call made directly
 // over HTTP gets: the same JSON when the call is allowed, the same status and error when it is
@@ -55,6 +60,11 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 		{[]string{"apply", "-f", labFile}, http.MethodPost, "/api/v1/apply", lab, nil},
 		{[]string{"delete", "VRF", "lab"}, http.MethodDelete, "/api/v1/resources/VRF/lab", "", func() {
 			if _, err := adminClient.Apply(ctx, mustDocument(t, lab)); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{[]string{"connect", "vrf", "lab", "lab-2"}, http.MethodPost, "/api/v1/connect", `{"vrfs": ["lab", "lab-2"]}`, func() {
+			if _, err := adminClient.Apply(ctx, mustDocument(t, labs)); err != nil {
 				t.Fatal(err)
 			}
 		}},
