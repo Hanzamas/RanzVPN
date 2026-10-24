@@ -24,6 +24,9 @@ update: {
         length: 48
       }
       mtu: 1280
+      dns: {
+        suffix: "default.ranz.internal"
+      }
     }
   }
   set: {
