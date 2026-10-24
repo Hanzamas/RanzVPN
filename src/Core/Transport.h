@@ -62,6 +62,10 @@ typedef bool(TRANSPORT_WRITE_PROC)(void *stream, const void *buf, UINT size);
 typedef void(TRANSPORT_CLOSE_PROC)(void *stream);
 typedef UINT(TRANSPORT_BINDING_PROC)(void *stream, UCHAR *binding, UINT max, UINT *size);
 typedef bool(TRANSPORT_REKEY_PROC)(void *stream);
+// Take gives a listener a TCP connection (a SOCKET) that the front door accepted and routed to it
+// (Core/FrontDoor.h; SDN-29, #205): it continues as one the listener accepted itself. It may be
+// NULL: a transport that is not over TCP takes none.
+typedef bool(TRANSPORT_TAKE_PROC)(void *listener, UINT_PTR socket);
 
 // One transport: its name in a fallback list, its state and its procedures
 typedef struct TRANSPORT {
@@ -77,6 +81,7 @@ typedef struct TRANSPORT {
 	TRANSPORT_BINDING_PROC *Binding;              // The channel binding of a stream, or NULL
 	TRANSPORT_REKEY_PROC *Rekey;                  // Update the outer keys of a stream, or NULL
 	UINT Queue;                                   // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it, NONE for none
+	TRANSPORT_TAKE_PROC *Take;                    // Take a connection that the front door routed to a listener, or NULL
 } TRANSPORT;
 
 // One entry of a fallback list: a transport and the address it dials
@@ -182,6 +187,12 @@ void TransportClose(TRANSPORT_STREAM *s);
 UINT TransportBinding(TRANSPORT_STREAM *s, UCHAR *binding, UINT max, UINT *size);
 bool TransportRekey(TRANSPORT_STREAM *s);
 TRANSPORT *TransportOf(TRANSPORT_STREAM *s);
+
+// The front door's handoff to a listener of this process (SDN-29, #205): the listener takes the TCP
+// connection socket (a SOCKET, blocking) and closes it in time; false, with the socket still the
+// caller's, when its transport takes no connection that way. The front door stops before the
+// listener closes, so no Take runs once TransportCloseListener started.
+bool TransportTake(TRANSPORT_LISTENER *l, UINT_PTR socket);
 
 // The fallback list (Transport.c). ParseList reads a configured list: its entries, at most max,
 // separated by commas, each the name of one of the known transports, a colon and the address,
@@ -320,6 +331,14 @@ void TransportQuicFree(TRANSPORT *t);
 // HKLM\SYSTEM\CurrentControlSet\Control\Cryptography\Configuration\Local\SSL\00010002, with the
 // transport's groups first and the groups the list had after them. An ECC Curve Order group policy
 // overrides that list where one is set; the transport leaves it as the administrator set it.
+//
+// The Trojan posture (CORE-S2-2, #70): a server with a decoy configured (Decoy) reads the first
+// application bytes after the TLS handshake and reverse-proxies a prober, one whose first handshake
+// message does not authenticate there, to a website the operator runs on the loopback interface, so
+// the prober meets an ordinary HTTPS site byte for byte (the decoy module, TransportDecoy.c, below).
+// A client may split its ClientHello into two TCP segments (SplitClientHello), the cut in the middle
+// of the server name, and omit the server name (OmitSni), so a DPI engine that matches an SNI
+// keyword in one segment sees neither the whole name nor, to our own servers, any name at all.
 #define TRANSPORT_TLS_12 0x00000001 // TLS 1.2
 #define TRANSPORT_TLS_13 0x00000002 // TLS 1.3
 
@@ -337,6 +356,11 @@ typedef struct TRANSPORT_TLS_CONFIG {
 	bool SetGroups;                              // New sets the key exchange groups of the machine (TransportTlsSetGroups)
 	bool BreakBinding;                           // A client that changes the binding it computes: for the mismatch test
 	UINT Queue;                                  // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it (CODEL)
+	char Decoy[TRANSPORT_ADDRESS_SIZE];          // The own-decoy backend a prober is reverse-proxied to ("127.0.0.1:port"); empty for none (server)
+	const UCHAR *DecoyKey;                       // With a decoy: the static key of the sessions over the server, a scalar ...
+	CRYPTO_IDENTITY *DecoyIdentity;              // ... or the node identity in the KSP, exactly one, kept by the owner while the transport lives
+	bool SplitClientHello;                       // The client splits its ClientHello into two TCP segments (client)
+	bool OmitSni;                                // The client omits the server name from its ClientHello (client)
 } TRANSPORT_TLS_CONFIG;
 
 // What a TLS handshake gave: the version, the cipher suite and the key exchange group that the
@@ -356,10 +380,13 @@ void TransportTlsDefaultConfig(TRANSPORT_TLS_CONFIG *cfg, const char *thumbprint
 
 // A server transport that listens with the certificate cfg names, or a client transport that dials
 // and pins that certificate; each acquires its own Schannel credential. New returns NULL when the
-// thumbprint is malformed, or the server's certificate is not in the store or has no key in a KSP.
+// thumbprint is malformed, or the server's certificate is not in the store or has no key in a KSP,
+// or a server has a decoy without exactly one of DecoyKey and DecoyIdentity.
 // The address of Listen and Dial is a host and a port ("vpn.example:443", "[::1]:443", ":443" to
 // listen on every address of both families); TransportTlsBoundPort gives the port the last listener
-// of a server transport bound, for a listener on port 0. LastHandshake gives what the last handshake
+// of a server transport bound, for a listener on port 0. A listener on the empty address "" binds no
+// socket: it takes the connections that the front door routes to it (TransportTake), and their
+// handshakes run as those of a listener's own. LastHandshake gives what the last handshake
 // that completed on the transport gave, false before there was one. Free closes the transport once
 // its listeners and streams are closed.
 TRANSPORT *TransportTlsServerNew(const TRANSPORT_TLS_CONFIG *cfg);
@@ -380,5 +407,59 @@ UINT TransportTlsSetGroups();
 // whether it is a HelloRetryRequest; false, with info untouched, when data does not start with a
 // whole record holding a whole ServerHello.
 bool TransportTlsParseHello(const UCHAR *data, UINT size, TRANSPORT_TLS_INFO *info);
+
+// The own-decoy reverse proxy (TransportDecoy.c, CORE-S2-2 #70): the Trojan posture of the TLS
+// transport. After the TLS handshake a server reads the first application bytes of a stream. A
+// client that opens a valid Ranz session sends the first Noise handshake frame there, which
+// authenticates it (TransportDecoyAuthenticate); a prober that sends anything else, or a handshake
+// message that does not authenticate, is reverse-proxied to a website the operator runs on the
+// loopback interface (TransportDecoyProxy), so it meets an ordinary HTTPS site byte for byte over
+// the same TLS session it opened. The TLS transport keeps the decoy out of its own path: it reads
+// the first frame and calls these with a small hook, giving the session the bytes it read on a
+// valid frame and the stream to the proxy on anything else. The proxy opens its own TCP connection
+// to the backend on the Windows TCP stack.
+
+// The encrypted side of a reverse-proxied stream, the prober's: the TLS transport's own stream read
+// and write, so the decoy module reaches the prober without the Schannel context
+typedef UINT(TRANSPORT_DECOY_READ)(void *stream, void *buf, UINT size, UINT timeout);
+typedef bool(TRANSPORT_DECOY_WRITE)(void *stream, const void *buf, UINT size);
+typedef struct TRANSPORT_DECOY_IO {
+	void *Stream;                 // The prober's stream (a TLS_STREAM of TransportTls.c)
+	TRANSPORT_DECOY_READ *Read;   // Read the prober's decrypted bytes
+	TRANSPORT_DECOY_WRITE *Write; // Write bytes to the prober, which its TLS session encrypts
+} TRANSPORT_DECOY_IO;
+
+// Whether the first bytes of a stream are a valid Ranz handshake frame: at least a frame header and
+// a record type and suite, a length that is a record's (2..NOISE_MAX_RECORD) and no longer than the
+// bytes read, and a record that is a handshake record (NOISE_RECORD_HANDSHAKE) of a suite the node
+// runs (NoiseSuiteAvailable). It reads no further than size bytes, so the caller may give it as few
+// bytes as came. This is the structural test the session layer makes before it reads the handshake.
+bool TransportDecoyIsHandshake(const UCHAR *first, UINT size);
+
+// Whether the first bytes of a stream authenticate a client of this server: a valid handshake frame
+// (TransportDecoyIsHandshake) whose Noise message the responder reads as the session layer will,
+// with the server's static key (key, a scalar, or identity, the node identity in the KSP: exactly
+// one) and the channel binding of the stream in the prologue (binding_type, binding_size bytes of
+// binding). The first message of IK decrypts only for an initiator that knows the server's static
+// key and made it for this outer session, so a prober that guesses the shape, or replays a message
+// of another session, fails. The handshake it reads is wiped; the session layer reads the message
+// again for the session. A prober that fails is reverse-proxied to the decoy.
+bool TransportDecoyAuthenticate(const UCHAR *first, UINT size, const UCHAR *key, CRYPTO_IDENTITY *identity, UINT binding_type,
+                                const UCHAR *binding, UINT binding_size);
+
+// Reverse-proxy the prober of io to the decoy backend that address names ("host:port" on the
+// loopback interface): open a TCP connection to it, send the first size bytes (what the prober
+// already sent) to it, and then carry bytes both ways until either side ends or cancel (which may be
+// NULL) is set. false when the backend cannot be reached, so the caller closes the stream; true once
+// the proxy ran. The prober sees the backend's bytes byte for byte over its own TLS session.
+bool TransportDecoyProxy(const TRANSPORT_DECOY_IO *io, const char *address, const UCHAR *first, UINT size, HANDLE cancel);
+
+// Where the server name lies in a ClientHello (TransportHello.c, CORE-S2-2 #70): hello holds size
+// bytes of a TLS handshake record that starts with a ClientHello, as Schannel writes a client's first
+// token. It gives the offset of the host name of the server_name extension in hello and its length
+// (at least 1); false when the ClientHello has no server_name or hello holds no whole one. It reads
+// no further than size bytes. A client that splits its ClientHello cuts it in the middle of that
+// name, so that neither TCP segment holds the whole name.
+bool TransportTlsHelloName(const UCHAR *hello, UINT size, UINT *offset, UINT *length);
 
 #endif // CORE_TRANSPORT_H

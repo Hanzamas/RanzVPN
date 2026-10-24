@@ -27,8 +27,9 @@ set_target_properties(cedar
 # client of Protocol.c; winsqlite3.lib: the SQLite of System32 (ConfigStore.c, ADR-0022); bcrypt.lib:
 # BCryptDeriveKeyPBKDF2 and crypt32.lib: the certificate subject and thumbprint (ConfigStore.c);
 # iphlpapi.lib: the learned routes of the BGP sidecar and ParseNetworkString (NodeBgp.c), which also
-# takes the pipe name's nonce from bcrypt.lib
-target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib iphlpapi.lib ole32.lib setupapi.lib uuid.lib winhttp.lib winsqlite3.lib)
+# takes the pipe name's nonce from bcrypt.lib, and the addresses, routes and address changes of the client role
+# (NodeClient.c, NodeWintun.c); powrprof.lib: the suspend and resume events of the client role
+target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib iphlpapi.lib ole32.lib powrprof.lib setupapi.lib uuid.lib winhttp.lib winsqlite3.lib)
 
 # cJSON (vcpkg, MIT): the JSON messages of the pipe to the BGP sidecar ranz-bgp (NodeBgp.c, CORE-S7-1 #82).
 # Windows has no JSON parser for C outside the Windows Runtime. The include directory is found from the
