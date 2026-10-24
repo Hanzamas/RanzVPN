@@ -265,6 +265,10 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 		NodeLog(ov->Node, "Overlay: generation %I64u applied: node %s, %u addresses, %u peers, the forwarding tables of %u VRFs", st->Generation, st->Name, st->NumAddresses, st->NumPeers, num_vrfs);
 	else
 		NodeLog(ov->Node, "Overlay: generation %I64u not applied: its forwarding tables could not be built or installed, so the node forwards on the tables before", st->Generation);
+
+	// The adapter of the host takes the state too: the addresses and routes of the client role (CORE-S3-1)
+	if (swapped && ov->Config.State != NULL)
+		ov->Config.State(ov->Node, ov->Config.AdapterParam, st);
 }
 
 //
@@ -355,6 +359,22 @@ static bool NodeOverlayListen(NODE_OVERLAY *ov) {
 	return (ov->Listener != NULL);
 }
 
+// Close the session that the peer of key has: it dialled again on another path. Only the thread of the overlay closes.
+static void NodeOverlayReplace(NODE_OVERLAY *ov, const UCHAR *key) {
+	NODE_OVERLAY_PEER *p;
+
+	Lock(ov->Lock);
+	{
+		p = NodeOverlayPeer(ov, NULL, key);
+		if (p != NULL && p->Session == NULL)
+			p = NULL;
+	}
+	Unlock(ov->Lock);
+
+	if (p != NULL)
+		NodeOverlayClose(ov, p);
+}
+
 // Take a stream that a peer dialled: the responder of a session, whose initiator must be a peer of the desired state
 static bool NodeOverlayAccept(NODE_OVERLAY *ov) {
 	NOISE_SESSION_CONFIG c;
@@ -373,8 +393,10 @@ static bool NodeOverlayAccept(NODE_OVERLAY *ov) {
 		return true;
 	}
 
-	// The peer's static key names the peer: a session between two peers has no Login
+	// The peer's static key names the peer: a session between two peers has no Login. A peer that dials again, after it
+	// roamed or woke from sleep, replaces the session that its old path left (CORE-S3-1).
 	TransportNoiseAcceptLogin(s);
+	NodeOverlayReplace(ov, s->Session.RemoteStatic);
 	NodeOverlayAttach(ov, s->Session.RemoteStatic, s);
 
 	return true;
@@ -393,7 +415,8 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 		for (UINT i = 0; i < LIST_NUM(ov->Peers) && found == false; i++) {
 			NODE_OVERLAY_PEER *p = LIST_DATA(ov->Peers, i);
 
-			if (p->Gone || p->Session != NULL || now < p->NextDial || Cmp(ov->Config.Key->Public, p->Key, PEER_KEY_SIZE) >= 0)
+			// A client dials its peers whatever the order of the keys: they cannot dial it (CORE-S3-1)
+			if (p->Gone || p->Session != NULL || now < p->NextDial || (ov->Config.Dialler == false && Cmp(ov->Config.Key->Public, p->Key, PEER_KEY_SIZE) >= 0))
 				continue;
 
 			StrCpy(name, sizeof(name), p->Name);
@@ -627,6 +650,10 @@ void NodeOverlayStop(NODE *n) {
 
 	if (ov == NULL)
 		return;
+
+	// The packets of the host stop first where the overlay stops them, as for the client role (CORE-S3-1)
+	if (ov->Config.AdapterStop != NULL)
+		ov->Config.AdapterStop(n, ov->Config.AdapterParam);
 
 	ControlStop(ov->Control);
 	NodeSwapVrfs(n, NULL);

@@ -199,6 +199,10 @@ typedef struct SU_ADAPTER_LIST SU_ADAPTER_LIST;
 
 typedef struct NODE NODE;
 typedef struct NODE_STATUS NODE_STATUS;
+typedef struct NODE_CLIENT NODE_CLIENT;
+typedef struct NODE_CLIENT_STATUS NODE_CLIENT_STATUS;
+typedef struct NODE_WINTUN NODE_WINTUN;
+typedef struct NODE_PREFIX NODE_PREFIX;
 typedef struct NODE_WORKER NODE_WORKER;
 typedef struct NODE_QUEUE NODE_QUEUE;
 typedef struct NODE_READER NODE_READER;
