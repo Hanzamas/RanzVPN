@@ -9,7 +9,10 @@
 //   in 4 bytes (big-endian) and the record. A control record that holds a Login is checked as the server's owner
 //   checks it (NoiseLoginParse) and opens the data stream;
 // - the first records that a TLS client of the TLS transport reads from a server (TransportTlsParseHello, CORE-S2-1
-//   #69): what it takes from a ServerHello must be a version it knows.
+//   #69): what it takes from a ServerHello must be a version it knows;
+// - the first bytes that a server with a decoy reads after the TLS handshake (TransportDecoyIsHandshake and
+//   TransportDecoyAuthenticate, CORE-S2-2 #70), and a client's ClientHello whose server name a split cuts
+//   (TransportTlsHelloName): a frame that authenticates has the shape of one, and a name lies within the bytes.
 // The server node has the static key and the ephemeral key of the cacophony IK vector, as in fuzz_noise.c, so that
 // the frames of the encrypted golden records of coretest noisesession get through the handshake and decrypt.
 //
@@ -167,10 +170,20 @@ static void FuzzHello(const UCHAR *data, UINT size)
 }
 
 // The input as the first bytes a server with a decoy reads after the TLS handshake: TransportDecoyIsHandshake tells a
-// valid Ranz handshake frame from a prober's first bytes, and reads no further than size bytes
-static void FuzzDecoy(const UCHAR *data, UINT size)
+// valid Ranz handshake frame from a prober's first bytes, and reads no further than size bytes; TransportDecoyAuthenticate
+// reads the Noise message of such a frame with the server node's key and a binding of zeros
+static void FuzzDecoy(FUZZ_TRANSPORT *f, const UCHAR *data, UINT size)
 {
-	if (TransportDecoyIsHandshake(data, size) == false)
+	UCHAR binding[NOISE_EXPORTER_SIZE];
+	bool shape = TransportDecoyIsHandshake(data, size);
+
+	memset(binding, 0, sizeof(binding));
+	if (TransportDecoyAuthenticate(data, size, f->ServerKey, NULL, NOISE_BINDING_EXPORTER, binding, sizeof(binding)) && shape == false)
+	{
+		FuzzFail("TransportDecoyAuthenticate took a frame that TransportDecoyIsHandshake does not");
+	}
+
+	if (shape == false)
 	{
 		return;
 	}
@@ -188,6 +201,23 @@ static void FuzzDecoy(const UCHAR *data, UINT size)
 		{
 			FuzzFail("TransportDecoyIsHandshake took a frame whose record is not all there");
 		}
+	}
+}
+
+// The input as a client's first token, a ClientHello in a TLS record: the server name that TransportTlsHelloName finds
+// has at least one byte and lies within the input
+static void FuzzHelloName(const UCHAR *data, UINT size)
+{
+	UINT offset = 0, length = 0;
+
+	if (TransportTlsHelloName(data, size, &offset, &length) == false)
+	{
+		return;
+	}
+
+	if (length == 0 || (UINT64)offset + length > size)
+	{
+		FuzzFail("TransportTlsHelloName gave a server name that is empty or not within the ClientHello");
 	}
 }
 
@@ -273,7 +303,8 @@ static void FuzzTransport(const uint8_t *data, size_t size)
 	FuzzStream(f, in, (UINT)size, (UINT)size);
 	FuzzStream(f, in, (UINT)size, 1);
 	FuzzHello(in, (UINT)size);
-	FuzzDecoy(in, (UINT)size);
+	FuzzDecoy(f, in, (UINT)size);
+	FuzzHelloName(in, (UINT)size);
 
 	SecureZeroMemory(f, sizeof(FUZZ_TRANSPORT));
 	free(f);

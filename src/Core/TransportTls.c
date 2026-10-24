@@ -473,14 +473,17 @@ static bool TlsSend(SOCKET s, const void *buf, UINT size) {
 
 // Send the client's first token, the ClientHello, as two TCP segments (CORE-S2-2, #70): TCP_NODELAY
 // is set, so each send goes as its own segment, and a brief flush between them keeps a reader from
-// coalescing them, so a DPI engine must reassemble the segments to read the server name. false when
-// the send failed.
+// coalescing them. The cut falls in the middle of the server name where the ClientHello has one
+// (TransportTlsHelloName), else in the middle of the token, so a DPI engine must reassemble the
+// segments to read the name. false when the send failed.
 static bool TlsSendSplit(SOCKET s, const void *buf, UINT size) {
 	const UCHAR *p = (const UCHAR *)buf;
-	UINT first = size / 2;
+	UINT first = size / 2, name = 0, name_size = 0;
 
 	if (size < 2)
 		return TlsSend(s, buf, size);
+	if (TransportTlsHelloName(p, size, &name, &name_size))
+		first = name + name_size / 2;
 	if (first == 0)
 		first = 1;
 	if (TlsSend(s, p, first) == false)
@@ -1181,13 +1184,14 @@ static UINT TlsDecoyFirst(TLS_STREAM *s, UCHAR *buf, UINT cap, HANDLE cancel) {
 }
 
 // After the TLS handshake of a server with a decoy configured: read the first frame of the stream. A
-// valid Ranz handshake frame goes to the session, its bytes given back for the first read (true). On
-// anything else the guard reverse-proxies the stream to the decoy and closes it as a website would,
-// and gives false; the caller then queues nothing and frees nothing, because the guard owns the
-// stream on this path.
+// handshake frame that authenticates goes to the session, its bytes given back for the first read
+// (true). On anything else the guard reverse-proxies the stream to the decoy and closes it as a
+// website would, and gives false; the caller then queues nothing and frees nothing, because the
+// guard owns the stream on this path.
 static bool TlsDecoyGuard(TLS_STREAM *s, HANDLE cancel) {
 	UCHAR *first = (UCHAR *)TlsZeroAlloc(TLS_DECOY_PEEK);
-	UINT size;
+	UCHAR binding[NOISE_EXPORTER_SIZE];
+	UINT size, binding_size = 0;
 
 	if (first == NULL) {
 		TlsStreamClose(s);
@@ -1196,8 +1200,14 @@ static bool TlsDecoyGuard(TLS_STREAM *s, HANDLE cancel) {
 
 	size = TlsDecoyFirst(s, first, TLS_DECOY_PEEK, cancel);
 
-	// A valid Ranz handshake frame: the session reads these bytes first, the stream having taken them
-	if (TransportDecoyIsHandshake(first, size)) {
+	// A client of this server: its first handshake message reads with the server's static key and the
+	// binding of this stream, as the session will read it
+	UINT binding_type = TlsStreamBinding(s, binding, sizeof(binding), &binding_size);
+	bool client = TransportDecoyAuthenticate(first, size, s->Net->Cfg.DecoyKey, s->Net->Cfg.DecoyIdentity, binding_type, binding, binding_size);
+	SecureZeroMemory(binding, sizeof(binding));
+
+	// The session reads these bytes first, the stream having taken them
+	if (client) {
 		s->Pre = first;
 		s->PreStart = 0;
 		s->PreSize = size;
@@ -1587,6 +1597,11 @@ static TRANSPORT *TransportTlsNew(const TRANSPORT_TLS_CONFIG *cfg, bool server) 
 
 	// The thumbprint of the server certificate: the server loads it, the client pins it
 	bool ok = (net->HaveWinsock && TlsParseThumbprint(net->Cfg.Thumbprint, net->Thumbprint));
+
+	// A server with a decoy authenticates the first handshake message with exactly one static key (CORE-S2-2, #70)
+	net->Cfg.Decoy[sizeof(net->Cfg.Decoy) - 1] = 0;
+	if (ok && server && net->Cfg.Decoy[0] != 0)
+		ok = ((net->Cfg.DecoyKey == NULL) != (net->Cfg.DecoyIdentity == NULL));
 
 	if (ok && server) {
 		net->Cert = CryptoCertFindByThumbprint(net->Cfg.Thumbprint, NULL, net->Cfg.MachineStore ? CRYPTO_MACHINE : 0);

@@ -3,10 +3,12 @@
 // TLS handshake a server reads the first application bytes of a stream (TransportTls.c). A client
 // that opens a valid Ranz session sends the first Noise handshake frame there; a prober that sends
 // anything else is reverse-proxied to a website the operator runs on the loopback interface, so it
-// meets an ordinary HTTPS site byte for byte over the same TLS session it opened. The module decides
-// a prober from a valid client by the shape of the first bytes alone (TransportDecoyIsHandshake, the
-// structural test the session layer makes), and carries bytes between the prober and the backend
-// over a TCP connection of its own on the Windows TCP stack (TransportDecoyProxy). It keeps no
+// meets an ordinary HTTPS site byte for byte over the same TLS session it opened. The module tells a
+// prober from a valid client by the first handshake message: its shape (TransportDecoyIsHandshake,
+// the structural test the session layer makes), then the Noise message read with the server's static
+// key and the channel binding of the stream (TransportDecoyAuthenticate), which only a client that
+// knows the server's key can write. It carries bytes between the prober and the backend over a TCP
+// connection of its own on the Windows TCP stack (TransportDecoyProxy). It keeps no
 // Schannel state: the TLS transport gives it the stream's own read and write (TRANSPORT_DECOY_IO),
 // which encrypt and decrypt the prober's side. Winsock is started by the TLS transport that calls
 // it; the module starts none of its own.
@@ -37,6 +39,33 @@ bool TransportDecoyIsHandshake(const UCHAR *first, UINT size) {
 	// The record: a handshake record of a suite the node runs (NoiseSessionAccept makes the same test)
 	const UCHAR *record = first + TRANSPORT_FRAME_HEADER;
 	return (record[0] == NOISE_RECORD_HANDSHAKE && NoiseSuiteAvailable(record[1]));
+}
+
+bool TransportDecoyAuthenticate(const UCHAR *first, UINT size, const UCHAR *key, CRYPTO_IDENTITY *identity, UINT binding_type,
+                                const UCHAR *binding, UINT binding_size) {
+	UCHAR prologue[NOISE_MAX_PROLOGUE];
+	NOISE_HANDSHAKE hs;
+	UINT payload_size = 0;
+
+	if (TransportDecoyIsHandshake(first, size) == false)
+		return false;
+
+	// The prologue the session layer gives the responder over this stream (NoiseSessionAccept)
+	UINT prologue_size = NoisePrologue(prologue, sizeof(prologue), binding_type, binding, binding_size);
+	if (prologue_size == 0)
+		return false;
+
+	// The responder reads the first message, as NoiseSessionAccept does: the handshake payload is empty
+	UINT record_size = ((UINT)first[0] << 24) | ((UINT)first[1] << 16) | ((UINT)first[2] << 8) | first[3];
+	const UCHAR *record = first + TRANSPORT_FRAME_HEADER;
+	ZeroMemory(&hs, sizeof(hs));
+	bool ok = (NoiseHandshakeInit(&hs, record[1], false, prologue, prologue_size, key, identity, NULL) &&
+	           NoiseHandshakeRead(&hs, record + 2, record_size - 2, NULL, 0, &payload_size));
+
+	NoiseHandshakeFree(&hs);
+	SecureZeroMemory(prologue, sizeof(prologue));
+
+	return ok;
 }
 
 // Split "host:port" at the last colon into host (max bytes, with its NUL; the brackets of "[v6]:port"
