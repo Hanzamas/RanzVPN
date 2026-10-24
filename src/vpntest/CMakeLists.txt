@@ -92,6 +92,8 @@ ranz_add_executable(vpntest HAMCORE
     vrftest.c
     # Named VXLAN test of SDN-62 (#289): the VXLAN module of the new core against harness VTEPs
     vxlantest.c
+    # Named Mirror test of SDN-23 (#199): the Mirrors of a node copy packets of the overlay to harness sensors in VXLAN
+    mirrortest.c
     # Named 1:1 NAT and 4via6 test of SDN-6 (#182): the translations of the data plane against packets that the test
     # builds, and two VRFs on one range reached through 4via6 and a LAN behind 1:1 NAT over the overlay
     nattest.c

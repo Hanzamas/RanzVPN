@@ -519,6 +519,9 @@ void vrf_test(UINT num, char **arg);
 // Named VXLAN test of SDN-62, #289 (vxlantest.c)
 void vxlan_test(UINT num, char **arg);
 
+// Named Mirror test of SDN-23, #199 (mirrortest.c)
+void mirror_test(UINT num, char **arg);
+
 // Named 1:1 NAT and 4via6 test of SDN-6, #182 (nattest.c)
 void nat_test(UINT num, char **arg);
 
@@ -688,6 +691,7 @@ TEST_LIST test_list[] =
 	{"sdntrace", sdntrace_test, "Default VRF tracer: sdntrace <host:port> <key> [<file>]: two nodes join VRF default of a running ranz controller, get addresses from its pool and ping each other over the loopback transport, also once the controller stopped (.github/scripts/sdn-tracer.ps1)."},
 	{"vrf", vrf_test, "VRF forwarding tables: DIR-24-8 and trie lookups against a reference on random routes, swaps under readers, two VRFs on 10.0.0.0/24 kept apart over the overlay (golden family vrf), a stream that loses no packet while the tables swap."},
 	{"vxlan", vxlan_test, "VXLAN: a frame, VLAN-tagged or not, goes out with its VNI and reaches a harness VTEP identical, and back to the module; a flood list of three VTEPs gets every frame and changes while the module runs; a datagram on an unknown VNI is dropped and counted."},
+	{"mirror", mirror_test, "Mirror: packets of the overlay that a Mirror takes (VRF, protocol, port) arrive at a harness sensor in VXLAN as golden datagrams, both ways and over IPv6; no other packet is copied; the rate limit of a Mirror holds under a load far above it."},
 	{"nat", nat_test, "1:1 NAT and 4via6: packets through the rules of four VRFs against packets that the test builds, ICMP errors included; over the overlay a host in two VRFs on 10.0.0.0/24 reaches 10.0.0.5 in each through two 4via6 addresses, and a 1:1 NAT rule rewrites both ways (golden family nat)."},
 	{"shape", shape_test, "Shaping of the overlay: the MTU of each VRF on its adapter and an override that raises it, TCP SYNs that leave with the MSS clamped to it, DSCP and ECN through the tunnel unchanged, traffic above the rate limit of a VRF and of the node shaped to that rate."},
 	{"switch", switch_test, "Switch: frames between members of different VLANs across access, trunk and native ports, VLAN-aware learning, broadcast and multicast by group subscription, non-IP EtherTypes, per-VLAN limits and counters and the TPID of a Network against golden files (golden family switch); ports that change while threads forward."},
