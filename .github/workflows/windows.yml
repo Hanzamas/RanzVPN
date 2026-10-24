@@ -722,8 +722,8 @@ jobs:
   # The C static analysis of the new core (ADR-0040 item 3), x64: clang-tidy with the checks of
   # .github/quality/clang-tidy.yaml on every .c file of src/Core, over the compile commands of the x64
   # build, and MSVC /analyze, which checks the SAL annotations of the Windows SDK and of the code, on a
-  # cl.exe build of the new core's modules (corecrypto, corenoise, corepeer, coretransport, corevxlan, coreswitch). A finding
-  # that the baseline of its tool in .github/quality does not hold fails the job
+  # cl.exe build of the new core's modules (corecrypto, corenoise, corepeer, coretransport, corevxlan, coreswitch,
+  # corepolicy, corefrontdoor). A finding that the baseline of its tool in .github/quality does not hold fails the job
   # (.github/scripts/static-findings.py). The third-party libraries of the peer module
   # (src/Core/3rdparty: libjuice, libplum), which that build compiles too, are not the new core's code
   # and do not count.
@@ -813,7 +813,7 @@ jobs:
         cmake -S . -B build-msvc -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_C_COMPILER=cl -DBUILD_NUMBER=0 "-DCMAKE_C_FLAGS=/DWIN32 /D_WINDOWS /analyze"
         if errorlevel 1 exit /b 1
 
-        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan coreswitch corefrontdoor > build-msvc\analyze.txt 2>&1
+        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan coreswitch corepolicy corefrontdoor > build-msvc\analyze.txt 2>&1
         set BUILD_EXIT=%ERRORLEVEL%
         type build-msvc\analyze.txt
         if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%

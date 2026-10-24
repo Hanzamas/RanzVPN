@@ -1,7 +1,8 @@
 # The Go programs of Ranz: one module and one executable, ranz (ONE-1 #310, ADR-0011 amendment of
 # 2026-10-22). The controller with its web UI (controller/, SDN-2 #178), the BGP sidecar of ADR-0010
-# (ranz-bgp/, CORE-S7-1 #82) and the CLI are all in controller/cmd/ranz: the subcommands controller
-# and bgp, and the verbs of the controller's API. ranz-nodesim and ranz-noisepeer (controller/cmd)
+# (ranz-bgp/, CORE-S7-1 #82), the mimicry sidecar of ADR-0023 (controller/internal/mimic, CORE-P2-1
+# #85) and the CLI are all in controller/cmd/ranz: the subcommands controller, bgp and mimic, and the
+# verbs of the controller's API. ranz-nodesim and ranz-noisepeer (controller/cmd)
 # are test tools: this workflow builds them and never ships them. The control protocol schema
 # (proto/) belongs here too.
 #
@@ -254,6 +255,28 @@ jobs:
         grep -q 'rqlite' "$RUNNER_TEMP/NOTICE"
         grep -q 'The MIT License (MIT)' "$RUNNER_TEMP/NOTICE"
         cmp "$RUNNER_TEMP/NOTICE" controller/cmd/ranz/NOTICE
+    # The mimicry sidecar (CORE-P2-1, #85) as a subcommand of the executable, read from outside: without
+    # -pipe it says so and exits with 2, -keygen prints the key pair of a server (each key 64 hex digits),
+    # and the NOTICE holds the licences of the libraries that the sidecar carries (REALITY, uTLS and the
+    # library of REALITY under the LGPL), which TestNoticeHasTheLicencesOfTheMimicryLibraries compares
+    # with the files of the modules
+    - name: The mimicry sidecar as a subcommand
+      run: |
+        ranz="$RUNNER_TEMP/linux-x64/ranz"
+        code=0
+        "$ranz" mimic 2> "$RUNNER_TEMP/mimic.err" || code=$?
+        cat "$RUNNER_TEMP/mimic.err"
+        test "$code" = 2
+        grep -q 'ranz mimic: -pipe is required' "$RUNNER_TEMP/mimic.err"
+
+        "$ranz" mimic -keygen > "$RUNNER_TEMP/mimic.keys"
+        grep -Eq '^private_key [0-9a-f]{64}$' "$RUNNER_TEMP/mimic.keys"
+        grep -Eq '^public_key [0-9a-f]{64}$' "$RUNNER_TEMP/mimic.keys"
+
+        "$ranz" notice > "$RUNNER_TEMP/NOTICE-mimic"
+        grep -q 'Mozilla Public License Version 2.0' "$RUNNER_TEMP/NOTICE-mimic"
+        grep -q 'Copyright (c) 2009 The Go Authors' "$RUNNER_TEMP/NOTICE-mimic"
+        grep -q 'github.com/juju/ratelimit' "$RUNNER_TEMP/NOTICE-mimic"
     # The rqlite version stays pinned (ONE-4, #313): RQLITE_VERSION here and in windows.yml, which
     # downloads the same release for the default VRF tracer, and the NOTICE names that version. The
     # LICENSE of the pinned tag is downloaded for TestNoticeHasTheRqliteLicence, which compares it
@@ -539,6 +562,15 @@ jobs:
       run: |
         go test -count=1 ./ranz-bgp/...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    # The mimicry sidecar (CORE-P2-1, #85) end to end on the named pipes of the node, which the Test step
+    # above runs on x64: the test is the node at both ends of the two sidecars, over go-winio pipes with the
+    # DACL of the node (internal/mimic/pipe_windows.go), a REALITY server and a uTLS client between them
+    - name: Test the mimicry sidecar
+      if: matrix.platform.ARCHITECTURE != 'x64'
+      shell: pwsh
+      run: |
+        go test -count=1 ./controller/internal/mimic
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     # The member of ranz for arm64 (ONE-4, #313): the x64 rqlited.exe written out and started under
     # emulation, and the choice of the rqlited that the controller runs
     - name: Test the rqlite member
@@ -572,6 +604,21 @@ jobs:
         if ($LASTEXITCODE -ne 0 -or $notice -notmatch 'GoBGP' -or $notice -notmatch 'Apache License') { throw 'ranz notice does not print the licence of GoBGP' }
         if ($notice -notmatch 'rqlite' -or $notice -notmatch 'The MIT License \(MIT\)') { throw 'ranz notice does not print the licence of rqlite' }
         Write-Host 'ranz: one version for every subcommand, the subcommands answer, the NOTICE has the licences of GoBGP and of rqlite'
+    # The mimicry sidecar (CORE-P2-1, #85) as a subcommand, natively on this architecture: without -pipe it
+    # says so and exits with 2, -keygen prints the key pair of a server, and the NOTICE holds the licences
+    # of the libraries that the sidecar carries
+    - name: The mimicry sidecar as a subcommand
+      shell: pwsh
+      run: |
+        $ranz = (Resolve-Path build\ranz\ranz.exe).Path
+        $err = Join-Path $env:RUNNER_TEMP 'mimic.err'
+        & $ranz mimic 2> $err
+        if ($LASTEXITCODE -ne 2 -or (Get-Content -LiteralPath $err -Raw) -notmatch 'ranz mimic: -pipe is required') { throw "ranz mimic without -pipe: exit code $LASTEXITCODE, $(Get-Content -LiteralPath $err -Raw)" }
+        $keys = (& $ranz mimic -keygen | Out-String)
+        if ($LASTEXITCODE -ne 0 -or $keys -notmatch '(?m)^private_key [0-9a-f]{64}\r?$' -or $keys -notmatch '(?m)^public_key [0-9a-f]{64}\r?$') { throw "ranz mimic -keygen did not print a key pair of 64 hex digits each" }
+        $notice = (& $ranz notice | Out-String)
+        if ($notice -notmatch 'Mozilla Public License Version 2\.0' -or $notice -notmatch 'Copyright \(c\) 2009 The Go Authors' -or $notice -notmatch 'github\.com/juju/ratelimit') { throw 'ranz notice does not print the licences of the libraries of ranz mimic' }
+        Write-Host 'ranz mimic: it answers as a subcommand, makes a key pair, and the NOTICE has the licences of its libraries'
     # The tools of SDN-53 (#246) as processes, natively on this architecture: ranz doctor passes its
     # six checks, ranz test throughput reports a rate between its server and its client, which are two
     # processes of the runner, and ranz cert makes a CA and a certificate that it signs with their keys
