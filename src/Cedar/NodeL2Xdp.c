@@ -79,7 +79,6 @@ typedef struct NODE_L2_XDP {
 	HANDLE Program;
 	HANDLE Thread;
 	volatile LONG Halt;
-	volatile LONG Failed;
 	// RX inject, on the injector thread only: the socket, the chunks of its UMEM that no descriptor holds (a stack), the
 	// descriptors submitted and completed so far, and when the completions last moved
 	NODE_L2_XSK Tx;
@@ -197,11 +196,10 @@ static DWORD WINAPI NodeL2XdpDrain(void *param) {
 				flags = (XSK_NOTIFY_FLAGS)(flags | XSK_NOTIFY_FLAG_POKE_RX);
 
 			HRESULT hr = XskNotifySocket(x->Rx.Socket, flags, NODE_L2_XDP_WAIT, &result);
-			if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_TIMEOUT)) {
-				// A socket that XDP took away (the interface went) answers at once: the health check sees it
-				InterlockedExchange(&x->Failed, 1);
-				Sleep(NODE_L2_XDP_WAIT);
-			}
+			// A wait that XDP refuses polls the ring once a millisecond instead. A socket that XDP took away (the
+			// interface went) flags its rings with an error, which the health check sees.
+			if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_TIMEOUT))
+				Sleep(1);
 			continue;
 		}
 
@@ -286,12 +284,12 @@ static UINT NodeL2XdpInject(NODE_L2 *a, const UCHAR **frames, const UINT *sizes,
 }
 
 // Whether the binding works, on the injector thread: no ring of either socket has an error (XDP sets one when the
-// interface goes or XDP lets go of it), the drain thread saw no failed wait, and injected frames do not wait longer
-// than NODE_L2_STALL ms for their completion
+// interface goes or XDP lets go of it), and injected frames do not wait longer than NODE_L2_STALL ms for their
+// completion
 static bool NodeL2XdpHealthy(NODE_L2 *a) {
 	NODE_L2_XDP *x = (NODE_L2_XDP *)a->BackendState;
 
-	if (x == NULL || ReadAcquire(&x->Failed) != 0)
+	if (x == NULL)
 		return false;
 
 	if (XskRingError(&x->Rx.Ring) || XskRingError(&x->Rx.Other) || XskRingError(&x->Tx.Ring) || XskRingError(&x->Tx.Other))

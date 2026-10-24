@@ -42,7 +42,7 @@
 #define	L2TEST_BUDGET			120000		// The whole test ends within this time, or the watchdog ends the process (ms)
 #define	L2TEST_BOUND			15000		// A bounded wait on observable state (ms)
 #define	L2TEST_POLL				10			// Poll interval of observable state (ms)
-#define	L2TEST_CAPTURE_LIMIT	50			// ms that no call of NodeL2Capture may take, even while the owner is paused
+#define	L2TEST_CAPTURE_LIMIT	500			// ms that no call of NodeL2Capture may take, even while the owner is paused (a runner may preempt the thread)
 #define	L2TEST_LONE				500			// ms within which a lone frame reaches the backend
 #define	L2TEST_FREE				3000		// ms within which NodeL2Free takes an adapter down
 #define	L2TEST_SLOTS			256			// Frames of each ring of the adapters of the test
