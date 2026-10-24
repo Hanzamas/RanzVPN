@@ -56,12 +56,12 @@ static void NodeRelayStop(NODE *n);
 static bool NodeEmptyRoleStart(NODE *n);
 static void NodeEmptyRoleStop(NODE *n);
 
-// The roles in start order; they stop in the reverse order. The client and bridge roles hold nothing yet: their
-// adapter queues and transports come with CORE-S3-1 (#71) and CORE-S3-3 (#73).
+// The roles in start order; they stop in the reverse order. The client role is NodeClient.c (CORE-S3-1, #71); the
+// bridge role holds nothing yet: its adapter queues come with CORE-S3-3 (#73).
 static NODE_ROLE_DEF node_roles[] =
     {
         {NODE_ROLE_SERVER, "server", NodeServerStart, NodeServerStop},
-        {NODE_ROLE_CLIENT, "client", NodeEmptyRoleStart, NodeEmptyRoleStop},
+        {NODE_ROLE_CLIENT, "client", NodeClientStart, NodeClientStop},
         {NODE_ROLE_BRIDGE, "bridge", NodeEmptyRoleStart, NodeEmptyRoleStop},
         {NODE_ROLE_RELAY, "relay", NodeRelayStart, NodeRelayStop},
 };

@@ -53,6 +53,12 @@ void relaypolicy_test();
 void iceupgrade_test();
 void icesymmetric_test();
 void punch_test();
+void frontdoor_test();
+
+// The processes of the front door test (frontdoor.c): coretest frontdoor-child node ... or owner ..., which the test
+// starts itself; main runs them before anything else
+#define CORETEST_FRONTDOOR_CHILD "frontdoor-child"
+int frontdoor_child(int argc, char *argv[]);
 
 // The NAT simulator (natsim.c): an in-process datagram network of hosts, each on the public side or behind a
 // simulated NAT, that carries the datagrams of the peer layer in place of UDP sockets

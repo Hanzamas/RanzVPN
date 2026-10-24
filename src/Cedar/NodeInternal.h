@@ -19,5 +19,7 @@ void NodeShapeStop(NODE *n);
 void NodeShapeAttach(NODE *n, NODE_VRF_TABLES *v, const struct CONTROL_STATE *st);
 void NodeShapeApplied(NODE *n, const struct CONTROL_STATE *st);
 bool NodeShapeOutput(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UCHAR *packet, UINT size);
+bool NodeClientStart(NODE *n);
+void NodeClientStop(NODE *n);
 
 #endif // NODE_INTERNAL_H

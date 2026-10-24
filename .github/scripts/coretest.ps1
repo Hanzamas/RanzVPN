@@ -9,11 +9,13 @@ $PSNativeCommandUseErrorActionPreference = $false
 # interop test needs ranz-noisepeer.exe (controller/cmd/ranz-noisepeer) next to coretest.exe, and
 # the tests of its peer module and relay role (CORE-S5-2, #78), and of its ICE and the port mapping
 # of home gateways (CORE-S5-3, #79), which wait for libjuice's consent and check timers (about
-# 90 s). Each must print "<TEST> TEST OK" and exit with 0; its output is printed in full either
+# 90 s), and the front door's test (SDN-29, #205), which starts coretest again as its node and
+# owner processes. Each must print "<TEST> TEST OK" and exit with 0; its output is printed in full either
 # way, so the job log shows every vector on x64 and arm64. RANZ_CORE_TESTS (comma list) overrides
 # the list.
 $named = @('rand', 'sha256', 'hmac', 'hkdf', 'aesgcm', 'x25519', 'identity', 'mlkem', 'selfsign', 'pfx', 'certstore', 'schannel',
-	'noise', 'noisehfs', 'noisesession', 'noisetunnel', 'noiseinterop', 'envelope', 'relay', 'relaypolicy', 'iceupgrade', 'icesymmetric', 'punch')
+	'noise', 'noisehfs', 'noisesession', 'noisetunnel', 'noiseinterop', 'envelope', 'relay', 'relaypolicy', 'iceupgrade', 'icesymmetric', 'punch',
+	'frontdoor')
 if ($env:RANZ_CORE_TESTS) { $named = $env:RANZ_CORE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
 
 $failed = @()
