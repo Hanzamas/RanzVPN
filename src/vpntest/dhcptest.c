@@ -1097,7 +1097,7 @@ static bool DhcpTestLeasesFrame(TRANSPORT_STREAM *s, char *network, UINT network
 
 				while (ok && p < end)
 				{
-					UINT64 f, v;
+					UINT64 f = 0, v = 0;
 
 					ok = DhcpTestVarint(body, end, &p, &f);
 					if (ok && f == ((3 << 3) | 0))
