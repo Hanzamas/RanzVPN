@@ -17,6 +17,8 @@
 // The test needs no administrator rights: it does not set the machine's Schannel group list (the server and client
 // transports are opened with the groups left as they are). It prints "TROJAN TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -748,6 +750,7 @@ static void TrojanHelloCase(TROJAN_CTX *ctx, char *thumbprint, bool split, bool 
 	Free(buf);
 }
 
+RANZ_TEST_TAGS("trojan", trojan_test, "core", "Trojan posture: a server reverse-proxies a prober to an own decoy website (byte for byte), a valid client reaches the session, and the client splits its ClientHello into two TCP segments and omits the SNI to our own servers.");
 void trojan_test(UINT num, char **arg)
 {
 	TROJAN_CTX *ctx = ZeroMalloc(sizeof(TROJAN_CTX));
