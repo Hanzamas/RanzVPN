@@ -99,6 +99,40 @@ func TestL2NetworkNeedsAnL2Backend(t *testing.T) {
 	}
 }
 
+// The Capabilities that the Node puts in its Hello are the architecture, SeLow and XDP and nothing else
+// (src/Cedar/NodeCaps.c, ONE-3 #312). On arm64 ranz install puts Wintun only on the host, so the Node reports
+// neither driver and an L2 Network is refused for it before an apply, naming the node and the Capability (ADR-0022,
+// ADR-0033). On x64 a host that holds SeLow alone, because its XDP runtime failed to install or ranz install
+// --no-xdp left it out, carries the L2 Network on SeLow; a host that holds neither does not.
+func TestL2NetworkOnWhatTheNodeReports(t *testing.T) {
+	states := compile(t,
+		res(intent.KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48"}`),
+		res(intent.KindNetwork, "corp-dmz", `{"vrf": "corp", "mode": "L2"}`),
+		res(intent.KindNode, "edge", `{"publicKey": "`+key2+`", "vrfs": ["corp"]}`),
+	)
+	s := states["edge"]
+	for _, c := range []struct {
+		what    string
+		caps    *controlpb.Capabilities
+		problem string
+	}{
+		{"arm64 with Wintun only", &controlpb.Capabilities{Architecture: controlpb.Architecture_ARCHITECTURE_ARM64},
+			`Node "edge" (arm64): L2 Network "corp-dmz" needs XDP or SeLow, which the node does not report`},
+		{"x64 with neither driver", &controlpb.Capabilities{Architecture: controlpb.Architecture_ARCHITECTURE_X64},
+			`Node "edge" (x64): L2 Network "corp-dmz" needs XDP or SeLow, which the node does not report`},
+		{"x64 with SeLow alone", &controlpb.Capabilities{Architecture: controlpb.Architecture_ARCHITECTURE_X64, Selow: true}, ""},
+		{"x64 with SeLow and the XDP runtime", &controlpb.Capabilities{Architecture: controlpb.Architecture_ARCHITECTURE_X64, Selow: true, Xdp: true}, ""},
+	} {
+		problems := Check("edge", c.caps, s)
+		switch {
+		case c.problem == "" && len(problems) > 0:
+			t.Errorf("%s: the L2 Network was refused: %v", c.what, problems)
+		case c.problem != "" && (len(problems) != 1 || problems[0].Error() != c.problem):
+			t.Errorf("%s: the problems are %v, want [%s]", c.what, problems, c.problem)
+		}
+	}
+}
+
 // The API form and the protocol form of the Capabilities carry the same facts.
 func TestAPIForm(t *testing.T) {
 	got := FromProto(server)
