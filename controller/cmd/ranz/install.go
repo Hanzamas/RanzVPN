@@ -54,10 +54,28 @@ func runUninstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "ranz uninstall: unexpected arguments: %q\n", flags.Args())
 		return 2
 	}
-	if err := install.Uninstall(os.Stdout); err != nil {
+	err := install.Uninstall(os.Stdout)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "ranz uninstall:", err)
+	} else {
+		fmt.Println("ranz uninstall: done")
+	}
+	return uninstallCode(err)
+}
+
+// rebootRequired is the exit code of an uninstall that a restart of Windows finishes, as Windows
+// Installer reports one (ERROR_SUCCESS_REBOOT_REQUIRED).
+const rebootRequired = 3010
+
+// uninstallCode is the exit code of ranz uninstall for the error of install.Uninstall: 0 for none,
+// rebootRequired when a network component did not unbind in time (#72, risk R2), 1 otherwise.
+func uninstallCode(err error) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, install.ErrRebootRequired):
+		return rebootRequired
+	default:
 		return 1
 	}
-	fmt.Println("ranz uninstall: done")
-	return 0
 }

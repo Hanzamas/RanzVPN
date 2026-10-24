@@ -7,8 +7,9 @@
 # 2. ranz install adds the XDP runtime. The xdp.sys that it put into System32 passes signtool verify /kp, the policy of
 #    Windows for kernel-mode drivers, which takes production signatures only, and is signed by Microsoft (ADR-0018
 #    amendment of 2026-10-13). vpntest kmtest xdp: TX inspect, RX inject, LAN discovery with per-VLAN broadcast limits,
-#    the paused consumer, the benchmark of the batch sizes, recovery and shutdown. Each recovery is in the Application
-#    event log under the source ranzvpnserver.
+#    the paused consumer, the benchmark of the batch sizes, recovery and shutdown. The recovery that the test asks for is
+#    in the Application event log under the source ranzvpnserver, and in an ETW trace session on the provider of
+#    Debug() (#72, risk R3).
 # 3. The soak: two minutes of TX and RX at full rate (#72, risk R2), and on the nightly run of a Sunday an hour of it, the
 #    weekly soak of risk R3.
 # 4. ranz uninstall after the traffic, timed: it removes the drivers within its timeouts. ranz install again, and the
@@ -30,6 +31,11 @@ $vpntestExe = (Resolve-Path -LiteralPath $Vpntest).Path
 $xdpSys = Join-Path $env:SystemRoot 'System32\drivers\xdp.sys'
 $firewallRule = 'ranz-kmtest'
 $script:failures = @()
+# The provider of Debug() (TRACELOGGING_DEFINE_PROVIDER of src/Mayaqua/Trace.c: the EventSource hash of "Ranz.VPN"), a
+# trace session on it, and the words of the recovery that vpntest kmtest asks for (NodeL2Recover of src/Cedar/NodeL2.c)
+$providerGuid = '{75b1770a-b78d-5167-6ab6-c837a52a76a2}'
+$traceSession = 'RanzKmTest'
+$recoveryText = 'a recovery was asked for'
 
 # A step that failed: the job goes on with the next one and fails at the end
 function Add-Failure([string] $step) {
@@ -54,6 +60,20 @@ function Invoke-KmTest([string[]] $argv) {
 	$ok = @($out | Select-String -CaseSensitive -Pattern '^KMTEST TEST OK').Count -eq 1
 	$leak = @($out | Select-String -CaseSensitive -Pattern 'NO MEMORY LEAKS').Count -eq 1
 	return ($ok -and $leak)
+}
+
+# Stop a trace session: logman stop now and then fails with the WMI GUID error, HRESULT 0x80071068, while the session is
+# there, and the next stop finds it, so it stops up to 3 times, 2 seconds apart, while that error comes back (as
+# etw-trace.ps1 does). Returns the exit code of the last stop.
+function Stop-TraceSession([string] $name) {
+	$wmiGuidError = -2147020696
+	for ($attempt = 1; $attempt -le 3; $attempt++) {
+		& logman stop $name -ets | Out-Host
+		$code = $LASTEXITCODE
+		if ($code -ne $wmiGuidError) { return $code }
+		if ($attempt -lt 3) { Start-Sleep -Seconds 2 }
+	}
+	return $code
 }
 
 # signtool.exe of the Windows SDK: the highest version under the Windows Kits, x64 build
@@ -100,14 +120,42 @@ if (-not (Test-Path -LiteralPath $xdpSys)) {
 	Write-Host "the xdp service: $((& sc.exe query xdp | Out-String).Trim())"
 }
 
+# The run of vpntest kmtest xdp inside an ETW trace session on the provider of Debug() (src/Mayaqua/Trace.c), which
+# receives the recovery that the test asks for, as the Application event log does
 $t0 = Get-Date
-if (-not (Invoke-KmTest @('xdp'))) { Add-Failure 'vpntest kmtest xdp' }
+$etl = Join-Path $env:RUNNER_TEMP 'kmtest.etl'
+& logman start $traceSession -p $providerGuid '0xffffffffffffffff' '0xff' -o $etl -ets
+if ($LASTEXITCODE -ne 0) { Add-Failure "logman could not start the trace session (exit code $LASTEXITCODE)" }
+try {
+	if (-not (Invoke-KmTest @('xdp'))) { Add-Failure 'vpntest kmtest xdp' }
+} finally {
+	$stopCode = Stop-TraceSession $traceSession
+}
+if ($stopCode -ne 0) { Add-Failure "logman could not stop the trace session (exit code $stopCode)" }
 
 # The recoveries of the test are in the Application event log
 $events = @(Get-WinEvent -LogName Application -MaxEvents 2000 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -eq 'ranzvpnserver' -and $_.Id -eq 10 -and $_.TimeCreated -ge $t0 })
 Write-Host "$($events.Count) recoveries of an L2 adapter in the Application event log"
 $events | Select-Object -First 3 | ForEach-Object { Write-Host "  $($_.TimeCreated): $($_.Message)" }
 if ($events.Count -lt 1) { Add-Failure 'no recovery of an L2 adapter in the Application event log' }
+
+# ... and in the trace session: the message is a UTF-16LE string in the payload of an event, which need not start at an
+# even offset of the file, so the file is decoded from both offsets (as etw-trace.ps1 reads it)
+if (-not (Test-Path -LiteralPath $etl)) {
+	$written = Get-ChildItem -Path $env:RUNNER_TEMP -Filter 'kmtest*.etl' | Sort-Object LastWriteTime | Select-Object -Last 1
+	if ($written) { $etl = $written.FullName }
+}
+if (-not (Test-Path -LiteralPath $etl)) {
+	Add-Failure 'the trace session wrote no .etl file'
+} else {
+	$bytes = [System.IO.File]::ReadAllBytes($etl)
+	$found = @(@(0, 1) | Where-Object {
+			$n = $bytes.Length - $_
+			[System.Text.Encoding]::Unicode.GetString($bytes, $_, $n - ($n % 2)).Contains($recoveryText)
+		}).Count -gt 0
+	Write-Host "trace session file: $etl ($($bytes.Length) bytes), a recovery in it: $found"
+	if (-not $found) { Add-Failure "the trace session received no event with '$recoveryText'" }
+}
 
 # 3. The soak: an hour on the nightly run of a Sunday, two minutes otherwise
 $soak = 120

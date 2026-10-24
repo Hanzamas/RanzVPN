@@ -207,7 +207,7 @@ static DWORD WINAPI KmWatchdog(LPVOID param)
 		return 0;
 	}
 
-	int len = snprintf(msg, sizeof(msg), "KMTEST TEST FAILED (did not finish within %u ms)\n", kmtest_budget);
+	int len = snprintf(msg, sizeof(msg), "KMTEST TEST FAILED (did not finish within %u ms)\n", (UINT)kmtest_budget);
 	if (len > 0)
 	{
 		WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), msg, (DWORD)MIN((UINT)len, (UINT)sizeof(msg) - 1), &written, NULL);
