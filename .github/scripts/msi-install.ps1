@@ -16,6 +16,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 # process: the msiexec exit code, the Service Control Manager, the files and their access list, the Apps and
 # Features entries and the data directory.
 #
+# - every package has a valid Authenticode signature, the one of the CI certificate that the job trusts as a root;
 # - an MSI of the other architecture is refused, and nothing is installed: the arm64 package on an x64 computer
 #   with 1633 (Windows Installer refuses its platform), the x64 package on an arm64 computer with 1603 and
 #   the launch condition message that names the arm64 package;
@@ -154,6 +155,12 @@ function Get-RelatedProducts {
 	} finally {
 		[void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($installer)
 	}
+}
+
+# The processor architecture that Windows keeps for the whole machine (the launch condition of the x64 package
+# reads the same value): x64 is AMD64 here, arm64 is ARM64
+function Get-NativeArchitecture {
+	return (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' -Name PROCESSOR_ARCHITECTURE -ErrorAction SilentlyContinue).PROCESSOR_ARCHITECTURE
 }
 
 # The files that the next restart removes or renames, and the ones of them that name the Ranz VPN folder
@@ -323,6 +330,7 @@ function Show-Diagnostics {
 	} else {
 		Write-Host "${installDir}: not there"
 	}
+	Write-Host "architecture of this computer: $(Get-NativeArchitecture) in the registry, $env:PROCESSOR_ARCHITECTURE and $env:PROCESSOR_ARCHITEW6432 in the environment of this process"
 	Write-Host "Apps and Features: $((@(Get-ArpEntries) | ForEach-Object { "$($_.Name) $($_.Version) $($_.Key)" }) -join '; ')"
 	Write-Host "Windows Installer products of the upgrade code: $((@(Get-RelatedProducts)) -join ', ')"
 	Write-Host "files that the next restart removes or renames and that name $installDir`: $((@(Get-PendingRemovals)) -join '; ')"
@@ -372,10 +380,22 @@ function Step([string] $name, [scriptblock] $body) {
 $state = @{}
 $since = Get-Date
 $script:lastLog = $null
+Write-Host "this computer is $(Get-NativeArchitecture) by the registry, and the architecture of this runner is $Architecture"
 if ($StandIn) { Remove-Item -LiteralPath $standInDir -Recurse -Force -ErrorAction SilentlyContinue }
 Remove-InstalledState
 
 try {
+	# 0. The packages are signed like the executables (ADR-0020 amendment of 2026-10-22), with the CI certificate
+	#    that the job trusts as a root
+	if (-not $StandIn) {
+		[void](Step 'the packages have a valid Authenticode signature' {
+			foreach ($package in $msiCurrent, $msiPrevious, $msiOther, $msiTampered) {
+				$sig = Get-AuthenticodeSignature -FilePath $package
+				if ($sig.Status -ne 'Valid') { throw "$package has signature status $($sig.Status), not Valid" }
+			}
+		})
+	}
+
 	# 1. A package of the other architecture is refused and installs nothing
 	[void](Step "the $other package is refused on $Architecture, and nothing is installed" {
 		$r = Invoke-Msiexec '/i' $msiOther 'wrong-architecture'
