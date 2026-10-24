@@ -2,13 +2,14 @@
 // The own-decoy reverse proxy of the TLS transport (CORE-S2-2, #70): the Trojan posture. After the
 // TLS handshake a server reads the first application bytes of a stream (TransportTls.c). A client
 // that opens a valid Ranz session sends the first Noise handshake frame there; a prober that sends
-// anything else is reverse-proxied to a website the operator runs on the loopback interface, so it
-// meets an ordinary HTTPS site byte for byte over the same TLS session it opened. The module tells a
-// prober from a valid client by the first handshake message: its shape (TransportDecoyIsHandshake,
-// the structural test the session layer makes), then the Noise message read with the server's static
-// key and the channel binding of the stream (TransportDecoyAuthenticate), which only a client that
-// knows the server's key can write. It carries bytes between the prober and the backend over a TCP
-// connection of its own on the Windows TCP stack (TransportDecoyProxy). It keeps no
+// anything else, or a handshake message that does not authenticate, is reverse-proxied to a website
+// the operator runs on the loopback interface, so it meets an ordinary HTTPS site byte for byte over
+// the same TLS session it opened. The module tells a prober from a valid client by the first
+// handshake message: its shape (TransportDecoyIsHandshake, the structural test the session layer
+// makes), then the Noise message read with the server's static key and the channel binding of the
+// stream (TransportDecoyAuthenticate), which only a client that knows the server's key can write. It
+// carries bytes between the prober and the backend over a TCP connection of its own on the Windows
+// TCP stack (TransportDecoyProxy). It keeps no
 // Schannel state: the TLS transport gives it the stream's own read and write (TRANSPORT_DECOY_IO),
 // which encrypt and decrypt the prober's side. Winsock is started by the TLS transport that calls
 // it; the module starts none of its own.

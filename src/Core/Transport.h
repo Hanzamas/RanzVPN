@@ -408,12 +408,12 @@ bool TransportTlsParseHello(const UCHAR *data, UINT size, TRANSPORT_TLS_INFO *in
 
 // The encrypted side of a reverse-proxied stream, the prober's: the TLS transport's own stream read
 // and write, so the decoy module reaches the prober without the Schannel context
-typedef UINT(*TRANSPORT_DECOY_READ)(void *stream, void *buf, UINT size, UINT timeout);
-typedef bool(*TRANSPORT_DECOY_WRITE)(void *stream, const void *buf, UINT size);
+typedef UINT(TRANSPORT_DECOY_READ)(void *stream, void *buf, UINT size, UINT timeout);
+typedef bool(TRANSPORT_DECOY_WRITE)(void *stream, const void *buf, UINT size);
 typedef struct TRANSPORT_DECOY_IO {
-	void *Stream;                // The prober's stream (a TLS_STREAM of TransportTls.c)
-	TRANSPORT_DECOY_READ Read;   // Read the prober's decrypted bytes
-	TRANSPORT_DECOY_WRITE Write; // Write bytes to the prober, which its TLS session encrypts
+	void *Stream;                 // The prober's stream (a TLS_STREAM of TransportTls.c)
+	TRANSPORT_DECOY_READ *Read;   // Read the prober's decrypted bytes
+	TRANSPORT_DECOY_WRITE *Write; // Write bytes to the prober, which its TLS session encrypts
 } TRANSPORT_DECOY_IO;
 
 // Whether the first bytes of a stream are a valid Ranz handshake frame: at least a frame header and

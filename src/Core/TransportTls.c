@@ -1190,7 +1190,7 @@ static UINT TlsDecoyFirst(TLS_STREAM *s, UCHAR *buf, UINT cap, HANDLE cancel) {
 // guard owns the stream on this path.
 static bool TlsDecoyGuard(TLS_STREAM *s, HANDLE cancel) {
 	UCHAR *first = (UCHAR *)TlsZeroAlloc(TLS_DECOY_PEEK);
-	UCHAR binding[NOISE_EXPORTER_SIZE];
+	UCHAR binding[NOISE_EXPORTER_SIZE] = {0};
 	UINT size, binding_size = 0;
 
 	if (first == NULL) {
