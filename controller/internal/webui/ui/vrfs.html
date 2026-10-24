@@ -16,6 +16,17 @@
 <ranz-problem></ranz-problem>
 <output id="result" aria-live="polite"></output>
 <ranz-table id="vrfs"></ranz-table>
+<section aria-labelledby="h-connect" data-action="connect" hidden>
+<h2 id="h-connect">Connect two VRFs</h2>
+<p>Each of the two imports a route target that the other exports, so the routes of each leak into the other, in one revision. A leak is reachability: the policy of each VRF still decides what passes.</p>
+<form id="connect-form" class="inline">
+<label for="vrf-a">VRF</label>
+<select id="vrf-a" name="a" required></select>
+<label for="vrf-b">and VRF</label>
+<select id="vrf-b" name="b" required></select>
+<button type="submit">Connect</button>
+</form>
+</section>
 <ranz-confirm></ranz-confirm>
 </main>
 </body>

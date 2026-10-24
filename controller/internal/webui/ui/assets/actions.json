@@ -6,6 +6,7 @@
     {"name": "nodes", "method": "GET", "path": "/api/v1/nodes", "role": "viewer"},
     {"name": "apply", "method": "POST", "path": "/api/v1/apply", "role": "operator"},
     {"name": "deleteResource", "method": "DELETE", "path": "/api/v1/resources/{kind}/{name}", "role": "operator"},
+    {"name": "connect", "method": "POST", "path": "/api/v1/connect", "role": "operator"},
     {"name": "revisions", "method": "GET", "path": "/api/v1/revisions", "role": "viewer"},
     {"name": "revision", "method": "GET", "path": "/api/v1/revisions/{id}", "role": "viewer"},
     {"name": "confirmRevision", "method": "POST", "path": "/api/v1/revisions/{id}/confirm", "role": "operator"},
