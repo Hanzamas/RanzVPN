@@ -48,7 +48,10 @@
 //	ranz [flags] get revision ID               print one revision with its resources
 //	ranz [flags] get events                    print the events, such as an automatic rollback or a pool near exhaustion
 //	ranz [flags] get ipam                      print how full each address pool is, and the routes of the gateway LAN subnets
+//	ranz [flags] get leases                    print the leases of the DHCP responders of the L2 Networks
 //	ranz [flags] delete KIND NAME              delete one resource
+//	ranz [flags] connect vrf A B               leak the routes of the VRFs A and B into each other, as one revision: each
+//	                                           imports a route target that the other exports (SDN-7)
 //	ranz [flags] export [-o json|yaml]         print the whole intent as one intent document, with the values the controller
 //	                                           filled in, such as the id and the ULA of each VRF; JSON unless -o yaml
 //	ranz [flags] import -f FILE                make the intent document in FILE (YAML or JSON, - for standard input) the whole
@@ -122,9 +125,10 @@ const usage = `usage:
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]
   ranz [flags] rollback REVISION
-  ranz [flags] get resources|nodes|revisions|events|ipam|licence
+  ranz [flags] get resources|nodes|revisions|events|ipam|leases|licence
   ranz [flags] get revision ID
   ranz [flags] delete KIND NAME
+  ranz [flags] connect vrf A B
   ranz [flags] export [-o json|yaml]
   ranz [flags] import -f FILE
   ranz [flags] status
@@ -289,6 +293,12 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 			return err
 		}
 		return show(out, ipam)
+	case len(args) == 2 && args[0] == "get" && args[1] == "leases":
+		leases, err := c.DHCPLeases(ctx)
+		if err != nil {
+			return err
+		}
+		return show(out, api.LeaseList{Leases: leases})
 	case len(args) == 2 && args[0] == "get" && args[1] == "resources":
 		rs, err := c.Resources(ctx)
 		if err != nil {
@@ -303,6 +313,12 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 		return show(out, api.NodeList{Nodes: nodes})
 	case len(args) == 3 && args[0] == "delete":
 		res, err := c.Delete(ctx, args[1], args[2])
+		if err != nil {
+			return err
+		}
+		return show(out, res)
+	case len(args) == 4 && args[0] == "connect" && args[1] == "vrf":
+		res, err := c.Connect(ctx, args[2], args[3])
 		if err != nil {
 			return err
 		}

@@ -11,7 +11,9 @@
 // one into the other. That is the starter rule "allow all inside VRF default" of a first install (ADR-0034); the
 // policy engine compiles the rules of the intent with SDN-8 (#184). With no controller reachable, the overlay keeps
 // the state it applied last and forwards on it (ADR-0027 decision 6). An overlay without a control stream takes its
-// states from NodeOverlayApply, as the vpntest harness gives them.
+// states from NodeOverlayApply, as the vpntest harness gives them. The Mirrors of a Generation go in with its tables,
+// and copy the packets that the overlay sends to a peer and delivers to the host to a sensor (NodeMirror.c; SDN-23,
+// #199).
 //
 // The host is a fake adapter in the vpntest harness, until one Wintun adapter per VRF comes with SDN-5 (#181). The
 // data transport finds a peer by its node name, as the in-process loopback transport of the harness does, until the
@@ -149,6 +151,8 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 
 	// 1:1 NAT (NodeNat.c; SDN-6, #182): the outside prefixes of the node's rules lead to the host, the routes of a peer to it
 	max_routes += NodeNatRoutes(st, NULL);
+	// Route leaking (NodeLeak.c; SDN-7, #183): the routes that the VRFs of the peers leak into the node's VRFs
+	max_routes += NodeLeakRoutes(st, NULL);
 
 	NODE_VRF_ROUTE *routes = ZeroMalloc(sizeof(NODE_VRF_ROUTE) * MAX(max_routes, 1));
 
@@ -162,8 +166,9 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 				num++;
 
 	num += NodeNatRoutes(st, routes + num);
+	num += NodeLeakRoutes(st, routes + num);
 
-	NODE_VRF_TABLES *v = NodeNewVrfTables(st->Generation, routes, num, (void **)hops, st->NumPeers);
+	NODE_VRF_TABLES *v = NodeLeakNewTables(st, routes, num, (void **)hops);
 	Free(routes);
 
 	// The rules of the Generation, installed with its tables
@@ -223,6 +228,8 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	NODE_VRF_TABLES *v = NodeOverlayTables(st, hops);
 	// The MTU and the rate limits of the Generation go in with its tables (NodeShape.c)
 	NodeShapeAttach(ov->Node, v, st);
+	// The Mirrors of the Generation go in with its tables (NodeMirror.c)
+	NodeMirrorAttach(ov->Node, v, st);
 	UINT num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
 	if (v != NULL && swapped == false)
@@ -231,6 +238,9 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	// The host's adapter of each VRF takes the MTU of the Generation that went in, before the overlay reports it
 	if (swapped)
 		NodeShapeApplied(ov->Node, st);
+	// The DHCP responders of the L2 Networks of the Generation (NodeDhcp.c; SDN-43, #236)
+	if (swapped)
+		NodeDhcpApplied(ov->Node, st);
 
 	Lock(ov->Lock);
 	{
@@ -461,6 +471,10 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 		ok = (from < v->NumHops && v->Hops[from] == p && NodeVrfLookup(vt, dst, addr_size) == NODE_VRF_LOCAL);
 	}
 
+	// A Mirror copies the packet as the peer sent it, before a 1:1 NAT rule translates it (NodeMirror.c)
+	if (ok)
+		NodeMirrorCopy(v, vrf_id, packet, packet_size, false);
+
 	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the host takes the packet as it sees it
 	ok = ok && NodeNatInbound(v, vrf_id, &packet, &packet_size, ov->NatBuf, NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
 
@@ -619,6 +633,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 		cc.StaticKey = cfg->Key->Private;
 	cc.Proc = NodeOverlayState;
 	cc.Param = ov;
+	// The leases of the DHCP responders go on the control stream (NodeDhcp.c; SDN-43, #236)
+	cc.Leases = NodeDhcpStart(n);
 	// The Hello of each stream carries the Capabilities of the host (NodeCaps.c; ONE-3, #312)
 	cc.CapsProc = NodeCapsProc;
 
@@ -653,6 +669,9 @@ void NodeOverlayStop(NODE *n) {
 	ControlStop(ov->Control);
 	NodeSwapVrfs(n, NULL);
 	NodeShapeStop(n);
+	// No table holds a Mirror any more: the VXLAN module of the Mirrors goes (NodeMirror.c)
+	NodeMirrorStop(n);
+	NodeDhcpStop(n);
 	ov->Halt = true;
 	if (ov->Thread != NULL) {
 		WaitForSingleObject(ov->Thread, INFINITE);
@@ -713,7 +732,8 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	NODE_OVERLAY_PEER *peer = (NODE_OVERLAY_PEER *)v->Hops[hop];
 	UCHAR *record = (size + NODE_OVERLAY_VRF_TAG <= sizeof(buf) ? buf : Malloc(size + NODE_OVERLAY_VRF_TAG));
 
-	WRITE_UINT(record, vrf_id);
+	// A route that a VRF of the peer leaks takes the packet into that VRF (NodeLeak.c; SDN-7, #183)
+	WRITE_UINT(record, NodeLeakVrf(v, hop, vrf_id));
 	size = NodeNatCopy(v, vrf_id, record + NODE_OVERLAY_VRF_TAG, packet, size);
 
 	// Counted on the peer before it reads the session, so the thread does not close the session under the send
@@ -723,6 +743,10 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	// of the VRF and the node may drop it (NodeShape.c)
 	bool ok = (s != NULL && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG));
 	InterlockedDecrement(&peer->Senders);
+
+	// A Mirror copies the packet as it went to the peer (NodeMirror.c)
+	if (ok)
+		NodeMirrorCopy(v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size, true);
 
 	if (record != buf)
 		Free(record);
