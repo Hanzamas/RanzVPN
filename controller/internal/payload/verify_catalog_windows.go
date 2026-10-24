@@ -5,6 +5,7 @@ package payload
 import (
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strings"
 	"unsafe"
 
@@ -27,7 +28,7 @@ type wintrustCatalogInfo struct {
 }
 
 // The WTD_* value of wintrust.h this file adds to the ones of verify_windows.go, and the hash that
-// the catalogs of Windows drivers carry for the files of a package.
+// the catalogs of Windows drivers carry for each file of a package.
 const (
 	wtdChoiceCatalog = 2        // WTD_CHOICE_CATALOG
 	catalogHash      = "SHA256" // BCRYPT_SHA256_ALGORITHM
@@ -48,51 +49,43 @@ var (
 // is not one that Windows trusts. No UI, and no revocation list fetched over the network, as
 // verifyAuthenticode runs.
 func verifyCatalogMember(catalog, path string) error {
-	code, err := catalogVerdict(catalog, path, catalogHash)
-	if err != nil {
-		return err
+	if _, err := os.Stat(catalog); err != nil {
+		return fmt.Errorf("the catalog check: the catalog: %w", err)
 	}
-	return catalogError(code)
-}
-
-// catalogVerdict is the code that WinVerifyTrust gives for the file at path as a member of the
-// catalog at catalog, hashed with alg (the name of a CNG hash algorithm). A call that fails before
-// WinVerifyTrust is reached is the error.
-func catalogVerdict(catalog, path, alg string) (uint32, error) {
 	catalogPtr, err := windows.UTF16PtrFromString(catalog)
 	if err != nil {
-		return 0, fmt.Errorf("the catalog check: %w", err)
+		return fmt.Errorf("the catalog check: %w", err)
 	}
 	pathPtr, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return 0, fmt.Errorf("the catalog check: %w", err)
+		return fmt.Errorf("the catalog check: %w", err)
 	}
-	algPtr, err := windows.UTF16PtrFromString(alg)
+	algPtr, err := windows.UTF16PtrFromString(catalogHash)
 	if err != nil {
-		return 0, fmt.Errorf("the catalog check: %w", err)
+		return fmt.Errorf("the catalog check: %w", err)
 	}
 
 	var admin uintptr
 	if r, _, callErr := procCryptCATAdminAcquireContext2.Call(uintptr(unsafe.Pointer(&admin)), 0, uintptr(unsafe.Pointer(algPtr)), 0, 0); r == 0 {
-		return 0, fmt.Errorf("the catalog check (CryptCATAdminAcquireContext2): %w", callErr)
+		return fmt.Errorf("the catalog check (CryptCATAdminAcquireContext2): %w", callErr)
 	}
 	defer procCryptCATAdminReleaseContext.Call(admin, 0)
 
 	file, err := windows.CreateFile(pathPtr, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
 	if err != nil {
-		return 0, fmt.Errorf("the catalog check: opening the file: %w", err)
+		return fmt.Errorf("the catalog check: opening the file: %w", err)
 	}
 	defer windows.CloseHandle(file)
 
 	hash := make([]byte, 64)
 	size := uint32(len(hash))
 	if r, _, callErr := procCryptCATAdminCalcHashFromFileHandle2.Call(admin, uintptr(file), uintptr(unsafe.Pointer(&size)), uintptr(unsafe.Pointer(&hash[0])), 0); r == 0 {
-		return 0, fmt.Errorf("the catalog check (CryptCATAdminCalcHashFromFileHandle2): %w", callErr)
+		return fmt.Errorf("the catalog check (CryptCATAdminCalcHashFromFileHandle2): %w", callErr)
 	}
 	hash = hash[:size]
 	tag, err := windows.UTF16PtrFromString(strings.ToUpper(hex.EncodeToString(hash)))
 	if err != nil {
-		return 0, fmt.Errorf("the catalog check: %w", err)
+		return fmt.Errorf("the catalog check: %w", err)
 	}
 
 	member := wintrustCatalogInfo{
@@ -121,7 +114,7 @@ func catalogVerdict(catalog, path, alg string) (uint32, error) {
 	data.stateAction = wtdStateActionClose
 	procWinVerifyTrust.Call(0, uintptr(unsafe.Pointer(&action)), uintptr(unsafe.Pointer(&data)))
 
-	return uint32(r), nil
+	return catalogError(uint32(r))
 }
 
 // catalogError is the verdict of WinVerifyTrust on a catalog member, code, as an error, nil for a

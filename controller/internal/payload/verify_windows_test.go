@@ -99,6 +99,84 @@ func TestVerifyAuthenticodeRejectsAnUnsignedFile(t *testing.T) {
 	}
 }
 
+// selowFile is the absolute path of a file of the SeLow package that selow/ holds: a driver package that
+// Microsoft signed for Windows, whose catalog lists the driver and the INF, a real fixture for the
+// check of a catalog member.
+func selowFile(t *testing.T, name string) string {
+	t.Helper()
+	path, err := filepath.Abs(filepath.Join("selow", name))
+	if err != nil {
+		t.Fatalf("the path of selow/%s: %v", name, err)
+	}
+	return path
+}
+
+func TestVerifyCatalogMemberAcceptsTheMembersOfItsCatalog(t *testing.T) {
+	catalog := selowFile(t, "SeLow_Win10_x64.cat")
+	for _, name := range []string{"SeLow_x64.sys", "SeLow_x64.inf"} {
+		if err := verifyCatalogMember(catalog, selowFile(t, name)); err != nil {
+			t.Errorf("verifyCatalogMember refuses %s, a member of the catalog of its package: %v", name, err)
+		}
+	}
+}
+
+func TestVerifyCatalogMemberRejectsAChangedFile(t *testing.T) {
+	catalog := selowFile(t, "SeLow_Win10_x64.cat")
+	data, err := os.ReadFile(selowFile(t, "SeLow_x64.sys"))
+	if err != nil {
+		t.Fatalf("reading the driver: %v", err)
+	}
+	data[len(data)/2] ^= 0xFF
+	changed := filepath.Join(t.TempDir(), "SeLow_x64.sys")
+	if err := os.WriteFile(changed, data, 0o644); err != nil {
+		t.Fatalf("writing %s: %v", changed, err)
+	}
+	err = verifyCatalogMember(catalog, changed)
+	if err == nil {
+		t.Fatal("verifyCatalogMember did not reject a file with one byte changed")
+	}
+	if !strings.Contains(err.Error(), "not a member") {
+		t.Fatalf("verifyCatalogMember refused the changed file for another reason: %v", err)
+	}
+	t.Logf("verifyCatalogMember refuses a file with one byte changed: %v", err)
+}
+
+func TestVerifyCatalogMemberRejectsAFileThatTheCatalogDoesNotList(t *testing.T) {
+	catalog := selowFile(t, "SeLow_Win10_x64.cat")
+	// A catalog lists no catalog, itself included
+	if err := verifyCatalogMember(catalog, catalog); err == nil {
+		t.Fatal("verifyCatalogMember did not reject a file that its catalog does not list")
+	}
+}
+
+func TestVerifyCatalogMemberReportsAFileOrACatalogThatIsNotThere(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	err := verifyCatalogMember(selowFile(t, "SeLow_Win10_x64.cat"), missing)
+	if err == nil || !strings.Contains(err.Error(), "opening the file") {
+		t.Errorf("verifyCatalogMember of a file that is not there = %v, want a message that names opening the file", err)
+	}
+	err = verifyCatalogMember(missing, selowFile(t, "SeLow_x64.sys"))
+	if err == nil || !strings.Contains(err.Error(), "the catalog") {
+		t.Errorf("verifyCatalogMember with a catalog that is not there = %v, want a message that names the catalog", err)
+	}
+}
+
+func TestCatalogErrorNamesTheCause(t *testing.T) {
+	if err := catalogError(trustOK); err != nil {
+		t.Errorf("catalogError(trustOK) = %v, want nil", err)
+	}
+	for code, want := range map[uint32]string{
+		certUntrustedRoot: "trusted root",
+		trustNoSignature:  "not a member",
+		0x80004005:        "WinVerifyTrust 0x80004005",
+	} {
+		err := catalogError(code)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("catalogError(%#x) = %v, want a message with %q", code, err, want)
+		}
+	}
+}
+
 func TestTrustErrorNamesTheCause(t *testing.T) {
 	if err := trustError(trustOK); err != nil {
 		t.Errorf("trustError(trustOK) = %v, want nil", err)

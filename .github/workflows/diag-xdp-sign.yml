@@ -9,7 +9,7 @@ on:
     paths:
     - .github/workflows/diag-xdp-sign.yml
     - .github/scripts/diag-xdp-sign.ps1
-    - controller/internal/payload/verify_diag_test.go
+    - controller/internal/install/drivers_diag_windows_amd64_test.go
 
 permissions:
   contents: read

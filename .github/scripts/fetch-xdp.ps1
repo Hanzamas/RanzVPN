@@ -4,10 +4,11 @@
 # (ADR-0022). The files of its runtime\native folder that ranz installs are copied to -OutDir, unchanged: xdp.sys, xdpapi.dll,
 # xdp.cat, xdp.inf and xdppcw.man (the manifest of its performance counters). self-integrity.ps1 embeds them in ranz.exe as
 # its XDP payload, which ranz install writes out, checks and installs with netcfg and lodctr, as Microsoft's
-# xdp-setup.ps1 does, so that no PowerShell script and no second download is left. The driver, its API library and its
-# catalog must carry the production signature of Microsoft (a test-signed prerelease has none that a machine trusts, and
-# cannot ship), which this script checks, and the install job of windows.yml checks again, with signtool verify /kp, on the
-# files that ranz install wrote. A new version changes the pin here and the NOTICE together (TestNoticeNamesThePinnedPayloads).
+# xdp-setup.ps1 does, so that no PowerShell script and no second download is left. The driver and its catalog must carry
+# the production signature of Microsoft (a test-signed prerelease has none that a machine trusts, and cannot ship), and the
+# API library must be listed in that catalog, which this script checks with signtool, and the install job of windows.yml
+# checks again on the files that ranz install wrote. A new version changes the pin here and the NOTICE together
+# (TestNoticeNamesThePinnedPayloads).
 param(
 	[string] $Version = '1.4.0',
 	[Parameter(Mandatory = $true)]
@@ -15,6 +16,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Native exit codes are checked by hand below
+$PSNativeCommandUseErrorActionPreference = $false
 
 # The SHA-512 (base64 to hex) that NuGet records for each pinned package; a changed hash fails the fetch
 $knownHash = @{
@@ -50,13 +53,41 @@ foreach ($name in $names) {
 	if (-not (Test-Path -LiteralPath (Join-Path $native $name))) { throw "The XDP runtime package is missing runtime\native\$name" }
 }
 
-# The driver, its API library and its catalog carry the production signature of Microsoft
-foreach ($name in @('xdp.sys', 'xdpapi.dll', 'xdp.cat')) {
-	$sig = Get-AuthenticodeSignature -LiteralPath (Join-Path $native $name)
-	Write-Host "${name}: signature $($sig.Status), signer $($sig.SignerCertificate.Subject)"
-	if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Microsoft') {
-		throw "$name is not signed by Microsoft: $($sig.Status), $($sig.SignerCertificate.Subject)"
+# signtool.exe of the Windows SDK: the highest version under the Windows Kits, x64 build
+function Get-SignTool {
+	$roots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "${env:ProgramFiles}\Windows Kits\10\bin")
+	$found = foreach ($r in $roots) {
+		if (Test-Path -LiteralPath $r) {
+			Get-ChildItem -LiteralPath $r -Recurse -Filter 'signtool.exe' -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' }
+		}
 	}
+	$tool = $found | Sort-Object FullName -Descending | Select-Object -First 1
+	if (-not $tool) { throw 'signtool.exe was not found under the Windows Kits' }
+	return $tool.FullName
+}
+
+# signtool verify with $options passes for $file, or this throws with what signtool said
+function Assert-Verified([string] $signtool, [string[]] $options, [string] $file) {
+	$out = (& $signtool verify @options /v $file 2>&1 | Out-String)
+	if ($LASTEXITCODE -ne 0) { throw "signtool verify $($options -join ' ') does not pass for ${file}:`n$out" }
+	Write-Host "signtool verify $($options -join ' ') passes for $(Split-Path -Leaf $file)"
+}
+
+# The driver and its catalog carry the production signature of Microsoft, which signtool checks as Windows does: the
+# driver with the policy for kernel-mode drivers (/kp) and the catalog with the default authentication policy (/pa).
+# xdpapi.dll carries a signature of its own from the Azure Public Services of Microsoft, whose root (Microsoft RSA
+# Services Root CA 2021) Windows does not trust for code, so neither Get-AuthenticodeSignature nor signtool verify /pa
+# passes for it on any machine. The DLL is listed in xdp.cat, which is how Windows trusts it, and signtool verify /c
+# checks it as a member of that catalog. Each of the three also names Microsoft as its signer.
+$signtool = Get-SignTool
+$catalog = Join-Path $native 'xdp.cat'
+Assert-Verified $signtool @('/kp') (Join-Path $native 'xdp.sys')
+Assert-Verified $signtool @('/pa') $catalog
+Assert-Verified $signtool @('/pa', '/c', $catalog) (Join-Path $native 'xdpapi.dll')
+foreach ($name in @('xdp.sys', 'xdpapi.dll', 'xdp.cat')) {
+	$signer = (Get-AuthenticodeSignature -LiteralPath (Join-Path $native $name)).SignerCertificate.Subject
+	Write-Host "${name}: signed by $signer"
+	if ($signer -notmatch 'O=Microsoft Corporation') { throw "$name is not signed by Microsoft: $signer" }
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null

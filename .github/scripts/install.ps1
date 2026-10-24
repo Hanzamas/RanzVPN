@@ -49,7 +49,8 @@ $PSNativeCommandUseErrorActionPreference = $false
 # - on x64 it also installs SeLow and the XDP runtime: each package under drivers\ in the Ranz VPN folder, each file
 #   as it is (the SeLow package of the repository, the XDP files by their SHA-256), the service of each running, the
 #   files that the INF of each copies into System32, and an install record. The XDP files keep the production
-#   signature of Microsoft: signtool verify /kp passes on xdp.sys, in System32 and in the package;
+#   signature of Microsoft: signtool verify /kp passes on xdp.sys, in System32 and in the package, and xdpapi.dll,
+#   which carries a signature that no machine trusts for code, is a member of xdp.cat (signtool verify /c);
 # - the Node reports what is there as its Capabilities, in the line "Capabilities:" of its node log (the Hello of its
 #   control stream carries the same, which the default VRF tracer of windows.yml reads from the API): x64 with SeLow
 #   and XDP after ranz install, arm64 with neither;
@@ -245,6 +246,17 @@ function Assert-KernelSignature([string] $file) {
 	Write-Host "signtool verify /kp passes for $file"
 }
 
+# $file names $signer as its signer and is a member of the signed catalog $catalog, which signtool verify /c checks as Windows
+# does. The xdpapi.dll of the XDP runtime carries a signature of the Azure Public Services of Microsoft that no machine trusts
+# for code (its root is no root of Windows), so the catalog of its package is how Windows trusts it
+function Assert-CatalogMember([string] $file, [string] $catalog, [string] $signer) {
+	$named = (Get-AuthenticodeSignature -FilePath $file).SignerCertificate.Subject
+	if ($named -notmatch $signer) { throw "$file is signed by $named, not by $signer" }
+	$out = (& $signtool verify /pa /c $catalog /v $file 2>&1 | Out-String)
+	if ($LASTEXITCODE -ne 0) { throw "signtool verify /c does not pass for $file against ${catalog}:`n$out" }
+	Write-Host "signtool verify /c passes for $file against $catalog"
+}
+
 # The install record of ranz install names the INF that Windows published for the driver $name (oemNN.inf), or none
 function Get-RecordedInf([string] $name) {
 	$record = Get-ItemProperty -LiteralPath $recordKey -ErrorAction SilentlyContinue
@@ -272,7 +284,8 @@ function Assert-SeLowInstalled {
 
 # What ranz install leaves of the XDP runtime on x64: its package under drivers\xdp with the files as Microsoft signed
 # them, the service xdp running, the driver and the API library that the INF copied into System32, and the record. The
-# files keep the production signature of Microsoft, which signtool verify /kp checks on the driver.
+# files keep the production signature of Microsoft, which signtool verify /kp checks on the driver and signtool verify /c
+# checks on the API library, a member of the catalog.
 function Assert-XdpInstalled {
 	$pkg = Join-Path $driversDir 'xdp'
 	foreach ($name in @('xdp.sys', 'xdpapi.dll', 'xdp.cat', 'xdp.inf', 'xdppcw.man')) {
@@ -288,7 +301,8 @@ function Assert-XdpInstalled {
 		Assert-Signer $file 'Microsoft'
 		Assert-KernelSignature $file
 	}
-	foreach ($file in @((Join-Path $pkg 'xdpapi.dll'), $xdpApi, (Join-Path $pkg 'xdp.cat'))) { Assert-Signer $file 'Microsoft' }
+	Assert-Signer (Join-Path $pkg 'xdp.cat') 'Microsoft'
+	foreach ($file in @((Join-Path $pkg 'xdpapi.dll'), $xdpApi)) { Assert-CatalogMember $file (Join-Path $pkg 'xdp.cat') 'Microsoft' }
 	$inf = Get-RecordedInf 'xdp'
 	if ($inf -notmatch '^oem\d+\.inf$') { throw "the install record does not name the INF that Windows published for the XDP runtime: '$inf'" }
 	Write-Host "the XDP runtime is installed by ranz install: the service runs, its files are the pinned ones with the signature of Microsoft, and the install record names $inf"
