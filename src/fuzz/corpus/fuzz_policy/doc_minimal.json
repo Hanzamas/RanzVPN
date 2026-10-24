@@ -1,0 +1,1 @@
+{"networks": [{"name": "lab", "mode": "l2"}, {"name": "wan", "mode": "l3"}], "rules": [{"name": "all", "action": "allow"}]}
