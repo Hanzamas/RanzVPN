@@ -169,6 +169,21 @@ func TestNewRecordsTheHashOfItsData(t *testing.T) {
 	}
 }
 
+// Windows reads a catalog by its extension, so the file that is checked ends in the name it will
+// have: a catalog checked under another extension never verifies (ONE-3, #312).
+func TestInstallChecksTheFileUnderTheExtensionItWillHave(t *testing.T) {
+	dir := t.TempDir()
+	calledWith := ""
+	withVerify(t, func(path string) error { calledWith = path; return nil })
+
+	if err := Install(dir, New("package.cat", []byte("a catalog"))); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !strings.HasSuffix(calledWith, "package.cat") {
+		t.Fatalf("verify was called with %q, which does not end in the name package.cat", calledWith)
+	}
+}
+
 func TestFileSHA256(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "thing.bin")
 	data := []byte("some bytes to hash")

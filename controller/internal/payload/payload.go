@@ -106,7 +106,9 @@ func Install(dir string, p Payload) error {
 		return fmt.Errorf("payload: %s: its data does not match the hash recorded for it", p.Name)
 	}
 
-	tmp, err := os.CreateTemp(dir, "."+p.Name+".tmp-*")
+	// The name of the file stays at the end of the temporary name: Windows reads a catalog by its
+	// extension, so a .cat file that is checked under another extension never verifies
+	tmp, err := os.CreateTemp(dir, ".tmp-*-"+p.Name)
 	if err != nil {
 		return fmt.Errorf("payload: %s: %w", p.Name, err)
 	}
