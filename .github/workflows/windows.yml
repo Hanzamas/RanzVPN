@@ -1169,8 +1169,9 @@ jobs:
     # The drivers that ranz install carries (ONE-3, #312), as the vendors signed them: the wintun.dll of
     # the pinned Wintun release of each architecture (fetch-wintun.ps1 checks the SHA-256 of the archive
     # and that WireGuard LLC signed the DLL), and the files of the pinned XDP runtime, for x64 only
-    # (fetch-xdp.ps1 checks the SHA-512 of the package and that Microsoft signed the driver). The SeLow
-    # package is in the repository.
+    # (fetch-xdp.ps1 checks the SHA-512 of the package, that Microsoft signed the driver and its catalog,
+    # and that the catalog lists xdpapi.dll, whose own signature no machine trusts). The SeLow package is
+    # in the repository.
     - name: Fetch Wintun
       shell: pwsh
       run: |
@@ -1268,7 +1269,8 @@ jobs:
   # (ONE-3, #312): the wintun.dll of the pinned Wintun release on both architectures, and on x64 the
   # SeLow driver package and the XDP runtime of the pinned Microsoft package. The job reads from
   # outside that ranz install wrote each of them as it is, installed SeLow and the XDP runtime (the
-  # XDP files keep the production signature of Microsoft: signtool verify /kp), and that the Node
+  # XDP files keep the production signature of Microsoft: signtool verify /kp for the driver, and
+  # signtool verify /c for xdpapi.dll, a member of the catalog), and that the Node
   # reported what is there as its Capabilities; that an XDP runtime that fails to install leaves the
   # Node installed with the xdp Capability absent (a third ranz.exe with one byte of xdp.sys changed),
   # as ranz install --no-xdp does; that on arm64 only Wintun is installed; and that ranz uninstall
