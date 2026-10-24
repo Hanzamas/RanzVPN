@@ -223,7 +223,7 @@ typedef union POLICY_SHARD {
 
 // The conntrack table of a Network: its memory is taken once, at its bound
 typedef struct POLICY_TRACK {
-	UINT MaxFlows;         // Its bound: the shards times the flows of each
+	UINT MaxFlows;          // Its bound: the shards times the flows of each
 	UINT NumShards;         // Its shards, a power of 2
 	UINT ShardBits;         // ... as bits of the hash
 	UINT64 Seed;            // The random key of its hash

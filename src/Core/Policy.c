@@ -54,13 +54,13 @@
 #define POLICY_CTL_DHCP_SERVER 4 // ... of a server
 
 // The ICMP types that the engine reads
-#define POLICY_ICMP4_ECHO_REPLY   0
-#define POLICY_ICMP4_ECHO         8
-#define POLICY_ICMP6_ECHO         128
-#define POLICY_ICMP6_ECHO_REPLY   129
-#define POLICY_ICMP6_RS           133
-#define POLICY_ICMP6_RA           134
-#define POLICY_ICMP6_REDIRECT     137
+#define POLICY_ICMP4_ECHO_REPLY 0
+#define POLICY_ICMP4_ECHO       8
+#define POLICY_ICMP6_ECHO       128
+#define POLICY_ICMP6_ECHO_REPLY 129
+#define POLICY_ICMP6_RS         133
+#define POLICY_ICMP6_RA         134
+#define POLICY_ICMP6_REDIRECT   137
 
 // What a frame reads of a member: made when it joins, never changed, and freed once no frame can still read it
 typedef struct POLICY_RECORD {
@@ -122,28 +122,28 @@ struct POLICY_ENGINE {
 
 // What PolicyInput reads of a frame
 typedef struct POLICY_PACKET {
-	const UCHAR *Smac;    // L2: the source MAC address; NULL in an L3 Network
-	UINT EtherType;       // The EtherType after a tag; that of the family for a packet of an L3 Network
-	bool Group;           // To a group address: an L2 destination with the multicast bit, an IP broadcast or multicast destination
-	UINT Family;          // POLICY_IPV4 or POLICY_IPV6, 0 for a frame that is not IP
-	UCHAR Src[16];        // The source IP address, IPv4 in the first 4 bytes
-	UCHAR Dst[16];        // ... and the destination
-	UINT Protocol;        // The IP protocol, after the extension headers of IPv6
-	UINT Class;           // POLICY_CLASS_*
-	bool Later;           // A later fragment, which has no transport header
-	const UCHAR *L4;      // The transport header
-	UINT L4Size;          // ... and the bytes from it to the end of the IP packet
-	bool HasPort;         // TCP or UDP with its ports
-	UINT SrcPort;         // ... the source port
-	UINT DstPort;         // ... and the destination port
-	UINT TcpFlags;        // The flags of a TCP segment
-	bool Echo;            // An ICMP echo request or reply
-	UINT EchoId;          // ... its id
-	bool Error;           // An ICMP error, which quotes the packet it is about
-	UINT IcmpType;        // The type of an ICMP message
-	UINT Control;         // POLICY_CTL_*
-	const UCHAR *ArpSha;  // ARP: the sender MAC address
-	UCHAR ArpSpa[16];     // ... and the sender IPv4 address
+	const UCHAR *Smac;   // L2: the source MAC address; NULL in an L3 Network
+	UINT EtherType;      // The EtherType after a tag; that of the family for a packet of an L3 Network
+	bool Group;          // To a group address: an L2 destination with the multicast bit, an IP broadcast or multicast destination
+	UINT Family;         // POLICY_IPV4 or POLICY_IPV6, 0 for a frame that is not IP
+	UCHAR Src[16];       // The source IP address, IPv4 in the first 4 bytes
+	UCHAR Dst[16];       // ... and the destination
+	UINT Protocol;       // The IP protocol, after the extension headers of IPv6
+	UINT Class;          // POLICY_CLASS_*
+	bool Later;          // A later fragment, which has no transport header
+	const UCHAR *L4;     // The transport header
+	UINT L4Size;         // ... and the bytes from it to the end of the IP packet
+	bool HasPort;        // TCP or UDP with its ports
+	UINT SrcPort;        // ... the source port
+	UINT DstPort;        // ... and the destination port
+	UINT TcpFlags;       // The flags of a TCP segment
+	bool Echo;           // An ICMP echo request or reply
+	UINT EchoId;         // ... its id
+	bool Error;          // An ICMP error, which quotes the packet it is about
+	UINT IcmpType;       // The type of an ICMP message
+	UINT Control;        // POLICY_CTL_*
+	const UCHAR *ArpSha; // ARP: the sender MAC address
+	UCHAR ArpSpa[16];    // ... and the sender IPv4 address
 } POLICY_PACKET;
 
 static const UCHAR policy_zero[16] = {0};
