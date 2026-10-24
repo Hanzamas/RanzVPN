@@ -37,6 +37,9 @@
 #define CONTROL_TIMEOUT        10000                         // ms for the handshake, and for a frame to come whole
 #define CONTROL_RETRY          1000                          // ms between two attempts to open the stream
 #define CONTROL_MAX_MIRRORS    16                            // The Mirrors of a node (NodeConfig.mirrors of control.options)
+#define CONTROL_DNS_NAME_SIZE  128                           // A suffix or a name of a zone with its terminating NUL (DnsZone.suffix, DnsRecord.name)
+#define CONTROL_MAX_DNS_RECORDS   16                         // The records of a zone (DnsZone.records of control.options)
+#define CONTROL_MAX_DNS_ADDRESSES 8                          // The addresses of a record (DnsRecord.addresses of control.options)
 
 // A Mirror that the node applies (Mirror of the control protocol; SDN-23, #199): the node copies the packets of the
 // overlay that match it to the sensor, in VXLAN
@@ -96,6 +99,22 @@ typedef struct CONTROL_PEER {
 	CONTROL_ROUTE Routes[CONTROL_MAX_ROUTES];         // ... ordered by VRF id
 } CONTROL_PEER;
 
+// A name of the zone of a VRF and the addresses that it answers (DnsRecord of the control protocol; SDN-11, #187)
+typedef struct CONTROL_DNS_RECORD {
+	char Name[CONTROL_DNS_NAME_SIZE];               // The name, relative to the suffix of the zone
+	UINT NumAddresses;                              // Its addresses
+	UCHAR Addresses[CONTROL_MAX_DNS_ADDRESSES][16]; // ... 4 bytes for IPv4, 16 for IPv6
+	UINT AddressSizes[CONTROL_MAX_DNS_ADDRESSES];   // ... the number of the bytes of each
+} CONTROL_DNS_RECORD;
+
+// The zone of overlay DNS of a VRF (DnsZone of the control protocol; SDN-11, #187): its suffix and the DnsRecord
+// resources of the VRF. The name of each node of the VRF answers that node's addresses there, which the state holds.
+typedef struct CONTROL_DNS_ZONE {
+	char Suffix[CONTROL_DNS_NAME_SIZE];                  // The suffix, without a dot at either end
+	UINT NumRecords;                                     // The records
+	CONTROL_DNS_RECORD Records[CONTROL_MAX_DNS_RECORDS]; // ... in name order
+} CONTROL_DNS_ZONE;
+
 // A VRF that the node is a member of (Vrf of the control protocol): the MTU and the rate limit of
 // the overlay in it (SDN-20, #196)
 typedef struct CONTROL_VRF {
@@ -103,6 +122,7 @@ typedef struct CONTROL_VRF {
 	UINT Id;                      // Its id
 	UINT Mtu;                     // Its MTU
 	UINT64 RateLimit;             // Bits per second that each node sends in it, 0 for no limit
+	CONTROL_DNS_ZONE *Dns;        // Its zone of overlay DNS (SDN-11, #187), NULL while overlay DNS is off in it; valid as the state is
 } CONTROL_VRF;
 
 // A reservation of the pool of a DHCP responder: an IPv4 prefix (Prefix of Dhcp.reserved)

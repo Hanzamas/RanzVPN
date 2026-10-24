@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeDhcp.c, NodeHarden.c, NodeLeak.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeDhcp.c, NodeDns.c, NodeHarden.c, NodeLeak.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -140,6 +140,22 @@
 #define NODE_DHCP_MAX_QUEUE    64     // Frames that wait to be sent at most
 #define NODE_DHCP_MAX_FRAME    1514   // Bytes of a frame that the responder takes or sends at most
 #define NODE_DHCP_TICK         50     // ms between two runs of the thread of the responders of a node when no frame wakes it
+
+// Overlay DNS of a node (NodeDns.c; SDN-11, #187)
+#define NODE_DNS_NAME_SIZE      128      // A suffix or a name of a zone with its terminating NUL (CONTROL_DNS_NAME_SIZE of Core/Control.h)
+#define NODE_DNS_MAX_ADDRESSES  8        // Addresses that a name of a zone answers at most (CONTROL_MAX_DNS_ADDRESSES), so an answer fits ...
+#define NODE_DNS_MAX_ANSWER     512      // ... the bytes of an answer at most: the stub resolver takes no EDNS (RFC 1035 4.2.1)
+#define NODE_DNS_PORT           53       // The UDP port of the stub resolver on each address of the node in a VRF
+#define NODE_DNS_TTL            60       // s that a client may keep an answer with addresses ...
+#define NODE_DNS_NEGATIVE_TTL   30       // ... and one without (RFC 2308): the MINIMUM of the SOA of a zone
+#define NODE_DNS_POLL           250      // ms that the thread of the stub resolver waits for a query, between two looks at its addresses
+#define NODE_DNS_RULE_LABEL     "RanzVPN-" // What the name of the key of an NRPT rule of a node begins with (NodeDnsRuleName)
+#define NODE_DNS_RULE_NAME_SIZE 64       // Characters of that name at most, with its NUL
+#define NODE_DNS_RCODE_NOERROR  0        // What NodeDnsAnswer answers: a name of the zone, with its addresses or none (NODATA) ...
+#define NODE_DNS_RCODE_FORMERR  1        // ... a query that does not parse
+#define NODE_DNS_RCODE_NXDOMAIN 3        // ... a name under the suffix that the zone does not have
+#define NODE_DNS_RCODE_NOTIMP   4        // ... an opcode other than QUERY
+#define NODE_DNS_RCODE_REFUSED  5        // ... a name outside the suffix, or a class other than IN
 
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
@@ -418,6 +434,41 @@ struct NODE_DHCP_STATUS {
 	UINT64 Changes;    // The changes of its leases: one for each lease that began, was renewed, moved or ended
 };
 
+// A name of the zone of a VRF and the addresses that it answers (NodeDns.c)
+struct NODE_DNS_NAME {
+	char Name[NODE_DNS_NAME_SIZE];               // The name, relative to the suffix of the zone, in lower case
+	UINT NumAddresses;                           // Its addresses
+	UCHAR Addresses[NODE_DNS_MAX_ADDRESSES][16]; // ... 4 bytes for IPv4, 16 for IPv6
+	UINT AddressSizes[NODE_DNS_MAX_ADDRESSES];   // ... the number of the bytes of each
+};
+
+// The zone of a VRF as the stub resolver answers it (NodeDnsAnswer): the records of the zone that the desired state
+// carries, then the name of the node and of each of its peers with their addresses in the VRF
+struct NODE_DNS_ZONE {
+	UINT VrfId;                      // The VRF
+	char Suffix[NODE_DNS_NAME_SIZE]; // Its suffix, in lower case, without a dot at either end
+	UINT Serial;                     // The serial of its SOA: the Generation of the state
+	bool Via6;                       // The host reaches the IPv4 of the VRF through 4via6 (ADR-0025 decision 4) ...
+	UCHAR Via6Prefix[12];            // ... in this /96: an IPv4 address of a name answers in an AAAA record, after it
+	UINT NumNames;                   // The names
+	NODE_DNS_NAME *Names;            // ...
+};
+
+// What NodeDnsGetStatus reports
+struct NODE_DNS_STATUS {
+	UINT NumZones;      // The zones of the state applied last
+	UINT NumAddresses;  // The addresses of the node in their VRFs that the stub resolver listens on ...
+	UINT NumListening;  // ... those it listens on now
+	bool Ready;         // ... and it listens on every one of them, of the state applied last
+	UINT NumRules;      // The NRPT rules that the node wrote: one per zone that it holds an address in
+	bool GroupPolicy;   // The NRPT of Group Policy holds rules, so the node writes its rules there too
+	UINT64 Queries;     // The queries that it answered from a zone ...
+	UINT64 NameErrors;  // ... of them with NXDOMAIN
+	UINT64 Refused;     // The queries for a name outside the suffix of the zone of their address, which it refused
+	UINT64 Dropped;     // The datagrams that it answered from no zone: no query, one that does not parse, or one too large
+	UINT LastBindError; // The error of the last bind of an address that failed, 0 for none
+};
+
 // What NodeGetStatus reports
 struct NODE_STATUS {
 	bool Running;      // Between NodeStart and NodeStop
@@ -529,6 +580,15 @@ bool NodeDhcpAttach(NODE *n, const char *network, struct SWITCH *sw, UINT vlan);
 void NodeDhcpDetach(NODE *n, const char *network);
 bool NodeDhcpGetNetwork(NODE *n, const char *network, NODE_DHCP_STATUS *st);
 
+// NodeDns.c
+NODE_DNS *NodeDnsNew(NODE *n, const UCHAR *key);
+void NodeDnsFree(NODE_DNS *d);
+void NodeDnsApply(NODE_DNS *d, const struct CONTROL_STATE *st);
+void NodeDnsGetStatus(NODE_DNS *d, NODE_DNS_STATUS *st);
+UINT NodeDnsAnswer(const NODE_DNS_ZONE *z, const UCHAR *query, UINT size, UCHAR *answer, UINT max, UINT *rcode, char *name, UINT name_size);
+bool NodeDnsVia6(const struct CONTROL_STATE *st, UINT vrf_id, UCHAR *prefix);
+void NodeDnsRuleName(wchar_t *name, UINT size, const UCHAR *key, UINT vrf_id);
+
 // NodeHarden.c
 void NodeHarden();
 const NODE_MITIGATION *NodeGetMitigations(UINT *num);
@@ -585,6 +645,7 @@ bool NodeVrfAdaptersApply(NODE_VRF_ADAPTERS *a, const struct CONTROL_STATE *st);
 bool NodeVrfAdaptersSend(NODE_VRF_ADAPTERS *a, UINT vrf_id, const UCHAR *packet, UINT size);
 bool NodeVrfAdaptersHas(NODE_VRF_ADAPTERS *a, UINT64 luid);
 UINT NodeVrfAdaptersGetStatus(NODE_VRF_ADAPTERS *a, NODE_VRF_ADAPTER_STATUS *list, UINT max);
+NODE_DNS *NodeVrfAdaptersDns(NODE_VRF_ADAPTERS *a);
 
 // NodeWintun.c
 bool NodeWintunAvailable(UINT *error);
