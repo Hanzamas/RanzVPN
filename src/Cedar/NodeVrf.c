@@ -284,8 +284,8 @@ NODE_VRF_TABLES *NodeNewVrfTables(UINT64 generation, const NODE_VRF_ROUTE *route
 	return v;
 }
 
-// Free the tables of the VRFs, their shaping table and the 1:1 NAT rules installed with them, wiped first as
-// NodeFreeTable does; the objects of the next hops stay the caller's
+// Free the tables of the VRFs, their shaping table, the 1:1 NAT rules installed with them and the VRFs of their next
+// hops, wiped first as NodeFreeTable does; the objects of the next hops stay the caller's
 void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 	if (v == NULL)
 		return;
@@ -295,6 +295,7 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 	NodeShapeFreeTable(v->Shape);
 
 	NodeFreeNat(v->Nat);
+	Free(v->HopVrfs);
 	Zero(v->Hops, sizeof(void *) * v->NumHops);
 	Free(v->Hops);
 	Free(v->Vrfs);

@@ -55,12 +55,13 @@ typedef struct CONTROL_NAT {
 } CONTROL_NAT;
 
 // A prefix of a VRF that leads to a peer besides its addresses (Route of the control protocol): the outside prefix
-// of a 1:1 NAT rule of the peer
+// of a 1:1 NAT rule of the peer, or a route that a VRF of the peer leaks into the VRF (SDN-7, #183)
 typedef struct CONTROL_ROUTE {
 	UINT VrfId;        // The VRF
 	UCHAR Address[16]; // The prefix: 4 bytes for IPv4, 16 for IPv6
 	UINT AddressSize;  // ... their number
 	UINT Length;       // ... and its length
+	UINT PeerVrfId;    // The VRF of the peer that a packet on the route goes into, 0 for VrfId itself
 } CONTROL_ROUTE;
 
 // A peer of the node: another node that shares a VRF with it (Peer of the control protocol)

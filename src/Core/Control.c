@@ -280,6 +280,7 @@ static void ControlCopyRoutes(CONTROL_ROUTE *dst, UINT *num, const ranz_control_
 
 		ZeroMemory(r, sizeof(CONTROL_ROUTE));
 		r->VrfId = src[i].vrf_id;
+		r->PeerVrfId = src[i].peer_vrf_id;
 		if (src[i].has_prefix && ControlCopyPrefix(r->Address, &r->AddressSize, &r->Length, &src[i].prefix))
 			(*num)++;
 	}

@@ -148,6 +148,8 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 
 	// 1:1 NAT (NodeNat.c; SDN-6, #182): the outside prefixes of the node's rules lead to the host, the routes of a peer to it
 	max_routes += NodeNatRoutes(st, NULL);
+	// Route leaking (NodeLeak.c; SDN-7, #183): the routes that the VRFs of the peers leak into the node's VRFs
+	max_routes += NodeLeakRoutes(st, NULL);
 
 	NODE_VRF_ROUTE *routes = ZeroMalloc(sizeof(NODE_VRF_ROUTE) * MAX(max_routes, 1));
 
@@ -161,8 +163,9 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 				num++;
 
 	num += NodeNatRoutes(st, routes + num);
+	num += NodeLeakRoutes(st, routes + num);
 
-	NODE_VRF_TABLES *v = NodeNewVrfTables(st->Generation, routes, num, (void **)hops, st->NumPeers);
+	NODE_VRF_TABLES *v = NodeLeakNewTables(st, routes, num, (void **)hops);
 	Free(routes);
 
 	// The rules of the Generation, installed with its tables
@@ -710,7 +713,8 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	NODE_OVERLAY_PEER *peer = (NODE_OVERLAY_PEER *)v->Hops[hop];
 	UCHAR *record = (size + NODE_OVERLAY_VRF_TAG <= sizeof(buf) ? buf : Malloc(size + NODE_OVERLAY_VRF_TAG));
 
-	WRITE_UINT(record, vrf_id);
+	// A route that a VRF of the peer leaks takes the packet into that VRF (NodeLeak.c; SDN-7, #183)
+	WRITE_UINT(record, NodeLeakVrf(v, hop, vrf_id));
 	size = NodeNatCopy(v, vrf_id, record + NODE_OVERLAY_VRF_TAG, packet, size);
 
 	// Counted on the peer before it reads the session, so the thread does not close the session under the send

@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeLeak.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -176,6 +176,9 @@ struct NODE_VRF_TABLES {
 	NODE_NAT *Nat;         // The 1:1 NAT rules of the same Generation (NodeNat.c; SDN-6, #182), NULL for none
 	// The MTU and the rate limits of the VRFs of the same Generation (NodeShape.c; SDN-20, #196), NULL for the defaults
 	NODE_SHAPE_TABLE *Shape;
+	// The VRF of the peer that a packet to each next hop goes into, 0 for the VRF of its route: a next hop of a route
+	// that a VRF of the peer leaks (NodeLeak.c; SDN-7, #183). NULL when no route is leaked.
+	UINT *HopVrfs;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -415,6 +418,11 @@ NODE_VRF_TABLES *NodeNewVrfTables(UINT64 generation, const NODE_VRF_ROUTE *route
 void NodeFreeVrfTables(NODE_VRF_TABLES *v);
 NODE_VRF_TABLE *NodeGetVrfTable(NODE_VRF_TABLES *v, UINT vrf_id);
 UINT NodeVrfLookup(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size);
+
+// NodeLeak.c
+UINT NodeLeakRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);
+NODE_VRF_TABLES *NodeLeakNewTables(const struct CONTROL_STATE *st, const NODE_VRF_ROUTE *routes, UINT num, void **hops);
+UINT NodeLeakVrf(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id);
 
 // NodeNat.c
 NODE_NAT *NodeNewNat(const struct CONTROL_STATE *st);
