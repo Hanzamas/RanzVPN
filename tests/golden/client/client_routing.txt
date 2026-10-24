@@ -1,0 +1,10 @@
+# CORE-S3-1: what each host gets for the same routing in VRF 1: node-c 100.64.0.2/10; node-s 100.64.0.1/10 and 198.18.0.1/24
+node-s gets icmp echo request 100.64.0.2 > 100.64.0.1 data "ranz client icmp"
+node-c gets icmp echo reply 100.64.0.1 > 100.64.0.2 data "ranz client icmp"
+node-s gets udp 100.64.0.2:47801 > 100.64.0.1:9821 data "ranz client udp 1"
+node-c gets udp 100.64.0.1:9821 > 100.64.0.2:47801 data "ranz client udp 1"
+node-s gets udp 100.64.0.2:47801 > 198.18.0.1:9821 data "ranz client udp 2"
+node-c gets udp 198.18.0.1:9821 > 100.64.0.2:47801 data "ranz client udp 2"
+node-s gets dns query A probe.ranz.test from 100.64.0.2 to 100.64.0.1:53
+node-c gets dns answer probe.ranz.test A 100.64.0.1
+no host gets udp 100.64.0.2:47801 > 100.64.0.9:9821 data "ranz client udp 3"

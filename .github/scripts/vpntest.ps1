@@ -42,7 +42,7 @@ if (Test-Path $benchFile) { Remove-Item $benchFile }
 }
 
 # Named self-tests: must print their OK marker and no leak. RANZ_SMOKE_TESTS (comma list) overrides the list.
-$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'tls', 'lossylink', 'noisehub', 'vrf', 'vxlan', 'switch', 'switchbench')
+$named = @('nthash', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'listeners', 'pktparse', 'vlantpid', 'icmpv6ns', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey', 'chaincerts', 'tlsctx', 'endian', 'svcargs', 'osinfo', 'fifo', 'node', 'nodesvc', 'nodelogin', 'store', 'transport', 'httplistener', 'harden', 'quic', 'tls', 'lossylink', 'noisehub', 'vrf', 'vxlan', 'switch', 'switchbench', 'client')
 if ($env:RANZ_SMOKE_TESTS) { $named = $env:RANZ_SMOKE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
 
 # The TLS transport (CORE-S2-1 #69) puts its key exchange groups first in the machine's Schannel group list, which an
@@ -139,6 +139,18 @@ $named | % {
 		$full
 		Write-Error 'switch golden files not compared (missing: SWITCH GOLDEN MODE compare)'
 		return $false
+	}
+
+	# ... and the client role test what each host gets on each path (golden family "client", CORE-S3-1 #71)
+	if ($test -eq 'client' -and $env:RANZ_UPDATE_GOLDEN -ne '1' -and ($full | Select-String -Pattern 'CLIENT GOLDEN MODE compare' -SimpleMatch -CaseSensitive).Count -ne 1) {
+		$full
+		Write-Error 'client golden files not compared (missing: CLIENT GOLDEN MODE compare)'
+		return $false
+	}
+
+	# The client role test puts what it measured into the job log: the transports, the Wintun driver, the status of the pipe
+	if ($test -eq 'client') {
+		$full | ? { $_ -cmatch '^  \[INFO\]|^\[' } | % { Write-Host $_ }
 	}
 
 	# The TLS transport and the lossy-link case (CORE-S2-1 #69) put what they measured into the job log: the build, the

@@ -14,5 +14,7 @@ void NodeBgpInit();
 void NodeBgpStart(NODE *n);
 void NodeBgpStop(NODE *n);
 void NodeLogMitigations(NODE *n);
+bool NodeClientStart(NODE *n);
+void NodeClientStop(NODE *n);
 
 #endif // NODE_INTERNAL_H
