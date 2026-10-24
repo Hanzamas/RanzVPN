@@ -3,6 +3,8 @@ package intent
 import (
 	"bytes"
 	"net/netip"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -33,13 +35,14 @@ const natJSON = `{"resources": [
 // empty intent (Apply) and as the whole intent of one (Replace, the import), which complete and
 // check every resource. The ULAs they draw come from a reader of zeros, so a failing input fails
 // again. An intent that is applied reads back from its resources, reports its pools and routes,
-// and holds no address in a LAN subnet of its VRF; no Node of it applies more 1:1 NAT rules than
-// the control protocol carries.
+// and holds no address in a LAN subnet of its VRF; no Node of it applies more 1:1 NAT rules, and no
+// zone of overlay DNS holds more records, than the control protocol carries.
 func FuzzParseDocument(f *testing.F) {
 	f.Add([]byte(docJSON))
 	f.Add([]byte(docYAML))
 	f.Add([]byte(ipamJSON))
 	f.Add([]byte(natJSON))
+	f.Add([]byte(dnsJSON))
 	f.Add([]byte(`{"resources": [{"kind": "Controller", "name": "c1", "spec": {}}]}`))
 
 	f.Fuzz(func(t *testing.T, b []byte) {
@@ -56,6 +59,12 @@ func FuzzParseDocument(f *testing.F) {
 			for node, rules := range in.NATRules() {
 				if len(rules) > MaxNATRules {
 					t.Fatalf("Node %q applies %d 1:1 NAT rules, more than %d", node, len(rules), MaxNATRules)
+				}
+			}
+			// The zones of overlay DNS fit the control protocol (dns.go)
+			for vrf := range in.VRFs {
+				if _, records, _ := in.Zone(vrf); len(records) > MaxDNSRecords || slices.ContainsFunc(records, func(r ZoneRecord) bool { return len(r.Addresses) > MaxDNSAddresses }) {
+					t.Fatalf("the zone of VRF %q has %d records, or a record with more than %d addresses", vrf, len(records), MaxDNSAddresses)
 				}
 			}
 			for _, r := range in.Routes() {
@@ -79,10 +88,12 @@ func FuzzParseDocument(f *testing.F) {
 // ULA of a VRF (ParseULA) and its route targets (ParseRouteTarget, whose one form parses as
 // itself), the pools of a Network (ParsePool), the public key of a Node (ParseKey) and its relay
 // address (ParseRelay), and, inside the package, a reservation of a Network (parseReserved), a LAN
-// subnet of a Node (parseLAN) and a prefix of a 1:1 NAT rule (parseNATPrefix).
+// subnet of a Node (parseLAN), a prefix of a 1:1 NAT rule (parseNATPrefix), and the DNS suffix of a
+// VRF, the name of a DnsRecord (checkDNSName) and its addresses (parseDNSAddress).
 func FuzzParseValues(f *testing.F) {
 	for _, s := range []string{"fd12:3456:789a::/48", "10.0.0.0/24", "2001:db8::/64", key1, "192.0.2.1:4000", "[2001:db8::1]:4000", "[::ffff:192.0.2.1]:1",
-		"10.0.0.1", "192.168.1.0/24", "0.0.0.0/0", "::ffff:10.0.0.0/120", "65000:100", "064512:007", "4200000000:65535"} {
+		"10.0.0.1", "192.168.1.0/24", "0.0.0.0/0", "::ffff:10.0.0.0/120", "65000:100", "064512:007", "4200000000:65535",
+		"fileserver.default.ranz.internal", "a-b.c1", "fe80::1%eth0", "::"} {
 		f.Add(s)
 	}
 
@@ -114,6 +125,12 @@ func FuzzParseValues(f *testing.F) {
 		}
 		if p, err := parseNATPrefix(s); err == nil && (p != p.Masked() || p.Bits() == 0 || p.Addr().Is4In6()) {
 			t.Errorf("parseNATPrefix(%q) = %s", s, p)
+		}
+		if a, err := parseDNSAddress(s); err == nil && (a.Zone() != "" || a.Is4In6() || a.IsUnspecified()) {
+			t.Errorf("parseDNSAddress(%q) = %s", s, a)
+		}
+		if checkDNSName(s) == nil && (len(s) > MaxDNSName || strings.ToLower(s) != s || strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".")) {
+			t.Errorf("checkDNSName(%q) takes it", s)
 		}
 	})
 }
