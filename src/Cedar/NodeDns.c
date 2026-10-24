@@ -33,16 +33,16 @@
 #include "NodeInternal.h"
 
 #include <ws2tcpip.h>
-#include <mstcpip.h>
+#include <mswsock.h>
 
-#define NODE_DNS_HEADER      12     // The header of a DNS message (RFC 1035 4.1.1)
-#define NODE_DNS_MAX_WIRE    255    // Bytes of a name in its wire form at most
-#define NODE_DNS_MAX_LABELS  128    // ... and its labels
-#define NODE_DNS_MAX_QUERY   1500   // Bytes of a query that the stub resolver takes at most; a longer datagram is dropped
-#define NODE_DNS_MAX_SOCKETS 16     // Addresses that the stub resolver listens on at most: the addresses of a node (CONTROL_MAX_ADDRESSES)
-#define NODE_DNS_SERVERS     1024   // Characters of the DNS servers of an NRPT rule at most, with the NUL
-#define NODE_DNS_MAX_LOGGED  16     // Refused queries that the node log names at most
-#define NODE_DNS_TYPE_A      1      // The types of a record ...
+#define NODE_DNS_HEADER      12   // The header of a DNS message (RFC 1035 4.1.1)
+#define NODE_DNS_MAX_WIRE    255  // Bytes of a name in its wire form at most
+#define NODE_DNS_MAX_LABELS  128  // ... and its labels
+#define NODE_DNS_MAX_QUERY   1500 // Bytes of a query that the stub resolver takes at most; a longer datagram is dropped
+#define NODE_DNS_MAX_SOCKETS 16   // Addresses that the stub resolver listens on at most: the addresses of a node (CONTROL_MAX_ADDRESSES)
+#define NODE_DNS_SERVERS     1024 // Characters of the DNS servers of an NRPT rule at most, with the NUL
+#define NODE_DNS_MAX_LOGGED  16   // Refused queries that the node log names at most
+#define NODE_DNS_TYPE_A      1    // The types of a record ...
 #define NODE_DNS_TYPE_SOA    6
 #define NODE_DNS_TYPE_AAAA   28
 #define NODE_DNS_TYPE_ANY    255    // ... and the type of a query for all of them
@@ -87,30 +87,30 @@ typedef struct NODE_DNS_RULE {
 
 // Overlay DNS of a node
 struct NODE_DNS {
-	NODE *Node;                                     // The node
-	wchar_t Prefix[NODE_DNS_RULE_NAME_SIZE];        // What the names of the node's NRPT rules begin with
-	LOCK *Lock;                                     // Apply and Free, one at a time; the rules
-	UINT NumRules;                                  // The rules that the node wrote, of the state applied last
-	NODE_DNS_RULE *Rules;                           // ...
-	bool GroupPolicy;                               // ... at the NRPT of Group Policy too
-	SRWLOCK ZoneLock;                               // The zones, the addresses and Version, which the thread reads
-	UINT NumZones;                                  // The zones of the state applied last
-	NODE_DNS_ZONE *Zones;                           // ...
-	UINT NumListen;                                 // The addresses that the stub resolver listens on
-	NODE_DNS_LISTEN Listen[NODE_DNS_MAX_SOCKETS];   // ...
-	LONG Version;                                   // ... counted by each state applied
-	HANDLE Halt;                                    // Stops the thread (a manual-reset event)
-	HANDLE Thread;                                  // The thread of the stub resolver, which alone changes the sockets
-	UINT NumSockets;                                // Its sockets
-	NODE_DNS_SOCKET Sockets[NODE_DNS_MAX_SOCKETS];  // ...
-	volatile LONG Bound;                            // The Version whose addresses the sockets are of
-	volatile LONG Listening;                        // ... and the sockets that are bound
-	volatile LONG LastError;                        // The error of the last bind that failed, 0 for none
-	volatile LONG64 Queries;                        // What NodeDnsGetStatus reports
+	NODE *Node;                                    // The node
+	wchar_t Prefix[NODE_DNS_RULE_NAME_SIZE];       // What the names of the node's NRPT rules begin with
+	LOCK *Lock;                                    // Apply and Free, one at a time; the rules
+	UINT NumRules;                                 // The rules that the node wrote, of the state applied last
+	NODE_DNS_RULE *Rules;                          // ...
+	bool GroupPolicy;                              // ... at the NRPT of Group Policy too
+	SRWLOCK ZoneLock;                              // The zones, the addresses and Version, which the thread reads
+	UINT NumZones;                                 // The zones of the state applied last
+	NODE_DNS_ZONE *Zones;                          // ...
+	UINT NumListen;                                // The addresses that the stub resolver listens on
+	NODE_DNS_LISTEN Listen[NODE_DNS_MAX_SOCKETS];  // ...
+	LONG Version;                                  // ... counted by each state applied
+	HANDLE Halt;                                   // Stops the thread (a manual-reset event)
+	HANDLE Thread;                                 // The thread of the stub resolver, which alone changes the sockets
+	UINT NumSockets;                               // Its sockets
+	NODE_DNS_SOCKET Sockets[NODE_DNS_MAX_SOCKETS]; // ...
+	volatile LONG Bound;                           // The Version whose addresses the sockets are of
+	volatile LONG Listening;                       // ... and the sockets that are bound
+	volatile LONG LastError;                       // The error of the last bind that failed, 0 for none
+	volatile LONG64 Queries;                       // What NodeDnsGetStatus reports
 	volatile LONG64 NameErrors;
 	volatile LONG64 Refused;
 	volatile LONG64 Dropped;
-	volatile LONG Logged;                           // The refused queries that the node log named
+	volatile LONG Logged; // The refused queries that the node log named
 };
 
 //

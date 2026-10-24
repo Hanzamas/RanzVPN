@@ -142,20 +142,20 @@
 #define NODE_DHCP_TICK         50     // ms between two runs of the thread of the responders of a node when no frame wakes it
 
 // Overlay DNS of a node (NodeDns.c; SDN-11, #187)
-#define NODE_DNS_NAME_SIZE      128      // A suffix or a name of a zone with its terminating NUL (CONTROL_DNS_NAME_SIZE of Core/Control.h)
-#define NODE_DNS_MAX_ADDRESSES  8        // Addresses that a name of a zone answers at most (CONTROL_MAX_DNS_ADDRESSES), so an answer fits ...
-#define NODE_DNS_MAX_ANSWER     512      // ... the bytes of an answer at most: the stub resolver takes no EDNS (RFC 1035 4.2.1)
-#define NODE_DNS_PORT           53       // The UDP port of the stub resolver on each address of the node in a VRF
-#define NODE_DNS_TTL            60       // s that a client may keep an answer with addresses ...
-#define NODE_DNS_NEGATIVE_TTL   30       // ... and one without (RFC 2308): the MINIMUM of the SOA of a zone
-#define NODE_DNS_POLL           250      // ms that the thread of the stub resolver waits for a query, between two looks at its addresses
+#define NODE_DNS_NAME_SIZE      128        // A suffix or a name of a zone with its terminating NUL (CONTROL_DNS_NAME_SIZE of Core/Control.h)
+#define NODE_DNS_MAX_ADDRESSES  8          // Addresses that a name of a zone answers at most (CONTROL_MAX_DNS_ADDRESSES), so an answer fits ...
+#define NODE_DNS_MAX_ANSWER     512        // ... the bytes of an answer at most: the stub resolver takes no EDNS (RFC 1035 4.2.1)
+#define NODE_DNS_PORT           53         // The UDP port of the stub resolver on each address of the node in a VRF
+#define NODE_DNS_TTL            60         // s that a client may keep an answer with addresses ...
+#define NODE_DNS_NEGATIVE_TTL   30         // ... and one without (RFC 2308): the MINIMUM of the SOA of a zone
+#define NODE_DNS_POLL           250        // ms that the thread of the stub resolver waits for a query, between two looks at its addresses
 #define NODE_DNS_RULE_LABEL     "RanzVPN-" // What the name of the key of an NRPT rule of a node begins with (NodeDnsRuleName)
-#define NODE_DNS_RULE_NAME_SIZE 64       // Characters of that name at most, with its NUL
-#define NODE_DNS_RCODE_NOERROR  0        // What NodeDnsAnswer answers: a name of the zone, with its addresses or none (NODATA) ...
-#define NODE_DNS_RCODE_FORMERR  1        // ... a query that does not parse
-#define NODE_DNS_RCODE_NXDOMAIN 3        // ... a name under the suffix that the zone does not have
-#define NODE_DNS_RCODE_NOTIMP   4        // ... an opcode other than QUERY
-#define NODE_DNS_RCODE_REFUSED  5        // ... a name outside the suffix, or a class other than IN
+#define NODE_DNS_RULE_NAME_SIZE 64         // Characters of that name at most, with its NUL
+#define NODE_DNS_RCODE_NOERROR  0          // What NodeDnsAnswer answers: a name of the zone, with its addresses or none (NODATA) ...
+#define NODE_DNS_RCODE_FORMERR  1          // ... a query that does not parse
+#define NODE_DNS_RCODE_NXDOMAIN 3          // ... a name under the suffix that the zone does not have
+#define NODE_DNS_RCODE_NOTIMP   4          // ... an opcode other than QUERY
+#define NODE_DNS_RCODE_REFUSED  5          // ... a name outside the suffix, or a class other than IN
 
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);

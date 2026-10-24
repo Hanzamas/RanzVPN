@@ -37,9 +37,11 @@
 #define CONTROL_TIMEOUT        10000                         // ms for the handshake, and for a frame to come whole
 #define CONTROL_RETRY          1000                          // ms between two attempts to open the stream
 #define CONTROL_MAX_MIRRORS    16                            // The Mirrors of a node (NodeConfig.mirrors of control.options)
-#define CONTROL_DNS_NAME_SIZE  128                           // A suffix or a name of a zone with its terminating NUL (DnsZone.suffix, DnsRecord.name)
-#define CONTROL_MAX_DNS_RECORDS   16                         // The records of a zone (DnsZone.records of control.options)
-#define CONTROL_MAX_DNS_ADDRESSES 8                          // The addresses of a record (DnsRecord.addresses of control.options)
+
+// The zones of overlay DNS (SDN-11, #187)
+#define CONTROL_DNS_NAME_SIZE     128 // A suffix or a name of a zone with its terminating NUL (DnsZone.suffix, DnsRecord.name)
+#define CONTROL_MAX_DNS_RECORDS   16  // The records of a zone (DnsZone.records of control.options)
+#define CONTROL_MAX_DNS_ADDRESSES 8   // The addresses of a record (DnsRecord.addresses of control.options)
 
 // A Mirror that the node applies (Mirror of the control protocol; SDN-23, #199): the node copies the packets of the
 // overlay that match it to the sensor, in VXLAN
