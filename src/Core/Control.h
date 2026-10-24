@@ -181,9 +181,11 @@ void ControlGetStatus(CONTROL_CLIENT *c, CONTROL_STATUS *st);
 // sends (CONTROL_CONFIG.Leases), FreeLeases frees them once no client uses them. SetLeases puts the leases of one L2
 // Network in place of the ones before, and the client sends them as one Leases message after each Hello and whenever
 // they change: at most CONTROL_MAX_LEASES of them, for CONTROL_MAX_DHCPS Networks at most. With leases NULL the Network
-// has no responder any more: its report goes and nothing is sent for it.
+// has no responder any more: its report goes and nothing is sent for it. WriteLeases writes each report that a stream
+// does not have yet as one frame, as the client does on its stream.
 CONTROL_LEASES *ControlNewLeases();
 void ControlFreeLeases(CONTROL_LEASES *l);
 bool ControlSetLeases(CONTROL_LEASES *l, const char *network, const CONTROL_LEASE *leases, UINT num);
+bool ControlWriteLeases(CONTROL_LEASES *l, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H

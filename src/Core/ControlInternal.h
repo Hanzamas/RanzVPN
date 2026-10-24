@@ -12,6 +12,5 @@
 // ControlDhcp.c
 void ControlCopyDhcps(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 void ControlLeasesResend(CONTROL_LEASES *l);
-bool ControlLeasesWrite(CONTROL_LEASES *l, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_INTERNAL_H

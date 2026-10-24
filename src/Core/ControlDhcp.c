@@ -253,7 +253,7 @@ static bool ControlLeasesSend(const ranz_control_v1_Leases *m, TRANSPORT_STREAM 
 
 // Write each report that the stream does not have yet, one frame each, on the thread of the client: false when a write
 // failed, which ends the stream
-bool ControlLeasesWrite(CONTROL_LEASES *l, TRANSPORT_STREAM *s) {
+bool ControlWriteLeases(CONTROL_LEASES *l, TRANSPORT_STREAM *s) {
 	if (l == NULL)
 		return true;
 

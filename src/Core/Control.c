@@ -458,7 +458,7 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	ControlLeasesResend(c->Config.Leases);
 
 	while (ok && ControlHalted(c) == false) {
-		ok = ControlLeasesWrite(c->Config.Leases, s);
+		ok = ControlWriteLeases(c->Config.Leases, s);
 		if (ok == false)
 			break;
 

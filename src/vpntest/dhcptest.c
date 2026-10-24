@@ -1015,7 +1015,210 @@ static void DhcpTestNode(DHCPTEST_CTX *ctx)
 	Free(net);
 }
 
-RANZ_TEST("dhcp", dhcp_test, "DHCP responder of an L2 Network: its probe, a lease of the pool with the gateway and the DNS servers of the Network, renewal, decline, release, inform and expiry, silence while a DHCP server of the LAN answers or the mode is off, and the responder of a node from its desired state on the switch of the Network.");
+// Read size bytes of a stream within DHCPTEST_QUIET: false when they did not come
+static bool DhcpTestReadAll(TRANSPORT_STREAM *s, UCHAR *buf, UINT size)
+{
+	UINT got = 0;
+
+	while (got < size)
+	{
+		UINT r = TransportRead(s, buf + got, size - got, DHCPTEST_QUIET);
+
+		if (r == TRANSPORT_LATER || r == 0 || r > size - got)
+		{
+			return false;
+		}
+		got += r;
+	}
+
+	return true;
+}
+
+// A varint of the protobuf wire format at *pos of buf: false when it runs past size
+static bool DhcpTestVarint(const UCHAR *buf, UINT size, UINT *pos, UINT64 *v)
+{
+	*v = 0;
+	for (UINT shift = 0;shift < 64;shift += 7)
+	{
+		if (*pos >= size)
+		{
+			return false;
+		}
+		UCHAR b = buf[(*pos)++];
+		*v |= ((UINT64)(b & 0x7F)) << shift;
+		if ((b & 0x80) == 0)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// One frame of the control stream that holds a ControlMessage whose body is Leases (field 8), read from its bytes as the
+// protobuf wire format has them, without the generated code: the Network and each lease as a line "<mac> <address>
+// <expires> <host name>". False when the frame is anything else.
+static bool DhcpTestLeasesFrame(TRANSPORT_STREAM *s, char *network, UINT network_size, char *lines, UINT lines_size)
+{
+	UCHAR head[4];
+	UCHAR *body = NULL;
+	UINT size, pos = 0;
+	UINT64 tag, len;
+	bool ok = false;
+
+	network[0] = 0;
+	lines[0] = 0;
+	if (DhcpTestReadAll(s, head, 4) == false || (size = READ_UINT(head)) == 0 || size > 1 << 20)
+	{
+		return false;
+	}
+	body = Malloc(size);
+	if (DhcpTestReadAll(s, body, size) && DhcpTestVarint(body, size, &pos, &tag) && tag == ((8 << 3) | 2) && DhcpTestVarint(body, size, &pos, &len) && len == size - pos)
+	{
+		ok = true;
+		while (ok && pos < size)
+		{
+			UINT64 field, flen;
+
+			ok = DhcpTestVarint(body, size, &pos, &field) && (field & 7) == 2 && DhcpTestVarint(body, size, &pos, &flen) && flen <= size - pos;
+			if (ok && field == ((1 << 3) | 2) && flen < network_size)
+			{
+				Copy(network, body + pos, (UINT)flen);
+				network[flen] = 0;
+			}
+			else if (ok && field == ((2 << 3) | 2))
+			{
+				// One Lease: mac (1), address (2), expires_ms (3), host_name (4)
+				UINT end = pos + (UINT)flen, p = pos;
+				UCHAR mac[6] = {0}, addr[4] = {0};
+				UINT64 expires = 0;
+				char host[64] = {0};
+				char line[MAX_SIZE];
+
+				while (ok && p < end)
+				{
+					UINT64 f, v;
+
+					ok = DhcpTestVarint(body, end, &p, &f);
+					if (ok && f == ((3 << 3) | 0))
+					{
+						ok = DhcpTestVarint(body, end, &p, &expires);
+						continue;
+					}
+					ok = ok && (f & 7) == 2 && DhcpTestVarint(body, end, &p, &v) && v <= end - p;
+					if (ok && f == ((1 << 3) | 2) && v == 6)
+					{
+						Copy(mac, body + p, 6);
+					}
+					else if (ok && f == ((2 << 3) | 2) && v == 4)
+					{
+						Copy(addr, body + p, 4);
+					}
+					else if (ok && f == ((4 << 3) | 2) && v < sizeof(host))
+					{
+						Copy(host, body + p, (UINT)v);
+						host[v] = 0;
+					}
+					else
+					{
+						ok = false;
+					}
+					p += (UINT)v;
+				}
+				Format(line, sizeof(line), "%02x:%02x:%02x:%02x:%02x:%02x %u.%u.%u.%u %I64u %s\n", (UINT)mac[0], (UINT)mac[1], (UINT)mac[2], (UINT)mac[3], (UINT)mac[4], (UINT)mac[5],
+					(UINT)addr[0], (UINT)addr[1], (UINT)addr[2], (UINT)addr[3], expires, host);
+				StrCat(lines, lines_size, line);
+			}
+			else
+			{
+				ok = false;
+			}
+			pos += (UINT)flen;
+		}
+	}
+	Free(body);
+
+	return ok;
+}
+
+// The leases of the responders on the control stream: one Leases message per Network, each report once, and anew when
+// it changes
+static void DhcpTestLeases(DHCPTEST_CTX *ctx)
+{
+	TRANSPORT *t = TransportLoopbackNew("dhcp-leases", 0, false);
+	TRANSPORT_LISTENER *l = (t != NULL ? TransportListen(t, "controller") : NULL);
+	TRANSPORT_STREAM *a = (l != NULL ? TransportDial(t, "controller", NULL) : NULL);
+	TRANSPORT_STREAM *b = (a != NULL ? TransportAccept(l, DHCPTEST_BOUND) : NULL);
+	CONTROL_LEASES *leases = ControlNewLeases();
+	CONTROL_LEASE x[3];
+	char network[CONTROL_NAME_SIZE];
+	char lines[MAX_SIZE * 2];
+	UCHAR one;
+
+	Print("Leases: the leases of a responder on the control stream\n");
+
+	if (DhcpTestCheck(ctx, b != NULL && leases != NULL, "A stream of the loopback transport, as the control stream", "could not set it up") == false)
+	{
+		ControlFreeLeases(leases);
+		TransportClose(a);
+		TransportClose(b);
+		TransportCloseListener(l);
+		TransportLoopbackFree(t);
+		return;
+	}
+
+	Zero(x, sizeof(x));
+	Copy(x[0].Mac, dhcptest_macs[DHCPTEST_CLIENT_A], 6);
+	WRITE_UINT(x[0].Address, DHCPTEST_IP(10, 20, 0, 8));
+	x[0].Expires = 1792800000123ULL;
+	StrCpy(x[0].HostName, sizeof(x[0].HostName), "client-a");
+	Copy(x[1].Mac, dhcptest_macs[DHCPTEST_CLIENT_B], 6);
+	WRITE_UINT(x[1].Address, DHCPTEST_IP(10, 20, 0, 9));
+	x[1].Expires = 1792800000456ULL;
+	StrCpy(x[1].HostName, sizeof(x[1].HostName), "bad\x01name\xC3\xA9");
+
+	bool set = ControlSetLeases(leases, DHCPTEST_NETWORK, x, 2);
+	bool written = ControlWriteLeases(leases, a);
+	bool ok = DhcpTestLeasesFrame(b, network, sizeof(network), lines, sizeof(lines));
+	DhcpTestCheck(ctx, set && written && ok && StrCmp(network, DHCPTEST_NETWORK) == 0 &&
+		StrCmp(lines, "02:00:00:00:43:0a 10.20.0.8 1792800000123 client-a\n02:00:00:00:43:0b 10.20.0.9 1792800000456 badname\n") == 0,
+		"The leases of Network lan go as one ControlMessage of the body Leases, each with its MAC address, its address, its end and its host name in printable ASCII", "set %u, written %u, read %u: %s %s", (UINT)set, (UINT)written, (UINT)ok, network, lines);
+
+	// A report goes once; a new one goes again, also an empty one; one without a responder goes nowhere
+	written = ControlWriteLeases(leases, a);
+	bool quiet = (TransportRead(b, &one, 1, DHCPTEST_POLL * 10) == TRANSPORT_LATER);
+	set = ControlSetLeases(leases, DHCPTEST_NETWORK, x, 0);
+	written = ControlWriteLeases(leases, a) && written;
+	ok = DhcpTestLeasesFrame(b, network, sizeof(network), lines, sizeof(lines));
+	DhcpTestCheck(ctx, written && quiet && set && ok && StrCmp(network, DHCPTEST_NETWORK) == 0 && lines[0] == 0,
+		"A report goes once, and the next one goes in its place, also one without a lease", "written %u, quiet %u, set %u, read %u: %s %s", (UINT)written, (UINT)quiet, (UINT)set, (UINT)ok, network, lines);
+	set = ControlSetLeases(leases, DHCPTEST_NETWORK, NULL, 0);
+	written = ControlWriteLeases(leases, a);
+	quiet = (TransportRead(b, &one, 1, DHCPTEST_POLL * 10) == TRANSPORT_LATER);
+	DhcpTestCheck(ctx, set && written && quiet, "A Network without a responder has no report: nothing goes", "set %u, written %u, quiet %u", (UINT)set, (UINT)written, (UINT)quiet);
+
+	// One report per Network, for CONTROL_MAX_DHCPS Networks at most
+	UINT accepted = 0;
+	for (UINT i = 0;i <= CONTROL_MAX_DHCPS;i++)
+	{
+		char name[CONTROL_NAME_SIZE];
+
+		Format(name, sizeof(name), "lan-%u", i);
+		if (ControlSetLeases(leases, name, x, 1))
+		{
+			accepted++;
+		}
+	}
+	DhcpTestCheck(ctx, accepted == CONTROL_MAX_DHCPS && ControlSetLeases(leases, "", x, 1) == false, "The reports of CONTROL_MAX_DHCPS Networks at most, each with a name", "%u accepted", accepted);
+
+	ControlFreeLeases(leases);
+	TransportClose(a);
+	TransportClose(b);
+	TransportCloseListener(l);
+	TransportLoopbackFree(t);
+}
+
+RANZ_TEST("dhcp", dhcp_test, "DHCP responder of an L2 Network: its probe, a lease of the pool with the gateway and the DNS servers of the Network, renewal, decline, release, inform and expiry, silence while a DHCP server of the LAN answers or the mode is off, the responder of a node from its desired state on the switch of the Network, and its leases on the control stream.");
 void dhcp_test(UINT num, char **arg)
 {
 	DHCPTEST_CTX ctx;
@@ -1029,6 +1232,7 @@ void dhcp_test(UINT num, char **arg)
 	DhcpTestLanServer(&ctx);
 	DhcpTestOff(&ctx);
 	DhcpTestNode(&ctx);
+	DhcpTestLeases(&ctx);
 
 	if (watchdog != NULL)
 	{
