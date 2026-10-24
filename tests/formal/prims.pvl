@@ -1,0 +1,66 @@
+(* prims.pvl
+   The primitives that the models of the handshakes of Ranz VPN share (AUD-5, #389; docs/formal-model.md).
+   .github/scripts/formal.py joins the files of a model in the order that variants.tsv lists and runs ProVerif
+   on the result, so a name that this file defines is visible in every file after it.
+
+   The symbolic model follows the Noise Explorer (Kobeissi, Nicolas and Bhargavan, EuroS&P 2019) for Noise_IK:
+   the Diffie-Hellman function with its commutation equation, a hash and key derivation functions that are
+   one-way, an AEAD that opens only under its key and its associated data, a static key per principal that a
+   leak event gives to the attacker in phase 0, or in phase 1 for forward secrecy, and the authentication and
+   confidentiality queries in the form of its grades. The text is written for this repository from the Noise
+   Protocol Framework, revision 34, sections 5 and 7, and from the code (the table model-to-code.tsv maps each
+   name to the function of the code that it stands for).
+*)
+
+type principal.
+type sessionid.
+type phasen.
+
+(* The network is the attacker: every message goes through this channel *)
+free c: channel.
+
+(* alice is a node that dials, bob a node that listens (or the controller), charlie is dishonest: the
+   attacker knows his keys *)
+const alice: principal.
+const bob: principal.
+const charlie: principal.
+const phase0: phasen.
+const phase1: phasen.
+
+const empty: bitstring.
+const g: bitstring.
+
+(* X25519: dhexp(x, P) is the point x * P of a point P, and the two sides of a Diffie-Hellman agree *)
+fun dhexp(bitstring, bitstring): bitstring.
+equation forall a: bitstring, b: bitstring; dhexp(a, dhexp(b, g)) = dhexp(b, dhexp(a, g)).
+
+(* The symmetric state of Noise (section 5.2). A hash and a key derivation function are one-way and
+   collision free in the symbolic model.
+   hash1(x)           HASH(x), the hash of the protocol name
+   mixh(h, d)         MixHash(d): h = HASH(h || d)
+   hkck(ck, ikm)      the first output of HKDF(ck, ikm): the next chaining key of MixKey
+   hkk(ck, ikm)       the second output: the cipher key of MixKey, whose nonce is 0
+   hksplit1, hksplit2 the two keys of Split()
+   hmac(k, d)         HMAC-SHA256, which derives the challenge of a Login and the id of a Tunnel from the
+                      handshake hash *)
+fun hash1(bitstring): bitstring.
+fun mixh(bitstring, bitstring): bitstring.
+fun hkck(bitstring, bitstring): bitstring.
+fun hkk(bitstring, bitstring): bitstring.
+fun hksplit1(bitstring): bitstring.
+fun hksplit2(bitstring): bitstring.
+fun hmac(bitstring, bitstring): bitstring.
+
+(* AES-GCM with the associated data: aead(k, ad, plaintext) is the ciphertext with its tag, and it opens only
+   under the same key and the same associated data. Every key of a handshake encrypts one message, at the
+   nonce 0, so the nonce is not a parameter. *)
+fun aead(bitstring, bitstring, bitstring): bitstring.
+reduc forall k: bitstring, ad: bitstring, m: bitstring; unaead(k, ad, aead(k, ad, m)) = m.
+
+(* The static key of a principal: its private scalar is known to its owner only, its public key to everyone *)
+fun skey(principal): bitstring [private].
+letfun spub(p: principal) = dhexp(skey(p), g).
+
+(* The static key of a principal, leaked to the attacker in phase 0 (a compromise before or during the
+   sessions) or in phase 1 (after them: forward secrecy) *)
+event LeakS(phasen, principal).

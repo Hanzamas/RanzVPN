@@ -1,0 +1,99 @@
+(* peer-lib.pvl
+   The peer layer of a node, as the code has it (AUD-5, #389; docs/formal-model.md; src/Core/Peer.c,
+   src/Core/PeerSignal.c). The peer layer has no handshake. A bind to a relay, the bound that answers it, a
+   signal that the controller carries and a punch probe are one-shot envelopes sealed with the Noise one-way
+   pattern K, Noise_K_25519_AESGCM_SHA256, whose prologue is "ranz peer 1" and the kind of the envelope
+   (PeerEnvelopeSeal, PeerEnvelopeOpen). The data datagrams of the peer layer carry their payload in the
+   clear: PEER_MSG_DATA, the key of the source, the key of the destination and the payload (PeerSend). The
+   only check that stands between a datagram and its delivery is the address that it came from
+   (PeerSourcePath) and that its source is a peer (PeerPolicy).
+
+   A datagram reaches a node with the source address that the network gives it, and the attacker is the
+   network, so the model sends every datagram with an address, which an honest node sets to its own and the
+   attacker sets to what it wants. A relay binds the node of a valid bind to that address
+   (PeerInputBind): the model records the address that a bind came from as the one the envelope was opened
+   with.
+
+   The receiver of the model keeps no state, so it accepts the replay of an envelope. The code refuses a replay
+   by a sequence that must grow (PeerOpenSignal, PeerInputBind, PeerPunchInput), but it keeps the last
+   sequence in memory, and drops it with the binding of a relay that expired and with the entry of a
+   peer that left the peer table: a receiver that has lost it is the receiver of this model.
+*)
+
+const name_k: bitstring.
+const plabel_peer: bitstring.
+const k_bind: bitstring.
+const k_signal: bitstring.
+const v_peer: bitstring.
+const tag_data: bitstring.
+
+(* The network address of a node, public *)
+fun addrof(principal): bitstring.
+
+(* The content of an envelope of a kind, and the payload of a data datagram: secret values that the queries
+   ask about *)
+fun plsecret(principal, principal, bitstring, sessionid): bitstring [private].
+fun datasec(principal, principal, sessionid): bitstring [private].
+
+event PeerSealed(principal, principal, bitstring, bitstring, bitstring).
+event PeerOpened(principal, principal, bitstring, bitstring, bitstring).
+event DataSent(principal, principal, bitstring).
+event DataDelivered(principal, principal, bitstring, bitstring).
+
+(* PeerEnvelopeSeal: -> e, es, ss, with the payload that holds the version, a sequence and the content. The
+   datagram is sent from the address of the sender. *)
+let PeerSeal(me: principal, to: principal, kind: bitstring, sid: sessionid) =
+  new e: bitstring;
+  new sq: bitstring;
+  let sI = skey(me) in
+  let SI = dhexp(sI, g) in
+  let SR = spub(to) in
+  let E = dhexp(e, g) in
+  let pl = (v_peer, sq, plsecret(me, to, kind, sid)) in
+  let h0 = hash1(name_k) in
+  let h1 = mixh(mixh(mixh(h0, (plabel_peer, kind)), SI), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhexp(e, SR)) in
+  let k2 = hkk(ck1, dhexp(sI, SR)) in
+  let ct = aead(k2, h2, pl) in
+  event PeerSealed(me, to, kind, pl, addrof(me));
+  out(c, (addrof(me), (kind, SI, E, ct))).
+
+(* PeerEnvelopeOpen: the receiver reads the kind and the key of the sender in the clear, and takes the
+   envelope only from a peer that it knows. a is the address that the datagram came from. *)
+let PeerOpen(me: principal, them: principal, kind: bitstring) =
+  in(c, (a: bitstring, (=kind, SI: bitstring, E: bitstring, ct: bitstring)));
+  if SI = spub(them) then
+  let sR = skey(me) in
+  let SR = dhexp(sR, g) in
+  let h0 = hash1(name_k) in
+  let h1 = mixh(mixh(mixh(h0, (plabel_peer, kind)), SI), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhexp(sR, E)) in
+  let k2 = hkk(ck1, dhexp(sR, SI)) in
+  let pl = unaead(k2, h2, ct) in
+  event PeerOpened(me, them, kind, pl, a).
+
+(* PeerSend and PeerInputData: a data datagram in the clear, taken from the address of the peer *)
+let DataSend(me: principal, to: principal, sid: sessionid) =
+  let d = datasec(me, to, sid) in
+  event DataSent(me, to, d);
+  out(c, (addrof(me), (tag_data, spub(me), spub(to), d))).
+
+let DataRecv(me: principal, them: principal) =
+  in(c, (a: bitstring, (=tag_data, src: bitstring, dst: bitstring, d: bitstring)));
+  if a = addrof(them) then
+  if src = spub(them) then
+  if dst = spub(me) then
+  event DataDelivered(me, them, d, a).
+
+let PeerSetup() =
+  out(c, spub(alice));
+  out(c, spub(bob));
+  out(c, spub(charlie));
+  out(c, skey(charlie));
+  out(c, g).
+
+let PeerLeaks(me: principal) =
+  ( event LeakS(phase0, me); out(c, skey(me)) )
+  | ( phase 1; event LeakS(phase1, me); out(c, skey(me)) ).

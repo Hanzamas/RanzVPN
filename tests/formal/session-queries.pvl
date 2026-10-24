@@ -1,0 +1,62 @@
+(* session-queries.pvl
+   The queries of the session models (AUD-5, #389). Each query is one statement, with its id in the comment
+   before it: formal.py reads the ids in order and takes the n-th RESULT line of ProVerif for the n-th id,
+   and expected.tsv says for each variant what the result must be. A leak in a condition is an event of a
+   phase: a compromise in phase 0 is before or during the sessions, one in phase 1 comes after them.
+
+   The conditions of the secrecy and authentication queries are the compromises that an attack may need.
+   The two keys of a server node are separate: its Noise identity key (LeakS) and the key of its TLS
+   certificate (LeakCert), as ADR-0023 asks (key separation). A query "unless the Noise key" says that every
+   attack contains the leak of that key, so it holds when the key is needed and fails when an attack gets by
+   without it.
+*)
+
+(* The handshake and the Login can complete, so that no query below is true only because nothing happens *)
+(* @query reach-login *)
+query t: bitstring; event(ServerLoginOk(bob, alice, t)).
+(* @query reach-done *)
+query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)).
+
+(* The password of alice, which the client sends in its first control record once the handshake is complete *)
+(* @query sec-pw *)
+query attacker(pw(alice)).
+(* @query sec-pw-unless-noise *)
+query attacker(pw(alice)) ==> event(LeakS(phase0, bob)).
+(* @query sec-pw-unless-cert *)
+query attacker(pw(alice)) ==> event(LeakCert(phase0, bob)).
+(* @query sec-pw-unless-both *)
+query attacker(pw(alice)) ==> event(LeakS(phase0, bob)) && event(LeakCert(phase0, bob)).
+
+(* What the server sends back, secret unless both keys of the server are compromised, and forward secrecy:
+   a leak of every long-term key after the session (phase 1) gives nothing that a leak before it does not *)
+(* @query sec-data-unless-both *)
+query sid: sessionid; attacker(appdata(bob, alice, sid)) ==> event(LeakS(phase0, bob)) && event(LeakCert(phase0, bob)).
+(* @query fs-data *)
+query sid: sessionid; attacker(appdata(bob, alice, sid)) ==> event(LeakS(phase0, bob)) || event(LeakCert(phase0, bob)) || event(LeakS(phase0, alice)).
+
+(* The server takes a handshake from alice only if alice started it in the TLS session that the server is
+   in, unless alice's key or its own is compromised (an initiator of Noise_IK is open to the key compromise
+   impersonation of its responder's key). The transcript of the TLS session is the identity of the session. *)
+(* @query auth-server *)
+query t: bitstring; event(ServerAccept(bob, alice, t)) ==> event(ClientStart(alice, bob, t)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+
+(* The client takes the answer of the server only if the server with the key that the client pinned made it,
+   in the TLS session that the client is in, and with the same handshake hash *)
+(* @query auth-client *)
+query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)) ==> event(ServerReply(bob, alice, t, h)) || event(LeakS(phase0, bob)).
+(* @query auth-client-both *)
+query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)) ==> event(ServerReply(bob, alice, t, h)) || (event(LeakS(phase0, bob)) && event(LeakCert(phase0, bob))).
+
+(* The version and the capabilities that the server settles on are the ones that the client offered, so the
+   attacker cannot lower them, and the suite that the server runs is the one that the client chose *)
+(* @query negotiation *)
+query v: bitstring, cp: bitstring; event(ServerNegotiated(bob, alice, v, cp)) ==> event(ClientOffered(alice, bob, v, cp)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+(* @query suite *)
+query s: bitstring; event(ServerSuite(bob, alice, s)) ==> event(ClientSuite(alice, bob, s)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+
+(* No replay: each handshake that the server takes, and each answer that the client takes, is one that was
+   sent once. These two hold only where no key is compromised, which is the honest variants. *)
+(* @query replay-server *)
+query t: bitstring; inj-event(ServerAccept(bob, alice, t)) ==> inj-event(ClientStart(alice, bob, t)).
+(* @query replay-client *)
+query t: bitstring, h: bitstring; inj-event(ClientDone(alice, bob, t, h)) ==> inj-event(ServerReply(bob, alice, t, h)).

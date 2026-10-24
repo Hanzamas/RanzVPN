@@ -1,0 +1,11 @@
+(* Negative control tls443-neither-honest: no pin and no binding, and no key leaked (AUD-5, #389). This is
+   the middlebox of ADR-0023 that terminates the TLS session of the client with a certificate of its own and
+   opens a session to the server: the two Noise handshakes cross it unchanged, and it reads and rewrites
+   every record. With either protection alone the attacker needs a key (tls443-nobinding, tls443-nopin);
+   with neither it needs none. *)
+
+process
+  ( Setup()
+  | !( Client(alice, bob, pin_off, bt_none, plabel_session, lab_exp_session, suite_hfs) )
+  | !( new sid: sessionid; Server(bob, alice, bt_none, plabel_session, lab_exp_session, suite_ik, suite_hfs, sid) )
+  )

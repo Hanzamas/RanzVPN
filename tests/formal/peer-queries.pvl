@@ -1,0 +1,40 @@
+(* peer-queries.pvl
+   The queries of the peer model (AUD-5, #389; see session-queries.pvl for how formal.py reads them). alice
+   seals envelopes of the two kinds that matter to bob, the bind (the relay role of bob) and the signal, and
+   sends data datagrams to him. The first five queries are about the envelopes, the last two about the data
+   datagrams of the peer layer.
+*)
+
+(* An envelope can be opened *)
+(* @query reach-open *)
+query k: bitstring, pl: bitstring, a: bitstring; event(PeerOpened(bob, alice, k, pl, a)).
+
+(* The envelope that bob opens as alice's was sealed by alice, to bob, with that kind, unless a static key is
+   leaked: Noise_K authenticates its sender by the static-static Diffie-Hellman, which a leaked key of the
+   receiver gives to the attacker as well (key compromise impersonation), and the prologue holds the kind *)
+(* @query pe-auth *)
+query k: bitstring, pl: bitstring, a: bitstring, a2: bitstring; event(PeerOpened(bob, alice, k, pl, a)) ==> event(PeerSealed(alice, bob, k, pl, a2)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+
+(* The address that bob takes the envelope from is the address that alice sent it from. The envelope does
+   not hold the address, so this fails: a relay binds the node to the address of the datagram. *)
+(* @query pe-addr *)
+query k: bitstring, pl: bitstring, a: bitstring; event(PeerOpened(bob, alice, k, pl, a)) ==> event(PeerSealed(alice, bob, k, pl, a)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+
+(* No replay: each envelope that bob opens was sealed once. The sequence of the code makes it so while the
+   receiver keeps the last one, and the receiver of this model has lost it. *)
+(* @query pe-replay *)
+query k: bitstring, pl: bitstring, a: bitstring, a2: bitstring; inj-event(PeerOpened(bob, alice, k, pl, a)) ==> inj-event(PeerSealed(alice, bob, k, pl, a2)).
+
+(* The content of an envelope is secret until the static key of bob is leaked, and then it is not: the key of
+   the envelope comes from es and ss, so it has no forward secrecy (pe-fs fails by the leak in phase 1) *)
+(* @query pe-secret *)
+query k: bitstring, sid: sessionid; attacker(plsecret(alice, bob, k, sid)) ==> event(LeakS(phase0, bob)) || event(LeakS(phase1, bob)).
+(* @query pe-fs *)
+query k: bitstring, sid: sessionid; attacker(plsecret(alice, bob, k, sid)) ==> event(LeakS(phase0, bob)).
+
+(* The data datagrams: the datagram that bob delivers as alice's was sent by her, and its payload is secret.
+   Neither holds: the datagram is in the clear, with no key to check. *)
+(* @query pd-forgery *)
+query d: bitstring, a: bitstring; event(DataDelivered(bob, alice, d, a)) ==> event(DataSent(alice, bob, d)).
+(* @query pd-secret *)
+query sid: sessionid; attacker(datasec(alice, bob, sid)).

@@ -1,0 +1,235 @@
+(* session-lib.pvl
+   The session handshake of a client and a server over TLS 1.3 or QUIC (AUD-5, #389; docs/formal-model.md): the
+   outer session that the transport gives, and on its first stream the Noise_IK handshake of the node
+   identity keys, bound to that session through the prologue, then the first control record (the Login of
+   a client node, or the Hello of a node to the controller) and the answer. The code is
+   src/Core/NoiseSession.c (the handshake and the prologue), src/Core/TransportNoise.c (the session on a
+   stream), src/Core/TransportTls.c and src/Core/TransportQuic.c (the outer session, the pin and the
+   binding), src/Core/Control.c and controller/internal/control/stream.go (the control stream) and
+   src/Cedar/NodeSession.c (the Login). model-to-code.tsv maps every element.
+
+   The outer session is a TLS 1.3 handshake of one round trip with the authentication of the server only:
+   the client sends a random value and its key share, the server answers with its random value, its key share,
+   its certificate and a signature of the transcript. The record keys and the exporter come from the Diffie-
+   Hellman secret and the transcript, so two sessions that differ in any value of the transcript have different
+   keys and different exporters, as the key schedule of RFC 8446 gives. The certificate chain is not
+   checked: the client compares the certificate with its pin, or accepts any certificate when a variant
+   leaves the pin out. The attacker is the network, so it may terminate the TLS session of a client with a
+   certificate of its own, and open one to the server: that is the middlebox of ADR-0023.
+
+   What a variant sets (the parameters of Client and Server):
+     pin     pin_on: the client accepts the certificate whose thumbprint it was configured with and no
+             other (TlsCheckPin, QuicConnCallback); pin_off: any certificate (a negative control)
+     bm      the binding in the prologue: bt_export, the TLS exporter (NOISE_BINDING_EXPORTER, the TLS-443
+             path and the control stream); bt_endpoint, the hash of the server certificate
+             (NOISE_BINDING_SERVER_END_POINT, the QUIC path); bt_none, no binding (a negative control)
+     plabel  the label of the prologue: NOISE_PROLOGUE_LABEL or CONTROL_PROLOGUE_LABEL
+     lab     the label of the exporter: NOISE_EXPORTER_LABEL or CONTROL_EXPORTER_LABEL
+     suite   the suite that the client offers; the server runs the two that sa and sb name
+*)
+
+(* The tags of the records, the labels, and the parameters of the variants *)
+const rec_hs: bitstring.
+const rec_app1: bitstring.
+const rec_app2: bitstring.
+const lab_c: bitstring.
+const lab_s: bitstring.
+const lab_exp_session: bitstring.
+const lab_exp_control: bitstring.
+const plabel_session: bitstring.
+const plabel_control: bitstring.
+const suite_ik: bitstring.
+const suite_hfs: bitstring.
+const bt_export: bitstring.
+const bt_endpoint: bitstring.
+const bt_none: bitstring.
+const nobind: bitstring.
+const pin_on: bitstring.
+const pin_off: bitstring.
+const v_hi: bitstring.
+
+(* The name of the Noise protocol of a suite, which InitializeSymmetric hashes into h *)
+fun suitename(bitstring): bitstring.
+
+(* Signatures, certificates and thumbprints. A certificate carries a public key, a thumbprint is its hash
+   (the SHA-1 of CryptoCertThumbprint, a hash without collisions in this model), and the end point of RFC 5929
+   is another hash of it (CryptoCertEndPoint). *)
+fun spk(bitstring): bitstring.
+fun sign(bitstring, bitstring): bitstring.
+reduc forall sk: bitstring, m: bitstring; checksign(spk(sk), sign(sk, m)) = m.
+fun mkcert(bitstring): bitstring.
+reduc forall p: bitstring; certkey(mkcert(p)) = p.
+fun thumb(bitstring): bitstring.
+fun epbind(bitstring): bitstring.
+
+(* TLS 1.3: the master secret from the Diffie-Hellman secret and the transcript, the keys of the records of
+   the two directions and the exporter of a label, and the AEAD of the records *)
+fun tlsms(bitstring, bitstring): bitstring.
+fun tlsk(bitstring, bitstring): bitstring.
+fun tlsexp(bitstring, bitstring): bitstring.
+fun senc(bitstring, bitstring): bitstring.
+reduc forall k: bitstring, m: bitstring; sdec(k, senc(k, m)) = m.
+
+(* The secrets of the principals. sigkey is the private key of the TLS certificate of a node (a key of the
+   CNG key storage provider that is not the node identity key); pw is the password of a user, or what a node
+   sends the controller; appdata is what the server sends back in a session. *)
+fun sigkey(principal): bitstring [private].
+fun pw(principal): bitstring [private].
+fun appdata(principal, principal, sessionid): bitstring [private].
+fun capsof(principal): bitstring.
+
+letfun certof(p: principal) = mkcert(spk(sigkey(p))).
+letfun pinof(p: principal) = thumb(certof(p)).
+
+(* The pin of the client: the certificate of the server is the one that it was configured with *)
+letfun pincheck(pin: bitstring, cert: bitstring, them: principal) = (pin = pin_off) || (thumb(cert) = pinof(them)).
+
+(* The binding of a session that a side computes from what it knows of the TLS session: the exporter from the
+   master secret, or the hash of the server certificate, or none *)
+letfun binding(bm: bitstring, ms: bitstring, cert: bitstring, lab: bitstring) =
+  if bm = bt_export then tlsexp(ms, lab) else (if bm = bt_endpoint then epbind(cert) else nobind).
+
+event LeakCert(phasen, principal).
+
+event ClientStart(principal, principal, bitstring).
+event ClientSuite(principal, principal, bitstring).
+event ClientDone(principal, principal, bitstring, bitstring).
+event ClientOffered(principal, principal, bitstring, bitstring).
+event ClientGotData(principal, principal, bitstring).
+event ServerAccept(principal, principal, bitstring).
+event ServerSuite(principal, principal, bitstring).
+event ServerReply(principal, principal, bitstring, bitstring).
+event ServerNegotiated(principal, principal, bitstring, bitstring).
+event ServerLoginOk(principal, principal, bitstring).
+event ServerSentData(principal, principal, bitstring).
+
+(* The client: the TLS handshake with the pin, then NoiseSessionConnect and NoiseSessionFinish with the
+   prologue that carries the binding, then the first control record and the answer. The events record what the
+   client believes: ClientStart is the first Noise message, with the transcript of its TLS session as the
+   identity of that session; ClientDone is the second message taken, with the handshake hash. *)
+let Client(me: principal, them: principal, pin: bitstring, bm: bitstring, plabel: bitstring, lab: bitstring, suite: bitstring) =
+  new cr: bitstring;
+  new x: bitstring;
+  let gx = dhexp(x, g) in
+  out(c, (cr, gx));
+  in(c, (sr: bitstring, gy: bitstring, cert: bitstring, sg: bitstring));
+  let tr = (cr, gx, sr, gy, cert) in
+  let trs = checksign(certkey(cert), sg) in
+  if trs = tr then
+  if pincheck(pin, cert, them) then
+  let ms = tlsms(dhexp(x, gy), tr) in
+  let kc = tlsk(ms, lab_c) in
+  let ks = tlsk(ms, lab_s) in
+  let bnd = binding(bm, ms, cert, lab) in
+  let prologue = (plabel, bm, bnd) in
+  new e: bitstring;
+  let sI = skey(me) in
+  let SI = dhexp(sI, g) in
+  let SR = spub(them) in
+  let E = dhexp(e, g) in
+  let h0 = hash1(suitename(suite)) in
+  let h1 = mixh(mixh(h0, prologue), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhexp(e, SR)) in
+  let k1 = hkk(h0, dhexp(e, SR)) in
+  let cs = aead(k1, h2, SI) in
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhexp(sI, SR)) in
+  let k2 = hkk(ck1, dhexp(sI, SR)) in
+  let cp = aead(k2, h3, empty) in
+  let h4 = mixh(h3, cp) in
+  event ClientStart(me, them, tr);
+  event ClientSuite(me, them, suite);
+  out(c, senc(kc, (rec_hs, suite, (E, cs, cp))));
+  in(c, rec2: bitstring);
+  let (=rec_hs, =suite, (E2: bitstring, cp2: bitstring)) = sdec(ks, rec2) in
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhexp(e, E2)) in
+  let ck4 = hkck(ck3, dhexp(sI, E2)) in
+  let k4 = hkk(ck3, dhexp(sI, E2)) in
+  let pl2 = unaead(k4, h5, cp2) in
+  if pl2 = empty then
+  let h6 = mixh(h5, cp2) in
+  event ClientDone(me, them, tr, h6);
+  event ClientOffered(me, them, v_hi, capsof(me));
+  out(c, senc(kc, (rec_app1, v_hi, capsof(me), pw(me))));
+  in(c, rec3: bitstring);
+  let (=rec_app2, d: bitstring) = sdec(ks, rec3) in
+  event ClientGotData(me, them, d).
+
+(* The server: the TLS handshake with its certificate, NoiseSessionAccept with the prologue that carries
+   its own view of the binding, the Login, and the answer. sa and sb are the two suites that it runs. It
+   serves one expected client, as the node of a peer does and as the key pin of a user does. *)
+let Server(me: principal, them: principal, bm: bitstring, plabel: bitstring, lab: bitstring, sa: bitstring, sb: bitstring, sid: sessionid) =
+  in(c, (cr: bitstring, gx: bitstring));
+  new sr: bitstring;
+  new y: bitstring;
+  let gy = dhexp(y, g) in
+  let mycert = certof(me) in
+  let tr = (cr, gx, sr, gy, mycert) in
+  out(c, (sr, gy, mycert, sign(sigkey(me), tr)));
+  let ms = tlsms(dhexp(y, gx), tr) in
+  let kc = tlsk(ms, lab_c) in
+  let ks = tlsk(ms, lab_s) in
+  let bnd = binding(bm, ms, mycert, lab) in
+  let prologue = (plabel, bm, bnd) in
+  in(c, rec1: bitstring);
+  let (=rec_hs, suite: bitstring, (E: bitstring, cs: bitstring, cp: bitstring)) = sdec(kc, rec1) in
+  if (suite = sa) || (suite = sb) then
+  let sR = skey(me) in
+  let SR = dhexp(sR, g) in
+  let h0 = hash1(suitename(suite)) in
+  let h1 = mixh(mixh(h0, prologue), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhexp(sR, E)) in
+  let k1 = hkk(h0, dhexp(sR, E)) in
+  let SI = unaead(k1, h2, cs) in
+  if SI = spub(them) then
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhexp(sR, SI)) in
+  let k2 = hkk(ck1, dhexp(sR, SI)) in
+  let pl1 = unaead(k2, h3, cp) in
+  if pl1 = empty then
+  let h4 = mixh(h3, cp) in
+  event ServerAccept(me, them, tr);
+  event ServerSuite(me, them, suite);
+  new e: bitstring;
+  let E2 = dhexp(e, g) in
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhexp(e, E)) in
+  let ck4 = hkck(ck3, dhexp(e, SI)) in
+  let k4 = hkk(ck3, dhexp(e, SI)) in
+  let cp2 = aead(k4, h5, empty) in
+  let h6 = mixh(h5, cp2) in
+  event ServerReply(me, them, tr, h6);
+  out(c, senc(ks, (rec_hs, suite, (E2, cp2))));
+  in(c, rec2: bitstring);
+  let (=rec_app1, v: bitstring, caps: bitstring, pass: bitstring) = sdec(kc, rec2) in
+  if pass = pw(them) then
+  event ServerNegotiated(me, them, v, caps);
+  event ServerLoginOk(me, them, tr);
+  event ServerSentData(me, them, appdata(me, them, sid));
+  out(c, senc(ks, (rec_app2, appdata(me, them, sid)))).
+
+(* What the attacker knows from the start: the public keys, the certificate of the server, and everything of
+   charlie *)
+let Setup() =
+  out(c, spub(alice));
+  out(c, spub(bob));
+  out(c, spub(charlie));
+  out(c, certof(bob));
+  out(c, certof(charlie));
+  out(c, skey(charlie));
+  out(c, sigkey(charlie));
+  out(c, pw(charlie));
+  out(c, g).
+
+(* The compromise of the keys of the honest nodes: in phase 0, before or during the sessions, and in phase 1,
+   after them, which is what forward secrecy asks of the sessions of phase 0 *)
+let Leaks() =
+  ( event LeakS(phase0, alice); out(c, skey(alice)) )
+  | ( event LeakS(phase0, bob); out(c, skey(bob)) )
+  | ( event LeakCert(phase0, bob); out(c, sigkey(bob)) )
+  | ( phase 1; event LeakS(phase1, alice); out(c, skey(alice)) )
+  | ( phase 1; event LeakS(phase1, bob); out(c, skey(bob)) )
+  | ( phase 1; event LeakCert(phase1, bob); out(c, sigkey(bob)) ).
