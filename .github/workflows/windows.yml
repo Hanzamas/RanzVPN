@@ -4,9 +4,23 @@
 # MSVC /analyze (static-analysis) and Application Verifier (appverif). The fuzz targets run in
 # fuzz-asan; quality.yml checks that every parser has one.
 #
-# A push to master runs every job, with no path filter. A pull request runs them when it changes a
-# path that one of the jobs reads. The filter starts from every path ('**') and takes out the paths
-# that no job here reads:
+# Two sets of jobs, which the plan job chooses (ci-plan.yml, .github/scripts/ci-plan.py):
+# - The fast set, on a pull request: the format check, build_and_test for x64 (the build with its tests
+#   and gates) and the Debug build for arm64, a compile check with no tests.
+# - The full set, every job here and both architectures of build_and_test and debug: on a push to master
+#   or integration, every night (a schedule runs on the default branch, master), on workflow_dispatch, on a
+#   pull request with the label full-ci and on a pull request that changes src/Core/Crypto*,
+#   src/Core/Noise*, src/SeLow, .github/scripts/self-integrity.ps1, .github/scripts/install.ps1 or
+#   .github/signing (SENSITIVE in ci-plan.py).
+# A job that only the full set runs has needs: plan and if: needs.plan.outputs.full == 'true' (install
+# follows sign_and_integrity, which it needs), and a pull request shows it as skipped. A new job
+# without them runs on every pull request. A leg of a matrix that a pull request does not run is not
+# created, since GitHub cannot skip one leg of a matrix. A pull request that edits a workflow, or a
+# script that a job of the full set runs, should carry the label full-ci.
+#
+# A push to master or integration, a scheduled run and a run by hand run every job, with no path filter.
+# A pull request runs the workflow when it changes a path that one of the jobs reads. The filter starts
+# from every path ('**') and takes out the paths that no job here reads:
 # - controller/ and ranz-bgp/, with go.mod and go.sum: the Go code of the one executable ranz
 #   (ranz.yml: the controller, the BGP sidecar and the CLI). The C build builds ranz for two of its
 #   steps, the default VRF tracer and the node that starts ranz bgp, and generates the nanopb code
@@ -23,8 +37,13 @@
 # .github/quality that they read. A new top-level path also runs it until it is taken out here.
 on:
   push:
-    branches: [master]
+    branches: [master, integration]
+  schedule:
+  - cron: '17 20 * * *'
+  workflow_dispatch:
   pull_request:
+    # labeled: the label full-ci starts the full set on a pull request that is open
+    types: [opened, synchronize, reopened, labeled]
     paths:
     - '**'
     - '!controller/**'
@@ -45,9 +64,13 @@ on:
     - '!.github/scripts/fuzz-registry.py'
     - '!.github/scripts/quality-gates-test.py'
     - '!.github/scripts/one-binary-check.py'
+    - '!.github/scripts/ci-plan-test.py'
     - '!.github/quality/fuzz-targets.txt'
     - '!.github/scripts/govulncheck-gate.py'
     - '!.github/quality/govulncheck-accepted.txt'
+
+# A run that is not a pull request is the full set, and its name says so: Full CI: push on integration
+run-name: "${{ github.event_name == 'pull_request' && github.event.pull_request.title || format('Full CI: {0} on {1}', github.event_name, github.ref_name) }}"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -76,14 +99,20 @@ env:
   RQLITE_WIN64_SHA256: '0f4a65a603b89b9a3c2607c5de64445236856884c83aa2e865ec9142fd184118'
 
 jobs:
+  # The fast set or the full set (ci-plan.yml); the jobs below read what it decided
+  plan:
+    uses: ./.github/workflows/ci-plan.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   build_and_test:
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        platform: [
-          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest"},
-          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm"}
-        ]
+        # x64 on a pull request, x64 and arm64 in the full set (MATRICES in ci-plan.py)
+        platform: ${{ fromJSON(needs.plan.outputs.build_matrix) }}
     runs-on: ${{ matrix.platform.RUNNER }}
     name: ${{ matrix.platform.ARCHITECTURE }}
     timeout-minutes: 60
@@ -412,6 +441,8 @@ jobs:
   # smoke test script on that build, replays the seed corpora (deterministic), then runs every
   # fuzz target of src/fuzz for a fixed time. Any of the three failing fails the job.
   fuzz-asan:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: fuzz-asan
     timeout-minutes: 45
@@ -574,6 +605,8 @@ jobs:
   # module below its floor in .github/quality/coverage-floors.txt, or a file of src/Core in no module,
   # fails the job.
   coverage:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: coverage (new core)
     timeout-minutes: 45
@@ -697,6 +730,8 @@ jobs:
   # (src/Core/3rdparty: libjuice, libplum), which that build compiles too, are not the new core's code
   # and do not count.
   static-analysis:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: static analysis (new core)
     timeout-minutes: 45
@@ -803,6 +838,8 @@ jobs:
   # planted fault, a failed test or a verifier error fails the job. go test -race covers the Go code
   # (ranz.yml).
   appverif:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: Application Verifier (new core)
     timeout-minutes: 45
@@ -901,6 +938,8 @@ jobs:
   # writes into ntdll; the VMProtect markers wrap only the licence-gate and key-handling routines; and
   # the release variant degrades or deceives under a debugger instead of crashing.
   harden:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: harden (ranzguard)
     timeout-minutes: 45
@@ -1006,15 +1045,15 @@ jobs:
   # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c and vpncmd.c) and without
   # WIN32_NO_DEBUG_HELP_DLL (the DbgHelp call stacks of Win32.c), with the Debug definitions of
   # cmake/RanzOptions.cmake. x64 and arm64: Win32GetCallStack captures with CaptureStackBackTrace,
-  # which needs no machine type.
+  # which needs no machine type. A pull request builds arm64 only: the x64 build of build_and_test covers
+  # x64, and this is the arm64 compile check.
   debug:
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        platform: [
-          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest", PRESET: "debug"},
-          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm", PRESET: "debug-arm64"}
-        ]
+        # arm64 on a pull request, x64 and arm64 in the full set (MATRICES in ci-plan.py)
+        platform: ${{ fromJSON(needs.plan.outputs.debug_matrix) }}
     runs-on: ${{ matrix.platform.RUNNER }}
     name: ${{ matrix.platform.ARCHITECTURE }} Debug (build only)
     timeout-minutes: 30
@@ -1105,7 +1144,8 @@ jobs:
   # both carry the signed rqlited.exe of the pinned rqlite release too, the rqlite member of a Controller
   # (ONE-4, #313). .github/scripts/self-integrity.ps1.
   sign_and_integrity:
-    needs: build_and_test
+    needs: [plan, build_and_test]
+    if: needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     name: sign and self-integrity
     timeout-minutes: 30

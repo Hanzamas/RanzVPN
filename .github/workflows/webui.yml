@@ -4,18 +4,22 @@
 # Nothing is compiled and nothing it fetches ships; the repository holds no npm lock file. The
 # Go tests of the UI, with the headless browser, run in ranz.yml.
 #
-# A push to master runs it, with no path filter. A pull request runs it when it changes the UI or
-# this file.
+# A push to master or integration and a run by hand run it, with no path filter. A pull request runs
+# it when it changes the UI or this file.
 
 name: webui
 
 on:
   push:
-    branches: [master]
+    branches: [master, integration]
+  workflow_dispatch:
   pull_request:
     paths:
     - 'controller/internal/webui/**'
     - '.github/workflows/webui.yml'
+
+# Named as in windows.yml: a run that is not a pull request is Full CI: <event> on <branch>
+run-name: "${{ github.event_name == 'pull_request' && github.event.pull_request.title || format('Full CI: {0} on {1}', github.event_name, github.ref_name) }}"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

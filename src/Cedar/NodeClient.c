@@ -1,22 +1,25 @@
 // NodeClient.c
 // The client role of a node (CORE-S3-1, #71; ADR-0011, ADR-0022 Roles): the node dials the servers of its
 // configuration over QUIC or TLS-443, joins their L3 network through the overlay of the node (NodeOverlay.c) and brings
-// it up on a Wintun adapter (NodeWintun.c). It replaces Cascade for new peers. Here are the pieces that a server does
-// not need (ADR-0011): the adapter with its routes and DNS servers, sleep and roaming, and the control by the logged-in
-// user.
-// - The Client setting of the configuration store (NODE_SETTING_CLIENT), one JSON object, names the adapter, the DNS
+// it up on one Wintun adapter per VRF (NodeVrfAdapter.c; SDN-5, #181). It replaces Cascade for new peers. Here are the
+// pieces that a server does not need (ADR-0011): the adapters with their routes and DNS servers, sleep and roaming, and
+// the control by the logged-in user.
+// - The Client setting of the configuration store (NODE_SETTING_CLIENT), one JSON object, names the adapters, the DNS
 //   servers and suffix of the network, the pipe of the logged-in user, and each server: its node name, the thumbprint
 //   of its certificate, which both transports pin, and its fallback list ("quic:vpn.example:443, tls:vpn.example:443").
-//   Without the setting the role holds nothing.
+//   With "forwarding": true the node is a gateway or an exit, and each of its adapters forwards between it and the
+//   other interfaces of the host. Without the setting the role holds nothing.
 // - The role runs the overlay of the node. Its data transport is the dialler of the role: a peer is dialled by its
 //   name, which is the race of the fallback list of the server of that name (TransportRace), so QUIC wins where UDP
 //   passes and TLS-443 where it does not. A client dials every server whatever the order of the keys, and listens
 //   nowhere. The data records of its Noise sessions wait in the ingress queue of the session layer, which CoDel runs,
 //   over QUIC as over TLS-443: the overlay carries them on a reliable stream of either.
-// - Each state that the overlay applies sets the adapter: the node's addresses in the VRF of its first address as host
-//   addresses, and a route through the adapter to the prefix of each address of the node and of its peers in that VRF.
-//   The packets of the host's own stack go from the ring of the adapter into the overlay (NodeOverlayInput) on the I/O
-//   thread of its adapter queue; the packets of the peers for the host go into the other ring.
+// - Each state that the overlay applies reconciles the adapters, one per VRF of the state, each with a fixed GUID of the
+//   node and its VRF (NodeVrfAdapter.c): the node's addresses in the VRF as host addresses, and a route through the
+//   adapter to the prefix of each address of the node and of its peers in that VRF. The packets of the host's own stack
+//   go from the ring of the adapter of a VRF into the overlay in that VRF (NodeOverlayInput) on the I/O thread of its
+//   adapter queue; the packets of the peers in a VRF go into the adapter of that VRF. The adapters stay while the
+//   streams close and the servers are dialled again.
 // - Sleep: the node takes the suspend and resume events of Windows (PowerRegisterSuspendResumeNotification). On
 //   suspend it closes its streams and dials nothing; on resume it dials again, and the server replaces the session
 //   that the sleep left behind with the new one (NodeOverlay.c).
@@ -84,9 +87,9 @@ struct NODE_CLIENT {
 	NODE_CLIENT_SERVER *Servers;                    // ... NODE_CLIENT_MAX_SERVERS of them allocated
 	TRANSPORT Dialler;                              // The data transport of the overlay: it dials a server by its name
 	PEER_KEY Key;                                   // The node's static key
-	NODE_WINTUN *Wintun;                            // The adapter
-	UINT64 Luid;                                    // ... the LUID of its interface
-	volatile LONG VrfId;                            // The VRF of the adapter: the VRF of the node's first address
+	bool Forwarding;                                // The node is a gateway or an exit: its adapters forward
+	NODE_VRF_ADAPTERS *Adapters;                    // The adapters, one per VRF of the state (NodeVrfAdapter.c)
+	volatile LONG VrfId;                            // The VRF of the node's first address, whose adapter the status names
 	bool Overlay;                                   // The role started the overlay of the node
 	LIST *Streams;                                  // The streams of the dialler that the overlay holds (NODE_CLIENT_STREAM)
 	UINT64 Epoch;                                   // One more at each close of the streams
@@ -218,6 +221,7 @@ static bool NodeClientLoad(NODE_CLIENT *c, const char *setting) {
 	StrToUni(c->Adapter, sizeof(c->Adapter), NodeClientJsonStr(cfg, "adapter", NODE_CLIENT_ADAPTER));
 	UniFormat(c->Pipe, sizeof(c->Pipe), L"\\\\.\\pipe\\%S", NodeClientJsonStr(cfg, "pipe", NODE_CLIENT_PIPE));
 	StrCpy(c->Suffix, sizeof(c->Suffix), NodeClientJsonStr(cfg, "suffix", ""));
+	c->Forwarding = (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cfg, "forwarding")) != 0);
 
 	cJSON_ArrayForEach(item, dns) {
 		if (cJSON_IsString(item) == false)
@@ -403,93 +407,57 @@ static bool NodeClientRekey(void *stream) {
 // The adapter
 //
 
-// A packet of the host's own stack, from the ring of the adapter on the I/O thread of its adapter queue: into the
-// overlay, in the VRF of the adapter
-static void NodeClientFromHost(NODE_WINTUN *w, void *param, const UCHAR *packet, UINT size) {
-	NODE_CLIENT *c = (NODE_CLIENT *)param;
-
-	NodeOverlayInput(c->Node, (UINT)ReadAcquire(&c->VrfId), packet, size);
-}
-
-// A packet of a peer for the host, on the thread of the overlay: into the ring of the adapter when it is of the VRF of
-// the adapter. One adapter per VRF comes with SDN-5 (#181).
+// A packet of a peer for the host, on the thread of the overlay: into the ring of the adapter of its VRF (SDN-5, #181)
 static void NodeClientToHost(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size) {
 	NODE_CLIENT *c = (NODE_CLIENT *)param;
 
-	if (vrf_id == (UINT)ReadAcquire(&c->VrfId))
-		NodeWintunSend(c->Wintun, packet, size);
+	NodeVrfAdaptersSend(c->Adapters, vrf_id, packet, size);
 }
 
-// The route to the prefix of an address of a state, its host bits cleared, added once. A /0 is no route of the network:
-// a default route through the adapter comes with the exit node of the tray (SDN-55, #248).
-static void NodeClientAddRoute(NODE_PREFIX *routes, UINT *num, const CONTROL_ADDRESS *a) {
-	NODE_PREFIX p;
-
-	if ((a->AddressSize != 4 && a->AddressSize != 16) || a->Length == 0 || a->Length > a->AddressSize * 8 || *num >= NODE_WINTUN_MAX_ROUTES)
-		return;
-
-	Zero(&p, sizeof(p));
-	p.AddressSize = a->AddressSize;
-	p.Length = a->Length;
-	for (UINT i = 0; i < a->AddressSize; i++) {
-		UINT bits = (a->Length >= (i + 1) * 8 ? 8 : (a->Length > i * 8 ? a->Length - i * 8 : 0));
-
-		p.Address[i] = (UCHAR)(a->Address[i] & (UCHAR)(0xFF << (8 - bits)));
-	}
-
-	for (UINT i = 0; i < *num; i++)
-		if (routes[i].AddressSize == p.AddressSize && routes[i].Length == p.Length && Cmp(routes[i].Address, p.Address, p.AddressSize) == 0)
-			return;
-
-	routes[(*num)++] = p;
-}
-
-// A state that the overlay applied, once its forwarding tables are in: the adapter takes the node's addresses in the VRF
-// of its first address, and a route to the prefix of each address of the node and of its peers in that VRF
+// A state that the overlay applied, once its forwarding tables are in: the adapters of its VRFs take the node's
+// addresses and the routes of each VRF (NodeVrfAdapter.c), and the status names the VRF of the node's first address
 static void NodeClientState(NODE *n, void *param, const CONTROL_STATE *st) {
 	NODE_CLIENT *c = (NODE_CLIENT *)param;
-	NODE_PREFIX addrs[NODE_WINTUN_MAX_ADDRESSES];
-	NODE_PREFIX *routes = ZeroMalloc(sizeof(NODE_PREFIX) * NODE_WINTUN_MAX_ROUTES);
-	UINT num_addrs = 0;
-	UINT num_routes = 0;
 	UINT vrf = (st->NumAddresses != 0 ? st->Addresses[0].VrfId : 0);
 
-	for (UINT i = 0; i < st->NumAddresses; i++) {
-		const CONTROL_ADDRESS *a = &st->Addresses[i];
+	InterlockedExchange(&c->VrfId, (LONG)vrf);
+	bool ok = NodeVrfAdaptersApply(c->Adapters, st);
 
-		if (a->VrfId != vrf || (a->AddressSize != 4 && a->AddressSize != 16) || num_addrs >= NODE_WINTUN_MAX_ADDRESSES)
-			continue;
+	NodeLog(n, "Client: generation %I64u on the adapters %S <VRF>: the first address in VRF %u, %u addresses, %u VRFs%s", st->Generation, c->Adapter, vrf,
+	        st->NumAddresses, st->NumVrfs, ok ? "" : " (not all of them set, see the lines before)");
+}
 
-		Zero(&addrs[num_addrs], sizeof(NODE_PREFIX));
-		Copy(addrs[num_addrs].Address, a->Address, a->AddressSize);
-		addrs[num_addrs].AddressSize = a->AddressSize;
-		addrs[num_addrs].Length = a->AddressSize * 8;
-		num_addrs++;
+// The adapter of the VRF of the node's first address into first, the name of the setting before the first state, and
+// the packets of the host taken from all the adapters of the role and put into them: the number of adapters
+static UINT NodeClientAdapters(NODE_CLIENT *c, NODE_VRF_ADAPTER_STATUS *first, UINT64 *from_host, UINT64 *to_host) {
+	NODE_VRF_ADAPTER_STATUS *list = ZeroMalloc(sizeof(NODE_VRF_ADAPTER_STATUS) * NODE_VRF_MAX_ADAPTERS);
+	UINT num = NodeVrfAdaptersGetStatus(c->Adapters, list, NODE_VRF_MAX_ADAPTERS);
+	UINT vrf = (UINT)ReadAcquire(&c->VrfId);
 
-		NodeClientAddRoute(routes, &num_routes, a);
+	Zero(first, sizeof(NODE_VRF_ADAPTER_STATUS));
+	UniStrCpy(first->Name, sizeof(first->Name), c->Adapter);
+	*from_host = 0;
+	*to_host = 0;
+
+	for (UINT i = 0; i < num; i++) {
+		if (list[i].VrfId == vrf)
+			Copy(first, &list[i], sizeof(NODE_VRF_ADAPTER_STATUS));
+		*from_host += list[i].FromHost;
+		*to_host += list[i].ToHost;
 	}
 
-	for (UINT i = 0; i < st->NumPeers; i++)
-		for (UINT j = 0; j < st->Peers[i].NumAddresses; j++)
-			if (st->Peers[i].Addresses[j].VrfId == vrf)
-				NodeClientAddRoute(routes, &num_routes, &st->Peers[i].Addresses[j]);
+	Free(list);
 
-	InterlockedExchange(&c->VrfId, (LONG)vrf);
-	bool ok = NodeWintunSetAddresses(c->Wintun, addrs, num_addrs);
-	ok = NodeWintunSetRoutes(c->Wintun, routes, num_routes) && ok;
-	Free(routes);
-
-	NodeLog(n, "Client: generation %I64u on adapter %S: VRF %u, %u addresses, %u routes%s", st->Generation, c->Adapter, vrf, num_addrs, num_routes,
-	        ok ? "" : " (not all of them set, see the lines before)");
+	return num;
 }
 
 // Stop what of the role calls into the overlay: the pipe of the logged-in user, which reads the status of the overlay,
-// and the adapter queue, which feeds it the packets of the host. NodeOverlayStop calls it first thing.
+// and the adapter queues, which feed it the packets of the host. NodeOverlayStop calls it first thing.
 static void NodeClientHalt(NODE *n, void *param) {
 	NODE_CLIENT *c = (NODE_CLIENT *)param;
 
 	NodeClientPipeStop(c);
-	NodeWintunHalt(c->Wintun);
+	NodeVrfAdaptersHalt(c->Adapters);
 }
 
 //
@@ -539,14 +507,14 @@ void NodeClientPower(NODE *n, UINT event) {
 	Unlock(n->Lock);
 }
 
-// An address of an interface came, changed or went: unless it is the node's own adapter or the loopback interface, the
-// timer moves on, so that it fires once the changes settled
+// An address of an interface came, changed or went: unless it is one of the node's own adapters or the loopback
+// interface, the timer moves on, so that it fires once the changes settled
 static VOID WINAPI NodeClientAddressChanged(PVOID context, PMIB_UNICASTIPADDRESS_ROW row, MIB_NOTIFICATION_TYPE type) {
 	NODE_CLIENT *c = (NODE_CLIENT *)context;
 	ULARGE_INTEGER due;
 	FILETIME ft;
 
-	if (row == NULL || type == MibInitialNotification || row->InterfaceLuid.Value == c->Luid || row->InterfaceLuid.Info.IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+	if (row == NULL || type == MibInitialNotification || row->InterfaceLuid.Info.IfType == IF_TYPE_SOFTWARE_LOOPBACK || NodeVrfAdaptersHas(c->Adapters, row->InterfaceLuid.Value))
 		return;
 
 	due.QuadPart = (ULONGLONG)(-(LONGLONG)NODE_CLIENT_SETTLE * 10000);
@@ -631,16 +599,16 @@ static void NodeClientSetDown(NODE_CLIENT *c, bool down) {
 // the counters
 static void NodeClientStatusJson(NODE_CLIENT *c, char *reply, UINT size) {
 	NODE_OVERLAY_STATUS os;
+	NODE_VRF_ADAPTER_STATUS first;
 	UINT64 from_host = 0;
 	UINT64 to_host = 0;
-	UINT64 dropped = 0;
 	char adapter[MAX_SIZE];
 	char addr[64];
 	const char *state;
 
 	NodeOverlayGetStatus(c->Node, &os);
-	NodeWintunCounters(c->Wintun, &from_host, &to_host, &dropped);
-	UniToStr(adapter, sizeof(adapter), c->Adapter);
+	UINT num_adapters = NodeClientAdapters(c, &first, &from_host, &to_host);
+	UniToStr(adapter, sizeof(adapter), first.Name);
 
 	cJSON *o = cJSON_CreateObject();
 	cJSON *addresses = cJSON_CreateArray();
@@ -658,7 +626,8 @@ static void NodeClientStatusJson(NODE_CLIENT *c, char *reply, UINT size) {
 
 		cJSON_AddStringToObject(o, "state", state);
 		cJSON_AddStringToObject(o, "adapter", adapter);
-		cJSON_AddNumberToObject(o, "interface", NodeWintunIndex(c->Wintun));
+		cJSON_AddNumberToObject(o, "interface", first.InterfaceIndex);
+		cJSON_AddNumberToObject(o, "adapters", num_adapters);
 		cJSON_AddStringToObject(o, "transport", c->Transport);
 		cJSON_AddNumberToObject(o, "servers", c->NumServers);
 		cJSON_AddNumberToObject(o, "peers", os.NumPeers);
@@ -870,7 +839,7 @@ static void NodeClientPipeStop(NODE_CLIENT *c) {
 
 // The state of the client role of a node; Running is false while the role holds nothing
 void NodeClientGetStatus(NODE *n, NODE_CLIENT_STATUS *st) {
-	UINT64 dropped = 0;
+	NODE_VRF_ADAPTER_STATUS first;
 
 	if (st == NULL)
 		return;
@@ -885,14 +854,14 @@ void NodeClientGetStatus(NODE *n, NODE_CLIENT_STATUS *st) {
 
 		if (c != NULL) {
 			st->Running = true;
-			UniStrCpy(st->Adapter, sizeof(st->Adapter), c->Adapter);
-			st->InterfaceIndex = NodeWintunIndex(c->Wintun);
-			st->InterfaceLuid = NodeWintunLuid(c->Wintun);
+			NodeClientAdapters(c, &first, &st->FromHost, &st->ToHost);
+			UniStrCpy(st->Adapter, sizeof(st->Adapter), first.Name);
+			st->InterfaceIndex = first.InterfaceIndex;
+			st->InterfaceLuid = first.InterfaceLuid;
 			UniStrCpy(st->Pipe, sizeof(st->Pipe), c->Pipe);
 			Copy(st->Key, c->Key.Public, PEER_KEY_SIZE);
 			st->VrfId = (UINT)ReadAcquire(&c->VrfId);
 			st->NumServers = c->NumServers;
-			NodeWintunCounters(c->Wintun, &st->FromHost, &st->ToHost, &dropped);
 
 			Lock(c->Lock);
 			{
@@ -909,13 +878,31 @@ void NodeClientGetStatus(NODE *n, NODE_CLIENT_STATUS *st) {
 	Unlock(n->Lock);
 }
 
-// The overlay of the node with the adapter and the dialler of the role, without a control stream: its states come
+// The Wintun adapters of the client role of a node, one per VRF of its state, at most max of them into list in the order
+// of their VRF ids: their number, 0 while the role holds nothing
+UINT NodeClientGetAdapters(NODE *n, NODE_VRF_ADAPTER_STATUS *list, UINT max) {
+	UINT num = 0;
+
+	if (n == NULL || list == NULL)
+		return 0;
+
+	Lock(n->Lock);
+	{
+		if (n->Client != NULL)
+			num = NodeVrfAdaptersGetStatus(n->Client->Adapters, list, max);
+	}
+	Unlock(n->Lock);
+
+	return num;
+}
+
+// The overlay of the node with the adapters and the dialler of the role, without a control stream: its states come
 // from NodeOverlayApply until the node opens one to a controller
 static bool NodeClientOverlayStart(NODE_CLIENT *c) {
 	NODE_OVERLAY_CONFIG cfg;
 
 	if (c->Node->Overlay != NULL) {
-		NodeLog(c->Node, "Role client: the overlay of the node runs already, without the adapter of the role");
+		NodeLog(c->Node, "Role client: the overlay of the node runs already, without the adapters of the role");
 		return false;
 	}
 
@@ -934,8 +921,9 @@ static bool NodeClientOverlayStart(NODE_CLIENT *c) {
 }
 
 // Release what the role holds, in the order that keeps each part valid for the ones that call into it: the pipe and the
-// adapter queue, the events, the overlay, which closes every stream of the dialler, then the adapter, the key and the
-// transports. The overlay stops under the node lock here (NodeSetRoles): it has no control stream that would take it.
+// adapter queues, the events, the overlay, which closes every stream of the dialler, then the adapters, the key and
+// the transports. The overlay stops under the node lock here (NodeSetRoles): it has no control stream that would take
+// it.
 static void NodeClientFree(NODE_CLIENT *c) {
 	NODE *n = c->Node;
 
@@ -945,7 +933,7 @@ static void NodeClientFree(NODE_CLIENT *c) {
 	if (c->Overlay && n->Overlay != NULL)
 		NodeOverlayStop(n);
 
-	NodeWintunFree(c->Wintun);
+	NodeVrfAdaptersFree(c->Adapters);
 	PeerKeyClose(&c->Key);
 
 	for (UINT i = 0; i < c->NumServers; i++) {
@@ -960,9 +948,9 @@ static void NodeClientFree(NODE_CLIENT *c) {
 }
 
 // Start the client role (the node lock is held): with the Client setting, its servers and their transports, the identity
-// key, the Wintun adapter with its DNS servers, the overlay, the events of Windows and the pipe of the logged-in user.
-// Without the setting the role holds nothing. False when the setting cannot be used or the adapter or the overlay
-// cannot come up.
+// key, the Wintun adapters of its VRFs, which come with the states, the overlay, the events of Windows and the pipe of the
+// logged-in user. Without the setting the role holds nothing. False when the setting cannot be used, wintun.dll is
+// missing or the overlay cannot come up.
 bool NodeClientStart(NODE *n) {
 	wchar_t key_name[MAX_SIZE];
 
@@ -1003,14 +991,12 @@ bool NodeClientStart(NODE *n) {
 	}
 
 	if (ok) {
-		c->Wintun = NodeWintunNew(n, c->Adapter, NodeClientFromHost, c);
-		ok = (c->Wintun != NULL);
+		c->Adapters = NodeVrfAdaptersNew(n, c->Adapter, c->Key.Public, c->Forwarding);
+		ok = (c->Adapters != NULL);
 	}
 
 	if (ok) {
-		c->Luid = NodeWintunLuid(c->Wintun);
-		if (IsEmptyStr(c->Dns) == false)
-			NodeWintunSetDns(c->Wintun, c->Dns, c->Suffix);
+		NodeVrfAdaptersSetDns(c->Adapters, c->Dns, c->Suffix);
 		ok = NodeClientOverlayStart(c);
 	}
 
@@ -1023,12 +1009,13 @@ bool NodeClientStart(NODE *n) {
 	NodeClientWatch(c);
 	NodeClientPipeStart(c);
 
-	NodeLog(n, "Role client: adapter %S, %u servers, the overlay without a control stream", c->Adapter, c->NumServers);
+	NodeLog(n, "Role client: adapters %S <VRF>, %u servers, the overlay without a control stream%s", c->Adapter, c->NumServers,
+	        c->Forwarding ? ", forwarding as a gateway or an exit" : "");
 
 	return true;
 }
 
-// Stop the client role (the node lock is held) and release all it holds; its adapter goes with it
+// Stop the client role (the node lock is held) and release all it holds; its adapters go with it
 void NodeClientStop(NODE *n) {
 	NODE_CLIENT *c = n->Client;
 
@@ -1038,5 +1025,5 @@ void NodeClientStop(NODE *n) {
 	n->Client = NULL;
 	NodeClientFree(c);
 
-	NodeLog(n, "Role client: its adapter, its streams and its pipe are gone");
+	NodeLog(n, "Role client: its adapters, its streams and its pipe are gone");
 }
