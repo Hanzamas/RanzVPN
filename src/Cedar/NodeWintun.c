@@ -6,7 +6,7 @@
 // that the node creates goes when the node closes it, or with the process. A session of an adapter has two rings: the
 // I/O thread of an adapter queue (NodeAddQueue) waits for the read event of the session and takes the IP packets of the
 // host's own stack from one ring, and NodeWintunSend puts the packets for the host into the other. The addresses, the
-// routes and the DNS servers of an adapter are set through IP Helper.
+// routes, the DNS servers and the forwarding of an adapter are set through IP Helper.
 
 #include "Node.h"
 
@@ -199,6 +199,12 @@ static void NodeWintunDrain(NODE_QUEUE *q, void *param) {
 // adapter that carries no packet. An adapter of the same name that is still going away is waited for. NULL when
 // wintun.dll is missing or the adapter cannot come up (the node log says why).
 NODE_WINTUN *NodeWintunNew(NODE *n, const wchar_t *name, NODE_WINTUN_PROC *proc, void *param) {
+	return NodeWintunNewGuid(n, name, NULL, proc, param);
+}
+
+// NodeWintunNew with the GUID requested for the adapter, NULL for the one of its name: the adapter of a VRF asks for
+// the GUID of its node and VRF (NodeVrfAdapter.c; SDN-5, #181). An adapter that still holds the GUID is waited for.
+NODE_WINTUN *NodeWintunNewGuid(NODE *n, const wchar_t *name, const GUID *requested, NODE_WINTUN_PROC *proc, void *param) {
 	char queue_name[MAX_SIZE];
 	GUID guid;
 	UINT error = 0;
@@ -213,7 +219,10 @@ NODE_WINTUN *NodeWintunNew(NODE *n, const wchar_t *name, NODE_WINTUN_PROC *proc,
 		return NULL;
 	}
 
-	NodeWintunGuid(&guid, name);
+	if (requested != NULL)
+		guid = *requested;
+	else
+		NodeWintunGuid(&guid, name);
 
 	// An adapter of this name that the node closed a moment ago may still hold the GUID
 	WINTUN_ADAPTER_HANDLE a = NULL;
@@ -561,4 +570,53 @@ bool NodeWintunSetDns(NODE_WINTUN *w, const char *servers, const char *suffix) {
 
 	NodeLog(w->Node, "Wintun adapter %S: DNS servers %s, suffix %s", w->Name, servers, IsEmptyStr(suffix) ? "none" : suffix);
 	return true;
+}
+
+// Let the Windows IP stack forward between an adapter and the other interfaces of the host, or not: Forwarding,
+// WeakHostSend and WeakHostReceive of its IPv4 and IPv6 interfaces, through SetIpInterfaceEntry. A gateway or an exit
+// takes them on (SDN-5, #181), so that the strong host model does not drop a packet that the adapter carries for another
+// interface or the reply to it; any other node takes them off, whatever the interface kept from before. An interface of
+// a family that the adapter does not have is left alone. False when one could not be read or set; the node log says
+// which.
+bool NodeWintunSetForwarding(NODE_WINTUN *w, bool on) {
+	bool ok = true;
+
+	if (w == NULL)
+		return false;
+
+	for (UINT i = 0; i < 2; i++) {
+		MIB_IPINTERFACE_ROW row;
+		ADDRESS_FAMILY family = (ADDRESS_FAMILY)(i == 0 ? AF_INET : AF_INET6);
+
+		InitializeIpInterfaceEntry(&row);
+		row.Family = family;
+		row.InterfaceLuid = w->Luid;
+		DWORD err = GetIpInterfaceEntry(&row);
+		if (err == ERROR_NOT_FOUND && family == AF_INET6)
+			continue;
+
+		// An interface that has the three as they should be is left as it is
+		if (err == NO_ERROR && (row.ForwardingEnabled != FALSE) == on && (row.WeakHostSend != FALSE) == on && (row.WeakHostReceive != FALSE) == on)
+			continue;
+
+		if (err == NO_ERROR) {
+			row.ForwardingEnabled = (on ? TRUE : FALSE);
+			row.WeakHostSend = (on ? TRUE : FALSE);
+			row.WeakHostReceive = (on ? TRUE : FALSE);
+			// SetIpInterfaceEntry refuses the site prefix length that GetIpInterfaceEntry gives (ERROR_INVALID_PARAMETER):
+			// it goes back as 0, as the winipcfg package of WireGuard sets it
+			row.SitePrefixLength = 0;
+			err = SetIpInterfaceEntry(&row);
+		}
+
+		if (err != NO_ERROR) {
+			NodeLog(w->Node, "Wintun adapter %S: the forwarding of %s could not be set %s (error %u)", w->Name, family == AF_INET ? "IPv4" : "IPv6", on ? "on" : "off", (UINT)err);
+			ok = false;
+		}
+	}
+
+	if (ok)
+		NodeLog(w->Node, "Wintun adapter %S: forwarding, weak host send and weak host receive %s", w->Name, on ? "on" : "off");
+
+	return ok;
 }
