@@ -936,17 +936,13 @@ static void PolicyFlowPorts(const POLICY_PACKET *pk, UINT *sport, UINT *dport) {
 	}
 }
 
-// Whether the conntrack table tracks a packet: an IP packet to one address that is no later fragment, of TCP (not a
-// reset), UDP, an ICMP echo or another protocol
+// Whether a packet is of a flow that the conntrack table tracks: an IP packet to one address that is no later fragment,
+// of TCP, UDP, an ICMP echo or another protocol (PolicyJudgeFlow starts no flow with a TCP reset)
 static bool PolicyTracks(const POLICY_PACKET *pk) {
 	if (pk->Family == 0 || pk->Group || pk->Later)
 		return false;
-	if (pk->Class == POLICY_CLASS_TCP)
-		return (pk->TcpFlags & POLICY_TCP_RST) == 0;
-	if (pk->Class == POLICY_CLASS_ICMP)
-		return pk->Echo;
 
-	return true;
+	return pk->Class != POLICY_CLASS_ICMP || pk->Echo;
 }
 
 // Whether flow f is the flow of a frame whose source is its side s, from the member from (record rf) to the member to
@@ -1106,9 +1102,10 @@ static UINT PolicyJudgeFlow(POLICY_ENGINE *p, const POLICY_STATE *st, const POLI
 		f = NULL;
 	}
 
-	// The first frame of a flow. A flow of the same key between other members is taken over when the rules allow the frame.
+	// The first frame of a flow, unless it is a TCP reset, which ends a flow and starts none. A flow of the same key
+	// between other members is taken over when the rules allow the frame.
 	index = PolicyMatchPacket(t, pk, vlan, rf, rt);
-	if (PolicyActionOf(t, index) == POLICY_ALLOW) {
+	if (PolicyActionOf(t, index) == POLICY_ALLOW && (pk->Class != POLICY_CLASS_TCP || (pk->TcpFlags & POLICY_TCP_RST) == 0)) {
 		if (f == NULL) {
 			UINT left = POLICY_LEFT_NONE;
 
