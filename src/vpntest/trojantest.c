@@ -2,16 +2,19 @@
 // Named Trojan-posture test of vpntest ("trojan" command, CORE-S2-2 #70)
 //
 // The own-decoy reverse proxy and the client ClientHello posture of the TLS transport of the new core
-// (src/Core/TransportTls.c, src/Core/TransportDecoy.c), over TLS on a test port of the loopback interface, never 443,
-// with the server certificate read from the store by its thumbprint. The checks:
-// - the own-decoy reverse proxy: a server with a decoy configured reverse-proxies a prober, one that does not open a
-//   valid Ranz session in the first bytes after the TLS handshake, to a website the test runs on the loopback interface,
-//   so the prober reads that website's bytes byte for byte over its own TLS session; a valid Ranz client, over the same
-//   server, reaches the Noise session and carries records;
+// (src/Core/TransportTls.c, src/Core/TransportDecoy.c, src/Core/TransportHello.c), over TLS on a test port of the
+// loopback interface, never 443, with the server certificate read from the store by its thumbprint. The checks:
+// - the own-decoy reverse proxy: a server with a decoy configured reverse-proxies a prober, one whose first bytes after
+//   the TLS handshake do not authenticate, to a website the test runs on the loopback interface, so the prober reads that
+//   website's bytes byte for byte over its own TLS session and the website reads the prober's bytes byte for byte. One
+//   prober sends an HTTP request, another a well-formed first handshake frame of a Ranz client that does not know the
+//   server's key, which fails authentication. A valid Ranz client, over the same server, reaches the Noise session and
+//   carries records; a server with a decoy and no static key to authenticate with does not open;
 // - the classifier on its own (TransportDecoyIsHandshake): a real first handshake frame is taken, an HTTP request and
-//   other first bytes are not;
+//   other first bytes are not; the authentication on its own (TransportDecoyAuthenticate): the first handshake frame
+//   of a client that knows the server's key authenticates, and not with another key, another binding or cut short;
 // - the ClientHello split: with the split toggle on, the client's ClientHello crosses two TCP segments (a capture
-//   listener records the segments); with it off, one segment;
+//   listener records the segments as they come) and no segment holds the whole server name; with it off, one segment;
 // - the SNI omission: with the toggle on, the ClientHello carries no server_name extension; with it off, it carries the
 //   server name.
 // The test needs no administrator rights: it does not set the machine's Schannel group list (the server and client
@@ -42,6 +45,7 @@
 #define	TROJAN_POLL			50					// Poll interval of the capture listener and the decoy website (ms)
 #define	TROJAN_CAP			16384				// Bytes of a captured ClientHello or a proxied answer at most
 #define	TROJAN_RECORD_HEADER	5				// A TLS record header: the type (1), the version (2) and the length (2)
+#define	TROJAN_SEGMENTS		8					// The segments of a captured ClientHello whose bounds the test keeps
 
 // The website's answer, which the prober must read byte for byte; the body ends at the close (Connection: close)
 static const char trojan_decoy_page[] =
@@ -67,6 +71,8 @@ typedef struct TROJAN_SITE
 	USHORT Port;						// The port it bound
 	volatile LONG Stop;					// The test asks it to stop
 	UINT NumServed;						// The connections it served
+	UCHAR Request[TROJAN_CAP];			// The bytes it read on the last connection ...
+	UINT RequestSize;					// ... and their number
 } TROJAN_SITE;
 
 // The server of the decoy case: its listener accepts valid Ranz streams only, because a prober is reverse-proxied before
@@ -203,6 +209,74 @@ static void TrojanClassifier(TROJAN_CTX *ctx)
 		TransportDecoyIsHandshake(NULL, 0) == false, "  a frame cut short, too few bytes and no bytes are not taken", "one was");
 }
 
+// The first handshake frame of a Ranz client to the server whose static key is server_pub, bound by binding (its type and
+// binding_size bytes), as the session layer writes one: the 4-byte length, then the record. Its bytes into buf (max at
+// most); its size, 0 when it cannot be made.
+static UINT TrojanFrame(UCHAR *buf, UINT max, UCHAR *server_pub, UINT binding_type, UCHAR *binding, UINT binding_size)
+{
+	UCHAR key[NOISE_KEY_SIZE], pub[NOISE_KEY_SIZE];
+	NOISE_SESSION_CONFIG c;
+	NOISE_SESSION *s = ZeroMalloc(sizeof(NOISE_SESSION));
+	UINT record_size = 0, size = 0;
+
+	CryptoX25519GenerateKey(key, pub);
+	TrojanConfig(&c, key, server_pub);
+	c.BindingType = binding_type;
+	c.Binding = binding;
+	c.BindingSize = binding_size;
+
+	if (max > TRANSPORT_FRAME_HEADER &&
+		NoiseSessionConnect(s, &c, Tick64(), buf + TRANSPORT_FRAME_HEADER, max - TRANSPORT_FRAME_HEADER, &record_size))
+	{
+		buf[0] = (UCHAR)(record_size >> 24);
+		buf[1] = (UCHAR)(record_size >> 16);
+		buf[2] = (UCHAR)(record_size >> 8);
+		buf[3] = (UCHAR)record_size;
+		size = TRANSPORT_FRAME_HEADER + record_size;
+	}
+
+	NoiseSessionFree(s);
+	Free(s);
+	Zero(key, sizeof(key));
+
+	return size;
+}
+
+// The authentication (TransportDecoyAuthenticate): the first handshake frame of a client that knows the server's key and
+// binds the session authenticates; read with another server's key, with another binding (a replay into another TLS
+// session) or cut short, it does not, and neither does an HTTP request
+static void TrojanAuthenticate(TROJAN_CTX *ctx)
+{
+	UCHAR server[NOISE_KEY_SIZE], server_pub[NOISE_KEY_SIZE], other[NOISE_KEY_SIZE], other_pub[NOISE_KEY_SIZE];
+	UCHAR binding[NOISE_EXPORTER_SIZE], moved[NOISE_EXPORTER_SIZE];
+	UCHAR *frame = ZeroMalloc(TROJAN_CAP);
+
+	Print("[the authentication: the first handshake message read with the server's key and the binding of the stream]\n");
+
+	CryptoX25519GenerateKey(server, server_pub);
+	CryptoX25519GenerateKey(other, other_pub);
+	for (UINT i = 0; i < NOISE_EXPORTER_SIZE; i++)
+	{
+		binding[i] = (UCHAR)(i + 1);
+		moved[i] = (UCHAR)(i + 2);
+	}
+
+	UINT size = TrojanFrame(frame, TROJAN_CAP, server_pub, NOISE_BINDING_EXPORTER, binding, NOISE_EXPORTER_SIZE);
+	TrojanCheck(ctx, size != 0 && TransportDecoyAuthenticate(frame, size, server, NULL, NOISE_BINDING_EXPORTER, binding, NOISE_EXPORTER_SIZE),
+		"  the first handshake frame of a client that knows the server's key authenticates", "it did not (%u bytes)", size);
+	TrojanCheck(ctx, size != 0 && TransportDecoyAuthenticate(frame, size, other, NULL, NOISE_BINDING_EXPORTER, binding, NOISE_EXPORTER_SIZE) == false,
+		"  read with another server's key, it does not", "it did");
+	TrojanCheck(ctx, size != 0 && TransportDecoyAuthenticate(frame, size, server, NULL, NOISE_BINDING_EXPORTER, moved, NOISE_EXPORTER_SIZE) == false,
+		"  read with another binding, as a replay into another TLS session, it does not", "it did");
+	TrojanCheck(ctx, size != 0 && TransportDecoyAuthenticate(frame, size - 1, server, NULL, NOISE_BINDING_EXPORTER, binding, NOISE_EXPORTER_SIZE) == false &&
+		TransportDecoyAuthenticate((const UCHAR *)TROJAN_PROBE, (UINT)StrLen(TROJAN_PROBE), server, NULL, NOISE_BINDING_EXPORTER, binding,
+		NOISE_EXPORTER_SIZE) == false, "  cut short it does not, and an HTTP request does not", "one did");
+
+	Zero(server, sizeof(server));
+	Zero(other, sizeof(other));
+	Free(frame);
+}
+
 //
 // The decoy website
 //
@@ -225,7 +299,6 @@ static bool TrojanHasBlankLine(const UCHAR *buf, UINT size)
 static void TrojanSiteThread(THREAD *thread, void *param)
 {
 	TROJAN_SITE *site = (TROJAN_SITE *)param;
-	UCHAR buf[2048];
 
 	while (InterlockedCompareExchange(&site->Stop, 0, 0) == 0)
 	{
@@ -245,28 +318,40 @@ static void TrojanSiteThread(THREAD *thread, void *param)
 			continue;
 		}
 
-		// The request, up to the blank line or the first read, then the page, then the close
+		// The request: what comes up to the blank line of an HTTP request, or up to a pause once some bytes came, as a
+		// website answers a request it cannot parse; then the page, then the close
+		UINT size = 0;
 		UINT64 end = Tick64() + TROJAN_SHORT;
-		while (Tick64() < end)
+		while (size < sizeof(site->Request) && Tick64() < end)
 		{
 			Zero(&p, sizeof(p));
 			p.fd = c;
 			p.events = POLLRDNORM;
 			if (WSAPoll(&p, 1, TROJAN_POLL) <= 0)
 			{
+				if (size != 0)
+				{
+					break;
+				}
 				continue;
 			}
-			int n = recv(c, (char *)buf, sizeof(buf), 0);
-			if (n <= 0 || TrojanHasBlankLine(buf, (UINT)n))
+			int n = recv(c, (char *)site->Request + size, (int)(sizeof(site->Request) - size), 0);
+			if (n <= 0)
+			{
+				break;
+			}
+			size += (UINT)n;
+			if (TrojanHasBlankLine(site->Request, size))
 			{
 				break;
 			}
 		}
+		site->RequestSize = size;
+		site->NumServed++;
 
 		send(c, trojan_decoy_page, (int)(sizeof(trojan_decoy_page) - 1), 0);
 		shutdown(c, SD_SEND);
 		closesocket(c);
-		site->NumServed++;
 	}
 }
 
@@ -363,8 +448,8 @@ static void TrojanServerThread(THREAD *thread, void *param)
 }
 
 // The valid client's end of a session over stream s against the server whose public key is server_pub: the Noise
-// session comes up, bound to the TLS exporter, and a control and a data record go to the server and come back. The
-// session takes s.
+// session comes up, bound to the TLS exporter, and a data record goes to the server and comes back. The session takes
+// s.
 static void TrojanValidSession(TROJAN_CTX *ctx, TRANSPORT_STREAM *s, UCHAR *server_pub)
 {
 	UCHAR key[NOISE_KEY_SIZE], pub[NOISE_KEY_SIZE];
@@ -416,42 +501,96 @@ static void TrojanReadAnswer(TRANSPORT_STREAM *s, UCHAR *buf, UINT max, UINT *si
 	}
 }
 
-// The own-decoy reverse proxy: a prober that sends an HTTP request after the TLS handshake reads the decoy website's
-// bytes byte for byte over its own TLS session; a valid Ranz client over the same server reaches the Noise session
+// One prober of the decoy case: it completes the TLS handshake with the server at address, sends its first bytes and
+// reads what comes back until the server closes. With handshake its first bytes are a well-formed first handshake frame
+// of a Ranz client that does not know this server's key (it is made for another server), bound to the prober's own TLS
+// session as a real client binds it, so only its authentication fails; else they are an HTTP request. It must read the
+// decoy website's bytes byte for byte, and the website must read its first bytes byte for byte.
+static void TrojanProber(TROJAN_CTX *ctx, TRANSPORT *prober, char *address, TROJAN_SITE *site, bool handshake)
+{
+	UCHAR other[NOISE_KEY_SIZE], other_pub[NOISE_KEY_SIZE], binding[NOISE_MAX_BINDING];
+	UCHAR *sent = ZeroMalloc(TROJAN_CAP);
+	UCHAR *answer = ZeroMalloc(TROJAN_CAP);
+	UINT sent_size = 0, answer_size = 0, binding_size = 0;
+	UINT page = (UINT)(sizeof(trojan_decoy_page) - 1);
+	UINT served = site->NumServed;
+	char *kind = (handshake ? "a handshake frame that fails authentication" : "an HTTP request");
+	char what[MAX_SIZE];
+
+	TRANSPORT_STREAM *p = TransportDial(prober, address, NULL);
+	bool dialled = (p != NULL);
+	if (p != NULL && handshake)
+	{
+		CryptoX25519GenerateKey(other, other_pub);
+		UINT binding_type = TransportBinding(p, binding, sizeof(binding), &binding_size);
+		sent_size = TrojanFrame(sent, TROJAN_CAP, other_pub, binding_type, binding, binding_size);
+		Zero(other, sizeof(other));
+	}
+	else if (p != NULL)
+	{
+		sent_size = StrLen(TROJAN_PROBE);
+		Copy(sent, TROJAN_PROBE, sent_size);
+	}
+	bool wrote = (sent_size != 0 && TransportWrite(p, sent, sent_size));
+	if (wrote)
+	{
+		TrojanReadAnswer(p, answer, TROJAN_CAP, &answer_size);
+	}
+	TransportClose(p);
+
+	Format(what, sizeof(what), "  a prober completes the TLS handshake and sends %s", kind);
+	TrojanCheck(ctx, wrote, what, "dialled %u, made %u bytes", (UINT)dialled, sent_size);
+	Format(what, sizeof(what), "  the prober that sent %s reads the decoy website's bytes byte for byte over its own TLS session", kind);
+	TrojanCheck(ctx, answer_size == page && Cmp(answer, trojan_decoy_page, page) == 0, what, "read %u of %u bytes", answer_size, page);
+	Format(what, sizeof(what), "  the decoy website reads the bytes of the prober that sent %s byte for byte", kind);
+	TrojanCheck(ctx, site->NumServed == served + 1 && site->RequestSize == sent_size && Cmp(site->Request, sent, sent_size) == 0, what,
+		"%u connections, read %u of %u bytes", site->NumServed - served, site->RequestSize, sent_size);
+
+	Free(answer);
+	Free(sent);
+}
+
+// The own-decoy reverse proxy: a prober whose first bytes after the TLS handshake do not authenticate reads the decoy
+// website's bytes byte for byte over its own TLS session; a valid Ranz client over the same server reaches the Noise
+// session
 static void TrojanDecoy(TROJAN_CTX *ctx, char *thumbprint)
 {
-	TROJAN_SITE site;
+	TROJAN_SITE *site = ZeroMalloc(sizeof(TROJAN_SITE));
 	TROJAN_SERVER srv;
 	TRANSPORT_TLS_CONFIG server_cfg, client_cfg, prober_cfg;
 	char address[TRANSPORT_ADDRESS_SIZE];
-	UCHAR *answer = ZeroMalloc(TROJAN_CAP);
-	UINT answer_size = 0;
 
 	Print("[the own-decoy reverse proxy]\n");
 
-	Zero(&site, sizeof(site));
 	Zero(&srv, sizeof(srv));
-	THREAD *site_thread = TrojanSiteStart(&site);
+	THREAD *site_thread = TrojanSiteStart(site);
 	if (TrojanCheck(ctx, site_thread != NULL, "  the decoy website listens on the loopback interface", "it could not listen") == false)
 	{
-		Free(answer);
+		Free(site);
 		return;
 	}
 
-	// The server with the decoy, and a valid client and a prober that both pin its certificate
+	// The server with the decoy, which authenticates the first handshake message with the static key of its sessions,
+	// and a valid client and a prober that both pin its certificate
+	CryptoX25519GenerateKey(srv.Key, srv.Pub);
 	TransportTlsDefaultConfig(&server_cfg, thumbprint, false);
 	server_cfg.SetGroups = false;
-	Format(server_cfg.Decoy, sizeof(server_cfg.Decoy), "127.0.0.1:%u", (UINT)site.Port);
+	Format(server_cfg.Decoy, sizeof(server_cfg.Decoy), "127.0.0.1:%u", (UINT)site->Port);
 	TransportTlsDefaultConfig(&client_cfg, thumbprint, false);
 	client_cfg.SetGroups = false;
 	TransportTlsDefaultConfig(&prober_cfg, thumbprint, false);
 	prober_cfg.SetGroups = false;
 
+	// Without a static key, a server with a decoy does not open
+	TRANSPORT *keyless = TransportTlsServerNew(&server_cfg);
+	TrojanCheck(ctx, keyless == NULL, "  a server with a decoy and no static key to authenticate with does not open", "it opened");
+	TransportTlsFree(keyless);
+
+	server_cfg.DecoyKey = srv.Key;
 	TRANSPORT *server = TransportTlsServerNew(&server_cfg);
 	TRANSPORT *client = TransportTlsClientNew(&client_cfg);
 	TRANSPORT *prober = TransportTlsClientNew(&prober_cfg);
 
-	CryptoX25519GenerateKey(srv.Key, srv.Pub);
 	srv.Listener = (server != NULL ? TransportListen(server, TROJAN_LISTEN) : NULL);
 	THREAD *srv_thread = (srv.Listener != NULL ? NewThread(TrojanServerThread, &srv) : NULL);
 
@@ -465,23 +604,13 @@ static void TrojanDecoy(TROJAN_CTX *ctx, char *thumbprint)
 		TrojanCheck(ctx, valid != NULL, "  the valid client completes the TLS handshake", "it did not");
 		TrojanValidSession(ctx, valid, srv.Pub);
 
-		// The prober: it completes the TLS handshake, sends an HTTP request and reads the website's bytes
-		TRANSPORT_STREAM *p = TransportDial(prober, address, NULL);
-		bool dialled = (p != NULL);
-		bool wrote = (dialled && TransportWrite(p, TROJAN_PROBE, (UINT)StrLen(TROJAN_PROBE)));
-		if (wrote)
-		{
-			TrojanReadAnswer(p, answer, TROJAN_CAP, &answer_size);
-		}
-		TransportClose(p);
+		// The probers: an HTTP request, then a handshake frame that fails authentication
+		TrojanProber(ctx, prober, address, site, false);
+		TrojanProber(ctx, prober, address, site, true);
 
-		UINT page = (UINT)(sizeof(trojan_decoy_page) - 1);
-		TrojanCheck(ctx, dialled && wrote, "  the prober completes the TLS handshake and sends an HTTP request", "dialled %u, wrote %u", (UINT)dialled, (UINT)wrote);
-		TrojanCheck(ctx, answer_size == page && Cmp(answer, trojan_decoy_page, page) == 0,
-			"  the prober reads the decoy website's bytes byte for byte over its own TLS session", "read %u of %u bytes", answer_size, page);
-		TrojanCheck(ctx, srv.NumSessions == 1 && site.NumServed == 1,
-			"  one valid session reached the server and one connection reached the website: the prober never became a session",
-			"%u sessions, %u served", srv.NumSessions, site.NumServed);
+		TrojanCheck(ctx, srv.NumSessions == 1 && site->NumServed == 2,
+			"  one valid session reached the server and both probers reached the website: no prober became a session",
+			"%u sessions, %u served", srv.NumSessions, site->NumServed);
 	}
 
 	InterlockedExchange(&srv.Stop, 1);
@@ -494,9 +623,9 @@ static void TrojanDecoy(TROJAN_CTX *ctx, char *thumbprint)
 	TransportTlsFree(prober);
 	TransportTlsFree(client);
 	TransportTlsFree(server);
-	TrojanSiteStop(&site, site_thread);
+	TrojanSiteStop(site, site_thread);
 	Zero(srv.Key, sizeof(srv.Key));
-	Free(answer);
+	Free(site);
 }
 
 //
@@ -613,6 +742,28 @@ static bool TrojanClientHelloSni(const UCHAR *buf, UINT size, char *host, UINT h
 	return false;
 }
 
+// The first segment of a captured flight (total bytes in buf, num segments that start at starts) that holds the whole
+// server name TROJAN_HOST; INFINITE when none does
+static UINT TrojanNameHolder(const UCHAR *buf, UINT total, const UINT *starts, UINT num)
+{
+	UINT len = StrLen(TROJAN_HOST);
+
+	for (UINT i = 0; i < num && i < TROJAN_SEGMENTS; i++)
+	{
+		UINT end = (i + 1 < num && i + 1 < TROJAN_SEGMENTS ? starts[i + 1] : total);
+
+		for (UINT pos = starts[i]; pos + len <= end; pos++)
+		{
+			if (Cmp(buf + pos, TROJAN_HOST, len) == 0)
+			{
+				return i;
+			}
+		}
+	}
+
+	return INFINITE;
+}
+
 // One ClientHello case: a client with the split and the omission toggles as given dials the capture listener; the
 // listener records the segments of the first flight and keeps the bytes of the ClientHello record
 static void TrojanHelloCase(TROJAN_CTX *ctx, char *thumbprint, bool split, bool omit)
@@ -625,6 +776,9 @@ static void TrojanHelloCase(TROJAN_CTX *ctx, char *thumbprint, bool split, bool 
 	char host[256];
 	DWORD on = 1;
 	UINT total = 0, segments = 0, record = 0;
+	UINT starts[TROJAN_SEGMENTS];
+
+	Zero(starts, sizeof(starts));
 
 	Print("[the ClientHello: split %s, SNI %s]\n", split ? "on" : "off", omit ? "omitted" : "sent");
 
@@ -695,6 +849,10 @@ static void TrojanHelloCase(TROJAN_CTX *ctx, char *thumbprint, bool split, bool 
 		{
 			break;
 		}
+		if (segments < TROJAN_SEGMENTS)
+		{
+			starts[segments] = total;
+		}
 		segments++;
 		total += (UINT)n;
 
@@ -729,6 +887,11 @@ static void TrojanHelloCase(TROJAN_CTX *ctx, char *thumbprint, bool split, bool 
 		{
 			TrojanCheck(ctx, segments >= 2, "  with the split toggle on, the ClientHello crosses two TCP segments", "it came in %u segment(s)", segments);
 		}
+		if (split && omit == false)
+		{
+			UINT holder = TrojanNameHolder(buf, total, starts, segments);
+			TrojanCheck(ctx, holder == INFINITE, "  with the split toggle on, no segment holds the whole server name", "segment %u holds it", holder + 1);
+		}
 		else
 		{
 			TrojanCheck(ctx, segments == 1, "  with the split toggle off, the ClientHello is one TCP segment", "it came in %u segments", segments);
@@ -750,7 +913,7 @@ static void TrojanHelloCase(TROJAN_CTX *ctx, char *thumbprint, bool split, bool 
 	Free(buf);
 }
 
-RANZ_TEST_TAGS("trojan", trojan_test, "core", "Trojan posture: a server reverse-proxies a prober to an own decoy website (byte for byte), a valid client reaches the session, and the client splits its ClientHello into two TCP segments and omits the SNI to our own servers.");
+RANZ_TEST_TAGS("trojan", trojan_test, "core", "Trojan posture: a server reverse-proxies a prober whose first bytes do not authenticate to an own decoy website (byte for byte), a valid client reaches the session; the client splits its ClientHello into two TCP segments, the cut in the server name, and omits the SNI to our own servers.");
 void trojan_test(UINT num, char **arg)
 {
 	TROJAN_CTX *ctx = ZeroMalloc(sizeof(TROJAN_CTX));
@@ -768,6 +931,7 @@ void trojan_test(UINT num, char **arg)
 	if (TrojanCheck(ctx, CryptoInit(), "the crypto module of the new core runs on CNG", "CryptoInit failed"))
 	{
 		TrojanClassifier(ctx);
+		TrojanAuthenticate(ctx);
 
 		// The server certificate: a self-signed ECDSA P-256 certificate in the current user's My store, its key in the
 		// KSP, read by its thumbprint, which the server loads and the clients pin
