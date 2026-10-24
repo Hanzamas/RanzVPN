@@ -21,5 +21,8 @@ void NodeShapeApplied(NODE *n, const struct CONTROL_STATE *st);
 bool NodeShapeOutput(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UCHAR *packet, UINT size);
 bool NodeClientStart(NODE *n);
 void NodeClientStop(NODE *n);
+struct CONTROL_LEASES *NodeDhcpStart(NODE *n);
+void NodeDhcpStop(NODE *n);
+void NodeDhcpApplied(NODE *n, const struct CONTROL_STATE *st);
 
 #endif // NODE_INTERNAL_H

@@ -230,6 +230,9 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	// The host's adapter of each VRF takes the MTU of the Generation that went in, before the overlay reports it
 	if (swapped)
 		NodeShapeApplied(ov->Node, st);
+	// The DHCP responders of the L2 Networks of the Generation (NodeDhcp.c; SDN-43, #236)
+	if (swapped)
+		NodeDhcpApplied(ov->Node, st);
 
 	Lock(ov->Lock);
 	{
@@ -618,6 +621,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 		cc.StaticKey = cfg->Key->Private;
 	cc.Proc = NodeOverlayState;
 	cc.Param = ov;
+	// The leases of the DHCP responders go on the control stream (NodeDhcp.c; SDN-43, #236)
+	cc.Leases = NodeDhcpStart(n);
 
 	ov->Thread = CreateThread(NULL, 0, NodeOverlayThread, ov, 0, &thread_id);
 	ov->Control = (ov->Thread != NULL && cfg->Control != NULL ? ControlStart(&cc) : NULL);
@@ -650,6 +655,7 @@ void NodeOverlayStop(NODE *n) {
 	ControlStop(ov->Control);
 	NodeSwapVrfs(n, NULL);
 	NodeShapeStop(n);
+	NodeDhcpStop(n);
 	ov->Halt = true;
 	if (ov->Thread != NULL) {
 		WaitForSingleObject(ov->Thread, INFINITE);

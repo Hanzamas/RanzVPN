@@ -119,6 +119,7 @@
 #define NODE_DHCP_LAN_HOLD     900000 // ms that the responder stays silent after a DHCP server of the LAN answered
 #define NODE_DHCP_MAX_QUEUE    64     // Frames that wait to be sent at most
 #define NODE_DHCP_MAX_FRAME    1514   // Bytes of a frame that the responder takes or sends at most
+#define NODE_DHCP_TICK         50     // ms between two runs of the thread of the responders of a node when no frame wakes it
 
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
@@ -266,6 +267,9 @@ struct NODE {
 
 	// The MTU, the MSS clamp and the rate limits of the overlay (NodeShape.c; SDN-20, #196), NULL while it does not run
 	NODE_SHAPE *Shape;
+
+	// The DHCP responders of the L2 Networks (NodeDhcp.c; SDN-43, #236), NULL while the overlay does not run
+	NODE_DHCPS *Dhcp;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -370,6 +374,7 @@ struct NODE_DHCP_STATUS {
 	UINT64 Arps;       // The ARP replies it sent for its own address
 	UINT64 Ignored;    // The DHCP messages of clients it took and did not answer
 	UINT64 LanAnswers; // The answers of a DHCP server of the LAN that it saw
+	UINT64 Changes;    // The changes of its leases: one for each lease that began, was renewed, moved or ended
 };
 
 // What NodeGetStatus reports
@@ -461,6 +466,8 @@ bool NodeBgpWithdraw(NODE *n, char *prefix);
 void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
 
 // NodeDhcp.c
+struct CONTROL_DHCP;
+struct SWITCH;
 NODE_DHCP *NodeDhcpNew(const NODE_DHCP_CONFIG *cfg, UINT64 now);
 void NodeDhcpFree(NODE_DHCP *d);
 void NodeDhcpSetConfig(NODE_DHCP *d, const NODE_DHCP_CONFIG *cfg, UINT64 now);
@@ -468,6 +475,10 @@ void NodeDhcpInput(NODE_DHCP *d, UINT64 now, const UCHAR *frame, UINT size);
 UINT NodeDhcpOutput(NODE_DHCP *d, UINT64 now, UCHAR *buf, UINT size);
 UINT NodeDhcpGetLeases(NODE_DHCP *d, UINT64 now, NODE_DHCP_LEASE *leases, UINT max);
 void NodeDhcpGetStatus(NODE_DHCP *d, UINT64 now, NODE_DHCP_STATUS *st);
+void NodeDhcpConfigOf(NODE_DHCP_CONFIG *cfg, const struct CONTROL_DHCP *c, const UCHAR *mac);
+bool NodeDhcpAttach(NODE *n, const char *network, struct SWITCH *sw, UINT vlan);
+void NodeDhcpDetach(NODE *n, const char *network);
+bool NodeDhcpGetNetwork(NODE *n, const char *network, NODE_DHCP_STATUS *st);
 
 // NodeHarden.c
 void NodeHarden();

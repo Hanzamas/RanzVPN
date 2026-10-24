@@ -73,6 +73,9 @@ src/Cedar  NodeNatInbound  fuzz_nat
 # The shaping of the overlay (SDN-20 #196) reads the packet of the host that NodeOverlayInput copied: no parser word in
 # its name, listed as a parser
 src/Cedar  NodeShapeOutput      exempt  only AdjustTcpMssL3 of TcpIp reads the bytes, to clamp the MSS of a TCP SYN, and fuzz_tcpip drives it through AdjustTcpMssL2; the rate limits take the size of the packet alone
+# The DHCP responder of an L2 Network (SDN-43 #236) reads the frames that the members of the switch of the Network send:
+# the DHCP messages of the clients and of a DHCP server of the LAN, and the ARP requests
+src/Cedar  NodeDhcpInput  fuzz_nodedhcp
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen

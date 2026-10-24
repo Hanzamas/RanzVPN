@@ -47,6 +47,10 @@ target_link_libraries(cedar PRIVATE corepeer)
 # #179), with the transport and session modules it runs on. Its nanopb messages stay inside it.
 target_link_libraries(cedar PRIVATE corecontrol)
 
+# The switch module of the new core, whose switch of an L2 Network the DHCP responder of the Node module joins as a
+# member (NodeDhcp.c; SDN-43, #236). It keeps the build options of the new core to itself, as corepeer does.
+target_link_libraries(cedar PRIVATE coreswitch)
+
 # Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that
 # print it include it (Cedar.c, Admin.c, Server.c, Command.c), so a new stamp rebuilds those four
 # and not the whole library. configure_file leaves the header alone when its content is the same.

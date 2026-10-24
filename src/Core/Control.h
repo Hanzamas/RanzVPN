@@ -28,6 +28,11 @@
 #define CONTROL_MAX_ADDRESSES  16                            // The addresses of a node (NodeConfig.addresses, Peer.addresses)
 #define CONTROL_MAX_NATS       16                            // The 1:1 NAT rules of a node (NodeConfig.nat of control.options)
 #define CONTROL_MAX_ROUTES     16                            // The routes of a peer (Peer.routes of control.options)
+#define CONTROL_MAX_DHCPS      16                            // The DHCP responders of a node, one per L2 Network (SDN-43, #236)
+#define CONTROL_MAX_DNS        4                             // The DNS servers of a responder (Dhcp.dns of control.options)
+#define CONTROL_MAX_RESERVED   16                            // The reservations of its pool (Dhcp.reserved of control.options)
+#define CONTROL_MAX_LEASES     1024                          // The leases of one responder that one Leases message holds (control.options)
+#define CONTROL_HOST_NAME_SIZE 64                            // The host name of a lease with its terminating NUL (Lease.host_name)
 #define CONTROL_MAX_FRAME      (1 << 20)                     // The largest frame the client reads
 #define CONTROL_TIMEOUT        10000                         // ms for the handshake, and for a frame to come whole
 #define CONTROL_RETRY          1000                          // ms between two attempts to open the stream
@@ -84,8 +89,42 @@ typedef struct CONTROL_VRF {
 	UINT64 RateLimit;             // Bits per second that each node sends in it, 0 for no limit
 } CONTROL_VRF;
 
+// A reservation of the pool of a DHCP responder: an IPv4 prefix (Prefix of Dhcp.reserved)
+typedef struct CONTROL_RESERVED {
+	UCHAR Address[4]; // The prefix, in network byte order
+	UINT Length;      // ... and its length
+} CONTROL_RESERVED;
+
+// The DHCP responder of an L2 Network that the node answers DHCP for (Network.dhcp of the control protocol; SDN-43, #236):
+// only a Network object whose Dhcp is in the mode pool carries one. The addresses are IPv4, in network byte order.
+typedef struct CONTROL_DHCP {
+	char Network[CONTROL_NAME_SIZE];                 // The L2 Network
+	UINT VrfId;                                      // ... and its VRF
+	UCHAR Pool[4];                                   // The IPv4 pool of the Network ...
+	UINT PoolLength;                                 // ... and its length
+	UCHAR Address[4];                                // The responder's own address in the pool: its server identifier
+	UCHAR Gateway[4];                                // The router of the clients, 0.0.0.0 for none
+	UINT NumDns;                                     // The DNS servers of the clients
+	UCHAR Dns[CONTROL_MAX_DNS][4];                   // ...
+	UINT LeaseTime;                                  // The lease time, in seconds
+	UINT NumReserved;                                // The reservations of the Network in the pool
+	CONTROL_RESERVED Reserved[CONTROL_MAX_RESERVED]; // ...
+} CONTROL_DHCP;
+
+// One lease of a DHCP responder as the node reports it (Lease of the control protocol)
+typedef struct CONTROL_LEASE {
+	UCHAR Mac[6];                          // The client's MAC address
+	UCHAR Address[4];                      // Its address, in network byte order
+	UINT64 Expires;                        // When the lease ends: Unix time in ms
+	char HostName[CONTROL_HOST_NAME_SIZE]; // The host name that the client sent (DHCP option 12), "" for none
+} CONTROL_LEASE;
+
+// The leases that a client reports to the controller (CONTROL_CONFIG.Leases), ControlDhcp.c
+typedef struct CONTROL_LEASES CONTROL_LEASES;
+
 // The desired state that the client applied, as its owner takes it (CONTROL_STATE_PROC). The
-// Networks and Relays of the state stay in the client until a module of the node needs them.
+// Networks and Relays of the state stay in the client until a module of the node needs them: the
+// DHCP responders of the Networks are the first (SDN-43, #236).
 typedef struct CONTROL_STATE {
 	UINT64 Generation;                                // The Generation of the state
 	char Name[CONTROL_NAME_SIZE];                     // The node's name in the intent
@@ -98,6 +137,8 @@ typedef struct CONTROL_STATE {
 	CONTROL_VRF Vrfs[CONTROL_MAX_VRFS];               // ... in name order
 	UINT NumPeers;                                    // Its peers
 	CONTROL_PEER *Peers;                              // ... in name order
+	UINT NumDhcps;                                    // The DHCP responders that it runs (SDN-43, #236)
+	CONTROL_DHCP Dhcps[CONTROL_MAX_DHCPS];            // ... in Network name order
 } CONTROL_STATE;
 
 // Takes each state that the client applied, before the client acknowledges its Generation. It runs
@@ -113,6 +154,7 @@ typedef struct CONTROL_CONFIG {
 	CRYPTO_IDENTITY *Identity;            // ... or the node identity in the key storage provider, which must outlive the client
 	CONTROL_STATE_PROC *Proc;             // Takes each state applied
 	void *Param;                          // The first parameter of Proc
+	CONTROL_LEASES *Leases;               // The leases that the client reports after each Hello and whenever they change, NULL for none: the owner's, which must outlive the client
 } CONTROL_CONFIG;
 
 // How a client stands (ControlGetStatus)
@@ -134,5 +176,14 @@ typedef struct CONTROL_CLIENT CONTROL_CLIENT;
 CONTROL_CLIENT *ControlStart(const CONTROL_CONFIG *cfg);
 void ControlStop(CONTROL_CLIENT *c);
 void ControlGetStatus(CONTROL_CLIENT *c, CONTROL_STATUS *st);
+
+// The leases of the DHCP responders of a node (SDN-43, #236), ControlDhcp.c. NewLeases makes the reports that a client
+// sends (CONTROL_CONFIG.Leases), FreeLeases frees them once no client uses them. SetLeases puts the leases of one L2
+// Network in place of the ones before, and the client sends them as one Leases message after each Hello and whenever
+// they change: at most CONTROL_MAX_LEASES of them, for CONTROL_MAX_DHCPS Networks at most. With leases NULL the Network
+// has no responder any more: its report goes and nothing is sent for it.
+CONTROL_LEASES *ControlNewLeases();
+void ControlFreeLeases(CONTROL_LEASES *l);
+bool ControlSetLeases(CONTROL_LEASES *l, const char *network, const CONTROL_LEASE *leases, UINT num);
 
 #endif // CORE_CONTROL_H
