@@ -19,6 +19,7 @@
 // figure that ranz test throughput reports between two hosts, here between two harness nodes, whose hosts have no TCP/IP
 // stack. Print "SDNTRACE TEST OK" only when every check passes.
 
+#include "controltls.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"
@@ -369,7 +370,7 @@ static UINT SdnTraceTlsBinding(void *stream, UCHAR *binding, UINT max, UINT *siz
 	return NOISE_BINDING_EXPORTER;
 }
 
-static void SdnTraceTlsInit(TRANSPORT *t)
+void SdnTraceTlsInit(TRANSPORT *t)
 {
 	Zero(t, sizeof(TRANSPORT));
 	StrCpy(t->Name, sizeof(t->Name), "tls");
