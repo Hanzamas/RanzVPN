@@ -16,9 +16,11 @@
 //	                          the XDP runtime out), register and start the Node service, and, with
 //	                          -controller, the Controller service too (package install, ONE-2 #311,
 //	                          ONE-3 #312)
-//	ranz uninstall            stop and remove the services, the drivers that install put on the
+//	ranz uninstall [-keep-ranz]
+//	                          stop and remove the services, the drivers that install put on the
 //	                          machine and the files it made, keeping the Node's data directory
-//	                          (package install, ONE-2 #311, ONE-3 #312)
+//	                          (package install, ONE-2 #311, ONE-3 #312); with -keep-ranz, leave
+//	                          ranz.exe and the Ranz folder for the MSI to remove (ONE-5 #314)
 //	ranz notice               print the NOTICE: the licence texts of what ranz carries
 //	ranz version              print the version, which is the same for every subcommand
 //	ranz cert [flags]         make a self-signed or CA-signed certificate and its key, in files or in the
@@ -109,7 +111,7 @@ const usage = `usage:
   ranz bgp -pipe NAME [-log FILE] [-log-level LEVEL]
   ranz mimic (-pipe NAME [-log FILE] [-log-level LEVEL] | -keygen)
   ranz install [-controller] [-no-xdp]
-  ranz uninstall
+  ranz uninstall [-keep-ranz]
   ranz notice
   ranz version
   ranz cert -cn NAME (-savecert FILE -savekey FILE | -ksp NAME) [flags]
