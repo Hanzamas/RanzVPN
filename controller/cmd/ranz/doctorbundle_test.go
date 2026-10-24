@@ -43,7 +43,11 @@ func hostFiles(t *testing.T) (nodeDir, controllerDir string) {
 	write(nodeLog, "node_20261023.log", "2026-10-23 10:00:00.000 Node started: 4 workers\r\n2026-10-23 10:00:01.000 BGP peer 192.0.2.1 password="+hostBGPPassword+" accepted\r\n")
 	write(nodeLog, "node_20261023~01.log", "2026-10-23 11:00:00.000 Role relay started\r\n")
 	write(nodeLog, "ranz-bgp.log", "time=2026-10-23T10:00:02Z level=INFO msg=\"connected to the node\" command=\"ranz.exe bgp -pipe x -log y\"\n")
-	write(nodeDir, nodeConfigFile, "setting\tRoles\tserver, relay\nsetting\tBgp\t{\"peers\": [{\"address\": \"192.0.2.1\", \"password\": \""+hostBGPPassword+"\"}]}\nuser\tcorp\talice\tpassword set\n")
+	// The configuration of the Node, in the form of CsDump: a JSON setting is a quoted string with escaped quotes
+	write(nodeDir, nodeConfigFile, "schema 1\n"+
+		`setting name="Roles" value="server, relay"`+"\n"+
+		`setting name="Bgp" value="{\"peers\": [{\"address\": \"192.0.2.1\", \"password\": \"`+hostBGPPassword+`\"}]}"`+"\n"+
+		`user network="corp" name="alice" auth=1 password="set" pinned_key=none`+"\n")
 	write(controllerDir, "controller.log", "2026-10-23T10:00:00.000Z INFO first start: the admin token is created token="+hostAPIToken+" file=admin.token\n")
 	// What no source names stays on the host: the token file, the keys and the databases
 	write(controllerDir, "admin.token", hostFileToken+"\n")

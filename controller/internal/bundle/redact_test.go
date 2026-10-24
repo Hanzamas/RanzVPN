@@ -39,6 +39,8 @@ func TestRedactReplacesWhatIsSecret(t *testing.T) {
 		{"a flag with an equal sign", `ranz.exe --password=Sup3rS3cretFlagValue2 -listen :443`, "Sup3rS3cretFlagValue2", "-listen :443"},
 		{"a signature header", `X-Ranz-Signature: sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`, "0123456789abcdef0123456789abcdef", "X-Ranz-Signature"},
 		{"a cookie", `Cookie: session=Sup3rS3cretSessionValue`, "Sup3rS3cretSessionValue", "Cookie"},
+		{"a JSON document in a quoted string", `setting name="Bgp" value="{\"peers\": [{\"address\": \"192.0.2.1\", \"password\": \"Sup3rS3cretBgpMd5\"}]}"`, "Sup3rS3cretBgpMd5", "192.0.2.1"},
+		{"an escaped name with a bare value", `value="{\"psk\":Sup3rS3cretBare, \"mtu\": 1280}"`, "Sup3rS3cretBare", "1280"},
 	} {
 		out, n := Redact(c.in)
 		if strings.Contains(out, c.secret) {

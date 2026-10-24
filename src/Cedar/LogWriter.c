@@ -13,6 +13,9 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 
+// Milliseconds in a day, the unit of the age limit of the files of a log (SetLogLimits)
+#define LOG_MS_PER_DAY (24ULL * 60ULL * 60ULL * 1000ULL)
+
 // State of the writer thread of a LOG (LogThread): the open file, the records not yet written,
 // the name of the open file and the date part of the current file name
 typedef struct LOG_WRITER {
@@ -23,6 +26,8 @@ typedef struct LOG_WRITER {
 	UINT RetryWait;          // Milliseconds waited after the last failed open, 0 after a successful one
 	UINT64 RetryTick;        // No new try to open the file before this tick
 	bool Realtime;           // The thread runs at the realtime priority (false: idle priority)
+	// The limits of the files of the log are applied again at this tick at the latest (LogSweep)
+	UINT64 NextSweepTick;
 } LOG_WRITER;
 
 static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w);
@@ -286,6 +291,144 @@ UINT64 GetMaxLogSize(LOG *g) {
 	return ret;
 }
 
+// Set the limits of the files of g (SDN-54, #247): an age limit in days and a disk limit in bytes, 0 for none. The
+// files of a log are the files of its directory whose names start with its prefix and end with ".log". The writer
+// thread deletes the oldest of them that are past the age limit, and the oldest ones while the files together would
+// pass the disk limit, when the limits are set, every LOG_LIMITS_SWEEP_INTERVAL and each time it opens a file. The
+// file that is open counts as much as the maximum log size lets it grow to, so a disk limit makes the maximum log size
+// at most a quarter of it, and the log never takes more than the limit, also not between two files.
+void SetLogLimits(LOG *g, UINT max_age_days, UINT64 max_total_size) {
+	if (g == NULL)
+		return;
+
+	if (max_total_size != 0)
+		SetMaxLogSize(g, MIN(GetMaxLogSize(g), MAX(max_total_size / 4, 1)));
+
+	LockLog(g);
+	{
+		g->MaxAgeDays = max_age_days;
+		g->MaxTotalSize = max_total_size;
+		g->LimitsChanged = true;
+	}
+	UnlockLog(g);
+
+	Set(g->Event);
+}
+
+// A file of the directory of a log that its limits may delete
+typedef struct LOG_OLD_FILE {
+	char Path[MAX_SIZE];
+	UINT64 Size;
+	UINT64 UpdateDate;
+} LOG_OLD_FILE;
+
+// Order the files of a log by the time of their last write, the oldest first, and by name when it is the same
+static int CompareLogOldFile(void *p1, void *p2) {
+	LOG_OLD_FILE *f1 = *(LOG_OLD_FILE **)p1;
+	LOG_OLD_FILE *f2 = *(LOG_OLD_FILE **)p2;
+
+	if (f1->UpdateDate == f2->UpdateDate)
+		return StrCmpi(f1->Path, f2->Path);
+
+	return (f1->UpdateDate > f2->UpdateDate) ? 1 : -1;
+}
+
+// Whether name is the name of a file of g: its prefix, then "_" (a date), "~" (a file number) or "." (no date), and
+// ".log" last
+static bool LogIsFileOf(const LOG *g, const char *name) {
+	if (StartWith(name, g->Prefix) == false || EndWith(name, ".log") == false)
+		return false;
+
+	char next = name[StrLen(g->Prefix)];
+
+	return (next == '_' || next == '~' || next == '.');
+}
+
+// Delete the files of g that its limits take away, the oldest first: those whose last write is more than the age limit
+// ago, then as many more as it takes for the files that are left, and the file that is open with the room that it may
+// grow to, not to pass the disk limit. The open file open_file is never deleted. A file that cannot be deleted stays
+// and is tried again later. Each deletion is a line of the log.
+static void LogApplyLimits(LOG *g, const char *open_file) {
+	UINT max_age_days = g->MaxAgeDays;
+	UINT64 max_total_size = g->MaxTotalSize;
+	UINT64 max_file_size = GetMaxLogSize(g);
+	UINT64 now = SystemTime64();
+	UINT64 total = 0;
+	char text[MAX_SIZE];
+
+	if (max_age_days == 0 && max_total_size == 0)
+		return;
+
+	LIST *o = NewListFast(CompareLogOldFile);
+	DIRLIST *d = EnumDir(IsEmptyStr(g->DirName) ? "." : g->DirName);
+
+	for (UINT i = 0; d != NULL && i < d->NumFiles; i++) {
+		DIRENT *e = d->File[i];
+
+		if (e->Folder == false && LogIsFileOf(g, e->FileName)) {
+			LOG_OLD_FILE *f = ZeroMalloc(sizeof(LOG_OLD_FILE));
+
+			// The name of the file as the writer makes it, so that it can tell the open file
+			Format(f->Path, sizeof(f->Path), "%s%s%s", g->DirName, IsEmptyStr(g->DirName) ? "" : "/", e->FileName);
+			f->Size = e->FileSize;
+			f->UpdateDate = e->UpdateDate;
+
+			if (StrCmpi(f->Path, open_file) == 0) {
+				Free(f);
+			} else {
+				Add(o, f);
+				total += f->Size;
+			}
+		}
+	}
+
+	FreeDir(d);
+	Sort(o);
+
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
+		LOG_OLD_FILE *f = LIST_DATA(o, i);
+		bool too_old = (max_age_days != 0 && f->UpdateDate + (UINT64)max_age_days * LOG_MS_PER_DAY < now);
+		bool too_big = (max_total_size != 0 && total + max_file_size > max_total_size);
+
+		// The files are in the order of their age: when this one stays, so do the newer ones
+		if (too_old == false && too_big == false)
+			break;
+
+		if (FileDelete(f->Path) == false)
+			continue;
+
+		total -= f->Size;
+
+		if (too_old)
+			Format(text, sizeof(text), "Log file %s deleted: its last record is more than %u days old", f->Path, max_age_days);
+		else
+			Format(text, sizeof(text), "Log file %s deleted: the log files would take more than the disk limit of %I64u bytes", f->Path, max_total_size);
+
+		InsertStringRecord(g, text);
+	}
+
+	for (UINT i = 0; i < LIST_NUM(o); i++)
+		Free(LIST_DATA(o, i));
+
+	ReleaseList(o);
+}
+
+// Apply the limits of g in the writer thread w when they were just set, or when LOG_LIMITS_SWEEP_INTERVAL has passed
+// since they were applied, so that the files of a log that nothing is written to still age out
+static void LogSweep(LOG *g, LOG_WRITER *w) {
+	if (g->MaxAgeDays == 0 && g->MaxTotalSize == 0)
+		return;
+
+	UINT64 now = Tick64();
+	if (g->LimitsChanged == false && now < w->NextSweepTick)
+		return;
+
+	g->LimitsChanged = false;
+	w->NextSweepTick = now + LOG_LIMITS_SWEEP_INTERVAL;
+
+	LogApplyLimits(g, w->FileName);
+}
+
 // Run the writer thread at the realtime priority (realtime) or the idle priority: the system call only on a change
 static void LogWriterSetPriority(LOG_WRITER *w, bool realtime) {
 	if (w->Realtime == realtime)
@@ -321,6 +464,8 @@ static void LogThread(THREAD *thread, void *param) {
 		while (true)
 			if (!LogThreadWriteGeneral(g, &w))
 				break;
+
+		LogSweep(g, &w);
 
 		if (g->Halt) {
 			// When the stop flag is set, break only after every record is saved
@@ -394,6 +539,9 @@ static void LogOpenFile(LOG *g, LOG_WRITER *w, char *file_name) {
 
 	if (w->Io != NULL) {
 		w->RetryWait = 0;
+
+		// A new file takes the log up to its limits again: the oldest files go before anything is written to it
+		LogApplyLimits(g, w->FileName);
 	} else {
 		w->RetryWait = (w->RetryWait == 0 ? LOG_ENGINE_RETRY_MIN : MIN(w->RetryWait * 2, LOG_ENGINE_RETRY_MAX));
 		w->RetryTick = Tick64() + (UINT64)w->RetryWait;

@@ -28,6 +28,7 @@
 #define NODE_LOG_PREFIX       "node"
 #define NODE_IMPORT_FILE_NAME L"ranz_server.config" // A fork configuration that NewNode imports once into an empty store
 #define NODE_IMPORTED_SUFFIX  L".imported"          // ... and then renames with this suffix
+#define NODE_CONFIG_DUMP_NAME L"node_config.txt"    // The text dump of the configuration store that NewNode writes, for ranz doctor --bundle (SDN-54, #247)
 
 // The settings of a node in its configuration store
 #define NODE_SETTING_ROLES        "Roles"       // A list of role names; without it NODE_DEFAULT_ROLES, "none" for no role
@@ -36,6 +37,14 @@
 #define NODE_SETTING_IDENTITY_KEY "IdentityKey" // The name of the node identity key; without it NODE_IDENTITY_KEY_NAME
 #define NODE_SETTING_BGP          "Bgp"         // The BGP settings, one JSON object (NodeBgpStart); without it no BGP sidecar
 #define NODE_SETTING_CLIENT       "Client"      // The settings of the client role, one JSON object (NodeClient.c); without it the role holds nothing
+#define NODE_SETTING_LOG_DAYS     "LogDays"     // The age limit of the node log in days: older files of the log are deleted; without it NODE_LOG_DEFAULT_DAYS, 0 for no limit
+#define NODE_SETTING_LOG_MB       "LogMB"       // The disk limit of the node log in megabytes: its files never take more together; without it NODE_LOG_DEFAULT_MB, 0 for no limit
+
+// The limits of the node log (SDN-54, #247) without the settings above, and the most that a setting may name
+#define NODE_LOG_DEFAULT_DAYS 30
+#define NODE_LOG_DEFAULT_MB   256
+#define NODE_LOG_MAX_DAYS     36500
+#define NODE_LOG_MAX_MB       1048576
 
 // The node identity key in the software key storage provider (ADR-0022) without the IdentityKey setting
 #define NODE_IDENTITY_KEY_NAME "Ranz Node"

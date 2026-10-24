@@ -41,6 +41,10 @@ var (
 	// nameValue is a name that holds a secret, a separator and the value: key=value, "key": "value",
 	// Key: value, in the text of a log, a header or a JSON document written as text.
 	nameValue = regexp.MustCompile(`(?i)(["']?[a-z0-9_.-]*(?:` + secretNames + `)[a-z0-9_.-]*["']?\s*[:=]\s*)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s,;&}\])"']+)`)
+
+	// escapedValue is the same for a JSON document that a line holds as a string in quotes, whose own quotes
+	// are escaped: \"password\":\"...\"
+	escapedValue = regexp.MustCompile(`(?i)(\\"[a-z0-9_.-]*(?:` + secretNames + `)[a-z0-9_.-]*\\"\s*:\s*)(\\"(?:[^"\\]|\\[^"])*\\"|[^\s,;&}\]"\\]+)`)
 )
 
 // secretNames are the parts of a name that make its value a secret, as a regular expression.
@@ -108,6 +112,7 @@ var steps = []step{
 	replacing(urlPassword, "${1}"+Replacement+"@", "://"),
 	replacing(vendorToken, Replacement, "gh", "xox", "akia"),
 	flagStep,
+	escapedStep,
 	nameStep,
 }
 
@@ -124,6 +129,24 @@ func flagStep(line, lower string) (string, int) {
 		}
 		n++
 		return g[1] + g[2] + Replacement
+	})
+	return out, n
+}
+
+// escapedStep replaces the value that follows a name that holds a secret in a JSON document that the
+// line holds as an escaped string.
+func escapedStep(line, lower string) (string, int) {
+	if !holdsAny(lower, secretTriggers) || !strings.Contains(line, `\"`) {
+		return line, 0
+	}
+	n := 0
+	out := escapedValue.ReplaceAllStringFunc(line, func(m string) string {
+		g := escapedValue.FindStringSubmatch(m)
+		if g == nil || strings.Contains(g[2], Replacement) {
+			return m
+		}
+		n++
+		return g[1] + `\"` + Replacement + `\"`
 	})
 	return out, n
 }
