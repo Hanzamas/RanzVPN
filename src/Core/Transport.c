@@ -105,6 +105,13 @@ TRANSPORT_STREAM *TransportAccept(TRANSPORT_LISTENER *l, UINT timeout) {
 	return TransportWrap(t, stream);
 }
 
+bool TransportTake(TRANSPORT_LISTENER *l, UINT_PTR socket) {
+	if (l == NULL || l->Transport->Take == NULL)
+		return false;
+
+	return l->Transport->Take(l->Listener, socket);
+}
+
 void TransportCloseListener(TRANSPORT_LISTENER *l) {
 	if (l == NULL)
 		return;

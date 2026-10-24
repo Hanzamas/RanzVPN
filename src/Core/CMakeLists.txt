@@ -257,6 +257,36 @@ set_target_properties(corepolicy
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# corefrontdoor: the front door (FrontDoor.h, FrontDoor*.c; SDN-29, #205; ADR-0035): the TCP listener of a node, on 443
+# in a deployment, that peeks the first bytes of each connection, routes it by its ClientHello or its first bytes and
+# hands the socket to its owner, in this process or in another through the owner's handoff pipe (WSADuplicateSocketW),
+# and the owner's end of that pipe. It calls Winsock, and advapi32 for the security descriptor of a pipe, and nothing
+# else. Its users keep their own build options, so ranz_core_options and the libraries stay PRIVATE, as for corepeer.
+file(GLOB SOURCES_CORE_FRONT_DOOR "FrontDoor*.c")
+file(GLOB HEADERS_CORE_FRONT_DOOR "FrontDoor*.h")
+
+add_library(corefrontdoor STATIC ${SOURCES_CORE_FRONT_DOOR} ${HEADERS_CORE_FRONT_DOOR})
+
+target_include_directories(corefrontdoor PUBLIC "${TOP_DIRECTORY}/src")
+
+target_link_libraries(corefrontdoor PRIVATE ranz_core_options ranz_warnings)
+
+# The only libraries the module calls
+target_link_libraries(corefrontdoor
+  PRIVATE
+    "ws2_32.lib"
+    "advapi32.lib"
+)
+
+set_target_properties(corefrontdoor
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "corefrontdoor"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
 # ranz_core_check_links(<target>...): stops the configure when one of the targets reaches,
 # through any chain of linked targets, the slim fork (mayaqua, cedar), OpenSSL or liboqs, which
 # the new core does not link (ADR-0022; CORE-F1, #61). src/CMakeLists.txt calls it once every

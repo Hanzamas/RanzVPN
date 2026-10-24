@@ -30,6 +30,9 @@ c  coreswitch     92  src/Core/Switch*.c
 # corepolicy (CORE-S4-2 #75) is exercised by vpntest's policy test, which this job runs with the tests above: 94.0%
 # measured, less two points for the threads that judge frames while the documents change
 c  corepolicy     92  src/Core/Policy*.c
+# corefrontdoor (SDN-29 #205) is exercised by coretest's frontdoor test, whose node and owner processes write their own
+# profiles; the node killed in the test writes none
+c  corefrontdoor  60  src/Core/FrontDoor*.c
 
 # The controller (controller/): the package of `ranz controller` is controller itself, and the
 # executable ranz, with its subcommands, is controller/cmd/ranz
