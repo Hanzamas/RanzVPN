@@ -353,8 +353,9 @@ func installController(w io.Writer, m *mgr.Mgr, dir string) error {
 // Uninstall stops and removes the Controller service, if it is registered, and the Node service,
 // and removes the Ranz folder, and leaves the data directories alone. It reports each step to w.
 // When it runs from the ranz.exe in the Ranz folder, that file cannot be deleted while it runs:
-// it and the folder are removed at the next restart.
-func Uninstall(w io.Writer) error {
+// it and the folder are removed at the next restart. With opts.KeepRanz it leaves that file and
+// the folder to its caller instead, and schedules nothing for the restart.
+func Uninstall(w io.Writer, opts UninstallOptions) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("uninstall: the path of ranz.exe: %w", err)
@@ -379,7 +380,7 @@ func Uninstall(w io.Writer) error {
 	} else if removed {
 		fmt.Fprintf(w, "uninstall: the %s service is removed\n", nodeServiceName)
 	}
-	if err := removeDir(w, dir, self); err != nil {
+	if err := removeDir(w, dir, self, opts.KeepRanz); err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
@@ -408,13 +409,15 @@ func removeController(w io.Writer, m *mgr.Mgr) error {
 // removeDir removes the Ranz folder, trying again for a few seconds: a service that has just
 // stopped, or a scanner, can hold a file for a moment. self is the running ranz.exe. When it is the
 // copy in the folder it cannot be deleted while it runs, so the rest of the folder goes at once and
-// that file and the folder at the next restart.
-func removeDir(w io.Writer, dir, self string) error {
+// that file and the folder at the next restart. With keepRanz the rest of the folder goes the same
+// way and ranz.exe and the folder stay, whichever ranz.exe runs, for the caller to remove: nothing
+// is scheduled for the restart.
+func removeDir(w io.Writer, dir, self string, keepRanz bool) error {
 	if !fileExists(dir) {
 		return nil
 	}
 	keep := ""
-	if sameFile(self, filepath.Join(dir, ranzExeName)) {
+	if keepRanz || sameFile(self, filepath.Join(dir, ranzExeName)) {
 		keep = ranzExeName
 	}
 	deadline := time.Now().Add(10 * time.Second)
@@ -430,6 +433,10 @@ func removeDir(w io.Writer, dir, self string) error {
 	}
 	if keep == "" {
 		fmt.Fprintf(w, "uninstall: the folder %s is removed\n", dir)
+		return nil
+	}
+	if keepRanz {
+		fmt.Fprintf(w, "uninstall: %s and the folder %s stay, for the caller to remove\n", keep, dir)
 		return nil
 	}
 	if err := removeAtRestart(filepath.Join(dir, keep), dir); err != nil {

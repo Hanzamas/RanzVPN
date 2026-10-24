@@ -12,8 +12,10 @@
 //	                          write the Node payload into Program Files, register and start the
 //	                          Node service, and, with -controller, the Controller service too
 //	                          (package install, ONE-2 #311)
-//	ranz uninstall            stop and remove the services and the files install made, keeping the
-//	                          Node's data directory (package install, ONE-2 #311)
+//	ranz uninstall [-keep-ranz]
+//	                          stop and remove the services and the files install made, keeping the
+//	                          Node's data directory (package install, ONE-2 #311); with -keep-ranz,
+//	                          leave ranz.exe and the Ranz folder for the MSI to remove (ONE-5 #314)
 //	ranz notice               print the NOTICE: the licence texts of what ranz carries
 //	ranz version              print the version, which is the same for every subcommand
 //	ranz cert [flags]         make a self-signed or CA-signed certificate and its key, in files or in the
@@ -100,7 +102,7 @@ const usage = `usage:
   ranz controller [flags]
   ranz bgp -pipe NAME [-log FILE] [-log-level LEVEL]
   ranz install [-controller]
-  ranz uninstall
+  ranz uninstall [-keep-ranz]
   ranz notice
   ranz version
   ranz cert -cn NAME (-savecert FILE -savekey FILE | -ksp NAME) [flags]

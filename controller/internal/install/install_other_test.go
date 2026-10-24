@@ -18,7 +18,9 @@ func TestInstallIsRefusedOffWindows(t *testing.T) {
 }
 
 func TestUninstallIsRefusedOffWindows(t *testing.T) {
-	if err := Uninstall(io.Discard); !errors.Is(err, errNotWindows) {
-		t.Fatalf("Uninstall() = %v, want %v", err, errNotWindows)
+	for _, opts := range []UninstallOptions{{}, {KeepRanz: true}} {
+		if err := Uninstall(io.Discard, opts); !errors.Is(err, errNotWindows) {
+			t.Fatalf("Uninstall(%+v) = %v, want %v", opts, err, errNotWindows)
+		}
 	}
 }
