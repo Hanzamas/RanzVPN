@@ -117,5 +117,10 @@ controller/internal/throughput  ReadRequest     FuzzRead
 controller/internal/throughput  ReadReport      FuzzRead
 controller/internal/throughput  Receiver.Input  FuzzRead
 
+# The diagnostics bundle (SDN-54 #247): the text of a log and the JSON documents of a bundle, which Redact and RedactJSON read
+# before anything leaves the host
+controller/internal/bundle  Redact      FuzzRedact
+controller/internal/bundle  RedactJSON  FuzzRedactJSON
+
 # The pipe protocol of the BGP sidecar (CORE-S7-1 #82)
 ranz-bgp/internal/sidecar  Reader.Read  FuzzRead

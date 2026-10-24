@@ -16,7 +16,9 @@ const Replacement = "[redacted]"
 // (password=..., "token": "...", -secret ...) or by its form (a bearer token, a token of the API,
 // a private key in PEM, the hash of a password, the password in a URL). A rule that does not know
 // a secret by name or by form cannot find it, which is why a bundle is built only from what the
-// code names (the parts of its sources) and each part goes through these rules.
+// code names (the parts of its sources) and each part goes through these rules. The rule of a
+// token of the API has no word boundary in front of it: a token that a log line glues to a word is
+// a token.
 var (
 	pemBlock = regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----.*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----`)
 	// pemHead is a private key whose end is not in the text, because a file was cut: the header,
@@ -24,7 +26,7 @@ var (
 	pemHead = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[^\n]*(?:\n[A-Za-z0-9+/=]{16,}[ \t\r]*)*`)
 
 	authScheme  = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}`)
-	apiToken    = regexp.MustCompile(`\branz_[A-Za-z0-9]{16,}`)
+	apiToken    = regexp.MustCompile(`ranz_[A-Za-z0-9]{16,}`)
 	jwt         = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*`)
 	licenceKey  = regexp.MustCompile(`\bkey/[A-Za-z0-9_-]{24,}(?:\.[A-Za-z0-9_-]{16,})?`)
 	cryptHash   = regexp.MustCompile(`\$(?:[0-9][a-z]?|argon2[a-z]*|pbkdf2[a-z0-9-]*|scrypt|bcrypt)\$[^\s"'<>]{12,}`)

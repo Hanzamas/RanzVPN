@@ -40,6 +40,8 @@ go  controller/cmd/ranz-noisepeer       0
 go  controller/internal/activation      81
 go  controller/internal/api             28
 go  controller/internal/audit           85
+# bundle (SDN-54 #247): the Linux job measures every file but system_windows.go, whose service query the Windows job runs
+go  controller/internal/bundle          80
 go  controller/internal/capability      95
 go  controller/internal/certgen         92
 go  controller/internal/cluster         61
@@ -55,6 +57,7 @@ go  controller/internal/install         80
 go  controller/internal/intent          91
 go  controller/internal/keys            71
 go  controller/internal/licence         89
+go  controller/internal/logfile         85
 go  controller/internal/mitigation      0
 go  controller/internal/nodesim         0
 # payload (ONE-2 #311) has real logic tested on every OS (payload_test.go: the hash checks, the
