@@ -106,7 +106,11 @@ func startServer(ctx context.Context, cfg *serverConfig, pipe string, emit func(
 
 // realityConfig is the configuration of the library for a server of cfg whose connections that are
 // no client are spliced to dest: the keys, the short ids, the names and the clock that make a
-// client, and the versions of the proof that the clients of Ranz send.
+// client, and the versions of the proof that the clients of Ranz send. The library copies the
+// records that the real site sends after its handshake, a session ticket among them, by writing
+// over the record that carries a session ticket (its record layer), so the server sends no ticket
+// of its own (SessionTicketsDisabled) and sets no ALPN protocol (NextProtos stays nil), as Xray
+// configures the library.
 func realityConfig(cfg *serverConfig, dest string) *reality.Config {
 	names := make(map[string]bool, len(cfg.serverNames))
 	for _, n := range cfg.serverNames {
@@ -124,6 +128,7 @@ func realityConfig(cfg *serverConfig, dest string) *reality.Config {
 		MaxTimeDiff:                 cfg.maxTimeDiff,
 		ShortIds:                    cfg.shortIDs,
 		DynamicRecordSizingDisabled: true,
+		SessionTicketsDisabled:      true,
 	}
 }
 
