@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeLeak.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeDhcp.c, NodeHarden.c, NodeLeak.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -116,6 +116,21 @@
 #define NODE_SHAPE_MSS_HEADERS 40    // Bytes of the IPv4 and TCP headers between the MTU of a VRF and the MSS of a TCP SYN in it
 #define NODE_SHAPE_BURST       50    // ms of its rate that a token bucket holds ...
 #define NODE_SHAPE_MIN_BURST   65536 // ... and bytes at least: more than the largest IP packet
+
+// The DHCP responder of an L2 Network (NodeDhcp.c; SDN-43, #236)
+#define NODE_DHCP_MAX_DNS      4      // DNS servers of the clients at most (Dhcp.dns of control.options)
+#define NODE_DHCP_MAX_RESERVED 16     // Reservations of the pool at most (Dhcp.reserved of control.options)
+#define NODE_DHCP_MAX_LEASES   1024   // Entries of the lease table at most, and leases reported (Leases.leases of control.options)
+#define NODE_DHCP_MIN_POOL     16     // The shortest IPv4 pool that a responder serves: a /16 ...
+#define NODE_DHCP_MAX_POOL     30     // ... and the longest, a /30: the responder and one client
+#define NODE_DHCP_OFFER_TIME   60000  // ms that an offered address stays the client's without its request
+#define NODE_DHCP_DECLINE_TIME 600000 // ms that an address that a client declined stays out of use
+#define NODE_DHCP_PROBE_TIME   300000 // ms between two probes for a DHCP server of the LAN
+#define NODE_DHCP_PROBE_WAIT   2000   // ms that the responder waits for the answers to its first probe before it answers a client
+#define NODE_DHCP_LAN_HOLD     900000 // ms that the responder stays silent after a DHCP server of the LAN answered
+#define NODE_DHCP_MAX_QUEUE    64     // Frames that wait to be sent at most
+#define NODE_DHCP_MAX_FRAME    1514   // Bytes of a frame that the responder takes or sends at most
+#define NODE_DHCP_TICK         50     // ms between two runs of the thread of the responders of a node when no frame wakes it
 
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
@@ -272,6 +287,9 @@ struct NODE {
 	// The VXLAN module that sends the copies of the Mirrors (NodeMirror.c; SDN-23, #199), NULL until a Generation of
 	// the overlay has a Mirror
 	NODE_MIRROR *volatile Mirror;
+
+	// The DHCP responders of the L2 Networks (NodeDhcp.c; SDN-43, #236), NULL while the overlay does not run
+	NODE_DHCPS *Dhcp;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -348,6 +366,47 @@ struct NODE_VRF_ADAPTER_STATUS {
 struct NODE_SHAPE_STATUS {
 	UINT64 Clamped; // TCP SYNs of the host that left with their MSS clamped to the MTU of their VRF
 	UINT64 Limited; // Packets of the host that a rate limit dropped
+};
+
+// How the DHCP responder of an L2 Network runs (NodeDhcpNew, NodeDhcpSetConfig): the Dhcp object of the Network in the
+// desired state of the node that answers DHCP for it (Core/Control.h). The addresses are IPv4 in host byte order:
+// 10.20.0.1 is 0x0A140001.
+struct NODE_DHCP_CONFIG {
+	bool Serve;                                   // The mode is pool: the responder answers while no DHCP server of the LAN answers
+	UCHAR Mac[6];                                 // The MAC address of the responder, the source of its frames
+	UINT Pool;                                    // The IPv4 pool of the Network ...
+	UINT PoolLength;                              // ... and its length, NODE_DHCP_MIN_POOL to NODE_DHCP_MAX_POOL
+	UINT Address;                                 // The responder's own address, a host address of the pool: its server identifier
+	UINT Gateway;                                 // The router of the clients, 0 for none
+	UINT NumDns;                                  // The DNS servers of the clients
+	UINT Dns[NODE_DHCP_MAX_DNS];                  // ...
+	UINT LeaseTime;                               // The lease time, in seconds
+	UINT NumReserved;                             // The reservations of the Network in the pool
+	UINT ReservedAddress[NODE_DHCP_MAX_RESERVED]; // ... their prefixes
+	UINT ReservedLength[NODE_DHCP_MAX_RESERVED];  // ... and their lengths
+};
+
+// One lease of a DHCP responder (NodeDhcpGetLeases)
+struct NODE_DHCP_LEASE {
+	UCHAR Mac[6];      // The client's MAC address
+	UINT Address;      // Its address, in host byte order
+	UINT64 Expires;    // The time at which the lease ends, in the ms of the responder's caller
+	char HostName[64]; // The host name that the client sent (option 12), printable ASCII; "" for none
+};
+
+// What NodeDhcpGetStatus reports
+struct NODE_DHCP_STATUS {
+	bool Serving;      // The responder answers clients: its mode is pool, its first probe had its answers and no DHCP server of the LAN answers
+	bool LanServer;    // A DHCP server of the LAN answered within NODE_DHCP_LAN_HOLD
+	UINT NumLeases;    // Its leases
+	UINT64 Probes;     // The probes it sent
+	UINT64 Offers;     // The DHCPOFFERs ...
+	UINT64 Acks;       // ... the DHCPACKs ...
+	UINT64 Naks;       // ... and the DHCPNAKs it sent
+	UINT64 Arps;       // The ARP replies it sent for its own address
+	UINT64 Ignored;    // The DHCP messages of clients it took and did not answer
+	UINT64 LanAnswers; // The answers of a DHCP server of the LAN that it saw
+	UINT64 Changes;    // The changes of its leases: one for each lease that began, was renewed, moved or ended
 };
 
 // What NodeGetStatus reports
@@ -444,6 +503,21 @@ void NodeReaderOnline(NODE *n, NODE_READER *r);
 bool NodeBgpAnnounce(NODE *n, char *prefix, char *next_hop);
 bool NodeBgpWithdraw(NODE *n, char *prefix);
 void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
+
+// NodeDhcp.c
+struct CONTROL_DHCP;
+struct SWITCH;
+NODE_DHCP *NodeDhcpNew(const NODE_DHCP_CONFIG *cfg, UINT64 now);
+void NodeDhcpFree(NODE_DHCP *d);
+void NodeDhcpSetConfig(NODE_DHCP *d, const NODE_DHCP_CONFIG *cfg, UINT64 now);
+void NodeDhcpInput(NODE_DHCP *d, UINT64 now, const UCHAR *frame, UINT size);
+UINT NodeDhcpOutput(NODE_DHCP *d, UINT64 now, UCHAR *buf, UINT size);
+UINT NodeDhcpGetLeases(NODE_DHCP *d, UINT64 now, NODE_DHCP_LEASE *leases, UINT max);
+void NodeDhcpGetStatus(NODE_DHCP *d, UINT64 now, NODE_DHCP_STATUS *st);
+void NodeDhcpConfigOf(NODE_DHCP_CONFIG *cfg, const struct CONTROL_DHCP *c, const UCHAR *mac);
+bool NodeDhcpAttach(NODE *n, const char *network, struct SWITCH *sw, UINT vlan);
+void NodeDhcpDetach(NODE *n, const char *network);
+bool NodeDhcpGetNetwork(NODE *n, const char *network, NODE_DHCP_STATUS *st);
 
 // NodeHarden.c
 void NodeHarden();

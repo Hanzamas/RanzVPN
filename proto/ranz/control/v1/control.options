@@ -58,3 +58,15 @@ ranz.control.v1.NodeEvent.message max_size:256
 # MaxNATRules and MaxPeerRoutes).
 ranz.control.v1.NodeConfig.nat max_count:16
 ranz.control.v1.Peer.routes max_count:16
+# The DHCP responder of an L2 Network (SDN-43): IPv4 addresses, at most 4 DNS servers and 16
+# reservations (controller/internal/intent MaxDHCPServers, MaxDHCPReserved). One Leases message holds
+# every lease of one responder, which holds at most 1024 (MaxLeases, NODE_DHCP_MAX_LEASES).
+ranz.control.v1.Dhcp.address max_size:4
+ranz.control.v1.Dhcp.gateway max_size:4
+ranz.control.v1.Dhcp.dns max_count:4 max_size:4
+ranz.control.v1.Dhcp.reserved max_count:16
+ranz.control.v1.Leases.network max_size:64
+ranz.control.v1.Leases.leases max_count:1024
+ranz.control.v1.Lease.mac max_size:6
+ranz.control.v1.Lease.address max_size:4
+ranz.control.v1.Lease.host_name max_size:64

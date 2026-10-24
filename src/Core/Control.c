@@ -12,6 +12,8 @@
 
 #include "ranz/control/v1/control.pb.h"
 
+#include "Core/ControlInternal.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -375,6 +377,9 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	qsort(st.Peers, st.NumPeers, sizeof(CONTROL_PEER), ControlComparePeers);
 
 	ControlCopyMirrors(&st, c->Objects, c->NumObjects);
+	// The DHCP responders of the L2 Networks (ControlDhcp.c; SDN-43, #236)
+	ControlCopyDhcps(&st, c->Objects, c->NumObjects);
+
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
 
@@ -484,7 +489,14 @@ static void ControlRun(CONTROL_CLIENT *c) {
 		ReleaseSRWLockExclusive(&c->Lock);
 	}
 
+	// The leases of the DHCP responders go after the Hello, all of them, and then whenever they change (ControlDhcp.c)
+	ControlLeasesResend(c->Config.Leases);
+
 	while (ok && ControlHalted(c) == false) {
+		ok = ControlWriteLeases(c->Config.Leases, s);
+		if (ok == false)
+			break;
+
 		UINT r = ControlRead(c, s, CONTROL_MAX_FRAME, CONTROL_POLL);
 		if (r == CONTROL_FRAME_END)
 			break;

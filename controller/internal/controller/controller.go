@@ -1039,8 +1039,11 @@ func (c *Controller) readLoop(s *stream) {
 			}
 		case *controlpb.ControlMessage_Telemetry:
 			c.takeTelemetry(s, body.Telemetry)
+		case *controlpb.ControlMessage_Leases:
+			// The leases of the DHCP responder of an L2 Network (SDN-43, dhcp.go)
+			c.takeLeases(s, body.Leases)
 		default:
-			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks, Signals and Telemetry after its Hello"))
+			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks, Signals, Telemetry and Leases after its Hello"))
 			return
 		}
 	}
