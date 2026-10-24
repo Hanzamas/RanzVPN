@@ -6,7 +6,7 @@ This is the runbook for the first test of Ranz VPN on two real Windows PCs. You 
 
 Read this first. The Node service of a PC cannot join a Controller yet (see Gaps at the end). So the test has three kinds of steps:
 
-- **Real.** The product does it: install, the Controller and its certificate, the web UI, the default Intent, PC B reaching the Controller, the link between the PCs, the Node resources and their addresses, `ranz doctor`, the logs, uninstall. Most steps are real.
+- **Real.** The product does it: install, the Controller and its certificate, the web UI, the default Intent, PC B reaching the Controller, the link between the PCs, the Node resources and their addresses, `ranz doctor`, the logs and the diagnostics bundles, uninstall. Most steps are real.
 - **Stand-in.** `vpntest firsttest`, a test program that is built in CI, plays the Nodes. It enrols two Nodes at the Controller of PC A over the real network, gives one of them a real Wintun adapter and answers a ping for the other. Steps 17, 19 and 23.
 - **Gap.** The thing the test is really for, two Node services that enrol and ping each other, does not work yet. Step 20 says what is missing.
 
@@ -209,7 +209,7 @@ Open `https://localhost/` in a browser on PC A. Use `https://localhost:5555/` af
 
 The page sends you to `/sign-in`. Paste the content of `admin.token` into the field. Get it with `Get-Content C:\ProgramData\Ranz\controller\admin.token`. The token stays in that browser tab until you sign out or close it.
 
-The pages are Overview, VRFs, Networks, Nodes, Intent, Revisions, Events, Licence and API tokens. Open Overview: the Controller card shows the control address, the TLS fingerprint and the public key of step 7, and the Licence card shows the Personal tier. This is the same check by command:
+The pages are Overview, VRFs, Networks, Nodes, Intent, Revisions, Events, Licence, Diagnostics and API tokens. Open Overview: the Controller card shows the control address, the TLS fingerprint and the public key of step 7, and the Licence card shows the Personal tier. This is the same check by command:
 
 ```powershell run
 curl.exe -k -s -o NUL -w "%{http_code}\n" https://localhost/
@@ -264,7 +264,7 @@ Get-ChildItem "$env:ProgramData\Hanzcodes\Ranz VPN"
 Get-ChildItem "$env:ProgramData\Hanzcodes\Ranz VPN\node_log" -Recurse -File | Select-String "Node started|Capabilities:"
 ```
 
-The service is `Running`. The data directory of the Node, `C:\ProgramData\Hanzcodes\Ranz VPN`, holds its Configuration store `ranz_node.db` and the folder `node_log`. The log says `Node started` and, a moment later, the Capabilities of the PC, for example `Capabilities: architecture x64, SeLow yes, XDP yes`. On arm64 it says `SeLow no, XDP no`.
+The service is `Running`. The data directory of the Node, `C:\ProgramData\Hanzcodes\Ranz VPN`, holds its Configuration store `ranz_node.db`, a text copy of its settings `node_config.txt` (the Node writes it at its start, and it holds no password hash), and the folder `node_log`. The log says `Node started` and, a moment later, the Capabilities of the PC, for example `Capabilities: architecture x64, SeLow yes, XDP yes`. On arm64 it says `SeLow no, XDP no`.
 
 ### 12. A token for PC B (viewer-token)
 
@@ -424,13 +424,13 @@ The commands for the items 1 and 2 do not exist, and a Node service listens on n
 
 <!-- step: doctor pc=both -->
 
-`ranz doctor` is the successor of the Check command of vpncmd. It checks the PC that it runs on, not the overlay: the clock, memory, text, the file system, threads and TLS over the network. Run it on each PC:
+`ranz doctor` is the successor of the Check command of vpncmd. It checks the PC that it runs on, not the overlay: the clock, memory, text, the file system, threads and TLS over the network. With `-bundle` it also writes the diagnostics bundle of the PC (SDN-54): one ZIP file with the logs of the Node, its settings, the state of the services and the report of the checks, and, on PC A, the log of the Controller. It holds no secret: the values of tokens, passwords and keys are replaced, and `manifest.json` in the file lists every part with the number of secrets replaced in it. `-o` names the file, which must not exist yet. Run it on each PC:
 
 ```powershell run
-ranz doctor
+ranz doctor -bundle -o C:\ranz-test\bundle-host.zip
 ```
 
-Every line says `Pass` and the verdict is `All checks passed`. The exit code is 0. A check that fails prints its reason under it, and the exit code is 1.
+Every line says `Pass` and the verdict is `All checks passed`. The exit code is 0. A check that fails prints its reason under it, and the exit code is 1. The last line says where the bundle is. Keep the file: it is what you send with the report of a test that failed.
 
 ### 22. What the web UI and the logs show (logs)
 
@@ -448,6 +448,14 @@ ranz get revisions
 - `ranz get events` is empty: the Controller raises an event for an automatic rollback of an apply with `--confirm`, a pool near exhaustion and a refused enrolment, and none of that happened.
 - `ranz get revisions` shows the first start and the apply of step 15.
 - In the web UI, Nodes shows both Nodes connected with the Generation they applied, Revisions shows the two revisions, and Events is empty.
+
+The Diagnostics page of the web UI has a button that downloads the diagnostics bundle of the Controller: its log, its Intent, revisions, events, licence, Nodes and address pools, and the state of its PC, with no secret in it. An operator or an admin may pull it, and every pull is in the audit log. This is the same by command, with the same token (the button calls this URL):
+
+```powershell run
+curl.exe -k -s --fail -X POST -H "Authorization: Bearer $((Get-Content $env:RANZ_TOKEN_FILE).Trim())" -o C:\ranz-test\bundle-controller.zip https://localhost/api/v1/diagnostics/bundle
+```
+
+The command prints nothing and writes the ZIP file. The log of the Controller is the part `controller/logs/controller.log` in it, and `manifest.json` lists all the parts.
 
 On PC B the stand-in window shows the same story from the Node side: its `[INFO]` lines name each Node, its control stream, its Generation, its address, its sessions and how many packets it forwarded and delivered. The node log of the Node service on PC B (step 11) is unchanged: that service took no part.
 
@@ -514,12 +522,12 @@ A Gap is something that the runbook needs and the code does not have. Nothing he
 3. **The Node service listens on no port.** `TransportQuicServerNew`, `TransportTlsServerNew` and the front door (`FrontDoorStart`, SDN-29, #205) are called by tests only, and the relay role binds a UDP socket only when its Roles setting asks for it. With the default settings two Node services cannot form a Noise session, even once Gap 1 is closed. **No open ticket carries it:** CORE-S1-1 (#67), CORE-S2-1 (#69) and SDN-29 (#205) delivered the modules and not their wiring into the service. Workaround: the two stand-in Nodes run their session in memory.
 4. **`ranz install` opens no firewall port.** The runbook adds and removes one rule by hand (steps 4 and 26). **No ticket carries it.** (REL-2, #47, did this for the slim fork.)
 5. **No `ranz` verb for the audit log.** The API has it (SDN-49, #242, `GET /api/v1/audit`), the CLI does not. Step 18 uses `curl.exe`. **No ticket carries it.**
-6. **No verb shows a Node's own state on its PC.** Its adapters, its sessions and its control stream show only in `ranz get nodes` on the Controller side and in the node log. `ranz doctor` checks the PC, not the Node. The nearest is SDN-55 (#248), the tray, which talks to the Node over a pipe. No verb is promised there.
+6. **No verb shows a Node's own state on its PC.** Its adapters, its sessions and its control stream show only in `ranz get nodes` on the Controller side and in the node log. `ranz doctor` checks the PC, not the Node, and `ranz doctor -bundle` (SDN-54, #247) collects the node log and the settings of the Node, not its live state. The nearest is SDN-55 (#248), the tray, which talks to the Node over a pipe. No verb is promised there.
 7. **The certificate of the Controller cannot be replaced.** It is always its own self-signed one (step 7), so a browser warns and `ranz` on another PC needs the fingerprint. `ranz cert` makes certificates, but the Controller has no setting to use one. SDN-45 (#238) gives a Node a certificate source (file, key storage or ACME); **no ticket names the Controller's certificate.**
 
 ## Troubleshooting
 
-These are the ways this test fails, with what the code says.
+These are the ways this test fails, with what the code says. Whatever fails, take the diagnostics bundle of each PC (`ranz doctor -bundle`, step 21) and the one of the Controller (step 22) before you uninstall: they hold the logs of the test and no secret.
 
 - **`ranz install` says `the certificate does not chain to a trusted root`.** The PC does not trust the CI certificate. Do step 3. The message names the file that failed.
 - **`ranz install` says `does ranz install run as an Administrator?`.** The window is not elevated.

@@ -334,6 +334,44 @@ function Assert-Gap([string] $gap, [bool] $there, [string] $what) {
 	Write-Host "$gap is still there: $what"
 }
 
+# A diagnostics bundle (SDN-54), a ZIP archive: the text of each part by its name
+function Read-Bundle([string] $path) {
+	if (-not (Test-Path -LiteralPath $path)) { throw "the bundle $path was not made" }
+	Add-Type -AssemblyName System.IO.Compression.FileSystem
+	$parts = [ordered]@{}
+	$zip = [System.IO.Compression.ZipFile]::OpenRead($path)
+	try {
+		foreach ($entry in $zip.Entries) {
+			$reader = New-Object System.IO.StreamReader($entry.Open())
+			try { $parts[$entry.FullName] = $reader.ReadToEnd() } finally { $reader.Dispose() }
+		}
+	} finally {
+		$zip.Dispose()
+	}
+	return $parts
+}
+
+# The parts that a bundle must hold, the folders that must hold a part, and the secrets that no part may hold
+function Assert-Bundle([string] $path, [string[]] $names, [string[]] $folders, [string[]] $secrets) {
+	$parts = Read-Bundle $path
+	Write-Host "the bundle $path holds $($parts.Count) parts: $($parts.Keys -join ', ')"
+	foreach ($name in $names) {
+		if (-not $parts.Contains($name)) { throw "the bundle $path has no part $name" }
+	}
+	foreach ($folder in $folders) {
+		if (@($parts.Keys | Where-Object { $_.StartsWith($folder) }).Count -eq 0) { throw "the bundle $path has no part under $folder" }
+	}
+	foreach ($name in $parts.Keys) {
+		foreach ($secret in $secrets) {
+			if ($secret -and $parts[$name].Contains($secret)) { throw "the part $name of the bundle $path holds the secret of an API token" }
+		}
+	}
+	# The manifest lists a problem for each source that failed and each part that was left out
+	$manifest = $parts['manifest.json'] | ConvertFrom-Json
+	$problems = @($manifest.problems | Where-Object { $_ })
+	if ($manifest.product -ne 'Ranz' -or $problems.Count -ne 0) { throw "the manifest of the bundle $path is $($parts['manifest.json'])" }
+}
+
 #
 # The steps, in the order of docs/first-test.md
 #
@@ -429,7 +467,7 @@ try {
 		$me = Get-Json $out
 		if ($me.name -ne 'admin' -or $me.role -ne 'admin') { throw "ranz whoami is $($me | ConvertTo-Json -Compress), not the admin token" }
 		# Each page of the UI, with its title, and the script that it loads: the pages need no token, they hold no data
-		$pages = [ordered]@{ '/' = 'Overview'; '/sign-in' = 'Sign in'; '/vrfs' = 'VRFs'; '/networks' = 'Networks'; '/nodes' = 'Nodes'; '/intent' = 'Intent'; '/revisions' = 'Revisions'; '/events' = 'Events'; '/licence' = 'Licence'; '/tokens' = 'API tokens' }
+		$pages = [ordered]@{ '/' = 'Overview'; '/sign-in' = 'Sign in'; '/vrfs' = 'VRFs'; '/networks' = 'Networks'; '/nodes' = 'Nodes'; '/intent' = 'Intent'; '/revisions' = 'Revisions'; '/events' = 'Events'; '/licence' = 'Licence'; '/diagnostics' = 'Diagnostics'; '/tokens' = 'API tokens' }
 		foreach ($path in $pages.Keys) {
 			$html = Invoke-Curl "https://localhost$path" -Body
 			if ($html -notmatch [regex]::Escape("<title>$($pages[$path]) | Ranz controller</title>")) { throw "the page $path has no title '$($pages[$path]) | Ranz controller'" }
@@ -476,7 +514,9 @@ try {
 		Wait-Service $nodeService 'Running'
 		if ($out -notmatch 'Node started') { throw 'the node log does not say that the Node started' }
 		if ($out -notmatch "Capabilities: architecture $Architecture, SeLow (yes|no), XDP (yes|no)") { throw "the node log does not give the Capabilities of an $Architecture PC: $out" }
-		if (-not (Test-Path -LiteralPath (Join-Path $nodeData 'ranz_node.db'))) { throw "ranz_node.db is not in $nodeData" }
+		foreach ($f in 'ranz_node.db', 'node_config.txt') {
+			if (-not (Test-Path -LiteralPath (Join-Path $nodeData $f))) { throw "$f is not in $nodeData" }
+		}
 	}
 
 	Step 'viewer-token' {
@@ -568,8 +608,9 @@ try {
 			if ($rec.Count -ne 1 -or $rec[0].message -notmatch 'first control stream' -or $rec[0].source -notmatch [regex]::Escape($values['PC-A'])) { throw "the audit log has no enrolment of $name from $($values['PC-A']): $($audit | ConvertTo-Json -Compress -Depth 4)" }
 		}
 		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
+		# One line for each Node: the member that serves it comes before the name of the Node, then the address it came from
 		foreach ($name in $nodeA, $nodeB) {
-			if ($log -notmatch [regex]::Escape("msg=`"node connected`" node=$name")) { throw "controller.log does not say that $name connected" }
+			if ($log -notmatch ('msg="node connected"[^\r\n]* node=' + [regex]::Escape($name) + ' remote=\S+ applied=0')) { throw "controller.log does not say that $name connected, from an address, with the Generation 0 applied" }
 		}
 	}
 
@@ -600,6 +641,12 @@ try {
 			if ($out -notmatch [regex]::Escape("Checking '$title'... Pass")) { throw "ranz doctor does not report the check '$title' as passed" }
 		}
 		if ($out -notmatch 'All checks passed') { throw 'ranz doctor does not report that all checks passed' }
+		# The bundle of this PC (SDN-54): the logs, the configuration and the status of what runs here, and no token
+		$bundle = Join-Path $work 'bundle-host.zip'
+		if ($out -notmatch [regex]::Escape("Diagnostics bundle written to $bundle")) { throw 'ranz doctor -bundle does not say where it wrote the bundle' }
+		if ($out -match 'not complete:') { throw "ranz doctor -bundle says that the bundle is not complete:`n$out" }
+		$secrets = @((Get-Content -LiteralPath $adminToken -Raw).Trim(), $values['VIEWER-TOKEN'])
+		Assert-Bundle $bundle @('manifest.json', 'system.json', 'services.json', 'doctor.txt', 'node/config.txt', 'controller/logs/controller.log') @('node/logs/') $secrets
 	}
 
 	Step 'logs' {
@@ -609,6 +656,9 @@ try {
 		if ($events.Count -ne 0) { throw "the Controller has events: $($events | ConvertTo-Json -Compress -Depth 4)" }
 		$revisions = ((Invoke-Ranz @('get', 'revisions')).revisions | ForEach-Object { $_.operation }) -join ','
 		if ($revisions -ne 'first-start,apply') { throw "the revisions are $revisions, not the first start and the apply" }
+		# The bundle of the Controller, the one that the button of the Diagnostics page downloads
+		$secrets = @((Get-Content -LiteralPath $adminToken -Raw).Trim(), $values['VIEWER-TOKEN'])
+		Assert-Bundle (Join-Path $work 'bundle-controller.zip') @('manifest.json', 'system.json', 'services.json', 'controller/status.json', 'controller/nodes.json', 'controller/intent.json', 'controller/revisions.json', 'controller/events.json', 'controller/licence.json', 'controller/ipam.json', 'controller/logs.json', 'controller/logs/controller.log') @() $secrets
 	}
 
 	Step 'stop-stand-in' {
