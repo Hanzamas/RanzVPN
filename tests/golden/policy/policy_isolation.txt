@@ -1,0 +1,60 @@
+1 first_mac_and_ip_taken: pass pass-rule starter doc 1
+2 second_mac_over_the_limit: drop drop-mac - doc 1
+3 second_ip_within_the_limit: pass pass-rule starter doc 1
+4 third_ip_over_the_limit: drop drop-ip - doc 1
+5 mac_of_another_member: drop drop-mac - doc 1
+6 ip_bound_to_the_gateway: drop drop-ip - doc 1
+7 own_addresses: pass pass-rule starter doc 1
+8 isolated_members: drop drop-isolated - doc 1
+9 reply_of_the_gateway: pass pass-flow starter doc 1
+10 arp_request: pass pass-control - doc 1
+11 arp_sender_ip_of_the_gateway: drop drop-ip - doc 1
+12 arp_sender_mac_of_another_member: drop drop-mac - doc 1
+13 dhcp_discover: pass pass-control - doc 1
+14 dhcp_server_message: drop drop-dhcp-server - doc 1
+15 broadcast_under_arp_and_dhcp_only: drop drop-broadcast - doc 1
+16 broadcast_of_another_member: pass pass-rule starter doc 1
+17 broadcast_delivered: g1 no gw yes v4 yes v6 no
+18 router_advertisement_filtered: drop drop-ra - doc 1
+19 router_advertisement_of_the_gateway: pass pass-control - doc 1
+20 router_advertisement_delivered: g1 no g2 yes v4 no v6 yes
+21 neighbour_solicitation: pass pass-control - doc 1
+22 ipv6_of_a_member_without_ipv6: drop drop-protocol - doc 1
+23 non_ip_of_a_member_without_it: drop drop-protocol - doc 1
+24 ipv4_of_a_member_without_ipv6: pass pass-rule starter doc 1
+25 ipv4_of_a_member_without_ipv4: drop drop-protocol - doc 1
+26 arp_of_a_member_without_ipv4: drop drop-protocol - doc 1
+27 ipv6_to_a_member_without_ipv6: drop drop-protocol - doc 1
+28 ipv6_of_a_member_without_ipv4: pass pass-rule starter doc 1
+29 member_of_a_network_without_rules: drop drop-network - doc 0
+30 to_a_member_of_another_network: drop drop-member - doc 0
+31 shorter_than_an_ethernet_header: drop drop-malformed - doc 1
+32 vlan_4095: drop drop-malformed - doc 1
+33 ip_packet_cut_short: drop drop-malformed - doc 1
+34 group_source_address: drop drop-malformed - doc 1
+35 tcp_header_cut_short: drop drop-malformed - doc 1
+36 tag_cut_short: drop drop-malformed - doc 1
+37 arp_not_of_ipv4: drop drop-malformed - doc 1
+g2 leaves, g3 joins
+38 frame_of_a_member_that_left: drop drop-member - doc 0
+39 frame_to_a_member_that_left: drop drop-member - doc 0
+40 mac_of_a_member_that_left: pass pass-rule starter doc 1
+41 flow_of_a_member_that_left: pass pass-rule starter doc 1
+network guest: l2, default deny, rules 1, members 5, flows 6 of 65536, tracked 7, evicted 0, expired 0
+network nowhere: not in the document, members 1
+counter guest starter: priority 1000000, allow, flows 7, packets 9, bytes 442
+counter guest default:deny: priority -, deny, flows 0, packets 0, bytes 0
+engine: members 6, networks 2, document 1, frames 39
+frames pass-rule: 8
+frames pass-flow: 1
+frames pass-control: 4
+frames drop-malformed: 7
+frames drop-member: 3
+frames drop-network: 1
+frames drop-isolated: 1
+frames drop-mac: 3
+frames drop-ip: 3
+frames drop-broadcast: 1
+frames drop-dhcp-server: 1
+frames drop-ra: 1
+frames drop-protocol: 5
