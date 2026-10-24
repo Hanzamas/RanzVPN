@@ -18,15 +18,23 @@
 #   go.mod requires, at its version (.github/scripts/sbom-check.ps1), and keeps it as the artifact
 #   sbom.
 #
-# It reads the whole tree, so it has no path filter: it runs on every pull request and on every
-# push to master.
+# It reads the whole tree, so it has no path filter: it runs on every pull request, on every push to
+# master or integration and on workflow_dispatch. It runs every night too, when the Go vulnerability
+# database has entries that no change of the code brought. Its job is the same in every run, and part
+# of the fast set of a pull request (ci-plan.yml).
 
 name: supply-chain
 
 on:
   push:
-    branches: [master]
+    branches: [master, integration]
+  schedule:
+  - cron: '31 20 * * *'
+  workflow_dispatch:
   pull_request:
+
+# Named as in windows.yml: a run that is not a pull request is Full CI: <event> on <branch>
+run-name: "${{ github.event_name == 'pull_request' && github.event.pull_request.title || format('Full CI: {0} on {1}', github.event_name, github.ref_name) }}"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
