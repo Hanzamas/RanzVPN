@@ -199,11 +199,12 @@ func removeService(m *mgr.Mgr, name string) (bool, error) {
 	return true, nil
 }
 
-// Install makes the Ranz folder with its access list, writes ranz-node.exe and a copy of the
-// running ranz.exe into it, registers the Node service under its virtual account and starts it,
-// and, with controller, does the same for the Controller service. It reports each step to w.
-// See the package documentation for what a second call does.
-func Install(w io.Writer, controller bool) error {
+// Install makes the Ranz folder with its access list, writes ranz-node.exe, wintun.dll, the NOTICE
+// and a copy of the running ranz.exe into it, puts the SeLow driver and the XDP runtime on the
+// machine where this build carries them (drivers.go), registers the Node service under its virtual
+// account and starts it, and, with opts.Controller, does the same for the Controller service. It
+// reports each step to w. See the package documentation for what a second call does.
+func Install(w io.Writer, opts Options) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("install: the path of ranz.exe: %w", err)
@@ -218,10 +219,10 @@ func Install(w io.Writer, controller bool) error {
 	}
 	defer m.Disconnect()
 
-	if err := installNode(w, m, dir, self); err != nil {
+	if err := installNode(w, m, dir, self, opts); err != nil {
 		return fmt.Errorf("install: %w", err)
 	}
-	if controller {
+	if opts.Controller {
 		if err := installController(w, m, dir); err != nil {
 			return fmt.Errorf("install: %w", err)
 		}
@@ -229,10 +230,11 @@ func Install(w io.Writer, controller bool) error {
 	return nil
 }
 
-// installNode makes the Ranz folder, fills it and registers and starts the Node service. A call
-// whose payload does not pass its check removes the folder again, when it made it, and registers
-// nothing.
-func installNode(w io.Writer, m *mgr.Mgr, dir, self string) error {
+// installNode makes the Ranz folder, fills it, puts the drivers on the machine and registers and
+// starts the Node service. A call whose payload does not pass its check removes the folder again,
+// when it made it, and registers nothing. The drivers come before the service starts, so that the
+// Node finds them at its start and reports them as its Capabilities.
+func installNode(w io.Writer, m *mgr.Mgr, dir, self string, opts Options) error {
 	exists, err := serviceExists(m, nodeServiceName)
 	if err != nil {
 		return err
@@ -242,22 +244,32 @@ func installNode(w io.Writer, m *mgr.Mgr, dir, self string) error {
 		return err
 	}
 	fmt.Fprintf(w, "install: the folder %s is for SYSTEM and the Administrators, and the two service accounts may read and run what is in it\n", dir)
-	if err := writeFiles(w, dir, self, exists); err != nil {
+	if err := writeFiles(w, dir, self, exists, opts); err != nil {
 		if created {
 			_ = os.RemoveAll(dir)
 		}
 		return err
 	}
+	installed := installDrivers(w, m, dir, opts)
 	if exists {
+		// A Node that runs has read what the machine holds at its start, so a driver that this call put there
+		// reaches the controller as a Capability only after the Node starts again
+		if installed > 0 {
+			fmt.Fprintf(w, "install: the %s service restarts, so that the Node reports the drivers that were just installed as its Capabilities\n", nodeServiceName)
+			if err := stopService(m, nodeServiceName); err != nil {
+				return err
+			}
+		}
 		return ensureRunning(w, m, nodeServiceName)
 	}
 	return createNode(w, m, dir)
 }
 
-// writeFiles writes the two files of the Ranz folder, each through payload.Install, which refuses
-// a file whose hash or Authenticode signature does not check. With onlyMissing a file that is
-// there stays as it is: a service that exists may be running it.
-func writeFiles(w io.Writer, dir, self string, onlyMissing bool) error {
+// writeFiles writes the files of the Ranz folder, each through payload.Install, which refuses a
+// file whose hash or Authenticode signature does not check: ranz-node.exe, wintun.dll and the
+// NOTICE beside it, and the copy of ranz.exe. With onlyMissing a file that is there stays as it
+// is: a service that exists may be running it.
+func writeFiles(w io.Writer, dir, self string, onlyMissing bool, opts Options) error {
 	node := payload.NodeExe
 	nodePath := filepath.Join(dir, node.Name)
 	if !onlyMissing || !fileExists(nodePath) {
@@ -266,7 +278,37 @@ func writeFiles(w io.Writer, dir, self string, onlyMissing bool) error {
 		}
 		fmt.Fprintf(w, "install: %s written (SHA-256 %x), after its hash and its Authenticode signature checked\n", nodePath, node.SHA256)
 	}
+	if err := writeWintun(w, dir, onlyMissing, opts.Notice); err != nil {
+		return err
+	}
 	return writeSelf(w, dir, self, onlyMissing)
+}
+
+// writeWintun writes wintun.dll, the DLL that the client role of the Node loads from the folder of
+// its executable, byte for byte as WireGuard LLC signed it, and the NOTICE beside it, whose text
+// holds the licence of the DLL (the licence asks for it to go with the DLL). The DLL installs
+// its driver itself when the Node creates an adapter, so there is nothing more to do for it here.
+func writeWintun(w io.Writer, dir string, onlyMissing bool, notice string) error {
+	dll := payload.WintunDll
+	dllPath := filepath.Join(dir, dll.Name)
+	if !onlyMissing || !fileExists(dllPath) {
+		if err := payload.Install(dir, dll); err != nil {
+			return fmt.Errorf("the Wintun payload: %w", err)
+		}
+		fmt.Fprintf(w, "install: %s written (SHA-256 %x), after its hash and its Authenticode signature checked\n", dllPath, dll.SHA256)
+	}
+	if notice == "" {
+		return nil
+	}
+	text := payload.NewUnsigned(noticeFileName, []byte(notice))
+	textPath := filepath.Join(dir, text.Name)
+	if !onlyMissing || !fileExists(textPath) {
+		if err := payload.Install(dir, text); err != nil {
+			return fmt.Errorf("the NOTICE: %w", err)
+		}
+		fmt.Fprintf(w, "install: %s written (SHA-256 %x), after its hash checked\n", textPath, text.SHA256)
+	}
+	return nil
 }
 
 // writeSelf writes a copy of the running ranz.exe, self, into the Ranz folder, through
@@ -351,10 +393,11 @@ func installController(w io.Writer, m *mgr.Mgr, dir string) error {
 }
 
 // Uninstall stops and removes the Controller service, if it is registered, and the Node service,
-// and removes the Ranz folder, and leaves the data directories alone. It reports each step to w.
-// When it runs from the ranz.exe in the Ranz folder, that file cannot be deleted while it runs:
-// it and the folder are removed at the next restart. With opts.KeepRanz it leaves that file and
-// the folder to its caller instead, and schedules nothing for the restart.
+// takes out the drivers that ranz install put on the machine (and no other: the install record
+// names them), removes the Ranz folder, and leaves the data directories alone. It reports each
+// step to w. When it runs from the ranz.exe in the Ranz folder, that file cannot be deleted while
+// it runs: it and the folder are removed at the next restart. With opts.KeepRanz it leaves that
+// file and the folder to its caller instead, and schedules nothing for the restart.
 func Uninstall(w io.Writer, opts UninstallOptions) error {
 	self, err := os.Executable()
 	if err != nil {
@@ -379,6 +422,10 @@ func Uninstall(w io.Writer, opts UninstallOptions) error {
 		errs = append(errs, err)
 	} else if removed {
 		fmt.Fprintf(w, "uninstall: the %s service is removed\n", nodeServiceName)
+	}
+	// The drivers go before the folder: the manifest of the XDP counters is in it
+	if err := removeDrivers(w, m, dir); err != nil {
+		errs = append(errs, err)
 	}
 	if err := removeDir(w, dir, self, opts.KeepRanz); err != nil {
 		errs = append(errs, err)

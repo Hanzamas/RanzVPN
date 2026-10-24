@@ -400,6 +400,24 @@ static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
 	return false;
 }
 
+// Put the Capabilities of the node into hello, as its owner tells them (CONTROL_CAPS_PROC): the architecture, SeLow
+// and XDP. An owner that gives no procedure leaves the Hello without any, and the controller counts every Capability
+// as missing then.
+static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
+	CONTROL_CAPS caps;
+
+	if (c->Config.CapsProc == NULL)
+		return;
+
+	ZeroMemory(&caps, sizeof(caps));
+	c->Config.CapsProc(c->Config.CapsParam, &caps);
+
+	hello->has_capabilities = true;
+	hello->capabilities.architecture = (ranz_control_v1_Architecture)caps.Architecture;
+	hello->capabilities.selow = caps.SeLow;
+	hello->capabilities.xdp = caps.Xdp;
+}
+
 // One stream: the dial, the handshake bound to the exporter of the TLS session, the Hello, then
 // the frames of the controller until the stream ends or the client halts
 static void ControlRun(CONTROL_CLIENT *c) {
@@ -439,6 +457,7 @@ static void ControlRun(CONTROL_CLIENT *c) {
 		c->Message->which_body = ranz_control_v1_ControlMessage_hello_tag;
 		c->Message->body.hello.schema_version = ranz_control_v1_SchemaVersion_SCHEMA_VERSION_2;
 		c->Message->body.hello.applied_generation = c->Status.Applied;
+		ControlSetCaps(c, &c->Message->body.hello);
 		ok = ControlWrite(c, s);
 	}
 

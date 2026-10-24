@@ -3,15 +3,20 @@ package main
 import "testing"
 
 // ranz install and ranz uninstall take no positional arguments; ranz install also takes
-// -controller, spelled with one dash or two. Each of these refuses its arguments before it
-// reaches install.Install or install.Uninstall; what those do is tested by the install job of
-// windows.yml (ONE-2 #311), which runs them on Windows with a signed ranz.exe.
+// -controller and -no-xdp, spelled with one dash or two. Each of these refuses its arguments before
+// it reaches install.Install or install.Uninstall; what those do is tested by the install job of
+// windows.yml (ONE-2 #311, ONE-3 #312), which runs them on Windows with a signed ranz.exe.
 func TestRunInstallTakesNoPositionalArguments(t *testing.T) {
 	if code := runInstall([]string{"extra"}); code != 2 {
 		t.Errorf("ranz install extra: exit code %d, want 2", code)
 	}
 	if code := runInstall([]string{"--controller", "extra"}); code != 2 {
 		t.Errorf("ranz install --controller extra: exit code %d, want 2", code)
+	}
+	for _, args := range [][]string{{"--no-xdp", "extra"}, {"-no-xdp", "--controller", "extra"}} {
+		if code := runInstall(args); code != 2 {
+			t.Errorf("ranz install %q: exit code %d, want 2", args, code)
+		}
 	}
 }
 
