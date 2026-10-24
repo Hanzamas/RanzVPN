@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -40,6 +42,36 @@ func TestNoticeHasTheLicencesOfTheMimicryLibraries(t *testing.T) {
 				t.Errorf("the NOTICE does not hold the %s of %s word for word: %s", c.file, c.module, firstDifference(have, want))
 			}
 		})
+	}
+}
+
+// THIRD_PARTY.TXT names the version of each library that `ranz mimic` carries, the one that go.mod
+// pins, so that a new version of a library fails here until the file follows it (CORE-P2-1, #85).
+func TestThirdPartyNamesThePinsOfTheMimicryLibraries(t *testing.T) {
+	gomod, err := os.ReadFile("../../../go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := os.ReadFile("../../../THIRD_PARTY.TXT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, module := range []string{
+		"github.com/xtls/reality",
+		"github.com/refraction-networking/utls",
+		"github.com/juju/ratelimit",
+		"github.com/andybalholm/brotli",
+		"github.com/klauspost/compress",
+		"github.com/pires/go-proxyproto",
+	} {
+		m := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(module) + ` (\S+)`).FindSubmatch(gomod)
+		if m == nil {
+			t.Errorf("go.mod does not require %s", module)
+			continue
+		}
+		if !bytes.Contains(third, []byte(module+" "+string(m[1]))) {
+			t.Errorf("go.mod pins %s %s and THIRD_PARTY.TXT does not name that version: set both to the version that ranz mimic carries", module, m[1])
+		}
 	}
 }
 
