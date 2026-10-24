@@ -248,6 +248,7 @@ func (s *server) handle(raw net.Conn) {
 		return
 	}
 	state := conn.ConnectionState()
+	s.log.Debug("the TLS session of a client", "peer", peer, "version", state.Version, "suite", state.CipherSuite)
 	if _, err := io.WriteString(pipe, "bind "+bindingText(&state)+"\n"); err != nil {
 		conn.Close()
 		pipe.Close()

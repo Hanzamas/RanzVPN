@@ -125,6 +125,7 @@ func (c *client) handle(pipe net.Conn) {
 	}
 
 	state := conn.ConnectionState()
+	c.log.Debug("the TLS session of a link", "address", address, "version", state.Version, "suite", state.CipherSuite)
 	if _, err := io.WriteString(pipe, "ok "+bindingText(&state)+"\n"); err != nil {
 		conn.Close()
 		pipe.Close()
