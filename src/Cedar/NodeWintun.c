@@ -82,25 +82,25 @@ typedef DWORD(WINAPI NODE_SET_DNS_FUNC)(GUID iface, const NODE_DNS_SETTINGS *set
 
 // An adapter of the node
 struct NODE_WINTUN {
-	NODE *Node;                                     // The node
-	wchar_t Name[MAX_SIZE];                         // The name of the adapter
-	WINTUN_ADAPTER_HANDLE Adapter;                  // The adapter, which goes when it is closed
-	NET_LUID Luid;                                  // Its interface
-	UINT Index;                                     // ... the index of that interface
-	GUID Guid;                                      // ... and its GUID
-	WINTUN_SESSION_HANDLE Session;                  // The session of its rings, NULL for an adapter without one
-	HANDLE ReadEvent;                               // The read event of the session, which the session owns
-	NODE_QUEUE *Queue;                              // The adapter queue that takes the packets of the host, NULL once halted
-	NODE_WINTUN_PROC *Proc;                         // Takes each packet of the host
-	void *Param;                                    // ... and its second parameter
-	LOCK *Lock;                                     // Addresses and Routes
+	NODE *Node;                                       // The node
+	wchar_t Name[MAX_SIZE];                           // The name of the adapter
+	WINTUN_ADAPTER_HANDLE Adapter;                    // The adapter, which goes when it is closed
+	NET_LUID Luid;                                    // Its interface
+	UINT Index;                                       // ... the index of that interface
+	GUID Guid;                                        // ... and its GUID
+	WINTUN_SESSION_HANDLE Session;                    // The session of its rings, NULL for an adapter without one
+	HANDLE ReadEvent;                                 // The read event of the session, which the session owns
+	NODE_QUEUE *Queue;                                // The adapter queue that takes the packets of the host, NULL once halted
+	NODE_WINTUN_PROC *Proc;                           // Takes each packet of the host
+	void *Param;                                      // ... and its second parameter
+	LOCK *Lock;                                       // Addresses and Routes
 	NODE_PREFIX Addresses[NODE_WINTUN_MAX_ADDRESSES]; // The addresses that the node set on the adapter
-	UINT NumAddresses;                              // ... their number
-	NODE_PREFIX Routes[NODE_WINTUN_MAX_ROUTES];     // The routes that the node installed through the adapter
-	UINT NumRoutes;                                 // ... their number
-	volatile LONG64 FromHost;                       // Packets of the host taken from the ring
-	volatile LONG64 ToHost;                         // Packets put into the ring for the host
-	volatile LONG64 Dropped;                        // Packets for the host that found the ring full
+	UINT NumAddresses;                                // ... their number
+	NODE_PREFIX Routes[NODE_WINTUN_MAX_ROUTES];       // The routes that the node installed through the adapter
+	UINT NumRoutes;                                   // ... their number
+	volatile LONG64 FromHost;                         // Packets of the host taken from the ring
+	volatile LONG64 ToHost;                           // Packets put into the ring for the host
+	volatile LONG64 Dropped;                          // Packets for the host that found the ring full
 };
 
 // Load wintun.dll from the directory of the executable, its imports from System32, and take its functions

@@ -14,8 +14,7 @@ ranz_add_executable(vpntest HAMCORE
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c,
   # quictest.c and tlstest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN
   # module for vxlantest.c, the switch module for switchtest.c; netapi32: the local account that stands for a domain
-  # account (NetUserAdd), and the local user of clienttest.c; iphlpapi and dnsapi: the echo, the routes, the DNS settings
-  # and the DNS query of clienttest.c
+  # account (NetUserAdd)
   LIBRARIES
     coretransport
     corenoise
@@ -23,8 +22,6 @@ ranz_add_executable(vpntest HAMCORE
     corevxlan
     coreswitch
     "netapi32.lib"
-    "iphlpapi.lib"
-    "dnsapi.lib"
   # The resources test (runtime.c) compares every hamcore file the executable serves with its source
   # file. A C-only definition, so the resource scripts of vpntest do not get the quoted path.
   C_DEFINITIONS

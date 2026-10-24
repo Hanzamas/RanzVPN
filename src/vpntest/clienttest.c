@@ -1504,6 +1504,11 @@ static bool ClientTestDatagram(UINT dst, char *data, bool expect_reply)
 	return ok;
 }
 
+// DnsQueryEx and DnsFree of dnsapi.dll, which the test takes by name: Mayaqua has a DnsFree of its own (DNS.c), so
+// vpntest cannot link the import library of dnsapi.dll
+typedef DNS_STATUS(WINAPI CLIENTTEST_DNS_QUERY_EX)(PDNS_QUERY_REQUEST request, PDNS_QUERY_RESULT result, PDNS_QUERY_CANCEL cancel);
+typedef VOID(WINAPI CLIENTTEST_DNS_FREE)(PVOID data, DNS_FREE_TYPE type);
+
 // A DNS query of the probe through the DNS servers of the interface of index, as an application of the runner asks:
 // the address of the A record of the answer, 0 for none
 static UINT ClientTestDnsQuery(UINT index)
@@ -1511,6 +1516,19 @@ static UINT ClientTestDnsQuery(UINT index)
 	DNS_QUERY_REQUEST req;
 	DNS_QUERY_RESULT res;
 	UINT ret = 0;
+
+	HMODULE dnsapi = LoadLibraryExW(L"dnsapi.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+	CLIENTTEST_DNS_QUERY_EX *query = (dnsapi != NULL ? (CLIENTTEST_DNS_QUERY_EX *)(void *)GetProcAddress(dnsapi, "DnsQueryEx") : NULL);
+	CLIENTTEST_DNS_FREE *free_records = (dnsapi != NULL ? (CLIENTTEST_DNS_FREE *)(void *)GetProcAddress(dnsapi, "DnsFree") : NULL);
+	if (query == NULL || free_records == NULL)
+	{
+		Print("  [INFO] dnsapi.dll has no DnsQueryEx or DnsFree (error %u)\n", (UINT)GetLastError());
+		if (dnsapi != NULL)
+		{
+			FreeLibrary(dnsapi);
+		}
+		return 0;
+	}
 
 	Zero(&req, sizeof(req));
 	Zero(&res, sizeof(res));
@@ -1521,7 +1539,7 @@ static UINT ClientTestDnsQuery(UINT index)
 	req.InterfaceIndex = index;
 	res.Version = DNS_QUERY_REQUEST_VERSION1;
 
-	DNS_STATUS status = DnsQueryEx(&req, &res, NULL);
+	DNS_STATUS status = query(&req, &res, NULL);
 	if (status == ERROR_SUCCESS && res.QueryStatus == ERROR_SUCCESS)
 	{
 		for (PDNS_RECORD r = res.pQueryRecords;r != NULL && ret == 0;r = r->pNext)
@@ -1539,8 +1557,9 @@ static UINT ClientTestDnsQuery(UINT index)
 
 	if (res.pQueryRecords != NULL)
 	{
-		DnsRecordListFree(res.pQueryRecords, DnsFreeRecordList);
+		free_records(res.pQueryRecords, DnsFreeRecordList);
 	}
+	FreeLibrary(dnsapi);
 
 	return ret;
 }

@@ -294,22 +294,22 @@ struct NODE_PREFIX {
 
 // What NodeClientGetStatus reports
 struct NODE_CLIENT_STATUS {
-	bool Running;                         // The role runs with a Client setting
-	bool Down;                            // The logged-in user took it down
-	bool Asleep;                          // Between a suspend and a resume
-	wchar_t Adapter[MAX_SIZE];            // The name of its Wintun adapter
-	UINT InterfaceIndex;                  // ... the index of its interface
-	UINT64 InterfaceLuid;                 // ... and the LUID of that interface
-	wchar_t Pipe[MAX_PATH];               // The pipe of the logged-in user
-	UCHAR Key[PEER_KEY_SIZE];             // The node's static key, which its servers know
-	UINT VrfId;                           // The VRF of the adapter: the VRF of the node's first address
-	UINT NumServers;                      // The servers that it dials
-	char Transport[TRANSPORT_NAME_SIZE];  // The transport of the stream that connected last, empty before the first
-	UINT64 NumDials;                      // Streams that connected
-	UINT64 NumResets;                     // Times it closed its streams: suspend, resume, roaming, down
-	UINT64 NumRoams;                      // Settled address changes on other interfaces
-	UINT64 FromHost;                      // Packets of the host taken from the adapter
-	UINT64 ToHost;                        // Packets put into the adapter for the host
+	bool Running;                        // The role runs with a Client setting
+	bool Down;                           // The logged-in user took it down
+	bool Asleep;                         // Between a suspend and a resume
+	wchar_t Adapter[MAX_SIZE];           // The name of its Wintun adapter
+	UINT InterfaceIndex;                 // ... the index of its interface
+	UINT64 InterfaceLuid;                // ... and the LUID of that interface
+	wchar_t Pipe[MAX_PATH];              // The pipe of the logged-in user
+	UCHAR Key[PEER_KEY_SIZE];            // The node's static key, which its servers know
+	UINT VrfId;                          // The VRF of the adapter: the VRF of the node's first address
+	UINT NumServers;                     // The servers that it dials
+	char Transport[TRANSPORT_NAME_SIZE]; // The transport of the stream that connected last, empty before the first
+	UINT64 NumDials;                     // Streams that connected
+	UINT64 NumResets;                    // Times it closed its streams: suspend, resume, roaming, down
+	UINT64 NumRoams;                     // Settled address changes on other interfaces
+	UINT64 FromHost;                     // Packets of the host taken from the adapter
+	UINT64 ToHost;                       // Packets put into the adapter for the host
 };
 
 // What NodeShapeGetStatus reports
