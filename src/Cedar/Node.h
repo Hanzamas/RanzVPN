@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeLeak.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeLeak.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -11,6 +11,7 @@
 
 #include "Core/Peer.h"
 #include "Core/Transport.h"
+#include "Core/Vxlan.h"
 
 // The roles of a node (ADR-0011, ADR-0022). A node runs any set of them, chosen by the configuration
 // and later by the control plane (NodeSetRoles). The controller is not a role: it left the node with #176.
@@ -66,6 +67,11 @@
 #define NODE_OVERLAY_BATCH         64   // Records that the thread takes from one session in one pass
 #define NODE_OVERLAY_VRF_TAG       4    // Bytes of a data record before its IP packet: the VRF id, big-endian (SDN-4, #180)
 #define NODE_OVERLAY_RECORD        2048 // Bytes of a data record that NodeOverlayInput builds on its stack; a larger one is allocated
+
+// The Mirrors of a node (NodeMirror.c; SDN-23, #199)
+#define NODE_MIRROR_ETHER     14                 // Bytes of the Ethernet header in front of the IP packet of a copy
+#define NODE_MIRROR_BURST     50                 // ms of its rate that the token bucket of a Mirror holds ...
+#define NODE_MIRROR_MIN_BURST VXLAN_MAX_DATAGRAM // ... and bytes at least: the largest datagram of the VXLAN module
 
 // The client role (NodeClient.c; CORE-S3-1, #71)
 #define NODE_CLIENT_ADAPTER     "Ranz"             // The name of its Wintun adapter without one in the Client setting
@@ -184,6 +190,8 @@ struct NODE_VRF_TABLES {
 	// The VRF of the peer that a packet to each next hop goes into, 0 for the VRF of its route: a next hop of a route
 	// that a VRF of the peer leaks (NodeLeak.c; SDN-7, #183). NULL when no route is leaked.
 	UINT *HopVrfs;
+	// The Mirrors of the same Generation (NodeMirror.c; SDN-23, #199), NULL for none
+	NODE_MIRROR_TABLE *Mirror;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -260,6 +268,10 @@ struct NODE {
 
 	// The MTU, the MSS clamp and the rate limits of the overlay (NodeShape.c; SDN-20, #196), NULL while it does not run
 	NODE_SHAPE *Shape;
+
+	// The VXLAN module that sends the copies of the Mirrors (NodeMirror.c; SDN-23, #199), NULL until a Generation of
+	// the overlay has a Mirror
+	NODE_MIRROR *volatile Mirror;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -383,6 +395,13 @@ struct NODE_MITIGATION {
 	char *Off;   // NULL when the node sets it; else why a feature of the node cannot run under it
 };
 
+// What NodeMirrorGetStatus reports: the copies of the Mirrors since the first Generation of the overlay that had one
+struct NODE_MIRROR_STATUS {
+	UINT64 Copied;  // Copies that went to a sensor
+	UINT64 Limited; // Copies that the rate limit of their Mirror dropped
+	UINT64 Failed;  // Copies that could not go: a packet too large for a VXLAN frame, a VNI of more than 24 bits, a failed send
+};
+
 // Node.c
 NODE *NewNode(wchar_t *data_dir);
 void FreeNode(NODE *n);
@@ -429,6 +448,14 @@ void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
 // NodeHarden.c
 void NodeHarden();
 const NODE_MITIGATION *NodeGetMitigations(UINT *num);
+
+// NodeMirror.c
+NODE_MIRROR *NodeNewMirror(VXLAN_SEND_PROC *send, void *send_param);
+void NodeFreeMirror(NODE_MIRROR *m);
+NODE_MIRROR_TABLE *NodeNewMirrorTable(NODE_MIRROR *m, const struct CONTROL_STATE *st);
+void NodeFreeMirrorTable(NODE_MIRROR_TABLE *t);
+void NodeMirrorCopy(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, bool from_host);
+void NodeMirrorGetStatus(NODE *n, NODE_MIRROR_STATUS *st);
 
 // NodeVrf.c
 NODE_VRF_TABLES *NodeNewVrfTables(UINT64 generation, const NODE_VRF_ROUTE *routes, UINT num, void **hops, UINT num_hops);

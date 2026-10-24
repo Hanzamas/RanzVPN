@@ -75,7 +75,7 @@ type Document struct {
 }
 
 // Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy,
-// Controller or NAT.
+// Mirror (mirror.go), Controller or NAT.
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -176,6 +176,7 @@ type Intent struct {
 	Networks    map[string]Network
 	Nodes       map[string]Node
 	Policies    map[string]Policy
+	Mirrors     map[string]Mirror
 	Controllers map[string]Controller
 	NATs        map[string]NAT
 }
@@ -183,7 +184,7 @@ type Intent struct {
 // New returns an empty intent.
 func New() Intent {
 	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: map[string]Policy{},
-		Controllers: map[string]Controller{}, NATs: map[string]NAT{}}
+		Mirrors: map[string]Mirror{}, Controllers: map[string]Controller{}, NATs: map[string]NAT{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
@@ -196,6 +197,11 @@ func (in Intent) Clone() Intent {
 	cloneRouteTargets(out.VRFs)
 	if out.Policies == nil {
 		out.Policies = map[string]Policy{}
+	}
+	// A Mirror holds no slice or map, so a copy of the map shares nothing
+	out.Mirrors = maps.Clone(in.Mirrors)
+	if out.Mirrors == nil {
+		out.Mirrors = map[string]Mirror{}
 	}
 	if out.Controllers == nil {
 		out.Controllers = map[string]Controller{}
@@ -273,6 +279,11 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &p); err == nil {
 				next.Policies[r.Name] = p
 			}
+		case KindMirror:
+			var m Mirror
+			if err = decodeSpec(r.Spec, &m); err == nil {
+				next.Mirrors[r.Name] = m
+			}
 		case KindController:
 			var c Controller
 			if err = decodeSpec(r.Spec, &c); err == nil {
@@ -284,7 +295,7 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 				next.NATs[r.Name] = n
 			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindController, KindNAT)
+			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -306,8 +317,8 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 }
 
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
-// Network, a Node, a Policy or a NAT uses cannot be deleted, nor can a Node that a NAT uses. The
-// Nodes lose their addresses in a deleted Network.
+// Network, a Node, a Policy, a Mirror or a NAT uses cannot be deleted, nor can a Node that a NAT
+// uses. The Nodes lose their addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -331,6 +342,7 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 				users = append(users, KindPolicy+" "+strconv.Quote(n))
 			}
 		}
+		users = append(users, next.mirrorUsers(name)...)
 		users = append(users, next.natUsers(name, "")...)
 		if len(users) > 0 {
 			return in, fmt.Errorf("%w: VRF %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
@@ -355,6 +367,11 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.Policies, name)
+	case KindMirror:
+		if _, ok := next.Mirrors[name]; !ok {
+			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
+		}
+		delete(next.Mirrors, name)
 	case KindController:
 		if _, ok := next.Controllers[name]; !ok {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
@@ -366,13 +383,13 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		}
 		delete(next.NATs, name)
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindController, KindNAT, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT, kind)
 	}
 	return next, nil
 }
 
 // Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
-// Policies, then the Controllers, then the NATs, each ordered by name.
+// Policies, then the Mirrors, then the Controllers, then the NATs, each ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -386,6 +403,9 @@ func (in Intent) Resources() []Resource {
 	}
 	for _, name := range sortedNames(in.Policies) {
 		out = append(out, resource(KindPolicy, name, in.Policies[name]))
+	}
+	for _, name := range sortedNames(in.Mirrors) {
+		out = append(out, resource(KindMirror, name, in.Mirrors[name]))
 	}
 	for _, name := range sortedNames(in.Controllers) {
 		out = append(out, resource(KindController, name, in.Controllers[name]))
@@ -419,6 +439,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var p Policy
 			err = decodeSpec(r.Spec, &p)
 			in.Policies[r.Name] = p
+		case KindMirror:
+			var m Mirror
+			err = decodeSpec(r.Spec, &m)
+			in.Mirrors[r.Name] = m
 		case KindController:
 			var c Controller
 			err = decodeSpec(r.Spec, &c)
@@ -558,6 +582,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 		n.Reserved = canonicalReserved(n.Reserved)
 		in.Networks[name] = n
 	}
+	in.completeMirrors()
 	_, hasDefault := in.VRFs[DefaultVRF]
 	for name, n := range in.Nodes {
 		if len(n.VRFs) == 0 && hasDefault {
@@ -670,6 +695,7 @@ func (in Intent) validate() []error {
 			problems = append(problems, fmt.Errorf("Policy %q: the action must be %s or %s, not %q", name, PolicyAllow, PolicyDeny, p.Action))
 		}
 	}
+	problems = append(problems, in.validateMirrors()...)
 	addresses := map[string]string{}
 	for _, name := range sortedNames(in.Controllers) {
 		c := in.Controllers[name]

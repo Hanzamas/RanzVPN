@@ -224,6 +224,39 @@ static bool ControlApply(CONTROL_CLIENT *c, const ranz_control_v1_Update *u) {
 	return true;
 }
 
+// The Mirrors of the NodeConfig among num objects (SDN-23, #199); a Mirror whose sensor is neither an IPv4 nor an
+// IPv6 address is left out
+static void ControlCopyMirrors(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num) {
+	st->NumMirrors = 0;
+
+	for (UINT i = 0; i < num; i++) {
+		if (objects[i].which_kind != ranz_control_v1_Object_node_tag)
+			continue;
+
+		const ranz_control_v1_NodeConfig *node = &objects[i].kind.node;
+
+		for (pb_size_t j = 0; j < node->mirrors_count && st->NumMirrors < CONTROL_MAX_MIRRORS; j++) {
+			const ranz_control_v1_Mirror *src = &node->mirrors[j];
+			CONTROL_MIRROR *m = &st->Mirrors[st->NumMirrors];
+
+			if (src->sensor.size != 4 && src->sensor.size != 16)
+				continue;
+
+			ZeroMemory(m, sizeof(CONTROL_MIRROR));
+			strncpy_s(m->Name, sizeof(m->Name), src->name, _TRUNCATE);
+			m->VrfId = src->vrf_id;
+			m->Protocol = src->protocol;
+			m->Port = src->port;
+			CopyMemory(m->Sensor, src->sensor.bytes, src->sensor.size);
+			m->SensorSize = src->sensor.size;
+			m->SensorPort = src->sensor_port;
+			m->Vni = src->vni;
+			m->RateLimit = src->rate_limit;
+			st->NumMirrors++;
+		}
+	}
+}
+
 static void ControlCopyAddresses(CONTROL_ADDRESS *dst, UINT *num, const ranz_control_v1_Address *src, pb_size_t count) {
 	*num = 0;
 
@@ -341,6 +374,7 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	qsort(st.Vrfs, st.NumVrfs, sizeof(CONTROL_VRF), ControlCompareVrfs);
 	qsort(st.Peers, st.NumPeers, sizeof(CONTROL_PEER), ControlComparePeers);
 
+	ControlCopyMirrors(&st, c->Objects, c->NumObjects);
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
 
