@@ -80,6 +80,8 @@ src/Cedar  NodeNatInbound  fuzz_nat
 # The shaping of the overlay (SDN-20 #196) reads the packet of the host that NodeOverlayInput copied: no parser word in
 # its name, listed as a parser
 src/Cedar  NodeShapeOutput      exempt  only AdjustTcpMssL3 of TcpIp reads the bytes, to clamp the MSS of a TCP SYN, and fuzz_tcpip drives it through AdjustTcpMssL2; the rate limits take the size of the packet alone
+# The Capabilities of the Node (ONE-3 #312) come from the host, not from a peer
+src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: it asks Windows for the architecture of the host, whether the services SeLow and xdp are registered and whether three files of System32 exist
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen

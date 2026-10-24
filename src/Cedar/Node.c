@@ -24,6 +24,7 @@
 
 #include "Core/Noise.h"
 
+#include "NodeCaps.h"
 #include "NodeInternal.h"
 
 #include <AclAPI.h>
@@ -325,6 +326,7 @@ NODE *NewNode(wchar_t *data_dir) {
 		NodeLog(n, protected_dir ? "Data directory %S: SYSTEM, the Administrators and the service account only" : "Data directory %S: its DACL could not be set", n->DataDir);
 
 	NodeLogMitigations(n);
+	NodeLogCaps(n);
 
 	n->Cedar = NewCedar(NULL, NULL);
 

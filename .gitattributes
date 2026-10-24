@@ -15,3 +15,10 @@ controller/cmd/ranz/NOTICE -text
 # #311): empty in the committed tree, and never text-converted even once a job of windows.yml
 # writes the signed ranz-node.exe of its architecture there before building.
 controller/internal/payload/*.exe -text
+# The Payloads of ONE-3 (#312) are embedded byte for byte too: the placeholders of the Wintun DLL and
+# of the XDP runtime, which the jobs of windows.yml fill from the pinned releases before they build,
+# and the SeLow package, a copy of the one in hamcore that a test compares with it (selow_test.go),
+# whose INF keeps its CRLF.
+controller/internal/payload/*.dll -text
+controller/internal/payload/xdp/* -text
+controller/internal/payload/selow/* -text

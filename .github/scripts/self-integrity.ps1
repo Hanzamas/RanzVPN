@@ -5,7 +5,10 @@ param(
 	[string] $LicenseFile,  # The LICENSE of the repository (unused payload, kept for parity with the release spec)
 	[string] $GoModuleDir,  # The Go module, the repository root (ranz, the shipped Go executable, for the symbol-strip check)
 	[string] $OutDir,       # Work directory: the signed copies and the MSI
-	[string] $Rqlited       # The rqlited.exe of the pinned rqlite release: the rqlite member that ranz.exe carries (ONE-4, #313)
+	[string] $Rqlited,      # The rqlited.exe of the pinned rqlite release: the rqlite member that ranz.exe carries (ONE-4, #313)
+	[string] $WintunX64,    # The folder that fetch-wintun.ps1 filled for x64: the wintun.dll that ranz.exe carries (ONE-3, #312)
+	[string] $WintunArm64,  # ... and for arm64
+	[string] $Xdp           # The folder that fetch-xdp.ps1 filled: the files of the XDP runtime that the x64 ranz.exe carries (ONE-3, #312)
 )
 
 # SEC-3 (#281), ADR-0020 and ADR-0036 amendments of 2026-10-22. Three things, all provable in CI with a
@@ -29,6 +32,14 @@ param(
 # publishes no Windows build for arm64, so the ranz.exe of both architectures carries the same x64
 # file, which Windows 11 on ARM runs under emulation. Its SHA-256 goes to GITHUB_OUTPUT too, so that the
 # install job compares the file that the Controller writes under its data directory with a hash.
+#
+# ONE-3 (#312) adds the drivers that ranz install carries, as Payloads of the same ranz.exe, none of them signed here
+# again: the wintun.dll of the pinned Wintun release for each architecture, as WireGuard LLC signed it, and for x64 the
+# files of the pinned XDP runtime, as Microsoft signed them, which the checks of ranz install need as they are. The
+# SeLow package is in the repository (src/bin/hamcore, and its copy under controller/internal/payload). The SHA-256 of
+# each of these files goes to GITHUB_OUTPUT too. A third x64 ranz.exe, in $OutDir\x64-xdpfail, has one byte of xdp.sys
+# changed, so that the install job can read what ranz install does when the XDP runtime fails: it must install the Node
+# all the same.
 
 $ErrorActionPreference = 'Stop'
 # Native exit codes are checked explicitly below (so "go tool nm", which exits 1 when a binary has no
@@ -49,6 +60,18 @@ $X64Dir = (Resolve-Path -LiteralPath $X64Dir).Path
 $Arm64Dir = (Resolve-Path -LiteralPath $Arm64Dir).Path
 $Wxs = (Resolve-Path -LiteralPath $Wxs).Path
 if (-not $Rqlited) { throw '-Rqlited names no rqlited.exe, which the ranz.exe of each architecture carries as a Payload (ONE-4, #313)' }
+if (-not $WintunX64 -or -not $WintunArm64) { throw '-WintunX64 and -WintunArm64 name no folder with the wintun.dll that the ranz.exe of each architecture carries as a Payload (ONE-3, #312)' }
+if (-not $Xdp) { throw '-Xdp names no folder with the XDP runtime that the x64 ranz.exe carries as a Payload (ONE-3, #312)' }
+$wintunDlls = @{
+	'x64'   = (Join-Path (Resolve-Path -LiteralPath $WintunX64).Path 'wintun.dll')
+	'arm64' = (Join-Path (Resolve-Path -LiteralPath $WintunArm64).Path 'wintun.dll')
+}
+$xdpDir = (Resolve-Path -LiteralPath $Xdp).Path
+# The files of the XDP runtime, named as controller/internal/payload/xdp holds them
+$xdpNames = @('xdp.sys', 'xdpapi.dll', 'xdp.cat', 'xdp.inf', 'xdppcw.man')
+foreach ($file in @($wintunDlls['x64'], $wintunDlls['arm64']) + @($xdpNames | ForEach-Object { Join-Path $xdpDir $_ })) {
+	if (-not (Test-Path -LiteralPath $file)) { throw "$file is missing: fetch-wintun.ps1 and fetch-xdp.ps1 fill the folders of -WintunX64, -WintunArm64 and -Xdp" }
+}
 
 # signtool.exe of the Windows SDK: the highest version under the Windows Kits, x64 build
 function Get-SignTool {
@@ -166,6 +189,21 @@ if ($env:GITHUB_OUTPUT) {
 	"member-sha256=$memberHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 }
 
+# ONE-3 (#312): the SHA-256 of each driver file that ranz.exe carries and ranz install writes, so that the install job
+# compares what it wrote with a hash, as it does for ranz-node.exe
+if ($env:GITHUB_OUTPUT) {
+	foreach ($arch in @('x64', 'arm64')) {
+		$hash = (Get-FileHash -LiteralPath $wintunDlls[$arch] -Algorithm SHA256).Hash
+		Write-Host "wintun.dll ($arch): SHA-256 $hash"
+		"wintun-sha256-$arch=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+	}
+	foreach ($pair in @(@{ File = 'xdp.sys'; Output = 'xdp-sys-sha256' }, @{ File = 'xdpapi.dll'; Output = 'xdp-api-sha256' })) {
+		$hash = (Get-FileHash -LiteralPath (Join-Path $xdpDir $pair.File) -Algorithm SHA256).Hash
+		Write-Host "$($pair.File): SHA-256 $hash"
+		"$($pair.Output)=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+	}
+}
+
 # ---------------------------------------------------------------------------------------------------
 # 1 (continued). Build an MSI that packages the signed x64 vpnserver.exe, sign it and verify it.
 # ---------------------------------------------------------------------------------------------------
@@ -264,7 +302,11 @@ Write-Host 'the MSI ships no PDB (the C PDB is kept private)'
 # builds, and writes empty again after. ranz.exe is then signed once, like every shipped executable. A
 # second build carries a copy of the ranz-node.exe payload with one byte changed well inside it, never
 # its MS-DOS or PE header, and is signed too: only its Payload is wrong, so ranz install must refuse it
-# for that and for no other reason.
+# for that and for no other reason. The ranz.exe of each architecture also carries the wintun.dll of the
+# pinned release, and the x64 one the files of the XDP runtime (ONE-3, #312), written over the placeholders
+# of controller/internal/payload (wintun_<arch>.dll and xdp/) and emptied again after. A third x64 build,
+# x64-xdpfail, carries the same Payloads with one byte of xdp.sys changed well inside it: ranz install must
+# refuse the XDP runtime and nothing else, and the Node must still be installed.
 $build = $env:GITHUB_RUN_NUMBER
 if (-not $build) { $build = '0' }
 Push-Location $GoModuleDir
@@ -277,16 +319,36 @@ try {
 		# The rqlite member, the same x64 file for both architectures (ONE-4, #313)
 		[byte[]] $memberBytes = [System.IO.File]::ReadAllBytes($member)
 		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/rqlited_$goarch.exe"), $memberBytes)
+		# The Wintun DLL of this architecture, and for x64 the XDP runtime (ONE-3, #312), as they were fetched
+		[byte[]] $wintunBytes = [System.IO.File]::ReadAllBytes($wintunDlls[$pair.Arch])
+		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/wintun_$goarch.dll"), $wintunBytes)
+		$variants = @('', '-tampered')
+		if ($pair.Arch -eq 'x64') {
+			foreach ($name in $xdpNames) {
+				[byte[]] $xdpBytes = [System.IO.File]::ReadAllBytes((Join-Path $xdpDir $name))
+				[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/xdp/$name"), $xdpBytes)
+			}
+			$variants += '-xdpfail'
+		}
 		$env:GOOS = 'windows'
 		$env:GOARCH = $goarch
 		$env:CGO_ENABLED = '0'
-		foreach ($variant in @('', '-tampered')) {
+		foreach ($variant in $variants) {
 			$payload = $nodeBytes.Clone()
-			if ($variant -ne '') {
+			if ($variant -eq '-tampered') {
 				$mid = [int]($payload.Length / 2)
 				$payload[$mid] = [byte]($payload[$mid] -bxor 0xFF)
 			}
 			[System.IO.File]::WriteAllBytes($placeholder, $payload)
+			# The XDP driver with one byte changed, for the third build only; the others carry it as it is
+			if ($pair.Arch -eq 'x64') {
+				[byte[]] $sysBytes = [System.IO.File]::ReadAllBytes((Join-Path $xdpDir 'xdp.sys'))
+				if ($variant -eq '-xdpfail') {
+					$mid = [int]($sysBytes.Length / 2)
+					$sysBytes[$mid] = [byte]($sysBytes[$mid] -bxor 0xFF)
+				}
+				[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path 'controller/internal/payload/xdp/xdp.sys'), $sysBytes)
+			}
 			$exeDir = Join-Path $OutDir "$($pair.Arch)$variant"
 			New-Item -ItemType Directory -Force -Path $exeDir | Out-Null
 			$goexe = Join-Path $exeDir 'ranz.exe'
@@ -295,7 +357,7 @@ try {
 			if ($variant -eq '') {
 				$nm = (go tool nm $goexe 2>&1 | Out-String)
 				if ($nm -notmatch 'no symbols') { throw "ranz ($goarch) still has a symbol table after -ldflags '-s -w':`n$nm" }
-				Write-Host "ranz ($goarch): -trimpath -ldflags '-s -w', no symbol table, ranz-node.exe ($($nodeBytes.Length) bytes) and rqlited.exe ($($memberBytes.Length) bytes) as its Payloads"
+				Write-Host "ranz ($goarch): -trimpath -ldflags '-s -w', no symbol table, ranz-node.exe ($($nodeBytes.Length) bytes), rqlited.exe ($($memberBytes.Length) bytes) and wintun.dll ($($wintunBytes.Length) bytes) as its Payloads"
 			}
 			Protect-File $signtool $thumb $goexe
 		}
@@ -304,6 +366,10 @@ try {
 	foreach ($goarch in @('amd64', 'arm64')) {
 		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/node_$goarch.exe"), [byte[]]@())
 		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/rqlited_$goarch.exe"), [byte[]]@())
+		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/wintun_$goarch.dll"), [byte[]]@())
+	}
+	foreach ($name in @('xdp.sys', 'xdpapi.dll', 'xdp.cat', 'xdp.inf', 'xdppcw.man')) {
+		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/xdp/$name"), [byte[]]@())
 	}
 	Pop-Location
 	Remove-Item Env:\GOOS, Env:\GOARCH, Env:\CGO_ENABLED -ErrorAction SilentlyContinue

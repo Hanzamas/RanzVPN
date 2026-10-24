@@ -1,4 +1,9 @@
-param([string] $BuildDir = 'build')
+param(
+	[string] $BuildDir = 'build',
+	# The architecture of this runner, x64 or arm64: what the nodes must report as their architecture (ONE-3, #312)
+	[ValidateSet('x64', 'arm64')]
+	[string] $Architecture = 'x64'
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -10,6 +15,9 @@ $ErrorActionPreference = 'Stop'
 # - give the two Node resources, which name no VRF, VRF default and an address each from its pool.
 # The nodes must open their control streams to it, apply their state and acknowledge its
 # Generation, which the API shows, and exchange ICMP echo over the in-process loopback transport;
+# the API must also show the Capabilities that each node put in its Hello (ONE-3, #312): the architecture of
+# this runner, and SeLow and the XDP runtime as this machine holds them, which the script reads from the
+# registry and the files of Windows without the code of the node;
 # once the controller stopped, they must still exchange it: they forward on the state they applied
 # last. vpntest creates the file $pinged after the first echoes and waits for the control streams
 # to go down; this script then checks the API and stops the controller. Once it stopped, vpntest also
@@ -138,6 +146,22 @@ try {
 		Start-Sleep -Milliseconds 500
 	}
 	foreach ($s in $states) { Write-Host "API: node $($s.name) at generation $($s.generation), acknowledged $($s.ackedGeneration), connected $($s.connected)" }
+
+	# The Capabilities of the nodes: a driver is there when its service is registered and its files are in
+	# System32, and SeLow and the XDP runtime exist for x64 only (ADR-0022)
+	$services = 'HKLM:\SYSTEM\CurrentControlSet\Services'
+	$system32 = Join-Path $env:SystemRoot 'System32'
+	$haveSeLow = $Architecture -eq 'x64' -and (Test-Path -LiteralPath "$services\SeLow") -and (Test-Path -LiteralPath (Join-Path $system32 'drivers\SeLow_x64.sys'))
+	$haveXdp = $Architecture -eq 'x64' -and (Test-Path -LiteralPath "$services\xdp") -and (Test-Path -LiteralPath (Join-Path $system32 'drivers\xdp.sys')) -and (Test-Path -LiteralPath (Join-Path $system32 'xdpapi.dll'))
+	foreach ($s in $states | Where-Object { $nodes.Contains($_.name) }) {
+		$caps = $s.capabilities
+		if (-not $caps) { throw "the API lists no Capabilities for node $($s.name), which its Hello carries: $($s | ConvertTo-Json -Compress -Depth 4)" }
+		Write-Host "API: node $($s.name) reports the architecture $($caps.architecture), SeLow $($caps.selow), XDP $($caps.xdp); this $Architecture runner has SeLow $haveSeLow and the XDP runtime $haveXdp"
+		if ($caps.architecture -ne $Architecture) { throw "node $($s.name) reports the architecture '$($caps.architecture)' on a $Architecture runner" }
+		if ([bool] $caps.selow -ne $haveSeLow) { throw "node $($s.name) reports SeLow $($caps.selow), and this runner has it: $haveSeLow" }
+		if ([bool] $caps.xdp -ne $haveXdp) { throw "node $($s.name) reports XDP $($caps.xdp), and this runner has it: $haveXdp" }
+	}
+	Write-Host 'the Hello of each node carried its Capabilities, which are the ones of this machine'
 
 	# The controller stops; the nodes ping each other again on the state they applied
 	Stop-Process -Id $ctl.Id -Force

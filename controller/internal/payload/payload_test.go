@@ -169,6 +169,21 @@ func TestNewRecordsTheHashOfItsData(t *testing.T) {
 	}
 }
 
+// Windows reads a catalog by its extension, so the file that is checked ends in the name it will
+// have: a catalog checked under another extension never verifies (ONE-3, #312).
+func TestInstallChecksTheFileUnderTheExtensionItWillHave(t *testing.T) {
+	dir := t.TempDir()
+	calledWith := ""
+	withVerify(t, func(path string) error { calledWith = path; return nil })
+
+	if err := Install(dir, New("package.cat", []byte("a catalog"))); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !strings.HasSuffix(calledWith, "package.cat") {
+		t.Fatalf("verify was called with %q, which does not end in the name package.cat", calledWith)
+	}
+}
+
 func TestFileSHA256(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "thing.bin")
 	data := []byte("some bytes to hash")
@@ -184,6 +199,150 @@ func TestFileSHA256(t *testing.T) {
 	}
 	if _, err := fileSHA256(filepath.Join(filepath.Dir(path), "missing.bin")); err == nil {
 		t.Fatal("fileSHA256 of a file that is not there did not fail")
+	}
+}
+
+// An Unsigned payload, a file that cannot carry a signature, is written after its hash check and
+// never reaches the Authenticode check (ONE-3, #312).
+func TestInstallDoesNotRunTheSignatureCheckForAnUnsignedPayload(t *testing.T) {
+	dir := t.TempDir()
+	withVerify(t, func(string) error { t.Fatal("verify ran for an unsigned payload"); return nil })
+
+	data := []byte("the INF of a driver package")
+	if err := Install(dir, NewUnsigned("driver.inf", data)); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "driver.inf"))
+	if err != nil {
+		t.Fatalf("reading the installed file: %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatalf("the installed file is %q, not %q", got, data)
+	}
+}
+
+// The hash check of an Unsigned payload stands: a file that was written wrong is refused.
+func TestInstallChecksTheHashOfAnUnsignedPayload(t *testing.T) {
+	dir := t.TempDir()
+	withVerify(t, func(string) error { t.Fatal("verify ran for an unsigned payload"); return nil })
+	withHashFile(t, func(string) ([32]byte, error) { return sha256.Sum256([]byte("other bytes")), nil })
+
+	err := Install(dir, NewUnsigned("driver.inf", []byte("real bytes")))
+	if err == nil || !strings.Contains(err.Error(), "does not match the hash") {
+		t.Fatalf("Install of an unsigned file that was written wrong = %v, want a refusal for its hash", err)
+	}
+	assertEmpty(t, dir)
+}
+
+// withVerifyCatalog substitutes verifyCatalog for the life of the test, so Install's handling of a
+// Catalog Member can be tested without a real catalog.
+func withVerifyCatalog(t *testing.T, f func(catalog, path string) error) {
+	t.Helper()
+	old := verifyCatalog
+	verifyCatalog = f
+	t.Cleanup(func() { verifyCatalog = old })
+}
+
+// A Catalog Member is written after its hash check and checked as a member of the catalog that was
+// written to the same directory before it, never by a signature of its own (ONE-3, #312).
+func TestInstallChecksACatalogMemberAgainstItsCatalog(t *testing.T) {
+	dir := t.TempDir()
+	withVerify(t, func(string) error { t.Fatal("verify ran for a catalog member"); return nil })
+	var gotCatalog, gotFile string
+	withVerifyCatalog(t, func(catalog, path string) error {
+		gotCatalog, gotFile = catalog, path
+		return nil
+	})
+
+	data := []byte("a library that the catalog lists")
+	if err := Install(dir, NewCatalogMember("lib.dll", data, "package.cat")); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if want := filepath.Join(dir, "package.cat"); gotCatalog != want {
+		t.Errorf("the catalog check was given the catalog %q, want %q", gotCatalog, want)
+	}
+	if gotFile == "" || filepath.Dir(gotFile) != dir {
+		t.Errorf("the catalog check was given %q, not a file inside %s", gotFile, dir)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "lib.dll"))
+	if err != nil {
+		t.Fatalf("reading the installed file: %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatalf("the installed file is %q, not %q", got, data)
+	}
+}
+
+// A catalog that does not list the file refuses it: nothing is written.
+func TestInstallRefusesACatalogMemberThatTheCatalogRejects(t *testing.T) {
+	dir := t.TempDir()
+	wantErr := errors.New("not in the catalog")
+	withVerifyCatalog(t, func(string, string) error { return wantErr })
+
+	err := Install(dir, NewCatalogMember("lib.dll", []byte("real bytes"), "package.cat"))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Install of a file that its catalog rejects = %v, want it to wrap %v", err, wantErr)
+	}
+	assertEmpty(t, dir)
+}
+
+// The hash check of a Catalog Member stands, and runs first.
+func TestInstallChecksTheHashOfACatalogMember(t *testing.T) {
+	dir := t.TempDir()
+	withVerifyCatalog(t, func(string, string) error {
+		t.Fatal("the catalog check ran although the file does not match the hash")
+		return nil
+	})
+	withHashFile(t, func(string) ([32]byte, error) { return sha256.Sum256([]byte("other bytes")), nil })
+
+	err := Install(dir, NewCatalogMember("lib.dll", []byte("real bytes"), "package.cat"))
+	if err == nil || !strings.Contains(err.Error(), "does not match the hash") {
+		t.Fatalf("Install of a catalog member that was written wrong = %v, want a refusal for its hash", err)
+	}
+	assertEmpty(t, dir)
+}
+
+func TestInstallRefusesACatalogNameThatIsNoPlainFileName(t *testing.T) {
+	dir := t.TempDir()
+	withVerifyCatalog(t, func(string, string) error {
+		t.Fatal("the catalog check ran for a catalog that is no file name")
+		return nil
+	})
+
+	for _, catalog := range []string{".", "..", "sub/package.cat", "../package.cat"} {
+		if err := Install(dir, NewCatalogMember("lib.dll", []byte("bytes"), catalog)); err == nil {
+			t.Errorf("Install of a payload whose catalog is named %q did not fail", catalog)
+		}
+	}
+	assertEmpty(t, dir)
+}
+
+func TestNewCatalogMemberRecordsTheHashAndTheCatalog(t *testing.T) {
+	p := NewCatalogMember("lib.dll", []byte("x"), "package.cat")
+	if p.Catalog != "package.cat" {
+		t.Errorf("NewCatalogMember recorded the catalog %q, not package.cat", p.Catalog)
+	}
+	if p.SHA256 != sha256.Sum256([]byte("x")) {
+		t.Errorf("NewCatalogMember recorded the hash %x, not the SHA-256 of its data", p.SHA256)
+	}
+	if p.Unsigned {
+		t.Error("NewCatalogMember marked the payload unsigned: its catalog check must run")
+	}
+	if New("lib.dll", []byte("x")).Catalog != "" {
+		t.Error("New named a catalog: its own signature must be checked")
+	}
+}
+
+func TestNewUnsignedRecordsTheHashAndTheFlag(t *testing.T) {
+	p := NewUnsigned("driver.inf", []byte("x"))
+	if !p.Unsigned {
+		t.Error("NewUnsigned did not mark the payload unsigned")
+	}
+	if p.SHA256 != sha256.Sum256([]byte("x")) {
+		t.Errorf("NewUnsigned recorded the hash %x, not the SHA-256 of its data", p.SHA256)
+	}
+	if New("driver.sys", []byte("x")).Unsigned {
+		t.Error("New marked a payload unsigned: its signature must be checked")
 	}
 }
 

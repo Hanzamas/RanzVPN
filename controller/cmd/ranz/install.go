@@ -10,9 +10,10 @@ import (
 )
 
 // ranz install and ranz uninstall are the install and uninstall of the product (package install,
-// ONE-2 #311); this file only parses -controller, passes the standard output for the steps they
-// report, and reports the result the way every subcommand of ranz does. The flag is spelled
-// -controller or --controller.
+// ONE-2 #311, ONE-3 #312); this file only parses -controller and -no-xdp, passes the NOTICE that
+// install writes beside the Wintun DLL and the standard output for the steps they report, and
+// reports the result the way every subcommand of ranz does. The flags are spelled -controller or
+// --controller, -no-xdp or --no-xdp.
 func init() {
 	register("install", runInstall)
 	register("uninstall", runUninstall)
@@ -21,6 +22,7 @@ func init() {
 func runInstall(args []string) int {
 	flags := flag.NewFlagSet("ranz install", flag.ContinueOnError)
 	controller := flags.Bool("controller", false, "also register and start the Controller service")
+	noXDP := flags.Bool("no-xdp", false, "leave the XDP runtime out, on a server that does not want it: the Node falls back to SeLow")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -31,7 +33,8 @@ func runInstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "ranz install: unexpected arguments: %q\n", flags.Args())
 		return 2
 	}
-	if err := install.Install(os.Stdout, *controller); err != nil {
+	opts := install.Options{Controller: *controller, NoXDP: *noXDP, Notice: notice}
+	if err := install.Install(os.Stdout, opts); err != nil {
 		fmt.Fprintln(os.Stderr, "ranz install:", err)
 		return 1
 	}
