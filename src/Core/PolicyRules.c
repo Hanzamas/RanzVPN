@@ -1384,7 +1384,7 @@ static bool PolicyJsonRule(cJSON *rules, const POLICY_COUNTERS *c) {
 // The counters of an engine as the JSON of the admin API (one line): the number of the document in force, and for each
 // of its Networks, its kind, its default action, its members, its conntrack table and the counters of each of its rules,
 // by priority, and of its default action:
-//   {"generation": 3, "networks": [{"name": "lab", "mode": "l2", "defaultAction": "deny", "members": 4, "flows": 2,
+//   {"document": 3, "networks": [{"name": "lab", "mode": "l2", "defaultAction": "deny", "members": 4, "flows": 2,
 //     "maxFlows": 4, "tracked": 5, "evicted": 1, "expired": 0, "rules": [{"name": "web", "priority": 100,
 //     "action": "allow", "flows": 1, "packets": 5, "bytes": 300}, {"name": "default:deny", "default": true,
 //     "action": "deny", "flows": 0, "packets": 2, "bytes": 120}]}]}
@@ -1402,7 +1402,7 @@ char *PolicyCountersJson(POLICY_ENGINE *p) {
 
 	if (ok) {
 		PolicyGetStats(p, &st);
-		ok = PolicyJsonNumber(root, "generation", st.Generation);
+		ok = PolicyJsonNumber(root, "document", st.Document);
 	}
 
 	// The root owns the array of the Networks once it holds it

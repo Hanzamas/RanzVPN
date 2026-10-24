@@ -194,7 +194,7 @@ typedef struct POLICY_FLOW {
 	UINT Older;        // ... before it, 0 for the least recently used
 	UINT Timeout;      // ms after Last that it expires
 	UINT64 Last;       // The time of its last frame (ms)
-	UINT64 Gen;        // The generation of the document whose table allowed it
+	UINT64 Gen;        // The number of the document whose table allowed it
 	UINT Rule;         // ... the index of the counters that it counts on in that table
 	UINT Member[2];    // The members of its sides, POLICY_NO_MEMBER for a side outside the Network
 	UINT MemberGen[2]; // ... their generations

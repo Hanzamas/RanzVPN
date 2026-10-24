@@ -4,7 +4,7 @@
 // The policy engine of the new core (src/Core/Policy.h) in process, with members whose frames the test builds byte for
 // byte:
 // - Golden family "policy". Each case puts one frame of a member into the engine and writes its verdict to the report as
-//   "<n> <case>: pass|drop <reason> <rule> gen <document>"; it must have the reason that the case names, and the report
+//   "<n> <case>: pass|drop <reason> <rule> doc <document>"; it must have the reason that the case names, and the report
 //   must match the golden file. A report ends with the state of its Networks, the counters of the rules and of the
 //   default action of each Network, and the frames of the engine by reason.
 //   - policy_conntrack.txt: TCP, UDP, ICMP, ICMPv6 and GRE flows that a rule allows one way, in an L2 and an L3 Network:
@@ -627,7 +627,7 @@ static void PtWrong(PTEST_GOLDEN *g)
 }
 
 // A case: the member from sends the frame of size bytes, of the VLAN vlan, to the member to at now. Its verdict goes to
-// the report as "<n> <name>: pass|drop <reason> <rule> gen <document>"; expect is the reason that it must have.
+// the report as "<n> <name>: pass|drop <reason> <rule> doc <document>"; expect is the reason that it must have.
 static void PtCase(PTEST_GOLDEN *g, const char *name, UINT64 now, UINT from, UINT to, UINT vlan, const UCHAR *frame, UINT size, UINT expect)
 {
 	char line[MAX_SIZE * 2];
@@ -635,8 +635,8 @@ static void PtCase(PTEST_GOLDEN *g, const char *name, UINT64 now, UINT from, UIN
 	bool pass = PolicyInput(g->Engine, now, from, to, vlan, frame, size, &r);
 
 	g->NumCases++;
-	Format(line, sizeof(line), "%u %s: %s %s %s gen %I64u\n", g->NumCases, name, pass ? "pass" : "drop", PtReason(r.Reason), r.Rule[0] != 0 ? r.Rule : "-",
-		r.Generation);
+	Format(line, sizeof(line), "%u %s: %s %s %s doc %I64u\n", g->NumCases, name, pass ? "pass" : "drop", PtReason(r.Reason), r.Rule[0] != 0 ? r.Rule : "-",
+		r.Document);
 	PtAdd(g->Report, line);
 
 	if (r.Reason != expect || pass != (expect <= POLICY_PASS_CONTROL))
@@ -730,7 +730,7 @@ static void PtTrailer(PTEST_GOLDEN *g, const char *const *nets, UINT num_nets)
 	}
 
 	PolicyGetStats(g->Engine, &st);
-	Format(line, sizeof(line), "engine: members %u, networks %u, document %I64u, frames %I64u\n", st.NumMembers, st.NumNetworks, st.Generation, st.Frames);
+	Format(line, sizeof(line), "engine: members %u, networks %u, document %I64u, frames %I64u\n", st.NumMembers, st.NumNetworks, st.Document, st.Frames);
 	PtAdd(g->Report, line);
 	for (UINT k = 0; k < POLICY_NUM_REASONS; k++)
 	{
@@ -1357,10 +1357,10 @@ static void PtDocuments(PTEST_CTX *ctx)
 	}
 
 	PolicyGetStats(g->Engine, &st);
-	Format(line, sizeof(line), "document in force: %I64u\n", st.Generation);
+	Format(line, sizeof(line), "document in force: %I64u\n", st.Document);
 	PtAdd(g->Report, line);
-	PtCheck(ctx, st.Generation == accepted, "documents: each document that the engine takes is the next in force, and one that it refuses leaves the one in force",
-		"document %I64u in force after %u accepted", st.Generation, accepted);
+	PtCheck(ctx, st.Document == accepted, "documents: each document that the engine takes is the next in force, and one that it refuses leaves the one in force",
+		"document %I64u in force after %u accepted", st.Document, accepted);
 
 	PtGoldenEnd(ctx, g, "policy_documents.txt", "documents");
 	PolicyFree(full);
@@ -1534,7 +1534,7 @@ static void PtMembers(PTEST_CTX *ctx)
 	char *json = PolicyCountersJson(p);
 	PtCheck(ctx, text != NULL && StrCmp(text, "no document of rules\n") == 0, "members: the CLI text of an engine without a document says so", "\"%s\"",
 		text != NULL ? text : "(none)");
-	PtCheck(ctx, json != NULL && StrCmp(json, "{\"generation\":0,\"networks\":[]}") == 0, "members: the admin API JSON of an engine without a document has no Network",
+	PtCheck(ctx, json != NULL && StrCmp(json, "{\"document\":0,\"networks\":[]}") == 0, "members: the admin API JSON of an engine without a document has no Network",
 		"%s", json != NULL ? json : "(none)");
 	PolicyFreeString(text);
 	PolicyFreeString(json);
@@ -1581,12 +1581,12 @@ static DWORD WINAPI PtJudgeThread(LPVOID param)
 		POLICY_RESULT r;
 		UINT k = (n & 1);
 		bool pass = PolicyInput(j->Engine, 1000, j->From, POLICY_NO_MEMBER, 0, f[k], size[k], &r);
-		bool odd = ((r.Generation & 1) != 0);
+		bool odd = ((r.Document & 1) != 0);
 		const char *rule = (odd ? (k == 0 ? "a-allow" : "a-deny") : (k == 0 ? "b-deny" : "b-allow"));
 		bool expect = (odd ? (k == 0) : (k == 1));
 
 		j->Judged++;
-		if (r.Generation == 0)
+		if (r.Document == 0)
 		{
 			j->NoDocument++;
 		}
@@ -1676,8 +1676,8 @@ static void PtConcurrent(PTEST_CTX *ctx)
 
 	PolicyGetStats(g->Engine, &st);
 	PtCheck(ctx, started == PTEST_THREADS, "atomic documents: the threads start", "%u of %u", started, (UINT)PTEST_THREADS);
-	PtCheck(ctx, refused == 0 && st.Generation == 1 + (UINT64)swaps, "atomic documents: every document is put in force, each with the next number",
-		"%u refused, document %I64u after %u changes", refused, st.Generation, swaps);
+	PtCheck(ctx, refused == 0 && st.Document == 1 + (UINT64)swaps, "atomic documents: every document is put in force, each with the next number",
+		"%u refused, document %I64u after %u changes", refused, st.Document, swaps);
 	PtCheck(ctx, judged != 0 && torn == 0 && none == 0,
 		"atomic documents: every frame is judged by one whole document, whose number, verdict and rule it carries",
 		"%I64u frames judged, %u torn, %u judged by no document", judged, torn, none);

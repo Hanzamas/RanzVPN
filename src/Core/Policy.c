@@ -4,7 +4,7 @@
 //
 // No lock serialises the engine on the data path (ADR-0022, Threading):
 // - The document in force (POLICY_STATE: the document, the tables of its Networks with their conntrack tables, and its
-//   generation) and the record of each member are read through pointers that a change replaces and never changes. A
+//   number) and the record of each member are read through pointers that a change replaces and never changes. A
 //   frame holds the shared lock of its slot of processors (POLICY_SLOTS of them, each on a cache line of its own) from
 //   its start to its verdict. A change publishes its new pointer, then takes the lock of every slot exclusive once
 //   (PolicyQuiesce): after that no frame still reads what the pointer pointed to before, which the change then frees. So
@@ -1215,7 +1215,7 @@ static UINT PolicyJudge(POLICY_ENGINE *p, const POLICY_STATE *st, UINT slot, UIN
 		return POLICY_DROP_NETWORK;
 
 	const POLICY_TABLE *t = st->ByNet[rf->Net->Index];
-	r->Generation = st->Gen;
+	r->Document = st->Gen;
 
 	if (vlan > 4094 || PolicyParse(frame, size, t->Config.Mode, &pk) == false)
 		return POLICY_DROP_MALFORMED;
@@ -1471,7 +1471,7 @@ void PolicyGetStats(POLICY_ENGINE *p, POLICY_STATS *st) {
 	{
 		const POLICY_STATE *state = PolicyStateOf(p);
 
-		st->Generation = (state != NULL ? state->Gen : 0);
+		st->Document = (state != NULL ? state->Gen : 0);
 	}
 	ReleaseSRWLockShared(&p->Readers[slot].Lock);
 

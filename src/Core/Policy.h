@@ -138,14 +138,14 @@ typedef struct POLICY_RESULT {
 	bool Pass;                      // The frame passes
 	UINT Reason;                    // Why: POLICY_PASS_* or POLICY_DROP_*
 	char Rule[POLICY_MAX_NAME + 1]; // The rule that judged the frame or its flow, default:deny for the default action of its Network; empty for none
-	UINT64 Generation;              // The number of the document that judged it, 0 for none
+	UINT64 Document;                // The number of the document that judged it, 0 for none
 } POLICY_RESULT;
 
 // The counters of an engine (PolicyGetStats)
 typedef struct POLICY_STATS {
 	UINT NumMembers;                    // The members
 	UINT NumNetworks;                   // The Networks that members or documents named
-	UINT64 Generation;                  // The number of the document in force: 0 before the first
+	UINT64 Document;                    // The number of the document in force: 0 before the first
 	UINT64 Frames;                      // Frames that PolicyInput judged
 	UINT64 Reasons[POLICY_NUM_REASONS]; // ... by the reason of their verdict
 } POLICY_STATS;
