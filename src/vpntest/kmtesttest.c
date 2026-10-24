@@ -175,11 +175,11 @@ typedef struct KMTEST_SENDER
 
 // The senders of a part of the test and the flag that stops them. They are on the heap of the process, outside the
 // memory that Mayaqua counts: a sender that stays blocked in send() keeps them, and the test leaves them to its thread.
-typedef struct KMTEST_FLOOD
+typedef struct KMTEST_SENDER_SET
 {
 	volatile LONG Stop;
 	KMTEST_SENDER Senders[KMTEST_SENDERS];
-} KMTEST_FLOOD;
+} KMTEST_SENDER_SET;
 
 // The sink of the benchmark
 typedef struct KMTEST_SINK
@@ -842,13 +842,13 @@ static DWORD WINAPI KmSenderThread(LPVOID param)
 }
 
 // New senders, none started
-static KMTEST_FLOOD *KmNewFlood()
+static KMTEST_SENDER_SET *KmNewSenderSet()
 {
-	return (KMTEST_FLOOD *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(KMTEST_FLOOD));
+	return (KMTEST_SENDER_SET *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(KMTEST_SENDER_SET));
 }
 
 // Free the senders once KmStopSenders joined all of them; senders that are still blocked in send() keep them
-static void KmFreeFlood(KMTEST_FLOOD *f)
+static void KmFreeSenderSet(KMTEST_SENDER_SET *f)
 {
 	if (f == NULL)
 	{
@@ -868,7 +868,7 @@ static void KmFreeFlood(KMTEST_FLOOD *f)
 
 // Start KMTEST_SENDERS sender threads to the neighbour of the adapter, with USO or with plain send() of size bytes of
 // payload; false when one could not start
-static bool KmStartSenders(KMTEST_ADAPTER *x, KMTEST_FLOOD *f, bool uso, UINT size)
+static bool KmStartSenders(KMTEST_ADAPTER *x, KMTEST_SENDER_SET *f, bool uso, UINT size)
 {
 	SOCKADDR_IN sa;
 	DWORD segment = KMTEST_SEGMENT;
@@ -916,7 +916,7 @@ static bool KmStartSenders(KMTEST_ADAPTER *x, KMTEST_FLOOD *f, bool uso, UINT si
 // Stop and join the sender threads, KMTEST_BOUND ms for each at most; the slowest send() of all of them in microseconds.
 // A sender that is still blocked in send() then counts as KMTEST_BOUND ms and keeps its thread and its socket (Stuck,
 // counted in stuck); uso and sends count the others.
-static LONG64 KmStopSenders(KMTEST_FLOOD *f, UINT *uso, LONG64 *sends, UINT *stuck)
+static LONG64 KmStopSenders(KMTEST_SENDER_SET *f, UINT *uso, LONG64 *sends, UINT *stuck)
 {
 	LONG64 slowest = 0;
 
@@ -960,7 +960,7 @@ static LONG64 KmStopSenders(KMTEST_FLOOD *f, UINT *uso, LONG64 *sends, UINT *stu
 
 // Wait up to KMTEST_BOUND ms once more for the senders that stayed blocked in send(), now that the L2 adapter is down,
 // and close the ones that end; how many are still blocked. A sender that ends now had frames held by the backend.
-static UINT KmReleaseSenders(KMTEST_FLOOD *f)
+static UINT KmReleaseSenders(KMTEST_SENDER_SET *f)
 {
 	UINT64 end = GetTickCount64() + KMTEST_BOUND;
 	UINT left = 0;
@@ -991,7 +991,7 @@ static UINT KmReleaseSenders(KMTEST_FLOOD *f)
 
 // One line for each sender: its local port, its sends and errors with the last error, its slowest send(), and whether
 // it stayed blocked in send()
-static void KmPrintSenders(char *name, KMTEST_FLOOD *f)
+static void KmPrintSenders(char *name, KMTEST_SENDER_SET *f)
 {
 	for (UINT i = 0;f != NULL && i < KMTEST_SENDERS;i++)
 	{
@@ -1026,7 +1026,7 @@ static void KmPausedConsumer(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, bool u
 		return;
 	}
 
-	KMTEST_FLOOD *f = KmNewFlood();
+	KMTEST_SENDER_SET *f = KmNewSenderSet();
 	bool started = KmStartSenders(x, f, uso, KMTEST_SEGMENT);
 	Sleep(500);
 
@@ -1081,7 +1081,7 @@ static void KmPausedConsumer(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, bool u
 		Print("  %s: %u of the %u senders that were blocked in send() ended once the L2 adapter was down, %u did not\n", name, stuck - left, stuck, left);
 		ctx->Stuck += left;
 	}
-	KmFreeFlood(f);
+	KmFreeSenderSet(f);
 }
 
 // The sink of the benchmark: counts the datagrams that reach it
@@ -1188,14 +1188,14 @@ static void KmSoak(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, UINT seconds)
 	UINT64 end = GetTickCount64() + (UINT64)seconds * 1000;
 	for (UINT i = 0;GetTickCount64() < end;i = (i + 1) % KMTEST_SOAK_PHASES)
 	{
-		KMTEST_FLOOD *f = NULL;
+		KMTEST_SENDER_SET *f = NULL;
 		UINT size = phase_sizes[i];
 		UINT tx = 0;
 		UINT64 phase_end = GetTickCount64() + KMTEST_SOAK_PHASE;
 
 		if ((phase_ways[i] & 1) != 0)
 		{
-			f = KmNewFlood();
+			f = KmNewSenderSet();
 			tx = (KmStartSenders(x, f, false, size - 42) ? KMTEST_SENDERS : 0);
 		}
 
@@ -1230,7 +1230,7 @@ static void KmSoak(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, UINT seconds)
 			KmPrintSenders("the soak", f);
 		}
 		ctx->Stuck += stuck;
-		KmFreeFlood(f);
+		KmFreeSenderSet(f);
 	}
 
 	Print("KMTEST BENCH soak: %u phases in %u s, %I64u probes, %I64u of them failed, %I64u reattaches, %I64u resets\n", phases, seconds, st.Probes, st.ProbeFailures, st.Reattaches, st.Resets);
@@ -1324,7 +1324,7 @@ static void KmBare(KMTEST_CTX *ctx, NODE *n, const UCHAR *key)
 
 	if (KmNewAdapter(ctx, &y, n, key, KMTEST_NETWORK3))
 	{
-		KMTEST_FLOOD *f = KmNewFlood();
+		KMTEST_SENDER_SET *f = KmNewSenderSet();
 		bool started = KmStartSenders(&y, f, true, KMTEST_SEGMENT);
 
 		Sleep(KMTEST_BARE_TIME);
@@ -1333,7 +1333,7 @@ static void KmBare(KMTEST_CTX *ctx, NODE *n, const UCHAR *key)
 			started ? "started" : "did not start", uso, (UINT64)sends, KMTEST_BARE_TIME, (UINT64)slowest, stuck);
 		KmPrintSenders("the bare adapter", f);
 		ctx->Stuck += stuck;
-		KmFreeFlood(f);
+		KmFreeSenderSet(f);
 	}
 
 	NodeKmTestFree(y.KmTest, stuck == 0);
