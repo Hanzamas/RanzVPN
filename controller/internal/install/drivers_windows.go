@@ -29,6 +29,14 @@ const toolWait = 3 * time.Minute
 // taken out.
 const driverWait = 20 * time.Second
 
+// unbindWait is how long removeDriver lets netcfg unbind and remove the network component of a
+// driver: past it, ranz uninstall reports that a restart finishes the job (ErrRebootRequired)
+// instead of hanging (#72, risk R2).
+const unbindWait = 30 * time.Second
+
+// errTimedOut is wrapped by the error of a tool that did not finish in time.
+var errTimedOut = errors.New("timed out")
+
 // installRecordKey is the registry key of the install record (HKEY_LOCAL_MACHINE): one string
 // value for each driver that ranz install put on the machine, which holds the name that Windows
 // published its INF under (oemNN.inf). ranz uninstall removes the drivers that the record names and
@@ -69,16 +77,22 @@ func shortened(text string, limit int) string {
 // runTool runs the tool name of the System32 folder with args, waits for it, and returns what it
 // printed. A tool that fails or does not finish within toolWait is an error that holds its output.
 func runTool(name string, args ...string) (string, error) {
+	return runToolWithin(toolWait, name, args...)
+}
+
+// runToolWithin is runTool with wait in place of toolWait. A tool that does not finish in time is
+// stopped, and its error wraps errTimedOut.
+func runToolWithin(wait time.Duration, name string, args ...string) (string, error) {
 	sys, err := systemFolder()
 	if err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), toolWait)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, filepath.Join(sys, name), args...).CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if ctx.Err() != nil {
-		return text, fmt.Errorf("%s did not finish within %s", name, toolWait)
+		return text, fmt.Errorf("%s did not finish within %s: %w", name, wait, errTimedOut)
 	}
 	if err != nil {
 		return text, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, shortened(text, 400))
@@ -304,7 +318,13 @@ func removeDriver(w io.Writer, m *mgr.Mgr, dir string, d driver, published, verb
 			note(err)
 		}
 	}
-	if _, err := runTool("netcfg.exe", "-u", d.component); err != nil {
+	if _, err := runToolWithin(unbindWait, "netcfg.exe", "-u", d.component); err != nil {
+		// A component that does not unbind in time keeps its driver loaded: the steps after it
+		// cannot finish before a restart, and the install record keeps the driver for the next
+		// uninstall
+		if errors.Is(err, errTimedOut) {
+			return fmt.Errorf("%s: %v: %w", d.label, err, ErrRebootRequired)
+		}
 		note(err)
 	}
 	if _, err := removeService(m, d.service); err != nil {

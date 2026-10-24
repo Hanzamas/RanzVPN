@@ -14,7 +14,7 @@
 #   .github/signing, .github/msi, .github/scripts/msi-*, docs/first-test.md or
 #   .github/scripts/first-test.ps1 (SENSITIVE in ci-plan.py).
 # A job that only the full set runs has needs: plan and if: needs.plan.outputs.full == 'true' (install
-# follows sign_and_integrity, which it needs, and first_test follows build_and_test and sign_and_integrity),
+# follows sign_and_integrity, which it needs, and first_test and kmtest follow build_and_test and sign_and_integrity),
 # and a pull request shows it as skipped. A new job
 # without them runs on every pull request. A leg of a matrix that a pull request does not run is not
 # created, since GitHub cannot skip one leg of a matrix. A pull request that edits a workflow, or a
@@ -1571,6 +1571,55 @@ jobs:
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
       run: |
         . .github/scripts/install.ps1 -Ranz artifacts\ranz\ranz.exe -Tampered artifacts\ranz-tampered\ranz.exe -XdpFail artifacts\ranz-xdpfail\ranz.exe -Architecture $env:ARCHITECTURE -NodeSha256 $env:NODE_SHA256 -MemberSha256 $env:MEMBER_SHA256 -WintunSha256 $env:WINTUN_SHA256 -XdpSysSha256 $env:XDP_SYS_SHA256 -XdpApiSha256 $env:XDP_API_SHA256
+
+  # The XDP job of the L2 adapter (CORE-S3-2, #72; seam 3 of #45): the vpntest test kmtest on a real KM-TEST Loopback
+  # Adapter, on Windows Server 2022 and 2025 x64, with the drivers that the signed ranz.exe of sign_and_integrity installs
+  # (ONE-3, #312), never a script. First SeLow alone (ranz install --no-xdp): the node finds at run time that XDP cannot
+  # bind and falls back to SeLow. Then the XDP runtime too, whose xdp.sys passes signtool verify /kp: TX inspect, RX
+  # inject, LAN discovery through an L2 switch with per-VLAN broadcast limits, recovery and shutdown, the soak (an hour
+  # on the nightly run of a Sunday), ranz uninstall and install after the traffic, and then the paused consumer and the
+  # benchmark of the batch sizes. Each run of vpntest has a time limit. arm64 is L3 only (no XDP runtime and no SeLow
+  # package for it): the l2adapter test of build_and_test shows that no L2 adapter is offered there.
+  # .github/scripts/kmtest.ps1.
+  kmtest:
+    needs: [build_and_test, sign_and_integrity]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, windows-2025]
+    name: kmtest (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 110
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download the x64 binaries
+      uses: actions/download-artifact@v4
+      with:
+        name: Binaries-x64
+        path: artifacts/bin
+    - name: Download ranz.exe
+      uses: actions/download-artifact@v4
+      with:
+        name: ranz-x64
+        path: artifacts/ranz
+    - name: Download the CI signing certificate
+      uses: actions/download-artifact@v4
+      with:
+        name: ci-signing-certificate
+        path: artifacts/certificate
+    # The root store only, as in the install job: the signature of ranz.exe chains to a trusted root
+    - name: Trust the CI signing certificate on this runner
+      shell: pwsh
+      run: |
+        $cer = Get-ChildItem -Path artifacts/certificate -Filter '*.cer' | Select-Object -First 1
+        if (-not $cer) { throw 'no .cer file in the ci-signing-certificate artifact' }
+        Import-Certificate -FilePath $cer.FullName -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+        Write-Host "trusted $($cer.FullName) as a root"
+    - name: The L2 adapter on KM-TEST with SeLow, then with XDP
+      shell: pwsh
+      timeout-minutes: 100
+      run: |
+        . .github/scripts/kmtest.ps1 -Ranz artifacts\ranz\ranz.exe -Vpntest artifacts\bin\vpntest.exe -Runner ${{ matrix.runner }}
 
   # The first test of the product on two PCs (docs/first-test.md, in simple English for the person who runs it by hand), proved on a
   # runner that plays both PCs, on windows-latest (x64) and windows-11-arm (arm64). .github/scripts/first-test.ps1 reads the

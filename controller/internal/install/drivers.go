@@ -1,6 +1,16 @@
 package install
 
-import "github.com/Hanzamas/RanzVPN/controller/internal/payload"
+import (
+	"errors"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/payload"
+)
+
+// ErrRebootRequired is what Uninstall returns, wrapped, when Windows did not let go of the network
+// component of a driver within unbindWait: unbinding ms_xdp can hang after heavy load (#72, risk
+// R2), so ranz uninstall stops waiting, leaves the driver in the install record for the next
+// uninstall, and reports that a restart finishes it (exit code 3010) instead of hanging.
+var ErrRebootRequired = errors.New("a restart of Windows is needed to finish: a network component did not unbind in time")
 
 // Options is what the operator asked ranz install for.
 type Options struct {

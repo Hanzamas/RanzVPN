@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"testing"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/install"
+)
 
 // ranz install and ranz uninstall take no positional arguments; ranz install also takes
 // -controller and -no-xdp, spelled with one dash or two. Each of these refuses its arguments before
@@ -41,5 +47,26 @@ func TestRunUninstallTakesNoArguments(t *testing.T) {
 	}
 	if code := runUninstall([]string{"-controller"}); code != 2 {
 		t.Errorf("ranz uninstall -controller: exit code %d, want 2", code)
+	}
+}
+
+// An uninstall that a network component kept from finishing in time exits 3010, as Windows
+// Installer does when a restart finishes the job, also when the error comes wrapped and joined
+// with others (#72, risk R2); any other failure exits 1.
+func TestUninstallCodeReportsARequiredRestart(t *testing.T) {
+	wrapped := fmt.Errorf("uninstall: %w", errors.Join(errors.New("removing the SeLow driver: a note"), fmt.Errorf("removing the XDP runtime: %w", install.ErrRebootRequired)))
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{nil, 0},
+		{install.ErrRebootRequired, 3010},
+		{wrapped, 3010},
+		{errors.New("uninstall: the service control manager"), 1},
+	}
+	for _, c := range cases {
+		if got := uninstallCode(c.err); got != c.want {
+			t.Errorf("uninstallCode(%v) = %d, want %d", c.err, got, c.want)
+		}
 	}
 }
