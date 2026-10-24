@@ -169,6 +169,8 @@ static bool NodeL2SeLowAttach(NODE_L2 *a, char *error, UINT error_size) {
 
 	SetThreadPriority(s->Thread, THREAD_PRIORITY_HIGHEST);
 
+	// SeLow hands over the frames of the adapter on one device, whatever queue they came in on
+	InterlockedExchange(&a->DriverQueues, 1);
 	a->BackendState = s;
 
 	return true;

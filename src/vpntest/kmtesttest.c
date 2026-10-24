@@ -6,10 +6,13 @@
 // install --no-xdp), found at run time. The XDP job of windows.yml runs it on Windows Server 2022 and 2025 x64 as
 // administrator (.github/scripts/kmtest.ps1); it needs the drivers, so the smoke loop leaves it out
 // (.github/quality/smoke-exclude.txt). Its argument is the backend that the host must give: "xdp" (the default) or
-// "selow"; the second argument "quick" leaves out the long parts (the paused consumer and the benchmark).
+// "selow"; the second argument "quick" leaves out the long parts (the paused consumer and the benchmark), "soak" with a
+// number of seconds runs the soak alone, and "bare" measures only senders with USO on an adapter without an L2 adapter
+// (KMTEST DIAG lines).
 // - The adapter: NodeKmTestNew creates a KM-TEST adapter with the MAC address of NodeL2Mac, which Windows reports for its
 //   interface, and finds the same adapter again; a second Network gets a second adapter with another address. With XDP,
-//   the number of queues that an AF_XDP socket binds to is measured (#72, multi-queue).
+//   the number of queues that an AF_XDP socket binds to is measured (#72, multi-queue), and the L2 adapter binds all of
+//   them.
 // - TX inspect: UDP datagrams that the host's stack sends to a neighbour on the adapter are captured, from the MAC
 //   address of the adapter. RX inject: IPv4/UDP frames that the node sends to the host reach a UDP socket bound to the
 //   adapter's address, and the host answers an ARP request that the node injects with an ARP reply that is captured.
@@ -58,6 +61,8 @@
 #define	KMTEST_POLL				20			// Poll interval of observable state (ms)
 #define	KMTEST_NETWORK			72			// The Network ids of the two adapters
 #define	KMTEST_NETWORK2			73
+#define	KMTEST_NETWORK3			74			// ... and of the adapter of the measurement "bare"
+#define	KMTEST_BARE_TIME		3000		// ms that the senders of "bare" send
 #define	KMTEST_LENGTH			24			// The prefix length of the address of an adapter
 #define	KMTEST_TX_PORT			5555		// UDP port of the datagrams that the host sends to the neighbour
 #define	KMTEST_RX_PORT			5556		// UDP port of the socket that takes the injected datagrams
@@ -102,11 +107,13 @@ static UCHAR kmtest_peer_mac[6] = {0x02, 0x00, 0x00, 0x00, 0x72, 0x04};
 // The time that the watchdog gives the run: KMTEST_BUDGET, and the soak on top
 static DWORD kmtest_budget = KMTEST_BUDGET;
 
-// The checks of the test
+// The checks of the test, and the senders that stayed blocked in send(): an adapter is not removed then, as its removal
+// would wait for their frames
 typedef struct KMTEST_CTX
 {
 	UINT NumChecks;
 	UINT NumFailed;
+	UINT Stuck;
 } KMTEST_CTX;
 
 // The owner of the adapter: it counts the frames of the host by kind, and hands each to the switch when one is set. It
@@ -154,14 +161,25 @@ typedef struct KMTEST_ADAPTER
 typedef struct KMTEST_SENDER
 {
 	SOCKET Sock;
+	USHORT Port;					// Its local UDP port
 	bool Uso;
 	UINT Size;						// Bytes of the payload of a datagram (KMTEST_SEGMENT for frames of 1514 bytes)
 	volatile LONG *Stop;
 	HANDLE Thread;
+	bool Stuck;						// Still blocked in send() when it was stopped
 	volatile LONG64 Sends;
 	volatile LONG64 Errors;
+	volatile LONG LastError;		// The Winsock error of the last send() that failed
 	volatile LONG64 SlowestUs;
 } KMTEST_SENDER;
+
+// The senders of a part of the test and the flag that stops them. They are on the heap of the process, outside the
+// memory that Mayaqua counts: a sender that stays blocked in send() keeps them, and the test leaves them to its thread.
+typedef struct KMTEST_FLOOD
+{
+	volatile LONG Stop;
+	KMTEST_SENDER Senders[KMTEST_SENDERS];
+} KMTEST_FLOOD;
 
 // The sink of the benchmark
 typedef struct KMTEST_SINK
@@ -815,6 +833,7 @@ static DWORD WINAPI KmSenderThread(LPVOID param)
 		else
 		{
 			s->Errors++;
+			InterlockedExchange(&s->LastError, (LONG)WSAGetLastError());
 			Sleep(1);
 		}
 	}
@@ -822,12 +841,42 @@ static DWORD WINAPI KmSenderThread(LPVOID param)
 	return 0;
 }
 
+// New senders, none started
+static KMTEST_FLOOD *KmNewFlood()
+{
+	return (KMTEST_FLOOD *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(KMTEST_FLOOD));
+}
+
+// Free the senders once KmStopSenders joined all of them; senders that are still blocked in send() keep them
+static void KmFreeFlood(KMTEST_FLOOD *f)
+{
+	if (f == NULL)
+	{
+		return;
+	}
+
+	for (UINT i = 0;i < KMTEST_SENDERS;i++)
+	{
+		if (f->Senders[i].Stuck)
+		{
+			return;
+		}
+	}
+
+	HeapFree(GetProcessHeap(), 0, f);
+}
+
 // Start KMTEST_SENDERS sender threads to the neighbour of the adapter, with USO or with plain send() of size bytes of
 // payload; false when one could not start
-static bool KmStartSenders(KMTEST_ADAPTER *x, KMTEST_SENDER *senders, volatile LONG *stop, bool uso, UINT size)
+static bool KmStartSenders(KMTEST_ADAPTER *x, KMTEST_FLOOD *f, bool uso, UINT size)
 {
 	SOCKADDR_IN sa;
 	DWORD segment = KMTEST_SEGMENT;
+
+	if (f == NULL)
+	{
+		return false;
+	}
 
 	Zero(&sa, sizeof(sa));
 	sa.sin_family = AF_INET;
@@ -836,15 +885,22 @@ static bool KmStartSenders(KMTEST_ADAPTER *x, KMTEST_SENDER *senders, volatile L
 
 	for (UINT i = 0;i < KMTEST_SENDERS;i++)
 	{
-		KMTEST_SENDER *s = &senders[i];
+		KMTEST_SENDER *s = &f->Senders[i];
+		SOCKADDR_IN local;
+		int local_len = sizeof(local);
 
 		Zero(s, sizeof(KMTEST_SENDER));
-		s->Stop = stop;
+		s->Stop = &f->Stop;
 		s->Size = size;
 		s->Sock = KmSocket(x->Address, 0);
 		if (s->Sock == INVALID_SOCKET || connect(s->Sock, (SOCKADDR *)&sa, sizeof(sa)) != 0)
 		{
 			return false;
+		}
+		Zero(&local, sizeof(local));
+		if (getsockname(s->Sock, (SOCKADDR *)&local, &local_len) == 0)
+		{
+			s->Port = ntohs(local.sin_port);
 		}
 		s->Uso = (uso && setsockopt(s->Sock, IPPROTO_UDP, UDP_SEND_MSG_SIZE, (char *)&segment, sizeof(segment)) == 0);
 		s->Thread = CreateThread(NULL, 0, KmSenderThread, s, 0, NULL);
@@ -857,31 +913,42 @@ static bool KmStartSenders(KMTEST_ADAPTER *x, KMTEST_SENDER *senders, volatile L
 	return true;
 }
 
-// Stop and join the sender threads; the slowest send() of all of them in microseconds
-static LONG64 KmStopSenders(KMTEST_SENDER *senders, volatile LONG *stop, UINT *uso, LONG64 *sends)
+// Stop and join the sender threads, KMTEST_BOUND ms for each at most; the slowest send() of all of them in microseconds.
+// A sender that is still blocked in send() then counts as KMTEST_BOUND ms and keeps its thread and its socket (Stuck,
+// counted in stuck); uso and sends count the others.
+static LONG64 KmStopSenders(KMTEST_FLOOD *f, UINT *uso, LONG64 *sends, UINT *stuck)
 {
 	LONG64 slowest = 0;
 
-	InterlockedExchange(stop, 1);
 	*uso = 0;
 	*sends = 0;
+	*stuck = 0;
+	if (f == NULL)
+	{
+		return 0;
+	}
+
+	InterlockedExchange(&f->Stop, 1);
 	for (UINT i = 0;i < KMTEST_SENDERS;i++)
 	{
-		KMTEST_SENDER *s = &senders[i];
+		KMTEST_SENDER *s = &f->Senders[i];
 
 		if (s->Thread != NULL)
 		{
 			if (WaitForSingleObject(s->Thread, KMTEST_BOUND) != WAIT_OBJECT_0)
 			{
-				// A sender that is still blocked in send() after KMTEST_BOUND ms
+				s->Stuck = true;
+				(*stuck)++;
 				slowest = MAX(slowest, (LONG64)KMTEST_BOUND * 1000);
 				continue;
 			}
 			CloseHandle(s->Thread);
+			s->Thread = NULL;
 		}
 		if (s->Sock != INVALID_SOCKET && s->Sock != 0)
 		{
 			closesocket(s->Sock);
+			s->Sock = INVALID_SOCKET;
 		}
 		slowest = MAX(slowest, s->SlowestUs);
 		*uso += (s->Uso ? 1 : 0);
@@ -891,17 +958,67 @@ static LONG64 KmStopSenders(KMTEST_SENDER *senders, volatile LONG *stop, UINT *u
 	return slowest;
 }
 
+// Wait up to KMTEST_BOUND ms once more for the senders that stayed blocked in send(), now that the L2 adapter is down,
+// and close the ones that end; how many are still blocked. A sender that ends now had frames held by the backend.
+static UINT KmReleaseSenders(KMTEST_FLOOD *f)
+{
+	UINT64 end = GetTickCount64() + KMTEST_BOUND;
+	UINT left = 0;
+
+	for (UINT i = 0;f != NULL && i < KMTEST_SENDERS;i++)
+	{
+		KMTEST_SENDER *s = &f->Senders[i];
+		UINT64 now = GetTickCount64();
+
+		if (s->Stuck == false)
+		{
+			continue;
+		}
+		if (WaitForSingleObject(s->Thread, (DWORD)(now < end ? end - now : 0)) != WAIT_OBJECT_0)
+		{
+			left++;
+			continue;
+		}
+		CloseHandle(s->Thread);
+		s->Thread = NULL;
+		closesocket(s->Sock);
+		s->Sock = INVALID_SOCKET;
+		s->Stuck = false;
+	}
+
+	return left;
+}
+
+// One line for each sender: its local port, its sends and errors with the last error, its slowest send(), and whether
+// it stayed blocked in send()
+static void KmPrintSenders(char *name, KMTEST_FLOOD *f)
+{
+	for (UINT i = 0;f != NULL && i < KMTEST_SENDERS;i++)
+	{
+		KMTEST_SENDER *s = &f->Senders[i];
+
+		Print("    %s, sender %u: port %u%s, %I64u sends, %I64u errors (the last %u), the slowest send() %I64u us%s\n", name, i + 1, (UINT)s->Port,
+			s->Uso ? " with USO" : "", (UINT64)s->Sends, (UINT64)s->Errors, (UINT)s->LastError, (UINT64)s->SlowestUs, s->Stuck ? ", blocked in send() when stopped" : "");
+	}
+}
+
+// What the backend tells of its driver: the queues that it captures from and the ones that frames came in on, the
+// frames that the driver dropped, and the waits on the driver that failed
+static void KmPrintDriver(char *name, NODE_L2_STATUS *st)
+{
+	Print("  %s: the %s backend captures from %u queue(s), frames came in on %u; the driver dropped %I64u, %I64u waits on it failed (the last 0x%08X)\n", name, st->Backend,
+		st->Queues, st->BusyQueues, st->DriverDrops, st->WaitFailures, st->WaitError);
+}
+
 // The paused consumer (#72, risk R1): senders flood the adapter while the owner stops taking frames for KMTEST_PAUSE ms
 static void KmPausedConsumer(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, bool uso, UINT ring, char *name)
 {
-	KMTEST_SENDER senders[KMTEST_SENDERS];
 	NODE_L2_STATUS st;
-	volatile LONG stop = 0;
 	char what[MAX_SIZE];
 	UINT uso_senders = 0;
+	UINT stuck = 0;
 	LONG64 sends = 0;
 
-	Zero(senders, sizeof(senders));
 	x->L2 = KmNewL2(x, n, ring, 0);
 	Format(what, sizeof(what), "the paused consumer, %s: the adapter is up", name);
 	if (KmCheck(ctx, x->L2 != NULL, what, "NodeL2New failed") == false)
@@ -909,7 +1026,8 @@ static void KmPausedConsumer(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, bool u
 		return;
 	}
 
-	bool started = KmStartSenders(x, senders, &stop, uso, KMTEST_SEGMENT);
+	KMTEST_FLOOD *f = KmNewFlood();
+	bool started = KmStartSenders(x, f, uso, KMTEST_SEGMENT);
 	Sleep(500);
 
 	LONG64 f0 = ReadAcquire64(&x->Owner.Frames);
@@ -931,10 +1049,13 @@ static void KmPausedConsumer(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, bool u
 	Sleep(1000);
 	LONG64 resumed = ReadAcquire64(&x->Owner.Frames) - f1;
 
-	LONG64 slowest = KmStopSenders(senders, &stop, &uso_senders, &sends);
+	LONG64 slowest = KmStopSenders(f, &uso_senders, &sends, &stuck);
+	NodeL2GetStatus(x->L2, &st);
 
 	Print("  %s: %u senders (%u with USO), %I64u sends, capture %I64u frames/s before the pause and %I64u frames/s in the second second after it, %I64u dropped during the pause, the slowest send() %I64u us\n",
 		name, KMTEST_SENDERS, uso_senders, (UINT64)sends, (UINT64)baseline, (UINT64)resumed, paused_drops, (UINT64)slowest);
+	KmPrintSenders(name, f);
+	KmPrintDriver(name, &st);
 	if (uso)
 	{
 		Print("KMTEST BENCH tx_capture %s: %I64u frames/s\n", name, (UINT64)baseline);
@@ -952,6 +1073,15 @@ static void KmPausedConsumer(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, bool u
 	x->L2 = NULL;
 	Format(what, sizeof(what), "the paused consumer, %s: NodeL2Free takes the adapter down in time after the flood", name);
 	KmCheck(ctx, freed, what, "a step did not finish in time");
+
+	if (stuck != 0)
+	{
+		UINT left = KmReleaseSenders(f);
+
+		Print("  %s: %u of the %u senders that were blocked in send() ended once the L2 adapter was down, %u did not\n", name, stuck - left, stuck, left);
+		ctx->Stuck += left;
+	}
+	KmFreeFlood(f);
 }
 
 // The sink of the benchmark: counts the datagrams that reach it
@@ -1044,7 +1174,6 @@ static void KmSoak(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, UINT seconds)
 	static char *phase_names[KMTEST_SOAK_PHASES] = {"TX 64", "RX 64", "TX 1514", "RX 1514", "TX+RX 1514", "RX 64", "TX 64", "RX 1514", "TX 1514", "TX+RX 64"};
 	static UINT phase_sizes[KMTEST_SOAK_PHASES] = {64, 64, 1514, 1514, 1514, 64, 64, 1514, 1514, 64};
 	static UINT phase_ways[KMTEST_SOAK_PHASES] = {1, 2, 1, 2, 3, 2, 1, 2, 1, 3};
-	KMTEST_SENDER senders[KMTEST_SENDERS];
 	UCHAR frame[NODE_L2_MAX_FRAME];
 	NODE_L2_STATUS st;
 	UINT phases = 0;
@@ -1059,15 +1188,15 @@ static void KmSoak(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, UINT seconds)
 	UINT64 end = GetTickCount64() + (UINT64)seconds * 1000;
 	for (UINT i = 0;GetTickCount64() < end;i = (i + 1) % KMTEST_SOAK_PHASES)
 	{
-		volatile LONG stop = 0;
+		KMTEST_FLOOD *f = NULL;
 		UINT size = phase_sizes[i];
 		UINT tx = 0;
 		UINT64 phase_end = GetTickCount64() + KMTEST_SOAK_PHASE;
 
-		Zero(senders, sizeof(senders));
 		if ((phase_ways[i] & 1) != 0)
 		{
-			tx = (KmStartSenders(x, senders, &stop, false, size - 42) ? KMTEST_SENDERS : 0);
+			f = KmNewFlood();
+			tx = (KmStartSenders(x, f, false, size - 42) ? KMTEST_SENDERS : 0);
 		}
 
 		UINT fsize = KmUdpFrame(frame, x->Mac, kmtest_neighbour_mac, x->Neighbour, x->Address, 40000, KMTEST_BENCH_PORT, size - 42);
@@ -1088,12 +1217,20 @@ static void KmSoak(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, UINT seconds)
 		}
 
 		UINT uso = 0;
+		UINT stuck = 0;
 		LONG64 sends = 0;
-		LONG64 slowest = KmStopSenders(senders, &stop, &uso, &sends);
+		LONG64 slowest = KmStopSenders(f, &uso, &sends, &stuck);
 		NodeL2GetStatus(x->L2, &st);
 		phases++;
-		Print("  soak phase %u (%s): %u senders, %I64u sends, the slowest %I64u us; captured %I64u (%I64u dropped), injected %I64u (%I64u refused), %I64u probes (%I64u failed), %I64u reattaches, %I64u resets\n",
-			phases, phase_names[i], tx, (UINT64)sends, (UINT64)slowest, st.Captured, st.CaptureDrops, st.Injected, st.InjectDrops, st.Probes, st.ProbeFailures, st.Reattaches, st.Resets);
+		Print("  soak phase %u (%s): %u senders, %I64u sends, the slowest %I64u us; captured %I64u (%I64u dropped, %I64u by the driver, on %u of %u queues), injected %I64u (%I64u refused), %I64u probes (%I64u failed), %I64u reattaches, %I64u resets\n",
+			phases, phase_names[i], tx, (UINT64)sends, (UINT64)slowest, st.Captured, st.CaptureDrops, st.DriverDrops, st.BusyQueues, st.Queues, st.Injected, st.InjectDrops,
+			st.Probes, st.ProbeFailures, st.Reattaches, st.Resets);
+		if (stuck != 0 || (tx != 0 && sends == 0))
+		{
+			KmPrintSenders("the soak", f);
+		}
+		ctx->Stuck += stuck;
+		KmFreeFlood(f);
 	}
 
 	Print("KMTEST BENCH soak: %u phases in %u s, %I64u probes, %I64u of them failed, %I64u reattaches, %I64u resets\n", phases, seconds, st.Probes, st.ProbeFailures, st.Reattaches, st.Resets);
@@ -1175,8 +1312,37 @@ static void KmDeleteDir(wchar_t *dir, bool print_log)
 	}
 }
 
-// The test on the backend expect: the long parts with full, or only the soak of soak seconds when that is not 0
-static void KmRun(KMTEST_CTX *ctx, NODE *n, char *expect, bool full, UINT soak)
+// The measurement "bare": senders with USO on a KM-TEST adapter of their own, which has no L2 adapter and so no program of
+// XDP and no socket of SeLow, for KMTEST_BARE_TIME ms. It shows whether the host's stack and the adapter carry USO
+// without the backend, in KMTEST DIAG lines, and checks nothing of the L2 adapter.
+static void KmBare(KMTEST_CTX *ctx, NODE *n, const UCHAR *key)
+{
+	KMTEST_ADAPTER y;
+	UINT uso = 0;
+	UINT stuck = 0;
+	LONG64 sends = 0;
+
+	if (KmNewAdapter(ctx, &y, n, key, KMTEST_NETWORK3))
+	{
+		KMTEST_FLOOD *f = KmNewFlood();
+		bool started = KmStartSenders(&y, f, true, KMTEST_SEGMENT);
+
+		Sleep(KMTEST_BARE_TIME);
+		LONG64 slowest = KmStopSenders(f, &uso, &sends, &stuck);
+		Print("KMTEST DIAG bare adapter: 4 senders %s, %u with USO, %I64u sends in %u ms, the slowest send() %I64u us, %u blocked in send() when stopped\n",
+			started ? "started" : "did not start", uso, (UINT64)sends, KMTEST_BARE_TIME, (UINT64)slowest, stuck);
+		KmPrintSenders("the bare adapter", f);
+		ctx->Stuck += stuck;
+		KmFreeFlood(f);
+	}
+
+	NodeKmTestFree(y.KmTest, stuck == 0);
+	CloseHandle(y.Owner.Resume);
+}
+
+// The test on the backend expect: the long parts with full, only the soak of soak seconds when that is not 0, or only
+// the measurement of senders on an adapter without an L2 adapter with bare
+static void KmRun(KMTEST_CTX *ctx, NODE *n, char *expect, bool full, UINT soak, bool bare)
 {
 	KMTEST_ADAPTER x;
 	NODE_L2_STATUS st;
@@ -1185,6 +1351,12 @@ static void KmRun(KMTEST_CTX *ctx, NODE *n, char *expect, bool full, UINT soak)
 	bool xdp = (StrCmpi(expect, "xdp") == 0);
 
 	memset(key, 0x72, sizeof(key));
+
+	if (bare)
+	{
+		KmBare(ctx, n, key);
+		return;
+	}
 
 	if (KmNewAdapter(ctx, &x, n, key, KMTEST_NETWORK) == false)
 	{
@@ -1196,7 +1368,7 @@ static void KmRun(KMTEST_CTX *ctx, NODE *n, char *expect, bool full, UINT soak)
 	if (soak != 0)
 	{
 		KmSoak(ctx, &x, n, soak);
-		NodeKmTestFree(x.KmTest, true);
+		NodeKmTestFree(x.KmTest, ctx->Stuck == 0);
 		CloseHandle(x.Owner.Resume);
 		return;
 	}
@@ -1213,17 +1385,21 @@ static void KmRun(KMTEST_CTX *ctx, NODE *n, char *expect, bool full, UINT soak)
 		"%s, interface %u", second != NULL ? "created" : "not created", NodeKmTestIndex(second));
 	NodeKmTestFree(second, true);
 
-	// The queues of the adapter (XDP only): KM-TEST has no RSS
+	// The queues of the adapter (XDP only): the receive queues that KM-TEST reports for RSS, each of which the L2 adapter
+	// binds
 	if (xdp)
 	{
-		UINT queues = NodeL2XdpQueues(x.IfIndex, 8, error, sizeof(error));
-		Print("KMTEST BENCH queues: an AF_XDP socket binds to %u queue(s) of the KM-TEST adapter (%s)\n", queues, error);
+		UINT64 t0 = GetTickCount64();
+		UINT queues = NodeL2XdpQueues(x.IfIndex, NODE_L2_XDP_MAX_QUEUES, error, sizeof(error));
+		Print("KMTEST BENCH queues: an AF_XDP socket binds to %u queue(s) of the KM-TEST adapter, found in %I64u ms (%s)\n", queues, GetTickCount64() - t0, error);
 		KmCheck(ctx, queues >= 1, "an AF_XDP socket binds to queue 0 of the adapter (the number of queues is measured)", "%u queues: %s", queues, error);
 	}
 
 	// The backend that the host gives
+	UINT64 t1 = GetTickCount64();
 	x.L2 = KmNewL2(&x, n, 0, 0);
 	NodeL2GetStatus(x.L2, &st);
+	Print("  the L2 adapter came up in %I64u ms\n", GetTickCount64() - t1);
 	char what[MAX_SIZE];
 	Format(what, sizeof(what), "the L2 adapter binds the %s backend, the one that this host gives", expect);
 	if (KmCheck(ctx, x.L2 != NULL && StrCmpi(st.Backend, expect) == 0, what, "%s, backend '%s'", x.L2 != NULL ? "an adapter" : "no adapter", st.Backend))
@@ -1246,6 +1422,7 @@ static void KmRun(KMTEST_CTX *ctx, NODE *n, char *expect, bool full, UINT soak)
 			"%I64u probes, %I64u failed, %I64u reattaches", st.Probes, st.ProbeFailures, st.Reattaches);
 		Print("  status: captured %I64u (%I64u dropped), delivered %I64u, sent %I64u (%I64u dropped), injected %I64u (%I64u refused) in %I64u batches, %I64u probes\n",
 			st.Captured, st.CaptureDrops, st.Delivered, st.Sent, st.SendDrops, st.Injected, st.InjectDrops, st.Batches, st.Probes);
+		KmPrintDriver("status", &st);
 
 		UINT64 t0 = GetTickCount64();
 		bool freed = NodeL2Free(x.L2);
@@ -1266,20 +1443,25 @@ static void KmRun(KMTEST_CTX *ctx, NODE *n, char *expect, bool full, UINT soak)
 		x.L2 = NULL;
 	}
 
-	NodeKmTestFree(x.KmTest, true);
+	if (ctx->Stuck != 0)
+	{
+		Print("  %u senders stayed blocked in send(): the KM-TEST adapter stays, as its removal would wait for their frames\n", ctx->Stuck);
+	}
+	NodeKmTestFree(x.KmTest, ctx->Stuck == 0);
 	CloseHandle(x.Owner.Resume);
 }
 
 // kmtest: the L2 adapter of the node on a KM-TEST adapter with the backend of this host (CORE-S3-2)
-RANZ_TEST("kmtest", kmtest_test, "KM-TEST adapter: the L2 adapter of the node on a real KM-TEST Loopback Adapter with XDP or SeLow (argument: xdp or selow, then quick): TX inspect, RX inject, LAN discovery through an L2 switch with per-VLAN broadcast limits, the paused consumer, the benchmark, recovery and shutdown (administrator rights, the drivers of ranz install).");
+RANZ_TEST("kmtest", kmtest_test, "KM-TEST adapter: the L2 adapter of the node on a real KM-TEST Loopback Adapter with XDP or SeLow (argument: xdp or selow, then quick, soak <seconds> or bare): TX inspect, RX inject, LAN discovery through an L2 switch with per-VLAN broadcast limits, the paused consumer, the benchmark, recovery and shutdown (administrator rights, the drivers of ranz install).");
 void kmtest_test(UINT num, char **arg)
 {
 	KMTEST_CTX ctx;
 	WSADATA wsa;
 	wchar_t dir[MAX_PATH];
 	char *expect = (num >= 1 ? arg[0] : "xdp");
-	bool full = (num < 2 || StrCmpi(arg[1], "quick") != 0);
+	bool full = (num < 2);
 	UINT soak = (num >= 3 && StrCmpi(arg[1], "soak") == 0 ? ToInt(arg[2]) : 0);
+	bool bare = (num >= 2 && StrCmpi(arg[1], "bare") == 0);
 
 	kmtest_budget = KMTEST_BUDGET + soak * 1000;
 	HANDLE done = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -1288,7 +1470,8 @@ void kmtest_test(UINT num, char **arg)
 	Zero(&ctx, sizeof(ctx));
 	WSAStartup(MAKEWORD(2, 2), &wsa);
 
-	Print("KM-TEST adapter test: the L2 adapter of the node on a KM-TEST Loopback Adapter, the %s backend%s\n", expect, soak != 0 ? ", the soak" : (full ? "" : ", quick"));
+	Print("KM-TEST adapter test: the L2 adapter of the node on a KM-TEST Loopback Adapter, the %s backend%s\n", expect,
+		bare ? ", senders on a bare adapter" : (soak != 0 ? ", the soak" : (full ? "" : ", quick")));
 
 	KmNewDir(dir, sizeof(dir));
 	NODE *n = NewNode(dir);
@@ -1296,7 +1479,7 @@ void kmtest_test(UINT num, char **arg)
 
 	if (KmCheck(&ctx, started, "a node without a role runs for the adapters", "NewNode or NodeStart failed"))
 	{
-		KmRun(&ctx, n, expect, full, soak);
+		KmRun(&ctx, n, expect, full, soak, bare);
 	}
 
 	if (n != NULL)
@@ -1304,9 +1487,13 @@ void kmtest_test(UINT num, char **arg)
 		NodeStop(n);
 		FreeNode(n);
 	}
-	KmDeleteDir(dir, ctx.NumFailed != 0);
+	KmDeleteDir(dir, ctx.NumFailed != 0 || ctx.Stuck != 0);
 
-	WSACleanup();
+	// A sender that stayed blocked in send() keeps Winsock in use
+	if (ctx.Stuck == 0)
+	{
+		WSACleanup();
+	}
 
 	if (watchdog != NULL)
 	{

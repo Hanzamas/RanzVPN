@@ -638,8 +638,9 @@ NODE_L2 *NodeL2New(NODE *n, const NODE_L2_CONFIG *cfg) {
 		return NULL;
 	}
 
-	NodeLog(n, "L2 adapter up: interface %u, MAC %02X-%02X-%02X-%02X-%02X-%02X, the %s backend, rings of %u frames, batches of %u, flush %u us",
-	        a->IfIndex, (UINT)a->Mac[0], (UINT)a->Mac[1], (UINT)a->Mac[2], (UINT)a->Mac[3], (UINT)a->Mac[4], (UINT)a->Mac[5], a->Backend->Name, slots, a->Batch, a->FlushUs);
+	NodeLog(n, "L2 adapter up: interface %u, MAC %02X-%02X-%02X-%02X-%02X-%02X, the %s backend on %u queue(s), rings of %u frames, batches of %u, flush %u us",
+	        a->IfIndex, (UINT)a->Mac[0], (UINT)a->Mac[1], (UINT)a->Mac[2], (UINT)a->Mac[3], (UINT)a->Mac[4], (UINT)a->Mac[5], a->Backend->Name,
+	        (UINT)ReadAcquire(&a->DriverQueues), slots, a->Batch, a->FlushUs);
 
 	return a;
 }
@@ -669,8 +670,9 @@ bool NodeL2Free(NODE_L2 *a) {
 
 	NodeDelQueue(a->Node, a->Queue);
 
-	NodeLog(a->Node, "L2 adapter of interface %u down: %I64u frames of the host captured (%I64u dropped), %I64u handed to the owner; %I64u sent to the host (%I64u dropped), %I64u injected in %I64u batches",
-	        a->IfIndex, (UINT64)a->Captured, (UINT64)a->CaptureDrops, (UINT64)a->Delivered, (UINT64)a->Sent, (UINT64)a->SendDrops, (UINT64)a->Injected, (UINT64)a->Batches);
+	NodeLog(a->Node, "L2 adapter of interface %u down: %I64u frames of the host captured (%I64u dropped, %I64u dropped by the driver), %I64u handed to the owner; %I64u sent to the host (%I64u dropped), %I64u injected in %I64u batches; %I64u failed waits on the driver",
+	        a->IfIndex, (UINT64)a->Captured, (UINT64)a->CaptureDrops, (UINT64)a->DriverDrops, (UINT64)a->Delivered, (UINT64)a->Sent, (UINT64)a->SendDrops, (UINT64)a->Injected,
+	        (UINT64)a->Batches, (UINT64)a->DriverWaitFailures);
 
 	if (ok)
 		NodeL2Release(a);
@@ -719,4 +721,9 @@ void NodeL2GetStatus(NODE_L2 *a, NODE_L2_STATUS *st) {
 	st->ProbeFailures = (UINT64)ReadAcquire64(&a->ProbeFailures);
 	st->Reattaches = (UINT64)ReadAcquire64(&a->Reattaches);
 	st->Resets = (UINT64)ReadAcquire64(&a->Resets);
+	st->Queues = (UINT)ReadAcquire(&a->DriverQueues);
+	st->BusyQueues = (UINT)ReadAcquire(&a->DriverBusyQueues);
+	st->DriverDrops = (UINT64)ReadAcquire64(&a->DriverDrops);
+	st->WaitFailures = (UINT64)ReadAcquire64(&a->DriverWaitFailures);
+	st->WaitError = (UINT)ReadAcquire(&a->DriverWaitError);
 }

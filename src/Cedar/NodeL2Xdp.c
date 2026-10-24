@@ -2,15 +2,19 @@
 // The XDP backend of the L2 adapter (NodeL2.h; CORE-S3-2, #72): XDP for Windows 1.4, in generic mode, on a KM-TEST
 // adapter (ADR-0018). Both directions go through the rule API and AF_XDP sockets, no eBPF (ADR-0018 amendment of
 // 2026-10-13, ADR-0022):
-// - TX inspect: a program on the hook {L2, TX, INSPECT} of queue 0 redirects every frame that the host sends out of the
-//   adapter to an AF_XDP socket bound for RX. Its drain thread takes the frames of the RX ring in batches, copies each
-//   into the capture ring of the adapter (NodeL2Capture) and gives the UMEM chunks back to the fill ring in one go. It
-//   waits for nothing but the ring (XskNotifySocket), takes no lock, allocates nothing and does no other I/O, so the
-//   socket never backs up into the senders of the host (#72, risk R1).
-// - RX inject: a second socket, bound for TX on {L2, RX, INJECT}, needs no program. The injector of the adapter hands it
-//   batches: free UMEM chunks are filled, the descriptors reserved and submitted in bulk, the socket poked once per batch
-//   when XDP asks for it, and the completions recycled in bulk (ADR-0022 amendment of 2026-10-19).
-// A KM-TEST adapter has one queue, so each socket binds to queue 0 (NodeL2XdpQueues measures how many an adapter has).
+// - TX inspect: XDP hands each frame that the host sends out of the adapter to a queue of the hook {L2, TX, INSPECT},
+//   chosen by the RSS hash of the frame, and a KM-TEST adapter reports receive queues for RSS. XDP passes the frames of a
+//   queue without a program on to the adapter, where nothing captures them, so the backend binds every queue that the
+//   adapter has (NodeL2XdpQueues, up to NODE_L2_XDP_MAX_QUEUES). Each queue has an AF_XDP socket bound for RX, a program
+//   that redirects every frame of the queue to it, and a drain thread of its own, which takes the frames of the RX ring
+//   in batches, copies each into the capture ring of the adapter (NodeL2Capture) and gives the UMEM chunks back to the
+//   fill ring in one go. A drain thread waits for nothing but its ring (XskNotifySocket), takes no lock, allocates
+//   nothing and does no other I/O, so no socket backs up into the senders of the host (#72, risk R1).
+// - RX inject: one more socket, bound for TX on {L2, RX, INJECT} of queue 0, needs no program. The injector of the
+//   adapter hands it batches: free UMEM chunks are filled, the descriptors reserved and submitted in bulk, the socket
+//   poked once per batch when XDP asks for it, and the completions recycled in bulk (ADR-0022 amendment of 2026-10-19).
+// - The health check reads the statistics of the sockets of TX inspect, the frames that XDP dropped or cut short before
+//   a drain thread took them, into the counters of the adapter.
 // The API is the header-only one of XDP_API_VERSION 3 from the pinned SDK package (src/Cedar/CMakeLists.txt): it opens
 // the XDP driver with NtCreateFile of ntdll, so nothing of the package ships, and the runtime is the one that ranz
 // install puts on the machine (ONE-3, #312). Where the runtime is missing or cannot bind, XskCreate, XskBind or
@@ -52,14 +56,22 @@ extern BOOLEAN XskRingProducerNeedPoke(const XSK_RING *Ring);
 
 // Bytes of a UMEM chunk: one frame of NODE_L2_MAX_FRAME bytes at most
 #define NODE_L2_XDP_CHUNK 2048
-// Entries of each AF_XDP ring, and chunks of each UMEM, without NODE_L2_CONFIG.BackendRing
-#define NODE_L2_XDP_RING 2048
-// Frames that the drain thread takes from the RX ring at once
+// Entries of each AF_XDP ring, and chunks of each UMEM, without NODE_L2_CONFIG.BackendRing: the socket of RX inject has
+// NODE_L2_XDP_RING, and the sockets of TX inspect share NODE_L2_XDP_CHUNKS, from NODE_L2_XDP_MIN_RING to
+// NODE_L2_XDP_RING each
+#define NODE_L2_XDP_RING     2048
+#define NODE_L2_XDP_CHUNKS   8192
+#define NODE_L2_XDP_MIN_RING 256
+// Entries of the rings of a socket that NodeL2XdpQueues opens to see whether a queue binds
+#define NODE_L2_XDP_PROBE_RING 64
+// Frames that a drain thread takes from its RX ring at once
 #define NODE_L2_XDP_BATCH 256
-// ms that the drain thread waits on the RX ring at a time, so that it sees its halt
+// ms that a drain thread waits on its RX ring at a time, so that it sees its halt
 #define NODE_L2_XDP_WAIT 50
 // ms that an injection waits at most for completions when no chunk is free
 #define NODE_L2_XDP_FREE_WAIT 1
+
+typedef struct NODE_L2_XDP NODE_L2_XDP;
 
 // One AF_XDP socket with its UMEM and its two rings: RX and fill, or TX and completion
 typedef struct NODE_L2_XSK {
@@ -70,24 +82,39 @@ typedef struct NODE_L2_XSK {
 	XSK_RING Other;
 } NODE_L2_XSK;
 
-// The state of the backend on one adapter (NODE_L2.BackendState)
-typedef struct NODE_L2_XDP {
-	NODE_L2 *Adapter;
-	UINT RingSize;
-	// TX inspect: the socket of the frames that the host sends, its program and the drain thread
+// One queue of TX inspect: its socket, the program that redirects the frames of the queue to it, and its drain thread
+typedef struct NODE_L2_XDP_QUEUE {
+	NODE_L2_XDP *Xdp;
 	NODE_L2_XSK Rx;
 	HANDLE Program;
 	HANDLE Thread;
+	// Written by the drain thread only: the frames that it took, and the waits on its ring that XDP refused, with the
+	// error of the last
+	volatile LONG64 Frames;
+	volatile LONG64 WaitFailures;
+	volatile LONG WaitError;
+} NODE_L2_XDP_QUEUE;
+
+// The state of the backend on one adapter (NODE_L2.BackendState)
+struct NODE_L2_XDP {
+	NODE_L2 *Adapter;
+	// TX inspect: one entry for each queue of the hook, and the halt of their drain threads
+	NODE_L2_XDP_QUEUE *Queues;
+	UINT NumQueues;
 	volatile LONG Halt;
+	// What the health check put into the counters of the adapter so far, on the injector thread
+	UINT64 ReportedDrops;
+	UINT64 ReportedWaitFailures;
 	// RX inject, on the injector thread only: the socket, the chunks of its UMEM that no descriptor holds (a stack), the
 	// descriptors submitted and completed so far, and when the completions last moved
+	UINT RingSize;
 	NODE_L2_XSK Tx;
 	UINT64 *Free;
 	UINT NumFree;
 	UINT64 Submitted;
 	UINT64 Completed;
 	UINT64 LastProgress;
-} NODE_L2_XDP;
+};
 
 // Open an AF_XDP socket on the hook of queue queue of the interface if_index, for RX (rx) or for TX, with a UMEM of ring
 // chunks and rings of ring entries, and activate it. step names what failed.
@@ -165,64 +192,130 @@ static void NodeL2XdpClose(NODE_L2_XSK *s) {
 
 // Free the state of the backend once no thread runs on it
 static void NodeL2XdpRelease(NODE_L2_XDP *x) {
-	if (x->Program != NULL)
-		CloseHandle(x->Program);
+	for (UINT i = 0; x->Queues != NULL && i < x->NumQueues; i++) {
+		if (x->Queues[i].Program != NULL)
+			CloseHandle(x->Queues[i].Program);
+		NodeL2XdpClose(&x->Queues[i].Rx);
+	}
 
-	NodeL2XdpClose(&x->Rx);
 	NodeL2XdpClose(&x->Tx);
 
+	if (x->Queues != NULL)
+		HeapFree(GetProcessHeap(), 0, x->Queues);
 	if (x->Free != NULL)
 		HeapFree(GetProcessHeap(), 0, x->Free);
 
 	HeapFree(GetProcessHeap(), 0, x);
 }
 
-// The drain thread of TX inspect: the frames of the RX ring, NODE_L2_XDP_BATCH at a time, into the capture ring of the
-// adapter, and their chunks back to the fill ring in one go. Between batches it waits on the RX ring, and pokes the fill
-// ring when XDP asks for it.
+// Halt the drain threads and join them, within timeout ms for all of them; false when one did not end in time
+static bool NodeL2XdpJoin(NODE_L2_XDP *x, UINT timeout) {
+	UINT64 end = GetTickCount64() + timeout;
+
+	InterlockedExchange(&x->Halt, 1);
+	for (UINT i = 0; i < x->NumQueues; i++) {
+		NODE_L2_XDP_QUEUE *q = &x->Queues[i];
+		UINT64 now = GetTickCount64();
+
+		if (q->Thread == NULL)
+			continue;
+		if (WaitForSingleObject(q->Thread, (DWORD)(now < end ? end - now : 0)) != WAIT_OBJECT_0)
+			return false;
+		CloseHandle(q->Thread);
+		q->Thread = NULL;
+	}
+
+	return true;
+}
+
+// The drain thread of a queue of TX inspect: the frames of its RX ring, NODE_L2_XDP_BATCH at a time, into the capture
+// ring of the adapter, and their chunks back to the fill ring in one go. Between batches it waits on the RX ring, and
+// pokes the fill ring when XDP asks for it.
 static DWORD WINAPI NodeL2XdpDrain(void *param) {
-	NODE_L2_XDP *x = (NODE_L2_XDP *)param;
+	NODE_L2_XDP_QUEUE *q = (NODE_L2_XDP_QUEUE *)param;
+	NODE_L2_XDP *x = q->Xdp;
 	UINT64 bases[NODE_L2_XDP_BATCH];
 
 	while (ReadAcquire(&x->Halt) == 0) {
 		XSK_NOTIFY_RESULT_FLAGS result = XSK_NOTIFY_RESULT_FLAG_NONE;
 		UINT32 index = 0;
-		UINT32 num = XskRingConsumerReserve(&x->Rx.Ring, NODE_L2_XDP_BATCH, &index);
+		UINT32 num = XskRingConsumerReserve(&q->Rx.Ring, NODE_L2_XDP_BATCH, &index);
 
 		if (num == 0) {
 			XSK_NOTIFY_FLAGS flags = XSK_NOTIFY_FLAG_WAIT_RX;
 
-			if (XskRingProducerNeedPoke(&x->Rx.Other))
+			if (XskRingProducerNeedPoke(&q->Rx.Other))
 				flags = (XSK_NOTIFY_FLAGS)(flags | XSK_NOTIFY_FLAG_POKE_RX);
 
-			HRESULT hr = XskNotifySocket(x->Rx.Socket, flags, NODE_L2_XDP_WAIT, &result);
-			// A wait that XDP refuses polls the ring once a millisecond instead. A socket that XDP took away (the
-			// interface went) flags its rings with an error, which the health check sees.
-			if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_TIMEOUT))
+			HRESULT hr = XskNotifySocket(q->Rx.Socket, flags, NODE_L2_XDP_WAIT, &result);
+			// A wait that XDP refuses is counted, and the ring is polled once a millisecond instead. A socket that XDP took
+			// away (the interface went) flags its rings with an error, which the health check sees.
+			if (FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_TIMEOUT) && hr != HRESULT_FROM_WIN32(WAIT_TIMEOUT)) {
+				InterlockedExchange(&q->WaitError, (LONG)hr);
+				InterlockedIncrement64(&q->WaitFailures);
 				Sleep(1);
+			}
 			continue;
 		}
 
 		for (UINT32 i = 0; i < num; i++) {
-			XSK_BUFFER_DESCRIPTOR *d = (XSK_BUFFER_DESCRIPTOR *)XskRingGetElement(&x->Rx.Ring, index + i);
+			XSK_BUFFER_DESCRIPTOR *d = (XSK_BUFFER_DESCRIPTOR *)XskRingGetElement(&q->Rx.Ring, index + i);
 
-			NodeL2Capture(x->Adapter, x->Rx.Umem + d->Address.BaseAddress + d->Address.Offset, d->Length);
+			NodeL2Capture(x->Adapter, q->Rx.Umem + d->Address.BaseAddress + d->Address.Offset, d->Length);
 			bases[i] = d->Address.BaseAddress;
 		}
-		XskRingConsumerRelease(&x->Rx.Ring, num);
+		XskRingConsumerRelease(&q->Rx.Ring, num);
 
 		UINT32 fill = 0;
-		UINT32 got = XskRingProducerReserve(&x->Rx.Other, num, &fill);
+		UINT32 got = XskRingProducerReserve(&q->Rx.Other, num, &fill);
 		for (UINT32 i = 0; i < got; i++)
-			*(UINT64 *)XskRingGetElement(&x->Rx.Other, fill + i) = bases[i];
-		XskRingProducerSubmit(&x->Rx.Other, got);
-		if (XskRingProducerNeedPoke(&x->Rx.Other))
-			XskNotifySocket(x->Rx.Socket, XSK_NOTIFY_FLAG_POKE_RX, 0, &result);
+			*(UINT64 *)XskRingGetElement(&q->Rx.Other, fill + i) = bases[i];
+		XskRingProducerSubmit(&q->Rx.Other, got);
+		if (XskRingProducerNeedPoke(&q->Rx.Other))
+			XskNotifySocket(q->Rx.Socket, XSK_NOTIFY_FLAG_POKE_RX, 0, &result);
 
+		InterlockedAdd64(&q->Frames, (LONG64)num);
 		NodeL2CaptureDone(x->Adapter);
 	}
 
 	return 0;
+}
+
+// What the queues of TX inspect tell, on the injector thread, into the counters of the adapter: the queues that frames
+// came in on, the frames that XDP dropped or cut short before a drain thread took them (the statistics of the sockets),
+// and the waits that XDP refused, with the error of the last
+static void NodeL2XdpReport(NODE_L2_XDP *x) {
+	NODE_L2 *a = x->Adapter;
+	UINT64 drops = 0;
+	UINT64 failures = 0;
+	UINT busy = 0;
+
+	for (UINT i = 0; i < x->NumQueues; i++) {
+		NODE_L2_XDP_QUEUE *q = &x->Queues[i];
+		XSK_STATISTICS stats;
+		UINT32 len = sizeof(stats);
+
+		ZeroMemory(&stats, sizeof(stats));
+		if (SUCCEEDED(XskGetSockopt(q->Rx.Socket, XSK_SOCKOPT_STATISTICS, &stats, &len)))
+			drops += stats.RxDropped + stats.RxTruncated;
+
+		if (ReadAcquire64(&q->WaitFailures) != 0) {
+			failures += (UINT64)ReadAcquire64(&q->WaitFailures);
+			InterlockedExchange(&a->DriverWaitError, ReadAcquire(&q->WaitError));
+		}
+		if (ReadAcquire64(&q->Frames) != 0)
+			busy++;
+	}
+
+	InterlockedExchange(&a->DriverBusyQueues, (LONG)busy);
+	if (drops > x->ReportedDrops) {
+		InterlockedAdd64(&a->DriverDrops, (LONG64)(drops - x->ReportedDrops));
+		x->ReportedDrops = drops;
+	}
+	if (failures > x->ReportedWaitFailures) {
+		InterlockedAdd64(&a->DriverWaitFailures, (LONG64)(failures - x->ReportedWaitFailures));
+		x->ReportedWaitFailures = failures;
+	}
 }
 
 // The completions of the TX ring, in one go: their chunks are free again
@@ -283,16 +376,22 @@ static UINT NodeL2XdpInject(NODE_L2 *a, const UCHAR **frames, const UINT *sizes,
 	return got;
 }
 
-// Whether the binding works, on the injector thread: no ring of either socket has an error (XDP sets one when the
-// interface goes or XDP lets go of it), and injected frames do not wait longer than NODE_L2_STALL ms for their
-// completion
+// Whether the binding works, on the injector thread: no ring of any socket has an error (XDP sets one when the interface
+// goes or XDP lets go of it), and injected frames do not wait longer than NODE_L2_STALL ms for their completion. It
+// reports what the queues of TX inspect tell first.
 static bool NodeL2XdpHealthy(NODE_L2 *a) {
 	NODE_L2_XDP *x = (NODE_L2_XDP *)a->BackendState;
 
 	if (x == NULL)
 		return false;
 
-	if (XskRingError(&x->Rx.Ring) || XskRingError(&x->Rx.Other) || XskRingError(&x->Tx.Ring) || XskRingError(&x->Tx.Other))
+	NodeL2XdpReport(x);
+
+	for (UINT i = 0; i < x->NumQueues; i++)
+		if (XskRingError(&x->Queues[i].Rx.Ring) || XskRingError(&x->Queues[i].Rx.Other))
+			return false;
+
+	if (XskRingError(&x->Tx.Ring) || XskRingError(&x->Tx.Other))
 		return false;
 
 	NodeL2XdpComplete(x);
@@ -300,8 +399,8 @@ static bool NodeL2XdpHealthy(NODE_L2 *a) {
 	return (x->Submitted == x->Completed || GetTickCount64() - x->LastProgress <= NODE_L2_STALL);
 }
 
-// Stop, within timeout ms for each step (#72, risk R2): what was injected completes first, then the program goes, so no
-// frame is redirected any more, then the drain thread ends and the sockets close. A drain thread that does not end in
+// Stop, within timeout ms for each step (#72, risk R2): what was injected completes first, then the programs go, so no
+// frame is redirected any more, then the drain threads end and the sockets close. A drain thread that does not end in
 // time keeps the state, which is then left to it.
 static bool NodeL2XdpDetach(NODE_L2 *a, UINT timeout) {
 	NODE_L2_XDP *x = (NODE_L2_XDP *)a->BackendState;
@@ -325,32 +424,37 @@ static bool NodeL2XdpDetach(NODE_L2 *a, UINT timeout) {
 		XskNotifySocket(x->Tx.Socket, (XSK_NOTIFY_FLAGS)(XSK_NOTIFY_FLAG_POKE_TX | XSK_NOTIFY_FLAG_WAIT_TX), NODE_L2_XDP_WAIT, &result);
 	}
 
-	if (x->Program != NULL) {
-		CloseHandle(x->Program);
-		x->Program = NULL;
+	for (UINT i = 0; i < x->NumQueues; i++) {
+		if (x->Queues[i].Program != NULL) {
+			CloseHandle(x->Queues[i].Program);
+			x->Queues[i].Program = NULL;
+		}
 	}
 
-	InterlockedExchange(&x->Halt, 1);
-	if (x->Thread != NULL) {
-		if (WaitForSingleObject(x->Thread, timeout) != WAIT_OBJECT_0)
-			return false;
-		CloseHandle(x->Thread);
-	}
+	if (NodeL2XdpJoin(x, timeout) == false)
+		return false;
 
+	NodeL2XdpReport(x);
 	NodeL2XdpRelease(x);
 
 	return ok;
 }
 
-// Bind to the adapter: the socket of TX inspect with its fill ring full, the program that redirects every frame that the
-// host sends to it, the socket of RX inject, and the drain thread
+// Bind to the adapter: on each queue of TX inspect a socket with its fill ring full and the program that redirects every
+// frame of the queue to it, then the socket of RX inject, and last the drain threads
 static bool NodeL2XdpAttach(NODE_L2 *a, char *error, UINT error_size) {
 	XDP_HOOK_ID inspect = {XDP_HOOK_L2, XDP_HOOK_TX, XDP_HOOK_INSPECT};
 	XDP_HOOK_ID inject = {XDP_HOOK_L2, XDP_HOOK_RX, XDP_HOOK_INJECT};
-	XDP_RULE rule;
+	char why[256];
 	const char *step = "";
 	UINT32 index = 0;
 	HRESULT hr;
+
+	UINT queues = NodeL2XdpQueues(a->IfIndex, NODE_L2_XDP_MAX_QUEUES, why, sizeof(why));
+	if (queues == 0) {
+		snprintf(error, error_size, "TX inspect: %s", why);
+		return false;
+	}
 
 	NODE_L2_XDP *x = (NODE_L2_XDP *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(NODE_L2_XDP));
 	if (x == NULL) {
@@ -359,31 +463,52 @@ static bool NodeL2XdpAttach(NODE_L2 *a, char *error, UINT error_size) {
 	}
 	x->Adapter = a;
 	x->RingSize = (a->BackendRing != 0 ? a->BackendRing : NODE_L2_XDP_RING);
-
-	hr = NodeL2XdpOpen(&x->Rx, a->IfIndex, 0, &inspect, true, x->RingSize, &step);
-	if (FAILED(hr)) {
-		snprintf(error, error_size, "TX inspect: %s failed (0x%08X)", step, (UINT)hr);
+	x->Queues = (NODE_L2_XDP_QUEUE *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(NODE_L2_XDP_QUEUE) * queues);
+	if (x->Queues == NULL) {
+		snprintf(error, error_size, "no memory");
 		NodeL2XdpRelease(x);
 		return false;
 	}
+	x->NumQueues = queues;
 
-	// Every chunk of the UMEM in the fill ring, for the frames to come
-	UINT32 got = XskRingProducerReserve(&x->Rx.Other, x->Rx.NumChunks, &index);
-	for (UINT32 i = 0; i < got; i++)
-		*(UINT64 *)XskRingGetElement(&x->Rx.Other, index + i) = (UINT64)i * NODE_L2_XDP_CHUNK;
-	XskRingProducerSubmit(&x->Rx.Other, got);
+	// The rings of TX inspect: NODE_L2_CONFIG.BackendRing each, or a share of NODE_L2_XDP_CHUNKS
+	UINT ring = a->BackendRing;
+	if (ring == 0) {
+		ring = NODE_L2_XDP_RING;
+		while (ring > NODE_L2_XDP_MIN_RING && ring * queues > NODE_L2_XDP_CHUNKS)
+			ring /= 2;
+	}
 
-	ZeroMemory(&rule, sizeof(rule));
-	rule.Match = XDP_MATCH_ALL;
-	rule.Action = XDP_PROGRAM_ACTION_REDIRECT;
-	rule.Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK;
-	rule.Redirect.Target = x->Rx.Socket;
-	hr = XdpCreateProgram(a->IfIndex, &inspect, 0, XDP_CREATE_PROGRAM_FLAG_GENERIC, &rule, 1, &x->Program);
-	if (FAILED(hr)) {
-		snprintf(error, error_size, "TX inspect: XdpCreateProgram failed (0x%08X)", (UINT)hr);
-		x->Program = NULL;
-		NodeL2XdpRelease(x);
-		return false;
+	for (UINT i = 0; i < queues; i++) {
+		NODE_L2_XDP_QUEUE *q = &x->Queues[i];
+		XDP_RULE rule;
+
+		q->Xdp = x;
+		hr = NodeL2XdpOpen(&q->Rx, a->IfIndex, i, &inspect, true, ring, &step);
+		if (FAILED(hr)) {
+			snprintf(error, error_size, "TX inspect, queue %u: %s failed (0x%08X)", i, step, (UINT)hr);
+			NodeL2XdpRelease(x);
+			return false;
+		}
+
+		// Every chunk of the UMEM in the fill ring, for the frames to come
+		UINT32 got = XskRingProducerReserve(&q->Rx.Other, q->Rx.NumChunks, &index);
+		for (UINT32 j = 0; j < got; j++)
+			*(UINT64 *)XskRingGetElement(&q->Rx.Other, index + j) = (UINT64)j * NODE_L2_XDP_CHUNK;
+		XskRingProducerSubmit(&q->Rx.Other, got);
+
+		ZeroMemory(&rule, sizeof(rule));
+		rule.Match = XDP_MATCH_ALL;
+		rule.Action = XDP_PROGRAM_ACTION_REDIRECT;
+		rule.Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK;
+		rule.Redirect.Target = q->Rx.Socket;
+		hr = XdpCreateProgram(a->IfIndex, &inspect, i, XDP_CREATE_PROGRAM_FLAG_GENERIC, &rule, 1, &q->Program);
+		if (FAILED(hr)) {
+			snprintf(error, error_size, "TX inspect, queue %u: XdpCreateProgram failed (0x%08X)", i, (UINT)hr);
+			q->Program = NULL;
+			NodeL2XdpRelease(x);
+			return false;
+		}
 	}
 
 	hr = NodeL2XdpOpen(&x->Tx, a->IfIndex, 0, &inject, false, x->RingSize, &step);
@@ -403,16 +528,22 @@ static bool NodeL2XdpAttach(NODE_L2 *a, char *error, UINT error_size) {
 		x->Free[x->NumFree++] = (UINT64)i * NODE_L2_XDP_CHUNK;
 	x->LastProgress = GetTickCount64();
 
-	x->Thread = CreateThread(NULL, 0, NodeL2XdpDrain, x, 0, NULL);
-	if (x->Thread == NULL) {
-		snprintf(error, error_size, "the drain thread could not start (error %u)", (UINT)GetLastError());
-		NodeL2XdpRelease(x);
-		return false;
+	// The drain threads run ahead of the injector, as the senders of the host do
+	for (UINT i = 0; i < queues; i++) {
+		NODE_L2_XDP_QUEUE *q = &x->Queues[i];
+
+		q->Thread = CreateThread(NULL, 0, NodeL2XdpDrain, q, 0, NULL);
+		if (q->Thread == NULL) {
+			snprintf(error, error_size, "the drain thread of queue %u could not start (error %u)", i, (UINT)GetLastError());
+			if (NodeL2XdpJoin(x, NODE_L2_STOP_WAIT))
+				NodeL2XdpRelease(x);
+			return false;
+		}
+		SetThreadPriority(q->Thread, THREAD_PRIORITY_HIGHEST);
 	}
 
-	// The thread of TX inspect runs ahead of the injector, as the senders of the host do
-	SetThreadPriority(x->Thread, THREAD_PRIORITY_HIGHEST);
-
+	InterlockedExchange(&a->DriverQueues, (LONG)queues);
+	InterlockedExchange(&a->DriverBusyQueues, 0);
 	a->BackendState = x;
 
 	return true;
@@ -425,9 +556,9 @@ const NODE_L2_BACKEND *NodeL2XdpBackend() {
 	return &node_l2_xdp;
 }
 
-// How many receive queues of the interface if_index an AF_XDP socket binds to on the TX inspect hook, from queue 0 on,
-// up to max: one for a KM-TEST adapter, which has no RSS (#72, multi-queue). error gets why the first queue that did not
-// bind failed.
+// How many queues of the TX inspect hook of the interface if_index an AF_XDP socket binds to, from queue 0 on, up to max:
+// XDP has one for each receive queue that the adapter reports for RSS, and one for an adapter without RSS (#72,
+// multi-queue). error gets why the first queue that did not bind failed.
 UINT NodeL2XdpQueues(UINT if_index, UINT max, char *error, UINT error_size) {
 	XDP_HOOK_ID inspect = {XDP_HOOK_L2, XDP_HOOK_TX, XDP_HOOK_INSPECT};
 	UINT num = 0;
@@ -440,7 +571,7 @@ UINT NodeL2XdpQueues(UINT if_index, UINT max, char *error, UINT error_size) {
 		const char *step = "";
 
 		ZeroMemory(&s, sizeof(s));
-		HRESULT hr = NodeL2XdpOpen(&s, if_index, num, &inspect, true, 64, &step);
+		HRESULT hr = NodeL2XdpOpen(&s, if_index, num, &inspect, true, NODE_L2_XDP_PROBE_RING, &step);
 		NodeL2XdpClose(&s);
 
 		if (FAILED(hr)) {

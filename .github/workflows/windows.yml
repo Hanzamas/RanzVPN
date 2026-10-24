@@ -1576,10 +1576,11 @@ jobs:
   # Adapter, on Windows Server 2022 and 2025 x64, with the drivers that the signed ranz.exe of sign_and_integrity installs
   # (ONE-3, #312), never a script. First SeLow alone (ranz install --no-xdp): the node finds at run time that XDP cannot
   # bind and falls back to SeLow. Then the XDP runtime too, whose xdp.sys passes signtool verify /kp: TX inspect, RX
-  # inject, LAN discovery through an L2 switch with per-VLAN broadcast limits, the paused consumer, the benchmark of the
-  # batch sizes, recovery and shutdown, the soak (an hour on the nightly run of a Sunday), and ranz uninstall and install
-  # after the traffic. arm64 is L3 only (no XDP runtime and no SeLow package for it): the l2adapter test of
-  # build_and_test shows that no L2 adapter is offered there. .github/scripts/kmtest.ps1.
+  # inject, LAN discovery through an L2 switch with per-VLAN broadcast limits, recovery and shutdown, the soak (an hour
+  # on the nightly run of a Sunday), ranz uninstall and install after the traffic, and then the paused consumer and the
+  # benchmark of the batch sizes. Each run of vpntest has a time limit. arm64 is L3 only (no XDP runtime and no SeLow
+  # package for it): the l2adapter test of build_and_test shows that no L2 adapter is offered there.
+  # .github/scripts/kmtest.ps1.
   kmtest:
     needs: [build_and_test, sign_and_integrity]
     strategy:

@@ -7,9 +7,9 @@
 //   from the node's static key and the Network id, so that two adapters on one segment never share one (ADR-0022, KM-TEST
 //   details). The node finds the adapter of that address again at its next start, and creates one otherwise.
 // - The backend: the driver that carries the frames, behind the small interface NODE_L2_BACKEND (attach, inject, health,
-//   detach). XDP for Windows (NodeL2Xdp.c) through its rule API, no eBPF: a program on the TX inspect hook redirects each
-//   frame that the host sends out of the adapter to an AF_XDP socket, and a second socket injects on the RX path
-//   (ADR-0018 amendment of 2026-10-13). SeLow (NodeL2SeLow.c) is the fallback where XDP is not installed or cannot bind,
+//   detach). XDP for Windows (NodeL2Xdp.c) through its rule API, no eBPF: a program on each queue of the TX inspect hook
+//   redirects the frames that the host sends out of the adapter to an AF_XDP socket of that queue, and one more socket
+//   injects on the RX path (ADR-0018 amendment of 2026-10-13). SeLow (NodeL2SeLow.c) is the fallback where XDP is not installed or cannot bind,
 //   found at run time (ADR-0022 amendment of 2026-10-15, ADR-0002 amendment of 2026-10-21). A test may give a backend of
 //   its own.
 // - Two bounded rings. A backend drains what the host sends on a thread of its own, which waits for nothing but its
@@ -64,6 +64,8 @@
 #define NODE_L2_STOP_WAIT 5000
 // Backends that an adapter tries at most
 #define NODE_L2_MAX_BACKENDS 4
+// Queues of the TX inspect hook that the XDP backend binds at most (NodeL2XdpQueues)
+#define NODE_L2_XDP_MAX_QUEUES 64
 // What the name that NodeL2Mac hashes begins with, before the node's static key and the Network id
 #define NODE_L2_MAC_LABEL "ranz l2 adapter"
 // The Event Log source and the event id of a recovery: after the MS_EVENT_* ids of the service (Mayaqua/Microsoft.h)
@@ -190,6 +192,14 @@ struct NODE_L2 {
 	volatile LONG64 ProbeFailures;
 	volatile LONG64 Reattaches;
 	volatile LONG64 Resets;
+	// What the backend reports of its driver on the injector thread (NODE_L2_BACKEND.Healthy): the queues that it captures
+	// from and the ones that frames came in on, the frames that the driver dropped or cut short before the capture ring,
+	// and the waits on the driver that failed, with the error of the last (an HRESULT)
+	volatile LONG DriverQueues;
+	volatile LONG DriverBusyQueues;
+	volatile LONG64 DriverDrops;
+	volatile LONG64 DriverWaitFailures;
+	volatile LONG DriverWaitError;
 };
 
 // What NodeL2GetStatus reports
@@ -219,6 +229,14 @@ struct NODE_L2_STATUS {
 	// Times that the backend was detached and attached again, and that the adapter was reset
 	UINT64 Reattaches;
 	UINT64 Resets;
+	// The queues of the driver that the backend captures from, and the ones that frames came in on
+	UINT Queues;
+	UINT BusyQueues;
+	// Frames that the driver dropped or cut short before the capture ring, and the waits on the driver that failed, with
+	// the error of the last
+	UINT64 DriverDrops;
+	UINT64 WaitFailures;
+	UINT WaitError;
 };
 
 // NodeL2.c
