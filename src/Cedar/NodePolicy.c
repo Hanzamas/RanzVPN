@@ -251,14 +251,13 @@ static cJSON *NodePolicyEnd(const CONTROL_RULE_END *e) {
 // A rule of the VRF vrf as an object of the document
 static cJSON *NodePolicyRule(const CONTROL_RULE *r, const char *vrf) {
 	cJSON *o = cJSON_CreateObject();
-	cJSON *nets = cJSON_AddArrayToObject(o, "networks");
 	cJSON *from = NodePolicyEnd(&r->From);
 	cJSON *to = NodePolicyEnd(&r->To);
 
 	cJSON_AddStringToObject(o, "name", r->Name);
 	cJSON_AddStringToObject(o, "action", r->Deny ? "deny" : "allow");
 	cJSON_AddNumberToObject(o, "priority", MIN(r->Priority, 1000000));
-	cJSON_AddItemToArray(nets, cJSON_CreateString(vrf));
+	cJSON_AddItemToArray(cJSON_AddArrayToObject(o, "networks"), cJSON_CreateString(vrf));
 	if (from != NULL)
 		cJSON_AddItemToObject(o, "from", from);
 	if (to != NULL)
