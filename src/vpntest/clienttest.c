@@ -2123,17 +2123,17 @@ static void ClientTestWintun(CLIENTTEST_CTX *ctx, char *out_dir, char *golden_di
 		c->Node = NewNode(c->Dir);
 		NodeStart(c->Node);
 		NodeClientGetStatus(c->Node, &cs);
-		ok = ClientTestCheck(ctx, cs.Running && cs.InterfaceIndex != 0 && Cmp(cs.Key, client_key, PEER_KEY_SIZE) == 0,
-			"node-c: the client role brings up its Wintun adapter", "running %u, interface %u", (UINT)cs.Running, cs.InterfaceIndex);
-		Print("  [INFO] Wintun driver %u.%u, adapter interface %u\n", NodeWintunDriverVersion() >> 16, NodeWintunDriverVersion() & 0xFFFF, cs.InterfaceIndex);
+		ok = ClientTestCheck(ctx, cs.Running && Cmp(cs.Key, client_key, PEER_KEY_SIZE) == 0,
+			"node-c: the client role runs on its identity key, its Wintun adapters to come with the VRFs of its state (SDN-5)", "running %u", (UINT)cs.Running);
 	}
 
 	if (ok)
 	{
 		ok = ClientTestApply(c, false, s->Key.Public) && ClientTestWaitUp(c);
 		NodeClientGetStatus(c->Node, &cs);
-		ClientTestCheck(ctx, ok, "node-c reaches node-s: the L3 network comes up on the Wintun adapter with the address of node-c",
-			"applied and up %u, %I64u dials, transport %s", (UINT)ok, cs.NumDials, cs.Transport);
+		ClientTestCheck(ctx, ok && cs.InterfaceIndex != 0, "node-c reaches node-s: the L3 network comes up on the Wintun adapter of VRF 1 with the address of node-c",
+			"applied and up %u, interface %u, %I64u dials, transport %s", (UINT)ok, cs.InterfaceIndex, cs.NumDials, cs.Transport);
+		Print("  [INFO] Wintun driver %u.%u, adapter interface %u\n", NodeWintunDriverVersion() >> 16, NodeWintunDriverVersion() & 0xFFFF, cs.InterfaceIndex);
 		if (srv->QuicListener != NULL)
 		{
 			ClientTestCheck(ctx, StrCmp(cs.Transport, "quic") == 0, "node-c: QUIC wins the race of its fallback list", "transport %s", cs.Transport);
