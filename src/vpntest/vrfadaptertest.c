@@ -251,8 +251,53 @@ static void VrfAdapterTestDeleteDir(wchar_t *dir)
 	DeleteDirW(dir);
 }
 
-// Stop and free a node of the test, and delete its data directory with its node log
-static void VrfAdapterTestFreeNode(NODE *n, wchar_t *dir)
+// The lines of the node log in a data directory that tell about the adapters and the client role, for a part of the
+// test that failed
+static void VrfAdapterTestPrintLog(wchar_t *dir)
+{
+	wchar_t log_dir[MAX_PATH];
+
+	ConbinePathW(log_dir, sizeof(log_dir), dir, NODE_LOG_DIR_NAME);
+	DIRLIST *d = EnumDirW(log_dir);
+
+	for (UINT i = 0;d != NULL && i < d->NumFiles;i++)
+	{
+		DIRENT *e = d->File[i];
+		wchar_t path[MAX_PATH];
+
+		if (e->Folder)
+		{
+			continue;
+		}
+
+		ConbinePathW(path, sizeof(path), log_dir, e->FileNameW);
+		BUF *b = ReadDumpW(path);
+		if (b == NULL)
+		{
+			continue;
+		}
+
+		char *text = ZeroMalloc(b->Size + 1);
+		Copy(text, b->Buf, b->Size);
+		TOKEN_LIST *t = ParseToken(text, "\r\n");
+		for (UINT j = 0;j < t->NumTokens;j++)
+		{
+			if (InStr(t->Token[j], "Wintun") || InStr(t->Token[j], "VRF adapters") || InStr(t->Token[j], "Role client") || InStr(t->Token[j], "Client:"))
+			{
+				Print("  [LOG] %s\n", t->Token[j]);
+			}
+		}
+		FreeToken(t);
+		Free(text);
+		FreeBuf(b);
+	}
+
+	FreeDir(d);
+}
+
+// Stop and free a node of the test, and delete its data directory with its node log, whose lines about the adapters
+// are printed first with print_log
+static void VrfAdapterTestFreeNode(NODE *n, wchar_t *dir, bool print_log)
 {
 	wchar_t log_dir[MAX_PATH];
 
@@ -263,6 +308,11 @@ static void VrfAdapterTestFreeNode(NODE *n, wchar_t *dir)
 
 	NodeStop(n);
 	FreeNode(n);
+
+	if (print_log)
+	{
+		VrfAdapterTestPrintLog(dir);
+	}
 
 	ConbinePathW(log_dir, sizeof(log_dir), dir, NODE_LOG_DIR_NAME);
 	VrfAdapterTestDeleteDir(log_dir);
@@ -748,6 +798,7 @@ static void VrfAdapterTestTwoVrfs(VRFADAPTERTEST_CTX *ctx)
 	NODE_VRF_ADAPTER_STATUS *list = ZeroMalloc(sizeof(NODE_VRF_ADAPTER_STATUS) * NODE_VRF_MAX_ADAPTERS);
 	VRFADAPTERTEST_HOST *host = ZeroMalloc(sizeof(VRFADAPTERTEST_HOST));
 	TRANSPORT *loopback = TransportLoopbackNew("loopback", 0, false);
+	UINT failed = ctx->NumFailed;
 
 	Print("[two VRFs on Wintun]\n");
 
@@ -880,8 +931,8 @@ static void VrfAdapterTestTwoVrfs(VRFADAPTERTEST_CTX *ctx)
 
 	Print("  [INFO] packets at node-s that are no echo request: %d\n", (int)ReadAcquire(&host->Other));
 
-	VrfAdapterTestFreeNode(c, c_dir);
-	VrfAdapterTestFreeNode(s, s_dir);
+	VrfAdapterTestFreeNode(c, c_dir, ctx->NumFailed != failed);
+	VrfAdapterTestFreeNode(s, s_dir, false);
 	if (loopback != NULL)
 	{
 		TransportLoopbackFree(loopback);
@@ -937,6 +988,7 @@ static void VrfAdapterTestGateway(VRFADAPTERTEST_CTX *ctx)
 	char *setting = ZeroMalloc(NODE_CLIENT_MAX_SETTING);
 	NODE_VRF_ADAPTER_STATUS *list = ZeroMalloc(sizeof(NODE_VRF_ADAPTER_STATUS) * NODE_VRF_MAX_ADAPTERS);
 	UINT r = Rand32() & 0xFFFF;
+	UINT failed = ctx->NumFailed;
 
 	Print("[a gateway or an exit]\n");
 
@@ -1034,7 +1086,7 @@ static void VrfAdapterTestGateway(VRFADAPTERTEST_CTX *ctx)
 		}
 	}
 
-	VrfAdapterTestFreeNode(g, dir);
+	VrfAdapterTestFreeNode(g, dir, ctx->NumFailed != failed);
 	PeerKeyDelete(identity_w);
 	Free(list);
 	Free(setting);
