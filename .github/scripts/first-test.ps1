@@ -660,8 +660,15 @@ try {
 		$revisions = ((Invoke-Ranz @('get', 'revisions')).revisions | ForEach-Object { $_.operation }) -join ','
 		if ($revisions -ne 'first-start,apply') { throw "the revisions are $revisions, not the first start and the apply" }
 		# The bundle of the Controller, the one that the button of the Diagnostics page downloads
-		$secrets = @((Get-Content -LiteralPath $adminToken -Raw).Trim(), $values['VIEWER-TOKEN'])
+		$admin = (Get-Content -LiteralPath $adminToken -Raw).Trim()
+		$secrets = @($admin, $values['VIEWER-TOKEN'])
 		Assert-Bundle (Join-Path $work 'bundle-controller.zip') @('manifest.json', 'system.json', 'services.json', 'controller/status.json', 'controller/nodes.json', 'controller/intent.json', 'controller/revisions.json', 'controller/events.json', 'controller/licence.json', 'controller/ipam.json', 'controller/logs.json', 'controller/logs/controller.log') @() $secrets
+		# The pull is in the audit log: an operation of the admin token, with the call as its action (the Controller writes
+		# the record when the call ends, a moment after curl has the file)
+		$null = Wait-Until {
+			$audit = Invoke-Curl 'https://localhost/api/v1/audit?kind=operation' $admin -Body | ConvertFrom-Json
+			@($audit.records | Where-Object { $_.action -eq 'POST /api/v1/diagnostics/bundle' -and $_.actor -eq 'token:admin' -and $_.outcome -eq 'success' }).Count -eq 1
+		} 'the audit log to hold the pull of the bundle' 15
 	}
 
 	Step 'stop-stand-in' {
