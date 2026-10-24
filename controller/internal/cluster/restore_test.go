@@ -19,8 +19,11 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
-// lease is the lease duration of the member of these tests: short, so a restore waits little.
-const lease = time.Second
+// lease is the lease duration of the member of these tests. A restore waits one lease, so it is
+// short, but not shorter than what rqlite stops its writes for: the full snapshot of a backup took
+// 744 ms on a busy runner, a leader steps down when it could not renew its lease for two thirds of
+// it, and 1 s did not outlast that. The cluster tests of package controllercmd use the same 6 s.
+const lease = 6 * time.Second
 
 // TestRestoreWhileTheLeaderRuns restores a backup of the store under a running leader (SDN-52,
 // #245): the leader steps down when the restore takes the lease, takes it again once the restore
@@ -136,8 +139,8 @@ func TestRestoreRefusesWhatIsNoBackup(t *testing.T) {
 }
 
 // waitLeads waits until m leads. Start makes one try to take the lease, within a fifth of the
-// lease duration (200 ms here), which a busy host can overrun: the member is then a standby until
-// the lease loop tries again, and the first call of a test would be refused as a standby's.
+// lease duration, which a busy host can overrun: the member is then a standby until the lease
+// loop tries again, and the first call of a test would be refused as a standby's.
 func waitLeads(t *testing.T, m *cluster.Member) {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)

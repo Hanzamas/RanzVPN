@@ -22,8 +22,8 @@ import (
 // A try of Start that the store answers too late is missed (the doc of Start): the member is a
 // standby until the lease loop tries again, and then it leads. The store of the member is rqlite
 // behind a proxy that holds the first request of the member until the member gives up on it, as a
-// busy host does now and then to the 200 ms of that try. TestRestoreWhileTheLeaderRuns once
-// failed at its first call for that.
+// busy host does now and then to that try. TestRestoreWhileTheLeaderRuns once failed at its first
+// call for that.
 func TestMemberLeadsAfterItsFirstTryIsMissed(t *testing.T) {
 	rq := rqlitetest.Start(t)
 	target, err := url.Parse(rq.URL())
