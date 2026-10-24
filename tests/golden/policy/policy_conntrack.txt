@@ -1,0 +1,60 @@
+1 tcp_syn: pass pass-rule web doc 1
+2 tcp_syn_ack_reply: pass pass-flow web doc 1
+3 tcp_ack: pass pass-flow web doc 1
+4 tcp_data_reply: pass pass-flow web doc 1
+5 tcp_new_flow_from_server: drop drop-default default:deny doc 1
+6 tcp_reply_from_another_member: drop drop-default default:deny doc 1
+7 tcp_fin: pass pass-flow web doc 1
+8 tcp_fin_reply: pass pass-flow web doc 1
+9 tcp_last_ack: pass pass-flow web doc 1
+10 tcp_port_without_rule: drop drop-default default:deny doc 1
+11 tcp_syn_443: pass pass-rule web doc 1
+12 tcp_reset_reply: pass pass-flow web doc 1
+13 tcp_syn_after_reset: pass pass-rule web doc 1
+14 tcp_reset_opens_no_flow: pass pass-rule web doc 1
+15 tcp_reply_after_reset: drop drop-default default:deny doc 1
+16 udp_query: pass pass-rule dns doc 1
+17 udp_answer: pass pass-flow dns doc 1
+18 udp_answer_to_another_port: drop drop-default default:deny doc 1
+19 icmp_echo: pass pass-rule ping doc 1
+20 icmp_echo_reply: pass pass-flow ping doc 1
+21 icmp_echo_from_server: drop drop-default default:deny doc 1
+22 icmp_error_about_a_flow: pass pass-related dns doc 1
+23 icmp_error_about_no_flow: drop drop-default default:deny doc 1
+24 gre: pass pass-rule gre doc 1
+25 gre_reply: pass pass-flow gre doc 1
+26 udp_later_fragment: drop drop-default default:deny doc 1
+27 ipv6_tcp_syn: pass pass-rule wan-out doc 1
+28 ipv6_tcp_syn_ack_reply: pass pass-flow wan-out doc 1
+29 icmpv6_error_about_a_flow: pass pass-related wan-out doc 1
+30 icmpv6_echo: pass pass-rule wan-out doc 1
+31 icmpv6_echo_reply: pass pass-flow wan-out doc 1
+32 ipv6_new_flow_from_gateway: drop drop-default default:deny doc 1
+33 ipv6_first_fragment: pass pass-rule wan-out doc 1
+34 ipv6_later_fragment: pass pass-rule wan-out doc 1
+a new document: gre is gone, ssh is new
+35 gre_reply_after_its_rule_went: drop drop-default default:deny doc 2
+36 gre_after_its_rule_went: drop drop-default default:deny doc 2
+37 icmp_echo_reply_of_a_kept_rule: pass pass-flow ping doc 2
+38 tcp_reply_of_a_kept_rule: pass pass-flow web doc 2
+39 tcp_of_the_new_rule: pass pass-rule ssh doc 2
+40 udp_answer_after_the_timeout: drop drop-default default:deny doc 2
+ages at 301001 ms: 6 flows expired
+network lab: l2, default deny, rules 4, members 3, flows 0 of 64, tracked 7, evicted 0, expired 5
+network wan: l3, default deny, rules 5, members 2, flows 1 of 65536, tracked 3, evicted 0, expired 2
+counter lab ssh: priority 5, allow, flows 1, packets 1, bytes 54
+counter lab web: priority 10, allow, flows 3, packets 12, bytes 648
+counter lab dns: priority 20, allow, flows 1, packets 3, bytes 162
+counter lab ping: priority 30, allow, flows 1, packets 3, bytes 138
+counter lab default:deny: priority -, deny, flows 0, packets 11, bytes 546
+counter wan ssh: priority 5, allow, flows 0, packets 0, bytes 0
+counter wan web: priority 10, allow, flows 0, packets 0, bytes 0
+counter wan dns: priority 20, allow, flows 0, packets 0, bytes 0
+counter wan ping: priority 30, allow, flows 0, packets 0, bytes 0
+counter wan wan-out: priority 50, allow, flows 3, packets 7, bytes 444
+counter wan default:deny: priority -, deny, flows 0, packets 1, bytes 52
+engine: members 5, networks 2, document 2, frames 40
+frames pass-rule: 12
+frames pass-flow: 14
+frames pass-related: 2
+frames drop-default: 12

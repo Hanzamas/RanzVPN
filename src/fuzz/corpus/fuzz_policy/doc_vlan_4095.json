@@ -1,0 +1,1 @@
+{"networks": [{"name": "lab"}], "rules": [{"name": "r", "action": "allow", "vlans": [4095]}]}

@@ -12,6 +12,7 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 | UDP 443 | QUIC | msquic, in the Node | QUIC only, routed by ALPN inside one listener. Not shared with other protocols. |
 | TCP 80 | HTTP | the HTTP listener | Off by default. It answers exactly two things: the redirect to HTTPS and ACME HTTP-01 (ADR-0020). Where HTTP.sys already holds port 80, for example under IIS, it registers through HTTP.sys URL reservations instead of binding the port itself. |
 | TCP 5555 | TLS | the same owners as 443 | The fallback when 443 is taken by another program: the Controller and the Node log it and report it as a Capability (ADR-0035). |
+| TCP 443, or the `listen` setting | TLS 1.3 (REALITY) | the sidecar `ranz mimic`, server role (CORE-P2-1) | Only on a Node that carries the mimicry transport for a network that fingerprints and probes (ADR-0023). It binds its own address, TCP 443 by default, and does not take its sockets from the front door yet, so on a Node whose front door holds 443 it needs an address of its own. A connection that is no Ranz client is spliced to the decoy site, and the ACME service that issues the certificate of an own decoy validates through this port (TLS-ALPN-01). |
 | UDP, not a fixed number | Noise over UDP, ICE | the ICE socket of a Node | One UDP socket per Node carries all its ICE sessions to peers. A Node behind a home gateway asks it for a public port with PCP, NAT-PMP or UPnP. |
 | UDP, set in the Node resource | the relay protocol | a Node with the relay Role | Only on a Node that runs a Relay. |
 
@@ -30,7 +31,8 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 |---|---|---|
 | a STUN server, UDP 3478 by default | STUN | the reflexive address in ICE |
 | the home gateway | PCP, NAT-PMP, UPnP IGD | the public port of the ICE socket (standard ports of those protocols; Ranz sets none) |
-| the ACME CA | HTTPS | certificates (SDN-45) |
+| the ACME CA | HTTPS | certificates (SDN-45, and the own decoy site of `ranz mimic`) |
+| the site that a borrow decoy names (the host and port of its `dest`) | TCP | the mimicry sidecar splices a connection that is no Ranz client to it, so that a prober sees the real certificate of that site; the sidecar holds no key of it (CORE-P2-1) |
 | the Hanzcodes activation service | HTTPS | online activation and the Enterprise key (SEC-6, SEC-7) |
 | the operator's receivers, port in the URL | HTTPS webhook, OTLP over HTTP, IPFIX over UDP or TCP, syslog over UDP or TCP | events, metrics, flow records and audit export (SDN-16, SDN-49) |
 
@@ -41,7 +43,8 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 | `127.0.0.1:4001` | rqlite HTTP | The Controller's store. |
 | `127.0.0.1:4002` | rqlite Raft | In a cluster of 3 or 5 members, `-rqlite-raft` must be an address that the other members reach (or `-rqlite-raft-adv` names one): open it between the members only. |
 | `-api-listen`, `-control-listen`, `-http-listen` of `ranz controller` | HTTP or TLS | Development ports and the plain port 80; all off by default. |
-| named pipes | JSON lines and handoff messages | The pipe of the BGP sidecar and the handoff pipes of the front door's owners. Local, not network ports. |
+| `127.0.0.1`, a port that the system gives (`decoy.listen`) | HTTPS | The own decoy site of `ranz mimic`, which only its REALITY listener reaches: the setting takes loopback addresses only. |
+| named pipes | JSON lines, handoff messages and streams | The pipe of the BGP sidecar, the handoff pipes of the front door's owners, and the control pipe and the data pipes of the mimicry sidecar (JSON lines, then one pipe connection for each inner stream). Local, not network ports. |
 
 ## Firewall summary
 

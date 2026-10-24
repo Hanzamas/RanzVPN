@@ -1,0 +1,1 @@
+{"networks": [{"name": "lab"}], "rules": [{"name": "r", "action": "deny", "networks": ["nope"]}]}
