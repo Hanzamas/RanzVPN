@@ -8,8 +8,8 @@
 // that the table of the VRF routes its destination to; a data record carries the VRF id before the packet
 // (NODE_OVERLAY_VRF_TAG). A packet of a peer goes to the host (NODE_ADAPTER_PROC) when the table of its VRF routes its
 // source to that peer and its destination to the host. So two VRFs may use the same range, and no packet crosses from
-// one into the other. That is the starter rule "allow all inside VRF default" of a first install (ADR-0034); the
-// policy engine compiles the rules of the intent with SDN-8 (#184). With no controller reachable, the overlay keeps
+// one into the other. The rules of each VRF, which the controller compiles from the intent, judge each flow at both
+// ends, default deny (NodePolicy.c; SDN-8, #184). With no controller reachable, the overlay keeps
 // the state it applied last and forwards on it (ADR-0027 decision 6). An overlay without a control stream takes its
 // states from NodeOverlayApply, as the vpntest harness gives them.
 //
@@ -221,10 +221,13 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 
 	// Built beside the live tables, then in their place: the swap returns once no reader holds the tables before
 	NODE_VRF_TABLES *v = NodeOverlayTables(st, hops);
+	// The rules of the policy of the VRFs of the Generation go in with its tables (NodePolicy.c)
+	NodePolicyAttach(ov->Node, v, st);
 	// The MTU and the rate limits of the Generation go in with its tables (NodeShape.c)
 	NodeShapeAttach(ov->Node, v, st);
 	UINT num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
+	NodePolicyApplied(ov->Node, swapped);
 	if (v != NULL && swapped == false)
 		NodeFreeVrfTables(v);
 
@@ -459,6 +462,8 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 		UINT from = NodeVrfLookup(vt, src, addr_size);
 
 		ok = (from < v->NumHops && v->Hops[from] == p && NodeVrfLookup(vt, dst, addr_size) == NODE_VRF_LOCAL);
+		// The policy of the VRF judges the packet as the peer sent it, before a 1:1 NAT rule translates it (NodePolicy.c)
+		ok = ok && NodePolicyInbound(ov->Node, v, vrf_id, from, packet, packet_size);
 	}
 
 	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the host takes the packet as it sees it
@@ -607,6 +612,7 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	ov->Buf = Malloc(NOISE_MAX_PAYLOAD);
 	ov->NatBuf = Malloc(NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
 	NodeShapeStart(n, cfg);
+	NodePolicyStart(n, cfg);
 	n->Overlay = ov;
 
 	Zero(&cc, sizeof(cc));
@@ -652,6 +658,8 @@ void NodeOverlayStop(NODE *n) {
 
 	ControlStop(ov->Control);
 	NodeSwapVrfs(n, NULL);
+	// No table holds a member of the policy any more: its engine goes (NodePolicy.c)
+	NodePolicyStop(n);
 	NodeShapeStop(n);
 	ov->Halt = true;
 	if (ov->Thread != NULL) {
@@ -715,13 +723,15 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 
 	WRITE_UINT(record, vrf_id);
 	size = NodeNatCopy(v, vrf_id, record + NODE_OVERLAY_VRF_TAG, packet, size);
+	// The policy of the VRF judges the packet as the overlay sees it, after the 1:1 NAT rules (NodePolicy.c; SDN-8, #184)
+	bool allowed = NodePolicyOutbound(n, v, vrf_id, hop, record + NODE_OVERLAY_VRF_TAG, size);
 
 	// Counted on the peer before it reads the session, so the thread does not close the session under the send
 	InterlockedIncrement(&peer->Senders);
 	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&peer->Session);
 	// The MTU of the VRF clamps the MSS of a TCP SYN as the overlay sees it, after the 1:1 NAT rules, and the rate limits
 	// of the VRF and the node may drop it (NodeShape.c)
-	bool ok = (s != NULL && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG));
+	bool ok = (allowed && s != NULL && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG));
 	InterlockedDecrement(&peer->Senders);
 
 	if (record != buf)

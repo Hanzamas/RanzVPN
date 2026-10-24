@@ -136,6 +136,8 @@ struct CONTROL_STATE;
 typedef void(NODE_STATE_PROC)(NODE *n, void *param, const struct CONTROL_STATE *st);
 // Takes an IP packet of the host's own stack from the ring of a Wintun adapter, on the I/O thread of its adapter queue
 typedef void(NODE_WINTUN_PROC)(NODE_WINTUN *w, void *param, const UCHAR *packet, UINT size);
+// Tells the time in ms of the flows of the policy of the overlay (NodeOverlayStart), on the thread of a packet
+typedef UINT64(NODE_CLOCK_PROC)(NODE *n, void *param);
 
 // A thread that reads the table snapshot: a worker, the I/O thread of an adapter queue, or a thread that
 // registered itself. It holds a snapshot only between two quiescent points and none while it is offline,
@@ -190,6 +192,8 @@ struct NODE_VRF_TABLES {
 	NODE_NAT *Nat;         // The 1:1 NAT rules of the same Generation (NodeNat.c; SDN-6, #182), NULL for none
 	// The MTU and the rate limits of the VRFs of the same Generation (NodeShape.c; SDN-20, #196), NULL for the defaults
 	NODE_SHAPE_TABLE *Shape;
+	// The members of the policy of the VRFs of the same Generation (NodePolicy.c; SDN-8, #184), NULL for no policy
+	NODE_POLICY_TABLE *Policy;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -264,6 +268,9 @@ struct NODE {
 	// The overlay (NodeOverlay.c; SDN-3, #179), NULL while it does not run
 	NODE_OVERLAY *Overlay;
 
+	// The policy of the VRFs of the overlay (NodePolicy.c; SDN-8, #184), NULL while it does not run
+	NODE_POLICY *Policy;
+
 	// The MTU, the MSS clamp and the rate limits of the overlay (NodeShape.c; SDN-20, #196), NULL while it does not run
 	NODE_SHAPE *Shape;
 };
@@ -281,6 +288,7 @@ struct NODE_OVERLAY_CONFIG {
 	NODE_ADAPTER_STOP_PROC *AdapterStop;     // Stops the packets of the host first thing in NodeOverlayStop, NULL when the caller stops them before
 	NODE_STATE_PROC *State;                  // Takes each state applied, once its forwarding tables are in, NULL for none
 	bool Dialler;                            // The node dials every peer, whatever the order of the keys, as a client does (CORE-S3-1)
+	NODE_CLOCK_PROC *Clock;                  // Tells the time of the flows of the policy (NodePolicy.c), NULL for GetTickCount64; with AdapterParam
 };
 
 // What NodeOverlayGetStatus reports
@@ -297,6 +305,18 @@ struct NODE_OVERLAY_STATUS {
 	UINT64 Forwarded;                           // Packets of the host sent to a peer
 	UINT64 Delivered;                           // Packets of the peers delivered to the host
 	UINT64 Dropped;                             // Packets of either side that the overlay dropped
+};
+
+// What NodePolicyGetVrf reports of the policy of a VRF of a node: its Network in the policy engine (Core/Policy.h)
+struct NODE_POLICY_VRF_STATUS {
+	UINT NumRules;   // The rules of the VRF
+	UINT NumMembers; // Its members: the host, the end outside the VRF and the peers in it
+	UINT Flows;      // The flows of its conntrack table
+	UINT MaxFlows;   // ... at most: its conntrack quota
+	UINT64 Tracked;  // Flows that the table took
+	UINT64 Evicted;  // ... that left it as the least recently used of a full table
+	UINT64 Expired;  // ... that left it after their timeout
+	UINT64 Dropped;  // Packets of any VRF that the policy of the node dropped
 };
 
 // An address or a route prefix of a Wintun adapter (NodeWintun.c)
@@ -496,5 +516,11 @@ bool NodeWintunSetDns(NODE_WINTUN *w, const char *servers, const char *suffix);
 // NodeShape.c
 void NodeShapeFreeTable(NODE_SHAPE_TABLE *t);
 void NodeShapeGetStatus(NODE *n, NODE_SHAPE_STATUS *st);
+
+// NodePolicy.c
+void NodePolicyFreeTable(NODE_POLICY_TABLE *t);
+char *NodePolicyDocument(const struct CONTROL_STATE *st);
+char *NodePolicyCountersText(NODE *n);
+bool NodePolicyGetVrf(NODE *n, const char *vrf, NODE_POLICY_VRF_STATUS *st);
 
 #endif // NODE_H

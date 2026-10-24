@@ -293,6 +293,7 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 	for (UINT i = 0; i < v->NumVrfs; i++)
 		NodeFreeVrfTable(v->Vrfs[i]);
 	NodeShapeFreeTable(v->Shape);
+	NodePolicyFreeTable(v->Policy);
 
 	NodeFreeNat(v->Nat);
 	Zero(v->Hops, sizeof(void *) * v->NumHops);

@@ -43,6 +43,10 @@ target_link_libraries(cedar PRIVATE cjson)
 # (CORE-S5-2, #78). It keeps the build options of the new core to itself, so Cedar compiles with its own.
 target_link_libraries(cedar PRIVATE corepeer)
 
+# The policy engine of the new core, which judges the packets of the overlay of the Node module by the rules of their VRF
+# (NodePolicy.c; SDN-8, #184). It keeps the build options of the new core to itself, as corepeer does.
+target_link_libraries(cedar PRIVATE corepolicy)
+
 # The control module of the new core, the control stream of the overlay of the Node module (NodeOverlay.c; SDN-3,
 # #179), with the transport and session modules it runs on. Its nanopb messages stay inside it.
 target_link_libraries(cedar PRIVATE corecontrol)
