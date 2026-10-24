@@ -1254,12 +1254,15 @@ func (x *ObjectKey) GetName() string {
 // the 1:1 NAT rules that it applies, ordered by VRF id, then inside prefix. Every state holds
 // exactly one.
 type NodeConfig struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Tags          []string               `protobuf:"bytes,2,rep,name=tags,proto3" json:"tags,omitempty"` // sorted
-	Addresses     []*Address             `protobuf:"bytes,3,rep,name=addresses,proto3" json:"addresses,omitempty"`
-	RateLimit     uint64                 `protobuf:"varint,4,opt,name=rate_limit,json=rateLimit,proto3" json:"rate_limit,omitempty"` // bits per second that the node sends into the overlay, 0 for no limit (SDN-20)
-	Nat           []*Nat                 `protobuf:"bytes,5,rep,name=nat,proto3" json:"nat,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Name      string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Tags      []string               `protobuf:"bytes,2,rep,name=tags,proto3" json:"tags,omitempty"` // sorted
+	Addresses []*Address             `protobuf:"bytes,3,rep,name=addresses,proto3" json:"addresses,omitempty"`
+	RateLimit uint64                 `protobuf:"varint,4,opt,name=rate_limit,json=rateLimit,proto3" json:"rate_limit,omitempty"` // bits per second that the node sends into the overlay, 0 for no limit (SDN-20)
+	Nat       []*Nat                 `protobuf:"bytes,5,rep,name=nat,proto3" json:"nat,omitempty"`
+	// The Mirrors that the node applies, ordered by name (SDN-23). No schema version changes with
+	// them: a node of an older release skips the field.
+	Mirrors       []*Mirror `protobuf:"bytes,6,rep,name=mirrors,proto3" json:"mirrors,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1325,6 +1328,13 @@ func (x *NodeConfig) GetRateLimit() uint64 {
 func (x *NodeConfig) GetNat() []*Nat {
 	if x != nil {
 		return x.Nat
+	}
+	return nil
+}
+
+func (x *NodeConfig) GetMirrors() []*Mirror {
+	if x != nil {
+		return x.Mirrors
 	}
 	return nil
 }
@@ -2473,6 +2483,111 @@ func (x *Route) GetPrefix() *Prefix {
 	return nil
 }
 
+// A Mirror that a node applies (ADR-0029 decision 9, SDN-23): the node copies the IP packets of the
+// overlay that match it, those that it sends to its peers and those that it delivers to its host,
+// to the sensor in VXLAN (RFC 7348), each packet behind an Ethernet header. The controller gives a
+// node the Mirrors whose source selects it: a tag of the node, the node itself or a VRF of the node.
+type Mirror struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Name       string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	VrfId      uint32                 `protobuf:"varint,2,opt,name=vrf_id,json=vrfId,proto3" json:"vrf_id,omitempty"`                // the VRF of the packets, 0 for every VRF of the node
+	Protocol   uint32                 `protobuf:"varint,3,opt,name=protocol,proto3" json:"protocol,omitempty"`                       // their IP protocol, 0 for any; 1 (ICMP) takes ICMPv6 in IPv6 packets
+	Port       uint32                 `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`                               // their source or destination port, of TCP or UDP; 0 for any
+	Sensor     []byte                 `protobuf:"bytes,5,opt,name=sensor,proto3" json:"sensor,omitempty"`                            // the sensor's address: 4 bytes for IPv4, 16 for IPv6
+	SensorPort uint32                 `protobuf:"varint,6,opt,name=sensor_port,json=sensorPort,proto3" json:"sensor_port,omitempty"` // ... and its UDP port
+	Vni        uint32                 `protobuf:"varint,7,opt,name=vni,proto3" json:"vni,omitempty"`                                 // the VNI of the copies, 0 for the VRF id of each packet
+	// Bits per second of VXLAN datagrams that the node sends the sensor at most, 0 for no limit
+	RateLimit     uint64 `protobuf:"varint,8,opt,name=rate_limit,json=rateLimit,proto3" json:"rate_limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Mirror) Reset() {
+	*x = Mirror{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Mirror) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Mirror) ProtoMessage() {}
+
+func (x *Mirror) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Mirror.ProtoReflect.Descriptor instead.
+func (*Mirror) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *Mirror) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Mirror) GetVrfId() uint32 {
+	if x != nil {
+		return x.VrfId
+	}
+	return 0
+}
+
+func (x *Mirror) GetProtocol() uint32 {
+	if x != nil {
+		return x.Protocol
+	}
+	return 0
+}
+
+func (x *Mirror) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *Mirror) GetSensor() []byte {
+	if x != nil {
+		return x.Sensor
+	}
+	return nil
+}
+
+func (x *Mirror) GetSensorPort() uint32 {
+	if x != nil {
+		return x.SensorPort
+	}
+	return 0
+}
+
+func (x *Mirror) GetVni() uint32 {
+	if x != nil {
+		return x.Vni
+	}
+	return 0
+}
+
+func (x *Mirror) GetRateLimit() uint64 {
+	if x != nil {
+		return x.RateLimit
+	}
+	return 0
+}
+
 var File_ranz_control_v1_control_proto protoreflect.FileDescriptor
 
 const file_ranz_control_v1_control_proto_rawDesc = "" +
@@ -2526,7 +2641,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04kind\"J\n" +
 	"\tObjectKey\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.ranz.control.v1.KindR\x04kind\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xb3\x01\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xe6\x01\n" +
 	"\n" +
 	"NodeConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
@@ -2534,7 +2649,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\taddresses\x18\x03 \x03(\v2\x18.ranz.control.v1.AddressR\taddresses\x12\x1d\n" +
 	"\n" +
 	"rate_limit\x18\x04 \x01(\x04R\trateLimit\x12&\n" +
-	"\x03nat\x18\x05 \x03(\v2\x14.ranz.control.v1.NatR\x03nat\"\x85\x01\n" +
+	"\x03nat\x18\x05 \x03(\v2\x14.ranz.control.v1.NatR\x03nat\x121\n" +
+	"\amirrors\x18\x06 \x03(\v2\x17.ranz.control.v1.MirrorR\amirrors\"\x85\x01\n" +
 	"\x03Vrf\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\rR\x02id\x12)\n" +
@@ -2630,7 +2746,18 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\aoutside\x18\x03 \x01(\v2\x17.ranz.control.v1.PrefixR\aoutside\"O\n" +
 	"\x05Route\x12\x15\n" +
 	"\x06vrf_id\x18\x01 \x01(\rR\x05vrfId\x12/\n" +
-	"\x06prefix\x18\x02 \x01(\v2\x17.ranz.control.v1.PrefixR\x06prefix*[\n" +
+	"\x06prefix\x18\x02 \x01(\v2\x17.ranz.control.v1.PrefixR\x06prefix\"\xcd\x01\n" +
+	"\x06Mirror\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x15\n" +
+	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x12\x1a\n" +
+	"\bprotocol\x18\x03 \x01(\rR\bprotocol\x12\x12\n" +
+	"\x04port\x18\x04 \x01(\rR\x04port\x12\x16\n" +
+	"\x06sensor\x18\x05 \x01(\fR\x06sensor\x12\x1f\n" +
+	"\vsensor_port\x18\x06 \x01(\rR\n" +
+	"sensorPort\x12\x10\n" +
+	"\x03vni\x18\a \x01(\rR\x03vni\x12\x1d\n" +
+	"\n" +
+	"rate_limit\x18\b \x01(\x04R\trateLimit*[\n" +
 	"\rSchemaVersion\x12\x1e\n" +
 	"\x1aSCHEMA_VERSION_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SCHEMA_VERSION_1\x10\x01\x12\x14\n" +
@@ -2689,7 +2816,7 @@ func file_ranz_control_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
-var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_ranz_control_v1_control_proto_goTypes = []any{
 	(SchemaVersion)(0),     // 0: ranz.control.v1.SchemaVersion
 	(RefuseReason)(0),      // 1: ranz.control.v1.RefuseReason
@@ -2725,6 +2852,7 @@ var file_ranz_control_v1_control_proto_goTypes = []any{
 	(*NodeEvent)(nil),      // 31: ranz.control.v1.NodeEvent
 	(*Nat)(nil),            // 32: ranz.control.v1.Nat
 	(*Route)(nil),          // 33: ranz.control.v1.Route
+	(*Mirror)(nil),         // 34: ranz.control.v1.Mirror
 }
 var file_ranz_control_v1_control_proto_depIdxs = []int32{
 	9,  // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
@@ -2748,30 +2876,31 @@ var file_ranz_control_v1_control_proto_depIdxs = []int32{
 	2,  // 18: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
 	25, // 19: ranz.control.v1.NodeConfig.addresses:type_name -> ranz.control.v1.Address
 	32, // 20: ranz.control.v1.NodeConfig.nat:type_name -> ranz.control.v1.Nat
-	23, // 21: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
-	3,  // 22: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
-	23, // 23: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
-	23, // 24: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
-	25, // 25: ranz.control.v1.Peer.addresses:type_name -> ranz.control.v1.Address
-	33, // 26: ranz.control.v1.Peer.routes:type_name -> ranz.control.v1.Route
-	4,  // 27: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
-	5,  // 28: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
-	6,  // 29: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
-	23, // 30: ranz.control.v1.Address.prefix:type_name -> ranz.control.v1.Prefix
-	27, // 31: ranz.control.v1.Telemetry.peers:type_name -> ranz.control.v1.PeerCounters
-	28, // 32: ranz.control.v1.Telemetry.vrfs:type_name -> ranz.control.v1.VrfCounters
-	29, // 33: ranz.control.v1.Telemetry.rules:type_name -> ranz.control.v1.RuleCounters
-	30, // 34: ranz.control.v1.Telemetry.flows:type_name -> ranz.control.v1.Flow
-	31, // 35: ranz.control.v1.Telemetry.events:type_name -> ranz.control.v1.NodeEvent
-	7,  // 36: ranz.control.v1.NodeEvent.type:type_name -> ranz.control.v1.NodeEventType
-	23, // 37: ranz.control.v1.Nat.inside:type_name -> ranz.control.v1.Prefix
-	23, // 38: ranz.control.v1.Nat.outside:type_name -> ranz.control.v1.Prefix
-	23, // 39: ranz.control.v1.Route.prefix:type_name -> ranz.control.v1.Prefix
-	40, // [40:40] is the sub-list for method output_type
-	40, // [40:40] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	34, // 21: ranz.control.v1.NodeConfig.mirrors:type_name -> ranz.control.v1.Mirror
+	23, // 22: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
+	3,  // 23: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
+	23, // 24: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
+	23, // 25: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
+	25, // 26: ranz.control.v1.Peer.addresses:type_name -> ranz.control.v1.Address
+	33, // 27: ranz.control.v1.Peer.routes:type_name -> ranz.control.v1.Route
+	4,  // 28: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
+	5,  // 29: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
+	6,  // 30: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
+	23, // 31: ranz.control.v1.Address.prefix:type_name -> ranz.control.v1.Prefix
+	27, // 32: ranz.control.v1.Telemetry.peers:type_name -> ranz.control.v1.PeerCounters
+	28, // 33: ranz.control.v1.Telemetry.vrfs:type_name -> ranz.control.v1.VrfCounters
+	29, // 34: ranz.control.v1.Telemetry.rules:type_name -> ranz.control.v1.RuleCounters
+	30, // 35: ranz.control.v1.Telemetry.flows:type_name -> ranz.control.v1.Flow
+	31, // 36: ranz.control.v1.Telemetry.events:type_name -> ranz.control.v1.NodeEvent
+	7,  // 37: ranz.control.v1.NodeEvent.type:type_name -> ranz.control.v1.NodeEventType
+	23, // 38: ranz.control.v1.Nat.inside:type_name -> ranz.control.v1.Prefix
+	23, // 39: ranz.control.v1.Nat.outside:type_name -> ranz.control.v1.Prefix
+	23, // 40: ranz.control.v1.Route.prefix:type_name -> ranz.control.v1.Prefix
+	41, // [41:41] is the sub-list for method output_type
+	41, // [41:41] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_ranz_control_v1_control_proto_init() }
@@ -2801,7 +2930,7 @@ func file_ranz_control_v1_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ranz_control_v1_control_proto_rawDesc), len(file_ranz_control_v1_control_proto_rawDesc)),
 			NumEnums:      8,
-			NumMessages:   26,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
