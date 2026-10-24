@@ -14,10 +14,13 @@
 // unsigned development build (MS_INTEGRITY_NO_SIGNATURE), for a run on a binary that was not signed.
 // Prints "SELFINTEGRITY TEST OK" only when the verdict matches the expectation.
 
+#include "testlist.h"
+
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Str.h"
 
+RANZ_TEST("selfintegrity", selfint_test, "Self-integrity: WinVerifyTrust and the .text hash of the running binary; OK when signed and intact, the degrade-or-deceive response when changed (SEC-3; run on a signed binary by self-integrity.ps1).");
 void selfint_test(UINT num, char **arg)
 {
 	char *expect = (num >= 1 && arg != NULL) ? arg[0] : "ok";

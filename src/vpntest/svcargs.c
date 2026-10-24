@@ -10,6 +10,8 @@
 // an empty string and NULL map to no mode (the tray checks fail on the old code). Prints
 // "SVCARGS TEST OK" only when every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
@@ -99,6 +101,7 @@ static UINT SvcArgsTestCount(const wchar_t *str, const wchar_t *keyword)
 }
 
 // svcargs: the argument table of MsService, its modes and SVC_HELP
+RANZ_TEST("svcargs", svcargs_test, "Service arguments: each argument of SVC_HELP selects its mode, /usermode_showtray and /usermode_hidetray select none.");
 void svcargs_test(UINT num, char **arg)
 {
 	SVCARGS_TEST t;

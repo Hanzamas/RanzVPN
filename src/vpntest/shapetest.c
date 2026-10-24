@@ -20,6 +20,7 @@
 // Print "SHAPE TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
@@ -925,6 +926,7 @@ static UINT64 ShapeTestRates(SHAPETEST_CTX *ctx, SHAPETEST_NODE *nodes)
 }
 
 // shape: the MTU, the MSS clamp, DSCP and the rate limits of the overlay
+RANZ_TEST("shape", shape_test, "Shaping of the overlay: the MTU of each VRF on its adapter and an override that raises it, TCP SYNs that leave with the MSS clamped to it, DSCP and ECN through the tunnel unchanged, traffic above the rate limit of a VRF and of the node shaped to that rate.");
 void shape_test(UINT num, char **arg)
 {
 	SHAPETEST_CTX ctx;

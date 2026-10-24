@@ -27,6 +27,7 @@
 // Print "SWITCH TEST OK" and "SWITCHBENCH TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Kernel.h"
@@ -1280,6 +1281,7 @@ static void SwTestConcurrent(SWTEST_CTX *ctx)
 	Free(workers);
 }
 
+RANZ_TEST_TAGS("switch", switch_test, "core", "Switch: frames between members of different VLANs across access, trunk and native ports, VLAN-aware learning, broadcast and multicast by group subscription, non-IP EtherTypes, per-VLAN limits and counters and the TPID of a Network against golden files (golden family switch); ports that change while threads forward.");
 void switch_test(UINT num, char **arg)
 {
 	SWTEST_CTX *ctx = ZeroMalloc(sizeof(SWTEST_CTX));
@@ -1473,6 +1475,7 @@ static UINT64 SwBenchCase(char *name, SWBENCH_THREAD **threads, UINT num, SRWLOC
 	return sorted[SWBENCH_RUNS / 2];
 }
 
+RANZ_TEST("switchbench", switchbench_test, "Switch benchmark: the forwarding of the L2 switch on one thread, on one thread per core and behind one lock as the Hub; it fails when the threads do not scale (BENCH lines).");
 void switchbench_test(UINT num, char **arg)
 {
 	SWTEST_CTX *ctx = ZeroMalloc(sizeof(SWTEST_CTX));

@@ -19,8 +19,10 @@
 # The check fails for:
 # - a function that looks like a parser and has no line (a new parser without a fuzz target);
 # - a line whose function no longer exists, or whose target does not exist or does not name it;
-# - a C target that src/fuzz/CMakeLists.txt does not build, that run_fuzzers.ps1 does not run by
-#   default (or runs without a -max_len), or that has no seed corpus;
+# - a C target that has no line "// fuzz-max-len: <bytes>" for run_fuzzers.ps1's -max_len, or no seed
+#   corpus; and a src/fuzz/CMakeLists.txt or run_fuzzers.ps1 that does not find the targets by their
+#   file names (fuzz_*.c), so that CI would not build or run a new one: a target is a new file and
+#   is in no list;
 # - a Go fuzz test of GO_SCOPE that no line names, which CI would never run (CI runs the targets of
 #   this file: the go-targets mode).
 #
@@ -149,20 +151,24 @@ def parse_registry(path):
     return entries, problems
 
 
-def cmake_targets(root):
+def cmake_takes_every_source(root):
+    # Does src/fuzz/CMakeLists.txt find the targets with file(GLOB ... fuzz_*.c)?
     text = read(os.path.join(root, FUZZ_DIR, 'CMakeLists.txt'))
-    m = re.search(r'set\(\s*RANZ_FUZZ_TARGETS\s+([^)]*)\)', text)
-    return re.findall(r'\b(fuzz_\w+)\b', m.group(1)) if m else []
+    return re.search(r'file\(\s*GLOB\b[^)]*fuzz_\*\.c', text) is not None
 
 
-def run_fuzzers_targets(root):
-    # The default -Targets list of run_fuzzers.ps1 and the targets that have a -max_len
+def run_fuzzers_finds_targets(root):
+    # (finds every fuzz_*.c itself, has a default list of targets that a new one would have to be added to)
     text = read(os.path.join(root, FUZZ_DIR, 'run_fuzzers.ps1'))
-    m = re.search(r'\$Targets\s*=\s*@\(([^)]*)\)', text)
-    default = re.findall(r"'(fuzz_\w+)'", m.group(1)) if m else []
-    m = re.search(r'\$MaxLen\s*=\s*@\{(.*?)\}', text, re.S)
-    max_len = re.findall(r"'(fuzz_\w+)'\s*=\s*\d+", m.group(1)) if m else []
-    return default, max_len
+    finds = re.search(r"-Filter\s+'fuzz_\*\.c'", text) is not None
+    listed = re.search(r"\$Targets\s*=\s*@\(\s*'fuzz_", text) is not None
+    return finds, listed
+
+
+def max_len_of(path):
+    # The -max_len of a target: the number of its line "// fuzz-max-len: <bytes>", None without one
+    m = re.search(r'^//\s*fuzz-max-len:\s*(\d+)\s*$', read(path), re.M)
+    return int(m.group(1)) if m else None
 
 
 def names_word(text, word):
@@ -200,8 +206,6 @@ def check(root):
                             'the reason it is not one (ADR-0040 item 1)' % (path, name, word, REGISTRY))
 
     # The fuzz targets that exist
-    built = cmake_targets(root)
-    default, max_len = run_fuzzers_targets(root)
     go_fuzz = {}
     for module in GO_SCOPE:
         for directory, path in go_files(root, module, tests=True):
@@ -237,17 +241,23 @@ def check(root):
             problems.append('%s: the target %s is neither a libFuzzer target (fuzz_*) nor a Go fuzz test (Fuzz*)'
                             % (e['where'], e['target']))
 
-    # Every target runs in CI
+    # Every target runs in CI: CMake builds and run_fuzzers.ps1 runs every fuzz_<name>.c, so a target needs no line in a list
+    if not cmake_takes_every_source(root):
+        problems.append('%s/CMakeLists.txt: does not find the targets by file(GLOB ... fuzz_*.c), so CI would not build a new '
+                        'target' % FUZZ_DIR)
+    finds, listed = run_fuzzers_finds_targets(root)
+    if listed:
+        problems.append('%s/run_fuzzers.ps1: has a default list of -Targets, which a new target would have to be added to: it '
+                        'finds every fuzz_<name>.c itself' % FUZZ_DIR)
+    if not finds:
+        problems.append("%s/run_fuzzers.ps1: does not find the targets by -Filter 'fuzz_*.c', so CI would not run a new one"
+                        % FUZZ_DIR)
     for name in sorted(n[:-2] for n in os.listdir(os.path.join(root, FUZZ_DIR)) if re.match(r'^fuzz_\w+\.c$', n)):
         if name == 'fuzz_common':
             continue
-        if name not in built:
-            problems.append('%s/%s.c: not in RANZ_FUZZ_TARGETS of %s/CMakeLists.txt' % (FUZZ_DIR, name, FUZZ_DIR))
-        if name not in default:
-            problems.append('%s/%s.c: not in the default -Targets of %s/run_fuzzers.ps1, so CI does not run it'
+        if max_len_of(os.path.join(root, FUZZ_DIR, name + '.c')) is None:
+            problems.append('%s/%s.c: no line "// fuzz-max-len: <bytes>", the -max_len that %s/run_fuzzers.ps1 gives libFuzzer'
                             % (FUZZ_DIR, name, FUZZ_DIR))
-        if name not in max_len:
-            problems.append('%s/%s.c: no $MaxLen entry in %s/run_fuzzers.ps1' % (FUZZ_DIR, name, FUZZ_DIR))
         if not os.path.isdir(os.path.join(root, FUZZ_DIR, 'corpus', name)):
             problems.append('%s/%s.c: no seed corpus %s/corpus/%s' % (FUZZ_DIR, name, FUZZ_DIR, name))
     for directory, target in sorted(set(go_fuzz) - named_go):

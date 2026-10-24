@@ -11,6 +11,8 @@
 // branches (a subnet mask, the UTF-8 length of a character) must give their old results.
 // Prints "ENDIAN TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/IpAddr.h"
 #include "Mayaqua/Memory.h"
@@ -28,6 +30,7 @@ static void EndianTestCheck(bool ok, char *what)
 	}
 }
 
+RANZ_TEST("endian", endian_test, "Byte order: Endian16/32/64 reverse the bytes as htons and htonl do, READ_* and WRITE_* are big-endian at unaligned addresses.");
 void endian_test(UINT num, char **arg)
 {
 	// One byte of slack in front, so the loads and stores run on an unaligned address

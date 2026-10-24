@@ -7,6 +7,8 @@
 // and a GitHub-hosted runner (Windows Server 2022 or later, Windows 11 on Arm) is named as such,
 // not Windows 10 or Server 2016. Prints "OSINFO TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Str.h"
@@ -51,6 +53,7 @@ static bool OsInfoIsGitHubHosted()
 }
 
 // osinfo: known answers of Win32ClassifyOs, GetOsInfo() of this system, the name on a GitHub-hosted runner
+RANZ_TEST("osinfo", osinfo_test, "OS information: Windows 10 and 11, Server 2016, 2019, 2022 and 2025 by build number; a GitHub-hosted runner is Server 2022 or later or Windows 11.");
 void osinfo_test(UINT num, char **arg)
 {
 	const OSVERSIONINFOEXW *os = Win32GetOsVersion();

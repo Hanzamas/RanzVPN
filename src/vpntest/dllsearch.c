@@ -11,6 +11,8 @@
 // fail on it. Prints "DLLSEARCH TEST OK" only when every check passes, and frees everything it
 // allocates. The [PASS] lines carry no values; the [FAIL] details do.
 
+#include "testlist.h"
+
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
@@ -144,6 +146,7 @@ static void DllSearchCheckFound(DLLSEARCH_CTX *ctx, wchar_t *name, char *what)
 }
 
 // dllsearch: where a dynamic load of a DLL named without a path looks
+RANZ_TEST("dllsearch", dllsearch_test, "DLL search order: next to the executable, System32 and AddDllDirectory, never the current directory or PATH.");
 void dllsearch_test(UINT num, char **arg)
 {
 	DLLSEARCH_CTX ctx;
