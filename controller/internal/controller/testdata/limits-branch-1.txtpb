@@ -1,0 +1,55 @@
+# Generation 1 of branch-1 after limits.json (SDN-20 #196): VRF corp with the MTU 1400 of its
+# override and its rate limit of 8 Mbit/s, and the rate limit of 2 Mbit/s of the node itself.
+update: {
+  generation: 1
+  set: {
+    node: {
+      name: "branch-1"
+      tags: "branch"
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\012\012\000\001"  # 10.10.0.1
+          length: 24
+        }
+      }
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\375\0224Vx\232\000\001\000\000\000\000\000\000\000\001"  # fd12:3456:789a:1::1
+          length: 64
+        }
+      }
+      rate_limit: 2000000
+    }
+  }
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\375\0224Vx\232\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1400
+      rate_limit: 8000000
+    }
+  }
+  set: {
+    network: {
+      name: "corp-lan"
+      vrf_id: 10
+      mode: NETWORK_MODE_L3
+      ipv4_pool: {
+        address: "\012\012\000\000"  # 10.10.0.0
+        length: 24
+      }
+      ipv6_pool: {
+        address: "\375\0224Vx\232\000\001\000\000\000\000\000\000\000\000"  # fd12:3456:789a:1::
+        length: 64
+      }
+    }
+  }
+}

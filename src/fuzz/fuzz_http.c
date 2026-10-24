@@ -5,6 +5,9 @@
 // target runs the same HttpParseHeaderLines() over the input with the BUF line source
 // HttpBufLineSource(), which splits lines exactly like RecvLine(). The socket reads themselves
 // are not covered.
+//
+// The largest input is above twice HTTP_HEADER_LINE_MAX_SIZE (4096), so that over-long lines are reached
+// fuzz-max-len: 10240
 
 #include "fuzz_common.h"
 

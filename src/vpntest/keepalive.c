@@ -14,6 +14,8 @@
 // sequences must differ. Prints "KEEPALIVE TEST OK" only when every check passes, and frees
 // everything it allocates.
 
+#include "testlist.h"
+
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Session.h"
@@ -137,6 +139,7 @@ static void KeepAliveTestThreads(KEEPALIVE_TEST *t)
 }
 
 // keepalive: the keepalive span of every session timeout, also of one that a server sends out of bounds
+RANZ_TEST("keepalive", keepalive_test, "Keepalive span: a session timeout out of bounds, also 0 or 1 from a server, gives the span of the clamped timeout.");
 void keepalive_test(UINT num, char **arg)
 {
 	KEEPALIVE_TEST t;

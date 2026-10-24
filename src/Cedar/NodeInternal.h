@@ -14,5 +14,10 @@ void NodeBgpInit();
 void NodeBgpStart(NODE *n);
 void NodeBgpStop(NODE *n);
 void NodeLogMitigations(NODE *n);
+void NodeShapeStart(NODE *n, const NODE_OVERLAY_CONFIG *cfg);
+void NodeShapeStop(NODE *n);
+void NodeShapeAttach(NODE *n, NODE_VRF_TABLES *v, const struct CONTROL_STATE *st);
+void NodeShapeApplied(NODE *n, const struct CONTROL_STATE *st);
+bool NodeShapeOutput(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UCHAR *packet, UINT size);
 
 #endif // NODE_INTERNAL_H

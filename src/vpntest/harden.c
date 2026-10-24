@@ -7,6 +7,8 @@
 // degrade-or-deceive response of ADR-0036). When ranzguard.exe is absent, which is every build but the
 // hardened one, the test skips and still reports OK, so it is safe in the ordinary CI jobs.
 
+#include "testlist.h"
+
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -294,6 +296,7 @@ static void HardenRunGuard(wchar_t *exe, bool as_debuggee, HARDEN_RUN *out)
 }
 
 // harden: ranzguard reports unlocked unwatched and degrades to locked under a debugger, never crashing
+RANZ_TEST("harden", harden_test, "Hardened licence gate: ranzguard reports unlocked unwatched and degrades to locked under a debugger, never crashing (skips when ranzguard.exe is absent).");
 void harden_test(UINT num, char **arg)
 {
 	HARDEN_CTX ctx;

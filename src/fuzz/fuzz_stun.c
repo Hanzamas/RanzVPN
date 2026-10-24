@@ -4,6 +4,8 @@
 // datagram from the STUN server, and as the configured server text through StunParseServerStr().
 // The transaction ID passed is the one in the input, so that the attribute parser is reached; with
 // a fixed ID only inputs that carry that ID would get past the header.
+//
+// fuzz-max-len: 2048
 
 #include "fuzz_common.h"
 

@@ -9,6 +9,8 @@
 // are counted by a job object that the test puts its own process in. Prints "VMDETECT TEST OK"
 // only when every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -88,6 +90,7 @@ static bool VmDetectIsGitHubHosted()
 
 // vmdetect: the first MsIsInVm call of the process writes no script, starts no process, returns
 // within VMDETECT_MAX_TIME, and reports a VM on a GitHub-hosted runner
+RANZ_TEST("vmdetect", vmdetect_test, "VM detection: MsIsInVm writes no script, starts no process, answers at once, reports a VM on a GitHub-hosted runner.");
 void vmdetect_test(UINT num, char **arg)
 {
 	VMDETECT_CTX ctx;

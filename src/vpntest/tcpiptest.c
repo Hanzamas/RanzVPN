@@ -18,6 +18,8 @@
 // reports a read past its end. Prints "TCPIP TEST OK" only when every check passes, and frees
 // everything it allocates. The [PASS] lines carry no values; the [FAIL] details do.
 
+#include "testlist.h"
+
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
@@ -515,6 +517,7 @@ static void TcpIpTestChecksum(TCPIPTEST_CTX *ctx)
 		"%u of %u inputs differ", bad_v6, num);
 }
 
+RANZ_TEST("tcpip", tcpip_test, "TCP/IP packets: DhcpModify reads the cookie at offset 236 and nothing past the payload, the MSS clamp walks the TCP options.");
 void tcpip_test(UINT num, char **arg)
 {
 	TCPIPTEST_CTX ctx;

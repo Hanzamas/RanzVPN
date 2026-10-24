@@ -9,28 +9,39 @@
 # protoc-gen-go, tidies go.mod and go.sum and runs gofmt; then vets (for Linux and for Windows),
 # builds every package and ranz for Linux x64, Windows x64 and Windows arm64 as it ships, records
 # the size of each, runs the Linux executable for its contract (one version for every subcommand,
-# the subcommands, the NOTICE with the licence of GoBGP), and tests the module, with rqlited of the
-# pinned rqlite release for the controller conformance tests and the cluster tests of SDN-17 (three
-# controller processes, each with its rqlited, on the runner: controller/cluster_test.go), and the
-# session of the BGP sidecar against GoBGP routers over an in-memory pipe. The controller tests
-# write every control message they sent or received to a directory, and the nanopb code generated
-# from the same schema decodes each one and encodes it back to the same bytes
-# (tests/control/nanopb_roundtrip.c). Then the job fails, and prints the diff, if generation, tidy
-# or gofmt changed a committed file. Last come the quality gates of ADR-0040 for the module: the
-# tests run with -race (item 4) and -coverprofile, and each package must stay at or above its
-# coverage floor (item 2, .github/quality/coverage-floors.txt); the fuzz tests of
+# the subcommands, the NOTICE with the licences of GoBGP and rqlite), and tests the module, with
+# rqlited of the pinned rqlite release for the controller conformance tests and the cluster tests of
+# SDN-17 (three controller processes, each with its rqlited, on the runner:
+# controller/cluster_test.go), and the session of the BGP sidecar against GoBGP routers over an
+# in-memory pipe. The controller tests write every control message they sent or received to a
+# directory, and the nanopb code generated from the same schema decodes each one and encodes it back
+# to the same bytes (tests/control/nanopb_roundtrip.c). Then the job fails, and prints the diff, if
+# generation, tidy or gofmt changed a committed file. Last come the quality gates of ADR-0040 for
+# the module: the tests run with -race (item 4) and -coverprofile, and each package must stay at or
+# above its coverage floor (item 2, .github/quality/coverage-floors.txt); the fuzz tests of
 # .github/quality/fuzz-targets.txt run with go test -fuzz for a short time each (item 1); and
 # staticcheck and govulncheck, for Linux and for Windows, must find nothing (item 3).
 #
 # windows: vets, builds and tests the module on Windows x64 and arm64. On x64 that includes the
 # controller (the cluster tests, its keys in the Microsoft Software Key Storage Provider) and ranz
-# controller as a Windows service on TCP 443 (and plain HTTP for the redirect) with rqlited as its
-# sidecar: install, start, stop, reset-admin and uninstall, driven with ranz and ranz-nodesim
-# (.github/scripts/controller-service.ps1). On both architectures it runs the sidecar on the named
-# pipe of the node, among them the process mitigations and the System32-only DLL search of ranz
-# read from outside its process (ADR-0039, SEC-1 #279), runs the executable for its contract, and
-# checks its flags (.github/scripts/binary-hardening.ps1). The arm64 runner has no rqlited, so it
-# tests the sidecar only.
+# controller as a Windows service on TCP 443 (and plain HTTP for the redirect) with its own rqlite
+# member as its sidecar: install, start, stop, reset-admin and uninstall, driven with ranz and
+# ranz-nodesim (.github/scripts/controller-service.ps1). The rqlite member of a Controller is a
+# Payload of ranz (ONE-4, #313; ADR-0026 amendment of 2026-10-23): each Windows job signs the
+# rqlited.exe of the pinned release with a self-signed certificate that it trusts and embeds it
+# over the placeholder of controller/internal/payload before it builds, so the x64 job's cluster
+# tests, its ranz.exe and its service run with members that ranz writes out under the data
+# directory itself, with no rqlited beside it, also again after a deletion. The cluster tests run
+# the executable ranz as each member: they build it from the checkout with the vendor key of the
+# tests linked in, as a release links its own (controller/cluster_test.go). rqlite publishes no
+# Windows build for arm64: the member of ranz for arm64 is the x64 rqlited.exe, which Windows 11 on
+# ARM runs under emulation, and the arm64 job writes it out and starts it (TestRqlitedMemberRuns).
+# On both architectures the job runs the sidecar on the named pipe of the node, among them the
+# process mitigations and the System32-only DLL search of ranz read from outside its process
+# (ADR-0039, SEC-1 #279), runs the executable for its contract, and checks its flags
+# (.github/scripts/binary-hardening.ps1). The NOTICE holds the licence text of the pinned rqlite tag
+# word for word (TestNoticeHasTheRqliteLicence of controller/cmd/ranz), and each rqlite archive
+# that a job downloads has the SHA-256 of the pinned release.
 #
 # The three tools that succeed the vpncmd tools (SDN-53, #246) run as processes in both jobs, read
 # from outside: ranz doctor passes its six checks; ranz test throughput runs the test server and the
@@ -96,6 +107,11 @@ env:
   PROTOBUF_PY_VERSION: '7.36.2'
   NANOPB_VERSION: '0.4.9.2'
   RQLITE_VERSION: 'v10.5.3'
+  # The SHA-256 of the release archives of RQLITE_VERSION that the jobs download, the digests that
+  # GitHub holds for the assets of the release (ONE-4, #313). A new version changes the pin, these
+  # digests, windows.yml and the NOTICE together.
+  RQLITE_LINUX_AMD64_SHA256: '93dc04417d9d233e79eb359e325793b1f92daa84ec93694953f4bff6307fda2b'
+  RQLITE_WIN64_SHA256: '0f4a65a603b89b9a3c2607c5de64445236856884c83aa2e865ec9142fd184118'
   # The Go static analysis of ADR-0040 item 3: staticcheck 2026.2.2 and govulncheck
   STATICCHECK_VERSION: 'v0.8.2'
   GOVULNCHECK_VERSION: 'v1.9.0'
@@ -123,6 +139,7 @@ jobs:
         echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
 
         curl -fsSL -o "$RUNNER_TEMP/rqlite.tar.gz" "https://github.com/rqlite/rqlite/releases/download/${RQLITE_VERSION}/rqlite-${RQLITE_VERSION}-linux-amd64.tar.gz"
+        echo "${RQLITE_LINUX_AMD64_SHA256}  $RUNNER_TEMP/rqlite.tar.gz" | sha256sum -c -
         mkdir -p "$RUNNER_TEMP/rqlite"
         tar -xzf "$RUNNER_TEMP/rqlite.tar.gz" -C "$RUNNER_TEMP/rqlite"
         rqlited="$(find "$RUNNER_TEMP/rqlite" -name rqlited -type f | head -n 1)"
@@ -182,7 +199,7 @@ jobs:
     # The contract of the one executable, read from outside (ONE-1): ranz version prints one line
     # with the one version, in every spelling, and the run number as its build number; ranz bgp,
     # ranz controller and the CLI answer as their subcommands do; ranz notice prints the NOTICE that
-    # is committed, which holds the licence of GoBGP
+    # is committed, which holds the licences of GoBGP and of rqlite
     - name: The executable
       run: |
         ranz="$RUNNER_TEMP/linux-x64/ranz"
@@ -210,7 +227,20 @@ jobs:
         "$ranz" notice > "$RUNNER_TEMP/NOTICE"
         grep -q 'GoBGP' "$RUNNER_TEMP/NOTICE"
         grep -q 'Apache License' "$RUNNER_TEMP/NOTICE"
+        grep -q 'rqlite' "$RUNNER_TEMP/NOTICE"
+        grep -q 'The MIT License (MIT)' "$RUNNER_TEMP/NOTICE"
         cmp "$RUNNER_TEMP/NOTICE" controller/cmd/ranz/NOTICE
+    # The rqlite version stays pinned (ONE-4, #313): RQLITE_VERSION here and in windows.yml, which
+    # downloads the same release for the default VRF tracer, and the NOTICE names that version. The
+    # LICENSE of the pinned tag is downloaded for TestNoticeHasTheRqliteLicence, which compares it
+    # with the NOTICE word for word, so a new version fails until the NOTICE follows it.
+    - name: The rqlite pin and the licence of its tag
+      run: |
+        grep -Fq "RQLITE_VERSION: '${RQLITE_VERSION}'" .github/workflows/windows.yml
+        grep -Fq "the rqlite release ${RQLITE_VERSION}," controller/cmd/ranz/NOTICE
+        grep -Fq "rqlite/blob/${RQLITE_VERSION}/go.mod" controller/cmd/ranz/NOTICE
+        curl -fsSL -o "$RUNNER_TEMP/rqlite-LICENSE" "https://raw.githubusercontent.com/rqlite/rqlite/${RQLITE_VERSION}/LICENSE"
+        echo "RQLITE_LICENSE=$RUNNER_TEMP/rqlite-LICENSE" >> "$GITHUB_ENV"
     # The tools of SDN-53 (#246), read from outside. ranz cert makes a CA and the certificates that it
     # signs, and OpenSSL takes them: openssl verify builds their chain (the trust store), an openssl
     # s_server with a certificate (the listener) is accepted by an openssl s_client that trusts the CA
@@ -378,12 +408,12 @@ jobs:
       fail-fast: false
       matrix:
         platform: [
-          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
-          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+          { ARCHITECTURE: x64, GOARCH: amd64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, GOARCH: arm64, RUNNER: "windows-11-arm" }
         ]
     name: ranz (Windows ${{ matrix.platform.ARCHITECTURE }})
     runs-on: ${{ matrix.platform.RUNNER }}
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       # The Go code builds without cgo; the gcc of the arm64 runner builds x64 code only
       CGO_ENABLED: '0'
@@ -393,18 +423,68 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
+    # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
+    # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64
     - name: Install rqlited
-      if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
       run: |
         $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
         $dir = Join-Path $env:RUNNER_TEMP 'rqlite'
         Invoke-WebRequest -Uri "https://github.com/rqlite/rqlite/releases/download/$env:RQLITE_VERSION/rqlite-$env:RQLITE_VERSION-win64.zip" -OutFile $zip
+        # The LICENSE of the pinned tag, for TestNoticeHasTheRqliteLicence
+        $licence = Join-Path $env:RUNNER_TEMP 'rqlite-LICENSE'
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/rqlite/rqlite/$env:RQLITE_VERSION/LICENSE" -OutFile $licence
+        "RQLITE_LICENSE=$licence" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        $sum = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
+        if ($sum -ne $env:RQLITE_WIN64_SHA256) { throw "rqlite-$env:RQLITE_VERSION-win64.zip has the SHA-256 $sum, not the pinned $env:RQLITE_WIN64_SHA256" }
         Expand-Archive -Path $zip -DestinationPath $dir
         $exe = Get-ChildItem -Path $dir -Recurse -Filter 'rqlited.exe' | Select-Object -First 1
         if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
         & $exe.FullName -version
         "RQLITED=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    # The rqlite member of a Controller is a Payload of ranz (ONE-4, #313; ADR-0026 amendment of
+    # 2026-10-23). ranz controller writes it out under its data directory only after it checked the
+    # SHA-256 and the Authenticode signature of the copy it carries (controller/internal/payload),
+    # and the rqlited.exe of the release has no signature. So this step signs a copy of it with a
+    # self-signed code-signing certificate that it makes and trusts on this runner, as
+    # .github/scripts/self-integrity.ps1 does for the executables of the C build (the certificate of
+    # the release signs the Payload at release, as it signs ranz-node.exe), and writes it over the
+    # placeholder of controller/internal/payload, so that every build of the steps below carries it:
+    # the cluster tests run members, each a ranz that they build, that write their own rqlited from
+    # it, ranz.exe carries it as it ships, and the service check runs with no rqlited beside
+    # ranz.exe. RQLITED stays for the tests that start an rqlite of their own (rqlitetest), and
+    # RQLITED_SIGNED is the signed file, which the service check compares what the controller writes
+    # out with. On the arm64 runner the member is the x64 rqlited.exe (rqlited_arm64.exe is its
+    # placeholder).
+    - name: Sign the rqlite member and embed it as the Payload
+      shell: pwsh
+      run: |
+        $embed = (Resolve-Path controller\internal\payload\rqlited_${{ matrix.platform.GOARCH }}.exe).Path
+        $work = Join-Path $env:RUNNER_TEMP 'rqlited-payload'
+        New-Item -ItemType Directory -Force -Path $work | Out-Null
+        $signed = Join-Path $work 'rqlited.exe'
+        Copy-Item -LiteralPath $env:RQLITED -Destination $signed -Force
+        $cert = New-SelfSignedCertificate -Type CodeSigningCert `
+          -Subject 'CN=Ranz VPN CI signing (rqlite member, self-signed), O=Hanzcodes' `
+          -CertStoreLocation Cert:\CurrentUser\My `
+          -KeyExportPolicy Exportable -KeyUsage DigitalSignature `
+          -NotAfter (Get-Date).AddYears(1)
+        $cer = Join-Path $work 'ranz-ci-rqlite.cer'
+        Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+        # The root store only: the signature of a file chains to a trusted root, and nothing here asks
+        # for a trusted publisher (the arm64 runner refuses that store to its user)
+        Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+        $result = Set-AuthenticodeSignature -FilePath $signed -Certificate $cert -HashAlgorithm SHA256
+        if ($result.Status -ne 'Valid') { throw "signing $signed left the status $($result.Status): $($result.StatusMessage)" }
+        $check = Get-AuthenticodeSignature -FilePath $signed
+        if ($check.Status -ne 'Valid') { throw "the signature of $signed has the status $($check.Status): $($check.StatusMessage)" }
+        # The signature is appended to the file: it must still be the same rqlited
+        & $signed -version
+        if ($LASTEXITCODE -ne 0) { throw "the signed rqlited.exe exited with code $LASTEXITCODE" }
+        Copy-Item -LiteralPath $signed -Destination $embed -Force
+        $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $embed).Hash
+        Write-Host "the rqlite member, signed by $($check.SignerCertificate.Subject): $((Get-Item -LiteralPath $embed).Length) bytes, SHA-256 $hash"
+        "RQLITED_SIGNED=$signed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     # ranz as it ships (-trimpath, -ldflags "-s -w", the run number as the build number), and the
     # test tool ranz-nodesim, which the service check and the hardening gate use
     - name: Vet and build
@@ -436,6 +516,14 @@ jobs:
       run: |
         go test -count=1 ./ranz-bgp/...
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    # The member of ranz for arm64 (ONE-4, #313): the x64 rqlited.exe written out and started under
+    # emulation, and the choice of the rqlited that the controller runs
+    - name: Test the rqlite member
+      if: matrix.platform.ARCHITECTURE != 'x64'
+      shell: pwsh
+      run: |
+        go test -count=1 -v -run '^(TestRqlitedMemberRuns|TestRqlitedExe.*|TestParseFlagsRqliteExternal)$' ./controller
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     # The contract of the one executable, read from outside and natively on this architecture
     # (ONE-1): one version for every subcommand, the subcommands, the NOTICE
     - name: The executable
@@ -459,7 +547,8 @@ jobs:
         if ($LASTEXITCODE -ne 2 -or (Get-Content -LiteralPath $err -Raw) -notmatch '(?m)^usage:') { throw "ranz without arguments: exit code $LASTEXITCODE, $(Get-Content -LiteralPath $err -Raw)" }
         $notice = (& $ranz notice | Out-String)
         if ($LASTEXITCODE -ne 0 -or $notice -notmatch 'GoBGP' -or $notice -notmatch 'Apache License') { throw 'ranz notice does not print the licence of GoBGP' }
-        Write-Host 'ranz: one version for every subcommand, the subcommands answer, the NOTICE has the licence of GoBGP'
+        if ($notice -notmatch 'rqlite' -or $notice -notmatch 'The MIT License \(MIT\)') { throw 'ranz notice does not print the licence of rqlite' }
+        Write-Host 'ranz: one version for every subcommand, the subcommands answer, the NOTICE has the licences of GoBGP and of rqlite'
     # The tools of SDN-53 (#246) as processes, natively on this architecture: ranz doctor passes its
     # six checks, ranz test throughput reports a rate between its server and its client, which are two
     # processes of the runner, and ranz cert makes a CA and a certificate that it signs with their keys
@@ -488,6 +577,9 @@ jobs:
       run: |
         go test -count=1 -v -run 'TestKSPStatic|TestLoad' ./controller/internal/keys
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+    # The service runs the ranz.exe built above, which carries the rqlite member (ONE-4, #313): no
+    # rqlited is beside it, and the script checks that the controller writes and runs its own, and
+    # writes it again after a deletion
     - name: Controller as a Windows service
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
