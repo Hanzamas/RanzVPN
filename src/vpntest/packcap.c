@@ -16,6 +16,8 @@
 // - the welcome cap refuses a welcome Pack padded by PACKCAP_BIG_SIZE.
 // Prints "PACKCAP TEST OK" only when every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Cedar/Cedar.h"
 #include "Cedar/Account.h"
 #include "Cedar/Connection.h"
@@ -252,6 +254,7 @@ static PACK *PackCapRecvWelcome(PACKCAP_TEST *t, PACK *p)
 }
 
 // packcap: the client reads no Pack beyond its cap from the server
+RANZ_TEST("packcap", packcap_test, "Client Pack size cap: a 1 MiB hello or welcome Pack from a loopback peer is refused, the longest real welcome Pack is read.");
 void packcap_test(UINT num, char **arg)
 {
 	PACKCAP_TEST t;

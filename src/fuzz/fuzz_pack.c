@@ -1,6 +1,8 @@
 // fuzz_pack.c
 // libFuzzer target: PACK deserialization (BufToPack / ReadPack), the decoder of every PACK
 // received by the server, the client and the admin RPC
+//
+// fuzz-max-len: 4096
 
 #include "fuzz_common.h"
 

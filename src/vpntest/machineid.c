@@ -12,6 +12,8 @@
 // the same across a real server restart. Prints "MACHINEID TEST OK" only when every check passes,
 // and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Cedar/Cedar.h"
 #include "Cedar/Protocol.h"
 #include "Cedar/Server.h"
@@ -239,6 +241,7 @@ static void MachineIdTestCfg(MACHINEID_CTX *ctx)
 }
 
 // machineid: the machine identity of FIX-5
+RANZ_TEST("machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts, the salt in the config.");
 void machineid_test(UINT num, char **arg)
 {
 	MACHINEID_CTX ctx;

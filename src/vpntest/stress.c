@@ -16,6 +16,8 @@
 // measured values (such as milliseconds) for diagnosis. "stress timing" adds one [TIME]
 // line per case.
 
+#include "testlist.h"
+
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Object.h"
@@ -1640,6 +1642,7 @@ static STRESS_CASE stress_cases[] =
 #define	STRESS_NUM_CASES	((UINT)(sizeof(stress_cases) / sizeof(stress_cases[0])))
 
 // Mayaqua runtime stress test: stress [timing] [case ...]
+RANZ_TEST("stress", stress_test, "Mayaqua runtime stress test: stress [timing] [case ...].");
 void stress_test(UINT num, char **arg)
 {
 	STRESS_CTX ctx;

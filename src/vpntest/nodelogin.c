@@ -14,6 +14,7 @@
 // Login failed is closed. Print "NODELOGIN TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/Account.h"
 #include "Cedar/Admin.h"
@@ -484,6 +485,7 @@ static void NodeLoginDeleteFiles(wchar_t *dir)
 	DeleteDirW(dir);
 }
 
+RANZ_TEST("nodelogin", nodelogin_test, "Node Login: password, certificate and domain credentials through a Noise session and NodeLogin give the SE-VPN login's result (administrator rights).");
 void nodelogin_test(UINT num, char **arg)
 {
 	NODELOGIN_CTX *ctx = ZeroMalloc(sizeof(NODELOGIN_CTX));

@@ -20,6 +20,8 @@
 //
 // Prints "TEMPDIR TEST OK" only when every check passes, and frees everything it allocates.
 
+#include "testlist.h"
+
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
@@ -638,6 +640,7 @@ static void TempDirChildCase(TEMPDIR_CTX *ctx)
 // tempdir: the temp directory has a 64-bit random name and a protected DACL; loading a string
 // table writes no cache file to %TEMP%; stale temp directories go without a junction being
 // followed, and no DLL is copied into the temp directory
+RANZ_TEST("tempdir", tempdir_test, "Temp directory: 64-bit random name, protected DACL; loading a string table writes no cache file.");
 void tempdir_test(UINT num, char **arg)
 {
 	TEMPDIR_CTX ctx;
