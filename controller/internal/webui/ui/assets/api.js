@@ -28,6 +28,7 @@
  * @property {Record<string, string | number>} [params] - fill the {placeholders} of the path
  * @property {Record<string, string | number | undefined>} [query] - the query string; empty values are left out
  * @property {unknown} [body] - sent as JSON
+ * @property {boolean} [blob] - the answer is a file: call returns {blob, filename} and not JSON
  */
 
 /** The roles from the lowest, as internal/rbac orders them. */
@@ -103,9 +104,21 @@ export function setToken(secret) {
 }
 
 /**
+ * fileName returns the name that the Content-Disposition header of an answer gives its file, or
+ * the name of a diagnostics bundle when it gives none.
+ * @param {string | null} disposition
+ * @returns {string}
+ */
+function fileName(disposition) {
+  const m = /filename="([^"\\/]+)"/.exec(disposition ?? '');
+  return m ? m[1] : 'ranz-diagnostics.zip';
+}
+
+/**
  * call makes the API call of the action name with the token of the tab and returns the JSON of
- * the answer. An answer other than 200 OK throws an APIError with the API's own message, so the
- * UI shows a refusal exactly as the API words it.
+ * the answer, or, for a call with the option blob, the file that the answer is. An answer other
+ * than 200 OK throws an APIError with the API's own message, so the UI shows a refusal exactly as
+ * the API words it.
  * @param {string} name
  * @param {CallOptions} [opts]
  * @returns {Promise<any>}
@@ -132,7 +145,7 @@ export async function call(name, opts = {}) {
     url += `?${q}`;
   }
   /** @type {Record<string, string>} */
-  const headers = { Accept: 'application/json' };
+  const headers = { Accept: opts.blob ? 'application/zip, application/json' : 'application/json' };
   const secret = token();
   if (secret) {
     headers.Authorization = `Bearer ${secret}`;
@@ -144,6 +157,9 @@ export async function call(name, opts = {}) {
     init.body = JSON.stringify(opts.body);
   }
   const r = await fetch(url, init);
+  if (opts.blob && r.ok) {
+    return { blob: await r.blob(), filename: fileName(r.headers.get('Content-Disposition')) };
+  }
   const text = await r.text();
   /** @type {any} */
   let data = null;

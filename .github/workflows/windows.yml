@@ -11,7 +11,8 @@
 #   or integration, every night (a schedule runs on the default branch, master), on workflow_dispatch, on a
 #   pull request with the label full-ci and on a pull request that changes src/Core/Crypto*,
 #   src/Core/Noise*, src/SeLow, .github/scripts/self-integrity.ps1, .github/scripts/install.ps1,
-#   .github/signing, docs/first-test.md or .github/scripts/first-test.ps1 (SENSITIVE in ci-plan.py).
+#   .github/signing, .github/msi, .github/scripts/msi-*, docs/first-test.md or
+#   .github/scripts/first-test.ps1 (SENSITIVE in ci-plan.py).
 # A job that only the full set runs has needs: plan and if: needs.plan.outputs.full == 'true' (install
 # follows sign_and_integrity, which it needs, and first_test follows build_and_test and sign_and_integrity),
 # and a pull request shows it as skipped. A new job
@@ -1298,6 +1299,201 @@ jobs:
         if-no-files-found: warn
         retention-days: 14
         path: build/signing/ranz-ci-signing.cer
+    # The thin MSI of ranz.exe (ONE-5, #314; ADR-0020 amendment of 2026-10-22), for x64 and arm64: it carries
+    # the signed ranz.exe of its architecture and nothing else, and it is signed like the executables, with
+    # the self-signed certificate of this job. Its version is the one that ranz version prints, major.minor
+    # and the run number, the one counter that only grows (ADR-0020 consequences). The step builds packages
+    # and publishes nothing. Each architecture gets the package at the version before it too, for the upgrade
+    # and the downgrade of the msi job, and one that carries the ranz.exe with a changed Payload, which ranz
+    # install must refuse (.github/scripts/msi-build.ps1, .github/msi/ranz.wxs).
+    - name: Build and sign the MSI of each architecture
+      shell: pwsh
+      run: |
+        $subject = 'CN=Ranz VPN CI signing (self-signed), O=Hanzcodes'
+        $cert = @(Get-ChildItem -Path Cert:\CurrentUser\My | Where-Object { $_.Subject -eq $subject })
+        if ($cert.Count -ne 1) { throw "$($cert.Count) certificates of the subject $subject are in the store of the signing step, not one" }
+        .github/scripts/msi-build.ps1 -Wxs .github/msi/ranz.wxs -OutDir build/msi `
+          -X64 build/signing/x64/ranz.exe -Arm64 build/signing/arm64/ranz.exe `
+          -X64Tampered build/signing/x64-tampered/ranz.exe -Arm64Tampered build/signing/arm64-tampered/ranz.exe `
+          -Thumbprint $cert[0].Thumbprint
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: msi-x64
+        if-no-files-found: warn
+        retention-days: 14
+        path: |
+          build/msi/ranz-x64*.msi
+          build/msi/ranz-x64.sha256
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: msi-arm64
+        if-no-files-found: warn
+        retention-days: 14
+        path: |
+          build/msi/ranz-arm64*.msi
+          build/msi/ranz-arm64.sha256
+
+  # The thin MSI of ranz.exe with a stand-in ranz.exe (ONE-5, #314): what Windows Installer does with the two
+  # actions of the package, ranz install and ranz uninstall -keep-ranz, proved without the C build, so that a
+  # mistake of the package shows within minutes and not after the build of the node. The stand-in
+  # (.github/msi/standin-ranz.go) logs each call and writes and removes a ranz-node.exe beside itself; the
+  # package is built from .github/msi/ranz.wxs with the pinned WiX, as the real one, at two versions. The
+  # next job runs the packages on both architectures (.github/scripts/msi-install.ps1 -StandIn), and the msi
+  # job, after sign_and_integrity, runs the same steps with the real signed ranz.exe. A pull request that
+  # changes the package or its scripts runs the full set (SENSITIVE in ci-plan.py), and this job with it.
+  msi_standin_build:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
+    runs-on: windows-latest
+    name: MSI with a stand-in ranz.exe (build)
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: go.sum
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    - name: Install WiX
+      shell: pwsh
+      run: |
+        # The WiX Toolset of the MSI (ADR-0020; REL-5, #50), the version that sign_and_integrity pins
+        dotnet tool install --global wix --version 5.0.2
+        if ($LASTEXITCODE -ne 0) { throw "dotnet tool install exited with code $LASTEXITCODE" }
+        $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
+        $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        & (Join-Path $tools 'wix.exe') --version
+    - name: Build the stand-in ranz.exe and the MSIs that carry it
+      shell: pwsh
+      run: |
+        $work = Join-Path $env:RUNNER_TEMP 'standin'
+        $env:GOOS = 'windows'
+        $env:CGO_ENABLED = '0'
+        foreach ($arch in @(@{ Name = 'x64'; Goarch = 'amd64' }, @{ Name = 'arm64'; Goarch = 'arm64' })) {
+          $env:GOARCH = $arch.Goarch
+          # prev is the stand-in of the package at the lower version, cur the one of the package under test
+          foreach ($id in 'prev', 'cur') {
+            $dir = Join-Path $work "$($arch.Name)-$id"
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            go build -ldflags "-X main.id=$id" -o (Join-Path $dir 'ranz.exe') .github/msi/standin-ranz.go
+            if ($LASTEXITCODE -ne 0) { throw "go build of the stand-in ($($arch.Name), $id) exited with code $LASTEXITCODE" }
+          }
+        }
+        Remove-Item Env:\GOOS, Env:\GOARCH, Env:\CGO_ENABLED
+        .github/scripts/msi-build.ps1 -Wxs .github/msi/ranz.wxs -OutDir build/msi-standin `
+          -X64 (Join-Path $work 'x64-cur\ranz.exe') -Arm64 (Join-Path $work 'arm64-cur\ranz.exe') `
+          -X64Previous (Join-Path $work 'x64-prev\ranz.exe') -Arm64Previous (Join-Path $work 'arm64-prev\ranz.exe') `
+          -Version 0.1.2 -PreviousVersion 0.1.1
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: msi-standin
+        if-no-files-found: warn
+        retention-days: 14
+        path: build/msi-standin/
+
+  msi_standin:
+    needs: msi_standin_build
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, RUNNER: "windows-11-arm" }
+        ]
+    name: MSI with a stand-in ranz.exe (${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download the MSIs
+      uses: actions/download-artifact@v4
+      with:
+        name: msi-standin
+        path: artifacts/msi
+    - name: The MSI, checked from outside
+      shell: pwsh
+      env:
+        ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
+      run: |
+        . .github/scripts/msi-install.ps1 -StandIn -Architecture $env:ARCHITECTURE -Dir artifacts\msi -OtherDir artifacts\msi -LogDir (Join-Path $env:RUNNER_TEMP 'msi-logs')
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: msi-standin-logs-${{ matrix.platform.ARCHITECTURE }}
+        if-no-files-found: warn
+        retention-days: 14
+        path: ${{ runner.temp }}/msi-logs
+
+  # The thin MSI of ranz.exe (ONE-5, #314; ADR-0011 and ADR-0020 amendments of 2026-10-22), on windows-latest
+  # (x64) and windows-11-arm (arm64), checked from outside the running process with msiexec: the exit codes,
+  # the Service Control Manager, the files and their access list, the Apps and Features entries and the data
+  # directory. The job copies the MSI of its architecture to its runner, the one at the version of the
+  # run, with the package at the version before it, the package of the other architecture and one whose
+  # ranz.exe carries a changed Payload, and the certificate that signed them (this is another machine than
+  # the one that signed). It proves that the MSI installs ranz.exe, runs ranz install and ends with
+  # ranzvpnserver running, and that the uninstall leaves nothing but the data directory; that an upgrade
+  # from N to N+1 keeps the data directory and the Node identity key, with one Apps and Features entry, and
+  # that a downgrade is refused; that each MSI is refused on the wrong architecture and installs nothing,
+  # and that a failed ranz install rolls the package back. The version of the package is the run number,
+  # the build that ranz version prints. .github/scripts/msi-install.ps1.
+  msi:
+    needs: sign_and_integrity
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, OTHER: arm64, RUNNER: "windows-latest" },
+          { ARCHITECTURE: arm64, OTHER: x64, RUNNER: "windows-11-arm" }
+        ]
+    name: msi (${{ matrix.platform.ARCHITECTURE }})
+    runs-on: ${{ matrix.platform.RUNNER }}
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download the MSIs of this architecture
+      uses: actions/download-artifact@v4
+      with:
+        name: msi-${{ matrix.platform.ARCHITECTURE }}
+        path: artifacts/msi
+    - name: Download the MSI of the other architecture
+      uses: actions/download-artifact@v4
+      with:
+        name: msi-${{ matrix.platform.OTHER }}
+        path: artifacts/msi-other
+    - name: Download the CI signing certificate
+      uses: actions/download-artifact@v4
+      with:
+        name: ci-signing-certificate
+        path: artifacts/certificate
+    # The root store only: the signature of a file chains to a trusted root, and nothing here asks for
+    # a trusted publisher
+    - name: Trust the CI signing certificate on this runner
+      shell: pwsh
+      run: |
+        $cer = Get-ChildItem -Path artifacts/certificate -Filter '*.cer' | Select-Object -First 1
+        if (-not $cer) { throw 'no .cer file in the ci-signing-certificate artifact' }
+        Import-Certificate -FilePath $cer.FullName -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+        Write-Host "trusted $($cer.FullName) as a root"
+    - name: The MSI, checked from outside
+      shell: pwsh
+      timeout-minutes: 30
+      env:
+        NODE_SHA256: ${{ needs.sign_and_integrity.outputs[format('node-sha256-{0}', matrix.platform.ARCHITECTURE)] }}
+        ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
+      run: |
+        . .github/scripts/msi-install.ps1 -Architecture $env:ARCHITECTURE -Dir artifacts\msi -OtherDir artifacts\msi-other -LogDir (Join-Path $env:RUNNER_TEMP 'msi-logs') -NodeSha256 $env:NODE_SHA256
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: msi-logs-${{ matrix.platform.ARCHITECTURE }}
+        if-no-files-found: warn
+        retention-days: 14
+        path: ${{ runner.temp }}/msi-logs
 
   # ranz install and ranz uninstall (ONE-2, #311; ADR-0011 and ADR-0020 amendments of 2026-10-22), on
   # windows-latest (x64) and windows-11-arm (arm64), checked from outside the running process. The

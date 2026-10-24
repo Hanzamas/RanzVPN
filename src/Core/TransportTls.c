@@ -13,8 +13,9 @@
 //
 // A listener accepts on a wait of the Windows thread pool and runs each TLS handshake on a callback
 // of the pool, so that a peer that never completes its handshake holds no other back; a stream whose
-// handshake completed waits in the backlog for Accept. A dial connects and runs the client's
-// handshake on the caller's thread, and returns as soon as it can once its cancel is set.
+// handshake completed waits in the backlog for Accept. A dial connects along the outbound path of
+// the configuration, direct or through a proxy and from its underlay (TransportPath.c), runs the
+// client's handshake on the caller's thread, and returns as soon as it can once its cancel is set.
 //
 // Schannel takes no list of key exchange groups per credential, and the hybrid X25519MLKEM768 is
 // not in the default list of builds 26100 and 26200: TransportTlsSetGroups sets the machine's list,
@@ -24,6 +25,7 @@
 #include <ws2tcpip.h>
 
 #include "Core/Transport.h"
+#include "Core/TransportInternal.h"
 
 #include <winternl.h>
 
@@ -518,71 +520,6 @@ static int TlsWait(SOCKET s, HANDLE cancel, UINT64 end) {
 		if (GetTickCount64() >= end)
 			return 0;
 	}
-}
-
-// Wait until a connect completes: true when it did, false when it failed or cancel was set. A
-// connect that failed shows in SO_ERROR while the socket is not writable.
-static bool TlsConnectWait(SOCKET s, HANDLE cancel) {
-	while (true) {
-		WSAPOLLFD p;
-		int error = 0, error_size = sizeof(error);
-
-		if (cancel != NULL && WaitForSingleObject(cancel, 0) == WAIT_OBJECT_0)
-			return false;
-
-		ZeroMemory(&p, sizeof(p));
-		p.fd = s;
-		p.events = POLLWRNORM;
-		int r = WSAPoll(&p, 1, TLS_POLL);
-		if (r < 0 || (r > 0 && (p.revents & (POLLERR | POLLHUP)) != 0))
-			return false;
-		if (getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&error, &error_size) != 0 || error != 0)
-			return false;
-		if (r > 0)
-			return true;
-	}
-}
-
-// A TCP connection to one address, connected without blocking so that cancel is seen
-static SOCKET TlsConnectOne(const struct addrinfo *a, HANDLE cancel) {
-	u_long nonblocking = 1;
-	SOCKET s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-
-	if (s == INVALID_SOCKET)
-		return INVALID_SOCKET;
-
-	bool ok = (ioctlsocket(s, FIONBIO, &nonblocking) == 0);
-	if (ok && connect(s, a->ai_addr, (int)a->ai_addrlen) != 0)
-		ok = (WSAGetLastError() == WSAEWOULDBLOCK && TlsConnectWait(s, cancel));
-	if (ok)
-		ok = TlsSocketReady(s);
-
-	if (ok == false) {
-		closesocket(s);
-		return INVALID_SOCKET;
-	}
-
-	return s;
-}
-
-// A TCP connection to host and port, the addresses of the host in turn; INVALID_SOCKET when none
-// answers or cancel was set
-static SOCKET TlsConnect(const char *host, const char *port, HANDLE cancel) {
-	struct addrinfo hints, *res = NULL;
-	SOCKET s = INVALID_SOCKET;
-
-	ZeroMemory(&hints, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_TCP;
-	if (getaddrinfo(host, port, &hints, &res) != 0)
-		return INVALID_SOCKET;
-
-	for (const struct addrinfo *a = res; a != NULL && s == INVALID_SOCKET; a = a->ai_next)
-		s = TlsConnectOne(a, cancel);
-	freeaddrinfo(res);
-
-	return s;
 }
 
 // A listening socket on host and port: every address of both families where host is empty. It is
@@ -1466,9 +1403,14 @@ static bool TlsDial(void *param, const char *address, HANDLE cancel, void **stre
 	if (net->Server || TlsSplitAddress(address, host, sizeof(host), port, sizeof(port)) == false || host[0] == 0)
 		return false;
 
-	SOCKET sock = TlsConnect(host, port, cancel);
+	// The connection along the outbound path: direct, or through the tunnel of a proxy
+	SOCKET sock = TransportPathConnect(&net->Cfg.Path, host, port, cancel);
 	if (sock == INVALID_SOCKET)
 		return false;
+	if (TlsSocketReady(sock) == false) {
+		closesocket(sock);
+		return false;
+	}
 
 	TLS_STREAM *s = TlsStreamNew(net, sock);
 	if (s == NULL)

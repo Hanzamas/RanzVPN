@@ -12,7 +12,10 @@
 //   #69): what it takes from a ServerHello must be a version it knows;
 // - the first bytes that a server with a decoy reads after the TLS handshake (TransportDecoyIsHandshake and
 //   TransportDecoyAuthenticate, CORE-S2-2 #70), and a client's ClientHello whose server name a split cuts
-//   (TransportTlsHelloName): a frame that authenticates has the shape of one, and a name lies within the bytes.
+//   (TransportTlsHelloName): a frame that authenticates has the shape of one, and a name lies within the bytes;
+// - what a proxy answers a client of the TLS transport, and a proxy list and a bypass list of WinHTTP (SDN-61 #254):
+//   an answer that TransportProxyParseHttp or TransportProxyParseSocks takes ends within the input, and a proxy that
+//   TransportProxyParseList takes has a host and a port; TransportProxyBypass reads the input as a list and as a host.
 // The server node has the static key and the ephemeral key of the cacophony IK vector, as in fuzz_noise.c, so that
 // the frames of the encrypted golden records of coretest noisesession get through the handshake and decrypt.
 //
@@ -169,6 +172,43 @@ static void FuzzHello(const UCHAR *data, UINT size)
 	}
 }
 
+// The input as what a proxy answers a client of the TLS transport, and as a proxy list and a bypass list of WinHTTP
+static void FuzzProxy(const UCHAR *data, UINT size)
+{
+	char host[TRANSPORT_ADDRESS_SIZE];
+	char port[8];
+	UINT used = 0, code = 0;
+
+	// An answer taken ends within the input and carries a code of its protocol
+	if (TransportProxyParseHttp(data, size, &used, &code) == TRANSPORT_PROXY_DONE && (used == 0 || used > size || code > 999))
+	{
+		FuzzFail("TransportProxyParseHttp took an answer that does not end within the input");
+	}
+	if (TransportProxyParseSocks(data, size, &used, &code) == TRANSPORT_PROXY_DONE && (used < 7 || used > size || code > 255))
+	{
+		FuzzFail("TransportProxyParseSocks took a reply that does not end within the input");
+	}
+
+	// A copy of exactly the input and its terminator: AddressSanitizer reports a read past the end of the text
+	char *text = malloc(size + 1);
+	if (text == NULL)
+	{
+		return;
+	}
+	memcpy(text, data, size);
+	text[size] = 0;
+
+	if (TransportProxyParseList(text, host, sizeof(host), port, sizeof(port)) &&
+		(host[0] == 0 || strtoul(port, NULL, 10) == 0 || strtoul(port, NULL, 10) > 65535))
+	{
+		FuzzFail("TransportProxyParseList gave a proxy without a host or a port");
+	}
+	(void)TransportProxyBypass(text, "vpn.example");
+	(void)TransportProxyBypass("<local>;*.example;10.*", text);
+
+	free(text);
+}
+
 // The input as the first bytes a server with a decoy reads after the TLS handshake: TransportDecoyIsHandshake tells a
 // valid Ranz handshake frame from a prober's first bytes, and reads no further than size bytes; TransportDecoyAuthenticate
 // reads the Noise message of such a frame with the server node's key and a binding of zeros
@@ -305,6 +345,7 @@ static void FuzzTransport(const uint8_t *data, size_t size)
 	FuzzHello(in, (UINT)size);
 	FuzzDecoy(f, in, (UINT)size);
 	FuzzHelloName(in, (UINT)size);
+	FuzzProxy(in, (UINT)size);
 
 	SecureZeroMemory(f, sizeof(FUZZ_TRANSPORT));
 	free(f);

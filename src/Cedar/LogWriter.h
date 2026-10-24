@@ -22,6 +22,10 @@ typedef struct LOG LOG;
 #define LOG_ENGINE_RETRY_MAX          5000                                   // The wait doubles after each failed try, up to this
 #define LOG_DROPPED_RECORDS_FORMAT    "%I64u log records dropped: the log file could not be written or the record queue was full"
 
+// The files of a log within an age limit and a disk limit (SetLogLimits, SDN-54 #247): the writer thread applies them
+// at least this often, besides when they are set and each time it opens a file
+#define LOG_LIMITS_SWEEP_INTERVAL (60 * 60 * 1000)
+
 #define LOG_SWITCH_NO     0
 #define LOG_SWITCH_SECOND 1
 #define LOG_SWITCH_MINUTE 2
@@ -61,6 +65,10 @@ struct LOG {
 	bool log_number_incremented;
 	UINT64 NumDropped;          // Records dropped and not yet reported in the file (under the RecordQueue lock)
 	volatile UINT64 MaxLogSize; // Maximum size of a log file (SetMaxLogSize), never 0
+	// The limits of the files of this log (SetLogLimits), 0 for none, and whether the writer thread has yet to apply them
+	volatile UINT MaxAgeDays;
+	volatile UINT64 MaxTotalSize;
+	volatile bool LimitsChanged;
 };
 
 LOG *NewLog(char *dir, char *prefix, UINT switch_type, UINT64 max_size);
@@ -77,5 +85,6 @@ void WriteRecordToBuffer(BUF *b, RECORD *r);
 void SetLogSwitchType(LOG *g, UINT switch_type);
 void SetMaxLogSize(LOG *g, UINT64 size);
 UINT64 GetMaxLogSize(LOG *g);
+void SetLogLimits(LOG *g, UINT max_age_days, UINT64 max_total_size);
 
 #endif

@@ -16,6 +16,9 @@ type Status struct {
 	// Cluster tells which member of the controller cluster answers and which one leads
 	// (internal/cluster). Every member answers the status itself.
 	Cluster *ClusterStatus `json:"cluster,omitempty"`
+	// Diagnostics is what the program tells the diagnostics bundle about it (diagnostics.go). It
+	// is the program's setting, not part of the answer.
+	Diagnostics *Diagnostics `json:"-"`
 }
 
 // ClusterStatus is the cluster part of Status.

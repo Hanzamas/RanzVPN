@@ -5,6 +5,8 @@
 package webui_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -14,11 +16,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -27,10 +31,12 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
+	"github.com/Hanzamas/RanzVPN/controller/internal/bundle"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/logfile"
 	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
@@ -126,6 +132,7 @@ func TestRolesLimitTheUI(t *testing.T) {
 		{"/revisions?revision=1&from=0&to=2", "revisions"},
 		{"/events", "events"},
 		{"/licence", "licence"},
+		{"/diagnostics", "diagnostics"},
 		{"/tokens", "tokens"},
 	}
 	// control is an element of a page with data-action, and whether it shows.
@@ -156,8 +163,13 @@ func TestRolesLimitTheUI(t *testing.T) {
 				}
 				seen[a.Name] = true
 			}
+			if p.page == "diagnostics" && !role.Allows(rbac.Operator) {
+				if notice := run(t, tab, chromedp.Text(chromedp.CSS("#operator-only"))); !strings.Contains(notice, "needs the role operator") {
+					t.Errorf("%s: the Diagnostics page says %q", role, notice)
+				}
+			}
 		}
-		for _, name := range []string{"apply", "deleteResource", "confirmRevision", "rollback", "diff", "installLicence", "tokens", "createToken", "deleteToken"} {
+		for _, name := range []string{"apply", "deleteResource", "confirmRevision", "rollback", "diff", "installLicence", "tokens", "createToken", "deleteToken", "diagnosticsBundle"} {
 			if !seen[name] && (name != "deleteToken" || role == rbac.Admin) {
 				t.Errorf("%s: no page has a control of the action %s", role, name)
 			}
@@ -291,6 +303,105 @@ func TestTheUIWorksThroughTheAPI(t *testing.T) {
 	}
 }
 
+// TestTheUIPullsTheDiagnosticsBundle is the second criterion of SDN-54 (#247) through the web UI: an
+// operator opens the Diagnostics page and takes the bundle with its button, and the archive that the
+// button made holds the parts that the controller names and none of the secrets that the log of the
+// controller holds. A viewer's page has no button and says why, and the call that a viewer's tab makes
+// anyway gets the API's own refusal.
+func TestTheUIPullsTheDiagnosticsBundle(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	nodeKey := newKey(t)
+	if _, err := h.admin.Apply(ctx, document(nodeKey)); err != nil {
+		t.Fatal(err)
+	}
+	viewer := h.token(t, "viewer-1", rbac.Viewer)
+	operator := h.token(t, "operator-1", rbac.Operator)
+	tab := newBrowser(t)
+
+	h.signIn(t, tab, operator)
+	h.visit(t, tab, "/diagnostics", "diagnostics")
+	// The page hands the archive to the browser as a Blob; keep the one that the click makes
+	run(t, tab, chromedp.Evaluate[chromedp.Void](`(() => {
+		window.pulled = null;
+		const make = URL.createObjectURL.bind(URL);
+		URL.createObjectURL = (blob) => { window.pulled = blob; return make(blob); };
+	})()`))
+	got := h.act(t, tab, chromedp.Click(chromedp.CSS("#bundle-button")))
+	if !strings.Contains(got, "The diagnostics bundle ranz-controller-") || !strings.Contains(got, ".zip is made") {
+		t.Errorf("the page says %q after the click", got)
+	}
+	encoded := run(t, tab, chromedp.Evaluate[string](`window.pulled.arrayBuffer().then((buffer) => {
+		const bytes = new Uint8Array(buffer);
+		let text = '';
+		for (let i = 0; i < bytes.length; i += 0x8000) {
+			text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+		}
+		return btoa(text);
+	})`, chromedp.EvalAwaitPromise))
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("what the button made is no ZIP archive: %v", err)
+	}
+	files := map[string]string{}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[f.Name] = string(b)
+	}
+	for _, name := range []string{bundle.ManifestName, "system.json", "controller/status.json", controller.DiagnosticsNodes, controller.DiagnosticsIntent,
+		controller.DiagnosticsRevisions, controller.DiagnosticsEvents, controller.DiagnosticsLicence, controller.DiagnosticsIPAM,
+		"controller/logs.json", "controller/logs/controller.log"} {
+		if _, ok := files[name]; !ok {
+			t.Errorf("the bundle that the button made has no part %s", name)
+		}
+	}
+	if log := files["controller/logs/controller.log"]; !strings.Contains(log, "first start: the admin token is created") || !strings.Contains(log, "file=admin.token") {
+		t.Errorf("the log of the bundle is\n%s", log)
+	}
+	if intentPart := files[controller.DiagnosticsIntent]; !strings.Contains(intentPart, "branch-1") || !strings.Contains(intentPart, "corp-lan") {
+		t.Errorf("the intent of the bundle is\n%s", intentPart)
+	}
+	// The log on the disk does hold the secret of the admin token, so that its absence means something
+	if disk, err := os.ReadFile(h.logPath); err != nil || !strings.Contains(string(disk), h.secret) {
+		t.Fatalf("the log of the controller does not hold the secret that the test plants: %v", err)
+	}
+	for _, secret := range []string{h.secret, operator, viewer} {
+		for name, content := range files {
+			if strings.Contains(content, secret) {
+				t.Errorf("the part %s of the bundle holds the secret of an API token", name)
+			}
+		}
+	}
+
+	h.signIn(t, tab, viewer)
+	h.visit(t, tab, "/diagnostics", "diagnostics")
+	if run(t, tab, chromedp.Evaluate[bool](`document.querySelector('#bundle-button').checkVisibility()`)) {
+		t.Error("the Diagnostics page of a viewer shows the button that pulls the bundle")
+	}
+	refused := run(t, tab, chromedp.Evaluate[string](`import('/assets/api.js').then((m) => m.call('diagnosticsBundle', {blob: true})).then(() => 'allowed', (e) => e.status + ' ' + e.message)`,
+		chromedp.EvalAwaitPromise))
+	_, err = h.client(viewer).DiagnosticsBundle(ctx)
+	var refusal *api.Error
+	if !errors.As(err, &refusal) {
+		t.Fatalf("the viewer's call for the bundle through the API gave %v", err)
+	}
+	if want := fmt.Sprintf("%d %s", refusal.Status, refusal.Message); refused != want || refusal.Status != http.StatusForbidden {
+		t.Errorf("the viewer's call for the bundle through the UI gave %q, and through the API %q", refused, want)
+	}
+}
+
 // harness is one controller on its own rqlite, with the control stream, the API and the web UI
 // on one TLS port, as ranz-controller serves them.
 type harness struct {
@@ -299,6 +410,8 @@ type harness struct {
 	ln     net.Listener
 	admin  *api.Client // with the admin token
 	secret string      // of the admin token
+	// logPath is the log of the controller that the diagnostics bundle holds, with the secret in it.
+	logPath string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -333,7 +446,20 @@ func newHarness(t *testing.T) *harness {
 	if h.ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
 		t.Fatal(err)
 	}
-	h.routes = api.Routes(c, tokens, api.Status{ControlAddress: h.ln.Addr().String(), TLSFingerprint: keys.Fingerprint(cert)})
+	// The log of the controller, as the service writes it: it holds the secret of the admin token
+	logLimits := logfile.LimitsOf(30, 1)
+	h.logPath = filepath.Join(t.TempDir(), "controller.log")
+	lw, err := logfile.New(h.logPath, logLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(lw, "2026-10-24T10:00:00.000Z INFO first start: the admin token is created token=%s file=admin.token\n", h.secret)
+	fmt.Fprintf(lw, "2026-10-24T10:00:01.000Z INFO the web UI is served on %s\n", h.ln.Addr())
+	if err := lw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.routes = api.Routes(c, tokens, api.Status{ControlAddress: h.ln.Addr().String(), TLSFingerprint: keys.Fingerprint(cert),
+		Diagnostics: &api.Diagnostics{LogFile: h.logPath, LogLimits: logLimits}})
 	srv := &port.Server{
 		TLS:     &tls.Config{Certificates: []tls.Certificate{cert}},
 		Control: c.ServeStream,
