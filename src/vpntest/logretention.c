@@ -21,6 +21,7 @@
 
 #include "Cedar/LogWriter.h"
 
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
