@@ -507,6 +507,9 @@ void tls_test(UINT num, char **arg);
 // Named lossy-link test of CORE-S2-1, #69 (lossylink.c)
 void lossylink_test(UINT num, char **arg);
 
+// Named Trojan-posture test of CORE-S2-2, #70 (trojantest.c)
+void trojan_test(UINT num, char **arg);
+
 // Named HTTP listener test of REL-6, #51 (httplistener.c)
 void httplistener_test(UINT num, char **arg);
 
@@ -677,6 +680,7 @@ TEST_LIST test_list[] =
 	{"noisehub", noisehub_test, "Noise to Hub: the L2 frames of a Noise session enter a Hub as a Session of type CONNECTION_NOISE and come out as the oracle's (golden family noisehub); a Tunnel of four connections keeps each flow in order and spreads the flows over all four."},
 	{"tls", tls_test, "TLS-443: a client completes a Schannel TLS 1.3 handshake on a test port, the Noise session comes up bound to the TLS exporter; X25519MLKEM768 first where the OS has ML-KEM, AES-GCM only, the server key in the KSP, the pin, the fallback when UDP is blocked (administrator rights)."},
 	{"lossylink", lossylink_test, "Lossy link: the ingress queue of the session layer (FIFO, CoDel's drops), and an inner TCP over the TLS-443 path on a simulated link of 1% and 2% loss and 50 ms round trip, over CoDel and over FIFO: no collapse with CoDel."},
+	{"trojan", trojan_test, "Trojan posture: a server reverse-proxies a prober to an own decoy website (byte for byte), a valid client reaches the session, and the client splits its ClientHello into two TCP segments and omits the SNI to our own servers."},
 	{"harden", harden_test, "Hardened licence gate: ranzguard reports unlocked unwatched and degrades to locked under a debugger, never crashing (skips when ranzguard.exe is absent)."},
 	{"httplistener", httplistener_test, "HTTP listener on a test port: the redirect to HTTPS, ACME HTTP-01 challenges, the errors, port conflicts, the configuration round trip, a held port."},
 	{"sdntrace", sdntrace_test, "Default VRF tracer: sdntrace <host:port> <key> [<file>]: two nodes join VRF default of a running ranz controller, get addresses from its pool and ping each other over the loopback transport, also once the controller stopped (.github/scripts/sdn-tracer.ps1)."},

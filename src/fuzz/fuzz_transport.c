@@ -163,6 +163,31 @@ static void FuzzHello(const UCHAR *data, UINT size)
 	}
 }
 
+// The input as the first bytes a server with a decoy reads after the TLS handshake: TransportDecoyIsHandshake tells a
+// valid Ranz handshake frame from a prober's first bytes, and reads no further than size bytes
+static void FuzzDecoy(const UCHAR *data, UINT size)
+{
+	if (TransportDecoyIsHandshake(data, size) == false)
+	{
+		return;
+	}
+
+	// A frame it takes has at least a header, a record type and a suite, and a length no bigger than the bytes read
+	if (size < TRANSPORT_FRAME_HEADER + 2)
+	{
+		FuzzFail("TransportDecoyIsHandshake took fewer bytes than a frame header and a record type and suite");
+	}
+	else
+	{
+		UINT length = ((UINT)data[0] << 24) | ((UINT)data[1] << 16) | ((UINT)data[2] << 8) | data[3];
+
+		if ((UINT64)TRANSPORT_FRAME_HEADER + length > size)
+		{
+			FuzzFail("TransportDecoyIsHandshake took a frame whose record is not all there");
+		}
+	}
+}
+
 // The input as what a server node reads from a stream, step bytes at a time at most
 static void FuzzStream(FUZZ_TRANSPORT *f, const UCHAR *data, UINT size, UINT step)
 {
@@ -245,6 +270,7 @@ static void FuzzTransport(const uint8_t *data, size_t size)
 	FuzzStream(f, in, (UINT)size, (UINT)size);
 	FuzzStream(f, in, (UINT)size, 1);
 	FuzzHello(in, (UINT)size);
+	FuzzDecoy(in, (UINT)size);
 
 	SecureZeroMemory(f, sizeof(FUZZ_TRANSPORT));
 	free(f);

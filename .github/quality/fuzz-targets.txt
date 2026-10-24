@@ -41,6 +41,10 @@ src/Core  TransportNoiseReceive  fuzz_transport
 src/Core  TransportRead          exempt  hands the read of a stream to the Read procedure of its transport; parses nothing (TransportNoiseReceive reads the frames)
 # The TLS transport (CORE-S2-1 #69): the ServerHello among the first records of a TLS server
 src/Core  TransportTlsParseHello  fuzz_transport
+# The own-decoy reverse proxy (CORE-S2-2 #70): the first bytes a server with a decoy reads after the TLS handshake; no
+# parser word in its name, listed as a parser. TransportDecoyProxy relays bytes between the prober and the backend and
+# decodes none, so it is not a parser.
+src/Core  TransportDecoyIsHandshake  fuzz_transport
 
 # The VXLAN module (SDN-62 #289): the datagrams of VTEPs
 src/Core  VxlanInput  fuzz_vxlan

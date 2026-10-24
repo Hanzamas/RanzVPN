@@ -483,8 +483,9 @@ jobs:
         # nodesvc installs ranz-node as a service, which would run outside the instrumented process; build_and_test only.
         # noisehub runs its loopback and TLS-443 parts here; its QUIC part needs msquic.dll, which this job does not fetch.
         # tls (CORE-S2-1 #69) runs on Schannel, which needs no DLL of its own; lossylink runs in virtual time.
+        # trojan (CORE-S2-2 #70) runs on Schannel and loopback sockets, also with no DLL of its own.
         # switchbench measures how forwarding scales across cores, which AddressSanitizer distorts; build_and_test only.
-        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,listeners,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo,node,nodelogin,store,transport,tls,lossylink,noisehub,vrf,vxlan,switch
+        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,listeners,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo,node,nodelogin,store,transport,tls,lossylink,trojan,noisehub,vrf,vxlan,switch
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list. Its output
         # and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a report printed
@@ -638,9 +639,10 @@ jobs:
         $env:LLVM_PROFILE_FILE = Join-Path $dir 'coretest-%p.profraw'
         . .github/scripts/coretest.ps1
         # The transport module's tests are vpntest's (transport, quic over msquic, tls over Schannel and lossylink, the
-        # ingress queue), as are the VXLAN module's (vxlan) and the switch module's (switch), run by its smoke test script
+        # ingress queue, trojan for the own-decoy reverse proxy and the ClientHello posture), as are the VXLAN module's
+        # (vxlan) and the switch module's (switch), run by its smoke test script
         $env:LLVM_PROFILE_FILE = Join-Path $dir 'vpntest-%p.profraw'
-        $env:RANZ_SMOKE_TESTS = 'transport,quic,tls,lossylink,vxlan,switch'
+        $env:RANZ_SMOKE_TESTS = 'transport,quic,tls,lossylink,trojan,vxlan,switch'
         . .github/scripts/vpntest.ps1
     - name: Coverage floor
       if: ${{ !cancelled() }}

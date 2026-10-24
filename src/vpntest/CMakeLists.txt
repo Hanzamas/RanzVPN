@@ -81,6 +81,9 @@ ranz_add_executable(vpntest HAMCORE
     # Named lossy-link test of CORE-S2-1 (#69): the ingress queue (CoDel) and an inner TCP over the TLS-443 path on a
     # simulated lossy link
     lossylink.c
+    # Named Trojan-posture test of CORE-S2-2 (#70): the own-decoy reverse proxy, and the client ClientHello split and
+    # SNI omission
+    trojantest.c
     # Named hardened licence gate test of SEC-4 (#282): drives ranzguard under the Win32 debug API
     harden.c
     # Named HTTP listener test of REL-6 (#51)
@@ -95,9 +98,9 @@ ranz_add_executable(vpntest HAMCORE
     # Named switch test and switch benchmark of CORE-S4-1 (#74): the L2 switch of the new core against golden frames
     switchtest.c
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c,
-  # quictest.c and tlstest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN
-  # module for vxlantest.c, the switch module for switchtest.c; netapi32: the local account that stands for a domain
-  # account (NetUserAdd)
+  # quictest.c, tlstest.c and trojantest.c (the QUIC transport loads msquic.dll at run time, so no import library is
+  # linked), the VXLAN module for vxlantest.c, the switch module for switchtest.c; netapi32: the local account that
+  # stands for a domain account (NetUserAdd)
   LIBRARIES
     coretransport
     corenoise

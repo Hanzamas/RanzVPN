@@ -45,6 +45,9 @@
 #define TLS_HANDSHAKE     10000                              // A TLS handshake completes within this time (ms)
 #define TLS_LINGER        1000                               // A close waits this long for the peer's end (ms)
 #define TLS_SEND_TIMEOUT  30000                              // A send that the peer does not take within this time fails (ms)
+#define TLS_SPLIT_PACE    20                                 // The flush gap between the two segments of a split ClientHello (ms)
+#define TLS_DECOY_PEEK    2048                               // Bytes of the first frame the decoy reads to classify it (CORE-S2-2, #70)
+#define TLS_DECOY_WAIT    1500                               // A read of the first frame waits this long once some bytes came (ms)
 
 // What the ServerHello parser reads (RFC 8446 section 4.1.3)
 #define TLS_CONTENT_CCS       20     // A ChangeCipherSpec record
@@ -125,6 +128,11 @@ typedef struct TLS_STREAM {
 	UCHAR *Out;                             // A record being written: its header, its bytes and its trailer ...
 	UINT OutSize;                           // ... the size of the largest
 	bool Ended;                             // The peer closed or the stream failed: a read gives the end
+	bool SentHello;                         // The client sent its first handshake token (the ClientHello): only it is split
+	UCHAR *Pre;                             // Bytes the decoy read before the session and gave back, returned first (server) ...
+	UINT PreStart;                          // ... the first not read yet ...
+	UINT PreSize;                           // ... their number ...
+	UINT PreAlloc;                          // ... and the size of the allocation
 	TRANSPORT_TLS_INFO Info;                // What the handshake gave
 	UCHAR Binding[NOISE_EXPORTER_SIZE];     // The TLS exporter of the session, the channel binding
 } TLS_STREAM;
@@ -463,6 +471,26 @@ static bool TlsSend(SOCKET s, const void *buf, UINT size) {
 	return true;
 }
 
+// Send the client's first token, the ClientHello, as two TCP segments (CORE-S2-2, #70): TCP_NODELAY
+// is set, so each send goes as its own segment, and a brief flush between them keeps a reader from
+// coalescing them, so a DPI engine must reassemble the segments to read the server name. false when
+// the send failed.
+static bool TlsSendSplit(SOCKET s, const void *buf, UINT size) {
+	const UCHAR *p = (const UCHAR *)buf;
+	UINT first = size / 2;
+
+	if (size < 2)
+		return TlsSend(s, buf, size);
+	if (first == 0)
+		first = 1;
+	if (TlsSend(s, p, first) == false)
+		return false;
+
+	Sleep(TLS_SPLIT_PACE);
+
+	return TlsSend(s, p + first, size - first);
+}
+
 // Wait until the socket has bytes or its end: 1; 0 once end passed or cancel (which may be NULL) was
 // set, which is looked at every TLS_POLL ms; -1 on an error. The socket is looked at once at least.
 static int TlsWait(SOCKET s, HANDLE cancel, UINT64 end) {
@@ -608,6 +636,7 @@ static void TlsStreamFree(TLS_STREAM *s) {
 	TlsRelease(s->In, TLS_IN_SIZE);
 	TlsRelease(s->Plain, TLS_RECORD_MAX);
 	TlsRelease(s->Out, s->OutSize);
+	TlsRelease(s->Pre, s->PreAlloc);
 	TlsRelease(s, sizeof(TLS_STREAM));
 }
 
@@ -713,7 +742,9 @@ static SECURITY_STATUS TlsStep(TLS_STREAM *s, bool input) {
 	if (net->Server)
 		r = AcceptSecurityContext(&net->Cred, s->HaveCtx ? &s->Ctx : NULL, &in_desc, TLS_ASC_FLAGS, 0, &s->Ctx, &out_desc, &attr, &expiry);
 	else
-		r = InitializeSecurityContextW(&net->Cred, s->HaveCtx ? &s->Ctx : NULL, s->Target, TLS_ISC_FLAGS, 0, 0, input ? &in_desc : NULL, 0, &s->Ctx, &out_desc, &attr, &expiry);
+		// A client that omits the server name passes no target, so the ClientHello carries no server_name extension
+		r = InitializeSecurityContextW(&net->Cred, s->HaveCtx ? &s->Ctx : NULL, net->Cfg.OmitSni ? NULL : s->Target, TLS_ISC_FLAGS, 0, 0,
+		                               input ? &in_desc : NULL, 0, &s->Ctx, &out_desc, &attr, &expiry);
 
 	if (r == SEC_E_OK || r == SEC_I_CONTINUE_NEEDED)
 		s->HaveCtx = true;
@@ -721,8 +752,16 @@ static SECURITY_STATUS TlsStep(TLS_STREAM *s, bool input) {
 	if (out[0].pvBuffer != NULL) {
 		if (net->Server)
 			TlsHello(s, (const UCHAR *)out[0].pvBuffer, out[0].cbBuffer);
-		if (out[0].cbBuffer != 0 && TlsSend(s->Socket, out[0].pvBuffer, out[0].cbBuffer) == false && (r == SEC_E_OK || r == SEC_I_CONTINUE_NEEDED))
-			r = SEC_E_INTERNAL_ERROR;
+		if (out[0].cbBuffer != 0) {
+			// The client splits its first token, the ClientHello, into two TCP segments where it is asked to
+			bool split = (net->Server == false && net->Cfg.SplitClientHello && s->SentHello == false);
+			bool sent = (split ? TlsSendSplit(s->Socket, out[0].pvBuffer, out[0].cbBuffer)
+			                   : TlsSend(s->Socket, out[0].pvBuffer, out[0].cbBuffer));
+			if (net->Server == false)
+				s->SentHello = true;
+			if (sent == false && (r == SEC_E_OK || r == SEC_I_CONTINUE_NEEDED))
+				r = SEC_E_INTERNAL_ERROR;
+		}
 		FreeContextBuffer(out[0].pvBuffer);
 	}
 
@@ -909,6 +948,17 @@ static UINT TlsStreamRead(void *stream, void *buf, UINT size, UINT timeout) {
 	UINT64 end = (timeout == INFINITE ? MAXUINT64 : GetTickCount64() + timeout);
 
 	while (true) {
+		// The bytes the decoy read before the session and gave back (server), before the stream's own
+		if (s->PreSize != 0) {
+			UINT n = (size < s->PreSize ? size : s->PreSize);
+
+			CopyMemory(buf, s->Pre + s->PreStart, n);
+			SecureZeroMemory(s->Pre + s->PreStart, n);
+			s->PreStart += n;
+			s->PreSize -= n;
+			return n;
+		}
+
 		// The bytes of a record decrypted before
 		if (s->PlainSize != 0) {
 			UINT n = (size < s->PlainSize ? size : s->PlainSize);
@@ -1026,7 +1076,7 @@ static void TlsShutdown(TLS_STREAM *s) {
 	if (net->Server)
 		r = AcceptSecurityContext(&net->Cred, &s->Ctx, NULL, TLS_ASC_FLAGS, 0, NULL, &out_desc, &attr, &expiry);
 	else
-		r = InitializeSecurityContextW(&net->Cred, &s->Ctx, s->Target, TLS_ISC_FLAGS, 0, 0, NULL, 0, &s->Ctx, &out_desc, &attr, &expiry);
+		r = InitializeSecurityContextW(&net->Cred, &s->Ctx, net->Cfg.OmitSni ? NULL : s->Target, TLS_ISC_FLAGS, 0, 0, NULL, 0, &s->Ctx, &out_desc, &attr, &expiry);
 
 	if (out.pvBuffer != NULL) {
 		if (r >= 0 && out.cbBuffer != 0)
@@ -1085,6 +1135,87 @@ static bool TlsStreamRekey(void *stream) {
 }
 
 //
+// The own-decoy reverse proxy (CORE-S2-2, #70): the Trojan posture of a server that has one
+//
+
+// Read up to the first whole frame of the stream into buf (cap bytes) within the handshake time: its
+// 4-byte length and the record, or whatever came. It stops once a whole frame is there, the length
+// is no record's, the stream ended, or the peer paused after sending some bytes. The bytes read are
+// the start of the stream, which the caller gives back to the session on a valid frame.
+static UINT TlsDecoyFirst(TLS_STREAM *s, UCHAR *buf, UINT cap, HANDLE cancel) {
+	UINT64 end = GetTickCount64() + TLS_HANDSHAKE;
+	UINT size = 0;
+
+	while (size < cap) {
+		if (cancel != NULL && WaitForSingleObject(cancel, 0) == WAIT_OBJECT_0)
+			break;
+
+		UINT64 now = GetTickCount64();
+		if (now >= end)
+			break;
+		UINT slice = (UINT)(end - now);
+		if (slice > TLS_DECOY_WAIT)
+			slice = TLS_DECOY_WAIT;
+
+		UINT got = TlsStreamRead(s, buf + size, cap - size, slice);
+		if (got == 0)
+			break;
+		if (got == TRANSPORT_LATER) {
+			// Nothing yet: wait for the first bytes until the deadline; a pause after some ends the read
+			if (size != 0)
+				break;
+			continue;
+		}
+
+		size += got;
+
+		// Stop once the whole first frame is there, or its length is no record's (a prober)
+		if (size >= TRANSPORT_FRAME_HEADER) {
+			UINT length = ((UINT)buf[0] << 24) | ((UINT)buf[1] << 16) | ((UINT)buf[2] << 8) | buf[3];
+			if ((UINT64)TRANSPORT_FRAME_HEADER + length <= size || length < 2 || length > NOISE_MAX_RECORD)
+				break;
+		}
+	}
+
+	return size;
+}
+
+// After the TLS handshake of a server with a decoy configured: read the first frame of the stream. A
+// valid Ranz handshake frame goes to the session, its bytes given back for the first read (true). On
+// anything else the guard reverse-proxies the stream to the decoy and closes it as a website would,
+// and gives false; the caller then queues nothing and frees nothing, because the guard owns the
+// stream on this path.
+static bool TlsDecoyGuard(TLS_STREAM *s, HANDLE cancel) {
+	UCHAR *first = (UCHAR *)TlsZeroAlloc(TLS_DECOY_PEEK);
+	UINT size;
+
+	if (first == NULL) {
+		TlsStreamClose(s);
+		return false;
+	}
+
+	size = TlsDecoyFirst(s, first, TLS_DECOY_PEEK, cancel);
+
+	// A valid Ranz handshake frame: the session reads these bytes first, the stream having taken them
+	if (TransportDecoyIsHandshake(first, size)) {
+		s->Pre = first;
+		s->PreStart = 0;
+		s->PreSize = size;
+		s->PreAlloc = TLS_DECOY_PEEK;
+		return true;
+	}
+
+	// A prober: the bytes it sent, and the rest of its stream, go to the decoy on the loopback
+	// interface, and the stream is closed with a close_notify, as an ordinary website closes it
+	TRANSPORT_DECOY_IO io = {s, TlsStreamRead, TlsStreamWrite};
+	(void)TransportDecoyProxy(&io, s->Net->Cfg.Decoy, first, size, cancel);
+	TlsRelease(first, TLS_DECOY_PEEK);
+	TlsStreamClose(s);
+
+	return false;
+}
+
+//
 // The listener
 //
 
@@ -1124,6 +1255,12 @@ static void CALLBACK TlsHandshakeCallback(PTP_CALLBACK_INSTANCE instance, void *
 		TlsStreamFree(s);
 		return;
 	}
+
+	// The Trojan posture: a prober that does not open a valid Ranz session is reverse-proxied to the
+	// decoy and never becomes a stream the listener gives out (CORE-S2-2, #70). The guard owns the
+	// stream on that path, closing it as a website would, so the callback queues and frees nothing.
+	if (l->Net->Cfg.Decoy[0] != 0 && TlsDecoyGuard(s, l->Closing) == false)
+		return;
 
 	AcquireSRWLockExclusive(&l->Lock);
 	if (l->Closed == false && l->NumQueued < TLS_BACKLOG) {

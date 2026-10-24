@@ -320,6 +320,14 @@ void TransportQuicFree(TRANSPORT *t);
 // HKLM\SYSTEM\CurrentControlSet\Control\Cryptography\Configuration\Local\SSL\00010002, with the
 // transport's groups first and the groups the list had after them. An ECC Curve Order group policy
 // overrides that list where one is set; the transport leaves it as the administrator set it.
+//
+// The Trojan posture (CORE-S2-2, #70): a server with a decoy configured (Decoy) reads the first
+// application bytes after the TLS handshake and reverse-proxies a prober, one that does not open a
+// valid Ranz session there, to a website the operator runs on the loopback interface, so the prober
+// meets an ordinary HTTPS site byte for byte (the decoy module, TransportDecoy.c, below). A client
+// may split its ClientHello into two TCP segments (SplitClientHello) and omit the server name
+// (OmitSni), so a DPI engine that matches an SNI keyword in one segment sees neither the whole name
+// nor, to our own servers, any name at all.
 #define TRANSPORT_TLS_12 0x00000001 // TLS 1.2
 #define TRANSPORT_TLS_13 0x00000002 // TLS 1.3
 
@@ -337,6 +345,9 @@ typedef struct TRANSPORT_TLS_CONFIG {
 	bool SetGroups;                              // New sets the key exchange groups of the machine (TransportTlsSetGroups)
 	bool BreakBinding;                           // A client that changes the binding it computes: for the mismatch test
 	UINT Queue;                                  // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it (CODEL)
+	char Decoy[TRANSPORT_ADDRESS_SIZE];          // The own-decoy backend a prober is reverse-proxied to ("127.0.0.1:port"); empty for none (server)
+	bool SplitClientHello;                       // The client splits its ClientHello into two TCP segments (client)
+	bool OmitSni;                                // The client omits the server name from its ClientHello (client)
 } TRANSPORT_TLS_CONFIG;
 
 // What a TLS handshake gave: the version, the cipher suite and the key exchange group that the
@@ -380,5 +391,40 @@ UINT TransportTlsSetGroups();
 // whether it is a HelloRetryRequest; false, with info untouched, when data does not start with a
 // whole record holding a whole ServerHello.
 bool TransportTlsParseHello(const UCHAR *data, UINT size, TRANSPORT_TLS_INFO *info);
+
+// The own-decoy reverse proxy (TransportDecoy.c, CORE-S2-2 #70): the Trojan posture of the TLS
+// transport. After the TLS handshake a server reads the first application bytes of a stream. A
+// client that opens a valid Ranz session sends the first Noise handshake frame there, which
+// TransportDecoyIsHandshake recognises; a prober that sends anything else is reverse-proxied to a
+// website the operator runs on the loopback interface (TransportDecoyProxy), so it meets an ordinary
+// HTTPS site byte for byte over the same TLS session it opened. The TLS transport keeps the decoy
+// out of its own path: it reads the first frame and calls these with a small hook, giving the
+// session the bytes it read on a valid frame and the stream to the proxy on anything else. The proxy
+// opens its own TCP connection to the backend on the Windows TCP stack.
+
+// The encrypted side of a reverse-proxied stream, the prober's: the TLS transport's own stream read
+// and write, so the decoy module reaches the prober without the Schannel context
+typedef UINT(*TRANSPORT_DECOY_READ)(void *stream, void *buf, UINT size, UINT timeout);
+typedef bool(*TRANSPORT_DECOY_WRITE)(void *stream, const void *buf, UINT size);
+typedef struct TRANSPORT_DECOY_IO {
+	void *Stream;                // The prober's stream (a TLS_STREAM of TransportTls.c)
+	TRANSPORT_DECOY_READ Read;   // Read the prober's decrypted bytes
+	TRANSPORT_DECOY_WRITE Write; // Write bytes to the prober, which its TLS session encrypts
+} TRANSPORT_DECOY_IO;
+
+// Whether the first bytes of a stream are a valid Ranz handshake frame: at least a frame header and
+// a record type and suite, a length that is a record's (2..NOISE_MAX_RECORD) and no longer than the
+// bytes read, and a record that is a handshake record (NOISE_RECORD_HANDSHAKE) of a suite the node
+// runs (NoiseSuiteAvailable). It reads no further than size bytes, so the caller may give it as few
+// bytes as came. This is the structural test the session layer makes before it reads the handshake;
+// a prober that does not meet it is reverse-proxied to the decoy.
+bool TransportDecoyIsHandshake(const UCHAR *first, UINT size);
+
+// Reverse-proxy the prober of io to the decoy backend that address names ("host:port" on the
+// loopback interface): open a TCP connection to it, send the first size bytes (what the prober
+// already sent) to it, and then carry bytes both ways until either side ends or cancel (which may be
+// NULL) is set. false when the backend cannot be reached, so the caller closes the stream; true once
+// the proxy ran. The prober sees the backend's bytes byte for byte over its own TLS session.
+bool TransportDecoyProxy(const TRANSPORT_DECOY_IO *io, const char *address, const UCHAR *first, UINT size, HANDLE cancel);
 
 #endif // CORE_TRANSPORT_H
