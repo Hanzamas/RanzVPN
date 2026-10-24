@@ -1,0 +1,1 @@
+http=proxy.example:80;https=[2001:db8::1]:3128 socks=s.example:1080

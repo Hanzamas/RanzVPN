@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -67,6 +68,104 @@ func TestNoticeHasTheRqliteLicence(t *testing.T) {
 	have := strings.Fields(notice)
 	if !strings.Contains(strings.Join(have, " "), strings.Join(want, " ")) {
 		t.Errorf("the NOTICE does not hold the licence text of rqlite word for word: %s", firstDifference(have, want))
+	}
+}
+
+// noticeHasTheLicenceInFile checks that the NOTICE holds the words of the licence in the file that
+// the environment variable env names, which the jobs of ranz.yml download from the pinned release
+// or tag of what the licence is of (ONE-3, #312). The NOTICE has the licence text word for word,
+// so a new version, whose licence text may change, fails here until the NOTICE follows it.
+func noticeHasTheLicenceInFile(t *testing.T, env, what string) {
+	t.Helper()
+	file := os.Getenv(env)
+	if file == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("%s is not set: CI must provide the licence of %s", env, what)
+		}
+		t.Skipf("%s is not set: set it to the licence file of %s to run this test", env, what)
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Fields(string(b))
+	if len(want) == 0 {
+		t.Fatalf("%s holds no words", file)
+	}
+	have := strings.Fields(notice)
+	if !strings.Contains(strings.Join(have, " "), strings.Join(want, " ")) {
+		t.Errorf("the NOTICE does not hold the licence text of %s word for word: %s", what, firstDifference(have, want))
+	}
+}
+
+// The NOTICE holds the Prebuilt Binaries License of the Wintun release that CI pins (ONE-3, #312):
+// ranz carries its wintun.dll, and the licence asks for its text to go with the DLL.
+func TestNoticeHasTheWintunLicence(t *testing.T) {
+	noticeHasTheLicenceInFile(t, "WINTUN_LICENSE", "the pinned Wintun release")
+}
+
+// The NOTICE holds the MIT License of the XDP for Windows release that CI pins (ONE-3, #312): ranz
+// carries the files of its runtime.
+func TestNoticeHasTheXDPLicence(t *testing.T) {
+	noticeHasTheLicenceInFile(t, "XDP_LICENSE", "the pinned XDP for Windows release")
+}
+
+// The NOTICE holds the licence statement of SoftEther VPN as the hamcore of the C build holds it
+// (src/bin/hamcore/legal.txt): the copyright lines, the Apache License reference and the
+// disclaimer, word for word. SeLow is part of SoftEther VPN, and ranz carries its driver package
+// (ONE-3, #312). The text of the Apache License itself is in the NOTICE already, in the section of
+// GoBGP.
+func TestNoticeHasTheSeLowLicence(t *testing.T) {
+	b, err := os.ReadFile("../../../src/bin/hamcore/legal.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legal := string(b)
+	start := strings.Index(legal, "SoftEther VPN:")
+	if start < 0 {
+		t.Fatal("legal.txt has no section of SoftEther VPN")
+	}
+	section := legal[start:]
+	if end := strings.Index(section, "-------------------"); end >= 0 {
+		section = section[:end]
+	}
+	paragraphs := regexp.MustCompile(`\r?\n[ \t]*\r?\n`).Split(strings.TrimSpace(section), -1)
+	// The copyright lines, the licence and the disclaimer; the fourth paragraph says where the
+	// licence text is in legal.txt, which is not where it is in the NOTICE
+	if len(paragraphs) < 3 {
+		t.Fatalf("the section of SoftEther VPN in legal.txt has %d paragraphs, want at least 3", len(paragraphs))
+	}
+	have := strings.Join(strings.Fields(notice), " ")
+	for _, p := range paragraphs[:3] {
+		if !strings.Contains(have, strings.Join(strings.Fields(p), " ")) {
+			t.Errorf("the NOTICE does not hold this paragraph of the SoftEther VPN section of legal.txt: %.80s", strings.TrimSpace(p))
+		}
+	}
+	if !strings.Contains(have, "SeLow_x64.sys") || !strings.Contains(have, "SeLow_Win10_x64.cat") || !strings.Contains(have, "SeLow_x64.inf") {
+		t.Error("the NOTICE does not name the files of the SeLow package")
+	}
+}
+
+// The NOTICE names the version of each Payload that CI pins, as the fetch script of that Payload
+// pins it (ONE-3, #312), so a new pin fails here until the NOTICE follows it.
+func TestNoticeNamesThePinnedPayloads(t *testing.T) {
+	pinned := regexp.MustCompile(`\$Version\s*=\s*'([0-9.]+)'`)
+	have := strings.Join(strings.Fields(notice), " ")
+	for _, c := range []struct{ script, phrase string }{
+		{"fetch-wintun.ps1", "Wintun release "},
+		{"fetch-xdp.ps1", "Microsoft.XDP-for-Windows.Runtime.x64 "},
+	} {
+		b, err := os.ReadFile("../../../.github/scripts/" + c.script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := pinned.FindSubmatch(b)
+		if m == nil {
+			t.Fatalf("%s pins no version with $Version = '...'", c.script)
+		}
+		if want := c.phrase + string(m[1]); !strings.Contains(have, want) {
+			t.Errorf("%s pins %s, and the NOTICE has no %q", c.script, m[1], want)
+		}
 	}
 }
 

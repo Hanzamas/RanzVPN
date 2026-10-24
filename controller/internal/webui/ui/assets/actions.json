@@ -18,6 +18,7 @@
     {"name": "removeLicence", "method": "DELETE", "path": "/api/v1/licence", "role": "operator"},
     {"name": "tokens", "method": "GET", "path": "/api/v1/tokens", "role": "admin"},
     {"name": "createToken", "method": "POST", "path": "/api/v1/tokens", "role": "admin"},
-    {"name": "deleteToken", "method": "DELETE", "path": "/api/v1/tokens/{name}", "role": "admin"}
+    {"name": "deleteToken", "method": "DELETE", "path": "/api/v1/tokens/{name}", "role": "admin"},
+    {"name": "diagnosticsBundle", "method": "POST", "path": "/api/v1/diagnostics/bundle", "role": "operator"}
   ]
 }

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/logfile"
 )
 
 // A taken TLS port falls back, the fallback sticks once the port is free again (ADR-0020), and
@@ -69,5 +71,27 @@ func TestParseFlagsListenSet(t *testing.T) {
 	cfg, err = parseFlags([]string{"-listen", ":443"})
 	if err != nil || !cfg.listenSet {
 		t.Errorf("-listen :443: set %v, %v", cfg.listenSet, err)
+	}
+}
+
+// The service log keeps within 30 days and 256 MB unless the flags say otherwise (SDN-54), 0 is no
+// limit, and a limit that makes no sense is refused.
+func TestParseFlagsLogLimits(t *testing.T) {
+	cfg, err := parseFlags(nil)
+	if err != nil || cfg.logLimits() != logfile.DefaultLimits() {
+		t.Errorf("no flags: the log limits are %+v, %v", cfg.logLimits(), err)
+	}
+	cfg, err = parseFlags([]string{"-log-days", "7", "-log-mb", "64"})
+	if err != nil || cfg.logLimits() != logfile.LimitsOf(7, 64) {
+		t.Errorf("-log-days 7 -log-mb 64: the log limits are %+v, %v", cfg.logLimits(), err)
+	}
+	cfg, err = parseFlags([]string{"-log-days", "0", "-log-mb", "0"})
+	if err != nil || cfg.logLimits() != (logfile.Limits{}) {
+		t.Errorf("-log-days 0 -log-mb 0: the log limits are %+v, %v", cfg.logLimits(), err)
+	}
+	for _, args := range [][]string{{"-log-days", "-1"}, {"-log-mb", "-5"}, {"-log-days", "36501"}, {"-log-mb", "1048577"}} {
+		if _, err := parseFlags(args); err == nil {
+			t.Errorf("%v was accepted", args)
+		}
 	}
 }

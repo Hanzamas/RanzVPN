@@ -71,6 +71,15 @@
 // lease duration, so the leader steps down, and then the next leader loads the restored store. In
 // a cluster, restore runs while the members run: rqlite loads the backup into every member.
 //
+// The service log of the Windows service is controller.log in the data directory, and it stays
+// within an age limit and a disk limit (SDN-54, #247): -log-days (30 by default) and -log-mb (256),
+// 0 for no limit. A file of the log that is full, or that holds an earlier day, is moved aside; the
+// files moved aside are deleted when their last record is older than the age limit, and, the oldest
+// first, when they would take the room that the disk limit leaves for the active file. An operator
+// pulls a bundle of the logs, the configuration and the status of the controller from the web UI
+// (the Diagnostics page, POST /api/v1/diagnostics/bundle); `ranz doctor --bundle` makes one of a
+// host.
+//
 // The licence key (ADR-0036) is installed with `ranz licence -f FILE` and kept in rqlite. It
 // must be signed with a vendor key that the release build links in (internal/licence); without
 // one, the Personal tier is in force.
@@ -104,6 +113,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/logfile"
 	"github.com/Hanzamas/RanzVPN/controller/internal/mitigation"
 	"github.com/Hanzamas/RanzVPN/controller/internal/payload"
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
@@ -152,7 +162,29 @@ type config struct {
 	name          string
 	advertise     string
 	lease         time.Duration
+	logDays       int
+	logMB         int
 	schema        controlpb.SchemaVersion
+}
+
+// maxLogDays and maxLogMB bound -log-days and -log-mb: a century, and a tebibyte. They keep the
+// limits of the service log, which the flags give in days and megabytes, within what its clock and
+// its sizes hold.
+const (
+	maxLogDays = 36500
+	maxLogMB   = 1 << 20
+)
+
+// logLimits returns the age and disk limits of the service log (SDN-54, internal/logfile).
+func (cfg config) logLimits() logfile.Limits {
+	return logfile.LimitsOf(cfg.logDays, cfg.logMB)
+}
+
+// DefaultDataDir returns the data directory of a controller that is started without -data:
+// %ProgramData%\Ranz\controller on Windows, /var/lib/ranz-controller elsewhere. `ranz doctor
+// --bundle` looks for the service log there.
+func DefaultDataDir() string {
+	return defaultDataDir()
 }
 
 func parseFlags(args []string) (config, error) {
@@ -178,6 +210,8 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.advertise, "advertise", "", "host:port of the TLS port as nodes and the other members reach it; the -listen address when it names a host and this is empty")
 	flags.DurationVar(&cfg.lease, "lease", cluster.DefaultLease, "the lease duration of the leader: a standby takes over this long after the leader is lost")
 	flags.IntVar(&schema, "schema-version", 0, "the control schema version to run as: the newest of this release by default, or the one before it during a rolling upgrade of a cluster, until every member runs this release")
+	flags.IntVar(&cfg.logDays, "log-days", logfile.DefaultMaxAgeDays, "the age limit of the service log in days: a file of the log whose last record is older is deleted; 0 for no limit (the Windows service writes the log, elsewhere the controller logs to its standard error)")
+	flags.IntVar(&cfg.logMB, "log-mb", logfile.DefaultMaxMB, "the disk limit of the service log in megabytes: its files never take more together, and the oldest are deleted first; 0 for no limit")
 	if err := flags.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -211,6 +245,10 @@ func parseFlags(args []string) (config, error) {
 		problem = errors.New("-rqlite-expect needs -rqlite-join")
 	case cfg.external && cfg.rqlited != "":
 		problem = errors.New("-rqlite-external and -rqlited exclude each other")
+	case cfg.logDays < 0 || cfg.logDays > maxLogDays:
+		problem = fmt.Errorf("-log-days %d is not between 0 (no limit) and %d", cfg.logDays, maxLogDays)
+	case cfg.logMB < 0 || cfg.logMB > maxLogMB:
+		problem = fmt.Errorf("-log-mb %d is not between 0 (no limit) and %d", cfg.logMB, maxLogMB)
 	}
 	if problem != nil {
 		fmt.Fprintln(flags.Output(), problem)
@@ -348,8 +386,9 @@ func Main(args []string) int {
 
 // hooks are what the Windows service adds to a run.
 type hooks struct {
-	ready func()           // called once everything serves
-	warn  func(msg string) // a warning the operator must see, in the Application log
+	ready   func()           // called once everything serves
+	warn    func(msg string) // a warning the operator must see, in the Application log
+	logFile string           // the active file of the service log, empty while the log is the standard error
 }
 
 // run runs the controller until ctx ends: rqlited if the configuration asks for it, the store,
@@ -461,6 +500,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 			ControlAddress: ln.Addr().String(),
 			TLSFingerprint: keys.Fingerprint(cert),
 			Capabilities:   api.Capabilities{TLSPort: tlsPortValue, TLSPortFallback: fell, PlainHTTP: plainWhere},
+			Diagnostics:    &api.Diagnostics{LogFile: h.logFile, LogLimits: cfg.logLimits()},
 		},
 		// The first start creates VRF default and the starter rule (ADR-0034)
 		Defaults: true,

@@ -163,6 +163,27 @@ typedef struct CONTROL_STATE {
 // on the client's thread; state is valid until it returns.
 typedef void(CONTROL_STATE_PROC)(void *param, const CONTROL_STATE *state);
 
+// The architectures of the Capabilities (Architecture of the control protocol)
+#define CONTROL_ARCHITECTURE_UNSPECIFIED 0
+#define CONTROL_ARCHITECTURE_X64         1
+#define CONTROL_ARCHITECTURE_ARM64       2
+
+// The Capabilities that a node reports in its Hello (Capabilities of the control protocol, ADR-0033; ONE-3,
+// #312): the facts about its host that its owner can tell. A Capability that the owner leaves out counts as
+// missing for the controller.
+typedef struct CONTROL_CAPS {
+	// The architecture of the host (CONTROL_ARCHITECTURE_*)
+	UINT Architecture;
+	// The SeLow driver is installed (x64 only)
+	bool SeLow;
+	// The XDP for Windows runtime is installed and works
+	bool Xdp;
+} CONTROL_CAPS;
+
+// Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node
+// whose Capabilities changed tells the controller by its next stream. It runs on the client's thread.
+typedef void(CONTROL_CAPS_PROC)(void *param, CONTROL_CAPS *caps);
+
 // How a client runs
 typedef struct CONTROL_CONFIG {
 	TRANSPORT *Transport;                 // The transport of the stream (see above)
@@ -173,6 +194,11 @@ typedef struct CONTROL_CONFIG {
 	CONTROL_STATE_PROC *Proc;             // Takes each state applied
 	void *Param;                          // The first parameter of Proc
 	CONTROL_LEASES *Leases;               // The leases that the client reports after each Hello and whenever they change, NULL for none: the owner's, which must outlive the client
+
+	// Tells the Capabilities of the node for each Hello, NULL for none: the Hello then holds none
+	CONTROL_CAPS_PROC *CapsProc;
+	// The first parameter of CapsProc
+	void *CapsParam;
 } CONTROL_CONFIG;
 
 // How a client stands (ControlGetStatus)

@@ -41,6 +41,10 @@ src/Core  TransportNoiseReceive  fuzz_transport
 src/Core  TransportRead          exempt  hands the read of a stream to the Read procedure of its transport; parses nothing (TransportNoiseReceive reads the frames)
 # The TLS transport (CORE-S2-1 #69): the ServerHello among the first records of a TLS server
 src/Core  TransportTlsParseHello  fuzz_transport
+# The outbound path (SDN-61 #254): what an HTTP or SOCKS5 proxy answers, and the proxy list that a PAC script gives
+src/Core  TransportProxyParseHttp   fuzz_transport
+src/Core  TransportProxyParseSocks  fuzz_transport
+src/Core  TransportProxyParseList   fuzz_transport
 # The Trojan posture (CORE-S2-2 #70): the first bytes a server with a decoy reads after the TLS handshake, and the
 # server name in the ClientHello that a client splits; no parser word in their names, listed as parsers.
 # TransportDecoyProxy relays bytes between the prober and the backend and decodes none, so it is not a parser.
@@ -86,6 +90,8 @@ src/Cedar  NodeMirrorCopy  fuzz_mirror
 # The DHCP responder of an L2 Network (SDN-43 #236) reads the frames that the members of the switch of the Network send:
 # the DHCP messages of the clients and of a DHCP server of the LAN, and the ARP requests
 src/Cedar  NodeDhcpInput  fuzz_nodedhcp
+# The Capabilities of the Node (ONE-3 #312) come from the host, not from a peer
+src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: it asks Windows for the architecture of the host, whether the services SeLow and xdp are registered and whether three files of System32 exist
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
@@ -140,6 +146,11 @@ controller/internal/certgen  LoadAuthority  FuzzLoadAuthority
 controller/internal/throughput  ReadRequest     FuzzRead
 controller/internal/throughput  ReadReport      FuzzRead
 controller/internal/throughput  Receiver.Input  FuzzRead
+
+# The diagnostics bundle (SDN-54 #247): the text of a log and the JSON documents of a bundle, which Redact and RedactJSON read
+# before anything leaves the host
+controller/internal/bundle  Redact      FuzzRedact
+controller/internal/bundle  RedactJSON  FuzzRedactJSON
 
 # The pipe protocol of the BGP sidecar (CORE-S7-1 #82)
 ranz-bgp/internal/sidecar  Reader.Read  FuzzRead

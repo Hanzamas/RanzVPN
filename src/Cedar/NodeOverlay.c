@@ -32,6 +32,7 @@
 
 #include "Core/Control.h"
 
+#include "NodeCaps.h"
 #include "NodeInternal.h"
 
 // One peer of the overlay, from a Peer object of the desired state: a next hop of the forwarding tables
@@ -634,6 +635,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Param = ov;
 	// The leases of the DHCP responders go on the control stream (NodeDhcp.c; SDN-43, #236)
 	cc.Leases = NodeDhcpStart(n);
+	// The Hello of each stream carries the Capabilities of the host (NodeCaps.c; ONE-3, #312)
+	cc.CapsProc = NodeCapsProc;
 
 	ov->Thread = CreateThread(NULL, 0, NodeOverlayThread, ov, 0, &thread_id);
 	ov->Control = (ov->Thread != NULL && cfg->Control != NULL ? ControlStart(&cc) : NULL);
