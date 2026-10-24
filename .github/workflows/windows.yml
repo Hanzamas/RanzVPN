@@ -778,7 +778,7 @@ jobs:
         cmake -S . -B build-msvc -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_C_COMPILER=cl -DBUILD_NUMBER=0 "-DCMAKE_C_FLAGS=/DWIN32 /D_WINDOWS /analyze"
         if errorlevel 1 exit /b 1
 
-        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan coreswitch > build-msvc\analyze.txt 2>&1
+        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan coreswitch corefrontdoor > build-msvc\analyze.txt 2>&1
         set BUILD_EXIT=%ERRORLEVEL%
         type build-msvc\analyze.txt
         if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
