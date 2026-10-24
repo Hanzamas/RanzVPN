@@ -1,0 +1,48 @@
+# The reminder to bump the browser parrots of the mimicry sidecar (CORE-P2-1 #85, ADR-0023). `ranz mimic`
+# sends the ClientHello of a browser, Edge by default, which uTLS has as a parrot for each browser
+# version; go.mod pins uTLS and controller/internal/mimic/fingerprint.go pins the Chrome version of the
+# parrot and the day it was last reviewed. A browser makes a major release every four weeks, so a
+# parrot goes stale, and this workflow fails once the review is more than six weeks old or uTLS has a
+# newer release or a newer parrot than the pin (.github/scripts/mimic-pin.py): a failed scheduled run is
+# the reminder, and a bump of the pin sets the day of the review to today.
+#
+# Every run starts with the tests of the script, which need no network. A pull request that changes the
+# pin or the script also checks the pin as it stands, offline; the schedule, and a run by hand, ask
+# GitHub for the releases of uTLS and Google for the stable Chrome as well.
+
+name: mimic-pin
+
+on:
+  schedule:
+  - cron: '23 5 * * 1'
+  workflow_dispatch:
+  pull_request:
+    paths:
+    - '.github/workflows/mimic-pin.yml'
+    - '.github/scripts/mimic-pin.py'
+    - 'controller/internal/mimic/fingerprint.go'
+    - 'go.mod'
+
+permissions:
+  contents: read
+
+jobs:
+  pin:
+    name: The browser parrots of ranz mimic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: The tests of the script
+      run: python .github/scripts/mimic-pin.py selftest
+    - name: The pin as it stands
+      if: github.event_name == 'pull_request'
+      run: python .github/scripts/mimic-pin.py check --offline
+    - name: The pin against the releases of uTLS and the stable Chrome
+      if: github.event_name != 'pull_request'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: python .github/scripts/mimic-pin.py check
