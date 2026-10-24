@@ -132,3 +132,9 @@ controller/internal/throughput  Receiver.Input  FuzzRead
 
 # The pipe protocol of the BGP sidecar (CORE-S7-1 #82)
 ranz-bgp/internal/sidecar  Reader.Read  FuzzRead
+
+# The mimicry sidecar (CORE-P2-1 #85): the messages that the node writes into its control pipe, and the frames that the
+# other sidecar sends through the TLS session (frameConn reads them through frameReader)
+controller/internal/mimic  Reader.Read       FuzzRead
+controller/internal/mimic  frameReader.Read  FuzzFrame
+controller/internal/mimic  frameConn.Read    FuzzFrame  via frameReader
