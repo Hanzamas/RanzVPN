@@ -4,22 +4,21 @@
 //
 // The ranzvpnserver service of a PC does not open a control stream to the Controller yet, so it cannot join an Intent by
 // itself (the Gaps of docs/first-test.md). This test is the Node that does. It runs the overlay of two nodes of the new
-// core, node-a and node-b, with the static keys of sdntrace.c, and opens the control stream of each to a running ranz
-// controller as sdntrace does (Core/Control.h, through NodeOverlayStart). The Intent of the controller holds a Node
-// resource with each of those keys, so each node applies its desired state, acknowledges its Generation and gets its
-// address from the automatic pool of VRF default. The Noise session between the two nodes runs on the in-process loopback
-// transport.
-// - node-a brings up a real Wintun adapter for VRF default, as the client role of the Node does (NodeClient.c): the adapter
-//   holds the address of node-a and a route to the Network of VRF default, and the packets of the IP stack of the machine on
+// core, pc-a and pc-b, with the static keys of sdntrace.c, and opens the control stream of each to a running ranz controller
+// as sdntrace does (Core/Control.h, through NodeOverlayStart). The Intent of the controller holds a Node resource with each
+// of those keys, so each node applies its desired state, acknowledges its Generation and gets its address from the
+// automatic pool of VRF default. The Noise session between the two nodes runs on the in-process loopback transport.
+// - pc-b brings up a real Wintun adapter for VRF default, as the client role of the Node does (NodeClient.c): the adapter
+//   holds the address of pc-b and a route to the Network of VRF default, and the packets of the IP stack of the machine on
 //   it go into the overlay.
-// - node-b has a fake host that answers an ICMP echo request to its address. Windows delivers a packet for an address of
-//   the machine itself on the machine, so two adapters of one machine could not ping each other over the overlay: what
-//   this test can show is the ping of the stack of the machine to node-b, through the adapter of node-a, the overlay and back.
+// - pc-a has a fake host that answers an ICMP echo request to its address. Windows delivers a packet for an address of the
+//   machine itself on the machine, so two adapters of one machine could not ping each other over the overlay: what this
+//   test can show is the ping of the stack of the machine to pc-a, through the adapter of pc-b, the overlay and back.
 // "vpntest firsttest <host:port> <key> [<ready file> <stop file>]": the address of the controller's TLS port and its static
 // key in base64. With the two files, the test creates the ready file once both nodes joined and the adapter holds its
-// address, runs until the stop file exists, and then checks that the echo requests of the machine reached the fake host and
-// that their replies came back into the adapter. Without them it runs until Ctrl+C and only prints what it saw. Print
-// "FIRSTTEST TEST OK" only when every check passes. Needs administrator rights and wintun.dll next to vpntest
+// address, runs until the stop file exists or Ctrl+C, and then checks that the echo requests of the machine reached the
+// fake host and that their replies came back into the adapter. Without them it runs until Ctrl+C and only prints what it
+// saw. Print "FIRSTTEST TEST OK" only when every check passes. Needs administrator rights and wintun.dll next to vpntest
 // (.github/scripts/fetch-wintun.ps1, or the copy that ranz install writes into the Ranz folder).
 
 #include "controltls.h"
@@ -53,11 +52,13 @@
 #define	FIRSTTEST_HOLD			3600000		// The test waits this long for the stop file or Ctrl+C (ms)
 #define	FIRSTTEST_POLL			100			// Poll interval of observable state (ms)
 #define	FIRSTTEST_NUM_NODES		2
+#define	FIRSTTEST_HOST_NODE		0			// The index of pc-a, whose host is the fake host
+#define	FIRSTTEST_ADAPTER_NODE	1			// The index of pc-b, whose host is its Wintun adapter
 #define	FIRSTTEST_MAX_PACKET	2048
 
 // The two nodes: their names in the intent, and the X25519 public keys of their static scalars 1, 2, ... 32 and 33,
 // 34, ... 64, which sdntrace.c and the controller conformance tests use as well (controller/internal/controller)
-static char *firsttest_names[FIRSTTEST_NUM_NODES] = {"node-a", "node-b"};
+static char *firsttest_names[FIRSTTEST_NUM_NODES] = {"pc-a", "pc-b"};
 static char *firsttest_keys[FIRSTTEST_NUM_NODES] = {"B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns="};
 
 // Set by Ctrl+C: the test goes on from its wait to its checks and its clean-up
@@ -79,7 +80,7 @@ typedef struct FIRSTTEST_NODE
 	NODE *Node;
 } FIRSTTEST_NODE;
 
-// The fake host of node-b: it answers the echo requests to its address
+// The fake host of pc-a: it answers the echo requests to its address
 typedef struct FIRSTTEST_HOST
 {
 	volatile LONG Echoes;				// Echo requests that it answered
@@ -165,6 +166,49 @@ static void FirstTestNewDir(wchar_t *dir, UINT size, char *name)
 	}
 }
 
+// The lines of the node log in a data directory that tell about the overlay and the adapters, for a node that did not join
+static void FirstTestPrintLog(char *name, wchar_t *dir)
+{
+	wchar_t log_dir[MAX_PATH];
+
+	ConbinePathW(log_dir, sizeof(log_dir), dir, NODE_LOG_DIR_NAME);
+	DIRLIST *d = EnumDirW(log_dir);
+
+	for (UINT i = 0;d != NULL && i < d->NumFiles;i++)
+	{
+		DIRENT *e = d->File[i];
+		wchar_t path[MAX_PATH];
+
+		if (e->Folder)
+		{
+			continue;
+		}
+
+		ConbinePathW(path, sizeof(path), log_dir, e->FileNameW);
+		BUF *b = ReadDumpW(path);
+		if (b == NULL)
+		{
+			continue;
+		}
+
+		char *text = ZeroMalloc(b->Size + 1);
+		Copy(text, b->Buf, b->Size);
+		TOKEN_LIST *t = ParseToken(text, "\r\n");
+		for (UINT j = 0;j < t->NumTokens;j++)
+		{
+			if (InStr(t->Token[j], "Overlay") || InStr(t->Token[j], "Wintun") || InStr(t->Token[j], "VRF adapters") || InStr(t->Token[j], "Peers"))
+			{
+				Print("  [LOG] %s: %s\n", name, t->Token[j]);
+			}
+		}
+		FreeToken(t);
+		Free(text);
+		FreeBuf(b);
+	}
+
+	FreeDir(d);
+}
+
 // Delete the files of a directory, then the directory (it holds no subdirectory)
 static void FirstTestDeleteDir(wchar_t *dir)
 {
@@ -190,9 +234,9 @@ static void FirstTestDeleteDir(wchar_t *dir)
 // The hosts of the two nodes
 //
 
-// The host of node-b, on the thread of its overlay, an online reader of its tables: an echo request gets its reply, into
-// the overlay in the VRF that it came in
-static void FirstTestServerHost(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size)
+// The host of pc-a, on the thread of its overlay, an online reader of its tables: an echo request gets its reply, into the
+// overlay in the VRF that it came in
+static void FirstTestFakeHost(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size)
 {
 	FIRSTTEST_HOST *h = (FIRSTTEST_HOST *)param;
 	UCHAR reply[FIRSTTEST_MAX_PACKET];
@@ -225,7 +269,7 @@ static void FirstTestServerHost(NODE *n, void *param, UINT vrf_id, const UCHAR *
 	NodeOverlayInput(n, vrf_id, reply, total);
 }
 
-// The host of node-a: its adapter of the VRF, which the test plugs into its overlay as the client role does
+// The host of pc-b: its adapter of the VRF, which the test plugs into its overlay as the client role does
 static void FirstTestToHost(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size)
 {
 	NodeVrfAdaptersSend((NODE_VRF_ADAPTERS *)param, vrf_id, packet, size);
@@ -356,7 +400,7 @@ static bool FirstTestGone(UINT64 luid)
 	return false;
 }
 
-// Whether the adapter of node-a holds its address within FIRSTTEST_BOUND, and which adapter it is: its status into adapter
+// Whether the adapter of pc-b holds its address within FIRSTTEST_BOUND, and which adapter it is: its status into adapter
 static bool FirstTestWaitAdapter(NODE_VRF_ADAPTERS *set, UINT addr, NODE_VRF_ADAPTER_STATUS *adapter)
 {
 	NODE_VRF_ADAPTER_STATUS *list = ZeroMalloc(sizeof(NODE_VRF_ADAPTER_STATUS) * NODE_VRF_MAX_ADAPTERS);
@@ -378,7 +422,7 @@ static bool FirstTestWaitAdapter(NODE_VRF_ADAPTERS *set, UINT addr, NODE_VRF_ADA
 	return held;
 }
 
-// Wait for the stop file, Ctrl+C or the end of FIRSTTEST_HOLD: whether it was the first or the second
+// Wait for the stop file, Ctrl+C or the end of FIRSTTEST_HOLD: whether it was one of the first two
 static bool FirstTestHold(char *stop_file)
 {
 	UINT64 end = Tick64() + FIRSTTEST_HOLD;
@@ -398,7 +442,7 @@ static bool FirstTestHold(char *stop_file)
 	return false;
 }
 
-RANZ_TEST("firsttest", firsttest_test, "Stand-in Nodes of the first test: firsttest <host:port> <key> [<ready file> <stop file>]: two nodes join VRF default of a running ranz controller, node-a with a Wintun adapter, node-b with a fake host (docs/first-test.md, .github/scripts/first-test.ps1).");
+RANZ_TEST("firsttest", firsttest_test, "Stand-in Nodes of the first test: firsttest <host:port> <key> [<ready file> <stop file>]: two nodes join VRF default of a running ranz controller, pc-b with a Wintun adapter, pc-a with a fake host (docs/first-test.md, .github/scripts/first-test.ps1).");
 void firsttest_test(UINT num, char **arg)
 {
 	FIRSTTEST_CTX *ctx = ZeroMalloc(sizeof(FIRSTTEST_CTX));
@@ -418,11 +462,18 @@ void firsttest_test(UINT num, char **arg)
 	bool holding = false;
 	bool ok = false;
 
-	Print("First test: two nodes join VRF default of the controller, node-a with a Wintun adapter, node-b with a fake host\n");
+	Print("First test: two nodes join VRF default of the controller, pc-b with a Wintun adapter, pc-a with a fake host\n");
 
 	firsttest_stop = CreateEventW(NULL, TRUE, FALSE, NULL);
 	SetConsoleCtrlHandler(FirstTestCtrl, TRUE);
 	Zero(&adapter, sizeof(adapter));
+
+	// A ready file or a stop file of an earlier run is not this run's
+	if (ready_file != NULL)
+	{
+		DeleteFileA(ready_file);
+		DeleteFileA(stop_file);
+	}
 
 	// The controller: its address and its static key
 	Zero(controller_key, sizeof(controller_key));
@@ -451,7 +502,7 @@ void firsttest_test(UINT num, char **arg)
 		goto END;
 	}
 
-	// The nodes, each with its static key; node-a with the adapter of its host, node-b with the fake host
+	// The nodes, each with its static key; pc-b with the adapter of its host, pc-a with the fake host
 	StrToUni(adapter_name, sizeof(adapter_name), NODE_CLIENT_ADAPTER);
 	for (UINT i = 0;i < FIRSTTEST_NUM_NODES;i++)
 	{
@@ -484,9 +535,9 @@ void firsttest_test(UINT num, char **arg)
 		Copy(c.ControllerKey, controller_key, PEER_KEY_SIZE);
 		c.Data = loopback;
 		c.Key = &t->Key;
-		if (i == 0)
+		if (i == FIRSTTEST_ADAPTER_NODE)
 		{
-			// The adapters of the VRFs of node-a are its host: the name of the client role, so "Ranz default"
+			// The adapters of the VRFs of pc-b are its host, named as the client role names them: "Ranz default"
 			set = NodeVrfAdaptersNew(t->Node, adapter_name, t->Key.Public, false);
 			c.Adapter = FirstTestToHost;
 			c.AdapterParam = set;
@@ -495,11 +546,11 @@ void firsttest_test(UINT num, char **arg)
 		}
 		else
 		{
-			c.Adapter = FirstTestServerHost;
+			c.Adapter = FirstTestFakeHost;
 			c.AdapterParam = host;
 		}
 		Format(what, sizeof(what), "%s: its overlay runs, with its control stream to %s", t->Name, arg[0]);
-		FirstTestCheck(ctx, (i != 0 || set != NULL) && NodeOverlayStart(t->Node, &c), what, "NodeVrfAdaptersNew (wintun.dll next to vpntest?) or NodeOverlayStart failed");
+		FirstTestCheck(ctx, (i != FIRSTTEST_ADAPTER_NODE || set != NULL) && NodeOverlayStart(t->Node, &c), what, "NodeVrfAdaptersNew (wintun.dll next to vpntest?) or NodeOverlayStart failed");
 	}
 
 	// Both join VRF default: a state with an address from its pool, the other node as the peer, the session up
@@ -509,8 +560,8 @@ void firsttest_test(UINT num, char **arg)
 
 	if (joined)
 	{
-		UINT addr_a = FirstTestAddress(nodes[0].Node);
-		UINT addr_b = FirstTestAddress(nodes[1].Node);
+		UINT addr_a = FirstTestAddress(nodes[FIRSTTEST_HOST_NODE].Node);
+		UINT addr_b = FirstTestAddress(nodes[FIRSTTEST_ADAPTER_NODE].Node);
 		char a[64];
 		char b[64];
 		char detail[MAX_SIZE * 2];
@@ -518,37 +569,37 @@ void firsttest_test(UINT num, char **arg)
 
 		IPToStr32(a, sizeof(a), addr_a);
 		IPToStr32(b, sizeof(b), addr_b);
-		FirstTestCheck(ctx, addr_a != addr_b && addr_a != 0 && addr_b != 0, "the two addresses differ", "node-a %s, node-b %s", a, b);
+		FirstTestCheck(ctx, addr_a != addr_b && addr_a != 0 && addr_b != 0, "the two addresses differ", "pc-a %s, pc-b %s", a, b);
 
-		held = FirstTestWaitAdapter(set, addr_a, &adapter);
-		FirstTestCheck(ctx, held, "the Wintun adapter of node-a for VRF default holds the address of node-a", "no adapter with the address %s within %u ms", a, FIRSTTEST_BOUND);
+		held = FirstTestWaitAdapter(set, addr_b, &adapter);
+		FirstTestCheck(ctx, held, "the Wintun adapter of pc-b for VRF default holds the address of pc-b", "no adapter with the address %s within %u ms", b, FIRSTTEST_BOUND);
 
 		if (held)
 		{
-			Print("  [INFO] node-a: adapter \"%S\", interface %u\n", adapter.Name, adapter.InterfaceIndex);
-			FirstTestCheck(ctx, FirstTestBestRoute(adapter.InterfaceLuid, addr_b, addr_a, detail, sizeof(detail)), "Windows takes the adapter of node-a to node-b, with the address of node-a as the source", "%s", detail);
+			Print("  [INFO] pc-b: adapter \"%S\", interface %u\n", adapter.Name, adapter.InterfaceIndex);
+			FirstTestCheck(ctx, FirstTestBestRoute(adapter.InterfaceLuid, addr_a, addr_b, detail, sizeof(detail)), "Windows takes the adapter of pc-b to pc-a, with the address of pc-b as the source", "%s", detail);
 
 			// The script and the person at the console read the addresses and the adapter from these lines
-			Print("FIRSTTEST NODE node-a ADDRESS %s ADAPTER \"%S\"\n", a, adapter.Name);
-			Print("FIRSTTEST NODE node-b ADDRESS %s HOST fake\n", b);
+			Print("FIRSTTEST NODE pc-a ADDRESS %s HOST fake\n", a);
+			Print("FIRSTTEST NODE pc-b ADDRESS %s ADAPTER \"%S\"\n", b, adapter.Name);
 			Print("FIRSTTEST READY\n");
 
 			if (ready_file != NULL)
 			{
 				HANDLE f = CreateFileA(ready_file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
-				FirstTestCheck(ctx, f != INVALID_HANDLE_VALUE, "the ready file of the script", "CreateFile %s: error %u", ready_file, (UINT)GetLastError());
+				FirstTestCheck(ctx, f != INVALID_HANDLE_VALUE, "the ready file", "CreateFile %s: error %u", ready_file, (UINT)GetLastError());
 				if (f != INVALID_HANDLE_VALUE)
 				{
 					CloseHandle(f);
 				}
 			}
 
-			Print("Ping %s from this machine now. Stop the test with Ctrl+C%s.\n", b, (stop_file != NULL ? " or the stop file" : ""));
+			Print("Ping %s from this machine now. Stop the test with Ctrl+C%s.\n", a, (stop_file != NULL ? " or by creating the stop file" : ""));
 			holding = FirstTestHold(stop_file);
 			FirstTestShowNodes(nodes);
 
-			// What the ping of the machine did: the fake host of node-b answered it, and the replies came into the adapter
+			// What the ping of the machine did: the fake host of pc-a answered it, and the replies came into the adapter
 			NODE_VRF_ADAPTER_STATUS *list = ZeroMalloc(sizeof(NODE_VRF_ADAPTER_STATUS) * NODE_VRF_MAX_ADAPTERS);
 			UINT listed = NodeVrfAdaptersGetStatus(set, list, NODE_VRF_MAX_ADAPTERS);
 			UINT64 from_host = (listed == 1 ? list[0].FromHost : 0);
@@ -556,27 +607,27 @@ void firsttest_test(UINT num, char **arg)
 			LONG echoes = ReadAcquire(&host->Echoes);
 
 			Free(list);
-			Print("  [INFO] the adapter of node-a took %I64u packets of the machine and put %I64u into the machine; the fake host of node-b answered %d echo requests and saw %d other packets\n",
+			Print("  [INFO] the adapter of pc-b took %I64u packets of the machine and put %I64u into the machine; the fake host of pc-a answered %d echo requests and saw %d other packets\n",
 				from_host, to_host, (int)echoes, (int)ReadAcquire(&host->Other));
 			if (stop_file != NULL)
 			{
-				FirstTestCheck(ctx, holding && echoes > 0, "the echo requests of the machine reached the host of node-b through the adapter of node-a and the overlay", "stopped by the file %u, answered %d", (UINT)holding, (int)echoes);
-				FirstTestCheck(ctx, to_host > 0, "the echo replies of node-b came back into the adapter of node-a", "%I64u packets", to_host);
+				FirstTestCheck(ctx, holding && echoes > 0, "the echo requests of the machine reached the host of pc-a through the adapter of pc-b and the overlay", "stopped by the file or Ctrl+C %u, answered %d", (UINT)holding, (int)echoes);
+				FirstTestCheck(ctx, to_host > 0, "the echo replies of pc-a came back into the adapter of pc-b", "%I64u packets", to_host);
 			}
 		}
 	}
 
-	// node-a's overlay stops, which halts its adapter, then the adapter goes with its set
-	if (nodes[0].Node != NULL)
+	// The overlay of pc-b stops, which halts its adapter, then the adapter goes with its set
+	if (nodes[FIRSTTEST_ADAPTER_NODE].Node != NULL)
 	{
-		NodeOverlayStop(nodes[0].Node);
+		NodeOverlayStop(nodes[FIRSTTEST_ADAPTER_NODE].Node);
 	}
 	if (set != NULL)
 	{
 		NodeVrfAdaptersFree(set);
 		if (adapter.InterfaceLuid != 0)
 		{
-			FirstTestCheck(ctx, FirstTestGone(adapter.InterfaceLuid), "once the adapter of node-a is freed, its interface is gone", "the interface is still there");
+			FirstTestCheck(ctx, FirstTestGone(adapter.InterfaceLuid), "once the adapter of pc-b is freed, its interface is gone", "the interface is still there");
 		}
 	}
 
@@ -593,6 +644,12 @@ void firsttest_test(UINT num, char **arg)
 		NodeStop(t->Node);
 		FreeNode(t->Node);
 		PeerKeyClose(&t->Key);
+
+		// The node log is written once the node is freed
+		if (ctx->NumFailed != 0)
+		{
+			FirstTestPrintLog(t->Name, t->Dir);
+		}
 		ConbinePathW(log_dir, sizeof(log_dir), t->Dir, NODE_LOG_DIR_NAME);
 		FirstTestDeleteDir(log_dir);
 		FirstTestDeleteDir(t->Dir);
