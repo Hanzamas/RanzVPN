@@ -6,45 +6,34 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
 
-// Temporary (ONE-3, #312), removed with .github/workflows/diag-xdp-sign.yml: the verdict of WinVerifyTrust on the
-// files of the pinned XDP runtime, for the settings of verifyAuthenticode and for the ones it does not use.
-func winVerifyTrustWith(path string, revocation, provFlags uint32) uint32 {
-	p, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return 0xFFFFFFFF
-	}
-	file := wintrustFileInfo{cbStruct: uint32(unsafe.Sizeof(wintrustFileInfo{})), filePath: p}
-	data := wintrustData{
-		cbStruct:         uint32(unsafe.Sizeof(wintrustData{})),
-		uiChoice:         wtdUINone,
-		revocationChecks: revocation,
-		unionChoice:      wtdChoiceFile,
-		file:             unsafe.Pointer(&file),
-		stateAction:      wtdStateActionVerify,
-		provFlags:        provFlags,
-	}
-	action := actionGenericVerifyV2
-	r, _, _ := procWinVerifyTrust.Call(0, uintptr(unsafe.Pointer(&action)), uintptr(unsafe.Pointer(&data)))
-	data.stateAction = wtdStateActionClose
-	procWinVerifyTrust.Call(0, uintptr(unsafe.Pointer(&action)), uintptr(unsafe.Pointer(&data)))
-	return uint32(r)
-}
-
+// Temporary (ONE-3, #312), removed with .github/workflows/diag-xdp-sign.yml: the verdict of the catalog check on the
+// files of the pinned XDP runtime, and on a copy of each with one byte changed.
 func TestDiagVerifyEachFile(t *testing.T) {
 	dir := os.Getenv("DIAG_DIR")
 	if dir == "" {
 		t.Skip("DIAG_DIR names no folder")
 	}
-	for _, name := range []string{"xdp.sys", "xdpapi.dll", "xdp.cat"} {
+	catalog := filepath.Join(dir, "xdp.cat")
+	changedDir := t.TempDir()
+	for _, name := range []string{"xdp.sys", "xdpapi.dll", "xdp.cat", "xdp.inf", "xdppcw.man"} {
 		path := filepath.Join(dir, name)
-		t.Logf("%s: verifyAuthenticode: %v", name, verifyAuthenticode(path))
-		t.Logf("%s: no revocation check, cache only: %#08x", name, winVerifyTrustWith(path, wtdRevokeNone, wtdCacheOnlyURLRetrieval))
-		t.Logf("%s: no revocation check, network allowed: %#08x", name, winVerifyTrustWith(path, wtdRevokeNone, 0))
-		t.Logf("%s: whole chain revocation check, network allowed: %#08x", name, winVerifyTrustWith(path, 1, 0))
+		for _, alg := range []string{"SHA256", "SHA1"} {
+			code, err := catalogVerdict(catalog, path, alg)
+			t.Logf("%s: member of xdp.cat, hashed with %s: %#08x, %v", name, alg, code, err)
+		}
+		t.Logf("%s: verifyCatalogMember: %v", name, verifyCatalogMember(catalog, path))
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data[len(data)/2] ^= 0xFF
+		changed := filepath.Join(changedDir, name)
+		if err := os.WriteFile(changed, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%s, one byte changed: verifyCatalogMember: %v", name, verifyCatalogMember(catalog, changed))
 	}
 }

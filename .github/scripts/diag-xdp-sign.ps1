@@ -1,49 +1,13 @@
-# Temporary (ONE-3, #312): reads, on a windows-latest runner, why Get-AuthenticodeSignature does not say Valid for the
-# xdpapi.dll of the pinned XDP runtime while it does for xdp.sys, and what each check of Windows says for each file of
-# the package, cold (as the runner is) and warm (after signtool had its say). Removed with its workflow when the check
-# of fetch-xdp.ps1 is fixed.
+# Temporary (ONE-3, #312): reads, on a windows-latest runner, what Windows says of each file of the pinned XDP runtime when
+# it is checked through the catalog of its package (xdpapi.dll carries a signature that no machine trusts, see the first
+# run of this workflow), and what the INF and the setup script of Microsoft do with the files. Removed with its workflow
+# when the checks of fetch-xdp.ps1 and install.ps1 are fixed.
 $ErrorActionPreference = 'Continue'
 $PSNativeCommandUseErrorActionPreference = $false
 
 function Section([string] $title) {
 	Write-Host ''
 	Write-Host "===== $title ====="
-}
-
-function Show-Signature([string] $path) {
-	$sig = Get-AuthenticodeSignature -LiteralPath $path
-	Write-Host "$(Split-Path -Leaf $path): Status=$($sig.Status) SignatureType=$($sig.SignatureType) IsOSBinary=$($sig.IsOSBinary)"
-	Write-Host "  StatusMessage: $($sig.StatusMessage)"
-	$c = $sig.SignerCertificate
-	if ($c) {
-		Write-Host "  signer: $($c.Subject) | issuer: $($c.Issuer) | thumbprint $($c.Thumbprint) | $($c.NotBefore.ToString('u')) .. $($c.NotAfter.ToString('u'))"
-	} else {
-		Write-Host '  signer: none'
-	}
-	$t = $sig.TimeStamperCertificate
-	if ($t) {
-		Write-Host "  timestamper: $($t.Subject) | issuer: $($t.Issuer) | $($t.NotBefore.ToString('u')) .. $($t.NotAfter.ToString('u'))"
-	} else {
-		Write-Host '  timestamper: none'
-	}
-}
-
-function Show-Chain([string] $path) {
-	$c = (Get-AuthenticodeSignature -LiteralPath $path).SignerCertificate
-	if (-not $c) { return }
-	$chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
-	$chain.ChainPolicy.RevocationMode = 'NoCheck'
-	$ok = $chain.Build($c)
-	Write-Host "$(Split-Path -Leaf $path): X509Chain.Build of the signer, no revocation check: $ok"
-	foreach ($s in $chain.ChainStatus) { Write-Host "  chain status: $($s.Status) $($s.StatusInformation.Trim())" }
-	foreach ($e in $chain.ChainElements) {
-		Write-Host "  element: $($e.Certificate.Subject) | thumbprint $($e.Certificate.Thumbprint) | $($e.Certificate.NotBefore.ToString('u')) .. $($e.Certificate.NotAfter.ToString('u'))"
-		foreach ($s in $e.ChainElementStatus) { Write-Host "    element status: $($s.Status) $($s.StatusInformation.Trim())" }
-	}
-	$cer = Join-Path $env:RUNNER_TEMP 'xdpapi-signer.cer'
-	[IO.File]::WriteAllBytes($cer, $c.Export('Cert'))
-	Write-Host 'certutil -verify -urlfetch of the signer:'
-	& certutil.exe -verify -urlfetch $cer 2>&1 | ForEach-Object { Write-Host "  $_" }
 }
 
 function Get-SignTool {
@@ -55,19 +19,6 @@ function Get-SignTool {
 	}
 	return ($found | Sort-Object FullName -Descending | Select-Object -First 1).FullName
 }
-
-function Invoke-GoCheck([string] $phase) {
-	Section "the Go check of controller/internal/payload, $phase"
-	& go test ./controller/internal/payload -run 'TestDiagVerifyEachFile' -count=1 -v 2>&1 | ForEach-Object { Write-Host $_ }
-}
-
-Section 'the machine'
-Write-Host "PowerShell $($PSVersionTable.PSVersion)"
-& cmd.exe /c ver
-& reg.exe query 'HKLM\SOFTWARE\Policies\Microsoft\SystemCertificates\AuthRoot' 2>&1 | ForEach-Object { Write-Host "  $_" }
-$roots = @(Get-ChildItem Cert:\LocalMachine\Root | Sort-Object Subject)
-Write-Host "$($roots.Count) roots in LocalMachine\Root:"
-foreach ($r in $roots) { Write-Host "  $($r.Thumbprint) $($r.Subject)" }
 
 Section 'the package'
 $version = '1.4.0'
@@ -83,32 +34,43 @@ $zip = Join-Path $env:RUNNER_TEMP "xdp-$version.zip"
 Copy-Item -LiteralPath $nupkg -Destination $zip -Force
 Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
 $native = Join-Path $extract 'runtime\native'
-foreach ($f in Get-ChildItem -LiteralPath $native -File) { Write-Host "  $($f.Name) $($f.Length) bytes, SHA-256 $((Get-FileHash -Algorithm SHA256 -LiteralPath $f.FullName).Hash)" }
-$files = @('xdp.sys', 'xdpapi.dll', 'xdp.cat') | ForEach-Object { Join-Path $native $_ }
 $env:DIAG_DIR = $native
 
-Section 'Get-AuthenticodeSignature, cold'
-foreach ($f in $files) { Show-Signature $f }
+Section 'xdp.inf'
+Get-Content -LiteralPath (Join-Path $native 'xdp.inf') | ForEach-Object { Write-Host "  $_" }
 
-Invoke-GoCheck 'cold'
+Section 'what xdp-setup.ps1 does with the files'
+Select-String -LiteralPath (Join-Path $native 'xdp-setup.ps1') -Pattern 'netcfg|lodctr|xdpapi|Start-Service|sc\.exe|Copy-Item|System32|\.cat|\.sys|\.inf|\.man|Test-Path' | ForEach-Object { Write-Host "  $($_.LineNumber): $($_.Line.Trim())" }
 
-Section 'the chain of the signer of xdpapi.dll'
-Show-Chain (Join-Path $native 'xdpapi.dll')
-
-Section 'signtool'
+Section 'signtool through the catalog'
 $signtool = Get-SignTool
 Write-Host "signtool: $signtool"
-foreach ($case in @(@('/pa', 'xdpapi.dll'), @('/pa', 'xdp.cat'), @('/kp', 'xdp.sys'), @('/pa', 'xdp.sys'), @('/kp', 'xdpapi.dll'))) {
-	$file = Join-Path $native $case[1]
-	Write-Host "--- signtool verify $($case[0]) /v $($case[1])"
-	& $signtool verify $case[0] /v $file 2>&1 | ForEach-Object { Write-Host "  $_" }
-	Write-Host "  exit code $LASTEXITCODE"
+$cat = Join-Path $native 'xdp.cat'
+# One byte of each file changed, in a folder of its own
+$changed = Join-Path $env:RUNNER_TEMP 'xdp-changed'
+New-Item -ItemType Directory -Force -Path $changed | Out-Null
+foreach ($name in @('xdpapi.dll', 'xdp.sys')) {
+	$bytes = [IO.File]::ReadAllBytes((Join-Path $native $name))
+	$bytes[[int]($bytes.Length / 2)] = $bytes[[int]($bytes.Length / 2)] -bxor 0xFF
+	[IO.File]::WriteAllBytes((Join-Path $changed $name), $bytes)
 }
-Write-Host '--- signtool verify /pa /v /debug xdpapi.dll'
-& $signtool verify /pa /v /debug (Join-Path $native 'xdpapi.dll') 2>&1 | ForEach-Object { Write-Host "  $_" }
-Write-Host "  exit code $LASTEXITCODE"
+$cases = @(
+	@('/pa', $cat, (Join-Path $native 'xdpapi.dll')),
+	@('/kp', $cat, (Join-Path $native 'xdpapi.dll')),
+	@('/kp', $cat, (Join-Path $native 'xdp.sys')),
+	@('/pa', $cat, (Join-Path $native 'xdp.inf')),
+	@('/pa', $cat, (Join-Path $native 'xdppcw.man')),
+	@('/pa', $cat, (Join-Path $changed 'xdpapi.dll')),
+	@('/kp', $cat, (Join-Path $changed 'xdp.sys'))
+)
+foreach ($case in $cases) {
+	Write-Host "--- signtool verify $($case[0]) /c $(Split-Path -Leaf $case[1]) $($case[2])"
+	$out = & $signtool verify $case[0] /c $case[1] /v $case[2] 2>&1
+	$code = $LASTEXITCODE
+	# The chain of the catalog is known from the first run: what decides is in these lines
+	$out | Where-Object { $_ -match 'Successfully verified|SignTool Error|Number of (files|errors)|Hash of file|Verifying' } | ForEach-Object { Write-Host "  $_" }
+	Write-Host "  exit code $code"
+}
 
-Section 'Get-AuthenticodeSignature, warm (after signtool and the chain build)'
-foreach ($f in $files) { Show-Signature $f }
-
-Invoke-GoCheck 'warm'
+Section 'the Go checks of controller/internal/payload'
+& go test ./controller/internal/payload -run 'TestDiagVerifyEachFile' -count=1 -v 2>&1 | ForEach-Object { Write-Host $_ }
