@@ -155,6 +155,11 @@ func realityHandshake(ctx context.Context, raw net.Conn, l *linkConfig, now time
 	if !verified {
 		return nil, errNotAuthenticated
 	}
+	// The ClientHello of a browser carries the renegotiation_info extension, and uTLS then lets the
+	// connection renegotiate, which the connection state of crypto/tls answers by exporting no keying
+	// material: the channel binding of the stream would be none. TLS 1.3 has no renegotiation, so the
+	// connection gives it up now that the handshake is over. cfg is the configuration of uc alone.
+	cfg.Renegotiation = utls.RenegotiateNever
 	return uc, nil
 }
 

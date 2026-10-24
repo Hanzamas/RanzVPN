@@ -331,12 +331,6 @@ func dialLink(pipe, address string) (net.Conn, string, error) {
 	return conn, binding, nil
 }
 
-// echo sends every byte that comes in on conn back, until the stream ends.
-func echo(conn net.Conn) {
-	io.Copy(conn, conn)
-	conn.Close()
-}
-
 // exchange writes size random bytes to a and reads them from b, and the other way round, and checks
 // them against each other: what a stream carries comes out the same.
 func exchange(t *testing.T, a, b net.Conn, size int) {

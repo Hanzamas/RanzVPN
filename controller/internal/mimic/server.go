@@ -75,23 +75,7 @@ func startServer(ctx context.Context, cfg *serverConfig, pipe string, emit func(
 		dest = d.addr
 	}
 
-	names := make(map[string]bool, len(cfg.serverNames))
-	for _, n := range cfg.serverNames {
-		names[n] = true
-	}
-	dialer := &net.Dialer{Timeout: destDialTimeout}
-	s.reality = &reality.Config{
-		DialContext:                 dialer.DialContext,
-		Type:                        "tcp",
-		Dest:                        dest,
-		ServerNames:                 names,
-		PrivateKey:                  cfg.key,
-		MinClientVer:                minClientVersion,
-		MaxClientVer:                maxClientVersion,
-		MaxTimeDiff:                 cfg.maxTimeDiff,
-		ShortIds:                    cfg.shortIDs,
-		DynamicRecordSizingDisabled: true,
-	}
+	s.reality = realityConfig(cfg, dest)
 
 	ln, err := net.Listen("tcp", cfg.listen)
 	if err != nil {
@@ -118,6 +102,29 @@ func startServer(ctx context.Context, cfg *serverConfig, pipe string, emit func(
 		s.warm(dest)
 	}
 	return s, nil
+}
+
+// realityConfig is the configuration of the library for a server of cfg whose connections that are
+// no client are spliced to dest: the keys, the short ids, the names and the clock that make a
+// client, and the versions of the proof that the clients of Ranz send.
+func realityConfig(cfg *serverConfig, dest string) *reality.Config {
+	names := make(map[string]bool, len(cfg.serverNames))
+	for _, n := range cfg.serverNames {
+		names[n] = true
+	}
+	dialer := &net.Dialer{Timeout: destDialTimeout}
+	return &reality.Config{
+		DialContext:                 dialer.DialContext,
+		Type:                        "tcp",
+		Dest:                        dest,
+		ServerNames:                 names,
+		PrivateKey:                  cfg.key,
+		MinClientVer:                minClientVersion,
+		MaxClientVer:                maxClientVersion,
+		MaxTimeDiff:                 cfg.maxTimeDiff,
+		ShortIds:                    cfg.shortIDs,
+		DynamicRecordSizingDisabled: true,
+	}
 }
 
 // detectionKeys are the keys of the probes that the library makes for dest: one for each server
@@ -247,7 +254,8 @@ func (s *server) handle(raw net.Conn) {
 	s.count.streams.Add(1)
 	s.log.Info("a client authenticated", "peer", peer)
 	s.emit(Message{Type: TypeAccepted, Peer: peer})
-	pump(pipe, newFrameConn(conn, s.cfg.shape), s.ctx.Done())
+	pump(s.log.With("peer", peer), pipe, newFrameConn(conn, s.cfg.shape), s.ctx.Done())
+	s.log.Debug("a stream ended", "peer", peer)
 }
 
 // stop closes the listener, the decoy and every connection, and waits for them to end.

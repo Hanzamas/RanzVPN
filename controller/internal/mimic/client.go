@@ -132,7 +132,8 @@ func (c *client) handle(pipe net.Conn) {
 	}
 	c.count.streams.Add(1)
 	c.log.Info("a link connected", "address", address, "fingerprint", link.fp.name)
-	pump(pipe, newFrameConn(conn, link.shape), c.ctx.Done())
+	pump(c.log.With("address", address), pipe, newFrameConn(conn, link.shape), c.ctx.Done())
+	c.log.Debug("a stream ended", "address", address)
 }
 
 // connect dials the server of a link and runs the handshake.

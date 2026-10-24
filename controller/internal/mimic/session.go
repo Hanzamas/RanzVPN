@@ -45,22 +45,31 @@ func Version() string {
 
 // events carries the messages that the sidecar sends on its own (accepted, probe, error) to the
 // node, in a queue: a node that reads slowly never holds up a connection of the sidecar, and a
-// message that does not fit is counted and dropped.
+// message that does not fit is counted and dropped. The queue is written to the pipe only once the
+// session started it, after ready, so that ready is the first message that the node reads after
+// start: a role has events while it starts (the connection of an ACME service that validates the
+// own decoy through the listener is a probe), and they follow ready.
 type events struct {
 	ch      chan Message
+	w       *Writer
 	dropped atomic.Uint64
+	started bool
 	done    chan struct{}
 }
 
 func newEvents(w *Writer) *events {
-	e := &events{ch: make(chan Message, 256), done: make(chan struct{})}
+	return &events{ch: make(chan Message, 256), w: w, done: make(chan struct{})}
+}
+
+// start writes what waits in the queue, and what comes, to the pipe from a goroutine of its own.
+func (e *events) start() {
+	e.started = true
 	go func() {
 		defer close(e.done)
 		for m := range e.ch {
-			w.Write(m)
+			e.w.Write(m)
 		}
 	}()
-	return e
 }
 
 func (e *events) send(m Message) {
@@ -71,10 +80,13 @@ func (e *events) send(m Message) {
 	}
 }
 
-// close ends the queue once what it holds is written. Nothing may send after it.
+// close ends the queue once what it holds is written; a queue that never started drops what it holds,
+// as the session that did not start had nothing to tell the node. Nothing may send after it.
 func (e *events) close() {
 	close(e.ch)
-	<-e.done
+	if e.started {
+		<-e.done
+	}
 }
 
 // session is one node's sidecar: the role that start asked for.
@@ -142,6 +154,7 @@ func Run(ctx context.Context, conn net.Conn, opts Options) error {
 	if err := w.Write(ready); err != nil {
 		return err
 	}
+	s.ev.start()
 	log.Info("started", "role", s.role, "listen", ready.Listen, "decoy", ready.Decoy)
 
 	for {

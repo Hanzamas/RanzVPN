@@ -3,6 +3,7 @@ package mimic
 import (
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -18,18 +19,20 @@ const drainTimeout = 5 * time.Second
 // until the second one did not end within drainTimeout of the first, or until stop is closed; then it
 // closes both. The end of one direction is passed on as far as the connection can: the end of what the
 // node writes becomes the close_notify of the TLS session, so the other end reads what is left and
-// then the end.
-func pump(pipe, outer net.Conn, stop <-chan struct{}) {
+// then the end. The log tells at the debug level how each direction ended, and why.
+func pump(log *slog.Logger, pipe, outer net.Conn, stop <-chan struct{}) {
 	done := make(chan struct{}, 2)
 	go func() {
-		io.Copy(outer, pipe)
+		n, err := io.Copy(outer, pipe)
+		log.Debug("the stream from the node ended", "bytes", n, "err", err)
 		if cw, ok := outer.(closeWriter); ok {
 			cw.CloseWrite()
 		}
 		done <- struct{}{}
 	}()
 	go func() {
-		io.Copy(pipe, outer)
+		n, err := io.Copy(pipe, outer)
+		log.Debug("the stream to the node ended", "bytes", n, "err", err)
 		// The pipe has no half close: when the other end is done, so is the stream
 		pipe.Close()
 		done <- struct{}{}
