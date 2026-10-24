@@ -342,12 +342,24 @@ struct ICMPV6_HEADER_INFO {
 #define DHCP_ID_WINS_ADDR          0x2C
 #define DHCP_ID_PRIVATE            0xFA
 
+// The options that the DHCP responder of an L2 Network writes (Cedar/NodeDhcp.c; RFC 2132)
+#define DHCP_ID_SUBNET_MASK    0x01
+#define DHCP_ID_LEASE_TIME     0x33
+#define DHCP_ID_SERVER_ID      0x36
+#define DHCP_ID_PARAMETER_LIST 0x37
+#define DHCP_ID_RENEWAL_TIME   0x3A
+#define DHCP_ID_REBINDING_TIME 0x3B
+
 
 #define DHCP_DISCOVER 1
 #define DHCP_REQUEST  3
+#define DHCP_DECLINE  4
+#define DHCP_RELEASE  7
+#define DHCP_INFORM   8
 
 #define DHCP_OFFER 2
 #define DHCP_ACK   5
+#define DHCP_NAK   6
 
 struct HTTPLOG {
 	char Method[32];
@@ -475,6 +487,9 @@ USHORT IpChecksum(void *buf, UINT size);
 DHCP_OPTION *GetDhcpOption(LIST *o, UINT id);
 void FreeDhcpOptions(LIST *o);
 LIST *ParseDhcpOptions(void *data, UINT size);
+UCHAR *DhcpOptionsOf(void *data, UINT size, UINT *options_size);
+DHCP_OPTION *NewDhcpOption(UINT id, const void *data, UINT size);
+BUF *BuildDhcpOptionsBuf(LIST *o);
 
 BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size);
