@@ -8,6 +8,8 @@
 //	ranz controller [flags]   the Controller service with its web UI: run, install, uninstall,
 //	                          reset-admin, backup and restore (package controllercmd)
 //	ranz bgp -pipe NAME       the BGP sidecar of a Node, which the Node starts (package bgpcmd)
+//	ranz mimic -pipe NAME     the mimicry sidecar of a Node, REALITY and uTLS, which the Node starts; ranz
+//	                          mimic -keygen prints the key pair of a server (package mimic, CORE-P2-1 #85)
 //	ranz install [-controller]
 //	                          write the Node payload into Program Files, register and start the
 //	                          Node service, and, with -controller, the Controller service too
@@ -101,6 +103,7 @@ import (
 const usage = `usage:
   ranz controller [flags]
   ranz bgp -pipe NAME [-log FILE] [-log-level LEVEL]
+  ranz mimic (-pipe NAME [-log FILE] [-log-level LEVEL] | -keygen)
   ranz install [-controller]
   ranz uninstall [-keep-ranz]
   ranz notice
