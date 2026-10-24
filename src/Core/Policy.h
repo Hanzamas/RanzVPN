@@ -27,7 +27,9 @@
 // bridge or a node, in one Network, with its identity and its guard (POLICY_GUARD_*), the isolation set of the fork:
 // client isolation (PrivacyFilter), the MAC and IP checks (CheckMac, CheckIP) with their limits (MaxMac, MaxIP), ARP and
 // DHCP only (ArpDhcpOnly), no DHCP server (DHCPNoServer), no router advertisements (RAFilter), and the filters of IPv4,
-// IPv6 and non-IP frames (FilterIPv4, FilterIPv6, FilterNonIP). The guard judges every frame before the rules. A member
+// IPv6 and non-IP frames (FilterIPv4, FilterIPv6, FilterNonIP). The guard judges every frame that a member sends before
+// the rules; its filters, ARP and DHCP only and its RA filter also judge every frame that the member gets (PolicyInput
+// for a frame to it, PolicyDeliver for a frame to a group address), as the fork's Hub applies them on both sides. A member
 // owns the source addresses it was given (PolicyBindMac, PolicyBindIp) and, under a check, those it sent from first, up
 // to its limit; no other member of its Network may send from them. ARP, IPv6 neighbour discovery and DHCP pass the guard
 // and not the rules, as the segment needs them.
@@ -186,7 +188,7 @@ bool PolicyDelMember(POLICY_ENGINE *p, UINT member);
 bool PolicyBindMac(POLICY_ENGINE *p, UINT member, const UCHAR *mac);
 bool PolicyBindIp(POLICY_ENGINE *p, UINT member, UINT family, const UCHAR *ip);
 bool PolicyInput(POLICY_ENGINE *p, UINT64 now, UINT from, UINT to, UINT vlan, const UCHAR *frame, UINT size, POLICY_RESULT *r);
-bool PolicyDeliver(POLICY_ENGINE *p, UINT from, UINT to);
+bool PolicyDeliver(POLICY_ENGINE *p, UINT from, UINT to, const UCHAR *frame, UINT size);
 UINT PolicyAge(POLICY_ENGINE *p, UINT64 now);
 void PolicyGetStats(POLICY_ENGINE *p, POLICY_STATS *st);
 bool PolicyGetNetworkStats(POLICY_ENGINE *p, const char *network, POLICY_NETWORK_STATS *st);

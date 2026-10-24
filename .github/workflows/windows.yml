@@ -679,8 +679,7 @@ jobs:
   # .github/quality/clang-tidy.yaml on every .c file of src/Core, over the compile commands of the x64
   # build, and MSVC /analyze, which checks the SAL annotations of the Windows SDK and of the code, on a
   # cl.exe build of the new core's modules (corecrypto, corenoise, corepeer, coretransport, corevxlan, coreswitch,
-  # corepolicy). A finding
-  # that the baseline of its tool in .github/quality does not hold fails the job
+  # corepolicy). A finding that the baseline of its tool in .github/quality does not hold fails the job
   # (.github/scripts/static-findings.py). The third-party libraries of the peer module
   # (src/Core/3rdparty: libjuice, libplum), which that build compiles too, are not the new core's code
   # and do not count.

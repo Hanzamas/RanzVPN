@@ -303,7 +303,7 @@ static bool PolicyNames(POLICY_PARSER *ps, const cJSON *item, const char *where,
 		list[i] = (char *)PolicyAlloc(&ps->Doc->Arena, len + 1);
 		if (list[i] == NULL)
 			return PolicyFail(ps, at, "takes more memory than there is");
-		CopyMemory(list[i], s, len);
+		CopyMemory(list[i], s, len + 1);
 		i++;
 	}
 
@@ -1458,7 +1458,7 @@ static bool PolicyTextLine(POLICY_TEXT *t, const char *line) {
 		t->Max = max;
 	}
 
-	CopyMemory(t->Buf + t->Len, line, len);
+	CopyMemory(t->Buf + t->Len, line, len + 1);
 	t->Len += len;
 	t->Buf[t->Len] = '\n';
 	t->Len++;

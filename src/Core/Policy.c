@@ -808,12 +808,13 @@ static bool PolicyParse(const UCHAR *frame, UINT size, UINT mode, POLICY_PACKET 
 	return ok && PolicyParseTransport(pk);
 }
 
-// The guard of a member over a frame of it: POLICY_PASS_RULE when the frame goes on, else the reason to drop it
-static UINT PolicyGuard(POLICY_ENGINE *p, UINT from, const POLICY_RECORD *rec, const POLICY_PACKET *pk) {
-	UINT guard = rec->Guard;
+// The filters of a guard that hold for the frames that a member gets as well as for those it sends, as the fork's Hub
+// applies the policy of a session on both sides (StorePacketFilterByPolicy and PolicyDropsPacket of Hub.c): the filters
+// of IPv4, IPv6 and non-IP frames, ARP and DHCP only, and no router advertisements. POLICY_PASS_RULE when they let the
+// frame through, else the reason to drop it.
+static UINT PolicyFilters(UINT guard, const POLICY_PACKET *pk) {
 	bool v4 = (pk->EtherType == POLICY_ETHERTYPE_IPV4 || pk->EtherType == POLICY_ETHERTYPE_ARP);
 
-	// The filters of IPv4, IPv6 and non-IP frames
 	if (((guard & POLICY_GUARD_NO_IPV4) != 0 && v4) || ((guard & POLICY_GUARD_NO_IPV6) != 0 && pk->EtherType == POLICY_ETHERTYPE_IPV6) ||
 	    ((guard & POLICY_GUARD_NO_NON_IP) != 0 && pk->Class == POLICY_CLASS_NON_IP))
 		return POLICY_DROP_PROTOCOL;
@@ -821,10 +822,21 @@ static UINT PolicyGuard(POLICY_ENGINE *p, UINT from, const POLICY_RECORD *rec, c
 	// Frames to a group address: ARP, DHCP and neighbour discovery only
 	if ((guard & POLICY_GUARD_ARP_DHCP_ONLY) != 0 && pk->Group && pk->Control == POLICY_CTL_NONE)
 		return POLICY_DROP_BROADCAST;
-	if ((guard & POLICY_GUARD_NO_DHCP_SERVER) != 0 && pk->Control == POLICY_CTL_DHCP_SERVER)
-		return POLICY_DROP_DHCP_SERVER;
 	if ((guard & POLICY_GUARD_NO_RA) != 0 && pk->Control == POLICY_CTL_ND && pk->IcmpType == POLICY_ICMP6_RA)
 		return POLICY_DROP_RA;
+
+	return POLICY_PASS_RULE;
+}
+
+// The guard of a member over a frame of it: POLICY_PASS_RULE when the frame goes on, else the reason to drop it
+static UINT PolicyGuard(POLICY_ENGINE *p, UINT from, const POLICY_RECORD *rec, const POLICY_PACKET *pk) {
+	UINT guard = rec->Guard;
+	UINT reason = PolicyFilters(guard, pk);
+
+	if (reason != POLICY_PASS_RULE)
+		return reason;
+	if ((guard & POLICY_GUARD_NO_DHCP_SERVER) != 0 && pk->Control == POLICY_CTL_DHCP_SERVER)
+		return POLICY_DROP_DHCP_SERVER;
 
 	// The source MAC address, and the sender of an ARP frame
 	if (pk->Smac != NULL) {
@@ -1209,6 +1221,8 @@ static UINT PolicyJudge(POLICY_ENGINE *p, const POLICY_STATE *st, UINT slot, UIN
 		return POLICY_DROP_MALFORMED;
 
 	UINT reason = PolicyGuard(p, from, rf, &pk);
+	if (reason == POLICY_PASS_RULE && rt != NULL)
+		reason = PolicyFilters(rt->Guard, &pk);
 	if (reason != POLICY_PASS_RULE)
 		return reason;
 	if (rt != NULL && (rf->Guard & POLICY_GUARD_ISOLATE) != 0 && (rt->Guard & POLICY_GUARD_ISOLATE) != 0)
@@ -1261,10 +1275,11 @@ bool PolicyInput(POLICY_ENGINE *p, UINT64 now, UINT from, UINT to, UINT vlan, co
 	return r->Pass;
 }
 
-// Whether a frame from the member from that passed PolicyInput may be delivered to the member to: both are members of
-// one Network, and not both under client isolation. The switch asks it for each member that a frame to a group address
-// reaches.
-bool PolicyDeliver(POLICY_ENGINE *p, UINT from, UINT to) {
+// Whether a frame from the member from that passed PolicyInput, size bytes, may be delivered to the member to: both are
+// members of one Network that the document in force defines, they are not both under client isolation, and the filters
+// that hold for the frames a member gets (PolicyFilters) let it through. The switch asks it for each member that a frame
+// to a group address reaches.
+bool PolicyDeliver(POLICY_ENGINE *p, UINT from, UINT to, const UCHAR *frame, UINT size) {
 	bool ok = false;
 
 	if (p == NULL)
@@ -1276,9 +1291,13 @@ bool PolicyDeliver(POLICY_ENGINE *p, UINT from, UINT to) {
 	{
 		const POLICY_RECORD *rf = PolicyRecordOf(p, from);
 		const POLICY_RECORD *rt = PolicyRecordOf(p, to);
+		const POLICY_STATE *st = PolicyStateOf(p);
+		const POLICY_TABLE *t = (st != NULL && rf != NULL ? st->ByNet[rf->Net->Index] : NULL);
+		POLICY_PACKET pk;
 
-		ok = (rf != NULL && rt != NULL && rf->Net == rt->Net &&
-		      ((rf->Guard & POLICY_GUARD_ISOLATE) == 0 || (rt->Guard & POLICY_GUARD_ISOLATE) == 0 || from == to));
+		ok = (rf != NULL && rt != NULL && t != NULL && rf->Net == rt->Net &&
+		      ((rf->Guard & POLICY_GUARD_ISOLATE) == 0 || (rt->Guard & POLICY_GUARD_ISOLATE) == 0 || from == to) &&
+		      PolicyParse(frame, size, t->Config.Mode, &pk) && PolicyFilters(rt->Guard, &pk) == POLICY_PASS_RULE);
 	}
 	ReleaseSRWLockShared(&p->Readers[slot].Lock);
 

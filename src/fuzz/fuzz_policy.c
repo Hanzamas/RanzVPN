@@ -10,7 +10,8 @@
 //   clock on by tens of ms (0xFF also ages the conntrack tables after the frame), the low bits of its third byte choose
 //   its VLAN, and the rest is the frame. It is judged by a fixed document of an L2 and an L3 Network whose members carry
 //   every guard flag between them, with conntrack tables of 64 flows, so that inputs reach eviction, and with the
-//   learning of the addresses that the checked members own. Every frame that passes is then offered to PolicyDeliver.
+//   learning of the addresses that the checked members own. Every frame that passes is then offered to PolicyDeliver for
+//   the member it goes to, or for every member when it goes to none, so that PolicyDeliver reads it to its last byte too.
 //
 // fuzz-max-len: 16384
 // fuzz-libs: corepolicy
@@ -207,7 +208,7 @@ static void FuzzPolicyDocument(const uint8_t *data, size_t size)
 
 			if (PolicyInput(fuzz_docs, fuzz_now, from, to, (round == 0 ? 0 : 10), fuzz_doc_frame[i], fuzz_doc_size[i], &r))
 			{
-				PolicyDeliver(fuzz_docs, from, to);
+				PolicyDeliver(fuzz_docs, from, to, fuzz_doc_frame[i], fuzz_doc_size[i]);
 			}
 		}
 		fuzz_now += 1000;
@@ -248,10 +249,17 @@ static void FuzzPolicyFrame(const uint8_t *data, size_t size)
 	UINT pick = (data[0] >> 3) & 7;
 	UINT to = (pick < FUZZ_NUM_MEMBERS ? fuzz_members[pick] : POLICY_NO_MEMBER);
 
+	// A frame to an end outside the Network, or to a group address, is offered to every member as the switch offers it
 	fuzz_now += (UINT64)data[1] * 10;
-	if (PolicyInput(fuzz_frames, fuzz_now, from, to, vlans[data[2] & 3], frame, frame_size, &r) && to != POLICY_NO_MEMBER)
+	if (PolicyInput(fuzz_frames, fuzz_now, from, to, vlans[data[2] & 3], frame, frame_size, &r))
 	{
-		PolicyDeliver(fuzz_frames, from, to);
+		for (UINT i = 0; i < FUZZ_NUM_MEMBERS; i++)
+		{
+			if (to == POLICY_NO_MEMBER || to == fuzz_members[i])
+			{
+				PolicyDeliver(fuzz_frames, from, fuzz_members[i], frame, frame_size);
+			}
+		}
 	}
 	if (data[1] == FUZZ_AGE)
 	{
