@@ -62,6 +62,10 @@ typedef bool(TRANSPORT_WRITE_PROC)(void *stream, const void *buf, UINT size);
 typedef void(TRANSPORT_CLOSE_PROC)(void *stream);
 typedef UINT(TRANSPORT_BINDING_PROC)(void *stream, UCHAR *binding, UINT max, UINT *size);
 typedef bool(TRANSPORT_REKEY_PROC)(void *stream);
+// Take gives a listener a TCP connection (a SOCKET) that the front door accepted and routed to it
+// (Core/FrontDoor.h; SDN-29, #205): it continues as one the listener accepted itself. It may be
+// NULL: a transport that is not over TCP takes none.
+typedef bool(TRANSPORT_TAKE_PROC)(void *listener, UINT_PTR socket);
 
 // One transport: its name in a fallback list, its state and its procedures
 typedef struct TRANSPORT {
@@ -77,6 +81,7 @@ typedef struct TRANSPORT {
 	TRANSPORT_BINDING_PROC *Binding;              // The channel binding of a stream, or NULL
 	TRANSPORT_REKEY_PROC *Rekey;                  // Update the outer keys of a stream, or NULL
 	UINT Queue;                                   // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it, NONE for none
+	TRANSPORT_TAKE_PROC *Take;                    // Take a connection that the front door routed to a listener, or NULL
 } TRANSPORT;
 
 // One entry of a fallback list: a transport and the address it dials
@@ -182,6 +187,12 @@ void TransportClose(TRANSPORT_STREAM *s);
 UINT TransportBinding(TRANSPORT_STREAM *s, UCHAR *binding, UINT max, UINT *size);
 bool TransportRekey(TRANSPORT_STREAM *s);
 TRANSPORT *TransportOf(TRANSPORT_STREAM *s);
+
+// The front door's handoff to a listener of this process (SDN-29, #205): the listener takes the TCP
+// connection socket (a SOCKET, blocking) and closes it in time; false, with the socket still the
+// caller's, when its transport takes no connection that way. The front door stops before the
+// listener closes, so no Take runs once TransportCloseListener started.
+bool TransportTake(TRANSPORT_LISTENER *l, UINT_PTR socket);
 
 // The fallback list (Transport.c). ParseList reads a configured list: its entries, at most max,
 // separated by commas, each the name of one of the known transports, a colon and the address,
@@ -359,7 +370,9 @@ void TransportTlsDefaultConfig(TRANSPORT_TLS_CONFIG *cfg, const char *thumbprint
 // thumbprint is malformed, or the server's certificate is not in the store or has no key in a KSP.
 // The address of Listen and Dial is a host and a port ("vpn.example:443", "[::1]:443", ":443" to
 // listen on every address of both families); TransportTlsBoundPort gives the port the last listener
-// of a server transport bound, for a listener on port 0. LastHandshake gives what the last handshake
+// of a server transport bound, for a listener on port 0. A listener on the empty address "" binds no
+// socket: it takes the connections that the front door routes to it (TransportTake), and their
+// handshakes run as those of a listener's own. LastHandshake gives what the last handshake
 // that completed on the transport gave, false before there was one. Free closes the transport once
 // its listeners and streams are closed.
 TRANSPORT *TransportTlsServerNew(const TRANSPORT_TLS_CONFIG *cfg);

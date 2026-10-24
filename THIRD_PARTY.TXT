@@ -1,0 +1,45 @@
+Ranz VPN: third-party binaries that the node loads at run time
+=============================================================
+
+The files below are not in this repository. CI fetches each one, pinned by its version and its hash, and checks its
+signature; ONE-3 (#312) carries them inside ranz.exe as Payloads. Each is used under the terms of its own licence.
+This file records those terms and the rules that a redistribution of the file follows (the NOTICE rules). A new
+version changes the pin here and in its fetch script together.
+
+
+Wintun 0.14.1
+-------------
+
+What:    wintun.dll, the L3 TUN adapter of WireGuard LLC (https://www.wintun.net), which the client role of the node
+         loads from the directory of its executable (src/Cedar/NodeClient.c and NodeWintun.c; CORE-S3-1, #71).
+
+Pinned:  https://www.wintun.net/builds/wintun-0.14.1.zip
+         SHA-256 07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51, the hash that wintun.net publishes
+         (.github/scripts/fetch-wintun.ps1 checks it). The node takes wintun/bin/amd64/wintun.dll on x64 and
+         wintun/bin/arm64/wintun.dll on arm64, each signed by WireGuard LLC (Authenticode), which the script checks too.
+
+Licence: the Prebuilt Binaries License of WireGuard LLC, the licence file of the archive, which is the authority.
+         In short:
+         - the DLL is licensed, not sold, for lawful use;
+         - it may not be reverse engineered, decompiled, disassembled, extracted from or otherwise modified, and no
+           derivative work may be made of it, except by using only the API of the wintun.h of the archive (the
+           "Permitted API");
+         - it may be redistributed without the written consent of WireGuard LLC only together with other software
+           that uses it through the Permitted API alone;
+         - its proprietary notices stay, and the names of WireGuard LLC, WireGuard and Wintun may not endorse or
+           promote a product without written consent;
+         - it comes without warranty and without liability; the licence ends on a breach, and every copy is then
+           deleted.
+         The header wintun.h has a licence line of its own (GPL-2.0 OR MIT in the pinned release). The node does not
+         include it: NodeWintun.c names the functions of its API and takes them from the DLL by name.
+
+NOTICE rules for every package that carries wintun.dll (ONE-3, #312, and any later one):
+         1. The DLL ships byte for byte as the archive has it, with the signature of WireGuard LLC: it is never
+            re-signed, stripped, compressed or patched, and the driver inside it is never taken out of it (the DLL
+            installs its driver itself).
+         2. The licence file of the archive goes with it word for word: in the NOTICE inside ranz.exe, beside the
+            licence texts already there, and next to the DLL wherever it is written to disk (fetch-wintun.ps1 puts it
+            there as wintun-LICENSE.txt).
+         3. Ranz VPN calls the DLL through the functions of wintun.h only (NodeWintun.c).
+         4. Ranz VPN names WireGuard and Wintun only to say what it carries (this file, the NOTICE), never to promote
+            itself.
