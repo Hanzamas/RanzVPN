@@ -8,6 +8,11 @@ ranz.control.v1.NodeConfig.name max_size:64
 ranz.control.v1.NodeConfig.tags max_count:16 max_size:64
 # One address per L3 Network of a node's VRFs, and a node is in at most 16 VRFs (Peer.vrf_ids)
 ranz.control.v1.NodeConfig.addresses max_count:16
+# The Mirrors of a node (SDN-23): 16, the most the controller lets one node have
+# (controller/internal/intent MaxMirrors)
+ranz.control.v1.NodeConfig.mirrors max_count:16
+ranz.control.v1.Mirror.name max_size:64
+ranz.control.v1.Mirror.sensor max_size:16
 ranz.control.v1.Peer.addresses max_count:16
 ranz.control.v1.Address.network max_size:64
 ranz.control.v1.Vrf.name max_size:64
@@ -56,7 +61,20 @@ ranz.control.v1.Rule.ports max_count:16
 ranz.control.v1.RuleEnd.tags max_count:16 max_size:64
 ranz.control.v1.RuleEnd.prefixes max_count:16
 # The 1:1 NAT rules that a node applies, its 4via6 among them, and the routes of a peer, which are
-# the outside prefixes of its rules (SDN-6): 16 each, the most the controller lets one node have
-# (controller/internal/intent MaxNATRules).
+# the outside prefixes of its rules (SDN-6) and the routes that its VRFs leak into the node's
+# (SDN-7): 16 each, the most the controller lets one node have (controller/internal/intent
+# MaxNATRules and MaxPeerRoutes).
 ranz.control.v1.NodeConfig.nat max_count:16
 ranz.control.v1.Peer.routes max_count:16
+# The DHCP responder of an L2 Network (SDN-43): IPv4 addresses, at most 4 DNS servers and 16
+# reservations (controller/internal/intent MaxDHCPServers, MaxDHCPReserved). One Leases message holds
+# every lease of one responder, which holds at most 1024 (MaxLeases, NODE_DHCP_MAX_LEASES).
+ranz.control.v1.Dhcp.address max_size:4
+ranz.control.v1.Dhcp.gateway max_size:4
+ranz.control.v1.Dhcp.dns max_count:4 max_size:4
+ranz.control.v1.Dhcp.reserved max_count:16
+ranz.control.v1.Leases.network max_size:64
+ranz.control.v1.Leases.leases max_count:1024
+ranz.control.v1.Lease.mac max_size:6
+ranz.control.v1.Lease.address max_size:4
+ranz.control.v1.Lease.host_name max_size:64

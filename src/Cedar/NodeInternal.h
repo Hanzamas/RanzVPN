@@ -10,6 +10,8 @@ void NodeStopWorkers(NODE *n);
 UINT NodeDelAllQueues(NODE *n);
 void NodeTablesStart(NODE *n);
 void NodeTablesStop(NODE *n);
+void NodeMirrorAttach(NODE *n, NODE_VRF_TABLES *v, const struct CONTROL_STATE *st);
+void NodeMirrorStop(NODE *n);
 void NodeBgpInit();
 void NodeBgpStart(NODE *n);
 void NodeBgpStop(NODE *n);
@@ -27,5 +29,8 @@ bool NodePolicyOutbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, cons
 bool NodePolicyInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size);
 bool NodeClientStart(NODE *n);
 void NodeClientStop(NODE *n);
+struct CONTROL_LEASES *NodeDhcpStart(NODE *n);
+void NodeDhcpStop(NODE *n);
+void NodeDhcpApplied(NODE *n, const struct CONTROL_STATE *st);
 
 #endif // NODE_INTERNAL_H

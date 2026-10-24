@@ -300,9 +300,11 @@ func TestPoolThresholdEvent(t *testing.T) {
 // TestNoDHCPInTheOverlay is the fourth criterion of #186 (ADR-0028 decision 1): a node gets its
 // addresses from the controller alone. The simulated node is a protocol-only node with no data
 // plane and no DHCP client, and it holds its allocated addresses from the one Update it
-// received; and the control protocol has no DHCP: no message, field or enum of it is named after
-// it. A ticket that adds DHCP to the protocol (the responder of an L2 Network, SDN-43 #236) changes
-// this test and names what it adds.
+// received; and the control protocol has no DHCP inside the overlay: the only messages, fields and
+// enums named after it are the ones of the DHCP responder of an L2 Network (SDN-43 #236), listed
+// here, which answers the clients of the LAN that the Network bridges and never a node (an L3
+// Network has none, internal/intent dhcp.go). A ticket that adds DHCP to the protocol changes this
+// test and names what it adds.
 func TestNoDHCPInTheOverlay(t *testing.T) {
 	h := newHarness(t)
 	h.apply("ipam-pools.json")
@@ -323,10 +325,32 @@ func TestNoDHCPInTheOverlay(t *testing.T) {
 	if !slices.Contains(names, "ranz.control.v1.Address") {
 		t.Fatalf("the names of the control protocol are %v, which lack Address", names)
 	}
+	// The DHCP responder of an L2 Network (SDN-43 #236); the values of an enum are named in the scope
+	// of the enum, as protobuf names them
+	responder := []string{
+		"ranz.control.v1.DHCP_MODE_OFF",
+		"ranz.control.v1.DHCP_MODE_POOL",
+		"ranz.control.v1.DHCP_MODE_UNSPECIFIED",
+		"ranz.control.v1.Dhcp",
+		"ranz.control.v1.Dhcp.address",
+		"ranz.control.v1.Dhcp.dns",
+		"ranz.control.v1.Dhcp.gateway",
+		"ranz.control.v1.Dhcp.lease_time",
+		"ranz.control.v1.Dhcp.mode",
+		"ranz.control.v1.Dhcp.reserved",
+		"ranz.control.v1.DhcpMode",
+		"ranz.control.v1.Network.dhcp",
+	}
+	var dhcp []string
 	for _, name := range names {
 		if strings.Contains(strings.ToLower(name), "dhcp") {
-			t.Errorf("the control protocol has %s: no DHCP runs inside the overlay", name)
+			dhcp = append(dhcp, name)
 		}
+	}
+	slices.Sort(dhcp)
+	if !slices.Equal(dhcp, responder) {
+		t.Errorf("the names of the control protocol after DHCP are\n%s\nwant the ones of the responder of an L2 Network alone\n%s: no DHCP runs inside the overlay",
+			strings.Join(dhcp, "\n"), strings.Join(responder, "\n"))
 	}
 }
 

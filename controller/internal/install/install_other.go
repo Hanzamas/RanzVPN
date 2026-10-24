@@ -13,4 +13,4 @@ var errNotWindows = errors.New("install: the Ranz VPN Node and Controller instal
 func Install(io.Writer, Options) error { return errNotWindows }
 
 // Uninstall refuses: there is no Windows service on this OS.
-func Uninstall(io.Writer) error { return errNotWindows }
+func Uninstall(io.Writer, UninstallOptions) error { return errNotWindows }

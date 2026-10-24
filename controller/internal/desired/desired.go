@@ -46,10 +46,12 @@ func KeyOf(o *controlpb.Object) Key {
 }
 
 // Compile returns the desired state of every Node of in, by node name. A node gets itself with
-// its addresses and its 1:1 NAT rules (nat.go), the VRFs it is a member of with their Networks, a
-// Peer for every other node that shares one of those VRFs (full mesh) with that node's addresses
-// and routes in them, and a Relay for every such node that is a relay (ADR-0015). in must be an
-// intent that intent.Apply returned.
+// its addresses, its 1:1 NAT rules (nat.go) and the Mirrors that select it (mirror.go), the VRFs
+// it is a member of with their Networks, a Peer for every other node that shares one of those
+// VRFs (full mesh) or that a leak joins to it (leak.go), with that node's addresses and routes in
+// them and the routes that its VRFs leak into the node's, a Relay for every such node that is a
+// relay (ADR-0015), and the rules of the policy of its VRFs that can match a flow with one end at
+// the node (policy.go). in must be an intent that intent.Apply returned.
 func Compile(in intent.Intent) (map[string]State, error) {
 	vrfs := map[string]*controlpb.Vrf{}
 	for name, v := range in.VRFs {
@@ -89,6 +91,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 	// The rules of the policy of the VRFs that each node enforces (policy.go; SDN-8)
 	rules := nodeRules(in, vrfs)
 	nat := natRules(in, vrfs)
+	leaked := leakRoutes(in, vrfs)
+	responders := in.Responders()
 	out := map[string]State{}
 	for name, n := range in.Nodes {
 		s := State{}
@@ -97,11 +101,18 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			member[v] = true
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Vrf{Vrf: vrfs[v]}})
 			for _, nw := range networks[v] {
-				s.add(&controlpb.Object{Kind: &controlpb.Object_Network{Network: nw}})
+				// The node that answers DHCP for an L2 Network gets its responder (dhcp.go)
+				s.add(&controlpb.Object{Kind: &controlpb.Object_Network{Network: withDHCP(nw, responders, name)}})
 			}
 		}
 		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(n.Tags), Addresses: addresses(in, name, vrfs, member), RateLimit: n.RateLimit}
 		self.Nat = nat[name]
+		// The Mirrors that select the node (mirror.go; SDN-23)
+		ms, err := mirrors(in, name, vrfs)
+		if err != nil {
+			return nil, err
+		}
+		self.Mirrors = ms
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {
@@ -115,14 +126,16 @@ func Compile(in intent.Intent) (map[string]State, error) {
 					sharedVRFs[v] = true
 				}
 			}
-			if len(shared) == 0 {
+			if len(shared) == 0 && !leaked.joined[name][other] {
 				continue
 			}
 			slices.Sort(shared)
 			peer := &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared, Addresses: addresses(in, other, vrfs, sharedVRFs), Tags: slices.Clone(o.Tags)}
 			peer.Routes = peerRoutes(nat[other], shared)
+			peer.Routes = withLeaks(peer.Routes, leaked.routes[name][other])
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})
-			if o.Relay != "" {
+			// A relay forwards only between nodes that share a VRF with it, so a peer that only a leak joins is none
+			if o.Relay != "" && len(shared) > 0 {
 				ap, err := intent.ParseRelay(o.Relay)
 				if err != nil {
 					return nil, fmt.Errorf("Node %q: %w", other, err)

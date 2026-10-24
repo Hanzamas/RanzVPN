@@ -761,6 +761,9 @@ UINT NodeNatRoutes(const CONTROL_STATE *st, NODE_VRF_ROUTE *routes) {
 		for (UINT j = 0; j < st->Peers[i].NumRoutes && j < CONTROL_MAX_ROUTES; j++) {
 			const CONTROL_ROUTE *c = &st->Peers[i].Routes[j];
 
+			// A route that a VRF of the peer leaks goes in with NodeLeakRoutes (NodeLeak.c; SDN-7, #183)
+			if (c->PeerVrfId != 0 && c->PeerVrfId != c->VrfId)
+				continue;
 			num += NodeNatRoute(routes, num, c->VrfId, c->Address, c->AddressSize, c->Length, i);
 		}
 	}

@@ -209,24 +209,11 @@ func policyAddress(p netip.Prefix) string {
 	return p.String()
 }
 
-// The IP protocols that a Policy names by name
-var policyProtocols = map[string]uint8{"icmp": 1, "tcp": 6, "udp": 17}
-
-// parsePolicyProtocol parses the protocol of a Policy: tcp, udp, icmp, or the number of an IP
-// protocol from 1 to 255. It returns the number, and 0 for none, which takes every protocol.
+// parsePolicyProtocol parses the protocol of a Policy as the one of a Mirror (ParseProtocol): tcp,
+// udp, icmp, or the number of an IP protocol from 1 to 255. It returns the number, and 0 for none,
+// which takes every protocol.
 func parsePolicyProtocol(v PolicyValue) (uint8, error) {
-	s := string(v)
-	if s == "" {
-		return 0, nil
-	}
-	if n, ok := policyProtocols[s]; ok {
-		return n, nil
-	}
-	n, err := strconv.ParseUint(s, 10, 8)
-	if err != nil || n == 0 || s != strconv.FormatUint(n, 10) {
-		return 0, fmt.Errorf("protocol %q is neither tcp, udp nor icmp, nor a number from 1 to 255", s)
-	}
-	return uint8(n), nil
+	return ParseProtocol(string(v))
 }
 
 // policyProtocolName writes the IP protocol n of a Policy in its one form: the name of TCP, UDP

@@ -3,6 +3,7 @@ package intent
 import (
 	"bytes"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -58,13 +59,13 @@ func TestReplace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := next.VRFs["corp"], (VRF{ID: 10, ULA: "fd12:3456:789a::/48", MTU: DefaultMTU}); got != want {
+	if got, want := next.VRFs["corp"], (VRF{ID: 10, ULA: "fd12:3456:789a::/48", MTU: DefaultMTU}); !reflect.DeepEqual(got, want) {
 		t.Errorf("corp, imported without its id and ULA, is %+v, want %+v", got, want)
 	}
-	if got, want := next.VRFs["lab"], (VRF{ID: 20, ULA: "fd12:3456:789c::/48", MTU: 1400}); got != want {
+	if got, want := next.VRFs["lab"], (VRF{ID: 20, ULA: "fd12:3456:789c::/48", MTU: 1400}); !reflect.DeepEqual(got, want) {
 		t.Errorf("lab, imported with another ULA, is %+v, want %+v", got, want)
 	}
-	if got, want := next.VRFs["new"], (VRF{ID: 1, ULA: "fd12:3456:789d::/48", MTU: DefaultMTU}); got != want {
+	if got, want := next.VRFs["new"], (VRF{ID: 1, ULA: "fd12:3456:789d::/48", MTU: DefaultMTU}); !reflect.DeepEqual(got, want) {
 		t.Errorf("new, a VRF the intent did not hold, is %+v, want %+v", got, want)
 	}
 	if len(next.VRFs) != 3 || len(next.Networks) != 0 || len(next.Nodes) != 0 || len(next.Controllers) != 0 {

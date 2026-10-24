@@ -38,6 +38,18 @@
 // 1:1 NAT (SDN-6, ADR-0025): a node gets the 1:1 NAT rules that it applies, its 4via6 among them,
 // in its NodeConfig, and the outside prefixes of the rules of a peer as routes of that Peer. No
 // schema version changes with them: a node of an older release skips the fields it does not know.
+//
+// Route leaking (SDN-7, ADR-0025 decisions 7 to 9): a VRF of the node that imports a route target
+// that another VRF exports gets the routes of that VRF which lead to a peer, as routes of that Peer
+// with Route.peer_vrf_id, the VRF of the peer that a packet on the route goes into. A node that
+// shares no VRF with the node but is reached through a leak, either way, is a Peer too. No schema
+// version changes with them: a node of an older release skips the field it does not know.
+//
+// DHCP responder (SDN-43, ADR-0028): the node that answers DHCP for an L2 Network gets the
+// responder in the Network object of its state (Network.dhcp), and after its Hello it sends the
+// controller the leases that the responder holds (Leases). No schema version changes with them: a
+// node of an older release skips the field it does not know, and a controller of an older release
+// answers the first Leases with REFUSE_REASON_PROTOCOL.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -67,6 +79,9 @@ message ControlMessage {
     // node to controller, after the Hello (SDN-16, ADR-0030): the counters, the flow records and the
     // events of the node
     Telemetry telemetry = 7;
+    // node to controller, after the Hello and whenever they change (SDN-43): the leases of the DHCP
+    // responder of one L2 Network
+    Leases leases = 8;
   }
 }
 
@@ -184,6 +199,9 @@ message NodeConfig {
   repeated Address addresses = 3;
   uint64 rate_limit = 4;  // bits per second that the node sends into the overlay, 0 for no limit (SDN-20)
   repeated Nat nat = 5;
+  // The Mirrors that the node applies, ordered by name (SDN-23). No schema version changes with
+  // them: a node of an older release skips the field.
+  repeated Mirror mirrors = 6;
 }
 
 // A VRF the node is a member of.
@@ -211,11 +229,16 @@ message Network {
   NetworkMode mode = 3;
   Prefix ipv4_pool = 4;
   Prefix ipv6_pool = 5;
+  // The DHCP responder of an L2 Network (SDN-43): only in the state of the node that answers DHCP
+  // for the Network, and only while the responder is on.
+  Dhcp dhcp = 6;
 }
 
-// Another node that shares at least one VRF with this one (full mesh), with its addresses in the
-// L3 Networks of the shared VRFs, ordered by Network name, and the routes of those VRFs that lead
-// to it besides them: the outside prefixes of its 1:1 NAT rules, ordered by VRF id, then prefix.
+// Another node that shares at least one VRF with this one (full mesh), or that a leak between a VRF
+// of each joins (SDN-7), with its addresses in the L3 Networks of the shared VRFs, ordered by
+// Network name, and the routes that lead to it besides them: the outside prefixes of its 1:1 NAT
+// rules in the shared VRFs, and the routes that its VRFs leak into the VRFs of this node, ordered
+// by VRF id, then prefix.
 message Peer {
   string name = 1;
   bytes public_key = 2;         // the Noise static key, 32 bytes
@@ -342,6 +365,42 @@ message Address {
   Prefix prefix = 3;
 }
 
+// The DHCP responder of an L2 Network on the node that answers DHCP for it (SDN-43 #236, ADR-0028).
+// While no DHCP server of the bridged LAN answers, the node gives the clients of the Network
+// addresses of its IPv4 pool, which stays the controller's, with the gateway and the DNS servers
+// below. It gives no client the first or the last address of the pool, a reservation of the
+// Network, the gateway, a DNS server or its own address. The addresses are IPv4, 4 bytes each.
+message Dhcp {
+  DhcpMode mode = 1;
+  bytes address = 2;             // the responder's own address in the pool: its server identifier
+  bytes gateway = 3;             // the router of the clients, empty for none
+  repeated bytes dns = 4;        // the DNS servers of the clients
+  uint32 lease_time = 5;         // seconds
+  repeated Prefix reserved = 6;  // the reservations of the Network in the IPv4 pool
+}
+
+// What the DHCP responder of an L2 Network does.
+enum DhcpMode {
+  DHCP_MODE_UNSPECIFIED = 0;  // as DHCP_MODE_OFF
+  DHCP_MODE_OFF = 1;          // the node answers no DHCP
+  DHCP_MODE_POOL = 2;         // the node answers from the pool while no DHCP server of the LAN answers
+}
+
+// The leases that the DHCP responder of one L2 Network holds (SDN-43): all of them, in place of the
+// ones the node sent for that Network before.
+message Leases {
+  string network = 1;
+  repeated Lease leases = 2;
+}
+
+// One lease: the address that a client holds until expires_ms (Unix time in milliseconds).
+message Lease {
+  bytes mac = 1;          // the client's MAC address, 6 bytes
+  bytes address = 2;      // its address in the pool, 4 bytes
+  uint64 expires_ms = 3;
+  string host_name = 4;   // the host name that the client sent (DHCP option 12), empty for none
+}
+
 // The summary that a node sends the controller on its stream (SDN-16 #192, ADR-0030 decision 3).
 // The counters are cumulative since the node started: a summary that is lost or repeated changes
 // nothing, and a node that restarts begins again at 0, which a monitoring system reads as a
@@ -436,4 +495,24 @@ message Nat {
 message Route {
   uint32 vrf_id = 1;
   Prefix prefix = 2;
+  // The VRF of the peer that a packet on the route goes into, when a VRF of the peer leaks the
+  // route into vrf_id (SDN-7): the node sends the packet with this VRF id, and the peer delivers it
+  // in that VRF. 0 for vrf_id itself.
+  uint32 peer_vrf_id = 3;
+}
+
+// A Mirror that a node applies (ADR-0029 decision 9, SDN-23): the node copies the IP packets of the
+// overlay that match it, those that it sends to its peers and those that it delivers to its host,
+// to the sensor in VXLAN (RFC 7348), each packet behind an Ethernet header. The controller gives a
+// node the Mirrors whose source selects it: a tag of the node, the node itself or a VRF of the node.
+message Mirror {
+  string name = 1;
+  uint32 vrf_id = 2;    // the VRF of the packets, 0 for every VRF of the node
+  uint32 protocol = 3;  // their IP protocol, 0 for any; 1 (ICMP) takes ICMPv6 in IPv6 packets
+  uint32 port = 4;      // their source or destination port, of TCP or UDP; 0 for any
+  bytes sensor = 5;     // the sensor's address: 4 bytes for IPv4, 16 for IPv6
+  uint32 sensor_port = 6;  // ... and its UDP port
+  uint32 vni = 7;       // the VNI of the copies, 0 for the VRF id of each packet
+  // Bits per second of VXLAN datagrams that the node sends the sensor at most, 0 for no limit
+  uint64 rate_limit = 8;
 }

@@ -27,7 +27,7 @@ static void ParseDNS(PKT *p, UCHAR *buf, UINT size);
 // The options of a DHCP payload: the bytes behind the magic cookie. The cookie is read only at its fixed
 // offset, and only when it is inside the payload: cookie bytes in sname, file or chaddr select nothing.
 // NULL when the payload has no cookie
-static UCHAR *DhcpOptionsOf(void *data, UINT size, UINT *options_size) {
+UCHAR *DhcpOptionsOf(void *data, UINT size, UINT *options_size) {
 	UINT magic_cookie = Endian32(DHCP_MAGIC_COOKIE);
 	if (data == NULL || size < DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT))
 		return NULL;
@@ -311,7 +311,9 @@ static void ParseDNS(PKT *p, UCHAR *buf, UINT size) {
 	p->TypeL7 = L7_DNS;
 }
 
-static BUF *BuildDhcpOptionsBuf(LIST *o) {
+// The options of the list o as they follow the magic cookie, with the End option: an option of more than
+// 255 bytes goes on in options 250 (DHCP_ID_PRIVATE), as ParseDhcpOptions reads them back
+BUF *BuildDhcpOptionsBuf(LIST *o) {
 	UCHAR id;
 	UCHAR sz;
 	if (o == NULL)
@@ -356,7 +358,8 @@ static BUF *BuildDhcpOptionsBuf(LIST *o) {
 	return b;
 }
 
-static DHCP_OPTION *NewDhcpOption(UINT id, const void *data, UINT size) {
+// A DHCP option of the id with a copy of the size bytes at data, for a list that FreeDhcpOptions frees
+DHCP_OPTION *NewDhcpOption(UINT id, const void *data, UINT size) {
 	if (size != 0 && data == NULL)
 		return NULL;
 

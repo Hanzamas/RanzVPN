@@ -77,17 +77,22 @@ func FuzzParseDocument(f *testing.F) {
 }
 
 // FuzzParseValues reads the input as each value of a resource that has a parser of its own: the
-// ULA of a VRF (ParseULA), the pools of a Network (ParsePool), the public key of a Node (ParseKey)
-// and its relay address (ParseRelay), and, inside the package, a reservation of a Network
-// (parseReserved), a LAN subnet of a Node (parseLAN) and a prefix of a 1:1 NAT rule
-// (parseNATPrefix).
+// ULA of a VRF (ParseULA) and its route targets (ParseRouteTarget, whose one form parses as
+// itself), the pools of a Network (ParsePool), the public key of a Node (ParseKey) and its relay
+// address (ParseRelay), and, inside the package, a reservation of a Network (parseReserved), a LAN
+// subnet of a Node (parseLAN) and a prefix of a 1:1 NAT rule (parseNATPrefix).
 func FuzzParseValues(f *testing.F) {
 	for _, s := range []string{"fd12:3456:789a::/48", "10.0.0.0/24", "2001:db8::/64", key1, "192.0.2.1:4000", "[2001:db8::1]:4000", "[::ffff:192.0.2.1]:1",
-		"10.0.0.1", "192.168.1.0/24", "0.0.0.0/0", "::ffff:10.0.0.0/120"} {
+		"10.0.0.1", "192.168.1.0/24", "0.0.0.0/0", "::ffff:10.0.0.0/120", "65000:100", "064512:007", "4200000000:65535"} {
 		f.Add(s)
 	}
 
 	f.Fuzz(func(t *testing.T, s string) {
+		if rt, err := ParseRouteTarget(s); err == nil {
+			if again, err := ParseRouteTarget(rt); err != nil || again != rt {
+				t.Errorf("ParseRouteTarget(%q) = %q, which parses as %q, %v", s, rt, again, err)
+			}
+		}
 		if p, err := ParseULA(s); err == nil && (p.Bits() != 48 || !p.Addr().Is6()) {
 			t.Errorf("ParseULA(%q) = %s, not an IPv6 /48", s, p)
 		}
