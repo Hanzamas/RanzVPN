@@ -187,6 +187,51 @@ func TestFileSHA256(t *testing.T) {
 	}
 }
 
+// An Unsigned payload, a file that cannot carry a signature, is written after its hash check and
+// never reaches the Authenticode check (ONE-3, #312).
+func TestInstallDoesNotRunTheSignatureCheckForAnUnsignedPayload(t *testing.T) {
+	dir := t.TempDir()
+	withVerify(t, func(string) error { t.Fatal("verify ran for an unsigned payload"); return nil })
+
+	data := []byte("the INF of a driver package")
+	if err := Install(dir, NewUnsigned("driver.inf", data)); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "driver.inf"))
+	if err != nil {
+		t.Fatalf("reading the installed file: %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatalf("the installed file is %q, not %q", got, data)
+	}
+}
+
+// The hash check of an Unsigned payload stands: a file that was written wrong is refused.
+func TestInstallChecksTheHashOfAnUnsignedPayload(t *testing.T) {
+	dir := t.TempDir()
+	withVerify(t, func(string) error { t.Fatal("verify ran for an unsigned payload"); return nil })
+	withHashFile(t, func(string) ([32]byte, error) { return sha256.Sum256([]byte("other bytes")), nil })
+
+	err := Install(dir, NewUnsigned("driver.inf", []byte("real bytes")))
+	if err == nil || !strings.Contains(err.Error(), "does not match the hash") {
+		t.Fatalf("Install of an unsigned file that was written wrong = %v, want a refusal for its hash", err)
+	}
+	assertEmpty(t, dir)
+}
+
+func TestNewUnsignedRecordsTheHashAndTheFlag(t *testing.T) {
+	p := NewUnsigned("driver.inf", []byte("x"))
+	if !p.Unsigned {
+		t.Error("NewUnsigned did not mark the payload unsigned")
+	}
+	if p.SHA256 != sha256.Sum256([]byte("x")) {
+		t.Errorf("NewUnsigned recorded the hash %x, not the SHA-256 of its data", p.SHA256)
+	}
+	if New("driver.sys", []byte("x")).Unsigned {
+		t.Error("New marked a payload unsigned: its signature must be checked")
+	}
+}
+
 // assertEmpty fails the test unless dir holds no files: a refused Install must leave no temporary
 // file behind and never create the destination path.
 func assertEmpty(t *testing.T, dir string) {

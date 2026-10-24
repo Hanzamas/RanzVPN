@@ -1,13 +1,18 @@
 // Package payload is the mechanism that writes a file embedded in ranz.exe out to disk (ADR-0011
 // amendment of 2026-10-22, ONE-2 #311; the Payload entry of CONTEXT.md): ranz-node.exe, the rqlite
 // member of a Controller (ONE-4 #313, which Ensure writes again when it is missing), and the
-// Wintun driver, the SeLow package and the XDP runtime of ONE-3 later. A Payload carries its own
-// data and the SHA-256 recorded for it. Install writes the data to a temporary file beside the
-// destination and checks that file, its hash and its Authenticode signature, before it takes the
-// place of the destination by a rename: a payload that fails either check is never written to its
-// destination and never started. The signature check is Windows only (verify_windows.go); on
-// another OS it always refuses (verify_other.go), so Install never produces a file that nothing
-// has verified.
+// Wintun driver, the SeLow package and the XDP runtime of ONE-3 #312 (wintun.go, selow.go,
+// xdp.go). A Payload carries its own data and the SHA-256 recorded for it. Install writes the data
+// to a temporary file beside the destination and checks that file, its hash and its Authenticode
+// signature, before it takes the place of the destination by a rename: a payload that fails either
+// check is never written to its destination and never started. The signature check is Windows
+// only (verify_windows.go); on another OS it always refuses (verify_other.go), so Install never
+// produces a file that nothing has verified.
+//
+// A file that cannot carry an Authenticode signature is an Unsigned Payload, which Install checks
+// by its hash alone: the INF and the performance counter manifest of a driver package, and the
+// NOTICE. Windows itself checks an INF against the signed catalog of its package when the package
+// is published (SetupCopyOEMInf), and ranz.exe, which holds every Payload, is signed as a whole.
 //
 // The directory that Install writes to must be one that only SYSTEM and the Administrators can
 // write to. Otherwise another account could replace the temporary file between the check and the
@@ -30,11 +35,23 @@ type Payload struct {
 	Name   string
 	Data   []byte
 	SHA256 [32]byte
+	// Unsigned marks a file that carries no Authenticode signature of its own (NewUnsigned):
+	// Install checks its hash and does not run the signature check.
+	Unsigned bool
 }
 
-// New returns the Payload name of the embedded bytes data, with its SHA-256 recorded.
+// New returns the Payload name of the embedded bytes data, with its SHA-256 recorded. Install
+// checks the Authenticode signature of the file it writes.
 func New(name string, data []byte) Payload {
 	return Payload{Name: name, Data: data, SHA256: sha256.Sum256(data)}
+}
+
+// NewUnsigned returns the Payload name of the embedded bytes data, a file that cannot carry an
+// Authenticode signature, with its SHA-256 recorded. Install checks its hash only.
+func NewUnsigned(name string, data []byte) Payload {
+	p := New(name, data)
+	p.Unsigned = true
+	return p
 }
 
 // verify is the Authenticode check that Install runs on the file it is about to install:
@@ -93,7 +110,8 @@ func Install(dir string, p Payload) error {
 }
 
 // check runs the two checks on the file at path: it must hold the bytes whose hash p records, as
-// they came off the disk, and its Authenticode signature must verify.
+// they came off the disk, and its Authenticode signature must verify. An Unsigned payload has the
+// first check only.
 func check(path string, p Payload) error {
 	sum, err := hashFile(path)
 	if err != nil {
@@ -101,6 +119,9 @@ func check(path string, p Payload) error {
 	}
 	if sum != p.SHA256 {
 		return errors.New("the file it wrote does not match the hash recorded for it")
+	}
+	if p.Unsigned {
+		return nil
 	}
 	return verify(path)
 }

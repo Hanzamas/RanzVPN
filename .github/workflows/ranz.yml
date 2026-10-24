@@ -91,6 +91,10 @@ on:
     - '.github/scripts/coverage-floor.py'
     - '.github/scripts/govulncheck-gate.py'
     - '.github/scripts/binary-hardening.ps1'
+    - '.github/scripts/fetch-wintun.ps1'
+    - '.github/scripts/fetch-xdp.ps1'
+    - 'src/bin/hamcore/legal.txt'
+    - 'src/bin/hamcore/DriverPackages/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -112,6 +116,11 @@ env:
   # digests, windows.yml and the NOTICE together.
   RQLITE_LINUX_AMD64_SHA256: '93dc04417d9d233e79eb359e325793b1f92daa84ec93694953f4bff6307fda2b'
   RQLITE_WIN64_SHA256: '0f4a65a603b89b9a3c2607c5de64445236856884c83aa2e865ec9142fd184118'
+  # The releases of the drivers that ranz carries as Payloads (ONE-3, #312), pinned by their fetch
+  # scripts (.github/scripts/fetch-wintun.ps1, fetch-xdp.ps1), which a step below checks against these:
+  # the jobs download the licence of each pinned tag for the NOTICE tests
+  WINTUN_VERSION: '0.14.1'
+  XDP_VERSION: '1.4.0'
   # The Go static analysis of ADR-0040 item 3: staticcheck 2026.2.2 and govulncheck
   STATICCHECK_VERSION: 'v0.8.2'
   GOVULNCHECK_VERSION: 'v1.9.0'
@@ -241,6 +250,19 @@ jobs:
         grep -Fq "rqlite/blob/${RQLITE_VERSION}/go.mod" controller/cmd/ranz/NOTICE
         curl -fsSL -o "$RUNNER_TEMP/rqlite-LICENSE" "https://raw.githubusercontent.com/rqlite/rqlite/${RQLITE_VERSION}/LICENSE"
         echo "RQLITE_LICENSE=$RUNNER_TEMP/rqlite-LICENSE" >> "$GITHUB_ENV"
+    # The pins of the Wintun DLL and of the XDP runtime (ONE-3, #312): the versions here, in the fetch
+    # scripts that windows.yml runs and in the NOTICE (TestNoticeNamesThePinnedPayloads) are one. The
+    # licence of each pinned tag is downloaded for TestNoticeHasTheWintunLicence and
+    # TestNoticeHasTheXDPLicence, which compare it with the NOTICE word for word, so a new version
+    # fails until the NOTICE follows it.
+    - name: The pins and the licences of the Wintun and XDP releases
+      run: |
+        grep -Fq "[string] \$Version = '${WINTUN_VERSION}'" .github/scripts/fetch-wintun.ps1
+        grep -Fq "[string] \$Version = '${XDP_VERSION}'" .github/scripts/fetch-xdp.ps1
+        curl -fsSL -o "$RUNNER_TEMP/wintun-LICENSE" "https://raw.githubusercontent.com/WireGuard/wintun/${WINTUN_VERSION}/prebuilt-binaries-license.txt"
+        curl -fsSL -o "$RUNNER_TEMP/xdp-LICENSE" "https://raw.githubusercontent.com/microsoft/xdp-for-windows/v${XDP_VERSION}/LICENSE"
+        echo "WINTUN_LICENSE=$RUNNER_TEMP/wintun-LICENSE" >> "$GITHUB_ENV"
+        echo "XDP_LICENSE=$RUNNER_TEMP/xdp-LICENSE" >> "$GITHUB_ENV"
     # The tools of SDN-53 (#246), read from outside. ranz cert makes a CA and the certificates that it
     # signs, and OpenSSL takes them: openssl verify builds their chain (the trust store), an openssl
     # s_server with a certificate (the listener) is accepted by an openssl s_client that trusts the CA
@@ -435,6 +457,14 @@ jobs:
         $licence = Join-Path $env:RUNNER_TEMP 'rqlite-LICENSE'
         Invoke-WebRequest -Uri "https://raw.githubusercontent.com/rqlite/rqlite/$env:RQLITE_VERSION/LICENSE" -OutFile $licence
         "RQLITE_LICENSE=$licence" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        # The licences of the pinned Wintun and XDP releases, for TestNoticeHasTheWintunLicence and
+        # TestNoticeHasTheXDPLicence (ONE-3, #312)
+        $wintun = Join-Path $env:RUNNER_TEMP 'wintun-LICENSE'
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/WireGuard/wintun/$env:WINTUN_VERSION/prebuilt-binaries-license.txt" -OutFile $wintun
+        "WINTUN_LICENSE=$wintun" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        $xdp = Join-Path $env:RUNNER_TEMP 'xdp-LICENSE'
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/microsoft/xdp-for-windows/v$env:XDP_VERSION/LICENSE" -OutFile $xdp
+        "XDP_LICENSE=$xdp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         $sum = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
         if ($sum -ne $env:RQLITE_WIN64_SHA256) { throw "rqlite-$env:RQLITE_VERSION-win64.zip has the SHA-256 $sum, not the pinned $env:RQLITE_WIN64_SHA256" }
         Expand-Archive -Path $zip -DestinationPath $dir
