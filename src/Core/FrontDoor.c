@@ -13,7 +13,6 @@
 
 #include <ws2tcpip.h>
 
-#include <stdlib.h>
 #include <string.h>
 
 #define FRONT_DOOR_STOP_POLL 50 // How often a wait of a connection looks whether the front door stops (ms)
@@ -64,10 +63,13 @@ static bool FrontDoorSplitAddress(const char *address, char *host, UINT host_siz
 	if (host_len >= host_size || port_len == 0 || port_len > 5 || port_len >= port_size)
 		return false;
 
-	for (UINT i = 0; i < port_len; i++)
+	UINT port_number = 0;
+	for (UINT i = 0; i < port_len; i++) {
 		if (colon[1 + i] < '0' || colon[1 + i] > '9')
 			return false;
-	if (atoi(colon + 1) > 65535)
+		port_number = port_number * 10 + (UINT)(colon[1 + i] - '0');
+	}
+	if (port_number > 65535)
 		return false;
 
 	memcpy(host, start, host_len);

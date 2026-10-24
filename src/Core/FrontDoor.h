@@ -35,19 +35,19 @@
 #define FRONT_DOOR_PORT 443 // The port of the front door in a deployment (ADR-0035 decision 1)
 
 // The limits of the owner table
-#define FRONT_DOOR_MAX_OWNERS  16  // Owners of one front door at most
-#define FRONT_DOOR_NAME_SIZE   32  // An owner's name, its terminator included
-#define FRONT_DOOR_LIST_SIZE   256 // A list of server names or ALPN protocols, its terminator included
-#define FRONT_DOOR_PREFIX_SIZE 32  // The first bytes of a byte owner at most
-#define FRONT_DOOR_PIPE_SIZE   128 // Characters of a pipe name, its terminator included
+#define FRONT_DOOR_MAX_OWNERS   16  // Owners of one front door at most
+#define FRONT_DOOR_NAME_SIZE    32  // An owner's name, its terminator included
+#define FRONT_DOOR_LIST_SIZE    256 // A list of server names or ALPN protocols, its terminator included
+#define FRONT_DOOR_PREFIX_SIZE  32  // The first bytes of a byte owner at most
+#define FRONT_DOOR_PIPE_SIZE    128 // Characters of a pipe name, its terminator included
 #define FRONT_DOOR_ADDRESS_SIZE 256 // The address of a front door, its terminator included
 
 // What the front door reads of a connection before it hands it over
-#define FRONT_DOOR_MAX_HELLO    16384  // The largest ClientHello it reads: the handshake message, its header included
-#define FRONT_DOOR_MAX_PEEK     32768  // Bytes it peeks at most: the ClientHello in records, or the first bytes
-#define FRONT_DOOR_MAX_NAME     255    // Bytes of a server name at most (RFC 6066 section 3)
+#define FRONT_DOOR_MAX_HELLO     16384 // The largest ClientHello it reads: the handshake message, its header included
+#define FRONT_DOOR_MAX_PEEK      32768 // Bytes it peeks at most: the ClientHello in records, or the first bytes
+#define FRONT_DOOR_MAX_NAME      255   // Bytes of a server name at most (RFC 6066 section 3)
 #define FRONT_DOOR_MAX_PROTOCOLS 16    // ALPN protocols of a ClientHello that it keeps
-#define FRONT_DOOR_MAX_PROTOCOL 255    // Bytes of an ALPN protocol at most (RFC 7301 section 3.1)
+#define FRONT_DOOR_MAX_PROTOCOL  255   // Bytes of an ALPN protocol at most (RFC 7301 section 3.1)
 
 // The timers of a connection
 #define FRONT_DOOR_PEEK_TIMEOUT    10000 // The first bytes decide the owner within this time, or the connection closes (ms)
@@ -78,15 +78,15 @@ typedef bool(FRONT_DOOR_TAKE_PROC)(void *param, SOCKET s);
 
 // One owner of the table
 typedef struct FRONT_DOOR_OWNER {
-	char Name[FRONT_DOOR_NAME_SIZE];         // "node", "controller": for the counters and the log
-	UINT Kind;                               // FRONT_DOOR_TLS or FRONT_DOOR_BYTES
-	char ServerNames[FRONT_DOOR_LIST_SIZE];  // TLS: the server names it takes, separated by commas, without case; "*.example" takes every name under example; empty takes any, and a ClientHello without one
-	char Protocols[FRONT_DOOR_LIST_SIZE];    // TLS: the ALPN protocols it takes, separated by commas: one of them offered; empty takes any, and a ClientHello without ALPN
-	UCHAR Prefix[FRONT_DOOR_PREFIX_SIZE];    // BYTES: the first bytes of its connections ...
-	UINT PrefixSize;                         // ... their number, 1 to FRONT_DOOR_PREFIX_SIZE
-	wchar_t Pipe[FRONT_DOOR_PIPE_SIZE];      // The handoff pipe of the owner process ("\\.\pipe\..."); empty for an owner in this process
-	FRONT_DOOR_TAKE_PROC *Take;              // An owner in this process: takes the socket
-	void *Param;                             // ... with this parameter
+	char Name[FRONT_DOOR_NAME_SIZE];        // "node", "controller": for the counters and the log
+	UINT Kind;                              // FRONT_DOOR_TLS or FRONT_DOOR_BYTES
+	char ServerNames[FRONT_DOOR_LIST_SIZE]; // TLS: the server names it takes, separated by commas, without case; "*.example" takes every name under example; empty takes any, and a ClientHello without one
+	char Protocols[FRONT_DOOR_LIST_SIZE];   // TLS: the ALPN protocols it takes, separated by commas: one of them offered; empty takes any, and a ClientHello without ALPN
+	UCHAR Prefix[FRONT_DOOR_PREFIX_SIZE];   // BYTES: the first bytes of its connections ...
+	UINT PrefixSize;                        // ... their number, 1 to FRONT_DOOR_PREFIX_SIZE
+	wchar_t Pipe[FRONT_DOOR_PIPE_SIZE];     // The handoff pipe of the owner process ("\\.\pipe\..."); empty for an owner in this process
+	FRONT_DOOR_TAKE_PROC *Take;             // An owner in this process: takes the socket
+	void *Param;                            // ... with this parameter
 } FRONT_DOOR_OWNER;
 
 // How a front door runs
@@ -100,23 +100,23 @@ typedef struct FRONT_DOOR_CONFIG {
 
 // What a front door did (FrontDoorGetStats)
 typedef struct FRONT_DOOR_STATS {
-	UINT64 Accepted;                     // Connections accepted
+	UINT64 Accepted;                      // Connections accepted
 	UINT64 Handed[FRONT_DOOR_MAX_OWNERS]; // ... handed to each owner, by its index in the table
-	UINT64 Unrouted;                     // ... closed because no owner takes them
-	UINT64 Refused;                      // ... closed because their owner did not take them: no pipe, no answer, or a refusal
+	UINT64 Unrouted;                      // ... closed because no owner takes them
+	UINT64 Refused;                       // ... closed because their owner did not take them: no pipe, no answer, or a refusal
 } FRONT_DOOR_STATS;
 
 // What the ClientHello of a TLS connection names (FrontDoorParseHello). The names point into Message, so a hello is
 // read where it was parsed, never copied.
 typedef struct FRONT_DOOR_HELLO {
-	UCHAR Message[FRONT_DOOR_MAX_HELLO];               // The ClientHello message, its header included, put together from its records ...
-	UINT MessageSize;                                  // ... its bytes
-	UINT RecordsSize;                                  // The bytes of the records up to its end, their headers included
-	const UCHAR *ServerName;                           // The host_name of server_name, NULL without one ...
-	UINT ServerNameSize;                               // ... its bytes, 1 to FRONT_DOOR_MAX_NAME
-	UINT NumProtocols;                                 // The ALPN protocols offered, of which the first FRONT_DOOR_MAX_PROTOCOLS are kept ...
-	const UCHAR *Protocols[FRONT_DOOR_MAX_PROTOCOLS];  // ... each one
-	UINT ProtocolSizes[FRONT_DOOR_MAX_PROTOCOLS];      // ... and its bytes, 1 to FRONT_DOOR_MAX_PROTOCOL
+	UCHAR Message[FRONT_DOOR_MAX_HELLO];              // The ClientHello message, its header included, put together from its records ...
+	UINT MessageSize;                                 // ... its bytes
+	UINT RecordsSize;                                 // The bytes of the records up to its end, their headers included
+	const UCHAR *ServerName;                          // The host_name of server_name, NULL without one ...
+	UINT ServerNameSize;                              // ... its bytes, 1 to FRONT_DOOR_MAX_NAME
+	UINT NumProtocols;                                // The ALPN protocols offered, of which the first FRONT_DOOR_MAX_PROTOCOLS are kept ...
+	const UCHAR *Protocols[FRONT_DOOR_MAX_PROTOCOLS]; // ... each one
+	UINT ProtocolSizes[FRONT_DOOR_MAX_PROTOCOLS];     // ... and its bytes, 1 to FRONT_DOOR_MAX_PROTOCOL
 } FRONT_DOOR_HELLO;
 
 // The handoff message: the socket, duplicated into the owner process

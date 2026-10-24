@@ -68,12 +68,12 @@ typedef struct FRONTDOOR_CHILD {
 } FRONTDOOR_CHILD;
 
 // The node of a child process
-typedef struct FRONTDOOR_NODE {
+typedef struct FRONTDOOR_NODE_STATE {
 	TRANSPORT_LISTENER *Listener; // The listener of its TLS transport, on no socket of its own
 	UCHAR Key[NOISE_KEY_SIZE];    // Its static key
 	volatile LONG Stop;           // Set once its standard input ended
 	UINT Sessions;                // The Noise sessions that came up
-} FRONTDOOR_NODE;
+} FRONTDOOR_NODE_STATE;
 
 static void frontdoor_put16(UCHAR *p, UINT v) {
 	p[0] = (UCHAR)(v >> 8);
@@ -207,7 +207,7 @@ static bool frontdoor_names(const FRONT_DOOR_HELLO *hello, const char *name, con
 
 // The owner procedure of the node: its TLS transport takes the connection
 static bool frontdoor_take(void *param, SOCKET s) {
-	FRONTDOOR_NODE *n = (FRONTDOOR_NODE *)param;
+	FRONTDOOR_NODE_STATE *n = (FRONTDOOR_NODE_STATE *)param;
 
 	return TransportTake(n->Listener, (UINT_PTR)s);
 }
@@ -1042,7 +1042,7 @@ static int frontdoor_owner_child(const char *pipe, const char *name) {
 // The sessions of a node: each stream that its TLS transport accepted runs the responder of a Noise session and echoes
 // its records until the client closes
 static DWORD WINAPI frontdoor_sessions(LPVOID param) {
-	FRONTDOOR_NODE *n = (FRONTDOOR_NODE *)param;
+	FRONTDOOR_NODE_STATE *n = (FRONTDOOR_NODE_STATE *)param;
 	UCHAR *buf = (UCHAR *)HeapAlloc(GetProcessHeap(), 0, NOISE_MAX_PAYLOAD);
 	NOISE_SESSION_CONFIG c;
 
@@ -1085,7 +1085,7 @@ static DWORD WINAPI frontdoor_sessions(LPVOID param) {
 // A node process: its TLS transport with the certificate of the thumbprint, a listener of it on no socket of its own,
 // and the front door on a test port with the owner table of the test, until its input ends; then its counters
 static int frontdoor_node_child(const char *thumbprint, bool machine, const char *controller, const char *signature, const char *absent) {
-	FRONTDOOR_NODE *n = (FRONTDOOR_NODE *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(FRONTDOOR_NODE));
+	FRONTDOOR_NODE_STATE *n = (FRONTDOOR_NODE_STATE *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(FRONTDOOR_NODE_STATE));
 	FRONT_DOOR_OWNER *owners = (FRONT_DOOR_OWNER *)HeapAlloc(GetProcessHeap(), 0, sizeof(FRONT_DOOR_OWNER) * FRONTDOOR_NUM_OWNERS);
 	wchar_t pipes[3][FRONT_DOOR_PIPE_SIZE];
 	TRANSPORT_TLS_CONFIG cfg;

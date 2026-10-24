@@ -10,9 +10,9 @@
 
 #include <sddl.h>
 
-#define FRONT_DOOR_PIPE_BACKLOG 16    // Sockets that wait for Accept at most: a handoff beyond them is refused
-#define FRONT_DOOR_PIPE_RETRY   10    // How long the thread waits after a connect of the pipe failed (ms)
-#define FRONT_DOOR_PIPE_BUFFER  4096  // The buffers of the pipe (bytes): a handoff message and an answer fit
+#define FRONT_DOOR_PIPE_BACKLOG 16   // Sockets that wait for Accept at most: a handoff beyond them is refused
+#define FRONT_DOOR_PIPE_RETRY   10   // How long the thread waits after a connect of the pipe failed (ms)
+#define FRONT_DOOR_PIPE_BUFFER  4096 // The buffers of the pipe (bytes): a handoff message and an answer fit
 
 struct FRONT_DOOR_PIPE {
 	HANDLE Pipe;                           // The instance of the pipe
