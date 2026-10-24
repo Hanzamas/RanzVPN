@@ -46,6 +46,8 @@
 // it. A signature verifies, other data and a block with bytes after the hash do not, and a received
 // signature of another length than the key's is rejected. Prints "RSASIG TEST OK".
 
+#include "testlist.h"
+
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
@@ -443,6 +445,7 @@ static void X509TestBundle(X509T_CTX *ctx, K *priv, K *pub)
 }
 
 // X.509 and certificate signature test
+RANZ_TEST("x509", x509_test, "X.509: long name fields, certificate times in UTC, PKCS#1 v1.5 signature length, PEM bundle with an unknown key.");
 void x509_test(UINT num, char **arg)
 {
 	X509T_CTX ctx;
@@ -494,6 +497,7 @@ static X *X509TestPemToX(const char *pem)
 
 // Certificate signature test: a certificate with an unknown signature algorithm that names the test
 // CA as its issuer is not signed by it
+RANZ_TEST("certsig", certsig_test, "Certificate signatures: only X509_verify() == 1 is valid; an unknown signature algorithm fails CheckXEx and GetIssuerFromList.");
 void certsig_test(UINT num, char **arg)
 {
 	X509T_CTX ctx;
@@ -570,6 +574,7 @@ static X509 *X509TestPemToX509(char *pem)
 }
 
 // Root certificate and X509ToX ownership test
+RANZ_TEST("x509root", x509root_test, "Root certificates: root_cert only for a verified self-signature; X509ToX leaves a certificate it refuses to its caller.");
 void x509root_test(UINT num, char **arg)
 {
 	X509T_CTX ctx;
@@ -661,6 +666,7 @@ static void X509TestRsaSizes(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 }
 
 // RSA client certificate signature test
+RANZ_TEST("rsasig", rsasig_test, "RSA client certificate signatures: PKCS#1 v1.5 SHA-1, a destination smaller than the key refused, a signature of another length rejected.");
 void rsasig_test(UINT num, char **arg)
 {
 	X509T_CTX ctx;

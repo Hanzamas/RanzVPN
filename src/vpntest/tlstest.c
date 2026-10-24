@@ -30,6 +30,8 @@
 // the list (CI takes the runner image's off, .github/scripts/vpntest.ps1). Print "TLS TEST OK" only when every check
 // passes.
 
+#include "testlist.h"
+
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -1249,6 +1251,7 @@ static void TlsTestPfxServer(TLSTEST_CTX *ctx)
 	Free(r);
 }
 
+RANZ_TEST_TAGS("tls", tls_test, "core", "TLS-443: a client completes a Schannel TLS 1.3 handshake on a test port, the Noise session comes up bound to the TLS exporter; X25519MLKEM768 first where the OS has ML-KEM, AES-GCM only, the server key in the KSP, the pin, the fallback when UDP is blocked (administrator rights).");
 void tls_test(UINT num, char **arg)
 {
 	TLSTEST_CTX *ctx = ZeroMalloc(sizeof(TLSTEST_CTX));

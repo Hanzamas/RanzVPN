@@ -27,6 +27,7 @@
 // Print "VRF TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
@@ -1778,6 +1779,7 @@ static void VrfTestOverlay(VRFTEST_CTX *ctx)
 }
 
 // vrf: the forwarding tables of the VRFs and the overlay that forwards on them
+RANZ_TEST("vrf", vrf_test, "VRF forwarding tables: DIR-24-8 and trie lookups against a reference on random routes, swaps under readers, two VRFs on 10.0.0.0/24 kept apart over the overlay (golden family vrf), a stream that loses no packet while the tables swap.");
 void vrf_test(UINT num, char **arg)
 {
 	VRFTEST_CTX ctx;

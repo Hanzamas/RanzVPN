@@ -20,6 +20,7 @@
 // Print "NAT TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
@@ -1306,6 +1307,7 @@ static void NatTestOverlay(NATTEST_CTX *ctx)
 }
 
 // nat: 1:1 NAT and 4via6 of the data plane, on packets and over the overlay
+RANZ_TEST("nat", nat_test, "1:1 NAT and 4via6: packets through the rules of four VRFs against packets that the test builds, ICMP errors included; over the overlay a host in two VRFs on 10.0.0.0/24 reaches 10.0.0.5 in each through two 4via6 addresses, and a 1:1 NAT rule rewrites both ways (golden family nat).");
 void nat_test(UINT num, char **arg)
 {
 	NATTEST_CTX ctx;

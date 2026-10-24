@@ -1,6 +1,8 @@
 // fuzz_login.c
 // libFuzzer target: the client's "login" PACK as the server reads it before the authentication
 // (BufToPack, then ParseLoginRequest, FND-196 #164)
+//
+// fuzz-max-len: 4096
 
 #include "fuzz_common.h"
 

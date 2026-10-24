@@ -19,6 +19,8 @@
 // old code run last. Prints "BUFBOUNDS TEST OK" only when every check passes, and frees everything
 // it allocates.
 
+#include "testlist.h"
+
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
@@ -721,6 +723,7 @@ static void BufBoundsTestCfgRead(BUFBOUNDS_CTX *ctx)
 }
 
 // bufbounds: BUF reads and writes near 2^32 and the binary configuration reader of SEC-3
+RANZ_TEST("bufbounds", bufbounds_test, "BUF bounds: ReadBuf, ReadBufStr and WriteBuf near 2^32, the binary configuration reader against counts and sizes past the end.");
 void bufbounds_test(UINT num, char **arg)
 {
 	BUFBOUNDS_CTX ctx;

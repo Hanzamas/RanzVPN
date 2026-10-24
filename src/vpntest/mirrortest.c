@@ -19,6 +19,8 @@
 //   packet is either copied or counted as limited.
 // Print "MIRROR TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
 
@@ -830,6 +832,7 @@ static void MirrorTestClose(MIRRORTEST_CTX *ctx)
 }
 
 // mirror: the Mirrors of a node over VXLAN
+RANZ_TEST("mirror", mirror_test, "Mirror: packets of the overlay that a Mirror takes (VRF, protocol, port) arrive at a harness sensor in VXLAN as golden datagrams, both ways and over IPv6; no other packet is copied; the rate limit of a Mirror holds under a load far above it.");
 void mirror_test(UINT num, char **arg)
 {
 	MIRRORTEST_CTX *ctx = ZeroMalloc(sizeof(MIRRORTEST_CTX));

@@ -13,6 +13,8 @@
 // this file adds and the module does not know, TCP on 127.0.0.1 through Winsock: the session layer takes it as it is.
 // Print "TRANSPORT TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -705,6 +707,7 @@ static void TransportTestRaces(TRANSPORTTEST_CTX *ctx, TRANSPORTTEST_NET *net)
 	TransportTestEndRace(ctx, net, NULL);
 }
 
+RANZ_TEST_TAGS("transport", transport_test, "core", "Transport: a Noise session end to end over the loopback transport, the race of a configured fallback list (the first to connect wins), the same session over a second transport.");
 void transport_test(UINT num, char **arg)
 {
 	TRANSPORTTEST_CTX *ctx = ZeroMalloc(sizeof(TRANSPORTTEST_CTX));

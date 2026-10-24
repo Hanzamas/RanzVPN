@@ -64,8 +64,8 @@
 // - The log cases of PKG-4 (#108) run after the vpncmd command cases and restore every setting they change.
 //   Syslog datagrams go to a loopback UDP socket of the test on an ephemeral port.
 
-#include "harness.h"
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/Account.h"
 #include "Cedar/Admin.h"
@@ -7530,6 +7530,7 @@ static void HarnessLogRecordCheck(HARNESS *h)
 // Entry points
 
 // "harness": in-process server, two hubs, cascade, frames, vpncmd golden outputs and configuration round-trips
+RANZ_TEST("harness", harness_test, "In-process server: hubs, cascade, frames, vpncmd golden outputs, config round-trip.");
 void harness_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
@@ -7604,6 +7605,7 @@ void harness_test(UINT num, char **arg)
 
 // "bench": cascade path frames per second, in-process hub flood, Pack, ParsePacket and IP table expiry
 // (informational, fails only on errors). Every case runs HARNESS_BENCH_RUNS times: the median, then every run
+RANZ_TEST("bench", bench_test, "Cascade frame throughput and Pack encode/decode benchmark (informational).");
 void bench_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
@@ -7681,6 +7683,7 @@ void bench_test(UINT num, char **arg)
 
 // "certdl": SetServerCert with server certificates whose issuer URL names a loopback listener of the test; the
 // server downloads the issuer certificate from it (DownloadCert, spec #30 step 9), one listener answer per run
+RANZ_TEST("certdl", certdl_test, "SetServerCert downloads the issuer certificate from a loopback listener (DownloadCert).");
 void certdl_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
@@ -7817,6 +7820,7 @@ void certdl_test(UINT num, char **arg)
 
 // "listenerbind": ListenerCreate and ListenerEnable wait for the bind attempt of the listener thread and report a
 // port that cannot be bound (FIX-3 #99). Before FIX-3 both slept a fixed 250 ms and always returned ERR_NO_ERROR.
+RANZ_TEST("listenerbind", listenerbind_test, "ListenerCreate and ListenerEnable wait for the bind and report a port that cannot be bound.");
 void listenerbind_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
@@ -7971,6 +7975,7 @@ void listenerbind_test(UINT num, char **arg)
 // "adminaudit": the admin RPC handlers write their audit line after an operation that succeeded, never after a
 // failed one, with the right string table key, and change the configuration revision only when the configuration
 // changed (FND-10 #107). The server's syslog goes to a loopback receiver of the test
+RANZ_TEST("adminaudit", adminaudit_test, "Admin audit: audit lines only after a successful call and with the right key, the configuration revision only after a change.");
 void adminaudit_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
@@ -8271,6 +8276,7 @@ static void PtrKeyAccessList(HARNESS *h)
 }
 
 // "ptrkey": POINTER_TO_KEY keys a block by its address; access list delete by UniqueId
+RANZ_TEST("ptrkey", ptrkey_test, "Pointer keys: POINTER_TO_KEY keys a block by its address; AccessDelete by UniqueId removes that entry after the Ids are renumbered.");
 void ptrkey_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
