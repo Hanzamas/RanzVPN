@@ -10,10 +10,11 @@ import (
 )
 
 // ranz install and ranz uninstall are the install and uninstall of the product (package install,
-// ONE-2 #311, ONE-3 #312); this file only parses -controller and -no-xdp, passes the NOTICE that
-// install writes beside the Wintun DLL and the standard output for the steps they report, and
-// reports the result the way every subcommand of ranz does. The flags are spelled -controller or
-// --controller, -no-xdp or --no-xdp.
+// ONE-2 #311, ONE-3 #312); this file only parses -controller, -no-xdp and -keep-ranz, passes the
+// NOTICE that install writes beside the Wintun DLL and the standard output for the steps they
+// report, and reports the result the way every subcommand of ranz does. The flags are spelled
+// -controller or --controller, -no-xdp or --no-xdp, -keep-ranz or --keep-ranz. The thin MSI runs
+// ranz install and ranz uninstall -keep-ranz (ONE-5 #314).
 func init() {
 	register("install", runInstall)
 	register("uninstall", runUninstall)
@@ -44,6 +45,7 @@ func runInstall(args []string) int {
 
 func runUninstall(args []string) int {
 	flags := flag.NewFlagSet("ranz uninstall", flag.ContinueOnError)
+	keepRanz := flags.Bool("keep-ranz", false, "leave ranz.exe and the Ranz folder for the caller to remove, as the MSI does")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -54,7 +56,7 @@ func runUninstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "ranz uninstall: unexpected arguments: %q\n", flags.Args())
 		return 2
 	}
-	err := install.Uninstall(os.Stdout)
+	err := install.Uninstall(os.Stdout, install.UninstallOptions{KeepRanz: *keepRanz})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ranz uninstall:", err)
 	} else {

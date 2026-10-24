@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -30,7 +31,7 @@ func TestApplyCompletesVRF(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := VRF{ID: 2, ULA: "fd11:1213:1415::/48", MTU: DefaultMTU}
-	if got := in.VRFs["new"]; got != want {
+	if got := in.VRFs["new"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("the completed VRF is %+v, want %+v", got, want)
 	}
 	again, err := Apply(in, doc(res(KindVRF, "new", `{"mtu": 1400}`)), bytes.NewReader(nil))
@@ -38,7 +39,7 @@ func TestApplyCompletesVRF(t *testing.T) {
 		t.Fatal(err)
 	}
 	want.MTU = 1400
-	if got := again.VRFs["new"]; got != want {
+	if got := again.VRFs["new"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("the VRF applied again is %+v, want %+v", got, want)
 	}
 	if _, err := Apply(again, doc(res(KindVRF, "new", `{"id": 9}`)), nil); err == nil || !strings.Contains(err.Error(), "cannot change") {
@@ -60,7 +61,7 @@ func TestApplyRejects(t *testing.T) {
 		doc  Document
 		want string
 	}{
-		{doc(res("Router", "r1", `{}`)), `Router "r1": the kind must be VRF, Network, Node, Policy, Controller or NAT`},
+		{doc(res("Router", "r1", `{}`)), `Router "r1": the kind must be VRF, Network, Node, Policy, Mirror, Controller or NAT`},
 		{doc(res(KindPolicy, "p", `{"vrf": "lab", "action": "allow"}`)), `Policy "p": VRF "lab" does not exist`},
 		{doc(res(KindPolicy, "p", `{"vrf": "corp", "action": "permit"}`)), `Policy "p": the action must be allow or deny, not "permit"`},
 		{doc(res(KindController, "c2", `{"address": "192.0.2.2", "publicKey": "`+key1+`"}`)), `Controller "c2": address "192.0.2.2" is not host:port`},
