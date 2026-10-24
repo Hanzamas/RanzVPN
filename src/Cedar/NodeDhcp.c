@@ -172,7 +172,7 @@ static NODE_DHCP_ENTRY *NodeDhcpByAddress(NODE_DHCP *d, UINT a) {
 
 // Whether the client mac may hold the address a: the responder may give it, and no entry of another client and no
 // declined address holds it
-static bool NodeDhcpFree(NODE_DHCP *d, UINT a, const UCHAR *mac) {
+static bool NodeDhcpAvailable(NODE_DHCP *d, UINT a, const UCHAR *mac) {
 	if (NodeDhcpUsable(d, a) == false)
 		return false;
 
@@ -435,7 +435,7 @@ static UINT NodeDhcpPick(NODE_DHCP *d, const UCHAR *mac, UINT requested) {
 		return e->Address;
 	if (e == NULL && d->NumEntries >= NODE_DHCP_MAX_LEASES)
 		return 0;
-	if (requested != 0 && NodeDhcpFree(d, requested, mac))
+	if (requested != 0 && NodeDhcpAvailable(d, requested, mac))
 		return requested;
 
 	for (UINT a = d->First + 1; a < d->Last; a++) {
@@ -448,7 +448,7 @@ static UINT NodeDhcpPick(NODE_DHCP *d, const UCHAR *mac, UINT requested) {
 			a = end;
 			continue;
 		}
-		if (NodeDhcpFree(d, a, mac))
+		if (NodeDhcpAvailable(d, a, mac))
 			return a;
 	}
 
@@ -526,7 +526,7 @@ static void NodeDhcpRequest(NODE_DHCP *d, UINT64 now, const DHCPV4_HEADER *h, LI
 	} else if (requested != 0 || ciaddr != 0) {
 		// INIT-REBOOT with the address it asks for, RENEWING and REBINDING with the address it holds
 		a = (requested != 0 ? requested : ciaddr);
-		ok = NodeDhcpFree(d, a, mac);
+		ok = NodeDhcpAvailable(d, a, mac);
 		if (ok && e == NULL && d->NumEntries >= NODE_DHCP_MAX_LEASES) {
 			d->Counters.Ignored++;
 			return;
