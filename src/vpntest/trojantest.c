@@ -639,7 +639,7 @@ static void TrojanDialThread(THREAD *thread, void *param)
 	TROJAN_DIAL *d = (TROJAN_DIAL *)param;
 	char address[TRANSPORT_ADDRESS_SIZE];
 
-	Format(address, sizeof(address), "127.0.0.1:%u", (UINT)d->Port);
+	Format(address, sizeof(address), "%s:%u", TROJAN_HOST, (UINT)d->Port);
 	TRANSPORT_STREAM *s = TransportDial(d->Client, address, NULL);
 	TransportClose(s);
 	d->Done = true;
@@ -886,11 +886,11 @@ static void TrojanHelloCase(TROJAN_CTX *ctx, char *thumbprint, bool split, bool 
 		if (split)
 		{
 			TrojanCheck(ctx, segments >= 2, "  with the split toggle on, the ClientHello crosses two TCP segments", "it came in %u segment(s)", segments);
-		}
-		if (split && omit == false)
-		{
-			UINT holder = TrojanNameHolder(buf, total, starts, segments);
-			TrojanCheck(ctx, holder == INFINITE, "  with the split toggle on, no segment holds the whole server name", "segment %u holds it", holder + 1);
+			if (omit == false)
+			{
+				UINT holder = TrojanNameHolder(buf, total, starts, segments);
+				TrojanCheck(ctx, holder == INFINITE, "  with the split toggle on, no segment holds the whole server name", "segment %u holds it", holder + 1);
+			}
 		}
 		else
 		{
