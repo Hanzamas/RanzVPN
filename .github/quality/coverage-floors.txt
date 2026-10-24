@@ -52,6 +52,9 @@ go  controller/internal/install         80
 go  controller/internal/intent          91
 go  controller/internal/keys            71
 go  controller/internal/licence         89
+# mimic (CORE-P2-1 #85): the Linux job runs the sidecars end to end on Unix sockets, with the REALITY
+# library, uTLS and an ACME service of the test; pipe_windows.go is the part that only Windows builds
+go  controller/internal/mimic           40
 go  controller/internal/mitigation      0
 go  controller/internal/nodesim         0
 # payload (ONE-2 #311) has real logic tested on every OS (payload_test.go: the hash checks, the

@@ -29,8 +29,14 @@ const (
 var chromiumParrot = utls.HelloChrome_133
 
 // chromiumParrotMajor is the major version of chromiumParrot, which .github/scripts/mimic-pin.py
-// reads.
-const chromiumParrotMajor = 133
+// reads, and parrotReviewed is the day on which a maintainer last checked the parrots against the
+// browsers and against the releases of uTLS (YYYY-MM-DD). The scheduled check fails when that day is
+// more than six weeks back, because Chrome and Edge each make a major release every four weeks:
+// whoever bumps uTLS or finds that it has no newer parrot yet sets the day to today.
+const (
+	chromiumParrotMajor = 133
+	parrotReviewed      = "2026-10-24"
+)
 
 // fingerprint is a ClientHello that a link sends.
 type fingerprint struct {

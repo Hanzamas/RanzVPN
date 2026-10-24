@@ -41,6 +41,8 @@ type client struct {
 
 	// dialOuter makes the TCP connection to a server; tests put a tap on it
 	dialOuter func(ctx context.Context, network, address string) (net.Conn, error)
+	// now is the clock whose time the proof of a link carries; tests set it to another time
+	now func() time.Time
 }
 
 // startClient listens on the data pipe.
@@ -50,9 +52,12 @@ func startClient(ctx context.Context, cfg *clientConfig, pipe string, count *cou
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	c := &client{cfg: cfg, log: log, count: count, ln: ln, ctx: ctx, cancel: cancel, sem: make(chan struct{}, maxStreams), dialOuter: opts.dialOuter}
+	c := &client{cfg: cfg, log: log, count: count, ln: ln, ctx: ctx, cancel: cancel, sem: make(chan struct{}, maxStreams), dialOuter: opts.dialOuter, now: opts.now}
 	if c.dialOuter == nil {
 		c.dialOuter = (&net.Dialer{}).DialContext
+	}
+	if c.now == nil {
+		c.now = time.Now
 	}
 	c.wg.Add(1)
 	go c.acceptLoop()
@@ -136,7 +141,7 @@ func (c *client) connect(ctx context.Context, l *linkConfig) (*utls.UConn, error
 	if err != nil {
 		return nil, err
 	}
-	conn, err := realityHandshake(ctx, raw, l)
+	conn, err := realityHandshake(ctx, raw, l, c.now())
 	if err != nil {
 		raw.Close()
 		return nil, err

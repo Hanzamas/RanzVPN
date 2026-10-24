@@ -197,13 +197,16 @@ func parseShortID(s string) ([shortIDSize]byte, error) {
 }
 
 // cleanName checks a DNS name (the SNI of a ClientHello, the name of a site) and returns it in
-// lower case.
+// lower case: labels of letters, digits and hyphens, from 1 to 63 bytes each, none of which starts
+// or ends with a hyphen, and at most 253 bytes in all.
 func cleanName(what, s string) (string, error) {
 	name := strings.ToLower(s)
-	ok := len(name) > 0 && len(name) <= 253 && !strings.HasPrefix(name, ".") && !strings.HasSuffix(name, ".") && !strings.Contains(name, "..") &&
-		!strings.HasPrefix(name, "-") && !strings.HasSuffix(name, "-")
-	for _, c := range name {
-		ok = ok && (c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '.')
+	ok := len(name) <= 253
+	for _, label := range strings.Split(name, ".") {
+		ok = ok && len(label) > 0 && len(label) <= 63 && !strings.HasPrefix(label, "-") && !strings.HasSuffix(label, "-")
+		for _, c := range label {
+			ok = ok && (c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-')
+		}
 	}
 	if !ok {
 		return "", fmt.Errorf("%s %q is not a DNS name", what, s)

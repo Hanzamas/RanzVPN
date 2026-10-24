@@ -35,14 +35,20 @@ const testTimeout = 60 * time.Second
 
 var pipeCounter atomic.Uint64
 
-// pipeName is a name for a pipe that a test makes: a named pipe on Windows, a Unix socket in the
-// temporary folder of the test elsewhere.
+// pipeName is a name for a pipe that a test makes: a named pipe on Windows, a Unix socket in a
+// short folder of its own elsewhere (the path of a Unix socket is at most 104 bytes, which the folder
+// that t.TempDir makes for a long test name can pass).
 func pipeName(t *testing.T, label string) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		return fmt.Sprintf(`\\.\pipe\ranz-mimic-%s-%d-%d`, label, os.Getpid(), pipeCounter.Add(1))
 	}
-	return filepath.Join(t.TempDir(), label+".sock")
+	dir, err := os.MkdirTemp("", "rzm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return filepath.Join(dir, label+".sock")
 }
 
 // logSink is where the log of a sidecar goes; the test prints it when it ends, never while a goroutine

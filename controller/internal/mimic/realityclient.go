@@ -116,9 +116,10 @@ func temporaryCertificate(der, authKey []byte) bool {
 }
 
 // realityHandshake runs the TLS handshake of the link over raw, a TCP connection to the server: the
-// ClientHello of the fingerprint with the proof of the link in it, and the check of the certificate
-// that answers. It fails when the server did not prove its key; raw is the caller's then.
-func realityHandshake(ctx context.Context, raw net.Conn, l *linkConfig) (*utls.UConn, error) {
+// ClientHello of the fingerprint with the proof of the link in it, which carries the time now, and
+// the check of the certificate that answers. It fails when the server did not prove its key; raw is
+// the caller's then.
+func realityHandshake(ctx context.Context, raw net.Conn, l *linkConfig, now time.Time) (*utls.UConn, error) {
 	var authKey []byte
 	verified := false
 	cfg := &utls.Config{
@@ -145,7 +146,7 @@ func realityHandshake(ctx context.Context, raw net.Conn, l *linkConfig) (*utls.U
 	if err := uc.BuildHandshakeState(); err != nil {
 		return nil, fmt.Errorf("the %s ClientHello: %w", l.fp.name, err)
 	}
-	if authKey, err = authenticate(uc.HandshakeState.Hello, uc.HandshakeState.State13.KeyShareKeys, l, time.Now()); err != nil {
+	if authKey, err = authenticate(uc.HandshakeState.Hello, uc.HandshakeState.State13.KeyShareKeys, l, now); err != nil {
 		return nil, err
 	}
 	if err := uc.HandshakeContext(ctx); err != nil {

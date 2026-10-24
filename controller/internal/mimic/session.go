@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 // Options are the options of a session.
@@ -19,7 +20,7 @@ type Options struct {
 	// The tests set these: they leave out what a test has no use for, or look into what a test needs.
 	skipDetect bool // the library does not probe the decoy
 	dialOuter  func(ctx context.Context, network, address string) (net.Conn, error)
-	started    func(*session)
+	now        func() time.Time // the clock of the client role, which the proof of a link carries
 }
 
 // Version names ranz mimic, the program that runs the sidecar, and the libraries it embeds.
@@ -137,9 +138,6 @@ func Run(ctx context.Context, conn net.Conn, opts Options) error {
 	if err := s.start(ctx, first, &ready, log, opts); err != nil {
 		w.Write(Message{Type: TypeError, Error: err.Error()})
 		return err
-	}
-	if opts.started != nil {
-		opts.started(s)
 	}
 	if err := w.Write(ready); err != nil {
 		return err

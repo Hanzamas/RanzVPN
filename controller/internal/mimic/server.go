@@ -212,9 +212,15 @@ func (s *server) handle(raw net.Conn) {
 	peer := raw.RemoteAddr().String()
 	conn, err := reality.Server(s.ctx, raw, s.reality)
 	if err != nil {
+		reason, spliced := strings.CutPrefix(err.Error(), "REALITY: processed invalid connection from "+peer+": ")
+		if !spliced {
+			// The library could not reach the decoy, so it spliced nothing
+			s.log.Error("the decoy cannot be reached", "peer", peer, "err", err)
+			s.emit(Message{Type: TypeError, Peer: peer, Error: oneLine(err)})
+			return
+		}
 		// Not a Ranz client: the library spliced it to the decoy, and it is over now
 		s.count.probes.Add(1)
-		reason := strings.TrimPrefix(err.Error(), "REALITY: processed invalid connection from "+peer+": ")
 		s.log.Info("a connection that is no client was spliced to the decoy", "peer", peer, "reason", reason)
 		s.emit(Message{Type: TypeProbe, Peer: peer, Reason: reason})
 		return

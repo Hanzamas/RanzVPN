@@ -42,8 +42,9 @@ const defaultPage = `<!DOCTYPE html>
 </html>
 `
 
-// fileCertCheck is how often the certificate files of the decoy are looked at for a change.
-const fileCertCheck = 10 * time.Second
+// fileCertCheck is how often the certificate files of the decoy are looked at for a change; a test
+// shortens it.
+var fileCertCheck = 10 * time.Second
 
 // decoy is a running own decoy.
 type decoy struct {
