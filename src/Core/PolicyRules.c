@@ -7,7 +7,6 @@
 // another kind refuses the whole document: the engine does not guess at a firewall.
 //   {"networks": [{"name": required,
 //                  "mode": "l2" or "l3" (l3),
-//                  "defaultAction": "allow" or "deny" (deny),
 //                  "maxFlows": 1 to POLICY_MAX_FLOWS (POLICY_DEFAULT_FLOWS),
 //                  "timeouts": {"tcpEstablished", "tcpTransitory", "udp", "icmp", "other": seconds, 1 to 604800}}],
 //    "addressGroups": [{"name": required, "addresses": [address, ...]}],
@@ -25,6 +24,8 @@
 //   An address: an IPv4 or IPv6 address, with /length for a prefix.
 // The names of Networks, rules and address groups are 1 to POLICY_MAX_NAME letters, digits, '.', '-' and '_'; those of
 // users, groups and tags are 1 to POLICY_MAX_NAME printable characters other than a space, and match without case.
+// A Network has no key for its default action: it is deny for every Network (ADR-0019 amendment of 2026-10-21), and an
+// allow rule of the lowest priority without ends is the starter rule that lets everything through.
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -703,7 +704,7 @@ static bool PolicyParseTimeouts(POLICY_PARSER *ps, const cJSON *item, const char
 
 // Network index of the document, the object item
 static bool PolicyParseNetwork(POLICY_PARSER *ps, const cJSON *item, UINT index, POLICY_NET_CONFIG *n) {
-	static const char *const keys[] = {"name", "mode", "defaultAction", "maxFlows", "timeouts"};
+	static const char *const keys[] = {"name", "mode", "maxFlows", "timeouts"};
 	char where[POLICY_MAX_PATH];
 	char at[POLICY_MAX_PATH];
 	const char *name = NULL;
@@ -739,10 +740,6 @@ static bool PolicyParseNetwork(POLICY_PARSER *ps, const cJSON *item, UINT index,
 	snprintf(at, sizeof(at), "%s.mode", where);
 	v = PolicyItem(item, "mode");
 	if (v != NULL && PolicyChoice(ps, v, at, policy_modes, ARRAYSIZE(policy_modes), &n->Mode) == false)
-		return false;
-	snprintf(at, sizeof(at), "%s.defaultAction", where);
-	v = PolicyItem(item, "defaultAction");
-	if (v != NULL && PolicyChoice(ps, v, at, policy_actions, ARRAYSIZE(policy_actions), &n->DefaultAction) == false)
 		return false;
 	snprintf(at, sizeof(at), "%s.maxFlows", where);
 	v = PolicyItem(item, "maxFlows");
@@ -1279,6 +1276,51 @@ bool PolicyParseRules(const char *json, UINT size, char *error, UINT error_size)
 	return ok;
 }
 
+// A text on its way (PolicyCountersText)
+typedef struct POLICY_TEXT {
+	char *Buf;  // The text, from the heap of the process
+	SIZE_T Len; // ... its length
+	SIZE_T Max; // ... and its room
+	UINT Width; // The width of the column of the rule names of the Network that it lists
+} POLICY_TEXT;
+
+// The counters of an engine (PolicyGetCounters) in a list from the heap of the process, *num of them; NULL when there is
+// no memory. The list is that of one document: a document that replaced the one in force while it was taken makes it
+// be taken again.
+static POLICY_COUNTERS *PolicyCountersList(POLICY_ENGINE *p, UINT *num) {
+	*num = 0;
+	if (p == NULL)
+		return NULL;
+
+	for (UINT tries = 0; tries < 8; tries++) {
+		UINT max = PolicyGetCounters(p, NULL, 0);
+		POLICY_COUNTERS *list = (POLICY_COUNTERS *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(POLICY_COUNTERS) * (max + 1));
+
+		if (list == NULL)
+			return NULL;
+
+		UINT total = PolicyGetCounters(p, list, max + 1);
+		if (total <= max + 1) {
+			*num = total;
+			return list;
+		}
+		HeapFree(GetProcessHeap(), 0, list);
+	}
+
+	return NULL;
+}
+
+// A copy of a string from the heap of the process; NULL when there is no memory
+static char *PolicyCopyString(const char *s) {
+	SIZE_T len = strlen(s);
+	char *copy = (char *)HeapAlloc(GetProcessHeap(), 0, len + 1);
+
+	if (copy != NULL)
+		CopyMemory(copy, s, len + 1);
+
+	return copy;
+}
+
 // Add a number to a JSON object; false when there is no memory
 static bool PolicyJsonNumber(cJSON *o, const char *key, UINT64 v) {
 	return cJSON_AddNumberToObject(o, key, (double)v) != NULL;
@@ -1291,7 +1333,7 @@ static bool PolicyJsonString(cJSON *o, const char *key, const char *v) {
 
 // A Network of the counters of an engine as an object of the array nets: its kind, its default action, its conntrack
 // table and the array of its rules; that array, NULL when there is no memory
-static cJSON *PolicyJsonNetwork(POLICY *p, cJSON *nets, const char *name) {
+static cJSON *PolicyJsonNetwork(POLICY_ENGINE *p, cJSON *nets, const char *name) {
 	POLICY_NETWORK_STATS st;
 	cJSON *o = cJSON_CreateObject();
 	cJSON *rules = cJSON_CreateArray();
@@ -1346,32 +1388,34 @@ static bool PolicyJsonRule(cJSON *rules, const POLICY_COUNTERS *c) {
 //     "maxFlows": 4, "tracked": 5, "evicted": 1, "expired": 0, "rules": [{"name": "web", "priority": 100,
 //     "action": "allow", "flows": 1, "packets": 5, "bytes": 300}, {"name": "default:deny", "default": true,
 //     "action": "deny", "flows": 0, "packets": 2, "bytes": 120}]}]}
-// NULL when there is no memory; PolicyFreeJson frees it.
-char *PolicyCountersJson(POLICY *p) {
+// NULL when there is no memory; PolicyFreeString frees it.
+char *PolicyCountersJson(POLICY_ENGINE *p) {
 	POLICY_STATS st;
-	cJSON *root = cJSON_CreateObject();
-	cJSON *nets = cJSON_CreateArray();
+	cJSON *array = NULL;
 	cJSON *rules = NULL;
 	char *json = NULL;
-	UINT num = PolicyGetCounters(p, NULL, 0);
-	POLICY_COUNTERS *list = (POLICY_COUNTERS *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(POLICY_COUNTERS) * (num + 1));
-	bool ok = (p != NULL && root != NULL && nets != NULL && list != NULL);
+	UINT num = 0;
+	POLICY_COUNTERS *list = PolicyCountersList(p, &num);
+	cJSON *root = cJSON_CreateObject();
+	cJSON *nets = cJSON_CreateArray();
+	bool ok = (list != NULL && root != NULL && nets != NULL);
 
 	if (ok) {
 		PolicyGetStats(p, &st);
-		num = PolicyGetCounters(p, list, num);
-		ok = PolicyJsonNumber(root, "generation", st.Generation) && cJSON_AddItemToObject(root, "networks", nets);
-		if (ok == false) {
-			cJSON_Delete(nets);
-			nets = NULL;
-		}
+		ok = PolicyJsonNumber(root, "generation", st.Generation);
+	}
+
+	// The root owns the array of the Networks once it holds it
+	if (ok && cJSON_AddItemToObject(root, "networks", nets)) {
+		array = nets;
+		nets = NULL;
 	} else {
-		cJSON_Delete(nets);
+		ok = false;
 	}
 
 	for (UINT i = 0; i < num && ok; i++) {
 		if (i == 0 || strcmp(list[i].Network, list[i - 1].Network) != 0)
-			rules = PolicyJsonNetwork(p, nets, list[i].Network);
+			rules = PolicyJsonNetwork(p, array, list[i].Network);
 		ok = (rules != NULL && PolicyJsonRule(rules, &list[i]));
 	}
 
@@ -1380,15 +1424,12 @@ char *PolicyCountersJson(POLICY *p) {
 
 		// A copy from the heap of the process, which does not depend on the allocator that cJSON has when it is freed
 		if (s != NULL) {
-			SIZE_T len = strlen(s);
-
-			json = (char *)HeapAlloc(GetProcessHeap(), 0, len + 1);
-			if (json != NULL)
-				CopyMemory(json, s, len + 1);
+			json = PolicyCopyString(s);
 			cJSON_free(s);
 		}
 	}
 
+	cJSON_Delete(nets);
 	cJSON_Delete(root);
 	if (list != NULL)
 		HeapFree(GetProcessHeap(), 0, list);
@@ -1396,8 +1437,103 @@ char *PolicyCountersJson(POLICY *p) {
 	return json;
 }
 
-// Free what PolicyCountersJson returned
-void PolicyFreeJson(char *json) {
-	if (json != NULL)
-		HeapFree(GetProcessHeap(), 0, json);
+// Add a line to a text; false when there is no memory, and the text stays as it was
+static bool PolicyTextLine(POLICY_TEXT *t, const char *line) {
+	SIZE_T len = strlen(line);
+
+	if (t->Len + len + 2 > t->Max) {
+		SIZE_T max = (t->Max == 0 ? 1024 : t->Max * 2);
+		char *buf = NULL;
+
+		while (max < t->Len + len + 2)
+			max *= 2;
+		buf = (char *)HeapAlloc(GetProcessHeap(), 0, max);
+		if (buf == NULL)
+			return false;
+		if (t->Buf != NULL) {
+			CopyMemory(buf, t->Buf, t->Len);
+			HeapFree(GetProcessHeap(), 0, t->Buf);
+		}
+		t->Buf = buf;
+		t->Max = max;
+	}
+
+	CopyMemory(t->Buf + t->Len, line, len);
+	t->Len += len;
+	t->Buf[t->Len] = '\n';
+	t->Len++;
+	t->Buf[t->Len] = 0;
+
+	return true;
+}
+
+// The counters of an engine as the CLI shows them: for each Network of the document in force, a line with its kind, its
+// default action, its members and its conntrack table, then a line for each of its rules, by priority, and one for its
+// default action:
+//   network lab: l2, default action deny, 4 members, 2 of 4 flows (tracked 5, evicted 1, expired 0)
+//     priority  rule          action  flows  packets  bytes
+//     100       web           allow   1      5        300
+//     -         default:deny  deny    0      2        120
+// "no document of rules" before the first one. NULL when there is no memory; PolicyFreeString frees it.
+char *PolicyCountersText(POLICY_ENGINE *p) {
+	POLICY_TEXT t;
+	char line[POLICY_MAX_NAME * 2 + 160];
+	UINT num = 0;
+	POLICY_COUNTERS *list = PolicyCountersList(p, &num);
+	bool ok = (list != NULL);
+
+	ZeroMemory(&t, sizeof(t));
+	if (ok && num == 0)
+		ok = PolicyTextLine(&t, "no document of rules");
+
+	for (UINT i = 0; i < num && ok; i++) {
+		char priority[16];
+
+		if (i == 0 || strcmp(list[i].Network, list[i - 1].Network) != 0) {
+			POLICY_NETWORK_STATS st;
+			UINT width = 4;
+
+			// The width of the column of the rule names of the Network
+			for (UINT k = i; k < num && strcmp(list[k].Network, list[i].Network) == 0; k++) {
+				UINT len = (UINT)strlen(list[k].Rule);
+
+				if (len > width)
+					width = len;
+			}
+
+			ZeroMemory(&st, sizeof(st));
+			PolicyGetNetworkStats(p, list[i].Network, &st);
+			snprintf(line, sizeof(line), "network %s: %s, default action %s, %u members, %u of %u flows (tracked %llu, evicted %llu, expired %llu)",
+			         list[i].Network, st.Mode == POLICY_L2 ? "l2" : "l3", st.DefaultAction == POLICY_ALLOW ? "allow" : "deny", st.NumMembers,
+			         st.Flows, st.MaxFlows, (unsigned long long)st.Tracked, (unsigned long long)st.Evicted, (unsigned long long)st.Expired);
+			ok = PolicyTextLine(&t, line);
+			snprintf(line, sizeof(line), "  %-8s  %-*s  %-6s  %-8s  %-8s  %s", "priority", (int)width, "rule", "action", "flows", "packets", "bytes");
+			ok = ok && PolicyTextLine(&t, line);
+			t.Width = width;
+		}
+
+		if (list[i].Default)
+			snprintf(priority, sizeof(priority), "-");
+		else
+			snprintf(priority, sizeof(priority), "%u", list[i].Priority);
+		snprintf(line, sizeof(line), "  %-8s  %-*s  %-6s  %-8llu  %-8llu  %llu", priority, (int)t.Width, list[i].Rule,
+		         list[i].Action == POLICY_ALLOW ? "allow" : "deny", (unsigned long long)list[i].Flows, (unsigned long long)list[i].Packets,
+		         (unsigned long long)list[i].Bytes);
+		ok = ok && PolicyTextLine(&t, line);
+	}
+
+	if (list != NULL)
+		HeapFree(GetProcessHeap(), 0, list);
+	if (ok == false && t.Buf != NULL) {
+		HeapFree(GetProcessHeap(), 0, t.Buf);
+		t.Buf = NULL;
+	}
+
+	return t.Buf;
+}
+
+// Free what PolicyCountersJson or PolicyCountersText returned
+void PolicyFreeString(char *s) {
+	if (s != NULL)
+		HeapFree(GetProcessHeap(), 0, s);
 }

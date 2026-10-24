@@ -108,7 +108,7 @@ typedef struct POLICY_RULE {
 typedef struct POLICY_NET_CONFIG {
 	char Name[POLICY_MAX_NAME + 1];     // Its name
 	UINT Mode;                          // POLICY_L2 or POLICY_L3
-	UINT DefaultAction;                 // POLICY_ALLOW or POLICY_DENY
+	UINT DefaultAction;                 // POLICY_DENY, for every Network (ADR-0019 amendment of 2026-10-21)
 	UINT MaxFlows;                      // The bound of its conntrack table
 	UINT Timeouts[POLICY_NUM_TIMEOUTS]; // The timeouts of its flows (ms)
 } POLICY_NET_CONFIG;
@@ -143,7 +143,8 @@ typedef struct POLICY_INDEX {
 // The compiled rules of one Network
 typedef struct POLICY_TABLE {
 	POLICY_NET_CONFIG Config;               // The Network as the document has it
-	struct POLICY_NET *Net;                 // ... and as the engine has it
+	struct POLICY_NET *Net;                 // ... and as the engine has it (Policy.c)
+	struct POLICY_TRACK *Track;             // Its conntrack table, which the next document keeps while it bounds it alike (Policy.c)
 	UINT NumRules;                          // Its rules: by priority, then in the order of the document
 	const POLICY_RULE **Rules;              // ...
 	UINT NumEntries;                        // Its entries, in the order of the rules
@@ -198,7 +199,7 @@ typedef struct POLICY_FLOW {
 	UINT Member[2];    // The members of its sides, POLICY_NO_MEMBER for a side outside the Network
 	UINT MemberGen[2]; // ... their generations
 	UCHAR Origin;      // The side that opened it
-	UCHAR State;       // POLICY_STATE_* (Policy.c)
+	UCHAR State;       // POLICY_FLOW_* (Policy.c)
 	UCHAR Sent;        // The sides that sent on it: bit 0 and bit 1
 	UCHAR Fin;         // The sides that sent a TCP FIN
 } POLICY_FLOW;
@@ -222,7 +223,7 @@ typedef union POLICY_SHARD {
 
 // The conntrack table of a Network: its memory is taken once, at its bound
 typedef struct POLICY_TRACK {
-	UINT MaxFlows;          // Its bound: the shards times the flows of each
+	UINT MaxFlows;         // Its bound: the shards times the flows of each
 	UINT NumShards;         // Its shards, a power of 2
 	UINT ShardBits;         // ... as bits of the hash
 	UINT64 Seed;            // The random key of its hash
@@ -232,16 +233,30 @@ typedef struct POLICY_TRACK {
 	volatile LONG NumFlows; // Its flows
 } POLICY_TRACK;
 
+// The kinds of address that a member owns (POLICY_OWNER)
+#define POLICY_OWN_MAC  1 // A MAC address, in the first 6 bytes
+#define POLICY_OWN_IPV4 4 // An IPv4 address, in the first 4 bytes
+#define POLICY_OWN_IPV6 6 // An IPv6 address
+
+// An address that a member of a Network owns (Policy.c)
+typedef struct POLICY_OWNER {
+	UCHAR Kind;     // POLICY_OWN_*
+	UCHAR Addr[16]; // The address, the bytes after it 0
+	UINT Member;    // The member that owns it
+} POLICY_OWNER;
+
 // A Network of an engine, made by the first member or document that names it and kept until the engine is freed
 typedef struct POLICY_NET {
 	char Name[POLICY_MAX_NAME + 1]; // Its name
 	UINT Index;                     // Its index in the engine
-	SRWLOCK LearnLock;              // The addresses of its members, while one is learnt or bound
-	POLICY_TRACK *volatile Track;   // Its conntrack table, NULL until a document defines the Network
+	SRWLOCK LearnLock;              // The addresses that its members own: shared to look one up, exclusive to add or take out
+	volatile LONG NumOwners;        // ... their number
+	UINT MaxOwners;                 // ... room for them
+	POLICY_OWNER *Owners;           // ... in ascending order of their kind and address
 	volatile LONG NumMembers;       // Its members
-	volatile LONG64 Tracked;        // Flows that its table took
-	volatile LONG64 Evicted;        // ... that left it as the least recently used of a full table
-	volatile LONG64 Expired;        // ... that left it after their timeout
+	volatile LONG64 Tracked;        // Flows that its tables took
+	volatile LONG64 Evicted;        // ... that left them as the least recently used of a full table
+	volatile LONG64 Expired;        // ... that left them after their timeout
 } POLICY_NET;
 
 // PolicyRules.c
