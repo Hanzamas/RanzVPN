@@ -297,19 +297,21 @@ function Assert-XdpInstalled {
 # The drivers are there as ranz install leaves them on this architecture: on x64 SeLow, and the XDP runtime unless $withXdp is false
 function Assert-DriversInstalled([bool] $withXdp) {
 	if (-not $x64) {
-		Assert-NoDrivers 'on arm64 only Wintun is installed, but'
+		Soft 'on arm64 only Wintun is installed' { Assert-NoDrivers 'on arm64 only Wintun is installed, but' }
 		return
 	}
-	Assert-SeLowInstalled
+	Soft 'SeLow is installed' { Assert-SeLowInstalled }
 	if ($withXdp) {
-		Assert-XdpInstalled
+		Soft 'the XDP runtime is installed' { Assert-XdpInstalled }
 	} else {
-		if (Get-DriverState 'xdp') { throw 'the service xdp is registered, and the XDP runtime was left out' }
-		foreach ($file in @($xdpSys, $xdpApi, (Join-Path $driversDir 'xdp'))) {
-			if (Test-Path -LiteralPath $file) { throw "$file is there, and the XDP runtime was left out" }
+		Soft 'the XDP runtime is left out' {
+			if (Get-DriverState 'xdp') { throw 'the service xdp is registered, and the XDP runtime was left out' }
+			foreach ($file in @($xdpSys, $xdpApi, (Join-Path $driversDir 'xdp'))) {
+				if (Test-Path -LiteralPath $file) { throw "$file is there, and the XDP runtime was left out" }
+			}
+			if (Get-RecordedInf 'xdp') { throw 'the install record names the XDP runtime, which was left out' }
+			Write-Host 'the XDP runtime is not installed, and has left no trace'
 		}
-		if (Get-RecordedInf 'xdp') { throw 'the install record names the XDP runtime, which was left out' }
-		Write-Host 'the XDP runtime is not installed, and has left no trace'
 	}
 }
 
@@ -403,6 +405,25 @@ function Assert-Member {
 	Write-Host "the Controller wrote its rqlite member, $memberFile, byte for byte the signed rqlited.exe and with a valid signature, and runs it as process $($running[0].ProcessId)"
 }
 
+# What the drivers of the machine are, as ranz install and the Node leave them: the services, the install record, the
+# packages under drivers\ and the Capabilities that the Node wrote to its log
+function Show-Drivers {
+	foreach ($name in @('SeLow', 'xdp')) {
+		$state = Get-DriverState $name
+		Write-Host "driver ${name}: $(if ($state) { $state } else { 'not registered' })"
+	}
+	$record = Get-ItemProperty -LiteralPath $recordKey -ErrorAction SilentlyContinue
+	if ($record) {
+		Write-Host "install record: $(@($record.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ', ')"
+	} else {
+		Write-Host 'install record: none'
+	}
+	if (Test-Path -LiteralPath $driversDir) {
+		Get-ChildItem -LiteralPath $driversDir -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName) $($_.Length) bytes" }
+	}
+	foreach ($line in @(Get-NodeCapsLines)) { Write-Host "node log: $line" }
+}
+
 # What a failed step needs to be read from the log alone
 function Show-Diagnostics {
 	foreach ($name in @($nodeService, $controllerService)) {
@@ -420,20 +441,7 @@ function Show-Diagnostics {
 	} else {
 		Write-Host "${installDir}: not there"
 	}
-	foreach ($name in @('SeLow', 'xdp')) {
-		$state = Get-DriverState $name
-		Write-Host "driver ${name}: $(if ($state) { $state } else { 'not registered' })"
-	}
-	$record = Get-ItemProperty -LiteralPath $recordKey -ErrorAction SilentlyContinue
-	if ($record) {
-		Write-Host "install record: $(@($record.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ', ')"
-	} else {
-		Write-Host 'install record: none'
-	}
-	if (Test-Path -LiteralPath $driversDir) {
-		Get-ChildItem -LiteralPath $driversDir -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName) $($_.Length) bytes" }
-	}
-	foreach ($line in @(Get-NodeCapsLines)) { Write-Host "node log: $line" }
+	Show-Drivers
 	Write-Host 'Service Control Manager events since the start of the job:'
 	Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $since } -ErrorAction SilentlyContinue |
 		Sort-Object RecordId | ForEach-Object { Write-Host ("  {0:u} id {1}: {2}" -f $_.TimeCreated, $_.Id, ($_.Message -replace '\s+', ' ')) }
@@ -451,6 +459,45 @@ function Show-Diagnostics {
 	} else {
 		Write-Host "the rqlite member: $memberFile is not there"
 	}
+}
+
+# The steps below run one after the other, each in a try of its own, and a step that fails does not stop the next: it is
+# recorded with its message, the state that it left is shown, and the machine is put back as far as it can be, so that
+# the next step starts from a runner without a driver of Ranz VPN. The job fails at the end, with every step that failed.
+# The drivers are new in this job and one run takes long, so one run tells all that is wrong.
+$failures = New-Object System.Collections.Generic.List[string]
+
+function Add-Failure([string] $step, $err) {
+	$failures.Add("${step}: $($err.Exception.Message)")
+	Write-Host "failed: ${step}: $($err.Exception.Message)"
+}
+
+# A check whose failure is recorded and does not stop its step: the checks after it tell more
+function Soft([string] $step, [scriptblock] $check) {
+	try {
+		& $check
+	} catch {
+		Add-Failure $step $_
+		Show-Drivers
+	}
+}
+
+# ranz uninstall from a ranz.exe of this job takes off what a failed step left, as far as it recorded it
+function Reset-Machine {
+	foreach ($exe in @($goodExe, $failExe)) {
+		if ($exe -and (Test-Path -LiteralPath $exe)) {
+			$null = Invoke-Ranz $exe @('uninstall')
+			break
+		}
+	}
+	Remove-InstalledState
+}
+
+# A step that did not finish
+function Fail([string] $step, $err) {
+	Add-Failure $step $err
+	Show-Diagnostics
+	Reset-Machine
 }
 
 Remove-InstalledState
@@ -473,7 +520,11 @@ try {
 	if (Test-Path -LiteralPath $installDir) { throw "a changed Payload still left $installDir" }
 	Assert-NoDrivers 'a changed Payload still left a driver:'
 	Write-Host "a changed Payload is refused: no service is registered, no driver is installed and $installDir is not left"
+} catch {
+	Fail 'a runner without drivers, and a changed Payload' $_
+}
 
+try {
 	# 1b. x64: a ranz.exe whose xdp.sys has one byte changed. The XDP runtime is refused for the signature of its
 	#     driver and leaves no trace; the Node and SeLow are installed all the same, and the Node reports the xdp
 	#     Capability as absent, with SeLow as the fallback (ADR-0002 amendment of 2026-10-21)
@@ -487,14 +538,18 @@ try {
 		}
 		Wait-ServiceState $nodeService 'Running'
 		Assert-DriversInstalled $false
-		Assert-NodeCaps $before $true $false
+		Soft 'the Node reports SeLow and no XDP' { Assert-NodeCaps $before $true $false }
 		$r = Invoke-Ranz $failExe @('uninstall')
 		if ($r.Code -ne 0) { throw "ranz uninstall after the XDP runtime that was refused exited with code $($r.Code)" }
 		Wait-ServiceGone $nodeService
-		Assert-DriversRemoved $r.Out
+		Soft 'ranz uninstall removes SeLow' { Assert-DriversRemoved $r.Out }
 		Write-Host 'a changed XDP driver is refused and leaves no trace: the Node is installed with SeLow, and reports XDP as absent'
 	}
+} catch {
+	Fail 'a changed XDP driver' $_
+}
 
+try {
 	# 2. ranz install: the Node service, the folder, the files, and the drivers of this architecture. Windows Firewall
 	#    blocks the outbound network for this ranz.exe, and the processes that it starts are recorded: it needs no
 	#    download and runs no PowerShell
@@ -572,7 +627,7 @@ try {
 	# The drivers of this architecture, and the Node that started after them reports them as its Capabilities: on x64
 	# SeLow and the XDP runtime, on arm64 neither
 	Assert-DriversInstalled $true
-	Assert-NodeCaps $before $x64 $x64
+	Soft 'the Node reports the Capabilities of its host' { Assert-NodeCaps $before $x64 $x64 }
 
 	if (-not (Test-Path -LiteralPath $store)) { throw "$store (the Configuration store of the Node) was not made" }
 
@@ -621,7 +676,7 @@ try {
 	if ($r.Code -ne 0) { throw "ranz uninstall exited with code $($r.Code)" }
 	foreach ($name in @($nodeService, $controllerService)) { Wait-ServiceGone $name }
 	if (Test-Path -LiteralPath $installDir) { throw "ranz uninstall left $installDir" }
-	Assert-DriversRemoved $r.Out
+	Soft 'ranz uninstall removes the drivers it installed' { Assert-DriversRemoved $r.Out }
 	if (-not (Test-Path -LiteralPath $store)) { throw "ranz uninstall removed the Configuration store of the Node, $store" }
 	$starts = Get-NodeStarts
 	if ($starts -lt 1) { throw "ranz uninstall removed the node log in $logDir" }
@@ -640,7 +695,7 @@ try {
 	if ($r.Code -ne 0) { throw "the reinstall exited with code $($r.Code)" }
 	Wait-ServiceState $nodeService 'Running'
 	Assert-DriversInstalled $true
-	Assert-NodeCaps $before $x64 $x64
+	Soft 'the reinstalled Node reports the Capabilities of its host' { Assert-NodeCaps $before $x64 $x64 }
 	# Stopping the Node closes its store and its log
 	Stop-Service -Name $nodeService
 	if ((Get-Sha256 $store) -ne $storeHash) { throw "a reinstall changed the Configuration store of the Node, which names its identity key" }
@@ -655,9 +710,13 @@ try {
 	foreach ($name in @($nodeService, $controllerService)) { Wait-ServiceGone $name }
 	$left = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
 	if ($left.Count -gt 1 -or ($left.Count -eq 1 -and $left[0] -ne 'ranz.exe')) { throw "ranz uninstall from $installedRanz left $($left -join ', ') in $installDir" }
-	Assert-DriversRemoved $r.Out
+	Soft 'ranz uninstall from the installed ranz.exe removes the drivers' { Assert-DriversRemoved $r.Out }
 	Write-Host "ranz uninstall from $installedRanz removed the services, the drivers and the other files; what is left in ${installDir}: $($left -join ', ')"
+} catch {
+	Fail 'ranz install and ranz uninstall' $_
+}
 
+try {
 	# 9. ranz install --no-xdp leaves the XDP runtime out on purpose: the Node reports no xdp Capability and SeLow is
 	#    its L2 backend (on arm64 the flag changes nothing, there is no XDP runtime to leave out). A ranz install after
 	#    it adds the XDP runtime, and the Node that ran restarts, so that it reports it.
@@ -668,21 +727,25 @@ try {
 	if ($x64 -and $r.Out -notmatch '--no-xdp') { throw "ranz install --no-xdp did not say that it left the XDP runtime out:`n$($r.Out)" }
 	Wait-ServiceState $nodeService 'Running'
 	Assert-DriversInstalled $false
-	Assert-NodeCaps $before $x64 $false
+	Soft 'the Node reports no XDP after --no-xdp' { Assert-NodeCaps $before $x64 $false }
 	if ($x64) {
 		$before = (Get-NodeCapsLines).Count
 		$r = Invoke-Ranz $goodExe @('install')
 		if ($r.Code -ne 0) { throw "ranz install after --no-xdp exited with code $($r.Code)" }
 		Wait-ServiceState $nodeService 'Running'
 		Assert-DriversInstalled $true
-		Assert-NodeCaps $before $true $true
+		Soft 'the Node that ran reports XDP after the install that added it' { Assert-NodeCaps $before $true $true }
 	}
 	$r = Invoke-Ranz $goodExe @('uninstall')
 	if ($r.Code -ne 0) { throw "ranz uninstall after --no-xdp exited with code $($r.Code)" }
 	Wait-ServiceGone $nodeService
-	Assert-DriversRemoved $r.Out
+	Soft 'ranz uninstall removes the drivers installed after --no-xdp' { Assert-DriversRemoved $r.Out }
 	Write-Host 'ranz install --no-xdp leaves the XDP runtime out, and a ranz install after it adds it'
+} catch {
+	Fail 'ranz install --no-xdp' $_
+}
 
+try {
 	# 10. x64: a SeLow that was on the machine before ranz install stays at ranz uninstall. This job installs it as the
 	#     fork does, by hand from its package; ranz install does not take it for its own, installs the XDP runtime beside
 	#     it, and ranz uninstall removes the XDP runtime and leaves SeLow.
@@ -697,7 +760,7 @@ try {
 		if ($r.Out -notmatch 'the SeLow driver is on this machine already') { throw "ranz install did not say that SeLow was on the machine already:`n$($r.Out)" }
 		if (Get-RecordedInf 'SeLow') { throw 'the install record names the SeLow that was there before ranz install' }
 		Wait-ServiceState $nodeService 'Running'
-		Assert-XdpInstalled
+		Soft 'the XDP runtime is installed beside the SeLow that was there before' { Assert-XdpInstalled }
 		$r = Invoke-Ranz $goodExe @('uninstall')
 		if ($r.Code -ne 0) { throw "ranz uninstall over a SeLow that was there before exited with code $($r.Code)" }
 		Wait-ServiceGone $nodeService
@@ -708,15 +771,22 @@ try {
 		}
 		if (Get-DriverState 'xdp') { throw 'ranz uninstall left the service xdp, which it installed' }
 		Write-Host 'ranz uninstall removed the XDP runtime that it installed and left the SeLow that was there before'
-		& $netcfg -u SeLow | Out-Host
-		$global:LASTEXITCODE = 0
 	}
 } catch {
-	Write-Host "failed: $($_.Exception.Message)"
-	Show-Diagnostics
-	throw
-} finally {
-	Remove-InstalledState
+	Fail 'a SeLow that was there before ranz install' $_
+}
+
+# The SeLow that this job installed by hand goes again, whatever the step did
+if ($x64 -and (Get-DriverState 'SeLow')) {
+	& (Join-Path $system32 'netcfg.exe') -u SeLow | Out-Host
+	$global:LASTEXITCODE = 0
+}
+Remove-InstalledState
+
+if ($failures.Count -gt 0) {
+	Write-Host "$($failures.Count) steps failed:"
+	foreach ($f in $failures) { Write-Host "  $f" }
+	throw "$($failures.Count) steps of the install job failed: $($failures -join '; ')"
 }
 
 Write-Host 'ok'
