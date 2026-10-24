@@ -1,0 +1,33 @@
+# Temporary (ONE-3, #312): why Get-AuthenticodeSignature does not say Valid for the xdpapi.dll of the pinned XDP
+# runtime on a windows-latest runner. It runs only when one of its own files changes, and is removed when the
+# check of fetch-xdp.ps1 is fixed.
+name: diag-xdp-sign
+
+on:
+  push:
+    branches: [one/3-drivers-in-ranz]
+    paths:
+    - .github/workflows/diag-xdp-sign.yml
+    - .github/scripts/diag-xdp-sign.ps1
+    - controller/internal/payload/verify_diag_test.go
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27.3'
+
+jobs:
+  diag:
+    runs-on: windows-latest
+    name: xdpapi.dll signature
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: go.sum
+    - name: Read what Windows says of each file of the XDP runtime
+      shell: pwsh
+      run: .github/scripts/diag-xdp-sign.ps1
