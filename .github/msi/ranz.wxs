@@ -49,12 +49,13 @@
       The x64 package installs on an ARM64 computer, where Windows runs x64 programs under emulation, so its launch
       condition asks what the computer is: the processor architecture that Windows keeps for the whole machine in the
       registry, and the one that the environment of an emulated x64 process names. A condition on the NativeMachine
-      property of Windows Installer did not refuse the package on a windows-11-arm runner.
+      property of Windows Installer did not refuse the package on a windows-11-arm runner. The id is upper case because
+      a property that a search sets must be public (WiX error WIX0012).
     -->
-    <Property Id="RanzNativeArch">
+    <Property Id="RANZNATIVEARCH">
       <RegistrySearch Root="HKLM" Key="SYSTEM\CurrentControlSet\Control\Session Manager\Environment" Name="PROCESSOR_ARCHITECTURE" Type="raw" />
     </Property>
-    <Launch Condition="Installed OR (RanzNativeArch ~&lt;&gt; &quot;ARM64&quot; AND %PROCESSOR_ARCHITEW6432 ~&lt;&gt; &quot;ARM64&quot;)" Message="This is the x64 package of Ranz VPN, and this computer is an ARM64 computer. Install the arm64 package of Ranz VPN instead." />
+    <Launch Condition="Installed OR (RANZNATIVEARCH ~&lt;&gt; &quot;ARM64&quot; AND %PROCESSOR_ARCHITEW6432 ~&lt;&gt; &quot;ARM64&quot;)" Message="This is the x64 package of Ranz VPN, and this computer is an ARM64 computer. Install the arm64 package of Ranz VPN instead." />
     <?endif?>
 
     <!-- The Ranz folder is fixed (ranz install names it too): its id has lower case letters, so it is not a public property that a command line could set -->
