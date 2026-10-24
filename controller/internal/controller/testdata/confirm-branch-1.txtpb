@@ -12,6 +12,7 @@ update: {
         length: 48
       }
       mtu: 1500
+      policy: {}
     }
   }
 }

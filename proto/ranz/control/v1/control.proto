@@ -28,6 +28,13 @@
 // version changes with it: a controller of an older release answers the first one with
 // REFUSE_REASON_PROTOCOL.
 //
+// Policy (SDN-8, ADR-0029): each VRF of a node carries the settings of its policy (Vrf.policy),
+// the conntrack quota of the VRF and the timeouts of its flows. The node gets as Rule objects the
+// rules of its VRFs that can match a flow with one end at the node, and with each Peer the tags
+// that identify it to the rules. The node enforces the rules of a VRF that has its policy, default
+// deny, at each end of a flow. No schema version changes with them: no node of a release before
+// them exists.
+//
 // 1:1 NAT (SDN-6, ADR-0025): a node gets the 1:1 NAT rules that it applies, its 4via6 among them,
 // in its NodeConfig, and the outside prefixes of the rules of a peer as routes of that Peer. No
 // schema version changes with them: a node of an older release skips the fields it does not know.
@@ -148,6 +155,7 @@ enum Kind {
   KIND_NETWORK = 3;
   KIND_PEER = 4;
   KIND_RELAY = 5;
+  KIND_RULE = 6;
 }
 
 // One object of the desired state, identified by its kind and its name.
@@ -158,6 +166,7 @@ message Object {
     Network network = 3;
     Peer peer = 4;
     Relay relay = 5;
+    Rule rule = 6;
   }
 }
 
@@ -184,6 +193,9 @@ message Vrf {
   Prefix ula = 3;  // the ULA /48 of the VRF (RFC 4193)
   uint32 mtu = 4;
   uint64 rate_limit = 5;  // bits per second that each node sends in the VRF, 0 for no limit (SDN-20)
+  // The policy of the VRF (SDN-8): the controller sends it with every VRF, and the node enforces
+  // the Rules of a VRF that has it. A VRF without it is one that no controller compiled rules for.
+  VrfPolicy policy = 6;
 }
 
 enum NetworkMode {
@@ -210,6 +222,7 @@ message Peer {
   repeated uint32 vrf_ids = 3;  // the shared VRFs, ascending
   repeated Address addresses = 4;
   repeated Route routes = 5;
+  repeated string tags = 6;  // sorted: the tags of the peer, which identify it to the Rules (SDN-8)
 }
 
 // A relay that the node may use (ADR-0015): another node with the relay role that shares a VRF
@@ -226,6 +239,58 @@ message Relay {
 message Prefix {
   bytes address = 1;
   uint32 length = 2;
+}
+
+// The policy of a VRF on a node (SDN-8 #184, ADR-0029 decision 5): the conntrack table of the VRF
+// holds max_flows flows at most, and a new flow takes the place of the least recently used one of
+// a full table, so a VRF that fills its table takes no room of another; a flow without a packet
+// ends after the timeout of its protocol and state, in seconds. 0 is the default of the node:
+// 65536 flows, 3600 s for an established TCP flow, 120 s for one that opens or closes, 60 s for
+// UDP, 30 s for an ICMP echo and 60 s for another protocol.
+message VrfPolicy {
+  uint32 max_flows = 1;
+  uint32 tcp_established = 2;
+  uint32 tcp_transitory = 3;
+  uint32 udp = 4;
+  uint32 icmp = 5;
+  uint32 other = 6;
+}
+
+// A rule of the policy of a VRF that the node enforces (SDN-8 #184, ADR-0029): the Policy resource
+// of its name. The rules of a VRF judge the first packet of a flow, at each end of the flow: by
+// priority, the lowest first, a deny rule before an allow rule of the same priority, then by name.
+// The first rule that matches allows or denies the flow, and no rule denies it. The packets that
+// follow the first of an allowed flow, in either direction, pass on the conntrack table of the VRF.
+// A rule matches a packet from its from end to its to end, of its protocol, to one of its ports.
+message Rule {
+  string name = 1;
+  uint32 vrf_id = 2;
+  uint32 priority = 3;
+  RuleAction action = 4;
+  RuleEnd from = 5;  // none for any
+  RuleEnd to = 6;    // none for any
+  uint32 protocol = 7;  // the IP protocol, 0 for any; 1 (ICMP) takes ICMPv6 in IPv6 packets
+  repeated PortRange ports = 8;  // destination ports of TCP or UDP, none for any
+}
+
+// What a Rule does with the flows that it matches.
+enum RuleAction {
+  RULE_ACTION_UNSPECIFIED = 0;  // as RULE_ACTION_DENY
+  RULE_ACTION_ALLOW = 1;
+  RULE_ACTION_DENY = 2;
+}
+
+// An end of the flows of a Rule: a node or a peer with one of the tags, any without one, whose
+// address is in one of the prefixes, any without one.
+message RuleEnd {
+  repeated string tags = 1;  // sorted
+  repeated Prefix prefixes = 2;
+}
+
+// The ports from first to last.
+message PortRange {
+  uint32 first = 1;
+  uint32 last = 2;
 }
 
 // The Capabilities of a node: facts about its host (ADR-0033). The controller checks the desired

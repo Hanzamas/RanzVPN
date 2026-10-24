@@ -47,6 +47,14 @@ ranz.control.v1.Flow.src max_size:16
 ranz.control.v1.Flow.dst max_size:16
 ranz.control.v1.NodeEvent.subject max_size:64
 ranz.control.v1.NodeEvent.message max_size:256
+# The policy of the VRFs (SDN-8): the tags of a peer as those of a node, and 16 values of each kind
+# in a Rule, the most the controller lets one Policy have (controller/internal/intent
+# MaxPolicyValues). Neither makes an Object larger than a NodeConfig.
+ranz.control.v1.Peer.tags max_count:16 max_size:64
+ranz.control.v1.Rule.name max_size:64
+ranz.control.v1.Rule.ports max_count:16
+ranz.control.v1.RuleEnd.tags max_count:16 max_size:64
+ranz.control.v1.RuleEnd.prefixes max_count:16
 # The 1:1 NAT rules that a node applies, its 4via6 among them, and the routes of a peer, which are
 # the outside prefixes of its rules (SDN-6): 16 each, the most the controller lets one node have
 # (controller/internal/intent MaxNATRules).

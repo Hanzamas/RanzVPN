@@ -103,6 +103,8 @@ controller/internal/intent  ParseKey       FuzzParseValues
 controller/internal/intent  ParseRelay     FuzzParseValues
 controller/internal/controller  Controller.Import  exempt  takes a document that ParseDocument parsed and intent.Replace checked, which FuzzParseDocument drives; it stores the result as a revision
 controller/internal/api         Client.Import      exempt  the API client of `ranz import`: it sends a parsed document to the controller and reads the controller's own answer
+# A protocol or a port of a Policy (SDN-8 #184), which a document gives as a number or a string
+controller/internal/intent  PolicyValue.UnmarshalJSON  FuzzParseDocument  via ParseDocument
 
 # The export targets that an operator sets through the API: webhooks, OTLP endpoints and IPFIX collectors (SDN-16 #192)
 controller/internal/export  Target.Validate  FuzzValidate

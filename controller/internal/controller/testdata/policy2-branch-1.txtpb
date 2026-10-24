@@ -1,0 +1,33 @@
+# Generation 2 of branch-1 after policy2.json (SDN-8): the change of web-to-db reaches branch-1 as a
+# delta of that rule alone.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    rule: {
+      name: "web-to-db"
+      vrf_id: 10
+      priority: 100
+      action: RULE_ACTION_ALLOW
+      from: {
+        tags: "web"
+      }
+      to: {
+        tags: "db"
+        prefixes: {
+          address: "\x0a\x0a\x00\x00"  # 10.10.0.0
+          length: 24
+        }
+      }
+      protocol: 6
+      ports: {
+        first: 5432
+        last: 5432
+      }
+      ports: {
+        first: 8443
+        last: 8443
+      }
+    }
+  }
+}
