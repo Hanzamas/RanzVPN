@@ -93,6 +93,19 @@ type Manifest struct {
 	Problems []string `json:"problems,omitempty"`
 }
 
+// ArchiveName returns the name for a file that holds the bundle that m describes: ranz, the kind,
+// the host and the time in UTC, as ranz-controller-vpn1-20261023T120000Z.zip.
+func (m Manifest) ArchiveName() string {
+	kind, host := "bundle", "host"
+	if m.Kind != "" {
+		kind = FileName(m.Kind)
+	}
+	if m.Host != "" {
+		host = FileName(m.Host)
+	}
+	return "ranz-" + kind + "-" + host + "-" + m.Created.UTC().Format("20060102T150405Z") + ".zip"
+}
+
 // redactionNote is what the manifest says of the secrets.
 const redactionNote = "No secret is in this bundle. The values of fields whose names hold a secret (password, token, key, " +
 	"hash, ...) and the secrets that have a form of their own (bearer tokens, API tokens, private keys, password hashes, " +

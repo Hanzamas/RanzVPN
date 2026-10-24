@@ -322,6 +322,23 @@ func TestNames(t *testing.T) {
 	}
 }
 
+// The name for the file of a bundle holds its kind, its host and its time in UTC, and no character
+// that a file name may not have.
+func TestArchiveName(t *testing.T) {
+	for _, c := range []struct {
+		m    Manifest
+		want string
+	}{
+		{Manifest{Kind: "controller", Host: "vpn 1", Created: fixed}, "ranz-controller-vpn_1-20261023T120000Z.zip"},
+		{Manifest{Created: fixed}, "ranz-bundle-host-20261023T120000Z.zip"},
+		{Manifest{Kind: "host", Host: "NODE-02.corp", Created: fixed.In(time.FixedZone("WIB", 7*3600))}, "ranz-host-NODE-02.corp-20261023T120000Z.zip"},
+	} {
+		if got := c.m.ArchiveName(); got != c.want {
+			t.Errorf("ArchiveName of %+v is %q, want %q", c.m, got, c.want)
+		}
+	}
+}
+
 // What a bundle says of its host holds no environment and no argument, and its services source
 // gives a part on Windows only.
 func TestSystemInfoAndServices(t *testing.T) {

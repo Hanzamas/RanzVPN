@@ -21,7 +21,10 @@
 //	ranz test throughput ...  measure the rate between two nodes: -listen runs the test server on one,
 //	                          a host and port runs the client on another (the successor of vpncmd
 //	                          TrafficServer and TrafficClient)
-//	ranz doctor               run the system check (the successor of vpncmd Check)
+//	ranz doctor [-bundle [-o FILE]]
+//	                          run the system check (the successor of vpncmd Check); with -bundle, also
+//	                          write the diagnostics bundle of this host, a ZIP archive with the logs, the
+//	                          configuration and the status of its Node and Controller and no secret (SDN-54, #247)
 //
 // Usage of the CLI:
 //
@@ -106,7 +109,7 @@ const usage = `usage:
   ranz cert -cn NAME (-savecert FILE -savekey FILE | -ksp NAME) [flags]
   ranz test throughput -listen ADDRESS
   ranz test throughput [flags] HOST[:PORT]
-  ranz doctor
+  ranz doctor [-bundle [-o FILE]]
   ranz [flags] apply -f FILE [-confirm DURATION]
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]

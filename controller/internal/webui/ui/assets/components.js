@@ -15,6 +15,8 @@ const areas = [
   { href: '/revisions', label: 'Revisions' },
   { href: '/events', label: 'Events' },
   { href: '/licence', label: 'Licence' },
+  // Only an operator may pull the diagnostics bundle, so only an operator sees the page.
+  { href: '/diagnostics', label: 'Diagnostics', action: 'diagnosticsBundle' },
   // Only an admin may list the API tokens, so only an admin sees the page.
   { href: '/tokens', label: 'API tokens', action: 'tokens' },
 ];

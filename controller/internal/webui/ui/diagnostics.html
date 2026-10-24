@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-page="diagnostics">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnostics | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/diagnostics.js"></script>
+</head>
+<body>
+<ranz-nav></ranz-nav>
+<main>
+<h1>Diagnostics</h1>
+<p class="lead">A diagnostics bundle is one ZIP archive with the logs, the configuration and the status of this controller and of its host, so that a support engineer needs no remote desktop. It holds no secret: the values of passwords, tokens and keys, and private keys, are replaced before the archive leaves the controller, and its manifest lists every part with its size and the number of secrets replaced in it.</p>
+<ranz-problem></ranz-problem>
+<p id="operator-only" class="notice" hidden></p>
+<output id="result" aria-live="polite"></output>
+<section aria-labelledby="h-bundle" data-action="diagnosticsBundle" hidden>
+<h2 id="h-bundle">Diagnostics bundle</h2>
+<p>The bundle is made when you ask for it, by the controller that answers. It holds the newest 16 MB of the controller's log, its Intent and revisions, its events, the licence in force, its nodes with their Capabilities, and the status of the controller and of its host. Every pull is in the audit log.</p>
+<div class="buttons"><button type="button" id="bundle-button">Download the bundle</button></div>
+</section>
+</main>
+</body>
+</html>

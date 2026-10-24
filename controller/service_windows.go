@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sys/windows/svc/eventlog"
 	"golang.org/x/sys/windows/svc/mgr"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/logfile"
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 )
 
@@ -106,8 +107,9 @@ type service struct {
 }
 
 // Execute starts the controller, reports it running once it serves, and stops it on a stop or
-// shutdown request. The service log is controller.log in the data directory; the start, the
-// stop, a failure and a fallback of the TLS port also go to the Application log.
+// shutdown request. The service log is controller.log in the data directory, within the age and
+// disk limits of -log-days and -log-mb; the start, the stop, a failure and a fallback of the TLS
+// port also go to the Application log.
 func (s *service) Execute(args []string, req <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
 	const accepts = svc.AcceptStop | svc.AcceptShutdown
 	status <- svc.Status{State: svc.StartPending}
@@ -131,6 +133,7 @@ func (s *service) Execute(args []string, req <-chan svc.ChangeRequest, status ch
 			warn: func(msg string) {
 				_ = s.elog.Warning(eventWarning, fmt.Sprintf("%s: %s", serviceName, msg))
 			},
+			logFile: f.Path(),
 		})
 	}()
 	for {
@@ -155,11 +158,14 @@ func (s *service) Execute(args []string, req <-chan svc.ChangeRequest, status ch
 	}
 }
 
-func (s *service) openLog() (*os.File, error) {
+// openLog opens the service log in the data directory, which keeps its files within the limits of
+// the configuration (internal/logfile). It applies them at once, so limits that are lower than the
+// ones of the last run take effect at the start.
+func (s *service) openLog() (*logfile.Writer, error) {
 	if err := makeDataDir(s.cfg.dataDir); err != nil {
 		return nil, err
 	}
-	return os.OpenFile(filepath.Join(s.cfg.dataDir, logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	return logfile.New(filepath.Join(s.cfg.dataDir, logFile), s.cfg.logLimits())
 }
 
 // install registers the Windows service, started automatically as its virtual account and running

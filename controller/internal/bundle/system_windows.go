@@ -21,13 +21,15 @@ func osVersion() string {
 	return fmt.Sprintf("%d.%d.%d", v.MajorVersion, v.MinorVersion, v.BuildNumber)
 }
 
-// Services returns what the service control manager holds of the services of Ranz. It opens each
-// with the right to read, so that a service account that is no administrator can too.
+// Services returns what the service control manager holds of the services of Ranz. It connects to
+// the manager and opens each service with the right to read only, so that a service account that is
+// no administrator can too: mgr.Connect asks for every right, which only an administrator has.
 func Services() ([]Service, error) {
-	m, err := mgr.Connect()
+	h, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
 	if err != nil {
 		return nil, fmt.Errorf("the service control manager: %w", err)
 	}
+	m := &mgr.Mgr{Handle: h}
 	defer m.Disconnect()
 	out := []Service{}
 	for _, name := range serviceNames {

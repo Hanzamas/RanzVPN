@@ -178,6 +178,7 @@ func TestFiles(t *testing.T) {
 		{"/revisions", "text/html; charset=utf-8", `data-page="revisions"`},
 		{"/events", "text/html; charset=utf-8", `data-page="events"`},
 		{"/licence", "text/html; charset=utf-8", `data-page="licence"`},
+		{"/diagnostics", "text/html; charset=utf-8", `data-page="diagnostics"`},
 		{"/tokens", "text/html; charset=utf-8", `data-page="tokens"`},
 		{"/assets/api.js", "text/javascript; charset=utf-8", "export async function call"},
 		{"/assets/style.css", "text/css; charset=utf-8", "@view-transition"},

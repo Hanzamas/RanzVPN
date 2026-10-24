@@ -127,6 +127,11 @@ func Files(path string) ([]File, error) {
 			// A file that is gone again, or a directory of that name, is no file of the log.
 			continue
 		}
+		if name == base {
+			if fresh, err := statOpen(filepath.Join(dir, name)); err == nil {
+				info = fresh
+			}
+		}
 		out = append(out, File{Name: name, Size: info.Size(), ModTime: info.ModTime(), Active: name == base})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -136,6 +141,19 @@ func Files(path string) ([]File, error) {
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// statOpen returns what a handle to the file at path says of it. The active file of a log is open
+// for writing, and on Windows a directory listing, and so os.Stat too, gives the size and the time
+// that the file had when its last writer closed it: too small a size for a log that is being
+// written, which only the handle of an open file knows.
+func statOpen(path string) (fs.FileInfo, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Stat()
 }
 
 // movedAside reports whether name is the name of a file that was moved aside from the active file
