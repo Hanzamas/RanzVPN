@@ -117,7 +117,9 @@ type Member struct {
 // Start starts the member. It tries once to take the lease, and leads when it gets it, before it
 // returns; then the lease loop runs until Close. A free lease, or one that held the member's own
 // name before a restart, goes to the member at once, so a single controller leads when Start
-// returns.
+// returns, unless its try failed: the try has a fifth of the lease duration to read the lease and
+// to take it, which a store that answers late overruns. The member is then a standby until the next
+// try of the lease loop, so a caller that needs the lead waits for it (Status).
 func Start(cfg Config) (*Member, error) {
 	if cfg.Name == "" {
 		return nil, errors.New("cluster: the member has no name")
