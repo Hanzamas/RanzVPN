@@ -1,7 +1,7 @@
 // TransportPath.c
 // The outbound path of the new core's client transports (SDN-61, #254): the TCP connection of a TLS-443 dial to its
-// server, through an outbound proxy where the configuration names one, and the underlay that it and a QUIC dial leave
-// through. A dial of TLS-443 goes:
+// server, through an outbound proxy where the configuration names one, and the underlay that it leaves through. A dial
+// of TLS-443 goes:
 // - direct;
 // - through the system's proxy, which WinHTTP finds for the URL of the server, https and its host and port (ADR-0008:
 //   WinHttpGetProxyForUrl plus a small CONNECT): the PAC script of the configuration, else the current user's settings
@@ -10,9 +10,9 @@
 //   cancelled, as the race of a fallback list cancels the attempts it does not need, returns at once;
 // - through an HTTP proxy, which CONNECT opens to the server (RFC 9110 section 9.3.6), or a SOCKS5 proxy without
 //   authentication (RFC 1928). Either resolves the server's name itself.
-// QUIC goes direct: a proxy of TCP carries no UDP. The underlay binding of either names an interface, by its alias or its
-// index, that the connection leaves through (IP_UNICAST_IF, IPV6_UNICAST_IF), a local address that it sends from (bind),
-// or both.
+// QUIC goes direct: a proxy of TCP carries no UDP. The underlay binding names an interface, by its alias or its index,
+// that the connection leaves through (IP_UNICAST_IF, IPV6_UNICAST_IF), a local address that it sends from (bind), or
+// both.
 //
 // What a proxy answers, and the proxy list that a PAC script gives (WPAD brings the script from the network), are
 // untrusted: TransportProxyParseHttp, TransportProxyParseSocks and TransportProxyParseList read them, and fuzz_transport
@@ -33,7 +33,7 @@
 // A proxy answers within this time (ms)
 #define PATH_ANSWER 10000
 // WinHTTP finds the system's proxy within this time (ms); a lookup that takes longer leaves the dial direct
-#define PATH_LOOKUP 30000
+#define PATH_LOOKUP_TIME 30000
 // A port with its NUL
 #define PATH_PORT_SIZE 8
 // The authority of a server, its host (an IPv6 address in brackets), a colon and its port, with its NUL
@@ -633,7 +633,7 @@ static bool PathSocksConnect(SOCKET s, const char *host, const char *port, HANDL
 	UCHAR request[SOCKS_REQUEST_SIZE];
 	UCHAR address[16];
 	UINT size = 4, code = 0;
-	UINT name = (UINT)strlen(host);
+	UINT name = (UINT)strnlen(host, 256);
 	ULONG number = 0;
 
 	ZeroMemory(request, sizeof(request));
@@ -839,7 +839,7 @@ static void CALLBACK PathLookupCallback(PTP_CALLBACK_INSTANCE instance, void *pa
 
 // The system's proxy for the server, from a lookup on the thread pool: its host and port into proxy_host and proxy_port
 // (TRANSPORT_ADDRESS_SIZE and PATH_PORT_SIZE bytes), empty for direct. False when cancel was set or the lookup could not
-// start; a lookup that does not end within PATH_LOOKUP leaves the dial direct.
+// start; a lookup that does not end within PATH_LOOKUP_TIME leaves the dial direct.
 static bool PathSystem(const char *pac, const char *host, const char *port, HANDLE cancel, char *proxy_host, char *proxy_port) {
 	PATH_LOOKUP *l = (PATH_LOOKUP *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PATH_LOOKUP));
 	bool cancelled = false;
@@ -861,7 +861,7 @@ static bool PathSystem(const char *pac, const char *host, const char *port, HAND
 	}
 
 	// Until the lookup ends, the dial is cancelled or the lookup runs out of its time
-	UINT64 end = GetTickCount64() + PATH_LOOKUP;
+	UINT64 end = GetTickCount64() + PATH_LOOKUP_TIME;
 	while (WaitForSingleObject(l->Done, PATH_POLL) == WAIT_TIMEOUT) {
 		if (cancel != NULL && WaitForSingleObject(cancel, 0) == WAIT_OBJECT_0) {
 			cancelled = true;

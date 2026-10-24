@@ -20,9 +20,12 @@
 //   address; one bound to the loopback interface, by its alias and by its index, from an address of that interface; one
 //   bound to a non-loopback interface of the machine, where it has one with an IPv4 address, from that address; a local
 //   address and an interface that the machine does not have fail the dial.
-// One runner has no two networks: the VM job of the multi-node seam (CORE-S3-2, #72) adds two KM-TEST adapters on
-// separate subnets, a proxy that only one of them reaches, and the packets of the underlay counted on the bound adapter.
+// One runner has no two networks: two KM-TEST adapters on separate subnets, a proxy that only one of them reaches, and
+// the packets of the underlay counted on the bound adapter are for the VM job of the multi-node seam (CORE-S3-2, #72),
+// which does not exist yet.
 // Print "PROXY TEST OK" only when every check passes.
+
+#include "testlist.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
@@ -1228,6 +1231,7 @@ static void ProxyTestUnderlay(PROXYTEST *t)
 	Free(relay);
 }
 
+RANZ_TEST_TAGS("proxy", proxy_test, "core", "The outbound path of the TLS-443 client: an HTTP CONNECT proxy, a SOCKS5 proxy and the system's proxy through WinHTTP (a PAC script) on test ports, and the underlay bound to a local address and an interface.");
 void proxy_test(UINT num, char **arg)
 {
 	PROXYTEST *t = ZeroMalloc(sizeof(PROXYTEST));

@@ -1,7 +1,6 @@
 // TransportInternal.h
 // Module-internal declarations of the transport module: the outbound path of a client transport (TransportPath.c), which
-// the TLS transport (TransportTls.c) dials along and whose underlay the QUIC transport binds. Only the Transport files
-// include this header.
+// the TLS transport (TransportTls.c) dials along. Only the Transport files include this header.
 
 #ifndef CORE_TRANSPORT_INTERNAL_H
 #define CORE_TRANSPORT_INTERNAL_H
