@@ -572,7 +572,12 @@ static bool NodeBgpLaunch(NODE_BGP *b) {
 	} else {
 		ConbinePathW(log_path, sizeof(log_path), n->DataDir, NODE_LOG_DIR_NAME);
 		ConbinePathW(log_path, sizeof(log_path), log_path, NODE_BGP_LOG_NAME);
-		UniFormat(cmd, sizeof(cmd), L"\"%s\" bgp -pipe %s -log \"%s\"", n->BgpSidecar, b->PipeName, log_path);
+
+		// The sidecar keeps its log within the limits of the node log (SDN-54, #247)
+		UINT log_days;
+		UINT log_mb;
+		NodeGetLogLimits(n, &log_days, &log_mb);
+		UniFormat(cmd, sizeof(cmd), L"\"%s\" bgp -pipe %s -log \"%s\" -log-days %u -log-mb %u", n->BgpSidecar, b->PipeName, log_path, log_days, log_mb);
 
 		Zero(&si, sizeof(si));
 		si.cb = sizeof(si);

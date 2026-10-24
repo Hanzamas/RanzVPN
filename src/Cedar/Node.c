@@ -236,11 +236,59 @@ static void NodeImportForkConfig(NODE *n) {
 	FileRenameW(path, done);
 }
 
+// The age limit in days and the disk limit in megabytes of the logs of the node (SDN-54, #247): the LogDays and LogMB
+// settings of the configuration store, NODE_LOG_DEFAULT_DAYS and NODE_LOG_DEFAULT_MB without them, 0 for no limit.
+// The node log and the log of the BGP sidecar keep within them.
+void NodeGetLogLimits(NODE *n, UINT *days, UINT *mb) {
+	char value[MAX_SIZE];
+
+	*days = NODE_LOG_DEFAULT_DAYS;
+	*mb = NODE_LOG_DEFAULT_MB;
+
+	if (n->Store != NULL) {
+		if (CsGetSetting(n->Store, NODE_SETTING_LOG_DAYS, value, sizeof(value)) && IsEmptyStr(value) == false)
+			*days = MIN(ToInt(value), NODE_LOG_MAX_DAYS);
+
+		if (CsGetSetting(n->Store, NODE_SETTING_LOG_MB, value, sizeof(value)) && IsEmptyStr(value) == false)
+			*mb = MIN(ToInt(value), NODE_LOG_MAX_MB);
+	}
+}
+
+// Keep the node log within its limits (NodeGetLogLimits). The limits reach the files that earlier runs left in the node
+// log directory as well.
+static void NodeLoadLogLimits(NODE *n) {
+	UINT days;
+	UINT mb;
+
+	NodeGetLogLimits(n, &days, &mb);
+
+	SetLogLimits(n->Log, days, (UINT64)mb * 1024ULL * 1024ULL);
+}
+
+// Write the text dump of the configuration store (CsDump) to NODE_CONFIG_DUMP_NAME in the data directory, as it is
+// at the start of the node, so that ranz doctor --bundle holds the configuration of the node (SDN-54, #247). The dump
+// shows no password hash and no key.
+static void NodeWriteConfigDump(NODE *n) {
+	wchar_t path[MAX_PATH];
+
+	if (n->Store == NULL)
+		return;
+
+	BUF *b = CsDump(n->Store);
+	if (b == NULL)
+		return;
+
+	ConbinePathW(path, sizeof(path), n->DataDir, NODE_CONFIG_DUMP_NAME);
+	DumpBufW(b, path);
+	FreeBuf(b);
+}
+
 // Open the configuration store (CS_FILE_NAME in the data directory), import a fork configuration into it once,
 // then read the settings: Roles (NODE_SETTING_ROLES; without it NODE_DEFAULT_ROLES, "none" for no role),
 // NumWorkers (NODE_SETTING_WORKERS; 0 for one per core), RelayPort (NODE_SETTING_RELAY_PORT; without it, or 0, a
 // port that the system picks), IdentityKey (NODE_SETTING_IDENTITY_KEY; without it NODE_IDENTITY_KEY_NAME) and Bgp
-// (NODE_SETTING_BGP; none for no BGP sidecar). The networks are read by the server role.
+// (NODE_SETTING_BGP; none for no BGP sidecar). The networks are read by the server role. Last it sets the limits of
+// the node log (NodeLoadLogLimits) and writes the text dump of the store (NodeWriteConfigDump).
 static void NodeLoadConfig(NODE *n) {
 	wchar_t path[MAX_PATH];
 	char roles[MAX_SIZE];
@@ -259,6 +307,7 @@ static void NodeLoadConfig(NODE *n) {
 
 	if (n->Store == NULL) {
 		NodeLog(n, "Configuration store %S cannot be opened: the default roles", path);
+		NodeLoadLogLimits(n);
 		return;
 	}
 
@@ -291,6 +340,9 @@ static void NodeLoadConfig(NODE *n) {
 		n->ConfigBgp = bgp;
 	else
 		Free(bgp);
+
+	NodeLoadLogLimits(n);
+	NodeWriteConfigDump(n);
 }
 
 // A node with its data directory: NULL for NodeDefaultDataDir, which NodeMakeDataDir protects. It opens the node
