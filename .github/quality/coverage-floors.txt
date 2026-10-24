@@ -53,8 +53,11 @@ go  controller/internal/intent          91
 go  controller/internal/keys            71
 go  controller/internal/licence         89
 # mimic (CORE-P2-1 #85): the Linux job runs the sidecars end to end on Unix sockets, with the REALITY
-# library, uTLS and an ACME service of the test; pipe_windows.go is the part that only Windows builds
-go  controller/internal/mimic           40
+# library, uTLS and an ACME service of the test; pipe_windows.go is the part that only Windows builds.
+# 91.6% was measured in the first run, in which the tests that move a stream failed, so it is a lower
+# bound: the floor is that less two points for the tests whose paths depend on timing, and it is to be
+# raised to the measure of a run in which they pass
+go  controller/internal/mimic           89
 go  controller/internal/mitigation      0
 go  controller/internal/nodesim         0
 # payload (ONE-2 #311) has real logic tested on every OS (payload_test.go: the hash checks, the
