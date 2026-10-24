@@ -45,6 +45,8 @@ SENSITIVE = [
     (r'\.github/scripts/install\.ps1$', 'the install script'),
     (r'\.github/msi/', 'the MSI package'),
     (r'\.github/scripts/msi-', 'the MSI scripts'),
+    (r'docs/first-test\.md$', 'the runbook of the first test'),
+    (r'\.github/scripts/first-test\.ps1$', 'the script that proves the runbook'),
 ]
 
 X64 = {'ARCHITECTURE': 'x64', 'VCPKG_TRIPLET': 'x64-windows-static', 'RUNNER': 'windows-latest'}
