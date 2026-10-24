@@ -15,6 +15,17 @@ func TestDiagVerifyEachFile(t *testing.T) {
 	if dir == "" {
 		t.Skip("DIAG_DIR names no folder")
 	}
+	// The SeLow package of the repository, a driver package of the same kind
+	selow, err := filepath.Abs("selow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"SeLow_x64.sys", "SeLow_x64.inf", "SeLow_Win10_x64.cat"} {
+		for _, alg := range []string{"SHA256", "SHA1"} {
+			code, err := catalogVerdict(filepath.Join(selow, "SeLow_Win10_x64.cat"), filepath.Join(selow, name), alg)
+			t.Logf("%s: member of SeLow_Win10_x64.cat, hashed with %s: %#08x, %v", name, alg, code, err)
+		}
+	}
 	catalog := filepath.Join(dir, "xdp.cat")
 	changedDir := t.TempDir()
 	for _, name := range []string{"xdp.sys", "xdpapi.dll", "xdp.cat", "xdp.inf", "xdppcw.man"} {

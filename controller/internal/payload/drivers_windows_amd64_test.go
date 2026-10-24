@@ -52,13 +52,35 @@ func TestSeLowPackageHoldsTheCopiedFiles(t *testing.T) {
 
 // The XDP runtime of ranz for x64 holds the files of runtime/native that the INF installs and the
 // manifest of its performance counters. The committed files are empty placeholders, so only the
-// names and the way each is checked are tested here.
+// names and the way each is checked are tested here: the driver and its catalog by their
+// signature, the INF and the manifest by their hash, and xdpapi.dll as a member of the catalog,
+// which therefore comes first.
 func TestXdpPackageHoldsTheFilesOfTheRuntime(t *testing.T) {
-	packageNames(t, XdpPackage, map[string]bool{
+	byName := packageNames(t, XdpPackage, map[string]bool{
 		"xdp.sys":    false,
 		"xdpapi.dll": false,
 		"xdp.cat":    false,
 		"xdp.inf":    true,
 		"xdppcw.man": true,
 	})
+	if got := byName["xdpapi.dll"].Catalog; got != "xdp.cat" {
+		t.Errorf("xdpapi.dll is checked as a member of the catalog %q, want xdp.cat", got)
+	}
+	for name, p := range byName {
+		if name != "xdpapi.dll" && p.Catalog != "" {
+			t.Errorf("%s is checked as a member of the catalog %q: only xdpapi.dll is", name, p.Catalog)
+		}
+	}
+	catalogAt, memberAt := -1, -1
+	for i, p := range XdpPackage {
+		switch p.Name {
+		case "xdp.cat":
+			catalogAt = i
+		case "xdpapi.dll":
+			memberAt = i
+		}
+	}
+	if catalogAt < 0 || memberAt < 0 || catalogAt > memberAt {
+		t.Errorf("xdp.cat must be written before xdpapi.dll: it is file %d of the package and xdpapi.dll is file %d", catalogAt, memberAt)
+	}
 }

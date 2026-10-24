@@ -14,6 +14,11 @@
 // NOTICE. Windows itself checks an INF against the signed catalog of its package when the package
 // is published (SetupCopyOEMInf), and ranz.exe, which holds every Payload, is signed as a whole.
 //
+// A file whose own signature no machine trusts, but which the signed catalog of its package lists,
+// is a Catalog Member, which Install checks as a member of that catalog, written to the same
+// directory before it (the xdpapi.dll of the XDP runtime: its signature chains to a root that
+// Windows does not trust for code, so the catalog of the package is how Windows trusts it).
+//
 // The directory that Install writes to must be one that only SYSTEM and the Administrators can
 // write to. Otherwise another account could replace the temporary file between the check and the
 // rename. Ensure, which writes a file for the program that runs it, has its own rule (ensure.go).
@@ -38,6 +43,11 @@ type Payload struct {
 	// Unsigned marks a file that carries no Authenticode signature of its own (NewUnsigned):
 	// Install checks its hash and does not run the signature check.
 	Unsigned bool
+	// Catalog is the name of the Payload, written to the same directory before this one, whose
+	// signed catalog lists this file (NewCatalogMember): Install checks the file as a member of
+	// that catalog, after its hash, and does not run the signature check. "" for a file that is
+	// not a member.
+	Catalog string
 }
 
 // New returns the Payload name of the embedded bytes data, with its SHA-256 recorded. Install
@@ -54,23 +64,40 @@ func NewUnsigned(name string, data []byte) Payload {
 	return p
 }
 
+// NewCatalogMember returns the Payload name of the embedded bytes data, a file that the signed
+// catalog named catalog lists, with its SHA-256 recorded. Install checks it as a member of that
+// catalog, which must be written to the same directory first.
+func NewCatalogMember(name string, data []byte, catalog string) Payload {
+	p := New(name, data)
+	p.Catalog = catalog
+	return p
+}
+
 // verify is the Authenticode check that Install runs on the file it is about to install:
 // verifyAuthenticode of this OS. A test of this package substitutes it to exercise Install's
 // other steps without a real signed file.
 var verify = verifyAuthenticode
 
+// verifyCatalog is the check that Install runs on a Catalog Member: verifyCatalogMember of this
+// OS, which takes the path of the catalog and the path of the file. A test substitutes it, as it
+// does verify.
+var verifyCatalog = verifyCatalogMember
+
 // hashFile is the SHA-256 of the file at path, which Install compares with the hash recorded for
 // the payload. A test substitutes it to make a file that was written wrong.
 var hashFile = fileSHA256
 
-// Install writes p as dir/p.Name, after its hash and its Authenticode signature check. Both checks
-// run on a temporary file in dir: the hash of the file as it was written, and its signature. A
-// payload whose data does not match its recorded hash, or whose file does not pass a check, is
-// refused, the temporary file is removed, and the destination path is never touched. On success the
-// temporary file becomes the destination path by a rename.
+// Install writes p as dir/p.Name, after its hash and its Authenticode signature check (a Catalog
+// Member's catalog check). Both checks run on a temporary file in dir: the hash of the file as it
+// was written, and its signature. A payload whose data does not match its recorded hash, or whose
+// file does not pass a check, is refused, the temporary file is removed, and the destination path
+// is never touched. On success the temporary file becomes the destination path by a rename.
 func Install(dir string, p Payload) error {
 	if p.Name == "" || p.Name == "." || p.Name == ".." || filepath.Base(p.Name) != p.Name {
 		return fmt.Errorf("payload: %q is not a plain file name", p.Name)
+	}
+	if p.Catalog != "" && (p.Catalog == "." || p.Catalog == ".." || filepath.Base(p.Catalog) != p.Catalog) {
+		return fmt.Errorf("payload: %s: its catalog %q is not a plain file name", p.Name, p.Catalog)
 	}
 	if len(p.Data) == 0 {
 		return fmt.Errorf("payload: %s carries no data (a build without the real payload embedded)", p.Name)
@@ -96,7 +123,7 @@ func Install(dir string, p Payload) error {
 		return fmt.Errorf("payload: %s: writing it: %w", p.Name, writeErr)
 	}
 
-	if err := check(tmpPath, p); err != nil {
+	if err := check(dir, tmpPath, p); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("payload: %s: %w", p.Name, err)
 	}
@@ -109,10 +136,11 @@ func Install(dir string, p Payload) error {
 	return nil
 }
 
-// check runs the two checks on the file at path: it must hold the bytes whose hash p records, as
-// they came off the disk, and its Authenticode signature must verify. An Unsigned payload has the
-// first check only.
-func check(path string, p Payload) error {
+// check runs the two checks on the file at path, which Install wrote to dir: it must hold the
+// bytes whose hash p records, as they came off the disk, and its Authenticode signature must
+// verify. An Unsigned payload has the first check only, and a Catalog Member has, instead of the
+// second, the check that the catalog written to dir lists it.
+func check(dir, path string, p Payload) error {
 	sum, err := hashFile(path)
 	if err != nil {
 		return fmt.Errorf("hashing the file it wrote: %w", err)
@@ -122,6 +150,9 @@ func check(path string, p Payload) error {
 	}
 	if p.Unsigned {
 		return nil
+	}
+	if p.Catalog != "" {
+		return verifyCatalog(filepath.Join(dir, p.Catalog), path)
 	}
 	return verify(path)
 }
