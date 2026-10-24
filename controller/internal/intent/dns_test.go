@@ -158,7 +158,7 @@ func TestDNSRejects(t *testing.T) {
 		{[]Resource{dnsRecord("r", `{"vrf": "lab", "addresses": ["10.9.0.1"]}`)}, `DnsRecord "r": VRF "lab" does not exist`},
 		{[]Resource{dnsRecord("r", `{"vrf": "red", "name": "File", "addresses": ["10.9.0.1"]}`)}, `DnsRecord "r": name: "File" is not DNS labels separated by dots`},
 		{[]Resource{dnsRecord("r", `{"vrf": "red", "name": "a..b", "addresses": ["10.9.0.1"]}`)}, `DnsRecord "r": name: "a..b" is not DNS labels`},
-		{[]Resource{dnsRecord("r", `{"vrf": "red", "name": "` + strings.Repeat("a.", 64) + `a", "addresses": ["10.9.0.1"]}`)}, `is longer than 127 characters`},
+		{[]Resource{dnsRecord("r", `{"vrf": "red", "name": "`+strings.Repeat("a.", 64)+`a", "addresses": ["10.9.0.1"]}`)}, `is longer than 127 characters`},
 		{[]Resource{dnsRecord("r", `{"vrf": "red", "name": "files-a", "addresses": ["10.9.0.1"]}`)}, `DnsRecord "r": "files-a" is the name of Node "files-a", which the zone of VRF "red" answers already`},
 		{[]Resource{dnsRecord("r", `{"vrf": "red", "name": "x", "addresses": ["10.9.0.1"]}`), dnsRecord("s", `{"vrf": "red", "name": "x", "addresses": ["10.9.0.2"]}`)},
 			`DnsRecord "s": the name "x" is already the name of DnsRecord "r" in VRF "red"`},
