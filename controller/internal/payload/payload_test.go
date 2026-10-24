@@ -289,7 +289,10 @@ func TestInstallRefusesACatalogMemberThatTheCatalogRejects(t *testing.T) {
 // The hash check of a Catalog Member stands, and runs first.
 func TestInstallChecksTheHashOfACatalogMember(t *testing.T) {
 	dir := t.TempDir()
-	withVerifyCatalog(t, func(string, string) error { t.Fatal("the catalog check ran although the file does not match the hash"); return nil })
+	withVerifyCatalog(t, func(string, string) error {
+		t.Fatal("the catalog check ran although the file does not match the hash")
+		return nil
+	})
 	withHashFile(t, func(string) ([32]byte, error) { return sha256.Sum256([]byte("other bytes")), nil })
 
 	err := Install(dir, NewCatalogMember("lib.dll", []byte("real bytes"), "package.cat"))
@@ -301,7 +304,10 @@ func TestInstallChecksTheHashOfACatalogMember(t *testing.T) {
 
 func TestInstallRefusesACatalogNameThatIsNoPlainFileName(t *testing.T) {
 	dir := t.TempDir()
-	withVerifyCatalog(t, func(string, string) error { t.Fatal("the catalog check ran for a catalog that is no file name"); return nil })
+	withVerifyCatalog(t, func(string, string) error {
+		t.Fatal("the catalog check ran for a catalog that is no file name")
+		return nil
+	})
 
 	for _, catalog := range []string{".", "..", "sub/package.cat", "../package.cat"} {
 		if err := Install(dir, NewCatalogMember("lib.dll", []byte("bytes"), catalog)); err == nil {
