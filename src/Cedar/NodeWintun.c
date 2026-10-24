@@ -595,6 +595,10 @@ bool NodeWintunSetForwarding(NODE_WINTUN *w, bool on) {
 		if (err == ERROR_NOT_FOUND && family == AF_INET6)
 			continue;
 
+		// An interface that has the three as they should be is left as it is
+		if (err == NO_ERROR && (row.ForwardingEnabled != FALSE) == on && (row.WeakHostSend != FALSE) == on && (row.WeakHostReceive != FALSE) == on)
+			continue;
+
 		if (err == NO_ERROR) {
 			row.ForwardingEnabled = (on ? TRUE : FALSE);
 			row.WeakHostSend = (on ? TRUE : FALSE);
