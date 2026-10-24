@@ -52,6 +52,7 @@ func TestRestoreWhileTheLeaderRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(m.Close)
+	waitLeads(t, m)
 	srv := httptest.NewServer(m.Handler())
 	t.Cleanup(srv.Close)
 	c := api.NewClient(srv.URL)
@@ -131,6 +132,24 @@ func TestRestoreRefusesWhatIsNoBackup(t *testing.T) {
 	}
 	if l, err := st.Lease(ctx); err != nil || l != free {
 		t.Errorf("a refused restore changed the lease to %+v (%v), from %+v", l, err, free)
+	}
+}
+
+// waitLeads waits until m leads. Start makes one try to take the lease, within a fifth of the
+// lease duration (200 ms here), which a busy host can overrun: the member is then a standby until
+// the lease loop tries again, and the first call of a test would be refused as a standby's.
+func waitLeads(t *testing.T, m *cluster.Member) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		s := m.Status().Cluster
+		if s.Role == api.RoleLeader {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the member does not lead 20 s after its start: %s, leader %q at epoch %d", s.Role, s.Leader, s.Epoch)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
