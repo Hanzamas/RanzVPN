@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -98,6 +98,11 @@
 #define NODE_WINTUN_MAX_ROUTES    64            // Routes through one adapter at most
 #define NODE_WINTUN_CREATE_WAIT   5000          // ms that the node waits for an adapter of the same name to go before it creates one
 #define NODE_WINTUN_CREATE_RETRY  250           // ms between two attempts to create it
+
+// The Wintun adapters of the VRFs of a node (NodeVrfAdapter.c; SDN-5, #181)
+#define NODE_VRF_MAX_ADAPTERS  16                 // Adapters of one node at most: one per VRF (CONTROL_MAX_VRFS of Core/Control.h)
+#define NODE_VRF_ADAPTER_NAME  128                // Characters of the name of an adapter at most, with its NUL (MAX_ADAPTER_NAME of wintun.h)
+#define NODE_VRF_ADAPTER_LABEL "ranz vrf adapter" // What the name of the GUID of an adapter begins with, before the node's static key and the VRF id
 
 // The forwarding tables of the VRFs of a node (NodeVrf.c; SDN-4, #180)
 #define NODE_VRF_LOCAL      0x3FFFFFFF // The next hop of an address of the node itself: the host
@@ -306,7 +311,7 @@ struct NODE_CLIENT_STATUS {
 	bool Running;                        // The role runs with a Client setting
 	bool Down;                           // The logged-in user took it down
 	bool Asleep;                         // Between a suspend and a resume
-	wchar_t Adapter[MAX_SIZE];           // The name of its Wintun adapter
+	wchar_t Adapter[MAX_SIZE];           // The name of its Wintun adapter of VrfId (one per VRF, SDN-5), the one of the Client setting before the first state
 	UINT InterfaceIndex;                 // ... the index of its interface
 	UINT64 InterfaceLuid;                // ... and the LUID of that interface
 	wchar_t Pipe[MAX_PATH];              // The pipe of the logged-in user
@@ -317,8 +322,20 @@ struct NODE_CLIENT_STATUS {
 	UINT64 NumDials;                     // Streams that connected
 	UINT64 NumResets;                    // Times it closed its streams: suspend, resume, roaming, down
 	UINT64 NumRoams;                     // Settled address changes on other interfaces
+	UINT64 FromHost;                     // Packets of the host taken from its adapters
+	UINT64 ToHost;                       // Packets put into its adapters for the host
+};
+
+// One Wintun adapter of a VRF, as NodeVrfAdaptersGetStatus and NodeClientGetAdapters report it
+struct NODE_VRF_ADAPTER_STATUS {
+	UINT VrfId;                          // The VRF
+	wchar_t Name[NODE_VRF_ADAPTER_NAME]; // The name of the adapter
+	GUID Guid;                           // The GUID that the node asked for (NodeVrfAdapterGuid), which Windows gives the interface
+	UINT InterfaceIndex;                 // The index of the interface
+	UINT64 InterfaceLuid;                // ... and its LUID
 	UINT64 FromHost;                     // Packets of the host taken from the adapter
-	UINT64 ToHost;                       // Packets put into the adapter for the host
+	UINT64 ToHost;                       // Packets put into it for the host
+	UINT64 Dropped;                      // Packets for the host that found its ring full
 };
 
 // What NodeShapeGetStatus reports
@@ -447,11 +464,25 @@ UINT NodeAcceptSession(NODE *n, TRANSPORT_NOISE *s, UINT timeout);
 // NodeClient.c
 void NodeClientGetStatus(NODE *n, NODE_CLIENT_STATUS *st);
 void NodeClientPower(NODE *n, UINT event);
+UINT NodeClientGetAdapters(NODE *n, NODE_VRF_ADAPTER_STATUS *list, UINT max);
+
+// NodeVrfAdapter.c
+void NodeVrfAdapterGuid(GUID *guid, const UCHAR *key, UINT vrf_id);
+NODE_VRF_ADAPTERS *NodeVrfAdaptersNew(NODE *n, const wchar_t *name, const UCHAR *key, bool forwarding);
+void NodeVrfAdaptersFree(NODE_VRF_ADAPTERS *a);
+void NodeVrfAdaptersHalt(NODE_VRF_ADAPTERS *a);
+void NodeVrfAdaptersSetDns(NODE_VRF_ADAPTERS *a, const char *servers, const char *suffix);
+bool NodeVrfAdaptersApply(NODE_VRF_ADAPTERS *a, const struct CONTROL_STATE *st);
+bool NodeVrfAdaptersSend(NODE_VRF_ADAPTERS *a, UINT vrf_id, const UCHAR *packet, UINT size);
+bool NodeVrfAdaptersHas(NODE_VRF_ADAPTERS *a, UINT64 luid);
+UINT NodeVrfAdaptersGetStatus(NODE_VRF_ADAPTERS *a, NODE_VRF_ADAPTER_STATUS *list, UINT max);
 
 // NodeWintun.c
 bool NodeWintunAvailable(UINT *error);
 UINT NodeWintunDriverVersion();
 NODE_WINTUN *NodeWintunNew(NODE *n, const wchar_t *name, NODE_WINTUN_PROC *proc, void *param);
+NODE_WINTUN *NodeWintunNewGuid(NODE *n, const wchar_t *name, const GUID *requested, NODE_WINTUN_PROC *proc, void *param);
+bool NodeWintunSetForwarding(NODE_WINTUN *w, bool on);
 void NodeWintunHalt(NODE_WINTUN *w);
 void NodeWintunFree(NODE_WINTUN *w);
 bool NodeWintunSend(NODE_WINTUN *w, const UCHAR *packet, UINT size);

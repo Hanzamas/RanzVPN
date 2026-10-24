@@ -1,0 +1,60 @@
+# The plan of a CI run, shared by windows.yml and ranz.yml (job plan, which they need): the fast set on
+# a pull request, the full set on every other event and on a pull request that carries the label
+# full-ci or changes a sensitive path. .github/scripts/ci-plan.py decides, and holds the legs of each
+# matrix job; its fixtures run in quality.yml. A job reads the outputs as needs.plan.outputs:
+#   full                 'true' for the full set, 'false' for the fast set: a job that only the full set
+#                        runs has if: needs.plan.outputs.full == 'true', so a pull request shows it as skipped
+#   build_matrix         the legs of build_and_test (windows.yml), as matrix.platform
+#   debug_matrix         the legs of debug (windows.yml)
+#   ranz_windows_matrix  the legs of windows (ranz.yml)
+#   reason               why the plan is what it is, one line
+# A matrix job that a pull request runs in part reads its legs from the plan, because GitHub has no
+# condition that skips one leg of a matrix: the legs that it leaves out are not created.
+#
+# Only a pull request needs the API: it lists the files that the pull request changes (the permission
+# pull-requests: read, which the calling job grants).
+
+name: ci-plan
+
+on:
+  workflow_call:
+    outputs:
+      full:
+        description: 'true for the full set, false for the fast set of a pull request'
+        value: ${{ jobs.plan.outputs.full }}
+      reason:
+        description: 'why the plan is what it is'
+        value: ${{ jobs.plan.outputs.reason }}
+      build_matrix:
+        description: 'the legs of build_and_test in windows.yml, as JSON'
+        value: ${{ jobs.plan.outputs.build_matrix }}
+      debug_matrix:
+        description: 'the legs of debug in windows.yml, as JSON'
+        value: ${{ jobs.plan.outputs.debug_matrix }}
+      ranz_windows_matrix:
+        description: 'the legs of windows in ranz.yml, as JSON'
+        value: ${{ jobs.plan.outputs.ranz_windows_matrix }}
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      full: ${{ steps.plan.outputs.full }}
+      reason: ${{ steps.plan.outputs.reason }}
+      build_matrix: ${{ steps.plan.outputs.build_matrix }}
+      debug_matrix: ${{ steps.plan.outputs.debug_matrix }}
+      ranz_windows_matrix: ${{ steps.plan.outputs.ranz_windows_matrix }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        sparse-checkout: .github/scripts
+    - name: Plan
+      id: plan
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 -I .github/scripts/ci-plan.py
