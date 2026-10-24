@@ -23,6 +23,7 @@
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
 
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/IpAddr.h"
