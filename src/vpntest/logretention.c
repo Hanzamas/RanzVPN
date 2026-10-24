@@ -180,6 +180,18 @@ static UINT LogRetentionCount(char *dir, char *prefix, UINT64 *total)
 	return num;
 }
 
+// The contents of the file path, NULL when it cannot be read. The reader shares write access, so that it can read the
+// file that a LOG has open: ReadDump does not, the writer has the file open for writing, and the open is refused
+static BUF *LogRetentionReadDump(char *path)
+{
+	wchar_t *path_w = CopyStrToUni(path);
+	BUF *b = ReadDumpExW(path_w, false, 0);
+
+	Free(path_w);
+
+	return b;
+}
+
 // The text of the files of dir whose names start with prefix, in one string; the caller frees it
 static char *LogRetentionRead(char *dir, char *prefix)
 {
@@ -196,7 +208,7 @@ static char *LogRetentionRead(char *dir, char *prefix)
 
 			LogRetentionPath(path, sizeof(path), dir, e->FileName);
 
-			BUF *b = ReadDump(path);
+			BUF *b = LogRetentionReadDump(path);
 
 			if (b != NULL)
 			{
@@ -216,6 +228,24 @@ static char *LogRetentionRead(char *dir, char *prefix)
 	return ret;
 }
 
+// The text of the files of dir whose names start with prefix, read again until it holds key, at most LOGRETENTION_WAIT
+// ms: WaitLogFlush returns when the queue of the LOG is empty, which is before the writer thread has written the last
+// record it took off the queue to the file. The caller frees the text, which may lack key when the time is out
+static char *LogRetentionReadUntil(char *dir, char *prefix, char *key)
+{
+	UINT64 end = Tick64() + LOGRETENTION_WAIT;
+	char *text = LogRetentionRead(dir, prefix);
+
+	while (LogRetentionHas(text, key) == false && Tick64() < end)
+	{
+		Free(text);
+		SleepThread(10);
+		text = LogRetentionRead(dir, prefix);
+	}
+
+	return text;
+}
+
 // The name of the file of dir with the prefix whose text holds key, "" when none does
 static void LogRetentionFind(char *name, UINT size, char *dir, char *prefix, char *key)
 {
@@ -233,7 +263,7 @@ static void LogRetentionFind(char *name, UINT size, char *dir, char *prefix, cha
 
 			LogRetentionPath(path, sizeof(path), dir, e->FileName);
 
-			BUF *b = ReadDump(path);
+			BUF *b = LogRetentionReadDump(path);
 
 			if (b != NULL)
 			{
@@ -339,7 +369,7 @@ static void LogRetentionAge(LOGRETENTION_CTX *ctx)
 	InsertStringRecord(g, "age test record");
 	WaitLogFlush(g);
 
-	char *text = LogRetentionRead(dir, "lr_2");
+	char *text = LogRetentionReadUntil(dir, "lr_2", "age test record");
 
 	LogRetentionCheck(ctx, LogRetentionHas(text, "lr_20200101.log deleted") && LogRetentionHas(text, "lr_20200102~01.log deleted") && LogRetentionHas(text, "age test record"),
 		"The log says that it deleted each file, and holds the record that was inserted", "the lines of the log are not there");
@@ -362,7 +392,7 @@ static void LogRetentionAge(LOGRETENTION_CTX *ctx)
 		InsertStringRecord(g, "record after the limits");
 		WaitLogFlush(g);
 
-		text = LogRetentionRead(dir, "lr_2");
+		text = LogRetentionReadUntil(dir, "lr_2", "record after the limits");
 		LogRetentionCheck(ctx, LogRetentionExists(dir, open_name) && LogRetentionHas(text, "age test record") && LogRetentionHas(text, "record after the limits"),
 			"The file that is open is not deleted, however old it is", "the open file is gone, or lost its records");
 		Free(text);
@@ -430,10 +460,11 @@ static void LogRetentionDisk(LOGRETENTION_CTX *ctx)
 	Format(detail, sizeof(detail), "%u files take %I64u bytes", num, total);
 	LogRetentionCheck(ctx, num >= 2 && total >= LOGRETENTION_DISK_LIMIT / 2, "The log keeps what the limit allows, and not much less", detail);
 
-	char *text = LogRetentionRead(dir, "ld");
-
 	Format(first, sizeof(first), "disk test record %05u ", 0);
 	Format(last, sizeof(last), "disk test record %05u ", LOGRETENTION_RECORDS - 1);
+
+	char *text = LogRetentionReadUntil(dir, "ld", last);
+
 	LogRetentionCheck(ctx, LogRetentionHas(text, last) && LogRetentionHas(text, first) == false && LogRetentionHas(text, "deleted: the log files would take more than the disk limit"),
 		"The log keeps the newest records, and says that it deleted the oldest files", "the newest record is gone, the first one is there, or no deletion is told");
 	Free(text);
