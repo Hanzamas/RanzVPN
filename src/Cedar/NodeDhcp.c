@@ -283,7 +283,7 @@ static bool NodeDhcpSendUdp(NODE_DHCP *d, const UCHAR *dst_mac, UINT src_ip, USH
 	mac->Protocol = Endian16(MAC_PROTO_IPV4);
 
 	IPV4_SET_VERSION(ip, 4);
-	IPV4_SET_HEADER_LEN(ip, sizeof(IPV4_HEADER) / 4);
+	IPV4_SET_HEADER_LEN(ip, 5);
 	ip->TotalLength = Endian16((USHORT)(sizeof(IPV4_HEADER) + sizeof(UDP_HEADER) + size));
 	ip->Identification = Endian16(d->IpId++);
 	ip->TimeToLive = NODE_DHCP_TTL;
