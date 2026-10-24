@@ -4,7 +4,8 @@ param(
 	[string] $Wxs,          # .github/signing/signing-proof.wxs
 	[string] $LicenseFile,  # The LICENSE of the repository (unused payload, kept for parity with the release spec)
 	[string] $GoModuleDir,  # The Go module, the repository root (ranz, the shipped Go executable, for the symbol-strip check)
-	[string] $OutDir        # Work directory: the signed copies and the MSI
+	[string] $OutDir,       # Work directory: the signed copies and the MSI
+	[string] $Rqlited       # The rqlited.exe of the pinned rqlite release: the rqlite member that ranz.exe carries (ONE-4, #313)
 )
 
 # SEC-3 (#281), ADR-0020 and ADR-0036 amendments of 2026-10-22. Three things, all provable in CI with a
@@ -22,6 +23,12 @@ param(
 # They are written as $OutDir\<arch>\ranz.exe and $OutDir\<arch>-tampered\ranz.exe, and the SHA-256 of
 # each signed ranz-node.exe goes to GITHUB_OUTPUT, so that the install job copies one ranz.exe to its
 # runner and compares what ranz install wrote with a hash, not with a second file.
+#
+# ONE-4 (#313) adds the rqlite member of a Controller as a second Payload of each of those ranz.exe: a
+# copy of the rqlited.exe of the pinned rqlite release, signed with the same certificate. rqlite
+# publishes no Windows build for arm64, so the ranz.exe of both architectures carries the same x64
+# file, which Windows 11 on ARM runs under emulation. Its SHA-256 goes to GITHUB_OUTPUT too, so that the
+# install job compares the file that the Controller writes under its data directory with a hash.
 
 $ErrorActionPreference = 'Stop'
 # Native exit codes are checked explicitly below (so "go tool nm", which exits 1 when a binary has no
@@ -41,6 +48,7 @@ $OutDir = (Resolve-Path -LiteralPath $OutDir).Path
 $X64Dir = (Resolve-Path -LiteralPath $X64Dir).Path
 $Arm64Dir = (Resolve-Path -LiteralPath $Arm64Dir).Path
 $Wxs = (Resolve-Path -LiteralPath $Wxs).Path
+if (-not $Rqlited) { throw '-Rqlited names no rqlited.exe, which the ranz.exe of each architecture carries as a Payload (ONE-4, #313)' }
 
 # signtool.exe of the Windows SDK: the highest version under the Windows Kits, x64 build
 function Get-SignTool {
@@ -147,6 +155,17 @@ if ($env:GITHUB_OUTPUT) {
 	}
 }
 
+# ONE-4 (#313): the rqlite member of a Controller. The rqlited.exe of the release has no signature, so
+# a copy of it is signed with the same certificate before the ranz.exe below embeds it.
+$member = Join-Path $OutDir 'rqlited.exe'
+Copy-Item -LiteralPath (Resolve-Path -LiteralPath $Rqlited).Path -Destination $member -Force
+Protect-File $signtool $thumb $member
+$memberHash = (Get-FileHash -LiteralPath $member -Algorithm SHA256).Hash
+Write-Host "signed rqlited.exe: SHA-256 $memberHash"
+if ($env:GITHUB_OUTPUT) {
+	"member-sha256=$memberHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+}
+
 # ---------------------------------------------------------------------------------------------------
 # 1 (continued). Build an MSI that packages the signed x64 vpnserver.exe, sign it and verify it.
 # ---------------------------------------------------------------------------------------------------
@@ -239,12 +258,13 @@ Write-Host 'the MSI ships no PDB (the C PDB is kept private)'
 
 # ranz, the one Go executable (ONE-1, #310; ONE-2, #311), built as it ships: -trimpath and -ldflags "-s -w",
 # so go tool nm reports no symbol table, and the run number as the build number of its one version. It
-# carries the signed ranz-node.exe of its architecture as its Payload. The committed
-# controller/internal/payload/node_<arch>.exe is an empty placeholder, which this step overwrites in its own
-# checkout before it builds, and writes empty again after. ranz.exe is then signed once, like every shipped
-# executable. A second build carries a copy of that payload with one byte changed well inside it, never its
-# MS-DOS or PE header, and is signed too: only its Payload is wrong, so ranz install must refuse it for
-# that and for no other reason.
+# carries the signed ranz-node.exe of its architecture as its Payload, and the signed rqlited.exe, the rqlite
+# member of a Controller (ONE-4, #313). The committed controller/internal/payload/node_<arch>.exe and
+# rqlited_<arch>.exe are empty placeholders, which this step overwrites in its own checkout before it
+# builds, and writes empty again after. ranz.exe is then signed once, like every shipped executable. A
+# second build carries a copy of the ranz-node.exe payload with one byte changed well inside it, never
+# its MS-DOS or PE header, and is signed too: only its Payload is wrong, so ranz install must refuse it
+# for that and for no other reason.
 $build = $env:GITHUB_RUN_NUMBER
 if (-not $build) { $build = '0' }
 Push-Location $GoModuleDir
@@ -254,6 +274,9 @@ try {
 		$placeholder = Join-Path (Get-Location).Path "controller/internal/payload/node_$goarch.exe"
 		# Read by the .NET method itself: a function would hand the array over one byte at a time
 		[byte[]] $nodeBytes = [System.IO.File]::ReadAllBytes((Join-Path $pair.Dir 'ranz-node.exe'))
+		# The rqlite member, the same x64 file for both architectures (ONE-4, #313)
+		[byte[]] $memberBytes = [System.IO.File]::ReadAllBytes($member)
+		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/rqlited_$goarch.exe"), $memberBytes)
 		$env:GOOS = 'windows'
 		$env:GOARCH = $goarch
 		$env:CGO_ENABLED = '0'
@@ -272,7 +295,7 @@ try {
 			if ($variant -eq '') {
 				$nm = (go tool nm $goexe 2>&1 | Out-String)
 				if ($nm -notmatch 'no symbols') { throw "ranz ($goarch) still has a symbol table after -ldflags '-s -w':`n$nm" }
-				Write-Host "ranz ($goarch): -trimpath -ldflags '-s -w', no symbol table, ranz-node.exe ($($nodeBytes.Length) bytes) as its Payload"
+				Write-Host "ranz ($goarch): -trimpath -ldflags '-s -w', no symbol table, ranz-node.exe ($($nodeBytes.Length) bytes) and rqlited.exe ($($memberBytes.Length) bytes) as its Payloads"
 			}
 			Protect-File $signtool $thumb $goexe
 		}
@@ -280,6 +303,7 @@ try {
 } finally {
 	foreach ($goarch in @('amd64', 'arm64')) {
 		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/node_$goarch.exe"), [byte[]]@())
+		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/rqlited_$goarch.exe"), [byte[]]@())
 	}
 	Pop-Location
 	Remove-Item Env:\GOOS, Env:\GOARCH, Env:\CGO_ENABLED -ErrorAction SilentlyContinue

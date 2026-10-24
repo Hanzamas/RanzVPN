@@ -1,10 +1,10 @@
 // Package intent is the declared network that `ranz apply -f` sends to the controller: the
-// resources of #176 "Resource model" that the controller knows (VRF, Network, Node, Policy, and
-// the Controller members of a controller cluster), their validation, and the values the
-// controller fills in when a resource is first applied, the addresses of the Nodes among them
-// (address.go, with the rules of the pools, the reservations and the LAN subnets in ipam.go); the
-// revisions of the intent with the diff between two (revision.go); and the intent of a first
-// install (defaults.go).
+// resources of #176 "Resource model" that the controller knows (VRF, Network, Node, Policy, the
+// Controller members of a controller cluster, and the 1:1 NAT rules of nat.go with the 4via6 of
+// the Nodes), their validation, and the values the controller fills in when a resource is first
+// applied, the addresses of the Nodes among them (address.go, with the rules of the pools, the
+// reservations and the LAN subnets in ipam.go); the revisions of the intent with the diff between
+// two (revision.go); and the intent of a first install (defaults.go).
 package intent
 
 import (
@@ -74,8 +74,8 @@ type Document struct {
 	Resources []Resource `json:"resources"`
 }
 
-// Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy
-// or Controller.
+// Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy,
+// Controller or NAT.
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -90,6 +90,10 @@ type VRF struct {
 	ULA string `json:"ula,omitempty"`
 	// MTU of the VRF, DefaultMTU when it is left out.
 	MTU uint32 `json:"mtu,omitempty"`
+	// RateLimit is the rate in bits per second that each Node sends into the overlay in the VRF at
+	// most, which a token bucket on the Node keeps (ADR-0025 decision 17, SDN-20). Left out, the
+	// VRF has no limit.
+	RateLimit uint64 `json:"rateLimit,omitempty"`
 	// DNS turns on overlay DNS in the VRF (ADR-0028): a zone of its own, which SDN-11 (#187)
 	// serves on its members. The first start sets it for VRF default (ADR-0034).
 	DNS bool `json:"dns,omitempty"`
@@ -135,6 +139,10 @@ type Node struct {
 	// an allocation, so no pool of the VRF covers one. Two gateways may advertise the same subnet
 	// (ADR-0025 decision 12).
 	LANSubnets map[string][]string `json:"lanSubnets,omitempty"`
+	// RateLimit is the rate in bits per second that the node sends into the overlay at most, in all
+	// its VRFs together, which a token bucket on the node keeps (ADR-0025 decision 17, SDN-20).
+	// Left out, the node has no limit.
+	RateLimit uint64 `json:"rateLimit,omitempty"`
 }
 
 // Controller is one member of the controller cluster as nodes reach it (SDN-17, ADR-0026). The
@@ -162,18 +170,19 @@ type Intent struct {
 	Nodes       map[string]Node
 	Policies    map[string]Policy
 	Controllers map[string]Controller
+	NATs        map[string]NAT
 }
 
 // New returns an empty intent.
 func New() Intent {
 	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: map[string]Policy{},
-		Controllers: map[string]Controller{}}
+		Controllers: map[string]Controller{}, NATs: map[string]NAT{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
 func (in Intent) Clone() Intent {
 	out := Intent{VRFs: maps.Clone(in.VRFs), Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: maps.Clone(in.Policies),
-		Controllers: maps.Clone(in.Controllers)}
+		Controllers: maps.Clone(in.Controllers), NATs: maps.Clone(in.NATs)}
 	if out.VRFs == nil {
 		out.VRFs = map[string]VRF{}
 	}
@@ -182,6 +191,9 @@ func (in Intent) Clone() Intent {
 	}
 	if out.Controllers == nil {
 		out.Controllers = map[string]Controller{}
+	}
+	if out.NATs == nil {
+		out.NATs = map[string]NAT{}
 	}
 	for name, n := range in.Networks {
 		n.EnrolSources = slices.Clone(n.EnrolSources)
@@ -258,8 +270,13 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &c); err == nil {
 				next.Controllers[r.Name] = c
 			}
+		case KindNAT:
+			var n NAT
+			if err = decodeSpec(r.Spec, &n); err == nil {
+				next.NATs[r.Name] = n
+			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindController)
+			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindController, KindNAT)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -281,8 +298,8 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 }
 
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
-// Network, a Node or a Policy uses cannot be deleted. The Nodes lose their addresses in a deleted
-// Network.
+// Network, a Node, a Policy or a NAT uses cannot be deleted, nor can a Node that a NAT uses. The
+// Nodes lose their addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -306,6 +323,7 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 				users = append(users, KindPolicy+" "+strconv.Quote(n))
 			}
 		}
+		users = append(users, next.natUsers(name, "")...)
 		if len(users) > 0 {
 			return in, fmt.Errorf("%w: VRF %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
@@ -320,6 +338,9 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		if _, ok := next.Nodes[name]; !ok {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
+		if users := next.natUsers("", name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
 		delete(next.Nodes, name)
 	case KindPolicy:
 		if _, ok := next.Policies[name]; !ok {
@@ -331,14 +352,19 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.Controllers, name)
+	case KindNAT:
+		if _, ok := next.NATs[name]; !ok {
+			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
+		}
+		delete(next.NATs, name)
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindController, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindController, KindNAT, kind)
 	}
 	return next, nil
 }
 
 // Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
-// Policies, then the Controllers, each ordered by name.
+// Policies, then the Controllers, then the NATs, each ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -355,6 +381,9 @@ func (in Intent) Resources() []Resource {
 	}
 	for _, name := range sortedNames(in.Controllers) {
 		out = append(out, resource(KindController, name, in.Controllers[name]))
+	}
+	for _, name := range sortedNames(in.NATs) {
+		out = append(out, resource(KindNAT, name, in.NATs[name]))
 	}
 	return out
 }
@@ -386,6 +415,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var c Controller
 			err = decodeSpec(r.Spec, &c)
 			in.Controllers[r.Name] = c
+		case KindNAT:
+			var n NAT
+			err = decodeSpec(r.Spec, &n)
+			in.NATs[r.Name] = n
 		default:
 			err = errors.New("unknown kind")
 		}
@@ -530,6 +563,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 		n.LANSubnets = canonicalLANs(n.LANSubnets)
 		in.Nodes[name] = n
 	}
+	in.completeNAT()
 	return problems
 }
 
@@ -641,6 +675,7 @@ func (in Intent) validate() []error {
 			problems = append(problems, fmt.Errorf("Controller %q: %w", name, err))
 		}
 	}
+	problems = append(problems, in.validateNAT()...)
 	return append(problems, in.validateIPAM()...)
 }
 

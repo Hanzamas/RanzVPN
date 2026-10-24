@@ -65,6 +65,31 @@ func TestCompile(t *testing.T) {
 	}
 }
 
+// The MTU and the rate limit of a VRF and the rate limit of a node reach the node's state (SDN-20):
+// a VRF that names no MTU has the default, and a VRF or a node that names no rate limit has none.
+func TestCompileLimits(t *testing.T) {
+	states := compile(t,
+		res(intent.KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48", "mtu": 1400, "rateLimit": 8000000}`),
+		res(intent.KindVRF, "lab", `{"id": 20, "ula": "fd12:3456:789b::/48"}`),
+		res(intent.KindNode, "a", `{"publicKey": "`+key1+`", "vrfs": ["corp", "lab"], "rateLimit": 2000000}`),
+		res(intent.KindNode, "b", `{"publicKey": "`+key2+`", "vrfs": ["lab"]}`),
+	)
+	corp := states["a"][Key{controlpb.Kind_KIND_VRF, "corp"}].GetVrf()
+	if corp.GetMtu() != 1400 || corp.GetRateLimit() != 8000000 {
+		t.Errorf("VRF corp in the state of a has the MTU %d and the rate limit %d, want 1400 and 8000000", corp.GetMtu(), corp.GetRateLimit())
+	}
+	lab := states["a"][Key{controlpb.Kind_KIND_VRF, "lab"}].GetVrf()
+	if lab.GetMtu() != intent.DefaultMTU || lab.GetRateLimit() != 0 {
+		t.Errorf("VRF lab in the state of a has the MTU %d and the rate limit %d, want %d and none", lab.GetMtu(), lab.GetRateLimit(), intent.DefaultMTU)
+	}
+	if got := states["a"][Key{controlpb.Kind_KIND_NODE, "a"}].GetNode().GetRateLimit(); got != 2000000 {
+		t.Errorf("node a has the rate limit %d, want 2000000", got)
+	}
+	if got := states["b"][Key{controlpb.Kind_KIND_NODE, "b"}].GetNode().GetRateLimit(); got != 0 {
+		t.Errorf("node b has the rate limit %d, want none", got)
+	}
+}
+
 // A relay is a Relay object of each node it shares a VRF with, with its key and its address, and
 // of no other node (ADR-0015).
 func TestCompileRelays(t *testing.T) {

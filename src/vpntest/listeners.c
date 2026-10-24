@@ -34,6 +34,7 @@
 // The test prints "LISTENERS TEST OK" only when every check passes.
 
 #include "harness_int.h"
+#include "testlist.h"
 
 #include "Cedar/Account.h"
 #include "Cedar/Admin.h"
@@ -916,6 +917,7 @@ static void ListenersAdminAccess(HARNESS *h)
 
 // "listeners": the default VPN listener on TCP 443, its fallback to 5555 and listeners on any port (REL-3), and the
 // empty admin password from loopback only (REL-4)
+RANZ_TEST("listeners", listeners_test, "Listeners and admin access: TCP 443 on a fresh configuration, 5555 when 443 cannot be bound at that first start, kept on later starts; ListenerCreate on any port; an admin login with the empty password gets error 51 from a non-loopback address and passes over loopback.");
 void listeners_test(UINT num, char **arg)
 {
 	Print("Default VPN listener: TCP %u on a fresh configuration, TCP %u when %u cannot be bound at that first start; "

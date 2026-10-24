@@ -3,10 +3,20 @@
 #
 # Results are the "BENCH <case> <value> <unit>" lines of the harness (vpntest bench and the other
 # vpntest tests that print BENCH lines, .github/scripts/vpntest.ps1 saves them to
-# build/harness-out/bench-<arch>.txt). A case is a rate when its unit is one of RATE_UNITS (higher is
-# faster) and a time when it is one of TIME_UNITS (lower is faster); other lines (sizes, counts, the
-# "<case>_runs" lists) are not compared. How much slower a case is: median / value - 1 for a rate,
-# value / median - 1 for a time.
+# build/harness-out/bench-<arch>.txt, and with RANZ_BENCH_RUNS=3 the second and third run to
+# bench-<arch>-run2.txt and bench-<arch>-run3.txt). A case is a rate when its unit is one of RATE_UNITS
+# (higher is faster) and a time when it is one of TIME_UNITS (lower is faster); other lines (sizes,
+# counts, the "<case>_runs" lists) are not compared. How much slower a case is: median / value - 1 for a
+# rate, value / median - 1 for a time.
+#
+# Noise on a shared runner makes one run an unreliable witness of a regression, so the gate judges the
+# best of the runs that it is given: the minimum of a time, the maximum of a rate, of each case over the
+# result files. A slowdown that every run shows is real; one that a run shows is noise. Two rules for
+# what remains:
+# - a time case whose recorded median is under SMALL_US microseconds (ip_table_expire_1024 takes 2 to 5)
+#   is too short for a relative margin: a scheduler tick is more than the margin. It fails only when it is
+#   slower than its median by more than SMALL_SLACK_US microseconds;
+# - every other case fails when it is slower than its median by more than its margin.
 #
 # The recorded medians, one file per architecture (.github/quality/bench-<arch>.txt):
 #   <case> <median> <unit> <margin %>
@@ -16,13 +26,17 @@
 # least two such units. A case whose median is 0 is left out: no margin is relative to 0.
 #
 # Usage:
-#   python bench-gate.py compare --medians FILE RESULTS...   exit 1 when a recorded case is slower
-#                                                            than its margin allows, or missing
+#   python bench-gate.py compare --medians FILE [--runs N] RESULTS...
+#                                                            exit 1 when a recorded case is slower
+#                                                            than it may be, or missing, or fewer than
+#                                                            N result files are given
 #   python bench-gate.py record --out FILE [--min-margin 25] [--note TEXT] RESULTS...
+# A RESULTS argument with a wildcard (bench-x64*.txt) names every file that matches it.
 #
 # Standard library only.
 
 import argparse
+import glob
 import math
 import os
 import re
@@ -31,8 +45,27 @@ import sys
 
 RATE_UNITS = {'frames/s', 'Mbit/s', 'ops/s'}
 TIME_UNITS = {'ns', 'us', 'ms', 's'}
+# A time unit in microseconds
+TIME_IN_US = {'ns': 0.001, 'us': 1.0, 'ms': 1000.0, 's': 1000000.0}
+# A time case under SMALL_US microseconds fails only above SMALL_SLACK_US microseconds over its median
+SMALL_US = 50
+SMALL_SLACK_US = 100
 
 _BENCH_RE = re.compile(r'^BENCH (\S+) (-?[0-9]+(?:\.[0-9]+)?) (\S+)\s*$')
+
+
+def expand(paths):
+    # The result files that the arguments name; a wildcard names every file that matches it
+    out, problems = [], []
+    for path in paths:
+        if any(c in path for c in '*?['):
+            found = sorted(glob.glob(path))
+            if not found:
+                problems.append('no result file matches %s' % path)
+            out.extend(found)
+        else:
+            out.append(path)
+    return out, problems
 
 
 def read_results(path):
@@ -47,6 +80,22 @@ def read_results(path):
             if unit in RATE_UNITS or unit in TIME_UNITS:
                 out[m.group(1)] = (float(m.group(2)), unit)
     return out
+
+
+def best_results(paths):
+    # case -> (best value, unit) over the result files: the minimum of a time, the maximum of a rate
+    best, problems = {}, []
+    for path in paths:
+        for case, (value, unit) in read_results(path).items():
+            if case not in best:
+                best[case] = (value, unit)
+            elif best[case][1] != unit:
+                problems.append('%s: the unit is %s in %s and %s in an earlier run' % (case, unit, path, best[case][1]))
+            elif unit in RATE_UNITS:
+                best[case] = (max(best[case][0], value), unit)
+            else:
+                best[case] = (min(best[case][0], value), unit)
+    return best, problems
 
 
 def slowdown(median, value, unit):
@@ -78,11 +127,14 @@ def read_medians(path):
 
 def compare(args):
     medians, problems = read_medians(args.medians)
-    results = {}
-    for path in args.results:
-        results.update(read_results(path))
+    paths, more = expand(args.results)
+    problems += more
+    if len(paths) < args.runs:
+        problems.append('%d result files given, and the gate judges the best of %d runs' % (len(paths), args.runs))
+    results, more = best_results(paths)
+    problems += more
 
-    lines = ['| case | median | this run | slower by | margin | |', '|---|---:|---:|---:|---:|---|']
+    lines = ['| case | median | best of %d | slower by | margin | |' % max(len(paths), 1), '|---|---:|---:|---:|---:|---|']
     for case in sorted(medians):
         median, unit, margin = medians[case]
         if case not in results:
@@ -95,7 +147,16 @@ def compare(args):
             continue
         slower = slowdown(median, value, unit)
         verdict = 'ok'
-        if slower * 100 > margin:
+        if unit in TIME_UNITS and median * TIME_IN_US[unit] < SMALL_US:
+            # Too short for a relative margin: only a slowdown of SMALL_SLACK_US microseconds counts
+            extra_us = (value - median) * TIME_IN_US[unit]
+            if extra_us > SMALL_SLACK_US:
+                verdict = 'too slow'
+                problems.append('%s: %g %s, %g us slower than the recorded median %g %s, which is under %g us and may be '
+                                'slower by %g us' % (case, value, unit, round(extra_us, 1), median, unit, SMALL_US, SMALL_SLACK_US))
+            elif slower * 100 > margin:
+                verdict = 'ok, under %g us' % SMALL_US
+        elif slower * 100 > margin:
             verdict = 'too slow'
             problems.append('%s: %g %s, %.1f%% slower than the recorded median %g %s; the margin is %g%%'
                             % (case, value, unit, slower * 100, median, unit, margin))
@@ -106,7 +167,8 @@ def compare(args):
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
         with open(summary, 'a', encoding='utf-8') as f:
-            f.write('### Performance regression gate (%s)\n\n%s\n\n' % (os.path.basename(args.medians), '\n'.join(lines)))
+            f.write('### Performance regression gate (%s, best of %d runs)\n\n%s\n\n'
+                    % (os.path.basename(args.medians), len(paths), '\n'.join(lines)))
     if new:
         print('Not compared, no recorded median (record one with bench-gate.py record): ' + ', '.join(new))
     for p in problems:
@@ -115,12 +177,17 @@ def compare(args):
         print('%d problems: a benchmark slower than its recorded median by more than its margin fails the build '
               '(ADR-0040 item 5)' % len(problems))
         return 1
-    print('%d benchmark cases within their margin of the recorded median' % len(medians))
+    print('%d benchmark cases within their margin of the recorded median (best of %d runs)' % (len(medians), len(paths)))
     return 0
 
 
 def record(args):
-    runs = [read_results(path) for path in args.results]
+    paths, problems = expand(args.results)
+    if problems:
+        for p in problems:
+            print(p, file=sys.stderr)
+        return 1
+    runs = [read_results(path) for path in paths]
     cases = {}
     for run in runs:
         for case, (value, unit) in run.items():
@@ -160,6 +227,8 @@ def main():
     sub = ap.add_subparsers(dest='mode', required=True)
     p = sub.add_parser('compare')
     p.add_argument('--medians', required=True)
+    p.add_argument('--runs', type=int, default=1, help='the number of result files that must be given: the runs of which '
+                   'the gate judges the best')
     p.add_argument('results', nargs='+')
     p = sub.add_parser('record')
     p.add_argument('--out', required=True)

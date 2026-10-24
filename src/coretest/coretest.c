@@ -165,6 +165,7 @@ static TEST_LIST test_list[] = {
     {"iceupgrade", iceupgrade_test, "A home gateway grants a public port through libplum; a relayed pair moves to the direct path that ICE validates with no datagram missing, and back when it fails."},
     {"icesymmetric", icesymmetric_test, "A pair behind two symmetric NATs: every ICE check fails and the pair stays on the relay, with its traffic flowing throughout."},
     {"punch", punch_test, "Symmetric-NAT traversal: two sequential NATs meet by port prediction, a cone and a random NAT by birthday punching, two random NATs fall back to the relay within the probe budget."},
+    {"frontdoor", frontdoor_test, "Front door, the node and its owners as processes: TLS of the new protocol stays in the node, other ALPN or SNI and a signature reach their owner processes through WSADuplicateSocketW; a handed connection outlives the node."},
 };
 
 #define NUM_TESTS (sizeof(test_list) / sizeof(test_list[0]))
@@ -190,6 +191,10 @@ static bool coretest_run(TEST_LIST *t) {
 int main(int argc, char *argv[]) {
 	UINT failed = 0;
 	bool found = false;
+
+	// A node or an owner process of the front door test, which prints only what the test reads
+	if (argc >= 2 && _stricmp(argv[1], CORETEST_FRONTDOOR_CHILD) == 0)
+		return frontdoor_child(argc, argv);
 
 	printf("coretest: tests of the Ranz VPN new core\n");
 	coretest_print_system();

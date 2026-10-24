@@ -72,6 +72,8 @@ env:
   GO_VERSION: '1.27.3'
   # The rqlite release of ranz.yml: the store of the controller of the default VRF tracer
   RQLITE_VERSION: 'v10.5.3'
+  # The SHA-256 of its Windows archive, which ranz.yml pins too (ONE-4, #313)
+  RQLITE_WIN64_SHA256: '0f4a65a603b89b9a3c2607c5de64445236856884c83aa2e865ec9142fd184118'
 
 jobs:
   build_and_test:
@@ -107,6 +109,12 @@ jobs:
       shell: pwsh
       run: |
         .github/scripts/fetch-msquic.ps1 -Arch ${{ matrix.platform.ARCHITECTURE }} -DllDir "${{ github.workspace }}\build"
+    # The pinned Wintun release (THIRD_PARTY.TXT) for the client role of the node (CORE-S3-1, #71): wintun.dll of the
+    # architecture next to vpntest, whose client test brings up Wintun adapters (the runners have administrator rights)
+    - name: Fetch Wintun
+      shell: pwsh
+      run: |
+        .github/scripts/fetch-wintun.ps1 -Arch ${{ matrix.platform.ARCHITECTURE }} -DllDir "${{ github.workspace }}\build"
     - name: Install the nanopb generator
       uses: ./.github/actions/nanopb
     - name: Build
@@ -240,17 +248,22 @@ jobs:
       env:
         # Names build/harness-out/bench-<arch>.txt (the BENCH lines of vpntest bench)
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
+        # The tests that print BENCH lines run three times, the second and third into bench-<arch>-run2.txt and -run3.txt:
+        # the gate below judges the best run of each case
+        RANZ_BENCH_RUNS: '3'
       run: |
         . .github/scripts/vpntest.ps1
-    # The performance regression gate (ADR-0040 item 5): every BENCH case of this run (vpntest bench and
+    # The performance regression gate (ADR-0040 item 5): every BENCH case of this job (vpntest bench and
     # the other tests that print BENCH lines) against its median recorded from earlier CI runs of the
-    # same architecture (.github/quality/bench-<arch>.txt). A case slower than its median by more than
-    # its margin fails the job; .github/scripts/bench-gate.py record makes the file anew.
+    # same architecture (.github/quality/bench-<arch>.txt). The best of the three runs of each case counts
+    # (the minimum time, the maximum rate), so a run that a busy runner slowed does not fail the job; a slowdown
+    # that every run shows does. A case slower than its median by more than its margin fails the job, a time
+    # recorded under 50 us only above 100 us over its median; .github/scripts/bench-gate.py record makes the file anew.
     - name: Performance regression gate
       shell: pwsh
       run: |
         $arch = '${{ matrix.platform.ARCHITECTURE }}'
-        python .github/scripts/bench-gate.py compare --medians ".github/quality/bench-$arch.txt" "build/harness-out/bench-$arch.txt"
+        python .github/scripts/bench-gate.py compare --runs 3 --medians ".github/quality/bench-$arch.txt" "build/harness-out/bench-$arch*.txt"
         if ($LASTEXITCODE -ne 0) { throw "a benchmark is slower than its recorded median allows (exit code $LASTEXITCODE)" }
     # The new core's crypto module (CORE-F1, #61): known-answer tests of X25519, AES-GCM, SHA-256,
     # HMAC, HKDF and the RNG, the identity key, the ML-KEM hybrid, the certificate path and an
@@ -307,6 +320,8 @@ jobs:
         $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
         $dir = Join-Path $env:RUNNER_TEMP 'rqlite'
         Invoke-WebRequest -Uri "https://github.com/rqlite/rqlite/releases/download/$env:RQLITE_VERSION/rqlite-$env:RQLITE_VERSION-win64.zip" -OutFile $zip
+        $sum = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
+        if ($sum -ne $env:RQLITE_WIN64_SHA256) { throw "rqlite-$env:RQLITE_VERSION-win64.zip has the SHA-256 $sum, not the pinned $env:RQLITE_WIN64_SHA256" }
         Expand-Archive -Path $zip -DestinationPath $dir
         $exe = Get-ChildItem -Path $dir -Recurse -Filter 'rqlited.exe' | Select-Object -First 1
         if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
@@ -444,12 +459,17 @@ jobs:
         }
         throw 'No clang-cl with the one-DLL ASan runtime (LLVM 20 or later) and libFuzzer found'
     # The msquic headers for the QUIC transport of the new core (CORE-S1-1, #67). The ASan job builds
-    # the transport but does not run the quic test (it is not in RANZ_SMOKE_TESTS below), so it needs
+    # the transport but does not run the quic test (asan-exclude.txt leaves it out), so it needs
     # the headers, not the DLL: TransportQuic.c loads msquic.dll only when a QUIC call is made.
     - name: Fetch msquic
       shell: pwsh
       run: |
         .github/scripts/fetch-msquic.ps1 -Arch x64
+    # wintun.dll next to vpntest for the client test (CORE-S3-1, #71), which runs here over TLS-443 (no msquic.dll)
+    - name: Fetch Wintun
+      shell: pwsh
+      run: |
+        .github/scripts/fetch-wintun.ps1 -Arch x64 -DllDir "${{ github.workspace }}\build"
     - name: Install the nanopb generator
       uses: ./.github/actions/nanopb
     - name: Build (RANZ_ASAN=ON, RANZ_FUZZ=ON)
@@ -478,17 +498,16 @@ jobs:
       shell: pwsh
       timeout-minutes: 10
       env:
-        # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
-        # certdl has time windows too (it measures the client timeouts); it also runs in build_and_test only.
-        # nodesvc installs ranz-node as a service, which would run outside the instrumented process; build_and_test only.
-        # noisehub runs its loopback and TLS-443 parts here; its QUIC part needs msquic.dll, which this job does not fetch.
-        # tls (CORE-S2-1 #69) runs on Schannel, which needs no DLL of its own; lossylink runs in virtual time.
-        # switchbench measures how forwarding scales across cores, which AddressSanitizer distorts; build_and_test only.
-        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,listeners,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo,node,nodelogin,store,transport,tls,lossylink,noisehub,vrf,vxlan,switch
+        # Every test that vpntest lists runs, except the ones in .github/quality/smoke-exclude.txt and in
+        # .github/quality/asan-exclude.txt, which gives the reason of each (a time budget that AddressSanitizer would
+        # exceed, a service outside the instrumented process, msquic.dll that this job does not fetch). A new test
+        # runs here without a line anywhere. noisehub runs its loopback and TLS-443 parts here; its QUIC part needs
+        # msquic.dll. tls (CORE-S2-1 #69) runs on Schannel, which needs no DLL of its own; lossylink runs in virtual time.
+        RANZ_SMOKE_EXCLUDE: asan
       run: |
-        # The smoke test script of build_and_test itself, so both jobs run the same test list. Its output
-        # and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a report printed
-        # after "NO MEMORY LEAKS".
+        # The smoke test script of build_and_test itself, so both jobs run the same tests but the ones in
+        # asan-exclude.txt. Its output and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a
+        # report printed after "NO MEMORY LEAKS".
         $script = '.github/scripts/vpntest.ps1'
         $out = (cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File $script -BuildDir build 2>&1") | Out-String
         $code = $LASTEXITCODE
@@ -637,10 +656,11 @@ jobs:
         # One profile per process (%p, the process id): coretest.ps1 runs each test in a process of its own
         $env:LLVM_PROFILE_FILE = Join-Path $dir 'coretest-%p.profraw'
         . .github/scripts/coretest.ps1
-        # The transport module's tests are vpntest's (transport, quic over msquic, tls over Schannel and lossylink, the
-        # ingress queue), as are the VXLAN module's (vxlan) and the switch module's (switch), run by its smoke test script
+        # The tests of the new core's modules that vpntest has (transport, quic over msquic, tls over Schannel and
+        # lossylink, the ingress queue; vxlan; switch) carry the tag core (RANZ_TEST_TAGS, src/vpntest/testlist.h), which
+        # its smoke test script selects; a new one is tagged in its own file
         $env:LLVM_PROFILE_FILE = Join-Path $dir 'vpntest-%p.profraw'
-        $env:RANZ_SMOKE_TESTS = 'transport,quic,tls,lossylink,vxlan,switch'
+        $env:RANZ_SMOKE_TAG = 'core'
         . .github/scripts/vpntest.ps1
     - name: Coverage floor
       if: ${{ !cancelled() }}
@@ -758,7 +778,7 @@ jobs:
         cmake -S . -B build-msvc -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_C_COMPILER=cl -DBUILD_NUMBER=0 "-DCMAKE_C_FLAGS=/DWIN32 /D_WINDOWS /analyze"
         if errorlevel 1 exit /b 1
 
-        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan coreswitch > build-msvc\analyze.txt 2>&1
+        cmake --build build-msvc --target corecrypto corenoise corepeer coretransport corevxlan coreswitch corefrontdoor > build-msvc\analyze.txt 2>&1
         set BUILD_EXIT=%ERRORLEVEL%
         type build-msvc\analyze.txt
         if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
@@ -1079,18 +1099,21 @@ jobs:
   # .text was changed (it degrades, not crashes), and checks the shipped binaries carry no symbols and the
   # package no public PDB. The Go executable ranz built with -trimpath and -ldflags "-s -w" has no
   # symbol table. It also builds the signed ranz.exe of each architecture with the signed ranz-node.exe
-  # as its Payload, and the same with one byte of the Payload changed, for the install job (ONE-2, #311).
-  # .github/scripts/self-integrity.ps1.
+  # as its Payload, and the same with one byte of the Payload changed, for the install job (ONE-2, #311);
+  # both carry the signed rqlited.exe of the pinned rqlite release too, the rqlite member of a Controller
+  # (ONE-4, #313). .github/scripts/self-integrity.ps1.
   sign_and_integrity:
     needs: build_and_test
     runs-on: windows-latest
     name: sign and self-integrity
     timeout-minutes: 30
     # The SHA-256 of the signed ranz-node.exe of each architecture (ONE-2, #311), which the install job
-    # compares with the file that ranz install writes
+    # compares with the file that ranz install writes, and of the signed rqlited.exe (ONE-4, #313),
+    # which it compares with the file that the Controller writes under its data directory
     outputs:
       node-sha256-x64: ${{ steps.signing.outputs.node-sha256-x64 }}
       node-sha256-arm64: ${{ steps.signing.outputs.node-sha256-arm64 }}
+      member-sha256: ${{ steps.signing.outputs.member-sha256 }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -1121,11 +1144,25 @@ jobs:
         $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
         $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         & (Join-Path $tools 'wix.exe') --version
+    # The rqlite member of a Controller (ONE-4, #313): the rqlited.exe of the pinned release, which
+    # self-integrity.ps1 signs and embeds as a Payload of the ranz.exe of each architecture
+    - name: Download the rqlite member
+      shell: pwsh
+      run: |
+        $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
+        $dir = Join-Path $env:RUNNER_TEMP 'rqlite'
+        Invoke-WebRequest -Uri "https://github.com/rqlite/rqlite/releases/download/$env:RQLITE_VERSION/rqlite-$env:RQLITE_VERSION-win64.zip" -OutFile $zip
+        $sum = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
+        if ($sum -ne $env:RQLITE_WIN64_SHA256) { throw "rqlite-$env:RQLITE_VERSION-win64.zip has the SHA-256 $sum, not the pinned $env:RQLITE_WIN64_SHA256" }
+        Expand-Archive -Path $zip -DestinationPath $dir
+        $exe = Get-ChildItem -Path $dir -Recurse -Filter 'rqlited.exe' | Select-Object -First 1
+        if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
+        "RQLITED=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     - name: Sign, self-integrity and symbol strip
       id: signing
       shell: pwsh
       run: |
-        . .github/scripts/self-integrity.ps1 -X64Dir artifacts/x64 -Arm64Dir artifacts/arm64 -Wxs .github/signing/signing-proof.wxs -LicenseFile LICENSE -GoModuleDir . -OutDir build/signing
+        . .github/scripts/self-integrity.ps1 -X64Dir artifacts/x64 -Arm64Dir artifacts/arm64 -Wxs .github/signing/signing-proof.wxs -LicenseFile LICENSE -GoModuleDir . -OutDir build/signing -Rqlited $env:RQLITED
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
@@ -1182,9 +1219,9 @@ jobs:
   # ranz-node.exe beside it and no second download. It copies the same ranz.exe with one byte of its
   # Payload changed too, which ranz install must refuse, writing nothing under Program Files and
   # starting nothing. Besides ranz.exe a runner needs the certificate that signed both, so that their
-  # signatures chain to a trusted root (this is another machine than the one that signed), and, until
-  # ONE-4 (#313) puts an rqlite member in ranz.exe, the rqlited that the Controller service stores its
-  # intent in. .github/scripts/install.ps1.
+  # signatures chain to a trusted root (this is another machine than the one that signed). The Controller
+  # service that ranz install --controller starts runs the rqlite member that ranz.exe carries (ONE-4,
+  # #313): no rqlited is installed or started by the job. .github/scripts/install.ps1.
   install:
     needs: sign_and_integrity
     strategy:
@@ -1223,21 +1260,11 @@ jobs:
         if (-not $cer) { throw 'no .cer file in the ci-signing-certificate artifact' }
         Import-Certificate -FilePath $cer.FullName -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
         Write-Host "trusted $($cer.FullName) as a root"
-    - name: Install rqlited
-      shell: pwsh
-      run: |
-        $zip = Join-Path $env:RUNNER_TEMP 'rqlite.zip'
-        $dir = Join-Path $env:RUNNER_TEMP 'rqlite'
-        Invoke-WebRequest -Uri "https://github.com/rqlite/rqlite/releases/download/$env:RQLITE_VERSION/rqlite-$env:RQLITE_VERSION-win64.zip" -OutFile $zip
-        Expand-Archive -Path $zip -DestinationPath $dir
-        $exe = Get-ChildItem -Path $dir -Recurse -Filter 'rqlited.exe' | Select-Object -First 1
-        if (-not $exe) { throw 'rqlited.exe is not in the rqlite release archive' }
-        & $exe.FullName -version
-        "RQLITED=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     - name: ranz install, checked from outside, then ranz uninstall
       shell: pwsh
       timeout-minutes: 15
       env:
         NODE_SHA256: ${{ needs.sign_and_integrity.outputs[format('node-sha256-{0}', matrix.platform.ARCHITECTURE)] }}
+        MEMBER_SHA256: ${{ needs.sign_and_integrity.outputs.member-sha256 }}
       run: |
-        . .github/scripts/install.ps1 -Ranz artifacts\ranz\ranz.exe -Tampered artifacts\ranz-tampered\ranz.exe -NodeSha256 $env:NODE_SHA256 -Rqlited $env:RQLITED
+        . .github/scripts/install.ps1 -Ranz artifacts\ranz\ranz.exe -Tampered artifacts\ranz-tampered\ranz.exe -NodeSha256 $env:NODE_SHA256 -MemberSha256 $env:MEMBER_SHA256

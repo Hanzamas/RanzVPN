@@ -1192,8 +1192,11 @@ static bool TlsListen(void *param, const char *address, void **listener) {
 	char host[TRANSPORT_ADDRESS_SIZE];
 	char port[8];
 
+	// The empty address: no socket of its own, only the connections that the front door routes here (TlsTake)
+	bool own = (address[0] != 0);
+
 	*listener = NULL;
-	if (net->Server == false || TlsSplitAddress(address, host, sizeof(host), port, sizeof(port)) == false)
+	if (net->Server == false || (own && TlsSplitAddress(address, host, sizeof(host), port, sizeof(port)) == false))
 		return false;
 
 	TLS_LISTENER *l = (TLS_LISTENER *)TlsZeroAlloc(sizeof(TLS_LISTENER));
@@ -1204,15 +1207,15 @@ static bool TlsListen(void *param, const char *address, void **listener) {
 	InitializeConditionVariable(&l->Changed);
 	InitializeThreadpoolEnvironment(&l->Env);
 
-	l->Socket = TlsListenSocket(net, host, port);
+	l->Socket = (own ? TlsListenSocket(net, host, port) : INVALID_SOCKET);
 	l->Event = WSACreateEvent();
 	l->Closing = CreateEventW(NULL, TRUE, FALSE, NULL);
 	l->Group = CreateThreadpoolCleanupGroup();
-	bool ok = (l->Socket != INVALID_SOCKET && l->Event != WSA_INVALID_EVENT && l->Closing != NULL && l->Group != NULL);
+	bool ok = ((own == false || l->Socket != INVALID_SOCKET) && l->Event != WSA_INVALID_EVENT && l->Closing != NULL && l->Group != NULL);
 	if (ok) {
 		SetThreadpoolCallbackCleanupGroup(&l->Env, l->Group, NULL);
 		l->Wait = CreateThreadpoolWait(TlsAcceptCallback, l, &l->Env);
-		ok = (l->Wait != NULL && WSAEventSelect(l->Socket, l->Event, FD_ACCEPT) == 0);
+		ok = (l->Wait != NULL && (own == false || WSAEventSelect(l->Socket, l->Event, FD_ACCEPT) == 0));
 	}
 	if (ok == false) {
 		TlsListenerFree(l);
@@ -1255,6 +1258,21 @@ static bool TlsAccept(void *listener, UINT timeout, void **stream) {
 	ReleaseSRWLockExclusive(&l->Lock);
 
 	return (*stream != NULL);
+}
+
+// A connection that the front door accepted and routed to the listener (TransportTake): its handshake runs as that of
+// one the listener took itself, and the listener closes it when the handshake cannot start
+static bool TlsTake(void *listener, UINT_PTR socket) {
+	TLS_LISTENER *l = (TLS_LISTENER *)listener;
+
+	AcquireSRWLockExclusive(&l->Lock);
+	bool closed = l->Closed;
+	ReleaseSRWLockExclusive(&l->Lock);
+	if (closed)
+		return false;
+
+	TlsStartHandshake(l, (SOCKET)socket);
+	return true;
 }
 
 static void TlsCloseListener(void *listener) {
@@ -1396,6 +1414,7 @@ static void TlsFill(TRANSPORT *t, TLS_NET *net) {
 	t->Binding = TlsStreamBinding;
 	t->Rekey = TlsStreamRekey;
 	t->Queue = net->Cfg.Queue;
+	t->Take = TlsTake;
 }
 
 void TransportTlsDefaultConfig(TRANSPORT_TLS_CONFIG *cfg, const char *thumbprint, bool machine_store) {

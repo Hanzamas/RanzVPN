@@ -6,6 +6,8 @@
 // through a whole frame), and as text through the address and mask parsers of the admin RPC and
 // the command line (StrToIP, StrToIP6, ParseIpAndMask46, ParseIpAndMask4, ParseIpAndMask6,
 // ParseIpAndSubnetMask4). Every address parsed is formatted again with IPToStr() or IPToStr32().
+//
+// fuzz-max-len: 4096
 
 #include "fuzz_common.h"
 

@@ -8,6 +8,9 @@
 // group and to every group, so that inputs reach learning, a full table, unicast, flooding, delivery to groups and the
 // limits. Every frame that the switch delivers is read to its last byte, so AddressSanitizer reports one that runs past
 // the input or past the buffer of the switch.
+//
+// fuzz-max-len: 9219
+// fuzz-libs: coreswitch
 
 #include "fuzz_common.h"
 

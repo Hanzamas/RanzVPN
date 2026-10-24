@@ -60,6 +60,7 @@ struct NODE_OVERLAY {
 	NODE_READER Reader;                         // The thread as a reader of the forwarding tables, online while it delivers
 	volatile bool Halt;                         // Ends the thread
 	UCHAR *Buf;                                 // The record that the thread reads
+	UCHAR *NatBuf;                              // Its packet as the host sees it, when a 1:1 NAT rule translates it (NodeNat.c)
 	volatile LONG64 Forwarded;                  // Packets of the host sent to a peer
 	volatile LONG64 Delivered;                  // Packets of the peers delivered to the host
 	volatile LONG64 Dropped;                    // Packets that the overlay dropped
@@ -145,6 +146,9 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 	for (UINT i = 0; i < st->NumPeers; i++)
 		max_routes += st->Peers[i].NumAddresses;
 
+	// 1:1 NAT (NodeNat.c; SDN-6, #182): the outside prefixes of the node's rules lead to the host, the routes of a peer to it
+	max_routes += NodeNatRoutes(st, NULL);
+
 	NODE_VRF_ROUTE *routes = ZeroMalloc(sizeof(NODE_VRF_ROUTE) * MAX(max_routes, 1));
 
 	for (UINT i = 0; i < st->NumAddresses; i++)
@@ -156,8 +160,14 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 			if (NodeOverlayRoute(&routes[num], &st->Peers[i].Addresses[j], i))
 				num++;
 
+	num += NodeNatRoutes(st, routes + num);
+
 	NODE_VRF_TABLES *v = NodeNewVrfTables(st->Generation, routes, num, (void **)hops, st->NumPeers);
 	Free(routes);
+
+	// The rules of the Generation, installed with its tables
+	if (v != NULL)
+		v->Nat = NodeNewNat(st);
 
 	return v;
 }
@@ -210,10 +220,16 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 
 	// Built beside the live tables, then in their place: the swap returns once no reader holds the tables before
 	NODE_VRF_TABLES *v = NodeOverlayTables(st, hops);
+	// The MTU and the rate limits of the Generation go in with its tables (NodeShape.c)
+	NodeShapeAttach(ov->Node, v, st);
 	UINT num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
 	if (v != NULL && swapped == false)
 		NodeFreeVrfTables(v);
+
+	// The host's adapter of each VRF takes the MTU of the Generation that went in, before the overlay reports it
+	if (swapped)
+		NodeShapeApplied(ov->Node, st);
 
 	Lock(ov->Lock);
 	{
@@ -245,6 +261,10 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 		NodeLog(ov->Node, "Overlay: generation %I64u applied: node %s, %u addresses, %u peers, the forwarding tables of %u VRFs", st->Generation, st->Name, st->NumAddresses, st->NumPeers, num_vrfs);
 	else
 		NodeLog(ov->Node, "Overlay: generation %I64u not applied: its forwarding tables could not be built or installed, so the node forwards on the tables before", st->Generation);
+
+	// The adapter of the host takes the state too: the addresses and routes of the client role (CORE-S3-1)
+	if (swapped && ov->Config.State != NULL)
+		ov->Config.State(ov->Node, ov->Config.AdapterParam, st);
 }
 
 //
@@ -335,6 +355,22 @@ static bool NodeOverlayListen(NODE_OVERLAY *ov) {
 	return (ov->Listener != NULL);
 }
 
+// Close the session that the peer of key has: it dialled again on another path. Only the thread of the overlay closes.
+static void NodeOverlayReplace(NODE_OVERLAY *ov, const UCHAR *key) {
+	NODE_OVERLAY_PEER *p;
+
+	Lock(ov->Lock);
+	{
+		p = NodeOverlayPeer(ov, NULL, key);
+		if (p != NULL && p->Session == NULL)
+			p = NULL;
+	}
+	Unlock(ov->Lock);
+
+	if (p != NULL)
+		NodeOverlayClose(ov, p);
+}
+
 // Take a stream that a peer dialled: the responder of a session, whose initiator must be a peer of the desired state
 static bool NodeOverlayAccept(NODE_OVERLAY *ov) {
 	NOISE_SESSION_CONFIG c;
@@ -353,8 +389,10 @@ static bool NodeOverlayAccept(NODE_OVERLAY *ov) {
 		return true;
 	}
 
-	// The peer's static key names the peer: a session between two peers has no Login
+	// The peer's static key names the peer: a session between two peers has no Login. A peer that dials again, after it
+	// roamed or woke from sleep, replaces the session that its old path left (CORE-S3-1).
 	TransportNoiseAcceptLogin(s);
+	NodeOverlayReplace(ov, s->Session.RemoteStatic);
 	NodeOverlayAttach(ov, s->Session.RemoteStatic, s);
 
 	return true;
@@ -373,7 +411,8 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 		for (UINT i = 0; i < LIST_NUM(ov->Peers) && found == false; i++) {
 			NODE_OVERLAY_PEER *p = LIST_DATA(ov->Peers, i);
 
-			if (p->Gone || p->Session != NULL || now < p->NextDial || Cmp(ov->Config.Key->Public, p->Key, PEER_KEY_SIZE) >= 0)
+			// A client dials its peers whatever the order of the keys: they cannot dial it (CORE-S3-1)
+			if (p->Gone || p->Session != NULL || now < p->NextDial || (ov->Config.Dialler == false && Cmp(ov->Config.Key->Public, p->Key, PEER_KEY_SIZE) >= 0))
 				continue;
 
 			StrCpy(name, sizeof(name), p->Name);
@@ -420,6 +459,9 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 
 		ok = (from < v->NumHops && v->Hops[from] == p && NodeVrfLookup(vt, dst, addr_size) == NODE_VRF_LOCAL);
 	}
+
+	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the host takes the packet as it sees it
+	ok = ok && NodeNatInbound(v, vrf_id, &packet, &packet_size, ov->NatBuf, NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
 
 	if (ok == false || ov->Config.Adapter == NULL) {
 		InterlockedIncrement64(&ov->Dropped);
@@ -562,6 +604,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	ov->Lock = NewLock();
 	ov->Peers = NewListFast(NULL);
 	ov->Buf = Malloc(NOISE_MAX_PAYLOAD);
+	ov->NatBuf = Malloc(NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
+	NodeShapeStart(n, cfg);
 	n->Overlay = ov;
 
 	Zero(&cc, sizeof(cc));
@@ -599,8 +643,13 @@ void NodeOverlayStop(NODE *n) {
 	if (ov == NULL)
 		return;
 
+	// The packets of the host stop first where the overlay stops them, as for the client role (CORE-S3-1)
+	if (ov->Config.AdapterStop != NULL)
+		ov->Config.AdapterStop(n, ov->Config.AdapterParam);
+
 	ControlStop(ov->Control);
 	NodeSwapVrfs(n, NULL);
+	NodeShapeStop(n);
 	ov->Halt = true;
 	if (ov->Thread != NULL) {
 		WaitForSingleObject(ov->Thread, INFINITE);
@@ -611,6 +660,7 @@ void NodeOverlayStop(NODE *n) {
 	ReleaseList(ov->Peers);
 	DeleteLock(ov->Lock);
 	Free(ov->Buf);
+	Free(ov->NatBuf);
 	Free(ov);
 
 	NodeLog(n, "Overlay stopped");
@@ -647,7 +697,8 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	NODE_VRF_TABLES *v = (t != NULL ? t->Vrfs : NULL);
 	NODE_VRF_TABLE *vt = NodeGetVrfTable(v, vrf_id);
 
-	if (vt != NULL && size <= NOISE_MAX_PAYLOAD - NODE_OVERLAY_VRF_TAG && NodeOverlayEnds(packet, size, src, dst, &addr_size) && NodeVrfLookup(vt, src, addr_size) == NODE_VRF_LOCAL)
+	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the tables route the packet as the overlay sees it
+	if (vt != NULL && size <= NOISE_MAX_PAYLOAD - NODE_OVERLAY_VRF_TAG && NodeNatEnds(v, vrf_id, packet, size, src, dst, &addr_size) && NodeVrfLookup(vt, src, addr_size) == NODE_VRF_LOCAL)
 		hop = NodeVrfLookup(vt, dst, addr_size);
 
 	// Only to a peer: the host's own addresses and the addresses of no route stay here
@@ -660,12 +711,14 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	UCHAR *record = (size + NODE_OVERLAY_VRF_TAG <= sizeof(buf) ? buf : Malloc(size + NODE_OVERLAY_VRF_TAG));
 
 	WRITE_UINT(record, vrf_id);
-	Copy(record + NODE_OVERLAY_VRF_TAG, packet, size);
+	size = NodeNatCopy(v, vrf_id, record + NODE_OVERLAY_VRF_TAG, packet, size);
 
 	// Counted on the peer before it reads the session, so the thread does not close the session under the send
 	InterlockedIncrement(&peer->Senders);
 	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&peer->Session);
-	bool ok = (s != NULL && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG));
+	// The MTU of the VRF clamps the MSS of a TCP SYN as the overlay sees it, after the 1:1 NAT rules, and the rate limits
+	// of the VRF and the node may drop it (NodeShape.c)
+	bool ok = (s != NULL && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG));
 	InterlockedDecrement(&peer->Senders);
 
 	if (record != buf)

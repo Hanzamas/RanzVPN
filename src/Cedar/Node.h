@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeHarden.c, NodeOverlay.c, NodeSession.c, NodeTable.c, NodeVrf.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeHarden.c, NodeNat.c, NodeOverlay.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -35,6 +35,7 @@
 #define NODE_SETTING_RELAY_PORT   "RelayPort"   // The UDP port of the relay role; without it, or 0, one that the system picks
 #define NODE_SETTING_IDENTITY_KEY "IdentityKey" // The name of the node identity key; without it NODE_IDENTITY_KEY_NAME
 #define NODE_SETTING_BGP          "Bgp"         // The BGP settings, one JSON object (NodeBgpStart); without it no BGP sidecar
+#define NODE_SETTING_CLIENT       "Client"      // The settings of the client role, one JSON object (NodeClient.c); without it the role holds nothing
 
 // The node identity key in the software key storage provider (ADR-0022) without the IdentityKey setting
 #define NODE_IDENTITY_KEY_NAME "Ranz Node"
@@ -66,11 +67,44 @@
 #define NODE_OVERLAY_VRF_TAG       4    // Bytes of a data record before its IP packet: the VRF id, big-endian (SDN-4, #180)
 #define NODE_OVERLAY_RECORD        2048 // Bytes of a data record that NodeOverlayInput builds on its stack; a larger one is allocated
 
+// The client role (NodeClient.c; CORE-S3-1, #71)
+#define NODE_CLIENT_ADAPTER     "Ranz"             // The name of its Wintun adapter without one in the Client setting
+#define NODE_CLIENT_PIPE        "ranz-node-client" // The pipe of the logged-in user (\\.\pipe\...) without one in the Client setting
+#define NODE_CLIENT_MAX_SETTING 8192               // Bytes of the Client setting at most
+#define NODE_CLIENT_MAX_SERVERS 8                  // Servers of the Client setting at most
+#define NODE_CLIENT_DIAL        5000               // ms that the race of the fallback list of a server takes at most
+#define NODE_CLIENT_SLICE       50                 // ms that a read of a stream waits at most before it looks at whether the role closed it
+#define NODE_CLIENT_SETTLE      500                // ms without an address change before the role takes the network as roamed
+#define NODE_CLIENT_LINE        128                // Bytes of a command line of the pipe at most
+#define NODE_CLIENT_REPLY       2048               // Bytes of an answer of the pipe at most
+#define NODE_CLIENT_PIPE_IDLE   30000              // ms that the pipe waits for the next command of a connected user
+
+// The Wintun adapters of a node (NodeWintun.c; CORE-S3-1, #71)
+#define NODE_WINTUN_DLL           L"wintun.dll" // Next to the executable: the pinned release of THIRD_PARTY.TXT
+#define NODE_WINTUN_TYPE          L"Ranz"       // The tunnel type of the adapters of the node
+#define NODE_WINTUN_RING          0x400000      // Bytes of each ring of a session: 4 MiB, between the 128 KiB and 64 MiB of wintun.h
+#define NODE_WINTUN_BATCH         256           // Packets of the host that the I/O thread takes in one run
+#define NODE_WINTUN_MAX_PACKET    0xFFFF        // Bytes of a packet at most (WINTUN_MAX_IP_PACKET_SIZE)
+#define NODE_WINTUN_MAX_ADDRESSES 16            // Addresses of one adapter at most
+#define NODE_WINTUN_MAX_ROUTES    64            // Routes through one adapter at most
+#define NODE_WINTUN_CREATE_WAIT   5000          // ms that the node waits for an adapter of the same name to go before it creates one
+#define NODE_WINTUN_CREATE_RETRY  250           // ms between two attempts to create it
+
 // The forwarding tables of the VRFs of a node (NodeVrf.c; SDN-4, #180)
 #define NODE_VRF_LOCAL      0x3FFFFFFF // The next hop of an address of the node itself: the host
 #define NODE_VRF_NONE       0xFFFFFFFF // What a lookup gives for an address that no route of the VRF holds
 #define NODE_VRF_MAX_ROUTES 65536      // Routes of the tables of one Generation at most
 #define NODE_VRF_MAX_HOPS   65536      // Next hops of those tables at most
+
+// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182)
+#define NODE_NAT_GROWTH 40 // Bytes that the translation of a packet of a peer adds at most: from IPv4 to IPv6, 20 to its header and 20 to the one that an ICMP error quotes
+
+// The MTU, the MSS clamp and the rate limits of the overlay of a node (NodeShape.c; SDN-20, #196)
+#define NODE_SHAPE_DEFAULT_MTU 1280  // The MTU of a VRF that the desired state gives none, the least that IPv6 allows (ADR-0025 decision 16)
+#define NODE_SHAPE_MAX_MTU     65535 // The largest MTU of a VRF (MaxMTU of the controller's intent)
+#define NODE_SHAPE_MSS_HEADERS 40    // Bytes of the IPv4 and TCP headers between the MTU of a VRF and the MSS of a TCP SYN in it
+#define NODE_SHAPE_BURST       50    // ms of its rate that a token bucket holds ...
+#define NODE_SHAPE_MIN_BURST   65536 // ... and bytes at least: more than the largest IP packet
 
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
@@ -78,6 +112,16 @@ typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
 typedef void(NODE_QUEUE_PROC)(NODE_QUEUE *q, void *param);
 // Takes an IP packet of the overlay for the host in the VRF vrf_id (NodeOverlayStart), on the thread of the overlay
 typedef void(NODE_ADAPTER_PROC)(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size);
+// Takes the MTU of the VRF vrf_id for the host's adapter of that VRF (NodeOverlayStart), on the thread that applied
+// the Generation
+typedef void(NODE_ADAPTER_MTU_PROC)(NODE *n, void *param, UINT vrf_id, UINT mtu);
+// Stops the packets of the host into the overlay, first thing in NodeOverlayStop (NodeOverlayStart)
+typedef void(NODE_ADAPTER_STOP_PROC)(NODE *n, void *param);
+// Takes a desired state that the overlay applied, once its forwarding tables are in (NodeOverlayStart)
+struct CONTROL_STATE;
+typedef void(NODE_STATE_PROC)(NODE *n, void *param, const struct CONTROL_STATE *st);
+// Takes an IP packet of the host's own stack from the ring of a Wintun adapter, on the I/O thread of its adapter queue
+typedef void(NODE_WINTUN_PROC)(NODE_WINTUN *w, void *param, const UCHAR *packet, UINT size);
 
 // A thread that reads the table snapshot: a worker, the I/O thread of an adapter queue, or a thread that
 // registered itself. It holds a snapshot only between two quiescent points and none while it is offline,
@@ -129,6 +173,9 @@ struct NODE_VRF_TABLES {
 	NODE_VRF_TABLE **Vrfs; // The table of each, by VRF id
 	UINT NumHops;          // Number of next hops
 	void **Hops;           // The next hops: what next hop i of a route leads to
+	NODE_NAT *Nat;         // The 1:1 NAT rules of the same Generation (NodeNat.c; SDN-6, #182), NULL for none
+	// The MTU and the rate limits of the VRFs of the same Generation (NodeShape.c; SDN-20, #196), NULL for the defaults
+	NODE_SHAPE_TABLE *Shape;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -192,6 +239,9 @@ struct NODE {
 	PEER_UDP *RelayUdp;         // The UDP socket of the relay role, NULL while it does not run
 	PEER_AGENT *Relay;          // The peer layer of the relay role, NULL while it does not run
 
+	// The client role (NodeClient.c; CORE-S3-1, #71), under Lock: NULL while the role holds nothing
+	NODE_CLIENT *Client;
+
 	// The BGP sidecar (CORE-S7-1, #82), under Lock
 	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
 	wchar_t BgpSidecar[MAX_PATH]; // The executable that holds the sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
@@ -199,6 +249,9 @@ struct NODE {
 
 	// The overlay (NodeOverlay.c; SDN-3, #179), NULL while it does not run
 	NODE_OVERLAY *Overlay;
+
+	// The MTU, the MSS clamp and the rate limits of the overlay (NodeShape.c; SDN-20, #196), NULL while it does not run
+	NODE_SHAPE *Shape;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -209,7 +262,11 @@ struct NODE_OVERLAY_CONFIG {
 	TRANSPORT *Data;                         // The transport of the Noise sessions to the peers, which finds a peer by its node name
 	PEER_KEY *Key;                           // The node's static key, which must outlive the overlay
 	NODE_ADAPTER_PROC *Adapter;              // Takes the packets for the host, NULL for none
-	void *AdapterParam;                      // ... and its second parameter
+	void *AdapterParam;                      // ... and its second parameter, which AdapterStop and State take too
+	NODE_ADAPTER_MTU_PROC *AdapterMtu;       // Takes the MTU of each VRF for the host's adapter of the VRF, NULL for none; with AdapterParam
+	NODE_ADAPTER_STOP_PROC *AdapterStop;     // Stops the packets of the host first thing in NodeOverlayStop, NULL when the caller stops them before
+	NODE_STATE_PROC *State;                  // Takes each state applied, once its forwarding tables are in, NULL for none
+	bool Dialler;                            // The node dials every peer, whatever the order of the keys, as a client does (CORE-S3-1)
 };
 
 // What NodeOverlayGetStatus reports
@@ -226,6 +283,39 @@ struct NODE_OVERLAY_STATUS {
 	UINT64 Forwarded;                           // Packets of the host sent to a peer
 	UINT64 Delivered;                           // Packets of the peers delivered to the host
 	UINT64 Dropped;                             // Packets of either side that the overlay dropped
+};
+
+// An address or a route prefix of a Wintun adapter (NodeWintun.c)
+struct NODE_PREFIX {
+	UCHAR Address[16]; // 4 bytes for IPv4, 16 for IPv6, in network byte order
+	UINT AddressSize;  // ... their number
+	UINT Length;       // The prefix length: 0 to 32 for IPv4, 0 to 128 for IPv6
+};
+
+// What NodeClientGetStatus reports
+struct NODE_CLIENT_STATUS {
+	bool Running;                        // The role runs with a Client setting
+	bool Down;                           // The logged-in user took it down
+	bool Asleep;                         // Between a suspend and a resume
+	wchar_t Adapter[MAX_SIZE];           // The name of its Wintun adapter
+	UINT InterfaceIndex;                 // ... the index of its interface
+	UINT64 InterfaceLuid;                // ... and the LUID of that interface
+	wchar_t Pipe[MAX_PATH];              // The pipe of the logged-in user
+	UCHAR Key[PEER_KEY_SIZE];            // The node's static key, which its servers know
+	UINT VrfId;                          // The VRF of the adapter: the VRF of the node's first address
+	UINT NumServers;                     // The servers that it dials
+	char Transport[TRANSPORT_NAME_SIZE]; // The transport of the stream that connected last, empty before the first
+	UINT64 NumDials;                     // Streams that connected
+	UINT64 NumResets;                    // Times it closed its streams: suspend, resume, roaming, down
+	UINT64 NumRoams;                     // Settled address changes on other interfaces
+	UINT64 FromHost;                     // Packets of the host taken from the adapter
+	UINT64 ToHost;                       // Packets put into the adapter for the host
+};
+
+// What NodeShapeGetStatus reports
+struct NODE_SHAPE_STATUS {
+	UINT64 Clamped; // TCP SYNs of the host that left with their MSS clamped to the MTU of their VRF
+	UINT64 Limited; // Packets of the host that a rate limit dropped
 };
 
 // What NodeGetStatus reports
@@ -326,6 +416,14 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v);
 NODE_VRF_TABLE *NodeGetVrfTable(NODE_VRF_TABLES *v, UINT vrf_id);
 UINT NodeVrfLookup(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size);
 
+// NodeNat.c
+NODE_NAT *NodeNewNat(const struct CONTROL_STATE *st);
+void NodeFreeNat(NODE_NAT *nat);
+UINT NodeNatRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);
+bool NodeNatEnds(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, UCHAR *src, UCHAR *dst, UINT *addr_size);
+UINT NodeNatCopy(NODE_VRF_TABLES *v, UINT vrf_id, UCHAR *dst, const UCHAR *packet, UINT size);
+bool NodeNatInbound(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR **packet, UINT *size, UCHAR *buf, UINT buf_size);
+
 // NodeOverlay.c
 bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg);
 void NodeOverlayStop(NODE *n);
@@ -335,5 +433,27 @@ void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
 
 // NodeSession.c
 UINT NodeAcceptSession(NODE *n, TRANSPORT_NOISE *s, UINT timeout);
+
+// NodeClient.c
+void NodeClientGetStatus(NODE *n, NODE_CLIENT_STATUS *st);
+void NodeClientPower(NODE *n, UINT event);
+
+// NodeWintun.c
+bool NodeWintunAvailable(UINT *error);
+UINT NodeWintunDriverVersion();
+NODE_WINTUN *NodeWintunNew(NODE *n, const wchar_t *name, NODE_WINTUN_PROC *proc, void *param);
+void NodeWintunHalt(NODE_WINTUN *w);
+void NodeWintunFree(NODE_WINTUN *w);
+bool NodeWintunSend(NODE_WINTUN *w, const UCHAR *packet, UINT size);
+UINT NodeWintunIndex(NODE_WINTUN *w);
+UINT64 NodeWintunLuid(NODE_WINTUN *w);
+void NodeWintunCounters(NODE_WINTUN *w, UINT64 *from_host, UINT64 *to_host, UINT64 *dropped);
+bool NodeWintunSetAddresses(NODE_WINTUN *w, const NODE_PREFIX *addrs, UINT num);
+bool NodeWintunSetRoutes(NODE_WINTUN *w, const NODE_PREFIX *routes, UINT num);
+bool NodeWintunSetDns(NODE_WINTUN *w, const char *servers, const char *suffix);
+
+// NodeShape.c
+void NodeShapeFreeTable(NODE_SHAPE_TABLE *t);
+void NodeShapeGetStatus(NODE *n, NODE_SHAPE_STATUS *st);
 
 #endif // NODE_H

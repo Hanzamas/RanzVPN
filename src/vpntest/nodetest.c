@@ -26,6 +26,8 @@
 // and delete it.
 // Print "NODE TEST OK" and "NODESVC TEST OK" only when every check passes.
 
+#include "testlist.h"
+
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/ConfigStore.h"
@@ -1350,6 +1352,7 @@ static void NodeTestRelay(NODETEST_CTX *ctx)
 }
 
 // node: the node in-process
+RANZ_TEST("node", node_test, "Node: each role from the configuration starts and stops with every thread joined; per-core workers, adapter queues, atomic table swaps; fork Hub and Sam.");
 void node_test(UINT num, char **arg)
 {
 	NODETEST_CTX ctx;
@@ -1847,6 +1850,7 @@ static void NodeSvcDeleteStore(wchar_t *store)
 }
 
 // nodesvc: ranz-node as the ranzvpnserver service, once per role
+RANZ_TEST("nodesvc", nodesvc_test, "Node service: ranz-node installs as ranzvpnserver, runs each role of its configuration and stops cleanly (administrator rights).");
 void nodesvc_test(UINT num, char **arg)
 {
 	NODETEST_CTX ctx;

@@ -12,6 +12,8 @@
 // reads as NULL or as exactly its text, never past its data. Prints "REGISTRY TEST OK" only when every check passes, deletes its keys and frees
 // everything it allocates.
 
+#include "testlist.h"
+
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
@@ -133,6 +135,7 @@ static bool RegistryMakeRestricted(const char *restricted)
 
 // registry: the registry helpers of Microsoft.c on short and odd REG_SZ values, a REG_MULTI_SZ and a
 // key that grants no more than reading and setting values
+RANZ_TEST("registry", registry_test, "Registry: empty and 1-byte REG_SZ read as empty strings, a REG_MULTI_SZ as its first string, writes and deletes need no KEY_ALL_ACCESS.");
 void registry_test(UINT num, char **arg)
 {
 	REGISTRY_CTX ctx;
