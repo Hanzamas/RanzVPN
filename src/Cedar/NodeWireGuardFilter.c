@@ -152,7 +152,6 @@ static DWORD NodeWireGuardAddFilter(HANDLE engine, UINT size, UINT index, const 
 HANDLE NodeWireGuardIsolate(NODE *n, UINT index, const CONTROL_STATE *st, UINT *pairs) {
 	FWPM_SESSION0 session;
 	HANDLE engine = NULL;
-	const CONTROL_RULE **rules = NULL;
 	UINT num_rules = 0;
 
 	*pairs = 0;
@@ -167,19 +166,19 @@ HANDLE NodeWireGuardIsolate(NODE *n, UINT index, const CONTROL_STATE *st, UINT *
 		return NULL;
 	}
 
-	if (st->NumRules != 0) {
-		rules = ZeroMalloc(sizeof(CONTROL_RULE *) * st->NumRules);
-		for (UINT i = 0; i < st->NumRules; i++)
-			rules[num_rules++] = &st->Rules[i];
+	// The rules of the state in the order of the policy engine
+	const CONTROL_RULE **rules = ZeroMalloc(sizeof(CONTROL_RULE *) * MAX(st->NumRules, 1));
+	for (UINT i = 0; i < st->NumRules && st->Rules != NULL; i++)
+		rules[num_rules++] = &st->Rules[i];
+	if (num_rules > 1)
 		qsort((void *)rules, num_rules, sizeof(CONTROL_RULE *), NodeWireGuardRuleOrder);
-	}
 
 	err = FwpmTransactionBegin0(engine, 0);
 	for (UINT f = 0; f < 2 && err == ERROR_SUCCESS; f++)
 		err = NodeWireGuardAddFilter(engine, f == 0 ? 4 : 16, index, NULL, NULL);
 
 	// Each pair of Devices of the gateway in one VRF, in each family that both have an address of
-	for (UINT i = 0; i < st->NumDevices && err == ERROR_SUCCESS; i++) {
+	for (UINT i = 0; i < st->NumDevices && st->Devices != NULL && err == ERROR_SUCCESS; i++) {
 		const CONTROL_DEVICE *a = &st->Devices[i];
 
 		for (UINT j = i + 1; j < st->NumDevices && err == ERROR_SUCCESS && a->HasKey; j++) {
@@ -212,8 +211,7 @@ HANDLE NodeWireGuardIsolate(NODE *n, UINT index, const CONTROL_STATE *st, UINT *
 
 	if (err == ERROR_SUCCESS)
 		err = FwpmTransactionCommit0(engine);
-	if (rules != NULL)
-		Free((void *)rules);
+	Free((void *)rules);
 
 	if (err != ERROR_SUCCESS) {
 		NodeLog(n, "WireGuard: the filters that keep two Devices of this gateway apart could not be added (error 0x%x)", (UINT)err);
