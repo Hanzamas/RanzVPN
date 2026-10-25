@@ -64,7 +64,7 @@ One row for the newest run of each workflow. Older runs that a newer run replace
 gh api "repos/Hanzamas/RanzVPN/actions/runs?head_sha=<sha>&per_page=100" --jq '[.workflow_runs | group_by(.path)[] | max_by(.id)] | .[] | [.id, .path, .status, .conclusion] | @tsv'
 ```
 
-Read it so: a row whose status is not `completed` is still running. A completed row whose conclusion is not `success` (or `skipped`) failed. The head is green when there are at least 3 rows and all of them are `completed` and `success`. This is rule 4 of the merge procedure.
+Read it so: a row whose status is not `completed` is not finished (it runs, it is queued, or it is `pending` behind an older run of the same workflow). A completed row whose conclusion is not `success` (or `skipped`) failed. The head is green when there are at least 3 rows and all of them are `completed` and `success`. This is rule 4 of the merge procedure.
 
 Why not the check runs: a new label or a new push starts new runs and cancels the old ones. The old check runs stay in the list as `cancelled`, so a list of check runs shows failures that are not failures. Matrix jobs that were cancelled before they expanded even keep a name like `install (${{ matrix.platform.ARCHITECTURE }})`. To find one job by its name, take the newest check run of that name (the highest id).
 
@@ -294,7 +294,7 @@ The integrator never writes the AUTHORITY line. If the routine has none, the int
 
 **First run.** Make the first run a dry run, by hand. In a dry run the tick does the heartbeat and the look, writes the report, and merges nothing, closes nothing and launches nothing. The maintainer reads the heartbeat comment and the run log. That proves in one run the reads with `gh api` and with the MCP tools, and the write and the edit of a comment. Then he sets the mode to `full`.
 
-**One schedule at a time.** Turn off the local scheduled task that resumes work after a usage window while the routine is on, and turn off the routine while the maintainer runs the integrator on his PC. The heartbeat is the safety net, not the plan.
+**One schedule at a time.** While the routine is on, turn off the local scheduled task that resumes work after a usage window. While the maintainer runs the integrator on his PC, turn off the routine. The heartbeat is the safety net, not the plan.
 
 **Set up, in order.**
 

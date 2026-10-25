@@ -79,7 +79,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 Merge a pull request only when all of these hold.
 
 1. Its base is `integration`, and its head is a branch of this repository, not of a fork.
-2. It is not a draft. A draft is a lane saying "not done". Mark it ready (`gh pr ready <n> --repo Hanzamas/RanzVPN`) only when the lane returned `ok: true`, or the body says that the work is done.
+2. It is not a draft. A draft is a lane saying "not done". Mark it ready (`gh pr ready <n> --repo Hanzamas/RanzVPN`, and see [integrator-cloud.md](integrator-cloud.md) for the cloud) only when the lane returned `ok: true`, or the body says that the work is done.
 3. GitHub says it is mergeable and clean: `mergeable` is true and `mergeable_state` is `clean`. Local: `gh pr view <n> --repo Hanzamas/RanzVPN --json mergeable,mergeStateStatus` shows MERGEABLE and CLEAN. `unstable` means that a check fails or still runs. `dirty` means a conflict.
 4. The newest run of every workflow of its head has finished and succeeded. At least 3 workflow runs exist: the move-only check, the quality checks and the supply-chain checks run on every pull request, so fewer means that CI has not started. A new label or a new push starts new runs and cancels the old ones. The old runs stay in the lists as `cancelled`. They do not count. Local: `gh pr checks <n> --repo Hanzamas/RanzVPN` shows the same. In the cloud see [integrator-cloud.md](integrator-cloud.md). A job that shows `skipped` is fine on the fast set.
 5. If it has C code, the full set ran and is green. The label `full-ci` is on it. In the newest `windows.yml` run the jobs `fuzz-asan`, `arm64`, `coverage (new core)`, `install (x64)` and `install (arm64)` show `success`, not `skipped`. "C code" means a change under `src/`, `proto/` or `cmake/`, in a CMake or vcpkg file, or in a script or workflow that the full set runs. If a pull request has C code and no label, add the label (`gh pr edit <n> --repo Hanzamas/RanzVPN --add-label full-ci`) and wait for the full set. Never merge it on the fast set.
@@ -110,11 +110,19 @@ You may add one sentence that a reader needs, for example where the findings of 
 
 ## The two sets of CI
 
-A pull request runs the **fast set**: the format check, the move-only check, the registry of fuzz targets, pins and govulncheck and SBOM, `ranz` on Linux and on Windows x64, the x64 build with its tests, and the arm64 Debug build (compile only). A job that only the full set runs shows `skipped`.
+A pull request runs the **fast set**:
 
-The **full set** runs on every push to `integration` or `master`, every night, on a manual run, on a pull request with the label `full-ci`, and always on a pull request that changes a sensitive path: `src/Core/Crypto*`, `src/Core/Noise*`, `src/SeLow/`, the install, signing and MSI scripts, `docs/first-test.md`, `tests/formal/` and a few more. The exact list is `SENSITIVE` in `.github/scripts/ci-plan.py`. The full set adds the arm64 tests, fuzz-asan, coverage, static analysis, Application Verifier, harden, sign and self-integrity, the MSI jobs, install, kmtest and the first test. The gates are in ADR-0040.
+- the format check, the move-only check and the registry of fuzz targets;
+- pins, govulncheck and SBOM;
+- `ranz` on Linux and on Windows x64;
+- the x64 build with its tests;
+- the arm64 Debug build (compile only).
 
-Some paths do not start `windows.yml` on a pull request at all: `docs/`, every `*.md` file, `controller/`, `go.mod` and `go.sum` and a few more. The header of `.github/workflows/windows.yml` lists them. A pull request that changes only such paths runs the checks that have no path filter (the move-only check, the quality checks, pins and govulncheck and SBOM), so it shows 3 workflow runs and about 6 check runs. Rule 4 of the merge procedure still applies. Judge a docs-only or Go-only pull request by the checks that it has, and never merge one that has a failed or running check.
+A job that only the full set runs shows `skipped`.
+
+The **full set** runs on every push to `integration` or `master`, every night, and on a manual run. It also runs on a pull request with the label `full-ci`. It always runs on a pull request that changes a sensitive path: `src/Core/Crypto*`, `src/Core/Noise*`, `src/SeLow/`, the install, signing and MSI scripts, `docs/first-test.md`, `tests/formal/` and a few more. The exact list is `SENSITIVE` in `.github/scripts/ci-plan.py`. The full set adds the arm64 tests, fuzz-asan, coverage, static analysis, Application Verifier, harden, sign and self-integrity, the MSI jobs, install, kmtest and the first test. The gates are in ADR-0040.
+
+Some paths do not start `windows.yml` on a pull request at all: `docs/`, every `*.md` file, `controller/`, `go.mod` and `go.sum` and a few more. The header of `.github/workflows/windows.yml` lists them. A pull request that changes only such paths runs the checks that have no path filter: the move-only check, the quality checks, and pins, govulncheck and SBOM. It shows 3 workflow runs and about 6 check runs. Rule 4 of the merge procedure still applies. Judge a docs-only or Go-only pull request by the checks that it has. Never merge one that has a failed or running check.
 
 ## Launching lanes
 
@@ -175,7 +183,7 @@ A local schedule that resumes work after a usage window (a scheduled task) and t
 | The ETW trace step (`.github/scripts/etw-trace.ps1`) | `logman` cannot stop the trace session, error `0x80071068`, on arm64. |
 | The `overlaydns` test | The answer for an AAAA record of a 4via6 address times out (status 1460). Seen once, on x64 of PR 403. If it fails on a second pull request, start a small fix lane. |
 
-When the only failing check is a known flake, and the failing case is in no code that the pull request changed, rerun the failed job once, for the run of the current head:
+Rerun a failed job once when two things hold. The only failing check is a known flake. The failing case is in no code that the pull request changed. Rerun it for the run of the current head:
 
 ```
 gh run rerun <run-id> --repo Hanzamas/RanzVPN --failed
@@ -212,7 +220,14 @@ The maintainer's word beats the heartbeat. If he tells an integrator to take ove
 
 ## Pause
 
-When the maintainer says stop: stop the Workflows and the watcher, push every WIP commit, and edit your heartbeat comment with what runs and what to resume (the pull requests, the branches and the lanes). Add `ended:` and end. The maintainer turns off the schedule: the local scheduled task or the cloud routine. When he says go, a new tick reads GitHub, as in "After a cut-off".
+When the maintainer says stop:
+
+1. Stop the Workflows and the watcher.
+2. Push every WIP commit.
+3. Edit your heartbeat comment: what runs, and what to resume (the pull requests, the branches and the lanes). Add `ended:`.
+4. End.
+
+The maintainer turns off the schedule: the local scheduled task or the cloud routine. When he says go, a new tick reads GitHub, as in "After a cut-off".
 
 ## Discussion with the maintainer
 
