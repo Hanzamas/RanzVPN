@@ -769,6 +769,8 @@ bool CsCheckUserPassword(CONFIG_STORE *s, char *network, char *name, char *passw
 
 // Trust on first use of the Noise static key of the user name of the network network (ADR-0022, Enrollment): the
 // first key is pinned, a later login must present the same one. The check and the pin are one transaction.
+// CS_KEY_NO_USER when the store keeps no such user; CS_KEY_ERROR when the store fails to begin, to read the user, to
+// write the pin or to commit it, which leaves the user as it was.
 UINT CsPinUserKey(CONFIG_STORE *s, char *network, char *name, UCHAR *key) {
 	UCHAR pinned[CS_KEY_SIZE];
 	UINT ret = CS_KEY_ERROR;
@@ -780,13 +782,15 @@ UINT CsPinUserKey(CONFIG_STORE *s, char *network, char *name, UCHAR *key) {
 		if (CsBegin(s)) {
 			INT64 user_id = 0;
 			UINT pinned_size = 0;
+			int step = SQLITE_ERROR; // The read of the user: a row, none (SQLITE_DONE) or a failure
 
 			sqlite3_stmt *st = CsPrepare(s, "SELECT u.id, u.pinned_key FROM users u JOIN networks n ON n.id = u.network_id WHERE n.name = ?1 AND u.name = ?2");
 			if (st != NULL) {
 				CsBindStr(st, 1, network);
 				CsBindStr(st, 2, name);
 
-				if (sqlite3_step(st) == SQLITE_ROW) {
+				step = sqlite3_step(st);
+				if (step == SQLITE_ROW) {
 					user_id = sqlite3_column_int64(st, 0);
 					pinned_size = CsColumnBlob(st, 1, pinned, sizeof(pinned));
 				}
@@ -794,8 +798,10 @@ UINT CsPinUserKey(CONFIG_STORE *s, char *network, char *name, UCHAR *key) {
 				sqlite3_finalize(st);
 			}
 
-			if (user_id == 0) {
+			if (step != SQLITE_ROW && step != SQLITE_DONE) {
 				ret = CS_KEY_ERROR;
+			} else if (user_id == 0) {
+				ret = CS_KEY_NO_USER;
 			} else if (pinned_size == 0) {
 				st = CsPrepare(s, "UPDATE users SET pinned_key = ?1, pinned_time = ?2 WHERE id = ?3");
 				if (st != NULL) {
