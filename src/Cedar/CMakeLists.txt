@@ -31,6 +31,47 @@ set_target_properties(cedar
 # (NodeClient.c, NodeWintun.c); powrprof.lib: the suspend and resume events of the client role
 target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib iphlpapi.lib ole32.lib powrprof.lib setupapi.lib uuid.lib winhttp.lib winsqlite3.lib)
 
+# The L2 adapter of the Node module (NodeL2*.c, NodeKmTest.c; CORE-S3-2, #72): newdev.lib for
+# UpdateDriverForPlugAndPlayDevicesW, which installs the driver of a new KM-TEST Loopback Adapter, and ntdll.lib for
+# NtCreateFile and NtDeviceIoControlFile, through which the header-only API of XDP for Windows drives the XDP driver
+target_link_libraries(cedar PRIVATE newdev.lib ntdll.lib)
+
+# The XDP for Windows SDK (Microsoft.XDP-for-Windows.Sdk, MIT) of the XDP backend of the L2 adapter: its headers, for
+# NodeL2Xdp.c alone, with the header-only API of XDP_API_VERSION 3, so nothing of the package is linked or shipped (the
+# runtime is the one that ranz install installs, ONE-3 #312). The package is pinned by its version and the SHA-512 that
+# NuGet records for it, and downloaded at configure time into the build tree, as vcpkg fetches its ports; a configure
+# without the network names an extracted package with RANZ_XDP_SDK_DIR instead.
+set(RANZ_XDP_SDK_VERSION "1.4.0")
+set(RANZ_XDP_SDK_SHA512 "bdc2ccdad3f2ea7fb0d66b66da10f5fc6348d1e3ab9e34adea736b9b7f70c377e5922fffa20085a8b39115b1d96457d98af1329f38ca0c9b41a3c63ec47ec633")
+set(RANZ_XDP_SDK_DIR "$ENV{RANZ_XDP_SDK_DIR}" CACHE PATH "An extracted Microsoft.XDP-for-Windows.Sdk package; empty to download the pinned one")
+set(_ranz_xdp_sdk "${RANZ_XDP_SDK_DIR}")
+if(NOT _ranz_xdp_sdk)
+  set(_ranz_xdp_sdk "${CMAKE_BINARY_DIR}/_deps/xdp-sdk-${RANZ_XDP_SDK_VERSION}")
+  if(NOT EXISTS "${_ranz_xdp_sdk}/build/native/include/afxdp.h")
+    set(_ranz_xdp_package "${CMAKE_BINARY_DIR}/_deps/xdp-sdk-${RANZ_XDP_SDK_VERSION}.zip")
+    file(DOWNLOAD
+      "https://api.nuget.org/v3-flatcontainer/microsoft.xdp-for-windows.sdk/${RANZ_XDP_SDK_VERSION}/microsoft.xdp-for-windows.sdk.${RANZ_XDP_SDK_VERSION}.nupkg"
+      "${_ranz_xdp_package}"
+      EXPECTED_HASH SHA512=${RANZ_XDP_SDK_SHA512}
+      TLS_VERIFY ON
+      STATUS _ranz_xdp_status)
+    list(GET _ranz_xdp_status 0 _ranz_xdp_code)
+    if(NOT _ranz_xdp_code EQUAL 0)
+      message(FATAL_ERROR "The XDP SDK ${RANZ_XDP_SDK_VERSION} could not be downloaded (${_ranz_xdp_status}). Set RANZ_XDP_SDK_DIR to an extracted Microsoft.XDP-for-Windows.Sdk package instead.")
+    endif()
+    file(ARCHIVE_EXTRACT INPUT "${_ranz_xdp_package}" DESTINATION "${_ranz_xdp_sdk}" PATTERNS "build/native/include/*")
+  endif()
+endif()
+if(NOT EXISTS "${_ranz_xdp_sdk}/build/native/include/afxdp.h")
+  message(FATAL_ERROR "${_ranz_xdp_sdk} holds no build/native/include/afxdp.h of the XDP SDK (CORE-S3-2, #72)")
+endif()
+message(STATUS "cedar: XDP SDK ${RANZ_XDP_SDK_VERSION} headers at ${_ranz_xdp_sdk}/build/native/include")
+set_source_files_properties(NodeL2Xdp.c
+  PROPERTIES
+    INCLUDE_DIRECTORIES "${_ranz_xdp_sdk}/build/native/include"
+    COMPILE_DEFINITIONS "XDP_API_VERSION=3;XDP_INCLUDE_WINCOMMON"
+)
+
 # cJSON (vcpkg, MIT): the JSON messages of the pipe to the BGP sidecar ranz-bgp (NodeBgp.c, CORE-S7-1 #82).
 # Windows has no JSON parser for C outside the Windows Runtime. The include directory is found from the
 # header, so the include line is <cjson/cJSON.h> whatever directory the package config exports.
