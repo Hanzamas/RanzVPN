@@ -14,9 +14,6 @@
 #define SECURITY_WIN32
 #include <security.h>
 
-#define SCHANNEL_USE_BLACKLISTS
-#include <schannel.h>
-
 #include <string.h>
 
 SecBufferDesc *TransportTlsAlpnOffer(const TRANSPORT_TLS_CONFIG *cfg, SecBufferDesc *desc, SecBuffer *buf, ULONG *list, UINT size) {
