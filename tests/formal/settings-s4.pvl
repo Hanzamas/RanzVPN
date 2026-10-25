@@ -1,0 +1,7 @@
+(* settings-s4.pvl: a try (AUD-5, #389). settings-fast.pvl with the selection function that takes the hypothesis of the
+   largest term. *)
+
+set expandIfTermsToTerms = true.
+set traceBacktracking = false.
+set reconstructTrace = false.
+set selFun = TermMaxsize.

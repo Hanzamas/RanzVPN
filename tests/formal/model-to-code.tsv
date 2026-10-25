@@ -26,10 +26,11 @@ prims.pvl	charlie	model	-	-	-	-	a node whose keys the attacker holds; the attack
 prims.pvl	phase0	model	-	-	-	-	the phase of the sessions and of a compromise before or during them; ProVerif phases, no code
 prims.pvl	phase1	model	-	-	-	-	the phase after the sessions, for forward secrecy; no code
 prims.pvl	empty	constant	src/Core/NoiseSession.c	NoiseSessionAccept	payload_size	-	the empty payload of both handshake messages (NoiseHandshakeRead and NoiseHandshakeWrite take none)
-prims.pvl	g	constant	src/Core/CryptoX25519.c	CryptoX25519PublicKey	CRYPTO_X25519_SIZE	-	the base point of X25519, through which a public key is the scalar times it
+prims.pvl	pk	function	src/Core/CryptoX25519.c	CryptoX25519PublicKey	CRYPTO_X25519_SIZE	-	the public key of a scalar: X25519 of the scalar and the base point
 prims.pvl	c	model	-	-	-	-	the network: every message goes through the attacker, so no code stands for it
-prims.pvl	dhexp	function	src/Core/Noise.c	NoiseMixDh	EphemeralKey	-	X25519 of an ephemeral scalar (CryptoX25519); a low-order public key gives no secret and fails the handshake
-prims.pvl	dhexp	function	src/Core/Noise.c	NoiseDhStatic	Identity	-	X25519 of the static key, which stays in the key storage provider (CryptoIdentityDh)
+prims.pvl	dhi	function	src/Core/Noise.c	NoiseMixDh	EphemeralKey	-	X25519 of a scalar of the initiator side (an ephemeral key) and the public key of the responder side (CryptoX25519); a low-order public key gives no secret and fails the handshake
+prims.pvl	dhi	function	src/Core/Noise.c	NoiseDhStatic	Identity	-	the same with the static key, which stays in the key storage provider (CryptoIdentityDh)
+prims.pvl	dhr	function	src/Core/Noise.c	NoiseMixDh	remote	-	the responder's computation of the same secret from its scalar and the public key that it received: the code runs the one function on both sides, and the model rewrites the responder's term to the initiator's
 prims.pvl	hash1	function	src/Core/Noise.c	NoiseHandshakeInit	H	-	InitializeSymmetric: the protocol name, zero padded to 32 bytes when it fits (IK) and hashed when longer (IKhfs); injective either way
 prims.pvl	mixh	function	src/Core/Noise.c	NoiseMixHash	H	-	MixHash: h = SHA-256(h || data)
 prims.pvl	hkck	function	src/Core/Noise.c	NoiseMixKey	Ck	-	MixKey: the first output of HKDF(ck, ikm) is the next chaining key
@@ -75,8 +76,9 @@ session-lib.pvl	mkcert	function	src/Core/TransportTls.c	TlsCheckPin	SECPKG_ATTR_
 session-lib.pvl	certkey	function	src/Core/TransportTls.c	TlsCheckPin	SECPKG_ATTR_REMOTE_CERT_CONTEXT	-	the public key that the certificate carries
 session-lib.pvl	thumb	function	src/Core/CryptoCert.c	CryptoCertThumbprint	CERT_SHA1_HASH_PROP_ID	D2	the thumbprint of a certificate: a SHA-1, a hash without collisions in the model
 session-lib.pvl	epbind	function	src/Core/CryptoCert.c	CryptoCertEndPoint	crypto_end_point_hashes	D1	the tls-server-end-point of RFC 5929, the hash of the certificate by the hash of its signature
-session-lib.pvl	tg	constant	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the base point of the key exchange of the outer session (X25519 or its hybrid in Schannel): a group of its own in the model, since no key share of TLS meets a Noise key
-session-lib.pvl	tdhexp	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the Diffie-Hellman of the key shares of the outer session, which Schannel runs inside the handshake
+session-lib.pvl	tpk	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ClientHello and of the ServerHello: the public key of an ephemeral scalar of the outer key exchange (X25519 or its hybrid in Schannel), with names of its own in the model so that no key share of TLS is taken for a Noise key
+session-lib.pvl	tdhi	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the Diffie-Hellman secret of the outer session as the client computes it, which Schannel runs inside the handshake
+session-lib.pvl	tdhr	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the same secret as the server computes it
 session-lib.pvl	tlsms	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the TLS 1.3 key schedule, from the Diffie-Hellman secret and the transcript, which Schannel runs
 session-lib.pvl	tlsms	function	src/Core/TransportTls.c	TransportTlsDefaultConfig	Versions	D6	the code also negotiates TLS 1.2 by default, whose exporter and downgrade protection the model does not have
 session-lib.pvl	tlsk	function	src/Core/TransportTls.c	TlsWriteRecord	EncryptMessage	-	the traffic key of one direction
@@ -91,8 +93,8 @@ session-lib.pvl	appdata	function	src/Core/NoiseSession.c	NoiseSessionSend	NOISE_
 session-lib.pvl	capsof	function	src/Core/Control.c	ControlSetCaps	capabilities	-	the Capabilities that the Hello of a node carries; in a session the method of the Login
 session-lib.pvl	certof	function	src/Core/TransportTls.c	TransportTlsNew	Cert	-	the certificate of the server, read from the store by its thumbprint
 session-lib.pvl	pinof	function	src/Core/TransportTls.c	TlsParseThumbprint	CRYPTO_THUMBPRINT_SIZE	D2	the thumbprint that a client is configured with, 40 hex digits, set in its setting and not derived from the node identity key
-session-lib.pvl	pincheck	function	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the pin of the TLS transport, which the client checks after the handshake
-session-lib.pvl	pincheck	function	src/Core/TransportQuic.c	QuicConnCallback	Thumbprint	D2	the pin of the QUIC transport, in the callback that msquic calls with the certificate
+session-lib.pvl	pinexp	function	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the thumbprint that the TLS transport compares the certificate of the server with, after the handshake: the one that the client was configured with
+session-lib.pvl	pinexp	function	src/Core/TransportQuic.c	QuicConnCallback	Thumbprint	D2	the same in the callback that msquic calls with the certificate
 session-lib.pvl	binding	function	src/Core/TransportTls.c	TlsStreamBinding	NOISE_BINDING_EXPORTER	-	the binding that the TLS transport gives a stream
 session-lib.pvl	binding	function	src/Core/TransportQuic.c	QuicStreamBinding	NOISE_BINDING_SERVER_END_POINT	D1	the binding that the QUIC transport gives a stream: the server knows its certificate, the client learnt it from the handshake
 session-lib.pvl	binding	function	src/Core/Transport.c	TransportBinding	Binding	-	what the session layer asks of the transport
@@ -122,7 +124,7 @@ session-lib.pvl	Client:cr	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	
 session-lib.pvl	Client:gx	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ClientHello
 session-lib.pvl	Client:cert	message	src/Core/TransportTls.c	TlsCheckPin	SECPKG_ATTR_REMOTE_CERT_CONTEXT	-	the certificate in the ServerHello flight
 session-lib.pvl	Client:sg	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the signature of the transcript in the ServerHello flight
-session-lib.pvl	Client:pincheck	check	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the pin, checked once the handshake completed
+session-lib.pvl	Client:pinexp	check	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the pin, checked once the handshake completed
 session-lib.pvl	Client:bnd	field	src/Core/TransportNoise.c	TransportNoiseStart	BindingType	-	the binding of the stream that goes into the prologue
 session-lib.pvl	Client:prologue	field	src/Core/NoiseSession.c	NoisePrologue	NOISE_PROLOGUE_LABEL,binding_type,binding	-	the prologue: the label, the binding type and the binding
 session-lib.pvl	Client:suite	field	src/Core/NoiseSession.c	NoiseSessionConnect	Suite	-	the second byte of the handshake record
@@ -148,12 +150,13 @@ session-lib.pvl	Server:E2	field	src/Core/Noise.c	NoiseWriteMessage2	EphemeralPub
 session-lib.pvl	Server:cp2	field	src/Core/Noise.c	NoiseHandshakeWrite	payload_size	-	the payload of the second message, empty
 session-lib.pvl	Server:v	field	src/Core/NoiseSession.c	NoiseLoginParse	NOISE_LOGIN_VERSION	-	the version byte of the Login
 session-lib.pvl	Server:caps	field	src/Core/NoiseSession.c	NoiseLoginParse	Method	-	the method of the Login; on the control stream the Capabilities of the Hello
-session-lib.pvl	Server:pass	check	src/Cedar/Node.c	NodeLogin	PlainPassword	-	the password against the user, by Sam
+session-lib.pvl	Server:pw	check	src/Cedar/Node.c	NodeLogin	PlainPassword	-	the password against the user, by Sam
 
 # tunnel-lib.pvl: the join of a further connection to a tunnel
 tunnel-lib.pvl	rec_join	constant	src/Core/NoiseSession.c	NoiseLoginEncode	NOISE_LOGIN_JOIN	-	the join method of the Login: its secret is the id of the Tunnel
 tunnel-lib.pvl	kc_on	constant	src/Core/NoiseSession.c	NoiseTunnelJoin	RemoteStatic	-	the join compares the static key of the connection with the one of the Tunnel
 tunnel-lib.pvl	kc_off	model	-	-	-	-	a negative control: the code compares the keys, and no code joins by the id alone
+tunnel-lib.pvl	joinkey	function	src/Core/NoiseSession.c	NoiseTunnelJoin	RemoteStatic	-	the key that a join compares the static key of the connection with: the one of the Tunnel
 tunnel-lib.pvl	tunnels	table	src/Core/NoiseSession.c	NoiseTunnelInit	RemoteStatic	-	the Tunnels of the server: the id and the static key of the peer node of each (NOISE_TUNNEL)
 tunnel-lib.pvl	tunnels	table	src/Cedar/NodeSession.c	NodeJoinTunnel	SessionList	-	the join finds the Tunnel through the Sessions of the Hub that carry one
 tunnel-lib.pvl	tch	model	-	-	-	-	the id of a new Tunnel, from the first connection to the node that made it: no code
@@ -170,7 +173,7 @@ tunnel-lib.pvl	JoinClient:cr	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLA
 tunnel-lib.pvl	JoinClient:gx	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ClientHello of this connection
 tunnel-lib.pvl	JoinClient:cert	message	src/Core/TransportTls.c	TlsCheckPin	SECPKG_ATTR_REMOTE_CERT_CONTEXT	-	the certificate in the ServerHello flight
 tunnel-lib.pvl	JoinClient:sg	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the signature of the transcript in the ServerHello flight
-tunnel-lib.pvl	JoinClient:pincheck	check	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the pin, checked once the handshake completed
+tunnel-lib.pvl	JoinClient:pinexp	check	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the pin, checked once the handshake completed
 tunnel-lib.pvl	JoinClient:bnd	field	src/Core/TransportNoise.c	TransportNoiseStart	BindingType	-	the binding of the stream of this connection, which goes into its prologue
 tunnel-lib.pvl	JoinClient:prologue	field	src/Core/NoiseSession.c	NoisePrologue	NOISE_PROLOGUE_LABEL,binding_type,binding	-	the prologue: the label, the binding type and the binding
 tunnel-lib.pvl	JoinClient:suite	field	src/Core/NoiseSession.c	NoiseSessionConnect	Suite	-	the second byte of the handshake record

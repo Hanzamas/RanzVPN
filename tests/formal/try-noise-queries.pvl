@@ -1,0 +1,13 @@
+(* try-noise-queries.pvl: a try (AUD-5, #389). Four queries of noise-queries.pvl, to compare settings of the prover. *)
+
+(* @query reach-c *)
+query m: bitstring; event(RecvMsg(bob, alice, st_c, m)).
+
+(* @query c-auth2 *)
+query cc: principal, m: bitstring; event(RecvMsg(bob, alice, st_c, m)) ==> event(SendMsg(alice, cc, st_c, m)) || event(LeakS(phase0, alice)).
+
+(* @query c-conf5 *)
+query sid: sessionid; attacker(msg_c(alice, bob, sid)) ==> event(LeakS(phase0, bob)).
+
+(* @query a-auth2 *)
+query cc: principal, m: bitstring; event(RecvMsg(bob, alice, st_a, m)) ==> event(SendMsg(alice, cc, st_a, m)) || event(LeakS(phase0, alice)).

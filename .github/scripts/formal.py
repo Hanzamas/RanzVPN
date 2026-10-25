@@ -66,7 +66,14 @@ EXPECT = {
     'attack': ('false',),
     'fails': ('false', 'unproved'),
     'reach': ('false', 'unproved'),
+    'any': ('true', 'false', 'unproved'),
 }
+
+
+class Anything(dict):
+    # The expectation of the queries of an experiment (a variant that starts with try-): any answer is fine
+    def __missing__(self, key):
+        return ('any', '')
 
 # The kinds of the rows of the table, and the ones that name no code
 KINDS = ('process', 'function', 'constant', 'table', 'event', 'message', 'field', 'check', 'model')
@@ -190,9 +197,13 @@ def load_expected(root):
 
 
 def check_expected(variants, queries, expected):
-    # The problems of expected.tsv against the queries of the variants
+    # The problems of expected.tsv against the queries of the variants. A variant whose name starts with try- is an
+    # experiment (settings of the prover, a model that is being made faster): it has no expectation, and run reports
+    # what ProVerif says of each of its queries without judging it.
     problems = []
     for name in variants:
+        if name.startswith('try-'):
+            continue
         for qid, _ in queries[name]:
             if (name, qid) not in expected:
                 problems.append('%s: the query %s has no line in %s' % (name, qid, EXPECTED))
@@ -354,6 +365,8 @@ def run(args):
             f.write(texts[n])
 
     expected = load_expected(root)
+    if all(n.startswith('try-') for n in names):
+        expected = Anything(expected)
     summary = ['### Formal model: ProVerif %s' % version, '']
 
     def finish(n, output, code, seconds):

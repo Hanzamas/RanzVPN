@@ -1,0 +1,11 @@
+(* try-a.pv: a try (AUD-5, #389). Noise_IK cut after its first message. *)
+
+process
+  ( NoiseSetup()
+  | NoiseLeaks(alice)
+  | NoiseLeaks(bob)
+  | !( new sid: sessionid; NoiseInitA(alice, bob, sid) )
+  | !( new sid: sessionid; NoiseInitA(alice, charlie, sid) )
+  | !( new sid: sessionid; NoiseRespA(bob, alice, sid) )
+  | !( new sid: sessionid; NoiseRespA(bob, charlie, sid) )
+  )

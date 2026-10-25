@@ -28,3 +28,14 @@ tls443-nopin	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-nopin.
 tls443-neither-honest	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-neither-honest.pv	Negative control: no pin and no binding, no key leaked: the middlebox	4
 control-node	prims.pvl,session-lib.pvl,session-queries.pvl,session/control-node.pv	Control stream of a C node: pinned certificate, Noise_IK of the node with the controller, bound to the exporter	4
 control-go	prims.pvl,session-lib.pvl,session-queries.pvl,session/control-go.pv	Control stream of a Go client: no certificate check, the same handshake	4
+# Experiments (names that start with try-): the prover on a few queries under other settings, with no expectation (formal.py run reports each answer)
+try-p0-s1	settings-fast.pvl,prims.pvl,session-lib.pvl,try-queries.pvl,session/tls443-p0.pv	try: the session, keys leaked in phase 0, the settings of the Noise Explorer	3
+try-p0-s2	settings-s2.pvl,prims.pvl,session-lib.pvl,try-queries.pvl,session/tls443-p0.pv	try: the same with the cheaper redundancy elimination	3
+try-p0-s3	settings-s3.pvl,prims.pvl,session-lib.pvl,try-queries.pvl,session/tls443-p0.pv	try: the same with no redundancy elimination	3
+try-p0-s4	settings-s4.pvl,prims.pvl,session-lib.pvl,try-queries.pvl,session/tls443-p0.pv	try: the same with the selection of the largest term	3
+try-small-s1	settings-fast.pvl,prims.pvl,session-lib.pvl,try-queries.pvl,session/try-small.pv	try: one server process	3
+try-honest-s1	settings-fast.pvl,prims.pvl,session-lib.pvl,try-queries.pvl,session/tls443-honest.pv	try: no key leaked	3
+try-nz-s1	settings-fast.pvl,prims.pvl,noise-lib.pvl,try-noise-queries.pvl,noise/encrypted.pv	try: Noise_IK alone, the settings of the Noise Explorer	4
+try-nz-s3	settings-s3.pvl,prims.pvl,noise-lib.pvl,try-noise-queries.pvl,noise/encrypted.pv	try: Noise_IK alone with no redundancy elimination	4
+try-nzA-s1	settings-fast.pvl,prims.pvl,noise-lib.pvl,try-stages-lib.pvl,try-stage-a-queries.pvl,noise/try-a.pv	try: Noise_IK cut after its first message	3
+try-nzAB-s1	settings-fast.pvl,prims.pvl,noise-lib.pvl,try-stages-lib.pvl,try-stage-ab-queries.pvl,noise/try-ab.pv	try: Noise_IK cut after its second message	3
