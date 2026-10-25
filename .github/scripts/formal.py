@@ -25,7 +25,9 @@
 #          query that must hold and does not, on a negative control or a finding that stops showing its attack,
 #          on an error of ProVerif or a timeout, and on any result that expected.tsv does not name. --slice I/K
 #          runs one variant with only the I-th of K slices of its queries, which is what a job of formal.yml does.
-#          formal.yml runs it in the full set.
+#          formal.yml runs it in the full set. A variant whose name starts with try- is an experiment (a model that is
+#          being made faster, other settings of the prover): it has no line in expected.tsv, list, smoke and run leave it
+#          out when no variant is named, and run reports its answers without judging them (docs/formal-model.md).
 # selftest the tests of this script, which need no prover.
 #
 # Usage:
@@ -1092,6 +1094,19 @@ bool NoiseProto(void);
                 pass
             else:
                 raise AssertionError('smoke took a variant that variants.tsv does not have')
+            # An experiment, a variant whose name starts with try-, has no expectation: the runs that name no variant leave it
+            # out, and run says what ProVerif answers without judging it
+            put(VARIANTS, 'v\tq.pvl,p.pv\tthe variant\nw\tq.pvl,p.pv\tanother\t2\ntry-x\tq.pvl,p.pv\tan experiment\n')
+            assert real_variants(load_variants(root)) == ['v', 'w']
+            listing = io.StringIO()
+            with contextlib.redirect_stdout(listing):
+                assert list_variants(argparse.Namespace(root=root, variants=[])) == 0
+            assert 'try-x' not in listing.getvalue(), listing.getvalue()
+            args.version, args.variants = '2.05', ['try-x']
+            canned['try-x'] = (reach + secret % 'true', 0, 1.0)
+            assert quiet(run, args) == 0, 'an experiment is not judged'
+            canned['try-x'] = ('', None, 5.0)
+            assert quiet(run, args) == 1, 'a timeout of an experiment is a failure'
         finally:
             globals()['run_proverif'], globals()['proverif_version'] = real
     print('formal selftest: ok')

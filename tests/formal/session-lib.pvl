@@ -17,7 +17,11 @@
    leaves the pin out. The attacker is the network, so it may terminate the TLS session of a client with a
    certificate of its own, and open one to the server: that is the middlebox of ADR-0023.
 
-   What a variant sets (the parameters of Client and Server):
+   Every process creates its names before its first input: ProVerif gives a name that is created after an input
+   the received values as arguments, and the ephemeral key of a responder that was e[cs, cp, E, sid] made every
+   term that held it a few hundred nodes larger.
+
+   What a variant sets (the parameters of Client and Server, through Sessions):
      pin     pin_on: the client accepts the certificate whose thumbprint it was configured with and no
              other (TlsCheckPin, QuicConnCallback); pin_off: any certificate (a negative control)
      bm      the binding in the prologue: bt_export, the TLS exporter (NOISE_BINDING_EXPORTER, the TLS-443

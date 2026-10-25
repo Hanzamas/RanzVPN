@@ -23,7 +23,7 @@ name: formal
 
 on:
   push:
-    branches: [master, integration, audit/aud-5-formal-model]
+    branches: [master, integration]
   schedule:
   - cron: '41 20 * * *'
   workflow_dispatch:
@@ -152,7 +152,7 @@ jobs:
         fail-on-cache-miss: true
     - name: ProVerif on the variant
       run: |
-        python -u -I .github/scripts/formal.py run --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION" --out build/formal --jobs 1 --timeout 420 --trace-lines 150 --slice "${{ matrix.slice }}" "${{ matrix.variant }}"
+        python -u -I .github/scripts/formal.py run --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION" --out build/formal --jobs 1 --timeout 900 --trace-lines 150 --slice "${{ matrix.slice }}" "${{ matrix.variant }}"
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:

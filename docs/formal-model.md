@@ -1,54 +1,63 @@
 # The formal model of the session handshake
 
-AUD-5 (#389). The design of the handshake of Ranz VPN is proved, not only tested: ProVerif checks models of the session handshake of a client over TLS 1.3 and over QUIC, of the join of a further connection to a tunnel, of the control stream, of Noise_IK alone and of the peer layer, and a CI job fails when a query that must hold does not hold. The models follow the code as it is today, and where the code differs from ADR-0022 and ADR-0023 this page says how (D1 to D7).
+AUD-5 (#389). The design of the handshake of Ranz VPN is proved, not only tested: ProVerif checks models of the session handshake of a client over TLS 1.3 and over QUIC, of the join of a further connection to a tunnel, of the control stream, of Noise_IK alone and of the peer layer, and a CI job fails when a query that must hold does not hold, or an attack that must show does not. The models follow the code as it is today, and where the code differs from ADR-0022 and ADR-0023 this page says how (D1 to D7). Every query of every model gets an answer from the prover: none is left to Tamarin.
 
 Files:
 
 | file | what it is |
 |---|---|
-| `tests/formal/*.pvl` | the declarations of the models: `prims.pvl` (Diffie-Hellman, hash, HKDF, AEAD, the static keys), `session-lib.pvl` and `session-queries.pvl` (the outer session, the handshake, the Login), `tunnel-lib.pvl` and `tunnel-queries.pvl` (the join of a further connection to a tunnel), `noise-lib.pvl` and `noise-queries.pvl` (Noise_IK alone), `peer-lib.pvl` and `peer-queries.pvl` (the peer layer) |
+| `tests/formal/*.pvl` | the declarations of the models: `prims.pvl` (Diffie-Hellman, hash, HKDF, AEAD, the static keys), `session-lib.pvl` (the outer session, the handshake, the Login, the compromises), `tunnel-lib.pvl` (the join of a further connection to a tunnel), `noise-lib.pvl` (Noise_IK alone), `peer-lib.pvl` (the peer layer), and the queries: `q-*.pvl` in groups for the session models, `tunnel-queries.pvl`, `noise-queries.pvl`, `peer-queries.pvl` |
 | `tests/formal/session/*.pv`, `tunnel/`, `noise/`, `peer/` | the variants: the last file of a model, the process that composes it |
 | `tests/formal/variants.tsv` | the files that make each variant, in the order in which `formal.py` joins them, and into how many ProVerif runs (slices) its queries are cut |
 | `tests/formal/expected.tsv` | what each query must give in each variant: `holds`, `attack`, `fails` or `reach` |
 | `tests/formal/model-to-code.tsv` | the table from the model to the code: every name, message and field of the models, with the file, the function and the field of the code; `check` finds each function defined in its file and each field in the body of one of the functions of its row |
 | `src/vpntest/formaltable.c` | the vpntest test `formaltable`: it refers to every C function of the table that is not static, so a function that the code loses or renames breaks the build of vpntest, and it pins the facts of the code that the models take (the suite name, the layout of the prologue, the exporter labels, TLS 1.2 by default) |
-| `.github/scripts/formal.py` | `check` (the table and the expectations, no prover), `list` (the jobs of the workflow), `run` (ProVerif on a variant, or on a slice of its queries), `selftest` |
+| `.github/scripts/formal.py` | `check` (the table and the expectations, no prover), `list` (the jobs of the workflow), `smoke` (every variant for a few seconds, to catch a mistake of syntax at once), `run` (ProVerif on a variant, or on a slice of its queries), `selftest` |
 | `.github/workflows/formal.yml` | the Linux jobs of the full set: one builds ProVerif 2.05, pinned by the SHA-256 of its archive, and one job for each variant, or for each slice of its queries, runs it |
 
-The check of the table runs in `quality.yml` on every pull request. The prover runs in the full set (a push to `integration` or `master`, the nightly run, a pull request that changes the models, the workflow or the script, and a pull request with the label `full-ci` that changes a file that the table names), as one job for each variant, or for each slice of its queries when `variants.tsv` cuts a variant into slices, so that the answers of a job are in its log when it is done; the input and the log of ProVerif of a job, with the traces of its attacks, are its artifact `formal-<variant>` or `formal-<variant>-<n>of<k>`.
+The check of the table runs in `quality.yml` on every pull request. The prover runs in the full set (a push to `integration` or `master`, the nightly run, a pull request that changes the models, the workflow or the script, and a pull request with the label `full-ci` that changes a file that the table names), as one job for each variant; the input and the log of ProVerif of a job, with the traces of its attacks, are its artifact `formal-<variant>` or `formal-<variant>-<n>of<k>`. The whole set answers in about two minutes.
 
 ## The model
 
-The attacker is the network (the Dolev-Yao attacker of ProVerif): it reads, drops, rewrites and sends every message, runs as many sessions as it likes, and may hold a key that a leak gives it. A leak is an event of a phase: in phase 0, before or during the sessions, and in phase 1, after them, which is what forward secrecy asks.
+The attacker is the network (the Dolev-Yao attacker of ProVerif): it reads, drops, rewrites and sends every message, runs as many sessions as it likes, and may hold a key that its scenario gives it.
 
-**The outer session.** A TLS 1.3 handshake of one round trip with the authentication of the server only: the client sends a random value and a key share, the server its random value, its key share, its certificate and a signature of the transcript. The keys of the records and the exporter come from the Diffie-Hellman secret and the transcript, so two sessions that differ in any value of the transcript have different keys and different exporters, as the key schedule of RFC 8446 gives. Its key exchange is in a group of its own in the model (`tdhexp`), since no key share of TLS meets a Noise key in the code. The client does not check the chain: it compares the certificate with its pin (`TlsCheckPin`, `QuicConnCallback`), which a variant can leave out. A middlebox is the attacker with a certificate of its own that terminates the session of the client and opens one to the server.
+**The outer session.** A TLS 1.3 handshake of one round trip with the authentication of the server only: the client sends a random value and a key share, the server its random value, its key share, its certificate and a signature of the transcript. The keys of the records and the exporter come from the Diffie-Hellman secret and the transcript, so two sessions that differ in any value of the transcript have different keys and different exporters, as the key schedule of RFC 8446 gives. The client does not check the chain: it compares the certificate with its pin (`TlsCheckPin`, `QuicConnCallback`), which a variant can leave out. A middlebox is the attacker with a certificate of its own that terminates the session of the client and opens one to the server.
 
-**The Noise handshake.** On the first stream the client runs Noise_IK with the static key of the node identity and the pinned static key of the server, with the prologue that holds the binding: the label, the binding type, and the binding of the outer session. The binding is the TLS exporter (`NOISE_BINDING_EXPORTER`, the TLS-443 path and the control stream) or the tls-server-end-point of RFC 5929 (`NOISE_BINDING_SERVER_END_POINT`, the QUIC path). The handshake payloads are empty and the records after it go in clear inside the outer session, which encrypts them once (ADR-0023, single encryption). The first control record is the Login (a password, checked by Sam, and the Noise static key pinned to the user on the first login) or, on the control stream, the Hello with the schema version and the Capabilities; the server answers with a record of the data stream or the Update.
+**The Noise handshake.** On the first stream the client runs Noise_IK with the static key of the node identity and the pinned static key of the server, with the prologue that holds the binding: the label, the binding type, and the binding of the outer session. The binding is the TLS exporter (`NOISE_BINDING_EXPORTER`, the TLS-443 path and the control stream) or the tls-server-end-point of RFC 5929 (`NOISE_BINDING_SERVER_END_POINT`, the QUIC path). The handshake payloads are empty and the records after it go in clear inside the outer session, which encrypts them once (ADR-0023, single encryption). The first control record is the Login (a password, checked by Sam, and the Noise static key pinned to the user on the first login) or, on the control stream, the Hello with the schema version and the Capabilities; the server answers with a record of the data stream or the Update. A server runs the suites that it supports as one process each (`Server`, one `suite`), and takes the records of its own suite only.
 
-**The two keys of a node.** A server node has its Noise identity key (`LeakS`) and the key of its TLS certificate (`LeakCert`), and a compromise of one does not give the other (ADR-0023, key separation). The queries say which compromises an attack needs.
+**The two keys of a node.** A server node has its Noise identity key and the key of its TLS certificate, and a compromise of one does not give the other (ADR-0023, key separation).
 
-**The tunnel join** (`tunnel`, `tunnel-honest`, `tunnel-quic`, `tunnel-nokey`). A tunnel of several connections (ADR-0022, amendment of 2026-10-15): the first connection of a peer node logs in and makes the Tunnel of an id, which is the HMAC-SHA256 of a label under its handshake hash (`NoiseTunnelId`); each further connection runs a handshake of its own in an outer session of its own and sends a join Login that names the id (`NOISE_LOGIN_JOIN`), and the server adds it to the Tunnel when the id is the Tunnel's and the static key of the connection is the one of the Tunnel (`TunnelJoin`, `NoiseTunnelJoin`). The model has the first connection as the Tunnel that it makes, a new id for the static key of its peer, which the attacker is given, since the id is no secret inside the outer session and nothing rests on it; and it has the join in full: the outer session with the pin, the binding, the handshake and the join Login. `charlie`, whose keys the attacker holds, has a Tunnel of his own and dials with the ids of the others. No production client dials a second connection yet: the client of a join is in vpntest (`noisehub.c`, `nodelogin.c`).
+**The scenarios.** A model is the session with the compromises of one scenario and no others, and none of its queries is conditional on a leak: it holds in the scenario or it does not. The scenarios are `none` (the attacker is the network), `cert` (it holds the key of the certificate of the server: the middlebox that can present the pinned certificate), `cert-client` (that and the Noise key of the client), `noise-client` (the Noise keys of the server and of the client), `both` (both keys of the server), `noise` (the Noise key of the server) and `fs` (every key, after the sessions, in phase 1 of ProVerif, which is what forward secrecy asks). A leak is an event, so the trace of an attack shows it.
 
-**Noise_IK alone** (`noise-encrypted`). A session that nothing binds encrypts its records under the Noise keys (`NOISE_SESSION_ENCRYPT`: the CDN path of phase 2 and the loopback transport of vpntest). That is where the session keys of Noise, their secrecy and their forward secrecy, are proved: the authentication and confidentiality grades of the Noise Explorer for the four messages of IK, which equal the grades that it publishes. The handshake payloads are empty in the code (the Login follows in the first control record, "under the forward secrecy of the complete handshake"), and the grades show why: message a has no forward secrecy, message c has all of it.
+**The tunnel join** (`tunnel-*`). A tunnel of several connections (ADR-0022, amendment of 2026-10-15): the first connection of a peer node logs in and makes the Tunnel of an id, which is the HMAC-SHA256 of a label under its handshake hash (`NoiseTunnelId`); each further connection runs a handshake of its own in an outer session of its own and sends a join Login that names the id (`NOISE_LOGIN_JOIN`), and the server adds it to the Tunnel when the id is the Tunnel's and the static key of the connection is the one of the Tunnel (`TunnelJoin`, `NoiseTunnelJoin`). The model has the first connection as the Tunnel that it makes, a new id for the static key of its peer, which the attacker is given, since the id is no secret inside the outer session and nothing rests on it; and it has the join in full: the outer session with the pin, the binding, the handshake and the join Login. `charlie`, whose keys the attacker holds, has a Tunnel of his own and dials with the ids of the others. No production client dials a second connection yet: the client of a join is in vpntest (`noisehub.c`, `nodelogin.c`).
+
+**Noise_IK alone** (`noise-encrypted`). A session that nothing binds encrypts its records under the Noise keys (`NOISE_SESSION_ENCRYPT`: the CDN path of phase 2 and the loopback transport of vpntest). That is where the session keys of Noise, their secrecy and their forward secrecy, are graded: the authentication and confidentiality grades of the Noise Explorer for the four messages of IK. The handshake payloads are empty in the code (the Login follows in the first control record, "under the forward secrecy of the complete handshake"), and the grades show why: message a has no forward secrecy, message c has all of it.
 
 **The peer layer** (`peer-leaks`, `peer-honest`). The envelopes of binds, bounds, signals and punch probes, sealed with the one-way pattern K, and the data datagrams, as the code has them.
+
+### How the models are written for the prover
+
+The models are written so that ProVerif answers in seconds. Three choices do it, and a model that leaves them breaks the prover: the first runs of the models, with the habits of the Noise Explorer, ran for twenty minutes and at 15 GB without an answer.
+
+- **Diffie-Hellman has no equation.** The Noise Explorer gives it the equation dh(a, pk(b)) = dh(b, pk(a)), and ProVerif then tries both orders of every Diffie-Hellman term of every clause. Every Diffie-Hellman of these handshakes is between a key of the side that dials and a key of the side that listens (es, ss, ee and se of IK, es and ss of K, the key shares of the outer session), so the model gives the initiator's computation as the term `dhi(a, B)` and rewrites the responder's `dhr(b, pk(a))` to the same term. The two sides agree, and an attacker still computes the secret when it has a scalar and the public key of the other side. What the encoding leaves out is a public key that is no `pk` of any scalar (a point of low order), which the code refuses (`NoiseMixDh`) and the responder's computation fails on.
+- **A process creates its names before its first input.** ProVerif gives a name that is created after an input the received values as arguments: the ephemeral key of the responder was `e[cs, cp, E, sid]`, and every term that held it held both ciphertexts of the first message, a few hundred nodes each, over and over in the key schedule.
+- **The pin, the binding and the suite are the choice of a rewrite rule or of the process that runs**, not boolean terms, and a model is one scenario with the queries that the scenario is about: the models that leaked three keys at once and asked "unless this key" never finished.
+
+Where the attacker holds the Noise key of the server, the queries of the client (`auth-client`, `data-auth`) and of replay are left out of the model: the attacker is the server there, and ProVerif would have to prove a long list of attacks false one by one for no gain.
 
 ### The variants
 
 | variant | what it is |
 |---|---|
-| `tls443` | the session over TLS 1.3 on TCP 443, as the code has it: pinned certificate, handshake bound to the exporter; the keys leak |
-| `tls443-honest` | the same with no key leaked |
-| `quic` | the session over QUIC, as the code has it: pinned certificate, handshake bound to the tls-server-end-point; the keys leak |
-| `quic-honest` | the same with no key leaked |
-| `tls443-nobinding` | negative control: no binding in the prologue |
-| `tls443-nopin` | negative control: the client pins no certificate |
-| `tls443-neither-honest` | negative control: no pin and no binding, no key leaked: the middlebox |
-| `tunnel`, `tunnel-honest` | the join of a further connection to a tunnel over TLS 1.3 as the code has it, with the keys leaked and with none |
-| `tunnel-quic` | the same over QUIC: the binding is the one of the certificate |
-| `tunnel-nokey` | negative control: the server joins by the id alone, with no comparison of the static key |
-| `control-node` | the control stream of a C node: pinned certificate, exporter of the control label |
-| `control-go` | the control stream of a Go client, which checks no certificate |
+| `tls443-none`, `tls443-cert`, `tls443-cert-client`, `tls443-noise-client`, `tls443-both`, `tls443-fs` | the session over TLS 1.3 on TCP 443, as the code has it (pinned certificate, handshake bound to the exporter), in the scenarios none, cert, cert-client, noise-client, both and fs |
+| `quic-none`, `quic-cert`, `quic-noise-client`, `quic-fs` | the session over QUIC, as the code has it (pinned certificate, handshake bound to the tls-server-end-point) |
+| `nobinding-cert` | negative control: no binding in the prologue, the key of the certificate leaked |
+| `nopin-noise` | negative control: the client pins no certificate, the Noise key of the server leaked |
+| `neither-none` | negative control: no pin and no binding, no key leaked: the middlebox |
+| `control-node-none`, `control-node-cert`, `control-node-noise-client`, `control-node-fs` | the control stream of a C node: pinned certificate, exporter of the control label |
+| `control-go-none`, `control-go-noise` | the control stream of a Go client, which checks no certificate |
+| `tunnel-none`, `tunnel-cert`, `tunnel-quic-cert` | the join of a further connection to a tunnel over TLS 1.3 and over QUIC, as the code has it |
+| `tunnel-nokey-none` | negative control: the server joins by the id alone, with no comparison of the static key |
 | `noise-encrypted` | Noise_IK alone with the records under the Noise keys |
 | `peer-leaks`, `peer-honest` | the peer layer, with the keys leaked and with none |
 
@@ -56,49 +65,51 @@ The attacker is the network (the Dolev-Yao attacker of ProVerif): it reads, drop
 
 | id | says |
 |---|---|
-| `reach-login`, `reach-done` | the Login and the handshake can complete, so no query is true for want of a run |
-| `sec-pw` | the password that the client sends is secret |
-| `sec-pw-unless-noise`, `sec-pw-unless-cert`, `sec-pw-unless-both` | the password is secret unless the Noise key of the server, the key of its certificate, or both, are leaked in phase 0: a query "unless X" holds when every attack needs X |
-| `sec-data-unless-both` | what the server sends back is secret unless both keys of the server are leaked |
-| `fs-data` | forward secrecy: a leak of every long-term key after the session gives nothing that a leak before it does not |
-| `auth-server` | the server takes the handshake of the client only if the client started it, in the TLS session that the server is in (the transcript of the TLS session is its identity) |
-| `auth-client`, `auth-client-both` | the client takes the answer only if the server with the key that it pinned made it, in its TLS session and with the same handshake hash, unless the Noise key (or both keys) of the server is leaked |
-| `data-auth` | what the client takes from the server after the handshake (a record of the data stream, or the Update of the controller) is what the server sent, unless the Noise key of the server is leaked |
-| `negotiation` | the version and the Capabilities that the server settles on are the ones that the client offered: the attacker cannot lower them |
-| `suite` | the suite that the server runs is the one that the client chose: the suite is in the protocol name that the hash of the handshake holds |
-| `replay-server`, `replay-client` | no replay: each handshake that the server takes, and each answer that the client takes, is one that was sent once; these hold where no key leaks |
+| `reach-login`, `reach-done` | the Login and the handshake can complete, so no query that holds is true for want of a run |
+| `sec-pw`, `sec-data` | the password that the client sends, and what the server sends back, are secret |
+| `fs-pw`, `fs-data` | the same after every long-term key leaked: forward secrecy |
+| `auth-server` | the server takes the handshake of the client only if the client started it, in the TLS session that the server is in (the transcript of the TLS session is its identity): the binding of a handshake to its session |
+| `auth-client` | the client takes the answer only if the server with the key that it pinned made it, in its TLS session and with the same handshake hash |
+| `data-auth` | what the client takes from the server after the handshake (a record of the data stream, or the Update of the controller) is what the server sent in that session |
+| `negotiation` | the version and the Capabilities that the server settles on are ones that the client offered: the attacker cannot lower them |
+| `suite` | the suite that the server runs is one that the client chose: the suite is in the protocol name that the hash of the handshake holds |
+| `replay-server`, `replay-client` | no replay: each handshake that the server takes, and each answer that the client takes, is one that was sent once |
 
 The queries of the tunnel models (`tunnel-queries.pvl`):
 
 | id | says |
 |---|---|
 | `reach-join` | a connection can join, so no query is true for want of a run |
-| `join-auth` | a connection that joins the Tunnel of alice is one that alice made, in the outer session that the server is in, unless the Noise key of alice or of the server is leaked: a middlebox that terminates the outer session of the join and opens one to the server is the case that the binding rules out |
+| `join-auth` | a connection that joins the Tunnel of alice is one that alice made, in the outer session that the server is in: a middlebox that terminates the outer session of the join and opens one to the server is the case that the binding rules out |
 | `join-identity` | a node joins only a Tunnel that was made for its own static key, whatever ids it knows: the ids of all Tunnels are the attacker's |
-| `join-replay` | no replay: each join that the server takes is of a Login that was sent once; this holds where no key leaks |
+| `join-replay` | no replay: each join that the server takes is of a Login that was sent once |
 
 The queries of `noise-encrypted` are the grades of the Noise Explorer for the messages a, b, c and d (`a-auth1` to `d-conf5`), and the ones of the peer layer are in `peer-queries.pvl`.
 
 ### What holds
 
-The session over TLS-443 as the code has it (`tls443`) proves every query: against a middlebox the handshake needs both keys of the server, the Noise key and the key of the certificate; the version, the Capabilities and the suite cannot be lowered; the data of a session stay secret when every long-term key leaks after it; and with no key leaked (`tls443-honest`) the password, the data, the authentication in both directions and the absence of replay all hold. The control stream of a C node (`control-node`) gives the same. The join of a further connection to a tunnel (`tunnel`) proves that a connection that joins the Tunnel of alice is one that alice made, in the outer session that the server is in, and that a node joins only a Tunnel that was made for its own static key, whatever ids it knows. `noise-encrypted` gives the grades of the Noise Explorer for IK: both ends authenticate the static key of the other (messages b, c and d with the strongest grades, message a open to the key compromise of its receiver), and the first records of both directions have strong forward secrecy.
+Every answer below is the one that ProVerif gives in the job of the variant, and `expected.tsv` is checked against it.
+
+**The session over TLS-443, as the code has it.** Against an attacker that is the network (`tls443-none`) every query holds. Against the middlebox that holds the key of the certificate of the server (`tls443-cert`) every query holds too: it presents the pinned certificate and terminates the TLS session of the client, and the handshake that it relays to the server is in the prologue of another exporter, so the handshake does not complete, and it reads and rewrites nothing. The version, the Capabilities and the suite cannot be lowered. With the key of the certificate and the Noise key of the client (`tls443-cert-client`) the password, the data, the answer of the server and the Capabilities are still safe, and the attacker is the client: `auth-server`, `suite` and `replay-server` fail, since the first message of Noise_IK is open to the compromise of the key of its initiator. With the Noise keys of the server and of the client (`tls443-noise-client`) the password and the data are safe, because the pin keeps the holder of the keys from answering the client in a TLS session of its own. With both keys of the server (`tls443-both`) the attacker is the server and every secrecy query fails: each key guards the other. With every key leaked after the sessions (`tls443-fs`) the password and the data are still secret: forward secrecy. The control stream of a C node (`control-node-*`) gives the same.
+
+**The tunnel.** A connection that joins the Tunnel of alice is one that alice made, in the outer session that the server is in, also against the middlebox with the key of the certificate (`tunnel-none`, `tunnel-cert`), and a node joins only a Tunnel that was made for its own static key, whatever ids it knows.
+
+**Noise_IK alone** (`noise-encrypted`) gives the grades of the Noise Explorer for the four messages: message a has the authentication of its sender only against a receiver whose key is not compromised (`a-auth1` and `a-auth3` hold, `a-auth2` and `a-auth4` do not), and no forward secrecy (`a-conf4` and `a-conf5` fail); message b holds every authentication grade and every confidentiality grade up to `b-conf4`; messages c and d, the first records of the two directions, hold every grade, with strong forward secrecy (`c-conf5`, `d-conf5`): that is why the Login is in the first control record and the handshake payloads are empty.
 
 The negative controls each show their attack, and CI fails when one does not:
 
-- **NC1, `tls443-nobinding`.** Without the binding, the key of the certificate of the server alone is enough for a middlebox: it terminates the TLS session of the client with the pinned certificate, opens one of its own to the server, and the two Noise handshakes cross it unchanged. `sec-pw-unless-noise`, `sec-data-unless-both`, `auth-server`, `auth-client` and `negotiation` hold in `tls443` and fail here.
-- **NC2, `tls443-nopin`.** Without the pin, the Noise key of the server alone is enough: its holder answers the client in a TLS session of its own, and the binding, which is of that session, matches. `sec-pw-unless-cert` and `auth-client-both` hold in `tls443` and fail here.
-- **NC3, `tls443-neither-honest`.** With neither, and no key leaked, the middlebox reads and rewrites every record: nothing is left for it to need.
-- **NC4, `tunnel-nokey`.** If the server joined a connection to the Tunnel of the id that it names without comparing the static key of the connection with the Tunnel's, `charlie` would join the Tunnel of alice with her id, which the attacker is given. `join-identity` holds in `tunnel` and fails here.
-
-With either protection alone a middlebox needs a key; the two together need both, so each guards the other's key.
+- **NC1, `nobinding-cert`.** Without the binding, the key of the certificate of the server alone is enough for a middlebox: it terminates the TLS session of the client with the pinned certificate, opens one of its own to the server, and the two Noise handshakes cross it unchanged. Every query but `suite` that holds in `tls443-cert` fails here.
+- **NC2, `nopin-noise`.** Without the pin, the Noise key of the server alone is enough: its holder answers the client in a TLS session of its own, and the binding, which is of that session, matches. Every query but the two that say the handshake can complete fails.
+- **NC3, `neither-none`.** With neither, and no key leaked, the middlebox reads and rewrites every record: nothing is left for it to need. Every query but `suite` fails.
+- **NC4, `tunnel-nokey-none`.** If the server joined a connection to the Tunnel of the id that it names without comparing the static key of the connection with the Tunnel's, `charlie` would join the Tunnel of alice with her id, which the attacker is given. `join-identity` holds in `tunnel-none` and fails here.
 
 ## Findings
 
-Each of these is an attack that the prover finds and a negative or positive result of `expected.tsv` that CI checks, so a fix of the code changes `expected.tsv` in the same change.
+Each of these is an attack that the prover finds, and a result of `expected.tsv` that CI checks, so a fix of the code changes `expected.tsv` in the same change. The trace of each is in the artifact of its job (`formal-<variant>.attacks.txt`) and in the log of the job.
 
 ### F1: on QUIC the key of the certificate alone gives a middlebox the session
 
-`quic`: `sec-pw-unless-noise`, `sec-pw-unless-both`, `sec-data-unless-both`, `auth-server`, `auth-client`, `auth-client-both` and `negotiation` fail, where `tls443` proves them. The tls-server-end-point is the same for every connection to one certificate (D1), so an attacker that holds the key of the certificate of the server, and not its Noise key, terminates the TLS session of the client, relays the Noise handshake to the server over a TLS session of its own (the binding is equal on both), and then reads and rewrites every record: the password, the data, the Hello. The pin keeps it out without that key (`sec-pw-unless-cert` holds). ADR-0023 asks for key separation so that a compromise of the certificate does not give the node identity; on QUIC it does. The code states the cause: msquic exposes no exporter. The join of a further connection is open to the same middlebox (`tunnel-quic`: `join-auth` fails, where `tunnel` proves it); the static key still decides which Tunnel a node joins (`join-identity` holds).
+`quic-cert`: `sec-pw`, `sec-data`, `auth-server`, `auth-client`, `data-auth`, `negotiation`, `replay-server` and `replay-client` fail, where `tls443-cert` proves them. The tls-server-end-point is the same for every connection to one certificate (D1), so an attacker that holds the key of the certificate of the server, and not its Noise key, terminates the TLS session of the client with the pinned certificate, relays the Noise handshake to the server over a TLS session of its own (the binding is equal on both), and then reads and rewrites every record: the password, the data, the Hello. The attacker uses the Noise key of nobody; it needs the key of the certificate and a position on the path. The pin keeps it out without that key (`quic-noise-client` holds). ADR-0023 binds the handshake to the outer session so that a middlebox that terminates it cannot read the data; on QUIC it can, with the certificate key. The code states the cause: msquic exposes no exporter. The join of a further connection is open to the same middlebox (`tunnel-quic-cert`: `join-auth` and `join-replay` fail, where `tunnel-cert` proves them); the static key still decides which Tunnel a node joins (`join-identity` holds).
 
 ### F2: the data datagrams of the peer layer have no confidentiality and no authentication
 
@@ -112,7 +123,7 @@ The envelope has no forward secrecy (`pe-fs` fails in `peer-leaks`): its key com
 
 ### C1: the Go client of the control stream relies on the key of the controller alone
 
-`control-go`: `sec-pw-unless-cert` and `auth-client-both` fail: the client that sets `InsecureSkipVerify` (`controller/internal/control`, `Dial`) has the pinned static key of the controller and the exporter, and nothing else, so the key of the controller alone is enough for an attacker. This is `tls443-nopin` with the control labels. The C node pins the certificate (`control-node` proves all).
+`control-go-noise`: `sec-pw`, `sec-data`, `auth-server`, `negotiation` and `suite` fail: the client that sets `InsecureSkipVerify` (`controller/internal/control`, `Dial`) has the pinned static key of the controller and the exporter, and nothing else, so the key of the controller alone is enough for an attacker. This is `nopin-noise` with the control labels. The C node pins the certificate (`control-node-noise-client` holds).
 
 ## Differences from ADR-0022 and ADR-0023
 
@@ -144,7 +155,7 @@ ADR-0022 puts the session on Schannel TLS 1.3. `TransportTlsDefaultConfig` sets 
 
 ### D7: Noise_IKhfs exists, and no caller selects it
 
-ADR-0022 has the post-quantum hybrid "used where the OS provides it in both TLS and Noise". `NOISE_SUITE_IKHFS` is implemented (`NoiseHandshakeInit` and the tokens e1 and ekem1), and the TLS side puts X25519MLKEM768 first (`TransportTlsSetGroups`), but every caller of the session module (`NodeOverlaySessionConfig`, `ControlRun`, the transports of the tests) sets `NOISE_SUITE_IK`. The responder runs the suite of the first record if it can run it (`NoiseSuiteAvailable`), with no policy of its own, and the suite is in the protocol name that `InitializeSymmetric` hashes into `h`, so an attacker that changes the byte makes the handshake fail (`suite` holds). The model has IKhfs up to its protocol name, not its KEM tokens.
+ADR-0022 has the post-quantum hybrid "used where the OS provides it in both TLS and Noise". `NOISE_SUITE_IKHFS` is implemented (`NoiseHandshakeInit` and the tokens e1 and ekem1), and the TLS side puts X25519MLKEM768 first (`TransportTlsSetGroups`), but every caller of the session module (`NodeOverlaySessionConfig`, `ControlRun`, the transports of the tests) sets `NOISE_SUITE_IK`. The responder runs the suite of the first record if it can run it (`NoiseSuiteAvailable`), with no policy of its own, and the suite is in the protocol name that `InitializeSymmetric` hashes into `h`, so an attacker that changes the byte makes the handshake fail (`suite` holds). The model has IKhfs up to its protocol name, not its KEM tokens; the client of the session models offers it (the client of the control models offers IK, as `ControlRun` does), so that a change of the byte to IK is the downgrade that `suite` asks about.
 
 ## What the model leaves out
 
@@ -153,7 +164,8 @@ ADR-0022 has the post-quantum hybrid "used where the OS provides it in both TLS 
 - Time: the timers, the dead-peer timeout, the expiry of a binding, which the model has only as the receiver that has lost its sequence.
 - Of the multi-connection tunnel, the first connection (its Login and the id that its handshake gives are the session model, and the id is the attacker's here), the routing of the flows over the connections (`NoiseTunnelRoute`), the loss of a connection and its return, the index that a connection takes and the number of connections that a tunnel holds. Several connections of a tunnel are dialled only in vpntest today.
 - Denial of service, traffic analysis, the decoy of the Trojan posture and the mimicry sidecar.
-- Cross-protocol use of the node static key in the session, the control stream and the envelopes: the three prologues differ in their labels and the envelopes in their pattern, but the models do not run them together.
+- Cross-protocol use of the node static key in the session, the control stream and the envelopes: the three prologues differ in their labels and the envelopes in their pattern, but the models do not run them together. A node that is both a client and a server with one static key is not modelled either: the Diffie-Hellman of the models is between an initiator and a responder.
+- Several compromises at once beyond the scenarios: the models answer for one compromise, or two where the second is the key of the client, and for both keys of the server.
 
 ## Running it
 
@@ -161,7 +173,9 @@ ProVerif 2.05 builds from its source archive (`./build -nointeract` with OCaml).
 
 ```
 python .github/scripts/formal.py check
-python .github/scripts/formal.py run --proverif /path/to/proverif --out build/formal tls443 quic
+python .github/scripts/formal.py run --proverif /path/to/proverif --out build/formal tls443-none tls443-cert
 ```
 
-`run` writes each variant as one `.pv` file and its log to the directory of `--out`; the file runs on its own with `proverif -in pitype build/formal/tls443.pv`. The result of a query is `is true`, `is false` (an attack, with its trace) or `cannot be proved`. ProVerif keeps its state for every query of one run, and a variant has many queries, so `variants.tsv` cuts the heavier variants into slices, each a run of ProVerif with consecutive queries of its own and a job of the workflow (`python .github/scripts/formal.py run --slice 2/4 tls443` runs the second of four).
+`run` writes each variant as one `.pv` file and its log to the directory of `--out`; the file runs on its own with `proverif -in pitype build/formal/tls443-none.pv`. The result of a query is `is true`, `is false` (an attack, with its trace) or `cannot be proved`. ProVerif keeps its state for every query of one run, so `variants.tsv` can cut a variant into slices, each a run of ProVerif with consecutive queries of its own and a job of the workflow (`python .github/scripts/formal.py run --slice 2/4 noise-encrypted` runs the second of four).
+
+To add a model, write its process in a file of `session/`, `tunnel/` or `noise/`, give it a line in `variants.tsv` and a line for each of its queries in `expected.tsv`, and a row for each name that it declares in the table. A variant whose name starts with `try-` is an experiment: it needs no line in `expected.tsv`, the jobs of the workflow leave it out, and `formal.py run try-name` reports what ProVerif answers for each query without judging it, with the last lines of ProVerif when it runs out of time. Run `formal.py smoke` and an experiment first when a model is new: a process that creates a name after an input, or an equation, is what makes ProVerif run for hours.
