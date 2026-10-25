@@ -434,7 +434,9 @@ func (in Intent) countDevices(out []PoolUse, index map[string]int) {
 // prefixes of every Network of the VRF as the allowed IPs (a split tunnel: what the Device reaches of
 // them is up to the policy of the VRF) and a keepalive of DeviceKeepalive seconds unless the battery
 // saver is on. The controller never holds the private key of a Device, so the configuration says
-// where it goes. A DNS line comes with overlay DNS (SDN-11, #187), which no VRF serves yet.
+// where it goes. The configuration has no DNS line yet: a stock client sends every name to the
+// server of its DNS line, and the stub resolver of overlay DNS (SDN-11, #187) answers only the
+// names of the zone of its VRF and refuses every other one.
 func (in Intent) DeviceConfig(name string, gatewayKey []byte) (string, error) {
 	d, ok := in.Devices[name]
 	if !ok {
