@@ -455,7 +455,7 @@ Restart the Controller. The Node dials again by itself, after a delay that start
 Restart-Service ranz-controller
 ```
 
-A few seconds after the Controller is back, `ranz get nodes` shows `pc-a` connected again, and the node log says `the control stream ended after it was open` with the attempts after it.
+A few seconds after the Controller is back, `ranz get nodes` shows `pc-a` connected again, and the node log says `the control stream ended after it was open` with the attempts after it. A network that drops without closing the connection ends the stream the same way: the Node probes a quiet stream with TCP keepalive after 10 seconds, and 3 probes 2 seconds apart that get no answer end it, so it dials again about 16 seconds after the last segment.
 
 ## Part 4. Check
 

@@ -102,6 +102,7 @@
 #define NODE_ADMIN_IDLE             10000             // ms that the admin pipe waits for the command of a connected Administrator
 #define NODE_CONTROLLER_MAX_SETTING 1024              // Bytes of the Controller setting at most
 #define NODE_CONTROLLER_FINGERPRINT 65                // The TLS fingerprint of a Controller: 64 hex digits and the NUL
+#define NODE_CONTROLLER_KEEPALIVE   10                // s without a segment on the control stream before TCP keepalive probes its path
 
 // The Wintun adapters of a node (NodeWintun.c; CORE-S3-1, #71)
 #define NODE_WINTUN_DLL           L"wintun.dll" // Next to the executable: the pinned release of THIRD_PARTY.TXT
