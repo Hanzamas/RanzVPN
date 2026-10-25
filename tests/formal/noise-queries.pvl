@@ -1,0 +1,83 @@
+(* noise-queries.pvl
+   The queries of the Noise model (AUD-5, #389), in the form of the grades of the Noise Explorer, for the four
+   messages of the encrypted session. The authentication grades are the correspondences of an accepted message
+   with a sent one, and the confidentiality grades the conditions that a secret payload needs to leak:
+     auth 1  the message was sent by alice to someone, unless a static key of alice or bob is leaked in phase 0
+     auth 2  the same, unless alice's key is leaked (resists the compromise of the receiver's key)
+     auth 3  the message was sent by alice to bob (not redirected), unless either key is leaked in phase 0
+     auth 4  the same, unless the sender's key is leaked
+     conf 2  the payload is secret unless the receiver's key is leaked, in any phase
+     conf 4  unless the receiver's key is leaked in phase 0, or both keys are leaked later
+     conf 5  unless the receiver's key is leaked in phase 0: strong forward secrecy
+   cc is any principal, so auth 1 and 2 let the message have been sent to another node.
+*)
+
+(* The handshake and the first records can complete *)
+(* @query reach-c *)
+query m: bitstring; event(RecvMsg(bob, alice, st_c, m)).
+(* @query reach-d *)
+query m: bitstring; event(RecvMsg(alice, bob, st_d, m)).
+
+(* Message a: alice to bob, -> e, es, s, ss *)
+(* @query a-auth1 *)
+query cc: principal, m: bitstring; event(RecvMsg(bob, alice, st_a, m)) ==> event(SendMsg(alice, cc, st_a, m)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+(* @query a-auth2 *)
+query cc: principal, m: bitstring; event(RecvMsg(bob, alice, st_a, m)) ==> event(SendMsg(alice, cc, st_a, m)) || event(LeakS(phase0, alice)).
+(* @query a-auth3 *)
+query m: bitstring; event(RecvMsg(bob, alice, st_a, m)) ==> event(SendMsg(alice, bob, st_a, m)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+(* @query a-auth4 *)
+query m: bitstring; event(RecvMsg(bob, alice, st_a, m)) ==> event(SendMsg(alice, bob, st_a, m)) || event(LeakS(phase0, alice)).
+(* @query a-conf2 *)
+query sid: sessionid, px: phasen; attacker(msg_a(alice, bob, sid)) ==> event(LeakS(px, bob)).
+(* @query a-conf4 *)
+query sid: sessionid, px: phasen, pz: phasen; attacker(msg_a(alice, bob, sid)) ==> event(LeakS(phase0, bob)) || (event(LeakS(px, bob)) && event(LeakS(pz, alice))).
+(* @query a-conf5 *)
+query sid: sessionid; attacker(msg_a(alice, bob, sid)) ==> event(LeakS(phase0, bob)).
+
+(* Message b: bob to alice, <- e, ee, se *)
+(* @query b-auth1 *)
+query cc: principal, m: bitstring; event(RecvMsg(alice, bob, st_b, m)) ==> event(SendMsg(bob, cc, st_b, m)) || event(LeakS(phase0, bob)) || event(LeakS(phase0, alice)).
+(* @query b-auth2 *)
+query cc: principal, m: bitstring; event(RecvMsg(alice, bob, st_b, m)) ==> event(SendMsg(bob, cc, st_b, m)) || event(LeakS(phase0, bob)).
+(* @query b-auth3 *)
+query m: bitstring; event(RecvMsg(alice, bob, st_b, m)) ==> event(SendMsg(bob, alice, st_b, m)) || event(LeakS(phase0, bob)) || event(LeakS(phase0, alice)).
+(* @query b-auth4 *)
+query m: bitstring; event(RecvMsg(alice, bob, st_b, m)) ==> event(SendMsg(bob, alice, st_b, m)) || event(LeakS(phase0, bob)).
+(* @query b-conf2 *)
+query sid: sessionid, px: phasen; attacker(msg_b(bob, alice, sid)) ==> event(LeakS(px, alice)).
+(* @query b-conf4 *)
+query sid: sessionid, px: phasen, pz: phasen; attacker(msg_b(bob, alice, sid)) ==> event(LeakS(phase0, alice)) || (event(LeakS(px, alice)) && event(LeakS(pz, bob))).
+(* @query b-conf5 *)
+query sid: sessionid; attacker(msg_b(bob, alice, sid)) ==> event(LeakS(phase0, alice)).
+
+(* Message c: the first record of alice, which carries her Login in the code *)
+(* @query c-auth1 *)
+query cc: principal, m: bitstring; event(RecvMsg(bob, alice, st_c, m)) ==> event(SendMsg(alice, cc, st_c, m)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+(* @query c-auth2 *)
+query cc: principal, m: bitstring; event(RecvMsg(bob, alice, st_c, m)) ==> event(SendMsg(alice, cc, st_c, m)) || event(LeakS(phase0, alice)).
+(* @query c-auth3 *)
+query m: bitstring; event(RecvMsg(bob, alice, st_c, m)) ==> event(SendMsg(alice, bob, st_c, m)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+(* @query c-auth4 *)
+query m: bitstring; event(RecvMsg(bob, alice, st_c, m)) ==> event(SendMsg(alice, bob, st_c, m)) || event(LeakS(phase0, alice)).
+(* @query c-conf2 *)
+query sid: sessionid, px: phasen; attacker(msg_c(alice, bob, sid)) ==> event(LeakS(px, bob)).
+(* @query c-conf4 *)
+query sid: sessionid, px: phasen, pz: phasen; attacker(msg_c(alice, bob, sid)) ==> event(LeakS(phase0, bob)) || (event(LeakS(px, bob)) && event(LeakS(pz, alice))).
+(* @query c-conf5 *)
+query sid: sessionid; attacker(msg_c(alice, bob, sid)) ==> event(LeakS(phase0, bob)).
+
+(* Message d: the first record of bob *)
+(* @query d-auth1 *)
+query cc: principal, m: bitstring; event(RecvMsg(alice, bob, st_d, m)) ==> event(SendMsg(bob, cc, st_d, m)) || event(LeakS(phase0, bob)) || event(LeakS(phase0, alice)).
+(* @query d-auth2 *)
+query cc: principal, m: bitstring; event(RecvMsg(alice, bob, st_d, m)) ==> event(SendMsg(bob, cc, st_d, m)) || event(LeakS(phase0, bob)).
+(* @query d-auth3 *)
+query m: bitstring; event(RecvMsg(alice, bob, st_d, m)) ==> event(SendMsg(bob, alice, st_d, m)) || event(LeakS(phase0, bob)) || event(LeakS(phase0, alice)).
+(* @query d-auth4 *)
+query m: bitstring; event(RecvMsg(alice, bob, st_d, m)) ==> event(SendMsg(bob, alice, st_d, m)) || event(LeakS(phase0, bob)).
+(* @query d-conf2 *)
+query sid: sessionid, px: phasen; attacker(msg_d(bob, alice, sid)) ==> event(LeakS(px, alice)).
+(* @query d-conf4 *)
+query sid: sessionid, px: phasen, pz: phasen; attacker(msg_d(bob, alice, sid)) ==> event(LeakS(phase0, alice)) || (event(LeakS(px, alice)) && event(LeakS(pz, bob))).
+(* @query d-conf5 *)
+query sid: sessionid; attacker(msg_d(bob, alice, sid)) ==> event(LeakS(phase0, alice)).

@@ -1,0 +1,269 @@
+# The table from the models to the code (AUD-5, #389): <model> <element> <kind> <file> <function> <field> <difference> <note>,
+# separated by tabs, one row for each name that a model file declares and for each message and field of the models.
+#
+#   model       the file of tests/formal that declares the element
+#   element     a name that the file declares (a process, a function, a destructor, an event, a table, a constant, a
+#               free name), or Process:name for a message or a field: name is a variable of the definition of Process
+#   kind        process, function, constant, table, event, message (a value that goes on the wire), field (a part of one),
+#               check (a test that a side makes), model (a name that stands for no code: the attacker, a phase)
+#   file        the file of the code, from the root of the repository
+#   function    the function of that file that builds the element, reads it or checks it (a C function with its body,
+#               a Go func); several, separated by commas, when the element is in more than one place
+#   field       the field of the code that holds the element: a member of a struct, a constant or a parameter that the
+#               file uses; several, separated by commas
+#   difference  D1 to D7 of docs/formal-model.md when the code differs from ADR-0022 or ADR-0023 here, else -
+#   note        what the element is, and how the code differs from the model when it does
+#
+# .github/scripts/formal.py check reads this file on every pull request: every file exists, every function is
+# defined in its file, every field is in the body of one of the functions of its row, every name of the models
+# has a row, and every difference that the file cites is described in docs/formal-model.md and the other way
+# round. A second reading of the table against the code is the review that AUD-5 asks for.
+
+# prims.pvl: the primitives
+prims.pvl	alice	constant	src/Core/NoiseSession.c	NoiseSessionConnect	Initiator	-	the dialling side: the initiator of Noise_IK, a client node or a node of a peer that dials
+prims.pvl	bob	constant	src/Core/NoiseSession.c	NoiseSessionAccept	Handshake	-	the listening side: the responder, a server node, the node of a peer that listens, or the controller
+prims.pvl	charlie	model	-	-	-	-	a node whose keys the attacker holds; the attacker is the network, so no code stands for him
+prims.pvl	phase0	model	-	-	-	-	the phase of the sessions and of a compromise before or during them; ProVerif phases, no code
+prims.pvl	phase1	model	-	-	-	-	the phase after the sessions, for forward secrecy; no code
+prims.pvl	empty	constant	src/Core/NoiseSession.c	NoiseSessionAccept	payload_size	-	the empty payload of both handshake messages (NoiseHandshakeRead and NoiseHandshakeWrite take none)
+prims.pvl	pk	function	src/Core/CryptoX25519.c	CryptoX25519PublicKey	CRYPTO_X25519_SIZE	-	the public key of a scalar: X25519 of the scalar and the base point
+prims.pvl	c	model	-	-	-	-	the network: every message goes through the attacker, so no code stands for it
+prims.pvl	dhi	function	src/Core/Noise.c	NoiseMixDh	EphemeralKey	-	X25519 of a scalar of the initiator side (an ephemeral key) and the public key of the responder side (CryptoX25519); a low-order public key gives no secret and fails the handshake
+prims.pvl	dhi	function	src/Core/Noise.c	NoiseDhStatic	Identity	-	the same with the static key, which stays in the key storage provider (CryptoIdentityDh)
+prims.pvl	dhr	function	src/Core/Noise.c	NoiseMixDh	remote	-	the responder's computation of the same secret from its scalar and the public key that it received: the code runs the one function on both sides, and the model rewrites the responder's term to the initiator's
+prims.pvl	hash1	function	src/Core/Noise.c	NoiseHandshakeInit	H	-	InitializeSymmetric: the protocol name, zero padded to 32 bytes when it fits (IK) and hashed when longer (IKhfs); injective either way
+prims.pvl	mixh	function	src/Core/Noise.c	NoiseMixHash	H	-	MixHash: h = SHA-256(h || data)
+prims.pvl	hkck	function	src/Core/Noise.c	NoiseMixKey	Ck	-	MixKey: the first output of HKDF(ck, ikm) is the next chaining key
+prims.pvl	hkk	function	src/Core/Noise.c	NoiseMixKey	Cipher	-	MixKey: the second output is the cipher key, with the nonce 0
+prims.pvl	hksplit1	function	src/Core/Noise.c	NoiseHandshakeSplit	Initiator	-	Split: the first key, which the initiator sends with
+prims.pvl	hksplit2	function	src/Core/Noise.c	NoiseHandshakeSplit	Ck	-	Split: the second key, which the responder sends with
+prims.pvl	hmac	function	src/Core/NoiseSession.c	NoiseSessionDerive	HandshakeHash	-	the challenge of a certificate Login and the id of a Tunnel: HMAC-SHA256 of a label under the handshake hash
+prims.pvl	aead	function	src/Core/Noise.c	NoiseCipherEncrypt	Nonce	-	AES-GCM with the nonce n; the key of a handshake encrypts one message, at 0
+prims.pvl	aead	function	src/Core/Noise.c	NoiseEncryptAndHash	H	-	EncryptAndHash: the associated data is the handshake hash
+prims.pvl	unaead	function	src/Core/Noise.c	NoiseCipherDecrypt	Nonce	-	a ciphertext opens only under its key and its associated data
+prims.pvl	skey	function	src/Core/CryptoX25519.c	CryptoIdentityDh	Key	-	the node identity key, a handle of the software key storage provider (ADR-0022 amendment of 2026-10-21)
+prims.pvl	spub	function	src/Core/CryptoX25519.c	CryptoIdentityPublicKey	pub	-	the public half of the node identity key
+prims.pvl	LeakS	model	-	-	-	-	the compromise of a static key, a test of the attacker; no code
+
+# session-lib.pvl: the constants, the tags of the records and the parameters of a variant
+session-lib.pvl	rec_hs	constant	src/Core/NoiseSession.c	NoiseSessionConnect	NOISE_RECORD_HANDSHAKE	-	the type byte of a handshake record
+session-lib.pvl	rec_app1	constant	src/Core/NoiseSession.c	NoiseSessionReceive	NOISE_RECORD_CONTROL	-	the first control record: the Login (NoiseLoginEncode) or, on the control stream, the Hello
+session-lib.pvl	rec_app2	constant	src/Core/NoiseSession.c	NoiseSessionReceive	NOISE_RECORD_DATA	-	a record of the data stream, which the server sends once it accepted the Login
+session-lib.pvl	lab_c	model	-	-	-	-	the TLS key of the records that the client sends, from the key schedule of Schannel or msquic
+session-lib.pvl	lab_s	model	-	-	-	-	the TLS key of the records that the server sends
+session-lib.pvl	lab_exp_session	constant	src/Core/TransportTls.c	TlsExporter	NOISE_EXPORTER_LABEL	-	the label of the exporter of the session binding
+session-lib.pvl	lab_exp_control	constant	controller/internal/control/stream.go	handshake	exporterLabel	D3	the label of the exporter of the control stream, in the controller and the Go client; the C node asks its transport for it (CONTROL_EXPORTER_LABEL) and no production transport gives it
+session-lib.pvl	lab_exp_control	constant	src/Core/Control.c	ControlRun	CONTROL_EXPORTER_SIZE	D3	the C client takes whatever exporter its transport gives, and checks only its size and its type
+session-lib.pvl	plabel_session	constant	src/Core/NoiseSession.c	NoisePrologue	NOISE_PROLOGUE_LABEL	-	the label of the prologue of a session handshake
+session-lib.pvl	plabel_control	constant	src/Core/Control.c	ControlRun	CONTROL_PROLOGUE_LABEL	-	the label of the prologue of a control handshake, with the exporter and no type byte
+session-lib.pvl	plabel_control	constant	controller/internal/control/stream.go	handshake	prologue	-	the same label in the controller and the Go client
+session-lib.pvl	suite_ik	constant	src/Core/Noise.c	NoiseSuiteName	NOISE_SUITE_IK	-	Noise_IK_25519_AESGCM_SHA256, the suite of every caller
+session-lib.pvl	suite_hfs	constant	src/Core/Noise.c	NoiseSuiteName	NOISE_SUITE_IKHFS	D7	Noise_IKhfs_25519+MLKEM768_AESGCM_SHA256: modelled up to its protocol name; its KEM tokens are not modelled, and no caller selects it
+session-lib.pvl	bt_export	constant	src/Core/NoiseSession.c	NoisePrologue	NOISE_BINDING_EXPORTER	-	the binding type of the TLS exporter, the TLS-443 path and the control stream
+session-lib.pvl	bt_endpoint	constant	src/Core/NoiseSession.c	NoisePrologue	NOISE_BINDING_SERVER_END_POINT	D1	the binding type of tls-server-end-point, the QUIC path
+session-lib.pvl	bt_none	constant	src/Core/NoiseSession.c	NoisePrologue	NOISE_BINDING_NONE	-	no binding: in the code that makes the session an encrypted one (NOISE_SESSION_ENCRYPT), and the model of the negative controls is a bound session with none, which no code runs
+session-lib.pvl	nobind	constant	src/Core/NoiseSession.c	NoisePrologue	binding_size	-	the empty binding of a session with none
+session-lib.pvl	pin_on	constant	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the client compares the thumbprint of the certificate of the server with the one that it was configured with
+session-lib.pvl	pin_on	constant	src/Core/TransportQuic.c	QuicConnCallback	BindingBad	D2	the same on QUIC: a certificate with another thumbprint is refused
+session-lib.pvl	pin_off	model	-	-	-	D3	a negative control: no transport of the core leaves the pin out; the Go client of the control stream checks no certificate (InsecureSkipVerify)
+session-lib.pvl	v_hi	constant	src/Core/NoiseSession.c	NoiseLoginParse	NOISE_LOGIN_VERSION	-	the version of the Login, which the parser accepts only if it is exactly this one
+session-lib.pvl	v_hi	constant	src/Core/Control.c	ControlRun	ranz_control_v1_SchemaVersion_SCHEMA_VERSION_2	-	the schema version of the Hello of a node, which the controller serves for N and N-1
+session-lib.pvl	suitename	function	src/Core/Noise.c	NoiseSuiteName	noise_name_ik	-	the protocol name of a suite, which InitializeSymmetric hashes into h: the suite is in the hash of the handshake
+session-lib.pvl	spk	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the public key of the certificate of the server, which the TLS signature is checked with (Schannel)
+session-lib.pvl	sign	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the signature of the transcript by the server (CertificateVerify)
+session-lib.pvl	checksign	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the client checks the signature but not the chain (TLS_ISC_FLAGS holds ISC_REQ_MANUAL_CRED_VALIDATION): the application compares the certificate with the pin
+session-lib.pvl	mkcert	function	src/Core/TransportTls.c	TlsCheckPin	SECPKG_ATTR_REMOTE_CERT_CONTEXT	-	the certificate that the server presents
+session-lib.pvl	certkey	function	src/Core/TransportTls.c	TlsCheckPin	SECPKG_ATTR_REMOTE_CERT_CONTEXT	-	the public key that the certificate carries
+session-lib.pvl	thumb	function	src/Core/CryptoCert.c	CryptoCertThumbprint	CERT_SHA1_HASH_PROP_ID	D2	the thumbprint of a certificate: a SHA-1, a hash without collisions in the model
+session-lib.pvl	epbind	function	src/Core/CryptoCert.c	CryptoCertEndPoint	crypto_end_point_hashes	D1	the tls-server-end-point of RFC 5929, the hash of the certificate by the hash of its signature
+session-lib.pvl	tpk	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ClientHello and of the ServerHello: the public key of an ephemeral scalar of the outer key exchange (X25519 or its hybrid in Schannel), with names of its own in the model so that no key share of TLS is taken for a Noise key
+session-lib.pvl	tdhi	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the Diffie-Hellman secret of the outer session as the client computes it, which Schannel runs inside the handshake
+session-lib.pvl	tdhr	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the same secret as the server computes it
+session-lib.pvl	tlsms	function	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the TLS 1.3 key schedule, from the Diffie-Hellman secret and the transcript, which Schannel runs
+session-lib.pvl	tlsms	function	src/Core/TransportTls.c	TransportTlsDefaultConfig	Versions	D6	the code also negotiates TLS 1.2 by default, whose exporter and downgrade protection the model does not have
+session-lib.pvl	tlsk	function	src/Core/TransportTls.c	TlsWriteRecord	EncryptMessage	-	the traffic key of one direction
+session-lib.pvl	tlsk	function	src/Core/TransportTls.c	TlsStreamRekey	stream	D5	the keys of the records never change in the model, and the outer rekey of the code is a call that does nothing
+session-lib.pvl	tlsexp	function	src/Core/TransportTls.c	TlsExporter	SECPKG_ATTR_KEYING_MATERIAL	-	the exporter of RFC 8446 section 7.5: the label, no context, 32 bytes
+session-lib.pvl	senc	function	src/Core/TransportTls.c	TlsWriteRecord	EncryptMessage	-	a record of the TLS session, which carries the Noise records and everything after them
+session-lib.pvl	sdec	function	src/Core/TransportTls.c	TlsDecrypt	DecryptMessage	-	a record opens only under the key of its session
+session-lib.pvl	sigkey	function	src/Core/TransportTls.c	TransportTlsNew	Cert	-	the private key of the certificate of a node, in a CNG key storage provider and not the node identity key (key separation)
+session-lib.pvl	pw	function	src/Core/NoiseSession.c	NoiseLoginEncode	Password	-	the secret of the Login: a password that Sam checks, or on the control stream what the node sends after its Hello
+session-lib.pvl	pw	function	src/Cedar/Node.c	NodeLogin	PlainPassword	-	the server checks it against the user (Sam)
+session-lib.pvl	appdata	function	src/Core/NoiseSession.c	NoiseSessionSend	NOISE_RECORD_DATA	-	what the server sends on the data stream, or on the control stream the Update
+session-lib.pvl	capsof	function	src/Core/Control.c	ControlSetCaps	capabilities	-	the Capabilities that the Hello of a node carries; in a session the method of the Login
+session-lib.pvl	certof	function	src/Core/TransportTls.c	TransportTlsNew	Cert	-	the certificate of the server, read from the store by its thumbprint
+session-lib.pvl	pinof	function	src/Core/TransportTls.c	TlsParseThumbprint	CRYPTO_THUMBPRINT_SIZE	D2	the thumbprint that a client is configured with, 40 hex digits, set in its setting and not derived from the node identity key
+session-lib.pvl	pinexp	function	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the thumbprint that the TLS transport compares the certificate of the server with, after the handshake: the one that the client was configured with
+session-lib.pvl	pinexp	function	src/Core/TransportQuic.c	QuicConnCallback	Thumbprint	D2	the same in the callback that msquic calls with the certificate
+session-lib.pvl	binding	function	src/Core/TransportTls.c	TlsStreamBinding	NOISE_BINDING_EXPORTER	-	the binding that the TLS transport gives a stream
+session-lib.pvl	binding	function	src/Core/TransportQuic.c	QuicStreamBinding	NOISE_BINDING_SERVER_END_POINT	D1	the binding that the QUIC transport gives a stream: the server knows its certificate, the client learnt it from the handshake
+session-lib.pvl	binding	function	src/Core/Transport.c	TransportBinding	Binding	-	what the session layer asks of the transport
+session-lib.pvl	LeakCert	event	src/Core/TransportTls.c	TransportTlsNew	Cert	-	the compromise of the key of the certificate of a node, a test of the attacker
+session-lib.pvl	ClientStart	event	src/Core/NoiseSession.c	NoiseSessionConnect	Initiator	-	the initiator wrote the first message
+session-lib.pvl	ClientSuite	event	src/Core/NoiseSession.c	NoiseSessionConnect	Suite	-	the suite byte of the handshake record
+session-lib.pvl	ClientDone	event	src/Core/NoiseSession.c	NoiseSessionFinish	Handshake	-	the initiator read the second message and the session is open
+session-lib.pvl	ClientDone	event	src/Core/NoiseSession.c	NoiseSessionOpen	HandshakeHash	-	the handshake hash that both sides keep
+session-lib.pvl	ClientOffered	event	src/Core/NoiseSession.c	NoiseLoginEncode	NOISE_LOGIN_VERSION	-	the version and the method of the Login
+session-lib.pvl	ClientOffered	event	src/Core/Control.c	ControlRun	schema_version	-	the schema version and the Capabilities of the Hello
+session-lib.pvl	ClientGotData	event	src/Core/NoiseSession.c	NoiseSessionReceive	NOISE_RECEIVE_DATA	-	the initiator received a record of the data stream
+session-lib.pvl	ServerAccept	event	src/Core/NoiseSession.c	NoiseSessionOpen	RemoteStatic	-	the responder read the first message and learnt the key of the initiator
+session-lib.pvl	ServerSuite	event	src/Core/NoiseSession.c	NoiseSessionAccept	record	-	the suite that the responder runs: the one of the record, if it can run it
+session-lib.pvl	ServerReply	event	src/Core/NoiseSession.c	NoiseSessionAccept	reply	-	the responder wrote the second message
+session-lib.pvl	ServerNegotiated	event	src/Core/NoiseSession.c	NoiseLoginParse	Method	-	the method of the Login that the server takes
+session-lib.pvl	ServerNegotiated	event	controller/internal/controller/controller.go	serveConn	RefuseReason_REFUSE_REASON_SCHEMA_VERSION	-	the controller serves the schema version of the Hello, N and N-1, or refuses the stream
+session-lib.pvl	ServerLoginOk	event	src/Cedar/Node.c	NodeLoginPinned	CsPinUserKey	-	Sam accepted the Login and the Noise static key is the one pinned to the user (trust on first use)
+session-lib.pvl	ServerSentData	event	src/Core/NoiseSession.c	NoiseSessionSend	NOISE_RECORD_DATA	-	the server sent a record of the data stream
+session-lib.pvl	Client	process	src/Core/TransportNoise.c	TransportNoiseConnect	Session	-	the client over a stream: NoiseSessionConnect, then NoiseSessionFinish
+session-lib.pvl	Server	process	src/Core/TransportNoise.c	TransportNoiseAccept	Session	-	the server over a stream: NoiseSessionAccept, then the Login (NodeAcceptSession)
+session-lib.pvl	Setup	model	-	-	-	-	what the attacker knows from the start: no code
+session-lib.pvl	Sessions	process	src/Core/TransportNoise.c	TransportNoiseConnect,TransportNoiseAccept	Session	-	the sessions of a node that dials and of the node that listens: the clients, and a server for each suite that it runs
+session-lib.pvl	LeakNoiseServer	model	-	-	-	-	the compromise of the Noise identity key of the server, before or during the sessions: a test of the attacker, no code
+session-lib.pvl	LeakCertServer	model	-	-	-	-	the compromise of the key of the certificate of the server: no code
+session-lib.pvl	LeakNoiseClient	model	-	-	-	-	the compromise of the Noise identity key of the client: no code
+session-lib.pvl	LeakLate	model	-	-	-	-	the compromise of all three keys after the sessions, in phase 1, which is what forward secrecy asks: no code
+
+# session-lib.pvl: the messages and fields of the session
+session-lib.pvl	Client:cr	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the random value of the ClientHello (Schannel)
+session-lib.pvl	Client:gx	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ClientHello
+session-lib.pvl	Client:cert	message	src/Core/TransportTls.c	TlsCheckPin	SECPKG_ATTR_REMOTE_CERT_CONTEXT	-	the certificate in the ServerHello flight
+session-lib.pvl	Client:sg	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the signature of the transcript in the ServerHello flight
+session-lib.pvl	Client:pinexp	check	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the pin, checked once the handshake completed
+session-lib.pvl	Client:bnd	field	src/Core/TransportNoise.c	TransportNoiseStart	BindingType	-	the binding of the stream that goes into the prologue
+session-lib.pvl	Client:prologue	field	src/Core/NoiseSession.c	NoisePrologue	NOISE_PROLOGUE_LABEL,binding_type,binding	-	the prologue: the label, the binding type and the binding
+session-lib.pvl	Client:suite	field	src/Core/NoiseSession.c	NoiseSessionConnect	Suite	-	the second byte of the handshake record
+session-lib.pvl	Client:E	field	src/Core/Noise.c	NoiseWriteMessage1	EphemeralPub	-	e, the first 32 bytes of the first message
+session-lib.pvl	Client:cs	field	src/Core/Noise.c	NoiseWriteMessage1	StaticPub	-	the encrypted static key of the initiator, 48 bytes
+session-lib.pvl	Client:cp	field	src/Core/Noise.c	NoiseHandshakeWrite	payload_size	-	the payload of the first message, empty, 16 bytes with its tag
+session-lib.pvl	Client:E2	field	src/Core/Noise.c	NoiseReadMessage2	RemoteEphemeral	-	e of the responder, the first 32 bytes of the second message
+session-lib.pvl	Client:cp2	field	src/Core/Noise.c	NoiseHandshakeRead	payload_size	-	the payload of the second message, empty, 16 bytes with its tag
+session-lib.pvl	Client:d	message	src/Core/NoiseSession.c	NoiseSessionReceive	NOISE_RECEIVE_DATA	-	a record of the data stream, in clear inside the outer session
+session-lib.pvl	Server:cr	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the random value of the ClientHello as the server received it
+session-lib.pvl	Server:gx	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ClientHello as the server received it
+session-lib.pvl	Server:sr	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the random value of the ServerHello
+session-lib.pvl	Server:gy	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ServerHello
+session-lib.pvl	Server:mycert	message	src/Core/TransportTls.c	TransportTlsNew	Cert	-	the certificate of the server, from the store
+session-lib.pvl	Server:bnd	field	src/Core/TransportNoise.c	TransportNoiseStart	BindingType	-	the binding that the server computes from its own view of the session
+session-lib.pvl	Server:prologue	field	src/Core/NoiseSession.c	NoisePrologue	NOISE_PROLOGUE_LABEL,binding_type,binding	-	the prologue of the responder, which must equal the initiator's
+session-lib.pvl	Server:suite	check	src/Core/NoiseSession.c	NoiseSessionAccept	NoiseSuiteAvailable	D7	the responder runs the suite of the record if it can run it, with no policy of its own
+session-lib.pvl	Server:E	field	src/Core/Noise.c	NoiseReadMessage1	RemoteEphemeral	-	e of the initiator
+session-lib.pvl	Server:cs	field	src/Core/Noise.c	NoiseReadMessage1	RemoteStatic	-	the encrypted static key, which the responder decrypts to learn the initiator
+session-lib.pvl	Server:cp	field	src/Core/Noise.c	NoiseHandshakeRead	payload_size	-	the payload of the first message, which must be empty
+session-lib.pvl	Server:SI	check	src/Cedar/Node.c	NodeLoginPinned	CsPinUserKey	-	the key of the initiator is the one pinned to the user, after the Login of Sam
+session-lib.pvl	Server:E2	field	src/Core/Noise.c	NoiseWriteMessage2	EphemeralPub	-	e of the responder
+session-lib.pvl	Server:cp2	field	src/Core/Noise.c	NoiseHandshakeWrite	payload_size	-	the payload of the second message, empty
+session-lib.pvl	Server:v	field	src/Core/NoiseSession.c	NoiseLoginParse	NOISE_LOGIN_VERSION	-	the version byte of the Login
+session-lib.pvl	Server:caps	field	src/Core/NoiseSession.c	NoiseLoginParse	Method	-	the method of the Login; on the control stream the Capabilities of the Hello
+session-lib.pvl	Server:pw	check	src/Cedar/Node.c	NodeLogin	PlainPassword	-	the password against the user, by Sam
+
+# tunnel-lib.pvl: the join of a further connection to a tunnel
+tunnel-lib.pvl	rec_join	constant	src/Core/NoiseSession.c	NoiseLoginEncode	NOISE_LOGIN_JOIN	-	the join method of the Login: its secret is the id of the Tunnel
+tunnel-lib.pvl	kc_on	constant	src/Core/NoiseSession.c	NoiseTunnelJoin	RemoteStatic	-	the join compares the static key of the connection with the one of the Tunnel
+tunnel-lib.pvl	kc_off	model	-	-	-	-	a negative control: the code compares the keys, and no code joins by the id alone
+tunnel-lib.pvl	joinkey	function	src/Core/NoiseSession.c	NoiseTunnelJoin	RemoteStatic	-	the key that a join compares the static key of the connection with: the one of the Tunnel
+tunnel-lib.pvl	tunnels	table	src/Core/NoiseSession.c	NoiseTunnelInit	RemoteStatic	-	the Tunnels of the server: the id and the static key of the peer node of each (NOISE_TUNNEL)
+tunnel-lib.pvl	tunnels	table	src/Cedar/NodeSession.c	NodeJoinTunnel	SessionList	-	the join finds the Tunnel through the Sessions of the Hub that carry one
+tunnel-lib.pvl	tch	model	-	-	-	-	the id of a new Tunnel, from the first connection to the node that made it: no code
+tunnel-lib.pvl	TunnelOpened	event	src/Cedar/ConnectionTunnel.c	TunnelStart	Routes	-	the Tunnel was made for the first connection of a node, once its Login was accepted
+tunnel-lib.pvl	TunnelOpened	event	src/Core/NoiseSession.c	NoiseTunnelId	noise_tunnel_label	-	its id is the HMAC of a label under the handshake hash of the first connection
+tunnel-lib.pvl	ClientJoin	event	src/Core/NoiseSession.c	NoiseLoginEncode	TunnelId	-	the join Login of a further connection, with the id of the Tunnel (the client is in vpntest only)
+tunnel-lib.pvl	ServerJoined	event	src/Cedar/ConnectionTunnel.c	TunnelJoin	Routes	-	the connection joined the Tunnel of that id, under the lock of the Tunnel
+tunnel-lib.pvl	ServerJoined	event	src/Core/NoiseSession.c	NoiseTunnelJoin	Connections	-	the connection took an index of the Tunnel
+tunnel-lib.pvl	TunnelOpen	process	src/Cedar/NodeSession.c	NodeStartTunnel,NodeTunnelThread	NodeLoginPinned,TunnelStart	-	the first connection: NodeLoginPinned accepted its Login and the Tunnel takes its Noise session (NoiseTunnelInit)
+tunnel-lib.pvl	JoinClient	process	src/Core/TransportNoise.c	TransportNoiseConnect	Session	-	the client of a further connection: its own outer session and handshake, then the join Login; only vpntest dials it
+tunnel-lib.pvl	JoinServer	process	src/Cedar/NodeSession.c	NodeJoinTunnel	TunnelJoin	-	the server of a further connection: NodeAcceptSession reads the join Login and NodeJoinTunnel offers the connection to every Tunnel of the Hub
+tunnel-lib.pvl	JoinClient:tid	message	src/Core/NoiseSession.c	NoiseLoginEncode	TunnelId	-	the id of the Tunnel in the join Login, in clear inside the outer session
+tunnel-lib.pvl	JoinClient:cr	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the random value of the ClientHello of this connection
+tunnel-lib.pvl	JoinClient:gx	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ClientHello of this connection
+tunnel-lib.pvl	JoinClient:cert	message	src/Core/TransportTls.c	TlsCheckPin	SECPKG_ATTR_REMOTE_CERT_CONTEXT	-	the certificate in the ServerHello flight
+tunnel-lib.pvl	JoinClient:sg	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the signature of the transcript in the ServerHello flight
+tunnel-lib.pvl	JoinClient:pinexp	check	src/Core/TransportTls.c	TlsCheckPin	Thumbprint	D2	the pin, checked once the handshake completed
+tunnel-lib.pvl	JoinClient:bnd	field	src/Core/TransportNoise.c	TransportNoiseStart	BindingType	-	the binding of the stream of this connection, which goes into its prologue
+tunnel-lib.pvl	JoinClient:prologue	field	src/Core/NoiseSession.c	NoisePrologue	NOISE_PROLOGUE_LABEL,binding_type,binding	-	the prologue: the label, the binding type and the binding
+tunnel-lib.pvl	JoinClient:suite	field	src/Core/NoiseSession.c	NoiseSessionConnect	Suite	-	the second byte of the handshake record
+tunnel-lib.pvl	JoinClient:E	field	src/Core/Noise.c	NoiseWriteMessage1	EphemeralPub	-	e, the first 32 bytes of the first message
+tunnel-lib.pvl	JoinClient:cs	field	src/Core/Noise.c	NoiseWriteMessage1	StaticPub	-	the encrypted static key of the initiator, which is the key of the Tunnel
+tunnel-lib.pvl	JoinClient:cp	field	src/Core/Noise.c	NoiseHandshakeWrite	payload_size	-	the payload of the first message, empty
+tunnel-lib.pvl	JoinClient:E2	field	src/Core/Noise.c	NoiseReadMessage2	RemoteEphemeral	-	e of the responder, the first 32 bytes of the second message
+tunnel-lib.pvl	JoinClient:cp2	field	src/Core/Noise.c	NoiseHandshakeRead	payload_size	-	the payload of the second message, empty
+tunnel-lib.pvl	JoinServer:tid	message	src/Core/NoiseSession.c	NoiseLoginParse	TunnelId	-	the id of the Tunnel that the join Login names
+tunnel-lib.pvl	JoinServer:cr	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the random value of the ClientHello as the server received it
+tunnel-lib.pvl	JoinServer:gx	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ClientHello as the server received it
+tunnel-lib.pvl	JoinServer:sr	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the random value of the ServerHello
+tunnel-lib.pvl	JoinServer:gy	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the key share of the ServerHello
+tunnel-lib.pvl	JoinServer:mycert	message	src/Core/TransportTls.c	TransportTlsNew	Cert	-	the certificate of the server, from the store
+tunnel-lib.pvl	JoinServer:bnd	field	src/Core/TransportNoise.c	TransportNoiseStart	BindingType	-	the binding that the server computes from its own view of this connection
+tunnel-lib.pvl	JoinServer:prologue	field	src/Core/NoiseSession.c	NoisePrologue	NOISE_PROLOGUE_LABEL,binding_type,binding	-	the prologue of the responder, which must equal the initiator's
+tunnel-lib.pvl	JoinServer:suite	check	src/Core/NoiseSession.c	NoiseSessionAccept	NoiseSuiteAvailable	D7	the responder runs the suite of the record if it can run it
+tunnel-lib.pvl	JoinServer:E	field	src/Core/Noise.c	NoiseReadMessage1	RemoteEphemeral	-	e of the initiator
+tunnel-lib.pvl	JoinServer:cs	field	src/Core/Noise.c	NoiseReadMessage1	RemoteStatic	-	the encrypted static key, which the responder decrypts to learn the peer node of the connection
+tunnel-lib.pvl	JoinServer:cp	field	src/Core/Noise.c	NoiseHandshakeRead	payload_size	-	the payload of the first message, which must be empty
+tunnel-lib.pvl	JoinServer:SI	field	src/Core/NoiseSession.c	NoiseSessionOpen	RemoteStatic	-	the static key of the connection: any key completes the handshake, and the Login decides what it joins
+tunnel-lib.pvl	JoinServer:E2	field	src/Core/Noise.c	NoiseWriteMessage2	EphemeralPub	-	e of the responder
+tunnel-lib.pvl	JoinServer:cp2	field	src/Core/Noise.c	NoiseHandshakeWrite	payload_size	-	the payload of the second message, empty
+tunnel-lib.pvl	JoinServer:rs	field	src/Core/NoiseSession.c	NoiseTunnelInit	RemoteStatic	-	the static key of the peer node of the Tunnel, from its first connection
+tunnel-lib.pvl	JoinServer:keycheck	check	src/Core/NoiseSession.c	NoiseTunnelJoin	RemoteStatic	-	only a connection to the same peer node joins
+
+# noise-lib.pvl: Noise_IK alone
+noise-lib.pvl	proto_ik	constant	src/Core/Noise.c	NoiseSuiteName	noise_name_ik	-	Noise_IK_25519_AESGCM_SHA256
+noise-lib.pvl	prol_enc	constant	src/Core/NoiseSession.c	NoisePrologue	NOISE_BINDING_NONE	-	the prologue of a session that nothing binds: the label and the binding type 0
+noise-lib.pvl	st_a	constant	src/Core/Noise.c	NoiseWriteMessage1	EphemeralPub	-	message a: -> e, es, s, ss
+noise-lib.pvl	st_b	constant	src/Core/Noise.c	NoiseWriteMessage2	EphemeralPub	-	message b: <- e, ee, se
+noise-lib.pvl	st_c	constant	src/Core/NoiseSession.c	NoiseSessionSend	NOISE_RECORD_CONTROL	-	message c: the first control record of the initiator, which holds its Login
+noise-lib.pvl	st_d	constant	src/Core/NoiseSession.c	NoiseSessionSend	NOISE_RECORD_DATA	-	message d: the first record of the responder
+noise-lib.pvl	rec_control	constant	src/Core/NoiseSession.c	NoiseSessionSend	NOISE_RECORD_CONTROL	-	the type byte that an encrypted record takes as associated data
+noise-lib.pvl	rec_data	constant	src/Core/NoiseSession.c	NoiseSessionSend	NOISE_RECORD_DATA	-	the type byte of a data record
+noise-lib.pvl	msg_a	model	-	-	-	-	the secret payload of message a, which the queries grade; the handshake payloads of the code are empty
+noise-lib.pvl	msg_b	model	-	-	-	-	the secret payload of message b, empty in the code
+noise-lib.pvl	msg_c	model	-	-	-	-	the secret payload of message c: the Login in the code
+noise-lib.pvl	msg_d	model	-	-	-	-	the secret payload of message d: the first data record in the code
+noise-lib.pvl	SendMsg	event	src/Core/NoiseSession.c	NoiseSessionSend	record	-	a message was sent
+noise-lib.pvl	RecvMsg	event	src/Core/NoiseSession.c	NoiseSessionReceive	record	-	a message was accepted
+noise-lib.pvl	NoiseInit	process	src/Core/NoiseSession.c	NoiseSessionConnect	Initiator	-	the initiator of a session that nothing binds
+noise-lib.pvl	NoiseInit	process	src/Core/NoiseSession.c	NoiseSessionFinish	Handshake	-	reads the second message and opens the session with the Noise keys (NoiseSessionOpen: NoiseHandshakeSplit)
+noise-lib.pvl	NoiseResp	process	src/Core/NoiseSession.c	NoiseSessionAccept	Handshake	-	the responder of a session that nothing binds
+noise-lib.pvl	NoiseLeaks	model	-	-	-	-	the compromise of the static key of a node: no code
+noise-lib.pvl	NoiseSetup	model	-	-	-	-	what the attacker knows from the start: no code
+noise-lib.pvl	NoiseInit:E	field	src/Core/Noise.c	NoiseWriteMessage1	EphemeralPub	-	e of message a
+noise-lib.pvl	NoiseInit:cs	field	src/Core/Noise.c	NoiseWriteMessage1	StaticPub	-	the encrypted static key of message a
+noise-lib.pvl	NoiseInit:cp	field	src/Core/Noise.c	NoiseHandshakeWrite	payload_size	-	the payload of message a
+noise-lib.pvl	NoiseInit:E2	field	src/Core/Noise.c	NoiseReadMessage2	RemoteEphemeral	-	e of message b
+noise-lib.pvl	NoiseInit:cp2	field	src/Core/Noise.c	NoiseHandshakeRead	payload_size	-	the payload of message b
+noise-lib.pvl	NoiseInit:ki	field	src/Core/Noise.c	NoiseHandshakeSplit	Initiator	-	the key that the initiator sends with, from Split
+noise-lib.pvl	NoiseInit:kr	field	src/Core/Noise.c	NoiseHandshakeSplit	Ck	-	the key that the initiator reads with, from Split
+noise-lib.pvl	NoiseInit:mc	message	src/Core/NoiseSession.c	NoiseSessionWriteRecord	NOISE_RECORD_REKEYED	-	the first encrypted record: the type byte, the payload and the tag
+noise-lib.pvl	NoiseResp:mb	field	src/Core/Noise.c	NoiseHandshakeWrite	payload_size	-	the payload of message b
+noise-lib.pvl	NoiseResp:md	message	src/Core/NoiseSession.c	NoiseSessionWriteRecord	NOISE_RECORD_REKEYED	-	the first encrypted record of the responder
+
+# peer-lib.pvl: the peer layer
+peer-lib.pvl	name_k	constant	src/Core/PeerSignal.c	PeerNoiseInit	PEER_NOISE_PROTOCOL	D4	Noise_K_25519_AESGCM_SHA256: the one-way pattern of the envelopes, the only Noise of the peer layer
+peer-lib.pvl	plabel_peer	constant	src/Core/PeerSignal.c	PeerNoiseInit	PEER_NOISE_PROLOGUE	-	the prologue label of an envelope, followed by its kind
+peer-lib.pvl	k_bind	constant	src/Core/PeerSignal.c	PeerIsEnvelopeKind	PEER_MSG_BIND	-	the kind of a bind to a relay
+peer-lib.pvl	k_signal	constant	src/Core/PeerSignal.c	PeerIsEnvelopeKind	PEER_MSG_SIGNAL	-	the kind of a signal that the controller carries
+peer-lib.pvl	v_peer	constant	src/Core/PeerSignal.c	PeerSignalEncode	PEER_VERSION	-	the version byte of the payload of an envelope
+peer-lib.pvl	tag_data	constant	src/Core/Peer.c	PeerSend	PEER_MSG_DATA	D4	the first byte of a data datagram, which carries its payload in the clear
+peer-lib.pvl	addrof	function	src/Core/Peer.c	PeerInputBind	from	D4	the address that a datagram came from, which a relay binds a node to and the peer layer takes as the path of a peer
+peer-lib.pvl	plsecret	model	-	-	-	-	the content of an envelope that a query asks about: no code
+peer-lib.pvl	datasec	model	-	-	-	-	the payload of a data datagram that a query asks about: no code
+peer-lib.pvl	PeerSealed	event	src/Core/PeerSignal.c	PeerEnvelopeSeal	payload	-	an envelope was sealed to a node
+peer-lib.pvl	PeerOpened	event	src/Core/PeerSignal.c	PeerEnvelopeOpen	sender	-	an envelope was opened, with the key of its sender and the address it came from
+peer-lib.pvl	DataSent	event	src/Core/Peer.c	PeerSend	PEER_DATA_HEADER_SIZE	D4	a data datagram was sent
+peer-lib.pvl	DataDelivered	event	src/Core/Peer.c	PeerInputData	PEER_DROP_SOURCE	D4	a data datagram was delivered: its source address is a path of its source and the source is a peer
+peer-lib.pvl	PeerSeal	process	src/Core/PeerSignal.c	PeerEnvelopeSeal	ephemeral	-	-> e, es, ss with the payload
+peer-lib.pvl	PeerOpen	process	src/Core/PeerSignal.c	PeerEnvelopeOpen	payload_len	-	<- e, es, ss, taken only from a known sender
+peer-lib.pvl	DataSend	process	src/Core/Peer.c	PeerSend	PEER_DATA_HEADER_SIZE	D4	PeerSend: the tag, the key of the source, the key of the destination and the payload
+peer-lib.pvl	DataRecv	process	src/Core/Peer.c	PeerInputData	PEER_DATA_HEADER_SIZE	D4	PeerInputData: the source address and the policy are the only checks
+peer-lib.pvl	PeerSetup	model	-	-	-	-	what the attacker knows from the start: no code
+peer-lib.pvl	PeerLeaks	model	-	-	-	-	the compromise of the static key of a node: no code
+peer-lib.pvl	PeerSeal:kind	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	kind	-	the kind, the first byte of the envelope and the last byte of the prologue
+peer-lib.pvl	PeerSeal:SI	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	PEER_KEY_SIZE	-	the static key of the sender, in the clear after the kind
+peer-lib.pvl	PeerSeal:E	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	e_pub	-	the ephemeral key of the envelope
+peer-lib.pvl	PeerSeal:ct	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	PEER_ENVELOPE_TAG	-	the ciphertext of the payload with its tag
+peer-lib.pvl	PeerSeal:sq	field	src/Core/Peer.c	PeerSealSignal	Sequence	-	the sequence, the wall clock in 100 ns that grows with every bind and signal (PeerNextSequence)
+peer-lib.pvl	PeerSeal:pl	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	payload_size	-	the payload of the envelope
+peer-lib.pvl	PeerOpen:a	field	src/Core/Peer.c	PeerInputBind	from	D4	the address that the datagram came from
+peer-lib.pvl	PeerOpen:SI	check	src/Core/PeerSignal.c	PeerEnvelopeOpen	sender	-	the sender is read from the envelope, and the caller checks that it is a peer (PeerFind)
+peer-lib.pvl	PeerOpen:pl	field	src/Core/PeerSignal.c	PeerEnvelopeOpen	payload_len	-	the payload that the envelope opens to
+peer-lib.pvl	DataSend:d	message	src/Core/Peer.c	PeerSend	PEER_MAX_PAYLOAD	D4	the payload of a data datagram, as the caller gave it
+peer-lib.pvl	DataRecv:src	field	src/Core/Peer.c	PeerInputData	PEER_DATA_HEADER_SIZE	D4	the key of the source, which the datagram claims
+peer-lib.pvl	DataRecv:dst	field	src/Core/Peer.c	PeerInputData	to_self	D4	the key of the destination: the node itself, or a node that the relay forwards to
+peer-lib.pvl	DataRecv:a	check	src/Core/Peer.c	PeerInputData	PeerSourcePath	D4	the source address is the address of a relay, a binding or a direct path of the source: no key checks it

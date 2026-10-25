@@ -1,0 +1,9 @@
+(* Variant quic-none: the session handshake over QUIC, as the code has it, against an attacker that is the network and
+   nothing more (AUD-5, #389). msquic gives no TLS exporter, so the binding is the tls-server-end-point of RFC 5929, the
+   hash of the certificate that the server presents (QuicCertBinding, NOISE_BINDING_SERVER_END_POINT). The client pins
+   the certificate (QuicConnCallback). *)
+
+process
+  ( Setup()
+  | Sessions(pin_on, bt_endpoint, plabel_session, lab_exp_session, suite_hfs)
+  )

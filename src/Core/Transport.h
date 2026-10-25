@@ -399,6 +399,10 @@ void TransportQuicFree(TRANSPORT *t);
 #define TRANSPORT_TLS_12 0x00000001 // TLS 1.2
 #define TRANSPORT_TLS_13 0x00000002 // TLS 1.3
 
+// Checks the certificate that the server presented, in place of the thumbprint pin of a client (TRANSPORT_TLS_CONFIG.Verify):
+// true takes the session. cert is the PCCERT_CONTEXT of the server certificate, valid until it returns.
+typedef bool(TRANSPORT_TLS_VERIFY_PROC)(void *param, const struct _CERT_CONTEXT *cert);
+
 // What TransportTlsSetGroups did
 #define TRANSPORT_TLS_GROUPS_SET    0 // The machine's list starts with the transport's groups
 #define TRANSPORT_TLS_GROUPS_POLICY 1 // An ECC Curve Order policy governs the list, which stays as it is
@@ -419,6 +423,13 @@ typedef struct TRANSPORT_TLS_CONFIG {
 	CRYPTO_IDENTITY *DecoyIdentity;              // ... or the node identity in the KSP, exactly one, kept by the owner while the transport lives
 	bool SplitClientHello;                       // The client splits its ClientHello into two TCP segments (client)
 	bool OmitSni;                                // The client omits the server name from its ClientHello (client)
+	// The client of the control stream of a Node (SDN-90, #395; TransportTlsAlpn.c): the ALPN protocol that it offers and
+	// that the server must select, empty for none; the label of the TLS exporter of its Channel binding, empty for
+	// NOISE_EXPORTER_LABEL; and the check of the server certificate in place of the thumbprint pin, with its parameter
+	char Alpn[TRANSPORT_NAME_SIZE];
+	char ExporterLabel[TRANSPORT_NAME_SIZE];
+	TRANSPORT_TLS_VERIFY_PROC *Verify;
+	void *VerifyParam;
 } TRANSPORT_TLS_CONFIG;
 
 // What a TLS handshake gave: the version, the cipher suite and the key exchange group that the
