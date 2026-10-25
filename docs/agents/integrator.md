@@ -61,7 +61,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 1. **Heartbeat.** Read the heartbeat issue. Stand down, or post your comment. See "The integrator heartbeat".
 2. **Look.** Read the state from GitHub, never from memory.
    - The open pull requests into `integration`: number, draft or not, head sha, title, labels. Local: `gh pr list --repo Hanzamas/RanzVPN --base integration --state open`.
-   - For each one, its mergeable state and the check runs of its head.
+   - For each one, its mergeable state and the CI runs of its head.
    - The branches: `git ls-remote --heads origin`.
    - The newest run of `Full CI: push on integration`. It is the full set on the real branch, so a red run there is urgent.
    - Local only: `git worktree list`, for lane worktrees with unpushed work.
@@ -81,8 +81,8 @@ Merge a pull request only when all of these hold.
 1. Its base is `integration`, and its head is a branch of this repository, not of a fork.
 2. It is not a draft. A draft is a lane saying "not done". Mark it ready (`gh pr ready <n> --repo Hanzamas/RanzVPN`) only when the lane returned `ok: true`, or the body says that the work is done.
 3. GitHub says it is mergeable and clean: `mergeable` is true and `mergeable_state` is `clean` (`gh pr view` shows MERGEABLE and CLEAN). `unstable` means that a check fails or still runs. `dirty` means a conflict.
-4. Every check run of its head has finished, and none failed or was cancelled. At least 4 check runs exist: fewer means that CI has not started. A job that shows `skipped` is fine on the fast set.
-5. If it has C code, the full set ran and is green. The label `full-ci` is on it. The jobs `fuzz-asan`, `arm64`, `coverage (new core)`, `install (x64)` and `install (arm64)` show `success`, not `skipped`. "C code" means a change under `src/` or `proto/`, in a CMake file, or in a script or workflow that the full set runs. If a pull request has C code and no label, add the label (`gh pr edit <n> --repo Hanzamas/RanzVPN --add-label full-ci`) and wait for the full set. Never merge it on the fast set.
+4. The newest run of every workflow of its head has finished and succeeded. At least 3 workflow runs exist: the move-only check, the quality checks and the supply-chain checks run on every pull request, so fewer means that CI has not started. An older run that a newer run replaced does not count. A new label or a new push starts new runs and cancels the old ones, and the old runs stay in the lists as `cancelled`. Local: `gh pr checks <n> --repo Hanzamas/RanzVPN` shows the same. In the cloud see [integrator-cloud.md](integrator-cloud.md). A job that shows `skipped` is fine on the fast set.
+5. If it has C code, the full set ran and is green. The label `full-ci` is on it. In the newest `windows.yml` run the jobs `fuzz-asan`, `arm64`, `coverage (new core)`, `install (x64)` and `install (arm64)` show `success`, not `skipped`. "C code" means a change under `src/` or `proto/`, in a CMake file, or in a script or workflow that the full set runs. If a pull request has C code and no label, add the label (`gh pr edit <n> --repo Hanzamas/RanzVPN --add-label full-ci`) and wait for the full set. Never merge it on the fast set.
 6. Its body has an acceptance table (criterion, test or job). No row says "not met", or the body says that the pull request is progress only (see below).
 7. The head is the same at two looks that are about 40 seconds apart. A lane often pushes right after CLEAN. If the head changed, start again at 3: the checks of the new head are not known yet.
 
@@ -114,7 +114,7 @@ A pull request runs the **fast set**: the format check, the move-only check, the
 
 The **full set** runs on every push to `integration` or `master`, every night, on a manual run, on a pull request with the label `full-ci`, and always on a pull request that changes a sensitive path: `src/Core/Crypto*`, `src/Core/Noise*`, `src/SeLow/`, the install, signing and MSI scripts, `docs/first-test.md`, `tests/formal/` and a few more. The exact list is `SENSITIVE` in `.github/scripts/ci-plan.py`. The full set adds the arm64 tests, fuzz-asan, coverage, static analysis, Application Verifier, harden, sign and self-integrity, the MSI jobs, install, kmtest and the first test. The gates are in ADR-0040.
 
-Some paths do not start `windows.yml` on a pull request at all: `docs/`, every `*.md` file, `controller/`, `go.mod` and `go.sum` and a few more. The header of `.github/workflows/windows.yml` lists them. A pull request that changes only such paths runs the checks that have no path filter (the move-only check, the quality checks, pins and govulncheck and SBOM), so it shows about 6 check runs. Rule 4 of the merge procedure still applies. Judge a docs-only or Go-only pull request by the checks that it has, and never merge one that has a failed or running check.
+Some paths do not start `windows.yml` on a pull request at all: `docs/`, every `*.md` file, `controller/`, `go.mod` and `go.sum` and a few more. The header of `.github/workflows/windows.yml` lists them. A pull request that changes only such paths runs the checks that have no path filter (the move-only check, the quality checks, pins and govulncheck and SBOM), so it shows 3 workflow runs and about 6 check runs. Rule 4 of the merge procedure still applies. Judge a docs-only or Go-only pull request by the checks that it has, and never merge one that has a failed or running check.
 
 ## Launching lanes
 
