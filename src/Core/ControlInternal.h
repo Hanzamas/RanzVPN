@@ -1,5 +1,5 @@
 // ControlInternal.h
-// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c): only its own files include this
+// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c, ControlListener.c): only its own files include this
 // header, after the messages that nanopb generates from the schema
 
 #ifndef CORE_CONTROL_INTERNAL_H
@@ -16,5 +16,9 @@ void ControlLeasesResend(CONTROL_LEASES *l);
 // ControlDns.c
 void ControlCopyZones(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 void ControlFreeZones(CONTROL_STATE *st);
+
+// ControlListener.c
+void ControlCopyListener(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
+void ControlFreeListener(CONTROL_STATE *st);
 
 #endif // CORE_CONTROL_INTERNAL_H

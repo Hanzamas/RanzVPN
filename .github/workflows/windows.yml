@@ -399,6 +399,16 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/bgp-spike.ps1 -BuildDir build
+    # The ACME source of the Listener of a node (SDN-45, #238), on x64 and arm64: ranz built next to vpntest, where the
+    # node starts it as ranz acme, Pebble, the test ACME server of Let's Encrypt, at a pinned version on this runner, and
+    # vpntest listeneracme: the certificate of the Listener issued and renewed, and the front door listening with it
+    # (.github/scripts/listener-acme.ps1). It needs only the build, so it runs after a test that failed too.
+    - name: Listener with ACME
+      if: ${{ !cancelled() }}
+      timeout-minutes: 15
+      shell: pwsh
+      run: |
+        . .github/scripts/listener-acme.ps1 -BuildDir build
     - name: Self-check
       timeout-minutes: 10
       shell: pwsh
@@ -1635,7 +1645,8 @@ jobs:
   # control streams to that Controller, one with a real Wintun adapter and one with a fake host), the enrolment in the audit log,
   # the ping of the stack of the runner through the adapter and the overlay, ranz doctor, the logs, ranz uninstall and the clean-up.
   # The Gap step of the runbook is read from the sources: the job fails when a Gap is closed, until the runbook has real steps
-  # for it. The Node service of a PC opens no control stream to the Controller yet, which is why the Nodes are the stand-in.
+  # for it. In step 20 the Node service of the runner joins the Controller as pc-a with its own key, through ranz node
+  # (SDN-90, #395); two Node services cannot form a session yet, so the stand-in keeps playing pc-b.
   # It follows build_and_test (vpntest) and sign_and_integrity (the signed ranz.exe and its certificate, as the install job does).
   first_test:
     needs: [plan, build_and_test, sign_and_integrity]
