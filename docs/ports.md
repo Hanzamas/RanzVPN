@@ -22,6 +22,7 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 |---|---|---|---|
 | TCP 179 | BGP | the sidecar `ranz bgp` (GoBGP) | Peers with the operator's own routers. Started only when the `Bgp` setting names peers. |
 | UDP 4789 | VXLAN | the VXLAN module of the Node (SDN-62) | Toward a fabric or a sensor. The Node is a VTEP. |
+| UDP 6081, configurable | Geneve | the VXLAN module of the Node (SDN-71) | Toward a fabric, OVN or NSX that uses Geneve instead of VXLAN. The Node is a tunnel endpoint of Geneve. |
 | UDP 67 and 68 | DHCP | the DHCP responder of the Node (SDN-43) | Only on an L2 Network whose responder is on, and only while no DHCP server of its bridged LAN answers. The responder is a member of the switch of the Network with a MAC address of its own and opens no socket of the host: it answers the clients' port 68 from port 67 and probes the LAN for a server from port 68. |
 | 53 | DNS | overlay DNS (SDN-11, planned) | Inside the overlay and the NRPT rules of the host. |
 | TCP 9821 | the traffic test | `ranz test throughput -listen`, started by hand (SDN-53) | Only while a test runs, on the address that it is given. `docs/first-test.md` uses it between two PCs. |
@@ -51,7 +52,7 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 
 - Open to the internet: TCP 443 and UDP 443. Add TCP 80 only when ACME HTTP-01 or the redirect is wanted.
 - Between Controller cluster members: the Raft port, on a private network.
-- On a Node that peers with a fabric or routers: TCP 179 and UDP 4789 to those peers, on the LAN side.
+- On a Node that peers with a fabric or routers: TCP 179 and UDP 4789 (UDP 6081 for a fabric of Geneve) to those peers, on the LAN side.
 - Nothing else needs to be open for incoming connections.
 
 A new feature that needs a port adds a row to this page, and prefers an owner behind TCP 443 or UDP 443 over a port of its own.
