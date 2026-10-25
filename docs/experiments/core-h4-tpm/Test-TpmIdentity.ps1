@@ -515,7 +515,7 @@ function Get-KeyFileAcl([string] $UniqueName) {
 		$root = Join-Path $env:ProgramData 'Microsoft\Crypto'
 		$file = Get-ChildItem -LiteralPath $root -Recurse -Force -Filter $UniqueName -ErrorAction SilentlyContinue | Select-Object -First 1
 		if ($file -eq $null) { return 'no file of that name under ProgramData\Microsoft\Crypto' }
-		return [pscustomobject]@{ Folder = $file.Directory.FullName.Substring($env:ProgramData.Length); Sddl = (Get-Acl -LiteralPath $file.FullName).Sddl }
+		return [pscustomobject]@{ Path = $file.FullName; Folder = $file.Directory.FullName.Substring($env:ProgramData.Length); Sddl = (Get-Acl -LiteralPath $file.FullName).Sddl }
 	} catch {
 		return Get-ErrorText $_
 	}
@@ -526,62 +526,102 @@ function Get-KeyFileAcl([string] $UniqueName) {
 # service control handler that never comes and then stops the process (error 1053), by which time the probe
 # has written its answer. The probe reads its job from a file and writes its answer to a file.
 $probeSource = @'
-$ErrorActionPreference = 'Stop'
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$job = Get-Content -Raw -LiteralPath (Join-Path $dir 'job.json') | ConvertFrom-Json
-$r = [ordered]@{ Account = [Security.Principal.WindowsIdentity]::GetCurrent().Name; Provider = $job.Provider }
-function Describe($record) {
-	$e = $record.Exception
-	return ('0x{0:X8} {1}: {2}' -f $e.HResult, $e.GetType().Name, $e.Message.Trim())
+$log = Join-Path $dir 'probe.log'
+function Write-Step([string] $text) {
+	Add-Content -LiteralPath $log -Value ((Get-Date).ToString('o') + ' ' + $text)
 }
-$provider = New-Object System.Security.Cryptography.CngProvider -ArgumentList $job.Provider
-$digest = [byte[]] (1..32)
-function Sign($key) {
-	$e = New-Object System.Security.Cryptography.ECDsaCng -ArgumentList $key
-	return $e.VerifyHash($digest, $e.SignHash($digest))
-}
-function Test-Create([bool] $machine) {
-	$p = New-Object System.Security.Cryptography.CngKeyCreationParameters
-	$p.Provider = $provider
-	$p.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
-	if ($machine) { $p.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey }
-	try {
-		$k = [System.Security.Cryptography.CngKey]::Create([System.Security.Cryptography.CngAlgorithm]::ECDsaP256, ('ranz-h4-svc-' + [guid]::NewGuid().ToString('N')), $p)
-		$ok = Sign $k
-		$k.Delete()
-		return 'ok, signature verified: ' + $ok
-	} catch {
-		return Describe $_
-	}
-}
-# 1. Open the machine key that the administrator made, and sign with it
+Write-Step ('started as ' + [Security.Principal.WindowsIdentity]::GetCurrent().Name)
 try {
-	$k = [System.Security.Cryptography.CngKey]::Open($job.MachineKey, $provider, [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey)
-	$r['OpenMachineKeyAndSign'] = 'ok, signature verified: ' + (Sign $k)
-	$k.Dispose()
+	$job = Get-Content -Raw -LiteralPath (Join-Path $dir 'job.json') | ConvertFrom-Json
+	$r = [ordered]@{ Account = [Security.Principal.WindowsIdentity]::GetCurrent().Name; Provider = $job.Provider }
+	function Describe($record) {
+		$e = $record.Exception
+		return ('0x{0:X8} {1}: {2}' -f $e.HResult, $e.GetType().Name, $e.Message.Trim())
+	}
+	$provider = New-Object System.Security.Cryptography.CngProvider -ArgumentList $job.Provider
+	$digest = [byte[]] (1..32)
+	function Sign($key) {
+		$e = New-Object System.Security.Cryptography.ECDsaCng -ArgumentList $key
+		return $e.VerifyHash($digest, $e.SignHash($digest))
+	}
+	function Test-Create([bool] $machine) {
+		$p = New-Object System.Security.Cryptography.CngKeyCreationParameters
+		$p.Provider = $provider
+		$p.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
+		if ($machine) { $p.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey }
+		try {
+			$k = [System.Security.Cryptography.CngKey]::Create([System.Security.Cryptography.CngAlgorithm]::ECDsaP256, ('ranz-h4-svc-' + [guid]::NewGuid().ToString('N')), $p)
+			$ok = Sign $k
+			$k.Delete()
+			return 'ok, signature verified: ' + $ok
+		} catch {
+			return Describe $_
+		}
+	}
+	# 1. Open the machine key that the administrator made, and sign with it
+	try {
+		$k = [System.Security.Cryptography.CngKey]::Open($job.MachineKey, $provider, [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey)
+		$r['OpenMachineKeyAndSign'] = 'ok, signature verified: ' + (Sign $k)
+		$k.Dispose()
+	} catch {
+		$r['OpenMachineKeyAndSign'] = Describe $_
+	}
+	Write-Step 'step 1 done'
+	# 2. Make a key in the machine key set, and 3. in its own key set, which is where the Node service keeps its key
+	$r['CreateMachineKeyAndSign'] = Test-Create $true
+	Write-Step 'step 2 done'
+	$r['CreateOwnKeyAndSign'] = Test-Create $false
+	Write-Step 'step 3 done'
+	$r | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $job.Out -Encoding UTF8
+	Write-Step 'answer written'
 } catch {
-	$r['OpenMachineKeyAndSign'] = Describe $_
+	Write-Step ('failed: ' + $_.Exception.Message)
 }
-# 2. Make a key in the machine key set, and 3. in its own key set, which is where the Node service keeps its key
-$r['CreateMachineKeyAndSign'] = Test-Create $true
-$r['CreateOwnKeyAndSign'] = Test-Create $false
-$r | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $job.Out -Encoding UTF8
 '@
 
-function Invoke-AsVirtualAccount([string] $Provider, [string] $MachineKey) {
+# One run of the probe: wait until the service is stopped, start it, and wait for its answer. The answer is the
+# probe's file; for a probe that gave none, what the service control manager and the probe's log say.
+function Start-ProbeService([string] $Name, [string] $Dir) {
+	$out = Join-Path $Dir 'result.json'
+	$logFile = Join-Path $Dir 'probe.log'
+	for ($i = 0; $i -lt 60 -and (Get-Service -Name $Name).Status -ne 'Stopped'; $i++) { Start-Sleep -Seconds 1 }
+	Remove-Item -LiteralPath $out, $logFile -Force -ErrorAction SilentlyContinue
+	$began = Get-Date
+	# sc.exe start waits for the 1053 that the probe never answers; the probe does not wait for it
+	[void] (Start-Process -FilePath sc.exe -ArgumentList @('start', $Name) -WindowStyle Hidden -PassThru)
+	for ($i = 0; $i -lt 60 -and -not (Test-Path -LiteralPath $out); $i++) { Start-Sleep -Seconds 1 }
+	$run = [ordered]@{}
+	if (Test-Path -LiteralPath $out) {
+		$run['Answer'] = Get-Content -Raw -LiteralPath $out | ConvertFrom-Json
+		return [pscustomobject]$run
+	}
+	$run['Error'] = 'the service wrote no answer in 60 s'
+	if (Test-Path -LiteralPath $logFile) { $run['ProbeLog'] = @(Get-Content -LiteralPath $logFile) }
+	$run['ScQuery'] = ((& sc.exe query $Name | Out-String) -replace '\s+', ' ').Trim()
+	try {
+		$run['ScmEvents'] = @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $began } -ErrorAction Stop |
+			Where-Object { $_.Message -like ('*' + $Name + '*') } | ForEach-Object { '{0} {1}' -f $_.Id, ($_.Message -replace '\s+', ' ') })
+	} catch {
+		$run['ScmEvents'] = Get-ErrorText $_
+	}
+	return [pscustomobject]$run
+}
+
+# The probe runs twice: with the DACL that the machine key got from its maker, and after the maker gave the
+# service read access to the file of the key, as an installer would
+function Invoke-AsVirtualAccount([string] $Provider, [string] $MachineKey, $KeyFile) {
 	$name = 'RanzH4Probe'
 	$dir = Join-Path $env:ProgramData 'RanzH4Probe'
-	$out = Join-Path $dir 'result.json'
 	$result = [ordered]@{ Provider = $Provider }
 	$created = $false
 	try {
 		New-Item -ItemType Directory -Force -Path $dir | Out-Null
 		Set-Content -LiteralPath (Join-Path $dir 'probe.ps1') -Value $probeSource -Encoding UTF8
-		@{ Provider = $Provider; MachineKey = $MachineKey; Out = $out } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir 'job.json') -Encoding UTF8
-		Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
+		@{ Provider = $Provider; MachineKey = $MachineKey; Out = (Join-Path $dir 'result.json') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir 'job.json') -Encoding UTF8
 		# The paths have no space, so the command line needs no quotes
 		$ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-		$command = $ps + ' -NoProfile -ExecutionPolicy Bypass -File ' + (Join-Path $dir 'probe.ps1')
+		$command = $ps + ' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + (Join-Path $dir 'probe.ps1')
 		& sc.exe create $name binPath= $command obj= "NT SERVICE\$name" start= demand | Out-Null
 		if ($LASTEXITCODE -ne 0) { throw ('sc.exe create exited with {0}' -f $LASTEXITCODE) }
 		$created = $true
@@ -589,13 +629,12 @@ function Invoke-AsVirtualAccount([string] $Provider, [string] $MachineKey) {
 		if (-not $sid) { throw 'sc.exe showsid gave no service SID' }
 		& icacls.exe $dir /grant ('*{0}:(OI)(CI)M' -f $sid) | Out-Null
 		$result['ServiceSid'] = $sid
-		# sc.exe start waits for the 1053; the probe does not
-		Start-Process -FilePath sc.exe -ArgumentList @('start', $name) -WindowStyle Hidden
-		for ($i = 0; $i -lt 90 -and -not (Test-Path -LiteralPath $out); $i++) { Start-Sleep -Seconds 1 }
-		if (Test-Path -LiteralPath $out) {
-			$result['Probe'] = Get-Content -Raw -LiteralPath $out | ConvertFrom-Json
+		$result['DefaultAcl'] = Start-ProbeService $name $dir
+		if ($KeyFile -ne $null -and $KeyFile.PSObject.Properties['Path'] -ne $null) {
+			& icacls.exe $KeyFile.Path /grant ('*{0}:R' -f $sid) | Out-Null
+			$result['AfterGrantOnKeyFile'] = Start-ProbeService $name $dir
 		} else {
-			$result['Error'] = 'the service wrote no answer in 90 s'
+			$result['AfterGrantOnKeyFile'] = 'not run: the file of the key was not found'
 		}
 	} catch {
 		$result['Error'] = Get-ErrorText $_
@@ -830,9 +869,10 @@ try {
 				$row['AdminMakesMachineKey'] = ('ok in {0} ms' -f $made.CreateMs)
 				$row['Key'] = Get-KeyFacts $made.Key
 				$row['AdminSigns'] = Test-KeyUse $made 'ecdsa' $p
-				$row['KeyFile'] = Get-KeyFileAcl $made.Key.UniqueName
+				$keyFile = Get-KeyFileAcl $made.Key.UniqueName
+				$row['KeyFile'] = $keyFile
 				$made.Key.Dispose()
-				$row['VirtualAccount'] = Invoke-AsVirtualAccount $p $made.Name
+				$row['VirtualAccount'] = Invoke-AsVirtualAccount $p $made.Name $keyFile
 				$e6 += [pscustomobject]$row
 			}
 			$results['E6_Machine'] = $e6
