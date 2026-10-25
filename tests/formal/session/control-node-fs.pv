@@ -1,0 +1,9 @@
+(* Variant control-node-fs: the control stream of a C node to the controller, against an attacker that holds every
+   long-term key of the nodes after the sessions (AUD-5, #389). As tls443-fs, with the labels of the control stream. *)
+
+process
+  ( Setup()
+  | LeakLate()
+  | !( Client(alice, bob, pin_on, bt_export, plabel_control, lab_exp_control, suite_ik) )
+  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_control, lab_exp_control, suite_ik, sid) )
+  )

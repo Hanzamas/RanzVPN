@@ -1,0 +1,11 @@
+(* Negative control nopin-noise: the session handshake over TLS 1.3 with the client that pins no certificate, against an
+   attacker that holds the Noise identity key of the server (AUD-5, #389). The binding still stops a middlebox from
+   relaying the handshake, so the attack that this variant must show is the one of the holder of the Noise key, which
+   answers the client in a TLS session of its own: the pin is what stops it in tls443-noise-client. The queries that
+   hold there must fail here. CI fails when they do not. *)
+
+process
+  ( Setup()
+  | LeakNoiseServer()
+  | Sessions(pin_off, bt_export, plabel_session, lab_exp_session, suite_hfs)
+  )

@@ -1,0 +1,123 @@
+(* noise-lib.pvl
+   The Noise_IK handshake alone, with the transport messages under the Noise keys (AUD-5, #389;
+   docs/formal-model.md). This is a session that nothing binds, NOISE_SESSION_ENCRYPT: the CDN path of phase 2,
+   and the loopback transport of the vpntest harness. A session that an outer TLS or QUIC session binds does
+   not take the Noise keys into use (NoiseSessionOpen calls NoiseHandshakeSplit only for an encrypted
+   session), so this model is where the session keys of Noise, their secrecy and their forward secrecy, are
+   proved. The code is src/Core/Noise.c (NoiseHandshakeWrite, NoiseHandshakeRead, NoiseHandshakeSplit) and
+   src/Core/NoiseSession.c (NoiseSessionConnect, NoiseSessionAccept, NoiseSessionFinish, NoiseSessionSend,
+   NoiseSessionReceive).
+
+   The four messages are the first and second of the handshake (a and b) and the first record of each
+   direction (c and d), as the Noise Explorer names them. The handshake payloads are empty in the code: the
+   Login follows in the first control record, which is message c, "under the forward secrecy of the complete
+   handshake" (NoiseSessionAccept). The model gives each message a secret payload so that the queries grade
+   what each message would have, and the grades are the proof that this is the right place for the Login:
+   message a has no forward secrecy, message c has all of it. The grades equal the ones that the Noise
+   Explorer publishes for IK.
+*)
+
+const proto_ik: bitstring.
+const prol_enc: bitstring.
+const st_a: bitstring.
+const st_b: bitstring.
+const st_c: bitstring.
+const st_d: bitstring.
+const rec_control: bitstring.
+const rec_data: bitstring.
+
+fun msg_a(principal, principal, sessionid): bitstring [private].
+fun msg_b(principal, principal, sessionid): bitstring [private].
+fun msg_c(principal, principal, sessionid): bitstring [private].
+fun msg_d(principal, principal, sessionid): bitstring [private].
+
+event SendMsg(principal, principal, bitstring, bitstring).
+event RecvMsg(principal, principal, bitstring, bitstring).
+
+(* The initiator: message a is -> e, es, s, ss (NoiseSessionConnect), message b is read as <- e, ee, se
+   (NoiseSessionFinish), and Split() gives the key that it sends its first record under and the key that it
+   reads the first record of the responder under (NoiseSessionOpen) *)
+let NoiseInit(me: principal, them: principal, sid: sessionid) =
+  new e: bitstring;
+  let sI = skey(me) in
+  let SI = pk(sI) in
+  let SR = spub(them) in
+  let E = pk(e) in
+  let h0 = hash1(proto_ik) in
+  let h1 = mixh(mixh(h0, prol_enc), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhi(e, SR)) in
+  let k1 = hkk(h0, dhi(e, SR)) in
+  let cs = aead(k1, h2, SI) in
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhi(sI, SR)) in
+  let k2 = hkk(ck1, dhi(sI, SR)) in
+  let ma = msg_a(me, them, sid) in
+  let cp = aead(k2, h3, ma) in
+  let h4 = mixh(h3, cp) in
+  event SendMsg(me, them, st_a, ma);
+  out(c, (E, cs, cp));
+  in(c, (E2: bitstring, cp2: bitstring));
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhi(e, E2)) in
+  let ck4 = hkck(ck3, dhi(sI, E2)) in
+  let k4 = hkk(ck3, dhi(sI, E2)) in
+  let mb = unaead(k4, h5, cp2) in
+  event RecvMsg(me, them, st_b, mb);
+  let ki = hksplit1(ck4) in
+  let kr = hksplit2(ck4) in
+  let mc = msg_c(me, them, sid) in
+  event SendMsg(me, them, st_c, mc);
+  out(c, aead(ki, rec_control, mc));
+  in(c, rd: bitstring);
+  let md = unaead(kr, rec_data, rd) in
+  event RecvMsg(me, them, st_d, md).
+
+(* The responder: it reads message a, answers with message b, and reads the first record of the initiator.
+   It serves one expected initiator, as in session-lib.pvl. *)
+let NoiseResp(me: principal, them: principal, sid: sessionid) =
+  new e: bitstring;
+  in(c, (E: bitstring, cs: bitstring, cp: bitstring));
+  let sR = skey(me) in
+  let SR = pk(sR) in
+  let h0 = hash1(proto_ik) in
+  let h1 = mixh(mixh(h0, prol_enc), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhr(sR, E)) in
+  let k1 = hkk(h0, dhr(sR, E)) in
+  if unaead(k1, h2, cs) = spub(them) then
+  let SI = spub(them) in
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhr(sR, SI)) in
+  let k2 = hkk(ck1, dhr(sR, SI)) in
+  let ma = unaead(k2, h3, cp) in
+  event RecvMsg(me, them, st_a, ma);
+  let h4 = mixh(h3, cp) in
+  let E2 = pk(e) in
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhr(e, E)) in
+  let ck4 = hkck(ck3, dhr(e, SI)) in
+  let k4 = hkk(ck3, dhr(e, SI)) in
+  let mb = msg_b(me, them, sid) in
+  let cp2 = aead(k4, h5, mb) in
+  event SendMsg(me, them, st_b, mb);
+  out(c, (E2, cp2));
+  let ki = hksplit1(ck4) in
+  let kr = hksplit2(ck4) in
+  in(c, rc: bitstring);
+  let mc = unaead(ki, rec_control, rc) in
+  event RecvMsg(me, them, st_c, mc);
+  let md = msg_d(me, them, sid) in
+  event SendMsg(me, them, st_d, md);
+  out(c, aead(kr, rec_data, md)).
+
+(* The compromise of the static key of a node, in phase 0 and in phase 1 *)
+let NoiseLeaks(me: principal) =
+  ( event LeakS(phase0, me); out(c, skey(me)) )
+  | ( phase 1; event LeakS(phase1, me); out(c, skey(me)) ).
+
+let NoiseSetup() =
+  out(c, spub(alice));
+  out(c, spub(bob));
+  out(c, spub(charlie));
+  out(c, skey(charlie)).

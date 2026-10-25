@@ -1,0 +1,277 @@
+# What each query must give in each variant (AUD-5, #389): <variant> <query> <expect> <note>, separated by tabs.
+# .github/scripts/formal.py run compares the result of ProVerif with this file and fails on any difference, so a
+# query that must hold and does not fails the job, and so does a negative control that stops showing its
+# attack. A variant with no line for a query of its files, or a line for a query it has not, fails too.
+#
+# expect:
+#   holds    ProVerif proves it: "is true"
+#   attack   ProVerif finds an attack and rebuilds its trace: "is false"
+#   fails    it is not proved: "is false" or "cannot be proved"
+#   reach    the event can happen, so that the queries about it are not true for want of any run: "is false"
+#            or "cannot be proved" of the query that asks for its absence
+# note: the finding or the control, when the line is one (see docs/formal-model.md)
+
+# TLS-443, as the code has it. An attacker that is the network gets nothing.
+tls443-none	reach-login	reach
+tls443-none	reach-done	reach
+tls443-none	sec-pw	holds
+tls443-none	sec-data	holds
+tls443-none	auth-server	holds
+tls443-none	auth-client	holds
+tls443-none	data-auth	holds
+tls443-none	negotiation	holds
+tls443-none	suite	holds
+tls443-none	replay-server	holds
+tls443-none	replay-client	holds
+
+# The middlebox with the key of the certificate: the binding of the handshake to the exporter stops it, whole
+tls443-cert	reach-login	reach
+tls443-cert	reach-done	reach
+tls443-cert	sec-pw	holds	the middlebox does not read the password
+tls443-cert	sec-data	holds
+tls443-cert	auth-server	holds	the handshake of alice is not accepted in another TLS session
+tls443-cert	auth-client	holds
+tls443-cert	data-auth	holds
+tls443-cert	negotiation	holds	the middlebox cannot lower the version
+tls443-cert	suite	holds
+tls443-cert	replay-server	holds
+tls443-cert	replay-client	holds
+
+# The key of the certificate and the Noise key of the client: the client's key lets the attacker be the client, not the server
+tls443-cert-client	reach-login	reach
+tls443-cert-client	reach-done	reach
+tls443-cert-client	sec-pw	holds
+tls443-cert-client	sec-data	holds
+tls443-cert-client	auth-server	attack	the first message of Noise_IK is open to the compromise of the key of its initiator
+tls443-cert-client	auth-client	holds
+tls443-cert-client	data-auth	holds
+tls443-cert-client	negotiation	holds	the Login needs the password, which the attacker has not
+tls443-cert-client	suite	attack	the attacker is the client, and starts a handshake of its own suite
+tls443-cert-client	replay-server	attack	the attacker is the client, and starts handshakes that alice did not
+tls443-cert-client	replay-client	holds
+
+# The Noise keys of the server and of the client: the pin keeps the attacker from answering the client
+tls443-noise-client	reach-login	reach
+tls443-noise-client	reach-done	reach
+tls443-noise-client	sec-pw	holds	the pin of the certificate keeps the holder of the Noise keys out of the TLS session of the client
+tls443-noise-client	sec-data	holds
+tls443-noise-client	auth-server	attack	the Noise keys let the attacker be the client
+tls443-noise-client	negotiation	holds
+tls443-noise-client	suite	attack	the attacker is the client
+
+# Both keys of the server: the attacker is the server
+tls443-both	reach-login	reach
+tls443-both	reach-done	reach
+tls443-both	sec-pw	attack	with both keys of the server the attacker reads the password
+tls443-both	sec-data	attack
+tls443-both	auth-server	attack
+tls443-both	negotiation	attack
+tls443-both	suite	attack
+
+# Forward secrecy: every key after the sessions gives nothing
+tls443-fs	fs-pw	holds	forward secrecy
+tls443-fs	fs-data	holds	forward secrecy
+
+# QUIC, as the code has it: the binding is the tls-server-end-point, the same for every connection to the certificate
+quic-none	reach-login	reach
+quic-none	reach-done	reach
+quic-none	sec-pw	holds
+quic-none	sec-data	holds
+quic-none	auth-server	holds
+quic-none	auth-client	holds
+quic-none	data-auth	holds
+quic-none	negotiation	holds
+quic-none	suite	holds
+quic-none	replay-server	holds
+quic-none	replay-client	holds
+
+quic-cert	reach-login	reach
+quic-cert	reach-done	reach
+quic-cert	sec-pw	attack	F1: the key of the certificate alone gives a middlebox the password
+quic-cert	sec-data	attack	F1
+quic-cert	auth-server	attack	F1: the handshake of alice is accepted in another TLS session
+quic-cert	auth-client	attack	F1
+quic-cert	data-auth	attack	F1: the middlebox rewrites what the server sends
+quic-cert	negotiation	attack	F1: the middlebox can lower the version
+quic-cert	suite	holds	the suite is in the hash of the handshake, not in the binding
+quic-cert	replay-server	attack	F1
+quic-cert	replay-client	attack	F1
+
+quic-noise-client	reach-login	reach
+quic-noise-client	reach-done	reach
+quic-noise-client	sec-pw	holds	the pin keeps the holder of the Noise keys out of the QUIC session of the client
+quic-noise-client	sec-data	holds
+quic-noise-client	auth-server	attack	the Noise keys let the attacker be the client
+quic-noise-client	negotiation	holds
+quic-noise-client	suite	attack	the attacker is the client
+
+quic-fs	fs-pw	holds	forward secrecy
+quic-fs	fs-data	holds	forward secrecy
+
+# Negative control: no binding. The key of the certificate alone gives the attack, as on QUIC (NC1)
+nobinding-cert	reach-login	reach
+nobinding-cert	reach-done	reach
+nobinding-cert	sec-pw	attack	NC1: without the binding the key of the certificate alone is enough
+nobinding-cert	sec-data	attack	NC1
+nobinding-cert	auth-server	attack	NC1
+nobinding-cert	auth-client	attack	NC1
+nobinding-cert	data-auth	attack	NC1
+nobinding-cert	negotiation	attack	NC1
+nobinding-cert	suite	holds
+nobinding-cert	replay-server	attack	NC1
+nobinding-cert	replay-client	attack	NC1
+
+# Negative control: no pin. The Noise key of the server alone gives the attack (NC2)
+nopin-noise	reach-login	reach
+nopin-noise	reach-done	reach
+nopin-noise	sec-pw	attack	NC2: without the pin the Noise key of the server alone is enough
+nopin-noise	sec-data	attack	NC2
+nopin-noise	auth-server	attack	NC2
+nopin-noise	negotiation	attack	NC2
+nopin-noise	suite	attack	NC2
+
+# Negative control: no pin and no binding, no key. The middlebox needs nothing (NC3)
+neither-none	reach-login	reach
+neither-none	reach-done	reach
+neither-none	sec-pw	attack	NC3: the middlebox reads the password
+neither-none	sec-data	attack	NC3
+neither-none	auth-server	attack	NC3
+neither-none	auth-client	attack	NC3
+neither-none	data-auth	attack	NC3
+neither-none	negotiation	attack	NC3: the middlebox can lower the version
+neither-none	suite	holds	the suite is in the hash of the handshake, whatever the outer session
+neither-none	replay-server	attack	NC3
+neither-none	replay-client	attack	NC3
+
+# The control stream of a C node: as TLS-443, with the labels of the control stream
+control-node-none	reach-login	reach
+control-node-none	reach-done	reach
+control-node-none	sec-pw	holds
+control-node-none	sec-data	holds	the Update that the node applies is secret
+control-node-none	auth-server	holds
+control-node-none	auth-client	holds
+control-node-none	data-auth	holds	the Update that the node applies is the controller's
+control-node-none	negotiation	holds	the Hello (version and Capabilities) cannot be lowered
+control-node-none	suite	holds
+control-node-none	replay-server	holds
+control-node-none	replay-client	holds
+
+control-node-cert	reach-login	reach
+control-node-cert	reach-done	reach
+control-node-cert	sec-pw	holds
+control-node-cert	sec-data	holds
+control-node-cert	auth-server	holds
+control-node-cert	auth-client	holds
+control-node-cert	data-auth	holds
+control-node-cert	negotiation	holds
+control-node-cert	suite	holds
+control-node-cert	replay-server	holds
+control-node-cert	replay-client	holds
+
+control-node-noise-client	reach-login	reach
+control-node-noise-client	reach-done	reach
+control-node-noise-client	sec-pw	holds
+control-node-noise-client	sec-data	holds
+control-node-noise-client	auth-server	attack	the Noise keys let the attacker be the node
+control-node-noise-client	negotiation	holds
+control-node-noise-client	suite	attack	the attacker is the node
+
+control-node-fs	fs-pw	holds	forward secrecy
+control-node-fs	fs-data	holds	forward secrecy
+
+# The control stream of a Go client, which checks no certificate: as the control with no pin (C1)
+control-go-none	reach-login	reach
+control-go-none	reach-done	reach
+control-go-none	sec-pw	holds
+control-go-none	sec-data	holds
+control-go-none	auth-server	holds
+control-go-none	auth-client	holds
+control-go-none	data-auth	holds
+control-go-none	negotiation	holds
+control-go-none	suite	holds
+control-go-none	replay-server	holds
+control-go-none	replay-client	holds
+
+control-go-noise	reach-login	reach
+control-go-noise	reach-done	reach
+control-go-noise	sec-pw	attack	C1: the static key of the controller alone is enough
+control-go-noise	sec-data	attack	C1
+control-go-noise	auth-server	attack	C1
+control-go-noise	negotiation	attack	C1
+control-go-noise	suite	attack	C1
+
+# The join of a further connection to a tunnel over TLS-443, as the code has it: every connection of a Tunnel is of the
+# node whose static key the Tunnel was made for, and is its own handshake in its own outer session
+tunnel-none	reach-join	reach
+tunnel-none	join-auth	holds
+tunnel-none	join-identity	holds	a node joins only a Tunnel of its own static key, whatever ids it knows
+tunnel-none	join-replay	holds
+
+tunnel-cert	reach-join	reach
+tunnel-cert	join-auth	holds	the binding keeps a middlebox out of the join
+tunnel-cert	join-identity	holds
+tunnel-cert	join-replay	holds
+
+# The same over QUIC: the binding is the one of the certificate, so a join is open to a middlebox that holds the key of the
+# certificate (F1), and the static key still decides which Tunnel a node joins
+tunnel-quic-cert	reach-join	reach
+tunnel-quic-cert	join-auth	attack	F1: the middlebox relays the join of alice to the server over a TLS session of its own
+tunnel-quic-cert	join-identity	holds	the static key is checked whatever the outer session
+tunnel-quic-cert	join-replay	attack	F1
+
+# Negative control: the server joins by the id alone (NC4)
+tunnel-nokey-none	reach-join	reach
+tunnel-nokey-none	join-auth	holds	the handshake still has to authenticate alice for a join in her name
+tunnel-nokey-none	join-identity	attack	NC4: charlie joins the Tunnel of alice with her id, which is no secret
+tunnel-nokey-none	join-replay	holds
+
+# Noise_IK alone, the records under the Noise keys, graded as the Noise Explorer grades IK
+noise-encrypted	reach-c	reach
+noise-encrypted	reach-d	reach
+noise-encrypted	a-auth1	holds
+noise-encrypted	a-auth2	fails	the sender of message a is open to the compromise of the key of the receiver
+noise-encrypted	a-auth3	holds
+noise-encrypted	a-auth4	fails	the same
+noise-encrypted	a-conf2	holds
+noise-encrypted	a-conf4	fails	message a has no forward secrecy: the handshake payloads are empty
+noise-encrypted	a-conf5	fails
+noise-encrypted	b-auth1	holds
+noise-encrypted	b-auth2	holds
+noise-encrypted	b-auth3	holds
+noise-encrypted	b-auth4	holds
+noise-encrypted	b-conf2	holds
+noise-encrypted	b-conf4	holds
+noise-encrypted	b-conf5	fails
+noise-encrypted	c-auth1	holds
+noise-encrypted	c-auth2	holds
+noise-encrypted	c-auth3	holds
+noise-encrypted	c-auth4	holds
+noise-encrypted	c-conf2	holds
+noise-encrypted	c-conf4	holds
+noise-encrypted	c-conf5	holds	strong forward secrecy: the Login is in this record
+noise-encrypted	d-auth1	holds
+noise-encrypted	d-auth2	holds
+noise-encrypted	d-auth3	holds
+noise-encrypted	d-auth4	holds
+noise-encrypted	d-conf2	holds
+noise-encrypted	d-conf4	holds
+noise-encrypted	d-conf5	holds	strong forward secrecy
+
+# The peer layer: the envelopes of Noise_K, and the data datagrams in the clear
+peer-leaks	reach-open	reach
+peer-leaks	pe-auth	holds
+peer-leaks	pe-addr	attack	F3: the relay binds the address of the datagram, which the envelope does not hold
+peer-leaks	pe-replay	attack	F3: the replay check needs the memory of the receiver, which expires
+peer-leaks	pe-secret	holds
+peer-leaks	pe-fs	attack	no forward secrecy of an envelope: inherent to Noise_K
+peer-leaks	pd-forgery	attack	F2: a data datagram has no authentication
+peer-leaks	pd-secret	attack	F2: a data datagram has no encryption
+
+peer-honest	reach-open	reach
+peer-honest	pe-auth	holds
+peer-honest	pe-addr	attack	F3
+peer-honest	pe-replay	attack	F3
+peer-honest	pe-secret	holds
+peer-honest	pe-fs	holds
+peer-honest	pd-forgery	attack	F2
+peer-honest	pd-secret	attack	F2

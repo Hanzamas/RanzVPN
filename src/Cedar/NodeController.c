@@ -11,7 +11,8 @@
 //   Roles decide what else runs. A node without the settings runs as before, says once in its log that it has no
 //   Controller and opens no stream.
 // - A stream that ends, or does not open, opens again after a delay that grows while the attempts fail (ControlRetry.c),
-//   whatever failed. The log says what: no Controller answered, the TLS fingerprint check or the Noise handshake with the
+//   whatever failed. A stream on a path that went dead without a reset ends by TCP keepalive, NODE_CONTROLLER_KEEPALIVE
+//   seconds after its last segment and a few probes (TransportTlsKeepAlive.c). The log says what: no Controller answered, the TLS fingerprint check or the Noise handshake with the
 //   static key of the Controller failed, both of which fail closed before any state comes, or the Controller refused the
 //   node, as one whose static key no Node resource names yet. The node keeps dialling, so it joins without a restart once
 //   an operator has written its Node resource.
@@ -297,7 +298,7 @@ static void NodeControllerEnd(void *param, const CONTROL_STATUS *st) {
 }
 
 // The TLS transport of the control stream: TLS 1.3 with the ALPN protocol of the control stream, its TLS exporter as the
-// Channel binding and the certificate checked against the fingerprint of the settings
+// Channel binding, the certificate checked against the fingerprint of the settings, and TCP keepalive
 static TRANSPORT *NodeControllerTls(NODE_CONTROLLER *c) {
 	TRANSPORT_TLS_CONFIG tc;
 
@@ -312,6 +313,8 @@ static TRANSPORT *NodeControllerTls(NODE_CONTROLLER *c) {
 	StrCpy(tc.ExporterLabel, sizeof(tc.ExporterLabel), CONTROL_EXPORTER_LABEL);
 	tc.Verify = NodeControllerVerify;
 	tc.VerifyParam = c;
+	// A stream that is quiet on a path that went dead without a reset ends, and the node dials again
+	tc.KeepAlive = NODE_CONTROLLER_KEEPALIVE;
 
 	c->Tls = TransportTlsClientNew(&tc);
 	if (c->Tls == NULL)

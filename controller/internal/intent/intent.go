@@ -75,7 +75,8 @@ type Document struct {
 }
 
 // Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy,
-// Mirror (mirror.go), Controller, NAT, DnsRecord (dns.go), Group or User (user.go).
+// Mirror (mirror.go), Controller, NAT, DnsRecord (dns.go), Group or User (user.go), or Listener
+// (listener.go).
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -208,13 +209,14 @@ type Intent struct {
 	DNSRecords  map[string]DNSRecord
 	Groups      map[string]Group
 	Users       map[string]User
+	Listeners   map[string]Listener
 }
 
 // New returns an empty intent.
 func New() Intent {
 	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: map[string]Policy{},
 		Mirrors: map[string]Mirror{}, Controllers: map[string]Controller{}, NATs: map[string]NAT{}, DNSRecords: map[string]DNSRecord{},
-		Groups: map[string]Group{}, Users: map[string]User{}}
+		Groups: map[string]Group{}, Users: map[string]User{}, Listeners: map[string]Listener{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
@@ -242,6 +244,8 @@ func (in Intent) Clone() Intent {
 	}
 	out.DNSRecords = in.cloneDNS()
 	out.Users, out.Groups = in.cloneUsers()
+	// The Listeners of the Nodes (listener.go)
+	out.Listeners = in.cloneListeners()
 	for name, n := range in.Networks {
 		n.EnrolSources = slices.Clone(n.EnrolSources)
 		n.Reserved = slices.Clone(n.Reserved)
@@ -343,9 +347,14 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &u); err == nil {
 				next.Users[r.Name] = u
 			}
+		case KindListener:
+			var l Listener
+			if err = decodeSpec(r.Spec, &l); err == nil {
+				next.Listeners[r.Name] = l
+			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT, KindDNSRecord,
-				KindGroup, KindUser)
+			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
+				KindDNSRecord, KindGroup, KindUser, KindListener)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -368,8 +377,9 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
 // Network, a Node, a Policy, a Mirror, a NAT or a DnsRecord uses cannot be deleted, nor can a Node
-// that a NAT or a DnsRecord uses or that answers DHCP for a Network, a Group that a User belongs
-// to, and a User that owns a Node. The Nodes lose their addresses in a deleted Network.
+// that a NAT, a DnsRecord or a Listener uses or that answers DHCP for a Network, a Group that a
+// User belongs to, and a User that owns a Node. The Nodes lose their addresses in a deleted
+// Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -421,6 +431,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		if users := next.dnsUsers("", name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
+		// The Listener of the Node (SDN-45, listener.go)
+		if users := next.listenerUsers(name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
 		delete(next.Nodes, name)
 	case KindPolicy:
 		if _, ok := next.Policies[name]; !ok {
@@ -455,16 +469,21 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		if err := next.deleteUser(name); err != nil {
 			return in, err
 		}
+	case KindListener:
+		if _, ok := next.Listeners[name]; !ok {
+			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
+		}
+		delete(next.Listeners, name)
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
-			KindDNSRecord, KindGroup, KindUser, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController,
+			KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener, kind)
 	}
 	return next, nil
 }
 
 // Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
 // Policies, then the Mirrors, then the Controllers, then the NATs, then the DnsRecords, then the
-// Groups, then the Users, each ordered by name.
+// Groups, then the Users, then the Listeners, each ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -492,6 +511,9 @@ func (in Intent) Resources() []Resource {
 		out = append(out, resource(KindDNSRecord, name, in.DNSRecords[name]))
 	}
 	out = append(out, in.userResources()...)
+	for _, name := range sortedNames(in.Listeners) {
+		out = append(out, resource(KindListener, name, in.Listeners[name]))
+	}
 	return out
 }
 
@@ -542,6 +564,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var u User
 			err = decodeSpec(r.Spec, &u)
 			in.Users[r.Name] = u
+		case KindListener:
+			var l Listener
+			err = decodeSpec(r.Spec, &l)
+			in.Listeners[r.Name] = l
 		default:
 			err = errors.New("unknown kind")
 		}
@@ -693,6 +719,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeDHCP(prev)
 	in.completeDNS()
 	in.completeUsers()
+	in.completeListeners()
 	return problems
 }
 
@@ -811,6 +838,7 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateDHCP()...)
 	problems = append(problems, in.validateDNS()...)
 	problems = append(problems, in.validateUsers()...)
+	problems = append(problems, in.validateListeners()...)
 	return append(problems, in.validateIPAM()...)
 }
 

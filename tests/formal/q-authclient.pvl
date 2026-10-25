@@ -1,0 +1,12 @@
+(* q-authclient.pvl
+   The queries of the session models about what the client takes (AUD-5, #389). *)
+
+(* The client takes the answer of the server only if the server with the key that it pinned made it, in the TLS session
+   that the client is in and with the same handshake hash *)
+(* @query auth-client *)
+query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)) ==> event(ServerReply(bob, alice, t, h)).
+
+(* What the client takes from the server after the handshake (a record of the data stream, or the Update of the
+   controller) is what the server sent in that session *)
+(* @query data-auth *)
+query t: bitstring, d: bitstring; event(ClientGotData(alice, bob, t, d)) ==> event(ServerSentData(bob, alice, t, d)).

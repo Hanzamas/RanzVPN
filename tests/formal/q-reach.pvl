@@ -1,0 +1,10 @@
+(* q-reach.pvl
+   The queries of the session models that say the models do something (AUD-5, #389; see docs/formal-model.md for how
+   formal.py reads a query: each is one statement with its id in the comment before it). The queries of a group are
+   joined to a model by variants.tsv, and expected.tsv says what each must give in it. *)
+
+(* The handshake and the Login can complete, so that no query that holds is true only because nothing happens *)
+(* @query reach-login *)
+query t: bitstring; event(ServerLoginOk(bob, alice, t)).
+(* @query reach-done *)
+query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)).

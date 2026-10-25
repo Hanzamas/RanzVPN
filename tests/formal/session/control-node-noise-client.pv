@@ -1,0 +1,10 @@
+(* Variant control-node-noise-client: the control stream of a C node to the controller, against an attacker that holds the
+   Noise identity keys of the controller and of the node but not the key of the certificate (AUD-5, #389). As
+   tls443-noise-client, with the labels of the control stream. *)
+
+process
+  ( Setup()
+  | LeakNoiseServer()
+  | LeakNoiseClient()
+  | Sessions(pin_on, bt_export, plabel_control, lab_exp_control, suite_ik)
+  )

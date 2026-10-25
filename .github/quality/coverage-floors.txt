@@ -41,6 +41,10 @@ go  controller                          49
 go  controller/cmd/ranz                 77
 go  controller/cmd/ranz-nodesim         0
 go  controller/cmd/ranz-noisepeer       0
+# acmecert (SDN-45 #238): the Linux job measures the renewal, the state and the account key, 42.1% at the first run;
+# the issuance talks to an ACME service and the store of Windows, which the step "Listener with ACME" of windows.yml
+# runs against Pebble
+go  controller/internal/acmecert        40
 go  controller/internal/activation      81
 go  controller/internal/api             28
 go  controller/internal/audit           85

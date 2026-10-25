@@ -37,5 +37,9 @@ void NodeAdminState(NODE *n, struct cJSON *o);
 struct CONTROL_LEASES *NodeDhcpStart(NODE *n);
 void NodeDhcpStop(NODE *n);
 void NodeDhcpApplied(NODE *n, const struct CONTROL_STATE *st);
+void NodeListenerStart(NODE *n);
+void NodeListenerStop(NODE *n);
+void NodeListenerApplied(NODE *n, const struct CONTROL_STATE *st);
+TRANSPORT_STREAM *NodeListenerAccept(NODE *n);
 
 #endif // NODE_INTERNAL_H
