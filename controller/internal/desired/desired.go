@@ -122,6 +122,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		}
 		self.Mirrors = ms
 		self.WireguardPort = wireguardPort(in, name)
+		// The Listener of the node (listener.go; SDN-45)
+		self.Listener = listener(in, name)
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {

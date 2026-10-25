@@ -130,5 +130,6 @@ func changedFields(a, b json.RawMessage) []string {
 
 // kindOrder is the place of kind in the order of Resources.
 func kindOrder(kind string) int {
-	return slices.Index([]string{KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT, KindDNSRecord, KindGroup, KindUser, KindDevice}, kind)
+	return slices.Index([]string{KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener,
+		KindDevice}, kind)
 }

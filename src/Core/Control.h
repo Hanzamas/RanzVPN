@@ -51,6 +51,46 @@
 #define CONTROL_DEVICE_ADDRESSES 2    // The addresses of a Device: IPv4 and IPv6 (Device.addresses of control.options)
 #define CONTROL_DEVICE_REPORT    5000 // ms between two reports of the counters of the Devices of a gateway
 
+// The Listener of a node (SDN-45, #238): the source of its certificate, and the sizes of its fields (control.options)
+#define CONTROL_CERT_NONE       0   // No source: the node listens on no port of its own
+#define CONTROL_CERT_FILE       1   // A PKCS #12 file on the node (CertificateFile)
+#define CONTROL_CERT_KSP        2   // A certificate of the LocalMachine\My store by its thumbprint (Listener.ksp)
+#define CONTROL_CERT_ACME       3   // A certificate that an ACME service issues (CertificateAcme)
+#define CONTROL_PATH_SIZE       260 // A path of a file of the node with its terminating NUL (CertificateFile.path)
+#define CONTROL_URL_SIZE        256 // The URL of an ACME directory with its terminating NUL (CertificateAcme.directory)
+#define CONTROL_EMAIL_SIZE      128 // The contact of an ACME account with its terminating NUL (CertificateAcme.email)
+#define CONTROL_ACME_NAMES      4   // The DNS names of a certificate of ACME (CertificateAcme.names) ...
+#define CONTROL_ACME_NAME_SIZE  254 // ... each with its terminating NUL
+#define CONTROL_THUMBPRINT_SIZE 41  // A thumbprint of 40 hex digits with its terminating NUL (Listener.ksp)
+
+// The Listener of the node (Listener of the control protocol; SDN-45, #238; ADR-0035): the front door on the TCP port,
+// which hands each connection of the new protocol to the node's TLS, and QUIC on the UDP port, both with the certificate
+// of the source. The TLS policy of each surface is fixed in the node: TLS 1.3 for the new protocol.
+typedef struct CONTROL_LISTENER {
+	// The Listener resource
+	char Name[CONTROL_NAME_SIZE];
+	// The TCP port of the front door and the UDP port of QUIC
+	UINT Port;
+	UINT QuicPort;
+	// The source of the certificate (CONTROL_CERT_*)
+	UINT Source;
+	// FILE: the PKCS #12 file, and the file that holds its password, "" for none
+	char Path[CONTROL_PATH_SIZE];
+	char PasswordFile[CONTROL_PATH_SIZE];
+	// KSP: the thumbprint of the certificate in the LocalMachine\My store
+	char Thumbprint[CONTROL_THUMBPRINT_SIZE];
+	// ACME: the URL of the directory, the contact of the account ("" for none) and the DNS names of the certificate
+	char Directory[CONTROL_URL_SIZE];
+	char Email[CONTROL_EMAIL_SIZE];
+	UINT NumNames;
+	char Names[CONTROL_ACME_NAMES][CONTROL_ACME_NAME_SIZE];
+	// ... the TCP port of the HTTP-01 challenge, the roots of a private service ("" for the system's), and the days before
+	// its end at which the node renews the certificate
+	UINT HttpPort;
+	char CaFile[CONTROL_PATH_SIZE];
+	UINT RenewDays;
+} CONTROL_LISTENER;
+
 // A Mirror that the node applies (Mirror of the control protocol; SDN-23, #199): the node copies the packets of the
 // overlay that match it to the sensor, in VXLAN
 typedef struct CONTROL_MIRROR {
@@ -265,6 +305,9 @@ typedef struct CONTROL_STATE {
 	CONTROL_MIRROR Mirrors[CONTROL_MAX_MIRRORS];      // ... in name order
 	UINT NumDhcps;                                    // The DHCP responders that it runs (SDN-43, #236)
 	CONTROL_DHCP Dhcps[CONTROL_MAX_DHCPS];            // ... in Network name order
+
+	// Its Listener (SDN-45, #238), NULL for none: then it listens on no port of its own. Valid as the state is.
+	CONTROL_LISTENER *Listener;
 
 	// The UDP port of its WireGuard interface, 0 when it is the gateway of no Device, and the WireGuard Devices of its
 	// VRFs in name order (SDN-80, #375)

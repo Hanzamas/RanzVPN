@@ -247,6 +247,9 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	// The DHCP responders of the L2 Networks of the Generation (NodeDhcp.c; SDN-43, #236)
 	if (swapped)
 		NodeDhcpApplied(ov->Node, st);
+	// Where the node listens: the Listener of the Generation (NodeListener.c; SDN-45, #238)
+	if (swapped)
+		NodeListenerApplied(ov->Node, st);
 
 	Lock(ov->Lock);
 	{
@@ -399,6 +402,9 @@ static bool NodeOverlayAccept(NODE_OVERLAY *ov) {
 		return false;
 
 	TRANSPORT_STREAM *stream = TransportAccept(ov->Listener, 0);
+	// Else a stream that the front door or QUIC of the node's Listener took (NodeListener.c; SDN-45, #238)
+	if (stream == NULL)
+		stream = NodeListenerAccept(ov->Node);
 	if (stream == NULL)
 		return false;
 
@@ -633,6 +639,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	ov->NatBuf = Malloc(NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
 	NodeShapeStart(n, cfg);
 	NodePolicyStart(n, cfg);
+	// The Listener, which listens where a state says (NodeListener.c; SDN-45, #238)
+	NodeListenerStart(n);
 	n->Overlay = ov;
 
 	Zero(&cc, sizeof(cc));
@@ -699,6 +707,8 @@ void NodeOverlayStop(NODE *n) {
 		WaitForSingleObject(ov->Thread, INFINITE);
 		CloseHandle(ov->Thread);
 	}
+	// The thread closed every session, the ones over the streams of the Listener too (NodeListener.c; SDN-45, #238)
+	NodeListenerStop(n);
 
 	n->Overlay = NULL;
 	ReleaseList(ov->Peers);

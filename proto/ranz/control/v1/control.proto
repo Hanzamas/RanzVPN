@@ -61,6 +61,11 @@
 // gets their keys and the UDP port to listen on (NodeConfig.wireguard_port). The gateway reports the
 // last handshake and the traffic of each of its Devices in its Telemetry. No schema version changes
 // with them: a node of an older release skips the fields it does not know.
+//
+// Listener (SDN-45, ADR-0035): the node that a Listener resource names gets it in its NodeConfig
+// (NodeConfig.listener): the ports of its front door and of QUIC and the source of their
+// certificate. No schema version changes with it: a node of an older release skips the field it
+// does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -218,6 +223,43 @@ message NodeConfig {
   // The UDP port that the WireGuard interface of the node listens on, which terminates the Devices
   // whose gateway the node is (SDN-80); 0 when the node is the gateway of no Device.
   uint32 wireguard_port = 7;
+  // The Listener of the node (SDN-45), absent while no Listener resource names it: the node then
+  // listens on no port of its own.
+  Listener listener = 8;
+}
+
+// The Listener of a node (SDN-45 #238, ADR-0035): the front door on the TCP port, which hands each
+// connection of the new protocol to the node's TLS, and QUIC on the UDP port, both with the
+// certificate of the source. The TLS policy of each surface is fixed, not part of the message: the
+// new protocol takes TLS 1.3 only; the web UI, the API and compat take TLS 1.2 and 1.3.
+message Listener {
+  string name = 1;
+  uint32 port = 2;       // the TCP port of the front door
+  uint32 quic_port = 3;  // the UDP port of QUIC
+  oneof certificate {
+    CertificateFile file = 4;
+    // a certificate of the LocalMachine\My store whose key is in a key storage provider, by its
+    // SHA-1 thumbprint: 40 upper-case hex digits
+    string ksp = 5;
+    CertificateAcme acme = 6;
+  }
+}
+
+// A certificate in a PKCS #12 file on the node, which the node imports into a key storage provider.
+message CertificateFile {
+  string path = 1;
+  string password_file = 2;  // the file on the node that holds its password, empty for none
+}
+
+// A certificate that an ACME service issues to the node (RFC 8555) with the HTTP-01 challenge, which
+// the node renews renew_days before it expires.
+message CertificateAcme {
+  string directory = 1;       // the https URL of the ACME directory
+  string email = 2;           // the contact of the account, empty for none
+  repeated string names = 3;  // the DNS names of the certificate
+  uint32 http_port = 4;       // the TCP port that answers the HTTP-01 challenge
+  string ca_file = 5;         // the roots of a private ACME service, a PEM file on the node; empty for the system's
+  uint32 renew_days = 6;
 }
 
 // A VRF the node is a member of.

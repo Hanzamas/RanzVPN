@@ -99,3 +99,15 @@ ranz.control.v1.Device.public_key max_size:32
 ranz.control.v1.Capabilities.wireguard_key max_size:32
 ranz.control.v1.Telemetry.devices max_count:64
 ranz.control.v1.DeviceCounters.device max_size:64
+# The Listener of a node (SDN-45): a path of a file on the node of at most 259 characters (MAX_PATH),
+# the URL of an ACME directory of at most 255, an e-mail address of at most 127, and 4 DNS names of
+# at most 253 characters each (controller/internal/intent MaxListenerPath, MaxListenerURL,
+# MaxListenerEmail, MaxACMENames). It makes the NodeConfig, and so an Object, about 1.8 kB larger.
+ranz.control.v1.Listener.name max_size:64
+ranz.control.v1.Listener.ksp max_size:41
+ranz.control.v1.CertificateFile.path max_size:260
+ranz.control.v1.CertificateFile.password_file max_size:260
+ranz.control.v1.CertificateAcme.directory max_size:256
+ranz.control.v1.CertificateAcme.email max_size:128
+ranz.control.v1.CertificateAcme.names max_count:4 max_size:254
+ranz.control.v1.CertificateAcme.ca_file max_size:260

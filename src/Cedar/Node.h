@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeHarden.c, NodeLeak.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeHarden.c, NodeLeak.c, NodeListener.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -102,6 +102,7 @@
 #define NODE_ADMIN_IDLE             10000             // ms that the admin pipe waits for the command of a connected Administrator
 #define NODE_CONTROLLER_MAX_SETTING 1024              // Bytes of the Controller setting at most
 #define NODE_CONTROLLER_FINGERPRINT 65                // The TLS fingerprint of a Controller: 64 hex digits and the NUL
+#define NODE_CONTROLLER_KEEPALIVE   10                // s without a segment on the control stream before TCP keepalive probes its path
 
 // The Wintun adapters of a node (NodeWintun.c; CORE-S3-1, #71)
 #define NODE_WINTUN_DLL           L"wintun.dll" // Next to the executable: the pinned release of THIRD_PARTY.TXT
@@ -173,6 +174,15 @@
 #define NODE_DNS_RCODE_NXDOMAIN 3          // ... a name under the suffix that the zone does not have
 #define NODE_DNS_RCODE_NOTIMP   4          // ... an opcode other than QUERY
 #define NODE_DNS_RCODE_REFUSED  5          // ... a name outside the suffix, or a class other than IN
+
+// The Listener of a node (NodeListener.c; SDN-45, #238)
+#define NODE_LISTENER_FALLBACK   5555     // The TCP port of the front door when 443 is taken (the amendment of ADR-0035 of 2026-10-21)
+#define NODE_LISTENER_ACME_DIR   L"acme"  // The folder of the ACME sidecar in the data directory: the state of each Listener
+#define NODE_LISTENER_ACME_WAIT  180000   // ms that one run of the ACME sidecar takes at most
+#define NODE_LISTENER_ACME_CHECK 43200000 // ms between two runs, which renew the certificate when it is due: 12 hours
+#define NODE_LISTENER_ACME_RETRY 600000   // ms before a run that failed runs again
+#define NODE_LISTENER_ACME_OUT   1024     // Bytes of the answer of a run at most
+#define NODE_LISTENER_ACME_CMD   4096     // Characters of the command line of a run at most
 
 // Runs one work item on a worker, to completion (NodePost)
 typedef void(NODE_WORK_PROC)(NODE_WORKER *w, void *param);
@@ -348,6 +358,9 @@ struct NODE {
 
 	// The DHCP responders of the L2 Networks (NodeDhcp.c; SDN-43, #236), NULL while the overlay does not run
 	NODE_DHCPS *Dhcp;
+
+	// The Listener of the node (NodeListener.c; SDN-45, #238): where it listens, NULL while the overlay does not run
+	NODE_LISTENER *Listener;
 
 	// The WireGuard end of a gateway of WireGuard Devices (NodeWireGuard.c; SDN-80, #375), NULL while the overlay does not
 	// run
@@ -538,6 +551,28 @@ struct NODE_DNS_STATUS {
 	UINT LastBindError; // The error of the last bind of an address that failed, 0 for none
 };
 
+// What NodeListenerGetStatus reports (SDN-45, #238)
+struct NODE_LISTENER_STATUS {
+	// The Listener of the state applied last, "" for none, and the source of its certificate (CONTROL_CERT_*)
+	char Name[MAX_SIZE];
+	UINT Source;
+	// The front door listens on the TCP port Port, and QUIC on the UDP port QuicPort: 0 where msquic.dll is missing
+	bool Running;
+	UINT Port;
+	UINT QuicPort;
+	// TCP 443 was taken, so the front door listens on NODE_LISTENER_FALLBACK
+	bool Fallback;
+	// The certificate of both, by its thumbprint, "" while none runs
+	char Thumbprint[MAX_SIZE];
+	// Why the listeners do not run, "" while they do or no Listener asks for them
+	char Error[MAX_SIZE];
+	// The streams that the overlay took from the listeners
+	UINT64 Accepted;
+	// The runs of the ACME sidecar, and the certificates of ACME that the listeners took
+	UINT64 AcmeRuns;
+	UINT64 AcmeIssued;
+};
+
 // What NodeGetStatus reports
 struct NODE_STATUS {
 	bool Running;      // Between NodeStart and NodeStop
@@ -719,6 +754,10 @@ void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
 
 // NodeSession.c
 UINT NodeAcceptSession(NODE *n, TRANSPORT_NOISE *s, UINT timeout);
+
+// NodeListener.c
+void NodeListenerGetStatus(NODE *n, NODE_LISTENER_STATUS *st);
+void NodeListenerRenew(NODE *n);
 
 // NodeClient.c
 void NodeClientGetStatus(NODE *n, NODE_CLIENT_STATUS *st);

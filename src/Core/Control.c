@@ -390,12 +390,15 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyDhcps(&st, c->Objects, c->NumObjects);
 	// The zones of overlay DNS of the VRFs (ControlDns.c; SDN-11, #187)
 	ControlCopyZones(&st, c->Objects, c->NumObjects);
+	// The Listener of the node (ControlListener.c; SDN-45, #238)
+	ControlCopyListener(&st, c->Objects, c->NumObjects);
 	// The WireGuard Devices (ControlDevice.c; SDN-80, #375)
 	ControlCopyDevices(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
 
+	ControlFreeListener(&st);
 	ControlFreeZones(&st);
 	ControlRelease(st.Peers, sizeof(CONTROL_PEER) * (num_peers != 0 ? num_peers : 1));
 	ControlFreePolicy(&st);

@@ -44,6 +44,10 @@ go  controller/cmd/ranz-noisepeer       0
 # ranz-wgpeer (SDN-80 #375), the stock WireGuard client of the WireGuard Device tracer of windows.yml: a test tool with no
 # tests of its own, which the tracer runs against a gateway Node
 go  controller/cmd/ranz-wgpeer          0
+# acmecert (SDN-45 #238): the Linux job measures the renewal, the state and the account key, 42.1% at the first run;
+# the issuance talks to an ACME service and the store of Windows, which the step "Listener with ACME" of windows.yml
+# runs against Pebble
+go  controller/internal/acmecert        40
 go  controller/internal/activation      81
 go  controller/internal/api             28
 go  controller/internal/audit           85

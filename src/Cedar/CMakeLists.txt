@@ -104,6 +104,11 @@ target_link_libraries(cedar PRIVATE corevxlan)
 # member (NodeDhcp.c; SDN-43, #236). It keeps the build options of the new core to itself, as corepeer does.
 target_link_libraries(cedar PRIVATE coreswitch)
 
+# The front door of the new core, which the Listener of the Node module starts on the TCP port of its desired state and
+# which hands each TLS connection to the node's TLS transport (NodeListener.c; SDN-45, #238). It keeps the build options
+# of the new core to itself, as corepeer does.
+target_link_libraries(cedar PRIVATE corefrontdoor)
+
 # Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that
 # print it include it (Cedar.c, Admin.c, Server.c, Command.c), so a new stamp rebuilds those four
 # and not the whole library. configure_file leaves the header alone when its content is the same.
