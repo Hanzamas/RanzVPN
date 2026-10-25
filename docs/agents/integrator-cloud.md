@@ -22,11 +22,15 @@ The check of 2026-10-26 showed this.
 
 - A foreground command ends after 10 minutes. Monitor ends after 30 minutes for each arm. Never wait with a foreground sleep.
 - The container is reclaimed when it is idle. What is not pushed is lost.
-- The clone is shallow, at `/home/user/RanzVPN`, on the default branch.
+- The clone is shallow, at `/home/user/RanzVPN`. It is on the default branch, unless the environment says another.
 - Only HTTPS on port 443 goes out.
 - `CronCreate` lives as long as the session. The routine is the only schedule that survives.
 
 **Not tried yet:** the check did not try a write other than `git push`: a comment, a label, a merge, closing a ticket, creating a pull request. The first full tick does them for real. If a write fails, the tick stops that action, puts the error in its report and goes on with the work that does not need it.
+
+## The shape of the job
+
+The job is a routine, not one long session. The routine fires a tick every 30 minutes. A tick reads GitHub, acts and ends. Nothing that matters lives in the container: the state is in the pull requests, the branches, the tickets and the heartbeat issue. A tick that meets the limit of the plan ends where it is, and the next tick reads GitHub and continues. A tick that has lanes alive stays in its session while they run, and waits with Monitor (30 minutes for each arm).
 
 ## The commands
 
@@ -62,7 +66,7 @@ gh api "repos/Hanzamas/RanzVPN/actions/runs?head_sha=<sha>&per_page=100" --jq '[
 
 Read it so: a row whose status is not `completed` is still running. A completed row whose conclusion is not `success` (or `skipped`) failed. The head is green when there are at least 3 rows and all of them are `completed` and `success`. This is rule 4 of the merge procedure.
 
-Why not the check runs: a new label or a new push starts new runs and cancels the old ones. The old check runs stay in the list as `cancelled`, so a list of check runs shows failures that are not failures. Use the check runs only for names. Take the newest of each name (the highest id).
+Why not the check runs: a new label or a new push starts new runs and cancels the old ones. The old check runs stay in the list as `cancelled`, so a list of check runs shows failures that are not failures. Matrix jobs that were cancelled before they expanded even keep a name like `install (${{ matrix.platform.ARCHITECTURE }})`. To find one job by its name, take the newest check run of that name (the highest id).
 
 ### The jobs of a run
 
@@ -70,7 +74,15 @@ Why not the check runs: a new label or a new push starts new runs and cancels th
 gh api "repos/Hanzamas/RanzVPN/actions/runs/<run-id>/jobs?per_page=100" --jq '.jobs[] | [.id, .name, .status, .conclusion] | @tsv'
 ```
 
-For rule 5 of the merge procedure, read the jobs of the newest `windows.yml` run. The id of a job is also the id of its check run. Tool: `pull_request_read` with the method `get_check_runs` lists the check runs of a pull request.
+For rule 5 of the merge procedure, read the jobs of the newest `windows.yml` run. The id of a job is also the id of its check run.
+
+### The check runs of a head
+
+```
+gh api "repos/Hanzamas/RanzVPN/commits/<sha>/check-runs?per_page=100" --jq '.check_runs[] | [.id, .name, .status, .conclusion] | @tsv'
+```
+
+Tool: `pull_request_read` with the method `get_check_runs`. One row for each job of each run, with the older and cancelled ones too (see above). Use it to find the id of a failed job. If the head has more than 100 check runs, add `--paginate`.
 
 ### The log of a failed job
 
@@ -151,11 +163,11 @@ Close a ticket in two calls: the comment first (the fixed text of the merge proc
 
 ```
 gh api repos/Hanzamas/RanzVPN/branches/<branch> --jq .commit.commit.committer.date
-gh run list --repo Hanzamas/RanzVPN --branch integration --event push --limit 3
+gh run list --repo Hanzamas/RanzVPN --branch integration --event push --limit 8
 git ls-remote --heads origin
 ```
 
-The first gives the date of the newest commit of a branch. A branch with a commit in the last 45 minutes is busy. The second shows the newest full runs on `integration`.
+The first gives the date of the newest commit of a branch. A branch with a commit in the last 45 minutes is busy. The second shows the newest full runs on `integration`: one push starts about 7 runs, one for each workflow. Judge the newest push only.
 
 The progress count. It counts the tickets (issues with `Ticket key` in the body) that are not postponed, not parked and not waiting for the maintainer:
 
@@ -206,7 +218,7 @@ The steps are those of [integrator.md](integrator.md). The cloud changes these:
 6. **Wait.** Start the watcher below with Monitor. It ends after 30 minutes: start it again, and refresh the heartbeat each time. A tick that has lanes alive stays in the session. When the platform ends the session, the lanes end with it. That is a cut-off: the next tick resumes from GitHub.
 7. **Report.** In the heartbeat comment. A tick that has nothing to do writes the three lines, a line `idle`, and `ended:`.
 
-A tick that stands down costs little: it reads one issue and ends.
+A tick that stands down costs little: it reads two sections and one issue, and ends.
 
 ## The watcher
 
@@ -255,21 +267,22 @@ A line is a hint. Before you merge, run the two looks of the merge procedure. Ea
 - Use the template in [lanes/](lanes/README.md). Its rules use these commands, so one script serves both places.
 - A lane pushes after every commit, because the container can go at any time.
 - A lane watches CI with `gh run watch`, in the background. The template says how.
-- When a tick starts after a cut-off, the open pull requests and the pushed branches are the state. Start resume lanes for them as in "After a cut-off" in [integrator.md](integrator.md).
+- When a tick starts after a cut-off, the open pull requests and the pushed branches are the state. Start resume lanes for them as in "After a cut-off" in [integrator.md](integrator.md). A cloud tick cannot resume the Workflow of an earlier tick with `resumeFromRunId`: the journal of that run went with the container. It starts new resume lanes.
+- The result of a lane is a claim. Read the pull request yourself before you merge it.
 
 ## The routine
 
 The maintainer creates the routine from a desktop or web session, with the `schedule` skill. The routine fires a cloud session on a schedule, and the session runs one tick. The default: every 30 minutes, at most 4 lanes, merges only into `integration`, never `master`, the heartbeat issue for the lock.
 
-The prompt is short. It points to these pages, so that a change to the pages changes the job without a change to the routine:
+The prompt is short. It points to these pages, so that a change to the pages changes the job without a change to the routine. It sends the tick to the heartbeat first, so that a tick that stands down does not read the whole of both pages:
 
 ```
 You are the cloud integrator of Hanzamas/RanzVPN. Run one tick.
 
 AUTHORITY: <the words of the maintainer that start this routine, verbatim, with the date>
 
-1. Run git fetch origin integration. Read docs/agents/integrator.md and docs/agents/integrator-cloud.md as they are on origin/integration.
-2. Run one tick as they say.
+1. Run git fetch origin integration. Read the section "The integrator heartbeat" of docs/agents/integrator.md and the section "The heartbeat in commands" of docs/agents/integrator-cloud.md, as they are on origin/integration, and do the heartbeat. If you stand down, end.
+2. Otherwise read both pages in full, and run one tick as they say.
 
 Heartbeat issue: #<number>
 Lane cap: 4
@@ -282,6 +295,14 @@ The integrator never writes the AUTHORITY line. If the routine has none, the int
 **First run.** Make the first run a dry run, by hand. In a dry run the tick does the heartbeat and the look, writes the report, and merges nothing, closes nothing and launches nothing. The maintainer reads the heartbeat comment and the run log. That proves in one run the reads with `gh api` and with the MCP tools, and the write and the edit of a comment. Then he sets the mode to `full`.
 
 **One schedule at a time.** Turn off the local scheduled task that resumes work after a usage window while the routine is on, and turn off the routine while the maintainer runs the integrator on his PC. The heartbeat is the safety net, not the plan.
+
+**Set up, in order.**
+
+1. Connect GitHub to claude.ai and install the Claude GitHub App on the account `Hanzamas`, so that a cloud session can push (see "Git in a cloud session").
+2. Create the issue `Integrator heartbeat`. Pin it and lock it.
+3. Create the routine with the prompt above, mode `dry run`, and run it once by hand.
+4. Read the heartbeat comment and the run log. Set the mode to `full`.
+5. Turn off the local scheduled task.
 
 ## When something fails
 

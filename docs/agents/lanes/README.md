@@ -8,7 +8,7 @@
 2. **Fill `QUOTE`.** The words of the maintainer that start this run, verbatim, with their date. In a cloud run they are the words that he wrote into the routine. A lane that sees no authority line refuses to commit, push or open a pull request. Never write words that he did not write. The script stops, when a lane is active, if `QUOTE` or `STATE` still says `FILL IN`.
 3. **Fill `STATE`.** The facts of the moment: the date, the pull requests that merged, the pull requests and tickets that other lanes work on. Replace the old text for every run. Never stack a second `STATE`: the lane would read two states that disagree.
 4. **Fill `LANES`.** Copy `EXAMPLE_LANE` into the array, once per lane. Keep a finished lane in the array with `skip: true`, so that a new run shows what was done.
-5. **Run** it with the Workflow tool, with the path of your copy as `scriptPath`. Run one Workflow for a set of lanes. Before you run it, check that no running Workflow has the same lane. After an edit, run the same `scriptPath` again. With `resumeFromRunId` the lanes that finished are not run again.
+5. **Run** it with the Workflow tool, with the path of your copy as `scriptPath`. Run one Workflow for a set of lanes. Before you run it, check that no running Workflow has the same lane. After a cut-off, start a new run with resume lanes. Do not use `resumeFromRunId` for that: a new `STATE` changes every prompt, so nothing would come from the cache, and in the cloud the journal of the old run is gone.
 
 ## A lane object
 
