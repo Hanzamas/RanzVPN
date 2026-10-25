@@ -1,0 +1,3 @@
+{"resources": [
+  {"kind": "Policy", "name": "web-to-db", "spec": {"vrf": "corp", "action": "allow", "priority": 100, "from": {"tags": ["web"]}, "to": {"tags": ["db"], "addresses": ["10.10.0.0/24"]}, "protocol": "tcp", "ports": [5432, 8443]}}
+]}
