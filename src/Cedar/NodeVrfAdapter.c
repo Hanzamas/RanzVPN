@@ -9,6 +9,9 @@
 // - Each adapter holds the node's addresses in its VRF as host addresses, and a route through it to the prefix of each
 //   address of the node and of its peers in that VRF and to each route of a peer there, set through IP Helper per
 //   adapter (NodeWintun.c). The DNS servers of the owner go on the adapter of the VRF of the node's first address.
+// - In a VRF whose IPv4 the host reaches through 4via6, the adapter holds the 4via6 address of each IPv4 address of the
+//   node there and a route to the /96 of the 4via6. The stub resolver of overlay DNS answers the zone of each VRF on the
+//   addresses of its adapter, and the NRPT sends the names under the suffix of the zone to them (NodeDns.c; SDN-11).
 // - The packets of the host's own stack on the adapter of a VRF go into the overlay in that VRF (NodeOverlayInput) on
 //   the I/O thread of its adapter queue; a packet of a peer in a VRF goes into the adapter of that VRF
 //   (NodeVrfAdaptersSend) on the thread of the overlay, which takes no lock: it counts itself on the place of the
@@ -65,6 +68,7 @@ struct NODE_VRF_ADAPTERS {
 	bool Halted;                                // The packets of the host stop: an adapter that comes carries none
 	SRWLOCK InfoLock;                           // Used, Guid and Luid of the places, and the publication of an adapter
 	NODE_VRF_SLOT Slots[NODE_VRF_MAX_ADAPTERS]; // The places
+	NODE_DNS *Resolver;                         // Overlay DNS of the VRFs on the addresses of their adapters (NodeDns.c; SDN-11, #187)
 };
 
 // The GUID that the node of the static key key asks for the adapter of the VRF vrf_id: a name-based GUID (RFC 4122
@@ -106,6 +110,7 @@ NODE_VRF_ADAPTERS *NodeVrfAdaptersNew(NODE *n, const wchar_t *name, const UCHAR 
 	a->Forwarding = forwarding;
 	a->Lock = NewLock();
 	InitializeSRWLock(&a->InfoLock);
+	a->Resolver = NodeDnsNew(n, key);
 
 	NodeLog(n, "VRF adapters %S: one Wintun adapter per VRF of the state%s", name, forwarding ? ", forwarding as a gateway or an exit" : "");
 
@@ -138,6 +143,9 @@ void NodeVrfAdaptersFree(NODE_VRF_ADAPTERS *a) {
 
 	if (a == NULL)
 		return;
+
+	// The stub resolver and the NRPT rules go before the addresses that they name
+	NodeDnsFree(a->Resolver);
 
 	Lock(a->Lock);
 	{
@@ -316,6 +324,35 @@ static void NodeVrfAdapterRoute(NODE_PREFIX *routes, UINT *num, const UCHAR *add
 	routes[(*num)++] = p;
 }
 
+// The 4via6 of the VRF vrf_id on its adapter (ADR-0025 decision 4; SDN-6, #182): when the state st gives the node the
+// 4via6 of the VRF, the adapter holds the 4via6 address of each IPv4 address of the node there, which the host sends
+// from and the stub resolver of overlay DNS listens on (NodeDns.c; SDN-11, #187) in place of an IPv4 address that
+// another VRF of the host may hold too, and a route to the /96 of the 4via6
+static void NodeVrfAdapterVia6(UINT vrf_id, const CONTROL_STATE *st, NODE_PREFIX *addrs, UINT *num_addrs, NODE_PREFIX *routes, UINT *num_routes) {
+	UCHAR prefix[16];
+
+	Zero(prefix, sizeof(prefix));
+	if (NodeDnsVia6(st, vrf_id, prefix) == false)
+		return;
+
+	for (UINT i = 0; i < st->NumAddresses && *num_addrs < NODE_WINTUN_MAX_ADDRESSES; i++) {
+		const CONTROL_ADDRESS *a = &st->Addresses[i];
+		NODE_PREFIX *p = &addrs[*num_addrs];
+
+		if (a->VrfId != vrf_id || a->AddressSize != 4)
+			continue;
+
+		Zero(p, sizeof(NODE_PREFIX));
+		Copy(p->Address, prefix, 12);
+		Copy(p->Address + 12, a->Address, 4);
+		p->AddressSize = 16;
+		p->Length = 128;
+		(*num_addrs)++;
+	}
+
+	NodeVrfAdapterRoute(routes, num_routes, prefix, 16, 96);
+}
+
 // The addresses and the routes of the VRF of an adapter in a state on that adapter: the node's addresses in the VRF as
 // host addresses, and a route to the prefix of each address of the node and of its peers in the VRF and to each route
 // of a peer there. False when one could not be set.
@@ -353,6 +390,8 @@ static bool NodeVrfAdapterSet(NODE_VRF_ADAPTER *v, const CONTROL_STATE *st) {
 			if (p->Routes[j].VrfId == v->VrfId)
 				NodeVrfAdapterRoute(routes, &num_routes, p->Routes[j].Address, p->Routes[j].AddressSize, p->Routes[j].Length);
 	}
+
+	NodeVrfAdapterVia6(v->VrfId, st, addrs, &num_addrs, routes, &num_routes);
 
 	bool ok = NodeWintunSetAddresses(v->Wintun, addrs, num_addrs);
 	ok = NodeWintunSetRoutes(v->Wintun, routes, num_routes) && ok;
@@ -429,6 +468,9 @@ bool NodeVrfAdaptersApply(NODE_VRF_ADAPTERS *a, const CONTROL_STATE *st) {
 
 	NodeLog(a->Node, "VRF adapters %S: generation %I64u: %u adapters, %u new, %u removed%s", a->Name, st->Generation, num, num_new, num_gone,
 	        ok ? "" : " (not all of them set, see the lines before)");
+
+	// Overlay DNS of the VRFs on the addresses of their adapters (NodeDns.c; SDN-11, #187)
+	NodeDnsApply(a->Resolver, st);
 
 	return ok;
 }
@@ -515,4 +557,9 @@ UINT NodeVrfAdaptersGetStatus(NODE_VRF_ADAPTERS *a, NODE_VRF_ADAPTER_STATUS *lis
 	ReleaseSRWLockShared(&a->InfoLock);
 
 	return num;
+}
+
+// Overlay DNS of the VRFs of the set (NodeDns.c), NULL for none
+NODE_DNS *NodeVrfAdaptersDns(NODE_VRF_ADAPTERS *a) {
+	return (a != NULL ? a->Resolver : NULL);
 }

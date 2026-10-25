@@ -90,6 +90,9 @@ src/Cedar  NodeMirrorCopy  fuzz_mirror
 # The DHCP responder of an L2 Network (SDN-43 #236) reads the frames that the members of the switch of the Network send:
 # the DHCP messages of the clients and of a DHCP server of the LAN, and the ARP requests
 src/Cedar  NodeDhcpInput  fuzz_nodedhcp
+# The stub resolver of overlay DNS (SDN-11 #187) reads the DNS queries that reach UDP port 53 of the node's addresses in a
+# VRF. No parser word in the name, listed as the parser it is
+src/Cedar  NodeDnsAnswer  fuzz_nodedns
 # The Capabilities of the Node (ONE-3 #312) come from the host, not from a peer
 src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: it asks Windows for the architecture of the host, whether the services SeLow and xdp are registered and whether three files of System32 exist
 

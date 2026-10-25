@@ -62,6 +62,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			return nil, fmt.Errorf("VRF %q: %w", name, err)
 		}
 		vrfs[name] = &controlpb.Vrf{Name: name, Id: v.ID, Ula: prefix(ula), Mtu: v.MTU, RateLimit: v.RateLimit, Policy: vrfPolicy(v)}
+		// The zone of overlay DNS (dns.go; SDN-11)
+		vrfs[name].Dns = zone(in, name)
 	}
 	networks := map[string][]*controlpb.Network{} // by VRF name
 	for name, n := range in.Networks {
