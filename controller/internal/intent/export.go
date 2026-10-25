@@ -89,6 +89,7 @@ func Replace(in Intent, doc Document, random io.Reader) (Intent, error) {
 			delete(base.DNSRecords, name)
 		}
 	}
+	base.dropUndeclaredUsers(declared)
 	next, err := Apply(base, doc, random)
 	if err != nil {
 		return in, err

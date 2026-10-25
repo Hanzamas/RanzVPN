@@ -110,6 +110,8 @@ func (in Intent) MirrorsOf(name string) []string {
 	if !ok {
 		return nil
 	}
+	// The Groups of the owner of the Node give it tags too (user.go, SDN-31)
+	n.Tags = in.NodeTags(name)
 	for _, m := range sortedNames(in.Mirrors) {
 		if in.Mirrors[m].selects(name, n) {
 			out = append(out, m)
