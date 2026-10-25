@@ -186,20 +186,17 @@ func (c *Controller) AuthenticateUser(ctx context.Context, l Login) (Account, er
 	devices := c.intent.DevicesOf(l.User)
 	c.mu.Unlock()
 
-	verified, derived := false, false
-	if known {
-		hash, have, err := c.store.UserPassword(ctx, l.User)
-		if err != nil {
-			return Account{}, err
-		}
-		if have {
-			derived = true
-			if verified, err = password.Verify(l.Password, hash); err != nil {
-				return Account{}, fmt.Errorf("the stored password of User %q: %w", l.User, err)
-			}
-		}
+	// The store is read for a name that no User has too, so that the read is no sign of which names exist
+	hash, have, err := c.store.UserPassword(ctx, l.User)
+	if err != nil {
+		return Account{}, err
 	}
-	if !derived {
+	verified := false
+	if known && have {
+		if verified, err = password.Verify(l.Password, hash); err != nil {
+			return Account{}, fmt.Errorf("the stored password of User %q: %w", l.User, err)
+		}
+	} else {
 		password.Decoy(l.Password)
 	}
 	if !verified {
