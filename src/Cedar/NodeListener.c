@@ -378,13 +378,15 @@ static bool NodeListenerAcmeRun(NODE_LISTENER *l, const CONTROL_LISTENER *c, cha
 		return false;
 	}
 
-	// The answer: "thumbprint <40 hex digits>", or "error <why>"
+	// The answer: "thumbprint <40 hex digits>", or "error <why>", on a line of its own. Trim takes spaces and tabs only, so
+	// the line end goes first.
 	BUF *b = ReadDumpW(out);
 	Zero(answer, sizeof(answer));
 	if (b != NULL) {
 		Copy(answer, b->Buf, MIN(b->Size, (UINT)sizeof(answer) - 1));
 		FreeBuf(b);
 	}
+	TrimCrlf(answer);
 	Trim(answer);
 
 	if (w != WAIT_OBJECT_0) {
