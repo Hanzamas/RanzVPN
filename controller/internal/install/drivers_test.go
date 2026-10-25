@@ -97,6 +97,24 @@ func TestEveryDriverHasItsOwnNames(t *testing.T) {
 	}
 }
 
+// The XDP runtime gets a receive ring that takes a send() of UDP segmentation offload in one pass:
+// XdpRxRingSize is a power of two that XDP takes (up to 8192), above the 44 segments of a send() of
+// 64 KB in frames of 1514 bytes (#72, risk R1). SeLow has no setting.
+func TestXDPRuntimeGetsAReceiveRingForUSO(t *testing.T) {
+	var ring uint32
+	for _, s := range xdpDriver.settings {
+		if s.name == "XdpRxRingSize" {
+			ring = s.value
+		}
+	}
+	if ring < 64 || ring > 8192 || ring&(ring-1) != 0 {
+		t.Errorf("the XDP runtime is set up with XdpRxRingSize %d, want a power of two from 64 to 8192", ring)
+	}
+	if len(seLowDriver.settings) != 0 {
+		t.Errorf("the SeLow driver has the settings %v, want none", seLowDriver.settings)
+	}
+}
+
 // The SeLow driver of this file is what the INF of its package installs: a component of the class
 // NetTrans (a protocol) with the id SeLow, and the service SeLow. The INF is the one that ranz
 // carries (internal/payload/selow), so a new package fails here until the table follows it.

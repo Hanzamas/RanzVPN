@@ -6,7 +6,8 @@
 #    amendment of 2026-10-21).
 # 2. ranz install adds the XDP runtime. The xdp.sys that it put into System32 passes signtool verify /kp, the policy of
 #    Windows for kernel-mode drivers, which takes production signatures only, and is signed by Microsoft (ADR-0018
-#    amendment of 2026-10-13). vpntest kmtest xdp quick: TX inspect, RX inject, LAN discovery with per-VLAN broadcast
+#    amendment of 2026-10-13), and its receive ring is set up (XdpRxRingSize, so that a send() with USO goes through
+#    TX inspect; #72, risk R1). vpntest kmtest xdp quick: TX inspect, RX inject, LAN discovery with per-VLAN broadcast
 #    limits, recovery and shutdown. The recovery that the test asks for is in the Application event log under the source
 #    ranzvpnserver, and in an ETW trace session on the provider of Debug() (#72, risk R3).
 # 3. The soak: two minutes of TX and RX at full rate (#72, risk R2), and on the nightly run of a Sunday an hour of it, the
@@ -109,6 +110,15 @@ function Stop-TraceSession([string] $name) {
 	return $code
 }
 
+# The receive ring that ranz install gives the XDP runtime (XdpRxRingSize of controller/internal/install/drivers.go):
+# XDP inspects what the host sends through it, and a ring smaller than the segments of a send() with USO left the
+# sender blocked (#72, risk R1)
+function Test-XdpRing([string] $when) {
+	$ring = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\xdp' -Name 'XdpRxRingSize' -ErrorAction SilentlyContinue).XdpRxRingSize
+	Write-Host "the XDP runtime $when has XdpRxRingSize '$ring'"
+	if (-not $ring -or $ring -lt 64) { Add-Failure "ranz install did not set up the receive ring of the XDP runtime $when (XdpRxRingSize '$ring')" }
+}
+
 # signtool.exe of the Windows SDK: the highest version under the Windows Kits, x64 build
 function Get-SignTool {
 	$roots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "${env:ProgramFiles}\Windows Kits\10\bin")
@@ -151,6 +161,7 @@ if (-not (Test-Path -LiteralPath $xdpSys)) {
 	Write-Host "xdp.sys: signed by $signer"
 	if ($signer -notmatch 'O=Microsoft Corporation') { Add-Failure "$xdpSys is not signed by Microsoft: $signer" }
 	Write-Host "the xdp service: $((& sc.exe query xdp | Out-String).Trim())"
+	Test-XdpRing 'after ranz install'
 }
 
 # The run of vpntest kmtest xdp quick inside an ETW trace session on the provider of Debug() (src/Mayaqua/Trace.c), which
@@ -202,6 +213,7 @@ if ($r.Code -ne 0 -and $r.Code -ne 3010) { Add-Failure "ranz uninstall after the
 Write-Host "ranz uninstall after $soak s of traffic took $($r.Seconds) s (exit code $($r.Code))"
 $r = Invoke-Ranz @('install')
 if ($r.Code -ne 0) { Add-Failure "ranz install after the uninstall exited with code $($r.Code)" }
+Test-XdpRing 'after the reinstall'
 if (-not (Invoke-KmTest @('xdp'))) { Add-Failure 'vpntest kmtest xdp after the reinstall' }
 
 # 5. Senders with USO on an adapter without an L2 adapter and on adapters with one, for the record: the run checks

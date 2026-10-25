@@ -227,6 +227,9 @@ func installDriver(w io.Writer, m *mgr.Mgr, dir string, d driver) (bool, error) 
 	if exists {
 		if _, recorded := recordedDriver(d.record); recorded {
 			fmt.Fprintf(w, "install: %s is installed already, by an earlier ranz install: it stays as it is\n", d.label)
+			if err := applySettings(w, d); err != nil {
+				fmt.Fprintf(w, "install: warning: %v\n", err)
+			}
 		} else {
 			fmt.Fprintf(w, "install: %s is on this machine already (the %s service), and ranz install did not put it there: ranz leaves it as it is, and uninstall leaves it too\n", d.label, d.service)
 		}
@@ -250,7 +253,7 @@ func installDriver(w io.Writer, m *mgr.Mgr, dir string, d driver) (bool, error) 
 		_ = os.RemoveAll(pkg)
 		return false, err
 	}
-	if err := installComponent(m, pkg, d, published); err != nil {
+	if err := installComponent(w, m, pkg, d, published); err != nil {
 		if undoErr := removeDriver(w, m, dir, d, published, "install"); undoErr != nil {
 			fmt.Fprintf(w, "install: taking %s out again: %v\n", d.label, undoErr)
 		}
@@ -262,9 +265,9 @@ func installDriver(w io.Writer, m *mgr.Mgr, dir string, d driver) (bool, error) 
 
 // installComponent installs the network component of d from the package that is published, as
 // Microsoft's xdp-setup.ps1 installs the XDP runtime: netcfg installs the component, lodctr
-// registers the performance counters of a driver that has a manifest, and the driver starts. It
-// records the install last.
-func installComponent(m *mgr.Mgr, pkg string, d driver, published string) error {
+// registers the performance counters of a driver that has a manifest, the settings of d go to the
+// key of its service, and the driver starts. It records the install last.
+func installComponent(w io.Writer, m *mgr.Mgr, pkg string, d driver, published string) error {
 	if _, err := runTool("netcfg.exe", "-v", "-l", filepath.Join(pkg, d.inf), "-c", d.class, "-i", d.component); err != nil {
 		return err
 	}
@@ -277,10 +280,38 @@ func installComponent(m *mgr.Mgr, pkg string, d driver, published string) error 
 			return err
 		}
 	}
+	if err := applySettings(w, d); err != nil {
+		return err
+	}
 	if err := startDriver(m, d.service); err != nil {
 		return err
 	}
 	return recordDriver(d.record, published)
+}
+
+// applySettings writes the settings of d to the key of its service, which its INF created, and
+// reports them to w. A driver that reads its settings when it loads finds them there; the XDP
+// runtime also watches its key, and sizes the receive ring of a queue by XdpRxRingSize when a
+// program attaches to the queue.
+func applySettings(w io.Writer, d driver) error {
+	if len(d.settings) == 0 {
+		return nil
+	}
+	path := `SYSTEM\CurrentControlSet\Services\` + d.service
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.SET_VALUE)
+	if err != nil {
+		return fmt.Errorf("the key HKLM\\%s of %s: %w", path, d.label, err)
+	}
+	defer k.Close()
+	var set []string
+	for _, s := range d.settings {
+		if err := k.SetDWordValue(s.name, s.value); err != nil {
+			return fmt.Errorf("%s of %s (HKLM\\%s): %w", s.name, d.label, path, err)
+		}
+		set = append(set, fmt.Sprintf("%s %d", s.name, s.value))
+	}
+	fmt.Fprintf(w, "install: %s is set up: %s\n", d.label, strings.Join(set, ", "))
+	return nil
 }
 
 // startDriver starts the driver of the service name and waits until it runs. A driver that has

@@ -54,10 +54,28 @@ type driver struct {
 	// leftovers are the files of System32 that the INF copies there and that stay when the
 	// component is removed: ranz uninstall deletes them. Paths are relative to System32.
 	leftovers []string
+	// settings are written to the key of the service (HKLM\SYSTEM\CurrentControlSet\Services\<service>)
+	// once the component is installed, and by every later install that finds the driver of an
+	// earlier ranz install. They go with the key when the driver is removed.
+	settings []setting
 	// files are the files of the package, which install writes into its folder; none on an
 	// architecture that has no package.
 	files []payload.Payload
 }
+
+// setting is a DWORD value of the key of the service of a driver, which the driver reads as its
+// tuning.
+type setting struct {
+	name  string
+	value uint32
+}
+
+// xdpRxRingSize is the XdpRxRingSize that install sets for the XDP runtime: the frames of the
+// receive ring that XDP gives a queue when a program attaches to it, a power of two from 8 to 8192.
+// XDP inspects what the host sends (TX inspect) through that ring, and with the default of 32 a
+// send() of UDP segmentation offload of 44 segments left its sender blocked for good on a KM-TEST
+// adapter, while a send() of 16 segments went through (#72, risk R1).
+const xdpRxRingSize = 1024
 
 // seLowDriver is the SeLow NDIS protocol driver of SoftEther, which captures and injects the frames
 // of a Local Bridge. Its INF is of the class NetTrans and installs the component SeLow (SL_PROTOCOL_NAME
@@ -74,7 +92,8 @@ var seLowDriver = driver{
 
 // xdpDriver is the XDP for Windows runtime: the filter driver xdp.sys, installed as the network
 // component ms_xdp, and the xdpapi.dll that the Node loads. It installs as Microsoft's xdp-setup.ps1
-// does it: netcfg for the component and lodctr for the performance counters.
+// does it: netcfg for the component and lodctr for the performance counters, then its receive ring
+// is set up (xdpRxRingSize).
 var xdpDriver = driver{
 	label:     "the XDP runtime",
 	record:    "xdp",
@@ -84,6 +103,7 @@ var xdpDriver = driver{
 	inf:       "xdp.inf",
 	manifest:  "xdppcw.man",
 	leftovers: []string{`drivers\xdp.sys`, "xdpapi.dll"},
+	settings:  []setting{{"XdpRxRingSize", xdpRxRingSize}},
 }
 
 // selectDrivers returns the drivers that Install puts on the machine, in the order it installs
