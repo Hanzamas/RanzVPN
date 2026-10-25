@@ -94,6 +94,9 @@ type VRF struct {
 	// most, which a token bucket on the Node keeps (ADR-0025 decision 17, SDN-20). Left out, the
 	// VRF has no limit.
 	RateLimit uint64 `json:"rateLimit,omitempty"`
+	// Conntrack holds the conntrack quota of the VRF on each Node and the timeouts of its flows
+	// (ADR-0029 decision 5, policy.go). Left out, each is the default of the Node.
+	Conntrack Conntrack `json:"conntrack,omitzero"`
 	// DNS turns on overlay DNS in the VRF (ADR-0028): a zone of its own, which SDN-11 (#187)
 	// serves on its members. The first start sets it for VRF default (ADR-0034).
 	DNS bool `json:"dns,omitempty"`
@@ -165,12 +168,25 @@ type Controller struct {
 
 // Policy is one rule of the policy of a VRF (ADR-0029). The policy engine of the nodes is
 // default deny, and a rule with the action PolicyAllow lets traffic through; the first start
-// creates the starter rule "allow all inside VRF default" (ADR-0034). So far a rule matches
-// every flow between the Nodes of its VRF: the tags, protocols and ports it matches, and its
-// compilation into the policy engine of the nodes, come with SDN-8 (#184).
+// creates the starter rule "allow all inside VRF default" (ADR-0034). A rule matches the flows
+// from its From end to its To end, of its protocol and to its ports, and the controller compiles
+// it into the policy engine of the Nodes of its VRF (policy.go; SDN-8, #184).
 type Policy struct {
 	VRF    string `json:"vrf"`
 	Action string `json:"action"` // PolicyAllow or PolicyDeny
+	// Priority orders the rules of the VRF, the lowest first, from 1 to MaxPriority; of one
+	// priority a deny rule comes before an allow rule, then the names in order. Left out, it is
+	// DefaultPriority.
+	Priority uint32 `json:"priority,omitempty"`
+	// From is the end that opens a flow, To the other. Left out, an end is any.
+	From PolicyEnd `json:"from,omitzero"`
+	To   PolicyEnd `json:"to,omitzero"`
+	// Protocol is tcp, udp, icmp (ICMP, and ICMPv6 in IPv6) or an IP protocol number from 1 to
+	// 255. Left out, any protocol.
+	Protocol PolicyValue `json:"protocol,omitempty"`
+	// Ports are the destination ports of TCP or UDP, each a port or a range "first-last". Left
+	// out, any port.
+	Ports []PolicyValue `json:"ports,omitempty"`
 }
 
 // Intent is the whole declared network, by kind and name.
@@ -201,6 +217,7 @@ func (in Intent) Clone() Intent {
 	if out.Policies == nil {
 		out.Policies = map[string]Policy{}
 	}
+	clonePolicies(out.Policies)
 	// A Mirror holds no slice or map, so a copy of the map shares nothing
 	out.Mirrors = maps.Clone(in.Mirrors)
 	if out.Mirrors == nil {
@@ -604,6 +621,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 		n.LANSubnets = canonicalLANs(n.LANSubnets)
 		in.Nodes[name] = n
 	}
+	in.completePolicies()
 	in.completeNAT()
 	in.completeLeaks()
 	in.completeDHCP(prev)
@@ -719,6 +737,7 @@ func (in Intent) validate() []error {
 			problems = append(problems, fmt.Errorf("Controller %q: %w", name, err))
 		}
 	}
+	problems = append(problems, in.validatePolicies()...)
 	problems = append(problems, in.validateNAT()...)
 	problems = append(problems, in.validateLeaks()...)
 	problems = append(problems, in.validateDHCP()...)

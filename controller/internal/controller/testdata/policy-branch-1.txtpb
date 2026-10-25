@@ -1,0 +1,117 @@
+# Generation 1 of branch-1 after policy.json (SDN-8): VRF corp carries the conntrack quota and the
+# timeouts that it declares, each peer its tags, and branch-1 (tag web) gets the rules of corp whose
+# from or to end can be it: web-to-db, from its tag, and no-guests, whose to end is any.
+update: {
+  generation: 1
+  set: {
+    node: {
+      name: "branch-1"
+      tags: "web"
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\x0a\x0a\x00\x01"  # 10.10.0.1
+          length: 24
+        }
+      }
+    }
+  }
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\xfd\x12\x34\x56\x78\x9a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1280
+      policy: {
+        max_flows: 4096
+        tcp_established: 600
+        udp: 20
+        icmp: 5
+      }
+    }
+  }
+  set: {
+    network: {
+      name: "corp-lan"
+      vrf_id: 10
+      mode: NETWORK_MODE_L3
+      ipv4_pool: {
+        address: "\x0a\x0a\x00\x00"  # 10.10.0.0
+        length: 24
+      }
+    }
+  }
+  set: {
+    peer: {
+      name: "branch-2"
+      public_key: "\x58\x69\xaf\xf4\x50\x54\x97\x32\xcb\xaa\xed\x5e\x5d\xf9\xb3\x0a\x6d\xa3\x1c\xb0\xe5\x74\x2b\xad\x5a\xd4\xa1\xa7\x68\xf1\xa6\x7b"
+      vrf_ids: 10
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\x0a\x0a\x00\x02"  # 10.10.0.2
+          length: 24
+        }
+      }
+      tags: "db"
+    }
+  }
+  set: {
+    peer: {
+      name: "lab-1"
+      public_key: "\x24\x4f\xe3\xb9\x63\xe8\x99\xdd\x29\x5b\xaf\xfc\xe2\x48\xd3\x53\x0f\x3a\x9a\x74\x79\xba\x06\x30\x02\x68\x0e\xbf\xe7\xad\xad\x49"
+      vrf_ids: 10
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\x0a\x0a\x00\x03"  # 10.10.0.3
+          length: 24
+        }
+      }
+    }
+  }
+  set: {
+    rule: {
+      name: "no-guests"
+      vrf_id: 10
+      priority: 1000
+      action: RULE_ACTION_DENY
+      from: {
+        tags: "guest"
+      }
+    }
+  }
+  set: {
+    rule: {
+      name: "web-to-db"
+      vrf_id: 10
+      priority: 100
+      action: RULE_ACTION_ALLOW
+      from: {
+        tags: "web"
+      }
+      to: {
+        tags: "db"
+        prefixes: {
+          address: "\x0a\x0a\x00\x00"  # 10.10.0.0
+          length: 24
+        }
+      }
+      protocol: 6
+      ports: {
+        first: 5432
+        last: 5432
+      }
+      ports: {
+        first: 8000
+        last: 8080
+      }
+    }
+  }
+}

@@ -1,0 +1,131 @@
+# Generation 1 of lab-1 after policy.json (SDN-8): lab-1 has no tag, so of the rules of corp it
+# gets no-guests, whose to end is any, and not web-to-db, whose two ends name tags it does not
+# have; it gets lab-ping, the rule of lab. VRF lab declares no conntrack, so its policy holds the
+# defaults of the node.
+update: {
+  generation: 1
+  set: {
+    node: {
+      name: "lab-1"
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\x0a\x0a\x00\x03"  # 10.10.0.3
+          length: 24
+        }
+      }
+      addresses: {
+        network: "lab-lan"
+        vrf_id: 20
+        prefix: {
+          address: "\x0a\x14\x00\x03"  # 10.20.0.3
+          length: 24
+        }
+      }
+    }
+  }
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\xfd\x12\x34\x56\x78\x9a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1280
+      policy: {
+        max_flows: 4096
+        tcp_established: 600
+        udp: 20
+        icmp: 5
+      }
+    }
+  }
+  set: {
+    vrf: {
+      name: "lab"
+      id: 20
+      ula: {
+        address: "\xfd\x12\x34\x56\x78\x9b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"  # fd12:3456:789b::
+        length: 48
+      }
+      mtu: 1280
+      policy: {}
+    }
+  }
+  set: {
+    network: {
+      name: "corp-lan"
+      vrf_id: 10
+      mode: NETWORK_MODE_L3
+      ipv4_pool: {
+        address: "\x0a\x0a\x00\x00"  # 10.10.0.0
+        length: 24
+      }
+    }
+  }
+  set: {
+    network: {
+      name: "lab-lan"
+      vrf_id: 20
+      mode: NETWORK_MODE_L3
+      ipv4_pool: {
+        address: "\x0a\x14\x00\x00"  # 10.20.0.0
+        length: 24
+      }
+    }
+  }
+  set: {
+    peer: {
+      name: "branch-1"
+      public_key: "\x07\xa3\x7c\xbc\x14\x20\x93\xc8\xb7\x55\xdc\x1b\x10\xe8\x6c\xb4\x26\x37\x4a\xd1\x6a\xa8\x53\xed\x0b\xdf\xc0\xb2\xb8\x6d\x1c\x7c"
+      vrf_ids: 10
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\x0a\x0a\x00\x01"  # 10.10.0.1
+          length: 24
+        }
+      }
+      tags: "web"
+    }
+  }
+  set: {
+    peer: {
+      name: "branch-2"
+      public_key: "\x58\x69\xaf\xf4\x50\x54\x97\x32\xcb\xaa\xed\x5e\x5d\xf9\xb3\x0a\x6d\xa3\x1c\xb0\xe5\x74\x2b\xad\x5a\xd4\xa1\xa7\x68\xf1\xa6\x7b"
+      vrf_ids: 10
+      addresses: {
+        network: "corp-lan"
+        vrf_id: 10
+        prefix: {
+          address: "\x0a\x0a\x00\x02"  # 10.10.0.2
+          length: 24
+        }
+      }
+      tags: "db"
+    }
+  }
+  set: {
+    rule: {
+      name: "lab-ping"
+      vrf_id: 20
+      priority: 1000
+      action: RULE_ACTION_ALLOW
+      protocol: 1
+    }
+  }
+  set: {
+    rule: {
+      name: "no-guests"
+      vrf_id: 10
+      priority: 1000
+      action: RULE_ACTION_DENY
+      from: {
+        tags: "guest"
+      }
+    }
+  }
+}
