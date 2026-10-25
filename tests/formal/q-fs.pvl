@@ -1,9 +1,7 @@
 (* q-fs.pvl
-   The queries of forward secrecy of the session models (AUD-5, #389): what the attacker knows after the sessions, when it
-   holds every long-term key of the nodes by then (the models that have LeakLate). A session whose password and data are
-   still secret has forward secrecy. *)
+   The query of forward secrecy of the session models (AUD-5, #389; AUD-6, #409): what the attacker knows after the
+   sessions, when it holds every long-term key of the nodes by then (the models that have LeakLate). A session whose data
+   is still secret has forward secrecy. The password is in q-fs-password.pvl. *)
 
-(* @query fs-pw *)
-query attacker(pw(alice)).
 (* @query fs-data *)
 query sid: sessionid; attacker(appdata(bob, alice, sid)).
