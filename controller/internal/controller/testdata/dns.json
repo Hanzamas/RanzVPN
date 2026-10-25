@@ -1,0 +1,14 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "red", "spec": {"id": 101, "ula": "fd00:101::/48", "dns": true, "dnsSuffix": "corp.internal"}},
+    {"kind": "VRF", "name": "blue", "spec": {"id": 202, "ula": "fd00:202::/48", "dns": true, "dnsSuffix": "corp.internal"}},
+    {"kind": "Network", "name": "red-lan", "spec": {"vrf": "red", "ipv4Pool": "10.1.0.0/24", "ipv6Pool": "fd00:101:0:1::/64"}},
+    {"kind": "Network", "name": "blue-lan", "spec": {"vrf": "blue", "ipv4Pool": "10.2.0.0/24"}},
+    {"kind": "Node", "name": "branch-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["red"]}},
+    {"kind": "Node", "name": "branch-2", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["blue"]}},
+    {"kind": "Node", "name": "lab-1", "spec": {"publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "vrfs": ["red"]}},
+    {"kind": "Node", "name": "relay-1", "spec": {"publicKey": "iDGGuAC0HVzwQpaV2ps8xPMo680YSm5IL6V4wQPwbHc=", "vrfs": ["blue"]}},
+    {"kind": "DnsRecord", "name": "red-files", "spec": {"vrf": "red", "name": "fileserver", "node": "lab-1"}},
+    {"kind": "DnsRecord", "name": "blue-files", "spec": {"vrf": "blue", "name": "fileserver", "node": "relay-1"}}
+  ]
+}

@@ -75,7 +75,7 @@ type Document struct {
 }
 
 // Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy,
-// Mirror (mirror.go), Controller or NAT.
+// Mirror (mirror.go), Controller, NAT or DnsRecord (dns.go).
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -100,6 +100,9 @@ type VRF struct {
 	// DNS turns on overlay DNS in the VRF (ADR-0028): a zone of its own, which SDN-11 (#187)
 	// serves on its members. The first start sets it for VRF default (ADR-0034).
 	DNS bool `json:"dns,omitempty"`
+	// DNSSuffix is the suffix of the zone of the VRF (dns.go). Left out, it is the name of the VRF
+	// followed by DNSDomain.
+	DNSSuffix string `json:"dnsSuffix,omitempty"`
 	// ImportTargets are the route targets that the VRF imports: the routes of every other VRF
 	// that exports one of them leak into it (ADR-0025 decision 7, leak.go). Left out, it imports
 	// none.
@@ -198,12 +201,13 @@ type Intent struct {
 	Mirrors     map[string]Mirror
 	Controllers map[string]Controller
 	NATs        map[string]NAT
+	DNSRecords  map[string]DNSRecord
 }
 
 // New returns an empty intent.
 func New() Intent {
 	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: map[string]Policy{},
-		Mirrors: map[string]Mirror{}, Controllers: map[string]Controller{}, NATs: map[string]NAT{}}
+		Mirrors: map[string]Mirror{}, Controllers: map[string]Controller{}, NATs: map[string]NAT{}, DNSRecords: map[string]DNSRecord{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
@@ -229,6 +233,7 @@ func (in Intent) Clone() Intent {
 	if out.NATs == nil {
 		out.NATs = map[string]NAT{}
 	}
+	out.DNSRecords = in.cloneDNS()
 	for name, n := range in.Networks {
 		n.EnrolSources = slices.Clone(n.EnrolSources)
 		n.Reserved = slices.Clone(n.Reserved)
@@ -315,8 +320,13 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &n); err == nil {
 				next.NATs[r.Name] = n
 			}
+		case KindDNSRecord:
+			var d DNSRecord
+			if err = decodeSpec(r.Spec, &d); err == nil {
+				next.DNSRecords[r.Name] = d
+			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT)
+			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT, KindDNSRecord)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -338,8 +348,9 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 }
 
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
-// Network, a Node, a Policy, a Mirror or a NAT uses cannot be deleted, nor can a Node that a NAT
-// uses or that answers DHCP for a Network. The Nodes lose their addresses in a deleted Network.
+// Network, a Node, a Policy, a Mirror, a NAT or a DnsRecord uses cannot be deleted, nor can a Node
+// that a NAT or a DnsRecord uses or that answers DHCP for a Network. The Nodes lose their
+// addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -365,6 +376,7 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		}
 		users = append(users, next.mirrorUsers(name)...)
 		users = append(users, next.natUsers(name, "")...)
+		users = append(users, next.dnsUsers(name, "")...)
 		if len(users) > 0 {
 			return in, fmt.Errorf("%w: VRF %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
@@ -385,6 +397,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		// The DHCP responder of a Network (SDN-43, dhcp.go)
 		if users := next.dhcpUsers(name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q answers DHCP for %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
+		// The names of the zones of overlay DNS (SDN-11, dns.go)
+		if users := next.dnsUsers("", name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
 		delete(next.Nodes, name)
 	case KindPolicy:
@@ -407,14 +423,21 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.NATs, name)
+	case KindDNSRecord:
+		if _, ok := next.DNSRecords[name]; !ok {
+			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
+		}
+		delete(next.DNSRecords, name)
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
+			KindDNSRecord, kind)
 	}
 	return next, nil
 }
 
 // Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
-// Policies, then the Mirrors, then the Controllers, then the NATs, each ordered by name.
+// Policies, then the Mirrors, then the Controllers, then the NATs, then the DnsRecords, each
+// ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -437,6 +460,9 @@ func (in Intent) Resources() []Resource {
 	}
 	for _, name := range sortedNames(in.NATs) {
 		out = append(out, resource(KindNAT, name, in.NATs[name]))
+	}
+	for _, name := range sortedNames(in.DNSRecords) {
+		out = append(out, resource(KindDNSRecord, name, in.DNSRecords[name]))
 	}
 	return out
 }
@@ -476,6 +502,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var n NAT
 			err = decodeSpec(r.Spec, &n)
 			in.NATs[r.Name] = n
+		case KindDNSRecord:
+			var d DNSRecord
+			err = decodeSpec(r.Spec, &d)
+			in.DNSRecords[r.Name] = d
 		default:
 			err = errors.New("unknown kind")
 		}
@@ -625,6 +655,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeNAT()
 	in.completeLeaks()
 	in.completeDHCP(prev)
+	in.completeDNS()
 	return problems
 }
 
@@ -741,6 +772,7 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateNAT()...)
 	problems = append(problems, in.validateLeaks()...)
 	problems = append(problems, in.validateDHCP()...)
+	problems = append(problems, in.validateDNS()...)
 	return append(problems, in.validateIPAM()...)
 }
 

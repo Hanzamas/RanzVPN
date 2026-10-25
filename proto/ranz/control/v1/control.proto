@@ -50,6 +50,10 @@
 // controller the leases that the responder holds (Leases). No schema version changes with them: a
 // node of an older release skips the field it does not know, and a controller of an older release
 // answers the first Leases with REFUSE_REASON_PROTOCOL.
+//
+// Overlay DNS (SDN-11, ADR-0028 decisions 6 to 8): a VRF with overlay DNS on carries its zone in
+// the Vrf object (Vrf.dns). No schema version changes with it: a node of an older release skips the
+// field it does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -214,6 +218,26 @@ message Vrf {
   // The policy of the VRF (SDN-8): the controller sends it with every VRF, and the node enforces
   // the Rules of a VRF that has it. A VRF without it is one that no controller compiled rules for.
   VrfPolicy policy = 6;
+  // The zone of overlay DNS in the VRF (SDN-11), absent while overlay DNS is off in it
+  DnsZone dns = 7;
+}
+
+// The zone of a VRF (SDN-11 #187, ADR-0028 decisions 6 and 7). The stub resolver of a node
+// answers it on the node's addresses in the VRF, and the NRPT rules of the node's host send only
+// the names under suffix to it. The name of each node of the VRF answers that node's addresses in
+// the VRF, which the node has from its own addresses and the ones of its peers
+// (NodeConfig.addresses, Peer.addresses); records holds the DnsRecord resources of the VRF,
+// ordered by name.
+message DnsZone {
+  string suffix = 1;  // without a dot at either end, lower case
+  repeated DnsRecord records = 2;
+}
+
+// A name of a zone and the addresses it answers: 4 bytes for IPv4 (an A record), 16 for IPv6 (an
+// AAAA record). The name is relative to the suffix of its zone.
+message DnsRecord {
+  string name = 1;
+  repeated bytes addresses = 2;
 }
 
 enum NetworkMode {
