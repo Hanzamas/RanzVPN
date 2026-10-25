@@ -18,6 +18,7 @@
 #include "testlist.h"
 
 #include "Cedar/Cedar.h"
+#include "Cedar/Connection.h"
 #include "Cedar/Node.h"
 
 #include "Mayaqua/Internat.h"
@@ -68,6 +69,9 @@ static FORMAL_ENTRY formal_functions[] =
 	FORMAL(NoiseSessionReceive),
 	FORMAL(NoiseSessionSend),
 	FORMAL(NoiseSuiteName),
+	FORMAL(NoiseTunnelId),
+	FORMAL(NoiseTunnelInit),
+	FORMAL(NoiseTunnelJoin),
 	FORMAL(PeerEnvelopeOpen),
 	FORMAL(PeerEnvelopeSeal),
 	FORMAL(PeerSealSignal),
@@ -77,6 +81,8 @@ static FORMAL_ENTRY formal_functions[] =
 	FORMAL(TransportNoiseAccept),
 	FORMAL(TransportNoiseConnect),
 	FORMAL(TransportTlsDefaultConfig),
+	FORMAL(TunnelJoin),
+	FORMAL(TunnelStart),
 };
 
 static UINT formaltable_test_failed = 0;

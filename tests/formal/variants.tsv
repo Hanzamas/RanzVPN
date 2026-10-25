@@ -1,20 +1,28 @@
-# The models that .github/scripts/formal.py runs (AUD-5, #389): <name> <files> <what it is>, separated by tabs.
+# The models that .github/scripts/formal.py runs (AUD-5, #389): <name> <files> <what it is> [<slices>], separated by tabs.
 # The files are paths below tests/formal, joined in this order into one ProVerif input, which formal.py runs
 # with the pinned ProVerif (.github/scripts/formal.py run). The queries of the files are numbered by their
 # (* @query id *) comments, and expected.tsv says what each must give in each variant. A line that starts
 # with # is a comment.
 #
+# slices: ProVerif keeps its state for every query of a run, so a variant with many queries, or a heavy one, runs
+# as that many ProVerif runs, each with consecutive queries of its own and a job of its own in formal.yml. 1 when
+# the column is missing.
+#
 # The session variants have the same ProVerif text but for the process at the end of the last file: the
 # compromise variants leak the keys of the nodes in phase 0 and in phase 1, the honest ones leak nothing.
-tls443	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443.pv	Session over TLS 1.3 (TLS-443), the code as it is: pinned certificate, Noise_IK bound to the TLS exporter; keys leaked
-tls443-honest	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-honest.pv	The same with no key leaked
-quic	prims.pvl,session-lib.pvl,session-queries.pvl,session/quic.pv	Session over QUIC, the code as it is: pinned certificate, Noise_IK bound to tls-server-end-point; keys leaked
-quic-honest	prims.pvl,session-lib.pvl,session-queries.pvl,session/quic-honest.pv	The same with no key leaked
-tls443-nobinding	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-nobinding.pv	Negative control: no binding in the prologue
-tls443-nopin	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-nopin.pv	Negative control: the client pins no certificate
-tls443-neither-honest	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-neither-honest.pv	Negative control: no pin and no binding, no key leaked: the middlebox
-control-node	prims.pvl,session-lib.pvl,session-queries.pvl,session/control-node.pv	Control stream of a C node: pinned certificate, Noise_IK of the node with the controller, bound to the exporter
-control-go	prims.pvl,session-lib.pvl,session-queries.pvl,session/control-go.pv	Control stream of a Go client: no certificate check, the same handshake
-noise-encrypted	prims.pvl,noise-lib.pvl,noise-queries.pvl,noise/encrypted.pv	Noise_IK alone with the records under the Noise keys (no outer session): the grades of the Noise Explorer
+tls443	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443.pv	Session over TLS 1.3 (TLS-443), the code as it is: pinned certificate, Noise_IK bound to the TLS exporter; keys leaked	4
+tls443-honest	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-honest.pv	The same with no key leaked	4
+quic	prims.pvl,session-lib.pvl,session-queries.pvl,session/quic.pv	Session over QUIC, the code as it is: pinned certificate, Noise_IK bound to tls-server-end-point; keys leaked	4
+quic-honest	prims.pvl,session-lib.pvl,session-queries.pvl,session/quic-honest.pv	The same with no key leaked	4
+tls443-nobinding	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-nobinding.pv	Negative control: no binding in the prologue	4
+tls443-nopin	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-nopin.pv	Negative control: the client pins no certificate	4
+tls443-neither-honest	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-neither-honest.pv	Negative control: no pin and no binding, no key leaked: the middlebox	4
+control-node	prims.pvl,session-lib.pvl,session-queries.pvl,session/control-node.pv	Control stream of a C node: pinned certificate, Noise_IK of the node with the controller, bound to the exporter	4
+control-go	prims.pvl,session-lib.pvl,session-queries.pvl,session/control-go.pv	Control stream of a Go client: no certificate check, the same handshake	4
+tunnel	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tls443.pv	Join of a further connection to a tunnel over TLS 1.3, the code as it is: the static key of the connection is compared with the Tunnel's; keys leaked	2
+tunnel-honest	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tls443-honest.pv	The same with no key leaked	2
+tunnel-quic	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/quic.pv	Join over QUIC, the code as it is: bound to tls-server-end-point; keys leaked	2
+tunnel-nokey	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/nokey.pv	Negative control: the join does not compare the static key of the connection with the Tunnel's	2
+noise-encrypted	prims.pvl,noise-lib.pvl,noise-queries.pvl,noise/encrypted.pv	Noise_IK alone with the records under the Noise keys (no outer session): the grades of the Noise Explorer	6
 peer-leaks	prims.pvl,peer-lib.pvl,peer-queries.pvl,peer/leaks.pv	Peer layer: Noise_K envelopes and data datagrams, keys leaked
 peer-honest	prims.pvl,peer-lib.pvl,peer-queries.pvl,peer/honest.pv	The same with no key leaked

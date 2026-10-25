@@ -1,21 +1,23 @@
 # The formal model of the session handshake (AUD-5, #389; docs/formal-model.md): ProVerif, pinned, on Linux.
 #
 # tests/formal holds the models of the handshakes of Ranz VPN: the session of a client over TLS-443 and over
-# QUIC, the control stream of a node and of a Go client, Noise_IK alone with its records under the Noise
-# keys, and the peer layer. The build job builds ProVerif 2.05 from the source archive of its authors, whose
-# SHA-256 is the one that opam-repository records for that release, and checks the table from the model to the
-# code. The prover job has one run for each variant of tests/formal/variants.tsv (.github/scripts/formal.py
-# run). A run fails when a query that must hold does not hold, when a negative control (the binding left
-# out, the pin left out, neither) stops showing its attack, and when a finding (the QUIC binding, the peer
-# layer) stops showing its own, so that a fix of the code has to change tests/formal/expected.tsv in the
-# same change. The inputs and the logs of ProVerif, with the traces of the attacks, are the artifacts
-# formal-<variant>.
+# QUIC, the join of a further connection to a tunnel, the control stream of a node and of a Go client, Noise_IK
+# alone with its records under the Noise keys, and the peer layer. The build job builds ProVerif 2.05 from the
+# source archive of its authors, whose SHA-256 is the one that opam-repository records for that release, and
+# checks the table from the model to the code. The prover job has one job for each variant of
+# tests/formal/variants.tsv, or for each slice of its queries when the file cuts the variant into slices
+# (.github/scripts/formal.py run). A job fails when a query that must hold does not hold, when a negative control
+# (the binding left out, the pin left out, neither, the static key of a join left out) stops showing its attack,
+# and when a finding (the QUIC binding, the peer layer) stops showing its own, so that a fix of the code has to
+# change tests/formal/expected.tsv in the same change. The inputs and the logs of ProVerif, with the traces of
+# the attacks, are the artifacts formal-<variant> and formal-<variant>-<slice>of<slices>.
 #
 # It runs in the full set only (ci-plan.yml, .github/scripts/ci-plan.py): on a push to master or integration,
 # every night, on workflow_dispatch, on a pull request with the label full-ci and on a pull request that
 # changes the models, this workflow or the script (SENSITIVE in ci-plan.py). A pull request that changes none
-# of the files below does not run the workflow. The table from the model to the code, which only needs
-# Python, is checked by quality.yml on every pull request.
+# of the files below does not run the workflow, and one that changes only the code that the table names, with
+# no label, runs the plan job and nothing else. The table from the model to the code, which only needs Python,
+# is checked by quality.yml on every pull request.
 
 name: formal
 
@@ -35,6 +37,18 @@ on:
     - '.github/workflows/ci-plan.yml'
     - '.github/scripts/ci-plan.py'
     - '.github/scripts/formal.py'
+    # The code that the table from the model to the code names: a change of it, on a pull request with the label
+    # full-ci, runs the prover (formal.py check keeps this list covering every file of the table)
+    - 'src/Core/Noise*'
+    - 'src/Core/Crypto*'
+    - 'src/Core/Transport*'
+    - 'src/Core/Peer*'
+    - 'src/Core/Control.*'
+    - 'src/Cedar/Node.c'
+    - 'src/Cedar/NodeSession.c'
+    - 'src/Cedar/ConnectionTunnel.c'
+    - 'controller/internal/control/stream.go'
+    - 'controller/internal/controller/controller.go'
 
 # A run that is not a pull request is the full set, and its name says so: Full CI: push on integration
 run-name: "${{ github.event_name == 'pull_request' && github.event.pull_request.title || format('Full CI: {0} on {1}', github.event_name, github.ref_name) }}"
@@ -71,7 +85,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
-      variants: ${{ steps.variants.outputs.names }}
+      matrix: ${{ steps.variants.outputs.matrix }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -81,7 +95,7 @@ jobs:
       run: |
         python -I .github/scripts/formal.py selftest
         python -I .github/scripts/formal.py check
-    - name: The variants
+    - name: The jobs of the variants
       id: variants
       run: python -I .github/scripts/formal.py list >> "$GITHUB_OUTPUT"
     - name: Restore ProVerif
@@ -110,16 +124,17 @@ jobs:
     - name: ProVerif runs and says its version
       run: python -I .github/scripts/formal.py version --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION"
 
-  # One run for each variant: its results are in its log as soon as it is done, whatever the others take
+  # One job for each variant, or for each slice of its queries when variants.tsv cuts it into slices (ProVerif keeps
+  # its state for every query of a run, and a variant with many queries or a heavy one needs more of the runner than
+  # it has): the results of a job are in its log as soon as it is done, whatever the others take
   prover:
-    name: ${{ matrix.variant }}
+    name: ${{ matrix.job }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        variant: ${{ fromJSON(needs.build.outputs.variants) }}
+      matrix: ${{ fromJSON(needs.build.outputs.matrix) }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -133,10 +148,10 @@ jobs:
         fail-on-cache-miss: true
     - name: ProVerif on the variant
       run: |
-        python -u -I .github/scripts/formal.py run --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION" --out build/formal --jobs 1 --timeout 2700 --trace-lines 150 "${{ matrix.variant }}"
+        python -u -I .github/scripts/formal.py run --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION" --out build/formal --jobs 1 --timeout 2700 --trace-lines 150 --slice "${{ matrix.slice }}" "${{ matrix.variant }}"
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
-        name: formal-${{ matrix.variant }}
+        name: formal-${{ matrix.slug }}
         if-no-files-found: warn
         path: build/formal/

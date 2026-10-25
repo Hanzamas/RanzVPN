@@ -62,6 +62,13 @@ reduc forall p: bitstring; certkey(mkcert(p)) = p.
 fun thumb(bitstring): bitstring.
 fun epbind(bitstring): bitstring.
 
+(* The key exchange of the outer session, in a group of its own: the key shares of TLS and the static keys of Noise
+   never meet in the code, no node computes a Diffie-Hellman with one from the other, and a group of its own
+   keeps the prover from trying the products of the two, which nothing computes *)
+const tg: bitstring.
+fun tdhexp(bitstring, bitstring): bitstring.
+equation forall a: bitstring, b: bitstring; tdhexp(a, tdhexp(b, tg)) = tdhexp(b, tdhexp(a, tg)).
+
 (* TLS 1.3: the master secret from the Diffie-Hellman secret and the transcript, the keys of the records of
    the two directions and the exporter of a label, and the AEAD of the records *)
 fun tlsms(bitstring, bitstring): bitstring.
@@ -110,14 +117,14 @@ event ServerSentData(principal, principal, bitstring).
 let Client(me: principal, them: principal, pin: bitstring, bm: bitstring, plabel: bitstring, lab: bitstring, suite: bitstring) =
   new cr: bitstring;
   new x: bitstring;
-  let gx = dhexp(x, g) in
+  let gx = tdhexp(x, tg) in
   out(c, (cr, gx));
   in(c, (sr: bitstring, gy: bitstring, cert: bitstring, sg: bitstring));
   let tr = (cr, gx, sr, gy, cert) in
   let trs = checksign(certkey(cert), sg) in
   if trs = tr then
   if pincheck(pin, cert, them) then
-  let ms = tlsms(dhexp(x, gy), tr) in
+  let ms = tlsms(tdhexp(x, gy), tr) in
   let kc = tlsk(ms, lab_c) in
   let ks = tlsk(ms, lab_s) in
   let bnd = binding(bm, ms, cert, lab) in
@@ -164,11 +171,11 @@ let Server(me: principal, them: principal, bm: bitstring, plabel: bitstring, lab
   in(c, (cr: bitstring, gx: bitstring));
   new sr: bitstring;
   new y: bitstring;
-  let gy = dhexp(y, g) in
+  let gy = tdhexp(y, tg) in
   let mycert = certof(me) in
   let tr = (cr, gx, sr, gy, mycert) in
   out(c, (sr, gy, mycert, sign(sigkey(me), tr)));
-  let ms = tlsms(dhexp(y, gx), tr) in
+  let ms = tlsms(tdhexp(y, gx), tr) in
   let kc = tlsk(ms, lab_c) in
   let ks = tlsk(ms, lab_s) in
   let bnd = binding(bm, ms, mycert, lab) in
@@ -222,7 +229,8 @@ let Setup() =
   out(c, skey(charlie));
   out(c, sigkey(charlie));
   out(c, pw(charlie));
-  out(c, g).
+  out(c, g);
+  out(c, tg).
 
 (* The compromise of the keys of the honest nodes: in phase 0, before or during the sessions, and in phase 1,
    after them, which is what forward secrecy asks of the sessions of phase 0 *)

@@ -8,7 +8,9 @@
 # without a fuzz target fails here (ADR-0040 item 1).
 #
 # formal model: the table from the models of the handshake to the code (AUD-5, #389) is checked here: every
-# function and field that it names exists, every name of the models has a row (.github/scripts/formal.py).
+# function that it names is defined in its file, every field is in the body of one of the functions of its
+# row, every name of the models has a row, and the paths of formal.yml cover every file of the table
+# (.github/scripts/formal.py).
 #
 # The gates themselves run where their code is built: the fuzzers, the coverage floors, the static
 # analysis, Application Verifier and the performance gate of the C build in windows.yml; go test
@@ -96,5 +98,5 @@ jobs:
         python-version: '3.12'
     - name: The tests of the script
       run: python -I .github/scripts/formal.py selftest
-    - name: Every function and field that the table names exists, every name of the models has a row
+    - name: Every function and field that the table names is in the code, every name of the models has a row
       run: python -I .github/scripts/formal.py check
