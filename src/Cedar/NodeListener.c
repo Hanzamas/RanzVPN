@@ -270,22 +270,31 @@ static bool NodeListenerCertificate(NODE_LISTENER *l, char *thumb, UINT size) {
 	Zero(path, sizeof(path));
 	Utf8ToUni(path, sizeof(path), c->Path, StrLen(c->Path));
 	BUF *pfx = ReadDumpW(path);
-	bool read = (pfx != NULL);
-	PCCERT_CONTEXT cert = (read ? CryptoCertImportPfx(pfx->Buf, pfx->Size, password, CRYPTO_MACHINE) : NULL);
-	bool ok = (cert != NULL && CryptoCertHasKspKey(cert) && CryptoCertAddToStore(cert, NULL, CRYPTO_MACHINE) && CryptoCertThumbprintStr(cert, thumb, size));
-
-	SecureZeroMemory(password, sizeof(password));
-	CryptoCertFree(cert);
-	FreeBuf(pfx);
-
-	if (ok == false) {
-		StrCpy(thumb, size, "");
-		Format(l->Error, sizeof(l->Error), "the PKCS #12 file %s %s", c->Path,
-		       read ? "does not import into the key storage provider and the LocalMachine\\My store: is its password the one of the password file?" : "cannot be read");
+	if (pfx == NULL) {
+		SecureZeroMemory(password, sizeof(password));
+		Format(l->Error, sizeof(l->Error), "the PKCS #12 file %s cannot be read", c->Path);
 		return false;
 	}
 
-	return true;
+	// Each step says why it failed: the import, the key of the certificate, the store. The thumbprint comes last, so it
+	// is there only when every step passed.
+	PCCERT_CONTEXT cert = CryptoCertImportPfx(pfx->Buf, pfx->Size, password, CRYPTO_MACHINE);
+	UINT error = (cert == NULL ? (UINT)GetLastError() : 0);
+	SecureZeroMemory(password, sizeof(password));
+	FreeBuf(pfx);
+
+	if (cert == NULL)
+		Format(l->Error, sizeof(l->Error), "the PKCS #12 file %s does not import into the key storage provider of the machine (error 0x%x): is its password the one of the password file?", c->Path, error);
+	else if (CryptoCertHasKspKey(cert) == false)
+		Format(l->Error, sizeof(l->Error), "the key of the certificate of the PKCS #12 file %s is not in a key storage provider", c->Path);
+	else if (CryptoCertAddToStore(cert, NULL, CRYPTO_MACHINE) == false)
+		Format(l->Error, sizeof(l->Error), "the certificate of the PKCS #12 file %s cannot go into the LocalMachine\\My store (error 0x%x)", c->Path, (UINT)GetLastError());
+	else if (CryptoCertThumbprintStr(cert, thumb, size) == false)
+		Format(l->Error, sizeof(l->Error), "the certificate of the PKCS #12 file %s has no thumbprint", c->Path);
+
+	CryptoCertFree(cert);
+
+	return (IsEmptyStr(thumb) == false);
 }
 
 //
