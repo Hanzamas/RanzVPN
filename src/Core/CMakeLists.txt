@@ -165,6 +165,8 @@ add_library(corecontrol STATIC
   ControlDhcp.c
   ControlDns.c
   ControlInternal.h
+  # The Listener of a node in a desired state (SDN-45, #238)
+  ControlListener.c
   "${_ranz_controlpb}/ranz/control/v1/control.pb.c"
   "${_ranz_controlpb}/ranz/control/v1/control.pb.h"
   # The policy of the VRFs in a desired state (SDN-8, #184)
