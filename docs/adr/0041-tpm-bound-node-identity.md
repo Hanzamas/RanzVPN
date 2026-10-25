@@ -2,6 +2,17 @@
 
 **Status:** Proposed (2026-10-25, CORE-H4, #401, under #45). An evaluation: nothing in the product changes with it. It recommends adopting the TPM-bound identity in a later phase (the hardening phase), as an opt-in identity kind that a TPM-held key proves with a signature inside the Noise session, not with a client certificate on the outer session, and only after one experiment on real TPM hardware (Decision 1 and 2). It builds on ADR-0022 (amendment of 2026-10-21), ADR-0023, ADR-0033, ADR-0035 and ADR-0039, and on the formal model of AUD-5 (`docs/formal-model.md`).
 
+## In short
+
+1. **Protection.** A TPM-held key that must also sign in the session stops the copy of a disk, of a backup and of a VM from becoming a second Node, which the software key cannot do. It does not stop an attacker on the running host, which can use the TPM key while it is there, but the identity survives its eviction. It adds failure modes: a cleared or replaced TPM loses the identity.
+2. **Windows.** The platform provider keeps non-extractable keys in the TPM. Microsoft does not list its algorithms, and the one TPM attestation that Windows documents attests RSA keys only. A service that runs as a virtual account cannot make a machine key, and keeps its key in its own key set (E6). The hosted runners have no TPM, so everything that needs one is untested and the script runs it elsewhere.
+3. **Cost.** One TPM signature per Tunnel at its setup, none on the data path. The time of a TPM signature was not measured; the condition is 100 ms.
+4. **Controller.** The Node resource gets an identity kind and a TPM pin. The first control record of a Noise session carries the proof, three places check it, and a Revision revokes it. The Noise session itself does not change.
+5. **No TPM.** The software kind stays the default. A Capability `tpm` tells the Controller what a host can do, and a Node of the TPM kind never falls back.
+6. **Formal model.** One message and two scenarios are added to the Noise session. The model of the outer session does not change.
+
+The recommendation is Decision 1: adopt in a later phase, with the proof in the Noise session, after the experiment on TPM hardware. Nine follow-up tickets carry it.
+
 ## Context
 
 A Node proves who it is with its Noise static key and with nothing else. What the code does today:
