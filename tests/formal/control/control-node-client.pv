@@ -1,0 +1,10 @@
+(* Variant control-node-client: the control stream of a C node to the controller, against an attacker that holds the
+   Noise identity key of the node and nothing else (AUD-6, #409). The controller knows a node by its static key alone,
+   with no password, so the holder of the key is the node: it gets the Updates of the node and chooses its Hello. The
+   session of a client with a Login needs the password as well (tls443-cert-client, tls443-pw). *)
+
+process
+  ( Setup()
+  | LeakNoiseClient()
+  | ControlSessions(pin_on, lab_exp_control)
+  )

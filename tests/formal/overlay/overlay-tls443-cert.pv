@@ -1,0 +1,9 @@
+(* Variant overlay-tls443-cert: an overlay session over TLS-443, as the client role dials a server and its Listener takes
+   it, against an attacker that holds the key of the certificate of the server (AUD-6, #409). The binding to the exporter
+   keeps the middlebox out, as in tls443-cert. *)
+
+process
+  ( Setup()
+  | LeakCertServer()
+  | OverlaySessions(pin_on, bt_export)
+  )

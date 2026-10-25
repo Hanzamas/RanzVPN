@@ -1,0 +1,120 @@
+(* overlay-lib.pvl
+   The sessions of the overlay of a node (AUD-6, #409; docs/formal-model.md), with the declarations of session-lib.pvl.
+   These are the sessions that run in production: the client role dials the servers of its Client setting over QUIC or
+   TLS-443 with the thumbprint pin of the setting (NodeClient.c), and the overlay of the server takes the stream from the
+   front door or the QUIC listener of its Listener (NodeListener.c, NodeOverlayAccept). The code is
+   src/Cedar/NodeOverlay.c (NodeOverlayDial, NodeOverlayAccept, NodeOverlayAttach, NodeOverlayReplace) on the session of
+   TransportNoise.c and NoiseSession.c.
+
+   An overlay session has no Login. The dialler runs NoiseSessionConnect with the static key of the peer from the
+   desired state and the suite Noise_IK (NodeOverlaySessionConfig); the responder completes the handshake with the static
+   key of any initiator, opens the data stream at once (TransportNoiseAcceptLogin), closes the session that a peer of
+   that key had (NodeOverlayReplace) and keeps the new one only for a peer of its desired state (NodeOverlayAttach): the
+   static key alone authenticates the peer. Then data records go both ways. The model has the peers of the desired state
+   of bob as every node whose key it knows (keyowner): alice, and charlie, whose keys the attacker holds.
+
+   What a variant sets: pin and bm as in session-lib.pvl, the same on both sides.
+*)
+
+(* The node that dials: the outer session with the pin, NoiseSessionConnect and NoiseSessionFinish with the binding in
+   the prologue, then a data record each way *)
+let OverlayClient(me: principal, them: principal, pin: bitstring, bm: bitstring, sid: sessionid) =
+  new cr: bitstring;
+  new x: bitstring;
+  new e: bitstring;
+  let gx = tpk(x) in
+  out(c, (cr, gx));
+  in(c, (sr: bitstring, gy: bitstring, cert: bitstring, sg: bitstring));
+  let tr = (cr, gx, sr, gy, cert) in
+  if checksign(certkey(cert), sg) = tr then
+  if thumb(cert) = pinexp(pin, cert, pinof(them)) then
+  let ms = tlsms(tdhi(x, gy), tr) in
+  let kc = tlsk(ms, lab_c) in
+  let ks = tlsk(ms, lab_s) in
+  let prologue = (plabel_session, bm, binding(bm, ms, cert, lab_exp_session)) in
+  let sI = skey(me) in
+  let SI = pk(sI) in
+  let SR = spub(them) in
+  let E = pk(e) in
+  let h0 = hash1(suitename(suite_ik)) in
+  let h1 = mixh(mixh(h0, prologue), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhi(e, SR)) in
+  let k1 = hkk(h0, dhi(e, SR)) in
+  let cs = aead(k1, h2, SI) in
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhi(sI, SR)) in
+  let k2 = hkk(ck1, dhi(sI, SR)) in
+  let cp = aead(k2, h3, empty) in
+  let h4 = mixh(h3, cp) in
+  event ClientStart(me, them, tr);
+  event ClientSuite(me, them, tr, suite_ik);
+  out(c, senc(kc, (rec_hs, suite_ik, (E, cs, cp))));
+  in(c, rec2: bitstring);
+  let (=rec_hs, =suite_ik, (E2: bitstring, cp2: bitstring)) = sdec(ks, rec2) in
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhi(e, E2)) in
+  let k4 = hkk(ck3, dhi(sI, E2)) in
+  if unaead(k4, h5, cp2) = empty then
+  let h6 = mixh(h5, cp2) in
+  event ClientDone(me, them, tr, h6);
+  let cd = cdata(me, them, sid) in
+  event ClientSentData(me, them, tr, cd);
+  out(c, senc(kc, (rec_data, cd)));
+  in(c, rec3: bitstring);
+  let (=rec_data, d: bitstring) = sdec(ks, rec3) in
+  event ClientGotData(me, them, tr, d).
+
+(* The node that accepts: NoiseSessionAccept with the static key of any initiator, then the peer of that key in its
+   desired state, and a data record each way. It runs the suite of the record if it can (one process for each suite). *)
+let OverlayServer(me: principal, bm: bitstring, suite: bitstring, sid: sessionid) =
+  new sr: bitstring;
+  new y: bitstring;
+  new e: bitstring;
+  in(c, (cr: bitstring, gx: bitstring));
+  let gy = tpk(y) in
+  let mycert = certof(me) in
+  let tr = (cr, gx, sr, gy, mycert) in
+  out(c, (sr, gy, mycert, sign(sigkey(me), tr)));
+  let ms = tlsms(tdhr(y, gx), tr) in
+  let kc = tlsk(ms, lab_c) in
+  let ks = tlsk(ms, lab_s) in
+  let prologue = (plabel_session, bm, binding(bm, ms, mycert, lab_exp_session)) in
+  in(c, rec1: bitstring);
+  let (=rec_hs, =suite, (E: bitstring, cs: bitstring, cp: bitstring)) = sdec(kc, rec1) in
+  let sR = skey(me) in
+  let SR = pk(sR) in
+  let h0 = hash1(suitename(suite)) in
+  let h1 = mixh(mixh(h0, prologue), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhr(sR, E)) in
+  let k1 = hkk(h0, dhr(sR, E)) in
+  let SI = unaead(k1, h2, cs) in
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhr(sR, SI)) in
+  let k2 = hkk(ck1, dhr(sR, SI)) in
+  if unaead(k2, h3, cp) = empty then
+  let h4 = mixh(h3, cp) in
+  event ServerAccept(me, SI, tr);
+  event ServerSuite(me, SI, tr, suite);
+  let E2 = pk(e) in
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhr(e, E)) in
+  let k4 = hkk(ck3, dhr(e, SI)) in
+  let cp2 = aead(k4, h5, empty) in
+  let h6 = mixh(h5, cp2) in
+  event ServerReply(me, SI, tr, h6);
+  out(c, senc(ks, (rec_hs, suite, (E2, cp2))));
+  let x = keyowner(SI) in
+  event ServerTook(me, x, tr);
+  event ServerSentData(me, x, tr, appdata(me, x, sid));
+  out(c, senc(ks, (rec_data, appdata(me, x, sid))));
+  in(c, rec3: bitstring);
+  let (=rec_data, d: bitstring) = sdec(kc, rec3) in
+  event ServerGotData(me, x, tr, d).
+
+(* The processes of an overlay model: alice dials bob, who runs both suites *)
+let OverlaySessions(pin: bitstring, bm: bitstring) =
+  !( new sid: sessionid; OverlayClient(alice, bob, pin, bm, sid) )
+  | !( new sid: sessionid; OverlayServer(bob, bm, suite_ik, sid) )
+  | !( new sid: sessionid; OverlayServer(bob, bm, suite_hfs, sid) ).

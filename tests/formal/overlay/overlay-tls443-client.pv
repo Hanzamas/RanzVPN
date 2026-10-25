@@ -1,0 +1,10 @@
+(* Variant overlay-tls443-client: an overlay session over TLS-443, against an attacker that holds the Noise identity key of
+   the dialling node and nothing else (AUD-6, #409). An overlay session has no Login, so the static key alone is the peer:
+   its holder is alice to bob, gets what bob sends her and sends in her name. The session with a Login needs the password
+   as well (tls443-cert-client). *)
+
+process
+  ( Setup()
+  | LeakNoiseClient()
+  | OverlaySessions(pin_on, bt_export)
+  )

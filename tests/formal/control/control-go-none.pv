@@ -1,0 +1,11 @@
+(* Variant control-go-none: the control stream of the Go client that Dial opens (AUD-5, #389; AUD-6, #409;
+   controller/internal/control/stream.go), against an attacker that is the network and nothing more. The client does not
+   check the certificate (InsecureSkipVerify): the Noise_IK handshake with the static key of the controller, bound to the
+   TLS exporter, is all that authenticates the controller. ranz-nodesim dials this way when the node has no TLS
+   fingerprint, and so do the tests of the controller; DialPinned checks the fingerprint, as the C node does (the
+   control-node variants). *)
+
+process
+  ( Setup()
+  | ControlSessions(pin_off, lab_exp_control)
+  )

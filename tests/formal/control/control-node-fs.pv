@@ -1,0 +1,9 @@
+(* Variant control-node-fs: the control stream of a C node to the controller, against an attacker that holds every
+   long-term key of the nodes after the streams (AUD-5, #389; AUD-6, #409). The Updates of the streams of phase 0 must
+   still be secret. *)
+
+process
+  ( Setup()
+  | LeakLate()
+  | ControlSessions(pin_on, lab_exp_control)
+  )
