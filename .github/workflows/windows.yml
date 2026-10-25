@@ -395,6 +395,15 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/bgp-spike.ps1 -BuildDir build
+    # The ACME source of the Listener of a node (SDN-45, #238), on x64 and arm64: ranz built next to vpntest, where the
+    # node starts it as ranz acme, Pebble, the test ACME server of Let's Encrypt, at a pinned version on this runner, and
+    # vpntest listeneracme: the certificate of the Listener issued and renewed, and the front door listening with it
+    # (.github/scripts/listener-acme.ps1)
+    - name: Listener with ACME
+      timeout-minutes: 15
+      shell: pwsh
+      run: |
+        . .github/scripts/listener-acme.ps1 -BuildDir build
     - name: Self-check
       timeout-minutes: 10
       shell: pwsh
