@@ -44,6 +44,7 @@ Architecture decision records live in `docs/adr/`; the reasoning behind them is 
 - [ADR-0038](../adr/0038-web-ui-native-multi-page-with-islands.md): The web UI is native HTML, CSS and JavaScript with no build step, multi-page with interactive islands, View Transitions and Speculation Rules, embedded in the controller (Accepted, 2026-10-21).
 - [ADR-0039](../adr/0039-security-hardening-baseline.md): Security hardening baseline for every Windows binary: CFG, CET, full ASLR, DEP, `/GS` and `/sdl`, `SetProcessMitigationPolicy` mitigations, virtual service accounts, strict pipe ACLs and System32-only DLL loading, pinned dependencies with an SBOM and reproducible signed builds, a BinSkim CI gate; new core only (Accepted, 2026-10-22).
 - [ADR-0040](../adr/0040-ci-quality-gates.md): CI quality gates for the new core: a fuzz target per new parser, a per-module coverage floor, static analysis (clang-tidy, MSVC `/analyze` with SAL, staticcheck, govulncheck), Application Verifier and `go test -race`, and a performance regression gate (Accepted, 2026-10-22).
+- [ADR-0041](../adr/0041-tpm-bound-node-identity.md): A TPM-bound identity for a Node next to the Noise static key, evaluated in CORE-H4 (#401): an opt-in identity kind whose TPM-held ECDSA P-256 key is pinned in the Node resource and proves itself with a signature of the Noise handshake hash, not with an mTLS client certificate, after one experiment on TPM hardware; the software kind stays the default (Proposed, 2026-10-25).
 
 ## Discussion log
 

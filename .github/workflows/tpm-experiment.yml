@@ -1,0 +1,57 @@
+# The experiments behind ADR-0041 (CORE-H4, #401), run on the hosted runners:
+# docs/experiments/core-h4-tpm/Test-TpmIdentity.ps1 in Windows PowerShell 5.1 and in PowerShell 7, on x64 and
+# arm64. A hosted runner has no TPM, so the run records what Windows says about a missing TPM and runs the
+# software controls: the software key storage provider, a service that runs as a virtual account (a small
+# program that the script builds with csc.exe) and makes keys in the machine key set and in its own key set,
+# and a Schannel handshake with a client certificate that the server pins. The ADR says what only a TPM can
+# show; a person with a TPM runs the same script by hand (the ADR names the commands).
+#
+# The workflow runs when the script or this file changes, and by workflow_dispatch. It builds nothing of the
+# product, so it is no part of the fast set or the full set of windows.yml and ranz.yml (ci-plan.yml). If a
+# hosted runner ever has a TPM, the same run uses it, and its artifact holds the numbers.
+
+name: tpm-experiment
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+    - 'docs/experiments/core-h4-tpm/**'
+    - '.github/workflows/tpm-experiment.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    name: ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - arch: x64
+          runner: windows-latest
+        - arch: arm64
+          runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        sparse-checkout: docs/experiments
+    - name: PowerShell 7
+      shell: pwsh
+      run: ./docs/experiments/core-h4-tpm/Test-TpmIdentity.ps1 -OutDir out/pwsh7 -IncludeRsa -Machine -ReadEk
+    - name: Windows PowerShell 5.1
+      shell: powershell
+      run: ./docs/experiments/core-h4-tpm/Test-TpmIdentity.ps1 -OutDir out/powershell51 -IncludeRsa -Machine -ReadEk
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: tpm-experiment-${{ matrix.arch }}
+        path: out/
+        retention-days: 30
