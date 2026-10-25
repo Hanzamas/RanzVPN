@@ -1,4 +1,4 @@
-# The plan of a CI run, shared by windows.yml and ranz.yml (job plan, which they need): the fast set on
+# The plan of a CI run, shared by windows.yml, ranz.yml and formal.yml (job plan, which they need): the fast set on
 # a pull request, the full set on every other event and on a pull request that carries the label
 # full-ci or changes a sensitive path. .github/scripts/ci-plan.py decides, and holds the legs of each
 # matrix job; its fixtures run in quality.yml. A job reads the outputs as needs.plan.outputs:

@@ -1,0 +1,14 @@
+(* Variant encrypted: Noise_IK over a stream that nothing binds, the records under the Noise keys (AUD-5,
+   #389). alice dials bob and charlie and bob serves alice and charlie, as in the Noise Explorer, so that the
+   grades that say "to someone else" have another node to be about. The static keys of alice and bob leak in
+   phase 0 and in phase 1. *)
+
+process
+  ( NoiseSetup()
+  | NoiseLeaks(alice)
+  | NoiseLeaks(bob)
+  | !( new sid: sessionid; NoiseInit(alice, bob, sid) )
+  | !( new sid: sessionid; NoiseInit(alice, charlie, sid) )
+  | !( new sid: sessionid; NoiseResp(bob, alice, sid) )
+  | !( new sid: sessionid; NoiseResp(bob, charlie, sid) )
+  )
