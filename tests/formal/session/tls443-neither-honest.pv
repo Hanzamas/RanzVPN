@@ -7,5 +7,6 @@
 process
   ( Setup()
   | !( Client(alice, bob, pin_off, bt_none, plabel_session, lab_exp_session, suite_hfs) )
-  | !( new sid: sessionid; Server(bob, alice, bt_none, plabel_session, lab_exp_session, suite_ik, suite_hfs, sid) )
+  | !( new sid: sessionid; Server(bob, alice, bt_none, plabel_session, lab_exp_session, suite_ik, sid) )
+  | !( new sid: sessionid; Server(bob, alice, bt_none, plabel_session, lab_exp_session, suite_hfs, sid) )
   )

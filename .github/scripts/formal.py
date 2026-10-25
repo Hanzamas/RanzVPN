@@ -19,6 +19,8 @@
 #          variants named, all by default). A variant whose line of variants.tsv has a fourth column N runs its
 #          queries as N ProVerif runs, the slices.
 # version  says which ProVerif runs, and fails when it is not the pinned version.
+# smoke    runs the prover on each variant for a few seconds (--timeout) and fails on an error that ProVerif reports at
+#          once, a mistake of syntax or of types, so that the workflow stops before it starts one job for each slice.
 # run      runs the pinned ProVerif on each variant and compares every result with expected.tsv. It fails on a
 #          query that must hold and does not, on a negative control or a finding that stops showing its attack,
 #          on an error of ProVerif or a timeout, and on any result that expected.tsv does not name. --slice I/K
@@ -30,6 +32,7 @@
 #   python formal.py check [--root DIR]
 #   python formal.py list [--root DIR] [VARIANT ...]
 #   python formal.py version [--proverif PATH] [--version V]
+#   python formal.py smoke [--root DIR] [--proverif PATH] [--out DIR] [--jobs N] [--timeout S] [VARIANT ...]
 #   python formal.py run [--root DIR] [--proverif PATH] [--version V] [--out DIR] [--jobs N] [--timeout S]
 #                        [--trace-lines N] [--slice I/K] [VARIANT ...]
 #   python formal.py selftest
@@ -250,13 +253,34 @@ VERDICT_TEXT = {'true': 'is true', 'false': 'is false (attack)', 'unproved': 'ca
 
 
 def run_proverif(proverif, path, timeout):
-    # (output, exit code or None on a timeout, seconds)
+    # (output, exit code or None on a timeout, seconds). The output of ProVerif goes to <path>.out as it comes, so
+    # that the progress lines of run can say where a long run is, and a run that times out is killed and its output
+    # kept.
     start = time.monotonic()
+    out_path = path + '.out'
+    with open(out_path, 'wb') as out:
+        p = subprocess.Popen([proverif, '-in', 'pitype', path], stdout=out, stderr=subprocess.STDOUT)
+        try:
+            code = p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+            code = None
+    with open(out_path, 'rb') as f:
+        output = f.read().decode('utf-8', 'replace')
+    return output, code, time.monotonic() - start
+
+
+def tail_line(path):
+    # The last line that ProVerif has written to the file so far, cut to 160 characters, or '' when there is none
     try:
-        p = subprocess.run([proverif, '-in', 'pitype', path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
-        return p.stdout.decode('utf-8', 'replace'), p.returncode, time.monotonic() - start
-    except subprocess.TimeoutExpired as e:
-        return (e.stdout or b'').decode('utf-8', 'replace'), None, time.monotonic() - start
+        with open(path, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 2000))
+            lines = [x for x in f.read().decode('utf-8', 'replace').split('\n') if x.strip()]
+    except OSError:
+        return ''
+    return lines[-1][:160] if lines else ''
 
 
 def peak_memory_mb():
@@ -340,6 +364,10 @@ def run(args):
         results = parse_results(output)
         if code is None:
             annotate('error', '%s: ProVerif did not finish in %d s (peak memory %d MB)' % (label, args.timeout, peak_memory_mb()))
+            # where it was: the last lines of its output, which say how far its rule base had grown
+            print('::group::the last lines of ProVerif on %s' % label)
+            print('\n'.join(output.rstrip().split('\n')[-40:]))
+            print('::endgroup::')
             return False, ['- **%s**: timeout after %d s' % (label, args.timeout)]
         if code != 0 and not results:
             tail = '\n'.join(output.strip().split('\n')[-25:])
@@ -384,7 +412,8 @@ def run(args):
         while pending:
             done, _ = concurrent.futures.wait(list(pending), timeout=60, return_when=concurrent.futures.FIRST_COMPLETED)
             if not done:
-                print('%.0f s: %d variants to come: %s' % (time.monotonic() - start, len(pending), ', '.join(sorted(labels[v] for v in pending.values()))), flush=True)
+                print('%.0f s: %d variants to come: %s' % (time.monotonic() - start, len(pending), ', '.join(sorted(
+                    '%s [%s]' % (labels[v], tail_line(paths[v] + '.out')) for v in pending.values()))), flush=True)
                 continue
             for future in done:
                 n = pending.pop(future)
@@ -654,6 +683,41 @@ def check_vpntest(root, public):
     for name in sorted(listed - public):
         problems.append('%s refers to %s, which %s does not name as a C function that is not static' % (VPNTEST, name, TABLE))
     return problems
+
+
+def smoke(args):
+    # Every variant runs with the prover for a few seconds (--timeout), so that a mistake of syntax or of types, which
+    # ProVerif reports at once, stops the workflow before it starts the jobs that would each report it
+    variants = load_variants(args.root)
+    names = args.variants or list(variants)
+    for n in names:
+        if n not in variants:
+            raise Problem('no variant %s: %s' % (n, ', '.join(variants)))
+    os.makedirs(args.out, exist_ok=True)
+    paths = {}
+    for n in names:
+        paths[n] = os.path.join(args.out, 'smoke-%s.pv' % n)
+        with open(paths[n], 'w', encoding='utf-8', newline='\n') as f:
+            f.write(build_text(args.root, variants[n][0]))
+    bad = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+        futures = {pool.submit(run_proverif, args.proverif, paths[n], args.timeout): n for n in names}
+        for future in concurrent.futures.as_completed(futures):
+            n = futures[future]
+            output, code, seconds = future.result()
+            lines = output.split('\n')
+            errors = [i for i, x in enumerate(lines) if re.match(r'(Error|Syntax error|Fatal)', x)]
+            if errors or code not in (None, 0):
+                bad += 1
+                first = errors[0] if errors else max(0, len(lines) - 6)
+                annotate('error', '%s: ProVerif reports an error (exit code %s):\n%s' % (n, code, '\n'.join(lines[max(0, first - 2):first + 3])))
+            else:
+                print('%s: %s' % (n, 'done in %.0f s' % seconds if code == 0 else 'running after %d s, no error' % args.timeout), flush=True)
+    if bad:
+        print('%d of %d variants do not run' % (bad, len(names)))
+        return 1
+    print('the %d variants run' % len(names))
+    return 0
 
 
 def version_check(args):
@@ -994,6 +1058,22 @@ bool NoiseProto(void);
             canned['v'] = (reach + secret % 'true', 0, 1.0)
             args.version = '2.04'
             assert quiet(run, args) == 1, 'the wrong version'
+            # smoke: a variant that runs on (a timeout) or ends is fine, an error of the prover is not
+            probe = argparse.Namespace(root=root, variants=[], proverif='proverif', out=os.path.join(root, 'smoke'), jobs=2, timeout=5)
+            canned['smoke-v'] = ('Process:\n', None, 5.0)
+            canned['smoke-w'] = (reach + secret % 'true', 0, 1.0)
+            assert quiet(smoke, probe) == 0, 'a variant that runs on and one that ends'
+            canned['smoke-v'] = ('File "smoke-v.pv", line 3, characters 5-8:\nError: Function pk is already defined.\n', 2, 0.1)
+            assert quiet(smoke, probe) == 1, 'an error of the prover'
+            canned['smoke-v'] = ('Process:\n', 2, 0.1)
+            assert quiet(smoke, probe) == 1, 'an exit code that is not zero'
+            probe.variants = ['nope']
+            try:
+                quiet(smoke, probe)
+            except Problem:
+                pass
+            else:
+                raise AssertionError('smoke took a variant that variants.tsv does not have')
         finally:
             globals()['run_proverif'], globals()['proverif_version'] = real
     print('formal selftest: ok')
@@ -1001,8 +1081,8 @@ bool NoiseProto(void);
 
 
 def main():
-    ap = argparse.ArgumentParser(description='The formal model of the session handshake: check, list, version, run, selftest')
-    ap.add_argument('mode', choices=['check', 'list', 'version', 'run', 'selftest'])
+    ap = argparse.ArgumentParser(description='The formal model of the session handshake: check, list, version, smoke, run, selftest')
+    ap.add_argument('mode', choices=['check', 'list', 'version', 'smoke', 'run', 'selftest'])
     ap.add_argument('variants', nargs='*', help='run: the variants to run, all by default')
     ap.add_argument('--root', default=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     ap.add_argument('--proverif', default='proverif', help='run: the ProVerif executable')
@@ -1022,6 +1102,8 @@ def main():
             return list_variants(args)
         if args.mode == 'version':
             return version_check(args)
+        if args.mode == 'smoke':
+            return smoke(args)
         return run(args)
     except Problem as e:
         annotate('error', str(e))

@@ -50,14 +50,15 @@ query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)) ==> event(
 (* What the client takes from the server after the handshake (a record of the data stream, or the Update of the
    controller) is what the server sent, unless the Noise key of the server is leaked *)
 (* @query data-auth *)
-query d: bitstring; event(ClientGotData(alice, bob, d)) ==> event(ServerSentData(bob, alice, d)) || event(LeakS(phase0, bob)).
+query t: bitstring, d: bitstring; event(ClientGotData(alice, bob, t, d)) ==> event(ServerSentData(bob, alice, t, d)) || event(LeakS(phase0, bob)).
 
-(* The version and the capabilities that the server settles on are the ones that the client offered, so the
-   attacker cannot lower them, and the suite that the server runs is the one that the client chose *)
+(* The version and the capabilities that the server settles on in a session are the ones that the client offered
+   in that session, so the attacker cannot lower them, and the suite that the server runs in a session is the one
+   that the client chose in it *)
 (* @query negotiation *)
-query v: bitstring, cp: bitstring; event(ServerNegotiated(bob, alice, v, cp)) ==> event(ClientOffered(alice, bob, v, cp)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+query t: bitstring, v: bitstring, cp: bitstring; event(ServerNegotiated(bob, alice, t, v, cp)) ==> event(ClientOffered(alice, bob, t, v, cp)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
 (* @query suite *)
-query s: bitstring; event(ServerSuite(bob, alice, s)) ==> event(ClientSuite(alice, bob, s)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+query t: bitstring, s: bitstring; event(ServerSuite(bob, alice, t, s)) ==> event(ClientSuite(alice, bob, t, s)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
 
 (* No replay: each handshake that the server takes, and each answer that the client takes, is one that was
    sent once. These two hold only where no key is compromised, which is the honest variants. *)

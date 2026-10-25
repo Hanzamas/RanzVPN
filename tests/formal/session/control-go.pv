@@ -9,5 +9,5 @@ process
   ( Setup()
   | Leaks()
   | !( Client(alice, bob, pin_off, bt_export, plabel_control, lab_exp_control, suite_ik) )
-  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_control, lab_exp_control, suite_ik, suite_ik, sid) )
+  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_control, lab_exp_control, suite_ik, sid) )
   )

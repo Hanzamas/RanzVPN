@@ -9,6 +9,6 @@ process
   | !( TunnelOpen(bob, alice) )
   | !( TunnelOpen(bob, charlie) )
   | !( JoinClient(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs) )
-  | !( JoinServer(bob, alice, bt_export, plabel_session, lab_exp_session, suite_ik, suite_hfs, kc_off) )
-  | !( JoinServer(bob, charlie, bt_export, plabel_session, lab_exp_session, suite_ik, suite_hfs, kc_off) )
+  | !( JoinServer(bob, alice, bt_export, plabel_session, lab_exp_session, suite_hfs, kc_off) )
+  | !( JoinServer(bob, charlie, bt_export, plabel_session, lab_exp_session, suite_hfs, kc_off) )
   )

@@ -46,15 +46,15 @@ let PeerSeal(me: principal, to: principal, kind: bitstring, sid: sessionid) =
   new e: bitstring;
   new sq: bitstring;
   let sI = skey(me) in
-  let SI = dhexp(sI, g) in
+  let SI = pk(sI) in
   let SR = spub(to) in
-  let E = dhexp(e, g) in
+  let E = pk(e) in
   let pl = (v_peer, sq, plsecret(me, to, kind, sid)) in
   let h0 = hash1(name_k) in
   let h1 = mixh(mixh(mixh(h0, (plabel_peer, kind)), SI), SR) in
   let h2 = mixh(h1, E) in
-  let ck1 = hkck(h0, dhexp(e, SR)) in
-  let k2 = hkk(ck1, dhexp(sI, SR)) in
+  let ck1 = hkck(h0, dhi(e, SR)) in
+  let k2 = hkk(ck1, dhi(sI, SR)) in
   let ct = aead(k2, h2, pl) in
   event PeerSealed(me, to, kind, pl, addrof(me));
   out(c, (addrof(me), (kind, SI, E, ct))).
@@ -65,12 +65,12 @@ let PeerOpen(me: principal, them: principal, kind: bitstring) =
   in(c, (a: bitstring, (=kind, SI: bitstring, E: bitstring, ct: bitstring)));
   if SI = spub(them) then
   let sR = skey(me) in
-  let SR = dhexp(sR, g) in
+  let SR = pk(sR) in
   let h0 = hash1(name_k) in
   let h1 = mixh(mixh(mixh(h0, (plabel_peer, kind)), SI), SR) in
   let h2 = mixh(h1, E) in
-  let ck1 = hkck(h0, dhexp(sR, E)) in
-  let k2 = hkk(ck1, dhexp(sR, SI)) in
+  let ck1 = hkck(h0, dhr(sR, E)) in
+  let k2 = hkk(ck1, dhr(sR, SI)) in
   let pl = unaead(k2, h2, ct) in
   event PeerOpened(me, them, kind, pl, a).
 
@@ -91,8 +91,7 @@ let PeerSetup() =
   out(c, spub(alice));
   out(c, spub(bob));
   out(c, spub(charlie));
-  out(c, skey(charlie));
-  out(c, g).
+  out(c, skey(charlie)).
 
 let PeerLeaks(me: principal) =
   ( event LeakS(phase0, me); out(c, skey(me)) )

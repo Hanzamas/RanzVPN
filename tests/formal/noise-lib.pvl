@@ -40,18 +40,18 @@ event RecvMsg(principal, principal, bitstring, bitstring).
 let NoiseInit(me: principal, them: principal, sid: sessionid) =
   new e: bitstring;
   let sI = skey(me) in
-  let SI = dhexp(sI, g) in
+  let SI = pk(sI) in
   let SR = spub(them) in
-  let E = dhexp(e, g) in
+  let E = pk(e) in
   let h0 = hash1(proto_ik) in
   let h1 = mixh(mixh(h0, prol_enc), SR) in
   let h2 = mixh(h1, E) in
-  let ck1 = hkck(h0, dhexp(e, SR)) in
-  let k1 = hkk(h0, dhexp(e, SR)) in
+  let ck1 = hkck(h0, dhi(e, SR)) in
+  let k1 = hkk(h0, dhi(e, SR)) in
   let cs = aead(k1, h2, SI) in
   let h3 = mixh(h2, cs) in
-  let ck2 = hkck(ck1, dhexp(sI, SR)) in
-  let k2 = hkk(ck1, dhexp(sI, SR)) in
+  let ck2 = hkck(ck1, dhi(sI, SR)) in
+  let k2 = hkk(ck1, dhi(sI, SR)) in
   let ma = msg_a(me, them, sid) in
   let cp = aead(k2, h3, ma) in
   let h4 = mixh(h3, cp) in
@@ -59,9 +59,9 @@ let NoiseInit(me: principal, them: principal, sid: sessionid) =
   out(c, (E, cs, cp));
   in(c, (E2: bitstring, cp2: bitstring));
   let h5 = mixh(h4, E2) in
-  let ck3 = hkck(ck2, dhexp(e, E2)) in
-  let ck4 = hkck(ck3, dhexp(sI, E2)) in
-  let k4 = hkk(ck3, dhexp(sI, E2)) in
+  let ck3 = hkck(ck2, dhi(e, E2)) in
+  let ck4 = hkck(ck3, dhi(sI, E2)) in
+  let k4 = hkk(ck3, dhi(sI, E2)) in
   let mb = unaead(k4, h5, cp2) in
   event RecvMsg(me, them, st_b, mb);
   let ki = hksplit1(ck4) in
@@ -78,26 +78,26 @@ let NoiseInit(me: principal, them: principal, sid: sessionid) =
 let NoiseResp(me: principal, them: principal, sid: sessionid) =
   in(c, (E: bitstring, cs: bitstring, cp: bitstring));
   let sR = skey(me) in
-  let SR = dhexp(sR, g) in
+  let SR = pk(sR) in
   let h0 = hash1(proto_ik) in
   let h1 = mixh(mixh(h0, prol_enc), SR) in
   let h2 = mixh(h1, E) in
-  let ck1 = hkck(h0, dhexp(sR, E)) in
-  let k1 = hkk(h0, dhexp(sR, E)) in
-  let SI = unaead(k1, h2, cs) in
-  if SI = spub(them) then
+  let ck1 = hkck(h0, dhr(sR, E)) in
+  let k1 = hkk(h0, dhr(sR, E)) in
+  if unaead(k1, h2, cs) = spub(them) then
+  let SI = spub(them) in
   let h3 = mixh(h2, cs) in
-  let ck2 = hkck(ck1, dhexp(sR, SI)) in
-  let k2 = hkk(ck1, dhexp(sR, SI)) in
+  let ck2 = hkck(ck1, dhr(sR, SI)) in
+  let k2 = hkk(ck1, dhr(sR, SI)) in
   let ma = unaead(k2, h3, cp) in
   event RecvMsg(me, them, st_a, ma);
   let h4 = mixh(h3, cp) in
   new e: bitstring;
-  let E2 = dhexp(e, g) in
+  let E2 = pk(e) in
   let h5 = mixh(h4, E2) in
-  let ck3 = hkck(ck2, dhexp(e, E)) in
-  let ck4 = hkck(ck3, dhexp(e, SI)) in
-  let k4 = hkk(ck3, dhexp(e, SI)) in
+  let ck3 = hkck(ck2, dhr(e, E)) in
+  let ck4 = hkck(ck3, dhr(e, SI)) in
+  let k4 = hkk(ck3, dhr(e, SI)) in
   let mb = msg_b(me, them, sid) in
   let cp2 = aead(k4, h5, mb) in
   event SendMsg(me, them, st_b, mb);
@@ -120,5 +120,4 @@ let NoiseSetup() =
   out(c, spub(alice));
   out(c, spub(bob));
   out(c, spub(charlie));
-  out(c, skey(charlie));
-  out(c, g).
+  out(c, skey(charlie)).

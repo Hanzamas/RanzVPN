@@ -4,12 +4,26 @@
    on the result, so a name that this file defines is visible in every file after it.
 
    The symbolic model follows the Noise Explorer (Kobeissi, Nicolas and Bhargavan, EuroS&P 2019) for Noise_IK:
-   the Diffie-Hellman function with its commutation equation, a hash and key derivation functions that are
-   one-way, an AEAD that opens only under its key and its associated data, a static key per principal that a
-   leak event gives to the attacker in phase 0, or in phase 1 for forward secrecy, and the authentication and
-   confidentiality queries in the form of its grades. The text is written for this repository from the Noise
-   Protocol Framework, revision 34, sections 5 and 7, and from the code (the table model-to-code.tsv maps each
-   name to the function of the code that it stands for).
+   a Diffie-Hellman function, hash and key derivation functions that are one-way, an AEAD that opens only under
+   its key and its associated data, a static key per principal that a leak event gives to the attacker in
+   phase 0, or in phase 1 for forward secrecy, and the authentication and confidentiality queries in the form
+   of its grades. The text is written for this repository from the Noise Protocol Framework, revision 34,
+   sections 5 and 7, and from the code (the table model-to-code.tsv maps each name to the function of the code
+   that it stands for).
+
+   One difference from the Noise Explorer is in the Diffie-Hellman function, for the sake of the prover. Its
+   model has the equation dh(a, pk(b)) = dh(b, pk(a)), and ProVerif then has to try both orders of every
+   Diffie-Hellman term in every clause: a key schedule has a dozen of them, and the analysis of IK takes
+   hours. Every Diffie-Hellman of the handshakes of Ranz VPN is between a key of the side that dials (the
+   initiator) and a key of the side that listens (the responder): es, ss, ee and se of IK, es and ss of K, and
+   the key shares of the outer session. So the initiator's computation is the term dhi(a, B) of its scalar a
+   and the public key B of the other side, and the responder's computation dhr(b, A) of its scalar b and the
+   public key A that it received is rewritten to the same term when A is pk(a). No equation is left. The two
+   sides still agree, and an attacker still computes the secret when it has a scalar and the public key of the
+   other side, which are the two things that the real function gives it. What the encoding leaves out is a
+   public key that is not the pk of any scalar (a point of low order): such a point gives the attacker nothing
+   that it did not have, and the code refuses it (NoiseMixDh), so the responder's computation fails on it
+   here as well.
 *)
 
 type principal.
@@ -28,11 +42,13 @@ const phase0: phasen.
 const phase1: phasen.
 
 const empty: bitstring.
-const g: bitstring.
 
-(* X25519: dhexp(x, P) is the point x * P of a point P, and the two sides of a Diffie-Hellman agree *)
-fun dhexp(bitstring, bitstring): bitstring.
-equation forall a: bitstring, b: bitstring; dhexp(a, dhexp(b, g)) = dhexp(b, dhexp(a, g)).
+(* X25519: pk(x) is the public key of the scalar x, dhi(a, B) the secret that the initiator computes from its
+   scalar a and the public key B of the responder, and dhr(b, A) the same secret as the responder computes it
+   from its scalar b and the public key A of the initiator *)
+fun pk(bitstring): bitstring.
+fun dhi(bitstring, bitstring): bitstring.
+reduc forall a: bitstring, b: bitstring; dhr(b, pk(a)) = dhi(a, pk(b)).
 
 (* The symmetric state of Noise (section 5.2). A hash and a key derivation function are one-way and
    collision free in the symbolic model.
@@ -59,7 +75,7 @@ reduc forall k: bitstring, ad: bitstring, m: bitstring; unaead(k, ad, aead(k, ad
 
 (* The static key of a principal: its private scalar is known to its owner only, its public key to everyone *)
 fun skey(principal): bitstring [private].
-letfun spub(p: principal) = dhexp(skey(p), g).
+letfun spub(p: principal) = pk(skey(p)).
 
 (* The static key of a principal, leaked to the attacker in phase 0 (a compromise before or during the
    sessions) or in phase 1 (after them: forward secrecy) *)

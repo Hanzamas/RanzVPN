@@ -25,7 +25,8 @@
              (NOISE_BINDING_SERVER_END_POINT, the QUIC path); bt_none, no binding (a negative control)
      plabel  the label of the prologue: NOISE_PROLOGUE_LABEL or CONTROL_PROLOGUE_LABEL
      lab     the label of the exporter: NOISE_EXPORTER_LABEL or CONTROL_EXPORTER_LABEL
-     suite   the suite that the client offers; the server runs the two that sa and sb name
+     suite   the suite that the client offers, and the one that a server process runs (a server runs two
+             suites as two processes, each of which takes the records of its own suite only)
 *)
 
 (* The tags of the records, the labels, and the parameters of the variants *)
@@ -62,12 +63,13 @@ reduc forall p: bitstring; certkey(mkcert(p)) = p.
 fun thumb(bitstring): bitstring.
 fun epbind(bitstring): bitstring.
 
-(* The key exchange of the outer session, in a group of its own: the key shares of TLS and the static keys of Noise
-   never meet in the code, no node computes a Diffie-Hellman with one from the other, and a group of its own
-   keeps the prover from trying the products of the two, which nothing computes *)
-const tg: bitstring.
-fun tdhexp(bitstring, bitstring): bitstring.
-equation forall a: bitstring, b: bitstring; tdhexp(a, tdhexp(b, tg)) = tdhexp(b, tdhexp(a, tg)).
+(* The key exchange of the outer session, which has its own names so that no key share of TLS is taken for a
+   Noise key: tpk(x) is the key share of the scalar x, tdhi(x, B) the secret that the client computes from its
+   scalar and the key share of the server, and tdhr(y, A) the same secret as the server computes it (the encoding
+   of prims.pvl) *)
+fun tpk(bitstring): bitstring.
+fun tdhi(bitstring, bitstring): bitstring.
+reduc forall a: bitstring, b: bitstring; tdhr(b, tpk(a)) = tdhi(a, tpk(b)).
 
 (* TLS 1.3: the master secret from the Diffie-Hellman secret and the transcript, the keys of the records of
    the two directions and the exporter of a label, and the AEAD of the records *)
@@ -88,27 +90,31 @@ fun capsof(principal): bitstring.
 letfun certof(p: principal) = mkcert(spk(sigkey(p))).
 letfun pinof(p: principal) = thumb(certof(p)).
 
-(* The pin of the client: the certificate of the server is the one that it was configured with *)
-letfun pincheck(pin: bitstring, cert: bitstring, them: principal) = (pin = pin_off) || (thumb(cert) = pinof(them)).
+(* The thumbprint that the client compares the certificate of the server with: the one that it was configured
+   with (pin_on), or the one of the certificate itself, which any certificate meets (pin_off). A destructor and
+   not a condition, so that a variant is the choice of a rule and the process has no boolean to evaluate. *)
+reduc forall c: bitstring, p: bitstring; pinexp(pin_on, c, p) = p;
+      forall c: bitstring, p: bitstring; pinexp(pin_off, c, p) = thumb(c).
 
 (* The binding of a session that a side computes from what it knows of the TLS session: the exporter from the
    master secret, or the hash of the server certificate, or none *)
-letfun binding(bm: bitstring, ms: bitstring, cert: bitstring, lab: bitstring) =
-  if bm = bt_export then tlsexp(ms, lab) else (if bm = bt_endpoint then epbind(cert) else nobind).
+reduc forall ms: bitstring, cert: bitstring, lab: bitstring; binding(bt_export, ms, cert, lab) = tlsexp(ms, lab);
+      forall ms: bitstring, cert: bitstring, lab: bitstring; binding(bt_endpoint, ms, cert, lab) = epbind(cert);
+      forall ms: bitstring, cert: bitstring, lab: bitstring; binding(bt_none, ms, cert, lab) = nobind.
 
 event LeakCert(phasen, principal).
 
 event ClientStart(principal, principal, bitstring).
-event ClientSuite(principal, principal, bitstring).
+event ClientSuite(principal, principal, bitstring, bitstring).
 event ClientDone(principal, principal, bitstring, bitstring).
-event ClientOffered(principal, principal, bitstring, bitstring).
-event ClientGotData(principal, principal, bitstring).
+event ClientOffered(principal, principal, bitstring, bitstring, bitstring).
+event ClientGotData(principal, principal, bitstring, bitstring).
 event ServerAccept(principal, principal, bitstring).
-event ServerSuite(principal, principal, bitstring).
+event ServerSuite(principal, principal, bitstring, bitstring).
 event ServerReply(principal, principal, bitstring, bitstring).
-event ServerNegotiated(principal, principal, bitstring, bitstring).
+event ServerNegotiated(principal, principal, bitstring, bitstring, bitstring).
 event ServerLoginOk(principal, principal, bitstring).
-event ServerSentData(principal, principal, bitstring).
+event ServerSentData(principal, principal, bitstring, bitstring).
 
 (* The client: the TLS handshake with the pin, then NoiseSessionConnect and NoiseSessionFinish with the
    prologue that carries the binding, then the first control record and the answer. The events record what the
@@ -117,105 +123,101 @@ event ServerSentData(principal, principal, bitstring).
 let Client(me: principal, them: principal, pin: bitstring, bm: bitstring, plabel: bitstring, lab: bitstring, suite: bitstring) =
   new cr: bitstring;
   new x: bitstring;
-  let gx = tdhexp(x, tg) in
+  let gx = tpk(x) in
   out(c, (cr, gx));
   in(c, (sr: bitstring, gy: bitstring, cert: bitstring, sg: bitstring));
   let tr = (cr, gx, sr, gy, cert) in
-  let trs = checksign(certkey(cert), sg) in
-  if trs = tr then
-  if pincheck(pin, cert, them) then
-  let ms = tlsms(tdhexp(x, gy), tr) in
+  if checksign(certkey(cert), sg) = tr then
+  if thumb(cert) = pinexp(pin, cert, pinof(them)) then
+  let ms = tlsms(tdhi(x, gy), tr) in
   let kc = tlsk(ms, lab_c) in
   let ks = tlsk(ms, lab_s) in
   let bnd = binding(bm, ms, cert, lab) in
   let prologue = (plabel, bm, bnd) in
   new e: bitstring;
   let sI = skey(me) in
-  let SI = dhexp(sI, g) in
+  let SI = pk(sI) in
   let SR = spub(them) in
-  let E = dhexp(e, g) in
+  let E = pk(e) in
   let h0 = hash1(suitename(suite)) in
   let h1 = mixh(mixh(h0, prologue), SR) in
   let h2 = mixh(h1, E) in
-  let ck1 = hkck(h0, dhexp(e, SR)) in
-  let k1 = hkk(h0, dhexp(e, SR)) in
+  let ck1 = hkck(h0, dhi(e, SR)) in
+  let k1 = hkk(h0, dhi(e, SR)) in
   let cs = aead(k1, h2, SI) in
   let h3 = mixh(h2, cs) in
-  let ck2 = hkck(ck1, dhexp(sI, SR)) in
-  let k2 = hkk(ck1, dhexp(sI, SR)) in
+  let ck2 = hkck(ck1, dhi(sI, SR)) in
+  let k2 = hkk(ck1, dhi(sI, SR)) in
   let cp = aead(k2, h3, empty) in
   let h4 = mixh(h3, cp) in
   event ClientStart(me, them, tr);
-  event ClientSuite(me, them, suite);
+  event ClientSuite(me, them, tr, suite);
   out(c, senc(kc, (rec_hs, suite, (E, cs, cp))));
   in(c, rec2: bitstring);
   let (=rec_hs, =suite, (E2: bitstring, cp2: bitstring)) = sdec(ks, rec2) in
   let h5 = mixh(h4, E2) in
-  let ck3 = hkck(ck2, dhexp(e, E2)) in
-  let ck4 = hkck(ck3, dhexp(sI, E2)) in
-  let k4 = hkk(ck3, dhexp(sI, E2)) in
-  let pl2 = unaead(k4, h5, cp2) in
-  if pl2 = empty then
+  let ck3 = hkck(ck2, dhi(e, E2)) in
+  let ck4 = hkck(ck3, dhi(sI, E2)) in
+  let k4 = hkk(ck3, dhi(sI, E2)) in
+  if unaead(k4, h5, cp2) = empty then
   let h6 = mixh(h5, cp2) in
   event ClientDone(me, them, tr, h6);
-  event ClientOffered(me, them, v_hi, capsof(me));
+  event ClientOffered(me, them, tr, v_hi, capsof(me));
   out(c, senc(kc, (rec_app1, v_hi, capsof(me), pw(me))));
   in(c, rec3: bitstring);
   let (=rec_app2, d: bitstring) = sdec(ks, rec3) in
-  event ClientGotData(me, them, d).
+  event ClientGotData(me, them, tr, d).
 
 (* The server: the TLS handshake with its certificate, NoiseSessionAccept with the prologue that carries
-   its own view of the binding, the Login, and the answer. sa and sb are the two suites that it runs. It
-   serves one expected client, as the node of a peer does and as the key pin of a user does. *)
-let Server(me: principal, them: principal, bm: bitstring, plabel: bitstring, lab: bitstring, sa: bitstring, sb: bitstring, sid: sessionid) =
+   its own view of the binding, the Login, and the answer. A server runs the suites that it supports as one
+   process each, and a process takes only the records of its own suite. It serves one expected client, as the
+   node of a peer does and as the key pin of a user does. *)
+let Server(me: principal, them: principal, bm: bitstring, plabel: bitstring, lab: bitstring, suite: bitstring, sid: sessionid) =
   in(c, (cr: bitstring, gx: bitstring));
   new sr: bitstring;
   new y: bitstring;
-  let gy = tdhexp(y, tg) in
+  let gy = tpk(y) in
   let mycert = certof(me) in
   let tr = (cr, gx, sr, gy, mycert) in
   out(c, (sr, gy, mycert, sign(sigkey(me), tr)));
-  let ms = tlsms(tdhexp(y, gx), tr) in
+  let ms = tlsms(tdhr(y, gx), tr) in
   let kc = tlsk(ms, lab_c) in
   let ks = tlsk(ms, lab_s) in
   let bnd = binding(bm, ms, mycert, lab) in
   let prologue = (plabel, bm, bnd) in
   in(c, rec1: bitstring);
-  let (=rec_hs, suite: bitstring, (E: bitstring, cs: bitstring, cp: bitstring)) = sdec(kc, rec1) in
-  if (suite = sa) || (suite = sb) then
+  let (=rec_hs, =suite, (E: bitstring, cs: bitstring, cp: bitstring)) = sdec(kc, rec1) in
   let sR = skey(me) in
-  let SR = dhexp(sR, g) in
+  let SR = pk(sR) in
   let h0 = hash1(suitename(suite)) in
   let h1 = mixh(mixh(h0, prologue), SR) in
   let h2 = mixh(h1, E) in
-  let ck1 = hkck(h0, dhexp(sR, E)) in
-  let k1 = hkk(h0, dhexp(sR, E)) in
-  let SI = unaead(k1, h2, cs) in
-  if SI = spub(them) then
+  let ck1 = hkck(h0, dhr(sR, E)) in
+  let k1 = hkk(h0, dhr(sR, E)) in
+  if unaead(k1, h2, cs) = spub(them) then
+  let SI = spub(them) in
   let h3 = mixh(h2, cs) in
-  let ck2 = hkck(ck1, dhexp(sR, SI)) in
-  let k2 = hkk(ck1, dhexp(sR, SI)) in
-  let pl1 = unaead(k2, h3, cp) in
-  if pl1 = empty then
+  let ck2 = hkck(ck1, dhr(sR, SI)) in
+  let k2 = hkk(ck1, dhr(sR, SI)) in
+  if unaead(k2, h3, cp) = empty then
   let h4 = mixh(h3, cp) in
   event ServerAccept(me, them, tr);
-  event ServerSuite(me, them, suite);
+  event ServerSuite(me, them, tr, suite);
   new e: bitstring;
-  let E2 = dhexp(e, g) in
+  let E2 = pk(e) in
   let h5 = mixh(h4, E2) in
-  let ck3 = hkck(ck2, dhexp(e, E)) in
-  let ck4 = hkck(ck3, dhexp(e, SI)) in
-  let k4 = hkk(ck3, dhexp(e, SI)) in
+  let ck3 = hkck(ck2, dhr(e, E)) in
+  let ck4 = hkck(ck3, dhr(e, SI)) in
+  let k4 = hkk(ck3, dhr(e, SI)) in
   let cp2 = aead(k4, h5, empty) in
   let h6 = mixh(h5, cp2) in
   event ServerReply(me, them, tr, h6);
   out(c, senc(ks, (rec_hs, suite, (E2, cp2))));
   in(c, rec2: bitstring);
-  let (=rec_app1, v: bitstring, caps: bitstring, pass: bitstring) = sdec(kc, rec2) in
-  if pass = pw(them) then
-  event ServerNegotiated(me, them, v, caps);
+  let (=rec_app1, v: bitstring, caps: bitstring, =pw(them)) = sdec(kc, rec2) in
+  event ServerNegotiated(me, them, tr, v, caps);
   event ServerLoginOk(me, them, tr);
-  event ServerSentData(me, them, appdata(me, them, sid));
+  event ServerSentData(me, them, tr, appdata(me, them, sid));
   out(c, senc(ks, (rec_app2, appdata(me, them, sid)))).
 
 (* What the attacker knows from the start: the public keys, the certificate of the server, and everything of
@@ -228,9 +230,7 @@ let Setup() =
   out(c, certof(charlie));
   out(c, skey(charlie));
   out(c, sigkey(charlie));
-  out(c, pw(charlie));
-  out(c, g);
-  out(c, tg).
+  out(c, pw(charlie)).
 
 (* The compromise of the keys of the honest nodes: in phase 0, before or during the sessions, and in phase 1,
    after them, which is what forward secrecy asks of the sessions of phase 0 *)
