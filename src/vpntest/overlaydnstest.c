@@ -69,6 +69,7 @@ typedef struct OVERLAYDNSTEST_CTX
 	HMODULE Dnsapi;						// dnsapi.dll
 	OVERLAYDNSTEST_QUERY *Query;		// Its DnsQuery_W ...
 	OVERLAYDNSTEST_FREE *Free;			// ... and DnsFree
+	UINT Bound;							// ms that a name may take to resolve as wanted: OVERLAYDNSTEST_BOUND until one does not
 } OVERLAYDNSTEST_CTX;
 
 // What a query of the DNS client gave
@@ -351,13 +352,14 @@ static void OverlayDnsTestResolve(OVERLAYDNSTEST_CTX *ctx, wchar_t *name, WORD t
 }
 
 // Whether the DNS client of Windows answers name with exactly the addresses want (as text, separated by spaces) within
-// OVERLAYDNSTEST_BOUND: the NRPT takes a changed rule a moment after the node wrote it
+// ctx->Bound: the NRPT takes a changed rule a moment after the node wrote it. After a name that does not resolve as
+// wanted, the next ones get OVERLAYDNSTEST_ANSWER, so a run whose NRPT does not work fails within the budget.
 static bool OverlayDnsTestResolves(OVERLAYDNSTEST_CTX *ctx, wchar_t *name, WORD type, char *want, char *detail, UINT detail_size)
 {
 	OVERLAYDNSTEST_ANSWERS a;
 
 	Zero(&a, sizeof(a));
-	for (UINT64 end = Tick64() + OVERLAYDNSTEST_BOUND;Tick64() < end;SleepThread(OVERLAYDNSTEST_POLL * 5))
+	for (UINT64 end = Tick64() + ctx->Bound;Tick64() < end;SleepThread(OVERLAYDNSTEST_POLL * 5))
 	{
 		OverlayDnsTestResolve(ctx, name, type, &a);
 		if (a.Status == 0 && StrCmp(a.Text, want) == 0)
@@ -367,6 +369,7 @@ static bool OverlayDnsTestResolves(OVERLAYDNSTEST_CTX *ctx, wchar_t *name, WORD 
 		}
 	}
 
+	ctx->Bound = OVERLAYDNSTEST_ANSWER;
 	Format(detail, detail_size, "status %d, addresses \"%s\", want \"%s\"", (int)a.Status, a.Text, want);
 	return false;
 }
@@ -766,6 +769,7 @@ void overlaydns_test(UINT num, char **arg)
 	HANDLE watchdog = (done != NULL ? CreateThread(NULL, 0, OverlayDnsTestWatchdog, done, 0, NULL) : NULL);
 
 	Zero(&ctx, sizeof(ctx));
+	ctx.Bound = OVERLAYDNSTEST_BOUND;
 
 	Print("Overlay DNS test: the stub resolver of each VRF on the node's addresses there, and the NRPT that sends only the overlay suffixes to it\n");
 
