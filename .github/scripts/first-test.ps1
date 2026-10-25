@@ -804,8 +804,10 @@ try {
 		# SDN-90), and must stay so: the Node service sets the control stream of its overlay, and ranz has the verbs.
 		if (-not (Test-Source 'src\Cedar' 'Node*.c' '\.Control\s*=|->Control\s*=')) { throw 'Gap 1 is open again: no code of the Node service sets the control stream of its overlay (NODE_OVERLAY_CONFIG.Control)' }
 		if (-not (Test-Source 'controller\cmd\ranz' '*.go' 'register\("node"')) { throw 'Gap 2 is open again: ranz has no verb node, which prints the key of a Node' }
-		$listens = (Test-Source 'src\Cedar' 'Node*.c' 'TransportTlsServerNew|TransportQuicServerNew|FrontDoorStart') -or (Test-Source 'src\ranz-node' '*.c' 'TransportTlsServerNew|TransportQuicServerNew|FrontDoorStart')
-		Assert-Gap 'Gap 3' (-not $listens) 'the Node service starts no QUIC listener, no TLS listener and no front door'
+		# The Listener of a desired state starts the front door and QUIC of a Node (SDN-45, NodeListener.c), but the overlay
+		# still dials a peer by its node name, not at the Listener of the peer
+		$byName = Test-Source 'src\Cedar' 'NodeOverlay.c' 'TransportDial\(ov->Config\.Data, name, NULL\)'
+		Assert-Gap 'Gap 3' $byName 'the overlay dials a peer by its node name on its data transport: the desired state gives it no address of the Listener of a peer'
 		Assert-Gap 'Gap 4' (-not (Test-Source 'controller\internal\install' '*.go' '(?i)firewall')) 'ranz install knows no firewall'
 		Assert-Gap 'Gap 5' (-not (Test-Source 'controller\cmd\ranz' '*.go' '(?i)audit')) 'the ranz CLI has no verb for the audit log'
 	}

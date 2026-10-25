@@ -11,7 +11,8 @@
 //   control stream, takes no state, says in its log that the fingerprint check failed and which fingerprint it saw, and
 //   dials again after a delay that doubles with each attempt that fails, up to its cap. With the fingerprint of that
 //   certificate the check passes, and the TLS session still fails: its server did not select the ALPN protocol of the
-//   control stream.
+//   control stream. The TLS transport of the control stream turns on TCP keepalive on its socket, so a stream that is
+//   quiet on a path that went dead without a reset ends too.
 // - The private half of the static key, which the test put into the key storage provider itself, is in no answer and in
 //   no line of the node log.
 // Print "NODEJOIN TEST OK" only when every check passes. Needs the rights to write a machine key, as an elevated window has.
@@ -34,6 +35,8 @@
 #include "Core/Crypto.h"
 #include "Core/Peer.h"
 #include "Core/Transport.h"
+
+#include <ws2tcpip.h>
 
 #include <string.h>
 
@@ -277,6 +280,50 @@ static bool NodeJoinFingerprint(PCCERT_CONTEXT cert, char *fp, UINT size)
 	return ok;
 }
 
+// Whether TransportTlsKeepAlive turns on TCP keepalive on the socket of a connection to port of the loopback interface as
+// the TLS transport of the control stream of a node asks for it, and leaves it off when a configuration asks for none, as
+// getsockopt reads the options back
+static bool NodeJoinKeepAlive(USHORT port, char *detail, UINT size)
+{
+	TRANSPORT_TLS_CONFIG cfg;
+	SOCKADDR_IN sa;
+	DWORD on[2] = {0, 0};
+	DWORD idle = 0, interval = 0, probes = 0;
+	bool ok = true;
+
+	Zero(&sa, sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(port);
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+	for (UINT i = 0;i < 2;i++)
+	{
+		SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		int len = sizeof(on[i]);
+
+		Zero(&cfg, sizeof(cfg));
+		cfg.KeepAlive = (i == 0 ? NODE_CONTROLLER_KEEPALIVE : 0);
+		ok = (ok && s != INVALID_SOCKET && connect(s, (SOCKADDR *)&sa, sizeof(sa)) == 0 && TransportTlsKeepAlive(&cfg, (UINT_PTR)s) &&
+			getsockopt(s, SOL_SOCKET, SO_KEEPALIVE, (char *)&on[i], &len) == 0);
+		if (ok && i == 0)
+		{
+			int idle_len = sizeof(idle), interval_len = sizeof(interval), probes_len = sizeof(probes);
+
+			ok = (getsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, (char *)&idle, &idle_len) == 0 && getsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, (char *)&interval, &interval_len) == 0 &&
+				getsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, (char *)&probes, &probes_len) == 0);
+		}
+		if (s != INVALID_SOCKET)
+		{
+			closesocket(s);
+		}
+	}
+
+	Format(detail, size, "the options %s: keepalive %u, idle %u s, %u probes %u s apart; without KeepAlive keepalive %u",
+		(ok ? "read back" : "could not be set or read"), (UINT)on[0], (UINT)idle, (UINT)probes, (UINT)interval, (UINT)on[1]);
+
+	return (ok && on[0] != 0 && on[1] == 0 && idle == NODE_CONTROLLER_KEEPALIVE && interval == TRANSPORT_TLS_KEEPALIVE_INTERVAL && probes == TRANSPORT_TLS_KEEPALIVE_PROBES);
+}
+
 RANZ_TEST_TAGS("nodejoin", nodejoin_test, "core", "Controller settings, admin pipe and static key of a Node without a controller (SDN-90): ranz node's commands, a TLS fingerprint that fails and one that passes, the delay that grows to its cap, no private key in any answer or log.");
 void nodejoin_test(UINT num, char **arg)
 {
@@ -296,7 +343,7 @@ void nodejoin_test(UINT num, char **arg)
 	wchar_t dir_fresh[MAX_PATH] = {0};
 	char priv_hex[2 * PEER_KEY_SIZE + 1], priv_lower[2 * PEER_KEY_SIZE + 1];
 	char thumbprint[MAX_SIZE] = "", fingerprint[MAX_SIZE] = "", address[MAX_SIZE] = "";
-	char command[MAX_SIZE * 2], want[MAX_SIZE], mismatch[MAX_SIZE * 2], next[3][MAX_SIZE];
+	char command[MAX_SIZE * 2], want[MAX_SIZE], mismatch[MAX_SIZE * 2], next[3][MAX_SIZE], detail[MAX_SIZE];
 	char *reply = ZeroMalloc(NODEJOIN_REPLY);
 	char *answers = ZeroMalloc(NODEJOIN_REPLY * 4);
 	char *priv_b64 = NULL, *pub_b64 = NULL, *ctrl_b64 = NULL, *fresh_b64 = NULL, *text = NULL;
@@ -444,6 +491,11 @@ void nodejoin_test(UINT num, char **arg)
 	NodeJoinCheck(ctx, delay == CONTROL_RETRY_MAX && failures == 7 && ControlRetryNext(delay, CONTROL_END_HANDSHAKE) == CONTROL_RETRY_MAX &&
 		ControlRetryNext(delay, CONTROL_END_DIAL) == CONTROL_RETRY_MAX && ControlRetryNext(delay, CONTROL_END_CLOSED) == CONTROL_RETRY,
 		"the delay doubles up to its cap of a minute and stays there, and a stream that was open dials again after a second", "%u ms after %u attempts that failed", delay, failures);
+
+	// A stream that is quiet on a path that went dead without a reset ends by TCP keepalive, and the node dials again as
+	// after any other end; the dial of the node with keepalive reaches the fingerprint check below
+	NodeJoinCheck(ctx, NodeJoinKeepAlive((USHORT)TransportTlsBoundPort(server), detail, sizeof(detail)), "the TLS transport of the control stream turns on TCP keepalive on the socket of its connection",
+		"%s", detail);
 
 	// With the fingerprint of the certificate the check passes, and the session still fails: no ALPN protocol of the control stream
 	Format(command, sizeof(command), "controller set %s %s %s", address, ctrl_b64, fingerprint);

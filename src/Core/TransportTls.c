@@ -1417,7 +1417,8 @@ static bool TlsDial(void *param, const char *address, HANDLE cancel, void **stre
 	SOCKET sock = TransportPathConnect(&net->Cfg.Path, host, port, cancel);
 	if (sock == INVALID_SOCKET)
 		return false;
-	if (TlsSocketReady(sock) == false) {
+	// A client of the control stream notices a path that went dead (TransportTlsKeepAlive.c; SDN-90, #395)
+	if (TlsSocketReady(sock) == false || TransportTlsKeepAlive(&net->Cfg, (UINT_PTR)sock) == false) {
 		closesocket(sock);
 		return false;
 	}
