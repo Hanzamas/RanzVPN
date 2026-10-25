@@ -8,7 +8,9 @@ param(
 	[string] $Rqlited,      # The rqlited.exe of the pinned rqlite release: the rqlite member that ranz.exe carries (ONE-4, #313)
 	[string] $WintunX64,    # The folder that fetch-wintun.ps1 filled for x64: the wintun.dll that ranz.exe carries (ONE-3, #312)
 	[string] $WintunArm64,  # ... and for arm64
-	[string] $Xdp           # The folder that fetch-xdp.ps1 filled: the files of the XDP runtime that the x64 ranz.exe carries (ONE-3, #312)
+	[string] $Xdp,          # The folder that fetch-xdp.ps1 filled: the files of the XDP runtime that the x64 ranz.exe carries (ONE-3, #312)
+	[string] $WireGuardX64, # The folder that fetch-wireguard.ps1 filled for x64: the wireguard.dll of WireGuardNT that ranz.exe carries (SDN-80, #375)
+	[string] $WireGuardArm64 # ... and for arm64
 )
 
 # SEC-3 (#281), ADR-0020 and ADR-0036 amendments of 2026-10-22. Three things, all provable in CI with a
@@ -40,6 +42,10 @@ param(
 # each of these files goes to GITHUB_OUTPUT too. A third x64 ranz.exe, in $OutDir\x64-xdpfail, has one byte of xdp.sys
 # changed, so that the install job can read what ranz install does when the XDP runtime fails: it must install the Node
 # all the same.
+#
+# SDN-80 (#375) adds the wireguard.dll of the pinned WireGuardNT SDK for each architecture, as WireGuard LLC signed it,
+# which a gateway of WireGuard Devices loads and ranz install writes unless --no-wireguard; its SHA-256 goes to
+# GITHUB_OUTPUT as well.
 
 $ErrorActionPreference = 'Stop'
 # Native exit codes are checked explicitly below (so "go tool nm", which exits 1 when a binary has no
@@ -71,6 +77,14 @@ $xdpDir = (Resolve-Path -LiteralPath $Xdp).Path
 $xdpNames = @('xdp.sys', 'xdpapi.dll', 'xdp.cat', 'xdp.inf', 'xdppcw.man')
 foreach ($file in @($wintunDlls['x64'], $wintunDlls['arm64']) + @($xdpNames | ForEach-Object { Join-Path $xdpDir $_ })) {
 	if (-not (Test-Path -LiteralPath $file)) { throw "$file is missing: fetch-wintun.ps1 and fetch-xdp.ps1 fill the folders of -WintunX64, -WintunArm64 and -Xdp" }
+}
+if (-not $WireGuardX64 -or -not $WireGuardArm64) { throw '-WireGuardX64 and -WireGuardArm64 name no folder with the wireguard.dll that the ranz.exe of each architecture carries as a Payload (SDN-80, #375)' }
+$wireguardDlls = @{
+	'x64'   = (Join-Path (Resolve-Path -LiteralPath $WireGuardX64).Path 'wireguard.dll')
+	'arm64' = (Join-Path (Resolve-Path -LiteralPath $WireGuardArm64).Path 'wireguard.dll')
+}
+foreach ($file in $wireguardDlls.Values) {
+	if (-not (Test-Path -LiteralPath $file)) { throw "$file is missing: fetch-wireguard.ps1 fills the folders of -WireGuardX64 and -WireGuardArm64" }
 }
 
 # signtool.exe of the Windows SDK: the highest version under the Windows Kits, x64 build
@@ -196,6 +210,10 @@ if ($env:GITHUB_OUTPUT) {
 		$hash = (Get-FileHash -LiteralPath $wintunDlls[$arch] -Algorithm SHA256).Hash
 		Write-Host "wintun.dll ($arch): SHA-256 $hash"
 		"wintun-sha256-$arch=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+		# The wireguard.dll of WireGuardNT (SDN-80, #375)
+		$hash = (Get-FileHash -LiteralPath $wireguardDlls[$arch] -Algorithm SHA256).Hash
+		Write-Host "wireguard.dll ($arch): SHA-256 $hash"
+		"wireguard-sha256-$arch=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 	}
 	foreach ($pair in @(@{ File = 'xdp.sys'; Output = 'xdp-sys-sha256' }, @{ File = 'xdpapi.dll'; Output = 'xdp-api-sha256' })) {
 		$hash = (Get-FileHash -LiteralPath (Join-Path $xdpDir $pair.File) -Algorithm SHA256).Hash
@@ -303,8 +321,9 @@ Write-Host 'the MSI ships no PDB (the C PDB is kept private)'
 # second build carries a copy of the ranz-node.exe payload with one byte changed well inside it, never
 # its MS-DOS or PE header, and is signed too: only its Payload is wrong, so ranz install must refuse it
 # for that and for no other reason. The ranz.exe of each architecture also carries the wintun.dll of the
-# pinned release, and the x64 one the files of the XDP runtime (ONE-3, #312), written over the placeholders
-# of controller/internal/payload (wintun_<arch>.dll and xdp/) and emptied again after. A third x64 build,
+# pinned release and the wireguard.dll of the pinned WireGuardNT SDK (SDN-80, #375), and the x64 one the
+# files of the XDP runtime (ONE-3, #312), written over the placeholders of controller/internal/payload
+# (wintun_<arch>.dll, wireguard_<arch>.dll and xdp/) and emptied again after. A third x64 build,
 # x64-xdpfail, carries the same Payloads with one byte of xdp.sys changed well inside it: ranz install must
 # refuse the XDP runtime and nothing else, and the Node must still be installed.
 $build = $env:GITHUB_RUN_NUMBER
@@ -322,6 +341,9 @@ try {
 		# The Wintun DLL of this architecture, and for x64 the XDP runtime (ONE-3, #312), as they were fetched
 		[byte[]] $wintunBytes = [System.IO.File]::ReadAllBytes($wintunDlls[$pair.Arch])
 		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/wintun_$goarch.dll"), $wintunBytes)
+		# The WireGuardNT DLL of this architecture (SDN-80, #375), as it was fetched
+		[byte[]] $wireguardBytes = [System.IO.File]::ReadAllBytes($wireguardDlls[$pair.Arch])
+		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/wireguard_$goarch.dll"), $wireguardBytes)
 		$variants = @('', '-tampered')
 		if ($pair.Arch -eq 'x64') {
 			foreach ($name in $xdpNames) {
@@ -357,7 +379,7 @@ try {
 			if ($variant -eq '') {
 				$nm = (go tool nm $goexe 2>&1 | Out-String)
 				if ($nm -notmatch 'no symbols') { throw "ranz ($goarch) still has a symbol table after -ldflags '-s -w':`n$nm" }
-				Write-Host "ranz ($goarch): -trimpath -ldflags '-s -w', no symbol table, ranz-node.exe ($($nodeBytes.Length) bytes), rqlited.exe ($($memberBytes.Length) bytes) and wintun.dll ($($wintunBytes.Length) bytes) as its Payloads"
+				Write-Host "ranz ($goarch): -trimpath -ldflags '-s -w', no symbol table, ranz-node.exe ($($nodeBytes.Length) bytes), rqlited.exe ($($memberBytes.Length) bytes), wintun.dll ($($wintunBytes.Length) bytes) and wireguard.dll ($($wireguardBytes.Length) bytes) as its Payloads"
 			}
 			Protect-File $signtool $thumb $goexe
 		}
@@ -367,6 +389,7 @@ try {
 		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/node_$goarch.exe"), [byte[]]@())
 		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/rqlited_$goarch.exe"), [byte[]]@())
 		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/wintun_$goarch.dll"), [byte[]]@())
+		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/wireguard_$goarch.dll"), [byte[]]@())
 	}
 	foreach ($name in @('xdp.sys', 'xdpapi.dll', 'xdp.cat', 'xdp.inf', 'xdppcw.man')) {
 		[System.IO.File]::WriteAllBytes((Join-Path (Get-Location).Path "controller/internal/payload/xdp/$name"), [byte[]]@())

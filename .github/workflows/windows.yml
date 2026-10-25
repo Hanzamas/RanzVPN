@@ -1182,13 +1182,16 @@ jobs:
     # compares with the file that ranz install writes, and of the signed rqlited.exe (ONE-4, #313),
     # which it compares with the file that the Controller writes under its data directory, and of the
     # wintun.dll of each architecture and the xdp.sys and xdpapi.dll of the XDP runtime (ONE-3, #312),
-    # which ranz install writes as they are
+    # and the wireguard.dll of WireGuardNT of each architecture (SDN-80, #375), which ranz install
+    # writes as they are
     outputs:
       node-sha256-x64: ${{ steps.signing.outputs.node-sha256-x64 }}
       node-sha256-arm64: ${{ steps.signing.outputs.node-sha256-arm64 }}
       member-sha256: ${{ steps.signing.outputs.member-sha256 }}
       wintun-sha256-x64: ${{ steps.signing.outputs.wintun-sha256-x64 }}
       wintun-sha256-arm64: ${{ steps.signing.outputs.wintun-sha256-arm64 }}
+      wireguard-sha256-x64: ${{ steps.signing.outputs.wireguard-sha256-x64 }}
+      wireguard-sha256-arm64: ${{ steps.signing.outputs.wireguard-sha256-arm64 }}
       xdp-sys-sha256: ${{ steps.signing.outputs.xdp-sys-sha256 }}
       xdp-api-sha256: ${{ steps.signing.outputs.xdp-api-sha256 }}
     steps:
@@ -1262,11 +1265,19 @@ jobs:
       shell: pwsh
       run: |
         .github/scripts/fetch-xdp.ps1 -OutDir "${{ github.workspace }}\build\xdp"
+    # The wireguard.dll of the pinned WireGuardNT SDK of each architecture (SDN-80, #375), which a
+    # gateway of WireGuard Devices loads: fetch-wireguard.ps1 checks the SHA-256 of the archive and that
+    # WireGuard LLC signed the DLL
+    - name: Fetch WireGuardNT
+      shell: pwsh
+      run: |
+        .github/scripts/fetch-wireguard.ps1 -Arch x64 -DllDir "${{ github.workspace }}\build\wireguard-x64"
+        .github/scripts/fetch-wireguard.ps1 -Arch arm64 -DllDir "${{ github.workspace }}\build\wireguard-arm64"
     - name: Sign, self-integrity and symbol strip
       id: signing
       shell: pwsh
       run: |
-        . .github/scripts/self-integrity.ps1 -X64Dir artifacts/x64 -Arm64Dir artifacts/arm64 -Wxs .github/signing/signing-proof.wxs -LicenseFile LICENSE -GoModuleDir . -OutDir build/signing -Rqlited $env:RQLITED -WintunX64 build/wintun-x64 -WintunArm64 build/wintun-arm64 -Xdp build/xdp
+        . .github/scripts/self-integrity.ps1 -X64Dir artifacts/x64 -Arm64Dir artifacts/arm64 -Wxs .github/signing/signing-proof.wxs -LicenseFile LICENSE -GoModuleDir . -OutDir build/signing -Rqlited $env:RQLITED -WintunX64 build/wintun-x64 -WintunArm64 build/wintun-arm64 -Xdp build/xdp -WireGuardX64 build/wireguard-x64 -WireGuardArm64 build/wireguard-arm64
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
@@ -1530,8 +1541,9 @@ jobs:
   # signatures chain to a trusted root (this is another machine than the one that signed). The Controller
   # service that ranz install --controller starts runs the rqlite member that ranz.exe carries (ONE-4,
   # #313): no rqlited is installed or started by the job. The same ranz.exe also carries the drivers
-  # (ONE-3, #312): the wintun.dll of the pinned Wintun release on both architectures, and on x64 the
-  # SeLow driver package and the XDP runtime of the pinned Microsoft package. The job reads from
+  # (ONE-3, #312): the wintun.dll of the pinned Wintun release on both architectures, the wireguard.dll of
+  # the pinned WireGuardNT SDK on both (SDN-80, #375), which ranz install --no-wireguard leaves out, and on
+  # x64 the SeLow driver package and the XDP runtime of the pinned Microsoft package. The job reads from
   # outside that ranz install wrote each of them as it is, installed SeLow and the XDP runtime (the
   # XDP files keep the production signature of Microsoft: signtool verify /kp for the driver, and
   # signtool verify /c for xdpapi.dll, a member of the catalog), and that the Node
@@ -1591,11 +1603,12 @@ jobs:
         NODE_SHA256: ${{ needs.sign_and_integrity.outputs[format('node-sha256-{0}', matrix.platform.ARCHITECTURE)] }}
         MEMBER_SHA256: ${{ needs.sign_and_integrity.outputs.member-sha256 }}
         WINTUN_SHA256: ${{ needs.sign_and_integrity.outputs[format('wintun-sha256-{0}', matrix.platform.ARCHITECTURE)] }}
+        WIREGUARD_SHA256: ${{ needs.sign_and_integrity.outputs[format('wireguard-sha256-{0}', matrix.platform.ARCHITECTURE)] }}
         XDP_SYS_SHA256: ${{ needs.sign_and_integrity.outputs.xdp-sys-sha256 }}
         XDP_API_SHA256: ${{ needs.sign_and_integrity.outputs.xdp-api-sha256 }}
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
       run: |
-        . .github/scripts/install.ps1 -Ranz artifacts\ranz\ranz.exe -Tampered artifacts\ranz-tampered\ranz.exe -XdpFail artifacts\ranz-xdpfail\ranz.exe -Architecture $env:ARCHITECTURE -NodeSha256 $env:NODE_SHA256 -MemberSha256 $env:MEMBER_SHA256 -WintunSha256 $env:WINTUN_SHA256 -XdpSysSha256 $env:XDP_SYS_SHA256 -XdpApiSha256 $env:XDP_API_SHA256
+        . .github/scripts/install.ps1 -Ranz artifacts\ranz\ranz.exe -Tampered artifacts\ranz-tampered\ranz.exe -XdpFail artifacts\ranz-xdpfail\ranz.exe -Architecture $env:ARCHITECTURE -NodeSha256 $env:NODE_SHA256 -MemberSha256 $env:MEMBER_SHA256 -WintunSha256 $env:WINTUN_SHA256 -XdpSysSha256 $env:XDP_SYS_SHA256 -XdpApiSha256 $env:XDP_API_SHA256 -WireGuardSha256 $env:WIREGUARD_SHA256
 
   # The XDP job of the L2 adapter (CORE-S3-2, #72; seam 3 of #45): the vpntest test kmtest on a real KM-TEST Loopback
   # Adapter, on Windows Server 2022 and 2025 x64, with the drivers that the signed ranz.exe of sign_and_integrity installs
