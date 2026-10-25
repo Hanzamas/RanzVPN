@@ -314,22 +314,25 @@ func addRule(rules *comObject, fr firewallRule, group string) error {
 	}
 	defer rule.release()
 	// The protocol comes before the ports: Windows Firewall takes ports only for TCP and UDP
-	steps := []func() error{
-		func() error { return rule.putString(rulePutName, fr.Name) },
-		func() error { return rule.putString(rulePutDescription, fr.Description) },
-		func() error { return rule.putString(rulePutApplicationName, fr.Program) },
-		func() error { return rule.call(rulePutProtocol, uintptr(fr.Protocol)) },
-		func() error { return rule.putString(rulePutLocalPorts, fr.Ports) },
-		func() error { return rule.call(rulePutDirection, fwDirectionIn) },
-		func() error { return rule.call(rulePutProfiles, fwProfilesAll) },
-		func() error { return rule.call(rulePutAction, fwActionAllow) },
-		func() error { return rule.call(rulePutEnabled, variantTrue) },
-		func() error { return rule.putString(rulePutGrouping, group) },
-		func() error { return rules.call(rulesAdd, uintptr(unsafe.Pointer(rule))) },
+	steps := []struct {
+		what string
+		do   func() error
+	}{
+		{"its name", func() error { return rule.putString(rulePutName, fr.Name) }},
+		{"its description", func() error { return rule.putString(rulePutDescription, fr.Description) }},
+		{"its program " + fr.Program, func() error { return rule.putString(rulePutApplicationName, fr.Program) }},
+		{"its protocol", func() error { return rule.call(rulePutProtocol, uintptr(fr.Protocol)) }},
+		{"its ports " + fr.Ports, func() error { return rule.putString(rulePutLocalPorts, fr.Ports) }},
+		{"its direction", func() error { return rule.call(rulePutDirection, fwDirectionIn) }},
+		{"its profiles", func() error { return rule.call(rulePutProfiles, fwProfilesAll) }},
+		{"its action", func() error { return rule.call(rulePutAction, fwActionAllow) }},
+		{"its state", func() error { return rule.call(rulePutEnabled, variantTrue) }},
+		{"its group", func() error { return rule.putString(rulePutGrouping, group) }},
+		{"the rule to the policy", func() error { return rules.call(rulesAdd, uintptr(unsafe.Pointer(rule))) }},
 	}
 	for _, step := range steps {
-		if err := step(); err != nil {
-			return fmt.Errorf("adding the rule %q: %w", fr.Name, err)
+		if err := step.do(); err != nil {
+			return fmt.Errorf("adding the rule %q, setting %s: %w", fr.Name, step.what, err)
 		}
 	}
 	return nil
@@ -418,12 +421,25 @@ func openPorts(w io.Writer, m *mgr.Mgr, dir string) {
 // it returns removes the rule again. A rule that cannot be made is reported, and the test serves all
 // the same: an Administrator then opens the port by hand.
 func AllowTestPort(w io.Writer, port int) func() {
-	self, err := os.Executable()
+	r, undo, err := allowTestPort(port)
 	if err != nil {
-		fmt.Fprintf(w, "Windows Firewall: the path of this program: %v\n", err)
+		fmt.Fprintf(w, "Windows Firewall does not let in %s (%v): open the port by hand if the client cannot connect\n", r.describe(), err)
 		return func() {}
 	}
-	r := testRule(self, port)
+	fmt.Fprintf(w, "Windows Firewall lets in %s while the test runs, the rule %q of the group %s\n", r.describe(), r.Name, FirewallGroup)
+	return undo
+}
+
+// allowTestPort makes the rule of the traffic test on the TCP port port for the running program, and
+// returns it with the func that removes it again. The path of the program is its long path:
+// os.Executable gives the path that started it, which may have short names of 8.3 (RUNNER~1), and
+// Windows Firewall takes a rule only for the long path.
+func allowTestPort(port int) (firewallRule, func(), error) {
+	self, err := os.Executable()
+	if err != nil {
+		return testRule("this program", port), nil, fmt.Errorf("the path of this program: %w", err)
+	}
+	r := testRule(longPath(self), port)
 	err = withRules(func(rules *comObject) error {
 		if err := removeRules(rules, r.Name); err != nil {
 			return err
@@ -431,13 +447,26 @@ func AllowTestPort(w io.Writer, port int) func() {
 		return addRule(rules, r, FirewallGroup)
 	})
 	if err != nil {
-		fmt.Fprintf(w, "Windows Firewall does not let in %s (%v): open the port by hand if the client cannot connect\n", r.describe(), err)
-		return func() {}
+		return r, nil, err
 	}
-	fmt.Fprintf(w, "Windows Firewall lets in %s while the test runs, the rule %q of the group %s\n", r.describe(), r.Name, FirewallGroup)
-	return func() {
+	return r, func() {
 		_ = withRules(func(rules *comObject) error { return removeRules(rules, r.Name) })
+	}, nil
+}
+
+// longPath returns the long path of the file path (GetLongPathNameW), or path itself when Windows
+// cannot give it.
+func longPath(path string) string {
+	u, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return path
 	}
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	n, err := windows.GetLongPathName(u, &buf[0], uint32(len(buf)))
+	if err != nil || n == 0 || int(n) >= len(buf) {
+		return path
+	}
+	return windows.UTF16ToString(buf[:n])
 }
 
 // closePorts removes every rule of the group FirewallGroup, whichever install or version made it,

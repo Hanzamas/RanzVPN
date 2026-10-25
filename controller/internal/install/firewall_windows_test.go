@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +66,45 @@ func TestSetFirewallReadsBackKeepsAndRemoves(t *testing.T) {
 		t.Fatalf("removing the group (error %v) removed %q", err, c.removed)
 	}
 	assertFirewall(t, group, nil)
+}
+
+// The rule of the traffic test is made for the long path of the running program, even when it was
+// started by a path with short names (the TEMP of a runner is C:\Users\RUNNER~1\...), read back in the
+// group, and removed again.
+func TestAllowTestPortReadsBackAndRemoves(t *testing.T) {
+	port := 40000 + int(time.Now().UnixNano()%20000)
+	r, undo, err := allowTestPort(port)
+	if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		t.Skip("Windows Firewall takes rules from an Administrator only")
+	}
+	if err != nil {
+		t.Fatalf("allowTestPort: %v", err)
+	}
+	removed := false
+	t.Cleanup(func() {
+		if !removed {
+			undo()
+		}
+	})
+	if strings.Contains(r.Program, "~") {
+		t.Errorf("the rule is for %s, a path with short names", r.Program)
+	}
+	got, err := readFirewall(FirewallGroup)
+	if err != nil {
+		t.Fatalf("reading the group %s: %v", FirewallGroup, err)
+	}
+	if i := slices.IndexFunc(got, func(h firewallRule) bool { return h.Name == r.Name }); i < 0 || !got[i].same(r) {
+		t.Fatalf("the group %s holds %+v, want the rule %+v", FirewallGroup, got, r)
+	}
+	undo()
+	removed = true
+	got, err = readFirewall(FirewallGroup)
+	if err != nil {
+		t.Fatalf("reading the group %s: %v", FirewallGroup, err)
+	}
+	if slices.ContainsFunc(got, func(h firewallRule) bool { return h.Name == r.Name }) {
+		t.Errorf("the rule %q is still there after the test stopped", r.Name)
+	}
 }
 
 // assertFirewall checks that the group holds the rules want, as Windows Firewall reads them back.

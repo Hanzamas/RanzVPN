@@ -118,9 +118,10 @@ func serveThroughput(ctx context.Context, addr string, out, stderr io.Writer) in
 	}
 	defer ln.Close()
 	// The port of the test in Windows Firewall while it serves (SDN-91, #396), so that a client on
-	// another PC reaches it without a rule made by hand
-	if a, ok := ln.Addr().(*net.TCPAddr); ok {
-		defer install.AllowTestPort(stderr, a.Port)()
+	// another PC reaches it without a rule made by hand. A loopback address needs none: no other PC
+	// reaches it.
+	if a, ok := ln.Addr().(*net.TCPAddr); ok && !a.IP.IsLoopback() {
+		defer install.AllowTestPort(out, a.Port)()
 	}
 	var mu sync.Mutex
 	logf := func(format string, args ...any) {
