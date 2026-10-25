@@ -123,6 +123,36 @@ function Wait-Listening([int] $port, [bool] $on) {
 	Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "UDP $($_.LocalAddress):$($_.LocalPort), process $($_.OwningProcess)" }
 }
 
+# The UDP port ranges that Windows keeps from binding (netsh int ipv4|ipv6 show excludedportrange) that hold one of ports,
+# as "family first-last"; the socket of WireGuardNT on such a port fails with error 5 (access denied)
+function Get-ExcludedRanges([int[]] $ports) {
+	$hits = @()
+	foreach ($family in 'ipv4', 'ipv6') {
+		$lines = & netsh.exe interface $family show excludedportrange protocol=udp
+		if ($LASTEXITCODE -ne 0) { throw "netsh interface $family show excludedportrange exited with code $LASTEXITCODE" }
+		foreach ($line in $lines) {
+			$m = [regex]::Match("$line", '^\s*([0-9]+)\s+([0-9]+)')
+			if (-not $m.Success) { continue }
+			$first = [int] $m.Groups[1].Value
+			$last = [int] $m.Groups[2].Value
+			if (@($ports | Where-Object { $_ -ge $first -and $_ -le $last }).Count -gt 0) { $hits += "$family $first-$last" }
+		}
+	}
+	return $hits
+}
+
+# The ports of the gateway free of the ranges that Windows keeps: the Windows NAT service (winnat) reserves ranges of the
+# dynamic ports for Hyper-V, which may hold 51820 on a runner, and takes new ones when it starts again
+function Clear-ExcludedRanges([int[]] $ports) {
+	$hits = @(Get-ExcludedRanges $ports)
+	if ($hits.Count -eq 0) { return }
+	Write-Host "UDP port ranges that Windows keeps, with a port of the gateway: $($hits -join ', '); the Windows NAT service starts again"
+	& net.exe stop winnat | Out-Null
+	& net.exe start winnat | Out-Null
+	$hits = @(Get-ExcludedRanges $ports)
+	if ($hits.Count -gt 0) { throw "UDP port ranges that Windows keeps still hold a port of the gateway ($($ports -join ', ')): $($hits -join ', ')" }
+}
+
 # The configuration of the Device name as the controller renders it, saved into file for the client and checked against the
 # gateway
 function Get-DeviceConfig([string] $name, [string] $file, [string] $wireguardKey, [int] $port) {
@@ -165,7 +195,9 @@ $ctl = $null
 $trace = $null
 $laptop = $null
 try {
-	$ctl = Start-Process -FilePath $ranz -PassThru -NoNewWindow -RedirectStandardOutput $controllerOut -RedirectStandardError $controllerErr -ArgumentList @(
+	Clear-ExcludedRanges @($defaultPort, $otherPort)
+
+	$ctl =Start-Process -FilePath $ranz -PassThru -NoNewWindow -RedirectStandardOutput $controllerOut -RedirectStandardError $controllerErr -ArgumentList @(
 		'controller', '-data', $data, '-listen', $tls, '-name', 'device-tracer', '-rqlited', $env:RQLITED, '-rqlite', "http://$rqliteHttp", '-rqlite-raft', $rqliteRaft)
 	# The handle keeps the exit code of the process for ExitCode
 	$null = $ctl.Handle
