@@ -385,10 +385,13 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyMirrors(&st, c->Objects, c->NumObjects);
 	// The DHCP responders of the L2 Networks (ControlDhcp.c; SDN-43, #236)
 	ControlCopyDhcps(&st, c->Objects, c->NumObjects);
+	// The zones of overlay DNS of the VRFs (ControlDns.c; SDN-11, #187)
+	ControlCopyZones(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
 
+	ControlFreeZones(&st);
 	ControlRelease(st.Peers, sizeof(CONTROL_PEER) * (num_peers != 0 ? num_peers : 1));
 	ControlFreePolicy(&st);
 }

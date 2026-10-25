@@ -84,6 +84,11 @@ func Replace(in Intent, doc Document, random io.Reader) (Intent, error) {
 			delete(base.NATs, name)
 		}
 	}
+	for name := range base.DNSRecords {
+		if _, ok := declared[KindDNSRecord+"/"+name]; !ok {
+			delete(base.DNSRecords, name)
+		}
+	}
 	next, err := Apply(base, doc, random)
 	if err != nil {
 		return in, err
