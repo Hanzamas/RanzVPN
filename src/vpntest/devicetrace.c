@@ -54,7 +54,7 @@
 #define	DEVICETRACE_POLL		100			// Poll interval of observable state (ms)
 #define	DEVICETRACE_NUM_NODES	2
 #define	DEVICETRACE_GATEWAY		0			// The index of gw, the gateway of the Device
-#define	DEVICETRACE_HOST		1			// The index of host, whose host is the fake host
+#define	DEVICETRACE_OVERLAY		1			// The index of host, whose host is the fake host
 #define	DEVICETRACE_MAX_PACKET	2048
 #define	DEVICETRACE_ISN			0x52414E5A	// The initial sequence number of the TCP of the fake host ("RANZ")
 
@@ -671,7 +671,7 @@ void devicetrace_test(UINT num, char **arg)
 	if (joined)
 	{
 		UINT addr_gw = DeviceTraceAddress(nodes[DEVICETRACE_GATEWAY].Node);
-		UINT addr_host = DeviceTraceAddress(nodes[DEVICETRACE_HOST].Node);
+		UINT addr_host = DeviceTraceAddress(nodes[DEVICETRACE_OVERLAY].Node);
 		char a[64];
 		char b[64];
 		UINT error = 0;
