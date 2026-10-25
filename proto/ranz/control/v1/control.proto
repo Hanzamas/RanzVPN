@@ -55,6 +55,13 @@
 // the Vrf object (Vrf.dns). No schema version changes with it: a node of an older release skips the
 // field it does not know.
 //
+// WireGuard Devices (SDN-80, #375): a node that can terminate WireGuard reports the Capability
+// wireguard with the public key of its WireGuard interface. Every node of a VRF gets the Devices of
+// the VRF (Device), which a stock WireGuard client joins through its gateway node, and the gateway
+// gets their keys and the UDP port to listen on (NodeConfig.wireguard_port). The gateway reports the
+// last handshake and the traffic of each of its Devices in its Telemetry. No schema version changes
+// with them: a node of an older release skips the fields it does not know.
+//
 // Listener (SDN-45, ADR-0035): the node that a Listener resource names gets it in its NodeConfig
 // (NodeConfig.listener): the ports of its front door and of QUIC and the source of their
 // certificate. No schema version changes with it: a node of an older release skips the field it
@@ -180,6 +187,7 @@ enum Kind {
   KIND_PEER = 4;
   KIND_RELAY = 5;
   KIND_RULE = 6;
+  KIND_DEVICE = 7;
 }
 
 // One object of the desired state, identified by its kind and its name.
@@ -191,6 +199,7 @@ message Object {
     Peer peer = 4;
     Relay relay = 5;
     Rule rule = 6;
+    Device device = 7;
   }
 }
 
@@ -211,6 +220,9 @@ message NodeConfig {
   // The Mirrors that the node applies, ordered by name (SDN-23). No schema version changes with
   // them: a node of an older release skips the field.
   repeated Mirror mirrors = 6;
+  // The UDP port that the WireGuard interface of the node listens on, which terminates the Devices
+  // whose gateway the node is (SDN-80); 0 when the node is the gateway of no Device.
+  uint32 wireguard_port = 7;
   // The Listener of the node (SDN-45), absent while no Listener resource names it: the node then
   // listens on no port of its own.
   Listener listener = 8;
@@ -324,6 +336,21 @@ message Relay {
   uint32 port = 4;       // ... and the UDP port
 }
 
+// A WireGuard Device of a VRF of the node (SDN-80 #375): a phone, a laptop or a router that joins
+// one Network over standard WireGuard, without ranz.exe, through its gateway node. Every node of the
+// VRF gets it: its addresses and its tags identify it to the Rules, as the tags of a Peer do, and a
+// packet to one of its addresses goes to the gateway, which delivers it to its host, and so to the
+// WireGuard interface there. Only the gateway gets its public key, which its WireGuard interface
+// takes as a peer of its own, with the addresses as the allowed IPs.
+message Device {
+  string name = 1;
+  uint32 vrf_id = 2;
+  repeated Address addresses = 3;  // its IPv4 and IPv6 address in its Network
+  repeated string tags = 4;        // sorted
+  string gateway = 5;              // the node that terminates it
+  bytes public_key = 6;            // its WireGuard key, 32 bytes: in the state of its gateway only
+}
+
 // An IP prefix: 4 address bytes for IPv4, 16 for IPv6.
 message Prefix {
   bytes address = 1;
@@ -396,6 +423,12 @@ message Capabilities {
   EgressTier egress_tier = 7;
   // TCP 443 was taken, so the node listens on 5555 instead (ADR-0035 amendment of 2026-10-21).
   bool tls_port_fallback = 8;
+  // wireguard.dll of WireGuardNT loads, so the node can be the gateway of WireGuard Devices
+  // (SDN-80, #375).
+  bool wireguard = 9;
+  // With wireguard: the public key of the node's WireGuard interface, 32 bytes, which the
+  // configuration of each of its Devices names.
+  bytes wireguard_key = 10;
 }
 
 // The Windows edition of a node's host.
@@ -480,6 +513,18 @@ message Telemetry {
   repeated RuleCounters rules = 3;
   repeated Flow flows = 4;
   repeated NodeEvent events = 5;
+  // The Devices whose gateway the node is (SDN-80): all of them in each summary that holds any
+  repeated DeviceCounters devices = 6;
+}
+
+// The WireGuard end of one Device at its gateway (SDN-80): the last handshake, in Unix time in
+// milliseconds (0 before the first), and the bytes that the gateway sent to the Device (tx) and
+// received from it (rx) since its WireGuard interface came up.
+message DeviceCounters {
+  string device = 1;
+  uint64 last_handshake_ms = 2;
+  uint64 tx_bytes = 3;
+  uint64 rx_bytes = 4;
 }
 
 // The traffic of a node with one peer, in the VRFs they share: tx goes from the node's host to the

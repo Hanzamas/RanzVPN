@@ -10,11 +10,12 @@ import (
 )
 
 // ranz install and ranz uninstall are the install and uninstall of the product (package install,
-// ONE-2 #311, ONE-3 #312); this file only parses -controller, -no-xdp and -keep-ranz, passes the
-// NOTICE that install writes beside the Wintun DLL and the standard output for the steps they
-// report, and reports the result the way every subcommand of ranz does. The flags are spelled
-// -controller or --controller, -no-xdp or --no-xdp, -keep-ranz or --keep-ranz. The thin MSI runs
-// ranz install and ranz uninstall -keep-ranz (ONE-5 #314).
+// ONE-2 #311, ONE-3 #312); this file only parses -controller, -no-xdp, -no-wireguard (SDN-80
+// #375) and -keep-ranz, passes the NOTICE that install writes beside the Wintun DLL and the
+// standard output for the steps they report, and reports the result the way every subcommand of
+// ranz does. The flags are spelled -controller or --controller, -no-xdp or --no-xdp, -no-wireguard
+// or --no-wireguard, -keep-ranz or --keep-ranz. The thin MSI runs ranz install and ranz uninstall
+// -keep-ranz (ONE-5 #314).
 func init() {
 	register("install", runInstall)
 	register("uninstall", runUninstall)
@@ -24,6 +25,7 @@ func runInstall(args []string) int {
 	flags := flag.NewFlagSet("ranz install", flag.ContinueOnError)
 	controller := flags.Bool("controller", false, "also register and start the Controller service")
 	noXDP := flags.Bool("no-xdp", false, "leave the XDP runtime out, on a server that does not want it: the Node falls back to SeLow")
+	noWireGuard := flags.Bool("no-wireguard", false, "leave wireguard.dll of WireGuardNT out, on a Node that is the gateway of no WireGuard Device")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -34,7 +36,7 @@ func runInstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "ranz install: unexpected arguments: %q\n", flags.Args())
 		return 2
 	}
-	opts := install.Options{Controller: *controller, NoXDP: *noXDP, Notice: notice}
+	opts := install.Options{Controller: *controller, NoXDP: *noXDP, NoWireGuard: *noWireGuard, Notice: notice}
 	if err := install.Install(os.Stdout, opts); err != nil {
 		fmt.Fprintln(os.Stderr, "ranz install:", err)
 		return 1

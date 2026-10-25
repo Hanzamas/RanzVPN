@@ -86,6 +86,19 @@ ranz.control.v1.DnsZone.suffix max_size:128
 ranz.control.v1.DnsZone.records max_count:16
 ranz.control.v1.DnsRecord.name max_size:128
 ranz.control.v1.DnsRecord.addresses max_count:8 max_size:16
+# The WireGuard Devices of the VRFs of a node (SDN-80): the IPv4 and the IPv6 address of a Device in
+# its Network, its tags as those of a node, the name of its gateway and its WireGuard key; the public
+# key of the WireGuard interface of a node in its Capabilities; and the counters of 64 Devices in one
+# Telemetry, the most that one gateway terminates (controller/internal/intent MaxGatewayDevices). A
+# Device object is smaller than a NodeConfig.
+ranz.control.v1.Device.name max_size:64
+ranz.control.v1.Device.addresses max_count:2
+ranz.control.v1.Device.tags max_count:16 max_size:64
+ranz.control.v1.Device.gateway max_size:64
+ranz.control.v1.Device.public_key max_size:32
+ranz.control.v1.Capabilities.wireguard_key max_size:32
+ranz.control.v1.Telemetry.devices max_count:64
+ranz.control.v1.DeviceCounters.device max_size:64
 # The Listener of a node (SDN-45): a path of a file on the node of at most 259 characters (MAX_PATH),
 # the URL of an ACME directory of at most 255, an e-mail address of at most 127, and 4 DNS names of
 # at most 253 characters each (controller/internal/intent MaxListenerPath, MaxListenerURL,

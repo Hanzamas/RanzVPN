@@ -3,11 +3,13 @@
 //
 // Install makes the Ranz folder under Program Files and sets its access list: full control for
 // SYSTEM and the Administrators, read and execute for the virtual accounts of the two services,
-// nothing for Users. It writes four files into it, each after its hash and its Authenticode
+// nothing for Users. It writes five files into it, each after its hash and its Authenticode
 // signature check (internal/payload): ranz-node.exe, the Node payload, wintun.dll, the Wintun
 // driver of WireGuard LLC, which the Node loads from its own folder and which installs its driver
-// itself, the NOTICE beside it (NOTICE.txt, which holds the licence of Wintun, hash checked only),
-// and ranz.exe, a copy of the running ranz.exe. The copy is what the Controller service runs as
+// itself, the NOTICE beside it (NOTICE.txt, which holds the licences of Wintun and WireGuardNT, hash
+// checked only), wireguard.dll, the WireGuardNT driver of WireGuard LLC, which a gateway of WireGuard
+// Devices loads the same way (SDN-80 #375; ranz install --no-wireguard leaves it out), and ranz.exe,
+// a copy of the running ranz.exe. The copy is what the Controller service runs as
 // `ranz.exe controller` and what the Node starts as `ranz.exe bgp`, next to ranz-node.exe, so
 // neither runs from wherever the download was left.
 //

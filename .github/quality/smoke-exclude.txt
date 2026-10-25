@@ -10,4 +10,5 @@ selfintegrity  needs a signed binary: .github/scripts/self-integrity.ps1 runs it
 sdntrace       needs the address and key of a running controller: .github/scripts/sdn-tracer.ps1 runs it
 firsttest      needs the address and key of a running controller, administrator rights and wintun.dll next to vpntest: .github/scripts/first-test.ps1 runs it
 kmtest         needs administrator rights, a KM-TEST adapter and the drivers of ranz install: the kmtest job runs it (.github/scripts/kmtest.ps1)
+devicetrace    needs the address and key of a running controller, administrator rights, wintun.dll and wireguard.dll next to vpntest and ranz-wgpeer: .github/scripts/device-tracer.ps1 runs it
 listeneracme   needs a test ACME server, ranz next to vpntest and administrator rights: .github/scripts/listener-acme.ps1 runs it

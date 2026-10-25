@@ -116,13 +116,18 @@ func (in Intent) pool(network string, f addrFamily) (netip.Prefix, bool) {
 }
 
 // allocate fills in the addresses of every Node of in, which complete completed, for both
-// families.
+// families, and of every Device: a Device keeps the addresses it held before any Node is given one,
+// and gets the ones it lacks after the Nodes (device.go).
 func (in Intent) allocate(prev Intent, declared map[string]bool) []error {
 	var problems []error
+	want := in.keepDevices(prev, declared)
 	for _, f := range []addrFamily{family4, family6} {
 		problems = append(problems, in.allocateFamily(prev, declared, f)...)
 	}
-	return problems
+	if len(problems) > 0 {
+		return problems
+	}
+	return in.allocateDevices(want)
 }
 
 // allocateFamily fills in the addresses of family f of every Node of in: one address in each L3
@@ -157,6 +162,8 @@ func (in Intent) allocateFamily(prev Intent, declared map[string]bool, f addrFam
 	for network := range pools {
 		holder[network] = map[netip.Addr]string{}
 	}
+	// The addresses that the Devices kept are theirs (device.go)
+	in.deviceHolders(holder, f)
 	take := func(name, network string, a netip.Addr) {
 		holder[network][a] = name
 		got[name][network] = a.String()
@@ -202,7 +209,7 @@ func (in Intent) allocateFamily(prev Intent, declared map[string]bool, f addrFam
 			case within(reserved[network], a):
 				problems = append(problems, fmt.Errorf("Node %q: address %s of Network %q is reserved by the Network", name, a, network))
 			case holder[network][a] != "":
-				problems = append(problems, fmt.Errorf("Node %q: address %s of Network %q is already the address of Node %q", name, a, network, holder[network][a]))
+				problems = append(problems, fmt.Errorf("Node %q: address %s of Network %q is already the address of %s", name, a, network, holderName(holder[network][a])))
 			default:
 				take(name, network, a)
 			}

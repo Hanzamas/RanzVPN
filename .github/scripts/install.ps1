@@ -8,7 +8,8 @@ param(
 	[string] $MemberSha256, # The SHA-256 of the signed rqlited.exe that ranz.exe carries as the rqlite member of a Controller (ONE-4, #313)
 	[string] $WintunSha256, # The SHA-256 of the wintun.dll of this architecture that ranz.exe carries, as WireGuard LLC signed it (ONE-3, #312)
 	[string] $XdpSysSha256, # x64 only: the SHA-256 of the xdp.sys of the XDP runtime that ranz.exe carries, as Microsoft signed it (ONE-3, #312)
-	[string] $XdpApiSha256  # ... and of its xdpapi.dll
+	[string] $XdpApiSha256, # ... and of its xdpapi.dll
+	[string] $WireGuardSha256 # The SHA-256 of the wireguard.dll of WireGuardNT of this architecture that ranz.exe carries, as WireGuard LLC signed it (SDN-80, #375)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,6 +61,11 @@ $PSNativeCommandUseErrorActionPreference = $false
 # - on arm64 only Wintun is installed: no SeLow and no XDP service, no drivers folder, and the Node reports neither;
 # - ranz uninstall removes the drivers that ranz install put on the machine, and leaves a SeLow that was there before
 #   (this job installs it by hand from the package of the repository first).
+#
+# SDN-80 (#375) adds the wireguard.dll of WireGuardNT that a gateway of WireGuard Devices loads, on both architectures:
+# - ranz install writes it beside the Node as WireGuard LLC signed it (its SHA-256, a valid signature of that signer), and
+#   the NOTICE holds its licence;
+# - ranz install --no-wireguard leaves it out and says so, and a ranz install after it writes it.
 
 $ranzFile = (Resolve-Path -LiteralPath $Ranz).Path
 $tamperedFile = (Resolve-Path -LiteralPath $Tampered).Path
@@ -68,6 +74,7 @@ $x64 = ($Architecture -eq 'x64')
 if ($NodeSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-NodeSha256 is not a SHA-256: '$NodeSha256'" }
 if ($MemberSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-MemberSha256 is not a SHA-256: '$MemberSha256'" }
 if ($WintunSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-WintunSha256 is not a SHA-256: '$WintunSha256'" }
+if ($WireGuardSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-WireGuardSha256 is not a SHA-256: '$WireGuardSha256'" }
 if ($x64) {
 	if ($XdpSysSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-XdpSysSha256 is not a SHA-256: '$XdpSysSha256'" }
 	if ($XdpApiSha256 -notmatch '^[0-9A-Fa-f]{64}$') { throw "-XdpApiSha256 is not a SHA-256: '$XdpApiSha256'" }
@@ -604,9 +611,10 @@ try {
 	if (@($acl.Access).Count -ne 4) { throw "the access list of $installDir has $(@($acl.Access).Count) entries, not SYSTEM, the Administrators and the two service accounts:`n$($acl.AccessToString)" }
 	Write-Host "the access list of ${installDir}: $($acl.AccessToString -replace '\s+', ' ')"
 
-	# The files of the Ranz VPN folder: the Node, ranz.exe, the Wintun DLL and the NOTICE that holds its licence, and
-	# on x64 the folder of the packages of the drivers; every executable and DLL has a valid Authenticode signature
-	$expected = @('NOTICE.txt', 'ranz-node.exe', 'ranz.exe', 'wintun.dll')
+	# The files of the Ranz VPN folder: the Node, ranz.exe, the Wintun DLL and the NOTICE that holds its licence, the
+	# WireGuardNT DLL, and on x64 the folder of the packages of the drivers; every executable and DLL has a valid
+	# Authenticode signature
+	$expected = @('NOTICE.txt', 'ranz-node.exe', 'ranz.exe', 'wintun.dll', 'wireguard.dll')
 	if ($x64) { $expected += 'drivers' }
 	$names = @(Get-ChildItem -LiteralPath $installDir -Force | ForEach-Object { $_.Name })
 	if (Compare-Object -ReferenceObject $expected -DifferenceObject $names) { throw "$installDir holds $($names -join ', '), not $($expected -join ', ')" }
@@ -638,6 +646,12 @@ try {
 	if (-not $printedNotice -or $installedNotice -ne $printedNotice) { throw "$noticeFile does not hold the words of ranz notice" }
 	if ($installedNotice -notmatch 'Wintun') { throw "$noticeFile does not hold the licence of Wintun" }
 	Write-Host "$installedWintun is the wintun.dll that ranz.exe carries, signed by WireGuard LLC, and $noticeFile holds the NOTICE with its licence"
+	# The WireGuardNT DLL as WireGuard LLC signed it, which a gateway of WireGuard Devices loads (SDN-80, #375)
+	$installedWireGuard = Join-Path $installDir 'wireguard.dll'
+	if ((Get-Sha256 $installedWireGuard) -ne $WireGuardSha256) { throw "$installedWireGuard is not byte for byte the wireguard.dll that ranz.exe carries (SHA-256 $WireGuardSha256)" }
+	Assert-Signer $installedWireGuard 'WireGuard LLC'
+	if ($installedNotice -notmatch 'WireGuardNT') { throw "$noticeFile does not hold the licence of WireGuardNT" }
+	Write-Host "$installedWireGuard is the wireguard.dll that ranz.exe carries, signed by WireGuard LLC, and $noticeFile holds its licence too"
 
 	# The drivers of this architecture, and the Node that started after them reports them as its Capabilities: on x64
 	# SeLow and the XDP runtime, on arm64 neither
@@ -758,6 +772,30 @@ try {
 	Write-Host 'ranz install --no-xdp leaves the XDP runtime out, and a ranz install after it adds it'
 } catch {
 	Fail 'ranz install --no-xdp' $_
+}
+
+try {
+	# 9b. ranz install --no-wireguard leaves wireguard.dll of WireGuardNT out on purpose (SDN-80, #375), on a Node that is the
+	#     gateway of no WireGuard Device; a ranz install after it writes the DLL.
+	Remove-InstalledState
+	$installedWireGuard = Join-Path $installDir 'wireguard.dll'
+	$r = Invoke-Ranz $goodExe @('install', '--no-wireguard')
+	if ($r.Code -ne 0) { throw "ranz install --no-wireguard exited with code $($r.Code)" }
+	if ($r.Out -notmatch 'wireguard\.dll is left out \(--no-wireguard\)') { throw "ranz install --no-wireguard did not say that it left wireguard.dll out:`n$($r.Out)" }
+	Wait-ServiceState $nodeService 'Running'
+	if (Test-Path -LiteralPath $installedWireGuard) { throw "ranz install --no-wireguard wrote $installedWireGuard" }
+	$r = Invoke-Ranz $goodExe @('install')
+	if ($r.Code -ne 0) { throw "ranz install after --no-wireguard exited with code $($r.Code)" }
+	if (-not (Test-Path -LiteralPath $installedWireGuard) -or (Get-Sha256 $installedWireGuard) -ne $WireGuardSha256) {
+		throw "ranz install after --no-wireguard did not write $installedWireGuard byte for byte (SHA-256 $WireGuardSha256)"
+	}
+	$r = Invoke-Ranz $goodExe @('uninstall')
+	if ($r.Code -ne 0) { throw "ranz uninstall after --no-wireguard exited with code $($r.Code)" }
+	Wait-ServiceGone $nodeService
+	Soft 'ranz uninstall removes the drivers installed after --no-wireguard' { Assert-DriversRemoved $r.Out }
+	Write-Host 'ranz install --no-wireguard leaves wireguard.dll out, and a ranz install after it writes it'
+} catch {
+	Fail 'ranz install --no-wireguard' $_
 }
 
 try {

@@ -2,7 +2,7 @@
 # 2026-10-22). The controller with its web UI (controller/, SDN-2 #178), the BGP sidecar of ADR-0010
 # (ranz-bgp/, CORE-S7-1 #82), the mimicry sidecar of ADR-0023 (controller/internal/mimic, CORE-P2-1
 # #85) and the CLI are all in controller/cmd/ranz: the subcommands controller, bgp and mimic, and the
-# verbs of the controller's API. ranz-nodesim and ranz-noisepeer (controller/cmd)
+# verbs of the controller's API. ranz-nodesim, ranz-noisepeer and ranz-wgpeer (controller/cmd)
 # are test tools: this workflow builds them and never ships them. The control protocol schema
 # (proto/) belongs here too.
 #
@@ -108,6 +108,7 @@ on:
     - '.github/scripts/binary-hardening.ps1'
     - '.github/scripts/fetch-wintun.ps1'
     - '.github/scripts/fetch-xdp.ps1'
+    - '.github/scripts/fetch-wireguard.ps1'
     - 'src/bin/hamcore/legal.txt'
     - 'src/bin/hamcore/DriverPackages/**'
 

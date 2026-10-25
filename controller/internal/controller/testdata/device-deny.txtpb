@@ -1,0 +1,19 @@
+# Generation 3 of gw and of host after device-deny.json (SDN-80): the rule that denies ICMP from the
+# Devices tagged phones goes to the gateway of Device phone, which judges its flows at their end
+# there, and to host, which any to end can be. Both get the same update.
+update: {
+  generation: 3
+  base_generation: 2
+  set: {
+    rule: {
+      name: "deny-phones"
+      vrf_id: 7
+      priority: 10
+      action: RULE_ACTION_DENY
+      from: {
+        tags: "phones"
+      }
+      protocol: 1
+    }
+  }
+}

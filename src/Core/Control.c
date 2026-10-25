@@ -157,6 +157,8 @@ static const char *ControlObjectName(const ranz_control_v1_Object *o) {
 		return o->kind.relay.name;
 	case ranz_control_v1_Object_rule_tag:
 		return o->kind.rule.name;
+	case ranz_control_v1_Object_device_tag:
+		return o->kind.device.name;
 	default:
 		break;
 	}
@@ -390,6 +392,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyZones(&st, c->Objects, c->NumObjects);
 	// The Listener of the node (ControlListener.c; SDN-45, #238)
 	ControlCopyListener(&st, c->Objects, c->NumObjects);
+	// The WireGuard Devices (ControlDevice.c; SDN-80, #375)
+	ControlCopyDevices(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
@@ -398,6 +402,7 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlFreeZones(&st);
 	ControlRelease(st.Peers, sizeof(CONTROL_PEER) * (num_peers != 0 ? num_peers : 1));
 	ControlFreePolicy(&st);
+	ControlFreeStateDevices(&st);
 }
 
 //
@@ -470,6 +475,12 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	hello->capabilities.architecture = (ranz_control_v1_Architecture)caps.Architecture;
 	hello->capabilities.selow = caps.SeLow;
 	hello->capabilities.xdp = caps.Xdp;
+	// WireGuardNT and the key of the WireGuard interface of the node (SDN-80, #375)
+	hello->capabilities.wireguard = caps.WireGuard;
+	if (caps.WireGuard) {
+		hello->capabilities.wireguard_key.size = NOISE_KEY_SIZE;
+		CopyMemory(hello->capabilities.wireguard_key.bytes, caps.WireGuardKey, NOISE_KEY_SIZE);
+	}
 }
 
 // One stream: the dial, the handshake bound to the exporter of the TLS session, the Hello, then
@@ -529,9 +540,11 @@ static void ControlRun(CONTROL_CLIENT *c) {
 
 	// The leases of the DHCP responders go after the Hello, all of them, and then whenever they change (ControlDhcp.c)
 	ControlLeasesResend(c->Config.Leases);
+	// ... and so do the counters of the WireGuard Devices of a gateway (ControlDevice.c; SDN-80, #375)
+	ControlDevicesResend(c->Config.Devices);
 
 	while (ok && ControlHalted(c) == false) {
-		ok = ControlWriteLeases(c->Config.Leases, s);
+		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
 		if (ok == false)
 			break;
 

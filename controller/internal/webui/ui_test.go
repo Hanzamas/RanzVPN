@@ -127,6 +127,7 @@ func TestRolesLimitTheUI(t *testing.T) {
 		{"/vrfs", "vrfs"},
 		{"/networks", "networks"},
 		{"/nodes", "nodes"},
+		{"/devices", "devices"},
 		{"/intent", "intent"},
 		{"/revisions", "revisions"},
 		{"/revisions?revision=1&from=0&to=2", "revisions"},

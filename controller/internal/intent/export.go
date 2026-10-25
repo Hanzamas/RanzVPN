@@ -94,6 +94,11 @@ func Replace(in Intent, doc Document, random io.Reader) (Intent, error) {
 			delete(base.Listeners, name)
 		}
 	}
+	for name := range base.Devices {
+		if _, ok := declared[KindDevice+"/"+name]; !ok {
+			delete(base.Devices, name)
+		}
+	}
 	base.dropUndeclaredUsers(declared)
 	next, err := Apply(base, doc, random)
 	if err != nil {

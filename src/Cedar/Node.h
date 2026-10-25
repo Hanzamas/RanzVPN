@@ -120,6 +120,14 @@
 #define NODE_VRF_ADAPTER_NAME  128                // Characters of the name of an adapter at most, with its NUL (MAX_ADAPTER_NAME of wintun.h)
 #define NODE_VRF_ADAPTER_LABEL "ranz vrf adapter" // What the name of the GUID of an adapter begins with, before the node's static key and the VRF id
 
+// The WireGuard Devices of a gateway (NodeWireGuard.c; SDN-80, #375)
+#define NODE_WIREGUARD_DLL        L"wireguard.dll"             // Next to the executable: the pinned WireGuardNT SDK of THIRD_PARTY.TXT
+#define NODE_WIREGUARD_ADAPTER    L"Ranz WireGuard"            // What the name of the WireGuard interface begins with, before the node's name
+#define NODE_WIREGUARD_LABEL      "ranz wireguard gateway key" // The label of the derivation of the WireGuard key pair of a node
+#define NODE_WIREGUARD_KEY_SIZE   32                           // A WireGuard key (X25519)
+#define NODE_WIREGUARD_COUNT      1000                         // ms between two reads of the counters of the Devices
+#define NODE_WIREGUARD_UNIX_EPOCH 116444736000000000ULL        // The FILETIME of 1970-01-01, in 100 ns intervals since 1601
+
 // The forwarding tables of the VRFs of a node (NodeVrf.c; SDN-4, #180)
 #define NODE_VRF_LOCAL      0x3FFFFFFF // The next hop of an address of the node itself: the host
 #define NODE_VRF_NONE       0xFFFFFFFF // What a lookup gives for an address that no route of the VRF holds
@@ -353,6 +361,10 @@ struct NODE {
 
 	// The Listener of the node (NodeListener.c; SDN-45, #238): where it listens, NULL while the overlay does not run
 	NODE_LISTENER *Listener;
+
+	// The WireGuard end of a gateway of WireGuard Devices (NodeWireGuard.c; SDN-80, #375), NULL while the overlay does not
+	// run
+	NODE_WIREGUARD *WireGuard;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -606,6 +618,27 @@ struct NODE_MITIGATION {
 	char *Off;   // NULL when the node sets it; else why a feature of the node cannot run under it
 };
 
+// What NodeWireGuardGetStatus reports (SDN-80, #375)
+struct NODE_WIREGUARD_STATUS {
+	// wireguard.dll loads
+	bool Available;
+	// The node has its WireGuard key pair, and Key is its public key, which its Hello reports
+	bool HasKey;
+	UCHAR Key[NODE_WIREGUARD_KEY_SIZE];
+	// Its WireGuard interface is up, on the UDP port Port, with the index and the LUID of its interface
+	bool Up;
+	UINT Port;
+	UINT InterfaceIndex;
+	UINT64 InterfaceLuid;
+	// The Devices that the interface terminates, and the routes of their addresses through it
+	UINT NumDevices;
+	UINT NumRoutes;
+	// Windows does not forward between two Devices on the interface (NodeWireGuardFilter.c) but for the pairs of Devices
+	// that the policy lets meet, NumPairs of them
+	bool Isolated;
+	UINT NumPairs;
+};
+
 // What NodeMirrorGetStatus reports: the copies of the Mirrors since the first Generation of the overlay that had one
 struct NODE_MIRROR_STATUS {
 	UINT64 Copied;  // Copies that went to a sensor
@@ -772,5 +805,11 @@ void NodePolicyFreeTable(NODE_POLICY_TABLE *t);
 char *NodePolicyDocument(const struct CONTROL_STATE *st);
 char *NodePolicyCountersText(NODE *n);
 bool NodePolicyGetVrf(NODE *n, const char *vrf, NODE_POLICY_VRF_STATUS *st);
+
+// NodeWireGuard.c
+bool NodeWireGuardAvailable(UINT *error);
+bool NodeWireGuardKey(const PEER_KEY *key, UCHAR *priv, UCHAR *pub);
+void NodeWireGuardGetStatus(NODE *n, NODE_WIREGUARD_STATUS *st);
+UINT NodeDeviceRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);
 
 #endif // NODE_H

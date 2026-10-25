@@ -136,6 +136,8 @@ func (c *Controller) Raise(ctx context.Context, ev event.Event) error {
 func (c *Controller) takeTelemetry(s *stream, t *controlpb.Telemetry) {
 	c.tel.hub.Report(s.name, t)
 	c.tel.exports.Flows(s.name, telemetry.FlowsOf(t))
+	// The WireGuard ends of the Devices whose gateway the node is (devices.go; SDN-80)
+	c.takeDevices(s.name, t.GetDevices())
 	for _, ne := range t.GetEvents() {
 		if ne.GetType() != controlpb.NodeEventType_NODE_EVENT_TYPE_GATEWAY_FAILOVER {
 			continue

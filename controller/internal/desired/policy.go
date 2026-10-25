@@ -38,7 +38,8 @@ func nodeRules(in intent.Intent, vrfs map[string]*controlpb.Vrf) map[string][]*c
 			rule.Ports = append(rule.Ports, &controlpb.PortRange{First: uint32(p.First), Last: uint32(p.Last)})
 		}
 		for name, n := range in.Nodes {
-			if slices.Contains(n.VRFs, r.VRF) && (r.From.Holds(tags[name]) || r.To.Holds(tags[name])) {
+			// A gateway judges the flows of its Devices too (device.go; SDN-80)
+			if slices.Contains(n.VRFs, r.VRF) && (r.From.Holds(tags[name]) || r.To.Holds(tags[name]) || gatewayHolds(in, name, r)) {
 				out[name] = append(out[name], rule)
 			}
 		}
