@@ -62,6 +62,9 @@ type Node struct {
 	Key           keys.Static // the node's static key
 	Controller    string      // host:port of the controller's port
 	ControllerKey []byte      // the controller's static public key
+	// TLSFingerprint, when it is set, is the TLS fingerprint of the Controller settings of a Node
+	// (SDN-90): the certificate of every controller must have it, as the Node checks it.
+	TLSFingerprint string
 	// Controllers are the members of a controller cluster that Serve tries, after the ones
 	// the cluster named in its last Controllers message and before Controller.
 	Controllers []Endpoint
@@ -141,7 +144,7 @@ func (n *Node) Learned() []Endpoint {
 }
 
 func (n *Node) run(ctx context.Context, ep Endpoint) error {
-	conn, err := control.Dial(ctx, ep.Address, n.Key, ep.Key)
+	conn, err := n.dial(ctx, ep)
 	if err != nil {
 		return err
 	}

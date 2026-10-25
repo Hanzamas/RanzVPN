@@ -68,6 +68,9 @@ go  controller/internal/logfile         85
 # raised to the measure of a run in which they pass
 go  controller/internal/mimic           89
 go  controller/internal/mitigation      0
+# nodecontroller (SDN-90 #395): the Controller settings of a Node, every path tested on every OS but
+# the key of settings that Parse did not return; the floor is set below the measure until a run records it
+go  controller/internal/nodecontroller  90
 go  controller/internal/nodesim         0
 # payload (ONE-2 #311) has real logic tested on every OS (payload_test.go: the hash checks, the
 # write and its cleanup), but verifyAuthenticode itself is Windows only (verify_windows_test.go,
