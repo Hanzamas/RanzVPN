@@ -115,6 +115,7 @@ session-lib.pvl	Client	process	src/Core/TransportNoise.c	TransportNoiseConnect	S
 session-lib.pvl	Server	process	src/Core/TransportNoise.c	TransportNoiseAccept	Session	-	the server over a stream: NoiseSessionAccept, then the Login (NodeAcceptSession)
 session-lib.pvl	Setup	model	-	-	-	-	what the attacker knows from the start: no code
 session-lib.pvl	Leaks	model	-	-	-	-	the compromise of the keys of the honest nodes: no code
+session-lib.pvl	LeaksP0	model	-	-	-	-	the same before or during the sessions only: no code
 
 # session-lib.pvl: the messages and fields of the session
 session-lib.pvl	Client:cr	message	src/Core/TransportTls.c	TlsStep	TLS_ISC_FLAGS	-	the random value of the ClientHello (Schannel)

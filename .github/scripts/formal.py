@@ -15,8 +15,9 @@
 #          the pull_request trigger of formal.yml cover every file that the table names.
 #          src/vpntest/formaltable.c refers to the C functions of the table that are not static, and check keeps
 #          its list equal to them, in both directions. quality.yml runs it on every pull request.
-# list     prints the matrix of formal.yml as matrix={"include":[...]}: a job for each slice of each variant. A
-#          variant whose line of variants.tsv has a fourth column N runs its queries as N ProVerif runs, the slices.
+# list     prints the matrix of formal.yml as matrix={"include":[...]}: a job for each slice of each variant (of the
+#          variants named, all by default). A variant whose line of variants.tsv has a fourth column N runs its
+#          queries as N ProVerif runs, the slices.
 # version  says which ProVerif runs, and fails when it is not the pinned version.
 # run      runs the pinned ProVerif on each variant and compares every result with expected.tsv. It fails on a
 #          query that must hold and does not, on a negative control or a finding that stops showing its attack,
@@ -27,7 +28,7 @@
 #
 # Usage:
 #   python formal.py check [--root DIR]
-#   python formal.py list [--root DIR]
+#   python formal.py list [--root DIR] [VARIANT ...]
 #   python formal.py version [--proverif PATH] [--version V]
 #   python formal.py run [--root DIR] [--proverif PATH] [--version V] [--out DIR] [--jobs N] [--timeout S]
 #                        [--trace-lines N] [--slice I/K] [VARIANT ...]
@@ -258,6 +259,15 @@ def run_proverif(proverif, path, timeout):
         return (e.stdout or b'').decode('utf-8', 'replace'), None, time.monotonic() - start
 
 
+def peak_memory_mb():
+    # The most memory that one of the child processes used so far, in MB, or 0 where the platform cannot say
+    try:
+        import resource
+    except ImportError:
+        return 0
+    return resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss // 1024
+
+
 def proverif_version(proverif):
     try:
         p = subprocess.run([proverif, '-help'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
@@ -329,7 +339,7 @@ def run(args):
             f.write(output)
         results = parse_results(output)
         if code is None:
-            annotate('error', '%s: ProVerif did not finish in %d s' % (label, args.timeout))
+            annotate('error', '%s: ProVerif did not finish in %d s (peak memory %d MB)' % (label, args.timeout, peak_memory_mb()))
             return False, ['- **%s**: timeout after %d s' % (label, args.timeout)]
         if code != 0 and not results:
             tail = '\n'.join(output.strip().split('\n')[-25:])
@@ -341,7 +351,7 @@ def run(args):
             annotate('error', str(e))
             return False, ['- **%s**: %s' % (label, e)]
         bad = [r for r in rows if not r[3]]
-        print('%s: %d queries in %.0f s, %d not as expected' % (label, len(rows), seconds, len(bad)))
+        print('%s: %d queries in %.0f s, peak memory %d MB, %d not as expected' % (label, len(rows), seconds, peak_memory_mb(), len(bad)))
         # The derivation or the trace of each attack that the variant must show, in the log of the job (a group per
         # run) and in the file <label>.attacks.txt of the artifact
         sections = query_sections(output)
@@ -659,9 +669,14 @@ def version_check(args):
 def list_variants(args):
     # The matrix of formal.yml as one line of a workflow output, matrix={"include":[...]}: one job for each slice of
     # each variant (variants.tsv), which runs the slice that the job names, as "run --slice 2/4 tls443" does
+    variants = load_variants(args.root)
     slices = load_slices(args.root)
+    names = args.variants or list(variants)
+    for name in names:
+        if name not in variants:
+            raise Problem('no variant %s: %s' % (name, ', '.join(variants)))
     include = []
-    for name in load_variants(args.root):
+    for name in names:
         count = slices[name]
         for index in range(1, count + 1):
             include.append({'variant': name, 'slice': '%d/%d' % (index, count),
@@ -916,11 +931,21 @@ bool NoiseProto(void);
             globals()['proverif_version'] = lambda proverif: '2.05'
             listing = io.StringIO()
             with contextlib.redirect_stdout(listing):
-                assert list_variants(argparse.Namespace(root=root)) == 0
+                assert list_variants(argparse.Namespace(root=root, variants=[])) == 0
             assert json.loads(listing.getvalue().replace('matrix=', '', 1)) == {'include': [
                 {'variant': 'v', 'slice': '1/1', 'job': 'v', 'slug': 'v'},
                 {'variant': 'w', 'slice': '1/2', 'job': 'w (1 of 2)', 'slug': 'w-1of2'},
                 {'variant': 'w', 'slice': '2/2', 'job': 'w (2 of 2)', 'slug': 'w-2of2'}]}, listing.getvalue()
+            listing = io.StringIO()
+            with contextlib.redirect_stdout(listing):
+                assert list_variants(argparse.Namespace(root=root, variants=['v'])) == 0
+            assert json.loads(listing.getvalue().replace('matrix=', '', 1)) == {'include': [{'variant': 'v', 'slice': '1/1', 'job': 'v', 'slug': 'v'}]}
+            try:
+                quiet(list_variants, argparse.Namespace(root=root, variants=['nope']))
+            except Problem:
+                pass
+            else:
+                raise AssertionError('list took a variant that variants.tsv does not have')
             args = argparse.Namespace(root=root, variants=[], proverif='proverif', version='2.05', out=os.path.join(root, 'out'),
                                       jobs=2, timeout=5, trace_lines=5, slice='')
             assert quiet(run, args) == 0, 'every result as expected'

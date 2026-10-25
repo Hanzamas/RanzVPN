@@ -30,6 +30,24 @@ tls443	suite	holds
 tls443	replay-server	fails	a leaked key lets the attacker start sessions
 tls443	replay-client	fails	a leaked key lets the attacker answer
 
+# The same with the keys leaked in phase 0 only: the queries of the sessions with no phase 1 in the model
+tls443-p0	reach-login	reach
+tls443-p0	reach-done	reach
+tls443-p0	sec-pw	fails	both keys of the server leak
+tls443-p0	sec-pw-unless-noise	holds
+tls443-p0	sec-pw-unless-cert	holds
+tls443-p0	sec-pw-unless-both	holds
+tls443-p0	sec-data-unless-both	holds
+tls443-p0	fs-data	holds
+tls443-p0	auth-server	holds
+tls443-p0	auth-client	holds
+tls443-p0	auth-client-both	holds
+tls443-p0	data-auth	holds
+tls443-p0	negotiation	holds
+tls443-p0	suite	holds
+tls443-p0	replay-server	fails	a leaked key lets the attacker start sessions
+tls443-p0	replay-client	fails	a leaked key lets the attacker answer
+
 # The same with no key leaked: nothing is left for the attacker to find
 tls443-honest	reach-login	reach
 tls443-honest	reach-done	reach

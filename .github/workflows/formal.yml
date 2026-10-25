@@ -97,7 +97,8 @@ jobs:
         python -I .github/scripts/formal.py check
     - name: The jobs of the variants
       id: variants
-      run: python -I .github/scripts/formal.py list >> "$GITHUB_OUTPUT"
+      # TEMP (diagnostics of the heavy variants): only some variants, so that the others do not queue first
+      run: python -I .github/scripts/formal.py list peer-leaks peer-honest tunnel tunnel-honest tunnel-quic tunnel-nokey noise-encrypted tls443-honest quic-honest tls443-p0 tls443 >> "$GITHUB_OUTPUT"
     - name: Restore ProVerif
       id: proverif
       uses: actions/cache@v4
@@ -148,7 +149,7 @@ jobs:
         fail-on-cache-miss: true
     - name: ProVerif on the variant
       run: |
-        python -u -I .github/scripts/formal.py run --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION" --out build/formal --jobs 1 --timeout 2700 --trace-lines 150 --slice "${{ matrix.slice }}" "${{ matrix.variant }}"
+        python -u -I .github/scripts/formal.py run --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION" --out build/formal --jobs 1 --timeout 1200 --trace-lines 150 --slice "${{ matrix.slice }}" "${{ matrix.variant }}"
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:

@@ -241,3 +241,9 @@ let Leaks() =
   | ( phase 1; event LeakS(phase1, alice); out(c, skey(alice)) )
   | ( phase 1; event LeakS(phase1, bob); out(c, skey(bob)) )
   | ( phase 1; event LeakCert(phase1, bob); out(c, sigkey(bob)) ).
+
+(* The same without the phase 1: a model with no phase that the queries about the sessions need is smaller *)
+let LeaksP0() =
+  ( event LeakS(phase0, alice); out(c, skey(alice)) )
+  | ( event LeakS(phase0, bob); out(c, skey(bob)) )
+  | ( event LeakCert(phase0, bob); out(c, sigkey(bob)) ).
