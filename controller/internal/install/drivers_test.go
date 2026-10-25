@@ -115,6 +115,16 @@ func TestXDPRuntimeGetsAReceiveRingForUSO(t *testing.T) {
 	}
 }
 
+// The settings of a driver go to the Parameters key of its service, the only key where the XDP
+// runtime reads XdpRxRingSize and watches for changes: a value on the key of the service itself
+// never reached XDP, and a send() with USO of 44 segments still blocked (#72, risk R1).
+func TestDriverSettingsGoToTheParametersKeyOfTheService(t *testing.T) {
+	want := `SYSTEM\CurrentControlSet\Services\xdp\Parameters`
+	if got := settingsKey(xdpDriver); got != want {
+		t.Errorf("the settings of %s go to HKLM\\%s, want HKLM\\%s", xdpDriver.label, got, want)
+	}
+}
+
 // The SeLow driver of this file is what the INF of its package installs: a component of the class
 // NetTrans (a protocol) with the id SeLow, and the service SeLow. The INF is the one that ranz
 // carries (internal/payload/selow), so a new package fails here until the table follows it.

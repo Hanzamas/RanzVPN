@@ -54,27 +54,36 @@ type driver struct {
 	// leftovers are the files of System32 that the INF copies there and that stay when the
 	// component is removed: ranz uninstall deletes them. Paths are relative to System32.
 	leftovers []string
-	// settings are written to the key of the service (HKLM\SYSTEM\CurrentControlSet\Services\<service>)
-	// once the component is installed, and by every later install that finds the driver of an
-	// earlier ranz install. They go with the key when the driver is removed.
+	// settings are written to the Parameters key of the service (settingsKey) once the component
+	// is installed, and by every later install that finds the driver of an earlier ranz install.
+	// They go with the key of the service when the driver is removed.
 	settings []setting
 	// files are the files of the package, which install writes into its folder; none on an
 	// architecture that has no package.
 	files []payload.Payload
 }
 
-// setting is a DWORD value of the key of the service of a driver, which the driver reads as its
-// tuning.
+// setting is a DWORD value of the Parameters key of the service of a driver, which the driver reads
+// as its tuning.
 type setting struct {
 	name  string
 	value uint32
+}
+
+// settingsKey returns the key that the settings of d go to (HKEY_LOCAL_MACHINE): the Parameters
+// key of its service. The XDP runtime reads its tuning there and nowhere else (XDP_PARAMETERS_KEY
+// of microsoft/xdp-for-windows: the key of the service of xdp.sys and \Parameters, which its INF
+// creates), and watches that key, so a setting written there reaches a running driver.
+func settingsKey(d driver) string {
+	return `SYSTEM\CurrentControlSet\Services\` + d.service + `\Parameters`
 }
 
 // xdpRxRingSize is the XdpRxRingSize that install sets for the XDP runtime: the frames of the
 // receive ring that XDP gives a queue when a program attaches to it, a power of two from 8 to 8192.
 // XDP inspects what the host sends (TX inspect) through that ring, and with the default of 32 a
 // send() of UDP segmentation offload of 44 segments left its sender blocked for good on a KM-TEST
-// adapter, while a send() of 16 segments went through (#72, risk R1).
+// adapter, while a send() of 16 segments went through (#72, risk R1). A value on the key of the
+// service itself, beside Parameters, never reached XDP, which kept the default.
 const xdpRxRingSize = 1024
 
 // seLowDriver is the SeLow NDIS protocol driver of SoftEther, which captures and injects the frames

@@ -112,9 +112,9 @@ function Stop-TraceSession([string] $name) {
 
 # The receive ring that ranz install gives the XDP runtime (XdpRxRingSize of controller/internal/install/drivers.go):
 # XDP inspects what the host sends through it, and a ring smaller than the segments of a send() with USO left the
-# sender blocked (#72, risk R1)
+# sender blocked (#72, risk R1). XDP reads it from the Parameters key of its service only.
 function Test-XdpRing([string] $when) {
-	$ring = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\xdp' -Name 'XdpRxRingSize' -ErrorAction SilentlyContinue).XdpRxRingSize
+	$ring = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\xdp\Parameters' -Name 'XdpRxRingSize' -ErrorAction SilentlyContinue).XdpRxRingSize
 	Write-Host "the XDP runtime $when has XdpRxRingSize '$ring'"
 	if (-not $ring -or $ring -lt 64) { Add-Failure "ranz install did not set up the receive ring of the XDP runtime $when (XdpRxRingSize '$ring')" }
 }

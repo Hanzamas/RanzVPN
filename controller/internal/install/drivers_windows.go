@@ -289,16 +289,16 @@ func installComponent(w io.Writer, m *mgr.Mgr, pkg string, d driver, published s
 	return recordDriver(d.record, published)
 }
 
-// applySettings writes the settings of d to the key of its service, which its INF created, and
-// reports them to w. A driver that reads its settings when it loads finds them there; the XDP
-// runtime also watches its key, and sizes the receive ring of a queue by XdpRxRingSize when a
-// program attaches to the queue.
+// applySettings writes the settings of d to the Parameters key of its service (settingsKey), which
+// it creates when the INF did not, and reports them to w. A driver that reads its settings when it
+// loads finds them there; the XDP runtime also watches that key, and sizes the receive ring of a
+// queue by XdpRxRingSize when a program attaches to the queue.
 func applySettings(w io.Writer, d driver) error {
 	if len(d.settings) == 0 {
 		return nil
 	}
-	path := `SYSTEM\CurrentControlSet\Services\` + d.service
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.SET_VALUE)
+	path := settingsKey(d)
+	k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, path, registry.SET_VALUE)
 	if err != nil {
 		return fmt.Errorf("the key HKLM\\%s of %s: %w", path, d.label, err)
 	}
