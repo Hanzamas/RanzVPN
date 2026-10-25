@@ -79,10 +79,11 @@ func (p Params) String() string {
 
 // Parse reads the stored form of a hash. It takes only the text that String writes: the algorithm
 // pbkdf2-sha256, an iteration count from 1 to MaxIterations in its plain digits, a salt of 8 to 64
-// bytes and a hash of KeySize bytes, in unpadded base64.
+// bytes and a hash of KeySize bytes, in unpadded base64, and no line end, which the base64 decoder
+// of Go would skip.
 func Parse(encoded string) (Params, error) {
 	parts := strings.Split(encoded, "$")
-	if len(parts) != 5 || parts[0] != "" || parts[1] != scheme {
+	if len(parts) != 5 || parts[0] != "" || parts[1] != scheme || strings.ContainsAny(encoded, "\r\n") {
 		return Params{}, fmt.Errorf("%w: it is not a $%s$ hash", ErrFormat, scheme)
 	}
 	count, ok := strings.CutPrefix(parts[2], "i=")

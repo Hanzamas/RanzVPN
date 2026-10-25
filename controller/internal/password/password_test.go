@@ -133,6 +133,10 @@ func TestParse(t *testing.T) {
 		"$pbkdf2-sha256$i=2$" + salt + "$" + key[:40],
 		"$pbkdf2-sha256$i=2$" + salt + "$" + key + "AA",
 		"$pbkdf2-sha256$i=2$" + strings.Repeat("A", 90) + "$" + key,
+		// The base64 decoder of Go skips a line end, so the text would not be the one that String writes
+		"$pbkdf2-sha256$i=2$" + salt[:10] + "\n" + salt[10:] + "$" + key,
+		"$pbkdf2-sha256$i=2$" + salt + "$" + key[:20] + "\r" + key[20:],
+		"$pbkdf2-sha256$i=2$" + salt + "$" + key + "\n",
 	} {
 		if p, err := Parse(bad); !errors.Is(err, ErrFormat) {
 			t.Errorf("Parse(%q) = %+v, %v, want ErrFormat", bad, p, err)

@@ -14,6 +14,8 @@ func FuzzParse(f *testing.F) {
 	f.Add("")
 	f.Add("$pbkdf2-sha256$i=600000$$")
 	f.Add("$argon2id$v=19$m=65536,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2g")
+	// The input that the first run of the fuzz test found: a line end inside the hash, which the base64 decoder skips
+	f.Add("$pbkdf2-sha256$i=1$00000000000$000000000000\r0000000000000000000000000000000")
 
 	f.Fuzz(func(t *testing.T, s string) {
 		p, err := Parse(s)
