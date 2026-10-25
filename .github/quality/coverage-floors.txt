@@ -73,6 +73,9 @@ go  controller/internal/logfile         85
 # raised to the measure of a run in which they pass
 go  controller/internal/mimic           89
 go  controller/internal/mitigation      0
+# nodecontroller (SDN-90 #395): the Controller settings of a Node, every path tested on every OS but
+# the key of settings that Parse did not return; the floor is set below the measure until a run records it
+go  controller/internal/nodecontroller  90
 go  controller/internal/nodesim         0
 # password (SDN-31 #225): the Linux job measures password.go and pbkdf2_other.go; the CNG derivation of pbkdf2_windows.go
 # is the Windows job's, which checks it against the standard library: 93.0% measured, less two points

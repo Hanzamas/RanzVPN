@@ -3,7 +3,8 @@
 // runs the handshake, says Hello, and then reads the frames of the controller: it applies each
 // Update to the objects it holds, hands the state to its owner and acknowledges the Generation.
 // A Refuse, a frame it cannot take, a failed write or the end of the stream close the stream, and
-// the thread opens it again after CONTROL_RETRY. The objects stay as they were applied last.
+// the thread opens it again after a delay that grows while the attempts fail (ControlRetry.c). The
+// objects stay as they were applied last.
 
 #include "Core/Control.h"
 
@@ -481,8 +482,12 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	UINT payload_size = 0;
 
 	TRANSPORT_STREAM *s = TransportDial(c->Config.Transport, c->Config.Address, c->Halt);
-	if (s == NULL)
+	if (s == NULL) {
+		AcquireSRWLockExclusive(&c->Lock);
+		c->Status.LastEnd = CONTROL_END_DIAL;
+		ReleaseSRWLockExclusive(&c->Lock);
 		return;
+	}
 
 	// The handshake messages go in frames of their own, as the controller reads them
 	c->FrameSize = 0;
@@ -520,6 +525,7 @@ static void ControlRun(CONTROL_CLIENT *c) {
 		c->Status.NumStreams++;
 		ReleaseSRWLockExclusive(&c->Lock);
 	}
+	bool opened = ok;
 
 	// The leases of the DHCP responders go after the Hello, all of them, and then whenever they change (ControlDhcp.c)
 	ControlLeasesResend(c->Config.Leases);
@@ -540,17 +546,42 @@ static void ControlRun(CONTROL_CLIENT *c) {
 
 	AcquireSRWLockExclusive(&c->Lock);
 	c->Status.Connected = false;
+	// How it ended (SDN-90, #395): the handshake failed, or the stream was open and ended with a Refuse, or without one
+	if (opened == false)
+		c->Status.LastEnd = CONTROL_END_HANDSHAKE;
+	else if (c->Message->which_body == ranz_control_v1_ControlMessage_refuse_tag)
+		c->Status.LastEnd = CONTROL_END_REFUSED;
+	else
+		c->Status.LastEnd = CONTROL_END_CLOSED;
 	ReleaseSRWLockExclusive(&c->Lock);
 
 	TransportClose(s);
 }
 
+// After a stream ended or did not open: the delay before the next attempt, which grows while the attempts fail
+// (ControlRetry.c), and the owner hears how it ended, unless the client halts (SDN-90, #395)
+static UINT ControlRetry(CONTROL_CLIENT *c, UINT delay) {
+	CONTROL_STATUS st;
+
+	AcquireSRWLockExclusive(&c->Lock);
+	c->Status.NextRetry = ControlRetryNext(delay, c->Status.LastEnd);
+	CopyMemory(&st, &c->Status, sizeof(st));
+	ReleaseSRWLockExclusive(&c->Lock);
+
+	if (c->Config.EndProc != NULL && ControlHalted(c) == false)
+		c->Config.EndProc(c->Config.EndParam, &st);
+
+	return st.NextRetry;
+}
+
 static DWORD WINAPI ControlThread(LPVOID param) {
 	CONTROL_CLIENT *c = (CONTROL_CLIENT *)param;
+	UINT delay = 0;
 
 	while (ControlHalted(c) == false) {
 		ControlRun(c);
-		WaitForSingleObject(c->Halt, CONTROL_RETRY);
+		delay = ControlRetry(c, delay);
+		WaitForSingleObject(c->Halt, delay);
 	}
 
 	return 0;

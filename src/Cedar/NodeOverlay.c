@@ -641,6 +641,9 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Transport = cfg->Control;
 	StrCpy(cc.Address, sizeof(cc.Address), cfg->Controller);
 	Copy(cc.ControllerKey, cfg->ControllerKey, PEER_KEY_SIZE);
+	// The owner hears how each stream ended (NodeController.c; SDN-90, #395)
+	cc.EndProc = cfg->ControlEnd;
+	cc.EndParam = cfg->ControlEndParam;
 	if (cfg->Key->Identity != NULL)
 		cc.Identity = cfg->Key->Identity;
 	else

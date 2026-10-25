@@ -32,8 +32,9 @@ $PSNativeCommandUseErrorActionPreference = $false
 # a gap that someone closes turns the job red until the runbook has real steps for it.
 # PC A and PC B are windows of one machine: the RANZ_* variables are kept for each, and the script switches them when the
 # PC of the step changes. <PC-A> is the address of the runner that is not loopback, so that PC B reaches the Controller
-# through the network, with the fingerprint, as a second PC does. The Nodes are the stand-in (vpntest firsttest): the
-# Node service of the PC does not open a control stream to the Controller yet (Gaps 1 to 3 of the document).
+# through the network, with the fingerprint, as a second PC does. The Nodes are the stand-in (vpntest firsttest) until
+# step 20, where the one Node service of the runner joins the Controller as pc-a in place of the stand-in for that Node
+# (SDN-90); the stand-in keeps playing pc-b, since two Node services cannot form a session yet (Gap 3 of the document).
 
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $x64 = ($Architecture -eq 'x64')
@@ -63,7 +64,7 @@ $addressA = '100.64.0.1'
 $addressB = '100.64.0.2'
 
 # The values in angle brackets that the commands of the document name, with what the script knows of them so far
-$values = [ordered]@{ 'PC-A' = $null; 'PORT' = $null; 'CONTROLLER' = $null; 'FINGERPRINT' = $null; 'CONTROLLER-KEY' = $null; 'VIEWER-TOKEN' = $null; 'PC-A-OVERLAY' = $null }
+$values = [ordered]@{ 'PC-A' = $null; 'PORT' = $null; 'CONTROLLER' = $null; 'FINGERPRINT' = $null; 'CONTROLLER-KEY' = $null; 'VIEWER-TOKEN' = $null; 'PC-A-OVERLAY' = $null; 'NODE-KEY' = $null }
 
 #
 # The document
@@ -218,10 +219,14 @@ function Read-Shared([string] $path) {
 }
 
 # Run the blocks of the current step in the order of the document: the lines of a run block one after the other, with
-# the output of each printed and kept, a background block started. The text of all the lines is returned.
-function Invoke-Doc {
+# the output of each printed and kept, a background block started. The text of all the lines is returned. -From and
+# -Count run some of the blocks only, for a step whose later blocks need a value that an earlier one prints.
+function Invoke-Doc([int] $From = 0, [int] $Count = -1) {
 	$all = New-Object System.Text.StringBuilder
-	foreach ($b in $script:current.Blocks) {
+	$blocks = @($script:current.Blocks)
+	$last = $(if ($Count -lt 0) { $blocks.Count } else { [Math]::Min($blocks.Count, $From + $Count) })
+	if ($From -ge $last) { throw "the step $($script:current.Id) has no block $From of the document" }
+	foreach ($b in $blocks[$From..($last - 1)]) {
 		if ($b.Kind -eq 'background') {
 			$null = Start-Background $b.Lines[0]
 			continue
@@ -323,6 +328,21 @@ function Show-Diagnostics {
 	Write-Host '--- routes of the adapter and the network profiles'
 	Get-NetRoute -InterfaceAlias $adapterName -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-Table DestinationPrefix, NextHop, RouteMetric | Out-String | Write-Host
 	Get-NetConnectionProfile -ErrorAction SilentlyContinue | Format-Table InterfaceAlias, NetworkCategory, IPv4Connectivity | Out-String | Write-Host
+}
+
+# The lines of the node log of the Node service of the runner that hold the text what
+function Get-NodeLog([string] $what) {
+	return @(Get-ChildItem -LiteralPath (Join-Path $nodeData 'node_log') -File -Recurse -ErrorAction SilentlyContinue | Select-String -Pattern $what -SimpleMatch)
+}
+
+# The Node of the Controller named name as ranz get nodes reports it, $null when there is none or the API does not answer
+# (a Controller that restarts)
+function Get-Node([string] $name) {
+	try {
+		return @((Invoke-Ranz @('get', 'nodes')).nodes | Where-Object { $_.name -eq $name })[0]
+	} catch {
+		return $null
+	}
 }
 
 # A source file that the Gap steps read: whether a pattern is in the files of a folder, tests left out
@@ -513,6 +533,7 @@ try {
 		$logDir = Join-Path $nodeData 'node_log'
 		# The node log is written a moment after the Node starts
 		$null = Wait-Until { @(Get-ChildItem -LiteralPath $logDir -File -Recurse -ErrorAction SilentlyContinue | Select-String -Pattern 'Capabilities: architecture' -SimpleMatch).Count -gt 0 } 'the node log to name the Capabilities'
+		$null = Wait-Until { @(Get-NodeLog 'Controller: none').Count -gt 0 } 'the node log to say that the Node has no Controller'
 		$out = Invoke-Doc
 		Wait-Service $nodeService 'Running'
 		if ($out -notmatch 'Node started') { throw 'the node log does not say that the Node started' }
@@ -520,6 +541,9 @@ try {
 		foreach ($f in 'ranz_node.db', 'node_config.txt') {
 			if (-not (Test-Path -LiteralPath (Join-Path $nodeData $f))) { throw "$f is not in $nodeData" }
 		}
+		# Without Controller settings the Node says so once at each start, and opens no control stream (SDN-90)
+		if ($out -notmatch 'Controller: none') { throw 'the node log does not say that the Node has no Controller' }
+		if (@(Get-NodeLog 'Overlay started').Count -ne 0) { throw 'the Node without Controller settings started an overlay' }
 	}
 
 	Step 'viewer-token' {
@@ -627,17 +651,71 @@ try {
 		Write-Host "the ping from PC B to $addressA, the overlay address of $nodeA, got $($replies.Count) replies of 4 through the adapter $adapterName"
 	}
 
-	Gap 'gap-node-service' {
-		# The document says what is missing. The sources must still say so, or the Gap is closed. Gaps 2, 6 and 7 are not
-		# read from the sources: nothing in them says that a verb or a setting is missing.
-		$controls = (Test-Source 'src\Cedar' 'Node*.c' '\.Control\s*=') -or (Test-Source 'src\ranz-node' '*.c' '\.Control\s*=')
-		Assert-Gap 'Gap 1' (-not $controls) 'no code of the Node service sets the control stream of its overlay (NODE_OVERLAY_CONFIG.Control): only the vpntest harness does'
-		# The Listener of a desired state starts the front door and QUIC of a Node (SDN-45, NodeListener.c), but the overlay
-		# still dials a peer by its node name, not at the Listener of the peer
-		$byName = Test-Source 'src\Cedar' 'NodeOverlay.c' 'TransportDial\(ov->Config\.Data, name, NULL\)'
-		Assert-Gap 'Gap 3' $byName 'the overlay dials a peer by its node name on its data transport: the desired state gives it no address of the Listener of a peer'
-		Assert-Gap 'Gap 4' (-not (Test-Source 'controller\internal\install' '*.go' '(?i)firewall')) 'ranz install knows no firewall'
-		Assert-Gap 'Gap 5' (-not (Test-Source 'controller\cmd\ranz' '*.go' '(?i)audit')) 'the ranz CLI has no verb for the audit log'
+	Step 'node-service' {
+		# The static key of the Node service, which the service makes at the first need, as the publicKey of a Node resource
+		$out = Invoke-Doc -From 0 -Count 1
+		$key = (Get-Json $out).publicKey
+		if (-not $key -or [Convert]::FromBase64String($key).Length -ne 32) { throw "ranz node key printed '$out', not the base64 of a key of 32 bytes" }
+		if ($key -eq $values['CONTROLLER-KEY'] -or $key -in @('B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=', 'WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=')) { throw "ranz node key printed the key $key of another end" }
+		$values['NODE-KEY'] = $key
+		Write-Host "the static key of the Node service: $key"
+
+		# The verb refuses a wrong value itself, with a message that says which
+		$errFile = Join-Path $work 'refused.err'
+		& $ranzExe node controller set $values['PC-A'] $values['CONTROLLER-KEY'] $values['FINGERPRINT'] 2> $errFile | Out-Null
+		$code = $LASTEXITCODE
+		$msg = Get-Content -LiteralPath $errFile -Raw
+		if ($code -ne 2 -or $msg -notmatch 'has no port') { throw "ranz node controller set took an address without a port (exit code $code): $msg" }
+		$global:LASTEXITCODE = 0
+		Write-Host "refused: $($msg.Trim())"
+
+		# A wrong TLS fingerprint and a wrong static key of the Controller fail closed, each with its check in the node log
+		$wrongKey = [Convert]::ToBase64String([byte[]](1..32))
+		foreach ($case in @(@($values['CONTROLLER-KEY'], ('ab' * 32), 'the TLS fingerprint check failed'), @($wrongKey, $values['FINGERPRINT'], 'the Noise handshake failed'))) {
+			$before = @(Get-NodeLog $case[2]).Count
+			& $ranzExe node controller set $values['CONTROLLER'] $case[0] $case[1] | Out-Null
+			if ($LASTEXITCODE -ne 0) { throw "ranz node controller set with a wrong value exited with code $LASTEXITCODE" }
+			$null = Wait-Until { @(Get-NodeLog $case[2]).Count -gt $before } "the node log to say '$($case[2])'" 60
+			Write-Host "a wrong value fails closed, and the node log says: $(@(Get-NodeLog $case[2])[-1].Line)"
+		}
+
+		# The settings of the runbook; the Controller refuses the key, which no Node resource holds yet, with the key as the
+		# actor of its audit log, and the Node keeps dialling
+		$null = Invoke-Doc -From 1 -Count 1
+		$shown = (& $ranzExe node controller show) -join "`n" | ConvertFrom-Json
+		if ($shown.controller.address -ne $values['CONTROLLER'] -or $shown.controller.publicKey -ne $values['CONTROLLER-KEY'] -or $shown.controller.tlsFingerprint -ne $values['FINGERPRINT']) {
+			throw "ranz node controller show gives $($shown | ConvertTo-Json -Compress -Depth 4), not the settings of step 7"
+		}
+		$null = Invoke-Doc -From 2 -Count 1
+		$token = (Get-Content -LiteralPath $adminToken -Raw).Trim()
+		$null = Wait-Until {
+			$audit = Invoke-Curl 'https://localhost/api/v1/audit?kind=auth-failed' $token -Body | ConvertFrom-Json
+			@($audit.records | Where-Object { $_.actor -eq "key:$key" -and $_.outcome -eq 'failure' }).Count -ge 1
+		} 'the audit log to hold the refusal of the key of the Node, with the key as the actor' 90
+		$null = Wait-Until { @(Get-NodeLog 'the Controller refused the node').Count -gt 0 } 'the node log to say that the Controller refused the node' 90
+
+		# Its Node resource in place of the test key of the stand-in: the Node joins on its next attempt, without a restart
+		$null = Invoke-Doc -From 3 -Count 1
+		$node = Wait-Until {
+			$n = Get-Node $nodeA
+			if ($n -and $n.connected -and $n.generation -ge 1 -and $n.ackedGeneration -eq $n.generation) { $n }
+		} 'the Node service to be connected as pc-a at its acknowledged Generation' 150
+		if (-not $node.capabilities -or $node.capabilities.architecture -ne $Architecture) { throw "pc-a reports the architecture '$($node.capabilities.architecture)' on a $Architecture runner" }
+		Write-Host "pc-a is the Node service now: generation $($node.generation), acknowledged $($node.ackedGeneration), capabilities $($node.capabilities | ConvertTo-Json -Compress)"
+		$null = Invoke-Doc -From 4 -Count 1
+		$null = Wait-Until { @(Get-NodeLog 'Overlay: generation').Count -gt 0 } 'the node log to say that the Node applied a Generation' 30
+
+		# The Controller restarts: the Node dials again by itself and is connected again. A Controller that starts sees no
+		# Node connected until its stream comes.
+		$ended = @(Get-NodeLog 'the control stream ended after it was open').Count
+		$null = Invoke-Doc -From 5
+		Wait-Service $controllerService 'Running'
+		$null = Wait-Until { @(Get-NodeLog 'the control stream ended after it was open').Count -gt $ended } 'the node log to say that the control stream ended' 60
+		$null = Wait-Until {
+			$n = Get-Node $nodeA
+			$n -and $n.connected -and $n.ackedGeneration -eq $n.generation
+		} 'the Node service to be connected again as pc-a after the restart of the Controller' 150
+		Write-Host 'after the restart of the Controller the Node service dialled again by itself and is connected again'
 	}
 
 	Step 'doctor' {
@@ -660,7 +738,7 @@ try {
 		$events = @((Invoke-Ranz @('get', 'events')).events | Where-Object { $_ })
 		if ($events.Count -ne 0) { throw "the Controller has events: $($events | ConvertTo-Json -Compress -Depth 4)" }
 		$revisions = ((Invoke-Ranz @('get', 'revisions')).revisions | ForEach-Object { $_.operation }) -join ','
-		if ($revisions -ne 'first-start,apply') { throw "the revisions are $revisions, not the first start and the apply" }
+		if ($revisions -ne 'first-start,apply,apply') { throw "the revisions are $revisions, not the first start and the applies of steps 15 and 20" }
 		# The bundle of the Controller, the one that the button of the Diagnostics page downloads
 		$admin = (Get-Content -LiteralPath $adminToken -Raw).Trim()
 		$secrets = @($admin, $values['VIEWER-TOKEN'])
@@ -688,10 +766,11 @@ try {
 	Step 'stand-in-gone' {
 		$null = Invoke-Doc
 		if (Get-NetAdapter -Name $adapterName -ErrorAction SilentlyContinue) { throw "the adapter $adapterName is still there after the stand-in stopped" }
+		# The stand-in played pc-b; pc-a is the Node service of the runner since step 20, which stays connected
 		$null = Wait-Until {
 			$nodes = @((Invoke-Ranz @('get', 'nodes') -token $viewerToken -server "https://$($values['CONTROLLER'])" -fingerprint $values['FINGERPRINT']).nodes)
-			$nodes.Count -eq 2 -and @($nodes | Where-Object { $_.connected }).Count -eq 0
-		} 'the Controller to see both Nodes as not connected' 30
+			$nodes.Count -eq 2 -and @($nodes | Where-Object { $_.name -eq $nodeB -and -not $_.connected }).Count -eq 1 -and @($nodes | Where-Object { $_.name -eq $nodeA -and $_.connected }).Count -eq 1
+		} 'the Controller to see pc-b as not connected and pc-a, the Node service, as connected' 30
 	}
 
 	Step 'uninstall' {
@@ -717,6 +796,20 @@ try {
 		foreach ($dir in (Join-Path $env:ProgramData 'Ranz'), $nodeData) {
 			if (Test-Path -LiteralPath $dir) { throw "$dir is still there" }
 		}
+	}
+
+	Gap 'gaps' {
+		# The document says what is missing. The sources must still say so, or the Gap is closed. Gaps 6 and 7 are not read
+		# from the sources: nothing in them says that a verb or a setting is missing. Gaps 1 and 2 are closed (step 20,
+		# SDN-90), and must stay so: the Node service sets the control stream of its overlay, and ranz has the verbs.
+		if (-not (Test-Source 'src\Cedar' 'Node*.c' '\.Control\s*=|->Control\s*=')) { throw 'Gap 1 is open again: no code of the Node service sets the control stream of its overlay (NODE_OVERLAY_CONFIG.Control)' }
+		if (-not (Test-Source 'controller\cmd\ranz' '*.go' 'register\("node"')) { throw 'Gap 2 is open again: ranz has no verb node, which prints the key of a Node' }
+		# The Listener of a desired state starts the front door and QUIC of a Node (SDN-45, NodeListener.c), but the overlay
+		# still dials a peer by its node name, not at the Listener of the peer
+		$byName = Test-Source 'src\Cedar' 'NodeOverlay.c' 'TransportDial\(ov->Config\.Data, name, NULL\)'
+		Assert-Gap 'Gap 3' $byName 'the overlay dials a peer by its node name on its data transport: the desired state gives it no address of the Listener of a peer'
+		Assert-Gap 'Gap 4' (-not (Test-Source 'controller\internal\install' '*.go' '(?i)firewall')) 'ranz install knows no firewall'
+		Assert-Gap 'Gap 5' (-not (Test-Source 'controller\cmd\ranz' '*.go' '(?i)audit')) 'the ranz CLI has no verb for the audit log'
 	}
 
 	if ($script:next -ne $docSteps.Count) {

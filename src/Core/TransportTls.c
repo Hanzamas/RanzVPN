@@ -658,6 +658,10 @@ static SECURITY_STATUS TlsStep(TLS_STREAM *s, bool input) {
 	ULONG attr = 0;
 	TimeStamp expiry;
 	SECURITY_STATUS r;
+	// The ALPN protocol that the first token of a client offers (TransportTlsAlpn.c; SDN-90, #395)
+	SecBuffer offer;
+	SecBufferDesc offer_desc;
+	ULONG offer_list[TRANSPORT_TLS_ALPN_LIST / sizeof(ULONG)];
 
 	in[0].BufferType = SECBUFFER_TOKEN;
 	in[0].cbBuffer = s->InSize;
@@ -684,7 +688,8 @@ static SECURITY_STATUS TlsStep(TLS_STREAM *s, bool input) {
 	else
 		// A client that omits the server name passes no target, so the ClientHello carries no server_name extension
 		r = InitializeSecurityContextW(&net->Cred, s->HaveCtx ? &s->Ctx : NULL, net->Cfg.OmitSni ? NULL : s->Target, TLS_ISC_FLAGS, 0, 0,
-		                               input ? &in_desc : NULL, 0, &s->Ctx, &out_desc, &attr, &expiry);
+		                               input ? &in_desc : TransportTlsAlpnOffer(&net->Cfg, &offer_desc, &offer, offer_list, sizeof(offer_list)), 0, &s->Ctx, &out_desc,
+		                               &attr, &expiry);
 
 	if (r == SEC_E_OK || r == SEC_I_CONTINUE_NEEDED)
 		s->HaveCtx = true;
@@ -717,8 +722,10 @@ static bool TlsCheckPin(TLS_STREAM *s) {
 	UCHAR thumbprint[CRYPTO_THUMBPRINT_SIZE];
 
 	ZeroMemory(thumbprint, sizeof(thumbprint));
+	// A client with a check of its own checks the certificate in place of the pin (SDN-90, #395)
 	bool ok = (QueryContextAttributesW(&s->Ctx, SECPKG_ATTR_REMOTE_CERT_CONTEXT, (void *)&cert) == SEC_E_OK && cert != NULL &&
-	           CryptoCertThumbprint(cert, thumbprint) && memcmp(thumbprint, s->Net->Thumbprint, CRYPTO_THUMBPRINT_SIZE) == 0);
+	           (s->Net->Cfg.Verify != NULL ? s->Net->Cfg.Verify(s->Net->Cfg.VerifyParam, cert)
+	                                       : (CryptoCertThumbprint(cert, thumbprint) && memcmp(thumbprint, s->Net->Thumbprint, CRYPTO_THUMBPRINT_SIZE) == 0)));
 
 	CryptoCertFree(cert);
 	return ok;
@@ -733,8 +740,10 @@ static bool TlsExporter(TLS_STREAM *s) {
 
 	ZeroMemory(&info, sizeof(info));
 	ZeroMemory(&material, sizeof(material));
-	info.cbLabel = (WORD)sizeof(NOISE_EXPORTER_LABEL);
-	info.pszLabel = (LPSTR)NOISE_EXPORTER_LABEL;
+	// The label of the configuration, the one of the control stream for its client (SDN-90, #395)
+	const char *label = (s->Net->Cfg.ExporterLabel[0] != 0 ? s->Net->Cfg.ExporterLabel : NOISE_EXPORTER_LABEL);
+	info.cbLabel = (WORD)(strlen(label) + 1);
+	info.pszLabel = (LPSTR)label;
 	info.cbKeyingMaterial = NOISE_EXPORTER_SIZE;
 
 	bool ok = (SetContextAttributesW(&s->Ctx, SECPKG_ATTR_KEYING_MATERIAL_INFO, &info, sizeof(info)) == SEC_E_OK &&
@@ -808,7 +817,8 @@ static bool TlsHandshake(TLS_STREAM *s, HANDLE cancel) {
 		r = TlsStep(s, true);
 	}
 
-	return (r == SEC_E_OK && (s->Net->Server || TlsCheckPin(s)) && TlsOpen(s));
+	// A client takes the session only with the ALPN protocol that it offered, when it offered one (SDN-90, #395)
+	return (r == SEC_E_OK && (s->Net->Server || (TlsCheckPin(s) && TransportTlsAlpnSelected(&s->Net->Cfg, &s->Ctx))) && TlsOpen(s));
 }
 
 // The context takes the post-handshake message that In starts with (a KeyUpdate, a
@@ -1556,8 +1566,11 @@ static TRANSPORT *TransportTlsNew(const TRANSPORT_TLS_CONFIG *cfg, bool server) 
 	ZeroMemory(&wsa, sizeof(wsa));
 	net->HaveWinsock = (WSAStartup(MAKEWORD(2, 2), &wsa) == 0);
 
-	// The thumbprint of the server certificate: the server loads it, the client pins it
-	bool ok = (net->HaveWinsock && TlsParseThumbprint(net->Cfg.Thumbprint, net->Thumbprint));
+	// The thumbprint of the server certificate: the server loads it, the client pins it, unless it checks the certificate
+	// itself (SDN-90, #395)
+	net->Cfg.Alpn[sizeof(net->Cfg.Alpn) - 1] = 0;
+	net->Cfg.ExporterLabel[sizeof(net->Cfg.ExporterLabel) - 1] = 0;
+	bool ok = (net->HaveWinsock && ((server == false && net->Cfg.Verify != NULL) || TlsParseThumbprint(net->Cfg.Thumbprint, net->Thumbprint)));
 
 	// A server with a decoy authenticates the first handshake message with exactly one static key (CORE-S2-2, #70)
 	net->Cfg.Decoy[sizeof(net->Cfg.Decoy) - 1] = 0;

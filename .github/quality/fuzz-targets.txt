@@ -103,6 +103,10 @@ controller/internal/control  Open                  FuzzOpen
 controller/internal/control  Conn.Read             FuzzRead
 controller/internal/control  Conn.SetReadDeadline  exempt  sets the deadline of the next Read; reads nothing
 
+# The Controller settings of a Node, as an operator types them into ranz node controller set (SDN-90 #395)
+controller/internal/nodecontroller  Parse  FuzzParse
+src/Cedar  NodeAdminCommand  exempt  one command line of an Administrator on the admin pipe of the Node, which only SYSTEM and the Administrators may open: ParseToken splits it, and the three values of the Controller settings in it pass the checks of the address, the base64 key of 32 bytes and the 64 hex digits, which nodecontroller.Parse (FuzzParse) makes before ranz node sends them
+
 # The source prefixes of a Network and of the admin source allowlist (SDN-39 #232)
 controller/internal/intent  ParseSources  FuzzParseSources
 
