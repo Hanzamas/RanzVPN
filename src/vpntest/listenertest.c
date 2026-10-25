@@ -298,8 +298,8 @@ static bool ListenerTestPfx(wchar_t *path, wchar_t *password_path, char *thumbpr
 				BUF *file = NewBufFromMemory(pfx.pbData, pfx.cbData);
 				BUF *pass = NewBuf();
 
-				WriteBufStr(pass, LISTENERTEST_PASSWORD);
-				WriteBufStr(pass, "\r\n");
+				// The password as the line of a text file, as an operator writes it
+				WriteBuf(pass, LISTENERTEST_PASSWORD "\r\n", StrLen(LISTENERTEST_PASSWORD "\r\n"));
 				ok = DumpBufW(file, path) && DumpBufW(pass, password_path);
 				FreeBuf(file);
 				FreeBuf(pass);
