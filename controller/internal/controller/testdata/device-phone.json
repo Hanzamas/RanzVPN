@@ -1,0 +1,3 @@
+{"resources": [
+  {"kind": "Device", "name": "phone", "spec": {"network": "lab-net", "gateway": "gw", "publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "tags": ["phones"]}}
+]}

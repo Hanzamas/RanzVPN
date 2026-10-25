@@ -80,6 +80,7 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 		{[]string{"admin-sources", "clear"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": []}`, nil},
 		{[]string{"get", "ipam"}, http.MethodGet, "/api/v1/ipam", "", nil},
 		{[]string{"get", "leases"}, http.MethodGet, "/api/v1/ipam/leases", "", nil},
+		{[]string{"get", "devices"}, http.MethodGet, "/api/v1/devices", "", nil},
 		{[]string{"get", "licence"}, http.MethodGet, "/api/v1/licence", "", nil},
 		{[]string{"licence", "-remove"}, http.MethodDelete, "/api/v1/licence", "", nil},
 		{[]string{"token", "list"}, http.MethodGet, "/api/v1/tokens", "", nil},

@@ -1,0 +1,3 @@
+{"resources": [
+  {"kind": "Device", "name": "laptop", "spec": {"network": "lab-net", "gateway": "gw", "publicKey": "iDGGuAC0HVzwQpaV2ps8xPMo680YSm5IL6V4wQPwbHc=", "batterySaver": true}}
+]}

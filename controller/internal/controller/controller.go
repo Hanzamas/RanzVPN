@@ -199,6 +199,9 @@ type Controller struct {
 
 	// The audit log (audit.go)
 	aud *auditState
+
+	// The WireGuard ends of the Devices that their gateways reported (devices.go)
+	dev deviceState
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -790,11 +793,11 @@ func checkFeatures(doc intent.Document, st licence.Status) error {
 }
 
 // checkCap refuses a change of the intent, an apply or a rollback as op names it, that adds a
-// Node when next would hold more Nodes than the licence in force st allows. A change that adds
-// none passes, so an intent above the cap (after the licence changed) can still be changed and
-// shrunk. c.mu is held.
+// Node when next would hold more Nodes than the licence in force st allows. A Device counts as a
+// client node (SDN-80), so adding one counts as adding a Node. A change that adds none passes, so an
+// intent above the cap (after the licence changed) can still be changed and shrunk. c.mu is held.
 func (c *Controller) checkCap(next intent.Intent, st licence.Status, op string) error {
-	if len(next.Nodes) <= st.Nodes {
+	if next.Licensed() <= st.Nodes {
 		return nil
 	}
 	var added []string
@@ -803,6 +806,7 @@ func (c *Controller) checkCap(next intent.Intent, st licence.Status, op string) 
 			added = append(added, "Node "+strconv.Quote(name))
 		}
 	}
+	added = append(added, next.AddedDevices(c.intent)...)
 	if len(added) == 0 {
 		return nil
 	}
@@ -811,7 +815,7 @@ func (c *Controller) checkCap(next intent.Intent, st licence.Status, op string) 
 		hint = "; a Business or Enterprise licence key raises the cap"
 	}
 	return fmt.Errorf("%w: the %s licence in force allows %d nodes, and this %s would make %d (new: %s)%s",
-		licence.ErrRefused, st.Tier, st.Nodes, op, len(next.Nodes), strings.Join(added, ", "), hint)
+		licence.ErrRefused, st.Tier, st.Nodes, op, next.Licensed(), strings.Join(added, ", "), hint)
 }
 
 // honoured checks states, the desired states that next compiles to, against the Capabilities of

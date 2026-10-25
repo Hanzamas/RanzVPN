@@ -1,0 +1,3 @@
+{"resources": [
+  {"kind": "Node", "name": "alpha", "spec": {"publicKey": "iDGGuAC0HVzwQpaV2ps8xPMo680YSm5IL6V4wQPwbHc=", "vrfs": ["lab"]}}
+]}

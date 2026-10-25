@@ -1,0 +1,31 @@
+# Generation 2 of host after device-phone.json (SDN-80): host is in VRF lab, so it gets Device phone,
+# whose addresses and tags identify it to the rules, and whose gateway it sends its packets to; the
+# key of the Device is for its gateway alone.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    device: {
+      name: "phone"
+      vrf_id: 7
+      addresses: {
+        network: "lab-net"
+        vrf_id: 7
+        prefix: {
+          address: "\x0a\x46\x00\x03"  # 10.70.0.3
+          length: 32
+        }
+      }
+      addresses: {
+        network: "lab-net"
+        vrf_id: 7
+        prefix: {
+          address: "\xfd\x07\x00\x07\x00\x07\x00\x01\x00\x00\x00\x00\x00\x00\x00\x03"  # fd07:7:7:1::3
+          length: 128
+        }
+      }
+      tags: "phones"
+      gateway: "gw"
+    }
+  }
+}

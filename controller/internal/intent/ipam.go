@@ -128,6 +128,8 @@ func (in Intent) Pools() []PoolUse {
 			}
 		}
 	}
+	// A Device holds its addresses as a Node does (device.go)
+	in.countDevices(out, index)
 	for i := range out {
 		u := &out[i]
 		used := min(u.Allocated+u.Reserved, u.Size)

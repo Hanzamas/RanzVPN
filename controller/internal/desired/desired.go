@@ -41,6 +41,8 @@ func KeyOf(o *controlpb.Object) Key {
 		return Key{controlpb.Kind_KIND_RELAY, k.Relay.GetName()}
 	case *controlpb.Object_Rule:
 		return Key{controlpb.Kind_KIND_RULE, k.Rule.GetName()}
+	case *controlpb.Object_Device:
+		return Key{controlpb.Kind_KIND_DEVICE, k.Device.GetName()}
 	}
 	return Key{}
 }
@@ -93,6 +95,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 	nat := natRules(in, vrfs)
 	leaked := leakRoutes(in, vrfs)
 	responders := in.Responders()
+	// The WireGuard Devices of the VRFs of each node (device.go; SDN-80)
+	devs := devices(in, vrfs)
 	out := map[string]State{}
 	for name, n := range in.Nodes {
 		s := State{}
@@ -113,6 +117,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			return nil, err
 		}
 		self.Mirrors = ms
+		self.WireguardPort = wireguardPort(in, name)
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {
@@ -146,6 +151,9 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		}
 		for _, r := range rules[name] {
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Rule{Rule: r}})
+		}
+		for _, d := range devs[name] {
+			s.add(&controlpb.Object{Kind: &controlpb.Object_Device{Device: d}})
 		}
 		out[name] = s
 	}
