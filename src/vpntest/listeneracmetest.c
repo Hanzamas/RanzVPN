@@ -193,7 +193,8 @@ static bool AcmeTestSession(ACMETEST_CTX *ctx, char *thumbprint, UINT port)
 	return ok;
 }
 
-// The status of the Listener of node-s once the sidecar gave issued certificates, within ACMETEST_BOUND
+// The status of the Listener of node-s once the sidecar gave issued certificates, within ACMETEST_BOUND; false at once
+// when its run number issued failed, which the error of the status says
 static bool AcmeTestWaitIssued(ACMETEST_CTX *ctx, UINT64 issued, NODE_LISTENER_STATUS *st)
 {
 	for (UINT64 end = Tick64() + ACMETEST_BOUND;Tick64() < end;SleepThread(ACMETEST_POLL))
@@ -202,6 +203,10 @@ static bool AcmeTestWaitIssued(ACMETEST_CTX *ctx, UINT64 issued, NODE_LISTENER_S
 		if (st->AcmeIssued >= issued && st->Running)
 		{
 			return true;
+		}
+		if (st->AcmeRuns >= issued && StartWith(st->Error, "ACME: "))
+		{
+			return false;
 		}
 	}
 

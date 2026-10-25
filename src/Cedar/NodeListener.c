@@ -303,9 +303,9 @@ static bool NodeListenerCertificate(NODE_LISTENER *l, char *thumb, UINT size) {
 
 // One run of the ACME sidecar for the Listener c: ranz.exe acme gets the certificate of the names of c from its
 // directory, or renews it when it is due, installs it in the LocalMachine\My store with its key in the software key
-// storage provider, and writes its thumbprint into its answer file. The thumbprint into thumb (size bytes); false when
-// the run failed, which the node log says, or the Listener stops.
-static bool NodeListenerAcmeRun(NODE_LISTENER *l, const CONTROL_LISTENER *c, char *thumb, UINT size) {
+// storage provider, and writes its thumbprint into its answer file. The thumbprint into thumb (size bytes); false, with
+// the reason in why (why_size bytes), when the run failed or the Listener stops.
+static bool NodeListenerAcmeRun(NODE_LISTENER *l, const CONTROL_LISTENER *c, char *thumb, UINT size, char *why, UINT why_size) {
 	NODE *n = l->Node;
 	wchar_t dir[MAX_PATH];
 	wchar_t name[MAX_SIZE];
@@ -344,7 +344,7 @@ static bool NodeListenerAcmeRun(NODE_LISTENER *l, const CONTROL_LISTENER *c, cha
 	Utf8ToUni(ca, sizeof(ca), c->CaFile, StrLen(c->CaFile));
 
 	if (IsFileExistsW(n->BgpSidecar) == false) {
-		NodeLog(n, "Listener %s: ACME cannot run: ranz.exe, which holds the ACME sidecar, is not installed at %S", c->Name, n->BgpSidecar);
+		Format(why, why_size, "ranz.exe, which holds the ACME sidecar, is not installed at %S", n->BgpSidecar);
 		return false;
 	}
 
@@ -357,7 +357,7 @@ static bool NodeListenerAcmeRun(NODE_LISTENER *l, const CONTROL_LISTENER *c, cha
 	Zero(&pi, sizeof(pi));
 
 	if (CreateProcessW(n->BgpSidecar, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi) == FALSE) {
-		NodeLog(n, "Listener %s: ACME cannot run: %S cannot be started (error %u)", c->Name, n->BgpSidecar, (UINT)GetLastError());
+		Format(why, why_size, "%S cannot be started (error %u)", n->BgpSidecar, (UINT)GetLastError());
 		Free(cmd);
 		return false;
 	}
@@ -373,8 +373,10 @@ static bool NodeListenerAcmeRun(NODE_LISTENER *l, const CONTROL_LISTENER *c, cha
 	CloseHandle(pi.hThread);
 	CloseHandle(pi.hProcess);
 
-	if (w == WAIT_OBJECT_0 + 1)
+	if (w == WAIT_OBJECT_0 + 1) {
+		Format(why, why_size, "the Listener stops");
 		return false;
+	}
 
 	// The answer: "thumbprint <40 hex digits>", or "error <why>"
 	BUF *b = ReadDumpW(out);
@@ -386,12 +388,12 @@ static bool NodeListenerAcmeRun(NODE_LISTENER *l, const CONTROL_LISTENER *c, cha
 	Trim(answer);
 
 	if (w != WAIT_OBJECT_0) {
-		NodeLog(n, "Listener %s: ACME did not answer within %u s", c->Name, (UINT)(NODE_LISTENER_ACME_WAIT / 1000));
+		Format(why, why_size, "the sidecar did not answer within %u s", (UINT)(NODE_LISTENER_ACME_WAIT / 1000));
 	} else if (StrLen(answer) == 11 + 2 * CRYPTO_THUMBPRINT_SIZE && Cmp(answer, "thumbprint ", 11) == 0 && size > 2 * CRYPTO_THUMBPRINT_SIZE) {
 		StrCpy(thumb, size, answer + 11);
 		ok = true;
 	} else {
-		NodeLog(n, "Listener %s: ACME failed: %s", c->Name, IsEmptyStr(answer) ? "the sidecar gave no answer" : answer);
+		StrCpy(why, why_size, IsEmptyStr(answer) ? "the sidecar gave no answer" : answer);
 	}
 
 	return ok;
@@ -404,27 +406,35 @@ static DWORD WINAPI NodeListenerAcmeThread(LPVOID param) {
 	NODE_LISTENER *l = (NODE_LISTENER *)param;
 	CONTROL_LISTENER *c = ZeroMalloc(sizeof(CONTROL_LISTENER));
 	char thumb[CONTROL_THUMBPRINT_SIZE];
+	char why[MAX_SIZE];
 
 	AcquireSRWLockShared(&l->Lock);
 	Copy(c, &l->Config, sizeof(CONTROL_LISTENER));
 	ReleaseSRWLockShared(&l->Lock);
 
 	while (true) {
-		bool ok = NodeListenerAcmeRun(l, c, thumb, sizeof(thumb));
+		StrCpy(why, sizeof(why), "");
+		bool ok = NodeListenerAcmeRun(l, c, thumb, sizeof(thumb), why, sizeof(why));
 
 		InterlockedIncrement64(&l->AcmeRuns);
-		if (ok) {
-			AcquireSRWLockExclusive(&l->Lock);
-			if (StrCmp(thumb, l->Thumbprint) != 0) {
-				// A new certificate: the listeners start again with it, and a session that runs keeps its own stream
-				NodeListenerDown(l);
-				if (NodeListenerUp(l, thumb))
-					InterlockedIncrement64(&l->AcmeIssued);
-				else
-					NodeLog(l->Node, "Listener %s not started: %s", c->Name, l->Error);
-			}
-			ReleaseSRWLockExclusive(&l->Lock);
+		AcquireSRWLockExclusive(&l->Lock);
+		if (ok == false) {
+			// The listeners keep the certificate before, where they have one; the status says why the run failed
+			Format(l->Error, sizeof(l->Error), "ACME: %s", why);
+		} else if (StrCmp(thumb, l->Thumbprint) != 0) {
+			// A new certificate: the listeners start again with it, and a session that runs keeps its own stream
+			NodeListenerDown(l);
+			if (NodeListenerUp(l, thumb))
+				InterlockedIncrement64(&l->AcmeIssued);
+			else
+				NodeLog(l->Node, "Listener %s not started: %s", c->Name, l->Error);
+		} else {
+			// The certificate stays, and the reason of a run before that failed goes
+			StrCpy(l->Error, sizeof(l->Error), "");
 		}
+		ReleaseSRWLockExclusive(&l->Lock);
+		if (ok == false)
+			NodeLog(l->Node, "Listener %s: ACME failed: %s", c->Name, why);
 
 		HANDLE waits[2] = {l->AcmeHalt, l->AcmeNow};
 		if (WaitForMultipleObjects(2, waits, FALSE, ok ? NODE_LISTENER_ACME_CHECK : NODE_LISTENER_ACME_RETRY) == WAIT_OBJECT_0)

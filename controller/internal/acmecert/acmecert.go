@@ -257,9 +257,13 @@ func issue(ctx context.Context, o Options, st Store, now time.Time) (state, erro
 	if err := authorize(ctx, c, order, o.HTTPPort); err != nil {
 		return state{}, err
 	}
-	if order, err = c.WaitOrder(ctx, order.URI); err != nil {
+	// The URL of the order comes with its creation: a service may leave it out of later answers (Pebble does), and
+	// the finalization waits on it while the service issues
+	uri := order.URI
+	if order, err = c.WaitOrder(ctx, uri); err != nil {
 		return state{}, fmt.Errorf("acme: the order: %w", err)
 	}
+	order.URI = uri
 
 	// A new key for each certificate: the key of the certificate before goes with it
 	name := fmt.Sprintf("Ranz ACME %s %d", o.Names[0], now.UnixNano())
@@ -282,7 +286,7 @@ func finalize(ctx context.Context, c *acme.Client, order *acme.Order, key crypto
 	if err != nil {
 		return state{}, fmt.Errorf("acme: the certificate request: %w", err)
 	}
-	chain, _, err := c.CreateOrderCert(ctx, order.FinalizeURL, csr, true)
+	chain, _, err := c.CreateCertFromOrder(ctx, order, csr, true)
 	if err != nil {
 		return state{}, fmt.Errorf("acme: the certificate: %w", err)
 	}
