@@ -53,9 +53,10 @@ $server = Start-Process -FilePath $pebble -PassThru -NoNewWindow -WorkingDirecto
 $code = 1
 $full = ''
 try {
+	# Only whether Pebble answers: curl.exe of Windows checks revocation, which the test CA of Pebble has none of
 	$deadline = (Get-Date).AddSeconds(30)
 	while ($true) {
-		$status = (& curl.exe -s -o NUL -w '%{http_code}' --cacert $roots $directory | Out-String).Trim()
+		$status = (& curl.exe -s -k -o NUL -w '%{http_code}' $directory | Out-String).Trim()
 		if ($status -eq '200') { break }
 		if ($server.HasExited) { throw "Pebble exited with $($server.ExitCode)" }
 		if ((Get-Date) -gt $deadline) { throw "Pebble does not answer on $directory" }
