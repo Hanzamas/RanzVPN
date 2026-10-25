@@ -46,8 +46,13 @@ on:
     - 'src/Core/Control.*'
     - 'src/Cedar/Node.c'
     - 'src/Cedar/NodeSession.c'
+    - 'src/Cedar/NodeOverlay.c'
+    - 'src/Cedar/NodeController.c'
+    - 'src/Cedar/NodeClient.c'
     - 'src/Cedar/ConnectionTunnel.c'
+    - 'src/vpntest/noisehub.c'
     - 'controller/internal/control/stream.go'
+    - 'controller/internal/control/pinned.go'
     - 'controller/internal/controller/controller.go'
 
 # A run that is not a pull request is the full set, and its name says so: Full CI: push on integration

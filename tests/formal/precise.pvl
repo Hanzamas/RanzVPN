@@ -1,0 +1,9 @@
+(* precise.pvl
+   A setting of ProVerif for the variants whose attacks the prover must rebuild as a trace (AUD-6, #409). Since the
+   responder takes the static key of any initiator, the first derivations that ProVerif finds of some attacks of
+   quic-cert, nobinding-cert and neither-none rest on an approximation of the actions of a process, and their traces
+   cannot be rebuilt: the answer is "cannot be proved" where the attack is real. With preciseActions the prover keeps the
+   actions of each process apart, finds the derivations of the real attacks and rebuilds them, at about four times the
+   time of the variant (under a minute). A variant takes this file first. *)
+
+set preciseActions = true.
