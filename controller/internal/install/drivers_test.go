@@ -97,6 +97,34 @@ func TestEveryDriverHasItsOwnNames(t *testing.T) {
 	}
 }
 
+// The XDP runtime gets a receive ring that takes a send() of UDP segmentation offload in one pass:
+// XdpRxRingSize is a power of two that XDP takes (up to 8192), above the 44 segments of a send() of
+// 64 KB in frames of 1514 bytes (#72, risk R1). SeLow has no setting.
+func TestXDPRuntimeGetsAReceiveRingForUSO(t *testing.T) {
+	var ring uint32
+	for _, s := range xdpDriver.settings {
+		if s.name == "XdpRxRingSize" {
+			ring = s.value
+		}
+	}
+	if ring < 64 || ring > 8192 || ring&(ring-1) != 0 {
+		t.Errorf("the XDP runtime is set up with XdpRxRingSize %d, want a power of two from 64 to 8192", ring)
+	}
+	if len(seLowDriver.settings) != 0 {
+		t.Errorf("the SeLow driver has the settings %v, want none", seLowDriver.settings)
+	}
+}
+
+// The settings of a driver go to the Parameters key of its service, the only key where the XDP
+// runtime reads XdpRxRingSize and watches for changes: a value on the key of the service itself
+// never reached XDP, and a send() with USO of 44 segments still blocked (#72, risk R1).
+func TestDriverSettingsGoToTheParametersKeyOfTheService(t *testing.T) {
+	want := `SYSTEM\CurrentControlSet\Services\xdp\Parameters`
+	if got := settingsKey(xdpDriver); got != want {
+		t.Errorf("the settings of %s go to HKLM\\%s, want HKLM\\%s", xdpDriver.label, got, want)
+	}
+}
+
 // The SeLow driver of this file is what the INF of its package installs: a component of the class
 // NetTrans (a protocol) with the id SeLow, and the service SeLow. The INF is the one that ranz
 // carries (internal/payload/selow), so a new package fails here until the table follows it.
