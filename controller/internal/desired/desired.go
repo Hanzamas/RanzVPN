@@ -39,6 +39,8 @@ func KeyOf(o *controlpb.Object) Key {
 		return Key{controlpb.Kind_KIND_PEER, k.Peer.GetName()}
 	case *controlpb.Object_Relay:
 		return Key{controlpb.Kind_KIND_RELAY, k.Relay.GetName()}
+	case *controlpb.Object_Rule:
+		return Key{controlpb.Kind_KIND_RULE, k.Rule.GetName()}
 	}
 	return Key{}
 }
@@ -47,8 +49,9 @@ func KeyOf(o *controlpb.Object) Key {
 // its addresses, its 1:1 NAT rules (nat.go) and the Mirrors that select it (mirror.go), the VRFs
 // it is a member of with their Networks, a Peer for every other node that shares one of those
 // VRFs (full mesh) or that a leak joins to it (leak.go), with that node's addresses and routes in
-// them and the routes that its VRFs leak into the node's, and a Relay for every such node that is
-// a relay (ADR-0015). in must be an intent that intent.Apply returned.
+// them and the routes that its VRFs leak into the node's, a Relay for every such node that is a
+// relay (ADR-0015), and the rules of the policy of its VRFs that can match a flow with one end at
+// the node (policy.go). in must be an intent that intent.Apply returned.
 func Compile(in intent.Intent) (map[string]State, error) {
 	vrfs := map[string]*controlpb.Vrf{}
 	for name, v := range in.VRFs {
@@ -56,7 +59,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		if err != nil {
 			return nil, fmt.Errorf("VRF %q: %w", name, err)
 		}
-		vrfs[name] = &controlpb.Vrf{Name: name, Id: v.ID, Ula: prefix(ula), Mtu: v.MTU, RateLimit: v.RateLimit}
+		vrfs[name] = &controlpb.Vrf{Name: name, Id: v.ID, Ula: prefix(ula), Mtu: v.MTU, RateLimit: v.RateLimit, Policy: vrfPolicy(v)}
 		// The zone of overlay DNS (dns.go; SDN-11)
 		vrfs[name].Dns = zone(in, name)
 	}
@@ -87,6 +90,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		}
 		keys[name] = k
 	}
+	// The rules of the policy of the VRFs that each node enforces (policy.go; SDN-8)
+	rules := nodeRules(in, vrfs)
 	nat := natRules(in, vrfs)
 	leaked := leakRoutes(in, vrfs)
 	responders := in.Responders()
@@ -127,7 +132,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 				continue
 			}
 			slices.Sort(shared)
-			peer := &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared, Addresses: addresses(in, other, vrfs, sharedVRFs)}
+			peer := &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared, Addresses: addresses(in, other, vrfs, sharedVRFs), Tags: slices.Clone(o.Tags)}
 			peer.Routes = peerRoutes(nat[other], shared)
 			peer.Routes = withLeaks(peer.Routes, leaked.routes[name][other])
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})
@@ -140,6 +145,9 @@ func Compile(in intent.Intent) (map[string]State, error) {
 				relay := &controlpb.Relay{Name: other, PublicKey: keys[other], Address: ap.Addr().AsSlice(), Port: uint32(ap.Port())}
 				s.add(&controlpb.Object{Kind: &controlpb.Object_Relay{Relay: relay}})
 			}
+		}
+		for _, r := range rules[name] {
+			s.add(&controlpb.Object{Kind: &controlpb.Object_Rule{Rule: r}})
 		}
 		out[name] = s
 	}

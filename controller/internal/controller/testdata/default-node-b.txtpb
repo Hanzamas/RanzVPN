@@ -1,5 +1,6 @@
 # Generation 1 of node-b after apply-default.json on a controller after its first start: VRF
-# default with the second address of its automatic pool, and node-a as its peer at the first.
+# default, with overlay DNS on, with the second address of its automatic pool, node-a as its peer
+# at the first, and the starter rule, which lets every flow inside VRF default through (SDN-8).
 update: {
   generation: 1
   set: {
@@ -24,6 +25,7 @@ update: {
         length: 48
       }
       mtu: 1280
+      policy: {}
       dns: {
         suffix: "default.ranz.internal"
       }
@@ -53,6 +55,14 @@ update: {
           length: 10
         }
       }
+    }
+  }
+  set: {
+    rule: {
+      name: "default-allow-all"
+      vrf_id: 1
+      priority: 1000
+      action: RULE_ACTION_ALLOW
     }
   }
 }

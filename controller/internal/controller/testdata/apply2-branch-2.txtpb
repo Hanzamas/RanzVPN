@@ -32,6 +32,7 @@ update: {
         length: 48
       }
       mtu: 1400
+      policy: {}
     }
   }
   set: {
@@ -81,6 +82,7 @@ update: {
           length: 64
         }
       }
+      tags: "branch"
     }
   }
 }

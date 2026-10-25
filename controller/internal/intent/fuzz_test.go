@@ -42,6 +42,7 @@ func FuzzParseDocument(f *testing.F) {
 	f.Add([]byte(docYAML))
 	f.Add([]byte(ipamJSON))
 	f.Add([]byte(natJSON))
+	f.Add([]byte(policyJSON))
 	f.Add([]byte(dnsJSON))
 	f.Add([]byte(`{"resources": [{"kind": "Controller", "name": "c1", "spec": {}}]}`))
 
