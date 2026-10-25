@@ -32,5 +32,10 @@ void NodeClientStop(NODE *n);
 struct CONTROL_LEASES *NodeDhcpStart(NODE *n);
 void NodeDhcpStop(NODE *n);
 void NodeDhcpApplied(NODE *n, const struct CONTROL_STATE *st);
+struct CONTROL_CAPS;
+struct CONTROL_DEVICES *NodeWireGuardStart(NODE *n, const NODE_OVERLAY_CONFIG *cfg);
+void NodeWireGuardStop(NODE *n);
+void NodeWireGuardApplied(NODE *n, const struct CONTROL_STATE *st);
+void NodeWireGuardCaps(void *param, struct CONTROL_CAPS *caps);
 
 #endif // NODE_INTERNAL_H

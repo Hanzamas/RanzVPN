@@ -13,4 +13,9 @@
 void ControlCopyDhcps(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 void ControlLeasesResend(CONTROL_LEASES *l);
 
+// ControlDevice.c
+void ControlCopyDevices(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
+void ControlFreeStateDevices(CONTROL_STATE *st);
+void ControlDevicesResend(CONTROL_DEVICES *d);
+
 #endif // CORE_CONTROL_INTERNAL_H

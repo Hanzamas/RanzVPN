@@ -40,6 +40,11 @@
 #define CONTROL_RETRY          1000                          // ms between two attempts to open the stream
 #define CONTROL_MAX_MIRRORS    16                            // The Mirrors of a node (NodeConfig.mirrors of control.options)
 
+// The WireGuard Devices (SDN-80, #375)
+#define CONTROL_MAX_DEVICES      64   // The Devices of a gateway (Telemetry.devices of control.options)
+#define CONTROL_DEVICE_ADDRESSES 2    // The addresses of a Device: IPv4 and IPv6 (Device.addresses of control.options)
+#define CONTROL_DEVICE_REPORT    5000 // ms between two reports of the counters of the Devices of a gateway
+
 // A Mirror that the node applies (Mirror of the control protocol; SDN-23, #199): the node copies the packets of the
 // overlay that match it to the sensor, in VXLAN
 typedef struct CONTROL_MIRROR {
@@ -180,6 +185,40 @@ typedef struct CONTROL_LEASE {
 // The leases that a client reports to the controller (CONTROL_CONFIG.Leases), ControlDhcp.c
 typedef struct CONTROL_LEASES CONTROL_LEASES;
 
+// A WireGuard Device of a VRF of the node (Device of the control protocol; SDN-80, #375): a phone, a laptop or a router
+// that joins one Network over standard WireGuard through its gateway node. Its addresses and its tags identify it to the
+// rules; a packet to one of its addresses goes to its gateway, and the gateway delivers it to its host, where its
+// WireGuard interface takes it. HasKey: the state is the one of its gateway, which terminates it with Key.
+typedef struct CONTROL_DEVICE {
+	// Its name, and the VRF of its Network
+	char Name[CONTROL_NAME_SIZE];
+	UINT VrfId;
+	// Its addresses in its Network: IPv4, then IPv6, each with the length of a host
+	UINT NumAddresses;
+	CONTROL_ADDRESS Addresses[CONTROL_DEVICE_ADDRESSES];
+	// Its tags, sorted, which identify it to the rules
+	UINT NumTags;
+	char Tags[CONTROL_MAX_TAGS][CONTROL_NAME_SIZE];
+	// The node that terminates it
+	char Gateway[CONTROL_NAME_SIZE];
+	// The node is its gateway, and Key is its WireGuard public key
+	bool HasKey;
+	UCHAR Key[NOISE_KEY_SIZE];
+} CONTROL_DEVICE;
+
+// The WireGuard end of one Device at its gateway, as the gateway reports it (DeviceCounters of the control protocol):
+// its last handshake in Unix time in ms (0 before the first), the bytes that the gateway sent it and the bytes that the
+// gateway received from it
+typedef struct CONTROL_DEVICE_COUNTERS {
+	char Name[CONTROL_NAME_SIZE];
+	UINT64 LastHandshake;
+	UINT64 TxBytes;
+	UINT64 RxBytes;
+} CONTROL_DEVICE_COUNTERS;
+
+// The counters of the Devices that a client reports to the controller (CONTROL_CONFIG.Devices), ControlDevice.c
+typedef struct CONTROL_DEVICES CONTROL_DEVICES;
+
 // The desired state that the client applied, as its owner takes it (CONTROL_STATE_PROC). The
 // Networks and Relays of the state stay in the client until a module of the node needs them: the
 // DHCP responders of the Networks are the first (SDN-43, #236).
@@ -203,6 +242,12 @@ typedef struct CONTROL_STATE {
 	CONTROL_MIRROR Mirrors[CONTROL_MAX_MIRRORS];      // ... in name order
 	UINT NumDhcps;                                    // The DHCP responders that it runs (SDN-43, #236)
 	CONTROL_DHCP Dhcps[CONTROL_MAX_DHCPS];            // ... in Network name order
+
+	// The UDP port of its WireGuard interface, 0 when it is the gateway of no Device, and the WireGuard Devices of its
+	// VRFs in name order (SDN-80, #375)
+	UINT WireGuardPort;
+	UINT NumDevices;
+	CONTROL_DEVICE *Devices;
 } CONTROL_STATE;
 
 // Takes each state that the client applied, before the client acknowledges its Generation. It runs
@@ -224,6 +269,10 @@ typedef struct CONTROL_CAPS {
 	bool SeLow;
 	// The XDP for Windows runtime is installed and works
 	bool Xdp;
+	// wireguard.dll of WireGuardNT loads, so the node can be the gateway of WireGuard Devices (SDN-80, #375) ...
+	bool WireGuard;
+	// ... and the public key of its WireGuard interface
+	UCHAR WireGuardKey[NOISE_KEY_SIZE];
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node
@@ -245,6 +294,10 @@ typedef struct CONTROL_CONFIG {
 	CONTROL_CAPS_PROC *CapsProc;
 	// The first parameter of CapsProc
 	void *CapsParam;
+
+	// The counters of the WireGuard Devices that the client reports, NULL for none: the owner's, which must outlive the
+	// client (SDN-80, #375)
+	CONTROL_DEVICES *Devices;
 } CONTROL_CONFIG;
 
 // How a client stands (ControlGetStatus)
@@ -277,5 +330,15 @@ CONTROL_LEASES *ControlNewLeases();
 void ControlFreeLeases(CONTROL_LEASES *l);
 bool ControlSetLeases(CONTROL_LEASES *l, const char *network, const CONTROL_LEASE *leases, UINT num);
 bool ControlWriteLeases(CONTROL_LEASES *l, TRANSPORT_STREAM *s);
+
+// The counters of the WireGuard Devices of a gateway (SDN-80, #375), ControlDevice.c. NewDevices makes the report that a
+// client sends (CONTROL_CONFIG.Devices), FreeDevices frees it once no client uses it. SetDevices puts the counters of num
+// Devices, CONTROL_MAX_DEVICES at most, in place of the ones before, and the client sends them in one Telemetry message
+// after each Hello and whenever they changed, at most every CONTROL_DEVICE_REPORT ms. WriteDevices writes that message
+// when it is due, as the client does on its stream.
+CONTROL_DEVICES *ControlNewDevices();
+void ControlFreeDevices(CONTROL_DEVICES *d);
+void ControlSetDevices(CONTROL_DEVICES *d, const CONTROL_DEVICE_COUNTERS *counters, UINT num);
+bool ControlWriteDevices(CONTROL_DEVICES *d, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H
