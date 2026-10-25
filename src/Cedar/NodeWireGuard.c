@@ -17,8 +17,9 @@
 //   model on, and the addresses of the Devices are routes through the WireGuard interface. A packet of a Device to an
 //   overlay host leaves the host through the adapter of its VRF, where the overlay takes it, judges it by the policy of
 //   the VRF as a packet of the Device (NodePolicy.c) and sends it to the peer of its destination; a packet of a peer to a
-//   Device goes to the host of its gateway, which forwards it to the WireGuard interface. A state without a Device whose
-//   gateway the node is takes the interface away, with its routes.
+//   Device goes to the host of its gateway, which forwards it to the WireGuard interface. Windows does not forward between
+//   two Devices on the WireGuard interface itself, which the policy would not see (NodeWireGuardFilter.c). A state without
+//   a Device whose gateway the node is takes the interface away, with its routes.
 // - The counters. A thread reads the last handshake and the traffic of each Device from the interface and hands them to
 //   the control stream (ControlSetDevices), which reports them to the controller.
 
@@ -142,6 +143,9 @@ struct NODE_WIREGUARD {
 	// The routes that the node installed through it: the addresses of the Devices
 	UINT NumRoutes;
 	NODE_PREFIX *Routes;
+	// The filter engine whose filters block the forwarding between two Devices on it (NodeWireGuardFilter.c), NULL for
+	// none
+	HANDLE Isolation;
 	// The thread of the counters, and its halt event
 	HANDLE Thread;
 	HANDLE Halt;
@@ -401,6 +405,8 @@ static void NodeWireGuardDown(NODE_WIREGUARD *wg) {
 		wg->Adapter = NULL;
 		NodeLog(wg->Node, "WireGuard: the interface went down: the node is the gateway of no Device");
 	}
+	NodeWireGuardRelease(wg->Isolation);
+	wg->Isolation = NULL;
 
 	Free(wg->Devices);
 	wg->Devices = NULL;
@@ -524,6 +530,10 @@ void NodeWireGuardApplied(NODE *n, const CONTROL_STATE *st) {
 						ok = NodeWireGuardForward(n, &luid, "the adapter of the VRF of a Device") && ok;
 				}
 				ok = NodeWireGuardSetRoutes(wg) && ok;
+				// ... but not between two Devices on the WireGuard interface itself, which the policy would not see
+				if (wg->Isolation == NULL)
+					wg->Isolation = NodeWireGuardIsolate(n, wg->Index);
+				ok = (wg->Isolation != NULL) && ok;
 			}
 
 			NodeLog(n, "WireGuard: generation %I64u: %u Devices on UDP port %u%s", st->Generation, wg->NumDevices, wg->Port,
@@ -680,6 +690,7 @@ void NodeWireGuardGetStatus(NODE *n, NODE_WIREGUARD_STATUS *st) {
 		st->InterfaceLuid = wg->Luid.Value;
 		st->NumDevices = wg->NumDevices;
 		st->NumRoutes = wg->NumRoutes;
+		st->Isolated = (wg->Isolation != NULL);
 	}
 	Unlock(wg->Lock);
 }

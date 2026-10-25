@@ -3,11 +3,12 @@
 // (SDN-80, #375; .github/scripts/device-tracer.ps1)
 //
 // Two nodes of the new core, gw and host, with the static keys of sdntrace.c, open their control streams to a running ranz
-// controller (Core/Control.h, through NodeOverlayStart) whose Intent holds a Node resource with each key and a WireGuard
-// Device whose gateway is gw. Their Noise session runs on the in-process loopback transport.
+// controller (Core/Control.h, through NodeOverlayStart) whose Intent holds a Node resource with each key and WireGuard
+// Devices whose gateway is gw. Their Noise session runs on the in-process loopback transport.
 // - gw is the gateway: its host is a real Wintun adapter for VRF default that forwards, as the adapter of a gateway does
 //   (NodeVrfAdapter.c), and its WireGuard interface (NodeWireGuard.c, on the wireguard.dll of WireGuardNT next to vpntest)
-//   terminates the Device on the UDP port of its state. Windows forwards between the two.
+//   terminates the Devices on the UDP port of its state. Windows forwards between the two, and not between two Devices on
+//   the WireGuard interface itself (NodeWireGuardFilter.c).
 // - host has a fake host, the overlay host of the tracer: it answers an ICMP echo request to its address and echoes the
 //   bytes of a TCP connection to any of its ports, keeping no state (DeviceTraceTcp).
 // A stock WireGuard client outside the process (ranz-wgpeer, controller/cmd/ranz-wgpeer) reaches host through gw: its
@@ -502,14 +503,14 @@ static bool DeviceTraceWaitAdapter(NODE_VRF_ADAPTERS *set, UINT addr, NODE_VRF_A
 	return held;
 }
 
-// Whether the WireGuard interface of gw is up with one Device and the routes of its addresses, within DEVICETRACE_BOUND:
-// its status into wg
+// Whether the WireGuard interface of gw is up with the Devices of the intent, the routes of their addresses and the filters
+// that keep them apart, within DEVICETRACE_BOUND: its status into wg
 static bool DeviceTraceWaitWireGuard(NODE *gw, NODE_WIREGUARD_STATUS *wg)
 {
 	for (UINT64 end = Tick64() + DEVICETRACE_BOUND;Tick64() < end;SleepThread(DEVICETRACE_POLL))
 	{
 		NodeWireGuardGetStatus(gw, wg);
-		if (wg->Up && wg->NumDevices == 1 && wg->Port != 0 && wg->NumRoutes != 0)
+		if (wg->Up && wg->NumDevices != 0 && wg->Port != 0 && wg->NumRoutes != 0 && wg->Isolated)
 		{
 			return true;
 		}
@@ -685,8 +686,8 @@ void devicetrace_test(UINT num, char **arg)
 
 		DeviceTraceCheck(ctx, NodeWireGuardAvailable(&error), "wireguard.dll of WireGuardNT loads next to vpntest", "error %u", error);
 		bool up = DeviceTraceWaitWireGuard(nodes[DEVICETRACE_GATEWAY].Node, &wg);
-		DeviceTraceCheck(ctx, up, "the WireGuard interface of gw is up with the Device of the intent and the routes of its addresses", "up %u, %u Devices, port %u, %u routes within %u ms",
-			(UINT)wg.Up, wg.NumDevices, wg.Port, wg.NumRoutes, DEVICETRACE_BOUND);
+		DeviceTraceCheck(ctx, up, "the WireGuard interface of gw is up with the Devices of the intent, the routes of their addresses and the filters that keep them apart",
+			"up %u, %u Devices, port %u, %u routes, kept apart %u within %u ms", (UINT)wg.Up, wg.NumDevices, wg.Port, wg.NumRoutes, (UINT)wg.Isolated, DEVICETRACE_BOUND);
 
 		if (held && up)
 		{
@@ -695,7 +696,7 @@ void devicetrace_test(UINT num, char **arg)
 
 			// The script reads the addresses and the port from these lines
 			Print("DEVICETRACE NODE host ADDRESS %s HOST fake\n", b);
-			Print("DEVICETRACE NODE gw ADDRESS %s WIREGUARD PORT %u INTERFACE %u\n", a, wg.Port, wg.InterfaceIndex);
+			Print("DEVICETRACE NODE gw ADDRESS %s WIREGUARD PORT %u INTERFACE %u DEVICES %u\n", a, wg.Port, wg.InterfaceIndex, wg.NumDevices);
 			Print("DEVICETRACE READY\n");
 
 			HANDLE f = CreateFileA(ready_file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -716,7 +717,7 @@ void devicetrace_test(UINT num, char **arg)
 			Print("DEVICETRACE HOST ECHOES %d ACCEPTED %d ECHOED %d OTHER %d\n", (int)ReadAcquire(&host->Echoes), (int)ReadAcquire(&host->Accepted),
 				(int)ReadAcquire(&host->Echoed), (int)ReadAcquire(&host->Other));
 			Print("DEVICETRACE POLICY gw RULES %u DROPPED %I64u\n", policy.NumRules, policy.Dropped);
-			Print("DEVICETRACE WIREGUARD gw UP %u PORT %u DEVICES %u\n", (UINT)wg.Up, wg.Port, wg.NumDevices);
+			Print("DEVICETRACE WIREGUARD gw UP %u PORT %u DEVICES %u APART %u\n", (UINT)wg.Up, wg.Port, wg.NumDevices, (UINT)wg.Isolated);
 		}
 	}
 

@@ -8,14 +8,16 @@
 // Usage:
 //
 //	ranz-wgpeer -genkey FILE
-//	ranz-wgpeer -config FILE -key FILE [-ping ADDRESS] [-tcp ADDRESS:PORT] [-blocked] [-timeout DURATION]
+//	ranz-wgpeer -config FILE -key FILE [-ping ADDRESS] [-tcp ADDRESS:PORT] [-blocked] [-timeout DURATION] [-serve DURATION]
 //
 // The first form writes a new private key into FILE, in base64 as wg genkey writes it, and prints
 // its public key, the publicKey of the Device resource. The second brings the Device up and waits
 // for its handshake with the gateway, pings the IPv4 ADDRESS of an overlay host and opens a TCP
 // connection to ADDRESS:PORT, through which one line goes to the host and comes back. With
-// -blocked the ping must get no reply, because policy denies it, and -tcp is not used. Each step
-// prints one line that starts with WGPEER; the exit code is 0 only when every step passed.
+// -blocked the ping must get no reply, because policy denies it, and -tcp is not used. With -serve
+// the Device stays up that long after its steps, and its netstack answers the echo requests that
+// reach it, as another Device of a test pings it. Each step prints one line that starts with
+// WGPEER; the exit code is 0 only when every step passed.
 package main
 
 import (
@@ -59,13 +61,14 @@ func main() {
 	tcp := flag.String("tcp", "", "the address and the port of the overlay host to open a TCP connection to")
 	blocked := flag.Bool("blocked", false, "the ping must get no reply: policy denies it")
 	timeout := flag.Duration("timeout", 30*time.Second, "how long the handshake and each step may take")
+	serve := flag.Duration("serve", 0, "keep the Device up this long after its steps, answering what reaches it")
 	flag.Parse()
 
 	var err error
 	if *genkey != "" {
 		err = genKey(*genkey, os.Stdout)
 	} else {
-		err = run(*config, *keyFile, *ping, *tcp, *blocked, *timeout, os.Stdout)
+		err = run(*config, *keyFile, *ping, *tcp, *blocked, *timeout, *serve, os.Stdout)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ranz-wgpeer:", err)
@@ -196,7 +199,7 @@ func readKey(path string) ([]byte, error) {
 }
 
 // run brings the Device of the configuration up and runs the steps that the flags ask for.
-func run(configFile, keyFile, ping, tcp string, blocked bool, timeout time.Duration, out io.Writer) error {
+func run(configFile, keyFile, ping, tcp string, blocked bool, timeout, serve time.Duration, out io.Writer) error {
 	f, err := os.Open(configFile)
 	if err != nil {
 		return err
@@ -297,6 +300,11 @@ func run(configFile, keyFile, ping, tcp string, blocked bool, timeout time.Durat
 			return fmt.Errorf("the TCP connection to %s: %w", tcp, err)
 		}
 		fmt.Fprintf(out, "WGPEER TCP OK %s\n", tcp)
+	}
+
+	if serve > 0 {
+		fmt.Fprintf(out, "WGPEER SERVING %s\n", serve)
+		time.Sleep(serve)
 	}
 
 	tx, rx, err := counters(dev)

@@ -37,5 +37,7 @@ struct CONTROL_DEVICES *NodeWireGuardStart(NODE *n, const NODE_OVERLAY_CONFIG *c
 void NodeWireGuardStop(NODE *n);
 void NodeWireGuardApplied(NODE *n, const struct CONTROL_STATE *st);
 void NodeWireGuardCaps(void *param, struct CONTROL_CAPS *caps);
+HANDLE NodeWireGuardIsolate(NODE *n, UINT index);
+void NodeWireGuardRelease(HANDLE engine);
 
 #endif // NODE_INTERNAL_H

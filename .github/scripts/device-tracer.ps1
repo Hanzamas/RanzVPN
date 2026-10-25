@@ -15,6 +15,8 @@ $ErrorActionPreference = 'Stop'
 # - the gateway listens on UDP 51820, the default, and the client completes its handshake with it, pings host and opens a
 #   TCP connection to host, through which a line goes and comes back;
 # - ranz get devices shows the last handshake and the traffic of the Device that the gateway reported;
+# - a second Device of the same gateway, which stays up, gets no packet of the first: Windows does not forward between
+#   two Devices on the WireGuard interface, whose filter netsh wfp lists;
 # - a Policy rule that denies the Device blocks the same ping once the gateway acknowledged the rule, and the policy of
 #   the gateway counts the drops;
 # - with the rule gone and wireguard.port of the gateway set to another port, the gateway listens there and no longer on
@@ -39,6 +41,11 @@ $ready = Join-Path $work 'ready'
 $stop = Join-Path $work 'stop'
 $deviceKey = Join-Path $work 'phone.key'
 $deviceConfig = Join-Path $work 'phone.conf'
+# The second Device of the gateway, which stays up while phone tries to reach it
+$laptopKey = Join-Path $work 'laptop.key'
+$laptopConfig = Join-Path $work 'laptop.conf'
+$laptopOut = Join-Path $work 'laptop.out'
+$laptopErr = Join-Path $work 'laptop.err'
 
 # Test ports, never 443 and not the ones of sdn-tracer.ps1: the TLS port of the controller and its rqlited
 $tls = '127.0.0.1:39543'
@@ -115,15 +122,23 @@ function Wait-Listening([int] $port, [bool] $on) {
 	Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "UDP $($_.LocalAddress):$($_.LocalPort), process $($_.OwningProcess)" }
 }
 
-# The configuration of the Device as the controller renders it, saved for the client and checked against the gateway
-function Get-DeviceConfig([string] $wireguardKey, [int] $port) {
-	$text = (& $ranz -server $api -token-file $tokenFile get device-config phone) -join "`n"
-	if ($LASTEXITCODE -ne 0) { throw "ranz get device-config phone exited with code $LASTEXITCODE" }
+# The configuration of the Device name as the controller renders it, saved into file for the client and checked against the
+# gateway
+function Get-DeviceConfig([string] $name, [string] $file, [string] $wireguardKey, [int] $port) {
+	$text = (& $ranz -server $api -token-file $tokenFile get device-config $name) -join "`n"
+	if ($LASTEXITCODE -ne 0) { throw "ranz get device-config $name exited with code $LASTEXITCODE" }
 	Write-Host $text
 	foreach ($line in "PublicKey = $wireguardKey", "Endpoint = ${endpoint}:$port", 'PersistentKeepalive = 25') {
-		if ($text -notmatch "(?m)^$([regex]::Escape($line))$") { throw "the configuration of the Device has no line '$line'" }
+		if ($text -notmatch "(?m)^$([regex]::Escape($line))$") { throw "the configuration of Device $name has no line '$line'" }
 	}
-	Set-Content -LiteralPath $deviceConfig -Value $text -Encoding utf8NoBOM
+	Set-Content -LiteralPath $file -Value $text -Encoding utf8NoBOM
+}
+
+# A key pair of a Device, as a stock client makes one: its private key into file, its public key returned
+function New-DeviceKey([string] $file) {
+	$public = "$(& $wgpeer -genkey $file)".Trim()
+	if ($LASTEXITCODE -ne 0 -or $public -notmatch '^[A-Za-z0-9+/]{43}=$') { throw "ranz-wgpeer -genkey printed '$public' (exit code $LASTEXITCODE)" }
+	return $public
 }
 
 # One run of the client: its lines, which must hold each of want
@@ -139,6 +154,7 @@ function Invoke-Client([string[]] $argv, [string[]] $want) {
 
 # Stop the processes of the check that still run, and the rqlited of the controller
 function Stop-All {
+	if ($laptop -and -not $laptop.HasExited) { Stop-Process -Id $laptop.Id -Force -ErrorAction SilentlyContinue; $laptop.WaitForExit() }
 	if ($trace -and -not $trace.HasExited) { Stop-Process -Id $trace.Id -Force -ErrorAction SilentlyContinue; $trace.WaitForExit() }
 	if ($ctl -and -not $ctl.HasExited) { Stop-Process -Id $ctl.Id -Force -ErrorAction SilentlyContinue; $ctl.WaitForExit() }
 	Get-Process -Name 'rqlited' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -146,6 +162,7 @@ function Stop-All {
 
 $ctl = $null
 $trace = $null
+$laptop = $null
 try {
 	$ctl = Start-Process -FilePath $ranz -PassThru -NoNewWindow -RedirectStandardOutput $controllerOut -RedirectStandardError $controllerErr -ArgumentList @(
 		'controller', '-data', $data, '-listen', $tls, '-name', 'device-tracer', '-rqlited', $env:RQLITED, '-rqlite', "http://$rqliteHttp", '-rqlite-raft', $rqliteRaft)
@@ -165,18 +182,20 @@ try {
 	}
 	$status = Invoke-Ranz @('status')
 
-	# The Device: a key pair of its own, as a stock client makes one, and the Nodes of the tracer in VRF default of the
-	# first start, gw with its WireGuard end
-	$devicePublic = "$(& $wgpeer -genkey $deviceKey)".Trim()
-	if ($LASTEXITCODE -ne 0 -or $devicePublic -notmatch '^[A-Za-z0-9+/]{43}=$') { throw "ranz-wgpeer -genkey printed '$devicePublic' (exit code $LASTEXITCODE)" }
+	# The Devices, each with a key pair of its own, and the Nodes of the tracer in VRF default of the first start, gw with
+	# its WireGuard end
 	$gateway = @{ kind = 'Node'; name = 'gw'; spec = @{ publicKey = $gwKey; wireguard = @{ endpoint = $endpoint } } }
 	Invoke-Apply 'tracer' @(
 		$gateway,
 		@{ kind = 'Node'; name = 'host'; spec = @{ publicKey = $hostKey } },
-		@{ kind = 'Device'; name = 'phone'; spec = @{ network = 'default'; gateway = 'gw'; publicKey = $devicePublic; tags = @('phones') } })
-	$phone = (Invoke-Ranz @('get', 'resources')).resources | Where-Object { $_.kind -eq 'Device' -and $_.name -eq 'phone' }
-	Write-Host "Device phone: $($phone.spec | ConvertTo-Json -Compress)"
-	if ($phone.spec.address -notmatch '^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.') { throw 'the Device has no address of the pool of Network default' }
+		@{ kind = 'Device'; name = 'phone'; spec = @{ network = 'default'; gateway = 'gw'; publicKey = (New-DeviceKey $deviceKey); tags = @('phones') } },
+		@{ kind = 'Device'; name = 'laptop'; spec = @{ network = 'default'; gateway = 'gw'; publicKey = (New-DeviceKey $laptopKey); tags = @('laptops') } })
+	$devices = @((Invoke-Ranz @('get', 'resources')).resources | Where-Object { $_.kind -eq 'Device' })
+	foreach ($d in $devices) {
+		Write-Host "Device $($d.name): $($d.spec | ConvertTo-Json -Compress)"
+		if ($d.spec.address -notmatch '^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.') { throw "Device $($d.name) has no address of the pool of Network default" }
+	}
+	$laptopAddress = ($devices | Where-Object { $_.name -eq 'laptop' }).spec.address
 
 	# The nodes join; the gateway brings its WireGuard interface up for the Device
 	$trace = Start-Process -FilePath $vpntest -PassThru -NoNewWindow -RedirectStandardOutput $traceOut -RedirectStandardError $traceErr -ArgumentList @(
@@ -194,8 +213,8 @@ try {
 	$m = [regex]::Match($said, 'DEVICETRACE NODE host ADDRESS ([0-9.]+) HOST fake')
 	if (-not $m.Success) { throw 'vpntest devicetrace printed no address of host' }
 	$hostAddress = $m.Groups[1].Value
-	$m = [regex]::Match($said, 'DEVICETRACE NODE gw ADDRESS ([0-9.]+) WIREGUARD PORT ([0-9]+)')
-	if (-not $m.Success -or [int] $m.Groups[2].Value -ne $defaultPort) { throw "the WireGuard interface of gw is not on UDP port $defaultPort" }
+	$m = [regex]::Match($said, 'DEVICETRACE NODE gw ADDRESS ([0-9.]+) WIREGUARD PORT ([0-9]+) INTERFACE [0-9]+ DEVICES ([0-9]+)')
+	if (-not $m.Success -or [int] $m.Groups[2].Value -ne $defaultPort -or [int] $m.Groups[3].Value -ne 2) { throw "the WireGuard interface of gw is not on UDP port $defaultPort with the two Devices" }
 
 	# The Capability wireguard of the gateway, with the key of its WireGuard interface
 	$gw = Wait-Acknowledged 'gw' 0
@@ -206,8 +225,30 @@ try {
 
 	# The gateway listens on the default port, and the client reaches host through it
 	Wait-Listening $defaultPort $true
-	Get-DeviceConfig $wireguardKey $defaultPort
+	Get-DeviceConfig 'phone' $deviceConfig $wireguardKey $defaultPort
 	Invoke-Client @('-ping', $hostAddress, '-tcp', "${hostAddress}:$tcpPort", '-timeout', '30s') @('WGPEER HANDSHAKE OK', "WGPEER PING OK $hostAddress", "WGPEER TCP OK ${hostAddress}:$tcpPort")
+
+	# Two Devices of the gateway are kept apart: laptop stays up, and the echo requests of phone never reach it. The filter of
+	# the gateway is in the filters of the Windows Filtering Platform.
+	$filters = Join-Path $work 'wfp-filters.xml'
+	& netsh.exe wfp show filters file=$filters | Out-Null
+	if ($LASTEXITCODE -ne 0 -or -not (Select-String -LiteralPath $filters -SimpleMatch 'Ranz VPN: no forwarding between two WireGuard Devices of a gateway' -Quiet)) {
+		throw 'netsh wfp show filters lists no filter of the gateway that keeps two Devices apart'
+	}
+	Get-DeviceConfig 'laptop' $laptopConfig $wireguardKey $defaultPort
+	$laptop = Start-Process -FilePath $wgpeer -PassThru -NoNewWindow -RedirectStandardOutput $laptopOut -RedirectStandardError $laptopErr -ArgumentList @(
+		'-config', $laptopConfig, '-key', $laptopKey, '-serve', '300s')
+	$null = $laptop.Handle
+	$end = (Get-Date).AddSeconds(60)
+	while ((Read-Shared $laptopOut) -notmatch 'WGPEER SERVING') {
+		if ($laptop.HasExited) { throw "the client of laptop exited with code $($laptop.ExitCode):`n$(Read-Shared $laptopOut)$(Read-Shared $laptopErr)" }
+		if ((Get-Date) -ge $end) { throw 'the client of laptop did not complete its handshake within 60 s' }
+		Start-Sleep -Milliseconds 500
+	}
+	Write-Host (Read-Shared $laptopOut)
+	Invoke-Client @('-ping', $laptopAddress, '-blocked', '-timeout', '9s') @('WGPEER HANDSHAKE OK', "WGPEER PING BLOCKED $laptopAddress")
+	Stop-Process -Id $laptop.Id -Force
+	$laptop.WaitForExit()
 
 	# The gateway reports the last handshake and the traffic of the Device
 	$end = (Get-Date).AddSeconds(60)
@@ -233,7 +274,7 @@ try {
 	$gw = Wait-Acknowledged 'gw' $before
 	Wait-Listening $otherPort $true
 	Wait-Listening $defaultPort $false
-	Get-DeviceConfig $wireguardKey $otherPort
+	Get-DeviceConfig 'phone' $deviceConfig $wireguardKey $otherPort
 	Invoke-Client @('-ping', $hostAddress, '-tcp', "${hostAddress}:$tcpPort", '-timeout', '30s') @('WGPEER HANDSHAKE OK', "WGPEER PING OK $hostAddress", "WGPEER TCP OK ${hostAddress}:$tcpPort")
 
 	# The nodes stop, and the gateway takes its WireGuard interface away
@@ -247,6 +288,7 @@ try {
 	if (-not $m.Success -or [int] $m.Groups[1].Value -lt 2 -or [int] $m.Groups[2].Value -lt 2 -or [int] $m.Groups[3].Value -lt 2) { throw 'the fake host of host did not answer the two pings and the two TCP connections of the Device' }
 	$m = [regex]::Match($out, 'DEVICETRACE POLICY gw RULES [0-9]+ DROPPED ([0-9]+)')
 	if (-not $m.Success -or [int] $m.Groups[1].Value -lt 3) { throw 'the policy of gw did not drop the three echo requests of the denied Device' }
+	if ($out -notmatch "DEVICETRACE WIREGUARD gw UP 1 PORT $otherPort DEVICES 2 APART 1") { throw "the WireGuard interface of gw was not up on UDP port $otherPort with the two Devices kept apart until the stop" }
 	Wait-Listening $otherPort $false
 	Write-Host 'ok'
 } catch {
