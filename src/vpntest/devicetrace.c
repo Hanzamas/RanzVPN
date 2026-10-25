@@ -7,8 +7,8 @@
 // Devices whose gateway is gw. Their Noise session runs on the in-process loopback transport.
 // - gw is the gateway: its host is a real Wintun adapter for VRF default that forwards, as the adapter of a gateway does
 //   (NodeVrfAdapter.c), and its WireGuard interface (NodeWireGuard.c, on the wireguard.dll of WireGuardNT next to vpntest)
-//   terminates the Devices on the UDP port of its state. Windows forwards between the two, and not between two Devices on
-//   the WireGuard interface itself (NodeWireGuardFilter.c).
+//   terminates the Devices on the UDP port of its state. Windows forwards between the two, and between two Devices on the
+//   WireGuard interface itself only where the policy lets them meet (NodeWireGuardFilter.c).
 // - host has a fake host, the overlay host of the tracer: it answers an ICMP echo request to its address and echoes the
 //   bytes of a TCP connection to any of its ports, keeping no state (DeviceTraceTcp).
 // A stock WireGuard client outside the process (ranz-wgpeer, controller/cmd/ranz-wgpeer) reaches host through gw: its
@@ -696,7 +696,7 @@ void devicetrace_test(UINT num, char **arg)
 
 			// The script reads the addresses and the port from these lines
 			Print("DEVICETRACE NODE host ADDRESS %s HOST fake\n", b);
-			Print("DEVICETRACE NODE gw ADDRESS %s WIREGUARD PORT %u INTERFACE %u DEVICES %u\n", a, wg.Port, wg.InterfaceIndex, wg.NumDevices);
+			Print("DEVICETRACE NODE gw ADDRESS %s WIREGUARD PORT %u INTERFACE %u DEVICES %u PAIRS %u\n", a, wg.Port, wg.InterfaceIndex, wg.NumDevices, wg.NumPairs);
 			Print("DEVICETRACE READY\n");
 
 			HANDLE f = CreateFileA(ready_file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -717,7 +717,7 @@ void devicetrace_test(UINT num, char **arg)
 			Print("DEVICETRACE HOST ECHOES %d ACCEPTED %d ECHOED %d OTHER %d\n", (int)ReadAcquire(&host->Echoes), (int)ReadAcquire(&host->Accepted),
 				(int)ReadAcquire(&host->Echoed), (int)ReadAcquire(&host->Other));
 			Print("DEVICETRACE POLICY gw RULES %u DROPPED %I64u\n", policy.NumRules, policy.Dropped);
-			Print("DEVICETRACE WIREGUARD gw UP %u PORT %u DEVICES %u APART %u\n", (UINT)wg.Up, wg.Port, wg.NumDevices, (UINT)wg.Isolated);
+			Print("DEVICETRACE WIREGUARD gw UP %u PORT %u DEVICES %u APART %u PAIRS %u\n", (UINT)wg.Up, wg.Port, wg.NumDevices, (UINT)wg.Isolated, wg.NumPairs);
 		}
 	}
 

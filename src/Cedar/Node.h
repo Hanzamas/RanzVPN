@@ -598,8 +598,10 @@ struct NODE_WIREGUARD_STATUS {
 	// The Devices that the interface terminates, and the routes of their addresses through it
 	UINT NumDevices;
 	UINT NumRoutes;
-	// Windows does not forward between two Devices on the interface (NodeWireGuardFilter.c)
+	// Windows does not forward between two Devices on the interface (NodeWireGuardFilter.c) but for the pairs of Devices
+	// that the policy lets meet, NumPairs of them
 	bool Isolated;
+	UINT NumPairs;
 };
 
 // What NodeMirrorGetStatus reports: the copies of the Mirrors since the first Generation of the overlay that had one

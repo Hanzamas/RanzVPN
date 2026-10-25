@@ -59,7 +59,7 @@ func TestCompileDevices(t *testing.T) {
 // its tag and its addresses, and the rule between their tags, so that the policy of either gateway
 // judges a packet between them by the rule. A node that no tag of the rule names and that is the
 // gateway of neither Device does not get the rule. Two Devices of one gateway never reach the
-// overlay: the gateway keeps them apart (src/Cedar/NodeWireGuardFilter.c).
+// overlay: their gateway judges the pair by the same rules (src/Cedar/NodeWireGuardFilter.c).
 func TestDevicesOfTwoGatewaysMeetInThePolicy(t *testing.T) {
 	const gw2Key = "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk="
 	const phoneKey = "iDGGuAC0HVzwQpaV2ps8xPMo680YSm5IL6V4wQPwbHc="

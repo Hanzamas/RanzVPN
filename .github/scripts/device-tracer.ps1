@@ -15,10 +15,11 @@ $ErrorActionPreference = 'Stop'
 # - the gateway listens on UDP 51820, the default, and the client completes its handshake with it, pings host and opens a
 #   TCP connection to host, through which a line goes and comes back;
 # - ranz get devices shows the last handshake and the traffic of the Device that the gateway reported;
-# - a second Device of the same gateway, which stays up, gets no packet of the first: Windows does not forward between
-#   two Devices on the WireGuard interface, whose filter netsh wfp lists;
-# - a Policy rule that denies the Device blocks the same ping once the gateway acknowledged the rule, and the policy of
-#   the gateway counts the drops;
+# - a second Device of the same gateway, which stays up, answers the ping of the first while the starter rule of VRF
+#   default lets every packet between them through: the filters of the gateway that netsh wfp lists block the forwarding
+#   between two Devices on its WireGuard interface, and permit this pair;
+# - a Policy rule that denies the Device blocks the same ping to host once the gateway acknowledged the rule, and the
+#   policy of the gateway counts the drops; the ping of the second Device is blocked too;
 # - with the rule gone and wireguard.port of the gateway set to another port, the gateway listens there and no longer on
 #   51820, the configuration names the new port, and the client reaches host through it.
 # The output of the processes is shown when a check fails.
@@ -213,8 +214,10 @@ try {
 	$m = [regex]::Match($said, 'DEVICETRACE NODE host ADDRESS ([0-9.]+) HOST fake')
 	if (-not $m.Success) { throw 'vpntest devicetrace printed no address of host' }
 	$hostAddress = $m.Groups[1].Value
-	$m = [regex]::Match($said, 'DEVICETRACE NODE gw ADDRESS ([0-9.]+) WIREGUARD PORT ([0-9]+) INTERFACE [0-9]+ DEVICES ([0-9]+)')
-	if (-not $m.Success -or [int] $m.Groups[2].Value -ne $defaultPort -or [int] $m.Groups[3].Value -ne 2) { throw "the WireGuard interface of gw is not on UDP port $defaultPort with the two Devices" }
+	$m = [regex]::Match($said, 'DEVICETRACE NODE gw ADDRESS ([0-9.]+) WIREGUARD PORT ([0-9]+) INTERFACE [0-9]+ DEVICES ([0-9]+) PAIRS ([0-9]+)')
+	if (-not $m.Success -or [int] $m.Groups[2].Value -ne $defaultPort -or [int] $m.Groups[3].Value -ne 2 -or [int] $m.Groups[4].Value -ne 1) {
+		throw "the WireGuard interface of gw is not on UDP port $defaultPort with the two Devices, which the starter rule lets meet"
+	}
 
 	# The Capability wireguard of the gateway, with the key of its WireGuard interface
 	$gw = Wait-Acknowledged 'gw' 0
@@ -228,12 +231,14 @@ try {
 	Get-DeviceConfig 'phone' $deviceConfig $wireguardKey $defaultPort
 	Invoke-Client @('-ping', $hostAddress, '-tcp', "${hostAddress}:$tcpPort", '-timeout', '30s') @('WGPEER HANDSHAKE OK', "WGPEER PING OK $hostAddress", "WGPEER TCP OK ${hostAddress}:$tcpPort")
 
-	# Two Devices of the gateway are kept apart: laptop stays up, and the echo requests of phone never reach it. The filter of
-	# the gateway is in the filters of the Windows Filtering Platform.
+	# Two Devices of the gateway meet where the policy lets them: laptop stays up and answers the ping of phone, since the
+	# starter rule of VRF default lets every packet between them through. The filters of the gateway are among the filters
+	# of the Windows Filtering Platform: the block of the forwarding between two Devices, and the permits of this pair.
 	$filters = Join-Path $work 'wfp-filters.xml'
 	& netsh.exe wfp show filters file=$filters | Out-Null
-	if ($LASTEXITCODE -ne 0 -or -not (Select-String -LiteralPath $filters -SimpleMatch 'Ranz VPN: no forwarding between two WireGuard Devices of a gateway' -Quiet)) {
-		throw 'netsh wfp show filters lists no filter of the gateway that keeps two Devices apart'
+	if ($LASTEXITCODE -ne 0) { throw "netsh wfp show filters exited with code $LASTEXITCODE" }
+	foreach ($name in 'Ranz VPN: no forwarding between two WireGuard Devices of a gateway', 'Ranz VPN: two WireGuard Devices that the policy lets meet') {
+		if (-not (Select-String -LiteralPath $filters -SimpleMatch $name -Quiet)) { throw "netsh wfp show filters lists no filter '$name'" }
 	}
 	Get-DeviceConfig 'laptop' $laptopConfig $wireguardKey $defaultPort
 	$laptop = Start-Process -FilePath $wgpeer -PassThru -NoNewWindow -RedirectStandardOutput $laptopOut -RedirectStandardError $laptopErr -ArgumentList @(
@@ -246,9 +251,7 @@ try {
 		Start-Sleep -Milliseconds 500
 	}
 	Write-Host (Read-Shared $laptopOut)
-	Invoke-Client @('-ping', $laptopAddress, '-blocked', '-timeout', '9s') @('WGPEER HANDSHAKE OK', "WGPEER PING BLOCKED $laptopAddress")
-	Stop-Process -Id $laptop.Id -Force
-	$laptop.WaitForExit()
+	Invoke-Client @('-ping', $laptopAddress, '-timeout', '30s') @('WGPEER HANDSHAKE OK', "WGPEER PING OK $laptopAddress")
 
 	# The gateway reports the last handshake and the traffic of the Device
 	$end = (Get-Date).AddSeconds(60)
@@ -260,11 +263,15 @@ try {
 	}
 	Write-Host "API: Device phone: $($listed[0] | ConvertTo-Json -Compress)"
 
-	# A rule that denies the Device blocks the same ping once the gateway acknowledged it
+	# A rule that denies the Device blocks the same ping once the gateway acknowledged it: to host, in the overlay, and to
+	# laptop, on the gateway, which keeps the pair apart from then on
 	$before = $gw.generation
 	Invoke-Apply 'deny' @(@{ kind = 'Policy'; name = 'deny-phones'; spec = @{ vrf = 'default'; action = 'deny'; priority = 10; from = @{ tags = @('phones') }; protocol = 'icmp' } })
 	$gw = Wait-Acknowledged 'gw' $before
 	Invoke-Client @('-ping', $hostAddress, '-blocked', '-timeout', '9s') @('WGPEER HANDSHAKE OK', "WGPEER PING BLOCKED $hostAddress")
+	Invoke-Client @('-ping', $laptopAddress, '-blocked', '-timeout', '9s') @('WGPEER HANDSHAKE OK', "WGPEER PING BLOCKED $laptopAddress")
+	Stop-Process -Id $laptop.Id -Force
+	$laptop.WaitForExit()
 
 	# The rule goes, and the gateway moves to another port
 	$before = $gw.generation
@@ -288,7 +295,7 @@ try {
 	if (-not $m.Success -or [int] $m.Groups[1].Value -lt 2 -or [int] $m.Groups[2].Value -lt 2 -or [int] $m.Groups[3].Value -lt 2) { throw 'the fake host of host did not answer the two pings and the two TCP connections of the Device' }
 	$m = [regex]::Match($out, 'DEVICETRACE POLICY gw RULES [0-9]+ DROPPED ([0-9]+)')
 	if (-not $m.Success -or [int] $m.Groups[1].Value -lt 3) { throw 'the policy of gw did not drop the three echo requests of the denied Device' }
-	if ($out -notmatch "DEVICETRACE WIREGUARD gw UP 1 PORT $otherPort DEVICES 2 APART 1") { throw "the WireGuard interface of gw was not up on UDP port $otherPort with the two Devices kept apart until the stop" }
+	if ($out -notmatch "DEVICETRACE WIREGUARD gw UP 1 PORT $otherPort DEVICES 2 APART 1 PAIRS 1") { throw "the WireGuard interface of gw was not up on UDP port $otherPort with its filters and the two Devices, which the starter rule lets meet again, until the stop" }
 	Wait-Listening $otherPort $false
 	Write-Host 'ok'
 } catch {
