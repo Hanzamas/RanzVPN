@@ -1,8 +1,8 @@
 (* Variant tunnel-quic-cert: a further connection joins a tunnel over QUIC, as the code has it, against an attacker that
-   holds the key of the certificate of the server (AUD-5, #389). The binding is the tls-server-end-point, the same for every
-   connection to the certificate of bob (QuicCertBinding), so the finding F1 holds for a join as it does for a session: the
-   middlebox relays the join of alice to bob over a TLS session of its own. The static key still decides which Tunnel a
-   node joins. *)
+   holds the key of the certificate of the server (AUD-5, #389; AUD-6, #409). The binding is the tls-server-end-point,
+   the same for every connection to the certificate of bob (QuicCertBinding), so the finding F1 holds for a join as it
+   does for a session: the middlebox relays the join of alice to bob over a TLS session of its own. The static key still
+   decides which Tunnel a connection joins. *)
 
 process
   ( Setup()
@@ -10,6 +10,5 @@ process
   | !( TunnelOpen(bob, alice) )
   | !( TunnelOpen(bob, charlie) )
   | !( JoinClient(alice, bob, pin_on, bt_endpoint, plabel_session, lab_exp_session, suite_hfs) )
-  | !( JoinServer(bob, alice, bt_endpoint, plabel_session, lab_exp_session, suite_hfs, kc_on) )
-  | !( JoinServer(bob, charlie, bt_endpoint, plabel_session, lab_exp_session, suite_hfs, kc_on) )
+  | !( JoinServer(bob, bt_endpoint, plabel_session, lab_exp_session, suite_hfs, kc_on) )
   )

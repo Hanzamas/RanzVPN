@@ -1,26 +1,27 @@
 (* tunnel-queries.pvl
-   The queries of the tunnel models (AUD-5, #389), numbered by their (* @query id *) comments as the queries of the session
-   models are, and not conditional on a leak: a model has the compromise of its scenario or it has none. The id of every
-   Tunnel is given to the attacker, so a query holds without the secrecy of the id: what keeps another node out of a
-   Tunnel is the static key that the handshake authenticated, and what keeps a middlebox out is the binding of the
-   handshake to its outer session.
+   The queries of the tunnel models (AUD-5, #389; AUD-6, #409), numbered by their (* @query id *) comments as the queries
+   of the session models are, and not conditional on a leak: a model has the compromise of its scenario or it has none.
+   The id of every Tunnel is given to the attacker, so a query holds without the secrecy of the id: what keeps another
+   node out of a Tunnel is the static key that the handshake authenticated, and what keeps a middlebox out is the binding
+   of the handshake to its outer session. The server knows a joining connection by its static key, so the events of the
+   server name the key.
 *)
 
-(* A connection can join, so that no query below is true only because nothing happens *)
+(* A connection of alice can join, so that no query below is true only because nothing happens *)
 (* @query reach-join *)
-query t: bitstring, id: bitstring; event(ServerJoined(bob, alice, id, t)).
+query t: bitstring, id: bitstring; event(ServerJoined(bob, pk(skey(alice)), id, t)).
 
-(* A connection that joins the Tunnel of alice is a connection that alice made, in the outer session that the server is
-   in. A middlebox that terminates the outer session of alice and opens one to the server is the case that the binding
-   rules out. *)
+(* A connection with the static key of alice that joins a Tunnel is a connection that alice made, in the outer session
+   that the server is in. A middlebox that terminates the outer session of alice and opens one to the server is the case
+   that the binding rules out. *)
 (* @query join-auth *)
-query t: bitstring, id: bitstring; event(ServerJoined(bob, alice, id, t)) ==> event(ClientJoin(alice, bob, id, t)).
+query t: bitstring, id: bitstring; event(ServerJoined(bob, pk(skey(alice)), id, t)) ==> event(ClientJoin(alice, bob, id, t)).
 
-(* A node joins only a Tunnel that was made for its own static key, whatever ids it knows: alice does not join a Tunnel of
-   charlie, and charlie, whose keys the attacker holds, does not join a Tunnel of alice *)
+(* A connection joins only a Tunnel that was made for its own static key, whatever ids it knows: alice does not join a
+   Tunnel of charlie, and charlie, whose keys the attacker holds, does not join a Tunnel of alice *)
 (* @query join-identity *)
-query t: bitstring, id: bitstring, x: principal; event(ServerJoined(bob, x, id, t)) ==> event(TunnelOpened(bob, x, id)).
+query t: bitstring, id: bitstring, k: bitstring; event(ServerJoined(bob, k, id, t)) ==> event(TunnelOpened(bob, k, id)).
 
 (* No replay: each join that the server takes is of a Login that was sent once *)
 (* @query join-replay *)
-query t: bitstring, id: bitstring; inj-event(ServerJoined(bob, alice, id, t)) ==> inj-event(ClientJoin(alice, bob, id, t)).
+query t: bitstring, id: bitstring; inj-event(ServerJoined(bob, pk(skey(alice)), id, t)) ==> inj-event(ClientJoin(alice, bob, id, t)).
