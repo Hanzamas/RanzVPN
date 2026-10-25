@@ -1,0 +1,5 @@
+{
+  "resources": [
+    {"kind": "DnsRecord", "name": "blue-files", "spec": {"vrf": "blue", "name": "fileserver", "addresses": ["192.168.7.20", "fd00:7::20"]}}
+  ]
+}
