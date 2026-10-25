@@ -378,6 +378,9 @@ static void ListenerTestSteps(LISTENERTEST_CTX *ctx, char *cert)
 	wchar_t password_path[MAX_PATH];
 	char pfx_thumbprint[MAX_SIZE];
 
+	Zero(&info, sizeof(info));
+	StrCpy(pfx_thumbprint, sizeof(pfx_thumbprint), "");
+
 	// The certificate of the store, by its thumbprint
 	Print("[a Listener whose certificate is in the LocalMachine\\My store]\n");
 	ListenerTestListener(&l, "edge", CONTROL_CERT_KSP);
