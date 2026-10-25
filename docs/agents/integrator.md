@@ -231,7 +231,7 @@ The maintainer turns off the schedule: the local scheduled task or the cloud rou
 
 ## Discussion with the maintainer
 
-When the maintainer talks about a plan, a design or an idea, nothing is recorded until he says so. No ticket, no label, no ADR, no `CONTEXT.md` entry, no issue comment, no document. Show the draft in chat first. An idea that he approves for recording becomes a ticket labelled `needs-triage`, unless he says `ready-for-agent`. Only he can start the skills `/to-spec` and `/to-tickets`: ask him to type them.
+When the maintainer talks about a plan, a design or an idea, nothing is recorded until he says so. No ticket, no label, no ADR, no `CONTEXT.md` entry, no issue comment, no document. Show the draft in chat first. An idea that he approves for recording becomes a ticket labelled `needs-triage`, unless he says `ready-for-agent`. Only he can start the skills that write specs and tickets (`/to-spec` and `/to-tickets`): ask him to type them.
 
 A cloud tick has no discussion. It never writes a ticket. A question for the maintainer goes into the report.
 
