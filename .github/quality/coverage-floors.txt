@@ -41,6 +41,9 @@ go  controller                          49
 go  controller/cmd/ranz                 77
 go  controller/cmd/ranz-nodesim         0
 go  controller/cmd/ranz-noisepeer       0
+# ranz-wgpeer (SDN-80 #375), the stock WireGuard client of the WireGuard Device tracer of windows.yml: a test tool with no
+# tests of its own, which the tracer runs against a gateway Node
+go  controller/cmd/ranz-wgpeer          0
 go  controller/internal/activation      81
 go  controller/internal/api             28
 go  controller/internal/audit           85
