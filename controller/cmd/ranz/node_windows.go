@@ -20,11 +20,11 @@ import (
 const nodePipeBusy = 10 * time.Second
 
 // nodeMaxAnswer bounds the answer of the Node service: one JSON line (NODE_ADMIN_REPLY of
-// src/Cedar/Node.h).
-const nodeMaxAnswer = 4096
+// src/Cedar/Node.h, which the state of the Node needs; SDN-91, #396).
+const nodeMaxAnswer = 65536
 
 // errNodeNotRunning is the error of the admin pipe when no Node service serves it
-var errNodeNotRunning = errors.New("the Node service " + install.NodeServiceName + " does not run here (its admin pipe is not there): start it with Start-Service " + install.NodeServiceName)
+var errNodeNotRunning = fmt.Errorf("%w: it does not run here (its admin pipe is not there): start it with Start-Service %s", errNodeStopped, install.NodeServiceName)
 
 // errNodeAdmin is the error of the admin pipe for a caller without administrator rights
 var errNodeAdmin = errors.New("ranz node needs administrator rights: run it in a window that was opened as Administrator")
