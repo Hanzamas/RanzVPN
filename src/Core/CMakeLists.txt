@@ -162,6 +162,8 @@ add_custom_command(
 add_library(corecontrol STATIC
   Control.c
   Control.h
+  # The delay before the stream opens again, which grows while the attempts fail (SDN-90, #395)
+  ControlRetry.c
   ControlDhcp.c
   ControlDns.c
   ControlInternal.h

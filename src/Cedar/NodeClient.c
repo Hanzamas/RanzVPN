@@ -28,9 +28,10 @@
 // - The logged-in user drives the role through a named pipe that the interactive users may open and no one remote:
 //   one command a line, status, up or down, each answered with the status of the role as one JSON object.
 //
-// The role takes its states from NodeOverlayApply, as the vpntest harness gives them, until the node opens the control
-// stream of its overlay to a controller. In the ranzvpnserver service the role needs what ONE-3 (#312) installs: the
-// Wintun driver and wintun.dll next to ranz-node, which the service account may load and use.
+// The role takes its states from the control stream of the Controller settings of the node (NodeController.c; SDN-90,
+// #395), or without them from NodeOverlayApply, as the vpntest harness gives them. In the ranzvpnserver service the role
+// needs what ONE-3 (#312) installs: the Wintun driver and wintun.dll next to ranz-node, which the service account may
+// load and use.
 
 #include "Node.h"
 
@@ -896,8 +897,9 @@ UINT NodeClientGetAdapters(NODE *n, NODE_VRF_ADAPTER_STATUS *list, UINT max) {
 	return num;
 }
 
-// The overlay of the node with the adapters and the dialler of the role, without a control stream: its states come
-// from NodeOverlayApply until the node opens one to a controller
+// The overlay of the node with the adapters and the dialler of the role, and the control stream of the Controller settings
+// when the node has them (NodeController.c); without them its states come from NodeOverlayApply, as the vpntest harness
+// gives them
 static bool NodeClientOverlayStart(NODE_CLIENT *c) {
 	NODE_OVERLAY_CONFIG cfg;
 
@@ -914,6 +916,8 @@ static bool NodeClientOverlayStart(NODE_CLIENT *c) {
 	cfg.AdapterStop = NodeClientHalt;
 	cfg.State = NodeClientState;
 	cfg.Dialler = true;
+	// The control stream to the Controller of the Controller settings, when the node has them (NodeController.c; SDN-90, #395)
+	NodeControllerOverlay(c->Node, &cfg);
 
 	c->Overlay = NodeOverlayStart(c->Node, &cfg);
 
@@ -1009,7 +1013,7 @@ bool NodeClientStart(NODE *n) {
 	NodeClientWatch(c);
 	NodeClientPipeStart(c);
 
-	NodeLog(n, "Role client: adapters %S <VRF>, %u servers, the overlay without a control stream%s", c->Adapter, c->NumServers,
+	NodeLog(n, "Role client: adapters %S <VRF>, %u servers, the overlay of the node%s", c->Adapter, c->NumServers,
 	        c->Forwarding ? ", forwarding as a gateway or an exit" : "");
 
 	return true;
