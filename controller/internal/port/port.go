@@ -9,6 +9,10 @@
 // ALPN, the socket itself through WSADuplicateSocketW); the controller then serves it with
 // ServeConn instead of accepting it on a listener of its own. The front door is not built yet,
 // so today the controller listens itself.
+//
+// The TLS policy of each surface is fixed (SDN-45, #238): the control stream, the new protocol,
+// takes TLS 1.3 only; the web UI and the API take TLS 1.2 and 1.3. A client that offers
+// control.ALPN gets the TLS 1.3 configuration, so its handshake fails below TLS 1.3.
 package port
 
 import (
@@ -18,6 +22,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -29,8 +34,8 @@ const handshakeTimeout = 10 * time.Second
 
 // Server serves the controller's TLS port.
 type Server struct {
-	// TLS holds the certificate. The server asks for TLS 1.3 and offers the ALPN protocols of
-	// the owners it has.
+	// TLS holds the certificate. The server asks for TLS 1.3 on the control stream and TLS 1.2 or
+	// 1.3 on HTTP, and offers the ALPN protocols of the owners it has.
 	TLS *tls.Config
 	// Control takes over each connection that negotiated control.ALPN; when it is nil, such
 	// connections are refused.
@@ -55,13 +60,23 @@ type Server struct {
 func (s *Server) init() {
 	s.once.Do(func() {
 		s.cfg = s.TLS.Clone()
-		s.cfg.MinVersion = tls.VersionTLS13
+		// The web UI and the API take TLS 1.2 and 1.3 (SDN-45) ...
+		s.cfg.MinVersion = tls.VersionTLS12
 		s.cfg.NextProtos = nil
 		if s.Control != nil {
 			s.cfg.NextProtos = append(s.cfg.NextProtos, control.ALPN)
 		}
 		if s.HTTP != nil {
 			s.cfg.NextProtos = append(s.cfg.NextProtos, "h2", "http/1.1")
+		}
+		// ... and a client that offers the control stream TLS 1.3 only
+		strict := s.cfg.Clone()
+		strict.MinVersion = tls.VersionTLS13
+		s.cfg.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			if slices.Contains(hello.SupportedProtos, control.ALPN) {
+				return strict, nil
+			}
+			return nil, nil
 		}
 		s.log = s.Log
 		if s.log == nil {
