@@ -90,6 +90,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		}
 		keys[name] = k
 	}
+	// The tags of each node with the Groups of its owner (user.go; SDN-31)
+	tags := nodeTags(in)
 	// The rules of the policy of the VRFs that each node enforces (policy.go; SDN-8)
 	rules := nodeRules(in, vrfs)
 	nat := natRules(in, vrfs)
@@ -107,7 +109,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 				s.add(&controlpb.Object{Kind: &controlpb.Object_Network{Network: withDHCP(nw, responders, name)}})
 			}
 		}
-		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(n.Tags), Addresses: addresses(in, name, vrfs, member), RateLimit: n.RateLimit}
+		self := &controlpb.NodeConfig{Name: name, Tags: slices.Clone(tags[name]), Addresses: addresses(in, name, vrfs, member), RateLimit: n.RateLimit}
 		self.Nat = nat[name]
 		// The Mirrors that select the node (mirror.go; SDN-23)
 		ms, err := mirrors(in, name, vrfs)
@@ -132,7 +134,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 				continue
 			}
 			slices.Sort(shared)
-			peer := &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared, Addresses: addresses(in, other, vrfs, sharedVRFs), Tags: slices.Clone(o.Tags)}
+			peer := &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared, Addresses: addresses(in, other, vrfs, sharedVRFs), Tags: slices.Clone(tags[other])}
 			peer.Routes = peerRoutes(nat[other], shared)
 			peer.Routes = withLeaks(peer.Routes, leaked.routes[name][other])
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})

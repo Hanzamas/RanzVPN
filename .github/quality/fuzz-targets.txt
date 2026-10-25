@@ -54,6 +54,8 @@ src/Core  TransportTlsHelloName       fuzz_transport
 
 # The VXLAN module (SDN-62 #289): the datagrams of VTEPs
 src/Core  VxlanInput  fuzz_vxlan
+# Geneve in the VXLAN module (SDN-71 #347): the Geneve header of the datagrams of VTEPs of Geneve, with its options
+src/Core  VxlanParseGeneve  fuzz_geneve
 
 # The switch module (CORE-S4-1 #74): the frames that the members of a Network send
 src/Core  SwitchInput  fuzz_switch
@@ -123,6 +125,10 @@ controller/internal/controller  Controller.Import  exempt  takes a document that
 controller/internal/api         Client.Import      exempt  the API client of `ranz import`: it sends a parsed document to the controller and reads the controller's own answer
 # A protocol or a port of a Policy (SDN-8 #184), which a document gives as a number or a string
 controller/internal/intent  PolicyValue.UnmarshalJSON  FuzzParseDocument  via ParseDocument
+# The Users, the Groups and the owners of the Nodes (SDN-31 #225) come in the same documents, and FuzzUsers starts from one
+# that holds them; the stored form of the password hash of a User (internal/password) is read by Parse
+controller/internal/intent  ParseDocument  FuzzUsers
+controller/internal/password  Parse  FuzzParse
 
 # The export targets that an operator sets through the API: webhooks, OTLP endpoints and IPFIX collectors (SDN-16 #192)
 controller/internal/export  Target.Validate  FuzzValidate
