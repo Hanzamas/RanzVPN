@@ -544,7 +544,12 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	AcquireSRWLockExclusive(&c->Lock);
 	c->Status.Connected = false;
 	// How it ended (SDN-90, #395): the handshake failed, or the stream was open and ended with a Refuse, or without one
-	c->Status.LastEnd = (opened == false ? CONTROL_END_HANDSHAKE : c->Message->which_body == ranz_control_v1_ControlMessage_refuse_tag ? CONTROL_END_REFUSED : CONTROL_END_CLOSED);
+	if (opened == false)
+		c->Status.LastEnd = CONTROL_END_HANDSHAKE;
+	else if (c->Message->which_body == ranz_control_v1_ControlMessage_refuse_tag)
+		c->Status.LastEnd = CONTROL_END_REFUSED;
+	else
+		c->Status.LastEnd = CONTROL_END_CLOSED;
 	ReleaseSRWLockExclusive(&c->Lock);
 
 	TransportClose(s);

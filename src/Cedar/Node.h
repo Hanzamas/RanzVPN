@@ -349,7 +349,7 @@ struct NODE_OVERLAY_CONFIG {
 	UCHAR ControllerKey[PEER_KEY_SIZE];      // ... and its static key
 	NODE_CONTROL_END_PROC *ControlEnd;       // Takes the end of each stream of the control stream, NULL for none (SDN-90, #395) ...
 	void *ControlEndParam;                   // ... and its first parameter
-	TRANSPORT *Data;                      // The transport of the Noise sessions to the peers, which finds a peer by its node name
+	TRANSPORT *Data;                         // The transport of the Noise sessions to the peers, which finds a peer by its node name
 	PEER_KEY *Key;                           // The node's static key, which must outlive the overlay
 	NODE_ADAPTER_PROC *Adapter;              // Takes the packets for the host, NULL for none
 	void *AdapterParam;                      // ... and its second parameter, which AdapterStop and State take too
@@ -417,18 +417,18 @@ struct NODE_CLIENT_STATUS {
 
 // What NodeControllerGetStatus reports (NodeController.c; SDN-90, #395)
 struct NODE_CONTROLLER_STATUS {
-	bool Set;                                     // The node has Controller settings
-	char Address[TRANSPORT_ADDRESS_SIZE];         // The address of the Controller's TLS port ...
-	UCHAR Key[PEER_KEY_SIZE];                     // ... its static key ...
+	bool Set;                                      // The node has Controller settings
+	char Address[TRANSPORT_ADDRESS_SIZE];          // The address of the Controller's TLS port ...
+	UCHAR Key[PEER_KEY_SIZE];                      // ... its static key ...
 	char Fingerprint[NODE_CONTROLLER_FINGERPRINT]; // ... and the TLS fingerprint of its certificate, in lower case
-	bool Overlay;                                 // The node started the overlay for the control stream, without the client role
-	bool Connected;                               // The control stream is open
-	UINT64 Generation;                            // The Generation of the desired state that the overlay runs
-	UINT64 NumEnds;                               // Streams that ended or did not open
-	UINT LastEnd;                                 // How the last one ended (CONTROL_END_*)
-	UINT NextRetry;                               // ms before the next attempt after it
-	bool Mismatch;                                // The certificate of the last dial failed the fingerprint check
-	char PipeAcl[MAX_SIZE];                       // The DACL of the admin pipe as the system holds it, in SDDL; "" when it does not run
+	bool Overlay;                                  // The node started the overlay for the control stream, without the client role
+	bool Connected;                                // The control stream is open
+	UINT64 Generation;                             // The Generation of the desired state that the overlay runs
+	UINT64 NumEnds;                                // Streams that ended or did not open
+	UINT LastEnd;                                  // How the last one ended (CONTROL_END_*)
+	UINT NextRetry;                                // ms before the next attempt after it
+	bool Mismatch;                                 // The certificate of the last dial failed the fingerprint check
+	char PipeAcl[MAX_SIZE];                        // The DACL of the admin pipe as the system holds it, in SDDL; "" when it does not run
 };
 
 // One Wintun adapter of a VRF, as NodeVrfAdaptersGetStatus and NodeClientGetAdapters report it
