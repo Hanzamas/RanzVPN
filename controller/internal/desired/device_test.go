@@ -54,3 +54,37 @@ func TestCompileDevices(t *testing.T) {
 		t.Error("host, which neither tag names, gets the rule between the phones")
 	}
 }
+
+// Two Devices of two gateways meet in the overlay (SDN-80): each gateway gets the other Device, with
+// its tag and its addresses, and the rule between their tags, so that the policy of either gateway
+// judges a packet between them by the rule. A node that no tag of the rule names and that is the
+// gateway of neither Device does not get the rule. Two Devices of one gateway never reach the
+// overlay: the gateway keeps them apart (src/Cedar/NodeWireGuardFilter.c).
+func TestDevicesOfTwoGatewaysMeetInThePolicy(t *testing.T) {
+	const gw2Key = "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk="
+	const phoneKey = "iDGGuAC0HVzwQpaV2ps8xPMo680YSm5IL6V4wQPwbHc="
+	const laptopKey = "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8="
+	states := compile(t,
+		res(intent.KindVRF, "lab", `{"id": 7, "ula": "fd07:7:7::/48"}`),
+		res(intent.KindNetwork, "lab-net", `{"vrf": "lab", "ipv4Pool": "10.70.0.0/24", "ipv6Pool": "fd07:7:7:1::/64"}`),
+		res(intent.KindNode, "gw", `{"publicKey": "`+key1+`", "vrfs": ["lab"], "wireguard": {"endpoint": "gw.example.net"}}`),
+		res(intent.KindNode, "gw2", `{"publicKey": "`+gw2Key+`", "vrfs": ["lab"], "wireguard": {"endpoint": "gw2.example.net"}}`),
+		res(intent.KindNode, "host", `{"publicKey": "`+key2+`", "vrfs": ["lab"], "tags": ["servers"]}`),
+		res(intent.KindDevice, "phone", `{"network": "lab-net", "gateway": "gw", "publicKey": "`+phoneKey+`", "tags": ["phones"]}`),
+		res(intent.KindDevice, "laptop", `{"network": "lab-net", "gateway": "gw2", "publicKey": "`+laptopKey+`", "tags": ["laptops"]}`),
+		res(intent.KindPolicy, "phones-not-laptops", `{"vrf": "lab", "action": "deny", "from": {"tags": ["phones"]}, "to": {"tags": ["laptops"]}}`),
+	)
+	rule := Key{controlpb.Kind_KIND_RULE, "phones-not-laptops"}
+	for _, c := range []struct{ gateway, other, tag string }{{"gw", "laptop", "laptops"}, {"gw2", "phone", "phones"}} {
+		if r := states[c.gateway][rule].GetRule(); r.GetAction() != controlpb.RuleAction_RULE_ACTION_DENY {
+			t.Errorf("%s, the gateway of one end, has the rule %v, want the deny rule from the phones to the laptops", c.gateway, r)
+		}
+		d := states[c.gateway][Key{controlpb.Kind_KIND_DEVICE, c.other}].GetDevice()
+		if !slices.Equal(d.GetTags(), []string{c.tag}) || len(d.GetAddresses()) != 2 || len(d.GetPublicKey()) != 0 {
+			t.Errorf("%s has Device %s as %v, want it with its tag and its two addresses, and without its key", c.gateway, c.other, d)
+		}
+	}
+	if _, ok := states["host"][rule]; ok {
+		t.Error("host, which no tag of the rule names and which is the gateway of no Device, gets the rule")
+	}
+}
