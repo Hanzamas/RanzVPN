@@ -66,7 +66,7 @@ gh api "repos/Hanzamas/RanzVPN/actions/runs?head_sha=<sha>&per_page=100" --jq '[
 
 Read it so: a row whose status is not `completed` is not finished (it runs, it is queued, or it is `pending` behind an older run of the same workflow). A completed row whose conclusion is not `success` (or `skipped`) failed. The head is green when there are at least 3 rows and all of them are `completed` and `success`. This is rule 4 of the merge procedure.
 
-Why not the check runs: a new label or a new push starts new runs and cancels the old ones. The old check runs stay in the list as `cancelled`, so a list of check runs shows failures that are not failures. Matrix jobs that were cancelled before they expanded even keep a name like `install (${{ matrix.platform.ARCHITECTURE }})`. To find one job by its name, take the newest check run of that name (the highest id).
+Why not the check runs: a new label or a new push starts new runs. They cancel or replace the old ones. The old check runs stay in the list, often as `cancelled`, so a list of check runs shows failures that are not failures. Matrix jobs that were cancelled before they expanded even keep a name like `install (${{ matrix.platform.ARCHITECTURE }})`. To find one job by its name, take the newest check run of that name (the highest id).
 
 ### The jobs of a run
 
@@ -190,10 +190,10 @@ Look for other integrators. Each row that this prints is a tick comment of anoth
 gh api "repos/Hanzamas/RanzVPN/issues/<heartbeat>/comments?since=$(date -u -d '45 minutes ago' +%Y-%m-%dT%H:%M:%SZ)&per_page=100" --jq '.[] | select(.body | startswith("integrator:")) | select(.body | contains("\nended: ") | not) | select(.body | contains("\nrun: <your-run>\n") | not) | [.id, .updated_at, (.body | split("\n") | .[0:3] | join(" / "))] | @tsv'
 ```
 
-Post your comment. The file has the three first lines (`integrator: cloud`, `run: <place>-<UTC start time>`, `alive: <UTC time>`). Keep the comment id:
+Post your comment. Write it to `/tmp/tick.md` first. The file has the three first lines (`integrator: cloud`, `run: <place>-<UTC start time>`, `alive: <UTC time>`). Keep the comment id in a file, because shell variables do not survive:
 
 ```
-gh api --method POST repos/Hanzamas/RanzVPN/issues/<heartbeat>/comments -F body=@tick.md --jq .id
+gh api --method POST repos/Hanzamas/RanzVPN/issues/<heartbeat>/comments -F body=@/tmp/tick.md --jq .id
 ```
 
 Look again. Run the command above once more and add `| select(.id < <your-comment-id>)` after the last `select`. A row means that another run started first. Edit your comment, add `ended: lost the race` and stand down.
@@ -201,7 +201,7 @@ Look again. Run the command above once more and add `| select(.id < <your-commen
 Refresh at least every 30 minutes: write the file again with the new `alive:` time and the report lines, then:
 
 ```
-gh api --method PATCH repos/Hanzamas/RanzVPN/issues/comments/<comment-id> -F body=@tick.md
+gh api --method PATCH repos/Hanzamas/RanzVPN/issues/comments/<comment-id> -F body=@/tmp/tick.md
 ```
 
 On a PC with PowerShell, the time of 45 minutes ago is `(Get-Date).ToUniversalTime().AddMinutes(-45).ToString("yyyy-MM-ddTHH:mm:ssZ")`.
