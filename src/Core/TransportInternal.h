@@ -22,4 +22,15 @@ SOCKET TransportPathConnect(const TRANSPORT_PATH *path, const char *host, const 
 // does not have, or a local address that is not a numeric one.
 bool TransportPathUnderlay(const TRANSPORT_PATH *path, ULONG *ifindex, SOCKADDR_INET *local);
 
+// The ALPN protocol of a client of the TLS transport (TransportTlsAlpn.c; SDN-90, #395). AlpnOffer fills desc and buf with
+// the input of the first InitializeSecurityContext of a client that offers the protocol of cfg, the list of its
+// ClientHello in list (size bytes, TRANSPORT_TLS_ALPN_LIST at most): desc, or NULL when cfg names no protocol. AlpnSelected
+// tells whether the server of the session of ctx selected that protocol: always true when cfg names none.
+#define TRANSPORT_TLS_ALPN_LIST 64 // Bytes of the ALPN input of a ClientHello at most
+struct _SecBufferDesc;
+struct _SecBuffer;
+struct _SecHandle;
+struct _SecBufferDesc *TransportTlsAlpnOffer(const TRANSPORT_TLS_CONFIG *cfg, struct _SecBufferDesc *desc, struct _SecBuffer *buf, ULONG *list, UINT size);
+bool TransportTlsAlpnSelected(const TRANSPORT_TLS_CONFIG *cfg, struct _SecHandle *ctx);
+
 #endif // CORE_TRANSPORT_INTERNAL_H

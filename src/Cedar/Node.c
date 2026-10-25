@@ -465,6 +465,10 @@ bool NodeStart(NODE *n) {
 				NodeRolesToStr(roles, sizeof(roles), n->Roles);
 				NodeLog(n, "Node roles: %s", roles);
 
+				// The overlay with the control stream of the Controller settings, for every set of roles, and the admin pipe
+				// (NodeController.c; SDN-90, #395)
+				NodeControllerStart(n);
+
 				NodeBgpStart(n);
 
 				ret = true;
@@ -487,6 +491,8 @@ void NodeStop(NODE *n) {
 	if (n == NULL)
 		return;
 
+	// The admin pipe, the overlay and the control stream of the Controller settings (NodeController.c; SDN-90, #395)
+	NodeControllerStop(n);
 	NodeOverlayStop(n);
 
 	Lock(n->Lock);
