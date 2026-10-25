@@ -147,13 +147,16 @@ func TestNoticeHasTheSeLowLicence(t *testing.T) {
 }
 
 // The NOTICE names the version of each Payload that CI pins, as the fetch script of that Payload
-// pins it (ONE-3, #312), so a new pin fails here until the NOTICE follows it.
+// pins it (ONE-3, #312; the WireGuardNT SDK of SDN-80, #375), so a new pin fails here until the
+// NOTICE follows it. The sign_and_integrity job of windows.yml checks that the NOTICE holds the
+// licence of the archives of Wintun and WireGuardNT that it fetched, word for word.
 func TestNoticeNamesThePinnedPayloads(t *testing.T) {
 	pinned := regexp.MustCompile(`\$Version\s*=\s*'([0-9.]+)'`)
 	have := strings.Join(strings.Fields(notice), " ")
 	for _, c := range []struct{ script, phrase string }{
 		{"fetch-wintun.ps1", "Wintun release "},
 		{"fetch-xdp.ps1", "Microsoft.XDP-for-Windows.Runtime.x64 "},
+		{"fetch-wireguard.ps1", "WireGuardNT SDK "},
 	} {
 		b, err := os.ReadFile("../../../.github/scripts/" + c.script)
 		if err != nil {

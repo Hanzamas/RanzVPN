@@ -1,7 +1,7 @@
 // NodeWireGuard.c
 // The WireGuard Devices of a node (SDN-80, #375; spec #374): a phone, a laptop or a router that joins one Network over
 // standard WireGuard, without ranz.exe, through a gateway node. The gateway terminates WireGuard with WireGuardNT: the
-// wireguard.dll of the pinned SDK (THIRD_PARTY.TXT), which the node loads from the directory of its executable, where
+// wireguard.dll of the pinned SDK 0.10.1 (THIRD_PARTY.TXT), which the node loads from the directory of its executable, where
 // ranz install puts it, and calls only through the API of the wireguard.h of that SDK (its functions by
 // GetProcAddress), as the licence of the DLL asks. A node on which the DLL loads reports the Capability wireguard with
 // the public key of its WireGuard interface (NodeWireGuardCaps), and the controller gives the Devices of a Network only

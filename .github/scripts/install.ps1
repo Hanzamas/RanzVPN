@@ -650,7 +650,8 @@ try {
 	$installedWireGuard = Join-Path $installDir 'wireguard.dll'
 	if ((Get-Sha256 $installedWireGuard) -ne $WireGuardSha256) { throw "$installedWireGuard is not byte for byte the wireguard.dll that ranz.exe carries (SHA-256 $WireGuardSha256)" }
 	Assert-Signer $installedWireGuard 'WireGuard LLC'
-	Write-Host "$installedWireGuard is the wireguard.dll that ranz.exe carries, signed by WireGuard LLC"
+	if ($installedNotice -notmatch 'WireGuardNT') { throw "$noticeFile does not hold the licence of WireGuardNT" }
+	Write-Host "$installedWireGuard is the wireguard.dll that ranz.exe carries, signed by WireGuard LLC, and $noticeFile holds its licence too"
 
 	# The drivers of this architecture, and the Node that started after them reports them as its Capabilities: on x64
 	# SeLow and the XDP runtime, on arm64 neither

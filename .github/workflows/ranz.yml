@@ -108,6 +108,7 @@ on:
     - '.github/scripts/binary-hardening.ps1'
     - '.github/scripts/fetch-wintun.ps1'
     - '.github/scripts/fetch-xdp.ps1'
+    - '.github/scripts/fetch-wireguard.ps1'
     - 'src/bin/hamcore/legal.txt'
     - 'src/bin/hamcore/DriverPackages/**'
 

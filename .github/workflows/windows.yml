@@ -1273,6 +1273,17 @@ jobs:
       run: |
         .github/scripts/fetch-wireguard.ps1 -Arch x64 -DllDir "${{ github.workspace }}\build\wireguard-x64"
         .github/scripts/fetch-wireguard.ps1 -Arch arm64 -DllDir "${{ github.workspace }}\build\wireguard-arm64"
+    # The licence file of the WireGuardNT archive, word for word in the NOTICE that ranz.exe carries and
+    # ranz install writes beside the DLL, as for Wintun above
+    - name: The NOTICE holds the licence of the WireGuardNT archive
+      shell: pwsh
+      run: |
+        $words = { param($path) (Get-Content -Raw -LiteralPath $path) -split '\s+' | Where-Object { $_ } }
+        $licence = (& $words 'build\wireguard-x64\wireguard-LICENSE.txt') -join ' '
+        $notice = (& $words 'controller\cmd\ranz\NOTICE') -join ' '
+        if (-not $licence) { throw 'build\wireguard-x64\wireguard-LICENSE.txt holds no words' }
+        if (-not $notice.Contains($licence)) { throw 'the NOTICE does not hold the licence file of the WireGuardNT archive word for word' }
+        Write-Host 'the NOTICE holds the licence file of the WireGuardNT archive word for word'
     - name: Sign, self-integrity and symbol strip
       id: signing
       shell: pwsh
