@@ -20,7 +20,9 @@
 # With -Machine, in an elevated process:
 #   E6  makes a key in the machine key set, as the installer of a Node would, and lets a service that runs
 #       as a virtual account (the account type of the Node service, ADR-0039) open it and sign, make a
-#       key in the machine key set, and make a key in its own key set (what the Node service does)
+#       key in the machine key set, and make a key in its own key set (what the Node service does). The
+#       service is a small program of C# that the script builds with csc.exe of the .NET Framework 4,
+#       runs, and deletes; it says where the file of each key it made is and who may read it
 # With -ReadEk, in an elevated process:
 #   E7  reads the endorsement key of the TPM and the certificates of its manufacturer, and builds the chain
 #       of the certificate, as the Controller would have to
@@ -37,7 +39,7 @@
 #   -IncludeRsa         also RSA 2048, 3072 and 4096 (a TPM needs seconds to make an RSA key)
 #   -SkipTls            leave E5 out
 #   -NoTpm              leave every use of the TPM out and run the controls only
-#   -Machine            run E6 (elevated; it makes and deletes a service named RanzH4Probe)
+#   -Machine            run E6 (elevated; it builds, runs and deletes a service named RanzH4Probe)
 #   -ReadEk             run E7 (elevated)
 # TLS 1.3 needs PowerShell 7 on Windows 11 or Windows Server 2022 or later. Windows PowerShell 5.1 runs
 # E5 over TLS 1.2: the client signs the handshake once in both, so the cost of the TPM is the same.
@@ -521,83 +523,237 @@ function Get-KeyFileAcl([string] $UniqueName) {
 	}
 }
 
-# What a service that runs as a virtual account does with the machine key set. The service is a process of
-# PowerShell that the service control manager starts as NT SERVICE\RanzH4Probe; the manager waits 30 s for a
-# service control handler that never comes and then stops the process (error 1053), by which time the probe
-# has written its answer. The probe reads its job from a file and writes its answer to a file.
+# What a service that runs as a virtual account does with keys. PowerShell cannot be that service (the service
+# control manager starts a process and waits for it to answer, and a PowerShell script never does), so the probe
+# is a small service of C# that csc.exe of the .NET Framework 4 builds from this text. It reads job.txt next to it
+# (line 1: the provider; line 2: the name of a key in the machine key set that an administrator made), tries
+# three things, writes result.txt (one name=value line each) and stops itself:
+#   OpenMachineKeyAndSign    opens the key of the administrator and signs with it
+#   CreateMachineKeyAndSign  makes a key of its own in the machine key set
+#   CreateOwnKeyAndSign      makes a key in the key set of its own account, which is where the Node service
+#                            keeps its identity key (PeerKeyScope, src/Core/PeerSignal.c)
+# For a key that it made it also says where the file of the key is and who may read it.
 $probeSource = @'
-$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$log = Join-Path $dir 'probe.log'
-function Write-Step([string] $text) {
-	Add-Content -LiteralPath $log -Value ((Get-Date).ToString('o') + ' ' + $text)
-}
-Write-Step ('started as ' + [Security.Principal.WindowsIdentity]::GetCurrent().Name)
-try {
-	$job = Get-Content -Raw -LiteralPath (Join-Path $dir 'job.json') | ConvertFrom-Json
-	$r = [ordered]@{ Account = [Security.Principal.WindowsIdentity]::GetCurrent().Name; Provider = $job.Provider }
-	function Describe($record) {
-		$e = $record.Exception
-		return ('0x{0:X8} {1}: {2}' -f $e.HResult, $e.GetType().Name, $e.Message.Trim())
-	}
-	$provider = New-Object System.Security.Cryptography.CngProvider -ArgumentList $job.Provider
-	$digest = [byte[]] (1..32)
-	function Sign($key) {
-		$e = New-Object System.Security.Cryptography.ECDsaCng -ArgumentList $key
-		return $e.VerifyHash($digest, $e.SignHash($digest))
-	}
-	function Test-Create([bool] $machine) {
-		$p = New-Object System.Security.Cryptography.CngKeyCreationParameters
-		$p.Provider = $provider
-		$p.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
-		if ($machine) { $p.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey }
-		try {
-			$k = [System.Security.Cryptography.CngKey]::Create([System.Security.Cryptography.CngAlgorithm]::ECDsaP256, ('ranz-h4-svc-' + [guid]::NewGuid().ToString('N')), $p)
-			$ok = Sign $k
-			$k.Delete()
-			return 'ok, signature verified: ' + $ok
-		} catch {
-			return Describe $_
+using System;
+using System.IO;
+using System.Reflection;
+using System.Security.AccessControl;
+using System.Security.Cryptography;
+using System.Security.Principal;
+using System.ServiceProcess;
+using System.Text;
+using System.Threading;
+
+namespace RanzTpmProbe
+{
+	public sealed class Probe : ServiceBase
+	{
+		private string dir;
+		private CngProvider provider;
+		private readonly StringBuilder answer = new StringBuilder();
+		private readonly byte[] digest = new byte[32];
+
+		public static void Main()
+		{
+			ServiceBase.Run(new Probe());
+		}
+
+		public Probe()
+		{
+			ServiceName = "RanzH4Probe";
+			CanStop = true;
+			// The event log source of a service is made by an administrator; this account is none
+			AutoLog = false;
+		}
+
+		protected override void OnStart(string[] args)
+		{
+			dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+			// OnStart must return within the start timeout: the work runs on a thread of its own
+			Thread worker = new Thread(Work);
+			worker.IsBackground = true;
+			worker.Start();
+		}
+
+		private static string Describe(Exception e)
+		{
+			return "0x" + e.HResult.ToString("X8") + " " + e.GetType().Name + ": " + e.Message.Trim();
+		}
+
+		private void Say(string name, string value)
+		{
+			answer.AppendLine(name + "=" + value.Replace("\r", " ").Replace("\n", " "));
+		}
+
+		private string SignAndVerify(CngKey key)
+		{
+			using (ECDsaCng ecdsa = new ECDsaCng(key))
+			{
+				return "ok, signature verified: " + ecdsa.VerifyHash(digest, ecdsa.SignHash(digest));
+			}
+		}
+
+		// The file under root (at most depth folders down) that has the name, or null
+		private static string FindFile(string root, string name, int depth)
+		{
+			try
+			{
+				string[] found = Directory.GetFiles(root, name);
+				if (found.Length > 0) return found[0];
+				if (depth == 0) return null;
+				foreach (string sub in Directory.GetDirectories(root))
+				{
+					string hit = FindFile(sub, name, depth - 1);
+					if (hit != null) return hit;
+				}
+			}
+			catch (Exception)
+			{
+			}
+			return null;
+		}
+
+		// Says where the file of a key is and its owner and DACL: who may read the file is who may use the key
+		private void SayFile(string label, string uniqueName, bool machine)
+		{
+			string[] roots;
+			if (machine)
+			{
+				roots = new string[] { Environment.ExpandEnvironmentVariables("%ProgramData%\\Microsoft\\Crypto") };
+			}
+			else
+			{
+				roots = new string[] {
+					Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+					Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+					Environment.ExpandEnvironmentVariables("%SystemRoot%\\ServiceProfiles\\" + ServiceName)
+				};
+			}
+			string file = null;
+			foreach (string root in roots)
+			{
+				if (root.Length > 0 && file == null) file = FindFile(root, uniqueName, 8);
+			}
+			Say(label + "File", file == null ? "not found under " + string.Join("; ", roots) : file);
+			if (file != null)
+			{
+				try
+				{
+					Say(label + "FileSddl", new FileInfo(file).GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.Owner | AccessControlSections.Access));
+				}
+				catch (Exception e)
+				{
+					Say(label + "FileSddl", Describe(e));
+				}
+			}
+		}
+
+		// Makes a key of the provider, signs with it, says where its file is, and deletes it
+		private string TryCreate(bool machine, string label)
+		{
+			CngKeyCreationParameters p = new CngKeyCreationParameters();
+			p.Provider = provider;
+			p.ExportPolicy = CngExportPolicies.None;
+			if (machine) p.KeyCreationOptions = CngKeyCreationOptions.MachineKey;
+			try
+			{
+				using (CngKey key = CngKey.Create(CngAlgorithm.ECDsaP256, "ranz-h4-svc-" + Guid.NewGuid().ToString("N"), p))
+				{
+					string result = SignAndVerify(key);
+					SayFile(label, key.UniqueName, machine);
+					key.Delete();
+					return result;
+				}
+			}
+			catch (Exception e)
+			{
+				return Describe(e);
+			}
+		}
+
+		private void Work()
+		{
+			try
+			{
+				string[] job = File.ReadAllLines(Path.Combine(dir, "job.txt"));
+				provider = new CngProvider(job[0].Trim());
+				Say("Account", WindowsIdentity.GetCurrent().Name);
+				Say("Provider", provider.Provider);
+				try
+				{
+					using (CngKey key = CngKey.Open(job[1].Trim(), provider, CngKeyOpenOptions.MachineKey))
+					{
+						Say("OpenMachineKeyAndSign", SignAndVerify(key));
+					}
+				}
+				catch (Exception e)
+				{
+					Say("OpenMachineKeyAndSign", Describe(e));
+				}
+				Say("CreateMachineKeyAndSign", TryCreate(true, "MachineKey"));
+				Say("CreateOwnKeyAndSign", TryCreate(false, "OwnKey"));
+			}
+			catch (Exception e)
+			{
+				Say("Failed", Describe(e));
+			}
+			try
+			{
+				// Written whole under another name and renamed, so that a reader never sees half of it
+				string tmp = Path.Combine(dir, "result.tmp");
+				File.WriteAllText(tmp, answer.ToString(), Encoding.UTF8);
+				File.Move(tmp, Path.Combine(dir, "result.txt"));
+			}
+			catch (Exception)
+			{
+			}
+			Thread.Sleep(500);
+			try
+			{
+				Stop();
+			}
+			catch (Exception)
+			{
+				Environment.Exit(0);
+			}
 		}
 	}
-	# 1. Open the machine key that the administrator made, and sign with it
-	try {
-		$k = [System.Security.Cryptography.CngKey]::Open($job.MachineKey, $provider, [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey)
-		$r['OpenMachineKeyAndSign'] = 'ok, signature verified: ' + (Sign $k)
-		$k.Dispose()
-	} catch {
-		$r['OpenMachineKeyAndSign'] = Describe $_
-	}
-	Write-Step 'step 1 done'
-	# 2. Make a key in the machine key set, and 3. in its own key set, which is where the Node service keeps its key
-	$r['CreateMachineKeyAndSign'] = Test-Create $true
-	Write-Step 'step 2 done'
-	$r['CreateOwnKeyAndSign'] = Test-Create $false
-	Write-Step 'step 3 done'
-	$r | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $job.Out -Encoding UTF8
-	Write-Step 'answer written'
-} catch {
-	Write-Step ('failed: ' + $_.Exception.Message)
 }
 '@
 
-# One run of the probe: wait until the service is stopped, start it, and wait for its answer. The answer is the
-# probe's file; for a probe that gave none, what the service control manager and the probe's log say.
+# Builds the probe service from $probeSource in the folder Dir with csc.exe of the .NET Framework 4, which every
+# Windows of the script has and which Windows PowerShell 5.1 and PowerShell 7 call the same way. Returns the path
+# of probe.exe.
+function Build-Probe([string] $Dir) {
+	$csc = @("$env:SystemRoot\Microsoft.NET\Framework64\v4.0.30319\csc.exe", "$env:SystemRoot\Microsoft.NET\Framework\v4.0.30319\csc.exe") |
+		Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+	if (-not $csc) { throw 'csc.exe of the .NET Framework 4 was not found' }
+	$source = Join-Path $Dir 'probe.cs'
+	$exe = Join-Path $Dir 'probe.exe'
+	Set-Content -LiteralPath $source -Value $probeSource -Encoding UTF8
+	$output = & $csc /nologo /target:exe /optimize+ "/out:$exe" /reference:System.ServiceProcess.dll /reference:System.Core.dll $source | Out-String
+	if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $exe)) { throw ('csc.exe did not build the probe: ' + $output.Trim()) }
+	return $exe
+}
+
+# One run of the probe: wait until the service is stopped, start it, and wait for its answer, the lines of
+# result.txt as properties. For a probe that gave none: what the service control manager says.
 function Start-ProbeService([string] $Name, [string] $Dir) {
-	$out = Join-Path $Dir 'result.json'
-	$logFile = Join-Path $Dir 'probe.log'
+	$out = Join-Path $Dir 'result.txt'
 	for ($i = 0; $i -lt 60 -and (Get-Service -Name $Name).Status -ne 'Stopped'; $i++) { Start-Sleep -Seconds 1 }
-	Remove-Item -LiteralPath $out, $logFile -Force -ErrorAction SilentlyContinue
+	Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
 	$began = Get-Date
-	# sc.exe start waits for the 1053 that the probe never answers; the probe does not wait for it
-	[void] (Start-Process -FilePath sc.exe -ArgumentList @('start', $Name) -WindowStyle Hidden -PassThru)
+	$start = ((& sc.exe start $Name | Out-String) -replace '\s+', ' ').Trim()
 	for ($i = 0; $i -lt 60 -and -not (Test-Path -LiteralPath $out); $i++) { Start-Sleep -Seconds 1 }
-	$run = [ordered]@{}
 	if (Test-Path -LiteralPath $out) {
-		$run['Answer'] = Get-Content -Raw -LiteralPath $out | ConvertFrom-Json
-		return [pscustomobject]$run
+		$answer = [ordered]@{}
+		foreach ($line in @(Get-Content -LiteralPath $out)) {
+			$at = $line.IndexOf('=')
+			if ($at -gt 0) { $answer[$line.Substring(0, $at)] = $line.Substring($at + 1) }
+		}
+		return [pscustomobject]$answer
 	}
-	$run['Error'] = 'the service wrote no answer in 60 s'
-	if (Test-Path -LiteralPath $logFile) { $run['ProbeLog'] = @(Get-Content -LiteralPath $logFile) }
+	$run = [ordered]@{ Error = 'the service wrote no answer in 60 s'; ScStart = $start }
 	$run['ScQuery'] = ((& sc.exe query $Name | Out-String) -replace '\s+', ' ').Trim()
 	try {
 		$run['ScmEvents'] = @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $began } -ErrorAction Stop |
@@ -617,14 +773,13 @@ function Invoke-AsVirtualAccount([string] $Provider, [string] $MachineKey, $KeyF
 	$created = $false
 	try {
 		New-Item -ItemType Directory -Force -Path $dir | Out-Null
-		Set-Content -LiteralPath (Join-Path $dir 'probe.ps1') -Value $probeSource -Encoding UTF8
-		@{ Provider = $Provider; MachineKey = $MachineKey; Out = (Join-Path $dir 'result.json') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir 'job.json') -Encoding UTF8
-		# The paths have no space, so the command line needs no quotes
-		$ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-		$command = $ps + ' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + (Join-Path $dir 'probe.ps1')
-		& sc.exe create $name binPath= $command obj= "NT SERVICE\$name" start= demand | Out-Null
+		$exe = Build-Probe $dir
+		Set-Content -LiteralPath (Join-Path $dir 'job.txt') -Value @($Provider, $MachineKey) -Encoding UTF8
+		& sc.exe create $name binPath= $exe obj= "NT SERVICE\$name" start= demand | Out-Null
 		if ($LASTEXITCODE -ne 0) { throw ('sc.exe create exited with {0}' -f $LASTEXITCODE) }
 		$created = $true
+		# As the Node service has it: the service SID is the SID of the virtual account
+		& sc.exe sidtype $name unrestricted | Out-Null
 		$sid = [regex]::Match((& sc.exe showsid $name | Out-String), 'S-1-5-80-[0-9-]+').Value
 		if (-not $sid) { throw 'sc.exe showsid gave no service SID' }
 		& icacls.exe $dir /grant ('*{0}:(OI)(CI)M' -f $sid) | Out-Null
@@ -643,7 +798,12 @@ function Invoke-AsVirtualAccount([string] $Provider, [string] $MachineKey, $KeyF
 			& sc.exe stop $name | Out-Null
 			& sc.exe delete $name | Out-Null
 		}
-		Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+		# The process of the service may take a moment to let go of probe.exe
+		for ($i = 0; $i -lt 10; $i++) {
+			Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+			if (-not (Test-Path -LiteralPath $dir)) { break }
+			Start-Sleep -Seconds 1
+		}
 	}
 	return [pscustomobject]$result
 }
