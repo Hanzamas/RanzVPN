@@ -168,7 +168,7 @@ A local schedule that resumes work after a usage window (a scheduled task) and t
 
 ## Pace
 
-- **About 5 lanes at once.** Four lanes last a whole 5-hour window. Twelve lanes burn it in about an hour and finish nothing, and the cut-off wastes what they did.
+- **About 5 lanes at once.** Four lanes last a whole 5-hour window. Twelve lanes burn it in about an hour and finish nothing, and the cut-off wastes what they did. Only the maintainer can allow a burst above 5.
 - **Cost.** Measured on 2026-10-24: a lane needs about 2.5 hours (the work, then 2 or 3 CI cycles of about 25 minutes) and about 16% of a window. A resume lane needs 8 to 12%. An Opus lane burns about 8% of a window per hour, a Sonnet lane about 4%.
 - **One budget.** The usage is shared by every session of the account: the laptop, the cloud and the chats of the maintainer.
 - **Refill a slot** when a lane ends. Do not start a lane that cannot finish in what is left of the window. Local: look at `get_usage`. Cloud: no tool tells you, so keep to the lane cap of the routine prompt (default 4).
