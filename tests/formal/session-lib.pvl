@@ -247,3 +247,13 @@ let LeaksP0() =
   ( event LeakS(phase0, alice); out(c, skey(alice)) )
   | ( event LeakS(phase0, bob); out(c, skey(bob)) )
   | ( event LeakCert(phase0, bob); out(c, sigkey(bob)) ).
+
+(* One compromise each, for the models that ask what one compromise gives: the Noise identity key of the server, the
+   key of its certificate, the Noise identity key of the client, and all three after the sessions *)
+let LeakNoiseServer() = event LeakS(phase0, bob); out(c, skey(bob)).
+let LeakCertServer() = event LeakCert(phase0, bob); out(c, sigkey(bob)).
+let LeakNoiseClient() = event LeakS(phase0, alice); out(c, skey(alice)).
+let LeakLate() =
+  ( phase 1; event LeakS(phase1, alice); out(c, skey(alice)) )
+  | ( phase 1; event LeakS(phase1, bob); out(c, skey(bob)) )
+  | ( phase 1; event LeakCert(phase1, bob); out(c, sigkey(bob)) ).

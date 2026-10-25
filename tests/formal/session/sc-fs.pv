@@ -1,0 +1,9 @@
+(* Scenario fs: the session over TLS 1.3 on TCP 443, as the code has it, and an attacker that holds every long-term key
+   of the nodes after the sessions (AUD-5, #389): what it knows of them then is what forward secrecy asks about. *)
+
+process
+  ( Setup()
+  | LeakLate()
+  | !( Client(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs) )
+  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_session, lab_exp_session, suite_hfs, sid) )
+  )

@@ -1,0 +1,11 @@
+(* Scenario noise-client: the session over TLS 1.3 on TCP 443, as the code has it, and an attacker that holds the Noise
+   identity keys of the server and of the client but not the key of the certificate (AUD-5, #389). *)
+
+process
+  ( Setup()
+  | LeakNoiseServer()
+  | LeakNoiseClient()
+  | !( Client(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs) )
+  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_session, lab_exp_session, suite_ik, sid) )
+  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_session, lab_exp_session, suite_hfs, sid) )
+  )

@@ -100,7 +100,7 @@ jobs:
     - name: The jobs of the variants
       id: variants
       # TEMP (diagnostics of the heavy variants): only some variants, so that the others do not queue first
-      run: python -I .github/scripts/formal.py list >> "$GITHUB_OUTPUT"
+      run: python -I .github/scripts/formal.py list try-sc-none try-sc-cert try-sc-cc try-sc-nc try-sc-both try-sc-fs try-sc-quic-cert try-sc-nobind-cert try-sc-nopin-noise >> "$GITHUB_OUTPUT"
     - name: Restore ProVerif
       id: proverif
       uses: actions/cache@v4
@@ -129,7 +129,7 @@ jobs:
     # Every variant runs for 25 seconds with the prover: a mistake of syntax or of types shows at once, and stops the
     # workflow here and not in each of the jobs below
     - name: Every variant runs
-      run: python -I .github/scripts/formal.py smoke --proverif "$HOME/proverif/proverif" --out build/smoke --jobs 4 --timeout 20
+      run: python -I .github/scripts/formal.py smoke --proverif "$HOME/proverif/proverif" --out build/smoke --jobs 4 --timeout 20 try-sc-none try-sc-cert try-sc-cc try-sc-nc try-sc-both try-sc-fs try-sc-quic-cert try-sc-nobind-cert try-sc-nopin-noise
 
   # One job for each variant, or for each slice of its queries when variants.tsv cuts it into slices (ProVerif keeps
   # its state for every query of a run, and a variant with many queries or a heavy one needs more of the runner than

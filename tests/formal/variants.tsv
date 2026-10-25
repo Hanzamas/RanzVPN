@@ -39,3 +39,12 @@ try-nz-s1	settings-fast.pvl,prims.pvl,noise-lib.pvl,try-noise-queries.pvl,noise/
 try-nz-s3	settings-s3.pvl,prims.pvl,noise-lib.pvl,try-noise-queries.pvl,noise/encrypted.pv	try: Noise_IK alone with no redundancy elimination	4
 try-nzA-s1	settings-fast.pvl,prims.pvl,noise-lib.pvl,try-stages-lib.pvl,try-stage-a-queries.pvl,noise/try-a.pv	try: Noise_IK cut after its first message	3
 try-nzAB-s1	settings-fast.pvl,prims.pvl,noise-lib.pvl,try-stages-lib.pvl,try-stage-ab-queries.pvl,noise/try-ab.pv	try: Noise_IK cut after its second message	3
+try-sc-none	prims.pvl,session-lib.pvl,scenario-queries.pvl,session/sc-none.pv	try: scenario none	6
+try-sc-cert	prims.pvl,session-lib.pvl,scenario-queries.pvl,session/sc-cert.pv	try: scenario cert	6
+try-sc-cc	prims.pvl,session-lib.pvl,scenario-queries.pvl,session/sc-cert-client.pv	try: scenario cert and client	6
+try-sc-nc	prims.pvl,session-lib.pvl,scenario-queries.pvl,session/sc-noise-client.pv	try: scenario noise and client	6
+try-sc-both	prims.pvl,session-lib.pvl,scenario-queries.pvl,session/sc-both.pv	try: scenario both keys of the server	6
+try-sc-fs	prims.pvl,session-lib.pvl,fs-queries.pvl,session/sc-fs.pv	try: scenario forward secrecy	2
+try-sc-quic-cert	prims.pvl,session-lib.pvl,scenario-queries.pvl,session/sc-quic-cert.pv	try: QUIC, scenario cert	6
+try-sc-nobind-cert	prims.pvl,session-lib.pvl,scenario-queries.pvl,session/sc-nobinding-cert.pv	try: no binding, scenario cert	6
+try-sc-nopin-noise	prims.pvl,session-lib.pvl,scenario-queries.pvl,session/sc-nopin-noise.pv	try: no pin, scenario noise	6

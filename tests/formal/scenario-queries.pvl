@@ -1,0 +1,41 @@
+(* scenario-queries.pvl
+   The queries of the session models that have one compromise each (AUD-5, #389): none is conditional on a leak, since
+   the compromise is in the model or it is not, and expected.tsv says for each model which of them hold. *)
+
+(* The handshake and the Login can complete, so that no query below is true only because nothing happens *)
+(* @query reach-login *)
+query t: bitstring; event(ServerLoginOk(bob, alice, t)).
+(* @query reach-done *)
+query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)).
+
+(* The password of alice, and what the server sends back *)
+(* @query sec-pw *)
+query attacker(pw(alice)).
+(* @query sec-data *)
+query sid: sessionid; attacker(appdata(bob, alice, sid)).
+
+(* The server takes a handshake from alice only if alice started it in the TLS session that the server is in *)
+(* @query auth-server *)
+query t: bitstring; event(ServerAccept(bob, alice, t)) ==> event(ClientStart(alice, bob, t)).
+
+(* The client takes the answer of the server only if the server with the key that it pinned made it, in the TLS session
+   that the client is in and with the same handshake hash *)
+(* @query auth-client *)
+query t: bitstring, h: bitstring; event(ClientDone(alice, bob, t, h)) ==> event(ServerReply(bob, alice, t, h)).
+
+(* What the client takes from the server after the handshake is what the server sent in that session *)
+(* @query data-auth *)
+query t: bitstring, d: bitstring; event(ClientGotData(alice, bob, t, d)) ==> event(ServerSentData(bob, alice, t, d)).
+
+(* The version and the Capabilities that the server settles on are ones that the client offered, and the suite that the
+   server runs is one that the client chose: the attacker cannot lower them. t2 is any session of the client. *)
+(* @query negotiation *)
+query t: bitstring, t2: bitstring, v: bitstring, cp: bitstring; event(ServerNegotiated(bob, alice, t, v, cp)) ==> event(ClientOffered(alice, bob, t2, v, cp)).
+(* @query suite *)
+query t: bitstring, t2: bitstring, s: bitstring; event(ServerSuite(bob, alice, t, s)) ==> event(ClientSuite(alice, bob, t2, s)).
+
+(* No replay: each handshake that the server takes, and each answer that the client takes, is one that was sent once *)
+(* @query replay-server *)
+query t: bitstring; inj-event(ServerAccept(bob, alice, t)) ==> inj-event(ClientStart(alice, bob, t)).
+(* @query replay-client *)
+query t: bitstring, h: bitstring; inj-event(ClientDone(alice, bob, t, h)) ==> inj-event(ServerReply(bob, alice, t, h)).
