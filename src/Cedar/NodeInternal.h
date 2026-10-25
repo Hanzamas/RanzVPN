@@ -32,6 +32,8 @@ void NodeClientStop(NODE *n);
 void NodeControllerStart(NODE *n);
 void NodeControllerStop(NODE *n);
 void NodeControllerOverlay(NODE *n, NODE_OVERLAY_CONFIG *cfg);
+struct cJSON;
+void NodeAdminState(NODE *n, struct cJSON *o);
 struct CONTROL_LEASES *NodeDhcpStart(NODE *n);
 void NodeDhcpStop(NODE *n);
 void NodeDhcpApplied(NODE *n, const struct CONTROL_STATE *st);
