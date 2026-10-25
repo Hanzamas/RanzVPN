@@ -2,7 +2,10 @@
 // The UDP socket of the VXLAN module on Winsock: dual-stack, on the wildcard address and the VXLAN port (or one that
 // the system picks), held exclusively, with one receive thread that drains the socket into VxlanInput. A VTEP does not
 // fragment a VXLAN datagram (RFC 7348 section 4.3): the socket sends with the don't-fragment bit, so a datagram above
-// the path MTU fails instead, and the module counts the failed send.
+// the path MTU fails instead, and the module counts the failed send. A socket of Geneve (VxlanUdpNewGeneve) is the same
+// on the Geneve port, and VxlanInput reads its datagrams as Geneve: a node that speaks both runs a socket of each into
+// its one module, which sends through one of them, since a tunnel endpoint takes datagrams from any source port (RFC
+// 8926 section 3.3).
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -13,6 +16,7 @@
 struct VXLAN_UDP {
 	SOCKET Socket;    // The socket
 	USHORT Port;      // Its port
+	USHORT Encap;     // The encapsulation of its datagrams: VXLAN_ENCAP_VXLAN, or VXLAN_ENCAP_GENEVE (VxlanUdpNewGeneve)
 	WSAEVENT Event;   // Signalled while it holds datagrams (WSAEventSelect, FD_READ)
 	HANDLE StopEvent; // Ends the receive thread
 	HANDLE Thread;    // The receive thread, NULL before VxlanUdpStart
@@ -108,6 +112,18 @@ VXLAN_UDP *VxlanUdpNew(USHORT port) {
 	return u;
 }
 
+// Open a UDP socket for the VTEPs of Geneve, as VxlanUdpNew does for VXLAN: on port of the wildcard address, GENEVE_PORT
+// for the tunnel endpoint of a node, 0 for one that the system picks. The module reads every datagram of the socket as
+// one from a VTEP of Geneve (VXLAN_ENCAP_GENEVE). NULL when the socket cannot be opened or bound.
+VXLAN_UDP *VxlanUdpNewGeneve(USHORT port) {
+	VXLAN_UDP *u = VxlanUdpNew(port);
+
+	if (u != NULL)
+		u->Encap = VXLAN_ENCAP_GENEVE;
+
+	return u;
+}
+
 // The port of the socket
 USHORT VxlanUdpPort(VXLAN_UDP *u) {
 	return (u != NULL ? u->Port : 0);
@@ -143,8 +159,11 @@ static void VxlanUdpDrain(VXLAN_UDP *u) {
 			break;
 		}
 
-		if (n > 0 && VxlanUdpFromSockaddr(&a, &from))
+		if (n > 0 && VxlanUdpFromSockaddr(&a, &from)) {
+			// The VTEP speaks the encapsulation of the socket that it sent to
+			a.Encap = u->Encap;
 			VxlanInput(u->Vxlan, &a, buf, (UINT)n);
+		}
 	}
 }
 
@@ -168,7 +187,8 @@ static DWORD WINAPI VxlanUdpThread(void *param) {
 }
 
 // Start the receive thread, which hands the datagrams of the socket to the module v. The module sends through
-// VxlanUdpSend with u as its parameter, so it must be created on u before.
+// VxlanUdpSend with u as its parameter, or with the other socket of a node that speaks VXLAN and Geneve, so it must be
+// created on that socket before.
 bool VxlanUdpStart(VXLAN_UDP *u, VXLAN *v) {
 	if (u == NULL || v == NULL || u->Thread != NULL)
 		return false;
