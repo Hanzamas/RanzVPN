@@ -5,7 +5,7 @@
 ## In short
 
 1. **Protection.** A TPM-held key that must also sign in the session stops the copy of a disk, of a backup and of a VM from becoming a second Node, which the software key cannot do. It does not stop an attacker on the running host, which can use the TPM key while it is there, but the identity survives its eviction. It adds failure modes: a cleared or replaced TPM loses the identity.
-2. **Windows.** The platform provider keeps non-extractable keys in the TPM. Microsoft does not list its algorithms, and the one TPM attestation that Windows documents attests RSA keys only. A service that runs as a virtual account cannot make a machine key, and keeps its key in its own key set (E6). The hosted runners have no TPM, so everything that needs one is untested and the script runs it elsewhere.
+2. **Windows.** The platform provider keeps non-extractable keys in the TPM. Microsoft's pages do not list its algorithms, and the one TPM attestation that Windows documents attests RSA keys only. A service that runs as a virtual account cannot make a machine key, and keeps its key in its own key set (E6). The hosted runners have no TPM, so everything that needs one is untested and the script runs it elsewhere.
 3. **Cost.** One TPM signature per Tunnel at its setup, none on the data path. The time of a TPM signature was not measured; the condition is 100 ms.
 4. **Controller.** The Node resource gets an identity kind and a TPM pin. The first control record of a Noise session carries the proof, three places check it, and a Revision revokes it. The Noise session itself does not change.
 5. **No TPM.** The software kind stays the default. A Capability `tpm` tells the Controller what a host can do, and a Node of the TPM kind never falls back.
@@ -22,7 +22,7 @@ A Node proves who it is with its Noise static key and with nothing else. What th
 - **Where it is used.** Noise_IK on the control stream (TLS 1.3 with no client certificate; the Controller reads the static key from the handshake and looks the Node up by it, `controller/internal/control/stream.go`) and on every Noise session to a server-role Node or to a peer. A Node is admitted by that key in three places: the Node resource (`publicKey`) at the Controller, the pinned key of a user (trust on first login) in the Configuration store of a server-role Node, and the Peer objects of the desired state of a Node.
 - **What ties it to the outer session.** The Channel binding: the TLS exporter on TLS-443 and on the control stream, and the tls-server-end-point on QUIC, because msquic exposes no exporter (formal model, D1 and F1; RFC 9266 and RFC 5929, S2).
 - **What already limits a stolen key.** The `enrolSources` of a Network refuse a control stream from outside its source prefixes, at every stream (ADR-0031, amendment of 2026-10-23).
-- **What ADR-0022 says.** Its amendment of 2026-10-21 keeps the key in the software provider because "the TPM provider has no curve25519", and leaves "a TPM-held wrapping key for the identity key" as an option after v1.
+- **What ADR-0022 says.** Its amendment of 2026-10-21 keeps the key in the software provider ("The TPM provider has no curve25519") and calls "A TPM-held wrapping key for the identity key" an option after v1.
 
 The problem is the one of the ticket: a person with SYSTEM rights, or a copy of a disk image, can take the key, and a cloned VM then holds the identity of the original. (The Machine identity of FIX-5 has the same clone case: servers cloned from one image differ only when each has its own Config file.)
 
@@ -76,7 +76,7 @@ The key that an administrator makes in the machine key set is a file under `C:\P
 |---|---|---|---|---|
 | a copy of the disk or of a backup | no. The file admits SYSTEM and Administrators (E6), and the ticket's premise is that either, or an image of the disk, can take the key. What protects the content of the file beyond its DACL was not tested (the machine scope of DPAPI protects nothing from a process on the same system, D17) | yes: the blob needs the TPM that wrapped it | yes | no |
 | a cloned VM or image that runs beside the original | no | yes, unless the clone gets the same TPM state (below) | yes, the same | no |
-| an attacker with SYSTEM or Administrator rights on the running host, evicted later | the identity is burned: the key file and the process are readable | burned too: the scalar is unwrapped in memory | the attacker can use the TPM key while it is on the host, as a signing oracle, but cannot take it away, and the Noise key alone is no longer enough: the identity survives the eviction (reasoned; the model of CORE-H4-2 checks it) | burned |
+| an attacker with SYSTEM or Administrator rights on the running host, evicted later | the identity is burned: the key file is readable (E6) and so is the process (reasoned) | burned too: the scalar is unwrapped in memory (reasoned) | the attacker can use the TPM key while it is on the host, as a signing oracle, but cannot take it away, and the Noise key alone is no longer enough: the identity survives the eviction (reasoned; the model of CORE-H4-2 checks it) | burned |
 | the same attacker while it stays | it acts as the Node from that host (reasoned), in every column | | | |
 | a middlebox that holds the key of the server certificate (F1 of the model, on QUIC) | not covered | not covered | C1 does not cover it. C2 does for a Node that presents a client certificate: the signature of TLS 1.3 client authentication covers the transcript of the session (S1), which the QUIC binding by tls-server-end-point does not (reasoned). Any client key would do: the TPM is not what closes F1 | not covered |
 | a rogue Node that an administrator, or a stolen API token, enrols | no | no | no | only with a list of the endorsement keys that may enrol (D1), and then only as to which TPMs |
@@ -114,7 +114,7 @@ The "yes" of columns B and C rests on the TPM, not on Windows: for a key that ca
 
 | what | how often | cost |
 |---|---|---|
-| TLS client authentication on its own (C2), software key (E5) | once per outer session | 0.04 to 0.3 ms on a loopback handshake of 0.9 to 4.6 ms (medians); the first handshake of a process is 80 to 140 ms slower with a client certificate: the first use of the key |
+| TLS client authentication on its own (C2), software key (E5) | once per outer session | 0.04 to 0.3 ms on a loopback handshake of 0.9 to 4.6 ms (medians); the first handshake of a process is 80 to 140 ms slower with a client certificate (E5 did not separate the open of the key, the credential and the chain) |
 | one ECDSA P-256 signature in the software provider (E4) | C1: once per Tunnel; C2: once per outer session | 0.20 to 0.61 ms median; four threads at once, no error |
 | one ECDSA P-256 signature in a TPM | the same | **not measured**: no TPM. E4 measures it on a host with one. The condition of Decision 2 is a median of at most 100 ms and a p95 of at most 250 ms |
 | the creation of the TPM key | once per Node | not measured; E3 times each kind |
