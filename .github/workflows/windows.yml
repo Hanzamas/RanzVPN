@@ -33,7 +33,8 @@
 #   are resources of the executables (cmake/RanzResources.cmake), so that directory is taken back
 #   in, whatever its file names. So is docs/first-test.md: the job first_test runs the commands that
 #   it holds.
-# - ranz.yml, move-only.yml and quality.yml, and the scripts that only they call.
+# - tests/formal/: the models of the handshake that formal.yml runs with ProVerif on Linux (AUD-5, #389).
+# - ranz.yml, move-only.yml, quality.yml and formal.yml, and the scripts that only they call.
 # Every other path runs the workflow: src/, proto/, cmake/, CMakeLists.txt, CMakePresets.json, vcpkg.json,
 # .gitmodules, .gitattributes, .clang-format, tests/golden/, developer_tools/stbchecker/, this file,
 # the actions of .github/actions, the scripts of .github/scripts that the jobs call and the files of
@@ -69,6 +70,9 @@ on:
     - '!.github/scripts/quality-gates-test.py'
     - '!.github/scripts/one-binary-check.py'
     - '!.github/scripts/ci-plan-test.py'
+    - '!tests/formal/**'
+    - '!.github/workflows/formal.yml'
+    - '!.github/scripts/formal.py'
     - '!.github/quality/fuzz-targets.txt'
     - '!.github/scripts/govulncheck-gate.py'
     - '!.github/quality/govulncheck-accepted.txt'

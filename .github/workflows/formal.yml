@@ -1,0 +1,161 @@
+# The formal model of the session handshake (AUD-5, #389; docs/formal-model.md): ProVerif, pinned, on Linux.
+#
+# tests/formal holds the models of the handshakes of Ranz VPN: the session of a client over TLS-443 and over
+# QUIC, the join of a further connection to a tunnel, the control stream of a node and of a Go client, Noise_IK
+# alone with its records under the Noise keys, and the peer layer. The build job builds ProVerif 2.05 from the
+# source archive of its authors, whose SHA-256 is the one that opam-repository records for that release, and
+# checks the table from the model to the code. The prover job has one job for each variant of
+# tests/formal/variants.tsv, or for each slice of its queries when the file cuts the variant into slices
+# (.github/scripts/formal.py run). A job fails when a query that must hold does not hold, when a negative control
+# (the binding left out, the pin left out, neither, the static key of a join left out) stops showing its attack,
+# and when a finding (the QUIC binding, the peer layer) stops showing its own, so that a fix of the code has to
+# change tests/formal/expected.tsv in the same change. The inputs and the logs of ProVerif, with the traces of
+# the attacks, are the artifacts formal-<variant> and formal-<variant>-<slice>of<slices>.
+#
+# It runs in the full set only (ci-plan.yml, .github/scripts/ci-plan.py): on a push to master or integration,
+# every night, on workflow_dispatch, on a pull request with the label full-ci and on a pull request that
+# changes the models, this workflow or the script (SENSITIVE in ci-plan.py). A pull request that changes none
+# of the files below does not run the workflow, and one that changes only the code that the table names, with
+# no label, runs the plan job and nothing else. The table from the model to the code, which only needs Python,
+# is checked by quality.yml on every pull request.
+
+name: formal
+
+on:
+  push:
+    branches: [master, integration]
+  schedule:
+  - cron: '41 20 * * *'
+  workflow_dispatch:
+  pull_request:
+    # labeled: the label full-ci starts the full set on a pull request that is open
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+    - 'tests/formal/**'
+    - 'docs/formal-model.md'
+    - '.github/workflows/formal.yml'
+    - '.github/workflows/ci-plan.yml'
+    - '.github/scripts/ci-plan.py'
+    - '.github/scripts/formal.py'
+    # The code that the table from the model to the code names: a change of it, on a pull request with the label
+    # full-ci, runs the prover (formal.py check keeps this list covering every file of the table)
+    - 'src/Core/Noise*'
+    - 'src/Core/Crypto*'
+    - 'src/Core/Transport*'
+    - 'src/Core/Peer*'
+    - 'src/Core/Control.*'
+    - 'src/Cedar/Node.c'
+    - 'src/Cedar/NodeSession.c'
+    - 'src/Cedar/ConnectionTunnel.c'
+    - 'controller/internal/control/stream.go'
+    - 'controller/internal/controller/controller.go'
+
+# A run that is not a pull request is the full set, and its name says so: Full CI: push on integration
+run-name: "${{ github.event_name == 'pull_request' && github.event.pull_request.title || format('Full CI: {0} on {1}', github.event_name, github.ref_name) }}"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # ProVerif 2.05 (February 2024), the release that opam-repository has as proverif.2.05, from the archive that it
+  # names, with its SHA-256. A new release changes the version, the archive and the digest together, and
+  # tests/formal/expected.tsv if its answers change.
+  PROVERIF_VERSION: '2.05'
+  PROVERIF_URL: 'https://proverif.inria.fr/proverif2.05.tar.gz'
+  PROVERIF_SHA256: '4871f53c32ab4a04669a060c4886ba5d9080496963fb980a9a62d2c429ceabc4'
+
+jobs:
+  # The fast set or the full set (ci-plan.yml); the jobs below read what it decided
+  plan:
+    uses: ./.github/workflows/ci-plan.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  # The script and the table, the names of the variants, and the binary of ProVerif that every variant runs with,
+  # kept between runs under a key that names its version and its digest
+  build:
+    name: ProVerif and the table
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      matrix: ${{ steps.variants.outputs.matrix }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: The script and the table from the model to the code
+      run: |
+        python -I .github/scripts/formal.py selftest
+        python -I .github/scripts/formal.py check
+    - name: The jobs of the variants
+      id: variants
+      run: python -I .github/scripts/formal.py list >> "$GITHUB_OUTPUT"
+    - name: Restore ProVerif
+      id: proverif
+      uses: actions/cache@v4
+      with:
+        path: ~/proverif
+        key: proverif-${{ env.PROVERIF_VERSION }}-${{ env.PROVERIF_SHA256 }}-ubuntu-24.04
+    # ./build needs ocamlyacc, ocamllex and ocamlopt, which ocaml-nox brings; -nointeract leaves out the
+    # interactive simulator, which needs GTK. The step that makes analyze may fail on a runner without the
+    # OCaml headers, after the proverif binary is made, so the step asks for the binary, not the exit status.
+    - name: Build ProVerif
+      if: steps.proverif.outputs.cache-hit != 'true'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ocaml-nox
+        ocamlfind ocamlopt -version || ocamlopt -version
+        curl -fsSL -o "$RUNNER_TEMP/proverif.tar.gz" "$PROVERIF_URL"
+        echo "${PROVERIF_SHA256}  $RUNNER_TEMP/proverif.tar.gz" | sha256sum -c -
+        tar -xzf "$RUNNER_TEMP/proverif.tar.gz" -C "$RUNNER_TEMP"
+        cd "$RUNNER_TEMP/proverif${PROVERIF_VERSION}"
+        ./build -nointeract || test -x ./proverif
+        test -x ./proverif
+        mkdir -p "$HOME/proverif"
+        cp ./proverif "$HOME/proverif/proverif"
+    - name: ProVerif runs and says its version
+      run: python -I .github/scripts/formal.py version --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION"
+    # Every variant runs for 20 seconds with the prover: a mistake of syntax or of types shows at once, and stops the
+    # workflow here and not in each of the jobs below
+    - name: Every variant runs
+      run: python -I .github/scripts/formal.py smoke --proverif "$HOME/proverif/proverif" --out build/smoke --jobs 4 --timeout 20
+
+  # One job for each variant, or for each slice of its queries when variants.tsv cuts it into slices (ProVerif keeps
+  # its state for every query of a run, and a variant with many queries or a heavy one needs more of the runner than
+  # it has): the results of a job are in its log as soon as it is done, whatever the others take
+  prover:
+    name: ${{ matrix.job }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.build.outputs.matrix) }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Restore ProVerif
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/proverif
+        key: proverif-${{ env.PROVERIF_VERSION }}-${{ env.PROVERIF_SHA256 }}-ubuntu-24.04
+        fail-on-cache-miss: true
+    - name: ProVerif on the variant
+      run: |
+        python -u -I .github/scripts/formal.py run --proverif "$HOME/proverif/proverif" --version "$PROVERIF_VERSION" --out build/formal --jobs 1 --timeout 900 --trace-lines 150 --slice "${{ matrix.slice }}" "${{ matrix.variant }}"
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: formal-${{ matrix.slug }}
+        if-no-files-found: warn
+        path: build/formal/

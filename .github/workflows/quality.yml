@@ -7,6 +7,11 @@
 # (.github/quality/fuzz-targets.txt, .github/scripts/fuzz-registry.py). A change that adds a parser
 # without a fuzz target fails here (ADR-0040 item 1).
 #
+# formal model: the table from the models of the handshake to the code (AUD-5, #389) is checked here: every
+# function that it names is defined in its file, every field is in the body of one of the functions of its
+# row, every name of the models has a row, and the paths of formal.yml cover every file of the table
+# (.github/scripts/formal.py).
+#
 # The gates themselves run where their code is built: the fuzzers, the coverage floors, the static
 # analysis, Application Verifier and the performance gate of the C build in windows.yml; go test
 # -fuzz, -race, the coverage floors, staticcheck and govulncheck of the Go module, which holds
@@ -77,3 +82,21 @@ jobs:
         python-version: '3.12'
     - name: Fast set, full set and the outputs that the workflows read
       run: python -I .github/scripts/ci-plan-test.py
+
+  # AUD-5 (#389): the formal model of the handshake (docs/formal-model.md). The table from the model to the
+  # code names the functions and the fields that stand for each message of the models, and a rename in the
+  # code that breaks a row fails here, on the pull request that makes it. The prover itself runs in
+  # formal.yml, in the full set; this needs only Python.
+  formal_table:
+    name: formal model table
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: The tests of the script
+      run: python -I .github/scripts/formal.py selftest
+    - name: Every function and field that the table names is in the code, every name of the models has a row
+      run: python -I .github/scripts/formal.py check

@@ -5,3 +5,4 @@
 # not a #29 C-split commit can land without rewriting history. Lines that start
 # with # are comments. Keep this list short and give a reason for every entry.
 12b21fcb2c6180bfd1080b8143acbaa5846d6463 controller registry refactor moves the Status struct to status.go together with the registry change
+16a365d62d8c04bf327b06e98fff04dba8852bf3 AUD-5 formal model: regroups the ProVerif query files, tests/formal/fs-queries.pvl becomes q-fs.pvl (4 identical lines, new header comment); no C code and no split of C files

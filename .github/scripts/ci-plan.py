@@ -1,5 +1,6 @@
 # The plan of a CI run: which jobs run, and which legs of the matrix jobs. The reusable workflow
-# .github/workflows/ci-plan.yml runs this script; windows.yml and ranz.yml read its outputs.
+# .github/workflows/ci-plan.yml runs this script; windows.yml and ranz.yml read its outputs, and formal.yml
+# reads full.
 #
 # A pull request runs the fast set: the jobs and the legs that check a change before it merges. Every
 # other event runs the full set (a push to master or integration, the nightly schedule, workflow_dispatch),
@@ -47,6 +48,9 @@ SENSITIVE = [
     (r'\.github/scripts/msi-', 'the MSI scripts'),
     (r'docs/first-test\.md$', 'the runbook of the first test'),
     (r'\.github/scripts/first-test\.ps1$', 'the script that proves the runbook'),
+    (r'tests/formal/', 'the formal model of the handshake'),
+    (r'\.github/scripts/formal\.py$', 'the script that checks and runs the formal model'),
+    (r'\.github/workflows/formal\.yml$', 'the workflow of the formal model'),
 ]
 
 X64 = {'ARCHITECTURE': 'x64', 'VCPKG_TRIPLET': 'x64-windows-static', 'RUNNER': 'windows-latest'}
