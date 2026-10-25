@@ -35,6 +35,7 @@ update: {
       }
       mtu: 1400
       rate_limit: 8000000
+      policy: {}
     }
   }
   set: {

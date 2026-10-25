@@ -1,0 +1,12 @@
+{"resources": [
+  {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48", "conntrack": {"maxFlows": 4096, "timeouts": {"tcpEstablished": 600, "udp": 20, "icmp": 5}}}},
+  {"kind": "VRF", "name": "lab", "spec": {"id": 20, "ula": "fd12:3456:789b::/48"}},
+  {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}},
+  {"kind": "Network", "name": "lab-lan", "spec": {"vrf": "lab", "ipv4Pool": "10.20.0.0/24"}},
+  {"kind": "Node", "name": "branch-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "tags": ["web"], "addresses": {"corp-lan": "10.10.0.1"}}},
+  {"kind": "Node", "name": "branch-2", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"], "tags": ["db"], "addresses": {"corp-lan": "10.10.0.2"}}},
+  {"kind": "Node", "name": "lab-1", "spec": {"publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "vrfs": ["corp", "lab"], "addresses": {"corp-lan": "10.10.0.3", "lab-lan": "10.20.0.3"}}},
+  {"kind": "Policy", "name": "web-to-db", "spec": {"vrf": "corp", "action": "allow", "priority": 100, "from": {"tags": ["web"]}, "to": {"tags": ["db"], "addresses": ["10.10.0.0/24"]}, "protocol": "tcp", "ports": [5432, "8000-8080"]}},
+  {"kind": "Policy", "name": "no-guests", "spec": {"vrf": "corp", "action": "deny", "from": {"tags": ["guest"]}}},
+  {"kind": "Policy", "name": "lab-ping", "spec": {"vrf": "lab", "action": "allow", "protocol": "icmp"}}
+]}

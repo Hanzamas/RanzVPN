@@ -25,6 +25,8 @@
 #define CONTROL_PROLOGUE_LABEL "ranz control stream 1"       // The prologue of the handshake, before the exporter
 #define CONTROL_NAME_SIZE      64                            // A name with its terminating NUL (control.options)
 #define CONTROL_MAX_VRFS       16                            // The VRFs of a node and of a peer (Peer.vrf_ids of control.options)
+#define CONTROL_MAX_TAGS       16                            // The tags of a node and of a peer (NodeConfig.tags, Peer.tags)
+#define CONTROL_RULE_VALUES    16                            // The tags and the prefixes of an end of a rule, and its port ranges
 #define CONTROL_MAX_ADDRESSES  16                            // The addresses of a node (NodeConfig.addresses, Peer.addresses)
 #define CONTROL_MAX_NATS       16                            // The 1:1 NAT rules of a node (NodeConfig.nat of control.options)
 #define CONTROL_MAX_ROUTES     16                            // The routes of a peer (Peer.routes of control.options)
@@ -74,6 +76,37 @@ typedef struct CONTROL_NAT {
 	UINT OutsideLength; // ... and its length
 } CONTROL_NAT;
 
+// An IP prefix of a rule (Prefix of the control protocol)
+typedef struct CONTROL_PREFIX {
+	UCHAR Address[16]; // The prefix: 4 bytes for IPv4, 16 for IPv6
+	UINT AddressSize;  // ... their number
+	UINT Length;       // ... and its length
+} CONTROL_PREFIX;
+
+// An end of the flows of a rule (RuleEnd of the control protocol): a node or a peer with one of the tags, any without
+// one, whose address is in one of the prefixes, any without one
+typedef struct CONTROL_RULE_END {
+	UINT NumTags;                                      // The tags
+	char Tags[CONTROL_RULE_VALUES][CONTROL_NAME_SIZE]; // ...
+	UINT NumPrefixes;                                  // The prefixes
+	CONTROL_PREFIX Prefixes[CONTROL_RULE_VALUES];      // ...
+} CONTROL_RULE_END;
+
+// A rule of the policy of a VRF that the node enforces (Rule of the control protocol; SDN-8, #184): it matches the flows
+// from its From end to its To end, of its protocol, to one of its ports
+typedef struct CONTROL_RULE {
+	char Name[CONTROL_NAME_SIZE];        // Its name, the Policy of the intent
+	UINT VrfId;                          // Its VRF
+	UINT Priority;                       // Its priority: the lowest is judged first
+	bool Deny;                           // It denies the flows it matches; else it allows them
+	CONTROL_RULE_END From;               // The end that opens a flow
+	CONTROL_RULE_END To;                 // ... and the other end
+	UINT Protocol;                       // The IP protocol, 0 for any; 1 (ICMP) takes ICMPv6 in IPv6 packets
+	UINT NumPorts;                       // The destination ports of TCP or UDP, none for any ...
+	UINT FirstPort[CONTROL_RULE_VALUES]; // ... the first of each range
+	UINT LastPort[CONTROL_RULE_VALUES];  // ... and the last
+} CONTROL_RULE;
+
 // A prefix of a VRF that leads to a peer besides its addresses (Route of the control protocol): the outside prefix
 // of a 1:1 NAT rule of the peer, or a route that a VRF of the peer leaks into the VRF (SDN-7, #183)
 typedef struct CONTROL_ROUTE {
@@ -94,6 +127,8 @@ typedef struct CONTROL_PEER {
 	CONTROL_ADDRESS Addresses[CONTROL_MAX_ADDRESSES]; // ... ordered by Network name
 	UINT NumRoutes;                                   // The prefixes of those VRFs that lead to it besides its addresses
 	CONTROL_ROUTE Routes[CONTROL_MAX_ROUTES];         // ... ordered by VRF id
+	UINT NumTags;                                     // Its tags, which identify it to the rules (SDN-8, #184)
+	char Tags[CONTROL_MAX_TAGS][CONTROL_NAME_SIZE];   // ... sorted
 } CONTROL_PEER;
 
 // A VRF that the node is a member of (Vrf of the control protocol): the MTU and the rate limit of
@@ -103,6 +138,13 @@ typedef struct CONTROL_VRF {
 	UINT Id;                      // Its id
 	UINT Mtu;                     // Its MTU
 	UINT64 RateLimit;             // Bits per second that each node sends in it, 0 for no limit
+	bool Policy;                  // It has its policy (SDN-8, #184): the node enforces its rules, default deny
+	UINT MaxFlows;                // ... its conntrack quota, 0 for the default of the node
+	UINT TcpEstablished;          // ... and the timeouts of its flows in s, 0 for the default of the node: TCP after
+	UINT TcpTransitory;           // ... the handshake, TCP while it opens or closes,
+	UINT Udp;                     // ... UDP,
+	UINT Icmp;                    // ... an ICMP echo
+	UINT Other;                   // ... and another IP protocol
 } CONTROL_VRF;
 
 // A reservation of the pool of a DHCP responder: an IPv4 prefix (Prefix of Dhcp.reserved)
@@ -149,6 +191,10 @@ typedef struct CONTROL_STATE {
 	UINT64 RateLimit;                                 // Bits per second that it sends into the overlay, 0 for no limit
 	UINT NumNats;                                     // The 1:1 NAT rules that it applies, its 4via6 among them
 	CONTROL_NAT Nats[CONTROL_MAX_NATS];               // ... ordered by VRF id
+	UINT NumTags;                                     // Its tags, which identify it to the rules (SDN-8, #184)
+	char Tags[CONTROL_MAX_TAGS][CONTROL_NAME_SIZE];   // ... sorted
+	UINT NumRules;                                    // The rules of the policy of its VRFs that it enforces
+	CONTROL_RULE *Rules;                              // ... in name order
 	UINT NumVrfs;                                     // The VRFs it is a member of
 	CONTROL_VRF Vrfs[CONTROL_MAX_VRFS];               // ... in name order
 	UINT NumPeers;                                    // Its peers

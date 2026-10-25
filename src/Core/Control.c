@@ -11,6 +11,7 @@
 #include <pb_encode.h>
 
 #include "ranz/control/v1/control.pb.h"
+#include "Core/ControlPolicy.h"
 
 #include "Core/ControlInternal.h"
 
@@ -153,6 +154,8 @@ static const char *ControlObjectName(const ranz_control_v1_Object *o) {
 		return o->kind.peer.name;
 	case ranz_control_v1_Object_relay_tag:
 		return o->kind.relay.name;
+	case ranz_control_v1_Object_rule_tag:
+		return o->kind.rule.name;
 	default:
 		break;
 	}
@@ -372,6 +375,9 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 		}
 	}
 
+	// The policy of the VRFs, the tags of the node and its peers, and the rules (ControlPolicy.c; SDN-8, #184)
+	ControlCopyPolicy(&st, c->Objects, c->NumObjects);
+
 	// A delta appends the objects it adds, so the VRFs and the peers are sorted again
 	qsort(st.Vrfs, st.NumVrfs, sizeof(CONTROL_VRF), ControlCompareVrfs);
 	qsort(st.Peers, st.NumPeers, sizeof(CONTROL_PEER), ControlComparePeers);
@@ -384,6 +390,7 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 		c->Config.Proc(c->Config.Param, &st);
 
 	ControlRelease(st.Peers, sizeof(CONTROL_PEER) * (num_peers != 0 ? num_peers : 1));
+	ControlFreePolicy(&st);
 }
 
 //
