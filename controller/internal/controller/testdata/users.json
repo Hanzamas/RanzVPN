@@ -1,0 +1,12 @@
+{"resources": [
+  {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48"}},
+  {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}},
+  {"kind": "Group", "name": "staff", "spec": {"displayName": "Staff"}},
+  {"kind": "Group", "name": "contractors", "spec": {}},
+  {"kind": "User", "name": "alice", "spec": {"displayName": "Alice", "groups": ["staff"], "maxDevices": 2}},
+  {"kind": "User", "name": "bob", "spec": {"groups": ["contractors"]}},
+  {"kind": "Node", "name": "alice-laptop", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "owner": "alice", "addresses": {"corp-lan": "10.10.0.1"}}},
+  {"kind": "Node", "name": "bob-laptop", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"], "owner": "bob", "addresses": {"corp-lan": "10.10.0.2"}}},
+  {"kind": "Node", "name": "files", "spec": {"publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "vrfs": ["corp"], "tags": ["db"], "addresses": {"corp-lan": "10.10.0.3"}}},
+  {"kind": "Policy", "name": "staff-to-files", "spec": {"vrf": "corp", "action": "allow", "from": {"tags": ["staff"]}, "to": {"tags": ["db"]}}}
+]}

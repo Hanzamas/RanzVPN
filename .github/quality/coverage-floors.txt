@@ -69,6 +69,9 @@ go  controller/internal/logfile         85
 go  controller/internal/mimic           89
 go  controller/internal/mitigation      0
 go  controller/internal/nodesim         0
+# password (SDN-31 #225): the Linux job measures password.go and pbkdf2_other.go; the CNG derivation of pbkdf2_windows.go
+# is the Windows job's, which checks it against the standard library
+go  controller/internal/password        80
 # payload (ONE-2 #311) has real logic tested on every OS (payload_test.go: the hash checks, the
 # write and its cleanup), but verifyAuthenticode itself is Windows only (verify_windows_test.go,
 # run by the Windows job of ranz.yml) and never runs on the Linux job, which measures this floor
