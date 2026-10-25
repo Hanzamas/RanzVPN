@@ -37,7 +37,8 @@
 #define CONTROL_HOST_NAME_SIZE 64                            // The host name of a lease with its terminating NUL (Lease.host_name)
 #define CONTROL_MAX_FRAME      (1 << 20)                     // The largest frame the client reads
 #define CONTROL_TIMEOUT        10000                         // ms for the handshake, and for a frame to come whole
-#define CONTROL_RETRY          1000                          // ms between two attempts to open the stream
+#define CONTROL_RETRY          1000                          // ms before the stream opens again after it was open (ControlRetry.c) ...
+#define CONTROL_RETRY_MAX      60000                         // ... and at most, as the delay doubles after each attempt that failed
 #define CONTROL_MAX_MIRRORS    16                            // The Mirrors of a node (NodeConfig.mirrors of control.options)
 
 // The zones of overlay DNS (SDN-11, #187)
@@ -301,6 +302,18 @@ typedef struct CONTROL_CAPS {
 // whose Capabilities changed tells the controller by its next stream. It runs on the client's thread.
 typedef void(CONTROL_CAPS_PROC)(void *param, CONTROL_CAPS *caps);
 
+// How the last stream of a client ended, or why it did not open (CONTROL_STATUS.LastEnd; SDN-90, #395)
+#define CONTROL_END_NONE      0 // No stream ended yet
+#define CONTROL_END_DIAL      1 // The transport did not connect: no controller answered, or its TLS session or certificate failed
+#define CONTROL_END_HANDSHAKE 2 // The Noise handshake failed: the controller does not hold the static key the node knows
+#define CONTROL_END_REFUSED   3 // The controller refused the node (LastRefuse, LastMessage)
+#define CONTROL_END_CLOSED    4 // The stream ended after it was open: the controller or the network went
+
+// Takes how a stream ended or why it did not open (LastEnd) and the delay before the next attempt (NextRetry), on the
+// client's thread; a client that halts calls it no more
+struct CONTROL_STATUS;
+typedef void(CONTROL_END_PROC)(void *param, const struct CONTROL_STATUS *st);
+
 // How a client runs
 typedef struct CONTROL_CONFIG {
 	TRANSPORT *Transport;                 // The transport of the stream (see above)
@@ -311,6 +324,8 @@ typedef struct CONTROL_CONFIG {
 	CONTROL_STATE_PROC *Proc;             // Takes each state applied
 	void *Param;                          // The first parameter of Proc
 	CONTROL_LEASES *Leases;               // The leases that the client reports after each Hello and whenever they change, NULL for none: the owner's, which must outlive the client
+	CONTROL_END_PROC *EndProc;            // Takes the end of each stream, NULL for none (SDN-90, #395) ...
+	void *EndParam;                       // ... and its first parameter
 
 	// Tells the Capabilities of the node for each Hello, NULL for none: the Hello then holds none
 	CONTROL_CAPS_PROC *CapsProc;
@@ -330,6 +345,8 @@ typedef struct CONTROL_STATUS {
 	UINT64 NumUpdates;     // Updates applied so far
 	UINT LastRefuse;       // The reason of the last Refuse (RefuseReason of the control protocol), 0 for none
 	char LastMessage[256]; // ... and its message
+	UINT LastEnd;          // How the last stream ended or why it did not open (CONTROL_END_*)
+	UINT NextRetry;        // ms before the next attempt after it: the delay grows while the attempts fail (ControlRetry.c)
 } CONTROL_STATUS;
 
 // The client of one node, Control.c
@@ -341,6 +358,11 @@ typedef struct CONTROL_CLIENT CONTROL_CLIENT;
 CONTROL_CLIENT *ControlStart(const CONTROL_CONFIG *cfg);
 void ControlStop(CONTROL_CLIENT *c);
 void ControlGetStatus(CONTROL_CLIENT *c, CONTROL_STATUS *st);
+
+// The delay before a client opens its stream again (ControlRetry.c; SDN-90, #395), from the delay before and how the last
+// stream ended (CONTROL_END_*): CONTROL_RETRY after a stream that was open and not refused, else twice the delay before,
+// from CONTROL_RETRY up to CONTROL_RETRY_MAX
+UINT ControlRetryNext(UINT delay, UINT end);
 
 // The leases of the DHCP responders of a node (SDN-43, #236), ControlDhcp.c. NewLeases makes the reports that a client
 // sends (CONTROL_CONFIG.Leases), FreeLeases frees them once no client uses them. SetLeases puts the leases of one L2

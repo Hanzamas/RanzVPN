@@ -1,0 +1,798 @@
+// NodeController.c
+// The Controller of a Node (SDN-90, #395): the Node service joins the Controller of its Controller settings by itself.
+// - The Controller settings are one JSON object in the Configuration store (NODE_SETTING_CONTROLLER): the address of the
+//   Controller's TLS port, its static key and the TLS fingerprint of its certificate, the three values that ranz status
+//   prints on the Controller. With them the overlay of the node has its control stream (Core/Control.h): TLS 1.3 on
+//   Schannel (TransportTls.c) that offers the ALPN protocol of the control stream and gives its TLS exporter as the Channel
+//   binding, the certificate of the Controller checked against the fingerprint in place of a thumbprint pin, and the
+//   Noise_IK handshake with the static key. The overlay starts in the service for every set of Roles: the client role
+//   starts it with its adapters and its dialler and takes the control stream from here (NodeControllerOverlay); without
+//   the client role the node starts it here, with no adapter and a data transport that dials and listens nowhere, and the
+//   Roles decide what else runs. A node without the settings runs as before, says once in its log that it has no
+//   Controller and opens no stream.
+// - A stream that ends, or does not open, opens again after a delay that grows while the attempts fail (ControlRetry.c),
+//   whatever failed. The log says what: no Controller answered, the TLS fingerprint check or the Noise handshake with the
+//   static key of the Controller failed, both of which fail closed before any state comes, or the Controller refused the
+//   node, as one whose static key no Node resource names yet. The node keeps dialling, so it joins without a restart once
+//   an operator has written its Node resource.
+// - The admin pipe (NODE_ADMIN_PIPE), which only SYSTEM, the Administrators and the service account may open, takes one
+//   command line of an Administrator, as ranz node sends them, and answers it with one JSON object: key gives the public
+//   half of the static key of the node, which it makes first when no role needed it yet; controller gives the settings
+//   and the state of the control stream; controller set <address> <key> <fingerprint> and controller clear write and
+//   remove the settings. The service is the one writer of its Configuration store, and it takes the settings at its next
+//   start, which ranz node makes at once. The private half of the key stays in the key storage provider: it is in no
+//   answer and no line of the log. Only the node of the service, on the default data directory, has the pipe, unless a
+//   test names one in NODE.AdminPipe before NodeStart.
+
+#include "Node.h"
+
+#include "ConfigStore.h"
+
+#include "Mayaqua/Internat.h"
+#include "Mayaqua/Memory.h"
+#include "Mayaqua/Object.h"
+#include "Mayaqua/Str.h"
+
+#include "Core/Control.h"
+#include "Core/Crypto.h"
+
+#include "NodeInternal.h"
+
+#include <aclapi.h>
+#include <sddl.h>
+
+#include <cjson/cJSON.h>
+
+// The DACL of the admin pipe: full control for SYSTEM, the Administrators and the virtual account of the ranzvpnserver
+// service (ADR-0039 decision 3), nothing for anyone else. The pipe has one instance, the first, so no one can serve under
+// its name.
+#define NODE_ADMIN_PIPE_SDDL L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" NODE_SERVICE_SID L")"
+
+// The Controller of a node
+struct NODE_CONTROLLER {
+	NODE *Node;                                    // The node
+	bool Set;                                      // The Controller settings are there, and valid
+	char Address[TRANSPORT_ADDRESS_SIZE];          // The address of the Controller's TLS port ...
+	UCHAR Key[PEER_KEY_SIZE];                      // ... its static key ...
+	char Fingerprint[NODE_CONTROLLER_FINGERPRINT]; // ... and the TLS fingerprint of its certificate, in lower case
+	TRANSPORT *Tls;                                // The TLS transport of the control stream, NULL until an overlay needs it
+	TRANSPORT None;                                // The data transport of an overlay without the client role: nowhere
+	PEER_KEY NodeKey;                              // The node's static key, for that overlay
+	bool Overlay;                                  // The node started that overlay
+	LOCK *Lock;                                    // The fields below
+	bool Checked;                                  // The certificate of the attempt that ends next reached the fingerprint check
+	bool Mismatch;                                 // The certificate of the last dial that reached the check failed it ...
+	char Seen[NODE_CONTROLLER_FINGERPRINT];        // ... and had this fingerprint
+	UINT64 NumEnds;                                // Streams that ended or did not open
+	UINT LastEnd;                                  // How the last one ended (CONTROL_END_*)
+	UINT NextRetry;                                // ms before the next attempt after it
+	wchar_t Pipe[MAX_PATH];                        // The admin pipe, empty for none
+	HANDLE PipeHandle;                             // Its server end, INVALID_HANDLE_VALUE without
+	HANDLE PipeStop;                               // Ends the thread of the pipe
+	HANDLE PipeThread;                             // The thread of the pipe
+};
+
+//
+// The Controller settings
+//
+
+// Whether a string is n hex digits and nothing else
+static bool NodeControllerHex(const char *s, UINT n) {
+	UINT i;
+
+	for (i = 0; s[i] != 0; i++)
+		if (i >= n || ((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f') || (s[i] >= 'A' && s[i] <= 'F')) == false)
+			return false;
+
+	return (i == n);
+}
+
+// The address of a Controller: a host and a port from 1 to 65535 after the last colon, an IPv6 host in brackets
+static bool NodeControllerAddressOk(const char *address) {
+	UINT len = StrLen(address);
+	UINT colon = INFINITE;
+	UINT port = 0;
+
+	for (UINT i = 0; i < len; i++) {
+		if (address[i] == ':')
+			colon = i;
+		else if (address[i] == ' ' || address[i] == '\t')
+			return false;
+	}
+
+	if (colon == INFINITE || colon == 0 || colon + 1 >= len || len >= TRANSPORT_ADDRESS_SIZE)
+		return false;
+
+	for (UINT i = colon + 1; i < len; i++) {
+		if (address[i] < '0' || address[i] > '9' || port > 65535)
+			return false;
+		port = port * 10 + (UINT)(address[i] - '0');
+	}
+
+	// An IPv6 address has colons of its own: it is in brackets, and the port follows the closing one
+	if (address[0] == '[' && address[colon - 1] != ']')
+		return false;
+	for (UINT i = 0; address[0] != '[' && i < colon; i++)
+		if (address[i] == ':' || address[i] == ']')
+			return false;
+
+	return (port >= 1 && port <= 65535);
+}
+
+// Check the three values of the Controller settings, as an Administrator gives them and as the store keeps them, into c:
+// false with the reason in error, which says which value is wrong
+static bool NodeControllerCheck(NODE_CONTROLLER *c, const char *address, const char *key, const char *fingerprint, char *error, UINT error_size) {
+	UINT key_size = 0;
+
+	if (IsEmptyStr((char *)address) || NodeControllerAddressOk(address) == false) {
+		Format(error, error_size, "the address of the Controller has no port, or no host: give host:port, the TLS port of ranz status on the Controller");
+		return false;
+	}
+
+	UCHAR *bin = (IsEmptyStr((char *)key) ? NULL : Base64ToBin(&key_size, key, StrLen((char *)key)));
+	if (bin == NULL || key_size != PEER_KEY_SIZE) {
+		Format(error, error_size, "the static key of the Controller is %u bytes long, not %u: give publicKey of ranz status on the Controller", (bin == NULL ? 0 : key_size), (UINT)PEER_KEY_SIZE);
+		Free(bin);
+		return false;
+	}
+
+	if (IsEmptyStr((char *)fingerprint) || NodeControllerHex(fingerprint, NODE_CONTROLLER_FINGERPRINT - 1) == false) {
+		Format(error, error_size, "the TLS fingerprint of the Controller is not 64 hex digits: give tlsFingerprint of ranz status on the Controller");
+		Free(bin);
+		return false;
+	}
+
+	StrCpy(c->Address, sizeof(c->Address), (char *)address);
+	Copy(c->Key, bin, PEER_KEY_SIZE);
+	StrCpy(c->Fingerprint, sizeof(c->Fingerprint), (char *)fingerprint);
+	StrLower(c->Fingerprint);
+	Free(bin);
+
+	return true;
+}
+
+// The string member name of a JSON object, "" when it has none
+static const char *NodeControllerJsonStr(cJSON *o, const char *name) {
+	const char *s = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(o, name));
+
+	return (s != NULL ? s : "");
+}
+
+// Read the Controller settings of the store into c; a setting that is no JSON object of three valid values counts as none,
+// with the node log saying why
+static void NodeControllerLoad(NODE_CONTROLLER *c) {
+	char error[MAX_SIZE];
+	char *setting = ZeroMalloc(NODE_CONTROLLER_MAX_SETTING);
+
+	c->Set = false;
+	if (c->Node->Store != NULL && CsGetSetting(c->Node->Store, NODE_SETTING_CONTROLLER, setting, NODE_CONTROLLER_MAX_SETTING) && IsEmptyStr(setting) == false) {
+		cJSON *o = cJSON_Parse(setting);
+
+		c->Set = (cJSON_IsObject(o) && NodeControllerCheck(c, NodeControllerJsonStr(o, "address"), NodeControllerJsonStr(o, "publicKey"), NodeControllerJsonStr(o, "tlsFingerprint"), error, sizeof(error)));
+		if (c->Set == false)
+			NodeLog(c->Node, "Controller: the %s setting is not used: %s", NODE_SETTING_CONTROLLER, (cJSON_IsObject(o) ? error : "it is not a JSON object"));
+		cJSON_Delete(o);
+	}
+
+	Free(setting);
+}
+
+// The settings of c as one JSON object, or JSON null without them
+static cJSON *NodeControllerJson(NODE_CONTROLLER *c) {
+	char *key;
+	UINT key_size = 0;
+
+	if (c->Set == false)
+		return cJSON_CreateNull();
+
+	cJSON *o = cJSON_CreateObject();
+	key = Base64FromBin(&key_size, c->Key, PEER_KEY_SIZE);
+	cJSON_AddStringToObject(o, "address", c->Address);
+	cJSON_AddStringToObject(o, "publicKey", key != NULL ? key : "");
+	cJSON_AddStringToObject(o, "tlsFingerprint", c->Fingerprint);
+	Free(key);
+
+	return o;
+}
+
+//
+// The control stream
+//
+
+// The TLS fingerprint of a certificate: the SHA-256 of its SubjectPublicKeyInfo in hex, in lower case, as the Controller
+// prints it
+static bool NodeControllerCertFingerprint(PCCERT_CONTEXT cert, char *fp, UINT size) {
+	static const char digits[] = "0123456789abcdef";
+	UCHAR hash[CRYPTO_SHA256_SIZE];
+	BYTE *der = NULL;
+	DWORD der_size = 0;
+
+	StrCpy(fp, size, "");
+	if (cert == NULL || size < NODE_CONTROLLER_FINGERPRINT ||
+	    CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, &cert->pCertInfo->SubjectPublicKeyInfo, CRYPT_ENCODE_ALLOC_FLAG, NULL, &der, &der_size) == FALSE)
+		return false;
+
+	bool ok = CryptoSha256(hash, der, der_size);
+	LocalFree(der);
+	if (ok == false)
+		return false;
+
+	for (UINT i = 0; i < CRYPTO_SHA256_SIZE; i++) {
+		fp[2 * i] = digits[hash[i] >> 4];
+		fp[2 * i + 1] = digits[hash[i] & 0x0F];
+	}
+	fp[2 * CRYPTO_SHA256_SIZE] = 0;
+
+	return true;
+}
+
+// The check of the certificate of the Controller, in place of a thumbprint pin (TRANSPORT_TLS_CONFIG.Verify): its
+// fingerprint is the one of the settings. The end of the stream tells the log whether it passed.
+static bool NodeControllerVerify(void *param, const struct _CERT_CONTEXT *cert) {
+	NODE_CONTROLLER *c = (NODE_CONTROLLER *)param;
+	char seen[NODE_CONTROLLER_FINGERPRINT];
+
+	bool ok = (NodeControllerCertFingerprint(cert, seen, sizeof(seen)) && StrCmpi(seen, c->Fingerprint) == 0);
+
+	Lock(c->Lock);
+	{
+		c->Checked = true;
+		c->Mismatch = (ok == false);
+		StrCpy(c->Seen, sizeof(c->Seen), seen);
+	}
+	Unlock(c->Lock);
+
+	return ok;
+}
+
+// A stream ended or did not open, on the thread of the control stream: the log says why and when the next attempt comes
+static void NodeControllerEnd(void *param, const CONTROL_STATUS *st) {
+	NODE_CONTROLLER *c = (NODE_CONTROLLER *)param;
+	char why[MAX_SIZE * 2];
+	char seen[NODE_CONTROLLER_FINGERPRINT];
+	bool checked, mismatch;
+
+	Lock(c->Lock);
+	{
+		checked = c->Checked;
+		mismatch = c->Mismatch;
+		StrCpy(seen, sizeof(seen), c->Seen);
+		c->Checked = false;
+		c->NumEnds++;
+		c->LastEnd = st->LastEnd;
+		c->NextRetry = st->NextRetry;
+	}
+	Unlock(c->Lock);
+
+	switch (st->LastEnd) {
+	case CONTROL_END_DIAL:
+		if (checked && mismatch)
+			Format(why, sizeof(why), "the TLS fingerprint check failed: the certificate of the Controller has the TLS fingerprint %s, not %s of the Controller settings, so no state is taken",
+			       IsEmptyStr(seen) ? "(none)" : seen, c->Fingerprint);
+		else if (checked)
+			Format(why, sizeof(why), "the certificate passed the TLS fingerprint check, and then the TLS session failed: the server did not select the ALPN protocol %s of the control stream, or gave no TLS exporter, so no state is taken",
+			       CONTROL_ALPN);
+		else
+			Format(why, sizeof(why), "no Controller answered there, or its TLS session failed");
+		break;
+	case CONTROL_END_HANDSHAKE:
+		Format(why, sizeof(why), "the Noise handshake failed: the Controller does not hold the static key of the Controller settings, or the TLS session is not end to end, so no state is taken");
+		break;
+	case CONTROL_END_REFUSED:
+		Format(why, sizeof(why), "the Controller refused the node (reason %u): %s. A node whose static key no Node resource holds joins once an operator writes one; ranz node key prints its key",
+		       st->LastRefuse, st->LastMessage);
+		break;
+	default:
+		Format(why, sizeof(why), "the control stream ended after it was open");
+		break;
+	}
+
+	NodeLog(c->Node, "Controller %s: %s; the next attempt in %u ms", c->Address, why, st->NextRetry);
+}
+
+// The TLS transport of the control stream: TLS 1.3 with the ALPN protocol of the control stream, its TLS exporter as the
+// Channel binding and the certificate checked against the fingerprint of the settings
+static TRANSPORT *NodeControllerTls(NODE_CONTROLLER *c) {
+	TRANSPORT_TLS_CONFIG tc;
+
+	if (c->Tls != NULL)
+		return c->Tls;
+
+	TransportTlsDefaultConfig(&tc, NULL, false);
+	tc.Versions = TRANSPORT_TLS_13;
+	tc.SetGroups = false;
+	tc.Queue = TRANSPORT_QUEUE_NONE;
+	StrCpy(tc.Alpn, sizeof(tc.Alpn), CONTROL_ALPN);
+	StrCpy(tc.ExporterLabel, sizeof(tc.ExporterLabel), CONTROL_EXPORTER_LABEL);
+	tc.Verify = NodeControllerVerify;
+	tc.VerifyParam = c;
+
+	c->Tls = TransportTlsClientNew(&tc);
+	if (c->Tls == NULL)
+		NodeLog(c->Node, "Controller: the TLS transport of the control stream cannot be made");
+
+	return c->Tls;
+}
+
+// The data transport of an overlay without the client role: it dials no peer and listens nowhere, so the node takes its
+// state and keeps no session; a Node that listens for other Nodes is the Listener (SDN-45, #238)
+static bool NodeControllerNoDial(void *param, const char *address, HANDLE cancel, void **stream) {
+	*stream = NULL;
+	return false;
+}
+
+static bool NodeControllerNoListen(void *param, const char *address, void **listener) {
+	*listener = NULL;
+	return false;
+}
+
+static bool NodeControllerNoAccept(void *listener, UINT timeout, void **stream) {
+	*stream = NULL;
+	return false;
+}
+
+static void NodeControllerNoCloseListener(void *listener) {
+	// No listener
+	return;
+}
+
+static UINT NodeControllerNoRead(void *stream, void *buf, UINT size, UINT timeout) {
+	return 0;
+}
+
+static bool NodeControllerNoWrite(void *stream, const void *buf, UINT size) {
+	return false;
+}
+
+static void NodeControllerNoClose(void *stream) {
+	// No stream
+	return;
+}
+
+// The Controller of the node, made with its settings when it does not exist yet (the node lock is held)
+static NODE_CONTROLLER *NodeControllerGet(NODE *n) {
+	if (n->Controller != NULL)
+		return n->Controller;
+
+	NODE_CONTROLLER *c = ZeroMalloc(sizeof(NODE_CONTROLLER));
+	c->Node = n;
+	c->Lock = NewLock();
+	c->PipeHandle = INVALID_HANDLE_VALUE;
+
+	StrCpy(c->None.Name, sizeof(c->None.Name), "none");
+	c->None.Param = c;
+	c->None.Dial = NodeControllerNoDial;
+	c->None.Listen = NodeControllerNoListen;
+	c->None.Accept = NodeControllerNoAccept;
+	c->None.CloseListener = NodeControllerNoCloseListener;
+	c->None.Read = NodeControllerNoRead;
+	c->None.Write = NodeControllerNoWrite;
+	c->None.Close = NodeControllerNoClose;
+
+	NodeControllerLoad(c);
+	n->Controller = c;
+
+	return c;
+}
+
+// The control stream of the overlay of the node to the Controller of its settings, into cfg; nothing without the settings
+// (the node lock is held). The client role calls it before it starts the overlay (NodeClient.c).
+void NodeControllerOverlay(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
+	if (n == NULL || cfg == NULL)
+		return;
+
+	NODE_CONTROLLER *c = NodeControllerGet(n);
+	if (c->Set == false || NodeControllerTls(c) == NULL)
+		return;
+
+	cfg->Control = c->Tls;
+	StrCpy(cfg->Controller, sizeof(cfg->Controller), c->Address);
+	Copy(cfg->ControllerKey, c->Key, PEER_KEY_SIZE);
+	cfg->ControlEnd = NodeControllerEnd;
+	cfg->ControlEndParam = c;
+}
+
+//
+// The admin pipe
+//
+
+// The answer to key: the public half of the static key of the node, made first when it does not exist yet. The private
+// half stays in the key storage provider.
+static void NodeAdminKey(NODE *n, cJSON *o) {
+	wchar_t name[MAX_SIZE];
+	PEER_KEY key;
+	UINT size = 0;
+
+	StrToUni(name, sizeof(name), n->IdentityKey);
+	if (PeerKeyOpen(&key, name) == false) {
+		cJSON_AddStringToObject(o, "error", "the static key of the node cannot be opened or made in the key storage provider");
+		return;
+	}
+
+	char *pub = Base64FromBin(&size, key.Public, PEER_KEY_SIZE);
+	cJSON_AddStringToObject(o, "publicKey", pub != NULL ? pub : "");
+	NodeLog(n, "Admin pipe: the static key \"%s\" of the node, made first if no role had needed it, has the public half %s", n->IdentityKey, pub != NULL ? pub : "");
+	Free(pub);
+	PeerKeyClose(&key);
+}
+
+// The answer to controller: the settings and the state of the control stream
+static void NodeAdminController(NODE *n, NODE_CONTROLLER *c, cJSON *o) {
+	NODE_OVERLAY_STATUS os;
+
+	NodeOverlayGetStatus(n, &os);
+	cJSON_AddItemToObject(o, "controller", NodeControllerJson(c));
+	cJSON_AddBoolToObject(o, "connected", os.Connected);
+	cJSON_AddNumberToObject(o, "generation", (double)os.Generation);
+}
+
+// Write the settings of the command into the store (set), or take them out (clear); the service takes them at its next
+// start. The settings that the node runs with stay until then.
+static void NodeAdminSet(NODE *n, NODE_CONTROLLER *c, TOKEN_LIST *t, cJSON *o) {
+	NODE_CONTROLLER *check = ZeroMalloc(sizeof(NODE_CONTROLLER));
+	char error[MAX_SIZE];
+	char *setting = NULL;
+	UINT ret;
+
+	if (t->NumTokens == 5 && StrCmpi(t->Token[1], "set") == 0) {
+		if (NodeControllerCheck(check, t->Token[2], t->Token[3], t->Token[4], error, sizeof(error)) == false) {
+			cJSON_AddStringToObject(o, "error", error);
+			Free(check);
+			return;
+		}
+		check->Set = true;
+		cJSON *json = NodeControllerJson(check);
+		setting = cJSON_PrintUnformatted(json);
+		cJSON_Delete(json);
+	}
+
+	ret = (n->Store == NULL ? ERR_INTERNAL_ERROR : CsSetSetting(n->Store, NODE_SETTING_CONTROLLER, setting));
+	if (ret != ERR_NO_ERROR) {
+		cJSON_AddStringToObject(o, "error", "the Configuration store of the node cannot be written");
+	} else {
+		cJSON_AddItemToObject(o, "controller", NodeControllerJson(check));
+		cJSON_AddBoolToObject(o, "connected", false);
+		cJSON_AddNumberToObject(o, "generation", 0);
+		if (setting != NULL)
+			NodeLog(n, "Admin pipe: the Controller settings now name the Controller %s; the node takes them at its next start", check->Address);
+		else
+			NodeLog(n, "Admin pipe: the Controller settings are cleared; the node takes that at its next start");
+	}
+
+	if (setting != NULL)
+		cJSON_free(setting);
+	Free(check);
+}
+
+// One command line of an Administrator, as ranz node sends it: key, controller, controller set <address> <key>
+// <fingerprint> or controller clear. The answer is one JSON object; a line that is no command gets an error.
+void NodeAdminCommand(NODE *n, char *line, char *reply, UINT size) {
+	if (n == NULL || line == NULL || reply == NULL || size == 0)
+		return;
+
+	cJSON *o = cJSON_CreateObject();
+	TOKEN_LIST *t = ParseToken(line, " \t\r\n");
+
+	Lock(n->Lock);
+	{
+		NODE_CONTROLLER *c = NodeControllerGet(n);
+
+		if (t->NumTokens == 1 && StrCmpi(t->Token[0], "key") == 0)
+			NodeAdminKey(n, o);
+		else if (t->NumTokens == 1 && StrCmpi(t->Token[0], "controller") == 0)
+			NodeAdminController(n, c, o);
+		else if (t->NumTokens >= 2 && StrCmpi(t->Token[0], "controller") == 0 &&
+		         ((t->NumTokens == 2 && StrCmpi(t->Token[1], "clear") == 0) || (t->NumTokens == 5 && StrCmpi(t->Token[1], "set") == 0)))
+			NodeAdminSet(n, c, t, o);
+		else
+			cJSON_AddStringToObject(o, "error", "unknown command: key, controller, controller set <address> <key> <fingerprint> or controller clear");
+	}
+	Unlock(n->Lock);
+
+	char *text = cJSON_PrintUnformatted(o);
+	StrCpy(reply, size, text != NULL ? text : "{}");
+	if (text != NULL)
+		cJSON_free(text);
+	cJSON_Delete(o);
+	FreeToken(t);
+}
+
+// One read or write of the pipe, overlapped, until it completes, the pipe stops or the Administrator stays idle too
+// long: false for the last two and for a failure, with the operation cancelled
+static bool NodeAdminPipeIo(NODE_CONTROLLER *c, HANDLE event, bool write, void *buf, UINT size, UINT *done) {
+	OVERLAPPED ov;
+	HANDLE waits[2];
+	DWORD n = 0;
+
+	*done = 0;
+	Zero(&ov, sizeof(ov));
+	ov.hEvent = event;
+	ResetEvent(event);
+
+	BOOL ok = (write ? WriteFile(c->PipeHandle, buf, size, NULL, &ov) : ReadFile(c->PipeHandle, buf, size, NULL, &ov));
+	if (ok == FALSE && GetLastError() != ERROR_IO_PENDING)
+		return false;
+
+	waits[0] = c->PipeStop;
+	waits[1] = event;
+	if (WaitForMultipleObjects(2, waits, FALSE, NODE_ADMIN_IDLE) != WAIT_OBJECT_0 + 1) {
+		CancelIoEx(c->PipeHandle, &ov);
+		GetOverlappedResult(c->PipeHandle, &ov, &n, TRUE);
+		return false;
+	}
+
+	if (GetOverlappedResult(c->PipeHandle, &ov, &n, FALSE) == FALSE)
+		return false;
+
+	*done = (UINT)n;
+	return true;
+}
+
+// The commands of one connected Administrator, one a line, each answered with one line, until the Administrator closes
+// the pipe. A line longer than NODE_ADMIN_LINE ends the connection.
+static void NodeAdminSession(NODE_CONTROLLER *c, HANDLE event) {
+	char *line = ZeroMalloc(NODE_ADMIN_LINE);
+	char *buf = ZeroMalloc(NODE_ADMIN_LINE);
+	char *reply = ZeroMalloc(NODE_ADMIN_REPLY);
+	UINT used = 0;
+	UINT got = 0;
+	bool alive = true;
+
+	while (alive && NodeAdminPipeIo(c, event, false, buf, NODE_ADMIN_LINE, &got) && got != 0) {
+		for (UINT i = 0; alive && i < got; i++) {
+			UINT written = 0;
+
+			if (buf[i] != '\n') {
+				alive = (used < NODE_ADMIN_LINE - 1);
+				if (alive)
+					line[used++] = buf[i];
+				continue;
+			}
+
+			line[used] = 0;
+			used = 0;
+			NodeAdminCommand(c->Node, line, reply, NODE_ADMIN_REPLY - 1);
+			StrCat(reply, NODE_ADMIN_REPLY, "\n");
+			alive = NodeAdminPipeIo(c, event, true, reply, StrLen(reply), &written);
+		}
+	}
+
+	Free(reply);
+	Free(buf);
+	Free(line);
+}
+
+// The thread of the admin pipe: one Administrator at a time, until the node stops
+static DWORD WINAPI NodeAdminThread(LPVOID param) {
+	NODE_CONTROLLER *c = (NODE_CONTROLLER *)param;
+	HANDLE event = CreateEventW(NULL, TRUE, FALSE, NULL);
+	HANDLE waits[2];
+
+	while (event != NULL && WaitForSingleObject(c->PipeStop, 0) == WAIT_TIMEOUT) {
+		OVERLAPPED ov;
+		DWORD n = 0;
+
+		Zero(&ov, sizeof(ov));
+		ov.hEvent = event;
+		ResetEvent(event);
+
+		BOOL connected = ConnectNamedPipe(c->PipeHandle, &ov);
+		DWORD err = GetLastError();
+		if (connected == FALSE && err == ERROR_IO_PENDING) {
+			waits[0] = c->PipeStop;
+			waits[1] = event;
+			if (WaitForMultipleObjects(2, waits, FALSE, INFINITE) != WAIT_OBJECT_0 + 1) {
+				CancelIoEx(c->PipeHandle, &ov);
+				GetOverlappedResult(c->PipeHandle, &ov, &n, TRUE);
+				break;
+			}
+			connected = GetOverlappedResult(c->PipeHandle, &ov, &n, FALSE);
+		} else if (connected == FALSE && err == ERROR_PIPE_CONNECTED) {
+			connected = TRUE;
+		}
+
+		if (connected)
+			NodeAdminSession(c, event);
+		else
+			Sleep(NODE_CLIENT_SLICE);
+
+		DisconnectNamedPipe(c->PipeHandle);
+	}
+
+	if (event != NULL)
+		CloseHandle(event);
+
+	return 0;
+}
+
+// Stop the thread of the admin pipe and close the pipe; nothing when it does not run
+static void NodeAdminStop(NODE_CONTROLLER *c) {
+	if (c->PipeThread != NULL) {
+		SetEvent(c->PipeStop);
+		WaitForSingleObject(c->PipeThread, INFINITE);
+		CloseHandle(c->PipeThread);
+		c->PipeThread = NULL;
+	}
+
+	if (c->PipeHandle != INVALID_HANDLE_VALUE && c->PipeHandle != NULL) {
+		CloseHandle(c->PipeHandle);
+		c->PipeHandle = INVALID_HANDLE_VALUE;
+	}
+
+	if (c->PipeStop != NULL) {
+		CloseHandle(c->PipeStop);
+		c->PipeStop = NULL;
+	}
+}
+
+// The admin pipe and its thread: the node of the service, on the default data directory, or the pipe that a test named.
+// Without it the node runs, and ranz node cannot reach it.
+static void NodeAdminStart(NODE_CONTROLLER *c) {
+	NODE *n = c->Node;
+	wchar_t def[MAX_PATH];
+	PSECURITY_DESCRIPTOR sd = NULL;
+	SECURITY_ATTRIBUTES sa;
+
+	NodeDefaultDataDir(def, sizeof(def));
+	if (UniIsEmptyStr(n->AdminPipe) == false)
+		UniFormat(c->Pipe, sizeof(c->Pipe), L"\\\\.\\pipe\\%s", n->AdminPipe);
+	else if (UniStrCmpi(n->DataDir, def) == 0)
+		UniFormat(c->Pipe, sizeof(c->Pipe), L"\\\\.\\pipe\\%S", NODE_ADMIN_PIPE);
+	else
+		return;
+
+	if (ConvertStringSecurityDescriptorToSecurityDescriptorW(NODE_ADMIN_PIPE_SDDL, SDDL_REVISION_1, &sd, NULL) == FALSE) {
+		NodeLog(n, "Admin pipe: its DACL is not valid (error %u)", (UINT)GetLastError());
+		return;
+	}
+
+	Zero(&sa, sizeof(sa));
+	sa.nLength = sizeof(sa);
+	sa.lpSecurityDescriptor = sd;
+	sa.bInheritHandle = FALSE;
+
+	// The first and only instance, for local callers only: no one can serve under its name
+	c->PipeHandle = CreateNamedPipeW(c->Pipe, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
+	                                 PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1, NODE_ADMIN_REPLY, NODE_ADMIN_LINE, 0, &sa);
+	DWORD err = GetLastError();
+	LocalFree(sd);
+
+	if (c->PipeHandle == INVALID_HANDLE_VALUE) {
+		NodeLog(n, "Admin pipe: %S cannot be created (error %u), so ranz node cannot reach this node", c->Pipe, (UINT)err);
+		return;
+	}
+
+	c->PipeStop = CreateEventW(NULL, TRUE, FALSE, NULL);
+	c->PipeThread = (c->PipeStop != NULL ? CreateThread(NULL, 0, NodeAdminThread, c, 0, NULL) : NULL);
+	if (c->PipeThread == NULL) {
+		NodeLog(n, "Admin pipe: its thread cannot start (error %u)", (UINT)GetLastError());
+		NodeAdminStop(c);
+		return;
+	}
+
+	NodeLog(n, "Admin pipe: %S, for SYSTEM and the Administrators only (ranz node)", c->Pipe);
+}
+
+//
+// The Controller
+//
+
+// Start the Controller of the node (the node lock is held), after its roles: the admin pipe, and the overlay with the
+// control stream of the settings when the client role did not start it. Without the settings the node opens no stream,
+// and says so once.
+void NodeControllerStart(NODE *n) {
+	wchar_t name[MAX_SIZE];
+	NODE_OVERLAY_CONFIG cfg;
+
+	if (n == NULL)
+		return;
+
+	NODE_CONTROLLER *c = NodeControllerGet(n);
+	NodeAdminStart(c);
+
+	if (c->Set == false) {
+		NodeLog(n, "Controller: none, so the node opens no control stream and dials no Controller; ranz node controller set joins it to one");
+		return;
+	}
+
+	if (n->Overlay != NULL) {
+		NodeLog(n, "Controller %s: the overlay of the client role has the control stream", c->Address);
+		return;
+	}
+
+	// The overlay without the client role: no adapter, and a data transport that dials and listens nowhere
+	StrToUni(name, sizeof(name), n->IdentityKey);
+	if (NodeControllerTls(c) == NULL || PeerKeyOpen(&c->NodeKey, name) == false) {
+		NodeLog(n, "Controller %s: no control stream: %s", c->Address, c->Tls == NULL ? "no TLS transport" : "the static key of the node cannot be opened or made");
+		return;
+	}
+
+	Zero(&cfg, sizeof(cfg));
+	cfg.Data = &c->None;
+	cfg.Key = &c->NodeKey;
+	NodeControllerOverlay(n, &cfg);
+	c->Overlay = NodeOverlayStart(n, &cfg);
+
+	NodeLog(n, c->Overlay ? "Controller %s: the overlay of the node runs with its control stream" : "Controller %s: the overlay of the node could not start", c->Address);
+}
+
+// Stop the Controller of the node (the node lock is not held): the admin pipe first, which reads the overlay, then the
+// overlay, which closes the control stream, then its transport and the key
+void NodeControllerStop(NODE *n) {
+	NODE_CONTROLLER *c;
+
+	if (n == NULL)
+		return;
+
+	Lock(n->Lock);
+	c = n->Controller;
+	Unlock(n->Lock);
+
+	if (c == NULL)
+		return;
+
+	NodeAdminStop(c);
+	NodeOverlayStop(n);
+
+	Lock(n->Lock);
+	n->Controller = NULL;
+	Unlock(n->Lock);
+
+	TransportTlsFree(c->Tls);
+	PeerKeyClose(&c->NodeKey);
+	DeleteLock(c->Lock);
+	Free(c);
+}
+
+// The state of the Controller of the node; Set is false without the settings or while the node does not run
+void NodeControllerGetStatus(NODE *n, NODE_CONTROLLER_STATUS *st) {
+	NODE_OVERLAY_STATUS os;
+	PACL dacl = NULL;
+	PSECURITY_DESCRIPTOR sd = NULL;
+	LPWSTR sddl = NULL;
+
+	if (st == NULL)
+		return;
+
+	Zero(st, sizeof(NODE_CONTROLLER_STATUS));
+	if (n == NULL)
+		return;
+
+	Lock(n->Lock);
+	{
+		NODE_CONTROLLER *c = n->Controller;
+
+		if (c != NULL) {
+			NodeOverlayGetStatus(n, &os);
+			st->Set = c->Set;
+			StrCpy(st->Address, sizeof(st->Address), c->Address);
+			Copy(st->Key, c->Key, PEER_KEY_SIZE);
+			StrCpy(st->Fingerprint, sizeof(st->Fingerprint), c->Fingerprint);
+			st->Overlay = c->Overlay;
+			st->Connected = os.Connected;
+			st->Generation = os.Generation;
+
+			Lock(c->Lock);
+			{
+				st->NumEnds = c->NumEnds;
+				st->LastEnd = c->LastEnd;
+				st->NextRetry = c->NextRetry;
+				st->Mismatch = c->Mismatch;
+				StrCpy(st->Seen, sizeof(st->Seen), c->Seen);
+			}
+			Unlock(c->Lock);
+
+			if (c->PipeHandle != INVALID_HANDLE_VALUE && c->PipeHandle != NULL &&
+			    GetSecurityInfo(c->PipeHandle, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &dacl, NULL, &sd) == ERROR_SUCCESS &&
+			    ConvertSecurityDescriptorToStringSecurityDescriptorW(sd, SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &sddl, NULL)) {
+				UniToStr(st->PipeAcl, sizeof(st->PipeAcl), sddl);
+			}
+		}
+	}
+	Unlock(n->Lock);
+
+	if (sddl != NULL)
+		LocalFree(sddl);
+	if (sd != NULL)
+		LocalFree(sd);
+}

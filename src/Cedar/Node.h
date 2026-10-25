@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeDhcp.c, NodeDns.c, NodeHarden.c, NodeLeak.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeHarden.c, NodeLeak.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -38,6 +38,7 @@
 #define NODE_SETTING_IDENTITY_KEY "IdentityKey" // The name of the node identity key; without it NODE_IDENTITY_KEY_NAME
 #define NODE_SETTING_BGP          "Bgp"         // The BGP settings, one JSON object (NodeBgpStart); without it no BGP sidecar
 #define NODE_SETTING_CLIENT       "Client"      // The settings of the client role, one JSON object (NodeClient.c); without it the role holds nothing
+#define NODE_SETTING_CONTROLLER   "Controller"  // The Controller settings, one JSON object (NodeController.c); without it the node opens no control stream
 #define NODE_SETTING_LOG_DAYS     "LogDays"     // The age limit of the node log in days: older files of the log are deleted; without it NODE_LOG_DEFAULT_DAYS, 0 for no limit
 #define NODE_SETTING_LOG_MB       "LogMB"       // The disk limit of the node log in megabytes: its files never take more together; without it NODE_LOG_DEFAULT_MB, 0 for no limit
 
@@ -93,6 +94,14 @@
 #define NODE_CLIENT_LINE        128                // Bytes of a command line of the pipe at most
 #define NODE_CLIENT_REPLY       2048               // Bytes of an answer of the pipe at most
 #define NODE_CLIENT_PIPE_IDLE   30000              // ms that the pipe waits for the next command of a connected user
+
+// The Controller of a node and its admin pipe (NodeController.c; SDN-90, #395)
+#define NODE_ADMIN_PIPE             "ranz-node-admin" // The admin pipe (\\.\pipe\...) without another in NODE.AdminPipe
+#define NODE_ADMIN_LINE             1024              // Bytes of a command line of the admin pipe at most
+#define NODE_ADMIN_REPLY            4096              // Bytes of an answer of the admin pipe at most
+#define NODE_ADMIN_IDLE             10000             // ms that the admin pipe waits for the command of a connected Administrator
+#define NODE_CONTROLLER_MAX_SETTING 1024              // Bytes of the Controller setting at most
+#define NODE_CONTROLLER_FINGERPRINT 65                // The TLS fingerprint of a Controller: 64 hex digits and the NUL
 
 // The Wintun adapters of a node (NodeWintun.c; CORE-S3-1, #71)
 #define NODE_WINTUN_DLL           L"wintun.dll" // Next to the executable: the pinned release of THIRD_PARTY.TXT
@@ -179,6 +188,10 @@ typedef void(NODE_ADAPTER_STOP_PROC)(NODE *n, void *param);
 // Takes a desired state that the overlay applied, once its forwarding tables are in (NodeOverlayStart)
 struct CONTROL_STATE;
 typedef void(NODE_STATE_PROC)(NODE *n, void *param, const struct CONTROL_STATE *st);
+// Takes how each stream of the control stream ended or why it did not open (NodeOverlayStart; CONTROL_END_PROC of
+// Core/Control.h), on the thread of the control stream
+struct CONTROL_STATUS;
+typedef void(NODE_CONTROL_END_PROC)(void *param, const struct CONTROL_STATUS *st);
 // Takes an IP packet of the host's own stack from the ring of a Wintun adapter, on the I/O thread of its adapter queue
 typedef void(NODE_WINTUN_PROC)(NODE_WINTUN *w, void *param, const UCHAR *packet, UINT size);
 // Tells the time in ms of the flows of the policy of the overlay (NodeOverlayStart), on the thread of a packet
@@ -310,6 +323,11 @@ struct NODE {
 	// The client role (NodeClient.c; CORE-S3-1, #71), under Lock: NULL while the role holds nothing
 	NODE_CLIENT *Client;
 
+	// The Controller of the node and its admin pipe (NodeController.c; SDN-90, #395), under Lock: NULL while the node
+	// does not run. The admin pipe is NODE_ADMIN_PIPE unless a test names another before NodeStart.
+	NODE_CONTROLLER *Controller;
+	wchar_t AdminPipe[MAX_PATH];
+
 	// The BGP sidecar (CORE-S7-1, #82), under Lock
 	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
 	wchar_t BgpSidecar[MAX_PATH]; // The executable that holds the sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
@@ -341,6 +359,8 @@ struct NODE_OVERLAY_CONFIG {
 	TRANSPORT *Control;                      // The transport of the control stream to the controller (Core/Control.h), NULL for none: NodeOverlayApply then applies the states
 	char Controller[TRANSPORT_ADDRESS_SIZE]; // The controller's address on it
 	UCHAR ControllerKey[PEER_KEY_SIZE];      // ... and its static key
+	NODE_CONTROL_END_PROC *ControlEnd;       // Takes the end of each stream of the control stream, NULL for none (SDN-90, #395) ...
+	void *ControlEndParam;                   // ... and its first parameter
 	TRANSPORT *Data;                         // The transport of the Noise sessions to the peers, which finds a peer by its node name
 	PEER_KEY *Key;                           // The node's static key, which must outlive the overlay
 	NODE_ADAPTER_PROC *Adapter;              // Takes the packets for the host, NULL for none
@@ -405,6 +425,23 @@ struct NODE_CLIENT_STATUS {
 	UINT64 NumRoams;                     // Settled address changes on other interfaces
 	UINT64 FromHost;                     // Packets of the host taken from its adapters
 	UINT64 ToHost;                       // Packets put into its adapters for the host
+};
+
+// What NodeControllerGetStatus reports (NodeController.c; SDN-90, #395)
+struct NODE_CONTROLLER_STATUS {
+	bool Set;                                      // The node has Controller settings
+	char Address[TRANSPORT_ADDRESS_SIZE];          // The address of the Controller's TLS port ...
+	UCHAR Key[PEER_KEY_SIZE];                      // ... its static key ...
+	char Fingerprint[NODE_CONTROLLER_FINGERPRINT]; // ... and the TLS fingerprint of its certificate, in lower case
+	bool Overlay;                                  // The node started the overlay for the control stream, without the client role
+	bool Connected;                                // The control stream is open
+	UINT64 Generation;                             // The Generation of the desired state that the overlay runs
+	UINT64 NumEnds;                                // Streams that ended or did not open
+	UINT LastEnd;                                  // How the last one ended (CONTROL_END_*)
+	UINT NextRetry;                                // ms before the next attempt after it
+	bool Mismatch;                                 // The certificate of the last dial that reached the fingerprint check failed it ...
+	char Seen[NODE_CONTROLLER_FINGERPRINT];        // ... and had this TLS fingerprint, "" before the first
+	char PipeAcl[MAX_SIZE];                        // The DACL of the admin pipe as the system holds it, in SDDL; "" when it does not run
 };
 
 // One Wintun adapter of a VRF, as NodeVrfAdaptersGetStatus and NodeClientGetAdapters report it
@@ -685,6 +722,10 @@ UINT NodeAcceptSession(NODE *n, TRANSPORT_NOISE *s, UINT timeout);
 void NodeClientGetStatus(NODE *n, NODE_CLIENT_STATUS *st);
 void NodeClientPower(NODE *n, UINT event);
 UINT NodeClientGetAdapters(NODE *n, NODE_VRF_ADAPTER_STATUS *list, UINT max);
+
+// NodeController.c
+void NodeControllerGetStatus(NODE *n, NODE_CONTROLLER_STATUS *st);
+void NodeAdminCommand(NODE *n, char *line, char *reply, UINT size);
 
 // NodeVrfAdapter.c
 void NodeVrfAdapterGuid(GUID *guid, const UCHAR *key, UINT vrf_id);

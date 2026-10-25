@@ -143,6 +143,12 @@ func (c *Conn) Close() error {
 // Dial opens a control stream to the controller at addr as the node with the static key key.
 // The handshake fails unless the controller holds the private half of controllerKey.
 func Dial(ctx context.Context, addr string, key keys.Static, controllerKey []byte) (*Conn, error) {
+	return dial(ctx, addr, key, controllerKey, nil)
+}
+
+// dial is Dial, with verify, when it is not nil, as the VerifyConnection of the TLS session
+// (DialPinned).
+func dial(ctx context.Context, addr string, key keys.Static, controllerKey []byte, verify func(tls.ConnectionState) error) (*Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
@@ -156,6 +162,7 @@ func Dial(ctx context.Context, addr string, key keys.Static, controllerKey []byt
 		MinVersion:         tls.VersionTLS13,
 		NextProtos:         []string{ALPN},
 		InsecureSkipVerify: true,
+		VerifyConnection:   verify,
 	})
 	c, err := handshake(ctx, tc, key, true, controllerKey)
 	if err != nil {
