@@ -27,6 +27,7 @@ func vrfPolicy(v intent.VRF) *controlpb.VrfPolicy {
 // has no entry.
 func nodeRules(in intent.Intent, vrfs map[string]*controlpb.Vrf) map[string][]*controlpb.Rule {
 	out := map[string][]*controlpb.Rule{}
+	tags := nodeTags(in)
 	for _, r := range in.Rules() {
 		rule := &controlpb.Rule{Name: r.Name, VrfId: vrfs[r.VRF].GetId(), Priority: r.Priority, Action: controlpb.RuleAction_RULE_ACTION_ALLOW,
 			From: ruleEnd(r.From), To: ruleEnd(r.To), Protocol: uint32(r.Protocol)}
@@ -37,7 +38,7 @@ func nodeRules(in intent.Intent, vrfs map[string]*controlpb.Vrf) map[string][]*c
 			rule.Ports = append(rule.Ports, &controlpb.PortRange{First: uint32(p.First), Last: uint32(p.Last)})
 		}
 		for name, n := range in.Nodes {
-			if slices.Contains(n.VRFs, r.VRF) && (r.From.Holds(n.Tags) || r.To.Holds(n.Tags)) {
+			if slices.Contains(n.VRFs, r.VRF) && (r.From.Holds(tags[name]) || r.To.Holds(tags[name])) {
 				out[name] = append(out[name], rule)
 			}
 		}
