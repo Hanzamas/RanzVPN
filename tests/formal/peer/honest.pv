@@ -1,0 +1,11 @@
+(* Variant honest: the peer layer with no key leaked (AUD-5, #389). *)
+
+process
+  ( PeerSetup()
+  | !( new sid: sessionid; PeerSeal(alice, bob, k_bind, sid) )
+  | !( new sid: sessionid; PeerSeal(alice, bob, k_signal, sid) )
+  | !( PeerOpen(bob, alice, k_bind) )
+  | !( PeerOpen(bob, alice, k_signal) )
+  | !( new sid: sessionid; DataSend(alice, bob, sid) )
+  | !( DataRecv(bob, alice) )
+  )

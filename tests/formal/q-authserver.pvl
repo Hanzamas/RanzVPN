@@ -1,0 +1,9 @@
+(* q-authserver.pvl
+   The query of the session models about what the server takes (AUD-5, #389). *)
+
+(* The server takes a handshake from alice only if alice started it in the TLS session that the server is in. The
+   transcript of the TLS session is the identity of the session, so this is the binding of the handshake to its
+   session: a middlebox that terminates the TLS session of alice and opens one to the server is a handshake that alice
+   did not start in the server's session. *)
+(* @query auth-server *)
+query t: bitstring; event(ServerAccept(bob, alice, t)) ==> event(ClientStart(alice, bob, t)).

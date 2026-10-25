@@ -1,0 +1,14 @@
+(* Variant tunnel-cert: a further connection joins a tunnel over TLS 1.3 on TCP 443, as the code has it, against an
+   attacker that holds the key of the certificate of the server (AUD-5, #389). As tunnel-none: the middlebox that can
+   present the pinned certificate must still be unable to join a connection of alice to her Tunnel, since the binding of
+   the handshake of each connection is to its own exporter. *)
+
+process
+  ( Setup()
+  | LeakCertServer()
+  | !( TunnelOpen(bob, alice) )
+  | !( TunnelOpen(bob, charlie) )
+  | !( JoinClient(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs) )
+  | !( JoinServer(bob, alice, bt_export, plabel_session, lab_exp_session, suite_hfs, kc_on) )
+  | !( JoinServer(bob, charlie, bt_export, plabel_session, lab_exp_session, suite_hfs, kc_on) )
+  )
