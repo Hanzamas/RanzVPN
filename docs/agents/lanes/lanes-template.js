@@ -46,7 +46,7 @@ const RULES = [
   '(18) THE CLOUD. In a cloud session the clone is shallow and the container can be reclaimed at any time. If `git rev-parse --is-shallow-repository` prints true, run `git fetch --unshallow origin` once, before the first merge of origin/integration. Only pushed work survives (rule 15). A command that runs in the foreground ends after 10 minutes.',
 ].join(' ')
 
-const COMMON = ' Other lanes run at the same time and the usage budget of the account is shared, so work in small steps, push after every commit, and watch CI with the one watch only. Keep your edits of functions that other lanes also change (the shared protocol, node and transport files) to hook lines and put your code in new files. A session can be cut off at any moment: every push must be a state that can be resumed.'
+const COMMON = ' Other lanes run at the same time and the usage budget of the account is shared, so work in small steps, push after every commit, and watch CI with the one watch of rule 3 only. Never start a foreground sleep to wait. Keep your edits of functions that other lanes also change (the shared protocol, node and transport files) to hook lines and put your code in new files. A session can be cut off at any moment: every push must be a state that can be resumed.'
 
 // FILL IN. One text with the facts of the moment. Replace it for every run, never stack a second one.
 // A lane reads it after its task, and it wins over the task where the two differ.
