@@ -115,6 +115,77 @@ func TestControlOnlyPortRefusesHTTP(t *testing.T) {
 	}
 }
 
+// The TLS policy of each surface (SDN-45): a TLS 1.2 client is refused on the control stream, the
+// new protocol, also when it offers HTTP besides, and accepted on the web UI and the API; TLS 1.3
+// takes both.
+func TestTLSPolicyPerSurface(t *testing.T) {
+	versions := make(chan uint16, 4)
+	s := &Server{
+		TLS: &tls.Config{Certificates: []tls.Certificate{certificate(t)}},
+		Control: func(tc *tls.Conn) {
+			versions <- tc.ConnectionState().Version
+			tc.Close()
+		},
+		HTTP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, tls.VersionName(r.TLS.Version))
+		}),
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(ln) }()
+	defer func() {
+		ln.Close()
+		<-done
+		s.Close()
+	}()
+	addr := ln.Addr().String()
+
+	// The control stream: TLS 1.2 is refused, TLS 1.3 taken
+	for _, protos := range [][]string{{control.ALPN}, {control.ALPN, "h2", "http/1.1"}} {
+		if tc, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true, NextProtos: protos, MaxVersion: tls.VersionTLS12}); err == nil {
+			tc.Close()
+			t.Errorf("a TLS 1.2 client that offers %v completed its handshake", protos)
+		}
+	}
+	tc, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true, NextProtos: []string{control.ALPN}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tc.Close()
+	select {
+	case v := <-versions:
+		if v != tls.VersionTLS13 {
+			t.Errorf("Control got a connection of %s", tls.VersionName(v))
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Control got no connection")
+	}
+
+	// The web UI and the API: TLS 1.2 and TLS 1.3
+	for _, v := range []uint16{tls.VersionTLS12, tls.VersionTLS13} {
+		tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: v, MaxVersion: v}}
+		client := &http.Client{Transport: tr, Timeout: 10 * time.Second}
+		resp, err := client.Get("https://" + addr + "/")
+		if err != nil {
+			t.Fatalf("%s: %v", tls.VersionName(v), err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		tr.CloseIdleConnections()
+		if string(body) != tls.VersionName(v) {
+			t.Errorf("a %s client: the HTTP handler saw %q", tls.VersionName(v), body)
+		}
+	}
+	select {
+	case v := <-versions:
+		t.Errorf("Control got a connection of %s from a client of the web UI", tls.VersionName(v))
+	default:
+	}
+}
+
 type challenges map[string]string
 
 func (c challenges) KeyAuthorization(token string) (string, bool) {
