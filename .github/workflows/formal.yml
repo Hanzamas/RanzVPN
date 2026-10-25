@@ -98,7 +98,7 @@ jobs:
     - name: The jobs of the variants
       id: variants
       # TEMP (diagnostics of the heavy variants): only some variants, so that the others do not queue first
-      run: python -I .github/scripts/formal.py list peer-leaks peer-honest tunnel tunnel-honest tunnel-quic tunnel-nokey noise-encrypted tls443-honest quic-honest tls443-p0 tls443 >> "$GITHUB_OUTPUT"
+      run: python -I .github/scripts/formal.py list tunnel tunnel-honest tunnel-quic tunnel-nokey noise-encrypted tls443-if tls443-p0 tls443 >> "$GITHUB_OUTPUT"
     - name: Restore ProVerif
       id: proverif
       uses: actions/cache@v4

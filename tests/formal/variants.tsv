@@ -12,15 +12,16 @@
 # compromise variants leak the keys of the nodes in phase 0 and in phase 1, the honest ones leak nothing.
 peer-leaks	prims.pvl,peer-lib.pvl,peer-queries.pvl,peer/leaks.pv	Peer layer: Noise_K envelopes and data datagrams, keys leaked
 peer-honest	prims.pvl,peer-lib.pvl,peer-queries.pvl,peer/honest.pv	The same with no key leaked
-tunnel	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tls443.pv	Join of a further connection to a tunnel over TLS 1.3, the code as it is: the static key of the connection is compared with the Tunnel's; keys leaked	2
-tunnel-honest	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tls443-honest.pv	The same with no key leaked	2
-tunnel-quic	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/quic.pv	Join over QUIC, the code as it is: bound to tls-server-end-point; keys leaked	2
-tunnel-nokey	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/nokey.pv	Negative control: the join does not compare the static key of the connection with the Tunnel's	2
-noise-encrypted	prims.pvl,noise-lib.pvl,noise-queries.pvl,noise/encrypted.pv	Noise_IK alone with the records under the Noise keys (no outer session): the grades of the Noise Explorer	6
+tunnel	settings-fast.pvl,prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tls443.pv	Join of a further connection to a tunnel over TLS 1.3, the code as it is: the static key of the connection is compared with the Tunnel's; keys leaked	2
+tunnel-honest	settings-fast.pvl,prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tls443-honest.pv	The same with no key leaked	2
+tunnel-quic	settings-fast.pvl,prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/quic.pv	Join over QUIC, the code as it is: bound to tls-server-end-point; keys leaked	2
+tunnel-nokey	settings-fast.pvl,prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/nokey.pv	Negative control: the join does not compare the static key of the connection with the Tunnel's	2
+noise-encrypted	settings-fast.pvl,prims.pvl,noise-lib.pvl,noise-queries.pvl,noise/encrypted.pv	Noise_IK alone with the records under the Noise keys (no outer session): the grades of the Noise Explorer	6
 tls443-honest	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-honest.pv	The same with no key leaked	4
 quic-honest	prims.pvl,session-lib.pvl,session-queries.pvl,session/quic-honest.pv	The same with no key leaked	4
-tls443-p0	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-p0.pv	Session over TLS 1.3 (TLS-443), the code as it is, with the keys leaked in phase 0 only	8
-tls443	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443.pv	Session over TLS 1.3 (TLS-443), the code as it is: pinned certificate, Noise_IK bound to the TLS exporter; keys leaked	16
+tls443-p0	settings-fast.pvl,prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-p0.pv	Session over TLS 1.3 (TLS-443), the code as it is, with the keys leaked in phase 0 only	8
+tls443-if	settings-if.pvl,prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443.pv	A try: tls443 with the settings of the Noise Explorer but the one for the traces	8
+tls443	settings-fast.pvl,prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443.pv	Session over TLS 1.3 (TLS-443), the code as it is: pinned certificate, Noise_IK bound to the TLS exporter; keys leaked	16
 quic	prims.pvl,session-lib.pvl,session-queries.pvl,session/quic.pv	Session over QUIC, the code as it is: pinned certificate, Noise_IK bound to tls-server-end-point; keys leaked	4
 tls443-nobinding	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-nobinding.pv	Negative control: no binding in the prologue	4
 tls443-nopin	prims.pvl,session-lib.pvl,session-queries.pvl,session/tls443-nopin.pv	Negative control: the client pins no certificate	4

@@ -30,6 +30,24 @@ tls443	suite	holds
 tls443	replay-server	fails	a leaked key lets the attacker start sessions
 tls443	replay-client	fails	a leaked key lets the attacker answer
 
+# A try: tls443 with the settings of the Noise Explorer but the one for the traces
+tls443-if	reach-login	reach
+tls443-if	reach-done	reach
+tls443-if	sec-pw	fails
+tls443-if	sec-pw-unless-noise	holds
+tls443-if	sec-pw-unless-cert	holds
+tls443-if	sec-pw-unless-both	holds
+tls443-if	sec-data-unless-both	holds
+tls443-if	fs-data	holds
+tls443-if	auth-server	holds
+tls443-if	auth-client	holds
+tls443-if	auth-client-both	holds
+tls443-if	data-auth	holds
+tls443-if	negotiation	holds
+tls443-if	suite	holds
+tls443-if	replay-server	fails
+tls443-if	replay-client	fails
+
 # The same with the keys leaked in phase 0 only: the queries of the sessions with no phase 1 in the model
 tls443-p0	reach-login	reach
 tls443-p0	reach-done	reach
