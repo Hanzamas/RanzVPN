@@ -2,8 +2,8 @@
 // Named stand-in test of vpntest ("firsttest" command): the two Nodes of the first test of the product on two PCs
 // (docs/first-test.md, .github/scripts/first-test.ps1)
 //
-// The ranzvpnserver service of a PC does not open a control stream to the Controller yet, so it cannot join an Intent by
-// itself (the Gaps of docs/first-test.md). This test is the Node that does. It runs the overlay of two nodes of the new
+// The ranzvpnserver service of a PC joins its Controller (step 20 of docs/first-test.md, SDN-90 #395), but two Node
+// services cannot form a Noise session yet (Gap 3). This test is the pair of Nodes that does. It runs the overlay of two nodes of the new
 // core, pc-a and pc-b, with the static keys of sdntrace.c, and opens the control stream of each to a running ranz controller
 // as sdntrace does (Core/Control.h, through NodeOverlayStart). The Intent of the controller holds a Node resource with each
 // of those keys, so each node applies its desired state, acknowledges its Generation and gets its address from the
