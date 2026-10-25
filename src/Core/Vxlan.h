@@ -9,18 +9,41 @@
 // the VNI: ingress replication, because the underlay has no multicast (ADR-0032 amendment, Flooding). VxlanSendTo sends
 // one copy to one VTEP. VxlanSetVni sets the VNIs that the module carries and the flood list of each, also while the
 // module runs: each frame goes to the whole list that its VNI had when it was sent, the old one or the new one. Every
-// datagram that the node receives from a VTEP goes through one ingress, VxlanInput, which reads the VXLAN header: the
-// frame of a VNI that the module carries goes to the receiver with its VNI and the VTEP it came from, and a datagram on
-// any other VNI, or one that is no VXLAN datagram, is dropped and counted.
+// datagram that the node receives from a VTEP goes through one ingress, VxlanInput, which reads its header: the frame
+// of a VNI that the module carries goes to the receiver with its VNI and the VTEP it came from, and a datagram on any
+// other VNI, or one that is no datagram of the encapsulation of its VTEP, is dropped and counted.
+//
+// The module speaks Geneve as well (RFC 8926; SDN-71, #347), for a fabric, OVN or NSX that uses it. The encapsulation
+// belongs to the VTEP (VXLAN_ADDR.Encap): a VNI of Geneve is a VNI of the one table of the module, a flood list may
+// hold VTEPs of both encapsulations, and each copy of a frame goes out in the encapsulation of its VTEP, to a VTEP of
+// Geneve behind a Geneve header without options. VxlanInput reads a datagram from a VTEP of Geneve by its Geneve
+// header, the options included (VxlanParseGeneve). The module reads no option yet, so a critical option is one that it
+// does not know: the datagram is dropped and counted (RFC 8926 section 3.5.1), and so is a control message (the O bit,
+// section 3.4), whose payload a tunnel endpoint does not forward. Every other option is skipped, and the frame goes to
+// the receiver without it. Geneve has no control plane of its own: the user of the module picks the encapsulation of
+// each VTEP, and the port of its socket of Geneve.
 //
 // The datagrams travel over a send procedure that the caller gives (VXLAN_SEND_PROC) and come back through VxlanInput:
-// the UDP socket of the module (VxlanUdp.c) on the VXLAN port, or the harness of a test.
+// the UDP sockets of the module (VxlanUdp.c), on the VXLAN port and, for the VTEPs of Geneve, on the Geneve port, or
+// the harness of a test.
 //
 // The VXLAN header (RFC 7348 section 5) in front of the frame in the UDP datagram:
 //   byte 0     the flags: the I flag (VXLAN_FLAG_VNI) set, the other bits zero when sent and ignored when received
 //   bytes 1-3  reserved: zero when sent, ignored when received
 //   bytes 4-6  the VNI, big-endian
 //   byte 7     reserved: zero when sent, ignored when received
+//
+// The Geneve header (RFC 8926 section 3.4) in front of the frame, which the module sends without options:
+//   byte 0     the version (the two high bits, GENEVE_VERSION) and the length of the options in 4-byte words (the six
+//              low bits)
+//   byte 1     the O bit (GENEVE_FLAG_CONTROL), the C bit (GENEVE_FLAG_CRITICAL) and six reserved bits: zero when sent,
+//              ignored when received
+//   bytes 2-3  the protocol of the payload, an EtherType: GENEVE_PROTOCOL_ETHERNET for an Ethernet frame
+//   bytes 4-6  the VNI, big-endian
+//   byte 7     reserved: zero when sent, ignored when received
+//   bytes 8-   the options (section 3.5), each a header of 4 bytes and its data: the class in bytes 0-1, the type in
+//              byte 2, whose high bit is the critical bit (GENEVE_OPTION_CRITICAL), and in byte 3 three reserved bits,
+//              ignored when received, and the length of the data in 4-byte words (the five low bits)
 
 #ifndef CORE_VXLAN_H
 #define CORE_VXLAN_H
@@ -34,6 +57,21 @@
 #define VXLAN_FLAG_VNI    0x08     // Its I flag: the VNI is valid
 #define VXLAN_MAX_VNI     0xFFFFFF // A VNI has 24 bits
 
+// Geneve (RFC 8926)
+#define GENEVE_PORT              6081   // The UDP port of Geneve (IANA; RFC 8926 section 3.3)
+#define GENEVE_HEADER_SIZE       8      // The fixed Geneve header, before its options: as long as the VXLAN header
+#define GENEVE_VERSION           0      // The version of the header, the one that RFC 8926 defines
+#define GENEVE_FLAG_CONTROL      0x80   // Byte 1: the O bit, a control message
+#define GENEVE_FLAG_CRITICAL     0x40   // Byte 1: the C bit, an option is critical
+#define GENEVE_PROTOCOL_ETHERNET 0x6558 // The protocol of an Ethernet frame (Transparent Ethernet Bridging)
+#define GENEVE_OPTION_CRITICAL   0x80   // The critical bit of the type of an option
+#define GENEVE_MAX_OPTIONS       63     // The options of one header at most: 63 words of options, one word for each header
+#define GENEVE_MAX_OPTION_DATA   124    // The data of one option at most: 31 words
+
+// The encapsulation of a VTEP (VXLAN_ADDR)
+#define VXLAN_ENCAP_VXLAN  0 // VXLAN (RFC 7348), on VXLAN_PORT
+#define VXLAN_ENCAP_GENEVE 1 // Geneve (RFC 8926), on GENEVE_PORT
+
 // The frames that the module carries, and its datagrams
 #define VXLAN_MIN_FRAME    14   // The shortest frame: the two MAC addresses and the EtherType, without the FCS
 #define VXLAN_MAX_DATAGRAM 9216 // The largest datagram that the module sends or takes: a jumbo frame of the underlay
@@ -44,16 +82,40 @@
 #define VXLAN_MAX_VTEPS 1024 // The VTEPs of one flood list at most
 
 // Why the module dropped a datagram (VXLAN_STATS)
-#define VXLAN_DROP_MALFORMED 0 // No VXLAN datagram: shorter than the header and a frame, longer than VXLAN_MAX_DATAGRAM, or without the I flag
+#define VXLAN_DROP_MALFORMED 0 // No datagram of the encapsulation of its VTEP: shorter than the header and a frame, longer than VXLAN_MAX_DATAGRAM, without the I flag of VXLAN, or a Geneve header that VxlanParseGeneve does not take or that no Ethernet frame follows
 #define VXLAN_DROP_VNI       1 // A VNI that the module does not carry
 #define VXLAN_DROP_SEND      2 // The send procedure did not take a datagram
-#define VXLAN_NUM_REASONS    3
+#define VXLAN_DROP_CRITICAL  3 // A Geneve datagram with a critical option that the module does not know (RFC 8926 section 3.5.1)
+#define VXLAN_DROP_CONTROL   4 // A Geneve control message, with the O bit: the module has none, and forwards no payload of one (RFC 8926 section 3.4)
+#define VXLAN_NUM_REASONS    5
 
-// A transport address of a VTEP: an IPv4 address as an IPv4-mapped IPv6 address (RFC 4291 section 2.5.5.2), and a port
+// A transport address of a VTEP: an IPv4 address as an IPv4-mapped IPv6 address (RFC 4291 section 2.5.5.2), a port,
+// and the encapsulation that it speaks
 typedef struct VXLAN_ADDR {
 	UCHAR Ip[16]; // The address
 	USHORT Port;  // The UDP port, host order: VXLAN_PORT for the VTEPs of a fabric
+	USHORT Encap; // The encapsulation: VXLAN_ENCAP_VXLAN, as VxlanAddrSetV4 sets it, or VXLAN_ENCAP_GENEVE
 } VXLAN_ADDR;
+
+// One option of a Geneve header (RFC 8926 section 3.5), as VxlanParseGeneve reads it
+typedef struct GENEVE_OPTION {
+	USHORT Class;      // Its class: the namespace of its type
+	UCHAR Type;        // Its type, as on the wire: the critical bit included
+	bool Critical;     // The critical bit of the type: a receiver that does not know the option drops the datagram
+	UINT Length;       // The bytes of its data: 0 to GENEVE_MAX_OPTION_DATA, a multiple of 4
+	const UCHAR *Data; // ... and the data, inside the datagram
+} GENEVE_OPTION;
+
+// A Geneve header (RFC 8926 section 3.4), as VxlanParseGeneve reads it
+typedef struct GENEVE_HEADER {
+	UINT Size;                                 // Its bytes: GENEVE_HEADER_SIZE and its options; the payload follows
+	bool Control;                              // The O bit: a control message
+	bool Critical;                             // The C bit: an option is critical, as the sender says
+	USHORT Protocol;                           // The protocol of the payload, an EtherType: GENEVE_PROTOCOL_ETHERNET for a frame
+	UINT Vni;                                  // The VNI
+	UINT NumOptions;                           // Its options
+	GENEVE_OPTION Options[GENEVE_MAX_OPTIONS]; // ... in their order
+} GENEVE_HEADER;
 
 // The counters of the module (VxlanGetStats)
 typedef struct VXLAN_STATS {
@@ -70,8 +132,9 @@ typedef struct VXLAN_UDP VXLAN_UDP;
 
 // Sends one datagram to dst; false when it could not be sent
 typedef bool(VXLAN_SEND_PROC)(void *param, const VXLAN_ADDR *dst, const void *data, UINT size);
-// Takes one frame of a VNI that the module carries, byte for byte as the VTEP from sent it. It runs on the thread that
-// called VxlanInput and may call VxlanSend and VxlanSendTo and nothing else of the module.
+// Takes one frame of a VNI that the module carries, byte for byte as the VTEP from sent it; from has the encapsulation
+// of the VTEP, so VxlanSendTo answers it in that encapsulation. It runs on the thread that called VxlanInput and may
+// call VxlanSend and VxlanSendTo and nothing else of the module.
 typedef void(VXLAN_RECV_PROC)(VXLAN *v, void *param, UINT vni, const VXLAN_ADDR *from, const UCHAR *frame, UINT size);
 
 // Vxlan.c
@@ -85,8 +148,13 @@ void VxlanInput(VXLAN *v, const VXLAN_ADDR *from, const UCHAR *data, UINT size);
 void VxlanGetStats(VXLAN *v, VXLAN_STATS *st);
 void VxlanAddrSetV4(VXLAN_ADDR *a, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, USHORT port);
 
+// VxlanGeneve.c
+void VxlanWriteGeneve(UCHAR *buf, UINT vni);
+bool VxlanParseGeneve(const UCHAR *data, UINT size, GENEVE_HEADER *h);
+
 // VxlanUdp.c
 VXLAN_UDP *VxlanUdpNew(USHORT port);
+VXLAN_UDP *VxlanUdpNewGeneve(USHORT port);
 USHORT VxlanUdpPort(VXLAN_UDP *u);
 bool VxlanUdpSend(void *param, const VXLAN_ADDR *dst, const void *data, UINT size);
 bool VxlanUdpStart(VXLAN_UDP *u, VXLAN *v);

@@ -66,6 +66,16 @@
 //	ranz [flags] token list                    print the API tokens, without their secrets
 //	ranz [flags] token create -role ROLE NAME  create an API token with the role viewer, operator or admin, and print its secret
 //	ranz [flags] token delete NAME             delete an API token
+//	ranz [flags] user list                     print the users, with their devices and whether each has a password (SDN-31)
+//	ranz [flags] user set [flags] NAME         make the user, or change the fields that the flags name: -display, -groups,
+//	                                           -expires, -max-devices, -may-change-password and -no-saved-password
+//	ranz [flags] user password [-f FILE] NAME  set the password of the user from FILE or standard input, one line; the
+//	                                           controller keeps a PBKDF2 hash of it, outside the intent
+//	ranz [flags] user delete NAME              delete the user and its password
+//	ranz [flags] group list                    print the groups, with their members: a group is a tag of policy for the
+//	                                           devices of its members
+//	ranz [flags] group set [-display TEXT] NAME  make the group, or change its display name
+//	ranz [flags] group delete NAME             delete the group
 //	ranz [flags] admin-sources list            print the admin source allowlist: the prefixes that the API and the web UI accept
 //	                                           connections from (none: any address)
 //	ranz [flags] admin-sources set PREFIX...   replace the allowlist with these prefixes, each a CIDR prefix such as 203.0.113.0/24
@@ -140,6 +150,13 @@ const usage = `usage:
   ranz [flags] token list
   ranz [flags] token create -role viewer|operator|admin NAME
   ranz [flags] token delete NAME
+  ranz [flags] user list
+  ranz [flags] user set [-display TEXT] [-groups A,B] [-expires TIME|none] [-max-devices N] [-may-change-password=BOOL] [-no-saved-password=BOOL] NAME
+  ranz [flags] user password [-f FILE] NAME
+  ranz [flags] user delete NAME
+  ranz [flags] group list
+  ranz [flags] group set [-display TEXT] NAME
+  ranz [flags] group delete NAME
   ranz [flags] admin-sources list
   ranz [flags] admin-sources set PREFIX...
   ranz [flags] admin-sources clear
@@ -398,6 +415,10 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 			return err
 		}
 		return show(out, tok)
+	case args[0] == "user":
+		return userCommand(ctx, c, args[1:], out)
+	case args[0] == "group":
+		return groupCommand(ctx, c, args[1:], out)
 	case len(args) == 2 && args[0] == "admin-sources" && args[1] == "list":
 		prefixes, err := c.AdminSources(ctx)
 		if err != nil {

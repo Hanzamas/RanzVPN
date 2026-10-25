@@ -27,6 +27,7 @@ func vrfPolicy(v intent.VRF) *controlpb.VrfPolicy {
 // has no entry.
 func nodeRules(in intent.Intent, vrfs map[string]*controlpb.Vrf) map[string][]*controlpb.Rule {
 	out := map[string][]*controlpb.Rule{}
+	tags := nodeTags(in)
 	for _, r := range in.Rules() {
 		rule := &controlpb.Rule{Name: r.Name, VrfId: vrfs[r.VRF].GetId(), Priority: r.Priority, Action: controlpb.RuleAction_RULE_ACTION_ALLOW,
 			From: ruleEnd(r.From), To: ruleEnd(r.To), Protocol: uint32(r.Protocol)}
@@ -38,7 +39,7 @@ func nodeRules(in intent.Intent, vrfs map[string]*controlpb.Vrf) map[string][]*c
 		}
 		for name, n := range in.Nodes {
 			// A gateway judges the flows of its Devices too (device.go; SDN-80)
-			if slices.Contains(n.VRFs, r.VRF) && (r.From.Holds(n.Tags) || r.To.Holds(n.Tags) || gatewayHolds(in, name, r)) {
+			if slices.Contains(n.VRFs, r.VRF) && (r.From.Holds(tags[name]) || r.To.Holds(tags[name]) || gatewayHolds(in, name, r)) {
 				out[name] = append(out[name], rule)
 			}
 		}

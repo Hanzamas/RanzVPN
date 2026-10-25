@@ -667,6 +667,8 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	if err := c.store.Commit(sctx, ch); err != nil {
 		return nil, err
 	}
+	// The passwords of the Users that the change removed (users.go)
+	c.dropPasswords(sctx, next)
 
 	c.intent, c.lic, c.force = next, cp.lic, force
 	if m := members(next); !proto.Equal(m, c.members) {

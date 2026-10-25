@@ -1,11 +1,15 @@
 // Vxlan.c
 // The VXLAN module (RFC 7348): the VNIs that the module carries, each with its flood list, the sends of a frame to one
-// VTEP or to each VTEP of a flood list, and VxlanInput, the one ingress of every datagram from a VTEP.
+// VTEP or to each VTEP of a flood list, and VxlanInput, the one ingress of every datagram from a VTEP. A VTEP speaks
+// VXLAN or Geneve (RFC 8926, VxlanGeneve.c), and each datagram has the header of the encapsulation of its VTEP.
 
 #include "Core/Vxlan.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+// The frame sits at the same place behind either header that the module sends, so one datagram serves the VTEPs of both
+_Static_assert(GENEVE_HEADER_SIZE == VXLAN_HEADER_SIZE, "the module sends a Geneve header as long as the VXLAN header");
 
 // One VNI that the module carries, and its flood list
 typedef struct VXLAN_VNI {
@@ -34,7 +38,7 @@ static void VxlanDrop(VXLAN *v, UINT reason) {
 		InterlockedIncrement64(&v->Drops[reason]);
 }
 
-// The order of two VTEPs: by address, then by port
+// The order of two VTEPs: by address, then by port, then by encapsulation
 static int VxlanCompareAddr(const void *p1, const void *p2) {
 	const VXLAN_ADDR *a = (const VXLAN_ADDR *)p1;
 	const VXLAN_ADDR *b = (const VXLAN_ADDR *)p2;
@@ -42,8 +46,10 @@ static int VxlanCompareAddr(const void *p1, const void *p2) {
 
 	if (c != 0)
 		return c;
+	if (a->Port != b->Port)
+		return (int)a->Port - (int)b->Port;
 
-	return (int)a->Port - (int)b->Port;
+	return (int)a->Encap - (int)b->Encap;
 }
 
 // Where the VNI vni is among the VNIs of the module, or would be; *found tells which. The caller holds the lock.
@@ -76,26 +82,38 @@ static const VXLAN_VNI *VxlanFind(VXLAN *v, UINT vni) {
 	return (found ? &v->Vnis[i] : NULL);
 }
 
-// The datagram of a frame on the VNI vni, in buf of buf_size bytes: the VXLAN header with the I flag and the reserved
-// bits zero (RFC 7348 section 5), then the frame as it is. Its size; 0 when vni has more than 24 bits, or the frame is
-// shorter than VXLAN_MIN_FRAME, longer than VXLAN_MAX_FRAME or larger than buf.
-static UINT VxlanEncode(UINT vni, const void *frame, UINT size, UCHAR *buf, UINT buf_size) {
-	if (vni > VXLAN_MAX_VNI || frame == NULL || size < VXLAN_MIN_FRAME || size > VXLAN_MAX_FRAME || buf_size < VXLAN_HEADER_SIZE + size)
-		return 0;
-
+// The VXLAN header of a frame on the VNI vni in the first VXLAN_HEADER_SIZE bytes of buf: the I flag, and the reserved
+// bits zero (RFC 7348 section 5)
+static void VxlanWriteHeader(UCHAR *buf, UINT vni) {
 	ZeroMemory(buf, VXLAN_HEADER_SIZE);
 	buf[0] = VXLAN_FLAG_VNI;
 	buf[4] = (UCHAR)(vni >> 16);
 	buf[5] = (UCHAR)(vni >> 8);
 	buf[6] = (UCHAR)vni;
+}
+
+// The datagram of a frame on the VNI vni, in buf of buf_size bytes: room for the header, which VxlanSendRaw writes for
+// the encapsulation of each VTEP, then the frame as it is. Its size; 0 when vni has more than 24 bits, or the frame is
+// shorter than VXLAN_MIN_FRAME, longer than VXLAN_MAX_FRAME or larger than buf.
+static UINT VxlanEncode(UINT vni, const void *frame, UINT size, UCHAR *buf, UINT buf_size) {
+	if (vni > VXLAN_MAX_VNI || frame == NULL || size < VXLAN_MIN_FRAME || size > VXLAN_MAX_FRAME || buf_size < VXLAN_HEADER_SIZE + size)
+		return 0;
+
 	CopyMemory(buf + VXLAN_HEADER_SIZE, frame, size);
 
 	return VXLAN_HEADER_SIZE + size;
 }
 
-// Send one datagram and count it
-static bool VxlanSendRaw(VXLAN *v, const VXLAN_ADDR *to, const UCHAR *data, UINT size) {
-	if (v->Send(v->SendParam, to, data, size)) {
+// Send the datagram of VxlanEncode in buf, size bytes, of a frame on the VNI vni to the VTEP to, and count it: in front
+// of the frame goes the header of the encapsulation of the VTEP, the VXLAN header or a Geneve header without options
+// (VxlanWriteGeneve), which is as long
+static bool VxlanSendRaw(VXLAN *v, const VXLAN_ADDR *to, UINT vni, UCHAR *buf, UINT size) {
+	if (to->Encap == VXLAN_ENCAP_GENEVE)
+		VxlanWriteGeneve(buf, vni);
+	else
+		VxlanWriteHeader(buf, vni);
+
+	if (v->Send(v->SendParam, to, buf, size)) {
 		InterlockedIncrement64(&v->Sent);
 		return true;
 	}
@@ -236,10 +254,10 @@ bool VxlanDelVni(VXLAN *v, UINT vni) {
 	return found;
 }
 
-// Send frame, size bytes, on the VNI vni to each VTEP of its flood list: one datagram for each (ingress replication),
-// under the shared lock, so the list stays whole while the frame goes out. False when the module does not carry vni,
-// its flood list is empty, the frame is shorter than VXLAN_MIN_FRAME or longer than VXLAN_MAX_FRAME, or a datagram could
-// not be sent.
+// Send frame, size bytes, on the VNI vni to each VTEP of its flood list: one datagram for each (ingress replication), in
+// the encapsulation of the VTEP, under the shared lock, so the list stays whole while the frame goes out. False when the
+// module does not carry vni, its flood list is empty, the frame is shorter than VXLAN_MIN_FRAME or longer than
+// VXLAN_MAX_FRAME, or a datagram could not be sent.
 bool VxlanSend(VXLAN *v, UINT vni, const void *frame, UINT size) {
 	UCHAR buf[VXLAN_MAX_DATAGRAM];
 	bool ok = false;
@@ -258,7 +276,7 @@ bool VxlanSend(VXLAN *v, UINT vni, const void *frame, UINT size) {
 		if (e != NULL && e->NumVteps != 0) {
 			ok = true;
 			for (UINT i = 0; i < e->NumVteps; i++)
-				if (VxlanSendRaw(v, &e->Vteps[i], buf, len) == false)
+				if (VxlanSendRaw(v, &e->Vteps[i], vni, buf, len) == false)
 					ok = false;
 		}
 	}
@@ -267,9 +285,9 @@ bool VxlanSend(VXLAN *v, UINT vni, const void *frame, UINT size) {
 	return ok;
 }
 
-// Send frame, size bytes, on the VNI vni to the one VTEP vtep, whether the module carries vni or not: a Mirror to its
-// sensor, the EVPN gateway to the VTEP of a known MAC. False when vni has more than 24 bits, the frame is shorter than
-// VXLAN_MIN_FRAME or longer than VXLAN_MAX_FRAME, or the datagram could not be sent.
+// Send frame, size bytes, on the VNI vni to the one VTEP vtep, in its encapsulation, whether the module carries vni or
+// not: a Mirror to its sensor, the EVPN gateway to the VTEP of a known MAC. False when vni has more than 24 bits, the
+// frame is shorter than VXLAN_MIN_FRAME or longer than VXLAN_MAX_FRAME, or the datagram could not be sent.
 bool VxlanSendTo(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const void *frame, UINT size) {
 	UCHAR buf[VXLAN_MAX_DATAGRAM];
 
@@ -280,25 +298,71 @@ bool VxlanSendTo(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const void *frame, 
 	if (len == 0)
 		return false;
 
-	return VxlanSendRaw(v, vtep, buf, len);
+	return VxlanSendRaw(v, vtep, vni, buf, len);
 }
 
-// The one ingress of the module: every datagram that the node receives from a VTEP, from the address from. A datagram
-// with the I flag, a VNI that the module carries and a frame of VXLAN_MIN_FRAME to VXLAN_MAX_FRAME bytes goes to the
-// receiver; the reserved bits are not looked at (RFC 7348 section 5). A datagram on any other VNI is dropped as
-// VXLAN_DROP_VNI, anything else as VXLAN_DROP_MALFORMED.
+// The VXLAN header at the start of the datagram data, size bytes (RFC 7348 section 5): VXLAN_NUM_REASONS, with *vni its
+// VNI and *header its size, or VXLAN_DROP_MALFORMED when the datagram is shorter than the header or the I flag is not
+// set. The reserved bits are not looked at.
+static UINT VxlanReadHeader(const UCHAR *data, UINT size, UINT *vni, UINT *header) {
+	if (size < VXLAN_HEADER_SIZE || (data[0] & VXLAN_FLAG_VNI) == 0)
+		return VXLAN_DROP_MALFORMED;
+
+	*vni = ((UINT)data[4] << 16) | ((UINT)data[5] << 8) | data[6];
+	*header = VXLAN_HEADER_SIZE;
+	return VXLAN_NUM_REASONS;
+}
+
+// The Geneve header at the start of the datagram data, size bytes, from a VTEP of Geneve: VXLAN_NUM_REASONS, with *vni
+// its VNI and *header its size with the options, or why the module drops the datagram. A header that VxlanParseGeneve
+// does not take, or one of a payload that is no Ethernet frame, is VXLAN_DROP_MALFORMED. A control message is
+// VXLAN_DROP_CONTROL: the module has none, and a tunnel endpoint does not forward the payload of one (RFC 8926 section
+// 3.4). The module reads no option yet (the source group of SDN-87 and the trace option of SDN-89 will be the first),
+// so a critical option is one that it does not know, which drops the datagram as VXLAN_DROP_CRITICAL (section 3.5.1),
+// whether the C bit of the header says so or not; any other option is skipped, and the frame goes on without it.
+static UINT VxlanReadGeneve(const UCHAR *data, UINT size, UINT *vni, UINT *header) {
+	GENEVE_HEADER h;
+
+	if (VxlanParseGeneve(data, size, &h) == false)
+		return VXLAN_DROP_MALFORMED;
+	if (h.Control)
+		return VXLAN_DROP_CONTROL;
+	for (UINT i = 0; i < h.NumOptions; i++)
+		if (h.Options[i].Critical)
+			return VXLAN_DROP_CRITICAL;
+	if (h.Protocol != GENEVE_PROTOCOL_ETHERNET)
+		return VXLAN_DROP_MALFORMED;
+
+	*vni = h.Vni;
+	*header = h.Size;
+	return VXLAN_NUM_REASONS;
+}
+
+// The one ingress of the module: every datagram that the node receives from a VTEP, from the address from, which reads
+// its header by the encapsulation of from: VXLAN (VxlanReadHeader) or Geneve (VxlanReadGeneve). A datagram that its
+// header lets through, on a VNI that the module carries and with a frame of VXLAN_MIN_FRAME to VXLAN_MAX_FRAME bytes
+// behind the header, goes to the receiver. A datagram on any other VNI is dropped as VXLAN_DROP_VNI, one that is too
+// short or too long as VXLAN_DROP_MALFORMED, and one that its header does not let through for the reason it gives.
 void VxlanInput(VXLAN *v, const VXLAN_ADDR *from, const UCHAR *data, UINT size) {
 	bool known = false;
+	UINT vni = 0;
+	UINT header = 0;
+	UINT reason;
 
 	if (v == NULL || from == NULL || data == NULL)
 		return;
 
-	if (size < VXLAN_HEADER_SIZE + VXLAN_MIN_FRAME || size > VXLAN_MAX_DATAGRAM || (data[0] & VXLAN_FLAG_VNI) == 0) {
-		VxlanDrop(v, VXLAN_DROP_MALFORMED);
+	if (from->Encap == VXLAN_ENCAP_GENEVE)
+		reason = VxlanReadGeneve(data, size, &vni, &header);
+	else
+		reason = VxlanReadHeader(data, size, &vni, &header);
+
+	if (reason == VXLAN_NUM_REASONS && (size - header < VXLAN_MIN_FRAME || size > VXLAN_MAX_DATAGRAM))
+		reason = VXLAN_DROP_MALFORMED;
+	if (reason != VXLAN_NUM_REASONS) {
+		VxlanDrop(v, reason);
 		return;
 	}
-
-	UINT vni = ((UINT)data[4] << 16) | ((UINT)data[5] << 8) | data[6];
 
 	AcquireSRWLockShared(&v->Lock);
 	{
@@ -313,7 +377,7 @@ void VxlanInput(VXLAN *v, const VXLAN_ADDR *from, const UCHAR *data, UINT size) 
 
 	InterlockedIncrement64(&v->Delivered);
 	if (v->Recv != NULL)
-		v->Recv(v, v->RecvParam, vni, from, data + VXLAN_HEADER_SIZE, size - VXLAN_HEADER_SIZE);
+		v->Recv(v, v->RecvParam, vni, from, data + header, size - header);
 }
 
 void VxlanGetStats(VXLAN *v, VXLAN_STATS *st) {
