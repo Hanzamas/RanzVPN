@@ -380,7 +380,7 @@ void nodejoin_test(UINT num, char **arg)
 	}
 
 	// A TLS port whose certificate has another TLS fingerprint than the settings name
-	cert = CryptoCertCreateSelfSigned(L"nodejoin", L"nodejoin.test", NULL, 30, 0);
+	cert = CryptoCertCreateSelfSigned(L"CN=nodejoin.test", L"nodejoin.test", NULL, 30, 0);
 	bool have_cert = (cert != NULL && CryptoCertThumbprintStr(cert, thumbprint, sizeof(thumbprint)) && CryptoCertAddToStore(cert, NULL, 0) && NodeJoinFingerprint(cert, fingerprint, sizeof(fingerprint)));
 	if (have_cert)
 	{

@@ -30,10 +30,11 @@ SecBufferDesc *TransportTlsAlpnOffer(const TRANSPORT_TLS_CONFIG *cfg, SecBufferD
 	p->ProtocolListsSize = entry;
 	p->ProtocolLists[0].ProtoNegoExt = SecApplicationProtocolNegotiationExt_ALPN;
 	p->ProtocolLists[0].ProtocolListSize = (unsigned short)(1 + name);
-	// The one protocol id after its length, past the ANYSIZE_ARRAY of the header
+	// The one protocol id after its length, past the ANYSIZE_ARRAY of the header: bytes, not a string
 	UCHAR *ids = (UCHAR *)list + FIELD_OFFSET(SEC_APPLICATION_PROTOCOLS, ProtocolLists) + FIELD_OFFSET(SEC_APPLICATION_PROTOCOL_LIST, ProtocolList);
 	ids[0] = (UCHAR)name;
-	CopyMemory(ids + 1, cfg->Alpn, name);
+	for (size_t i = 0; i < name; i++)
+		ids[1 + i] = (UCHAR)cfg->Alpn[i];
 
 	buf->BufferType = SECBUFFER_APPLICATION_PROTOCOLS;
 	buf->cbBuffer = need;
