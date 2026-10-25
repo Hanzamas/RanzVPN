@@ -1645,7 +1645,8 @@ jobs:
   # control streams to that Controller, one with a real Wintun adapter and one with a fake host), the enrolment in the audit log,
   # the ping of the stack of the runner through the adapter and the overlay, ranz doctor, the logs, ranz uninstall and the clean-up.
   # The Gap step of the runbook is read from the sources: the job fails when a Gap is closed, until the runbook has real steps
-  # for it. The Node service of a PC opens no control stream to the Controller yet, which is why the Nodes are the stand-in.
+  # for it. In step 20 the Node service of the runner joins the Controller as pc-a with its own key, through ranz node
+  # (SDN-90, #395); two Node services cannot form a session yet, so the stand-in keeps playing pc-b.
   # It follows build_and_test (vpntest) and sign_and_integrity (the signed ranz.exe and its certificate, as the install job does).
   first_test:
     needs: [plan, build_and_test, sign_and_integrity]

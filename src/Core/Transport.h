@@ -430,7 +430,21 @@ typedef struct TRANSPORT_TLS_CONFIG {
 	char ExporterLabel[TRANSPORT_NAME_SIZE];
 	TRANSPORT_TLS_VERIFY_PROC *Verify;
 	void *VerifyParam;
+	// The client of the control stream of a Node (SDN-90, #395; TransportTlsKeepAlive.c): the seconds without a segment
+	// after which TCP keepalive probes the connection, 0 for none (see TransportTlsKeepAlive)
+	UINT KeepAlive;
 } TRANSPORT_TLS_CONFIG;
+
+// The TCP keepalive of a client whose configuration has KeepAlive (TransportTlsKeepAlive.c; SDN-90, #395): after KeepAlive
+// seconds without a segment, TRANSPORT_TLS_KEEPALIVE_PROBES probes TRANSPORT_TLS_KEEPALIVE_INTERVAL seconds apart, and the
+// connection fails when none is answered. So a stream that is quiet on a path that went dead without a reset ends, and
+// its owner dials again.
+#define TRANSPORT_TLS_KEEPALIVE_INTERVAL 2 // Seconds between two probes
+#define TRANSPORT_TLS_KEEPALIVE_PROBES   3 // Probes without an answer that end the connection
+
+// Turn on the TCP keepalive that cfg asks for (KeepAlive) on socket, the TCP socket of a connection of a client, as the TLS
+// transport does when it dials. True when cfg asks for none, or the system took every option.
+bool TransportTlsKeepAlive(const TRANSPORT_TLS_CONFIG *cfg, UINT_PTR socket);
 
 // What a TLS handshake gave: the version, the cipher suite and the key exchange group that the
 // server chose. The group is the one of the ServerHello on the wire (TransportTlsParseHello), which
