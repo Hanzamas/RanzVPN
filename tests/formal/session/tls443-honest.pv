@@ -1,9 +1,0 @@
-(* Variant tls443-honest: the same as tls443 with no key leaked, so what holds here holds against an attacker
-   that is the network and nothing more. The queries about replay are true here only (AUD-5, #389). *)
-
-process
-  ( Setup()
-  | !( Client(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs) )
-  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_session, lab_exp_session, suite_ik, sid) )
-  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_session, lab_exp_session, suite_hfs, sid) )
-  )

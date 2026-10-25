@@ -1,8 +1,0 @@
-(* settings-s3.pvl: a try (AUD-5, #389). settings-fast.pvl with no redundancy elimination of rules and none of
-   hypotheses. *)
-
-set expandIfTermsToTerms = true.
-set traceBacktracking = false.
-set reconstructTrace = false.
-set redundancyElim = no.
-set redundantHypElim = false.

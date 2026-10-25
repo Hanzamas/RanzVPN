@@ -1,5 +1,0 @@
-(* settings-if.pvl: a try (AUD-5, #389). The settings of the Noise Explorer but the one that leaves out the rebuilding
-   of the trace of an attack, to see which of them a variant needs. *)
-
-set expandIfTermsToTerms = true.
-set traceBacktracking = false.

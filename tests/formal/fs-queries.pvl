@@ -1,8 +1,0 @@
-(* fs-queries.pvl
-   The queries of forward secrecy (AUD-5, #389): what the attacker knows after the sessions, when it holds every
-   long-term key of the nodes by then (the models with LeakLate). *)
-
-(* @query fs-pw *)
-query attacker(pw(alice)).
-(* @query fs-data *)
-query sid: sessionid; attacker(appdata(bob, alice, sid)).

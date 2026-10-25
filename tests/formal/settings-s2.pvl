@@ -1,8 +1,0 @@
-(* settings-s2.pvl: a try (AUD-5, #389). settings-fast.pvl with the cheaper redundancy elimination of ProVerif, which
-   compares a rule with the others through a matching of its hypotheses that can take a very long time on a rule with
-   many of them. *)
-
-set expandIfTermsToTerms = true.
-set traceBacktracking = false.
-set reconstructTrace = false.
-set redundancyElim = simple.

@@ -1,0 +1,10 @@
+(* Variant quic-cert: the session handshake over QUIC, as the code has it, against an attacker that holds the key of the
+   certificate of the server (AUD-5, #389). The tls-server-end-point is the same for every connection to that
+   certificate (D1 of docs/formal-model.md), so the middlebox that presents the pinned certificate to the client, and
+   opens a session of its own to the server, relays the Noise handshake with the same binding on both sides: finding F1. *)
+
+process
+  ( Setup()
+  | LeakCertServer()
+  | Sessions(pin_on, bt_endpoint, plabel_session, lab_exp_session, suite_hfs)
+  )

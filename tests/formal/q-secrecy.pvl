@@ -1,0 +1,11 @@
+(* q-secrecy.pvl
+   The secrecy queries of the session models (AUD-5, #389). None is conditional on a leak: a model has the compromise of its
+   scenario or it has none, and expected.tsv says which of them hold there. *)
+
+(* The password of alice, which the client sends in its first control record once the handshake is complete *)
+(* @query sec-pw *)
+query attacker(pw(alice)).
+
+(* What the server sends back in a session: a record of the data stream, or on the control stream the Update *)
+(* @query sec-data *)
+query sid: sessionid; attacker(appdata(bob, alice, sid)).

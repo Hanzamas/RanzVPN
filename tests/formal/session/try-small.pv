@@ -1,9 +1,0 @@
-(* try-small.pv: a try (AUD-5, #389). The session with one server process, of the suite that the client offers, and the
-   keys leaked in phase 0 only: the fewest processes that the session has. *)
-
-process
-  ( Setup()
-  | LeaksP0()
-  | !( Client(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs) )
-  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_session, lab_exp_session, suite_hfs, sid) )
-  )
