@@ -25,7 +25,7 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 | UDP 6081, configurable | Geneve | the VXLAN module of the Node (SDN-71) | Toward a fabric, OVN or NSX that uses Geneve instead of VXLAN. The Node is a tunnel endpoint of Geneve. |
 | UDP 67 and 68 | DHCP | the DHCP responder of the Node (SDN-43) | Only on an L2 Network whose responder is on, and only while no DHCP server of its bridged LAN answers. The responder is a member of the switch of the Network with a MAC address of its own and opens no socket of the host: it answers the clients' port 68 from port 67 and probes the LAN for a server from port 68. |
 | 53 | DNS | overlay DNS (SDN-11, planned) | Inside the overlay and the NRPT rules of the host. |
-| TCP 9821 | the traffic test | `ranz test throughput -listen`, started by hand (SDN-53) | Only while a test runs, on the address that it is given. `docs/first-test.md` uses it between two PCs. |
+| TCP 9821 | the traffic test | `ranz test throughput -listen`, started by hand (SDN-53) | Only while a test runs, on the address that it is given. `docs/first-test.md` uses it between two PCs. While it serves, the test lets its port in to itself in Windows Firewall, a rule of the group `Ranz VPN`, and removes the rule when it stops. |
 
 ## Outgoing only
 
@@ -54,5 +54,7 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 - Between Controller cluster members: the Raft port, on a private network.
 - On a Node that peers with a fabric or routers: TCP 179 and UDP 4789 (UDP 6081 for a fabric of Geneve) to those peers, on the LAN side.
 - Nothing else needs to be open for incoming connections.
+
+`ranz install` makes these rules in Windows Firewall itself, for the parts that it installs and nothing else (SDN-91): TCP 443 and UDP 443 for `ranz-node.exe`, and with `--controller` TCP 443 and 5555 for `ranz.exe`, the program of the Controller service, each in the Ranz folder under Program Files. They are inbound allow rules of every profile in the group `Ranz VPN` (`Get-NetFirewallRule -Group "Ranz VPN"` lists them). A second `ranz install` or an upgrade leaves the same rules: a rule that is there as it should be stays, and a rule of the group that no installed part needs goes. `ranz uninstall` removes every rule of the group. A firewall in front of the host, or on the LAN side, is the operator's.
 
 A new feature that needs a port adds a row to this page, and prefers an owner behind TCP 443 or UDP 443 over a port of its own.

@@ -227,6 +227,8 @@ func Install(w io.Writer, opts Options) error {
 			return fmt.Errorf("install: %w", err)
 		}
 	}
+	// The ports of the parts that are installed now (firewall.go; SDN-91, #396)
+	openPorts(w, m, dir)
 	return nil
 }
 
@@ -430,6 +432,8 @@ func Uninstall(w io.Writer, opts UninstallOptions) error {
 	if err := removeDir(w, dir, self, opts.KeepRanz); err != nil {
 		errs = append(errs, err)
 	}
+	// The rules of the group in Windows Firewall (firewall.go; SDN-91, #396)
+	closePorts(w)
 	if len(errs) > 0 {
 		return fmt.Errorf("uninstall: %w", errors.Join(errs...))
 	}
