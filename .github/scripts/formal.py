@@ -127,6 +127,11 @@ def load_variants(root):
     return variants
 
 
+def real_variants(variants):
+    # The names of the variants that the workflow runs when none is named: the experiments (try-) are named to be run
+    return [n for n in variants if not n.startswith('try-')]
+
+
 def load_slices(root):
     # {name: how many ProVerif runs the queries of the variant are split over}: the fourth column of variants.tsv,
     # 1 when it has none. ProVerif keeps its state for every query of one run, so a variant with many queries or a
@@ -336,7 +341,7 @@ def run(args):
         return 1
     version = proverif_version(args.proverif)
 
-    names = args.variants or list(variants)
+    names = args.variants or real_variants(variants)
     for n in names:
         if n not in variants:
             raise Problem('no variant %s: %s' % (n, ', '.join(variants)))
@@ -702,7 +707,7 @@ def smoke(args):
     # Every variant runs with the prover for a few seconds (--timeout), so that a mistake of syntax or of types, which
     # ProVerif reports at once, stops the workflow before it starts the jobs that would each report it
     variants = load_variants(args.root)
-    names = args.variants or list(variants)
+    names = args.variants or real_variants(variants)
     for n in names:
         if n not in variants:
             raise Problem('no variant %s: %s' % (n, ', '.join(variants)))
@@ -748,7 +753,7 @@ def list_variants(args):
     # each variant (variants.tsv), which runs the slice that the job names, as "run --slice 2/4 tls443" does
     variants = load_variants(args.root)
     slices = load_slices(args.root)
-    names = args.variants or list(variants)
+    names = args.variants or real_variants(variants)
     for name in names:
         if name not in variants:
             raise Problem('no variant %s: %s' % (name, ', '.join(variants)))

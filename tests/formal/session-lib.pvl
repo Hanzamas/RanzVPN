@@ -123,6 +123,7 @@ event ServerSentData(principal, principal, bitstring, bitstring).
 let Client(me: principal, them: principal, pin: bitstring, bm: bitstring, plabel: bitstring, lab: bitstring, suite: bitstring) =
   new cr: bitstring;
   new x: bitstring;
+  new e: bitstring;
   let gx = tpk(x) in
   out(c, (cr, gx));
   in(c, (sr: bitstring, gy: bitstring, cert: bitstring, sg: bitstring));
@@ -134,7 +135,6 @@ let Client(me: principal, them: principal, pin: bitstring, bm: bitstring, plabel
   let ks = tlsk(ms, lab_s) in
   let bnd = binding(bm, ms, cert, lab) in
   let prologue = (plabel, bm, bnd) in
-  new e: bitstring;
   let sI = skey(me) in
   let SI = pk(sI) in
   let SR = spub(them) in
@@ -173,9 +173,10 @@ let Client(me: principal, them: principal, pin: bitstring, bm: bitstring, plabel
    process each, and a process takes only the records of its own suite. It serves one expected client, as the
    node of a peer does and as the key pin of a user does. *)
 let Server(me: principal, them: principal, bm: bitstring, plabel: bitstring, lab: bitstring, suite: bitstring, sid: sessionid) =
-  in(c, (cr: bitstring, gx: bitstring));
   new sr: bitstring;
   new y: bitstring;
+  new e: bitstring;
+  in(c, (cr: bitstring, gx: bitstring));
   let gy = tpk(y) in
   let mycert = certof(me) in
   let tr = (cr, gx, sr, gy, mycert) in
@@ -203,7 +204,6 @@ let Server(me: principal, them: principal, bm: bitstring, plabel: bitstring, lab
   let h4 = mixh(h3, cp) in
   event ServerAccept(me, them, tr);
   event ServerSuite(me, them, tr, suite);
-  new e: bitstring;
   let E2 = pk(e) in
   let h5 = mixh(h4, E2) in
   let ck3 = hkck(ck2, dhr(e, E)) in

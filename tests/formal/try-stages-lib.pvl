@@ -65,6 +65,7 @@ let NoiseInitAB(me: principal, them: principal, sid: sessionid) =
   event RecvMsg(me, them, st_b, mb).
 
 let NoiseRespAB(me: principal, them: principal, sid: sessionid) =
+  new e: bitstring;
   in(c, (E: bitstring, cs: bitstring, cp: bitstring));
   let sR = skey(me) in
   let SR = pk(sR) in
@@ -81,7 +82,6 @@ let NoiseRespAB(me: principal, them: principal, sid: sessionid) =
   let ma = unaead(k2, h3, cp) in
   event RecvMsg(me, them, st_a, ma);
   let h4 = mixh(h3, cp) in
-  new e: bitstring;
   let E2 = pk(e) in
   let h5 = mixh(h4, E2) in
   let ck3 = hkck(ck2, dhr(e, E)) in
