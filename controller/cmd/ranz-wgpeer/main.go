@@ -49,9 +49,10 @@ import (
 // The text that the echo request and the TCP connection carry
 const probe = "ranz device tracer"
 
-// blockedTries is how many echo requests the ping that policy denies sends, each waiting its own
-// share of the timeout for a reply that must not come.
-const blockedTries = 3
+// pingTries is how many echo requests a ping sends at most, each waiting its own share of the
+// timeout: the ping that policy denies sends all of them, for replies that must not come, and
+// another ping stops at the first reply.
+const pingTries = 3
 
 func main() {
 	genkey := flag.String("genkey", "", "write a new private key into this file and print its public key")
@@ -277,8 +278,8 @@ func run(configFile, keyFile, ping, tcp string, blocked bool, timeout, serve tim
 	}
 
 	if target.IsValid() && blocked {
-		for i := 1; i <= blockedTries; i++ {
-			rtt, err := echo(tnet, target, i, timeout/blockedTries)
+		for i := 1; i <= pingTries; i++ {
+			rtt, err := echo(tnet, target, i, timeout/pingTries)
 			if err == nil {
 				return fmt.Errorf("echo request %d to %s got a reply after %s, and policy denies the Device", i, target, rtt)
 			}
@@ -286,9 +287,15 @@ func run(configFile, keyFile, ping, tcp string, blocked bool, timeout, serve tim
 				return fmt.Errorf("echo request %d to %s: %w", i, target, err)
 			}
 		}
-		fmt.Fprintf(out, "WGPEER PING BLOCKED %s: %d echo requests, no reply within %s\n", target, blockedTries, timeout)
+		fmt.Fprintf(out, "WGPEER PING BLOCKED %s: %d echo requests, no reply within %s\n", target, pingTries, timeout)
 	} else if target.IsValid() {
-		rtt, err := echo(tnet, target, 1, timeout)
+		// As ping does, a lost echo request is followed by the next one
+		var rtt time.Duration
+		for i := 1; i <= pingTries; i++ {
+			if rtt, err = echo(tnet, target, i, timeout/pingTries); err == nil || !errors.Is(err, os.ErrDeadlineExceeded) {
+				break
+			}
+		}
 		if err != nil {
 			return fmt.Errorf("echo request to %s: %w", target, err)
 		}
