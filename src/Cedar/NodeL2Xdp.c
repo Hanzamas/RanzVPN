@@ -3,13 +3,14 @@
 // adapter (ADR-0018). Both directions go through the rule API and AF_XDP sockets, no eBPF (ADR-0018 amendment of
 // 2026-10-13, ADR-0022):
 // - TX inspect: XDP hands each frame that the host sends out of the adapter to a queue of the hook {L2, TX, INSPECT},
-//   chosen by the RSS hash of the frame, and a KM-TEST adapter reports receive queues for RSS. XDP passes the frames of a
-//   queue without a program on to the adapter, where nothing captures them, so the backend binds every queue that the
-//   adapter has (NodeL2XdpQueues, up to NODE_L2_XDP_MAX_QUEUES). Each queue has an AF_XDP socket bound for RX, a program
-//   that redirects every frame of the queue to it, and a drain thread of its own, which takes the frames of the RX ring
-//   in batches, copies each into the capture ring of the adapter (NodeL2Capture) and gives the UMEM chunks back to the
-//   fill ring in one go. A drain thread waits for nothing but its ring (XskNotifySocket), takes no lock, allocates
-//   nothing and does no other I/O, so no socket backs up into the senders of the host (#72, risk R1).
+//   chosen by the RSS hash of the frame, and passes the frames of a queue without a program on to the adapter, where
+//   nothing captures them. So the backend binds every queue that the adapter has (NodeL2XdpQueues, up to
+//   NODE_L2_XDP_MAX_QUEUES): one on a KM-TEST adapter, which has no RSS, more on an adapter with RSS. Each queue has an
+//   AF_XDP socket bound for RX, a program that redirects every frame of the queue to it, and a drain thread of its own,
+//   which takes the frames of the RX ring in batches, copies each into the capture ring of the adapter (NodeL2Capture)
+//   and gives the UMEM chunks back to the fill ring in one go. A drain thread waits for nothing but its ring
+//   (XskNotifySocket), takes no lock, allocates nothing and does no other I/O, so no socket backs up into the senders of
+//   the host (#72, risk R1).
 // - RX inject: one more socket, bound for TX on {L2, RX, INJECT} of queue 0, needs no program. The injector of the
 //   adapter hands it batches: free UMEM chunks are filled, the descriptors reserved and submitted in bulk, the socket
 //   poked once per batch when XDP asks for it, and the completions recycled in bulk (ADR-0022 amendment of 2026-10-19).
@@ -556,9 +557,10 @@ const NODE_L2_BACKEND *NodeL2XdpBackend() {
 	return &node_l2_xdp;
 }
 
-// How many queues of the TX inspect hook of the interface if_index an AF_XDP socket binds to, from queue 0 on, up to max:
-// XDP has one for each receive queue that the adapter reports for RSS, and one for an adapter without RSS (#72,
-// multi-queue). error gets why the first queue that did not bind failed.
+// How many queues of the TX inspect hook of the interface if_index take a socket and a program that redirects to it,
+// from queue 0 on, up to max: one for each receive queue that the adapter reports for RSS, and one for an adapter
+// without RSS, such as KM-TEST (#72, multi-queue). A socket binds to a queue that the adapter does not have too, and only
+// XdpCreateProgram refuses it, so each queue gets both. error gets why the first queue that did not take them failed.
 UINT NodeL2XdpQueues(UINT if_index, UINT max, char *error, UINT error_size) {
 	XDP_HOOK_ID inspect = {XDP_HOOK_L2, XDP_HOOK_TX, XDP_HOOK_INSPECT};
 	UINT num = 0;
@@ -568,10 +570,23 @@ UINT NodeL2XdpQueues(UINT if_index, UINT max, char *error, UINT error_size) {
 
 	for (; num < max; num++) {
 		NODE_L2_XSK s;
+		XDP_RULE rule;
+		HANDLE program = NULL;
 		const char *step = "";
 
 		ZeroMemory(&s, sizeof(s));
 		HRESULT hr = NodeL2XdpOpen(&s, if_index, num, &inspect, true, NODE_L2_XDP_PROBE_RING, &step);
+		if (SUCCEEDED(hr)) {
+			ZeroMemory(&rule, sizeof(rule));
+			rule.Match = XDP_MATCH_ALL;
+			rule.Action = XDP_PROGRAM_ACTION_REDIRECT;
+			rule.Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK;
+			rule.Redirect.Target = s.Socket;
+			step = "XdpCreateProgram";
+			hr = XdpCreateProgram(if_index, &inspect, num, XDP_CREATE_PROGRAM_FLAG_GENERIC, &rule, 1, &program);
+			if (SUCCEEDED(hr))
+				CloseHandle(program);
+		}
 		NodeL2XdpClose(&s);
 
 		if (FAILED(hr)) {

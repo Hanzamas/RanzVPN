@@ -14,8 +14,8 @@
 # 4. ranz uninstall after the traffic, timed: it removes the drivers within its timeouts. ranz install again, and the
 #    adapter comes back with XDP: vpntest kmtest xdp, which also runs the long parts, the paused consumer with senders
 #    with USO and plain ones (#72, risk R1) and the benchmark of the batch sizes.
-# 5. The measurement of senders with USO on a KM-TEST adapter without an L2 adapter (vpntest kmtest xdp bare), printed
-#    for the record, then ranz uninstall.
+# 5. The measurement of senders with USO on a KM-TEST adapter without an L2 adapter and on adapters with one, without a
+#    pause of the owner (vpntest kmtest xdp bare), printed for the record, then ranz uninstall.
 # Each run of vpntest is a process of its own with a time limit: a run that a driver keeps from ending fails its step,
 # and the job goes on with the next one.
 param(
@@ -204,8 +204,9 @@ $r = Invoke-Ranz @('install')
 if ($r.Code -ne 0) { Add-Failure "ranz install after the uninstall exited with code $($r.Code)" }
 if (-not (Invoke-KmTest @('xdp'))) { Add-Failure 'vpntest kmtest xdp after the reinstall' }
 
-# 5. Senders with USO on an adapter without an L2 adapter, for the record: the run checks nothing of the L2 adapter
-if (-not (Invoke-KmTest @('xdp', 'bare') 3)) { Write-Host 'vpntest kmtest xdp bare did not end well: see its KMTEST DIAG lines' }
+# 5. Senders with USO on an adapter without an L2 adapter and on adapters with one, for the record: the run checks
+# nothing of the L2 adapter
+if (-not (Invoke-KmTest @('xdp', 'bare') 5)) { Write-Host 'vpntest kmtest xdp bare did not end well: see its KMTEST DIAG lines' }
 $r = Invoke-Ranz @('uninstall')
 if ($r.Code -ne 0 -and $r.Code -ne 3010) { Add-Failure "ranz uninstall exited with code $($r.Code)" }
 
