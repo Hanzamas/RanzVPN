@@ -55,7 +55,8 @@ static bool ControlCopyDevice(CONTROL_DEVICE *d, const ranz_control_v1_Device *s
 	strncpy_s(d->Gateway, sizeof(d->Gateway), src->gateway, _TRUNCATE);
 	d->VrfId = src->vrf_id;
 
-	for (pb_size_t i = 0; i < src->addresses_count && d->NumAddresses < CONTROL_DEVICE_ADDRESSES; i++) {
+	// An address that is not IPv4 or IPv6 is skipped, so i is bounded by the array of the message too
+	for (pb_size_t i = 0; i < src->addresses_count && i < ARRAYSIZE(src->addresses) && d->NumAddresses < CONTROL_DEVICE_ADDRESSES; i++) {
 		const ranz_control_v1_Address *a = &src->addresses[i];
 		CONTROL_ADDRESS *c = &d->Addresses[d->NumAddresses];
 
