@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" data-page="devices">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devices | Ranz controller</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/devices.js"></script>
+</head>
+<body>
+<ranz-nav></ranz-nav>
+<main>
+<h1>Devices</h1>
+<p class="lead">The WireGuard Devices of the Intent: phones, laptops and routers that join one Network over standard WireGuard through their gateway Node, with the last handshake and the traffic that the gateway reported for each.</p>
+<ranz-problem></ranz-problem>
+<output id="result" aria-live="polite"></output>
+<ranz-table id="devices"></ranz-table>
+<ranz-confirm></ranz-confirm>
+</main>
+</body>
+</html>

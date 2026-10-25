@@ -137,6 +137,21 @@
  */
 
 /**
+ * controller.DeviceStatus (SDN-80): the times are RFC 3339 and left out while the gateway reported none
+ * @typedef {object} DeviceStatus
+ * @property {string} name
+ * @property {string} network
+ * @property {string} gateway
+ * @property {string} [address]
+ * @property {string} [ipv6Address]
+ * @property {string} [lastHandshake]
+ * @property {number} txBytes
+ * @property {number} rxBytes
+ * @property {string} [reported]
+ * @property {boolean} [unlicensed]
+ */
+
+/**
  * api.Status
  * @typedef {object} Status
  * @property {string} publicKey

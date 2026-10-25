@@ -174,6 +174,7 @@ func TestFiles(t *testing.T) {
 		{"/vrfs", "text/html; charset=utf-8", `data-page="vrfs"`},
 		{"/networks", "text/html; charset=utf-8", `data-page="networks"`},
 		{"/nodes", "text/html; charset=utf-8", `data-page="nodes"`},
+		{"/devices", "text/html; charset=utf-8", `data-page="devices"`},
 		{"/intent", "text/html; charset=utf-8", `data-page="intent"`},
 		{"/revisions", "text/html; charset=utf-8", `data-page="revisions"`},
 		{"/events", "text/html; charset=utf-8", `data-page="events"`},
