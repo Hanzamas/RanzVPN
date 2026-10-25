@@ -20,6 +20,17 @@ query k: bitstring, pl: bitstring, a: bitstring, a2: bitstring; event(PeerOpened
 (* @query pe-addr *)
 query k: bitstring, pl: bitstring, a: bitstring; event(PeerOpened(bob, alice, k, pl, a)) ==> event(PeerSealed(alice, bob, k, pl, a)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
 
+(* The same for a punch probe: PeerPunchInput sets the direct path of alice to the address that the probe came from,
+   so the weakness of the bind holds for the direct path (AUD-6, #409) *)
+(* @query pp-addr *)
+query pl: bitstring, a: bitstring; event(PeerOpened(bob, alice, k_punch, pl, a)) ==> event(PeerSealed(alice, bob, k_punch, pl, a)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+
+(* The bound that alice takes from her relay bob was sealed by bob, to alice, unless a static key is leaked: it is a
+   Noise_K envelope as the others, and the check of the address of the relay adds nothing against an attacker that
+   sends from any address (AUD-6, #409) *)
+(* @query pb-auth *)
+query pl: bitstring, a: bitstring, a2: bitstring; event(PeerOpened(alice, bob, k_bound, pl, a)) ==> event(PeerSealed(bob, alice, k_bound, pl, a2)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+
 (* No replay: each envelope that bob opens was sealed once. The sequence of the code makes it so while the
    receiver keeps the last one, and the receiver of this model has lost it. *)
 (* @query pe-replay *)
