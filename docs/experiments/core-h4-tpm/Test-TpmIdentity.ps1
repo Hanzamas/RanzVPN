@@ -17,9 +17,17 @@
 #   E5  runs a TLS handshake over the loopback with Schannel, with no client certificate, with a client
 #       certificate whose key is in the software provider, and with one whose key is in the TPM, and
 #       times each; one more handshake presents a certificate that the server does not pin
-# What it never does: clear the TPM, change its owner, lockout or authorization values, send a wrong
-# authorization value, read the endorsement key, use the machine key set or start an elevated process.
-# Every key that it creates has a random name that starts with ranz-h4- and is deleted at the end.
+# With -Machine, in an elevated process:
+#   E6  makes a key in the machine key set, as the installer of a Node would, and lets a service that runs
+#       as a virtual account (the account type of the Node service, ADR-0039) open it and sign, make a
+#       key in the machine key set, and make a key in its own key set (what the Node service does)
+# With -ReadEk, in an elevated process:
+#   E7  reads the endorsement key of the TPM and the certificates of its manufacturer, and builds the chain
+#       of the certificate, as the Controller would have to
+# What it never does: clear the TPM, change its owner, lockout or authorization values, or send a wrong
+# authorization value. Without -Machine and -ReadEk it needs no rights and touches only the key set of the
+# current user. Every key that it creates has a random name that starts with ranz-h4- and is deleted at the
+# end. The output of -ReadEk names the device: do not post it.
 #
 # Usage (Windows PowerShell 5.1 or PowerShell 7):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File Test-TpmIdentity.ps1 -OutDir out
@@ -29,6 +37,8 @@
 #   -IncludeRsa         also RSA 2048, 3072 and 4096 (a TPM needs seconds to make an RSA key)
 #   -SkipTls            leave E5 out
 #   -NoTpm              leave every use of the TPM out and run the controls only
+#   -Machine            run E6 (elevated; it makes and deletes a service named RanzH4Probe)
+#   -ReadEk             run E7 (elevated)
 # TLS 1.3 needs PowerShell 7 on Windows 11 or Windows Server 2022 or later. Windows PowerShell 5.1 runs
 # E5 over TLS 1.2: the client signs the handshake once in both, so the cost of the TPM is the same.
 # It writes results.json and report.txt to -OutDir and prints the report. The exit code is 0 when the
@@ -42,10 +52,14 @@ param(
 	[int] $HandshakeCount = 20,
 	[switch] $IncludeRsa,
 	[switch] $SkipTls,
-	[switch] $NoTpm
+	[switch] $NoTpm,
+	[switch] $Machine,
+	[switch] $ReadEk
 )
 
 $ErrorActionPreference = 'Stop'
+# A native command that fails (sc.exe on a service that is not running) must not stop the script
+$PSNativeCommandUseErrorActionPreference = $false
 
 $PcpName = 'Microsoft Platform Crypto Provider'
 $SoftName = 'Microsoft Software Key Storage Provider'
@@ -360,14 +374,15 @@ function New-KeyName() {
 	return 'ranz-h4-' + [guid]::NewGuid().ToString('N')
 }
 
-# One persisted key of the provider, in the current user's key set and never exportable. The result holds
-# the key, or the error that the provider gave.
-function New-TestKey([string] $Provider, [string] $Algorithm, [int] $Length = 0, [string] $Curve = '') {
+# One persisted key of the provider, in the current user's key set (the machine key set with -MachineSet)
+# and never exportable. The result holds the key, or the error that the provider gave.
+function New-TestKey([string] $Provider, [string] $Algorithm, [int] $Length = 0, [string] $Curve = '', [switch] $MachineSet) {
 	$out = [pscustomobject]@{ Key = $null; Name = (New-KeyName); CreateMs = 0.0; Error = '' }
 	$params = New-Object System.Security.Cryptography.CngKeyCreationParameters
 	$params.Provider = New-Object System.Security.Cryptography.CngProvider -ArgumentList $Provider
 	$params.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
 	$params.KeyUsage = [System.Security.Cryptography.CngKeyUsages]::AllUsages
+	if ($MachineSet) { $params.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey }
 	if ($Length -gt 0) {
 		$prop = New-Object System.Security.Cryptography.CngProperty -ArgumentList @('Length', [BitConverter]::GetBytes([int] $Length), [System.Security.Cryptography.CngPropertyOptions]::None)
 		$params.Parameters.Add($prop)
@@ -382,16 +397,18 @@ function New-TestKey([string] $Provider, [string] $Algorithm, [int] $Length = 0,
 		$t0 = [System.Diagnostics.Stopwatch]::GetTimestamp()
 		$out.Key = [System.Security.Cryptography.CngKey]::Create($alg, $out.Name, $params)
 		$out.CreateMs = [Math]::Round(([System.Diagnostics.Stopwatch]::GetTimestamp() - $t0) * 1000.0 / [System.Diagnostics.Stopwatch]::Frequency, 1)
-		[void] $script:Keys.Add([pscustomobject]@{ Name = $out.Name; Provider = $Provider })
+		[void] $script:Keys.Add([pscustomobject]@{ Name = $out.Name; Provider = $Provider; MachineSet = [bool] $MachineSet })
 	} catch {
 		$out.Error = Get-ErrorText $_
 	}
 	return $out
 }
 
-function Remove-TestKey([string] $Name, [string] $Provider) {
+function Remove-TestKey([string] $Name, [string] $Provider, [bool] $MachineSet = $false) {
 	try {
-		$k = [System.Security.Cryptography.CngKey]::Open($Name, (New-Object System.Security.Cryptography.CngProvider -ArgumentList $Provider))
+		$options = [System.Security.Cryptography.CngKeyOpenOptions]::None
+		if ($MachineSet) { $options = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey }
+		$k = [System.Security.Cryptography.CngKey]::Open($Name, (New-Object System.Security.Cryptography.CngProvider -ArgumentList $Provider), $options)
 		$k.Delete()
 		return $true
 	} catch {
@@ -433,7 +450,7 @@ function Test-Provider([string] $Name) {
 function Test-KeyUse($created, [string] $Kind, [string] $Provider) {
 	$use = [ordered]@{}
 	$key = $created.Key
-	$digest = (New-Object System.Security.Cryptography.SHA256Managed).ComputeHash([System.Text.Encoding]::UTF8.GetBytes('ranz core-h4'))
+	$digest = [System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes('ranz core-h4'))
 	if ($Kind -eq 'ecdsa') {
 		try {
 			$ecdsa = New-Object System.Security.Cryptography.ECDsaCng -ArgumentList $key
@@ -489,6 +506,107 @@ function Test-KeyUse($created, [string] $Kind, [string] $Provider) {
 		}
 	}
 	return [pscustomobject]$use
+}
+
+# The ACL of the file that holds a persisted key, found by the unique name of the key: who may read the
+# file is who may use a key whose provider keeps its blob in a file (what the machine key set relies on)
+function Get-KeyFileAcl([string] $UniqueName) {
+	try {
+		$root = Join-Path $env:ProgramData 'Microsoft\Crypto'
+		$file = Get-ChildItem -LiteralPath $root -Recurse -Force -Filter $UniqueName -ErrorAction SilentlyContinue | Select-Object -First 1
+		if ($file -eq $null) { return 'no file of that name under ProgramData\Microsoft\Crypto' }
+		return [pscustomobject]@{ Folder = $file.Directory.FullName.Substring($env:ProgramData.Length); Sddl = (Get-Acl -LiteralPath $file.FullName).Sddl }
+	} catch {
+		return Get-ErrorText $_
+	}
+}
+
+# What a service that runs as a virtual account does with the machine key set. The service is a process of
+# PowerShell that the service control manager starts as NT SERVICE\RanzH4Probe; the manager waits 30 s for a
+# service control handler that never comes and then stops the process (error 1053), by which time the probe
+# has written its answer. The probe reads its job from a file and writes its answer to a file.
+$probeSource = @'
+$ErrorActionPreference = 'Stop'
+$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$job = Get-Content -Raw -LiteralPath (Join-Path $dir 'job.json') | ConvertFrom-Json
+$r = [ordered]@{ Account = [Security.Principal.WindowsIdentity]::GetCurrent().Name; Provider = $job.Provider }
+function Describe($record) {
+	$e = $record.Exception
+	return ('0x{0:X8} {1}: {2}' -f $e.HResult, $e.GetType().Name, $e.Message.Trim())
+}
+$provider = New-Object System.Security.Cryptography.CngProvider -ArgumentList $job.Provider
+$digest = [byte[]] (1..32)
+function Sign($key) {
+	$e = New-Object System.Security.Cryptography.ECDsaCng -ArgumentList $key
+	return $e.VerifyHash($digest, $e.SignHash($digest))
+}
+function Test-Create([bool] $machine) {
+	$p = New-Object System.Security.Cryptography.CngKeyCreationParameters
+	$p.Provider = $provider
+	$p.ExportPolicy = [System.Security.Cryptography.CngExportPolicies]::None
+	if ($machine) { $p.KeyCreationOptions = [System.Security.Cryptography.CngKeyCreationOptions]::MachineKey }
+	try {
+		$k = [System.Security.Cryptography.CngKey]::Create([System.Security.Cryptography.CngAlgorithm]::ECDsaP256, ('ranz-h4-svc-' + [guid]::NewGuid().ToString('N')), $p)
+		$ok = Sign $k
+		$k.Delete()
+		return 'ok, signature verified: ' + $ok
+	} catch {
+		return Describe $_
+	}
+}
+# 1. Open the machine key that the administrator made, and sign with it
+try {
+	$k = [System.Security.Cryptography.CngKey]::Open($job.MachineKey, $provider, [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey)
+	$r['OpenMachineKeyAndSign'] = 'ok, signature verified: ' + (Sign $k)
+	$k.Dispose()
+} catch {
+	$r['OpenMachineKeyAndSign'] = Describe $_
+}
+# 2. Make a key in the machine key set, and 3. in its own key set, which is where the Node service keeps its key
+$r['CreateMachineKeyAndSign'] = Test-Create $true
+$r['CreateOwnKeyAndSign'] = Test-Create $false
+$r | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $job.Out -Encoding UTF8
+'@
+
+function Invoke-AsVirtualAccount([string] $Provider, [string] $MachineKey) {
+	$name = 'RanzH4Probe'
+	$dir = Join-Path $env:ProgramData 'RanzH4Probe'
+	$out = Join-Path $dir 'result.json'
+	$result = [ordered]@{ Provider = $Provider }
+	$created = $false
+	try {
+		New-Item -ItemType Directory -Force -Path $dir | Out-Null
+		Set-Content -LiteralPath (Join-Path $dir 'probe.ps1') -Value $probeSource -Encoding UTF8
+		@{ Provider = $Provider; MachineKey = $MachineKey; Out = $out } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir 'job.json') -Encoding UTF8
+		Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
+		# The paths have no space, so the command line needs no quotes
+		$ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+		$command = $ps + ' -NoProfile -ExecutionPolicy Bypass -File ' + (Join-Path $dir 'probe.ps1')
+		& sc.exe create $name binPath= $command obj= "NT SERVICE\$name" start= demand | Out-Null
+		if ($LASTEXITCODE -ne 0) { throw ('sc.exe create exited with {0}' -f $LASTEXITCODE) }
+		$created = $true
+		$sid = [regex]::Match((& sc.exe showsid $name | Out-String), 'S-1-5-80-[0-9-]+').Value
+		if (-not $sid) { throw 'sc.exe showsid gave no service SID' }
+		& icacls.exe $dir /grant ('*{0}:(OI)(CI)M' -f $sid) | Out-Null
+		$result['ServiceSid'] = $sid
+		# sc.exe start waits for the 1053; the probe does not
+		Start-Process -FilePath sc.exe -ArgumentList @('start', $name) -WindowStyle Hidden
+		for ($i = 0; $i -lt 90 -and -not (Test-Path -LiteralPath $out); $i++) { Start-Sleep -Seconds 1 }
+		if (Test-Path -LiteralPath $out) {
+			$result['Probe'] = Get-Content -Raw -LiteralPath $out | ConvertFrom-Json
+		} else {
+			$result['Error'] = 'the service wrote no answer in 90 s'
+		}
+	} catch {
+		$result['Error'] = Get-ErrorText $_
+	} finally {
+		if ($created) {
+			& sc.exe stop $name | Out-Null
+			& sc.exe delete $name | Out-Null
+		}
+		Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+	}
+	return [pscustomobject]$result
 }
 
 $results = [ordered]@{ Started = (Get-Date).ToUniversalTime().ToString('o'); PowerShell = $PSVersionTable.PSVersion.ToString() }
@@ -587,7 +705,7 @@ try {
 			$e4 += [pscustomobject]$row
 			continue
 		}
-		$digest = (New-Object System.Security.Cryptography.SHA256Managed).ComputeHash([System.Text.Encoding]::UTF8.GetBytes('ranz core-h4 timing'))
+		$digest = [System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes('ranz core-h4 timing'))
 		$ecdsa = New-Object System.Security.Cryptography.ECDsaCng -ArgumentList $created.Key
 		try {
 			$first = Measure-Ms { [void] $ecdsa.SignHash($digest) }
@@ -689,6 +807,74 @@ try {
 		}
 		$results['E5_Tls'] = [pscustomobject]$e5
 	}
+
+	# ---- E6: the machine key set, and a service that runs as a virtual account
+	if ($Machine) {
+		if (-not $admin) {
+			$results['E6_Machine'] = 'not run: it needs an elevated process'
+		} else {
+			$e6 = @()
+			foreach ($p in $providers) {
+				$row = [ordered]@{ Provider = $p }
+				if (-not $open[$p]) {
+					$row['Error'] = 'the provider does not open (E2)'
+					$e6 += [pscustomobject]$row
+					continue
+				}
+				$made = New-TestKey -Provider $p -Algorithm 'ECDsaP256' -MachineSet
+				if ($made.Key -eq $null) {
+					$row['AdminMakesMachineKey'] = $made.Error
+					$e6 += [pscustomobject]$row
+					continue
+				}
+				$row['AdminMakesMachineKey'] = ('ok in {0} ms' -f $made.CreateMs)
+				$row['Key'] = Get-KeyFacts $made.Key
+				$row['AdminSigns'] = Test-KeyUse $made 'ecdsa' $p
+				$row['KeyFile'] = Get-KeyFileAcl $made.Key.UniqueName
+				$made.Key.Dispose()
+				$row['VirtualAccount'] = Invoke-AsVirtualAccount $p $made.Name
+				$e6 += [pscustomobject]$row
+			}
+			$results['E6_Machine'] = $e6
+		}
+	}
+
+	# ---- E7: the endorsement key and the certificates of the manufacturer
+	if ($ReadEk) {
+		if (-not $admin) {
+			$results['E7_Ek'] = 'not run: it needs an elevated process'
+		} elseif (-not $useTpm) {
+			$results['E7_Ek'] = 'not run: -NoTpm'
+		} else {
+			$e7 = [ordered]@{}
+			try {
+				$ek = Get-TpmEndorsementKeyInfo -HashAlgorithm Sha256
+				$e7['IsPresent'] = $ek.IsPresent
+				$e7['PublicKeyHash'] = $ek.PublicKeyHash
+				$manufacturer = @($ek.ManufacturerCertificates | Where-Object { $_ -ne $null })
+				$additional = @($ek.AdditionalCertificates | Where-Object { $_ -ne $null })
+				$e7['ManufacturerCertificates'] = $manufacturer.Count
+				$e7['AdditionalCertificates'] = $additional.Count
+				$e7['Certificates'] = @(($manufacturer + $additional) | ForEach-Object {
+					[pscustomobject]@{ Subject = $_.Subject; Issuer = $_.Issuer; NotAfter = $_.NotAfter.ToString('o') }
+				})
+				if ($manufacturer.Count -gt 0) {
+					$x509 = 'System.Security.Cryptography.X509Certificates.X509Certificate2'
+					$chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
+					$chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
+					$chain.ChainPolicy.UrlRetrievalTimeout = [TimeSpan]::FromSeconds(10)
+					foreach ($extra in $additional) { [void] $chain.ChainPolicy.ExtraStore.Add((New-Object $x509 -ArgumentList (, $extra.RawData))) }
+					$leaf = New-Object $x509 -ArgumentList (, $manufacturer[0].RawData)
+					$e7['ChainBuilds'] = $chain.Build($leaf)
+					$e7['ChainStatus'] = @($chain.ChainStatus | ForEach-Object { $_.Status.ToString() })
+					$e7['ChainSubjects'] = @($chain.ChainElements | ForEach-Object { $_.Certificate.Subject })
+				}
+			} catch {
+				$e7['Error'] = Get-ErrorText $_
+			}
+			$results['E7_Ek'] = [pscustomobject]$e7
+		}
+	}
 } catch {
 	$results['Fatal'] = Get-ErrorText $_
 } finally {
@@ -699,7 +885,7 @@ try {
 		} catch { }
 		try { Remove-Item -LiteralPath ('Cert:\CurrentUser\My\' + $c.Thumbprint) -Force } catch { }
 	}
-	foreach ($k in $script:Keys) { [void] (Remove-TestKey $k.Name $k.Provider) }
+	foreach ($k in $script:Keys) { [void] (Remove-TestKey $k.Name $k.Provider $k.MachineSet) }
 }
 
 $results['Finished'] = (Get-Date).ToUniversalTime().ToString('o')
@@ -739,6 +925,12 @@ if ($results.Contains('E5_Tls')) {
 	[void] $text.AppendLine((($results['E5_Tls'].Runs | ForEach-Object {
 		[pscustomobject]@{ Run = $_.Run; Protocol = $_.Protocol; Failures = $_.Failures; Saw = $_.ServerSawClientCertificate; First = $_.FirstMs; Handshake = (Join-Properties $_.Handshake); Error = $_.Error; FirstError = $_.FirstError }
 	} | Format-List | Out-String -Width 240).TrimEnd()))
+}
+foreach ($section in @(@('E6_Machine', 'E6 the machine key set and a service that runs as a virtual account'), @('E7_Ek', 'E7 the endorsement key and the certificates of the manufacturer'))) {
+	if ($results.Contains($section[0])) {
+		[void] $text.AppendLine([Environment]::NewLine + $section[1])
+		[void] $text.AppendLine((($results[$section[0]] | ConvertTo-Json -Depth 8).TrimEnd()))
+	}
 }
 if ($results.Contains('Fatal')) { [void] $text.AppendLine([Environment]::NewLine + 'The script stopped on: ' + $results['Fatal']) }
 $report = $text.ToString()
