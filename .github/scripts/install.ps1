@@ -66,7 +66,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 # and 5555 for ranz.exe; ranz install again keeps each rule with its id and removes a rule of the group that an older
 # version left, as an upgrade finds it; after ranz uninstall no rule of the group is left.
 
-$ranzFile =(Resolve-Path -LiteralPath $Ranz).Path
+$ranzFile = (Resolve-Path -LiteralPath $Ranz).Path
 $tamperedFile = (Resolve-Path -LiteralPath $Tampered).Path
 if (-not $Architecture) { throw '-Architecture names no architecture' }
 $x64 = ($Architecture -eq 'x64')

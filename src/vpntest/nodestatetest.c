@@ -228,7 +228,8 @@ void nodestate_test(UINT num, char **arg)
 
 	// The state of a running node with no role and no Controller settings
 	bool asked = NodeStateAsk(pipe, "state", reply, NODESTATE_REPLY);
-	NodeStateCheck(ctx, asked && InStr(reply, "\"error\"") == false, "state: the admin pipe answers the command", "the answer is %s", reply);
+	// A refused command is an object with error alone; the front door of a state has an error of its own, "" here
+	NodeStateCheck(ctx, asked && StartWith(reply, "{\"error\"") == false, "state: the admin pipe answers the command", "the answer is %s", reply);
 	NodeStateCheck(ctx, InStr(reply, "\"running\":true") && InStr(reply, "\"roles\":"), "state: the node runs, with its Roles", "the answer is %s", reply);
 	NodeStateCheck(ctx, InStr(reply, "\"controlStream\":{") && InStr(reply, "\"connected\":false") && InStr(reply, "the node has no Controller settings"),
 		"state: the control stream is not connected, and says why", "the answer is %s", reply);
