@@ -427,7 +427,8 @@ struct NODE_CONTROLLER_STATUS {
 	UINT64 NumEnds;                                // Streams that ended or did not open
 	UINT LastEnd;                                  // How the last one ended (CONTROL_END_*)
 	UINT NextRetry;                                // ms before the next attempt after it
-	bool Mismatch;                                 // The certificate of the last dial failed the fingerprint check
+	bool Mismatch;                                 // The certificate of the last dial that reached the fingerprint check failed it ...
+	char Seen[NODE_CONTROLLER_FINGERPRINT];        // ... and had this TLS fingerprint, "" before the first
 	char PipeAcl[MAX_SIZE];                        // The DACL of the admin pipe as the system holds it, in SDDL; "" when it does not run
 };
 

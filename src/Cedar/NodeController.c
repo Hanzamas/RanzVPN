@@ -60,7 +60,8 @@ struct NODE_CONTROLLER {
 	PEER_KEY NodeKey;                              // The node's static key, for that overlay
 	bool Overlay;                                  // The node started that overlay
 	LOCK *Lock;                                    // The fields below
-	bool Mismatch;                                 // The certificate of the last dial failed the fingerprint check ...
+	bool Checked;                                  // The certificate of the attempt that ends next reached the fingerprint check
+	bool Mismatch;                                 // The certificate of the last dial that reached the check failed it ...
 	char Seen[NODE_CONTROLLER_FINGERPRINT];        // ... and had this fingerprint
 	UINT64 NumEnds;                                // Streams that ended or did not open
 	UINT LastEnd;                                  // How the last one ended (CONTROL_END_*)
@@ -226,7 +227,7 @@ static bool NodeControllerCertFingerprint(PCCERT_CONTEXT cert, char *fp, UINT si
 }
 
 // The check of the certificate of the Controller, in place of a thumbprint pin (TRANSPORT_TLS_CONFIG.Verify): its
-// fingerprint is the one of the settings. The end of the stream tells the log whether it failed.
+// fingerprint is the one of the settings. The end of the stream tells the log whether it passed.
 static bool NodeControllerVerify(void *param, const struct _CERT_CONTEXT *cert) {
 	NODE_CONTROLLER *c = (NODE_CONTROLLER *)param;
 	char seen[NODE_CONTROLLER_FINGERPRINT];
@@ -235,6 +236,7 @@ static bool NodeControllerVerify(void *param, const struct _CERT_CONTEXT *cert) 
 
 	Lock(c->Lock);
 	{
+		c->Checked = true;
 		c->Mismatch = (ok == false);
 		StrCpy(c->Seen, sizeof(c->Seen), seen);
 	}
@@ -248,13 +250,14 @@ static void NodeControllerEnd(void *param, const CONTROL_STATUS *st) {
 	NODE_CONTROLLER *c = (NODE_CONTROLLER *)param;
 	char why[MAX_SIZE * 2];
 	char seen[NODE_CONTROLLER_FINGERPRINT];
-	bool mismatch;
+	bool checked, mismatch;
 
 	Lock(c->Lock);
 	{
+		checked = c->Checked;
 		mismatch = c->Mismatch;
 		StrCpy(seen, sizeof(seen), c->Seen);
-		c->Mismatch = false;
+		c->Checked = false;
 		c->NumEnds++;
 		c->LastEnd = st->LastEnd;
 		c->NextRetry = st->NextRetry;
@@ -263,9 +266,12 @@ static void NodeControllerEnd(void *param, const CONTROL_STATUS *st) {
 
 	switch (st->LastEnd) {
 	case CONTROL_END_DIAL:
-		if (mismatch)
+		if (checked && mismatch)
 			Format(why, sizeof(why), "the TLS fingerprint check failed: the certificate of the Controller has the TLS fingerprint %s, not %s of the Controller settings, so no state is taken",
 			       IsEmptyStr(seen) ? "(none)" : seen, c->Fingerprint);
+		else if (checked)
+			Format(why, sizeof(why), "the certificate passed the TLS fingerprint check, and then the TLS session failed: the server did not select the ALPN protocol %s of the control stream, or gave no TLS exporter, so no state is taken",
+			       CONTROL_ALPN);
 		else
 			Format(why, sizeof(why), "no Controller answered there, or its TLS session failed");
 		break;
@@ -772,6 +778,7 @@ void NodeControllerGetStatus(NODE *n, NODE_CONTROLLER_STATUS *st) {
 				st->LastEnd = c->LastEnd;
 				st->NextRetry = c->NextRetry;
 				st->Mismatch = c->Mismatch;
+				StrCpy(st->Seen, sizeof(st->Seen), c->Seen);
 			}
 			Unlock(c->Lock);
 

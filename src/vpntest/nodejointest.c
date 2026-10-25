@@ -8,9 +8,10 @@
 //   fingerprint or an address without a port is refused with a message that says which; controller set and controller
 //   clear write and remove the settings, which the node takes at its next start.
 // - With settings that name a TLS port whose certificate has another TLS fingerprint, the node starts its overlay with the
-//   control stream, takes no state, says in its log that the fingerprint check failed, and dials again after a delay that
-//   doubles with each attempt that fails. With the fingerprint of that certificate the check passes, and the TLS session
-//   still fails: its server did not select the ALPN protocol of the control stream.
+//   control stream, takes no state, says in its log that the fingerprint check failed and which fingerprint it saw, and
+//   dials again after a delay that doubles with each attempt that fails, up to its cap. With the fingerprint of that
+//   certificate the check passes, and the TLS session still fails: its server did not select the ALPN protocol of the
+//   control stream.
 // - The private half of the static key, which the test put into the key storage provider itself, is in no answer and in
 //   no line of the node log.
 // Print "NODEJOIN TEST OK" only when every check passes. Needs the rights to write a machine key, as an elevated window has.
@@ -163,7 +164,8 @@ static bool NodeJoinAsk(wchar_t *pipe, char *command, char *reply, UINT size)
 	return (ok && IsEmptyStr(reply) == false);
 }
 
-// The text of every file of the node log of dir, NUL-terminated
+// The text of every file of the node log of dir, NUL-terminated. The log writer of a node that runs holds its file open
+// for writing, so the files are read without the read lock.
 static char *NodeJoinLog(wchar_t *dir)
 {
 	wchar_t log_dir[MAX_PATH];
@@ -182,7 +184,7 @@ static char *NodeJoinLog(wchar_t *dir)
 		}
 
 		ConbinePathW(path, sizeof(path), log_dir, d->File[i]->FileNameW);
-		BUF *b = ReadDumpW(path);
+		BUF *b = ReadDumpExW(path, false, 0);
 		if (b != NULL)
 		{
 			WriteBuf(all, b->Buf, b->Size);
@@ -211,13 +213,13 @@ static UINT NodeJoinCount(char *text, char *what)
 	return num;
 }
 
-// Whether the node log of dir says what within NODEJOIN_WAIT
-static bool NodeJoinWaitLog(wchar_t *dir, char *what)
+// Whether the node log of dir says what more than num times within NODEJOIN_WAIT
+static bool NodeJoinWaitLog(wchar_t *dir, char *what, UINT num)
 {
 	for (UINT64 end = Tick64() + NODEJOIN_WAIT;Tick64() < end;SleepThread(NODEJOIN_POLL))
 	{
 		char *text = NodeJoinLog(dir);
-		bool found = InStr(text, what);
+		bool found = (NodeJoinCount(text, what) > num);
 
 		Free(text);
 		if (found)
@@ -275,7 +277,7 @@ static bool NodeJoinFingerprint(PCCERT_CONTEXT cert, char *fp, UINT size)
 	return ok;
 }
 
-RANZ_TEST_TAGS("nodejoin", nodejoin_test, "core", "Controller settings, admin pipe and static key of a Node without a controller (SDN-90): ranz node's commands, a TLS fingerprint that fails, the delay that grows, no private key in any answer or log.");
+RANZ_TEST_TAGS("nodejoin", nodejoin_test, "core", "Controller settings, admin pipe and static key of a Node without a controller (SDN-90): ranz node's commands, a TLS fingerprint that fails and one that passes, the delay that grows to its cap, no private key in any answer or log.");
 void nodejoin_test(UINT num, char **arg)
 {
 	NODEJOIN_CTX *ctx = ZeroMalloc(sizeof(NODEJOIN_CTX));
@@ -294,12 +296,13 @@ void nodejoin_test(UINT num, char **arg)
 	wchar_t dir_fresh[MAX_PATH] = {0};
 	char priv_hex[2 * PEER_KEY_SIZE + 1], priv_lower[2 * PEER_KEY_SIZE + 1];
 	char thumbprint[MAX_SIZE] = "", fingerprint[MAX_SIZE] = "", address[MAX_SIZE] = "";
-	char command[MAX_SIZE * 2], want[MAX_SIZE];
+	char command[MAX_SIZE * 2], want[MAX_SIZE], mismatch[MAX_SIZE * 2], next[3][MAX_SIZE];
 	char *reply = ZeroMalloc(NODEJOIN_REPLY);
 	char *answers = ZeroMalloc(NODEJOIN_REPLY * 4);
 	char *priv_b64 = NULL, *pub_b64 = NULL, *ctrl_b64 = NULL, *fresh_b64 = NULL, *text = NULL;
+	// The TLS fingerprint of the settings that no certificate of the test has
+	char *wrong = "abababababababababababababababababababababababababababababababab";
 	PCCERT_CONTEXT cert = NULL;
-	UINT seen[4] = {0, 0, 0, 0};
 	UINT size = 0;
 	UINT scope = NodeJoinScope();
 	UINT r = Rand32() & 0xFFFF;
@@ -395,31 +398,52 @@ void nodejoin_test(UINT num, char **arg)
 		goto END;
 	}
 
-	Format(command, sizeof(command), "controller set %s %s %s", address, ctrl_b64, "abababababababababababababababababababababababababababababababab");
+	Format(command, sizeof(command), "controller set %s %s %s", address, ctrl_b64, wrong);
 	Format(want, sizeof(want), "\"address\":\"%s\"", address);
 	NodeJoinCheck(ctx, NodeJoinAsk(pipe, command, reply, NODEJOIN_REPLY) && InStr(reply, want) && InStr(reply, "\"error\"") == false, "controller set writes the settings", "%s", reply);
 	StrCat(answers, NODEJOIN_REPLY * 4, reply);
 
-	// The node takes them at its next start: the overlay with the control stream, no state, and the log says which check failed
+	// The node takes them at its next start: the overlay with the control stream, no state, and the log says which check
+	// failed, with the TLS fingerprint of the certificate as the test computes it and the Controller prints it
 	FreeNode(n);
 	n = NodeJoinStart(dir, pipe);
 	NodeControllerGetStatus(n, &st);
 	NodeJoinCheck(ctx, st.Set && st.Overlay && StrCmp(st.Address, address) == 0 && Cmp(st.Key, controller_key, PEER_KEY_SIZE) == 0,
 		"at its next start the node runs its overlay with the control stream of the settings", "set %u, overlay %u, address %s", (UINT)st.Set, (UINT)st.Overlay, st.Address);
-	NodeJoinCheck(ctx, NodeJoinWaitLog(dir, "the TLS fingerprint check failed: the certificate of the Controller has the TLS fingerprint"),
-		"a wrong TLS fingerprint fails closed, and the log says that the fingerprint check failed", "not within %u ms", NODEJOIN_WAIT);
+	Format(mismatch, sizeof(mismatch), "the TLS fingerprint check failed: the certificate of the Controller has the TLS fingerprint %s, not %s of the Controller settings", fingerprint, wrong);
+	bool failed = NodeJoinWaitLog(dir, mismatch, 0);
+	NodeControllerGetStatus(n, &st);
+	NodeJoinCheck(ctx, failed && st.Mismatch && StrCmp(st.Seen, fingerprint) == 0, "a wrong TLS fingerprint fails closed, and the log says that the fingerprint check failed and which one it saw",
+		"the log %s within %u ms, mismatch %u, the fingerprint seen %s", (failed ? "says it" : "does not say it"), NODEJOIN_WAIT, (UINT)st.Mismatch, st.Seen);
 
-	// The delay before the next attempt doubles with each attempt that fails: 1, 2 and 4 s after the first three
-	for (UINT64 end = Tick64() + NODEJOIN_WAIT;seen[3] == 0 && Tick64() < end;SleepThread(NODEJOIN_POLL))
+	// The delay before the next attempt doubles with each attempt that fails, as the log says of each one: 1, 2 and 4 s
+	// after the first three
+	for (UINT i = 0;i < 3;i++)
 	{
-		NodeControllerGetStatus(n, &st);
-		if (st.NumEnds >= 1 && st.NumEnds <= 3 && seen[st.NumEnds] == 0)
-		{
-			seen[st.NumEnds] = st.NextRetry;
-		}
+		Format(next[i], sizeof(next[i]), "; the next attempt in %u ms", (UINT)CONTROL_RETRY << i);
 	}
-	NodeJoinCheck(ctx, seen[1] == CONTROL_RETRY && seen[2] == 2 * CONTROL_RETRY && seen[3] == 4 * CONTROL_RETRY && st.LastEnd == CONTROL_END_DIAL && st.Connected == false && st.Generation == 0,
-		"each attempt that fails doubles the delay before the next one, and no state comes", "delays %u, %u, %u ms, last end %u, generation %I64u", seen[1], seen[2], seen[3], st.LastEnd, st.Generation);
+	bool third = NodeJoinWaitLog(dir, next[2], 0);
+	char *lines = NodeJoinLog(dir);
+	char *delay1 = strstr(lines, next[0]);
+	char *delay2 = (delay1 != NULL ? strstr(delay1, next[1]) : NULL);
+	char *delay4 = (delay2 != NULL ? strstr(delay2, next[2]) : NULL);
+	NodeControllerGetStatus(n, &st);
+	NodeJoinCheck(ctx, third && delay4 != NULL && NodeJoinCount(lines, mismatch) >= 3 && st.NumEnds >= 3 && st.NextRetry >= 4 * CONTROL_RETRY && st.LastEnd == CONTROL_END_DIAL &&
+		st.Connected == false && st.Generation == 0,
+		"each attempt that fails doubles the delay before the next one, and no state comes", "the log %s the delays of 1, 2 and 4 s in that order, %u attempts, the next in %u ms, last end %u, generation %I64u",
+		(delay4 != NULL ? "has" : "does not have"), (UINT)st.NumEnds, st.NextRetry, st.LastEnd, st.Generation);
+	Free(lines);
+
+	// The delay grows up to its cap and stays there, and a stream that was open dials again after the shortest delay
+	UINT delay = 0, failures = 0;
+	while (failures < 16 && delay < CONTROL_RETRY_MAX)
+	{
+		delay = ControlRetryNext(delay, CONTROL_END_REFUSED);
+		failures++;
+	}
+	NodeJoinCheck(ctx, delay == CONTROL_RETRY_MAX && failures == 7 && ControlRetryNext(delay, CONTROL_END_HANDSHAKE) == CONTROL_RETRY_MAX &&
+		ControlRetryNext(delay, CONTROL_END_DIAL) == CONTROL_RETRY_MAX && ControlRetryNext(delay, CONTROL_END_CLOSED) == CONTROL_RETRY,
+		"the delay doubles up to its cap of a minute and stays there, and a stream that was open dials again after a second", "%u ms after %u attempts that failed", delay, failures);
 
 	// With the fingerprint of the certificate the check passes, and the session still fails: no ALPN protocol of the control stream
 	Format(command, sizeof(command), "controller set %s %s %s", address, ctrl_b64, fingerprint);
@@ -427,10 +451,12 @@ void nodejoin_test(UINT num, char **arg)
 	StrCat(answers, NODEJOIN_REPLY * 4, reply);
 	FreeNode(n);
 	n = NodeJoinStart(dir, pipe);
-	NodeJoinCheck(ctx, NodeJoinWaitLog(dir, "no Controller answered there, or its TLS session failed"),
-		"the certificate of the fingerprint passes its check, and a server that selects no ALPN protocol fails the session", "not within %u ms", NODEJOIN_WAIT);
+	bool passed = NodeJoinWaitLog(dir, "the certificate passed the TLS fingerprint check, and then the TLS session failed: the server did not select the ALPN protocol " CONTROL_ALPN, 0);
 	NodeControllerGetStatus(n, &st);
-	NodeJoinCheck(ctx, st.Mismatch == false && st.Generation == 0, "no state comes from a server that is not the Controller", "mismatch %u, generation %I64u", (UINT)st.Mismatch, st.Generation);
+	NodeJoinCheck(ctx, passed && st.Mismatch == false && StrCmp(st.Seen, fingerprint) == 0,
+		"the certificate of the fingerprint passes its check, and a server that selects no ALPN protocol fails the session", "the log %s within %u ms, mismatch %u, the fingerprint seen %s",
+		(passed ? "says it" : "does not say it"), NODEJOIN_WAIT, (UINT)st.Mismatch, st.Seen);
+	NodeJoinCheck(ctx, st.Connected == false && st.Generation == 0, "no state comes from a server that is not the Controller", "connected %u, generation %I64u", (UINT)st.Connected, st.Generation);
 
 	// controller shows the settings; clear takes them out, and at the next start the node has no Controller again
 	NodeJoinCheck(ctx, NodeJoinAsk(pipe, "controller", reply, NODEJOIN_REPLY) && InStr(reply, want) && InStr(reply, "\"connected\":false"), "controller shows the settings and the state of the stream", "%s", reply);
