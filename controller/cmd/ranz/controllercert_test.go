@@ -140,7 +140,8 @@ func TestControllerCertCommands(t *testing.T) {
 	out = run("set", "-host", "pc-a.example.com", "-cert", certFile, "-key", keyFile)
 	noKey("set", out)
 	changed := userDecode[controller.CertificateChange](t, out)
-	if c := changed.Certificate; c.Source != servercert.SourceFile || c.Fingerprint != fp || c.SelfSigned || c.Setting == nil || c.Setting.File == nil ||
+	// The certificate of the file is self-signed, as certFiles makes it
+	if c := changed.Certificate; c.Source != servercert.SourceFile || c.Fingerprint != fp || !c.SelfSigned || c.Setting == nil || c.Setting.File == nil ||
 		c.Setting.File.Certificate != certFile || !reflect.DeepEqual(c.Names, []string{"pc-a.example.com"}) {
 		t.Errorf("set printed %+v, want the certificate of the file with the fingerprint %s", c, fp)
 	}
