@@ -51,11 +51,12 @@ UINT NodeEndpointsTargets(const CONTROL_ENDPOINT *endpoints, UINT num, TRANSPORT
 // Whether a node dials a peer that has no session, given their static keys key and peer_key. A data transport that finds a
 // peer by its node name (by_name) leaves the order of the keys alone to decide: the lower key dials, and a dialler, which
 // is the client role, dials every peer. One that dials through endpoints dials a peer only when it can (dialable), and
-// then a node that has no endpoints (endpoints, its own number) dials it whatever the order of the keys, since no peer can
-// dial that node, while two nodes that both have endpoints follow the order of the keys, so that exactly one of them dials.
+// then a dialler does, and so does a node that has no endpoints (endpoints, its own number), whatever the order of the
+// keys, since no peer can dial either of them, while two nodes that both have endpoints follow the order of the keys, so
+// that exactly one of them dials.
 bool NodeEndpointsDials(bool by_name, bool dialler, const UCHAR *key, const UCHAR *peer_key, UINT endpoints, bool dialable) {
 	if (by_name)
 		return (dialler || Cmp(key, peer_key, PEER_KEY_SIZE) < 0);
 
-	return (dialable && (endpoints == 0 || Cmp(key, peer_key, PEER_KEY_SIZE) < 0));
+	return (dialable && (dialler || endpoints == 0 || Cmp(key, peer_key, PEER_KEY_SIZE) < 0));
 }
