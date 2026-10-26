@@ -216,6 +216,7 @@ void nodepins_test(UINT num, char **arg)
 	wchar_t dir[MAX_PATH] = {0};
 	char thumbprint[MAX_SIZE] = "", fingerprint[MAX_SIZE] = "", address[MAX_SIZE] = "";
 	char want[MAX_SIZE * 4];
+	char shown[MAX_SIZE * 2];
 	char *stored = ZeroMalloc(NODEPINS_SETTING);
 	char *reply = ZeroMalloc(NODEPINS_SETTING);
 	char *ctrl_b64 = NULL;
@@ -292,8 +293,8 @@ void nodepins_test(UINT num, char **arg)
 	NodePinsStored(dir, stored, NODEPINS_SETTING);
 	NodePinsCheck(ctx, NodePinsAre(n, 1, fingerprint, NULL) && StrCmp(stored, want) == 0, "a state with the new fingerprint alone makes the node forget the old one, in memory and in the store", "the store holds %s, want %s", stored, want);
 	NodeAdminCommand(n, "controller", reply, NODEPINS_SETTING);
-	Format(want, sizeof(want), "\"tlsFingerprint\":\"%s\",\"tlsFingerprints\":[\"%s\"]}", fingerprint, fingerprint);
-	NodePinsCheck(ctx, InStr(reply, want), "the admin pipe shows the fingerprint of the certificate in use as the one of the settings, before any restart", "%s", reply);
+	Format(shown, sizeof(shown), "\"tlsFingerprint\":\"%s\",\"tlsFingerprints\":[\"%s\"]}", fingerprint, fingerprint);
+	NodePinsCheck(ctx, InStr(reply, shown), "the admin pipe shows the fingerprint of the certificate in use as the one of the settings, before any restart", "%s", reply);
 
 	// A state that names none, and one whose fingerprints are no 64 hex digits, change nothing
 	NodePinsState(state, NULL, NULL);
