@@ -460,6 +460,8 @@ bool NodeStart(NODE *n) {
 			if (NodeStartWorkers(n)) {
 				n->Running = true;
 				NodeLog(n, "Node started: data directory %S, %u workers", n->DataDir, n->NumWorkers);
+				// The lines of the transport module, as a QUIC side without an exporter, into the node log (CORE-H5-R, #443)
+				NodeTransportLogStart(n);
 
 				NodeApplyRoles(n, n->ConfigRoles);
 
@@ -510,6 +512,7 @@ void NodeStop(NODE *n) {
 
 			NodeStopWorkers(n);
 			NodeTablesStop(n);
+			NodeTransportLogStop(n);
 
 			n->Running = false;
 			NodeLog(n, "Node stopped: %u workers joined, %u adapter queues detached", num_workers, num_queues);

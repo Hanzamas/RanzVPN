@@ -207,6 +207,28 @@ bool TransportTake(TRANSPORT_LISTENER *l, UINT_PTR socket);
 UINT TransportParseList(const char *list, TRANSPORT **transports, UINT num_transports, TRANSPORT_TARGET *targets, UINT max);
 TRANSPORT_STREAM *TransportRace(const TRANSPORT_TARGET *targets, UINT num, UINT delay, UINT timeout, TRANSPORT_RACE *race);
 
+// The fallback after a handshake (TransportFallback.c; CORE-H5-R, #443). The race picks the first stream to connect, so
+// QUIC wins wherever UDP passes, also against a server whose Noise handshake over QUIC fails, as a node of the build
+// before CORE-H5 refuses one of this build (the binding types differ) while TLS-443 still works between them. A client
+// keeps a TRANSPORT_FALLBACK per fallback list: Won records the transport of the stream that a race gave, Refused takes
+// that transport out of the next races for TRANSPORT_FALLBACK_HOLD once the handshake on its stream failed, and Targets
+// gives the entries of the list that the next race dials: those of the transports not taken out, in their order, or all
+// of them when that leaves none. So a dial after a failed handshake goes to the next transport of the list, and the
+// transport taken out comes back after the hold, when the server may have been upgraded. Now is GetTickCount64. The
+// caller serialises the calls on one fallback.
+#define TRANSPORT_FALLBACK_HOLD 300000 // ms that a transport whose handshake failed stays out of the races of its list
+
+typedef struct TRANSPORT_FALLBACK {
+	TRANSPORT *Last;                           // The transport of the stream that the last race gave, NULL before
+	UINT NumRefused;                           // The transports taken out
+	TRANSPORT *Refused[TRANSPORT_MAX_TARGETS]; // ... each until its time
+	UINT64 Until[TRANSPORT_MAX_TARGETS];
+} TRANSPORT_FALLBACK;
+
+UINT TransportFallbackTargets(TRANSPORT_FALLBACK *f, const TRANSPORT_TARGET *targets, UINT num, UINT64 now, TRANSPORT_TARGET *out, UINT max);
+void TransportFallbackWon(TRANSPORT_FALLBACK *f, TRANSPORT *t);
+TRANSPORT *TransportFallbackRefused(TRANSPORT_FALLBACK *f, UINT64 now);
+
 // The session layer (TransportNoise.c). Connect runs the initiator of a Noise session on a stream,
 // Accept the responder; each takes the stream, with cfg as for NoiseSessionConnect and
 // NoiseSessionAccept but for the binding, which comes from the stream, and the flag
