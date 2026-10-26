@@ -1,0 +1,9 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48"}},
+    {"kind": "VRF", "name": "lab", "spec": {"id": 20, "ula": "fd12:3456:789b::/48"}},
+    {"kind": "Node", "name": "gw-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"]}},
+    {"kind": "Node", "name": "hub", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"], "endpoints": [{"transport": "quic", "address": "hub.example.com:443"}, {"transport": "tls", "address": "hub.example.com:443"}]}},
+    {"kind": "Node", "name": "lab-1", "spec": {"publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "vrfs": ["lab"]}}
+  ]
+}

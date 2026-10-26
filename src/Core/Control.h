@@ -51,6 +51,9 @@
 #define CONTROL_DEVICE_ADDRESSES 2    // The addresses of a Device: IPv4 and IPv6 (Device.addresses of control.options)
 #define CONTROL_DEVICE_REPORT    5000 // ms between two reports of the counters of the Devices of a gateway
 
+// The endpoints of a node and of its peers (SDN-93, #410)
+#define CONTROL_MAX_ENDPOINTS 8 // The endpoints of a node and of a peer (NodeConfig.endpoints, Peer.endpoints of control.options)
+
 // The TLS fingerprints of the certificate of the Controller that a state names (SDN-92, #397)
 #define CONTROL_TLS_PINS     4  // The fingerprints of a state (NodeConfig.controller_tls of control.options)
 #define CONTROL_TLS_PIN_SIZE 65 // A fingerprint: 64 hex digits and the terminating NUL
@@ -172,6 +175,15 @@ typedef struct CONTROL_ROUTE {
 	UINT PeerVrfId;    // The VRF of the peer that a packet on the route goes into, 0 for VrfId itself
 } CONTROL_ROUTE;
 
+// An endpoint of a node or of a peer (Endpoint of the control protocol; SDN-93, #410): an address under which the other
+// nodes reach it, over one transport
+typedef struct CONTROL_ENDPOINT {
+	// The transport, as a fallback list names it: quic, tls or mimic (the names of the transports in Core/Transport.h)
+	char Transport[TRANSPORT_NAME_SIZE];
+	// The address that the transport dials: host:port, with an IPv6 host in brackets
+	char Address[TRANSPORT_ADDRESS_SIZE];
+} CONTROL_ENDPOINT;
+
 // A peer of the node: another node that shares a VRF with it (Peer of the control protocol)
 typedef struct CONTROL_PEER {
 	char Name[CONTROL_NAME_SIZE];                     // Its node name
@@ -184,6 +196,11 @@ typedef struct CONTROL_PEER {
 	CONTROL_ROUTE Routes[CONTROL_MAX_ROUTES];         // ... ordered by VRF id
 	UINT NumTags;                                     // Its tags, which identify it to the rules (SDN-8, #184)
 	char Tags[CONTROL_MAX_TAGS][CONTROL_NAME_SIZE];   // ... sorted
+
+	// The endpoints that the node dials the peer at (SDN-93, #410), in the order of the peer's Node resource, which is the
+	// order of the race: none for a peer that the node does not dial
+	UINT NumEndpoints;
+	CONTROL_ENDPOINT Endpoints[CONTROL_MAX_ENDPOINTS];
 } CONTROL_PEER;
 
 // A name of the zone of a VRF and the addresses that it answers (DnsRecord of the control protocol; SDN-11, #187)
@@ -318,6 +335,11 @@ typedef struct CONTROL_STATE {
 	UINT WireGuardPort;
 	UINT NumDevices;
 	CONTROL_DEVICE *Devices;
+
+	// Its own endpoints (SDN-93, #410), in the order of its Node resource: none when it names none, so that no peer can dial
+	// it and it dials them
+	UINT NumEndpoints;
+	CONTROL_ENDPOINT Endpoints[CONTROL_MAX_ENDPOINTS];
 
 	// The TLS fingerprints of the certificate of the Controller that the node accepts (SDN-92, #397), as the Controller sent
 	// them: 64 hex digits each, in lower case, the certificate in use first. There are none while the Controller sent none:
