@@ -41,6 +41,10 @@
    No production code runs the peer layer yet: the only PeerNew is the relay role (NodeRelayStart), which takes binds
    and forwards, and nothing in production calls PeerSend, PeerSealSignal, PeerOpenSignal or PeerSetRelays. The
    answers of this model are about the code of the module and its tests.
+
+   A process makes its fresh values (ephemeral keys, sequences, nonces) before its first input, where the code makes
+   them when it sends. A fresh value is as fresh either way; a name made after an input carries that input in
+   ProVerif, and with the leaked keys of peer-leaks the attacker nests such names without end (#399).
 *)
 
 const name_k: bitstring.
@@ -72,6 +76,11 @@ fun plsecret(principal, principal, bitstring, sessionid): bitstring [private].
 fun datasec(principal, principal, sessionid): bitstring [private].
 
 event PeerSealed(principal, principal, bitstring, bitstring, bitstring).
+(* The one-shot envelope of PeerSeal, which takes no input before it seals: the event of the injective query pe-replay.
+   An injective query keeps, for each event of its conclusion, the inputs that came before it; the seals of the bind
+   with its cookie and of the punch come after inputs that the attacker of peer-leaks builds from leaked keys, and
+   ProVerif did not end on PeerSealed there (#399). *)
+event EnvelopeSealed(principal, principal, bitstring, bitstring).
 event PeerOpened(principal, principal, bitstring, bitstring, bitstring).
 event DataSent(principal, principal, bitstring).
 event DataDelivered(principal, principal, bitstring, bitstring).
@@ -118,6 +127,7 @@ let PeerSeal(me: principal, to: principal, kind: bitstring, sid: sessionid) =
   let k2 = hkk(ck1, dhi(sI, SR)) in
   let ct = aead(k2, h2, pl) in
   event PeerSealed(me, to, kind, pl, addrof(me));
+  event EnvelopeSealed(me, to, kind, pl);
   out(c, (addrof(me), (kind, SI, E, ct))).
 
 (* PeerEnvelopeOpen: the receiver reads the kind and the key of the sender in the clear, and takes the
@@ -152,8 +162,7 @@ let PeerOpenBound(me: principal, relay: principal) =
 
 (* PeerChallengeSend: the relay me answers a bind of the node them from the address a with the cookie of that
    address, sealed to the node and sent to that address *)
-let RelayChallenge(me: principal, them: principal, a: bitstring, sq: bitstring, ck: bitstring) =
-  new e: bitstring;
+let RelayChallenge(me: principal, them: principal, a: bitstring, sq: bitstring, ck: bitstring, e: bitstring) =
   let pl = (v_peer, sq, ck) in
   event ChallengeSent(me, them, a, ck);
   event PeerSealed(me, them, k_challenge, pl, addrof(me));
@@ -162,6 +171,7 @@ let RelayChallenge(me: principal, them: principal, a: bitstring, sq: bitstring, 
 (* PeerInputBind at the relay role: a bind of the node them from the address a binds it there only with the cookie
    of a; a bind without a cookie, or with another, draws the challenge *)
 let RelayBind(me: principal, them: principal) =
+  new e: bitstring;
   in(c, (a: bitstring, (=k_bind, SI: bitstring, E: bitstring, ct: bitstring)));
   if SI = spub(them) then
   let pl = kopen(skey(me), SI, k_bind, E, ct) in
@@ -169,15 +179,17 @@ let RelayBind(me: principal, them: principal) =
   let (=v_peer, sq: bitstring, =ck) = pl in
     event RelayBound(me, them, a, ck)
   else let (=v_peer, sq1: bitstring) = pl in
-    RelayChallenge(me, them, a, sq1, ck)
+    RelayChallenge(me, them, a, sq1, ck, e)
   else let (=v_peer, sq2: bitstring, other: bitstring) = pl in
-    RelayChallenge(me, them, a, sq2, ck).
+    RelayChallenge(me, them, a, sq2, ck, e).
 
 (* PeerBind and PeerInputChallenge at the node me: a bind with no cookie, then, for the challenge of its relay to that
    bind, a bind with the cookie of the challenge *)
 let NodeBind(me: principal, relay: principal) =
   new sq: bitstring;
   new e: bitstring;
+  new sq2: bitstring;
+  new e2: bitstring;
   let pl = (v_peer, sq) in
   event PeerSealed(me, relay, k_bind, pl, addrof(me));
   out(c, (addrof(me), kseal(skey(me), spub(relay), k_bind, e, pl)));
@@ -185,8 +197,6 @@ let NodeBind(me: principal, relay: principal) =
   if a = addrof(relay) then
   if SR = spub(relay) then
   let (=v_peer, =sq, ck: bitstring) = kopen(skey(me), SR, k_challenge, E, ct) in
-  new sq2: bitstring;
-  new e2: bitstring;
   let pl2 = (v_peer, sq2, ck) in
   event BindCookie(me, relay, ck);
   event PeerSealed(me, relay, k_bind, pl2, addrof(me));
@@ -259,10 +269,12 @@ let PeerSessResp(me: principal, them: principal) =
 (* PeerPunchInput at the end with the lower key: a challenge with a nonce to the address a of a probe, sealed to the
    peer; the direct path at a once a response from a echoes the nonce, and a proof that echoes the peer's nonce *)
 let PunchLead(me: principal, them: principal) =
-  in(c, a: bitstring);
   new n: bitstring;
   new e: bitstring;
   new sq: bitstring;
+  new e2: bitstring;
+  new sq3: bitstring;
+  in(c, a: bitstring);
   let pl = (v_peer, sq, pt_challenge, n, empty) in
   event PunchNonce(me, them, a, n);
   event PeerSealed(me, them, k_punch, pl, addrof(me));
@@ -272,8 +284,6 @@ let PunchLead(me: principal, them: principal) =
   if a2 = a then
   let (=v_peer, sq2: bitstring, =pt_response, m: bitstring, =n) = kopen(skey(me), SI, k_punch, E, ct) in
   event PunchDirect(me, them, a, n);
-  new e2: bitstring;
-  new sq3: bitstring;
   let pl2 = (v_peer, sq3, pt_proof, empty, m) in
   event PunchEcho(me, them, m);
   event PeerSealed(me, them, k_punch, pl2, addrof(me));
@@ -282,12 +292,12 @@ let PunchLead(me: principal, them: principal) =
 (* PeerPunchInput at the other end: a challenge from the address a draws a response to a that echoes its nonce and
    holds one of its own; the direct path at a once a proof from a echoes that *)
 let PunchFollow(me: principal, them: principal) =
-  in(c, (a: bitstring, (=k_punch, SI: bitstring, E: bitstring, ct: bitstring)));
-  if SI = spub(them) then
-  let (=v_peer, sq: bitstring, =pt_challenge, n: bitstring, x: bitstring) = kopen(skey(me), SI, k_punch, E, ct) in
   new m: bitstring;
   new e: bitstring;
   new sq2: bitstring;
+  in(c, (a: bitstring, (=k_punch, SI: bitstring, E: bitstring, ct: bitstring)));
+  if SI = spub(them) then
+  let (=v_peer, sq: bitstring, =pt_challenge, n: bitstring, x: bitstring) = kopen(skey(me), SI, k_punch, E, ct) in
   let pl = (v_peer, sq2, pt_response, m, n) in
   event PunchEcho(me, them, n);
   event PunchNonce(me, them, a, m);

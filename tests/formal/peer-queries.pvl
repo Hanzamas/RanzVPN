@@ -32,10 +32,12 @@ query pl: bitstring, a: bitstring; event(PeerOpened(bob, alice, k_punch, pl, a))
 (* @query pb-auth *)
 query pl: bitstring, a: bitstring, a2: bitstring; event(PeerOpened(alice, bob, k_bound, pl, a)) ==> event(PeerSealed(bob, alice, k_bound, pl, a2)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
 
-(* No replay: each envelope that bob opens was sealed once. The sequence of the code makes it so, above the clock of
-   the receiver's entry of the peer, and the receiver of this model takes any sequence. *)
+(* No replay: each signal that bob opens was sealed once. The sequence of the code makes it so, above the clock of the
+   receiver's entry of the peer, and the receiver of this model takes any sequence. The query is on the signal, which
+   only the one-shot PeerSeal seals (EnvelopeSealed): the receiver of a bind and of a punch probe is the same
+   PeerOpen, so the answer is the same for them. *)
 (* @query pe-replay *)
-query k: bitstring, pl: bitstring, a: bitstring, a2: bitstring; inj-event(PeerOpened(bob, alice, k, pl, a)) ==> inj-event(PeerSealed(alice, bob, k, pl, a2)).
+query pl: bitstring, a: bitstring; inj-event(PeerOpened(bob, alice, k_signal, pl, a)) ==> inj-event(EnvelopeSealed(alice, bob, k_signal, pl)).
 
 (* The content of an envelope is secret until the static key of bob is leaked, and then it is not: the key of
    the envelope comes from es and ss, so it has no forward secrecy (pe-fs fails by the leak in phase 1) *)

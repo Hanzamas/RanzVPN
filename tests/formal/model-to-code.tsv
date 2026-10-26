@@ -322,6 +322,7 @@ peer-lib.pvl	cookiekey	function	src/Core/PeerChallenge.c	PeerCookieMake	CookieSe
 peer-lib.pvl	plsecret	model	-	-	-	-	the content of an envelope that a query asks about: no code
 peer-lib.pvl	datasec	model	-	-	-	-	the payload of a data datagram that a query asks about: no code
 peer-lib.pvl	PeerSealed	event	src/Core/PeerSignal.c	PeerEnvelopeSeal	payload	-	an envelope was sealed to a node
+peer-lib.pvl	EnvelopeSealed	event	src/Core/PeerSignal.c	PeerEnvelopeSeal	payload	-	the same event for the one-shot envelopes of PeerSeal alone, which the injective query pe-replay names
 peer-lib.pvl	PeerOpened	event	src/Core/PeerSignal.c	PeerEnvelopeOpen	sender	-	an envelope was opened, with the key of its sender; PeerEnvelopeOpen sees no address and a signal has none, so the address of the event means something for a bind, a punch probe and a bound only, where the caller has it (from)
 peer-lib.pvl	DataSent	event	src/Core/PeerSession.c	PeerSessionWriteRecord	NoiseCipherEncrypt	-	a record with a payload was sealed under the keys of a peer session
 peer-lib.pvl	DataDelivered	event	src/Core/Peer.c	PeerInputData	Recv,PeerSessionInput	-	a payload was delivered: the record opened under the keys of the session of its source, which the policy found to be a peer
