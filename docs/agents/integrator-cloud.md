@@ -335,5 +335,5 @@ The integrator never writes the AUTHORITY line or the EXPLICIT PERMISSION paragr
 | Merge answers 405 | Not mergeable now. Read the pull request again. |
 | Create answers 422 | A pull request for the branch exists, or the branch has no new commit. |
 | 403 or 429 with a note about rate limits | Stop the tick, write it in the report, and end. |
-| A command that the permission check refused | Report it under `blocked:` with its text and its message, and call `PushNotification` when you have the tool. Never retry it split up or reworded. A refused merge ("Merge Without Review") means that no layer of "What clears the permission check" matches the command as written. Compare the text of the command with the rules, and add the missing layer. A local session merges by hand meanwhile. |
+| A command that the permission check refused | Do what [integrator.md](integrator.md) says in "What the integrator must not do" and "The report". A refused merge ("Merge Without Review") means that no layer of "What clears the permission check" matches the command as written. Compare the text of the command with the rules, and add the missing layer. A local session merges by hand meanwhile. |
 | No heartbeat issue | Stop and report. Without it you cannot know that you are alone. |

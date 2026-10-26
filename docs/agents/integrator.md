@@ -274,8 +274,9 @@ The job ends when all of these hold:
 Then the integrator does this once:
 
 1. It posts a comment on the heartbeat issue that starts with `DONE:`. The comment says what was built (the closed tickets by area), the state of `integration`, and what is left for the maintainer: the parked release work, the real test on two PCs of `docs/first-test.md`, and the tickets labelled `postponed` or `needs-triage`, each with its number.
-2. It creates one issue titled `Ranz VPN: every ticket in scope is done` with the same text. This is the place to look. GitHub does not notify the maintainer of it, because the routine acts through his own account and GitHub does not notify a person of their own activity. It looks for an issue with that title first, and never makes a second one. When the session has the tool `PushNotification`, it also calls it once, with one line that starts with `DONE`.
-3. It ends. Each later tick does the heartbeat, reads the progress count, and ends in that step when nothing changed. It writes no ticket and starts no lane. A new open ticket in scope, or a red run on `integration`, ends the quiet state, and the tick works again.
+2. It creates one issue titled `Ranz VPN: every ticket in scope is done` with the same text. It looks for an issue with that title first, and never makes a second one. This issue is the place to look. GitHub does not notify the maintainer of it, because the routine acts through his own account and GitHub does not notify a person of their own activity.
+3. When the session has the tool `PushNotification`, it calls it once, with one line that starts with `DONE`. A block gets the same call, with one line that says what is blocked (see "The report").
+4. It ends. Each later tick does the heartbeat, reads the progress count, and ends in that step when nothing changed. It writes no ticket and starts no lane. A new open ticket in scope, or a red run on `integration`, ends the quiet state, and the tick works again.
 
 The tickets labelled `postponed` or `needs-triage` are not in scope, and the integrator does not triage them before the end. They are the maintainer's: he decides after he reads the `DONE:` comment. Do not write new tickets to avoid this end. A new ticket needs a source: a finding of a review or a failed run, a gap of the runbook, or an open spec. When none exists, the work is done.
 
