@@ -31,11 +31,6 @@ type Settings struct {
 	// TLSFingerprint is the hex SHA-256 of the SubjectPublicKeyInfo of the Controller's TLS
 	// certificate (tlsFingerprint of `ranz status`), in lower case.
 	TLSFingerprint string `json:"tlsFingerprint"`
-	// TLSFingerprints are the fingerprints that the Node accepts once the Controller has sent them
-	// (SDN-92, NodeConfig.controller_tls), the one of the certificate in use first. Absent until it
-	// did: TLSFingerprint is then the only one. The Node writes it; `ranz node controller set` never
-	// does.
-	TLSFingerprints []string `json:"tlsFingerprints,omitempty"`
 }
 
 // Parse checks the three values of the Controller settings and returns them in the form the Node
