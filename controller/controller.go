@@ -20,6 +20,10 @@
 //	-listen          :443, TLS: ranz-control/1 to the control stream; h2, http/1.1 or none to the API
 //	                 and the web UI (SDN-28);
 //	                 with the default, a 443 that cannot be bound falls back to 5555 (ADR-0020)
+//	-front-door-pipe \\.\pipe\ranz-controller-front-door on Windows: the handoff pipe through which
+//	                 the front door of a node on the same host, which then owns TCP 443, hands over
+//	                 the connections of the TLS port (SDN-73, ADR-0035); empty for none. The
+//	                 controller listens on -listen beside it, as it does without a front door
 //	-http-listen     off; plain HTTP (port 80) for the redirect to HTTPS and ACME HTTP-01 only,
 //	                 through HTTP.sys on Windows
 //	-control-listen  off; a second TLS port for the control stream only, for development
@@ -150,6 +154,7 @@ type config struct {
 	listen        string
 	listenSet     bool // -listen was given, so it does not fall back
 	httpListen    string
+	frontDoorPipe string
 	controlListen string
 	apiListen     string
 	rqliteURL     string
@@ -197,6 +202,7 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.dataDir, "data", defaultDataDir(), "the data directory: the controller's keys, the service log and the data of -rqlited")
 	flags.StringVar(&cfg.listen, "listen", ":443", "the TCP address of the TLS port: the control stream and the API, told apart by ALPN; the default falls back to 5555 when 443 cannot be bound")
 	flags.StringVar(&cfg.httpListen, "http-listen", "", "the TCP address of plain HTTP, for example :80, which only redirects to HTTPS and answers ACME HTTP-01 challenges (through HTTP.sys on Windows); off when empty")
+	flags.StringVar(&cfg.frontDoorPipe, "front-door-pipe", port.DefaultFrontDoorPipe, "the handoff pipe through which the front door of a node on the same host hands over the connections of the TLS port (Windows); empty for none")
 	flags.StringVar(&cfg.controlListen, "control-listen", "", "for development: a second TLS address for the control stream only, for example 127.0.0.1:7443")
 	flags.StringVar(&cfg.apiListen, "api-listen", "", "for development: a loopback address for the API over plain HTTP, for example 127.0.0.1:7080")
 	flags.StringVar(&cfg.rqliteURL, "rqlite", "http://127.0.0.1:4001", "the URL of the rqlite HTTP API; with -rqlited, rqlited listens on its host:port")
@@ -532,6 +538,9 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	defer tlsPort.Close()
 	go func() { errc <- tlsPort.Serve(ln) }()
 	log.Info("TLS port", "address", ln.Addr().String(), "protocols", "ranz-control/1, h2, http/1.1")
+	if fd := serveFrontDoor(cfg.frontDoorPipe, tlsPort, log); fd != nil {
+		defer fd.Close()
+	}
 
 	if cfg.controlListen != "" {
 		cln, err := net.Listen("tcp", cfg.controlListen)
