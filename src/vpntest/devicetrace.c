@@ -20,7 +20,9 @@
 // key in base64. The test creates the ready file once both nodes joined, the adapter of gw holds its address and the
 // WireGuard interface of gw is up with the Device, and prints the addresses and the port; then it runs until the stop file
 // exists or Ctrl+C, prints what the fake host answered and what the policy of gw dropped, and checks that the WireGuard
-// interface goes with the overlay of gw. Print "DEVICETRACE TEST OK" only when every check passes. Needs administrator
+// interface goes with the overlay of gw. While it runs it prints each change of the WireGuard interface of gw; a stop file
+// that says "failed" (a check of the script failed) prints the node log too. Print "DEVICETRACE TEST OK" only when every
+// check passes. Needs administrator
 // rights, and wintun.dll and wireguard.dll next to vpntest (.github/scripts/fetch-wintun.ps1 and fetch-wireguard.ps1).
 
 #include "controltls.h"
@@ -537,11 +539,56 @@ static bool DeviceTraceGone(UINT64 luid)
 	return false;
 }
 
-// Wait for the stop file, Ctrl+C or the end of DEVICETRACE_HOLD: whether it was one of the first two
-static bool DeviceTraceHold(char *stop_file)
+// Print the state of the WireGuard interface of gw when it differs from last, which takes it: the script shows these lines
+// when one of its waits on the gateway ends without what it waited for (FIX-11, #438)
+static void DeviceTraceShowWireGuard(NODE *gw, NODE_WIREGUARD_STATUS *last, UINT64 *last_generation)
 {
+	NODE_WIREGUARD_STATUS wg;
+	NODE_OVERLAY_STATUS st;
+
+	NodeWireGuardGetStatus(gw, &wg);
+	NodeOverlayGetStatus(gw, &st);
+	if (st.Generation == *last_generation && wg.Up == last->Up && wg.Port == last->Port && wg.NumDevices == last->NumDevices &&
+		wg.NumRoutes == last->NumRoutes && wg.Isolated == last->Isolated && wg.NumPairs == last->NumPairs)
+	{
+		return;
+	}
+
+	Print("  [INFO] gw: generation %I64u; WireGuard interface up %u on UDP port %u, %u Devices, %u routes, kept apart %u, %u pairs\n",
+		st.Generation, (UINT)wg.Up, wg.Port, wg.NumDevices, wg.NumRoutes, (UINT)wg.Isolated, wg.NumPairs);
+	Copy(last, &wg, sizeof(wg));
+	*last_generation = st.Generation;
+}
+
+// Whether the script wrote "failed" into the stop file: a check of its own failed, and the node log is printed as well
+static bool DeviceTraceStopFailed(char *stop_file)
+{
+	char text[MAX_SIZE];
+	BUF *b = ReadDump(stop_file);
+
+	if (b == NULL)
+	{
+		return false;
+	}
+
+	Zero(text, sizeof(text));
+	Copy(text, b->Buf, MIN(b->Size, (UINT)sizeof(text) - 1));
+	FreeBuf(b);
+
+	return InStr(text, "failed");
+}
+
+// Wait for the stop file, Ctrl+C or the end of DEVICETRACE_HOLD: whether it was one of the first two. Each change of the
+// WireGuard interface of gw, from wg, is printed meanwhile.
+static bool DeviceTraceHold(char *stop_file, NODE *gw, NODE_WIREGUARD_STATUS *wg)
+{
+	NODE_WIREGUARD_STATUS last;
+	UINT64 last_generation = 0;
+
+	Copy(&last, wg, sizeof(last));
 	for (UINT64 end = Tick64() + DEVICETRACE_HOLD;Tick64() < end;)
 	{
+		DeviceTraceShowWireGuard(gw, &last, &last_generation);
 		if (WaitForSingleObject(devicetrace_stop, DEVICETRACE_POLL) != WAIT_TIMEOUT)
 		{
 			return true;
@@ -573,6 +620,7 @@ void devicetrace_test(UINT num, char **arg)
 	char *ready_file = (num >= 4 ? arg[2] : NULL);
 	char *stop_file = (num >= 4 ? arg[3] : NULL);
 	bool joined = false;
+	bool script_failed = false;
 	bool ok = false;
 
 	Print("WireGuard Device tracer: gw terminates the Device on WireGuardNT and forwards it into the overlay, host answers it\n");
@@ -706,7 +754,8 @@ void devicetrace_test(UINT num, char **arg)
 				CloseHandle(f);
 			}
 
-			bool stopped = DeviceTraceHold(stop_file);
+			bool stopped = DeviceTraceHold(stop_file, nodes[DEVICETRACE_GATEWAY].Node, &wg);
+			script_failed = (stopped && DeviceTraceStopFailed(stop_file));
 			DeviceTraceShowNodes(nodes);
 			DeviceTraceCheck(ctx, stopped, "the script created the stop file", "not within %u ms", DEVICETRACE_HOLD);
 
@@ -755,7 +804,7 @@ void devicetrace_test(UINT num, char **arg)
 		PeerKeyClose(&t->Key);
 
 		// The node log is written once the node is freed
-		if (ctx->NumFailed != 0)
+		if (ctx->NumFailed != 0 || script_failed)
 		{
 			DeviceTracePrintLog(t->Name, t->Dir);
 		}

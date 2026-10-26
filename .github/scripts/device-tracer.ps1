@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 #   policy of the gateway counts the drops; the ping of the second Device is blocked too;
 # - with the rule gone and wireguard.port of the gateway set to another port, the gateway listens there and no longer on
 #   51820, the configuration names the new port, and the client reaches host through it.
-# The output of the processes is shown when a check fails.
+# The output of the processes is shown when a check fails, with the node log of vpntest devicetrace (Stop-Trace).
 
 $bin = (Resolve-Path $BuildDir).Path
 $ranz = Join-Path $bin 'ranz.exe'
@@ -113,14 +113,29 @@ function Test-Listening([int] $port) {
 	return @(Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue).Count -gt 0
 }
 
-# Wait until the UDP port is listened on, or no longer is
+function Show-Listening([int] $port) {
+	Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "UDP $($_.LocalAddress):$($_.LocalPort), process $($_.OwningProcess)" }
+}
+
+# Wait until the UDP port is listened on, or no longer is, within $waitSeconds (FIX-11, #438: the gateway may take longer
+# than a fixed window on a slow runner). On a timeout the state of the gateway goes out with the error: who listens on
+# its ports, the ranges that Windows keeps that hold one, and, from the catch below, the lines of vpntest about its
+# WireGuard interface and its node log.
 function Wait-Listening([int] $port, [bool] $on) {
-	$end = (Get-Date).AddSeconds(30)
+	$start = Get-Date
+	$end = $start.AddSeconds($waitSeconds)
 	while ((Test-Listening $port) -ne $on) {
-		if ((Get-Date) -ge $end) { throw "UDP port $port is $(if ($on) { 'not listened on' } else { 'still listened on' }) after 30 s" }
+		if ((Get-Date) -ge $end) {
+			Write-Host "--- the UDP ports of the gateway:"
+			foreach ($p in $defaultPort, $otherPort) { Show-Listening $p }
+			$hits = @(Get-ExcludedRanges @($defaultPort, $otherPort))
+			Write-Host "UDP port ranges that Windows keeps, with a port of the gateway: $(if ($hits.Count -gt 0) { $hits -join ', ' } else { 'none' })"
+			throw "UDP port $port is $(if ($on) { 'not listened on' } else { 'still listened on' }) after $waitSeconds s"
+		}
 		Start-Sleep -Milliseconds 500
 	}
-	Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "UDP $($_.LocalAddress):$($_.LocalPort), process $($_.OwningProcess)" }
+	Write-Host "UDP port $port is $(if ($on) { 'listened on' } else { 'no longer listened on' }) after $([int] ((Get-Date) - $start).TotalSeconds) s"
+	Show-Listening $port
 }
 
 # The UDP port ranges that Windows keeps from binding (netsh int ipv4|ipv6 show excludedportrange) that hold one of ports,
@@ -181,6 +196,17 @@ function Invoke-Client([string[]] $argv, [string[]] $want) {
 	foreach ($w in $want) {
 		if (-not ($out | Where-Object { $_ -like "$w*" })) { throw "ranz-wgpeer $($argv -join ' ') printed no line '$w'" }
 	}
+}
+
+# A failed check of the script: vpntest devicetrace, if it still runs, gets a stop file that says so, which makes it print
+# the state of its nodes and their node log on its way out, within $waitSeconds. The file is renamed into place, so that
+# vpntest never reads it half written.
+function Stop-Trace {
+	if (-not $trace -or $trace.HasExited) { return }
+	$file = "$stop.tmp"
+	Set-Content -LiteralPath $file -Value 'failed' -Encoding utf8NoBOM
+	Move-Item -LiteralPath $file -Destination $stop -Force
+	if (-not $trace.WaitForExit($waitSeconds * 1000)) { Write-Host "vpntest devicetrace did not finish within $waitSeconds s of the stop file" }
 }
 
 # Stop the processes of the check that still run, and the rqlited of the controller
@@ -331,8 +357,9 @@ try {
 	Wait-Listening $otherPort $false
 	Write-Host 'ok'
 } catch {
+	Stop-Trace
 	Stop-All
-	Show-Output 'vpntest devicetrace' $traceOut 200
+	Show-Output 'vpntest devicetrace' $traceOut 400
 	Show-Output 'vpntest devicetrace (stderr)' $traceErr 50
 	Show-Output 'ranz controller' $controllerErr 120
 	throw
