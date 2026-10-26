@@ -36,14 +36,14 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 ## What the integrator may do
 
 - Read everything on GitHub.
-- Launch lanes for the tickets that pass "Launching lanes", with one Workflow per set of lanes.
+- Launch lanes for the tickets that pass "Launching lanes", in batches of at most 2 lanes, each batch its own Workflow.
 - Push a WIP commit of a cut-off lane to the branch of that lane: `git push origin HEAD:<branch>`.
 - Mark the draft pull request of a lane ready, when the lane says that it is done.
 - Add the label `full-ci` to a pull request that has C code.
 - Rerun one failed job once, for a known flake.
 - Review a pull request: read it, start read-only review agents on its diff (the `code-review` skill), and send what they find back to its lane, as a resume lane or as a comment.
 - Merge a pull request that passes "The merge procedure", and close its tickets.
-- Write tickets and specs, and triage the tickets that are labelled `needs-triage`, by "Writing tickets": create, edit, label, comment on and close issues.
+- Write tickets and specs, and triage a ticket labelled `needs-triage` that blocks work in scope, by "Writing tickets": create, edit, label, comment on and close issues.
 - Write ADRs, `CONTEXT.md` entries and docs, in a pull request into `integration`, like any other change.
 - Comment on a ticket whose pull request merged as progress, to say what is left.
 - Post and edit its own comments on the heartbeat issue.
@@ -61,7 +61,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 - Spend money, change billing, or touch credentials and tokens.
 - Cut a scope item that the maintainer put in, or put it off: no `postponed` label from the integrator. Close a ticket only when its work is merged, or when it duplicates another or is obsolete, and say so in a comment. Never close a ticket to hide an unmet criterion.
 - Rerun a CI run of any head but the live one. It cancels the live run of the pull request.
-- Retry a command that the permission check blocked, split up or reworded. Stop and report it.
+- Retry a command that the permission check refused, split up or reworded. Report the refusal under `blocked:` (see "The report") and go on with the work that does not need the command.
 
 ## A tick
 
@@ -72,13 +72,14 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
    - The branches: `git ls-remote --heads origin`.
    - The newest run of `Full CI: push on integration`. It is the full set on the real branch, so a red run there is urgent.
    - Local only: `git worktree list`, for lane worktrees with unpushed work.
+   - The lanes of earlier ticks: the `lanes` lines of the tick comments of the last 3 hours (the command is in [integrator-cloud.md](integrator-cloud.md)). The tickets and pull requests named there are in flight. They count against the lane cap, and they get no lane and no resume lane before their branch has had no push for 90 minutes. A tick that ends its turn while its Workflow runs leaves a stale heartbeat comment, and its lanes still run.
 3. **Merge.** Every pull request that passes "The merge procedure". Close its tickets.
 4. **Repair.** For each other pull request:
    - a failed check that is a known flake: rerun it once;
    - a failed check or a conflict, and the branch is not busy: start a resume lane. A branch is busy when it got a push in the last 45 minutes, because a person or another process may be working on it;
    - a red run on `integration`: start a fix lane before any new ticket.
-5. **Launch.** If fewer than 5 lanes are alive, start lanes for the next ready tickets. See "Launching lanes". Use one Workflow for the whole set. If no ticket is ready, or a review or a lane found a gap that no ticket covers, write tickets first. See "Writing tickets".
-6. **Wait.** Arm a watcher and wait. A watcher is a script that prints one line when a pull request becomes clean, conflicting or failed; the one for the cloud is in [integrator-cloud.md](integrator-cloud.md). Refresh your heartbeat comment at least every 30 minutes. When a lane ends or the watcher prints a line, go to step 2.
+5. **Launch.** If fewer than 5 lanes are alive, counting those of earlier ticks, start lanes for the next ready tickets. See "Launching lanes". Start them in batches, each batch its own Workflow. If no ticket is ready, or a review or a lane found a gap that no ticket covers, write tickets first. See "Writing tickets".
+6. **Wait.** Arm a watcher and wait. A watcher is a script that prints one line when a pull request becomes clean, conflicting or failed; the one for the cloud is in [integrator-cloud.md](integrator-cloud.md). Refresh your heartbeat comment at least every 30 minutes. When a lane ends or the watcher prints a line, go to step 2. A tick may instead end its turn after it launched a Workflow, because the platform wakes the session when the Workflow ends. Then its heartbeat goes stale, and the next tick finds its lanes through the `lanes` line (step 2). A session that wakes later does the heartbeat again before it acts.
 7. **Report.** Edit your heartbeat comment. See "The report". Write `ended:` only when none of your lanes is alive.
 
 ## The merge procedure
@@ -150,7 +151,7 @@ A ticket whose blocker has an open pull request may start on the branch of that 
 3. A ticket that blocks many other open tickets. Example: a review that gates three tickets.
 4. The lowest number.
 
-**One Workflow.** Launch the whole set with one Workflow, from a copy of [lanes/lanes-template.js](lanes/lanes-template.js). See [lanes/README.md](lanes/README.md). Never launch a second Workflow that has a lane that the first one has: two lanes on one branch destroy each other. A Workflow runs at most `min(16, CPUs - 2)` agents at the same time, so more lanes need a second Workflow with other lanes.
+**Batches.** Launch the lanes in batches, each batch its own Workflow, from a copy of [lanes/lanes-template.js](lanes/lanes-template.js). See [lanes/README.md](lanes/README.md). A Workflow runs at most `min(16, CPUs - 2)` lanes at the same time. A cloud container has few CPUs, so that is 2: a Workflow of 5 lanes ran 2 and queued 3 (seen on 2026-10-26). So a batch has at most 2 lanes, and the batches run side by side, up to the lane cap. Never launch a lane that another Workflow has: two lanes on one branch destroy each other. The usage of the plan stays the limit. The lane cap is what a window pays for, and more lanes at once do not finish more work in a window.
 
 **The model.** Opus for the C data path, crypto, drivers and hard design. Sonnet with effort `max` for Go, UI, CLI, docs and CI. Always set the model on the agent. An agent without a model runs on the model of the session.
 
@@ -166,7 +167,7 @@ The integrator writes tickets itself. It does not ask the maintainer to type `/t
 
 - no ticket is ready for a lane and a slot is free;
 - a review, a lane or a failed run found a gap that no open ticket covers;
-- a ticket labelled `needs-triage` waits for a decision;
+- a ticket labelled `needs-triage` blocks a ticket that is in scope (the others wait for the end, see "When the work is done");
 - a merged pull request left a criterion unmet and the rest is more than a few lines of work.
 
 A new ticket has a source: a finding, a gap of the runbook (`docs/first-test.md`), an open spec, or a goal in `CONTEXT.md` or an ADR. Put the source in the body. Never write a ticket just to have work.
@@ -204,7 +205,7 @@ A local schedule that resumes work after a usage window (a scheduled task) and t
 - **One budget.** The usage is shared by every session of the account: the laptop, the cloud and the chats of the maintainer.
 - **Refill a slot** when a lane ends. Do not start a lane that cannot finish in what is left of the window. Local: look at `get_usage`. Cloud: no tool tells you, so keep to the lane cap of the routine prompt (default 5) and to its usage window rule (lanes start only in the first 3 hours after `window-start`).
 - **CI is the bottleneck.** A cycle takes about 25 minutes. A lane that waits for CI costs almost nothing. Many open pull requests do not need many new lanes.
-- **One Workflow per set**, never two with the same lane.
+- **One lane in one Workflow**, never the same lane in two.
 
 ## Known flakes
 
@@ -262,6 +263,22 @@ When the maintainer says stop:
 
 The maintainer turns off the schedule: the local scheduled task or the cloud routine. When he says go, a new tick reads GitHub, as in "After a cut-off".
 
+## When the work is done
+
+The job ends when all of these hold:
+
+- no ticket in scope is open. The progress count in [integrator-cloud.md](integrator-cloud.md) shows 0 open tickets. It leaves out the tickets labelled `postponed`, `needs-triage` and `parked`;
+- no pull request into `integration` is open;
+- the newest full run on `integration` is green.
+
+Then the integrator does this once:
+
+1. It posts a comment on the heartbeat issue that starts with `DONE:`. The comment says what was built (the closed tickets by area), the state of `integration`, and what is left for the maintainer: the parked release work, the real test on two PCs of `docs/first-test.md`, and the tickets labelled `postponed` or `needs-triage`, each with its number.
+2. It creates one issue titled `Ranz VPN: every ticket in scope is done` with the same text. This is the place to look. GitHub does not notify the maintainer of it, because the routine acts through his own account and GitHub does not notify a person of their own activity. It looks for an issue with that title first, and never makes a second one. When the session has the tool `PushNotification`, it also calls it once, with one line that starts with `DONE`.
+3. It ends. Each later tick does the heartbeat, reads the progress count, and ends in that step when nothing changed. It writes no ticket and starts no lane. A new open ticket in scope, or a red run on `integration`, ends the quiet state, and the tick works again.
+
+The tickets labelled `postponed` or `needs-triage` are not in scope, and the integrator does not triage them before the end. They are the maintainer's: he decides after he reads the `DONE:` comment. Do not write new tickets to avoid this end. A new ticket needs a source: a finding of a review or a failed run, a gap of the runbook, or an open spec. When none exists, the work is done.
+
 ## Discussion with the maintainer
 
 When the maintainer marks a talk as a discussion ("diskusikan"), nothing is recorded until he says so. No ticket, no label, no ADR, no `CONTEXT.md` entry, no issue comment, no document. Show the draft in chat first. An idea that he approves for recording becomes a ticket labelled `ready-for-agent`.
@@ -282,13 +299,13 @@ This holds only for a talk that he marks as a discussion. In every other case th
 Each tick ends with a report. In the cloud it goes into the heartbeat comment, after the first three lines. Local, it goes to the chat. It says:
 
 - **merged:** the pull requests and the tickets that they closed;
-- **lanes:** the lanes that run (key, ticket, branch), the lanes that started in this tick, and the lanes that ended with `ok: false`;
+- **lanes:** the lanes that run (key, ticket, branch), with the run that launched each one, those of earlier ticks too; the lanes that started in this tick, with the Workflow id; and the lanes that ended with `ok: false`. This is the line that the next tick reads;
 - **waiting:** the pull requests that wait, and why (checks run, conflict, draft, needs the full set);
 - **integration:** the result of the newest full run on `integration`;
 - **tickets:** the tickets that this tick wrote, triaged or closed outside a merge, each with one line on why;
 - **decisions:** the answers of a grill that this tick took, each with the ticket or ADR that records it;
 - **new terms:** the "New terms" of the bodies of merged pull requests. The integrator writes them into `CONTEXT.md` in a docs pull request, and names that pull request here;
-- **blocked:** a command that the permission check refused, with its message;
+- **blocked:** a command that the permission check refused: its text and its message. The tick also calls `PushNotification` once, when it has the tool, with one line that says what is blocked. It does not retry the command;
 - **ASK:** a line for each question that the wide permission does not cover: `master`, a release, money, credentials. Nothing else goes here;
 - **progress:** the open and closed tickets in scope (the command is in [integrator-cloud.md](integrator-cloud.md)).
 
