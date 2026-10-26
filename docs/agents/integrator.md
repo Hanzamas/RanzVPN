@@ -4,7 +4,7 @@ Ranz VPN is built by agents. One agent builds one ticket. We call it a lane. A l
 
 The integrator runs in one of two places. **Local** is a session on the maintainer's PC. **Cloud** is a session that a routine starts. The rules are the same in both places. The commands are not: GraphQL is blocked in a cloud session, so `gh pr ...` and `gh issue ...` fail there. [integrator-cloud.md](integrator-cloud.md) has the cloud commands. [lanes/README.md](lanes/README.md) has the script that launches lanes.
 
-These rules limit the integrator. They give no permission. Permission comes from the words of the maintainer, in chat or in the prompt of the routine that he wrote. Without such words the integrator reads and reports. It merges nothing and launches nothing.
+These rules limit the integrator. They give no permission. Permission comes from the words of the maintainer, in chat or in the prompt of the routine that he wrote. Without such words the integrator reads and reports. It merges nothing and launches nothing. The words tell the integrator what it may do. They do not clear the permission check of a cloud session: see "What clears the permission check" in [integrator-cloud.md](integrator-cloud.md).
 
 The maintainer gave a wide permission on 2026-10-26: "yang kuinginkan sangat eksplisit ya Autonomous semua merge review pr issue dll grill dll mattpocock kecuali ini branch main y". In English: everything is autonomous, merges, review of pull requests, issues and the rest, the grill and the rest of the Matt Pocock skills, except the main branch. So the integrator does not ask him to merge, to review, to create, edit or close a ticket, or to answer a grill. It decides, records the decision and reports. The one exception is `master` and what goes with it: a release. Everything below is written for this permission.
 
@@ -17,7 +17,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 - Everything else is autonomous: merge, review, tickets, grills, specs, ADRs. Decide with the recommended answer, record it, report it. Ask only about `master`, a release, money or credentials.
 - A lane pushes after every commit. A cut-off loses no pushed work.
 - One integrator acts at a time. The heartbeat issue decides which one.
-- About 5 lanes at once. The usage of the plan is shared.
+- About 5 lanes at once, started in batches of at most 2, each batch its own Workflow. The usage of the plan is shared.
 
 ## Words
 
@@ -152,7 +152,7 @@ A ticket whose blocker has an open pull request may start on the branch of that 
 3. A ticket that blocks many other open tickets. Example: a review that gates three tickets.
 4. The lowest number.
 
-**Batches.** Launch the lanes in batches, each batch its own Workflow, from a copy of [lanes/lanes-template.js](lanes/lanes-template.js). See [lanes/README.md](lanes/README.md). A Workflow runs at most `min(16, CPUs - 2)` lanes at the same time. A cloud container has few CPUs, so that is 2: a Workflow of 5 lanes ran 2 and queued 3 (seen on 2026-10-26). So a batch has at most 2 lanes, and the batches run side by side, up to the lane cap. Never launch a lane that another Workflow has: two lanes on one branch destroy each other. The usage of the plan stays the limit. The lane cap is what a window pays for, and more lanes at once do not finish more work in a window.
+**Batches.** Launch the lanes in batches, each batch its own Workflow, from a copy of [lanes/lanes-template.js](lanes/lanes-template.js). See [lanes/README.md](lanes/README.md). A Workflow runs at most `min(16, CPUs - 2)` lanes at the same time. A cloud container has few CPUs, so that is 2: a Workflow of 5 lanes ran 2 and queued 3 (seen on 2026-10-26). So a batch has at most 2 lanes, and the batches run side by side. Then the lane cap is the number of lanes that run at once. Never launch a lane that another Workflow has: two lanes on one branch destroy each other. The usage of the plan stays the limit: do not raise the lane cap above what the window pays for, because more lanes at once do not finish more work in a window.
 
 **The model.** Opus for the C data path, crypto, drivers and hard design. Sonnet with effort `max` for Go, UI, CLI, docs and CI. Always set the model on the agent. An agent without a model runs on the model of the session.
 
