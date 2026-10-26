@@ -295,7 +295,7 @@ You are the cloud integrator of Hanzamas/RanzVPN. Run one tick.
 
 AUTHORITY: <the words of the maintainer that start this routine, verbatim, with the date>
 
-EXPLICIT PERMISSION: <the actions that the maintainer allows without asking, in this repository only: the REST merge into integration with its exact command, review of pull requests, create, edit, label, comment on and close tickets, the grill with the recommended answers, to-spec and to-tickets, lanes and their pull requests, ADRs and docs. The one exception: master, which is never touched.>
+EXPLICIT PERMISSION: <the actions that the maintainer allows without asking, in this repository only: merge into integration, review of pull requests, create, edit, label, comment on and close tickets, the grill with the recommended answers, to-spec and to-tickets, lanes and their pull requests, ADRs and docs. The one exception: master, which is never touched.>
 
 1. Run git fetch origin integration. Read the section "The integrator heartbeat" of docs/agents/integrator.md and the section "The heartbeat in commands" of docs/agents/integrator-cloud.md, as they are on origin/integration, and do the heartbeat. If you stand down, end.
 2. Otherwise read both pages in full, and run one tick as they say.
@@ -308,7 +308,7 @@ Usage window rule: <time based, see below>
 Decisions: <use the recommended answer, record it, and write ASK: only for what the permission does not cover>
 ```
 
-The integrator never writes the AUTHORITY line or the EXPLICIT PERMISSION paragraph. If the routine has none, the integrator reads and reports and does nothing else. The two tell the tick what the maintainer allows. They do not clear the permission check of the cloud: see "What clears the permission check".
+The integrator never writes the AUTHORITY line or the EXPLICIT PERMISSION paragraph. If the routine has none, the integrator reads and reports and does nothing else. The two tell the tick what the maintainer allows. They do not clear the permission check of the cloud, and no wording of them can. The three layers of "What clears the permission check" do, and layer 1 is set in the allowed tools of the routine, outside the prompt.
 
 **The usage window rule.** A cloud session cannot read the usage of the plan, so the rule uses time. The heartbeat comment keeps a line `window-start: <UTC time>`. The first tick after a stop for the limit of the plan, or more than 5 hours after the last `window-start`, writes a new one. In the first 3 hours after `window-start` a tick may launch lanes up to the cap. After that it launches none: it merges, closes tickets and repairs, and lets the lanes that run finish and push. If a command fails with a message about the limit of the plan, the tick writes `ended: plan limit` and ends.
 
@@ -320,7 +320,7 @@ The integrator never writes the AUTHORITY line or the EXPLICIT PERMISSION paragr
 
 1. Connect GitHub to claude.ai and install the Claude GitHub App on the account `Hanzamas`, so that a cloud session can push (see "Git in a cloud session").
 2. Create the issue `Integrator heartbeat`. Pin it and lock it.
-3. Create the routine with the prompt above, mode `dry run`, and run it once by hand.
+3. Create the routine with the prompt above, the allow rules of layer 1 in its allowed tools (see "What clears the permission check"), mode `dry run`, and run it once by hand.
 4. Read the heartbeat comment and the run log. Set the mode to `full`.
 5. Turn off the local scheduled task.
 
@@ -335,5 +335,5 @@ The integrator never writes the AUTHORITY line or the EXPLICIT PERMISSION paragr
 | Merge answers 405 | Not mergeable now. Read the pull request again. |
 | Create answers 422 | A pull request for the branch exists, or the branch has no new commit. |
 | 403 or 429 with a note about rate limits | Stop the tick, write it in the report, and end. |
-| A command that the permission check refused | Report it under `blocked:` with its text and its message, and call `PushNotification` when you have the tool. Never retry it split up or reworded. A refused merge ("Merge Without Review") means that no layer of "What clears the permission check" matches the command as written. Compare the text of the command with the rules, and add the missing layer. A local session merges by hand meanwhile. |
+| A command that the permission check refused | Do what [integrator.md](integrator.md) says in "What the integrator must not do" and "The report". A refused merge ("Merge Without Review") means that no layer of "What clears the permission check" matches the command as written. Compare the text of the command with the rules, and add the missing layer. A local session merges by hand meanwhile. |
 | No heartbeat issue | Stop and report. Without it you cannot know that you are alone. |

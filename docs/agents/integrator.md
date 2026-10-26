@@ -4,7 +4,7 @@ Ranz VPN is built by agents. One agent builds one ticket. We call it a lane. A l
 
 The integrator runs in one of two places. **Local** is a session on the maintainer's PC. **Cloud** is a session that a routine starts. The rules are the same in both places. The commands are not: GraphQL is blocked in a cloud session, so `gh pr ...` and `gh issue ...` fail there. [integrator-cloud.md](integrator-cloud.md) has the cloud commands. [lanes/README.md](lanes/README.md) has the script that launches lanes.
 
-These rules limit the integrator. They give no permission. Permission comes from the words of the maintainer, in chat or in the prompt of the routine that he wrote. Without such words the integrator reads and reports. It merges nothing and launches nothing.
+These rules limit the integrator. They give no permission. Permission comes from the words of the maintainer, in chat or in the prompt of the routine that he wrote. Without such words the integrator reads and reports. It merges nothing and launches nothing. The words tell the integrator what it may do. They do not clear the permission check of a cloud session: see "What clears the permission check" in [integrator-cloud.md](integrator-cloud.md).
 
 The maintainer gave a wide permission on 2026-10-26: "yang kuinginkan sangat eksplisit ya Autonomous semua merge review pr issue dll grill dll mattpocock kecuali ini branch main y". In English: everything is autonomous, merges, review of pull requests, issues and the rest, the grill and the rest of the Matt Pocock skills, except the main branch. So the integrator does not ask him to merge, to review, to create, edit or close a ticket, or to answer a grill. It decides, records the decision and reports. The one exception is `master` and what goes with it: a release. Everything below is written for this permission.
 
@@ -17,7 +17,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 - Everything else is autonomous: merge, review, tickets, grills, specs, ADRs. Decide with the recommended answer, record it, report it. Ask only about `master`, a release, money or credentials.
 - A lane pushes after every commit. A cut-off loses no pushed work.
 - One integrator acts at a time. The heartbeat issue decides which one.
-- About 5 lanes at once. The usage of the plan is shared.
+- About 5 lanes at once, started in batches of at most 2, each batch its own Workflow. The usage of the plan is shared.
 
 ## Words
 
@@ -76,7 +76,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 3. **Merge.** Every pull request that passes "The merge procedure". Close its tickets.
 4. **Repair.** For each other pull request:
    - a failed check that is a known flake: rerun it once;
-   - a failed check or a conflict, and the branch is not busy: start a resume lane. A branch is busy when it got a push in the last 45 minutes, because a person or another process may be working on it;
+   - a failed check or a conflict, and the branch is not busy: start a resume lane. A branch is busy when it got a push in the last 45 minutes, because a person or another process may be working on it. The branch of a lane in flight (step 2) stays busy until it has had no push for 90 minutes;
    - a red run on `integration`: start a fix lane before any new ticket.
 5. **Launch.** If fewer than 5 lanes are alive, counting those of earlier ticks, start lanes for the next ready tickets. See "Launching lanes". Start them in batches, each batch its own Workflow. If no ticket is ready, or a review or a lane found a gap that no ticket covers, write tickets first. See "Writing tickets".
 6. **Wait.** Arm a watcher and wait. A watcher is a script that prints one line when a pull request becomes clean, conflicting or failed; the one for the cloud is in [integrator-cloud.md](integrator-cloud.md). Refresh your heartbeat comment at least every 30 minutes. When a lane ends or the watcher prints a line, go to step 2. A tick may instead end its turn after it launched a Workflow, because the platform wakes the session when the Workflow ends. Then its heartbeat goes stale, and the next tick finds its lanes through the `lanes` line (step 2). A session that wakes later does the heartbeat again before it acts.
@@ -140,7 +140,8 @@ Some paths do not start `windows.yml` on a pull request at all: `docs/`, every `
 - it has none of the labels `needs-triage`, `postponed` and `parked`;
 - its body has a line `Ticket key:` (an issue without it is a spec: no lane);
 - every `#number` in its `## Blocked by` section is a closed issue (`None` means no blocker);
-- no open pull request exists for it, and no branch with a recent push (the title of a lane pull request starts with the ticket key).
+- no open pull request exists for it, and no branch with a recent push (the title of a lane pull request starts with the ticket key);
+- no lane of an earlier tick is in flight for it (step 2 of "A tick").
 
 A ticket whose blocker has an open pull request may start on the branch of that pull request. That is a stacked start, at most 2 levels deep. Its lane merges `origin/integration` after the blocker merged.
 
@@ -151,7 +152,7 @@ A ticket whose blocker has an open pull request may start on the branch of that 
 3. A ticket that blocks many other open tickets. Example: a review that gates three tickets.
 4. The lowest number.
 
-**Batches.** Launch the lanes in batches, each batch its own Workflow, from a copy of [lanes/lanes-template.js](lanes/lanes-template.js). See [lanes/README.md](lanes/README.md). A Workflow runs at most `min(16, CPUs - 2)` lanes at the same time. A cloud container has few CPUs, so that is 2: a Workflow of 5 lanes ran 2 and queued 3 (seen on 2026-10-26). So a batch has at most 2 lanes, and the batches run side by side, up to the lane cap. Never launch a lane that another Workflow has: two lanes on one branch destroy each other. The usage of the plan stays the limit. The lane cap is what a window pays for, and more lanes at once do not finish more work in a window.
+**Batches.** Launch the lanes in batches, each batch its own Workflow, from a copy of [lanes/lanes-template.js](lanes/lanes-template.js). See [lanes/README.md](lanes/README.md). A Workflow runs at most `min(16, CPUs - 2)` lanes at the same time. A cloud container has few CPUs, so that is 2: a Workflow of 5 lanes ran 2 and queued 3 (seen on 2026-10-26). So a batch has at most 2 lanes, and the batches run side by side. Then the lane cap is the number of lanes that run at once. Never launch a lane that another Workflow has: two lanes on one branch destroy each other. The usage of the plan stays the limit: do not raise the lane cap above what the window pays for, because more lanes at once do not finish more work in a window.
 
 **The model.** Opus for the C data path, crypto, drivers and hard design. Sonnet with effort `max` for Go, UI, CLI, docs and CI. Always set the model on the agent. An agent without a model runs on the model of the session.
 
@@ -192,7 +193,7 @@ The usage window of the plan ends without warning. It kills the session and ever
 3. **State.** Read the pull requests, the branches and the tickets, as in step 2 of "A tick".
 4. **Unpushed work (local only).** `git worktree list` shows the lane worktrees (`.claude/worktrees/wf_*`). In each one that has uncommitted or unpushed work, commit it as a WIP commit and push it to the branch of the lane: `git push origin HEAD:<branch>`. A cloud session has no such worktrees. The unpushed work of a dead lane is lost, which is why every lane pushes after every commit.
 5. **Merge** what is clean, as in "The merge procedure".
-6. **Resume lanes.** For every open pull request that fails, conflicts, or is a draft with no recent push, and for every lane branch that has no pull request: one resume lane. The lane reads the pull request body and the head first.
+6. **Resume lanes.** For every open pull request that fails, conflicts, or is a draft with no recent push, and for every lane branch that has no pull request: one resume lane. Leave out the lanes in flight (step 2 of "A tick"). The lane reads the pull request body and the head first.
 7. **New lanes**, if slots are free.
 8. **Report.**
 
@@ -250,6 +251,8 @@ Before you act:
 
 While you act, edit your comment at least every 30 minutes and set `alive:` to the time now. A tick that stops refreshing, for example because the usage window cut it off, is taken over after 45 minutes. Age is the `updated_at` of the comment, which is the clock of GitHub.
 
+A comment that is older than 45 minutes can still have lanes alive. A tick that launched a Workflow may end its turn while the lanes run, because the platform wakes it when the Workflow ends, and it does not refresh its comment meanwhile. So before you launch or resume anything, read the `lanes` lines of the tick comments of the last 3 hours (step 2 of "A tick"). The tickets and pull requests named there are in flight. They count against the lane cap, and they get no lane and no resume lane before their branch has had no push for 90 minutes.
+
 The maintainer's word beats the heartbeat. If he tells an integrator to take over, it posts its comment and acts. The other one sees a fresh comment and stands down.
 
 ## Pause
@@ -274,8 +277,9 @@ The job ends when all of these hold:
 Then the integrator does this once:
 
 1. It posts a comment on the heartbeat issue that starts with `DONE:`. The comment says what was built (the closed tickets by area), the state of `integration`, and what is left for the maintainer: the parked release work, the real test on two PCs of `docs/first-test.md`, and the tickets labelled `postponed` or `needs-triage`, each with its number.
-2. It creates one issue titled `Ranz VPN: every ticket in scope is done` with the same text. This is the place to look. GitHub does not notify the maintainer of it, because the routine acts through his own account and GitHub does not notify a person of their own activity. It looks for an issue with that title first, and never makes a second one. When the session has the tool `PushNotification`, it also calls it once, with one line that starts with `DONE`.
-3. It ends. Each later tick does the heartbeat, reads the progress count, and ends in that step when nothing changed. It writes no ticket and starts no lane. A new open ticket in scope, or a red run on `integration`, ends the quiet state, and the tick works again.
+2. It creates one issue titled `Ranz VPN: every ticket in scope is done` with the same text. It looks for an issue with that title first, and never makes a second one. This issue is the place to look. GitHub does not notify the maintainer of it, because the routine acts through his own account and GitHub does not notify a person of their own activity.
+3. When the session has the tool `PushNotification`, it calls it once, with one line that starts with `DONE`. A block gets the same call, with one line that says what is blocked (see "The report").
+4. It ends. Each later tick does the heartbeat, reads the progress count, and ends in that step when nothing changed. It writes no ticket and starts no lane. A new open ticket in scope, or a red run on `integration`, ends the quiet state, and the tick works again.
 
 The tickets labelled `postponed` or `needs-triage` are not in scope, and the integrator does not triage them before the end. They are the maintainer's: he decides after he reads the `DONE:` comment. Do not write new tickets to avoid this end. A new ticket needs a source: a finding of a review or a failed run, a gap of the runbook, or an open spec. When none exists, the work is done.
 

@@ -49,4 +49,4 @@ Each lane returns `ok`, `pr`, `head`, `ci`, `met`, `notMet`, `newTerms` and `blo
 - Every string is plain: single quotes and no apostrophes, so that no quote ends a string early.
 - No `Date.now()` and no `Math.random()`. The Workflow tool refuses them, because they break a resume.
 - The rules of the lane are the `RULES` array. When a rule changes, change it there and in the page that it mirrors.
-- The pace rule is about 5 lanes at once. The script warns above 6.
+- The pace rule is about 5 lanes at once, over all Workflows. One copy of the script is one batch of at most 2 active lanes, and it warns above 2.
