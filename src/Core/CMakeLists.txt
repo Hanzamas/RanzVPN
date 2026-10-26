@@ -182,6 +182,8 @@ add_library(corecontrol STATIC
   ControlDevice.c
   # The endpoints of a node and of its peers in a desired state (SDN-93, #410)
   ControlEndpoint.c
+  # The kinds of the links of the VRFs and the tunnel endpoints in a desired state (SDN-76, #356)
+  ControlLink.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

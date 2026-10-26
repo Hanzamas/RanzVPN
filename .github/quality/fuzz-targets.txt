@@ -133,6 +133,8 @@ controller/internal/intent  ParseKey       FuzzParseValues
 controller/internal/intent  ParseRelay     FuzzParseValues
 # The addresses of the endpoints of a Node (SDN-93 #410), as an operator writes them into a Node resource
 controller/internal/intent  ParseEndpointAddress  FuzzParseValues
+# The address of the tunnel endpoint of a Node for the links of kind vxlan and geneve (SDN-76 #356)
+controller/internal/intent  ParseVTEPAddress  FuzzParseVTEP
 # The route targets of a VRF (SDN-7 #183)
 controller/internal/intent  ParseRouteTarget  FuzzParseValues
 # The sensor and the protocol of a Mirror (SDN-23 #199)

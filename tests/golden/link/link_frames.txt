@@ -1,0 +1,9 @@
+# VRF red (101) between node-a and node-b: the packets that each host sends, and what the other host takes
+node-a -> node-b: red udp 10.0.0.1:5000 > 10.0.0.2:53, 100 bytes: arrives as it was sent
+node-b -> node-a: red udp 10.0.0.2:53 > 10.0.0.1:5000, 100 bytes: arrives as it was sent
+node-a -> node-b: red icmp echo request 10.0.0.1 > 10.0.0.2, 100 bytes: arrives as it was sent
+node-a -> node-b: red udp fd00::1:40000 > fd00::2:8080, 100 bytes: arrives as it was sent
+node-b -> node-a: red icmpv6 echo request fd00::2 > fd00::1, 100 bytes: arrives as it was sent
+node-a -> node-b: red udp 10.0.0.1:5000 > 10.0.0.9:53, 100 bytes: not sent
+node-a: forwarded 3, delivered 2, dropped 1
+node-b: forwarded 2, delivered 3, dropped 0

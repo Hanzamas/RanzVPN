@@ -184,6 +184,20 @@ typedef struct CONTROL_ENDPOINT {
 	char Address[TRANSPORT_ADDRESS_SIZE];
 } CONTROL_ENDPOINT;
 
+// The kinds of a link between the nodes of a VRF (LinkKind of the control protocol; SDN-76, #356)
+#define CONTROL_LINK_NOISE  0 // The Noise session over QUIC or TLS
+#define CONTROL_LINK_VXLAN  1 // Plain VXLAN between the tunnel endpoints of two nodes, on a network that the operator trusts
+#define CONTROL_LINK_GENEVE 2 // ... or plain Geneve
+
+// The tunnel endpoint of a node or of a peer for the links of kind vxlan and geneve (Vtep of the control protocol;
+// SDN-76, #356)
+typedef struct CONTROL_VTEP {
+	UCHAR Address[16]; // Its address: 4 bytes for IPv4, 16 for IPv6
+	UINT AddressSize;  // ... their number, 0 for none: the node itself, or a peer that shares no such VRF
+	UINT VxlanPort;    // The UDP port of VXLAN, 0 for the default (VXLAN_PORT of Core/Vxlan.h)
+	UINT GenevePort;   // The UDP port of Geneve, 0 for the default (GENEVE_PORT)
+} CONTROL_VTEP;
+
 // A peer of the node: another node that shares a VRF with it (Peer of the control protocol)
 typedef struct CONTROL_PEER {
 	char Name[CONTROL_NAME_SIZE];                     // Its node name
@@ -201,6 +215,10 @@ typedef struct CONTROL_PEER {
 	// order of the race: none for a peer that the node does not dial
 	UINT NumEndpoints;
 	CONTROL_ENDPOINT Endpoints[CONTROL_MAX_ENDPOINTS];
+
+	// Its tunnel endpoint (SDN-76, #356): the only address that the node takes the datagrams of a link of kind vxlan or
+	// geneve of a shared VRF from
+	CONTROL_VTEP Vtep;
 } CONTROL_PEER;
 
 // A name of the zone of a VRF and the addresses that it answers (DnsRecord of the control protocol; SDN-11, #187)
@@ -234,6 +252,8 @@ typedef struct CONTROL_VRF {
 	UINT Icmp;                    // ... an ICMP echo
 	UINT Other;                   // ... and another IP protocol
 	CONTROL_DNS_ZONE *Dns;        // Its zone of overlay DNS (SDN-11, #187), NULL while overlay DNS is off in it; valid as the state is
+	UINT Link;                    // The kind of the links between its nodes (CONTROL_LINK_*; SDN-76, #356) ...
+	UINT Vni;                     // ... and the VNI of a link of kind vxlan or geneve
 } CONTROL_VRF;
 
 // A reservation of the pool of a DHCP responder: an IPv4 prefix (Prefix of Dhcp.reserved)
@@ -346,6 +366,9 @@ typedef struct CONTROL_STATE {
 	// the node then keeps the fingerprint it has. Valid as the state is.
 	UINT NumTlsPins;
 	char TlsPins[CONTROL_TLS_PINS][CONTROL_TLS_PIN_SIZE];
+
+	// Its tunnel endpoint for the links of kind vxlan and geneve (SDN-76, #356): the ports it listens on
+	CONTROL_VTEP Vtep;
 } CONTROL_STATE;
 
 // Takes each state that the client applied, before the client acknowledges its Generation. It runs
@@ -371,6 +394,8 @@ typedef struct CONTROL_CAPS {
 	bool WireGuard;
 	// ... and the public key of its WireGuard interface
 	UCHAR WireGuardKey[NOISE_KEY_SIZE];
+	// The node runs the links of kind vxlan and geneve (SDN-76, #356)
+	bool PlainLinks;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node
