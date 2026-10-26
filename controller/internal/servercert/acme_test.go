@@ -5,9 +5,11 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -69,6 +71,14 @@ func pebbleRoot(t *testing.T, management, minica string) *x509.CertPool {
 	return pool
 }
 
+// acmeState returns what the ACME client of the Manager that keeps its certificates in dir holds: its files, and the
+// state that names the certificate in use, for the message of a check that failed.
+func acmeState(dir string) (files []string, state string) {
+	files, _ = filepath.Glob(filepath.Join(dir, "acme", "*"))
+	b, _ := os.ReadFile(filepath.Join(dir, "acme", "state", "state.json"))
+	return files, string(b)
+}
+
 // acmeManager returns a Manager of the key key that keeps its ACME certificates in dir, whose clock runs ahead of the
 // real one by skew nanoseconds. With plain it answers the challenges through the plain HTTP port of the Controller.
 func acmeManager(t *testing.T, dir string, key crypto.Signer, plain bool, skew *atomic.Int64) *Manager {
@@ -119,7 +129,8 @@ func TestServesACertificateOfAnACMEService(t *testing.T) {
 				go func() { _ = srv.Serve(ln) }()
 				t.Cleanup(func() { _ = srv.Close() })
 			}
-			setting := Setting{ACME: &ACME{Directory: directory, Names: []string{"localhost"}, HTTPPort: uint16(challengePort), CAFile: roots}}
+			// The certificate is renewed when a day is left of it: Pebble may issue one for less than the 30 days of the default
+			setting := Setting{ACME: &ACME{Directory: directory, Names: []string{"localhost"}, HTTPPort: uint16(challengePort), CAFile: roots, RenewDays: 1}}
 
 			// The service issues, and the Controller serves the chain for the key that it has
 			own := m.Fingerprint()
@@ -127,6 +138,7 @@ func TestServesACertificateOfAnACMEService(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Logf("the service issued the certificate %s for %s, from %s to %s", l.Info.Thumbprint, l.Info.Names, l.Info.NotBefore, l.Info.NotAfter)
 			if l.Info.Source != SourceACME || l.Info.Fingerprint != own || !slices.Contains(l.Info.Names, "localhost") || len(l.Cert.Certificate) < 2 || l.Info.SelfSigned || l.Setting == nil {
 				t.Fatalf("the certificate is %+v with %d certificates in its chain, want one of the service for the key with the fingerprint %s", l.Info, len(l.Cert.Certificate), own)
 			}
@@ -142,15 +154,17 @@ func TestServesACertificateOfAnACMEService(t *testing.T) {
 			first := m.Info()
 			m.renew(ctx)
 			if got := m.Info(); got.Thumbprint != first.Thumbprint {
-				t.Errorf("a look at a certificate that is not due changed it: %s, was %s", got.Thumbprint, first.Thumbprint)
+				files, state := acmeState(dir)
+				t.Errorf("a look at a certificate that is not due changed it: %s, was %s (valid until %s); the files are %v, the state %s", got.Thumbprint, first.Thumbprint, first.NotAfter, files, state)
 			}
 			restarted, err := acmeManager(t, dir, key, c.plain, &skew).Load(ctx, setting)
 			if err != nil || restarted.Info.Thumbprint != first.Thumbprint {
-				t.Errorf("after a restart: %+v, %v, want the certificate of before, %s", restarted.Info, err, first.Thumbprint)
+				files, state := acmeState(dir)
+				t.Errorf("after a restart: %+v, %v, want the certificate of before, %s; the files are %v, the state %s", restarted.Info, err, first.Thumbprint, files, state)
 			}
 
-			// It is due ten days before its end: the service issues another, for the same key
-			skew.Store(int64(time.Until(first.NotAfter) - 10*24*time.Hour))
+			// It is due half a day before its end: the service issues another, for the same key
+			skew.Store(int64(time.Until(first.NotAfter) - 12*time.Hour))
 			m.mu.Lock()
 			m.nextACME = time.Time{}
 			m.mu.Unlock()
@@ -174,4 +188,48 @@ func TestServesACertificateOfAnACMEService(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A setting of an ACME service that gave no certificate is not asked again at each look at the store, which a member
+// makes every Poll: it waits acmeRetry, while another setting is asked at once. The certificate in use stays.
+func TestRefreshAsksACMEAgainOnlyAfterTheWait(t *testing.T) {
+	var asked atomic.Int64
+	service := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(service.Close)
+	roots := filepath.Join(t.TempDir(), "roots.pem")
+	if err := os.WriteFile(roots, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: service.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st := &memStore{}
+	m := newManager(t, st, "")
+	own := m.Fingerprint()
+	now := time.Now()
+	m.cfg.Now = func() time.Time { return now }
+	use := func(name string) {
+		st.set(Setting{ACME: &ACME{Directory: service.URL, Names: []string{name}, CAFile: roots}}.Encode(), own)
+	}
+	look := func(what string, wantAsked int64) {
+		t.Helper()
+		refusedWith(t, what, m.Refresh(context.Background()), "gave no certificate")
+		if got := asked.Load(); got != wantAsked {
+			t.Errorf("%s: the service was asked %d times in all, want %d", what, got, wantAsked)
+		}
+		if got := m.Info().Source; got != SourceSelfSigned {
+			t.Errorf("%s: the certificate in use is of the source %s, want the self-signed one to stay", what, got)
+		}
+	}
+
+	use("a.example.com")
+	look("the first look", 1)
+	look("a look at once after", 1)
+	now = now.Add(acmeRetry - time.Second)
+	look("a look just before the wait ends", 1)
+	now = now.Add(2 * time.Second)
+	look("a look after the wait", 2)
+	use("b.example.com")
+	look("a look at another setting", 3)
+	look("a look at it at once after", 3)
 }

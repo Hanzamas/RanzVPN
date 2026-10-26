@@ -85,6 +85,12 @@ type Manager struct {
 	answers map[string]string
 	// nextACME is when the ACME client is asked next.
 	nextACME time.Time
+	// failedSetting is the ACME setting that the last look at the store could not get a certificate for,
+	// with the error, and failedUntil is when the client is asked for it again: a service is not asked
+	// at each look for a certificate that it did not give.
+	failedSetting string
+	failedErr     error
+	failedUntil   time.Time
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -281,8 +287,12 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("the stored certificate setting: %w", err)
 	}
+	if err := m.failedBefore(setting); err != nil {
+		return err
+	}
 	l, err := m.Load(ctx, s)
 	if err != nil {
+		m.fail(setting, s, err)
 		return err
 	}
 	m.mu.Lock()
@@ -294,6 +304,28 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	m.mu.Unlock()
 	m.logServed(l)
 	return nil
+}
+
+// failedBefore returns the error of the last run of the ACME client for the setting while it is less than
+// acmeRetry ago, and nil when the client may be asked: a setting of another source is looked at at each
+// poll, which costs a read of a file, and a setting that changed has not failed yet.
+func (m *Manager) failedBefore(setting string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failedErr != nil && m.failedSetting == setting && m.cfg.Now().Before(m.failedUntil) {
+		return m.failedErr
+	}
+	return nil
+}
+
+// fail remembers that the ACME client gave no certificate for the setting, whose normal form is s.
+func (m *Manager) fail(setting string, s Setting, err error) {
+	if s.ACME == nil {
+		return
+	}
+	m.mu.Lock()
+	m.failedSetting, m.failedErr, m.failedUntil = setting, err, m.cfg.Now().Add(acmeRetry)
+	m.mu.Unlock()
 }
 
 // Load makes the certificate that the setting s names ready to be served, and checks it: it is
