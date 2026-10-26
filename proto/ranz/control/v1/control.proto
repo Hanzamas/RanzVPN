@@ -66,6 +66,13 @@
 // (NodeConfig.listener): the ports of its front door and of QUIC and the source of their
 // certificate. No schema version changes with it: a node of an older release skips the field it
 // does not know.
+//
+// Certificate of the controller (SDN-92, #397): while the controller serves a certificate that an
+// operator set, every node gets the TLS fingerprints of it that the node may accept
+// (NodeConfig.controller_tls). The controller sends the fingerprint of a new certificate in a
+// Generation and waits for the acknowledgements before it serves the certificate, so a node that
+// pinned the fingerprint of the old one still reaches the controller. No schema version changes
+// with it: a node of an older release skips the field it does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -226,6 +233,13 @@ message NodeConfig {
   // The Listener of the node (SDN-45), absent while no Listener resource names it: the node then
   // listens on no port of its own.
   Listener listener = 8;
+  // The TLS fingerprints of the certificate of the controller that the node accepts (SDN-92): the
+  // lower-case hex of the SHA-256 of the SubjectPublicKeyInfo, 64 digits each, the fingerprint of
+  // the certificate in use first. The node keeps them in place of the fingerprint it was given, and
+  // takes the certificate of the controller when it has any of them. Absent while the controller
+  // serves its own self-signed certificate and no operator set another: the node then keeps the
+  // fingerprint it has.
+  repeated string controller_tls = 9;
 }
 
 // The Listener of a node (SDN-45 #238, ADR-0035): the front door on the TCP port, which hands each
