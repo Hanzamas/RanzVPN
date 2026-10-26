@@ -43,7 +43,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 - Rerun one failed job once, for a known flake.
 - Review a pull request: read it, start read-only review agents on its diff (the `code-review` skill), and send what they find back to its lane, as a resume lane or as a comment.
 - Merge a pull request that passes "The merge procedure", and close its tickets.
-- Write tickets and specs, and triage the tickets that are labelled `needs-triage`, by "Writing tickets": create, edit, label, comment on and close issues.
+- Write tickets and specs, and triage a ticket labelled `needs-triage` that blocks work in scope, by "Writing tickets": create, edit, label, comment on and close issues.
 - Write ADRs, `CONTEXT.md` entries and docs, in a pull request into `integration`, like any other change.
 - Comment on a ticket whose pull request merged as progress, to say what is left.
 - Post and edit its own comments on the heartbeat issue.
@@ -166,7 +166,7 @@ The integrator writes tickets itself. It does not ask the maintainer to type `/t
 
 - no ticket is ready for a lane and a slot is free;
 - a review, a lane or a failed run found a gap that no open ticket covers;
-- a ticket labelled `needs-triage` waits for a decision;
+- a ticket labelled `needs-triage` blocks a ticket that is in scope (the others wait for the end, see "When the work is done");
 - a merged pull request left a criterion unmet and the rest is more than a few lines of work.
 
 A new ticket has a source: a finding, a gap of the runbook (`docs/first-test.md`), an open spec, or a goal in `CONTEXT.md` or an ADR. Put the source in the body. Never write a ticket just to have work.
@@ -261,6 +261,22 @@ When the maintainer says stop:
 4. End.
 
 The maintainer turns off the schedule: the local scheduled task or the cloud routine. When he says go, a new tick reads GitHub, as in "After a cut-off".
+
+## When the work is done
+
+The job ends when all of these hold:
+
+- no ticket in scope is open. The progress count in [integrator-cloud.md](integrator-cloud.md) shows 0 open tickets. It leaves out the tickets labelled `postponed`, `needs-triage` and `parked`;
+- no pull request into `integration` is open;
+- the newest full run on `integration` is green.
+
+Then the integrator does this once:
+
+1. It posts a comment on the heartbeat issue that starts with `DONE:`. The comment says what was built (the closed tickets by area), the state of `integration`, and what is left for the maintainer: the parked release work, the real test on two PCs of `docs/first-test.md`, and the tickets labelled `postponed` or `needs-triage`, each with its number.
+2. It creates one issue titled `Ranz VPN: every ticket in scope is done` with the same text, so that GitHub tells the maintainer. It looks for an issue with that title first, and never makes a second one.
+3. It ends. Each later tick does the heartbeat, reads the progress count, and ends in that step when nothing changed. It writes no ticket and starts no lane. A new open ticket in scope, or a red run on `integration`, ends the quiet state, and the tick works again.
+
+The tickets labelled `postponed` or `needs-triage` are not in scope, and the integrator does not triage them before the end. They are the maintainer's: he decides after he reads the `DONE:` comment. Do not write new tickets to avoid this end. A new ticket needs a source: a finding of a review or a failed run, a gap of the runbook, or an open spec. When none exists, the work is done.
 
 ## Discussion with the maintainer
 
