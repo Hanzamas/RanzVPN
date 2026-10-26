@@ -63,6 +63,16 @@ type Options struct {
 	RenewDays int
 	// State is the state directory of the Listener.
 	State string
+	// Responder, when it is set, is where the HTTP-01 challenges are answered: a port that is
+	// listening already, as the plain HTTP port of the Controller (SDN-92, #397). Without one a run
+	// listens on HTTPPort itself while the service validates.
+	Responder Responder
+}
+
+// Responder answers the HTTP-01 challenges of a run: Put makes body the answer to a GET of path, the
+// path of the challenge, for as long as the run needs it.
+type Responder interface {
+	Put(path, body string)
 }
 
 // Store is where a certificate and its key go.
@@ -76,6 +86,15 @@ type Store interface {
 	Has(thumbprint string) bool
 	// Remove takes the certificate of the thumbprint and the key name away; an empty one is left.
 	Remove(thumbprint, name string)
+}
+
+// ChainStore is a Store that serves the certificate with the ones that lead to its root, as the
+// Controller does (SDN-92, #397): it gets the whole chain that the service gave, the certificate
+// itself first, in place of the call of Install.
+type ChainStore interface {
+	Store
+	// InstallChain puts the chain, DER certificates, into the store, linked to the key name.
+	InstallChain(chain [][]byte, name string) error
 }
 
 // Result is what a run gave: the certificate by its thumbprint, the upper-case hex of its SHA-1, its
@@ -139,7 +158,7 @@ func (o Options) check() error {
 		return errors.New("acme: no directory")
 	case len(o.Names) == 0:
 		return errors.New("acme: no DNS names")
-	case o.HTTPPort < 1 || o.HTTPPort > 65535:
+	case o.Responder == nil && (o.HTTPPort < 1 || o.HTTPPort > 65535):
 		return fmt.Errorf("acme: the HTTP-01 port %d is not from 1 to 65535", o.HTTPPort)
 	case o.RenewDays < 0:
 		return fmt.Errorf("acme: renew-days %d is below 0", o.RenewDays)
@@ -254,7 +273,16 @@ func issue(ctx context.Context, o Options, st Store, now time.Time) (state, erro
 	if err != nil {
 		return state{}, fmt.Errorf("acme: the order: %w", err)
 	}
-	if err := authorize(ctx, c, order, o.HTTPPort); err != nil {
+	resp := o.Responder
+	if resp == nil {
+		l, err := listenChallenges(o.HTTPPort)
+		if err != nil {
+			return state{}, err
+		}
+		defer l.Close()
+		resp = l
+	}
+	if err := authorize(ctx, c, order, resp); err != nil {
 		return state{}, err
 	}
 	// The URL of the order comes with its creation: a service may leave it out of later answers (Pebble does), and
@@ -297,21 +325,33 @@ func finalize(ctx context.Context, c *acme.Client, order *acme.Order, key crypto
 	if err != nil {
 		return state{}, fmt.Errorf("acme: the certificate: %w", err)
 	}
-	if err := st.Install(chain[0], name); err != nil {
+	// The Controller serves the chain, a Node only the certificate that its store links to the key
+	if cs, ok := st.(ChainStore); ok {
+		err = cs.InstallChain(chain, name)
+	} else {
+		err = st.Install(chain[0], name)
+	}
+	if err != nil {
 		return state{}, err
 	}
 	return state{Thumbprint: certgen.Thumbprint(chain[0]), Key: name, NotAfter: leaf.NotAfter, Names: slices.Clone(names)}, nil
 }
 
-// authorize answers the HTTP-01 challenge of each authorization of the order that is not valid yet,
-// on the TCP port, until the service validated it.
-func authorize(ctx context.Context, c *acme.Client, order *acme.Order, port int) error {
-	var mu sync.Mutex
-	answers := map[string]string{}
-	srv := &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		body, ok := answers[r.URL.Path]
-		mu.Unlock()
+// challengeListener answers the HTTP-01 challenges of a run that has no Responder: an HTTP server on a
+// TCP port of this host, for as long as the run is.
+type challengeListener struct {
+	mu      sync.Mutex
+	answers map[string]string
+	srv     *http.Server
+}
+
+// listenChallenges starts the server on the TCP port.
+func listenChallenges(port int) (*challengeListener, error) {
+	l := &challengeListener{answers: map[string]string{}}
+	l.srv = &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		l.mu.Lock()
+		body, ok := l.answers[r.URL.Path]
+		l.mu.Unlock()
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -320,11 +360,27 @@ func authorize(ctx context.Context, c *acme.Client, order *acme.Order, port int)
 	})}
 	ln, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(port)))
 	if err != nil {
-		return fmt.Errorf("acme: the HTTP-01 challenge cannot listen on TCP port %d: %w", port, err)
+		return nil, fmt.Errorf("acme: the HTTP-01 challenge cannot listen on TCP port %d: %w", port, err)
 	}
-	go func() { _ = srv.Serve(ln) }()
-	defer srv.Close()
+	go func() { _ = l.srv.Serve(ln) }()
+	return l, nil
+}
 
+// Put makes body the answer to a GET of path.
+func (l *challengeListener) Put(path, body string) {
+	l.mu.Lock()
+	l.answers[path] = body
+	l.mu.Unlock()
+}
+
+// Close stops the server.
+func (l *challengeListener) Close() {
+	_ = l.srv.Close()
+}
+
+// authorize answers the HTTP-01 challenge of each authorization of the order that is not valid yet,
+// through resp, until the service validated it.
+func authorize(ctx context.Context, c *acme.Client, order *acme.Order, resp Responder) error {
 	for _, u := range order.AuthzURLs {
 		z, err := c.GetAuthorization(ctx, u)
 		if err != nil {
@@ -347,9 +403,7 @@ func authorize(ctx context.Context, c *acme.Client, order *acme.Order, port int)
 		if err != nil {
 			return fmt.Errorf("acme: the challenge of %s: %w", z.Identifier.Value, err)
 		}
-		mu.Lock()
-		answers[c.HTTP01ChallengePath(chal.Token)] = body
-		mu.Unlock()
+		resp.Put(c.HTTP01ChallengePath(chal.Token), body)
 		if _, err := c.Accept(ctx, chal); err != nil {
 			return fmt.Errorf("acme: the challenge of %s: %w", z.Identifier.Value, err)
 		}

@@ -4,9 +4,13 @@ import (
 	"context"
 	"crypto"
 	"errors"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -186,5 +190,72 @@ func TestIssueFails(t *testing.T) {
 	}
 	if _, err := Run(ctx, o, WindowsStore{}, time.Now()); err == nil || !strings.Contains(err.Error(), "holds no PEM certificate") {
 		t.Errorf("roots that do not parse: %v", err)
+	}
+}
+
+// getBody makes a GET of url and returns the status and the body of the answer.
+func getBody(t *testing.T, url string) (int, string) {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, string(b)
+}
+
+// A run with no Responder answers the HTTP-01 challenges itself on the TCP port: a path that was put gets its body, any
+// other path is not found, a port that is taken is an error, and the port is free again when the run closes the listener.
+func TestChallengeListener(t *testing.T) {
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := probe.Addr().(*net.TCPAddr).Port
+	if err := probe.Close(); err != nil {
+		t.Fatal(err)
+	}
+	l, err := listenChallenges(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(port)) + "/.well-known/acme-challenge/"
+	l.Put("/.well-known/acme-challenge/token-1", "token-1.thumbprint")
+	if code, body := getBody(t, url+"token-1"); code != http.StatusOK || body != "token-1.thumbprint" {
+		t.Errorf("the challenge that was put: %d %q, want 200 and its key authorization", code, body)
+	}
+	if code, _ := getBody(t, url+"token-2"); code != http.StatusNotFound {
+		t.Errorf("a challenge that was not put: %d, want 404", code)
+	}
+	if _, err := listenChallenges(port); err == nil || !strings.Contains(err.Error(), "cannot listen on TCP port") {
+		t.Errorf("a second listener on the same port: %v, want the port to be refused", err)
+	}
+	l.Close()
+	if c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 2*time.Second); err == nil {
+		c.Close()
+		t.Error("the port still listens after Close")
+	}
+}
+
+// answers is a Responder that keeps what it is given.
+type answers map[string]string
+
+func (a answers) Put(path, body string) { a[path] = body }
+
+// A Responder is a port that listens already, as the plain HTTP port of the Controller: a run with one needs no port of
+// its own, and a run without one still needs a port from 1 to 65535.
+func TestResponderNeedsNoPort(t *testing.T) {
+	o := options(t)
+	o.HTTPPort = 0
+	if err := o.check(); err == nil || !strings.Contains(err.Error(), "the HTTP-01 port 0") {
+		t.Errorf("options with no port and no Responder: %v, want the port to be refused", err)
+	}
+	o.Responder = answers{}
+	if err := o.check(); err != nil {
+		t.Errorf("options with a Responder and no port: %v", err)
 	}
 }
