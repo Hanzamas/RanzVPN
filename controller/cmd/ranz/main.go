@@ -82,6 +82,14 @@
 //	                                           or one address; a list without the address of the call is refused, and a loopback
 //	                                           address, the host of the controller itself, always passes
 //	ranz [flags] admin-sources clear           remove the allowlist, so that any address may reach the API and the web UI
+//	ranz [flags] controller-cert show          print the certificate that the Controller serves on its TLS port: subject, names,
+//	                                           thumbprint, TLS fingerprint, expiry and source, never a key (SDN-92)
+//	ranz [flags] controller-cert set -host NAMES -cert FILE [-key FILE]
+//	                                           serve the certificate in a PEM file with its key; -ksp THUMBPRINT names one of the
+//	                                           Windows key storage with its key staying there, -acme NAMES gets one from an ACME
+//	                                           service; refused with the reason when the certificate does not match its key, has
+//	                                           expired or does not name the host that the Nodes use
+//	ranz [flags] controller-cert clear         serve the Controller's own self-signed certificate again
 //
 // Flags:
 //
@@ -160,6 +168,9 @@ const usage = `usage:
   ranz [flags] admin-sources list
   ranz [flags] admin-sources set PREFIX...
   ranz [flags] admin-sources clear
+  ranz [flags] controller-cert show
+  ranz [flags] controller-cert set (-cert FILE [-key FILE] | -ksp THUMBPRINT | -acme NAMES) [-host NAMES] [-force]
+  ranz [flags] controller-cert clear [-force]
 `
 
 var errUsage = errors.New("bad arguments")
@@ -419,6 +430,8 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 		return userCommand(ctx, c, args[1:], out)
 	case args[0] == "group":
 		return groupCommand(ctx, c, args[1:], out)
+	case args[0] == "controller-cert":
+		return controllerCertCommand(ctx, c, args[1:], out)
 	case len(args) == 2 && args[0] == "admin-sources" && args[1] == "list":
 		prefixes, err := c.AdminSources(ctx)
 		if err != nil {

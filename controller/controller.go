@@ -118,6 +118,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/payload"
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
+	"github.com/Hanzamas/RanzVPN/controller/internal/servercert"
 	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 	"github.com/Hanzamas/RanzVPN/controller/internal/webui"
@@ -457,6 +458,12 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		log.Info("first start: the admin token is created, its secret is in the data directory", "token", rbac.FirstAdmin, "file", tokenFile)
 	}
 
+	// The certificate of the TLS port: the self-signed one of the key above, or the one that an
+	// operator set (SDN-92, internal/servercert)
+	certs := servercert.New(servercert.Config{Store: st, SelfSigned: cert, Key: tlsKey, Dir: cfg.dataDir, Advertised: cfg.advertise, Challenges: cfg.httpListen != "", Log: log})
+	certs.Start(ctx)
+	defer certs.Close()
+
 	errc := make(chan error, 4)
 	ln, fell, err := listenTLS(cfg.listen, fallbackPort, cfg.listenSet, cfg.dataDir)
 	if err != nil {
@@ -475,7 +482,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 
 	var plainWhere string
 	if cfg.httpListen != "" {
-		plain, err := port.ListenPlain(cfg.httpListen, port.Redirect(tlsPortNumber, nil), log)
+		plain, err := port.ListenPlain(cfg.httpListen, port.Redirect(tlsPortNumber, certs), log)
 		if err != nil {
 			return fmt.Errorf("-http-listen: %w", err)
 		}
@@ -502,8 +509,10 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 			Capabilities:   api.Capabilities{TLSPort: tlsPortValue, TLSPortFallback: fell, PlainHTTP: plainWhere},
 			Diagnostics:    &api.Diagnostics{LogFile: h.logFile, LogLimits: cfg.logLimits()},
 		},
-		// The first start creates VRF default and the starter rule (ADR-0034)
-		Defaults: true,
+		// The first start creates VRF default and the starter rule (ADR-0034); the fingerprint of the
+		// status and of the lease follows the certificate that is served (SDN-92)
+		Defaults:     true,
+		Certificates: certs,
 	})
 	if err != nil {
 		return err
@@ -513,7 +522,9 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	log.Info("controller cluster member", "name", cfg.name, "advertise", cfg.advertised(ln), "role", st0.Cluster.Role,
 		"leader", st0.Cluster.Leader, "schema", st0.Cluster.SchemaVersion, "rqliteJoin", strings.Join(cfg.join, ","))
 	apiHandler := m.Handler()
-	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+	// The certificate is the one of the Manager at each handshake: a new one reaches the next
+	// connection and leaves the ones that are up as they are
+	tlsCfg := &tls.Config{GetCertificate: certs.GetCertificate}
 	// The web UI (internal/webui) is served beside the API it calls, at every path outside /api/,
 	// and both only to the addresses of the admin source allowlist (SDN-39, #232).
 	sources := api.NewSources(st, log, adminSourcesTTL).WithAudit(audit.NewLog(st, log))

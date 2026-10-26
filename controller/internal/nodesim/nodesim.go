@@ -86,6 +86,8 @@ type Node struct {
 	gen     uint64
 	frames  []Frame
 	learned []Endpoint // from the last Controllers message
+	// pins are the TLS fingerprints that the last state named (SDN-92), nil before the first
+	pins []string
 	// The stream that Run serves, nil while it serves none
 	conn *control.Conn
 }
@@ -289,6 +291,8 @@ func (n *Node) apply(u *controlpb.Update) error {
 		return fmt.Errorf("nodesim: %w", err)
 	}
 	n.state, n.gen = next, u.GetGeneration()
+	// A Node that pinned the fingerprint takes the ones of the state before it acknowledges it
+	n.learnFingerprints(next)
 	return nil
 }
 
