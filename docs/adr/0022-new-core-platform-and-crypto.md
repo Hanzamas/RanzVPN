@@ -149,7 +149,7 @@ Maintainer decision (Hilmi: "gaperlu ada enkripsi ganda, catat"); the full rule 
 - Data is encrypted once, by msquic (QUIC) or Schannel (TLS 1.3), AES-GCM. The core does no per-packet crypto of its own on the QUIC and TLS-443 paths, which roughly halves the crypto cost per byte and brings per-core throughput close to WireGuard.
 - Noise_IK (CNG X25519, KSP identity key) stays as the identity handshake on the first stream of each connection, bound to that connection through the TLS exporter where the stack exposes one (Schannel: `SECPKG_ATTR_KEYING_MATERIAL`). A mismatch closes the connection.
 - Inner Noise data encryption remains only for the phase-2 CDN path.
-- Spike in CORE-S1-1: check whether Schannel (with TLS 1.3) and msquic expose an RFC 8446 exporter to the application (no msquic exporter API is known yet). Where one does not, the binding falls back to `tls-server-end-point` (RFC 5929: the hash of the pinned server certificate, whose key is in a KSP) in the Noise prologue; data encryption stays single either way.
+- Spike in CORE-S1-1: check whether Schannel (with TLS 1.3) and msquic expose an RFC 8446 exporter to the application (no msquic exporter API is known yet). Where one does not, the binding falls back to `tls-server-end-point` (RFC 5929: the hash of the pinned server certificate, whose key is in a KSP) in the Noise prologue; data encryption stays single either way. *(Answered by the amendment of 2026-10-26 below: msquic 2.6 exports, and the QUIC path binds the exporter of its connection, CORE-H5.)*
 
 ## Amendment 2026-10-19: no SoftEther compatibility, PBKDF2 passwords
 
@@ -199,4 +199,11 @@ Maintainer decision (Hilmi: "ya ya ya semua"). The node identity key stays in th
 Maintainer decision (Hilmi: "ya ya ya semua"). CORE-S2-1 (#69) is updated to match.
 - **Server and controller keys always live in the CNG KSP.** A PFX is imported into the KSP, never into a legacy CSP. The question of spec #45, whether Schannel TLS 1.3 falls back to 1.2 or fails when the server key sits in a legacy CSP, is therefore closed: the case does not arise.
 - **Schannel's key exchange groups are set explicitly:** X25519MLKEM768 first, X25519 as the fallback, because Schannel does not pick the hybrid by default on builds 26100 and 26200.
+
+## Amendment 2026-10-26: the QUIC path binds the exporter of its connection (CORE-H5)
+
+CORE-H5 (#408), from finding F1 of the formal model (AUD-5, `docs/formal-model.md`). It answers the spike of the amendment of 2026-10-15 for msquic.
+- **msquic 2.6 exports keying material:** `ConnectionExportKeyingMaterial` (API table, preview part of `msquic.h`), on Schannel through `SECPKG_ATTR_KEYING_MATERIAL`, as the TLS-443 path does. The QUIC path binds the Noise handshake to the exporter of its connection (`NOISE_EXPORTER_LABEL`, no context, 32 bytes; `TransportQuicExporter`), taken in the CONNECTED event while msquic holds the TLS state. The fallback to `tls-server-end-point`, which is the same for every connection to one certificate and so let a middlebox with the key of the certificate relay a session, is no longer used.
+- **Data encryption stays single.** The other way that the ticket offered, an unbound QUIC session with its records under the Noise keys, was not needed. Cost of the exporter against the certificate binding on the vpntest harness (`quicbind`, 10000 records of 1400 bytes, best of 3, one CI run): x64 385.4 against 373.3 MB/s and 4.46 against 4.46 ms of CPU per MB, handshake 4.9 against 5.1 ms; arm64 215.0 against 101.2 MB/s and 8.93 against 11.16 ms of CPU per MB, handshake 7.5 against 7.1 ms. The records are the same, so the difference is the noise of a shared runner.
+- **A node of the build before CORE-H5 is refused cleanly over QUIC,** both ways: the binding type in the prologue differs, so the handshake fails at message 1, with no session. Over TLS-443 the two still interoperate.
 
