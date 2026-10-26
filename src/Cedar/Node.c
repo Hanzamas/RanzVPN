@@ -822,7 +822,9 @@ bool NodeLogin(NODE *n, NOISE_LOGIN *login, UCHAR *challenge, AUTH_RESULT *ret) 
 // same on every later login. A login whose credentials Sam accepts but whose key does not match the
 // pinned one is refused (ret->Ok is cleared, ret->Error is ERR_AUTH_FAILED), so a stolen password
 // alone does not let an attacker impersonate an enrolled node (ADR-0022, ADR-0023). A user that the
-// configuration store does not keep (a domain account, an anonymous login) is not pinned.
+// configuration store does not keep (a domain account, an anonymous login) is not pinned. A store
+// that fails to check the key refuses the login in the same way, so the client gets the answer of a
+// wrong password, and the node log tells why: a failed store never skips the check (FIX-8).
 bool NodeLoginPinned(NODE *n, NOISE_LOGIN *login, UCHAR *challenge, UCHAR *static_key, AUTH_RESULT *ret) {
 	if (NodeLogin(n, login, challenge, ret) == false)
 		return false;
@@ -834,14 +836,17 @@ bool NodeLoginPinned(NODE *n, NOISE_LOGIN *login, UCHAR *challenge, UCHAR *stati
 
 	UINT pin = CsPinUserKey(n->Store, login->HubName, login->UserName, static_key);
 
-	if (pin == CS_KEY_MISMATCH) {
-		NodeLog(n, "Login of %s on %s refused: the Noise static key is not the pinned one", login->UserName, login->HubName);
-		ret->Ok = false;
-		ret->Error = ERR_AUTH_FAILED;
-		return false;
-	}
-
-	// CS_KEY_PINNED (the first login) and CS_KEY_MATCH (a later one) pass. CS_KEY_ERROR is a user the
+	// CS_KEY_PINNED (the first login) and CS_KEY_MATCH (a later one) pass. CS_KEY_NO_USER is a user the
 	// store does not keep, which the hub's Sam authenticated: it is not pinned here.
-	return true;
+	if (pin == CS_KEY_PINNED || pin == CS_KEY_MATCH || pin == CS_KEY_NO_USER)
+		return true;
+
+	if (pin == CS_KEY_MISMATCH)
+		NodeLog(n, "Login of %s on %s refused: the Noise static key is not the pinned one", login->UserName, login->HubName);
+	else
+		NodeLog(n, "Login of %s on %s refused: the configuration store failed to check the pinned key", login->UserName, login->HubName);
+
+	ret->Ok = false;
+	ret->Error = ERR_AUTH_FAILED;
+	return false;
 }
