@@ -671,12 +671,16 @@ jobs:
       run: |
         ./.github/scripts/binary-hardening.ps1 -Path build\ranz\ranz.exe -Unhardened build\ranz\ranz-nodesim.exe
     # The controller's keys in the Microsoft Software Key Storage Provider (internal/keys), in the
-    # job log: the X25519 Noise static key against crypto/ecdh, and both keys across two loads.
+    # job log: the X25519 Noise static key against crypto/ecdh, and both keys across two loads; and the
+    # certificate of the Controller that is served by its thumbprint with its key staying in the
+    # provider (internal/servercert, SDN-92, #397).
     - name: Keys in the key storage provider
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
       run: |
         go test -count=1 -v -run 'TestKSPStatic|TestLoad' ./controller/internal/keys
+        if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
+        go test -count=1 -v -run 'TestServesACertificateOfTheKeyStorage' ./controller/internal/servercert
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     # The service runs the ranz.exe built above, which carries the rqlite member (ONE-4, #313): no
     # rqlited is beside it, and the script checks that the controller writes and runs its own, and
