@@ -7,7 +7,10 @@
 // of a running node. One worker per core runs its work items on its own core, in posting order; an adapter
 // queue drains on one I/O thread of its own. A table swap is atomic under readers on every worker: no reader
 // sees a torn, wiped or older snapshot; a swap waits while a reader still holds the old snapshot, and the
-// other workers go on meanwhile. The Hubs of the server role are fork Hubs, whose users (Account) the fork's
+// other workers go on meanwhile. The check that every reader sees several generations while the swaps run
+// waits for its swaps and its readers, within a bound, and does not count what fits in a fixed time, so a busy
+// machine makes the test longer and does not fail it (#437); a second round, with a pause before each swap,
+// makes the check wait in every run. The Hubs of the server role are fork Hubs, whose users (Account) the fork's
 // Sam checks through NodeAuthenticate; the node writes its log through LogWriter and reads its configuration
 // from its configuration store (ConfigStore, CORE-F5 #65).
 // The relay role (CORE-S5-2 #78) listens on a UDP port under the node identity key: two peer layers of the new
@@ -53,8 +56,11 @@
 #define	NODETEST_BUDGET			300000		// The whole node test (ms): the watchdog ends a hung run
 #define	NODETEST_BOUND			10000		// A bounded wait on observable state (ms)
 #define	NODETEST_HOLD			300			// How long a swap must keep waiting for a reader that holds the old snapshot (ms)
-#define	NODETEST_SWAP_TIME		1000		// Swaps of the atomicity case run this long (ms)
-#define	NODETEST_SWAP_MAX		20000		// ... or this many swaps
+#define	NODETEST_SWAP_TIME		1000		// Swaps of the atomicity case run at least this long (ms) ...
+#define	NODETEST_SWAP_MAX		20000		// ... and stop at this many
+#define	NODETEST_SWAP_MIN		10			// The generations check waits for this many swaps ...
+#define	NODETEST_SWAP_BOUND		30000		// ... and for every reader to see two generations, this long at most (ms)
+#define	NODETEST_SWAP_PAUSE		150			// The slow round waits this long before each swap (ms): a busy runner took about this long (#437)
 #define	NODETEST_ROLE_WORKERS	2			// Workers of the role cases
 #define	NODETEST_HUB			"NODETEST"	// Hub of the server role in the Sam case
 #define	NODETEST_USER			"alice"
@@ -884,6 +890,7 @@ typedef struct NODETEST_SWAP
 {
 	volatile LONG Stop;				// Set to end the reader items
 	volatile LONG Done;				// Reader items that ended
+	volatile LONG Changed;			// Reader items that saw the generation change: the swaps reached them
 } NODETEST_SWAP;
 
 static NODETEST_SWAP nodetest_swap;
@@ -918,6 +925,12 @@ static void NodeTestReaderItem(NODE_WORKER *w, void *param)
 		if (t->Generation != r->Last)
 		{
 			r->Distinct++;
+
+			// The second generation it sees: the first change, which the main thread waits for
+			if (r->Distinct == 2)
+			{
+				InterlockedIncrement(&nodetest_swap.Changed);
+			}
 		}
 		r->Last = t->Generation;
 	}
@@ -990,6 +1003,90 @@ static void NodeTestSwapperThread(THREAD *thread, void *param)
 	s->Ret = NodeSwapTables(s->Node, s->Tables);
 }
 
+// What a round of swaps under the readers came to
+typedef struct NODETEST_ROUND
+{
+	bool Ended;						// The reader items ended once they were told to
+	UINT Swaps;						// Swaps the node took
+	UINT Refused;					// Swaps it refused
+	UINT Elapsed;					// How long the round took (ms)
+	UINT64 Passes;					// Snapshots read, by all readers
+	UINT64 Torn;					// ... that were not whole
+	UINT64 Backwards;				// ... that were older than the one read before
+	UINT Few;						// Readers that saw fewer than two generations
+} NODETEST_ROUND;
+
+// Fewer than NODETEST_SWAP_MIN swaps, each after a pause of NODETEST_SWAP_PAUSE, fit in NODETEST_SWAP_TIME: the slow
+// round always waits for the condition of the generations check, which a busy machine makes the other round do now
+// and then
+_Static_assert(NODETEST_SWAP_TIME / NODETEST_SWAP_PAUSE + 1 < NODETEST_SWAP_MIN, "the slow round must not reach NODETEST_SWAP_MIN swaps within NODETEST_SWAP_TIME");
+
+// Whether the generations check has what it waits for: its swaps, and the change of the generation seen by every reader
+static bool NodeTestGenerationsSeen(UINT swaps, UINT readers)
+{
+	return (swaps >= NODETEST_SWAP_MIN && InterlockedCompareExchange(&nodetest_swap.Changed, 0, 0) >= (LONG)readers);
+}
+
+// A reader item on each of the num workers, then swaps under them, with a pause of pause ms (0 for none) before each.
+// The swaps go on for NODETEST_SWAP_TIME at least, the load that the atomicity check needs, and after that until the
+// generations check has what it waits for. How many swaps fit in a given time is up to the scheduler: a swap waits for
+// every reader to run, and a busy machine runs them late. So the condition ends the round, and the bound of
+// NODETEST_SWAP_BOUND when the condition never comes.
+static void NodeTestSwapRound(NODE *n, UINT num, UINT pause, NODETEST_ROUND *r)
+{
+	NODE_STATUS st;
+
+	Zero(r, sizeof(NODETEST_ROUND));
+	Zero(&nodetest_swap, sizeof(nodetest_swap));
+
+	NODETEST_READER *readers = ZeroMalloc(sizeof(NODETEST_READER) * MAX(num, 1));
+	for (UINT i = 0;i < num;i++)
+	{
+		NodePost(n, i, NodeTestReaderItem, &readers[i]);
+	}
+
+	UINT64 start = Tick64();
+	UINT64 now = start;
+	while (r->Swaps < NODETEST_SWAP_MAX && now - start < NODETEST_SWAP_BOUND &&
+		(now - start < NODETEST_SWAP_TIME || NodeTestGenerationsSeen(r->Swaps, num) == false))
+	{
+		if (pause != 0)
+		{
+			SleepThread(pause);
+		}
+
+		NodeGetStatus(n, &st);
+		NODE_TABLES *t = NodeTestTables(st.Generation + 1);
+		if (NodeSwapTables(n, t))
+		{
+			r->Swaps++;
+		}
+		else
+		{
+			NodeFreeTables(t);
+			r->Refused++;
+		}
+
+		now = Tick64();
+	}
+	r->Elapsed = (UINT)(now - start);
+
+	InterlockedExchange(&nodetest_swap.Stop, 1);
+	r->Ended = NodeTestWait(&nodetest_swap.Done, (LONG)num, NODETEST_BOUND);
+
+	for (UINT i = 0;i < num;i++)
+	{
+		r->Passes += readers[i].Passes;
+		r->Torn += readers[i].Torn;
+		r->Backwards += readers[i].Backwards;
+		if (readers[i].Distinct < 2)
+		{
+			r->Few++;
+		}
+	}
+	Free(readers);
+}
+
 static void NodeTestSwap(NODETEST_CTX *ctx)
 {
 	wchar_t dir[MAX_PATH];
@@ -1011,55 +1108,30 @@ static void NodeTestSwap(NODETEST_CTX *ctx)
 	NodeTestCheck(ctx, ok && st.Generation == 2, "NodeSwapTables gives the snapshot the next generation",
 		"returned %u, generation %I64u", (UINT)ok, st.Generation);
 
-	// A reader on every worker, then swaps for NODETEST_SWAP_TIME
-	Zero(&nodetest_swap, sizeof(nodetest_swap));
-	NODETEST_READER *readers = ZeroMalloc(sizeof(NODETEST_READER) * MAX(num, 1));
-	for (UINT i = 0;i < num;i++)
-	{
-		NodePost(n, i, NodeTestReaderItem, &readers[i]);
-	}
+	// A reader on every worker, then swaps under them. What fits in NODETEST_SWAP_TIME is the load of the atomicity
+	// check. The generations check does not count it: on a busy machine the round goes on until the swaps are done
+	// and every reader has seen the generation change.
+	NODETEST_ROUND fast, paused;
 
-	UINT swaps = 0, refused = 0;
-	UINT64 end = Tick64() + NODETEST_SWAP_TIME;
-	while (Tick64() < end && swaps < NODETEST_SWAP_MAX)
-	{
-		NodeGetStatus(n, &st);
-		t = NodeTestTables(st.Generation + 1);
-		if (NodeSwapTables(n, t))
-		{
-			swaps++;
-		}
-		else
-		{
-			NodeFreeTables(t);
-			refused++;
-		}
-	}
-
-	InterlockedExchange(&nodetest_swap.Stop, 1);
-	bool ended = NodeTestWait(&nodetest_swap.Done, (LONG)num, NODETEST_BOUND);
-
-	UINT64 passes = 0, torn = 0, backwards = 0;
-	UINT few = 0;
-	for (UINT i = 0;i < num;i++)
-	{
-		passes += readers[i].Passes;
-		torn += readers[i].Torn;
-		backwards += readers[i].Backwards;
-		if (readers[i].Distinct < 2)
-		{
-			few++;
-		}
-	}
-	Free(readers);
-
-	Print("  %u swaps in %u ms under %u readers, %I64u reads\n", swaps, NODETEST_SWAP_TIME, num, passes);
+	NodeTestSwapRound(n, num, 0, &fast);
+	Print("  %u swaps in %u ms under %u readers, %I64u reads\n", fast.Swaps, fast.Elapsed, num, fast.Passes);
 
 	Format(what, sizeof(what), "Swaps under a reader on each of the %u workers: no reader sees a torn, wiped or older snapshot", num);
-	NodeTestCheck(ctx, ended && refused == 0 && torn == 0 && backwards == 0, what,
-		"readers ended %u, %u swaps refused, %I64u torn, %I64u older", (UINT)ended, refused, torn, backwards);
-	NodeTestCheck(ctx, ended && swaps >= 10 && few == 0, "Every reader sees several generations while the swaps run",
-		"%u swaps, %u readers saw fewer than two generations", swaps, few);
+	NodeTestCheck(ctx, fast.Ended && fast.Refused == 0 && fast.Torn == 0 && fast.Backwards == 0, what,
+		"readers ended %u, %u swaps refused, %I64u torn, %I64u older", (UINT)fast.Ended, fast.Refused, fast.Torn, fast.Backwards);
+	NodeTestCheck(ctx, fast.Ended && fast.Swaps >= NODETEST_SWAP_MIN && fast.Few == 0, "Every reader sees several generations while the swaps run",
+		"readers ended %u, %u swaps in %u ms, %u readers saw fewer than two generations", (UINT)fast.Ended, fast.Swaps, fast.Elapsed, fast.Few);
+
+	// The same with a pause before each swap, so that fewer than NODETEST_SWAP_MIN fit in NODETEST_SWAP_TIME, as on a
+	// busy machine: the generations check has to wait for its condition in every run, not only in a slow one
+	NodeTestSwapRound(n, num, NODETEST_SWAP_PAUSE, &paused);
+	Print("  %u swaps in %u ms under %u readers, a pause of %u ms before each, %I64u reads\n", paused.Swaps, paused.Elapsed, num,
+		NODETEST_SWAP_PAUSE, paused.Passes);
+
+	NodeTestCheck(ctx, paused.Ended && paused.Refused == 0 && paused.Torn == 0 && paused.Backwards == 0 && paused.Swaps >= NODETEST_SWAP_MIN &&
+		paused.Few == 0, "Every reader sees several generations when the swaps are slow: the check waits for them, not for a time",
+		"readers ended %u, %u swaps refused, %I64u torn, %I64u older, %u swaps in %u ms, %u readers saw fewer than two generations",
+		(UINT)paused.Ended, paused.Refused, paused.Torn, paused.Backwards, paused.Swaps, paused.Elapsed, paused.Few);
 
 	// A reader that holds a snapshot: the swap waits for it, the other workers go on
 	NODETEST_SLOW s;
