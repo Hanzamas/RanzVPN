@@ -42,7 +42,7 @@ Each lane returns `ok`, `pr`, `head`, `ci`, `met`, `notMet`, `newTerms` and `blo
 
 - `ok: false` means not done. Never queue its pull request for merge. The integrator reads the pull request itself before it merges.
 - `blocked` is a command that the permission check refused. Tell the maintainer. Never retry it.
-- `newTerms` go into the report. Nobody edits `CONTEXT.md` without the maintainer.
+- `newTerms` go into the report. A lane never edits `CONTEXT.md`. The integrator collects the new terms and writes them in a docs pull request.
 
 ## Rules of the file
 
