@@ -56,6 +56,8 @@ void icesymmetric_test();
 void punch_test();
 void peersession_test();
 void frontdoor_test();
+// The msquic of the exporter of a QUIC connection (quicexporter.c; CORE-H5-R, #443)
+void quicexporter_test();
 
 // The processes of the front door test (frontdoor.c): coretest frontdoor-child node ... or owner ..., which the test
 // starts itself; main runs them before anything else
