@@ -74,7 +74,7 @@ struct NODE_CONTROLLER {
 	bool Mismatch;                                 // The certificate of the last dial that reached the check failed it ...
 	char Seen[NODE_CONTROLLER_FINGERPRINT];        // ... and had this fingerprint
 	UINT NumPins;                                  // The TLS fingerprints that the Controller sent (SDN-92, #397), 0 before it did: Fingerprint alone passes the check ...
-	char Pins[NODE_CONTROLLER_PINS][NODE_CONTROLLER_FINGERPRINT]; // ... in lower case, the certificate in use first
+	NODE_FINGERPRINT Pins[NODE_CONTROLLER_PINS];   // ... in lower case, the certificate in use first
 	UINT64 NumEnds;                                // Streams that ended or did not open
 	UINT LastEnd;                                  // How the last one ended (CONTROL_END_*)
 	UINT NextRetry;                                // ms before the next attempt after it

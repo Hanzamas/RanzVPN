@@ -106,6 +106,9 @@
 #define NODE_CONTROLLER_PINS        4                 // The TLS fingerprints that a node accepts at once, once its Controller sent them (SDN-92, #397)
 #define NODE_CONTROLLER_KEEPALIVE   10                // s without a segment on the control stream before TCP keepalive probes its path
 
+// A TLS fingerprint of a Controller as text, in lower case, with its NUL
+typedef char NODE_FINGERPRINT[NODE_CONTROLLER_FINGERPRINT];
+
 // The Wintun adapters of a node (NodeWintun.c; CORE-S3-1, #71)
 #define NODE_WINTUN_DLL           L"wintun.dll" // Next to the executable: the pinned release of THIRD_PARTY.TXT
 #define NODE_WINTUN_TYPE          L"Ranz"       // The tunnel type of the adapters of the node
@@ -468,7 +471,7 @@ struct NODE_CONTROLLER_STATUS {
 	char PipeAcl[MAX_SIZE];                        // The DACL of the admin pipe as the system holds it, in SDDL; "" when it does not run
 	char Why[MAX_SIZE * 2];                        // Why the last stream ended or did not open, as the node log says it; "" before the first (SDN-91, #396)
 	UINT NumPins;                                  // The TLS fingerprints that the node accepts once the Controller sent them (SDN-92, #397), 0 before: Fingerprint alone ...
-	char Pins[NODE_CONTROLLER_PINS][NODE_CONTROLLER_FINGERPRINT]; // ... in lower case, the certificate in use first
+	NODE_FINGERPRINT Pins[NODE_CONTROLLER_PINS];   // ... in lower case, the certificate in use first
 };
 
 // One Wintun adapter of a VRF, as NodeVrfAdaptersGetStatus and NodeClientGetAdapters report it
