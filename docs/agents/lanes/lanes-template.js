@@ -7,6 +7,8 @@ export const meta = {
 // The lane workflow script of the integrator (docs/agents/integrator.md).
 // 1. Copy this file out of the repository (the scratchpad of the session, or /tmp) and change meta.name.
 // 2. Fill QUOTE, STATE and LANES. Do not commit the filled copy.
+//    Keep at most 2 active lanes in a copy: a Workflow runs at most CPUs - 2 lanes at once (2 in the cloud),
+//    so one copy is one batch, and each batch is its own Workflow.
 // 3. Run it with the Workflow tool: the path of your copy as scriptPath.
 // docs/agents/lanes/README.md says how, in one page.
 // Keep every string plain: single quotes, no apostrophes, so that no quote ends a string early.
@@ -102,6 +104,6 @@ for (const l of ACTIVE) {
   if (l.model !== 'opus' && l.model !== 'sonnet') throw new Error('Lane ' + l.key + ' needs the model opus or sonnet.')
   if (ACTIVE.filter(o => o.key === l.key).length > 1) throw new Error('Two lanes have the key ' + l.key + '.')
 }
-if (ACTIVE.length > 6) log('WARNING: ' + ACTIVE.length + ' lanes at once. The pace rule is about 5 (docs/agents/integrator.md).')
+if (ACTIVE.length > 2) log('WARNING: ' + ACTIVE.length + ' active lanes in one Workflow. A Workflow runs at most CPUs - 2 lanes at once (2 in the cloud) and queues the rest. Make batches of at most 2 lanes, each batch its own Workflow (docs/agents/lanes/README.md).')
 const results = await parallel(ACTIVE.map(l => () => lane(l)))
 return ACTIVE.map((l, i) => ({ lane: l.key, model: l.model, result: results[i] }))
