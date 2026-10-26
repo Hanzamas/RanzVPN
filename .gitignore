@@ -26,3 +26,13 @@ developer_tools/stbchecker/obj/
 # local tooling indexes (never commit)
 .codegraph/
 graphify-out/
+
+# state of a Claude Code session (lane worktrees, locks, local settings); what the repository
+# shares stays tracked
+.claude/*
+!.claude/CLAUDE.md
+!.claude/settings.json
+!.claude/rules/
+!.claude/skills/
+!.claude/agents/
+!.claude/commands/
