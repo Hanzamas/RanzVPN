@@ -394,6 +394,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyListener(&st, c->Objects, c->NumObjects);
 	// The WireGuard Devices (ControlDevice.c; SDN-80, #375)
 	ControlCopyDevices(&st, c->Objects, c->NumObjects);
+	// The endpoints of the node and of its peers (ControlEndpoint.c; SDN-93, #410)
+	ControlCopyEndpoints(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);

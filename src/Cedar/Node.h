@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeHarden.c, NodeLeak.c, NodeListener.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeEndpoints.c, NodeHarden.c, NodeLeak.c, NodeListener.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -206,6 +206,10 @@ typedef void(NODE_CONTROL_END_PROC)(void *param, const struct CONTROL_STATUS *st
 typedef void(NODE_WINTUN_PROC)(NODE_WINTUN *w, void *param, const UCHAR *packet, UINT size);
 // Tells the time in ms of the flows of the policy of the overlay (NodeOverlayStart), on the thread of a packet
 typedef UINT64(NODE_CLOCK_PROC)(NODE *n, void *param);
+// Tells whether the data transport dials the peer name, whose Peer object lists the num endpoints (SDN-93, #410), as the
+// overlay asks for each peer that has no session (NodeOverlayStart): under the lock of the overlay, so it takes no lock
+struct CONTROL_ENDPOINT;
+typedef bool(NODE_DIALABLE_PROC)(NODE *n, void *param, const char *name, const struct CONTROL_ENDPOINT *endpoints, UINT num);
 
 // A thread that reads the table snapshot: a worker, the I/O thread of an adapter queue, or a thread that
 // registered itself. It holds a snapshot only between two quiescent points and none while it is offline,
@@ -383,6 +387,13 @@ struct NODE_OVERLAY_CONFIG {
 	NODE_STATE_PROC *State;                  // Takes each state applied, once its forwarding tables are in, NULL for none
 	bool Dialler;                            // The node dials every peer, whatever the order of the keys, as a client does (CORE-S3-1)
 	NODE_CLOCK_PROC *Clock;                  // Tells the time of the flows of the policy (NodePolicy.c), NULL for GetTickCount64; with AdapterParam
+
+	// Tells whether the data transport dials a peer, which has endpoints in its Peer object (SDN-93, #410); with AdapterParam.
+	// The overlay then dials a peer only when it does, and a node that has no endpoints itself dials every such peer, whatever
+	// the order of the keys, while two nodes that both have endpoints follow it (NodeEndpointsDials). NULL: the data transport
+	// finds a peer by its node name, and the order of the keys decides alone, as the in-process transport of the vpntest
+	// harness does.
+	NODE_DIALABLE_PROC *Dialable;
 };
 
 // What NodeOverlayGetStatus reports
@@ -399,6 +410,10 @@ struct NODE_OVERLAY_STATUS {
 	UINT64 Forwarded;                           // Packets of the host sent to a peer
 	UINT64 Delivered;                           // Packets of the peers delivered to the host
 	UINT64 Dropped;                             // Packets of either side that the overlay dropped
+
+	// The dials that the overlay started, whatever they gave: a peer that the node does not dial, one without endpoints for
+	// one, adds none (SDN-93, #410)
+	UINT64 Dials;
 };
 
 // What NodePolicyGetVrf reports of the policy of a VRF of a node: its Network in the policy engine (Core/Policy.h)
@@ -751,6 +766,11 @@ void NodeOverlayStop(NODE *n);
 bool NodeOverlayApply(NODE *n, const struct CONTROL_STATE *st);
 bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size);
 void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
+UINT NodeOverlayEndpoints(NODE *n, const char *name, struct CONTROL_ENDPOINT *out, UINT max);
+
+// NodeEndpoints.c
+UINT NodeEndpointsTargets(const struct CONTROL_ENDPOINT *endpoints, UINT num, TRANSPORT **known, UINT num_known, TRANSPORT_TARGET *targets, UINT max);
+bool NodeEndpointsDials(bool by_name, bool dialler, const UCHAR *key, const UCHAR *peer_key, UINT endpoints, bool dialable);
 
 // NodeSession.c
 UINT NodeAcceptSession(NODE *n, TRANSPORT_NOISE *s, UINT timeout);
