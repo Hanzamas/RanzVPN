@@ -58,5 +58,5 @@ tunnel-quic-cert	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tun
 tunnel-nokey-none	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tunnel-nokey-none.pv	Negative control: the join does not compare the static key of the connection with the Tunnel's
 # Noise_IK alone, and the peer layer
 noise-encrypted	prims.pvl,noise-lib.pvl,noise-queries.pvl,noise/encrypted.pv	Noise_IK alone with the records under the Noise keys (no outer session): the grades of the Noise Explorer	2
-peer-leaks	prims.pvl,peer-lib.pvl,peer-queries.pvl,peer/leaks.pv	Peer layer: Noise_K envelopes and data datagrams, keys leaked
-peer-honest	prims.pvl,peer-lib.pvl,peer-queries.pvl,peer/honest.pv	The same with no key leaked
+peer-leaks	prims.pvl,peer-lib.pvl,peer-queries.pvl,peer/leaks.pv	Peer layer: Noise_K envelopes, the bind challenge, the punch nonces and the peer session of the data datagrams, keys leaked	3
+peer-honest	prims.pvl,peer-lib.pvl,peer-queries.pvl,peer/honest.pv	The same with no key leaked	3

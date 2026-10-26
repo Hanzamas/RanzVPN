@@ -88,7 +88,7 @@ static bool PeerKeyDh(PEER_KEY *k, UCHAR *shared, const UCHAR *peer) {
 
 // Whether kind is the kind of an envelope
 static bool PeerIsEnvelopeKind(UINT kind) {
-	return kind == PEER_MSG_BIND || kind == PEER_MSG_BOUND || kind == PEER_MSG_SIGNAL || kind == PEER_MSG_PUNCH;
+	return kind == PEER_MSG_BIND || kind == PEER_MSG_BOUND || kind == PEER_MSG_SIGNAL || kind == PEER_MSG_PUNCH || kind == PEER_MSG_CHALLENGE;
 }
 
 // The static key of the X25519 scalar priv, held in memory

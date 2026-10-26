@@ -3,16 +3,33 @@
 // the node to its relays, the paths to each peer, the relay role, and PeerInput, the one ingress of every datagram,
 // which delivers a datagram for the node and forwards one for another node through the same policy check. The ICE
 // sessions that move a peer to a direct path are PeerIce.c's; this file starts them from the signals, sends on
-// them, and takes what they deliver through the same ingress.
+// them, and takes what they deliver through the same ingress. The datagrams between two nodes are those of their
+// peer session (PeerSession.c): this file sends what the session writes and hands it what comes in.
 
 #include "Core/PeerInternal.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-// The clock of bindings and binds (ms), monotonic
-static UINT64 PeerNow() {
+// The clock of bindings, binds and sessions (ms), monotonic
+UINT64 PeerNow() {
 	return GetTickCount64();
+}
+
+// The wall clock in 100 ns units, which the sequences of binds, signals, punches and initiations follow
+UINT64 PeerWallClock() {
+	FILETIME ft;
+
+	GetSystemTimePreciseAsFileTime(&ft);
+
+	return ((UINT64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+}
+
+// The lowest sequence that the peer p must exceed, given last, the last one taken of a kind: the clock when the entry
+// of p was made, at least. A receiver that lost its memory of the peer, by a restart or a new entry, so takes no
+// sequence of before that, and the sequences of binds, signals and punches survive the loss (finding F3 of AUD-5).
+UINT64 PeerFloorOf(const PEER *p, UINT64 last) {
+	return (last > p->Floor ? last : p->Floor);
 }
 
 void PeerCount(PEER_AGENT *a, UINT counter) {
@@ -51,10 +68,7 @@ USHORT PeerGetUint16(const UCHAR *p) {
 // sequence when the clock did not move on. It grows across restarts of the node too, so a receiver that keeps the
 // last sequence of each node refuses every replay, as WireGuard does with the timestamp of a handshake initiation.
 UINT64 PeerNextSequence(PEER_AGENT *a) {
-	FILETIME ft;
-
-	GetSystemTimePreciseAsFileTime(&ft);
-	UINT64 now = ((UINT64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+	UINT64 now = PeerWallClock();
 
 	while (true) {
 		LONG64 last = ReadAcquire64(&a->Sequence);
@@ -75,6 +89,10 @@ void PeerDefaultConfig(PEER_CONFIG *c) {
 	c->BindInterval = PEER_DEFAULT_BIND;
 	c->BindRetry = PEER_DEFAULT_BIND_RETRY;
 	c->BindExpiry = PEER_DEFAULT_BIND_EXPIRY;
+	c->SessionRekeyTime = PEER_DEFAULT_REKEY_TIME;
+	c->SessionRekeyDatagrams = PEER_DEFAULT_REKEY_DATAGRAMS;
+	c->SessionTimeout = PEER_DEFAULT_SESSION_TIMEOUT;
+	c->SessionKeepalive = PEER_DEFAULT_KEEPALIVE;
 }
 
 // The peer layer of a node with the static key key (an identity key in it stays owned by the caller and must
@@ -128,6 +146,12 @@ PEER_AGENT *PeerNew(PEER_KEY *key, PEER_CONFIG *c, PEER_SEND_PROC *send, void *s
 		a->RateInterval = 1;
 	a->RateTolerance = a->RateInterval * (LONG64)(a->Config.RelayBurst - 1);
 
+	// The key of the bind challenges of the relay role (PeerChallenge.c)
+	if (CryptoRandom(a->CookieSecret, sizeof(a->CookieSecret)) == false) {
+		PeerFree(a);
+		return NULL;
+	}
+
 	if (a->Config.Ice && PeerIceStart(a) == false) {
 		PeerFree(a);
 		return NULL;
@@ -145,8 +169,11 @@ void PeerFree(PEER_AGENT *a) {
 	if (a->Config.Ice)
 		PeerIceStop(a);
 
-	if (a->Peers != NULL)
+	if (a->Peers != NULL) {
+		for (UINT i = 0; i < a->NumPeers; i++)
+			PeerSessionFree(a->Peers[i].Session);
 		HeapFree(GetProcessHeap(), 0, a->Peers);
+	}
 	if (a->Bindings != NULL)
 		HeapFree(GetProcessHeap(), 0, a->Bindings);
 
@@ -267,7 +294,7 @@ static PEER_RELAY *PeerFindRelay(PEER_AGENT *a, const UCHAR *key) {
 }
 
 // Send one datagram and count it
-static bool PeerSendRaw(PEER_AGENT *a, const PEER_ADDR *to, const void *data, UINT size) {
+bool PeerSendRaw(PEER_AGENT *a, const PEER_ADDR *to, const void *data, UINT size) {
 	if (a->Send(a->SendParam, to, data, size)) {
 		PeerCount(a, PEER_COUNT_SENT);
 		return true;
@@ -277,11 +304,13 @@ static bool PeerSendRaw(PEER_AGENT *a, const PEER_ADDR *to, const void *data, UI
 	return false;
 }
 
-// Bind the node to the relay of relay_key: a bind envelope with the next sequence, which the relay answers with a
-// bound. Without the lock.
-static void PeerBind(PEER_AGENT *a, const UCHAR *relay_key) {
-	UCHAR payload[PEER_BIND_SIZE];
-	UCHAR env[PEER_ENVELOPE_HEADER + PEER_BIND_SIZE + PEER_ENVELOPE_TAG];
+// Bind the node to the relay of relay_key: a bind envelope with the next sequence and the cookie of the relay's last
+// bind challenge, which the relay answers with a bound, or with a challenge when it has no good cookie (PeerChallenge.c).
+// answer: the bind answers a challenge. Without the lock.
+void PeerBind(PEER_AGENT *a, const UCHAR *relay_key, bool answer) {
+	UCHAR payload[PEER_BIND_MAX];
+	UCHAR env[PEER_ENVELOPE_HEADER + PEER_BIND_MAX + PEER_ENVELOPE_TAG];
+	UINT payload_size = PEER_BIND_SIZE;
 	PEER_ADDR to;
 	bool found = false;
 
@@ -289,7 +318,18 @@ static void PeerBind(PEER_AGENT *a, const UCHAR *relay_key) {
 	payload[0] = PEER_VERSION;
 	PeerPutUint64(payload + 1, seq);
 
-	UINT size = PeerSeal(a, relay_key, PEER_MSG_BIND, payload, sizeof(payload), env, sizeof(env));
+	AcquireSRWLockShared(&a->Lock);
+	{
+		PEER_RELAY *r = PeerFindRelay(a, relay_key);
+
+		if (r != NULL && r->HasCookie) {
+			CopyMemory(payload + PEER_BIND_SIZE, r->Cookie, PEER_COOKIE_SIZE);
+			payload_size = PEER_BIND_MAX;
+		}
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	UINT size = PeerSeal(a, relay_key, PEER_MSG_BIND, payload, payload_size, env, sizeof(env));
 	if (size == 0)
 		return;
 
@@ -299,6 +339,7 @@ static void PeerBind(PEER_AGENT *a, const UCHAR *relay_key) {
 
 		if (r != NULL) {
 			r->Binding = true;
+			r->Answered = answer;
 			r->BindSequence = seq;
 			r->BindTick = PeerNow();
 			to = r->Info.Addr;
@@ -331,7 +372,7 @@ static void PeerBindWanted(PEER_AGENT *a) {
 	ReleaseSRWLockShared(&a->Lock);
 
 	for (UINT i = 0; i < num; i++)
-		PeerBind(a, keys[i]);
+		PeerBind(a, keys[i], false);
 }
 
 static int PeerComparePeer(const void *p1, const void *p2) {
@@ -372,6 +413,9 @@ void PeerSetPeers(PEER_AGENT *a, PEER_INFO *peers, UINT num) {
 		t[n++] = t[i];
 	}
 
+	// A new entry takes no sequence of before it was made (PeerFloorOf)
+	UINT64 floor = PeerWallClock();
+
 	// No ICE session starts or ends meanwhile (PeerIce.c)
 	AcquireSRWLockExclusive(&a->IceLock);
 	AcquireSRWLockExclusive(&a->Lock);
@@ -384,8 +428,11 @@ void PeerSetPeers(PEER_AGENT *a, PEER_INFO *peers, UINT num) {
 
 				t[i] = *old;
 				t[i].Info = info;
-				// The session moves with the peer: what stays in the old table belongs to the peers that went
+				// The sessions move with the peer: what stays in the old table belongs to the peers that went
 				old->Ice = NULL;
+				old->Session = NULL;
+			} else {
+				t[i].Floor = floor;
 			}
 		}
 
@@ -403,8 +450,11 @@ void PeerSetPeers(PEER_AGENT *a, PEER_INFO *peers, UINT num) {
 		PeerIceRetire(t, old_num);
 	ReleaseSRWLockExclusive(&a->IceLock);
 
-	if (t != NULL)
+	if (t != NULL) {
+		for (UINT i = 0; i < old_num; i++)
+			PeerSessionFree(t[i].Session);
 		HeapFree(GetProcessHeap(), 0, t);
+	}
 }
 
 // Set the relays that the node may use, from the Relay objects of the desired state; the first is its home relay.
@@ -647,7 +697,7 @@ UINT PeerOpenSignal(PEER_AGENT *a, const UCHAR *env, UINT size, PEER_SIGNAL *sig
 
 		if (p == NULL)
 			reason = PEER_DROP_POLICY;
-		else if (s.Sequence <= p->Sequence)
+		else if (s.Sequence <= PeerFloorOf(p, p->Sequence))
 			reason = PEER_DROP_REPLAY;
 		else if (has_relay && (r == NULL || PeerAddrEqual(&r->Info.Addr, &s.Relay) == false))
 			reason = PEER_DROP_RELAY;
@@ -674,7 +724,7 @@ UINT PeerOpenSignal(PEER_AGENT *a, const UCHAR *env, UINT size, PEER_SIGNAL *sig
 	PeerCount(a, PEER_COUNT_SIGNALS);
 
 	if (bind)
-		PeerBind(a, s.RelayKey);
+		PeerBind(a, s.RelayKey, false);
 
 	if (a->Config.Ice && s.IceUfrag[0] != 0)
 		PeerIceRemote(a, sender, &s);
@@ -769,30 +819,69 @@ static bool PeerRateAllow(PEER_AGENT *a, PEER_BINDING *b) {
 	}
 }
 
-// A data datagram: delivered when it is for the node, forwarded when it is for a node bound to the relay role,
-// after one policy check either way. via is the peer whose ICE session delivered it, NULL for one that came from
-// the address from.
+// Send a datagram back the way that one from the peer of key came: to the address from (a relay, a node bound to the
+// relay role, or the peer's direct address), or on the ICE session with the peer when from is NULL
+static void PeerSendBack(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *key, const UCHAR *data, UINT size) {
+	bool sent = false;
+
+	if (from != NULL) {
+		PeerSendRaw(a, from, data, size);
+		return;
+	}
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		PEER *p = PeerFind(a, key);
+
+		if (p != NULL && p->Ice != NULL)
+			sent = PeerIceSend(p->Ice, data, size);
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	if (sent)
+		PeerCount(a, PEER_COUNT_SENT);
+	else
+		PeerDrop(a, PEER_DROP_SEND);
+}
+
+// A datagram between two nodes, a handshake message or a record of a peer session: taken by the session of its
+// source when it is for the node, forwarded as it came when it is for a node bound to the relay role, after one
+// policy check either way. The relay reads the clear header only. via is the peer whose ICE session delivered it,
+// NULL for one that came from the address from.
 static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *via, const UCHAR *data, UINT size) {
+	PEER_RECORD_INFO r;
+	PEER_SESSION_OUT out;
 	PEER_ADDR to;
 	UINT reason = PEER_OK;
 	UINT path = PEER_PATH_NONE;
 	bool forward = false;
 
-	if (size < PEER_DATA_HEADER_SIZE) {
+	if (PeerRecordParse(data, size, &r) == false) {
 		PeerDrop(a, PEER_DROP_MALFORMED);
 		return;
 	}
 
-	const UCHAR *src = data + 1;
-	const UCHAR *dst = data + 1 + PEER_KEY_SIZE;
+	const UCHAR *src = r.Src;
+	const UCHAR *dst = r.Dst;
 	bool to_self = (memcmp(dst, a->Key.Public, PEER_KEY_SIZE) == 0);
+
+	out.ReplySize = 0;
+	out.Flush = false;
+	out.Keepalive = false;
+	out.Deliver = false;
+	out.DeliverSize = 0;
 
 	AcquireSRWLockShared(&a->Lock);
 	{
 		path = PeerSourcePath(a, from, via, src);
 		reason = (path == PEER_PATH_NONE ? PEER_DROP_SOURCE : PeerPolicy(a, src, dst));
 
-		if (reason == PEER_OK && to_self == false) {
+		if (reason == PEER_OK && to_self) {
+			// For the node: its session with the source, which the policy found to be a peer
+			PEER *p = PeerFind(a, src);
+
+			reason = (p != NULL ? PeerSessionInput(a, p, &r, data, size, &out) : PEER_DROP_POLICY);
+		} else if (reason == PEER_OK) {
 			// For another node: only the relay role forwards, and only from a node bound to it to another one
 			PEER_BINDING *s = (path == PEER_PATH_BOUND ? PeerFindBinding(a, src) : NULL);
 			PEER_BINDING *d = (s != NULL ? PeerFindBinding(a, dst) : NULL);
@@ -823,29 +912,56 @@ static void PeerInputData(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *via
 		return;
 	}
 
+	// The response to an initiation, then the queue that new keys release, back the way the datagram came. out.Reply
+	// holds each datagram of the queue in turn once the response went.
+	if (out.ReplySize != 0)
+		PeerSendBack(a, from, src, out.Reply, out.ReplySize);
+
+	for (bool first = out.Keepalive; out.Flush; first = false) {
+		UINT len = 0;
+
+		AcquireSRWLockShared(&a->Lock);
+		{
+			PEER *p = PeerFind(a, src);
+
+			if (p != NULL)
+				len = PeerSessionFlush(a, p, first, out.Reply);
+		}
+		ReleaseSRWLockShared(&a->Lock);
+
+		if (len == 0)
+			break;
+		PeerSendBack(a, from, src, out.Reply, len);
+	}
+
+	if (out.Deliver == false)
+		return;
+
 	PeerCount(a, PEER_COUNT_DELIVERED);
 	if (path == PEER_PATH_RELAY)
 		PeerCount(a, PEER_COUNT_DELIVERED_RELAY);
 
 	if (a->Recv != NULL)
-		a->Recv(a, a->RecvParam, src, (path == PEER_PATH_RELAY ? PEER_PATH_RELAY : PEER_PATH_DIRECT), data + PEER_DATA_HEADER_SIZE, size - PEER_DATA_HEADER_SIZE);
+		a->Recv(a, a->RecvParam, src, (path == PEER_PATH_RELAY ? PEER_PATH_RELAY : PEER_PATH_DIRECT), out.Payload, out.DeliverSize);
 }
 
 // A bind, at the relay role: a node that holds the key of a peer binds to the address the bind came from, unless
-// the bind is older than the last one of that node. The relay answers with a bound, which tells the node the
-// address it saw: its server reflexive candidate.
+// the bind is not above the last one of that node, and only with the cookie of a challenge that the relay sent to that
+// address (PeerChallenge.c); without one, the relay sends the challenge and binds nothing. The relay answers a bind it
+// takes with a bound, which tells the node the address it saw: its server reflexive candidate.
 static void PeerInputBind(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
 	UCHAR sender[PEER_KEY_SIZE];
 	UCHAR payload[PEER_BOUND_SIZE];
 	UCHAR env[PEER_ENVELOPE_HEADER + PEER_BOUND_SIZE + PEER_ENVELOPE_TAG];
 	UINT len = 0;
 	UINT reason = PEER_OK;
+	bool challenge = false;
 
 	if (a->Config.Relay == false)
 		reason = PEER_DROP_NOT_RELAY;
 	else if (PeerOpen(a, data, size, sender, payload, sizeof(payload), &len) == false)
 		reason = PEER_DROP_FORGED;
-	else if (len != PEER_BIND_SIZE || payload[0] != PEER_VERSION)
+	else if ((len != PEER_BIND_SIZE && len != PEER_BIND_MAX) || payload[0] != PEER_VERSION)
 		reason = PEER_DROP_MALFORMED;
 
 	if (reason != PEER_OK) {
@@ -857,20 +973,25 @@ static void PeerInputBind(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *dat
 
 	AcquireSRWLockExclusive(&a->Lock);
 	{
-		PEER_BINDING *b = PeerFindBinding(a, sender);
+		PEER *p = PeerFind(a, sender);
 
-		if (PeerFind(a, sender) == NULL) {
+		if (p == NULL) {
 			reason = PEER_DROP_POLICY;
-		} else if (b != NULL && seq <= b->Sequence) {
+		} else if (seq <= PeerFloorOf(p, p->BindSequence)) {
+			// The sequence is kept with the peer, not the binding, so it outlives the expiry of the binding
 			reason = PEER_DROP_REPLAY;
+		} else if (len != PEER_BIND_MAX || PeerCookieCheck(a, sender, from, payload + PEER_BIND_SIZE) == false) {
+			challenge = true;
 		} else {
-			b = PeerAddBinding(a, sender);
+			PEER_BINDING *b = PeerAddBinding(a, sender);
+
 			if (b == NULL) {
 				reason = PEER_DROP_SEND;
 			} else {
 				b->Addr = *from;
 				b->Sequence = seq;
 				b->Tick = PeerNow();
+				p->BindSequence = seq;
 			}
 		}
 	}
@@ -878,6 +999,11 @@ static void PeerInputBind(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *dat
 
 	if (reason != PEER_OK) {
 		PeerDrop(a, reason);
+		return;
+	}
+
+	if (challenge) {
+		PeerChallengeSend(a, sender, from, seq);
 		return;
 	}
 
@@ -945,6 +1071,12 @@ void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT siz
 
 	switch (data[0]) {
 	case PEER_MSG_DATA:
+		// The old clear form: no node or relay takes it, so nothing can go back to the clear
+		PeerDrop(a, PEER_DROP_CLEAR);
+		break;
+	case PEER_MSG_INIT:
+	case PEER_MSG_RESPONSE:
+	case PEER_MSG_RECORD:
 		PeerInputData(a, from, NULL, data, size);
 		break;
 	case PEER_MSG_BIND:
@@ -952,6 +1084,9 @@ void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT siz
 		break;
 	case PEER_MSG_BOUND:
 		PeerInputBound(a, from, data, size);
+		break;
+	case PEER_MSG_CHALLENGE:
+		PeerInputChallenge(a, from, data, size);
 		break;
 	case PEER_MSG_PUNCH:
 		PeerPunchInput(a, from, data, size);
@@ -962,13 +1097,19 @@ void PeerInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT siz
 	}
 }
 
-// What the ICE session with the peer of key delivered (PeerIce.c): a data datagram on the direct path, through the
-// same checks as one from PeerInput. Anything else is dropped.
+// What the ICE session with the peer of key delivered (PeerIce.c): a datagram of a peer session on the direct path,
+// through the same checks as one from PeerInput. A datagram of the old clear form is dropped as PeerInput drops it,
+// and anything else as malformed.
 void PeerInputDirect(PEER_AGENT *a, const UCHAR *key, const UCHAR *data, UINT size) {
 	if (a == NULL || key == NULL || data == NULL)
 		return;
 
-	if (size == 0 || size > PEER_MAX_DATAGRAM || data[0] != PEER_MSG_DATA) {
+	if (size != 0 && data[0] == PEER_MSG_DATA) {
+		PeerDrop(a, PEER_DROP_CLEAR);
+		return;
+	}
+
+	if (size == 0 || size > PEER_MAX_DATAGRAM || (data[0] != PEER_MSG_INIT && data[0] != PEER_MSG_RESPONSE && data[0] != PEER_MSG_RECORD)) {
 		PeerDrop(a, PEER_DROP_MALFORMED);
 		return;
 	}
@@ -976,23 +1117,13 @@ void PeerInputDirect(PEER_AGENT *a, const UCHAR *key, const UCHAR *data, UINT si
 	PeerInputData(a, NULL, key, data, size);
 }
 
-// Send one datagram of data to the peer of dst on its path now (PeerGetStatus): a direct path, else the relay of
-// the peer's last signal. A datagram that the ICE session cannot send, as when its direct path has just failed,
-// goes through the relay. False when dst is no peer, has no path yet or size is above PEER_MAX_PAYLOAD.
-bool PeerSend(PEER_AGENT *a, const UCHAR *dst, const void *data, UINT size) {
-	UCHAR buf[PEER_MAX_DATAGRAM];
+// Send one datagram of a peer session, buf, to the peer of dst on its path now (PeerGetStatus): a direct path, else
+// the relay of the peer's last signal. A datagram that the ICE session cannot send, as when its direct path has just
+// failed, goes through the relay. False when dst is no peer or has no path.
+static bool PeerSendTo(PEER_AGENT *a, const UCHAR *dst, const UCHAR *buf, UINT size) {
 	PEER_ADDR to;
 	UINT path = PEER_PATH_NONE;
 	bool sent = false;
-
-	if (a == NULL || dst == NULL || (data == NULL && size != 0) || size > PEER_MAX_PAYLOAD)
-		return false;
-
-	buf[0] = PEER_MSG_DATA;
-	CopyMemory(buf + 1, a->Key.Public, PEER_KEY_SIZE);
-	CopyMemory(buf + 1 + PEER_KEY_SIZE, dst, PEER_KEY_SIZE);
-	if (size != 0)
-		CopyMemory(buf + PEER_DATA_HEADER_SIZE, data, size);
 
 	AcquireSRWLockShared(&a->Lock);
 	{
@@ -1005,7 +1136,7 @@ bool PeerSend(PEER_AGENT *a, const UCHAR *dst, const void *data, UINT size) {
 			} else if (path == PEER_PATH_DIRECT) {
 				// On the ICE socket, under the shared lock: the session cannot end meanwhile, and libjuice sends
 				// without its own lock, which a thread of libjuice may hold while it waits for this one
-				sent = PeerIceSend(p->Ice, buf, PEER_DATA_HEADER_SIZE + size);
+				sent = PeerIceSend(p->Ice, buf, size);
 				path = (sent ? PEER_PATH_NONE : (PeerRelayOf(a, p, &to) ? PEER_PATH_RELAY : PEER_PATH_NONE));
 			} else if (path == PEER_PATH_RELAY) {
 				PeerRelayOf(a, p, &to);
@@ -1022,7 +1153,80 @@ bool PeerSend(PEER_AGENT *a, const UCHAR *dst, const void *data, UINT size) {
 	if (path == PEER_PATH_NONE)
 		return false;
 
-	return PeerSendRaw(a, &to, buf, PEER_DATA_HEADER_SIZE + size);
+	return PeerSendRaw(a, &to, buf, size);
+}
+
+// Send one datagram of data to the peer of dst, in the peer session with it, on its path now: a record under the
+// keys of the session, or, before it has keys, the datagram waits in its queue and the handshake starts (PeerSession.c).
+// Keys that are due are replaced after the record went. False when dst is no peer, has no path yet, size is above
+// PEER_MAX_PAYLOAD, or the record could not be sent or queued.
+bool PeerSend(PEER_AGENT *a, const UCHAR *dst, const void *data, UINT size) {
+	UCHAR buf[PEER_MAX_DATAGRAM];
+	UINT len = 0;
+	bool known = false;
+	bool queued = false;
+	bool rekey = false;
+
+	if (a == NULL || dst == NULL || (data == NULL && size != 0) || size > PEER_MAX_PAYLOAD)
+		return false;
+
+	AcquireSRWLockShared(&a->Lock);
+	{
+		PEER *p = PeerFind(a, dst);
+
+		if (p != NULL && PeerPathOf(a, p) != PEER_PATH_NONE) {
+			known = true;
+			len = PeerSessionSeal(a, p, data, size, buf, &queued, &rekey);
+		}
+	}
+	ReleaseSRWLockShared(&a->Lock);
+
+	if (known == false)
+		return false;
+
+	bool sent = (len != 0 && PeerSendTo(a, dst, buf, len));
+
+	if (rekey) {
+		AcquireSRWLockShared(&a->Lock);
+		{
+			PEER *p = PeerFind(a, dst);
+
+			len = (p != NULL ? PeerSessionInitiate(a, p, buf) : 0);
+		}
+		ReleaseSRWLockShared(&a->Lock);
+
+		if (len != 0)
+			PeerSendTo(a, dst, buf, len);
+	}
+
+	return sent || queued;
+}
+
+// The timers of the peer sessions (PeerSessionTick): an initiation again, a rekey or a keepalive, sent on the path of
+// each peer
+static void PeerSessionTimers(PEER_AGENT *a) {
+	UCHAR buf[PEER_MAX_DATAGRAM];
+	UCHAR key[PEER_KEY_SIZE];
+
+	for (UINT i = 0;; i++) {
+		UINT len = 0;
+		bool more = false;
+
+		AcquireSRWLockShared(&a->Lock);
+		{
+			more = (i < a->NumPeers);
+			if (more) {
+				CopyMemory(key, a->Peers[i].Info.Key, PEER_KEY_SIZE);
+				len = PeerSessionTick(a, &a->Peers[i], buf);
+			}
+		}
+		ReleaseSRWLockShared(&a->Lock);
+
+		if (more == false)
+			break;
+		if (len != 0)
+			PeerSendTo(a, key, buf, len);
+	}
 }
 
 // The timer of the peer layer, at least once a second: the relay role drops the bindings that were not renewed in
@@ -1053,6 +1257,7 @@ void PeerTick(PEER_AGENT *a) {
 
 	PeerBindWanted(a);
 	PeerPunchTick(a);
+	PeerSessionTimers(a);
 }
 
 // How the node reaches the peer of key; false when key is no peer
@@ -1083,6 +1288,7 @@ bool PeerGetStatus(PEER_AGENT *a, const UCHAR *key, PEER_STATUS *st) {
 				st->Direct = p->Direct;
 			else if (p->Ice != NULL && PeerIceUp(p->Ice))
 				st->Direct = p->Ice->Selected;
+			PeerSessionStatus(p, st);
 			ret = true;
 		}
 	}
@@ -1110,6 +1316,8 @@ void PeerGetStats(PEER_AGENT *a, PEER_STATS *st) {
 	st->Fallbacks = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_FALLBACKS]);
 	st->PunchAttempts = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_PUNCH_ATTEMPTS]);
 	st->PunchSuccesses = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_PUNCH_SUCCESSES]);
+	st->Handshakes = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_HANDSHAKES]);
+	st->Challenges = (UINT64)ReadAcquire64(&a->Counters[PEER_COUNT_CHALLENGES]);
 	for (UINT i = 0; i < PEER_NUM_REASONS; i++)
 		st->Drops[i] = (UINT64)ReadAcquire64(&a->Drops[i]);
 
@@ -1178,7 +1386,7 @@ bool PeerAddrEqual(const PEER_ADDR *a, const PEER_ADDR *b) {
 
 // The name of a reason of PEER_DROP_* in the counters, for logs and tests
 const char *PeerReasonName(UINT reason) {
-	static const char *names[PEER_NUM_REASONS] = {"ok", "malformed", "forged", "replay", "policy", "source", "not a relay", "not bound", "rate", "relay", "send"};
+	static const char *names[PEER_NUM_REASONS] = {"ok", "malformed", "forged", "replay", "policy", "source", "not a relay", "not bound", "rate", "relay", "send", "clear", "session"};
 
 	return (reason < PEER_NUM_REASONS ? names[reason] : "unknown");
 }

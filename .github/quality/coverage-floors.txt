@@ -14,6 +14,8 @@
 # The new core (src/Core, ADR-0022)
 c  corecrypto     85  src/Core/Crypto*.c
 c  corenoise      86  src/Core/Noise*.c
+# corepeer holds the peer sessions of the data datagrams and the bind challenge (PeerSession.c, PeerChallenge.c;
+# CORE-H2 #399), which coretest's peersession, relay, relaypolicy and punch tests run
 c  corepeer       72  src/Core/Peer*.c
 # coretransport went from 85 to 81 (83.5% measured) when TransportQuic.c joined it (CORE-S1-1 #67): this job
 # runs the quic test against msquic, which does not reach the error paths of its dial, backlog and shutdown

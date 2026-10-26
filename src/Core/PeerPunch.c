@@ -17,9 +17,20 @@
 // each aims its first probe at the other's predicted port, so their two mappings address each other; a cone paired
 // with a random NAT meets because the random side reaches the cone's one predictable port and the cone learns the
 // random side's mapping from that probe and answers it. Two random NATs predict nothing, so the probes miss until
-// the budget runs out and the pair stays on the relay. On the first meeting the peer moves to the direct path
-// (HasDirect, as PeerSetDirect sets it), with the relay still carrying its traffic until then, so nothing is
-// interrupted; the path stays on the pair of mappings that meeting and its answer used.
+// the budget runs out and the pair stays on the relay.
+//
+// A probe proves who sent it, not where the sender is: an attacker on the path can send a captured probe from an
+// address of its own (finding F3 of the second review of AUD-5, PR 405). So a meeting moves the peer to the direct path
+// only at an address that proved it, by an exchange of nonces sealed to the peer (CORE-H2 #399). Of the two ends, the
+// one with the lower static key leads: it answers a probe from an address with a challenge, a fresh nonce sealed to the
+// peer and sent to that address; the other end answers a probe with a probe, so that the leader gets one. The other
+// end answers the challenge, from the address the challenge reached it at, with a response that echoes the nonce and
+// carries a nonce of its own; the leader takes the response only from the address its nonce went to, moves the peer
+// to the direct path there, and sends a proof that echoes the second nonce, which moves the other end to the direct
+// path at the address that proof came from, the one its own nonce went to. Only the peer can read a nonce, and it can
+// echo one only from where the nonce reached it, so a probe that names an address the peer does not own sets no
+// path. Each end moves once, on the one exchange that completed, so the two ends use the same pair of mappings; the
+// relay carries the traffic of the pair until then, so nothing is interrupted.
 //
 // Locks: PeerPunchStart, PeerPunchInput and PeerPunchTick take the lock of the layer to read and change the punch of
 // a peer; they seal and send the probes without it, as the rest of the layer does. PeerPunchCandidate reads the
@@ -29,9 +40,16 @@
 
 #include <string.h>
 
-#define PEER_PUNCH_PAYLOAD_SIZE  9  // The payload of a probe: PEER_VERSION and the sequence, as a bind's is
+// The payload of a punch message: PEER_VERSION, the sequence, the type, a nonce and the echo of the peer's nonce
+#define PEER_PUNCH_PAYLOAD_SIZE  (10 + 2 * PEER_PUNCH_NONCE_SIZE)
 #define PEER_PUNCH_SEQ_THRESHOLD 16 // The largest reflexive-port step still read as a sequential NAT, not a random one
 #define PEER_PUNCH_TICK_MAX      64 // The most probes one PeerTick gathers across all the peers it is punching
+
+// The types of a punch message
+#define PEER_PUNCH_PROBE     1 // A probe to a predicted address
+#define PEER_PUNCH_CHALLENGE 2 // The leader's answer to a probe: a nonce
+#define PEER_PUNCH_RESPONSE  3 // The other end's answer: the echo of that nonce and a nonce of its own
+#define PEER_PUNCH_PROOF     4 // The leader's answer: the echo of the second nonce
 
 // The budget, the birthday range and the per-tick rate of a punch, the configured values or the defaults
 static UINT PeerPunchBudget(PEER_AGENT *a) {
@@ -195,17 +213,55 @@ typedef struct PEER_PUNCH_SEND {
 	PEER_ADDR To;
 } PEER_PUNCH_SEND;
 
-// Seal a probe for the peer of key and send it to to
-static void PeerPunchProbe(PEER_AGENT *a, const UCHAR *key, const PEER_ADDR *to) {
+// Seal a punch message of type for the peer of key, with nonce and echo (NULL for none), and send it to to
+static void PeerPunchSend(PEER_AGENT *a, const UCHAR *key, const PEER_ADDR *to, UINT type, const UCHAR *nonce, const UCHAR *echo) {
 	UCHAR payload[PEER_PUNCH_PAYLOAD_SIZE];
 	UCHAR env[PEER_ENVELOPE_HEADER + PEER_PUNCH_PAYLOAD_SIZE + PEER_ENVELOPE_TAG];
 
+	ZeroMemory(payload, sizeof(payload));
 	payload[0] = PEER_VERSION;
 	PeerPutUint64(payload + 1, PeerNextSequence(a));
+	payload[9] = (UCHAR)type;
+	if (nonce != NULL)
+		CopyMemory(payload + 10, nonce, PEER_PUNCH_NONCE_SIZE);
+	if (echo != NULL)
+		CopyMemory(payload + 10 + PEER_PUNCH_NONCE_SIZE, echo, PEER_PUNCH_NONCE_SIZE);
 
 	UINT size = PeerSeal(a, key, PEER_MSG_PUNCH, payload, sizeof(payload), env, sizeof(env));
 	if (size != 0 && a->Send(a->SendParam, to, env, size))
 		PeerCount(a, PEER_COUNT_SENT);
+}
+
+// A fresh nonce of the punch, which goes to the address to: kept in the next slot, in place of the oldest. False when
+// the random generator fails. The caller holds the lock.
+static bool PeerPunchNonce(PEER_PUNCH *punch, const PEER_ADDR *to, UCHAR *nonce) {
+	if (CryptoRandom(nonce, PEER_PUNCH_NONCE_SIZE) == false)
+		return false;
+
+	UINT i = punch->NextNonce % PEER_PUNCH_NONCES;
+	punch->NonceTo[i] = *to;
+	CopyMemory(punch->Nonces[i], nonce, PEER_PUNCH_NONCE_SIZE);
+	punch->NextNonce = i + 1;
+
+	return true;
+}
+
+// Whether echo is a nonce of the punch that went to the address from; the nonce is used up. The caller holds the lock.
+static bool PeerPunchEcho(PEER_PUNCH *punch, const PEER_ADDR *from, const UCHAR *echo) {
+	static const UCHAR zero[PEER_PUNCH_NONCE_SIZE] = {0};
+
+	if (memcmp(echo, zero, PEER_PUNCH_NONCE_SIZE) == 0)
+		return false;
+
+	for (UINT i = 0; i < PEER_PUNCH_NONCES; i++) {
+		if (PeerAddrEqual(&punch->NonceTo[i], from) && memcmp(punch->Nonces[i], echo, PEER_PUNCH_NONCE_SIZE) == 0) {
+			ZeroMemory(punch->Nonces[i], PEER_PUNCH_NONCE_SIZE);
+			ZeroMemory(&punch->NonceTo[i], sizeof(PEER_ADDR));
+			return true;
+		}
+	}
+
+	return false;
 }
 
 // Send the next bounded burst of probes of every peer the node is punching, and mark a punch failed once its budget
@@ -246,27 +302,31 @@ void PeerPunchTick(PEER_AGENT *a) {
 	ReleaseSRWLockExclusive(&a->Lock);
 
 	for (UINT i = 0; i < num; i++)
-		PeerPunchProbe(a, send[i].Key, &send[i].To);
+		PeerPunchSend(a, send[i].Key, &send[i].To, PEER_PUNCH_PROBE, NULL, NULL);
 }
 
-// A probe that arrived from the address from: open it, check it is from a peer the node is punching and is not a
-// replay. The first one the node takes makes from the direct path of that peer, as its own mapping now reaches it: the
-// node answers it once, so the peer learns the node's mapping of the same pair, and counts the meeting a prediction
-// success. A later one, such as the rest of a burst the peer sent before it took that answer, leaves the direct path
-// on that pair: the peer takes the node's data only from the mapping the answer came from. Called from PeerInput for a
-// PEER_MSG_PUNCH datagram.
+// A punch message that arrived from the address from: open it, check it is from a peer the node is punching and is not
+// a replay, then take its part in the exchange of nonces. A probe draws a challenge from the leader and a probe from the
+// other end; a challenge draws a response from the other end; a response that echoes the leader's nonce from the
+// address it went to moves the peer to the direct path at the leader and draws a proof; a proof that echoes the other
+// end's nonce from the address it went to moves the peer to the direct path there. A node already on the direct path
+// takes a message and answers none, so a late probe of a burst leaves the path on the pair that met. A meeting counts
+// as a prediction success. Called from PeerInput for a PEER_MSG_PUNCH datagram.
 void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size) {
 	UCHAR sender[PEER_KEY_SIZE];
 	UCHAR payload[PEER_PUNCH_PAYLOAD_SIZE];
+	UCHAR nonce[PEER_PUNCH_NONCE_SIZE];
 	UINT len = 0;
 	UINT reason = PEER_OK;
+	UINT reply = 0;
 	bool connected = false;
-	bool answer = false;
+
+	ZeroMemory(nonce, sizeof(nonce));
 
 	if (a->Config.Punch) {
 		if (PeerOpen(a, data, size, sender, payload, sizeof(payload), &len) == false)
 			reason = PEER_DROP_FORGED;
-		else if (len != PEER_PUNCH_PAYLOAD_SIZE || payload[0] != PEER_VERSION)
+		else if (len != PEER_PUNCH_PAYLOAD_SIZE || payload[0] != PEER_VERSION || payload[9] < PEER_PUNCH_PROBE || payload[9] > PEER_PUNCH_PROOF)
 			reason = PEER_DROP_MALFORMED;
 	} else {
 		reason = PEER_DROP_MALFORMED;
@@ -278,6 +338,9 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 	}
 
 	UINT64 seq = PeerGetUint64(payload + 1);
+	UINT type = payload[9];
+	const UCHAR *their_nonce = payload + 10;
+	const UCHAR *echo = payload + 10 + PEER_PUNCH_NONCE_SIZE;
 
 	AcquireSRWLockExclusive(&a->Lock);
 	{
@@ -287,18 +350,29 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 		if (p == NULL) {
 			reason = PEER_DROP_POLICY;
 		} else if (punch->State != PEER_PUNCH_PROBING && punch->State != PEER_PUNCH_CONNECTED) {
-			reason = PEER_DROP_FORGED; // No punch is open with this peer: an unsolicited or stale probe
-		} else if (seq <= punch->LastSeq) {
+			reason = PEER_DROP_FORGED; // No punch is open with this peer: an unsolicited or stale message
+		} else if (seq <= PeerFloorOf(p, punch->LastSeq)) {
 			reason = PEER_DROP_REPLAY;
 		} else {
+			bool leader = (memcmp(a->Key.Public, p->Info.Key, PEER_KEY_SIZE) < 0);
+
 			punch->LastSeq = seq;
-			connected = (punch->State != PEER_PUNCH_CONNECTED);
-			if (connected) {
-				p->HasDirect = true;
-				p->Direct = *from;
-				punch->State = PEER_PUNCH_CONNECTED;
+
+			if (punch->State == PEER_PUNCH_CONNECTED) {
+				// On the direct path already: the exchange that got it there is the only one
+			} else if (type == PEER_PUNCH_PROBE) {
+				reply = (leader ? (PeerPunchNonce(punch, from, nonce) ? PEER_PUNCH_CHALLENGE : 0) : PEER_PUNCH_PROBE);
+			} else if (type == PEER_PUNCH_CHALLENGE && leader == false) {
+				reply = (PeerPunchNonce(punch, from, nonce) ? PEER_PUNCH_RESPONSE : 0);
+			} else if ((type == PEER_PUNCH_RESPONSE && leader) || (type == PEER_PUNCH_PROOF && leader == false)) {
+				connected = PeerPunchEcho(punch, from, echo);
+				if (connected) {
+					p->HasDirect = true;
+					p->Direct = *from;
+					punch->State = PEER_PUNCH_CONNECTED;
+					reply = (leader ? PEER_PUNCH_PROOF : 0);
+				}
 			}
-			answer = connected;
 		}
 	}
 	ReleaseSRWLockExclusive(&a->Lock);
@@ -311,8 +385,16 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 	if (connected)
 		PeerCount(a, PEER_COUNT_PUNCH_SUCCESSES);
 
-	// Answer the first probe once, so the peer learns this node's mapping; the peer, once connected, does not answer
-	// back, so the exchange stops
-	if (answer)
-		PeerPunchProbe(a, sender, from);
+	// A challenge carries the node's nonce; a response echoes the peer's and carries the node's; a proof echoes the
+	// peer's
+	if (reply == PEER_PUNCH_PROBE)
+		PeerPunchSend(a, sender, from, PEER_PUNCH_PROBE, NULL, NULL);
+	else if (reply == PEER_PUNCH_CHALLENGE)
+		PeerPunchSend(a, sender, from, PEER_PUNCH_CHALLENGE, nonce, NULL);
+	else if (reply == PEER_PUNCH_RESPONSE)
+		PeerPunchSend(a, sender, from, PEER_PUNCH_RESPONSE, nonce, their_nonce);
+	else if (reply == PEER_PUNCH_PROOF)
+		PeerPunchSend(a, sender, from, PEER_PUNCH_PROOF, NULL, their_nonce);
+
+	SecureZeroMemory(nonce, sizeof(nonce));
 }

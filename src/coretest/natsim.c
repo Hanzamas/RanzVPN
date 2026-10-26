@@ -71,6 +71,9 @@ struct NATSIM {
 	volatile LONG Queued;                // Datagrams queued so far
 	volatile LONG Done;                  // ... and handed to their receiver so far
 	volatile LONG Unroutable;            // Datagrams to an address that no host and no NAT has
+	NATSIM_TAP *Tap;                     // Sees every datagram sent and may drop it, NULL for none
+	void *TapParam;                      // ... its parameter
+	volatile LONG Hold;                  // The delivery waits while it is set
 };
 
 static bool NatSimSameIp(const PEER_ADDR *a, const PEER_ADDR *b) {
@@ -82,6 +85,11 @@ static DWORD WINAPI NatSimThread(void *param) {
 	NATSIM *s = (NATSIM *)param;
 
 	while (InterlockedCompareExchange(&s->Stop, 0, 0) == 0) {
+		if (InterlockedCompareExchange(&s->Hold, 0, 0) != 0) {
+			WaitForSingleObject(s->Event, 10);
+			continue;
+		}
+
 		EnterCriticalSection(&s->Lock);
 		NATSIM_ITEM *item = s->Head;
 		if (item != NULL) {
@@ -310,6 +318,15 @@ bool NatSimSend(void *param, const PEER_ADDR *dst, const void *data, UINT size) 
 	if (size == 0 || size > PEER_MAX_DATAGRAM)
 		return false;
 
+	EnterCriticalSection(&s->Lock);
+	NATSIM_TAP *tap = s->Tap;
+	void *tap_param = s->TapParam;
+	LeaveCriticalSection(&s->Lock);
+
+	// What the tap drops leaves the host and is lost on the way
+	if (tap != NULL && tap(tap_param, h, dst, (const UCHAR *)data, size) == false)
+		return true;
+
 	NATSIM_ITEM *item = (NATSIM_ITEM *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(NATSIM_ITEM));
 	if (item == NULL)
 		return false;
@@ -375,6 +392,20 @@ bool NatSimWaitIdle(NATSIM *s, UINT timeout) {
 	}
 
 	return true;
+}
+
+// Set the tap that sees every datagram sent from now on, NULL for none
+void NatSimSetTap(NATSIM *s, NATSIM_TAP *tap, void *param) {
+	EnterCriticalSection(&s->Lock);
+	s->Tap = tap;
+	s->TapParam = param;
+	LeaveCriticalSection(&s->Lock);
+}
+
+// Hold the delivery of the datagrams, or release it
+void NatSimHold(NATSIM *s, bool hold) {
+	InterlockedExchange(&s->Hold, hold ? 1 : 0);
+	SetEvent(s->Event);
 }
 
 // The datagrams from outside that the filter of the NAT dropped

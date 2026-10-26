@@ -1319,8 +1319,10 @@ static void NodeTestRelay(NODETEST_CTX *ctx)
 		bool sent = PeerSend(a.Agent, b.Key.Public, "ping", 4);
 		bool got = NodeTestWait(&a.Received, 1, NODETEST_BOUND);
 		NodeGetStatus(n, &st);
-		NodeTestCheck(ctx, sent && got && b.Received == 1 && StrCmp(a.Last, "pong") == 0 && st.RelayForwarded == 2,
-			"A ping and its pong go between the two through the relay role of the node, over UDP", "sent %u, received %u and %u, %I64u forwarded",
+		// Four forwarded: the handshake of the peer session that the ping starts (its initiation and response), the ping
+		// and the pong
+		NodeTestCheck(ctx, sent && got && b.Received == 1 && StrCmp(a.Last, "pong") == 0 && st.RelayForwarded == 4,
+			"A ping and its pong go between the two through the relay role of the node, over UDP, in a peer session", "sent %u, received %u and %u, %I64u forwarded",
 			(UINT)sent, (UINT)a.Received, (UINT)b.Received, st.RelayForwarded);
 
 		// The control plane takes the peers of the relay away: it drops their bindings and forwards nothing
@@ -1328,7 +1330,7 @@ static void NodeTestRelay(NODETEST_CTX *ctx)
 		PeerSend(a.Agent, b.Key.Public, "ping", 4);
 		SleepThread(NODETEST_QUIET);
 		NodeGetStatus(n, &st);
-		NodeTestCheck(ctx, b.Received == 1 && st.RelayBindings == 0 && st.RelayForwarded == 2,
+		NodeTestCheck(ctx, b.Received == 1 && st.RelayBindings == 0 && st.RelayForwarded == 4,
 			"With no peers set, the relay role holds no binding and forwards nothing", "%u received, %u bindings, %I64u forwarded",
 			(UINT)b.Received, st.RelayBindings, st.RelayForwarded);
 	}

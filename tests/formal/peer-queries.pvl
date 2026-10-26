@@ -1,8 +1,9 @@
 (* peer-queries.pvl
-   The queries of the peer model (AUD-5, #389; see session-queries.pvl for how formal.py reads them). alice
-   seals envelopes of the two kinds that matter to bob, the bind (the relay role of bob) and the signal, and
-   sends data datagrams to him. The first five queries are about the envelopes, the last two about the data
-   datagrams of the peer layer.
+   The queries of the peer model (AUD-5, #389; CORE-H2, #399; see session-queries.pvl for how formal.py reads them).
+   alice seals envelopes of the two kinds that matter to bob, the bind (the relay role of bob) and the signal, binds
+   to bob through his challenge, runs a peer session with him and sends him a record in it, and punches with him,
+   where bob leads. The pe-* queries are about the envelopes, pb-auth about the bound, the pd-* queries about the data
+   datagrams, pe-cookie about the binding, and the pp-* queries about the punch.
 *)
 
 (* An envelope can be opened *)
@@ -15,13 +16,13 @@ query k: bitstring, pl: bitstring, a: bitstring; event(PeerOpened(bob, alice, k,
 (* @query pe-auth *)
 query k: bitstring, pl: bitstring, a: bitstring, a2: bitstring; event(PeerOpened(bob, alice, k, pl, a)) ==> event(PeerSealed(alice, bob, k, pl, a2)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
 
-(* The address that bob takes the envelope from is the address that alice sent it from. The envelope does
-   not hold the address, so this fails: a relay binds the node to the address of the datagram. *)
+(* The address that bob takes the envelope from is the address that alice sent it from. The envelope does not hold
+   the address, so this fails, and it is why no envelope alone binds a node or sets a path: the relay binds by the
+   cookie of pe-cookie. *)
 (* @query pe-addr *)
 query k: bitstring, pl: bitstring, a: bitstring; event(PeerOpened(bob, alice, k, pl, a)) ==> event(PeerSealed(alice, bob, k, pl, a)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
 
-(* The same for a punch probe: PeerPunchInput sets the direct path of alice to the address that the probe came from,
-   so the weakness of the bind holds for the direct path (AUD-6, #409) *)
+(* The same for a punch probe, which therefore sets no direct path (pp-proof) *)
 (* @query pp-addr *)
 query pl: bitstring, a: bitstring; event(PeerOpened(bob, alice, k_punch, pl, a)) ==> event(PeerSealed(alice, bob, k_punch, pl, a)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
 
@@ -31,10 +32,12 @@ query pl: bitstring, a: bitstring; event(PeerOpened(bob, alice, k_punch, pl, a))
 (* @query pb-auth *)
 query pl: bitstring, a: bitstring, a2: bitstring; event(PeerOpened(alice, bob, k_bound, pl, a)) ==> event(PeerSealed(bob, alice, k_bound, pl, a2)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
 
-(* No replay: each envelope that bob opens was sealed once. The sequence of the code makes it so while the
-   receiver keeps the last one, and the receiver of this model has lost it. *)
+(* No replay: each signal that bob opens was sealed once. The sequence of the code makes it so, above the clock of the
+   receiver's entry of the peer, and the receiver of this model takes any sequence. The query is on the signal, which
+   only the one-shot PeerSeal seals (EnvelopeSealed): the receiver of a bind and of a punch probe is the same
+   PeerOpen, so the answer is the same for them. *)
 (* @query pe-replay *)
-query k: bitstring, pl: bitstring, a: bitstring, a2: bitstring; inj-event(PeerOpened(bob, alice, k, pl, a)) ==> inj-event(PeerSealed(alice, bob, k, pl, a2)).
+query pl: bitstring, a: bitstring; inj-event(PeerOpened(bob, alice, k_signal, pl, a)) ==> inj-event(EnvelopeSealed(alice, bob, k_signal, pl)).
 
 (* The content of an envelope is secret until the static key of bob is leaked, and then it is not: the key of
    the envelope comes from es and ss, so it has no forward secrecy (pe-fs fails by the leak in phase 1) *)
@@ -43,9 +46,31 @@ query k: bitstring, sid: sessionid; attacker(plsecret(alice, bob, k, sid)) ==> e
 (* @query pe-fs *)
 query k: bitstring, sid: sessionid; attacker(plsecret(alice, bob, k, sid)) ==> event(LeakS(phase0, bob)).
 
-(* The data datagrams: the datagram that bob delivers as alice's was sent by her, and its payload is secret.
-   Neither holds: the datagram is in the clear, with no key to check. *)
+(* The data datagrams: the peer session can deliver one *)
+(* @query reach-data *)
+query d: bitstring, a: bitstring; event(DataDelivered(bob, alice, d, a)).
+
+(* The datagram that bob delivers as alice's was sent by her, unless a static key was leaked before: the peer
+   session authenticates both ends by their static keys, a leaked key of the responder lets the attacker pose as the
+   initiator to it (key compromise impersonation of IK), and the record opens only under the key of the session *)
 (* @query pd-forgery *)
-query d: bitstring, a: bitstring; event(DataDelivered(bob, alice, d, a)) ==> event(DataSent(alice, bob, d)).
+query d: bitstring, a: bitstring; event(DataDelivered(bob, alice, d, a)) ==> event(DataSent(alice, bob, d)) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+
+(* The payload of a datagram is secret, also when both static keys leak after the session: its key comes from the
+   ephemeral Diffie-Hellman of the handshake (forward secrecy) *)
 (* @query pd-secret *)
-query sid: sessionid; attacker(datasec(alice, bob, sid)).
+query sid: sessionid; attacker(datasec(alice, bob, sid)) ==> event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+
+(* The relay binds alice at an address only with the cookie that it sent to that address, which alice put into a bind
+   of hers: the same bind sent from another address binds nothing *)
+(* @query reach-bound *)
+query a: bitstring, ck: bitstring; event(RelayBound(bob, alice, a, ck)).
+(* @query pe-cookie *)
+query a: bitstring, ck: bitstring; event(RelayBound(bob, alice, a, ck)) ==> (event(ChallengeSent(bob, alice, a, ck)) && event(BindCookie(alice, bob, ck))) || event(LeakS(phase0, alice)) || event(LeakS(phase0, bob)).
+
+(* An end of a punch moves the peer to the direct path at an address only once the peer echoed the nonce that went to
+   that address, sealed to the peer: a probe that only names the address sets no path *)
+(* @query reach-direct *)
+query a: bitstring, n: bitstring; event(PunchDirect(alice, bob, a, n)).
+(* @query pp-proof *)
+query x: principal, y: principal, a: bitstring, n: bitstring; event(PunchDirect(x, y, a, n)) ==> (event(PunchNonce(x, y, a, n)) && event(PunchEcho(y, x, n))) || event(LeakS(phase0, x)) || event(LeakS(phase0, y)).

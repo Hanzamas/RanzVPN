@@ -22,6 +22,19 @@
 // its ICE session with the receiver. A sequence that grows with the wall clock, as the timestamp of a WireGuard
 // handshake initiation does, makes every replay fail.
 //
+// A relay binds a node only from the address that its bind came from and only with a cookie that the relay sent
+// to that address, sealed to the node (a bind challenge, PeerChallenge.c), so the same bind sent from another
+// address does not move the binding. A punch moves a peer to the direct path only at an address that proved, by
+// echoing a nonce sealed to the peer, that the peer receives there (PeerPunch.c).
+//
+// Every data datagram between two nodes goes in a peer session (PeerSession.c, CORE-H2 #399): Noise_IK between
+// the static keys of the two nodes, in the manner of WireGuard. The first datagram to a peer starts the
+// handshake on the path in use; the datagrams that wait for it are queued, so none is lost. A datagram keeps a
+// clear header that a relay forwards by, its kind, the source key, the destination key and a session index; the
+// rest is an AES-GCM record under the keys of the session, with a counter that a sliding window checks. The
+// session belongs to the pair of nodes, not to the path, so an Upgrade or a Fallback keeps it. Its keys are
+// replaced on a schedule and after a number of datagrams, and a session whose peer is silent is dropped.
+//
 // The datagrams travel over a send procedure that the caller gives (PEER_SEND_PROC) and come back through
 // PeerInput: a UDP socket (PeerUdp.c) or the harness network of coretest. The socket stands in for the QUIC
 // datagrams of CORE-S1-1 (#67) until the transport interface of CORE-F4 (#64) carries them; the relay then
@@ -40,8 +53,11 @@
 #define PEER_MAX_RELAYS       8    // Relays that a node may use
 #define PEER_MAX_CANDIDATES   8    // ICE candidates of one signal
 #define PEER_MAX_DATAGRAM     2048 // The largest datagram of the peer layer
-#define PEER_DATA_HEADER_SIZE 65   // A data datagram: PEER_MSG_DATA, the source key, the destination key
-#define PEER_MAX_PAYLOAD      (PEER_MAX_DATAGRAM - PEER_DATA_HEADER_SIZE)
+#define PEER_DATA_HEADER_SIZE 65   // A datagram between two nodes starts with its kind, the source key, the destination key
+#define PEER_RECORD_HEADER    77   // A record: that, the session index of the receiver and the counter (big-endian)
+#define PEER_RECORD_TAG       16   // ... then the ciphertext of the payload and the AES-GCM tag
+#define PEER_MAX_PAYLOAD      (PEER_MAX_DATAGRAM - PEER_RECORD_HEADER - PEER_RECORD_TAG)
+#define PEER_SESSION_ID_SIZE  8    // The id of a peer session that PEER_STATUS shows: the start of its handshake hash
 #define PEER_ENVELOPE_HEADER  65   // An envelope: its kind, the sender's static key, the ephemeral key
 #define PEER_ENVELOPE_TAG     16   // ... then the ciphertext and the AES-GCM tag
 #define PEER_MAX_ENVELOPE     1024 // The largest envelope (Signal.envelope of control.options)
@@ -50,11 +66,15 @@
 #define PEER_ICE_PWD_SIZE     33   // An ICE password of a signal, 22 to 32 ice-chars, and its NUL
 
 // The first byte of a datagram or an envelope
-#define PEER_MSG_DATA   1 // Datagram: a frame from a node to a node
-#define PEER_MSG_BIND   2 // Envelope and datagram: a node binds to a relay
-#define PEER_MSG_BOUND  3 // Envelope and datagram: the relay's answer, with the address it sees the node at
-#define PEER_MSG_SIGNAL 4 // Envelope: a signal from a node to a peer, through the control plane only
-#define PEER_MSG_PUNCH  5 // Envelope and datagram: a hole-punch probe straight to a predicted address of a peer
+#define PEER_MSG_DATA      1 // The old clear data datagram, which every node and relay drops (PEER_DROP_CLEAR)
+#define PEER_MSG_BIND      2 // Envelope and datagram: a node binds to a relay
+#define PEER_MSG_BOUND     3 // Envelope and datagram: the relay's answer, with the address it sees the node at
+#define PEER_MSG_SIGNAL    4 // Envelope: a signal from a node to a peer, through the control plane only
+#define PEER_MSG_PUNCH     5 // Envelope and datagram: a hole-punch message straight to a predicted address of a peer
+#define PEER_MSG_CHALLENGE 6 // Envelope and datagram: the relay's cookie for a bind from an address it has not seen the node at
+#define PEER_MSG_INIT      7 // Datagram: the first message of the handshake of a peer session (Noise_IK)
+#define PEER_MSG_RESPONSE  8 // Datagram: its second message
+#define PEER_MSG_RECORD    9 // Datagram: a record of a peer session, a frame from a node to a node or a keepalive
 
 // The type of a signal
 #define PEER_SIGNAL_OFFER  1 // Sent to a new peer
@@ -85,6 +105,11 @@
 #define PEER_PATH_RELAY  1 // Through a relay
 #define PEER_PATH_DIRECT 2 // Directly, on the path that ICE validated
 
+// The peer session of a node with a peer (PEER_STATUS; PeerSession.c)
+#define PEER_SESSION_NONE      0 // None: the next datagram to the peer starts a handshake
+#define PEER_SESSION_HANDSHAKE 1 // A handshake is on its way and no keys are up yet: datagrams wait in the queue
+#define PEER_SESSION_UP        2 // Records go both ways
+
 // What PeerOpenSignal returns, and why the peer layer dropped a datagram, an envelope or a signal
 #define PEER_OK             0  // Taken
 #define PEER_DROP_MALFORMED 1  // Too short, too long, of no known kind or with a bad payload
@@ -97,7 +122,9 @@
 #define PEER_DROP_RATE      8  // Over the rate of the relay for its source
 #define PEER_DROP_RELAY     9  // A signal or a bound from a relay that the control plane did not assign
 #define PEER_DROP_SEND      10 // The send procedure failed
-#define PEER_NUM_REASONS    11
+#define PEER_DROP_CLEAR     11 // A data datagram of the old clear form (PEER_MSG_DATA): there is no downgrade to it
+#define PEER_DROP_SESSION   12 // A record or a handshake answer under no session of its source: an unknown index, or another node's
+#define PEER_NUM_REASONS    13
 
 // A transport address: an IPv4 address as an IPv4-mapped IPv6 address (RFC 4291 section 2.5.5.2), and a port
 typedef struct PEER_ADDR {
@@ -148,13 +175,16 @@ typedef struct PEER_SIGNAL {
 
 // How a node reaches one peer (PeerGetStatus)
 typedef struct PEER_STATUS {
-	UINT Path;                     // PEER_PATH_*: the path that PeerSend takes now
-	UCHAR RelayKey[PEER_KEY_SIZE]; // The relay of the peer's last signal, zero for none
-	UINT NumCandidates;            // The candidates of its last signal
-	UINT64 Sequence;               // The sequence of its last signal
-	UINT Ice;                      // PEER_ICE_*: the ICE session with the peer
-	UINT Punch;                    // PEER_PUNCH_*: the symmetric-NAT hole punch with the peer
-	PEER_ADDR Direct;              // The peer's address on the direct path, while the peer is on it
+	UINT Path;                             // PEER_PATH_*: the path that PeerSend takes now
+	UCHAR RelayKey[PEER_KEY_SIZE];         // The relay of the peer's last signal, zero for none
+	UINT NumCandidates;                    // The candidates of its last signal
+	UINT64 Sequence;                       // The sequence of its last signal
+	UINT Ice;                              // PEER_ICE_*: the ICE session with the peer
+	UINT Punch;                            // PEER_PUNCH_*: the symmetric-NAT hole punch with the peer
+	PEER_ADDR Direct;                      // The peer's address on the direct path, while the peer is on it
+	UINT Session;                          // PEER_SESSION_*: the peer session with the peer
+	UCHAR SessionId[PEER_SESSION_ID_SIZE]; // ... the id of its keys now, the same at both ends, zero for none
+	UINT64 Handshakes;                     // ... the handshakes that completed with the peer: the first keys, then each rekey
 } PEER_STATUS;
 
 // The counters of the peer layer of a node (PeerGetStats)
@@ -169,6 +199,8 @@ typedef struct PEER_STATS {
 	UINT64 Fallbacks;               // ... of them whose direct path failed later: peers back on the relay
 	UINT64 PunchAttempts;           // Symmetric-NAT hole punches started (one per peer per control-plane trigger)
 	UINT64 PunchSuccesses;          // ... of them that reached a direct path by port prediction or birthday punching
+	UINT64 Handshakes;              // Handshakes of peer sessions that completed, as initiator or responder
+	UINT64 Challenges;              // Bind challenges that the relay role sent: binds from an address it had no cookie for
 	UINT NumBindings;               // Nodes bound to the relay role now
 	UINT NumBound;                  // Relays that the node is bound to now
 	UINT NumIce;                    // ICE sessions now
@@ -195,6 +227,10 @@ typedef struct PEER_CONFIG {
 	UINT PunchBudget;                // The most probes one punch of a peer may send before it gives up; 0 for the default
 	UINT PunchPorts;                 // The ports swept above a predicted or reflexive one in the birthday range; 0 for the default
 	UINT PunchRate;                  // Probes one PeerTick sends per punching peer, so a burst stays bounded; 0 for the default
+	UINT SessionRekeyTime;           // ms after which the initiator of a peer session's keys replaces them; 0 for the default
+	UINT64 SessionRekeyDatagrams;    // Records sent under one key after which the sender replaces it; 0 for the default
+	UINT SessionTimeout;             // ms without a record from the peer after which its session is dropped; 0 for the default
+	UINT SessionKeepalive;           // ms after a record received with none sent, when a keepalive answers it; 0 for the default
 } PEER_CONFIG;
 
 #define PEER_DEFAULT_RELAY_RATE   20000
@@ -205,6 +241,13 @@ typedef struct PEER_CONFIG {
 #define PEER_DEFAULT_PUNCH_BUDGET 256 // Bounded (ADR-0015 item 2): a punch stops here and the peer stays on the relay
 #define PEER_DEFAULT_PUNCH_PORTS  16  // The birthday range: a sequential NAT's next port is within a few of the predicted one
 #define PEER_DEFAULT_PUNCH_RATE   16  // Probes per tick, so the probe rate stays within a configurable bound
+// The timers of a peer session, those of the Noise session (Noise.h): rekey after 2 min or 2^24 records under one
+// key, which keeps AES-GCM within the limit of RFC 8446 section 5.5; a keepalive 10 s after a record that had no
+// answer; the session dropped after 45 s without a record from the peer
+#define PEER_DEFAULT_REKEY_TIME      120000
+#define PEER_DEFAULT_REKEY_DATAGRAMS (1ULL << 24)
+#define PEER_DEFAULT_SESSION_TIMEOUT 45000
+#define PEER_DEFAULT_KEEPALIVE       10000
 
 // The peer layer of one node, Peer.c
 typedef struct PEER_AGENT PEER_AGENT;
@@ -248,6 +291,28 @@ UINT PeerEnvelopeSeal(PEER_KEY *key, const UCHAR *peer, UINT kind, const UCHAR *
 bool PeerEnvelopeOpen(PEER_KEY *key, const UCHAR *env, UINT size, UCHAR *sender, void *payload, UINT payload_size, UINT *payload_len);
 UINT PeerSignalEncode(const PEER_SIGNAL *s, UCHAR *buf, UINT size);
 bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s);
+
+// The clear header of a datagram between two nodes (PeerRecordParse): a handshake message or a record
+typedef struct PEER_RECORD_INFO {
+	UINT Kind;        // PEER_MSG_INIT, PEER_MSG_RESPONSE or PEER_MSG_RECORD
+	const UCHAR *Src; // The source key, in the datagram
+	const UCHAR *Dst; // The destination key, in the datagram
+	UINT Sender;      // The session index of the sender (a handshake message)
+	UINT Receiver;    // The session index of the receiver (a response or a record)
+	UINT64 Counter;   // The counter of a record
+	UINT HeaderSize;  // The bytes before the Noise message or the ciphertext
+} PEER_RECORD_INFO;
+
+// The payload of a handshake message of a peer session (PeerHandshakeParse)
+typedef struct PEER_HANDSHAKE_INFO {
+	UINT64 Timestamp; // The initiation: the sequence of the initiator, which grows with the clock (PeerNextSequence)
+	UINT Sender;      // The session index of the side that wrote the message
+	UINT Receiver;    // The response: the index of the initiator
+} PEER_HANDSHAKE_INFO;
+
+// PeerSession.c
+bool PeerRecordParse(const UCHAR *data, UINT size, PEER_RECORD_INFO *r);
+bool PeerHandshakeParse(UINT kind, const UCHAR *payload, UINT size, PEER_HANDSHAKE_INFO *h);
 
 // PeerUdp.c
 PEER_UDP *PeerUdpNew(USHORT port);

@@ -1,6 +1,7 @@
 (* Variant leaks: the peer layer with the static keys of alice and bob leaked in phase 0 and in phase 1 (AUD-5, #389;
-   AUD-6, #409). alice seals a bind, a signal and a punch probe to bob, bob answers her binds with a bound, and alice
-   sends data datagrams to him. *)
+   AUD-6, #409; CORE-H2, #399). alice seals a bind, a signal and a punch probe to bob, bob answers her binds with a
+   bound, alice binds to bob through his challenge, runs a peer session with him and sends him a record in it, and the
+   two punch, with bob as the leader. *)
 
 process
   ( PeerSetup()
@@ -14,6 +15,10 @@ process
   | !( PeerOpen(bob, alice, k_signal) )
   | !( PeerOpen(bob, alice, k_punch) )
   | !( PeerOpenBound(alice, bob) )
-  | !( new sid: sessionid; DataSend(alice, bob, sid) )
-  | !( DataRecv(bob, alice) )
+  | !( NodeBind(alice, bob) )
+  | !( RelayBind(bob, alice) )
+  | !( new sid: sessionid; PeerSessInit(alice, bob, sid) )
+  | !( PeerSessResp(bob, alice) )
+  | !( PunchLead(bob, alice) )
+  | !( PunchFollow(alice, bob) )
   )

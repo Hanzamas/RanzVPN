@@ -18,6 +18,8 @@ ranz_add_executable(coretest CORE
     ice.c homegw.c
     # Port prediction and birthday punching for symmetric NAT on the NAT simulator, CORE-S5-4 (#266)
     punch.c
+    # The peer sessions of the data datagrams on the NAT simulator, CORE-H2 (#399)
+    peersession.c
     # The front door with the node and its owners as processes of their own, SDN-29 (#205)
     frontdoor.c
   LIBRARIES
