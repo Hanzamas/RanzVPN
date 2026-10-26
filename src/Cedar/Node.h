@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeHarden.c, NodeLeak.c, NodeListener.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeHarden.c, NodeLeak.c, NodeListener.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeState.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -98,7 +98,8 @@
 // The Controller of a node and its admin pipe (NodeController.c; SDN-90, #395)
 #define NODE_ADMIN_PIPE             "ranz-node-admin" // The admin pipe (\\.\pipe\...) without another in NODE.AdminPipe
 #define NODE_ADMIN_LINE             1024              // Bytes of a command line of the admin pipe at most
-#define NODE_ADMIN_REPLY            4096              // Bytes of an answer of the admin pipe at most
+#define NODE_ADMIN_REPLY            65536             // Bytes of an answer of the admin pipe at most: the state of a node (NodeState.c; SDN-91, #396) is the longest
+#define NODE_STATE_MAX_SESSIONS     128               // Noise sessions that the state of a node names at most, so that it fits an answer
 #define NODE_ADMIN_IDLE             10000             // ms that the admin pipe waits for the command of a connected Administrator
 #define NODE_CONTROLLER_MAX_SETTING 2048              // Bytes of the Controller setting at most
 #define NODE_CONTROLLER_FINGERPRINT 65                // The TLS fingerprint of a Controller: 64 hex digits and the NUL
@@ -388,7 +389,8 @@ struct NODE_OVERLAY_CONFIG {
 
 // What NodeOverlayGetStatus reports
 struct NODE_OVERLAY_STATUS {
-	bool Connected;                             // The control stream is open
+	bool Connected;                             // The control stream is open ...
+	UINT64 Since;                               // ... since this GetTickCount64 (SDN-91, #396)
 	UINT64 Generation;                          // The Generation of the desired state that the overlay runs, 0 before the first
 	char Name[PEER_NAME_SIZE];                  // The node's name in the intent
 	UINT NumAddresses;                          // Its IPv4 addresses in the L3 Networks of its VRFs
@@ -400,6 +402,14 @@ struct NODE_OVERLAY_STATUS {
 	UINT64 Forwarded;                           // Packets of the host sent to a peer
 	UINT64 Delivered;                           // Packets of the peers delivered to the host
 	UINT64 Dropped;                             // Packets of either side that the overlay dropped
+};
+
+// One peer of the overlay and its Noise session, as NodeOverlayGetSessions reports it (SDN-91, #396)
+struct NODE_OVERLAY_SESSION {
+	char Name[PEER_NAME_SIZE];           // The node name of the peer
+	bool Up;                             // Its Noise session is up ...
+	char Transport[TRANSPORT_NAME_SIZE]; // ... over this transport ...
+	UINT64 Since;                        // ... since this GetTickCount64
 };
 
 // What NodePolicyGetVrf reports of the policy of a VRF of a node: its Network in the policy engine (Core/Policy.h)
@@ -456,6 +466,7 @@ struct NODE_CONTROLLER_STATUS {
 	bool Mismatch;                                 // The certificate of the last dial that reached the fingerprint check failed it ...
 	char Seen[NODE_CONTROLLER_FINGERPRINT];        // ... and had this TLS fingerprint, "" before the first
 	char PipeAcl[MAX_SIZE];                        // The DACL of the admin pipe as the system holds it, in SDDL; "" when it does not run
+	char Why[MAX_SIZE * 2];                        // Why the last stream ended or did not open, as the node log says it; "" before the first (SDN-91, #396)
 	UINT NumPins;                                  // The TLS fingerprints that the node accepts once the Controller sent them (SDN-92, #397), 0 before: Fingerprint alone ...
 	char Pins[NODE_CONTROLLER_PINS][NODE_CONTROLLER_FINGERPRINT]; // ... in lower case, the certificate in use first
 };
@@ -754,6 +765,7 @@ void NodeOverlayStop(NODE *n);
 bool NodeOverlayApply(NODE *n, const struct CONTROL_STATE *st);
 bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size);
 void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
+UINT NodeOverlayGetSessions(NODE *n, NODE_OVERLAY_SESSION *list, UINT max, char *listener, UINT listener_size);
 
 // NodeSession.c
 UINT NodeAcceptSession(NODE *n, TRANSPORT_NOISE *s, UINT timeout);

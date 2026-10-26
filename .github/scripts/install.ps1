@@ -66,6 +66,11 @@ $PSNativeCommandUseErrorActionPreference = $false
 # - ranz install writes it beside the Node as WireGuard LLC signed it (its SHA-256, a valid signature of that signer), and
 #   the NOTICE holds its licence;
 # - ranz install --no-wireguard leaves it out and says so, and a ranz install after it writes it.
+#
+# SDN-91 (#396) adds the ports of the parts in Windows Firewall, read back with Get-NetFirewallRule: after ranz install the
+# group Ranz VPN holds TCP 443 and UDP 443 for ranz-node.exe and nothing else, after ranz install --controller also TCP 443
+# and 5555 for ranz.exe; ranz install again keeps each rule with its id and removes a rule of the group that an older
+# version left, as an upgrade finds it; after ranz uninstall no rule of the group is left.
 
 $ranzFile = (Resolve-Path -LiteralPath $Ranz).Path
 $tamperedFile = (Resolve-Path -LiteralPath $Tampered).Path
@@ -109,6 +114,8 @@ $xdpApi = Join-Path $system32 'xdpapi.dll'
 # The SeLow package that ranz carries, as the repository holds it: the job runs in a checkout
 $selowPackage = Join-Path (Get-Location).Path 'src\bin\hamcore\DriverPackages\SeLow_Win10\x64'
 $firewallRule = 'ranz-install-no-network'
+# The group of the inbound rules of ranz install in Windows Firewall: FirewallGroup of controller/internal/install/firewall.go
+$firewallGroup = 'Ranz VPN'
 
 # A clean folder that holds only the ranz.exe of $exe, which the job then runs from: nowhere near the
 # folders of the artifacts, so that it cannot find a second file next to it
@@ -192,6 +199,40 @@ function Block-Network([string] $program) {
 
 function Unblock-Network {
 	Remove-NetFirewallRule -DisplayName $firewallRule -ErrorAction SilentlyContinue
+}
+
+# The rules of the group of ranz install, each as one line with the id that Windows Firewall gave it, sorted: a rule that
+# is removed and added again has another id
+function Get-FirewallLines {
+	@(Get-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue | ForEach-Object {
+			$port = $_ | Get-NetFirewallPortFilter
+			'{0} | {1} | {2} {3}' -f $_.Name, $_.DisplayName, $port.Protocol, (@($port.LocalPort) -join ',')
+		} | Sort-Object)
+}
+
+# The group of ranz install in Windows Firewall holds the rules of the Node, and of the Controller with $controller, and
+# no other, read back from Windows Firewall (SDN-91, #396): TCP 443 and UDP 443 for ranz-node.exe, TCP 443 and 5555 for
+# ranz.exe, each an enabled inbound allow rule of every profile
+function Assert-FirewallRules([bool] $controller, [string] $when) {
+	$want = @("Ranz VPN Node (TCP 443) | TCP 443 | $installDir\ranz-node.exe", "Ranz VPN Node (UDP 443) | UDP 443 | $installDir\ranz-node.exe")
+	if ($controller) { $want += "Ranz VPN Controller (TCP 443, 5555) | TCP 443,5555 | $installDir\ranz.exe" }
+	$got = @(Get-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue | ForEach-Object {
+			$port = $_ | Get-NetFirewallPortFilter
+			$app = $_ | Get-NetFirewallApplicationFilter
+			if ("$($_.Direction)" -ne 'Inbound' -or "$($_.Action)" -ne 'Allow' -or "$($_.Enabled)" -ne 'True' -or ("$($_.Profile)" -ne 'Any' -and "$($_.Profile)" -ne 'Domain, Private, Public')) {
+				throw "$when the rule $($_.DisplayName) of the group $firewallGroup is $($_.Direction) $($_.Action), enabled $($_.Enabled), profile $($_.Profile)"
+			}
+			'{0} | {1} {2} | {3}' -f $_.DisplayName, $port.Protocol, (@($port.LocalPort) -join ','), $app.Program
+		} | Sort-Object)
+	$want = @($want | Sort-Object)
+	if (($got -join "`n") -ne ($want -join "`n")) { throw "$when the group $firewallGroup of Windows Firewall holds:`n  $($got -join "`n  ")`nnot:`n  $($want -join "`n  ")" }
+	Write-Host "$when Windows Firewall holds the rules of the group ${firewallGroup}: $($got -join '; ')"
+}
+
+function Assert-NoFirewallRules([string] $when) {
+	$left = @(Get-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue | ForEach-Object { $_.DisplayName })
+	if ($left.Count -ne 0) { throw "$when the group $firewallGroup of Windows Firewall still holds $($left -join ', ')" }
+	Write-Host "$when no rule of the group $firewallGroup is left in Windows Firewall"
 }
 
 # Record the processes that start, with the process that started each (a Windows Management Instrumentation event of
@@ -353,6 +394,8 @@ function Assert-DriversRemoved([string] $output) {
 
 function Remove-InstalledState {
 	Unblock-Network
+	# By group, not through a pipeline: Remove-NetFirewallRule with no input would delete every rule
+	Remove-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue
 	foreach ($name in @($nodeService, $controllerService)) {
 		if (Get-Service -Name $name -ErrorAction SilentlyContinue) {
 			& sc.exe stop $name | Out-Null
@@ -660,6 +703,9 @@ try {
 
 	if (-not (Test-Path -LiteralPath $store)) { throw "$store (the Configuration store of the Node) was not made" }
 
+	# The ports of the Node in Windows Firewall, and no other (SDN-91, #396)
+	Assert-FirewallRules $false 'after ranz install:'
+
 	# 3. No Controller service without --controller
 	if (Get-Service -Name $controllerService -ErrorAction SilentlyContinue) { throw "$controllerService exists although ranz install ran without --controller" }
 	Write-Host "no $controllerService without --controller"
@@ -678,11 +724,17 @@ try {
 	Wait-ServiceState $nodeService 'Running'
 	Write-Host "$controllerService is Running as $controllerAccount, from $($csvc.PathName); $nodeService still runs"
 	Assert-Member
+	Assert-FirewallRules $true 'after ranz install --controller:'
+	$rulesBefore = Get-FirewallLines
 
 	# 5. Idempotent: install again leaves one service of each name, both Running, and a Node that was
-	#    stopped runs again
+	#    stopped runs again. The rules of the group stay as they are, each with its id, and a rule of the group that an
+	#    older version left, as an upgrade finds it, goes.
+	$stray = 'Ranz VPN Node (TCP 8443)'
+	New-NetFirewallRule -DisplayName $stray -Group $firewallGroup -Direction Inbound -Protocol TCP -LocalPort 8443 -Program (Join-Path $installDir 'ranz-node.exe') -Action Allow | Out-Null
 	$r = Invoke-Ranz $goodExe @('install', '-controller')
 	if ($r.Code -ne 0) { throw "the second ranz install -controller exited with code $($r.Code)" }
+	if ($r.Out -notmatch [regex]::Escape("the rule `"$stray`" of the group $firewallGroup is removed")) { throw "the second ranz install did not say that it removed the rule $stray of an older version:`n$($r.Out)" }
 	# The drivers that it put there are not installed again, and are still its own, so that uninstall removes them
 	if ($x64 -and ($r.Out -notmatch 'the SeLow driver is installed already' -or $r.Out -notmatch 'the XDP runtime is installed already')) {
 		throw "the second ranz install did not say that SeLow and the XDP runtime are installed already:`n$($r.Out)"
@@ -699,6 +751,10 @@ try {
 	if ($r.Code -ne 0) { throw "ranz install over a stopped Node exited with code $($r.Code)" }
 	Wait-ServiceState $nodeService 'Running'
 	Write-Host 'ranz install again leaves one service of each name, both Running, and starts a Node that was stopped'
+	Assert-FirewallRules $true 'after ranz install ran again:'
+	$rulesAfter = Get-FirewallLines
+	if (($rulesAfter -join "`n") -ne ($rulesBefore -join "`n")) { throw "ranz install again changed the rules of the group ${firewallGroup}:`n  $($rulesBefore -join "`n  ")`nbecame:`n  $($rulesAfter -join "`n  ")" }
+	Write-Host 'ranz install again keeps each rule of the group, with its id, and removes the rule of an older version'
 
 	# 6. ranz uninstall: both services and the Ranz VPN folder go, the data directories stay
 	$r = Invoke-Ranz $goodExe @('uninstall')
@@ -710,6 +766,7 @@ try {
 	$starts = Get-NodeStarts
 	if ($starts -lt 1) { throw "ranz uninstall removed the node log in $logDir" }
 	if (-not (Test-Path -LiteralPath (Join-Path $controllerData 'admin.token'))) { throw "ranz uninstall removed the data directory of the Controller, $controllerData" }
+	Assert-NoFirewallRules 'after ranz uninstall:'
 	# The Node has stopped, so its store is closed: this is the file that a reinstall must find again
 	$storeHash = Get-Sha256 $store
 	Write-Host "ranz uninstall removed both services and $installDir, and kept $dataDir and $controllerData"
@@ -725,6 +782,7 @@ try {
 	Wait-ServiceState $nodeService 'Running'
 	Assert-DriversInstalled $true
 	Soft 'the reinstalled Node reports the Capabilities of its host' { Assert-NodeCaps $before $x64 $x64 }
+	Assert-FirewallRules $false 'after the reinstall without the Controller:'
 	# Stopping the Node closes its store and its log
 	Stop-Service -Name $nodeService
 	if ((Get-Sha256 $store) -ne $storeHash) { throw "a reinstall changed the Configuration store of the Node, which names its identity key" }
@@ -740,6 +798,7 @@ try {
 	$left = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
 	if ($left.Count -gt 1 -or ($left.Count -eq 1 -and $left[0] -ne 'ranz.exe')) { throw "ranz uninstall from $installedRanz left $($left -join ', ') in $installDir" }
 	Soft 'ranz uninstall from the installed ranz.exe removes the drivers' { Assert-DriversRemoved $r.Out }
+	Assert-NoFirewallRules "after ranz uninstall from ${installedRanz}:"
 	Write-Host "ranz uninstall from $installedRanz removed the services, the drivers and the other files; what is left in ${installDir}: $($left -join ', ')"
 } catch {
 	Fail 'ranz install and ranz uninstall' $_
