@@ -1,0 +1,620 @@
+// peersession.c
+// Named test of the peer sessions of the data datagrams (src/Core/PeerSession.c; CORE-H2 #399), on the NAT simulator
+// of natsim.c, as relay.c and punch.c run:
+// peersession: the relay R on the public side and the nodes A and B, each behind a sequential-allocation symmetric NAT
+//   with punching on, as in punch.c; C, G and H on the public side. A tap sees every datagram on every link.
+//   - A packet from A reaches B through R, then, after the Upgrade that the punch makes, on the direct path, and back
+//     through R after a Fallback, in one session: no byte of the inner packet is in the clear in any datagram.
+//   - A record that is changed in any byte, replayed, or sent under the session of another node is dropped and
+//     counted, each case on its own; so is a datagram of the old clear form, at the relay and at the node.
+//   - G and H start their handshakes at the same time; the two end in one session that carries traffic both ways.
+//   - G replaces the keys after a number of datagrams and on a schedule, with no datagram lost, and a session whose
+//     peer is silent is dropped; the next datagram starts a new one.
+//   - The cost of the protection per datagram, measured on two peer layers that hand their datagrams to each other.
+// The control plane is stood in for by the test, which hands each signal from one node to the other.
+
+#include "coretest.h"
+
+#include <string.h>
+
+#define PS_WAIT      10000 // ms: a bounded wait for the network to carry everything sent
+#define PS_TICKS     40    // The most tick rounds the punch of A and B is given to meet
+#define PS_REKEY_N   50    // The records under one key of G and H
+#define PS_REKEY_MS  400   // The rekey time of G and H
+#define PS_TIMEOUT   1500  // ... the time after which a silent session is dropped
+#define PS_KEEPALIVE 200   // ... and the time after which a record with no answer gets a keepalive
+#define PS_FLOOD     500   // The datagrams of the rekey after a number of datagrams
+#define PS_BENCH     20000 // The datagrams that the measurement of the cost sends
+#define PS_WINDOW    6     // A run of this many bytes of the inner packet in a datagram counts as the packet in the clear
+
+// The inner packet of A for B, which no link may carry in the clear
+static const char ps_inner[] = "INNER PACKET of node A for node B: 10.20.30.40 -> 10.20.30.50, port 5353, ranz-ps-0123456789";
+
+// One node of the test and what it received
+typedef struct PS_NODE {
+	const char *Name;                  // Its name
+	PEER_KEY Key;                      // Its static key
+	PEER_ADDR Addr;                    // Its address: private behind a NAT
+	NATSIM_HOST *Host;                 // Its host on the network
+	PEER_AGENT *Agent;                 // Its peer layer
+	volatile LONG Received;            // Data datagrams delivered to it
+	volatile LONG ReceivedRelay;       // ... of them through a relay
+	volatile LONG ReceivedDirect;      // ... of them on the direct path
+	UINT LastSize;                     // The size of the last one
+	UCHAR Last[PEER_MAX_PAYLOAD];      // ... its payload
+	UCHAR LastSrc[PEER_KEY_SIZE];      // ... and its source
+} PS_NODE;
+
+// What the tap saw on every link: the datagrams by kind, the ones that carried a run of the inner packet in the clear,
+// and the last record of one host, which the test alters and sends again
+typedef struct PS_TAP {
+	CRITICAL_SECTION Lock;
+	UINT Datagrams;                   // Every datagram sent
+	UINT Kinds[16];                   // ... by its first byte
+	UINT Clear;                       // ... of them with PS_WINDOW bytes of the inner packet in a row
+	NATSIM_HOST *Keep;                // The host whose last record it keeps
+	UINT KeptSize;                    // ... that record
+	UCHAR Kept[PEER_MAX_DATAGRAM];    // ...
+} PS_TAP;
+
+// The network of the test
+typedef struct PS_WORLD {
+	NATSIM *Sim;      // The network
+	NATSIM_NAT *NatA; // A's NAT
+	NATSIM_NAT *NatB; // B's NAT
+	PS_NODE R, R2, A, B, C, G, H;
+	PS_TAP Tap;       // What the links carried
+} PS_WORLD;
+
+// Whether data holds PS_WINDOW bytes in a row of the inner packet
+static bool ps_has_inner(const UCHAR *data, UINT size) {
+	UINT inner = (UINT)sizeof(ps_inner) - 1;
+
+	for (UINT i = 0; i + PS_WINDOW <= size; i++)
+		for (UINT j = 0; j + PS_WINDOW <= inner; j++)
+			if (data[i] == (UCHAR)ps_inner[j] && memcmp(data + i, ps_inner + j, PS_WINDOW) == 0)
+				return true;
+
+	return false;
+}
+
+static bool ps_tap(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, const UCHAR *data, UINT size) {
+	PS_TAP *t = (PS_TAP *)param;
+	bool clear = ps_has_inner(data, size);
+
+	EnterCriticalSection(&t->Lock);
+	t->Datagrams++;
+	t->Kinds[data[0] & 15]++;
+	if (clear)
+		t->Clear++;
+	if (from == t->Keep && data[0] == PEER_MSG_RECORD) {
+		CopyMemory(t->Kept, data, size);
+		t->KeptSize = size;
+	}
+	LeaveCriticalSection(&t->Lock);
+
+	return true;
+}
+
+// The receive procedure of every node: keep the datagram and count it by its path
+static void ps_recv(PEER_AGENT *a, void *param, const UCHAR *src, UINT path, const void *data, UINT size) {
+	PS_NODE *n = (PS_NODE *)param;
+
+	n->LastSize = (size < sizeof(n->Last) ? size : (UINT)sizeof(n->Last));
+	CopyMemory(n->Last, data, n->LastSize);
+	CopyMemory(n->LastSrc, src, PEER_KEY_SIZE);
+
+	if (path == PEER_PATH_RELAY)
+		InterlockedIncrement(&n->ReceivedRelay);
+	else
+		InterlockedIncrement(&n->ReceivedDirect);
+	InterlockedIncrement(&n->Received);
+}
+
+// A node of the world: its key from the fixed scalar first, its host behind nat (NULL: public) at addr, its peer
+// layer with the configuration c
+static bool ps_node(PS_WORLD *w, PS_NODE *n, const char *name, UCHAR first, NATSIM_NAT *nat, const PEER_ADDR *addr, PEER_CONFIG *c) {
+	n->Name = name;
+	n->Addr = *addr;
+	coretest_fixed_key(&n->Key, first);
+	n->Host = NatSimAddHost(w->Sim, nat, addr);
+	if (n->Host == NULL)
+		return false;
+
+	n->Agent = PeerNew(&n->Key, c, NatSimSend, n->Host, ps_recv, n);
+	NatSimAttach(n->Host, n->Agent);
+
+	return n->Agent != NULL;
+}
+
+// A peer of the peer table: a node with the key key in VRF 10
+static void ps_peer(PEER_INFO *p, PS_NODE *n) {
+	ZeroMemory(p, sizeof(PEER_INFO));
+	strcpy_s(p->Name, sizeof(p->Name), n->Name);
+	CopyMemory(p->Key, n->Key.Public, PEER_KEY_SIZE);
+	p->NumVrfs = 1;
+	p->VrfIds[0] = 10;
+}
+
+static void ps_relay_info(PEER_RELAY_INFO *r, PS_NODE *relay) {
+	ZeroMemory(r, sizeof(PEER_RELAY_INFO));
+	strcpy_s(r->Name, sizeof(r->Name), relay->Name);
+	CopyMemory(r->Key, relay->Key.Public, PEER_KEY_SIZE);
+	r->Addr = relay->Addr;
+}
+
+// The stand-in of the control plane: an offer from one node to the other and the answer
+static bool ps_pair(PS_WORLD *w, PS_NODE *x, PS_NODE *y) {
+	UCHAR env[PEER_MAX_ENVELOPE];
+
+	UINT size = PeerSealSignal(x->Agent, y->Key.Public, PEER_SIGNAL_OFFER, env, sizeof(env));
+	bool ok = PeerOpenSignal(y->Agent, env, size, NULL) == PEER_OK;
+	size = PeerSealSignal(y->Agent, x->Key.Public, PEER_SIGNAL_ANSWER, env, sizeof(env));
+	ok = PeerOpenSignal(x->Agent, env, size, NULL) == PEER_OK && ok;
+
+	return NatSimWaitIdle(w->Sim, PS_WAIT) && ok;
+}
+
+// Build the world: R and R2 with the relay role (R2 the second reflexive vantage point of the punch); A and B behind
+// sequential symmetric NATs with punching on; C, G and H public, G and H with the short timers of the rekey checks.
+// Every node is a peer of R and R2; B has the peers A and C; G and H are peers of each other.
+static bool ps_world_start(PS_WORLD *w) {
+	PEER_CONFIG rc, pc, gc;
+	PEER_ADDR addr;
+	PEER_INFO p[6];
+	PEER_RELAY_INFO ri[2];
+	bool ok = true;
+
+	ZeroMemory(w, sizeof(PS_WORLD));
+	InitializeCriticalSection(&w->Tap.Lock);
+	w->Sim = NatSimNew();
+	if (w->Sim == NULL)
+		return false;
+
+	w->NatA = NatSimAddNat(w->Sim, 203, 0, 113, 10, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT);
+	w->NatB = NatSimAddNat(w->Sim, 203, 0, 113, 20, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT);
+
+	PeerDefaultConfig(&rc);
+	rc.Relay = true;
+	PeerDefaultConfig(&pc);
+	pc.Punch = true;
+	pc.PunchBudget = 64;
+	pc.PunchRate = 8;
+	PeerDefaultConfig(&gc);
+	gc.SessionRekeyDatagrams = PS_REKEY_N;
+	gc.SessionRekeyTime = PS_REKEY_MS;
+	gc.SessionTimeout = PS_TIMEOUT;
+	gc.SessionKeepalive = PS_KEEPALIVE;
+
+	PeerAddrSetV4(&addr, 198, 51, 100, 1, 3478);
+	ok = ps_node(w, &w->R, "r", 129, NULL, &addr, &rc) && ok;
+	PeerAddrSetV4(&addr, 198, 51, 100, 2, 3478);
+	ok = ps_node(w, &w->R2, "r2", 161, NULL, &addr, &rc) && ok;
+	PeerAddrSetV4(&addr, 10, 0, 0, 2, 5000);
+	ok = ps_node(w, &w->A, "a", 1, w->NatA, &addr, &pc) && ok;
+	ok = ps_node(w, &w->B, "b", 33, w->NatB, &addr, &pc) && ok;
+	PeerAddrSetV4(&addr, 198, 51, 100, 3, 4000);
+	ok = ps_node(w, &w->C, "c", 65, NULL, &addr, NULL) && ok;
+	PeerAddrSetV4(&addr, 198, 51, 100, 7, 5000);
+	ok = ps_node(w, &w->G, "g", 225, NULL, &addr, &gc) && ok;
+	PeerAddrSetV4(&addr, 198, 51, 100, 8, 5000);
+	ok = ps_node(w, &w->H, "h", 17, NULL, &addr, &gc) && ok;
+
+	if (ok == false)
+		return false;
+
+	ps_peer(&p[0], &w->A);
+	ps_peer(&p[1], &w->B);
+	ps_peer(&p[2], &w->C);
+	ps_peer(&p[3], &w->G);
+	ps_peer(&p[4], &w->H);
+	PeerSetPeers(w->R.Agent, p, 5);
+	PeerSetPeers(w->R2.Agent, p, 5);
+
+	ps_peer(&p[0], &w->B);
+	PeerSetPeers(w->A.Agent, p, 1);
+	ps_peer(&p[0], &w->A);
+	ps_peer(&p[1], &w->C);
+	PeerSetPeers(w->B.Agent, p, 2);
+	ps_peer(&p[0], &w->B);
+	PeerSetPeers(w->C.Agent, p, 1);
+	ps_peer(&p[0], &w->H);
+	PeerSetPeers(w->G.Agent, p, 1);
+	ps_peer(&p[0], &w->G);
+	PeerSetPeers(w->H.Agent, p, 1);
+
+	ps_relay_info(&ri[0], &w->R);
+	ps_relay_info(&ri[1], &w->R2);
+	PS_NODE *nodes[] = {&w->A, &w->B, &w->C, &w->G, &w->H};
+	for (UINT i = 0; i < sizeof(nodes) / sizeof(nodes[0]); i++) {
+		PeerSetHostCandidates(nodes[i]->Agent, &nodes[i]->Addr, 1);
+		PeerSetRelays(nodes[i]->Agent, ri, 2);
+	}
+
+	return NatSimWaitIdle(w->Sim, PS_WAIT);
+}
+
+// Stop the network first, so that no datagram reaches a freed peer layer
+static void ps_world_stop(PS_WORLD *w) {
+	PS_NODE *nodes[] = {&w->R, &w->R2, &w->A, &w->B, &w->C, &w->G, &w->H};
+
+	NatSimFree(w->Sim);
+	w->Sim = NULL;
+
+	for (UINT i = 0; i < sizeof(nodes) / sizeof(nodes[0]); i++) {
+		PeerFree(nodes[i]->Agent);
+		nodes[i]->Agent = NULL;
+		PeerKeyClose(&nodes[i]->Key);
+	}
+
+	DeleteCriticalSection(&w->Tap.Lock);
+}
+
+static PEER_STATUS ps_status(PS_NODE *from, PS_NODE *to) {
+	PEER_STATUS ps;
+
+	PeerGetStatus(from->Agent, to->Key.Public, &ps);
+
+	return ps;
+}
+
+// The sum of the drops of a node, every reason
+static UINT64 ps_drops(PS_NODE *n) {
+	PEER_STATS st;
+	UINT64 sum = 0;
+
+	PeerGetStats(n->Agent, &st);
+	for (UINT r = PEER_DROP_MALFORMED; r < PEER_NUM_REASONS; r++)
+		sum += st.Drops[r];
+
+	return sum;
+}
+
+static UINT64 ps_drop(PS_NODE *n, UINT reason) {
+	PEER_STATS st;
+
+	PeerGetStats(n->Agent, &st);
+
+	return st.Drops[reason];
+}
+
+// Send the inner packet from A to B; true when B got it, whole, from A
+static bool ps_send_inner(PS_WORLD *w) {
+	LONG received = w->B.Received;
+
+	bool sent = PeerSend(w->A.Agent, w->B.Key.Public, ps_inner, (UINT)sizeof(ps_inner) - 1);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+
+	return sent && w->B.Received == received + 1 && w->B.LastSize == sizeof(ps_inner) - 1 && memcmp(w->B.Last, ps_inner, sizeof(ps_inner) - 1) == 0 &&
+	       memcmp(w->B.LastSrc, w->A.Key.Public, PEER_KEY_SIZE) == 0;
+}
+
+// Drive the punch of A and B until both are on the direct path
+static bool ps_converge(PS_WORLD *w) {
+	for (UINT i = 0; i < PS_TICKS; i++) {
+		PeerTick(w->A.Agent);
+		PeerTick(w->B.Agent);
+		NatSimWaitIdle(w->Sim, PS_WAIT);
+
+		if (ps_status(&w->A, &w->B).Path == PEER_PATH_DIRECT && ps_status(&w->B, &w->A).Path == PEER_PATH_DIRECT)
+			return true;
+	}
+
+	return false;
+}
+
+// The inner packet through R, on the direct path after the Upgrade, and through R again after a Fallback, in one
+// session, with no byte of it in the clear on any link
+static void ps_capture(PS_WORLD *w) {
+	coretest_check(ps_pair(w, &w->A, &w->B), "A and B exchange one signal each through the control plane");
+
+	NatSimSetTap(w->Sim, ps_tap, &w->Tap);
+
+	bool relayed = ps_send_inner(w);
+	PEER_STATUS before = ps_status(&w->A, &w->B);
+	PEER_STATUS b_side = ps_status(&w->B, &w->A);
+	coretest_check(relayed && w->B.ReceivedRelay == 1 && before.Path == PEER_PATH_RELAY && before.Session == PEER_SESSION_UP,
+	               "A's packet reaches B through R, in the peer session that it started");
+	coretest_check(memcmp(before.SessionId, b_side.SessionId, PEER_SESSION_ID_SIZE) == 0 && before.Handshakes == 1 && b_side.Handshakes == 1,
+	               "A and B hold the same session: one handshake, the same id at both ends");
+
+	bool direct = ps_converge(w);
+	bool upgraded = ps_send_inner(w);
+	PEER_STATUS after = ps_status(&w->A, &w->B);
+	coretest_check(direct && upgraded && w->B.ReceivedDirect == 1 && after.Path == PEER_PATH_DIRECT,
+	               "After the Upgrade that the punch made, A's packet reaches B on the direct path");
+	coretest_check(memcmp(before.SessionId, after.SessionId, PEER_SESSION_ID_SIZE) == 0 && after.Handshakes == 1,
+	               "The Upgrade keeps the session: it belongs to the pair of nodes, not to the path");
+
+	// The Fallback: the direct path goes, and the pair is back on R
+	PeerSetDirect(w->A.Agent, w->B.Key.Public, NULL);
+	PeerSetDirect(w->B.Agent, w->A.Key.Public, NULL);
+	bool fell_back = ps_send_inner(w);
+	PEER_STATUS back = ps_status(&w->A, &w->B);
+	coretest_check(fell_back && w->B.ReceivedRelay == 2 && back.Path == PEER_PATH_RELAY && memcmp(back.SessionId, before.SessionId, PEER_SESSION_ID_SIZE) == 0 &&
+	               back.Handshakes == 1,
+	               "After a Fallback to R the packet goes on in the same session");
+
+	NatSimSetTap(w->Sim, NULL, NULL);
+
+	EnterCriticalSection(&w->Tap.Lock);
+	UINT datagrams = w->Tap.Datagrams;
+	UINT clear = w->Tap.Clear;
+	UINT records = w->Tap.Kinds[PEER_MSG_RECORD];
+	UINT inits = w->Tap.Kinds[PEER_MSG_INIT];
+	UINT responses = w->Tap.Kinds[PEER_MSG_RESPONSE];
+	UINT plain = w->Tap.Kinds[PEER_MSG_DATA];
+	LeaveCriticalSection(&w->Tap.Lock);
+
+	coretest_info("the tap saw %u datagrams on the links: %u records, %u initiations, %u responses", datagrams, records, inits, responses);
+	coretest_check(datagrams != 0 && records >= 5 && inits == 2 && responses == 2 && plain == 0,
+	               "The datagrams between A and B are one handshake, which R forwarded, and records; none is of the old clear form");
+	coretest_check(clear == 0, "No datagram on any link carries 6 bytes in a row of the inner packet: no byte of it is in the clear");
+}
+
+// A record changed in any byte, the same record again, and records under another node's session are dropped and
+// counted; so is a datagram of the old clear form
+static void ps_tamper(PS_WORLD *w) {
+	UCHAR rec[PEER_MAX_DATAGRAM];
+	UCHAR alt[PEER_MAX_DATAGRAM];
+
+	// A record from A to B, which the tap keeps as it leaves A
+	w->Tap.Keep = w->A.Host;
+	w->Tap.KeptSize = 0;
+	NatSimSetTap(w->Sim, ps_tap, &w->Tap);
+	bool sent = ps_send_inner(w);
+	NatSimSetTap(w->Sim, NULL, NULL);
+	UINT size = w->Tap.KeptSize;
+	CopyMemory(rec, w->Tap.Kept, size);
+	coretest_check(sent && size == PEER_RECORD_HEADER + sizeof(ps_inner) - 1 + PEER_RECORD_TAG, "The tap keeps a record of A for B as it leaves A");
+
+	// Every byte changed, one at a time, as from R
+	LONG received = w->B.Received;
+	UINT64 drops = ps_drops(&w->B);
+	UINT64 forged = ps_drop(&w->B, PEER_DROP_FORGED);
+	for (UINT i = 0; i < size; i++) {
+		CopyMemory(alt, rec, size);
+		alt[i] ^= 0x01;
+		PeerInput(w->B.Agent, &w->R.Addr, alt, size);
+	}
+	coretest_info("of the %u altered records, B refused %llu as forged", size, ps_drop(&w->B, PEER_DROP_FORGED) - forged);
+	coretest_check(w->B.Received == received && ps_drops(&w->B) == drops + size && ps_drop(&w->B, PEER_DROP_FORGED) - forged >= sizeof(ps_inner) - 1 + PEER_RECORD_TAG,
+	               "A record changed in any one byte is dropped and counted, each one: every byte of the ciphertext and the tag fails the decryption");
+
+	// The same record again
+	UINT64 replay = ps_drop(&w->B, PEER_DROP_REPLAY);
+	PeerInput(w->B.Agent, &w->R.Addr, rec, size);
+	coretest_check(w->B.Received == received && ps_drop(&w->B, PEER_DROP_REPLAY) == replay + 1, "The same record again is a replay: dropped and counted");
+
+	// Under the session of another node: A's record in C's name, and C's record in A's name
+	bool c_paired = ps_pair(w, &w->C, &w->B);
+	bool c_sent = c_paired && PeerSend(w->C.Agent, w->B.Key.Public, "from c", 6);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+	received = w->B.Received;
+	UINT64 session = ps_drop(&w->B, PEER_DROP_SESSION);
+	CopyMemory(alt, rec, size);
+	CopyMemory(alt + 1, w->C.Key.Public, PEER_KEY_SIZE);
+	PeerInput(w->B.Agent, &w->R.Addr, alt, size);
+	coretest_check(c_sent && ps_status(&w->B, &w->C).Session == PEER_SESSION_UP && w->B.Received == received && ps_drop(&w->B, PEER_DROP_SESSION) == session + 1,
+	               "A's record sent in the name of C, which has a session with B, is dropped and counted: its index names no keys of C's");
+
+	w->Tap.Keep = w->C.Host;
+	w->Tap.KeptSize = 0;
+	NatSimSetTap(w->Sim, ps_tap, &w->Tap);
+	PeerSend(w->C.Agent, w->B.Key.Public, "from c again", 12);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+	NatSimSetTap(w->Sim, NULL, NULL);
+	UINT c_size = w->Tap.KeptSize;
+	CopyMemory(alt, w->Tap.Kept, c_size);
+	CopyMemory(alt + 1, w->A.Key.Public, PEER_KEY_SIZE);
+	received = w->B.Received;
+	PeerInput(w->B.Agent, &w->R.Addr, alt, c_size);
+	coretest_check(c_size != 0 && w->B.Received == received && ps_drop(&w->B, PEER_DROP_SESSION) == session + 2,
+	               "C's record sent in the name of A is dropped and counted as well: a record is taken only under the session of its source");
+
+	// The old clear form: a data datagram of A for B with the inner packet in the clear, through R and at B
+	UINT len = (UINT)sizeof(ps_inner) - 1;
+	ZeroMemory(alt, PEER_DATA_HEADER_SIZE);
+	alt[0] = PEER_MSG_DATA;
+	CopyMemory(alt + 1, w->A.Key.Public, PEER_KEY_SIZE);
+	CopyMemory(alt + 1 + PEER_KEY_SIZE, w->B.Key.Public, PEER_KEY_SIZE);
+	CopyMemory(alt + PEER_DATA_HEADER_SIZE, ps_inner, len);
+	UINT64 r_clear = ps_drop(&w->R, PEER_DROP_CLEAR);
+	UINT64 b_clear = ps_drop(&w->B, PEER_DROP_CLEAR);
+	PEER_STATS st;
+	PeerGetStats(w->R.Agent, &st);
+	UINT64 forwarded = st.Forwarded;
+	NatSimSend(w->A.Host, &w->R.Addr, alt, PEER_DATA_HEADER_SIZE + len);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+	PeerInput(w->B.Agent, &w->R.Addr, alt, PEER_DATA_HEADER_SIZE + len);
+	PeerGetStats(w->R.Agent, &st);
+	coretest_check(ps_drop(&w->R, PEER_DROP_CLEAR) == r_clear + 1 && st.Forwarded == forwarded, "R drops a datagram of the old clear form and counts it: it forwards none");
+	coretest_check(ps_drop(&w->B, PEER_DROP_CLEAR) == b_clear + 1 && w->B.Received == received, "B drops one too and counts it: there is no downgrade to the clear");
+}
+
+// G and H start their handshakes at the same time: one session, traffic both ways
+static void ps_simultaneous(PS_WORLD *w) {
+	coretest_check(ps_pair(w, &w->G, &w->H), "G and H exchange one signal each through the control plane");
+
+	// Both send before either initiation is on its way, so the two cross
+	NatSimHold(w->Sim, true);
+	bool g_sent = PeerSend(w->G.Agent, w->H.Key.Public, "g first", 7);
+	bool h_sent = PeerSend(w->H.Agent, w->G.Key.Public, "h first", 7);
+	PEER_STATUS g_wait = ps_status(&w->G, &w->H);
+	PEER_STATUS h_wait = ps_status(&w->H, &w->G);
+	NatSimHold(w->Sim, false);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+
+	PEER_STATUS g = ps_status(&w->G, &w->H);
+	PEER_STATUS h = ps_status(&w->H, &w->G);
+	coretest_check(g_sent && h_sent && g_wait.Session == PEER_SESSION_HANDSHAKE && h_wait.Session == PEER_SESSION_HANDSHAKE,
+	               "G and H each start a handshake with the other at the same time");
+	coretest_check(g.Session == PEER_SESSION_UP && h.Session == PEER_SESSION_UP && memcmp(g.SessionId, h.SessionId, PEER_SESSION_ID_SIZE) == 0 &&
+	               g.Handshakes == 1 && h.Handshakes == 1,
+	               "The two handshakes end in one session: one completed handshake at each end, with the same id");
+	coretest_check(w->H.Received == 1 && memcmp(w->H.Last, "g first", 7) == 0 && w->G.Received == 1 && memcmp(w->G.Last, "h first", 7) == 0,
+	               "Each datagram that waited for the handshake arrives");
+
+	bool sent = PeerSend(w->G.Agent, w->H.Key.Public, "g again", 7) && PeerSend(w->H.Agent, w->G.Key.Public, "h again", 7);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+	PEER_STATUS g2 = ps_status(&w->G, &w->H);
+	coretest_check(sent && w->H.Received == 2 && w->G.Received == 2 && memcmp(g2.SessionId, g.SessionId, PEER_SESSION_ID_SIZE) == 0,
+	               "The one session carries traffic both ways");
+}
+
+// G replaces the keys after a number of datagrams and on a schedule without a datagram lost; a silent session is dropped
+static void ps_rekey(PS_WORLD *w) {
+	char text[32];
+
+	PEER_STATUS start = ps_status(&w->G, &w->H);
+	LONG received = w->H.Received;
+	UINT sent = 0;
+	for (UINT i = 0; i < PS_FLOOD; i++) {
+		snprintf(text, sizeof(text), "flood %u", i);
+		if (PeerSend(w->G.Agent, w->H.Key.Public, text, (UINT)strlen(text)))
+			sent++;
+
+		// The network keeps up, so each rekey's response comes back within a few datagrams of its initiation
+		if (i % 10 == 9)
+			NatSimWaitIdle(w->Sim, PS_WAIT);
+	}
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+	PEER_STATUS flooded = ps_status(&w->G, &w->H);
+	PEER_STATUS h_side = ps_status(&w->H, &w->G);
+	coretest_info("G sent %u datagrams with a rekey every %u: %llu handshakes with H in all", sent, PS_REKEY_N, flooded.Handshakes);
+	coretest_check(sent == PS_FLOOD && w->H.Received == received + PS_FLOOD, "Not one of the datagrams went missing through the rekeys");
+	coretest_check(flooded.Handshakes >= start.Handshakes + PS_FLOOD / PS_REKEY_N / 2 && memcmp(flooded.SessionId, start.SessionId, PEER_SESSION_ID_SIZE) != 0 &&
+	               memcmp(flooded.SessionId, h_side.SessionId, PEER_SESSION_ID_SIZE) == 0,
+	               "The keys were replaced after the configured number of datagrams, again and again, and both ends hold the same ones");
+
+	// On the schedule: past the rekey time, the tick of the initiator of the keys replaces them
+	Sleep(PS_REKEY_MS + 100);
+	PeerTick(w->G.Agent);
+	PeerTick(w->H.Agent);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+	received = w->H.Received;
+	sent = 0;
+	for (UINT i = 0; i < 20; i++) {
+		snprintf(text, sizeof(text), "after %u", i);
+		if (PeerSend(w->G.Agent, w->H.Key.Public, text, (UINT)strlen(text)))
+			sent++;
+	}
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+	PEER_STATUS timed = ps_status(&w->G, &w->H);
+	coretest_check(timed.Handshakes > flooded.Handshakes && memcmp(timed.SessionId, flooded.SessionId, PEER_SESSION_ID_SIZE) != 0 && sent == 20 &&
+	               w->H.Received == received + 20,
+	               "Past the rekey time the keys are replaced on the tick, and the traffic goes on with no datagram lost");
+
+	// Silent: past the timeout with no record, both ends drop the session; the next datagram starts a new one
+	Sleep(PS_TIMEOUT + 200);
+	PeerTick(w->G.Agent);
+	PeerTick(w->H.Agent);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+	PEER_STATUS g_silent = ps_status(&w->G, &w->H);
+	PEER_STATUS h_silent = ps_status(&w->H, &w->G);
+	coretest_check(g_silent.Session == PEER_SESSION_NONE && h_silent.Session == PEER_SESSION_NONE, "A session whose other end is silent past the timeout is dropped at both ends");
+
+	received = w->H.Received;
+	bool again = PeerSend(w->G.Agent, w->H.Key.Public, "new session", 11);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
+	PEER_STATUS renewed = ps_status(&w->G, &w->H);
+	coretest_check(again && w->H.Received == received + 1 && renewed.Session == PEER_SESSION_UP && renewed.Handshakes == timed.Handshakes + 1,
+	               "The next datagram starts a new session and arrives");
+}
+
+// Two peer layers that hand their datagrams to each other at once, on the direct path, for the measurement
+typedef struct PS_LINK {
+	PEER_AGENT *To;   // The peer layer that the datagrams go to
+	PEER_ADDR From;   // The address they come from
+} PS_LINK;
+
+static bool ps_link_send(void *param, const PEER_ADDR *dst, const void *data, UINT size) {
+	PS_LINK *l = (PS_LINK *)param;
+
+	PeerInput(l->To, &l->From, (const UCHAR *)data, size);
+
+	return true;
+}
+
+static void ps_bench_recv(PEER_AGENT *a, void *param, const UCHAR *src, UINT path, const void *data, UINT size) {
+	InterlockedIncrement((volatile LONG *)param);
+}
+
+// The cost of the protection per datagram: a record sealed, handed over and opened, of 1400 bytes
+static void ps_bench() {
+	PEER_KEY kx, ky;
+	PS_LINK lx, ly;
+	PEER_INFO p;
+	PEER_ADDR ax, ay;
+	UCHAR payload[1400];
+	volatile LONG got = 0;
+	LARGE_INTEGER freq, t0, t1;
+
+	coretest_fixed_key(&kx, 1);
+	coretest_fixed_key(&ky, 33);
+	PeerAddrSetV4(&ax, 198, 51, 100, 21, 5000);
+	PeerAddrSetV4(&ay, 198, 51, 100, 22, 5000);
+	ZeroMemory(&lx, sizeof(lx));
+	ZeroMemory(&ly, sizeof(ly));
+	lx.From = ax;
+	ly.From = ay;
+
+	PEER_AGENT *x = PeerNew(&kx, NULL, ps_link_send, &lx, ps_bench_recv, (void *)&got);
+	PEER_AGENT *y = PeerNew(&ky, NULL, ps_link_send, &ly, ps_bench_recv, (void *)&got);
+	if (coretest_check(x != NULL && y != NULL, "Two peer layers for the measurement start") == false) {
+		PeerFree(x);
+		PeerFree(y);
+		return;
+	}
+
+	lx.To = y;
+	ly.To = x;
+	ZeroMemory(&p, sizeof(p));
+	strcpy_s(p.Name, sizeof(p.Name), "y");
+	CopyMemory(p.Key, ky.Public, PEER_KEY_SIZE);
+	p.NumVrfs = 1;
+	p.VrfIds[0] = 10;
+	PeerSetPeers(x, &p, 1);
+	strcpy_s(p.Name, sizeof(p.Name), "x");
+	CopyMemory(p.Key, kx.Public, PEER_KEY_SIZE);
+	PeerSetPeers(y, &p, 1);
+	PeerSetDirect(x, ky.Public, &ay);
+	PeerSetDirect(y, kx.Public, &ax);
+
+	for (UINT i = 0; i < sizeof(payload); i++)
+		payload[i] = (UCHAR)i;
+
+	// The first datagram makes the session
+	PeerSend(x, ky.Public, payload, sizeof(payload));
+
+	QueryPerformanceFrequency(&freq);
+	QueryPerformanceCounter(&t0);
+	for (UINT i = 0; i < PS_BENCH; i++)
+		PeerSend(x, ky.Public, payload, sizeof(payload));
+	QueryPerformanceCounter(&t1);
+
+	double ns = (double)(t1.QuadPart - t0.QuadPart) * 1e9 / (double)freq.QuadPart / PS_BENCH;
+	coretest_info("the peer session costs %.0f ns per datagram of %u bytes: sealed, handed over and opened on one thread", ns, (UINT)sizeof(payload));
+	coretest_check(got == PS_BENCH + 1, "Every datagram of the measurement arrived");
+
+	PeerFree(x);
+	PeerFree(y);
+	PeerKeyClose(&kx);
+	PeerKeyClose(&ky);
+}
+
+void peersession_test() {
+	PS_WORLD w;
+
+	bool started = ps_world_start(&w);
+	coretest_check(started, "The network starts: R and R2 on the public side, A and B each behind a sequential symmetric NAT, C, G and H on the public side");
+	if (started) {
+		ps_capture(&w);
+		ps_tamper(&w);
+		ps_simultaneous(&w);
+		ps_rekey(&w);
+	}
+	ps_world_stop(&w);
+
+	ps_bench();
+}

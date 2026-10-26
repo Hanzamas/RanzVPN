@@ -423,7 +423,6 @@ static void PeerWindowUpdate(PEER_KEYPAIR *k, UINT64 c) {
 // of the session.
 static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const PEER_RECORD_INFO *r, const UCHAR *data, UINT size, PEER_SESSION_OUT *o) {
 	NOISE_HANDSHAKE hs;
-	NOISE_CIPHER send, recv;
 	UCHAR payload[PEER_INIT_PAYLOAD];
 	UCHAR reply[PEER_RESPONSE_PAYLOAD];
 	PEER_HANDSHAKE_INFO h;
@@ -432,8 +431,7 @@ static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const P
 	UINT out = 0;
 	UINT reason = PEER_OK;
 
-	ZeroMemory(&send, sizeof(send));
-	ZeroMemory(&recv, sizeof(recv));
+	ZeroMemory(&k, sizeof(k));
 
 	AcquireSRWLockExclusive(&a->KeyLock);
 	bool ok = PeerSessionNoiseInit(a, &hs, false, NULL) &&
@@ -458,10 +456,9 @@ static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const P
 		ok = index != 0 && NoiseHandshakeWrite(&hs, reply, sizeof(reply), o->Reply + PEER_RESPONSE_HEADER, PEER_MAX_DATAGRAM - PEER_RESPONSE_HEADER, &out);
 		ReleaseSRWLockExclusive(&a->KeyLock);
 
-		ZeroMemory(&k, sizeof(k));
 		CopyMemory(k.Id, hs.H, PEER_SESSION_ID_SIZE);
 
-		if (ok == false || PEER_RESPONSE_HEADER + out != PEER_RESPONSE_SIZE || NoiseHandshakeSplit(&hs, &send, &recv) == false) {
+		if (ok == false || PEER_RESPONSE_HEADER + out != PEER_RESPONSE_SIZE || NoiseHandshakeSplit(&hs, &k.Send, &k.Recv) == false) {
 			reason = PEER_DROP_SESSION;
 		} else {
 			s->LastInit = h.Timestamp;
@@ -475,8 +472,6 @@ static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const P
 			k.Valid = true;
 			k.LocalIndex = index;
 			k.RemoteIndex = h.Sender;
-			k.Send = send;
-			k.Recv = recv;
 			k.Created = PeerNow();
 
 			// Keys the peer has confirmed stay in use until its first record under the new ones; else the new ones
@@ -508,7 +503,6 @@ static UINT PeerSessionTakeInit(PEER_AGENT *a, PEER *p, PEER_SESSION *s, const P
 // A response from the peer p to the node's initiation: the new keys become the current ones, and the queue goes out.
 // The caller holds the lock of the session.
 static UINT PeerSessionTakeResponse(PEER_AGENT *a, PEER_SESSION *s, const PEER_RECORD_INFO *r, const UCHAR *data, UINT size, PEER_SESSION_OUT *o) {
-	NOISE_CIPHER send, recv;
 	UCHAR payload[PEER_RESPONSE_PAYLOAD];
 	PEER_HANDSHAKE_INFO h;
 	PEER_KEYPAIR k;
@@ -517,8 +511,6 @@ static UINT PeerSessionTakeResponse(PEER_AGENT *a, PEER_SESSION *s, const PEER_R
 	if (s->Pending == false || r->Receiver != s->PendingIndex)
 		return PEER_DROP_SESSION;
 
-	ZeroMemory(&send, sizeof(send));
-	ZeroMemory(&recv, sizeof(recv));
 	ZeroMemory(&k, sizeof(k));
 
 	AcquireSRWLockExclusive(&a->KeyLock);
@@ -528,7 +520,7 @@ static UINT PeerSessionTakeResponse(PEER_AGENT *a, PEER_SESSION *s, const PEER_R
 	ok = ok && PeerHandshakeParse(PEER_MSG_RESPONSE, payload, len, &h) && h.Sender == r->Sender && h.Receiver == s->PendingIndex;
 	if (ok)
 		CopyMemory(k.Id, s->Handshake.H, PEER_SESSION_ID_SIZE);
-	ok = ok && NoiseHandshakeSplit(&s->Handshake, &send, &recv);
+	ok = ok && NoiseHandshakeSplit(&s->Handshake, &k.Send, &k.Recv);
 
 	// A response that fails ends the handshake, which failed for good; the timer starts another
 	UINT index = s->PendingIndex;
@@ -543,8 +535,6 @@ static UINT PeerSessionTakeResponse(PEER_AGENT *a, PEER_SESSION *s, const PEER_R
 	k.Confirmed = true;
 	k.LocalIndex = index;
 	k.RemoteIndex = h.Sender;
-	k.Send = send;
-	k.Recv = recv;
 	k.Created = PeerNow();
 
 	PeerKeypairMove(&s->Previous, &s->Current);

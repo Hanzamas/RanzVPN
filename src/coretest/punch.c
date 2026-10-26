@@ -28,6 +28,7 @@
 #define PUNCH_PORTS  16    // The birthday range above a predicted or reflexive port
 #define PUNCH_RATE   8     // Probes one PeerTick sends per punching peer
 #define PUNCH_TICKS  40    // The most tick rounds a pair is given to meet, or a punch to spend its budget
+#define PUNCH_PAYLOAD_SIZE 42 // A punch message: version, sequence, type, a nonce and an echo of 16 bytes each
 
 // One node of the test and what it received
 typedef struct PUNCH_NODE {
@@ -279,24 +280,37 @@ static UINT64 punch_drops(PUNCH_NODE *n) {
 	return sum;
 }
 
-// A probe of B for A, as PeerPunchTick seals one (version 1, then the sequence), sent from B's host to the address to,
-// so it leaves through B's mapping towards to. Its sequence is the wall clock in 100 ns units, as PeerNextSequence
-// draws one, so it is above every sequence B sent before.
-static void punch_probe_from_b(PUNCH_WORLD *w, const PEER_ADDR *to) {
+// A probe of B for A, sealed as PeerPunchTick seals one (version 1, the sequence, type 1 for a probe, and two empty
+// nonces) into env; returns its size. Its sequence is the wall clock in 100 ns units, as PeerNextSequence draws one,
+// so it is above every sequence B sent before.
+static UINT punch_seal_probe(PUNCH_WORLD *w, UCHAR *env, UINT max) {
 	FILETIME ft;
-	UCHAR probe[9];
-	UCHAR env[PEER_MAX_ENVELOPE];
+	UCHAR probe[PUNCH_PAYLOAD_SIZE];
 
 	GetSystemTimePreciseAsFileTime(&ft);
 	UINT64 seq = ((UINT64)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
 
+	ZeroMemory(probe, sizeof(probe));
 	probe[0] = 1;
 	for (UINT i = 0; i < 8; i++)
 		probe[1 + i] = (UCHAR)(seq >> (56 - 8 * i));
+	probe[9] = 1;
 
-	UINT size = PeerEnvelopeSeal(&w->B.Key, w->A.Key.Public, PEER_MSG_PUNCH, NULL, probe, sizeof(probe), env, sizeof(env));
+	return PeerEnvelopeSeal(&w->B.Key, w->A.Key.Public, PEER_MSG_PUNCH, NULL, probe, sizeof(probe), env, max);
+}
+
+// A probe of B for A, sent from B's host to the address to, so it leaves through B's mapping towards to
+static void punch_probe_from_b(PUNCH_WORLD *w, const PEER_ADDR *to) {
+	UCHAR env[PEER_MAX_ENVELOPE];
+
+	UINT size = punch_seal_probe(w, env, sizeof(env));
 	NatSimSend(w->B.Host, to, env, size);
 	NatSimWaitIdle(w->Sim, PUNCH_WAIT);
+}
+
+// The send procedure of a peer layer that the test feeds by hand: its datagrams go nowhere
+static bool punch_send_nowhere(void *param, const PEER_ADDR *dst, const void *data, UINT size) {
+	return true;
 }
 
 // Two sequential symmetric NATs: the pair moves to the direct path by port prediction
@@ -394,10 +408,68 @@ static void punch_birthday() {
 
 	coretest_check(punch_exchange(&w), "A and B exchange one signal each through the control plane");
 
+	// Before any probe: an attacker on the path sends a probe of B, which it captured, to A's port from an address of
+	// its own. A takes it as B's, but moves to no direct path there: its answer goes to that address, sealed to B
+	// (finding F3 of the second review of AUD-5 on the direct path)
+	PEER_ADDR attacker, a_public;
+	PEER_STATUS ps;
+	UCHAR env[PEER_MAX_ENVELOPE];
+	PeerAddrSetV4(&attacker, 198, 51, 100, 66, 4000);
+	NATSIM_HOST *m = NatSimAddHost(w.Sim, NULL, &attacker);
+	NatSimMapped(w.NatA, &w.A.Addr, &a_public);
+	UINT64 a_sent = punch_sent(&w.A);
+	UINT size = punch_seal_probe(&w, env, sizeof(env));
+	NatSimSend(m, &a_public, env, size);
+	NatSimWaitIdle(w.Sim, PUNCH_WAIT);
+	PeerGetStatus(w.A.Agent, w.B.Key.Public, &ps);
+	coretest_check(m != NULL && ps.Path == PEER_PATH_RELAY && ps.Punch == PEER_PUNCH_PROBING && punch_sent(&w.A) == a_sent + 1,
+	               "A probe of B that an attacker sends from its own address moves A to no direct path there: A answers it once, sealed to B, and waits for the echo that only B can give");
+
 	bool direct = punch_converge(&w);
 	PeerGetStats(w.A.Agent, &st_a);
 	PeerGetStats(w.B.Agent, &st_b);
+	PeerGetStatus(w.A.Agent, w.B.Key.Public, &ps);
 	coretest_check(direct && st_a.PunchSuccesses == 1 && st_b.PunchSuccesses == 1, "Birthday punching gets the pair a direct path within the probe budget: the random side reaches the cone's one port and the cone learns the random mapping");
+	coretest_check(PeerAddrEqual(&ps.Direct, &attacker) == false && ps.Direct.Port != 0, "A's direct path to B is at B's own mapping, which proved itself with the echo of A's nonce, not at the attacker's address");
+
+	// A probe of B sealed before A restarts is a replay at the new peer layer of A, which takes no sequence older than
+	// its entry of B, while a fresh one is taken
+	PEER_CONFIG pc;
+	PEER_INFO p;
+	PEER_RELAY_INFO ri[2];
+	PEER_ADDR from;
+	UINT old_size = punch_seal_probe(&w, env, sizeof(env));
+	Sleep(2);
+	PeerDefaultConfig(&pc);
+	pc.Punch = true;
+	PEER_AGENT *a2 = PeerNew(&w.A.Key, &pc, punch_send_nowhere, NULL, NULL, NULL);
+	if (a2 != NULL) {
+		UCHAR sig[PEER_MAX_ENVELOPE];
+		UCHAR fresh[PEER_MAX_ENVELOPE];
+
+		punch_peer(&p, "b", w.B.Key.Public, 10);
+		PeerSetPeers(a2, &p, 1);
+		punch_relay_info(&ri[0], &w.R);
+		punch_relay_info(&ri[1], &w.R2);
+		PeerSetRelays(a2, ri, 2);
+		UINT sig_size = PeerSealSignal(w.B.Agent, w.A.Key.Public, PEER_SIGNAL_OFFER, sig, sizeof(sig));
+		UINT taken = PeerOpenSignal(a2, sig, sig_size, NULL);
+		PeerGetStatus(a2, w.B.Key.Public, &ps);
+
+		PeerAddrSetV4(&from, 203, 0, 113, 20, 40000);
+		PeerInput(a2, &from, env, old_size);
+		PEER_STATS st;
+		PeerGetStats(a2, &st);
+		UINT64 replay = st.Drops[PEER_DROP_REPLAY];
+
+		UINT fresh_size = punch_seal_probe(&w, fresh, sizeof(fresh));
+		PeerInput(a2, &from, fresh, fresh_size);
+		PeerGetStats(a2, &st);
+		coretest_check(taken == PEER_OK && ps.Punch == PEER_PUNCH_PROBING && replay == 1 && st.Drops[PEER_DROP_REPLAY] == 1,
+		               "After A restarts, a probe of B from before the restart is a replay, and a fresh one is taken");
+	}
+	coretest_check(a2 != NULL, "A's peer layer starts again with the same key");
+	PeerFree(a2);
 
 	InterlockedExchange(&w.A.Echo, 1);
 	LONG b_direct = w.B.ReceivedDirect;

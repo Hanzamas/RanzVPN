@@ -7,7 +7,10 @@
 // relaypolicy: forged, altered, replayed and redirected signals and binds are refused. The relay forwards only from
 //   a node bound to it to another one in a VRF of both, at its rate, and follows a change of its peers at once. A
 //   direct and a relayed datagram go through the one ingress and the one policy check. A relay that restarts gets
-//   its bindings back from the keepalive of its nodes.
+//   its bindings back from the keepalive of its nodes. A node's bind sent from another address binds nothing, and a
+//   bind or a signal sent again is a replay after the binding expired, the peer list changed or the receiver
+//   restarted (CORE-H2 #399, finding F3 of AUD-5). The datagrams that the relay forwards are records of peer sessions,
+//   which it forwards by their clear header (PeerSession.c).
 // The control plane is stood in for by the test, which hands each signal from one node to the other; the
 // controller's conformance test carries the same envelopes through the controller (controller/internal/controller).
 
@@ -15,7 +18,8 @@
 
 #include <string.h>
 
-#define RELAY_WAIT 10000 // ms: a bounded wait for the network to carry everything sent
+#define RELAY_WAIT   10000 // ms: a bounded wait for the network to carry everything sent
+#define RELAY_EXPIRY 300   // ms: the BindExpiry of R2 after its restart
 
 // One node of a test and what it received
 typedef struct RELAY_NODE {
@@ -246,16 +250,20 @@ static UINT relay_signal(RELAY_WORLD *w, RELAY_NODE *from, RELAY_NODE *to, UINT 
 	return PeerOpenSignal(to->Agent, env, size, sig);
 }
 
-// A data datagram from src to dst with text as its payload, built by hand as a forger would; returns its size
+// A record of a peer session from src to dst, built by hand as a forger would: the clear header that a relay forwards
+// by (the kind, the two keys, index 1 and counter 0), text in place of the ciphertext, and a zero tag. A relay forwards
+// it by its header alone; a node refuses it, which has no keys under that index. Returns its size.
 static UINT relay_datagram(UCHAR *buf, const UCHAR *src, const UCHAR *dst, const char *text) {
 	UINT len = (UINT)strlen(text);
 
-	buf[0] = PEER_MSG_DATA;
+	ZeroMemory(buf, PEER_RECORD_HEADER + len + PEER_RECORD_TAG);
+	buf[0] = PEER_MSG_RECORD;
 	CopyMemory(buf + 1, src, PEER_KEY_SIZE);
 	CopyMemory(buf + 1 + PEER_KEY_SIZE, dst, PEER_KEY_SIZE);
-	CopyMemory(buf + PEER_DATA_HEADER_SIZE, text, len);
+	buf[PEER_DATA_HEADER_SIZE + 3] = 1;
+	CopyMemory(buf + PEER_RECORD_HEADER, text, len);
 
-	return PEER_DATA_HEADER_SIZE + len;
+	return PEER_RECORD_HEADER + len + PEER_RECORD_TAG;
 }
 
 // A drop counter of a node
@@ -318,6 +326,7 @@ void relay_test() {
 	PeerGetStats(w.B.Agent, &st_b);
 	coretest_check(st.Binds == 5 && st.NumBindings == 5 && st.Drops[PEER_DROP_POLICY] == 1, "R took one bind from each of its five nodes, A and B through their NATs, and refused D, which is no node of its VRFs");
 	coretest_check(st_a.NumBound == 1 && st_b.NumBound == 1, "A and B are bound to R: it answered each bind");
+	coretest_check(st.Challenges == 5, "R bound each node only after a challenge to the address of its first bind, which the node answered with the cookie");
 	coretest_check(NatSimMapped(w.NatA, &w.A.Addr, &mapped), "NAT A mapped A's address for R");
 	PeerAddrToStr(text, sizeof(text), &mapped);
 	coretest_info("A is 10.0.0.2:5000 behind NAT A, which maps it to %s towards R", text);
@@ -352,8 +361,8 @@ void relay_test() {
 
 	PeerGetStats(w.A.Agent, &st_a);
 	coretest_check(sent && idle && w.B.Received == 1 && w.B.ReceivedRelay == 1 && strcmp(w.B.Last, "ping 1") == 0 && memcmp(w.B.LastSrc, w.A.Key.Public, PEER_KEY_SIZE) == 0, "A's first datagram to B is delivered at once, through R");
-	coretest_check(w.A.Received == 2 && strcmp(w.A.Last, "pong 1") == 0 && w.A.LastPath == PEER_PATH_RELAY, "B's answer reaches A: one round trip, with no handshake between A and B before it");
-	coretest_check(st_a.Sent - sent_before == 1 && relay_forwarded(&w.R) - forwarded_before == 2, "A sent one datagram for that round trip, and R forwarded the two of it");
+	coretest_check(w.A.Received == 2 && strcmp(w.A.Last, "pong 1") == 0 && w.A.LastPath == PEER_PATH_RELAY, "B's answer reaches A: one round trip, in the peer session that B's first datagram started");
+	coretest_check(st_a.Sent - sent_before == 1 && relay_forwarded(&w.R) - forwarded_before == 2, "A sent one datagram for that round trip, and R forwarded the two of it: no new handshake");
 	coretest_info("the ping and its pong took %llu ms on the harness network", t1 - t0);
 
 	// The direct path that ICE would try first
@@ -607,9 +616,26 @@ static void relay_policy_paths(RELAY_WORLD *w) {
 }
 
 // A relay holds no state that a restart loses: its nodes bind again on their keepalive
-static void relay_policy_restart(RELAY_WORLD *w) {
+// R2 restarts: a new peer layer with the same key and the same Peer objects. Its BindExpiry is short for
+// relay_policy_replays, which lets a binding expire; R2 drops one only on its tick.
+static void relay_restart_r2(RELAY_WORLD *w) {
 	PEER_CONFIG c;
 	PEER_INFO p[2];
+
+	NatSimAttach(w->R2.Host, NULL);
+	NatSimWaitIdle(w->Sim, RELAY_WAIT);
+	PeerFree(w->R2.Agent);
+	PeerDefaultConfig(&c);
+	c.Relay = true;
+	c.BindExpiry = RELAY_EXPIRY;
+	w->R2.Agent = PeerNew(&w->R2.Key, &c, NatSimSend, w->R2.Host, relay_recv, &w->R2);
+	relay_peer(&p[0], "x", w->X.Key.Public, 30);
+	relay_peer(&p[1], "y", w->Y.Key.Public, 30);
+	PeerSetPeers(w->R2.Agent, p, 2);
+	NatSimAttach(w->R2.Host, w->R2.Agent);
+}
+
+static void relay_policy_restart(RELAY_WORLD *w) {
 	PEER_STATS st;
 
 	coretest_check(relay_pair(w, &w->X, &w->Y), "X and Y come up through R2");
@@ -617,17 +643,7 @@ static void relay_policy_restart(RELAY_WORLD *w) {
 	NatSimWaitIdle(w->Sim, RELAY_WAIT);
 	coretest_check(sent && w->Y.Received == 1, "X's datagram reaches Y through R2");
 
-	// R2 restarts: a new peer layer with the same key and the same Peer objects
-	NatSimAttach(w->R2.Host, NULL);
-	NatSimWaitIdle(w->Sim, RELAY_WAIT);
-	PeerFree(w->R2.Agent);
-	PeerDefaultConfig(&c);
-	c.Relay = true;
-	w->R2.Agent = PeerNew(&w->R2.Key, &c, NatSimSend, w->R2.Host, relay_recv, &w->R2);
-	relay_peer(&p[0], "x", w->X.Key.Public, 30);
-	relay_peer(&p[1], "y", w->Y.Key.Public, 30);
-	PeerSetPeers(w->R2.Agent, p, 2);
-	NatSimAttach(w->R2.Host, w->R2.Agent);
+	relay_restart_r2(w);
 
 	sent = PeerSend(w->X.Agent, w->Y.Key.Public, "lost", 4);
 	NatSimWaitIdle(w->Sim, RELAY_WAIT);
@@ -642,6 +658,120 @@ static void relay_policy_restart(RELAY_WORLD *w) {
 	sent = PeerSend(w->X.Agent, w->Y.Key.Public, "after", 5);
 	NatSimWaitIdle(w->Sim, RELAY_WAIT);
 	coretest_check(st.NumBindings == 2 && sent && w->Y.Received == 2 && strcmp(w->Y.Last, "after") == 0, "After the next keepalive X and Y are bound to R2 again and their traffic flows");
+}
+
+// The tap of relay_policy_replays, an attacker on the path: it keeps the last bind that one host sends to one address
+// and, while Drop is set, drops it on the way
+typedef struct RELAY_TAP {
+	CRITICAL_SECTION Lock;
+	NATSIM_HOST *From;             // The host whose binds it keeps
+	PEER_ADDR To;                  // ... to this address
+	bool Drop;                     // Drop them
+	UINT Size;                     // The last one
+	UCHAR Data[PEER_MAX_DATAGRAM]; // ...
+} RELAY_TAP;
+
+static bool relay_tap(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, const UCHAR *data, UINT size) {
+	RELAY_TAP *t = (RELAY_TAP *)param;
+	bool pass = true;
+
+	EnterCriticalSection(&t->Lock);
+	if (from == t->From && PeerAddrEqual(dst, &t->To) && data[0] == PEER_MSG_BIND) {
+		CopyMemory(t->Data, data, size);
+		t->Size = size;
+		pass = (t->Drop == false);
+	}
+	LeaveCriticalSection(&t->Lock);
+
+	return pass;
+}
+
+// A bind is tied to the address it came from, and the sequences of binds and signals outlive the memory of the
+// receiver: the expiry of a binding, a change of the peer list, a restart (finding F3 of the second review of AUD-5)
+static void relay_policy_replays(RELAY_WORLD *w) {
+	RELAY_TAP tap;
+	PEER_STATS st;
+	PEER_INFO p[2];
+	UCHAR env[PEER_MAX_ENVELOPE];
+	UCHAR bind[PEER_MAX_DATAGRAM];
+
+	ZeroMemory(&tap, sizeof(tap));
+	InitializeCriticalSection(&tap.Lock);
+	tap.From = w->X.Host;
+	tap.To = w->R2.Addr;
+
+	// The attacker drops X's next bind to R2 and sends it from C's address
+	tap.Drop = true;
+	NatSimSetTap(w->Sim, relay_tap, &tap);
+	Sleep(150);
+	PeerTick(w->X.Agent);
+	NatSimWaitIdle(w->Sim, RELAY_WAIT);
+	NatSimSetTap(w->Sim, NULL, NULL);
+
+	PeerGetStats(w->R2.Agent, &st);
+	UINT64 challenges = st.Challenges;
+	UINT64 binds = st.Binds;
+	UINT64 c_forged = relay_drops(&w->C, PEER_DROP_FORGED);
+	UINT size = tap.Size;
+	CopyMemory(bind, tap.Data, size);
+	NatSimSend(w->C.Host, &w->R2.Addr, bind, size);
+	NatSimWaitIdle(w->Sim, RELAY_WAIT);
+	PeerGetStats(w->R2.Agent, &st);
+	coretest_check(size != 0 && st.Binds == binds && st.Challenges == challenges + 1 && relay_drops(&w->C, PEER_DROP_FORGED) == c_forged + 1,
+	               "X's fresh bind, which never reached R2, sent from C's address binds nothing: R2 sends its challenge to C's address, sealed to X, and C cannot open it");
+
+	LONG received = w->Y.Received;
+	bool sent = PeerSend(w->X.Agent, w->Y.Key.Public, "still x", 7);
+	NatSimWaitIdle(w->Sim, RELAY_WAIT);
+	coretest_check(sent && w->Y.Received == received + 1 && strcmp(w->Y.Last, "still x") == 0, "X's binding stays at X's address: its traffic still reaches Y");
+
+	// A bind that R2 took, sent again from X's own address once the binding expired
+	tap.Drop = false;
+	NatSimSetTap(w->Sim, relay_tap, &tap);
+	Sleep(150);
+	PeerTick(w->X.Agent);
+	NatSimWaitIdle(w->Sim, RELAY_WAIT);
+	NatSimSetTap(w->Sim, NULL, NULL);
+	size = tap.Size;
+	CopyMemory(bind, tap.Data, size);
+
+	Sleep(RELAY_EXPIRY + 100);
+	PeerTick(w->R2.Agent);
+	PeerGetStats(w->R2.Agent, &st);
+	UINT64 replay = relay_drops(&w->R2, PEER_DROP_REPLAY);
+	bool expired = (st.NumBindings == 0);
+	NatSimSend(w->X.Host, &w->R2.Addr, bind, size);
+	NatSimWaitIdle(w->Sim, RELAY_WAIT);
+	PeerGetStats(w->R2.Agent, &st);
+	coretest_check(expired && st.NumBindings == 0 && relay_drops(&w->R2, PEER_DROP_REPLAY) == replay + 1,
+	               "Once X's binding at R2 expired, X's last bind sent again is a replay: R2 keeps the sequence with the peer, not with the binding");
+
+	// ... and after R2 restarts
+	relay_restart_r2(w);
+	NatSimSend(w->X.Host, &w->R2.Addr, bind, size);
+	NatSimWaitIdle(w->Sim, RELAY_WAIT);
+	PeerGetStats(w->R2.Agent, &st);
+	coretest_check(st.NumBindings == 0 && st.Challenges == 0 && relay_drops(&w->R2, PEER_DROP_REPLAY) == 1,
+	               "After R2 restarts, X's bind of before the restart is a replay: R2 takes no sequence older than its entry of X");
+
+	// A signal of A that B took, sent again after the control plane took A from B's peers and gave it back
+	UINT env_size = PeerSealSignal(w->A.Agent, w->B.Key.Public, PEER_SIGNAL_OFFER, env, sizeof(env));
+	UINT first = PeerOpenSignal(w->B.Agent, env, env_size, NULL);
+	relay_peer(&p[0], "r", w->R.Key.Public, 10);
+	PeerSetPeers(w->B.Agent, p, 1);
+	relay_peer(&p[1], "a", w->A.Key.Public, 10);
+	PeerSetPeers(w->B.Agent, p, 2);
+	coretest_check(first == PEER_OK && PeerOpenSignal(w->B.Agent, env, env_size, NULL) == PEER_DROP_REPLAY,
+	               "A signal that B took is a replay after the peer list of B dropped A and took it again");
+
+	// ... and at B after a restart: a new peer layer with B's key
+	PEER_AGENT *b2 = PeerNew(&w->B.Key, NULL, NatSimSend, w->B.Host, NULL, NULL);
+	if (b2 != NULL)
+		PeerSetPeers(b2, p, 2);
+	coretest_check(b2 != NULL && PeerOpenSignal(b2, env, env_size, NULL) == PEER_DROP_REPLAY, "... and after B restarts: B takes no sequence older than its entry of A");
+	PeerFree(b2);
+
+	DeleteCriticalSection(&tap.Lock);
 }
 
 void relaypolicy_test() {
@@ -660,6 +790,7 @@ void relaypolicy_test() {
 		relay_policy_forwarding(&w);
 		relay_policy_paths(&w);
 		relay_policy_restart(&w);
+		relay_policy_replays(&w);
 	}
 
 	relay_world_stop(&w);

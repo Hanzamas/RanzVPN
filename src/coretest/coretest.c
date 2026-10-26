@@ -165,6 +165,7 @@ static TEST_LIST test_list[] = {
     {"iceupgrade", iceupgrade_test, "A home gateway grants a public port through libplum; a relayed pair moves to the direct path that ICE validates with no datagram missing, and back when it fails."},
     {"icesymmetric", icesymmetric_test, "A pair behind two symmetric NATs: every ICE check fails and the pair stays on the relay, with its traffic flowing throughout."},
     {"punch", punch_test, "Symmetric-NAT traversal: two sequential NATs meet by port prediction, a cone and a random NAT by birthday punching, two random NATs fall back to the relay within the probe budget."},
+    {"peersession", peersession_test, "Peer sessions: no inner byte in the clear on any link, relayed or direct; altered, replayed and misdirected records refused; one session from two handshakes; rekey and timeout without loss."},
     {"frontdoor", frontdoor_test, "Front door, the node and its owners as processes: TLS of the new protocol stays in the node, other ALPN or SNI and a signature reach their owner processes through WSADuplicateSocketW; a handed connection outlives the node."},
 };
 

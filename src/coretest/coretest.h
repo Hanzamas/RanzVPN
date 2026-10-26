@@ -53,6 +53,7 @@ void relaypolicy_test();
 void iceupgrade_test();
 void icesymmetric_test();
 void punch_test();
+void peersession_test();
 void frontdoor_test();
 
 // The processes of the front door test (frontdoor.c): coretest frontdoor-child node ... or owner ..., which the test
@@ -87,6 +88,13 @@ bool NatSimWaitIdle(NATSIM *s, UINT timeout);
 UINT NatSimFiltered(NATSIM_NAT *n);
 UINT NatSimUnroutable(NATSIM *s);
 bool NatSimMapped(NATSIM_NAT *n, const PEER_ADDR *inside, PEER_ADDR *pub);
+
+// A tap of the network (natsim.c): sees every datagram that a host sends, on whatever link, before the network routes
+// it, and drops it by returning false, as an attacker on the path would; it runs on the sending thread. Hold stops the
+// delivery until it is released, so that datagrams sent meanwhile cross on the way.
+typedef bool(NATSIM_TAP)(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, const UCHAR *data, UINT size);
+void NatSimSetTap(NATSIM *s, NATSIM_TAP *tap, void *param);
+void NatSimHold(NATSIM *s, bool hold);
 
 // The simulated home gateway of the ICE tests (homegw.c): a UPnP Internet Gateway Device that libplum finds with
 // SSDP, and the port forwarding of the mapping it grants, from its WAN side on the IPv4 loopback to the home
