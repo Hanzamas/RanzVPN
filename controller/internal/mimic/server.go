@@ -231,9 +231,10 @@ func (s *server) handle(raw net.Conn) {
 			s.emit(Message{Type: TypeError, Peer: peer, Error: oneLine(err)})
 			return
 		}
-		// Not a Ranz client: the library spliced it to the decoy, and it is over now
+		// Not a Ranz client: the library spliced it to the decoy, and it is over now. It is counted, and
+		// logged at the debug level only: a stranger can send as many as it likes (CORE-P2-6, #406)
 		s.count.probes.Add(1)
-		s.log.Info("a connection that is no client was spliced to the decoy", "peer", peer, "reason", reason)
+		s.log.Debug("a connection that is no client was spliced to the decoy", "peer", peer, "reason", reason)
 		s.emit(Message{Type: TypeProbe, Peer: peer, Reason: reason})
 		return
 	}

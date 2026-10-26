@@ -64,6 +64,28 @@
 #define NODE_BGP_MAX_ROUTES   65536           // Learned routes that a node installs at most
 #define NODE_BGP_ROUTE_METRIC 256             // The route metric of a learned route: the default RouteMetric of New-NetRoute
 
+// The mimicry sidecar, the subcommand mimic of ranz.exe (NODE_BGP_EXE_NAME), and the mimic transport over it (NodeMimic.c,
+// NodeMimicTransport.c; ADR-0023, CORE-P2-1 #85, CORE-P2-6 #406)
+#define NODE_SETTING_MIMIC_SERVER "MimicServer" // The settings of the server role of the sidecar, one JSON text that the node forwards unread; without it no server role
+#define NODE_SETTING_MIMIC_CLIENT "MimicClient" // ... of the client role; without it no client role
+#define NODE_MIMIC_TRANSPORT      "mimic"       // The name of the transport in a fallback list
+#define NODE_MIMIC_ROLE_SERVER    0             // The roles of a sidecar: the index of its status
+#define NODE_MIMIC_ROLE_CLIENT    1
+#define NODE_MIMIC_NUM_ROLES      2
+#define NODE_MIMIC_MAX_LINE       65536 // Bytes of one message of the control pipe at most, with its newline (mimic.MaxLine)
+#define NODE_MIMIC_MAX_SETTING    61440 // Bytes of a setting at most: it goes into the start message, within NODE_MIMIC_MAX_LINE
+#define NODE_MIMIC_DATA_LINE      1024  // Bytes of the line in front of a stream of a data pipe at most, with its newline
+#define NODE_MIMIC_BINDING        32    // Bytes of the channel binding of a stream (mimic.BindingSize)
+#define NODE_MIMIC_RESTART_FIRST  1000  // ms before a sidecar that ended by itself starts again, the first time ...
+#define NODE_MIMIC_RESTART_MAX    60000 // ... and at most: the delay doubles each time it ends again
+#define NODE_MIMIC_STATS          1000  // ms between two stats messages to a running sidecar
+#define NODE_MIMIC_LOG_STATS      60000 // ms between two lines of the counters in the node log, while they change
+
+// What the client role of the sidecar answered a dial (NodeMimicParseAnswer)
+#define NODE_MIMIC_ANSWER_OK    0 // ok and the binding: the stream starts
+#define NODE_MIMIC_ANSWER_ERROR 1 // error and the reason: the link failed
+#define NODE_MIMIC_ANSWER_BAD   2 // No answer of the protocol
+
 #define NODE_MAX_WORKERS       256      // Workers of one node at most, whatever the number of cores
 #define NODE_WORKER_BATCH      64       // Completions that a worker takes from its port in one wait
 #define NODE_TABLE_KEY_SIZE    16       // Bytes of a table key: an IPv6 address; a shorter key is zero-padded
@@ -211,6 +233,51 @@ typedef UINT64(NODE_CLOCK_PROC)(NODE *n, void *param);
 // overlay asks for each peer that has no session (NodeOverlayStart): under the lock of the overlay, so it takes no lock
 struct CONTROL_ENDPOINT;
 typedef bool(NODE_DIALABLE_PROC)(NODE *n, void *param, const char *name, const struct CONTROL_ENDPOINT *endpoints, UINT num);
+// Runs once the control pipe of a mimicry sidecar exists and before the sidecar starts, with the name of the pipe: a
+// test that connects another client to it (NODE_MIMIC_TEST)
+typedef void(NODE_MIMIC_LAUNCH_PROC)(void *param, const wchar_t *pipe);
+
+// What a test changes in the way a node starts its mimicry sidecars (NODE.MimicTest; NodeMimic.c)
+struct NODE_MIMIC_TEST {
+	NODE_MIMIC_LAUNCH_PROC *BeforeLaunch; // Runs before each start of a sidecar, NULL for nothing
+	void *Param;                          // Its parameter
+};
+
+// What NodeMimicGetStatus reports of the sidecar of one role (NODE_MIMIC_ROLE_*), and NodeGetStatus in Mimic. The
+// counters are those of the sidecar (its stats messages), added up over every process of the role since the node started.
+struct NODE_MIMIC_STATUS {
+	bool Configured;        // The configuration has the settings of the role
+	bool Running;           // The sidecar runs with them: it sent ready, and the transport of the role is available
+	UINT ProcessId;         // The process of the sidecar, 0 when none runs
+	UINT NumStarts;         // The processes of the sidecar that started and connected to their control pipe
+	UINT NumRestarts;       // ... of which after one ended by itself
+	UINT NumErrors;         // Error messages of the sidecar
+	UINT64 Accepted;        // The server role: clients that proved the key of the server
+	UINT64 Probes;          // ... connections that were no Ranz client, spliced to the decoy
+	UINT64 Streams;         // The inner streams that the sidecar carried to or from the node
+	UINT64 Dropped;         // The events that did not fit the queue of the control pipe of the sidecar
+	char Listen[MAX_SIZE];  // The server role: the address of the REALITY listener that ready named
+	char Version[MAX_SIZE]; // What the sidecar named in ready: ranz mimic and its libraries
+	char PipeAcl[MAX_SIZE]; // The DACL of the control pipe as the system holds it, in SDDL
+	char Error[MAX_SIZE];   // Why the transport of the role is not available, "" while it is or the role has no settings
+};
+
+// One message of a mimicry sidecar on its control pipe, as NodeMimicParseMessage reads it: the fields of the protocol of
+// controller/internal/mimic/control.go that the node reads, "" or 0 for a field the message does not have
+struct NODE_MIMIC_MESSAGE {
+	char Type[32];          // ready, accepted, probe, stats or error
+	char Version[MAX_SIZE]; // ready
+	UINT Protocol;
+	char Listen[MAX_SIZE];
+	char Decoy[MAX_SIZE];
+	char Peer[MAX_SIZE];   // accepted, probe, error
+	char Reason[MAX_SIZE]; // probe
+	UINT64 Accepted;       // stats
+	UINT64 Probes;
+	UINT64 Streams;
+	UINT64 Dropped;
+	char Error[MAX_SIZE]; // error
+};
 
 // A thread that reads the table snapshot: a worker, the I/O thread of an adapter queue, or a thread that
 // registered itself. It holds a snapshot only between two quiescent points and none while it is offline,
@@ -347,6 +414,12 @@ struct NODE {
 	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
 	wchar_t BgpSidecar[MAX_PATH]; // The executable that holds the sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
 	NODE_BGP *Bgp;                // The running BGP sidecar (NodeBgp.c), NULL when none runs
+
+	// The mimicry sidecar and the mimic transport (NodeMimic.c; CORE-P2-6, #406), under Lock. A test may name another
+	// executable and set MimicTest before NodeStart.
+	wchar_t MimicSidecar[MAX_PATH]; // The executable that holds the sidecar: NODE_BGP_EXE_NAME next to the executable
+	NODE_MIMIC_TEST MimicTest;      // What a test changes in the way the node starts a sidecar
+	NODE_MIMIC *Mimic;              // The sidecars and the transport, NULL while the node does not run
 
 	// The overlay (NodeOverlay.c; SDN-3, #179), NULL while it does not run
 	NODE_OVERLAY *Overlay;
@@ -615,6 +688,9 @@ struct NODE_STATUS {
 	UINT RelayBindings;            // The nodes bound to it
 	UINT64 RelayBinds;             // The binds it took
 	UINT64 RelayForwarded;         // The datagrams it forwarded
+
+	// The mimicry sidecars of the mimic transport (NodeMimic.c; CORE-P2-6, #406), by role (NODE_MIMIC_ROLE_*)
+	NODE_MIMIC_STATUS Mimic[NODE_MIMIC_NUM_ROLES];
 };
 
 // The Login of a Noise session of the new core (Core/Noise.h)
@@ -715,6 +791,13 @@ void NodeReaderOnline(NODE *n, NODE_READER *r);
 bool NodeBgpAnnounce(NODE *n, char *prefix, char *next_hop);
 bool NodeBgpWithdraw(NODE *n, char *prefix);
 void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
+
+// NodeMimic.c, NodeMimicTransport.c
+TRANSPORT *NodeMimicTransport(NODE *n);
+void NodeMimicGetStatus(NODE *n, UINT role, NODE_MIMIC_STATUS *st);
+bool NodeMimicParseMessage(const char *line, NODE_MIMIC_MESSAGE *m);
+bool NodeMimicParseBind(const char *line, UCHAR *binding, UINT *size);
+UINT NodeMimicParseAnswer(const char *line, UCHAR *binding, UINT *size, char *reason, UINT reason_size);
 
 // NodeDhcp.c
 struct CONTROL_DHCP;

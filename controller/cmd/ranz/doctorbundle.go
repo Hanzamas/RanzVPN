@@ -58,7 +58,7 @@ func hostSources(report, nodeDir, controllerDir string) []bundle.Source {
 	if nodeDir != "" {
 		sources = append(sources,
 			bundle.LogSource("node log", "node/logs", func() ([]string, error) {
-				return bundle.Matching(filepath.Join(nodeDir, "node_log"), "node_*.log", "ranz-bgp*.log")
+				return bundle.Matching(filepath.Join(nodeDir, "node_log"), "node_*.log", "ranz-bgp*.log", "ranz-mimic*.log")
 			}),
 			fileSource("node configuration", "node/config.txt", filepath.Join(nodeDir, nodeConfigFile)),
 		)
