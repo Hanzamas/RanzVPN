@@ -11,7 +11,7 @@
 #               a Go func); several, separated by commas, when the element is in more than one place
 #   field       the field of the code that holds the element: a member of a struct, a constant or a parameter that the
 #               file uses; several, separated by commas
-#   difference  D1 to D8 of docs/formal-model.md when the code differs from ADR-0022 or ADR-0023 here, else -
+#   difference  D1 to D9 of docs/formal-model.md when the code differs from ADR-0022 or ADR-0023 here, else -
 #   note        what the element is, and how the code differs from the model when it does
 #
 # .github/scripts/formal.py check reads this file on every pull request: every file exists, every function is
@@ -217,6 +217,61 @@ overlay-lib.pvl	OverlayClient:cd	message	src/Cedar/NodeOverlay.c	NodeOverlayInpu
 overlay-lib.pvl	OverlayServer:SI	field	src/Cedar/NodeOverlay.c	NodeOverlayAccept	RemoteStatic	-	the static key of the peer: the session has no Login
 overlay-lib.pvl	OverlayServer:x	check	src/Cedar/NodeOverlay.c	NodeOverlayAttach	NodeOverlayPeer	-	the peer of the desired state with that key; a session of a key that no peer has is closed
 overlay-lib.pvl	OverlayServer:d	message	src/Cedar/NodeOverlay.c	NodeOverlayDeliver	NodeOverlayEnds	-	a data record of the peer, delivered to the host when the table of its VRF routes it
+
+# mimic-lib.pvl: the session over the mimic transport, the third outer session (AUD-7, #425): the mimicry sidecar ranz mimic
+# (controller/internal/mimic) and the transport of the node over its pipes (NodeMimic.c, NodeMimicTransport.c; CORE-P2-6, #406)
+mimic-lib.pvl	site	constant	controller/internal/mimic/server.go	realityConfig	Dest	-	the decoy: the own decoy of the sidecar on a loopback address, or the big site that it borrows and never holds a key of; the library splices to Dest
+mimic-lib.pvl	proof_ver	constant	controller/internal/mimic/realityclient.go	authenticate	clientVersion	-	the version of the client in the proof; the server takes the versions from minClientVersion to maxClientVersion (MinClientVer, MaxClientVer of realityConfig), so a client of REALITY that is no Ranz client is spliced
+mimic-lib.pvl	line_bind	constant	src/Cedar/NodeMimicTransport.c	NodeMimicParseBind	NodeMimicWord,NodeMimicParseBinding	-	bind and the binding, 64 hex digits or "-": the first line of a stream of the data pipe of the server role, which the sidecar writes
+mimic-lib.pvl	line_bind	constant	controller/internal/mimic/server.go	handle	bindingText,dialPipe	-	the server sidecar connects to the data pipe of its node for each client that proved the key, and writes the line first
+mimic-lib.pvl	line_dial	constant	src/Cedar/NodeMimicTransport.c	NodeMimicDial	request,NodeMimicWriteStream	-	dial and the address of a link: the request that the node writes on the data pipe of the client role
+mimic-lib.pvl	line_ok	constant	src/Cedar/NodeMimicTransport.c	NodeMimicParseAnswer	NODE_MIMIC_ANSWER_OK,NodeMimicParseBinding	-	ok and the binding, the answer of the client sidecar when the link connected; error and the reason when it did not
+mimic-lib.pvl	line_ok	constant	controller/internal/mimic/client.go	handle	bindingText,refuse	-	the client sidecar answers the request with the binding of the TLS session of the link, or refuses it
+mimic-lib.pvl	sid_wrong	constant	controller/internal/mimic/config.go	parseLink	shortID	-	a short id that a link names and the server does not have: the link of the settings is typed by hand, so it can be wrong
+mimic-lib.pvl	decoy_page	constant	controller/internal/mimic/decoy.go	landing	defaultPage	-	the landing page of the own decoy, which a prober sees; in the borrow mode the page of the real site
+mimic-lib.pvl	realkey	function	controller/internal/mimic/config.go	parseServer	PrivateKey	-	the REALITY private key of a server, an X25519 key of its own (key separation of ADR-0023): the private_key of the MimicServer setting
+mimic-lib.pvl	realkey	function	src/Cedar/NodeMimic.c	NodeMimicStartMessage	settings	-	the node puts the MimicServer setting into the start message unread, so the key reaches the sidecar over the control pipe only, never on a command line
+mimic-lib.pvl	realpub	function	controller/internal/mimic/config.go	parseLink	publicKey	D9	the public key of the server that a link holds, the pin of the mimic path; the link is typed by hand into the MimicClient setting
+mimic-lib.pvl	shortid	function	controller/internal/mimic/config.go	parseServer	ShortIDs	-	the short ids of the server, from 1 to 16; the model has the one of the link of alice
+mimic-lib.pvl	rauth	function	controller/internal/mimic/realityclient.go	authenticate	authKey,Random	-	the auth key: HKDF-SHA256 of the X25519 secret of the key share of the ClientHello and the public key of the server, the first 20 bytes of the random as the salt, REALITY as the info
+mimic-lib.pvl	rmac	function	controller/internal/mimic/realityclient.go	temporaryCertificate	sha512	-	HMAC-SHA512 of the public key of the temporary certificate under the auth key
+mimic-lib.pvl	tcert	function	controller/internal/mimic/realityclient.go	temporaryCertificate	ed25519,Signature	-	the temporary certificate of the server that took a proof: an Ed25519 key whose signature is the HMAC
+mimic-lib.pvl	tcertkey	function	controller/internal/mimic/realityclient.go	temporaryCertificate	PublicKey	-	the public key of the temporary certificate
+mimic-lib.pvl	tcertmac	function	controller/internal/mimic/realityclient.go	temporaryCertificate	Signature	-	the signature of the temporary certificate, which the client compares with the HMAC; the certificate of the decoy is no temporary certificate, and the check fails
+mimic-lib.pvl	tlshk	model	-	-	-	-	the handshake traffic key of TLS 1.3, inside the TLS libraries of the sidecar (uTLS and the REALITY library): no code of Ranz
+mimic-lib.pvl	LeakReality	model	-	-	-	-	the compromise of the REALITY private key of the server, a test of the attacker; no code
+mimic-lib.pvl	LeakLink	model	-	-	-	-	the compromise of the link of alice, a test of the attacker; no code
+mimic-lib.pvl	MimicHello	event	controller/internal/mimic/realityclient.go	authenticate	SessionId,shortID	-	the ClientHello of a link, whose session id is the proof with the short id of the link
+mimic-lib.pvl	MimicLinkUp	event	controller/internal/mimic/realityclient.go	realityHandshake	VerifyPeerCertificate,verified	D9	the client took the temporary certificate: the check of the key of the link, and of nothing else (no chain, InsecureSkipVerify), is the pin of the path
+mimic-lib.pvl	MimicProved	event	controller/internal/mimic/server.go	handle	accepted	-	the library took the proof (reality.Server): a client that authenticated, which the sidecar counts
+mimic-lib.pvl	MimicStream	event	controller/internal/mimic/server.go	handle	dialPipe,bindingText	-	the server sidecar hands its node the stream of a client, with the binding of its TLS session
+mimic-lib.pvl	MimicSpliced	event	controller/internal/mimic/server.go	handle	probes	-	a connection that is no client was spliced to the decoy: counted, and logged at the debug level only
+mimic-lib.pvl	MimicSpliced	event	src/Cedar/NodeMimic.c	NodeMimicOnMessage	Probes	-	the node keeps the count of probes in its status and logs no probe on its own
+mimic-lib.pvl	MimicClient	process	src/Cedar/NodeMimicTransport.c	NodeMimicDial	GetNamedPipeServerProcessId,NodeMimicReadLine	-	the node dials over the data pipe of its client sidecar, which it takes only from the process that it started
+mimic-lib.pvl	MimicClient	process	controller/internal/mimic/client.go	connect	realityHandshake	-	the client sidecar dials the server of the link and runs the REALITY handshake
+mimic-lib.pvl	MimicServer	process	src/Cedar/NodeMimicTransport.c	NodeMimicListenThread	GetNamedPipeClientProcessId,NodeMimicSidecarReady	-	the listener of the node takes a connection of the data pipe only from the server sidecar that it started
+mimic-lib.pvl	MimicServer	process	src/Cedar/NodeMimicTransport.c	NodeMimicAccept	NodeMimicParseBind,NODE_MIMIC_LINE_WAIT	-	Accept reads the bind line of the stream before it gives the stream to the session layer
+mimic-lib.pvl	MimicServer	process	controller/internal/mimic/server.go	realityConfig	PrivateKey,ShortIds	-	the REALITY library opens the proof with the private key and takes a short id of the list
+mimic-lib.pvl	MimicSessions	process	src/Cedar/NodeMimic.c	NodeMimicSupervisor	NODE_MIMIC_RESTART_FIRST,NODE_MIMIC_RESTART_MAX	-	a sidecar that ends by itself starts again with the same settings after a delay from 1 s to 60 s, and every stream over it ends: every connection of the model is one run of a sidecar
+mimic-lib.pvl	MimicSessions	process	src/Cedar/NodeMimic.c	NodeMimicLaunch	GetNamedPipeClientProcessId,FILE_FLAG_FIRST_PIPE_INSTANCE,PIPE_REJECT_REMOTE_CLIENTS,NodeMimicPipeSa	-	the control pipe: the node creates it first, with the first instance only, no remote client and a DACL of the account of the node alone (NODE_MIMIC_PIPE_SDDL), and takes only the sidecar that it started as its client, so the settings reach that process and no other
+mimic-lib.pvl	MimicSessions	process	src/Cedar/NodeMimic.c	NodeMimicTransport	Transport	-	the transport, which only the vpntest test mimic takes: no production path dials or listens over it yet
+mimic-lib.pvl	MimicSetup	model	-	-	-	-	what the attacker knows from the start: the public key of the server, which is no secret, and the certificate of the decoy; no code
+mimic-lib.pvl	LeakRealityKey	model	-	-	-	-	the compromise of the REALITY private key of the server: no code
+mimic-lib.pvl	LeakLinkShortId	model	-	-	-	-	the compromise of the short id of the link of alice: no code
+mimic-lib.pvl	MimicClient:proof	message	controller/internal/mimic/realityclient.go	authenticate	Seal,SessionId	-	the proof: AES-256-GCM of the version, the time and the short id under the auth key, the last 12 bytes of the random as the nonce, the ClientHello with a zero session id as the associated data; the model leaves out the time
+mimic-lib.pvl	MimicClient:cert	check	controller/internal/mimic/realityclient.go	realityHandshake	VerifyPeerCertificate,errNotAuthenticated	-	the check of the temporary certificate; a certificate of the decoy fails it, and the dial fails before the node sends a byte
+mimic-lib.pvl	MimicClient:ehs	message	controller/internal/mimic/realityclient.go	realityHandshake	HandshakeContext	-	the flight of the server after its ServerHello, under the handshake keys: the certificate and the signature of the transcript
+mimic-lib.pvl	MimicClient:line	message	src/Cedar/NodeMimicTransport.c	NodeMimicDial	NodeMimicParseAnswer	-	the answer of the client sidecar, read a byte at a time so that nothing of the stream after it is taken
+mimic-lib.pvl	MimicClient:bnd	field	src/Cedar/NodeMimicTransport.c	NodeMimicBinding	NOISE_BINDING_EXPORTER,NOISE_BINDING_NONE	-	the binding of the stream: the exporter of the line, or none for "-", which makes the session encrypted
+mimic-lib.pvl	MimicClient:bnd	field	controller/internal/mimic/realityclient.go	bindingText	BindingLabel,ExportKeyingMaterial	-	the TLS exporter of the REALITY session with the label of the session module (NOISE_EXPORTER_LABEL), no context and 32 bytes
+mimic-lib.pvl	MimicClient:bnd	field	src/Core/Transport.c	TransportRekey	Rekey	D5	the mimic transport sets no Rekey, so the request of NoiseSessionPoll does nothing: the sidecar's TLS session is its own, and the model has no rekey
+mimic-lib.pvl	MimicClient:prologue	field	src/Core/NoiseSession.c	NoisePrologue	NOISE_PROLOGUE_LABEL,binding_type,binding	-	the prologue of a session, as on the other paths
+mimic-lib.pvl	MimicServer:settings	field	src/Cedar/NodeMimic.c	NodeMimicStartMessage	settings,cJSON_PrintUnformatted	-	the start message: the role, the data pipe and the settings of the role, on one line of the control pipe
+mimic-lib.pvl	MimicServer:settings	field	controller/internal/mimic/control.go	Read	DisallowUnknownFields	-	the sidecar reads the start message and refuses a field it does not know; the node logs the refusal and the role stays unavailable
+mimic-lib.pvl	MimicServer:sids	check	controller/internal/mimic/server.go	realityConfig	ShortIds,MaxTimeDiff	-	the short ids that the library takes; it also refuses a proof whose clock is too far from its own, which the model leaves out
+mimic-lib.pvl	MimicServer:cert	message	controller/internal/mimic/server.go	realityConfig	SessionTicketsDisabled	-	the temporary certificate that the library makes for a client that proved the key; no session ticket, so no resumption skips it
+mimic-lib.pvl	MimicServer:line	message	src/Cedar/NodeMimicTransport.c	NodeMimicAccept	NodeMimicParseBind	-	the bind line in front of a stream of the server role
+mimic-lib.pvl	MimicServer:dcert	message	controller/internal/mimic/decoy.go	startDecoy	TLSConfig	-	the certificate of the own decoy (ACME, files, or self-signed in the tests); in the borrow mode the one of the real site
 
 # tunnel-lib.pvl: the join of a further connection to a tunnel
 tunnel-lib.pvl	rec_join	constant	src/Core/NoiseSession.c	NoiseLoginParse	NOISE_LOGIN_JOIN,TunnelId	-	the join method of the Login: it names the hub and the id of a Tunnel

@@ -1,0 +1,14 @@
+(* Negative control mimic-nobinding-key: mimic-key with the binding left out of the prologue (AUD-7, #425). It is the
+   same model and the same attacker, the holder of the REALITY private key of the server, with bt_none on both ends: the
+   first line of a stream carries no binding, and the handshake runs bound to nothing. (The code runs a stream whose line
+   says "-" as an encrypted session, NOISE_SESSION_ENCRYPT, which the control leaves out: it is the binding alone that it
+   takes away, as nobinding-cert does on TLS-443.) The middlebox terminates the REALITY session of alice, opens one of its
+   own to bob, and the two Noise handshakes cross it unchanged, so the queries that hold in mimic-key must fail here. CI
+   fails when they do not. *)
+
+process
+  ( Setup()
+  | MimicSetup()
+  | LeakRealityKey()
+  | MimicSessions(bt_none, kp_on)
+  )

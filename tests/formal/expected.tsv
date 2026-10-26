@@ -344,6 +344,85 @@ tunnel-nokey-none	join-auth	holds	the handshake still has to authenticate alice 
 tunnel-nokey-none	join-identity	attack	NC4: charlie joins the Tunnel of alice with her id, which is no secret
 tunnel-nokey-none	join-replay	holds
 
+# The mimic path with a Login, as the code has it (AUD-7, #425): a prober that knows the public key of the server gets the
+# decoy and nothing else
+mimic-none	reach-took	reach
+mimic-none	reach-done	reach
+mimic-none	sec-pw	holds
+mimic-none	sec-data	holds
+mimic-none	auth-server	holds
+mimic-none	took-auth	holds
+mimic-none	cdata-auth	holds
+mimic-none	auth-client	holds
+mimic-none	data-auth	holds
+mimic-none	suite	holds
+mimic-none	replay-server	holds
+mimic-none	replay-client	holds
+mimic-none	mimic-auth	holds	only the server sidecar answers alice with a temporary certificate
+mimic-none	probe	holds	the prober cannot make a proof that the server takes: it is spliced to the decoy
+mimic-none	probe-decoy	reach
+mimic-none	sec-shortid	holds	the proof seals the short id under the auth key
+mimic-none	wrong-sid	holds	a link with a wrong short id sees the decoy and gives up
+
+# The link of alice, the public key and her short id: the attacker can prove the key and learns that the server is no
+# decoy, and nothing of the sessions of alice
+mimic-link	reach-took	reach
+mimic-link	reach-done	reach
+mimic-link	sec-pw	holds
+mimic-link	sec-data	holds
+mimic-link	auth-server	holds
+mimic-link	took-auth	holds
+mimic-link	cdata-auth	holds
+mimic-link	auth-client	holds
+mimic-link	data-auth	holds
+mimic-link	suite	holds
+mimic-link	replay-server	holds
+mimic-link	replay-client	holds
+mimic-link	mimic-auth	holds	the short id does not give the auth key of a ClientHello of alice
+mimic-link	probe	attack	the holder of a link proves the key: the server answers it as a server and not as the decoy
+mimic-link	probe-decoy	reach
+mimic-link	sec-shortid	attack	the attacker holds it
+mimic-link	wrong-sid	holds
+
+# The middlebox with the REALITY private key of the server: it terminates the outer session, and the binding of the
+# handshake to the exporter stops it, whole, as on TLS-443
+mimic-key	reach-took	reach
+mimic-key	reach-done	reach
+mimic-key	sec-pw	holds	the middlebox does not read the password
+mimic-key	sec-data	holds
+mimic-key	auth-server	holds	the handshake of alice is not accepted in another REALITY session
+mimic-key	took-auth	holds
+mimic-key	cdata-auth	holds
+mimic-key	auth-client	holds
+mimic-key	data-auth	holds
+mimic-key	suite	holds
+mimic-key	replay-server	holds
+mimic-key	replay-client	holds
+mimic-key	mimic-auth	attack	the key answers alice with a temporary certificate of its own: the outer session is the middlebox's
+mimic-key	probe	attack	the key makes any proof
+mimic-key	probe-decoy	reach
+mimic-key	sec-shortid	attack	the key opens every proof
+mimic-key	wrong-sid	reach	the middlebox answers a link whatever its short id
+
+# Negative control: the mimic path with no binding. The REALITY private key alone gives the attack (NC6)
+mimic-nobinding-key	reach-took	reach
+mimic-nobinding-key	reach-done	reach
+mimic-nobinding-key	sec-pw	attack	NC6: without the binding the REALITY private key alone is enough
+mimic-nobinding-key	sec-data	attack	NC6
+mimic-nobinding-key	auth-server	attack	NC6
+mimic-nobinding-key	took-auth	attack	NC6
+mimic-nobinding-key	cdata-auth	attack	NC6
+mimic-nobinding-key	auth-client	attack	NC6
+mimic-nobinding-key	data-auth	attack	NC6
+mimic-nobinding-key	suite	holds	the suite is in the hash of the handshake, whatever the outer session
+mimic-nobinding-key	replay-server	attack	NC6
+mimic-nobinding-key	replay-client	attack	NC6
+mimic-nobinding-key	mimic-auth	attack
+mimic-nobinding-key	probe	attack
+mimic-nobinding-key	probe-decoy	reach
+mimic-nobinding-key	sec-shortid	attack
+mimic-nobinding-key	wrong-sid	reach
+
 # Noise_IK alone, the records under the Noise keys, graded as the Noise Explorer grades IK
 noise-encrypted	reach-c	reach
 noise-encrypted	reach-d	reach

@@ -1,0 +1,257 @@
+(* mimic-lib.pvl
+   The session with a Login over the mimic transport (AUD-7, #425; docs/formal-model.md), with the declarations of
+   session-lib.pvl: the third outer session, the one that the mimicry sidecar ranz mimic makes (controller/internal/mimic),
+   and on it the Noise_IK handshake and the Login of session-lib.pvl. The core side is src/Cedar/NodeMimic.c (the sidecars,
+   their control pipes, the start message and the restart) and src/Cedar/NodeMimicTransport.c (the transport over their
+   data pipes, CORE-P2-6, #406). model-to-code.tsv maps every element.
+
+   No production path runs it yet: NodeMimicTransport, which gives the transport, is called by the vpntest test mimic only,
+   and no fallback list of the client role or Listener of a node takes a stream from it. The sidecar of the client role
+   starts with a node whose configuration store has a MimicClient setting, and the link of that setting (the address, the
+   public key and the short id) is typed by hand: the Controller half (CORE-P2-7, #424, and SDN-94, #423), which would
+   report the key of a server and give its clients the link, is not merged.
+
+   The outer session is REALITY over TCP, TLS 1.3 with the authentication of the server by its REALITY key:
+   - the client sidecar sends the ClientHello of a browser (uTLS) whose session id is the proof: the short id of its
+     link (and its version and clock, which the model leaves out), sealed with AES-GCM under the auth key, the HKDF of the
+     X25519 secret of the key share of the ClientHello and the public key of the server, salted with the random of the
+     ClientHello; the ClientHello is the associated data (authenticate);
+   - the server sidecar (the REALITY library) opens the proof with its private key and takes it when the short id is one
+     of its own. Then it answers as a TLS 1.3 server with a temporary certificate, a fresh Ed25519 key whose signature is
+     the HMAC-SHA512 of that key under the auth key, inside the handshake keys of the session, and the client checks the
+     HMAC and nothing else (temporaryCertificate): the public key of the server in the link is the pin of the path;
+   - a ClientHello whose proof does not open, or whose short id is not the server's, is spliced to the decoy, a real site
+     that answers with its own certificate: the prober sees the decoy, and a client of Ranz sees a certificate that is no
+     temporary certificate and gives up (errNotAuthenticated), before its node sends a byte.
+   The record keys and the exporter come from the Diffie-Hellman secret of the key shares and the transcript, as in
+   session-lib.pvl. The key share of the proof is the key share of the TLS session, as in the code.
+
+   The pipes. The sidecar and its node talk over named pipes that only the account of the node opens, and the node takes
+   only the process that it started as the other end (GetNamedPipeClientProcessId of the control pipe and of the data pipe
+   of the server role, GetNamedPipeServerProcessId of the data pipe of the client role), so the model has the sidecar and
+   the node of one end as one process, and a pipe as a value that they pass: the settings of the start message, which hold
+   the private key of a server and its short ids (NodeMimicStartMessage), and the first line of a stream, which carries
+   the binding (bind <binding> of the server role, dial <address> and ok <binding> of the client role). The pump of the
+   sidecar copies the bytes of the stream between the pipe and the TLS session and looks into neither, which the model has
+   as the node sealing its records under the keys of the TLS session itself. A sidecar that ends by itself is started again
+   with the same settings (NodeMimicSupervisor): the replication of the processes is that, since every connection of the
+   model is one run of the sidecar.
+
+   What a variant sets (the parameters of MimicSessions): bm, the binding of both ends: bt_export, the TLS exporter of the
+   outer session with the label of the session module (bindingText, BindingLabel; NodeMimicBinding), or bt_none for the
+   negative control; and kp as in session-lib.pvl.
+*)
+
+(* The decoy site: the own decoy of the sidecar or the big site that it borrows, whose key the attacker does not hold *)
+const site: principal.
+
+(* The version of the client that a proof carries with the short id, the first lines of the streams of the data pipes,
+   the dial request of the client role, a short id that is no short id of the server (a link that names a wrong one), and
+   the landing page of the decoy *)
+const proof_ver: bitstring.
+const line_bind: bitstring.
+const line_dial: bitstring.
+const line_ok: bitstring.
+const sid_wrong: bitstring.
+const decoy_page: bitstring.
+
+(* The REALITY key of a server node: an X25519 key of its own, which is neither the Noise identity key nor the key of a TLS
+   certificate (ADR-0023, key separation). Its public key is the public key of the links, with the key shares of tpk. *)
+fun realkey(principal): bitstring [private].
+letfun realpub(p: principal) = tpk(realkey(p)).
+
+(* The short id of the links of a server: the server keeps the list of its short ids, and a client sends the one of its
+   link in the proof. The model has one, which the link of alice names. *)
+fun shortid(principal): bitstring [private].
+
+(* rauth(s, r): the auth key, HKDF-SHA256 of the X25519 secret s of the key share of the ClientHello and the key of the
+   server, with the random r as the salt and REALITY as the info. rmac(k, p): HMAC-SHA512 of a public key p under the
+   auth key k. tcert(p, m): the temporary certificate of the public key p with the signature m. tlshk(s, t): the key of
+   the handshake messages of TLS 1.3 after the key shares, from the secret and the transcript so far, which hides the
+   certificate. *)
+fun rauth(bitstring, bitstring): bitstring.
+fun rmac(bitstring, bitstring): bitstring.
+fun tcert(bitstring, bitstring): bitstring.
+reduc forall p: bitstring, m: bitstring; tcertkey(tcert(p, m)) = p.
+reduc forall p: bitstring, m: bitstring; tcertmac(tcert(p, m)) = m.
+fun tlshk(bitstring, bitstring): bitstring.
+
+event LeakReality(phasen, principal).
+event LeakLink(principal).
+
+(* What the sidecars do: MimicHello is the ClientHello of a client with the short id of its link, MimicLinkUp the client
+   that took the temporary certificate (the session that it hands its node), MimicProved the server that took the proof,
+   MimicStream the server that hands its node the stream of that session, MimicSpliced the server that spliced a
+   connection to the decoy *)
+event MimicHello(principal, principal, bitstring, bitstring).
+event MimicLinkUp(principal, principal, bitstring, bitstring).
+event MimicProved(principal, bitstring, bitstring).
+event MimicStream(principal, bitstring).
+event MimicSpliced(principal, bitstring).
+
+(* The client end: the node writes the dial request on the data pipe of its sidecar, the sidecar runs the REALITY
+   handshake of the link with the short id link and answers ok with the binding, and the node runs NoiseSessionConnect
+   and NoiseSessionFinish with that binding in the prologue, then the Login, a data record each way, a keepalive and the
+   close, as Client of session-lib.pvl *)
+let MimicClient(me: principal, them: principal, link: bitstring, bm: bitstring, plabel: bitstring, suite: bitstring, sid: sessionid) =
+  new cr: bitstring;
+  new x: bitstring;
+  new e: bitstring;
+  let request = (line_dial, them) in
+  let (=line_dial, addr: principal) = request in
+  let gx = tpk(x) in
+  let ak = rauth(tdhi(x, realpub(addr)), cr) in
+  let proof = aead(ak, (cr, gx), (proof_ver, link)) in
+  event MimicHello(me, addr, link, cr);
+  out(c, (cr, gx, proof));
+  in(c, (sr: bitstring, gy: bitstring, ehs: bitstring));
+  let th = (cr, gx, proof, sr, gy) in
+  let (cert: bitstring, sg: bitstring) = sdec(tlshk(tdhi(x, gy), th), ehs) in
+  let tpub = tcertkey(cert) in
+  if tcertmac(cert) = rmac(ak, tpub) then
+  let tr = (th, cert) in
+  if checksign(tpub, sg) = tr then
+  let ms = tlsms(tdhi(x, gy), tr) in
+  let kc = tlsk(ms, lab_c) in
+  let ks = tlsk(ms, lab_s) in
+  event MimicLinkUp(me, addr, link, tr);
+  let line = (line_ok, binding(bm, ms, cert, lab_exp_session)) in
+  let (=line_ok, bnd: bitstring) = line in
+  let prologue = (plabel, bm, bnd) in
+  let sI = skey(me) in
+  let SI = pk(sI) in
+  let SR = spub(them) in
+  let E = pk(e) in
+  let h0 = hash1(suitename(suite)) in
+  let h1 = mixh(mixh(h0, prologue), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhi(e, SR)) in
+  let k1 = hkk(h0, dhi(e, SR)) in
+  let cs = aead(k1, h2, SI) in
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhi(sI, SR)) in
+  let k2 = hkk(ck1, dhi(sI, SR)) in
+  let cp = aead(k2, h3, empty) in
+  let h4 = mixh(h3, cp) in
+  event ClientStart(me, them, tr);
+  event ClientSuite(me, them, tr, suite);
+  out(c, senc(kc, (rec_hs, suite, (E, cs, cp))));
+  in(c, rec2: bitstring);
+  let (=rec_hs, =suite, (E2: bitstring, cp2: bitstring)) = sdec(ks, rec2) in
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhi(e, E2)) in
+  let k4 = hkk(ck3, dhi(sI, E2)) in
+  if unaead(k4, h5, cp2) = empty then
+  let h6 = mixh(h5, cp2) in
+  event ClientDone(me, them, tr, h6);
+  out(c, senc(kc, (rec_control, (v_hi, m_pw, me, pw(me)))));
+  let cd = cdata(me, them, sid) in
+  event ClientSentData(me, them, tr, cd);
+  out(c, senc(kc, (rec_data, cd)));
+  in(c, rec3: bitstring);
+  let (=rec_data, d: bitstring) = sdec(ks, rec3) in
+  event ClientGotData(me, them, tr, d);
+  out(c, senc(kc, (rec_keepalive, empty)));
+  out(c, senc(kc, (rec_close, empty))).
+
+(* The server end: the sidecar of the server role takes the settings of its start message, opens the proof of a
+   ClientHello, answers a client with the temporary certificate and writes the bind line in front of the stream, and the
+   node runs NoiseSessionAccept with that binding in the prologue, then the Login, the key check and a data record each
+   way, as Server of session-lib.pvl. A ClientHello whose proof does not open with a short id of the server is spliced to
+   the decoy, which answers with its own certificate and its landing page. A server runs the suites that it supports as
+   one process each. *)
+let MimicServer(me: principal, kp: bitstring, bm: bitstring, plabel: bitstring, suite: bitstring, sid: sessionid) =
+  new sr: bitstring;
+  new y: bitstring;
+  new tk: bitstring;
+  new e: bitstring;
+  new sd: bitstring;
+  new yd: bitstring;
+  let settings = (realkey(me), shortid(me)) in
+  let (rk: bitstring, sids: bitstring) = settings in
+  in(c, (cr: bitstring, gx: bitstring, proof: bitstring));
+  let ak = rauth(tdhr(rk, gx), cr) in
+  let (=proof_ver, =sids) = unaead(ak, (cr, gx), proof) in
+  (
+  event MimicProved(me, cr, sids);
+  let gy = tpk(y) in
+  let tpub = spk(tk) in
+  let cert = tcert(tpub, rmac(ak, tpub)) in
+  let th = (cr, gx, proof, sr, gy) in
+  let tr = (th, cert) in
+  let ms = tlsms(tdhr(y, gx), tr) in
+  let kc = tlsk(ms, lab_c) in
+  let ks = tlsk(ms, lab_s) in
+  event MimicStream(me, tr);
+  out(c, (sr, gy, senc(tlshk(tdhr(y, gx), th), (cert, sign(tk, tr)))));
+  let line = (line_bind, binding(bm, ms, cert, lab_exp_session)) in
+  let (=line_bind, bnd: bitstring) = line in
+  let prologue = (plabel, bm, bnd) in
+  in(c, rec1: bitstring);
+  let (=rec_hs, =suite, (E: bitstring, cs: bitstring, cp: bitstring)) = sdec(kc, rec1) in
+  let sR = skey(me) in
+  let SR = pk(sR) in
+  let h0 = hash1(suitename(suite)) in
+  let h1 = mixh(mixh(h0, prologue), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhr(sR, E)) in
+  let k1 = hkk(h0, dhr(sR, E)) in
+  let SI = unaead(k1, h2, cs) in
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhr(sR, SI)) in
+  let k2 = hkk(ck1, dhr(sR, SI)) in
+  if unaead(k2, h3, cp) = empty then
+  let h4 = mixh(h3, cp) in
+  event ServerAccept(me, SI, tr);
+  event ServerSuite(me, SI, tr, suite);
+  let E2 = pk(e) in
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhr(e, E)) in
+  let k4 = hkk(ck3, dhr(e, SI)) in
+  let cp2 = aead(k4, h5, empty) in
+  let h6 = mixh(h5, cp2) in
+  event ServerReply(me, SI, tr, h6);
+  out(c, senc(ks, (rec_hs, suite, (E2, cp2))));
+  in(c, rec2: bitstring);
+  let (=rec_control, (=v_hi, =m_pw, u: principal, upw: bitstring)) = sdec(kc, rec2) in
+  if upw = pw(u) then
+  if SI = keyok(kp, SI, spub(u)) then
+  event ServerTook(me, u, tr);
+  event ServerSentData(me, u, tr, appdata(me, u, sid));
+  out(c, senc(ks, (rec_data, appdata(me, u, sid))));
+  in(c, rec3: bitstring);
+  let (=rec_data, d: bitstring) = sdec(kc, rec3) in
+  event ServerGotData(me, u, tr, d)
+  )
+  else
+  (
+  event MimicSpliced(me, cr);
+  let gyd = tpk(yd) in
+  let dcert = certof(site) in
+  let thd = (cr, gx, proof, sd, gyd) in
+  let trd = (thd, dcert) in
+  out(c, (sd, gyd, senc(tlshk(tdhr(yd, gx), thd), (dcert, sign(sigkey(site), trd)))));
+  out(c, senc(tlsk(tlsms(tdhr(yd, gx), trd), lab_s), decoy_page))
+  ).
+
+(* The processes of a mimic model: alice dials bob through the link of her client settings, and through a link that names
+   a short id that bob does not have; bob runs both suites *)
+let MimicSessions(bm: bitstring, kp: bitstring) =
+  !( new sid: sessionid; MimicClient(alice, bob, shortid(bob), bm, plabel_session, suite_hfs, sid) )
+  | !( new sid: sessionid; MimicClient(alice, bob, sid_wrong, bm, plabel_session, suite_hfs, sid) )
+  | !( new sid: sessionid; MimicServer(bob, kp, bm, plabel_session, suite_ik, sid) )
+  | !( new sid: sessionid; MimicServer(bob, kp, bm, plabel_session, suite_hfs, sid) ).
+
+(* What the attacker knows of the mimic path from the start, with Setup: the public key of the server, which every link
+   holds and which is no secret, and the certificate of the decoy, which every prober sees *)
+let MimicSetup() =
+  out(c, realpub(bob));
+  out(c, certof(site)).
+
+(* The compromises of the mimic models, each an event, as in session-lib.pvl:
+     LeakRealityKey  the REALITY private key of the server, which the start message carries: the middlebox that can
+                     answer as the server
+     LeakLinkShortId the short id of the link of alice (the public key is the attacker's always): a client of the server,
+                     or a link that leaked *)
+let LeakRealityKey() = event LeakReality(phase0, bob); out(c, realkey(bob)).
+let LeakLinkShortId() = event LeakLink(bob); out(c, shortid(bob)).
