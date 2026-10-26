@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -79,15 +81,23 @@ func acmeState(dir string) (files []string, state string) {
 	return files, string(b)
 }
 
-// acmeManager returns a Manager of the key key that keeps its ACME certificates in dir, whose clock runs ahead of the
-// real one by skew nanoseconds. With plain it answers the challenges through the plain HTTP port of the Controller.
-func acmeManager(t *testing.T, dir string, key crypto.Signer, plain bool, skew *atomic.Int64) *Manager {
+// testLog writes the log of a Manager to the log of the test, as one line for each record.
+type testLog struct{ t *testing.T }
+
+func (l testLog) Write(p []byte) (int, error) {
+	l.t.Log(strings.TrimRight(string(p), "\r\n"))
+	return len(p), nil
+}
+
+// acmeManager returns a Manager of the key key that keeps its ACME certificates in dir. With plain it answers the
+// challenges through the plain HTTP port of the Controller.
+func acmeManager(t *testing.T, dir string, key crypto.Signer, plain bool) *Manager {
 	t.Helper()
 	self, err := keys.SelfSigned(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(Config{SelfSigned: self, Key: key, Dir: dir, Challenges: plain, Now: func() time.Time { return time.Now().Add(time.Duration(skew.Load())) }})
+	return New(Config{SelfSigned: self, Key: key, Dir: dir, Challenges: plain, Log: slog.New(slog.NewTextHandler(testLog{t}, nil))})
 }
 
 // The Controller serves a certificate that an ACME service issued, for its own key, so that the TLS fingerprint that the
@@ -118,8 +128,7 @@ func TestServesACertificateOfAnACMEService(t *testing.T) {
 			ctx := context.Background()
 			key := ecKey(t)
 			dir := t.TempDir()
-			var skew atomic.Int64
-			m := acmeManager(t, dir, key, c.plain, &skew)
+			m := acmeManager(t, dir, key, c.plain)
 			if c.plain {
 				ln, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(challengePort)))
 				if err != nil {
@@ -129,7 +138,8 @@ func TestServesACertificateOfAnACMEService(t *testing.T) {
 				go func() { _ = srv.Serve(ln) }()
 				t.Cleanup(func() { _ = srv.Close() })
 			}
-			// The certificate is renewed when a day is left of it: Pebble may issue one for less than the 30 days of the default
+			// The certificate is renewed when a day is left of it. Pebble issues a certificate for 90 days or for 6 days, the one or
+			// the other for an order, and the 30 days of the default renewDays would make the short one due at once
 			setting := Setting{ACME: &ACME{Directory: directory, Names: []string{"localhost"}, HTTPPort: uint16(challengePort), CAFile: roots, RenewDays: 1}}
 
 			// The service issues, and the Controller serves the chain for the key that it has
@@ -157,14 +167,15 @@ func TestServesACertificateOfAnACMEService(t *testing.T) {
 				files, state := acmeState(dir)
 				t.Errorf("a look at a certificate that is not due changed it: %s, was %s (valid until %s); the files are %v, the state %s", got.Thumbprint, first.Thumbprint, first.NotAfter, files, state)
 			}
-			restarted, err := acmeManager(t, dir, key, c.plain, &skew).Load(ctx, setting)
+			restarted, err := acmeManager(t, dir, key, c.plain).Load(ctx, setting)
 			if err != nil || restarted.Info.Thumbprint != first.Thumbprint {
 				files, state := acmeState(dir)
 				t.Errorf("after a restart: %+v, %v, want the certificate of before, %s; the files are %v, the state %s", restarted.Info, err, first.Thumbprint, files, state)
 			}
 
-			// It is due half a day before its end: the service issues another, for the same key
-			skew.Store(int64(time.Until(first.NotAfter) - 12*time.Hour))
+			// It is due when the setting asks for the renewal 3650 days before the end, which every certificate is within:
+			// the service issues another, for the same key
+			m.cur.Load().Setting.ACME.RenewDays = 3650
 			m.mu.Lock()
 			m.nextACME = time.Time{}
 			m.mu.Unlock()
