@@ -1,6 +1,7 @@
 // PeerInternal.h
 // Module-internal declarations of the Peer module: the state of a node's peer layer, which Peer.c, PeerSignal.c,
-// PeerUdp.c, PeerIce.c and PeerPortMap.c share. Only the Peer files include this header.
+// PeerUdp.c, PeerIce.c, PeerPortMap.c, PeerPunch.c, PeerSession.c and PeerChallenge.c share. Only the Peer files
+// include this header.
 
 #ifndef CORE_PEER_INTERNAL_H
 #define CORE_PEER_INTERNAL_H
@@ -8,10 +9,18 @@
 #include "Core/Peer.h"
 
 #include "Core/Crypto.h"
+#include "Core/Noise.h"
 
-// The payload of a bind: PEER_VERSION and the sequence
-#define PEER_VERSION   1
-#define PEER_BIND_SIZE 9
+// The payload of a bind: PEER_VERSION and the sequence, then the cookie of the relay's bind challenge, if the node
+// has one for that relay
+#define PEER_VERSION     1
+#define PEER_BIND_SIZE   9
+#define PEER_COOKIE_SIZE 16
+#define PEER_BIND_MAX    (PEER_BIND_SIZE + PEER_COOKIE_SIZE)
+// ... of a bind challenge: PEER_VERSION, the sequence of the bind it answers, the cookie
+#define PEER_CHALLENGE_SIZE (PEER_BIND_SIZE + PEER_COOKIE_SIZE)
+// A cookie is good for the period it was made in and the one after it (PeerChallenge.c)
+#define PEER_COOKIE_PERIOD 120000
 // ... of a bound: PEER_VERSION, the sequence of the bind it answers, the address the relay saw the bind from
 #define PEER_BOUND_SIZE 27
 // ... of a signal: PEER_VERSION, the type, the sequence, the relay key, address and port, the number of
@@ -28,6 +37,77 @@
 // The target addresses one punch of a peer probes: the peer's predicted port, then a birthday range above each of
 // its reflexive and mapped candidates (PeerPunch.c)
 #define PEER_PUNCH_MAX_TARGETS 48
+// The nonces of a punch that wait for their echo, each with the address it went to (PeerPunch.c)
+#define PEER_PUNCH_NONCES     4
+#define PEER_PUNCH_NONCE_SIZE 16
+
+// A peer session (PeerSession.c): the sizes of its handshake messages. An initiation is its kind, the source key,
+// the destination key and the sender's index, then the first message of Noise_IK with the payload of
+// PEER_INIT_PAYLOAD bytes (the timestamp, the sender's index); a response is its kind, the keys, the sender's
+// index and the receiver's, then the second message with the payload of PEER_RESPONSE_PAYLOAD bytes (the two
+// indices).
+#define PEER_INIT_HEADER      69
+#define PEER_INIT_PAYLOAD     12
+#define PEER_INIT_SIZE        (PEER_INIT_HEADER + NOISE_IK_MESSAGE1_SIZE + PEER_INIT_PAYLOAD)
+#define PEER_RESPONSE_HEADER  73
+#define PEER_RESPONSE_PAYLOAD 8
+#define PEER_RESPONSE_SIZE    (PEER_RESPONSE_HEADER + NOISE_IK_MESSAGE2_SIZE + PEER_RESPONSE_PAYLOAD)
+#define PEER_SESSION_QUEUE    8    // Datagrams that wait for a handshake, per peer
+#define PEER_SESSION_RETRY    1000 // ms before an initiation that had no answer is sent again
+#define PEER_SESSION_TRIES    10   // ... how many times, before the queue is dropped
+#define PEER_WINDOW_BITS      256  // The sliding window of the counters of the records under one key
+#define PEER_WINDOW_WORDS     (PEER_WINDOW_BITS / 64)
+
+// The keys of a peer session: one handshake's
+typedef struct PEER_KEYPAIR {
+	bool Valid;                             // It holds keys
+	bool Initiator;                         // This node started the handshake of the keys
+	bool Confirmed;                         // The peer has the keys: this node is their initiator, or took a record under them
+	UINT LocalIndex;                        // The index that the records to this node carry
+	UINT RemoteIndex;                       // The index that this node's records carry
+	NOISE_CIPHER Send;                      // The key of the records this node sends; its nonce is the next counter
+	NOISE_CIPHER Recv;                      // The key of the records it receives
+	bool RecvAny;                           // A record was taken under the keys
+	UINT64 RecvMax;                         // ... the highest counter taken
+	UINT64 Window[PEER_WINDOW_WORDS];       // ... and which of the PEER_WINDOW_BITS counters below it were taken
+	UINT64 Created;                         // When the handshake completed (ms)
+	UCHAR Id[PEER_SESSION_ID_SIZE];         // The start of the handshake hash, the same at both ends
+} PEER_KEYPAIR;
+
+// The peer session of a node with one peer, which the PEER holds while the peer stays. Its lock comes after the
+// lock of the layer, and before KeyLock.
+typedef struct PEER_SESSION {
+	SRWLOCK Lock;                                         // Everything below
+	PEER_KEYPAIR Current;                                 // The keys that records go under
+	PEER_KEYPAIR Previous;                                // The keys before them, for the records still on their way
+	PEER_KEYPAIR Next;                                    // A responder's new keys, until the initiator's first record under them
+	bool Pending;                                         // This node's initiation is on its way
+	NOISE_HANDSHAKE Handshake;                            // ... its handshake
+	UINT PendingIndex;                                    // ... its index
+	UINT64 PendingTick;                                   // ... when it was sent (ms)
+	UINT PendingTries;                                    // ... and how many times
+	UINT64 LastInit;                                      // The timestamp of the last initiation taken from the peer
+	UINT64 LastSent;                                      // When the node last sent a record (ms)
+	UINT64 LastReceived;                                  // When it last took one
+	UINT64 LastData;                                      // ... and one with a payload, which a keepalive answers
+	UINT64 SentUnderKey;                                 // Records sent under the current keys
+	UINT64 Handshakes;                                    // Handshakes that completed with the peer
+	UINT QueueNum;                                        // The datagrams that wait for the handshake
+	UINT QueueSize[PEER_SESSION_QUEUE];                   // ... their sizes
+	UCHAR Queue[PEER_SESSION_QUEUE][PEER_MAX_PAYLOAD];    // ... and their bytes
+} PEER_SESSION;
+
+// What one input of a peer session gives the layer: a datagram to send back to the peer, the queue to send now, and
+// a payload to deliver to the node
+typedef struct PEER_SESSION_OUT {
+	UINT ReplySize;                  // The response to an initiation, 0 for none
+	UCHAR Reply[PEER_MAX_DATAGRAM];  // ... its bytes
+	bool Flush;                      // New keys are up: the queue goes now (PeerSessionFlush)
+	bool Keepalive;                  // ... and a keepalive when it is empty: the node's own handshake completed
+	bool Deliver;                   // A payload for the node
+	UINT DeliverSize;                // ... its size
+	UCHAR Payload[PEER_MAX_PAYLOAD]; // ... and its bytes
+} PEER_SESSION_OUT;
 
 // The agent of libjuice (juice/juice.h), which only PeerIce.c calls
 struct juice_agent;
@@ -59,6 +139,9 @@ typedef struct PEER_PUNCH {
 	UINT NumTargets;                           // The addresses the probes go to: the predicted port first
 	UINT Next;                                 // The next target of the round over them, so one tick sends a bounded burst
 	PEER_ADDR Targets[PEER_PUNCH_MAX_TARGETS]; // ...
+	UINT NextNonce;                            // The next slot of the nonces below, round robin
+	PEER_ADDR NonceTo[PEER_PUNCH_NONCES];      // The addresses that a nonce of the node went to, sealed to the peer
+	UCHAR Nonces[PEER_PUNCH_NONCES][PEER_PUNCH_NONCE_SIZE]; // ... and those nonces, which the peer echoes from there
 } PEER_PUNCH;
 
 // One peer in the peer table, kept across PeerSetPeers while the peer stays
@@ -73,6 +156,10 @@ typedef struct PEER {
 	PEER_ADDR Direct;                               // ... to this address
 	PEER_ICE *Ice;                                  // The ICE session with the peer, NULL for none
 	PEER_PUNCH Punch;                               // The symmetric-NAT hole punch with the peer (PeerPunch.c)
+	PEER_SESSION *Session;                          // The peer session with the peer (PeerSession.c), NULL when out of memory
+	UINT64 Floor;                                   // The clock (PeerWallClock) when the entry was made: every sequence of
+	                                                // the peer must be above it, so a restart or a new entry takes no replay
+	UINT64 BindSequence;                            // The relay role: the sequence of the last bind taken from the peer
 } PEER;
 
 // The ICE side of a node (PeerIce.c, PeerPortMap.c), with Config.Ice
@@ -91,6 +178,9 @@ typedef struct PEER_RELAY {
 	UINT64 BindSequence;  // The sequence of the last bind
 	UINT64 BindTick;      // When the last bind was sent (ms)
 	PEER_ADDR Observed;   // The address that the relay saw the node at: its server reflexive candidate
+	bool HasCookie;       // The relay sent a bind challenge: its cookie goes in the next binds
+	bool Answered;        // The last bind answered a challenge, so the next challenge waits for a new bind
+	UCHAR Cookie[PEER_COOKIE_SIZE]; // ... the cookie
 } PEER_RELAY;
 
 // One node bound to the relay role. A binding is soft state: the node renews it, and the relay drops it when it
@@ -125,10 +215,11 @@ struct PEER_AGENT {
 	volatile LONG64 Sequence;                // The last sequence of a bind or a signal of the node
 	LONG64 RateInterval;                     // GCRA: performance counter ticks between two datagrams at RelayRate
 	LONG64 RateTolerance;                    // ... and the burst tolerance
-	volatile LONG64 Counters[10];            // Sent, Delivered, DeliveredRelay, Forwarded, Binds, Signals, Upgrades, Fallbacks, PunchAttempts, PunchSuccesses
+	volatile LONG64 Counters[12];            // Sent, Delivered, DeliveredRelay, Forwarded, Binds, Signals, Upgrades, Fallbacks, PunchAttempts, PunchSuccesses, Handshakes, Challenges
 	volatile LONG64 Drops[PEER_NUM_REASONS]; // What the layer dropped, by reason
 	SRWLOCK IceLock;                         // Serialises the start, the remote side and the end of the ICE sessions
 	PEER_ICE_NODE Ice;                       // The ICE socket and the port mapping, with Config.Ice
+	UCHAR CookieSecret[CRYPTO_SHA256_SIZE];  // The relay role: the key of its bind challenges, new at every start
 };
 
 // The counters of a PEER_AGENT
@@ -142,17 +233,39 @@ struct PEER_AGENT {
 #define PEER_COUNT_FALLBACKS       7
 #define PEER_COUNT_PUNCH_ATTEMPTS  8
 #define PEER_COUNT_PUNCH_SUCCESSES 9
+#define PEER_COUNT_HANDSHAKES      10
+#define PEER_COUNT_CHALLENGES      11
 
 // Peer.c
 void PeerCount(PEER_AGENT *a, UINT counter);
 void PeerDrop(PEER_AGENT *a, UINT reason);
+UINT64 PeerNow();
+UINT64 PeerWallClock();
 UINT64 PeerNextSequence(PEER_AGENT *a);
+UINT64 PeerFloorOf(const PEER *p, UINT64 last);
 void PeerPutUint64(UCHAR *p, UINT64 v);
 UINT64 PeerGetUint64(const UCHAR *p);
 void PeerPutUint16(UCHAR *p, USHORT v);
 USHORT PeerGetUint16(const UCHAR *p);
 PEER *PeerFind(PEER_AGENT *a, const UCHAR *key);
 void PeerInputDirect(PEER_AGENT *a, const UCHAR *key, const UCHAR *data, UINT size);
+bool PeerSendRaw(PEER_AGENT *a, const PEER_ADDR *to, const void *data, UINT size);
+void PeerBind(PEER_AGENT *a, const UCHAR *relay_key, bool answer);
+
+// PeerSession.c
+PEER_SESSION *PeerSessionNew();
+void PeerSessionFree(PEER_SESSION *s);
+UINT PeerSessionSeal(PEER_AGENT *a, PEER *p, const void *data, UINT size, UCHAR *buf, bool *queued, bool *rekey);
+UINT PeerSessionInitiate(PEER_AGENT *a, PEER *p, UCHAR *buf);
+UINT PeerSessionInput(PEER_AGENT *a, PEER *p, const PEER_RECORD_INFO *r, const UCHAR *data, UINT size, PEER_SESSION_OUT *o);
+UINT PeerSessionFlush(PEER_AGENT *a, PEER *p, bool first, UCHAR *buf);
+UINT PeerSessionTick(PEER_AGENT *a, PEER *p, UCHAR *buf);
+void PeerSessionStatus(PEER *p, PEER_STATUS *st);
+
+// PeerChallenge.c
+bool PeerCookieCheck(PEER_AGENT *a, const UCHAR *key, const PEER_ADDR *from, const UCHAR *cookie);
+void PeerChallengeSend(PEER_AGENT *a, const UCHAR *key, const PEER_ADDR *from, UINT64 seq);
+void PeerInputChallenge(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size);
 
 // PeerSignal.c
 UINT PeerSeal(PEER_AGENT *a, const UCHAR *peer, UINT kind, const void *payload, UINT payload_size, UCHAR *buf, UINT size);

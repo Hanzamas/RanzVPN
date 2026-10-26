@@ -57,7 +57,8 @@ add_subdirectory(3rdparty)
 
 # corepeer: the peer module (Peer.h, Peer*.c; CORE-S5-2, #78): the peer layer of a node, the relay role and the
 # envelopes of binds and signals, on the crypto module and Winsock; ICE and the port mapping of home gateways
-# (PeerIce.c, PeerPortMap.c; CORE-S5-3, #79) on libjuice and libplum. The Node module of Cedar links it too, so
+# (PeerIce.c, PeerPortMap.c; CORE-S5-3, #79) on libjuice and libplum; the peer sessions of its data datagrams
+# (PeerSession.c; CORE-H2, #399) on the Noise_IK handshake of the session module. The Node module of Cedar links it too, so
 # ranz_core_options and the libraries stay PRIVATE: a target that links corepeer keeps its own build options and
 # gets the libraries for the link only.
 file(GLOB SOURCES_CORE_PEER "Peer*.c")
@@ -72,6 +73,7 @@ target_link_libraries(corepeer PRIVATE ranz_core_options ranz_warnings)
 # The only libraries the module calls
 target_link_libraries(corepeer
   PRIVATE
+    corenoise
     corecrypto
     libjuice
     libplum
