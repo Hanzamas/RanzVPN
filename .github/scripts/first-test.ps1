@@ -847,7 +847,8 @@ try {
 		if ($change.certificate.source -ne 'file' -or $new -notmatch '^[0-9a-f]{64}$' -or $new -eq $old -or @($change.certificate.names) -notcontains $values['PC-A'] -or $change.certificate.selfSigned) {
 			throw "the replacement is $($change | ConvertTo-Json -Compress -Depth 5), not a certificate of the file for $($values['PC-A']) with another fingerprint than $old"
 		}
-		if ((@($change.pinned) -join ',') -ne "$nodeA,$nodeB" -or @($change.unpinned).Count -ne 0) {
+		# unpinned is left out of the answer when it is empty, and the count of @($null) is one
+		if ((@($change.pinned) -join ',') -ne "$nodeA,$nodeB" -or @($change.unpinned | Where-Object { $_ }).Count -ne 0) {
 			throw "the Nodes that took the new fingerprint before the certificate was served are $(@($change.pinned) -join ','), and $(@($change.unpinned) -join ',') did not"
 		}
 		$values['FINGERPRINT'] = $new
