@@ -7,8 +7,9 @@
 // ServeConn is the seam for the front door of SDN-29 (#205). On a host that runs a node too, the
 // node owns TCP 443 and hands over each connection that belongs to the controller (by TLS SNI and
 // ALPN, the socket itself through WSADuplicateSocketW); the controller then serves it with
-// ServeConn instead of accepting it on a listener of its own. The front door is not built yet,
-// so today the controller listens itself.
+// ServeConn instead of accepting it on a listener of its own. ListenFrontDoor is the controller's
+// end of that handoff (SDN-73, #352; frontdoor_windows.go), beside the listener of the controller,
+// which keeps its own port as it does without a front door.
 //
 // The TLS policy of each surface is fixed (SDN-45, #238): the control stream, the new protocol,
 // takes TLS 1.3 only; the web UI and the API take TLS 1.2 and 1.3. A client that offers

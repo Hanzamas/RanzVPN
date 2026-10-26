@@ -34,6 +34,11 @@
 
 #define FRONT_DOOR_PORT 443 // The port of the front door in a deployment (ADR-0035 decision 1)
 
+// The handoff pipe of a Controller on the same host (SDN-73, #352): DefaultFrontDoorPipe of controller/internal/port
+#define FRONT_DOOR_CONTROLLER_PIPE L"\\\\.\\pipe\\ranz-controller-front-door"
+// The ALPN protocols of the Controller's port: its web UI and API, and the control stream of the nodes (CONTROL_ALPN)
+#define FRONT_DOOR_CONTROLLER_PROTOCOLS "h2, http/1.1, ranz-control/1"
+
 // The limits of the owner table
 #define FRONT_DOOR_MAX_OWNERS   16  // Owners of one front door at most
 #define FRONT_DOOR_NAME_SIZE    32  // An owner's name, its terminator included

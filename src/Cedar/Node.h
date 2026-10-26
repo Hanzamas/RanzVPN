@@ -346,6 +346,8 @@ struct NODE_VRF_TABLES {
 	NODE_MIRROR_TABLE *Mirror;
 	// The members of the policy of the VRFs of the same Generation (NodePolicy.c; SDN-8, #184), NULL for no policy
 	NODE_POLICY_TABLE *Policy;
+	// The links of kind vxlan and geneve of the same Generation (NodeLink.c; SDN-76, #356), NULL for none
+	struct NODE_LINK_TABLE *Link;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -440,6 +442,10 @@ struct NODE {
 	// The VXLAN module that sends the copies of the Mirrors (NodeMirror.c; SDN-23, #199), NULL until a Generation of
 	// the overlay has a Mirror
 	NODE_MIRROR *volatile Mirror;
+
+	// The VXLAN module of the links of kind vxlan and geneve (NodeLink.c; SDN-76, #356), NULL until a Generation of the
+	// overlay has one
+	struct NODE_LINK *volatile Link;
 
 	// The DHCP responders of the L2 Networks (NodeDhcp.c; SDN-43, #236), NULL while the overlay does not run
 	NODE_DHCPS *Dhcp;

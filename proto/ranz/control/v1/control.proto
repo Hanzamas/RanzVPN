@@ -250,6 +250,30 @@ message NodeConfig {
   // The endpoints of the node (SDN-93 #410), in the order of its Node resource: the addresses under which
   // the other nodes reach it. A node that has none cannot be dialled, so it dials its peers.
   repeated Endpoint endpoints = 10;
+  // The tunnel endpoint of the node for the links of kind vxlan and geneve (SDN-76 #356): the ports it
+  // listens on. Absent while no VRF of the node has such a link.
+  Vtep vtep = 11;
+}
+
+// The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise
+// session over QUIC or TLS, for any underlay. A link of kind vxlan or geneve carries the packets of the
+// VRF in plain VXLAN (RFC 7348) or Geneve (RFC 8926) between the tunnel endpoints of two nodes, on a
+// network that the operator trusts: no Noise, no encryption of the product. A node takes such a
+// datagram only from the address of a peer of the VRF that the controller named, and only on the VNI
+// of the VRF.
+enum LinkKind {
+  LINK_KIND_UNSPECIFIED = 0;  // as LINK_KIND_NOISE
+  LINK_KIND_NOISE = 1;
+  LINK_KIND_VXLAN = 2;
+  LINK_KIND_GENEVE = 3;
+}
+
+// A tunnel endpoint of a node for the links of kind vxlan and geneve (SDN-76 #356): its address on
+// the network that the operator trusts, and the UDP port of each encapsulation.
+message Vtep {
+  bytes address = 1;       // 4 bytes for IPv4, 16 for IPv6; empty in the NodeConfig of the node itself
+  uint32 vxlan_port = 2;   // 4789 by default
+  uint32 geneve_port = 3;  // 6081 by default
 }
 
 // The Listener of a node (SDN-45 #238, ADR-0035): the front door on the TCP port, which hands each
@@ -298,6 +322,10 @@ message Vrf {
   VrfPolicy policy = 6;
   // The zone of overlay DNS in the VRF (SDN-11), absent while overlay DNS is off in it
   DnsZone dns = 7;
+  // The kind of the links between the nodes of the VRF (SDN-76 #356), and the VNI that a link of kind
+  // vxlan or geneve carries its packets on, 0 for a link of kind noise.
+  LinkKind link = 8;
+  uint32 vni = 9;
 }
 
 // The zone of a VRF (SDN-11 #187, ADR-0028 decisions 6 and 7). The stub resolver of a node
@@ -350,6 +378,9 @@ message Peer {
   repeated Route routes = 5;
   repeated string tags = 6;  // sorted: the tags of the peer, which identify it to the Rules (SDN-8)
   repeated Endpoint endpoints = 7;
+  // The tunnel endpoint of the peer (SDN-76 #356), absent while no shared VRF has a link of kind vxlan
+  // or geneve: the only address that this node takes the datagrams of those links from.
+  Vtep vtep = 8;
 }
 
 // The transports that a node dials a peer over, as a fallback list names them: quic, tls and mimic
@@ -473,6 +504,8 @@ message Capabilities {
   // With wireguard: the public key of the node's WireGuard interface, 32 bytes, which the
   // configuration of each of its Devices names.
   bytes wireguard_key = 10;
+  // The node runs the links of kind vxlan and geneve (SDN-76 #356): the VXLAN module over Winsock UDP.
+  bool plain_links = 11;
 }
 
 // The Windows edition of a node's host.

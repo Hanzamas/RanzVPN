@@ -398,6 +398,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyDevices(&st, c->Objects, c->NumObjects);
 	// The endpoints of the node and of its peers (ControlEndpoint.c; SDN-93, #410)
 	ControlCopyEndpoints(&st, c->Objects, c->NumObjects);
+	// The kinds of the links of the VRFs and the tunnel endpoints (ControlLink.c; SDN-76, #356)
+	ControlCopyLinks(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
@@ -485,6 +487,8 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 		hello->capabilities.wireguard_key.size = NOISE_KEY_SIZE;
 		CopyMemory(hello->capabilities.wireguard_key.bytes, caps.WireGuardKey, NOISE_KEY_SIZE);
 	}
+	// The links of kind vxlan and geneve (SDN-76, #356)
+	hello->capabilities.plain_links = caps.PlainLinks;
 }
 
 // One stream: the dial, the handshake bound to the exporter of the TLS session, the Hello, then

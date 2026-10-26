@@ -103,6 +103,9 @@ void NodeCapsProc(void *param, CONTROL_CAPS *caps) {
 
 	NodeCapsReadHost(&host);
 	NodeCapsDecide(&host, caps);
+	// The links of kind vxlan and geneve run on Winsock UDP, on every host (NodeLink.c; SDN-76, #356)
+	if (caps != NULL)
+		caps->PlainLinks = true;
 }
 
 // The architecture of the Capabilities as the node log names it
