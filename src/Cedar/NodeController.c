@@ -21,9 +21,10 @@
 //   half of the static key of the node, which it makes first when no role needed it yet; controller gives the settings
 //   and the state of the control stream; controller set <address> <key> <fingerprint> and controller clear write and
 //   remove the settings; state gives what the node does now, which NodeState.c answers (SDN-91, #396). The service is
-//   the one writer of its Configuration store, and it takes the settings at its next start, which ranz node makes at once. The private half of the key stays in the key storage provider: it is in no
-//   answer and no line of the log. Only the node of the service, on the default data directory, has the pipe, unless a
-//   test names one in NODE.AdminPipe before NodeStart.
+//   the one writer of its Configuration store, and it takes the settings at its next start, which ranz node makes at
+//   once. The private half of the key stays in the key storage provider: it is in no answer and no line of the log.
+//   Only the node of the service, on the default data directory, has the pipe, unless a test names one in
+//   NODE.AdminPipe before NodeStart.
 
 #include "Node.h"
 
