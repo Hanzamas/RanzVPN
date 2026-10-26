@@ -26,11 +26,19 @@ The check of 2026-10-26 showed this.
 - Only HTTPS on port 443 goes out.
 - `CronCreate` lives as long as the session. The routine is the only schedule that survives.
 
-**Not tried yet:** the check did not try a write other than `git push`: a comment, a label, a merge, closing a ticket, creating a pull request. The first full tick does them for real. If a write fails, the tick stops that action, puts the error in its report and goes on with the work that does not need it.
+**The routine tried the writes** on 2026-10-26: comments, edits of comments, closing tickets, pull requests of lanes, reruns and the REST merge all worked, after the permission check had refused the REST merge of one pull request twice ("Merge Without Review"). If a write fails, the tick stops that action, puts the error in its report and goes on with the work that does not need it.
+
+## What clears the permission check
+
+A routine runs in auto mode. A classifier blocks some actions, among them "merging a pull request that no human approved". The saved prompt of a routine is not live user input, and the documentation says that it cannot act as approval or consent. So a paragraph of the prompt, such as EXPLICIT PERMISSION, does not clear the check. It only tells the tick what the maintainer allows. Three things clear it. The first two were in place on 2026-10-26, when the cloud merged a pull request by itself (#426, 04:09Z). The third is the one to add if a refusal comes back.
+
+1. **Narrow allow rules** in the allowed tools of the routine: `Bash(gh api -X PUT *pulls/*/merge*)`, `Bash(gh api --method PUT *pulls/*/merge*)` and `mcp__github__merge_pull_request`. A command that such a rule matches never reaches the classifier. A broad rule, such as a plain `Bash`, is dropped in auto mode. A rule matches the text of one command, so the merge command of this page stays one simple command with literal values. A leading assignment of a variable, or a command inside `$(...)`, defeats the rule.
+2. **`autoMode.allow` in the server-managed settings of the organization.** They are at claude.ai, Organization settings, Claude Code, Managed settings, and only an Owner can edit them. The maintainer set a rule there that allows merges into `integration` of this repository, and never into `master`. A cloud session receives these settings when it starts.
+3. **`permissions.allow` in `.claude/settings.json` of the repository.** A cloud session with one repository reads it. The classifier does not read `autoMode` from the repository, but it honours permission rules. Add the rules of layer 1 there if the first two are not enough. This file widens what an agent may do, so a change of it goes in its own pull request, and the report names it.
 
 ## The shape of the job
 
-The job is a routine, not one long session. The routine fires a tick every 30 minutes. A tick reads GitHub, acts and ends. Nothing that matters lives in the container: the state is in the pull requests, the branches, the tickets and the heartbeat issue. A tick that meets the limit of the plan ends where it is, and the next tick reads GitHub and continues. A tick that has lanes alive stays in its session while they run, and waits with Monitor (30 minutes for each arm).
+The job is a routine, not one long session. The routine fires a tick every hour (a routine cannot fire more often). A tick reads GitHub, acts and ends. Nothing that matters lives in the container: the state is in the pull requests, the branches, the tickets and the heartbeat issue. A tick that meets the limit of the plan ends where it is, and the next tick reads GitHub and continues. A tick that has launched lanes may stay in its session and wait with Monitor (30 minutes for each arm), or it may end its turn, because the platform wakes the session when the Workflow ends. A session that ended its turn leaves a stale heartbeat comment, so the `lanes` line of its report is what the next tick reads to know that the lanes run.
 
 ## The commands
 
@@ -206,6 +214,12 @@ gh api --method PATCH repos/Hanzamas/RanzVPN/issues/comments/<comment-id> -F bod
 
 On a PC with PowerShell, the time of 45 minutes ago is `(Get-Date).ToUniversalTime().AddMinutes(-45).ToString("yyyy-MM-ddTHH:mm:ssZ")`.
 
+The lanes of earlier ticks. This prints the `lanes` line of each tick comment of the last 3 hours. The tickets and pull requests that it names are in flight (see "A tick" in [integrator.md](integrator.md)):
+
+```
+gh api "repos/Hanzamas/RanzVPN/issues/<heartbeat>/comments?since=$(date -u -d '3 hours ago' +%Y-%m-%dT%H:%M:%SZ)&per_page=100" --jq '.[] | select(.body | startswith("integrator:")) | [.id, .created_at, (.body | split("\n") | map(select(startswith("**lanes"))) | join(" "))] | @tsv'
+```
+
 ## A tick in the cloud
 
 The steps are those of [integrator.md](integrator.md). The cloud changes these:
@@ -214,8 +228,8 @@ The steps are those of [integrator.md](integrator.md). The cloud changes these:
 2. **Heartbeat.** With the commands above.
 3. **Look.** With the commands of this page, not with `gh pr` and `gh issue`.
 4. **Merge and repair.** The REST merge with `sha`. The rerun of a flake is `gh run rerun`.
-5. **Launch.** Keep to the lane cap of the routine prompt (default 4). There is no usage tool. If a command fails with a message about the limit of the plan, stop launching, write `ended: plan limit` in your comment and end. Do not try again before the next tick.
-6. **Wait.** Start the watcher below with Monitor. It ends after 30 minutes: start it again, and refresh the heartbeat each time. A tick that has lanes alive stays in the session. When the platform ends the session, the lanes end with it. That is a cut-off: the next tick resumes from GitHub.
+5. **Launch.** Keep to the lane cap of the routine prompt (default 5), counting the lanes of earlier ticks. Start the lanes in batches of at most 2, each batch its own Workflow, because a Workflow runs at most 2 lanes at once in this container. There is no usage tool. If a command fails with a message about the limit of the plan, stop launching, write `ended: plan limit` in your comment and end. Do not try again before the next tick.
+6. **Wait.** Either start the watcher below with Monitor (it ends after 30 minutes: start it again, and refresh the heartbeat each time), or write the `lanes` line of your report and end your turn, and let the platform wake the session when a Workflow ends. A session that wakes does the heartbeat again before it acts. When the platform ends the session, the lanes end with it. That is a cut-off: the next tick resumes from GitHub.
 7. **Report.** In the heartbeat comment. A tick that has nothing to do writes the three lines, a line `idle`, and `ended:`.
 
 A tick that stands down costs little: it reads two sections and one issue, and ends.
@@ -267,12 +281,12 @@ A line is a hint. Before you merge, run the two looks of the merge procedure. Ea
 - Use the template in [lanes/](lanes/README.md). Its rules use these commands, so one script serves both places.
 - A lane pushes after every commit, because the container can go at any time.
 - A lane watches CI with `gh run watch`, in the background. The template says how.
-- When a tick starts after a cut-off, the open pull requests and the pushed branches are the state. Start resume lanes for them as in "After a cut-off" in [integrator.md](integrator.md). A cloud tick cannot resume the Workflow of an earlier tick with `resumeFromRunId`: the journal of that run went with the container. It starts new resume lanes.
+- When a tick starts after a cut-off, the open pull requests and the pushed branches are the state. Start resume lanes for them as in "After a cut-off" in [integrator.md](integrator.md). A cloud tick cannot resume the Workflow of an earlier tick with `resumeFromRunId`: the journal of that run went with the container. It starts new resume lanes. The lanes that the tick comments of the last 3 hours name are in flight, not cut off: see "The heartbeat in commands".
 - The result of a lane is a claim. Read the pull request yourself before you merge it.
 
 ## The routine
 
-The maintainer creates the routine from a desktop or web session, with the `schedule` skill. The routine fires a cloud session on a schedule, and the session runs one tick. The default: every 30 minutes, at most 4 lanes, merges only into `integration`, never `master`, the heartbeat issue for the lock.
+The maintainer creates the routine from a desktop or web session, with the `schedule` skill. The routine fires a cloud session on a schedule, and the session runs one tick. The default: every hour (cron `7 * * * *`, because a routine cannot fire more often than once an hour), at most 5 lanes, merges only into `integration`, never `master`, the heartbeat issue for the lock.
 
 The prompt is short. It points to these pages, so that a change to the pages changes the job without a change to the routine. It sends the tick to the heartbeat first, so that a tick that stands down does not read the whole of both pages:
 
@@ -281,16 +295,22 @@ You are the cloud integrator of Hanzamas/RanzVPN. Run one tick.
 
 AUTHORITY: <the words of the maintainer that start this routine, verbatim, with the date>
 
+EXPLICIT PERMISSION: <the actions that the maintainer allows without asking, in this repository only: the REST merge into integration with its exact command, review of pull requests, create, edit, label, comment on and close tickets, the grill with the recommended answers, to-spec and to-tickets, lanes and their pull requests, ADRs and docs. The one exception: master, which is never touched.>
+
 1. Run git fetch origin integration. Read the section "The integrator heartbeat" of docs/agents/integrator.md and the section "The heartbeat in commands" of docs/agents/integrator-cloud.md, as they are on origin/integration, and do the heartbeat. If you stand down, end.
 2. Otherwise read both pages in full, and run one tick as they say.
 
 Heartbeat issue: #<number>
-Lane cap: 4
+Lane cap: 5
 Mode: <dry run | full>
 Order of tickets: <the order that the maintainer wants, or none>
+Usage window rule: <time based, see below>
+Decisions: <use the recommended answer, record it, and write ASK: only for what the permission does not cover>
 ```
 
-The integrator never writes the AUTHORITY line. If the routine has none, the integrator reads and reports and does nothing else.
+The integrator never writes the AUTHORITY line or the EXPLICIT PERMISSION paragraph. If the routine has none, the integrator reads and reports and does nothing else. The two tell the tick what the maintainer allows. They do not clear the permission check of the cloud: see "What clears the permission check".
+
+**The usage window rule.** A cloud session cannot read the usage of the plan, so the rule uses time. The heartbeat comment keeps a line `window-start: <UTC time>`. The first tick after a stop for the limit of the plan, or more than 5 hours after the last `window-start`, writes a new one. In the first 3 hours after `window-start` a tick may launch lanes up to the cap. After that it launches none: it merges, closes tickets and repairs, and lets the lanes that run finish and push. If a command fails with a message about the limit of the plan, the tick writes `ended: plan limit` and ends.
 
 **First run.** Make the first run a dry run, by hand. In a dry run the tick does the heartbeat and the look, writes the report, and merges nothing, closes nothing and launches nothing. The maintainer reads the heartbeat comment and the run log. That proves in one run the reads with `gh api` and with the MCP tools, and the write and the edit of a comment. Then he sets the mode to `full`.
 
@@ -315,5 +335,5 @@ The integrator never writes the AUTHORITY line. If the routine has none, the int
 | Merge answers 405 | Not mergeable now. Read the pull request again. |
 | Create answers 422 | A pull request for the branch exists, or the branch has no new commit. |
 | 403 or 429 with a note about rate limits | Stop the tick, write it in the report, and end. |
-| A command that the permission check refused | Stop and report it with its message. Never retry it split up or reworded. |
+| A command that the permission check refused | Report it under `blocked:` with its text and its message, and call `PushNotification` when you have the tool. Never retry it split up or reworded. A refused merge ("Merge Without Review") means that no layer of "What clears the permission check" matches the command as written. Compare the text of the command with the rules, and add the missing layer. A local session merges by hand meanwhile. |
 | No heartbeat issue | Stop and report. Without it you cannot know that you are alone. |

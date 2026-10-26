@@ -8,7 +8,7 @@
 2. **Fill `QUOTE`.** The words of the maintainer that start this run, verbatim, with their date. In a cloud run they are the words that he wrote into the routine. A lane that sees no authority line refuses to commit, push or open a pull request. Never write words that he did not write. The script stops, when a lane is active, if `QUOTE` or `STATE` still says `FILL IN`.
 3. **Fill `STATE`.** The facts of the moment: the date, the pull requests that merged, the pull requests and tickets that other lanes work on. Replace the old text for every run. Never stack a second `STATE`: the lane would read two states that disagree.
 4. **Fill `LANES`.** Copy `EXAMPLE_LANE` into the array, once per lane. Keep a finished lane in the array with `skip: true`, so that a new run shows what was done.
-5. **Run** it with the Workflow tool, with the path of your copy as `scriptPath`. Run one Workflow for a set of lanes. Before you run it, check that no running Workflow has the same lane. After a cut-off, start a new run with resume lanes. Do not use `resumeFromRunId` for that: a new `STATE` changes every prompt, so nothing would come from the cache, and in the cloud the journal of the old run is gone.
+5. **Run** it with the Workflow tool, with the path of your copy as `scriptPath`. A Workflow runs at most `CPUs - 2` lanes at once, which is 2 in a cloud container, and it queues the others. So run the lanes in batches of at most 2, each batch its own Workflow (its own copy, with `skip: true` on the lanes of the other batches), and the batches run side by side. Before you run one, check that no running Workflow, and no tick comment of the last 3 hours, has the same lane. After a cut-off, start a new run with resume lanes. Do not use `resumeFromRunId` for that: a new `STATE` changes every prompt, so nothing would come from the cache, and in the cloud the journal of the old run is gone.
 
 ## A lane object
 
@@ -41,8 +41,8 @@ The local branch has its own name, so that it does not clash with a branch that 
 Each lane returns `ok`, `pr`, `head`, `ci`, `met`, `notMet`, `newTerms` and `blocked`.
 
 - `ok: false` means not done. Never queue its pull request for merge. The integrator reads the pull request itself before it merges.
-- `blocked` is a command that the permission check refused. Tell the maintainer. Never retry it.
-- `newTerms` go into the report. Nobody edits `CONTEXT.md` without the maintainer.
+- `blocked` is a command that the permission check refused. The integrator reports it under `blocked:` with its text. Never retry it.
+- `newTerms` go into the report. A lane never edits `CONTEXT.md`. The integrator collects the new terms and writes them in a docs pull request.
 
 ## Rules of the file
 
