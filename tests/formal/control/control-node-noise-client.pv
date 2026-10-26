@@ -1,0 +1,11 @@
+(* Variant control-node-noise-client: the control stream of a C node to the controller, against an attacker that holds the
+   Noise identity keys of the controller and of the node but not the key of the certificate (AUD-5, #389; AUD-6, #409).
+   The fingerprint check keeps it from answering the node, and the key of the node makes it the node to the
+   controller. *)
+
+process
+  ( Setup()
+  | LeakNoiseServer()
+  | LeakNoiseClient()
+  | ControlSessions(pin_on, lab_exp_control)
+  )

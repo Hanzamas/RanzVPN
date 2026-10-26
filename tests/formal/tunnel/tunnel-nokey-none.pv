@@ -1,13 +1,12 @@
-(* Negative control tunnel-nokey-none: the server joins a connection to the Tunnel of the id that it names without comparing
-   its static key with the one of the Tunnel (AUD-5, #389; NoiseTunnelJoin does compare them). charlie then joins the
-   Tunnel of alice with her id, which the attacker knows, and the model must show that attack: join-identity holds in
-   tunnel-none and must fail here. CI fails when it does not. *)
+(* Negative control tunnel-nokey-none: the server joins a connection to the Tunnel of the id that it names without
+   comparing its static key with the one of the Tunnel (AUD-5, #389; AUD-6, #409; NoiseTunnelJoin does compare them).
+   charlie then joins the Tunnel of alice with her id, which the attacker knows, and the model must show that attack:
+   join-identity holds in tunnel-none and must fail here. CI fails when it does not. *)
 
 process
   ( Setup()
   | !( TunnelOpen(bob, alice) )
   | !( TunnelOpen(bob, charlie) )
   | !( JoinClient(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs) )
-  | !( JoinServer(bob, alice, bt_export, plabel_session, lab_exp_session, suite_hfs, kc_off) )
-  | !( JoinServer(bob, charlie, bt_export, plabel_session, lab_exp_session, suite_hfs, kc_off) )
+  | !( JoinServer(bob, bt_export, plabel_session, lab_exp_session, suite_hfs, kc_off) )
   )

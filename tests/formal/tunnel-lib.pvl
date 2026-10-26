@@ -1,19 +1,27 @@
 (* tunnel-lib.pvl
-   The join of a further connection to a tunnel (AUD-5, #389; docs/formal-model.md). The first connection of a
-   peer node logs in and makes the Tunnel of an id (NodeStartTunnel, TunnelStart, NoiseTunnelInit); each further
-   connection of that node runs a handshake of its own, in an outer session of its own, and sends a join Login
-   that names the id (NOISE_LOGIN_JOIN). The server joins the connection to the Tunnel of that id only when the
-   static key of the connection is the one of the Tunnel (TunnelJoin, NoiseTunnelJoin), so that every connection
-   of a tunnel is of one node. The code is src/Core/NoiseSession.c (the Tunnel, the join Login),
-   src/Cedar/ConnectionTunnel.c (TunnelStart and TunnelJoin) and src/Cedar/NodeSession.c (NodeStartTunnel and
-   NodeJoinTunnel). The client of a further connection exists in vpntest only (src/vpntest/noisehub.c and
-   nodelogin.c): no production client dials a second connection yet.
+   The join of a further connection to a tunnel (AUD-5, #389; AUD-6, #409; docs/formal-model.md). The first connection
+   of a peer node logs in and makes the Tunnel of an id (NodeStartTunnel, TunnelStart, NoiseTunnelInit); each further
+   connection of that node runs a handshake of its own, in an outer session of its own, and sends a join Login that names
+   the hub and the id (NOISE_LOGIN_JOIN). The responder completes the handshake with the static key of any initiator, as
+   for a session (session-lib.pvl), and NodeAcceptSession reads the join Login: the hub name selects the Sessions of
+   that Hub whose Connection carries a Tunnel (NodeJoinTunnel), and the user name of the Login is never read. The
+   connection joins the Tunnel of that id only when its static key is the one of the Tunnel (TunnelJoin,
+   NoiseTunnelJoin), so that every connection of a tunnel is of one node; the key pin of NodeLoginPinned is not run for a
+   join. The code is src/Core/NoiseSession.c (the Tunnel, the join Login), src/Cedar/ConnectionTunnel.c (TunnelStart and
+   TunnelJoin) and src/Cedar/NodeSession.c (NodeStartTunnel and NodeJoinTunnel). The client of a further connection is
+   in the vpntest harness only (NoiseHubConnect of src/vpntest/noisehub.c): no production client dials a second
+   connection yet, and no production path runs NodeAcceptSession.
 
-   The first connection is not run again here. Its session is the model of session-lib.pvl, whose queries cover
-   it, and what the join takes from it is the id: HMAC-SHA256 of a label under the handshake hash, a value that
-   anybody who sees the handshake knows. TunnelOpen stands for the first connection, as the join sees it: it
-   makes a new id for the static key of the peer node, and gives the id to the node and to the attacker. Nothing
-   below rests on the secrecy of the id.
+   A join is refused as well when the Tunnel is halting, when no index of it is free (an index is used once) and when
+   the same Noise session joins twice, and the server sends no answer to a join, whether it took it or not: the client
+   learns of a refusal by the close of the stream. Those refusals keep the bookkeeping of the Tunnel and not who joins,
+   so the model has the key comparison and not them.
+
+   The first connection is not run again here. Its session is the model of session-lib.pvl, whose queries cover it, and
+   what the join takes from it is the id: HMAC-SHA256 of a label under the handshake hash, a value that anybody who sees
+   the handshake knows. TunnelOpen stands for the first connection, as the join sees it: it makes a new id for the static
+   key of the peer node in a hub, and gives the id to the node and to the attacker. Nothing below rests on the secrecy of
+   the id.
 
    What a variant sets: the parameters of session-lib.pvl for the outer session and the binding, and
      keycheck  kc_on: the server compares the static key of the joining connection with the one of the Tunnel
@@ -23,35 +31,37 @@
 const rec_join: bitstring.
 const kc_on: bitstring.
 const kc_off: bitstring.
+const hub: bitstring.
 
-(* The Tunnels of the server: the id and the static key of the peer node of each (TUNNEL.Routes) *)
-table tunnels(bitstring, bitstring).
+(* The Tunnels of the server: the hub, the id and the static key of the peer node of each (the Sessions of the Hub,
+   TUNNEL.Routes) *)
+table tunnels(bitstring, bitstring, bitstring).
 
 (* The id of a new Tunnel, from the first connection of a node to the node: the id is known to both ends of the
    connection *)
 free tch: channel [private].
 
-event TunnelOpened(principal, principal, bitstring).
+event TunnelOpened(principal, bitstring, bitstring).
 event ClientJoin(principal, principal, bitstring, bitstring).
-event ServerJoined(principal, principal, bitstring, bitstring).
+event ServerJoined(principal, bitstring, bitstring, bitstring).
 
-(* The key that a join compares the static key si of the connection with: the one of the Tunnel (kc_on), or si
-   itself, which it meets (kc_off) *)
+(* The key that a join compares the static key si of the connection with: the one of the Tunnel (kc_on), or si itself,
+   which it meets (kc_off) *)
 reduc forall rs: bitstring, si: bitstring; joinkey(kc_on, rs, si) = rs;
       forall rs: bitstring, si: bitstring; joinkey(kc_off, rs, si) = si.
 
-(* The first connection of the node them to the server me: its Login was accepted and the Tunnel of a new id was
-   made for the static key of the peer node *)
+(* The first connection of the node them to the server me: its Login was accepted and the Tunnel of a new id was made in
+   the hub for the static key of the peer node *)
 let TunnelOpen(me: principal, them: principal) =
   new tid: bitstring;
-  event TunnelOpened(me, them, tid);
-  insert tunnels(tid, spub(them));
+  event TunnelOpened(me, spub(them), tid);
+  insert tunnels(hub, tid, spub(them));
   out(c, tid);
   out(tch, (me, them, tid)).
 
-(* The client of a further connection: the outer session with the pin, the handshake with the binding in its
-   prologue, as Client of session-lib.pvl does them, then the join Login with the id of its Tunnel. The event is
-   the Login, with the transcript of the outer session of this connection as its identity. *)
+(* The client of a further connection: the outer session with the pin, the handshake with the binding in its prologue,
+   as Client of session-lib.pvl does them, then the join Login with the hub and the id of its Tunnel. The event is the
+   Login, with the transcript of the outer session of this connection as its identity. *)
 let JoinClient(me: principal, them: principal, pin: bitstring, bm: bitstring, plabel: bitstring, lab: bitstring, suite: bitstring) =
   new cr: bitstring;
   new x: bitstring;
@@ -91,14 +101,13 @@ let JoinClient(me: principal, them: principal, pin: bitstring, bm: bitstring, pl
   let k4 = hkk(ck3, dhi(sI, E2)) in
   if unaead(k4, h5, cp2) = empty then
   event ClientJoin(me, them, tid, tr);
-  out(c, senc(kc, (rec_join, tid))).
+  out(c, senc(kc, (rec_control, (rec_join, hub, tid)))).
 
-(* The server of a further connection: the outer session with its certificate, the handshake with the prologue
-   that carries its own view of the binding, then the join Login. The connection joins the Tunnel of the id when
-   a Tunnel of that id exists and, with kc_on, its peer node is the one that the handshake authenticated. It
-   serves one expected peer node, as Server of session-lib.pvl does, and runs the suite of its parameter only;
-   the processes of a variant stand for the nodes that may dial it. *)
-let JoinServer(me: principal, them: principal, bm: bitstring, plabel: bitstring, lab: bitstring, suite: bitstring, keycheck: bitstring) =
+(* The server of a further connection: the outer session with its certificate, the handshake with the prologue that
+   carries its own view of the binding and the static key of any initiator, then the join Login. The connection joins
+   the Tunnel of the hub and the id that the Login names when the Tunnel exists and, with kc_on, its peer node has the
+   static key of the handshake. It runs the suite of its parameter only; nothing goes back to the client. *)
+let JoinServer(me: principal, bm: bitstring, plabel: bitstring, lab: bitstring, suite: bitstring, keycheck: bitstring) =
   new sr: bitstring;
   new y: bitstring;
   new e: bitstring;
@@ -121,8 +130,7 @@ let JoinServer(me: principal, them: principal, bm: bitstring, plabel: bitstring,
   let h2 = mixh(h1, E) in
   let ck1 = hkck(h0, dhr(sR, E)) in
   let k1 = hkk(h0, dhr(sR, E)) in
-  if unaead(k1, h2, cs) = spub(them) then
-  let SI = spub(them) in
+  let SI = unaead(k1, h2, cs) in
   let h3 = mixh(h2, cs) in
   let ck2 = hkck(ck1, dhr(sR, SI)) in
   let k2 = hkk(ck1, dhr(sR, SI)) in
@@ -135,7 +143,7 @@ let JoinServer(me: principal, them: principal, bm: bitstring, plabel: bitstring,
   let cp2 = aead(k4, h5, empty) in
   out(c, senc(ks, (rec_hs, suite, (E2, cp2))));
   in(c, rec2: bitstring);
-  let (=rec_join, tid: bitstring) = sdec(kc, rec2) in
-  get tunnels(=tid, rs: bitstring) in
+  let (=rec_control, (=rec_join, jhub: bitstring, tid: bitstring)) = sdec(kc, rec2) in
+  get tunnels(=jhub, =tid, rs: bitstring) in
   if SI = joinkey(keycheck, rs, SI) then
-  event ServerJoined(me, them, tid, tr).
+  event ServerJoined(me, SI, tid, tr).

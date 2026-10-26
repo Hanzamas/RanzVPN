@@ -1,11 +1,11 @@
 (* Variant tls443-both: the session handshake over TLS 1.3 on TCP 443, as the code has it, against an attacker that holds
-   both keys of the server, its Noise identity key and the key of its certificate (AUD-5, #389). It is the server, and
-   the model shows what that gives it: the password and the data. With either key alone it is not (tls443-cert, and
-   tls443-noise-client), so each guards the other. *)
+   both keys of the server, its Noise identity key and the key of its certificate (AUD-5, #389; AUD-6, #409). It is the
+   server, and the model shows what that gives it: the password and the data. With either key alone it is not
+   (tls443-cert, and tls443-noise-client), so each guards the other. *)
 
 process
   ( Setup()
   | LeakNoiseServer()
   | LeakCertServer()
-  | Sessions(pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs)
+  | Sessions(pin_on, bt_export, bt_export, kp_on, plabel_session, lab_exp_session, suite_hfs)
   )

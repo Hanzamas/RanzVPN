@@ -1,9 +1,22 @@
 (* q-authserver.pvl
-   The query of the session models about what the server takes (AUD-5, #389). *)
+   The queries of the session models about what the server takes (AUD-5, #389; AUD-6, #409). The server knows the static
+   key of the initiator from message 1 and the user or the node only from what follows, so auth-server names the key of
+   alice and took-auth the principal that the server took the session as. *)
 
-(* The server takes a handshake from alice only if alice started it in the TLS session that the server is in. The
-   transcript of the TLS session is the identity of the session, so this is the binding of the handshake to its
+(* The server takes a handshake with the static key of alice only if alice started it in the TLS session that the server
+   is in. The transcript of the TLS session is the identity of the session, so this is the binding of the handshake to its
    session: a middlebox that terminates the TLS session of alice and opens one to the server is a handshake that alice
    did not start in the server's session. *)
 (* @query auth-server *)
-query t: bitstring; event(ServerAccept(bob, alice, t)) ==> event(ClientStart(alice, bob, t)).
+query t: bitstring; event(ServerAccept(bob, pk(skey(alice)), t)) ==> event(ClientStart(alice, bob, t)).
+
+(* The server takes a session as alice's (her Login, her Hello, or her session as a peer) only if alice started it, in
+   that TLS session: what the password and the key pin of a Login, the key lookup of the controller and the peer lookup
+   of the overlay are for *)
+(* @query took-auth *)
+query t: bitstring; event(ServerTook(bob, alice, t)) ==> event(ClientStart(alice, bob, t)).
+
+(* What the server takes as the data of alice's session (a record of the data stream, a lease of the control stream) is
+   what alice sent in that session *)
+(* @query cdata-auth *)
+query t: bitstring, d: bitstring; event(ServerGotData(bob, alice, t, d)) ==> event(ClientSentData(alice, bob, t, d)).

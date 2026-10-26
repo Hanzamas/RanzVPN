@@ -1,10 +1,10 @@
 (* Variant tls443-cert: the session handshake over TLS 1.3 on TCP 443, as the code has it, against an attacker that holds
-   the key of the certificate of the server (AUD-5, #389). This is the middlebox of ADR-0023 in the best position that it
-   can have: it presents the pinned certificate and terminates the TLS session of the client, and opens a session of its
-   own to the server. The binding of the Noise handshake to the exporter is what must stop it. *)
+   the key of the certificate of the server (AUD-5, #389; AUD-6, #409). This is the middlebox of ADR-0023 in the best
+   position that it can have: it presents the pinned certificate and terminates the TLS session of the client, and opens
+   a session of its own to the server. The binding of the Noise handshake to the exporter is what must stop it. *)
 
 process
   ( Setup()
   | LeakCertServer()
-  | Sessions(pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs)
+  | Sessions(pin_on, bt_export, bt_export, kp_on, plabel_session, lab_exp_session, suite_hfs)
   )

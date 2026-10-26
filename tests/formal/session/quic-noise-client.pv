@@ -1,10 +1,10 @@
 (* Variant quic-noise-client: the session handshake over QUIC, as the code has it, against an attacker that holds the
-   Noise identity keys of the server and of the client but not the key of the certificate (AUD-5, #389). The pin keeps it
-   from answering the client, as on TLS-443. *)
+   Noise identity keys of the server and of the client but not the key of the certificate (AUD-5, #389; AUD-6, #409).
+   The pin keeps it from answering the client, as on TLS-443. *)
 
 process
   ( Setup()
   | LeakNoiseServer()
   | LeakNoiseClient()
-  | Sessions(pin_on, bt_endpoint, plabel_session, lab_exp_session, suite_hfs)
+  | Sessions(pin_on, bt_endpoint, bt_endpoint, kp_on, plabel_session, lab_exp_session, suite_hfs)
   )

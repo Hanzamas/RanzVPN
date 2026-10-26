@@ -77,6 +77,11 @@ reduc forall k: bitstring, ad: bitstring, m: bitstring; unaead(k, ad, aead(k, ad
 fun skey(principal): bitstring [private].
 letfun spub(p: principal) = pk(skey(p)).
 
+(* The node that a static key names, where the receiver of a handshake looks the key up: the Node resource of the
+   controller (byKey), the peer of the desired state of the overlay. A key that is no node's names nobody, and the
+   lookup fails. *)
+reduc forall p: principal; keyowner(pk(skey(p))) = p.
+
 (* The static key of a principal, leaked to the attacker in phase 0 (a compromise before or during the
    sessions) or in phase 1 (after them: forward secrecy) *)
 event LeakS(phasen, principal).

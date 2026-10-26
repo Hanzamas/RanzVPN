@@ -1,0 +1,12 @@
+(* Variant quic-nocert-none: a QUIC client that got no certificate of the server (no
+   QUIC_CONNECTION_EVENT_PEER_CERTIFICATE_RECEIVED), against an attacker that is the network (AUD-6, #409). Each side runs
+   the session bound or encrypted from what its own transport gives it (TransportNoiseStart): this client has no
+   tls-server-end-point, so QuicStreamBinding gives it none, it checks no pin and runs an encrypted session with the
+   prologue of no binding, while the server, which knows its certificate, runs a bound one. The two prologues differ, so
+   the handshake cannot complete, which reach-took and reach-done must prove. The model has the handshake of such a
+   client, not the records under the Noise keys that it would send after one. *)
+
+process
+  ( Setup()
+  | Sessions(pin_off, bt_none, bt_endpoint, kp_on, plabel_session, lab_exp_session, suite_hfs)
+  )

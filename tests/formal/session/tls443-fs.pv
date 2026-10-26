@@ -1,11 +1,11 @@
 (* Variant tls443-fs: the session handshake over TLS 1.3 on TCP 443, as the code has it, against an attacker that holds
-   every long-term key of the nodes after the sessions (AUD-5, #389): the Noise identity keys of both, and the key of the
-   certificate of the server, in phase 1. The password and the data that the sessions of phase 0 carried must still be
-   secret, which is forward secrecy. One server process, for the suite that the client offers. *)
+   every long-term key of the nodes after the sessions (AUD-5, #389; AUD-6, #409): the Noise identity keys of both, and
+   the key of the certificate of the server, in phase 1. The password and the data that the sessions of phase 0 carried
+   must still be secret, which is forward secrecy. One server process, for the suite that the client offers. *)
 
 process
   ( Setup()
   | LeakLate()
-  | !( Client(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs) )
-  | !( new sid: sessionid; Server(bob, alice, bt_export, plabel_session, lab_exp_session, suite_hfs, sid) )
+  | !( new sid: sessionid; Client(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs, sid) )
+  | !( new sid: sessionid; Server(bob, kp_on, bt_export, plabel_session, lab_exp_session, suite_hfs, sid) )
   )

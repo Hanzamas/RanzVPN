@@ -1,8 +1,9 @@
 (* q-replay.pvl
-   The queries of the session models about replay (AUD-5, #389). *)
+   The queries of the session models about replay (AUD-5, #389; AUD-6, #409). *)
 
-(* No replay: each handshake that the server takes, and each answer that the client takes, is one that was sent once *)
+(* No replay: each handshake with the key of alice that the server takes, and each answer that the client takes, is one
+   that was sent once *)
 (* @query replay-server *)
-query t: bitstring; inj-event(ServerAccept(bob, alice, t)) ==> inj-event(ClientStart(alice, bob, t)).
+query t: bitstring; inj-event(ServerAccept(bob, pk(skey(alice)), t)) ==> inj-event(ClientStart(alice, bob, t)).
 (* @query replay-client *)
-query t: bitstring, h: bitstring; inj-event(ClientDone(alice, bob, t, h)) ==> inj-event(ServerReply(bob, alice, t, h)).
+query t: bitstring, h: bitstring; inj-event(ClientDone(alice, bob, t, h)) ==> inj-event(ServerReply(bob, pk(skey(alice)), t, h)).

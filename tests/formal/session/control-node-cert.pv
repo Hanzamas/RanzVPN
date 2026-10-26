@@ -1,8 +1,0 @@
-(* Variant control-node-cert: the control stream of a C node to the controller, against an attacker that holds the key of
-   the certificate of the controller (AUD-5, #389). As tls443-cert, with the labels of the control stream. *)
-
-process
-  ( Setup()
-  | LeakCertServer()
-  | Sessions(pin_on, bt_export, plabel_control, lab_exp_control, suite_ik)
-  )

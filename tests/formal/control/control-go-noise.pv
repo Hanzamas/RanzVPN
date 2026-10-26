@@ -1,0 +1,10 @@
+(* Variant control-go-noise: the control stream of the Go client that Dial opens, against an attacker that holds the Noise
+   identity key of the controller (AUD-5, #389; AUD-6, #409). The client checks no certificate, so the static key of the
+   controller is the only secret that it relies on, and its holder answers the client in a TLS session of its own:
+   finding C1. This is nopin-noise with the control stream. *)
+
+process
+  ( Setup()
+  | LeakNoiseServer()
+  | ControlSessions(pin_off, lab_exp_control)
+  )

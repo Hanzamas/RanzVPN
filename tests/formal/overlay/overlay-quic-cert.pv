@@ -1,0 +1,9 @@
+(* Variant overlay-quic-cert: an overlay session over QUIC, against an attacker that holds the key of the certificate of
+   the server (AUD-6, #409). The tls-server-end-point binds the handshake to the certificate and not to the connection
+   (D1), so finding F1 holds for the overlay sessions that run in production as it does for a session with a Login. *)
+
+process
+  ( Setup()
+  | LeakCertServer()
+  | OverlaySessions(pin_on, bt_endpoint)
+  )
