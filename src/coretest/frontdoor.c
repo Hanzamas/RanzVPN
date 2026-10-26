@@ -47,7 +47,7 @@
 #define FRONTDOOR_BUF       4096                   // A ClientHello and its records
 
 // The owner table of the test's nodes, in this order
-#define FRONTDOOR_CONTROLLER 0 // TLS with ALPN h2 or http/1.1: the Controller's web UI and API
+#define FRONTDOOR_CONTROLLER 0 // TLS with ALPN h2, http/1.1 or ranz-control/1: the Controller's web UI, API and control stream
 #define FRONTDOOR_WEB_UI     1 // TLS with the server name of the web UI: the Controller
 #define FRONTDOOR_SIGNED     2 // The test signature: the signature owner
 #define FRONTDOOR_ABSENT     3 // TLS with an ALPN whose owner process does not run
@@ -219,7 +219,7 @@ static void frontdoor_owners(FRONT_DOOR_OWNER *owners, const wchar_t *controller
 
 	strcpy_s(owners[FRONTDOOR_CONTROLLER].Name, FRONT_DOOR_NAME_SIZE, "controller");
 	owners[FRONTDOOR_CONTROLLER].Kind = FRONT_DOOR_TLS;
-	strcpy_s(owners[FRONTDOOR_CONTROLLER].Protocols, FRONT_DOOR_LIST_SIZE, "h2, http/1.1");
+	strcpy_s(owners[FRONTDOOR_CONTROLLER].Protocols, FRONT_DOOR_LIST_SIZE, FRONT_DOOR_CONTROLLER_PROTOCOLS);
 	wcscpy_s(owners[FRONTDOOR_CONTROLLER].Pipe, FRONT_DOOR_PIPE_SIZE, controller);
 
 	strcpy_s(owners[FRONTDOOR_WEB_UI].Name, FRONT_DOOR_NAME_SIZE, "controller-web-ui");

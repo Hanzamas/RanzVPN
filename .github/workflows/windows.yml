@@ -371,6 +371,28 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/sdn-tracer.ps1 -BuildDir build -Architecture ${{ matrix.platform.ARCHITECTURE }}
+    # The Controller behind the front door of a node on the same host (SDN-73, #352; ADR-0035), on x64 and arm64: ranz
+    # controller on a test port with its handoff pipe, and the node of coretest's frontdoor test with its front door on
+    # another test port, never 443. Through the front door the API answers over h2, over HTTP/1.1 and with the server name
+    # of the web UI, with the Controller's own certificate, a node control stream of ranz-nodesim enrols, and once the
+    # Controller is gone the front door closes the connection (.github/scripts/controller-frontdoor.ps1). It needs only
+    # the build, so it runs after a test that failed too.
+    - name: Build ranz-nodesim for the front door check
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      working-directory: controller
+      env:
+        # As ranz above: the gcc of the arm64 runner builds x64 code only
+        CGO_ENABLED: '0'
+      run: |
+        go build -o ..\build\ranz-nodesim.exe ./cmd/ranz-nodesim
+        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
+    - name: Controller behind the front door
+      if: ${{ !cancelled() }}
+      timeout-minutes: 10
+      shell: pwsh
+      run: |
+        . .github/scripts/controller-frontdoor.ps1 -BuildDir build
     # The WireGuard Device tracer (SDN-80, #375; seam 3 of #45 as ADR-0002 amended it on 2026-10-21): the controller of the
     # default VRF tracer with a Device of Network default, the gateway Node of vpntest devicetrace on the wireguard.dll of
     # the pinned WireGuardNT SDK (THIRD_PARTY.TXT) and a Wintun adapter, the overlay host on its other node, and

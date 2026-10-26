@@ -16,9 +16,9 @@
 // the listeners: the node listens on no port of its own. When TCP 443 is taken, the front door listens on
 // NODE_LISTENER_FALLBACK instead and logs it (the amendment of ADR-0035 of 2026-10-21).
 //
-// The front door hands every TLS connection to the node: the handoff of the web UI and the API (ALPN h2 and http/1.1)
-// to a Controller on the same host waits for the Controller's end of the handoff pipe (controller/internal/port), which
-// listens on its own port until then.
+// The front door hands the TLS connections of the web UI, the API and the control stream (ALPN h2, http/1.1 and
+// ranz-control/1) to a Controller on the same host, through its handoff pipe (FRONT_DOOR_CONTROLLER_PIPE; SDN-73, #352:
+// controller/internal/port), and every other TLS connection to the node.
 
 #include "Node.h"
 
@@ -132,7 +132,7 @@ static bool NodeListenerUp(NODE_LISTENER *l, const char *thumb) {
 	const CONTROL_LISTENER *c = &l->Config;
 	TRANSPORT_TLS_CONFIG tc;
 	TRANSPORT_QUIC_CONFIG qc;
-	FRONT_DOOR_OWNER owner;
+	FRONT_DOOR_OWNER owners[2];
 	FRONT_DOOR_CONFIG fc;
 	char address[TRANSPORT_ADDRESS_SIZE];
 
@@ -147,16 +147,22 @@ static bool NodeListenerUp(NODE_LISTENER *l, const char *thumb) {
 		return false;
 	}
 
-	// The front door hands every TLS connection to it, on the port of the Listener or, when 443 is taken, on the fallback
-	Zero(&owner, sizeof(owner));
-	StrCpy(owner.Name, sizeof(owner.Name), "node");
-	owner.Kind = FRONT_DOOR_TLS;
-	owner.Take = NodeListenerTake;
-	owner.Param = l->TlsListener;
+	// The front door hands the TLS connections of a Controller's ALPN protocols to the Controller on this host, through
+	// its handoff pipe (SDN-73, #352), and every other TLS connection to the node, on the port of the Listener or, when
+	// 443 is taken, on the fallback. Without a Controller on the host, its connections are closed.
+	Zero(owners, sizeof(owners));
+	StrCpy(owners[0].Name, sizeof(owners[0].Name), "controller");
+	owners[0].Kind = FRONT_DOOR_TLS;
+	StrCpy(owners[0].Protocols, sizeof(owners[0].Protocols), FRONT_DOOR_CONTROLLER_PROTOCOLS);
+	UniStrCpy(owners[0].Pipe, sizeof(owners[0].Pipe), FRONT_DOOR_CONTROLLER_PIPE);
+	StrCpy(owners[1].Name, sizeof(owners[1].Name), "node");
+	owners[1].Kind = FRONT_DOOR_TLS;
+	owners[1].Take = NodeListenerTake;
+	owners[1].Param = l->TlsListener;
 
 	Zero(&fc, sizeof(fc));
-	fc.Owners = &owner;
-	fc.NumOwners = 1;
+	fc.Owners = owners;
+	fc.NumOwners = 2;
 	Format(fc.Address, sizeof(fc.Address), ":%u", c->Port);
 	l->FrontDoor = FrontDoorStart(&fc);
 	if (l->FrontDoor == NULL && c->Port == FRONT_DOOR_PORT) {
