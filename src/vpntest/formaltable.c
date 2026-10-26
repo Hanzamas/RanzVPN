@@ -33,6 +33,12 @@
 
 #include <string.h>
 
+// The functions of the peer module that the table names and Core/PeerInternal.h declares, which only the files of the
+// peer module include: the bind challenge (Core/PeerChallenge.c) and the punch (Core/PeerPunch.c)
+void PeerChallengeSend(PEER_AGENT *a, const UCHAR *key, const PEER_ADDR *from, UINT64 seq);
+void PeerInputChallenge(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size);
+void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size);
+
 typedef void (*FORMAL_FUNCTION)(void);
 
 // A function of the table and where it is in this program
@@ -75,12 +81,14 @@ static FORMAL_ENTRY formal_functions[] =
 	FORMAL(NoiseTunnelId),
 	FORMAL(NoiseTunnelInit),
 	FORMAL(NoiseTunnelJoin),
+	FORMAL(PeerChallengeSend),
 	FORMAL(PeerEnvelopeOpen),
 	FORMAL(PeerEnvelopeSeal),
 	FORMAL(PeerInput),
+	FORMAL(PeerInputChallenge),
 	FORMAL(PeerOpenSignal),
+	FORMAL(PeerPunchInput),
 	FORMAL(PeerSealSignal),
-	FORMAL(PeerSend),
 	FORMAL(PeerSignalEncode),
 	FORMAL(TransportBinding),
 	FORMAL(TransportNoiseAccept),

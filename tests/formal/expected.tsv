@@ -359,25 +359,36 @@ noise-encrypted	d-conf2	holds
 noise-encrypted	d-conf4	holds
 noise-encrypted	d-conf5	holds	strong forward secrecy
 
-# The peer layer: the envelopes of Noise_K, and the data datagrams in the clear
+# The peer layer: the envelopes of Noise_K, the bind challenge, the punch with its nonces, and the data datagrams in a
+# peer session (CORE-H2 #399, which closed F2 and F3)
 peer-leaks	reach-open	reach
 peer-leaks	pe-auth	holds
-peer-leaks	pe-addr	attack	F3: the relay binds the address of the datagram, which the envelope does not hold
-peer-leaks	pp-addr	attack	F3: a punch probe sets the direct path to the address that it came from
+peer-leaks	pe-addr	attack	negative control: an envelope holds no address, so no envelope alone binds a node (pe-cookie)
+peer-leaks	pp-addr	attack	negative control: a probe holds no address, so no probe sets a direct path (pp-proof)
 peer-leaks	pb-auth	holds	a bound is sealed by the relay
-peer-leaks	pe-replay	attack	F3: the replay check needs the memory of the receiver, which expires
+peer-leaks	pe-replay	attack	negative control: the receiver of the model keeps no sequence; the code keeps one above its entry of the peer
 peer-leaks	pe-secret	holds
 peer-leaks	pe-fs	attack	no forward secrecy of an envelope: inherent to Noise_K
-peer-leaks	pd-forgery	attack	F2: a data datagram has no authentication
-peer-leaks	pd-secret	attack	F2: a data datagram has no encryption
+peer-leaks	reach-data	reach
+peer-leaks	pd-forgery	holds	a record opens only under the keys of the peer session
+peer-leaks	pd-secret	holds	the keys of a peer session have forward secrecy
+peer-leaks	reach-bound	reach
+peer-leaks	pe-cookie	holds	the relay binds only with the cookie that it sent to the address of the bind
+peer-leaks	reach-direct	reach
+peer-leaks	pp-proof	holds	a direct path only where the peer echoed the nonce sent there
 
 peer-honest	reach-open	reach
 peer-honest	pe-auth	holds
-peer-honest	pe-addr	attack	F3
-peer-honest	pp-addr	attack	F3
+peer-honest	pe-addr	attack	negative control
+peer-honest	pp-addr	attack	negative control
 peer-honest	pb-auth	holds
-peer-honest	pe-replay	attack	F3
+peer-honest	pe-replay	attack	negative control
 peer-honest	pe-secret	holds
 peer-honest	pe-fs	holds
-peer-honest	pd-forgery	attack	F2
-peer-honest	pd-secret	attack	F2
+peer-honest	reach-data	reach
+peer-honest	pd-forgery	holds
+peer-honest	pd-secret	holds
+peer-honest	reach-bound	reach
+peer-honest	pe-cookie	holds
+peer-honest	reach-direct	reach
+peer-honest	pp-proof	holds

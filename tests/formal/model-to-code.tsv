@@ -298,29 +298,51 @@ noise-lib.pvl	NoiseResp:mb	field	src/Core/Noise.c	NoiseHandshakeWrite	payload_si
 noise-lib.pvl	NoiseResp:md	message	src/Core/NoiseSession.c	NoiseSessionWriteRecord	NOISE_RECORD_REKEYED	-	the first encrypted record of the responder
 
 # peer-lib.pvl: the peer layer
-peer-lib.pvl	name_k	constant	src/Core/PeerSignal.c	PeerNoiseInit	PEER_NOISE_PROTOCOL	D4	Noise_K_25519_AESGCM_SHA256: the one-way pattern of the envelopes, the only Noise of the peer layer
+peer-lib.pvl	name_k	constant	src/Core/PeerSignal.c	PeerNoiseInit	PEER_NOISE_PROTOCOL	-	Noise_K_25519_AESGCM_SHA256: the one-way pattern of the envelopes
+peer-lib.pvl	name_ik	constant	src/Core/PeerSession.c	PeerSessionNoiseInit	NOISE_SUITE_IK	D4	Noise_IK_25519_AESGCM_SHA256: the handshake of a peer session, over the datagrams of the peer layer
 peer-lib.pvl	plabel_peer	constant	src/Core/PeerSignal.c	PeerNoiseInit	PEER_NOISE_PROLOGUE	-	the prologue label of an envelope, followed by its kind
+peer-lib.pvl	plabel_sess	constant	src/Core/PeerSession.c	PeerSessionNoiseInit	PEER_SESSION_PROLOGUE	-	the prologue of the handshake of a peer session, "ranz peer session 1"
 peer-lib.pvl	k_bind	constant	src/Core/PeerSignal.c	PeerIsEnvelopeKind	PEER_MSG_BIND	-	the kind of a bind to a relay
 peer-lib.pvl	k_signal	constant	src/Core/PeerSignal.c	PeerIsEnvelopeKind	PEER_MSG_SIGNAL	-	the kind of a signal that the controller carries
 peer-lib.pvl	k_signal	constant	src/Core/Peer.c	PeerOpenSignal	PEER_DROP_RELAY,Sequence	-	a signal names a relay, which the node takes only when the control plane assigned it at that address, and has a sequence that must grow; the content of a signal is one secret value in the model, so the relay check has no answer of its own
 peer-lib.pvl	k_signal	constant	src/Core/Peer.c	PeerSourcePath	via	-	the ICE path: what the ICE session with a peer delivers (PeerInputDirect) is taken only with that peer as its source; the connectivity checks of libjuice are not in the model
-peer-lib.pvl	k_punch	constant	src/Core/Peer.c	PeerInput	PEER_MSG_PUNCH,PeerPunchInput	D4	the kind of a punch probe: PeerPunchInput sets the direct path of the peer to the address that the probe came from (with Config.Punch, which no production code sets)
+peer-lib.pvl	k_punch	constant	src/Core/Peer.c	PeerInput	PEER_MSG_PUNCH,PeerPunchInput	-	the kind of a punch message: a probe, and the challenge, the response and the proof of the nonces (PeerPunchInput, with Config.Punch, which no production code sets)
 peer-lib.pvl	k_bound	constant	src/Core/Peer.c	PeerInputBound	PeerFindRelay,BindSequence	-	the kind of a bound, the answer of a relay to a bind: a node takes it only from a configured relay, at the address of that relay, for its last bind
+peer-lib.pvl	k_challenge	constant	src/Core/Peer.c	PeerInput	PEER_MSG_CHALLENGE,PeerInputChallenge	-	the kind of a bind challenge, the relay's cookie for the address of a bind, sealed to the node
+peer-lib.pvl	k_init	constant	src/Core/Peer.c	PeerInput	PEER_MSG_INIT,PeerInputData	D4	the kind of the first handshake message of a peer session, in the clear header with the source key and the destination key
+peer-lib.pvl	k_response	constant	src/Core/Peer.c	PeerInput	PEER_MSG_RESPONSE	D4	the kind of the second handshake message of a peer session
+peer-lib.pvl	k_record	constant	src/Core/Peer.c	PeerInput	PEER_MSG_RECORD	D4	the kind of a record of a peer session; the old clear form PEER_MSG_DATA is dropped (PEER_DROP_CLEAR)
+peer-lib.pvl	k_record	constant	src/Core/Peer.c	PeerInputData	PeerRateAllow,forward	-	the relay forwards a datagram of a peer session as it came, by its clear header, from a node bound to it to another bound node, inside a VRF of both and under a rate limit; the attacker of the model sends any datagram from any address, so the model has no forwarding process
 peer-lib.pvl	v_peer	constant	src/Core/PeerSignal.c	PeerSignalEncode	PEER_VERSION	-	the version byte of the payload of an envelope
-peer-lib.pvl	tag_data	constant	src/Core/Peer.c	PeerSend	PEER_MSG_DATA	D4	the first byte of a data datagram, which carries its payload in the clear
-peer-lib.pvl	tag_data	constant	src/Core/Peer.c	PeerInputData	PeerRateAllow,forward	D4	the relay forwards a data datagram as it came, from a node bound to it to another bound node, inside a VRF of both and under a rate limit, and a node takes any source key from a relay that it is bound to; the attacker of the model sends any datagram from any address, so the model has no relay process
-peer-lib.pvl	addrof	function	src/Core/Peer.c	PeerInputBind	from	D4	the address that a datagram came from, which a relay binds a node to, a punch probe sets the direct path to, and the peer layer takes as the path of a peer
+peer-lib.pvl	pt_challenge	constant	src/Core/PeerPunch.c	PeerPunchInput	PEER_PUNCH_CHALLENGE	-	the type of the punch message of the leader that carries its nonce to the address of a probe
+peer-lib.pvl	pt_response	constant	src/Core/PeerPunch.c	PeerPunchInput	PEER_PUNCH_RESPONSE	-	the type of the answer of the other end: the echo of the nonce and a nonce of its own
+peer-lib.pvl	pt_proof	constant	src/Core/PeerPunch.c	PeerPunchInput	PEER_PUNCH_PROOF	-	the type of the leader's answer: the echo of the other end's nonce
+peer-lib.pvl	addrof	function	src/Core/Peer.c	PeerInputBind	from	-	the address that a datagram came from: the address whose cookie a relay checks before it binds a node there, and where a punch nonce goes
+peer-lib.pvl	cookiekey	function	src/Core/PeerChallenge.c	PeerCookieMake	CookieSecret	-	the secret of the bind challenges of a relay, new at every start (PeerNew)
 peer-lib.pvl	plsecret	model	-	-	-	-	the content of an envelope that a query asks about: no code
 peer-lib.pvl	datasec	model	-	-	-	-	the payload of a data datagram that a query asks about: no code
 peer-lib.pvl	PeerSealed	event	src/Core/PeerSignal.c	PeerEnvelopeSeal	payload	-	an envelope was sealed to a node
 peer-lib.pvl	PeerOpened	event	src/Core/PeerSignal.c	PeerEnvelopeOpen	sender	-	an envelope was opened, with the key of its sender; PeerEnvelopeOpen sees no address and a signal has none, so the address of the event means something for a bind, a punch probe and a bound only, where the caller has it (from)
-peer-lib.pvl	DataSent	event	src/Core/Peer.c	PeerSend	PEER_DATA_HEADER_SIZE	D4	a data datagram was sent
-peer-lib.pvl	DataDelivered	event	src/Core/Peer.c	PeerInputData	PEER_DROP_SOURCE	D4	a data datagram was delivered: its source address is a path of its source and the source is a peer
+peer-lib.pvl	DataSent	event	src/Core/PeerSession.c	PeerSessionWriteRecord	NoiseCipherEncrypt	-	a record with a payload was sealed under the keys of a peer session
+peer-lib.pvl	DataDelivered	event	src/Core/Peer.c	PeerInputData	Recv,PeerSessionInput	-	a payload was delivered: the record opened under the keys of the session of its source, which the policy found to be a peer
+peer-lib.pvl	ChallengeSent	event	src/Core/PeerChallenge.c	PeerChallengeSend	PEER_COUNT_CHALLENGES	-	the relay sent the cookie of an address to that address, sealed to the node
+peer-lib.pvl	BindCookie	event	src/Core/PeerChallenge.c	PeerInputChallenge	HasCookie	-	the node took the cookie of a challenge of its relay for its last bind, for its next binds
+peer-lib.pvl	RelayBound	event	src/Core/Peer.c	PeerInputBind	PeerAddBinding,BindSequence	-	the relay bound the node at the address of the bind
+peer-lib.pvl	PunchNonce	event	src/Core/PeerPunch.c	PeerPunchNonce	NonceTo	-	a nonce of the punch went to an address, sealed to the peer
+peer-lib.pvl	PunchEcho	event	src/Core/PeerPunch.c	PeerPunchInput	their_nonce	-	an end of the punch echoed the nonce of the other end
+peer-lib.pvl	PunchDirect	event	src/Core/PeerPunch.c	PeerPunchInput	HasDirect,PeerPunchEcho	-	an end of the punch moved the peer to the direct path at the address that its nonce went to and the echo came from
+peer-lib.pvl	kseal	function	src/Core/PeerSignal.c	PeerEnvelopeSeal	e_pub	-	an envelope sealed as a term: the kind, the static key of the sender, the ephemeral key and the ciphertext
+peer-lib.pvl	kopen	function	src/Core/PeerSignal.c	PeerEnvelopeOpen	payload_len	-	the payload of an envelope, or nothing when it does not open
 peer-lib.pvl	PeerSeal	process	src/Core/PeerSignal.c	PeerEnvelopeSeal	ephemeral	-	-> e, es, ss with the payload
 peer-lib.pvl	PeerOpen	process	src/Core/PeerSignal.c	PeerEnvelopeOpen	payload_len	-	<- e, es, ss, taken only from a known sender
 peer-lib.pvl	PeerOpenBound	process	src/Core/Peer.c	PeerInputBound	PeerAddrEqual,PEER_DROP_RELAY	-	a bound, taken from the configured relay at its address
-peer-lib.pvl	DataSend	process	src/Core/Peer.c	PeerSend	PEER_DATA_HEADER_SIZE	D4	PeerSend: the tag, the key of the source, the key of the destination and the payload
-peer-lib.pvl	DataRecv	process	src/Core/Peer.c	PeerInputData	PEER_DATA_HEADER_SIZE	D4	PeerInputData: the source address and the policy are the only checks
+peer-lib.pvl	RelayChallenge	process	src/Core/PeerChallenge.c	PeerChallengeSend	PEER_MSG_CHALLENGE	-	the challenge: the version, the sequence of the bind, the cookie of its address, sealed to the node and sent to that address
+peer-lib.pvl	RelayBind	process	src/Core/Peer.c	PeerInputBind	PeerCookieCheck,PeerChallengeSend	-	a bind binds the node at its address with the cookie of that address, and draws the challenge without it
+peer-lib.pvl	NodeBind	process	src/Core/PeerChallenge.c	PeerInputChallenge	PeerBind,BindSequence	-	the node answers the challenge of its relay to its last bind with a bind that holds the cookie
+peer-lib.pvl	PeerSessInit	process	src/Core/PeerSession.c	PeerSessionWriteInit,PeerSessionTakeResponse	PendingIndex	D4	the initiator of a peer session: its initiation, the response, the keys of Split
+peer-lib.pvl	PeerSessResp	process	src/Core/PeerSession.c	PeerSessionTakeInit,PeerSessionTakeRecord	RemoteStatic	D4	the responder of a peer session: an initiation of the peer that the clear header names, its response, and the records of the initiator
+peer-lib.pvl	PunchLead	process	src/Core/PeerPunch.c	PeerPunchInput	leader	-	the end with the lower static key: a challenge to the address of a probe, then a proof
+peer-lib.pvl	PunchFollow	process	src/Core/PeerPunch.c	PeerPunchInput	leader	-	the other end: a response to a challenge, then the direct path on the proof
 peer-lib.pvl	PeerSetup	model	-	-	-	-	what the attacker knows from the start: no code
 peer-lib.pvl	PeerLeaks	model	-	-	-	-	the compromise of the static key of a node: no code
 peer-lib.pvl	PeerSeal:kind	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	kind	-	the kind, the first byte of the envelope and the last byte of the prologue
@@ -329,12 +351,16 @@ peer-lib.pvl	PeerSeal:E	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	e_pub	-	the
 peer-lib.pvl	PeerSeal:ct	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	PEER_ENVELOPE_TAG	-	the ciphertext of the payload with its tag
 peer-lib.pvl	PeerSeal:sq	field	src/Core/Peer.c	PeerSealSignal	Sequence	-	the sequence, the wall clock in 100 ns that grows with every bind and signal (PeerNextSequence)
 peer-lib.pvl	PeerSeal:pl	field	src/Core/PeerSignal.c	PeerEnvelopeSeal	payload_size	-	the payload of the envelope
-peer-lib.pvl	PeerOpen:a	field	src/Core/Peer.c	PeerInputBind	from	D4	the address that the datagram came from, which the relay binds the node to
+peer-lib.pvl	PeerOpen:a	field	src/Core/Peer.c	PeerInputBind	from	-	the address that the datagram came from, whose cookie the relay checks
 peer-lib.pvl	PeerOpen:SI	check	src/Core/PeerSignal.c	PeerEnvelopeOpen	sender	-	the sender is read from the envelope, and the caller checks that it is a peer (PeerFind)
 peer-lib.pvl	PeerOpen:pl	field	src/Core/PeerSignal.c	PeerEnvelopeOpen	payload_len	-	the payload that the envelope opens to
 peer-lib.pvl	PeerOpenBound:a	check	src/Core/Peer.c	PeerInputBound	PeerAddrEqual	-	the address of the bound is the one of the configured relay
 peer-lib.pvl	PeerOpenBound:SI	check	src/Core/Peer.c	PeerInputBound	PeerFindRelay	-	the sender is a configured relay
-peer-lib.pvl	DataSend:d	message	src/Core/Peer.c	PeerSend	PEER_MAX_PAYLOAD	D4	the payload of a data datagram, as the caller gave it
-peer-lib.pvl	DataRecv:src	field	src/Core/Peer.c	PeerInputData	PEER_DATA_HEADER_SIZE	D4	the key of the source, which the datagram claims
-peer-lib.pvl	DataRecv:dst	field	src/Core/Peer.c	PeerInputData	to_self	D4	the key of the destination: the node itself, or a node that the relay forwards to
-peer-lib.pvl	DataRecv:a	check	src/Core/Peer.c	PeerInputData	PeerSourcePath	D4	the source address is the address of a relay, a binding or a direct path of the source: no key checks it
+peer-lib.pvl	PeerSessInit:ts	field	src/Core/PeerSession.c	PeerSessionWriteInit	PeerNextSequence	-	the timestamp of the initiation, which grows with the clock, so a replayed initiation is refused
+peer-lib.pvl	PeerSessInit:d	message	src/Core/PeerSession.c	PeerSessionWriteRecord	PEER_RECORD_HEADER	-	the payload of a record, under the key of Split with the clear header as its associated data
+peer-lib.pvl	PeerSessResp:SI	check	src/Core/PeerSession.c	PeerSessionTakeInit	RemoteStatic	-	the static key in the initiation is the one of the peer that the clear header names
+peer-lib.pvl	PeerSessResp:a2	field	src/Core/Peer.c	PeerInputData	PeerSourcePath	-	the source address is the address of a relay, a binding or a direct path of the source; the key of the session checks the record
+peer-lib.pvl	RelayBind:ck	check	src/Core/Peer.c	PeerInputBind	PeerCookieCheck	-	the cookie of the address that the bind came from
+peer-lib.pvl	NodeBind:ck	field	src/Core/PeerChallenge.c	PeerInputChallenge	Cookie	-	the cookie that the challenge holds, for the next binds to that relay
+peer-lib.pvl	PunchLead:n	field	src/Core/PeerPunch.c	PeerPunchNonce	Nonces	-	the nonce that goes to the address of the probe
+peer-lib.pvl	PunchLead:a	check	src/Core/PeerPunch.c	PeerPunchEcho	NonceTo	-	the echo counts only from the address that the nonce went to
