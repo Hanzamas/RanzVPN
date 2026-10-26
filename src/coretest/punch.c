@@ -23,12 +23,12 @@
 
 #include <string.h>
 
-#define PUNCH_WAIT   10000 // ms: a bounded wait for the network to carry everything sent
-#define PUNCH_BUDGET 64    // Probes one punch of a peer may send before it gives up
-#define PUNCH_PORTS  16    // The birthday range above a predicted or reflexive port
-#define PUNCH_RATE   8     // Probes one PeerTick sends per punching peer
-#define PUNCH_TICKS  40    // The most tick rounds a pair is given to meet, or a punch to spend its budget
-#define PUNCH_PAYLOAD_SIZE 42 // A punch message: version, sequence, type, a nonce and an echo of 16 bytes each
+#define PUNCH_WAIT         10000 // ms: a bounded wait for the network to carry everything sent
+#define PUNCH_BUDGET       64    // Probes one punch of a peer may send before it gives up
+#define PUNCH_PORTS        16    // The birthday range above a predicted or reflexive port
+#define PUNCH_RATE         8     // Probes one PeerTick sends per punching peer
+#define PUNCH_TICKS        40    // The most tick rounds a pair is given to meet, or a punch to spend its budget
+#define PUNCH_PAYLOAD_SIZE 42    // A punch message: version, sequence, type, a nonce and an echo of 16 bytes each
 
 // One node of the test and what it received
 typedef struct PUNCH_NODE {

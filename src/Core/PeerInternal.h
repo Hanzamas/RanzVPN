@@ -60,41 +60,41 @@
 
 // The keys of a peer session: one handshake's
 typedef struct PEER_KEYPAIR {
-	bool Valid;                             // It holds keys
-	bool Initiator;                         // This node started the handshake of the keys
-	bool Confirmed;                         // The peer has the keys: this node is their initiator, or took a record under them
-	UINT LocalIndex;                        // The index that the records to this node carry
-	UINT RemoteIndex;                       // The index that this node's records carry
-	NOISE_CIPHER Send;                      // The key of the records this node sends; its nonce is the next counter
-	NOISE_CIPHER Recv;                      // The key of the records it receives
-	bool RecvAny;                           // A record was taken under the keys
-	UINT64 RecvMax;                         // ... the highest counter taken
-	UINT64 Window[PEER_WINDOW_WORDS];       // ... and which of the PEER_WINDOW_BITS counters below it were taken
-	UINT64 Created;                         // When the handshake completed (ms)
-	UCHAR Id[PEER_SESSION_ID_SIZE];         // The start of the handshake hash, the same at both ends
+	bool Valid;                       // It holds keys
+	bool Initiator;                   // This node started the handshake of the keys
+	bool Confirmed;                   // The peer has the keys: this node is their initiator, or took a record under them
+	UINT LocalIndex;                  // The index that the records to this node carry
+	UINT RemoteIndex;                 // The index that this node's records carry
+	NOISE_CIPHER Send;                // The key of the records this node sends; its nonce is the next counter
+	NOISE_CIPHER Recv;                // The key of the records it receives
+	bool RecvAny;                     // A record was taken under the keys
+	UINT64 RecvMax;                   // ... the highest counter taken
+	UINT64 Window[PEER_WINDOW_WORDS]; // ... and which of the PEER_WINDOW_BITS counters below it were taken
+	UINT64 Created;                   // When the handshake completed (ms)
+	UCHAR Id[PEER_SESSION_ID_SIZE];   // The start of the handshake hash, the same at both ends
 } PEER_KEYPAIR;
 
 // The peer session of a node with one peer, which the PEER holds while the peer stays. Its lock comes after the
 // lock of the layer, and before KeyLock.
 typedef struct PEER_SESSION {
-	SRWLOCK Lock;                                         // Everything below
-	PEER_KEYPAIR Current;                                 // The keys that records go under
-	PEER_KEYPAIR Previous;                                // The keys before them, for the records still on their way
-	PEER_KEYPAIR Next;                                    // A responder's new keys, until the initiator's first record under them
-	bool Pending;                                         // This node's initiation is on its way
-	NOISE_HANDSHAKE Handshake;                            // ... its handshake
-	UINT PendingIndex;                                    // ... its index
-	UINT64 PendingTick;                                   // ... when it was sent (ms)
-	UINT PendingTries;                                    // ... and how many times
-	UINT64 LastInit;                                      // The timestamp of the last initiation taken from the peer
-	UINT64 LastSent;                                      // When the node last sent a record (ms)
-	UINT64 LastReceived;                                  // When it last took one
-	UINT64 LastData;                                      // ... and one with a payload, which a keepalive answers
-	UINT64 SentUnderKey;                                 // Records sent under the current keys
-	UINT64 Handshakes;                                    // Handshakes that completed with the peer
-	UINT QueueNum;                                        // The datagrams that wait for the handshake
-	UINT QueueSize[PEER_SESSION_QUEUE];                   // ... their sizes
-	UCHAR Queue[PEER_SESSION_QUEUE][PEER_MAX_PAYLOAD];    // ... and their bytes
+	SRWLOCK Lock;                                      // Everything below
+	PEER_KEYPAIR Current;                              // The keys that records go under
+	PEER_KEYPAIR Previous;                             // The keys before them, for the records still on their way
+	PEER_KEYPAIR Next;                                 // A responder's new keys, until the initiator's first record under them
+	bool Pending;                                      // This node's initiation is on its way
+	NOISE_HANDSHAKE Handshake;                         // ... its handshake
+	UINT PendingIndex;                                 // ... its index
+	UINT64 PendingTick;                                // ... when it was sent (ms)
+	UINT PendingTries;                                 // ... and how many times
+	UINT64 LastInit;                                   // The timestamp of the last initiation taken from the peer
+	UINT64 LastSent;                                   // When the node last sent a record (ms)
+	UINT64 LastReceived;                               // When it last took one
+	UINT64 LastData;                                   // ... and one with a payload, which a keepalive answers
+	UINT64 SentUnderKey;                               // Records sent under the current keys
+	UINT64 Handshakes;                                 // Handshakes that completed with the peer
+	UINT QueueNum;                                     // The datagrams that wait for the handshake
+	UINT QueueSize[PEER_SESSION_QUEUE];                // ... their sizes
+	UCHAR Queue[PEER_SESSION_QUEUE][PEER_MAX_PAYLOAD]; // ... and their bytes
 } PEER_SESSION;
 
 // What one input of a peer session gives the layer: a datagram to send back to the peer, the queue to send now, and
@@ -104,7 +104,7 @@ typedef struct PEER_SESSION_OUT {
 	UCHAR Reply[PEER_MAX_DATAGRAM];  // ... its bytes
 	bool Flush;                      // New keys are up: the queue goes now (PeerSessionFlush)
 	bool Keepalive;                  // ... and a keepalive when it is empty: the node's own handshake completed
-	bool Deliver;                   // A payload for the node
+	bool Deliver;                    // A payload for the node
 	UINT DeliverSize;                // ... its size
 	UCHAR Payload[PEER_MAX_PAYLOAD]; // ... and its bytes
 } PEER_SESSION_OUT;
@@ -132,15 +132,15 @@ typedef struct PEER_ICE {
 // it predicts of the peer, on the peer layer's own socket, while the peer stays on the relay. The control plane
 // triggers it with the signal exchange; a validated probe sets HasDirect below, like PeerSetDirect does.
 typedef struct PEER_PUNCH {
-	UINT State;                                // PEER_PUNCH_*
-	UINT Budget;                               // Probes left before the punch gives up
-	bool Attempted;                            // Counted once in PunchAttempts
-	UINT64 LastSeq;                            // The last punch sequence taken from the peer, for anti-replay
-	UINT NumTargets;                           // The addresses the probes go to: the predicted port first
-	UINT Next;                                 // The next target of the round over them, so one tick sends a bounded burst
-	PEER_ADDR Targets[PEER_PUNCH_MAX_TARGETS]; // ...
-	UINT NextNonce;                            // The next slot of the nonces below, round robin
-	PEER_ADDR NonceTo[PEER_PUNCH_NONCES];      // The addresses that a nonce of the node went to, sealed to the peer
+	UINT State;                                             // PEER_PUNCH_*
+	UINT Budget;                                            // Probes left before the punch gives up
+	bool Attempted;                                         // Counted once in PunchAttempts
+	UINT64 LastSeq;                                         // The last punch sequence taken from the peer, for anti-replay
+	UINT NumTargets;                                        // The addresses the probes go to: the predicted port first
+	UINT Next;                                              // The next target of the round over them, so one tick sends a bounded burst
+	PEER_ADDR Targets[PEER_PUNCH_MAX_TARGETS];              // ...
+	UINT NextNonce;                                         // The next slot of the nonces below, round robin
+	PEER_ADDR NonceTo[PEER_PUNCH_NONCES];                   // The addresses that a nonce of the node went to, sealed to the peer
 	UCHAR Nonces[PEER_PUNCH_NONCES][PEER_PUNCH_NONCE_SIZE]; // ... and those nonces, which the peer echoes from there
 } PEER_PUNCH;
 
@@ -171,15 +171,15 @@ typedef struct PEER_ICE_NODE {
 
 // One relay that the node may use, and its binding to it
 typedef struct PEER_RELAY {
-	PEER_RELAY_INFO Info; // From the control plane
-	bool Wanted;          // The home relay, or the relay of a peer: the node keeps a binding to it
-	bool Binding;         // A bind was sent
-	bool Bound;           // The relay answered the last bind
-	UINT64 BindSequence;  // The sequence of the last bind
-	UINT64 BindTick;      // When the last bind was sent (ms)
-	PEER_ADDR Observed;   // The address that the relay saw the node at: its server reflexive candidate
-	bool HasCookie;       // The relay sent a bind challenge: its cookie goes in the next binds
-	bool Answered;        // The last bind answered a challenge, so the next challenge waits for a new bind
+	PEER_RELAY_INFO Info;           // From the control plane
+	bool Wanted;                    // The home relay, or the relay of a peer: the node keeps a binding to it
+	bool Binding;                   // A bind was sent
+	bool Bound;                     // The relay answered the last bind
+	UINT64 BindSequence;            // The sequence of the last bind
+	UINT64 BindTick;                // When the last bind was sent (ms)
+	PEER_ADDR Observed;             // The address that the relay saw the node at: its server reflexive candidate
+	bool HasCookie;                 // The relay sent a bind challenge: its cookie goes in the next binds
+	bool Answered;                  // The last bind answered a challenge, so the next challenge waits for a new bind
 	UCHAR Cookie[PEER_COOKIE_SIZE]; // ... the cookie
 } PEER_RELAY;
 

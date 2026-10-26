@@ -294,13 +294,13 @@ bool PeerSignalDecode(const UCHAR *buf, UINT size, PEER_SIGNAL *s);
 
 // The clear header of a datagram between two nodes (PeerRecordParse): a handshake message or a record
 typedef struct PEER_RECORD_INFO {
-	UINT Kind;          // PEER_MSG_INIT, PEER_MSG_RESPONSE or PEER_MSG_RECORD
-	const UCHAR *Src;   // The source key, in the datagram
-	const UCHAR *Dst;   // The destination key, in the datagram
-	UINT Sender;        // The session index of the sender (a handshake message)
-	UINT Receiver;      // The session index of the receiver (a response or a record)
-	UINT64 Counter;     // The counter of a record
-	UINT HeaderSize;    // The bytes before the Noise message or the ciphertext
+	UINT Kind;        // PEER_MSG_INIT, PEER_MSG_RESPONSE or PEER_MSG_RECORD
+	const UCHAR *Src; // The source key, in the datagram
+	const UCHAR *Dst; // The destination key, in the datagram
+	UINT Sender;      // The session index of the sender (a handshake message)
+	UINT Receiver;    // The session index of the receiver (a response or a record)
+	UINT64 Counter;   // The counter of a record
+	UINT HeaderSize;  // The bytes before the Noise message or the ciphertext
 } PEER_RECORD_INFO;
 
 // The payload of a handshake message of a peer session (PeerHandshakeParse)

@@ -32,29 +32,29 @@ static const char ps_inner[] = "INNER PACKET of node A for node B: 10.20.30.40 -
 
 // One node of the test and what it received
 typedef struct PS_NODE {
-	const char *Name;                  // Its name
-	PEER_KEY Key;                      // Its static key
-	PEER_ADDR Addr;                    // Its address: private behind a NAT
-	NATSIM_HOST *Host;                 // Its host on the network
-	PEER_AGENT *Agent;                 // Its peer layer
-	volatile LONG Received;            // Data datagrams delivered to it
-	volatile LONG ReceivedRelay;       // ... of them through a relay
-	volatile LONG ReceivedDirect;      // ... of them on the direct path
-	UINT LastSize;                     // The size of the last one
-	UCHAR Last[PEER_MAX_PAYLOAD];      // ... its payload
-	UCHAR LastSrc[PEER_KEY_SIZE];      // ... and its source
+	const char *Name;             // Its name
+	PEER_KEY Key;                 // Its static key
+	PEER_ADDR Addr;               // Its address: private behind a NAT
+	NATSIM_HOST *Host;            // Its host on the network
+	PEER_AGENT *Agent;            // Its peer layer
+	volatile LONG Received;       // Data datagrams delivered to it
+	volatile LONG ReceivedRelay;  // ... of them through a relay
+	volatile LONG ReceivedDirect; // ... of them on the direct path
+	UINT LastSize;                // The size of the last one
+	UCHAR Last[PEER_MAX_PAYLOAD]; // ... its payload
+	UCHAR LastSrc[PEER_KEY_SIZE]; // ... and its source
 } PS_NODE;
 
 // What the tap saw on every link: the datagrams by kind, the ones that carried a run of the inner packet in the clear,
 // and the last record of one host, which the test alters and sends again
 typedef struct PS_TAP {
 	CRITICAL_SECTION Lock;
-	UINT Datagrams;                   // Every datagram sent
-	UINT Kinds[16];                   // ... by its first byte
-	UINT Clear;                       // ... of them with PS_WINDOW bytes of the inner packet in a row
-	NATSIM_HOST *Keep;                // The host whose last record it keeps
-	UINT KeptSize;                    // ... that record
-	UCHAR Kept[PEER_MAX_DATAGRAM];    // ...
+	UINT Datagrams;                // Every datagram sent
+	UINT Kinds[16];                // ... by its first byte
+	UINT Clear;                    // ... of them with PS_WINDOW bytes of the inner packet in a row
+	NATSIM_HOST *Keep;             // The host whose last record it keeps
+	UINT KeptSize;                 // ... that record
+	UCHAR Kept[PEER_MAX_DATAGRAM]; // ...
 } PS_TAP;
 
 // The network of the test
@@ -63,7 +63,7 @@ typedef struct PS_WORLD {
 	NATSIM_NAT *NatA; // A's NAT
 	NATSIM_NAT *NatB; // B's NAT
 	PS_NODE R, R2, A, B, C, G, H;
-	PS_TAP Tap;       // What the links carried
+	PS_TAP Tap; // What the links carried
 } PS_WORLD;
 
 // Whether data holds PS_WINDOW bytes in a row of the inner packet
@@ -332,7 +332,7 @@ static void ps_capture(PS_WORLD *w) {
 	bool fell_back = ps_send_inner(w);
 	PEER_STATUS back = ps_status(&w->A, &w->B);
 	coretest_check(fell_back && w->B.ReceivedRelay == 2 && back.Path == PEER_PATH_RELAY && memcmp(back.SessionId, before.SessionId, PEER_SESSION_ID_SIZE) == 0 &&
-	               back.Handshakes == 1,
+	                   back.Handshakes == 1,
 	               "After a Fallback to R the packet goes on in the same session");
 
 	NatSimSetTap(w->Sim, NULL, NULL);
@@ -450,7 +450,7 @@ static void ps_simultaneous(PS_WORLD *w) {
 	coretest_check(g_sent && h_sent && g_wait.Session == PEER_SESSION_HANDSHAKE && h_wait.Session == PEER_SESSION_HANDSHAKE,
 	               "G and H each start a handshake with the other at the same time");
 	coretest_check(g.Session == PEER_SESSION_UP && h.Session == PEER_SESSION_UP && memcmp(g.SessionId, h.SessionId, PEER_SESSION_ID_SIZE) == 0 &&
-	               g.Handshakes == 1 && h.Handshakes == 1,
+	                   g.Handshakes == 1 && h.Handshakes == 1,
 	               "The two handshakes end in one session: one completed handshake at each end, with the same id");
 	coretest_check(w->H.Received == 1 && memcmp(w->H.Last, "g first", 7) == 0 && w->G.Received == 1 && memcmp(w->G.Last, "h first", 7) == 0,
 	               "Each datagram that waited for the handshake arrives");
@@ -484,7 +484,7 @@ static void ps_rekey(PS_WORLD *w) {
 	coretest_info("G sent %u datagrams with a rekey every %u: %llu handshakes with H in all", sent, PS_REKEY_N, flooded.Handshakes);
 	coretest_check(sent == PS_FLOOD && w->H.Received == received + PS_FLOOD, "Not one of the datagrams went missing through the rekeys");
 	coretest_check(flooded.Handshakes >= start.Handshakes + PS_FLOOD / PS_REKEY_N / 2 && memcmp(flooded.SessionId, start.SessionId, PEER_SESSION_ID_SIZE) != 0 &&
-	               memcmp(flooded.SessionId, h_side.SessionId, PEER_SESSION_ID_SIZE) == 0,
+	                   memcmp(flooded.SessionId, h_side.SessionId, PEER_SESSION_ID_SIZE) == 0,
 	               "The keys were replaced after the configured number of datagrams, again and again, and both ends hold the same ones");
 
 	// On the schedule: past the rekey time, the tick of the initiator of the keys replaces them
@@ -502,7 +502,7 @@ static void ps_rekey(PS_WORLD *w) {
 	NatSimWaitIdle(w->Sim, PS_WAIT);
 	PEER_STATUS timed = ps_status(&w->G, &w->H);
 	coretest_check(timed.Handshakes > flooded.Handshakes && memcmp(timed.SessionId, flooded.SessionId, PEER_SESSION_ID_SIZE) != 0 && sent == 20 &&
-	               w->H.Received == received + 20,
+	                   w->H.Received == received + 20,
 	               "Past the rekey time the keys are replaced on the tick, and the traffic goes on with no datagram lost");
 
 	// Silent: past the timeout with no record, both ends drop the session; the next datagram starts a new one
@@ -524,8 +524,8 @@ static void ps_rekey(PS_WORLD *w) {
 
 // Two peer layers that hand their datagrams to each other at once, on the direct path, for the measurement
 typedef struct PS_LINK {
-	PEER_AGENT *To;   // The peer layer that the datagrams go to
-	PEER_ADDR From;   // The address they come from
+	PEER_AGENT *To; // The peer layer that the datagrams go to
+	PEER_ADDR From; // The address they come from
 } PS_LINK;
 
 static bool ps_link_send(void *param, const PEER_ADDR *dst, const void *data, UINT size) {
