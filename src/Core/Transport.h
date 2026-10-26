@@ -368,6 +368,33 @@ TRANSPORT *TransportQuicClientNew(const TRANSPORT_QUIC_CONFIG *cfg);
 USHORT TransportQuicBoundPort(TRANSPORT *t);
 void TransportQuicFree(TRANSPORT *t);
 
+// The msquic of the exporter (TransportQuicExporter.c; CORE-H5-R, #443). ConnectionExportKeyingMaterial sits in the
+// preview part of the msquic API table, which a later minor version may move or change, so a side reads the exporter
+// only from the minor version that the build was made against (the pinned package of fetch-msquic.ps1), any patch of
+// it. TransportQuicExporterVersion tells whether version, the four numbers of QUIC_PARAM_GLOBAL_LIBRARY_VERSION, is that
+// one; for another it writes a line to the transport log that names the side (server or client) and the version, and
+// that side's streams stay unbound, so its sessions with a bound peer fail.
+#define TRANSPORT_QUIC_EXPORTER_MAJOR 2 // The msquic whose API table this build reads the exporter from: 2.6.x
+#define TRANSPORT_QUIC_EXPORTER_MINOR 6
+bool TransportQuicExporterVersion(const UINT *version, bool server);
+
+// The channel binding of a QUIC connection (CORE-H5, #408): the TLS exporter of connection (an HQUIC whose handshake
+// completed, from the CONNECTED event) under api (the QUIC_API_TABLE of msquic), with NOISE_EXPORTER_LABEL, into exporter
+// (NOISE_EXPORTER_SIZE bytes), on the server or the client side. False, with a line of the transport log once per side
+// and reason, when that msquic is not the pinned minor, its table has no exporter or the connection gives none; the
+// stream then has no binding, and its session is encrypted.
+bool TransportQuicExporter(const void *api, void *connection, bool server, UCHAR *exporter);
+
+// The log of the transport module (TransportLog.c; CORE-H5-R, #443): the lines that tell why a transport runs with less
+// than it should, as a QUIC side without an exporter. Each line goes to the procedure that SetLog gave, with its
+// parameter, or without one to the debugger (OutputDebugStringA); SetLog(NULL, NULL) goes back to the debugger, and once
+// it returns the procedure before runs no more. The procedure may run on any thread, a callback of msquic too, so it
+// must not block or call into the transport. A line is TRANSPORT_LOG_SIZE bytes at most, with its NUL.
+#define TRANSPORT_LOG_SIZE 512
+typedef void(TRANSPORT_LOG_PROC)(void *param, const char *line);
+void TransportSetLog(TRANSPORT_LOG_PROC *proc, void *param);
+void TransportLog(const char *format, ...);
+
 // The TLS transport (TransportTls.c, CORE-S2-1 #69), on Schannel through SSPI: TLS 1.3 and 1.2 over
 // TCP on the Windows TCP stack, for a client that cannot use UDP (TLS-443 in a fallback list,
 // ADR-0005). The server credential (SCH_CREDENTIALS) presents a certificate read from the Windows
