@@ -76,7 +76,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 3. **Merge.** Every pull request that passes "The merge procedure". Close its tickets.
 4. **Repair.** For each other pull request:
    - a failed check that is a known flake: rerun it once;
-   - a failed check or a conflict, and the branch is not busy: start a resume lane. A branch is busy when it got a push in the last 45 minutes, because a person or another process may be working on it;
+   - a failed check or a conflict, and the branch is not busy: start a resume lane. A branch is busy when it got a push in the last 45 minutes, because a person or another process may be working on it. The branch of a lane in flight (step 2) stays busy until it has had no push for 90 minutes;
    - a red run on `integration`: start a fix lane before any new ticket.
 5. **Launch.** If fewer than 5 lanes are alive, counting those of earlier ticks, start lanes for the next ready tickets. See "Launching lanes". Start them in batches, each batch its own Workflow. If no ticket is ready, or a review or a lane found a gap that no ticket covers, write tickets first. See "Writing tickets".
 6. **Wait.** Arm a watcher and wait. A watcher is a script that prints one line when a pull request becomes clean, conflicting or failed; the one for the cloud is in [integrator-cloud.md](integrator-cloud.md). Refresh your heartbeat comment at least every 30 minutes. When a lane ends or the watcher prints a line, go to step 2. A tick may instead end its turn after it launched a Workflow, because the platform wakes the session when the Workflow ends. Then its heartbeat goes stale, and the next tick finds its lanes through the `lanes` line (step 2). A session that wakes later does the heartbeat again before it acts.
@@ -140,7 +140,8 @@ Some paths do not start `windows.yml` on a pull request at all: `docs/`, every `
 - it has none of the labels `needs-triage`, `postponed` and `parked`;
 - its body has a line `Ticket key:` (an issue without it is a spec: no lane);
 - every `#number` in its `## Blocked by` section is a closed issue (`None` means no blocker);
-- no open pull request exists for it, and no branch with a recent push (the title of a lane pull request starts with the ticket key).
+- no open pull request exists for it, and no branch with a recent push (the title of a lane pull request starts with the ticket key);
+- no lane of an earlier tick is in flight for it (step 2 of "A tick").
 
 A ticket whose blocker has an open pull request may start on the branch of that pull request. That is a stacked start, at most 2 levels deep. Its lane merges `origin/integration` after the blocker merged.
 
@@ -192,7 +193,7 @@ The usage window of the plan ends without warning. It kills the session and ever
 3. **State.** Read the pull requests, the branches and the tickets, as in step 2 of "A tick".
 4. **Unpushed work (local only).** `git worktree list` shows the lane worktrees (`.claude/worktrees/wf_*`). In each one that has uncommitted or unpushed work, commit it as a WIP commit and push it to the branch of the lane: `git push origin HEAD:<branch>`. A cloud session has no such worktrees. The unpushed work of a dead lane is lost, which is why every lane pushes after every commit.
 5. **Merge** what is clean, as in "The merge procedure".
-6. **Resume lanes.** For every open pull request that fails, conflicts, or is a draft with no recent push, and for every lane branch that has no pull request: one resume lane. The lane reads the pull request body and the head first.
+6. **Resume lanes.** For every open pull request that fails, conflicts, or is a draft with no recent push, and for every lane branch that has no pull request: one resume lane. Leave out the lanes in flight (step 2 of "A tick"). The lane reads the pull request body and the head first.
 7. **New lanes**, if slots are free.
 8. **Report.**
 
@@ -249,6 +250,8 @@ Before you act:
 4. Otherwise post your comment. Then read the comments again. If a comment of another run, not ended and updated in the last 45 minutes, has a lower comment id than yours, that run started first. Edit your comment to add `ended: lost the race`, and stand down.
 
 While you act, edit your comment at least every 30 minutes and set `alive:` to the time now. A tick that stops refreshing, for example because the usage window cut it off, is taken over after 45 minutes. Age is the `updated_at` of the comment, which is the clock of GitHub.
+
+A comment that is older than 45 minutes can still have lanes alive. A tick that launched a Workflow may end its turn while the lanes run, because the platform wakes it when the Workflow ends, and it does not refresh its comment meanwhile. So before you launch or resume anything, read the `lanes` lines of the tick comments of the last 3 hours (step 2 of "A tick"). The tickets and pull requests named there are in flight. They count against the lane cap, and they get no lane and no resume lane before their branch has had no push for 90 minutes.
 
 The maintainer's word beats the heartbeat. If he tells an integrator to take over, it posts its comment and acts. The other one sees a fresh comment and stands down.
 
