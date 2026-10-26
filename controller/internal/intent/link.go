@@ -26,8 +26,8 @@ const (
 	LinkGeneve = "geneve"
 )
 
-// MaxVNI is the largest VNI: VXLAN and Geneve carry 24 bits.
-const MaxVNI = 1<<24 - 1
+// GenevePort is the UDP port of Geneve (RFC 8926 section 3.3), as VXLANPort is that of VXLAN (mirror.go).
+const GenevePort = 6081
 
 // VTEP is the tunnel endpoint of a Node for the links of kind vxlan and geneve.
 type VTEP struct {
@@ -138,27 +138,24 @@ func (in Intent) validateLinks() []error {
 		} else {
 			addresses[a] = name
 		}
-		if t.VXLANPort > 65535 || t.GenevePort > 65535 {
+		if vxlan, geneve := t.Ports(); t.VXLANPort > 65535 || t.GenevePort > 65535 {
 			problems = append(problems, fmt.Errorf("Node %q: the vtep ports %d and %d must be from 1 to 65535 (0 for the default)", name, t.VXLANPort, t.GenevePort))
-		} else if VXLANPort(t) == GenevePort(t) {
-			problems = append(problems, fmt.Errorf("Node %q: the vtep has the port %d for both VXLAN and Geneve", name, VXLANPort(t)))
+		} else if vxlan == geneve {
+			problems = append(problems, fmt.Errorf("Node %q: the vtep has the port %d for both VXLAN and Geneve", name, vxlan))
 		}
 	}
 	return problems
 }
 
-// VXLANPort returns the UDP port of VXLAN of the tunnel endpoint t: 4789 when it names none.
-func VXLANPort(t VTEP) uint32 {
-	if t.VXLANPort == 0 {
-		return 4789
+// Ports returns the UDP ports of VXLAN and of Geneve of the tunnel endpoint t: VXLANPort and GenevePort
+// for the ones that it names none of.
+func (t VTEP) Ports() (vxlan, geneve uint32) {
+	vxlan, geneve = t.VXLANPort, t.GenevePort
+	if vxlan == 0 {
+		vxlan = VXLANPort
 	}
-	return t.VXLANPort
-}
-
-// GenevePort returns the UDP port of Geneve of the tunnel endpoint t: 6081 when it names none.
-func GenevePort(t VTEP) uint32 {
-	if t.GenevePort == 0 {
-		return 6081
+	if geneve == 0 {
+		geneve = GenevePort
 	}
-	return t.GenevePort
+	return vxlan, geneve
 }

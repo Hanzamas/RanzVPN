@@ -28,11 +28,17 @@ func TestApplyLinks(t *testing.T) {
 	if v := in.VRFs["corp"]; Plain(v.Link) || v.VNI != 0 {
 		t.Errorf("VRF corp has the link %q and the VNI %d, want noise and none", v.Link, v.VNI)
 	}
-	if got := in.Nodes["a"].VTEP; got != (VTEP{Address: "10.1.0.1", VXLANPort: 4800}) || VXLANPort(got) != 4800 || GenevePort(got) != 6081 {
+	if got := in.Nodes["a"].VTEP; got != (VTEP{Address: "10.1.0.1", VXLANPort: 4800}) {
 		t.Errorf("the vtep of Node a is %+v", got)
 	}
-	if got := in.Nodes["b"].VTEP; got.Address != "2001:db8::2" || VXLANPort(got) != 4789 {
+	if vxlan, geneve := in.Nodes["a"].VTEP.Ports(); vxlan != 4800 || geneve != 6081 {
+		t.Errorf("the ports of the vtep of Node a are %d and %d, want 4800 and 6081", vxlan, geneve)
+	}
+	if got := in.Nodes["b"].VTEP; got.Address != "2001:db8::2" {
 		t.Errorf("the vtep of Node b is %+v", got)
+	}
+	if vxlan, _ := in.Nodes["b"].VTEP.Ports(); vxlan != 4789 {
+		t.Errorf("the VXLAN port of the vtep of Node b is %d, want 4789", vxlan)
 	}
 	if got := in.PlainVRFs(in.Nodes["a"]); strings.Join(got, ",") != "dc,lab" {
 		t.Errorf("the VRFs of Node a with a plain link are %v", got)
@@ -40,7 +46,7 @@ func TestApplyLinks(t *testing.T) {
 
 	rs := in.Resources()
 	again, err := Apply(in, doc(rs...), nil)
-	if err != nil || again.VRFs["dc"] != in.VRFs["dc"] || again.Nodes["a"].VTEP != in.Nodes["a"].VTEP {
+	if err != nil || again.VRFs["dc"].Link != LinkVXLAN || again.VRFs["dc"].VNI != 30 || again.Nodes["a"].VTEP != in.Nodes["a"].VTEP {
 		t.Errorf("the resources applied again: %v, VRF dc %+v, the vtep of a %+v", err, again.VRFs["dc"], again.Nodes["a"].VTEP)
 	}
 	for _, r := range rs {

@@ -41,7 +41,8 @@ func ownVtep(in intent.Intent, n intent.Node) *controlpb.Vtep {
 	if len(in.PlainVRFs(n)) == 0 {
 		return nil
 	}
-	return &controlpb.Vtep{VxlanPort: intent.VXLANPort(n.VTEP), GenevePort: intent.GenevePort(n.VTEP)}
+	vxlan, geneve := n.VTEP.Ports()
+	return &controlpb.Vtep{VxlanPort: vxlan, GenevePort: geneve}
 }
 
 // peerVtep returns the tunnel endpoint of the Node o for the Peer object of a Node that shares the VRFs
@@ -55,5 +56,6 @@ func peerVtep(in intent.Intent, o intent.Node, shared map[string]bool) *controlp
 	if !plain || err != nil {
 		return nil
 	}
-	return &controlpb.Vtep{Address: a.AsSlice(), VxlanPort: intent.VXLANPort(o.VTEP), GenevePort: intent.GenevePort(o.VTEP)}
+	vxlan, geneve := o.VTEP.Ports()
+	return &controlpb.Vtep{Address: a.AsSlice(), VxlanPort: vxlan, GenevePort: geneve}
 }

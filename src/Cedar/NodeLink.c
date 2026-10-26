@@ -56,15 +56,15 @@ typedef struct NODE_LINK_THREAD {
 // The VXLAN module of the links of a node, its sockets, and what became of the frames
 struct NODE_LINK {
 	NODE *Node;
-	LOCK *Lock;                     // The opening of the sockets and the VNIs that the module carries
-	VXLAN *Vxlan;                   // The module
-	VXLAN_UDP *volatile Udp;        // Its socket of VXLAN, NULL until a Generation has a link of kind vxlan
-	VXLAN_UDP *volatile GeneveUdp;  // ... and of Geneve
-	UINT NumCarried;                // The VNIs that the module carries, under Lock
+	LOCK *Lock;                    // The opening of the sockets and the VNIs that the module carries
+	VXLAN *Vxlan;                  // The module
+	VXLAN_UDP *volatile Udp;       // Its socket of VXLAN, NULL until a Generation has a link of kind vxlan
+	VXLAN_UDP *volatile GeneveUdp; // ... and of Geneve
+	UINT NumCarried;               // The VNIs that the module carries, under Lock
 	UINT Carried[CONTROL_MAX_VRFS * 2];
-	UINT NumCurrent;                // ... of them, those of the Generation in the tables
+	UINT NumCurrent; // ... of them, those of the Generation in the tables
 	UINT Current[CONTROL_MAX_VRFS];
-	UINT NumNext;                   // ... and those of the Generation that goes in
+	UINT NumNext; // ... and those of the Generation that goes in
 	UINT Next[CONTROL_MAX_VRFS];
 	NODE_LINK_THREAD Threads[NODE_LINK_THREADS];
 	volatile LONG64 Sent;
@@ -84,9 +84,9 @@ typedef struct NODE_LINK_VRF {
 
 // The tunnel endpoint of a peer of a Generation, and the VRFs that it shares with the node
 typedef struct NODE_LINK_PEER {
-	bool HasVtep;       // The Controller named its tunnel endpoint
-	VXLAN_ADDR Vxlan;   // ... for VXLAN
-	VXLAN_ADDR Geneve;  // ... and for Geneve
+	bool HasVtep;      // The Controller named its tunnel endpoint
+	VXLAN_ADDR Vxlan;  // ... for VXLAN
+	VXLAN_ADDR Geneve; // ... and for Geneve
 	UINT NumVrfs;
 	UINT VrfIds[CONTROL_MAX_VRFS];
 } NODE_LINK_PEER;
