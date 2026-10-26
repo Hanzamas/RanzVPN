@@ -434,6 +434,15 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/listener-acme.ps1 -BuildDir build
+    # The ACME source of the certificate of the Controller (SDN-92, #397), on x64 and arm64, with the same Pebble: the
+    # Controller serves the chain that the service issued for its own key, keeps it across a restart and renews it
+    # (.github/scripts/controller-acme.ps1, TestServesACertificateOfAnACMEService of controller/internal/servercert).
+    - name: Controller certificate with ACME
+      if: ${{ !cancelled() }}
+      timeout-minutes: 15
+      shell: pwsh
+      run: |
+        . .github/scripts/controller-acme.ps1 -BuildDir build
     - name: Self-check
       timeout-minutes: 10
       shell: pwsh
