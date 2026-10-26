@@ -1,0 +1,22 @@
+# Generation 2 of gw-1 after endpoints2.json: only the delta from generation 1. The endpoints of hub changed (a new
+# address and a new order), so its Peer object is the one change. lab-1, which shares no VRF with hub, gets no
+# generation 2.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    peer: {
+      name: "hub"
+      public_key: "Xi\257\364PT\2272\313\252\355^]\371\263\012m\243\034\260\345t+\255Z\324\241\247h\361\246{"
+      vrf_ids: 10
+      endpoints: {
+        transport: TRANSPORT_TLS
+        address: "hub.example.com:443"
+      }
+      endpoints: {
+        transport: TRANSPORT_QUIC
+        address: "198.51.100.7:443"
+      }
+    }
+  }
+}

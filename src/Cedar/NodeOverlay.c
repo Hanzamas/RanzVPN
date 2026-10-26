@@ -19,7 +19,9 @@
 // data transport finds a peer by its node name, as the in-process loopback transport of the harness does, until the
 // QUIC transport (CORE-S1-1, #67) carries the sessions on the paths of the peer module. Of two peers, the one with the
 // lower static key dials and the other accepts; the static key of the handshake is a peer's identity, so a session
-// has no Login. One thread of the overlay accepts, dials and reads the sessions; it alone closes them, and a sender
+// has no Login. The endpoints of a Peer object (SDN-93, #410) are where a data transport that dials through them reaches the
+// peer: such a node dials only a peer that has some, and a node that has none of its own always dials (NodeEndpoints.c). One
+// thread of the overlay accepts, dials and reads the sessions; it alone closes them, and a sender
 // counts itself on the peer while it sends, so a session is never closed under a send. The forwarding reads the
 // tables without a lock, as a reader of the table snapshot, so a peer that a Generation drops goes only once no
 // table leads to it any more.
@@ -43,6 +45,12 @@ typedef struct NODE_OVERLAY_PEER {
 	volatile LONG Senders;             // Calls of NodeOverlayInput that send on Session now
 	UINT64 NextDial;                   // When the node dials it next
 	bool Gone;                         // The desired state dropped it and no table leads to it: the thread closes its session and frees it
+	UINT64 Since;                      // When Session came up, for the state of the node (SDN-91, #396) ...
+	TRANSPORT *Transport;              // ... and the transport that it runs over
+
+	// The endpoints that its Peer object lists (SDN-93, #410), which the node dials it at, in the order of the race
+	UINT NumEndpoints;
+	CONTROL_ENDPOINT Endpoints[CONTROL_MAX_ENDPOINTS];
 } NODE_OVERLAY_PEER;
 
 // The overlay of a node
@@ -67,6 +75,11 @@ struct NODE_OVERLAY {
 	volatile LONG64 Forwarded;                  // Packets of the host sent to a peer
 	volatile LONG64 Delivered;                  // Packets of the peers delivered to the host
 	volatile LONG64 Dropped;                    // Packets that the overlay dropped
+
+	// The number of the endpoints of the node itself (SDN-93, #410), under Lock: a node that has none is dialled by no peer
+	UINT NumEndpoints;
+	// The dials that the overlay started
+	volatile LONG64 Dials;
 };
 
 // The IPv4 addresses of a CONTROL_ADDRESS list, in network byte order, and the VRF of each; the forwarding tables take
@@ -195,6 +208,8 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	{
 		if (IsEmptyStr(ov->Name))
 			StrCpy(ov->Name, sizeof(ov->Name), st->Name);
+		// Whether a peer can dial the node is the endpoints that it has (SDN-93, #410)
+		ov->NumEndpoints = st->NumEndpoints;
 
 		for (UINT i = 0; i < LIST_NUM(ov->Peers); i++) {
 			NODE_OVERLAY_PEER *p = LIST_DATA(ov->Peers, i);
@@ -223,6 +238,9 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 				Add(ov->Peers, p);
 			}
 			hops[i] = p;
+			// The endpoints that the node dials the peer at: a change of them reaches the next dial (SDN-93, #410)
+			p->NumEndpoints = cp->NumEndpoints;
+			Copy(p->Endpoints, cp->Endpoints, sizeof(CONTROL_ENDPOINT) * cp->NumEndpoints);
 		}
 	}
 	Unlock(ov->Lock);
@@ -342,6 +360,8 @@ static bool NodeOverlayAttach(NODE_OVERLAY *ov, const UCHAR *key, TRANSPORT_NOIS
 		if (p != NULL && p->Session == NULL) {
 			InterlockedExchangePointer((PVOID volatile *)&p->Session, s);
 			StrCpy(name, sizeof(name), p->Name);
+			p->Since = GetTickCount64();
+			p->Transport = TransportOf(s->Stream);
 			ok = true;
 		}
 	}
@@ -398,11 +418,9 @@ static void NodeOverlayReplace(NODE_OVERLAY *ov, const UCHAR *key) {
 static bool NodeOverlayAccept(NODE_OVERLAY *ov) {
 	NOISE_SESSION_CONFIG c;
 
-	if (ov->Listener == NULL)
-		return false;
-
-	TRANSPORT_STREAM *stream = TransportAccept(ov->Listener, 0);
-	// Else a stream that the front door or QUIC of the node's Listener took (NodeListener.c; SDN-45, #238)
+	TRANSPORT_STREAM *stream = (ov->Listener != NULL ? TransportAccept(ov->Listener, 0) : NULL);
+	// Else a stream that the front door or QUIC of the node's Listener took (NodeListener.c; SDN-45, #238), also when the data
+	// transport listens nowhere, as that of the client role and the one of a node without it do (SDN-93, #410)
 	if (stream == NULL)
 		stream = NodeListenerAccept(ov->Node);
 	if (stream == NULL)
@@ -437,8 +455,14 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 		for (UINT i = 0; i < LIST_NUM(ov->Peers) && found == false; i++) {
 			NODE_OVERLAY_PEER *p = LIST_DATA(ov->Peers, i);
 
-			// A client dials its peers whatever the order of the keys: they cannot dial it (CORE-S3-1)
-			if (p->Gone || p->Session != NULL || now < p->NextDial || (ov->Config.Dialler == false && Cmp(ov->Config.Key->Public, p->Key, PEER_KEY_SIZE) >= 0))
+			if (p->Gone || p->Session != NULL || now < p->NextDial)
+				continue;
+
+			// A client dials its peers whatever the order of the keys: they cannot dial it (CORE-S3-1). A data transport that
+			// dials through endpoints dials a peer that has some, and a node without endpoints always dials (NodeEndpoints.c;
+			// SDN-93, #410)
+			bool dialable = (ov->Config.Dialable != NULL && ov->Config.Dialable(ov->Node, ov->Config.AdapterParam, p->Name, p->Endpoints, p->NumEndpoints));
+			if (NodeEndpointsDials(ov->Config.Dialable == NULL, ov->Config.Dialler, ov->Config.Key->Public, p->Key, ov->NumEndpoints, dialable) == false)
 				continue;
 
 			StrCpy(name, sizeof(name), p->Name);
@@ -452,6 +476,7 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 	if (found == false)
 		return false;
 
+	InterlockedIncrement64(&ov->Dials);
 	TRANSPORT_STREAM *stream = TransportDial(ov->Config.Data, name, NULL);
 	if (stream == NULL)
 		return true;
@@ -803,6 +828,7 @@ void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st) {
 
 	ControlGetStatus(ov->Control, &cs);
 	st->Connected = cs.Connected;
+	st->Since = cs.Since;
 
 	Lock(ov->Lock);
 	{
@@ -827,4 +853,72 @@ void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st) {
 	st->Forwarded = (UINT64)ReadAcquire64(&ov->Forwarded);
 	st->Delivered = (UINT64)ReadAcquire64(&ov->Delivered);
 	st->Dropped = (UINT64)ReadAcquire64(&ov->Dropped);
+	st->Dials = (UINT64)ReadAcquire64(&ov->Dials);
+}
+
+// The endpoints that the Peer object of the peer name lists, at most max of them into out: their number, 0 for a peer that
+// the desired state does not hold and for one that has none (SDN-93, #410). The data transport of the client role asks for
+// them when it dials a server, on the thread of the overlay, which holds no lock then.
+UINT NodeOverlayEndpoints(NODE *n, const char *name, CONTROL_ENDPOINT *out, UINT max) {
+	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
+	UINT num = 0;
+
+	if (ov == NULL || name == NULL || out == NULL)
+		return 0;
+
+	Lock(ov->Lock);
+	{
+		for (UINT i = 0; i < LIST_NUM(ov->Peers) && num == 0; i++) {
+			NODE_OVERLAY_PEER *p = LIST_DATA(ov->Peers, i);
+
+			if (p->Gone == false && StrCmp(p->Name, name) == 0) {
+				num = MIN(p->NumEndpoints, max);
+				Copy(out, p->Endpoints, sizeof(CONTROL_ENDPOINT) * num);
+			}
+		}
+	}
+	Unlock(ov->Lock);
+
+	return num;
+}
+
+// The peers of the overlay of a node and their Noise sessions, into list, at most max of them, and into listener the name of
+// the data transport that the overlay listens on, "" for none: the number of the peers, which may be more than max (the
+// state of a node, NodeState.c; SDN-91, #396)
+UINT NodeOverlayGetSessions(NODE *n, NODE_OVERLAY_SESSION *list, UINT max, char *listener, UINT listener_size) {
+	UINT num = 0;
+
+	if (listener != NULL)
+		StrCpy(listener, listener_size, "");
+
+	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
+	if (ov == NULL)
+		return 0;
+
+	if (listener != NULL && ov->Listener != NULL)
+		StrCpy(listener, listener_size, ov->Config.Data->Name);
+
+	Lock(ov->Lock);
+	{
+		for (UINT i = 0; i < LIST_NUM(ov->Peers); i++) {
+			NODE_OVERLAY_PEER *p = LIST_DATA(ov->Peers, i);
+
+			if (p->Gone)
+				continue;
+			if (list != NULL && num < max) {
+				NODE_OVERLAY_SESSION *s = &list[num];
+
+				Zero(s, sizeof(NODE_OVERLAY_SESSION));
+				StrCpy(s->Name, sizeof(s->Name), p->Name);
+				s->Up = (p->Session != NULL);
+				if (s->Up && p->Transport != NULL)
+					StrCpy(s->Transport, sizeof(s->Transport), p->Transport->Name);
+				s->Since = (s->Up ? p->Since : 0);
+			}
+			num++;
+		}
+	}
+	Unlock(ov->Lock);
+
+	return num;
 }

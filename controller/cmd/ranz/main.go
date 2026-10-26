@@ -49,6 +49,9 @@
 //	ranz [flags] get events                    print the events, such as an automatic rollback or a pool near exhaustion
 //	ranz [flags] get ipam                      print how full each address pool is, and the routes of the gateway LAN subnets
 //	ranz [flags] get leases                    print the leases of the DHCP responders of the L2 Networks
+//	ranz [flags] get audit [filters] [-o json|table]
+//	                                           print the records of the audit log, oldest first, with the filters of the API:
+//	                                           -kind, -actor, -since, -until, -after and -limit (audit.go)
 //	ranz [flags] get devices                   print the WireGuard Devices with the last handshake and the traffic of each
 //	ranz [flags] get device-config NAME        print the WireGuard configuration of the Device NAME, for a stock client
 //	ranz [flags] delete KIND NAME              delete one resource
@@ -139,6 +142,7 @@ const usage = `usage:
   ranz [flags] rollback REVISION
   ranz [flags] get resources|nodes|revisions|events|ipam|leases|licence|devices
   ranz [flags] get revision ID
+  ranz [flags] get audit [-kind KIND] [-actor ACTOR] [-since TIME] [-until TIME] [-after ID] [-limit N] [-o json|table]
   ranz [flags] get device-config NAME
   ranz [flags] delete KIND NAME
   ranz [flags] connect vrf A B
@@ -285,6 +289,8 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 			return err
 		}
 		return show(out, res)
+	case len(args) >= 2 && args[0] == "get" && args[1] == "audit":
+		return auditCommand(ctx, c, args[2:], out)
 	case len(args) == 2 && args[0] == "get" && args[1] == "revisions":
 		revs, err := c.Revisions(ctx)
 		if err != nil {
