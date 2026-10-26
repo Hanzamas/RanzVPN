@@ -1,0 +1,19 @@
+# Generation 2 of hub after endpoints2.json: only the delta from generation 1. Its own endpoints are in its NodeConfig,
+# which tells it that the other Nodes can dial it, and that is the one change.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    node: {
+      name: "hub"
+      endpoints: {
+        transport: TRANSPORT_TLS
+        address: "hub.example.com:443"
+      }
+      endpoints: {
+        transport: TRANSPORT_QUIC
+        address: "198.51.100.7:443"
+      }
+    }
+  }
+}

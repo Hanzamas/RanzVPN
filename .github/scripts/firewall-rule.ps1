@@ -51,9 +51,16 @@ Write-Host "unzipped to $dir"
 $since = (Get-Date).AddSeconds(-2)
 $service = $null
 
-# Every rule of the local store as one line, sorted: a rule added, deleted or changed changes a line
+# The rules that Windows makes for the Store apps of a user are named after the package family, then -In- or -Out-
+# (Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe-In-Allow-ServerCapability). They come while a step runs, as the apps of the
+# runner are provisioned, and nothing of vpnserver adds them: a run of this step saw three of them between /install and
+# its check of the rules.
+$storeRule = '^[A-Za-z0-9][A-Za-z0-9.-]*_[a-z0-9]{13}-(In|Out)-'
+
+# Every rule of the local store as one line, sorted: a rule added, deleted or changed changes a line. The rules of the
+# Store apps are left out.
 function Get-RuleLines {
-	@(Get-NetFirewallRule | ForEach-Object {
+	@(Get-NetFirewallRule | Where-Object { $_.Name -notmatch $storeRule } | ForEach-Object {
 			'{0} | {1} | enabled {2} | {3} | {4} | profile {5}' -f $_.Name, $_.DisplayName, $_.Enabled, $_.Direction, $_.Action, $_.Profile
 		} | Sort-Object)
 }

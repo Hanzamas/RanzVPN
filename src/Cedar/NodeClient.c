@@ -7,8 +7,10 @@
 // - The Client setting of the configuration store (NODE_SETTING_CLIENT), one JSON object, names the adapters, the DNS
 //   servers and suffix of the network, the pipe of the logged-in user, and each server: its node name, the thumbprint
 //   of its certificate, which both transports pin, and its fallback list ("quic:vpn.example:443, tls:vpn.example:443").
-//   With "forwarding": true the node is a gateway or an exit, and each of its adapters forwards between it and the
-//   other interfaces of the host. Without the setting the role holds nothing.
+//   A server that names no fallback list is dialled at the endpoints of its Peer object, which the Controller sends
+//   (NodeEndpoints.c; SDN-93, #410), and only while that Peer object lists some. With "forwarding": true the node is a
+//   gateway or an exit, and each of its adapters forwards between it and the other interfaces of the host. Without the
+//   setting the role holds nothing.
 // - The role runs the overlay of the node. Its data transport is the dialler of the role: a peer is dialled by its
 //   name, which is the race of the fallback list of the server of that name (TransportRace), so QUIC wins where UDP
 //   passes and TLS-443 where it does not. A client dials every server whatever the order of the keys, and listens
@@ -149,7 +151,9 @@ static bool NodeClientThumbprint(char *dst, UINT size, const char *src) {
 
 // A server of the setting: its name, the transports that its fallback list names, each pinning its certificate, and the
 // entries of the list that they can dial. An entry of a transport that cannot run here (QUIC without msquic.dll) is
-// left out, so the others still dial. False when no entry is left.
+// left out, so the others still dial. False when no entry is left. A server without a fallback list has both transports,
+// and the entries come from the endpoints of its Peer object when it is dialled (SDN-93, #410); it is left out when no
+// transport can run.
 static bool NodeClientAddServer(NODE_CLIENT *c, NODE_CLIENT_SERVER *s, const char *name, const char *thumbprint, const char *dial) {
 	char pin[2 * CRYPTO_THUMBPRINT_SIZE + 1];
 	TRANSPORT *known[2];
@@ -157,14 +161,15 @@ static bool NodeClientAddServer(NODE_CLIENT *c, NODE_CLIENT_SERVER *s, const cha
 
 	Zero(s, sizeof(NODE_CLIENT_SERVER));
 
-	if (IsEmptyStr(name) || StrLen(name) >= PEER_NAME_SIZE || NodeClientThumbprint(pin, sizeof(pin), thumbprint) == false || IsEmptyStr(dial)) {
-		NodeLog(c->Node, "Role client: a server of the %s setting has no name, no thumbprint of 40 hex digits or no fallback list", NODE_SETTING_CLIENT);
+	if (IsEmptyStr(name) || StrLen(name) >= PEER_NAME_SIZE || NodeClientThumbprint(pin, sizeof(pin), thumbprint) == false) {
+		NodeLog(c->Node, "Role client: a server of the %s setting has no name or no thumbprint of 40 hex digits", NODE_SETTING_CLIENT);
 		return false;
 	}
 
 	StrCpy(s->Name, sizeof(s->Name), name);
+	bool endpoints = IsEmptyStr(dial);
 
-	if (InStr(dial, "quic:")) {
+	if (endpoints || InStr(dial, "quic:")) {
 		TRANSPORT_QUIC_CONFIG qc;
 
 		TransportQuicDefaultConfig(&qc, pin, false);
@@ -175,7 +180,7 @@ static bool NodeClientAddServer(NODE_CLIENT *c, NODE_CLIENT_SERVER *s, const cha
 			NodeLog(c->Node, "Role client: server %s: no QUIC here (msquic.dll is missing), so its fallback list goes on without", name);
 	}
 
-	if (InStr(dial, "tls:")) {
+	if (endpoints || InStr(dial, "tls:")) {
 		TRANSPORT_TLS_CONFIG tc;
 
 		TransportTlsDefaultConfig(&tc, pin, false);
@@ -194,14 +199,17 @@ static bool NodeClientAddServer(NODE_CLIENT *c, NODE_CLIENT_SERVER *s, const cha
 	}
 	FreeToken(t);
 
-	if (s->NumTargets == 0) {
+	if ((endpoints == false && s->NumTargets == 0) || (endpoints && s->Quic == NULL && s->Tls == NULL)) {
 		TransportQuicFree(s->Quic);
 		TransportTlsFree(s->Tls);
 		Zero(s, sizeof(NODE_CLIENT_SERVER));
 		return false;
 	}
 
-	NodeLog(c->Node, "Role client: server %s, dialled over %u entries of its fallback list \"%s\"", name, s->NumTargets, dial);
+	if (endpoints)
+		NodeLog(c->Node, "Role client: server %s, dialled at the endpoints of its Peer object, which the Controller sends", name);
+	else
+		NodeLog(c->Node, "Role client: server %s, dialled over %u entries of its fallback list \"%s\"", name, s->NumTargets, dial);
 	return true;
 }
 
@@ -276,7 +284,8 @@ static void NodeClientReset(NODE_CLIENT *c, const char *why) {
 	NodeLog(c->Node, "Client: %s (%u streams closed)", why, num);
 }
 
-// Dial the server named address: the race of its fallback list. While the role is down or asleep it dials nothing.
+// Dial the server named address: the race of its fallback list, or of the endpoints of its Peer object when it has none
+// (SDN-93, #410). While the role is down or asleep it dials nothing.
 static bool NodeClientDial(void *param, const char *address, HANDLE cancel, void **stream) {
 	NODE_CLIENT *c = (NODE_CLIENT *)param;
 	NODE_CLIENT_SERVER *s = NULL;
@@ -300,7 +309,24 @@ static bool NodeClientDial(void *param, const char *address, HANDLE cancel, void
 	if (idle || s == NULL)
 		return false;
 
-	TRANSPORT_STREAM *t = TransportRace(s->Targets, s->NumTargets, TRANSPORT_RACE_DELAY, NODE_CLIENT_DIAL, &race);
+	// The entries of the race: those of the fallback list of the server, or without a list the endpoints of its Peer object
+	// that a transport here can dial (NodeEndpoints.c; SDN-93, #410)
+	TRANSPORT_TARGET listed[TRANSPORT_MAX_TARGETS];
+	const TRANSPORT_TARGET *targets = s->Targets;
+	UINT num = s->NumTargets;
+
+	if (num == 0) {
+		CONTROL_ENDPOINT endpoints[CONTROL_MAX_ENDPOINTS];
+		TRANSPORT *known[2] = {s->Quic, s->Tls};
+		UINT num_endpoints = NodeOverlayEndpoints(c->Node, address, endpoints, CONTROL_MAX_ENDPOINTS);
+
+		num = NodeEndpointsTargets(endpoints, num_endpoints, known, 2, listed, TRANSPORT_MAX_TARGETS);
+		targets = listed;
+		if (num == 0)
+			return false;
+	}
+
+	TRANSPORT_STREAM *t = TransportRace(targets, num, TRANSPORT_RACE_DELAY, NODE_CLIENT_DIAL, &race);
 	if (t == NULL) {
 		bool logged;
 
@@ -310,11 +336,11 @@ static bool NodeClientDial(void *param, const char *address, HANDLE cancel, void
 		Unlock(c->Lock);
 
 		if (logged == false)
-			NodeLog(c->Node, "Client: server %s not reached: %u of its %u entries failed within %u ms", address, race.NumFailed, s->NumTargets, (UINT)NODE_CLIENT_DIAL);
+			NodeLog(c->Node, "Client: server %s not reached: %u of its %u entries failed within %u ms", address, race.NumFailed, num, (UINT)NODE_CLIENT_DIAL);
 		return false;
 	}
 
-	char *winner = s->Targets[race.Winner].Transport->Name;
+	char *winner = targets[race.Winner].Transport->Name;
 	NODE_CLIENT_STREAM *cs = ZeroMalloc(sizeof(NODE_CLIENT_STREAM));
 	cs->Client = c;
 	cs->Stream = t;
@@ -334,6 +360,24 @@ static bool NodeClientDial(void *param, const char *address, HANDLE cancel, void
 
 	*stream = cs;
 	return true;
+}
+
+// Whether the dialler dials the peer name, whose Peer object lists the num endpoints: a server of the Client setting that has
+// a fallback list, or none and an endpoint that a transport here can dial (SDN-93, #410). A peer that is no server, or that has
+// no such endpoint, is not dialled: the overlay does not start a dial for it, so the role does not retry for it in a loop. The
+// servers do not change while the role runs, so this takes no lock: the overlay asks under its own.
+static bool NodeClientDialable(NODE *n, void *param, const char *name, const CONTROL_ENDPOINT *endpoints, UINT num) {
+	NODE_CLIENT *c = (NODE_CLIENT *)param;
+
+	for (UINT i = 0; i < c->NumServers; i++) {
+		NODE_CLIENT_SERVER *s = &c->Servers[i];
+		TRANSPORT *known[2] = {s->Quic, s->Tls};
+
+		if (StrCmp(s->Name, name) == 0)
+			return (s->NumTargets != 0 || NodeEndpointsTargets(endpoints, num, known, 2, NULL, 0) != 0);
+	}
+
+	return false;
 }
 
 // A client listens nowhere: no peer dials it
@@ -916,6 +960,8 @@ static bool NodeClientOverlayStart(NODE_CLIENT *c) {
 	cfg.AdapterStop = NodeClientHalt;
 	cfg.State = NodeClientState;
 	cfg.Dialler = true;
+	// Only a server that it can dial is dialled, through the endpoints of its Peer object where its setting names no list
+	cfg.Dialable = NodeClientDialable;
 	// The control stream to the Controller of the Controller settings, when the node has them (NodeController.c; SDN-90, #395)
 	NodeControllerOverlay(c->Node, &cfg);
 

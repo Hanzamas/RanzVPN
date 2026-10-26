@@ -145,6 +145,10 @@ type Node struct {
 	// Relay is the address and UDP port that the node's relay role listens on, host:port with an
 	// IP address (ADR-0015). Left out, the node is no relay for the others.
 	Relay string `json:"relay,omitempty"`
+	// Endpoints are the addresses under which the other Nodes reach the node, each over one transport: quic, tls or
+	// mimic (SDN-93, endpoint.go). A Node dials a peer at its endpoints, in this order, and the first transport that
+	// connects wins. Left out, no Node dials this one, so it dials its peers.
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
 	// Addresses holds the address of the node in each L3 Network of its VRFs that has an IPv4
 	// pool, by Network name (ADR-0028, address.go). One left out is allocated by the controller.
 	Addresses map[string]string `json:"addresses,omitempty"`
@@ -265,6 +269,7 @@ func (in Intent) Clone() Intent {
 	for name, n := range in.Nodes {
 		n.VRFs = slices.Clone(n.VRFs)
 		n.Tags = slices.Clone(n.Tags)
+		n.Endpoints = slices.Clone(n.Endpoints)
 		n.Addresses = maps.Clone(n.Addresses)
 		n.IPv6Addresses = maps.Clone(n.IPv6Addresses)
 		n.LANSubnets = cloneLANs(n.LANSubnets)
@@ -676,8 +681,8 @@ func ParseKey(s string) ([]byte, error) {
 
 // complete fills in what the resources of in leave out: the id, ULA and MTU of a VRF, the mode
 // of a Network, the VRFs of a Node that names none (VRF default, when in has it), the order of a
-// Node's VRFs and tags, the form of its relay address, and the one form of the reservations of a
-// Network and of the LAN subnets of a Node. A VRF keeps the id and ULA it got when prev first held
+// Node's VRFs and tags, the form of its relay address and of its endpoints, and the one form of the
+// reservations of a Network and of the LAN subnets of a Node. A VRF keeps the id and ULA it got when prev first held
 // it; they cannot change while it exists. The addresses of the Nodes follow (allocate).
 func (in Intent) complete(prev Intent, random io.Reader) []error {
 	var problems []error
@@ -749,6 +754,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 			n.Relay = ap.String()
 		}
 		n.LANSubnets = canonicalLANs(n.LANSubnets)
+		n.Endpoints = canonicalEndpoints(n.Endpoints)
 		in.Nodes[name] = n
 	}
 	in.completePolicies()
@@ -878,6 +884,7 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateDNS()...)
 	problems = append(problems, in.validateUsers()...)
 	problems = append(problems, in.validateListeners()...)
+	problems = append(problems, in.validateEndpoints()...)
 	problems = append(problems, in.validateDevices()...)
 	return append(problems, in.validateIPAM()...)
 }

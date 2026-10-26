@@ -178,6 +178,8 @@ add_library(corecontrol STATIC
   ControlPolicy.h
   # The WireGuard Devices of a state and the counters of a gateway (SDN-80, #375)
   ControlDevice.c
+  # The endpoints of a node and of its peers in a desired state (SDN-93, #410)
+  ControlEndpoint.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

@@ -34,6 +34,10 @@
 // Configuration store and so the same Node identity key, which the key storage provider keeps for
 // the virtual account of the service.
 //
+// Install opens the inbound ports of the parts that are installed in Windows Firewall, rules of the
+// group Ranz VPN for the programs of the Ranz folder, and Uninstall removes every rule of that group
+// (firewall.go; SDN-91, #396).
+//
 // Running Install again is safe. A service that exists is not made again, and a file that is
 // there is not written again, because the running service holds it open: the call only writes a
 // file that is missing and starts a service that does not run. A driver that is there is not

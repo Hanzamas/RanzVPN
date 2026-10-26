@@ -55,7 +55,11 @@ $stopFile = Join-Path $work 'stop'
 $nodeService = 'ranzvpnserver'
 $controllerService = 'ranz-controller'
 $adapterName = 'Ranz default'
-$firewallRule = 'Ranz first test'
+# The group of the rules that ranz install makes in Windows Firewall (SDN-91), and the rules of the Node and the Controller:
+# protocol, ports and program
+$firewallGroup = 'Ranz VPN'
+$nodeRules = @("TCP 443 $installDir\ranz-node.exe", "UDP 443 $installDir\ranz-node.exe")
+$controllerRules = @("TCP 443,5555 $installDir\ranz.exe")
 # The two Nodes of the stand-in and the addresses that the Controller gives them: the lowest free host addresses of the
 # pool, in the order of their names (ADR-0028)
 $nodeA = 'pc-a'
@@ -352,6 +356,32 @@ function Test-Source([string] $folder, [string] $filter, [string] $pattern) {
 	return (@(Select-String -Path $files.FullName -Pattern $pattern).Count -gt 0)
 }
 
+# The rules of the group of ranz install, read back from Windows Firewall: each must be an enabled inbound rule that allows,
+# and the protocols, ports and programs of all of them must be want. The ids of the rules are returned, in order.
+function Assert-FirewallRules([string[]] $want) {
+	$rules = @(Get-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue)
+	$have = @()
+	foreach ($r in $rules) {
+		$ports = $r | Get-NetFirewallPortFilter
+		$program = ($r | Get-NetFirewallApplicationFilter).Program
+		if ($r.Direction -ne 'Inbound' -or $r.Action -ne 'Allow' -or [string] $r.Enabled -ne 'True') { throw "the rule '$($r.DisplayName)' of the group $firewallGroup is $($r.Direction) $($r.Action), enabled $($r.Enabled)" }
+		$have += "$($ports.Protocol) $(@($ports.LocalPort) -join ',') $program"
+	}
+	$haveText = (@($have | Sort-Object) -join '; ')
+	$wantText = (@($want | Sort-Object) -join '; ')
+	if ($haveText -ne $wantText) { throw "the group $firewallGroup of Windows Firewall holds [$haveText], not [$wantText]" }
+	Write-Host "Windows Firewall, the group ${firewallGroup}: $haveText"
+	return @($rules | ForEach-Object { $_.Name } | Sort-Object)
+}
+
+# ranz node state of the Node service of the runner: its exit code and its JSON
+function Get-NodeState {
+	$out = (& $ranzExe node state) -join "`n"
+	$code = $LASTEXITCODE
+	$global:LASTEXITCODE = 0
+	return [pscustomobject]@{ Code = $code; State = $(if ($out.Trim()) { $out | ConvertFrom-Json } else { $null }); Text = $out }
+}
+
 function Assert-Gap([string] $gap, [bool] $there, [string] $what) {
 	if (-not $there) { throw "$gap is closed, or its sources moved: $what. Make the steps of docs/first-test.md real, and then this Gap step a step" }
 	Write-Host "$gap is still there: $what"
@@ -433,15 +463,18 @@ try {
 	}
 
 	Step 'firewall' {
-		$null = Invoke-Doc
-		$rule = Get-NetFirewallRule -DisplayName $firewallRule
-		$ports = @($rule | Get-NetFirewallPortFilter | ForEach-Object { $_.LocalPort }) -join ','
-		if ($rule.Direction -ne 'Inbound' -or $rule.Action -ne 'Allow' -or $ports -ne '443,5555,9821') { throw "the firewall rule is $($rule.Direction) $($rule.Action) on '$ports'" }
+		# Nothing is opened by hand (SDN-91): before the install the group of ranz install is empty
+		$out = Invoke-Doc
+		if ($out.Trim()) { throw "the group $firewallGroup of Windows Firewall holds rules before the install:`n$out" }
+		$null = Assert-FirewallRules @()
 	}
 
 	Step 'install-a' {
 		$out = Invoke-Doc
 		if ($out -notmatch 'ranz install: done' -or $out -notmatch 'install: the ranz-controller service is running') { throw 'ranz install --controller did not say that it is done and that the Controller runs' }
+		# The rules of the Node and the Controller, and only them, read back from Windows Firewall
+		if ($out -notmatch 'install: Windows Firewall lets in') { throw 'ranz install --controller did not say which ports it opened in Windows Firewall' }
+		$script:firewallIds = Assert-FirewallRules ($nodeRules + $controllerRules)
 		foreach ($name in $nodeService, $controllerService) { Wait-Service $name 'Running' }
 		foreach ($f in 'ranz-node.exe', 'ranz.exe', 'wintun.dll', 'NOTICE.txt') {
 			if (-not (Test-Path -LiteralPath (Join-Path $installDir $f))) { throw "ranz install did not write $f into $installDir" }
@@ -527,6 +560,10 @@ try {
 		$out = Invoke-Doc
 		if ($out -notmatch 'install: the ranzvpnserver service is running' -or $out -notmatch 'ranz install: done') { throw 'the second ranz install did not say that the Node runs and that it is done' }
 		if (@(Get-CimInstance Win32_Service -Filter "Name='$nodeService'").Count -ne 1) { throw "there is not exactly one service $nodeService" }
+		# The runner is PC A too, so the Controller is installed: a second install keeps the same rules, by their ids
+		$ids = Assert-FirewallRules ($nodeRules + $controllerRules)
+		if (($ids -join ',') -ne ($script:firewallIds -join ',')) { throw "the second ranz install changed the rules of the group ${firewallGroup}: $($script:firewallIds -join ',') before, $($ids -join ',') after" }
+		if ($out -notmatch 'which is there already') { throw 'the second ranz install did not say that it kept the rules that are there' }
 	}
 
 	Step 'node-up' {
@@ -544,6 +581,15 @@ try {
 		# Without Controller settings the Node says so once at each start, and opens no control stream (SDN-90)
 		if ($out -notmatch 'Controller: none') { throw 'the node log does not say that the Node has no Controller' }
 		if (@(Get-NodeLog 'Overlay started').Count -ne 0) { throw 'the Node without Controller settings started an overlay' }
+		# ranz node state asks the running service on its admin pipe (SDN-91): its Roles, no control stream and why, no
+		# adapter and no session
+		if ($out -notmatch 'Control stream\s+none: the node has no Controller settings') { throw "ranz node state -o table does not say that the Node has no Controller:`n$out" }
+		$ns = Get-NodeState
+		$s = $ns.State
+		if ($ns.Code -ne 0 -or $s.service -ne 'running' -or -not $s.running -or -not $s.roles -or $s.controlStream.set -or $s.controlStream.connected -or $s.controlStream.why -ne 'the node has no Controller settings' -or @($s.adapters).Count -ne 0 -or @($s.sessions).Count -ne 0 -or $null -eq $s.listeners) {
+			throw "ranz node state (exit code $($ns.Code)) is $($ns.Text)"
+		}
+		Write-Host "ranz node state: roles $($s.roles), control stream none: $($s.controlStream.why)"
 	}
 
 	Step 'viewer-token' {
@@ -577,6 +623,9 @@ try {
 		foreach ($row in 'Download', 'Upload', 'Total') {
 			if ($out -notmatch "(?m)^\s+$row\s+\d+\s+[\d,]+ bytes\s+[\d.]+ [KMGT]?bps") { throw "the report has no rate for $row" }
 		}
+		# The server let its port in while it served, with a rule of the group of ranz install (SDN-91)
+		$served = Read-Shared $script:background[-1].Out
+		if ($served -notmatch 'Windows Firewall lets in TCP 9821') { throw "the server of the link check did not let its port in:`n$served$(Read-Shared $script:background[-1].Err)" }
 		Stop-Background
 	}
 
@@ -599,6 +648,14 @@ try {
 			}
 		}
 		if ($joined.Count -ne 2) { throw "the Intent has $($joined.Count) Nodes, not 2" }
+		# The endpoint of pc-a (SDN-93, #410) as the Controller keeps it: one TLS endpoint at the address of PC A, and none for pc-b
+		$endpoints = @{}
+		foreach ($n in $joined) { $endpoints[$n.name] = @($n.spec.endpoints | Where-Object { $_ }) }
+		$wantEndpoint = "$($values['PC-A']):$($values['PORT'])"
+		if ($endpoints[$nodeA].Count -ne 1 -or $endpoints[$nodeA][0].transport -ne 'tls' -or $endpoints[$nodeA][0].address -ne $wantEndpoint) {
+			throw "Node $nodeA has the endpoints $($endpoints[$nodeA] | ConvertTo-Json -Compress -Depth 4), not one TLS endpoint at $wantEndpoint"
+		}
+		if ($endpoints[$nodeB].Count -ne 0) { throw "Node $nodeB has the endpoints $($endpoints[$nodeB] | ConvertTo-Json -Compress -Depth 4), not none" }
 		$pool = @((Invoke-Ranz @('get', 'ipam')).pools)[0]
 		if ($pool.allocated -ne 2) { throw "the pool of Network default has $($pool.allocated) addresses allocated, not 2" }
 		$values['PC-A-OVERLAY'] = $addressA
@@ -627,13 +684,19 @@ try {
 			Write-Host "node $($n.name): generation $($n.generation), acknowledged $($n.ackedGeneration), connected $($n.connected), capabilities $($n.capabilities | ConvertTo-Json -Compress)"
 			if (-not $n.capabilities -or $n.capabilities.architecture -ne $Architecture) { throw "Node $($n.name) reports the architecture '$($n.capabilities.architecture)' on a $Architecture runner" }
 		}
-		# The audit log has the enrolment of each Node, from the address that its stream came from
-		$token = (Get-Content -LiteralPath $adminToken -Raw).Trim()
-		$audit = Invoke-Curl 'https://localhost/api/v1/audit?kind=enrolment' $token -Body | ConvertFrom-Json
+		# The audit log has the enrolment of each Node, from the address that its stream came from, as ranz get audit reads it
+		# (SDN-91): its JSON is the JSON of the API, and a call without a valid token is refused
+		$audit = Invoke-Ranz @('get', 'audit', '-kind', 'enrolment')
 		foreach ($name in $nodeA, $nodeB) {
 			$rec = @($audit.records | Where-Object { $_.actor -eq "node:$name" -and $_.outcome -eq 'success' })
 			if ($rec.Count -ne 1 -or $rec[0].message -notmatch 'first control stream' -or $rec[0].source -notmatch [regex]::Escape($values['PC-A'])) { throw "the audit log has no enrolment of $name from $($values['PC-A']): $($audit | ConvertTo-Json -Compress -Depth 4)" }
 		}
+		$token = (Get-Content -LiteralPath $adminToken -Raw).Trim()
+		$api = Invoke-Curl 'https://localhost/api/v1/audit?kind=enrolment' $token -Body | ConvertFrom-Json
+		if (($api | ConvertTo-Json -Compress -Depth 6) -ne ($audit | ConvertTo-Json -Compress -Depth 6)) { throw "ranz get audit gives $($audit | ConvertTo-Json -Compress -Depth 6), the API $($api | ConvertTo-Json -Compress -Depth 6)" }
+		$badToken = Join-Path $work 'bad.token'
+		Set-Content -LiteralPath $badToken -Value ('ranz_' + ('0' * 40))
+		Assert-Refused @('-server', 'https://127.0.0.1', '-token-file', $badToken, 'get', 'audit') 401
 		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
 		# One line for each Node: the member that serves it comes before the name of the Node, then the address it came from
 		foreach ($name in $nodeA, $nodeB) {
@@ -686,12 +749,16 @@ try {
 		if ($shown.controller.address -ne $values['CONTROLLER'] -or $shown.controller.publicKey -ne $values['CONTROLLER-KEY'] -or $shown.controller.tlsFingerprint -ne $values['FINGERPRINT']) {
 			throw "ranz node controller show gives $($shown | ConvertTo-Json -Compress -Depth 4), not the settings of step 7"
 		}
-		$null = Invoke-Doc -From 2 -Count 1
-		$token = (Get-Content -LiteralPath $adminToken -Raw).Trim()
 		$null = Wait-Until {
-			$audit = Invoke-Curl 'https://localhost/api/v1/audit?kind=auth-failed' $token -Body | ConvertFrom-Json
+			$audit = Invoke-Ranz @('get', 'audit', '-kind', 'auth-failed')
 			@($audit.records | Where-Object { $_.actor -eq "key:$key" -and $_.outcome -eq 'failure' }).Count -ge 1
 		} 'the audit log to hold the refusal of the key of the Node, with the key as the actor' 90
+		$out = Invoke-Doc -From 2 -Count 1
+		if ($out -notmatch [regex]::Escape("key:$key")) { throw "ranz get audit -kind auth-failed -o table does not list the refusal of key:${key}:`n$out" }
+		# While it is refused, the state of the Node says why
+		$ns = Get-NodeState
+		if ($ns.Code -ne 0 -or $ns.State.controlStream.connected -or $ns.State.controlStream.controller -ne $values['CONTROLLER'] -or -not $ns.State.controlStream.why) { throw "ranz node state of the refused Node (exit code $($ns.Code)) is $($ns.Text)" }
+		Write-Host "ranz node state: not connected to $($values['CONTROLLER']): $($ns.State.controlStream.why)"
 		$null = Wait-Until { @(Get-NodeLog 'the Controller refused the node').Count -gt 0 } 'the node log to say that the Controller refused the node' 90
 
 		# Its Node resource in place of the test key of the stand-in: the Node joins on its next attempt, without a restart
@@ -702,8 +769,17 @@ try {
 		} 'the Node service to be connected as pc-a at its acknowledged Generation' 150
 		if (-not $node.capabilities -or $node.capabilities.architecture -ne $Architecture) { throw "pc-a reports the architecture '$($node.capabilities.architecture)' on a $Architecture runner" }
 		Write-Host "pc-a is the Node service now: generation $($node.generation), acknowledged $($node.ackedGeneration), capabilities $($node.capabilities | ConvertTo-Json -Compress)"
-		$null = Invoke-Doc -From 4 -Count 1
 		$null = Wait-Until { @(Get-NodeLog 'Overlay: generation').Count -gt 0 } 'the node log to say that the Node applied a Generation' 30
+		$out = Invoke-Doc -From 4 -Count 1
+		# The state of the Node on its PC says the same as the Controller (SDN-91): pc-a, connected to the Controller at a
+		# Generation, no adapter without the client role, and its listeners
+		if ($out -notmatch "Node\s+$nodeA" -or $out -notmatch "connected to $([regex]::Escape($values['CONTROLLER'])) for \d+s, Generation \d+") { throw "ranz node state -o table does not show pc-a connected to $($values['CONTROLLER']):`n$out" }
+		$ns = Get-NodeState
+		$s = $ns.State
+		if ($ns.Code -ne 0 -or $s.name -ne $nodeA -or -not $s.controlStream.connected -or $s.controlStream.controller -ne $values['CONTROLLER'] -or $s.controlStream.generation -lt 1 -or $s.controlStream.why -or @($s.adapters).Count -ne 0 -or $null -eq $s.listeners) {
+			throw "ranz node state of the joined Node (exit code $($ns.Code)) is $($ns.Text)"
+		}
+		Write-Host "ranz node state: $nodeA connected to $($s.controlStream.controller) for $($s.controlStream.connectedSeconds) s at Generation $($s.controlStream.generation), $(@($s.sessions).Count) peers"
 
 		# The Controller restarts: the Node dials again by itself and is connected again. A Controller that starts sees no
 		# Node connected until its stream comes.
@@ -746,7 +822,7 @@ try {
 		# The pull is in the audit log: an operation of the admin token, with the call as its action (the Controller writes
 		# the record when the call ends, a moment after curl has the file)
 		$null = Wait-Until {
-			$audit = Invoke-Curl 'https://localhost/api/v1/audit?kind=operation' $admin -Body | ConvertFrom-Json
+			$audit = Invoke-Ranz @('get', 'audit', '-kind', 'operation', '-limit', '1000')
 			@($audit.records | Where-Object { $_.action -eq 'POST /api/v1/diagnostics/bundle' -and $_.actor -eq 'token:admin' -and $_.outcome -eq 'success' }).Count -eq 1
 		} 'the audit log to hold the pull of the bundle' 15
 	}
@@ -779,6 +855,12 @@ try {
 		if (Test-Path -LiteralPath $installDir) { throw "ranz uninstall left $installDir" }
 		if (-not (Test-Path -LiteralPath $adminToken)) { throw 'ranz uninstall removed the data directory of the Controller, which it keeps' }
 		if (-not (Test-Path -LiteralPath (Join-Path $nodeData 'ranz_node.db'))) { throw 'ranz uninstall removed the Configuration store of the Node, which it keeps' }
+		# No rule of the group of ranz install is left, also not the one of the link check whose server was killed (SDN-91)
+		$null = Assert-FirewallRules @()
+		# ranz node state says that the service is stopped
+		$ns = Get-NodeState
+		if ($ns.Code -ne 3 -or $ns.State.service -ne 'stopped') { throw "ranz node state after the uninstall (exit code $($ns.Code)) is $($ns.Text)" }
+		Write-Host 'ranz node state: the Node service is stopped'
 		if ($x64) {
 			foreach ($name in 'SeLow', 'xdp') {
 				if ((& sc.exe query $name | Out-String) -match 'STATE') { throw "ranz uninstall left the driver $name" }
@@ -791,7 +873,6 @@ try {
 		# The rqlite member of the Controller ends with its service, and a moment later its files can go
 		$null = Wait-Until { $null -eq (Get-Process -Name 'rqlited', 'ranz-node' -ErrorAction SilentlyContinue) } 'the processes of the services to end' 30
 		$null = Invoke-Doc
-		if (Get-NetFirewallRule -DisplayName $firewallRule -ErrorAction SilentlyContinue) { throw 'the firewall rule is still there' }
 		if (@(Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like 'CN=Ranz VPN CI signing*' }).Count -ne 0) { throw 'the CI certificate is still trusted' }
 		foreach ($dir in (Join-Path $env:ProgramData 'Ranz'), $nodeData) {
 			if (Test-Path -LiteralPath $dir) { throw "$dir is still there" }
@@ -799,17 +880,21 @@ try {
 	}
 
 	Gap 'gaps' {
-		# The document says what is missing. The sources must still say so, or the Gap is closed. Gaps 6 and 7 are not read
-		# from the sources: nothing in them says that a verb or a setting is missing. Gaps 1 and 2 are closed (step 20,
-		# SDN-90), and must stay so: the Node service sets the control stream of its overlay, and ranz has the verbs.
+		# The document says what is missing. The sources must still say so, or the Gap is closed. Gap 7 is not read from the
+		# sources: nothing in them says that a setting is missing. Gaps 1 and 2 are closed (step 20, SDN-90), and Gaps 4, 5
+		# and 6 (SDN-91), and must stay so: the Node service sets the control stream of its overlay, ranz has the verbs of
+		# the node, ranz install makes firewall rules, and ranz reads the audit log and the state of a Node.
 		if (-not (Test-Source 'src\Cedar' 'Node*.c' '\.Control\s*=|->Control\s*=')) { throw 'Gap 1 is open again: no code of the Node service sets the control stream of its overlay (NODE_OVERLAY_CONFIG.Control)' }
 		if (-not (Test-Source 'controller\cmd\ranz' '*.go' 'register\("node"')) { throw 'Gap 2 is open again: ranz has no verb node, which prints the key of a Node' }
-		# The Listener of a desired state starts the front door and QUIC of a Node (SDN-45, NodeListener.c), but the overlay
-		# still dials a peer by its node name, not at the Listener of the peer
-		$byName = Test-Source 'src\Cedar' 'NodeOverlay.c' 'TransportDial\(ov->Config\.Data, name, NULL\)'
-		Assert-Gap 'Gap 3' $byName 'the overlay dials a peer by its node name on its data transport: the desired state gives it no address of the Listener of a peer'
-		Assert-Gap 'Gap 4' (-not (Test-Source 'controller\internal\install' '*.go' '(?i)firewall')) 'ranz install knows no firewall'
-		Assert-Gap 'Gap 5' (-not (Test-Source 'controller\cmd\ranz' '*.go' '(?i)audit')) 'the ranz CLI has no verb for the audit log'
+		if (-not (Test-Source 'controller\internal\install' '*.go' 'func openPorts\(')) { throw 'Gap 4 is open again: ranz install opens no port in Windows Firewall' }
+		if (-not (Test-Source 'controller\cmd\ranz' '*.go' 'args\[1\] == "audit"')) { throw 'Gap 5 is open again: ranz has no verb for the audit log' }
+		if (-not (Test-Source 'controller\cmd\ranz' '*.go' 'args\[0\] == "state"')) { throw 'Gap 6 is open again: ranz node has no verb state' }
+		# The Listener of a desired state starts the front door and QUIC of a Node (SDN-45, NodeListener.c), and a Node dials a
+		# peer through the endpoints of its Peer object (SDN-93, NodeEndpoints.c), which must stay so; but only the client role
+		# dials, and the data transport of the Node service dials nowhere
+		if (-not (Test-Source 'src\Cedar' 'NodeEndpoints.c' 'NodeEndpointsTargets')) { throw 'Gap 3 is open again: no code of the Node module dials a peer through its endpoints (NodeEndpointsTargets)' }
+		$noDial = Test-Source 'src\Cedar' 'NodeController.c' 'None\.Dial\s*=\s*NodeControllerNoDial'
+		Assert-Gap 'Gap 3' $noDial 'the data transport of the Node service dials nowhere: only the client role dials a peer, through its endpoints, and the desired state carries no pin of the certificate of a peer'
 	}
 
 	if ($script:next -ne $docSteps.Count) {

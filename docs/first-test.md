@@ -127,17 +127,17 @@ Import-Certificate -FilePath C:\ranz-test\cert\ranz-ci-signing.cer -CertStoreLoc
 
 The last line must be `Valid`. The signer is `CN=Ranz VPN CI signing (self-signed), O=Hanzcodes`.
 
-### 4. Open the firewall on PC A (firewall)
+### 4. The firewall (firewall)
 
 <!-- step: firewall pc=a -->
 
-Windows Firewall blocks incoming connections, and `ranz install` adds no rule. PC A needs TCP 443 for the Controller: the web UI, the API and the control streams of the Nodes all use it. TCP 5555 is its fallback port. TCP 9821 is for the link check of step 14. `docs/ports.md` lists every port of the product. PC B needs no rule: nothing of it listens.
+Windows Firewall blocks incoming connections, and you open nothing by hand. `ranz install` opens the ports of what it installs, as rules of the group `Ranz VPN`: TCP 443 and UDP 443 for the Node (`ranz-node.exe`), and with `--controller` TCP 443 and 5555 for the Controller (`ranz.exe`): the web UI, the API and the control streams of the Nodes, on 5555 when 443 was taken. `ranz uninstall` removes every rule of the group (step 25). The link check of step 14 lets its own port in while it runs. `docs/ports.md` lists every port of the product. Before the install the group is empty:
 
 ```powershell run
-New-NetFirewallRule -DisplayName "Ranz first test" -Direction Inbound -Protocol TCP -LocalPort 443,5555,9821 -Action Allow | Select-Object DisplayName, Enabled, Direction, Action
+Get-NetFirewallRule -Group "Ranz VPN" -ErrorAction SilentlyContinue | Format-Table DisplayName, Direction, Action, Enabled
 ```
 
-Step 26 removes the rule.
+The command prints nothing.
 
 ## Part 1. PC A: the Controller
 
@@ -147,6 +147,7 @@ Step 26 removes the rule.
 
 ```powershell run
 ranz install --controller
+Get-NetFirewallRule -Group "Ranz VPN" | Format-Table DisplayName, Direction, Action, Enabled
 ```
 
 This does the following, and checks the hash and the signature of every file before it writes the file. A file that fails is never written.
@@ -155,8 +156,9 @@ This does the following, and checks the hash and the signature of every file bef
 - On x64 it installs the SeLow driver and the XDP runtime. On arm64 there are none: Wintun is the only driver.
 - It registers and starts the Node service `ranzvpnserver`.
 - Because of `--controller` it also registers and starts the Controller service `ranz-controller`. The Controller brings its own rqlite member inside `ranz.exe`.
+- It opens the ports of the Node and the Controller in Windows Firewall: the group `Ranz VPN` holds three inbound rules that allow, `Ranz VPN Node (TCP 443)`, `Ranz VPN Node (UDP 443)` and `Ranz VPN Controller (TCP 443, 5555)`, and nothing else.
 
-The last lines are `install: the ranz-controller service is running` and `ranz install: done`. It is safe to run the command again.
+The last lines are `install: the ranz-controller service is running`, a line `install: Windows Firewall lets in ...` for each rule, and `ranz install: done`. It is safe to run the command again: a rule that is there as it should be stays, so a second install and an upgrade leave the same rules.
 
 ### 6. The Controller starts (controller-up)
 
@@ -248,13 +250,13 @@ A Node that names no VRF joins VRF `default` and gets an address from that pool.
 
 <!-- step: install-b pc=b -->
 
-On PC B run steps 1, 2 and 3 first. PC B needs no firewall rule (step 4). Then:
+On PC B run steps 1, 2 and 3 first. Then:
 
 ```powershell run
 ranz install
 ```
 
-This is the same install without `--controller`: no Controller service is made. Nothing of PC B listens on the network today.
+This is the same install without `--controller`: no Controller service is made, and the group `Ranz VPN` of Windows Firewall holds the two rules of the Node only, TCP 443 and UDP 443. Nothing of PC B listens on the network today.
 
 ### 11. The Node runs (node-up)
 
@@ -264,9 +266,12 @@ This is the same install without `--controller`: no Controller service is made. 
 Get-Service ranzvpnserver
 Get-ChildItem "$env:ProgramData\Hanzcodes\Ranz VPN"
 Get-ChildItem "$env:ProgramData\Hanzcodes\Ranz VPN\node_log" -Recurse -File | Select-String "Node started|Capabilities:|Controller: none"
+ranz node state -o table
 ```
 
 The service is `Running`. The data directory of the Node, `C:\ProgramData\Hanzcodes\Ranz VPN`, holds its Configuration store `ranz_node.db`, a text copy of its settings `node_config.txt` (the Node writes it at its start, and it holds no password hash), and the folder `node_log`. The log says `Node started` and, a moment later, the Capabilities of the PC, for example `Capabilities: architecture x64, SeLow yes, XDP yes`. On arm64 it says `SeLow no, XDP no`. It also says once at each start `Controller: none`: the Node has no Controller settings yet (step 20 gives them to the Node of PC A), so it opens no control stream and dials no Controller.
+
+`ranz node state` shows what the Node service does now. It asks the running service on its admin pipe, which only SYSTEM and the Administrators may open, and prints its Roles, its control stream, its adapters with their VRFs and addresses, the Noise sessions of its peers with their transport and age, and its listeners. Here the control stream is `none: the node has no Controller settings`, and there is no adapter and no session yet. Without `-o table` it prints JSON. For a stopped service it says `is stopped`, with the exit code 3.
 
 ### 12. A token for PC B (viewer-token)
 
@@ -296,7 +301,7 @@ ranz whoami
 ranz get resources
 ```
 
-`TcpTestSucceeded` must be `True`. If not, the firewall of step 4 or the network is the problem. `ranz whoami` prints the name `pc-b` and the role `viewer`. `ranz get resources` prints the three resources of step 9. The `RANZ_TLS_FINGERPRINT` makes `ranz` accept the certificate of the Controller only when its fingerprint is the one you copied. A wrong value fails. The viewer token cannot change anything: `ranz apply` from PC B is answered with 403.
+`TcpTestSucceeded` must be `True`. If not, the firewall rules of step 5 or the network is the problem. `ranz whoami` prints the name `pc-b` and the role `viewer`. `ranz get resources` prints the three resources of step 9. The `RANZ_TLS_FINGERPRINT` makes `ranz` accept the certificate of the Controller only when its fingerprint is the one you copied. A wrong value fails. The viewer token cannot change anything: `ranz apply` from PC B is answered with 403.
 
 ### 14. The link between the two PCs (link-check)
 
@@ -314,7 +319,7 @@ On PC B run the client:
 ranz test throughput -span 3s <PC-A>:9821
 ```
 
-The client prints one line for the connection, then a table with a row Download, Upload and Total and the rate of each. Stop the server on PC A with Ctrl+C. Once the overlay carries traffic, the same test between the two overlay addresses measures the overlay.
+The server lets its port in while it serves: it prints `Windows Firewall lets in TCP 9821 ... while the test runs`, with a rule of the group `Ranz VPN`, and removes the rule when it stops (a server that was killed leaves it to `ranz uninstall`). A server on a loopback address makes no rule. The client prints one line for the connection, then a table with a row Download, Upload and Total and the rate of each. Stop the server on PC A with Ctrl+C. Once the overlay carries traffic, the same test between the two overlay addresses measures the overlay.
 
 ## Part 3. The Nodes join and get addresses
 
@@ -324,14 +329,16 @@ The client prints one line for the connection, then a table with a row Download,
 
 A Node is part of the network only when the Intent holds a Node resource with the static key of that Node. You apply two. They name no VRF, so both join VRF `default`.
 
+The Node resource of `pc-a` also says where the other PC reaches it. `endpoints` is a list in which each entry names a transport (`quic`, `tls` or `mimic`) and an address, a host and a port, under which the other Nodes reach the Node. `pc-a` has one endpoint: TLS at `<PC-A>:<PORT>`, the address of PC A that PC B reaches in step 13. The Controller puts the endpoints of a Node into the Peer object of every Node that shares a VRF with it, so the desired state of `pc-b` names them as the place of its peer `pc-a`. `pc-b` has no endpoints, so it is the Node that dials: no other Node can dial it, and a peer without endpoints is not dialled. `ranz apply` refuses a malformed endpoint with a message that says which: a transport that is not `quic`, `tls` or `mimic`, an address without a port, or a name that is no DNS name.
+
 The keys below are the two public test keys of the stand-in, which plays both Nodes until step 20 puts the key of the Node service of PC A into `pc-a`. Their private halves are in the source of `vpntest`, so anyone who reaches your Controller could act as these two Nodes. Use them on a test Controller only.
 
 ```powershell run
-Set-Content -Path C:\ranz-test\nodes.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw="}},{"kind":"Node","name":"pc-b","spec":{"publicKey":"WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns="}}]}'
+Set-Content -Path C:\ranz-test\nodes.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=","endpoints":[{"transport":"tls","address":"<PC-A>:<PORT>"}]}},{"kind":"Node","name":"pc-b","spec":{"publicKey":"WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns="}}]}'
 ranz apply -f C:\ranz-test\nodes.json
 ```
 
-`ranz apply` prints the revision it made, 2, and the Generation of the state of each Node. Every apply is a revision: `ranz diff` shows what it changed and `ranz rollback 1` undoes it.
+`ranz apply` prints the revision it made, 2, and the Generation of the state of each Node. Every apply is a revision: `ranz diff` shows what it changed and `ranz rollback 1` undoes it. Nothing of a Node listens at that endpoint yet: this Intent names no Listener, so the endpoint is what the Controller tells the Nodes, and not yet an address that answers one (Gap 3).
 
 ### 16. How each Node gets its address (addresses)
 
@@ -344,7 +351,7 @@ ranz get resources
 ranz get ipam
 ```
 
-In the Node resources, `spec.addresses.default` is the address in Network `default`. `pc-a` has `100.64.0.1` and `pc-b` has `100.64.0.2`. Write down `100.64.0.1` as `<PC-A-OVERLAY>`. `ranz get ipam` shows `allocated` 2 for the pool. The Nodes page of the web UI lists both Nodes. They are not connected yet.
+In the Node resources, `spec.addresses.default` is the address in Network `default`. `pc-a` has `100.64.0.1` and `pc-b` has `100.64.0.2`. Write down `100.64.0.1` as `<PC-A-OVERLAY>`. `spec.endpoints` of `pc-a` holds the endpoint of step 15, as the Controller keeps it, and `pc-b` has none. `ranz get ipam` shows `allocated` 2 for the pool. The Nodes page of the web UI lists both Nodes. They are not connected yet.
 
 A Node learns its address in its desired state, which the Controller sends it on its control stream. The address is set on the Wintun adapter of the Node as a host address. The adapter also gets a route to the pool.
 
@@ -355,7 +362,7 @@ A Node learns its address in its desired state, which the Controller sends it on
 This is the stand-in for two Node services that form a session with each other (Gap 3). `vpntest firsttest` runs two Nodes in one process on PC B. Each opens its control stream to the Controller of PC A, with the static key of its Node resource, as a Node service does:
 
 - `pc-b` is a real Node with a real Wintun adapter named `Ranz default`. The adapter gets the address of `pc-b`, as the client role of the Node brings it up. The packets of PC B on this adapter go into the overlay.
-- `pc-a` is a Node with a fake host that answers an ICMP echo request to its address. The two Nodes run their Noise session in memory.
+- `pc-a` is a Node with a fake host that answers an ICMP echo request to its address. The two Nodes run their Noise session in memory, and find each other by their node names, so they do not use the endpoint of `pc-a` (Gap 3).
 
 Why `pc-a` has no adapter: Windows delivers a packet for an address of the PC itself on the PC. Two adapters of one PC could not ping each other through the overlay. Only the fake host can answer the ping that you send from PC B.
 
@@ -379,12 +386,12 @@ The first stream of a static key is the enrolment of that Node. The Controller c
 
 ```powershell run
 ranz get nodes
-curl.exe -k -s -H "Authorization: Bearer $((Get-Content $env:RANZ_TOKEN_FILE).Trim())" "https://localhost/api/v1/audit?kind=enrolment"
+ranz get audit -kind enrolment -o table
 Get-Content C:\ProgramData\Ranz\controller\controller.log -Tail 20
 ```
 
 - `ranz get nodes` shows `pc-a` and `pc-b` with `connected` true. `generation` and `ackedGeneration` are equal: the Node applied the last state. The `capabilities` are the ones the Node put in its Hello: the architecture of PC B, and whether SeLow and the XDP runtime are there.
-- The audit log has one record of the kind `enrolment` for each Node: `the first control stream of the static key of this node`, with the address that the stream came from. (There is no `ranz` verb for the audit log yet, so the command calls the API. The Events of the web UI are another list: they hold the events of the Controller, such as an automatic rollback.)
+- The audit log has one record of the kind `enrolment` for each Node: `the first control stream of the static key of this node`, with the address that the stream came from. `ranz get audit` reads it through the API with the token of the window, with the filters of the API (`-kind`, `-actor`, `-since`, `-until`, `-after`, `-limit`); without `-o table` it prints the JSON of the API. A token of any API role reads it, and a call without a valid token is refused with 401. (The Events of the web UI are another list: they hold the events of the Controller, such as an automatic rollback.)
 - `controller.log` says `node connected` for each Node, with the address it came from and the Generation it had applied: `0` at the first start.
 
 The Nodes page and the Overview of the web UI show the same: two Nodes in the Intent, two connected.
@@ -431,13 +438,13 @@ ranz node controller show
 No Node resource holds the key of the Node yet, so the Controller refuses it. The audit log records each refusal as a failed authentication of the actor `key:<NODE-KEY>`, and the Node dials again after a delay that doubles from 1 second up to 1 minute:
 
 ```powershell run
-curl.exe -k -s -H "Authorization: Bearer $((Get-Content $env:RANZ_TOKEN_FILE).Trim())" "https://localhost/api/v1/audit?kind=auth-failed"
+ranz get audit -kind auth-failed -o table
 ```
 
-Put the key into the Node resource `pc-a`, in place of the test key of the stand-in:
+Put the key into the Node resource `pc-a`, in place of the test key of the stand-in. An apply replaces the whole resource, so the endpoint of step 15 is in it again:
 
 ```powershell run
-Set-Content -Path C:\ranz-test\pc-a.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"<NODE-KEY>"}}]}'
+Set-Content -Path C:\ranz-test\pc-a.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"<NODE-KEY>","endpoints":[{"transport":"tls","address":"<PC-A>:<PORT>"}]}}]}'
 ranz apply -f C:\ranz-test\pc-a.json
 ```
 
@@ -445,9 +452,10 @@ The Controller refuses the stream of the stand-in for `pc-a` at once: its key is
 
 ```powershell run
 ranz get nodes
+ranz node state -o table
 ```
 
-`pc-a` is connected, at the Generation it acknowledged, with the Capabilities of PC A. It holds the address `100.64.0.1` of the Node resource and its node log says `Overlay: generation`, but it has no adapter: the Roles of a default install do not bring one up, and no other Node can reach it (Gap 3).
+`pc-a` is connected, at the Generation it acknowledged, with the Capabilities of PC A. It holds the address `100.64.0.1` of the Node resource and its node log says `Overlay: generation`, but it has no adapter: the Roles of a default install do not bring one up, and no other Node can reach it: nothing of the Node service listens at its endpoint (Gap 3). `ranz node state` shows the same from the side of the Node: `Node pc-a`, its Roles, the control stream `connected to <CONTROLLER>` for some seconds at the Generation that `ranz get nodes` shows acknowledged, no adapter, the peer `pc-b` with its session down, and its listeners. While the Node is not connected, its control stream says why, as the node log does, and when it tries again.
 
 Restart the Controller. The Node dials again by itself, after a delay that starts at 1 second again since its stream was open:
 
@@ -535,16 +543,15 @@ Run on each PC:
 ranz uninstall
 ```
 
-It stops and removes the services, takes out the drivers that `ranz install` put there (and leaves a driver that was there before), and removes `C:\Program Files\Ranz VPN`. It keeps the data directories on purpose (ADR-0020): a later `ranz install` resumes with the same Configuration store and the same Controller store.
+It stops and removes the services, takes out the drivers that `ranz install` put there (and leaves a driver that was there before), removes every rule of the group `Ranz VPN` from Windows Firewall, and removes `C:\Program Files\Ranz VPN`. `Get-NetFirewallRule -Group "Ranz VPN"` then finds no rule, and `ranz node state` says that the Node service is stopped. It keeps the data directories on purpose (ADR-0020): a later `ranz install` resumes with the same Configuration store and the same Controller store.
 
 ### 26. Remove what uninstall keeps (clean-up)
 
 <!-- step: clean-up pc=both -->
 
-Remove the data directories, the certificate and the firewall rule. The firewall rule is on PC A only, and the data directory `C:\ProgramData\Ranz` too: on PC B the commands for them print an error that you can ignore.
+Remove the data directories and the certificate. The data directory `C:\ProgramData\Ranz` is on PC A only: on PC B the command for it prints an error that you can ignore. There is no firewall rule to remove: `ranz uninstall` removed them.
 
 ```powershell run
-Remove-NetFirewallRule -DisplayName "Ranz first test"
 Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "CN=Ranz VPN CI signing*" } | Remove-Item
 Remove-Item -Recurse -Force C:\ProgramData\Ranz
 Remove-Item -Recurse -Force "C:\ProgramData\Hanzcodes\Ranz VPN"
@@ -556,12 +563,9 @@ Then delete `C:\ranz-test`. Windows keeps the two keys of the Controller (`Ranz 
 
 <!-- gap: gaps -->
 
-A Gap is something that the runbook needs and the code does not have. Nothing here was built for this runbook. Where a safe workaround exists the steps above use it. Gaps 1 and 2, the Node service that joins its Controller and the static key of a Node that a verb prints, are closed: they are step 20 (SDN-90, #395). The numbers of the others stay.
+A Gap is something that the runbook needs and the code does not have. Nothing here was built for this runbook. Where a safe workaround exists the steps above use it. Gaps 1 and 2, the Node service that joins its Controller and the static key of a Node that a verb prints, are closed: they are step 20 (SDN-90, #395). Gaps 4, 5 and 6 are closed by SDN-91 (#396): `ranz install` opens the ports of what it installs and `ranz uninstall` closes them (steps 4, 5 and 25), `ranz get audit` reads the audit log (steps 18 and 20), and `ranz node state` shows the state of a Node on its PC (steps 11 and 20). The numbers of the others stay.
 
-3. **The Node service listens only where its Listener says, and a peer cannot find that Listener.** A Listener resource (SDN-45, #238) names a Node, the TCP port of its front door and the UDP port of QUIC, 443 each, and the source of their certificate: a PKCS #12 file on the Node, a certificate of the LocalMachine\My store by its thumbprint, or ACME. The Node that applies it starts the front door (`FrontDoorStart`, SDN-29, #205), which hands each TLS connection to the TLS of the new protocol (TLS 1.3 only), and QUIC where `msquic.dll` is present, and its overlay takes the sessions of its peers on them (`src/Cedar/NodeListener.c`; `vpntest listener` proves it). The Intent of this runbook names no Listener, so the Node service of step 20 listens on no port. The part that is still missing: the desired state gives a Node no address and no certificate of the Listener of a peer. The overlay dials a peer by its node name on its data transport (`NodeOverlayDial` in `src/Cedar/NodeOverlay.c`), as the in-process loopback transport of the harness does, and the data transport of the Node service dials nowhere, or with the client role the servers of its client settings, never the Listener of a peer. So two Node services cannot form a Noise session, though each joins its Controller (step 20). **No open ticket carries it.** The relay role binds a UDP socket only when its Roles setting asks for it. Workaround: the two stand-in Nodes run their session in memory.
-4. **`ranz install` opens no firewall port.** The runbook adds and removes one rule by hand (steps 4 and 26). **No ticket carries it.** (REL-2, #47, did this for the slim fork.)
-5. **No `ranz` verb for the audit log.** The API has it (SDN-49, #242, `GET /api/v1/audit`), the CLI does not. Step 18 uses `curl.exe`. **No ticket carries it.**
-6. **No verb shows a Node's own state on its PC.** Its adapters, its sessions and its control stream show only in `ranz get nodes` on the Controller side and in the node log. `ranz doctor` checks the PC, not the Node, and `ranz doctor -bundle` (SDN-54, #247) collects the node log and the settings of the Node, not its live state. The nearest is SDN-55 (#248), the tray, which talks to the Node over a pipe. No verb is promised there.
+3. **The Node service listens only where its Listener says, and it dials nowhere.** A Listener resource (SDN-45, #238) names a Node, the TCP port of its front door and the UDP port of QUIC, 443 each, and the source of their certificate: a PKCS #12 file on the Node, a certificate of the LocalMachine\My store by its thumbprint, or ACME. The Node that applies it starts the front door (`FrontDoorStart`, SDN-29, #205), which hands each TLS connection to the TLS of the new protocol (TLS 1.3 only), and QUIC where `msquic.dll` is present, and its overlay takes the sessions of its peers on them (`src/Cedar/NodeListener.c`; `vpntest listener` proves it). The Intent of this runbook names no Listener, so the Node service of step 20 listens on no port. The address of a peer is closed since SDN-93 (#410): the Node resource names the endpoints under which the other Nodes reach it (step 15), the Controller puts them into the Peer object of every Node that shares a VRF with it, and a Node dials a peer through them with the race of the fallback list, as the data transport of the client role does with the name of a peer (`NodeEndpointsTargets` in `src/Cedar/NodeEndpoints.c`; `vpntest endpoints` proves it against a hub whose Listener takes the dial). Two parts are still missing. The desired state carries no pin of the certificate that a peer presents: a dialling Node pins the thumbprint that its Client setting holds for the server of that name, which CORE-H3 (#400) replaces with a SHA-256 pin bound to the Node identity. And the data transport of the Node service dials nowhere (`NodeControllerNoDial` in `src/Cedar/NodeController.c`): only the client role dials, so a PC that is to dial another needs the client role and its Client setting, which this runbook does not set up. So two Node services cannot form a Noise session, though each joins its Controller (step 20). **No open ticket carries the dial of the Node service.** The relay role binds a UDP socket only when its Roles setting asks for it. Workaround: the two stand-in Nodes run their session in memory.
 7. **The certificate of the Controller cannot be replaced.** It is always its own self-signed one (step 7), so a browser warns and `ranz` on another PC needs the fingerprint. `ranz cert` makes certificates, but the Controller has no setting to use one. SDN-45 (#238) gives a Node a certificate source (file, key storage or ACME); **no ticket names the Controller's certificate.**
 
 ## Troubleshooting
@@ -577,8 +581,8 @@ These are the ways this test fails, with what the code says. Whatever fails, tak
 - **`ranz` says 401.** The token is wrong or deleted: `the bearer token is not a token of this controller, or it was deleted`. On PC A, `ranz controller reset-admin` makes a new admin token, prints it once and writes it to `admin.token`.
 - **`ranz` says 403 with `is not allowed to reach the API and the web UI`.** The admin source allowlist does not hold the address of the caller. `ranz admin-sources list` on PC A shows it. A loopback address always passes.
 - **`ranz` on PC B says `the controller's certificate has the TLS fingerprint ..., not ...`.** `<FINGERPRINT>` is not the one of this Controller, or PC B reaches another machine than PC A.
-- **A connection from PC B times out.** The firewall (step 4), or PC B does not reach `<PC-A>`. `Test-NetConnection` of step 13 tells.
-- **`ranz node` says `needs administrator rights`.** The window is not elevated: the admin pipe of the Node service lets only SYSTEM and the Administrators in. `does not run here` means that the Node service is stopped: `Start-Service ranzvpnserver`.
+- **A connection from PC B times out.** The firewall rules of step 5 (`Get-NetFirewallRule -Group "Ranz VPN"`; `ranz install` says `install: warning: Windows Firewall was not set` when another firewall owns the policy), or PC B does not reach `<PC-A>`. `Test-NetConnection` of step 13 tells.
+- **`ranz node` says `needs administrator rights`.** The window is not elevated: the admin pipe of the Node service lets only SYSTEM and the Administrators in. `is stopped` (`does not run here`) means that the Node service is stopped: `Start-Service ranzvpnserver`.
 - **`pc-a` does not connect in step 20.** Its node log (step 11) says why, once for each attempt, with the delay before the next one: `the TLS fingerprint check failed` means that `<FINGERPRINT>` is not the one of this Controller; `the Noise handshake failed` means that `<CONTROLLER-KEY>` is not its static key; `the Controller refused the node (reason 1)` means that no Node resource holds `<NODE-KEY>` yet, so do the apply of step 20; `no Controller answered there` means that `<CONTROLLER>` is wrong or the firewall blocks it. Correct the value with `ranz node controller set`, which restarts the Node service.
 - **The stand-in says `wintun.dll next to vpntest?`.** Do the `Copy-Item` of step 17. The DLL must be in the folder of `vpntest.exe`. The stand-in needs an elevated window.
 - **The stand-in says `not within 90000 ms`.** The Controller did not take the two Nodes. The stand-in does not print the reason of a refusal, so read `controller.log` on PC A: `node refused: unknown static key` means that no Node resource has the key (step 15), and `source address outside the source prefixes of its Network` means that a Network limits the addresses that Nodes may enrol from. No line at all means that the stream did not arrive: look at the firewall and at `<CONTROLLER>`.
@@ -594,5 +598,6 @@ The job `first_test` of `.github/workflows/windows.yml` runs on `windows-latest`
 - **The commands are the commands of this file.** A block `powershell run` is run by the script, line by line, in the folder and the PowerShell of the runner, after it fills in the values in angle brackets from what it measured. A block `powershell background` is started and left running, and the script stops it at the end of its step. A command that exits with an error fails the step. The script then checks what the step says you see: the services, the files, the JSON of the API, the pages of the web UI, the audit records, the ping.
 - **One machine plays both PCs.** The runner is PC A and PC B. It switches the `RANZ_*` variables of the window when the PC changes, so that PC B reads the Controller through the address of the runner and the fingerprint, as a second PC would. `<PC-A>` is the address of the runner that is not loopback. Step 10 finds the install of step 5 there already, which is safe.
 - **The Node service of the runner joins.** Step 20 runs on the one Node service of the runner, as `pc-a`, in place of the stand-in for that Node; the stand-in keeps playing `pc-b`. Before the settings of the runbook, the script sets a wrong TLS fingerprint and then a wrong static key with `ranz node controller set`, and waits for the node log to say which check failed. After the right settings it waits for the refusal of the key in the audit log, then for `pc-a` connected at its acknowledged Generation, and after the restart of the Controller for `pc-a` connected again.
-- **A Gap is read from the sources.** At the Gap step, which the script runs last, it looks in the sources for what the document says is missing: an overlay that dials a peer at something else than its node name (Gap 3), a firewall rule in `ranz install` (Gap 4), a verb for the audit log in the CLI (Gap 5). When one is there, the job fails, until this file has real steps for it. It also checks that Gaps 1 and 2 stay closed: the Node service sets the control stream of its overlay, and the CLI has the verbs of step 20.
+- **The firewall, the audit log and the state of the Node are read back.** After each install the script reads the rules of the group `Ranz VPN` from Windows Firewall, with their protocols, ports and programs: the three of the Node and the Controller, the same rules (by their ids) after the second install of step 10, none after the uninstall. It reads the enrolments and the refusal of the key of step 20 with `ranz get audit`, checks that a call without a valid token is refused, and reads `ranz node state` of the Node service before and after it joins, and once it is uninstalled.
+- **A Gap is read from the sources.** At the Gap step, which the script runs last, it looks in the sources for what the document says is missing: a data transport of the Node service that dials a peer (Gap 3). When it is there, the job fails, until this file has real steps for it. It also checks that the closed Gaps stay closed: the Node service sets the control stream of its overlay, the CLI has the verbs of step 20, `ranz install` knows the firewall, and the CLI has the verbs for the audit log and the state of a Node. So does the part of Gap 3 that SDN-93 closed: a Node dials a peer through its endpoints.
 - **What CI cannot do.** It cannot try two PCs, a browser, or the Gaps. The web UI is checked by its pages and by the API calls that the pages make. The overlay between two Nodes is the stand-in, with one real Wintun adapter and a fake host.
