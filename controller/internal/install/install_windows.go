@@ -487,7 +487,7 @@ func removeController(w io.Writer, m *mgr.Mgr) error {
 // copy in the folder it cannot be deleted while it runs, so the rest of the folder goes at once and
 // that file and the folder at the next restart. With keepRanz the rest of the folder goes the same
 // way and ranz.exe and the folder stay, whichever ranz.exe runs, for the caller to remove: nothing
-// is scheduled for the restart.
+// is scheduled for the restart, and it returns once no other process holds ranz.exe (waitUnheld).
 func removeDir(w io.Writer, dir, self string, keepRanz bool) error {
 	if !fileExists(dir) {
 		return nil
@@ -512,6 +512,7 @@ func removeDir(w io.Writer, dir, self string, keepRanz bool) error {
 		return nil
 	}
 	if keepRanz {
+		waitUnheld(w, filepath.Join(dir, keep), 10*time.Second)
 		fmt.Fprintf(w, "uninstall: %s and the folder %s stay, for the caller to remove\n", keep, dir)
 		return nil
 	}
