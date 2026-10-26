@@ -240,7 +240,8 @@ static void MimicTestWriteConfig(wchar_t *dir, char *server, char *client)
 	CsClose(s);
 }
 
-// Append the text of every file under dir, and of its directories, to b
+// Append the text of every file under dir, and of its directories, to b. The log writer of a node that runs, and a
+// sidecar, hold their files open for writing, so the files are read without the read lock.
 static void MimicTestReadTree(BUF *b, wchar_t *dir)
 {
 	DIRLIST *d = EnumDirW(dir);
@@ -257,7 +258,7 @@ static void MimicTestReadTree(BUF *b, wchar_t *dir)
 			continue;
 		}
 
-		BUF *f = ReadDumpW(path);
+		BUF *f = ReadDumpExW(path, false, 0);
 		if (f != NULL)
 		{
 			WriteBuf(b, f->Buf, f->Size);
@@ -287,7 +288,7 @@ static char *MimicTestReadLog(wchar_t *dir, wchar_t *name)
 		wchar_t path[MAX_PATH];
 
 		ConbinePathW(path, sizeof(path), log_dir, name);
-		BUF *f = ReadDumpW(path);
+		BUF *f = ReadDumpExW(path, false, 0);
 		if (f != NULL)
 		{
 			WriteBuf(b, f->Buf, f->Size);
@@ -323,7 +324,7 @@ static char *MimicTestReadNodeLog(wchar_t *dir)
 		}
 
 		ConbinePathW(path, sizeof(path), log_dir, e->FileNameW);
-		BUF *f = ReadDumpW(path);
+		BUF *f = ReadDumpExW(path, false, 0);
 		if (f != NULL)
 		{
 			WriteBuf(b, f->Buf, f->Size);
