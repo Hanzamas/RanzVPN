@@ -345,6 +345,27 @@ static bool MimicTestHas(char *text, char *part)
 	return (text != NULL && SearchStrEx(text, part, 0, false) != INFINITE);
 }
 
+// Whether the logs of dir say part within MIMICTEST_TIMEOUT: the node log has a writer thread, so a line that the node
+// logged reaches its file a little later
+static bool MimicTestWaitLog(wchar_t *dir, char *part)
+{
+	UINT64 end = Tick64() + MIMICTEST_TIMEOUT;
+
+	while (true)
+	{
+		char *log = MimicTestReadLog(dir, NULL);
+		bool found = MimicTestHas(log, part);
+
+		Free(log);
+		if (found || Tick64() >= end)
+		{
+			return found;
+		}
+
+		SleepThread(100);
+	}
+}
+
 // The command line of the process pid, as Windows keeps it; "" when it cannot be read
 static void MimicTestCommandLine(UINT pid, char *out, UINT size)
 {
@@ -974,10 +995,8 @@ static void MimicTestRestart(MIMICTEST_CTX *ctx, NODE *client_node, TRANSPORT *c
 		"  the node starts the sidecar again after the delay, as another process", "running %u, process %u, %u restarts, after %I64u ms", (UINT)again,
 		st.Mimic[NODE_MIMIC_ROLE_CLIENT].ProcessId, st.Mimic[NODE_MIMIC_ROLE_CLIENT].NumRestarts, took);
 
-	char *log = MimicTestReadLog(dir, NULL);
-	MimicTestCheck(ctx, MimicTestHas(log, "Mimic client sidecar ended by itself (exit code 1): started again in 1000 ms"),
+	MimicTestCheck(ctx, MimicTestWaitLog(dir, "Mimic client sidecar ended by itself (exit code 1): started again in 1000 ms"),
 		"  the node log says that the sidecar ended and when it starts again", "%s", "the line is missing");
-	Free(log);
 
 	// A new dial works
 	MimicTestConformanceServer(ctx, client, l, address);
@@ -1051,10 +1070,12 @@ static void MimicTestUnavailable(MIMICTEST_CTX *ctx)
 		NodeStop(n);
 		FreeNode(n);
 
+		// A line of the transport starts with "Mimic ", case and all: the data directory, which the node log names, is
+		// mimic_none_<tick>
 		char *log = MimicTestReadLog(dir, NULL);
-		bool ok = (cases[i].LogLine != NULL ? MimicTestHas(log, cases[i].LogLine) : MimicTestHas(log, "Mimic") == false);
+		bool ok = (cases[i].LogLine != NULL ? MimicTestHas(log, cases[i].LogLine) : SearchStrEx(log, "Mimic ", 0, true) == INFINITE);
 		MimicTestCheck(ctx, ok, "  the node log says why, or nothing of the transport without a setting", "the node log %s \"%s\"",
-			cases[i].LogLine != NULL ? "lacks" : "has", cases[i].LogLine != NULL ? cases[i].LogLine : "Mimic");
+			cases[i].LogLine != NULL ? "lacks" : "has", cases[i].LogLine != NULL ? cases[i].LogLine : "Mimic ");
 		Free(log);
 
 		MimicTestDeleteTree(dir);
@@ -1165,11 +1186,11 @@ static void MimicTestNodes(MIMICTEST_CTX *ctx)
 		"  the control pipe has the strict DACL: protected, full access for the account of the node (OWNER RIGHTS) alone", "DACL \"%s\"", ms->PipeAcl);
 
 	// The client that came first on the control pipe was refused, and the node started the sidecar again
-	char *log = MimicTestReadLog(server_dir, NULL);
-	MimicTestCheck(ctx, impostor.Pipe != INVALID_HANDLE_VALUE && MimicTestHas(log, "connected to the pipe, not the sidecar") && ms->NumStarts == 1 && ms->NumRestarts == 1,
+	bool refused = MimicTestWaitLog(server_dir, "connected to the pipe, not the sidecar");
+	MimicTestCheck(ctx, impostor.Pipe != INVALID_HANDLE_VALUE && refused && ms->NumStarts == 1 && ms->NumRestarts == 1,
 		"  the control pipe refuses a client that is not the sidecar the node started, and the node starts the sidecar again",
-		"the other client connected %u, %u starts, %u restarts", (UINT)(impostor.Pipe != INVALID_HANDLE_VALUE), ms->NumStarts, ms->NumRestarts);
-	Free(log);
+		"the other client connected %u, the refusal logged %u, %u starts, %u restarts", (UINT)(impostor.Pipe != INVALID_HANDLE_VALUE), (UINT)refused,
+		ms->NumStarts, ms->NumRestarts);
 	if (impostor.Pipe != INVALID_HANDLE_VALUE)
 	{
 		CloseHandle(impostor.Pipe);

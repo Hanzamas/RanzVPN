@@ -90,6 +90,34 @@ func TestRunRefusesAStartThatCannotRun(t *testing.T) {
 	}
 }
 
+// A start whose settings hold a field that the sidecar does not know is no message: the sidecar
+// answers it with an error, so that the node logs the refusal and does not start it again.
+func TestRunRefusesAStartWithAnUnknownField(t *testing.T) {
+	node, sidecar := net.Pipe()
+	defer node.Close()
+	done := make(chan error, 1)
+	go func() { done <- Run(context.Background(), sidecar, Options{Logger: testLogger(t), skipDetect: true}) }()
+	node.SetDeadline(time.Now().Add(testTimeout))
+	if _, err := node.Write([]byte(`{"type":"start","role":"client","pipe":"p","client":{"links":[],"misspelt":1}}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewReader(node).Read()
+	if err != nil {
+		t.Fatalf("start was not answered: %v", err)
+	}
+	if m.Type != TypeError || !strings.Contains(m.Error, "misspelt") {
+		t.Errorf("the sidecar answered with %+v, want an error that names the field", m)
+	}
+	select {
+	case err := <-done:
+		if err == nil || err.Error() != m.Error {
+			t.Errorf("Run returned %v, want the error that it told the node: %q", err, m.Error)
+		}
+	case <-time.After(testTimeout):
+		t.Fatal("Run did not return after it refused start")
+	}
+}
+
 func TestRunEndsWhenTheNodeIsGoneBeforeStart(t *testing.T) {
 	node, sidecar := net.Pipe()
 	node.Close()
