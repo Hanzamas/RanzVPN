@@ -1,0 +1,6 @@
+bind 6b1f4e2a9c0d3f8e7a5b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f
+bind -
+ok 0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789abcdef
+ok -
+error the address is not a link
+error

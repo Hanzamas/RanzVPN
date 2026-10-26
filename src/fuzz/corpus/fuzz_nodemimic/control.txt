@@ -1,0 +1,6 @@
+{"type":"ready","version":"ranz mimic, REALITY v0.0.0, uTLS v1.0.0","protocol":1,"listen":"127.0.0.1:55443","decoy":"127.0.0.1:55444"}
+{"type":"accepted","peer":"127.0.0.1:60001"}
+{"type":"probe","peer":"127.0.0.1:60002","reason":"server name mismatch"}
+{"type":"stats","accepted":3,"probes":1,"streams":3,"dropped":0}
+{"type":"error","error":"start: private_key is not 64 hexadecimal digits"}
+{"type":"error","peer":"127.0.0.1:60003","error":"the data pipe of the node: timeout"}

@@ -95,6 +95,11 @@ src/Cedar  NodeDhcpInput  fuzz_nodedhcp
 # The stub resolver of overlay DNS (SDN-11 #187) reads the DNS queries that reach UDP port 53 of the node's addresses in a
 # VRF. No parser word in the name, listed as the parser it is
 src/Cedar  NodeDnsAnswer  fuzz_nodedns
+# The mimicry sidecar of the Node (CORE-P2-6 #406): the messages of its control pipe, and the line in front of each stream
+# of its data pipes (the binding of the server role, the answer to a dial of the client role)
+src/Cedar  NodeMimicParseMessage  fuzz_nodemimic
+src/Cedar  NodeMimicParseBind     fuzz_nodemimic
+src/Cedar  NodeMimicParseAnswer   fuzz_nodemimic
 # The Capabilities of the Node (ONE-3 #312) come from the host, not from a peer
 src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: it asks Windows for the architecture of the host, whether the services SeLow and xdp are registered and whether three files of System32 exist
 
