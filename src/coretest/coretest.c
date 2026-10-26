@@ -150,6 +150,7 @@ static TEST_LIST test_list[] = {
     {"x25519", x25519_test, "X25519 against RFC 7748 5.2 and 6.1, the iterated test, clamping, masking, reduction, low-order points."},
     {"identity", identity_test, "Node identity key in the software KSP: RFC 7748 6.1 through NCrypt, open, create, delete."},
     {"mlkem", mlkem_test, "ML-KEM-768 and the X25519MLKEM768 hybrid where the OS has it; omitted, without failing, where not."},
+    {"cryptorefusal", cryptorefusal_test, "Refusals of the crypto module: missing arguments, released state, an ML-KEM key out of range, a key of another curve; outputs zeroed, keys released."},
     {"selfsign", selfsign_test, "Self-signed ECDSA P-256 certificate on a CNG key: signature, algorithms, extensions, key in the KSP."},
     {"pfx", pfx_test, "PFX of OpenSSL 3 defaults (PBES2, AES-256-CBC, SHA-256 MAC) into the KSP; wrong password and no PFX refused."},
     {"certstore", certstore_test, "Certificate store: add, find by thumbprint, remove; malformed thumbprints refused."},

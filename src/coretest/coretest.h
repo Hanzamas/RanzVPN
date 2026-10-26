@@ -38,6 +38,7 @@ void aesgcm_test();
 void x25519_test();
 void identity_test();
 void mlkem_test();
+void cryptorefusal_test();
 void selfsign_test();
 void pfx_test();
 void certstore_test();
