@@ -823,7 +823,7 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
 	// The MTU of the VRF clamps the MSS of a TCP SYN as the overlay sees it, after the 1:1 NAT rules, and the rate limits
 	// of the VRF and the node may drop it (NodeShape.c)
-	bool ok = (allowed && (s != NULL || plain) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ?NodeLinkSend(v, hop, record, size) : TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG)));
+	bool ok = (allowed && (s != NULL || plain) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size) : TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG)));
 	InterlockedDecrement(&peer->Senders);
 
 	// A Mirror copies the packet as it went to the peer (NodeMirror.c)
