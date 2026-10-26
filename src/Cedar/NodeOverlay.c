@@ -43,6 +43,8 @@ typedef struct NODE_OVERLAY_PEER {
 	volatile LONG Senders;             // Calls of NodeOverlayInput that send on Session now
 	UINT64 NextDial;                   // When the node dials it next
 	bool Gone;                         // The desired state dropped it and no table leads to it: the thread closes its session and frees it
+	UINT64 Since;                      // When Session came up, for the state of the node (SDN-91, #396) ...
+	TRANSPORT *Transport;              // ... and the transport that it runs over
 } NODE_OVERLAY_PEER;
 
 // The overlay of a node
@@ -342,6 +344,8 @@ static bool NodeOverlayAttach(NODE_OVERLAY *ov, const UCHAR *key, TRANSPORT_NOIS
 		if (p != NULL && p->Session == NULL) {
 			InterlockedExchangePointer((PVOID volatile *)&p->Session, s);
 			StrCpy(name, sizeof(name), p->Name);
+			p->Since = GetTickCount64();
+			p->Transport = TransportOf(s->Stream);
 			ok = true;
 		}
 	}
@@ -803,6 +807,7 @@ void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st) {
 
 	ControlGetStatus(ov->Control, &cs);
 	st->Connected = cs.Connected;
+	st->Since = cs.Since;
 
 	Lock(ov->Lock);
 	{
@@ -827,4 +832,45 @@ void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st) {
 	st->Forwarded = (UINT64)ReadAcquire64(&ov->Forwarded);
 	st->Delivered = (UINT64)ReadAcquire64(&ov->Delivered);
 	st->Dropped = (UINT64)ReadAcquire64(&ov->Dropped);
+}
+
+// The peers of the overlay of a node and their Noise sessions, into list, at most max of them, and into listener the name of
+// the data transport that the overlay listens on, "" for none: the number of the peers, which may be more than max (the
+// state of a node, NodeState.c; SDN-91, #396)
+UINT NodeOverlayGetSessions(NODE *n, NODE_OVERLAY_SESSION *list, UINT max, char *listener, UINT listener_size) {
+	UINT num = 0;
+
+	if (listener != NULL)
+		StrCpy(listener, listener_size, "");
+
+	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
+	if (ov == NULL)
+		return 0;
+
+	if (listener != NULL && ov->Listener != NULL)
+		StrCpy(listener, listener_size, ov->Config.Data->Name);
+
+	Lock(ov->Lock);
+	{
+		for (UINT i = 0; i < LIST_NUM(ov->Peers); i++) {
+			NODE_OVERLAY_PEER *p = LIST_DATA(ov->Peers, i);
+
+			if (p->Gone)
+				continue;
+			if (list != NULL && num < max) {
+				NODE_OVERLAY_SESSION *s = &list[num];
+
+				Zero(s, sizeof(NODE_OVERLAY_SESSION));
+				StrCpy(s->Name, sizeof(s->Name), p->Name);
+				s->Up = (p->Session != NULL);
+				if (s->Up && p->Transport != NULL)
+					StrCpy(s->Transport, sizeof(s->Transport), p->Transport->Name);
+				s->Since = (s->Up ? p->Since : 0);
+			}
+			num++;
+		}
+	}
+	Unlock(ov->Lock);
+
+	return num;
 }

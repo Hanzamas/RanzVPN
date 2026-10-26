@@ -382,7 +382,8 @@ typedef struct CONTROL_CONFIG {
 
 // How a client stands (ControlGetStatus)
 typedef struct CONTROL_STATUS {
-	bool Connected;        // A stream is open: the handshake passed and the Hello went out
+	bool Connected;        // A stream is open: the handshake passed and the Hello went out ...
+	UINT64 Since;          // ... since this GetTickCount64, or the last one was (SDN-91, #396)
 	UINT64 Applied;        // The Generation applied last, 0 before the first
 	UINT64 NumStreams;     // Streams whose handshake passed so far
 	UINT64 NumUpdates;     // Updates applied so far

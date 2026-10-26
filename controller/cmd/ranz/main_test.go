@@ -75,6 +75,10 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 		{[]string{"get", "revision", "1"}, http.MethodGet, "/api/v1/revisions/1", "", nil},
 		{[]string{"diff"}, http.MethodGet, "/api/v1/diff", "", nil},
 		{[]string{"get", "events"}, http.MethodGet, "/api/v1/events", "", nil},
+		// The audit log with the filters of the API (SDN-91, #396)
+		{[]string{"get", "audit"}, http.MethodGet, "/api/v1/audit", "", nil},
+		{[]string{"get", "audit", "-kind", "intent-change", "-limit", "2"}, http.MethodGet, "/api/v1/audit?kind=intent-change&limit=2", "", nil},
+		{[]string{"get", "audit", "-actor", "token:admin", "-since", "2026-01-01T00:00:00Z", "-after", "1"}, http.MethodGet, "/api/v1/audit?actor=token%3Aadmin&since=2026-01-01T00%3A00%3A00Z&after=1", "", nil},
 		{[]string{"admin-sources", "list"}, http.MethodGet, "/api/v1/admin-sources", "", nil},
 		{[]string{"admin-sources", "set", "192.0.2.0/24", "2001:db8::10"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": ["192.0.2.0/24", "2001:db8::10"]}`, nil},
 		{[]string{"admin-sources", "clear"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": []}`, nil},

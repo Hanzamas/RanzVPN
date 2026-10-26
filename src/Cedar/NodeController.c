@@ -20,10 +20,11 @@
 //   command line of an Administrator, as ranz node sends them, and answers it with one JSON object: key gives the public
 //   half of the static key of the node, which it makes first when no role needed it yet; controller gives the settings
 //   and the state of the control stream; controller set <address> <key> <fingerprint> and controller clear write and
-//   remove the settings. The service is the one writer of its Configuration store, and it takes the settings at its next
-//   start, which ranz node makes at once. The private half of the key stays in the key storage provider: it is in no
-//   answer and no line of the log. Only the node of the service, on the default data directory, has the pipe, unless a
-//   test names one in NODE.AdminPipe before NodeStart.
+//   remove the settings; state gives what the node does now, which NodeState.c answers (SDN-91, #396). The service is
+//   the one writer of its Configuration store, and it takes the settings at its next start, which ranz node makes at
+//   once. The private half of the key stays in the key storage provider: it is in no answer and no line of the log.
+//   Only the node of the service, on the default data directory, has the pipe, unless a test names one in
+//   NODE.AdminPipe before NodeStart.
 
 #include "Node.h"
 
@@ -67,6 +68,7 @@ struct NODE_CONTROLLER {
 	UINT64 NumEnds;                                // Streams that ended or did not open
 	UINT LastEnd;                                  // How the last one ended (CONTROL_END_*)
 	UINT NextRetry;                                // ms before the next attempt after it
+	char Why[MAX_SIZE * 2];                        // Why the last one ended, as the log says it (SDN-91, #396)
 	wchar_t Pipe[MAX_PATH];                        // The admin pipe, empty for none
 	HANDLE PipeHandle;                             // Its server end, INVALID_HANDLE_VALUE without
 	HANDLE PipeStop;                               // Ends the thread of the pipe
@@ -288,6 +290,11 @@ static void NodeControllerEnd(void *param, const CONTROL_STATUS *st) {
 		break;
 	}
 
+	// The state of the node says it too (NodeState.c; SDN-91, #396)
+	Lock(c->Lock);
+	StrCpy(c->Why, sizeof(c->Why), why);
+	Unlock(c->Lock);
+
 	NodeLog(c->Node, "Controller %s: %s; the next attempt in %u ms", c->Address, why, st->NextRetry);
 }
 
@@ -487,8 +494,10 @@ void NodeAdminCommand(NODE *n, char *line, char *reply, UINT size) {
 		else if (t->NumTokens >= 2 && StrCmpi(t->Token[0], "controller") == 0 &&
 		         ((t->NumTokens == 2 && StrCmpi(t->Token[1], "clear") == 0) || (t->NumTokens == 5 && StrCmpi(t->Token[1], "set") == 0)))
 			NodeAdminSet(n, c, t, o);
+		else if (t->NumTokens == 1 && StrCmpi(t->Token[0], "state") == 0)
+			NodeAdminState(n, o);
 		else
-			cJSON_AddStringToObject(o, "error", "unknown command: key, controller, controller set <address> <key> <fingerprint> or controller clear");
+			cJSON_AddStringToObject(o, "error", "unknown command: key, controller, controller set <address> <key> <fingerprint>, controller clear or state");
 	}
 	Unlock(n->Lock);
 
@@ -782,6 +791,7 @@ void NodeControllerGetStatus(NODE *n, NODE_CONTROLLER_STATUS *st) {
 				st->NextRetry = c->NextRetry;
 				st->Mismatch = c->Mismatch;
 				StrCpy(st->Seen, sizeof(st->Seen), c->Seen);
+				StrCpy(st->Why, sizeof(st->Why), c->Why);
 			}
 			Unlock(c->Lock);
 
