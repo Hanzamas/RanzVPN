@@ -215,11 +215,14 @@ static void NodeControllerLoad(NODE_CONTROLLER *c) {
 	Free(setting);
 }
 
-// The TLS fingerprints that the Controller sent into the JSON object o of the settings, as the array tlsFingerprints: none
-// without them. The settings of an Administrator, which have a Lock of no one, have none.
-static void NodeControllerJsonPins(NODE_CONTROLLER *c, cJSON *o) {
+// The TLS fingerprints of the settings into the JSON object o: tlsFingerprint, the one of the certificate in use, which is
+// the first that the Controller sent once it sent any (the one that the store holds, NodeControllerSavePins), and the array
+// tlsFingerprints with all that the Controller sent, none without them. The settings of an Administrator, which have a Lock
+// of no one, have none of the Controller's.
+static void NodeControllerJsonFingerprints(NODE_CONTROLLER *c, cJSON *o) {
 	Lock(c->Lock);
 	{
+		cJSON_AddStringToObject(o, "tlsFingerprint", (c->NumPins == 0 ? c->Fingerprint : c->Pins[0]));
 		cJSON *list = (c->NumPins != 0 ? cJSON_AddArrayToObject(o, "tlsFingerprints") : NULL);
 
 		for (UINT i = 0; list != NULL && i < c->NumPins; i++)
@@ -240,8 +243,7 @@ static cJSON *NodeControllerJson(NODE_CONTROLLER *c) {
 	key = Base64FromBin(&key_size, c->Key, PEER_KEY_SIZE);
 	cJSON_AddStringToObject(o, "address", c->Address);
 	cJSON_AddStringToObject(o, "publicKey", key != NULL ? key : "");
-	cJSON_AddStringToObject(o, "tlsFingerprint", c->Fingerprint);
-	NodeControllerJsonPins(c, o);
+	NodeControllerJsonFingerprints(c, o);
 	Free(key);
 
 	return o;

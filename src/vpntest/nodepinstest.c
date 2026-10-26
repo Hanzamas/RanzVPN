@@ -291,6 +291,9 @@ void nodepins_test(UINT num, char **arg)
 	Format(want, sizeof(want), "{\"address\":\"%s\",\"publicKey\":\"%s\",\"tlsFingerprint\":\"%s\",\"tlsFingerprints\":[\"%s\"]}", address, ctrl_b64, fingerprint, fingerprint);
 	NodePinsStored(dir, stored, NODEPINS_SETTING);
 	NodePinsCheck(ctx, NodePinsAre(n, 1, fingerprint, NULL) && StrCmp(stored, want) == 0, "a state with the new fingerprint alone makes the node forget the old one, in memory and in the store", "the store holds %s, want %s", stored, want);
+	NodeAdminCommand(n, "controller", reply, NODEPINS_SETTING);
+	Format(want, sizeof(want), "\"tlsFingerprint\":\"%s\",\"tlsFingerprints\":[\"%s\"]}", fingerprint, fingerprint);
+	NodePinsCheck(ctx, InStr(reply, want), "the admin pipe shows the fingerprint of the certificate in use as the one of the settings, before any restart", "%s", reply);
 
 	// A state that names none, and one whose fingerprints are no 64 hex digits, change nothing
 	NodePinsState(state, NULL, NULL);
