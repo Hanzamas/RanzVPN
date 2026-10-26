@@ -6,11 +6,11 @@
 // Noise session (TransportNoise.c) runs over it unchanged: the handshake, the Login, the control
 // stream and the data stream, whose frames enter the Hub (CORE-S1-2, #68). The connection
 // advertises the QUIC DATAGRAM frames here, which no data path takes yet. The channel binding of
-// a stream is the tls-server-end-point of the
-// pinned server certificate (RFC 5929): both ends compute it from the certificate msquic presents,
-// because Schannel exposes no RFC 8446 exporter to msquic yet (the CORE-S1-1 spike of ADR-0022,
-// amendment of 2026-10-15). The client pins the server certificate and refuses any other, and the
-// system root store is not trusted (ADR-0023).
+// a stream is the TLS exporter of its connection (NOISE_BINDING_EXPORTER, TransportQuicExporter.c;
+// CORE-H5, #408), which both ends take when the handshake completes, so that a middlebox that holds
+// the key of the certificate cannot relay a session; a connection that gives no exporter leaves its
+// streams unbound, and their sessions encrypted. The client pins the server certificate and refuses
+// any other, and the system root store is not trusted (ADR-0023).
 //
 // msquic.dll is loaded at the first QUIC call through LoadLibrary and MsQuicOpenVersion, so a
 // program that never dials or listens over QUIC needs neither the DLL nor the import library, and
@@ -21,7 +21,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
-#include "Core/Transport.h"
+#include "Core/TransportInternal.h"
 
 #include <msquic.h>
 
@@ -67,16 +67,18 @@ typedef struct QUIC_LISTENER {
 
 // A connection: the handle, and the control stream the session layer runs over
 typedef struct QUIC_CONN {
-	QUIC_NET *Net;                    // The transport
-	HQUIC Connection;                 // The msquic connection
-	QUIC_LISTENER *Listener;          // The listener that accepted it (server), or NULL (client)
-	volatile LONG Refs;               // The callback plus every stream that points here
-	HANDLE Ready;                     // Set when the connection is up (client) or failed
-	volatile LONG Connected;          // The handshake completed
-	volatile LONG Failed;             // The connection failed before it came up, or shut down
-	UCHAR Binding[NOISE_MAX_BINDING]; // The tls-server-end-point of the certificate msquic presented
-	UINT BindingSize;                 // ... its size, 0 until the certificate arrived
-	bool BindingBad;                  // A client that pinned another certificate: the binding is wrong
+	QUIC_NET *Net;                       // The transport
+	HQUIC Connection;                    // The msquic connection
+	QUIC_LISTENER *Listener;             // The listener that accepted it (server), or NULL (client)
+	volatile LONG Refs;                  // The callback plus every stream that points here
+	HANDLE Ready;                        // Set when the connection is up (client) or failed
+	volatile LONG Connected;             // The handshake completed
+	volatile LONG Failed;                // The connection failed before it came up, or shut down
+	UCHAR Binding[NOISE_MAX_BINDING];    // The tls-server-end-point of the certificate msquic presented
+	UINT BindingSize;                    // ... its size, 0 until the certificate arrived
+	bool BindingBad;                     // A client that pinned another certificate: the binding is wrong
+	UCHAR Exporter[NOISE_EXPORTER_SIZE]; // The TLS exporter of the connection, the binding of its streams
+	bool Exported;                       // ... taken when the handshake completed
 } QUIC_CONN;
 
 // A stream: the TRANSPORT stream object, a synchronous byte stream over an async msquic stream
@@ -601,27 +603,37 @@ static UINT QuicStreamBinding(void *stream, UCHAR *binding, UINT max, UINT *size
 	QUIC_STREAM *s = (QUIC_STREAM *)stream;
 	QUIC_CONN *c = s->Conn;
 	QUIC_NET *net = c->Net;
+	const UCHAR *bind = c->Exporter;
+	UINT bind_size = (c->Exported ? NOISE_EXPORTER_SIZE : 0);
+	UINT type = NOISE_BINDING_EXPORTER;
 
 	*size = 0;
 
-	// The server knows its own certificate; the client learnt it from the handshake
-	if (net->Server) {
-		if (net->BindingSize == 0 || net->BindingSize > max)
-			return NOISE_BINDING_NONE;
-		CopyMemory(binding, net->Binding, net->BindingSize);
-		*size = net->BindingSize;
-	} else {
-		if (c->BindingSize == 0 || c->BindingSize > max)
-			return NOISE_BINDING_NONE;
-		CopyMemory(binding, c->Binding, c->BindingSize);
-		*size = c->BindingSize;
-		// The mismatch test: a client that computes a binding of its own, as a middlebox that
-		// terminated the TLS would, so the two prologues differ and the handshake is closed
-		if (net->Cfg.BreakBinding && *size != 0)
-			binding[0] ^= 0xFF;
+	// A client that got no certificate checked no pin: its stream has no binding, so its session is
+	// encrypted, and its handshake with a bound server fails
+	if (net->Server == false && c->BindingSize == 0)
+		return NOISE_BINDING_NONE;
+
+	// The binding of the build before CORE-H5, for the test of an old node: the tls-server-end-point,
+	// which the server knows from its own certificate and the client learnt from the handshake
+	if (net->Cfg.EndPointBinding) {
+		bind = (net->Server ? net->Binding : c->Binding);
+		bind_size = (net->Server ? net->BindingSize : c->BindingSize);
+		type = NOISE_BINDING_SERVER_END_POINT;
 	}
 
-	return NOISE_BINDING_SERVER_END_POINT;
+	// The TLS exporter of the connection: none, from an msquic without one, leaves the stream unbound
+	if (bind_size == 0 || bind_size > max)
+		return NOISE_BINDING_NONE;
+	CopyMemory(binding, bind, bind_size);
+	*size = bind_size;
+
+	// The mismatch test: a client that computes a binding of its own, as a middlebox that terminated
+	// the TLS would, so the two prologues differ and the handshake is closed
+	if (net->Server == false && net->Cfg.BreakBinding)
+		binding[0] ^= 0xFF;
+
+	return type;
 }
 
 static bool QuicStreamRekey(void *stream) {
@@ -649,15 +661,16 @@ static void QuicConnRelease(QUIC_CONN *c) {
 	QuicRelease(c, sizeof(QUIC_CONN));
 }
 
-// The connection callback: it records the certificate's binding, wakes a waiting dial on connect or
-// failure, and closes the connection on shutdown
+// The connection callback: it records the certificate's binding and the exporter of the connection,
+// wakes a waiting dial on connect or failure, and closes the connection on shutdown
 static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnCallback(HQUIC connection, void *context, QUIC_CONNECTION_EVENT *event) {
 	QUIC_CONN *c = (QUIC_CONN *)context;
 
-	UNREFERENCED_PARAMETER(connection);
-
 	switch (event->Type) {
 	case QUIC_CONNECTION_EVENT_CONNECTED:
+		// The exporter now, while msquic still holds the TLS state, which a server lets go of once the
+		// client acknowledged its handshake; the streams of the connection take it as their binding
+		c->Exported = TransportQuicExporter(g_quic, connection, c->Exporter);
 		InterlockedExchange(&c->Connected, 1);
 		if (c->Ready != NULL)
 			SetEvent(c->Ready);
