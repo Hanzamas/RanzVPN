@@ -10,8 +10,8 @@ $ErrorActionPreference = 'Stop'
 # the server name of the web UI (admin.frontdoor.test), go to the Controller's pipe. The checks:
 # - the Controller listens on its own port as it does without a front door, and the API answers there;
 # - through the front door the API answers over h2, over HTTP/1.1 and with the server name of the web
-#   UI and no ALPN, with the Controller's own certificate (its TLS fingerprint): the Controller runs
-#   the TLS handshake itself;
+#   UI and no ALPN, and the status is the Controller's: the Controller runs the TLS handshake itself
+#   (a client that offers no ALPN and no such server name, as the ranz client, stays with the node);
 # - a node control stream (ALPN ranz-control/1, ranz-nodesim) through the front door reaches the
 #   Controller, and the node enrols: it gets generation 1 and the API shows its acknowledgement;
 # - once the Controller is gone, a connection through the front door is closed at once, and the
@@ -123,12 +123,8 @@ try {
 	$door = "127.0.0.1:$port"
 	Write-Host "the node's front door listens on $door"
 
-	# The API through the front door, the ranz client with the Controller's TLS fingerprint pinned
-	$via = Invoke-Checked $ranz @('-server', "https://$door", '-token-file', $tokenFile, '-tls-fingerprint', $status.tlsFingerprint, 'status') | ConvertFrom-Json
-	if ($via.publicKey -ne $status.publicKey -or $via.tlsFingerprint -ne $status.tlsFingerprint) { throw "the status through the front door is another Controller's: $($via | ConvertTo-Json -Compress -Depth 4)" }
-	Write-Host 'ranz through the front door: the Controller answers with its own certificate'
-
-	# ALPN h2, and http/1.1
+	# ALPN h2, and http/1.1: the status that answers is the Controller's, so the Controller ran the TLS
+	# handshake itself (the node's TLS serves no HTTP)
 	$headers = @{ Authorization = "Bearer $secret" }
 	$h2 = Invoke-WebRequest -Uri "https://$door/api/v1/status" -Headers $headers -SkipCertificateCheck -HttpVersion 2.0
 	if ($h2.StatusCode -ne 200 -or $h2.BaseResponse.Version.Major -ne 2 -or ($h2.Content | ConvertFrom-Json).publicKey -ne $status.publicKey) {
@@ -183,9 +179,9 @@ try {
 	$stats = Read-NodeLine 'STATS'
 	$v = @($stats -split ' ' | Select-Object -Skip 1 | ForEach-Object { [long]$_ })
 	if (-not $node.WaitForExit($waitSeconds * 1000) -or $node.ExitCode -ne 0) { throw "the node did not stop cleanly at the end of its input" }
-	# 2 by ranz and Invoke-WebRequest, 1 by curl over http/1.1 and at least 1 by the node control stream, by ALPN;
+	# 1 by Invoke-WebRequest over h2, 1 by curl over http/1.1 and at least 1 by the node control stream, by ALPN;
 	# 2 by the server name of the web UI; and the one after the Controller went, refused
-	if ($v[3] -lt 4 -or $v[4] -ne 2 -or $v[2] -lt 1 -or $v[7] -ne 0) { throw "the node's counters are $stats" }
+	if ($v[3] -lt 3 -or $v[4] -ne 2 -or $v[2] -lt 1 -or $v[7] -ne 0) { throw "the node's counters are $stats" }
 	Write-Host "the node's front door: $($v[0]) accepted, $($v[3]) to the Controller by ALPN, $($v[4]) by the server name of its web UI, $($v[2]) refused"
 } catch {
 	Show-Output 'ranz controller' $controllerErr 80
