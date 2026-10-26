@@ -26,11 +26,11 @@ The check of 2026-10-26 showed this.
 - Only HTTPS on port 443 goes out.
 - `CronCreate` lives as long as the session. The routine is the only schedule that survives.
 
-**Not tried yet:** the check did not try a write other than `git push`: a comment, a label, a merge, closing a ticket, creating a pull request. The first full tick does them for real. If a write fails, the tick stops that action, puts the error in its report and goes on with the work that does not need it.
+**The routine tried the writes** on 2026-10-26: comments, edits of comments, closing tickets, pull requests of lanes, reruns and the REST merge of four pull requests worked. One thing can fail: the permission check of the cloud refused the REST merge of a fifth pull request twice ("Merge Without Review"). It is a soft deny that opens only for an explicit request of that exact action. So the routine prompt names the merge in a paragraph EXPLICIT PERMISSION, and the allowed tools of the routine carry the patterns `Bash(gh api -X PUT *pulls/*/merge*)`, `Bash(gh api --method PUT *pulls/*/merge*)` and `mcp__github__merge_pull_request`. If a write fails anyway, the tick stops that action, puts the error in its report and goes on with the work that does not need it.
 
 ## The shape of the job
 
-The job is a routine, not one long session. The routine fires a tick every 30 minutes. A tick reads GitHub, acts and ends. Nothing that matters lives in the container: the state is in the pull requests, the branches, the tickets and the heartbeat issue. A tick that meets the limit of the plan ends where it is, and the next tick reads GitHub and continues. A tick that has lanes alive stays in its session while they run, and waits with Monitor (30 minutes for each arm).
+The job is a routine, not one long session. The routine fires a tick every hour (a routine cannot fire more often). A tick reads GitHub, acts and ends. Nothing that matters lives in the container: the state is in the pull requests, the branches, the tickets and the heartbeat issue. A tick that meets the limit of the plan ends where it is, and the next tick reads GitHub and continues. A tick that has lanes alive stays in its session while they run, and waits with Monitor (30 minutes for each arm).
 
 ## The commands
 
@@ -272,7 +272,7 @@ A line is a hint. Before you merge, run the two looks of the merge procedure. Ea
 
 ## The routine
 
-The maintainer creates the routine from a desktop or web session, with the `schedule` skill. The routine fires a cloud session on a schedule, and the session runs one tick. The default: every 30 minutes, at most 4 lanes, merges only into `integration`, never `master`, the heartbeat issue for the lock.
+The maintainer creates the routine from a desktop or web session, with the `schedule` skill. The routine fires a cloud session on a schedule, and the session runs one tick. The default: every hour (cron `7 * * * *`, because a routine cannot fire more often than once an hour), at most 5 lanes, merges only into `integration`, never `master`, the heartbeat issue for the lock.
 
 The prompt is short. It points to these pages, so that a change to the pages changes the job without a change to the routine. It sends the tick to the heartbeat first, so that a tick that stands down does not read the whole of both pages:
 
@@ -281,16 +281,22 @@ You are the cloud integrator of Hanzamas/RanzVPN. Run one tick.
 
 AUTHORITY: <the words of the maintainer that start this routine, verbatim, with the date>
 
+EXPLICIT PERMISSION: <the actions that the maintainer allows without asking, in this repository only: the REST merge into integration with its exact command, review of pull requests, create, edit, label, comment on and close tickets, the grill with the recommended answers, to-spec and to-tickets, lanes and their pull requests, ADRs and docs. The one exception: master, which is never touched.>
+
 1. Run git fetch origin integration. Read the section "The integrator heartbeat" of docs/agents/integrator.md and the section "The heartbeat in commands" of docs/agents/integrator-cloud.md, as they are on origin/integration, and do the heartbeat. If you stand down, end.
 2. Otherwise read both pages in full, and run one tick as they say.
 
 Heartbeat issue: #<number>
-Lane cap: 4
+Lane cap: 5
 Mode: <dry run | full>
 Order of tickets: <the order that the maintainer wants, or none>
+Usage window rule: <time based, see below>
+Decisions: <use the recommended answer, record it, and write ASK: only for what the permission does not cover>
 ```
 
-The integrator never writes the AUTHORITY line. If the routine has none, the integrator reads and reports and does nothing else.
+The integrator never writes the AUTHORITY line or the EXPLICIT PERMISSION paragraph. If the routine has none, the integrator reads and reports and does nothing else.
+
+**The usage window rule.** A cloud session cannot read the usage of the plan, so the rule uses time. The heartbeat comment keeps a line `window-start: <UTC time>`. The first tick after a stop for the limit of the plan, or more than 5 hours after the last `window-start`, writes a new one. In the first 3 hours after `window-start` a tick may launch lanes up to the cap. After that it launches none: it merges, closes tickets and repairs, and lets the lanes that run finish and push. If a command fails with a message about the limit of the plan, the tick writes `ended: plan limit` and ends.
 
 **First run.** Make the first run a dry run, by hand. In a dry run the tick does the heartbeat and the look, writes the report, and merges nothing, closes nothing and launches nothing. The maintainer reads the heartbeat comment and the run log. That proves in one run the reads with `gh api` and with the MCP tools, and the write and the edit of a comment. Then he sets the mode to `full`.
 
@@ -315,5 +321,5 @@ The integrator never writes the AUTHORITY line. If the routine has none, the int
 | Merge answers 405 | Not mergeable now. Read the pull request again. |
 | Create answers 422 | A pull request for the branch exists, or the branch has no new commit. |
 | 403 or 429 with a note about rate limits | Stop the tick, write it in the report, and end. |
-| A command that the permission check refused | Stop and report it with its message. Never retry it split up or reworded. |
+| A command that the permission check refused | Stop and report it with its message. Never retry it split up or reworded. A refused merge ("Merge Without Review") means that the routine prompt lacks the EXPLICIT PERMISSION paragraph or the allow patterns of the merge; the maintainer or his local session fixes the routine, and merges by hand meanwhile. |
 | No heartbeat issue | Stop and report. Without it you cannot know that you are alone. |
