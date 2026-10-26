@@ -131,6 +131,10 @@ func Run(ctx context.Context, conn net.Conn, opts Options) error {
 		if errors.Is(err, io.EOF) {
 			return errors.New("the node closed the pipe before start")
 		}
+		// A start that is no message, such as a setting with a field that this version does not know,
+		// is answered as a start that cannot run: the node logs the refusal and does not start the
+		// sidecar again (CORE-P2-6, #406)
+		w.Write(Message{Type: TypeError, Error: err.Error()})
 		return err
 	}
 	if first.Type != TypeStart {

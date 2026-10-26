@@ -1,0 +1,7 @@
+{"type":""}
+{"type":"stats","accepted":-1,"probes":1e300,"streams":"3"}
+[1,2,3]
+BIND 6b1f4e2a9c0d3f8e7a5b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f
+bind 6b1f4e2a9c0d3f8e7a5b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1
+ok zz1f4e2a9c0d3f8e7a5b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f
+errors
