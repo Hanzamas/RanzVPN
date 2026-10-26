@@ -324,14 +324,16 @@ The client prints one line for the connection, then a table with a row Download,
 
 A Node is part of the network only when the Intent holds a Node resource with the static key of that Node. You apply two. They name no VRF, so both join VRF `default`.
 
+The Node resource of `pc-a` also says where the other PC reaches it. `endpoints` is a list in which each entry names a transport (`quic`, `tls` or `mimic`) and an address, a host and a port, under which the other Nodes reach the Node. `pc-a` has one endpoint: TLS at `<PC-A>:<PORT>`, the address of PC A that PC B reaches in step 13. The Controller puts the endpoints of a Node into the Peer object of every Node that shares a VRF with it, so the desired state of `pc-b` names them as the place of its peer `pc-a`. `pc-b` has no endpoints, so it is the Node that dials: no other Node can dial it, and a peer without endpoints is not dialled. `ranz apply` refuses a malformed endpoint with a message that says which: a transport that is not `quic`, `tls` or `mimic`, an address without a port, or a name that is no DNS name.
+
 The keys below are the two public test keys of the stand-in, which plays both Nodes until step 20 puts the key of the Node service of PC A into `pc-a`. Their private halves are in the source of `vpntest`, so anyone who reaches your Controller could act as these two Nodes. Use them on a test Controller only.
 
 ```powershell run
-Set-Content -Path C:\ranz-test\nodes.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw="}},{"kind":"Node","name":"pc-b","spec":{"publicKey":"WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns="}}]}'
+Set-Content -Path C:\ranz-test\nodes.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=","endpoints":[{"transport":"tls","address":"<PC-A>:<PORT>"}]}},{"kind":"Node","name":"pc-b","spec":{"publicKey":"WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns="}}]}'
 ranz apply -f C:\ranz-test\nodes.json
 ```
 
-`ranz apply` prints the revision it made, 2, and the Generation of the state of each Node. Every apply is a revision: `ranz diff` shows what it changed and `ranz rollback 1` undoes it.
+`ranz apply` prints the revision it made, 2, and the Generation of the state of each Node. Every apply is a revision: `ranz diff` shows what it changed and `ranz rollback 1` undoes it. Nothing of a Node listens at that endpoint yet: this Intent names no Listener, so the endpoint is what the Controller tells the Nodes, and not yet an address that answers one (Gap 3).
 
 ### 16. How each Node gets its address (addresses)
 
@@ -344,7 +346,7 @@ ranz get resources
 ranz get ipam
 ```
 
-In the Node resources, `spec.addresses.default` is the address in Network `default`. `pc-a` has `100.64.0.1` and `pc-b` has `100.64.0.2`. Write down `100.64.0.1` as `<PC-A-OVERLAY>`. `ranz get ipam` shows `allocated` 2 for the pool. The Nodes page of the web UI lists both Nodes. They are not connected yet.
+In the Node resources, `spec.addresses.default` is the address in Network `default`. `pc-a` has `100.64.0.1` and `pc-b` has `100.64.0.2`. Write down `100.64.0.1` as `<PC-A-OVERLAY>`. `spec.endpoints` of `pc-a` holds the endpoint of step 15, as the Controller keeps it, and `pc-b` has none. `ranz get ipam` shows `allocated` 2 for the pool. The Nodes page of the web UI lists both Nodes. They are not connected yet.
 
 A Node learns its address in its desired state, which the Controller sends it on its control stream. The address is set on the Wintun adapter of the Node as a host address. The adapter also gets a route to the pool.
 
@@ -355,7 +357,7 @@ A Node learns its address in its desired state, which the Controller sends it on
 This is the stand-in for two Node services that form a session with each other (Gap 3). `vpntest firsttest` runs two Nodes in one process on PC B. Each opens its control stream to the Controller of PC A, with the static key of its Node resource, as a Node service does:
 
 - `pc-b` is a real Node with a real Wintun adapter named `Ranz default`. The adapter gets the address of `pc-b`, as the client role of the Node brings it up. The packets of PC B on this adapter go into the overlay.
-- `pc-a` is a Node with a fake host that answers an ICMP echo request to its address. The two Nodes run their Noise session in memory.
+- `pc-a` is a Node with a fake host that answers an ICMP echo request to its address. The two Nodes run their Noise session in memory, and find each other by their node names, so they do not use the endpoint of `pc-a` (Gap 3).
 
 Why `pc-a` has no adapter: Windows delivers a packet for an address of the PC itself on the PC. Two adapters of one PC could not ping each other through the overlay. Only the fake host can answer the ping that you send from PC B.
 
@@ -434,10 +436,10 @@ No Node resource holds the key of the Node yet, so the Controller refuses it. Th
 curl.exe -k -s -H "Authorization: Bearer $((Get-Content $env:RANZ_TOKEN_FILE).Trim())" "https://localhost/api/v1/audit?kind=auth-failed"
 ```
 
-Put the key into the Node resource `pc-a`, in place of the test key of the stand-in:
+Put the key into the Node resource `pc-a`, in place of the test key of the stand-in. An apply replaces the whole resource, so the endpoint of step 15 is in it again:
 
 ```powershell run
-Set-Content -Path C:\ranz-test\pc-a.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"<NODE-KEY>"}}]}'
+Set-Content -Path C:\ranz-test\pc-a.json -Value '{"resources":[{"kind":"Node","name":"pc-a","spec":{"publicKey":"<NODE-KEY>","endpoints":[{"transport":"tls","address":"<PC-A>:<PORT>"}]}}]}'
 ranz apply -f C:\ranz-test\pc-a.json
 ```
 
@@ -447,7 +449,7 @@ The Controller refuses the stream of the stand-in for `pc-a` at once: its key is
 ranz get nodes
 ```
 
-`pc-a` is connected, at the Generation it acknowledged, with the Capabilities of PC A. It holds the address `100.64.0.1` of the Node resource and its node log says `Overlay: generation`, but it has no adapter: the Roles of a default install do not bring one up, and no other Node can reach it (Gap 3).
+`pc-a` is connected, at the Generation it acknowledged, with the Capabilities of PC A. It holds the address `100.64.0.1` of the Node resource and its node log says `Overlay: generation`, but it has no adapter: the Roles of a default install do not bring one up, and no other Node can reach it: nothing of the Node service listens at its endpoint (Gap 3).
 
 Restart the Controller. The Node dials again by itself, after a delay that starts at 1 second again since its stream was open:
 
@@ -558,7 +560,7 @@ Then delete `C:\ranz-test`. Windows keeps the two keys of the Controller (`Ranz 
 
 A Gap is something that the runbook needs and the code does not have. Nothing here was built for this runbook. Where a safe workaround exists the steps above use it. Gaps 1 and 2, the Node service that joins its Controller and the static key of a Node that a verb prints, are closed: they are step 20 (SDN-90, #395). The numbers of the others stay.
 
-3. **The Node service listens only where its Listener says, and a peer cannot find that Listener.** A Listener resource (SDN-45, #238) names a Node, the TCP port of its front door and the UDP port of QUIC, 443 each, and the source of their certificate: a PKCS #12 file on the Node, a certificate of the LocalMachine\My store by its thumbprint, or ACME. The Node that applies it starts the front door (`FrontDoorStart`, SDN-29, #205), which hands each TLS connection to the TLS of the new protocol (TLS 1.3 only), and QUIC where `msquic.dll` is present, and its overlay takes the sessions of its peers on them (`src/Cedar/NodeListener.c`; `vpntest listener` proves it). The Intent of this runbook names no Listener, so the Node service of step 20 listens on no port. The part that is still missing: the desired state gives a Node no address and no certificate of the Listener of a peer. The overlay dials a peer by its node name on its data transport (`NodeOverlayDial` in `src/Cedar/NodeOverlay.c`), as the in-process loopback transport of the harness does, and the data transport of the Node service dials nowhere, or with the client role the servers of its client settings, never the Listener of a peer. So two Node services cannot form a Noise session, though each joins its Controller (step 20). **No open ticket carries it.** The relay role binds a UDP socket only when its Roles setting asks for it. Workaround: the two stand-in Nodes run their session in memory.
+3. **The Node service listens only where its Listener says, and it dials nowhere.** A Listener resource (SDN-45, #238) names a Node, the TCP port of its front door and the UDP port of QUIC, 443 each, and the source of their certificate: a PKCS #12 file on the Node, a certificate of the LocalMachine\My store by its thumbprint, or ACME. The Node that applies it starts the front door (`FrontDoorStart`, SDN-29, #205), which hands each TLS connection to the TLS of the new protocol (TLS 1.3 only), and QUIC where `msquic.dll` is present, and its overlay takes the sessions of its peers on them (`src/Cedar/NodeListener.c`; `vpntest listener` proves it). The Intent of this runbook names no Listener, so the Node service of step 20 listens on no port. The address of a peer is closed since SDN-93 (#410): the Node resource names the endpoints under which the other Nodes reach it (step 15), the Controller puts them into the Peer object of every Node that shares a VRF with it, and a Node dials a peer through them with the race of the fallback list, as the data transport of the client role does with the name of a peer (`NodeEndpointsTargets` in `src/Cedar/NodeEndpoints.c`; `vpntest endpoints` proves it against a hub whose Listener takes the dial). Two parts are still missing. The desired state carries no pin of the certificate that a peer presents: a dialling Node pins the thumbprint that its Client setting holds for the server of that name, which CORE-H3 (#400) replaces with a SHA-256 pin bound to the Node identity. And the data transport of the Node service dials nowhere (`NodeControllerNoDial` in `src/Cedar/NodeController.c`): only the client role dials, so a PC that is to dial another needs the client role and its Client setting, which this runbook does not set up. So two Node services cannot form a Noise session, though each joins its Controller (step 20). **No open ticket carries the dial of the Node service.** The relay role binds a UDP socket only when its Roles setting asks for it. Workaround: the two stand-in Nodes run their session in memory.
 4. **`ranz install` opens no firewall port.** The runbook adds and removes one rule by hand (steps 4 and 26). **No ticket carries it.** (REL-2, #47, did this for the slim fork.)
 5. **No `ranz` verb for the audit log.** The API has it (SDN-49, #242, `GET /api/v1/audit`), the CLI does not. Step 18 uses `curl.exe`. **No ticket carries it.**
 6. **No verb shows a Node's own state on its PC.** Its adapters, its sessions and its control stream show only in `ranz get nodes` on the Controller side and in the node log. `ranz doctor` checks the PC, not the Node, and `ranz doctor -bundle` (SDN-54, #247) collects the node log and the settings of the Node, not its live state. The nearest is SDN-55 (#248), the tray, which talks to the Node over a pipe. No verb is promised there.
@@ -594,5 +596,5 @@ The job `first_test` of `.github/workflows/windows.yml` runs on `windows-latest`
 - **The commands are the commands of this file.** A block `powershell run` is run by the script, line by line, in the folder and the PowerShell of the runner, after it fills in the values in angle brackets from what it measured. A block `powershell background` is started and left running, and the script stops it at the end of its step. A command that exits with an error fails the step. The script then checks what the step says you see: the services, the files, the JSON of the API, the pages of the web UI, the audit records, the ping.
 - **One machine plays both PCs.** The runner is PC A and PC B. It switches the `RANZ_*` variables of the window when the PC changes, so that PC B reads the Controller through the address of the runner and the fingerprint, as a second PC would. `<PC-A>` is the address of the runner that is not loopback. Step 10 finds the install of step 5 there already, which is safe.
 - **The Node service of the runner joins.** Step 20 runs on the one Node service of the runner, as `pc-a`, in place of the stand-in for that Node; the stand-in keeps playing `pc-b`. Before the settings of the runbook, the script sets a wrong TLS fingerprint and then a wrong static key with `ranz node controller set`, and waits for the node log to say which check failed. After the right settings it waits for the refusal of the key in the audit log, then for `pc-a` connected at its acknowledged Generation, and after the restart of the Controller for `pc-a` connected again.
-- **A Gap is read from the sources.** At the Gap step, which the script runs last, it looks in the sources for what the document says is missing: an overlay that dials a peer at something else than its node name (Gap 3), a firewall rule in `ranz install` (Gap 4), a verb for the audit log in the CLI (Gap 5). When one is there, the job fails, until this file has real steps for it. It also checks that Gaps 1 and 2 stay closed: the Node service sets the control stream of its overlay, and the CLI has the verbs of step 20.
+- **A Gap is read from the sources.** At the Gap step, which the script runs last, it looks in the sources for what the document says is missing: a data transport of the Node service that dials a peer (Gap 3), a firewall rule in `ranz install` (Gap 4), a verb for the audit log in the CLI (Gap 5). When one is there, the job fails, until this file has real steps for it. It also checks that Gaps 1 and 2 stay closed: the Node service sets the control stream of its overlay, and the CLI has the verbs of step 20. So does the part of Gap 3 that SDN-93 closed: a Node dials a peer through its endpoints.
 - **What CI cannot do.** It cannot try two PCs, a browser, or the Gaps. The web UI is checked by its pages and by the API calls that the pages make. The overlay between two Nodes is the stand-in, with one real Wintun adapter and a fake host.

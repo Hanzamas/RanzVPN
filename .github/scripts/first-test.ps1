@@ -599,6 +599,14 @@ try {
 			}
 		}
 		if ($joined.Count -ne 2) { throw "the Intent has $($joined.Count) Nodes, not 2" }
+		# The endpoint of pc-a (SDN-93, #410) as the Controller keeps it: one TLS endpoint at the address of PC A, and none for pc-b
+		$endpoints = @{}
+		foreach ($n in $joined) { $endpoints[$n.name] = @($n.spec.endpoints | Where-Object { $_ }) }
+		$wantEndpoint = "$($values['PC-A']):$($values['PORT'])"
+		if ($endpoints[$nodeA].Count -ne 1 -or $endpoints[$nodeA][0].transport -ne 'tls' -or $endpoints[$nodeA][0].address -ne $wantEndpoint) {
+			throw "Node $nodeA has the endpoints $($endpoints[$nodeA] | ConvertTo-Json -Compress -Depth 4), not one TLS endpoint at $wantEndpoint"
+		}
+		if ($endpoints[$nodeB].Count -ne 0) { throw "Node $nodeB has the endpoints $($endpoints[$nodeB] | ConvertTo-Json -Compress -Depth 4), not none" }
 		$pool = @((Invoke-Ranz @('get', 'ipam')).pools)[0]
 		if ($pool.allocated -ne 2) { throw "the pool of Network default has $($pool.allocated) addresses allocated, not 2" }
 		$values['PC-A-OVERLAY'] = $addressA
@@ -804,10 +812,12 @@ try {
 		# SDN-90), and must stay so: the Node service sets the control stream of its overlay, and ranz has the verbs.
 		if (-not (Test-Source 'src\Cedar' 'Node*.c' '\.Control\s*=|->Control\s*=')) { throw 'Gap 1 is open again: no code of the Node service sets the control stream of its overlay (NODE_OVERLAY_CONFIG.Control)' }
 		if (-not (Test-Source 'controller\cmd\ranz' '*.go' 'register\("node"')) { throw 'Gap 2 is open again: ranz has no verb node, which prints the key of a Node' }
-		# The Listener of a desired state starts the front door and QUIC of a Node (SDN-45, NodeListener.c), but the overlay
-		# still dials a peer by its node name, not at the Listener of the peer
-		$byName = Test-Source 'src\Cedar' 'NodeOverlay.c' 'TransportDial\(ov->Config\.Data, name, NULL\)'
-		Assert-Gap 'Gap 3' $byName 'the overlay dials a peer by its node name on its data transport: the desired state gives it no address of the Listener of a peer'
+		# The Listener of a desired state starts the front door and QUIC of a Node (SDN-45, NodeListener.c), and a Node dials a
+		# peer through the endpoints of its Peer object (SDN-93, NodeEndpoints.c), which must stay so; but only the client role
+		# dials, and the data transport of the Node service dials nowhere
+		if (-not (Test-Source 'src\Cedar' 'NodeEndpoints.c' 'NodeEndpointsTargets')) { throw 'Gap 3 is open again: no code of the Node module dials a peer through its endpoints (NodeEndpointsTargets)' }
+		$noDial = Test-Source 'src\Cedar' 'NodeController.c' 'None\.Dial\s*=\s*NodeControllerNoDial'
+		Assert-Gap 'Gap 3' $noDial 'the data transport of the Node service dials nowhere: only the client role dials a peer, through its endpoints, and the desired state carries no pin of the certificate of a peer'
 		Assert-Gap 'Gap 4' (-not (Test-Source 'controller\internal\install' '*.go' '(?i)firewall')) 'ranz install knows no firewall'
 		Assert-Gap 'Gap 5' (-not (Test-Source 'controller\cmd\ranz' '*.go' '(?i)audit')) 'the ranz CLI has no verb for the audit log'
 	}
