@@ -385,6 +385,7 @@ NODE *NewNode(wchar_t *data_dir) {
 	GetExeDirW(n->BgpSidecar, sizeof(n->BgpSidecar));
 	ConbinePathW(n->BgpSidecar, sizeof(n->BgpSidecar), n->BgpSidecar, NODE_BGP_EXE_NAME);
 	NodeBgpInit();
+	NodeMimicInit(n);
 
 	NodeLoadConfig(n);
 
@@ -470,6 +471,7 @@ bool NodeStart(NODE *n) {
 				NodeControllerStart(n);
 
 				NodeBgpStart(n);
+				NodeMimicStart(n);
 
 				ret = true;
 			} else {
@@ -500,6 +502,7 @@ void NodeStop(NODE *n) {
 		if (n->Running) {
 			UINT num_workers = n->NumWorkers;
 
+			NodeMimicStop(n);
 			NodeBgpStop(n);
 			NodeApplyRoles(n, 0);
 
@@ -573,6 +576,10 @@ void NodeGetStatus(NODE *n, NODE_STATUS *st) {
 	// Read without the table lock, which a swap holds while it waits for its readers
 	st->NumReaders = LIST_NUM(n->ReaderList);
 	st->Generation = (UINT64)ReadAcquire64(&n->Generation);
+
+	// The mimicry sidecars (NodeMimic.c; CORE-P2-6, #406)
+	for (UINT i = 0; i < NODE_MIMIC_NUM_ROLES; i++)
+		NodeMimicGetStatus(n, i, &st->Mimic[i]);
 }
 
 // Bring the Hub name of the configuration up in the Cedar of the node, online or offline: a fork Hub with the
