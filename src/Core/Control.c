@@ -535,6 +535,7 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	if (ok) {
 		AcquireSRWLockExclusive(&c->Lock);
 		c->Status.Connected = true;
+		c->Status.Since = GetTickCount64();
 		c->Status.NumStreams++;
 		ReleaseSRWLockExclusive(&c->Lock);
 	}

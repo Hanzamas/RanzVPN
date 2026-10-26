@@ -17,6 +17,7 @@ import (
 //	ranz node controller show
 //	ranz node controller clear
 //	ranz node key                                              the public half of its static key
+//	ranz node state [-o json|table]                            what it does now (nodestate.go; SDN-91)
 //
 // The Node service ranzvpnserver does the work. It answers one command a line on its admin pipe,
 // which only SYSTEM, the Administrators and the service itself may open, so the verbs need
@@ -62,6 +63,7 @@ const nodeUsage = `usage:
   ranz node controller show
   ranz node controller clear
   ranz node key
+  ranz node state [-o json|table]
 <host:port>, <key> and <fingerprint> are the TLS port, publicKey and tlsFingerprint of ranz status on the Controller.`
 
 func runNode(args []string, stdout, stderr io.Writer, agent nodeAgent) int {
@@ -79,6 +81,8 @@ func runNode(args []string, stdout, stderr io.Writer, agent nodeAgent) int {
 			return 2
 		}
 		return nodeController(stdout, stderr, agent, "ranz node controller set", "controller set "+s.Address+" "+s.PublicKey+" "+s.TLSFingerprint, true)
+	case len(args) >= 1 && args[0] == "state":
+		return nodeState(args[1:], stdout, stderr, agent)
 	case len(args) == 1 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help"):
 		fmt.Fprintln(stdout, nodeUsage)
 		return 0
