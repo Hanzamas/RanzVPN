@@ -1,0 +1,5 @@
+{
+  "resources": [
+    {"kind": "Node", "name": "hub", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"], "endpoints": [{"transport": "tls", "address": "hub.example.com:443"}, {"transport": "quic", "address": "198.51.100.7:443"}]}}
+  ]
+}

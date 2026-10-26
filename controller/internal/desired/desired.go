@@ -51,9 +51,10 @@ func KeyOf(o *controlpb.Object) Key {
 // its addresses, its 1:1 NAT rules (nat.go) and the Mirrors that select it (mirror.go), the VRFs
 // it is a member of with their Networks, a Peer for every other node that shares one of those
 // VRFs (full mesh) or that a leak joins to it (leak.go), with that node's addresses and routes in
-// them and the routes that its VRFs leak into the node's, a Relay for every such node that is a
-// relay (ADR-0015), and the rules of the policy of its VRFs that can match a flow with one end at
-// the node (policy.go). in must be an intent that intent.Apply returned.
+// them and the routes that its VRFs leak into the node's, and with the endpoints that it is dialled
+// at (endpoint.go), a Relay for every such node that is a relay (ADR-0015), and the rules of the
+// policy of its VRFs that can match a flow with one end at the node (policy.go). The node's own
+// endpoints are in its own NodeConfig. in must be an intent that intent.Apply returned.
 func Compile(in intent.Intent) (map[string]State, error) {
 	vrfs := map[string]*controlpb.Vrf{}
 	for name, v := range in.VRFs {
@@ -124,6 +125,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		self.WireguardPort = wireguardPort(in, name)
 		// The Listener of the node (listener.go; SDN-45)
 		self.Listener = listener(in, name)
+		// The endpoints of the node (endpoint.go; SDN-93)
+		self.Endpoints = endpoints(n)
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {
@@ -144,6 +147,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			peer := &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared, Addresses: addresses(in, other, vrfs, sharedVRFs), Tags: slices.Clone(tags[other])}
 			peer.Routes = peerRoutes(nat[other], shared)
 			peer.Routes = withLeaks(peer.Routes, leaked.routes[name][other])
+			// The endpoints of the peer, which this node dials it at (endpoint.go; SDN-93)
+			peer.Endpoints = endpoints(o)
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})
 			// A relay forwards only between nodes that share a VRF with it, so a peer that only a leak joins is none
 			if o.Relay != "" && len(shared) > 0 {

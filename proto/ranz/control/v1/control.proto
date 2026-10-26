@@ -66,6 +66,13 @@
 // (NodeConfig.listener): the ports of its front door and of QUIC and the source of their
 // certificate. No schema version changes with it: a node of an older release skips the field it
 // does not know.
+//
+// Endpoints (SDN-93, #410): the addresses under which the other nodes reach a node, each over one
+// transport. The controller puts the endpoints of a node into the Peer object of every node that
+// shares a VRF with it, or that a leak joins to it, and into the node's own NodeConfig, so that a
+// node knows whether a peer can dial it. A node dials a peer at the endpoints of its Peer object,
+// with the race of its fallback list. No schema version changes with them: a node of an older
+// release skips the field it does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -226,6 +233,9 @@ message NodeConfig {
   // The Listener of the node (SDN-45), absent while no Listener resource names it: the node then
   // listens on no port of its own.
   Listener listener = 8;
+  // The endpoints of the node (SDN-93 #410), in the order of its Node resource: the addresses under which
+  // the other nodes reach it. A node that has none cannot be dialled, so it dials its peers.
+  repeated Endpoint endpoints = 9;
 }
 
 // The Listener of a node (SDN-45 #238, ADR-0035): the front door on the TCP port, which hands each
@@ -316,7 +326,8 @@ message Network {
 // of each joins (SDN-7), with its addresses in the L3 Networks of the shared VRFs, ordered by
 // Network name, and the routes that lead to it besides them: the outside prefixes of its 1:1 NAT
 // rules in the shared VRFs, and the routes that its VRFs leak into the VRFs of this node, ordered
-// by VRF id, then prefix.
+// by VRF id, then prefix. Its endpoints (SDN-93 #410) are the addresses under which this node dials it,
+// in the order of its Node resource; a peer without any is not dialled.
 message Peer {
   string name = 1;
   bytes public_key = 2;         // the Noise static key, 32 bytes
@@ -324,6 +335,25 @@ message Peer {
   repeated Address addresses = 4;
   repeated Route routes = 5;
   repeated string tags = 6;  // sorted: the tags of the peer, which identify it to the Rules (SDN-8)
+  repeated Endpoint endpoints = 7;
+}
+
+// The transports that a node dials a peer over, as a fallback list names them: quic, tls and mimic
+// (src/Core/Transport.h).
+enum Transport {
+  TRANSPORT_UNSPECIFIED = 0;
+  TRANSPORT_QUIC = 1;
+  TRANSPORT_TLS = 2;   // TLS 1.3 on TCP, the TLS-443 of ADR-0005
+  TRANSPORT_MIMIC = 3;  // the mimicry sidecar (ADR-0023)
+}
+
+// An address under which the other nodes reach a node, over one transport (SDN-93 #410): host:port, a
+// DNS name or an IP address (an IPv6 address in brackets) and a port from 1 to 65535, at most 255
+// characters. The node that dials a peer races the endpoints of the peer in the order they are listed in,
+// and the first transport that connects wins.
+message Endpoint {
+  Transport transport = 1;
+  string address = 2;
 }
 
 // A relay that the node may use (ADR-0015): another node with the relay role that shares a VRF
