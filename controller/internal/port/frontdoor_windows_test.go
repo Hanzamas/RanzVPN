@@ -86,51 +86,57 @@ func send(pipe string, msg func(pid uint32) ([]byte, error)) (byte, error) {
 	return answer[0], nil
 }
 
-// handOver hands the accepted connection raw to the pipe and closes the front door's own handle
-// of it, whatever the answer.
-func handOver(pipe string, raw net.Conn) (byte, error) {
-	defer raw.Close()
+// handOver hands the accepted socket raw to the pipe and closes the front door's own handle of it,
+// whatever the answer.
+func handOver(pipe string, raw windows.Handle) (byte, error) {
+	defer windows.Closesocket(raw)
 	return send(pipe, func(pid uint32) ([]byte, error) {
-		sc, err := raw.(*net.TCPConn).SyscallConn()
-		if err != nil {
-			return nil, err
-		}
 		var info windows.WSAProtocolInfo
-		var derr error
-		if err := sc.Control(func(fd uintptr) { derr = windows.WSADuplicateSocket(windows.Handle(fd), pid, &info) }); err != nil {
+		if err := windows.WSADuplicateSocket(raw, pid, &info); err != nil {
 			return nil, err
-		}
-		if derr != nil {
-			return nil, derr
 		}
 		return encodeHandoff(&info)
 	})
 }
 
+var procAccept = windows.NewLazySystemDLL("ws2_32.dll").NewProc("accept")
+
 // frontDoor plays the front door on a test port: every connection that it accepts goes to the
-// pipe, and the answers come on the channel.
+// pipe, and the answers come on the channel. Its sockets are plain Winsock sockets, as the front
+// door's are: a socket of package net belongs to the completion port of this process, and so would
+// the controller's socket of the same connection.
 func frontDoor(t *testing.T, pipe string) (string, chan byte) {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := windows.Socket(windows.AF_INET, windows.SOCK_STREAM, windows.IPPROTO_TCP)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { windows.Closesocket(ln) })
+	if err := windows.Bind(ln, &windows.SockaddrInet4{Addr: [4]byte{127, 0, 0, 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.Listen(ln, 16); err != nil {
+		t.Fatal(err)
+	}
+	sa, err := windows.Getsockname(ln)
+	if err != nil {
+		t.Fatal(err)
+	}
 	answers := make(chan byte, 16)
 	go func() {
 		for {
-			raw, err := ln.Accept()
-			if err != nil {
+			r, _, _ := procAccept.Call(uintptr(ln), 0, 0)
+			if windows.Handle(r) == windows.InvalidHandle {
 				return
 			}
-			answer, err := handOver(pipe, raw)
+			answer, err := handOver(pipe, windows.Handle(r))
 			if err != nil {
 				t.Errorf("the handoff of a connection: %v", err)
 			}
 			answers <- answer
 		}
 	}()
-	return ln.Addr().String(), answers
+	return fmt.Sprintf("127.0.0.1:%d", sa.(*windows.SockaddrInet4).Port), answers
 }
 
 func taken(t *testing.T, answers chan byte) {
