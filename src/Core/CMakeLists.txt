@@ -174,6 +174,8 @@ add_library(corecontrol STATIC
   # The policy of the VRFs in a desired state (SDN-8, #184)
   ControlPolicy.c
   ControlPolicy.h
+  # The WireGuard Devices of a state and the counters of a gateway (SDN-80, #375)
+  ControlDevice.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

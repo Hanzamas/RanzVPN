@@ -1,0 +1,8 @@
+(* q-suite.pvl
+   The query of the session models about the suite (AUD-5, #389; AUD-6, #409). The control stream has no suite byte and
+   runs Noise_IK only, so its models do not ask it. *)
+
+(* The suite that the server runs with the static key of alice is one that alice chose: the suite is in the protocol name
+   that the hash of the handshake holds, so an attacker that changes the byte makes the handshake fail *)
+(* @query suite *)
+query t: bitstring, t2: bitstring, s: bitstring; event(ServerSuite(bob, pk(skey(alice)), t, s)) ==> event(ClientSuite(alice, bob, t2, s)).

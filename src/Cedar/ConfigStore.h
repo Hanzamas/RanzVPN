@@ -49,7 +49,8 @@
 #define CS_KEY_PINNED   0 // The user had no key: this one is pinned now
 #define CS_KEY_MATCH    1 // The key is the pinned one
 #define CS_KEY_MISMATCH 2 // The user has another pinned key
-#define CS_KEY_ERROR    3 // No such user, or the store failed
+#define CS_KEY_ERROR    3 // The store failed to begin, read, write or commit: no key is checked or pinned
+#define CS_KEY_NO_USER  4 // The store keeps no such user (a domain account): no key is pinned
 
 // The configuration store of a node: one connection to the database. Each call runs its statements under
 // Lock; other connections to the same file (CsOpen again) read while one writes (write-ahead log).

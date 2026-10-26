@@ -1,0 +1,3 @@
+{"resources": [
+  {"kind": "Policy", "name": "deny-phones", "spec": {"vrf": "lab", "action": "deny", "priority": 10, "from": {"tags": ["phones"]}, "protocol": "icmp"}}
+]}

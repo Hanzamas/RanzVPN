@@ -1,0 +1,138 @@
+(* control-lib.pvl
+   The control stream of a node to the controller (AUD-5, #389; AUD-6, #409; docs/formal-model.md), with the declarations
+   of session-lib.pvl. The node dials the controller over TLS 1.3, and on that stream runs the Noise_IK handshake with the
+   static key of the controller from its Controller settings, bound to the TLS exporter of the control label. The code
+   is src/Core/Control.c (ControlRun, the C node), src/Cedar/NodeController.c (the TLS transport of the C node and its
+   check of the certificate), controller/internal/control/stream.go and pinned.go (the Go client and the controller) and
+   controller/internal/controller/controller.go (serveConn, what the controller takes).
+
+   The control stream is not a session of NoiseSession.c. Its frames are a 4-byte length and a message, with no record
+   type byte and no suite byte: the two handshake messages, then one protobuf ControlMessage per frame (a Hello, an
+   Update, an Ack, a lease). The suite is Noise_IK only. The prologue is the label and the exporter, with no binding type
+   byte. The node sends no password: after the Hello it sends Acks and the leases of its DHCP responders, and the
+   controller takes the static key of the handshake as the identity of the node. It looks the key up among its Node
+   resources (byKey): a key that no Node resource names is refused (REFUSE_REASON_UNKNOWN_NODE), and any other one gets
+   the Updates of its node and chooses the Hello of its node (the schema version, of the N and N-1 that the controller
+   serves, and the Capabilities). The controller then checks the source prefixes, the licence and the Capabilities, which
+   are not the authentication of the node and are not in the model.
+
+   The C node (ControlRun on the TLS transport of NodeControllerTls, SDN-90) checks the certificate of the controller
+   against the TLS fingerprint of its Controller settings (NodeControllerVerify, the SHA-256 of its public key) and asks
+   its transport for the exporter of CONTROL_EXPORTER_LABEL; ControlRun itself takes any binding of the exporter type and
+   32 bytes. The Go client checks no certificate with Dial (InsecureSkipVerify) and the fingerprint with DialPinned.
+
+   What a variant sets: pin (pin_on: the fingerprint; pin_off: Dial of the Go client) and lab, the label of the exporter.
+*)
+
+(* The bodies of a ControlMessage: the oneof tags of control.proto *)
+const pb_hello: bitstring.
+const pb_update: bitstring.
+const pb_lease: bitstring.
+
+(* The Capabilities that the Hello of a node carries *)
+fun capsof(principal): bitstring.
+
+(* The node: the TLS handshake with its check of the certificate, the two handshake messages in frames of their own, the
+   Hello, a lease of its DHCP responders, and the Update of the controller. *)
+let ControlClient(me: principal, them: principal, pin: bitstring, lab: bitstring, sid: sessionid) =
+  new cr: bitstring;
+  new x: bitstring;
+  new e: bitstring;
+  let gx = tpk(x) in
+  out(c, (cr, gx));
+  in(c, (sr: bitstring, gy: bitstring, cert: bitstring, sg: bitstring));
+  let tr = (cr, gx, sr, gy, cert) in
+  if checksign(certkey(cert), sg) = tr then
+  if thumb(cert) = pinexp(pin, cert, pinof(them)) then
+  let ms = tlsms(tdhi(x, gy), tr) in
+  let kc = tlsk(ms, lab_c) in
+  let ks = tlsk(ms, lab_s) in
+  let prologue = (plabel_control, tlsexp(ms, lab)) in
+  let sI = skey(me) in
+  let SI = pk(sI) in
+  let SR = spub(them) in
+  let E = pk(e) in
+  let h0 = hash1(suitename(suite_ik)) in
+  let h1 = mixh(mixh(h0, prologue), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhi(e, SR)) in
+  let k1 = hkk(h0, dhi(e, SR)) in
+  let cs = aead(k1, h2, SI) in
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhi(sI, SR)) in
+  let k2 = hkk(ck1, dhi(sI, SR)) in
+  let cp = aead(k2, h3, empty) in
+  let h4 = mixh(h3, cp) in
+  event ClientStart(me, them, tr);
+  out(c, senc(kc, (E, cs, cp)));
+  in(c, msg2: bitstring);
+  let (E2: bitstring, cp2: bitstring) = sdec(ks, msg2) in
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhi(e, E2)) in
+  let k4 = hkk(ck3, dhi(sI, E2)) in
+  if unaead(k4, h5, cp2) = empty then
+  let h6 = mixh(h5, cp2) in
+  event ClientDone(me, them, tr, h6);
+  event ClientOffered(me, them, tr, v_hi, capsof(me));
+  out(c, senc(kc, (pb_hello, (v_hi, capsof(me)))));
+  let cd = cdata(me, them, sid) in
+  event ClientSentData(me, them, tr, cd);
+  out(c, senc(kc, (pb_lease, cd)));
+  in(c, msg3: bitstring);
+  let (=pb_update, d: bitstring) = sdec(ks, msg3) in
+  event ClientGotData(me, them, tr, d).
+
+(* The controller: the TLS handshake with its certificate, the responder of Noise_IK with the static key of any node,
+   the Hello, the Node resource of the key, the Update of that node and a lease of the node *)
+let ControlServer(me: principal, lab: bitstring, sid: sessionid) =
+  new sr: bitstring;
+  new y: bitstring;
+  new e: bitstring;
+  in(c, (cr: bitstring, gx: bitstring));
+  let gy = tpk(y) in
+  let mycert = certof(me) in
+  let tr = (cr, gx, sr, gy, mycert) in
+  out(c, (sr, gy, mycert, sign(sigkey(me), tr)));
+  let ms = tlsms(tdhr(y, gx), tr) in
+  let kc = tlsk(ms, lab_c) in
+  let ks = tlsk(ms, lab_s) in
+  let prologue = (plabel_control, tlsexp(ms, lab)) in
+  in(c, msg1: bitstring);
+  let (E: bitstring, cs: bitstring, cp: bitstring) = sdec(kc, msg1) in
+  let sR = skey(me) in
+  let SR = pk(sR) in
+  let h0 = hash1(suitename(suite_ik)) in
+  let h1 = mixh(mixh(h0, prologue), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhr(sR, E)) in
+  let k1 = hkk(h0, dhr(sR, E)) in
+  let SI = unaead(k1, h2, cs) in
+  let h3 = mixh(h2, cs) in
+  let ck2 = hkck(ck1, dhr(sR, SI)) in
+  let k2 = hkk(ck1, dhr(sR, SI)) in
+  if unaead(k2, h3, cp) = empty then
+  let h4 = mixh(h3, cp) in
+  event ServerAccept(me, SI, tr);
+  let E2 = pk(e) in
+  let h5 = mixh(h4, E2) in
+  let ck3 = hkck(ck2, dhr(e, E)) in
+  let k4 = hkk(ck3, dhr(e, SI)) in
+  let cp2 = aead(k4, h5, empty) in
+  let h6 = mixh(h5, cp2) in
+  event ServerReply(me, SI, tr, h6);
+  out(c, senc(ks, (E2, cp2)));
+  in(c, msg3: bitstring);
+  let (=pb_hello, (v: bitstring, caps: bitstring)) = sdec(kc, msg3) in
+  let x = keyowner(SI) in
+  event ServerNegotiated(me, x, tr, v, caps);
+  event ServerTook(me, x, tr);
+  event ServerSentData(me, x, tr, appdata(me, x, sid));
+  out(c, senc(ks, (pb_update, appdata(me, x, sid))));
+  in(c, msg4: bitstring);
+  let (=pb_lease, d: bitstring) = sdec(kc, msg4) in
+  event ServerGotData(me, x, tr, d).
+
+(* The processes of a control model: the streams of alice to the controller bob *)
+let ControlSessions(pin: bitstring, lab: bitstring) =
+  !( new sid: sessionid; ControlClient(alice, bob, pin, lab, sid) )
+  | !( new sid: sessionid; ControlServer(bob, lab, sid) ).

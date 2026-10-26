@@ -75,8 +75,8 @@ type Document struct {
 }
 
 // Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy,
-// Mirror (mirror.go), Controller, NAT, DnsRecord (dns.go), Group or User (user.go), or Listener
-// (listener.go).
+// Mirror (mirror.go), Controller, NAT, DnsRecord (dns.go), Group or User (user.go), Listener
+// (listener.go) or Device (device.go).
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -164,6 +164,9 @@ type Node struct {
 	// every Group of that User as a tag, and counts against the maximum devices of the User. Left
 	// out, the Node has no owner.
 	Owner string `json:"owner,omitempty"`
+	// WireGuard is the WireGuard end of a node that is the gateway of Devices (SDN-80, device.go).
+	// Left out, the node is the gateway of no Device.
+	WireGuard WireGuard `json:"wireguard,omitzero"`
 }
 
 // Controller is one member of the controller cluster as nodes reach it (SDN-17, ADR-0026). The
@@ -210,13 +213,14 @@ type Intent struct {
 	Groups      map[string]Group
 	Users       map[string]User
 	Listeners   map[string]Listener
+	Devices     map[string]Device
 }
 
 // New returns an empty intent.
 func New() Intent {
 	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: map[string]Policy{},
 		Mirrors: map[string]Mirror{}, Controllers: map[string]Controller{}, NATs: map[string]NAT{}, DNSRecords: map[string]DNSRecord{},
-		Groups: map[string]Group{}, Users: map[string]User{}, Listeners: map[string]Listener{}}
+		Groups: map[string]Group{}, Users: map[string]User{}, Listeners: map[string]Listener{}, Devices: map[string]Device{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
@@ -246,6 +250,12 @@ func (in Intent) Clone() Intent {
 	out.Users, out.Groups = in.cloneUsers()
 	// The Listeners of the Nodes (listener.go)
 	out.Listeners = in.cloneListeners()
+	// The WireGuard Devices (device.go)
+	out.Devices = maps.Clone(in.Devices)
+	if out.Devices == nil {
+		out.Devices = map[string]Device{}
+	}
+	cloneDevices(out.Devices)
 	for name, n := range in.Networks {
 		n.EnrolSources = slices.Clone(n.EnrolSources)
 		n.Reserved = slices.Clone(n.Reserved)
@@ -264,15 +274,18 @@ func (in Intent) Clone() Intent {
 }
 
 // Capped returns in with only its first n Nodes in name order: the Nodes that a licence with a
-// node cap of n covers (internal/licence). in itself is not changed.
+// node cap of n covers (internal/licence). A Device counts as a client node after the Nodes, so the
+// cap that the Nodes leave covers the first Devices in name order whose gateway stays (device.go).
+// in itself is not changed.
 func (in Intent) Capped(n int) Intent {
-	if len(in.Nodes) <= n {
+	if in.Licensed() <= n {
 		return in
 	}
 	out := in.Clone()
-	for _, name := range sortedNames(in.Nodes)[max(n, 0):] {
+	for _, name := range sortedNames(in.Nodes)[min(max(n, 0), len(in.Nodes)):] {
 		delete(out.Nodes, name)
 	}
+	out.capDevices(n - len(out.Nodes))
 	return out
 }
 
@@ -352,9 +365,14 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &l); err == nil {
 				next.Listeners[r.Name] = l
 			}
+		case KindDevice:
+			var d Device
+			if err = decodeSpec(r.Spec, &d); err == nil {
+				next.Devices[r.Name] = d
+			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
-				KindDNSRecord, KindGroup, KindUser, KindListener)
+			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
+				KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -376,10 +394,10 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 }
 
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
-// Network, a Node, a Policy, a Mirror, a NAT or a DnsRecord uses cannot be deleted, nor can a Node
-// that a NAT, a DnsRecord or a Listener uses or that answers DHCP for a Network, a Group that a
-// User belongs to, and a User that owns a Node. The Nodes lose their addresses in a deleted
-// Network.
+// Network, a Node, a Policy, a Mirror, a NAT or a DnsRecord uses cannot be deleted, nor can a
+// Network that a Device uses, nor a Node that a NAT, a DnsRecord or a Listener uses, that is the
+// gateway of a Device or that answers DHCP for a Network, a Group that a User belongs to, and a
+// User that owns a Node. The Nodes lose their addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -414,6 +432,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		if _, ok := next.Networks[name]; !ok {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
+		// The Devices of the Network (device.go)
+		if users := next.deviceUsers(name, ""); len(users) > 0 {
+			return in, fmt.Errorf("%w: Network %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
 		delete(next.Networks, name)
 		next.release(name)
 	case KindNode:
@@ -422,6 +444,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		}
 		if users := next.natUsers("", name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
+		// The Devices whose gateway the Node is (device.go)
+		if users := next.deviceUsers("", name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q is the gateway of %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
 		// The DHCP responder of a Network (SDN-43, dhcp.go)
 		if users := next.dhcpUsers(name); len(users) > 0 {
@@ -474,16 +500,21 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.Listeners, name)
+	case KindDevice:
+		if _, ok := next.Devices[name]; !ok {
+			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
+		}
+		delete(next.Devices, name)
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController,
-			KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror,
+			KindController, KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, kind)
 	}
 	return next, nil
 }
 
 // Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
 // Policies, then the Mirrors, then the Controllers, then the NATs, then the DnsRecords, then the
-// Groups, then the Users, then the Listeners, each ordered by name.
+// Groups, then the Users, then the Listeners, then the Devices, each ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -513,6 +544,9 @@ func (in Intent) Resources() []Resource {
 	out = append(out, in.userResources()...)
 	for _, name := range sortedNames(in.Listeners) {
 		out = append(out, resource(KindListener, name, in.Listeners[name]))
+	}
+	for _, name := range sortedNames(in.Devices) {
+		out = append(out, resource(KindDevice, name, in.Devices[name]))
 	}
 	return out
 }
@@ -568,6 +602,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var l Listener
 			err = decodeSpec(r.Spec, &l)
 			in.Listeners[r.Name] = l
+		case KindDevice:
+			var d Device
+			err = decodeSpec(r.Spec, &d)
+			in.Devices[r.Name] = d
 		default:
 			err = errors.New("unknown kind")
 		}
@@ -720,6 +758,7 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeDNS()
 	in.completeUsers()
 	in.completeListeners()
+	in.completeDevices()
 	return problems
 }
 
@@ -839,6 +878,7 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateDNS()...)
 	problems = append(problems, in.validateUsers()...)
 	problems = append(problems, in.validateListeners()...)
+	problems = append(problems, in.validateDevices()...)
 	return append(problems, in.validateIPAM()...)
 }
 

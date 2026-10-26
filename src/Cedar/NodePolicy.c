@@ -45,6 +45,10 @@
 #define NODE_POLICY_PEER    1 // A peer
 #define NODE_POLICY_OUTSIDE 2 // The end outside the VRF: a peer that is no member of it
 
+// The kind of the member of a WireGuard Device (SDN-80, #375): a member of its own in its VRF at every node, with its tags,
+// found by its addresses, so a Device is never taken for the host of its gateway nor for the peer that is its gateway
+#define NODE_POLICY_WIREGUARD 3
+
 // A member of the engine in one VRF
 typedef struct NODE_POLICY_MEMBER {
 	UINT VrfId;                                     // The VRF
@@ -70,12 +74,25 @@ struct NODE_POLICY {
 	volatile LONG64 Dropped; // Packets that the policy dropped
 };
 
+// One address of a WireGuard Device of a VRF of a policy table (SDN-80, #375): 4 bytes for IPv4, 16 for IPv6, the member
+// of the Device, and whether the node is its gateway, where the Device is the end of a flow at the host
+typedef struct NODE_POLICY_DEVICE {
+	UCHAR Address[16];
+	UINT Size;
+	UINT Member;
+	bool Local;
+} NODE_POLICY_DEVICE;
+
 // One VRF of a policy table
 typedef struct NODE_POLICY_VRF {
 	UINT VrfId;   // The VRF
 	UINT Host;    // The member of the host
 	UINT Outside; // The member of the end outside the VRF
 	UINT *Hops;   // The member of each next hop: its peer in the VRF, or Outside
+
+	// The WireGuard Devices of the VRF, one entry for each of their addresses
+	UINT NumDevices;
+	NODE_POLICY_DEVICE *Devices;
 } NODE_POLICY_VRF;
 
 // The policy table of one Generation, on its forwarding tables (NODE_VRF_TABLES)
@@ -393,6 +410,48 @@ void NodePolicyStop(NODE *n) {
 	Free(p);
 }
 
+// The members of the WireGuard Devices of the VRF cv of the state st, which the table that is built holds from now on
+// (refs): one entry for each address of each Device, its number in num, NULL for none. A Device is a member of its own,
+// named after it, with its tags and, at its gateway, its key. The caller holds the lock.
+static NODE_POLICY_DEVICE *NodePolicyDevices(NODE_POLICY *p, LIST *refs, const CONTROL_VRF *cv, const CONTROL_STATE *st, UINT *num) {
+	NODE_POLICY_DEVICE *list = NULL;
+	CONTROL_PEER *who = NULL;
+
+	*num = 0;
+
+	for (UINT i = 0; i < st->NumDevices && st->Devices != NULL; i++) {
+		const CONTROL_DEVICE *d = &st->Devices[i];
+
+		if (d->VrfId != cv->Id || d->NumAddresses == 0)
+			continue;
+
+		if (list == NULL) {
+			list = ZeroMalloc(sizeof(NODE_POLICY_DEVICE) * CONTROL_DEVICE_ADDRESSES * st->NumDevices);
+			who = ZeroMalloc(sizeof(CONTROL_PEER));
+		}
+
+		Zero(who, sizeof(CONTROL_PEER));
+		StrCpy(who->Name, sizeof(who->Name), d->Name);
+		if (d->HasKey)
+			Copy(who->Key, d->Key, PEER_KEY_SIZE);
+		UINT member = NodePolicyHold(p, refs, cv, NODE_POLICY_WIREGUARD, who, d->Tags, d->NumTags);
+
+		for (UINT j = 0; j < d->NumAddresses && j < CONTROL_DEVICE_ADDRESSES; j++) {
+			NODE_POLICY_DEVICE *e = &list[(*num)++];
+
+			Copy(e->Address, d->Addresses[j].Address, d->Addresses[j].AddressSize);
+			e->Size = d->Addresses[j].AddressSize;
+			e->Member = member;
+			e->Local = d->HasKey;
+		}
+	}
+
+	if (who != NULL)
+		Free(who);
+
+	return list;
+}
+
 // The policy table of the Generation of st onto its forwarding tables v, before they go in: in each VRF of the state that
 // has its policy, the members of the host, of the end outside and of each next hop, which the table holds; and the
 // document of rules of the state, put in force in the engine, under which the tables before go on until the swap
@@ -427,6 +486,8 @@ void NodePolicyAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st) {
 
 				e->Hops[j] = (NodePolicyShares(cp, cv->Id) ? NodePolicyHold(p, refs, cv, NODE_POLICY_PEER, cp, cp->Tags, cp->NumTags) : e->Outside);
 			}
+			// The WireGuard Devices of the VRF, by their addresses (SDN-80, #375)
+			e->Devices = NodePolicyDevices(p, refs, cv, st, &e->NumDevices);
 		}
 	}
 	Unlock(p->Lock);
@@ -520,8 +581,11 @@ void NodePolicyFreeTable(NODE_POLICY_TABLE *t) {
 	}
 	ReleaseList(gone);
 
-	for (UINT i = 0; i < t->NumVrfs; i++)
+	for (UINT i = 0; i < t->NumVrfs; i++) {
 		Free(t->Vrfs[i].Hops);
+		if (t->Vrfs[i].Devices != NULL)
+			Free(t->Vrfs[i].Devices);
+	}
 	Free(t->Refs);
 
 	Zero(t, sizeof(NODE_POLICY_TABLE));
@@ -531,6 +595,41 @@ void NodePolicyFreeTable(NODE_POLICY_TABLE *t) {
 //
 // The packets
 //
+
+// The ends of a packet of the VRF e from the host when out is set, whose source or destination is an address of a
+// WireGuard Device (SDN-80, #375): a Device that the node terminates is the end at the host in place of the host, any
+// other the end at the peer in place of the peer that is its gateway
+static void NodePolicyDeviceEnds(const NODE_POLICY_VRF *e, const UCHAR *packet, UINT size, bool out, UINT *host, UINT *peer) {
+	const UCHAR *src, *dst;
+	UINT addr_size;
+
+	if (e->NumDevices == 0 || packet == NULL || size < 20)
+		return;
+
+	if ((packet[0] >> 4) == 4) {
+		addr_size = 4;
+		src = packet + 12;
+		dst = packet + 16;
+	} else if ((packet[0] >> 4) == 6 && size >= 40) {
+		addr_size = 16;
+		src = packet + 8;
+		dst = packet + 24;
+	} else {
+		return;
+	}
+
+	for (UINT i = 0; i < e->NumDevices; i++) {
+		const NODE_POLICY_DEVICE *d = &e->Devices[i];
+
+		if (d->Size != addr_size || d->Member == POLICY_NO_MEMBER)
+			continue;
+
+		if (d->Local && Cmp(d->Address, out ? src : dst, addr_size) == 0)
+			*host = d->Member;
+		else if (d->Local == false && Cmp(d->Address, out ? dst : src, addr_size) == 0)
+			*peer = d->Member;
+	}
+}
 
 // Judge a packet of the VRF vrf_id between the host and the next hop hop of the tables v, from the host when out is set,
 // as the overlay sees it. True when it passes. The caller is an online reader of the node's table snapshot, which holds v.
@@ -547,8 +646,11 @@ static bool NodePolicyJudge(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, 
 
 	if (t->Closed == false && p->Engine != NULL) {
 		UINT peer = (hop < t->NumHops ? e->Hops[hop] : e->Outside);
+		UINT host = e->Host;
 
-		ok = PolicyInput(p->Engine, NodePolicyNow(n, p), out ? e->Host : peer, out ? peer : e->Host, 0, packet, size, NULL);
+		// A WireGuard Device is an end of its own, found by its address (SDN-80, #375)
+		NodePolicyDeviceEnds(e, packet, size, out, &host, &peer);
+		ok = PolicyInput(p->Engine, NodePolicyNow(n, p), out ? host : peer, out ? peer : host, 0, packet, size, NULL);
 	}
 	if (ok == false)
 		InterlockedIncrement64(&p->Dropped);

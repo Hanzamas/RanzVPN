@@ -155,6 +155,8 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 	max_routes += NodeNatRoutes(st, NULL);
 	// Route leaking (NodeLeak.c; SDN-7, #183): the routes that the VRFs of the peers leak into the node's VRFs
 	max_routes += NodeLeakRoutes(st, NULL);
+	// The WireGuard Devices (NodeWireGuard.c; SDN-80, #375): the addresses of each lead to its gateway
+	max_routes += NodeDeviceRoutes(st, NULL);
 
 	NODE_VRF_ROUTE *routes = ZeroMalloc(sizeof(NODE_VRF_ROUTE) * MAX(max_routes, 1));
 
@@ -169,6 +171,7 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 
 	num += NodeNatRoutes(st, routes + num);
 	num += NodeLeakRoutes(st, routes + num);
+	num += NodeDeviceRoutes(st, routes + num);
 
 	NODE_VRF_TABLES *v = NodeLeakNewTables(st, routes, num, (void **)hops);
 	Free(routes);
@@ -284,6 +287,9 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	// The adapter of the host takes the state too: the addresses and routes of the client role (CORE-S3-1)
 	if (swapped && ov->Config.State != NULL)
 		ov->Config.State(ov->Node, ov->Config.AdapterParam, st);
+	// The WireGuard interface of a gateway, after the adapters of its VRFs (NodeWireGuard.c; SDN-80, #375)
+	if (swapped)
+		NodeWireGuardApplied(ov->Node, st);
 }
 
 //
@@ -656,8 +662,11 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Param = ov;
 	// The leases of the DHCP responders go on the control stream (NodeDhcp.c; SDN-43, #236)
 	cc.Leases = NodeDhcpStart(n);
-	// The Hello of each stream carries the Capabilities of the host (NodeCaps.c; ONE-3, #312)
-	cc.CapsProc = NodeCapsProc;
+	// The Hello of each stream carries the Capabilities of the host (NodeCaps.c; ONE-3, #312), with WireGuardNT and the key of
+	// the WireGuard interface, and the counters of the Devices of a gateway go on the stream (NodeWireGuard.c; SDN-80, #375)
+	cc.CapsProc = NodeWireGuardCaps;
+	cc.CapsParam = n;
+	cc.Devices = NodeWireGuardStart(n, cfg);
 
 	ov->Thread = CreateThread(NULL, 0, NodeOverlayThread, ov, 0, &thread_id);
 	ov->Control = (ov->Thread != NULL && cfg->Control != NULL ? ControlStart(&cc) : NULL);
@@ -688,6 +697,8 @@ void NodeOverlayStop(NODE *n) {
 		ov->Config.AdapterStop(n, ov->Config.AdapterParam);
 
 	ControlStop(ov->Control);
+	// The WireGuard interface goes once the control stream that reported its counters stopped (NodeWireGuard.c)
+	NodeWireGuardStop(n);
 	NodeSwapVrfs(n, NULL);
 	// No table holds a member of the policy any more: its engine goes (NodePolicy.c)
 	NodePolicyStop(n);

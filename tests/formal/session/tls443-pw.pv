@@ -1,0 +1,9 @@
+(* Variant tls443-pw: the session handshake over TLS 1.3 on TCP 443, as the code has it, against an attacker that holds
+   the password of alice (AUD-6, #409). Her static key is pinned to her user (an earlier Login pinned it), so
+   NodeLoginPinned refuses a Login with the password and another key: a stolen password alone does not log in. *)
+
+process
+  ( Setup()
+  | LeakPassword()
+  | Sessions(pin_on, bt_export, bt_export, kp_on, plabel_session, lab_exp_session, suite_hfs)
+  )

@@ -199,8 +199,8 @@ func removeService(m *mgr.Mgr, name string) (bool, error) {
 	return true, nil
 }
 
-// Install makes the Ranz folder with its access list, writes ranz-node.exe, wintun.dll, the NOTICE
-// and a copy of the running ranz.exe into it, puts the SeLow driver and the XDP runtime on the
+// Install makes the Ranz folder with its access list, writes ranz-node.exe, wintun.dll, the NOTICE,
+// wireguard.dll and a copy of the running ranz.exe into it, puts the SeLow driver and the XDP runtime on the
 // machine where this build carries them (drivers.go), registers the Node service under its virtual
 // account and starts it, and, with opts.Controller, does the same for the Controller service. It
 // reports each step to w. See the package documentation for what a second call does.
@@ -269,8 +269,8 @@ func installNode(w io.Writer, m *mgr.Mgr, dir, self string, opts Options) error 
 
 // writeFiles writes the files of the Ranz folder, each through payload.Install, which refuses a
 // file whose hash or Authenticode signature does not check: ranz-node.exe, wintun.dll and the
-// NOTICE beside it, and the copy of ranz.exe. With onlyMissing a file that is there stays as it
-// is: a service that exists may be running it.
+// NOTICE beside it, wireguard.dll unless opts.NoWireGuard, and the copy of ranz.exe. With
+// onlyMissing a file that is there stays as it is: a service that exists may be running it.
 func writeFiles(w io.Writer, dir, self string, onlyMissing bool, opts Options) error {
 	node := payload.NodeExe
 	nodePath := filepath.Join(dir, node.Name)
@@ -283,7 +283,32 @@ func writeFiles(w io.Writer, dir, self string, onlyMissing bool, opts Options) e
 	if err := writeWintun(w, dir, onlyMissing, opts.Notice); err != nil {
 		return err
 	}
+	if err := writeWireGuard(w, dir, onlyMissing, opts.NoWireGuard); err != nil {
+		return err
+	}
 	return writeSelf(w, dir, self, onlyMissing)
+}
+
+// writeWireGuard writes wireguard.dll, the DLL of WireGuardNT that a gateway of WireGuard Devices
+// loads from the folder of its executable (SDN-80, #375), byte for byte as WireGuard LLC signed it;
+// the NOTICE that writeWintun writes holds its licence too. The DLL installs the WireGuardNT driver
+// itself when the Node creates its WireGuard interface, so there is nothing more to do for it here.
+// With noWireGuard it writes nothing.
+func writeWireGuard(w io.Writer, dir string, onlyMissing, noWireGuard bool) error {
+	dll := payload.WireGuardDll
+	dllPath := filepath.Join(dir, dll.Name)
+	if noWireGuard {
+		fmt.Fprintf(w, "install: %s is left out (--no-wireguard): the Node is the gateway of no WireGuard Device and reports no Capability wireguard\n", dll.Name)
+		return nil
+	}
+	if onlyMissing && fileExists(dllPath) {
+		return nil
+	}
+	if err := payload.Install(dir, dll); err != nil {
+		return fmt.Errorf("the WireGuardNT payload: %w", err)
+	}
+	fmt.Fprintf(w, "install: %s written (SHA-256 %x), after its hash and its Authenticode signature checked\n", dllPath, dll.SHA256)
+	return nil
 }
 
 // writeWintun writes wintun.dll, the DLL that the client role of the Node loads from the folder of

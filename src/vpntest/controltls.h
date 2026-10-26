@@ -1,5 +1,6 @@
 // controltls.h
-// The TLS client of the control stream that two tests of vpntest share: sdntrace.c defines it, firsttest.c uses it
+// The TLS client of the control stream that three tests of vpntest share: sdntrace.c defines it, firsttest.c and
+// devicetrace.c use it
 
 #ifndef	CONTROLTLS_H
 #define	CONTROLTLS_H

@@ -31,6 +31,10 @@ set_target_properties(cedar
 # (NodeClient.c, NodeWintun.c); powrprof.lib: the suspend and resume events of the client role
 target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib iphlpapi.lib ole32.lib powrprof.lib setupapi.lib uuid.lib winhttp.lib winsqlite3.lib)
 
+# fwpuclnt.lib: the Windows Filtering Platform, whose filters keep two WireGuard Devices of a gateway apart
+# (NodeWireGuardFilter.c; SDN-80, #375)
+target_link_libraries(cedar PRIVATE fwpuclnt.lib)
+
 # The L2 adapter of the Node module (NodeL2*.c, NodeKmTest.c; CORE-S3-2, #72): newdev.lib for
 # UpdateDriverForPlugAndPlayDevicesW, which installs the driver of a new KM-TEST Loopback Adapter, and ntdll.lib for
 # NtCreateFile and NtDeviceIoControlFile, through which the header-only API of XDP for Windows drives the XDP driver

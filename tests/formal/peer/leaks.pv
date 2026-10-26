@@ -1,5 +1,6 @@
-(* Variant leaks: the peer layer with the static keys of alice and bob leaked in phase 0 and in phase 1
-   (AUD-5, #389). alice seals a bind and a signal to bob and sends data datagrams to him. *)
+(* Variant leaks: the peer layer with the static keys of alice and bob leaked in phase 0 and in phase 1 (AUD-5, #389;
+   AUD-6, #409). alice seals a bind, a signal and a punch probe to bob, bob answers her binds with a bound, and alice
+   sends data datagrams to him. *)
 
 process
   ( PeerSetup()
@@ -7,8 +8,12 @@ process
   | PeerLeaks(bob)
   | !( new sid: sessionid; PeerSeal(alice, bob, k_bind, sid) )
   | !( new sid: sessionid; PeerSeal(alice, bob, k_signal, sid) )
+  | !( new sid: sessionid; PeerSeal(alice, bob, k_punch, sid) )
+  | !( new sid: sessionid; PeerSeal(bob, alice, k_bound, sid) )
   | !( PeerOpen(bob, alice, k_bind) )
   | !( PeerOpen(bob, alice, k_signal) )
+  | !( PeerOpen(bob, alice, k_punch) )
+  | !( PeerOpenBound(alice, bob) )
   | !( new sid: sessionid; DataSend(alice, bob, sid) )
   | !( DataRecv(bob, alice) )
   )

@@ -11,6 +11,7 @@ const areas = [
   { href: '/vrfs', label: 'VRFs' },
   { href: '/networks', label: 'Networks' },
   { href: '/nodes', label: 'Nodes' },
+  { href: '/devices', label: 'Devices' },
   { href: '/intent', label: 'Intent' },
   { href: '/revisions', label: 'Revisions' },
   { href: '/events', label: 'Events' },

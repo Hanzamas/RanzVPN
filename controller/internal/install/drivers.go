@@ -18,9 +18,13 @@ type Options struct {
 	Controller bool
 	// NoXDP leaves the XDP runtime out (ranz install --no-xdp), on a server that does not want it.
 	NoXDP bool
+	// NoWireGuard leaves wireguard.dll of WireGuardNT out (ranz install --no-wireguard), on a Node
+	// that is the gateway of no WireGuard Device (SDN-80, #375): the Node reports no Capability
+	// wireguard, and the controller refuses a Device whose gateway it is.
+	NoWireGuard bool
 	// Notice is the NOTICE of ranz.exe (ranz notice). Install writes it beside the files whose
-	// licences it holds, as NOTICE.txt, because the licence of Wintun asks for its text to go with
-	// the DLL wherever the DLL is written to disk. Empty writes no file.
+	// licences it holds, as NOTICE.txt, because the licences of Wintun and WireGuardNT ask for their
+	// text to go with the DLL wherever the DLL is written to disk. Empty writes no file.
 	Notice string
 }
 

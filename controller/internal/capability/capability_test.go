@@ -153,9 +153,50 @@ func TestAPIForm(t *testing.T) {
 	if c := FromProto(&controlpb.Capabilities{}); c == nil || *c != (Capabilities{}) {
 		t.Errorf("empty Capabilities have the API form %+v", c)
 	}
-	for _, c := range []Capabilities{{SKU: "Datacenter"}, {Architecture: "x86"}, {EgressTier: 4}} {
+	for _, c := range []Capabilities{{SKU: "Datacenter"}, {Architecture: "x86"}, {EgressTier: 4}, {WireGuardKey: "not base64"}, {WireGuardKey: "AAAA"}} {
 		if _, err := c.Proto(); err == nil {
 			t.Errorf("%+v has a protocol form", c)
 		}
+	}
+}
+
+// A gateway on which wireguard.dll loads reports the Capability wireguard with the key of its WireGuard interface
+// (SDN-80): both forms carry them.
+func TestAPIFormWireGuard(t *testing.T) {
+	p := &controlpb.Capabilities{Architecture: controlpb.Architecture_ARCHITECTURE_ARM64, Wireguard: true, WireguardKey: []byte(strings.Repeat("\x11", 32))}
+	got := FromProto(p)
+	want := Capabilities{Architecture: "arm64", WireGuard: true, WireGuardKey: "ERERERERERERERERERERERERERERERERERERERERERE="}
+	if got == nil || *got != want {
+		t.Fatalf("the API form of %v is %+v, want %+v", p, got, want)
+	}
+	back, err := got.Proto()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(back, p) {
+		t.Errorf("the API form %+v comes back as %v, not %v", got, back, p)
+	}
+}
+
+// A WireGuard Device needs the Capability wireguard at its gateway (SDN-80): the problem names the gateway and the
+// Device, and the other node of the VRF, which does not terminate it, needs nothing.
+func TestDeviceNeedsWireGuard(t *testing.T) {
+	states := compile(t,
+		res(intent.KindVRF, "lab", `{"id": 7, "ula": "fd07:7:7::/48"}`),
+		res(intent.KindNetwork, "lab-net", `{"vrf": "lab", "ipv4Pool": "10.70.0.0/24"}`),
+		res(intent.KindNode, "gw", `{"publicKey": "`+key1+`", "vrfs": ["lab"], "wireguard": {"endpoint": "gw.example.net"}}`),
+		res(intent.KindNode, "host", `{"publicKey": "`+key2+`", "vrfs": ["lab"]}`),
+		res(intent.KindDevice, "phone", `{"network": "lab-net", "gateway": "gw", "publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk="}`),
+	)
+	problems := Check("gw", server, states["gw"])
+	want := `Node "gw" (Server, x64): WireGuard Device "phone" needs wireguard, which the node does not report`
+	if len(problems) != 1 || problems[0].Error() != want {
+		t.Errorf("the problems are %v, want [%s]", problems, want)
+	}
+	if problems := Check("gw", &controlpb.Capabilities{Wireguard: true}, states["gw"]); len(problems) > 0 {
+		t.Errorf("a gateway that reports wireguard was refused: %v", problems)
+	}
+	if problems := Check("host", nil, states["host"]); len(problems) > 0 {
+		t.Errorf("host, which terminates no Device, was refused: %v", problems)
 	}
 }

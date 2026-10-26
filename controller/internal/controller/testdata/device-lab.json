@@ -1,0 +1,7 @@
+{"resources": [
+  {"kind": "VRF", "name": "lab", "spec": {"id": 7, "ula": "fd07:7:7::/48"}},
+  {"kind": "Network", "name": "lab-net", "spec": {"vrf": "lab", "ipv4Pool": "10.70.0.0/24", "ipv6Pool": "fd07:7:7:1::/64"}},
+  {"kind": "Node", "name": "gw", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["lab"], "tags": ["gateway"], "wireguard": {"endpoint": "gw.example.net"}}},
+  {"kind": "Node", "name": "host", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["lab"], "tags": ["servers"]}},
+  {"kind": "Policy", "name": "allow-lab", "spec": {"vrf": "lab", "action": "allow"}}
+]}

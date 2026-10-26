@@ -1,8 +1,8 @@
 # Ports and protocols
 
-What an installation of the new core opens, uses and speaks, by plane. The decisions are in ADR-0020 (listener defaults), ADR-0035 (the front door), ADR-0015 (relay and peers), ADR-0022 and ADR-0026 (the Controller cluster). The Legacy protocols (SE-VPN compat, OpenVPN, WireGuard, L2TP, SSTP, IKEv2, EtherIP, L2TPv3, the industrial gateways) are postponed and are not listed.
+What an installation of the new core opens, uses and speaks, by plane. The decisions are in ADR-0020 (listener defaults), ADR-0035 (the front door), ADR-0015 (relay and peers), ADR-0022 and ADR-0026 (the Controller cluster). The Legacy protocols (SE-VPN compat, OpenVPN, L2TP, SSTP, IKEv2, EtherIP, L2TPv3, the industrial gateways) are postponed and are not listed. WireGuard is not one of them any more: the WireGuard Devices of a gateway Node (SDN-80, spec #374) took its place, and their port is listed.
 
-Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-0035). Everything else is optional, on the LAN side, outgoing only, or inside the host.
+Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-0035); a gateway of WireGuard Devices needs its WireGuard port too. Everything else is optional, on the LAN side, outgoing only, or inside the host.
 
 ## Open to the internet
 
@@ -15,6 +15,7 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 | TCP 443, or the `listen` setting | TLS 1.3 (REALITY) | the sidecar `ranz mimic`, server role (CORE-P2-1) | Only on a Node that carries the mimicry transport for a network that fingerprints and probes (ADR-0023). It binds its own address, TCP 443 by default, and does not take its sockets from the front door yet, so on a Node whose front door holds 443 it needs an address of its own. A connection that is no Ranz client is spliced to the decoy site, and the ACME service that issues the certificate of an own decoy validates through this port (TLS-ALPN-01). |
 | UDP, not a fixed number | Noise over UDP, ICE | the ICE socket of a Node | One UDP socket per Node carries all its ICE sessions to peers. A Node behind a home gateway asks it for a public port with PCP, NAT-PMP or UPnP. |
 | UDP, set in the Node resource | the relay protocol | a Node with the relay Role | Only on a Node that runs a Relay. |
+| UDP 51820, or `wireguard.port` of the Node resource | WireGuard | the WireGuard interface of a gateway Node (WireGuardNT, SDN-80) | Only on a Node that is the gateway of a WireGuard Device, and only while it is one. The stock WireGuard clients of its Devices reach it there, at the DNS name `wireguard.endpoint` of the Node, which their configuration names. Not shared with UDP 443. Behind a NAT it needs a port forward by hand. |
 
 ## On the LAN or fabric side only
 
@@ -53,6 +54,7 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 - Open to the internet: TCP 443 and UDP 443. Add TCP 80 only when ACME HTTP-01 or the redirect is wanted.
 - Between Controller cluster members: the Raft port, on a private network.
 - On a Node that peers with a fabric or routers: TCP 179 and UDP 4789 (UDP 6081 for a fabric of Geneve) to those peers, on the LAN side.
+- On a gateway of WireGuard Devices: its WireGuard port, UDP 51820 unless the Node sets `wireguard.port`, open to the internet or forwarded to it by the NAT in front of it.
 - Nothing else needs to be open for incoming connections.
 
 `ranz install` makes these rules in Windows Firewall itself, for the parts that it installs and nothing else (SDN-91): TCP 443 and UDP 443 for `ranz-node.exe`, and with `--controller` TCP 443 and 5555 for `ranz.exe`, the program of the Controller service, each in the Ranz folder under Program Files. They are inbound allow rules of every profile in the group `Ranz VPN` (`Get-NetFirewallRule -Group "Ranz VPN"` lists them). A second `ranz install` or an upgrade leaves the same rules: a rule that is there as it should be stays, and a rule of the group that no installed part needs goes. `ranz uninstall` removes every rule of the group. A firewall in front of the host, or on the LAN side, is the operator's.

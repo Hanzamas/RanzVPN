@@ -1,0 +1,10 @@
+(* Variant tls443-pw-first: as tls443-pw, before the first Login of alice (AUD-6, #409). No key is pinned to her user
+   yet, so the first Login pins whatever static key it comes with (trust on first use, CsPinUserKey): the holder of the
+   password logs in with a key of its own and pins it. A user that the configuration store does not keep (a domain
+   account) is never pinned, and is this variant on every Login. *)
+
+process
+  ( Setup()
+  | LeakPassword()
+  | Sessions(pin_on, bt_export, bt_export, kp_none, plabel_session, lab_exp_session, suite_hfs)
+  )

@@ -1,13 +1,9 @@
 (* q-negotiation.pvl
-   The queries of the session models about the negotiation (AUD-5, #389). t2 is any session of the client: what the
-   queries say is about the content, which a middlebox that only relays does not change. *)
+   The query of the control models about the Hello (AUD-5, #389; AUD-6, #409). t2 is any session of the client: what the
+   query says is about the content, which a middlebox that only relays does not change. The Login of a session has one
+   version, which the parser takes exactly, so it negotiates nothing, and a session negotiates its suite (q-suite.pvl). *)
 
-(* The version and the Capabilities that the server settles on are ones that the client offered, so the attacker cannot
-   lower them *)
+(* The schema version and the Capabilities that the controller settles on for alice are ones that alice offered, so the
+   attacker cannot lower them *)
 (* @query negotiation *)
 query t: bitstring, t2: bitstring, v: bitstring, cp: bitstring; event(ServerNegotiated(bob, alice, t, v, cp)) ==> event(ClientOffered(alice, bob, t2, v, cp)).
-
-(* The suite that the server runs is one that the client chose: the suite is in the protocol name that the hash of the
-   handshake holds, so an attacker that changes the byte makes the handshake fail *)
-(* @query suite *)
-query t: bitstring, t2: bitstring, s: bitstring; event(ServerSuite(bob, alice, t, s)) ==> event(ClientSuite(alice, bob, t2, s)).

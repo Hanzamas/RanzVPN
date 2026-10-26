@@ -8,6 +8,7 @@
 package capability
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"maps"
@@ -32,6 +33,10 @@ type Capabilities struct {
 	XDP             bool   `json:"xdp"`
 	EgressTier      int    `json:"egressTier"`      // 1 RRAS NAT, 2 WinNAT, 3 proxy; 0 when the node reports none
 	TLSPortFallback bool   `json:"tlsPortFallback"` // TCP 443 was taken, so the node listens on 5555
+	// WireGuard: wireguard.dll of WireGuardNT loads, so the node can be the gateway of Devices
+	// (SDN-80), and WireGuardKey is the public key of its WireGuard interface, base64.
+	WireGuard    bool   `json:"wireguard,omitempty"`
+	WireGuardKey string `json:"wireguardKey,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -52,7 +57,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 	if p == nil {
 		return nil
 	}
-	return &Capabilities{
+	c := &Capabilities{
 		SKU:             name(skuNames, p.GetSku()),
 		Architecture:    name(architectureNames, p.GetArchitecture()),
 		HyperV:          p.GetHyperV(),
@@ -61,7 +66,12 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		XDP:             p.GetXdp(),
 		EgressTier:      int(p.GetEgressTier()),
 		TLSPortFallback: p.GetTlsPortFallback(),
+		WireGuard:       p.GetWireguard(),
 	}
+	if len(p.GetWireguardKey()) > 0 {
+		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
+	}
+	return c
 }
 
 // Proto returns c in the form of a Hello. It fails on a SKU, an architecture or an Egress tier
@@ -73,6 +83,14 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		Selow:           c.SeLow,
 		Xdp:             c.XDP,
 		TlsPortFallback: c.TLSPortFallback,
+		Wireguard:       c.WireGuard,
+	}
+	if c.WireGuardKey != "" {
+		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)
+		if err != nil || len(k) != 32 {
+			return nil, fmt.Errorf("wireguardKey %q is not the base64 of a 32-byte key", c.WireGuardKey)
+		}
+		p.WireguardKey = k
 	}
 	var err error
 	if p.Sku, err = value(skuNames, c.SKU, "sku"); err != nil {
@@ -112,6 +130,18 @@ var requirements = []requirement{
 		},
 		capability: "XDP or SeLow",
 		has:        func(c *controlpb.Capabilities) bool { return c.GetXdp() || c.GetSelow() },
+	},
+	// A WireGuard Device needs WireGuardNT at its gateway (SDN-80, #375): only the state of the
+	// gateway holds the key of a Device, which its WireGuard interface takes as a peer.
+	{
+		feature: func(o *controlpb.Object) string {
+			if d := o.GetDevice(); len(d.GetPublicKey()) > 0 {
+				return fmt.Sprintf("WireGuard Device %q", d.GetName())
+			}
+			return ""
+		},
+		capability: "wireguard",
+		has:        func(c *controlpb.Capabilities) bool { return c.GetWireguard() },
 	},
 }
 

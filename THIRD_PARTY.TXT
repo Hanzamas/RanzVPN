@@ -143,3 +143,28 @@ NOTICE rules for every package that carries wintun.dll (ONE-3, #312, and any lat
          3. Ranz VPN calls the DLL through the functions of wintun.h only (NodeWintun.c).
          4. Ranz VPN names WireGuard and Wintun only to say what it carries (this file, the NOTICE), never to promote
             itself.
+
+
+WireGuardNT 0.10.1
+------------------
+
+What:    wireguard.dll, the WireGuard implementation for the Windows kernel of WireGuard LLC
+         (https://git.zx2c4.com/wireguard-nt/about/), which a gateway node of WireGuard Devices loads from the directory
+         of its executable (src/Cedar/NodeWireGuard.c; SDN-80, #375). ranz install writes it beside the node unless
+         --no-wireguard.
+
+Pinned:  https://download.wireguard.com/wireguard-nt/wireguard-nt-0.10.1.zip
+         SHA-256 772c0b1463d8d2212716f43f06f4594d880dea4f735165bd68e388fc41b81605, the hash of the archive as
+         download.wireguard.com served it on 2026-10-25, when CI read it together with the signatures below
+         (.github/scripts/fetch-wireguard.ps1 checks both). The node takes wireguard-nt/bin/amd64/wireguard.dll on x64
+         and wireguard-nt/bin/arm64/wireguard.dll on arm64, each signed by WireGuard LLC (Authenticode).
+
+Licence: the Prebuilt Binaries License of WireGuard LLC, the licence file of the archive, which is the authority. It is
+         the licence of Wintun above, for "wireguard.dll" as downloaded from download.wireguard.com, with the API of
+         the wireguard.h of the archive as the "Permitted API". The node does not include wireguard.h:
+         NodeWireGuard.c names the functions of its API and takes them from the DLL by name.
+
+NOTICE rules for every package that carries wireguard.dll (SDN-80, #375, and any later one): the four rules of Wintun
+         above, with wireguard.dll, wireguard.h, NodeWireGuard.c and the licence file that fetch-wireguard.ps1 puts
+         beside the DLL as wireguard-LICENSE.txt; the NOTICE names WireGuard LLC, WireGuard and WireGuardNT only to say
+         what it carries.

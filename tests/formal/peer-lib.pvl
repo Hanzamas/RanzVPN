@@ -16,14 +16,35 @@
 
    The receiver of the model keeps no state, so it accepts the replay of an envelope. The code refuses a replay
    by a sequence that must grow (PeerOpenSignal, PeerInputBind, PeerPunchInput), but it keeps the last
-   sequence in memory, and drops it with the binding of a relay that expired and with the entry of a
-   peer that left the peer table: a receiver that has lost it is the receiver of this model.
+   sequence in memory, and drops it with the binding of a relay that expired, with the entry of a peer that
+   left the peer table and with a restart of the node: a receiver that has lost it is the receiver of this
+   model. While the receiver keeps it, a repeated envelope is PEER_DROP_REPLAY, so the attacker of pe-addr
+   drops or outruns the original, and a binding that it takes lasts until the next renewal of the node.
+
+   The kinds of the model (AUD-6, #409): a bind (PeerInputBind at the relay role binds the node to the address
+   of the datagram), a signal (PeerOpenSignal; no address), a punch probe (PeerPunchInput sets the direct path
+   of the peer to the address that the probe came from, with Config.Punch, which no production code sets) and
+   a bound (PeerInputBound at a node takes it only from a configured relay, at the address of that relay, as
+   the answer to the last bind of the node). A signal names a relay, which the node takes only when the control
+   plane assigned that relay at that address (PEER_DROP_RELAY); the content of a signal is one secret value in
+   the model, so that check has no answer of its own here. The relay forwards a data datagram as it came from a
+   node bound to it to another node bound to it, inside a VRF of both and under a rate limit, and a node takes a
+   datagram with any source key from a relay that it is bound to; the attacker of the model sends any datagram
+   from any address, which is all that the forwarding would give it, so the model has no relay process. The
+   ICE path (PeerIce.c, libjuice) delivers a datagram through PeerInputDirect only when its source is the peer
+   of the ICE session, and its connectivity checks are those of libjuice, which the model does not have.
+
+   No production code runs the peer layer yet: the only PeerNew is the relay role (NodeRelayStart), which
+   takes binds and forwards, and nothing in production calls PeerSend, PeerSealSignal, PeerOpenSignal or
+   PeerSetRelays. The answers of this model are about the code of the module and its tests.
 *)
 
 const name_k: bitstring.
 const plabel_peer: bitstring.
 const k_bind: bitstring.
 const k_signal: bitstring.
+const k_punch: bitstring.
+const k_bound: bitstring.
 const v_peer: bitstring.
 const tag_data: bitstring.
 
@@ -73,6 +94,21 @@ let PeerOpen(me: principal, them: principal, kind: bitstring) =
   let k2 = hkk(ck1, dhr(sR, SI)) in
   let pl = unaead(k2, h2, ct) in
   event PeerOpened(me, them, kind, pl, a).
+
+(* PeerInputBound: a node takes a bound only from the relay that it has configured, at the address of that relay *)
+let PeerOpenBound(me: principal, relay: principal) =
+  in(c, (a: bitstring, (=k_bound, SI: bitstring, E: bitstring, ct: bitstring)));
+  if a = addrof(relay) then
+  if SI = spub(relay) then
+  let sR = skey(me) in
+  let SR = pk(sR) in
+  let h0 = hash1(name_k) in
+  let h1 = mixh(mixh(mixh(h0, (plabel_peer, k_bound)), SI), SR) in
+  let h2 = mixh(h1, E) in
+  let ck1 = hkck(h0, dhr(sR, E)) in
+  let k2 = hkk(ck1, dhr(sR, SI)) in
+  let pl = unaead(k2, h2, ct) in
+  event PeerOpened(me, relay, k_bound, pl, a).
 
 (* PeerSend and PeerInputData: a data datagram in the clear, taken from the address of the peer *)
 let DataSend(me: principal, to: principal, sid: sessionid) =

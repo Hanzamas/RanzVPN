@@ -1,0 +1,11 @@
+(* Variant control-node-none: the control stream of a C node to the controller (AUD-5, #389; AUD-6, #409; Control.c,
+   ControlRun, on the TLS transport of NodeControllerTls), against an attacker that is the network and nothing more. The
+   node is alice and the controller is bob. The node checks the certificate of the controller against the TLS
+   fingerprint of its Controller settings (NodeControllerVerify), and its Noise_IK handshake with the static key of the
+   controller is bound to the exporter of CONTROL_EXPORTER_LABEL. It sends its Hello and a lease, no password, and the
+   controller takes the static key as the node. *)
+
+process
+  ( Setup()
+  | ControlSessions(pin_on, lab_exp_control)
+  )

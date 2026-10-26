@@ -574,8 +574,8 @@ static void StoreTestPasswords(STORETEST_CTX *ctx, CONFIG_STORE *s, wchar_t *pat
 	char line[MAX_SIZE];
 	Format(line, sizeof(line), "pinned_key=%s\n", hex);
 	StoreTestCheck(ctx, p1 == CS_KEY_PINNED && p2 == CS_KEY_MATCH && p3 == CS_KEY_MISMATCH && has_key && unpin == ERR_NO_ERROR && p4 == CS_KEY_PINNED &&
-		p5 == CS_KEY_ERROR && StoreTestDumpHas(s, line),
-		"The first key of a user is pinned, the same key matches, another one does not; after an unpin the next key is pinned",
+		p5 == CS_KEY_NO_USER && StoreTestDumpHas(s, line),
+		"The first key of a user is pinned, the same key matches, another one does not; after an unpin the next key is pinned; a user that the store does not keep is no failure",
 		"results %u, %u, %u, unpin %u, %u, unknown user %u", p1, p2, p3, unpin, p4, p5);
 }
 
