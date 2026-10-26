@@ -27,17 +27,17 @@ typedef struct QUICEXPORTER_LOG {
 } QUICEXPORTER_LOG;
 
 // What the API table of the test answers
-static uint32_t quicexporter_version[4];      // The version it tells ...
-static bool quicexporter_no_version = false;  // ... or none
-static QUIC_STATUS quicexporter_status = 0;   // What the export gives
-static UINT quicexporter_length = 0;          // The OutputLength it was asked for
-static bool quicexporter_label = false;       // ... and whether its label was NOISE_EXPORTER_LABEL, without a context
+static uint32_t quicexporter_version[4];     // The version it tells ...
+static bool quicexporter_no_version = false; // ... or none
+static QUIC_STATUS quicexporter_status = 0;  // What the export gives
+static UINT quicexporter_length = 0;         // The OutputLength it was asked for
+static bool quicexporter_label = false;      // ... and whether its label was NOISE_EXPORTER_LABEL, without a context
 
 static void quicexporter_log(void *param, const char *line) {
-	QUICEXPORTER_LOG *log = (QUICEXPORTER_LOG *)param;
+	QUICEXPORTER_LOG *seen =(QUICEXPORTER_LOG *)param;
 
-	log->NumLines++;
-	strncpy_s(log->Last, sizeof(log->Last), line, _TRUNCATE);
+	seen->NumLines++;
+	strncpy_s(seen->Last, sizeof(seen->Last), line, _TRUNCATE);
 	coretest_info("transport log: %s", line);
 }
 
@@ -83,7 +83,7 @@ static bool quicexporter_all(const UCHAR *p, UINT size, UCHAR b) {
 
 // The check of the version on its own: the pinned minor with any patch passes, another minor or major is refused with one
 // line of the log for each side, which names the side and the version
-static void quicexporter_versions(QUICEXPORTER_LOG *log) {
+static void quicexporter_versions(QUICEXPORTER_LOG *seen) {
 	UINT pinned[4] = {TRANSPORT_QUIC_EXPORTER_MAJOR, TRANSPORT_QUIC_EXPORTER_MINOR, 2, 0};
 	UINT patch[4] = {TRANSPORT_QUIC_EXPORTER_MAJOR, TRANSPORT_QUIC_EXPORTER_MINOR, 0, 0};
 	UINT next[4] = {TRANSPORT_QUIC_EXPORTER_MAJOR, TRANSPORT_QUIC_EXPORTER_MINOR + 1, 0, 0};
@@ -92,33 +92,33 @@ static void quicexporter_versions(QUICEXPORTER_LOG *log) {
 	UINT before[4] = {TRANSPORT_QUIC_EXPORTER_MAJOR, TRANSPORT_QUIC_EXPORTER_MINOR - 1, 1, 0};
 	char want[64];
 
-	coretest_check(TransportQuicExporterVersion(pinned, true) && TransportQuicExporterVersion(patch, false) && log->NumLines == 0,
+	coretest_check(TransportQuicExporterVersion(pinned, true) && TransportQuicExporterVersion(patch, false) && seen->NumLines == 0,
 	               "the pinned msquic minor passes, with any patch, on both sides, and logs nothing");
 
 	snprintf(want, sizeof(want), "msquic %u.%u.0 is not the pinned %u.%u", next[0], next[1], pinned[0], pinned[1]);
-	coretest_check(TransportQuicExporterVersion(next, true) == false && log->NumLines == 1 && strstr(log->Last, "the server side has no exporter") != NULL &&
-	                   strstr(log->Last, want) != NULL,
+	coretest_check(TransportQuicExporterVersion(next, true) == false && seen->NumLines == 1 && strstr(seen->Last, "the server side has no exporter") != NULL &&
+	                   strstr(seen->Last, want) != NULL,
 	               "the next minor is refused on the server side, with a line of the log that names the side and the version");
-	coretest_check(TransportQuicExporterVersion(next_patch, true) == false && log->NumLines == 1,
+	coretest_check(TransportQuicExporterVersion(next_patch, true) == false && seen->NumLines == 1,
 	               "... refused again without a second line for that side");
 
 	snprintf(want, sizeof(want), "msquic %u.%u.0 is not the pinned %u.%u", major[0], major[1], pinned[0], pinned[1]);
-	coretest_check(TransportQuicExporterVersion(major, false) == false && log->NumLines == 2 && strstr(log->Last, "the client side has no exporter") != NULL &&
-	                   strstr(log->Last, want) != NULL,
+	coretest_check(TransportQuicExporterVersion(major, false) == false && seen->NumLines == 2 && strstr(seen->Last, "the client side has no exporter") != NULL &&
+	                   strstr(seen->Last, want) != NULL,
 	               "the next major with the pinned minor is refused on the client side, with its own line");
-	coretest_check(TransportQuicExporterVersion(before, false) == false && log->NumLines == 2,
+	coretest_check(TransportQuicExporterVersion(before, false) == false && seen->NumLines == 2,
 	               "the minor before the pinned one is refused too, the client side's line already out");
-	coretest_check(TransportQuicExporterVersion(NULL, true) == false && log->NumLines == 2, "no version is refused");
+	coretest_check(TransportQuicExporterVersion(NULL, true) == false && seen->NumLines == 2, "no version is refused");
 }
 
 // The exporter on the table of the test: the pinned minor gives the exporter with NOISE_EXPORTER_LABEL; a table without
 // the entry, a connection that gives none and an msquic that does not tell its version each leave the side without an
 // exporter, wiped, and log one line
-static void quicexporter_exporter(QUICEXPORTER_LOG *log) {
+static void quicexporter_exporter(QUICEXPORTER_LOG *seen) {
 	QUIC_API_TABLE api;
 	UCHAR exporter[NOISE_EXPORTER_SIZE];
 	UCHAR connection = 0;
-	UINT lines = log->NumLines;
+	UINT lines = seen->NumLines;
 
 	ZeroMemory(&api, sizeof(api));
 	api.GetParam = quicexporter_get_param;
@@ -128,26 +128,26 @@ static void quicexporter_exporter(QUICEXPORTER_LOG *log) {
 	quicexporter_status = QUIC_STATUS_SUCCESS;
 	ZeroMemory(exporter, sizeof(exporter));
 	coretest_check(TransportQuicExporter(&api, &connection, true, exporter) && quicexporter_all(exporter, sizeof(exporter), QUICEXPORTER_PATTERN) &&
-	                   quicexporter_length == NOISE_EXPORTER_SIZE && quicexporter_label && log->NumLines == lines,
+	                   quicexporter_length == NOISE_EXPORTER_SIZE && quicexporter_label && seen->NumLines == lines,
 	               "the pinned msquic gives the exporter of NOISE_EXPORTER_SIZE bytes with NOISE_EXPORTER_LABEL and no context, and logs nothing");
 
 	quicexporter_status = QUIC_STATUS_INVALID_STATE;
 	FillMemory(exporter, sizeof(exporter), 0x11);
 	coretest_check(TransportQuicExporter(&api, &connection, false, exporter) == false && quicexporter_all(exporter, sizeof(exporter), 0) &&
-	                   log->NumLines == lines + 1 && strstr(log->Last, "the client side of a connection got no exporter from msquic") != NULL,
+	                   seen->NumLines == lines + 1 && strstr(seen->Last, "the client side of a connection got no exporter from msquic") != NULL,
 	               "a connection that gives no exporter: the client side has none, the output is wiped, and a line of the log says so");
-	coretest_check(TransportQuicExporter(&api, &connection, false, exporter) == false && log->NumLines == lines + 1,
+	coretest_check(TransportQuicExporter(&api, &connection, false, exporter) == false && seen->NumLines == lines + 1,
 	               "... again on the client side without a second line");
 
 	api.ConnectionExportKeyingMaterial = NULL;
-	coretest_check(TransportQuicExporter(&api, &connection, true, exporter) == false && log->NumLines == lines + 2 &&
-	                   strstr(log->Last, "the server side has no exporter") != NULL && strstr(log->Last, "no ConnectionExportKeyingMaterial") != NULL,
+	coretest_check(TransportQuicExporter(&api, &connection, true, exporter) == false && seen->NumLines == lines + 2 &&
+	                   strstr(seen->Last, "the server side has no exporter") != NULL && strstr(seen->Last, "no ConnectionExportKeyingMaterial") != NULL,
 	               "a table without the entry: the server side has no exporter, and a line of the log says so");
 
 	api.ConnectionExportKeyingMaterial = quicexporter_export;
 	quicexporter_no_version = true;
-	coretest_check(TransportQuicExporter(&api, &connection, true, exporter) == false && log->NumLines == lines + 3 &&
-	                   strstr(log->Last, "msquic does not tell its version") != NULL,
+	coretest_check(TransportQuicExporter(&api, &connection, true, exporter) == false && seen->NumLines == lines + 3 &&
+	                   strstr(seen->Last, "msquic does not tell its version") != NULL,
 	               "an msquic that does not tell its version: the server side has no exporter, and a line of the log says so");
 
 	coretest_check(TransportQuicExporter(NULL, &connection, true, exporter) == false && TransportQuicExporter(&api, NULL, true, exporter) == false &&
@@ -156,18 +156,18 @@ static void quicexporter_exporter(QUICEXPORTER_LOG *log) {
 
 	// Without the procedure of the log, a line goes to the debugger and not to the procedure before
 	TransportSetLog(NULL, NULL);
-	coretest_check(TransportQuicExporter(&api, &connection, false, exporter) == false && log->NumLines == lines + 3,
+	coretest_check(TransportQuicExporter(&api, &connection, false, exporter) == false && seen->NumLines == lines + 3,
 	               "with the log set back to the debugger, the client side's line goes there and not to the procedure of the test");
 }
 
 void quicexporter_test() {
-	QUICEXPORTER_LOG log;
+	QUICEXPORTER_LOG seen;
 
-	ZeroMemory(&log, sizeof(log));
-	TransportSetLog(quicexporter_log, &log);
+	ZeroMemory(&seen, sizeof(seen));
+	TransportSetLog(quicexporter_log, &seen);
 
-	quicexporter_versions(&log);
-	quicexporter_exporter(&log);
+	quicexporter_versions(&seen);
+	quicexporter_exporter(&seen);
 
 	TransportSetLog(NULL, NULL);
 }

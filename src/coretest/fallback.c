@@ -13,12 +13,17 @@
 
 #include <string.h>
 
-#define FALLBACK_ADDRESS "server" // The address of the server on both transports
+// The address of the server on both transports, and the fallback list of the client
+#define FALLBACK_ADDRESS "server"
 #define FALLBACK_LIST    "quic:" FALLBACK_ADDRESS ", tls:" FALLBACK_ADDRESS
-#define FALLBACK_TLS_DIAL 100     // ms that a dial of the "tls" transport takes, so that "quic" wins a race of both
-#define FALLBACK_TIMEOUT 10000    // ms for a race, a handshake or a record
-#define FALLBACK_POLL    200      // ms that an accept of a server waits before it looks at its stop flag
-#define FALLBACK_ECHO    "fallback"
+// ms that a dial of the "tls" transport takes, so that "quic" wins a race of both
+#define FALLBACK_TLS_DIAL 100
+// ms for a race, a handshake or a record
+#define FALLBACK_TIMEOUT 10000
+// ms that an accept of a server waits before it looks at its stop flag
+#define FALLBACK_POLL 200
+// The record that a session echoes
+#define FALLBACK_ECHO "fallback"
 
 // The server behind one transport: it accepts each stream, runs the responder with its static key and echoes the records
 // of each session that comes up
