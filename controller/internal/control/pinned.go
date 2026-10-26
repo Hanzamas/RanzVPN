@@ -14,7 +14,14 @@ import (
 // certificate of another key fails the dial with nodecontroller.ErrFingerprint, so the node sends
 // nothing on that session.
 func DialPinned(ctx context.Context, addr string, key keys.Static, controllerKey []byte, fingerprint string) (*Conn, error) {
+	return DialPinnedAny(ctx, addr, key, controllerKey, []string{fingerprint})
+}
+
+// DialPinnedAny opens a control stream as DialPinned does for a Node that accepts more than one TLS
+// fingerprint of the controller, as it does while the controller changes its certificate (SDN-92):
+// the certificate must have one of them.
+func DialPinnedAny(ctx context.Context, addr string, key keys.Static, controllerKey []byte, fingerprints []string) (*Conn, error) {
 	return dial(ctx, addr, key, controllerKey, func(st tls.ConnectionState) error {
-		return nodecontroller.CheckFingerprint(st, fingerprint)
+		return nodecontroller.CheckFingerprints(st, fingerprints)
 	})
 }

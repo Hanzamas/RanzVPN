@@ -39,6 +39,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
+	"github.com/Hanzamas/RanzVPN/controller/internal/servercert"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -87,6 +88,11 @@ type Config struct {
 	// Defaults has the first leader of an empty store create the intent of a first install
 	// (controller.Config.Defaults).
 	Defaults bool
+	// Certificates is the certificate that the member's TLS port serves (SDN-92, #397), nil for a
+	// port that serves the one certificate of Fingerprint. When it is set, the TLS fingerprint of
+	// the status and of the lease is the one of the certificate it serves now, and the leader sends
+	// the nodes the fingerprints of it (controller.Config.Certificates).
+	Certificates *servercert.Manager
 }
 
 // Member is one member of a controller cluster.
@@ -105,6 +111,7 @@ type Member struct {
 	seen      store.Lease // the lease as this member saw it last
 	seenSince time.Time   // since when it is unchanged
 	renewed   time.Time   // the last renewal of this member's lease
+	leased    string      // the TLS fingerprint that the lease of this member holds
 
 	mu       sync.Mutex
 	active   *controller.Controller // non-nil while this member leads
@@ -206,6 +213,7 @@ func (m *Member) Status() api.Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.cfg.Status
+	s.TLSFingerprint = m.fingerprint(s.TLSFingerprint)
 	s.PublicKey = base64.StdEncoding.EncodeToString(m.cfg.Key.Public())
 	schema := m.cfg.Schema
 	if schema == controlpb.SchemaVersion_SCHEMA_VERSION_UNSPECIFIED {
@@ -220,6 +228,15 @@ func (m *Member) Status() api.Status {
 	}
 	s.Cluster = cs
 	return s
+}
+
+// fingerprint returns the TLS fingerprint of the certificate that the member serves now: the one of
+// its Certificates when it has them, else fixed, the one it was given.
+func (m *Member) fingerprint(fixed string) string {
+	if m.cfg.Certificates != nil {
+		return m.cfg.Certificates.Fingerprint()
+	}
+	return fixed
 }
 
 func (m *Member) serveAPI(w http.ResponseWriter, r *http.Request) {
@@ -285,7 +302,7 @@ func (m *Member) campaign(ctx context.Context) {
 	if l.Holder != "" && l.Holder != m.cfg.Name && now.Sub(m.seenSince) < m.cfg.Lease {
 		return
 	}
-	me := store.Lease{Holder: m.cfg.Name, Address: m.cfg.Address, Fingerprint: m.cfg.Fingerprint}
+	me := store.Lease{Holder: m.cfg.Name, Address: m.cfg.Address, Fingerprint: m.fingerprint(m.cfg.Fingerprint)}
 	won, err := m.cfg.Store.Acquire(sctx, l, me)
 	if err != nil {
 		m.log.Debug("taking the lease", "err", err)
@@ -294,6 +311,7 @@ func (m *Member) campaign(ctx context.Context) {
 	if !won {
 		return
 	}
+	m.leased = me.Fingerprint
 	m.renewed = time.Now()
 	me.Epoch, me.Renewal = l.Epoch+1, l.Renewal+1
 	m.lead(ctx, me)
@@ -304,7 +322,7 @@ func (m *Member) campaign(ctx context.Context) {
 // epoch of l.
 func (m *Member) lead(ctx context.Context, l store.Lease) {
 	c, err := controller.New(ctx, controller.Config{Store: m.cfg.Store.Fenced(l.Epoch), Key: m.cfg.Key, Log: m.log, Schema: m.cfg.Schema, LicenceKeys: m.cfg.LicenceKeys,
-		Defaults: m.cfg.Defaults})
+		Defaults: m.cfg.Defaults, Certificates: m.cfg.Certificates})
 	if err != nil {
 		m.log.Error("taking the lead", "epoch", l.Epoch, "err", err)
 		m.release(l.Epoch)
@@ -326,7 +344,17 @@ func (m *Member) renew(ctx context.Context) {
 	m.mu.Unlock()
 	sctx, cancel := context.WithTimeout(ctx, m.retry)
 	defer cancel()
-	ok, err := m.cfg.Store.Renew(sctx, l.Epoch)
+	var ok bool
+	var err error
+	if fp := m.fingerprint(m.cfg.Fingerprint); fp != m.leased {
+		// The certificate that the member serves changed: the standbys check the new fingerprint (SDN-92)
+		ok, err = m.cfg.Store.RenewFingerprint(sctx, l.Epoch, fp)
+		if err == nil && ok {
+			m.leased = fp
+		}
+	} else {
+		ok, err = m.cfg.Store.Renew(sctx, l.Epoch)
+	}
 	switch {
 	case err == nil && ok:
 		m.renewed = time.Now()

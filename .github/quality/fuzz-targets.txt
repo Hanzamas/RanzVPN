@@ -163,6 +163,11 @@ controller/internal/store  Open       exempt  opens the controller's own rqlite 
 # LoadAuthority reads as PEM
 controller/internal/certgen  LoadAuthority  FuzzLoadAuthority
 
+# The certificate of the controller (SDN-92 #397): the setting that an operator gives ranz controller-cert set and the API,
+# and the PEM files of its file source, which loadPEM reads: the operator's own files, refused with a reason or taken
+controller/internal/servercert  ParseSetting  FuzzParseSetting
+controller/internal/servercert  Manager.Load  FuzzLoadPEM  via loadPEM
+
 # The traffic test of `ranz test throughput` (SDN-53 #246): what a peer sends to a test server (the request, and the frames
 # of an upload) and to a test client (the frames of a download, the report of an upload)
 controller/internal/throughput  ReadRequest     FuzzRead

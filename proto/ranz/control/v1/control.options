@@ -117,3 +117,7 @@ ranz.control.v1.CertificateAcme.ca_file max_size:260
 ranz.control.v1.Peer.endpoints max_count:8
 ranz.control.v1.NodeConfig.endpoints max_count:8
 ranz.control.v1.Endpoint.address max_size:256
+# The TLS fingerprints of the certificate of the controller that a node accepts (SDN-92): 64 hex
+# digits each, and at most 4, the certificate in use, the one that comes next, and room for a
+# controller that gives more. It makes the NodeConfig, and so an Object, about 260 bytes larger.
+ranz.control.v1.NodeConfig.controller_tls max_count:4 max_size:65

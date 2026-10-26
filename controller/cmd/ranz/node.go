@@ -40,14 +40,24 @@ type nodeAgent interface {
 	restart() error
 }
 
+// nodeControllerSettings are the Controller settings as the Node service answers them: the three
+// values of nodecontroller.Settings, and the TLS fingerprints that the Controller sent the Node
+// (SDN-92, controller_tls of its NodeConfig), the one of the certificate in use first. They are
+// absent until the Controller sent them: TLSFingerprint is then the only one the Node accepts. The
+// Node writes them; `ranz node controller set` never does.
+type nodeControllerSettings struct {
+	nodecontroller.Settings
+	TLSFingerprints []string `json:"tlsFingerprints,omitempty"`
+}
+
 // nodeControllerAnswer is the answer of the Node service to the commands of the Controller
 // settings: the settings, nil when it has none, and whether its control stream is open, at which
 // Generation. Error is the reason of a command that the service refused.
 type nodeControllerAnswer struct {
-	Controller *nodecontroller.Settings `json:"controller"`
-	Connected  bool                     `json:"connected"`
-	Generation uint64                   `json:"generation"`
-	Error      string                   `json:"error,omitempty"`
+	Controller *nodeControllerSettings `json:"controller"`
+	Connected  bool                    `json:"connected"`
+	Generation uint64                  `json:"generation"`
+	Error      string                  `json:"error,omitempty"`
 }
 
 // nodeKeyAnswer is the answer of the Node service to the command key: the public half of its static

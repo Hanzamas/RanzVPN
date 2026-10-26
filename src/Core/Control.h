@@ -54,6 +54,10 @@
 // The endpoints of a node and of its peers (SDN-93, #410)
 #define CONTROL_MAX_ENDPOINTS 8 // The endpoints of a node and of a peer (NodeConfig.endpoints, Peer.endpoints of control.options)
 
+// The TLS fingerprints of the certificate of the Controller that a state names (SDN-92, #397)
+#define CONTROL_TLS_PINS     4  // The fingerprints of a state (NodeConfig.controller_tls of control.options)
+#define CONTROL_TLS_PIN_SIZE 65 // A fingerprint: 64 hex digits and the terminating NUL
+
 // The Listener of a node (SDN-45, #238): the source of its certificate, and the sizes of its fields (control.options)
 #define CONTROL_CERT_NONE       0   // No source: the node listens on no port of its own
 #define CONTROL_CERT_FILE       1   // A PKCS #12 file on the node (CertificateFile)
@@ -336,6 +340,12 @@ typedef struct CONTROL_STATE {
 	// it and it dials them
 	UINT NumEndpoints;
 	CONTROL_ENDPOINT Endpoints[CONTROL_MAX_ENDPOINTS];
+
+	// The TLS fingerprints of the certificate of the Controller that the node accepts (SDN-92, #397), as the Controller sent
+	// them: 64 hex digits each, in lower case, the certificate in use first. There are none while the Controller sent none:
+	// the node then keeps the fingerprint it has. Valid as the state is.
+	UINT NumTlsPins;
+	char TlsPins[CONTROL_TLS_PINS][CONTROL_TLS_PIN_SIZE];
 } CONTROL_STATE;
 
 // Takes each state that the client applied, before the client acknowledges its Generation. It runs

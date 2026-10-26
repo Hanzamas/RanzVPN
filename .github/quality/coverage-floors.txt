@@ -90,6 +90,10 @@ go  controller/internal/payload         60
 go  controller/internal/port            69
 go  controller/internal/rbac            65
 go  controller/internal/rqlitetest      0
+# servercert (SDN-92 #397): the Linux job measures the setting, the files and PEM source, the manager with the chain
+# of ACME and the answers of its challenges, and the other sources' refusals; not ksp_windows.go, whose key storage the
+# Windows job of ranz.yml runs: 82.6% measured, less two points for the poll and the clocks of the tests
+go  controller/internal/servercert      80
 go  controller/internal/sidecar         0
 go  controller/internal/store           37
 go  controller/internal/telemetry       80

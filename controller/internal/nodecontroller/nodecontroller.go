@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -110,12 +111,24 @@ var ErrFingerprint = errors.New("the TLS fingerprint check failed")
 // tls.Config.VerifyConnection: the leaf certificate that the Controller presented must have it. Its
 // error wraps ErrFingerprint and names both fingerprints.
 func CheckFingerprint(st tls.ConnectionState, fingerprint string) error {
+	return CheckFingerprints(st, []string{fingerprint})
+}
+
+// CheckFingerprints checks the TLS session st against the fingerprints that a Node accepts: the
+// leaf certificate that the Controller presented must have one of them. A Node has more than one
+// while the Controller changes its certificate (SDN-92): the one in use and the one that comes next.
+// The error wraps ErrFingerprint and names the fingerprint of the certificate and the ones accepted.
+func CheckFingerprints(st tls.ConnectionState, fingerprints []string) error {
 	if len(st.PeerCertificates) == 0 {
 		return fmt.Errorf("%w: the Controller presented no certificate", ErrFingerprint)
 	}
 	got := Fingerprint(st.PeerCertificates[0].RawSubjectPublicKeyInfo)
-	if got != strings.ToLower(fingerprint) {
-		return fmt.Errorf("%w: the certificate of the Controller has the TLS fingerprint %s, not %s of the Controller settings", ErrFingerprint, got, strings.ToLower(fingerprint))
+	accepted := make([]string, len(fingerprints))
+	for i, fp := range fingerprints {
+		accepted[i] = strings.ToLower(fp)
+	}
+	if !slices.Contains(accepted, got) {
+		return fmt.Errorf("%w: the certificate of the Controller has the TLS fingerprint %s, not %s of the Controller settings", ErrFingerprint, got, strings.Join(accepted, " or "))
 	}
 	return nil
 }

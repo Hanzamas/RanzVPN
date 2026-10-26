@@ -16,6 +16,13 @@
 //   static key of the Controller failed, both of which fail closed before any state comes, or the Controller refused the
 //   node, as one whose static key no Node resource names yet. The node keeps dialling, so it joins without a restart once
 //   an operator has written its Node resource.
+// - The Controller can change the certificate that it serves (SDN-92, #397). A certificate with another key has another TLS
+//   fingerprint, so the Controller sends the fingerprint of the next certificate with the one in use in the state of the node
+//   (NodeConfig.controller_tls), waits until the node acknowledged the state, and only then serves the next certificate. The
+//   node accepts every fingerprint that the Controller sent in place of the one of its settings, and writes them into the
+//   setting (tlsFingerprints) before it acknowledges, so that it still reaches the Controller after the change and after a
+//   restart of the service (NodeControllerPins). A node that was not connected when the certificate changed has the old
+//   fingerprint only, and ranz node controller set gives it the new one.
 // - The admin pipe (NODE_ADMIN_PIPE), which only SYSTEM, the Administrators and the service account may open, takes one
 //   command line of an Administrator, as ranz node sends them, and answers it with one JSON object: key gives the public
 //   half of the static key of the node, which it makes first when no role needed it yet; controller gives the settings
@@ -61,10 +68,13 @@ struct NODE_CONTROLLER {
 	TRANSPORT None;                                // The data transport of an overlay without the client role: nowhere
 	PEER_KEY NodeKey;                              // The node's static key, for that overlay
 	bool Overlay;                                  // The node started that overlay
+	LOCK *SettingLock;                             // One change of the stored setting at a time: an Administrator's and the Controller's own (SDN-92)
 	LOCK *Lock;                                    // The fields below
 	bool Checked;                                  // The certificate of the attempt that ends next reached the fingerprint check
 	bool Mismatch;                                 // The certificate of the last dial that reached the check failed it ...
 	char Seen[NODE_CONTROLLER_FINGERPRINT];        // ... and had this fingerprint
+	UINT NumPins;                                  // The TLS fingerprints that the Controller sent (SDN-92, #397), 0 before it did: Fingerprint alone passes the check ...
+	NODE_FINGERPRINT Pins[NODE_CONTROLLER_PINS];   // ... in lower case, the certificate in use first
 	UINT64 NumEnds;                                // Streams that ended or did not open
 	UINT LastEnd;                                  // How the last one ended (CONTROL_END_*)
 	UINT NextRetry;                                // ms before the next attempt after it
@@ -161,6 +171,29 @@ static const char *NodeControllerJsonStr(cJSON *o, const char *name) {
 	return (s != NULL ? s : "");
 }
 
+// The TLS fingerprints that the Controller sent (SDN-92, #397), as the setting keeps them in the array tlsFingerprints, into
+// c: the strings of it that are 64 hex digits, in lower case, at most NODE_CONTROLLER_PINS. A setting without the array has
+// none, and the fingerprint of the setting alone passes the check.
+static void NodeControllerLoadPins(NODE_CONTROLLER *c, cJSON *o) {
+	cJSON *list = cJSON_GetObjectItemCaseSensitive(o, "tlsFingerprints");
+	cJSON *item;
+
+	c->NumPins = 0;
+	if (cJSON_IsArray(list) == false)
+		return;
+
+	cJSON_ArrayForEach(item, list) {
+		const char *s = cJSON_GetStringValue(item);
+
+		if (s == NULL || c->NumPins >= NODE_CONTROLLER_PINS || NodeControllerHex(s, NODE_CONTROLLER_FINGERPRINT - 1) == false)
+			continue;
+
+		StrCpy(c->Pins[c->NumPins], sizeof(c->Pins[c->NumPins]), (char *)s);
+		StrLower(c->Pins[c->NumPins]);
+		c->NumPins++;
+	}
+}
+
 // Read the Controller settings of the store into c; a setting that is no JSON object of three valid values counts as none,
 // with the node log saying why
 static void NodeControllerLoad(NODE_CONTROLLER *c) {
@@ -172,12 +205,30 @@ static void NodeControllerLoad(NODE_CONTROLLER *c) {
 		cJSON *o = cJSON_Parse(setting);
 
 		c->Set = (cJSON_IsObject(o) && NodeControllerCheck(c, NodeControllerJsonStr(o, "address"), NodeControllerJsonStr(o, "publicKey"), NodeControllerJsonStr(o, "tlsFingerprint"), error, sizeof(error)));
-		if (c->Set == false)
+		if (c->Set)
+			NodeControllerLoadPins(c, o);
+		else
 			NodeLog(c->Node, "Controller: the %s setting is not used: %s", NODE_SETTING_CONTROLLER, (cJSON_IsObject(o) ? error : "it is not a JSON object"));
 		cJSON_Delete(o);
 	}
 
 	Free(setting);
+}
+
+// The TLS fingerprints of the settings into the JSON object o: tlsFingerprint, the one of the certificate in use, which is
+// the first that the Controller sent once it sent any (the one that the store holds, NodeControllerSavePins), and the array
+// tlsFingerprints with all that the Controller sent, none without them. The settings of an Administrator, which have a Lock
+// of no one, have none of the Controller's.
+static void NodeControllerJsonFingerprints(NODE_CONTROLLER *c, cJSON *o) {
+	Lock(c->Lock);
+	{
+		cJSON_AddStringToObject(o, "tlsFingerprint", (c->NumPins == 0 ? c->Fingerprint : c->Pins[0]));
+		cJSON *list = (c->NumPins != 0 ? cJSON_AddArrayToObject(o, "tlsFingerprints") : NULL);
+
+		for (UINT i = 0; list != NULL && i < c->NumPins; i++)
+			cJSON_AddItemToArray(list, cJSON_CreateString(c->Pins[i]));
+	}
+	Unlock(c->Lock);
 }
 
 // The settings of c as one JSON object, or JSON null without them
@@ -192,7 +243,7 @@ static cJSON *NodeControllerJson(NODE_CONTROLLER *c) {
 	key = Base64FromBin(&key_size, c->Key, PEER_KEY_SIZE);
 	cJSON_AddStringToObject(o, "address", c->Address);
 	cJSON_AddStringToObject(o, "publicKey", key != NULL ? key : "");
-	cJSON_AddStringToObject(o, "tlsFingerprint", c->Fingerprint);
+	NodeControllerJsonFingerprints(c, o);
 	Free(key);
 
 	return o;
@@ -229,16 +280,34 @@ static bool NodeControllerCertFingerprint(PCCERT_CONTEXT cert, char *fp, UINT si
 	return true;
 }
 
+// The fingerprints that the node accepts as the log says them: the ones that the Controller sent, or the one of the settings,
+// with " or " between them. c->Lock is held.
+static void NodeControllerAcceptedText(NODE_CONTROLLER *c, char *text, UINT size) {
+	StrCpy(text, size, (c->NumPins == 0 ? c->Fingerprint : c->Pins[0]));
+
+	for (UINT i = 1; i < c->NumPins; i++) {
+		StrCat(text, size, " or ");
+		StrCat(text, size, c->Pins[i]);
+	}
+}
+
 // The check of the certificate of the Controller, in place of a thumbprint pin (TRANSPORT_TLS_CONFIG.Verify): its
-// fingerprint is the one of the settings. The end of the stream tells the log whether it passed.
+// fingerprint is the one of the settings, or one that the Controller sent (SDN-92, #397). The end of the stream tells the log
+// whether it passed.
 static bool NodeControllerVerify(void *param, const struct _CERT_CONTEXT *cert) {
 	NODE_CONTROLLER *c = (NODE_CONTROLLER *)param;
 	char seen[NODE_CONTROLLER_FINGERPRINT];
+	bool ok = false;
 
-	bool ok = (NodeControllerCertFingerprint(cert, seen, sizeof(seen)) && StrCmpi(seen, c->Fingerprint) == 0);
+	bool known = NodeControllerCertFingerprint(cert, seen, sizeof(seen));
 
 	Lock(c->Lock);
 	{
+		// The one Fingerprint of the settings, until the Controller sent others, which take its place
+		if (c->NumPins == 0)
+			ok = (known && StrCmpi(seen, c->Fingerprint) == 0);
+		for (UINT i = 0; i < c->NumPins && ok == false; i++)
+			ok = (known && StrCmpi(seen, c->Pins[i]) == 0);
 		c->Checked = true;
 		c->Mismatch = (ok == false);
 		StrCpy(c->Seen, sizeof(c->Seen), seen);
@@ -253,6 +322,7 @@ static void NodeControllerEnd(void *param, const CONTROL_STATUS *st) {
 	NODE_CONTROLLER *c = (NODE_CONTROLLER *)param;
 	char why[MAX_SIZE * 2];
 	char seen[NODE_CONTROLLER_FINGERPRINT];
+	char accepted[NODE_CONTROLLER_PINS * NODE_CONTROLLER_FINGERPRINT + 16];
 	bool checked, mismatch;
 
 	Lock(c->Lock);
@@ -260,6 +330,7 @@ static void NodeControllerEnd(void *param, const CONTROL_STATUS *st) {
 		checked = c->Checked;
 		mismatch = c->Mismatch;
 		StrCpy(seen, sizeof(seen), c->Seen);
+		NodeControllerAcceptedText(c, accepted, sizeof(accepted));
 		c->Checked = false;
 		c->NumEnds++;
 		c->LastEnd = st->LastEnd;
@@ -271,7 +342,7 @@ static void NodeControllerEnd(void *param, const CONTROL_STATUS *st) {
 	case CONTROL_END_DIAL:
 		if (checked && mismatch)
 			Format(why, sizeof(why), "the TLS fingerprint check failed: the certificate of the Controller has the TLS fingerprint %s, not %s of the Controller settings, so no state is taken",
-			       IsEmptyStr(seen) ? "(none)" : seen, c->Fingerprint);
+			       IsEmptyStr(seen) ? "(none)" : seen, accepted);
 		else if (checked)
 			Format(why, sizeof(why), "the certificate passed the TLS fingerprint check, and then the TLS session failed: the server did not select the ALPN protocol %s of the control stream, or gave no TLS exporter, so no state is taken",
 			       CONTROL_ALPN);
@@ -367,6 +438,7 @@ static NODE_CONTROLLER *NodeControllerGet(NODE *n) {
 	NODE_CONTROLLER *c = ZeroMalloc(sizeof(NODE_CONTROLLER));
 	c->Node = n;
 	c->Lock = NewLock();
+	c->SettingLock = NewLock();
 	c->PipeHandle = INVALID_HANDLE_VALUE;
 
 	StrCpy(c->None.Name, sizeof(c->None.Name), "none");
@@ -400,6 +472,113 @@ void NodeControllerOverlay(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	Copy(cfg->ControllerKey, c->Key, PEER_KEY_SIZE);
 	cfg->ControlEnd = NodeControllerEnd;
 	cfg->ControlEndParam = c;
+}
+
+//
+// The TLS fingerprints that the Controller sends (SDN-92, #397)
+//
+
+// Write the TLS fingerprints pins into the Controller setting of the store, in place of the ones it holds: tlsFingerprint
+// becomes the first and tlsFingerprints all of them. The setting is changed only while it still names the Controller of c:
+// an Administrator may have written another one, which the node takes at its next start, with a fingerprint of its own.
+static void NodeControllerSavePins(NODE_CONTROLLER *c, char pins[][NODE_CONTROLLER_FINGERPRINT], UINT num) {
+	NODE *n = c->Node;
+	NODE_CONTROLLER *stored = ZeroMalloc(sizeof(NODE_CONTROLLER));
+	char *setting = ZeroMalloc(NODE_CONTROLLER_MAX_SETTING);
+	char error[MAX_SIZE];
+	char *text = NULL;
+	const char *skipped = NULL;
+	UINT ret = ERR_NO_ERROR;
+
+	Lock(c->SettingLock);
+	{
+		cJSON *o = NULL;
+		bool found = (n->Store != NULL && CsGetSetting(n->Store, NODE_SETTING_CONTROLLER, setting, NODE_CONTROLLER_MAX_SETTING) && IsEmptyStr(setting) == false);
+
+		if (found)
+			o = cJSON_Parse(setting);
+
+		if (cJSON_IsObject(o) == false)
+			skipped = "the Configuration store holds no Controller setting";
+		else if (NodeControllerCheck(stored, NodeControllerJsonStr(o, "address"), NodeControllerJsonStr(o, "publicKey"), NodeControllerJsonStr(o, "tlsFingerprint"), error, sizeof(error)) == false ||
+		         StrCmp(stored->Address, c->Address) != 0 || Cmp(stored->Key, c->Key, PEER_KEY_SIZE) != 0)
+			skipped = "the Controller setting of the store names another Controller now";
+
+		if (skipped == NULL) {
+			cJSON_DeleteItemFromObjectCaseSensitive(o, "tlsFingerprint");
+			cJSON_DeleteItemFromObjectCaseSensitive(o, "tlsFingerprints");
+			cJSON_AddStringToObject(o, "tlsFingerprint", pins[0]);
+			cJSON *list = cJSON_AddArrayToObject(o, "tlsFingerprints");
+
+			for (UINT i = 0; list != NULL && i < num; i++)
+				cJSON_AddItemToArray(list, cJSON_CreateString(pins[i]));
+
+			text = cJSON_PrintUnformatted(o);
+			if (text == NULL || StrLen(text) >= NODE_CONTROLLER_MAX_SETTING - 1)
+				skipped = "the setting would be too long";
+			else
+				ret = CsSetSetting(n->Store, NODE_SETTING_CONTROLLER, text);
+		}
+
+		cJSON_Delete(o);
+	}
+	Unlock(c->SettingLock);
+
+	if (skipped != NULL)
+		NodeLog(n, "Controller %s: the TLS fingerprints are not written into the Controller setting (%s), so the node takes them until its next start", c->Address, skipped);
+	else if (ret != ERR_NO_ERROR)
+		NodeLog(n, "Controller %s: the TLS fingerprints cannot be written into the Configuration store, so the node takes them until its next start", c->Address);
+
+	if (text != NULL)
+		cJSON_free(text);
+	Free(setting);
+	Free(stored);
+}
+
+// The TLS fingerprints of the certificate of the Controller that a state names: the node accepts them in place of the ones it
+// had, and writes them into its Controller setting before the control stream acknowledges the state, so that a node that
+// pinned the fingerprint of the certificate in use still reaches the Controller once it serves another, also after the service
+// restarts. A state that names none leaves them as they are, and a node without Controller settings has none to change. It
+// runs on the thread of the control stream, or on the caller's of NodeOverlayApply.
+void NodeControllerPins(NODE *n, const CONTROL_STATE *st) {
+	NODE_CONTROLLER *c = (n != NULL ? n->Controller : NULL);
+	char pins[NODE_CONTROLLER_PINS][NODE_CONTROLLER_FINGERPRINT];
+	char text[NODE_CONTROLLER_PINS * NODE_CONTROLLER_FINGERPRINT + 16];
+	UINT num = 0;
+	bool changed;
+
+	if (c == NULL || st == NULL || c->Set == false)
+		return;
+
+	Zero(pins, sizeof(pins));
+	for (UINT i = 0; i < st->NumTlsPins && i < NODE_CONTROLLER_PINS; i++) {
+		if (NodeControllerHex(st->TlsPins[i], NODE_CONTROLLER_FINGERPRINT - 1) == false)
+			continue;
+
+		StrCpy(pins[num], sizeof(pins[num]), (char *)st->TlsPins[i]);
+		StrLower(pins[num]);
+		num++;
+	}
+
+	if (num == 0)
+		return;
+
+	Lock(c->Lock);
+	{
+		changed = (c->NumPins != num || Cmp(c->Pins, pins, sizeof(pins)) != 0);
+		if (changed) {
+			c->NumPins = num;
+			Copy(c->Pins, pins, sizeof(pins));
+		}
+		NodeControllerAcceptedText(c, text, sizeof(text));
+	}
+	Unlock(c->Lock);
+
+	if (changed == false)
+		return;
+
+	NodeLog(n, "Controller %s: the TLS fingerprints of its certificate that the node accepts are now %s", c->Address, text);
+	NodeControllerSavePins(c, pins, num);
 }
 
 //
@@ -456,7 +635,10 @@ static void NodeAdminSet(NODE *n, NODE_CONTROLLER *c, TOKEN_LIST *t, cJSON *o) {
 		cJSON_Delete(json);
 	}
 
+	// Beside the fingerprints that the Controller sends (NodeControllerPins), which change the stored setting too
+	Lock(c->SettingLock);
 	ret = (n->Store == NULL ? ERR_INTERNAL_ERROR : CsSetSetting(n->Store, NODE_SETTING_CONTROLLER, setting));
+	Unlock(c->SettingLock);
 	if (ret != ERR_NO_ERROR) {
 		cJSON_AddStringToObject(o, "error", "the Configuration store of the node cannot be written");
 	} else {
@@ -752,6 +934,7 @@ void NodeControllerStop(NODE *n) {
 
 	TransportTlsFree(c->Tls);
 	PeerKeyClose(&c->NodeKey);
+	DeleteLock(c->SettingLock);
 	DeleteLock(c->Lock);
 	Free(c);
 }
@@ -792,6 +975,8 @@ void NodeControllerGetStatus(NODE *n, NODE_CONTROLLER_STATUS *st) {
 				st->Mismatch = c->Mismatch;
 				StrCpy(st->Seen, sizeof(st->Seen), c->Seen);
 				StrCpy(st->Why, sizeof(st->Why), c->Why);
+				st->NumPins = c->NumPins;
+				Copy(st->Pins, c->Pins, sizeof(st->Pins));
 			}
 			Unlock(c->Lock);
 

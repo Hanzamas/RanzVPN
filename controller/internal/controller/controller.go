@@ -48,6 +48,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
+	"github.com/Hanzamas/RanzVPN/controller/internal/servercert"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 	"github.com/Hanzamas/RanzVPN/controller/internal/version"
 )
@@ -125,6 +126,13 @@ type Config struct {
 	// Audit configures the audit log (SDN-49, audit.go): how often the exporter of the audit targets
 	// looks for records and how often the old ones are removed. Its zero value is the defaults.
 	Audit audit.Config
+	// Certificates is the certificate that the TLS port of the program serves (SDN-92,
+	// certificate.go), nil for a program that serves one fixed certificate: the controller then
+	// changes nothing of it and sends the nodes no fingerprint.
+	Certificates *servercert.Manager
+	// CertificateWait is how long a change of the certificate waits for the nodes to acknowledge the
+	// new fingerprint; DefaultCertificateWait when zero.
+	CertificateWait time.Duration
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -202,6 +210,9 @@ type Controller struct {
 
 	// The WireGuard ends of the Devices that their gateways reported (devices.go)
 	dev deviceState
+
+	// The certificate of the TLS port and the fingerprints that the nodes get of it (certificate.go)
+	certs *certificateState
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -256,6 +267,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	}
 	c.tel = newTelemetryState(cfg)
 	c.aud = newAuditState(cfg, c.store, c.log)
+	c.certs = newCertificateState(cfg)
 	if c.random == nil {
 		c.random = rand.Reader
 	}
@@ -617,6 +629,8 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	if err != nil {
 		return compiled{}, err
 	}
+	// The TLS fingerprints of the certificate that the controller serves (certificate.go; SDN-92)
+	c.withFingerprints(states)
 	return compiled{lic: lic, force: force, states: states}, nil
 }
 

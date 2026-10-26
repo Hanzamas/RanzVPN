@@ -123,9 +123,13 @@
 #define NODE_ADMIN_REPLY            65536             // Bytes of an answer of the admin pipe at most: the state of a node (NodeState.c; SDN-91, #396) is the longest
 #define NODE_STATE_MAX_SESSIONS     128               // Noise sessions that the state of a node names at most, so that it fits an answer
 #define NODE_ADMIN_IDLE             10000             // ms that the admin pipe waits for the command of a connected Administrator
-#define NODE_CONTROLLER_MAX_SETTING 1024              // Bytes of the Controller setting at most
+#define NODE_CONTROLLER_MAX_SETTING 2048              // Bytes of the Controller setting at most
 #define NODE_CONTROLLER_FINGERPRINT 65                // The TLS fingerprint of a Controller: 64 hex digits and the NUL
+#define NODE_CONTROLLER_PINS        4                 // The TLS fingerprints that a node accepts at once, once its Controller sent them (SDN-92, #397)
 #define NODE_CONTROLLER_KEEPALIVE   10                // s without a segment on the control stream before TCP keepalive probes its path
+
+// A TLS fingerprint of a Controller as text, in lower case, with its NUL
+typedef char NODE_FINGERPRINT[NODE_CONTROLLER_FINGERPRINT];
 
 // The Wintun adapters of a node (NodeWintun.c; CORE-S3-1, #71)
 #define NODE_WINTUN_DLL           L"wintun.dll" // Next to the executable: the pinned release of THIRD_PARTY.TXT
@@ -554,6 +558,8 @@ struct NODE_CONTROLLER_STATUS {
 	char Seen[NODE_CONTROLLER_FINGERPRINT];        // ... and had this TLS fingerprint, "" before the first
 	char PipeAcl[MAX_SIZE];                        // The DACL of the admin pipe as the system holds it, in SDDL; "" when it does not run
 	char Why[MAX_SIZE * 2];                        // Why the last stream ended or did not open, as the node log says it; "" before the first (SDN-91, #396)
+	UINT NumPins;                                  // The TLS fingerprints that the node accepts once the Controller sent them (SDN-92, #397), 0 before: Fingerprint alone ...
+	NODE_FINGERPRINT Pins[NODE_CONTROLLER_PINS];   // ... in lower case, the certificate in use first
 };
 
 // One Wintun adapter of a VRF, as NodeVrfAdaptersGetStatus and NodeClientGetAdapters report it
@@ -881,6 +887,7 @@ UINT NodeClientGetAdapters(NODE *n, NODE_VRF_ADAPTER_STATUS *list, UINT max);
 
 // NodeController.c
 void NodeControllerGetStatus(NODE *n, NODE_CONTROLLER_STATUS *st);
+void NodeControllerPins(NODE *n, const struct CONTROL_STATE *st);
 void NodeAdminCommand(NODE *n, char *line, char *reply, UINT size);
 
 // NodeVrfAdapter.c
