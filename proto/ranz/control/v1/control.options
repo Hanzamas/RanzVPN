@@ -111,3 +111,9 @@ ranz.control.v1.CertificateAcme.directory max_size:256
 ranz.control.v1.CertificateAcme.email max_size:128
 ranz.control.v1.CertificateAcme.names max_count:4 max_size:254
 ranz.control.v1.CertificateAcme.ca_file max_size:260
+# The endpoints of a node (SDN-93): 8 at most, as many as the entries of a fallback list (TRANSPORT_MAX_TARGETS), each an
+# address of at most 255 characters (controller/internal/intent MaxEndpoints, MaxAddress). They make a Peer about 2.1 kB
+# larger, which leaves it smaller than the NodeConfig, and the NodeConfig, and so an Object, about 2.1 kB larger.
+ranz.control.v1.Peer.endpoints max_count:8
+ranz.control.v1.NodeConfig.endpoints max_count:8
+ranz.control.v1.Endpoint.address max_size:256
