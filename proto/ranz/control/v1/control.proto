@@ -235,7 +235,7 @@ message NodeConfig {
   Listener listener = 8;
   // The endpoints of the node (SDN-93 #410), in the order of its Node resource: the addresses under which
   // the other nodes reach it. A node that has none cannot be dialled, so it dials its peers.
-  repeated Endpoint endpoints = 9;
+  repeated Endpoint endpoints = 10;
 }
 
 // The Listener of a node (SDN-45 #238, ADR-0035): the front door on the TCP port, which hands each
