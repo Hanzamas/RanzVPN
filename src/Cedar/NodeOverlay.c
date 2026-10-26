@@ -36,6 +36,7 @@
 
 #include "NodeCaps.h"
 #include "NodeInternal.h"
+#include "NodeLink.h"
 
 // One peer of the overlay, from a Peer object of the desired state: a next hop of the forwarding tables
 typedef struct NODE_OVERLAY_PEER {
@@ -257,9 +258,12 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	NodeShapeAttach(ov->Node, v, st);
 	// The Mirrors of the Generation go in with its tables (NodeMirror.c)
 	NodeMirrorAttach(ov->Node, v, st);
+	// The links of kind vxlan and geneve of the Generation go in with its tables (NodeLink.c; SDN-76, #356)
+	NodeLinkAttach(ov->Node, v, st);
 	UINT num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
 	NodePolicyApplied(ov->Node, swapped);
+	NodeLinkApplied(ov->Node, swapped);
 	if (v != NULL && swapped == false)
 		NodeFreeVrfTables(v);
 
@@ -497,8 +501,9 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 }
 
 // A data record of the peer p: the VRF id, then an IP packet, which goes to the host in that VRF when its table routes
-// the source to p and the destination to the host. The thread of the overlay reads the tables as an online reader.
-static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCHAR *record, UINT size) {
+// the source to p and the destination to the host; nat_buf takes the packet that a 1:1 NAT rule translates. The thread
+// of the overlay, or the receive thread of a link (NodeOverlayLinkDeliver), reads the tables as an online reader.
+static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCHAR *record, UINT size, UCHAR *nat_buf) {
 	UCHAR src[16], dst[16];
 	UINT addr_size = 0;
 	bool ok = false;
@@ -522,7 +527,7 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 		NodeMirrorCopy(v, vrf_id, packet, packet_size, false);
 
 	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the host takes the packet as it sees it
-	ok = ok && NodeNatInbound(v, vrf_id, &packet, &packet_size, ov->NatBuf, NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
+	ok = ok && NodeNatInbound(v, vrf_id, &packet, &packet_size, nat_buf, NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
 
 	if (ok == false || ov->Config.Adapter == NULL) {
 		InterlockedIncrement64(&ov->Dropped);
@@ -531,6 +536,16 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 
 	InterlockedIncrement64(&ov->Delivered);
 	ov->Config.Adapter(ov->Node, ov->Config.AdapterParam, vrf_id, packet, packet_size);
+}
+
+// A data record that a link of kind vxlan or geneve carried from the next hop hop (NodeLink.c; SDN-76, #356), which goes to
+// the host as a record of a session does, with nat_buf of NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH bytes for its translation.
+// The caller is an online reader of the node's table snapshot, and hop is a next hop of its tables.
+void NodeOverlayLinkDeliver(NODE *n, void *hop, const UCHAR *record, UINT size, UCHAR *nat_buf) {
+	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
+
+	if (ov != NULL)
+		NodeOverlayDeliver(ov, (NODE_OVERLAY_PEER *)hop, record, size, nat_buf);
 }
 
 // Read the records of every session: the data records go to the host, keepalives keep the session open, and a session
@@ -565,7 +580,7 @@ static bool NodeOverlayReceive(NODE_OVERLAY *ov) {
 
 			busy = true;
 			if (ret == NOISE_RECEIVE_DATA) {
-				NodeOverlayDeliver(ov, p, ov->Buf, size);
+				NodeOverlayDeliver(ov, p, ov->Buf, size, ov->NatBuf);
 			} else if (ret != NOISE_RECEIVE_CONTROL) {
 				NodeOverlayClose(ov, p);
 				break;
@@ -730,6 +745,8 @@ void NodeOverlayStop(NODE *n) {
 	NodeShapeStop(n);
 	// No table holds a Mirror any more: the VXLAN module of the Mirrors goes (NodeMirror.c)
 	NodeMirrorStop(n);
+	// No table holds a link any more: the VXLAN module of the links goes, with its receive threads (NodeLink.c)
+	NodeLinkStop(n);
 	NodeDhcpStop(n);
 	ov->Halt = true;
 	if (ov->Thread != NULL) {
@@ -802,9 +819,12 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	// Counted on the peer before it reads the session, so the thread does not close the session under the send
 	InterlockedIncrement(&peer->Senders);
 	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&peer->Session);
+	// A link of kind vxlan or geneve of the VRF of the record carries it in place of the session (NodeLink.c; SDN-76, #356)
+	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
 	// The MTU of the VRF clamps the MSS of a TCP SYN as the overlay sees it, after the 1:1 NAT rules, and the rate limits
 	// of the VRF and the node may drop it (NodeShape.c)
-	bool ok = (allowed && s != NULL && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG));
+	bool ok = (allowed && (s != NULL || plain) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) &&
+		(plain ? NodeLinkSend(v, hop, record, size) : TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG)));
 	InterlockedDecrement(&peer->Senders);
 
 	// A Mirror copies the packet as it went to the peer (NodeMirror.c)
