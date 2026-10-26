@@ -321,11 +321,14 @@ bool TransportProxyBypass(const char *bypass, const char *host);
 // the control stream and the data stream, whose L2 frames enter the existing Hub as the Session of a
 // Tunnel, CORE-S1-2 #68). The connection advertises QUIC DATAGRAM frames, which no data path takes
 // yet. The channel binding of a
-// stream is the tls-server-end-point of the pinned server certificate (RFC 5929, NOISE_BINDING_
-// SERVER_END_POINT): both ends compute it from the certificate msquic presents, because Schannel
-// exposes no RFC 8446 exporter to msquic yet (the CORE-S1-1 spike of ADR-0022, amendment of
-// 2026-10-15). The client pins the server certificate: a connection whose certificate does not
-// match the configured thumbprint is refused, and the system root store is not trusted (ADR-0023).
+// stream is the TLS exporter of its connection (RFC 8446 section 7.5, RFC 9001; NOISE_BINDING_
+// EXPORTER with NOISE_EXPORTER_LABEL), which msquic gives from 2.6 on (CORE-H5, #408), so that a
+// session is bound to its connection and not only to the certificate; a connection without one
+// leaves its streams unbound, and their sessions encrypted. A node of the build before CORE-H5 bound
+// the tls-server-end-point of the certificate (RFC 5929), so its handshake with this one fails, and
+// EndPointBinding makes a transport that binds as it did, for that test. The client pins the server
+// certificate: a connection whose certificate does not match the configured thumbprint is refused,
+// and the system root store is not trusted (ADR-0023).
 //
 // The module links the official import library msquic.lib and loads msquic.dll at the first QUIC
 // call (the link is delay-loaded, so a program that never dials or listens over QUIC needs no DLL).
@@ -341,6 +344,7 @@ typedef struct TRANSPORT_QUIC_CONFIG {
 	bool Bbr;                                        // Ask msquic for BBR; the default congestion control where it has none
 	UINT IdleTimeoutMs;                              // The QUIC idle timeout, 0 for TRANSPORT_QUIC_IDLE_DEFAULT
 	bool BreakBinding;                               // A client that changes the binding it computes: for the mismatch test
+	bool EndPointBinding;                            // Bind the tls-server-end-point, as before CORE-H5: for the test of an old node
 } TRANSPORT_QUIC_CONFIG;
 
 #define TRANSPORT_QUIC_IDLE_DEFAULT 30000 // The QUIC idle timeout without one in the configuration (ms)

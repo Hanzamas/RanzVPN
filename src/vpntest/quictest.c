@@ -8,8 +8,8 @@
 // and an invalid one does not, matching the node's Account/Sam result; on the first login the
 // client's Noise static key is pinned to the user, and a later connection of the same user with a
 // different key is refused even with the right password (trust on first use). The channel binding
-// is the tls-server-end-point of the pinned certificate (RFC 5929): a client that computes a
-// different binding, as a middlebox that terminated the TLS would, cannot complete the handshake.
+// is the TLS exporter of the QUIC connection (CORE-H5, #408): a client that computes a different
+// binding, as a middlebox that terminated the TLS would, cannot complete the handshake.
 // The legacy SE-VPN listener is untouched: this test adds a transport beside it and changes no
 // file of the oracle. Print "QUIC TEST OK" only when every check passes; skip, passing, where
 // msquic.dll is not present (a build without the runtime fetched), so the suite still runs.
@@ -238,7 +238,10 @@ static void QuicTestCase(QUICTEST_CTX *ctx, char *what, TRANSPORT *server, TRANS
 
 	if (connected)
 	{
-		*bound = (n->Session.Flags & NOISE_SESSION_ENCRYPT) != 0 ? NOISE_BINDING_NONE : NOISE_BINDING_SERVER_END_POINT;
+		UCHAR binding[NOISE_MAX_BINDING];
+		UINT binding_size = 0;
+
+		*bound = (n->Session.Flags & NOISE_SESSION_ENCRYPT) != 0 ? NOISE_BINDING_NONE : TransportBinding(stream, binding, sizeof(binding), &binding_size);
 
 		Zero(&login, sizeof(login));
 		login.Method = NOISE_LOGIN_PASSWORD;
@@ -408,11 +411,11 @@ void quic_test(UINT num, char **arg)
 				CryptoX25519GenerateKey(key_a, key_a_pub);
 				CryptoX25519GenerateKey(key_b, key_b_pub);
 
-				// A valid password logs in; the HTTP/3 posture means the session is bound to the
-				// real certificate (NOISE_BINDING_SERVER_END_POINT), so the handshake carried the ALPN
-				// "h3" and the pinned certificate
+				// A valid password logs in; the session is bound to the TLS exporter of its QUIC
+				// connection (NOISE_BINDING_EXPORTER, CORE-H5), which the handshake with the ALPN "h3"
+				// and the pinned certificate gave both ends
 				QuicTestCase(ctx, "a valid password logs in, the client's key is pinned", server, client, node, 0, key_a, true, true, &bound);
-				QuicTestCheck(ctx, bound == NOISE_BINDING_SERVER_END_POINT, "  the session is bound to the server's real certificate (HTTP/3 posture, the pinned certificate)", "binding type %u", bound);
+				QuicTestCheck(ctx, bound == NOISE_BINDING_EXPORTER, "  the session is bound to the exporter of its QUIC connection (HTTP/3 posture, the pinned certificate)", "binding type %u", bound);
 
 				// A wrong password is refused, matching Sam
 				QuicTestCase(ctx, "a wrong password is refused", server, client, node, 0, key_a, true, false, &bound);

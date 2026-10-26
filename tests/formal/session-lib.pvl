@@ -40,8 +40,9 @@
              other (TlsCheckPin, QuicConnCallback, NodeControllerVerify); pin_off: any certificate (the Go client of
              the control stream, and the negative controls)
      bmc,bms the binding in the prologue of the client and of the server, each from its own transport: bt_export, the
-             TLS exporter (NOISE_BINDING_EXPORTER, the TLS-443 path); bt_endpoint, the hash of the server certificate
-             (NOISE_BINDING_SERVER_END_POINT, the QUIC path); bt_none, no binding (a QUIC client that got no
+             TLS exporter (NOISE_BINDING_EXPORTER, the TLS-443 path, and the QUIC path since CORE-H5, #408);
+             bt_endpoint, the hash of the server certificate (NOISE_BINDING_SERVER_END_POINT, the QUIC path of the
+             build before CORE-H5, the negative control endpoint-cert); bt_none, no binding (a QUIC client that got no
              certificate, and the negative controls)
      kp      the key check of the server after the Login: kp_on, the static key must be the one pinned to the user;
              kp_none, no key is compared (the first Login of a user, a user that the store does not keep)

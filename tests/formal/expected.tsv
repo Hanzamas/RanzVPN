@@ -104,8 +104,8 @@ tls443-pw-first	suite	holds
 tls443-pw-first	replay-server	holds
 tls443-pw-first	replay-client	holds
 
-# QUIC with a Login, as the code has it: the binding is the tls-server-end-point, the same for every connection to the
-# certificate
+# QUIC with a Login, as the code has it: the binding is the TLS exporter of the QUIC connection (CORE-H5, #408), so QUIC
+# holds what TLS-443 holds
 quic-none	reach-took	reach
 quic-none	reach-done	reach
 quic-none	sec-pw	holds
@@ -119,18 +119,19 @@ quic-none	suite	holds
 quic-none	replay-server	holds
 quic-none	replay-client	holds
 
+# The middlebox with the key of the certificate: the exporter of the QUIC connection stops it, as on TLS-443 (F1 closed)
 quic-cert	reach-took	reach
 quic-cert	reach-done	reach
-quic-cert	sec-pw	attack	F1: the key of the certificate alone gives a middlebox the password
-quic-cert	sec-data	attack	F1
-quic-cert	auth-server	attack	F1: the handshake of alice is accepted in another TLS session
-quic-cert	took-auth	attack	F1: the Login of alice is accepted in the TLS session of the middlebox
-quic-cert	cdata-auth	attack	F1: the middlebox writes the data of alice
-quic-cert	auth-client	attack	F1
-quic-cert	data-auth	attack	F1: the middlebox rewrites what the server sends
+quic-cert	sec-pw	holds	CORE-H5: the middlebox does not read the password
+quic-cert	sec-data	holds	CORE-H5
+quic-cert	auth-server	holds	CORE-H5: the handshake of alice is not accepted in another QUIC connection
+quic-cert	took-auth	holds	CORE-H5: the Login of alice is not accepted in the connection of the middlebox
+quic-cert	cdata-auth	holds	CORE-H5: the middlebox writes no data of alice
+quic-cert	auth-client	holds	CORE-H5
+quic-cert	data-auth	holds	CORE-H5: the middlebox rewrites nothing that the server sends
 quic-cert	suite	holds	the suite is in the hash of the handshake, not in the binding
-quic-cert	replay-server	attack	F1
-quic-cert	replay-client	attack	F1
+quic-cert	replay-server	holds	CORE-H5: message 1 of alice opens no session on another connection
+quic-cert	replay-client	holds	CORE-H5
 
 quic-noise-client	reach-took	reach
 quic-noise-client	reach-done	reach
@@ -144,7 +145,8 @@ quic-noise-client	suite	attack	the attacker is the client
 quic-fs	fs-pw	holds	forward secrecy
 quic-fs	fs-data	holds	forward secrecy
 
-# A QUIC client that got no certificate runs an encrypted session and the server a bound one: no handshake completes
+# A QUIC client that got no certificate runs an encrypted session and the server one bound to its exporter: no handshake
+# completes
 quic-nocert-none	reach-took	holds	the prologues differ, so the server takes no session of alice
 quic-nocert-none	reach-done	holds	the prologues differ, so the handshake of alice does not complete
 quic-nocert-none	sec-pw	holds
@@ -195,6 +197,21 @@ neither-none	data-auth	attack	NC3
 neither-none	suite	holds	the suite is in the hash of the handshake, whatever the outer session
 neither-none	replay-server	attack	NC3
 neither-none	replay-client	attack	NC3
+
+# Negative control: the binding of the build before CORE-H5, the tls-server-end-point, which is the same for every
+# connection to the certificate. The key of the certificate alone gives the attack (NC5, F1 as it was)
+endpoint-cert	reach-took	reach
+endpoint-cert	reach-done	reach
+endpoint-cert	sec-pw	attack	NC5: the key of the certificate alone gives a middlebox the password
+endpoint-cert	sec-data	attack	NC5
+endpoint-cert	auth-server	attack	NC5: the handshake of alice is accepted in another QUIC connection
+endpoint-cert	took-auth	attack	NC5: the Login of alice is accepted in the connection of the middlebox
+endpoint-cert	cdata-auth	attack	NC5: the middlebox writes the data of alice
+endpoint-cert	auth-client	attack	NC5
+endpoint-cert	data-auth	attack	NC5: the middlebox rewrites what the server sends
+endpoint-cert	suite	holds	the suite is in the hash of the handshake, not in the binding
+endpoint-cert	replay-server	attack	NC5: message 1 of alice is taken again on a new connection
+endpoint-cert	replay-client	attack	NC5
 
 # The control stream of a C node, which checks the fingerprint of the certificate of the controller and sends no password
 control-node-none	reach-took	reach
@@ -292,15 +309,15 @@ overlay-tls443-client	replay-client	holds
 
 overlay-quic-cert	reach-took	reach
 overlay-quic-cert	reach-done	reach
-overlay-quic-cert	sec-data	attack	F1 on the overlay sessions that run in production
-overlay-quic-cert	auth-server	attack	F1
-overlay-quic-cert	took-auth	attack	F1
-overlay-quic-cert	cdata-auth	attack	F1
-overlay-quic-cert	auth-client	attack	F1
-overlay-quic-cert	data-auth	attack	F1
+overlay-quic-cert	sec-data	holds	CORE-H5: the exporter of the QUIC connection keeps the middlebox out of the overlay sessions that run in production
+overlay-quic-cert	auth-server	holds	CORE-H5
+overlay-quic-cert	took-auth	holds	CORE-H5
+overlay-quic-cert	cdata-auth	holds	CORE-H5
+overlay-quic-cert	auth-client	holds	CORE-H5
+overlay-quic-cert	data-auth	holds	CORE-H5
 overlay-quic-cert	suite	holds	the suite is in the hash of the handshake
-overlay-quic-cert	replay-server	attack	F1
-overlay-quic-cert	replay-client	attack	F1
+overlay-quic-cert	replay-server	holds	CORE-H5
+overlay-quic-cert	replay-client	holds	CORE-H5
 
 # The join of a further connection to a tunnel over TLS-443, as the code has it: every connection of a Tunnel is of the
 # node whose static key the Tunnel was made for, and is its own handshake in its own outer session
@@ -314,12 +331,12 @@ tunnel-cert	join-auth	holds	the binding keeps a middlebox out of the join
 tunnel-cert	join-identity	holds
 tunnel-cert	join-replay	holds
 
-# The same over QUIC: the binding is the one of the certificate, so a join is open to a middlebox that holds the key of the
-# certificate (F1), and the static key still decides which Tunnel a connection joins
+# The same over QUIC: the binding is the exporter of each QUIC connection (CORE-H5), so a join is closed to a middlebox
+# that holds the key of the certificate, and the static key still decides which Tunnel a connection joins
 tunnel-quic-cert	reach-join	reach
-tunnel-quic-cert	join-auth	attack	F1: the middlebox relays the join of alice to the server over a TLS session of its own
+tunnel-quic-cert	join-auth	holds	CORE-H5: the middlebox cannot relay the join of alice to the server over a connection of its own
 tunnel-quic-cert	join-identity	holds	the static key is checked whatever the outer session
-tunnel-quic-cert	join-replay	attack	F1
+tunnel-quic-cert	join-replay	holds	CORE-H5
 
 # Negative control: the server joins by the id alone (NC4)
 tunnel-nokey-none	reach-join	reach
