@@ -816,11 +816,12 @@ try {
 			throw "ranz controller-cert show with no setting is $($shown | ConvertTo-Json -Compress -Depth 4), not the self-signed certificate with the fingerprint $old"
 		}
 
-		# A certificate that the Controller refuses changes nothing: a key that is not the key of the certificate, and a
-		# certificate that does not name the host that the Nodes use. The answer says why.
+		# A certificate that the Controller refuses changes nothing: a key that is not the key of the certificate (the
+		# certificate of the CA with the key of the Controller: the service may read no key of the CA), and a certificate that
+		# does not name the host that the Nodes use. The answer says why.
 		$refusedFile = Join-Path $work 'refused.err'
 		foreach ($case in @(
-				@(@('-host', $values['PC-A'], '-cert', $cert, '-key', (Join-Path $folder 'ca.key')), 'does not belong to the certificate'),
+				@(@('-host', $values['PC-A'], '-cert', (Join-Path $folder 'ca.pem'), '-key', $key), 'does not belong to the certificate'),
 				@(@('-host', 'other.example.com', '-cert', $cert, '-key', $key), 'does not name the host "other.example.com"'))) {
 			$setArgs = [string[]] $case[0]
 			& $ranzExe controller-cert set @setArgs 2> $refusedFile | Out-Null
