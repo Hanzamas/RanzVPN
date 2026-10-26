@@ -34,7 +34,7 @@ static UINT quicexporter_length = 0;         // The OutputLength it was asked fo
 static bool quicexporter_label = false;      // ... and whether its label was NOISE_EXPORTER_LABEL, without a context
 
 static void quicexporter_log(void *param, const char *line) {
-	QUICEXPORTER_LOG *seen =(QUICEXPORTER_LOG *)param;
+	QUICEXPORTER_LOG *seen = (QUICEXPORTER_LOG *)param;
 
 	seen->NumLines++;
 	strncpy_s(seen->Last, sizeof(seen->Last), line, _TRUNCATE);
