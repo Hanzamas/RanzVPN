@@ -424,6 +424,17 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/bgp-spike.ps1 -BuildDir build
+    # The mimic transport of a node (ADR-0023; CORE-P2-6 #406), on x64 and arm64: ranz built next to vpntest, where the
+    # node starts it as ranz mimic for the server role and the client role, and vpntest mimic: a Noise session over
+    # REALITY on 127.0.0.1 between two nodes, the binding, a prober spliced to the decoy, the restart of a killed
+    # sidecar, the counters, and the REALITY private key in no log, command line or diagnostics bundle
+    # (.github/scripts/mimic-sidecar.ps1). It needs only the build, so it runs after a test that failed too.
+    - name: Mimic transport
+      if: ${{ !cancelled() }}
+      timeout-minutes: 15
+      shell: pwsh
+      run: |
+        . .github/scripts/mimic-sidecar.ps1 -BuildDir build
     # The ACME source of the Listener of a node (SDN-45, #238), on x64 and arm64: ranz built next to vpntest, where the
     # node starts it as ranz acme, Pebble, the test ACME server of Let's Encrypt, at a pinned version on this runner, and
     # vpntest listeneracme: the certificate of the Listener issued and renewed, and the front door listening with it

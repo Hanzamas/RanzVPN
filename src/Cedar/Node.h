@@ -244,7 +244,7 @@ struct NODE_MIMIC_STATUS {
 	bool Configured;        // The configuration has the settings of the role
 	bool Running;           // The sidecar runs with them: it sent ready, and the transport of the role is available
 	UINT ProcessId;         // The process of the sidecar, 0 when none runs
-	UINT NumStarts;         // The processes that the node started for the role
+	UINT NumStarts;         // The processes of the sidecar that started and connected to their control pipe
 	UINT NumRestarts;       // ... of which after one ended by itself
 	UINT NumErrors;         // Error messages of the sidecar
 	UINT64 Accepted;        // The server role: clients that proved the key of the server
