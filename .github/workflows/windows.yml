@@ -279,18 +279,6 @@ jobs:
         cd developer_tools/stbchecker
         dotnet run -- ../../src/bin/hamcore
         if ($LASTEXITCODE -ne 0) { throw "stbchecker reported differences between the string tables (exit code $LASTEXITCODE)" }
-    # The node test ten times in a row (#437), before the Test step, whose script deletes the bench files of an earlier run
-    # of itself. The checks of the node test wait for what they observe and never for a fixed time, so a busy runner makes a
-    # run longer and fails none. Temporary: it records ten green runs in a row on x64 and goes with the last commit of the
-    # pull request.
-    - name: Node test, ten runs in a row
-      if: matrix.platform.ARCHITECTURE == 'x64'
-      timeout-minutes: 10
-      shell: pwsh
-      env:
-        RANZ_SMOKE_TESTS: node,node,node,node,node,node,node,node,node,node
-      run: |
-        . .github/scripts/vpntest.ps1
     - name: Test
       timeout-minutes: 10
       shell: pwsh
