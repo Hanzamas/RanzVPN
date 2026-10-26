@@ -392,6 +392,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyZones(&st, c->Objects, c->NumObjects);
 	// The Listener of the node (ControlListener.c; SDN-45, #238)
 	ControlCopyListener(&st, c->Objects, c->NumObjects);
+	// The TLS fingerprints of the certificate of the Controller (ControlPins.c; SDN-92, #397)
+	ControlCopyTlsPins(&st, c->Objects, c->NumObjects);
 	// The WireGuard Devices (ControlDevice.c; SDN-80, #375)
 	ControlCopyDevices(&st, c->Objects, c->NumObjects);
 

@@ -169,6 +169,8 @@ add_library(corecontrol STATIC
   ControlInternal.h
   # The Listener of a node in a desired state (SDN-45, #238)
   ControlListener.c
+  # The TLS fingerprints of the certificate of the Controller in a desired state (SDN-92, #397)
+  ControlPins.c
   "${_ranz_controlpb}/ranz/control/v1/control.pb.c"
   "${_ranz_controlpb}/ranz/control/v1/control.pb.h"
   # The policy of the VRFs in a desired state (SDN-8, #184)

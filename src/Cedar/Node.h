@@ -100,8 +100,9 @@
 #define NODE_ADMIN_LINE             1024              // Bytes of a command line of the admin pipe at most
 #define NODE_ADMIN_REPLY            4096              // Bytes of an answer of the admin pipe at most
 #define NODE_ADMIN_IDLE             10000             // ms that the admin pipe waits for the command of a connected Administrator
-#define NODE_CONTROLLER_MAX_SETTING 1024              // Bytes of the Controller setting at most
+#define NODE_CONTROLLER_MAX_SETTING 2048              // Bytes of the Controller setting at most
 #define NODE_CONTROLLER_FINGERPRINT 65                // The TLS fingerprint of a Controller: 64 hex digits and the NUL
+#define NODE_CONTROLLER_PINS        4                 // The TLS fingerprints that a node accepts at once, once its Controller sent them (SDN-92, #397)
 #define NODE_CONTROLLER_KEEPALIVE   10                // s without a segment on the control stream before TCP keepalive probes its path
 
 // The Wintun adapters of a node (NodeWintun.c; CORE-S3-1, #71)
@@ -455,6 +456,8 @@ struct NODE_CONTROLLER_STATUS {
 	bool Mismatch;                                 // The certificate of the last dial that reached the fingerprint check failed it ...
 	char Seen[NODE_CONTROLLER_FINGERPRINT];        // ... and had this TLS fingerprint, "" before the first
 	char PipeAcl[MAX_SIZE];                        // The DACL of the admin pipe as the system holds it, in SDDL; "" when it does not run
+	UINT NumPins;                                  // The TLS fingerprints that the node accepts once the Controller sent them (SDN-92, #397), 0 before: Fingerprint alone ...
+	char Pins[NODE_CONTROLLER_PINS][NODE_CONTROLLER_FINGERPRINT]; // ... in lower case, the certificate in use first
 };
 
 // One Wintun adapter of a VRF, as NodeVrfAdaptersGetStatus and NodeClientGetAdapters report it
@@ -766,6 +769,7 @@ UINT NodeClientGetAdapters(NODE *n, NODE_VRF_ADAPTER_STATUS *list, UINT max);
 
 // NodeController.c
 void NodeControllerGetStatus(NODE *n, NODE_CONTROLLER_STATUS *st);
+void NodeControllerPins(NODE *n, const struct CONTROL_STATE *st);
 void NodeAdminCommand(NODE *n, char *line, char *reply, UINT size);
 
 // NodeVrfAdapter.c

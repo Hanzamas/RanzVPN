@@ -135,3 +135,22 @@ func TestNodeKeyPrintsThePublicHalfOnly(t *testing.T) {
 		t.Errorf("a key that is not 32 bytes: exit code %d, want 1", code)
 	}
 }
+
+// show prints the TLS fingerprints that the Controller sent the Node (SDN-92), the one of the certificate in use first,
+// beside the one of the settings, and prints none while the Controller sent none.
+func TestNodeControllerShowsTheFingerprintsTheControllerSent(t *testing.T) {
+	next := strings.Repeat("ab", 32)
+	f := &fakeNode{answers: map[string]string{
+		"controller": `{"controller":{"address":"pc-a:5555","publicKey":"` + testControllerKey + `","tlsFingerprint":"` + testFingerprint + `","tlsFingerprints":["` + testFingerprint + `","` + next + `"]},"connected":true,"generation":5}`,
+	}}
+	code, out, _ := runNodeWith(t, f, "controller", "show")
+	if code != 0 || !strings.Contains(out, `"tlsFingerprints": [`) || !strings.Contains(out, `"`+next+`"`) {
+		t.Errorf("show: exit code %d, output %s", code, out)
+	}
+	f = &fakeNode{answers: map[string]string{
+		"controller": `{"controller":{"address":"pc-a:5555","publicKey":"` + testControllerKey + `","tlsFingerprint":"` + testFingerprint + `"},"connected":true,"generation":5}`,
+	}}
+	if code, out, _ = runNodeWith(t, f, "controller", "show"); code != 0 || strings.Contains(out, "tlsFingerprints") {
+		t.Errorf("show of a Node that was sent none: exit code %d, output %s", code, out)
+	}
+}

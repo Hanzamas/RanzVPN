@@ -191,6 +191,10 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	NODE_OVERLAY_PEER **hops = ZeroMalloc(sizeof(NODE_OVERLAY_PEER *) * MAX(st->NumPeers, 1));
 	LIST *dropped = NewListFast(NULL);
 
+	// The TLS fingerprints of the certificate of the Controller that the state names, accepted before anything else of the
+	// state is applied and before the control stream acknowledges it (NodeController.c; SDN-92, #397)
+	NodeControllerPins(ov->Node, st);
+
 	Lock(ov->Lock);
 	{
 		if (IsEmptyStr(ov->Name))
