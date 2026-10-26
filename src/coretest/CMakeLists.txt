@@ -26,6 +26,8 @@ ranz_add_executable(coretest CORE
     frontdoor.c
     # The msquic of the exporter of a QUIC connection, on an API table of the test, CORE-H5-R (#443)
     quicexporter.c
+    # The fallback after a handshake: a server that refuses the handshake over QUIC, CORE-H5-R (#443)
+    fallback.c
   LIBRARIES
     corefrontdoor
     coretransport

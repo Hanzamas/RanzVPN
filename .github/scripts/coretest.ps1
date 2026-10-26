@@ -15,7 +15,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 # the list.
 $named = @('rand', 'sha256', 'hmac', 'hkdf', 'aesgcm', 'x25519', 'identity', 'mlkem', 'cryptorefusal', 'selfsign', 'pfx', 'certstore', 'schannel',
 	'noise', 'noisehfs', 'noisesession', 'noisetunnel', 'noiseinterop', 'envelope', 'relay', 'relaypolicy', 'iceupgrade', 'icesymmetric', 'punch',
-	'peersession', 'frontdoor', 'quicexporter')
+	'peersession', 'frontdoor', 'quicexporter', 'fallback')
 if ($env:RANZ_CORE_TESTS) { $named = $env:RANZ_CORE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
 
 $failed = @()

@@ -58,6 +58,8 @@ void peersession_test();
 void frontdoor_test();
 // The msquic of the exporter of a QUIC connection (quicexporter.c; CORE-H5-R, #443)
 void quicexporter_test();
+// The fallback after a handshake, on loopback transports (fallback.c; CORE-H5-R, #443)
+void fallback_test();
 
 // The processes of the front door test (frontdoor.c): coretest frontdoor-child node ... or owner ..., which the test
 // starts itself; main runs them before anything else
