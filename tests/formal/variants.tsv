@@ -29,16 +29,17 @@ tls443-both	prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q
 tls443-fs	prims.pvl,session-lib.pvl,q-fs-password.pvl,q-fs.pvl,session/tls443-fs.pv	TLS-443: the attacker holds every key after the sessions: forward secrecy
 tls443-pw	prims.pvl,session-lib.pvl,q-reach.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/tls443-pw.pv	TLS-443: the attacker holds the password of the user, whose static key is pinned
 tls443-pw-first	prims.pvl,session-lib.pvl,q-reach.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/tls443-pw-first.pv	TLS-443: the attacker holds the password, and no key is pinned yet (trust on first use)
-# The session with a Login over QUIC, as the code has it: the binding is the tls-server-end-point
-quic-none	prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/quic-none.pv	QUIC, pinned certificate, Noise_IK bound to tls-server-end-point: an attacker that is the network
-quic-cert	precise.pvl,prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/quic-cert.pv	QUIC: the attacker holds the key of the certificate of the server (finding F1)
+# The session with a Login over QUIC, as the code has it: the binding is the TLS exporter of the QUIC connection (CORE-H5, #408)
+quic-none	prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/quic-none.pv	QUIC, pinned certificate, Noise_IK bound to the exporter of the QUIC connection: an attacker that is the network
+quic-cert	prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/quic-cert.pv	QUIC: the attacker holds the key of the certificate of the server (finding F1, closed by CORE-H5)
 quic-noise-client	prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-suite.pvl,session/quic-noise-client.pv	QUIC: the attacker holds the Noise keys of the server and of the client
 quic-fs	prims.pvl,session-lib.pvl,q-fs-password.pvl,q-fs.pvl,session/quic-fs.pv	QUIC: the attacker holds every key after the sessions: forward secrecy
 quic-nocert-none	prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/quic-nocert-none.pv	QUIC: a client that got no certificate runs an encrypted session, the server a bound one: the handshake cannot complete
-# The negative controls: the binding left out, the pin left out, both
+# The negative controls: the binding left out, the pin left out, both, and the binding to the certificate alone
 nobinding-cert	precise.pvl,prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/nobinding-cert.pv	Negative control: no binding in the prologue, the attacker holds the key of the certificate
 nopin-noise	prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-suite.pvl,session/nopin-noise.pv	Negative control: the client pins no certificate, the attacker holds the Noise key of the server
 neither-none	precise.pvl,prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/neither-none.pv	Negative control: no pin and no binding, the attacker holds no key: the middlebox
+endpoint-cert	precise.pvl,prims.pvl,session-lib.pvl,q-reach.pvl,q-password.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,session/endpoint-cert.pv	Negative control: the binding of the build before CORE-H5, the tls-server-end-point, the attacker holds the key of the certificate (F1)
 # The control stream of a node to the controller: no password, no record type or suite byte, the node known by its key
 control-node-none	prims.pvl,session-lib.pvl,control-lib.pvl,q-reach.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-negotiation.pvl,q-replay.pvl,control/control-node-none.pv	Control stream of a C node: the fingerprint of the certificate checked, exporter of the control label: an attacker that is the network
 control-node-cert	prims.pvl,session-lib.pvl,control-lib.pvl,q-reach.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-negotiation.pvl,q-replay.pvl,control/control-node-cert.pv	Control stream of a C node: the attacker holds the key of the certificate of the controller
@@ -50,11 +51,11 @@ control-go-noise	prims.pvl,session-lib.pvl,control-lib.pvl,q-reach.pvl,q-secrecy
 # The overlay sessions, which run in production: no Login, the static key is the peer
 overlay-tls443-cert	prims.pvl,session-lib.pvl,overlay-lib.pvl,q-reach.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,overlay/overlay-tls443-cert.pv	Overlay session over TLS-443: the attacker holds the key of the certificate of the server
 overlay-tls443-client	prims.pvl,session-lib.pvl,overlay-lib.pvl,q-reach.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,overlay/overlay-tls443-client.pv	Overlay session over TLS-443: the attacker holds the Noise key of the dialling node, which is all that the peer knows it by
-overlay-quic-cert	prims.pvl,session-lib.pvl,overlay-lib.pvl,q-reach.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,overlay/overlay-quic-cert.pv	Overlay session over QUIC: the attacker holds the key of the certificate of the server (finding F1)
+overlay-quic-cert	prims.pvl,session-lib.pvl,overlay-lib.pvl,q-reach.pvl,q-secrecy.pvl,q-authserver.pvl,q-authclient.pvl,q-suite.pvl,q-replay.pvl,overlay/overlay-quic-cert.pv	Overlay session over QUIC: the attacker holds the key of the certificate of the server (finding F1, closed by CORE-H5)
 # The join of a further connection to a tunnel
 tunnel-none	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tunnel-none.pv	Join over TLS-443, the code as it is: the static key of the connection is compared with the Tunnel's
 tunnel-cert	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tunnel-cert.pv	Join over TLS-443: the attacker holds the key of the certificate of the server
-tunnel-quic-cert	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tunnel-quic-cert.pv	Join over QUIC: the attacker holds the key of the certificate of the server (finding F1)
+tunnel-quic-cert	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tunnel-quic-cert.pv	Join over QUIC: the attacker holds the key of the certificate of the server (finding F1, closed by CORE-H5)
 tunnel-nokey-none	prims.pvl,session-lib.pvl,tunnel-lib.pvl,tunnel-queries.pvl,tunnel/tunnel-nokey-none.pv	Negative control: the join does not compare the static key of the connection with the Tunnel's
 # Noise_IK alone, and the peer layer
 noise-encrypted	prims.pvl,noise-lib.pvl,noise-queries.pvl,noise/encrypted.pv	Noise_IK alone with the records under the Noise keys (no outer session): the grades of the Noise Explorer	2

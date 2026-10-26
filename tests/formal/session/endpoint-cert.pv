@@ -1,0 +1,12 @@
+(* Negative control endpoint-cert: the session handshake over QUIC as the build before CORE-H5 (#408) had it, bound to
+   the tls-server-end-point of the certificate (NOISE_BINDING_SERVER_END_POINT, which EndPointBinding of the tests still
+   gives), against an attacker that holds the key of the certificate of the server. The value is the same for every
+   connection to that certificate (D1), so the middlebox that presents the pinned certificate to the client, and opens a
+   session of its own to the server, relays the Noise handshake with the same binding on both sides: finding F1, which
+   must show here as long as quic-cert proves that the exporter closes it. *)
+
+process
+  ( Setup()
+  | LeakCertServer()
+  | Sessions(pin_on, bt_endpoint, bt_endpoint, kp_on, plabel_session, lab_exp_session, suite_hfs)
+  )

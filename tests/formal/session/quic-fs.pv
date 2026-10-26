@@ -1,9 +1,9 @@
 (* Variant quic-fs: the session handshake over QUIC, as the code has it, against an attacker that holds every long-term
-   key of the nodes after the sessions (AUD-5, #389; AUD-6, #409). As tls443-fs. *)
+   key of the nodes after the sessions (AUD-5, #389; AUD-6, #409; CORE-H5, #408). As tls443-fs. *)
 
 process
   ( Setup()
   | LeakLate()
-  | !( new sid: sessionid; Client(alice, bob, pin_on, bt_endpoint, plabel_session, lab_exp_session, suite_hfs, sid) )
-  | !( new sid: sessionid; Server(bob, kp_on, bt_endpoint, plabel_session, lab_exp_session, suite_hfs, sid) )
+  | !( new sid: sessionid; Client(alice, bob, pin_on, bt_export, plabel_session, lab_exp_session, suite_hfs, sid) )
+  | !( new sid: sessionid; Server(bob, kp_on, bt_export, plabel_session, lab_exp_session, suite_hfs, sid) )
   )

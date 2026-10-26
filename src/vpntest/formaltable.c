@@ -39,6 +39,10 @@ void PeerChallengeSend(PEER_AGENT *a, const UCHAR *key, const PEER_ADDR *from, U
 void PeerInputChallenge(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size);
 void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UINT size);
 
+// The exporter of a QUIC connection (Core/TransportQuicExporter.c; CORE-H5, #408), which Core/TransportInternal.h declares
+// for the files of the transport module only
+bool TransportQuicExporter(const void *api, void *connection, UCHAR *exporter);
+
 typedef void (*FORMAL_FUNCTION)(void);
 
 // A function of the table and where it is in this program
@@ -94,6 +98,7 @@ static FORMAL_ENTRY formal_functions[] =
 	FORMAL(TransportNoiseAccept),
 	FORMAL(TransportNoiseConnect),
 	FORMAL(TransportNoiseSend),
+	FORMAL(TransportQuicExporter),
 	FORMAL(TransportTlsDefaultConfig),
 	FORMAL(TransportTlsSetGroups),
 	FORMAL(TunnelJoin),
