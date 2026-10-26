@@ -751,13 +751,16 @@ jobs:
       run: |
         $dir = Join-Path $PWD 'build\coverage'
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        # One profile per process (%p, the process id): coretest.ps1 runs each test in a process of its own
-        $env:LLVM_PROFILE_FILE = Join-Path $dir 'coretest-%p.profraw'
+        # One profile per process id (%p): coretest.ps1 runs each test in a process of its own. Windows hands a
+        # freed process id to the next process at once, and with %p alone a later test overwrote the profile of an
+        # earlier one of the same id (FIX-10, #435: the mlkem test's lines were lost); %m merges a profile into the
+        # file that is there instead (online profile merging, locked between processes)
+        $env:LLVM_PROFILE_FILE = Join-Path $dir 'coretest-%p-%m.profraw'
         . .github/scripts/coretest.ps1
         # The tests of the new core's modules that vpntest has (transport, quic over msquic, tls over Schannel and
         # lossylink, the ingress queue; vxlan; switch) carry the tag core (RANZ_TEST_TAGS, src/vpntest/testlist.h), which
         # its smoke test script selects; a new one is tagged in its own file
-        $env:LLVM_PROFILE_FILE = Join-Path $dir 'vpntest-%p.profraw'
+        $env:LLVM_PROFILE_FILE = Join-Path $dir 'vpntest-%p-%m.profraw'
         $env:RANZ_SMOKE_TAG = 'core'
         . .github/scripts/vpntest.ps1
     - name: Coverage floor

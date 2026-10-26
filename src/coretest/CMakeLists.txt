@@ -8,6 +8,8 @@ ranz_add_executable(coretest CORE
     coretest.c coretest.h
     # Known-answer tests of the crypto module, CORE-F1 (#61)
     kat.c hybrid.c
+    # The refusals of the crypto module, FIX-10 (#435)
+    refusal.c
     # Certificate path and the Schannel handshake, CORE-F1 (#61)
     cert.c schannel.c
     # The session module: handshake, session, tunnel and the interop with flynn/noise, CORE-F2 (#62)
