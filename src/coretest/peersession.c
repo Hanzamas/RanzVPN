@@ -46,7 +46,7 @@ typedef struct PS_NODE {
 } PS_NODE;
 
 // What the tap saw on every link: the datagrams by kind, the ones that carried a run of the inner packet in the clear,
-// and the last record of one host, which the test alters and sends again
+// and the last record of one host, which the test alters and sends again, and which the tap may withhold
 typedef struct PS_TAP {
 	CRITICAL_SECTION Lock;
 	UINT Datagrams;                // Every datagram sent
@@ -55,6 +55,7 @@ typedef struct PS_TAP {
 	NATSIM_HOST *Keep;             // The host whose last record it keeps
 	UINT KeptSize;                 // ... that record
 	UCHAR Kept[PEER_MAX_DATAGRAM]; // ...
+	bool Withhold;                 // The kept record is lost on the way: its receiver never takes it
 } PS_TAP;
 
 // The network of the test
@@ -81,6 +82,7 @@ static bool ps_has_inner(const UCHAR *data, UINT size) {
 static bool ps_tap(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, const UCHAR *data, UINT size) {
 	PS_TAP *t = (PS_TAP *)param;
 	bool clear = ps_has_inner(data, size);
+	bool pass = true;
 
 	EnterCriticalSection(&t->Lock);
 	t->Datagrams++;
@@ -90,10 +92,11 @@ static bool ps_tap(void *param, NATSIM_HOST *from, const PEER_ADDR *dst, const U
 	if (from == t->Keep && data[0] == PEER_MSG_RECORD) {
 		CopyMemory(t->Kept, data, size);
 		t->KeptSize = size;
+		pass = (t->Withhold == false);
 	}
 	LeaveCriticalSection(&t->Lock);
 
-	return true;
+	return pass;
 }
 
 // The receive procedure of every node: keep the datagram and count it by its path
@@ -358,18 +361,24 @@ static void ps_tamper(PS_WORLD *w) {
 	UCHAR rec[PEER_MAX_DATAGRAM];
 	UCHAR alt[PEER_MAX_DATAGRAM];
 
-	// A record from A to B, which the tap keeps as it leaves A
+	// A record from A to B, which the tap keeps as it leaves A and withholds from B: B has not taken its counter, so a
+	// copy with a changed byte of the ciphertext or the tag is no replay and goes to the decryption
+	UINT len = (UINT)sizeof(ps_inner) - 1;
+	LONG received = w->B.Received;
 	w->Tap.Keep = w->A.Host;
 	w->Tap.KeptSize = 0;
+	w->Tap.Withhold = true;
 	NatSimSetTap(w->Sim, ps_tap, &w->Tap);
-	bool sent = ps_send_inner(w);
+	bool sent = PeerSend(w->A.Agent, w->B.Key.Public, ps_inner, len);
+	NatSimWaitIdle(w->Sim, PS_WAIT);
 	NatSimSetTap(w->Sim, NULL, NULL);
+	w->Tap.Withhold = false;
 	UINT size = w->Tap.KeptSize;
 	CopyMemory(rec, w->Tap.Kept, size);
-	coretest_check(sent && size == PEER_RECORD_HEADER + sizeof(ps_inner) - 1 + PEER_RECORD_TAG, "The tap keeps a record of A for B as it leaves A");
+	coretest_check(sent && size == PEER_RECORD_HEADER + len + PEER_RECORD_TAG && w->B.Received == received,
+	               "The tap keeps a record of A for B as it leaves A, and withholds it from B");
 
 	// Every byte changed, one at a time, as from R
-	LONG received = w->B.Received;
 	UINT64 drops = ps_drops(&w->B);
 	UINT64 forged = ps_drop(&w->B, PEER_DROP_FORGED);
 	for (UINT i = 0; i < size; i++) {
@@ -381,7 +390,13 @@ static void ps_tamper(PS_WORLD *w) {
 	coretest_check(w->B.Received == received && ps_drops(&w->B) == drops + size && ps_drop(&w->B, PEER_DROP_FORGED) - forged >= sizeof(ps_inner) - 1 + PEER_RECORD_TAG,
 	               "A record changed in any one byte is dropped and counted, each one: every byte of the ciphertext and the tag fails the decryption");
 
+	// The record as A sealed it, after all its altered copies: none of them moved the window of B
+	PeerInput(w->B.Agent, &w->R.Addr, rec, size);
+	coretest_check(w->B.Received == received + 1 && w->B.LastSize == len && memcmp(w->B.Last, ps_inner, len) == 0 && memcmp(w->B.LastSrc, w->A.Key.Public, PEER_KEY_SIZE) == 0,
+	               "The record itself, after its altered copies, is taken and delivered");
+
 	// The same record again
+	received = w->B.Received;
 	UINT64 replay = ps_drop(&w->B, PEER_DROP_REPLAY);
 	PeerInput(w->B.Agent, &w->R.Addr, rec, size);
 	coretest_check(w->B.Received == received && ps_drop(&w->B, PEER_DROP_REPLAY) == replay + 1, "The same record again is a replay: dropped and counted");
@@ -413,7 +428,6 @@ static void ps_tamper(PS_WORLD *w) {
 	               "C's record sent in the name of A is dropped and counted as well: a record is taken only under the session of its source");
 
 	// The old clear form: a data datagram of A for B with the inner packet in the clear, through R and at B
-	UINT len = (UINT)sizeof(ps_inner) - 1;
 	ZeroMemory(alt, PEER_DATA_HEADER_SIZE);
 	alt[0] = PEER_MSG_DATA;
 	CopyMemory(alt + 1, w->A.Key.Public, PEER_KEY_SIZE);
