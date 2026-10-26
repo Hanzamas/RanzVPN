@@ -459,7 +459,13 @@ static _Function_class_(QUIC_STREAM_CALLBACK) QUIC_STATUS QUIC_API QuicStreamCal
 		return QUIC_STATUS_SUCCESS;
 
 	case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
-		// msquic is done with the stream: let go of its reference; the handle is closed with the last one
+		// msquic is done with the stream, also when its connection closed: a reader takes the bytes left,
+		// then the end, instead of waiting for bytes that cannot come
+		AcquireSRWLockExclusive(&s->Lock);
+		s->Aborted = true;
+		WakeAllConditionVariable(&s->Changed);
+		ReleaseSRWLockExclusive(&s->Lock);
+		// Let go of msquic's reference; the handle is closed with the last one
 		QuicStreamRelease(s);
 		return QUIC_STATUS_SUCCESS;
 

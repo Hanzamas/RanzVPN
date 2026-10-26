@@ -248,6 +248,7 @@ static void QuicBindPump(QUICBIND_PUMP *p)
 {
 	UCHAR buf[4096];
 	UINT64 end = 0;
+	UINT64 last = Tick64();
 
 	while (true)
 	{
@@ -255,6 +256,11 @@ static void QuicBindPump(QUICBIND_PUMP *p)
 
 		if (n == TRANSPORT_LATER)
 		{
+			// A way that stays quiet for a whole timeout has ended, whatever its stream says
+			if (Tick64() - last >= QUICBIND_TIMEOUT)
+			{
+				break;
+			}
 			if (InterlockedCompareExchange(p->Stop, 0, 0) != 0)
 			{
 				if (end == 0)
@@ -272,6 +278,7 @@ static void QuicBindPump(QUICBIND_PUMP *p)
 		{
 			break;
 		}
+		last = Tick64();
 		if (p->Seen != NULL && p->SeenSize < QUICBIND_SEEN)
 		{
 			UINT take = MIN(n, QUICBIND_SEEN - p->SeenSize);
