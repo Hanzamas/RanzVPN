@@ -6,8 +6,8 @@ This is the runbook for the first test of Ranz VPN on two real Windows PCs. You 
 
 Read this first. The Node service of a PC joins its Controller (step 20), but two Node services cannot form a Noise session with each other yet (see Gaps at the end). So the test has three kinds of steps:
 
-- **Real.** The product does it: install, the Controller and its certificate, the web UI, the default Intent, PC B reaching the Controller, the link between the PCs, the Node resources and their addresses, the Node service of PC A joining the Controller with its own key, `ranz doctor`, the logs and the diagnostics bundles, uninstall. Most steps are real.
-- **Stand-in.** `vpntest firsttest`, a test program that is built in CI, plays the Nodes that need a session with each other. It enrols two Nodes at the Controller of PC A over the real network, gives one of them a real Wintun adapter and answers a ping for the other. Steps 17, 19 and 23. From step 20 on, the Node service of PC A plays `pc-a` and the stand-in plays `pc-b` only.
+- **Real.** The product does it: install, the Controller and its certificate, the web UI, the default Intent, PC B reaching the Controller, the link between the PCs, the Node resources and their addresses, the Node service of PC A joining the Controller with its own key, the replacement of the certificate of the Controller by one that `ranz cert` made, `ranz doctor`, the logs and the diagnostics bundles, uninstall. Most steps are real.
+- **Stand-in.** `vpntest firsttest`, a test program that is built in CI, plays the Nodes that need a session with each other. It enrols two Nodes at the Controller of PC A over the real network, gives one of them a real Wintun adapter and answers a ping for the other. Steps 17, 19 and 24. From step 20 on, the Node service of PC A plays `pc-a` and the stand-in plays `pc-b` only.
 - **Gap.** The thing the test is really for, two Node services that ping each other, does not work yet. The Gaps at the end say what is missing.
 
 ## The two PCs and the values you copy
@@ -26,7 +26,7 @@ A few commands need a value from an earlier step. They show it in angle brackets
 | `<PC-A>` | The address of PC A that PC B can reach, for example `192.168.1.10` | `ipconfig` on PC A |
 | `<PORT>` | The TCP port of the Controller: `443`, or `5555` when 443 was taken | step 7, `tlsPort` |
 | `<CONTROLLER>` | `<PC-A>:<PORT>` | |
-| `<FINGERPRINT>` | The TLS fingerprint of the Controller | step 7, `tlsFingerprint` |
+| `<FINGERPRINT>` | The TLS fingerprint of the Controller | step 7, `tlsFingerprint`. Step 21 gives the Controller another certificate, and `<FINGERPRINT>` becomes the new `fingerprint` of step 21 from there on. |
 | `<CONTROLLER-KEY>` | The static key of the Controller | step 7, `publicKey` |
 | `<VIEWER-TOKEN>` | An API token that can only read | step 12 |
 | `<PC-A-OVERLAY>` | The overlay address of the Node `pc-a` | step 16 |
@@ -58,13 +58,14 @@ All commands are PowerShell commands, run in a window that was opened as Adminis
 | 18 | enrol | A | real, for the stand-in |
 | 19 | ping | B | stand-in |
 | 20 | node-service | A | real |
-| 21 | doctor | both | real |
-| 22 | logs | A | real |
-| 23 | stop-stand-in | B | stand-in |
-| 24 | stand-in-gone | B | real |
-| 25 | uninstall | both | real |
-| 26 | clean-up | both | real |
-| 27 | gaps | | gap |
+| 21 | replace-certificate | A and B | real |
+| 22 | doctor | both | real |
+| 23 | logs | A | real |
+| 24 | stop-stand-in | B | stand-in |
+| 25 | stand-in-gone | B | real |
+| 26 | uninstall | both | real |
+| 27 | clean-up | both | real |
+| 28 | gaps | | gap |
 
 The step numbers in the headings below are the ones of this table. The text of each heading has the id after it. CI uses the id, not the number.
 
@@ -118,7 +119,7 @@ The first command must print `True`. The second names your Windows. The third pr
 
 <!-- step: trust pc=both -->
 
-`ranz install` writes `ranz-node.exe`, the drivers and a copy of `ranz.exe`. It refuses every file whose signature does not chain to a trusted root. The CI build is signed with a self-signed certificate, so each PC must trust that certificate as a root first. (A release build will carry a purchased certificate and needs no such step.) Step 26 removes it again.
+`ranz install` writes `ranz-node.exe`, the drivers and a copy of `ranz.exe`. It refuses every file whose signature does not chain to a trusted root. The CI build is signed with a self-signed certificate, so each PC must trust that certificate as a root first. (A release build will carry a purchased certificate and needs no such step.) Step 27 removes it again.
 
 ```powershell run
 Import-Certificate -FilePath C:\ranz-test\cert\ranz-ci-signing.cer -CertStoreLocation Cert:\LocalMachine\Root
@@ -137,7 +138,7 @@ Windows Firewall blocks incoming connections, and `ranz install` adds no rule. P
 New-NetFirewallRule -DisplayName "Ranz first test" -Direction Inbound -Protocol TCP -LocalPort 443,5555,9821 -Action Allow | Select-Object DisplayName, Enabled, Direction, Action
 ```
 
-Step 26 removes the rule.
+Step 27 removes the rule.
 
 ## Part 1. PC A: the Controller
 
@@ -201,7 +202,7 @@ You see this, with your own values:
 
 Write down `publicKey` as `<CONTROLLER-KEY>`, `tlsFingerprint` as `<FINGERPRINT>` and `tlsPort` as `<PORT>`. If `tlsPort` is `5555`, the Controller fell back and `tlsPortFallback` is `true`.
 
-`ranz` on PC A does not check the certificate: loopback is the host itself. On any other PC, `ranz` accepts the certificate only with the fingerprint (step 13). A browser cannot check the fingerprint, so it warns. The certificate cannot be replaced by one that a browser trusts yet (Gap 7).
+`ranz` on PC A does not check the certificate: loopback is the host itself. On any other PC, `ranz` accepts the certificate only with the fingerprint (step 13). A browser cannot check the fingerprint, so it warns. Step 21 replaces the certificate by one that a browser trusts.
 
 ### 8. The web UI (web-ui)
 
@@ -457,9 +458,127 @@ Restart-Service ranz-controller
 
 A few seconds after the Controller is back, `ranz get nodes` shows `pc-a` connected again, and the node log says `the control stream ended after it was open` with the attempts after it. A network that drops without closing the connection ends the stream the same way: the Node probes a quiet stream with TCP keepalive after 10 seconds, and 3 probes 2 seconds apart that get no answer end it, so it dials again about 16 seconds after the last segment.
 
-## Part 4. Check
+## Part 4. The certificate of the Controller
 
-### 21. `ranz doctor` (doctor)
+### 21. Replace the certificate of the Controller (replace-certificate)
+
+<!-- step: replace-certificate pc=both -->
+
+Until now the Controller served the self-signed certificate of step 7. `ranz controller-cert` replaces it (SDN-92). The certificate comes from one of three sources: a PEM file with its key, which this step uses; a certificate of the Windows key storage that `-ksp` names by its thumbprint, whose key stays in the key storage; or an ACME service (`-acme`), which the Controller renews by itself. The web UI, the API and the control streams of the Nodes all use the one certificate. `ranz controller-cert show` prints it: its source, subject, names, thumbprint, TLS fingerprint and end. It never prints a key. `ranz controller-cert clear` takes the setting away, and the Controller serves its own certificate again, with the fingerprint of step 7.
+
+The Controller checks a certificate before it serves it. It refuses one whose key is not the key of the file, one that has ended or is not valid yet, one that is a CA certificate or is not for a server, one with a key that the Nodes do not take, and one that does not name every host that the Nodes use (`-host`). The reason is in the answer, and the certificate in use stays. A certificate that passes is served to the connections that come after it, and the connections that are up stay up.
+
+A certificate with another key has another TLS fingerprint, and a Node pins the fingerprint (step 20). So the Controller first sends each Node the fingerprint of the new certificate with the one in use, over its control stream, waits until the Nodes that are connected have acknowledged it, and only then serves the new certificate. The Node takes the fingerprints in place of the one it was given, and keeps them in its settings, so it reaches the Controller after the change and after a restart. A Node that is not connected could not be told: the command names it and changes nothing, unless `-force` goes on, and that Node needs `ranz node controller set` with the new fingerprint. A certificate for the key that the Controller has already, as the ACME certificate of the Controller always is, has the same fingerprint, and nothing has to be sent.
+
+The test makes the certificate with `ranz cert`: a CA of its own, and a certificate for `<PC-A>` that the CA signs. The Controller service runs as `NT SERVICE\ranz-controller`, so the key file gets an access rule for that account. On PC A:
+
+```powershell run
+New-Item -ItemType Directory -Force C:\ranz-test\controller-cert | Out-Null
+ranz cert -cn "Ranz first test CA" -ca -savecert C:\ranz-test\controller-cert\ca.pem -savekey C:\ranz-test\controller-cert\ca.key
+ranz cert -cn <PC-A> -hosts <PC-A> -signcert C:\ranz-test\controller-cert\ca.pem -signkey C:\ranz-test\controller-cert\ca.key -savecert C:\ranz-test\controller-cert\controller.pem -savekey C:\ranz-test\controller-cert\controller.key
+icacls C:\ranz-test\controller-cert\controller.key /grant "NT SERVICE\ranz-controller:R"
+```
+
+Nothing is set yet, so the Controller still serves its own certificate:
+
+```powershell run
+ranz controller-cert show
+```
+
+`source` is `self-signed`, the subject is `CN=ranz-controller`, `fingerprint` is the `<FINGERPRINT>` of step 7, and there is no `setting`. Now set the certificate. `-host` names the host that the Nodes and PC B use to reach the Controller, which the certificate must name:
+
+```powershell run
+ranz controller-cert set -host <PC-A> -cert C:\ranz-test\controller-cert\controller.pem -key C:\ranz-test\controller-cert\controller.key
+```
+
+The answer has the certificate that is served now, with `source` `file`, and `pinned`, the Nodes that took the new fingerprint before the certificate was served: `pc-a`, the Node service, and `pc-b`, the stand-in. The `fingerprint` is another one than the one of step 7. Write it down as `<FINGERPRINT>` in place of the old one. The Controller keeps the setting in its store, writes the change in its log (`certificate of the controller changed`), in its events (`controller-certificate-changed`) and in its audit log, as an operation of the token that made it. From here `show` and `ranz status` print the new fingerprint:
+
+```powershell run
+ranz controller-cert show
+```
+
+A certificate that the Controller does not take changes nothing. This one is refused with 400: the certificate does not name the host `other.example.com`, and the answer says which host it names, `<PC-A>`. `show` still prints the certificate above.
+
+```powershell
+ranz controller-cert set -host other.example.com -cert C:\ranz-test\controller-cert\controller.pem -key C:\ranz-test\controller-cert\controller.key
+```
+
+The key of another certificate, a certificate that has ended and a certificate file that is gone are refused the same way, each with its reason.
+
+The Node service pinned the fingerprint of step 7 in step 20. The Controller sent it the new fingerprint with the old one before it served the new certificate, and then the new one alone. `ranz node controller show` prints what the Node accepts: `tlsFingerprint` is the new fingerprint, and `tlsFingerprints` lists the fingerprints that the Controller sent, the new one only now. While the certificate changed the list had two, the old fingerprint first:
+
+```powershell run
+ranz node controller show
+```
+
+Now give each end a connection of its own. The Controller reads its setting from its store when it starts, and serves the new certificate again. The Nodes dial it again: the Node service with the new fingerprint that it kept, the stand-in with no fingerprint to check:
+
+```powershell run
+Restart-Service ranz-controller
+```
+
+Restart the Node service too. It reads the fingerprints that the Controller sent from its Configuration store, and dials with them:
+
+```powershell run
+Restart-Service ranzvpnserver
+```
+
+A few seconds later both Nodes are connected again, at the Generation that they acknowledged:
+
+```powershell run
+ranz get nodes
+```
+
+On PC B, `ranz` checks the certificate of the Controller by its fingerprint, as in step 13, or, with no fingerprint, by its chain: the certificate must name the host of `RANZ_SERVER`, and its chain must end in a root that Windows trusts, as for a browser. Copy `ca.pem` of PC A, the certificate of the CA and never `ca.key`, to the same folder on PC B, and trust it:
+
+```powershell run
+Import-Certificate -FilePath C:\ranz-test\controller-cert\ca.pem -CertStoreLocation Cert:\LocalMachine\Root | Select-Object Subject
+```
+
+Take the fingerprint away. `ranz whoami` works anyway, because the certificate names `<PC-A>` and its chain ends in the CA that PC B trusts:
+
+```powershell run
+Remove-Item Env:RANZ_TLS_FINGERPRINT -ErrorAction SilentlyContinue
+ranz whoami
+```
+
+With the new fingerprint it works as in step 13. The old fingerprint is refused now:
+
+```powershell run
+$env:RANZ_TLS_FINGERPRINT = "<FINGERPRINT>"
+ranz whoami
+```
+
+A browser on PC B takes the web UI as well, with no warning. The certificate names `<PC-A>`, so the address is `https://<PC-A>/`:
+
+```powershell run
+(Invoke-WebRequest -UseBasicParsing https://<CONTROLLER>/).StatusCode
+```
+
+A certificate that chains to no root that PC B trusts is refused without the fingerprint. Take the CA out of the store of PC B:
+
+```powershell run
+Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "CN=Ranz first test CA*" } | Remove-Item
+```
+
+Without the fingerprint `ranz whoami` fails now, with `certificate signed by unknown authority`:
+
+```powershell
+Remove-Item Env:RANZ_TLS_FINGERPRINT -ErrorAction SilentlyContinue
+ranz whoami
+```
+
+With the fingerprint it works, whatever PC B trusts. Pin it again, which the later steps of PC B expect:
+
+```powershell run
+$env:RANZ_TLS_FINGERPRINT = "<FINGERPRINT>"
+```
+
+The later steps run on the new certificate. Step 27 removes the files with `C:\ranz-test`, and the data directory of the Controller, which holds the setting.
+
+## Part 5. Check
+
+### 22. `ranz doctor` (doctor)
 
 <!-- step: doctor pc=both -->
 
@@ -471,7 +590,7 @@ ranz doctor -bundle -o C:\ranz-test\bundle-host.zip
 
 Every line says `Pass` and the verdict is `All checks passed`. The exit code is 0. A check that fails prints its reason under it, and the exit code is 1. The last line says where the bundle is. Keep the file: it is what you send with the report of a test that failed.
 
-### 22. What the web UI and the logs show (logs)
+### 23. What the web UI and the logs show (logs)
 
 <!-- step: logs pc=a -->
 
@@ -484,9 +603,9 @@ ranz get revisions
 ```
 
 - The Application log says `ranz-controller started`.
-- `ranz get events` is empty: the Controller raises an event for an automatic rollback of an apply with `--confirm`, a pool near exhaustion and a refused enrolment, and none of that happened. The refusals of step 20 are failed authentications in the audit log.
-- `ranz get revisions` shows the first start, the apply of step 15 and the apply of step 20.
-- In the web UI, Nodes shows both Nodes connected with the Generation they applied, `pc-a` the Node service and `pc-b` the stand-in, Revisions shows the three revisions, and Events is empty.
+- `ranz get events` holds one event, `controller-certificate-changed`, the change of step 21. The Controller also raises an event for an automatic rollback of an apply with `--confirm`, a pool near exhaustion and a refused enrolment, and none of that happened. The refusals of step 20 are failed authentications in the audit log.
+- `ranz get revisions` shows the first start, the apply of step 15 and the apply of step 20. The certificate of step 21 is no part of the Intent, so it made no revision.
+- In the web UI, Nodes shows both Nodes connected with the Generation they applied, `pc-a` the Node service and `pc-b` the stand-in, Revisions shows the three revisions, and Events shows the change of the certificate.
 
 The Diagnostics page of the web UI has a button that downloads the diagnostics bundle of the Controller: its log, its Intent, revisions, events, licence, Nodes and address pools, and the state of its PC, with no secret in it. An operator or an admin may pull it, and every pull is in the audit log. This is the same by command, with the same token (the button calls this URL):
 
@@ -498,7 +617,7 @@ The command prints nothing and writes the ZIP file. The log of the Controller is
 
 On PC B the stand-in window shows the same story from the Node side: its `[INFO]` lines name each Node, its control stream, its Generation, its address, its sessions and how many packets it forwarded and delivered. The node log of the Node service of PC A tells it of `pc-a` since step 20: the refusals and the delay before each next attempt, the Generations it applied, and the end of its stream when the Controller restarted, with the attempts after it. The node log of the Node service on PC B (step 11) is unchanged: that service took no part.
 
-### 23. Stop the stand-in (stop-stand-in)
+### 24. Stop the stand-in (stop-stand-in)
 
 <!-- step: stop-stand-in pc=b -->
 
@@ -510,7 +629,7 @@ New-Item C:\ranz-test\stop -ItemType File
 
 The stand-in checks that the echo requests of PC B reached `pc-a` and that the replies came back into the adapter. It then removes the adapter and prints `FIRSTTEST TEST OK` and `NO MEMORY LEAKS`. Wait for that, and for the end of its process.
 
-### 24. The stand-in is gone (stand-in-gone)
+### 25. The stand-in is gone (stand-in-gone)
 
 <!-- step: stand-in-gone pc=b -->
 
@@ -521,11 +640,11 @@ Get-NetAdapter -Name "Ranz default" -ErrorAction SilentlyContinue
 ranz get nodes
 ```
 
-The first command prints nothing. In the answer of the second, `connected` is false for `pc-b`, and true for `pc-a`: that is the Node service of PC A since step 20, which stays connected until the uninstall stops it. (The window of PC B reads the Controller with the viewer token of step 13.)
+The first command prints nothing. In the answer of the second, `connected` is false for `pc-b`, and true for `pc-a`: that is the Node service of PC A since step 20, which stays connected until the uninstall stops it. (The window of PC B reads the Controller with the viewer token of step 13 and the fingerprint of step 21.)
 
-## Part 5. Clean up
+## Part 6. Clean up
 
-### 25. Uninstall (uninstall)
+### 26. Uninstall (uninstall)
 
 <!-- step: uninstall pc=both -->
 
@@ -537,7 +656,7 @@ ranz uninstall
 
 It stops and removes the services, takes out the drivers that `ranz install` put there (and leaves a driver that was there before), and removes `C:\Program Files\Ranz VPN`. It keeps the data directories on purpose (ADR-0020): a later `ranz install` resumes with the same Configuration store and the same Controller store.
 
-### 26. Remove what uninstall keeps (clean-up)
+### 27. Remove what uninstall keeps (clean-up)
 
 <!-- step: clean-up pc=both -->
 
@@ -556,17 +675,16 @@ Then delete `C:\ranz-test`. Windows keeps the two keys of the Controller (`Ranz 
 
 <!-- gap: gaps -->
 
-A Gap is something that the runbook needs and the code does not have. Nothing here was built for this runbook. Where a safe workaround exists the steps above use it. Gaps 1 and 2, the Node service that joins its Controller and the static key of a Node that a verb prints, are closed: they are step 20 (SDN-90, #395). The numbers of the others stay.
+A Gap is something that the runbook needs and the code does not have. Nothing here was built for this runbook. Where a safe workaround exists the steps above use it. Gaps 1 and 2, the Node service that joins its Controller and the static key of a Node that a verb prints, are closed: they are step 20 (SDN-90, #395). Gap 7, the certificate of the Controller, is closed too: it is step 21 (SDN-92, #397). The numbers of the others stay.
 
 3. **The Node service listens only where its Listener says, and a peer cannot find that Listener.** A Listener resource (SDN-45, #238) names a Node, the TCP port of its front door and the UDP port of QUIC, 443 each, and the source of their certificate: a PKCS #12 file on the Node, a certificate of the LocalMachine\My store by its thumbprint, or ACME. The Node that applies it starts the front door (`FrontDoorStart`, SDN-29, #205), which hands each TLS connection to the TLS of the new protocol (TLS 1.3 only), and QUIC where `msquic.dll` is present, and its overlay takes the sessions of its peers on them (`src/Cedar/NodeListener.c`; `vpntest listener` proves it). The Intent of this runbook names no Listener, so the Node service of step 20 listens on no port. The part that is still missing: the desired state gives a Node no address and no certificate of the Listener of a peer. The overlay dials a peer by its node name on its data transport (`NodeOverlayDial` in `src/Cedar/NodeOverlay.c`), as the in-process loopback transport of the harness does, and the data transport of the Node service dials nowhere, or with the client role the servers of its client settings, never the Listener of a peer. So two Node services cannot form a Noise session, though each joins its Controller (step 20). **No open ticket carries it.** The relay role binds a UDP socket only when its Roles setting asks for it. Workaround: the two stand-in Nodes run their session in memory.
-4. **`ranz install` opens no firewall port.** The runbook adds and removes one rule by hand (steps 4 and 26). **No ticket carries it.** (REL-2, #47, did this for the slim fork.)
+4. **`ranz install` opens no firewall port.** The runbook adds and removes one rule by hand (steps 4 and 27). **No ticket carries it.** (REL-2, #47, did this for the slim fork.)
 5. **No `ranz` verb for the audit log.** The API has it (SDN-49, #242, `GET /api/v1/audit`), the CLI does not. Step 18 uses `curl.exe`. **No ticket carries it.**
 6. **No verb shows a Node's own state on its PC.** Its adapters, its sessions and its control stream show only in `ranz get nodes` on the Controller side and in the node log. `ranz doctor` checks the PC, not the Node, and `ranz doctor -bundle` (SDN-54, #247) collects the node log and the settings of the Node, not its live state. The nearest is SDN-55 (#248), the tray, which talks to the Node over a pipe. No verb is promised there.
-7. **The certificate of the Controller cannot be replaced.** It is always its own self-signed one (step 7), so a browser warns and `ranz` on another PC needs the fingerprint. `ranz cert` makes certificates, but the Controller has no setting to use one. SDN-45 (#238) gives a Node a certificate source (file, key storage or ACME); **no ticket names the Controller's certificate.**
 
 ## Troubleshooting
 
-These are the ways this test fails, with what the code says. Whatever fails, take the diagnostics bundle of each PC (`ranz doctor -bundle`, step 21) and the one of the Controller (step 22) before you uninstall: they hold the logs of the test and no secret.
+These are the ways this test fails, with what the code says. Whatever fails, take the diagnostics bundle of each PC (`ranz doctor -bundle`, step 22) and the one of the Controller (step 23) before you uninstall: they hold the logs of the test and no secret.
 
 - **`ranz install` says `the certificate does not chain to a trusted root`.** The PC does not trust the CI certificate. Do step 3. The message names the file that failed.
 - **`ranz install` says `does ranz install run as an Administrator?`.** The window is not elevated.
@@ -585,6 +703,9 @@ These are the ways this test fails, with what the code says. Whatever fails, tak
 - **`FIRSTTEST TEST FAILED` after the stop.** The line that failed says what: no echo request reached `pc-a` (you did not ping in time, or the ping went another way), or the replies did not come back.
 - **The ping gets no reply.** `Get-NetRoute -InterfaceAlias "Ranz default"` must show `100.64.0.0/10`. Another VPN may own that range. Tailscale uses `100.64.0.0/10`; stop it for this test.
 - **The stand-in prints `Wintun adapter Ranz default not created: error N`.** The adapter could not come up. Look for an older adapter of that name with `Get-NetAdapter -Name "Ranz default"`, for example one that a stand-in left when it was killed instead of stopped. The stand-in waits 5 seconds for an old adapter of the same name to go before it gives up.
+- **`ranz controller-cert set` says `the private key file cannot be read`.** The Controller service runs as `NT SERVICE\ranz-controller` and may not read the file: give it read access to the key file, as step 21 does with `icacls`. The paths are on the PC of the Controller.
+- **`ranz controller-cert set` says 409 and names a Node.** That Node is not connected, so the Controller could not tell it the fingerprint of the new certificate, and a Node that pinned the old one would not reach the Controller again. Connect it and run the command again. With `-force` the certificate is replaced anyway, and that Node needs `ranz node controller set <CONTROLLER> <CONTROLLER-KEY> <FINGERPRINT>` with the new fingerprint.
+- **A Node does not connect after the certificate changed.** Its node log says `the TLS fingerprint check failed` and names the fingerprint that it saw: the Controller serves a certificate that the Node was not told of, as a Node that was not connected during a change with `-force`. Give it the new fingerprint with `ranz node controller set`. If the Controller fell back to its own certificate because its setting could not be read (its log says `the certificate setting cannot be used`), fix the cause, for example the access to the files, and the Controller serves the certificate again within seconds.
 
 ## How CI proves it
 
@@ -594,5 +715,6 @@ The job `first_test` of `.github/workflows/windows.yml` runs on `windows-latest`
 - **The commands are the commands of this file.** A block `powershell run` is run by the script, line by line, in the folder and the PowerShell of the runner, after it fills in the values in angle brackets from what it measured. A block `powershell background` is started and left running, and the script stops it at the end of its step. A command that exits with an error fails the step. The script then checks what the step says you see: the services, the files, the JSON of the API, the pages of the web UI, the audit records, the ping.
 - **One machine plays both PCs.** The runner is PC A and PC B. It switches the `RANZ_*` variables of the window when the PC changes, so that PC B reads the Controller through the address of the runner and the fingerprint, as a second PC would. `<PC-A>` is the address of the runner that is not loopback. Step 10 finds the install of step 5 there already, which is safe.
 - **The Node service of the runner joins.** Step 20 runs on the one Node service of the runner, as `pc-a`, in place of the stand-in for that Node; the stand-in keeps playing `pc-b`. Before the settings of the runbook, the script sets a wrong TLS fingerprint and then a wrong static key with `ranz node controller set`, and waits for the node log to say which check failed. After the right settings it waits for the refusal of the key in the audit log, then for `pc-a` connected at its acknowledged Generation, and after the restart of the Controller for `pc-a` connected again.
-- **A Gap is read from the sources.** At the Gap step, which the script runs last, it looks in the sources for what the document says is missing: an overlay that dials a peer at something else than its node name (Gap 3), a firewall rule in `ranz install` (Gap 4), a verb for the audit log in the CLI (Gap 5). When one is there, the job fails, until this file has real steps for it. It also checks that Gaps 1 and 2 stay closed: the Node service sets the control stream of its overlay, and the CLI has the verbs of step 20.
+- **The certificate is replaced for real.** Step 21 makes the CA and the certificate with `ranz cert` for the address of the runner, gives the service account of the Controller the key file, and sets the certificate. The script reads the answer (the two Nodes pinned, the new fingerprint), the log, the events and the audit log, and checks that the Nodes that were connected stayed connected: the Controller log has no new `node connected` line. A certificate for another host is refused with its reason, and the certificate in use stays. The Node service must hold the new fingerprint and keep it in its settings. After the restart of the Controller and then of the Node service, both Nodes are connected again at their acknowledged Generation, and the node log has no new failure of the fingerprint check. PC B reaches the Controller with no fingerprint once it trusts the CA, with the new fingerprint, and the web UI answers 200 to a client that checks the chain. With the CA out of the store, `ranz` without the fingerprint is refused with `unknown authority`.
+- **A Gap is read from the sources.** At the Gap step, which the script runs last, it looks in the sources for what the document says is missing: an overlay that dials a peer at something else than its node name (Gap 3), a firewall rule in `ranz install` (Gap 4), a verb for the audit log in the CLI (Gap 5). When one is there, the job fails, until this file has real steps for it. It also checks that Gaps 1, 2 and 7 stay closed: the Node service sets the control stream of its overlay, and the CLI has the verbs of steps 20 and 21.
 - **What CI cannot do.** It cannot try two PCs, a browser, or the Gaps. The web UI is checked by its pages and by the API calls that the pages make. The overlay between two Nodes is the stand-in, with one real Wintun adapter and a fake host.

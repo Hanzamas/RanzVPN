@@ -718,6 +718,165 @@ try {
 		Write-Host 'after the restart of the Controller the Node service dialled again by itself and is connected again'
 	}
 
+	Step 'replace-certificate' {
+		$folder = Join-Path $work 'controller-cert'
+		$cert = Join-Path $folder 'controller.pem'
+		$key = Join-Path $folder 'controller.key'
+		$controllerLog = Join-Path $controllerData 'controller.log'
+		$old = $values['FINGERPRINT']
+		$server = "https://$($values['CONTROLLER'])"
+		# How often the Controller log says that a Node connected: a connection that was up stays up, so the count of a Node
+		# that stayed connected does not change
+		function Get-Connections([string] $name) {
+			return @([regex]::Matches((Get-Content -LiteralPath $controllerLog -Raw), 'msg="node connected"[^\r\n]* node=' + [regex]::Escape($name) + ' ')).Count
+		}
+
+		# The CA, the certificate for the address of this runner that it signs, and the access of the service account
+		$null = Invoke-Doc -From 0 -Count 1
+		foreach ($f in 'ca.pem', 'ca.key', 'controller.pem', 'controller.key') {
+			if (-not (Test-Path -LiteralPath (Join-Path $folder $f))) { throw "ranz cert did not write $f into $folder" }
+		}
+		$acl = (& icacls $key | Out-String)
+		if ($acl -notmatch 'ranz-controller') { throw "the key file has no access rule for the service account of the Controller:`n$acl" }
+		$global:LASTEXITCODE = 0
+
+		# Nothing is set: the self-signed certificate of step 7, with the fingerprint that the Node service pinned in step 20
+		$out = Invoke-Doc -From 1 -Count 1
+		$shown = Get-Json $out
+		if ($out -match 'PRIVATE KEY') { throw 'ranz controller-cert show printed a key' }
+		if ($shown.source -ne 'self-signed' -or $shown.fingerprint -ne $old -or $shown.setting) {
+			throw "ranz controller-cert show with no setting is $($shown | ConvertTo-Json -Compress -Depth 4), not the self-signed certificate with the fingerprint $old"
+		}
+
+		# A certificate that the Controller refuses changes nothing: a key that is not the key of the certificate, and a
+		# certificate that does not name the host that the Nodes use. The answer says why.
+		$refusedFile = Join-Path $work 'refused.err'
+		foreach ($case in @(
+				@(@('-host', $values['PC-A'], '-cert', $cert, '-key', (Join-Path $folder 'ca.key')), 'does not belong to the certificate'),
+				@(@('-host', 'other.example.com', '-cert', $cert, '-key', $key), 'does not name the host "other.example.com"'))) {
+			$setArgs = [string[]] $case[0]
+			& $ranzExe controller-cert set @setArgs 2> $refusedFile | Out-Null
+			$code = $LASTEXITCODE
+			$msg = Get-Content -LiteralPath $refusedFile -Raw
+			if ($code -eq 0 -or $msg -notmatch '\(400 ' -or $msg -notmatch [regex]::Escape($case[1])) { throw "ranz controller-cert set $($setArgs -join ' ') was not refused with 400 and '$($case[1])' (exit code $code): $msg" }
+			$global:LASTEXITCODE = 0
+			Write-Host "refused: $($msg.Trim())"
+		}
+		$shown = Invoke-Ranz @('controller-cert', 'show')
+		if ($shown.fingerprint -ne $old -or $shown.source -ne 'self-signed') { throw "a refused certificate changed the certificate in use: $($shown | ConvertTo-Json -Compress -Depth 4)" }
+
+		# The replacement: both Nodes take the new fingerprint before the certificate is served
+		$before = @{ $nodeA = (Get-Connections $nodeA); $nodeB = (Get-Connections $nodeB) }
+		foreach ($name in $nodeA, $nodeB) {
+			if ($before[$name] -lt 1) { throw "controller.log does not say that $name connected" }
+		}
+		$failedChecks = @(Get-NodeLog 'the TLS fingerprint check failed').Count
+		$out = Invoke-Doc -From 2 -Count 1
+		if ($out -match 'PRIVATE KEY') { throw 'ranz controller-cert set printed a key' }
+		$change = Get-Json $out
+		$new = $change.certificate.fingerprint
+		if ($change.certificate.source -ne 'file' -or $new -notmatch '^[0-9a-f]{64}$' -or $new -eq $old -or @($change.certificate.names) -notcontains $values['PC-A'] -or $change.certificate.selfSigned) {
+			throw "the replacement is $($change | ConvertTo-Json -Compress -Depth 5), not a certificate of the file for $($values['PC-A']) with another fingerprint than $old"
+		}
+		if ((@($change.pinned) -join ',') -ne "$nodeA,$nodeB" -or @($change.unpinned).Count -ne 0) {
+			throw "the Nodes that took the new fingerprint before the certificate was served are $(@($change.pinned) -join ','), and $(@($change.unpinned) -join ',') did not"
+		}
+		$values['FINGERPRINT'] = $new
+		Write-Host "the Controller serves the certificate of the file: fingerprint $new, in place of $old"
+
+		# The log, the events and the audit log have the change, and the status and show name the new fingerprint
+		$log = Get-Content -LiteralPath $controllerLog -Raw
+		foreach ($line in 'msg="TLS certificate"', 'msg="certificate of the controller changed"') {
+			if ($log -notmatch [regex]::Escape($line)) { throw "controller.log does not say '$line'" }
+		}
+		$events = @((Invoke-Ranz @('get', 'events')).events | Where-Object { $_ })
+		if ($events.Count -ne 1 -or $events[0].type -ne 'controller-certificate-changed' -or $events[0].message -notmatch [regex]::Escape($new)) {
+			throw "the events are $($events | ConvertTo-Json -Compress -Depth 4), not the change of the certificate"
+		}
+		$admin = (Get-Content -LiteralPath $adminToken -Raw).Trim()
+		$null = Wait-Until {
+			$audit = Invoke-Curl 'https://localhost/api/v1/audit?kind=operation' $admin -Body | ConvertFrom-Json
+			@($audit.records | Where-Object { $_.action -eq 'PUT /api/v1/controller-certificate' -and $_.actor -eq 'token:admin' -and $_.outcome -eq 'success' }).Count -eq 1
+		} 'the audit log to hold the change of the certificate' 15
+		$out = Invoke-Doc -From 3 -Count 1
+		$shown = Get-Json $out
+		if ($out -match 'PRIVATE KEY' -or $shown.fingerprint -ne $new -or $shown.source -ne 'file' -or $shown.setting.file.certificate -ne $cert -or $shown.setting.file.key -ne $key) {
+			throw "ranz controller-cert show after the change is $($shown | ConvertTo-Json -Compress -Depth 5)"
+		}
+		if ((Invoke-Ranz @('status')).tlsFingerprint -ne $new) { throw 'ranz status does not name the fingerprint of the new certificate' }
+
+		# The connections that were up stayed up: no Node connected again because of the change
+		foreach ($name in $nodeA, $nodeB) {
+			if ((Get-Connections $name) -ne $before[$name]) { throw "$name connected again while the certificate was replaced: its connection was up and had to stay" }
+			$n = Get-Node $name
+			if (-not $n -or -not $n.connected) { throw "$name is not connected after the certificate was replaced" }
+		}
+		Write-Host 'the Nodes that were connected stayed connected while the certificate was replaced'
+
+		# The Node service pinned the old fingerprint in step 20: the Controller sent it the new one with the old one, then the
+		# new one alone, and the node keeps what it was sent in its settings
+		$null = Wait-Until {
+			$s = (& $ranzExe node controller show) -join "`n" | ConvertFrom-Json
+			if ($s.controller.tlsFingerprint -eq $new -and (@($s.controller.tlsFingerprints) -join ',') -eq $new) { $s }
+		} 'the Node service to hold the new fingerprint alone in its settings' 60
+		$null = Invoke-Doc -From 4 -Count 1
+		foreach ($want in "accepts are now $old or $new", "accepts are now $new") {
+			$null = Wait-Until { @(Get-NodeLog $want).Count -ge 1 } "the node log to say '$want'" 30
+		}
+
+		# The Controller restarts, and serves the certificate of its setting again: both Nodes dial again, the Node service
+		# with the fingerprint that it was sent
+		$ended = @(Get-NodeLog 'the control stream ended after it was open').Count
+		$null = Invoke-Doc -From 5 -Count 1
+		Wait-Service $controllerService 'Running'
+		$null = Wait-Until { @(Get-NodeLog 'the control stream ended after it was open').Count -gt $ended } 'the node log to say that the control stream ended' 60
+		$null = Wait-Until {
+			$a = Get-Node $nodeA
+			$b = Get-Node $nodeB
+			$a -and $b -and $a.connected -and $b.connected -and $a.ackedGeneration -eq $a.generation -and $b.ackedGeneration -eq $b.generation
+		} 'both Nodes to be connected again after the restart of the Controller' 150
+		if ((Invoke-Ranz @('controller-cert', 'show')).fingerprint -ne $new) { throw 'the Controller does not serve the certificate of its setting after a restart' }
+
+		# The Node service restarts: it reads the fingerprints from its Configuration store and dials with them
+		$null = Invoke-Doc -From 6 -Count 1
+		Wait-Service $nodeService 'Running'
+		$null = Wait-Until {
+			$a = Get-Node $nodeA
+			$a -and $a.connected -and $a.ackedGeneration -eq $a.generation
+		} 'the Node service to be connected as pc-a again after its restart' 150
+		$out = Invoke-Doc -From 7 -Count 1
+		if ($out -notmatch $nodeA -or $out -notmatch $nodeB) { throw "ranz get nodes does not list both Nodes: $out" }
+		if (@(Get-NodeLog 'the TLS fingerprint check failed').Count -ne $failedChecks) {
+			throw "the fingerprint check of the Node service failed after the certificate was replaced: $(@(Get-NodeLog 'the TLS fingerprint check failed')[-1].Line)"
+		}
+		Write-Host 'both Nodes are connected with the new certificate, the Node service also after its own restart'
+
+		# PC B: with no fingerprint, ranz checks the chain against the roots of Windows
+		Enter-Pc 'b'
+		$null = Invoke-Doc -From 8 -Count 1
+		$me = Get-Json (Invoke-Doc -From 9 -Count 1)
+		if ($me.role -ne 'viewer' -or $me.name -ne 'pc-b') { throw "ranz whoami with no fingerprint answers as $($me | ConvertTo-Json -Compress)" }
+		$me = Get-Json (Invoke-Doc -From 10 -Count 1)
+		if ($me.role -ne 'viewer' -or $me.name -ne 'pc-b') { throw "ranz whoami with the new fingerprint answers as $($me | ConvertTo-Json -Compress)" }
+		& $ranzExe -server $server -token-file $viewerToken -tls-fingerprint $old whoami 2>$null | Out-Null
+		if ($LASTEXITCODE -eq 0) { throw 'ranz accepted the old fingerprint of the Controller after the certificate was replaced' }
+		$global:LASTEXITCODE = 0
+		Write-Host 'the old fingerprint is refused'
+		if ((Invoke-Doc -From 11 -Count 1) -notmatch '(?m)^200\s*$') { throw "the web UI did not answer 200 to a client that checks the chain of the certificate" }
+
+		# With the CA out of the store the chain ends in no root that Windows trusts: refused without the fingerprint
+		$null = Invoke-Doc -From 12 -Count 1
+		if (@(Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like 'CN=Ranz first test CA*' }).Count -ne 0) { throw 'the CA of the test is still trusted' }
+		Remove-Item Env:RANZ_TLS_FINGERPRINT -ErrorAction SilentlyContinue
+		& $ranzExe whoami 2> $refusedFile | Out-Null
+		$msg = Get-Content -LiteralPath $refusedFile -Raw
+		if ($LASTEXITCODE -eq 0 -or $msg -notmatch 'unknown authority') { throw "ranz with no fingerprint was not refused for a certificate of no trusted root (exit code $LASTEXITCODE): $msg" }
+		$global:LASTEXITCODE = 0
+		Write-Host "refused: $($msg.Trim())"
+		$null = Invoke-Doc -From 13 -Count 1
+		Enter-Pc 'a'
+	}
+
 	Step 'doctor' {
 		$out = Invoke-Doc
 		foreach ($title in 'Kernel System', 'Memory Operation System', 'ANSI / Unicode string processing system', 'File system', 'Thread processing system', 'Network system') {
@@ -735,8 +894,9 @@ try {
 	Step 'logs' {
 		$out = Invoke-Doc
 		if ($out -notmatch 'ranz-controller started') { throw 'the Application log does not say that ranz-controller started' }
+		# The one event is the change of the certificate of step 21 (SDN-92)
 		$events = @((Invoke-Ranz @('get', 'events')).events | Where-Object { $_ })
-		if ($events.Count -ne 0) { throw "the Controller has events: $($events | ConvertTo-Json -Compress -Depth 4)" }
+		if ($events.Count -ne 1 -or $events[0].type -ne 'controller-certificate-changed') { throw "the Controller has the events $($events | ConvertTo-Json -Compress -Depth 4), not the change of the certificate of step 21 alone" }
 		$revisions = ((Invoke-Ranz @('get', 'revisions')).revisions | ForEach-Object { $_.operation }) -join ','
 		if ($revisions -ne 'first-start,apply,apply') { throw "the revisions are $revisions, not the first start and the applies of steps 15 and 20" }
 		# The bundle of the Controller, the one that the button of the Diagnostics page downloads
@@ -799,11 +959,13 @@ try {
 	}
 
 	Gap 'gaps' {
-		# The document says what is missing. The sources must still say so, or the Gap is closed. Gaps 6 and 7 are not read
-		# from the sources: nothing in them says that a verb or a setting is missing. Gaps 1 and 2 are closed (step 20,
-		# SDN-90), and must stay so: the Node service sets the control stream of its overlay, and ranz has the verbs.
+		# The document says what is missing. The sources must still say so, or the Gap is closed. Gap 6 is not read from the
+		# sources: nothing in them says that a verb is missing. Gaps 1 and 2 are closed (step 20, SDN-90), and must stay so:
+		# the Node service sets the control stream of its overlay, and ranz has the verbs. So is Gap 7 (step 21, SDN-92): ranz
+		# has the verb that sets the certificate of the Controller.
 		if (-not (Test-Source 'src\Cedar' 'Node*.c' '\.Control\s*=|->Control\s*=')) { throw 'Gap 1 is open again: no code of the Node service sets the control stream of its overlay (NODE_OVERLAY_CONFIG.Control)' }
 		if (-not (Test-Source 'controller\cmd\ranz' '*.go' 'register\("node"')) { throw 'Gap 2 is open again: ranz has no verb node, which prints the key of a Node' }
+		if (-not (Test-Source 'controller\cmd\ranz' '*.go' '"controller-cert"')) { throw 'Gap 7 is open again: ranz has no verb controller-cert, which sets the certificate of the Controller' }
 		# The Listener of a desired state starts the front door and QUIC of a Node (SDN-45, NodeListener.c), but the overlay
 		# still dials a peer by its node name, not at the Listener of the peer
 		$byName = Test-Source 'src\Cedar' 'NodeOverlay.c' 'TransportDial\(ov->Config\.Data, name, NULL\)'
