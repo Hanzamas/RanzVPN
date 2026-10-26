@@ -1,6 +1,6 @@
 # Threat model of the new core and the Controller
 
-AUD-1 (#362). This page is the threat model of the new core (the Node, ADR-0022) and of the Controller (ADR-0026). For each plane it says what is protected, where an attacker can reach it, what four attackers can do (an attacker on the path, a malicious peer, a malicious tenant and a thief of a node key), and which control answers each threat. A threat that no control answers is a gap, and each gap is an open ticket or a draft ticket (Appendix B). The standard mode (SDN-76 to SDN-79) has a section of its own, with what the operator must provide, and section 14 says what is out of scope and why.
+AUD-1 (#362). This page is the threat model of the new core (the Node, ADR-0022) and of the Controller (ADR-0026). For each plane it says what is protected, where an attacker can reach it, what four attackers can do (an attacker on the path, a malicious peer, a malicious tenant and a thief of a node key), and which control answers each threat. A threat that no control answers is a gap, and each gap is an open ticket, a draft ticket (Appendix B) or an amendment of an open ticket (Appendix C). The standard mode (SDN-76 to SDN-79) has a section of its own, with what the operator must provide, and section 14 says what is out of scope and why.
 
 It is written for the maintainer, for the reviewers of AUD-2 (#364), who check each module against it, and for the auditor of AUD-4 (#365), whose package starts with it. `docs/formal-model.md` proves the handshakes with ProVerif. This page does not repeat its answers: it cites them, and says what the rest of the design rests on. It describes the tree of `integration` at commit `c8bf82f` (2026-10-26). Where the code differs from an ADR it says so, and the differences that the formal model numbers D1 to D8 keep their numbers.
 
@@ -8,7 +8,7 @@ It is written for the maintainer, for the reviewers of AUD-2 (#364), who check e
 
 The ticket names six planes: the Noise session (with its Channel binding, Login and rekey), the transports, the front door and its handoff, the control stream, the API with the web UI and the tokens, and the store with the licence. Sections 5 to 10 take them in that order. Section 11 adds the data plane behind the sessions, because the malicious peer and the malicious tenant are stopped there and not in the sessions. Section 12 is the standard mode, section 13 the entry points that came after the ticket was written (WireGuard Devices, the relay, the sidecars, the pipes of the host).
 
-Each plane has the same parts: what it is, as built; its assets; its entry points; what each attacker can do; and a table of threats. One row of a table is one threat: who makes it, what it does, the control that answers it with its evidence, the status of that control, and the gap that is left. A gap is `G-n` of Appendix A, which names the open ticket that covers it, or the draft ticket `DT-n` of Appendix B.
+Each plane has the same parts: what it is, as built; its assets; its entry points and the trust boundaries of section 4 that it sits on; what each attacker can do; and a table of threats. One row of a table is one threat: who makes it, what it does, the control that answers it with its evidence, the status of that control, and the gap that is left. A gap is `G-n` of Appendix A, which names the open ticket that covers it, or the draft ticket `DT-n` of Appendix B.
 
 **Evidence.** Every control names its evidence, of one of five kinds. **code**: a file or a function that was read for this page. **test**: a vpntest or coretest case, a Go test or a CI job, by name. **model**: a query of `docs/formal-model.md`. **ADR**: a decision. **reasoned**: our own argument, which nothing tested, as in ADR-0041. The reasoned rows are the first for AUD-2 to check.
 
@@ -124,7 +124,7 @@ The first control record of a session that dials a server Role is a Login. The T
 
 The assets are A1 (the records), A3 (the identity key), A6 (the Login secrets, while a Login is in flight), and the availability of the responder (A9).
 
-The entry points are four, all of them read from a stranger before it is known: the first handshake record of every accepted stream (`NoiseSessionAccept`, `NoiseHandshakeRead`), where the responder takes the static key of any initiator and decides after the handshake; the records after it (`NoiseSessionReceive`) and the frames of the stream (`TransportNoiseReceive`: four bytes of length, at most 65537 bytes); the Login and the join Login (`NoiseLoginParse`, then Sam and the key pin); and the headers of the inner frames, which the flow hash reads (`NoiseTunnelFlowHash`). Each has a fuzz target in the registry (`fuzz_noise`, `fuzz_transport`).
+The entry points are four, all of them read from a stranger before it is known: the first handshake record of every accepted stream (`NoiseSessionAccept`, `NoiseHandshakeRead`), where the responder takes the static key of any initiator and decides after the handshake; the records after it (`NoiseSessionReceive`) and the frames of the stream (`TransportNoiseReceive`: four bytes of length, at most 65537 bytes); the Login and the join Login (`NoiseLoginParse`, then Sam and the key pin); and the headers of the inner frames, which the flow hash reads (`NoiseTunnelFlowHash`). Each has a fuzz target in the registry (`fuzz_noise`, `fuzz_transport`). The trust boundaries are B3, where two Nodes meet, and B1 for the first bytes of a stream (section 4).
 
 ### What each attacker can do
 
@@ -148,10 +148,10 @@ The entry points are four, all of them read from a stranger before it is known: 
 | NS-9 | stranger, any tenant | Completes the outer handshake and then sends nothing, or one byte of the Noise message at a time. | The Node reads the first frame within `NODE_OVERLAY_HANDSHAKE` (5 s) and closes the stream. But the one thread of the overlay does it, inline: `NodeOverlayAccept` calls `TransportNoiseAccept`, and the same thread reads the sessions of every peer and dials every peer. So each silent connection stops the forwarding of the whole Node for up to 5 s, and one connection every 5 s keeps it stopped. QUIC, and a TLS-443 listener without a decoy (TR-2), let any stranger in; a TLS listener with a decoy sends strangers to the decoy before the thread sees them. Evidence: code `NodeOverlay.c` (`NodeOverlayThread`, `NodeOverlayAccept`), `TransportNoise.c` (`TransportNoiseRead`); reasoned, not measured. | open | G-1, DT-1 |
 | NS-10 | stranger | Costs the responder one Diffie-Hellman and one AEAD for each attempt, from anywhere, with no limit for a source. | Nothing at the Node: no limit for a source and no cap on unauthenticated connections (DT-3). | open | G-7, DT-3 |
 | NS-11 | stolen node key | Completes the handshake as the Node against every Node that lists it, from any address, and holds the access that the Policy gives its tags. Deleting its Node resource, or changing its `publicKey`, removes it from the Peer objects of the next Generation; a Node that cannot reach the Controller keeps the old list (CS-10). | The key is in the software key storage provider, not exportable, in the key set of the service account. The Policy of the VRF limits what the Node may do. Evidence: model `overlay-tls443-client`, `overlay-quic-cert` (the Noise key of a Node alone is the Node to its peers); ADR-0041. | partial | G-6 |
-| NS-12 | stolen node key | Replaces the live session of the real Node: a new handshake of a key closes the session that the peer holds for it (`NodeOverlayReplace`), so a thief can keep the real Node off, and the real Node dials again and does the same. | None. It is how a Node that roamed or woke from sleep takes its place again (CORE-S3-1). Evidence: code. | accepted | the detection of DT-11 |
+| NS-12 | stolen node key | Replaces the live session of the real Node: a new handshake of a key closes the session that the peer holds for it (`NodeOverlayReplace`), so a thief can keep the real Node off, and the real Node dials again and does the same. | None. It is how a Node that roamed or woke from sleep takes its place again (CORE-S3-1). Evidence: code. | accepted | G-30, DT-11 (the detection) |
 | NS-13 | stolen node key, at rest | Copies the key from a disk, a backup or a cloned VM. | ADR-0041 (Proposed) designs a TPM-bound identity that signs inside the Noise session: it stops the copy, not an intruder who is on the host. It is not built, and its follow-ups CORE-H4-1 to CORE-H4-9 are named in the ADR and not filed. Evidence: ADR-0041. | designed | G-6 |
 | NS-14 | any | Reads or alters the Login password in transit, or replays a certificate Login. | A Login is the first control record of a bound session, inside the outer session, and a certificate Login signs a challenge that comes from the handshake hash of that session. Evidence: model `sec-pw`, `tls443-cert`; test `nodelogin`. | tests only | none |
-| NS-15 | malicious peer, any tenant | Guesses passwords by sending Logins, with no limit on the attempts for a user or a source. | In the store, a check costs one PBKDF2 derivation of 600000 iterations, and an unknown user costs the same (`cs_dummy_salt`), so timing tells nothing of which names exist. There is no lockout and no throttle. Evidence: code `ConfigStore.c`, `NodeSession.c`; reasoned. | tests only | G-5 |
+| NS-15 | malicious peer, any tenant | Guesses passwords by sending Logins, with no limit on the attempts for a user or a source. | In the store, a check costs one PBKDF2 derivation of 600000 iterations, and an unknown user costs the same (`cs_dummy_salt`), so timing tells nothing of which names exist. There is no lockout and no throttle. Evidence: code `ConfigStore.c`, `NodeSession.c`; reasoned. | tests only | G-5, DT-5 |
 | NS-16 | holder of a password | Logs in first and pins its own key to a user whose first Login has not come (trust on first use). A user of a Windows domain and an anonymous Login are never pinned. | The pin: later Logins must come from the pinned key (`NodeLoginPinned`; a store that fails to check refuses, FIX-8). Trust on first use is the design of ADR-0022, and admin-issued join tokens are deferred. Evidence: model `tls443-pw`, `tls443-pw-first`; formal-model D8; test `pinfail`. | accepted | none: the model shows the first Login as the attack, and the decision is ADR-0022's |
 | NS-17 | stranger | Joins a Tunnel by guessing its id, or with the id of another peer's Tunnel. | The join Login must come from the static key of the Tunnel (`NoiseTunnelJoin`), whatever id it names. Evidence: model `join-identity`, and the negative control `tunnel-nokey-none`. | tests only | none |
 | NS-18 | any | Crafts a handshake, a record, a Login or a frame to corrupt the memory of the Node. | The parsers of the module have fuzz targets that run under AddressSanitizer in the full set, and the registry refuses a new parser without one. Evidence: `.github/quality/fuzz-targets.txt` (`NoiseHandshakeRead`, `NoiseSessionAccept`, `NoiseSessionFinish`, `NoiseSessionReceive`, `NoiseLoginParse`, `NoiseTunnelFlowHash`, `TransportNoiseReceive`); the coretest cases `noise` and `session`. | runs | none: the long campaign is AUD-3 (#363) |
@@ -191,7 +191,7 @@ A client races the entries of its fallback list (QUIC, then TLS-443, then mimic)
 
 The assets are the confidentiality and integrity of the outer session (A1), the certificates with their keys and the pin, the exporter, the camouflage posture that ADR-0023 promises (indistinguishable from HTTPS and HTTP/3 to a classifier of VPN protocols), the REALITY key of a mimic server, and the availability of the listeners (A9).
 
-The entry points are the QUIC Initial and handshake packets (parsed by msquic); the TCP connections that the front door hands over, then the ClientHello and the TLS records (parsed by Schannel); the first frame after the TLS handshake, which the decoy reads (`TransportDecoyIsHandshake`, `TransportDecoyAuthenticate`); on a client, the answers of an HTTP or SOCKS5 proxy and the proxy list of a PAC script (`TransportProxyParse*`) and the ServerHello (`TransportTlsParseHello`); and the TCP listener of the mimic sidecar, with its pipes (B10).
+The entry points are the QUIC Initial and handshake packets (parsed by msquic); the TCP connections that the front door hands over, then the ClientHello and the TLS records (parsed by Schannel); the first frame after the TLS handshake, which the decoy reads (`TransportDecoyIsHandshake`, `TransportDecoyAuthenticate`); on a client, the answers of an HTTP or SOCKS5 proxy and the proxy list of a PAC script (`TransportProxyParse*`) and the ServerHello (`TransportTlsParseHello`); and the TCP listener of the mimic sidecar, with its pipes (B10). The trust boundaries are B1 and B3, B10 for the mimic sidecar, and B8 toward a proxy, a PAC script and an ACME CA.
 
 ### What each attacker can do
 
@@ -205,7 +205,7 @@ The entry points are the QUIC Initial and handshake packets (parsed by msquic); 
 | id | who | threat | control, with its evidence | status | gap |
 |---|---|---|---|---|---|
 | TR-1 | on-path, passive | Classifies the traffic as a VPN by its fingerprint: ClientHello, QUIC Initial, sizes and timing. | The ClientHello and the QUIC Initial are those of Schannel and msquic, so a classifier of VPN protocols finds ordinary Windows software (ADR-0006 tiers 1 and 2, ADR-0023). A client may split the ClientHello in two segments and omit the SNI toward its own servers. There is no claim against a GFW-class classifier, or against size and timing analysis. Evidence: ADR-0023; test `trojan` (the split and the omission). | accepted | none: tier 3 is the mimic path (TR-9), and the padding of the traffic shape is phase 2 |
-| TR-2 | on-path, active prober | Connects to the port and learns that it is no web server. | The decoy exists: after the TLS handshake the server reads the first frame, and a prober whose first message does not open under the static key of the server, for this outer session, is reverse-proxied to a site on loopback (`TransportDecoyAuthenticate`, `TransportDecoyProxy`; test `trojan`). But the Listener of a Node configures no decoy (`NodeListenerUp`), so a prober sees the node's certificate and then a closed connection; and QUIC has no HTTP/3 server behind `h3`. Evidence: code `NodeListener.c`, `TransportTls.c`; test `trojan`. | tests only | G-9 (the static site itself is #353) |
+| TR-2 | on-path, active prober | Connects to the port and learns that it is no web server. | The decoy exists: after the TLS handshake the server reads the first frame, and a prober whose first message does not open under the static key of the server, for this outer session, is reverse-proxied to a site on loopback (`TransportDecoyAuthenticate`, `TransportDecoyProxy`; test `trojan`). But the Listener of a Node configures no decoy (`NodeListenerUp`), so a prober sees the node's certificate and then a closed connection; and QUIC has no HTTP/3 server behind `h3`. Evidence: code `NodeListener.c`, `TransportTls.c`; test `trojan`. | tests only | G-9, DT-4 (the static site itself is #353) |
 | TR-3 | malicious peer, any holder of the key | Tells a node from the decoy: the decoy lets a client through if its first message opens under the static public key of the server, and a peer knows that key. | The key is not published by the Node. The Intent shows it to a viewer and the control plane gives it to the peers, so the holders are insiders. Evidence: code `TransportDecoyAuthenticate`; reasoned. | accepted | none |
 | TR-4 | on-path | A middlebox with its own root CA (a corporate proxy that inspects TLS) reads the traffic. | Strict pinning: the client takes the pinned certificate only, so the path fails closed and is not read. Such networks use the CDN path in phase 2. Evidence: ADR-0023 (amendment of 2026-10-15); code (`QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION`, `SCH_CRED_MANUAL_CRED_VALIDATION`). | accepted | none |
 | TR-5 | stranger, any tenant | Floods the listeners: QUIC Initial packets, TCP connections, TLS handshakes, ClientHello fragments. | The front door reads at most 16 KiB of a ClientHello and gives each connection 10 s; msquic keeps its own defaults. There is no limit for a source, no cap on unauthenticated connections and no QUIC retry under load. Evidence: code `FrontDoor.h`, `TransportQuic.c`, `NodeListener.c`. | open | G-7 |
@@ -245,7 +245,7 @@ The owner's end of the pipe is `FrontDoorPipeNew`: the first instance of the nam
 
 ### Assets and entry points
 
-The assets are the availability of TCP 443 (A9), the integrity of the routing (a connection reaches only an owner that takes it), the duplicated sockets with the bytes that the peer already sent, and the pipes of the owners. The entry points are every byte that any host sends to TCP 443 before an owner has the connection (`FrontDoorParseHello`, `FrontDoorRoute`), and the handoff pipe, which is local (`FrontDoorHandoffDecode`).
+The assets are the availability of TCP 443 (A9), the integrity of the routing (a connection reaches only an owner that takes it), the duplicated sockets with the bytes that the peer already sent, and the pipes of the owners. The entry points are every byte that any host sends to TCP 443 before an owner has the connection (`FrontDoorParseHello`, `FrontDoorRoute`), and the handoff pipe, which is local (`FrontDoorHandoffDecode`). The trust boundaries are B1, where any network meets the listener, and B2, from the front door to the owner process.
 
 ### What each attacker can do
 
@@ -265,7 +265,7 @@ The assets are the availability of TCP 443 (A9), the integrity of the routing (a
 | FD-5 | local user | Connects to the pipe of an owner as a client and sends a forged handoff message. | The pipe takes local clients only, with a DACL that lets in SYSTEM, the Administrators and the owner's account, or the account that the owner names. The message is decoded by `FrontDoorHandoffDecode`, which has a fuzz target. A process that may connect is trusted. Evidence: code `FrontDoorPipe.c`; the fuzz registry; reasoned. | runs | none |
 | FD-6 | stranger | Floods UDP 443 with QUIC Initial packets. | msquic's own defaults; no retry under load and no limit for a source. Evidence: code `TransportQuic.c`. | open | G-7 |
 | FD-7 | any | The front door as the way to a Controller on the same host: the connections for the web UI and the API reach the Controller's own TLS. | The socket is duplicated, not proxied, so the Controller sees the real address of the client, which the admin source allowlist needs. The allowlist serves a loopback address before it reads the list, so a handoff that turned into a proxy on loopback would let every remote caller past it. The tests of SDN-73 must show that the allowlist refuses a remote address through the handoff. Evidence: ADR-0035; code `api/sources.go` (`Restrict`); reasoned. | designed | #352 (Appendix C) |
-| FD-8 | a flaw in the Node, a stolen service account | Uses the access that the handoff needs to reach the Controller on the same host. The Node's front door duplicates sockets into the process of the Controller, so the Controller's process must let the Node's service account duplicate handles into it. A holder of that right can also copy any handle out of the Controller's process: its open files in the data directory, its pipe to rqlited. The Node service answers the internet, and the Controller's store is a loopback port without authentication (ST-1), so on one host a flaw of the Node's TLS front end is a short way to the Controller. | None by design: ADR-0039 gives each service an account of its own, and the handoff gives one of them a right on the other. Evidence: code `FrontDoor.h` (the comment on `FrontDoorPipeNew`); reasoned. | designed | #352 (Appendix C) |
+| FD-8 | a flaw in the Node, a stolen service account | Uses the access that the handoff needs to reach the Controller on the same host. The Node's front door duplicates sockets into the process of the Controller, so the Controller's process must let the Node's service account duplicate handles into it. A holder of that right can also copy any handle out of the Controller's process: its open files in the data directory, its pipe to rqlited. The Node service answers the internet, and the Controller's store is a loopback port without authentication (ST-1), so on one host a flaw of the Node's TLS front end is a short way to the Controller. | None by design: ADR-0039 gives each service an account of its own, and the handoff gives one of them a right on the other. Evidence: code `FrontDoor.h` (the comment on `FrontDoorPipeNew`); reasoned. | designed | G-13, #352 (Appendix C) |
 
 ## 8. The control stream
 
@@ -285,7 +285,7 @@ The Controller completes the handshake with the static key of any initiator, rea
 
 The assets are the integrity of the desired state (A2: it decides what each Node enforces), the two keys of the Controller (A4), the key of a Node as its identity at the Controller (A3), the confidentiality of the Signals, and the availability of the control plane (A9).
 
-The entry points are the TLS port with the ALPN, before anybody is known: the TLS handshake, the Noise handshake, and the Hello frame, which is read after the handshake with the frame limit of the stream, 16 MiB (CS-4). After the Hello, the Acks, Signals, Telemetry and Leases of an admitted Node (`Conn.Read`, protobuf; fuzz targets `FuzzRead`, `FuzzOpen`). On the Node, the Updates of the Controller (the nanopb decode and `ControlApply`).
+The entry points are the TLS port with the ALPN, before anybody is known: the TLS handshake, the Noise handshake, and the Hello frame, which is read after the handshake with the frame limit of the stream, 16 MiB (CS-4). After the Hello, the Acks, Signals, Telemetry and Leases of an admitted Node (`Conn.Read`, protobuf; fuzz targets `FuzzRead`, `FuzzOpen`). On the Node, the Updates of the Controller (the nanopb decode and `ControlApply`). The trust boundary is B5, a Node to the Controller.
 
 ### What each attacker can do
 
@@ -309,8 +309,8 @@ The entry points are the TLS port with the ALPN, before anybody is known: the TL
 | CS-9 | operator, a compromised Controller | Pushes any desired state to every Node: peers, rules, routes, Mirrors, a Listener with a certificate path (a UNC path is allowed, so a Node would authenticate to the server it names), an ACME directory. | Nothing at the Node: the Controller is the root of trust of the overlay (ADR-0026). What limits and records it: the three roles, Revisions with diff and rollback, `--confirm`, the audit record of every Revision, the rate limit of a Mirror. Evidence: ADR-0026, ADR-0031; code `intent/listener.go` (`nodePathRule`); reasoned for the UNC path. | accepted | none: the operator is trusted with the Intent (AP-5 to AP-7) |
 | CS-10 | stolen node key, a revoked Node | Keeps working against the peers that cannot reach the Controller: a Node with no Controller keeps forwarding on its last Generation, so a peer that was not told of a revocation keeps accepting the revoked key. | None, by decision: a control-plane outage is not a data-plane outage (ADR-0026 decision 5, ADR-0027 decision 6). The revocation reaches a peer with its next Generation. Evidence: ADR-0027; code `NodeOverlay.c`. | accepted | none: a maximum age for a Generation is an option (question 4, section 15) |
 | CS-11 | holder of one key of the Controller | Holds its Noise key alone, or its TLS key alone. | Each guards the other: a Node pins the TLS key and checks the Noise key, so an attacker needs both. Both keys are persisted keys of the software key storage provider, not exportable, used inside the provider, in the key set of the service account (a file of mode 0600 on Linux, in CI only). Evidence: model `control-node-cert`, `control-node-noise-client`; code `keys_windows.go`. | runs | none |
-| CS-12 | operator | Replaces the certificate of the Controller while a Node is down, which then pins a key that the Controller no longer serves. | The new fingerprint goes to the connected Nodes first, in a Generation, and the Controller serves the new certificate only after each has acknowledged. A Node that is not connected makes the change refuse (409) unless the operator forces it, and then it is pinned again by hand. Evidence: ADR-0027 (amendment of 2026-10-26); code `certificate.go`; test `nodepins`. | runs | none: an operational risk that the runbook states |
-| CS-13 | a compromised Controller | Feeds a Node a malformed `ControlMessage` to corrupt its memory. The Node decodes it with nanopb and applies it in `ControlApply`, which is static, so the fuzz registry does not list it, and no libFuzzer target reads it. | The messages are bounded by `control.options` (nanopb has fixed sizes) and the sender is the pinned Controller. The round trip of `tests/control/nanopb_roundtrip.c` decodes what the Go tests send. Evidence: code `Control.c`; reasoned. | partial | G-15 |
+| CS-12 | operator | Replaces the certificate of the Controller while a Node is down, which then pins a key that the Controller no longer serves. | The new fingerprint goes to the connected Nodes first, in a Generation, and the Controller serves the new certificate only after each has acknowledged. A Node that is not connected makes the change refuse (409) unless the operator forces it, and then it is pinned again by hand. Evidence: ADR-0027 (amendment of 2026-10-26); code `certificate.go`; test `nodepins`. | runs | none: an operational risk that ADR-0027 states |
+| CS-13 | a compromised Controller | Feeds a Node a malformed `ControlMessage` to corrupt its memory. The Node decodes it with nanopb and applies it in `ControlApply`, which is static, so the fuzz registry does not list it, and no libFuzzer target reads it. | The messages are bounded by `control.options` (nanopb has fixed sizes) and the sender is the pinned Controller. The round trip of `tests/control/nanopb_roundtrip.c` decodes what the Go tests send. Evidence: code `Control.c`; reasoned. | partial | G-15, DT-12 |
 
 ## 9. The API, the web UI and the tokens
 
@@ -329,7 +329,7 @@ The web UI (`controller/internal/webui`, ADR-0038) is static HTML, CSS and JavaS
 
 ### Assets and entry points
 
-The assets are the Intent and its Revisions (A2), the tokens (A5), the audit log (A10), the availability of the API (A9) and the confidentiality of the topology. The entry points are the TLS port before the Guard (the handshake, the request line and the headers, which Go's HTTP server reads within 10 s); the JSON bodies after it (an apply, an import or a connect up to 16 MiB, the allowlist up to 64 KiB, a password up to 4 KiB, each decoded with `DisallowUnknownFields`); the plain HTTP port; the static files of the web UI (GET and HEAD only); and on the host the token file, the variable `RANZ_TOKEN` and the CLI.
+The assets are the Intent and its Revisions (A2), the tokens (A5), the audit log (A10), the availability of the API (A9) and the confidentiality of the topology. The entry points are the TLS port before the Guard (the handshake, the request line and the headers, which Go's HTTP server reads within 10 s); the JSON bodies after it (an apply, an import or a connect up to 16 MiB, the allowlist up to 64 KiB, a password up to 4 KiB, each decoded with `DisallowUnknownFields`); the plain HTTP port; the static files of the web UI (GET and HEAD only); and on the host the token file, the variable `RANZ_TOKEN` and the CLI. The trust boundaries are B6, an operator to the Controller, B11 for the files and the CLI of the host, and B8 for the targets that the Controller calls.
 
 ### What each attacker can do
 
@@ -346,13 +346,13 @@ The assets are the Intent and its Revisions (A2), the tokens (A5), the audit log
 |---|---|---|---|---|---|
 | AP-1 | stranger, on-path | Calls the API with no token, or guesses one, to read or change the Intent. | `Guard` answers 401 to a call whose token matches no stored hash and records an `auth-failed` entry (one for a source in 10 s), and 403 to a role that is too low. A secret has at least 128 random bits and is found by its SHA-256, so a guess fails and the lookup gives no timing worth using. `Needs` picks the role from the method and the path, and `TestRegisteredRolesMatchNeeds` ties every registered route to it. Evidence: code `api.go`, `rbac.go`; tests `rbac_test`, `api_test`, `audit_test`. | runs | none |
 | AP-2 | on-path, local user, any | Gets an admin or operator token. It lives in the tab of the browser (`sessionStorage`), in `admin.token`, in a token file or `RANZ_TOKEN` of the CLI, in the history of a shell, in a log, in a bundle and on the wire. | A token is shown once and stored as a hash. Its `ranz_` form lets a secret scanner find it. The diagnostics bundle and `ranz doctor --bundle` redact by name and by form. `admin.token` is in the data directory (ST-3). A remote CLI checks the chain or a pinned fingerprint. Two things are left. A token has no expiry, no last-used time and no scope below its role, so a leaked one works until an admin deletes it. And the CLI checks no certificate toward `127.0.0.1`, which is its default: a local user that listens on that port while the Controller is not there (the Controller falls back to 5555 when 443 is taken, and a Node's front door may hold 443) gets the token of any administrator who runs `ranz` on the host. Evidence: code `rbac.go`, `api.go` (`NewClient`, `Pin`), `cmd/ranz/main.go`, `bundle/redact.go`; fuzz `FuzzRedact`; reasoned for the loopback case. | partial | G-17, DT-13 |
-| AP-3 | stranger on the network | Reaches the API and the web UI from outside the operator's network. | The admin source allowlist: a source that the list does not hold is refused with 403 before the token is read, and recorded as an event and as an `auth-failed` entry. A standby that forwards a call to the leader is a source there, so the addresses of the members go in the list. The control stream is not behind it: a Network limits where its Nodes enrol from. The list is empty by default, and `ranz install --controller` opens TCP 443 and 5555 for every firewall profile, so by default the token is the only barrier. Loopback is always served, so a handoff that turned into a proxy on loopback would pass every remote caller (FD-7). Evidence: code `api/sources.go`, `api/adminsources.go`; tests `sources_test`, `TestAdminAllows`. | runs, when it is set | none: the install's choice (the runbook of the standard mode and of the Controller says it, section 12) |
+| AP-3 | stranger on the network | Reaches the API and the web UI from outside the operator's network. | The admin source allowlist: a source that the list does not hold is refused with 403 before the token is read, and recorded as an event and as an `auth-failed` entry. A standby that forwards a call to the leader is a source there, so the addresses of the members go in the list. The control stream is not behind it: a Network limits where its Nodes enrol from. The list is empty by default, and `ranz install --controller` opens TCP 443 and 5555 for every firewall profile, so by default the token is the only barrier. Loopback is always served, so a handoff that turned into a proxy on loopback would pass every remote caller (FD-7). Evidence: code `api/sources.go`, `api/adminsources.go`; tests `sources_test`, `TestAdminAllows`. | runs, when it is set | G-29, DT-6 (question 3, section 15) |
 | AP-4 | stranger, any tenant | Attacks a person who has the web UI open: a script injected into a page, a forged cross-site request, a framed page, a script from another origin. | The policy above allows no inline script or style, no other origin, no frame, no other form target and no base URL. The files are embedded and served for GET and HEAD only, with `nosniff`, `no-referrer` and same-origin policies. There is no cookie, so no forged request: the token goes in a header that the script sets. A test refuses `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write` and `eval(` in the files of the UI. A name is a DNS label and any other text is shown as text. Evidence: code `webui.go`, `ui/assets/api.js`; test `webui_test`. | runs | none: a flaw would put the token of the tab in reach, and `sessionStorage` ends with the tab |
 | AP-5 | token holder, a tenant that is given a token | Does more than its role was meant for. Roles are global, so a viewer reads the Intent of every VRF, the keys and the addresses of every Node and the audit log, and an operator changes every VRF. A party that is given a token for its own VRF is given all of them. | The three roles and the decision that the operator is trusted with the Intent (ADR-0026, ADR-0031; CS-9). Roles scoped to one Network are #231 and not built. Evidence: ADR-0031; the header of `rbac.go`. | accepted | none: no token goes to a party outside the operator's own staff until #231 |
 | AP-6 | token holder, operator | Points the Controller or a Node at a host of its choosing. (a) An export or audit target (webhook, OTLP, IPFIX or syslog) is checked for its scheme, a host and a port and for no user name, and nothing else, so the Controller's POSTs and its TCP and UDP connections go to any host it can reach: loopback and the HTTP port of its own store (ST-1), the address of a cloud host's metadata service, a server of the internal network. They are blind, and the body is a JSON event. (b) A Mirror takes any unicast address as its sensor, and the selected Nodes send the plaintext packets of their VRFs there as plain VXLAN, up to the rate that the Mirror names. (c) The Listener of a Node takes the path of a certificate file, and a UNC path is allowed, so the service account of the Node would authenticate to the host that the path names; and the URL of an ACME directory. (d) The certificate of the Controller takes file paths of the Controller's host. | Redirects are off in the exporters, the URL carries no user name, the secret never comes back from the API, and a Mirror has a rate limit and at most 16 for a Node. Nothing limits where they point. Evidence: code `export/target.go` (`checkURL`), `intent/mirror.go` (`ParseSensor`), `intent/listener.go` (`nodePathRule`), `servercert/setting.go`; the exporters' own clients; reasoned for the effects, which no test shows. | open | G-16, DT-9 |
 | AP-7 | token holder, operator | Erases the trail of its own changes: sets the audit retention to 1 day and 1000 records, deletes the audit target that keeps a copy, or has the log pushed out by a flood of `auth-failed` entries (CS-3). | The change of the retention and of a target is itself recorded, under the name of the token, as an operation. A Revision keeps the content of every change, and names nobody. A copy at a target that the operator cannot reach survives, and nothing makes the retention or the targets an admin matter: both are operator calls. Evidence: code `audit/retention.go` (`minDays`, `minRecords`), `api/audit.go`, `api.go` (`Needs`), `intent/revision.go`. | open | G-16, DT-9 |
 | AP-8 | token holder, viewer | Reads what a viewer may: the whole Intent, the Nodes with their keys and addresses, the events, the audit log, the Controller's public key and TLS fingerprint, and the licence. | A viewer sees no secret: the secret of a target never comes back, a URL shows its scheme and host only, the hash of a user's password is not returned. Reads are not audited. Evidence: code `export/target.go` (`Info`), `api/users.go`; reasoned. | accepted | G-17 for the audit of reads |
-| AP-9 | token holder, operator | Uses the calls of an operator that go beyond the Intent: the diagnostics bundle (the logs, the configuration and the status of the Controller and of its host); the licence key (PUT or DELETE, which lowers the node cap to Personal and refuses the Nodes above it); the password of a user (`PUT /api/v1/users/{name}/password`); the certificate of the Controller. | The bundle is redacted and leaves out the keys, the token file and the store. The calls are audited as operations. A licence change never stops a live tunnel (ADR-0036, amendment of 2026-10-22). The comment of `diagnostics.go` itself says that keeping the logs from the operators needs a rule in the Guard that was left out. Evidence: code `api/diagnostics.go`, `bundle/bundle.go`, `api/licence.go`; reasoned. | accepted | G-16 (the logs and the passwords are in DT-9) |
+| AP-9 | token holder, operator | Uses the calls of an operator that go beyond the Intent: the diagnostics bundle (the logs, the configuration and the status of the Controller and of its host); the licence key (PUT or DELETE, which lowers the node cap to Personal and refuses the Nodes above it); the password of a user (`PUT /api/v1/users/{name}/password`); the certificate of the Controller. | The bundle is redacted and leaves out the keys, the token file and the store. The calls are audited as operations. A licence change never stops a live tunnel (ADR-0036, amendment of 2026-10-22). The comment of `diagnostics.go` itself says that keeping the logs from the operators needs a rule in the Guard that was left out. Evidence: code `api/diagnostics.go`, `bundle/bundle.go`, `api/licence.go`; reasoned. | accepted | G-16, DT-9 (question 2, section 15, decides the logs and the passwords) |
 | AP-10 | any, a malformed body | Crafts a body to crash or to corrupt the Controller. | Bodies are bounded and decoded with `DisallowUnknownFields`; the Intent is checked before it is stored (names, sizes, addresses, references); the parsers have Go fuzz targets (`FuzzParseDocument`, `FuzzParseSources`, `FuzzParseMirror`, `FuzzUsers`, `FuzzValidate`, `FuzzParseFilter`, `FuzzRedact`) and Go is memory-safe. Evidence: code; the fuzz targets, which run on their corpus in the tests; the long campaign is AUD-3. | runs | none |
 | AP-11 | stranger | Floods the port with TLS handshakes and requests, with no token. | The TLS handshake and the request headers each take 10 s at most, and a call without a token costs a lookup. There is no limit for a source and no cap on connections, and the control stream is on the same port (CS-4). Evidence: code `port.go`, `api.go`. | open | G-7, DT-3 |
 | AP-12 | stranger | Sends crafted requests to the plain HTTP port. | HTTP.sys parses them in the kernel; the Controller reads the cooked URL, answers 301 to `https://` and answers the ACME challenge path, takes no body (a buffer of 1 MiB), and its URL prefixes are reserved for the service account. The Go side reads the structures of HTTP.sys through `unsafe`, bounded by the lengths that HTTP.sys gives. The port is off unless `-http-listen` is set. The development listener `-api-listen` serves the API over plain HTTP and the Controller refuses an address that is not loopback; `-control-listen` is a second TLS port for the stream. Evidence: code `port/plain_windows.go`, `controller.go`; test `plain_windows_test.go`. | runs, when it is set | none: AUD-2 reads the `unsafe` code |
@@ -378,7 +378,7 @@ Two ADRs carry the number 0036 (`0036-licensing.md` and `0036-anti-debug-and-ant
 
 ### Assets and entry points
 
-The assets are the store (A7) with what it holds (A2, A5, A6, A10, A11), the two keys of the Controller (A4), the backups, and the availability of the store (A9). The entry points are the HTTP port of `rqlited` on loopback and its Raft port; the data directory and its files; the files of a backup and a restore; the licence key (`PUT /api/v1/licence`, `licence.Parse`) and the revocation file; and the commands of a local administrator.
+The assets are the store (A7) with what it holds (A2, A5, A6, A10, A11), the two keys of the Controller (A4), the backups, and the availability of the store (A9). The entry points are the HTTP port of `rqlited` on loopback and its Raft port; the data directory and its files; the files of a backup and a restore; the licence key (`PUT /api/v1/licence`, `licence.Parse`) and the revocation file; and the commands of a local administrator. The trust boundaries are B7, between the Controller and its store and between its members, B11 for the files and the commands of the host, and B8 toward the activation service.
 
 ### What each attacker can do
 
@@ -397,7 +397,7 @@ The assets are the store (A7) with what it holds (A2, A5, A6, A10, A11), the two
 | ST-2 | on-path, any host that reaches the Raft port (cluster) | Reads and rewrites the Raft traffic of the members, or joins as a member (`-join`): the whole store. | The Raft address of a cluster is explicit, and `docs/ports.md` says to open it between the members only, on a private network: the operator's firewall is the control, and `ranz install` opens no rule for it. rqlite can encrypt and authenticate the traffic between nodes, and the Controller starts it with neither. `-rqlite-external` takes any `-rqlite` URL, so a store on another host would be reached over plain HTTP with no credential. Evidence: code `sidecar/rqlited.go`, `controller.go` (`-rqlite-raft`, `-rqlite-raft-adv`, `-rqlite-join`, `-rqlite-external`); `docs/ports.md`; reasoned. | open | G-19, DT-8 |
 | ST-3 | local user | Creates `C:\ProgramData\Ranz\controller` before the install, since `C:\ProgramData` lets any user create a folder, and keeps the directory that the Controller then fills: `admin.token`, the data of `rqlited`, the log, and the `rqlited.exe` that the service starts from it (`payload.Ensure` checks its SHA-256 and its signature when it writes the file, and not when the service runs it, so an owner of the directory can swap it in between and run code as the service account). | `installService` and `makeDataDir` give the directory a protected access list: full control for SYSTEM, the Administrators, the owner and the service account. `makeDataDir` leaves a directory that exists alone, and neither call changes the owner, so a directory that a user made stays that user's, and the owner is in the list. The Node does better when it runs elevated: `NodeMakeDataDir` takes over a directory that exists, makes the Administrators its owner and replaces the access list of what it holds (`O:BA`). Evidence: code `controller.go` (`makeDataDir`), `service_windows.go` (`dataDirSDDL`, `installService`), `Node.c` (`NodeMakeDataDir`); reasoned: not tested. | open | G-20, DT-10 |
 | ST-4 | thief of a disk, of a VM snapshot or of a backup, a user that can read a file | Reads what the store holds: the Intent, the hashes of the tokens (of no use: 128 bits), the hashes of the users' passwords (PBKDF2, 600000 iterations, open to an offline guess), the licence key (which can be copied, and whose watermark names its customer), and in clear the secrets of the audit and export targets, a webhook's HMAC key and an OTLP bearer token. A backup that an administrator restores and that was changed is the Intent, because nothing signs it. | The data directory's access list; `backup` and `restore` need a local administrator. The file of a backup is made with mode 0600, which Windows ignores, so it takes the access list of the folder it is written to. The message of `backup` names the hashes and the licence key, and not the secrets of the targets. The keys of the Controller are not in the store. Evidence: code `backup.go`, `store/export.go` (`json.Marshal`), `store/audit.go`, `store/userpasswords.go`. | partial | G-22, DT-10 |
-| ST-5 | thief of a file | Reads the private key of a certificate that an operator gave the Controller as files (`servercert` File: a PKCS #8 key, not encrypted, at an absolute path that the service account must read). | The default is the Controller's own TLS key in the key storage provider, with a self-signed or an ACME certificate for it. A file is the operator's choice, protected as the operator protects it. A leaked key is replaced through the pin mechanism of ADR-0027 (CS-12). Evidence: code `servercert/setting.go`; ADR-0027; the first-test guide, step 21. | partial | none: the operator's file; the runbook says it |
+| ST-5 | thief of a file | Reads the private key of a certificate that an operator gave the Controller as files (`servercert` File: a PKCS #8 key, not encrypted, at an absolute path that the service account must read). | The default is the Controller's own TLS key in the key storage provider, with a self-signed or an ACME certificate for it. A file is the operator's choice, protected as the operator protects it. A leaked key is replaced through the pin mechanism of ADR-0027 (CS-12). Evidence: code `servercert/setting.go`; ADR-0027; the first-test guide, step 21. | partial | none: the operator's file; step 21 of `docs/first-test.md` shows how to give the service its read access |
 | ST-6 | operator, stranger | Gives the Controller a licence key that is forged, or edited to raise the tier, the node count or the expiry. | The signature, checked with the vendor keys that the release links in; a key that does not verify is refused (400) and a stored one is checked again at load. Evidence: code `licence/licence.go`; fuzz `FuzzParse`; tests `licence_test`. | runs | none |
 | ST-7 | token holder, operator | Lowers or removes the licence to take Nodes away from the Controller: the Personal tier serves ten. | A licence change is audited, and a live tunnel is never bricked, since a Node keeps forwarding on its last Generation (ADR-0036, ADR-0027). Evidence: code `controller.go` (`SetLicence`); ADR-0036. | accepted | G-16 (it is in DT-9) |
 | ST-8 | on-path to the vendor, a holder of an old file | Replays an older revocation list, or removes the file, so that a revoked key is licensed again. A list that does not verify, and an absent file, leave the empty list on purpose, so that a forged or corrupt list never bricks the Controller; the date of a list (`Issued`) is not compared with the one in force. The client of the activation service takes any base URL, and nothing in it refuses `http`. | The signature of the vendor on the list and on the activation token, and the expiry of a token. Evidence: code `controller.go` (`loadRevocations`), `licence/revocation.go`, `activation/client.go`. | accepted | G-23: a requirement on #283 and #284 (Appendix C); licensing is not a security property (A11) |
@@ -423,7 +423,7 @@ The L2 side is a library. The switch (`Switch.c`: a MAC table for each VLAN, wit
 
 ### Assets and entry points
 
-The assets are the traffic (A1), the Intent as the Node enforces it (A2) and the availability of the forwarding (A9). The entry points are the data records of every session after the handshake (`NodeOverlayDeliver`, which reads the VRF tag and the IP header, then the policy, NAT and Mirror code that reads the rest of the packet); the packets of the host (`NodeOverlayInput`); the DNS and DHCP responders of the overlay (OE-10); and, once the L2 path is wired, the frames of the adapters.
+The assets are the traffic (A1), the Intent as the Node enforces it (A2) and the availability of the forwarding (A9). The entry points are the data records of every session after the handshake (`NodeOverlayDeliver`, which reads the VRF tag and the IP header, then the policy, NAT and Mirror code that reads the rest of the packet); the packets of the host (`NodeOverlayInput`); the DNS and DHCP responders of the overlay (OE-10); and, once the L2 path is wired, the frames of the adapters. The trust boundary is B3: the table and the policy of the VRF are its controls on the far side, and the adapter of the host lies behind them.
 
 ### What each attacker can do
 
@@ -436,12 +436,12 @@ The assets are the traffic (A1), the Intent as the Node enforces it (A2) and the
 
 | id | who | threat | control, with its evidence | status | gap |
 |---|---|---|---|---|---|
-| DP-1 | malicious peer, stolen node key | Reaches every host of a VRF whose rules are too wide: after a first install every Node of `default` reaches every other on every port. | The starter rule is an explicit Policy resource of the Intent, which the operator narrows or deletes, and the engine's own default is deny; a Node of another VRF, or an address that no VRF holds, is "the end outside" with no tag. Evidence: ADR-0034, ADR-0029; code `intent/defaults.go`, `NodePolicy.c`. | accepted | none: the runbook says to narrow the starter rule before a Node that is not trusted joins `default` |
+| DP-1 | malicious peer, stolen node key | Reaches every host of a VRF whose rules are too wide: after a first install every Node of `default` reaches every other on every port. | The starter rule is an explicit Policy resource of the Intent, which the operator narrows or deletes, and the engine's own default is deny; a Node of another VRF, or an address that no VRF holds, is "the end outside" with no tag. Evidence: ADR-0034, ADR-0029; code `intent/defaults.go`, `NodePolicy.c`. | accepted | G-29, DT-6 (the notice of the starter rule); the rule itself is ADR-0034's decision |
 | DP-2 | malicious peer | Spoofs the source address or the VRF of a packet (NS-7). The case that is left: a peer that holds a route, as a gateway for a LAN or a prefix that a NAT rule or a leak gives it, may source any address of that prefix. | The table binds each address to one next hop, and the Controller compiles the routes from the Intent, so a route is the statement of what the peer may source. Evidence: code `NodeOverlayDeliver`; tests `vrf`, `leakpolicy`. | runs | none |
 | DP-3 | malicious peer | Uses the Node as a router to a third peer, or to the Node's own LAN: sends a packet whose destination is another peer's address or a LAN address. | The destination must be the host (`NODE_VRF_LOCAL`), so the Node forwards between no two peers. What the host does with a packet for another address is its own routing, which is off unless the operator turned it on for a gateway role (a router Device, #378; the EVPN gateway). Evidence: code `NodeOverlayDeliver`. | runs | none |
 | DP-4 | malicious tenant, a peer of another VRF | Hops between VRFs: sends the tag of a VRF that the Node is in and the sender is not, or uses a route that another VRF leaks into its own. | The table of the tagged VRF holds no route that leads to a sender that is not a member, so the source check fails. A leak (SDN-7) is reachability, not a firewall bypass: the packets of a leaked route are judged as from "the end outside the VRF", which has no tag, so default deny applies, and each VRF has its own conntrack table. Evidence: ADR-0029 decision 6; code `NodePolicy.c`, `intent/leak.go`; tests `vrf`, `leakpolicy`. | runs | none |
 | DP-5 | malicious peer | Fills the conntrack table of a VRF with flows from many source ports. A full table evicts its least recently used flow, so a reply that was tracked is judged again as a first packet, and default deny drops it until the flow is opened again. | The table is per VRF with a quota (65536 flows by default, 1048576 at most), so a VRF takes no room from another, and an eviction is counted (`evicted`), so the flood shows. There is no share for a member. Evidence: code `PolicyTrack.c` (`PolicyTrackAdd`), `NodePolicy.c`; reasoned: no test floods a table. | partial | question 5 (section 15) |
-| DP-6 | the Controller, a state of an older schema | A VRF whose state carries no policy forwards as the overlay did before SDN-8, with no check. The Controller sends a policy with every VRF, and the harness of vpntest leaves it out on purpose. | The engine fails closed when it refuses a document. Whether a state of one of the older schemas that the Controller still serves (ADR-0027) can leave the policy out is for AUD-2 to check. Evidence: code `NodePolicy.c` (its header); reasoned. | accepted | none: question 9 (section 15) |
+| DP-6 | the Controller, a state of an older schema | A VRF whose state carries no policy forwards as the overlay did before SDN-8, with no check. The Controller sends a policy with every VRF, and the harness of vpntest leaves it out on purpose. | The engine fails closed when it refuses a document. Whether a state of one of the older schemas that the Controller still serves (ADR-0027) can leave the policy out is for AUD-2 to check. Evidence: code `NodePolicy.c` (its header); reasoned. | accepted | none: for AUD-2 (section 15) |
 | DP-7 | malicious peer | Crafts a packet to corrupt the memory of the Node: a malformed header, a fragment, an option, an ICMP message that is no echo. | The parsers have fuzz targets under AddressSanitizer (`fuzz_policy`, `fuzz_nat`, `fuzz_mirror`, `fuzz_switch`). A later fragment has no ports and an ICMP message other than an echo is judged one by one. `NodeOverlayInput` is exempt in the registry, with a target of its own still to come. Evidence: `.github/quality/fuzz-targets.txt`; code `Policy.h`. | partial | G-15, DT-12 |
 | DP-8 | malicious peer, a host of a stretched Network | Attacks an L2 Network: MAC spoofing, a flood of source MACs, a broadcast storm, ARP spoofing, a rogue DHCP server or router advertisement. | The switch bounds its MAC table (65536 entries by default, 1048576 at most, and counts the sources that it refused) and limits broadcast and multicast for each VLAN; the guard has client isolation, the MAC and IP checks, no DHCP server, no router advertisement, and ARP and DHCP only. No code of a Node calls them yet, so a Node carries no L2 Network between peers today, and the protections that SDN-41 specifies are open. Evidence: code `Switch.h`, `Policy.h`; coretest `switch`, `policy`; fuzz `fuzz_switch`, `fuzz_policy`. | tests only | G-21, #234 |
 | DP-9 | malicious peer | Floods packets at the rate of its link. | The rate limit of a VRF (SDN-20) is the sender's own, so it binds an honest peer only (NS-8). | accepted | question 5 (section 15) |
@@ -450,7 +450,7 @@ The assets are the traffic (A1), the Intent as the Node enforces it (A2) and the
 
 ### What it is
 
-The standard mode is a plain mode for a network that the operator trusts: a LAN, an intranet, a data center, a private WAN. Two Nodes there exchange VXLAN or Geneve datagrams directly (SDN-76, #356), peer by BGP (SDN-77, #357) or by EVPN (SDN-78, #358), and may use a Node as a route reflector (SDN-79, #359). It is plain by decision of the maintainer (2026-10-24): no Noise session and no IPsec of ours, and the operator may put IPsec or MACsec under it. The Intent chooses the kind of a link for each Network or VRF: `noise`, the default, which is the sessions of section 5 and fits any underlay, or `vxlan` or `geneve`. The Controller stays the control plane: it tells each Node its peers, the VNI of each VRF and the flood list, and the policy engine, the forwarding tables and the VRF adapters see no difference. A VRF uses one form of the standard mode, the form that the Controller fills or the BGP and EVPN peering, never both.
+The standard mode is a plain mode for a network that the operator trusts: a LAN, an intranet, a data center, a private WAN. Two Nodes there exchange VXLAN or Geneve datagrams directly (SDN-76, #356), peer by BGP (SDN-77, #357) or by EVPN (SDN-78, #358), and may use a Node as a route reflector (SDN-79, #359). It is plain by decision of the maintainer (2026-10-24): no Noise session and no IPsec of ours, and the operator may put IPsec or MACsec under it. The Intent chooses the kind of a link for each Network or VRF: `noise`, the default, which is the sessions of section 5 and fits any underlay, or `vxlan` or `geneve`. The Controller stays the control plane: it tells each Node its peers, the VNI of each VRF and the flood list, and the policy engine, the forwarding tables and the VRF adapters see no difference. A VRF uses one form of the standard mode, the form that the Controller fills or the BGP and EVPN peering, never both. The trust boundary is B9, a Node to an underlay of the standard mode; the `noise` kind stays on B3.
 
 Group IDs and tag sets travel with each packet (SDN-87, #386; SDN-88, #387). In `off` the option is ignored. In `trusted-underlay` a forged tag is honoured, which is the limit of that mode, and `ranz explain` marks the Network "tags not authenticated". In `hmac` the option carries a MAC, HMAC-SHA256 truncated to 64 bits over the VNI, the group, the tags, the inner IP and L4 headers and a timestamp, with a window of 30 s and one key for each VRF, which the Controller sends in the Generation and rotates with two keys active. A packet without a valid option is judged by the map of address to group that the Controller sends, then by default deny.
 
@@ -507,11 +507,19 @@ What the product provides: the list of peers and VNIs from the Controller, the d
 
 ## 13. The other entry points
 
-These came after the ticket was written, or sit beside the planes above. Each is a way in that the threat model of a plane would otherwise miss.
+These came after the ticket was written, or sit beside the planes above. Each is a way in that the threat model of a plane would otherwise miss. Their trust boundaries are B4 (the peer layer), B10 and B11 (the sidecars and the pipes of the host) and B12 (the Devices).
 
 ### What each is, as built
 
 The WireGuard Devices (SDN-80 to SDN-86, #375 to #381; spec #374) are phones, laptops and routers that join one Network over standard WireGuard through a gateway Node, with WireGuardNT of the pinned SDK 0.10.1 loaded from the directory of the Node's executable. The tracer (`NodeWireGuard.c`) is built in part; the keys, the life cycle and the self-service are open. The WireGuard key pair of a gateway is derived from its static key and never stored. The peer layer (`Peer.h`, ADR-0015) is the relay role and the direct path with ICE: Noise_IK between the static keys of two Nodes in the manner of WireGuard, sealed envelopes for the signals, and a relay that both ends are bound to. Its models are the `peer-*` queries; nothing in production calls it yet (CS-8). The sidecars (`ranz bgp`, `ranz mimic`, `ranz acme`) are child processes of the Node's account, reached over named pipes. The admin pipe and the client pipe are the local ways to drive a Node. The Configuration store of the Node, `ranz_node.db`, holds its settings.
+
+### What each attacker can do
+
+- **On the path.** It reads and drops the datagrams of the peer layer and of the WireGuard port, and it reads the clear header of the peer layer (OE-5). It cannot read a peer session or the tunnel of a Device.
+- **A malicious peer.** It can bind to a relay that it is named for (OE-4), and learns from the signals the addresses of the peers that it shares a VRF with (OE-6).
+- **A malicious tenant.** A Device or a host of another VRF reaches nothing outside its own VRF, since the policy judges a Device by its address (OE-3, DP-4).
+- **A stolen node key.** For a gateway, the WireGuard key pair of the gateway too, which derives from the static key and is never stored. For any Node, its peer sessions (NS-11).
+- **A local user.** The pipes and the Configuration store (OE-7 to OE-11).
 
 ### Threats
 
@@ -529,4 +537,568 @@ The WireGuard Devices (SDN-80 to SDN-86, #375 to #381; spec #374) are phones, la
 | OE-10 | any host on the overlay | Sends crafted queries or requests to the overlay DNS and DHCP responders of a Node (SDN-11, SDN-43), or starves the pool of leases with many requests. | The responders read what the host sends on the overlay adapter, answer from the records of the Intent, and hold at most 1024 leases; both have fuzz targets. Evidence: `.github/quality/fuzz-targets.txt` (`NodeDnsAnswer`, `NodeDhcpInput`); `proto/ranz/control/v1/control.options`. | runs | none |
 | OE-11 | local user | Reads or changes the Configuration store of the Node, `ranz_node.db`: the Controller pin, the settings of the sidecars with the REALITY key (TR-10), the pins of users. | The data directory of the Node has a protected access list (SYSTEM, the Administrators, the service SID) and, when the Node runs elevated, the Administrators as its owner (`NodeMakeDataDir`). Evidence: code `Node.c`. | runs | none |
 
-<!-- END-OF-PART -->
+## 14. What is out of scope, and why
+
+The page covers the new core (the Node) and the Controller as they are in the tree of `integration`, against the four attackers of section 3 and the two that were added. Each item below is left out for one of three reasons: it is another ticket's work, no control of the product could answer it, or it is not a property that anybody relies on. The reason is written with the item.
+
+| out of scope | why | where it is covered, if it is |
+|---|---|---|
+| The slim fork, its legacy listener, `vpncmd` and OpenSSL | They are being retired (CORE-S8-1, #84), and their surface is the one that the fork has always had. This page is about what replaces them. | #84; ADR-0037 for the legacy phase |
+| The Windows kernel, its drivers (Wintun, WireGuardNT, SeLow, XDP), msquic, Schannel and CNG | Third-party and OS code. The product pins and signs what it ships and reads what the OS reports. This page names the use of each, not their flaws. | TR-11; SEC-1, SEC-2; CLN-3 (#361) |
+| An administrator or SYSTEM on a host of the product, a kernel-mode attacker, physical access, a hypervisor | They hold the host, so they hold the keys that it uses and the memory that it works in. The service accounts of ADR-0039 only limit what a flaw of one service gives. | A12; section 3 |
+| An operator or a Controller that does wrong with the Intent | The Controller is the root of trust of the overlay (ADR-0026). The page records what limits and records its abuse (CS-9, AP-5 to AP-7), and does not claim to prevent it. | AP-5 to AP-7; DT-9 |
+| Censorship beyond tiers 1 and 2 of ADR-0006, traffic analysis by size and timing | The product claims to look like ordinary Windows software on the wire, and no more. A classifier of the GFW class, or a study of sizes and timing, is not answered in v1. | TR-1, TR-2; the mimic path is AUD-7 (#425) |
+| Volumetric denial of service | A flood that fills the link cannot be answered by software on the host. The exhaustion of a thread, a table or the memory of the product is in scope. | G-1, G-7, G-14, DP-5 |
+| Side channels: timing, caches, speculative execution | Beyond the compiler's mitigations (ADR-0024, a draft) the product relies on the libraries for constant time. The page does not audit them. | ADR-0024; AUD-2 for the code that is ours |
+| The cryptographic primitives and the Noise framework | AES-GCM, X25519, SHA-256, ML-KEM, Ed25519, HMAC and PBKDF2 are assumed sound. The ProVerif models assume perfect cryptography and say what else they leave out. | `docs/formal-model.md` |
+| A quantum attacker on authentication | The static keys are X25519 and nothing plans a post-quantum signature. The records are protected by the key exchange of the outer session. | NS-4; the position in section 5; #382 |
+| The vendor's infrastructure, and licence enforcement against the administrator of a host | The activation service, its HSM and its signing key are the vendor's systems. A licence is not a security property that an operator relies on: an administrator who patches the binary beats it, and ADR-0036 says it never stops a live tunnel. | A11; ST-6 to ST-9 |
+| Features that are not built | They have no code to review. Each is named so that its threat model is written with it: the Controller's end of the handoff (SDN-73, #352), the static site (#353), ingress (#354), roles scoped to a Network (#231), multi-factor login (postponed in #226), the phase-2 transports (#86, #95), the TPM-bound identity (ADR-0041), and the Device keys and the self-service Devices (#376, #377, #381). | Appendix C names what each must say |
+| The security of the other end: the OS of a phone with a Device key, the receiver of a webhook, the router of an operator | The product ends at its own interface. It limits what it sends (AP-6) and what it accepts (SM-6). | AP-6, SM-6, OE-2 |
+| Social engineering, phishing of an operator, the process around the product (backup policy, patching, who holds a token) | No control of the product answers it. Section 12 says what the operator of the standard mode must do. | section 12 |
+| The repository and its build pipeline | A supply-chain risk to what is shipped, not a threat to the running product. | SEC-1 to SEC-3; AUD-4 (#365) |
+
+## 15. Questions, and where to start
+
+### For the maintainer
+
+The numbers are the ones that the rows cite.
+
+1. **The Login.** The Login of a Node (NS-14 to NS-16) is built and tested, and nothing in production calls it. Is it wired to the users that the Controller keeps (`user_passwords`, PBKDF2) when SDN-32 (#226) lands, or retired in favour of the Controller's own logins? DT-5 puts a throttle on it either way.
+2. **Which operator powers are admin's.** Targets and audit targets (AP-6), Mirror sensors, Listener file paths, the audit retention (AP-7), the licence (ST-7), the logs in the diagnostics bundle and the password of a user (AP-9). DT-9 assumes: targets, sensors, UNC paths, the retention and the audit targets become admin's, the rest stay operator's.
+3. **The default reach of the API.** `ranz install --controller` opens TCP 443 and 5555 on every profile and the admin source allowlist is empty, so the token is the only barrier (AP-3). Should the first install narrow the allowlist (DT-6), as the mesh of ADR-0034 narrows nothing?
+4. **A maximum age for a Generation.** A Node with no Controller keeps forwarding on its last Generation, so a revoked key stays good at the peers that did not hear (CS-10). An optional maximum age, after which a Node drops the peers that the Generation named, would bound it at the price of making a Controller outage a data-plane outage. Accept the risk as ADR-0027 does, or add the option?
+5. **Limits at the receiver.** The rate limit of a VRF is the sender's own (NS-8), and the conntrack table has no share for a member (DP-5). Should a Node limit what it takes from one peer, and the flows that one peer may hold?
+6. **The Controller's Noise key.** The Nodes pin it, and the `Controllers` message carries the keys of the members, but no document says how a key is replaced after a leak (CS-11). The TLS key has the mechanism of ADR-0027 (CS-12).
+7. **ADR-0041.** Accept it, so that CORE-H4-1 to CORE-H4-9 are filed (G-6)? The reflectors of the standard mode and the gateways of Devices deserve the binding first (SM-7).
+8. **The position on the hybrid handshake.** Section 5 proposes to keep it off on the bound paths and to require it of the CDN path (#86). Accept it as the decision that CORE-P2-5 and #374 leave to this page?
+9. **The peer layer.** Does the direct path ship inside the QUIC datagrams, as `Peer.h` plans, so that its clear header of 65 bytes is inside the outer encryption (OE-5)?
+10. **Plain links across the internet.** Should the Controller refuse a `vxlan` or `geneve` link whose endpoint is a public address unless the Intent says that it knows (SM-8)?
+
+### For AUD-2 and AUD-4
+
+The rows marked reasoned are ours and nothing tested them. These are the ones whose answer would change a severity, so read them first:
+
+- NS-9: measure the stall of the overlay thread with silent connections, and NS-6: whether Schannel and msquic update their keys by themselves.
+- CS-4: measure the memory that a stalled 16 MiB frame holds, and the connections it takes to exhaust a Controller.
+- FD-4, FD-8: try the squat of a handoff pipe, and read what `PROCESS_DUP_HANDLE` on the Controller's process gives the Node's account.
+- ST-1: run the exploit (a token row, a Node resource) from a local user, and ST-3: pre-create the data directory and swap `rqlited.exe`.
+- AP-2 (the loopback case), AP-6 (a target on `127.0.0.1:4001`, a UNC path in a Listener, a Mirror sensor off the network).
+- DP-6: whether a state of an older schema can leave the policy out, and where else a Node fails open.
+- NS-19: the use of one static key by three protocols, which no model runs together.
+- Everything that reads memory of the peer's bytes: `NodeOverlayInput`, the nanopb decode in `Control.c`, `CsImportForkConfig` (DT-12).
+
+### How this page is kept
+
+A new transport, a new owner behind the front door, a new sidecar or a new way into the Controller adds a section or a row and a box on the diagram of section 4. A ticket that closes a gap changes the status of its row, and the register of Appendix A is updated in the same pull request. The page is reviewed by the maintainer and by AUD-2, and is the first part of the package of AUD-4.
+
+## Appendix A. The register of gaps
+
+Severity is defined in section 1 and is our judgement. A gap is answered by an open ticket (`#n`), by a draft ticket of Appendix B (`DT-n`), or by an amendment of Appendix C. The integrator files the drafts: the lane that wrote this page may not open issues.
+
+| id | gap | rows | severity | answered by |
+|---|---|---|---|---|
+| G-1 | A stranger that holds no key stops the forwarding of a Node: the handshake runs on the one thread of the overlay. | NS-9 | High | DT-1 |
+| G-2 | The outer keys are never updated, and nobody knows whether the OS does it. | NS-6 | Low | #400 |
+| G-3 | A client still offers TLS 1.2 by default. | NS-5 | Low | #400 |
+| G-4 | The hybrid key exchange of the QUIC path is not proven. | NS-4 | Low | #382 |
+| G-5 | The Login has no throttle or lockout, and nothing calls it. | NS-15 | Medium | DT-5, #226 (Appendix C) |
+| G-6 | A copy of a node key is the Node, from anywhere, until the Intent drops it. | NS-11, NS-13, CS-5, SM-7 | Medium | ADR-0041, then CORE-H4-1 to CORE-H4-9 (question 7) |
+| G-7 | No limit for a source and no cap on unauthenticated connections: the front door, QUIC, the Controller's port. | NS-10, TR-5, FD-1, FD-6, AP-11, SM-5 | Medium | DT-3 |
+| G-8 | The pin is a SHA-1 thumbprint that a person types. | TR-8 | Low | #400 |
+| G-9 | The Listener of a Node configures no decoy, so a prober sees a closed connection. | TR-2 | Low | DT-4 (the static site is #353) |
+| G-10 | A QUIC handshake that fails does not fall back to TLS-443, and the msquic minor is not pinned. | NS-1, TR-6, TR-11 | Low | #443 |
+| G-11 | The mimic path has no formal model, and its suites and its pin are not settled. | TR-9 | Medium | #425 (AUD-7), #400 |
+| G-12 | The REALITY key of a mimic server is kept as text in the Configuration store. | TR-10 | Medium | #424 (Appendix C) |
+| G-13 | Nothing checks who serves a handoff pipe, and the handoff gives the Node's account a right on the Controller's process. | FD-4, FD-8 | Medium | DT-7, #352 (Appendix C) |
+| G-14 | The Controller allocates up to 16 MiB for each connection before it knows who it is. | CS-4, CS-6 | Medium | DT-2 |
+| G-15 | Parsers that read a peer's or the Controller's bytes have no fuzz target: `NodeOverlayInput`, `CsImportForkConfig`, the nanopb decode of a Node. | CS-13, DP-7 | Low | DT-12 |
+| G-16 | An operator can point the Controller or a Node at any host and any address, copy a VRF's traffic to any sensor, and shorten the log that records it. | AP-6, AP-7, AP-9, ST-7 | Medium | DT-9 |
+| G-17 | A token never expires, shows no last use, and a read is not audited; the CLI checks no certificate toward loopback. | AP-2, AP-8 | Low | DT-13 |
+| G-18 | The store's HTTP port on loopback asks for no credential: a local process is an admin of the Controller. | ST-1 | High | DT-8 |
+| G-19 | The Raft traffic of a cluster is neither encrypted nor authenticated. | ST-2 | Medium | DT-8 |
+| G-20 | A data directory that a local user made first stays that user's, and holds the `rqlited.exe` that the service runs. | ST-3 | Medium | DT-10 |
+| G-21 | The L2 protections of SDN-41 are open, and the switch and the guard are not wired into a Node. | NS-7, DP-8 | Medium | #234 (and #292, #293 for the stretch) |
+| G-22 | The secrets of the targets are in the store in clear, and a backup is written with the access list of its folder. | ST-4 | Medium | DT-10 |
+| G-23 | A revocation list can be replayed or removed, and the activation client takes any base URL. | ST-8 | Low | Appendix C (the release work that links the activation package) |
+| G-24 | In the standard mode a packet with a wrong MAC falls back to the address, an address is an identity, and the key of `hmac` is one for the VRF and sits in the store. | SM-2, SM-3 | Medium | #387 (Appendix C) |
+| G-25 | The two rules of SDN-76 do not bind a source address to a VNI. | SM-4 | Medium | #356 (Appendix C) |
+| G-26 | The BGP sidecar sets no session protection and no maximum, and the accept list is not yet fed per peer from the Intent; EVPN has no per-peer limits. | SM-5, SM-6 | Medium | #357, #358 (Appendix C); #292, #293 |
+| G-27 | Nothing refuses a plain link whose endpoint is a public address. | SM-8 | Low | #356 (Appendix C), question 10 |
+| G-28 | The life cycle and the keys of a Device are open, and the PresharedKey and the private key have no rule yet. | OE-2 | Medium | #376, #377 (Appendix C) |
+| G-29 | A first install leaves the API open to every address, with the token as the only barrier, and the starter rule allows all inside `default` with no notice. | AP-3, DP-1 | Low | DT-6, question 3 |
+| G-30 | Nothing shows a session that is replaced again and again by two holders of one key. | NS-12 | Low | DT-11 |
+
+## Appendix B. Draft tickets
+
+The format is the one of the tickets of this repository. The lane that wrote this page may not create issues, so these are drafts: the integrator files them and assigns their keys (the CORE-H series for the Node, SEC for the Controller). Each one names the gap it closes, and carries acceptance criteria that a test or a CI job can check.
+
+### DT-1. A stranger's handshake never runs on the forwarding thread of a Node
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+`NodeOverlayAccept` reads the first frame of an accepted stream inline, on the one thread that also reads the sessions of every peer and dials every peer (NS-9). A connection that finishes the outer handshake and then sends nothing stops the forwarding of the whole Node for up to `NODE_OVERLAY_HANDSHAKE` (5 s), and one such connection every 5 s keeps it stopped. After this ticket the handshake of a stream that has not proved a key runs off that thread, in a bounded pool of workers or in a state machine that never blocks, with a cap on the handshakes in flight. The thread of the overlay only takes a session that finished.
+
+## Seam
+
+the vpntest harness (seam 2 of #45)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] With 64 connections that complete the outer handshake and send nothing, the forwarding of an established session between two Nodes is delayed by no more than a bound that the test states, measured by the harness.
+- [ ] A handshake that does not finish in its time is closed and counted, and the count is in the status of the overlay.
+- [ ] No more than a configured number of handshakes are in flight; the next are refused at the accept and counted.
+- [ ] The test fails on the code before the change, which the PR shows.
+- [ ] `NodeOverlayAccept` makes no blocking read on the thread of the overlay.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-1.
+```
+
+### DT-2. The Controller reads little before it knows the Node
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+`control.Conn.Read` takes a frame of up to 16 MiB (`MaxFrame`) from the first one, and `readFrame` allocates the whole length as soon as it has read the four bytes of it. After the Noise handshake the Controller reads the Hello within 10 s, so a connection that sends the length of a 16 MiB frame and stalls holds 16 MiB for that time, with no key of a Node and no token (CS-4). After this ticket the Hello is read with a limit of its own (the largest Hello that a Node sends, with room), a frame is read as its bytes arrive and not allocated up front, the frames of an admitted Node have a limit for each kind of message (the Acks, Signals, Telemetry and Leases that `control.options` sizes), and the Controller caps the connections that have not sent a Hello.
+
+## Seam
+
+the controller conformance seam with the node simulator (seam of #176)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] A connection that sends the length of a 16 MiB frame and then stalls holds no more than the bytes that it sent plus a small buffer, shown by a test that counts allocations.
+- [ ] A Hello over its limit gets a Refuse or a close, and a frame of an admitted Node over the limit of its kind closes the stream; the limits are constants that sit beside `control.options`.
+- [ ] At most a stated number of connections wait for a Hello, in all and for one source; the next are closed and counted.
+- [ ] `FuzzRead` and `FuzzOpen` pass with the new limits, and the node simulator and the C Node still work.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-14.
+```
+
+### DT-3. Limits for a source and a cap on unauthenticated connections
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+The front door, the msquic listener and the TLS port of the Controller accept without a limit (NS-10, TR-5, FD-1, FD-6, AP-11). After this ticket each has: a cap on the connections that have not finished their handshake, in all and for one source address (a /32 or a /64); a rate limit on new connections and on handshake attempts for a source; QUIC retry under load; and counters in the status. The limits are settings with defaults that an honest site does not hit: many Nodes behind one NAT address are not starved by the default for one source.
+
+## Seam
+
+the vpntest harness (seam 2 of #45) and the controller conformance seam with the node simulator (seam of #176)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] A flood of new TCP connections from one source is cut at its cap, and a connection from another source is served meanwhile (harness).
+- [ ] Under a flood of QUIC Initial packets, retry is on and the memory and the CPU of the listener stay bounded; the setting is read back from msquic in the test.
+- [ ] The Controller's TLS port has the same caps, and the control stream of an admitted Node is not refused by a flood from another source.
+- [ ] 1000 Nodes behind one address connect with the defaults.
+- [ ] The counters of the refusals are in the status of the Node and of the Controller.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-7.
+```
+
+### DT-4. The Listener of a Node sets the decoy
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+The TLS transport has a decoy (`TransportDecoyAuthenticate`, `TransportDecoyProxy`; test `trojan`), and `NodeListenerUp` configures none, so a prober sees the certificate of the Node and then a closed connection (TR-2). After this ticket the Listener resource of the Intent has a decoy target, a loopback address and port, which the Controller sends and the Node passes to the TLS transport. Left out, there is no decoy, as today, and `ranz explain` says so. The static site that it points at is #353.
+
+## Seam
+
+the vpntest harness (seam 2 of #45) and the controller conformance seam (seam of #176)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] A prober that sends a first frame that does not open under the static key of the Node gets the answer of the decoy, shown by a test client, and a real peer still connects.
+- [ ] With no decoy set the Listener behaves as before and `ranz explain` says that there is none.
+- [ ] The Controller refuses a decoy target that is not a loopback address.
+- [ ] The decoy field is in the schema and the node simulator conformance shows it.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-9.
+```
+
+### DT-5. A throttle on the Login of a Node
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+A Login costs one PBKDF2 derivation of 600000 iterations, for an unknown user too, and nothing limits the attempts for a user or a source (NS-15). It has no caller in production yet. After this ticket the Login has a throttle that is in place before it is wired: after a number of failures for a user or from a source in a window, further attempts are delayed or refused without a derivation, an unknown user counts as a known one, and each refusal is recorded (the audit of #226). Which store the Login checks is decided in question 1 of the threat model.
+
+## Seam
+
+the vpntest harness (seam 2 of #45)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] After N wrong passwords for one user in a window, the next attempt for that user is refused in less time than one derivation takes, from any source.
+- [ ] After N wrong passwords from one source across many users, the source is refused for a window, and an honest source is not.
+- [ ] An unknown user is throttled as a known one, and the time of its answer does not tell the two apart.
+- [ ] Every refusal is counted and logged without the password.
+- [ ] The tests `nodelogin` and `pinfail` pass.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-5.
+```
+
+### DT-6. The first install narrows who may reach the API
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+`ranz install --controller` opens TCP 443 and 5555 on every firewall profile, and the admin source allowlist is empty, so the token is the only barrier (AP-3, question 3 of the threat model). After this ticket the install sets the admin source allowlist: loopback and the subnets of the private interfaces of the host by default, or the sources that `--admin-from` names, or everything only with `--admin-from any`. The first start says in its log and in `ranz status` which sources are allowed and how to change them, and that the starter rule allows all traffic inside VRF `default` and how to narrow it. The mesh of ADR-0034 is not changed: the control stream is not behind the allowlist, and the starter rule stays.
+
+## Seam
+
+the controller conformance seam (seam of #176) and the first-test script
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] After an install with no flag, a call from a source outside the default set gets 403 and is recorded, and a call from loopback and from a private subnet of the host is served.
+- [ ] `--admin-from` takes prefixes, and `any` restores the open default; both show in `ranz status`.
+- [ ] A Node enrols from an address outside the allowlist.
+- [ ] The first start and `ranz status` say that the starter rule allows all inside VRF `default`, and `docs/first-test.md` shows how to narrow it.
+- [ ] The first-test script and the multi-node job pass with their runners' addresses allowed.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-29. The maintainer decides question 3 first.
+```
+
+### DT-7. The front door checks who serves a handoff pipe
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+`FrontDoorSend` connects to the pipe of an owner by name, takes the process id of whoever serves it and duplicates the socket into that process (FD-4). It passes no impersonation level, and it checks neither the account nor the image of the server. After this ticket it connects with `SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION`, and checks that the serving process runs as the account that the owner table names (a SID) and, where the owner names one, that its image is the executable that it expects, before `WSADuplicateSocketW`. It refuses otherwise and counts.
+
+## Seam
+
+the coretest harness (`frontdoor`)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] A pipe of the owner's name that another account serves gets no socket, and the connection is closed and counted.
+- [ ] A pipe served by the right account gets the socket.
+- [ ] The owner table has the SID, and the Controller's end of #352 sets it.
+- [ ] The connect passes no impersonation level above identification, which the test reads from the pipe.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-13.
+```
+
+### DT-8. The store asks for a credential and encrypts between members
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+The Controller starts `rqlited` with no credential and no encryption (ST-1, ST-2). After this ticket the first start makes a random credential, keeps it in a file of the data directory with its protected access list, and starts `rqlited` with `-auth`. The store client sends it, and so do `reset-admin`, `backup` and `restore`. In a cluster the Raft and the node API use mutual TLS (`-node-encrypt`, `-node-cert`, `-node-key`, `-node-ca-cert`); how the members get their certificates is decided here and written as an amendment of ADR-0026. `-rqlite-external` accepts an `https` URL with its CA, and a plain `http` URL only on loopback.
+
+## Seam
+
+the controller conformance seam with a real `rqlited` (the cluster tests of ADR-0026)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] A request to the HTTP port with no credential, or a wrong one, gets 401, and a local process that does not hold the file cannot read the `api_tokens` table.
+- [ ] The three-member cluster tests run with encrypted and authenticated Raft, and a fourth process that joins without a certificate is refused.
+- [ ] `reset-admin`, `backup` and `restore` work against a running and a stopped service.
+- [ ] `-rqlite-external` refuses a plain URL that is not loopback.
+- [ ] ADR-0026 is amended with the credential and the certificates.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gaps G-18 and G-19.
+```
+
+### DT-9. An operator cannot point the Controller or a Node anywhere
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+An operator token can point the Controller at any host (the targets), copy the traffic of a VRF to any address (a Mirror), have a Node reach any UNC path (a Listener), and shorten the audit log (AP-6, AP-7). After this ticket the admin owns the list of hosts and prefixes that these may name, and the operator works inside it: the targets refuse loopback, link-local and the Controller's own store unless the admin lists the host, and the name is resolved and the address checked at the connect; the sensor of a Mirror must be inside an admin-listed prefix; a UNC path in a Listener is refused unless the admin allows the server; the audit retention and the audit targets need admin, as the tokens do. Question 2 of the threat model decides what else moves to admin.
+
+## Seam
+
+the controller conformance seam with the node simulator (seam of #176)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] A target on `127.0.0.1:4001`, on a link-local address and on a name that resolves to either is refused when it is made and when it is used; one in a listed prefix is accepted.
+- [ ] A Mirror whose sensor is outside the listed prefixes is refused by apply.
+- [ ] A Listener with a UNC path to a server that is not allowed is refused by apply.
+- [ ] `PUT /api/v1/audit/retention` and the calls on audit targets need admin, and `TestRegisteredRolesMatchNeeds` says so.
+- [ ] ADR-0031 is amended with the new admin lists.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-16.
+```
+
+### DT-10. The files of the Controller's host
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+Three things about what the Controller leaves on its host (ST-3, ST-4). First, a data directory that a local user made before the install stays that user's: `protectDir` replaces the access list but not the owner, and the list holds the owner. After this ticket the install takes the directory over, with the Administrators as its owner, as `NodeMakeDataDir` does, and the service refuses to start in a data directory that SYSTEM, the Administrators or its own account do not own. Second, a backup takes the access list of the folder it is written to: it is written with a protected access list of its own. Third, the secrets of the audit and export targets are in the store in clear: they are kept encrypted with a key of the Controller in the key storage provider, and the message of `backup` names everything that a backup holds.
+
+## Seam
+
+the Windows tests of the Controller and the first-test script
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] A data directory that a standard user made before the install is taken over (owner Administrators, protected list) or the install refuses with a message, shown by a Windows test; the service does not start in a directory owned by a standard user.
+- [ ] A backup written to a folder that the Users group can read cannot be read by Users.
+- [ ] The table of the targets, read through the store, shows no secret in clear, and a restore on the same host keeps them working; the documentation says what a restore on another host does.
+- [ ] The text that `backup` prints names the hashes, the licence key, the secrets of the targets and the Intent.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gaps G-20 and G-22.
+```
+
+### DT-11. A session that two holders of one key replace again and again is shown
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+A new handshake of a key closes the session that a peer holds for it, so a thief and the real Node can keep each other off by taking turns (NS-12). After this ticket a Node counts the replacements of the session of each peer in a window, and above a number raises an Event (`session-flap`) with the name of the peer and the source addresses of the sessions that replaced each other. The Event goes to the Controller with the Telemetry and shows in the web UI and `ranz events`.
+
+## Seam
+
+the vpntest harness (seam 2 of #45) and the controller conformance seam (seam of #176)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] Two dialers that use one key, against one Node, make the Event appear within the window, with both addresses.
+- [ ] A Node that roams once raises none.
+- [ ] The Event reaches the Controller and is listed in `ranz events`.
+- [ ] The documentation says what to do: delete the Node resource and make a new key.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-30.
+```
+
+### DT-12. The fuzz targets that are still to come
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+Three readers of foreign bytes have no fuzz target of their own: `NodeOverlayInput` and `CsImportForkConfig` are exempt in the registry with "a fuzz target of its own is still to come", and the nanopb decode of a message of the Controller and `ControlApply` (`Control.c`) are not in it at all (CS-13, DP-7). After this ticket each has a libFuzzer target in the registry, with seeds from the existing tests, and the two exemptions are gone.
+
+## Seam
+
+the fuzz job of `quality.yml` (ADR-0040)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] The registry check passes with the two exempt lines turned into targets and the decode and the apply of a Controller message listed.
+- [ ] The full fuzz set runs the three targets under AddressSanitizer for the time of the CI budget, with no finding, or with the findings fixed in the same pull request.
+- [ ] The seeds of the control target include the messages that `tests/control/nanopb_roundtrip.c` decodes.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-15.
+```
+
+### DT-13. A token has a life, and the CLI checks the certificate toward loopback
+
+```markdown
+## Parent
+
+#45
+
+## What to build
+
+A token never expires, shows no last use, and a read is not audited (AP-2, AP-8). The CLI checks no certificate toward `127.0.0.1`, its default. After this ticket a token can be made with an expiry and is refused after it; the last use of each token is kept (at most one write a minute) and shown by `ranz tokens`; a read of the tokens, the audit log and the licence is recorded as an access; and the CLI pins the TLS fingerprint toward loopback as well, reading it from the data directory when it can read it and asking for `-fingerprint` when it cannot.
+
+## Seam
+
+the controller conformance seam (seam of #176)
+
+## Phase
+
+Hardening phase (after the core data path)
+
+## Acceptance criteria
+
+- [ ] A token with an expiry is refused with 401 after it, is shown as expired, and an admin can still delete it.
+- [ ] `ranz tokens` shows the last use of each token.
+- [ ] A listener on `127.0.0.1:443` that presents another key makes `ranz` refuse and send no token; the right key works.
+- [ ] A read of the tokens, the audit log or the licence leaves an access record under the name of the token.
+
+## Blocked by
+
+None
+
+---
+Ticket key: to be assigned. Draft of AUD-1 (#362), gap G-17.
+```
+
+## Appendix C. Amendments proposed for open tickets
+
+These tickets are open and the threat model reads each of them as written. Each line is a sentence that the ticket lacks, and the gap that it closes. The maintainer or the integrator makes the edit; this lane does not touch tickets.
+
+| ticket | amendment | gap, rows |
+|---|---|---|
+| #352 (SDN-73) | Say that the Controller sees the real address of the client through the handoff, and test that the admin source allowlist refuses a remote address through it. Decide the account of the Controller's process and the right that the handoff gives to the Node's account (`PROCESS_DUP_HANDLE`), so that a flaw of the Node on the same host is not a short way to the Controller. Use the owner check of DT-7. | G-13; FD-4, FD-7, FD-8 |
+| #356 (SDN-76) | Accept a datagram only from a source that the Controller named for that very VNI, not from any named source on any VNI that the Node carries. When the endpoint of a plain link is a public address, raise an Event and ask for an acknowledgement in the Intent. | G-25, G-27; SM-4, SM-8 |
+| #357 (SDN-77) | The Controller writes for each peer the accept list (the prefixes that Node may announce, from its Networks and the addresses of its VRFs) and a maximum number of prefixes; no default route is accepted unless the Intent says so. Add a setting for session protection (TCP MD5 and TTL security, which GoBGP offers), or say in the ticket that the underlay provides it. | G-26; SM-5, SM-6 |
+| #358 (SDN-78) | Apply the limits of SDN-65 (#292: MAC mobility, limits and events) and SDN-66 (#293) to the EVPN peers that are Ranz Nodes, and give each peer a list of the MACs, VNIs and prefixes it may announce. | G-26; SM-6 |
+| #359 (SDN-79) | Note that a reflector is a point of trust: its key is the first to bind (ADR-0041), and two reflectors are named. | G-6; SM-7 |
+| #387 (SDN-88) | Add an option for a Network in `hmac` mode to drop a packet with no valid MAC, instead of judging it by the map of address to group. Keep the key of a VRF out of every resource that a viewer reads, and in a table of its own that DT-10 protects in backups. Say in the documentation that in the standard mode an address is the identity of a peer unless that option is on. | G-24; SM-2, SM-3 |
+| #226 (SDN-32) | The criterion "a wrong password is refused and audited" gets a second line: repeated failures for one user or from one source are delayed, and the delay is audited. DT-5 does the Node's part. | G-5; NS-15 |
+| #376 (SDN-81) | A revoke reaches the gateway within a stated time, the web UI shows a gateway that has not acknowledged it, and the revoke is audited. | G-28; OE-2 |
+| #377 (SDN-82) | Say where the private key of a Device is made and that the Controller never keeps it. The PresharedKey is kept like the secret of a target (DT-10), and is in no log, audit record, bundle or resource that a viewer reads. The configuration file and the QR code are shown once. | G-28; OE-2 |
+| #382 (CORE-P2-5) | Show on the QUIC path, from the connection information, that the group negotiated is the hybrid one where the OS has ML-KEM. | G-4; NS-4 |
+| #424 (CORE-P2-7) | The decision of 2026-10-26 keeps the REALITY key in the Configuration store. Say how: as text, or protected with a key of the host that only the service account can use. | G-12; TR-10 |
+| #234 (SDN-41) | Say which protections apply to an L2 VNI of the standard mode, and that the switch and the guard are wired into the Node before an L2 Network is carried between peers. | G-21; DP-8, SM-4 |
+| the release work that links the activation package | Refuse a revocation list older than the one in force (`Issued`), keep the last list in the store, and require `https` for the base URL. The fail-open of an absent or corrupt list stays, by the decision of ADR-0036. SEC-7 (#284) is closed, so this is a new ticket when the work is scheduled. | G-23; ST-8 |
+| the move of the peer layer onto the QUIC datagrams | Put the 65-byte clear header inside the encryption of the outer session, and limit the sources of a relay (question 9). | OE-5, OE-4 |
+| the ADR numbers | Two ADRs carry the number 0036 (`0036-licensing.md` and `0036-anti-debug-and-anti-re-release-variant.md`). Renumber the second. | documentation |
+| #400 (CORE-H3), #443, #425 (AUD-7) | None: they cover G-2, G-3 and G-8; G-10; and G-11 as they are written. | G-2, G-3, G-8, G-10, G-11 |
