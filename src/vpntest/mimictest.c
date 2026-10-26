@@ -781,6 +781,7 @@ static void MimicTestCancelAndRace(MIMICTEST_CTX *ctx, TRANSPORT *client, TRANSP
 	char list[MAX_SIZE];
 
 	Print("[cancel and race]\n");
+	Zero(&c, sizeof(c));
 
 	// A cancel that is set already: the dial does not start
 	c.Event = CreateEventW(NULL, TRUE, TRUE, NULL);

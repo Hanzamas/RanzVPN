@@ -292,6 +292,7 @@ static bool NodeMimicDial(void *param, const char *address, HANDLE cancel, void 
 	ULONG server = 0;
 
 	*stream = NULL;
+	Zero(binding, sizeof(binding));
 
 	if (sc->Settings == NULL || IsEmptyStr(address) || StrLen(address) + 6 > NODE_MIMIC_MAX_REQUEST || NodeMimicSidecarReady(sc, &pid, NULL) == false)
 		return false;
@@ -532,6 +533,7 @@ static bool NodeMimicAccept(void *listener, UINT timeout, void **stream) {
 			UCHAR binding[NODE_MIMIC_BINDING];
 			UINT binding_size = 0;
 
+			Zero(binding, sizeof(binding));
 			MIMIC_STREAM *s = NodeMimicNewStream(pipe, binding, 0);
 
 			// The sidecar writes the line as soon as it connected
