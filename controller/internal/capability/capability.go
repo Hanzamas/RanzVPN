@@ -37,6 +37,9 @@ type Capabilities struct {
 	// (SDN-80), and WireGuardKey is the public key of its WireGuard interface, base64.
 	WireGuard    bool   `json:"wireguard,omitempty"`
 	WireGuardKey string `json:"wireguardKey,omitempty"`
+	// PlainLinks: the node runs the links of kind vxlan and geneve (SDN-76), the VXLAN module over
+	// Winsock UDP.
+	PlainLinks bool `json:"plainLinks,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -67,6 +70,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		EgressTier:      int(p.GetEgressTier()),
 		TLSPortFallback: p.GetTlsPortFallback(),
 		WireGuard:       p.GetWireguard(),
+		PlainLinks:      p.GetPlainLinks(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -84,6 +88,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		Xdp:             c.XDP,
 		TlsPortFallback: c.TLSPortFallback,
 		Wireguard:       c.WireGuard,
+		PlainLinks:      c.PlainLinks,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)
@@ -143,6 +148,27 @@ var requirements = []requirement{
 		capability: "wireguard",
 		has:        func(c *controlpb.Capabilities) bool { return c.GetWireguard() },
 	},
+	// A link of kind vxlan or geneve needs a node that runs them (SDN-76, #356): a node of an older
+	// release would send the packets of the VRF over its Noise sessions, which the others no longer
+	// take as the link of the VRF.
+	{
+		feature: func(o *controlpb.Object) string {
+			if v := o.GetVrf(); v.GetLink() == controlpb.LinkKind_LINK_KIND_VXLAN || v.GetLink() == controlpb.LinkKind_LINK_KIND_GENEVE {
+				return fmt.Sprintf("%s link of VRF %q", linkName(v.GetLink()), v.GetName())
+			}
+			return ""
+		},
+		capability: "plainLinks",
+		has:        func(c *controlpb.Capabilities) bool { return c.GetPlainLinks() },
+	},
+}
+
+// linkName returns the name that the Intent gives the kind k of a link.
+func linkName(k controlpb.LinkKind) string {
+	if k == controlpb.LinkKind_LINK_KIND_GENEVE {
+		return "geneve"
+	}
+	return "vxlan"
 }
 
 // Check returns the problems of the desired state s of node for the Capabilities c that the node

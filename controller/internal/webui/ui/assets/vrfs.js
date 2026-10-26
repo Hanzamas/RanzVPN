@@ -7,6 +7,7 @@ import { call, onSubmit, start } from './page.js';
 import { el, find } from './dom.js';
 import { RanzTable } from './components.js';
 import { deleteButton, loadResources, report } from './resources.js';
+import { linkCell } from './links.js';
 
 /** @typedef {import('./types.js').ApplyResult} ApplyResult */
 
@@ -46,6 +47,8 @@ async function render() {
     { label: 'ID', cell: (r) => r.spec?.id },
     { label: 'ULA', cell: (r) => el('code', {}, r.spec?.ula ?? '') },
     { label: 'MTU', cell: (r) => r.spec?.mtu ?? `${defaultMTU} (default)` },
+    // The kind of the links between its Nodes (links.js; SDN-76)
+    { label: 'Link', cell: (r) => linkCell(r.spec) },
     {
       label: 'Networks',
       cell: (r) => {

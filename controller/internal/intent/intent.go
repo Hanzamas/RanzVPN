@@ -111,6 +111,11 @@ type VRF struct {
 	// ExportTargets are the route targets that the VRF exports: its routes leak into every other
 	// VRF that imports one of them. Left out, it exports none.
 	ExportTargets []string `json:"exportTargets,omitempty"`
+	// Link is the kind of the links between the Nodes of the VRF (SDN-76, link.go): noise, the
+	// default, or vxlan or geneve, plain on a network that the operator trusts. VNI is the VNI
+	// that such a link carries the VRF on; left out, it is the id of the VRF.
+	Link string `json:"link,omitempty"`
+	VNI  uint32 `json:"vni,omitempty"`
 }
 
 // Network belongs to one VRF. Its pools are the controller's to allocate from (ADR-0028,
@@ -171,6 +176,10 @@ type Node struct {
 	// WireGuard is the WireGuard end of a node that is the gateway of Devices (SDN-80, device.go).
 	// Left out, the node is the gateway of no Device.
 	WireGuard WireGuard `json:"wireguard,omitzero"`
+	// VTEP is the tunnel endpoint of the node for the links of kind vxlan and geneve of its VRFs
+	// (SDN-76, link.go): its address on the network that the operator trusts and its ports.
+	// Left out, the node can be in no VRF with such a link.
+	VTEP VTEP `json:"vtep,omitzero"`
 }
 
 // Controller is one member of the controller cluster as nodes reach it (SDN-17, ADR-0026). The
@@ -765,6 +774,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeUsers()
 	in.completeListeners()
 	in.completeDevices()
+	// The kinds of the links of the VRFs and the tunnel endpoints of the Nodes (link.go)
+	in.completeLinks()
 	return problems
 }
 
@@ -886,6 +897,7 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateListeners()...)
 	problems = append(problems, in.validateEndpoints()...)
 	problems = append(problems, in.validateDevices()...)
+	problems = append(problems, in.validateLinks()...)
 	return append(problems, in.validateIPAM()...)
 }
 
