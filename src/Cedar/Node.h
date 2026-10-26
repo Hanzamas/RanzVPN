@@ -100,6 +100,10 @@
 #define NODE_OVERLAY_VRF_TAG       4    // Bytes of a data record before its IP packet: the VRF id, big-endian (SDN-4, #180)
 #define NODE_OVERLAY_RECORD        2048 // Bytes of a data record that NodeOverlayInput builds on its stack; a larger one is allocated
 
+// The handshakes of the streams that the overlay accepts (NodeHandshake.c; AUD1-DT-1, #449)
+#define NODE_OVERLAY_HANDSHAKES        64 // Handshakes in flight at most, without MaxHandshakes in the configuration
+#define NODE_OVERLAY_HANDSHAKE_WORKERS 16 // Threads of the pool that runs them, one handshake each at a time
+
 // The Mirrors of a node (NodeMirror.c; SDN-23, #199)
 #define NODE_MIRROR_ETHER     14                 // Bytes of the Ethernet header in front of the IP packet of a copy
 #define NODE_MIRROR_BURST     50                 // ms of its rate that the token bucket of a Mirror holds ...
@@ -478,6 +482,10 @@ struct NODE_OVERLAY_CONFIG {
 	// finds a peer by its node name, and the order of the keys decides alone, as the in-process transport of the vpntest
 	// harness does.
 	NODE_DIALABLE_PROC *Dialable;
+
+	// The handshakes of the streams that the overlay accepts that are in flight at most, 0 for NODE_OVERLAY_HANDSHAKES: the
+	// stream after them is refused at the accept (NodeHandshake.c; AUD1-DT-1, #449)
+	UINT MaxHandshakes;
 };
 
 // What NodeOverlayGetStatus reports
@@ -499,6 +507,13 @@ struct NODE_OVERLAY_STATUS {
 	// The dials that the overlay started, whatever they gave: a peer that the node does not dial, one without endpoints for
 	// one, adds none (SDN-93, #410)
 	UINT64 Dials;
+
+	// The handshakes of the streams that the overlay accepted, which run off its thread (NodeHandshake.c; AUD1-DT-1, #449)
+	UINT MaxHandshakes;        // In flight at most
+	UINT HandshakesInFlight;   // Waiting for a thread of the pool or running on one
+	UINT64 HandshakesTimedOut; // Closed because they did not finish in NODE_OVERLAY_HANDSHAKE
+	UINT64 HandshakesFailed;   // Closed because they failed within it
+	UINT64 HandshakesRefused;  // Streams refused at the accept, because MaxHandshakes were in flight
 };
 
 // One peer of the overlay and its Noise session, as NodeOverlayGetSessions reports it (SDN-91, #396)

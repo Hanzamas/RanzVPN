@@ -11,6 +11,13 @@
 //   time and more. No packet takes longer than HANDSHAKEPOOLTEST_DELAY ms, a fifth of NODE_OVERLAY_HANDSHAKE, to reach
 //   node-b's host: the thread of node-b's overlay reads no silent stream. A thread that read one would hold every packet
 //   for up to NODE_OVERLAY_HANDSHAKE.
+// - Time: each handshake of a silent stream that did not finish in NODE_OVERLAY_HANDSHAKE is closed, so the stream
+//   reads its end, and counted in the status of node-b's overlay as timed out; the session of node-a and node-b stays
+//   up.
+// - Limit: node-c, whose overlay runs at most HANDSHAKEPOOLTEST_MAX handshakes, takes that many of
+//   HANDSHAKEPOOLTEST_MAX + HANDSHAKEPOOLTEST_OVER silent streams; the others are refused at the accept, so they read
+//   their end at once, and counted. Once those handshakes timed out, a stream whose first frame is no handshake fails
+//   at once and is counted as failed.
 // Print "HANDSHAKEPOOL TEST OK" only when every check passes.
 
 #include "testlist.h"
@@ -43,13 +50,18 @@
 #define	HANDSHAKEPOOLTEST_GAP		20			// ms between a packet that arrived and the next
 #define	HANDSHAKEPOOLTEST_SIZE		64			// The size of a test packet
 #define	HANDSHAKEPOOLTEST_VRF		101			// The one VRF
+#define	HANDSHAKEPOOLTEST_MAX		8			// The handshakes in flight at most of node-c
+#define	HANDSHAKEPOOLTEST_OVER		4			// The silent streams to node-c beyond them
+#define	HANDSHAKEPOOLTEST_LIMITED	(HANDSHAKEPOOLTEST_MAX + HANDSHAKEPOOLTEST_OVER)
 
-// The nodes
+// The nodes: node-a and node-b are peers, node-c has none
 #define	HANDSHAKEPOOLTEST_A			0
 #define	HANDSHAKEPOOLTEST_B			1
+#define	HANDSHAKEPOOLTEST_C			2
+#define	HANDSHAKEPOOLTEST_NODES		3
 
-static char *handshakepooltest_names[2] = {"node-a", "node-b"};
-static char *handshakepooltest_addrs[2] = {"10.0.0.1", "10.0.0.2"};
+static char *handshakepooltest_names[HANDSHAKEPOOLTEST_NODES] = {"node-a", "node-b", "node-c"};
+static char *handshakepooltest_addrs[HANDSHAKEPOOLTEST_NODES] = {"10.0.0.1", "10.0.0.2", "10.0.0.3"};
 
 // One node and the fake adapter of its host
 typedef struct HANDSHAKEPOOLTEST_NODE
@@ -78,8 +90,10 @@ typedef struct HANDSHAKEPOOLTEST_CTX
 	UINT NumChecks;
 	UINT NumFailed;
 	TRANSPORT *Loopback;
-	HANDSHAKEPOOLTEST_NODE Nodes[2];
-	TRANSPORT_STREAM *Silent[HANDSHAKEPOOLTEST_SILENT];	// The silent streams to node-b
+	HANDSHAKEPOOLTEST_NODE Nodes[HANDSHAKEPOOLTEST_NODES];
+	TRANSPORT_STREAM *Silent[HANDSHAKEPOOLTEST_SILENT];		// The silent streams to node-b
+	TRANSPORT_STREAM *Limited[HANDSHAKEPOOLTEST_LIMITED];	// ... and to node-c
+	TRANSPORT_STREAM *Garbage;								// The stream to node-c whose first frame is no handshake
 } HANDSHAKEPOOLTEST_CTX;
 
 static bool HandshakePoolTestCheck(HANDSHAKEPOOLTEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
@@ -228,11 +242,11 @@ static void HandshakePoolTestAddresses(UINT i, CONTROL_ADDRESS *a)
 	a->Length = 24;
 }
 
-// Apply the state of node i at Generation 1: its address, and the other node as its peer
+// Apply the state of node i at Generation 1: its address, and for node-a and node-b the other as its peer
 static bool HandshakePoolTestApply(HANDSHAKEPOOLTEST_CTX *ctx, UINT i)
 {
 	CONTROL_STATE *st = ZeroMalloc(sizeof(CONTROL_STATE));
-	UINT j = 1 - i;
+	UINT j = (i == HANDSHAKEPOOLTEST_A ? HANDSHAKEPOOLTEST_B : HANDSHAKEPOOLTEST_A);
 
 	st->Generation = 1;
 	StrCpy(st->Name, sizeof(st->Name), handshakepooltest_names[i]);
@@ -240,13 +254,16 @@ static bool HandshakePoolTestApply(HANDSHAKEPOOLTEST_CTX *ctx, UINT i)
 	HandshakePoolTestAddresses(i, &st->Addresses[0]);
 
 	st->Peers = ZeroMalloc(sizeof(CONTROL_PEER));
-	st->NumPeers = 1;
-	StrCpy(st->Peers[0].Name, sizeof(st->Peers[0].Name), handshakepooltest_names[j]);
-	Copy(st->Peers[0].Key, ctx->Nodes[j].Key.Public, PEER_KEY_SIZE);
-	st->Peers[0].NumVrfs = 1;
-	st->Peers[0].VrfIds[0] = HANDSHAKEPOOLTEST_VRF;
-	st->Peers[0].NumAddresses = 1;
-	HandshakePoolTestAddresses(j, &st->Peers[0].Addresses[0]);
+	if (i != HANDSHAKEPOOLTEST_C)
+	{
+		st->NumPeers = 1;
+		StrCpy(st->Peers[0].Name, sizeof(st->Peers[0].Name), handshakepooltest_names[j]);
+		Copy(st->Peers[0].Key, ctx->Nodes[j].Key.Public, PEER_KEY_SIZE);
+		st->Peers[0].NumVrfs = 1;
+		st->Peers[0].VrfIds[0] = HANDSHAKEPOOLTEST_VRF;
+		st->Peers[0].NumAddresses = 1;
+		HandshakePoolTestAddresses(j, &st->Peers[0].Addresses[0]);
+	}
 
 	bool ok = NodeOverlayApply(ctx->Nodes[i].Node, st);
 
@@ -395,6 +412,105 @@ static void HandshakePoolTestForwarding(HANDSHAKEPOOLTEST_CTX *ctx)
 		"%u sent, %u refused, %u lost, the longest took %I64u ms", p.Sent, p.Refused, p.Lost, p.MaxDelay);
 }
 
+// The status of the overlay of node i once done says so, or once HANDSHAKEPOOLTEST_BOUND passed, into st
+typedef bool (HANDSHAKEPOOLTEST_DONE)(const NODE_OVERLAY_STATUS *st, UINT64 want);
+static void HandshakePoolTestWait(HANDSHAKEPOOLTEST_CTX *ctx, UINT i, HANDSHAKEPOOLTEST_DONE *done, UINT64 want, NODE_OVERLAY_STATUS *st)
+{
+	UINT64 end = Tick64() + HANDSHAKEPOOLTEST_BOUND;
+
+	while (true)
+	{
+		NodeOverlayGetStatus(ctx->Nodes[i].Node, st);
+		if (done(st, want) || Tick64() >= end)
+		{
+			return;
+		}
+		SleepThread(HANDSHAKEPOOLTEST_POLL);
+	}
+}
+
+static bool HandshakePoolTestTimedOut(const NODE_OVERLAY_STATUS *st, UINT64 want)
+{
+	return (st->HandshakesTimedOut >= want);
+}
+
+static bool HandshakePoolTestTaken(const NODE_OVERLAY_STATUS *st, UINT64 want)
+{
+	return (st->HandshakesInFlight + st->HandshakesRefused >= want);
+}
+
+static bool HandshakePoolTestFailed(const NODE_OVERLAY_STATUS *st, UINT64 want)
+{
+	return (st->HandshakesFailed >= want);
+}
+
+// The streams of num that read their end at once: the node closed them
+static UINT HandshakePoolTestEnded(TRANSPORT_STREAM **streams, UINT num)
+{
+	UINT ret = 0;
+
+	for (UINT i = 0;i < num;i++)
+	{
+		UCHAR c;
+
+		if (streams[i] != NULL && TransportRead(streams[i], &c, 1, 0) == 0)
+		{
+			ret++;
+		}
+	}
+
+	return ret;
+}
+
+// The handshakes of the silent streams to node-b timed out: closed and counted, and the session stays up
+static void HandshakePoolTestTime(HANDSHAKEPOOLTEST_CTX *ctx)
+{
+	NODE_OVERLAY_STATUS st;
+	char what[MAX_SIZE];
+
+	Print("[the handshakes that do not finish in their time]\n");
+
+	HandshakePoolTestWait(ctx, HANDSHAKEPOOLTEST_B, HandshakePoolTestTimedOut, HANDSHAKEPOOLTEST_SILENT, &st);
+	UINT ended = HandshakePoolTestEnded(ctx->Silent, HANDSHAKEPOOLTEST_SILENT);
+
+	Format(what, sizeof(what), "  node-b counts the %u handshakes as timed out, none failed or refused, none in flight, and each silent stream reads its end", HANDSHAKEPOOLTEST_SILENT);
+	HandshakePoolTestCheck(ctx, st.HandshakesTimedOut == HANDSHAKEPOOLTEST_SILENT && st.HandshakesFailed == 0 && st.HandshakesRefused == 0 && st.HandshakesInFlight == 0 && ended == HANDSHAKEPOOLTEST_SILENT, what,
+		"%I64u timed out, %I64u failed, %I64u refused, %u in flight, %u streams ended", st.HandshakesTimedOut, st.HandshakesFailed, st.HandshakesRefused, st.HandshakesInFlight, ended);
+	HandshakePoolTestCheck(ctx, st.NumLinks == 1, "  the session of node-b to node-a stays up", "%u links", st.NumLinks);
+}
+
+// node-c runs at most HANDSHAKEPOOLTEST_MAX handshakes: the streams after them are refused at the accept and counted
+static void HandshakePoolTestLimit(HANDSHAKEPOOLTEST_CTX *ctx)
+{
+	NODE_OVERLAY_STATUS st;
+	char what[MAX_SIZE];
+	UCHAR frame[4];
+
+	Print("[the limit of the handshakes in flight]\n");
+
+	UINT num = HandshakePoolTestDialSilent(ctx, handshakepooltest_names[HANDSHAKEPOOLTEST_C], ctx->Limited, HANDSHAKEPOOLTEST_LIMITED);
+	HandshakePoolTestWait(ctx, HANDSHAKEPOOLTEST_C, HandshakePoolTestTaken, HANDSHAKEPOOLTEST_LIMITED, &st);
+	UINT ended = HandshakePoolTestEnded(ctx->Limited, num);
+
+	Format(what, sizeof(what), "  of %u silent streams to node-c, %u are in flight, its limit, and %u are refused at the accept and read their end",
+		HANDSHAKEPOOLTEST_LIMITED, HANDSHAKEPOOLTEST_MAX, HANDSHAKEPOOLTEST_OVER);
+	HandshakePoolTestCheck(ctx, num == HANDSHAKEPOOLTEST_LIMITED && st.MaxHandshakes == HANDSHAKEPOOLTEST_MAX && st.HandshakesInFlight == HANDSHAKEPOOLTEST_MAX && st.HandshakesRefused == HANDSHAKEPOOLTEST_OVER && ended == HANDSHAKEPOOLTEST_OVER, what,
+		"%u dialled, limit %u, %u in flight, %I64u refused, %u streams ended", num, st.MaxHandshakes, st.HandshakesInFlight, st.HandshakesRefused, ended);
+
+	HandshakePoolTestWait(ctx, HANDSHAKEPOOLTEST_C, HandshakePoolTestTimedOut, HANDSHAKEPOOLTEST_MAX, &st);
+	HandshakePoolTestCheck(ctx, st.HandshakesTimedOut == HANDSHAKEPOOLTEST_MAX && st.HandshakesInFlight == 0, "  the handshakes in flight time out, and none is in flight any more",
+		"%I64u timed out, %u in flight", st.HandshakesTimedOut, st.HandshakesInFlight);
+
+	// A frame of no bytes is no handshake
+	Zero(frame, sizeof(frame));
+	UINT got = HandshakePoolTestDialSilent(ctx, handshakepooltest_names[HANDSHAKEPOOLTEST_C], &ctx->Garbage, 1);
+	bool written = (got == 1 && TransportWrite(ctx->Garbage, frame, sizeof(frame)));
+	HandshakePoolTestWait(ctx, HANDSHAKEPOOLTEST_C, HandshakePoolTestFailed, 1, &st);
+	HandshakePoolTestCheck(ctx, written && st.HandshakesFailed == 1 && st.HandshakesTimedOut == HANDSHAKEPOOLTEST_MAX && st.HandshakesRefused == HANDSHAKEPOOLTEST_OVER,
+		"  a stream whose first frame is no handshake is counted as failed, and nothing else changes",
+		"written %u, %I64u failed, %I64u timed out, %I64u refused", (UINT)written, st.HandshakesFailed, st.HandshakesTimedOut, st.HandshakesRefused);
+}
+
 // The nodes and their overlays, and the session between them
 static bool HandshakePoolTestOpen(HANDSHAKEPOOLTEST_CTX *ctx)
 {
@@ -404,7 +520,7 @@ static bool HandshakePoolTestOpen(HANDSHAKEPOOLTEST_CTX *ctx)
 
 	Print("[the nodes and their overlays]\n");
 
-	for (UINT i = 0;i < 2 && ok;i++)
+	for (UINT i = 0;i < HANDSHAKEPOOLTEST_NODES && ok;i++)
 	{
 		HANDSHAKEPOOLTEST_NODE *t = &ctx->Nodes[i];
 		NODE_OVERLAY_CONFIG c;
@@ -424,6 +540,8 @@ static bool HandshakePoolTestOpen(HANDSHAKEPOOLTEST_CTX *ctx)
 		c.Key = &t->Key;
 		c.Adapter = HandshakePoolTestAdapter;
 		c.AdapterParam = t;
+		// node-c runs fewer handshakes at once than the default
+		c.MaxHandshakes = (i == HANDSHAKEPOOLTEST_C ? HANDSHAKEPOOLTEST_MAX : 0);
 		Format(what, sizeof(what), "  %s: its overlay runs without a control stream", handshakepooltest_names[i]);
 		ok = HandshakePoolTestCheck(ctx, ok && NodeOverlayStart(t->Node, &c), what, "NodeOverlayStart failed") && ok;
 	}
@@ -431,29 +549,37 @@ static bool HandshakePoolTestOpen(HANDSHAKEPOOLTEST_CTX *ctx)
 
 	if (ok)
 	{
-		bool applied = HandshakePoolTestApply(ctx, HANDSHAKEPOOLTEST_A) && HandshakePoolTestApply(ctx, HANDSHAKEPOOLTEST_B);
+		bool applied = HandshakePoolTestApply(ctx, HANDSHAKEPOOLTEST_A) && HandshakePoolTestApply(ctx, HANDSHAKEPOOLTEST_B) && HandshakePoolTestApply(ctx, HANDSHAKEPOOLTEST_C);
 		bool linked = applied && HandshakePoolTestWaitLinks(ctx);
 
-		ok = HandshakePoolTestCheck(ctx, applied && linked, "  node-a and node-b apply their states, and their session is up",
+		ok = HandshakePoolTestCheck(ctx, applied && linked, "  node-a, node-b and node-c apply their states, and the session of node-a and node-b is up",
 			"applied %u, linked %u", (UINT)applied, (UINT)linked);
 	}
 
 	return ok;
 }
 
-// The silent streams first, then the nodes, whose overlays stop with every thread joined
-static void HandshakePoolTestClose(HANDSHAKEPOOLTEST_CTX *ctx)
+// Close the streams of num that are open
+static void HandshakePoolTestCloseStreams(TRANSPORT_STREAM **streams, UINT num)
 {
-	for (UINT i = 0;i < HANDSHAKEPOOLTEST_SILENT;i++)
+	for (UINT i = 0;i < num;i++)
 	{
-		if (ctx->Silent[i] != NULL)
+		if (streams[i] != NULL)
 		{
-			TransportClose(ctx->Silent[i]);
-			ctx->Silent[i] = NULL;
+			TransportClose(streams[i]);
+			streams[i] = NULL;
 		}
 	}
+}
 
-	for (UINT i = 0;i < 2;i++)
+// The test's streams first, then the nodes, whose overlays stop with every thread joined
+static void HandshakePoolTestClose(HANDSHAKEPOOLTEST_CTX *ctx)
+{
+	HandshakePoolTestCloseStreams(ctx->Silent, HANDSHAKEPOOLTEST_SILENT);
+	HandshakePoolTestCloseStreams(ctx->Limited, HANDSHAKEPOOLTEST_LIMITED);
+	HandshakePoolTestCloseStreams(&ctx->Garbage, 1);
+
+	for (UINT i = 0;i < HANDSHAKEPOOLTEST_NODES;i++)
 	{
 		HANDSHAKEPOOLTEST_NODE *t = &ctx->Nodes[i];
 		wchar_t log_dir[MAX_PATH];
@@ -472,7 +598,7 @@ static void HandshakePoolTestClose(HANDSHAKEPOOLTEST_CTX *ctx)
 }
 
 // handshakepool: the handshakes of the streams that a node accepts run off the thread of its overlay
-RANZ_TEST("handshakepool", handshakepool_test, "Handshake pool (AUD1-DT-1): while 64 silent streams reach a node, the packets of its session to a peer arrive within a fifth of the handshake time.");
+RANZ_TEST("handshakepool", handshakepool_test, "Handshake pool (AUD1-DT-1): while 64 silent streams reach a node, the packets of its session to a peer arrive within a fifth of the handshake time; a handshake that times out is closed and counted; the streams beyond the limit in flight are refused and counted.");
 void handshakepool_test(UINT num, char **arg)
 {
 	HANDSHAKEPOOLTEST_CTX *ctx = ZeroMalloc(sizeof(HANDSHAKEPOOLTEST_CTX));
@@ -485,6 +611,8 @@ void handshakepool_test(UINT num, char **arg)
 	if (HandshakePoolTestOpen(ctx))
 	{
 		HandshakePoolTestForwarding(ctx);
+		HandshakePoolTestTime(ctx);
+		HandshakePoolTestLimit(ctx);
 	}
 
 	HandshakePoolTestClose(ctx);

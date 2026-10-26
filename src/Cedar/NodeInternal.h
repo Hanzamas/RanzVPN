@@ -51,5 +51,13 @@ void NodeWireGuardApplied(NODE *n, const struct CONTROL_STATE *st);
 void NodeWireGuardCaps(void *param, struct CONTROL_CAPS *caps);
 HANDLE NodeWireGuardIsolate(NODE *n, UINT index, const struct CONTROL_STATE *st, UINT *pairs);
 void NodeWireGuardRelease(HANDLE engine);
+// The pool of the handshakes of the streams that the overlay accepts (NodeHandshake.c; AUD1-DT-1, #449)
+typedef struct NODE_HANDSHAKES NODE_HANDSHAKES;
+NODE_HANDSHAKES *NodeHandshakeStart(const NOISE_SESSION_CONFIG *cfg, UINT max);
+bool NodeHandshakeSubmit(NODE_HANDSHAKES *p, TRANSPORT_STREAM *stream);
+TRANSPORT_NOISE *NodeHandshakeTake(NODE_HANDSHAKES *p);
+void NodeHandshakeStop(NODE_HANDSHAKES *p);
+void NodeHandshakeFree(NODE_HANDSHAKES *p);
+void NodeHandshakeGetStatus(NODE_HANDSHAKES *p, NODE_OVERLAY_STATUS *st);
 
 #endif // NODE_INTERNAL_H
