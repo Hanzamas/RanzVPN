@@ -278,19 +278,6 @@ static bool NodeControllerCertFingerprint(PCCERT_CONTEXT cert, char *fp, UINT si
 	return true;
 }
 
-// Whether the node accepts the TLS fingerprint fp of the certificate of the Controller: one of the fingerprints that the
-// Controller sent (SDN-92, #397), or, before it sent any, the one of the settings. c->Lock is held.
-static bool NodeControllerAccepts(NODE_CONTROLLER *c, char *fp) {
-	if (c->NumPins == 0)
-		return (StrCmpi(fp, c->Fingerprint) == 0);
-
-	for (UINT i = 0; i < c->NumPins; i++)
-		if (StrCmpi(fp, c->Pins[i]) == 0)
-			return true;
-
-	return false;
-}
-
 // The fingerprints that the node accepts as the log says them: the ones that the Controller sent, or the one of the settings,
 // with " or " between them. c->Lock is held.
 static void NodeControllerAcceptedText(NODE_CONTROLLER *c, char *text, UINT size) {
@@ -308,13 +295,17 @@ static void NodeControllerAcceptedText(NODE_CONTROLLER *c, char *text, UINT size
 static bool NodeControllerVerify(void *param, const struct _CERT_CONTEXT *cert) {
 	NODE_CONTROLLER *c = (NODE_CONTROLLER *)param;
 	char seen[NODE_CONTROLLER_FINGERPRINT];
-	bool ok;
+	bool ok = false;
 
 	bool known = NodeControllerCertFingerprint(cert, seen, sizeof(seen));
 
 	Lock(c->Lock);
 	{
-		ok = (known && NodeControllerAccepts(c, seen));
+		// The one Fingerprint of the settings, until the Controller sent others, which take its place
+		if (c->NumPins == 0)
+			ok = (known && StrCmpi(seen, c->Fingerprint) == 0);
+		for (UINT i = 0; i < c->NumPins && ok == false; i++)
+			ok = (known && StrCmpi(seen, c->Pins[i]) == 0);
 		c->Checked = true;
 		c->Mismatch = (ok == false);
 		StrCpy(c->Seen, sizeof(c->Seen), seen);
