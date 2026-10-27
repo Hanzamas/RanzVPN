@@ -198,7 +198,7 @@ control-lib.pvl	ControlClient:prologue	field	src/Core/Control.c	ControlRun	CONTR
 control-lib.pvl	ControlClient:cs	field	src/Core/Control.c	ControlRun	NoiseHandshakeWrite,ControlWriteFrame	-	message 1, in a frame of its own with no record type and no suite byte
 control-lib.pvl	ControlClient:msg2	message	src/Core/Control.c	ControlRun	ControlReadWhole,NoiseHandshakeRead	-	message 2, in a frame of its own
 control-lib.pvl	ControlClient:cd	message	src/Core/Control.c	ControlRun	ControlWriteLeases	-	a lease of a DHCP responder of the node
-control-lib.pvl	ControlClient:d	message	src/Core/Control.c	ControlTake	ControlApply	-	the Update that the node applies
+control-lib.pvl	ControlClient:d	message	src/Core/Control.c	ControlInput	ControlApply	-	the Update that the node applies, in each frame that ControlTake takes
 control-lib.pvl	ControlServer:SI	field	controller/internal/control/stream.go	handshake	PeerStatic	-	the static key of the node: any key completes the handshake, and the controller looks it up
 control-lib.pvl	ControlServer:x	check	controller/internal/controller/controller.go	serveConn	byKey,RefuseReason_REFUSE_REASON_UNKNOWN_NODE	-	the node of the key; no password: the static key alone authenticates the node
 control-lib.pvl	ControlServer:v	field	controller/internal/controller/controller.go	serveConn	GetSchemaVersion	-	the schema version of the Hello
