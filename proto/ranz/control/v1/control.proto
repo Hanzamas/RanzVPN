@@ -91,9 +91,11 @@
 // peer gets records of frame version 1 on the Noise sessions (Peer.frame_version), which carry the
 // source group before the packet; a link of kind vxlan or geneve carries it in the VXLAN group
 // policy extension or in a Geneve option when its VRF is in the tag mode trusted-underlay
-// (Vrf.tag_mode). The node reports the packets that it judged by their source group in its
-// Telemetry (SourceGroupCounters). No schema version changes with them: a node of an older release
-// skips the fields it does not know, reports no Capability tags and gets no record of version 1.
+// (Vrf.tag_mode). A node judges the claims of a peer only once its state gives the peer the frame
+// version 1 with its groups: before, as when a peer's Generation went in before the node's own, it
+// ignores them. The node reports the packets that it judged by their source group in its Telemetry
+// (SourceGroupCounters). No schema version changes with them: a node of an older release skips the
+// fields it does not know, reports no Capability tags and gets no record of version 1.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -358,7 +360,7 @@ message SourceGroup {
 
 // How a node trusts the source group that a link of kind vxlan or geneve carries (SDN-87 #386), the
 // tag mode of the Networks of its VRF. A Noise session authenticates what it carries, so the node
-// takes the source group of its records whatever the mode.
+// takes the source group of its records whatever the mode, once it knows the groups of the peer.
 enum TagMode {
   TAG_MODE_UNSPECIFIED = 0;  // as TAG_MODE_OFF
   // The node ignores the source group of such a link and sends none.
@@ -661,7 +663,9 @@ message SourceGroupCounters {
   TagMode mode = 1;
   uint64 carried = 2;  // judged by the source group that they carried
   uint64 missing = 3;  // carried none, judged by the map of address to group
-  uint64 ignored = 4;  // carried one that the mode off ignores, judged by that map too
+  // carried one that the node ignores, judged by that map too: in the mode off, or of a peer whose
+  // groups the node does not know yet
+  uint64 ignored = 4;
   uint64 refused = 5;  // claimed a group that the sending node may not assert: dropped as an unknown group
 }
 

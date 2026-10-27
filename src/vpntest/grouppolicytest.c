@@ -25,6 +25,10 @@
 //   geneve so is admin with the tag set of another group; and a packet from 10.0.0.99, an address that no route of red
 //   leads to node-a, is in no group and dropped. In the tag mode off the option is ignored and the map judges each
 //   packet, and node-a sends none, which node-b counts as missing.
+// - The Generations roll out: node-a reports the Capability tags and stamps admin on the records that it sends node-b,
+//   while the state of node-b gives node-a the frame version 0 and none of its groups, as until the Generation of node-b
+//   goes in, or while the controller cannot reach node-b. Node-b ignores those claims and judges the packets by the map:
+//   the one from 10.0.0.1 is dropped as guest, the one from 10.0.0.50 arrives as admin, and it counts both as ignored.
 // - Frame version 0: with node-a a node without the Capability tags, which has no group and sends node-b records of frame
 //   version 0, its packets over noise still go and are judged by the map: the one from 10.0.0.50 arrives, the one from
 //   10.0.0.1 is dropped, and node-b counts both as missing.
@@ -165,6 +169,14 @@ static GPTEST_CASE gptest_off[] =
 	{"off: guest on a packet from 10.0.0.50 is ignored, and the map judges it as admin: it arrives", true, GPTEST_PHONE, true, GPTEST_GUEST, GPTEST_GUEST_TAGS, GPTEST_IGNORED, true},
 	{"off: node-a sends no option, and the map judges the packet of its host from 10.0.0.1 as guest: dropped", false, "10.0.0.1", false, 0, 0, GPTEST_MISSING, false},
 	{"off: ... and the one from 10.0.0.50 as admin: it arrives", false, GPTEST_PHONE, false, 0, 0, GPTEST_MISSING, true},
+};
+
+// The packets of node-a's host over noise while node-a stamps admin on them and node-b does not know the groups of node-a
+// yet
+static GPTEST_CASE gptest_rollout[] =
+{
+	{"a claim of admin from node-a, whose groups node-b does not know yet, is ignored, and the map judges the packet from 10.0.0.1 as guest: dropped", false, "10.0.0.1", false, 0, 0, GPTEST_IGNORED, false},
+	{"... and the one from 10.0.0.50 as admin: it arrives", false, GPTEST_PHONE, false, 0, 0, GPTEST_IGNORED, true},
 };
 
 // The packets of node-a's host over noise while node-a is a node without the Capability tags
@@ -967,6 +979,16 @@ static void GpTestRun(GPTEST_CTX *ctx)
 		}
 	}
 
+	// One Generation of each node: node-b's without the groups of node-a, node-a's that stamps admin
+	Print("[the Generations roll out: node-a stamps its records before node-b knows its groups, over noise]\n");
+	bool applied = GpTestApply(ctx, GPTEST_B, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, false, 0, 0) &&
+		GpTestApply(ctx, GPTEST_A, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_ADMIN, GPTEST_ADMIN_TAGS) && GpTestWaitLinks(ctx);
+	if (GpTestCheck(ctx, applied, "The link of red is noise; node-a sends records of frame version 1 that claim admin, and the state of node-b gives node-a the frame version 0 and none of its groups",
+		"not within %u ms", GPTEST_BOUND))
+	{
+		GpTestCases(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_SESSION, gptest_rollout, sizeof(gptest_rollout) / sizeof(gptest_rollout[0]));
+	}
+
 	Print("[frame version 0: node-a is a node without the Capability tags, over noise]\n");
 	if (GpTestSwitch(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, false))
 	{
@@ -975,7 +997,7 @@ static void GpTestRun(GPTEST_CTX *ctx)
 }
 
 // grouppolicy: the policy of a VRF by the source group that a packet carries
-RANZ_TEST_TAGS("grouppolicy", grouppolicy_test, "core", "Source group policy (SDN-87): between two nodes, a rule written by tag allows or denies a packet by the source group that it carries, over noise, vxlan and geneve; a claim of a group that the sending node may not assert is dropped, counted and logged; a packet without one is judged by the map of address to group; trusted-underlay honours a forged group and off ignores it; a node of frame version 0 still gets through.");
+RANZ_TEST_TAGS("grouppolicy", grouppolicy_test, "core", "Source group policy (SDN-87): between two nodes, a rule written by tag allows or denies a packet by the source group that it carries, over noise, vxlan and geneve; a claim of a group that the sending node may not assert is dropped, counted and logged; a packet without one is judged by the map of address to group; trusted-underlay honours a forged group and off ignores it; a node ignores the claims of a peer whose groups it does not know yet; a node of frame version 0 still gets through.");
 void grouppolicy_test(UINT num, char **arg)
 {
 	GPTEST_CTX *ctx = ZeroMalloc(sizeof(GPTEST_CTX));

@@ -27,12 +27,17 @@
 // At the destination (NodeSourceGroupInbound) a claim that the node takes must be a group that the sending peer may assert
 // in the VRF of the packet, with the tag set of that group where the claim carries one: the policy of the VRF then judges
 // the packet by that group. Any other claim is an unknown group: the node drops the packet, counts it and logs it, at most
-// one line every NODE_SOURCE_GROUP_LOG ms. A packet that carried no source group, or one that the tag mode off ignores, is
-// judged by the map of address to group, as before SDN-87: the route of its source leads to the peer, whose own group it
-// is, or to a Device of the peer, whose group it is; an address that no route of the VRF leads to the peer is no address
-// of the map, and the overlay drops its packet. The node counts the packets of its peers by the tag mode in which it
-// judged them, the records of its sessions as the mode session, and reports the counters on its control stream (Core/
-// ControlSourceGroup.c).
+// one line every NODE_SOURCE_GROUP_LOG ms. The node judges the claims of a peer so only once it knows the groups that the
+// peer may assert, which its state gives with the frame version 1 of the peer once both report the Capability tags. The
+// controller gives both nodes their Generations at once, but each applies its own when it comes, and a node that the
+// controller cannot reach forwards on the state that it applied last: so a peer can send its claims before the node knows
+// its groups, and the node ignores them until it does, as the tag mode off ignores the claims of a link, instead of
+// dropping every packet of the peer. A packet that carried no source group, or one that the node ignores, is judged by the
+// map of address to group, as before SDN-87: the route of its source leads to the peer, whose own group it is, or to a
+// Device of the peer, whose group it is; an address that no route of the VRF leads to the peer is no address of the map,
+// and the overlay drops its packet. A claim gains nothing over that map, so ignoring one opens nothing. The node counts
+// the packets of its peers by the tag mode in which it judged them, the records of its sessions as the mode session, and
+// reports the counters on its control stream (Core/ControlSourceGroup.c).
 
 #include "NodeSourceGroup.h"
 
@@ -45,7 +50,7 @@
 // The results of a packet in a tag mode, as the node counts them
 #define NODE_SOURCE_CARRIED 0 // It carried a source group that the node took
 #define NODE_SOURCE_MISSING 1 // It carried none: the map of address to group judged it
-#define NODE_SOURCE_IGNORED 2 // It carried one that the tag mode off ignores: the map judged it
+#define NODE_SOURCE_IGNORED 2 // It carried one that the node ignores, in the tag mode off or of a peer whose groups it does not know: the map judged it
 #define NODE_SOURCE_REFUSED 3 // It claimed a group that the sending peer may not assert: dropped
 #define NODE_SOURCE_RESULTS 4
 
@@ -381,6 +386,12 @@ bool NodeSourceGroupStamp(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, 
 	return true;
 }
 
+// Whether the node knows the groups that the peer of the next hop hop of the table t may assert: its state gives the peer
+// the frame version 1, as the controller does with those groups once both report the Capability tags
+static bool NodeSourceGroupKnows(const NODE_SOURCE_GROUP_TABLE *t, UINT hop) {
+	return (t != NULL && hop < t->NumPeers && t->Peers[hop].FrameVersion == NODE_FRAME_VERSION);
+}
+
 // Whether the peer of the next hop hop of the table t may assert the claim in the VRF vrf_id: the group is one of its
 // groups in the VRF, with the tag set of that group when the claim carries one
 static bool NodeSourceGroupAllowed(const NODE_SOURCE_GROUP_TABLE *t, UINT hop, UINT vrf_id, const NODE_SOURCE_CLAIM *claim) {
@@ -466,10 +477,11 @@ static void NodeSourceGroupLog(NODE *n, const NODE_SOURCE_GROUP_TABLE *t, UINT h
 // A packet of the next hop hop of the tables v in the VRF vrf_id on its way to the host, with the source group that it
 // carried, as claim tells, before a 1:1 NAT rule translates it: true when it passes. A record of a Noise session carries
 // a source group that the session authenticated, which the node takes whatever the tag mode; a datagram of a link of kind
-// vxlan or geneve carries one that the tag mode of its VRF decides on: off ignores it, trusted-underlay takes it. A group
-// that the node takes must be one that the peer may assert: the policy of the VRF judges the packet by it. Any other is an
-// unknown group, which the node drops, counts and logs. A packet that carried none, or one that off ignores, is judged by
-// the map of address to group. The caller is an online reader of the node's table snapshot, which holds v.
+// vxlan or geneve carries one that the tag mode of its VRF decides on: off ignores it, trusted-underlay takes it. The node
+// takes the group of a peer whose groups it knows, and it must be one that the peer may assert: the policy of the VRF
+// judges the packet by it. Any other is an unknown group, which the node drops, counts and logs. A packet that carried
+// none, one that off ignores, or one of a peer whose groups the node does not know yet, is judged by the map of address
+// to group. The caller is an online reader of the node's table snapshot, which holds v.
 bool NodeSourceGroupInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size) {
 	NODE_SOURCE_GROUPS *g = (n != NULL ? n->SourceGroups : NULL);
 	const NODE_SOURCE_GROUP_TABLE *t = (v != NULL ? v->SourceGroups : NULL);
@@ -480,7 +492,7 @@ bool NodeSourceGroupInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, 
 		return NodePolicyInbound(n, v, vrf_id, hop, packet, size);
 	}
 
-	if (mode == CONTROL_TAG_MODE_OFF) {
+	if (mode == CONTROL_TAG_MODE_OFF || NodeSourceGroupKnows(t, hop) == false) {
 		NodeSourceGroupCount(g, mode, NODE_SOURCE_IGNORED);
 		return NodePolicyInbound(n, v, vrf_id, hop, packet, size);
 	}
