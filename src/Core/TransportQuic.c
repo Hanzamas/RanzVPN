@@ -61,6 +61,7 @@ typedef struct QUIC_NET {
 typedef struct QUIC_LISTENER {
 	QUIC_NET *Net;                           // The transport
 	HQUIC Listener;                          // The msquic listener
+	volatile LONG Refs;                      // The app plus every connection it accepted, which may outlive its close
 	SRWLOCK Lock;                            // The queue below
 	CONDITION_VARIABLE Changed;              // A stream was queued, or the listener closed
 	struct QUIC_STREAM *Queue[QUIC_BACKLOG]; // The control streams dialled and not accepted, oldest first
@@ -681,6 +682,14 @@ static void QuicConnLeave(QUIC_CONN *c) {
 		SourceLimitsLeave(c->Net->Limits, &c->Key);
 }
 
+// Release one reference of a listener: free it once it is closed and every connection that it accepted is gone. A
+// connection outlives the close of its listener, and the client's control stream may reach it only after that close,
+// so the stream must still find the listener closed, never freed memory.
+static void QuicListenerRelease(QUIC_LISTENER *l) {
+	if (l != NULL && InterlockedDecrement(&l->Refs) == 0)
+		QuicRelease(l, sizeof(QUIC_LISTENER));
+}
+
 // Release one reference of a connection: free it once the callback and every stream are gone
 static void QuicConnRelease(QUIC_CONN *c) {
 	if (c == NULL || InterlockedDecrement(&c->Refs) != 0)
@@ -691,6 +700,7 @@ static void QuicConnRelease(QUIC_CONN *c) {
 	// The handle is closed with the last reference, once the callback and every stream are done with it
 	if (c->Connection != NULL)
 		g_quic->ConnectionClose(c->Connection);
+	QuicListenerRelease(c->Listener);
 	QuicRelease(c, sizeof(QUIC_CONN));
 }
 
@@ -772,7 +782,8 @@ static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnC
 	}
 }
 
-// A new connection wrapper, with one reference for the callback. NULL when there is no memory.
+// A new connection wrapper, with one reference for the callback; a connection of a listener holds one of the listener
+// too. NULL when there is no memory.
 static QUIC_CONN *QuicConnNew(QUIC_NET *net, QUIC_LISTENER *listener, bool want_ready) {
 	QUIC_CONN *c = (QUIC_CONN *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(QUIC_CONN));
 
@@ -780,7 +791,6 @@ static QUIC_CONN *QuicConnNew(QUIC_NET *net, QUIC_LISTENER *listener, bool want_
 		return NULL;
 
 	c->Net = net;
-	c->Listener = listener;
 	c->Refs = 1;
 	if (want_ready) {
 		c->Ready = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -788,6 +798,10 @@ static QUIC_CONN *QuicConnNew(QUIC_NET *net, QUIC_LISTENER *listener, bool want_
 			QuicRelease(c, sizeof(QUIC_CONN));
 			return NULL;
 		}
+	}
+	if (listener != NULL) {
+		InterlockedIncrement(&listener->Refs);
+		c->Listener = listener;
 	}
 
 	return c;
@@ -861,6 +875,7 @@ static bool QuicListen(void *param, const char *address, void **listener) {
 	if (l == NULL)
 		return false;
 	l->Net = net;
+	l->Refs = 1;
 	InitializeSRWLock(&l->Lock);
 	InitializeConditionVariable(&l->Changed);
 
@@ -868,6 +883,11 @@ static bool QuicListen(void *param, const char *address, void **listener) {
 		QuicRelease(l, sizeof(QUIC_LISTENER));
 		return false;
 	}
+
+	// msquic tells a listener when it starts or stops answering new connections with a retry only when the listener
+	// asks for it (AUD1-DT-3, #451): the state of the node counts it
+	BOOLEAN dos_events = TRUE;
+	(void)g_quic->SetParam(l->Listener, QUIC_PARAM_DOS_MODE_EVENTS, sizeof(dos_events), &dos_events);
 
 	QuicMakeAddr(host, port, &addr);
 	if (QUIC_FAILED(g_quic->ListenerStart(l->Listener, &net->Alpn, 1, &addr))) {
@@ -937,8 +957,10 @@ static void QuicCloseListener(void *listener) {
 		QuicStreamRelease(drop[i]);
 	}
 
+	// The connections that it accepted hold the listener until they are gone: a stream that reaches one of them later
+	// finds the listener closed and is aborted
 	g_quic->ListenerClose(l->Listener);
-	QuicRelease(l, sizeof(QUIC_LISTENER));
+	QuicListenerRelease(l);
 }
 
 //
