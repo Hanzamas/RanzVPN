@@ -25,6 +25,7 @@
 #include "Core/Noise.h"
 
 #include "NodeInternal.h"
+#include "NodeThrottle.h"
 
 // What the thread of the Session of a new Tunnel takes (NodeTunnelThread)
 typedef struct NODE_TUNNEL_START {
@@ -164,7 +165,8 @@ static UINT NodeStartTunnel(NODE *n, NOISE_LOGIN *login, TRANSPORT_NOISE *s, boo
 	UINT err = ERR_NO_ERROR;
 
 	NoiseSessionChallenge(&s->Session, challenge, sizeof(challenge));
-	bool ok = NodeLoginPinned(n, login, challenge, s->Session.RemoteStatic, &res);
+	// Behind the throttle of the Login (AUD1-DT-5, #453); the transport does not tell the address of the client yet
+	bool ok = NodeLoginThrottled(n, login, challenge, s->Session.RemoteStatic, NULL, &res);
 	Free(res.Policy);
 	FreeX(res.ClientX);
 	if (ok == false)
