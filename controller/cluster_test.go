@@ -338,11 +338,12 @@ func apply(t *testing.T, m *member, doc intent.Document) controller.ApplyResult 
 type member struct {
 	name   string
 	dir    string
-	tls    string // host:port of the TLS port, the control stream and the API
-	http   string // host:port of the HTTP API of its rqlited
-	raft   string // host:port of the Raft transport of its rqlited
-	join   string // the Raft addresses of every member
-	schema int    // -schema-version, 0 for the default
+	tls    string    // host:port of the TLS port, the control stream and the API
+	http   string    // host:port of the HTTP API of its rqlited
+	raft   string    // host:port of the Raft transport of its rqlited
+	join   string    // the Raft addresses of every member
+	schema int       // -schema-version, 0 for the default
+	pki    memberPKI // its certificates for the mutual TLS between the members (AUD1-DT-8)
 	api    *api.Client
 	key    []byte // the Noise static public key, from the status
 
@@ -410,8 +411,14 @@ func newCluster(t *testing.T, schema int) []*member {
 		raft = append(raft, addrs[3*i+2])
 	}
 	var ms []*member
+	// The members of the cluster share the credential of the store and the CA of their certificates
+	// (AUD1-DT-8): an operator copies the credential file of the first member to the others
+	ca := newClusterCA(t)
+	credential := newClusterCredential(t)
 	for i := range 3 {
 		m := &member{name: fmt.Sprintf("c%d", i+1), dir: t.TempDir(), tls: addrs[3*i], http: addrs[3*i+1], raft: addrs[3*i+2], join: strings.Join(raft, ","), schema: schema}
+		m.pki = ca.issue(t, m.dir, m.name)
+		credential.install(t, filepath.Join(m.dir, "data"))
 		m.api = api.NewClient("https://" + m.tls)
 		ms = append(ms, m)
 	}
@@ -496,6 +503,7 @@ func (m *member) start(t *testing.T) {
 		"-rqlite", "http://" + m.http, "-rqlite-raft", m.raft,
 		"-rqlite-join", m.join, "-rqlite-expect", "3", "-lease", clusterLease.String(),
 	}
+	args = append(args, m.pki.args()...)
 	args = append(args, memberRqlited(t)...)
 	if m.schema != 0 {
 		args = append(args, "-schema-version", strconv.Itoa(m.schema))

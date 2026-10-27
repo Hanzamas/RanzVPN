@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
-	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -99,8 +98,13 @@ func resetAdmin(ctx context.Context, cfg config, rights func() error, out io.Wri
 // service's while it runs, or else an rqlited of its own on the service's data, which stop stops
 // again: the one that -rqlited names, or the member that this executable carries (rqlitedExe).
 func openStore(ctx context.Context, cfg config, out io.Writer) (st *store.Store, stop func(), err error) {
+	// The credential of the store, when the service made one (AUD1-DT-8); this command makes none
+	access, authFile, _, aerr := cfg.rqliteAccess(false)
+	if aerr != nil {
+		return nil, nil, fmt.Errorf("the credential of the store: %w", aerr)
+	}
 	pctx, cancel := context.WithTimeout(ctx, probeTimeout)
-	st, err = store.Open(pctx, cfg.rqliteURL)
+	st, err = store.OpenWith(pctx, cfg.rqliteURL, access)
 	cancel()
 	if err == nil {
 		return st, st.Close, nil
@@ -116,19 +120,17 @@ func openStore(ctx context.Context, cfg config, out io.Writer) (st *store.Store,
 	if err != nil || u.Host == "" {
 		return nil, nil, fmt.Errorf("-rqlite %q is not a URL with a host:port", cfg.rqliteURL)
 	}
-	rq := &sidecar.Rqlited{
-		Path:     rqlited,
-		DataDir:  filepath.Join(cfg.dataDir, "rqlite"),
-		HTTPAddr: u.Host,
-		RaftAddr: cfg.raftAddr,
-		Output:   out,
+	rq, err := cfg.member(rqlited, u.Host, authFile)
+	if err != nil {
+		return nil, nil, err
 	}
+	rq.Output = out
 	sctx, cancel := context.WithTimeout(ctx, startTimeout)
 	defer cancel()
 	if err := rq.Start(sctx); err != nil {
 		return nil, nil, err
 	}
-	if st, err = store.Open(sctx, cfg.rqliteURL); err != nil {
+	if st, err = store.OpenWith(sctx, cfg.rqliteURL, access); err != nil {
 		rq.Stop()
 		return nil, nil, err
 	}
