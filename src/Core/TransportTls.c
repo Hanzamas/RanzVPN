@@ -1107,7 +1107,8 @@ static bool TlsStreamRemote(void *stream, char *address, UINT size) {
 	if (len == 0 || len >= size)
 		return false;
 
-	CopyMemory(address, s->Remote, len + 1);
+	CopyMemory(address, s->Remote, len);
+	address[len] = 0;
 	return true;
 }
 

@@ -245,7 +245,8 @@ static bool TransportLoopbackRemote(void *stream, char *address, UINT size) {
 	if (len == 0 || len >= size)
 		return false;
 
-	CopyMemory(address, remote, len + 1);
+	CopyMemory(address, remote, len);
+	address[len] = 0;
 	return true;
 }
 

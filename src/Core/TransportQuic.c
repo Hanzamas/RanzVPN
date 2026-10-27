@@ -674,7 +674,8 @@ static bool QuicStreamRemote(void *stream, char *address, UINT size) {
 	if (len == 0 || len >= size)
 		return false;
 
-	CopyMemory(address, c->Remote, len + 1);
+	CopyMemory(address, c->Remote, len);
+	address[len] = 0;
 	return true;
 }
 
