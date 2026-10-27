@@ -45,6 +45,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
+	"github.com/Hanzamas/RanzVPN/controller/internal/export"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
@@ -212,6 +213,10 @@ type Controller struct {
 	// The audit log (audit.go)
 	aud *auditState
 
+	// Where the targets may connect to, and the target hosts that an admin lists (admindestinations.go)
+	reach *export.Guard
+	hosts targetHosts
+
 	// The WireGuard ends of the Devices that their gateways reported (devices.go)
 	dev deviceState
 
@@ -278,6 +283,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if c.waiting == nil {
 		c.waiting = control.NewWaiting(control.MaxWaiting, control.MaxWaitingPerSource)
 	}
+	c.reach = c.newGuard()
 	c.tel = newTelemetryState(cfg)
 	c.aud = newAuditState(cfg, c.store, c.log)
 	c.certs = newCertificateState(cfg)
@@ -415,6 +421,9 @@ func (c *Controller) ApplyConfirm(ctx context.Context, doc intent.Document, conf
 	}
 	next, err := intent.Apply(c.intent, doc, c.random)
 	if err != nil {
+		return ApplyResult{}, err
+	}
+	if err := c.checkDestinations(ctx, next); err != nil {
 		return ApplyResult{}, err
 	}
 	if err := c.checkCap(next, st, "apply"); err != nil {

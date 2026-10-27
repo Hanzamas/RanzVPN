@@ -110,6 +110,12 @@ func NewFeed(journal Journal, log *slog.Logger, agent string, poll time.Duration
 	}
 }
 
+// SetGuard makes the Feed call its webhooks only where g allows (AUD1-DT-9 #457): each call is
+// checked when it is made. Set it before Start.
+func (f *Feed) SetGuard(g *export.Guard) {
+	f.client = g.HTTPClient(10 * time.Second)
+}
+
 // Start runs the Feed on a goroutine of its own until Stop.
 func (f *Feed) Start() {
 	ctx, cancel := context.WithCancel(context.Background())

@@ -192,10 +192,10 @@ Rules are in [integrator.md](integrator.md). The commands are these. `<heartbeat
 gh api -X GET search/issues -f q='repo:Hanzamas/RanzVPN is:issue is:open in:title "Integrator heartbeat"' --jq '.items[] | [.number, .title] | @tsv'
 ```
 
-Look for other integrators. Each row that this prints is a tick comment of another run, not ended, updated in the last 45 minutes. Any row means: stand down.
+Look for other integrators. Each row that this prints is a tick comment of another run, not ended, updated in the last 15 minutes. Any row means: stand down.
 
 ```
-gh api "repos/Hanzamas/RanzVPN/issues/<heartbeat>/comments?since=$(date -u -d '45 minutes ago' +%Y-%m-%dT%H:%M:%SZ)&per_page=100" --jq '.[] | select(.body | startswith("integrator:")) | select(.body | contains("\nended: ") | not) | select(.body | contains("\nrun: <your-run>\n") | not) | [.id, .updated_at, (.body | split("\n") | .[0:3] | join(" / "))] | @tsv'
+gh api "repos/Hanzamas/RanzVPN/issues/<heartbeat>/comments?since=$(date -u -d '15 minutes ago' +%Y-%m-%dT%H:%M:%SZ)&per_page=100" --jq '.[] | select(.body | startswith("integrator:")) | select(.body | contains("\nended: ") | not) | select(.body | contains("\nrun: <your-run>\n") | not) | [.id, .updated_at, (.body | split("\n") | .[0:3] | join(" / "))] | @tsv'
 ```
 
 Post your comment. Write it to `/tmp/tick.md` first. The file has the three first lines (`integrator: cloud`, `run: <place>-<UTC start time>`, `alive: <UTC time>`). Keep the comment id in a file, because shell variables do not survive:
@@ -206,13 +206,13 @@ gh api --method POST repos/Hanzamas/RanzVPN/issues/<heartbeat>/comments -F body=
 
 Look again. Run the command above once more and add `| select(.id < <your-comment-id>)` after the last `select`. A row means that another run started first. Edit your comment, add `ended: lost the race` and stand down.
 
-Refresh at least every 30 minutes: write the file again with the new `alive:` time and the report lines, then:
+Refresh every 5 minutes, on each `PULSE` of the watcher: write the file again with the new `alive:` time and the report lines, then:
 
 ```
 gh api --method PATCH repos/Hanzamas/RanzVPN/issues/comments/<comment-id> -F body=@/tmp/tick.md
 ```
 
-On a PC with PowerShell, the time of 45 minutes ago is `(Get-Date).ToUniversalTime().AddMinutes(-45).ToString("yyyy-MM-ddTHH:mm:ssZ")`.
+On a PC with PowerShell, the time of 15 minutes ago is `(Get-Date).ToUniversalTime().AddMinutes(-15).ToString("yyyy-MM-ddTHH:mm:ssZ")`.
 
 The lanes of earlier ticks. This prints the `lanes` line of each tick comment of the last 3 hours. The tickets and pull requests that it names are in flight (see "A tick" in [integrator.md](integrator.md)):
 
@@ -228,7 +228,7 @@ The steps are those of [integrator.md](integrator.md). The cloud changes these:
 2. **Heartbeat.** With the commands above.
 3. **Look.** With the commands of this page, not with `gh pr` and `gh issue`.
 4. **Merge and repair.** The REST merge with `sha`. The rerun of a flake is `gh run rerun`.
-5. **Launch.** Keep to the lane cap of the routine prompt (default 6), counting the lanes of earlier ticks, and fill every free slot at once. Start each lane as its own agent with isolation `worktree`, or as a Workflow of one lane, because a Workflow runs at most 2 lanes at once in this container and queues the rest. There is no usage tool, and there is no window rule: launch until a command fails with a message about the limit of the plan, then stop launching, write `ended: plan limit` in your comment and end. Do not try again before the next session.
+5. **Launch.** Keep to the lane cap of the routine prompt (default 12), counting the lanes of earlier ticks, and fill every free slot at once. Start each lane as its own agent with isolation `worktree`, or as a Workflow of one lane, because a Workflow runs at most 2 lanes at once in this container and queues the rest. There is no usage tool, and there is no window rule: launch until a command fails with a message about the limit of the plan, then stop launching, write `ended: plan limit` in your comment and end. Do not try again before the next session.
 6. **Wait.** Start the watcher below with Monitor (it ends after 30 minutes: start it again, and refresh the heartbeat each time). Never end your turn while a lane of yours is alive or a pull request into `integration` is open and not merged. When the platform ends the session, the lanes end with it. That is a cut-off: the next session resumes from GitHub.
 7. **Report.** In the heartbeat comment. A tick that has nothing to do writes the three lines, a line `idle`, and `ended:`.
 
@@ -264,11 +264,15 @@ while true; do
     fi
     seen[$n]=$key
   done <<< "$list"
-  sleep 60
+  if [ $((SECONDS - ${last_pulse:-0})) -ge 300 ]; then
+    last_pulse=$SECONDS
+    echo "PULSE"
+  fi
+  sleep 30
 done
 ```
 
-A line is a hint. Before you merge, run the two looks of the merge procedure. Each poll makes 1 call plus 2 calls for each open pull request, so keep the interval at 60 seconds or more.
+A line is a hint. Before you merge, run the two looks of the merge procedure. The line `PULSE` comes every 5 minutes: on it, refresh your heartbeat comment and look again at the lanes, the pull requests and the ready tickets. The poll is every 30 seconds, so a clean or failed pull request is seen within a minute. Each poll makes 1 call plus 2 calls for each open pull request, which is fine for 40 pull requests.
 
 ## Git in a cloud session
 
@@ -286,7 +290,7 @@ A line is a hint. Before you merge, run the two looks of the merge procedure. Ea
 
 ## The routine
 
-The maintainer creates the routine from a desktop or web session, with the `schedule` skill. The routine fires a cloud session on a schedule, and the session runs one tick. The default: every hour (cron `7 * * * *`, because a routine cannot fire more often than once an hour; two more routines at `27 * * * *` and `47 * * * *` make it every 20 minutes), at most 6 lanes, merges only into `integration`, never `master`, the heartbeat issue for the lock.
+The maintainer creates the routine from a desktop or web session, with the `schedule` skill. The routine fires a cloud session on a schedule, and the session runs one tick. The default: every hour (cron `7 * * * *`, because a routine cannot fire more often than once an hour; two more routines at `27 * * * *` and `47 * * * *` make it every 20 minutes), at most 12 lanes, merges only into `integration`, never `master`, the heartbeat issue for the lock.
 
 The prompt is short. It points to these pages, so that a change to the pages changes the job without a change to the routine. It sends the tick to the heartbeat first, so that a tick that stands down does not read the whole of both pages:
 
@@ -301,7 +305,7 @@ EXPLICIT PERMISSION: <the actions that the maintainer allows without asking, in 
 2. Otherwise read both pages in full, and run one tick as they say.
 
 Heartbeat issue: #<number>
-Lane cap: 6
+Lane cap: 12
 Mode: <dry run | full>
 Order of tickets: <the order that the maintainer wants, or none>
 Speed rules: <stay alive and react at once; one agent per lane; fill every free slot; no launch window; the wait rule for every lane; a blocker is done when a merged pull request names it; never ask about a merge>

@@ -26,6 +26,7 @@
 
 #include "NodeCaps.h"
 #include "NodeInternal.h"
+#include "NodeThrottle.h"
 
 #include <AclAPI.h>
 #include <ShlObj.h>
@@ -358,6 +359,7 @@ NODE *NewNode(wchar_t *data_dir) {
 	n->ReaderList = NewListFast(NULL);
 	n->QueueList = NewListFast(NULL);
 	n->HubList = NewListFast(NULL);
+	n->LoginThrottle = NewNodeThrottle();
 
 	// An online reader never publishes epoch 0, which means offline
 	n->Epoch = 1;
@@ -410,6 +412,7 @@ void FreeNode(NODE *n) {
 	ReleaseList(n->QueueList);
 	ReleaseList(n->ReaderList);
 	Free(n->Peers);
+	FreeNodeThrottle(n->LoginThrottle);
 
 	DeleteLock(n->TableLock);
 	DeleteLock(n->Lock);

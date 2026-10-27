@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
@@ -196,6 +197,7 @@ func DomainOf(node string) uint32 {
 type IPFIX struct {
 	network string
 	address string
+	guard   *export.Guard // nil: connect to any address
 	now     func() time.Time
 
 	mu     sync.Mutex
@@ -207,11 +209,18 @@ type IPFIX struct {
 // NewIPFIX returns the exporter to the collector that t names, udp://host:port or tcp://host:port.
 // It connects when it first sends.
 func NewIPFIX(t export.Target) (*IPFIX, error) {
+	return NewGuardedIPFIX(t, nil)
+}
+
+// NewGuardedIPFIX is NewIPFIX with the connection made through g (AUD1-DT-9 #457), which checks the
+// address of the collector when it connects and again before each write, so that an address that an
+// admin takes out of the list is not written to any more; none when g is nil.
+func NewGuardedIPFIX(t export.Target, g *export.Guard) (*IPFIX, error) {
 	u, err := url.Parse(t.URL)
 	if err != nil || (u.Scheme != "udp" && u.Scheme != "tcp") || u.Port() == "" {
 		return nil, fmt.Errorf("telemetry: IPFIX target %q: %q is not udp://host:port or tcp://host:port", t.Name, t.URL)
 	}
-	return &IPFIX{network: u.Scheme, address: u.Host, now: time.Now, seq: map[uint32]uint32{}}, nil
+	return &IPFIX{network: u.Scheme, address: u.Host, guard: g, now: time.Now, seq: map[uint32]uint32{}}, nil
 }
 
 // Export sends the flows that node observed. It returns an error when the collector cannot be
@@ -228,11 +237,18 @@ func (x *IPFIX) Export(node string, flows []Flow) error {
 	domain := DomainOf(node)
 	for _, m := range messages(domain, x.seq[domain], x.now(), flows) {
 		if x.conn == nil {
-			c, err := net.DialTimeout(x.network, x.address, 5*time.Second)
+			c, err := x.dial()
 			if err != nil {
 				return fmt.Errorf("telemetry: IPFIX collector %s://%s: %w", x.network, x.address, err)
 			}
 			x.conn = c
+		} else if x.guard != nil {
+			host, _, _ := net.SplitHostPort(x.address)
+			if err := x.guard.Verify(context.Background(), host, x.conn.RemoteAddr()); err != nil {
+				x.conn.Close()
+				x.conn = nil
+				return fmt.Errorf("telemetry: IPFIX collector %s://%s: %w", x.network, x.address, err)
+			}
 		}
 		_ = x.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		if _, err := x.conn.Write(m.bytes); err != nil {
@@ -243,6 +259,16 @@ func (x *IPFIX) Export(node string, flows []Flow) error {
 		x.seq[domain] += m.records
 	}
 	return nil
+}
+
+// dial connects to the collector, through the Guard when there is one.
+func (x *IPFIX) dial() (net.Conn, error) {
+	if x.guard == nil {
+		return net.DialTimeout(x.network, x.address, 5*time.Second)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return x.guard.DialContext(ctx, x.network, x.address)
 }
 
 // Close closes the connection to the collector, and Export sends nothing after it.
