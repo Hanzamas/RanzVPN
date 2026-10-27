@@ -14,8 +14,9 @@
 //   has the excess closed; and 1000 Nodes behind one address connect with the default limits, none of them refused;
 // - the QUIC listener (src/Core/TransportQuic.c): the setting of retry is read back from msquic, a source over the rate of
 //   its connections is refused by the listener and counted, and under a flood of Initial packets msquic answers with
-//   retries, the connections that it holds, the memory and the CPU of the process stay bounded, and an honest client
-//   connects after the flood.
+//   retries and tells the listener so (its DoS mode), the connections that it holds, the memory and the CPU of the
+//   process stay bounded, and an honest client connects after the flood. The honest client closes at once and the
+//   listener closes right after, before the server may have seen the client's stream: the transport must still free.
 // Print "SOURCELIMITS TEST OK" only when every check passes. It fails where msquic.dll is not present, since the QUIC
 // listener is not tested there.
 
@@ -803,10 +804,13 @@ static void SlQuic(SLTEST_CTX *ctx)
 			Sleep(3000);
 
 			ok = TransportQuicGetStats(server, &st);
-			Print("SOURCELIMITS QUIC FLOOD: %u Initial packets sent, %llu retries, %llu connections held, retry %s, setting %u\n", sent,
-				ok ? st.Retries : 0, ok ? st.ActiveConnections : 0, (ok && st.DosMode) ? "on" : "off", ok ? st.RetryMemoryLimit : 0);
+			Print("SOURCELIMITS QUIC FLOOD: %u Initial packets sent, %llu retries, %llu connections held, retry %s after %llu changes, setting %u\n", sent,
+				ok ? st.Retries : 0, ok ? st.ActiveConnections : 0, (ok && st.DosMode) ? "on" : "off", ok ? st.DosModeChanges : 0, ok ? st.RetryMemoryLimit : 0);
 			SlCheck(ctx, ok && sent >= SLTEST_INITIALS / 2 && st.RetryMemoryLimit == 1, "  the flood is sent, and the setting that msquic holds is the one of the listener", "sent %u, the setting is %u", sent, ok ? st.RetryMemoryLimit : 0);
 			SlCheck(ctx, ok && st.Retries > retries_before, "  msquic answers the flood of Initial packets with retries", "no retry packet was sent");
+			// msquic sends a retry only while the handshakes hold more than the limit, which is when it tells the listeners
+			// that it answers new connections with a retry (its DoS mode), so the state of the node shows it
+			SlCheck(ctx, ok && st.DosModeChanges > 0, "  msquic tells the listener that it answers new connections with a retry", "no change of the DoS mode was told");
 			SlCheck(ctx, ok && st.ActiveConnections < SLTEST_INITIALS / 2, "  the connections that msquic holds stay bounded under the flood", "%llu connections for %u packets", ok ? st.ActiveConnections : 0, sent);
 			UINT64 grown = SlPrivateBytes() - memory, used = SlCpuMs() - cpu;
 			SlCheck(ctx, SlPrivateBytes() < memory + SLTEST_MEMORY && used < SLTEST_CPU, "  the memory and the CPU of the process stay bounded", "%llu bytes more private memory, %llu ms of CPU", grown, used);
