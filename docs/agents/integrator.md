@@ -17,7 +17,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 - Everything else is autonomous: merge, review, tickets, grills, specs, ADRs. Decide with the recommended answer, record it, report it. Ask only about `master`, a release, money or credentials.
 - A lane pushes after every commit. A cut-off loses no pushed work.
 - One integrator acts at a time. The heartbeat issue decides which one.
-- About 5 lanes at once, started in batches of at most 2, each batch its own Workflow. The usage of the plan is shared.
+- Be fast and proactive. Up to 6 lanes at once, one agent per ticket, every free slot filled at once, until the plan limit stops the job. Stay in the session and react to each event within a minute. The usage of the plan is shared.
 
 ## Words
 
@@ -36,7 +36,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 ## What the integrator may do
 
 - Read everything on GitHub.
-- Launch lanes for the tickets that pass "Launching lanes", in batches of at most 2 lanes, each batch its own Workflow.
+- Launch lanes for the tickets that pass "Launching lanes", one agent per ticket, up to the lane cap.
 - Push a WIP commit of a cut-off lane to the branch of that lane: `git push origin HEAD:<branch>`.
 - Mark the draft pull request of a lane ready, when the lane says that it is done.
 - Add the label `full-ci` to a pull request that has C code.
@@ -78,8 +78,8 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
    - a failed check that is a known flake: rerun it once;
    - a failed check or a conflict, and the branch is not busy: start a resume lane. A branch is busy when it got a push in the last 45 minutes, because a person or another process may be working on it. The branch of a lane in flight (step 2) stays busy until it has had no push for 90 minutes;
    - a red run on `integration`: start a fix lane before any new ticket.
-5. **Launch.** If fewer than 5 lanes are alive, counting those of earlier ticks, start lanes for the next ready tickets. See "Launching lanes". Start them in batches, each batch its own Workflow. If no ticket is ready, or a review or a lane found a gap that no ticket covers, write tickets first. See "Writing tickets".
-6. **Wait.** Arm a watcher and wait. A watcher is a script that prints one line when a pull request becomes clean, conflicting or failed; the one for the cloud is in [integrator-cloud.md](integrator-cloud.md). Refresh your heartbeat comment at least every 30 minutes. When a lane ends or the watcher prints a line, go to step 2. A tick may instead end its turn after it launched a Workflow, because the platform wakes the session when the Workflow ends. Then its heartbeat goes stale, and the next tick finds its lanes through the `lanes` line (step 2). A session that wakes later does the heartbeat again before it acts.
+5. **Launch.** If fewer than 6 lanes are alive, counting those of earlier ticks, start lanes for the next ready tickets at once, one agent per ticket. See "Launching lanes". Never leave a ready ticket waiting while a slot is free. If no ticket is ready, or a review or a lane found a gap that no ticket covers, write tickets first. See "Writing tickets".
+6. **Wait, and stay alive.** Arm a watcher and wait. A watcher is a script that prints one line when a pull request becomes clean, conflicting or failed; the one for the cloud is in [integrator-cloud.md](integrator-cloud.md). Refresh your heartbeat comment at least every 20 minutes. When a lane ends or the watcher prints a line, go to step 2 at once: a clean pull request is merged and its ticket closed in the same minute, a failed one gets its resume lane, a free slot gets the next lane. Never end your turn while a lane of yours is alive or a pull request into `integration` is open and not merged. A turn that ends leaves a stale heartbeat comment, and a reaction that waits for the next hourly tick is hours of idle capacity. If the session dies anyway, the next tick finds the lanes through the `lanes` line (step 2).
 7. **Report.** Edit your heartbeat comment. See "The report". Write `ended:` only when none of your lanes is alive.
 
 ## The merge procedure
@@ -139,7 +139,7 @@ Some paths do not start `windows.yml` on a pull request at all: `docs/`, every `
 - it is open and has the label `ready-for-agent`;
 - it has none of the labels `needs-triage`, `postponed` and `parked`;
 - its body has a line `Ticket key:` (an issue without it is a spec: no lane);
-- every `#number` in its `## Blocked by` section is a closed issue (`None` means no blocker);
+- every `#number` in its `## Blocked by` section is done. A blocker is done when its issue is closed, or when a merged pull request into `integration` names it with `Closes #N`. Close the ticket of every merged pull request at once, so that the ticket does not hold back the tickets that it blocks (`None` means no blocker);
 - no open pull request exists for it, and no branch with a recent push (the title of a lane pull request starts with the ticket key);
 - no lane of an earlier tick is in flight for it (step 2 of "A tick").
 
@@ -152,13 +152,13 @@ A ticket whose blocker has an open pull request may start on the branch of that 
 3. A ticket that blocks many other open tickets. Example: a review that gates three tickets.
 4. The lowest number.
 
-**Batches.** Launch the lanes in batches, each batch its own Workflow, from a copy of [lanes/lanes-template.js](lanes/lanes-template.js). See [lanes/README.md](lanes/README.md). A Workflow runs at most `min(16, CPUs - 2)` lanes at the same time. A cloud container has few CPUs, so that is 2: a Workflow of 5 lanes ran 2 and queued 3 (seen on 2026-10-26). So a batch has at most 2 lanes, and the batches run side by side. Then the lane cap is the number of lanes that run at once. Never launch a lane that another Workflow has: two lanes on one branch destroy each other. The usage of the plan stays the limit: do not raise the lane cap above what the window pays for, because more lanes at once do not finish more work in a window.
+**One agent per lane.** Start each lane as its own agent with isolation `worktree`, or as a Workflow of one lane, built from [lanes/lanes-template.js](lanes/lanes-template.js). See [lanes/README.md](lanes/README.md). Then a free slot is a lane that ended, and nothing queues. A Workflow runs at most `min(16, CPUs - 2)` lanes at the same time, which is 2 in a cloud container: a Workflow of 5 lanes ran 2 and queued 3 (seen on 2026-10-26), and the usage of the plan stayed at 4% for hours while 52 tickets were ready (2026-10-27). Never launch a lane that another agent has: two lanes on one branch destroy each other.
 
 **The model.** Opus for the C data path, crypto, drivers and hard design. Sonnet with effort `max` for Go, UI, CLI, docs and CI. Always set the model on the agent. An agent without a model runs on the model of the session.
 
 **Conflicts between lanes.** Pull requests that keep conflicting on the same files go into one pull request. Start one lane that merges the branches of all of them (a batch lane). When it merges, the other pull requests show as merged by themselves. Close their tickets.
 
-**A lane is one job.** It does not close tickets, merge pull requests or push to `integration`. Its rules are in the template. If a lane returns `ok: false`, the work is not done: never queue its pull request for merge.
+**A lane is one job, and it owns its ticket until its pull request is green.** It does not close tickets, merge pull requests or push to `integration`. Its rules are in the template. A lane never ends its turn while a workflow run of its head is pending: ending the turn ends the lane, and its pull request is left red or unchecked until the next tick. It waits with a blocking `gh run watch`, fixes forward, and returns when every run of its head is green. A lane that returns with a red or pending pull request has failed: start its resume lane at once. If a lane returns `ok: false`, the work is not done: never queue its pull request for merge.
 
 ## Writing tickets
 
@@ -201,12 +201,12 @@ A local schedule that resumes work after a usage window (a scheduled task) and t
 
 ## Pace
 
-- **About 5 lanes at once.** Four lanes last a whole 5-hour window. Twelve lanes burn it in about an hour and finish nothing, and the cut-off wastes what they did. Only the maintainer can allow a burst above 5.
+- **Use the window.** The maintainer wants the usage limit used up to 99%, in every window (2026-10-27). Idle capacity is the waste to avoid: the first day of the cloud routine left the usage at 4% of a window for hours, because lanes started only in a window of time, one reaction came per hour, and lanes ended before their CI. Keep up to 6 lanes alive, fill a slot the minute it frees, and do not stop until a command fails with a message about the plan limit. A burst of 12 lanes at once (2026-10-24) burned a window in about an hour and the cut-off wasted what they did, so refill one lane at a time and keep every lane pushing after every commit. A cut lane then loses little, and a resume lane needs 8 to 12% against 16% for a new one.
 - **Cost.** Measured on 2026-10-24: a lane needs about 2.5 hours (the work, then 2 or 3 CI cycles of about 25 minutes) and about 16% of a window. A resume lane needs 8 to 12%. An Opus lane burns about 8% of a window per hour, a Sonnet lane about 4%.
 - **One budget.** The usage is shared by every session of the account: the laptop, the cloud and the chats of the maintainer.
-- **Refill a slot** when a lane ends. Do not start a lane that cannot finish in what is left of the window. Local: look at `get_usage`. Cloud: no tool tells you, so keep to the lane cap of the routine prompt (default 5) and to its usage window rule (lanes start only in the first 3 hours after `window-start`).
-- **CI is the bottleneck.** A cycle takes about 25 minutes. A lane that waits for CI costs almost nothing. Many open pull requests do not need many new lanes.
-- **One lane in one Workflow**, never the same lane in two.
+- **Refill a slot** when a lane ends. Local: look at `get_usage`. Cloud: no tool tells you, so keep to the lane cap of the routine prompt (default 6) and launch until a command fails with a message about the plan limit. There is no window rule that stops launching.
+- **CI is the bottleneck.** A cycle takes about 25 minutes. A lane that waits for CI costs almost nothing, so many lanes can wait at once. That is why 6 lanes fit in a window.
+- **One lane, one agent**, never the same lane in two.
 
 ## Known flakes
 
