@@ -170,7 +170,9 @@ func (h *harness) serveFrom(from string) string {
 		HTTP:    api.NewSources(h.st, nil, 0).Restrict(h.port.HTTP),
 	}
 	done := make(chan error, 1)
-	go func() { done <- srv.Serve(fromListener{Listener: raw, from: &net.TCPAddr{IP: net.ParseIP(from), Port: 40000}}) }()
+	go func() {
+		done <- srv.Serve(fromListener{Listener: raw, from: &net.TCPAddr{IP: net.ParseIP(from), Port: 40000}})
+	}()
 	h.t.Cleanup(func() {
 		raw.Close()
 		<-done
