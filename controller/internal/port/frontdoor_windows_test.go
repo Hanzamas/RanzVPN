@@ -161,6 +161,10 @@ func TestFrontDoorHandsOver(t *testing.T) {
 		TLS: &tls.Config{Certificates: []tls.Certificate{cert}},
 		Control: func(tc *tls.Conn) {
 			controls <- tc.ConnectionState().NegotiatedProtocol
+			// Wait for the client to close first: a server that closes at once resets the
+			// connection on Windows, and the reset can reach the client before it has read the
+			// end of its handshake
+			_, _ = io.Copy(io.Discard, tc)
 			tc.Close()
 		},
 		HTTP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
