@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeEndpoints.c, NodeHarden.c, NodeLeak.c, NodeListener.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeState.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeEndpoints.c, NodeFlap.c, NodeHarden.c, NodeLeak.c, NodeListener.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeState.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -103,6 +103,10 @@
 // The handshakes of the streams that the overlay accepts (NodeHandshake.c; AUD1-DT-1, #449)
 #define NODE_OVERLAY_HANDSHAKES        64 // Handshakes in flight at most, without MaxHandshakes in the configuration
 #define NODE_OVERLAY_HANDSHAKE_WORKERS 16 // Threads of the pool that runs them, one handshake each at a time
+
+// The session flap (NodeFlap.c; AUD1-DT-11, #459)
+#define NODE_FLAP_LIMIT  5     // Replacements of the session of one peer in the window above which the overlay reports it, without FlapLimit in the configuration
+#define NODE_FLAP_WINDOW 60000 // ms of that window, without FlapWindow in the configuration
 
 // The Mirrors of a node (NodeMirror.c; SDN-23, #199)
 #define NODE_MIRROR_ETHER     14                 // Bytes of the Ethernet header in front of the IP packet of a copy
@@ -496,6 +500,11 @@ struct NODE_OVERLAY_CONFIG {
 	// Takes the peer whose handshake failed on a stream that the overlay dialled (CORE-H5-R, #443), NULL for none; with
 	// AdapterParam
 	NODE_REFUSED_PROC *Refused;
+
+	// The session flap (NodeFlap.c; AUD1-DT-11, #459): the replacements of the session of one peer in FlapWindow ms above
+	// which the overlay reports it as an Event, 0 for NODE_FLAP_LIMIT, and the window, 0 for NODE_FLAP_WINDOW
+	UINT FlapLimit;
+	UINT FlapWindow;
 };
 
 // What NodeOverlayGetStatus reports
@@ -524,6 +533,11 @@ struct NODE_OVERLAY_STATUS {
 	UINT64 HandshakesTimedOut; // Closed because they did not finish in NODE_OVERLAY_HANDSHAKE
 	UINT64 HandshakesFailed;   // Closed because they failed within it
 	UINT64 HandshakesRefused;  // Streams refused at the accept, because MaxHandshakes were in flight
+
+	// The sessions that a new handshake of the key of a peer replaced, and the session flaps that the overlay reported as
+	// Events (NodeFlap.c; AUD1-DT-11, #459)
+	UINT64 SessionsReplaced;
+	UINT64 SessionFlaps;
 };
 
 // One peer of the overlay and its Noise session, as NodeOverlayGetSessions reports it (SDN-91, #396)
@@ -909,6 +923,8 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size);
 void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
 UINT NodeOverlayGetSessions(NODE *n, NODE_OVERLAY_SESSION *list, UINT max, char *listener, UINT listener_size);
 UINT NodeOverlayEndpoints(NODE *n, const char *name, struct CONTROL_ENDPOINT *out, UINT max);
+struct CONTROL_EVENT;
+UINT NodeOverlayGetEvents(NODE *n, struct CONTROL_EVENT *list, UINT max);
 
 // NodeEndpoints.c
 UINT NodeEndpointsTargets(const struct CONTROL_ENDPOINT *endpoints, UINT num, TRANSPORT **known, UINT num_known, TRANSPORT_TARGET *targets, UINT max);
