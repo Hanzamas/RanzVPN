@@ -166,7 +166,8 @@ static UINT NodeStartTunnel(NODE *n, NOISE_LOGIN *login, TRANSPORT_NOISE *s, boo
 
 	NoiseSessionChallenge(&s->Session, challenge, sizeof(challenge));
 	// Behind the throttle of the Login (AUD1-DT-5, #453); the transport does not tell the address of the client yet
-	bool ok = NodeLoginThrottled(n, login, challenge, s->Session.RemoteStatic, NULL, &res);
+	bool ok = NodeLoginThrottleBegin(n, login, NULL, &res) && NodeLoginPinned(n, login, challenge, s->Session.RemoteStatic, &res);
+	NodeLoginThrottleEnd(n, login, NULL, ok);
 	Free(res.Policy);
 	FreeX(res.ClientX);
 	if (ok == false)

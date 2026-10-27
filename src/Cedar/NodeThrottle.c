@@ -338,37 +338,47 @@ char *NodeThrottleReasonStr(UINT reason) {
 	}
 }
 
-bool NodeLoginThrottled(NODE *n, NOISE_LOGIN *login, UCHAR *challenge, UCHAR *static_key, IP *source, AUTH_RESULT *ret) {
+bool NodeLoginThrottleBegin(NODE *n, NOISE_LOGIN *login, IP *source, AUTH_RESULT *ret) {
 	NODE_THROTTLE_STATUS st;
 	char src[MAX_SIZE];
 
 	if (ret == NULL)
 		return false;
 
-	if (n == NULL || login == NULL) {
-		Zero(ret, sizeof(AUTH_RESULT));
-		ret->Error = ERR_AUTH_FAILED;
+	Zero(ret, sizeof(AUTH_RESULT));
+	ret->Error = ERR_AUTH_FAILED;
+	if (n == NULL || login == NULL)
 		return false;
-	}
 
 	if (login->Method == NOISE_LOGIN_JOIN)
-		return NodeLoginPinned(n, login, challenge, static_key, ret);
+		return true;
 
 	UINT why = NodeThrottleBegin(n->LoginThrottle, login->HubName, login->UserName, source, Tick64());
-	if (why != NODE_THROTTLE_PASS) {
-		// The answer of a wrong password, without a check; the log line names the user and the source, never the password
-		Zero(ret, sizeof(AUTH_RESULT));
-		ret->Error = ERR_AUTH_FAILED;
+	if (why == NODE_THROTTLE_PASS)
+		return true;
 
-		NodeThrottleGetStatus(n->LoginThrottle, &st);
-		NodeThrottleSourceStr(src, sizeof(src), source);
-		NodeLog(n, "Login throttle: a Login of %s on %s from %s refused without a check: %s (refusal %I64u)", login->UserName, login->HubName, src,
-		        NodeThrottleReasonStr(why), st.NumRefused);
+	// The answer of a wrong password, without a check; the log line names the user and the source, never the password
+	NodeThrottleGetStatus(n->LoginThrottle, &st);
+	NodeThrottleSourceStr(src, sizeof(src), source);
+	NodeLog(n, "Login throttle: a Login of %s on %s from %s refused without a check: %s (refusal %I64u)", login->UserName, login->HubName, src,
+	        NodeThrottleReasonStr(why), st.NumRefused);
+
+	return false;
+}
+
+void NodeLoginThrottleEnd(NODE *n, NOISE_LOGIN *login, IP *source, bool ok) {
+	if (n == NULL || login == NULL || login->Method == NOISE_LOGIN_JOIN)
+		return;
+
+	NodeThrottleEnd(n->LoginThrottle, login->HubName, login->UserName, source, ok);
+}
+
+bool NodeLoginThrottled(NODE *n, NOISE_LOGIN *login, UCHAR *challenge, UCHAR *static_key, IP *source, AUTH_RESULT *ret) {
+	if (NodeLoginThrottleBegin(n, login, source, ret) == false)
 		return false;
-	}
 
 	bool ok = NodeLoginPinned(n, login, challenge, static_key, ret);
-	NodeThrottleEnd(n->LoginThrottle, login->HubName, login->UserName, source, ok);
+	NodeLoginThrottleEnd(n, login, source, ok);
 
 	return ok;
 }

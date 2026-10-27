@@ -70,4 +70,10 @@ char *NodeThrottleReasonStr(UINT reason);
 // address of the client, NULL when the transport does not tell it. A join Login names no user and is not throttled.
 bool NodeLoginThrottled(NODE *n, struct NOISE_LOGIN *login, UCHAR *challenge, UCHAR *static_key, IP *source, AUTH_RESULT *ret);
 
+// NodeLoginThrottled in two halves around the caller's own NodeLoginPinned: Begin says whether the Login may be checked
+// (false fills ret with the answer of a wrong password and writes the log line), and End tells the throttle the result
+// of that check. End is a no-op for a Login that Begin refused, whose result is false.
+bool NodeLoginThrottleBegin(NODE *n, struct NOISE_LOGIN *login, IP *source, AUTH_RESULT *ret);
+void NodeLoginThrottleEnd(NODE *n, struct NOISE_LOGIN *login, IP *source, bool ok);
+
 #endif
