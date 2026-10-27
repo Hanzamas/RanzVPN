@@ -24,6 +24,10 @@ ranz_add_executable(coretest CORE
     peersession.c
     # The front door with the node and its owners as processes of their own, SDN-29 (#205)
     frontdoor.c
+    # The msquic of the exporter of a QUIC connection, on an API table of the test, CORE-H5-R (#443)
+    quicexporter.c
+    # The fallback after a handshake: a server that refuses the handshake over QUIC, CORE-H5-R (#443)
+    fallback.c
   LIBRARIES
     corefrontdoor
     coretransport
@@ -38,3 +42,7 @@ ranz_add_executable(coretest CORE
   LINK_OPTIONS
     "/MAP:${BUILD_DIRECTORY}/coretest.map"
 )
+
+# The msquic headers (src/Core/CMakeLists.txt) for the API table of quicexporter.c, which stands for msquic: the headers
+# only, coretest loads no msquic.dll
+target_include_directories(coretest PRIVATE "${RANZ_MSQUIC_INCLUDE_DIR}")
