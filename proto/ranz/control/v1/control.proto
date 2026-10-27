@@ -80,6 +80,12 @@
 // Generation and waits for the acknowledgements before it serves the certificate, so a node that
 // pinned the fingerprint of the old one still reaches the controller. No schema version changes
 // with it: a node of an older release skips the field it does not know.
+//
+// Egress (SDN-12 #188, ADR-0025 decision 13): the node that is the internet exit of a VRF gets the
+// id of the VRF in its NodeConfig (NodeConfig.egress_vrf_ids), and every other node of the VRF gets
+// the default route 0.0.0.0/0 of the VRF as a route of the Peer of the exit. The exit reports the
+// Egress tier that its host gives it, with the SKU and Hyper-V that decide it, in its Capabilities.
+// No schema version changes with them: a node of an older release skips the field it does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -260,6 +266,10 @@ message NodeConfig {
   // Go writes the members of a oneof after the other fields of a message and nanopb in the order of the
   // numbers, and the two must write the same bytes.
   string listener_decoy = 12;
+  // The VRFs whose internet exit the node is (SDN-12 #188), by id, ascending: the node takes the
+  // traffic of their other nodes to the outside with the Egress tier of its host. Empty for a node
+  // that is the exit of no VRF.
+  repeated uint32 egress_vrf_ids = 13;
 }
 
 // The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise

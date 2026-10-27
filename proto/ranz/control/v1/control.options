@@ -133,3 +133,6 @@ ranz.control.v1.NodeConfig.controller_tls max_count:4 max_size:65
 # The tunnel endpoint of a node for the links of kind vxlan and geneve (SDN-76): an IPv4 or an IPv6
 # address. It makes a Peer and the NodeConfig about 30 bytes larger.
 ranz.control.v1.Vtep.address max_size:16
+# The VRFs whose internet exit a node is (SDN-12): at most 16, the VRFs of a node (Peer.vrf_ids). It
+# makes the NodeConfig, and so an Object, about 70 bytes larger.
+ranz.control.v1.NodeConfig.egress_vrf_ids max_count:16
