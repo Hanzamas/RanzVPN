@@ -25,7 +25,9 @@ $ErrorActionPreference = 'Stop'
 #   opens a TCP connection to it through gw, the overlay and host, whose policies each judge the packets between the two
 #   Devices by their tags;
 # - a Policy rule that denies the Device blocks the same ping to host once the gateway acknowledged the rule, and the
-#   policy of the gateway counts the drops; the ping of the second Device is blocked too. The rule denies the ICMP of the
+#   policy of the gateway counts the drops; the ping of the second Device is blocked too, and the gateway lets no pair of
+#   its Devices meet while the rule holds: the filters of the forward layers match no protocol, so a rule of some flows
+#   keeps two Devices of one gateway apart whole (ADR-0029 amendment of 2026-10-27). The rule denies the ICMP of the
 #   Device only, so the ping to tablet is blocked as well, and the TCP connection to tablet still goes through;
 # - with the rule gone and wireguard.port of the gateway set to another port, the gateway listens there and no longer on
 #   51820, the configuration names the new port, and the client reaches host through it.
@@ -70,9 +72,8 @@ $hostKey = 'WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns='
 $endpoint = 'localhost'
 $defaultPort = 51820
 $otherPort = 51821
-# The port of host, the gateway of tablet, and its WireGuard interface (NODE_WIREGUARD_ADAPTER and the name of the node)
+# The port of host, the gateway of tablet; vpntest prints the index of its WireGuard interface ($hostInterface)
 $hostPort = 51822
-$hostInterface = 'Ranz WireGuard host'
 # The port of the TCP connection to the fake host, which echoes on any port
 $tcpPort = 7
 
@@ -184,13 +185,13 @@ function Clear-ExcludedRanges([int[]] $ports) {
 # host applies installs again, so the host of the runner reaches tablet as another host would, through the adapter of gw
 # and the overlay. The routes are found by the addresses of tablet; none of them may be left.
 function Remove-HostRoutes {
-	$routes = @(Get-NetRoute -InterfaceAlias $hostInterface -ErrorAction SilentlyContinue | Where-Object { Test-TabletRoute $_.DestinationPrefix })
+	$routes = @(Get-NetRoute -InterfaceIndex $hostInterface -ErrorAction SilentlyContinue | Where-Object { Test-TabletRoute $_.DestinationPrefix })
 	foreach ($r in $routes) {
-		Write-Host "the route $($r.DestinationPrefix) of $hostInterface goes: host stands for a gateway on a host of its own"
+		Write-Host "the route $($r.DestinationPrefix) of the WireGuard interface of host (interface $hostInterface) goes: host stands for a gateway on a host of its own"
 		Remove-NetRoute -InputObject $r -Confirm:$false
 	}
-	$left = @(Get-NetRoute -InterfaceAlias $hostInterface -ErrorAction SilentlyContinue | Where-Object { Test-TabletRoute $_.DestinationPrefix })
-	if ($left.Count -gt 0) { throw "$hostInterface still routes $($left.DestinationPrefix -join ', ') to tablet" }
+	$left = @(Get-NetRoute -InterfaceIndex $hostInterface -ErrorAction SilentlyContinue | Where-Object { Test-TabletRoute $_.DestinationPrefix })
+	if ($left.Count -gt 0) { throw "the WireGuard interface of host (interface $hostInterface) still routes $($left.DestinationPrefix -join ', ') to tablet" }
 }
 
 # Whether the prefix of a route is the host route of an address of tablet
@@ -307,10 +308,11 @@ try {
 	$said = Read-Shared $traceOut
 	Write-Host $said
 	if ($said -match '\[FAIL\]') { throw 'a check of vpntest devicetrace failed' }
-	$m = [regex]::Match($said, 'DEVICETRACE NODE host ADDRESS ([0-9.]+) HOST fake WIREGUARD PORT ([0-9]+) INTERFACE [0-9]+ DEVICES ([0-9]+) PAIRS ([0-9]+)')
+	$m = [regex]::Match($said, 'DEVICETRACE NODE host ADDRESS ([0-9.]+) HOST fake WIREGUARD PORT ([0-9]+) INTERFACE ([0-9]+) DEVICES ([0-9]+) PAIRS ([0-9]+)')
 	if (-not $m.Success) { throw 'vpntest devicetrace printed no address of host' }
 	$hostAddress = $m.Groups[1].Value
-	if ([int] $m.Groups[2].Value -ne $hostPort -or [int] $m.Groups[3].Value -ne 1 -or [int] $m.Groups[4].Value -ne 0) {
+	$hostInterface = [int] $m.Groups[3].Value
+	if ([int] $m.Groups[2].Value -ne $hostPort -or [int] $m.Groups[4].Value -ne 1 -or [int] $m.Groups[5].Value -ne 0) {
 		throw "the WireGuard interface of host is not on UDP port $hostPort with tablet, its one Device"
 	}
 	$m = [regex]::Match($said, 'DEVICETRACE NODE gw ADDRESS ([0-9.]+) WIREGUARD PORT ([0-9]+) INTERFACE [0-9]+ DEVICES ([0-9]+) PAIRS ([0-9]+)')
@@ -378,6 +380,10 @@ try {
 	$gw = Wait-Acknowledged 'gw' $before
 	Invoke-Client @('-ping', $hostAddress, '-blocked', '-timeout', '9s') @('WGPEER HANDSHAKE OK', "WGPEER PING BLOCKED $hostAddress")
 	Invoke-Client @('-ping', $laptopAddress, '-blocked', '-timeout', '9s') @('WGPEER HANDSHAKE OK', "WGPEER PING BLOCKED $laptopAddress")
+	# The rule denies only the ICMP of phone, which the filters of the forward layers cannot tell from its TCP: gw keeps the
+	# pair apart whole while the rule holds (ADR-0029 amendment of 2026-10-27), as vpntest prints for that Generation
+	$apart = "gw: generation $($gw.generation); WireGuard interface up 1 on UDP port $defaultPort, 2 Devices, [0-9]+ routes, kept apart 1, 0 pairs"
+	if ((Read-Shared $traceOut) -notmatch $apart) { throw "gw does not keep phone and laptop apart at generation $($gw.generation), under a rule that denies only the ICMP of phone" }
 	Stop-Process -Id $laptop.Id -Force
 	$laptop.WaitForExit()
 
