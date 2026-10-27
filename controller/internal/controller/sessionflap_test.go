@@ -72,24 +72,45 @@ func TestSessionFlapReachesTheEvents(t *testing.T) {
 		}
 	}
 
-	// A report with no message gets one that names the node and the peer, and a peer name that is too long is cut
-	long := strings.Repeat("p", 100)
-	if err := b1.Telemetry(flapReport(
-		&controlpb.NodeEvent{Type: controlpb.NodeEventType_NODE_EVENT_TYPE_SESSION_FLAP, Subject: "branch-3"},
-		&controlpb.NodeEvent{Type: controlpb.NodeEventType_NODE_EVENT_TYPE_SESSION_FLAP, Subject: long, Message: strings.Repeat("m", 300)})); err != nil {
+	// A report with no message gets one that names the node and the peer
+	if err := b1.Telemetry(flapReport(&controlpb.NodeEvent{Type: controlpb.NodeEventType_NODE_EVENT_TYPE_SESSION_FLAP, Subject: "branch-3"})); err != nil {
 		t.Fatal(err)
 	}
 	second, _ := w.next(t)
-	third, _ := w.next(t)
 	if want := "the session of peer branch-3 of node branch-1 was replaced again and again"; second.Subject != "branch-3" || second.Message != want {
 		t.Errorf("the report with no message became %+v, want the message %q", second, want)
 	}
-	if third.Subject != long[:63] || len(third.Message) != 255 {
-		t.Errorf("the report with a long name and message became a subject of %d and a message of %d bytes, want 63 and 255", len(third.Subject), len(third.Message))
+	h.waitMetrics(`ranz_events_total{type="session-flap"} 2`)
+	if evs := h.events(); len(evs) != 2 || evs[1].ID != second.ID {
+		t.Errorf("the API lists %+v, want the two session flaps in the order they were reported", evs)
 	}
-	h.waitMetrics(`ranz_events_total{type="session-flap"} 3`)
-	if evs := h.events(); len(evs) != 3 || evs[1].ID != second.ID || evs[2].ID != third.ID {
-		t.Errorf("the API lists %+v, want the three session flaps in the order they were reported", evs)
+}
+
+// TestSessionFlapFieldsAreCutToTheirLimits checks that a report whose peer name and message are longer than the
+// fields of the schema (63 and 255 bytes, control.options) becomes an Event whose subject and message are cut to
+// them. A node that keeps to the schema never sends one, so the stream is a raw one, as in limits_test.go: the
+// frame is not among the ones that the nanopb round trip of CI decodes (RANZ_CONTROL_WIRE), which refuses a
+// string over its limit.
+func TestSessionFlapFieldsAreCutToTheirLimits(t *testing.T) {
+	h := newTelemetryHarness(t, time.Minute)
+	h.apply("apply1.json")
+	conn := h.rawStream(keyBranch1)
+	h.sayHello(conn)
+	h.waitConnected("branch-1", true)
+
+	long := strings.Repeat("p", 100)
+	report := flapReport(&controlpb.NodeEvent{Type: controlpb.NodeEventType_NODE_EVENT_TYPE_SESSION_FLAP, Subject: long, Message: strings.Repeat("m", 300)})
+	if _, err := conn.Write(&controlpb.ControlMessage{Body: &controlpb.ControlMessage_Telemetry{Telemetry: report}}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.waitMetrics(`ranz_events_total{type="session-flap"} 1`)
+	evs := h.events()
+	if len(evs) != 1 {
+		t.Fatalf("the API lists %d events, want the one session flap: %+v", len(evs), evs)
+	}
+	if e := evs[0]; e.Type != event.SessionFlap || e.Node != "branch-1" || e.Subject != long[:63] || len(e.Message) != 255 {
+		t.Errorf("the report with a long name and message became a %s event of node %s with a subject of %d and a message of %d bytes, want 63 and 255", e.Type, e.Node, len(e.Subject), len(e.Message))
 	}
 }
 
