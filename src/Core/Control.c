@@ -57,7 +57,11 @@ static void ControlRelease(void *p, SIZE_T size) {
 	HeapFree(GetProcessHeap(), 0, p);
 }
 
-static void ControlFree(CONTROL_CLIENT *c) {
+// Free a client whose thread does not run: one that ControlNew made, or one whose thread ended
+void ControlFree(CONTROL_CLIENT *c) {
+	if (c == NULL)
+		return;
+
 	if (c->Halt != NULL)
 		CloseHandle(c->Halt);
 	ControlRelease(c->Objects, sizeof(ranz_control_v1_Object) * (c->NumObjects != 0 ? c->NumObjects : 1));
@@ -179,7 +183,7 @@ static UINT ControlFind(const ranz_control_v1_Object *objects, UINT num, UINT ki
 // Apply u to the objects: a full state replaces them, a delta from the Generation applied last
 // takes its removed objects away and sets the others. false for an Update that does not apply,
 // which leaves the objects as they were.
-static bool ControlApply(CONTROL_CLIENT *c, const ranz_control_v1_Update *u) {
+bool ControlApply(CONTROL_CLIENT *c, const ranz_control_v1_Update *u) {
 	bool delta = (u->base_generation != 0);
 	UINT num = 0;
 
@@ -415,15 +419,23 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 // The stream
 //
 
-// Take the frame that Frame holds: an Update is applied, handed to the owner and acknowledged; the
-// members of a cluster and the Signals of the peers come with the modules that use them. false
-// ends the stream: a Refuse, a frame that does not decode or does not apply, or a failed write.
-static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
-	ranz_control_v1_ControlMessage *m = c->Message;
-	pb_istream_t is = pb_istream_from_buffer(c->Frame + CONTROL_FRAME_HEADER, c->FrameSize - CONTROL_FRAME_HEADER);
+// Decode the message of a frame, size bytes at data after the size of the frame, into Message with the code that nanopb
+// generates from the schema: false for bytes that are no ControlMessage of it
+bool ControlDecode(CONTROL_CLIENT *c, const UCHAR *data, UINT size) {
+	pb_istream_t is = pb_istream_from_buffer(data, size);
 
-	ZeroMemory(m, sizeof(ranz_control_v1_ControlMessage));
-	if (pb_decode(&is, ranz_control_v1_ControlMessage_fields, m) == false)
+	ZeroMemory(c->Message, sizeof(ranz_control_v1_ControlMessage));
+	return pb_decode(&is, ranz_control_v1_ControlMessage_fields, c->Message);
+}
+
+// Take the message of a frame of the controller, size bytes at data after the size of the frame: an Update is applied
+// and handed to the owner; the members of a cluster and the Signals of the peers come with the modules that use them.
+// false ends the stream: a Refuse, a message that does not decode or does not apply, and one that only a node sends.
+// The message stays in Message.
+bool ControlInput(CONTROL_CLIENT *c, const UCHAR *data, UINT size) {
+	ranz_control_v1_ControlMessage *m = c->Message;
+
+	if (ControlDecode(c, data, size) == false)
 		return false;
 
 	switch (m->which_body) {
@@ -439,11 +451,7 @@ static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
 		c->Status.Applied = gen;
 		c->Status.NumUpdates++;
 		ReleaseSRWLockExclusive(&c->Lock);
-
-		ZeroMemory(m, sizeof(ranz_control_v1_ControlMessage));
-		m->which_body = ranz_control_v1_ControlMessage_ack_tag;
-		m->body.ack.generation = gen;
-		return ControlWrite(c, s);
+		return true;
 	}
 
 	case ranz_control_v1_ControlMessage_refuse_tag:
@@ -463,6 +471,24 @@ static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
 
 	// A Hello or an Ack goes from a node to the controller, never back
 	return false;
+}
+
+// Take the frame that Frame holds (ControlInput), and acknowledge an Update that it applied. false ends the stream: a
+// message that ControlInput does not take, or a failed write.
+static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
+	ranz_control_v1_ControlMessage *m = c->Message;
+
+	if (ControlInput(c, c->Frame + CONTROL_FRAME_HEADER, c->FrameSize - CONTROL_FRAME_HEADER) == false)
+		return false;
+	if (m->which_body != ranz_control_v1_ControlMessage_update_tag)
+		return true;
+
+	UINT64 gen = m->body.update.generation;
+
+	ZeroMemory(m, sizeof(ranz_control_v1_ControlMessage));
+	m->which_body = ranz_control_v1_ControlMessage_ack_tag;
+	m->body.ack.generation = gen;
+	return ControlWrite(c, s);
 }
 
 // Put the Capabilities of the node into hello, as its owner tells them (CONTROL_CAPS_PROC): the architecture, SeLow
@@ -613,7 +639,9 @@ static DWORD WINAPI ControlThread(LPVOID param) {
 // The client
 //
 
-CONTROL_CLIENT *ControlStart(const CONTROL_CONFIG *cfg) {
+// A client of cfg whose thread does not run: NULL when the configuration is not complete. ControlStart starts its
+// thread; one that no thread runs takes the frames of a controller through ControlInput (fuzz_control).
+CONTROL_CLIENT *ControlNew(const CONTROL_CONFIG *cfg) {
 	if (cfg == NULL || cfg->Transport == NULL || cfg->Address[0] == 0 || (cfg->StaticKey == NULL) == (cfg->Identity == NULL))
 		return NULL;
 
@@ -637,6 +665,14 @@ CONTROL_CLIENT *ControlStart(const CONTROL_CONFIG *cfg) {
 		ControlFree(c);
 		return NULL;
 	}
+
+	return c;
+}
+
+CONTROL_CLIENT *ControlStart(const CONTROL_CONFIG *cfg) {
+	CONTROL_CLIENT *c = ControlNew(cfg);
+	if (c == NULL)
+		return NULL;
 
 	c->Thread = CreateThread(NULL, 0, ControlThread, c, 0, NULL);
 	if (c->Thread == NULL) {
