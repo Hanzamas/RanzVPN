@@ -138,6 +138,9 @@ type Config struct {
 	// waiting.go): control.NewWaiting(control.MaxWaiting, control.MaxWaitingPerSource) when nil. A
 	// cluster member passes its own, which its standby streams count in as well.
 	Waiting *control.Waiting
+	// OperationTimeout is how long the controller waits for the answer of a node to a live operation of
+	// an operator (SDN-50, operations.go); DefaultOperationTimeout when zero.
+	OperationTimeout time.Duration
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -167,6 +170,9 @@ type NodeStatus struct {
 	// Unlicensed is true for a Node above the node cap of the licence in force: it has no
 	// desired state, and its control stream is refused.
 	Unlicensed bool `json:"unlicensed,omitempty"`
+	// Banned is true for a Node whose owner an operator banned (SDN-50, bans.go): its control stream
+	// is refused, and no other node has it as a Peer.
+	Banned bool `json:"banned,omitempty"`
 }
 
 // Controller holds the intent and the desired state of every node.
@@ -227,6 +233,10 @@ type Controller struct {
 	// closes (waiting.go)
 	waiting    *control.Waiting
 	waitingLog event.Throttle
+
+	// The live operations of operators: the banned users and the Operations that wait for a node
+	// (operations.go, bans.go; SDN-50)
+	live liveState
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -256,6 +266,7 @@ type stream struct {
 	members  *controlpb.Controllers // the Controllers message sent last, nil before the first
 	refusal  *controlpb.Refuse
 	signals  []*controlpb.Signal // Signals of other nodes for this one, waiting for the writer
+	live     liveStream          // the session of the node and its live operations (operations.go; SDN-50)
 }
 
 // New loads the intent, the node states and the licence key from the store and reconciles them:
@@ -332,6 +343,10 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		return nil, err
 	}
 	if c.caps, err = c.store.LoadCapabilities(ctx); err != nil {
+		return nil, err
+	}
+	// The bans of users, which the first compile below honours (bans.go; SDN-50)
+	if err := c.startLiveOperations(ctx, cfg); err != nil {
 		return nil, err
 	}
 	for _, sn := range stored {
@@ -589,8 +604,9 @@ func (c *Controller) Nodes() []NodeStatus {
 			out = append(out, NodeStatus{Name: name, Capabilities: caps, Unlicensed: true})
 			continue
 		}
+		_, banned := c.bannedOwner(name)
 		out = append(out, NodeStatus{Name: name, Generation: n.gen, AckedGeneration: n.ackedGen, Connected: n.stream != nil,
-			Capabilities: caps})
+			Capabilities: caps, Banned: banned})
 	}
 	return out
 }
@@ -647,7 +663,8 @@ type compiled struct {
 // compile compiles next under lic, the licence key installed (nil for none).
 func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled, error) {
 	force := c.evaluate(lic)
-	states, err := desired.Compile(next.Capped(force.Nodes))
+	// The Nodes of the banned users are left out of the states of the others (bans.go; SDN-50)
+	states, err := c.compileStates(next.Capped(force.Nodes))
 	if err != nil {
 		return compiled{}, err
 	}
@@ -703,8 +720,9 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	if err := c.store.Commit(sctx, ch); err != nil {
 		return nil, err
 	}
-	// The passwords of the Users that the change removed (users.go)
+	// The passwords of the Users that the change removed (users.go), and their bans (bans.go)
 	c.dropPasswords(sctx, next)
+	c.dropBans(sctx, next)
 
 	c.intent, c.lic, c.force = next, cp.lic, force
 	if m := members(next); !proto.Equal(m, c.members) {
@@ -971,6 +989,12 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		c.refuseSource(conn, name, network, from)
 		return
 	}
+	if ban, banned := c.bannedOwner(name); banned {
+		// The user that owns the node is banned (bans.go; SDN-50)
+		c.mu.Unlock()
+		c.refuseBanned(conn, name, ban, remote)
+		return
+	}
 	n := c.nodes[name]
 	_, seen := c.caps[string(conn.PeerKey())]
 	caps := c.report(conn.PeerKey(), name, hello.GetCapabilities())
@@ -999,6 +1023,7 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		// A new stream of the node replaces its old one.
 		n.stream.shut()
 	}
+	s.live = newLiveStream(remote)
 	n.stream = s
 	c.hello(n, s, hello.GetAppliedGeneration())
 	c.wg.Add(1)
@@ -1100,8 +1125,11 @@ func (c *Controller) readLoop(s *stream) {
 		case *controlpb.ControlMessage_Leases:
 			// The leases of the DHCP responder of an L2 Network (SDN-43, dhcp.go)
 			c.takeLeases(s, body.Leases)
+		case *controlpb.ControlMessage_OperationResult:
+			// The answer of the node to a live operation (SDN-50, operations.go)
+			c.takeOperationResult(s, body.OperationResult)
 		default:
-			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks, Signals, Telemetry and Leases after its Hello"))
+			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks, Signals, Telemetry, Leases and OperationResults after its Hello"))
 			return
 		}
 	}
@@ -1179,10 +1207,12 @@ func (c *Controller) writeLoop(s *stream) {
 		var m *controlpb.Controllers
 		var u *controlpb.Update
 		var sigs []*controlpb.Signal
+		var ops []*controlpb.Operation
 		if r == nil {
 			m = c.nextMembers(s)
 			u = c.nextUpdate(s)
 			sigs, s.signals = s.signals, nil
+			ops, s.live.ops = s.live.ops, nil
 		}
 		c.mu.Unlock()
 		if r != nil {
@@ -1206,6 +1236,10 @@ func (c *Controller) writeLoop(s *stream) {
 				return
 			}
 			c.log.Info("signal forwarded", "node", s.name, "from", sig.GetPeer(), "bytes", len(sig.GetEnvelope()))
+		}
+		// The live operations that operators asked of the node (operations.go; SDN-50)
+		if !c.sendOperations(s, ops) {
+			return
 		}
 		if u == nil {
 			continue

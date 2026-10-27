@@ -84,8 +84,10 @@
 // Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
 // Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
 // the node does it at once and answers with an OperationResult of the same id. Only a node that reports
-// the Capability operations is sent one, since a node that does not know the frame ends its stream. No
-// schema version changes with them.
+// the Capability operations is sent one, since a node that does not know the frame ends its stream. The
+// other live operations are the controller's own: it lists the sessions (the control streams of the nodes),
+// ends one with a Refuse that has the reason REFUSE_REASON_OPERATOR, and bans a user by leaving the Nodes
+// that the user owns out of every desired state. No schema version changes with them.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -188,6 +190,10 @@ enum RefuseReason {
   REFUSE_REASON_LICENCE = 5;
   // The controller is a standby member of a cluster; Refuse.leader names the leader.
   REFUSE_REASON_NOT_LEADER = 6;
+  // An operator of the controller ended the stream (SDN-50 #243): a disconnect of the session, or a ban of the user
+  // that the node belongs to. Refuse.message says which. A node dials again after the delay of a refused stream; a
+  // banned user's node is refused again until an operator lifts the ban.
+  REFUSE_REASON_OPERATOR = 7;
 }
 
 // The members of the controller cluster, from the Controller resources of the intent, ordered by
