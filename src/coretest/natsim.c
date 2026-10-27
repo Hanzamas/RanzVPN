@@ -10,7 +10,7 @@
 // One delivery thread hands the datagrams to PeerInput of the receiving host, in the order they were sent, so
 // that a receiver that sends from its receive procedure queues behind the datagram it took.
 
-#include "coretest.h"
+#include "natsim.h"
 
 #include <string.h>
 
