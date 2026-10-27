@@ -32,13 +32,13 @@ The check of 2026-10-26 showed this.
 
 A routine runs in auto mode. A classifier blocks some actions, among them "merging a pull request that no human approved". The saved prompt of a routine is not live user input, and the documentation says that it cannot act as approval or consent. So a paragraph of the prompt, such as EXPLICIT PERMISSION, does not clear the check. It only tells the tick what the maintainer allows. Three things clear it. The first two were in place on 2026-10-26, when the cloud merged a pull request by itself (#426, 04:09Z). The third is the one to add if a refusal comes back.
 
-1. **Narrow allow rules** in the allowed tools of the routine: `Bash(gh api -X PUT *pulls/*/merge*)`, `Bash(gh api --method PUT *pulls/*/merge*)` and `mcp__github__merge_pull_request`. A command that such a rule matches never reaches the classifier. A broad rule, such as a plain `Bash`, is dropped in auto mode. A rule matches the text of one command, so the merge command of this page stays one simple command with literal values. A leading assignment of a variable, or a command inside `$(...)`, defeats the rule.
+1. **Narrow allow rules** in the allowed tools of the routine: `Bash(gh api -X PUT *pulls/*/merge*)`, `Bash(gh api --method PUT *pulls/*/merge*)` and `mcp__github__merge_pull_request` for the merge, and, because the classifier refused to comment on and close tickets again and again from 2026-10-26 ("External System Writes"), `Bash(gh api --method POST repos/Hanzamas/RanzVPN/issues*)`, `Bash(gh api --method PATCH repos/Hanzamas/RanzVPN/issues*)`, the `-X` forms of both, and the same four for `pulls`. A command that such a rule matches never reaches the classifier. A broad rule, such as a plain `Bash`, is dropped in auto mode. A rule matches the text of one command, so the merge command of this page stays one simple command with literal values. A leading assignment of a variable, or a command inside `$(...)`, defeats the rule.
 2. **`autoMode.allow` in the server-managed settings of the organization.** They are at claude.ai, Organization settings, Claude Code, Managed settings, and only an Owner can edit them. The maintainer set a rule there that allows merges into `integration` of this repository, and never into `master`. A cloud session receives these settings when it starts.
 3. **`permissions.allow` in `.claude/settings.json` of the repository.** A cloud session with one repository reads it. The classifier does not read `autoMode` from the repository, but it honours permission rules. Add the rules of layer 1 there if the first two are not enough. This file widens what an agent may do, so a change of it goes in its own pull request, and the report names it.
 
 ## The shape of the job
 
-The job is a routine, not one long session. The routine fires a tick every hour (a routine cannot fire more often). A tick reads GitHub, acts and ends. Nothing that matters lives in the container: the state is in the pull requests, the branches, the tickets and the heartbeat issue. A tick that meets the limit of the plan ends where it is, and the next tick reads GitHub and continues. A tick that has launched lanes may stay in its session and wait with Monitor (30 minutes for each arm), or it may end its turn, because the platform wakes the session when the Workflow ends. A session that ended its turn leaves a stale heartbeat comment, so the `lanes` line of its report is what the next tick reads to know that the lanes run.
+The job is a long-running session that a routine starts. The routine fires every hour (a routine cannot fire more often), and the maintainer may keep two more routines at other minutes, so that a dead session is replaced within 20 minutes. A session that finds another one alive stands down at once. The session that wins the heartbeat stays alive: it keeps the lanes full, waits with Monitor (30 minutes for each arm, then it arms again), reacts to every event within a minute, and refreshes its heartbeat comment every 20 minutes. It ends only when the plan limit stops it, or at the end of the work. Nothing that matters lives in the container: the state is in the pull requests, the branches, the tickets and the heartbeat issue, so a session that dies is replaced by the next one, which reads GitHub and continues. The `lanes` line of the report is what the next session reads to know which lanes run.
 
 ## The commands
 
@@ -228,8 +228,8 @@ The steps are those of [integrator.md](integrator.md). The cloud changes these:
 2. **Heartbeat.** With the commands above.
 3. **Look.** With the commands of this page, not with `gh pr` and `gh issue`.
 4. **Merge and repair.** The REST merge with `sha`. The rerun of a flake is `gh run rerun`.
-5. **Launch.** Keep to the lane cap of the routine prompt (default 5), counting the lanes of earlier ticks. Start the lanes in batches of at most 2, each batch its own Workflow, because a Workflow runs at most 2 lanes at once in this container. There is no usage tool. If a command fails with a message about the limit of the plan, stop launching, write `ended: plan limit` in your comment and end. Do not try again before the next tick.
-6. **Wait.** Either start the watcher below with Monitor (it ends after 30 minutes: start it again, and refresh the heartbeat each time), or write the `lanes` line of your report and end your turn, and let the platform wake the session when a Workflow ends. A session that wakes does the heartbeat again before it acts. When the platform ends the session, the lanes end with it. That is a cut-off: the next tick resumes from GitHub.
+5. **Launch.** Keep to the lane cap of the routine prompt (default 6), counting the lanes of earlier ticks, and fill every free slot at once. Start each lane as its own agent with isolation `worktree`, or as a Workflow of one lane, because a Workflow runs at most 2 lanes at once in this container and queues the rest. There is no usage tool, and there is no window rule: launch until a command fails with a message about the limit of the plan, then stop launching, write `ended: plan limit` in your comment and end. Do not try again before the next session.
+6. **Wait.** Start the watcher below with Monitor (it ends after 30 minutes: start it again, and refresh the heartbeat each time). Never end your turn while a lane of yours is alive or a pull request into `integration` is open and not merged. When the platform ends the session, the lanes end with it. That is a cut-off: the next session resumes from GitHub.
 7. **Report.** In the heartbeat comment. A tick that has nothing to do writes the three lines, a line `idle`, and `ended:`.
 
 A tick that stands down costs little: it reads two sections and one issue, and ends.
@@ -286,7 +286,7 @@ A line is a hint. Before you merge, run the two looks of the merge procedure. Ea
 
 ## The routine
 
-The maintainer creates the routine from a desktop or web session, with the `schedule` skill. The routine fires a cloud session on a schedule, and the session runs one tick. The default: every hour (cron `7 * * * *`, because a routine cannot fire more often than once an hour), at most 5 lanes, merges only into `integration`, never `master`, the heartbeat issue for the lock.
+The maintainer creates the routine from a desktop or web session, with the `schedule` skill. The routine fires a cloud session on a schedule, and the session runs one tick. The default: every hour (cron `7 * * * *`, because a routine cannot fire more often than once an hour; two more routines at `27 * * * *` and `47 * * * *` make it every 20 minutes), at most 6 lanes, merges only into `integration`, never `master`, the heartbeat issue for the lock.
 
 The prompt is short. It points to these pages, so that a change to the pages changes the job without a change to the routine. It sends the tick to the heartbeat first, so that a tick that stands down does not read the whole of both pages:
 
@@ -301,16 +301,16 @@ EXPLICIT PERMISSION: <the actions that the maintainer allows without asking, in 
 2. Otherwise read both pages in full, and run one tick as they say.
 
 Heartbeat issue: #<number>
-Lane cap: 5
+Lane cap: 6
 Mode: <dry run | full>
 Order of tickets: <the order that the maintainer wants, or none>
-Usage window rule: <time based, see below>
+Speed rules: <stay alive and react at once; one agent per lane; fill every free slot; no launch window; the wait rule for every lane; a blocker is done when a merged pull request names it; never ask about a merge>
 Decisions: <use the recommended answer, record it, and write ASK: only for what the permission does not cover>
 ```
 
 The integrator never writes the AUTHORITY line or the EXPLICIT PERMISSION paragraph. If the routine has none, the integrator reads and reports and does nothing else. The two tell the tick what the maintainer allows. They do not clear the permission check of the cloud, and no wording of them can. The three layers of "What clears the permission check" do, and layer 1 is set in the allowed tools of the routine, outside the prompt.
 
-**The usage window rule.** A cloud session cannot read the usage of the plan, so the rule uses time. The heartbeat comment keeps a line `window-start: <UTC time>`. The first tick after a stop for the limit of the plan, or more than 5 hours after the last `window-start`, writes a new one. In the first 3 hours after `window-start` a tick may launch lanes up to the cap. After that it launches none: it merges, closes tickets and repairs, and lets the lanes that run finish and push. If a command fails with a message about the limit of the plan, the tick writes `ended: plan limit` and ends.
+**No usage window rule.** A cloud session cannot read the usage of the plan. An earlier rule used time: lanes started only in the first 3 hours after a `window-start` that the tick estimated. The estimate was off by hours, and the rule left the usage at 4% of a window while 52 tickets were ready (2026-10-27). So there is none: the session launches while a slot is free, until a command fails with a message about the limit of the plan. Then it writes `ended: plan limit` and ends, and the next session after the window resets continues.
 
 **First run.** Make the first run a dry run, by hand. In a dry run the tick does the heartbeat and the look, writes the report, and merges nothing, closes nothing and launches nothing. The maintainer reads the heartbeat comment and the run log. That proves in one run the reads with `gh api` and with the MCP tools, and the write and the edit of a comment. Then he sets the mode to `full`.
 
