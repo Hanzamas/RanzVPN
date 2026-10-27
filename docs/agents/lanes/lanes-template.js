@@ -86,7 +86,7 @@ const LANES = []
 async function lane(l) {
   const prompt = AUTH + '\n\n' + RULES + '\n\n' + l.task + COMMON + STATE
   const opts = { label: 'lane:' + l.key, phase: 'Lanes', schema: RESULT, model: l.model, isolation: 'worktree' }
-  if (l.model === 'sonnet') opts.effort = 'max'
+  opts.effort = 'max'
   try {
     return await agent(prompt, opts)
   } catch (e) {

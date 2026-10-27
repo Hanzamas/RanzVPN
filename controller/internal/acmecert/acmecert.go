@@ -314,6 +314,7 @@ func finalize(ctx context.Context, c *acme.Client, order *acme.Order, key crypto
 	if err != nil {
 		return state{}, fmt.Errorf("acme: the certificate request: %w", err)
 	}
+	settleAfterFinalize(c, order.FinalizeURL, order.URI, finalizeSettle)
 	chain, _, err := c.CreateCertFromOrder(ctx, order, csr, true)
 	if err != nil {
 		return state{}, fmt.Errorf("acme: the certificate: %w", err)
