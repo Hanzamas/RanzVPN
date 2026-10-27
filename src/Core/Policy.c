@@ -12,7 +12,7 @@
 // - A conntrack table has a lock per shard (PolicyTrack.c), which a frame holds while it finds, adds or changes its flow.
 // - The addresses that the members of a Network own are a sorted list of the Network under its LearnLock, which a frame
 //   holds shared to look up its source and exclusive to take a new one. A Network whose members own nothing, and a member
-//   under no check, take no lock for it.
+//   under no check that is no gateway, take no lock for it.
 // - The changes (members, their addresses, documents) hold ConfigLock, which the data path never takes. A frame takes the
 //   lock of its slot, then the LearnLock of its Network or the lock of a shard, never both at once; a change takes
 //   ConfigLock, then one of those, and waits for the slots with none of them held.
@@ -355,6 +355,14 @@ static UINT PolicyOwnerOf(POLICY_NET *net, UINT kind, const UCHAR *addr) {
 	return member;
 }
 
+// The addresses of a kind that the member of the record rec may own: its limit, or POLICY_MAX_GATEWAY for a gateway
+static UINT PolicyOwnLimit(const POLICY_RECORD *rec, UINT kind) {
+	if ((rec->Guard & POLICY_GUARD_GATEWAY) != 0)
+		return POLICY_MAX_GATEWAY;
+
+	return (kind == POLICY_OWN_MAC ? rec->MaxMacs : rec->MaxIps);
+}
+
 // Give member, whose record is rec, an address of a kind: true when it owns it now or did before; false when another
 // member owns it, the member owns its limit of the kind, it left, or there is no memory. The caller holds the LearnLock
 // of the Network exclusive.
@@ -373,7 +381,7 @@ static bool PolicyOwnerAdd(POLICY_ENGINE *p, POLICY_NET *net, UINT member, const
 		return net->Owners[i].Member == member;
 
 	UINT *num = (kind == POLICY_OWN_MAC ? &s->NumMacs : &s->NumIps);
-	if (*num >= (kind == POLICY_OWN_MAC ? rec->MaxMacs : rec->MaxIps))
+	if (*num >= PolicyOwnLimit(rec, kind))
 		return false;
 
 	UINT count = (UINT)net->NumOwners;
@@ -417,11 +425,63 @@ static void PolicyOwnerDropMember(POLICY_ENGINE *p, POLICY_NET *net, UINT member
 	p->Slots[member].NumIps = 0;
 }
 
+// Give the gateway member, whose record is rec, an address of a kind that another member may own: one that no member
+// owns, as PolicyOwnerAdd gives it, or one of a member that is no gateway, which moves to the gateway while the gateway
+// owns fewer than its limit of the kind. An address of another gateway stays its own. The caller holds the LearnLock of
+// the Network exclusive.
+static void PolicyOwnerTake(POLICY_ENGINE *p, POLICY_NET *net, UINT member, const POLICY_RECORD *rec, UINT kind, const UCHAR *addr) {
+	POLICY_SLOT *s = &p->Slots[member];
+	POLICY_OWNER o;
+	bool found = false;
+
+	PolicyOwnerKey(&o, kind, addr);
+	UINT i = PolicyOwnerIndex(net, &o, &found);
+	if (found == false) {
+		PolicyOwnerAdd(p, net, member, rec, kind, addr);
+		return;
+	}
+
+	UINT owner = net->Owners[i].Member;
+	UINT *num = (kind == POLICY_OWN_MAC ? &s->NumMacs : &s->NumIps);
+	if (owner == member || s->Record != rec || *num >= PolicyOwnLimit(rec, kind))
+		return;
+
+	// The owner may be leaving: PolicyDelMember takes out what it owned under this lock
+	const POLICY_RECORD *old = PolicyRecordOf(p, owner);
+	if (old != NULL && (old->Guard & POLICY_GUARD_GATEWAY) != 0)
+		return;
+
+	UINT *old_num = (kind == POLICY_OWN_MAC ? &p->Slots[owner].NumMacs : &p->Slots[owner].NumIps);
+	if (*old_num != 0)
+		(*old_num)--;
+	net->Owners[i].Member = member;
+	(*num)++;
+}
+
+// Whether the gateway member, whose record is rec, may send from an address of a kind: always. It owns the address from
+// then on (PolicyOwnerTake), so that no member under a check can take it or keep it; a frame from an address that it owns
+// only reads the list.
+static bool PolicyGatewaySource(POLICY_ENGINE *p, UINT member, const POLICY_RECORD *rec, UINT kind, const UCHAR *addr) {
+	POLICY_NET *net = rec->Net;
+
+	if (PolicyOwnerOf(net, kind, addr) == member)
+		return true;
+
+	AcquireSRWLockExclusive(&net->LearnLock);
+	PolicyOwnerTake(p, net, member, rec, kind, addr);
+	ReleaseSRWLockExclusive(&net->LearnLock);
+
+	return true;
+}
+
 // Whether a member may send from an address of a kind: it owns it; or no member owns it and the member is under no check
-// of the kind; or it is under the check (check), no member owns the address, and the member takes it within its limit
+// of the kind; or it is under the check (check), no member owns the address, and the member takes it within its limit.
+// The gateway of an L2 Network may send from any address (PolicyGatewaySource).
 static bool PolicySourceOk(POLICY_ENGINE *p, UINT member, const POLICY_RECORD *rec, UINT kind, const UCHAR *addr, bool check) {
 	POLICY_NET *net = rec->Net;
 
+	if ((rec->Guard & POLICY_GUARD_GATEWAY) != 0)
+		return PolicyGatewaySource(p, member, rec, kind, addr);
 	if (check == false && ReadAcquire(&net->NumOwners) == 0)
 		return true;
 
@@ -841,6 +901,10 @@ static UINT PolicyGuard(POLICY_ENGINE *p, UINT from, const POLICY_RECORD *rec, c
 		return reason;
 	if ((guard & POLICY_GUARD_NO_DHCP_SERVER) != 0 && pk->Control == POLICY_CTL_DHCP_SERVER)
 		return POLICY_DROP_DHCP_SERVER;
+	// The RA guard of an L2 Network holds for what the member sends only: it still gets the router advertisements of the
+	// gateway (SDN-41)
+	if ((guard & POLICY_GUARD_NO_ROUTER) != 0 && pk->Control == POLICY_CTL_ND && pk->IcmpType == POLICY_ICMP6_RA)
+		return POLICY_DROP_RA;
 
 	// The source MAC address, and the sender of an ARP frame
 	if (pk->Smac != NULL) {
