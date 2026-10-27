@@ -676,7 +676,7 @@ static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnC
 	case QUIC_CONNECTION_EVENT_CONNECTED:
 		// The exporter now, while msquic still holds the TLS state, which a server lets go of once the
 		// client acknowledged its handshake; the streams of the connection take it as their binding
-		c->Exported = TransportQuicExporter(g_quic, connection, c->Exporter);
+		c->Exported = TransportQuicExporter(g_quic, connection, c->Net->Server, c->Exporter);
 		InterlockedExchange(&c->Connected, 1);
 		if (c->Ready != NULL)
 			SetEvent(c->Ready);

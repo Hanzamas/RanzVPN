@@ -13,7 +13,10 @@
 //   setting the role holds nothing.
 // - The role runs the overlay of the node. Its data transport is the dialler of the role: a peer is dialled by its
 //   name, which is the race of the fallback list of the server of that name (TransportRace), so QUIC wins where UDP
-//   passes and TLS-443 where it does not. A client dials every server whatever the order of the keys, and listens
+//   passes and TLS-443 where it does not. A transport whose Noise handshake then fails, as QUIC between a node of the
+//   build before CORE-H5 and one of this build, stays out of the races of that server for TRANSPORT_FALLBACK_HOLD, so
+//   the next dial goes to the next transport of the list (TransportFallback.c; CORE-H5-R, #443). A client dials every
+//   server whatever the order of the keys, and listens
 //   nowhere. The data records of its Noise sessions wait in the ingress queue of the session layer, which CoDel runs,
 //   over QUIC as over TLS-443: the overlay carries them on a reliable stream of either.
 // - Each state that the overlay applies reconciles the adapters, one per VRF of the state, each with a fixed GUID of the
@@ -68,6 +71,7 @@ typedef struct NODE_CLIENT_SERVER {
 	TRANSPORT *Tls;                                  // The TLS transport, NULL when the list names none
 	UINT NumTargets;                                 // The entries of the fallback list that a transport here can dial
 	TRANSPORT_TARGET Targets[TRANSPORT_MAX_TARGETS]; // ... in the order of the list
+	TRANSPORT_FALLBACK Fallback;                     // The transports whose handshake failed, out of its races for a while (under the lock)
 } NODE_CLIENT_SERVER;
 
 // A stream of the dialler: the stream of the transport that won the race, which the role closes on suspend, resume,
@@ -326,6 +330,14 @@ static bool NodeClientDial(void *param, const char *address, HANDLE cancel, void
 			return false;
 	}
 
+	// Without the transports whose handshake failed, so that the dial after a failed handshake goes to the next transport
+	// of the list (TransportFallback.c; CORE-H5-R, #443)
+	TRANSPORT_TARGET raced[TRANSPORT_MAX_TARGETS];
+	Lock(c->Lock);
+	num = TransportFallbackTargets(&s->Fallback, targets, num, GetTickCount64(), raced, TRANSPORT_MAX_TARGETS);
+	Unlock(c->Lock);
+	targets = raced;
+
 	TRANSPORT_STREAM *t = TransportRace(targets, num, TRANSPORT_RACE_DELAY, NODE_CLIENT_DIAL, &race);
 	if (t == NULL) {
 		bool logged;
@@ -353,6 +365,7 @@ static bool NodeClientDial(void *param, const char *address, HANDLE cancel, void
 		c->NumDials++;
 		c->Failing = false;
 		StrCpy(c->Transport, sizeof(c->Transport), winner);
+		TransportFallbackWon(&s->Fallback, targets[race.Winner].Transport);
 	}
 	Unlock(c->Lock);
 
@@ -378,6 +391,29 @@ static bool NodeClientDialable(NODE *n, void *param, const char *name, const CON
 	}
 
 	return false;
+}
+
+// The handshake failed on the stream that the last race for the server name gave (CORE-H5-R, #443): its transport stays
+// out of the races of the server for TRANSPORT_FALLBACK_HOLD, so the overlay's next dial goes to the next transport of
+// its list, as from a QUIC that a node of the build before CORE-H5 refuses to its TLS-443
+static void NodeClientRefused(NODE *n, void *param, const char *name) {
+	NODE_CLIENT *c = (NODE_CLIENT *)param;
+	TRANSPORT *t = NULL;
+
+	for (UINT i = 0; i < c->NumServers; i++) {
+		NODE_CLIENT_SERVER *s = &c->Servers[i];
+
+		if (StrCmp(s->Name, name) == 0) {
+			Lock(c->Lock);
+			t = TransportFallbackRefused(&s->Fallback, GetTickCount64());
+			Unlock(c->Lock);
+			break;
+		}
+	}
+
+	if (t != NULL)
+		NodeLog(n, "Client: server %s: the handshake over %s failed, so its next dials race the rest of its list for %u s", name, t->Name,
+		        (UINT)(TRANSPORT_FALLBACK_HOLD / 1000));
 }
 
 // A client listens nowhere: no peer dials it
@@ -962,6 +998,8 @@ static bool NodeClientOverlayStart(NODE_CLIENT *c) {
 	cfg.Dialler = true;
 	// Only a server that it can dial is dialled, through the endpoints of its Peer object where its setting names no list
 	cfg.Dialable = NodeClientDialable;
+	// A failed handshake sends the next dial of its server to the next transport of the list (CORE-H5-R, #443)
+	cfg.Refused = NodeClientRefused;
 	// The control stream to the Controller of the Controller settings, when the node has them (NodeController.c; SDN-90, #395)
 	NodeControllerOverlay(c->Node, &cfg);
 

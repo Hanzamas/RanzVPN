@@ -168,6 +168,8 @@ static TEST_LIST test_list[] = {
     {"punch", punch_test, "Symmetric-NAT traversal: two sequential NATs meet by port prediction, a cone and a random NAT by birthday punching, two random NATs fall back to the relay within the probe budget."},
     {"peersession", peersession_test, "Peer sessions: no inner byte in the clear on any link, relayed or direct; altered, replayed and misdirected records refused; one session from two handshakes; rekey and timeout without loss."},
     {"frontdoor", frontdoor_test, "Front door, the node and its owners as processes: TLS of the new protocol stays in the node, other ALPN or SNI and a signature reach their owner processes through WSADuplicateSocketW; a handed connection outlives the node."},
+    {"quicexporter", quicexporter_test, "QUIC exporter: only the pinned msquic minor is read; another minor, a table without the entry and a connection without an exporter are refused, each side logged once."},
+    {"fallback", fallback_test, "Fallback after a handshake: a server that refuses the handshake over QUIC is reached over TLS-443 at the next dial; QUIC comes back after its hold."},
 };
 
 #define NUM_TESTS (sizeof(test_list) / sizeof(test_list[0]))

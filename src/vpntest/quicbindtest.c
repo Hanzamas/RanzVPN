@@ -12,7 +12,7 @@
 // old build and a node of this one are refused cleanly, both ways: the handshake fails at once, with no session. Last
 // it measures the cost: the throughput and the CPU time of the process for the data records of a session bound to the
 // exporter against one bound to the certificate, on the same loopback. Print "QUICBIND TEST OK" only when every check
-// passes; skip, passing, where msquic.dll is not present.
+// passes; it fails where msquic.dll is not present, since nothing of the binding is tested there (CORE-H5-R, #443).
 
 #include "testlist.h"
 
@@ -522,8 +522,10 @@ void quicbind_test(UINT num, char **arg)
 
 	if (CryptoInit() == false || TransportQuicAvailable() == false)
 	{
-		Print("  msquic.dll is not present: the QUIC transport cannot run; the test is skipped\n");
-		Print("QUICBIND TEST OK\n");
+		// The binding is not tested where QUIC cannot run, so the test fails there rather than pass on nothing (CORE-H5-R,
+		// #443): every job that runs it fetches msquic.dll next to vpntest
+		Print("  msquic.dll is not present: the QUIC transport cannot run, so the binding is not tested\n");
+		Print("QUICBIND TEST FAILED (msquic.dll is not present)\n");
 		if (watchdog != NULL)
 		{
 			SetEvent(done);

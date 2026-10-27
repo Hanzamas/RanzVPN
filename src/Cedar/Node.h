@@ -241,6 +241,9 @@ typedef UINT64(NODE_CLOCK_PROC)(NODE *n, void *param);
 // overlay asks for each peer that has no session (NodeOverlayStart): under the lock of the overlay, so it takes no lock
 struct CONTROL_ENDPOINT;
 typedef bool(NODE_DIALABLE_PROC)(NODE *n, void *param, const char *name, const struct CONTROL_ENDPOINT *endpoints, UINT num);
+// Takes the peer name whose Noise handshake failed on a stream that the data transport dialled (CORE-H5-R, #443), on the
+// thread of the overlay and outside its lock, so that the next dial of the peer races the next transport of its list
+typedef void(NODE_REFUSED_PROC)(NODE *n, void *param, const char *name);
 // Runs once the control pipe of a mimicry sidecar exists and before the sidecar starts, with the name of the pipe: a
 // test that connects another client to it (NODE_MIMIC_TEST)
 typedef void(NODE_MIMIC_LAUNCH_PROC)(void *param, const wchar_t *pipe);
@@ -486,6 +489,10 @@ struct NODE_OVERLAY_CONFIG {
 	// The handshakes of the streams that the overlay accepts that are in flight at most, 0 for NODE_OVERLAY_HANDSHAKES: the
 	// stream after them is refused at the accept (NodeHandshake.c; AUD1-DT-1, #449)
 	UINT MaxHandshakes;
+
+	// Takes the peer whose handshake failed on a stream that the overlay dialled (CORE-H5-R, #443), NULL for none; with
+	// AdapterParam
+	NODE_REFUSED_PROC *Refused;
 };
 
 // What NodeOverlayGetStatus reports

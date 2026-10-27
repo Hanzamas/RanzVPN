@@ -60,4 +60,7 @@ void NodeHandshakeStop(NODE_HANDSHAKES *p);
 void NodeHandshakeFree(NODE_HANDSHAKES *p);
 void NodeHandshakeGetStatus(NODE_HANDSHAKES *p, NODE_OVERLAY_STATUS *st);
 
+void NodeTransportLogStart(NODE *n);
+void NodeTransportLogStop(NODE *n);
+
 #endif // NODE_INTERNAL_H

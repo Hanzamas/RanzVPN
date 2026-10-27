@@ -493,6 +493,9 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 	NodeOverlaySessionConfig(ov, &c, key);
 	if (TransportNoiseConnect(s, stream, &c, NODE_OVERLAY_HANDSHAKE) == false) {
 		Free(s);
+		// The data transport races the next transport of the peer's list at the next dial (CORE-H5-R, #443)
+		if (ov->Config.Refused != NULL)
+			ov->Config.Refused(ov->Node, ov->Config.AdapterParam, name);
 		return true;
 	}
 
