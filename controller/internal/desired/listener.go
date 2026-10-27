@@ -17,7 +17,7 @@ func listener(in intent.Intent, node string) *controlpb.Listener {
 		return nil
 	}
 	l := in.Listeners[name]
-	out := &controlpb.Listener{Name: name, Port: uint32(l.Port), QuicPort: uint32(l.QUICPort)}
+	out := &controlpb.Listener{Name: name, Port: uint32(l.Port), QuicPort: uint32(l.QUICPort), Decoy: l.Decoy}
 	switch c := l.Certificate; {
 	case c.File != "":
 		out.Certificate = &controlpb.Listener_File{File: &controlpb.CertificateFile{Path: c.File, PasswordFile: c.PasswordFile}}

@@ -110,6 +110,7 @@ static void NodeStateListeners(NODE *n, const NODE_STATUS *ns, const char *overl
 	cJSON_AddNumberToObject(f, "tcpPort", ls->Running ? ls->Port : 0);
 	cJSON_AddNumberToObject(f, "quicPort", ls->Running ? ls->QuicPort : 0);
 	cJSON_AddBoolToObject(f, "fallback", ls->Fallback);
+	cJSON_AddStringToObject(f, "decoy", ls->Decoy);
 	cJSON_AddStringToObject(f, "error", ls->Error);
 	cJSON_AddNumberToObject(l, "relayUdpPort", ns->RelayPort);
 

@@ -15,7 +15,7 @@ const testNodeState = `{"running":true,"roles":"server, client","name":"pc-a",` 
 	`"adapters":[{"vrf":1,"name":"Ranz VPN VRF 1","interfaceIndex":23,"addresses":["10.20.0.5"]}],` +
 	`"sessions":[{"peer":"pc-b","up":true,"transport":"tcp","ageSeconds":30},{"peer":"pc-c","up":false,"transport":"","ageSeconds":0}],` +
 	`"numPeers":2,` +
-	`"listeners":{"overlay":"tcp","frontDoor":{"listener":"default","running":true,"tcpPort":443,"quicPort":443,"fallback":false,"error":""},"relayUdpPort":0}}`
+	`"listeners":{"overlay":"tcp","frontDoor":{"listener":"default","running":true,"tcpPort":443,"quicPort":443,"fallback":false,"decoy":"","error":""},"relayUdpPort":0}}`
 
 // ranz node state asks the Node service with the command state and prints its answer as JSON, with
 // the field service, and as a table that names the Roles, the control stream, the adapters with
@@ -43,10 +43,20 @@ func TestNodeStatePrintsTheAnswerOfTheService(t *testing.T) {
 		t.Fatalf("-o table: exit code %d, stderr %q", code, errOut)
 	}
 	for _, s := range []string{"pc-a", "server, client", "connected to 192.168.1.10:443 for 42s, Generation 7", "Ranz VPN VRF 1", "10.20.0.5",
-		"pc-b", "up", "tcp", "30s", "pc-c", "down", "front door TCP 443 and QUIC UDP 443", "relay none"} {
+		"pc-b", "up", "tcp", "30s", "pc-c", "down", "front door TCP 443 and QUIC UDP 443, no decoy", "relay none"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("the table has no %q:\n%s", s, out)
 		}
+	}
+}
+
+// A Node whose Listener has a decoy shows it in the table (AUD1-DT-4 #452).
+func TestNodeStateShowsTheDecoy(t *testing.T) {
+	state := strings.Replace(testNodeState, `"decoy":""`, `"decoy":"127.0.0.1:8080"`, 1)
+	f := &fakeNode{answers: map[string]string{"state": state}}
+	code, out, errOut := runNodeWith(t, f, "state", "-o", "table")
+	if code != 0 || !strings.Contains(out, "front door TCP 443 and QUIC UDP 443, decoy 127.0.0.1:8080") {
+		t.Errorf("exit code %d, stderr %q, table:\n%s", code, errOut, out)
 	}
 }
 

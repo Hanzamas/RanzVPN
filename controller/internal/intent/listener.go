@@ -3,6 +3,7 @@ package intent
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"slices"
@@ -16,7 +17,8 @@ import (
 // the node whose key is in a key storage provider (KSP), or an ACME service that issues the
 // certificate to the node, which renews it there. The TLS policy of each surface is fixed, and the
 // Listener only shows it: TLS 1.3 for the new protocol, TLS 1.2 and 1.3 for the web UI, the API and
-// compat. A Node has one Listener at most; a Node that no Listener names listens on no port of its
+// compat. The Listener may name a decoy, a site on the loopback interface of the node that a prober of
+// the TLS of the new protocol meets (AUD1-DT-4 #452). A Node has one Listener at most; a Node that no Listener names listens on no port of its
 // own.
 
 // KindListener is the kind of a Listener.
@@ -64,6 +66,11 @@ type Listener struct {
 	Port uint16 `json:"port,omitempty"`
 	// QUICPort is the UDP port of QUIC; DefaultListenerPort when it is left out.
 	QUICPort uint16 `json:"quicPort,omitempty"`
+	// Decoy is the decoy of the TLS of the new protocol (AUD1-DT-4 #452): the loopback address and port of a
+	// site on the node, such as 127.0.0.1:8080 or [::1]:8080, to which the node passes a prober, one whose first
+	// frame does not open under the static key of the node. Left out for no decoy: a prober then meets the
+	// certificate of the node and a closed connection.
+	Decoy string `json:"decoy,omitempty"`
 	// Certificate is the source of the certificate of both.
 	Certificate ListenerCertificate `json:"certificate"`
 	// TLS is the TLS policy of the surfaces, which the controller fills in: ListenerPolicy and no
@@ -160,6 +167,9 @@ func (in Intent) completeListeners() {
 		if l.QUICPort == 0 {
 			l.QUICPort = DefaultListenerPort
 		}
+		if ap, err := netip.ParseAddrPort(l.Decoy); err == nil {
+			l.Decoy = ap.String()
+		}
 		if t := strings.ToUpper(strings.NewReplacer(" ", "", ":", "").Replace(l.Certificate.KSP)); thumbprintRule.MatchString(t) {
 			l.Certificate.KSP = t
 		}
@@ -196,6 +206,9 @@ func (in Intent) validateListeners() []error {
 		} else {
 			nodes[l.Node] = name
 		}
+		if err := checkDecoy(l.Decoy); err != nil {
+			problems = append(problems, fmt.Errorf("Listener %q: decoy: %w", name, err))
+		}
 		for _, err := range l.Certificate.check() {
 			problems = append(problems, fmt.Errorf("Listener %q: certificate: %w", name, err))
 		}
@@ -204,6 +217,27 @@ func (in Intent) validateListeners() []error {
 		}
 	}
 	return problems
+}
+
+// checkDecoy checks the decoy of a Listener: empty for none, else the IP address of the loopback
+// interface and a port, 127.0.0.1:8080 or [::1]:8080. The node passes a prober to it, so it is a site
+// on the node itself; a name is refused, since the node would resolve it, and so is an address of any
+// other host.
+func checkDecoy(s string) error {
+	if s == "" {
+		return nil
+	}
+	ap, err := netip.ParseAddrPort(s)
+	if err != nil {
+		return fmt.Errorf("%q is not an IP address and a port, such as 127.0.0.1:8080 or [::1]:8080", s)
+	}
+	if !ap.Addr().IsLoopback() || ap.Addr().Zone() != "" {
+		return fmt.Errorf("%q is not a loopback address: the decoy is a site on the node itself, at 127.0.0.1 or ::1", s)
+	}
+	if ap.Port() == 0 {
+		return fmt.Errorf("%q has port 0: name the port of the site", s)
+	}
+	return nil
 }
 
 // check returns what is wrong with the source of a certificate.

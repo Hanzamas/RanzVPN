@@ -113,6 +113,7 @@ ranz.control.v1.DeviceCounters.device max_size:64
 # MaxListenerEmail, MaxACMENames). It makes the NodeConfig, and so an Object, about 1.8 kB larger.
 ranz.control.v1.Listener.name max_size:64
 ranz.control.v1.Listener.ksp max_size:41
+ranz.control.v1.Listener.decoy max_size:48
 ranz.control.v1.CertificateFile.path max_size:260
 ranz.control.v1.CertificateFile.password_file max_size:260
 ranz.control.v1.CertificateAcme.directory max_size:256

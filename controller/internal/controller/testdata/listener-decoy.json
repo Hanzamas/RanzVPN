@@ -1,0 +1,9 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48"}},
+    {"kind": "Node", "name": "gw-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"]}},
+    {"kind": "Node", "name": "hub", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"]}},
+    {"kind": "Listener", "name": "edge-gw-1", "spec": {"node": "gw-1", "decoy": "127.0.0.1:8080", "certificate": {"file": "C:\\ProgramData\\Ranz\\gw-1.pfx"}}},
+    {"kind": "Listener", "name": "edge-hub", "spec": {"node": "hub", "certificate": {"file": "C:\\ProgramData\\Ranz\\hub.pfx"}}}
+  ]
+}
