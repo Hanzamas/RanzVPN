@@ -16,6 +16,10 @@ var ErrRebootRequired = errors.New("a restart of Windows is needed to finish: a 
 type Options struct {
 	// Controller also registers and starts the Controller service (ranz install --controller).
 	Controller bool
+	// AdminFrom is --admin-from: the prefixes that the API and the web UI of the Controller accept
+	// connections from, or AdminFromAny; none for the default (adminfrom.go). Only a Controller that
+	// is registered by this call takes it.
+	AdminFrom []string
 	// NoXDP leaves the XDP runtime out (ranz install --no-xdp), on a server that does not want it.
 	NoXDP bool
 	// NoWireGuard leaves wireguard.dll of WireGuardNT out (ranz install --no-wireguard), on a Node

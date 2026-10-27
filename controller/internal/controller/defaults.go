@@ -31,5 +31,6 @@ func (c *Controller) firstStart(ctx context.Context) error {
 	}
 	c.log.Info("first start: the intent of a first install", "revision", res.Revision, "vrf", intent.DefaultVRF,
 		"pool", intent.DefaultPool, "rule", intent.StarterRule)
+	c.log.Warn("first start: " + intent.StarterRuleNote)
 	return nil
 }

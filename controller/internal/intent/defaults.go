@@ -16,6 +16,10 @@ const (
 	DefaultPool = "100.64.0.0/10"
 	// StarterRule is the Policy that allows all traffic inside VRF default.
 	StarterRule = "default-allow-all"
+	// StarterRuleNote says what the starter rule does and how to narrow it, for the log of the first
+	// start and for `ranz status` (AUD1-DT-6, #454).
+	StarterRuleNote = "the starter rule " + StarterRule + " allows all traffic inside VRF " + DefaultVRF +
+		": narrow it by deleting it (ranz delete Policy " + StarterRule + ") and applying Policies of your own, as docs/first-test.md shows"
 	// OpFirstStart is the operation of the revision that the first start made.
 	OpFirstStart = "first-start"
 )

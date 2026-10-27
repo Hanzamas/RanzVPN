@@ -22,3 +22,7 @@ Ranz v1 is a full SDN for network engineers (VRFs, NAT, route leaking, EVPN), bu
 - The starter rule is an ordinary rule in the intent, visible through the API and named by `ranz explain` like any other rule.
 - The default VRF tracer (SDN-3, #179) proves this path end to end: a fresh controller reports VRF `default` and the starter rule, and two harness nodes get addresses from the pool and exchange ICMP echo over the in-process loopback transport.
 - Tickets: SDN-3 (#179).
+
+## Amendment (AUD1-DT-6, #454)
+
+The mesh is not changed: the control stream of the Nodes is not behind the admin source allowlist, and the starter rule stays. What the first install narrows is who may reach the API and the web UI of the Controller. `ranz install --controller` sets the admin source allowlist (SDN-39) to loopback and the subnets of the private interfaces of the host, or to the sources that `--admin-from` names, or leaves it empty with `--admin-from any`. The Controller applies the list at its first start only, and says in its log and in `ranz status` which sources are allowed and how to change them, and that the starter rule allows all traffic inside VRF `default` and how to narrow it (docs/first-test.md).

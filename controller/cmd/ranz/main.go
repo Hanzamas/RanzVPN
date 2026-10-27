@@ -10,7 +10,7 @@
 //	ranz bgp -pipe NAME       the BGP sidecar of a Node, which the Node starts (package bgpcmd)
 //	ranz mimic -pipe NAME     the mimicry sidecar of a Node, REALITY and uTLS, which the Node starts; ranz
 //	                          mimic -keygen prints the key pair of a server (package mimic, CORE-P2-1 #85)
-//	ranz install [-controller] [-no-xdp] [-no-wireguard]
+//	ranz install [-controller [-admin-from PREFIXES|any]] [-no-xdp] [-no-wireguard]
 //	                          write the Node payload, Wintun, WireGuardNT (-no-wireguard leaves it
 //	                          out, SDN-80 #375) and the NOTICE into Program Files, install the SeLow
 //	                          driver and the XDP runtime (x64 only; -no-xdp leaves the XDP runtime
@@ -136,7 +136,7 @@ const usage = `usage:
   ranz controller [flags]
   ranz bgp -pipe NAME [-log FILE] [-log-level LEVEL]
   ranz mimic (-pipe NAME [-log FILE] [-log-level LEVEL] | -keygen)
-  ranz install [-controller] [-no-xdp] [-no-wireguard]
+  ranz install [-controller [-admin-from PREFIXES|any]] [-no-xdp] [-no-wireguard]
   ranz uninstall [-keep-ranz]
   ranz notice
   ranz version

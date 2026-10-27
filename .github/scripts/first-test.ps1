@@ -474,6 +474,8 @@ try {
 		if ($out -notmatch 'ranz install: done' -or $out -notmatch 'install: the ranz-controller service is running') { throw 'ranz install --controller did not say that it is done and that the Controller runs' }
 		# The rules of the Node and the Controller, and only them, read back from Windows Firewall
 		if ($out -notmatch 'install: Windows Firewall lets in') { throw 'ranz install --controller did not say which ports it opened in Windows Firewall' }
+		# The first install narrows who may reach the API (AUD1-DT-6): loopback and the private subnets, and how to change it
+		if ($out -notmatch 'install: the Controller starts with the admin source allowlist [^\r\n]*127\.0\.0\.0/8[^\r\n]*403[^\r\n]*ranz admin-sources set') { throw 'ranz install --controller did not say which sources may reach the API and how to change that' }
 		$script:firewallIds = Assert-FirewallRules ($nodeRules + $controllerRules)
 		foreach ($name in $nodeService, $controllerService) { Wait-Service $name 'Running' }
 		foreach ($f in 'ranz-node.exe', 'ranz.exe', 'wintun.dll', 'NOTICE.txt') {
@@ -492,7 +494,7 @@ try {
 			if (-not (Test-Path -LiteralPath (Join-Path $controllerData $f))) { throw "the Controller did not make $f in $controllerData" }
 		}
 		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
-		foreach ($line in 'first start: the intent of a first install', 'msg="TLS port"') {
+		foreach ($line in 'first start: the intent of a first install', 'msg="TLS port"', 'first start: the admin source allowlist is set', 'first start: the starter rule default-allow-all allows all traffic inside VRF default') {
 			if ($log -notmatch [regex]::Escape($line)) { throw "controller.log does not say '$line'" }
 		}
 		$token = (Get-Content -LiteralPath $adminToken -Raw).Trim()
@@ -506,6 +508,16 @@ try {
 		if ($status.tlsFingerprint -notmatch '^[0-9a-f]{64}$') { throw "the TLS fingerprint is '$($status.tlsFingerprint)', not 64 hex digits" }
 		if ([Convert]::FromBase64String($status.publicKey).Length -ne 32) { throw "the public key '$($status.publicKey)' is not the base64 of 32 bytes" }
 		if ($status.capabilities.tlsPort -ne 443 -or $status.capabilities.tlsPortFallback) { throw 'the Controller is not on TCP 443' }
+		# ranz status says who may reach the API and what the starter rule does (AUD1-DT-6)
+		if ($status.adminAccess.open -or @($status.adminAccess.sources) -notcontains '127.0.0.0/8' -or $status.adminAccess.note -notmatch 'ranz admin-sources set') { throw "ranz status says $($status.adminAccess | ConvertTo-Json -Compress) about the admin source allowlist, not loopback and the private subnets, with how to change it" }
+		if ($status.starterRule.name -ne 'default-allow-all' -or $status.starterRule.note -notmatch 'allows all traffic inside VRF default' -or $status.starterRule.note -notmatch 'docs/first-test\.md') { throw "ranz status says $($status.starterRule | ConvertTo-Json -Compress) about the starter rule" }
+		# PC B reaches the Controller through the address of the runner (step 13), so the allowlist must hold it. A runner on a
+		# private subnet is in the default; one on a public address is named by hand, as the runbook says
+		$held = @($status.adminAccess.sources | ForEach-Object { $_ })
+		if ($values['PC-A'] -notmatch '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)') {
+			Write-Host "the address $($values['PC-A']) of the runner is not private, so the allowlist does not hold it: it is added now"
+			$null = Invoke-Ranz (@('admin-sources', 'set') + $held + @($values['PC-A']))
+		}
 		# What the log says at the first start is what the API says
 		# (the log writer quotes a value that holds an equals sign, as a base64 key does)
 		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw

@@ -49,7 +49,10 @@
 // refused with 403 before its token is looked at, and recorded as an event. Without a list, every
 // address may reach them. A loopback address always passes, so a local administrator always
 // reaches the controller. The control stream of the nodes is not behind it: a Network limits the
-// addresses its Nodes enrol from (its enrolSources). In a cluster, the list must hold the
+// addresses its Nodes enrol from (its enrolSources). -admin-from sets the list at the first start,
+// the one that makes the first admin token (AUD1-DT-6, #454): `ranz install --controller` passes
+// loopback and the private subnets of the host, or what its --admin-from names; "any" leaves the
+// list empty, and a run without the flag does too. In a cluster, the list must hold the
 // addresses of the members too, because a standby forwards a call to the leader from its own
 // address.
 //
@@ -170,6 +173,7 @@ type config struct {
 	lease         time.Duration
 	logDays       int
 	logMB         int
+	adminFrom     string // -admin-from: the admin source allowlist that the first start sets
 	schema        controlpb.SchemaVersion
 }
 
@@ -219,11 +223,16 @@ func parseFlags(args []string) (config, error) {
 	flags.IntVar(&schema, "schema-version", 0, "the control schema version to run as: the newest of this release by default, or the one before it during a rolling upgrade of a cluster, until every member runs this release")
 	flags.IntVar(&cfg.logDays, "log-days", logfile.DefaultMaxAgeDays, "the age limit of the service log in days: a file of the log whose last record is older is deleted; 0 for no limit (the Windows service writes the log, elsewhere the controller logs to its standard error)")
 	flags.IntVar(&cfg.logMB, "log-mb", logfile.DefaultMaxMB, "the disk limit of the service log in megabytes: its files never take more together, and the oldest are deleted first; 0 for no limit")
+	flags.StringVar(&cfg.adminFrom, "admin-from", "", "the admin source allowlist that the first start sets: prefixes separated by commas, or any for none; a later start keeps the list in the store (ranz admin-sources)")
 	if err := flags.Parse(args); err != nil {
 		return config{}, err
 	}
 	if flags.NArg() > 0 {
 		return config{}, fmt.Errorf("unexpected arguments: %q", flags.Args())
+	}
+	if _, _, err := parseAdminFrom(cfg.adminFrom); err != nil {
+		fmt.Fprintln(flags.Output(), err)
+		return config{}, err
 	}
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "listen" {
@@ -462,6 +471,9 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	}
 	if created {
 		log.Info("first start: the admin token is created, its secret is in the data directory", "token", rbac.FirstAdmin, "file", tokenFile)
+		if _, err := firstAdminSources(ctx, st, cfg.adminFrom, log); err != nil {
+			return err
+		}
 	}
 
 	// The certificate of the TLS port: the self-signed one of the key above, or the one that an

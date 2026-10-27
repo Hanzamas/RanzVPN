@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -223,7 +224,7 @@ func Install(w io.Writer, opts Options) error {
 		return fmt.Errorf("install: %w", err)
 	}
 	if opts.Controller {
-		if err := installController(w, m, dir); err != nil {
+		if err := installController(w, m, dir, opts); err != nil {
 			return fmt.Errorf("install: %w", err)
 		}
 	}
@@ -404,17 +405,26 @@ func setRecovery(s *mgr.Service) error {
 }
 
 // installController registers the Controller service, to run the ranz.exe of the Ranz folder as
-// `ranz.exe controller`, and starts it. A service that exists is only started.
-func installController(w io.Writer, m *mgr.Mgr, dir string) error {
+// `ranz.exe controller`, and starts it. A service that exists is only started: it keeps the admin
+// source allowlist that it has (adminfrom.go).
+func installController(w io.Writer, m *mgr.Mgr, dir string, opts Options) error {
 	exists, err := serviceExists(m, controllerServiceName)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		if err := controllercmd.Install(filepath.Join(dir, ranzExeName)); err != nil {
+		addrs, _ := net.InterfaceAddrs()
+		adminFrom, err := AdminFrom(opts.AdminFrom, addrs)
+		if err != nil {
+			return err
+		}
+		if err := controllercmd.InstallAdminFrom(filepath.Join(dir, ranzExeName), adminFrom); err != nil {
 			return fmt.Errorf("registering the %s service: %w", controllerServiceName, err)
 		}
 		fmt.Fprintf(w, "install: the %s service is registered\n", controllerServiceName)
+		fmt.Fprintln(w, adminFromMessage(adminFrom))
+	} else if len(opts.AdminFrom) > 0 {
+		fmt.Fprintf(w, "install: the %s service is there already, so --admin-from changes nothing: set the list with ranz admin-sources set PREFIX...\n", controllerServiceName)
 	}
 	return ensureRunning(w, m, controllerServiceName)
 }
