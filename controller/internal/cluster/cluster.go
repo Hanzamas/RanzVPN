@@ -107,6 +107,10 @@ type Member struct {
 	// audit records the calls that this member's Guard refuses as unauthenticated (SDN-49).
 	audit *audit.Log
 
+	// waiting caps the control streams that wait for a Hello (CS-4): the ones of this member as a
+	// standby, and the ones of its controller while it leads.
+	waiting *control.Waiting
+
 	// Used by the lease loop only.
 	seen      store.Lease // the lease as this member saw it last
 	seenSince time.Time   // since when it is unchanged
@@ -134,7 +138,8 @@ func Start(cfg Config) (*Member, error) {
 	if cfg.Lease == 0 {
 		cfg.Lease = DefaultLease
 	}
-	m := &Member{cfg: cfg, log: cfg.Log, retry: cfg.Lease / 5, deadline: cfg.Lease * 2 / 3, done: make(chan struct{})}
+	m := &Member{cfg: cfg, log: cfg.Log, retry: cfg.Lease / 5, deadline: cfg.Lease * 2 / 3, done: make(chan struct{}),
+		waiting: control.NewWaiting(control.MaxWaiting, control.MaxWaitingPerSource)}
 	if m.log == nil {
 		m.log = slog.New(slog.DiscardHandler)
 	}
@@ -165,6 +170,14 @@ func (m *Member) ServeStream(tc *tls.Conn) {
 		c.ServeStream(tc)
 		return
 	}
+	// The stream waits for its Hello until it is read, or until the stream ends
+	leave, err := m.waiting.Enter(tc.RemoteAddr())
+	if err != nil {
+		m.log.Debug("control stream closed: too many wait for a Hello", "remote", tc.RemoteAddr().String(), "err", err)
+		tc.Close()
+		return
+	}
+	defer leave()
 	conn, err := control.Accept(context.Background(), tc, m.cfg.Key)
 	if err != nil {
 		m.log.Debug("control stream handshake failed", "remote", tc.RemoteAddr().String(), "err", err)
@@ -177,6 +190,7 @@ func (m *Member) ServeStream(tc *tls.Conn) {
 	if _, _, err := conn.Read(); err != nil {
 		return
 	}
+	leave()
 	r := &controlpb.Refuse{Reason: controlpb.RefuseReason_REFUSE_REASON_NOT_LEADER, Message: "this controller is a standby, and no member of the cluster leads at the moment"}
 	if l.Holder != "" && l.Holder != m.cfg.Name {
 		r.Message = "this controller is a standby: the leader is " + l.Holder
@@ -322,7 +336,7 @@ func (m *Member) campaign(ctx context.Context) {
 // epoch of l.
 func (m *Member) lead(ctx context.Context, l store.Lease) {
 	c, err := controller.New(ctx, controller.Config{Store: m.cfg.Store.Fenced(l.Epoch), Key: m.cfg.Key, Log: m.log, Schema: m.cfg.Schema, LicenceKeys: m.cfg.LicenceKeys,
-		Defaults: m.cfg.Defaults, Certificates: m.cfg.Certificates})
+		Defaults: m.cfg.Defaults, Certificates: m.cfg.Certificates, Waiting: m.waiting})
 	if err != nil {
 		m.log.Error("taking the lead", "epoch", l.Epoch, "err", err)
 		m.release(l.Epoch)
