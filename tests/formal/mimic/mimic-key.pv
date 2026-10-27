@@ -1,0 +1,18 @@
+(* Variant mimic-key: the mimic path, as the code has it, against an attacker that holds the REALITY private key of the
+   server (AUD-7, #425): the key that the public key of the link pins. This is the middlebox in the best position that it
+   can have on this path: it opens every proof, answers alice with a temporary certificate of its own, so that her sidecar
+   hands her node the stream, and opens a REALITY session of its own to the server with her short id. The binding of the
+   Noise handshake to the exporter of each session is what must stop it, as on TLS-443 (tls443-cert). *)
+
+(* The attacker that holds the REALITY key makes the key share of every ClientHello that it sends, so the prover would
+   select attacker(tpk(a)) in the hypothesis of a rule whose conclusion matches it, and run without end: it did not
+   finish in 900 s. The prover suggests this declaration, which changes only the order in which it resolves the rules,
+   not what it proves; with it the variant answers in about a minute. *)
+noselect a: bitstring; attacker(tpk(a)).
+
+process
+  ( Setup()
+  | MimicSetup()
+  | LeakRealityKey()
+  | MimicSessions(bt_export, kp_on)
+  )
