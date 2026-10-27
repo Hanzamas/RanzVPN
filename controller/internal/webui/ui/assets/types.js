@@ -96,6 +96,8 @@
  * @property {string} message
  * @property {number} [revision]
  * @property {number} [reverts]
+ * @property {string} [node] - the node the event is about, or the node that reported it
+ * @property {string} [subject] - what else it is about: the gateway of a failover, the peer of a session flap
  */
 
 /**

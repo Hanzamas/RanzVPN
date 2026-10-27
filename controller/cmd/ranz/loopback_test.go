@@ -267,6 +267,66 @@ func TestRanzChecksOnlyLoopbackByTheDataDirectory(t *testing.T) {
 	}
 }
 
+// ranz explain has the connection flags of the CLI and checks a loopback address as the CLI does: it sends no token
+// without a fingerprint to check by, nor to another key, and takes the data directory from -controller-dir or from
+// RANZ_CONTROLLER_DIR, and the fingerprint from -tls-fingerprint.
+func TestRanzExplainChecksLoopbackToo(t *testing.T) {
+	ctx := context.Background()
+	right, rightFP := answerer(t)
+	other, otherFP := answerer(t)
+	dir, empty := t.TempDir(), t.TempDir()
+	if err := servercert.WriteFingerprint(dir, rightFP); err != nil {
+		t.Fatal(err)
+	}
+	tokenFile := filepath.Join(t.TempDir(), "admin.token")
+	if err := os.WriteFile(tokenFile, []byte("ranz_ADMINSECRET\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// explainAt runs ranz explain toward server with the flags, and returns its exit code and its standard error
+	explainAt := func(server string, flags ...string) (int, string) {
+		t.Helper()
+		var out, errOut bytes.Buffer
+		args := append([]string{"-server", server, "-token-file", tokenFile}, flags...)
+		code := runExplain(ctx, append(args, "node-a", "node-b"), &out, &errOut)
+		return code, errOut.String()
+	}
+
+	// With no fingerprint to check by it sends no token and does not even connect
+	code, errOut := explainAt(right.srv.URL, "-controller-dir", empty)
+	for _, want := range []string{"sends no token", "-tls-fingerprint", empty} {
+		if code != 1 || !strings.Contains(errOut, want) {
+			t.Errorf("ranz explain with no fingerprint: exit code %d, %q, want 1 and %q", code, errOut, want)
+		}
+	}
+	if conns, auth := right.seen(); conns != 0 || len(auth) != 0 {
+		t.Errorf("the listener got %d connections and %d requests, want none: ranz must not connect before it knows who answers", conns, len(auth))
+	}
+
+	// Another key is refused with both fingerprints, and no request reaches its listener
+	code, errOut = explainAt(other.srv.URL, "-controller-dir", dir)
+	for _, want := range []string{"sent no token", otherFP, rightFP} {
+		if code != 1 || !strings.Contains(errOut, want) {
+			t.Errorf("ranz explain toward another key: exit code %d, %q, want 1 and %q", code, errOut, want)
+		}
+	}
+	if _, auth := other.seen(); len(auth) != 0 {
+		t.Errorf("the listener with another key got the headers %q, want no request: the token must not leave ranz", auth)
+	}
+
+	// The right key works, by the file of the data directory that the flag names, by the one that RANZ_CONTROLLER_DIR
+	// names, and by -tls-fingerprint
+	explainAt(right.srv.URL, "-controller-dir", dir)
+	t.Setenv("RANZ_CONTROLLER_DIR", dir)
+	explainAt(right.srv.URL)
+	if _, auth := right.seen(); len(auth) != 2 || auth[0] != "Bearer ranz_ADMINSECRET" || auth[1] != auth[0] {
+		t.Errorf("the right listener got the headers %q, want two calls with the token", auth)
+	}
+	explainAt(other.srv.URL, "-tls-fingerprint", otherFP)
+	if _, auth := other.seen(); len(auth) != 1 || auth[0] != "Bearer ranz_ADMINSECRET" {
+		t.Errorf("the listener with the fingerprint on the command line got the headers %q, want one call with the token", auth)
+	}
+}
+
 // loopbackRefusal finds the refusal in what the HTTP client made of it, and in nothing else.
 func TestLoopbackRefusal(t *testing.T) {
 	u := &unchecked{server: "https://127.0.0.1", dir: "d", err: os.ErrNotExist}

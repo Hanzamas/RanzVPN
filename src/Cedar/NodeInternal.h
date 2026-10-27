@@ -40,7 +40,7 @@ void NodeAdminState(NODE *n, struct cJSON *o);
 struct CONTROL_LEASES *NodeDhcpStart(NODE *n);
 void NodeDhcpStop(NODE *n);
 void NodeDhcpApplied(NODE *n, const struct CONTROL_STATE *st);
-void NodeListenerStart(NODE *n);
+void NodeListenerStart(NODE *n, PEER_KEY *key);
 void NodeListenerStop(NODE *n);
 void NodeListenerApplied(NODE *n, const struct CONTROL_STATE *st);
 TRANSPORT_STREAM *NodeListenerAccept(NODE *n);
@@ -59,6 +59,17 @@ TRANSPORT_NOISE *NodeHandshakeTake(NODE_HANDSHAKES *p);
 void NodeHandshakeStop(NODE_HANDSHAKES *p);
 void NodeHandshakeFree(NODE_HANDSHAKES *p);
 void NodeHandshakeGetStatus(NODE_HANDSHAKES *p, NODE_OVERLAY_STATUS *st);
+// The count of the replacements of the session of each peer in a window (NodeFlap.c; AUD1-DT-11, #459): Start makes it for
+// the overlay of n, which reports through the queue of events (Core/Control.h), which must outlive it; Replaced tells it that
+// a new handshake of the key of the peer closed its session, with the addresses (host:port, "" for none) that the old and the
+// new session came from
+#define NODE_FLAP_SOURCE_SIZE 64 // The address that a session came from that the overlay keeps for a peer, with its NUL
+typedef struct NODE_FLAP NODE_FLAP;
+struct CONTROL_EVENTS;
+NODE_FLAP *NodeFlapStart(NODE *n, UINT limit, UINT window, struct CONTROL_EVENTS *events);
+void NodeFlapFree(NODE_FLAP *f);
+void NodeFlapReplaced(NODE_FLAP *f, const char *peer, const char *old_source, const char *new_source);
+void NodeFlapGetStatus(NODE_FLAP *f, NODE_OVERLAY_STATUS *st);
 
 void NodeTransportLogStart(NODE *n);
 void NodeTransportLogStop(NODE *n);

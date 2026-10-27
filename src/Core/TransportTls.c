@@ -43,6 +43,7 @@
 #define TLS_RECORD_MAX    (TLS_RECORD_HEADER + 16384 + 2048) // The largest record a peer may send (RFC 5246 section 6.2.3)
 #define TLS_IN_SIZE       (2 * TLS_RECORD_MAX)               // Bytes of records that a stream holds before it decrypts them
 #define TLS_BACKLOG       16                                 // Streams a listener holds before it closes a new one
+#define TLS_REMOTE_SIZE   64                                 // The address of the peer of a stream with its NUL: [IPv6]:port is 47 bytes at most
 #define TLS_POLL          50                                 // How often a dial or a handshake looks at its cancel while it waits (ms)
 #define TLS_HANDSHAKE     10000                              // A TLS handshake completes within this time (ms)
 #define TLS_LINGER        1000                               // A close waits this long for the peer's end (ms)
@@ -137,6 +138,7 @@ typedef struct TLS_STREAM {
 	UINT PreAlloc;                          // ... and the size of the allocation
 	TRANSPORT_TLS_INFO Info;                // What the handshake gave
 	UCHAR Binding[NOISE_EXPORTER_SIZE];     // The TLS exporter of the session, the channel binding
+	char Remote[TLS_REMOTE_SIZE];           // The address of the peer of the TCP connection, "host:port", "" when it tells none (AUD1-DT-11, #459)
 } TLS_STREAM;
 
 // A listener: its socket, the wait of the pool on its connections, its handshakes in progress and
@@ -580,6 +582,17 @@ static void TlsStreamFree(TLS_STREAM *s) {
 	TlsRelease(s, sizeof(TLS_STREAM));
 }
 
+// The address of the peer of a connected socket into remote (size bytes with the NUL), "" when the socket tells none
+static void TlsRemoteAddress(SOCKET sock, char *remote, UINT size) {
+	struct sockaddr_storage peer;
+	int peer_size = sizeof(peer);
+
+	remote[0] = 0;
+	ZeroMemory(&peer, sizeof(peer));
+	if (getpeername(sock, (struct sockaddr *)&peer, &peer_size) == 0)
+		TransportAddressText((const struct sockaddr *)&peer, remote, size);
+}
+
 // A new stream of a transport on a connected socket, which it takes: NULL, with the socket closed,
 // when there is no memory
 static TLS_STREAM *TlsStreamNew(TLS_NET *net, SOCKET sock) {
@@ -592,6 +605,8 @@ static TLS_STREAM *TlsStreamNew(TLS_NET *net, SOCKET sock) {
 
 	s->Net = net;
 	s->Socket = sock;
+	// Where the peer is, for the node that reports the sessions that replace each other (AUD1-DT-11, #459)
+	TlsRemoteAddress(sock, s->Remote, sizeof(s->Remote));
 	InitializeSRWLock(&s->SendLock);
 	InitializeSRWLock(&s->CtxLock);
 	s->In = (UCHAR *)TlsZeroAlloc(TLS_IN_SIZE);
@@ -1084,6 +1099,19 @@ static bool TlsStreamRekey(void *stream) {
 	return true;
 }
 
+// The address of the peer of the connection of a stream, which the stream took when it was made (AUD1-DT-11, #459)
+static bool TlsStreamRemote(void *stream, char *address, UINT size) {
+	const TLS_STREAM *s = (const TLS_STREAM *)stream;
+	size_t len = strnlen(s->Remote, sizeof(s->Remote));
+
+	if (len == 0 || len >= size)
+		return false;
+
+	CopyMemory(address, s->Remote, len);
+	address[len] = 0;
+	return true;
+}
+
 //
 // The own-decoy reverse proxy (CORE-S2-2, #70): the Trojan posture of a server that has one
 //
@@ -1515,6 +1543,7 @@ static void TlsFill(TRANSPORT *t, TLS_NET *net) {
 	t->Rekey = TlsStreamRekey;
 	t->Queue = net->Cfg.Queue;
 	t->Take = TlsTake;
+	t->Remote = TlsStreamRemote;
 }
 
 void TransportTlsDefaultConfig(TRANSPORT_TLS_CONFIG *cfg, const char *thumbprint, bool machine_store) {

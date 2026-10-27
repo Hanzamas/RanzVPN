@@ -24,7 +24,7 @@ const (
 )
 
 // Types lists the types of event, in the order that the metrics list them.
-var Types = []string{AutomaticRollback, NodeDown, GatewayFailover, PoolNearExhaustion}
+var Types = []string{AutomaticRollback, NodeDown, GatewayFailover, PoolNearExhaustion, SessionFlap}
 
 // Event is one thing that happened.
 type Event struct {
@@ -37,8 +37,10 @@ type Event struct {
 	Revision uint64 `json:"revision,omitempty"`
 	// Reverts is the revision that an AutomaticRollback undid.
 	Reverts uint64 `json:"reverts,omitempty"`
-	// Node is the node the event is about, for NodeDown and GatewayFailover.
+	// Node is the node the event is about, for NodeDown and GatewayFailover, and the node that
+	// reported it for SessionFlap.
 	Node string `json:"node,omitempty"`
-	// Subject is what else the event is about: the gateway of a GatewayFailover.
+	// Subject is what else the event is about: the gateway of a GatewayFailover, the peer of a
+	// SessionFlap.
 	Subject string `json:"subject,omitempty"`
 }
