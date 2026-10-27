@@ -101,10 +101,10 @@ func (s *stalled) Read(p []byte) (int, error) {
 }
 
 // A peer that sends the length of a frame and then stops holds no more than the bytes that it sent
-// and a small buffer: the first criterion of #450. The frame is read as its bytes arrive, where it
-// was allocated for its whole length as soon as the length was read. The test counts the bytes that
-// Read allocates until it blocks for the peer, on the end of a node, which takes frames of 16 MiB,
-// and on the end of the controller, after the Hello.
+// and a small buffer: the first criterion of #450. The frame is read as its bytes arrive, and not
+// allocated for its whole length as soon as the length is read. The test counts the bytes that Read
+// allocates until it blocks for the peer, on the end of a node, which takes frames of 16 MiB, and on
+// the end of the controller, after the Hello.
 func TestStalledFrameHoldsOnlyWhatArrived(t *testing.T) {
 	const smallBuffer = 64 << 10
 	hello := frameOf(marshal(t, helloMessage()))

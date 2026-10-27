@@ -176,9 +176,9 @@ func TestFrameOverItsLimitClosesTheStream(t *testing.T) {
 		conn := h.rawStream(keyBranch1)
 		h.sayHello(conn)
 		h.waitConnected("branch-1", true)
-		if _, err := conn.Write(k.msg); err != nil {
-			t.Fatalf("%s: %v", k.name, err)
-		}
+		// The controller closes the stream at the first byte of the frame, so the write of a large
+		// one may fail for it: what the test checks is that the stream ends
+		_, _ = conn.Write(k.msg)
 		if r := endOf(t, conn); r != nil && r.GetReason() != controlpb.RefuseReason_REFUSE_REASON_PROTOCOL {
 			t.Errorf("the controller answered %s over its limit with %s, want a Refuse for a protocol error, or a close", k.name, r.GetReason())
 		}
