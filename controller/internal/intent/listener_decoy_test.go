@@ -24,12 +24,14 @@ func TestApplyListenerDecoy(t *testing.T) {
 		t.Errorf("the decoy of edge-b is %q, want 127.0.0.1:8080", d)
 	}
 
-	// An address of the loopback range and an IPv6 address are accepted, written in their one form
+	// An address of the loopback range and an IPv6 address are accepted, written in their one form, the one
+	// that the node takes: an IPv4-mapped IPv6 address as the IPv4 address
 	for spec, want := range map[string]string{
-		"127.0.0.1:8080":      "127.0.0.1:8080",
-		"127.9.8.7:80":        "127.9.8.7:80",
-		"[::1]:8080":          "[::1]:8080",
-		"[0:0:0:0:0:0:0:1]:9": "[::1]:9",
+		"127.0.0.1:8080":          "127.0.0.1:8080",
+		"127.9.8.7:80":            "127.9.8.7:80",
+		"[::1]:8080":              "[::1]:8080",
+		"[0:0:0:0:0:0:0:1]:9":     "[::1]:9",
+		"[::ffff:127.0.0.1]:8080": "127.0.0.1:8080",
 	} {
 		next, err := Apply(listenerBase(t), doc(res(KindListener, "l", `{"node": "a", "decoy": "`+spec+`", `+ksp+`}`)), nil)
 		if err != nil || next.Listeners["l"].Decoy != want {
@@ -61,6 +63,8 @@ func TestApplyListenerDecoyRejects(t *testing.T) {
 		{"127.0.0.1:0", `has port 0`},
 		{"http://127.0.0.1:8080", `is not an IP address and a port`},
 		{"[fe80::1%eth0]:8080", `is not a loopback address`},
+		{"[::1%lo]:8080", `is not a loopback address`},
+		{"[::ffff:192.0.2.10]:8080", `"192.0.2.10:8080" is not a loopback address`},
 	} {
 		_, err := Apply(listenerBase(t), doc(res(KindListener, "l", `{"node": "a", "decoy": "`+c.decoy+`", `+ksp+`}`)), nil)
 		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), `Listener "l": decoy: `) || !strings.Contains(err.Error(), c.want) {

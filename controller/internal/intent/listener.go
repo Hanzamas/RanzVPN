@@ -18,8 +18,8 @@ import (
 // certificate to the node, which renews it there. The TLS policy of each surface is fixed, and the
 // Listener only shows it: TLS 1.3 for the new protocol, TLS 1.2 and 1.3 for the web UI, the API and
 // compat. The Listener may name a decoy, a site on the loopback interface of the node that a prober of
-// the TLS of the new protocol meets (AUD1-DT-4 #452). A Node has one Listener at most; a Node that no Listener names listens on no port of its
-// own.
+// the TLS of the new protocol meets (AUD1-DT-4 #452). A Node has one Listener at most; a Node that no
+// Listener names listens on no port of its own.
 
 // KindListener is the kind of a Listener.
 const KindListener = "Listener"
@@ -47,6 +47,9 @@ const (
 	MaxListenerEmail = 127
 	// MaxACMENames is the most DNS names of a certificate of ACME.
 	MaxACMENames = 4
+	// MaxListenerDecoy is the length of the longest decoy that the node takes: it fits the 48-byte
+	// field of the C node (control.options). A decoy in its one form is at most 21 bytes.
+	MaxListenerDecoy = 47
 )
 
 // The TLS versions that each surface of a Listener takes (SDN-45): fixed, never configurable
@@ -158,7 +161,7 @@ func (in Intent) cloneListeners() map[string]Listener {
 // completeListeners fills in what a Listener leaves out: its ports, the directory, the port of the
 // challenge and the renewal of ACME, and the TLS policy. It writes the thumbprint of a KSP
 // certificate as 40 upper-case hex digits; one that is not 40 hex digits then stays as it is, for
-// validateListeners to refuse.
+// validateListeners to refuse. It writes the decoy in its one form (canonicalDecoy).
 func (in Intent) completeListeners() {
 	for name, l := range in.Listeners {
 		if l.Port == 0 {
@@ -167,9 +170,7 @@ func (in Intent) completeListeners() {
 		if l.QUICPort == 0 {
 			l.QUICPort = DefaultListenerPort
 		}
-		if ap, err := netip.ParseAddrPort(l.Decoy); err == nil {
-			l.Decoy = ap.String()
-		}
+		l.Decoy = canonicalDecoy(l.Decoy)
 		if t := strings.ToUpper(strings.NewReplacer(" ", "", ":", "").Replace(l.Certificate.KSP)); thumbprintRule.MatchString(t) {
 			l.Certificate.KSP = t
 		}
@@ -217,6 +218,17 @@ func (in Intent) validateListeners() []error {
 		}
 	}
 	return problems
+}
+
+// canonicalDecoy returns the decoy s in its one form, the one that the node reads: an IPv4-mapped
+// IPv6 address as the IPv4 address, as ParseRelay takes one, and an IPv6 address in its short form.
+// A decoy that is not an IP address and a port stays as it is, for checkDecoy to refuse.
+func canonicalDecoy(s string) string {
+	ap, err := netip.ParseAddrPort(s)
+	if err != nil {
+		return s
+	}
+	return netip.AddrPortFrom(ap.Addr().Unmap(), ap.Port()).String()
 }
 
 // checkDecoy checks the decoy of a Listener: empty for none, else the IP address of the loopback
