@@ -12,6 +12,7 @@
 
 #include "NodeThrottle.h"
 
+#include "Cedar.h"
 #include "Node.h"
 #include "Sam.h"
 
@@ -35,13 +36,13 @@ typedef struct NODE_THROTTLE_ENTRY {
 } NODE_THROTTLE_ENTRY;
 
 struct NODE_THROTTLE {
-	LOCK *Lock;                // Everything below
-	LIST *List;                // The entries (NODE_THROTTLE_ENTRY), sorted by their key
-	UINT UserFailures;         // The limits (NODE_THROTTLE_STATUS)
+	LOCK *Lock;        // Everything below
+	LIST *List;        // The entries (NODE_THROTTLE_ENTRY), sorted by their key
+	UINT UserFailures; // The limits (NODE_THROTTLE_STATUS)
 	UINT SourceFailures;
 	UINT64 Window;
 	UINT MaxEntries;
-	UINT64 NumRefusedUser;     // The refusals by reason
+	UINT64 NumRefusedUser; // The refusals by reason
 	UINT64 NumRefusedSource;
 	UINT64 NumRefusedFull;
 };
