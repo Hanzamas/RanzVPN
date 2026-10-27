@@ -707,6 +707,14 @@ struct NODE_LISTENER_STATUS {
 	// The runs of the ACME sidecar, and the certificates of ACME that the listeners took
 	UINT64 AcmeRuns;
 	UINT64 AcmeIssued;
+	// What the limits for a source of the two listeners refused, since the node started (AUD1-DT-3, #451): the front door
+	// on TCP, QUIC on UDP, where msquic.dll is present (HasQuic), and what msquic does about a flood of Initial packets
+	SOURCE_LIMIT_STATS FrontDoorLimits;
+	bool HasQuic;
+	SOURCE_LIMIT_STATS QuicLimits;
+	UINT QuicRetryMemoryLimit; // The retry setting of msquic, read back from it
+	bool QuicRetrying;         // msquic answers new connections with a retry now
+	UINT64 QuicRetries;        // The retry packets that msquic sent
 };
 
 // What NodeGetStatus reports
