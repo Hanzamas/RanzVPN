@@ -10,6 +10,11 @@
 
 #include "ranz/control/v1/control.pb.h"
 
+// Control.c: the decode of the message of a frame of the controller into the Message of a client, and the apply of an
+// Update to the objects of the client, which ControlInput runs
+bool ControlDecode(CONTROL_CLIENT *c, const UCHAR *data, UINT size);
+bool ControlApply(CONTROL_CLIENT *c, const ranz_control_v1_Update *u);
+
 // ControlDhcp.c
 void ControlCopyDhcps(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 void ControlLeasesResend(CONTROL_LEASES *l);
