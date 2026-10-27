@@ -60,7 +60,7 @@
 #define	EXPLAIN_MAX_PACKET		2048		// The bytes of a packet that the adapter of a host keeps
 #define	EXPLAIN_FRAME_HEADER	4			// The size of a frame of the control stream, big-endian, before its message
 #define	EXPLAIN_MAX_FRAME		(EXPLAIN_FRAME_HEADER + NOISE_MAX_MESSAGE)	// A frame of the handshake or the Hello at most
-#define	EXPLAIN_CONTROLLER		"controller"	// The address of the stand-in controller on the transport of the control streams
+#define	EXPLAIN_CONTROLLER_ADDRESS	"controller"	// The address of the stand-in controller on the transport of the control streams
 #define	EXPLAIN_PLAN_VERSION	1			// The version of a plan (explain.PlanVersion)
 #define	EXPLAIN_TEXT_SIZE		1024		// A verdict as a line
 
@@ -124,7 +124,7 @@ typedef struct EXPLAIN_PLAN
 typedef struct EXPLAIN_CONTROLLER
 {
 	EXPLAIN_PLAN *Plan;
-	TRANSPORT_LISTENER *Listener;		// Listens at EXPLAIN_CONTROLLER on the transport of the control streams
+	TRANSPORT_LISTENER *Listener;		// Listens at EXPLAIN_CONTROLLER_ADDRESS on the transport of the control streams
 	UCHAR Scalar[PEER_KEY_SIZE];		// Its static key ...
 	PEER_KEY Key;						// ... with its public half, which the nodes pin
 	HANDLE Thread;
@@ -620,7 +620,7 @@ static EXPLAIN_CONTROLLER *ExplainStartController(EXPLAIN_PLAN *p, TRANSPORT *t)
 	{
 		c->Scalar[i] = (UCHAR)(0xC0 + i);
 	}
-	c->Listener = TransportListen(t, EXPLAIN_CONTROLLER);
+	c->Listener = TransportListen(t, EXPLAIN_CONTROLLER_ADDRESS);
 
 	if (c->Listener != NULL && PeerKeyFromScalar(&c->Key, c->Scalar))
 	{
@@ -766,7 +766,7 @@ static bool ExplainStartNode(EXPLAIN_NODE *t, EXPLAIN_CONTROLLER *c, TRANSPORT *
 
 	Zero(&cfg, sizeof(cfg));
 	cfg.Control = control;
-	StrCpy(cfg.Controller, sizeof(cfg.Controller), EXPLAIN_CONTROLLER);
+	StrCpy(cfg.Controller, sizeof(cfg.Controller), EXPLAIN_CONTROLLER_ADDRESS);
 	Copy(cfg.ControllerKey, c->Key.Public, PEER_KEY_SIZE);
 	cfg.Data = data;
 	cfg.Key = &t->Key;
