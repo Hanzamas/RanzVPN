@@ -4,6 +4,7 @@ package controllercmd
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"testing"
 	"unsafe"
@@ -20,10 +21,15 @@ var procCreateRestrictedToken = windows.NewLazySystemDLL("advapi32.dll").NewProc
 // SeChangeNotifyPrivilege is taken from the token, as the token of a standard user holds only that one.
 const disableMaxPrivilege = 0x1
 
-// requireAdministrator skips a test that needs the rights of an elevated Administrator, as the runner has.
+// requireAdministrator skips a test that needs the rights of an elevated Administrator, as the runner
+// has. On a runner of GitHub Actions the test fails instead, since a skip there would pass a job that
+// proved nothing.
 func requireAdministrator(t *testing.T) {
 	t.Helper()
 	if err := adminRights(); err != nil {
+		if os.Getenv("GITHUB_ACTIONS") == "true" {
+			t.Fatalf("this test needs an elevated Administrator, which a runner has: %v", err)
+		}
 		t.Skipf("this test needs an elevated Administrator: %v", err)
 	}
 }

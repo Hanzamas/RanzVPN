@@ -45,6 +45,7 @@ func newSealedHarness(t *testing.T, sealer *keys.Sealer) *harness {
 	}
 	h.start()
 	t.Cleanup(h.stop)
+	h.allowLoopback()
 	return h
 }
 

@@ -135,11 +135,14 @@ func TestSealTargetsInACluster(t *testing.T) {
 	rq := rqlitetest.Start(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	cfg, err := parseFlags([]string{"-data", t.TempDir(), "-rqlite", rq.URL(),
-		"-rqlite-join", "127.0.0.1:4002,127.0.0.1:4012,127.0.0.1:4022", "-rqlite-expect", "3"})
+	cfg, err := parseFlags([]string{"-data", t.TempDir(), "-rqlite", rq.URL()})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// What -rqlite-join sets. The flag itself asks for the certificates of the members (AUD1-DT-8), which
+	// this test, whose rqlite is the one of rqlitetest, has none of.
+	cfg.join = []string{"127.0.0.1:4002", "127.0.0.1:4012", "127.0.0.1:4022"}
+	cfg.expect = 3
 	var logs bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logs, nil))
 	st := openTestStore(t, ctx, rq.URL())
