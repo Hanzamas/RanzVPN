@@ -452,6 +452,9 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		return err
 	}
 	defer st.Close()
+	if err := sealTargets(ctx, cfg, st, log); err != nil {
+		return err
+	}
 	tokens := rbac.New(st)
 	tokenFile := filepath.Join(cfg.dataDir, adminTokenFile)
 	created, err := tokens.Bootstrap(ctx, func(secret string) error {
