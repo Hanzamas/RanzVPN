@@ -80,6 +80,13 @@
 // Generation and waits for the acknowledgements before it serves the certificate, so a node that
 // pinned the fingerprint of the old one still reaches the controller. No schema version changes
 // with it: a node of an older release skips the field it does not know.
+//
+// Session flap (AUD1-DT-11, #459): a node counts the replacements of the session of each of its
+// peers in a window, since a new handshake of a key closes the session that the node holds for it,
+// and above its limit it reports the event NODE_EVENT_TYPE_SESSION_FLAP in its Telemetry: the peer
+// in subject, and in message how often and from which source addresses the sessions came. No
+// schema version changes with it: a controller of an older release skips an event of a type that it
+// does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -652,7 +659,8 @@ message Flow {
 }
 
 // An event of the node itself that the controller turns into an Event (ADR-0030 decision 5).
-// subject names what it is about: for a gateway failover, the gateway that the node moved to.
+// subject names what it is about: for a gateway failover, the gateway that the node moved to; for
+// a session flap, the peer whose session was replaced again and again.
 message NodeEvent {
   NodeEventType type = 1;
   string subject = 2;
@@ -663,6 +671,9 @@ message NodeEvent {
 enum NodeEventType {
   NODE_EVENT_TYPE_UNSPECIFIED = 0;
   NODE_EVENT_TYPE_GATEWAY_FAILOVER = 1;
+  // Two holders of one key replace the session of a peer again and again (NS-12 of
+  // docs/threat-model.md, AUD1-DT-11 #459).
+  NODE_EVENT_TYPE_SESSION_FLAP = 2;
 }
 
 // A 1:1 NAT rule of a node in one of its VRFs (ADR-0025 decisions 4 and 5, SDN-6): the host of
