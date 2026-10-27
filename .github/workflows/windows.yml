@@ -27,7 +27,8 @@
 #   (ranz.yml: the controller, the BGP sidecar and the CLI). The C build builds ranz for two of its
 #   steps, the default VRF tracer and the node that starts ranz bgp, and generates the nanopb code
 #   of the control protocol schema in proto/ (SDN-3, #179), so a change of the schema runs both
-#   workflows.
+#   workflows. controller/internal/explain and controller/cmd/ranz-explainplan are taken back in:
+#   the explain conformance of build_and_test runs them against the data plane (SDN-15, #191).
 # - tests/control/: the nanopb round trip of ranz.yml.
 # - docs/ and every *.md file (ADRs, README.md, CONTEXT.md, CLAUDE.md). The files of src/bin/hamcore
 #   are resources of the executables (cmake/RanzResources.cmake), so that directory is taken back
@@ -51,6 +52,8 @@ on:
     paths:
     - '**'
     - '!controller/**'
+    - 'controller/internal/explain/**'
+    - 'controller/cmd/ranz-explainplan/**'
     - '!ranz-bgp/**'
     - '!go.mod'
     - '!go.sum'
@@ -371,6 +374,26 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/sdn-tracer.ps1 -BuildDir build -Architecture ${{ matrix.platform.ARCHITECTURE }}
+    # The explain conformance (SDN-15, #191; ADR-0031 decision 8): ranz-explainplan compiles each scenario of
+    # tests/explain as the controller does and writes its plan, the states of its nodes and each test packet with the
+    # verdict of explain; vpntest explain runs the plans through the data plane of real nodes, which take their states
+    # from a stand-in controller over their own control streams, and every packet must end where explain says, with the
+    # rules that explain names. The deliberately broken scenario of tests/explain/broken must fail the suite on the
+    # packets of its fault (.github/scripts/explain-conformance.ps1)
+    - name: Build ranz-explainplan for the explain conformance
+      shell: pwsh
+      working-directory: controller
+      env:
+        # As ranz above: the gcc of the arm64 runner builds x64 code only
+        CGO_ENABLED: '0'
+      run: |
+        go build -o ..\build\ranz-explainplan.exe ./cmd/ranz-explainplan
+        if ($LASTEXITCODE -ne 0) { throw "go build exited with code $LASTEXITCODE" }
+    - name: Explain conformance
+      timeout-minutes: 10
+      shell: pwsh
+      run: |
+        . .github/scripts/explain-conformance.ps1 -BuildDir build
     # The Controller behind the front door of a node on the same host (SDN-73, #352; ADR-0035), on x64 and arm64: ranz
     # controller on a test port with its handoff pipe, and the node of coretest's frontdoor test with its front door on
     # another test port, never 443. Through the front door the API answers over h2, over HTTP/1.1 and with the server name

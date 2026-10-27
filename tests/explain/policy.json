@@ -1,0 +1,34 @@
+{
+  "description": "One VRF, three Nodes and rules between their tags (SDN-8): a rule allows a flow at both ends, a deny rule of a lower priority number drops one at the Node that sends it, and the default action denies a flow that no rule allows. web-1 has endpoints, which the link of a step names (SDN-93).",
+  "nodes": {"web-1": 1, "app-1": 33, "db-1": 97},
+  "intent": {"resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd00:10::/48"}},
+    {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}},
+    {"kind": "Node", "name": "web-1", "spec": {"vrfs": ["corp"], "tags": ["web"], "addresses": {"corp-lan": "10.10.0.10"},
+      "endpoints": [{"transport": "quic", "address": "203.0.113.10:443"}, {"transport": "tls", "address": "203.0.113.10:443"}]}},
+    {"kind": "Node", "name": "app-1", "spec": {"vrfs": ["corp"], "tags": ["app"], "addresses": {"corp-lan": "10.10.0.20"}}},
+    {"kind": "Node", "name": "db-1", "spec": {"vrfs": ["corp"], "tags": ["db"], "addresses": {"corp-lan": "10.10.0.30"}}},
+    {"kind": "Policy", "name": "web-to-app", "spec": {"vrf": "corp", "action": "allow", "priority": 100, "from": {"tags": ["web"]}, "to": {"tags": ["app"]}, "protocol": "tcp", "ports": [8080]}},
+    {"kind": "Policy", "name": "app-to-db", "spec": {"vrf": "corp", "action": "allow", "priority": 100, "from": {"tags": ["app"]}, "to": {"tags": ["db"]}, "protocol": "tcp", "ports": [5432]}},
+    {"kind": "Policy", "name": "no-ssh", "spec": {"vrf": "corp", "action": "deny", "priority": 50, "protocol": "tcp", "ports": [22]}},
+    {"kind": "Policy", "name": "ops-ssh", "spec": {"vrf": "corp", "action": "allow", "from": {"tags": ["web"]}, "protocol": "tcp", "ports": [22]}},
+    {"kind": "Policy", "name": "dns", "spec": {"vrf": "corp", "action": "allow", "to": {"addresses": ["10.10.0.30"]}, "protocol": "udp", "ports": [53]}},
+    {"kind": "Policy", "name": "ping", "spec": {"vrf": "corp", "action": "allow", "protocol": "icmp"}}
+  ]},
+  "packets": [
+    {"name": "web-to-app", "from": "web-1", "to": "app-1", "protocol": "tcp", "sourcePort": 40000, "port": 8080,
+     "expect": {"delivered": true, "node": "app-1", "vrf": "corp", "source": "10.10.0.10", "destination": "10.10.0.20", "rules": {"web-1": "web-to-app", "app-1": "web-to-app"}}},
+    {"name": "web-to-db", "from": "web-1", "to": "db-1", "protocol": "tcp", "sourcePort": 40001, "port": 5432,
+     "expect": {"delivered": false, "node": "web-1", "reason": "policy", "rules": {"web-1": "default:deny"}}},
+    {"name": "app-to-db", "from": "app-1", "to": "db-1", "protocol": "tcp", "sourcePort": 40002, "port": 5432,
+     "expect": {"delivered": true, "node": "db-1", "vrf": "corp", "source": "10.10.0.20", "destination": "10.10.0.30", "rules": {"app-1": "app-to-db", "db-1": "app-to-db"}}},
+    {"name": "web-ssh", "from": "web-1", "to": "app-1", "protocol": "tcp", "sourcePort": 40003, "port": 22,
+     "expect": {"delivered": false, "node": "web-1", "reason": "policy", "rules": {"web-1": "no-ssh"}}},
+    {"name": "dns", "from": "app-1", "to": "db-1", "protocol": "udp", "sourcePort": 40004, "port": 53,
+     "expect": {"delivered": true, "node": "db-1", "vrf": "corp", "source": "10.10.0.20", "destination": "10.10.0.30", "rules": {"app-1": "dns", "db-1": "dns"}}},
+    {"name": "ping", "from": "db-1", "to": "web-1",
+     "expect": {"delivered": true, "node": "web-1", "vrf": "corp", "source": "10.10.0.30", "destination": "10.10.0.10", "rules": {"db-1": "ping", "web-1": "ping"}}},
+    {"name": "dns-to-app", "from": "web-1", "to": "10.10.0.20", "protocol": "udp", "sourcePort": 40005, "port": 53,
+     "expect": {"delivered": false, "node": "web-1", "reason": "policy", "rules": {"web-1": "default:deny"}}}
+  ]
+}
