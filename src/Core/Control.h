@@ -471,6 +471,17 @@ CONTROL_CLIENT *ControlStart(const CONTROL_CONFIG *cfg);
 void ControlStop(CONTROL_CLIENT *c);
 void ControlGetStatus(CONTROL_CLIENT *c, CONTROL_STATUS *st);
 
+// A client without its thread and its stream, for the fuzz target of the control stream (src/fuzz/fuzz_control.c;
+// AUD1-DT-12, #460). New makes a client as Start does but starts no thread: NULL when the configuration is not complete.
+// Input takes the message of one frame of the controller, size bytes at data after the size of the frame, as the stream
+// of the client takes it, but sends no Ack: the client decodes it with nanopb, applies an Update to the objects that it
+// holds and hands them to the owner (Proc), and notes a Refuse in its status. It gives false for a message that ends the
+// stream: a Refuse, a message that does not decode or does not apply, and one that only a node sends. Free frees a
+// client of New.
+CONTROL_CLIENT *ControlNew(const CONTROL_CONFIG *cfg);
+bool ControlInput(CONTROL_CLIENT *c, const UCHAR *data, UINT size);
+void ControlFree(CONTROL_CLIENT *c);
+
 // The delay before a client opens its stream again (ControlRetry.c; SDN-90, #395), from the delay before and how the last
 // stream ended (CONTROL_END_*): CONTROL_RETRY after a stream that was open and not refused, else twice the delay before,
 // from CONTROL_RETRY up to CONTROL_RETRY_MAX
