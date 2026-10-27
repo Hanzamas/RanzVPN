@@ -69,11 +69,25 @@
 // records the reset in the Application log on Windows (event ID 5).
 //
 // A local administrator of the host also backs up the whole store (the intent with every
-// revision, the node states, the events, the tokens and the licence key) with backup, and puts a
-// backup back with restore (SDN-52, #245), with the flags of the service, while it runs or while
-// it is stopped. A restore under a running controller first takes the lease of the leader for a
-// lease duration, so the leader steps down, and then the next leader loads the restored store. In
-// a cluster, restore runs while the members run: rqlite loads the backup into every member.
+// revision, the node states, the events, the hashes of the tokens and of the passwords, the licence
+// key and the secrets of the targets) with backup, and puts a backup back with restore (SDN-52,
+// #245), with the flags of the service, while it runs or while it is stopped. A restore under a
+// running controller first takes the lease of the leader for a lease duration, so the leader steps
+// down, and then the next leader loads the restored store. In a cluster, restore runs while the
+// members run: rqlite loads the backup into every member. The file of a backup has an access list of
+// its own, for SYSTEM and the Administrators only on Windows, whatever the access list of its folder
+// says (AUD1-DT-10, #458). The secrets of the export and audit targets are in the store sealed with a
+// key of this host (the sealing key, internal/keys), so a restore on the same host keeps them working;
+// on another host the targets come back with no secret, the log of the controller names them, and the
+// operator puts each one again with its secret. The members of a cluster have no sealing key in
+// common and keep those secrets in clear.
+//
+// On Windows the data directory belongs to SYSTEM, the Administrators or the service's account, and
+// nobody else has a right in it: install makes it, or takes over one that exists, with the
+// Administrators as its owner and a protected access list, down to every file and folder in it, and
+// refuses one that holds a link; the service refuses to start in a data directory that another account
+// owns, which is how a directory that a local user made before the install, or put in its place, is
+// kept out of it (ST-3 of docs/threat-model.md).
 //
 // The service log of the Windows service is controller.log in the data directory, and it stays
 // within an age limit and a disk limit (SDN-54, #247): -log-days (30 by default) and -log-mb (256),
@@ -141,8 +155,8 @@ const fallbackPort = "5555"
 const fallbackFile = "listen-fallback"
 
 // adminTokenFile, in the data directory, holds the secret of the admin token that the first
-// start of the controller creates (rbac.Bootstrap). Only the directory's owner and the
-// administrators can read it (makeDataDir).
+// start of the controller creates (rbac.Bootstrap). Only the directory's owner, SYSTEM, the
+// administrators and the service's account can read it (makeDataDir).
 const adminTokenFile = "admin.token"
 
 // adminSourcesTTL is how long a member uses a read of the admin source allowlist: a change of it
