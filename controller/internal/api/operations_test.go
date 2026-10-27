@@ -99,7 +99,9 @@ func TestOperationsClientCalls(t *testing.T) {
 		{"MACTable on a node", http.MethodGet, "mac-table", "node=branch-1", func() (controller.TableResult, error) { return c.MACTable(ctx, "corp-dmz", "branch-1") }},
 		{"ClearMACTable", http.MethodDelete, "mac-table", "", func() (controller.TableResult, error) { return c.ClearMACTable(ctx, "corp-dmz", "", "") }},
 		{"ClearMACTable of one entry", http.MethodDelete, "mac-table", "mac=02%3A00%3A5e%3A10%3A00%3A01&node=branch-1",
-			func() (controller.TableResult, error) { return c.ClearMACTable(ctx, "corp-dmz", "branch-1", "02:00:5e:10:00:01") }},
+			func() (controller.TableResult, error) {
+				return c.ClearMACTable(ctx, "corp-dmz", "branch-1", "02:00:5e:10:00:01")
+			}},
 		{"IPTable", http.MethodGet, "ip-table", "", func() (controller.TableResult, error) { return c.IPTable(ctx, "corp-dmz", "") }},
 		{"ClearIPTable of one entry", http.MethodDelete, "ip-table", "address=10.20.0.9",
 			func() (controller.TableResult, error) { return c.ClearIPTable(ctx, "corp-dmz", "", "10.20.0.9") }},

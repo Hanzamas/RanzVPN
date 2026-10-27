@@ -774,7 +774,10 @@ func TestTablesRefuseWhatTheyCannotDo(t *testing.T) {
 		{"a node that does not exist", func() error { _, err := h.api.MACTable(ctx, "corp-dmz", "nobody"); return err }, http.StatusNotFound, `Node "nobody"`},
 		{"a node of another VRF", func() error { _, err := h.api.IPTable(ctx, "corp-dmz", "lab-box"); return err }, http.StatusBadRequest, `does not hold Network "corp-dmz"`},
 		{"a MAC address that is none", func() error { _, err := h.api.ClearMACTable(ctx, "corp-dmz", "", "02:00:5e"); return err }, http.StatusBadRequest, "no MAC address"},
-		{"a MAC address of 8 bytes", func() error { _, err := h.api.ClearMACTable(ctx, "corp-dmz", "", "02:00:5e:10:00:0a:0b:0c"); return err }, http.StatusBadRequest, "no MAC address of 6 bytes"},
+		{"a MAC address of 8 bytes", func() error {
+			_, err := h.api.ClearMACTable(ctx, "corp-dmz", "", "02:00:5e:10:00:0a:0b:0c")
+			return err
+		}, http.StatusBadRequest, "no MAC address of 6 bytes"},
 		{"an address that is none", func() error { _, err := h.api.ClearIPTable(ctx, "corp-dmz", "", "10.20.0"); return err }, http.StatusBadRequest, "no IP address"},
 	} {
 		if err := c.call(); httpStatus(err) != c.want || !strings.Contains(fmt.Sprint(err), c.says) {
@@ -957,7 +960,10 @@ func TestOperationsAreAudited(t *testing.T) {
 		{"mac-table", "network corp-dmz on node alice-laptop", audit.Success, "alice-laptop: ok, 1 entries", func() error { _, err := ops.MACTable(ctx, "corp-dmz", "alice-laptop"); return err }},
 		{"ip-table", "network corp-dmz on node alice-laptop", audit.Success, "alice-laptop: ok, 1 entries", func() error { _, err := ops.IPTable(ctx, "corp-dmz", "alice-laptop"); return err }},
 		{"mac-table-clear", "network corp-dmz on node alice-laptop, entry 02:00:5e:10:00:0a", audit.Success, "alice-laptop: ok, 1 removed",
-			func() error { _, err := ops.ClearMACTable(ctx, "corp-dmz", "alice-laptop", "02:00:5e:10:00:0a"); return err }},
+			func() error {
+				_, err := ops.ClearMACTable(ctx, "corp-dmz", "alice-laptop", "02:00:5e:10:00:0a")
+				return err
+			}},
 		{"ip-table-clear", "network corp-dmz on node alice-laptop, entry 10.20.0.9", audit.Success, "alice-laptop: ok, 1 removed",
 			func() error { _, err := ops.ClearIPTable(ctx, "corp-dmz", "alice-laptop", "10.20.0.9"); return err }},
 		// bob-laptop reports no Capability operations, and files has no stream, so a call that asks every node
@@ -972,7 +978,10 @@ func TestOperationsAreAudited(t *testing.T) {
 		{"user-unban", "user bob", audit.Failure, "is not banned", func() error { _, err := ops.Unban(ctx, "bob"); return httpErr(err, http.StatusNotFound) }},
 		{"user-ban", "user nobody", audit.Failure, `User "nobody"`, func() error { _, err := ops.Ban(ctx, "nobody", ""); return httpErr(err, http.StatusNotFound) }},
 		{"user-disconnect", "user alice", audit.Success, "sessions ended: 1 (alice-laptop)", func() error { _, err := ops.DisconnectUser(ctx, "alice"); return err }},
-		{"session-disconnect", "session 0123456789abcdef", audit.Failure, "no such resource", func() error { _, err := ops.Disconnect(ctx, "0123456789abcdef"); return httpErr(err, http.StatusNotFound) }},
+		{"session-disconnect", "session 0123456789abcdef", audit.Failure, "no such resource", func() error {
+			_, err := ops.Disconnect(ctx, "0123456789abcdef")
+			return httpErr(err, http.StatusNotFound)
+		}},
 	}
 	for i, s := range steps {
 		if err := s.do(); err != nil {

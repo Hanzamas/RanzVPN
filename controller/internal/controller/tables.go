@@ -193,15 +193,15 @@ func (q TableRequest) operation() (*controlpb.Operation, error) {
 	case q.Table == TableIP:
 		op.Kind = controlpb.OperationKind_OPERATION_KIND_CLEAR_IP_TABLE
 	default:
-		return nil, fmt.Errorf("%w: the table is %s or %s, not %q", intent.ErrInvalid, TableMAC, TableIP, clip(string(q.Table), maxSubject))
+		return nil, badRequestf("the table is %s or %s, not %q", TableMAC, TableIP, clip(string(q.Table), maxSubject))
 	}
 	switch {
 	case len(q.MAC) != 0 && (q.Table != TableMAC || !q.Clear):
-		return nil, fmt.Errorf("%w: only a clear of the MAC table names a MAC address", intent.ErrInvalid)
+		return nil, badRequestf("only a clear of the MAC table names a MAC address")
 	case q.Address.IsValid() && (q.Table != TableIP || !q.Clear):
-		return nil, fmt.Errorf("%w: only a clear of the IP table names an address", intent.ErrInvalid)
+		return nil, badRequestf("only a clear of the IP table names an address")
 	case len(q.MAC) != 0 && len(q.MAC) != 6:
-		return nil, fmt.Errorf("%w: a MAC address has 6 bytes, not %d", intent.ErrInvalid, len(q.MAC))
+		return nil, badRequestf("a MAC address has 6 bytes, not %d", len(q.MAC))
 	}
 	if len(q.MAC) != 0 {
 		op.Mac = slices.Clone([]byte(q.MAC))
@@ -232,7 +232,7 @@ func (c *Controller) tableTargets(q TableRequest) ([]tableTarget, error) {
 		return nil, fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindNetwork, clip(q.Network, maxSubject))
 	}
 	if nw.Mode != intent.ModeL2 {
-		return nil, fmt.Errorf("%w: Network %q is an L3 Network, and only an L2 Network has a MAC table and an IP table", intent.ErrInvalid, q.Network)
+		return nil, badRequestf("Network %q is an L3 Network, and only an L2 Network has a MAC table and an IP table", q.Network)
 	}
 	if _, ok := c.intent.Nodes[q.Node]; q.Node != "" && !ok {
 		return nil, fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindNode, clip(q.Node, maxSubject))
@@ -246,7 +246,7 @@ func (c *Controller) tableTargets(q TableRequest) ([]tableTarget, error) {
 		n := c.nodes[name]
 		if n == nil || n.state[holds] == nil {
 			if q.Node != "" {
-				return nil, fmt.Errorf("%w: Node %q does not hold Network %q: it is no member of VRF %q, or the licence in force leaves it out", intent.ErrInvalid, name, q.Network, nw.VRF)
+				return nil, badRequestf("Node %q does not hold Network %q: it is no member of VRF %q, or the licence in force leaves it out", name, q.Network, nw.VRF)
 			}
 			continue
 		}
@@ -262,7 +262,7 @@ func (c *Controller) tableTargets(q TableRequest) ([]tableTarget, error) {
 		out = append(out, t)
 	}
 	if len(out) > MaxTableNodes {
-		return nil, fmt.Errorf("%w: Network %q is on %d nodes, and one call asks at most %d: name a node", intent.ErrInvalid, q.Network, len(out), MaxTableNodes)
+		return nil, badRequestf("Network %q is on %d nodes, and one call asks at most %d: name a node", q.Network, len(out), MaxTableNodes)
 	}
 	return out, nil
 }

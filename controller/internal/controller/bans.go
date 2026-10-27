@@ -115,13 +115,13 @@ func banReason(ban store.Ban) string {
 func checkBanReason(reason string) error {
 	switch {
 	case len(reason) > MaxBanReason:
-		return fmt.Errorf("%w: the reason of a ban has %d bytes, and at most %d are allowed", intent.ErrInvalid, len(reason), MaxBanReason)
+		return badRequestf("the reason of a ban has %d bytes, and at most %d are allowed", len(reason), MaxBanReason)
 	case !utf8.ValidString(reason):
-		return fmt.Errorf("%w: the reason of a ban is no UTF-8 text", intent.ErrInvalid)
+		return badRequestf("the reason of a ban is no UTF-8 text")
 	}
 	for _, r := range reason {
 		if unicode.IsControl(r) {
-			return fmt.Errorf("%w: the reason of a ban holds a control character, %U", intent.ErrInvalid, r)
+			return badRequestf("the reason of a ban holds a control character, %U", r)
 		}
 	}
 	return nil

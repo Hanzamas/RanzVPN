@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
 	"slices"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/audit"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
+	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -45,6 +47,20 @@ var (
 	// errBusy marks an Operation for a node that has too many waiting.
 	errBusy = errors.New("the node has too many operations waiting")
 )
+
+// badRequest is the error of a live operation that its caller asked for wrongly: its text says what is
+// wrong, and to the API it is an intent.ErrInvalid, which it answers with 400 Bad Request.
+type badRequest string
+
+func (e badRequest) Error() string { return string(e) }
+
+// Is makes a badRequest an intent.ErrInvalid.
+func (e badRequest) Is(target error) bool { return target == intent.ErrInvalid }
+
+// badRequestf returns the badRequest that format and args make.
+func badRequestf(format string, args ...any) error {
+	return badRequest(fmt.Sprintf(format, args...))
+}
 
 // liveState is what the controller keeps for the live operations: the banned users (bans.go) and the
 // Operations that wait for the answer of a node.
