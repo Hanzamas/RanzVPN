@@ -79,6 +79,13 @@ src/Core  FrontDoorParseHello     fuzz_frontdoor
 src/Core  FrontDoorRoute          fuzz_frontdoor
 src/Core  FrontDoorHandoffDecode  fuzz_frontdoor
 
+# The control stream of a node (SDN-3 #179; AUD1-DT-12 #460): the messages that the Controller sends, which the node decodes
+# with nanopb (ControlDecode) and takes (ControlInput); it applies an Update to the desired state that it holds
+# (ControlApply), which has no parser word in its name and is listed as the reader of the Update that it is
+src/Core  ControlInput   fuzz_control
+src/Core  ControlDecode  fuzz_control  via ControlInput
+src/Core  ControlApply   fuzz_control  via ControlInput
+
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
 src/Cedar  CsOpen               exempt  opens the node's own SQLite store (winsqlite3)
