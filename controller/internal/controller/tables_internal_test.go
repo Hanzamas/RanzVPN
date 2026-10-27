@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -10,9 +11,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
 // tableMAC returns the 6 bytes of a MAC address that ends in last.
@@ -84,6 +89,23 @@ func TestTableEntriesTakeNoMoreThanANodeLists(t *testing.T) {
 	}
 	if got, left := tableEntries(nil, TableIP); got == nil || len(got) != 0 || left != 0 {
 		t.Errorf("of no entry the controller took %v and left out %d, want an empty list", got, left)
+	}
+}
+
+// The time of the last frame of an entry is one that JSON can write, so that one entry of a node never leaves the
+// answer of the API empty: the last instant of the year 9999 is taken, and a later one is left out.
+func TestTableEntriesLastSeenIsWritableAsJSON(t *testing.T) {
+	last := time.Date(9999, time.December, 31, 23, 59, 59, 999000000, time.UTC)
+	got, left := tableEntries([]*controlpb.TableEntry{
+		{Mac: tableMAC(1), LastSeenMs: maxLastSeenMs},
+		{Mac: tableMAC(2), LastSeenMs: maxLastSeenMs + 1},
+		{Mac: tableMAC(3), LastSeenMs: math.MaxInt64},
+	}, TableMAC)
+	if left != 0 || len(got) != 3 || !got[0].LastSeen.Equal(last) || !got[1].LastSeen.IsZero() || !got[2].LastSeen.IsZero() {
+		t.Fatalf("the entries are %+v with %d left out, want the first at %v and no time for the other two", got, left, last)
+	}
+	if _, err := json.Marshal(got); err != nil {
+		t.Errorf("the entries cannot be written as JSON: %v", err)
 	}
 }
 
@@ -185,5 +207,19 @@ func TestCheckBanReason(t *testing.T) {
 		if (err == nil) != c.ok || (err != nil && !errors.Is(err, intent.ErrInvalid)) {
 			t.Errorf("the reason %q gave %v, want ok %v", c.reason, err, c.ok)
 		}
+	}
+}
+
+// The message of a Refuse is cut at a character, so that the ban of a user with a long reason that is not
+// ASCII still makes a Refuse that can be encoded: cut at a byte, it would end inside a character.
+func TestRefusalIsCutAtACharacter(t *testing.T) {
+	reason := strings.Repeat("é", MaxBanReason/2)
+	r := refusal(controlpb.RefuseReason_REFUSE_REASON_OPERATOR, "%s", banReason(store.Ban{User: "alice", Reason: reason}))
+	msg := r.GetMessage()
+	if len(msg) > maxRefuseMessage || !utf8.ValidString(msg) || !strings.HasPrefix(msg, `User "alice" is banned: é`) {
+		t.Errorf("the message of the Refuse has %d bytes and is %q, want at most %d bytes of text that starts with the ban", len(msg), msg, maxRefuseMessage)
+	}
+	if _, err := proto.Marshal(r); err != nil {
+		t.Errorf("the Refuse of a ban cannot be encoded: %v", err)
 	}
 }

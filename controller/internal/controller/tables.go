@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"math"
 	"net"
 	"net/netip"
 	"slices"
@@ -70,6 +69,10 @@ const (
 	// maxResultMessage is the longest message that the controller takes from the answer of a node:
 	// OperationResult.message of control.options, without the terminating NUL.
 	maxResultMessage = 255
+	// maxLastSeenMs is the last instant that the controller takes as the time of the last frame of an
+	// entry, 9999-12-31T23:59:59.999Z in Unix milliseconds: a later one is none, since JSON cannot write a
+	// year above 9999 and one such entry would leave the whole answer of the API empty.
+	maxLastSeenMs = 253402300799999
 )
 
 // TableRequest is a live operation on the MAC table or the IP table of an L2 Network.
@@ -389,7 +392,7 @@ func tableEntries(entries []*controlpb.TableEntry, table TableKind) (out []Table
 			k.addr = addr.Unmap()
 			k.Address = k.addr.String()
 		}
-		if ms := e.GetLastSeenMs(); ms != 0 && ms <= math.MaxInt64 {
+		if ms := e.GetLastSeenMs(); ms != 0 && ms <= maxLastSeenMs {
 			k.LastSeen = time.UnixMilli(int64(ms)).UTC()
 		}
 		taken = append(taken, k)

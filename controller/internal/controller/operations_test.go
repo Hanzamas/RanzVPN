@@ -456,7 +456,9 @@ func TestBanCutsAUserOffAtOnce(t *testing.T) {
 	if _, err := h.api.Ban(ctx, "nobody", ""); httpStatus(err) != http.StatusNotFound {
 		t.Errorf("banning a user that does not exist gave %v, want 404", err)
 	}
-	for _, reason := range []string{"two\nlines", strings.Repeat("x", controller.MaxBanReason+1), "no \xff text"} {
+	// A reason that is no UTF-8 cannot be sent: JSON has no way to carry it, and the client writes U+FFFD for the
+	// byte, so TestCheckBanReason and FuzzCheckBanReason refuse it where the controller checks it
+	for _, reason := range []string{"two\nlines", strings.Repeat("x", controller.MaxBanReason+1), "next\u0085line"} {
 		if _, err := h.api.Ban(ctx, "carol", reason); httpStatus(err) != http.StatusBadRequest {
 			t.Errorf("banning with the reason %q gave %v, want 400", reason, err)
 		}
@@ -997,14 +999,18 @@ func TestOperationsAreAudited(t *testing.T) {
 		t.Fatalf("a ban as a viewer gave %v, want 403", err)
 	}
 
-	recs := h.waitAudit(ops, "a record of each operation", func(rs []audit.Record) bool { return len(auditOfKind(rs, audit.Operation)) >= len(steps) })
+	// The first record is the one of h.sessionOf above: it found the session of bob-laptop with the client of the
+	// harness, which carries no origin, so the controller records it for the system, at the source local. The
+	// others are one for each call that was served and none for the calls that were refused.
+	recs := h.waitAudit(ops, "a record of each operation", func(rs []audit.Record) bool { return len(auditOfKind(rs, audit.Operation)) >= len(steps)+1 })
 	operations := auditOfKind(recs, audit.Operation)
-	if len(operations) != len(steps) {
-		t.Fatalf("the audit log holds %d operations, want %d, one for each call that was served and none for the calls that were refused:\n%s",
-			len(operations), len(steps), auditLines(recs))
+	if len(operations) != len(steps)+1 {
+		t.Fatalf("the audit log holds %d operations, want %d: the one that found the session of bob-laptop, and one for each call that was served:\n%s",
+			len(operations), len(steps)+1, auditLines(recs))
 	}
+	checkAuditRecord(t, operations[0], since, audit.ActorSystem, audit.SourceLocal, audit.Success, "session-list", 0)
 	for i, s := range steps {
-		r := operations[i]
+		r := operations[i+1]
 		checkAuditRecord(t, r, since, audit.ActorToken("ops-1"), "127.0.0.1", s.outcome, s.action, 0)
 		if r.Subject != s.subject || !strings.Contains(r.Message, s.message) {
 			t.Errorf("the operation %d is %+v, want the subject %q and a message that says %q", i, r, s.subject, s.message)

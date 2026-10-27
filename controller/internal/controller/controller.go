@@ -1332,10 +1332,9 @@ func (s *stream) shut() {
 }
 
 func refusal(reason controlpb.RefuseReason, format string, args ...any) *controlpb.Refuse {
-	msg := fmt.Sprintf(format, args...)
-	if len(msg) > maxRefuseMessage {
-		msg = msg[:maxRefuseMessage]
-	}
+	// Cut at a character: a message that ends inside one is no UTF-8, and a Refuse that holds it cannot be
+	// encoded, which the reason of a ban (SDN-50) can make
+	msg := clip(fmt.Sprintf(format, args...), maxRefuseMessage)
 	return &controlpb.Refuse{Reason: reason, Message: msg}
 }
 
