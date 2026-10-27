@@ -32,7 +32,9 @@
 //
 // Every call of the API needs the bearer token of a role (SDN-14, #190). The first start creates
 // the admin token and writes its secret to admin.token in the data directory, for `ranz
-// -token-file`. It also creates the intent of a first install as revision 1 (ADR-0034, SDN-3
+// -token-file`. Each start, and each change of the certificate that the TLS port serves, writes
+// its TLS fingerprint to tls.fingerprint there, which `ranz` on this host checks a loopback
+// address by (AUD1-DT-13, #461). The first start also creates the intent of a first install as revision 1 (ADR-0034, SDN-3
 // #179): VRF default with overlay DNS on, its Network default with the automatic IPv4 pool
 // 100.64.0.0/10, and the starter rule default-allow-all; a Node that names no VRF joins VRF
 // default. rqlite is the controller's sidecar, and the controller runs a member of its own: the

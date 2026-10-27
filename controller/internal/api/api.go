@@ -301,7 +301,7 @@ func (c *Client) Pin(fp string) error {
 			}
 			sum := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
 			if !bytes.Equal(sum[:], want) {
-				return fmt.Errorf("the controller's certificate has the TLS fingerprint %x, not %s", sum, fp)
+				return &FingerprintError{Got: hex.EncodeToString(sum[:]), Want: fp}
 			}
 			return nil
 		},
