@@ -15,7 +15,8 @@
 
 #include <string.h>
 
-#define FRONT_DOOR_STOP_POLL 50 // How often a wait of a connection looks whether the front door stops (ms)
+#define FRONT_DOOR_STOP_POLL  50 // How often a wait of a connection looks whether the front door stops (ms)
+#define FRONT_DOOR_POOL_SPARE 4  // Threads of the pool beyond one for every connection that may wait: the accept and its neighbours
 
 struct FRONT_DOOR {
 	FRONT_DOOR_OWNER Owners[FRONT_DOOR_MAX_OWNERS]; // The owner table, a copy of the configuration's
@@ -29,6 +30,8 @@ struct FRONT_DOOR {
 	PTP_WAIT Wait;                                  // The wait of the pool on Event
 	TP_CALLBACK_ENVIRON Env;                        // The environment of the wait and the connections ...
 	PTP_CLEANUP_GROUP Group;                        // ... and their cleanup group, which waits for every callback
+	PTP_POOL Pool;                                  // The pool of the callbacks, with a thread for every connection that may wait
+	SOURCE_LIMITS *Limits;                          // The limits for a source (SourceLimit.h)
 	SRWLOCK Lock;                                   // Stopped
 	bool Stopped;                                   // Stop runs: the wait is not set again
 	bool HaveWinsock;                               // WSAStartup succeeded
@@ -42,6 +45,7 @@ struct FRONT_DOOR {
 typedef struct FRONT_DOOR_CONN {
 	FRONT_DOOR *Door; // The front door
 	SOCKET Socket;    // The connection
+	SOURCE_KEY Key;   // Its source: the limits count the connection for it until it is routed
 } FRONT_DOOR_CONN;
 
 // The host and the port of an address: "host:port", "[ipv6]:port" or ":port" for every address; false when it is
@@ -252,6 +256,7 @@ static void CALLBACK FrontDoorRouteCallback(PTP_CALLBACK_INSTANCE instance, void
 	FRONT_DOOR_CONN *c = (FRONT_DOOR_CONN *)param;
 	FRONT_DOOR *fd = c->Door;
 	SOCKET s = c->Socket;
+	SOURCE_KEY key = c->Key;
 	u_long blocking = 0;
 	bool taken = false;
 
@@ -266,6 +271,15 @@ static void CALLBACK FrontDoorRouteCallback(PTP_CALLBACK_INSTANCE instance, void
 
 	if (owner >= fd->NumOwners || owner >= FRONT_DOOR_MAX_OWNERS) {
 		InterlockedIncrement64(&fd->Unrouted);
+		SourceLimitsLeave(fd->Limits, &key);
+		closesocket(s);
+		return;
+	}
+
+	// A ClientHello that a TLS owner takes starts a TLS handshake: a source that starts them faster than its rate gets
+	// the connection closed before its handoff, and the handshake is counted as refused (SourceLimitsGetStats)
+	if (fd->Owners[owner].Kind == FRONT_DOOR_TLS && SourceLimitsHandshake(fd->Limits, &key, GetTickCount64()) != SOURCE_LIMIT_ADMIT) {
+		SourceLimitsLeave(fd->Limits, &key);
 		closesocket(s);
 		return;
 	}
@@ -282,19 +296,28 @@ static void CALLBACK FrontDoorRouteCallback(PTP_CALLBACK_INSTANCE instance, void
 	}
 
 	InterlockedIncrement64(taken ? &fd->Handed[owner] : &fd->Refused);
+	SourceLimitsLeave(fd->Limits, &key);
 	if (s != INVALID_SOCKET)
 		closesocket(s);
 }
 
-// A connection that the listener took: its own event selection goes, which leaves it not blocking, no process that
-// this one starts inherits it, and its route runs on a callback of the pool; it is closed when the callback cannot start
-static void FrontDoorTake(FRONT_DOOR *fd, SOCKET s) {
+// A connection that the listener took, from the source key: the limits for a source decide first, and a connection over
+// them is closed at once, before it holds a thread; its own event selection goes, which leaves it not blocking, no
+// process that this one starts inherits it, and its route runs on a callback of the pool; it is closed when the
+// callback cannot start
+static void FrontDoorTake(FRONT_DOOR *fd, SOCKET s, const SOURCE_KEY *key) {
+	InterlockedIncrement64(&fd->Accepted);
+	if (SourceLimitsEnter(fd->Limits, key, GetTickCount64()) != SOURCE_LIMIT_ADMIT) {
+		closesocket(s);
+		return;
+	}
+
 	FRONT_DOOR_CONN *c = (FRONT_DOOR_CONN *)HeapAlloc(GetProcessHeap(), 0, sizeof(FRONT_DOOR_CONN));
 
-	InterlockedIncrement64(&fd->Accepted);
 	(void)SetHandleInformation((HANDLE)s, HANDLE_FLAG_INHERIT, 0);
 	if (c == NULL || WSAEventSelect(s, NULL, 0) != 0) {
 		InterlockedIncrement64(&fd->Unrouted);
+		SourceLimitsLeave(fd->Limits, key);
 		closesocket(s);
 		if (c != NULL)
 			HeapFree(GetProcessHeap(), 0, c);
@@ -303,8 +326,10 @@ static void FrontDoorTake(FRONT_DOOR *fd, SOCKET s) {
 
 	c->Door = fd;
 	c->Socket = s;
+	c->Key = *key;
 	if (TrySubmitThreadpoolCallback(FrontDoorRouteCallback, c, &fd->Env) == false) {
 		InterlockedIncrement64(&fd->Unrouted);
+		SourceLimitsLeave(fd->Limits, key);
 		closesocket(s);
 		HeapFree(GetProcessHeap(), 0, c);
 	}
@@ -323,11 +348,16 @@ static void CALLBACK FrontDoorAcceptCallback(PTP_CALLBACK_INSTANCE instance, voi
 	ZeroMemory(&events, sizeof(events));
 	if (WSAEnumNetworkEvents(fd->Socket, fd->Event, &events) == 0) {
 		while (true) {
-			SOCKET s = accept(fd->Socket, NULL, NULL);
+			struct sockaddr_storage peer;
+			int peer_size = sizeof(peer);
+			SOCKET s = accept(fd->Socket, (struct sockaddr *)&peer, &peer_size);
 
-			if (s != INVALID_SOCKET)
-				FrontDoorTake(fd, s);
-			else if (WSAGetLastError() != WSAECONNRESET)
+			if (s != INVALID_SOCKET) {
+				SOURCE_KEY key;
+
+				SourceLimitsKey((const struct sockaddr *)&peer, &key);
+				FrontDoorTake(fd, s, &key);
+			} else if (WSAGetLastError() != WSAECONNRESET)
 				break;
 		}
 	}
@@ -346,6 +376,9 @@ static void FrontDoorFree(FRONT_DOOR *fd) {
 		CloseThreadpoolCleanupGroup(fd->Group);
 	}
 	DestroyThreadpoolEnvironment(&fd->Env);
+	if (fd->Pool != NULL)
+		CloseThreadpool(fd->Pool);
+	SourceLimitsFree(fd->Limits);
 
 	if (fd->Socket != INVALID_SOCKET)
 		closesocket(fd->Socket);
@@ -395,8 +428,19 @@ FRONT_DOOR *FrontDoorStart(const FRONT_DOOR_CONFIG *cfg) {
 	fd->Closing = CreateEventW(NULL, TRUE, FALSE, NULL);
 	fd->Group = CreateThreadpoolCleanupGroup();
 
-	bool ok = (fd->HaveWinsock && fd->Event != WSA_INVALID_EVENT && fd->Closing != NULL && fd->Group != NULL && FrontDoorListen(fd, host, port));
+	// The limits for a source, and a pool with a thread for each connection that may wait and the accept: the callbacks
+	// that wait for their bytes never queue behind each other, so a source that holds the most it may leaves the threads
+	// that the others need
+	SOURCE_LIMIT_CONFIG limits;
+	fd->Limits = SourceLimitsNew(&cfg->Limits);
+	fd->Pool = CreateThreadpool(NULL);
+	SourceLimitsGetConfig(fd->Limits, &limits);
+
+	bool ok = (fd->HaveWinsock && fd->Event != WSA_INVALID_EVENT && fd->Closing != NULL && fd->Group != NULL && fd->Limits != NULL && fd->Pool != NULL &&
+	           SetThreadpoolThreadMinimum(fd->Pool, 1) && FrontDoorListen(fd, host, port));
 	if (ok) {
+		SetThreadpoolThreadMaximum(fd->Pool, limits.MaxPending + FRONT_DOOR_POOL_SPARE);
+		SetThreadpoolCallbackPool(&fd->Env, fd->Pool);
 		SetThreadpoolCallbackCleanupGroup(&fd->Env, fd->Group, NULL);
 		fd->Wait = CreateThreadpoolWait(FrontDoorAcceptCallback, fd, &fd->Env);
 		ok = (fd->Wait != NULL && WSAEventSelect(fd->Socket, fd->Event, FD_ACCEPT) == 0);
@@ -428,6 +472,7 @@ void FrontDoorGetStats(FRONT_DOOR *fd, FRONT_DOOR_STATS *st) {
 		st->Handed[i] = (UINT64)InterlockedOr64(&fd->Handed[i], 0);
 	st->Unrouted = (UINT64)InterlockedOr64(&fd->Unrouted, 0);
 	st->Refused = (UINT64)InterlockedOr64(&fd->Refused, 0);
+	SourceLimitsGetStats(fd->Limits, &st->Limits);
 }
 
 void FrontDoorStop(FRONT_DOOR *fd) {

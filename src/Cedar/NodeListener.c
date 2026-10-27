@@ -71,6 +71,10 @@ struct NODE_LISTENER {
 	HANDLE AcmeNow;
 	volatile LONG64 AcmeRuns;
 	volatile LONG64 AcmeIssued;
+	// What the limits for a source of the listeners that went away refused (AUD1-DT-3, #451): the front door and QUIC, so
+	// the counters of the status go on over a restart of the listeners. The lock guards them.
+	SOURCE_LIMIT_STATS FrontDoorGone;
+	SOURCE_LIMIT_STATS QuicGone;
 };
 
 // Whether two Listeners are the same
@@ -96,13 +100,33 @@ static bool NodeListenerTake(void *param, SOCKET s) {
 	return TransportTake((TRANSPORT_LISTENER *)param, (UINT_PTR)s);
 }
 
+// Add what the limits for a source of a listener refused, which goes away, to the total of its kind
+static void NodeListenerAddRefused(SOURCE_LIMIT_STATS *total, const SOURCE_LIMIT_STATS *s) {
+	total->Admitted += s->Admitted;
+	total->RefusedFull += s->RefusedFull;
+	total->RefusedSource += s->RefusedSource;
+	total->RefusedRate += s->RefusedRate;
+	total->RefusedHandshake += s->RefusedHandshake;
+}
+
 // Stop the listeners that run: the front door first, so that no connection reaches the TLS listener once it closes, then
 // the listeners. Their transports retire, since the overlay may still hold their streams. The caller holds the lock
 // exclusive.
 static void NodeListenerDown(NODE_LISTENER *l) {
-	if (l->FrontDoor != NULL)
+	if (l->FrontDoor != NULL) {
+		FRONT_DOOR_STATS fs;
+
+		FrontDoorGetStats(l->FrontDoor, &fs);
+		NodeListenerAddRefused(&l->FrontDoorGone, &fs.Limits);
 		FrontDoorStop(l->FrontDoor);
+	}
 	l->FrontDoor = NULL;
+	if (l->Quic != NULL) {
+		TRANSPORT_QUIC_STATS qs;
+
+		if (TransportQuicGetStats(l->Quic, &qs))
+			NodeListenerAddRefused(&l->QuicGone, &qs.Limits);
+	}
 
 	if (l->TlsListener != NULL)
 		TransportCloseListener(l->TlsListener);
@@ -628,6 +652,31 @@ void NodeListenerGetStatus(NODE *n, NODE_LISTENER_STATUS *st) {
 		st->Fallback = l->Fallback;
 		StrCpy(st->Thumbprint, sizeof(st->Thumbprint), l->Thumbprint);
 		StrCpy(st->Error, sizeof(st->Error), l->Error);
+
+		// What the limits for a source refused: the listeners that went away, and the ones that run
+		st->FrontDoorLimits = l->FrontDoorGone;
+		st->QuicLimits = l->QuicGone;
+		if (l->FrontDoor != NULL) {
+			FRONT_DOOR_STATS fs;
+
+			FrontDoorGetStats(l->FrontDoor, &fs);
+			NodeListenerAddRefused(&st->FrontDoorLimits, &fs.Limits);
+			st->FrontDoorLimits.Pending = fs.Limits.Pending;
+			st->FrontDoorLimits.Sources = fs.Limits.Sources;
+		}
+		if (l->Quic != NULL) {
+			TRANSPORT_QUIC_STATS qs;
+
+			st->HasQuic = TransportQuicGetStats(l->Quic, &qs);
+			if (st->HasQuic) {
+				NodeListenerAddRefused(&st->QuicLimits, &qs.Limits);
+				st->QuicLimits.Pending = qs.Limits.Pending;
+				st->QuicLimits.Sources = qs.Limits.Sources;
+				st->QuicRetryMemoryLimit = qs.RetryMemoryLimit;
+				st->QuicRetrying = qs.DosMode;
+				st->QuicRetries = qs.Retries;
+			}
+		}
 	}
 	ReleaseSRWLockShared(&l->Lock);
 
