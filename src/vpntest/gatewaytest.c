@@ -15,8 +15,8 @@
 // - Silent failure: gw-1 freezes, so its Noise session to node-a stays open and goes silent. node-a finds it down with its
 //   probes inside that session in under one second (no BFD), and the flows of gw-1 move to the other two within that time,
 //   while the flows of the other two stay where they are.
-// - Stop: with ECMP off, gw-2 carries every flow; its overlay stops, and the traffic moves to gw-3 within the time in which the
-//   probes find a gateway down.
+// - Stop: with ECMP off, gw-2 carries every flow; its overlay stops, its Noise session to node-a closes, and the traffic moves
+//   to gw-3 within the probe interval (#195).
 // - Recovery: gw-1 thaws, answers its probes in a row, and carries the flows again.
 // Print "GATEWAY TEST OK" only when every check passes.
 //
@@ -983,7 +983,7 @@ static void GatewayOverlay(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, TRANSP
 		GatewayTestName(nodes, GATEWAY_NUM_NODES, got));
 
 	// Stop: with ECMP off gw-2 carries every flow, gw-1 being down; its overlay stops, and the traffic moves to gw-3 within the
-	// time in which the probes find a gateway down
+	// probe interval, as its Noise session closes
 	if (GatewayTestCheck(ctx, GatewayApply(nodes, ++gen, false, 0, want), "Generation 5: ECMP off, gw-1 still frozen", "not applied") == false)
 	{
 		return;
@@ -992,9 +992,9 @@ static void GatewayOverlay(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, TRANSP
 	start = Tick64();
 	NodeOverlayStop(nodes[GATEWAY_GW2].Node);
 	failover = GatewayFailover(ctx, nodes, GATEWAYTEST_PORT, GATEWAY_GW2, start, &to);
-	Format(what, sizeof(what), "Stop: the overlay of gw-2 stops, and its traffic moves to gw-3 within %u ms, the time in which the probes find a gateway down",
-		NODE_GATEWAY_DEAD);
-	GatewayTestCheck(ctx, failover <= NODE_GATEWAY_DEAD && to == GATEWAY_GW3, what, "%u ms, to %s", failover, GatewayTestName(nodes, GATEWAY_NUM_NODES, to));
+	Format(what, sizeof(what), "Stop: the overlay of gw-2 stops, and its traffic moves to gw-3 within %u ms, the probe interval: its Noise session closes, so it is down at once",
+		NODE_GATEWAY_PROBE);
+	GatewayTestCheck(ctx, failover <= NODE_GATEWAY_PROBE && to == GATEWAY_GW3, what, "%u ms, to %s", failover, GatewayTestName(nodes, GATEWAY_NUM_NODES, to));
 	Print("  stop of gw-2: its traffic moved after %u ms\n", failover);
 	want[GATEWAY_GW2] = GATEWAYTEST_NONE;
 
