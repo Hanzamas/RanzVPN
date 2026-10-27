@@ -30,9 +30,11 @@
 #include "Core/Transport.h"
 
 #include <ws2tcpip.h>
+#include <sddl.h>
 
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #define FRONTDOOR_TIMEOUT   15000                  // A child's line, a handshake, an answer or an echo within this time (ms)
 #define FRONTDOOR_POLL      200                    // How often a child looks whether its standard input ended (ms)
@@ -212,10 +214,39 @@ static bool frontdoor_take(void *param, SOCKET s) {
 	return TransportTake(n->Listener, (UINT_PTR)s);
 }
 
+// The SID of this process's account as a string, which is the account of every owner process of the test
+static bool frontdoor_own_sid(char *sid, UINT size) {
+	UCHAR buf[sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE];
+	HANDLE token = NULL;
+	DWORD got = 0;
+	char *text = NULL;
+	bool ok = false;
+
+	if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+		if (GetTokenInformation(token, TokenUser, buf, sizeof(buf), &got) && ConvertSidToStringSidA(((TOKEN_USER *)buf)->User.Sid, &text)) {
+			ok = (strlen(text) < size);
+			if (ok)
+				memcpy(sid, text, strlen(text) + 1);
+			LocalFree(text);
+		}
+		CloseHandle(token);
+	}
+
+	return ok;
+}
+
 // The owner table of a node beside its Controller: the pipes of the Controller, of the signature owner and of the
-// owner that does not run, and the node's own procedure
+// owner that does not run, and the node's own procedure. The owner processes run as this account.
 static void frontdoor_owners(FRONT_DOOR_OWNER *owners, const wchar_t *controller, const wchar_t *signature, const wchar_t *absent, void *node) {
+	char account[FRONT_DOOR_SID_SIZE];
+
 	ZeroMemory(owners, sizeof(FRONT_DOOR_OWNER) * FRONTDOOR_NUM_OWNERS);
+	account[0] = 0;
+	(void)frontdoor_own_sid(account, sizeof(account));
+	strcpy_s(owners[FRONTDOOR_CONTROLLER].Account, FRONT_DOOR_SID_SIZE, account);
+	strcpy_s(owners[FRONTDOOR_WEB_UI].Account, FRONT_DOOR_SID_SIZE, account);
+	strcpy_s(owners[FRONTDOOR_SIGNED].Account, FRONT_DOOR_SID_SIZE, account);
+	strcpy_s(owners[FRONTDOOR_ABSENT].Account, FRONT_DOOR_SID_SIZE, account);
 
 	strcpy_s(owners[FRONTDOOR_CONTROLLER].Name, FRONT_DOOR_NAME_SIZE, "controller");
 	owners[FRONTDOOR_CONTROLLER].Kind = FRONT_DOOR_TLS;
@@ -883,6 +914,193 @@ static void frontdoor_after_kill(const char *node_args, DWORD controller) {
 		HeapFree(GetProcessHeap(), 0, rec);
 }
 
+// A front door on a test port with the one owner "checked", the pipe pipe with the account and the image given (NULL or
+// empty: none), and a client that connects and sends the signature. With the owner's pipe served in this process by
+// p, true when the socket came out of p and carries the signature (taken) or the client was closed and nothing came
+// (not taken); the counters must agree.
+static bool frontdoor_checked(FRONT_DOOR_PIPE *p, const wchar_t *pipe, const char *account, const wchar_t *image, bool taken) {
+	FRONT_DOOR_OWNER owner;
+	FRONT_DOOR_CONFIG fc;
+	FRONT_DOOR_STATS st;
+	char got[sizeof(FRONTDOOR_SIGNATURE)];
+	const UINT size = (UINT)strlen(FRONTDOOR_SIGNATURE);
+
+	ZeroMemory(&owner, sizeof(owner));
+	strcpy_s(owner.Name, FRONT_DOOR_NAME_SIZE, "checked");
+	owner.Kind = FRONT_DOOR_BYTES;
+	owner.PrefixSize = size;
+	memcpy(owner.Prefix, FRONTDOOR_SIGNATURE, size);
+	wcscpy_s(owner.Pipe, FRONT_DOOR_PIPE_SIZE, pipe);
+	if (account != NULL)
+		strcpy_s(owner.Account, FRONT_DOOR_SID_SIZE, account);
+	if (image != NULL)
+		wcscpy_s(owner.Image, FRONT_DOOR_IMAGE_SIZE, image);
+
+	ZeroMemory(&fc, sizeof(fc));
+	strcpy_s(fc.Address, sizeof(fc.Address), FRONTDOOR_LISTEN);
+	fc.Owners = &owner;
+	fc.NumOwners = 1;
+	FRONT_DOOR *fd = FrontDoorStart(&fc);
+	if (fd == NULL)
+		return false;
+
+	bool ok = false;
+	ZeroMemory(got, sizeof(got));
+	if (taken) {
+		SOCKET c = frontdoor_connect(FrontDoorPort(fd));
+		SOCKET s = (c != INVALID_SOCKET && frontdoor_send(c, FRONTDOOR_SIGNATURE, size) ? FrontDoorPipeAccept(p, FRONTDOOR_TIMEOUT) : INVALID_SOCKET);
+
+		ok = (s != INVALID_SOCKET && frontdoor_recv_all(s, got, size) && memcmp(got, FRONTDOOR_SIGNATURE, size) == 0);
+		if (s != INVALID_SOCKET)
+			closesocket(s);
+		if (c != INVALID_SOCKET)
+			closesocket(c);
+
+		// The front door counts the handoff after the owner answered: wait for it
+		for (UINT i = 0; ok && i < 200; i++) {
+			FrontDoorGetStats(fd, &st);
+			if (st.Handed[0] != 0)
+				break;
+			Sleep(10);
+		}
+		FrontDoorGetStats(fd, &st);
+		ok = (ok && st.Handed[0] == 1 && st.Refused == 0 && st.Impostors == 0);
+	} else {
+		// The counters rise before the front door closes the connection, so the close is the sign to read them
+		ok = frontdoor_dropped(FrontDoorPort(fd), FRONTDOOR_SIGNATURE, size);
+		SOCKET s = FrontDoorPipeAccept(p, 300);
+		FrontDoorGetStats(fd, &st);
+		ok = (ok && s == INVALID_SOCKET && st.Handed[0] == 0 && st.Refused == 1 && st.Impostors == 1);
+		if (s != INVALID_SOCKET)
+			closesocket(s);
+	}
+
+	FrontDoorStop(fd);
+
+	return ok;
+}
+
+// A pipe that another account serves, or another image, gets no socket (the connection is closed and counted); a pipe
+// that the right account serves gets it. The pipe is served here, by this process, whose account and image are the ones
+// that the table names or does not.
+static void frontdoor_owner_check() {
+	wchar_t pipe[FRONT_DOOR_PIPE_SIZE], image[FRONT_DOOR_IMAGE_SIZE], other_image[FRONT_DOOR_IMAGE_SIZE];
+	char mine[FRONT_DOOR_SID_SIZE];
+	const char *other = "S-1-5-19";
+
+	swprintf_s(pipe, FRONT_DOOR_PIPE_SIZE, L"\\\\.\\pipe\\ranz-frontdoor-%lu-served", GetCurrentProcessId());
+	if (coretest_check(frontdoor_own_sid(mine, sizeof(mine)) && GetModuleFileNameW(NULL, image, FRONT_DOOR_IMAGE_SIZE) != 0 &&
+	                       GetSystemDirectoryW(other_image, FRONT_DOOR_IMAGE_SIZE - 16) != 0 && wcscat_s(other_image, FRONT_DOOR_IMAGE_SIZE, L"\\cmd.exe") == 0,
+	                   "the account and the image of this process") == false)
+		return;
+	if (strcmp(mine, other) == 0)
+		other = "S-1-5-20";
+
+	FRONT_DOOR_PIPE *p = FrontDoorPipeNew(pipe, NULL);
+	if (coretest_check(p != NULL, "a handoff pipe served by this process") == false)
+		return;
+
+	coretest_check(frontdoor_checked(p, pipe, mine, NULL, true), "a pipe served by the account that the owner table names gets the socket");
+	coretest_check(frontdoor_checked(p, pipe, other, NULL, false),
+	               "a pipe that another account serves gets no socket: the connection is closed and counted as an impostor");
+	coretest_check(frontdoor_checked(p, pipe, NULL, NULL, false), "an owner that names no account gets no socket either: the front door hands nothing to a process it cannot identify");
+	coretest_check(frontdoor_checked(p, pipe, mine, image, true), "the right account and the executable that the owner names: the socket");
+	coretest_check(frontdoor_checked(p, pipe, mine, other_image, false), "the right account but another executable than the owner names: no socket, counted");
+
+	FrontDoorPipeFree(p);
+}
+
+// A pipe that is no handoff pipe: it reads what the front door sent, impersonates the client, and tells the level
+// that the client allowed. Nothing else: it answers NOT_TAKEN.
+static int frontdoor_level_child(const char *pipe) {
+	wchar_t wide[FRONT_DOOR_PIPE_SIZE];
+	FRONT_DOOR_HANDOFF m;
+	DWORD got = 0;
+	UCHAR answer = FRONT_DOOR_NOT_TAKEN;
+	SECURITY_IMPERSONATION_LEVEL level = SecurityAnonymous;
+	HANDLE token = NULL;
+	DWORD size = 0;
+
+	if (MultiByteToWideChar(CP_ACP, 0, pipe, -1, wide, FRONT_DOOR_PIPE_SIZE) == 0)
+		return 2;
+
+	HANDLE h = CreateNamedPipeW(wide, PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1,
+	                            4096, 4096, 0, NULL);
+	if (h == INVALID_HANDLE_VALUE) {
+		printf("FAILED the pipe %s could not be made\n", pipe);
+		fflush(stdout);
+		return 1;
+	}
+
+	printf("READY %lu\n", GetCurrentProcessId());
+	fflush(stdout);
+
+	bool ok = ((ConnectNamedPipe(h, NULL) || GetLastError() == ERROR_PIPE_CONNECTED) && ReadFile(h, &m, sizeof(m), &got, NULL) && ImpersonateNamedPipeClient(h));
+	if (ok) {
+		ok = (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &token) && GetTokenInformation(token, TokenImpersonationLevel, &level, sizeof(level), &size));
+		RevertToSelf();
+		if (token != NULL)
+			CloseHandle(token);
+	}
+
+	printf(ok ? "LEVEL %d\n" : "FAILED no level\n", (int)level);
+	fflush(stdout);
+
+	// The front door reads the answer and closes its end
+	if (WriteFile(h, &answer, 1, &got, NULL))
+		(void)ReadFile(h, &m, sizeof(m), &got, NULL);
+	CloseHandle(h);
+
+	return (ok ? 0 : 1);
+}
+
+// The connect passes no impersonation level above identification: a server that impersonates the front door's client
+// reads SecurityIdentification from its token
+static void frontdoor_identification() {
+	FRONTDOOR_CHILD *child = (FRONTDOOR_CHILD *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(FRONTDOOR_CHILD));
+	FRONT_DOOR_OWNER owner;
+	FRONT_DOOR_CONFIG fc;
+	char pipe[FRONT_DOOR_PIPE_SIZE], args[512], line[FRONTDOOR_LINE];
+	DWORD code = 1;
+
+	if (coretest_check(child != NULL, "the level child's buffer") == false)
+		return;
+
+	snprintf(pipe, sizeof(pipe), "\\\\.\\pipe\\ranz-frontdoor-%lu-level", GetCurrentProcessId());
+	snprintf(args, sizeof(args), "level %s", pipe);
+	bool started = (frontdoor_start(child, args) && frontdoor_line(child, "READY", line, sizeof(line)));
+	coretest_check(started, "a process serves a pipe that impersonates its client");
+
+	ZeroMemory(&owner, sizeof(owner));
+	strcpy_s(owner.Name, FRONT_DOOR_NAME_SIZE, "level");
+	owner.Kind = FRONT_DOOR_BYTES;
+	owner.PrefixSize = (UINT)strlen(FRONTDOOR_SIGNATURE);
+	memcpy(owner.Prefix, FRONTDOOR_SIGNATURE, owner.PrefixSize);
+	MultiByteToWideChar(CP_ACP, 0, pipe, -1, owner.Pipe, FRONT_DOOR_PIPE_SIZE);
+	bool sid = frontdoor_own_sid(owner.Account, sizeof(owner.Account));
+
+	ZeroMemory(&fc, sizeof(fc));
+	strcpy_s(fc.Address, sizeof(fc.Address), FRONTDOOR_LISTEN);
+	fc.Owners = &owner;
+	fc.NumOwners = 1;
+	FRONT_DOOR *fd = (started && sid ? FrontDoorStart(&fc) : NULL);
+
+	SOCKET c = (fd != NULL ? frontdoor_connect(FrontDoorPort(fd)) : INVALID_SOCKET);
+	bool sent = (c != INVALID_SOCKET && frontdoor_send(c, FRONTDOOR_SIGNATURE, (UINT)strlen(FRONTDOOR_SIGNATURE)));
+	bool level = (sent && frontdoor_line(child, "LEVEL", line, sizeof(line)) && strcmp(line, "LEVEL 1") == 0);
+	if (level == false && sent)
+		coretest_info("the server read \"%s\" from its token", line);
+	coretest_check(level, "the server that impersonates the front door's connection gets SecurityIdentification: the pipe is read for no more");
+
+	if (c != INVALID_SOCKET)
+		closesocket(c);
+	if (fd != NULL)
+		FrontDoorStop(fd);
+	if (child->Process.hProcess != NULL)
+		(void)frontdoor_end(child, &code);
+	HeapFree(GetProcessHeap(), 0, child);
+}
+
 // The node, the Controller and the signature owner, each a coretest process, and the checks against them
 static void frontdoor_processes(const char *thumbprint, UINT scope) {
 	FRONTDOOR_CHILD *children = (FRONTDOOR_CHILD *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(FRONTDOOR_CHILD) * 3);
@@ -954,6 +1172,8 @@ void frontdoor_test() {
 	frontdoor_parser();
 	frontdoor_table();
 	frontdoor_message();
+	frontdoor_owner_check();
+	frontdoor_identification();
 
 	// The certificate of the node's TLS: self-signed, in the store of the scope, its key in the KSP
 	coretest_info("the node's certificate: %s", coretest_scope_name());
@@ -1159,7 +1379,9 @@ int frontdoor_child(int argc, char *argv[]) {
 		return frontdoor_node_child(argv[3], strcmp(argv[4], "1") == 0, argv[5], argv[6], argv[7]);
 	if (argc == 5 && strcmp(argv[2], "owner") == 0)
 		return frontdoor_owner_child(argv[3], argv[4]);
+	if (argc == 4 && strcmp(argv[2], "level") == 0)
+		return frontdoor_level_child(argv[3]);
 
-	printf("FAILED usage: coretest %s node <thumbprint> <machine> <controller pipe> <signature pipe> <absent pipe> | owner <pipe> <name>\n", CORETEST_FRONTDOOR_CHILD);
+	printf("FAILED usage: coretest %s node <thumbprint> <machine> <controller pipe> <signature pipe> <absent pipe> | owner <pipe> <name> | level <pipe>\n", CORETEST_FRONTDOOR_CHILD);
 	return 2;
 }

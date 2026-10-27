@@ -12,8 +12,10 @@
 #include "Core/FrontDoor.h"
 
 #include <ws2tcpip.h>
+#include <sddl.h>
 
 #include <string.h>
+#include <wchar.h>
 
 #define FRONT_DOOR_STOP_POLL 50 // How often a wait of a connection looks whether the front door stops (ms)
 
@@ -36,6 +38,7 @@ struct FRONT_DOOR {
 	volatile LONG64 Handed[FRONT_DOOR_MAX_OWNERS];
 	volatile LONG64 Unrouted;
 	volatile LONG64 Refused;
+	volatile LONG64 Impostors;
 };
 
 // A connection that the listener took, for the callback that routes it
@@ -206,9 +209,66 @@ static bool FrontDoorPipeIo(FRONT_DOOR *fd, HANDLE pipe, HANDLE event, bool writ
 	return (GetOverlappedResult(pipe, &ov, &done, TRUE) && done == size);
 }
 
+bool FrontDoorAccountSid(const wchar_t *account, char *sid, UINT size) {
+	UCHAR buf[SECURITY_MAX_SID_SIZE];
+	DWORD sid_size = sizeof(buf), domain_size = 256;
+	wchar_t domain[256];
+	SID_NAME_USE use;
+	char *text = NULL;
+
+	if (account == NULL || sid == NULL || size == 0 || LookupAccountNameW(NULL, account, buf, &sid_size, domain, &domain_size, &use) == FALSE)
+		return false;
+	if (ConvertSidToStringSidA(buf, &text) == FALSE)
+		return false;
+
+	bool ok = (strlen(text) < size);
+	if (ok)
+		memcpy(sid, text, strlen(text) + 1);
+	LocalFree(text);
+
+	return ok;
+}
+
+// Whether the process pid, which serves the pipe of the owner o, is the one that the table names: it runs as the account
+// of o->Account and, where o->Image is set, it runs that executable. False when o names no account, when the process or
+// its token cannot be read, and when either differs: the front door gives a socket to nobody it cannot identify.
+static bool FrontDoorServedByOwner(const FRONT_DOOR_OWNER *o, ULONG pid) {
+	UCHAR buf[sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE];
+	PSID want = NULL;
+	HANDLE token = NULL;
+	DWORD got = 0;
+	bool ok = false;
+
+	if (o->Account[0] == 0 || ConvertStringSidToSidA(o->Account, &want) == FALSE)
+		return false;
+
+	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+	if (process != NULL) {
+		ok = (OpenProcessToken(process, TOKEN_QUERY, &token) && GetTokenInformation(token, TokenUser, buf, sizeof(buf), &got) &&
+		      EqualSid(((TOKEN_USER *)buf)->User.Sid, want));
+
+		if (ok && o->Image[0] != 0) {
+			wchar_t image[FRONT_DOOR_IMAGE_SIZE];
+			DWORD size = FRONT_DOOR_IMAGE_SIZE;
+
+			ok = (QueryFullProcessImageNameW(process, 0, image, &size) && _wcsicmp(image, o->Image) == 0);
+		}
+	}
+
+	if (token != NULL)
+		CloseHandle(token);
+	if (process != NULL)
+		CloseHandle(process);
+	LocalFree(want);
+
+	return ok;
+}
+
 // Hand a connection to an owner in another process, through its pipe: the socket duplicated into the owner process,
 // whose id the pipe gives, in a handoff message, and the owner's answer. True once the owner took it; the front door's
 // own handle closes after, either way. While every instance of the pipe serves another handoff, the front door waits.
+// The pipe is opened for identification only, and the process that serves it must be the owner's account and image
+// before the socket is duplicated into it (FD-4).
 static bool FrontDoorSend(FRONT_DOOR *fd, const FRONT_DOOR_OWNER *o, SOCKET s) {
 	UINT64 end = GetTickCount64() + fd->HandoffTimeout;
 	FRONT_DOOR_HANDOFF m;
@@ -217,7 +277,7 @@ static bool FrontDoorSend(FRONT_DOOR *fd, const FRONT_DOOR_OWNER *o, SOCKET s) {
 	UCHAR answer = FRONT_DOOR_NOT_TAKEN;
 
 	while (true) {
-		pipe = CreateFileW(o->Pipe, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
+		pipe = CreateFileW(o->Pipe, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, NULL);
 		if (pipe != INVALID_HANDLE_VALUE)
 			break;
 
@@ -232,7 +292,13 @@ static bool FrontDoorSend(FRONT_DOOR *fd, const FRONT_DOOR_OWNER *o, SOCKET s) {
 	m.Size = sizeof(m);
 
 	HANDLE event = CreateEventW(NULL, TRUE, FALSE, NULL);
-	bool ok = (event != NULL && GetNamedPipeServerProcessId(pipe, &pid) && WSADuplicateSocketW(s, pid, &m.Info) == 0);
+	bool ok = (event != NULL && GetNamedPipeServerProcessId(pipe, &pid));
+	if (ok && FrontDoorServedByOwner(o, pid) == false) {
+		InterlockedIncrement64(&fd->Impostors);
+		ok = false;
+	}
+	if (ok)
+		ok = (WSADuplicateSocketW(s, pid, &m.Info) == 0);
 	if (ok)
 		ok = FrontDoorPipeIo(fd, pipe, event, true, &m, sizeof(m), end);
 	if (ok)
@@ -381,6 +447,8 @@ FRONT_DOOR *FrontDoorStart(const FRONT_DOOR_CONFIG *cfg) {
 		o->ServerNames[FRONT_DOOR_LIST_SIZE - 1] = 0;
 		o->Protocols[FRONT_DOOR_LIST_SIZE - 1] = 0;
 		o->Pipe[FRONT_DOOR_PIPE_SIZE - 1] = 0;
+		o->Account[FRONT_DOOR_SID_SIZE - 1] = 0;
+		o->Image[FRONT_DOOR_IMAGE_SIZE - 1] = 0;
 	}
 	fd->PeekTimeout = (cfg->PeekTimeout != 0 ? cfg->PeekTimeout : FRONT_DOOR_PEEK_TIMEOUT);
 	fd->HandoffTimeout = (cfg->HandoffTimeout != 0 ? cfg->HandoffTimeout : FRONT_DOOR_HANDOFF_TIMEOUT);
@@ -428,6 +496,7 @@ void FrontDoorGetStats(FRONT_DOOR *fd, FRONT_DOOR_STATS *st) {
 		st->Handed[i] = (UINT64)InterlockedOr64(&fd->Handed[i], 0);
 	st->Unrouted = (UINT64)InterlockedOr64(&fd->Unrouted, 0);
 	st->Refused = (UINT64)InterlockedOr64(&fd->Refused, 0);
+	st->Impostors = (UINT64)InterlockedOr64(&fd->Impostors, 0);
 }
 
 void FrontDoorStop(FRONT_DOOR *fd) {
