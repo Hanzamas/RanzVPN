@@ -11,6 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/refraction-networking/utls v1.8.2
 	github.com/rqlite/gorqlite v0.0.0-20261020015727-7224ce2bd419
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/xtls/reality v0.0.0-20261014101318-83f621788ca8
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.47.0

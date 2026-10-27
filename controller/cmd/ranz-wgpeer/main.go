@@ -1,18 +1,22 @@
 // Command ranz-wgpeer is a stock WireGuard client for the tests of the WireGuard Devices of a
 // gateway Node (SDN-80 #375): wireguard-go with its netstack, a TCP/IP stack in the process, so it
 // needs no adapter and no administrator rights and holds no address of the machine. It reads the
-// configuration that the Controller renders for a Device (`ranz get device-config NAME`) and the
-// private key that only the Device holds, as a stock client imports them. It is a test tool:
-// ranz.yml and windows.yml build it, and nothing ships it.
+// configuration that the Controller renders for a Device and the private key that only the Device
+// holds, as a stock client imports them: the finished configuration that `ranz device create` prints
+// (SDN-82), which holds the PrivateKey of the Device and the PresharedKey of its gateway, or the one that
+// `ranz get device-config NAME` prints (SDN-80) with the private key of the file of -key. It is a test
+// tool: ranz.yml and windows.yml build it, and nothing ships it.
 //
 // Usage:
 //
 //	ranz-wgpeer -genkey FILE
-//	ranz-wgpeer -config FILE -key FILE [-ping ADDRESS] [-tcp ADDRESS:PORT] [-blocked] [-timeout DURATION] [-serve DURATION]
+//	ranz-wgpeer -config FILE [-key FILE] [-ping ADDRESS] [-tcp ADDRESS:PORT] [-blocked] [-timeout DURATION] [-serve DURATION]
 //
 // The first form writes a new private key into FILE, in base64 as wg genkey writes it, and prints
-// its public key, the publicKey of the Device resource. The second brings the Device up and waits
-// for its handshake with the gateway, pings the IPv4 ADDRESS of an overlay host and opens a TCP
+// its public key, the publicKey of the Device resource. The second brings the Device up, with the
+// PrivateKey of the configuration, or with the key of the file of -key when it has none, and with the
+// PresharedKey of the configuration when it has one, and waits for its handshake with the gateway,
+// pings the IPv4 ADDRESS of an overlay host and opens a TCP
 // connection to ADDRESS:PORT, through which one line goes to the host and comes back. With
 // -blocked the ping must get no reply, because policy denies it, and -tcp is not used. With -serve
 // the Device stays up that long after its steps, and its netstack answers the echo requests that
@@ -57,7 +61,7 @@ const pingTries = 3
 func main() {
 	genkey := flag.String("genkey", "", "write a new private key into this file and print its public key")
 	config := flag.String("config", "", "the WireGuard configuration of the Device, as `ranz get device-config` prints it")
-	keyFile := flag.String("key", "", "the file of the private key of the Device, in base64")
+	keyFile := flag.String("key", "", "the file of the private key of the Device, in base64; the configuration may hold the PrivateKey instead")
 	ping := flag.String("ping", "", "the IPv4 address of the overlay host to ping")
 	tcp := flag.String("tcp", "", "the address and the port of the overlay host to open a TCP connection to")
 	blocked := flag.Bool("blocked", false, "the ping must get no reply: policy denies it")
@@ -100,12 +104,26 @@ func genKey(path string, out io.Writer) error {
 // deviceConfig is what a stock client takes from the configuration of a Device: its [Interface]
 // and its one [Peer], the gateway.
 type deviceConfig struct {
-	addresses  []netip.Prefix
-	mtu        int
+	addresses []netip.Prefix
+	mtu       int
+	// privateKey is the PrivateKey of the [Interface], nil when the configuration has none: the file of
+	// -key holds it
+	privateKey []byte
 	gatewayKey []byte
-	endpoint   string
-	allowedIPs []netip.Prefix
-	keepalive  int
+	// presharedKey is the PresharedKey of the [Peer], nil when the Device has none
+	presharedKey []byte
+	endpoint     string
+	allowedIPs   []netip.Prefix
+	keepalive    int
+}
+
+// key32 decodes a WireGuard key in base64, which is 32 bytes.
+func key32(s string) ([]byte, error) {
+	k, err := base64.StdEncoding.DecodeString(s)
+	if err == nil && len(k) != 32 {
+		err = fmt.Errorf("a key of %d bytes, not 32", len(k))
+	}
+	return k, err
 }
 
 // parseConfig reads the configuration of a Device. A field that a stock client does not know fails
@@ -138,14 +156,15 @@ func parseConfig(r io.Reader) (deviceConfig, error) {
 			c.addresses, err = prefixes(value)
 		case "interface.mtu":
 			c.mtu, err = strconv.Atoi(value)
-		case "interface.dns", "interface.privatekey", "interface.listenport":
-			// The servers of overlay DNS, which the tests resolve no name with, and the key and the port
-			// that the flags and the system give
+		case "interface.dns", "interface.listenport":
+			// The servers of overlay DNS, which the tests resolve no name with, and the port that the
+			// system gives
+		case "interface.privatekey":
+			c.privateKey, err = key32(value)
 		case "peer.publickey":
-			c.gatewayKey, err = base64.StdEncoding.DecodeString(value)
-			if err == nil && len(c.gatewayKey) != 32 {
-				err = fmt.Errorf("a key of %d bytes, not 32", len(c.gatewayKey))
-			}
+			c.gatewayKey, err = key32(value)
+		case "peer.presharedkey":
+			c.presharedKey, err = key32(value)
 		case "peer.endpoint":
 			c.endpoint = value
 		case "peer.allowedips":
@@ -210,9 +229,16 @@ func run(configFile, keyFile, ping, tcp string, blocked bool, timeout, serve tim
 	if err != nil {
 		return fmt.Errorf("%s: %w", configFile, err)
 	}
-	priv, err := readKey(keyFile)
-	if err != nil {
-		return err
+	// The private key is the file of -key, or the PrivateKey of the finished configuration that the controller
+	// shows once when it makes the Device
+	priv := cfg.privateKey
+	if keyFile != "" {
+		if priv, err = readKey(keyFile); err != nil {
+			return err
+		}
+	}
+	if priv == nil {
+		return fmt.Errorf("%s has no PrivateKey, and no -key file gives the private key of the Device", configFile)
 	}
 	var target netip.Addr
 	if ping != "" {
@@ -241,8 +267,11 @@ func run(configFile, keyFile, ping, tcp string, blocked bool, timeout, serve tim
 	defer dev.Close()
 
 	var uapi strings.Builder
-	fmt.Fprintf(&uapi, "private_key=%s\npublic_key=%s\nendpoint=%s\npersistent_keepalive_interval=%d\n",
-		hex.EncodeToString(priv), hex.EncodeToString(cfg.gatewayKey), endpoint, cfg.keepalive)
+	fmt.Fprintf(&uapi, "private_key=%s\npublic_key=%s\n", hex.EncodeToString(priv), hex.EncodeToString(cfg.gatewayKey))
+	if cfg.presharedKey != nil {
+		fmt.Fprintf(&uapi, "preshared_key=%s\n", hex.EncodeToString(cfg.presharedKey))
+	}
+	fmt.Fprintf(&uapi, "endpoint=%s\npersistent_keepalive_interval=%d\n", endpoint, cfg.keepalive)
 	for _, p := range cfg.allowedIPs {
 		fmt.Fprintf(&uapi, "allowed_ip=%s\n", p)
 	}

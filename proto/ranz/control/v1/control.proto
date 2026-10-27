@@ -430,7 +430,8 @@ message Relay {
 // VRF gets it: its addresses and its tags identify it to the Rules, as the tags of a Peer do, and a
 // packet to one of its addresses goes to the gateway, which delivers it to its host, and so to the
 // WireGuard interface there. Only the gateway gets its public key, which its WireGuard interface
-// takes as a peer of its own, with the addresses as the allowed IPs.
+// takes as a peer of its own, with the addresses as the allowed IPs, and with its PresharedKey when it has one
+// (SDN-82 #377).
 message Device {
   string name = 1;
   uint32 vrf_id = 2;
@@ -438,6 +439,7 @@ message Device {
   repeated string tags = 4;        // sorted
   string gateway = 5;              // the node that terminates it
   bytes public_key = 6;            // its WireGuard key, 32 bytes: in the state of its gateway only
+  bytes preshared_key = 7;         // its PresharedKey, 32 bytes: in the state of its gateway only, and only for a Device that has one
 }
 
 // An IP prefix: 4 address bytes for IPv4, 16 for IPv6.

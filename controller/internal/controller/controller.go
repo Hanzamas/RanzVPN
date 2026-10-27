@@ -220,6 +220,9 @@ type Controller struct {
 	// The WireGuard ends of the Devices that their gateways reported (devices.go)
 	dev deviceState
 
+	// The sealed PresharedKeys of the Devices (devicekeys.go)
+	dkeys deviceKeys
+
 	// The certificate of the TLS port and the fingerprints that the nodes get of it (certificate.go)
 	certs *certificateState
 
@@ -332,6 +335,10 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		return nil, err
 	}
 	if c.caps, err = c.store.LoadCapabilities(ctx); err != nil {
+		return nil, err
+	}
+	// The sealed PresharedKeys of the Devices, which the compile below puts into the states of their gateways
+	if err := c.loadDeviceKeys(ctx, in); err != nil {
 		return nil, err
 	}
 	for _, sn := range stored {
@@ -653,6 +660,8 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	}
 	// The TLS fingerprints of the certificate that the controller serves (certificate.go; SDN-92)
 	c.withFingerprints(states)
+	// The sealed PresharedKeys of the Devices, in the states of their gateways (devicekeys.go; SDN-82)
+	desired.WithPresharedKeys(states, c.dkeys.sealed)
 	return compiled{lic: lic, force: force, states: states}, nil
 }
 
@@ -705,6 +714,8 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	}
 	// The passwords of the Users that the change removed (users.go)
 	c.dropPasswords(sctx, next)
+	// The PresharedKeys of the Devices that the change removed (devicekeys.go)
+	c.dropDeviceKeys(sctx, next)
 
 	c.intent, c.lic, c.force = next, cp.lic, force
 	if m := members(next); !proto.Equal(m, c.members) {
@@ -1234,7 +1245,8 @@ func (c *Controller) nextUpdate(s *stream) *controlpb.Update {
 		u = desired.Full(n.state, n.gen)
 	}
 	s.inflight, s.sent = n.gen, n.state
-	return u
+	// The states hold the PresharedKeys of the Devices sealed: the gateway gets them opened (devicekeys.go)
+	return c.openDeviceKeys(u)
 }
 
 // nextMembers returns the Controllers message the node of s lacks: none for a node of schema
