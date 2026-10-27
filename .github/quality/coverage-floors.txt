@@ -36,6 +36,9 @@ c  corepolicy     92  src/Core/Policy*.c
 # corefrontdoor (SDN-29 #205) is exercised by coretest's frontdoor test, whose node and owner processes write their own
 # profiles; the node killed in the test writes none
 c  corefrontdoor  60  src/Core/FrontDoor*.c
+# coresourcelimit (AUD1-DT-3 #451) is exercised by vpntest's sourcelimits test, which this job runs with the tests above: its
+# table, its caps, its two token buckets and its sweep; the floor leaves the one out-of-memory path of each allocation
+c  coresourcelimit  80  src/Core/SourceLimit*.c
 
 # The controller (controller/): the package of `ranz controller` is controller itself, and the
 # executable ranz, with its subcommands, is controller/cmd/ranz

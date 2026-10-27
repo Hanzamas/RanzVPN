@@ -1,29 +1,35 @@
 // devicetrace.c
-// Named test of vpntest ("devicetrace" command): the gateway Node and the overlay host of the WireGuard Device tracer
+// Named test of vpntest ("devicetrace" command): the gateway Nodes and the overlay host of the WireGuard Device tracer
 // (SDN-80, #375; .github/scripts/device-tracer.ps1)
 //
 // Two nodes of the new core, gw and host, with the static keys of sdntrace.c, open their control streams to a running ranz
 // controller (Core/Control.h, through NodeOverlayStart) whose Intent holds a Node resource with each key and WireGuard
-// Devices whose gateway is gw. Their Noise session runs on the in-process loopback transport.
+// Devices whose gateway is gw or host. Their Noise session runs on the in-process loopback transport.
 // - gw is the gateway: its host is a real Wintun adapter for VRF default that forwards, as the adapter of a gateway does
 //   (NodeVrfAdapter.c), and its WireGuard interface (NodeWireGuard.c, on the wireguard.dll of WireGuardNT next to vpntest)
-//   terminates the Devices on the UDP port of its state. Windows forwards between the two, and between two Devices on the
+//   terminates its Devices on the UDP port of its state. Windows forwards between the two, and between two Devices on the
 //   WireGuard interface itself only where the policy lets them meet (NodeWireGuardFilter.c).
 // - host has a fake host, the overlay host of the tracer: it answers an ICMP echo request to its address and echoes the
-//   bytes of a TCP connection to any of its ports, keeping no state (DeviceTraceTcp).
+//   bytes of a TCP connection to any of its ports, keeping no state (DeviceTraceTcp). host is the gateway of a Device as
+//   well, with a WireGuard interface of its own on the UDP port of its state, and stands for a gateway on a host of its
+//   own: one runner holds both gateways, and Windows would forward between their two WireGuard interfaces directly, so the
+//   script takes the routes of the WireGuard interface of host to its Devices away, and the fake host answers for the
+//   Devices of host as it does for host. Its answers for host and for them are counted apart.
 // A stock WireGuard client outside the process (ranz-wgpeer, controller/cmd/ranz-wgpeer) reaches host through gw: its
 // packets leave the WireGuard interface, Windows forwards them into the adapter of gw, and the overlay of gw judges them
 // by the policy of the VRF as the packets of the Device (NodePolicy.c) before it sends them to host; the replies come
-// back the same way. Windows delivers a packet for an address of the machine itself on the machine, which is why the
-// overlay host is a fake host of the other node and not the IP stack of the machine.
+// back the same way. A packet of the client to a Device of host goes the same way, and the overlay of host judges it again
+// as a packet between two Devices, before its fake host answers it. Windows delivers a packet for an address of the
+// machine itself on the machine, which is why the overlay host is a fake host of the other node and not the IP stack of
+// the machine.
 // "vpntest devicetrace <host:port> <key> <ready file> <stop file>": the address of the controller's TLS port and its static
 // key in base64. The test creates the ready file once both nodes joined, the adapter of gw holds its address and the
-// WireGuard interface of gw is up with the Device, and prints the addresses and the port; then it runs until the stop file
-// exists or Ctrl+C, prints what the fake host answered and what the policy of gw dropped, and checks that the WireGuard
-// interface goes with the overlay of gw. While it runs it prints each change of the WireGuard interface of gw; a stop file
-// that says "failed" (a check of the script failed) prints the node log too. Print "DEVICETRACE TEST OK" only when every
-// check passes. Needs administrator
-// rights, and wintun.dll and wireguard.dll next to vpntest (.github/scripts/fetch-wintun.ps1 and fetch-wireguard.ps1).
+// WireGuard interfaces of gw and host are up with their Devices, and prints the addresses and the ports; then it runs until
+// the stop file exists or Ctrl+C, prints what the fake host answered and what the policy of each node dropped, and checks
+// that each WireGuard interface goes with the overlay of its node. While it runs it prints each change of the WireGuard
+// interfaces; a stop file that says "failed" (a check of the script failed) prints the node log too. Print
+// "DEVICETRACE TEST OK" only when every check passes. Needs administrator rights, and wintun.dll and wireguard.dll next to
+// vpntest (.github/scripts/fetch-wintun.ps1 and fetch-wireguard.ps1).
 
 #include "controltls.h"
 #include "testlist.h"
@@ -56,8 +62,8 @@
 #define	DEVICETRACE_HOLD		3600000		// The test waits this long for the stop file or Ctrl+C (ms)
 #define	DEVICETRACE_POLL		100			// Poll interval of observable state (ms)
 #define	DEVICETRACE_NUM_NODES	2
-#define	DEVICETRACE_GATEWAY		0			// The index of gw, the gateway of the Device
-#define	DEVICETRACE_OVERLAY		1			// The index of host, whose host is the fake host
+#define	DEVICETRACE_GATEWAY		0			// The index of gw, the gateway of the Device of the client
+#define	DEVICETRACE_OVERLAY		1			// The index of host, whose host is the fake host, and a gateway on a host of its own
 #define	DEVICETRACE_MAX_PACKET	2048
 #define	DEVICETRACE_ISN			0x52414E5A	// The initial sequence number of the TCP of the fake host ("RANZ")
 
@@ -85,12 +91,21 @@ typedef struct DEVICETRACE_NODE
 	NODE *Node;
 } DEVICETRACE_NODE;
 
-// The fake host of node host: what it answered
-typedef struct DEVICETRACE_HOST
+// What the fake host of node host answered for the packets to one kind of address
+typedef struct DEVICETRACE_ANSWERS
 {
 	volatile LONG Echoes;				// ICMP echo requests that it answered
 	volatile LONG Accepted;				// TCP SYNs that it answered with a SYN-ACK
 	volatile LONG Echoed;				// TCP segments whose bytes it sent back
+} DEVICETRACE_ANSWERS;
+
+// The fake host of node host: what it answered for the address of host, and for any other address that the tables of host
+// lead to its host, which is an address of a Device of host
+typedef struct DEVICETRACE_HOST
+{
+	volatile LONG Address;				// The address of host in network byte order, once host joined
+	DEVICETRACE_ANSWERS Host;			// For the address of host
+	DEVICETRACE_ANSWERS Devices;		// For the addresses of the Devices of host
 	volatile LONG Other;				// Packets that it did not answer
 } DEVICETRACE_HOST;
 
@@ -285,8 +300,8 @@ static UINT DeviceTraceEcho(const UCHAR *p, UINT total, UCHAR *reply)
 // The answer to the TCP segment p of total bytes into reply, as an echo server answers on any port: its size, 0 for no
 // answer. The fake host keeps no state. A SYN gets a SYN-ACK from DEVICETRACE_ISN; a segment with bytes gets the same
 // bytes back, and a FIN gets a FIN, from the sequence number that the client acknowledges, which is the next one of the
-// fake host. A bare acknowledgement and a reset get nothing.
-static UINT DeviceTraceTcp(DEVICETRACE_HOST *h, const UCHAR *p, UINT total, UCHAR *reply)
+// fake host. A bare acknowledgement and a reset get nothing. The answers are counted in a.
+static UINT DeviceTraceTcp(DEVICETRACE_ANSWERS *a, const UCHAR *p, UINT total, UCHAR *reply)
 {
 	UCHAR *t = reply + 20;
 	UINT size, seq, ack, data, len, next;
@@ -320,7 +335,7 @@ static UINT DeviceTraceTcp(DEVICETRACE_HOST *h, const UCHAR *p, UINT total, UCHA
 		ack = seq + 1;
 		seq = DEVICETRACE_ISN;
 		data = 0;
-		InterlockedIncrement(&h->Accepted);
+		InterlockedIncrement(&a->Accepted);
 	}
 	else if ((flags & TCP_ACK) != 0 && (data != 0 || (flags & TCP_FIN) != 0))
 	{
@@ -331,7 +346,7 @@ static UINT DeviceTraceTcp(DEVICETRACE_HOST *h, const UCHAR *p, UINT total, UCHA
 		seq = next;
 		if (data != 0)
 		{
-			InterlockedIncrement(&h->Echoed);
+			InterlockedIncrement(&a->Echoed);
 		}
 	}
 	else
@@ -364,7 +379,8 @@ static UINT DeviceTraceTcp(DEVICETRACE_HOST *h, const UCHAR *p, UINT total, UCHA
 }
 
 // The host of node host, on the thread of its overlay, an online reader of its tables: the answer to an IPv4 packet
-// without options goes into the overlay in the VRF that the packet came in
+// without options goes into the overlay in the VRF that the packet came in. A packet to an address other than the one of
+// host is for a Device of host, which the fake host plays (see above).
 static void DeviceTraceFakeHost(NODE *n, void *param, UINT vrf_id, const UCHAR *packet, UINT size)
 {
 	DEVICETRACE_HOST *h = (DEVICETRACE_HOST *)param;
@@ -374,17 +390,20 @@ static void DeviceTraceFakeHost(NODE *n, void *param, UINT vrf_id, const UCHAR *
 
 	if (size >= 20 && packet[0] == 0x45 && total >= 20 && total <= size && total <= sizeof(reply))
 	{
+		LONG address = ReadAcquire(&h->Address);
+		DEVICETRACE_ANSWERS *a = (Cmp(packet + 16, &address, 4) == 0 ? &h->Host : &h->Devices);
+
 		if (packet[9] == IP_PROTO_ICMPV4)
 		{
 			len = DeviceTraceEcho(packet, total, reply);
 			if (len != 0)
 			{
-				InterlockedIncrement(&h->Echoes);
+				InterlockedIncrement(&a->Echoes);
 			}
 		}
 		else if (packet[9] == IP_PROTO_TCP)
 		{
-			len = DeviceTraceTcp(h, packet, total, reply);
+			len = DeviceTraceTcp(a, packet, total, reply);
 		}
 	}
 
@@ -539,23 +558,23 @@ static bool DeviceTraceGone(UINT64 luid)
 	return false;
 }
 
-// Print the state of the WireGuard interface of gw when it differs from last, which takes it: the script shows these lines
-// when one of its waits on the gateway ends without what it waited for (FIX-11, #438)
-static void DeviceTraceShowWireGuard(NODE *gw, NODE_WIREGUARD_STATUS *last, UINT64 *last_generation)
+// Print the state of the WireGuard interface of the node t when it differs from last, which takes it: the script shows these
+// lines when one of its waits on a gateway ends without what it waited for (FIX-11, #438)
+static void DeviceTraceShowWireGuard(DEVICETRACE_NODE *t, NODE_WIREGUARD_STATUS *last, UINT64 *last_generation)
 {
 	NODE_WIREGUARD_STATUS wg;
 	NODE_OVERLAY_STATUS st;
 
-	NodeWireGuardGetStatus(gw, &wg);
-	NodeOverlayGetStatus(gw, &st);
+	NodeWireGuardGetStatus(t->Node, &wg);
+	NodeOverlayGetStatus(t->Node, &st);
 	if (st.Generation == *last_generation && wg.Up == last->Up && wg.Port == last->Port && wg.NumDevices == last->NumDevices &&
 		wg.NumRoutes == last->NumRoutes && wg.Isolated == last->Isolated && wg.NumPairs == last->NumPairs)
 	{
 		return;
 	}
 
-	Print("  [INFO] gw: generation %I64u; WireGuard interface up %u on UDP port %u, %u Devices, %u routes, kept apart %u, %u pairs\n",
-		st.Generation, (UINT)wg.Up, wg.Port, wg.NumDevices, wg.NumRoutes, (UINT)wg.Isolated, wg.NumPairs);
+	Print("  [INFO] %s: generation %I64u; WireGuard interface up %u on UDP port %u, %u Devices, %u routes, kept apart %u, %u pairs\n",
+		t->Name, st.Generation, (UINT)wg.Up, wg.Port, wg.NumDevices, wg.NumRoutes, (UINT)wg.Isolated, wg.NumPairs);
 	Copy(last, &wg, sizeof(wg));
 	*last_generation = st.Generation;
 }
@@ -579,16 +598,20 @@ static bool DeviceTraceStopFailed(char *stop_file)
 }
 
 // Wait for the stop file, Ctrl+C or the end of DEVICETRACE_HOLD: whether it was one of the first two. Each change of the
-// WireGuard interface of gw, from wg, is printed meanwhile.
-static bool DeviceTraceHold(char *stop_file, NODE *gw, NODE_WIREGUARD_STATUS *wg)
+// WireGuard interface of each node, from its status in wg, is printed meanwhile.
+static bool DeviceTraceHold(char *stop_file, DEVICETRACE_NODE *nodes, NODE_WIREGUARD_STATUS *wg)
 {
-	NODE_WIREGUARD_STATUS last;
-	UINT64 last_generation = 0;
+	NODE_WIREGUARD_STATUS last[DEVICETRACE_NUM_NODES];
+	UINT64 last_generation[DEVICETRACE_NUM_NODES];
 
-	Copy(&last, wg, sizeof(last));
+	Copy(last, wg, sizeof(last));
+	Zero(last_generation, sizeof(last_generation));
 	for (UINT64 end = Tick64() + DEVICETRACE_HOLD;Tick64() < end;)
 	{
-		DeviceTraceShowWireGuard(gw, &last, &last_generation);
+		for (UINT i = 0;i < DEVICETRACE_NUM_NODES;i++)
+		{
+			DeviceTraceShowWireGuard(&nodes[i], &last[i], &last_generation[i]);
+		}
 		if (WaitForSingleObject(devicetrace_stop, DEVICETRACE_POLL) != WAIT_TIMEOUT)
 		{
 			return true;
@@ -602,7 +625,7 @@ static bool DeviceTraceHold(char *stop_file, NODE *gw, NODE_WIREGUARD_STATUS *wg
 	return false;
 }
 
-RANZ_TEST("devicetrace", devicetrace_test, "Gateway of the WireGuard Device tracer: devicetrace <host:port> <key> <ready file> <stop file>: gw terminates a Device on WireGuardNT and forwards it into the overlay, host answers echo requests and TCP (.github/scripts/device-tracer.ps1).");
+RANZ_TEST("devicetrace", devicetrace_test, "Gateways of the WireGuard Device tracer: devicetrace <host:port> <key> <ready file> <stop file>: gw terminates Devices on WireGuardNT and forwards them into the overlay, host answers echo requests and TCP, for itself and for its own Device (.github/scripts/device-tracer.ps1).");
 void devicetrace_test(UINT num, char **arg)
 {
 	DEVICETRACE_CTX *ctx = ZeroMalloc(sizeof(DEVICETRACE_CTX));
@@ -612,7 +635,8 @@ void devicetrace_test(UINT num, char **arg)
 	TRANSPORT *loopback = NULL;
 	NODE_VRF_ADAPTERS *set = NULL;
 	NODE_VRF_ADAPTER_STATUS adapter;
-	NODE_WIREGUARD_STATUS wg;
+	// The WireGuard interface of each node, by the index of the node
+	NODE_WIREGUARD_STATUS wg[DEVICETRACE_NUM_NODES];
 	UCHAR controller_key[PEER_KEY_SIZE];
 	wchar_t adapter_name[MAX_SIZE];
 	HANDLE done = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -623,12 +647,12 @@ void devicetrace_test(UINT num, char **arg)
 	bool script_failed = false;
 	bool ok = false;
 
-	Print("WireGuard Device tracer: gw terminates the Device on WireGuardNT and forwards it into the overlay, host answers it\n");
+	Print("WireGuard Device tracer: gw terminates the Devices on WireGuardNT and forwards them into the overlay, host answers them, as a gateway of its own Device\n");
 
 	devicetrace_stop = CreateEventW(NULL, TRUE, FALSE, NULL);
 	SetConsoleCtrlHandler(DeviceTraceCtrl, TRUE);
 	Zero(&adapter, sizeof(adapter));
-	Zero(&wg, sizeof(wg));
+	Zero(wg, sizeof(wg));
 
 	// The controller: its address and its static key; and the two files of the script
 	Zero(controller_key, sizeof(controller_key));
@@ -728,23 +752,41 @@ void devicetrace_test(UINT num, char **arg)
 		IPToStr32(a, sizeof(a), addr_gw);
 		IPToStr32(b, sizeof(b), addr_host);
 		DeviceTraceCheck(ctx, addr_gw != addr_host && addr_gw != 0 && addr_host != 0, "the two addresses differ", "gw %s, host %s", a, b);
+		// The fake host tells its answers for host from those for the Devices of host by this address
+		InterlockedExchange(&host->Address, (LONG)addr_host);
 
 		bool held = DeviceTraceWaitAdapter(set, addr_gw, &adapter);
 		DeviceTraceCheck(ctx, held, "the Wintun adapter of gw for VRF default holds the address of gw", "no adapter with the address %s within %u ms", a, DEVICETRACE_BOUND);
 
 		DeviceTraceCheck(ctx, NodeWireGuardAvailable(&error), "wireguard.dll of WireGuardNT loads next to vpntest", "error %u", error);
-		bool up = DeviceTraceWaitWireGuard(nodes[DEVICETRACE_GATEWAY].Node, &wg);
-		DeviceTraceCheck(ctx, up, "the WireGuard interface of gw is up with the Devices of the intent, the routes of their addresses and the filters that keep them apart",
-			"up %u, %u Devices, port %u, %u routes, kept apart %u within %u ms", (UINT)wg.Up, wg.NumDevices, wg.Port, wg.NumRoutes, (UINT)wg.Isolated, DEVICETRACE_BOUND);
+		bool up = true;
+		for (UINT i = 0;i < DEVICETRACE_NUM_NODES;i++)
+		{
+			NODE_WIREGUARD_STATUS *s = &wg[i];
+			char what[MAX_SIZE];
+
+			bool is_up = DeviceTraceWaitWireGuard(nodes[i].Node, s);
+			Format(what, sizeof(what), "the WireGuard interface of %s is up with its Devices of the intent, the routes of their addresses and the filters that keep them apart", nodes[i].Name);
+			DeviceTraceCheck(ctx, is_up, what, "up %u, %u Devices, port %u, %u routes, kept apart %u within %u ms", (UINT)s->Up, s->NumDevices, s->Port, s->NumRoutes,
+				(UINT)s->Isolated, DEVICETRACE_BOUND);
+			up = up && is_up;
+		}
 
 		if (held && up)
 		{
-			Print("  [INFO] gw: adapter \"%S\", interface %u; WireGuard interface %u on UDP port %u, %u Devices, %u routes\n",
-				adapter.Name, adapter.InterfaceIndex, wg.InterfaceIndex, wg.Port, wg.NumDevices, wg.NumRoutes);
+			NODE_WIREGUARD_STATUS *wg_gw = &wg[DEVICETRACE_GATEWAY];
+			NODE_WIREGUARD_STATUS *wg_host = &wg[DEVICETRACE_OVERLAY];
 
-			// The script reads the addresses and the port from these lines
-			Print("DEVICETRACE NODE host ADDRESS %s HOST fake\n", b);
-			Print("DEVICETRACE NODE gw ADDRESS %s WIREGUARD PORT %u INTERFACE %u DEVICES %u PAIRS %u\n", a, wg.Port, wg.InterfaceIndex, wg.NumDevices, wg.NumPairs);
+			Print("  [INFO] gw: adapter \"%S\", interface %u; WireGuard interface %u on UDP port %u, %u Devices, %u routes\n",
+				adapter.Name, adapter.InterfaceIndex, wg_gw->InterfaceIndex, wg_gw->Port, wg_gw->NumDevices, wg_gw->NumRoutes);
+			Print("  [INFO] host: WireGuard interface %u on UDP port %u, %u Devices, %u routes\n", wg_host->InterfaceIndex, wg_host->Port, wg_host->NumDevices,
+				wg_host->NumRoutes);
+
+			// The script reads the addresses and the ports from these lines
+			Print("DEVICETRACE NODE host ADDRESS %s HOST fake WIREGUARD PORT %u INTERFACE %u DEVICES %u PAIRS %u\n", b, wg_host->Port, wg_host->InterfaceIndex,
+				wg_host->NumDevices, wg_host->NumPairs);
+			Print("DEVICETRACE NODE gw ADDRESS %s WIREGUARD PORT %u INTERFACE %u DEVICES %u PAIRS %u\n", a, wg_gw->Port, wg_gw->InterfaceIndex, wg_gw->NumDevices,
+				wg_gw->NumPairs);
 			Print("DEVICETRACE READY\n");
 
 			HANDLE f = CreateFileA(ready_file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -754,30 +796,46 @@ void devicetrace_test(UINT num, char **arg)
 				CloseHandle(f);
 			}
 
-			bool stopped = DeviceTraceHold(stop_file, nodes[DEVICETRACE_GATEWAY].Node, &wg);
+			bool stopped = DeviceTraceHold(stop_file, nodes, wg);
 			script_failed = (stopped && DeviceTraceStopFailed(stop_file));
 			DeviceTraceShowNodes(nodes);
 			DeviceTraceCheck(ctx, stopped, "the script created the stop file", "not within %u ms", DEVICETRACE_HOLD);
 
-			// What the Device did: the script reads these lines, and its client said what it saw
-			NODE_POLICY_VRF_STATUS policy;
-			NodePolicyGetVrf(nodes[DEVICETRACE_GATEWAY].Node, "default", &policy);
-			NodeWireGuardGetStatus(nodes[DEVICETRACE_GATEWAY].Node, &wg);
-			Print("DEVICETRACE HOST ECHOES %d ACCEPTED %d ECHOED %d OTHER %d\n", (int)ReadAcquire(&host->Echoes), (int)ReadAcquire(&host->Accepted),
-				(int)ReadAcquire(&host->Echoed), (int)ReadAcquire(&host->Other));
-			Print("DEVICETRACE POLICY gw RULES %u DROPPED %I64u\n", policy.NumRules, policy.Dropped);
-			Print("DEVICETRACE WIREGUARD gw UP %u PORT %u DEVICES %u APART %u PAIRS %u\n", (UINT)wg.Up, wg.Port, wg.NumDevices, (UINT)wg.Isolated, wg.NumPairs);
+			// What the Devices did: the script reads these lines, and its client said what it saw
+			for (UINT i = 0;i < DEVICETRACE_NUM_NODES;i++)
+			{
+				NODE_POLICY_VRF_STATUS policy;
+				NODE_WIREGUARD_STATUS *s = &wg[i];
+
+				NodePolicyGetVrf(nodes[i].Node, "default", &policy);
+				NodeWireGuardGetStatus(nodes[i].Node, s);
+				Print("DEVICETRACE POLICY %s RULES %u DROPPED %I64u\n", nodes[i].Name, policy.NumRules, policy.Dropped);
+				Print("DEVICETRACE WIREGUARD %s UP %u PORT %u DEVICES %u APART %u PAIRS %u\n", nodes[i].Name, (UINT)s->Up, s->Port, s->NumDevices, (UINT)s->Isolated,
+					s->NumPairs);
+			}
+			Print("DEVICETRACE HOST ECHOES %d ACCEPTED %d ECHOED %d OTHER %d\n", (int)ReadAcquire(&host->Host.Echoes), (int)ReadAcquire(&host->Host.Accepted),
+				(int)ReadAcquire(&host->Host.Echoed), (int)ReadAcquire(&host->Other));
+			Print("DEVICETRACE HOST DEVICES ECHOES %d ACCEPTED %d ECHOED %d\n", (int)ReadAcquire(&host->Devices.Echoes), (int)ReadAcquire(&host->Devices.Accepted),
+				(int)ReadAcquire(&host->Devices.Echoed));
 		}
 	}
 
-	// The overlay of gw stops, which halts its adapter and takes its WireGuard interface away, then the adapter goes with
-	// its set
-	if (nodes[DEVICETRACE_GATEWAY].Node != NULL)
+	// The overlay of each node stops, which takes its WireGuard interface away; that of gw halts its adapter too, which goes
+	// with its set after
+	for (UINT i = 0;i < DEVICETRACE_NUM_NODES;i++)
 	{
-		NodeOverlayStop(nodes[DEVICETRACE_GATEWAY].Node);
-		if (wg.InterfaceLuid != 0)
+		char what[MAX_SIZE];
+
+		if (nodes[i].Node == NULL)
 		{
-			DeviceTraceCheck(ctx, DeviceTraceGone(wg.InterfaceLuid), "once the overlay of gw stopped, its WireGuard interface is gone", "the interface is still there");
+			continue;
+		}
+
+		NodeOverlayStop(nodes[i].Node);
+		if (wg[i].InterfaceLuid != 0)
+		{
+			Format(what, sizeof(what), "once the overlay of %s stopped, its WireGuard interface is gone", nodes[i].Name);
+			DeviceTraceCheck(ctx, DeviceTraceGone(wg[i].InterfaceLuid), what, "the interface is still there");
 		}
 	}
 	if (set != NULL)

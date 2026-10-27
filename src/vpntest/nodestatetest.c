@@ -237,6 +237,10 @@ void nodestate_test(UINT num, char **arg)
 		"state: no adapter and no session without an overlay", "the answer is %s", reply);
 	NodeStateCheck(ctx, InStr(reply, "\"listeners\":{") && InStr(reply, "\"frontDoor\":{") && InStr(reply, "\"relayUdpPort\":0"),
 		"state: the listeners, none of them running", "the answer is %s", reply);
+	// What the limits for a source of the front door and of QUIC refused (AUD1-DT-3, #451): none yet
+	NodeStateCheck(ctx, InStr(reply, "\"refused\":{\"tcp\":{\"pending\":0,\"sources\":0,\"admitted\":0,\"refusedFull\":0,\"refusedSource\":0,\"refusedRate\":0,\"refusedHandshake\":0}") &&
+		InStr(reply, "\"quic\":{\"pending\":0") && InStr(reply, "\"retryMemoryLimit\":0,\"retrying\":false,\"retries\":0"),
+		"state: the refusals of the limits for a source, none yet", "the answer is %s", reply);
 
 	// An ordinary user is refused, and the administrator is answered after that
 	bool as_user = NodeStateOpenAsUser(pipe, &error);
