@@ -585,8 +585,11 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	ControlDevicesResend(c->Config.Devices);
 
 	while (ok && ControlHalted(c) == false) {
+		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
+		// The events of the node that wait for the controller (ControlEvent.c; AUD1-DT-11, #459)
+		ok = ok && ControlWriteEvents(c->Config.Events, s);
 		// ... and the Signals of the node for its peers, as they come (ControlSignal.c; CORE-S5-5, #411)
-		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s) && ControlWriteSignals(c->Config.Signals, s);
+		ok = ok && ControlWriteSignals(c->Config.Signals, s);
 		if (ok == false)
 			break;
 
