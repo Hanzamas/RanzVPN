@@ -86,8 +86,44 @@ type nodeStateListeners struct {
 		Fallback bool   `json:"fallback"`
 		Decoy    string `json:"decoy"`
 		Error    string `json:"error"`
+		// Refused is what the limits for a source of the two listeners refused since the Node started
+		// (AUD1-DT-3, #451): the front door on TCP, and QUIC on UDP with what msquic does about a flood.
+		Refused struct {
+			TCP  nodeStateLimits `json:"tcp"`
+			QUIC struct {
+				nodeStateLimits
+				Available        bool   `json:"available"`
+				RetryMemoryLimit uint32 `json:"retryMemoryLimit"`
+				Retrying         bool   `json:"retrying"`
+				Retries          uint64 `json:"retries"`
+			} `json:"quic"`
+		} `json:"refused"`
 	} `json:"frontDoor"`
 	RelayUDPPort int `json:"relayUdpPort"`
+}
+
+// nodeStateLimits is what the limits for a source of one listener hold and refused: the connections
+// that wait for their handshake now, the sources it counts, the connections it admitted, and the
+// refusals by reason (SourceLimit.h).
+type nodeStateLimits struct {
+	Pending          uint32 `json:"pending"`
+	Sources          uint32 `json:"sources"`
+	Admitted         uint64 `json:"admitted"`
+	RefusedFull      uint64 `json:"refusedFull"`
+	RefusedSource    uint64 `json:"refusedSource"`
+	RefusedRate      uint64 `json:"refusedRate"`
+	RefusedHandshake uint64 `json:"refusedHandshake"`
+}
+
+// refusals is the sum of the refusals of one listener.
+func (s nodeStateLimits) refusals() uint64 {
+	return s.RefusedFull + s.RefusedSource + s.RefusedRate + s.RefusedHandshake
+}
+
+// limits is a listener's refusals in the words of the table: how many, and for which reason.
+func (s nodeStateLimits) limits() string {
+	return fmt.Sprintf("%d refused (%d over the cap in all, %d over the cap of a source, %d over the rate of connections, %d over the rate of handshakes), %d waiting for their handshake",
+		s.refusals(), s.RefusedFull, s.RefusedSource, s.RefusedRate, s.RefusedHandshake, s.Pending)
 }
 
 // nodeState runs ranz node state with args, the arguments after state.
@@ -149,6 +185,13 @@ func nodeStateTable(out io.Writer, a nodeStateAnswer) error {
 	}
 	l := a.Listeners
 	fmt.Fprintf(tw, "Listeners\toverlay %s; front door %s; relay %s\n", orNone(l.Overlay), frontDoor(l), portOrNone("UDP", l.RelayUDPPort))
+	if l.FrontDoor.Running {
+		r := l.FrontDoor.Refused
+		fmt.Fprintf(tw, "Refused on TCP\t%s\n", r.TCP.limits())
+		if r.QUIC.Available {
+			fmt.Fprintf(tw, "Refused on QUIC\t%s; retry %s, %d retries sent, limit %d/65535 of the memory\n", r.QUIC.limits(), retryWord(r.QUIC.Retrying), r.QUIC.Retries, r.QUIC.RetryMemoryLimit)
+		}
+	}
 	if err := tw.Flush(); err != nil {
 		return err
 	}
@@ -207,6 +250,15 @@ func portOrNone(protocol string, port int) string {
 		return "none"
 	}
 	return protocol + " " + strconv.Itoa(port)
+}
+
+// retryWord is the state of the retry of msquic in the words of the table: it is set on every start, and it answers new
+// connections once the handshakes hold more memory than its limit.
+func retryWord(answering bool) string {
+	if answering {
+		return "answering now"
+	}
+	return "armed"
 }
 
 func orNone(s string) string {

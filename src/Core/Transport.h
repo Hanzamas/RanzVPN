@@ -26,6 +26,7 @@
 #define CORE_TRANSPORT_H
 
 #include "Core/Noise.h"
+#include "Core/SourceLimit.h"
 
 #define TRANSPORT_NAME_SIZE    32  // A transport name with its terminating NUL
 #define TRANSPORT_ADDRESS_SIZE 256 // An address with its terminating NUL: a host and a port, a URL, a pipe name
@@ -367,9 +368,29 @@ typedef struct TRANSPORT_QUIC_CONFIG {
 	UINT IdleTimeoutMs;                              // The QUIC idle timeout, 0 for TRANSPORT_QUIC_IDLE_DEFAULT
 	bool BreakBinding;                               // A client that changes the binding it computes: for the mismatch test
 	bool EndPointBinding;                            // Bind the tls-server-end-point, as before CORE-H5: for the test of an old node
+	SOURCE_LIMIT_CONFIG Limits;                      // A listener: the limits for a source (SourceLimit.h), a field of 0 takes its default
+	UINT RetryMemoryLimit;                           // A listener: the memory of the handshakes above which msquic answers a new connection with a retry, in 1/65535 of the memory of the machine; 0 for TRANSPORT_QUIC_RETRY_DEFAULT
 } TRANSPORT_QUIC_CONFIG;
 
 #define TRANSPORT_QUIC_IDLE_DEFAULT 30000 // The QUIC idle timeout without one in the configuration (ms)
+
+// The memory of the handshakes that a listener holds before it asks the peers of new connections to prove their address with
+// a retry (QUIC_PARAM_GLOBAL_RETRY_MEMORY_PERCENT of msquic, in 1/65535 of the memory of the machine). msquic's own
+// default is 65, about 0.1%, which a flood of Initial packets can fill before the listener refuses a source (FD-6, TR-5 of
+// docs/threat-model.md); this is a quarter of it, about 4 MiB on a machine with 16 GiB, which an honest site's handshakes
+// do not reach, and a flood meets retry after the first few thousand packets.
+#define TRANSPORT_QUIC_RETRY_DEFAULT 16
+
+// What a QUIC listener did (TransportQuicGetStats): the limits for a source, the setting of retry as msquic holds it now
+// and what msquic did
+typedef struct TRANSPORT_QUIC_STATS {
+	SOURCE_LIMIT_STATS Limits; // The connections that have not finished their handshake now, and what the limits refused
+	UINT RetryMemoryLimit;     // The retry setting that msquic holds, read back from it (QUIC_PARAM_GLOBAL_RETRY_MEMORY_PERCENT)
+	bool DosMode;              // msquic answers new connections with a retry now, because the handshakes hold too much memory
+	UINT64 DosModeChanges;     // The times it started or stopped
+	UINT64 Retries;            // The retry packets that msquic of this process sent, ever (QUIC_PERF_COUNTER_SEND_STATELESS_RETRY)
+	UINT64 ActiveConnections;  // The connections that msquic of this process holds now (QUIC_PERF_COUNTER_CONN_ACTIVE)
+} TRANSPORT_QUIC_STATS;
 
 // Fill cfg with the defaults: the name "quic", the ALPN "h3", the thumbprint of the server
 // certificate (upper-case hex, spaces and colons ignored) and the store it is in
@@ -389,6 +410,12 @@ TRANSPORT *TransportQuicServerNew(const TRANSPORT_QUIC_CONFIG *cfg);
 TRANSPORT *TransportQuicClientNew(const TRANSPORT_QUIC_CONFIG *cfg);
 USHORT TransportQuicBoundPort(TRANSPORT *t);
 void TransportQuicFree(TRANSPORT *t);
+
+// The counters of the listeners of a server transport (AUD1-DT-3, #451), at this moment; false for a transport that is not
+// a QUIC server. A listener of a server transport refuses a connection of a source over its caps or its rates, as the
+// front door does, and sets the retry of msquic (TRANSPORT_QUIC_RETRY_DEFAULT); the setting that this reports is read back
+// from msquic.
+bool TransportQuicGetStats(TRANSPORT *t, TRANSPORT_QUIC_STATS *st);
 
 // The msquic of the exporter (TransportQuicExporter.c; CORE-H5-R, #443). ConnectionExportKeyingMaterial sits in the
 // preview part of the msquic API table, which a later minor version may move or change, so a side reads the exporter
