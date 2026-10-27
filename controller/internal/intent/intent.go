@@ -116,6 +116,9 @@ type VRF struct {
 	// that such a link carries the VRF on; left out, it is the id of the VRF.
 	Link string `json:"link,omitempty"`
 	VNI  uint32 `json:"vni,omitempty"`
+	// Peering is how the Nodes of the VRF exchange their routes when its link is vxlan or geneve
+	// (SDN-77, peering.go): with the protocol bgp they peer by BGP. Left out, the Controller gives them.
+	Peering Peering `json:"peering,omitzero"`
 }
 
 // Network belongs to one VRF. Its pools are the controller's to allocate from (ADR-0028,
@@ -776,6 +779,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeDevices()
 	// The kinds of the links of the VRFs and the tunnel endpoints of the Nodes (link.go)
 	in.completeLinks()
+	// The BGP peering of the VRFs (peering.go)
+	in.completePeering()
 	return problems
 }
 
@@ -898,6 +903,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateEndpoints()...)
 	problems = append(problems, in.validateDevices()...)
 	problems = append(problems, in.validateLinks()...)
+	// The BGP peering of the VRFs (peering.go)
+	problems = append(problems, in.validatePeering()...)
 	return append(problems, in.validateIPAM()...)
 }
 

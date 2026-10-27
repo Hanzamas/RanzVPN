@@ -824,6 +824,8 @@ func checkFeatures(doc intent.Document, st licence.Status) error {
 			problems = append(problems, fmt.Errorf("%s %q: %s is an Enterprise feature, and the licence in force is %s", r.Kind, r.Name, f.Name(), st.Tier))
 		}
 	}
+	// The BGP peering of the Nodes of a VRF (peering.go; SDN-77)
+	problems = append(problems, peeringFeatures(doc, st)...)
 	if len(problems) > 0 {
 		return fmt.Errorf("%w:\n%w", licence.ErrRefused, errors.Join(problems...))
 	}

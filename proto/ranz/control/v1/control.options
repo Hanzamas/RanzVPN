@@ -132,3 +132,14 @@ ranz.control.v1.NodeConfig.controller_tls max_count:4 max_size:65
 # The tunnel endpoint of a node for the links of kind vxlan and geneve (SDN-76): an IPv4 or an IPv6
 # address. It makes a Peer and the NodeConfig about 30 bytes larger.
 ranz.control.v1.Vtep.address max_size:16
+# The BGP peering of the standard mode (SDN-77): a router id, the addresses of the sidecars, the LAN
+# subnets that a node announces, 16 at most, and what a peer may announce, its 16 addresses at most
+# and its LAN subnets (controller/internal/intent MaxPeeringAnnounce, MaxPeeringAccept). They make
+# the NodeConfig about 700 bytes larger and a Peer about 1.4 kB, which leaves it smaller than the
+# NodeConfig.
+ranz.control.v1.NodePeering.router_id max_size:4
+ranz.control.v1.NodePeering.address max_size:16
+ranz.control.v1.NodePeering.announce max_count:16
+ranz.control.v1.PeerPeering.address max_size:16
+ranz.control.v1.PeerPeering.vrf_ids max_count:16
+ranz.control.v1.PeerPeering.accept max_count:32

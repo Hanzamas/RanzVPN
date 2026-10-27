@@ -67,6 +67,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		vrfs[name].Dns = zone(in, name)
 		// The kind of the links of the VRF and its VNI (link.go; SDN-76)
 		withLink(vrfs[name], v)
+		// How the Nodes of the VRF exchange their routes (peering.go; SDN-77)
+		vrfs[name].Peering = vrfPeering(v)
 	}
 	networks := map[string][]*controlpb.Network{} // by VRF name
 	for name, n := range in.Networks {
@@ -131,6 +133,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		self.Endpoints = endpoints(n)
 		// The tunnel endpoint of the node for the links of kind vxlan and geneve (link.go; SDN-76)
 		self.Vtep = ownVtep(in, n)
+		// The BGP peering of the node (peering.go; SDN-77)
+		self.Peering = nodePeering(in, n, vrfs)
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {
@@ -155,6 +159,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			peer.Endpoints = endpoints(o)
 			// The tunnel endpoint of the peer, for the links of kind vxlan and geneve of the shared VRFs (link.go; SDN-76)
 			peer.Vtep = peerVtep(in, o, sharedVRFs)
+			// The BGP peering with the peer in the shared VRFs that peer by BGP (peering.go; SDN-77)
+			peer.Peering = peerPeering(in, other, o, sharedVRFs, vrfs)
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})
 			// A relay forwards only between nodes that share a VRF with it, so a peer that only a leak joins is none
 			if o.Relay != "" && len(shared) > 0 {

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,6 +72,9 @@ type config struct {
 	listenAddresses []string
 	peers           []peerConfig
 	accept          []netip.Prefix
+	// address is the node's own address in the peering of the standard mode (peering.go), the zero
+	// Addr for a sidecar that peers with the routers of the operator
+	address netip.Addr
 }
 
 type peerConfig struct {
@@ -78,6 +82,11 @@ type peerConfig struct {
 	asn     uint32
 	port    uint32
 	passive bool
+	// holdTime and vrfs are of a Ranz node in the peering of the standard mode: the BGP hold time in
+	// seconds, 0 for the default, and the prefixes that it may announce in each VRF that it shares
+	// with the node, by VRF id; vrfs is nil for a router of the operator
+	holdTime uint32
+	vrfs     map[uint32][]netip.Prefix
 }
 
 // learnedRoute is the route of a learned prefix that the node was told about.
@@ -92,8 +101,14 @@ type session struct {
 	w         *Writer
 	log       *slog.Logger
 	cancel    context.CancelFunc
-	announced map[netip.Prefix]uuid.UUID    // the read loop only
-	learned   map[netip.Prefix]learnedRoute // the watch goroutine only
+	address   netip.Addr                // the node's own address in the peering of the standard mode, as in config
+	announced map[routeKey]uuid.UUID    // the read loop only
+	learned   map[routeKey]learnedRoute // the watch goroutine only
+
+	// The Ranz nodes among the peers in the peering of the standard mode, by address, which the read
+	// loop sets and the watch goroutine reads (peering.go)
+	mu    sync.Mutex
+	nodes map[netip.Addr]peerConfig
 }
 
 // Run serves one node on conn until the node closes it or ctx ends: it reads start, runs BGP with
@@ -148,7 +163,7 @@ func Run(ctx context.Context, conn io.ReadWriteCloser, opts Options) error {
 
 	// The peers come after ready, so that the node reads ready before the first peer message.
 	for _, p := range cfg.peers {
-		if err := s.bgp.AddPeer(ctx, &api.AddPeerRequest{Peer: peerRequest(p)}); err != nil {
+		if err := s.bgp.AddPeer(ctx, &api.AddPeerRequest{Peer: s.peerRequest(p)}); err != nil {
 			s.send(Message{Type: TypeError, Peer: p.address.String(), Error: fmt.Sprintf("peer %s: %v", p.address, err)})
 			continue
 		}
@@ -168,6 +183,8 @@ func Run(ctx context.Context, conn io.ReadWriteCloser, opts Options) error {
 			err = s.announce(m)
 		case TypeWithdraw:
 			err = s.withdraw(m)
+		case TypePeers:
+			err = s.setPeers(ctx, m)
 		case TypeStart:
 			err = errors.New("BGP runs already: start comes once")
 		default:
@@ -200,6 +217,14 @@ func parseStart(m Message) (config, error) {
 	default:
 		return cfg, fmt.Errorf("start: listen_port %d is not a TCP port, 0 or -1", m.ListenPort)
 	}
+	// The node's own address in the peering of the standard mode (peering.go)
+	if m.Address != "" {
+		addr, err := parsePeeringAddress(m)
+		if err != nil {
+			return cfg, err
+		}
+		cfg.address = addr
+	}
 	for _, a := range m.ListenAddresses {
 		addr, err := netip.ParseAddr(a)
 		if err != nil {
@@ -212,21 +237,15 @@ func parseStart(m Message) (config, error) {
 	}
 	seen := make(map[netip.Addr]bool)
 	for _, p := range m.Peers {
-		addr, err := netip.ParseAddr(p.Address)
+		pc, err := parsePeer(p, cfg.address)
 		if err != nil {
-			return cfg, fmt.Errorf("start: peer address %q: %v", p.Address, err)
+			return cfg, fmt.Errorf("start: %w", err)
 		}
-		if seen[addr] {
-			return cfg, fmt.Errorf("start: peer %s comes twice", addr)
+		if seen[pc.address] {
+			return cfg, fmt.Errorf("start: peer %s comes twice", pc.address)
 		}
-		seen[addr] = true
-		if p.ASN == 0 {
-			return cfg, fmt.Errorf("start: peer %s has no asn", addr)
-		}
-		if p.Port > 65535 {
-			return cfg, fmt.Errorf("start: peer %s: port %d is not a TCP port", addr, p.Port)
-		}
-		cfg.peers = append(cfg.peers, peerConfig{address: addr, asn: p.ASN, port: p.Port, passive: p.Passive})
+		seen[pc.address] = true
+		cfg.peers = append(cfg.peers, pc)
 	}
 	for _, a := range m.Accept {
 		prefix, err := parsePrefix(a)
@@ -256,24 +275,37 @@ func parsePrefix(s string) (netip.Prefix, error) {
 // startSession starts GoBGP with cfg, without its peers: the global settings, the policies and
 // the watch of the best paths and the peers.
 func startSession(ctx context.Context, cfg config, w *Writer, log *slog.Logger, level *slog.LevelVar) (*session, error) {
-	b := server.NewBgpServer(server.LoggerOption(log, level))
-	go b.Serve()
-
 	sctx, cancel := context.WithCancel(context.Background())
 	s := &session{
-		bgp:       b,
 		w:         w,
 		log:       log,
 		cancel:    cancel,
-		announced: make(map[netip.Prefix]uuid.UUID),
-		learned:   make(map[netip.Prefix]learnedRoute),
+		address:   cfg.address,
+		announced: make(map[routeKey]uuid.UUID),
+		learned:   make(map[routeKey]learnedRoute),
+		nodes:     make(map[netip.Addr]peerConfig),
+	}
+	for _, p := range cfg.peers {
+		if p.vrfs != nil {
+			s.nodes[p.address] = p
+		}
 	}
 
+	// GoBGP logs into the log of the sidecar, and a session that it refuses goes to the node too (peering.go)
+	b := server.NewBgpServer(server.LoggerOption(slog.New(refusalHandler{Handler: log.Handler(), refused: s.refused}), level))
+	s.bgp = b
+	go b.Serve()
+
+	// The peering of the standard mode listens on the node's own address only
+	listen := cfg.listenAddresses
+	if cfg.address.IsValid() {
+		listen = []string{cfg.address.String()}
+	}
 	err := b.StartBgp(ctx, &api.StartBgpRequest{Global: &api.Global{
 		Asn:             cfg.asn,
 		RouterId:        cfg.routerID.String(),
 		ListenPort:      cfg.listenPort,
-		ListenAddresses: cfg.listenAddresses,
+		ListenAddresses: listen,
 	}})
 	if err == nil {
 		err = s.setPolicies(ctx, cfg.accept)
@@ -324,6 +356,12 @@ func (s *session) setPolicies(ctx context.Context, accept []netip.Prefix) error 
 	}})
 	if err != nil {
 		return err
+	}
+
+	// The peering of the standard mode takes every path of the Ranz nodes, and reports to the node only
+	// the ones that the peer may announce in the VRF of the path (onBestPath, accepts in peering.go)
+	if s.address.IsValid() {
+		return nil
 	}
 
 	// A prefix set holds one address family: one set and one statement for each.
@@ -382,8 +420,12 @@ func (s *session) setPolicies(ctx context.Context, accept []netip.Prefix) error 
 	}})
 }
 
-// peerRequest is the GoBGP peer of a router of the operator, with IPv4 and IPv6 unicast.
-func peerRequest(p peerConfig) *api.Peer {
+// peerRequest is the GoBGP peer of a router of the operator, with IPv4 and IPv6 unicast, or of a Ranz
+// node in the peering of the standard mode (nodePeer in peering.go).
+func (s *session) peerRequest(p peerConfig) *api.Peer {
+	if p.vrfs != nil {
+		return nodePeer(p, s.address)
+	}
 	return &api.Peer{
 		Conf: &api.PeerConf{
 			NeighborAddress: p.address.String(),
@@ -412,59 +454,73 @@ func (s *session) send(m Message) {
 	}
 }
 
-// announce applies an announce message: the prefix goes to the peers as a path of the node.
+// announce applies an announce message: the prefix goes to the peers as a path of the node, a
+// unicast path, or a VPN path of its VRF in the peering of the standard mode.
 func (s *session) announce(m Message) error {
 	prefix, err := parsePrefix(m.Prefix)
 	if err != nil {
 		return err
 	}
+	var path *apiutil.Path
+	switch {
+	case m.VRF != 0:
+		path, err = s.vpnPath(m.VRF, prefix, m.NextHop)
+	case s.address.IsValid():
+		err = fmt.Errorf("prefix %s: an announce of the peering of the standard mode names its vrf", prefix)
+	default:
+		path, err = unicastPath(prefix, m.NextHop)
+	}
+	if err != nil {
+		return err
+	}
+	resp, err := s.bgp.AddPath(apiutil.AddPathRequest{Paths: []*apiutil.Path{path}})
+	if err != nil {
+		return err
+	}
+	// A prefix announced again replaces its path, under a new UUID.
+	s.announced[routeKey{vrf: m.VRF, prefix: prefix}] = resp[0].UUID
+	s.log.Info("prefix announced", "vrf", m.VRF, "prefix", prefix, "nextHop", pathNextHop(path))
+	return nil
+}
+
+// unicastPath is the unicast path of an announce message without a VRF: prefix via next, the address
+// of each session when it is empty (GoBGP's next-hop-self).
+func unicastPath(prefix netip.Prefix, next string) (*apiutil.Path, error) {
 	family := bgp.RF_IPv4_UC
 	nextHop := netip.IPv4Unspecified()
 	if prefix.Addr().Is6() {
 		family = bgp.RF_IPv6_UC
 		nextHop = netip.IPv6Unspecified()
 	}
-	// An unspecified next hop becomes the address of each session (GoBGP's next-hop-self).
-	if m.NextHop != "" {
-		nextHop, err = netip.ParseAddr(m.NextHop)
+	if next != "" {
+		var err error
+		nextHop, err = netip.ParseAddr(next)
 		if err != nil {
-			return fmt.Errorf("next hop %q: %v", m.NextHop, err)
+			return nil, fmt.Errorf("next hop %q: %v", next, err)
 		}
 		if nextHop.Is4() != prefix.Addr().Is4() {
-			return fmt.Errorf("next hop %s is not of the address family of %s", nextHop, prefix)
+			return nil, fmt.Errorf("next hop %s is not of the address family of %s", nextHop, prefix)
 		}
 	}
 	nlri, err := bgp.NewIPAddrPrefix(prefix)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	attrs := []bgp.PathAttributeInterface{bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP)}
 	if family == bgp.RF_IPv4_UC {
 		a, err := bgp.NewPathAttributeNextHop(nextHop)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		attrs = append(attrs, a)
 	} else {
 		a, err := bgp.NewPathAttributeMpReachNLRI(family, []bgp.PathNLRI{{NLRI: nlri}}, nextHop)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		attrs = append(attrs, a)
 	}
-	resp, err := s.bgp.AddPath(apiutil.AddPathRequest{Paths: []*apiutil.Path{{
-		Family: family,
-		Nlri:   nlri,
-		Attrs:  attrs,
-		Age:    time.Now().Unix(),
-	}}})
-	if err != nil {
-		return err
-	}
-	// A prefix announced again replaces its path, under a new UUID.
-	s.announced[prefix] = resp[0].UUID
-	s.log.Info("prefix announced", "prefix", prefix, "nextHop", nextHop)
-	return nil
+	return &apiutil.Path{Family: family, Nlri: nlri, Attrs: attrs, Age: time.Now().Unix()}, nil
 }
 
 // withdraw applies a withdraw message.
@@ -473,15 +529,19 @@ func (s *session) withdraw(m Message) error {
 	if err != nil {
 		return err
 	}
-	id, ok := s.announced[prefix]
+	key := routeKey{vrf: m.VRF, prefix: prefix}
+	id, ok := s.announced[key]
 	if !ok {
+		if m.VRF != 0 {
+			return fmt.Errorf("prefix %s is not announced in VRF %d", prefix, m.VRF)
+		}
 		return fmt.Errorf("prefix %s is not announced", prefix)
 	}
 	if err := s.bgp.DeletePath(apiutil.DeletePathRequest{UUIDs: []uuid.UUID{id}}); err != nil {
 		return err
 	}
-	delete(s.announced, prefix)
-	s.log.Info("prefix withdrawn", "prefix", prefix)
+	delete(s.announced, key)
+	s.log.Info("prefix withdrawn", "vrf", m.VRF, "prefix", prefix)
 	return nil
 }
 
@@ -502,41 +562,51 @@ func (s *session) onPeer(ev *apiutil.WatchEventMessage_PeerEvent, _ time.Time) {
 // onBestPath tells the node about the best paths that changed: a best path learned from a peer
 // is a learned route, and a prefix whose best path is withdrawn, or is now the node's own, is
 // withdrawn. The paths of one call are applied in order, so a best path that moves from one
-// peer to another ends as the later one, without a withdrawn message between.
+// peer to another ends as the later one, without a withdrawn message between. In the peering of
+// the standard mode a prefix is one of the VRF of its path, and a path that its Ranz node may not
+// announce there counts as none (accepts in peering.go).
 func (s *session) onBestPath(paths []*apiutil.Path, _ time.Time) {
-	next := make(map[netip.Prefix]*learnedRoute)
-	var order []netip.Prefix
+	next := make(map[routeKey]*learnedRoute)
+	var order []routeKey
 	for _, p := range paths {
-		n, ok := p.Nlri.(*bgp.IPAddrPrefix)
-		if !ok || (p.Family != bgp.RF_IPv4_UC && p.Family != bgp.RF_IPv6_UC) {
+		key, ok := pathKey(p)
+		if !ok {
 			continue
 		}
-		prefix := n.Prefix
-		if _, ok := next[prefix]; !ok {
-			order = append(order, prefix)
+		if _, ok := next[key]; !ok {
+			order = append(order, key)
 		}
 		if p.Withdrawal || !p.PeerAddress.IsValid() {
-			next[prefix] = nil
+			next[key] = nil
 			continue
 		}
 		nh := pathNextHop(p)
 		if !nh.IsValid() {
-			s.log.Warn("learned path without a next hop", "prefix", prefix, "peer", p.PeerAddress)
-			next[prefix] = nil
+			s.log.Warn("learned path without a next hop", "vrf", key.vrf, "prefix", key.prefix, "peer", p.PeerAddress)
+			next[key] = nil
 			continue
 		}
-		next[prefix] = &learnedRoute{nextHop: nh.String(), peer: p.PeerAddress.String()}
+		if key.vrf != 0 {
+			// The next hop of an IPv6 route over an IPv4 session comes as an IPv4-mapped address
+			nh = nh.Unmap()
+			if !s.accepts(p.PeerAddress, key) {
+				s.log.Warn("learned path not taken: the peer may not announce it in its VRF", "vrf", key.vrf, "prefix", key.prefix, "peer", p.PeerAddress)
+				next[key] = nil
+				continue
+			}
+		}
+		next[key] = &learnedRoute{nextHop: nh.String(), peer: p.PeerAddress.Unmap().String()}
 	}
-	for _, prefix := range order {
-		old, had := s.learned[prefix]
-		r := next[prefix]
+	for _, key := range order {
+		old, had := s.learned[key]
+		r := next[key]
 		switch {
 		case r == nil && had:
-			delete(s.learned, prefix)
-			s.send(Message{Type: TypeWithdrawn, Prefix: prefix.String(), Peer: old.peer})
+			delete(s.learned, key)
+			s.send(Message{Type: TypeWithdrawn, VRF: key.vrf, Prefix: key.prefix.String(), Peer: old.peer})
 		case r != nil && (!had || old != *r):
-			s.learned[prefix] = *r
-			s.send(Message{Type: TypeLearned, Prefix: prefix.String(), NextHop: r.nextHop, Peer: r.peer})
+			s.learned[key] = *r
+			s.send(Message{Type: TypeLearned, VRF: key.vrf, Prefix: key.prefix.String(), NextHop: r.nextHop, Peer: r.peer})
 		}
 	}
 }

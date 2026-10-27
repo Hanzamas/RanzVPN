@@ -80,6 +80,16 @@
 // Generation and waits for the acknowledgements before it serves the certificate, so a node that
 // pinned the fingerprint of the old one still reaches the controller. No schema version changes
 // with it: a node of an older release skips the field it does not know.
+//
+// BGP peering of the standard mode (SDN-77, #357): the nodes of a VRF whose links are of kind vxlan
+// or geneve and whose peering is bgp (Vrf.peering) exchange their routes there by BGP, in a full
+// mesh, each with the sidecar ranz bgp on the network that the operator trusts. A node gets the
+// settings of its sidecar (NodeConfig.peering): the AS of the overlay, its router id, its address
+// there, and the prefixes that it announces besides its addresses, its LAN subnets; and each peer
+// that shares such a VRF with it the address of that peer's sidecar, the hold time of their session,
+// the VRFs of the session and what the peer may announce in them (Peer.peering). The controller
+// writes nothing else: the routes go between the nodes. No schema version changes with them: a node
+// of an older release skips the fields it does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -253,6 +263,36 @@ message NodeConfig {
   // The tunnel endpoint of the node for the links of kind vxlan and geneve (SDN-76 #356): the ports it
   // listens on. Absent while no VRF of the node has such a link.
   Vtep vtep = 11;
+  // The BGP peering of the node (SDN-77 #357), absent while no VRF of the node peers by BGP
+  NodePeering peering = 14;
+}
+
+// How the nodes of a VRF exchange their routes (SDN-77 #357).
+enum Peering {
+  PEERING_UNSPECIFIED = 0;  // the controller gives them, with the addresses and the routes of each Peer
+  PEERING_BGP = 1;          // the nodes peer by BGP in a full mesh, on the links of kind vxlan or geneve
+}
+
+// The BGP peering of a node (SDN-77 #357): the settings of its sidecar ranz bgp. The sidecar listens on
+// TCP 179 of the address of the node and connects from it, and takes a session only from the address of
+// a peer whose Peer object has a PeerPeering.
+message NodePeering {
+  uint32 asn = 1;        // the AS of the overlay, one for every node: the sessions are internal BGP
+  bytes router_id = 2;   // its BGP identifier, 4 bytes
+  bytes address = 3;     // its address on the network that the operator trusts: 4 bytes for IPv4, 16 for IPv6
+  // The prefixes that it announces besides its addresses in the VRFs that peer by BGP: its LAN subnets
+  // there, ordered by VRF id, then prefix
+  repeated Route announce = 4;
+}
+
+// The BGP peering with a peer (SDN-77 #357), in the VRFs that the two share and that peer by BGP.
+message PeerPeering {
+  bytes address = 1;            // the address of the peer's sidecar: 4 bytes for IPv4, 16 for IPv6
+  uint32 hold_time = 2;         // the BGP hold time of the session in seconds, 0 for 90
+  repeated uint32 vrf_ids = 3;  // the VRFs of the session, ascending
+  // What the peer may announce in them, with their more specific ones: its addresses and its LAN
+  // subnets there, ordered by VRF id, then prefix. The node takes nothing else from it.
+  repeated Route accept = 4;
 }
 
 // The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise
@@ -326,6 +366,8 @@ message Vrf {
   // vxlan or geneve carries its packets on, 0 for a link of kind noise.
   LinkKind link = 8;
   uint32 vni = 9;
+  // How the nodes of the VRF exchange their routes (SDN-77 #357)
+  Peering peering = 13;
 }
 
 // The zone of a VRF (SDN-11 #187, ADR-0028 decisions 6 and 7). The stub resolver of a node
@@ -381,6 +423,8 @@ message Peer {
   // The tunnel endpoint of the peer (SDN-76 #356), absent while no shared VRF has a link of kind vxlan
   // or geneve: the only address that this node takes the datagrams of those links from.
   Vtep vtep = 8;
+  // The BGP peering with the peer (SDN-77 #357), absent while no shared VRF peers by BGP
+  PeerPeering peering = 12;
 }
 
 // The transports that a node dials a peer over, as a fallback list names them: quic, tls and mimic
