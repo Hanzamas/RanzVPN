@@ -38,6 +38,7 @@
 #include "NodeCaps.h"
 #include "NodeInternal.h"
 #include "NodeLink.h"
+#include "NodeSourceGroup.h"
 
 // One peer of the overlay, from a Peer object of the desired state: a next hop of the forwarding tables
 typedef struct NODE_OVERLAY_PEER {
@@ -263,6 +264,8 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	NodeMirrorAttach(ov->Node, v, st);
 	// The links of kind vxlan and geneve of the Generation go in with its tables (NodeLink.c; SDN-76, #356)
 	NodeLinkAttach(ov->Node, v, st);
+	// The source groups of the Generation go in with its tables (NodeSourceGroup.c; SDN-87, #386)
+	NodeSourceGroupAttach(ov->Node, v, st);
 	UINT num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
 	NodePolicyApplied(ov->Node, swapped);
@@ -504,12 +507,24 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 }
 
 // A data record of the peer p: the VRF id, then an IP packet, which goes to the host in that VRF when its table routes
-// the source to p and the destination to the host; nat_buf takes the packet that a 1:1 NAT rule translates. The thread
+// the source to p and the destination to the host; nat_buf takes the packet that a 1:1 NAT rule translates. claim is the
+// source group that a datagram of a link carried; NULL for a record of a Noise session, which carries its own. The thread
 // of the overlay, or the receive thread of a link (NodeOverlayLinkDeliver), reads the tables as an online reader.
-static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCHAR *record, UINT size, UCHAR *nat_buf) {
+static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCHAR *record, UINT size, UCHAR *nat_buf, const NODE_SOURCE_CLAIM *claim) {
 	UCHAR src[16], dst[16];
 	UINT addr_size = 0;
 	bool ok = false;
+	NODE_SOURCE_CLAIM session;
+	UINT header = 0;
+
+	// A record of frame version 1 carries the source group of its packet before the data record (NodeSourceGroup.c; SDN-87,
+	// #386); one that the node cannot read is dropped
+	if (claim == NULL) {
+		claim = &session;
+		size = (NodeFrameParse(record, size, &session, &header) ? size - header : 0);
+		record += header;
+	}
+
 	UINT vrf_id = (size >= NODE_OVERLAY_VRF_TAG ? READ_UINT(record) : 0);
 	const UCHAR *packet = record + NODE_OVERLAY_VRF_TAG;
 	UINT packet_size = (size >= NODE_OVERLAY_VRF_TAG ? size - NODE_OVERLAY_VRF_TAG : 0);
@@ -521,8 +536,9 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 		UINT from = NodeVrfLookup(vt, src, addr_size);
 
 		ok = (from < v->NumHops && v->Hops[from] == p && NodeVrfLookup(vt, dst, addr_size) == NODE_VRF_LOCAL);
-		// The policy of the VRF judges the packet as the peer sent it, before a 1:1 NAT rule translates it (NodePolicy.c)
-		ok = ok && NodePolicyInbound(ov->Node, v, vrf_id, from, packet, packet_size);
+		// The policy of the VRF judges the packet as the peer sent it, before a 1:1 NAT rule translates it (NodePolicy.c), by
+		// the source group that it carried (NodeSourceGroup.c; SDN-87, #386)
+		ok = ok && NodeSourceGroupInbound(ov->Node, v, vrf_id, from, claim, packet, packet_size);
 	}
 
 	// A Mirror copies the packet as the peer sent it, before a 1:1 NAT rule translates it (NodeMirror.c)
@@ -542,13 +558,14 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 }
 
 // A data record that a link of kind vxlan or geneve carried from the next hop hop (NodeLink.c; SDN-76, #356), which goes to
-// the host as a record of a session does, with nat_buf of NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH bytes for its translation.
-// The caller is an online reader of the node's table snapshot, and hop is a next hop of its tables.
-void NodeOverlayLinkDeliver(NODE *n, void *hop, const UCHAR *record, UINT size, UCHAR *nat_buf) {
+// the host as a record of a session does, with nat_buf of NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH bytes for its translation,
+// and claim the source group that its datagram carried (SDN-87, #386). The caller is an online reader of the node's table
+// snapshot, and hop is a next hop of its tables.
+void NodeOverlayLinkDeliver(NODE *n, void *hop, const UCHAR *record, UINT size, UCHAR *nat_buf, const struct NODE_SOURCE_CLAIM *claim) {
 	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
 
-	if (ov != NULL)
-		NodeOverlayDeliver(ov, (NODE_OVERLAY_PEER *)hop, record, size, nat_buf);
+	if (ov != NULL && claim != NULL)
+		NodeOverlayDeliver(ov, (NODE_OVERLAY_PEER *)hop, record, size, nat_buf, claim);
 }
 
 // Read the records of every session: the data records go to the host, keepalives keep the session open, and a session
@@ -583,7 +600,7 @@ static bool NodeOverlayReceive(NODE_OVERLAY *ov) {
 
 			busy = true;
 			if (ret == NOISE_RECEIVE_DATA) {
-				NodeOverlayDeliver(ov, p, ov->Buf, size, ov->NatBuf);
+				NodeOverlayDeliver(ov, p, ov->Buf, size, ov->NatBuf, NULL);
 			} else if (ret != NOISE_RECEIVE_CONTROL) {
 				NodeOverlayClose(ov, p);
 				break;
@@ -717,6 +734,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.CapsProc = NodeWireGuardCaps;
 	cc.CapsParam = n;
 	cc.Devices = NodeWireGuardStart(n, cfg);
+	// The counters of the source groups, which go on the stream too (NodeSourceGroup.c; SDN-87, #386)
+	cc.SourceGroups = NodeSourceGroupStart(n);
 
 	ov->Thread = (ov->Handshakes != NULL ? CreateThread(NULL, 0, NodeOverlayThread, ov, 0, &thread_id) : NULL);
 	ov->Control = (ov->Thread != NULL && cfg->Control != NULL ? ControlStart(&cc) : NULL);
@@ -770,6 +789,8 @@ void NodeOverlayStop(NODE *n) {
 	NodeListenerStop(n);
 	// The thread stopped the pool of the handshakes; a thread that did not start leaves it to stop here
 	NodeHandshakeFree(ov->Handshakes);
+	// No table, thread or control stream reads the source groups any more (NodeSourceGroup.c; SDN-87, #386)
+	NodeSourceGroupStop(n);
 
 	n->Overlay = NULL;
 	ReleaseList(ov->Peers);
@@ -801,7 +822,8 @@ bool NodeOverlayApply(NODE *n, const CONTROL_STATE *st) {
 bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
 	UCHAR src[16], dst[16];
-	UCHAR buf[NODE_OVERLAY_RECORD];
+	// The record, after the room of the header of frame version 1 (NodeSourceGroup.c; SDN-87, #386)
+	UCHAR buf[NODE_FRAME_ROOM + NODE_OVERLAY_RECORD];
 	UINT addr_size = 0;
 	UINT hop = NODE_VRF_NONE;
 
@@ -823,7 +845,8 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	}
 
 	NODE_OVERLAY_PEER *peer = (NODE_OVERLAY_PEER *)v->Hops[hop];
-	UCHAR *record = (size + NODE_OVERLAY_VRF_TAG <= sizeof(buf) ? buf : Malloc(size + NODE_OVERLAY_VRF_TAG));
+	UCHAR *room = (NODE_FRAME_ROOM + size + NODE_OVERLAY_VRF_TAG <= sizeof(buf) ? buf : Malloc(NODE_FRAME_ROOM + size + NODE_OVERLAY_VRF_TAG));
+	UCHAR *record = room + NODE_FRAME_ROOM;
 
 	// A route that a VRF of the peer leaks takes the packet into that VRF (NodeLeak.c; SDN-7, #183)
 	WRITE_UINT(record, NodeLeakVrf(v, hop, vrf_id));
@@ -836,17 +859,21 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&peer->Session);
 	// A link of kind vxlan or geneve of the VRF of the record carries it in place of the session (NodeLink.c; SDN-76, #356)
 	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
+	// The source group of the packet goes before the record to a peer that takes records of frame version 1; a link carries
+	// it in its own header (NodeSourceGroup.c; SDN-87, #386)
+	UINT frame_size = size + NODE_OVERLAY_VRF_TAG;
+	const UCHAR *frame = (plain ? record : NodeSourceGroupWrap(v, hop, vrf_id, record, &frame_size));
 	// The MTU of the VRF clamps the MSS of a TCP SYN as the overlay sees it, after the 1:1 NAT rules, and the rate limits
 	// of the VRF and the node may drop it (NodeShape.c)
-	bool ok = (allowed && (s != NULL || plain) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size) : TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG)));
+	bool ok = (allowed && (s != NULL || plain) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size) : TransportNoiseSend(s, NOISE_RECORD_DATA, frame, frame_size)));
 	InterlockedDecrement(&peer->Senders);
 
 	// A Mirror copies the packet as it went to the peer (NodeMirror.c)
 	if (ok)
 		NodeMirrorCopy(v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size, true);
 
-	if (record != buf)
-		Free(record);
+	if (room != buf)
+		Free(room);
 
 	InterlockedIncrement64(ok ? &ov->Forwarded : &ov->Dropped);
 	return ok;

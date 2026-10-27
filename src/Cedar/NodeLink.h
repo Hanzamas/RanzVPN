@@ -38,6 +38,7 @@ void NodeLinkStop(NODE *n);
 void NodeLinkGetStatus(NODE *n, NODE_LINK_STATUS *st);
 
 // NodeOverlay.c
-void NodeOverlayLinkDeliver(NODE *n, void *hop, const UCHAR *record, UINT size, UCHAR *nat_buf);
+struct NODE_SOURCE_CLAIM;
+void NodeOverlayLinkDeliver(NODE *n, void *hop, const UCHAR *record, UINT size, UCHAR *nat_buf, const struct NODE_SOURCE_CLAIM *claim);
 
 #endif // NODE_LINK_H

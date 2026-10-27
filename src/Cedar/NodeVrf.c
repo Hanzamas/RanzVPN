@@ -15,6 +15,7 @@
 
 #include "Node.h"
 #include "NodeLink.h"
+#include "NodeSourceGroup.h"
 
 #include "Mayaqua/Memory.h"
 
@@ -294,6 +295,8 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 	NodeFreeMirrorTable(v->Mirror);
 	// The links of kind vxlan and geneve (NodeLink.c; SDN-76, #356)
 	NodeFreeLinkTable(v->Link);
+	// The source groups (NodeSourceGroup.c; SDN-87, #386)
+	NodeFreeSourceGroupTable(v->SourceGroups);
 	for (UINT i = 0; i < v->NumVrfs; i++)
 		NodeFreeVrfTable(v->Vrfs[i]);
 	NodeShapeFreeTable(v->Shape);

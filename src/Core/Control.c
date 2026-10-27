@@ -400,6 +400,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyEndpoints(&st, c->Objects, c->NumObjects);
 	// The kinds of the links of the VRFs and the tunnel endpoints (ControlLink.c; SDN-76, #356)
 	ControlCopyLinks(&st, c->Objects, c->NumObjects);
+	// The source groups of the node, its peers and the Devices, and the tag modes of the VRFs (ControlSourceGroup.c; SDN-87, #386)
+	ControlCopySourceGroups(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
@@ -489,6 +491,8 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	}
 	// The links of kind vxlan and geneve (SDN-76, #356)
 	hello->capabilities.plain_links = caps.PlainLinks;
+	// The source groups (SDN-87, #386)
+	hello->capabilities.tags = caps.Tags;
 }
 
 // One stream: the dial, the handshake bound to the exporter of the TLS session, the Hello, then
@@ -551,9 +555,11 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	ControlLeasesResend(c->Config.Leases);
 	// ... and so do the counters of the WireGuard Devices of a gateway (ControlDevice.c; SDN-80, #375)
 	ControlDevicesResend(c->Config.Devices);
+	// ... and the counters of the source groups, once they hold any (ControlSourceGroup.c; SDN-87, #386)
+	ControlSourceGroupsResend(c->Config.SourceGroups);
 
 	while (ok && ControlHalted(c) == false) {
-		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
+		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s) && ControlWriteSourceGroups(c->Config.SourceGroups, s);
 		if (ok == false)
 			break;
 

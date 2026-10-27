@@ -138,6 +138,9 @@ type Network struct {
 	// DHCP is the DHCP responder of an L2 Network (SDN-43, dhcp.go): a Node that answers DHCP from
 	// the IPv4 pool when the bridged LAN has no DHCP server. Left out, the responder is off.
 	DHCP *DHCP `json:"dhcp,omitempty"`
+	// TagMode is how the Nodes of the VRF trust the source group that a link of kind vxlan or geneve
+	// carries (SDN-87, tagmode.go): off or trusted-underlay. Left out, it is off.
+	TagMode string `json:"tagMode,omitempty"`
 }
 
 // Node is a node of the overlay, identified by its Noise static key.
@@ -776,6 +779,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeDevices()
 	// The kinds of the links of the VRFs and the tunnel endpoints of the Nodes (link.go)
 	in.completeLinks()
+	// The tag modes of the Networks (tagmode.go)
+	in.completeTagModes()
 	return problems
 }
 
@@ -898,6 +903,7 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateEndpoints()...)
 	problems = append(problems, in.validateDevices()...)
 	problems = append(problems, in.validateLinks()...)
+	problems = append(problems, in.validateTagModes()...)
 	return append(problems, in.validateIPAM()...)
 }
 

@@ -352,6 +352,8 @@ struct NODE_VRF_TABLES {
 	NODE_POLICY_TABLE *Policy;
 	// The links of kind vxlan and geneve of the same Generation (NodeLink.c; SDN-76, #356), NULL for none
 	struct NODE_LINK_TABLE *Link;
+	// The source groups of the same Generation (NodeSourceGroup.c; SDN-87, #386), NULL for none
+	struct NODE_SOURCE_GROUP_TABLE *SourceGroups;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -463,6 +465,10 @@ struct NODE {
 
 	// The throttle of the Login (NodeThrottle.c; AUD1-DT-5, #453), from NewNode to FreeNode
 	struct NODE_THROTTLE *LoginThrottle;
+
+	// The source groups of the overlay (NodeSourceGroup.c; SDN-87, #386): the counters by tag mode, NULL while the overlay
+	// does not run
+	struct NODE_SOURCE_GROUPS *SourceGroups;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)

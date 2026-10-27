@@ -67,6 +67,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		vrfs[name].Dns = zone(in, name)
 		// The kind of the links of the VRF and its VNI (link.go; SDN-76)
 		withLink(vrfs[name], v)
+		// The tag mode of its Networks (sourcegroup.go; SDN-87)
+		vrfs[name].TagMode = tagMode(in.VRFTagMode(name))
 	}
 	networks := map[string][]*controlpb.Network{} // by VRF name
 	for name, n := range in.Networks {

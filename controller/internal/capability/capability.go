@@ -40,6 +40,9 @@ type Capabilities struct {
 	// PlainLinks: the node runs the links of kind vxlan and geneve (SDN-76), the VXLAN module over
 	// Winsock UDP.
 	PlainLinks bool `json:"plainLinks,omitempty"`
+	// Tags: the node carries the source group of its packets to its peers and judges theirs by the
+	// one they carry (SDN-87).
+	Tags bool `json:"tags,omitempty"`
 }
 
 var skuNames = map[controlpb.Sku]string{
@@ -71,6 +74,7 @@ func FromProto(p *controlpb.Capabilities) *Capabilities {
 		TLSPortFallback: p.GetTlsPortFallback(),
 		WireGuard:       p.GetWireguard(),
 		PlainLinks:      p.GetPlainLinks(),
+		Tags:            p.GetTags(),
 	}
 	if len(p.GetWireguardKey()) > 0 {
 		c.WireGuardKey = base64.StdEncoding.EncodeToString(p.GetWireguardKey())
@@ -89,6 +93,7 @@ func (c Capabilities) Proto() (*controlpb.Capabilities, error) {
 		TlsPortFallback: c.TLSPortFallback,
 		Wireguard:       c.WireGuard,
 		PlainLinks:      c.PlainLinks,
+		Tags:            c.Tags,
 	}
 	if c.WireGuardKey != "" {
 		k, err := base64.StdEncoding.DecodeString(c.WireGuardKey)

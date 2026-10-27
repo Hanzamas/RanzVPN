@@ -653,6 +653,8 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	}
 	// The TLS fingerprints of the certificate that the controller serves (certificate.go; SDN-92)
 	c.withFingerprints(states)
+	// The source groups of the Nodes that report the Capability tags (sourcegroup.go; SDN-87)
+	c.withSourceGroups(next.Capped(force.Nodes), states)
 	return compiled{lic: lic, force: force, states: states}, nil
 }
 
@@ -973,6 +975,7 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 	}
 	n := c.nodes[name]
 	_, seen := c.caps[string(conn.PeerKey())]
+	tagged := c.caps[string(conn.PeerKey())].GetTags()
 	caps := c.report(conn.PeerKey(), name, hello.GetCapabilities())
 	if !seen {
 		// The first Hello of this key is rare, and report writes to the store here as well
@@ -986,6 +989,8 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_LICENCE, capFormat, force.Tier, force.Nodes, name))
 		return
 	}
+	// A Capability tags that changed changes the source groups of the states of the node and its peers (sourcegroup.go; SDN-87)
+	c.tagsChanged(name, tagged, caps)
 	if problems := capability.Check(name, caps, n.state); len(problems) > 0 {
 		// The node keeps forwarding on the generation it applied last; the intent it cannot
 		// honour does not reach it.
