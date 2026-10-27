@@ -73,6 +73,8 @@ Where the attacker holds the Noise key of the server, the queries of the client 
 
 Since the responder takes the key of any initiator, the first derivations that ProVerif finds for some attacks of `endpoint-cert` (before CORE-H5, `quic-cert`), `nobinding-cert` and `neither-none` rest on an approximation of the actions of a process, and it cannot rebuild their traces ("cannot be proved" where the attack is real). Those three variants take `precise.pvl` first, which sets `preciseActions`: the prover then finds and rebuilds the real attacks, in under a minute each.
 
+Where the attacker holds the REALITY private key of the server (`mimic-key`, `mimic-nobinding-key`), it makes the key share of every ClientHello that it sends, and ProVerif 2.05 selected `attacker(tpk(a))` in a loop and did not finish in 900 s. The two variants declare `noselect a: bitstring; attacker(tpk(a)).`, the declaration that the prover suggests. It changes only the order in which the prover resolves its rules, not what it proves, and the two variants then answer in about one and about six minutes.
+
 ### The variants
 
 | variant | what it is |
