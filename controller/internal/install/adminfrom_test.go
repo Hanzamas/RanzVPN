@@ -45,6 +45,31 @@ func TestAdminFromDefaultIsLoopbackAndThePrivateSubnets(t *testing.T) {
 	}
 }
 
+// The default never takes in a public address: the subnet of an interface is listed within the
+// private block that holds its address, so a mask that is wider than the block, as 172.16.0.5/8 has,
+// or one of no bits, gives the block and not 172.0.0.0/8 or everything. An address whose mask is
+// not a prefix adds nothing.
+func TestAdminFromDefaultStaysWithinThePrivateBlocks(t *testing.T) {
+	crooked := &net.IPNet{IP: net.ParseIP("10.4.4.4"), Mask: net.IPv4Mask(255, 0, 255, 0)}
+	for _, c := range []struct {
+		what  string
+		addrs []net.Addr
+		want  string
+	}{
+		{"a /8 over 172.16", []net.Addr{ipnet(t, "172.16.0.5/8")}, "127.0.0.0/8,172.16.0.0/12,::1/128"},
+		{"a /8 over 192.168", []net.Addr{ipnet(t, "192.168.1.5/8")}, "127.0.0.0/8,192.168.0.0/16,::1/128"},
+		{"a /0 over 10", []net.Addr{ipnet(t, "10.1.1.1/0")}, "10.0.0.0/8,127.0.0.0/8,::1/128"},
+		{"a /4 over a unique local address", []net.Addr{ipnet(t, "fd12::1/4")}, "127.0.0.0/8,::1/128,fc00::/7"},
+		{"a /12 that is the block", []net.Addr{ipnet(t, "172.20.1.1/12")}, "127.0.0.0/8,172.16.0.0/12,::1/128"},
+		{"a mask that narrows the block", []net.Addr{ipnet(t, "172.20.1.1/24")}, "127.0.0.0/8,172.20.1.0/24,::1/128"},
+		{"a mask that is not a prefix", []net.Addr{crooked}, "127.0.0.0/8,::1/128"},
+	} {
+		if got, err := AdminFrom(nil, c.addrs); err != nil || got != c.want {
+			t.Errorf("%s: the default allowlist is %q (%v), want %q", c.what, got, err, c.want)
+		}
+	}
+}
+
 // --admin-from names prefixes or addresses, canonical and ordered, and any alone restores the open
 // default; a wrong entry, a repeated one and any beside a prefix are refused.
 func TestAdminFromTakesPrefixesOrAny(t *testing.T) {
@@ -70,13 +95,39 @@ func TestAdminFromTakesPrefixesOrAny(t *testing.T) {
 // ranz install says which sources the Controller allows and how to change it, or that none is
 // restricted.
 func TestAdminFromMessageSaysWhoIsAllowedAndHowToChangeIt(t *testing.T) {
-	m := adminFromMessage("10.1.2.0/24,127.0.0.0/8")
-	for _, want := range []string{"10.1.2.0/24, 127.0.0.0/8", "403", "ranz admin-sources set", "--admin-from any"} {
+	m := adminFromMessage("10.1.2.0/24,127.0.0.0/8", "")
+	for _, want := range []string{"the Controller starts with the admin source allowlist", "10.1.2.0/24, 127.0.0.0/8", "403", "ranz admin-sources set", "--admin-from any"} {
 		if !strings.Contains(m, want) {
 			t.Errorf("the message %q does not say %q", m, want)
 		}
 	}
-	if m := adminFromMessage(AdminFromAny); !strings.Contains(m, "any address may reach") {
+	if m := adminFromMessage(AdminFromAny, ""); !strings.Contains(m, "any address may reach") {
 		t.Errorf("the message for any is %q", m)
+	}
+}
+
+// A data directory that holds the store of a Controller that started before, which ranz uninstall
+// leaves, keeps its list: ranz install does not promise the list of its flag or of the default, and
+// says where to see the list and how to change it. A service that is registered already says the
+// same.
+func TestAdminFromMessageDoesNotPromiseAListThatAStoreKeeps(t *testing.T) {
+	for _, value := range []string{"10.1.2.0/24,127.0.0.0/8", AdminFromAny} {
+		m := adminFromMessage(value, `C:\ProgramData\Ranz\controller`)
+		for _, want := range []string{`C:\ProgramData\Ranz\controller`, "holds the store of a Controller that started before", "keeps the admin source allowlist that it has", "whatever --admin-from or the default says", "ranz status", "ranz admin-sources set"} {
+			if !strings.Contains(m, want) {
+				t.Errorf("the message for the kept store with the flag %q does not say %q: %s", value, want, m)
+			}
+		}
+		for _, not := range []string{"starts with", "every other gets 403"} {
+			if strings.Contains(m, not) {
+				t.Errorf("the message for the kept store with the flag %q says %q, which a kept store does not do: %s", value, not, m)
+			}
+		}
+	}
+	m := adminFromExistingMessage("ranz-controller")
+	for _, want := range []string{"the ranz-controller service is there already", "--admin-from and the default change nothing", "at its first start only", "its store keeps the list", "ranz status", "ranz admin-sources set"} {
+		if !strings.Contains(m, want) {
+			t.Errorf("the message for a service that is there already does not say %q: %s", want, m)
+		}
 	}
 }

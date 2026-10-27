@@ -406,7 +406,8 @@ func setRecovery(s *mgr.Service) error {
 
 // installController registers the Controller service, to run the ranz.exe of the Ranz folder as
 // `ranz.exe controller`, and starts it. A service that exists is only started: it keeps the admin
-// source allowlist that it has (adminfrom.go).
+// source allowlist that it has, and so does a data directory that ranz uninstall left with the store
+// of an earlier Controller, and ranz install says so (adminfrom.go).
 func installController(w io.Writer, m *mgr.Mgr, dir string, opts Options) error {
 	exists, err := serviceExists(m, controllerServiceName)
 	if err != nil {
@@ -418,13 +419,17 @@ func installController(w io.Writer, m *mgr.Mgr, dir string, opts Options) error 
 		if err != nil {
 			return err
 		}
+		keptDir := controllercmd.DefaultDataDir()
+		if !controllercmd.KeptStore(keptDir) {
+			keptDir = ""
+		}
 		if err := controllercmd.InstallAdminFrom(filepath.Join(dir, ranzExeName), adminFrom); err != nil {
 			return fmt.Errorf("registering the %s service: %w", controllerServiceName, err)
 		}
 		fmt.Fprintf(w, "install: the %s service is registered\n", controllerServiceName)
-		fmt.Fprintln(w, adminFromMessage(adminFrom))
-	} else if len(opts.AdminFrom) > 0 {
-		fmt.Fprintf(w, "install: the %s service is there already, so --admin-from changes nothing: set the list with ranz admin-sources set PREFIX...\n", controllerServiceName)
+		fmt.Fprintln(w, adminFromMessage(adminFrom, keptDir))
+	} else {
+		fmt.Fprintln(w, adminFromExistingMessage(controllerServiceName))
 	}
 	return ensureRunning(w, m, controllerServiceName)
 }
