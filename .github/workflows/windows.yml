@@ -421,8 +421,10 @@ jobs:
     # the pinned WireGuardNT SDK (THIRD_PARTY.TXT) and a Wintun adapter, the overlay host on its other node, and
     # ranz-wgpeer, a stock WireGuard client on wireguard-go and its netstack with the key of the Device: the handshake, a
     # ping and a TCP connection through the gateway, a second Device of the gateway that the first reaches while the policy
-    # lets them meet, the same pings blocked by a deny rule, the last handshake and the traffic in ranz get devices, and the
-    # gateway on UDP 51820 and on the port that its Node sets (.github/scripts/device-tracer.ps1)
+    # lets them meet, a Device of the other node, a gateway too, that the first reaches through the overlay, the same pings
+    # blocked by a deny rule of their ICMP while the TCP connection to the Device of the other gateway goes through, the last
+    # handshake and the traffic in ranz get devices, and the gateway on UDP 51820 and on the port that its Node sets
+    # (.github/scripts/device-tracer.ps1)
     - name: Fetch WireGuardNT
       shell: pwsh
       run: |
