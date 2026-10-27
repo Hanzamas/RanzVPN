@@ -27,7 +27,8 @@
 // c. Data: packets of the host of node-a reach the host of node-b through relay-1 and come back, one of the MTU of the VRF
 //    among them, while node-a reaches node-c on its stream session; the capture finds no 8 bytes in a row of them.
 // d. Counters: the sessions of node-a and node-b say relay for their pair and stream for node-c, with the records of the
-//    overlay that went each way on the datagram path.
+//    overlay that went each way on the datagram path, and so does the answer of the admin pipe of node-a to state, which
+//    ranz node state prints.
 // e. Relay restart: relay-1 starts again with no Binding. The next keepalive of each Node binds it again, and the packets go
 //    through as before, with no new Signal, no new Generation, the same control stream and the same peer session.
 // f. NAT ageing: after a quiet time of three NAT timeouts the packets still go through, on the same mappings, which the
@@ -1444,8 +1445,19 @@ static void RelayPathCounters(RELAYPATH_CTX *ctx)
 		"The counters of each peer say how many records went each way on the datagram path, and none for a peer on its stream session",
 		"node-a to node-b %I64u out, %I64u in; node-b to node-a %I64u out, %I64u in; node-c %I64u and %I64u at node-a, %I64u and %I64u at node-b; %I64u each way expected", ab.DatagramsOut,
 		ab.DatagramsIn, ba.DatagramsOut, ba.DatagramsIn, ac.DatagramsOut, ac.DatagramsIn, bc.DatagramsOut, bc.DatagramsIn, n);
-	RelayPathCheck(ctx, StrCmp(NodeAgentPathName(ab.Path), "relay") == 0 && StrCmp(NodeAgentPathName(ac.Path), "stream") == 0,
-		"The state of the node names the paths relay and stream, as ranz node state prints them", "%s and %s", NodeAgentPathName(ab.Path), NodeAgentPathName(ac.Path));
+
+	// The answer of the admin pipe of node-a to state, which ranz node state prints: the entry of node-b, whole, and the path
+	// and the datagrams of node-c, after its age
+	char *reply = ZeroMalloc(NODE_ADMIN_REPLY);
+	char relay[MAX_SIZE];
+	NodeAdminCommand(ctx->Nodes[RELAYPATH_A].Node, "state", reply, NODE_ADMIN_REPLY);
+	Format(relay, sizeof(relay), "{\"peer\":\"node-b\",\"up\":false,\"transport\":\"\",\"ageSeconds\":0,\"path\":\"relay\",\"datagramsOut\":%I64u,\"datagramsIn\":%I64u}", n, n);
+	bool shown = InStr(reply, relay) && InStr(reply, "{\"peer\":\"node-c\",\"up\":true,") && InStr(reply, "\"path\":\"stream\",\"datagramsOut\":0,\"datagramsIn\":0}");
+	UINT sessions = SearchStr(reply, "\"sessions\":", 0);
+	RelayPathCheck(ctx, shown,
+		"The state of node-a, as its admin pipe answers it and ranz node state prints it, says the path of each peer, relay for node-b with the datagrams each way and stream for node-c",
+		"the answer from its sessions on is %s", (sessions != INFINITE ? reply + sessions : reply));
+	Free(reply);
 }
 
 // What stays the same at a Node across the restart of relay-1 and the quiet time of the NATs
