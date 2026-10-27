@@ -253,6 +253,13 @@ message NodeConfig {
   // The tunnel endpoint of the node for the links of kind vxlan and geneve (SDN-76 #356): the ports it
   // listens on. Absent while no VRF of the node has such a link.
   Vtep vtep = 11;
+  // The decoy of the Listener of the node (AUD1-DT-4 #452): the loopback address and port of a site on the node,
+  // "127.0.0.1:8080" or "[::1]:8080", to which the node passes a prober of the TLS of the new protocol, one whose
+  // first frame does not open under its static key. Empty for none, and while no Listener names the node. A
+  // node of an older release skips the field. It is a field of the NodeConfig and not of the Listener, because
+  // Go writes the members of a oneof after the other fields of a message and nanopb in the order of the
+  // numbers, and the two must write the same bytes.
+  string listener_decoy = 12;
 }
 
 // The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise
@@ -284,12 +291,6 @@ message Listener {
   string name = 1;
   uint32 port = 2;       // the TCP port of the front door
   uint32 quic_port = 3;  // the UDP port of QUIC
-  // The decoy of the TLS of the new protocol (AUD1-DT-4 #452): the loopback address and port of a site on the
-  // node, "127.0.0.1:8080" or "[::1]:8080", to which the node passes a prober, one whose first frame does not
-  // open under its static key. Empty for none. A node of an older release skips the field. It is declared before
-  // the oneof because Go writes the members of a oneof after the other fields, and nanopb writes the fields in
-  // the order of the declaration (control.options: sort_by_tag:false), so both write the same bytes.
-  string decoy = 7;
   oneof certificate {
     CertificateFile file = 4;
     // a certificate of the LocalMachine\My store whose key is in a key storage provider, by its

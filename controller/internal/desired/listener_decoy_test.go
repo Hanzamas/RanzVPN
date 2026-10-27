@@ -19,9 +19,9 @@ func TestCompileListenerDecoy(t *testing.T) {
 	}
 	states := compile(t, rs...)
 	for node, want := range map[string]string{"a": "127.0.0.1:8080", "b": ""} {
-		l := states[node][Key{controlpb.Kind_KIND_NODE, node}].GetNode().GetListener()
-		if l == nil || l.GetDecoy() != want {
-			t.Errorf("the Listener of %s is %v, want the decoy %q", node, l, want)
+		n := states[node][Key{controlpb.Kind_KIND_NODE, node}].GetNode()
+		if n.GetListener() == nil || n.GetListenerDecoy() != want {
+			t.Errorf("the NodeConfig of %s has the Listener %v and the decoy %q, want the decoy %q", node, n.GetListener(), n.GetListenerDecoy(), want)
 		}
 	}
 }

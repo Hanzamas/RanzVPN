@@ -22,12 +22,12 @@ func TestListenerDecoyReachesTheNode(t *testing.T) {
 	hub := h.sim("hub", keyBranch2)
 
 	n := nodeObject(gw.update(t))
-	if n == nil || n.GetListener() == nil || n.GetListener().GetDecoy() != "127.0.0.1:8080" || n.GetListener().GetName() != "edge-gw-1" {
-		t.Errorf("the NodeConfig of gw-1 has the Listener %v, want edge-gw-1 with the decoy 127.0.0.1:8080", n.GetListener())
+	if n == nil || n.GetListener() == nil || n.GetListenerDecoy() != "127.0.0.1:8080" || n.GetListener().GetName() != "edge-gw-1" {
+		t.Errorf("the NodeConfig of gw-1 has the Listener %v and the decoy %q, want edge-gw-1 with the decoy 127.0.0.1:8080", n.GetListener(), n.GetListenerDecoy())
 	}
 	n = nodeObject(hub.update(t))
-	if n == nil || n.GetListener() == nil || n.GetListener().GetDecoy() != "" {
-		t.Errorf("the NodeConfig of hub has the Listener %v, want one without a decoy", n.GetListener())
+	if n == nil || n.GetListener() == nil || n.GetListenerDecoy() != "" {
+		t.Errorf("the NodeConfig of hub has the Listener %v and the decoy %q, want one without a decoy", n.GetListener(), n.GetListenerDecoy())
 	}
 	h.waitNode("gw-1", 1, true)
 	h.waitNode("hub", 1, true)
@@ -44,8 +44,8 @@ func TestListenerDecoyReachesTheNode(t *testing.T) {
 		t.Errorf("the change of the decoy changed %+v, want gw-1 at generation 2 alone", res.Nodes)
 	}
 	n = nodeObject(gw.update(t))
-	if n == nil || n.GetListener().GetDecoy() != "[::1]:9090" {
-		t.Errorf("the NodeConfig of gw-1 has the Listener %v, want the decoy [::1]:9090", n.GetListener())
+	if n == nil || n.GetListenerDecoy() != "[::1]:9090" {
+		t.Errorf("the NodeConfig of gw-1 has the decoy %q, want [::1]:9090", n.GetListenerDecoy())
 	}
 	h.waitNode("gw-1", 2, true)
 	h.waitNode("hub", 1, true)

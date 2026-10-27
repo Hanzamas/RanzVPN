@@ -60,7 +60,7 @@ void ControlCopyListener(CONTROL_STATE *st, const ranz_control_v1_Object *object
 		strncpy_s(l->Name, sizeof(l->Name), src->name, _TRUNCATE);
 		l->Port = src->port;
 		l->QuicPort = src->quic_port;
-		strncpy_s(l->Decoy, sizeof(l->Decoy), src->decoy, _TRUNCATE);
+		strncpy_s(l->Decoy, sizeof(l->Decoy), o->kind.node.listener_decoy, _TRUNCATE);
 		ControlCopyCertificate(l, src);
 
 		if (l->Source == CONTROL_CERT_NONE || l->Port > 65535 || l->QuicPort > 65535 || (l->Source == CONTROL_CERT_ACME && l->NumNames == 0)) {
