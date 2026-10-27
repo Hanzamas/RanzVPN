@@ -694,7 +694,7 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	NodeShapeStart(n, cfg);
 	NodePolicyStart(n, cfg);
 	// The Listener, which listens where a state says (NodeListener.c; SDN-45, #238)
-	NodeListenerStart(n);
+	NodeListenerStart(n, cfg->Key);
 	n->Overlay = ov;
 
 	Zero(&cc, sizeof(cc));
