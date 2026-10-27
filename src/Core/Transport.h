@@ -28,7 +28,7 @@
 #include "Core/Noise.h"
 #include "Core/SourceLimit.h"
 
-#define TRANSPORT_NAME_SIZE   32  // A transport name with its terminating NUL
+#define TRANSPORT_NAME_SIZE    32  // A transport name with its terminating NUL
 #define TRANSPORT_ADDRESS_SIZE 256 // An address with its terminating NUL: a host and a port, a URL, a pipe name
 #define TRANSPORT_MAX_TARGETS  8   // The entries of a fallback list at most
 #define TRANSPORT_RACE_DELAY   250 // The attempt delay (ms) that RFC 8305 section 8 recommends

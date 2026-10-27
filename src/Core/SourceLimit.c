@@ -28,12 +28,12 @@ typedef struct SOURCE_ENTRY {
 } SOURCE_ENTRY;
 
 struct SOURCE_LIMITS {
-	SOURCE_LIMIT_CONFIG Cfg;                 // The configuration, with the defaults filled in
-	SRWLOCK Lock;                            // Everything below
-	SOURCE_ENTRY *Buckets[SOURCE_BUCKETS];   // The table
-	UINT Count;                              // The sources in it
-	UINT Pending;                            // The connections that have not finished their handshake, in all
-	UINT64 Admitted;                         // The counters of SOURCE_LIMIT_STATS
+	SOURCE_LIMIT_CONFIG Cfg;               // The configuration, with the defaults filled in
+	SRWLOCK Lock;                          // Everything below
+	SOURCE_ENTRY *Buckets[SOURCE_BUCKETS]; // The table
+	UINT Count;                            // The sources in it
+	UINT Pending;                          // The connections that have not finished their handshake, in all
+	UINT64 Admitted;                       // The counters of SOURCE_LIMIT_STATS
 	UINT64 RefusedFull;
 	UINT64 RefusedSource;
 	UINT64 RefusedRate;
