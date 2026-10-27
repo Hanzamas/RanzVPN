@@ -47,6 +47,9 @@ func (c *Controller) Import(ctx context.Context, doc intent.Document) (ApplyResu
 	if err != nil {
 		return ApplyResult{}, err
 	}
+	if err := c.checkDestinations(ctx, next); err != nil {
+		return ApplyResult{}, err
+	}
 	if err := c.checkCap(next, st, "import"); err != nil {
 		return ApplyResult{}, err
 	}
