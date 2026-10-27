@@ -400,6 +400,9 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyEndpoints(&st, c->Objects, c->NumObjects);
 	// The kinds of the links of the VRFs and the tunnel endpoints (ControlLink.c; SDN-76, #356)
 	ControlCopyLinks(&st, c->Objects, c->NumObjects);
+	// The hubs and the ECMP of the VRFs, the LAN subnets of the node and the gateways that are down (ControlGateway.c; SDN-19,
+	// #195)
+	ControlCopyGateways(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);

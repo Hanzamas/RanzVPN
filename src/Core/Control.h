@@ -219,6 +219,10 @@ typedef struct CONTROL_PEER {
 	// Its tunnel endpoint (SDN-76, #356): the only address that the node takes the datagrams of a link of kind vxlan or
 	// geneve of a shared VRF from
 	CONTROL_VTEP Vtep;
+
+	// The controller reports it down (SDN-19, #195): it is a gateway of a prefix that another gateway announces too, and it
+	// has had no control stream for a while, so the node gives that prefix to another gateway that answers its probes
+	bool Down;
 } CONTROL_PEER;
 
 // A name of the zone of a VRF and the addresses that it answers (DnsRecord of the control protocol; SDN-11, #187)
@@ -254,6 +258,8 @@ typedef struct CONTROL_VRF {
 	CONTROL_DNS_ZONE *Dns;        // Its zone of overlay DNS (SDN-11, #187), NULL while overlay DNS is off in it; valid as the state is
 	UINT Link;                    // The kind of the links between its nodes (CONTROL_LINK_*; SDN-76, #356) ...
 	UINT Vni;                     // ... and the VNI of a link of kind vxlan or geneve
+	char Hub[CONTROL_NAME_SIZE];  // The hub node of a VRF of topology hub-and-spoke (SDN-19, #195), "" for a full mesh
+	bool Ecmp;                    // The flows to a prefix of several gateways spread over the healthy ones (SDN-19, #195)
 } CONTROL_VRF;
 
 // A reservation of the pool of a DHCP responder: an IPv4 prefix (Prefix of Dhcp.reserved)
@@ -369,6 +375,11 @@ typedef struct CONTROL_STATE {
 
 	// Its tunnel endpoint for the links of kind vxlan and geneve (SDN-76, #356): the ports it listens on
 	CONTROL_VTEP Vtep;
+
+	// The LAN subnets behind it, which it advertises as a gateway in its VRFs (SDN-19, #195): routes that lead to its host,
+	// ordered by VRF id
+	UINT NumLanSubnets;
+	CONTROL_ROUTE LanSubnets[CONTROL_MAX_ROUTES];
 } CONTROL_STATE;
 
 // Takes each state that the client applied, before the client acknowledges its Generation. It runs
