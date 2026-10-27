@@ -184,6 +184,8 @@ add_library(corecontrol STATIC
   ControlEndpoint.c
   # The kinds of the links of the VRFs and the tunnel endpoints in a desired state (SDN-76, #356)
   ControlLink.c
+  # The events of the node that the client reports (AUD1-DT-11, #459)
+  ControlEvent.c
   # The hubs and the ECMP of the VRFs, the LAN subnets of a node and the gateways that are down in a desired state (SDN-19,
   # #195)
   ControlGateway.c
