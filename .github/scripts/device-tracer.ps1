@@ -18,8 +18,15 @@ $ErrorActionPreference = 'Stop'
 # - a second Device of the same gateway, which stays up, answers the ping of the first while the starter rule of VRF
 #   default lets every packet between them through: the filters of the gateway that netsh wfp lists block the forwarding
 #   between two Devices on its WireGuard interface, and permit this pair;
+# - Devices of two gateways meet in the overlay: host is the gateway of tablet, on a port of its own, and stands for a
+#   gateway on a host of its own. One runner holds both gateways, and Windows would forward between their two WireGuard
+#   interfaces directly, so the routes of the WireGuard interface of host to tablet are taken away after each state that
+#   host applies (Remove-HostRoutes), and the fake host of host answers for tablet. The client of phone pings tablet and
+#   opens a TCP connection to it through gw, the overlay and host, whose policies each judge the packets between the two
+#   Devices by their tags;
 # - a Policy rule that denies the Device blocks the same ping to host once the gateway acknowledged the rule, and the
-#   policy of the gateway counts the drops; the ping of the second Device is blocked too;
+#   policy of the gateway counts the drops; the ping of the second Device is blocked too. The rule denies the ICMP of the
+#   Device only, so the ping to tablet is blocked as well, and the TCP connection to tablet still goes through;
 # - with the rule gone and wireguard.port of the gateway set to another port, the gateway listens there and no longer on
 #   51820, the configuration names the new port, and the client reaches host through it.
 # The output of the processes is shown when a check fails, with the node log of vpntest devicetrace (Stop-Trace).
@@ -47,6 +54,8 @@ $laptopKey = Join-Path $work 'laptop.key'
 $laptopConfig = Join-Path $work 'laptop.conf'
 $laptopOut = Join-Path $work 'laptop.out'
 $laptopErr = Join-Path $work 'laptop.err'
+# The Device of host, which the fake host of host plays: no client holds its key
+$tabletKey = Join-Path $work 'tablet.key'
 
 # Test ports, never 443 and not the ones of sdn-tracer.ps1: the TLS port of the controller and its rqlited
 $tls = '127.0.0.1:39543'
@@ -61,6 +70,9 @@ $hostKey = 'WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns='
 $endpoint = 'localhost'
 $defaultPort = 51820
 $otherPort = 51821
+# The port of host, the gateway of tablet, and its WireGuard interface (NODE_WIREGUARD_ADAPTER and the name of the node)
+$hostPort = 51822
+$hostInterface = 'Ranz WireGuard host'
 # The port of the TCP connection to the fake host, which echoes on any port
 $tcpPort = 7
 
@@ -126,10 +138,10 @@ function Wait-Listening([int] $port, [bool] $on) {
 	$end = $start.AddSeconds($waitSeconds)
 	while ((Test-Listening $port) -ne $on) {
 		if ((Get-Date) -ge $end) {
-			Write-Host "--- the UDP ports of the gateway:"
-			foreach ($p in $defaultPort, $otherPort) { Show-Listening $p }
-			$hits = @(Get-ExcludedRanges @($defaultPort, $otherPort))
-			Write-Host "UDP port ranges that Windows keeps, with a port of the gateway: $(if ($hits.Count -gt 0) { $hits -join ', ' } else { 'none' })"
+			Write-Host "--- the UDP ports of the gateways:"
+			foreach ($p in $defaultPort, $otherPort, $hostPort) { Show-Listening $p }
+			$hits = @(Get-ExcludedRanges @($defaultPort, $otherPort, $hostPort))
+			Write-Host "UDP port ranges that Windows keeps, with a port of a gateway: $(if ($hits.Count -gt 0) { $hits -join ', ' } else { 'none' })"
 			throw "UDP port $port is $(if ($on) { 'not listened on' } else { 'still listened on' }) after $waitSeconds s"
 		}
 		Start-Sleep -Milliseconds 500
@@ -166,6 +178,27 @@ function Clear-ExcludedRanges([int[]] $ports) {
 	& net.exe start winnat | Out-Null
 	$hits = @(Get-ExcludedRanges $ports)
 	if ($hits.Count -gt 0) { throw "UDP port ranges that Windows keeps still hold a port of the gateway ($($ports -join ', ')): $($hits -join ', ')" }
+}
+
+# host stands for a gateway on a host of its own: the routes of its WireGuard interface to tablet go, which each state that
+# host applies installs again, so the host of the runner reaches tablet as another host would, through the adapter of gw
+# and the overlay. The routes are found by the addresses of tablet; none of them may be left.
+function Remove-HostRoutes {
+	$routes = @(Get-NetRoute -InterfaceAlias $hostInterface -ErrorAction SilentlyContinue | Where-Object { Test-TabletRoute $_.DestinationPrefix })
+	foreach ($r in $routes) {
+		Write-Host "the route $($r.DestinationPrefix) of $hostInterface goes: host stands for a gateway on a host of its own"
+		Remove-NetRoute -InputObject $r -Confirm:$false
+	}
+	$left = @(Get-NetRoute -InterfaceAlias $hostInterface -ErrorAction SilentlyContinue | Where-Object { Test-TabletRoute $_.DestinationPrefix })
+	if ($left.Count -gt 0) { throw "$hostInterface still routes $($left.DestinationPrefix -join ', ') to tablet" }
+}
+
+# Whether the prefix of a route is the host route of an address of tablet
+function Test-TabletRoute([string] $prefix) {
+	$address, $length = $prefix -split '/'
+	$ip = [System.Net.IPAddress]::Parse($address)
+	if ([int] $length -ne $ip.GetAddressBytes().Length * 8) { return $false }
+	return (@($tabletAddresses | Where-Object { $_.Equals($ip) }).Count -gt 0)
 }
 
 # The configuration of the Device name as the controller renders it, saved into file for the client and checked against the
@@ -221,7 +254,7 @@ $ctl = $null
 $trace = $null
 $laptop = $null
 try {
-	Clear-ExcludedRanges @($defaultPort, $otherPort)
+	Clear-ExcludedRanges @($defaultPort, $otherPort, $hostPort)
 
 	$ctl =Start-Process -FilePath $ranz -PassThru -NoNewWindow -RedirectStandardOutput $controllerOut -RedirectStandardError $controllerErr -ArgumentList @(
 		'controller', '-data', $data, '-listen', $tls, '-name', 'device-tracer', '-rqlited', $env:RQLITED, '-rqlite', "http://$rqliteHttp", '-rqlite-raft', $rqliteRaft)
@@ -242,19 +275,24 @@ try {
 	$status = Invoke-Ranz @('status')
 
 	# The Devices, each with a key pair of its own, and the Nodes of the tracer in VRF default of the first start, gw with
-	# its WireGuard end
+	# its WireGuard end, and host with one of its own, on its own port, as the gateway of tablet
 	$gateway = @{ kind = 'Node'; name = 'gw'; spec = @{ publicKey = $gwKey; wireguard = @{ endpoint = $endpoint } } }
 	Invoke-Apply 'tracer' @(
 		$gateway,
-		@{ kind = 'Node'; name = 'host'; spec = @{ publicKey = $hostKey } },
+		@{ kind = 'Node'; name = 'host'; spec = @{ publicKey = $hostKey; wireguard = @{ endpoint = $endpoint; port = $hostPort } } },
 		@{ kind = 'Device'; name = 'phone'; spec = @{ network = 'default'; gateway = 'gw'; publicKey = (New-DeviceKey $deviceKey); tags = @('phones') } },
-		@{ kind = 'Device'; name = 'laptop'; spec = @{ network = 'default'; gateway = 'gw'; publicKey = (New-DeviceKey $laptopKey); tags = @('laptops') } })
+		@{ kind = 'Device'; name = 'laptop'; spec = @{ network = 'default'; gateway = 'gw'; publicKey = (New-DeviceKey $laptopKey); tags = @('laptops') } },
+		@{ kind = 'Device'; name = 'tablet'; spec = @{ network = 'default'; gateway = 'host'; publicKey = (New-DeviceKey $tabletKey); tags = @('tablets') } })
 	$devices = @((Invoke-Ranz @('get', 'resources')).resources | Where-Object { $_.kind -eq 'Device' })
 	foreach ($d in $devices) {
 		Write-Host "Device $($d.name): $($d.spec | ConvertTo-Json -Compress)"
 		if ($d.spec.address -notmatch '^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.') { throw "Device $($d.name) has no address of the pool of Network default" }
 	}
 	$laptopAddress = ($devices | Where-Object { $_.name -eq 'laptop' }).spec.address
+	$tablet = ($devices | Where-Object { $_.name -eq 'tablet' }).spec
+	$tabletAddress = $tablet.address
+	# The addresses of tablet, which host routes through its WireGuard interface (Remove-HostRoutes)
+	$tabletAddresses = @(@($tablet.address, $tablet.ipv6Address) | Where-Object { $_ } | ForEach-Object { [System.Net.IPAddress]::Parse($_) })
 
 	# The nodes join; the gateway brings its WireGuard interface up for the Device
 	$trace = Start-Process -FilePath $vpntest -PassThru -NoNewWindow -RedirectStandardOutput $traceOut -RedirectStandardError $traceErr -ArgumentList @(
@@ -269,25 +307,36 @@ try {
 	$said = Read-Shared $traceOut
 	Write-Host $said
 	if ($said -match '\[FAIL\]') { throw 'a check of vpntest devicetrace failed' }
-	$m = [regex]::Match($said, 'DEVICETRACE NODE host ADDRESS ([0-9.]+) HOST fake')
+	$m = [regex]::Match($said, 'DEVICETRACE NODE host ADDRESS ([0-9.]+) HOST fake WIREGUARD PORT ([0-9]+) INTERFACE [0-9]+ DEVICES ([0-9]+) PAIRS ([0-9]+)')
 	if (-not $m.Success) { throw 'vpntest devicetrace printed no address of host' }
 	$hostAddress = $m.Groups[1].Value
+	if ([int] $m.Groups[2].Value -ne $hostPort -or [int] $m.Groups[3].Value -ne 1 -or [int] $m.Groups[4].Value -ne 0) {
+		throw "the WireGuard interface of host is not on UDP port $hostPort with tablet, its one Device"
+	}
 	$m = [regex]::Match($said, 'DEVICETRACE NODE gw ADDRESS ([0-9.]+) WIREGUARD PORT ([0-9]+) INTERFACE [0-9]+ DEVICES ([0-9]+) PAIRS ([0-9]+)')
 	if (-not $m.Success -or [int] $m.Groups[2].Value -ne $defaultPort -or [int] $m.Groups[3].Value -ne 2 -or [int] $m.Groups[4].Value -ne 1) {
 		throw "the WireGuard interface of gw is not on UDP port $defaultPort with the two Devices, which the starter rule lets meet"
 	}
 
-	# The Capability wireguard of the gateway, with the key of its WireGuard interface
+	# The Capability wireguard of each gateway, with the key of its WireGuard interface
 	$gw = Wait-Acknowledged 'gw' 0
-	$null = Wait-Acknowledged 'host' 0
+	$overlay = Wait-Acknowledged 'host' 0
 	Write-Host "API: node gw at generation $($gw.generation), capabilities $($gw.capabilities | ConvertTo-Json -Compress)"
 	if (-not $gw.capabilities.wireguard -or $gw.capabilities.wireguardKey -notmatch '^[A-Za-z0-9+/]{43}=$') { throw 'gw does not report the Capability wireguard with the key of its WireGuard interface' }
 	$wireguardKey = $gw.capabilities.wireguardKey
+	Write-Host "API: node host at generation $($overlay.generation), capabilities $($overlay.capabilities | ConvertTo-Json -Compress)"
+	if (-not $overlay.capabilities.wireguard) { throw 'host does not report the Capability wireguard, and it is the gateway of tablet' }
 
 	# The gateway listens on the default port, and the client reaches host through it
 	Wait-Listening $defaultPort $true
 	Get-DeviceConfig 'phone' $deviceConfig $wireguardKey $defaultPort
 	Invoke-Client @('-ping', $hostAddress, '-tcp', "${hostAddress}:$tcpPort", '-timeout', '30s') @('WGPEER HANDSHAKE OK', "WGPEER PING OK $hostAddress", "WGPEER TCP OK ${hostAddress}:$tcpPort")
+
+	# Devices of two gateways: host listens on its own port as the gateway of tablet, and phone reaches tablet through gw,
+	# the overlay and host, whose policies each judge the packets between the two Devices
+	Wait-Listening $hostPort $true
+	Remove-HostRoutes
+	Invoke-Client @('-ping', $tabletAddress, '-tcp', "${tabletAddress}:$tcpPort", '-timeout', '30s') @('WGPEER HANDSHAKE OK', "WGPEER PING OK $tabletAddress", "WGPEER TCP OK ${tabletAddress}:$tcpPort")
 
 	# Two Devices of the gateway meet where the policy lets them: laptop stays up and answers the ping of phone, since the
 	# starter rule of VRF default lets every packet between them through. The filters of the gateway are among the filters
@@ -324,12 +373,21 @@ try {
 	# A rule that denies the Device blocks the same ping once the gateway acknowledged it: to host, in the overlay, and to
 	# laptop, on the gateway, which keeps the pair apart from then on
 	$before = $gw.generation
+	$hostBefore = $overlay.generation
 	Invoke-Apply 'deny' @(@{ kind = 'Policy'; name = 'deny-phones'; spec = @{ vrf = 'default'; action = 'deny'; priority = 10; from = @{ tags = @('phones') }; protocol = 'icmp' } })
 	$gw = Wait-Acknowledged 'gw' $before
 	Invoke-Client @('-ping', $hostAddress, '-blocked', '-timeout', '9s') @('WGPEER HANDSHAKE OK', "WGPEER PING BLOCKED $hostAddress")
 	Invoke-Client @('-ping', $laptopAddress, '-blocked', '-timeout', '9s') @('WGPEER HANDSHAKE OK', "WGPEER PING BLOCKED $laptopAddress")
 	Stop-Process -Id $laptop.Id -Force
 	$laptop.WaitForExit()
+
+	# The rule denies the ICMP of the phones only: tablet, a Device of the other gateway, gets no ping from phone, and the
+	# TCP connection of phone to tablet still goes through, judged in the overlay by the policy of each gateway. host takes
+	# the rule too, since its other end names any Device.
+	$overlay = Wait-Acknowledged 'host' $hostBefore
+	Remove-HostRoutes
+	Invoke-Client @('-ping', $tabletAddress, '-blocked', '-timeout', '9s') @('WGPEER HANDSHAKE OK', "WGPEER PING BLOCKED $tabletAddress")
+	Invoke-Client @('-tcp', "${tabletAddress}:$tcpPort", '-timeout', '30s') @('WGPEER HANDSHAKE OK', "WGPEER TCP OK ${tabletAddress}:$tcpPort")
 
 	# The rule goes, and the gateway moves to another port
 	$before = $gw.generation
@@ -351,10 +409,16 @@ try {
 	if ($out -notmatch 'NO MEMORY LEAKS') { throw 'vpntest devicetrace leaked memory' }
 	$m = [regex]::Match($out, 'DEVICETRACE HOST ECHOES ([0-9]+) ACCEPTED ([0-9]+) ECHOED ([0-9]+)')
 	if (-not $m.Success -or [int] $m.Groups[1].Value -lt 2 -or [int] $m.Groups[2].Value -lt 2 -or [int] $m.Groups[3].Value -lt 2) { throw 'the fake host of host did not answer the two pings and the two TCP connections of the Device' }
+	# For tablet: the one ping under the starter rule, and a TCP connection under either rule
+	$m = [regex]::Match($out, 'DEVICETRACE HOST DEVICES ECHOES ([0-9]+) ACCEPTED ([0-9]+) ECHOED ([0-9]+)')
+	if (-not $m.Success -or [int] $m.Groups[1].Value -lt 1 -or [int] $m.Groups[2].Value -lt 2 -or [int] $m.Groups[3].Value -lt 2) { throw 'the fake host of host did not answer, for tablet, the ping and the two TCP connections of phone' }
+	# Three echo requests to host and three to tablet: gw drops them on their way into the overlay
 	$m = [regex]::Match($out, 'DEVICETRACE POLICY gw RULES [0-9]+ DROPPED ([0-9]+)')
-	if (-not $m.Success -or [int] $m.Groups[1].Value -lt 3) { throw 'the policy of gw did not drop the three echo requests of the denied Device' }
+	if (-not $m.Success -or [int] $m.Groups[1].Value -lt 6) { throw 'the policy of gw did not drop the echo requests of the denied Device to host and to tablet' }
 	if ($out -notmatch "DEVICETRACE WIREGUARD gw UP 1 PORT $otherPort DEVICES 2 APART 1 PAIRS 1") { throw "the WireGuard interface of gw was not up on UDP port $otherPort with its filters and the two Devices, which the starter rule lets meet again, until the stop" }
+	if ($out -notmatch "DEVICETRACE WIREGUARD host UP 1 PORT $hostPort DEVICES 1 APART 1 PAIRS 0") { throw "the WireGuard interface of host was not up on UDP port $hostPort with its filters and tablet until the stop" }
 	Wait-Listening $otherPort $false
+	Wait-Listening $hostPort $false
 	Write-Host 'ok'
 } catch {
 	Stop-Trace
