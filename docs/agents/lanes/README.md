@@ -15,7 +15,7 @@
 | Field | Meaning |
 |---|---|
 | `key` | A short name, used for the label and the result. Unique in the run. |
-| `model` | `opus` for the C data path, crypto, drivers and hard design. `sonnet` for Go, UI, CLI, docs and CI (the script sets effort `max`). Always set. The script refuses any other value. |
+| `model` | `opus` for the C data path, crypto, drivers and hard design. `sonnet` for Go, UI, CLI, docs and CI. The script sets effort `max` for both. Always set. The script refuses any other value. |
 | `skip` | `true` leaves the lane out. |
 | `task` | What the lane does. |
 
