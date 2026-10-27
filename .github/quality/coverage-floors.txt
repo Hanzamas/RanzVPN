@@ -47,8 +47,8 @@ go  controller/cmd/ranz-noisepeer       0
 # tests of its own, which the tracer runs against a gateway Node
 go  controller/cmd/ranz-wgpeer          0
 # ranz-explainplan (SDN-15 #191), the test tool that writes the plans of the explain conformance for vpntest: its test
-# writes the plans of tests/explain; the floor is set below the measure until a run records it
-go  controller/cmd/ranz-explainplan     60
+# writes the plans of tests/explain, 87.2% measured at the first run, less two points
+go  controller/cmd/ranz-explainplan     85
 # acmecert (SDN-45 #238): the Linux job measures the renewal, the state and the account key, 42.1% at the first run;
 # the issuance talks to an ACME service and the store of Windows, which the step "Listener with ACME" of windows.yml
 # runs against Pebble
@@ -67,8 +67,8 @@ go  controller/internal/desired         79
 go  controller/internal/doctor          88
 go  controller/internal/event           90
 # explain (SDN-15 #191): the walk of ranz explain and the scenarios of the explain conformance, which its tests run
-# through the walk; the floor is set below the measure until a run records it
-go  controller/internal/explain         80
+# through the walk, 88.8% measured at the first run, less two points
+go  controller/internal/explain         86
 go  controller/internal/export          90
 # install (ONE-2 #311): the Linux job measures names.go and files.go (the SIDs, the access list, the
 # removal of the folder), not install_windows.go, whose services the install job of windows.yml runs
