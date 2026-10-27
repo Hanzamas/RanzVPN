@@ -201,6 +201,13 @@ set_target_properties(corecontrol
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# corecontrolpb: the messages of the control stream for a test that stands in for the controller (the relay path test of
+# vpntest, src/vpntest/relaypathtest.c; CORE-S5-5, #411): the headers that nanopb generates, with nanopb and corecontrol,
+# whose build generates them
+add_library(corecontrolpb INTERFACE)
+target_include_directories(corecontrolpb INTERFACE "${_ranz_controlpb}")
+target_link_libraries(corecontrolpb INTERFACE corecontrol nanopb)
+
 # corevxlan: the VXLAN module (Vxlan.h, Vxlan*.c; SDN-62, #289): a frame encapsulated with its VNI towards one VTEP or
 # each VTEP of a flood list, and decapsulated by VNI, on Winsock, which is all it links. It is written once for the
 # Mirrors (SDN-23) and the EVPN gateway (SDN-25) of the Node module, so ranz_core_options and the library stay PRIVATE,
