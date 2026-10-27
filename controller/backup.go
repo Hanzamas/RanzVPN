@@ -26,10 +26,6 @@ import (
 // the wait for the leader to step down, and the transfer of the store.
 const backupTimeout = 10 * time.Minute
 
-// errNoAccessList is what protectBackupFile returns for a volume that has no access lists, such as a
-// FAT drive: there is no list to set, and the backup there is as readable as the volume.
-var errNoAccessList = errors.New("the volume has no access lists")
-
 // runBackup runs `ranz controller backup -o FILE [flags]`, with the flags of the service.
 func runBackup(args []string) error {
 	file, rest := fileFlag(args, "o")
@@ -95,8 +91,9 @@ func runRestore(args []string) error {
 // and the Administrators, whatever the access list of the folder of file says), and returns its size.
 // rights must allow it (adminRights), and the data directory of cfg must exist. The backup goes to a
 // temporary file first, so a failed one leaves an earlier backup in file as it was. The temporary file
-// gets its access list before the first byte of the store is written to it. out receives the output of
-// an rqlited that backup starts (openStore), and the warning for a volume that has no access lists.
+// has its access list from the moment it exists, and no other handle of it is open while the store is
+// written to it (createBackupFile). out receives the output of an rqlited that backup starts
+// (openStore), and the warning for a volume that has no access lists.
 func backup(ctx context.Context, cfg config, file string, rights func() error, out io.Writer) (int64, error) {
 	if err := onHost(cfg, rights, "backup"); err != nil {
 		return 0, err
@@ -107,16 +104,12 @@ func backup(ctx context.Context, cfg config, file string, rights func() error, o
 	}
 	defer stop()
 	tmp := file + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	f, protected, err := createBackupFile(tmp)
 	if err != nil {
 		return 0, err
 	}
-	if err := protectBackupFile(tmp); errors.Is(err, errNoAccessList) {
+	if !protected {
 		fmt.Fprintf(out, "ranz controller backup: warning: the volume of %s has no access lists, so whoever can read the volume can read the backup\n", file)
-	} else if err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return 0, err
 	}
 	err = st.Backup(ctx, f)
 	if cerr := f.Close(); err == nil {

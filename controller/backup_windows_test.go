@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 )
 
@@ -88,4 +90,88 @@ func TestBackupIsNotReadableByUsers(t *testing.T) {
 	if err := restore(ctx, cfg, file, allowed, io.Discard); err != nil {
 		t.Errorf("restore of the protected backup: %v", err)
 	}
+}
+
+// The temporary file of a backup has its access list from the moment it exists, and nobody else holds a
+// handle of it while the store is written to it (createBackupFile). Windows checks the access list when a
+// handle is opened, and not at each read: a handle that a standard user opened while the file had the list
+// of its folder would read the whole backup after the list changed. A file of that name that is left from
+// before and that a standard user holds open is not written into; once it is closed, it is replaced by a
+// file that has the list of a backup before its first byte, that a standard user cannot open, and of which
+// an Administrator gets no second handle.
+func TestBackupFileIsProtectedFromTheStart(t *testing.T) {
+	requireAdministrator(t)
+	folder := filepath.Join(t.TempDir(), "backups")
+	if err := os.Mkdir(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	setDACL(t, folder, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FRFX;;;BU)")
+	tmp := filepath.Join(folder, "store.backup.tmp")
+
+	// The file of a backup that failed, with the list of the folder, which a standard user opened
+	if err := os.WriteFile(tmp, []byte("left from before"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var held *os.File
+	asStandardUser(t, func() {
+		var err error
+		if held, err = os.Open(tmp); err != nil {
+			t.Errorf("a standard user cannot open a file that takes the list of the folder, so this test shows nothing: %v", err)
+		}
+	})
+	if held == nil {
+		t.FailNow()
+	}
+	defer held.Close()
+	if f, _, err := createBackupFile(tmp); err == nil {
+		f.Close()
+		t.Error("createBackupFile made the temporary file of a backup in the place of a file that a standard user holds open")
+	}
+	if b, err := io.ReadAll(held); err != nil || string(b) != "left from before" {
+		t.Errorf("the handle of the standard user reads %q (%v), want what was left from before", b, err)
+	}
+	held.Close()
+
+	f, protected, err := createBackupFile(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if !protected {
+		t.Error("createBackupFile says that the volume of the temporary folder keeps no access lists")
+	}
+	// Before the first byte, read through the handle of the backup, which holds the right to read its list
+	sd, err := windows.GetSecurityInfo(windows.Handle(f.Fd()), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sd.String(); !strings.Contains(got, "D:P") || !strings.Contains(got, ";SY)") || !strings.Contains(got, ";BA)") || strings.Contains(got, ";BU)") {
+		t.Errorf("the temporary file of a backup has the access list %s as it is made, want SYSTEM and the Administrators only, protected", got)
+	}
+	if fi, err := f.Stat(); err != nil || fi.Size() != 0 {
+		t.Errorf("the temporary file of a backup is not a new one: %v, %v", fi, err)
+	}
+	if g, err := os.Open(tmp); !errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
+		if g != nil {
+			g.Close()
+		}
+		t.Errorf("an Administrator opened a second handle of the temporary file of a backup (%v), want a sharing violation", err)
+	}
+	asStandardUser(t, func() {
+		if g, err := os.Open(tmp); err == nil {
+			g.Close()
+			t.Error("a standard user opened the temporary file of a backup while the backup writes it")
+		}
+	})
+	if _, err := f.Write([]byte("the store")); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	asStandardUser(t, func() {
+		if b, err := os.ReadFile(tmp); !errors.Is(err, fs.ErrPermission) {
+			t.Errorf("a standard user read the temporary file of a backup (%q, %v), want access denied", b, err)
+		}
+	})
 }
