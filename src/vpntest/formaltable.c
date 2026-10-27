@@ -53,6 +53,7 @@ typedef struct FORMAL_ENTRY
 // The C functions of tests/formal/model-to-code.tsv that are not static
 static FORMAL_ENTRY formal_functions[] =
 {
+	FORMAL(ControlInput),
 	FORMAL(CryptoCertEndPoint),
 	FORMAL(CryptoCertThumbprint),
 	FORMAL(CryptoIdentityDh),
