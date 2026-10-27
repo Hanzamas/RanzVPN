@@ -133,6 +133,10 @@ type Config struct {
 	// CertificateWait is how long a change of the certificate waits for the nodes to acknowledge the
 	// new fingerprint; DefaultCertificateWait when zero.
 	CertificateWait time.Duration
+	// Waiting caps the control streams that wait for a Hello, in all and for one source address (CS-4,
+	// waiting.go): control.NewWaiting(control.MaxWaiting, control.MaxWaitingPerSource) when nil. A
+	// cluster member passes its own, which its standby streams count in as well.
+	Waiting *control.Waiting
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -213,6 +217,11 @@ type Controller struct {
 
 	// The certificate of the TLS port and the fingerprints that the nodes get of it (certificate.go)
 	certs *certificateState
+
+	// The cap on the control streams that wait for a Hello, and the throttle of the log of the ones it
+	// closes (waiting.go)
+	waiting    *control.Waiting
+	waitingLog event.Throttle
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -261,9 +270,13 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		nodes:       map[string]*node{},
 		byKey:       map[string]string{},
 		conns:       map[net.Conn]struct{}{},
+		waiting:     cfg.Waiting,
 	}
 	if c.log == nil {
 		c.log = slog.New(slog.DiscardHandler)
+	}
+	if c.waiting == nil {
+		c.waiting = control.NewWaiting(control.MaxWaiting, control.MaxWaitingPerSource)
 	}
 	c.tel = newTelemetryState(cfg)
 	c.aud = newAuditState(cfg, c.store, c.log)
@@ -888,6 +901,13 @@ func (c *Controller) refuse(s *stream, reason controlpb.RefuseReason, format str
 // serveConn runs one control stream: the Noise handshake, the Hello, then the node's Acks on
 // this goroutine and the updates on a writer goroutine.
 func (c *Controller) serveConn(tc *tls.Conn) {
+	// The stream waits for its Hello until it is read, or until the stream ends (waiting.go)
+	leave, err := c.waiting.Enter(tc.RemoteAddr())
+	if err != nil {
+		c.refuseWaiting(tc, err)
+		return
+	}
+	defer leave()
 	conn, err := control.Accept(context.Background(), tc, c.key)
 	if err != nil {
 		c.log.Warn("control stream handshake failed", "remote", tc.RemoteAddr().String(), "err", err)
@@ -899,8 +919,13 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		return
 	}
 	m, _, err := conn.Read()
+	leave()
 	if err != nil {
 		c.log.Warn("control stream closed before its Hello", "remote", conn.RemoteAddr().String(), "err", err)
+		if errors.Is(err, control.ErrFrameTooLarge) {
+			// The Hello is over its limit: it is read no further
+			writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "%v", err))
+		}
 		return
 	}
 	hello := m.GetHello()
@@ -1038,6 +1063,10 @@ func (c *Controller) readLoop(s *stream) {
 	for {
 		m, _, err := s.conn.Read()
 		if err != nil {
+			if errors.Is(err, control.ErrFrameTooLarge) {
+				c.log.Warn("node refused: a frame over the limit of its kind", "node", s.name, "err", err)
+				writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "%v", err))
+			}
 			return
 		}
 		switch body := m.GetBody().(type) {

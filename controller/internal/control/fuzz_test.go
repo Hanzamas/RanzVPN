@@ -49,36 +49,54 @@ func FuzzOpen(f *testing.F) {
 	})
 }
 
-// FuzzRead reads the input as the frames of a control stream, as Conn.Read reads them after the
-// handshake: a 4-byte big-endian length and one ControlMessage, until the input ends. A message
-// that decodes must encode again.
+// FuzzRead reads the input as the frames of a control stream, as Conn.Read reads them on the
+// controller's end after the handshake: a 4-byte big-endian length and one ControlMessage, until
+// the input ends. The first frame is the Hello and has MaxHello bytes at most, each later frame the
+// limit of its kind (limits.go), and a frame over its limit ends the input. A message that decodes
+// must encode again.
 func FuzzRead(f *testing.F) {
-	hello, err := proto.MarshalOptions{Deterministic: true}.Marshal(&controlpb.ControlMessage{Body: &controlpb.ControlMessage_Hello{Hello: &controlpb.Hello{
-		SchemaVersion: controlpb.SchemaVersion_SCHEMA_VERSION_1, AppliedGeneration: 7,
-	}}})
-	if err != nil {
-		f.Fatal(err)
-	}
 	var seed bytes.Buffer
-	if err := writeFrame(&seed, hello); err != nil {
-		f.Fatal(err)
+	for _, m := range []*controlpb.ControlMessage{
+		{Body: &controlpb.ControlMessage_Hello{Hello: &controlpb.Hello{SchemaVersion: controlpb.SchemaVersion_SCHEMA_VERSION_1, AppliedGeneration: 7}}},
+		{Body: &controlpb.ControlMessage_Ack{Ack: &controlpb.Ack{Generation: 7}}},
+		{Body: &controlpb.ControlMessage_Signal{Signal: &controlpb.Signal{Peer: "branch-2", Envelope: []byte{4, 1, 2, 3}}}},
+		{Body: &controlpb.ControlMessage_Telemetry{Telemetry: &controlpb.Telemetry{Rules: []*controlpb.RuleCounters{{VrfId: 10, Rule: "default-allow-all", PacketCount: 22, ByteCount: 3300}}}}},
+		{Body: &controlpb.ControlMessage_Leases{Leases: &controlpb.Leases{Network: "corp-lan", Leases: []*controlpb.Lease{{Mac: []byte{2, 0, 0, 0, 0, 1}, Address: []byte{10, 10, 0, 7}, ExpiresMs: 1760000000000, HostName: "laptop"}}}}},
+	} {
+		b, err := proto.MarshalOptions{Deterministic: true}.Marshal(m)
+		if err != nil {
+			f.Fatal(err)
+		}
+		if err := writeFrame(&seed, b); err != nil {
+			f.Fatal(err)
+		}
 	}
 	if err := writeFrame(&seed, nil); err != nil {
 		f.Fatal(err)
 	}
 	f.Add(seed.Bytes())
 	f.Add([]byte{0x00, 0x00, 0x00, 0x02, 0x08})
+	// The length of a frame of 16 MiB, and of a Hello of one byte over its limit
+	f.Add([]byte{0x01, 0x00, 0x00, 0x00})
+	f.Add([]byte{0x00, 0x00, 0x04, 0x01})
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		r := bytes.NewReader(data)
-		for {
-			b, err := readFrame(r, MaxFrame)
+		c := &Conn{r: bytes.NewReader(data), fromNode: true}
+		for first := true; ; first = false {
+			m, b, err := c.Read()
 			if err != nil {
-				return
-			}
-			m := &controlpb.ControlMessage{}
-			if err := proto.Unmarshal(b, m); err != nil {
+				if b == nil {
+					return
+				}
+				// A frame that is no message: the next one may be
 				continue
+			}
+			limit := MaxHello
+			if !first && len(b) > 0 {
+				limit, _ = nodeKind(b[0])
+			}
+			if len(b) > limit {
+				t.Fatalf("a frame of %d bytes was taken, over its limit of %d", len(b), limit)
 			}
 			if _, err := proto.Marshal(m); err != nil {
 				t.Fatalf("a frame that decodes does not encode again: %v", err)

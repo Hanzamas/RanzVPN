@@ -1,0 +1,11 @@
+(* Variant mimic-link: the mimic path, as the code has it, against an attacker that holds the link of alice: the public key
+   of the server and her short id (AUD-7, #425). A client of the server holds them, and so does anyone who reads the link,
+   which is typed by hand into the MimicClient setting today. The attacker gets the temporary certificate of the server and
+   learns that it is no decoy, but it cannot answer alice as the server: that takes the auth key of her ClientHello. *)
+
+process
+  ( Setup()
+  | MimicSetup()
+  | LeakLinkShortId()
+  | MimicSessions(bt_export, kp_on)
+  )

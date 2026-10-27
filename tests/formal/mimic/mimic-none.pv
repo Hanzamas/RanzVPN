@@ -1,0 +1,10 @@
+(* Variant mimic-none: the session with a Login over the mimic transport, as the code has it, against an attacker that is
+   the network and knows the public key of the server (AUD-7, #425). This is the prober: it sends what it likes to the
+   REALITY listener and sees what comes back, and without a short id of the server it is spliced to the decoy. The Noise
+   handshake is bound to the exporter of the REALITY session, which the first line of the stream carries. *)
+
+process
+  ( Setup()
+  | MimicSetup()
+  | MimicSessions(bt_export, kp_on)
+  )

@@ -8,6 +8,10 @@
 // The node opens the stream (the Noise initiator, which knows the controller's static key in
 // advance); the controller learns the node's static key from the handshake and looks the node up
 // by it.
+//
+// The controller reads little before it knows the node (limits.go, CS-4): the Hello, the first
+// frame, has a limit of its own, each later frame has the limit of its kind, and a frame is read as
+// its bytes arrive, so a peer that sends a length and stops holds no more than the bytes it sent.
 package control
 
 import (
@@ -19,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"sync"
 	"time"
 
@@ -33,7 +38,8 @@ const (
 	// ALPN is the TLS application protocol of the control stream: on the controller's port it
 	// tells a control stream from the HTTP of the API and the web UI.
 	ALPN = "ranz-control/1"
-	// MaxFrame is the largest frame either end accepts.
+	// MaxFrame is the largest frame that the controller sends and that a node accepts. The controller
+	// accepts less from a node: MaxHello for its first frame, then the limit of the kind of each.
 	MaxFrame = 16 << 20
 
 	// exporterLabel names the TLS exporter (RFC 8446 section 7.5) whose output goes into the
@@ -84,6 +90,14 @@ type Conn struct {
 	peer []byte
 	rmu  sync.Mutex
 	wmu  sync.Mutex
+
+	// r is where Read takes the frames from: tc, except in a test.
+	r io.Reader
+	// fromNode is true on the controller's end, whose frames come from a node and have the limits of
+	// limits.go; on a node's end they come from the controller. hello is true once Read took the first
+	// frame, the Hello. Both are read under rmu.
+	fromNode bool
+	hello    bool
 }
 
 // PeerKey returns the static key of the other end.
@@ -96,11 +110,14 @@ func (c *Conn) RemoteAddr() net.Addr {
 	return c.tc.RemoteAddr()
 }
 
-// Read reads the next frame and returns its message and its bytes as they came.
+// Read reads the next frame and returns its message and its bytes as they came. A frame over the
+// limit of its place in the stream (limits.go) is an error that wraps ErrFrameTooLarge: on the
+// controller's end the first frame, the Hello, has at most MaxHello bytes, and each later one at most
+// the limit of its kind. The caller closes the stream after any error but a malformed frame.
 func (c *Conn) Read() (*controlpb.ControlMessage, []byte, error) {
 	c.rmu.Lock()
 	defer c.rmu.Unlock()
-	b, err := readFrame(c.tc, MaxFrame)
+	b, err := c.frame()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -226,7 +243,7 @@ func handshake(ctx context.Context, tc *tls.Conn, key keys.Static, initiator boo
 		if err := writeFrame(tc, msg); err != nil {
 			return nil, fmt.Errorf("control: Noise handshake: %w", err)
 		}
-		msg, err = readFrame(tc, maxHandshakeFrame)
+		msg, err = readFrame(tc, handshakeFrame)
 		if err != nil {
 			return nil, fmt.Errorf("control: Noise handshake: %w", err)
 		}
@@ -234,7 +251,7 @@ func handshake(ctx context.Context, tc *tls.Conn, key keys.Static, initiator boo
 			return nil, fmt.Errorf("control: Noise handshake: the controller does not hold the expected static key, or the TLS session is not end to end: %w", err)
 		}
 	} else {
-		msg, err := readFrame(tc, maxHandshakeFrame)
+		msg, err := readFrame(tc, handshakeFrame)
 		if err != nil {
 			return nil, fmt.Errorf("control: Noise handshake: %w", err)
 		}
@@ -252,7 +269,7 @@ func handshake(ctx context.Context, tc *tls.Conn, key keys.Static, initiator boo
 	if err := tc.SetDeadline(time.Time{}); err != nil {
 		return nil, fmt.Errorf("control: %w", err)
 	}
-	return &Conn{tc: tc, peer: hs.PeerStatic()}, nil
+	return &Conn{tc: tc, peer: hs.PeerStatic(), r: tc, fromNode: !initiator}, nil
 }
 
 func writeFrame(w io.Writer, b []byte) error {
@@ -262,18 +279,50 @@ func writeFrame(w io.Writer, b []byte) error {
 	return err
 }
 
-func readFrame(r io.Reader, limit int) ([]byte, error) {
+// readFrame reads one frame: a 4-byte big-endian length and that many bytes. A length over what l
+// allows fails at once, before a byte of the frame is read, and so does a frame whose first byte
+// tells a kind that has a smaller limit (frameLimit.kind). The frame is read as its bytes arrive, a
+// chunk of frameChunk at a time, and not allocated for its whole length as soon as the length is
+// read, so a peer that sends a length and stops holds no more than the bytes that it sent and one
+// chunk (CS-4).
+func readFrame(r io.Reader, l frameLimit) ([]byte, error) {
 	var hdr [4]byte
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
 		return nil, err
 	}
-	n := binary.BigEndian.Uint32(hdr[:])
-	if n > uint32(limit) {
-		return nil, fmt.Errorf("control: a frame of %d bytes is larger than %d", n, limit)
+	size := binary.BigEndian.Uint32(hdr[:])
+	if size > uint32(l.max) {
+		return nil, tooLarge(size, l.max, l.what)
 	}
-	b := make([]byte, n)
-	if _, err := io.ReadFull(r, b); err != nil {
+	n := int(size)
+	if n == 0 {
+		return []byte{}, nil
+	}
+	// The first chunk is there before the first byte of the frame: it is the small buffer that a peer
+	// makes the stream hold with a length and nothing more.
+	chunk := make([]byte, min(n, frameChunk))
+	if _, err := io.ReadFull(r, chunk[:1]); err != nil {
 		return nil, err
 	}
-	return b, nil
+	if l.kind != nil {
+		if limit, what := l.kind(chunk[0]); size > uint32(limit) {
+			return nil, tooLarge(size, limit, what)
+		}
+	}
+	if _, err := io.ReadFull(r, chunk[1:]); err != nil {
+		return nil, err
+	}
+	if n == len(chunk) {
+		return chunk, nil
+	}
+	chunks := [][]byte{chunk}
+	for have := len(chunk); have < n; {
+		next := make([]byte, min(n-have, frameChunk))
+		if _, err := io.ReadFull(r, next); err != nil {
+			return nil, err
+		}
+		chunks = append(chunks, next)
+		have += len(next)
+	}
+	return slices.Concat(chunks...), nil
 }

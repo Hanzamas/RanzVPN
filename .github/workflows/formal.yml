@@ -49,11 +49,13 @@ on:
     - 'src/Cedar/NodeOverlay.c'
     - 'src/Cedar/NodeController.c'
     - 'src/Cedar/NodeClient.c'
+    - 'src/Cedar/NodeMimic*'
     - 'src/Cedar/ConnectionTunnel.c'
     - 'src/vpntest/noisehub.c'
     - 'controller/internal/control/stream.go'
     - 'controller/internal/control/pinned.go'
     - 'controller/internal/controller/controller.go'
+    - 'controller/internal/mimic/*.go'
 
 # A run that is not a pull request is the full set, and its name says so: Full CI: push on integration
 run-name: "${{ github.event_name == 'pull_request' && github.event.pull_request.title || format('Full CI: {0} on {1}', github.event_name, github.ref_name) }}"

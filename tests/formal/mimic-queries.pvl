@@ -1,0 +1,29 @@
+(* mimic-queries.pvl
+   The queries of the mimic models about the outer session that the mimicry sidecar makes (AUD-7, #425;
+   docs/formal-model.md). The queries of the session on top of it are the ones of the session models (q-*.pvl). *)
+
+(* The client sidecar takes a temporary certificate, and hands its node the stream, only in a REALITY session that the
+   server sidecar of bob answered: what a middlebox needs to terminate the outer session *)
+(* @query mimic-auth *)
+query l: bitstring, t: bitstring; event(MimicLinkUp(alice, bob, l, t)) ==> event(MimicStream(bob, t)).
+
+(* The server takes a proof, and so answers with the temporary certificate where it would splice to the decoy, only for a
+   ClientHello that the client sidecar of alice made with that short id: what a prober can learn of the server. A
+   ClientHello of alice sent again is taken again: the library refuses one only when its clock is too old, which the model
+   leaves out, and its answer is under handshake keys that the prober does not have. *)
+(* @query probe *)
+query r: bitstring, l: bitstring; event(MimicProved(bob, r, l)) ==> event(MimicHello(alice, bob, l, r)).
+
+(* A connection that does not prove the key is spliced to the decoy, so that the queries about the prober are not true for
+   want of a splice *)
+(* @query probe-decoy *)
+query r: bitstring; event(MimicSpliced(bob, r)).
+
+(* The short id of the link stays secret: the proof seals it under the auth key *)
+(* @query sec-shortid *)
+query attacker(shortid(bob)).
+
+(* A client whose link names a short id that the server does not have never takes a certificate: the server splices it to
+   the decoy, it sees the certificate of the decoy and gives up, and its node sends nothing *)
+(* @query wrong-sid *)
+query t: bitstring; event(MimicLinkUp(alice, bob, sid_wrong, t)).
