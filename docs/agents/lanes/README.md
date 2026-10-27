@@ -8,14 +8,14 @@
 2. **Fill `QUOTE`.** The words of the maintainer that start this run, verbatim, with their date. In a cloud run they are the words that he wrote into the routine. A lane that sees no authority line refuses to commit, push or open a pull request. Never write words that he did not write. The script stops, when a lane is active, if `QUOTE` or `STATE` still says `FILL IN`.
 3. **Fill `STATE`.** The facts of the moment: the date, the pull requests that merged, the pull requests and tickets that other lanes work on. Replace the old text for every run. Never stack a second `STATE`: the lane would read two states that disagree.
 4. **Fill `LANES`.** Copy `EXAMPLE_LANE` into the array, once per lane. Keep a finished lane in the array with `skip: true`, so that a new run shows what was done.
-5. **Run** it with the Workflow tool, with the path of your copy as `scriptPath`. A Workflow runs at most `CPUs - 2` lanes at once, which is 2 in a cloud container, and it queues the others. So run the lanes in batches of at most 2, each batch its own Workflow (its own copy, with `skip: true` on the lanes of the other batches), and the batches run side by side. Before you run one, check that no running Workflow, and no tick comment of the last 3 hours, has the same lane. After a cut-off, start a new run with resume lanes. Do not use `resumeFromRunId` for that: a new `STATE` changes every prompt, so nothing would come from the cache, and in the cloud the journal of the old run is gone.
+5. **Run** it with the Workflow tool, with the path of your copy as `scriptPath`. A Workflow runs at most `CPUs - 2` lanes at once, which is 2 in a cloud container, and it queues the others. So run one lane in each Workflow (its own copy, with `skip: true` on the other lanes), or start the lane as its own agent with isolation `worktree`, and the lanes run side by side. A free slot is then a lane that ended, and nothing queues. Before you run one, check that no running Workflow, and no tick comment of the last 3 hours, has the same lane. After a cut-off, start a new run with resume lanes. Do not use `resumeFromRunId` for that: a new `STATE` changes every prompt, so nothing would come from the cache, and in the cloud the journal of the old run is gone.
 
 ## A lane object
 
 | Field | Meaning |
 |---|---|
 | `key` | A short name, used for the label and the result. Unique in the run. |
-| `model` | `opus` for the C data path, crypto, drivers and hard design. `sonnet` for Go, UI, CLI, docs and CI (the script sets effort `max`). Always set. The script refuses any other value. |
+| `model` | `opus` for the C data path, crypto, drivers and hard design. `sonnet` for Go, UI, CLI, docs and CI. The script sets effort `max` for both. Always set. The script refuses any other value. |
 | `skip` | `true` leaves the lane out. |
 | `task` | What the lane does. |
 
@@ -49,4 +49,5 @@ Each lane returns `ok`, `pr`, `head`, `ci`, `met`, `notMet`, `newTerms` and `blo
 - Every string is plain: single quotes and no apostrophes, so that no quote ends a string early.
 - No `Date.now()` and no `Math.random()`. The Workflow tool refuses them, because they break a resume.
 - The rules of the lane are the `RULES` array. When a rule changes, change it there and in the page that it mirrors.
-- The pace rule is about 5 lanes at once, over all Workflows. One copy of the script is one batch of at most 2 active lanes, and it warns above 2.
+- The pace rule is up to 6 lanes at once, over all agents and Workflows, refilled the minute a slot frees (see "Pace" in [integrator.md](../integrator.md)). One copy of the script has one active lane, and it warns above 2.
+- A lane never ends its turn while a workflow run of its head is pending. Rule 3 of the lane says how it waits.
