@@ -319,10 +319,10 @@ static bool SlTake(void *param, SOCKET s)
 
 	setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
 	(void)recv(s, buf, sizeof(buf), 0);
+	InterlockedIncrement(&o->Taken);
 	(void)send(s, "T", 1, 0);
 	shutdown(s, SD_SEND);
 	closesocket(s);
-	InterlockedIncrement(&o->Taken);
 
 	return true;
 }
@@ -761,8 +761,10 @@ static void SlQuic(SLTEST_CTX *ctx)
 				"  the connections of a source over its rate are refused by the listener and counted", "served %u of %u, admitted %llu, refused for the rate %llu", served, (UINT)SLTEST_QUIC_DIALS,
 				ok ? st.Limits.Admitted : 0, ok ? st.Limits.RefusedRate : 0);
 		}
+		g_sl_phase = "the QUIC listener: freeing the transport of the rate test";
 		TransportCloseListener(listener);
 		TransportQuicFree(server);
+		g_sl_phase = "the QUIC listener: the flood";
 
 		// A flood of Initial packets at a listener whose retry setting is the least: msquic answers with retries, and the
 		// connections that it holds, the memory and the CPU of the process stay bounded
@@ -815,12 +817,15 @@ static void SlQuic(SLTEST_CTX *ctx)
 			SlCheck(ctx, s != NULL, "  an honest client connects to the listener after the flood", "the dial failed");
 			TransportClose(s);
 		}
+		g_sl_phase = "the QUIC listener: closing the listener of the flood";
 		TransportCloseListener(listener);
+		g_sl_phase = "the QUIC listener: freeing the transport of the flood";
 		TransportQuicFree(server);
-
+		g_sl_phase = "the QUIC listener: freeing the client";
 		TransportQuicFree(client);
 	}
 
+	g_sl_phase = "the QUIC listener: removing the certificate";
 	if (cert != NULL)
 	{
 		CryptoCertRemoveFromStore(thumbprint, NULL, scope);
@@ -838,16 +843,22 @@ void sourcelimits_test(UINT num, char **arg)
 
 	Print("SOURCELIMITS test: the limits for a source of the front door and of the QUIC listener (AUD1-DT-3)\n");
 
+	UINT64 t0 = GetTickCount64();
+
 	g_sl_phase = "the table of sources";
 	SlUnit(ctx);
 	g_sl_phase = "the front door flood";
 	SlFlood(ctx);
+	Print("SOURCELIMITS TIME flood done at %llu ms\n", GetTickCount64() - t0);
 	g_sl_phase = "the front door rates";
 	SlRates(ctx);
+	Print("SOURCELIMITS TIME rates done at %llu ms\n", GetTickCount64() - t0);
 	g_sl_phase = "the front door Nodes";
 	SlNodes(ctx);
+	Print("SOURCELIMITS TIME Nodes done at %llu ms\n", GetTickCount64() - t0);
 	g_sl_phase = "the QUIC listener";
 	SlQuic(ctx);
+	Print("SOURCELIMITS TIME QUIC done at %llu ms\n", GetTickCount64() - t0);
 
 	if (watchdog != NULL)
 	{
