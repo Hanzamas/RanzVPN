@@ -97,3 +97,50 @@ func TestExplainCommand(t *testing.T) {
 		t.Errorf("a controller that does not answer: exit code %d", code)
 	}
 }
+
+// ranz explain prints the link of each step: a link of kind vxlan says that it is unencrypted (SDN-76, #356), and the
+// link shows where each of its two Nodes is dialled, at the endpoints of its Node resource (SDN-93, #410). dc-1 and
+// dc-2 share VRF dc, whose link is of kind vxlan, and VRF corp, which the Noise session carries.
+func TestExplainCommandLinks(t *testing.T) {
+	ctx := context.Background()
+	srv, _, admin := startController(t)
+	s := explain.Scenario{Name: "links", Nodes: map[string]uint8{"dc-1": 1, "dc-2": 33}}
+	if err := json.Unmarshal([]byte(`{"resources": [
+		{"kind": "VRF", "name": "dc", "spec": {"id": 30, "ula": "fd00:30::/48", "link": "vxlan", "vni": 3000}},
+		{"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd00:10::/48"}},
+		{"kind": "Network", "name": "dc-lan", "spec": {"vrf": "dc", "ipv4Pool": "10.30.0.0/24"}},
+		{"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}},
+		{"kind": "Node", "name": "dc-1", "spec": {"vrfs": ["corp", "dc"], "addresses": {"dc-lan": "10.30.0.1", "corp-lan": "10.10.0.1"}, "vtep": {"address": "192.0.2.1"}}},
+		{"kind": "Node", "name": "dc-2", "spec": {"vrfs": ["corp", "dc"], "addresses": {"dc-lan": "10.30.0.2", "corp-lan": "10.10.0.2"}, "vtep": {"address": "192.0.2.2"},
+			"endpoints": [{"transport": "quic", "address": "dc-2.example.com:443"}, {"transport": "tls", "address": "203.0.113.2:443"}]}},
+		{"kind": "Policy", "name": "dc-all", "spec": {"vrf": "dc", "action": "allow"}},
+		{"kind": "Policy", "name": "corp-all", "spec": {"vrf": "corp", "action": "allow"}}
+	]}`), &s.Intent); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := s.Document()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&api.Client{URL: srv.URL, Token: admin, HTTP: srv.Client()}).Apply(ctx, doc); err != nil {
+		t.Fatal(err)
+	}
+	tokenFile := filepath.Join(t.TempDir(), "admin.token")
+	if err := os.WriteFile(tokenFile, []byte(admin+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const dialled = "; dc-2 is dialled at quic dc-2.example.com:443, tls 203.0.113.2:443; dc-1 has no endpoints, so no peer dials it\n"
+	for _, c := range []struct{ vrf, link string }{
+		{"dc", "  dc-1  link    the link of kind vxlan of VRF dc carries the packet on VNI 3000 to the tunnel endpoint of dc-2: unencrypted, plain on a network that the operator trusts" + dialled},
+		{"corp", "  dc-1  link    the Noise session of dc-1 to dc-2 carries the packet in VRF corp, encrypted" + dialled},
+	} {
+		var out, errOut bytes.Buffer
+		code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "-vrf", c.vrf, "-protocol", "udp", "-sport", "40000", "-port", "53", "dc-1", "dc-2"}, &out, &errOut)
+		if code != 0 {
+			t.Fatalf("ranz explain -vrf %s dc-1 dc-2: exit code %d: %s", c.vrf, code, errOut.String())
+		}
+		if !strings.Contains(out.String(), c.link) || !strings.Contains(out.String(), "verdict: delivered to dc-2 in VRF "+c.vrf+" as ") {
+			t.Errorf("ranz explain -vrf %s dc-1 dc-2 printed\n%s\nwithout the link %q, or not delivered to dc-2", c.vrf, out.String(), c.link)
+		}
+	}
+}
