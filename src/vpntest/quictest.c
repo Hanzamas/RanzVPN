@@ -65,6 +65,8 @@ typedef struct QUICTEST_SERVER
 	bool Accepted;					// The handshake completed
 	bool LoggedIn;					// The Login passed Sam and the key pin
 	UINT LoginError;				// The error of NodeLoginPinned
+	bool HasRemote;					// The stream that it accepted tells the address of its client (AUD1-DT-11, #459) ...
+	char Remote[TRANSPORT_ADDRESS_SIZE];	// ... this one
 } QUICTEST_SERVER;
 
 static bool QuicTestCheck(QUICTEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
@@ -138,6 +140,8 @@ static void QuicTestServerThread(THREAD *thread, void *param)
 	NOISE_SESSION_CONFIG sc;
 
 	QuicTestConfig(&sc, srv->ServerKey, NULL);
+	// Before the session takes the stream
+	srv->HasRemote = (s != NULL && TransportRemote(s, srv->Remote, sizeof(srv->Remote)));
 	srv->Accepted = TransportNoiseAccept(n, s, &sc, QUICTEST_TIMEOUT);
 
 	if (srv->Accepted)
@@ -240,6 +244,12 @@ static void QuicTestCase(QUICTEST_CTX *ctx, char *what, TRANSPORT *server, TRANS
 	{
 		UCHAR binding[NOISE_MAX_BINDING];
 		UINT binding_size = 0;
+		char client_remote[TRANSPORT_ADDRESS_SIZE];
+
+		// The client's end of the connection tells the address that it dialled (AUD1-DT-11, #459)
+		bool client_tells = TransportRemote(stream, client_remote, sizeof(client_remote));
+		QuicTestCheck(ctx, client_tells && StrCmp(client_remote, address) == 0, "  the client's end of the connection tells the address that it dialled", "%s: \"%s\"",
+			client_tells ? "gave" : "gave none", client_tells ? client_remote : "");
 
 		*bound = (n->Session.Flags & NOISE_SESSION_ENCRYPT) != 0 ? NOISE_BINDING_NONE : TransportBinding(stream, binding, sizeof(binding), &binding_size);
 
@@ -273,6 +283,9 @@ static void QuicTestCase(QUICTEST_CTX *ctx, char *what, TRANSPORT *server, TRANS
 		"connected %u, expected %u", (UINT)connected, (UINT)expect_connect);
 	if (expect_connect)
 	{
+		// The server's end tells the address of its client, on the loopback interface with a port of its own (AUD1-DT-11, #459)
+		QuicTestCheck(ctx, srv->HasRemote && StartWith(srv->Remote, "127.0.0.1:") && StrCmp(srv->Remote, address) != 0, "  the server's end of the connection tells the address of its client",
+			"%s: \"%s\"", srv->HasRemote ? "gave" : "gave none", srv->HasRemote ? srv->Remote : "");
 		QuicTestCheck(ctx, logged_in == expect_login, expect_login ? "  the Login is accepted, matching the node's Sam" : "  the Login is refused, matching the node's Sam",
 			"client logged in %u, server logged in %u, server error %u, expected %u", (UINT)logged_in, (UINT)srv->LoggedIn, srv->LoginError, (UINT)expect_login);
 	}

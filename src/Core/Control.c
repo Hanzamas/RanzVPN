@@ -586,6 +586,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 
 	while (ok && ControlHalted(c) == false) {
 		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
+		// The events of the node that wait for the controller (ControlEvent.c; AUD1-DT-11, #459)
+		ok = ok && ControlWriteEvents(c->Config.Events, s);
 		if (ok == false)
 			break;
 

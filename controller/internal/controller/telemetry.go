@@ -22,10 +22,11 @@ import (
 // (telemetry.Hub) and exports them as Prometheus metrics and, to the targets an operator
 // configured, over OTLP; it sends the flow records to the IPFIX targets; and it raises Events,
 // which the event feed (telemetry.Feed) delivers to the webhook targets and counts: a node that
-// has lost its control stream for NodeDownAfter, a node that reports a gateway failover, the
-// automatic rollback of an unconfirmed revision (revision.go) and the IPAM pool that a change of
-// the intent takes to its threshold (ipam.go, SDN-10). The last two are stored in the transaction
-// of the change that makes them; the first two are raised with Raise.
+// has lost its control stream for NodeDownAfter, a node that reports a gateway failover or a
+// session flap (sessionflap.go, AUD1-DT-11), the automatic rollback of an unconfirmed revision
+// (revision.go) and the IPAM pool that a change of the intent takes to its threshold (ipam.go,
+// SDN-10). The last two are stored in the transaction of the change that makes them; the first two
+// are raised with Raise.
 
 // DefaultNodeDownAfter is how long a node that had a control stream may have none before the
 // controller raises a NodeDown event. A node opens a new stream within seconds when its old one
@@ -141,6 +142,11 @@ func (c *Controller) takeTelemetry(s *stream, t *controlpb.Telemetry) {
 	// The WireGuard ends of the Devices whose gateway the node is (devices.go; SDN-80)
 	c.takeDevices(s.name, t.GetDevices())
 	for _, ne := range t.GetEvents() {
+		// Two holders of one key replace the session of a peer again and again (sessionflap.go; AUD1-DT-11, #459)
+		if ne.GetType() == controlpb.NodeEventType_NODE_EVENT_TYPE_SESSION_FLAP {
+			c.takeSessionFlap(s, ne)
+			continue
+		}
 		if ne.GetType() != controlpb.NodeEventType_NODE_EVENT_TYPE_GATEWAY_FAILOVER {
 			continue
 		}
