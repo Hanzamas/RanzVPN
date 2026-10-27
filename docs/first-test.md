@@ -159,7 +159,7 @@ This does the following, and checks the hash and the signature of every file bef
 - Because of `--controller` it also registers and starts the Controller service `ranz-controller`. The Controller brings its own rqlite member inside `ranz.exe`.
 - It opens the ports of the Node and the Controller in Windows Firewall: the group `Ranz VPN` holds three inbound rules that allow, `Ranz VPN Node (TCP 443)`, `Ranz VPN Node (UDP 443)` and `Ranz VPN Controller (TCP 443, 5555)`, and nothing else.
 
-- It narrows who may reach the API and the web UI of the Controller, because TCP 443 and 5555 are open on every profile. The admin source allowlist is loopback and the subnets of the private interfaces of the PC (RFC 1918 and unique local addresses), unless you name the sources yourself with `--admin-from`, for example `ranz install --controller --admin-from 203.0.113.0/24,198.51.100.7`, or open the API to every address with `--admin-from any`. From an address outside the list, every call gets `403` and an event, before its token is looked at. The control stream of the Nodes is not behind the list: a Node enrols from any address, and a Network limits where its Nodes enrol from. The Controller applies the list at its first start only; change it afterwards with `ranz admin-sources set PREFIX...` or lift it with `ranz admin-sources clear`.
+- It narrows who may reach the API and the web UI of the Controller, because TCP 443 and 5555 are open on every profile. The admin source allowlist is loopback and the subnets of the private interfaces of the PC (RFC 1918 and unique local addresses), unless you name the sources yourself with `--admin-from`, for example `ranz install --controller --admin-from 203.0.113.0/24,198.51.100.7`, or open the API to every address with `--admin-from any`. From an address outside the list, every call gets `403` and an event, before its token is looked at. The control stream of the Nodes is not behind the list: a Node enrols from any address, and a Network limits where its Nodes enrol from. The Controller applies the list at its first start only; change it afterwards with `ranz admin-sources set PREFIX...` or lift it with `ranz admin-sources clear`. A Controller whose store is there already, because the service is registered or because `ranz uninstall` left the data directory, keeps the list of that store whatever `--admin-from` says, and `ranz install` says so in place of the line below.
 
 The last lines are `install: the ranz-controller service is running`, a line `install: the Controller starts with the admin source allowlist ...`, a line `install: Windows Firewall lets in ...` for each rule, and `ranz install: done`. It is safe to run the command again: a rule that is there as it should be stays, so a second install and an upgrade leave the same rules.
 
@@ -176,7 +176,7 @@ Get-Content C:\ProgramData\Ranz\controller\controller.log -Tail 12
 Both services are `Running`. The folder `C:\ProgramData\Ranz\controller` is the data directory of the Controller. At its first start the Controller made:
 
 - `admin.token`: the secret of the admin API token. Only SYSTEM, the Administrators, the owner of the folder and the service account can read it.
-- `controller.log`: its log. It says `first start: the intent of a first install` and `TLS port`, and at its first start which sources may reach the API and how to change that (`first start: the admin source allowlist is set`) and that the starter rule allows all traffic inside VRF `default` and how to narrow it (`first start: the starter rule default-allow-all`).
+- `controller.log`: its log. It says `first start: the intent of a first install` and `TLS port`, and at its first start which sources may reach the API and how to change that (`first start: the admin source allowlist is set`) and that the starter rule allows all traffic inside VRF `default` and how to narrow it (`first start: the starter rule default-allow-all`). Every later start says which list it keeps (`the admin source allowlist is set`), and warns when there is none.
 - `payload\rqlited.exe` and `rqlite\`: its store.
 
 ### 7. The certificate (certificate)
@@ -206,7 +206,7 @@ You see this, with your own values:
 }
 ```
 
-`adminAccess` is the admin source allowlist of step 5: the sources that may reach the API and the web UI, and `open` is `true` when there is none. `starterRule` is there while the Intent holds the starter rule of step 9.
+`adminAccess` is the admin source allowlist of step 5: the sources that may reach the API and the web UI, and `open` is `true` when there is none. The list is an admin's to read, so `sources` is in the answer for the admin token only: a viewer reads `open` and the note. `starterRule` is there while the Intent holds the starter rule of step 9 as the first start made it.
 
 Write down `publicKey` as `<CONTROLLER-KEY>`, `tlsFingerprint` as `<FINGERPRINT>` and `tlsPort` as `<PORT>`. If `tlsPort` is `5555`, the Controller fell back and `tlsPortFallback` is `true`.
 
@@ -251,7 +251,7 @@ There is one revision, `first-start`. `ranz get ipam` shows the pool of Network 
 
 A Node that names no VRF joins VRF `default` and gets an address from that pool.
 
-The starter rule lets every Node of VRF `default` talk to every other. The first start says so in `controller.log`, and `ranz status` says so in `starterRule` for as long as the rule exists. To narrow it, delete the rule, which leaves VRF `default` at default deny, and apply the Policies that you want, each with the action `allow` or `deny`:
+The starter rule lets every Node of VRF `default` talk to every other. The first start says so in `controller.log`, and `ranz status` says so in `starterRule` for as long as the Intent holds the rule as the first start made it: a rule of that name that you narrowed in place, with a protocol or ports, no longer allows all, and `starterRule` is gone. To narrow it, delete the rule, which leaves VRF `default` at default deny, and apply the Policies that you want, each with the action `allow` or `deny`:
 
 ```powershell
 ranz delete Policy default-allow-all
@@ -679,7 +679,7 @@ Run on each PC:
 ranz uninstall
 ```
 
-It stops and removes the services, takes out the drivers that `ranz install` put there (and leaves a driver that was there before), removes every rule of the group `Ranz VPN` from Windows Firewall, and removes `C:\Program Files\Ranz VPN`. `Get-NetFirewallRule -Group "Ranz VPN"` then finds no rule, and `ranz node state` says that the Node service is stopped. It keeps the data directories on purpose (ADR-0020): a later `ranz install` resumes with the same Configuration store and the same Controller store.
+It stops and removes the services, takes out the drivers that `ranz install` put there (and leaves a driver that was there before), removes every rule of the group `Ranz VPN` from Windows Firewall, and removes `C:\Program Files\Ranz VPN`. `Get-NetFirewallRule -Group "Ranz VPN"` then finds no rule, and `ranz node state` says that the Node service is stopped. It keeps the data directories on purpose (ADR-0020): a later `ranz install` resumes with the same Configuration store and the same Controller store, and the Controller keeps the admin source allowlist of that store (`ranz install` says so).
 
 ### 27. Remove what uninstall keeps (clean-up)
 
