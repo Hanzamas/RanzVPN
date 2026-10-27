@@ -6,6 +6,10 @@
    own to bob, and the two Noise handshakes cross it unchanged, so the queries that hold in mimic-key must fail here. CI
    fails when they do not. *)
 
+(* The selection of mimic-key, which changes only the order in which the prover resolves the rules: without it the
+   prover runs without end, as on mimic-key *)
+noselect a: bitstring; attacker(tpk(a)).
+
 process
   ( Setup()
   | MimicSetup()
