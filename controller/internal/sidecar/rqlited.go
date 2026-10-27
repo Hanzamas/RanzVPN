@@ -34,6 +34,17 @@ type Rqlited struct {
 	Expect   int       // the number of members that form a new cluster (rqlited -bootstrap-expect), 0 to join one
 	Output   io.Writer // its standard output and error, discarded when nil
 
+	// AuthFile is the credential file of rqlited (-auth, see credential.go): every request of its
+	// HTTP API then needs the credential, and a member of a cluster joins with it (-join-as). Empty
+	// for no credential.
+	AuthFile string
+	// NodeCACert, NodeCert and NodeKey are the PEM files of the mutual TLS between the members
+	// (-node-encrypt): the Raft transport and the node API of the cluster are encrypted, and a
+	// member that does not present a certificate of NodeCACert is refused. All three, or none.
+	NodeCACert string
+	NodeCert   string
+	NodeKey    string
+
 	cmd  *exec.Cmd
 	done chan struct{}
 	err  error
@@ -48,6 +59,15 @@ func (r *Rqlited) args() []string {
 	args := []string{"-node-id", id, "-http-addr", r.HTTPAddr, "-raft-addr", r.RaftAddr}
 	if r.RaftAdv != "" {
 		args = append(args, "-raft-adv-addr", r.RaftAdv)
+	}
+	if r.AuthFile != "" {
+		args = append(args, "-auth", r.AuthFile)
+		if len(r.Join) > 0 {
+			args = append(args, "-join-as", CredentialUser)
+		}
+	}
+	if r.NodeCert != "" {
+		args = append(args, "-node-encrypt", "-node-cert", r.NodeCert, "-node-key", r.NodeKey, "-node-ca-cert", r.NodeCACert, "-node-verify-client")
 	}
 	if len(r.Join) > 0 {
 		args = append(args, "-join", strings.Join(r.Join, ","))
@@ -91,10 +111,17 @@ func (r *Rqlited) Start(ctx context.Context) error {
 		release()
 		close(done)
 	}()
+	var user, password string
+	if r.AuthFile != "" {
+		if user, password, err = ReadCredential(r.AuthFile); err != nil {
+			r.Stop()
+			return fmt.Errorf("sidecar: %w", err)
+		}
+	}
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		if ready(ctx, r.URL()+"/readyz") {
+		if ready(ctx, r.URL()+"/readyz", user, password) {
 			return nil
 		}
 		select {
@@ -134,12 +161,15 @@ func (r *Rqlited) Done() <-chan struct{} {
 	return r.done
 }
 
-func ready(ctx context.Context, url string) bool {
+func ready(ctx context.Context, url, user, password string) bool {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return false
+	}
+	if user != "" {
+		req.SetBasicAuth(user, password)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
