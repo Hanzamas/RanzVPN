@@ -4,6 +4,14 @@
 # one with its terminating NUL. The counts bound one Update; a node whose state outgrows them
 # needs callback fields here, which the node's control stream decides when it lands. An Update of
 # 64 objects is larger than 64 kB, so the C build defines PB_FIELD_32BIT.
+#
+# The controller limits what a node sends it (AUD1-DT-2 #450): the Hello, and each of the Ack,
+# Signal, Telemetry and Leases messages, have a largest frame, MaxHello, MaxAck, MaxSignal,
+# MaxTelemetry and MaxLeases of controller/internal/control/limits.go, and the controller closes the
+# stream of a node that sends a larger one. Each limit is above the largest frame that the sizes of
+# the fields of its message allow (Hello and its Capabilities, Signal, Telemetry and the messages
+# in it, Leases and Lease), and a test computes those frames from this file: a size that grows
+# past its limit fails it, so raise the limit with the size.
 ranz.control.v1.NodeConfig.name max_size:64
 ranz.control.v1.NodeConfig.tags max_count:16 max_size:64
 # One address per L3 Network of a node's VRFs, and a node is in at most 16 VRFs (Peer.vrf_ids)
