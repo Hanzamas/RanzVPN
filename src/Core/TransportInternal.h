@@ -33,6 +33,11 @@ struct _SecHandle;
 struct _SecBufferDesc *TransportTlsAlpnOffer(const TRANSPORT_TLS_CONFIG *cfg, struct _SecBufferDesc *desc, struct _SecBuffer *buf, ULONG *list, UINT size);
 bool TransportTlsAlpnSelected(const TRANSPORT_TLS_CONFIG *cfg, struct _SecHandle *ctx);
 
+// The text of a socket address (TransportRemote.c; AUD1-DT-11, #459), as a Remote procedure gives it: "a.b.c.d:port", or
+// "[address]:port" for IPv6, where an IPv4-mapped address is the IPv4 one. It fills out (size bytes with the NUL) and gives
+// true, or leaves it empty and gives false for an address of another family or one that does not fit.
+bool TransportAddressText(const struct sockaddr *addr, char *out, UINT size);
+
 // The channel binding of a QUIC connection, TransportQuicExporter, is in Core/Transport.h with the check of the msquic
 // version that it reads it from (CORE-H5-R, #443), so that coretest tests both
 
