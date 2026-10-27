@@ -38,7 +38,7 @@
 #include <psapi.h>
 #include <stdio.h>
 
-#define	SLTEST_WATCHDOG		420000			// The test process is aborted after this (ms)
+#define	SLTEST_WATCHDOG		150000			// The test process is aborted after this (ms)
 #define	SLTEST_WAIT			15000			// A bounded wait on observable state (ms)
 #define	SLTEST_POLL			10				// How often it looks (ms)
 #define	SLTEST_FLOOD		40				// The connections of a flood at the front door
@@ -103,6 +103,29 @@ static bool SlCheck(SLTEST_CTX *ctx, bool ok, char *what, char *fmt, ...)
 	return false;
 }
 
+// What the test does now, which the watchdog names when it ends the run
+static const char *volatile g_sl_phase = "start";
+
+// A dial of client to address that gives up after 20 s, so that a connection that never comes up fails the check
+static VOID CALLBACK SlCancelTimer(PVOID param, BOOLEAN fired)
+{
+	UNREFERENCED_PARAMETER(fired);
+	SetEvent((HANDLE)param);
+}
+
+static TRANSPORT_STREAM *SlDial(TRANSPORT *client, char *address)
+{
+	HANDLE cancel = CreateEventW(NULL, TRUE, FALSE, NULL);
+	HANDLE timer = NULL;
+
+	CreateTimerQueueTimer(&timer, NULL, SlCancelTimer, cancel, 20000, 0, WT_EXECUTEONLYONCE);
+	TRANSPORT_STREAM *s = TransportDial(client, address, cancel);
+	DeleteTimerQueueTimer(NULL, timer, INVALID_HANDLE_VALUE);
+	CloseHandle(cancel);
+
+	return s;
+}
+
 // The watchdog: a native thread that ends a run that hangs, so a lost wake-up is a failed test instead of a hung CI step
 static DWORD WINAPI SlWatchdog(LPVOID param)
 {
@@ -114,7 +137,7 @@ static DWORD WINAPI SlWatchdog(LPVOID param)
 		return 0;
 	}
 
-	int len = snprintf(msg, sizeof(msg), "SOURCELIMITS TEST FAILED (did not finish within %u ms)\n", SLTEST_WATCHDOG);
+	int len = snprintf(msg, sizeof(msg), "SOURCELIMITS TEST FAILED (did not finish within %u ms, in: %s)\n", SLTEST_WATCHDOG, g_sl_phase);
 	if (len > 0)
 	{
 		WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), msg, (DWORD)MIN((UINT)len, (UINT)sizeof(msg) - 1), &written, NULL);
@@ -292,7 +315,9 @@ static bool SlTake(void *param, SOCKET s)
 {
 	SLTEST_OWNER *o = (SLTEST_OWNER *)param;
 	char buf[256];
+	DWORD timeout = 5000;
 
+	setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
 	(void)recv(s, buf, sizeof(buf), 0);
 	(void)send(s, "T", 1, 0);
 	shutdown(s, SD_SEND);
@@ -371,7 +396,7 @@ static bool SlServed(char *source, USHORT port)
 {
 	UCHAR hello[64];
 	char answer = 0;
-	DWORD timeout = SLTEST_WAIT;
+	DWORD timeout = 5000;
 	SOCKET s = SlConnect(source, port);
 
 	if (s == INVALID_SOCKET)
@@ -723,7 +748,7 @@ static void SlQuic(SLTEST_CTX *ctx)
 			Format(address, sizeof(address), "127.0.0.1:%u", (UINT)TransportQuicBoundPort(server));
 			for (UINT i = 0; i < SLTEST_QUIC_DIALS; i++)
 			{
-				TRANSPORT_STREAM *s = TransportDial(client, address, NULL);
+				TRANSPORT_STREAM *s = SlDial(client, address);
 
 				if (s != NULL)
 				{
@@ -786,7 +811,7 @@ static void SlQuic(SLTEST_CTX *ctx)
 
 			// An honest client connects after the flood, through the retry
 			Format(address, sizeof(address), "127.0.0.1:%u", (UINT)TransportQuicBoundPort(server));
-			TRANSPORT_STREAM *s = (client != NULL ? TransportDial(client, address, NULL) : NULL);
+			TRANSPORT_STREAM *s = (client != NULL ? SlDial(client, address) : NULL);
 			SlCheck(ctx, s != NULL, "  an honest client connects to the listener after the flood", "the dial failed");
 			TransportClose(s);
 		}
@@ -813,10 +838,15 @@ void sourcelimits_test(UINT num, char **arg)
 
 	Print("SOURCELIMITS test: the limits for a source of the front door and of the QUIC listener (AUD1-DT-3)\n");
 
+	g_sl_phase = "the table of sources";
 	SlUnit(ctx);
+	g_sl_phase = "the front door flood";
 	SlFlood(ctx);
+	g_sl_phase = "the front door rates";
 	SlRates(ctx);
+	g_sl_phase = "the front door Nodes";
 	SlNodes(ctx);
+	g_sl_phase = "the QUIC listener";
 	SlQuic(ctx);
 
 	if (watchdog != NULL)

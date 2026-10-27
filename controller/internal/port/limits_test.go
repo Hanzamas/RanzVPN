@@ -364,11 +364,16 @@ func TestThousandNodesBehindOneAddressConnectWithTheDefaults(t *testing.T) {
 	var wg sync.WaitGroup
 	var failed atomic.Int64
 	start := make(chan struct{})
+	// The loopback of Windows resets connections when more than a few hundred are opened in one instant, which is
+	// the host's backlog and no limit of the port: the Nodes connect 200 at a time, within the same second
+	room := make(chan struct{}, 200)
 	for i := 0; i < nodes; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			<-start
+			room <- struct{}{}
+			defer func() { <-room }()
 			d := net.Dialer{Timeout: 60 * time.Second}
 			raw, err := d.Dial("tcp", ln.Addr().String())
 			if err != nil {
