@@ -254,6 +254,7 @@ static void StoreTestLibrary(STORETEST_CTX *ctx)
 	wchar_t expect[MAX_PATH];
 	char mode[MAX_SIZE];
 	char value[MAX_SIZE];
+	char schema[MAX_SIZE];
 
 	StoreTestNewDir(dir, sizeof(dir), "library");
 	StoreTestPath(path, sizeof(path), dir);
@@ -277,8 +278,9 @@ static void StoreTestLibrary(STORETEST_CTX *ctx)
 	StoreTestCheck(ctx, GetModuleHandleW(L"sqlite3.dll") == NULL, "No other SQLite library is loaded", "sqlite3.dll is loaded");
 	Print("  winsqlite3.dll: SQLite %s\n", CsLibVersion());
 
-	StoreTestCheck(ctx, CsSetSetting(s, "Probe", "1") == ERR_NO_ERROR && StoreTestDumpHas(s, "schema 1\n"),
-		"A new store has schema 1 and takes a write", "the write or the schema line failed");
+	Format(schema, sizeof(schema), "schema %u\n", CS_SCHEMA_VERSION);
+	StoreTestCheck(ctx, CsSetSetting(s, "Probe", "1") == ERR_NO_ERROR && StoreTestDumpHas(s, schema),
+		"A new store has schema CS_SCHEMA_VERSION and takes a write", "the write or the schema line failed");
 
 	CsClose(s);
 
