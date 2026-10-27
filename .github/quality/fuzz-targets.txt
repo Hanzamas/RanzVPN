@@ -125,6 +125,15 @@ src/Cedar  NodeAdminCommand  exempt  one command line of an Administrator on the
 # The source prefixes of a Network and of the admin source allowlist (SDN-39 #232)
 controller/internal/intent  ParseSources  FuzzParseSources
 
+# The admin destination lists (AUD1-DT-9 #457): the target hosts, the sensor prefixes and the UNC servers that an admin sets
+# through the API, and the UNC path of a file of a node that a Listener names, which the servers are matched against. UNCServer
+# has no parser word in its name and reads the same bytes.
+controller/internal/intent  ParseTargetHosts     FuzzParseDestinations
+controller/internal/intent  ParseUNCServers      FuzzParseDestinations
+controller/internal/intent  ParseSensorPrefixes  FuzzParseDestinations
+controller/internal/intent  ParseHostList        FuzzParseDestinations  via ParseTargetHosts
+controller/internal/intent  UNCServer            FuzzParseDestinations
+
 # The intent documents of the API, `ranz apply -f` and `ranz import -f` (SDN-52 #245)
 controller/internal/intent  ParseDocument  FuzzParseDocument
 controller/internal/intent  ParseULA       FuzzParseValues
