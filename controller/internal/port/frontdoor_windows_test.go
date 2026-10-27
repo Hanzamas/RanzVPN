@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -61,12 +62,24 @@ func handoffBytes(t *testing.T, info *windows.WSAProtocolInfo) []byte {
 // send writes msg to the handoff pipe, as one front door, and returns the answer; msg nil writes
 // nothing and closes the pipe at once.
 func send(pipe string, msg func(pid uint32) ([]byte, error)) (byte, error) {
+	return sendThen(pipe, msg, nil)
+}
+
+// sendThen is send, and before is called once the exchange is over and before the pipe closes: the
+// controller starts to serve the socket when its end of the pipe ends, so what the front door does
+// to its own handle in before cannot overlap the controller's use of the socket.
+func sendThen(pipe string, msg func(pid uint32) ([]byte, error), before func()) (byte, error) {
 	timeout := 5 * time.Second
 	p, err := winio.DialPipe(pipe, &timeout)
 	if err != nil {
 		return 0, err
 	}
-	defer p.Close()
+	defer func() {
+		if before != nil {
+			before()
+		}
+		p.Close()
+	}()
 	var pid uint32
 	if err := windows.GetNamedPipeServerProcessId(windows.Handle(p.(interface{ Fd() uintptr }).Fd()), &pid); err != nil {
 		return 0, err
@@ -87,16 +100,21 @@ func send(pipe string, msg func(pid uint32) ([]byte, error)) (byte, error) {
 }
 
 // handOver hands the accepted socket raw to the pipe and closes the front door's own handle of it,
-// whatever the answer.
+// whatever the answer. The handle closes before the pipe does: the controller waits for the end of
+// the pipe before it serves the socket, so its TLS handshake never runs while the front door's
+// handle of the same connection is closing in this process (the test's front door is the
+// controller's process; the real one is another, and has no such overlap to look at).
 func handOver(pipe string, raw windows.Handle) (byte, error) {
-	defer windows.Closesocket(raw)
-	return send(pipe, func(pid uint32) ([]byte, error) {
+	var once sync.Once
+	closeRaw := func() { once.Do(func() { windows.Closesocket(raw) }) }
+	defer closeRaw()
+	return sendThen(pipe, func(pid uint32) ([]byte, error) {
 		var info windows.WSAProtocolInfo
 		if err := windows.WSADuplicateSocket(raw, pid, &info); err != nil {
 			return nil, err
 		}
 		return encodeHandoff(&info)
-	})
+	}, closeRaw)
 }
 
 var procAccept = windows.NewLazySystemDLL("ws2_32.dll").NewProc("accept")
