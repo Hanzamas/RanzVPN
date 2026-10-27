@@ -17,7 +17,7 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
 - Everything else is autonomous: merge, review, tickets, grills, specs, ADRs. Decide with the recommended answer, record it, report it. Ask only about `master`, a release, money or credentials.
 - A lane pushes after every commit. A cut-off loses no pushed work.
 - One integrator acts at a time. The heartbeat issue decides which one.
-- Be fast and proactive. Up to 6 lanes at once, one agent per ticket, every free slot filled at once, until the plan limit stops the job. Stay in the session and react to each event within a minute. The usage of the plan is shared.
+- Be fast and proactive. Up to 12 lanes at once, one agent per ticket, every free slot filled at once, until the plan limit stops the job. Stay in the session and react to each event within a minute. The usage of the plan is shared.
 
 ## Words
 
@@ -78,8 +78,8 @@ The repository is public. Tickets, pull request bodies, comments and CI logs are
    - a failed check that is a known flake: rerun it once;
    - a failed check or a conflict, and the branch is not busy: start a resume lane. A branch is busy when it got a push in the last 45 minutes, because a person or another process may be working on it. The branch of a lane in flight (step 2) stays busy until it has had no push for 90 minutes;
    - a red run on `integration`: start a fix lane before any new ticket.
-5. **Launch.** If fewer than 6 lanes are alive, counting those of earlier ticks, start lanes for the next ready tickets at once, one agent per ticket. See "Launching lanes". Never leave a ready ticket waiting while a slot is free. If no ticket is ready, or a review or a lane found a gap that no ticket covers, write tickets first. See "Writing tickets".
-6. **Wait, and stay alive.** Arm a watcher and wait. A watcher is a script that prints one line when a pull request becomes clean, conflicting or failed; the one for the cloud is in [integrator-cloud.md](integrator-cloud.md). Refresh your heartbeat comment at least every 20 minutes. When a lane ends or the watcher prints a line, go to step 2 at once: a clean pull request is merged and its ticket closed in the same minute, a failed one gets its resume lane, a free slot gets the next lane. Never end your turn while a lane of yours is alive or a pull request into `integration` is open and not merged. A turn that ends leaves a stale heartbeat comment, and a reaction that waits for the next hourly tick is hours of idle capacity. If the session dies anyway, the next tick finds the lanes through the `lanes` line (step 2).
+5. **Launch.** If fewer than 12 lanes are alive, counting those of earlier ticks, start lanes for the next ready tickets at once, one agent per ticket. See "Launching lanes". Never leave a ready ticket waiting while a slot is free. If no ticket is ready, or a review or a lane found a gap that no ticket covers, write tickets first. See "Writing tickets".
+6. **Wait, and stay alive.** Arm a watcher and wait. A watcher is a script that prints one line when a pull request becomes clean, conflicting or failed; the one for the cloud is in [integrator-cloud.md](integrator-cloud.md). Refresh your heartbeat comment every 5 minutes (the watcher prints a line `PULSE` for it). When a lane ends or the watcher prints a line, go to step 2 at once: a clean pull request is merged and its ticket closed in the same minute, a failed one gets its resume lane, a free slot gets the next lane. Never end your turn while a lane of yours is alive or a pull request into `integration` is open and not merged. A turn that ends leaves a stale heartbeat comment, and a reaction that waits for the next hourly tick is hours of idle capacity. If the session dies anyway, the next tick finds the lanes through the `lanes` line (step 2).
 7. **Report.** Edit your heartbeat comment. See "The report". Write `ended:` only when none of your lanes is alive.
 
 ## The merge procedure
@@ -201,11 +201,11 @@ A local schedule that resumes work after a usage window (a scheduled task) and t
 
 ## Pace
 
-- **Use the window.** The maintainer wants the usage limit used up to 99%, in every window (2026-10-27). Idle capacity is the waste to avoid: the first day of the cloud routine left the usage at 4% of a window for hours, because lanes started only in a window of time, one reaction came per hour, and lanes ended before their CI. Keep up to 6 lanes alive, fill a slot the minute it frees, and do not stop until a command fails with a message about the plan limit. A burst of 12 lanes at once (2026-10-24) burned a window in about an hour and the cut-off wasted what they did, so refill one lane at a time and keep every lane pushing after every commit. A cut lane then loses little, and a resume lane needs 8 to 12% against 16% for a new one.
+- **Use the window.** The maintainer wants the usage limit used up to 99%, in every window (2026-10-27). Idle capacity is the waste to avoid: the first day of the cloud routine left the usage at 4% of a window for hours, because lanes started only in a window of time, one reaction came per hour, and lanes ended before their CI. Keep up to 12 lanes alive, fill a slot the minute it frees, and do not stop until a command fails with a message about the plan limit. A burst of 12 lanes at once (2026-10-24) burned a window in about an hour and the cut-off wasted what they did, so refill one lane at a time and keep every lane pushing after every commit. A cut lane then loses little, and a resume lane needs 8 to 12% against 16% for a new one.
 - **Cost.** Measured on 2026-10-24: a lane needs about 2.5 hours (the work, then 2 or 3 CI cycles of about 25 minutes) and about 16% of a window. A resume lane needs 8 to 12%. An Opus lane burns about 8% of a window per hour, a Sonnet lane about 4%.
 - **One budget.** The usage is shared by every session of the account: the laptop, the cloud and the chats of the maintainer.
-- **Refill a slot** when a lane ends. Local: look at `get_usage`. Cloud: no tool tells you, so keep to the lane cap of the routine prompt (default 6) and launch until a command fails with a message about the plan limit. There is no window rule that stops launching.
-- **CI is the bottleneck.** A cycle takes about 25 minutes. A lane that waits for CI costs almost nothing, so many lanes can wait at once. That is why 6 lanes fit in a window.
+- **Refill a slot** when a lane ends. Local: look at `get_usage`. Cloud: no tool tells you, so keep to the lane cap of the routine prompt (default 12) and launch until a command fails with a message about the plan limit. There is no window rule that stops launching.
+- **CI is the bottleneck.** A cycle takes about 25 minutes. A lane that waits for CI costs almost nothing, so many lanes can wait at once. That is why 12 lanes can wait at once.
 - **One lane, one agent**, never the same lane in two.
 
 ## Known flakes
@@ -244,14 +244,14 @@ alive: 2026-10-26T14:30:00Z
 
 Before you act:
 
-1. Read the comments of the issue that were updated in the last 45 minutes. The command is in [integrator-cloud.md](integrator-cloud.md).
+1. Read the comments of the issue that were updated in the last 15 minutes. The command is in [integrator-cloud.md](integrator-cloud.md).
 2. Keep only the tick comments, those whose first line starts with `integrator:`. Drop your own run, and every comment that has an `ended:` line.
 3. If any comment is left, another integrator is alive. Stand down: post nothing, act on nothing, end.
-4. Otherwise post your comment. Then read the comments again. If a comment of another run, not ended and updated in the last 45 minutes, has a lower comment id than yours, that run started first. Edit your comment to add `ended: lost the race`, and stand down.
+4. Otherwise post your comment. Then read the comments again. If a comment of another run, not ended and updated in the last 15 minutes, has a lower comment id than yours, that run started first. Edit your comment to add `ended: lost the race`, and stand down.
 
-While you act, edit your comment at least every 30 minutes and set `alive:` to the time now. A tick that stops refreshing, for example because the usage window cut it off, is taken over after 45 minutes. Age is the `updated_at` of the comment, which is the clock of GitHub.
+While you act, edit your comment every 5 minutes (on each `PULSE` of the watcher) and set `alive:` to the time now. A session that stops refreshing, for example because the usage window cut it off, is taken over after 15 minutes. Age is the `updated_at` of the comment, which is the clock of GitHub.
 
-A comment that is older than 45 minutes can still have lanes alive. A tick that launched a Workflow may end its turn while the lanes run, because the platform wakes it when the Workflow ends, and it does not refresh its comment meanwhile. So before you launch or resume anything, read the `lanes` lines of the tick comments of the last 3 hours (step 2 of "A tick"). The tickets and pull requests named there are in flight. They count against the lane cap, and they get no lane and no resume lane before their branch has had no push for 90 minutes.
+A comment that is older than 15 minutes can still have lanes alive: a session that died leaves its lanes behind for a while, and two sessions may run side by side. So before you launch or resume anything, read the `lanes` lines of the tick comments of the last 3 hours (step 2 of "A tick"). The tickets and pull requests named there are in flight. They count against the lane cap, and they get no lane and no resume lane before their branch has had no push for 90 minutes.
 
 The maintainer's word beats the heartbeat. If he tells an integrator to take over, it posts its comment and acts. The other one sees a fresh comment and stands down.
 
