@@ -103,6 +103,31 @@ static void NodeStateSessions(NODE *n, UINT64 now, cJSON *o, char *listener, UIN
 	Free(list);
 }
 
+// What the limits for a source of one listener hold and refused (AUD1-DT-3, #451): the connections that wait for their
+// handshake now, and the refusals by reason since the node started
+static void NodeStateLimits(cJSON *o, const SOURCE_LIMIT_STATS *st) {
+	cJSON_AddNumberToObject(o, "pending", st->Pending);
+	cJSON_AddNumberToObject(o, "sources", st->Sources);
+	cJSON_AddNumberToObject(o, "admitted", (double)st->Admitted);
+	cJSON_AddNumberToObject(o, "refusedFull", (double)st->RefusedFull);
+	cJSON_AddNumberToObject(o, "refusedSource", (double)st->RefusedSource);
+	cJSON_AddNumberToObject(o, "refusedRate", (double)st->RefusedRate);
+	cJSON_AddNumberToObject(o, "refusedHandshake", (double)st->RefusedHandshake);
+}
+
+// The refusals of the front door and of QUIC, and the retry of msquic, into the front door object f
+static void NodeStateRefused(cJSON *f, const NODE_LISTENER_STATUS *ls) {
+	cJSON *r = cJSON_AddObjectToObject(f, "refused");
+
+	NodeStateLimits(cJSON_AddObjectToObject(r, "tcp"), &ls->FrontDoorLimits);
+	cJSON *q = cJSON_AddObjectToObject(r, "quic");
+	NodeStateLimits(q, &ls->QuicLimits);
+	cJSON_AddBoolToObject(q, "available", ls->HasQuic);
+	cJSON_AddNumberToObject(q, "retryMemoryLimit", ls->QuicRetryMemoryLimit);
+	cJSON_AddBoolToObject(q, "retrying", ls->QuicRetrying);
+	cJSON_AddNumberToObject(q, "retries", (double)ls->QuicRetries);
+}
+
 // The listeners: the data transport of the overlay, the front door and QUIC of the Listener, the UDP port of the relay role
 static void NodeStateListeners(NODE *n, const NODE_STATUS *ns, const char *overlay, cJSON *o) {
 	NODE_LISTENER_STATUS *ls = ZeroMalloc(sizeof(NODE_LISTENER_STATUS));
@@ -117,6 +142,7 @@ static void NodeStateListeners(NODE *n, const NODE_STATUS *ns, const char *overl
 	cJSON_AddNumberToObject(f, "quicPort", ls->Running ? ls->QuicPort : 0);
 	cJSON_AddBoolToObject(f, "fallback", ls->Fallback);
 	cJSON_AddStringToObject(f, "error", ls->Error);
+	NodeStateRefused(f, ls);
 	cJSON_AddNumberToObject(l, "relayUdpPort", ns->RelayPort);
 
 	Free(ls);
