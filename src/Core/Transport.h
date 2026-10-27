@@ -207,6 +207,28 @@ bool TransportTake(TRANSPORT_LISTENER *l, UINT_PTR socket);
 UINT TransportParseList(const char *list, TRANSPORT **transports, UINT num_transports, TRANSPORT_TARGET *targets, UINT max);
 TRANSPORT_STREAM *TransportRace(const TRANSPORT_TARGET *targets, UINT num, UINT delay, UINT timeout, TRANSPORT_RACE *race);
 
+// The fallback after a handshake (TransportFallback.c; CORE-H5-R, #443). The race picks the first stream to connect, so
+// QUIC wins wherever UDP passes, also against a server whose Noise handshake over QUIC fails, as a node of the build
+// before CORE-H5 refuses one of this build (the binding types differ) while TLS-443 still works between them. A client
+// keeps a TRANSPORT_FALLBACK per fallback list: Won records the transport of the stream that a race gave, Refused takes
+// that transport out of the next races for TRANSPORT_FALLBACK_HOLD once the handshake on its stream failed, and Targets
+// gives the entries of the list that the next race dials: those of the transports not taken out, in their order, or all
+// of them when that leaves none. So a dial after a failed handshake goes to the next transport of the list, and the
+// transport taken out comes back after the hold, when the server may have been upgraded. Now is GetTickCount64. The
+// caller serialises the calls on one fallback.
+#define TRANSPORT_FALLBACK_HOLD 300000 // ms that a transport whose handshake failed stays out of the races of its list
+
+typedef struct TRANSPORT_FALLBACK {
+	TRANSPORT *Last;                           // The transport of the stream that the last race gave, NULL before
+	UINT NumRefused;                           // The transports taken out
+	TRANSPORT *Refused[TRANSPORT_MAX_TARGETS]; // ... each until its time
+	UINT64 Until[TRANSPORT_MAX_TARGETS];
+} TRANSPORT_FALLBACK;
+
+UINT TransportFallbackTargets(TRANSPORT_FALLBACK *f, const TRANSPORT_TARGET *targets, UINT num, UINT64 now, TRANSPORT_TARGET *out, UINT max);
+void TransportFallbackWon(TRANSPORT_FALLBACK *f, TRANSPORT *t);
+TRANSPORT *TransportFallbackRefused(TRANSPORT_FALLBACK *f, UINT64 now);
+
 // The session layer (TransportNoise.c). Connect runs the initiator of a Noise session on a stream,
 // Accept the responder; each takes the stream, with cfg as for NoiseSessionConnect and
 // NoiseSessionAccept but for the binding, which comes from the stream, and the flag
@@ -367,6 +389,33 @@ TRANSPORT *TransportQuicServerNew(const TRANSPORT_QUIC_CONFIG *cfg);
 TRANSPORT *TransportQuicClientNew(const TRANSPORT_QUIC_CONFIG *cfg);
 USHORT TransportQuicBoundPort(TRANSPORT *t);
 void TransportQuicFree(TRANSPORT *t);
+
+// The msquic of the exporter (TransportQuicExporter.c; CORE-H5-R, #443). ConnectionExportKeyingMaterial sits in the
+// preview part of the msquic API table, which a later minor version may move or change, so a side reads the exporter
+// only from the minor version that the build was made against (the pinned package of fetch-msquic.ps1), any patch of
+// it. TransportQuicExporterVersion tells whether version, the four numbers of QUIC_PARAM_GLOBAL_LIBRARY_VERSION, is that
+// one; for another it writes a line to the transport log that names the side (server or client) and the version, and
+// that side's streams stay unbound, so its sessions with a bound peer fail.
+#define TRANSPORT_QUIC_EXPORTER_MAJOR 2 // The msquic whose API table this build reads the exporter from: 2.6.x
+#define TRANSPORT_QUIC_EXPORTER_MINOR 6
+bool TransportQuicExporterVersion(const UINT *version, bool server);
+
+// The channel binding of a QUIC connection (CORE-H5, #408): the TLS exporter of connection (an HQUIC whose handshake
+// completed, from the CONNECTED event) under api (the QUIC_API_TABLE of msquic), with NOISE_EXPORTER_LABEL, into exporter
+// (NOISE_EXPORTER_SIZE bytes), on the server or the client side. False, with a line of the transport log once per side
+// and reason, when that msquic is not the pinned minor, its table has no exporter or the connection gives none; the
+// stream then has no binding, and its session is encrypted.
+bool TransportQuicExporter(const void *api, void *connection, bool server, UCHAR *exporter);
+
+// The log of the transport module (TransportLog.c; CORE-H5-R, #443): the lines that tell why a transport runs with less
+// than it should, as a QUIC side without an exporter. Each line goes to the procedure that SetLog gave, with its
+// parameter, or without one to the debugger (OutputDebugStringA); SetLog(NULL, NULL) goes back to the debugger, and once
+// it returns the procedure before runs no more. The procedure may run on any thread, a callback of msquic too, so it
+// must not block or call into the transport. A line is TRANSPORT_LOG_SIZE bytes at most, with its NUL.
+#define TRANSPORT_LOG_SIZE 512
+typedef void(TRANSPORT_LOG_PROC)(void *param, const char *line);
+void TransportSetLog(TRANSPORT_LOG_PROC *proc, void *param);
+void TransportLog(const char *format, ...);
 
 // The TLS transport (TransportTls.c, CORE-S2-1 #69), on Schannel through SSPI: TLS 1.3 and 1.2 over
 // TCP on the Windows TCP stack, for a client that cannot use UDP (TLS-443 in a fallback list,

@@ -33,10 +33,7 @@ struct _SecHandle;
 struct _SecBufferDesc *TransportTlsAlpnOffer(const TRANSPORT_TLS_CONFIG *cfg, struct _SecBufferDesc *desc, struct _SecBuffer *buf, ULONG *list, UINT size);
 bool TransportTlsAlpnSelected(const TRANSPORT_TLS_CONFIG *cfg, struct _SecHandle *ctx);
 
-// The channel binding of a QUIC connection (TransportQuicExporter.c; CORE-H5, #408): the TLS exporter of connection (an
-// HQUIC whose handshake completed, from the CONNECTED event) under api (the QUIC_API_TABLE of msquic), with
-// NOISE_EXPORTER_LABEL, into exporter (NOISE_EXPORTER_SIZE bytes). False when the msquic has no exporter (before 2.6)
-// or the connection gives none; the stream then has no binding, and its session is encrypted.
-bool TransportQuicExporter(const void *api, void *connection, UCHAR *exporter);
+// The channel binding of a QUIC connection, TransportQuicExporter, is in Core/Transport.h with the check of the msquic
+// version that it reads it from (CORE-H5-R, #443), so that coretest tests both
 
 #endif // CORE_TRANSPORT_INTERNAL_H
