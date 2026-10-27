@@ -245,7 +245,7 @@ func (m *Member) Status() api.Status {
 		cs.Leader, cs.Epoch = m.lease.Holder, m.lease.Epoch
 	}
 	s.Cluster = cs
-	return s
+	return s.WithRefusals()
 }
 
 // fingerprint returns the TLS fingerprint of the certificate that the member serves now: the one of

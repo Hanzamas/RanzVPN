@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 )
 
@@ -23,6 +24,21 @@ type Status struct {
 	// Diagnostics is what the program tells the diagnostics bundle about it (diagnostics.go). It
 	// is the program's setting, not part of the answer.
 	Diagnostics *Diagnostics `json:"-"`
+	// Refused is what the limits for a source of the TLS port refused since the controller started
+	// (AUD1-DT-3, #451): the connections over the caps and the rates of their source, by reason.
+	Refused *port.Refusals `json:"refused,omitempty"`
+	// ReadRefusals gives Refused at each answer (WithRefusals). It is the program's setting, not
+	// part of the answer.
+	ReadRefusals func() port.Refusals `json:"-"`
+}
+
+// WithRefusals returns s with Refused read now from ReadRefusals, when the program set one.
+func (s Status) WithRefusals() Status {
+	if s.ReadRefusals != nil {
+		r := s.ReadRefusals()
+		s.Refused = &r
+	}
+	return s
 }
 
 // ClusterStatus is the cluster part of Status.
@@ -56,7 +72,7 @@ type Capabilities struct {
 func init() {
 	register(
 		route{http.MethodGet, "/api/v1/status", rbac.Viewer, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
-			reply(w, http.StatusOK, d.withAccess(r.Context()))
+			reply(w, http.StatusOK, d.withAccess(r.Context()).WithRefusals())
 		}},
 		route{http.MethodGet, "/api/v1/whoami", rbac.Viewer, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
 			tok, _ := Caller(r.Context())

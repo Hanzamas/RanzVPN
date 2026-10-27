@@ -24,6 +24,11 @@
 //	                 the front door of a node on the same host, which then owns TCP 443, hands over
 //	                 the connections of the TLS port (SDN-73, ADR-0035); empty for none. The
 //	                 controller listens on -listen beside it, as it does without a front door
+//	-max-pending, -max-pending-per-source, -connect-rate, -connect-burst, -handshake-rate, -handshake-burst
+//	                 the limits for a source of the TLS port (AUD1-DT-3, #451): the connections that wait for
+//	                 their TLS handshake in all and for one source, and the rates of the new connections and
+//	                 of the handshakes of one source. 0 is the default, which an honest site does not meet:
+//	                 1000 nodes behind one address connect at once. What is refused is counted in the status
 //	-http-listen     off; plain HTTP (port 80) for the redirect to HTTPS and ACME HTTP-01 only,
 //	                 through HTTP.sys on Windows
 //	-control-listen  off; a second TLS port for the control stream only, for development
@@ -110,6 +115,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -179,6 +185,7 @@ type config struct {
 	logMB         int
 	adminFrom     string // -admin-from: the admin source allowlist that the first start sets
 	schema        controlpb.SchemaVersion
+	limits        port.Limits // the limits for a source of the TLS port (AUD1-DT-3, #451)
 }
 
 // maxLogDays and maxLogMB bound -log-days and -log-mb: a century, and a tebibyte. They keep the
@@ -233,6 +240,12 @@ func parseFlags(args []string) (config, error) {
 	flags.IntVar(&cfg.logDays, "log-days", logfile.DefaultMaxAgeDays, "the age limit of the service log in days: a file of the log whose last record is older is deleted; 0 for no limit (the Windows service writes the log, elsewhere the controller logs to its standard error)")
 	flags.IntVar(&cfg.logMB, "log-mb", logfile.DefaultMaxMB, "the disk limit of the service log in megabytes: its files never take more together, and the oldest are deleted first; 0 for no limit")
 	flags.StringVar(&cfg.adminFrom, "admin-from", "", "the admin source allowlist that the first start sets: prefixes separated by commas, or any for none; a later start keeps the list in the store (ranz admin-sources)")
+	flags.IntVar(&cfg.limits.MaxPending, "max-pending", 0, fmt.Sprintf("the most connections of the TLS port that wait for their TLS handshake in all; the next is closed (0: %d)", port.DefaultMaxPending))
+	flags.IntVar(&cfg.limits.MaxPendingPerSource, "max-pending-per-source", 0, fmt.Sprintf("... and for one source, an IPv4 address or the /64 of an IPv6 address (0: %d)", port.DefaultMaxPendingPerSource))
+	flags.Float64Var(&cfg.limits.ConnectRate, "connect-rate", 0, fmt.Sprintf("the new connections a second that a source may open at the TLS port, sustained (0: %d)", port.DefaultRate))
+	flags.IntVar(&cfg.limits.ConnectBurst, "connect-burst", 0, fmt.Sprintf("... and how many it may open at once (0: %d)", port.DefaultBurst))
+	flags.Float64Var(&cfg.limits.HandshakeRate, "handshake-rate", 0, fmt.Sprintf("the TLS handshakes a second that a source may start at the TLS port, sustained (0: %d)", port.DefaultRate))
+	flags.IntVar(&cfg.limits.HandshakeBurst, "handshake-burst", 0, fmt.Sprintf("... and how many it may start at once (0: %d)", port.DefaultBurst))
 	if err := flags.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -274,6 +287,8 @@ func parseFlags(args []string) (config, error) {
 		problem = fmt.Errorf("-log-days %d is not between 0 (no limit) and %d", cfg.logDays, maxLogDays)
 	case cfg.logMB < 0 || cfg.logMB > maxLogMB:
 		problem = fmt.Errorf("-log-mb %d is not between 0 (no limit) and %d", cfg.logMB, maxLogMB)
+	case cfg.limits.MaxPending < 0 || cfg.limits.MaxPendingPerSource < 0 || cfg.limits.ConnectRate < 0 || cfg.limits.ConnectBurst < 0 || cfg.limits.HandshakeRate < 0 || cfg.limits.HandshakeBurst < 0:
+		problem = errors.New("-max-pending, -max-pending-per-source, -connect-rate, -connect-burst, -handshake-rate and -handshake-burst are not below 0: 0 is the default")
 	}
 	if problem == nil {
 		problem = cfg.checkRqlite()
@@ -525,6 +540,8 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	}
 
 	tlsPortValue, _ := strconv.Atoi(tlsPortNumber)
+	// The status reads the refusals of the TLS port, which the member starts before it
+	var tlsPortOnce atomic.Pointer[port.Server]
 	m, err := cluster.Start(cluster.Config{
 		Name:        cfg.name,
 		Address:     cfg.advertised(ln),
@@ -540,6 +557,12 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 			TLSFingerprint: keys.Fingerprint(cert),
 			Capabilities:   api.Capabilities{TLSPort: tlsPortValue, TLSPortFallback: fell, PlainHTTP: plainWhere},
 			Diagnostics:    &api.Diagnostics{LogFile: h.logFile, LogLimits: cfg.logLimits()},
+			ReadRefusals: func() port.Refusals {
+				if p := tlsPortOnce.Load(); p != nil {
+					return p.Refusals()
+				}
+				return port.Refusals{}
+			},
 		},
 		// The first start creates VRF default and the starter rule (ADR-0034); the fingerprint of the
 		// status and of the lease follows the certificate that is served (SDN-92)
@@ -560,7 +583,8 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	// The web UI (internal/webui) is served beside the API it calls, at every path outside /api/,
 	// and both only to the addresses of the admin source allowlist (SDN-39, #232).
 	sources := api.NewSources(st, log, adminSourcesTTL).WithAudit(audit.NewLog(st, log))
-	tlsPort := &port.Server{TLS: tlsCfg, Control: m.ServeStream, HTTP: webHandler(sources, apiHandler), Log: log}
+	tlsPort := &port.Server{TLS: tlsCfg, Control: m.ServeStream, HTTP: webHandler(sources, apiHandler), Log: log, Limits: cfg.limits}
+	tlsPortOnce.Store(tlsPort)
 	defer tlsPort.Close()
 	go func() { errc <- tlsPort.Serve(ln) }()
 	log.Info("TLS port", "address", ln.Addr().String(), "protocols", "ranz-control/1, h2, http/1.1")
@@ -573,7 +597,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		if err != nil {
 			return fmt.Errorf("-control-listen: %w", err)
 		}
-		dev := &port.Server{TLS: tlsCfg, Control: m.ServeStream, Log: log}
+		dev := &port.Server{TLS: tlsCfg, Control: m.ServeStream, Log: log, Limits: cfg.limits}
 		defer dev.Close()
 		defer cln.Close()
 		go func() { errc <- dev.Serve(cln) }()

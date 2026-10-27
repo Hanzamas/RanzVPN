@@ -15,7 +15,10 @@ const testNodeState = `{"running":true,"roles":"server, client","name":"pc-a",` 
 	`"adapters":[{"vrf":1,"name":"Ranz VPN VRF 1","interfaceIndex":23,"addresses":["10.20.0.5"]}],` +
 	`"sessions":[{"peer":"pc-b","up":true,"transport":"tcp","ageSeconds":30},{"peer":"pc-c","up":false,"transport":"","ageSeconds":0}],` +
 	`"numPeers":2,` +
-	`"listeners":{"overlay":"tcp","frontDoor":{"listener":"default","running":true,"tcpPort":443,"quicPort":443,"fallback":false,"error":""},"relayUdpPort":0}}`
+	`"listeners":{"overlay":"tcp","frontDoor":{"listener":"default","running":true,"tcpPort":443,"quicPort":443,"fallback":false,"error":"",` +
+	`"refused":{"tcp":{"pending":3,"sources":2,"admitted":900,"refusedFull":1,"refusedSource":40,"refusedRate":5,"refusedHandshake":2},` +
+	`"quic":{"pending":0,"sources":1,"admitted":77,"refusedFull":0,"refusedSource":6,"refusedRate":0,"refusedHandshake":0,"available":true,"retryMemoryLimit":16,"retrying":true,"retries":1234}}},` +
+	`"relayUdpPort":0}}`
 
 // ranz node state asks the Node service with the command state and prints its answer as JSON, with
 // the field service, and as a table that names the Roles, the control stream, the adapters with
@@ -43,7 +46,10 @@ func TestNodeStatePrintsTheAnswerOfTheService(t *testing.T) {
 		t.Fatalf("-o table: exit code %d, stderr %q", code, errOut)
 	}
 	for _, s := range []string{"pc-a", "server, client", "connected to 192.168.1.10:443 for 42s, Generation 7", "Ranz VPN VRF 1", "10.20.0.5",
-		"pc-b", "up", "tcp", "30s", "pc-c", "down", "front door TCP 443 and QUIC UDP 443", "relay none"} {
+		"pc-b", "up", "tcp", "30s", "pc-c", "down", "front door TCP 443 and QUIC UDP 443", "relay none",
+		// The refusals of the limits for a source (AUD1-DT-3, #451), by listener and reason
+		"48 refused (1 over the cap in all, 40 over the cap of a source, 5 over the rate of connections, 2 over the rate of handshakes), 3 waiting for their handshake",
+		"6 refused (0 over the cap in all, 6 over the cap of a source, 0 over the rate of connections, 0 over the rate of handshakes)", "retry answering now, 1234 retries sent, limit 16/65535"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("the table has no %q:\n%s", s, out)
 		}

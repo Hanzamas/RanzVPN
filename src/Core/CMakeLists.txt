@@ -317,6 +317,32 @@ set_target_properties(corefrontdoor
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
+# coresourcelimit: the limits for a source (SourceLimit.h, SourceLimit*.c; AUD1-DT-3, #451): the caps on the connections that
+# have not finished their handshake, in all and for one source, and the rates of new connections and of handshake attempts
+# of a source, which the front door and the QUIC transport of the Listener of a node each hold. It calls Winsock only for
+# the types of an address and links nothing. Its users keep their own build options, so ranz_core_options stays PRIVATE.
+file(GLOB SOURCES_CORE_SOURCE_LIMIT "SourceLimit*.c")
+file(GLOB HEADERS_CORE_SOURCE_LIMIT "SourceLimit*.h")
+
+add_library(coresourcelimit STATIC ${SOURCES_CORE_SOURCE_LIMIT} ${HEADERS_CORE_SOURCE_LIMIT})
+
+target_include_directories(coresourcelimit PUBLIC "${TOP_DIRECTORY}/src")
+
+target_link_libraries(coresourcelimit PRIVATE ranz_core_options ranz_warnings)
+
+set_target_properties(coresourcelimit
+  PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  LIBRARY_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+  COMPILE_PDB_NAME "coresourcelimit"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
+
+# The front door and the QUIC transport limit their sources with it
+target_link_libraries(corefrontdoor PRIVATE coresourcelimit)
+target_link_libraries(coretransport PRIVATE coresourcelimit)
+
 # ranz_core_check_links(<target>...): stops the configure when one of the targets reaches,
 # through any chain of linked targets, the slim fork (mayaqua, cedar), OpenSSL or liboqs, which
 # the new core does not link (ADR-0022; CORE-F1, #61). src/CMakeLists.txt calls it once every

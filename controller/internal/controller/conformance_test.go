@@ -387,6 +387,8 @@ type harness struct {
 	// tune changes the Config of the controller before each start, for a test that needs a
 	// setting the others leave at its default (telemetry_test.go).
 	tune func(*controller.Config)
+	// limits are the limits for a source of the TLS port (AUD1-DT-3, #451), the defaults when they are zero.
+	limits port.Limits
 }
 
 func newHarness(t *testing.T) *harness {
@@ -461,8 +463,10 @@ func (h *harness) start() {
 	h.port = &port.Server{
 		TLS:     &tls.Config{Certificates: []tls.Certificate{cert}},
 		Control: c.ServeStream,
-		HTTP:    api.Handler(c, tokens, api.Status{ControlAddress: ln.Addr().String(), TLSFingerprint: keys.Fingerprint(cert)}),
-		Log:     log,
+		HTTP: api.Handler(c, tokens, api.Status{ControlAddress: ln.Addr().String(), TLSFingerprint: keys.Fingerprint(cert),
+			ReadRefusals: func() port.Refusals { return h.port.Refusals() }}),
+		Log:    log,
+		Limits: h.limits,
 	}
 	h.serve = make(chan error, 1)
 	go func() { h.serve <- h.port.Serve(ln) }()
