@@ -83,11 +83,14 @@
 // common and keep those secrets in clear.
 //
 // On Windows the data directory belongs to SYSTEM, the Administrators or the service's account, and
-// nobody else has a right in it: install makes it, or takes over one that exists, with the
-// Administrators as its owner and a protected access list, down to every file and folder in it, and
-// refuses one that holds a link; the service refuses to start in a data directory that another account
-// owns, which is how a directory that a local user made before the install, or put in its place, is
-// kept out of it (ST-3 of docs/threat-model.md).
+// nobody else has a right in it (ST-3 of docs/threat-model.md). install makes it with the
+// Administrators as its owner and a protected access list. A directory that exists and that one of
+// them, or the administrator who installs, owns is kept, with what it holds, and given that owner and
+// that list. One that another account owns, which a local user may have made before the install, is
+// made again when it is empty, and refused when it holds anything or is a link, since what it holds
+// would run as the controller. The service refuses to start in a data directory that another account
+// owns, and so do reset-admin, backup and restore, which run the rqlited of its payload folder: that
+// keeps out a directory that a local user put in the place of the real one.
 //
 // The service log of the Windows service is controller.log in the data directory, and it stays
 // within an age limit and a disk limit (SDN-54, #247): -log-days (30 by default) and -log-mb (256),
@@ -662,10 +665,12 @@ func serveHTTP(srv *http.Server, l net.Listener) error {
 }
 
 // makeDataDir creates the data directory if it does not exist, readable by its owner and the
-// administrators only.
+// administrators only. One that exists must belong to SYSTEM, the Administrators or the account that
+// runs the controller (checkDataDirOwner): a directory that a local user made before the install, or
+// put in its place, is not used (ST-3).
 func makeDataDir(dir string) error {
 	if _, err := os.Stat(dir); err == nil {
-		return nil
+		return checkDataDirOwner(dir)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err

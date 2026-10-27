@@ -486,8 +486,16 @@ try {
 	}
 
 	Step 'controller-up' {
-		$null = Invoke-Doc
+		$out = Invoke-Doc
 		foreach ($name in $nodeService, $controllerService) { Wait-Service $name 'Running' }
+		# The data directory is the Administrators' (AUD1-DT-10, #458, ST-3): they own it, its access list is protected, and
+		# only SYSTEM, the Administrators, the owner and the service account have a rule in it
+		if ($out -notmatch '(?m)^BUILTIN\\Administrators\s*$') { throw "the data directory of the Controller is not owned by the Administrators:`n$out" }
+		if ($out -notmatch '(?m)^True\s*$') { throw "the access list of the data directory of the Controller is not protected:`n$out" }
+		$rules = @((Get-Acl -LiteralPath $controllerData).Access | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique)
+		$others = @($rules | Where-Object { @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM', 'OWNER RIGHTS', 'S-1-3-4', "NT SERVICE\$controllerService") -notcontains $_ })
+		if ($others.Count -gt 0) { throw "the access list of the data directory of the Controller has rules for $($others -join ', ')" }
+		Write-Host "the data directory of the Controller: owned by the Administrators, a protected access list with rules for $($rules -join ', ') only"
 		foreach ($f in 'admin.token', 'controller.log', 'payload\rqlited.exe', 'rqlite') {
 			if (-not (Test-Path -LiteralPath (Join-Path $controllerData $f))) { throw "the Controller did not make $f in $controllerData" }
 		}

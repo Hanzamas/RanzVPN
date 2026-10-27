@@ -67,16 +67,20 @@ func runResetAdmin(args []string) error {
 // resetAdmin creates a new admin token in the controller's store and writes its secret to
 // admin.token in the data directory, as the first start does (rbac.Bootstrap), and returns the
 // token with its secret and that file. It runs on the controller's host only: rights must
-// allow it (adminRights), and the data directory of cfg must exist. While the service runs,
-// its rqlite answers at -rqlite; while it is stopped, resetAdmin runs the rqlited of the service
-// (-rqlited, or the member of this executable) on the service's data for as long as it takes. out
-// receives the output of that rqlited.
+// allow it (adminRights), and the data directory of cfg must exist and must not be another
+// account's (checkDataDirOwner). While the service runs, its rqlite answers at -rqlite; while it
+// is stopped, resetAdmin runs the rqlited of the service (-rqlited, or the member of this
+// executable) on the service's data for as long as it takes. out receives the output of that
+// rqlited.
 func resetAdmin(ctx context.Context, cfg config, rights func() error, out io.Writer) (rbac.NewToken, string, error) {
 	if err := rights(); err != nil {
 		return rbac.NewToken{}, "", err
 	}
 	if fi, err := os.Stat(cfg.dataDir); err != nil || !fi.IsDir() {
 		return rbac.NewToken{}, "", fmt.Errorf("the data directory %s (-data) does not exist: reset-admin runs on the controller's host, with the flags of the service", cfg.dataDir)
+	}
+	if err := checkDataDirOwner(cfg.dataDir); err != nil {
+		return rbac.NewToken{}, "", err
 	}
 	st, stop, err := openStore(ctx, cfg, out)
 	if err != nil {

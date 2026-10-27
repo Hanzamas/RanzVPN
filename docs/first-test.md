@@ -169,13 +169,17 @@ The last lines are `install: the ranz-controller service is running`, a line `in
 Get-Service ranzvpnserver, ranz-controller
 Get-ChildItem C:\ProgramData\Ranz\controller
 Get-Content C:\ProgramData\Ranz\controller\controller.log -Tail 12
+(Get-Acl C:\ProgramData\Ranz\controller).Owner
+(Get-Acl C:\ProgramData\Ranz\controller).AreAccessRulesProtected
 ```
 
 Both services are `Running`. The folder `C:\ProgramData\Ranz\controller` is the data directory of the Controller. At its first start the Controller made:
 
-- `admin.token`: the secret of the admin API token. Only SYSTEM, the Administrators, the owner of the folder and the service account can read it.
+- `admin.token`: the secret of the admin API token. Only SYSTEM, the Administrators and the service account can read it.
 - `controller.log`: its log. It says `first start: the intent of a first install` and `TLS port`.
 - `payload\rqlited.exe` and `rqlite\`: its store.
+
+The last two commands print `BUILTIN\Administrators` and `True`: the Administrators own the data directory, and its access list is protected, so that it takes no rule from `C:\ProgramData`, which lets every user make a folder. Only SYSTEM, the Administrators and the service account have a right in it. `ranz install` made it that way. A folder of that name that another account made before the install is not kept: the install makes an empty one again, and refuses one that holds files, with a message that says what to do, since the files could be a store with a token that its maker knows or an `rqlited.exe` of its own, which the service would run. The service itself does not start in a data directory that an account other than SYSTEM, the Administrators and the service owns.
 
 ### 7. The certificate (certificate)
 

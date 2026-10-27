@@ -64,7 +64,7 @@ func backupMessage(file string, size int64, clusterMember bool) string {
 		secrets = "the secrets of the targets (the export and audit targets) in clear, since the members of a cluster have no sealing key in common"
 	}
 	return fmt.Sprintf("ranz controller backup: the store is in %s (%d bytes), %s.\n"+
-		"  It holds the Intent with every revision, the states of the Nodes, the hashes of the API tokens and of the passwords of the users, the licence key, and %s.\n"+
+		"  It holds everything that the controller keeps in its store: the Intent with every revision, the states and the Capabilities of the Nodes, the events and the audit log, the settings (the lists of admin sources and destinations, the certificate of the controller), the leases of DHCP, the hashes of the API tokens and of the passwords of the users, the licence key, and %s.\n"+
 		"  Keep every copy of it as safe as the data directory.\n", file, size, backupAccess, secrets)
 }
 
@@ -161,7 +161,9 @@ func restore(ctx context.Context, cfg config, file string, rights func() error, 
 }
 
 // onHost refuses a caller that rights do not allow, and a host without the data directory of
-// cfg, as reset-admin does: the command cmd runs on the controller's host only.
+// cfg, as reset-admin does: the command cmd runs on the controller's host only. It refuses a data
+// directory that another account than SYSTEM, the Administrators and the service's owns, since the
+// command runs the rqlited of that directory as the administrator (checkDataDirOwner).
 func onHost(cfg config, rights func() error, cmd string) error {
 	if err := rights(); err != nil {
 		return err
@@ -169,7 +171,7 @@ func onHost(cfg config, rights func() error, cmd string) error {
 	if fi, err := os.Stat(cfg.dataDir); err != nil || !fi.IsDir() {
 		return fmt.Errorf("the data directory %s (-data) does not exist: %s runs on the controller's host, with the flags of the service", cfg.dataDir, cmd)
 	}
-	return nil
+	return checkDataDirOwner(cfg.dataDir)
 }
 
 // fileFlag takes the flag -name FILE (or -name=FILE, with one or two dashes) out of args, and

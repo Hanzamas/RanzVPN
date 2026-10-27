@@ -22,8 +22,8 @@ import (
 func TestBackupMessageNamesWhatItHolds(t *testing.T) {
 	msg := backupMessage(filepath.Join("backups", "store.backup"), 4096, false)
 	for _, want := range []string{
-		"store.backup", "4096 bytes", backupAccess,
-		"the Intent with every revision", "the hashes of the API tokens and of the passwords of the users",
+		"store.backup", "4096 bytes", backupAccess, "everything that the controller keeps in its store",
+		"the Intent with every revision", "the events and the audit log", "the hashes of the API tokens and of the passwords of the users",
 		"the licence key", "the secrets of the targets", "the key of this host seals",
 		"a restore on another host brings the targets back with no secret",
 	} {
