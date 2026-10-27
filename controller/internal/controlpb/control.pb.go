@@ -1781,6 +1781,12 @@ type Listener struct {
 	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Port     uint32                 `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`                         // the TCP port of the front door
 	QuicPort uint32                 `protobuf:"varint,3,opt,name=quic_port,json=quicPort,proto3" json:"quic_port,omitempty"` // the UDP port of QUIC
+	// The decoy of the TLS of the new protocol (AUD1-DT-4 #452): the loopback address and port of a site on the
+	// node, "127.0.0.1:8080" or "[::1]:8080", to which the node passes a prober, one whose first frame does not
+	// open under its static key. Empty for none. A node of an older release skips the field. It is declared before
+	// the oneof because Go writes the members of a oneof after the other fields, and nanopb writes the fields in
+	// the order of the declaration (control.options: sort_by_tag:false), so both write the same bytes.
+	Decoy string `protobuf:"bytes,7,opt,name=decoy,proto3" json:"decoy,omitempty"`
 	// Types that are valid to be assigned to Certificate:
 	//
 	//	*Listener_File
@@ -1840,6 +1846,13 @@ func (x *Listener) GetQuicPort() uint32 {
 		return x.QuicPort
 	}
 	return 0
+}
+
+func (x *Listener) GetDecoy() string {
+	if x != nil {
+		return x.Decoy
+	}
+	return ""
 }
 
 func (x *Listener) GetCertificate() isListener_Certificate {
@@ -4334,11 +4347,12 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\n" +
 	"vxlan_port\x18\x02 \x01(\rR\tvxlanPort\x12\x1f\n" +
 	"\vgeneve_port\x18\x03 \x01(\rR\n" +
-	"genevePort\"\xe2\x01\n" +
+	"genevePort\"\xf8\x01\n" +
 	"\bListener\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x1b\n" +
-	"\tquic_port\x18\x03 \x01(\rR\bquicPort\x126\n" +
+	"\tquic_port\x18\x03 \x01(\rR\bquicPort\x12\x14\n" +
+	"\x05decoy\x18\a \x01(\tR\x05decoy\x126\n" +
 	"\x04file\x18\x04 \x01(\v2 .ranz.control.v1.CertificateFileH\x00R\x04file\x12\x12\n" +
 	"\x03ksp\x18\x05 \x01(\tH\x00R\x03ksp\x126\n" +
 	"\x04acme\x18\x06 \x01(\v2 .ranz.control.v1.CertificateAcmeH\x00R\x04acmeB\r\n" +

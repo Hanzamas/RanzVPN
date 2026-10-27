@@ -322,6 +322,13 @@ func readOptions(t *testing.T, path string) options {
 		set := map[string]int{}
 		for _, f := range fields[1:] {
 			name, value, ok := strings.Cut(f, ":")
+			// A flag of nanopb (sort_by_tag:false) takes no size; it is 0 or 1 here
+			switch value {
+			case "false":
+				value = "0"
+			case "true":
+				value = "1"
+			}
 			n, err := strconv.Atoi(value)
 			if !ok || err != nil {
 				t.Fatalf("%s: %q is no option of the form name:number", path, f)
