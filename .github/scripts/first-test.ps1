@@ -138,7 +138,7 @@ $script:windows = @{ a = @{}; b = @{} }
 # The events of the admin source allowlist that the Controller holds (AUD1-DT-6): the one of its first start, and one more for
 # each change that a step makes by hand
 $script:allowlistEvents = 1
-$windowVariables ='RANZ_SERVER', 'RANZ_TOKEN_FILE', 'RANZ_TLS_FINGERPRINT', 'RANZ_TOKEN'
+$windowVariables = 'RANZ_SERVER', 'RANZ_TOKEN_FILE', 'RANZ_TLS_FINGERPRINT', 'RANZ_TOKEN'
 
 # The window of the PC: its RANZ_* variables are put away, and the ones of the other PC come back
 function Enter-Pc([string] $to) {
