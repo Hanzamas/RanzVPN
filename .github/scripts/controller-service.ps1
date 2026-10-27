@@ -51,8 +51,9 @@ $ErrorActionPreference = 'Stop'
 # - leave its files as AUD1-DT-10 (#458) says (controller-hostfiles.ps1): a data directory that
 #   install made owned by the Administrators, with a protected access list; a backup written for
 #   SYSTEM and the Administrators only, whatever its folder lets in, that holds the secret of a
-#   target sealed and is named by what `ranz controller backup` says; and no start of the service
-#   in a data directory that a standard user owns;
+#   target sealed and is named by what `ranz controller backup` says, and whose restore under the
+#   running service brings the target back with its secret; and no start of the service in a
+#   data directory that a standard user owns;
 # - refuse the API from an address outside the admin source allowlist (SDN-39, #232): with the
 #   list set to documentation addresses, the runner's own address, which is not loopback, gets 403
 #   and an admin-access-refused event while loopback still passes, and with the list removed the

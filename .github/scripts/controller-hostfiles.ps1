@@ -6,7 +6,8 @@
 #   no rule for any account but SYSTEM, the Administrators, the owner and the service account;
 # - a backup that goes to a folder that the Users group may read is written for SYSTEM and the Administrators only,
 #   holds the secret of a target sealed and not in clear, and the text that `ranz controller backup` prints names
-#   what it holds;
+#   what it holds; a restore of it on the same host, under the running service, brings the target back with its
+#   secret;
 # - the service does not start in a data directory that a standard user owns, says why in the Application log,
 #   and starts again once the Administrators own the directory.
 
@@ -44,6 +45,22 @@ function Invoke-ApiWithBody([string] $method, [string] $path, [string] $json) {
 		$argv += @('-H', 'Content-Type: application/json', '--data-binary', "@$body")
 	}
 	return ((& curl.exe @argv "$api$path") -join '').Trim()
+}
+
+# The target $name as GET /api/v1/targets lists it, once the API lists it: after a restore the service takes the lease
+# again and loads the restored store
+function Wait-ApiTarget([string] $name) {
+	$end = (Get-Date).AddSeconds($waitSeconds)
+	while ($true) {
+		$token = (Get-Content -LiteralPath $tokenFile -Raw).Trim()
+		$body = ((& curl.exe -k -s -f -H "Authorization: Bearer $token" "$api/api/v1/targets") -join '').Trim()
+		if ($LASTEXITCODE -eq 0 -and $body) {
+			$target = @(($body | ConvertFrom-Json).targets | Where-Object { $_.name -eq $name })
+			if ($target.Count -eq 1) { return $target[0] }
+		}
+		if ((Get-Date) -ge $end) { throw "the API did not list the target $name within $waitSeconds s: $body" }
+		Start-Sleep -Milliseconds 500
+	}
 }
 
 # A backup of the store of the running service
@@ -86,6 +103,19 @@ function Test-Backup {
 		if ($said -notmatch [regex]::Escape($want)) { throw "ranz controller backup does not say '$want':`n$said" }
 	}
 	Write-Host 'the backup holds the secret of the target sealed, and ranz controller backup names the Intent, the hashes, the licence key and the secrets of the targets'
+
+	# The target is deleted, and a restore of the backup on the same host, under the running service, brings it back
+	# with its secret: the service opens the sealed secret with the sealing key of its own account
+	$code = Invoke-ApiWithBody 'DELETE' '/api/v1/targets/ci-target' ''
+	if ($code -ne '200') { throw "the API did not delete the target: HTTP status $code" }
+	$errFile = Join-Path $work 'restore.err'
+	& $ranz controller restore -f $file -data $data 2> $errFile
+	$exit = $LASTEXITCODE
+	Get-Content -LiteralPath $errFile | ForEach-Object { Write-Host "  restore: $_" }
+	if ($exit -ne 0) { throw "ranz controller restore exited with code $exit" }
+	$target = Wait-ApiTarget 'ci-target'
+	if (-not $target.hasSecret) { throw "after a restore on the same host the target has no secret: $($target | ConvertTo-Json -Compress)" }
+	Write-Host "after a restore of the backup on the same host the target has its secret: $($target | ConvertTo-Json -Compress)"
 
 	$code = Invoke-ApiWithBody 'DELETE' '/api/v1/targets/ci-target' ''
 	if ($code -ne '200') { throw "the API did not delete the target: HTTP status $code" }
