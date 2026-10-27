@@ -35,6 +35,11 @@ UINT NatSimFiltered(NATSIM_NAT *n);
 UINT NatSimUnroutable(NATSIM *s);
 bool NatSimMapped(NATSIM_NAT *n, const PEER_ADDR *inside, PEER_ADDR *pub);
 
+// The ageing of the mappings of a NAT (CORE-S5-5, #411): a mapping that carried no datagram out for the timeout of its
+// NAT is gone, as on a real NAT, so only a keepalive keeps a path open through it
+void NatSimSetTimeout(NATSIM *s, NATSIM_NAT *n, UINT timeout);
+UINT NatSimExpired(NATSIM_NAT *n);
+
 // A tap of the network (natsim.c): sees every datagram that a host sends, on whatever link, before the network routes
 // it, and drops it by returning false, as an attacker on the path would; it runs on the sending thread. Hold stops the
 // delivery until it is released, so that datagrams sent meanwhile cross on the way.
