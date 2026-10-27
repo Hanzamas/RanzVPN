@@ -2,9 +2,12 @@ package controller_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
@@ -51,6 +54,64 @@ func TestExplainScenarios(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The link of a step of GET /api/v1/explain, which ranz explain prints: a link of kind vxlan is unencrypted (SDN-76,
+// #356), and the endpoints of the Nodes of the link are where each is dialled (SDN-93, #410).
+func TestExplainLinks(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	s := explain.Scenario{Name: "links", Nodes: map[string]uint8{"dc-1": 1, "dc-2": 33}}
+	if err := json.Unmarshal([]byte(`{"resources": [
+		{"kind": "VRF", "name": "dc", "spec": {"id": 30, "ula": "fd00:30::/48", "link": "vxlan", "vni": 3000}},
+		{"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd00:10::/48"}},
+		{"kind": "Network", "name": "dc-lan", "spec": {"vrf": "dc", "ipv4Pool": "10.30.0.0/24"}},
+		{"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}},
+		{"kind": "Node", "name": "dc-1", "spec": {"vrfs": ["corp", "dc"], "addresses": {"dc-lan": "10.30.0.1", "corp-lan": "10.10.0.1"}, "vtep": {"address": "192.0.2.1"}}},
+		{"kind": "Node", "name": "dc-2", "spec": {"vrfs": ["corp", "dc"], "addresses": {"dc-lan": "10.30.0.2", "corp-lan": "10.10.0.2"}, "vtep": {"address": "192.0.2.2"},
+			"endpoints": [{"transport": "quic", "address": "dc-2.example.com:443"}, {"transport": "tls", "address": "203.0.113.2:443"}]}},
+		{"kind": "Policy", "name": "dc-all", "spec": {"vrf": "dc", "action": "allow"}},
+		{"kind": "Policy", "name": "corp-all", "spec": {"vrf": "corp", "action": "allow"}}
+	]}`), &s.Intent); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := s.Document()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.api.Apply(ctx, doc); err != nil {
+		t.Fatal(err)
+	}
+	want := []explain.Endpoint{{Transport: "quic", Address: "dc-2.example.com:443"}, {Transport: "tls", Address: "203.0.113.2:443"}}
+	for _, c := range []struct {
+		vrf, kind string
+		encrypted bool
+		text      string
+	}{
+		{"dc", "vxlan", false, "the link of kind vxlan of VRF dc carries the packet on VNI 3000 to the tunnel endpoint of dc-2: unencrypted"},
+		{"corp", "noise", true, "the Noise session of dc-1 to dc-2 carries the packet in VRF corp, encrypted"},
+	} {
+		r, err := h.api.Explain(ctx, explain.Query{From: "dc-1", To: "dc-2", VRF: c.vrf, Protocol: "udp", SourcePort: 40000, Port: 53})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var link *explain.Step
+		for i := range r.Steps {
+			if r.Steps[i].Kind == explain.StepLink {
+				link = &r.Steps[i]
+			}
+		}
+		if link == nil || link.Link.Kind != c.kind || link.Link.Encrypted != c.encrypted || !strings.Contains(link.Text, c.text) {
+			t.Fatalf("VRF %s: the link step is %+v, want %s, encrypted %v, saying %q", c.vrf, link, c.kind, c.encrypted, c.text)
+		}
+		if !slices.Equal(link.Link.Endpoints, want) || len(link.Link.SourceEndpoints) != 0 ||
+			!strings.Contains(link.Text, "dc-2 is dialled at quic dc-2.example.com:443, tls 203.0.113.2:443; dc-1 has no endpoints, so no peer dials it") {
+			t.Errorf("VRF %s: the link step shows the endpoints %+v and %+v: %q", c.vrf, link.Link.Endpoints, link.Link.SourceEndpoints, link.Text)
+		}
+		if !r.Verdict.Delivered || r.Verdict.Node != "dc-2" || r.Verdict.VRF != c.vrf {
+			t.Errorf("VRF %s: the verdict is %+v", c.vrf, r.Verdict)
+		}
 	}
 }
 
