@@ -54,11 +54,10 @@ func (s *Store) Targets(ctx context.Context) ([]export.Stored, error) {
 		if err := qr.Scan(&name, &doc, &delivered); err != nil {
 			return nil, fmt.Errorf("store: reading the export targets: %w", err)
 		}
-		var t export.Target
-		if err := json.Unmarshal([]byte(doc), &t); err != nil {
+		t, err := s.decodeTarget(exportTargetsTable, name, doc)
+		if err != nil {
 			return nil, fmt.Errorf("store: export target %q: %w", name, err)
 		}
-		t.Name = name
 		out = append(out, export.Stored{Target: t, Delivered: uint64(delivered)})
 	}
 	return out, nil
@@ -67,12 +66,12 @@ func (s *Store) Targets(ctx context.Context) ([]export.Stored, error) {
 // PutTarget stores t, which replaces the target of its name. A new target starts at the latest
 // event: its webhook is sent the events that follow, not the ones of before it existed.
 func (s *Store) PutTarget(ctx context.Context, t export.Target) error {
-	b, err := json.Marshal(t)
+	doc, err := s.encodeTarget(exportTargetsTable, t)
 	if err != nil {
 		return fmt.Errorf("store: export target %q: %w", t.Name, err)
 	}
 	err = s.write(ctx, []gorqlite.ParameterizedStatement{statement(`INSERT INTO export_targets (name, target, delivered) VALUES (?, ?, (SELECT COALESCE(MAX(id), 0) FROM events)) ON CONFLICT (name) DO UPDATE SET target = excluded.target`,
-		t.Name, string(b))})
+		t.Name, doc)})
 	if err != nil {
 		return fmt.Errorf("store: export target %q: %w", t.Name, err)
 	}

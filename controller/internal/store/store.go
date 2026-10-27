@@ -53,6 +53,7 @@ type Store struct {
 	conn  *gorqlite.Connection
 	epoch int64 // the lease epoch the writes are fenced with, 0 when they are not
 	url   string
+	seal  *sealing // what seals the secrets of the targets, nil before SetSealer (sealed.go)
 }
 
 // Node is the stored state of one node. Desired is the full state at Generation; Acked is the
@@ -120,7 +121,7 @@ func (s *Store) Close() {
 // and each of its writes fails with ErrNotLeader, and writes nothing, once the lease has another
 // epoch.
 func (s *Store) Fenced(epoch int64) *Store {
-	return &Store{conn: s.conn, epoch: epoch, url: s.url}
+	return &Store{conn: s.conn, epoch: epoch, url: s.url, seal: s.seal}
 }
 
 // write runs stmts in one rqlite transaction, after the fence when s is fenced.
