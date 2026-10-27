@@ -101,11 +101,11 @@ let MimicClient(me: principal, them: principal, link: bitstring, bm: bitstring, 
   let (=line_dial, addr: principal) = request in
   let gx = tpk(x) in
   let ak = rauth(tdhi(x, realpub(addr)), cr) in
-  let proof = aead(ak, (cr, gx), (proof_ver, link)) in
+  let chproof = aead(ak, (cr, gx), (proof_ver, link)) in
   event MimicHello(me, addr, link, cr);
-  out(c, (cr, gx, proof));
+  out(c, (cr, gx, chproof));
   in(c, (sr: bitstring, gy: bitstring, ehs: bitstring));
-  let th = (cr, gx, proof, sr, gy) in
+  let th = (cr, gx, chproof, sr, gy) in
   let (cert: bitstring, sg: bitstring) = sdec(tlshk(tdhi(x, gy), th), ehs) in
   let tpub = tcertkey(cert) in
   if tcertmac(cert) = rmac(ak, tpub) then
@@ -169,15 +169,15 @@ let MimicServer(me: principal, kp: bitstring, bm: bitstring, plabel: bitstring, 
   new yd: bitstring;
   let settings = (realkey(me), shortid(me)) in
   let (rk: bitstring, sids: bitstring) = settings in
-  in(c, (cr: bitstring, gx: bitstring, proof: bitstring));
+  in(c, (cr: bitstring, gx: bitstring, chproof: bitstring));
   let ak = rauth(tdhr(rk, gx), cr) in
-  let (=proof_ver, =sids) = unaead(ak, (cr, gx), proof) in
+  let (=proof_ver, =sids) = unaead(ak, (cr, gx), chproof) in
   (
   event MimicProved(me, cr, sids);
   let gy = tpk(y) in
   let tpub = spk(tk) in
   let cert = tcert(tpub, rmac(ak, tpub)) in
-  let th = (cr, gx, proof, sr, gy) in
+  let th = (cr, gx, chproof, sr, gy) in
   let tr = (th, cert) in
   let ms = tlsms(tdhr(y, gx), tr) in
   let kc = tlsk(ms, lab_c) in
@@ -228,7 +228,7 @@ let MimicServer(me: principal, kp: bitstring, bm: bitstring, plabel: bitstring, 
   event MimicSpliced(me, cr);
   let gyd = tpk(yd) in
   let dcert = certof(site) in
-  let thd = (cr, gx, proof, sd, gyd) in
+  let thd = (cr, gx, chproof, sd, gyd) in
   let trd = (thd, dcert) in
   out(c, (sd, gyd, senc(tlshk(tdhr(yd, gx), thd), (dcert, sign(sigkey(site), trd)))));
   out(c, senc(tlsk(tlsms(tdhr(yd, gx), trd), lab_s), decoy_page))
