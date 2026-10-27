@@ -74,6 +74,7 @@
 #define CONTROL_ACME_NAMES      4   // The DNS names of a certificate of ACME (CertificateAcme.names) ...
 #define CONTROL_ACME_NAME_SIZE  254 // ... each with its terminating NUL
 #define CONTROL_THUMBPRINT_SIZE 41  // A thumbprint of 40 hex digits with its terminating NUL (Listener.ksp)
+#define CONTROL_DECOY_SIZE      48  // The decoy of a Listener, a loopback address and a port, with its terminating NUL (NodeConfig.listener_decoy)
 
 // The Listener of the node (Listener of the control protocol; SDN-45, #238; ADR-0035): the front door on the TCP port,
 // which hands each connection of the new protocol to the node's TLS, and QUIC on the UDP port, both with the certificate
@@ -84,6 +85,8 @@ typedef struct CONTROL_LISTENER {
 	// The TCP port of the front door and the UDP port of QUIC
 	UINT Port;
 	UINT QuicPort;
+	// The decoy of the TLS of the new protocol (AUD1-DT-4, #452): the loopback address and port of a site on the node, "" for none
+	char Decoy[CONTROL_DECOY_SIZE];
 	// The source of the certificate (CONTROL_CERT_*)
 	UINT Source;
 	// FILE: the PKCS #12 file, and the file that holds its password, "" for none

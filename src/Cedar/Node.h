@@ -728,6 +728,8 @@ struct NODE_LISTENER_STATUS {
 	bool Fallback;
 	// The certificate of both, by its thumbprint, "" while none runs
 	char Thumbprint[MAX_SIZE];
+	// The decoy that the TLS of the new protocol runs with (AUD1-DT-4, #452), "" for none
+	char Decoy[MAX_SIZE];
 	// Why the listeners do not run, "" while they do or no Listener asks for them
 	char Error[MAX_SIZE];
 	// The streams that the overlay took from the listeners

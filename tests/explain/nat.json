@@ -1,0 +1,26 @@
+{
+  "description": "1:1 NAT in one VRF (SDN-6): gw-1 presents the LAN 192.168.1.0/24 behind it as 10.50.1.0/24, the outside prefix of its rule, which leads to gw-1 in the forwarding table of pc-1. A packet to the outside goes to the host of gw-1 with its address of the LAN, and a packet of the LAN goes into the VRF from the outside. The rules judge the addresses as the overlay sees them.",
+  "nodes": {"gw-1": 1, "pc-1": 33},
+  "intent": {"resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd00:10::/48"}},
+    {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}},
+    {"kind": "Node", "name": "gw-1", "spec": {"vrfs": ["corp"], "tags": ["gateway"], "addresses": {"corp-lan": "10.10.0.1"}}},
+    {"kind": "Node", "name": "pc-1", "spec": {"vrfs": ["corp"], "tags": ["pc"], "addresses": {"corp-lan": "10.10.0.2"}}},
+    {"kind": "NAT", "name": "lan-1", "spec": {"vrf": "corp", "node": "gw-1", "inside": "192.168.1.0/24", "outside": "10.50.1.0/24"}},
+    {"kind": "Policy", "name": "pc-to-lan", "spec": {"vrf": "corp", "action": "allow", "from": {"tags": ["pc"]}, "to": {"addresses": ["10.50.1.0/24"]}, "protocol": "tcp", "ports": [443]}},
+    {"kind": "Policy", "name": "lan-syslog", "spec": {"vrf": "corp", "action": "allow", "from": {"addresses": ["10.50.1.0/24"]}, "to": {"tags": ["pc"]}, "protocol": "udp", "ports": [514]}},
+    {"kind": "Policy", "name": "ping", "spec": {"vrf": "corp", "action": "allow", "protocol": "icmp"}}
+  ]},
+  "packets": [
+    {"name": "pc-to-lan-https", "from": "pc-1", "to": "10.50.1.5", "protocol": "tcp", "sourcePort": 40000, "port": 443,
+     "expect": {"delivered": true, "node": "gw-1", "vrf": "corp", "source": "10.10.0.2", "destination": "192.168.1.5", "rules": {"pc-1": "pc-to-lan", "gw-1": "pc-to-lan"}}},
+    {"name": "pc-to-lan-ssh", "from": "pc-1", "to": "10.50.1.5", "protocol": "tcp", "sourcePort": 40001, "port": 22,
+     "expect": {"delivered": false, "node": "pc-1", "reason": "policy", "rules": {"pc-1": "default:deny"}}},
+    {"name": "lan-to-pc-syslog", "from": "192.168.1.7", "to": "pc-1", "protocol": "udp", "sourcePort": 40002, "port": 514,
+     "expect": {"delivered": true, "node": "pc-1", "vrf": "corp", "source": "10.50.1.7", "destination": "10.10.0.2", "rules": {"gw-1": "lan-syslog", "pc-1": "lan-syslog"}}},
+    {"name": "pc-to-gw-ping", "from": "pc-1", "to": "gw-1",
+     "expect": {"delivered": true, "node": "gw-1", "vrf": "corp", "source": "10.10.0.2", "destination": "10.10.0.1", "rules": {"pc-1": "ping", "gw-1": "ping"}}},
+    {"name": "pc-to-lan-dns", "from": "pc-1", "to": "10.50.1.9", "protocol": "udp", "sourcePort": 40003, "port": 53,
+     "expect": {"delivered": false, "node": "pc-1", "reason": "policy", "rules": {"pc-1": "default:deny"}}}
+  ]
+}
