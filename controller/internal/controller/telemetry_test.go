@@ -59,6 +59,7 @@ func newTelemetryHarness(t *testing.T, nodeDown time.Duration) *harness {
 	}
 	h.start()
 	t.Cleanup(h.stop)
+	h.allowLoopback()
 	return h
 }
 
