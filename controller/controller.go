@@ -481,6 +481,9 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	// The certificate of the TLS port: the self-signed one of the key above, or the one that an
 	// operator set (SDN-92, internal/servercert)
 	certs := servercert.New(servercert.Config{Store: st, SelfSigned: cert, Key: tlsKey, Dir: cfg.dataDir, Advertised: cfg.advertise, Challenges: cfg.httpListen != "", Log: log})
+	// Its fingerprint in a file of the data directory, which ranz on this host checks a loopback address by
+	// (AUD1-DT-13, #461)
+	certs.PublishFingerprint(cfg.dataDir)
 	certs.Start(ctx)
 	defer certs.Close()
 
