@@ -45,12 +45,15 @@ type Server struct {
 	HTTP http.Handler
 	// Log is discarded when it is nil.
 	Log *slog.Logger
+	// Limits are the limits for a source (AUD1-DT-3, #451; limits.go); a field of 0 takes its default.
+	Limits Limits
 
-	once  sync.Once
-	cfg   *tls.Config
-	log   *slog.Logger
-	queue *queue
-	srv   *http.Server
+	once   sync.Once
+	cfg    *tls.Config
+	log    *slog.Logger
+	queue  *queue
+	srv    *http.Server
+	limits *limiter
 
 	mu      sync.Mutex
 	closed  bool
@@ -73,7 +76,11 @@ func (s *Server) init() {
 		// ... and a client that offers the control stream TLS 1.3 only
 		strict := s.cfg.Clone()
 		strict.MinVersion = tls.VersionTLS13
+		s.limits = newLimiter(s.Limits, time.Now)
 		s.cfg.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			if err := s.limits.handshake(hello.Conn.RemoteAddr()); err != nil {
+				return nil, err
+			}
 			if slices.Contains(hello.SupportedProtos, control.ALPN) {
 				return strict, nil
 			}
@@ -117,9 +124,15 @@ func (s *Server) Serve(ln net.Listener) error {
 // protocol that the handshake negotiated. A control stream runs on in Control, on this goroutine.
 func (s *Server) ServeConn(raw net.Conn) {
 	s.init()
+	leave, err := s.limits.enter(raw.RemoteAddr())
+	if err != nil {
+		s.refuse(raw, err)
+		return
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
+		leave()
 		raw.Close()
 		return
 	}
@@ -127,6 +140,7 @@ func (s *Server) ServeConn(raw net.Conn) {
 	s.wg.Add(1)
 	s.mu.Unlock()
 	tc := s.handshake(raw)
+	leave()
 	s.mu.Lock()
 	delete(s.shaking, raw)
 	closed := s.closed
