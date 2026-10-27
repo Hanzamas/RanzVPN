@@ -17,8 +17,9 @@ type Status struct {
 	// Cluster tells which member of the controller cluster answers and which one leads
 	// (internal/cluster). Every member answers the status itself.
 	Cluster *ClusterStatus `json:"cluster,omitempty"`
-	// AdminAccess is the admin source allowlist in force, and StarterRule the starter rule of the
-	// first install while the intent holds it (statusaccess.go).
+	// AdminAccess is the admin source allowlist in force, with its prefixes for an admin only, and
+	// StarterRule the starter rule of the first install while the intent holds it as the first start
+	// made it (statusaccess.go).
 	AdminAccess *AdminAccess       `json:"adminAccess,omitempty"`
 	StarterRule *StarterRuleStatus `json:"starterRule,omitempty"`
 	// Diagnostics is what the program tells the diagnostics bundle about it (diagnostics.go). It
