@@ -170,6 +170,11 @@ controller/internal/activation  OpenOfflineResponse   FuzzOpenOfflineResponse
 
 controller/internal/rbac   ParseRole  exempt  compares the name with the three role names; decodes nothing
 controller/internal/store  Open       exempt  opens the controller's own rqlite store by its URL
+controller/internal/store  OpenWith   exempt  opens the controller's own rqlite store by its URL, with the credential and the CA that the controller read from its own files
+
+# The credential file of the store (AUD1-DT-8 #456): the JSON that rqlited reads, which the controller wrote itself or an
+# operator copied from the first member of a cluster
+controller/internal/sidecar  ReadCredential  FuzzParseCredential via parseCredential
 
 # The CA certificate and key files of `ranz cert -signcert` and -signkey (SDN-53 #246): the operator's own files, which
 # LoadAuthority reads as PEM
