@@ -40,7 +40,7 @@ void NodeAdminState(NODE *n, struct cJSON *o);
 struct CONTROL_LEASES *NodeDhcpStart(NODE *n);
 void NodeDhcpStop(NODE *n);
 void NodeDhcpApplied(NODE *n, const struct CONTROL_STATE *st);
-void NodeListenerStart(NODE *n);
+void NodeListenerStart(NODE *n, PEER_KEY *key);
 void NodeListenerStop(NODE *n);
 void NodeListenerApplied(NODE *n, const struct CONTROL_STATE *st);
 TRANSPORT_STREAM *NodeListenerAccept(NODE *n);

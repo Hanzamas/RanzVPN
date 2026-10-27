@@ -1598,7 +1598,14 @@ type NodeConfig struct {
 	Endpoints []*Endpoint `protobuf:"bytes,10,rep,name=endpoints,proto3" json:"endpoints,omitempty"`
 	// The tunnel endpoint of the node for the links of kind vxlan and geneve (SDN-76 #356): the ports it
 	// listens on. Absent while no VRF of the node has such a link.
-	Vtep          *Vtep `protobuf:"bytes,11,opt,name=vtep,proto3" json:"vtep,omitempty"`
+	Vtep *Vtep `protobuf:"bytes,11,opt,name=vtep,proto3" json:"vtep,omitempty"`
+	// The decoy of the Listener of the node (AUD1-DT-4 #452): the loopback address and port of a site on the node,
+	// "127.0.0.1:8080" or "[::1]:8080", to which the node passes a prober of the TLS of the new protocol, one whose
+	// first frame does not open under its static key. Empty for none, and while no Listener names the node. A
+	// node of an older release skips the field. It is a field of the NodeConfig and not of the Listener, because
+	// Go writes the members of a oneof after the other fields of a message and nanopb in the order of the
+	// numbers, and the two must write the same bytes.
+	ListenerDecoy string `protobuf:"bytes,12,opt,name=listener_decoy,json=listenerDecoy,proto3" json:"listener_decoy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1708,6 +1715,13 @@ func (x *NodeConfig) GetVtep() *Vtep {
 		return x.Vtep
 	}
 	return nil
+}
+
+func (x *NodeConfig) GetListenerDecoy() string {
+	if x != nil {
+		return x.ListenerDecoy
+	}
+	return ""
 }
 
 // A tunnel endpoint of a node for the links of kind vxlan and geneve (SDN-76 #356): its address on
@@ -4313,7 +4327,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04kind\"J\n" +
 	"\tObjectKey\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.ranz.control.v1.KindR\x04kind\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xcf\x03\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xf6\x03\n" +
 	"\n" +
 	"NodeConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
@@ -4328,7 +4342,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x0econtroller_tls\x18\t \x03(\tR\rcontrollerTls\x127\n" +
 	"\tendpoints\x18\n" +
 	" \x03(\v2\x19.ranz.control.v1.EndpointR\tendpoints\x12)\n" +
-	"\x04vtep\x18\v \x01(\v2\x15.ranz.control.v1.VtepR\x04vtep\"`\n" +
+	"\x04vtep\x18\v \x01(\v2\x15.ranz.control.v1.VtepR\x04vtep\x12%\n" +
+	"\x0elistener_decoy\x18\f \x01(\tR\rlistenerDecoy\"`\n" +
 	"\x04Vtep\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x1d\n" +
 	"\n" +
