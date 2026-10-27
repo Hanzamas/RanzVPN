@@ -89,7 +89,9 @@ src/Core  ControlApply   fuzz_control  via ControlInput
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
 src/Cedar  CsOpen               exempt  opens the node's own SQLite store (winsqlite3)
-src/Cedar  CsImportForkConfig   exempt  the config importer of CORE-F5, merged before ADR-0040: Cfg parses the bytes of the file (fuzz_cfg) and the importer walks the parsed tree; a fuzz target of its own is still to come
+# The config importer of CORE-F5 (AUD1-DT-12 #460): Cfg parses the bytes of the file (fuzz_cfg) and the importer walks the
+# parsed tree into a store
+src/Cedar  CsImportForkConfig   fuzz_configimport
 src/Cedar  NodeOverlayInput     exempt  a packet of the host's own IP stack on the overlay adapter of a VRF (SDN-3 #179, merged before the gate; SDN-4 #180; SDN-6 #182): NodeNatEnds (fuzz_nat) reads its two addresses as the overlay sees them, the forwarding table of the VRF looks them up, and NodeNatCopy (fuzz_nat) writes the packet after the VRF id, which the policy of the VRF (NodePolicy.c; SDN-8 #184) hands to PolicyInput (fuzz_policy); a fuzz target of its own is still to come
 # The 1:1 NAT and 4via6 of the Node (SDN-6 #182) read the packets of the host and of the peers, ICMP errors and the
 # packets they quote among them: no parser word in their names, listed as the readers of packets that they are
