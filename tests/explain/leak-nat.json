@@ -1,0 +1,27 @@
+{
+  "description": "An overlapping leak through 1:1 NAT (SDN-6, SDN-7): red and blue both use 10.0.0.0/24 and leak into each other, so the address of each Node leaks as the outside of its 1:1 NAT rule, 172.16.1.1 for red-1 and 172.16.2.1 for blue-1. A packet goes out of a host through the rule of its Node, takes the route that the other VRF leaks, and reaches the other host through the rule of that Node, where the policy of its VRF judges it by the outside addresses.",
+  "nodes": {"red-1": 1, "blue-1": 33},
+  "intent": {"resources": [
+    {"kind": "VRF", "name": "red", "spec": {"id": 1, "ula": "fd00:1::/48", "exportTargets": ["64512:1"], "importTargets": ["64512:2"]}},
+    {"kind": "VRF", "name": "blue", "spec": {"id": 2, "ula": "fd00:2::/48", "exportTargets": ["64512:2"], "importTargets": ["64512:1"]}},
+    {"kind": "Network", "name": "red-lan", "spec": {"vrf": "red", "ipv4Pool": "10.0.0.0/24"}},
+    {"kind": "Network", "name": "blue-lan", "spec": {"vrf": "blue", "ipv4Pool": "10.0.0.0/24"}},
+    {"kind": "Node", "name": "red-1", "spec": {"vrfs": ["red"], "addresses": {"red-lan": "10.0.0.1"}}},
+    {"kind": "Node", "name": "blue-1", "spec": {"vrfs": ["blue"], "addresses": {"blue-lan": "10.0.0.1"}}},
+    {"kind": "NAT", "name": "red-1-out", "spec": {"vrf": "red", "node": "red-1", "inside": "10.0.0.1/32", "outside": "172.16.1.1/32"}},
+    {"kind": "NAT", "name": "blue-1-out", "spec": {"vrf": "blue", "node": "blue-1", "inside": "10.0.0.1/32", "outside": "172.16.2.1/32"}},
+    {"kind": "Policy", "name": "red-web-from-blue", "spec": {"vrf": "red", "action": "allow", "from": {"addresses": ["172.16.2.1"]}, "protocol": "tcp", "ports": [80]}},
+    {"kind": "Policy", "name": "red-dns-out", "spec": {"vrf": "red", "action": "allow", "to": {"addresses": ["172.16.2.0/24"]}, "protocol": "udp", "ports": [53]}},
+    {"kind": "Policy", "name": "blue-allow-all", "spec": {"vrf": "blue", "action": "allow"}}
+  ]},
+  "packets": [
+    {"name": "blue-to-red-web", "from": "blue-1", "to": "172.16.1.1", "protocol": "tcp", "sourcePort": 40000, "port": 80,
+     "expect": {"delivered": true, "node": "red-1", "vrf": "red", "source": "172.16.2.1", "destination": "10.0.0.1", "rules": {"blue-1": "blue-allow-all", "red-1": "red-web-from-blue"}}},
+    {"name": "blue-to-red-ssh", "from": "blue-1", "to": "172.16.1.1", "protocol": "tcp", "sourcePort": 40001, "port": 22,
+     "expect": {"delivered": false, "node": "red-1", "reason": "policy", "rules": {"blue-1": "blue-allow-all", "red-1": "default:deny"}}},
+    {"name": "red-to-blue-web", "from": "red-1", "to": "blue-1", "protocol": "tcp", "sourcePort": 40002, "port": 80,
+     "expect": {"delivered": false, "node": "red-1", "reason": "policy", "rules": {"red-1": "default:deny"}}},
+    {"name": "red-to-blue-dns", "from": "red-1", "to": "blue-1", "protocol": "udp", "sourcePort": 40003, "port": 53,
+     "expect": {"delivered": true, "node": "blue-1", "vrf": "blue", "source": "172.16.1.1", "destination": "10.0.0.1", "rules": {"red-1": "red-dns-out", "blue-1": "blue-allow-all"}}}
+  ]
+}

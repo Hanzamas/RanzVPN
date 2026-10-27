@@ -81,6 +81,13 @@
 // pinned the fingerprint of the old one still reaches the controller. No schema version changes
 // with it: a node of an older release skips the field it does not know.
 //
+// Session flap (AUD1-DT-11, #459): a node counts the replacements of the session of each of its
+// peers in a window, since a new handshake of a key closes the session that the node holds for it,
+// and above its limit it reports the event NODE_EVENT_TYPE_SESSION_FLAP in its Telemetry: the peer
+// in subject, and in message how often and from which source addresses the sessions came. No
+// schema version changes with it: a controller of an older release skips an event of a type that it
+// does not know.
+//
 // Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
 // Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
 // the node does it at once and answers with an OperationResult of the same id. Only a node that reports
@@ -730,6 +737,9 @@ type NodeEventType int32
 const (
 	NodeEventType_NODE_EVENT_TYPE_UNSPECIFIED      NodeEventType = 0
 	NodeEventType_NODE_EVENT_TYPE_GATEWAY_FAILOVER NodeEventType = 1
+	// Two holders of one key replace the session of a peer again and again (NS-12 of
+	// docs/threat-model.md, AUD1-DT-11 #459).
+	NodeEventType_NODE_EVENT_TYPE_SESSION_FLAP NodeEventType = 2
 )
 
 // Enum value maps for NodeEventType.
@@ -737,10 +747,12 @@ var (
 	NodeEventType_name = map[int32]string{
 		0: "NODE_EVENT_TYPE_UNSPECIFIED",
 		1: "NODE_EVENT_TYPE_GATEWAY_FAILOVER",
+		2: "NODE_EVENT_TYPE_SESSION_FLAP",
 	}
 	NodeEventType_value = map[string]int32{
 		"NODE_EVENT_TYPE_UNSPECIFIED":      0,
 		"NODE_EVENT_TYPE_GATEWAY_FAILOVER": 1,
+		"NODE_EVENT_TYPE_SESSION_FLAP":     2,
 	}
 )
 
@@ -1759,7 +1771,14 @@ type NodeConfig struct {
 	Endpoints []*Endpoint `protobuf:"bytes,10,rep,name=endpoints,proto3" json:"endpoints,omitempty"`
 	// The tunnel endpoint of the node for the links of kind vxlan and geneve (SDN-76 #356): the ports it
 	// listens on. Absent while no VRF of the node has such a link.
-	Vtep          *Vtep `protobuf:"bytes,11,opt,name=vtep,proto3" json:"vtep,omitempty"`
+	Vtep *Vtep `protobuf:"bytes,11,opt,name=vtep,proto3" json:"vtep,omitempty"`
+	// The decoy of the Listener of the node (AUD1-DT-4 #452): the loopback address and port of a site on the node,
+	// "127.0.0.1:8080" or "[::1]:8080", to which the node passes a prober of the TLS of the new protocol, one whose
+	// first frame does not open under its static key. Empty for none, and while no Listener names the node. A
+	// node of an older release skips the field. It is a field of the NodeConfig and not of the Listener, because
+	// Go writes the members of a oneof after the other fields of a message and nanopb in the order of the
+	// numbers, and the two must write the same bytes.
+	ListenerDecoy string `protobuf:"bytes,12,opt,name=listener_decoy,json=listenerDecoy,proto3" json:"listener_decoy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1869,6 +1888,13 @@ func (x *NodeConfig) GetVtep() *Vtep {
 		return x.Vtep
 	}
 	return nil
+}
+
+func (x *NodeConfig) GetListenerDecoy() string {
+	if x != nil {
+		return x.ListenerDecoy
+	}
+	return ""
 }
 
 // A tunnel endpoint of a node for the links of kind vxlan and geneve (SDN-76 #356): its address on
@@ -4130,7 +4156,8 @@ func (x *Flow) GetEndMs() uint64 {
 }
 
 // An event of the node itself that the controller turns into an Event (ADR-0030 decision 5).
-// subject names what it is about: for a gateway failover, the gateway that the node moved to.
+// subject names what it is about: for a gateway failover, the gateway that the node moved to; for
+// a session flap, the peer whose session was replaced again and again.
 type NodeEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Type          NodeEventType          `protobuf:"varint,1,opt,name=type,proto3,enum=ranz.control.v1.NodeEventType" json:"type,omitempty"`
@@ -4730,7 +4757,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04kind\"J\n" +
 	"\tObjectKey\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.ranz.control.v1.KindR\x04kind\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xcf\x03\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xf6\x03\n" +
 	"\n" +
 	"NodeConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
@@ -4745,7 +4772,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x0econtroller_tls\x18\t \x03(\tR\rcontrollerTls\x127\n" +
 	"\tendpoints\x18\n" +
 	" \x03(\v2\x19.ranz.control.v1.EndpointR\tendpoints\x12)\n" +
-	"\x04vtep\x18\v \x01(\v2\x15.ranz.control.v1.VtepR\x04vtep\"`\n" +
+	"\x04vtep\x18\v \x01(\v2\x15.ranz.control.v1.VtepR\x04vtep\x12%\n" +
+	"\x0elistener_decoy\x18\f \x01(\tR\rlistenerDecoy\"`\n" +
 	"\x04Vtep\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x1d\n" +
 	"\n" +
@@ -5039,10 +5067,11 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\bDhcpMode\x12\x19\n" +
 	"\x15DHCP_MODE_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rDHCP_MODE_OFF\x10\x01\x12\x12\n" +
-	"\x0eDHCP_MODE_POOL\x10\x02*V\n" +
+	"\x0eDHCP_MODE_POOL\x10\x02*x\n" +
 	"\rNodeEventType\x12\x1f\n" +
 	"\x1bNODE_EVENT_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
-	" NODE_EVENT_TYPE_GATEWAY_FAILOVER\x10\x01*\xb1\x01\n" +
+	" NODE_EVENT_TYPE_GATEWAY_FAILOVER\x10\x01\x12 \n" +
+	"\x1cNODE_EVENT_TYPE_SESSION_FLAP\x10\x02*\xb1\x01\n" +
 	"\rOperationKind\x12\x1e\n" +
 	"\x1aOPERATION_KIND_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18OPERATION_KIND_MAC_TABLE\x10\x01\x12\"\n" +

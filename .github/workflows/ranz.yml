@@ -67,7 +67,8 @@
 # A push to master or integration, a scheduled run and a run by hand run both jobs, with no path
 # filter. A pull request runs them when it changes a path that they read: controller/ and
 # ranz-bgp/, the two trees of the module; go.mod and go.sum; proto/, the schema that go generate
-# and the nanopb round trip read; tests/control/, the round trip program; .gitattributes, which
+# and the nanopb round trip read; tests/control/, the round trip program; tests/explain/, the
+# scenarios of the explain conformance that the tests of the controller read; .gitattributes, which
 # sets the line endings of the checkout; this file, the plan (ci-plan.yml and ci-plan.py),
 # .github/scripts/controller-service.ps1, .github/scripts/ranz-tools.ps1, the binary hardening gate
 # .github/scripts/binary-hardening.ps1, which windows.yml runs too, the fuzz targets, coverage
@@ -93,6 +94,7 @@ on:
     - 'go.sum'
     - 'proto/**'
     - 'tests/control/**'
+    - 'tests/explain/**'
     - '.gitattributes'
     - '.github/workflows/ranz.yml'
     - '.github/workflows/ci-plan.yml'
