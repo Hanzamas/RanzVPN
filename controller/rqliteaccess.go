@@ -22,6 +22,10 @@ import (
 // administrator or SYSTEM cannot read it.
 const rqliteAuthFile = "rqlite-auth.json"
 
+// rqliteDataDir is the folder of the data directory that holds the data of the rqlite member of the
+// controller, its store.
+const rqliteDataDir = "rqlite"
+
 // checkRqlite is the part of parseFlags that checks how rqlite is reached.
 func (cfg config) checkRqlite() error {
 	if cfg.external {
@@ -96,7 +100,7 @@ func (cfg config) rqliteAccess(own bool) (a store.Access, authFile string, creat
 func (cfg config) member(exe, rqliteHTTP, authFile string) (*sidecar.Rqlited, error) {
 	rq := &sidecar.Rqlited{
 		Path:     exe,
-		DataDir:  filepath.Join(cfg.dataDir, "rqlite"),
+		DataDir:  filepath.Join(cfg.dataDir, rqliteDataDir),
 		HTTPAddr: rqliteHTTP,
 		RaftAddr: cfg.raftAddr,
 		AuthFile: authFile,

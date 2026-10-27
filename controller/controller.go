@@ -55,11 +55,12 @@
 // address may reach them. A loopback address always passes, so a local administrator always
 // reaches the controller. The control stream of the nodes is not behind it: a Network limits the
 // addresses its Nodes enrol from (its enrolSources). -admin-from sets the list at the first start,
-// the one that makes the first admin token (AUD1-DT-6, #454): `ranz install --controller` passes
-// loopback and the private subnets of the host, or what its --admin-from names; "any" leaves the
-// list empty, and a run without the flag does too. In a cluster, the list must hold the
-// addresses of the members too, because a standby forwards a call to the leader from its own
-// address.
+// the one that finds no API token in the store, and before it makes the first admin token
+// (AUD1-DT-6, #454): `ranz install --controller` passes loopback and the private subnets of the
+// host, or what its --admin-from names; "any" leaves the list empty, and a run without the flag
+// does too. A later start keeps the list that the store holds, and says in its log which list that
+// is, with a warning when it is empty. In a cluster, the list must hold the addresses of the
+// members too, because a standby forwards a call to the leader from its own address.
 //
 // Cluster (SDN-17, ADR-0026): a cluster of 3 or 5 members runs one `ranz controller` on each host,
 // each with its own rqlited, all started with the same -rqlite-join (the Raft addresses of every
@@ -492,17 +493,16 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	defer st.Close()
 	tokens := rbac.New(st)
 	tokenFile := filepath.Join(cfg.dataDir, adminTokenFile)
-	created, err := tokens.Bootstrap(ctx, func(secret string) error {
+	// The first start sets the admin source allowlist and then makes the first admin token, and a later
+	// start says which list it keeps (adminfrom.go)
+	created, err := bootstrapAdmin(ctx, tokens, st, cfg.adminFrom, func(secret string) error {
 		return os.WriteFile(tokenFile, []byte(secret+"\n"), 0o600)
-	})
+	}, log)
 	if err != nil {
-		return fmt.Errorf("the first admin token: %w", err)
+		return err
 	}
 	if created {
 		log.Info("first start: the admin token is created, its secret is in the data directory", "token", rbac.FirstAdmin, "file", tokenFile)
-		if _, err := firstAdminSources(ctx, st, cfg.adminFrom, log); err != nil {
-			return err
-		}
 	}
 
 	// The certificate of the TLS port: the self-signed one of the key above, or the one that an
