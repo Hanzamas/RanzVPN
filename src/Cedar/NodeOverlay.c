@@ -21,7 +21,8 @@
 // lower static key dials and the other accepts; the static key of the handshake is a peer's identity, so a session
 // has no Login. The endpoints of a Peer object (SDN-93, #410) are where a data transport that dials through them reaches the
 // peer: such a node dials only a peer that has some, and a node that has none of its own always dials (NodeEndpoints.c). One
-// thread of the overlay accepts, dials and reads the sessions; it alone closes them, and a sender
+// thread of the overlay accepts, dials and reads the sessions, and a pool runs the handshakes of the streams that it accepts
+// (NodeHandshake.c; AUD1-DT-1, #449); the thread alone closes the sessions, and a sender
 // counts itself on the peer while it sends, so a session is never closed under a send. The forwarding reads the
 // tables without a lock, as a reader of the table snapshot, so a peer that a Generation drops goes only once no
 // table leads to it any more.
@@ -81,6 +82,8 @@ struct NODE_OVERLAY {
 	UINT NumEndpoints;
 	// The dials that the overlay started
 	volatile LONG64 Dials;
+	// The pool that runs the handshakes of the streams that the thread accepts (NodeHandshake.c; AUD1-DT-1, #449)
+	NODE_HANDSHAKES *Handshakes;
 };
 
 // The IPv4 addresses of a CONTROL_ADDRESS list, in network byte order, and the VRF of each; the forwarding tables take
@@ -422,24 +425,21 @@ static void NodeOverlayReplace(NODE_OVERLAY *ov, const UCHAR *key) {
 		NodeOverlayClose(ov, p);
 }
 
-// Take a stream that a peer dialled: the responder of a session, whose initiator must be a peer of the desired state
+// Take a stream that a peer dialled: the responder of a session, whose initiator must be a peer of the desired state. Its
+// handshake runs in the pool of the handshakes, never on this thread, which reads no stream that has proved no key and
+// takes only a session whose handshake finished (NodeHandshake.c; AUD1-DT-1, #449).
 static bool NodeOverlayAccept(NODE_OVERLAY *ov) {
-	NOISE_SESSION_CONFIG c;
-
 	TRANSPORT_STREAM *stream = (ov->Listener != NULL ? TransportAccept(ov->Listener, 0) : NULL);
 	// Else a stream that the front door or QUIC of the node's Listener took (NodeListener.c; SDN-45, #238), also when the data
 	// transport listens nowhere, as that of the client role and the one of a node without it do (SDN-93, #410)
 	if (stream == NULL)
 		stream = NodeListenerAccept(ov->Node);
-	if (stream == NULL)
-		return false;
+	if (stream != NULL)
+		NodeHandshakeSubmit(ov->Handshakes, stream);
 
-	TRANSPORT_NOISE *s = ZeroMalloc(sizeof(TRANSPORT_NOISE));
-	NodeOverlaySessionConfig(ov, &c, NULL);
-	if (TransportNoiseAccept(s, stream, &c, NODE_OVERLAY_HANDSHAKE) == false) {
-		Free(s);
-		return true;
-	}
+	TRANSPORT_NOISE *s = NodeHandshakeTake(ov->Handshakes);
+	if (s == NULL)
+		return (stream != NULL);
 
 	// The peer's static key names the peer: a session between two peers has no Login. A peer that dials again, after it
 	// roamed or woke from sleep, replaces the session that its old path left (CORE-S3-1).
@@ -655,6 +655,9 @@ static DWORD WINAPI NodeOverlayThread(LPVOID param) {
 	Unlock(ov->Lock);
 	NodeOverlayReap(ov);
 
+	// The handshakes end before the listeners of their streams, and the sessions that the thread did not take close
+	NodeHandshakeStop(ov->Handshakes);
+
 	TransportCloseListener(ov->Listener);
 	ov->Listener = NULL;
 
@@ -672,6 +675,7 @@ static DWORD WINAPI NodeOverlayThread(LPVOID param) {
 // the states. False when the configuration is not complete, the overlay runs, or the control stream cannot start.
 bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	CONTROL_CONFIG cc;
+	NOISE_SESSION_CONFIG hc;
 	DWORD thread_id = 0;
 
 	if (n == NULL || cfg == NULL || cfg->Data == NULL || cfg->Key == NULL || n->Overlay != NULL)
@@ -684,6 +688,9 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	ov->Peers = NewListFast(NULL);
 	ov->Buf = Malloc(NOISE_MAX_PAYLOAD);
 	ov->NatBuf = Malloc(NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
+	// The pool of the handshakes of the streams that the thread accepts, as their responder (NodeHandshake.c; AUD1-DT-1, #449)
+	NodeOverlaySessionConfig(ov, &hc, NULL);
+	ov->Handshakes = NodeHandshakeStart(&hc, cfg->MaxHandshakes);
 	NodeShapeStart(n, cfg);
 	NodePolicyStart(n, cfg);
 	// The Listener, which listens where a state says (NodeListener.c; SDN-45, #238)
@@ -711,10 +718,13 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.CapsParam = n;
 	cc.Devices = NodeWireGuardStart(n, cfg);
 
-	ov->Thread = CreateThread(NULL, 0, NodeOverlayThread, ov, 0, &thread_id);
+	ov->Thread = (ov->Handshakes != NULL ? CreateThread(NULL, 0, NodeOverlayThread, ov, 0, &thread_id) : NULL);
 	ov->Control = (ov->Thread != NULL && cfg->Control != NULL ? ControlStart(&cc) : NULL);
 	if (ov->Thread == NULL || (cfg->Control != NULL && ov->Control == NULL)) {
-		NodeLog(n, "Overlay not started: the control stream to %s could not start", cfg->Controller);
+		if (ov->Handshakes == NULL)
+			NodeLog(n, "Overlay not started: the pool of the handshakes could not start");
+		else
+			NodeLog(n, "Overlay not started: the control stream to %s could not start", cfg->Controller);
 		NodeOverlayStop(n);
 		return false;
 	}
@@ -758,6 +768,8 @@ void NodeOverlayStop(NODE *n) {
 	}
 	// The thread closed every session, the ones over the streams of the Listener too (NodeListener.c; SDN-45, #238)
 	NodeListenerStop(n);
+	// The thread stopped the pool of the handshakes; a thread that did not start leaves it to stop here
+	NodeHandshakeFree(ov->Handshakes);
 
 	n->Overlay = NULL;
 	ReleaseList(ov->Peers);
@@ -880,6 +892,7 @@ void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st) {
 	st->Delivered = (UINT64)ReadAcquire64(&ov->Delivered);
 	st->Dropped = (UINT64)ReadAcquire64(&ov->Dropped);
 	st->Dials = (UINT64)ReadAcquire64(&ov->Dials);
+	NodeHandshakeGetStatus(ov->Handshakes, st);
 }
 
 // The endpoints that the Peer object of the peer name lists, at most max of them into out: their number, 0 for a peer that
