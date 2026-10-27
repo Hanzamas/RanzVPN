@@ -280,7 +280,7 @@ func TestRqliteNeedsTheCredential(t *testing.T) {
 	if err := restore(ctx, cfg, backupFile, allowed, io.Discard); err != nil {
 		t.Errorf("restore against the stopped service: %v", err)
 	}
-	if again, _, err := sidecar.ReadCredential(file); err != nil || again != password {
+	if _, again, err := sidecar.ReadCredential(file); err != nil || again != password {
 		t.Errorf("the credential file changed under the commands (%v)", err)
 	}
 }

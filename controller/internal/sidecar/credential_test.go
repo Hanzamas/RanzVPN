@@ -69,7 +69,7 @@ func TestReadCredentialRefuses(t *testing.T) {
 // certificates of the members only as a set.
 func TestArgsAuthAndNodeEncryption(t *testing.T) {
 	r := &Rqlited{HTTPAddr: "127.0.0.1:4001", RaftAddr: "127.0.0.1:4002", DataDir: "data"}
-	if a := r.args(); slices.Contains(a, "-auth") || slices.Contains(a, "-node-encrypt") {
+	if a := r.args(); slices.Contains(a, "-auth") || slices.Contains(a, "-node-cert") {
 		t.Errorf("a member with neither has %v", a)
 	}
 	r.AuthFile, r.Join = "auth.json", []string{"127.0.0.1:4012"}
@@ -81,10 +81,8 @@ func TestArgsAuthAndNodeEncryption(t *testing.T) {
 			t.Errorf("the arguments %v lack %v", a, want)
 		}
 	}
-	for _, want := range []string{"-node-encrypt", "-node-verify-client"} {
-		if !slices.Contains(a, want) {
-			t.Errorf("the arguments %v lack %s", a, want)
-		}
+	if !slices.Contains(a, "-node-verify-client") {
+		t.Errorf("the arguments %v lack -node-verify-client", a)
 	}
 	if a[len(a)-1] != "data" {
 		t.Errorf("the data directory is not the last argument: %v", a)

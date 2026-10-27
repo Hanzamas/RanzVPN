@@ -39,7 +39,7 @@ type Rqlited struct {
 	// for no credential.
 	AuthFile string
 	// NodeCACert, NodeCert and NodeKey are the PEM files of the mutual TLS between the members
-	// (-node-encrypt): the Raft transport and the node API of the cluster are encrypted, and a
+	// (-node-cert with -node-verify-client): the Raft transport and the node API of the cluster are encrypted, and a
 	// member that does not present a certificate of NodeCACert is refused. All three, or none.
 	NodeCACert string
 	NodeCert   string
@@ -67,7 +67,7 @@ func (r *Rqlited) args() []string {
 		}
 	}
 	if r.NodeCert != "" {
-		args = append(args, "-node-encrypt", "-node-cert", r.NodeCert, "-node-key", r.NodeKey, "-node-ca-cert", r.NodeCACert, "-node-verify-client")
+		args = append(args, "-node-cert", r.NodeCert, "-node-key", r.NodeKey, "-node-ca-cert", r.NodeCACert, "-node-verify-client")
 	}
 	if len(r.Join) > 0 {
 		args = append(args, "-join", strings.Join(r.Join, ","))

@@ -14,7 +14,7 @@ import (
 // How the controller reaches its rqlite and how the members of a cluster reach each other
 // (AUD1-DT-8, ADR-0026 amendment of 2026-10-27): rqlited runs with -auth, the store client and
 // reset-admin, backup and restore send the credential, and the members of a cluster use mutual TLS
-// on the Raft transport and the node API (-node-encrypt).
+// on the Raft transport and the node API (rqlited -node-cert, -node-key, -node-ca-cert and -node-verify-client).
 
 // rqliteAuthFile, in the data directory, is the credential file of rqlited (sidecar.WriteCredential).
 // The first start of a single controller makes it with a random password; the data directory has
