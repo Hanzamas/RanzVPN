@@ -879,9 +879,12 @@ try {
 		foreach ($line in 'msg="TLS certificate"', 'msg="certificate of the controller changed"') {
 			if ($log -notmatch [regex]::Escape($line)) { throw "controller.log does not say '$line'" }
 		}
+		# The first start set the admin source allowlist and recorded it (AUD1-DT-6), so the events are that and the change
 		$events = @((Invoke-Ranz @('get', 'events')).events | Where-Object { $_ })
-		if ($events.Count -ne 1 -or $events[0].type -ne 'controller-certificate-changed' -or $events[0].message -notmatch [regex]::Escape($new)) {
-			throw "the events are $($events | ConvertTo-Json -Compress -Depth 4), not the change of the certificate"
+		$allowed = @($events | Where-Object { $_.type -eq 'admin-sources-changed' -and $_.message -match 'at the first start' })
+		$changed = @($events | Where-Object { $_.type -eq 'controller-certificate-changed' })
+		if ($events.Count -ne 2 -or $allowed.Count -ne 1 -or $changed.Count -ne 1 -or $changed[0].message -notmatch [regex]::Escape($new)) {
+			throw "the events are $($events | ConvertTo-Json -Compress -Depth 4), not the allowlist of the first start and the change of the certificate"
 		}
 		$null = Wait-Until {
 			$audit = Invoke-Ranz @('get', 'audit', '-kind', 'operation', '-limit', '1000')
@@ -983,9 +986,11 @@ try {
 	Step 'logs' {
 		$out = Invoke-Doc
 		if ($out -notmatch 'ranz-controller started') { throw 'the Application log does not say that ranz-controller started' }
-		# The one event is the change of the certificate of step 21 (SDN-92)
+		# The events are the admin source allowlist of the first start (AUD1-DT-6) and the change of the certificate of step 21 (SDN-92)
 		$events = @((Invoke-Ranz @('get', 'events')).events | Where-Object { $_ })
-		if ($events.Count -ne 1 -or $events[0].type -ne 'controller-certificate-changed') { throw "the Controller has the events $($events | ConvertTo-Json -Compress -Depth 4), not the change of the certificate of step 21 alone" }
+		$allowed = @($events | Where-Object { $_.type -eq 'admin-sources-changed' -and $_.message -match 'at the first start' })
+		$changed = @($events | Where-Object { $_.type -eq 'controller-certificate-changed' })
+		if ($events.Count -ne 2 -or $allowed.Count -ne 1 -or $changed.Count -ne 1) { throw "the Controller has the events $($events | ConvertTo-Json -Compress -Depth 4), not the allowlist of the first start and the change of the certificate of step 21 alone" }
 		$revisions = ((Invoke-Ranz @('get', 'revisions')).revisions | ForEach-Object { $_.operation }) -join ','
 		if ($revisions -ne 'first-start,apply,apply') { throw "the revisions are $revisions, not the first start and the applies of steps 15 and 20" }
 		# The bundle of the Controller, the one that the button of the Diagnostics page downloads

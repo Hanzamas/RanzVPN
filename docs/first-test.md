@@ -628,9 +628,9 @@ ranz get revisions
 ```
 
 - The Application log says `ranz-controller started`.
-- `ranz get events` holds one event, `controller-certificate-changed`, the change of step 21. The Controller also raises an event for an automatic rollback of an apply with `--confirm`, a pool near exhaustion and a refused enrolment, and none of that happened. The refusals of step 20 are failed authentications in the audit log.
+- `ranz get events` holds two events: `admin-sources-changed`, the admin source allowlist that the first start set (step 5), and `controller-certificate-changed`, the change of step 21. The Controller also raises an event for an automatic rollback of an apply with `--confirm`, a pool near exhaustion, a refused enrolment and a call from a source outside the allowlist (`admin-access-refused`), and none of that happened. The refusals of step 20 are failed authentications in the audit log.
 - `ranz get revisions` shows the first start, the apply of step 15 and the apply of step 20. The certificate of step 21 is no part of the Intent, so it made no revision.
-- In the web UI, Nodes shows both Nodes connected with the Generation they applied, `pc-a` the Node service and `pc-b` the stand-in, Revisions shows the three revisions, and Events shows the change of the certificate.
+- In the web UI, Nodes shows both Nodes connected with the Generation they applied, `pc-a` the Node service and `pc-b` the stand-in, Revisions shows the three revisions, and Events shows the allowlist of the first start and the change of the certificate.
 
 The Diagnostics page of the web UI has a button that downloads the diagnostics bundle of the Controller: its log, its Intent, revisions, events, licence, Nodes and address pools, and the state of its PC, with no secret in it. An operator or an admin may pull it, and every pull is in the audit log. This is the same by command, with the same token (the button calls this URL):
 
