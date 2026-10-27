@@ -186,6 +186,8 @@ add_library(corecontrol STATIC
   ControlLink.c
   # The security of the L2 Networks in a desired state (SDN-41, #234)
   ControlSecurity.c
+  # The events of the node that the client reports (AUD1-DT-11, #459)
+  ControlEvent.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

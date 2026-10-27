@@ -7,6 +7,16 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 )
 
+// listenerDecoy returns the decoy of the Listener of the Node node (AUD1-DT-4, #452), "" for none and when no
+// Listener names the node. It is a field of the NodeConfig beside the Listener (control.proto).
+func listenerDecoy(in intent.Intent, node string) string {
+	name, ok := in.ListenerOf(node)
+	if !ok {
+		return ""
+	}
+	return in.Listeners[name].Decoy
+}
+
 // listener returns the Listener of the Node node as the node applies it (SDN-45, ADR-0035): the
 // port of its front door, the port of QUIC and the source of their certificate; nil when no
 // Listener names the node. The TLS policy of each surface is fixed in the node, so the state
