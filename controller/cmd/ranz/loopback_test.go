@@ -61,8 +61,8 @@ func (l countingListener) Accept() (net.Conn, error) {
 	return c, err
 }
 
-// answerer starts a server that answers every call as the admin token and has the certificate that the key
-// gives it. It returns the server, its certificate and the fingerprint of it.
+// answerer starts a server that answers every call as the admin token, with a certificate of a key of its own.
+// It returns the server and the TLS fingerprint of that certificate.
 func answerer(t *testing.T) (*answering, string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
