@@ -39,8 +39,14 @@
 // The ALPN protocols of the Controller's port: its web UI and API, and the control stream of the nodes (CONTROL_ALPN)
 #define FRONT_DOOR_CONTROLLER_PROTOCOLS "h2, http/1.1, ranz-control/1"
 
+// The account of the Controller's process, the virtual service account of the ranz-controller service: the front door
+// hands connections to the pipe above only when this account serves it (DT-7, #455)
+#define FRONT_DOOR_CONTROLLER_ACCOUNT L"NT SERVICE\\ranz-controller"
+
 // The limits of the owner table
 #define FRONT_DOOR_MAX_OWNERS   16  // Owners of one front door at most
+#define FRONT_DOOR_SID_SIZE     128 // The SID of an owner's account as a string, its terminator included
+#define FRONT_DOOR_IMAGE_SIZE   260 // The path of an owner's executable, its terminator included
 #define FRONT_DOOR_NAME_SIZE    32  // An owner's name, its terminator included
 #define FRONT_DOOR_LIST_SIZE    256 // A list of server names or ALPN protocols, its terminator included
 #define FRONT_DOOR_PREFIX_SIZE  32  // The first bytes of a byte owner at most
@@ -90,6 +96,8 @@ typedef struct FRONT_DOOR_OWNER {
 	UCHAR Prefix[FRONT_DOOR_PREFIX_SIZE];   // BYTES: the first bytes of its connections ...
 	UINT PrefixSize;                        // ... their number, 1 to FRONT_DOOR_PREFIX_SIZE
 	wchar_t Pipe[FRONT_DOOR_PIPE_SIZE];     // The handoff pipe of the owner process ("\\.\pipe\..."); empty for an owner in this process
+	char Account[FRONT_DOOR_SID_SIZE];      // An owner in another process: the SID ("S-1-5-80-...") of the account that its pipe's server must run as; empty gets no socket
+	wchar_t Image[FRONT_DOOR_IMAGE_SIZE];   // ... and the full path of the executable that serves it, compared without case; empty takes any image
 	FRONT_DOOR_TAKE_PROC *Take;             // An owner in this process: takes the socket
 	void *Param;                            // ... with this parameter
 } FRONT_DOOR_OWNER;
@@ -109,6 +117,7 @@ typedef struct FRONT_DOOR_STATS {
 	UINT64 Handed[FRONT_DOOR_MAX_OWNERS]; // ... handed to each owner, by its index in the table
 	UINT64 Unrouted;                      // ... closed because no owner takes them
 	UINT64 Refused;                       // ... closed because their owner did not take them: no pipe, no answer, or a refusal
+	UINT64 Impostors;                     // ... of those, closed because the process that serves the owner's pipe is not the account or the image that the table names (DT-7)
 } FRONT_DOOR_STATS;
 
 // What the ClientHello of a TLS connection names (FrontDoorParseHello). The names point into Message, so a hello is
@@ -152,7 +161,15 @@ bool FrontDoorHandoffDecode(const void *data, UINT size, WSAPROTOCOL_INFOW *info
 // not valid or the address cannot be bound (443 taken: the caller starts again on 5555). Port gives the port it bound,
 // for a front door on port 0. GetStats gives its counters. Stop closes the listener, waits for the connections being
 // routed, which end at once, and frees the front door; a connection that it handed over stays with its owner.
+// Before the front door duplicates a socket into the process that serves an owner's pipe, it connects with
+// SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, so the server may identify the front door's account but never act as
+// it, and it checks that the process runs as the SID of the owner's Account and, where the owner names an Image, runs
+// that executable. It reads the process's token and image with PROCESS_QUERY_LIMITED_INFORMATION, which an owner under
+// another account must grant besides PROCESS_DUP_HANDLE. A pipe that another process serves gets no socket: the
+// connection is closed and counted (Impostors). AccountSid gives the SID string of an account name, such as
+// FRONT_DOOR_CONTROLLER_ACCOUNT; false when Windows does not know the account.
 FRONT_DOOR *FrontDoorStart(const FRONT_DOOR_CONFIG *cfg);
+bool FrontDoorAccountSid(const wchar_t *account, char *sid, UINT size);
 USHORT FrontDoorPort(FRONT_DOOR *fd);
 void FrontDoorGetStats(FRONT_DOOR *fd, FRONT_DOOR_STATS *st);
 void FrontDoorStop(FRONT_DOOR *fd);
