@@ -23,6 +23,13 @@
 // several TLS records (ADR-0023: the fragmentation of the ClientHello is a client toggle). Any other connection goes to
 // the first byte owner whose prefix it starts with; while an earlier owner's longer prefix may still match, the front
 // door waits for more bytes. A connection that no owner takes is closed.
+//
+// The front door limits its sources (AUD1-DT-3, #451; Core/SourceLimit.h; FD-1, NS-10 of docs/threat-model.md): a
+// connection counts from the moment it is accepted until its owner has it or it is closed, and the front door accepts at
+// most FRONT_DOOR_CONFIG.Limits.MaxPending of them in all and MaxPendingPerSource for one source (an IPv4 address, or an
+// IPv6 /64), so the connections that wait for their bytes never hold more threads than the pool of the front door has,
+// and a source that holds many leaves the others served. A source that opens connections faster than its rate, or
+// starts TLS handshakes faster than its rate, has the excess closed. The refusals are counted (FRONT_DOOR_STATS.Limits).
 
 #ifndef CORE_FRONT_DOOR_H
 #define CORE_FRONT_DOOR_H
@@ -31,6 +38,8 @@
 #include <windows.h>
 
 #include <stdbool.h>
+
+#include "Core/SourceLimit.h"
 
 #define FRONT_DOOR_PORT 443 // The port of the front door in a deployment (ADR-0035 decision 1)
 
@@ -109,6 +118,7 @@ typedef struct FRONT_DOOR_CONFIG {
 	UINT NumOwners;                        // ... its owners, 1 to FRONT_DOOR_MAX_OWNERS
 	UINT PeekTimeout;                      // ms the first bytes may take to decide the owner; 0 for FRONT_DOOR_PEEK_TIMEOUT
 	UINT HandoffTimeout;                   // ms an owner process may take to answer; 0 for FRONT_DOOR_HANDOFF_TIMEOUT
+	SOURCE_LIMIT_CONFIG Limits;            // The limits for a source; a field of 0 takes its default (SOURCE_LIMIT_*)
 } FRONT_DOOR_CONFIG;
 
 // What a front door did (FrontDoorGetStats)
@@ -118,6 +128,8 @@ typedef struct FRONT_DOOR_STATS {
 	UINT64 Unrouted;                      // ... closed because no owner takes them
 	UINT64 Refused;                       // ... closed because their owner did not take them: no pipe, no answer, or a refusal
 	UINT64 Impostors;                     // ... of those, closed because the process that serves the owner's pipe is not the account or the image that the table names (DT-7)
+	SOURCE_LIMIT_STATS Limits;            // The connections that wait now, and what the limits for a source refused: connections
+	                                      // that Accepted counts too, closed at once, or TLS handshakes closed before their handoff
 } FRONT_DOOR_STATS;
 
 // What the ClientHello of a TLS connection names (FrontDoorParseHello). The names point into Message, so a hello is

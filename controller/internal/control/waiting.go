@@ -90,6 +90,12 @@ func (w *Waiting) Refused() (full, source uint64) {
 	return w.refusedFull, w.refusedSource
 }
 
+// SourceOf is sourceOf for the other limits of the TLS port that count a source the same way (internal/port,
+// AUD1-DT-3 #451).
+func SourceOf(remote net.Addr) netip.Addr {
+	return sourceOf(remote)
+}
+
 // sourceOf returns the source that a stream from remote counts for: its IPv4 address, or the /64 of its
 // IPv6 address, which any address of the /64 stands for. A remote that is no IP address has the invalid
 // address, a source of its own.
