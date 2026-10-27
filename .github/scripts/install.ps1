@@ -717,7 +717,9 @@ try {
 	Wait-ServiceState $controllerService 'Running'
 	$csvc = Get-CimInstance Win32_Service -Filter "Name='$controllerService'"
 	if ($csvc.StartName -ne $controllerAccount) { throw "$controllerService runs as '$($csvc.StartName)', not its virtual account $controllerAccount" }
-	if ($csvc.PathName -ne "`"$installedRanz`" controller") { throw "$controllerService runs '$($csvc.PathName)', not the ranz.exe of $installDir with controller" }
+	# With the admin source allowlist of the first install (AUD1-DT-6): loopback and the private subnets of the host
+	if ($csvc.PathName -notmatch ('^' + [regex]::Escape("`"$installedRanz`" controller -admin-from ") + '\S*127\.0\.0\.0/8\S*$')) { throw "$controllerService runs '$($csvc.PathName)', not the ranz.exe of $installDir with controller and -admin-from, which holds loopback" }
+	if ($r.Out -notmatch 'install: the Controller starts with the admin source allowlist [^\r\n]*127\.0\.0\.0/8[^\r\n]*403[^\r\n]*ranz admin-sources set') { throw "ranz install --controller did not say which sources may reach the API and how to change that:`n$($r.Out)" }
 	$csid = (& sc.exe showsid $controllerService | Out-String)
 	if ($csid -notmatch [regex]::Escape($controllerSid)) { throw "Windows gives $controllerAccount another SID than ${controllerSid}:`n$csid" }
 	Assert-Access $installDir $controllerAccount 'ReadAndExecute'
