@@ -42,14 +42,15 @@
 
 // One peer of the overlay, from a Peer object of the desired state: a next hop of the forwarding tables
 typedef struct NODE_OVERLAY_PEER {
-	char Name[PEER_NAME_SIZE];         // Its node name: its address on the data transport
-	UCHAR Key[PEER_KEY_SIZE];          // Its static key
-	TRANSPORT_NOISE *volatile Session; // The Noise session to it, NULL while there is none
-	volatile LONG Senders;             // Calls of NodeOverlayInput that send on Session now
-	UINT64 NextDial;                   // When the node dials it next
-	bool Gone;                         // The desired state dropped it and no table leads to it: the thread closes its session and frees it
-	UINT64 Since;                      // When Session came up, for the state of the node (SDN-91, #396) ...
-	TRANSPORT *Transport;              // ... and the transport that it runs over
+	char Name[PEER_NAME_SIZE];          // Its node name: its address on the data transport
+	UCHAR Key[PEER_KEY_SIZE];           // Its static key
+	TRANSPORT_NOISE *volatile Session;  // The Noise session to it, NULL while there is none
+	volatile LONG Senders;              // Calls of NodeOverlayInput that send on Session now
+	UINT64 NextDial;                    // When the node dials it next
+	bool Gone;                          // The desired state dropped it and no table leads to it: the thread closes its session and frees it
+	UINT64 Since;                       // When Session came up, for the state of the node (SDN-91, #396) ...
+	TRANSPORT *Transport;               // ... and the transport that it runs over
+	char Source[NODE_FLAP_SOURCE_SIZE]; // The address that Session came from, "" when the transport told none (NodeFlap.c; AUD1-DT-11, #459)
 
 	// The endpoints that its Peer object lists (SDN-93, #410), which the node dials it at, in the order of the race
 	UINT NumEndpoints;
@@ -85,6 +86,10 @@ struct NODE_OVERLAY {
 	volatile LONG64 Dials;
 	// The pool that runs the handshakes of the streams that the thread accepts (NodeHandshake.c; AUD1-DT-1, #449)
 	NODE_HANDSHAKES *Handshakes;
+	// The events of the node that wait for the controller, and the count of the replacements of the session of each peer,
+	// which raises one when two holders of a key replace it again and again (NodeFlap.c; AUD1-DT-11, #459)
+	CONTROL_EVENTS *Events;
+	NODE_FLAP *Flap;
 };
 
 // The IPv4 addresses of a CONTROL_ADDRESS list, in network byte order, and the VRF of each; the forwarding tables take
@@ -376,6 +381,8 @@ static bool NodeOverlayAttach(NODE_OVERLAY *ov, const UCHAR *key, TRANSPORT_NOIS
 			StrCpy(name, sizeof(name), p->Name);
 			p->Since = GetTickCount64();
 			p->Transport = TransportOf(s->Stream);
+			// Where it came from, for the count of the replacements of the session (NodeFlap.c; AUD1-DT-11, #459)
+			TransportRemote(s->Stream, p->Source, sizeof(p->Source));
 			ok = true;
 		}
 	}
@@ -412,20 +419,35 @@ static bool NodeOverlayListen(NODE_OVERLAY *ov) {
 	return (ov->Listener != NULL);
 }
 
-// Close the session that the peer of key has: it dialled again on another path. Only the thread of the overlay closes.
-static void NodeOverlayReplace(NODE_OVERLAY *ov, const UCHAR *key) {
+// Close the session that the peer of key has: it dialled again on another path, with the session of incoming. Only the
+// thread of the overlay closes. The replacement counts towards the session flap of the peer, with the addresses that the two
+// sessions came from (NodeFlap.c; AUD1-DT-11, #459).
+static void NodeOverlayReplace(NODE_OVERLAY *ov, const UCHAR *key, TRANSPORT_NOISE *incoming) {
 	NODE_OVERLAY_PEER *p;
+	char name[PEER_NAME_SIZE];
+	char closed[NODE_FLAP_SOURCE_SIZE];
 
 	Lock(ov->Lock);
 	{
 		p = NodeOverlayPeer(ov, NULL, key);
 		if (p != NULL && p->Session == NULL)
 			p = NULL;
+		if (p != NULL) {
+			StrCpy(name, sizeof(name), p->Name);
+			StrCpy(closed, sizeof(closed), p->Source);
+		}
 	}
 	Unlock(ov->Lock);
 
-	if (p != NULL)
-		NodeOverlayClose(ov, p);
+	if (p == NULL)
+		return;
+
+	NodeOverlayClose(ov, p);
+
+	char opened[NODE_FLAP_SOURCE_SIZE];
+
+	TransportRemote(incoming->Stream, opened, sizeof(opened));
+	NodeFlapReplaced(ov->Flap, name, closed, opened);
 }
 
 // Take a stream that a peer dialled: the responder of a session, whose initiator must be a peer of the desired state. Its
@@ -447,7 +469,7 @@ static bool NodeOverlayAccept(NODE_OVERLAY *ov) {
 	// The peer's static key names the peer: a session between two peers has no Login. A peer that dials again, after it
 	// roamed or woke from sleep, replaces the session that its old path left (CORE-S3-1).
 	TransportNoiseAcceptLogin(s);
-	NodeOverlayReplace(ov, s->Session.RemoteStatic);
+	NodeOverlayReplace(ov, s->Session.RemoteStatic, s);
 	NodeOverlayAttach(ov, s->Session.RemoteStatic, s);
 
 	return true;
@@ -708,10 +730,13 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	// The pool of the handshakes of the streams that the thread accepts, as their responder (NodeHandshake.c; AUD1-DT-1, #449)
 	NodeOverlaySessionConfig(ov, &hc, NULL);
 	ov->Handshakes = NodeHandshakeStart(&hc, cfg->MaxHandshakes);
+	// The events for the controller, and the count of the replacements of the session of each peer (NodeFlap.c; AUD1-DT-11, #459)
+	ov->Events = ControlNewEvents();
+	ov->Flap = NodeFlapStart(n, cfg->FlapLimit, cfg->FlapWindow, ov->Events);
 	NodeShapeStart(n, cfg);
 	NodePolicyStart(n, cfg);
 	// The Listener, which listens where a state says (NodeListener.c; SDN-45, #238)
-	NodeListenerStart(n);
+	NodeListenerStart(n, cfg->Key);
 	n->Overlay = ov;
 
 	Zero(&cc, sizeof(cc));
@@ -734,6 +759,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.CapsProc = NodeWireGuardCaps;
 	cc.CapsParam = n;
 	cc.Devices = NodeWireGuardStart(n, cfg);
+	// The events of the node go on the control stream too (ControlEvent.c; AUD1-DT-11, #459)
+	cc.Events = ov->Events;
 	// The counters of the source groups, which go on the stream too (NodeSourceGroup.c; SDN-87, #386)
 	cc.SourceGroups = NodeSourceGroupStart(n);
 
@@ -789,6 +816,9 @@ void NodeOverlayStop(NODE *n) {
 	NodeListenerStop(n);
 	// The thread stopped the pool of the handshakes; a thread that did not start leaves it to stop here
 	NodeHandshakeFree(ov->Handshakes);
+	// The thread that counted the replacements and the control stream that sent the events are done
+	NodeFlapFree(ov->Flap);
+	ControlFreeEvents(ov->Events);
 	// No table, thread or control stream reads the source groups any more (NodeSourceGroup.c; SDN-87, #386)
 	NodeSourceGroupStop(n);
 
@@ -920,6 +950,16 @@ void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st) {
 	st->Dropped = (UINT64)ReadAcquire64(&ov->Dropped);
 	st->Dials = (UINT64)ReadAcquire64(&ov->Dials);
 	NodeHandshakeGetStatus(ov->Handshakes, st);
+	NodeFlapGetStatus(ov->Flap, st);
+}
+
+// The events of the node that wait for the controller, at most max of them into list: their number. A node with a control
+// stream hands them over as soon as it can, so it holds few; one without a control stream, as in the vpntest harness, holds
+// them (AUD1-DT-11, #459).
+UINT NodeOverlayGetEvents(NODE *n, CONTROL_EVENT *list, UINT max) {
+	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
+
+	return (ov != NULL ? ControlGetEvents(ov->Events, list, max) : 0);
 }
 
 // The endpoints that the Peer object of the peer name lists, at most max of them into out: their number, 0 for a peer that

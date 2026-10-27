@@ -92,13 +92,15 @@ func FuzzParseDocument(f *testing.F) {
 // itself), the pools of a Network (ParsePool), the public key of a Node (ParseKey) and its relay
 // address (ParseRelay), and, inside the package, a reservation of a Network (parseReserved), a LAN
 // subnet of a Node (parseLAN), a prefix of a 1:1 NAT rule (parseNATPrefix), and the DNS suffix of a
-// VRF, the name of a DnsRecord (checkDNSName) and its addresses (parseDNSAddress), and the address of an
-// endpoint of a Node (ParseEndpointAddress, SDN-93), whose host and port write back as the same address.
+// VRF, the name of a DnsRecord (checkDNSName) and its addresses (parseDNSAddress), the address of an
+// endpoint of a Node (ParseEndpointAddress, SDN-93), whose host and port write back as the same address,
+// and the decoy of a Listener in its one form (canonicalDecoy, checkDecoy; AUD1-DT-4 #452).
 func FuzzParseValues(f *testing.F) {
 	for _, s := range []string{"fd12:3456:789a::/48", "10.0.0.0/24", "2001:db8::/64", key1, "192.0.2.1:4000", "[2001:db8::1]:4000", "[::ffff:192.0.2.1]:1",
 		"10.0.0.1", "192.168.1.0/24", "0.0.0.0/0", "::ffff:10.0.0.0/120", "65000:100", "064512:007", "4200000000:65535",
 		"fileserver.default.ranz.internal", "a-b.c1", "fe80::1%eth0", "::",
-		"hub.example.com:443", "HUB.Example.com:0443", "hub.example.com", "hub:443:80", "[hub]:443", "300.1.1.1:443", "[::ffff:0.0.0.0]:1", "[fe80::1%eth0]:443"} {
+		"hub.example.com:443", "HUB.Example.com:0443", "hub.example.com", "hub:443:80", "[hub]:443", "300.1.1.1:443", "[::ffff:0.0.0.0]:1", "[fe80::1%eth0]:443",
+		"127.0.0.1:8080", "[::1]:8080", "[::ffff:127.0.0.2]:80", "[::1%lo]:80"} {
 		f.Add(s)
 	}
 
@@ -142,6 +144,16 @@ func FuzzParseValues(f *testing.F) {
 			again, p, err := ParseEndpointAddress(back)
 			if host == "" || port == 0 || len(back) > MaxAddress || err != nil || again != host || p != port {
 				t.Errorf("ParseEndpointAddress(%q) = %q, %d, which write back as %q and parse as %q, %d, %v", s, host, port, back, again, p, err)
+			}
+		}
+		// A decoy that the controller takes is, in the form that it sends, what the node takes too: an address of
+		// 127.0.0.0/8 or ::1 without a zone and a port other than 0, in its one form, that fits the field of the node
+		if d := canonicalDecoy(s); d != "" && checkDecoy(d) == nil {
+			ap, err := netip.ParseAddrPort(d)
+			a := ap.Addr()
+			loopback := (a.Is4() && a.As4()[0] == 127) || a == netip.IPv6Loopback()
+			if err != nil || ap.String() != d || ap.Port() == 0 || a.Zone() != "" || !loopback || len(d) > MaxListenerDecoy {
+				t.Errorf("the decoy %q is sent as %q", s, d)
 			}
 		}
 	})

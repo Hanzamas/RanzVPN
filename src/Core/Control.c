@@ -585,7 +585,11 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	ControlSourceGroupsResend(c->Config.SourceGroups);
 
 	while (ok && ControlHalted(c) == false) {
-		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s) && ControlWriteSourceGroups(c->Config.SourceGroups, s);
+		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
+		// The events of the node that wait for the controller (ControlEvent.c; AUD1-DT-11, #459)
+		ok = ok && ControlWriteEvents(c->Config.Events, s);
+		// The counters of the source groups when they are due (ControlSourceGroup.c; SDN-87, #386)
+		ok = ok && ControlWriteSourceGroups(c->Config.SourceGroups, s);
 		if (ok == false)
 			break;
 
