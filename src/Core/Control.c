@@ -400,6 +400,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyEndpoints(&st, c->Objects, c->NumObjects);
 	// The kinds of the links of the VRFs and the tunnel endpoints (ControlLink.c; SDN-76, #356)
 	ControlCopyLinks(&st, c->Objects, c->NumObjects);
+	// The relays that the node may use, its home relay first (ControlSignal.c; CORE-S5-5, #411)
+	ControlCopyRelays(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
@@ -415,9 +417,10 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 // The stream
 //
 
-// Take the frame that Frame holds: an Update is applied, handed to the owner and acknowledged; the
-// members of a cluster and the Signals of the peers come with the modules that use them. false
-// ends the stream: a Refuse, a frame that does not decode or does not apply, or a failed write.
+// Take the frame that Frame holds: an Update is applied, handed to the owner and acknowledged; a
+// Signal of a peer goes to the owner as it came; the members of a cluster come with the module that
+// uses them. false ends the stream: a Refuse, a frame that does not decode or does not apply, or a
+// failed write.
 static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
 	ranz_control_v1_ControlMessage *m = c->Message;
 	pb_istream_t is = pb_istream_from_buffer(c->Frame + CONTROL_FRAME_HEADER, c->FrameSize - CONTROL_FRAME_HEADER);
@@ -454,7 +457,11 @@ static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
 		return false;
 
 	case ranz_control_v1_ControlMessage_controllers_tag:
+		return true;
+
 	case ranz_control_v1_ControlMessage_signal_tag:
+		// The envelope stays sealed: only the peer layer of the node opens it (ControlSignal.c; CORE-S5-5, #411)
+		ControlTakeSignal(&c->Config, &m->body.signal);
 		return true;
 
 	default:
@@ -553,7 +560,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	ControlDevicesResend(c->Config.Devices);
 
 	while (ok && ControlHalted(c) == false) {
-		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
+		// ... and the Signals of the node for its peers, as they come (ControlSignal.c; CORE-S5-5, #411)
+		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s) && ControlWriteSignals(c->Config.Signals, s);
 		if (ok == false)
 			break;
 

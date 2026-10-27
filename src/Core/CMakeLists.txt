@@ -184,6 +184,8 @@ add_library(corecontrol STATIC
   ControlEndpoint.c
   # The kinds of the links of the VRFs and the tunnel endpoints in a desired state (SDN-76, #356)
   ControlLink.c
+  # The Relays of a desired state and the Signals of the peers on the control stream (CORE-S5-5, #411)
+  ControlSignal.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")
