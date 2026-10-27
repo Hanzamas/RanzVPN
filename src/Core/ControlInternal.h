@@ -1,5 +1,5 @@
 // ControlInternal.h
-// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c, ControlListener.c, ControlDevice.c, ControlEndpoint.c, ControlLink.c, ControlPins.c): only its own
+// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c, ControlListener.c, ControlDevice.c, ControlEndpoint.c, ControlEvent.c, ControlLink.c, ControlPins.c): only its own
 // files include this
 // header, after the messages that nanopb generates from the schema
 

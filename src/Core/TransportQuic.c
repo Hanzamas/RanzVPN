@@ -32,6 +32,7 @@
 #define QUIC_BACKLOG     16     // Accepted streams a listener holds before it drops the oldest
 #define QUIC_DIAL_POLL   50     // How often a dial checks its cancel while it waits to connect (ms)
 #define QUIC_PEER_STREAM 4      // Bidirectional streams the peer may open on a connection
+#define QUIC_REMOTE_SIZE 64     // The address of the other end of a connection with its NUL: [IPv6]:port is 47 bytes at most
 
 // The msquic API, opened once per process through LoadLibrary and ref-counted over the transports
 static SRWLOCK g_quic_lock = SRWLOCK_INIT;
@@ -79,6 +80,7 @@ typedef struct QUIC_CONN {
 	bool BindingBad;                     // A client that pinned another certificate: the binding is wrong
 	UCHAR Exporter[NOISE_EXPORTER_SIZE]; // The TLS exporter of the connection, the binding of its streams
 	bool Exported;                       // ... taken when the handshake completed
+	char Remote[QUIC_REMOTE_SIZE];       // The address of the other end, "host:port": taken when the handshake completed, "" until then (AUD1-DT-11, #459)
 } QUIC_CONN;
 
 // A stream: the TRANSPORT stream object, a synchronous byte stream over an async msquic stream
@@ -642,6 +644,18 @@ static UINT QuicStreamBinding(void *stream, UCHAR *binding, UINT max, UINT *size
 	return type;
 }
 
+// The address of the other end of the connection of a stream, which the connection took when it came up (AUD1-DT-11, #459)
+static bool QuicStreamRemote(void *stream, char *address, UINT size) {
+	const QUIC_CONN *c = ((const QUIC_STREAM *)stream)->Conn;
+	size_t len = strnlen(c->Remote, sizeof(c->Remote));
+
+	if (len == 0 || len >= size)
+		return false;
+
+	CopyMemory(address, c->Remote, len + 1);
+	return true;
+}
+
 static bool QuicStreamRekey(void *stream) {
 	// QUIC holds the keys; the outer key update is QUIC_PARAM_CONN_FORCE_KEY_UPDATE of the private
 	// header, which this transport does not set yet. The session asks for it on its schedule, and
@@ -667,6 +681,17 @@ static void QuicConnRelease(QUIC_CONN *c) {
 	QuicRelease(c, sizeof(QUIC_CONN));
 }
 
+// Take the address of the other end of the connection, as msquic has it once the connection is up, into Remote; it stays
+// empty when msquic tells none (AUD1-DT-11, #459)
+static void QuicConnRemote(QUIC_CONN *c, HQUIC connection) {
+	QUIC_ADDR remote;
+	UINT32 size = sizeof(remote);
+
+	ZeroMemory(&remote, sizeof(remote));
+	if (QUIC_SUCCEEDED(g_quic->GetParam(connection, QUIC_PARAM_CONN_REMOTE_ADDRESS, &size, &remote)))
+		TransportAddressText((const struct sockaddr *)&remote, c->Remote, sizeof(c->Remote));
+}
+
 // The connection callback: it records the certificate's binding and the exporter of the connection,
 // wakes a waiting dial on connect or failure, and closes the connection on shutdown
 static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnCallback(HQUIC connection, void *context, QUIC_CONNECTION_EVENT *event) {
@@ -677,6 +702,7 @@ static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnC
 		// The exporter now, while msquic still holds the TLS state, which a server lets go of once the
 		// client acknowledged its handshake; the streams of the connection take it as their binding
 		c->Exported = TransportQuicExporter(g_quic, connection, c->Net->Server, c->Exporter);
+		QuicConnRemote(c, connection);
 		InterlockedExchange(&c->Connected, 1);
 		if (c->Ready != NULL)
 			SetEvent(c->Ready);
@@ -974,6 +1000,7 @@ static void QuicFill(TRANSPORT *t, QUIC_NET *net) {
 	t->Close = QuicStreamClose;
 	t->Binding = QuicStreamBinding;
 	t->Rekey = QuicStreamRekey;
+	t->Remote = QuicStreamRemote;
 }
 
 void TransportQuicDefaultConfig(TRANSPORT_QUIC_CONFIG *cfg, const char *thumbprint, bool machine_store) {

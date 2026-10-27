@@ -939,6 +939,15 @@ static void TlsTestListener(TLSTEST_CTX *ctx, TRANSPORT *server, TRANSPORT *clie
 		(UINT)(silent != INVALID_SOCKET), (UINT)(s != NULL), (UINT)(a != NULL));
 	TlsTestCheck(ctx, sent && TlsTestDropped(http), "  a peer that sends no TLS (an HTTP request) is dropped", "sent %u", (UINT)sent);
 
+	// The address of the other end of a stream (AUD1-DT-11, #459): the accepted end tells the address that its client came from, which
+	// is on the loopback interface and has a port of its own, and the client's end the address that it dialled
+	char remote[TRANSPORT_ADDRESS_SIZE];
+	bool tells = (a != NULL && TransportRemote(a, remote, sizeof(remote)));
+	TlsTestCheck(ctx, tells && StartWith(remote, "127.0.0.1:") && StrCmp(remote, address) != 0,
+		"  the accepted end of a connection tells the address of its client, on the loopback interface with a port of its own", "%s: \"%s\"", tells ? "gave" : "gave none", tells ? remote : "");
+	tells = (s != NULL && TransportRemote(s, remote, sizeof(remote)));
+	TlsTestCheck(ctx, tells && StrCmp(remote, address) == 0, "  the end that dialled tells the address that it dialled", "%s: \"%s\"", tells ? "gave" : "gave none", tells ? remote : "");
+
 	// Many records' worth of bytes in one write, and back
 	for (UINT i = 0; i < TLSTEST_BULK; i++)
 	{

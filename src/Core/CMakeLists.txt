@@ -184,6 +184,8 @@ add_library(corecontrol STATIC
   ControlEndpoint.c
   # The kinds of the links of the VRFs and the tunnel endpoints in a desired state (SDN-76, #356)
   ControlLink.c
+  # The events of the node that the client reports (AUD1-DT-11, #459)
+  ControlEvent.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

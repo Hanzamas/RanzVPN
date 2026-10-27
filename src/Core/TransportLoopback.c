@@ -30,6 +30,9 @@ typedef struct LOOPBACK_LINK {
 	volatile LONG NumEnds;              // The ends not closed yet: the last one frees the link
 	UINT BindingSize;                   // A bound transport: the size of the binding of the stream ...
 	UCHAR Binding[NOISE_EXPORTER_SIZE]; // ... and the random binding
+	// What the two ends tell of the other (TransportRemote; AUD1-DT-11, #459): the dialler's end the address that it
+	// dialled, the listener's end the source that the dial came from, "" for none
+	char Remote[2][TRANSPORT_LOOPBACK_REMOTE];
 } LOOPBACK_LINK;
 
 // One end of a stream: the stream object of the transport
@@ -53,11 +56,12 @@ typedef struct LOOPBACK_LISTENER {
 
 // The state of a loopback transport, its Param
 struct LOOPBACK_NET {
-	SRWLOCK Lock;                 // The listeners and their queues
-	CONDITION_VARIABLE Changed;   // A stream was dialled, an Accept returned, or a listener closed
-	LOOPBACK_LISTENER *Listeners; // The listeners
-	UINT DialDelay;               // ms that a dial waits first
-	bool Bound;                   // Each stream has a random channel binding
+	SRWLOCK Lock;                           // The listeners and their queues
+	CONDITION_VARIABLE Changed;             // A stream was dialled, an Accept returned, or a listener closed
+	LOOPBACK_LISTENER *Listeners;           // The listeners
+	UINT DialDelay;                         // ms that a dial waits first
+	bool Bound;                             // Each stream has a random channel binding
+	char Source[TRANSPORT_LOOPBACK_REMOTE]; // The source of the streams dialled from now on (TransportLoopbackSetSource)
 };
 
 static void *TransportLoopbackAlloc(UINT size) {
@@ -231,6 +235,20 @@ static void TransportLoopbackClose(void *stream) {
 	TransportLoopbackRelease(e, sizeof(LOOPBACK_END));
 }
 
+// The address that the other end of a stream tells (AUD1-DT-11, #459): the address that the dialler dialled, the source that
+// the dial came from; false when there is none
+static bool TransportLoopbackRemote(void *stream, char *address, UINT size) {
+	LOOPBACK_END *e = (LOOPBACK_END *)stream;
+	const char *remote = e->Link->Remote[e->Side];
+	size_t len = strnlen(remote, TRANSPORT_LOOPBACK_REMOTE);
+
+	if (len == 0 || len >= size)
+		return false;
+
+	CopyMemory(address, remote, len + 1);
+	return true;
+}
+
 static UINT TransportLoopbackBinding(void *stream, UCHAR *binding, UINT max, UINT *size) {
 	LOOPBACK_LINK *k = ((LOOPBACK_END *)stream)->Link;
 
@@ -257,6 +275,14 @@ static LOOPBACK_LISTENER *TransportLoopbackFind(LOOPBACK_NET *net, const char *a
 	return NULL;
 }
 
+// Copy text into a remote field of TRANSPORT_LOOPBACK_REMOTE bytes, cut where it does not fit
+static void TransportLoopbackSetText(char *dst, const char *text) {
+	size_t len = strnlen(text, TRANSPORT_LOOPBACK_REMOTE - 1);
+
+	CopyMemory(dst, text, len);
+	dst[len] = 0;
+}
+
 static bool TransportLoopbackDial(void *param, const char *address, HANDLE cancel, void **stream) {
 	LOOPBACK_NET *net = (LOOPBACK_NET *)param;
 	LOOPBACK_END *ends[2];
@@ -278,6 +304,9 @@ static bool TransportLoopbackDial(void *param, const char *address, HANDLE cance
 	LOOPBACK_LISTENER *l = TransportLoopbackFind(net, address);
 	bool queued = (l != NULL && l->NumQueued < TRANSPORT_LOOPBACK_BACKLOG);
 	if (queued) {
+		// What each end tells of the other, before the listener's end can be accepted (AUD1-DT-11, #459)
+		TransportLoopbackSetText(ends[0]->Link->Remote[0], address);
+		TransportLoopbackSetText(ends[0]->Link->Remote[1], net->Source);
 		l->Queue[l->NumQueued++] = ends[1];
 		WakeAllConditionVariable(&net->Changed);
 	}
@@ -421,8 +450,20 @@ TRANSPORT *TransportLoopbackNew(const char *name, UINT dial_delay, bool bound) {
 	t->Close = TransportLoopbackClose;
 	t->Binding = TransportLoopbackBinding;
 	t->Rekey = NULL;
+	t->Remote = TransportLoopbackRemote;
 
 	return t;
+}
+
+void TransportLoopbackSetSource(TRANSPORT *t, const char *source) {
+	if (t == NULL || t->Param == NULL)
+		return;
+
+	LOOPBACK_NET *net = (LOOPBACK_NET *)t->Param;
+
+	AcquireSRWLockExclusive(&net->Lock);
+	TransportLoopbackSetText(net->Source, (source != NULL ? source : ""));
+	ReleaseSRWLockExclusive(&net->Lock);
 }
 
 void TransportLoopbackFree(TRANSPORT *t) {

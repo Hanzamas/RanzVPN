@@ -66,6 +66,11 @@ typedef bool(TRANSPORT_REKEY_PROC)(void *stream);
 // (Core/FrontDoor.h; SDN-29, #205): it continues as one the listener accepted itself. It may be
 // NULL: a transport that is not over TCP takes none.
 typedef bool(TRANSPORT_TAKE_PROC)(void *listener, UINT_PTR socket);
+// Remote gives the address of the other end of a stream into address (size bytes at most, with its NUL) as the transport
+// knows it: "host:port", an IPv6 host in brackets. It is the source of a stream that a listener accepted, and the address
+// that a stream that was dialled connected to (AUD1-DT-11, #459). False when the transport does not know it, or it does
+// not fit. It may be NULL: a transport that tells no address.
+typedef bool(TRANSPORT_REMOTE_PROC)(void *stream, char *address, UINT size);
 
 // One transport: its name in a fallback list, its state and its procedures
 typedef struct TRANSPORT {
@@ -82,6 +87,7 @@ typedef struct TRANSPORT {
 	TRANSPORT_REKEY_PROC *Rekey;                  // Update the outer keys of a stream, or NULL
 	UINT Queue;                                   // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it, NONE for none
 	TRANSPORT_TAKE_PROC *Take;                    // Take a connection that the front door routed to a listener, or NULL
+	TRANSPORT_REMOTE_PROC *Remote;                // The address of the other end of a stream, or NULL
 } TRANSPORT;
 
 // One entry of a fallback list: a transport and the address it dials
@@ -187,6 +193,9 @@ void TransportClose(TRANSPORT_STREAM *s);
 UINT TransportBinding(TRANSPORT_STREAM *s, UCHAR *binding, UINT max, UINT *size);
 bool TransportRekey(TRANSPORT_STREAM *s);
 TRANSPORT *TransportOf(TRANSPORT_STREAM *s);
+// The address of the other end of a stream, as the Remote procedure of its transport gives it (see TRANSPORT_REMOTE_PROC):
+// the source of a stream that a listener accepted. False, with address empty, when the transport tells none.
+bool TransportRemote(TRANSPORT_STREAM *s, char *address, UINT size);
 
 // The front door's handoff to a listener of this process (SDN-29, #205): the listener takes the TCP
 // connection socket (a SOCKET, blocking) and closes it in time; false, with the socket still the
@@ -274,9 +283,14 @@ UINT64 TransportQueueNow();
 // real transport, so that the harness races transports of different speeds. Its streams have no
 // channel binding, unless bound: each stream then has a random binding that both of its ends
 // give, which stands in for the exporter of a TLS or QUIC session. Free frees the transport once
-// its listeners are closed.
+// its listeners are closed. SetSource sets the address that the streams dialled from now on come from, as
+// the listener's end of each tells it ("198.51.100.7:40001", at most TRANSPORT_LOOPBACK_REMOTE - 1 bytes,
+// "" for none): the harness stands in for hosts of several addresses, as the address of a dialled TCP
+// connection does (AUD1-DT-11, #459). The dialler's end tells the address that it dialled.
+#define TRANSPORT_LOOPBACK_REMOTE 64 // The longest address that a loopback stream tells, with its NUL
 TRANSPORT *TransportLoopbackNew(const char *name, UINT dial_delay, bool bound);
 void TransportLoopbackFree(TRANSPORT *t);
+void TransportLoopbackSetSource(TRANSPORT *t, const char *source);
 
 // The outbound path of a client transport (TransportPath.c, SDN-61 #254): how its connection reaches the server. A
 // dial of TLS-443 goes direct, or through an outbound proxy: the system's, which WinHTTP finds for the server's URL
