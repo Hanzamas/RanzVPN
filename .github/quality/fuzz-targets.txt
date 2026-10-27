@@ -62,6 +62,10 @@ src/Core  TransportTlsHelloName       fuzz_transport
 src/Core  VxlanInput  fuzz_vxlan
 # Geneve in the VXLAN module (SDN-71 #347): the Geneve header of the datagrams of VTEPs of Geneve, with its options
 src/Core  VxlanParseGeneve  fuzz_geneve
+# The source group of a datagram (SDN-87 #386), which VxlanInput reads from the header of each one: the group policy
+# extension of VXLAN, and the option of the source group among the options of a Geneve header
+src/Core  VxlanParseGroup        fuzz_vxlan   via VxlanInput
+src/Core  VxlanParseGroupOption  fuzz_geneve  via VxlanInput
 
 # The switch module (CORE-S4-1 #74): the frames that the members of a Network send
 src/Core  SwitchInput  fuzz_switch
@@ -115,6 +119,9 @@ src/Cedar  NodeDnsAnswer  fuzz_nodedns
 src/Cedar  NodeMimicParseMessage  fuzz_nodemimic
 src/Cedar  NodeMimicParseBind     fuzz_nodemimic
 src/Cedar  NodeMimicParseAnswer   fuzz_nodemimic
+# The source groups of the overlay (SDN-87 #386): the header of a record of a Noise session, which carries the source
+# group of its packet from frame version 1 on
+src/Cedar  NodeFrameParse  fuzz_frame
 # The Capabilities of the Node (ONE-3 #312) come from the host, not from a peer
 src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: it asks Windows for the architecture of the host, whether the services SeLow and xdp are registered and whether three files of System32 exist
 
