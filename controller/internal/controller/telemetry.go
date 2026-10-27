@@ -173,6 +173,8 @@ func clip(s string, limit int) string {
 
 // nodeUp is called when the node name opened a control stream: it is no longer going down.
 func (c *Controller) nodeUp(name string) {
+	// A gateway that was down is up again for the health data of gateway HA (gateways.go; SDN-19)
+	c.setGatewayDown(name, false)
 	t := c.tel
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -215,6 +217,8 @@ func (c *Controller) nodeDown(name string) {
 	if skip {
 		return
 	}
+	// A gateway that is down for the health data of gateway HA (gateways.go; SDN-19)
+	c.setGatewayDown(name, true)
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
 	msg := fmt.Sprintf("node %s has had no control stream for %s", name, t.downAfter)
