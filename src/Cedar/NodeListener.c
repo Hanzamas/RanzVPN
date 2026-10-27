@@ -179,6 +179,9 @@ static bool NodeListenerUp(NODE_LISTENER *l, const char *thumb) {
 	owners[0].Kind = FRONT_DOOR_TLS;
 	StrCpy(owners[0].Protocols, sizeof(owners[0].Protocols), FRONT_DOOR_CONTROLLER_PROTOCOLS);
 	UniStrCpy(owners[0].Pipe, sizeof(owners[0].Pipe), FRONT_DOOR_CONTROLLER_PIPE);
+	// Only the Controller's service account may serve that pipe (DT-7, #455); without its SID no connection is handed over
+	if (FrontDoorAccountSid(FRONT_DOOR_CONTROLLER_ACCOUNT, owners[0].Account, sizeof(owners[0].Account)) == false)
+		NodeLog(n, "Listener %s: Windows does not know the account of the Controller service, so the front door hands it no connection", c->Name);
 	StrCpy(owners[1].Name, sizeof(owners[1].Name), "node");
 	owners[1].Kind = FRONT_DOOR_TLS;
 	owners[1].Take = NodeListenerTake;

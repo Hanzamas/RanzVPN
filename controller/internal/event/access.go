@@ -9,6 +9,9 @@ const (
 	AdminAccessRefused = "admin-access-refused"
 	// AdminSourcesChanged: an admin set the admin source allowlist or removed it.
 	AdminSourcesChanged = "admin-sources-changed"
+	// AdminDestinationsChanged: an admin set the admin destination lists (AUD1-DT-9, #457): the
+	// hosts that targets may name, the sensor prefixes and the UNC servers.
+	AdminDestinationsChanged = "admin-destinations-changed"
 	// EnrolmentRefused: a node opened its control stream from an address outside the source
 	// prefixes of a Network that it joins, and was refused.
 	EnrolmentRefused = "enrolment-refused"

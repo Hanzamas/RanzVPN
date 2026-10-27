@@ -76,6 +76,8 @@ func (c *Controller) startTelemetry(ctx context.Context) error {
 	t := c.tel
 	t.feed = telemetry.NewFeed(c.store, c.log, "ranz-controller/"+c.version, t.poll)
 	t.exports = telemetry.NewExporters(c.samples, t.interval, c.log)
+	t.feed.SetGuard(c.reach)
+	t.exports.SetGuard(c.reach)
 	t.metrics = telemetry.Handler(c.samples)
 	t.exports.Apply(ctx, plain(targets))
 	t.feed.Start()
@@ -277,6 +279,9 @@ func (c *Controller) Targets(ctx context.Context) ([]export.Target, error) {
 // its exporter. An error that wraps export.ErrInvalid is a target that is not valid.
 func (c *Controller) PutTarget(ctx context.Context, t export.Target) error {
 	if err := t.Validate(); err != nil {
+		return err
+	}
+	if err := c.reach.Check(ctx, t.URL); err != nil {
 		return err
 	}
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)

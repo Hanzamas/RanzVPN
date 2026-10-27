@@ -19,16 +19,26 @@ import (
 //	GET    /api/v1/audit                  AuditList: the records that match the query, oldest first      viewer
 //	                                      kind, actor, since and until (RFC 3339), after (a record id)
 //	                                      and limit (1 to 1000, 100 when left out)
-//	GET    /api/v1/audit/targets          AuditTargetList, without the secrets and the paths of the URLs  viewer
+//	GET    /api/v1/audit/targets          AuditTargetList, without the secrets and the paths of the URLs  admin
 //	PUT    /api/v1/audit/targets/{name}   an export.Target of the kind webhook or syslog, which
-//	                                      replaces the one of that name; an export.Info                   operator
-//	DELETE /api/v1/audit/targets/{name}   the export.Info of the target that was deleted                  operator
+//	                                      replaces the one of that name; an export.Info                   admin
+//	DELETE /api/v1/audit/targets/{name}   the export.Info of the target that was deleted                  admin
 //	GET    /api/v1/audit/retention        the audit.Retention in force                                    viewer
-//	PUT    /api/v1/audit/retention        an audit.Retention, which becomes the one in force              operator
+//	PUT    /api/v1/audit/retention        an audit.Retention, which becomes the one in force              admin
 //
 // A viewer reads the audit log because the API gives every read the role viewer (Needs). The audit
 // targets are where the audit log is sent: a webhook receives each record as a JSON POST, a syslog
-// receiver as an RFC 5424 message. A request that is not valid is answered with 400 Bad Request.
+// receiver as an RFC 5424 message. An operator must not send the audit log where he pleases, nor
+// shorten it, so the audit targets and the retention need admin (AUD1-DT-9, #457). A target must not
+// name an address that the admin destination lists keep from it (export.Guard). A request that is
+// not valid is answered with 400 Bad Request.
+
+// auditTargetsPath is the root of the audit targets and auditRetentionPath the retention of the audit
+// log, which only an admin changes (Needs).
+const (
+	auditTargetsPath   = "/api/v1/audit/targets"
+	auditRetentionPath = "/api/v1/audit/retention"
+)
 
 // AuditList is the answer of GET /api/v1/audit.
 type AuditList struct {
@@ -62,7 +72,7 @@ func init() {
 			}
 			reply(w, http.StatusOK, list)
 		}},
-		route{http.MethodGet, "/api/v1/audit/targets", rbac.Viewer, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
+		route{http.MethodGet, auditTargetsPath, rbac.Admin, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
 			ts, err := d.Controller.AuditTargets(r.Context())
 			if err != nil {
 				replyError(w, err)
@@ -74,7 +84,7 @@ func init() {
 			}
 			reply(w, http.StatusOK, AuditTargetList{Targets: infos})
 		}},
-		route{http.MethodPut, "/api/v1/audit/targets/{name}", rbac.Operator, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
+		route{http.MethodPut, auditTargetsPath + "/{name}", rbac.Admin, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
 			var t export.Target
 			dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
 			dec.DisallowUnknownFields()
@@ -93,7 +103,7 @@ func init() {
 			}
 			reply(w, http.StatusOK, t.Info())
 		}},
-		route{http.MethodDelete, "/api/v1/audit/targets/{name}", rbac.Operator, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
+		route{http.MethodDelete, auditTargetsPath + "/{name}", rbac.Admin, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
 			t, err := d.Controller.DeleteAuditTarget(r.Context(), r.PathValue("name"))
 			if err != nil {
 				replyError(w, err)
@@ -109,7 +119,7 @@ func init() {
 			}
 			reply(w, http.StatusOK, ret)
 		}},
-		route{http.MethodPut, "/api/v1/audit/retention", rbac.Operator, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
+		route{http.MethodPut, auditRetentionPath, rbac.Admin, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
 			var ret audit.Retention
 			dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
 			dec.DisallowUnknownFields()
