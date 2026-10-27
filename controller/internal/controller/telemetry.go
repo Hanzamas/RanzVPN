@@ -244,6 +244,7 @@ func (c *Controller) samples() []telemetry.Sample {
 		}
 		out = append(out, telemetry.Sample{Metric: "node_connected", Labels: []string{n.Name}, Value: connected})
 	}
+	out = append(out, c.waitingSamples()...)
 	return append(out, c.tel.feed.Samples()...)
 }
 

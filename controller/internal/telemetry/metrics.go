@@ -25,8 +25,8 @@ type Metric struct {
 }
 
 // Metrics is every metric that the controller exports. The counters of the nodes (ADR-0030
-// decision 1) come from the summaries that the nodes push; node_connected, events and
-// webhook_deliveries are the controller's own.
+// decision 1) come from the summaries that the nodes push; node_connected, events,
+// webhook_deliveries and control_refused are the controller's own.
 var Metrics = []Metric{
 	{Name: "peer_packets", Help: "Packets of a node with a peer: tx from the node's host to the peer, rx from the peer to the node's host.", Unit: "{packet}", Kind: Counter, Labels: []string{"node", "peer", "direction"}},
 	{Name: "peer_bytes", Help: "Bytes of the packets of a node with a peer: tx from the node's host to the peer, rx from the peer to the node's host.", Unit: "By", Kind: Counter, Labels: []string{"node", "peer", "direction"}},
@@ -38,6 +38,7 @@ var Metrics = []Metric{
 	{Name: "node_connected", Help: "Whether a node has a control stream to the controller: 1 when it has, 0 when it has not.", Unit: "1", Kind: Gauge, Labels: []string{"node"}},
 	{Name: "events", Help: "Events that the controller raised, by type.", Unit: "{event}", Kind: Counter, Labels: []string{"type"}},
 	{Name: "webhook_deliveries", Help: "Deliveries of events to webhooks, by result: ok, failed (tried again later) or dropped (given up).", Unit: "{delivery}", Kind: Counter, Labels: []string{"webhook", "result"}},
+	{Name: "control_refused", Help: "Control streams that the controller closed before their Hello because too many wait for one, by reason: all (too many wait in all) or source (too many wait for the source address).", Unit: "{stream}", Kind: Counter, Labels: []string{"reason"}},
 }
 
 // Sample is one series of a metric: its label values, in the order of the Labels of the metric
