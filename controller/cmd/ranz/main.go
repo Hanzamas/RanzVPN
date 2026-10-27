@@ -32,6 +32,8 @@
 //	                          run the system check (the successor of vpncmd Check); with -bundle, also
 //	                          write the diagnostics bundle of this host, a ZIP archive with the logs, the
 //	                          configuration and the status of its Node and Controller and no secret (SDN-54, #247)
+//	ranz explain [flags] A B  walk the compiled model of the controller for a packet from A to B and name each VRF,
+//	                          route, 1:1 NAT rule, link and rule of the policy that it meets (explain.go, SDN-15 #191)
 //
 // Usage of the CLI:
 //
@@ -148,6 +150,7 @@ const usage = `usage:
   ranz test throughput -listen ADDRESS
   ranz test throughput [flags] HOST[:PORT]
   ranz doctor [-bundle [-o FILE]]
+  ranz explain [flags] [-vrf VRF] [-protocol tcp|udp|icmp|N] [-sport PORT] [-port PORT] [-o text|json] A B
   ranz [flags] apply -f FILE [-confirm DURATION]
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]
