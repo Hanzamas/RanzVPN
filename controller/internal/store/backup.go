@@ -96,7 +96,7 @@ func (s *Store) rqlite(ctx context.Context, method, path, contentType string, bo
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.httpClient().Do(req)
 	if err != nil {
 		return nil, err
 	}

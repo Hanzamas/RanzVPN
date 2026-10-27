@@ -61,6 +61,7 @@ type Exporter struct {
 	store  Store
 	log    *slog.Logger
 	client *http.Client
+	guard  *export.Guard // nil: connect to any address
 	agent  string
 	host   string
 	poll   time.Duration
@@ -98,6 +99,13 @@ func NewExporter(s Store, log *slog.Logger, agent string, poll time.Duration) *E
 		wake:     make(chan struct{}, 1),
 		attempts: map[string]attempt{},
 	}
+}
+
+// SetGuard makes the Exporter connect to its targets only where g allows (AUD1-DT-9 #457): each
+// webhook call and each syslog connection is checked when it is made. Set it before Start.
+func (x *Exporter) SetGuard(g *export.Guard) {
+	x.guard = g
+	x.client = g.HTTPClient(sendTimeout)
 }
 
 // Start runs the Exporter on a goroutine of its own until Stop.
@@ -307,9 +315,37 @@ func (x *Exporter) dial(ctx context.Context, u *url.URL) (net.Conn, error) {
 	d := &net.Dialer{Timeout: dialTimeout}
 	switch u.Scheme {
 	case "udp", "tcp":
+		if x.guard != nil {
+			return x.guard.DialContext(ctx, u.Scheme, u.Host)
+		}
 		return d.DialContext(ctx, u.Scheme, u.Host)
 	case "tls":
+		if x.guard != nil {
+			return x.guardedTLS(ctx, u)
+		}
 		return (&tls.Dialer{NetDialer: d, Config: x.TLS}).DialContext(ctx, "tcp", u.Host)
 	}
 	return nil, fmt.Errorf("the scheme %q of a syslog target is none of udp, tcp and tls", u.Scheme)
+}
+
+// guardedTLS connects to the tls:// receiver u through the Guard and starts TLS on the connection,
+// as tls.Dialer does: the name of the host is the one the certificate must carry.
+func (x *Exporter) guardedTLS(ctx context.Context, u *url.URL) (net.Conn, error) {
+	conn, err := x.guard.DialContext(ctx, "tcp", u.Host)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &tls.Config{}
+	if x.TLS != nil {
+		cfg = x.TLS.Clone()
+	}
+	if cfg.ServerName == "" {
+		cfg.ServerName = u.Hostname()
+	}
+	tc := tls.Client(conn, cfg)
+	if err := tc.HandshakeContext(ctx); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return tc, nil
 }

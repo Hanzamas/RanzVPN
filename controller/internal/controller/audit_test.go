@@ -53,7 +53,18 @@ func newAuditHarness(t *testing.T) *harness {
 	}
 	h.start()
 	t.Cleanup(h.stop)
+	h.allowLoopback()
 	return h
+}
+
+// allowLoopback lists the loopback addresses as target hosts, since the receivers of the tests listen
+// there (AUD1-DT-9, #457): the targets refuse them otherwise. It writes the store, as an admin does
+// through the API, but raises no event, which the tests that count events would see.
+func (h *harness) allowLoopback() {
+	h.t.Helper()
+	if err := h.st.SetAdminDestinations(context.Background(), intent.Destinations{Targets: []string{"127.0.0.0/8", "::1/128"}}); err != nil {
+		h.t.Fatal(err)
+	}
 }
 
 // auditedAPI returns a client of the API of the controller of h as ranz-controller serves it, with
@@ -615,24 +626,39 @@ func TestAuditListingPagesAndFilters(t *testing.T) {
 	}
 }
 
-// The audit targets and the retention are read by every role and changed by an operator, with the
-// roles of the API; a target that is not valid is refused, and the API shows no secret.
+// The audit log and the retention are read by every role; the audit targets are read, and the targets
+// and the retention changed, by an admin only (AUD1-DT-9, #457); a target that is not valid is
+// refused, and the API shows no secret.
 func TestAuditTargetsAndRetentionAreManagedThroughTheAPI(t *testing.T) {
 	h := newAuditHarness(t)
 	ctx := context.Background()
 	viewer := h.auditedAPI(h.token("viewer-1", rbac.Viewer))
 	operator := h.auditedAPI(h.token("operator-1", rbac.Operator))
+	admin := h.auditedAPI(h.token("admin-2", rbac.Admin))
 	target := export.Target{Name: "siem", Kind: export.KindWebhook, URL: "https://siem.example.com/audit/T0/XXXX", Secret: "s3cret-hmac-key", Types: []string{audit.AuthFailed}}
 
-	if _, err := viewer.PutAuditTarget(ctx, target); httpStatus(err) != http.StatusForbidden {
-		t.Errorf("a viewer made an audit target: %v", err)
+	// The calls on audit targets and the change of the retention need admin (AUD1-DT-9, #457): an
+	// operator must not send the audit log where he pleases, nor shorten it
+	for _, c := range []*api.Client{viewer, operator} {
+		if _, err := c.PutAuditTarget(ctx, target); httpStatus(err) != http.StatusForbidden {
+			t.Errorf("a role below admin made an audit target: %v", err)
+		}
+		if _, err := c.AuditTargets(ctx); httpStatus(err) != http.StatusForbidden {
+			t.Errorf("a role below admin listed the audit targets: %v", err)
+		}
+		if _, err := c.DeleteAuditTarget(ctx, "siem"); httpStatus(err) != http.StatusForbidden {
+			t.Errorf("a role below admin deleted an audit target: %v", err)
+		}
+		if _, err := c.SetAuditRetention(ctx, audit.Retention{Days: 30, MaxRecords: 5000}); httpStatus(err) != http.StatusForbidden {
+			t.Errorf("a role below admin set the retention: %v", err)
+		}
 	}
-	info, err := operator.PutAuditTarget(ctx, target)
+	info, err := admin.PutAuditTarget(ctx, target)
 	if err != nil || !info.HasSecret || info.URL != "https://siem.example.com/..." || len(info.Types) != 1 {
-		t.Fatalf("an operator made the audit target and got %+v, %v, want it without its secret and the path of its URL", info, err)
+		t.Fatalf("an admin made the audit target and got %+v, %v, want it without its secret and the path of its URL", info, err)
 	}
-	if list, err := viewer.AuditTargets(ctx); err != nil || len(list) != 1 || list[0].Name != "siem" || strings.Contains(asJSON(t, list), "s3cret") {
-		t.Errorf("a viewer lists the audit targets %+v, %v", list, err)
+	if list, err := admin.AuditTargets(ctx); err != nil || len(list) != 1 || list[0].Name != "siem" || strings.Contains(asJSON(t, list), "s3cret") {
+		t.Errorf("an admin lists the audit targets %+v, %v", list, err)
 	}
 	if others, err := operator.Targets(ctx); err != nil || len(others) != 0 {
 		t.Errorf("the targets of events hold %+v, %v, want none of the audit targets", others, err)
@@ -643,42 +669,37 @@ func TestAuditTargetsAndRetentionAreManagedThroughTheAPI(t *testing.T) {
 		"a syslog secret":      {Name: "logs", Kind: export.KindSyslog, URL: "udp://192.0.2.10:514", Secret: "x"},
 		"a kind of record":     {Name: "logs", Kind: export.KindSyslog, URL: "udp://192.0.2.10:514", Types: []string{"node-down"}},
 	} {
-		if _, err := operator.PutAuditTarget(ctx, bad); httpStatus(err) != http.StatusBadRequest {
+		if _, err := admin.PutAuditTarget(ctx, bad); httpStatus(err) != http.StatusBadRequest {
 			t.Errorf("%s: the audit target was answered with %v, want 400", name, err)
 		}
 	}
-	if _, err := operator.DeleteAuditTarget(ctx, "gone"); httpStatus(err) != http.StatusNotFound {
+	if _, err := admin.DeleteAuditTarget(ctx, "gone"); httpStatus(err) != http.StatusNotFound {
 		t.Errorf("deleting an audit target that is not there gave %v, want 404", err)
 	}
-	if _, err := viewer.DeleteAuditTarget(ctx, "siem"); httpStatus(err) != http.StatusForbidden {
-		t.Errorf("a viewer deleted an audit target: %v", err)
-	}
-	if gone, err := operator.DeleteAuditTarget(ctx, "siem"); err != nil || gone.Name != "siem" {
+	if gone, err := admin.DeleteAuditTarget(ctx, "siem"); err != nil || gone.Name != "siem" {
 		t.Errorf("deleting the audit target gave %+v, %v", gone, err)
 	}
-	if list, err := viewer.AuditTargets(ctx); err != nil || len(list) != 0 {
-		t.Errorf("after the delete a viewer lists %+v, %v", list, err)
+	if list, err := admin.AuditTargets(ctx); err != nil || len(list) != 0 {
+		t.Errorf("after the delete an admin lists %+v, %v", list, err)
 	}
 
-	if _, err := viewer.SetAuditRetention(ctx, audit.Retention{Days: 30, MaxRecords: 5000}); httpStatus(err) != http.StatusForbidden {
-		t.Errorf("a viewer set the retention: %v", err)
-	}
-	if _, err := operator.SetAuditRetention(ctx, audit.Retention{}); httpStatus(err) != http.StatusBadRequest {
+	if _, err := admin.SetAuditRetention(ctx, audit.Retention{}); httpStatus(err) != http.StatusBadRequest {
 		t.Errorf("a retention of nothing was answered with %v, want 400", err)
 	}
-	if got, err := operator.SetAuditRetention(ctx, audit.Retention{Days: 30, MaxRecords: 5000}); err != nil || got.Days != 30 {
-		t.Errorf("an operator set the retention and got %+v, %v", got, err)
+	if got, err := admin.SetAuditRetention(ctx, audit.Retention{Days: 30, MaxRecords: 5000}); err != nil || got.Days != 30 {
+		t.Errorf("an admin set the retention and got %+v, %v", got, err)
 	}
 	if got, err := viewer.AuditRetention(ctx); err != nil || got != (audit.Retention{Days: 30, MaxRecords: 5000}) {
 		t.Errorf("a viewer reads the retention %+v, %v", got, err)
 	}
 
-	// What the operator changed is in the audit log, under the operator: the failures too
-	recs := h.waitAudit(viewer, "the eight operations of the operator", func(rs []audit.Record) bool { return len(auditOfKind(rs, audit.Operation)) == 8 })
+	// What the admin changed is in the audit log, under the admin: the failures too, and no call that
+	// the Guard refused
+	recs := h.waitAudit(viewer, "the eight operations of the admin", func(rs []audit.Record) bool { return len(auditOfKind(rs, audit.Operation)) == 8 })
 	var rejected int
 	for _, r := range auditOfKind(recs, audit.Operation) {
-		if r.Actor != "token:operator-1" {
-			t.Errorf("the operation %+v is not the operator's", r)
+		if r.Actor != "token:admin-2" {
+			t.Errorf("the operation %+v is not the admin's", r)
 		}
 		if r.Outcome == audit.Failure {
 			rejected++
@@ -688,6 +709,6 @@ func TestAuditTargetsAndRetentionAreManagedThroughTheAPI(t *testing.T) {
 		}
 	}
 	if rejected != 5 {
-		t.Errorf("%d operations of the operator failed, want 5 (the three targets that are not valid, the delete of one that is not there, and the retention of nothing):\n%s", rejected, auditLines(recs))
+		t.Errorf("%d operations of the admin failed, want 5 (the three targets that are not valid, the delete of one that is not there, and the retention of nothing):\n%s", rejected, auditLines(recs))
 	}
 }

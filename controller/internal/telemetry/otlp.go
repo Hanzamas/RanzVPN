@@ -30,6 +30,12 @@ type OTLP struct {
 // interval (DefaultExportInterval when it is not above 0). The URL of t is the endpoint as it is,
 // and an URL that has no path gets /v1/metrics, where OTLP/HTTP receivers listen.
 func NewOTLP(ctx context.Context, t export.Target, samples func() []Sample, interval time.Duration) (*OTLP, error) {
+	return NewGuardedOTLP(ctx, t, samples, interval, nil)
+}
+
+// NewGuardedOTLP is NewOTLP with the connections of the export made through g (AUD1-DT-9 #457),
+// which checks the address of each push when it is made; none when g is nil.
+func NewGuardedOTLP(ctx context.Context, t export.Target, samples func() []Sample, interval time.Duration, g *export.Guard) (*OTLP, error) {
 	u, err := url.Parse(t.URL)
 	if err != nil {
 		return nil, fmt.Errorf("telemetry: OTLP target %q: %w", t.Name, err)
@@ -38,6 +44,9 @@ func NewOTLP(ctx context.Context, t export.Target, samples func() []Sample, inte
 		u.Path = "/v1/metrics"
 	}
 	opts := []otlpmetrichttp.Option{otlpmetrichttp.WithEndpointURL(u.String())}
+	if g != nil {
+		opts = append(opts, otlpmetrichttp.WithHTTPClient(g.HTTPClient(10*time.Second)))
+	}
 	if t.Secret != "" {
 		opts = append(opts, otlpmetrichttp.WithHeaders(map[string]string{"Authorization": "Bearer " + t.Secret}))
 	}

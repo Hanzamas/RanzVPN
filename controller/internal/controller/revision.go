@@ -181,6 +181,9 @@ func (c *Controller) restore(ctx context.Context, target uint64, rev intent.Revi
 		if err := c.checkCap(next, cp.force, "rollback"); err != nil {
 			return ApplyResult{}, err
 		}
+		if err := c.checkDestinations(ctx, next); err != nil {
+			return ApplyResult{}, fmt.Errorf("revision %d: %w", target, err)
+		}
 		if err := c.known(rs); err != nil {
 			return ApplyResult{}, fmt.Errorf("revision %d: %w", target, err)
 		}
