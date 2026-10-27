@@ -460,6 +460,9 @@ struct NODE {
 	// The WireGuard end of a gateway of WireGuard Devices (NodeWireGuard.c; SDN-80, #375), NULL while the overlay does not
 	// run
 	NODE_WIREGUARD *WireGuard;
+
+	// The throttle of the Login (NodeThrottle.c; AUD1-DT-5, #453), from NewNode to FreeNode
+	struct NODE_THROTTLE *LoginThrottle;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)

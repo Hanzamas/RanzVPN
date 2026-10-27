@@ -82,6 +82,9 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 		{[]string{"admin-sources", "list"}, http.MethodGet, "/api/v1/admin-sources", "", nil},
 		{[]string{"admin-sources", "set", "192.0.2.0/24", "2001:db8::10"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": ["192.0.2.0/24", "2001:db8::10"]}`, nil},
 		{[]string{"admin-sources", "clear"}, http.MethodPut, "/api/v1/admin-sources", `{"prefixes": []}`, nil},
+		{[]string{"admin-destinations", "list"}, http.MethodGet, "/api/v1/admin-destinations", "", nil},
+		{[]string{"admin-destinations", "set", "-sensors", "192.0.2.0/24", "-unc-servers", "files.example, 10.0.0.9"}, http.MethodPut, "/api/v1/admin-destinations",
+			`{"targets": [], "sensors": ["192.0.2.0/24"], "uncServers": ["files.example", "10.0.0.9"]}`, nil},
 		{[]string{"get", "ipam"}, http.MethodGet, "/api/v1/ipam", "", nil},
 		{[]string{"get", "leases"}, http.MethodGet, "/api/v1/ipam/leases", "", nil},
 		{[]string{"get", "devices"}, http.MethodGet, "/api/v1/devices", "", nil},
@@ -201,6 +204,23 @@ func TestAdminSourcesUsage(t *testing.T) {
 		{"admin-sources", "unknown"},
 		{"admin-sources", "list", "extra"},
 		{"admin-sources", "clear", "extra"},
+	} {
+		if err := do(context.Background(), &api.Client{}, args, io.Discard); !errors.Is(err, errUsage) {
+			t.Errorf("ranz %s: %v, want the usage", strings.Join(args, " "), err)
+		}
+	}
+}
+
+// The admin-destinations commands print the usage for what they do not take: no subcommand, a set
+// that names no list, a list with an argument, and a flag that does not exist.
+func TestAdminDestinationsUsage(t *testing.T) {
+	for _, args := range [][]string{
+		{"admin-destinations"},
+		{"admin-destinations", "set"},
+		{"admin-destinations", "set", "10.0.0.0/8"},
+		{"admin-destinations", "set", "-bogus", "x"},
+		{"admin-destinations", "unknown"},
+		{"admin-destinations", "list", "extra"},
 	} {
 		if err := do(context.Background(), &api.Client{}, args, io.Discard); !errors.Is(err, errUsage) {
 			t.Errorf("ranz %s: %v, want the usage", strings.Join(args, " "), err)

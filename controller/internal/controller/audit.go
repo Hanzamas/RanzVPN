@@ -42,6 +42,7 @@ func newAuditState(cfg Config, st *store.Store, log *slog.Logger) *auditState {
 func (c *Controller) startAudit() {
 	a := c.aud
 	a.exporter = audit.NewExporter(c.store, c.log, "ranz-controller/"+c.version, a.cfg.Poll)
+	a.exporter.SetGuard(c.reach)
 	a.exporter.Start()
 	prune := a.cfg.Prune
 	if prune <= 0 {
@@ -122,6 +123,9 @@ func (c *Controller) AuditTargets(ctx context.Context) ([]export.Target, error) 
 // export.ErrInvalid is a target that is not valid.
 func (c *Controller) PutAuditTarget(ctx context.Context, t export.Target) error {
 	if err := t.ValidateAudit(audit.Kinds); err != nil {
+		return err
+	}
+	if err := c.reach.Check(ctx, t.URL); err != nil {
 		return err
 	}
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)

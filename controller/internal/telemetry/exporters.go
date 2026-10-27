@@ -39,6 +39,8 @@ type Exporters struct {
 	interval time.Duration
 	log      *slog.Logger
 
+	guard *export.Guard // nil: connect to any address
+
 	mu     sync.Mutex
 	closed bool
 	otlp   map[string]runningOTLP
@@ -57,6 +59,12 @@ func NewExporters(samples func() []Sample, interval time.Duration, log *slog.Log
 		jobs: make(chan queued, 256), done: make(chan struct{})}
 	go e.send()
 	return e
+}
+
+// SetGuard makes the exporters connect only where g allows (AUD1-DT-9 #457). Set it before the first
+// Apply.
+func (e *Exporters) SetGuard(g *export.Guard) {
+	e.guard = g
 }
 
 // send hands the queued flow records to the IPFIX exporters until Close.
@@ -108,7 +116,7 @@ func (e *Exporters) Apply(ctx context.Context, targets []export.Target) {
 		if _, ok := e.otlp[name]; ok {
 			continue
 		}
-		o, err := NewOTLP(ctx, t, e.samples, e.interval)
+		o, err := NewGuardedOTLP(ctx, t, e.samples, e.interval, e.guard)
 		if err != nil {
 			e.log.Error("OTLP target not started", "target", name, "err", err)
 			continue
@@ -125,7 +133,7 @@ func (e *Exporters) Apply(ctx context.Context, targets []export.Target) {
 		if _, ok := e.ipfix[name]; ok {
 			continue
 		}
-		x, err := NewIPFIX(t)
+		x, err := NewGuardedIPFIX(t, e.guard)
 		if err != nil {
 			e.log.Error("IPFIX target not started", "target", name, "err", err)
 			continue

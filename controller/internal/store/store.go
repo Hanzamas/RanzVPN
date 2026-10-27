@@ -52,8 +52,11 @@ var ErrNotLeader = errors.New("store: this controller no longer holds the lease 
 type Store struct {
 	conn  *gorqlite.Connection
 	epoch int64 // the lease epoch the writes are fenced with, 0 when they are not
-	url   string
-	seal  *sealing // what seals the secrets of the targets, nil before SetSealer (sealed.go)
+	// url is the URL of rqlite with disableClusterDiscovery, and the credential as its userinfo
+	// when rqlite asks for one (OpenWith).
+	url    string
+	client *http.Client // for the calls beside gorqlite's; nil is http.DefaultClient (httpClient)
+	seal   *sealing     // what seals the secrets of the targets, nil before SetSealer (sealed.go)
 }
 
 // Node is the stored state of one node. Desired is the full state at Generation; Acked is the
@@ -89,7 +92,13 @@ type Changes struct {
 // Open connects to rqlite at rawURL and creates the tables the first time. It retries until
 // rqlite answers or ctx ends, so the controller can start before its sidecar is ready.
 func Open(ctx context.Context, rawURL string) (*Store, error) {
-	u, err := url.Parse(rawURL)
+	return OpenWith(ctx, rawURL, Access{})
+}
+
+// OpenWith is Open for an rqlite that asks for a credential, or serves HTTPS with a certificate of
+// its own CA (AUD1-DT-8): a is how the store reaches it.
+func OpenWith(ctx context.Context, rawURL string, a Access) (*Store, error) {
+	u, client, err := a.apply(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("store: rqlite at %s: %w", rawURL, err)
 	}
@@ -97,10 +106,10 @@ func Open(ctx context.Context, rawURL string) (*Store, error) {
 	q.Set("disableClusterDiscovery", "true")
 	u.RawQuery = q.Encode()
 	for {
-		conn, err := gorqlite.Open(u.String())
+		conn, err := gorqlite.OpenWithClient(u.String(), client)
 		if err == nil {
 			if _, err = conn.WriteContext(ctx, schemaStatements()); err == nil {
-				return &Store{conn: conn, url: u.String()}, nil
+				return &Store{conn: conn, url: u.String(), client: client}, nil
 			}
 			conn.Close()
 		}
@@ -121,7 +130,7 @@ func (s *Store) Close() {
 // and each of its writes fails with ErrNotLeader, and writes nothing, once the lease has another
 // epoch.
 func (s *Store) Fenced(epoch int64) *Store {
-	return &Store{conn: s.conn, epoch: epoch, url: s.url, seal: s.seal}
+	return &Store{conn: s.conn, epoch: epoch, url: s.url, client: s.client, seal: s.seal}
 }
 
 // write runs stmts in one rqlite transaction, after the fence when s is fenced.
@@ -270,7 +279,7 @@ func (s *Store) Members(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("store: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.httpClient().Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("store: rqlite status: %w", err)
 	}

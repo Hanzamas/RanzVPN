@@ -137,7 +137,6 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/servercert"
-	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 	"github.com/Hanzamas/RanzVPN/controller/internal/webui"
 )
@@ -177,6 +176,11 @@ type config struct {
 	raftAddr      string
 	raftAdv       string
 	rqliteID      string
+	rqliteAuth    string // -rqlite-auth: the credential file of rqlite, the one in the data directory when empty
+	rqliteCA      string // -rqlite-ca: the CA of an https -rqlite
+	nodeCACert    string // -rqlite-node-ca-cert, -rqlite-node-cert and -rqlite-node-key: mutual TLS between the members
+	nodeCert      string
+	nodeKey       string
 	join          []string
 	expect        int
 	name          string
@@ -225,6 +229,11 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.raftAddr, "rqlite-raft", "127.0.0.1:4002", "the TCP address of the Raft transport of -rqlited; in a cluster, one the other members reach")
 	flags.StringVar(&cfg.raftAdv, "rqlite-raft-adv", "", "the Raft address of -rqlited as the other members reach it, when -rqlite-raft is not one (for example 0.0.0.0:4002)")
 	flags.StringVar(&cfg.rqliteID, "rqlite-id", "", "the Raft node id of -rqlited: 1 for a single controller, -name in a cluster when it is empty")
+	flags.StringVar(&cfg.rqliteAuth, "rqlite-auth", "", "the credential file of rqlite (rqlited -auth): by default rqlite-auth.json in the data directory, which the first start of a single controller makes with a random password; a member of a cluster, and a controller with -rqlite-external, need the file of the rqlite they use")
+	flags.StringVar(&cfg.rqliteCA, "rqlite-ca", "", "the PEM file of the CA that signed the certificate of an https -rqlite (-rqlite-external)")
+	flags.StringVar(&cfg.nodeCACert, "rqlite-node-ca-cert", "", "a cluster: the PEM file of the CA of the members (rqlited -node-ca-cert); a member that does not present a certificate of it is refused")
+	flags.StringVar(&cfg.nodeCert, "rqlite-node-cert", "", "a cluster: the PEM file of the certificate of this member, for the Raft transport and the node API (rqlited -node-cert); it names the host of -rqlite-raft")
+	flags.StringVar(&cfg.nodeKey, "rqlite-node-key", "", "a cluster: the PEM file of the key of -rqlite-node-cert (rqlited -node-key)")
 	flags.StringVar(&join, "rqlite-join", "", "a cluster: the comma-separated Raft addresses of all its members (rqlited -join), the same on every member")
 	flags.IntVar(&cfg.expect, "rqlite-expect", 0, "a new cluster: the number of members that form it, 3 or 5 (rqlited -bootstrap-expect), the same on every member and at every start")
 	flags.StringVar(&cfg.name, "name", strings.ToLower(host), "the name of this member of the controller cluster, unique in the cluster")
@@ -270,6 +279,9 @@ func parseFlags(args []string) (config, error) {
 		problem = fmt.Errorf("-log-days %d is not between 0 (no limit) and %d", cfg.logDays, maxLogDays)
 	case cfg.logMB < 0 || cfg.logMB > maxLogMB:
 		problem = fmt.Errorf("-log-mb %d is not between 0 (no limit) and %d", cfg.logMB, maxLogMB)
+	}
+	if problem == nil {
+		problem = cfg.checkRqlite()
 	}
 	if problem != nil {
 		fmt.Fprintln(flags.Output(), problem)
@@ -433,22 +445,24 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	if err != nil {
 		return fmt.Errorf("the rqlite member: %w", err)
 	}
+	// The credential of the store (AUD1-DT-8): the first start of a single controller makes it
+	access, authFile, madeAuth, err := cfg.rqliteAccess(rqlited != "")
+	if err != nil {
+		return fmt.Errorf("the credential of the store: %w", err)
+	}
+	if madeAuth {
+		log.Info("first start: the credential of the store is created, it is in the data directory", "file", authFile)
+	}
 	if rqlited != "" {
 		u, err := url.Parse(cfg.rqliteURL)
 		if err != nil || u.Host == "" {
 			return fmt.Errorf("-rqlite %q is not a URL with a host:port", cfg.rqliteURL)
 		}
-		rq := &sidecar.Rqlited{
-			Path:     rqlited,
-			DataDir:  filepath.Join(cfg.dataDir, "rqlite"),
-			HTTPAddr: u.Host,
-			RaftAddr: cfg.raftAddr,
-			RaftAdv:  cfg.raftAdv,
-			NodeID:   cfg.rqliteNodeID(),
-			Join:     cfg.join,
-			Expect:   cfg.expect,
-			Output:   out,
+		rq, err := cfg.member(rqlited, u.Host, authFile)
+		if err != nil {
+			return err
 		}
+		rq.RaftAdv, rq.NodeID, rq.Join, rq.Expect, rq.Output = cfg.raftAdv, cfg.rqliteNodeID(), cfg.join, cfg.expect, out
 		sctx, cancel := context.WithTimeout(ctx, startTimeout)
 		err = rq.Start(sctx)
 		cancel()
@@ -460,7 +474,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	}
 
 	sctx, cancel := context.WithTimeout(ctx, startTimeout)
-	st, err := store.Open(sctx, cfg.rqliteURL)
+	st, err := store.OpenWith(sctx, cfg.rqliteURL, access)
 	cancel()
 	if err != nil {
 		return err
