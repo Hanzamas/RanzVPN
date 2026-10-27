@@ -1,0 +1,45 @@
+1 gateway_arp_announcement: A got FFFFFFFFFFFF020000000501080600010800060400010200000005010A0500010000000000000A050001
+1 gateway_arp_announcement: B got FFFFFFFFFFFF020000000501080600010800060400010200000005010A0500010000000000000A050001
+1 gateway_arp_announcement: C got FFFFFFFFFFFF020000000501080600010800060400010200000005010A0500010000000000000A050001
+1 gateway_arp_announcement: verdict pass-control
+2 a_arp_request: GW got FFFFFFFFFFFF02000000050A0806000108000604000102000000050A0A05000A0000000000000A050001
+2 a_arp_request: B got FFFFFFFFFFFF02000000050A0806000108000604000102000000050A0A05000A0000000000000A050001
+2 a_arp_request: C got FFFFFFFFFFFF02000000050A0806000108000604000102000000050A0A05000A0000000000000A050001
+2 a_arp_request: verdict pass-control
+3 a_to_the_gateway: GW got 02000000050102000000050A08004500002000000000401100000A05000A0A0500019C400035000C000052414E5A
+3 a_to_the_gateway: verdict pass-rule
+4 reply_of_the_gateway: A got 02000000050A02000000050108004500002000000000401100000A0500010A05000A00359C40000C000052414E5A
+4 reply_of_the_gateway: verdict pass-flow
+5 b_from_the_mac_of_a: nothing
+5 b_from_the_mac_of_a: verdict drop-mac
+6 gateway_to_a_after_the_spoof: A got 02000000050A02000000050108004500002000000000401100000A0500010A05000A00359C40000C000052414E5A
+6 gateway_to_a_after_the_spoof: verdict pass-flow
+7 b_from_the_ip_of_the_gateway: nothing
+7 b_from_the_ip_of_the_gateway: verdict drop-ip
+8 b_arp_reply_for_the_gateway: nothing
+8 b_arp_reply_for_the_gateway: verdict drop-ip
+9 b_from_its_own_addresses: GW got 02000000050102000000050B08004500002000000000401100000A05000B0A0500019C420035000C000052414E5A
+9 b_from_its_own_addresses: verdict pass-rule
+10 b_from_a_second_mac_past_its_limit: nothing
+10 b_from_a_second_mac_past_its_limit: verdict drop-mac
+11 b_from_a_second_ip_within_its_limit: GW got 02000000050102000000050B08004500002000000000401100000A05000C0A0500019C440035000C000052414E5A
+11 b_from_a_second_ip_within_its_limit: verdict pass-rule
+12 b_from_a_third_ip_past_its_limit: nothing
+12 b_from_a_third_ip_past_its_limit: verdict drop-ip
+13 c_from_an_address_the_gateway_never_sent_from: A got 02000000050A02000000050C86DD60000000000C11FFFE800000000000000000000000000001FE80000000000000000000000000000A9C460009000C000052414E5A
+13 c_from_an_address_the_gateway_never_sent_from: verdict pass-rule
+14 router_advertisement_of_the_gateway: A got 33330000000102000000050186DD6000000000103AFFFE800000000000000000000000000001FF020000000000000000000000000001860000004000070800007530000003E8
+14 router_advertisement_of_the_gateway: B got 33330000000102000000050186DD6000000000103AFFFE800000000000000000000000000001FF020000000000000000000000000001860000004000070800007530000003E8
+14 router_advertisement_of_the_gateway: C got 33330000000102000000050186DD6000000000103AFFFE800000000000000000000000000001FF020000000000000000000000000001860000004000070800007530000003E8
+14 router_advertisement_of_the_gateway: verdict pass-control
+15 c_after_the_gateway_took_it_back: nothing
+15 c_after_the_gateway_took_it_back: verdict drop-ip
+16 c_from_its_own_address: A got 02000000050A02000000050C86DD60000000000C11FFFE80000000000000000000000000000CFE80000000000000000000000000000A9C480009000C000052414E5A
+16 c_from_its_own_address: verdict pass-rule
+mac 10 02-00-00-00-05-01: GW
+mac 10 02-00-00-00-05-0A: A
+mac 10 02-00-00-00-05-0B: B
+mac 10 02-00-00-00-05-0C: C
+vlan 10: in 10 frames; unicast 7, flooded 0, broadcast 2, multicast 1, limit drops 0, filtered 0; out 16 frames
+switch: ports 4, macs 4, learnt 4, moved 0, refused 0; drops malformed 0, port 0, vlan 0, source 0, filter 6
+policy: 16 frames, pass-rule 5, pass-flow 2, pass-control 3, drop-mac 2, drop-ip 4
