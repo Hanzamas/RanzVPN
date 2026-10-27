@@ -154,7 +154,7 @@ A ticket whose blocker has an open pull request may start on the branch of that 
 
 **One agent per lane.** Start each lane as its own agent with isolation `worktree`, or as a Workflow of one lane, built from [lanes/lanes-template.js](lanes/lanes-template.js). See [lanes/README.md](lanes/README.md). Then a free slot is a lane that ended, and nothing queues. A Workflow runs at most `min(16, CPUs - 2)` lanes at the same time, which is 2 in a cloud container: a Workflow of 5 lanes ran 2 and queued 3 (seen on 2026-10-26), and the usage of the plan stayed at 4% for hours while 52 tickets were ready (2026-10-27). Never launch a lane that another agent has: two lanes on one branch destroy each other.
 
-**The model.** Opus for the C data path, crypto, drivers and hard design. Sonnet with effort `max` for Go, UI, CLI, docs and CI. Always set the model on the agent. An agent without a model runs on the model of the session.
+**The model.** Opus for the C data path, crypto, drivers and hard design. Sonnet for Go, UI, CLI, docs and CI. Every lane runs with effort `max`, Opus too (the maintainer asked for it on 2026-10-27). Always set the model on the agent. An agent without a model runs on the model of the session.
 
 **Conflicts between lanes.** Pull requests that keep conflicting on the same files go into one pull request. Start one lane that merges the branches of all of them (a batch lane). When it merges, the other pull requests show as merged by themselves. Close their tickets.
 
