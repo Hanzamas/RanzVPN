@@ -2956,14 +2956,15 @@ func (x *Relay) GetPort() uint32 {
 // takes as a peer of its own, with the addresses as the allowed IPs, and with its PresharedKey when it has one
 // (SDN-82 #377).
 type Device struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	VrfId         uint32                 `protobuf:"varint,2,opt,name=vrf_id,json=vrfId,proto3" json:"vrf_id,omitempty"`
-	Addresses     []*Address             `protobuf:"bytes,3,rep,name=addresses,proto3" json:"addresses,omitempty"`                           // its IPv4 and IPv6 address in its Network
-	Tags          []string               `protobuf:"bytes,4,rep,name=tags,proto3" json:"tags,omitempty"`                                     // sorted
-	Gateway       string                 `protobuf:"bytes,5,opt,name=gateway,proto3" json:"gateway,omitempty"`                               // the node that terminates it
-	PublicKey     []byte                 `protobuf:"bytes,6,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`          // its WireGuard key, 32 bytes: in the state of its gateway only
-	PresharedKey  []byte                 `protobuf:"bytes,7,opt,name=preshared_key,json=presharedKey,proto3" json:"preshared_key,omitempty"` // its PresharedKey, 32 bytes: in the state of its gateway only, and only for a Device that has one
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Name      string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	VrfId     uint32                 `protobuf:"varint,2,opt,name=vrf_id,json=vrfId,proto3" json:"vrf_id,omitempty"`
+	Addresses []*Address             `protobuf:"bytes,3,rep,name=addresses,proto3" json:"addresses,omitempty"`                  // its IPv4 and IPv6 address in its Network
+	Tags      []string               `protobuf:"bytes,4,rep,name=tags,proto3" json:"tags,omitempty"`                            // sorted
+	Gateway   string                 `protobuf:"bytes,5,opt,name=gateway,proto3" json:"gateway,omitempty"`                      // the node that terminates it
+	PublicKey []byte                 `protobuf:"bytes,6,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // its WireGuard key, 32 bytes: in the state of its gateway only
+	// 7 and 8 are the group and the tag set of the source group (SDN-87 #386), so the PresharedKey is 9
+	PresharedKey  []byte `protobuf:"bytes,9,opt,name=preshared_key,json=presharedKey,proto3" json:"preshared_key,omitempty"` // its PresharedKey, 32 bytes: in the state of its gateway only, and only for a Device that has one
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5050,7 +5051,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\agateway\x18\x05 \x01(\tR\agateway\x12\x1d\n" +
 	"\n" +
 	"public_key\x18\x06 \x01(\fR\tpublicKey\x12#\n" +
-	"\rpreshared_key\x18\a \x01(\fR\fpresharedKey\":\n" +
+	"\rpreshared_key\x18\t \x01(\fR\fpresharedKey\":\n" +
 	"\x06Prefix\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x16\n" +
 	"\x06length\x18\x02 \x01(\rR\x06length\"\xb4\x01\n" +
