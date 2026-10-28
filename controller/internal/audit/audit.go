@@ -49,10 +49,14 @@ const (
 	// Operation: any other call of the API that changes something: a licence key, an export target,
 	// an API token. The live operations of SDN-50 (#243) are recorded as this kind.
 	Operation = "operation"
+	// Access: a read of the API tokens, the audit log or the licence, which a call that changes
+	// nothing would leave no record of otherwise (AUD1-DT-13, #461). The Log records the reads of one
+	// token at most once a minute for each of the three (accessEvery).
+	Access = "access"
 )
 
 // Kinds lists the kinds of a Record, in the order of the list above.
-var Kinds = []string{Login, Logout, AuthFailed, Enrolment, IntentChange, Operation}
+var Kinds = []string{Login, Logout, AuthFailed, Enrolment, IntentChange, Operation, Access}
 
 // The outcomes of a Record.
 const (
@@ -117,7 +121,7 @@ type Record struct {
 	// Outcome is Success or Failure.
 	Outcome string `json:"outcome"`
 	// Action is what was done: the operation of the revision of an IntentChange, the call of an
-	// Operation (for example PUT /api/v1/targets/slack).
+	// Operation (for example PUT /api/v1/targets/slack) or of an Access (GET /api/v1/tokens).
 	Action string `json:"action,omitempty"`
 	// Subject is what it was done to, when Action does not say.
 	Subject string `json:"subject,omitempty"`
@@ -213,6 +217,8 @@ type Log struct {
 
 	mu   sync.Mutex
 	seen map[string]time.Time // for each source, when its last failed authentication was recorded
+
+	access accessThrottle // the reads that were recorded lately (access.go)
 }
 
 // NewLog returns a Log on s. A record that cannot be stored is logged to log, which is discarded
@@ -249,6 +255,9 @@ func (l *Log) Record(ctx context.Context, r Record) error {
 	r.Subject = clip(r.Subject, maxSubject)
 	r.Message = clip(r.Message, maxMessage)
 	if r.Kind == AuthFailed && !l.allow(r.Source) {
+		return nil
+	}
+	if r.Kind == Access && !l.access.allow(r.Actor, r.Action, l.now()) {
 		return nil
 	}
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)

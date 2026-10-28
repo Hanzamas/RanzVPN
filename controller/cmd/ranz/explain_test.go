@@ -34,10 +34,12 @@ func TestExplainCommand(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(admin+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The test server is on a loopback address, so ranz explain pins its certificate (AUD1-DT-13, #461)
+	fingerprint := fingerprintOf(srv.Certificate())
 	run := func(args ...string) (int, string, string) {
 		t.Helper()
 		var out, errOut bytes.Buffer
-		code := runExplain(ctx, append([]string{"-server", srv.URL, "-token-file", tokenFile}, args...), &out, &errOut)
+		code := runExplain(ctx, append([]string{"-server", srv.URL, "-token-file", tokenFile, "-tls-fingerprint", fingerprint}, args...), &out, &errOut)
 		return code, out.String(), errOut.String()
 	}
 
@@ -94,7 +96,7 @@ func TestExplainCommand(t *testing.T) {
 	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", filepath.Join(t.TempDir(), "missing"), "node-s", "node-r"}, &out2, &errOut2); code != 1 || !strings.Contains(errOut2.String(), "the token file") {
 		t.Errorf("a token file that does not exist: exit code %d, %q", code, errOut2.String())
 	}
-	if code := runExplain(ctx, []string{"-server", "https://127.0.0.1:1", "-token-file", tokenFile, "node-s", "node-r"}, &out2, &errOut2); code != 1 {
+	if code := runExplain(ctx, []string{"-server", "https://127.0.0.1:1", "-token-file", tokenFile, "-tls-fingerprint", fingerprint, "node-s", "node-r"}, &out2, &errOut2); code != 1 {
 		t.Errorf("a controller that does not answer: exit code %d", code)
 	}
 }
@@ -130,13 +132,15 @@ func TestExplainCommandLinks(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(admin+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The test server is on a loopback address, so ranz explain pins its certificate (AUD1-DT-13, #461)
+	fingerprint := fingerprintOf(srv.Certificate())
 	const dialled = "; dc-2 is dialled at quic dc-2.example.com:443, tls 203.0.113.2:443; dc-1 has no endpoints, so no peer dials it\n"
 	for _, c := range []struct{ vrf, link string }{
 		{"dc", "  dc-1  link    the link of kind vxlan of VRF dc carries the packet on VNI 3000 to the tunnel endpoint of dc-2: unencrypted, plain on a network that the operator trusts" + dialled},
 		{"corp", "  dc-1  link    the Noise session of dc-1 to dc-2 carries the packet in VRF corp, encrypted" + dialled},
 	} {
 		var out, errOut bytes.Buffer
-		code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "-vrf", c.vrf, "-protocol", "udp", "-sport", "40000", "-port", "53", "dc-1", "dc-2"}, &out, &errOut)
+		code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "-tls-fingerprint", fingerprint, "-vrf", c.vrf, "-protocol", "udp", "-sport", "40000", "-port", "53", "dc-1", "dc-2"}, &out, &errOut)
 		if code != 0 {
 			t.Fatalf("ranz explain -vrf %s dc-1 dc-2: exit code %d: %s", c.vrf, code, errOut.String())
 		}
