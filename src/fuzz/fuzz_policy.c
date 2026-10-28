@@ -9,9 +9,11 @@
 //   7 members) and the member that it goes to (bits 3 to 5; 7 for an end outside the Network), its second byte moves the
 //   clock on by tens of ms (0xFF also ages the conntrack tables after the frame), the low bits of its third byte choose
 //   its VLAN, and the rest is the frame. It is judged by a fixed document of an L2 and an L3 Network whose members carry
-//   every guard flag between them, with conntrack tables of 64 flows, so that inputs reach eviction, and with the
-//   learning of the addresses that the checked members own. Every frame that passes is then offered to PolicyDeliver for
-//   the member it goes to, or for every member when it goes to none, so that PolicyDeliver reads it to its last byte too.
+//   every guard flag between them, with conntrack tables of 64 flows, so that inputs reach eviction, with the learning
+//   of the addresses that the checked members own and that the gateway of the L2 Network takes from them, and with the
+//   frames that carry more than the engine reads (a third VLAN tag, a ninth IPv6 extension header). Every frame that
+//   passes is then offered to PolicyDeliver for the member it goes to, or for every member when it goes to none, so that
+//   PolicyDeliver reads it to its last byte too.
 //
 // fuzz-max-len: 16384
 // fuzz-libs: corepolicy
@@ -154,9 +156,10 @@ static bool FuzzPolicySetup()
 
 	fuzz_members[0] = FuzzPolicyMember(fuzz_frames, "lab", "alice", "staff", NULL,
 		POLICY_GUARD_ISOLATE | POLICY_GUARD_CHECK_MAC | POLICY_GUARD_CHECK_IP | POLICY_GUARD_ARP_DHCP_ONLY | POLICY_GUARD_NO_DHCP_SERVER | POLICY_GUARD_NO_RA);
-	fuzz_members[1] = FuzzPolicyMember(fuzz_frames, "lab", "bob", "staff", NULL, POLICY_GUARD_ISOLATE);
+	// bob is the gateway of lab (the security of an L2 Network, SDN-41): it takes the addresses of alice and the server
+	fuzz_members[1] = FuzzPolicyMember(fuzz_frames, "lab", "bob", "staff", NULL, POLICY_GUARD_ISOLATE | POLICY_GUARD_GATEWAY);
 	fuzz_members[2] = FuzzPolicyMember(fuzz_frames, "lab", NULL, NULL, "lan", POLICY_GUARD_NO_IPV6);
-	fuzz_members[3] = FuzzPolicyMember(fuzz_frames, "lab", NULL, NULL, "server", POLICY_GUARD_NO_NON_IP | POLICY_GUARD_CHECK_MAC);
+	fuzz_members[3] = FuzzPolicyMember(fuzz_frames, "lab", NULL, NULL, "server", POLICY_GUARD_NO_NON_IP | POLICY_GUARD_CHECK_MAC | POLICY_GUARD_NO_ROUTER);
 	fuzz_members[4] = FuzzPolicyMember(fuzz_frames, "wan", "carol", NULL, NULL, POLICY_GUARD_CHECK_IP | POLICY_GUARD_NO_RA);
 	fuzz_members[5] = FuzzPolicyMember(fuzz_frames, "wan", NULL, NULL, "gateway", POLICY_GUARD_NO_IPV4);
 	fuzz_members[6] = FuzzPolicyMember(fuzz_frames, "wan", NULL, "staff", NULL, 0);

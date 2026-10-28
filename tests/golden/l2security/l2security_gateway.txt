@@ -1,0 +1,42 @@
+1 a_dhcp_discover: GW got FFFFFFFFFFFF02000000050A080045000020000000004011000000000000FFFFFFFF00440043000C000052414E5A
+1 a_dhcp_discover: B got FFFFFFFFFFFF02000000050A080045000020000000004011000000000000FFFFFFFF00440043000C000052414E5A
+1 a_dhcp_discover: verdict pass-control
+2 b_dhcp_discover: GW got FFFFFFFFFFFF02000000050B080045000020000000004011000000000000FFFFFFFF00440043000C000052414E5A
+2 b_dhcp_discover: A got FFFFFFFFFFFF02000000050B080045000020000000004011000000000000FFFFFFFF00440043000C000052414E5A
+2 b_dhcp_discover: verdict pass-control
+3 gateway_dhcp_offer: A got FFFFFFFFFFFF02000000050108004500002000000000401100000A050001FFFFFFFF00430044000C000052414E5A
+3 gateway_dhcp_offer: B got FFFFFFFFFFFF02000000050108004500002000000000401100000A050001FFFFFFFF00430044000C000052414E5A
+3 gateway_dhcp_offer: verdict pass-control
+4 a_dhcp_offer_as_a_rogue_server: nothing
+4 a_dhcp_offer_as_a_rogue_server: verdict drop-dhcp-server
+5 a_dhcp_ack_to_b: nothing
+5 a_dhcp_ack_to_b: verdict drop-dhcp-server
+6 gateway_dhcp_ack_to_a: A got 02000000050A02000000050108004500002000000000401100000A0500010A05000A00430044000C000052414E5A
+6 gateway_dhcp_ack_to_a: verdict pass-control
+7 b_router_solicitation: GW got 33330000000202000000050B86DD6000000000083AFFFE80000000000000000000000000000BFF0200000000000000000000000000028500000000000000
+7 b_router_solicitation: verdict pass-control
+8 gateway_router_advertisement: A got 33330000000102000000050186DD6000000000103AFFFE800000000000000000000000000001FF020000000000000000000000000001860000004000070800007530000003E8
+8 gateway_router_advertisement: B got 33330000000102000000050186DD6000000000103AFFFE800000000000000000000000000001FF020000000000000000000000000001860000004000070800007530000003E8
+8 gateway_router_advertisement: verdict pass-control
+9 a_router_advertisement: nothing
+9 a_router_advertisement: verdict drop-ra
+10 a_dhcpv6_advertise_as_a_rogue_server: nothing
+10 a_dhcpv6_advertise_as_a_rogue_server: verdict drop-dhcp-server
+11 gateway_dhcpv6_advertise: B got 02000000050B02000000050186DD60000000000C11FFFE800000000000000000000000000001FE80000000000000000000000000000B02230222000C000052414E5A
+11 gateway_dhcpv6_advertise: verdict pass-control
+12 a_neighbour_advertisement: B got 02000000050B02000000050A86DD6000000000183AFFFE80000000000000000000000000000AFE80000000000000000000000000000B8800000060000000FE80000000000000000000000000000A
+12 a_neighbour_advertisement: verdict pass-control
+13 a_unicast_to_b: B got 02000000050B02000000050A08004500002000000000401100000A05000A0A05000B9C400050000C000052414E5A
+13 a_unicast_to_b: verdict pass-rule
+14 a_dhcp_offer_behind_two_tags: nothing
+14 a_dhcp_offer_behind_two_tags: verdict drop-dhcp-server
+15 a_dhcp_offer_behind_three_tags: nothing
+15 a_dhcp_offer_behind_three_tags: verdict drop-protocol
+16 a_router_advertisement_behind_nine_extension_headers: nothing
+16 a_router_advertisement_behind_nine_extension_headers: verdict drop-protocol
+mac 10 02-00-00-00-05-01: GW
+mac 10 02-00-00-00-05-0A: A
+mac 10 02-00-00-00-05-0B: B
+vlan 10: in 9 frames; unicast 4, flooded 0, broadcast 3, multicast 2, limit drops 0, filtered 0; out 13 frames
+switch: ports 3, macs 3, learnt 3, moved 0, refused 0; drops malformed 0, port 0, vlan 0, source 0, filter 7
+policy: 16 frames, pass-rule 1, pass-control 8, drop-dhcp-server 4, drop-ra 1, drop-protocol 2
