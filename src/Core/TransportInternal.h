@@ -41,4 +41,18 @@ bool TransportAddressText(const struct sockaddr *addr, char *out, UINT size);
 // The channel binding of a QUIC connection, TransportQuicExporter, is in Core/Transport.h with the check of the msquic
 // version that it reads it from (CORE-H5-R, #443), so that coretest tests both
 
+// The XDP datapath of msquic for the QUIC transport (TransportQuicXdp.c; CORE-S7-2, #83), whose msquic header has no preview
+// part; api is the QUIC_API_TABLE of msquic. XdpChoose gives the datapath (TRANSPORT_QUIC_DATAPATH_*) of a transport of cfg,
+// the server or a client: the normal one where cfg asks for neither Xdp nor Qtip, or where they cannot run here, with a line
+// of the transport log; false for a Qtip that cannot run, since QTIP has no normal datapath. XdpSettings names XdpEnabled and
+// QTIPEnabled in settings, a QUIC_SETTINGS of the configuration, for datapath. XdpListen starts listener (an HQUIC) on alpn
+// (a QUIC_BUFFER) and address (a QUIC_ADDR) with the global settings of msquic for datapath, under the lock that every
+// start of a listener of the module takes, and puts them back; false when it does not start. XdpOf (TransportQuic.c) gives
+// the msquic of a QUIC transport to TransportQuicGetXdpStatus: its table, its configuration (an HQUIC) and its datapath;
+// false for another transport.
+bool TransportQuicXdpChoose(const void *api, const TRANSPORT_QUIC_CONFIG *cfg, bool server, UINT *datapath);
+void TransportQuicXdpSettings(const void *api, void *settings, UINT datapath);
+bool TransportQuicXdpListen(const void *api, void *listener, const void *alpn, const void *address, UINT datapath);
+bool TransportQuicXdpOf(TRANSPORT *t, const void **api, void **configuration, UINT *datapath);
+
 #endif // CORE_TRANSPORT_INTERNAL_H
