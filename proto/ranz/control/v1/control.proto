@@ -676,6 +676,18 @@ message Telemetry {
   repeated NodeEvent events = 5;
   // The Devices whose gateway the node is (SDN-80): all of them in each summary that holds any
   repeated DeviceCounters devices = 6;
+  // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), absent while
+  // its peer layer does not run
+  PathCounters paths = 7;
+}
+
+// The Paths of the peer agent of a node since the node started (CORE-S5-6, ADR-0015 decision 4):
+// the Upgrades, each a Path that moved from the Relay to the direct path that ICE validated, and
+// the Fallbacks, each a direct path whose consent freshness failed, so that its pair went back to
+// the Relay.
+message PathCounters {
+  uint64 upgrades = 1;
+  uint64 fallbacks = 2;
 }
 
 // The WireGuard end of one Device at its gateway (SDN-80): the last handshake, in Unix time in

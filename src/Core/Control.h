@@ -59,6 +59,9 @@
 #define CONTROL_MAX_ENVELOPE 1024 // The envelope of a Signal (Signal.envelope of control.options; PEER_MAX_ENVELOPE)
 #define CONTROL_MAX_SIGNALS  64   // The Signals that wait for the stream at most; the oldest goes first, as at the controller
 
+// The Paths of the peer agent of a node (CORE-S5-6, #412)
+#define CONTROL_PATH_REPORT 1000 // ms between two reports of the Upgrades and the Fallbacks of the Paths of a node
+
 // The TLS fingerprints of the certificate of the Controller that a state names (SDN-92, #397)
 #define CONTROL_TLS_PINS     4  // The fingerprints of a state (NodeConfig.controller_tls of control.options)
 #define CONTROL_TLS_PIN_SIZE 65 // A fingerprint: 64 hex digits and the terminating NUL
@@ -394,6 +397,10 @@ typedef void(CONTROL_SIGNAL_PROC)(void *param, const char *peer, const UCHAR *en
 // The Signals that a client sends to the controller for the peers of the node (CONTROL_CONFIG.Signals), ControlSignal.c
 typedef struct CONTROL_SIGNALS CONTROL_SIGNALS;
 
+// The Upgrades and the Fallbacks of the Paths of the peer agent that a client reports to the controller (CONTROL_CONFIG.Paths;
+// CORE-S5-6, #412), ControlPath.c
+typedef struct CONTROL_PATHS CONTROL_PATHS;
+
 // The desired state that the client applied, as its owner takes it (CONTROL_STATE_PROC). The
 // Networks of the state stay in the client until a module of the node needs them: the DHCP
 // responders of the Networks are the first (SDN-43, #236). The Relays go to the peer agent of the
@@ -534,6 +541,10 @@ typedef struct CONTROL_CONFIG {
 	// The Signals that the client sends to the controller for the peers of the node, NULL for none: the owner's, which must
 	// outlive the client
 	CONTROL_SIGNALS *Signals;
+
+	// The Upgrades and the Fallbacks of the Paths of the peer agent that the client reports, NULL for none: the owner's, which
+	// must outlive the client (CORE-S5-6, #412)
+	CONTROL_PATHS *Paths;
 } CONTROL_CONFIG;
 
 // How a client stands (ControlGetStatus)
@@ -619,5 +630,15 @@ CONTROL_SIGNALS *ControlNewSignals();
 void ControlFreeSignals(CONTROL_SIGNALS *q);
 bool ControlSendSignal(CONTROL_SIGNALS *q, const char *peer, const UCHAR *envelope, UINT size);
 bool ControlWriteSignals(CONTROL_SIGNALS *q, TRANSPORT_STREAM *s);
+
+// The Paths of the peer agent of a node (CORE-S5-6, #412), ControlPath.c. NewPaths makes the report that a client sends
+// (CONTROL_CONFIG.Paths), FreePaths frees it once no client uses it. SetPaths puts the Upgrades and the Fallbacks of the
+// Paths of the node since it started in place of the ones before: the client sends them in one Telemetry message after
+// each Hello once they were set, and whenever they changed, at most every CONTROL_PATH_REPORT ms. WritePaths writes that
+// message when it is due, as the client does on its stream.
+CONTROL_PATHS *ControlNewPaths();
+void ControlFreePaths(CONTROL_PATHS *p);
+void ControlSetPaths(CONTROL_PATHS *p, UINT64 upgrades, UINT64 fallbacks);
+bool ControlWritePaths(CONTROL_PATHS *p, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H
