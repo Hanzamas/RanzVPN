@@ -2,8 +2,9 @@
 // The state of a Node on its own PC (SDN-91, #396): the answer of the admin pipe (NodeController.c) to the command state,
 // which ranz node state prints. It says what the Node service does now: its Roles, its control stream (the Controller,
 // since when it is connected and the Generation that the overlay runs, or why it is not), its Wintun adapters with their
-// VRFs and the addresses of the node in each VRF, the Noise sessions of its peers with their transport and their age, and
-// its listeners (the data transport of the overlay, the front door and QUIC of its Listener, the UDP port of the relay
+// VRFs and the addresses of the node in each VRF, the Noise sessions of its peers with their transport and their age, how it
+// reaches each peer, on its stream session or through a Relay, with the datagrams that went each way there (CORE-S5-5, #411),
+// and its listeners (the data transport of the overlay, the front door and QUIC of its Listener, the UDP port of the relay
 // role). The pipe is the local channel: only SYSTEM, the Administrators and the service account may open it.
 
 #include "Node.h"
@@ -15,6 +16,7 @@
 
 #include "Core/Control.h"
 
+#include "NodeAgent.h"
 #include "NodeInternal.h"
 
 #include <cjson/cJSON.h>
@@ -90,6 +92,10 @@ static void NodeStateSessions(NODE *n, UINT64 now, cJSON *o, char *listener, UIN
 		cJSON_AddBoolToObject(e, "up", list[i].Up);
 		cJSON_AddStringToObject(e, "transport", list[i].Transport);
 		cJSON_AddNumberToObject(e, "ageSeconds", list[i].Up ? NodeStateAge(list[i].Since, now) : 0.0);
+		// How the overlay reaches the peer, and the records that went each way on its datagram path (NodeAgent.c; CORE-S5-5, #411)
+		cJSON_AddStringToObject(e, "path", NodeAgentPathName(list[i].Path));
+		cJSON_AddNumberToObject(e, "datagramsOut", (double)list[i].DatagramsOut);
+		cJSON_AddNumberToObject(e, "datagramsIn", (double)list[i].DatagramsIn);
 		cJSON_AddItemToArray(a, e);
 	}
 	cJSON_AddNumberToObject(o, "numPeers", total);
