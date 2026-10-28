@@ -266,6 +266,10 @@ typedef struct CONTROL_PEER {
 	// geneve of a shared VRF from
 	CONTROL_VTEP Vtep;
 
+	// The controller reports it down (SDN-19, #195): it is a gateway of a prefix that another gateway announces too, and it
+	// has had no control stream for a while, so the node gives that prefix to another gateway that answers its probes
+	bool Down;
+
 	// Its source group in each VRF that it shares with the node, ordered by VRF id (SDN-87, #386): with the groups of the
 	// Devices whose gateway it is, the groups that it may assert; and the frame version of the records of the Noise
 	// session that the node sends it, 1 when they carry the source group of their packet
@@ -307,6 +311,8 @@ typedef struct CONTROL_VRF {
 	CONTROL_DNS_ZONE *Dns;        // Its zone of overlay DNS (SDN-11, #187), NULL while overlay DNS is off in it; valid as the state is
 	UINT Link;                    // The kind of the links between its nodes (CONTROL_LINK_*; SDN-76, #356) ...
 	UINT Vni;                     // ... and the VNI of a link of kind vxlan or geneve
+	char Hub[CONTROL_NAME_SIZE];  // The hub node of a VRF of topology hub-and-spoke (SDN-19, #195), "" for a full mesh
+	bool Ecmp;                    // The flows to a prefix of several gateways spread over the healthy ones (SDN-19, #195)
 	UINT TagMode;                 // How the node trusts the source group that such a link carries (CONTROL_TAG_MODE_OFF or _TRUSTED; SDN-87, #386)
 } CONTROL_VRF;
 
@@ -497,6 +503,11 @@ typedef struct CONTROL_STATE {
 	// relay role shares a VRF with it.
 	UINT NumRelays;
 	CONTROL_RELAY Relays[CONTROL_MAX_RELAYS];
+
+	// The LAN subnets behind it, which it advertises as a gateway in its VRFs (SDN-19, #195): routes that lead to its host,
+	// ordered by VRF id
+	UINT NumLanSubnets;
+	CONTROL_ROUTE LanSubnets[CONTROL_MAX_ROUTES];
 } CONTROL_STATE;
 
 // Takes each state that the client applied, before the client acknowledges its Generation. It runs

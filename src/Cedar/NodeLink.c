@@ -478,9 +478,12 @@ UINT NodeLinkKind(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id) {
 
 // Send the data record of size bytes of its IP packet, behind its VRF id, to the next hop hop of the tables v over the link
 // of kind vxlan or geneve of the VRF: the packet behind an Ethernet header on the VNI of the VRF, to the tunnel endpoint
-// of the peer in the encapsulation of the link. False when the peer has no tunnel endpoint, the frame is larger than the
-// module takes, or the datagram could not be sent. The caller reads v as a reader of the table snapshot of the node.
-bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size) {
+// of the peer in the encapsulation of the link. A packet of the host when host is set, which carries its source group in
+// the tag mode trusted-underlay of the VRF; else the packet of a spoke that the node, the hub of the VRF, sends on to
+// another, which carries none (NodeSourceGroup.c; SDN-87, #386). False when the peer has no tunnel endpoint, the frame is
+// larger than the module takes, or the datagram could not be sent. The caller reads v as a reader of the table snapshot of
+// the node.
+bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size, bool host) {
 	NODE_LINK_TABLE *t = (v != NULL ? v->Link : NULL);
 	UCHAR frame[VXLAN_MAX_FRAME];
 
@@ -501,9 +504,11 @@ bool NodeLinkSend(NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size) 
 	WRITE_USHORT(frame + 12, (packet[0] >> 4) == 6 ? MAC_PROTO_IPV6 : MAC_PROTO_IPV4);
 	Copy(frame + NODE_LINK_ETHER, packet, size);
 
-	// The source group of the packet, in the tag mode trusted-underlay of the VRF (NodeSourceGroup.c; SDN-87, #386)
+	// The source group of a packet of the host, in the tag mode trusted-underlay of the VRF (NodeSourceGroup.c; SDN-87, #386)
 	VXLAN_GROUP group;
-	NodeSourceGroupStamp(v, lv->VrfId, packet, size, &group);
+	Zero(&group, sizeof(group));
+	if (host)
+		NodeSourceGroupStamp(v, lv->VrfId, packet, size, &group);
 	bool ok = VxlanSendToGroup(t->Link->Vxlan, lv->Vni, lv->Kind == CONTROL_LINK_GENEVE ? &p->Geneve : &p->Vxlan, &group, frame, NODE_LINK_ETHER + size);
 	InterlockedIncrement64(ok ? &t->Link->Sent : &t->Link->Failed);
 

@@ -14,6 +14,7 @@
 // tbl24, 64 MiB of address space that VirtualAlloc gives as zero pages, takes memory only for the pages that are used.
 
 #include "Node.h"
+#include "NodeGateway.h"
 #include "NodeLink.h"
 #include "NodeSourceGroup.h"
 
@@ -295,6 +296,8 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 	NodeFreeMirrorTable(v->Mirror);
 	// The links of kind vxlan and geneve (NodeLink.c; SDN-76, #356)
 	NodeFreeLinkTable(v->Link);
+	// The groups of gateways and the hubs (NodeGateway.c; SDN-19, #195)
+	NodeFreeGatewayTable(v->Gateway);
 	// The source groups (NodeSourceGroup.c; SDN-87, #386)
 	NodeFreeSourceGroupTable(v->SourceGroups);
 	for (UINT i = 0; i < v->NumVrfs; i++)

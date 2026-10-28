@@ -21,8 +21,10 @@
 // The source group that the node stamps on a packet of its host is the group of the WireGuard Device whose address is the
 // source of the packet, when the node is the gateway of that Device, and the node's own group in the VRF of the packet
 // otherwise. A packet of a route that a VRF of the peer leaks goes into a VRF of which the node has no group, and carries
-// none. The relay role forwards the sealed datagrams of the peer layer as they are, and a node forwards no packet between
-// two peers, so no node rewrites the source group of another.
+// none. The relay role forwards the sealed datagrams of the peer layer as they are. The hub of a VRF of topology
+// hub-and-spoke, the one node that sends the packet of a peer on to another (NodeGateway.c; SDN-19, #195), sends it as a
+// record of frame version 0 or a datagram without a source group, so the other spoke judges it by the map of address to
+// group, as a packet of the hub. So no node rewrites the source group of another.
 //
 // At the destination (NodeSourceGroupInbound) a claim that the node takes must be a group that the sending peer may assert
 // in the VRF of the packet, with the tag set of that group where the claim carries one: the policy of the VRF then judges

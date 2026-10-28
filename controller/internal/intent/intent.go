@@ -116,6 +116,15 @@ type VRF struct {
 	// that such a link carries the VRF on; left out, it is the id of the VRF.
 	Link string `json:"link,omitempty"`
 	VNI  uint32 `json:"vni,omitempty"`
+	// Topology is the topology of the VRF (SDN-19, topology.go): full-mesh, the default, where every
+	// Node of the VRF is a peer of every other, or hub-and-spoke, where the spokes reach each other
+	// only through the Node Hub, the hub of the VRF.
+	Topology string `json:"topology,omitempty"`
+	Hub      string `json:"hub,omitempty"`
+	// ECMP spreads the flows to a LAN subnet that several gateways advertise in the VRF over the
+	// healthy ones by the hash of each flow (SDN-19, topology.go). Left out, the first healthy
+	// gateway in name order carries them.
+	ECMP bool `json:"ecmp,omitempty"`
 }
 
 // Network belongs to one VRF. Its pools are the controller's to allocate from (ADR-0028,
@@ -417,9 +426,9 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
 // Network, a Node, a Policy, a Mirror, a NAT or a DnsRecord uses cannot be deleted, nor can a
 // Network that a Device uses, nor a Node that a NAT, a DnsRecord or a Listener uses, that is the
-// gateway of a Device or of the security of a Network or that answers DHCP for a Network, a Group
-// that a User belongs to, and a User that owns a Node. The Nodes lose their addresses in a deleted
-// Network.
+// gateway of a Device or of the security of a Network, that answers DHCP for a Network or that is
+// the hub of a VRF, a Group that a User belongs to, and a User that owns a Node. The Nodes lose
+// their addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -486,6 +495,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		// The Listener of the Node (SDN-45, listener.go)
 		if users := next.listenerUsers(name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
+		// The VRFs of topology hub-and-spoke whose hub the Node is (SDN-19, topology.go)
+		if users := next.hubUsers(name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q is the hub of %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
 		delete(next.Nodes, name)
 	case KindPolicy:
@@ -790,6 +803,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeDevices()
 	// The kinds of the links of the VRFs and the tunnel endpoints of the Nodes (link.go)
 	in.completeLinks()
+	// The topologies of the VRFs (SDN-19, topology.go)
+	in.completeTopologies()
 	// The tag modes of the Networks (tagmode.go)
 	in.completeTagModes()
 	return problems
@@ -915,6 +930,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateEndpoints()...)
 	problems = append(problems, in.validateDevices()...)
 	problems = append(problems, in.validateLinks()...)
+	// The topologies of the VRFs and the LAN subnets of the gateways (SDN-19, topology.go)
+	problems = append(problems, in.validateTopologies()...)
 	problems = append(problems, in.validateTagModes()...)
 	return append(problems, in.validateIPAM()...)
 }

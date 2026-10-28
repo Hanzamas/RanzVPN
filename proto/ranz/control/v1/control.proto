@@ -111,6 +111,16 @@
 // other live operations are the controller's own: it lists the sessions (the control streams of the nodes),
 // ends one with a Refuse that has the reason REFUSE_REASON_OPERATOR, and bans a user by leaving the Nodes
 // that the user owns out of every desired state. No schema version changes with them.
+//
+// Topology and gateways (SDN-19, #195, ADR-0025 decisions 11 and 12): a VRF of topology
+// hub-and-spoke names its hub node in the Vrf object of every member (Vrf.hub). A spoke gets the hub
+// as its only peer in the VRF, with the prefixes of the VRF as routes of the hub, and the hub sends
+// the traffic of one spoke on to another. A node gets the LAN subnets behind it in its NodeConfig
+// (NodeConfig.lan_subnets) and the ones of each gateway that shares a VRF with it as routes of that
+// Peer; when several gateways announce one prefix, the node picks a healthy one from its own probes
+// inside their Noise sessions and from the controller's health data (Peer.down), or one of the
+// healthy ones by the hash of each flow when the VRF spreads them (Vrf.ecmp). No schema version
+// changes with them: a node of an older release skips the fields it does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -300,9 +310,12 @@ message NodeConfig {
   // Go writes the members of a oneof after the other fields of a message and nanopb in the order of the
   // numbers, and the two must write the same bytes.
   string listener_decoy = 12;
+  // The LAN subnets behind the node, which it advertises as a gateway in its VRFs (SDN-19 #195),
+  // ordered by VRF id, then prefix: they lead to its host.
+  repeated Route lan_subnets = 13;
   // The source group of the node in each of its VRFs (SDN-87 #386), ordered by VRF id; none for a node
   // that does not report the Capability tags
-  repeated SourceGroup groups = 13;
+  repeated SourceGroup groups = 15;
 }
 
 // The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise
@@ -379,6 +392,12 @@ message Vrf {
   // How the nodes of the VRF trust the source group that a link of kind vxlan or geneve carries
   // (SDN-87 #386): the tag mode of the Networks of the VRF
   TagMode tag_mode = 10;
+  // The hub node of a VRF of topology hub-and-spoke (SDN-19 #195), which sends the traffic of one
+  // spoke on to another; empty for a full mesh
+  string hub = 11;
+  // The flows to a prefix that several gateways announce spread over the healthy ones by the hash
+  // of each flow (SDN-19 #195); without it the first healthy gateway in name order carries them
+  bool ecmp = 12;
 }
 
 // The source group of an endpoint in one VRF (SDN-87 #386): its group ID, from 1 to 65535, and its
@@ -466,9 +485,11 @@ message L2Security {
 // Another node that shares at least one VRF with this one (full mesh), or that a leak between a VRF
 // of each joins (SDN-7), with its addresses in the L3 Networks of the shared VRFs, ordered by
 // Network name, and the routes that lead to it besides them: the outside prefixes of its 1:1 NAT
-// rules in the shared VRFs, and the routes that its VRFs leak into the VRFs of this node, ordered
-// by VRF id, then prefix. Its endpoints (SDN-93 #410) are the addresses under which this node dials it,
-// in the order of its Node resource; a peer without any is not dialled.
+// rules in the shared VRFs, the LAN subnets that it advertises there (SDN-19), the prefixes that a
+// spoke reaches through it when it is the hub of a shared VRF (SDN-19), and the routes that its VRFs
+// leak into the VRFs of this node, ordered by VRF id, then prefix. Two spokes of a VRF of topology
+// hub-and-spoke do not share it. Its endpoints (SDN-93 #410) are the addresses under which this node
+// dials it, in the order of its Node resource; a peer without any is not dialled.
 message Peer {
   string name = 1;
   bytes public_key = 2;         // the Noise static key, 32 bytes
@@ -488,6 +509,11 @@ message Peer {
   // #386): 1 when both report the Capability tags, and each record then carries its source group;
   // 0, the records before SDN-87, otherwise.
   uint32 frame_version = 10;
+  // The controller's health data of a gateway (SDN-19 #195): the peer announces a prefix that
+  // another gateway announces too, and it has had no control stream for a while. The node gives the
+  // traffic of that prefix to another gateway that answers its probes, and to this one only while
+  // none does.
+  bool down = 11;
 }
 
 // The transports that a node dials a peer over, as a fallback list names them: quic, tls and mimic
