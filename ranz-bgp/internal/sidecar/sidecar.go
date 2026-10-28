@@ -88,7 +88,9 @@ type learnedRoute struct {
 
 // session is BGP for one node.
 type session struct {
-	bgp       *server.BgpServer
+	bgp *server.BgpServer
+	// The EVPN of a gateway (evpn.go; SDN-25 #201), nil for none
+	evpn      *evpnState
 	w         *Writer
 	log       *slog.Logger
 	cancel    context.CancelFunc
@@ -130,6 +132,12 @@ func Run(ctx context.Context, conn io.ReadWriteCloser, opts Options) error {
 		w.Write(Message{Type: TypeError, Error: err.Error()})
 		return err
 	}
+	// The EVPN of a gateway (evpn.go; SDN-25 #201)
+	ev, err := parseEVPN(first.EVPN, cfg.routerID)
+	if err != nil {
+		w.Write(Message{Type: TypeError, Error: err.Error()})
+		return err
+	}
 
 	s, err := startSession(ctx, cfg, w, log, opts.LogLevel)
 	if err != nil {
@@ -137,6 +145,11 @@ func Run(ctx context.Context, conn io.ReadWriteCloser, opts Options) error {
 		return err
 	}
 	defer s.stop()
+	// ... before the peers, which take its family
+	if err := s.startEVPN(ctx, ev); err != nil {
+		w.Write(Message{Type: TypeError, Error: err.Error()})
+		return err
+	}
 	if opts.started != nil {
 		opts.started(s.bgp)
 	}
@@ -148,7 +161,7 @@ func Run(ctx context.Context, conn io.ReadWriteCloser, opts Options) error {
 
 	// The peers come after ready, so that the node reads ready before the first peer message.
 	for _, p := range cfg.peers {
-		if err := s.bgp.AddPeer(ctx, &api.AddPeerRequest{Peer: peerRequest(p)}); err != nil {
+		if err := s.bgp.AddPeer(ctx, &api.AddPeerRequest{Peer: s.withEVPN(peerRequest(p))}); err != nil {
 			s.send(Message{Type: TypeError, Peer: p.address.String(), Error: fmt.Sprintf("peer %s: %v", p.address, err)})
 			continue
 		}
@@ -414,6 +427,10 @@ func (s *session) send(m Message) {
 
 // announce applies an announce message: the prefix goes to the peers as a path of the node.
 func (s *session) announce(m Message) error {
+	// A prefix of an EVPN VRF goes to the fabric as an IP prefix route (evpn.go; SDN-25 #201)
+	if s.evpn.has(m.VRF) {
+		return s.announceEVPN(m)
+	}
 	prefix, err := parsePrefix(m.Prefix)
 	if err != nil {
 		return err
@@ -469,6 +486,10 @@ func (s *session) announce(m Message) error {
 
 // withdraw applies a withdraw message.
 func (s *session) withdraw(m Message) error {
+	// ... and leaves it (evpn.go)
+	if s.evpn.has(m.VRF) {
+		return s.withdrawEVPN(m)
+	}
 	prefix, err := parsePrefix(m.Prefix)
 	if err != nil {
 		return err
