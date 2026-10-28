@@ -1,6 +1,6 @@
 // NodeAgent.h
-// The peer agent of the overlay of a node (NodeAgent.c; CORE-S5-5, #411): the declarations that the overlay, the state of the
-// node and the tests use
+// The peer agent of the overlay of a node (NodeAgent.c; CORE-S5-5, #411; CORE-S5-6, #412): the declarations that the overlay,
+// the state of the node and the tests use
 
 #ifndef NODE_AGENT_H
 #define NODE_AGENT_H
@@ -11,12 +11,14 @@
 #define NODE_AGENT_SIGNAL     2000  // ms before the agent offers a Signal again to a peer that did not answer the first ...
 #define NODE_AGENT_SIGNAL_MAX 60000 // ... and at most: the delay doubles after each offer without an answer
 #define NODE_AGENT_THREADS    2     // The receive threads that hand the agent its datagrams: its socket's, or the network's of a test
+#define NODE_AGENT_HOSTS      30000 // ms between two reads of the host addresses of its UDP socket: its host candidates with ICE
 
 typedef struct NODE_AGENT NODE_AGENT;
 
 // What NodeAgentGetStatus reports
 typedef struct NODE_AGENT_STATUS {
 	bool Running;          // The peer layer runs: a desired state named a Relay
+	bool Ice;              // ICE moves the peers of the datagram path to a direct path once it validates one (CORE-S5-6, #412)
 	USHORT Port;           // The UDP port of its socket, 0 on the network of a test
 	UINT NumRelays;        // The Relays of the state applied last
 	UINT64 SignalsSent;    // The Signals that the agent gave the control stream: offers and answers
@@ -38,6 +40,8 @@ bool NodeAgentSend(NODE *n, const UCHAR *key, const UCHAR *record, UINT size);
 void NodeAgentSessions(NODE *n, NODE_OVERLAY_SESSION *list, UINT num);
 void NodeAgentGetStatus(NODE *n, NODE_AGENT_STATUS *st);
 const char *NodeAgentPathName(UINT path);
+struct CONTROL_PATHS *NodeAgentPaths(NODE *n);
+const char *NodeAgentPortMapName(UINT state);
 
 // NodeOverlay.c
 void NodeOverlayAgentDeliver(NODE *n, const UCHAR *key, const UCHAR *record, UINT size, UCHAR *nat_buf);

@@ -810,6 +810,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Signals = NodeAgentStart(n, cfg);
 	cc.SignalProc = NodeAgentSignal;
 	cc.SignalParam = n;
+	// ... and the Upgrades and the Fallbacks of its Paths, which the Controller exports (NodeAgent.c; CORE-S5-6, #412)
+	cc.Paths = NodeAgentPaths(n);
 
 	ov->Thread = (ov->Handshakes != NULL ? CreateThread(NULL, 0, NodeOverlayThread, ov, 0, &thread_id) : NULL);
 	ov->Control = (ov->Thread != NULL && cfg->Control != NULL ? ControlStart(&cc) : NULL);

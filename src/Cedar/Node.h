@@ -41,6 +41,7 @@
 #define NODE_SETTING_CONTROLLER   "Controller"  // The Controller settings, one JSON object (NodeController.c); without it the node opens no control stream
 #define NODE_SETTING_LOG_DAYS     "LogDays"     // The age limit of the node log in days: older files of the log are deleted; without it NODE_LOG_DEFAULT_DAYS, 0 for no limit
 #define NODE_SETTING_LOG_MB       "LogMB"       // The disk limit of the node log in megabytes: its files never take more together; without it NODE_LOG_DEFAULT_MB, 0 for no limit
+#define NODE_SETTING_PORT_MAPPING "PortMapping" // 1: the peer agent asks the home gateway for a public port with PCP, NAT-PMP or UPnP (NodeAgent.c); without it, or 0, no request leaves the node
 
 // The limits of the node log (SDN-54, #247) without the settings above, and the most that a setting may name
 #define NODE_LOG_DEFAULT_DAYS 30

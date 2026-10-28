@@ -16,7 +16,17 @@
 //   delay that doubles up to NODE_AGENT_SIGNAL_MAX. It takes the Signals that the Controller forwards and answers each
 //   offer. A Signal is sealed to the static key of its receiver, so the Controller can neither read nor alter one: the
 //   peer layer drops and counts a Signal that does not open. The Path through the Relay is up once the two exchanged one
-//   Signal each (relay-first). The direct path of ICE and the punch come with CORE-S5-3 and CORE-S5-4 (#412, #413).
+//   Signal each (relay-first). The punch comes with CORE-S5-4 (#413).
+// - Once the pair is up through the Relay, ICE runs for it in the background (Core/PeerIce.c; CORE-S5-6, #412) on the socket
+//   of the peer layer: the candidates of the node are the host addresses of that socket and the address that the home relay
+//   saw the node at, which the answer of its bind gives, so no STUN server is needed and none is used. The pair moves to the
+//   direct path that ICE validates (an Upgrade), with its peer session, and back to the Relay when consent freshness fails
+//   it (a Fallback). With ICE the agent offers and answers once the home relay answered its bind, so that every Signal names
+//   that address, and it offers again to every peer of the datagram path when its candidates change. A node asks its home
+//   gateway for a public port of the socket with PCP, NAT-PMP or UPnP only when its setting PortMapping is 1
+//   (NODE_SETTING_PORT_MAPPING): it is off by default, as a port that a gateway opens is attack surface. The public port then
+//   goes first among the candidates. The Upgrades and the Fallbacks go to the Controller on the control stream
+//   (ControlSetPaths), which exports them.
 // - The overlay sends the record of a peer without a stream session on its Path (NodeAgentSend), after the forwarding table,
 //   the policy, the 1:1 NAT rules and the shaping of the VRF, as it sends the record of a session. A record that comes back
 //   goes to the host as one of a session does, with the same VRF tag and the same policy (NodeOverlayAgentDeliver), on the
@@ -31,6 +41,7 @@
 
 #include "Core/Control.h"
 
+#include "ConfigStore.h"
 #include "NodeInternal.h"
 
 // One peer of the overlay as the agent knows it, from the Peer objects of the desired state
@@ -39,7 +50,8 @@ typedef struct NODE_AGENT_PEER {
 	UCHAR Key[PEER_KEY_SIZE];  // Its static key
 	bool Datagram;             // Neither end of the pair has an endpoint: the two cannot dial each other
 	bool DialFailed;           // The last dial of the node to it failed
-	bool Resignal;             // The home relay changed: the next offer tells the peer, whether it has a Path or not
+	bool Resignal;             // The home relay or the candidates changed: the next offer tells the peer, whether it has a Path or not
+	bool Answer;               // With ICE, its offer came before the home relay answered the bind: the thread answers it then
 	UINT64 NextSignal;         // When the agent may offer it a Signal next (GetTickCount64)
 	UINT Delay;                // ... and the delay after that offer
 	volatile LONG64 Out;       // Records of the overlay sent to it on its Path
@@ -86,6 +98,10 @@ struct NODE_AGENT {
 	volatile LONG64 SignalsTaken;                  // Signals of peers taken
 	volatile LONG64 SignalsDropped;                // ... and dropped
 	volatile LONG64 Delivered;                     // Records of peers handed to the overlay
+	PEER_CANDIDATE Seen[PEER_MAX_CANDIDATES];      // With ICE, the candidates of the node at the last look of the thread ...
+	UINT NumSeen;                                  // ... and their number: the thread alone uses them
+	UINT64 NextHosts;                              // When the thread reads the host addresses of the UDP socket again
+	CONTROL_PATHS *Paths;                          // The Upgrades and the Fallbacks that the control stream reports
 };
 
 // The agent of the overlay of node n, NULL while the overlay does not run
@@ -226,12 +242,17 @@ void NodeAgentDialFailed(NODE *n, const UCHAR *key) {
 //
 
 // Offer a Signal to each peer that needs the datagram path and has no Path to it yet, as its delay allows, and once to each that
-// has to hear of a new home relay. The Signal goes on the control stream, which the Controller carries it on to the peer.
+// has to hear of a new home relay or of new candidates of the node. The Signal goes on the control stream, which the Controller
+// carries it on to the peer. With ICE an offer names the address that the home relay saw the node at, so none goes before the
+// relay answered the bind of the node.
 static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 	UCHAR env[PEER_MAX_ENVELOPE];
 	NODE_AGENT_DUE *due = NULL;
 	UINT num = 0;
 	UINT64 now = GetTickCount64();
+
+	if (a->Config.Ice && PeerHomeBound(p) == false)
+		return;
 
 	AcquireSRWLockShared(&a->Lock);
 	{
@@ -291,7 +312,9 @@ static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 // A Signal that the Controller carried from the peer of the node name peer (CONTROL_SIGNAL_PROC), on the thread of the control
 // stream. The peer layer opens it, which only the static key of the node does: a Signal that the Controller forged or altered,
 // a replay, or one of no peer is dropped and counted. An offer gets the answer of the node, which goes to the node that holds
-// the key of the sender in the desired state, whatever name the Controller gave the Signal.
+// the key of the sender in the desired state, whatever name the Controller gave the Signal. With ICE the answer names the
+// address that the home relay saw the node at: an offer that comes before the relay answered the bind of the node is
+// answered by the thread of the agent once it did (NodeAgentAnswer).
 void NodeAgentSignal(void *param, const char *peer, const UCHAR *envelope, UINT size) {
 	NODE *n = (NODE *)param;
 	NODE_AGENT *a = NodeAgentOf(n);
@@ -321,28 +344,132 @@ void NodeAgentSignal(void *param, const char *peer, const UCHAR *envelope, UINT 
 	if (sig.Type != PEER_SIGNAL_OFFER)
 		return;
 
-	AcquireSRWLockShared(&a->Lock);
+	bool later = (a->Config.Ice && PeerHomeBound(p) == false);
+
+	AcquireSRWLockExclusive(&a->Lock);
 	{
-		const NODE_AGENT_PEER *e = NodeAgentFind(a, sig.Sender);
+		NODE_AGENT_PEER *e = NodeAgentFind(a, sig.Sender);
 
 		if (e != NULL) {
 			StrCpy(name, sizeof(name), e->Name);
 			known = true;
+			e->Answer = later;
 		}
 	}
-	ReleaseSRWLockShared(&a->Lock);
+	ReleaseSRWLockExclusive(&a->Lock);
 
-	UINT len = (known ? PeerSealSignal(p, sig.Sender, PEER_SIGNAL_ANSWER, env, sizeof(env)) : 0);
+	UINT len = (known && later == false ? PeerSealSignal(p, sig.Sender, PEER_SIGNAL_ANSWER, env, sizeof(env)) : 0);
 	if (len != 0 && ControlSendSignal(a->Signals, name, env, len))
 		InterlockedIncrement64(&a->SignalsSent);
+}
+
+// With ICE, the answers to the offers that came before the home relay answered the bind of the node, once it did: each names
+// the address that the relay saw the node at
+static void NodeAgentAnswer(NODE_AGENT *a, PEER_AGENT *p) {
+	UCHAR env[PEER_MAX_ENVELOPE];
+	NODE_AGENT_DUE *due = NULL;
+	UINT num = 0;
+
+	if (PeerHomeBound(p) == false)
+		return;
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		for (UINT i = 0; i < a->NumPeers; i++) {
+			NODE_AGENT_PEER *e = &a->Peers[i];
+
+			if (e->Answer == false)
+				continue;
+
+			if (due == NULL)
+				due = Malloc(sizeof(NODE_AGENT_DUE) * a->NumPeers);
+			StrCpy(due[num].Name, sizeof(due[num].Name), e->Name);
+			Copy(due[num].Key, e->Key, PEER_KEY_SIZE);
+			num++;
+			e->Answer = false;
+		}
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
+
+	for (UINT i = 0; i < num; i++) {
+		UINT len = PeerSealSignal(p, due[i].Key, PEER_SIGNAL_ANSWER, env, sizeof(env));
+
+		if (len != 0 && ControlSendSignal(a->Signals, due[i].Name, env, len))
+			InterlockedIncrement64(&a->SignalsSent);
+	}
+
+	Free(due);
+}
+
+// Whether the n candidates c are the m candidates d, in the same order
+static bool NodeAgentSameCandidates(const PEER_CANDIDATE *c, UINT n, const PEER_CANDIDATE *d, UINT m) {
+	if (n != m)
+		return false;
+
+	for (UINT i = 0; i < n; i++)
+		if (c[i].Type != d[i].Type || PeerAddrEqual(&c[i].Addr, &d[i].Addr) == false)
+			return false;
+
+	return true;
+}
+
+// With ICE: when the candidates of the node changed since the last look, as when the home gateway granted the public port of
+// the socket or the home relay saw the node at another address, each peer of the datagram path hears of them in an offer. The
+// offer starts a new ICE session with the peer while the one there is still checks without the public port, or failed
+// (PeerSealSignal), and the peer takes the candidates with it.
+static void NodeAgentCandidates(NODE_AGENT *a, PEER_AGENT *p) {
+	PEER_CANDIDATE c[PEER_MAX_CANDIDATES];
+
+	UINT num = PeerGetCandidates(p, c, PEER_MAX_CANDIDATES);
+	if (NodeAgentSameCandidates(c, num, a->Seen, a->NumSeen))
+		return;
+
+	for (UINT i = 0; i < num; i++)
+		a->Seen[i] = c[i];
+	a->NumSeen = num;
+
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		for (UINT i = 0; i < a->NumPeers; i++) {
+			a->Peers[i].Resignal = true;
+			a->Peers[i].NextSignal = 0;
+		}
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
 }
 
 //
 // The agent
 //
 
+// Whether the setting PortMapping of node n is 1: the peer agent then asks the home gateway for a public port of its socket
+static bool NodeAgentPortMapping(NODE *n) {
+	char value[MAX_SIZE];
+
+	return (n->Store != NULL && CsGetSetting(n->Store, NODE_SETTING_PORT_MAPPING, value, sizeof(value)) && ToInt(value) != 0);
+}
+
+// With ICE, the host addresses of the UDP socket of the agent as the host candidates of its peer layer, which the thread reads
+// again every NODE_AGENT_HOSTS, so that an address that the host gained or lost goes to the peers too
+static void NodeAgentHosts(NODE_AGENT *a, PEER_AGENT *p) {
+	PEER_ADDR hosts[PEER_MAX_CANDIDATES];
+
+	UINT num = PeerUdpHosts(a->Udp, hosts, PEER_MAX_CANDIDATES - 1);
+	PeerSetHostCandidates(p, hosts, num);
+	a->NextHosts = GetTickCount64() + NODE_AGENT_HOSTS;
+}
+
+// The Upgrades and the Fallbacks of the peer layer, which the control stream reports to the Controller when they changed
+static void NodeAgentReport(NODE_AGENT *a, PEER_AGENT *p) {
+	PEER_STATS st;
+
+	PeerGetStats(p, &st);
+	ControlSetPaths(a->Paths, st.Upgrades, st.Fallbacks);
+}
+
 // The thread of the agent: the timers of the peer layer on the network of a test, whose Binding keepalives and session timers
-// they run (the receive thread of a UDP socket runs them itself, PeerUdp.c), and the offers
+// they run (the receive thread of a UDP socket runs them itself, PeerUdp.c); with ICE, the host addresses of the UDP socket
+// and the candidates of the node; the answers that waited for the home relay, the offers, and the report of the Paths
 static DWORD WINAPI NodeAgentThread(LPVOID param) {
 	NODE_AGENT *a = (NODE_AGENT *)param;
 
@@ -354,14 +481,30 @@ static DWORD WINAPI NodeAgentThread(LPVOID param) {
 
 		if (a->Udp == NULL)
 			PeerTick(p);
+		else if (a->Config.Ice && GetTickCount64() >= a->NextHosts)
+			NodeAgentHosts(a, p);
+		if (a->Config.Ice) {
+			NodeAgentCandidates(a, p);
+			NodeAgentAnswer(a, p);
+		}
 		NodeAgentOffer(a, p);
+		NodeAgentReport(a, p);
 	}
 
 	return 0;
 }
 
+// How the peer layer of the agent reaches its peers, in the words of the node log
+static const char *NodeAgentIceWords(NODE_AGENT *a) {
+	if (a->Config.Ice == false)
+		return "without ICE, so its peers stay on the Relay";
+
+	return (a->Config.PortMap ? "with ICE and the port mapping of the home gateway" : "with ICE, without the port mapping of the home gateway");
+}
+
 // Start the peer layer of the agent: on the network of a test, or on a UDP socket of its own, whose receive thread hands it the
-// datagrams. NULL when it cannot start. The caller holds ApplyLock.
+// datagrams and whose addresses are its host candidates with ICE; the network of a test gives it those of the host of the node
+// when it takes the layer. NULL when it cannot start. The caller holds ApplyLock.
 static PEER_AGENT *NodeAgentRun(NODE_AGENT *a) {
 	PEER_UDP *u = NULL;
 	PEER_SEND_PROC *send = a->Send;
@@ -387,6 +530,8 @@ static PEER_AGENT *NodeAgentRun(NODE_AGENT *a) {
 	}
 
 	a->Udp = u;
+	if (u != NULL && a->Config.Ice)
+		NodeAgentHosts(a, p);
 	InterlockedExchangePointer((PVOID volatile *)&a->Peer, p);
 
 	// The network of a test hands the layer its datagrams from now on
@@ -394,9 +539,9 @@ static PEER_AGENT *NodeAgentRun(NODE_AGENT *a) {
 		a->Attach(a->Node, a->AttachParam, p);
 
 	if (u != NULL)
-		NodeLog(a->Node, "Agent: its peer layer runs on UDP port %u", (UINT)PeerUdpPort(u));
+		NodeLog(a->Node, "Agent: its peer layer runs on UDP port %u, %s", (UINT)PeerUdpPort(u), NodeAgentIceWords(a));
 	else
-		NodeLog(a->Node, "Agent: its peer layer runs on the network of the test");
+		NodeLog(a->Node, "Agent: its peer layer runs on the network of the test, %s", NodeAgentIceWords(a));
 
 	return p;
 }
@@ -519,8 +664,10 @@ void NodeAgentApply(NODE *n, const CONTROL_STATE *st) {
 }
 
 // Start the agent of the overlay of node n, with the network and the timers of the configuration cfg of the overlay: its peer
-// layer waits for a state that names a Relay. Returns the queue of the Signals that the control stream sends, NULL without
-// memory for it.
+// layer waits for a state that names a Relay. ICE moves the peers of the datagram path to a direct path, unless the
+// configuration of a test turns it off, and the port mapping of the home gateway runs where the setting PortMapping of the
+// node, or the configuration of a test, asks for it. Returns the queue of the Signals that the control stream sends, NULL
+// without memory for it.
 CONTROL_SIGNALS *NodeAgentStart(NODE *n, const NODE_OVERLAY_CONFIG *cfg) {
 	if (n == NULL || cfg == NULL || NodeAgentOf(n) != NULL)
 		return NULL;
@@ -532,17 +679,17 @@ CONTROL_SIGNALS *NodeAgentStart(NODE *n, const NODE_OVERLAY_CONFIG *cfg) {
 		Copy(&a->Config, cfg->PathConfig, sizeof(PEER_CONFIG));
 	else
 		PeerDefaultConfig(&a->Config);
-	// The agent is no relay, and it reaches its peers through the Relays: the direct path of ICE and the punch come with
-	// CORE-S5-3 and CORE-S5-4 (#412, #413)
+	// The agent is no relay, and the punch comes with CORE-S5-4 (#413)
 	a->Config.Relay = false;
-	a->Config.Ice = false;
-	a->Config.PortMap = false;
+	a->Config.Ice = (cfg->PathConfig != NULL ? cfg->PathConfig->Ice : true);
+	a->Config.PortMap = a->Config.Ice && (a->Config.PortMap || NodeAgentPortMapping(n));
 	a->Config.Punch = false;
 	a->Send = cfg->PathSend;
 	a->SendParam = cfg->PathSendParam;
 	a->Attach = cfg->PathAttach;
 	a->AttachParam = cfg->AdapterParam;
 	a->Signals = ControlNewSignals();
+	a->Paths = ControlNewPaths();
 	a->ApplyLock = NewLock();
 	InitializeSRWLock(&a->Lock);
 
@@ -557,8 +704,8 @@ CONTROL_SIGNALS *NodeAgentStart(NODE *n, const NODE_OVERLAY_CONFIG *cfg) {
 }
 
 // Stop the agent of the overlay of node n, once the control stream that carried its Signals and the thread of the overlay that
-// dialled its peers stopped: its thread, then the network that hands its peer layer datagrams, then the layer and the readers
-// of its receive threads
+// dialled its peers stopped: its thread, then the network that hands its peer layer datagrams, then the layer, whose ICE
+// sessions send on its UDP socket until they end, then the socket and the readers of its receive threads
 void NodeAgentStop(NODE *n) {
 	NODE_AGENT *a = (n != NULL ? (NODE_AGENT *)InterlockedExchangePointer((PVOID volatile *)&n->Agent, NULL) : NULL);
 
@@ -573,13 +720,14 @@ void NodeAgentStop(NODE *n) {
 	if (a->Halt != NULL)
 		CloseHandle(a->Halt);
 
-	// No datagram comes to the layer once its socket is closed, or once it left the network of the test
+	// No datagram comes to the layer once the receive thread of its socket stopped, or once it left the network of the test
 	PEER_AGENT *p = NodeAgentPeerOf(a);
 	if (a->Udp != NULL)
-		PeerUdpFree(a->Udp);
+		PeerUdpStop(a->Udp);
 	else if (p != NULL && a->Attach != NULL)
 		a->Attach(n, a->AttachParam, NULL);
 	PeerFree(p);
+	PeerUdpFree(a->Udp);
 
 	for (UINT i = 0; i < NODE_AGENT_THREADS; i++) {
 		NODE_AGENT_THREAD *th = &a->Threads[i];
@@ -590,6 +738,7 @@ void NodeAgentStop(NODE *n) {
 	}
 
 	ControlFreeSignals(a->Signals);
+	ControlFreePaths(a->Paths);
 	DeleteLock(a->ApplyLock);
 	Free(a->Peers);
 	Free(a);
@@ -645,6 +794,7 @@ void NodeAgentGetStatus(NODE *n, NODE_AGENT_STATUS *st) {
 
 	PEER_AGENT *p = NodeAgentPeerOf(a);
 	st->Running = (p != NULL);
+	st->Ice = a->Config.Ice;
 	st->Port = (p != NULL ? PeerUdpPort(a->Udp) : 0);
 	st->NumRelays = (UINT)ReadAcquire(&a->NumRelays);
 	st->SignalsSent = (UINT64)ReadAcquire64(&a->SignalsSent);
@@ -652,6 +802,28 @@ void NodeAgentGetStatus(NODE *n, NODE_AGENT_STATUS *st) {
 	st->SignalsDropped = (UINT64)ReadAcquire64(&a->SignalsDropped);
 	st->Delivered = (UINT64)ReadAcquire64(&a->Delivered);
 	PeerGetStats(p, &st->Peer);
+}
+
+// The report of the Upgrades and the Fallbacks of node n that its control stream sends (CONTROL_CONFIG.Paths), NULL while its
+// overlay does not run
+CONTROL_PATHS *NodeAgentPaths(NODE *n) {
+	NODE_AGENT *a = NodeAgentOf(n);
+
+	return (a != NULL ? a->Paths : NULL);
+}
+
+// The name of a state of the port mapping of PEER_PORTMAP_*, as the state of the node says it
+const char *NodeAgentPortMapName(UINT state) {
+	switch (state) {
+	case PEER_PORTMAP_PENDING:
+		return "asking";
+	case PEER_PORTMAP_MAPPED:
+		return "mapped";
+	case PEER_PORTMAP_FAILED:
+		return "failed";
+	default:
+		return "off";
+	}
 }
 
 // The name of a path of NODE_PATH_*, as the state of the node says it
