@@ -126,11 +126,13 @@ UINT NodeFrameWrite(UCHAR *room, UINT group, UINT64 tags) {
 // Read the header of a record of a Noise session, size bytes, into *claim, and its size into *header, which the data
 // record of frame version 0 follows. A record of frame version 0, whose VRF tag is the id of a VRF, has none and carries
 // no source group: *header is 0. A record whose VRF tag is 0, the VRF tag of no VRF, is of a later frame version: false,
-// with *header 0, unless it is a record of frame version 1 whose options fill their length exactly, each a header of 4
-// bytes and its data, with no critical option but the ones that the node knows. The option of the source group gives the
-// claim, the last one when there are several; an option that the node does not know and whose critical bit is clear is
-// skipped.
+// with *header 0 and no claim, unless it is a record of frame version 1 whose options fill their length exactly, each a
+// header of 4 bytes and its data, with no critical option but the ones that the node knows. The option of the source
+// group gives the claim, the last one when there are several; an option that the node does not know and whose critical
+// bit is clear is skipped.
 bool NodeFrameParse(const UCHAR *record, UINT size, NODE_SOURCE_CLAIM *claim, UINT *header) {
+	NODE_SOURCE_CLAIM c;
+
 	if (claim == NULL || header == NULL)
 		return false;
 
@@ -148,7 +150,10 @@ bool NodeFrameParse(const UCHAR *record, UINT size, NODE_SOURCE_CLAIM *claim, UI
 	if (end > size)
 		return false;
 
-	// The options fill whole words, so the header of one fits in what is left of them, and its data must fit after it
+	// The options fill whole words, so the header of one fits in what is left of them, and its data must fit after it. The
+	// claim goes into *claim once every option is read, so that a record that the node drops leaves none, as one whose
+	// option of the source group comes before an option that runs past the options
+	Copy(&c, claim, sizeof(NODE_SOURCE_CLAIM));
 	for (UINT pos = NODE_FRAME_HEADER; pos < end;) {
 		UINT type = record[pos];
 		UINT len = (UINT)record[pos + 1] * 4;
@@ -157,19 +162,18 @@ bool NodeFrameParse(const UCHAR *record, UINT size, NODE_SOURCE_CLAIM *claim, UI
 			return false;
 
 		if (type == NODE_FRAME_GROUP && len == NODE_FRAME_GROUP_DATA) {
-			claim->Carried = true;
-			claim->HasTags = true;
-			claim->Group = READ_USHORT(record + pos + 4);
-			claim->Tags = READ_UINT64(record + pos + 8);
+			c.Carried = true;
+			c.HasTags = true;
+			c.Group = READ_USHORT(record + pos + 4);
+			c.Tags = READ_UINT64(record + pos + 8);
 		} else if ((type & NODE_FRAME_CRITICAL) != 0) {
-			Zero(claim, sizeof(NODE_SOURCE_CLAIM));
-			claim->Carrier = NODE_CARRIER_SESSION;
 			return false;
 		}
 
 		pos += 4 + len;
 	}
 
+	Copy(claim, &c, sizeof(NODE_SOURCE_CLAIM));
 	*header = end;
 	return true;
 }

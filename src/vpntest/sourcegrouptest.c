@@ -181,8 +181,8 @@ static void SgTestRead(SGTEST_CTX *ctx, char *out, UINT size, const UCHAR *frame
 	}
 }
 
-// What NodeFrameParse read from a record, as a line
-static void SgTestReadRecord(char *out, UINT size, const UCHAR *record, UINT record_size)
+// What NodeFrameParse read from a record, as a line. A record that the node drops leaves no header and no claim.
+static void SgTestReadRecord(SGTEST_CTX *ctx, char *out, UINT size, const UCHAR *record, UINT record_size)
 {
 	NODE_SOURCE_CLAIM claim;
 	UINT header = 0;
@@ -190,6 +190,8 @@ static void SgTestReadRecord(char *out, UINT size, const UCHAR *record, UINT rec
 	if (NodeFrameParse(record, record_size, &claim, &header) == false)
 	{
 		StrCpy(out, size, "  read: not read, the node drops the record");
+		SgTestCheck(ctx, header == 0 && claim.Carried == false && claim.Carrier == NODE_CARRIER_SESSION,
+			"a record that the node drops leaves no header and no claim");
 	}
 	else if (claim.Carried == false)
 	{
@@ -228,7 +230,7 @@ static void SgTestGroups(SGTEST_CTX *ctx)
 		SgTestFields(fields, sizeof(fields), record, sgtest_ranz_fields, sizeof(sgtest_ranz_fields) / sizeof(sgtest_ranz_fields[0]));
 		Format(line, sizeof(line), "  ranz frame: %s", fields);
 		SgTestLine(ctx, line);
-		SgTestReadRecord(line, sizeof(line), record, sizeof(record));
+		SgTestReadRecord(ctx, line, sizeof(line), record, sizeof(record));
 		SgTestLine(ctx, line);
 
 		Zero(&group, sizeof(group));
@@ -285,7 +287,7 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	Zero(record, sizeof(record));
 	WRITE_UINT(record, SGTEST_VRF);
 	SgTestLine(ctx, "a record of frame version 0, the data record of VRF 101");
-	SgTestReadRecord(line, sizeof(line), record, NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
+	SgTestReadRecord(ctx, line, sizeof(line), record, NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
 	SgTestLine(ctx, line);
 
 	// Frame version 2
@@ -293,7 +295,7 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	record[4] = 2;
 	WRITE_UINT(record + NODE_FRAME_HEADER, SGTEST_VRF);
 	SgTestLine(ctx, "a record of frame version 2, which no node knows yet");
-	SgTestReadRecord(line, sizeof(line), record, NODE_FRAME_HEADER + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
+	SgTestReadRecord(ctx, line, sizeof(line), record, NODE_FRAME_HEADER + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
 	SgTestLine(ctx, line);
 
 	// Options that run past the record
@@ -303,7 +305,23 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	record[NODE_FRAME_HEADER] = NODE_FRAME_GROUP;
 	record[NODE_FRAME_HEADER + 1] = NODE_FRAME_GROUP_DATA / 4;
 	SgTestLine(ctx, "a record of frame version 1 whose options run past its end");
-	SgTestReadRecord(line, sizeof(line), record, NODE_FRAME_HEADER + 4);
+	SgTestReadRecord(ctx, line, sizeof(line), record, NODE_FRAME_HEADER + 4);
+	SgTestLine(ctx, line);
+
+	// The option of the source group, then an option whose data runs past the options: the record is dropped, and the
+	// claim of the first option does not stay behind (a crash input of fuzz_frame)
+	Zero(record, sizeof(record));
+	record[4] = NODE_FRAME_VERSION;
+	record[5] = 6;
+	record[NODE_FRAME_HEADER] = NODE_FRAME_GROUP;
+	record[NODE_FRAME_HEADER + 1] = NODE_FRAME_GROUP_DATA / 4;
+	WRITE_USHORT(record + NODE_FRAME_HEADER + 4, 5);
+	WRITE_UINT64(record + NODE_FRAME_HEADER + 8, 0x10);
+	record[NODE_FRAME_HEADER + 16] = 0x02;
+	record[NODE_FRAME_HEADER + 17] = 4;
+	WRITE_UINT(record + NODE_FRAME_HEADER + 24, SGTEST_VRF);
+	SgTestLine(ctx, "a record of frame version 1 with the option of the source group, then an option whose data runs past the options");
+	SgTestReadRecord(ctx, line, sizeof(line), record, NODE_FRAME_HEADER + 24 + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
 	SgTestLine(ctx, line);
 
 	// An option that the node does not know, with its critical bit set
@@ -313,7 +331,7 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	record[NODE_FRAME_HEADER] = 0x82;
 	WRITE_UINT(record + NODE_FRAME_HEADER + 4, SGTEST_VRF);
 	SgTestLine(ctx, "a record of frame version 1 with an option of the type 0x82, critical, that the node does not know");
-	SgTestReadRecord(line, sizeof(line), record, NODE_FRAME_HEADER + 4 + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
+	SgTestReadRecord(ctx, line, sizeof(line), record, NODE_FRAME_HEADER + 4 + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
 	SgTestLine(ctx, line);
 
 	// An option that the node does not know, with its critical bit clear and no data, before the option of the source group
@@ -327,7 +345,7 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	WRITE_UINT64(record + NODE_FRAME_HEADER + 12, 0x80);
 	WRITE_UINT(record + NODE_FRAME_HEADER + 20, SGTEST_VRF);
 	SgTestLine(ctx, "a record of frame version 1 with an option of the type 0x02 that the node does not know, then the option of the source group");
-	SgTestReadRecord(line, sizeof(line), record, NODE_FRAME_HEADER + 20 + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
+	SgTestReadRecord(ctx, line, sizeof(line), record, NODE_FRAME_HEADER + 20 + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
 	SgTestLine(ctx, line);
 
 	// VXLAN without the G flag

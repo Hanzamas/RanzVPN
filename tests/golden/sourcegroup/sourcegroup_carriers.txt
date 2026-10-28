@@ -40,6 +40,8 @@ a record of frame version 2, which no node knows yet
   read: not read, the node drops the record
 a record of frame version 1 whose options run past its end
   read: not read, the node drops the record
+a record of frame version 1 with the option of the source group, then an option whose data runs past the options
+  read: not read, the node drops the record
 a record of frame version 1 with an option of the type 0x82, critical, that the node does not know
   read: not read, the node drops the record
 a record of frame version 1 with an option of the type 0x02 that the node does not know, then the option of the source group

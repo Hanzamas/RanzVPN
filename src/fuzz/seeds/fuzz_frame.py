@@ -53,3 +53,6 @@ def make_seeds(h):
     seed('past_options.bin', frame(option(0x01, struct.pack('>HHQ', 3, 0, 0x4)), words=2) + record)
     seed('version_2.bin', frame(b'', version=2) + record)
     seed('cut_header.bin', frame(b'')[:6])
+    # The option of the source group, then an option whose data runs past the options: the record is dropped with no
+    # claim, which a crash input of the fuzzer once found left behind
+    seed('group_then_past_options.bin', frame(group(5, 0x10) + struct.pack('>BBH', 0x02, 4, 0), words=6) + record)
