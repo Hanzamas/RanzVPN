@@ -5,19 +5,20 @@
 // five nodes in VRF red, fake adapters for their hosts, the in-process loopback transport for their Noise sessions, and the
 // desired states that the test applies itself (NodeOverlayApply). node-a runs under no profile; node-b, node-c and node-d
 // are the devices of alice, node-e the device of bob. node-a has the greatest static key, so the devices dial it. node-b
-// has two IPv4 addresses and one IPv6 address of its own more than the others, and a 1:1 NAT rule whose outside prefix is
-// a route of node-b at every other node: a prefix that node-b routes.
+// has two IPv4 addresses and one IPv6 address of its own more than the others, and two 1:1 NAT rules, one of IPv4 and one
+// of IPv6, whose outside prefixes are routes of node-b at every other node: prefixes that node-b routes.
 // - Rates: alice runs under an upload limit of 8 Mbit/s and a download limit of 4 Mbit/s. node-a sends to node-b as fast as
 //   it can for 1.5 s, and its overlay sends node-b the burst of the bucket and 4 Mbit/s over the time; node-b, paced by a
 //   rate limit of its own of 16 Mbit/s, sends to node-a, whose host takes the burst and 8 Mbit/s over the time, and node-a
 //   drops the rest. Every packet is counted: what arrives, and what the limits drop.
 // - Flags at the peers (the Peer objects carry the profile, the NodeConfigs do not): node-a drops a TCP SYN to node-b, in
 //   IPv4 and behind a hop-by-hop header of IPv6, and a SYN-ACK from it (no-server), passes a SYN from it, an ACK and UDP to
-//   it; drops a packet to the outside of the NAT rule of node-b and one from it (no-routing); takes the first two IPv4
-//   addresses and the first IPv6 address that node-b sends from and drops the next ones (the counts); node-b and node-c
-//   reach each other, since the privacy filter needs the profiles of both ends.
+//   it; drops a packet to the outside of a NAT rule of node-b and one from it, in IPv4 and in IPv6 (no-routing); takes
+//   the first two IPv4 addresses and the first IPv6 address that node-b sends from and drops the next ones (the counts);
+//   node-b and node-c reach each other, since the privacy filter needs the profiles of both ends.
 // - Flags on the devices themselves (the NodeConfigs carry the profile, the Peer objects do not): node-b drops the SYN of
-//   node-a to its host and the SYN-ACK of its host, and the packet to the outside of its NAT rule and the one from it.
+//   node-a to its host and the SYN-ACK of its host, and the packet to the outside of a NAT rule and the one from it, in
+//   IPv4 and in IPv6.
 // - Flags at both: the privacy filter keeps node-b and node-c apart at the node that sends, while each reaches node-a and
 //   node-e, which runs under the profile of bob without it.
 // - Sessions: alice runs under at most 2 sessions at a node, bob under 1. node-a holds 2 of the 3 devices of alice and
@@ -95,11 +96,16 @@ static char *profiletest_addrs[PROFILETEST_NODES][6] =
 	{"10.0.0.5", "fd00::5", NULL},
 };
 
-// The 1:1 NAT rule of node-b: its LAN 192.168.9.0/24 is 10.9.0.0/24 in red, a route of node-b at the other nodes
+// The 1:1 NAT rules of node-b: its LAN 192.168.9.0/24 is 10.9.0.0/24 in red, and its LAN fd09:9::/64 is fd00:9::/64, each
+// outside prefix a route of node-b at the other nodes
 #define	PROFILETEST_NAT_INSIDE	"192.168.9.0"
 #define	PROFILETEST_NAT_OUTSIDE	"10.9.0.0"
 #define	PROFILETEST_LAN_HOST	"192.168.9.5"
 #define	PROFILETEST_ROUTED		"10.9.0.5"
+#define	PROFILETEST_NAT6_INSIDE		"fd09:9::"
+#define	PROFILETEST_NAT6_OUTSIDE	"fd00:9::"
+#define	PROFILETEST_LAN6_HOST		"fd09:9::5"
+#define	PROFILETEST_ROUTED6			"fd00:9::5"
 
 // Where a case expects a packet to end
 #define	PROFILETEST_DELIVERED	0			// The host of the receiver takes it
@@ -564,6 +570,25 @@ static UINT ProfileTestAddresses(UINT i, CONTROL_ADDRESS *a)
 	return num;
 }
 
+// A 1:1 NAT rule of node-b in red from the prefix inside, which its host sees, to the prefix outside, which the VRF sees:
+// /24 for IPv4, /64 for IPv6
+static void ProfileTestNat(CONTROL_NAT *c, char *inside, char *outside)
+{
+	c->VrfId = PROFILETEST_VRF;
+	c->InsideSize = ProfileTestAddress(c->Inside, inside);
+	c->InsideLength = (c->InsideSize == 4 ? 24 : 64);
+	c->OutsideSize = ProfileTestAddress(c->Outside, outside);
+	c->OutsideLength = (c->OutsideSize == 4 ? 24 : 64);
+}
+
+// The route of node-b at another node to the outside prefix of one of its NAT rules: /24 for IPv4, /64 for IPv6
+static void ProfileTestRoute(CONTROL_ROUTE *r, char *prefix)
+{
+	r->VrfId = PROFILETEST_VRF;
+	r->AddressSize = ProfileTestAddress(r->Address, prefix);
+	r->Length = (r->AddressSize == 4 ? 24 : 64);
+}
+
 // Whether node i holds node j as a peer in the Generation g: every other node, but node-a and the nodes that g leaves out,
 // and two devices when g holds the devices to node-a alone
 static bool ProfileTestPeers(PROFILETEST_GEN *g, UINT i, UINT j)
@@ -599,14 +624,9 @@ static CONTROL_STATE *ProfileTestState(PROFILETEST_NODE *nodes, PROFILETEST_GEN 
 
 	if (i == PROFILETEST_B)
 	{
-		CONTROL_NAT *c = &st->Nats[st->NumNats++];
-
 		st->RateLimit = g->RateB;
-		c->VrfId = PROFILETEST_VRF;
-		c->InsideSize = ProfileTestAddress(c->Inside, PROFILETEST_NAT_INSIDE);
-		c->InsideLength = 24;
-		c->OutsideSize = ProfileTestAddress(c->Outside, PROFILETEST_NAT_OUTSIDE);
-		c->OutsideLength = 24;
+		ProfileTestNat(&st->Nats[st->NumNats++], PROFILETEST_NAT_INSIDE, PROFILETEST_NAT_OUTSIDE);
+		ProfileTestNat(&st->Nats[st->NumNats++], PROFILETEST_NAT6_INSIDE, PROFILETEST_NAT6_OUTSIDE);
 	}
 
 	// The other nodes in name order, which is the order of their indexes
@@ -626,10 +646,8 @@ static CONTROL_STATE *ProfileTestState(PROFILETEST_NODE *nodes, PROFILETEST_GEN 
 		p->NumAddresses = ProfileTestAddresses(j, p->Addresses);
 		if (j == PROFILETEST_B)
 		{
-			p->NumRoutes = 1;
-			p->Routes[0].VrfId = PROFILETEST_VRF;
-			p->Routes[0].AddressSize = ProfileTestAddress(p->Routes[0].Address, PROFILETEST_NAT_OUTSIDE);
-			p->Routes[0].Length = 24;
+			ProfileTestRoute(&p->Routes[p->NumRoutes++], PROFILETEST_NAT_OUTSIDE);
+			ProfileTestRoute(&p->Routes[p->NumRoutes++], PROFILETEST_NAT6_OUTSIDE);
 		}
 		if (g->Peers)
 		{
@@ -983,13 +1001,20 @@ static void ProfileTestFlagsAtPeers(PROFILETEST_CTX *ctx, PROFILETEST_NODE *node
 	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_A, PROFILETEST_SYN_ACK, b4, a4, PROFILETEST_AT_RECEIVER, PROFILETEST_SERVER,
 		"No-server at the peer: node-a drops the SYN-ACK of node-b, which would accept a connection");
 
-	// No-routing: the outside prefix of the NAT rule of node-b is a route of node-b, not an address of its own
+	// No-routing: the outside prefixes of the NAT rules of node-b are routes of node-b, not addresses of its own. A packet that
+	// no-routing drops takes none of the addresses that the counts below let node-b send from.
 	ProfileTestCase(ctx, nodes, PROFILETEST_A, PROFILETEST_B, PROFILETEST_UDP, a4, PROFILETEST_ROUTED, PROFILETEST_AT_SENDER, PROFILETEST_ROUTING,
 		"No-routing at the peer: node-a drops a packet to the outside of the NAT rule of node-b");
 	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_A, PROFILETEST_UDP, PROFILETEST_LAN_HOST, a4, PROFILETEST_AT_RECEIVER, PROFILETEST_ROUTING,
 		"No-routing at the peer: node-a drops the packet of the LAN behind node-b, which node-b translates to its outside");
 	ProfileTestCase(ctx, nodes, PROFILETEST_A, PROFILETEST_B, PROFILETEST_UDP, a4, b4, PROFILETEST_DELIVERED, PROFILETEST_ROUTING,
 		"No-routing at the peer: a packet to the own address of node-b reaches it");
+	ProfileTestCase(ctx, nodes, PROFILETEST_A, PROFILETEST_B, PROFILETEST_UDP, a6, PROFILETEST_ROUTED6, PROFILETEST_AT_SENDER, PROFILETEST_ROUTING,
+		"No-routing at the peer: node-a drops an IPv6 packet to the outside of the IPv6 NAT rule of node-b");
+	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_A, PROFILETEST_UDP, PROFILETEST_LAN6_HOST, a6, PROFILETEST_AT_RECEIVER, PROFILETEST_ROUTING,
+		"No-routing at the peer: node-a drops the IPv6 packet of the LAN behind node-b, which node-b translates to its outside");
+	ProfileTestCase(ctx, nodes, PROFILETEST_A, PROFILETEST_B, PROFILETEST_UDP, a6, b6, PROFILETEST_DELIVERED, PROFILETEST_ROUTING,
+		"No-routing at the peer: an IPv6 packet to the own address of node-b reaches it");
 
 	// The counts: the SYN of node-b above came from 10.0.0.2, its first IPv4 address at node-a
 	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_A, PROFILETEST_UDP, "10.0.0.12", a4, PROFILETEST_DELIVERED, PROFILETEST_ADDRESSES,
@@ -1011,7 +1036,7 @@ static void ProfileTestFlagsAtPeers(PROFILETEST_CTX *ctx, PROFILETEST_NODE *node
 // The flags on the devices themselves: the NodeConfigs carry the profile of alice, the Peer objects do not
 static void ProfileTestFlagsOwn(PROFILETEST_CTX *ctx, PROFILETEST_NODE *nodes)
 {
-	char *a4 = "10.0.0.1", *b4 = "10.0.0.2", *c4 = "10.0.0.3";
+	char *a4 = "10.0.0.1", *a6 = "fd00::1", *b4 = "10.0.0.2", *b6 = "fd00::2", *c4 = "10.0.0.3";
 
 	ProfileTestCase(ctx, nodes, PROFILETEST_A, PROFILETEST_B, PROFILETEST_SYN, a4, b4, PROFILETEST_AT_RECEIVER, PROFILETEST_SERVER,
 		"No-server on the device: node-b drops the TCP SYN of node-a to its host");
@@ -1023,6 +1048,12 @@ static void ProfileTestFlagsOwn(PROFILETEST_CTX *ctx, PROFILETEST_NODE *nodes)
 		"No-routing on the device: node-b drops a packet to the outside of its NAT rule");
 	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_A, PROFILETEST_UDP, PROFILETEST_LAN_HOST, a4, PROFILETEST_AT_SENDER, PROFILETEST_ROUTING,
 		"No-routing on the device: node-b drops the packet of its LAN, which its NAT rule translates");
+	ProfileTestCase(ctx, nodes, PROFILETEST_A, PROFILETEST_B, PROFILETEST_UDP, a6, PROFILETEST_ROUTED6, PROFILETEST_AT_RECEIVER, PROFILETEST_ROUTING,
+		"No-routing on the device: node-b drops an IPv6 packet to the outside of its IPv6 NAT rule");
+	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_A, PROFILETEST_UDP, PROFILETEST_LAN6_HOST, a6, PROFILETEST_AT_SENDER, PROFILETEST_ROUTING,
+		"No-routing on the device: node-b drops the IPv6 packet of its LAN, which its IPv6 NAT rule translates");
+	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_A, PROFILETEST_UDP, b6, a6, PROFILETEST_DELIVERED, PROFILETEST_ROUTING,
+		"No-routing on the device: an IPv6 packet from the own address of node-b leaves it");
 	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_C, PROFILETEST_ICMP, b4, c4, PROFILETEST_DELIVERED, PROFILETEST_ISOLATED,
 		"The privacy filter on the devices alone: node-b reaches node-c, as neither holds the profile of the other");
 }

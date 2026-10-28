@@ -18,8 +18,9 @@ import (
 //	ranz explain [flags] A B   walk the compiled model of the controller for a packet from A to B and print each
 //	                           step: the VRF, the route of the forwarding table with the VRF that a leaked route comes
 //	                           from and its route targets, the 1:1 NAT rules, the link with the endpoints of its Nodes
-//	                           and whether it encrypts, and the rule of the policy of the VRF at each end; then where
-//	                           the packet ends
+//	                           and whether it encrypts, the effective session profile of each end that runs under one,
+//	                           with the User or the Group that gives it (SDN-40), and the rule of the policy of the VRF
+//	                           at each end; then where the packet ends
 //
 // A is a Node, which sends from its address in the VRF, a WireGuard Device, or an address of either; B is a Node, a
 // Device or an IP address. The flags come before A and B: the connection flags of the CLI (-server, -token-file,
