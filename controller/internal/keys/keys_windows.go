@@ -69,7 +69,7 @@ func removeKeys(dir string) error {
 	}
 	defer freeObject(prov)
 	var errs []error
-	for _, kind := range []string{"Noise", "TLS"} {
+	for _, kind := range []string{"Noise", "TLS", "Store"} {
 		h, err := openKey(prov, keyName(kind, dir), keyScope())
 		if err == nil {
 			err = deleteKey(h)

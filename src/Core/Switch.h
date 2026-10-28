@@ -28,6 +28,10 @@
 // multicast frames. Beyond the tag, the switch reads only the two addresses, so a frame of any EtherType or length field
 // (IPX, NetBEUI, AppleTalk, Profinet, IEC 61850 GOOSE) passes byte for byte, bar the tag that its ports add or take off.
 //
+// Filter. A switch may have a filter (SWITCH_CONFIG.Admit, Deliver), which judges each frame before the switch learns its
+// source, and each member that a frame to a group reaches: the security of an L2 Network, which the policy engine runs
+// (SwitchSecurity.h; SDN-41, #234). A frame that it refuses goes nowhere, and its source is not learnt.
+//
 // Time is the caller's: SwitchInput and SwitchAge take it in ms (GetTickCount64, or the clock of a test), and the limits
 // and the ages of the MAC table run on it.
 
@@ -69,16 +73,30 @@
 #define SWITCH_DROP_PORT      1 // From a port that no member holds
 #define SWITCH_DROP_VLAN      2 // Of no VLAN that the port carries, or of VLAN id 4095
 #define SWITCH_DROP_SOURCE    3 // A group address as the source
-#define SWITCH_NUM_REASONS    4
+#define SWITCH_DROP_FILTER    4 // Refused by the filter of the switch (SWITCH_CONFIG.Admit)
+#define SWITCH_NUM_REASONS    5
+
+#define SWITCH_NO_MEMBER 0xFFFFFFFF // No member: where a frame to a group goes, for the filter of a switch
+
+// The filter of a switch (SWITCH_CONFIG). Admit judges each frame that the member from sends in the VLAN vlan, after its
+// VLAN and before the switch learns its source: a frame to an address that the VLAN learnt goes to the member to of its
+// port, any other frame to SWITCH_NO_MEMBER. Deliver judges such a frame again for each member to that it reaches. Both
+// run on the thread of SwitchInput, under the shared lock of the port of from (and, for Deliver, of the port of to), and
+// must not wait; true lets the frame through. The members are those of the ports (SWITCH_PORT_CONFIG.Member).
+typedef bool(SWITCH_ADMIT_PROC)(void *param, UINT64 now, UINT from, UINT to, UINT vlan, const UCHAR *frame, UINT size);
+typedef bool(SWITCH_DELIVER_PROC)(void *param, UINT from, UINT to, const UCHAR *frame, UINT size);
 
 // How a switch runs (SwitchNew); a value of 0 takes the default
 typedef struct SWITCH_CONFIG {
-	USHORT Tpid;         // The TPID of the Network's tags: SWITCH_MIN_TPID or above; 0 for SWITCH_TPID_8021Q
-	UINT MaxPorts;       // Ports at most, up to SWITCH_MAX_PORTS; 0 for SWITCH_DEFAULT_PORTS
-	UINT MaxMacs;        // Entries of the MAC table at most, up to SWITCH_MAX_MACS; 0 for SWITCH_DEFAULT_MACS
-	UINT AgingTime;      // ms after which SwitchAge takes out an entry that no frame refreshed; 0 for SWITCH_DEFAULT_AGING
-	UINT BroadcastLimit; // The broadcast limit of a VLAN that SwitchSetVlanLimits did not set, frames per second; 0 for none
-	UINT MulticastLimit; // ... and its multicast limit
+	USHORT Tpid;                  // The TPID of the Network's tags: SWITCH_MIN_TPID or above; 0 for SWITCH_TPID_8021Q
+	UINT MaxPorts;                // Ports at most, up to SWITCH_MAX_PORTS; 0 for SWITCH_DEFAULT_PORTS
+	UINT MaxMacs;                 // Entries of the MAC table at most, up to SWITCH_MAX_MACS; 0 for SWITCH_DEFAULT_MACS
+	UINT AgingTime;               // ms after which SwitchAge takes out an entry that no frame refreshed; 0 for SWITCH_DEFAULT_AGING
+	UINT BroadcastLimit;          // The broadcast limit of a VLAN that SwitchSetVlanLimits did not set, frames per second; 0 for none
+	UINT MulticastLimit;          // ... and its multicast limit
+	SWITCH_ADMIT_PROC *Admit;     // The filter of the switch: judges each frame, NULL for none ...
+	SWITCH_DELIVER_PROC *Deliver; // ... and each member that a frame to a group reaches, NULL for none
+	void *FilterParam;            // ... their first parameter
 } SWITCH_CONFIG;
 
 // Takes a frame that the switch delivers to the member of a port, byte for byte as it leaves the port. It runs on the
@@ -94,6 +112,7 @@ typedef struct SWITCH_PORT_CONFIG {
 	UINT NumAllowed;        // ... their number
 	SWITCH_SEND_PROC *Send; // Takes the frames that the port delivers
 	void *Param;            // ... its first parameter
+	UINT Member;            // Its member for the filter of the switch, which a switch without one ignores
 } SWITCH_PORT_CONFIG;
 
 // The counters of one VLAN (SwitchGetVlanStats). Each frame that its VLAN took is counted once in InFrames and once in
