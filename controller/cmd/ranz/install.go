@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/install"
 )
@@ -26,6 +27,7 @@ func runInstall(args []string) int {
 	controller := flags.Bool("controller", false, "also register and start the Controller service")
 	noXDP := flags.Bool("no-xdp", false, "leave the XDP runtime out, on a server that does not want it: the Node falls back to SeLow")
 	noWireGuard := flags.Bool("no-wireguard", false, "leave wireguard.dll of WireGuardNT out, on a Node that is the gateway of no WireGuard Device")
+	adminFrom := flags.String("admin-from", "", "with --controller: the sources that may reach the API and the web UI, prefixes or addresses separated by commas, or any for every address; by default loopback and the subnets of the private interfaces of this host")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -36,7 +38,20 @@ func runInstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "ranz install: unexpected arguments: %q\n", flags.Args())
 		return 2
 	}
-	opts := install.Options{Controller: *controller, NoXDP: *noXDP, NoWireGuard: *noWireGuard, Notice: notice}
+	from := strings.FieldsFunc(*adminFrom, func(r rune) bool { return r == ',' || r == ' ' })
+	if len(from) == 0 && *adminFrom != "" {
+		fmt.Fprintln(os.Stderr, "ranz install: --admin-from names no prefix: give prefixes or addresses separated by commas, or any")
+		return 2
+	}
+	if len(from) > 0 && !*controller {
+		fmt.Fprintln(os.Stderr, "ranz install: --admin-from needs --controller: it is the allowlist of the Controller")
+		return 2
+	}
+	if _, err := install.AdminFrom(from, nil); err != nil {
+		fmt.Fprintln(os.Stderr, "ranz install:", err)
+		return 2
+	}
+	opts := install.Options{Controller: *controller, AdminFrom: from, NoXDP: *noXDP, NoWireGuard: *noWireGuard, Notice: notice}
 	if err := install.Install(os.Stdout, opts); err != nil {
 		fmt.Fprintln(os.Stderr, "ranz install:", err)
 		return 1
