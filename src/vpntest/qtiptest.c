@@ -15,20 +15,26 @@
 //   carries loopback traffic on Winsock in any case); a default transport after it asks for the normal datapath, and a
 //   session over it comes up. Elsewhere a transport with Xdp keeps the normal datapath, and one with Qtip is not made.
 // - QTIP: where the XDP runtime is installed (the Capability xdp), a QTIP listener on TRANSPORT_QUIC_QTIP_PORT holds both
-//   the TCP and the UDP port, which no other socket can bind until it closes, and takes a session of plain QUIC as well;
-//   without it the listener does not listen, since QTIP has no normal datapath;
+//   the TCP and the UDP port, which no other socket can bind until it closes. msquic takes the packets of a QTIP listener
+//   from XDP only: it starts no receive on the OS sockets that reserve its ports (datapath_winuser.c of msquic 2.6.2), and
+//   the loopback does not cross XDP, so plain QUIC over the loopback does not reach it, while from the network its rules
+//   on every XDP interface take QUIC over UDP as well as over TCP. Without the runtime the listener does not listen, since
+//   QTIP has no normal datapath;
 // - the node: node-s with QuicXdp and Qtip on, whose overlay runs without a control stream and applies a state with a
 //   Listener (Cedar/NodeListener.c), runs the QUIC of its Listener on the datapath of the host and QTIP where the XDP
-//   runtime is there, or says why not, and node-c's session over the QUIC of the Listener comes up; without the settings
-//   its QUIC asks for the normal datapath and no QTIP listener runs.
+//   runtime is there, or says why not, node-c's session over the QUIC of the Listener comes up, and the ports of QTIP are
+//   free again once node-s stopped; without the settings its QUIC asks for the normal datapath and no QTIP listener runs.
 // With the argument "serve STOPFILE" or "dial THUMBPRINT", the test is one of the two server node processes of the XDP job
 // (ADR-0002 amendment of 2026-10-21: two node processes on one runner, each on its own KM-TEST adapter): node-s brings up
 // its KM-TEST adapter with the L2 adapter on XDP (198.18.83.1) and its Listener with QTIP on port 8443, prints "QTIP SERVE
 // READY" with the thumbprint of its certificate, and runs until the file STOPFILE is there; node-c brings up its own
-// KM-TEST adapter with XDP (198.18.84.1), checks from its process that TCP 8443 and UDP 8443 are held, opens a session of
-// plain QUIC to the QTIP listener of node-s, and dials node-s at 198.18.83.1:8443 over QTIP. Whether that link comes up is
-// printed as "QTIP LINK UP" or "QTIP LINK DOWN" and is no check: a KM-TEST adapter sends nowhere what XDP injects for it
-// to transmit, so on a runner with no wire between the two adapters the link cannot come up, which the job records.
+// KM-TEST adapter with XDP (198.18.84.1), checks from its process that TCP 8443 and UDP 8443 are held and that plain QUIC
+// over the loopback does not reach the QTIP listener of node-s, and dials node-s at 198.18.83.1:8443 over QTIP. Whether
+// that link comes up is printed as "QTIP LINK UP" or "QTIP LINK DOWN" and is no check: XDP sends the frames of an AF_XDP
+// socket below its own hooks, down to the miniport, injects received frames above them, and skips the loopback frames of
+// NDIS (send.c and recv.c of the XDP LWF of xdp-for-windows 1.4.0), and a KM-TEST adapter sends nowhere what reaches it.
+// So on a runner with no wire between the two adapters no frame of the link reaches the XDP program of node-s, and the
+// link cannot come up, which the job records.
 // Print "QTIP TEST OK" only when every check passes; skip, passing, where msquic.dll is not present. Needs administrator
 // rights: the LocalMachine\My store and its key storage provider, and the KM-TEST adapters of serve and dial.
 
@@ -62,6 +68,7 @@
 #define	QTIPTEST_TIMEOUT		15000		// A handshake, an accept or a record within this time (ms)
 #define	QTIPTEST_BOUND			20000		// A bounded wait on observable state (ms)
 #define	QTIPTEST_POLL			20			// Poll interval of observable state (ms)
+#define	QTIPTEST_REFUSED		5000		// A dial that must not come up is given this long (ms): one over the loopback comes up in far less
 #define	QTIPTEST_LISTEN			"127.0.0.1:0"	// A listener of the transport checks binds an ephemeral port on the loopback
 #define	QTIPTEST_CN				L"CN=localhost"	// The subject of the certificate
 #define	QTIPTEST_SAN			L"localhost"	// ... and its subject alternative name
@@ -355,6 +362,47 @@ static void QtipTestConfig(QTIPTEST_CTX *ctx, TRANSPORT_QUIC_CONFIG *cfg, bool x
 	cfg->Qtip = qtip;
 }
 
+// A dial of plain QUIC over the loopback to port that gives up after QTIPTEST_REFUSED ms: whether it ran, and in *up
+// whether it came up. A stream that came up closes again.
+static bool QtipTestLoopbackDial(QTIPTEST_CTX *ctx, USHORT port, bool *up)
+{
+	TRANSPORT_QUIC_CONFIG cfg;
+	char address[TRANSPORT_ADDRESS_SIZE];
+	LARGE_INTEGER due;
+
+	*up = false;
+	QtipTestConfig(ctx, &cfg, false, false);
+	TRANSPORT *plain = TransportQuicClientNew(&cfg);
+	if (plain == NULL)
+	{
+		return false;
+	}
+
+	// A waitable timer is the cancel of the dial; without one msquic ends it at its handshake idle timeout
+	HANDLE timer = CreateWaitableTimerW(NULL, TRUE, NULL);
+	due.QuadPart = -10000LL * QTIPTEST_REFUSED;
+	if (timer != NULL)
+	{
+		SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE);
+	}
+
+	Format(address, sizeof(address), "127.0.0.1:%u", (UINT)port);
+	TRANSPORT_STREAM *s = TransportDial(plain, address, timer);
+	*up = (s != NULL);
+	if (s != NULL)
+	{
+		TransportClose(s);
+	}
+
+	if (timer != NULL)
+	{
+		CloseHandle(timer);
+	}
+	TransportQuicFree(plain);
+
+	return true;
+}
+
 // The name of a datapath
 static char *QtipTestDatapath(UINT datapath)
 {
@@ -528,27 +576,14 @@ static void QtipTestQtip(QTIPTEST_CTX *ctx)
 
 		if (l != NULL)
 		{
-			// A client of plain QUIC on the loopback: a QTIP listener takes QUIC over UDP as well, on its OS socket
-			QTIPTEST_ECHO *e = ZeroMalloc(sizeof(QTIPTEST_ECHO));
-			UCHAR client_key[NOISE_KEY_SIZE], client_pub[NOISE_KEY_SIZE], server_pub[NOISE_KEY_SIZE];
-
-			CryptoX25519GenerateKey(client_key, client_pub);
-			CryptoX25519GenerateKey(e->Key, server_pub);
-			e->Listener = l;
-			THREAD *thread = NewThread(QtipTestEchoThread, e);
-			TRANSPORT_QUIC_CONFIG pc;
-			QtipTestConfig(ctx, &pc, false, false);
-			TRANSPORT *plain = TransportQuicClientNew(&pc);
-			Format(address, sizeof(address), "127.0.0.1:%u", (UINT)port);
-			TRANSPORT_STREAM *s = (plain != NULL ? TransportDial(plain, address, NULL) : NULL);
-			bool up = QtipTestExchange(s, client_key, server_pub) && e->Accepted;
-			WaitThread(thread, INFINITE);
-			ReleaseThread(thread);
-			TransportQuicFree(plain);
-			Zero(client_key, sizeof(client_key));
-			Zero(e->Key, sizeof(e->Key));
-			Free(e);
-			QtipTestCheck(ctx, up, "the QTIP listener takes a session of plain QUIC over UDP as well", "up %u", (UINT)up);
+			// msquic takes the packets of a QTIP listener from XDP only: it starts no receive on the OS sockets that reserve
+			// its ports, and the loopback does not cross XDP. So plain QUIC over the loopback reaches no QTIP listener, while
+			// from the network the rules of the listener on every XDP interface take QUIC over UDP as well as over TCP.
+			bool up = false;
+			bool ran = QtipTestLoopbackDial(ctx, port, &up);
+			QtipTestCheck(ctx, ran && up == false,
+				"plain QUIC over the loopback does not reach it: msquic takes the packets of a QTIP listener from XDP only, which the loopback does not cross",
+				"the dial %s", ran ? "came up" : "did not run");
 
 			TransportCloseListener(l);
 			l = NULL;
@@ -773,6 +808,7 @@ static void QtipTestNode(QTIPTEST_CTX *ctx, TRANSPORT *loopback)
 	char address[TRANSPORT_ADDRESS_SIZE];
 	UINT want = (ctx->Host ? TRANSPORT_QUIC_DATAPATH_XDP : TRANSPORT_QUIC_DATAPATH_NORMAL);
 	bool qtip = (ctx->Host && ctx->Runtime);
+	bool listened = false;
 
 	Print("[the node: QuicXdp and Qtip on]\n");
 	QtipTestNewDir(dir, sizeof(dir), "none", true);
@@ -786,8 +822,9 @@ static void QtipTestNode(QTIPTEST_CTX *ctx, TRANSPORT *loopback)
 			"applied %u, running %u, QUIC port %u, %s, error %s", (UINT)applied, (UINT)st.Running, st.QuicPort, QtipTestDatapath(st.QuicDatapath), st.Error);
 		if (qtip)
 		{
-			QtipTestCheck(ctx, st.QtipPort == TRANSPORT_QUIC_QTIP_PORT && IsEmptyStr(st.QtipError), "QTIP listens beside it on its own port, TCP and UDP",
-				"QTIP port %u, error %s", st.QtipPort, st.QtipError);
+			listened = (st.QtipPort == TRANSPORT_QUIC_QTIP_PORT && IsEmptyStr(st.QtipError) && QtipTestHeld(TRANSPORT_QUIC_QTIP_PORT));
+			QtipTestCheck(ctx, listened, "QTIP listens beside it on its own port and holds both the TCP and the UDP port", "QTIP port %u, error %s", st.QtipPort,
+				st.QtipError);
 		}
 		else
 		{
@@ -800,18 +837,17 @@ static void QtipTestNode(QTIPTEST_CTX *ctx, TRANSPORT *loopback)
 		Format(address, sizeof(address), "127.0.0.1:%u", st.QuicPort);
 		bool up = (quic != NULL && st.QuicPort != 0 && QtipTestNodeSession(ctx, n, quic, address, NULL));
 		QtipTestCheck(ctx, up, "node-c's session over the QUIC of the Listener comes up, and the overlay of node-s takes it as its peer's", "up %u", (UINT)up);
-
-		if (qtip && st.QtipPort != 0)
-		{
-			// The overlay takes the streams of the QTIP listener as its own (NodeQtipAccept): one of plain QUIC on the loopback
-			Format(address, sizeof(address), "127.0.0.1:%u", st.QtipPort);
-			up = (quic != NULL && QtipTestNodeSession(ctx, n, quic, address, NULL));
-			QtipTestCheck(ctx, up, "node-c's session to the QTIP port of node-s comes up, and the overlay takes it as its peer's", "up %u", (UINT)up);
-		}
 		TransportQuicFree(quic);
 	}
 	QtipTestNodeStop(n);
 	QtipTestDeleteDir(dir);
+
+	// The QTIP listener goes with the Listener of the node (NodeQtipDown, NodeQtipFree), and msquic lets go of its ports
+	if (listened)
+	{
+		QtipTestCheck(ctx, QtipTestWaitFree(TRANSPORT_QUIC_QTIP_PORT), "once node-s stopped, TCP 8443 and UDP 8443 are free again: its QTIP listener went with its Listener",
+			"a port is still taken");
+	}
 
 	Print("[the node: without the settings]\n");
 	QtipTestNewDir(dir, sizeof(dir), "none", false);
@@ -979,13 +1015,13 @@ static void QtipTestDial(QTIPTEST_CTX *ctx, char *thumbprint)
 		QtipTestCheck(ctx, QtipTestHeld(TRANSPORT_QUIC_QTIP_PORT), "from the process of node-c, TCP 8443 and UDP 8443 are held: no socket binds either",
 			"a port binds");
 
-		// The QTIP listener of node-s takes QUIC over UDP too: a session of plain QUIC on the loopback, from this process
-		QtipTestConfig(ctx, &cfg, false, false);
-		TRANSPORT *plain = TransportQuicClientNew(&cfg);
-		Format(address, sizeof(address), "127.0.0.1:%u", (UINT)TRANSPORT_QUIC_QTIP_PORT);
-		bool up = (plain != NULL && QtipTestNodeSession(ctx, NULL, plain, address, NULL));
-		QtipTestCheck(ctx, up, "node-c's session of plain QUIC to the QTIP port of node-s comes up, from another process", "up %u", (UINT)up);
-		TransportQuicFree(plain);
+		// msquic takes the packets of the QTIP listener of node-s from XDP only, so plain QUIC over the loopback does not reach
+		// it from this process either
+		bool up = false;
+		bool ran = QtipTestLoopbackDial(ctx, TRANSPORT_QUIC_QTIP_PORT, &up);
+		QtipTestCheck(ctx, ran && up == false,
+			"from the process of node-c, plain QUIC over the loopback does not reach the QTIP listener of node-s: msquic takes its packets from XDP only",
+			"the dial %s", ran ? "came up" : "did not run");
 
 		// The link of QUIC with a TCP header, from the KM-TEST adapter of node-c to the one of node-s
 		QtipTestConfig(ctx, &cfg, false, true);

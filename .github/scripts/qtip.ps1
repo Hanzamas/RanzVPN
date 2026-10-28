@@ -4,15 +4,17 @@
 # msquic.dll of the pinned package next to vpntest:
 # 1. ranz install. vpntest qtip in one process: the rule (Windows Server x64 only), the msquic release that ships QTIP,
 #    default off, opt-in and the normal datapath as before, a QTIP listener on 8443 that holds both the TCP and the UDP
-#    port and takes plain QUIC too, and the QuicXdp and Qtip settings of a node, here with the XDP runtime.
+#    port, which plain QUIC over the loopback does not reach (msquic takes the packets of a QTIP listener from XDP only),
+#    and the QuicXdp and Qtip settings of a node, here with the XDP runtime.
 # 2. Two server node processes. node-s (vpntest qtip serve STOPFILE) brings up its own KM-TEST adapter with XDP and its
 #    Listener with QTIP on 8443, and prints READY with the thumbprint of its certificate; from outside, Get-NetTCPConnection
 #    and Get-NetUDPEndpoint must show TCP 8443 and UDP 8443 held by its process. node-c (vpntest qtip dial THUMBPRINT) brings
-#    up its own KM-TEST adapter with XDP, finds both ports held from its process, opens a session of plain QUIC to the
-#    QTIP port of node-s, and dials node-s over QTIP between the two adapters. Whether that link came up goes to the job
-#    summary as a record, not a check: a KM-TEST adapter sends nowhere what XDP injects for it to transmit, so with no wire
-#    between the two adapters of a hosted runner the QUIC-over-TCP-header link cannot come up, which the pull request of
-#    #83 reports as a criterion not met.
+#    up its own KM-TEST adapter with XDP, finds both ports held from its process and the QTIP listener of node-s out of
+#    reach of plain QUIC over the loopback, and dials node-s over QTIP between the two adapters. Whether that link came up
+#    goes to the job summary as a record, not a check: XDP sends the frames of an AF_XDP socket down to the miniport below
+#    its own hooks, and a KM-TEST adapter sends nowhere what reaches it, so with no wire between the two adapters of a
+#    hosted runner the QUIC-over-TCP-header link cannot come up, which the pull request of #83 reports as a criterion not
+#    met.
 # 3. ranz uninstall.
 # Each run of vpntest is a process of its own with a time limit.
 param(
