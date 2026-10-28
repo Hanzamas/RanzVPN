@@ -36,10 +36,16 @@
 15 c_after_the_gateway_took_it_back: verdict drop-ip
 16 c_from_its_own_address: A got 02000000050A02000000050C86DD60000000000C11FFFE80000000000000000000000000000CFE80000000000000000000000000000A9C480009000C000052414E5A
 16 c_from_its_own_address: verdict pass-rule
+17 b_from_the_ip_of_the_gateway_behind_two_tags: nothing
+17 b_from_the_ip_of_the_gateway_behind_two_tags: verdict drop-ip
+18 b_from_its_own_address_behind_two_tags: A got 02000000050A02000000050B810000008100000008004500002000000000401100000A05000B0A05000A9C490009000C000052414E5A
+18 b_from_its_own_address_behind_two_tags: verdict pass-rule
+19 b_from_its_own_address_behind_three_tags: nothing
+19 b_from_its_own_address_behind_three_tags: verdict drop-protocol
 mac 10 02-00-00-00-05-01: GW
 mac 10 02-00-00-00-05-0A: A
 mac 10 02-00-00-00-05-0B: B
 mac 10 02-00-00-00-05-0C: C
-vlan 10: in 10 frames; unicast 7, flooded 0, broadcast 2, multicast 1, limit drops 0, filtered 0; out 16 frames
-switch: ports 4, macs 4, learnt 4, moved 0, refused 0; drops malformed 0, port 0, vlan 0, source 0, filter 6
-policy: 16 frames, pass-rule 5, pass-flow 2, pass-control 3, drop-mac 2, drop-ip 4
+vlan 10: in 11 frames; unicast 8, flooded 0, broadcast 2, multicast 1, limit drops 0, filtered 0; out 17 frames
+switch: ports 4, macs 4, learnt 4, moved 0, refused 0; drops malformed 0, port 0, vlan 0, source 0, filter 8
+policy: 19 frames, pass-rule 6, pass-flow 2, pass-control 3, drop-mac 2, drop-ip 5, drop-protocol 1

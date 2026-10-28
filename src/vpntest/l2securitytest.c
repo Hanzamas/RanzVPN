@@ -11,12 +11,14 @@
 //   - l2security_spoofing.txt: the MAC and IP checks with their limits. The frames of a client from its own addresses
 //     pass; from the address of another client or of the gateway, past its limits, or in an ARP reply that claims the
 //     address of the gateway, they go nowhere, and the MAC table keeps each address on its own port. The gateway takes
-//     back an address that a client took before the gateway sent from it.
+//     back an address that a client took before the gateway sent from it. A frame behind two tags is judged by what it
+//     carries; behind three tags it carries more than the policy engine reads, and goes nowhere.
 //   - l2security_broadcast.txt: ARP and DHCP only. A client sends and gets ARP, DHCP, DHCPv6 and IPv6 neighbour
 //     discovery to a group address, and no other broadcast or multicast, which still reaches a second gateway; its
 //     unicast frames pass.
 //   - l2security_gateway.txt: the DHCP and RA guards. A client that acts as a DHCP or DHCPv6 server or sends router
-//     advertisements is blocked; the DHCP messages and the router advertisements of the gateway reach the clients.
+//     advertisements is blocked; the DHCP messages and the router advertisements of the gateway reach the clients. A
+//     client cannot hide a DHCP server message or a router advertisement behind tags or IPv6 extension headers.
 // - Then: the guard of each role of a port and the members that SwitchSecurityMember makes; and the security of the L2
 //   Networks of a desired state as the control module takes it from the wire (Network.security, ControlInput): an L2
 //   Network carries it, an L3 Network and a Network without one do not, and a delta changes it.
@@ -307,6 +309,49 @@ static UINT L2tIcmp6Frame(UCHAR *f, const UCHAR *dmac, const UCHAR *smac, const 
 	}
 
 	return L2tFrame(f, dmac, smac, POLICY_IPV6, src, dst, 58, l4, 8 + body_size);
+}
+
+// A frame at f of the router advertisement of the cases from smac and src to the all-nodes address, behind num IPv6
+// destination options headers of 8 bytes, each with a PadN option; its size
+static UINT L2tHiddenRaFrame(UCHAR *f, const UCHAR *smac, const UCHAR *src, UINT num)
+{
+	UCHAR l4[L2T_FRAME_MAX];
+	UINT pos = 0;
+
+	for (UINT i = 0; i < num; i++)
+	{
+		Zero(l4 + pos, 8);
+		l4[pos] = (UCHAR)(i + 1 < num ? 60 : 58);	// The next header: another destination options header, then ICMPv6
+		l4[pos + 2] = 1;							// PadN, of 4 bytes
+		l4[pos + 3] = 4;
+		pos += 8;
+	}
+
+	// The router advertisement: the hop limit 64, no flags and the router lifetime of 1800 s, then the timers
+	Zero(l4 + pos, 8);
+	l4[pos] = 134;
+	l4[pos + 4] = 0x40;
+	l4[pos + 6] = 0x07;
+	l4[pos + 7] = 0x08;
+	Copy(l4 + pos + 8, l2t_ra_timers, sizeof(l2t_ra_timers));
+
+	return L2tFrame(f, l2t_mac_all_nodes, smac, POLICY_IPV6, src, l2t_ip6_all_nodes, 60, l4, pos + 16);
+}
+
+// Put num priority tags (TPID 0x8100, VLAN id 0) into the Ethernet frame f of size bytes, after its addresses: the outer
+// and the inner tag of a QinQ frame, or tags that a frame hides behind; its new size
+static UINT L2tTags(UCHAR *f, UINT size, UINT num)
+{
+	MoveMemory(f + 12 + num * 4, f + 12, size - 12);
+	for (UINT i = 0; i < num; i++)
+	{
+		f[12 + i * 4] = 0x81;
+		f[13 + i * 4] = 0x00;
+		f[14 + i * 4] = 0x00;
+		f[15 + i * 4] = 0x00;
+	}
+
+	return size + num * 4;
 }
 
 // An ARP frame at f for Ethernet and IPv4 from smac to dmac: the operation op of the sender sha, spa for the target tha,
@@ -663,6 +708,15 @@ static void L2tSpoofing(L2T_CTX *ctx)
 		size = L2tUdpFrame(f, l2t_mac_a, l2t_mac_c, POLICY_IPV6, l2t_ip6_c, l2t_ip6_a, 40008, 9);
 		L2tCase(net, "c_from_its_own_address", L2S_C, f, size, L2T_BIT(L2S_A));
 
+		// Behind two tags, an outer and an inner one, a frame is judged by what it carries; behind three, it carries more
+		// than the policy engine reads and goes nowhere
+		size = L2tTags(f, L2tUdpFrame(f, l2t_mac_a, l2t_mac_b, POLICY_IPV4, l2t_ip_gw, l2t_ip_a, 53, 40000), 2);
+		L2tCase(net, "b_from_the_ip_of_the_gateway_behind_two_tags", L2S_B, f, size, 0);
+		size = L2tTags(f, L2tUdpFrame(f, l2t_mac_a, l2t_mac_b, POLICY_IPV4, l2t_ip_b, l2t_ip_a, 40009, 9), 2);
+		L2tCase(net, "b_from_its_own_address_behind_two_tags", L2S_B, f, size, L2T_BIT(L2S_A));
+		size = L2tTags(f, L2tUdpFrame(f, l2t_mac_a, l2t_mac_b, POLICY_IPV4, l2t_ip_b, l2t_ip_a, 40010, 9), 3);
+		L2tCase(net, "b_from_its_own_address_behind_three_tags", L2S_B, f, size, 0);
+
 		L2tGolden(ctx, net, "l2security_spoofing.txt", "spoofing");
 	}
 
@@ -788,6 +842,15 @@ static void L2tGateway(L2T_CTX *ctx)
 		L2tCase(net, "a_neighbour_advertisement", L2G_A, f, size, L2T_BIT(L2G_B));
 		size = L2tUdpFrame(f, l2t_mac_b, l2t_mac_a, POLICY_IPV4, l2t_ip_a, l2t_ip_b, 40000, 80);
 		L2tCase(net, "a_unicast_to_b", L2G_A, f, size, L2T_BIT(L2G_B));
+
+		// A client cannot hide a DHCP server message or a router advertisement: behind two tags the guard reads it, and
+		// behind three tags or nine IPv6 extension headers it carries more than the policy engine reads and goes nowhere
+		size = L2tTags(f, L2tUdpFrame(f, l2t_mac_bcast, l2t_mac_a, POLICY_IPV4, l2t_ip_a, l2t_ip_bcast, 67, 68), 2);
+		L2tCase(net, "a_dhcp_offer_behind_two_tags", L2G_A, f, size, 0);
+		size = L2tTags(f, L2tUdpFrame(f, l2t_mac_bcast, l2t_mac_a, POLICY_IPV4, l2t_ip_a, l2t_ip_bcast, 67, 68), 3);
+		L2tCase(net, "a_dhcp_offer_behind_three_tags", L2G_A, f, size, 0);
+		size = L2tHiddenRaFrame(f, l2t_mac_a, l2t_ip6_a, 9);
+		L2tCase(net, "a_router_advertisement_behind_nine_extension_headers", L2G_A, f, size, 0);
 
 		L2tGolden(ctx, net, "l2security_gateway.txt", "gateway");
 	}

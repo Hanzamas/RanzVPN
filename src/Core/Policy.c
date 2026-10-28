@@ -26,6 +26,7 @@
 #define POLICY_MAX_HEADERS  8      // IPv6 extension headers that a packet may have before its transport header
 #define POLICY_ETH_HEADER   14     // The two MAC addresses and the EtherType of an Ethernet frame
 #define POLICY_TAG_SIZE     4      // A VLAN tag
+#define POLICY_MAX_TAGS     2      // VLAN tags that a frame may have before its EtherType: an outer and an inner tag (QinQ)
 #define POLICY_ARP_SIZE     28     // An ARP packet for Ethernet and IPv4
 #define POLICY_NO_RULE      0xFFFF // No rule: what PolicyRejudge returns for a flow that a member left
 
@@ -61,6 +62,10 @@
 #define POLICY_ICMP6_RS         133
 #define POLICY_ICMP6_RA         134
 #define POLICY_ICMP6_REDIRECT   137
+
+// The flags of a guard that judge what a frame carries: a member under one of them sends no frame that carries more than
+// the engine reads (POLICY_PACKET.Opaque), which none of them could judge
+#define POLICY_GUARD_READS (POLICY_GUARD_CHECK_IP | POLICY_GUARD_NO_DHCP_SERVER | POLICY_GUARD_NO_RA | POLICY_GUARD_NO_ROUTER)
 
 // What a frame reads of a member: made when it joins, never changed, and freed once no frame can still read it
 typedef struct POLICY_RECORD {
@@ -123,7 +128,8 @@ struct POLICY_ENGINE {
 // What PolicyInput reads of a frame
 typedef struct POLICY_PACKET {
 	const UCHAR *Smac;   // L2: the source MAC address; NULL in an L3 Network
-	UINT EtherType;      // The EtherType after a tag; that of the family for a packet of an L3 Network
+	UINT EtherType;      // The EtherType after the tags; that of the family for a packet of an L3 Network
+	bool Opaque;         // It carries more than the engine reads: a tag after POLICY_MAX_TAGS, an IPv6 extension header after POLICY_MAX_HEADERS
 	bool Group;          // To a group address: an L2 destination with the multicast bit, an IP broadcast or multicast destination
 	UINT Family;         // POLICY_IPV4 or POLICY_IPV6, 0 for a frame that is not IP
 	UCHAR Src[16];       // The source IP address, IPv4 in the first 4 bytes
@@ -151,6 +157,11 @@ static const UCHAR policy_zero[16] = {0};
 // A 16-bit value at p, big-endian
 static UINT PolicyGet16(const UCHAR *p) {
 	return ((UINT)p[0] << 8) | p[1];
+}
+
+// Whether an EtherType is the TPID of a VLAN tag: 0x8100 (IEEE 802.1Q), 0x88A8 (802.1ad) or 0x9100
+static bool PolicyIsTag(UINT type) {
+	return type == 0x8100 || type == 0x88A8 || type == 0x9100;
 }
 
 //
@@ -769,7 +780,7 @@ static bool PolicyParseIpv4(const UCHAR *ip, UINT size, bool quoted, POLICY_PACK
 }
 
 // The IPv6 header at ip, size bytes, and its extension headers into pk, as PolicyParseIpv4. A packet with more than
-// POLICY_MAX_HEADERS extension headers has the next one as its protocol.
+// POLICY_MAX_HEADERS extension headers has the next one as its protocol, and carries more than the engine reads.
 static bool PolicyParseIpv6(const UCHAR *ip, UINT size, bool quoted, POLICY_PACKET *pk) {
 	if (size < 40 || (ip[0] >> 4) != 6)
 		return false;
@@ -814,6 +825,8 @@ static bool PolicyParseIpv6(const UCHAR *ip, UINT size, bool quoted, POLICY_PACK
 	pk->Protocol = next;
 	pk->L4 = ip + off;
 	pk->L4Size = end - off;
+	if (pk->Later == false && (next == 0 || next == 43 || next == 44 || next == 60))
+		pk->Opaque = true;
 
 	return true;
 }
@@ -830,19 +843,21 @@ static bool PolicyParse(const UCHAR *frame, UINT size, UINT mode, POLICY_PACKET 
 	if (mode == POLICY_L2) {
 		UINT off = POLICY_ETH_HEADER;
 
-		// The two addresses, then the EtherType after one tag (0x8100, 0x88A8 or 0x9100, as the VLAN of the frame is the
-		// caller's); a group address is no source
+		// The two addresses, then the EtherType after the tags, POLICY_MAX_TAGS at most (as the VLAN of the frame is the
+		// caller's): the tag of a QinQ frame inside its outer tag, or one behind a priority tag, is read too, and a frame
+		// with a tag after them carries more than the engine reads. A group address is no source.
 		if (size < POLICY_ETH_HEADER || (frame[6] & 1) != 0)
 			return false;
 		pk->Smac = frame + 6;
 		pk->Group = ((frame[0] & 1) != 0);
 		pk->EtherType = PolicyGet16(frame + 12);
-		if (pk->EtherType == 0x8100 || pk->EtherType == 0x88A8 || pk->EtherType == 0x9100) {
-			if (size < POLICY_ETH_HEADER + POLICY_TAG_SIZE)
+		for (UINT n = 0; n < POLICY_MAX_TAGS && PolicyIsTag(pk->EtherType); n++) {
+			if (size < off + POLICY_TAG_SIZE)
 				return false;
-			pk->EtherType = PolicyGet16(frame + 16);
+			pk->EtherType = PolicyGet16(frame + off + 2);
 			off += POLICY_TAG_SIZE;
 		}
+		pk->Opaque = PolicyIsTag(pk->EtherType);
 		ip = frame + off;
 		ip_size = size - off;
 
@@ -899,6 +914,10 @@ static UINT PolicyGuard(POLICY_ENGINE *p, UINT from, const POLICY_RECORD *rec, c
 
 	if (reason != POLICY_PASS_RULE)
 		return reason;
+	// The IP check and the DHCP and RA guards judge what a frame carries: a frame that carries more than the engine reads
+	// could hide a source address, a DHCP server message or a router advertisement from them
+	if ((guard & POLICY_GUARD_READS) != 0 && pk->Opaque)
+		return POLICY_DROP_PROTOCOL;
 	if ((guard & POLICY_GUARD_NO_DHCP_SERVER) != 0 && pk->Control == POLICY_CTL_DHCP_SERVER)
 		return POLICY_DROP_DHCP_SERVER;
 	// The RA guard of an L2 Network holds for what the member sends only: it still gets the router advertisements of the

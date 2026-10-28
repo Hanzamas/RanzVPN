@@ -28,9 +28,15 @@
 12 a_neighbour_advertisement: verdict pass-control
 13 a_unicast_to_b: B got 02000000050B02000000050A08004500002000000000401100000A05000A0A05000B9C400050000C000052414E5A
 13 a_unicast_to_b: verdict pass-rule
+14 a_dhcp_offer_behind_two_tags: nothing
+14 a_dhcp_offer_behind_two_tags: verdict drop-dhcp-server
+15 a_dhcp_offer_behind_three_tags: nothing
+15 a_dhcp_offer_behind_three_tags: verdict drop-protocol
+16 a_router_advertisement_behind_nine_extension_headers: nothing
+16 a_router_advertisement_behind_nine_extension_headers: verdict drop-protocol
 mac 10 02-00-00-00-05-01: GW
 mac 10 02-00-00-00-05-0A: A
 mac 10 02-00-00-00-05-0B: B
 vlan 10: in 9 frames; unicast 4, flooded 0, broadcast 3, multicast 2, limit drops 0, filtered 0; out 13 frames
-switch: ports 3, macs 3, learnt 3, moved 0, refused 0; drops malformed 0, port 0, vlan 0, source 0, filter 4
-policy: 13 frames, pass-rule 1, pass-control 8, drop-dhcp-server 3, drop-ra 1
+switch: ports 3, macs 3, learnt 3, moved 0, refused 0; drops malformed 0, port 0, vlan 0, source 0, filter 7
+policy: 16 frames, pass-rule 1, pass-control 8, drop-dhcp-server 4, drop-ra 1, drop-protocol 2

@@ -36,7 +36,10 @@
 // two flags: the RA guard of a client, which sends no router advertisement and still gets those of the gateway
 // (POLICY_GUARD_NO_ROUTER), and the gateway itself (POLICY_GUARD_GATEWAY), which is never refused a source address and
 // owns each one it sends from, up to POLICY_MAX_GATEWAY of each kind, taking it over from a member that is no gateway, so
-// that no member under a check can take an address of the gateway or keep one from it.
+// that no member under a check can take an address of the gateway or keep one from it. The engine reads two VLAN tags of
+// a frame, an outer and an inner one, and eight IPv6 extension headers of a packet: a member under the IP check or a DHCP
+// or RA guard sends no frame that carries more, which could hide a source address, a DHCP server message or a router
+// advertisement from them.
 //
 // Counters. Each rule counts the flows it allowed and the frames and bytes it matched, and the default action of each
 // Network counts its own (PolicyGetCounters; PolicyCountersJson for the admin API, PolicyCountersText for the CLI). A rule
@@ -124,7 +127,7 @@
 #define POLICY_DROP_BROADCAST   13 // To a group address, other than ARP, DHCP and neighbour discovery, under ARP and DHCP only
 #define POLICY_DROP_DHCP_SERVER 14 // A DHCP or DHCPv6 server message of a member that may send none
 #define POLICY_DROP_RA          15 // An IPv6 router advertisement of a member that may send none
-#define POLICY_DROP_PROTOCOL    16 // An IPv4, IPv6 or non-IP frame of a member that filters them
+#define POLICY_DROP_PROTOCOL    16 // An IPv4, IPv6 or non-IP frame of a member that filters them; one that carries more than the engine reads, of a member under the IP check or a DHCP or RA guard
 #define POLICY_NUM_REASONS      17
 
 // A member (PolicyAddMember). The strings are copied.

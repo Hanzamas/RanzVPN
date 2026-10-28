@@ -10,7 +10,9 @@
 // - A client: a user session, a node with the host and the LAN behind it, unless it is a gateway. The protections of its
 //   Network hold for it: the MAC and IP checks with their limits (CheckMac, CheckIP, MaxMac, MaxIP of the fork), ARP and
 //   DHCP only (ArpDhcpOnly), no DHCP server (DHCPNoServer) and the RA guard (RAFilter), which keeps a client from sending
-//   router advertisements and lets it get those of the gateway.
+//   router advertisements and lets it get those of the gateway. A client cannot hide from them behind VLAN tags or IPv6
+//   extension headers: the policy engine reads two tags and eight extension headers, and under the IP check or the DHCP
+//   or RA guard a frame that carries more goes nowhere (Policy.h).
 // - The gateway: the port behind which the real gateway of the Network is, its router and the DHCP server of its LAN, or
 //   the DHCP responder of the node (SDN-43). No protection holds for it, so its DHCP messages and router advertisements
 //   reach the clients. Under a MAC or IP check, an address that it sends from is its own before a client's
