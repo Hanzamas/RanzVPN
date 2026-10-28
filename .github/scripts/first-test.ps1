@@ -870,10 +870,11 @@ try {
 		$values['FINGERPRINT'] = $new
 		Write-Host "the Controller serves the certificate of the file: fingerprint $new, in place of $old"
 
-		# The log, the events and the audit log have the change, and the status and show name the new fingerprint
-		$log = Get-Content -LiteralPath $controllerLog -Raw
+		# The log, the events and the audit log have the change, and the status and show name the new fingerprint. The
+		# Controller writes both lines before it answers, yet a read of controller.log right after the answer has missed the
+		# first one on x64 runners while the file held it, so the log is read again until it shows them
 		foreach ($line in 'msg="TLS certificate"', 'msg="certificate of the controller changed"') {
-			if ($log -notmatch [regex]::Escape($line)) { throw "controller.log does not say '$line'" }
+			$null = Wait-Until { (Get-Content -LiteralPath $controllerLog -Raw) -match [regex]::Escape($line) } "controller.log to say '$line'" 15
 		}
 		$events = @((Invoke-Ranz @('get', 'events')).events | Where-Object { $_ })
 		if ($events.Count -ne 1 -or $events[0].type -ne 'controller-certificate-changed' -or $events[0].message -notmatch [regex]::Escape($new)) {
