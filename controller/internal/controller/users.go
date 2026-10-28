@@ -173,6 +173,8 @@ func (c *Controller) ChangeUserPassword(ctx context.Context, name, current, next
 //
 //   - ErrBadCredentials: no such User, a User without a password, or a wrong password.
 //   - ErrUserExpired: the User has expired (intent.User.Expires): it cannot authenticate any more.
+//   - ErrUserBanned: an operator banned the User (SDN-50, bans.go): it cannot authenticate until the
+//     ban is lifted.
 //   - ErrSavedPassword: the User may not save its password, and the client says that it took it
 //     from its own storage (Login.Saved).
 //
@@ -207,6 +209,10 @@ func (c *Controller) AuthenticateUser(ctx context.Context, l Login) (Account, er
 	}
 	if user.ExpiredAt(time.Now()) {
 		return Account{}, fmt.Errorf("%w: User %q expired at %s", ErrUserExpired, l.User, user.Expires.Format(time.RFC3339))
+	}
+	if c.isBanned(l.User) {
+		// An operator banned the user (bans.go; SDN-50)
+		return Account{}, fmt.Errorf("%w: User %q", ErrUserBanned, l.User)
 	}
 	if l.Saved && user.NoSavedPassword {
 		return Account{}, fmt.Errorf("%w: User %q must have its password typed at each login", ErrSavedPassword, l.User)

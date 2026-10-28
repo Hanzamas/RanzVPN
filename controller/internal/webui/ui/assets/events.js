@@ -23,6 +23,8 @@ async function render() {
   find('#events', RanzTable).render([
     { label: 'Time', cell: (e) => when(e.time) },
     { label: 'Type', cell: (e) => e.type },
+    { label: 'Node', cell: (e) => e.node ?? '' },
+    { label: 'Subject', cell: (e) => e.subject ?? '' },
     { label: 'Message', cell: (e) => e.message },
     { label: 'Revision', cell: (e) => revision(e.revision) },
     { label: 'Reverts', cell: (e) => revision(e.reverts) },
