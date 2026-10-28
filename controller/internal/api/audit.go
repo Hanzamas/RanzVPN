@@ -228,7 +228,9 @@ func AuditRefusals(l *audit.Log, h http.Handler) http.Handler {
 // make, so only the ones that fail are recorded here (audit.IntentChange, outcome failure, with the
 // reason). Any other change is an audit.Operation, with the call as its action. A read is recorded
 // only when it is one of the three that auditedReads names, as an audit.Access. Only the member of a
-// cluster that leads serves the calls, so each one is recorded once.
+// cluster that leads serves the calls, so each one is recorded once. The live operations of
+// /api/v1/operations (SDN-50, #243) are recorded by the controller itself, each with what it did to
+// whom, so they get the origin here and no record (selfAudited).
 func AuditCalls(a Auditor, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		actor := audit.ActorUnknown
@@ -238,6 +240,10 @@ func AuditCalls(a Auditor, h http.Handler) http.Handler {
 		r = r.WithContext(audit.NewContext(r.Context(), audit.Origin{Actor: actor, Source: audit.Host(r.RemoteAddr)}))
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			auditRead(a, h, w, r)
+			return
+		}
+		if selfAudited(r.URL.Path) {
+			h.ServeHTTP(w, r)
 			return
 		}
 		sw := &statusWriter{ResponseWriter: w}

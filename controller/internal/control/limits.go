@@ -32,6 +32,9 @@ const (
 	// MaxLeases is the largest Leases message: the 1024 leases of one responder (Leases.leases of
 	// control.options), about 95 kB.
 	MaxLeases = 128 << 10
+	// MaxOperationResult is the largest OperationResult (SDN-50): the 512 entries of one table
+	// (OperationResult.entries of control.options) and the 256 characters of its message, about 57 kB.
+	MaxOperationResult = 64 << 10
 )
 
 const (
@@ -42,6 +45,8 @@ const (
 	fieldSignal    = 5
 	fieldTelemetry = 7
 	fieldLeases    = 8
+	// fieldOperationResult is the field of the answer of a node to an Operation (SDN-50)
+	fieldOperationResult = 10
 
 	// frameChunk is the size by which a frame grows as its bytes arrive, which makes it the small
 	// buffer that a stream holds beyond the bytes that its peer sent (readFrame).
@@ -93,6 +98,8 @@ func nodeKind(first byte) (limit int, what string) {
 			return MaxTelemetry, "a Telemetry message"
 		case fieldLeases:
 			return MaxLeases, "a Leases message"
+		case fieldOperationResult:
+			return MaxOperationResult, "an OperationResult"
 		}
 	}
 	return MaxHello, "a frame of a kind that a node does not send after its Hello"
