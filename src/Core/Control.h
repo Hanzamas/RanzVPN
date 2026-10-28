@@ -307,6 +307,27 @@ typedef struct CONTROL_LEASE {
 // The leases that a client reports to the controller (CONTROL_CONFIG.Leases), ControlDhcp.c
 typedef struct CONTROL_LEASES CONTROL_LEASES;
 
+// The security of the L2 Networks (SDN-41, #234)
+#define CONTROL_MAX_SECURITIES 16 // The L2 Networks of a node that have one
+#define CONTROL_MAX_GATEWAYS   8  // The gateways of one (L2Security.gateways of control.options)
+
+// The security of an L2 Network of the node (L2Security of the control protocol; SDN-41, #234): the protections that the
+// switch of the Network applies to the frames of its clients (Core/SwitchSecurity.h), and the nodes of its gateways, whose
+// ports are no clients. Every node of the VRF of the Network has it.
+typedef struct CONTROL_SECURITY {
+	char Network[CONTROL_NAME_SIZE];                        // The L2 Network
+	UINT VrfId;                                             // ... and its VRF
+	bool CheckMac;                                          // A client sends from MAC addresses of its own only ...
+	bool CheckIp;                                           // ... and from IP addresses of its own only
+	UINT MaxMacs;                                           // The MAC addresses that a client owns under CheckMac, 0 while it is off
+	UINT MaxIps;                                            // ... and the IP addresses under CheckIp
+	bool ArpDhcpOnly;                                       // Frames of a client to a group address and to it from one: ARP, DHCP and neighbour discovery only
+	bool DhcpGuard;                                         // No DHCP or DHCPv6 server messages from a client
+	bool RaGuard;                                           // No IPv6 router advertisements from a client
+	UINT NumGateways;                                       // The nodes of the gateways
+	char Gateways[CONTROL_MAX_GATEWAYS][CONTROL_NAME_SIZE]; // ... in name order
+} CONTROL_SECURITY;
+
 // A WireGuard Device of a VRF of the node (Device of the control protocol; SDN-80, #375): a phone, a laptop or a router
 // that joins one Network over standard WireGuard through its gateway node. Its addresses and its tags identify it to the
 // rules; a packet to one of its addresses goes to its gateway, and the gateway delivers it to its host, where its
@@ -418,6 +439,11 @@ typedef struct CONTROL_STATE {
 
 	// Its tunnel endpoint for the links of kind vxlan and geneve (SDN-76, #356): the ports it listens on
 	CONTROL_VTEP Vtep;
+
+	// The security of its L2 Networks (SDN-41, #234), in Network name order: a Network without one has none. Valid as the
+	// state is.
+	UINT NumSecurities;
+	CONTROL_SECURITY *Securities;
 
 	// The relays that it may use (CORE-S5-5, #411), in name order: the first is its home relay. None while no node with the
 	// relay role shares a VRF with it.

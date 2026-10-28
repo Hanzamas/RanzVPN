@@ -88,6 +88,7 @@ typedef union SWITCH_PORT {
 		UINT Mode;              // SWITCH_ACCESS or SWITCH_TRUNK
 		UINT Vlan;              // The access VLAN, or the native VLAN of a trunk port (0 for none)
 		UINT Gen;               // The generation: one more each time a member leaves the port, so that a frame that found the port of an address before gets to no later member
+		UINT Member;            // Its member for the filter of the switch (SWITCH_PORT_CONFIG.Member)
 		UCHAR *Allowed;         // A trunk port: the bitmap of the VLANs that it carries, its native VLAN included
 		SWITCH_SEND_PROC *Send; // Takes the frames of the port
 		void *Param;            // ... its first parameter
@@ -138,6 +139,9 @@ struct SWITCH {
 	UINT AgingTime;                                // ms after which SwitchAge takes out an entry
 	UINT BroadcastLimit;                           // The limits of a new VLAN
 	UINT MulticastLimit;                           // ...
+	SWITCH_ADMIT_PROC *Admit;                      // The filter of the switch, NULL for none (SWITCH_CONFIG)
+	SWITCH_DELIVER_PROC *Deliver;                  // ...
+	void *FilterParam;                             // ... their first parameter
 	UINT64 Seed;                                   // The random key of the hash of the MAC table
 	SWITCH_PORT *Ports;                            // The ports, each on a cache line of its own
 	SWITCH_SHARD *Shards;                          // The shards of the MAC table, ditto
@@ -163,6 +167,7 @@ typedef struct SWITCH_EGRESS {
 	bool VlanTag;       // It came with a VLAN tag: then the frame as it came is its tagged form, else its untagged form
 	UINT Vlan;          // Its VLAN
 	SWITCH_VLAN *State; // ... and the state of the VLAN
+	UINT Member;        // The member of the port it came from, for the filter of the switch
 	UINT Slot;          // The slot of processors of the counters
 	UCHAR *Buf;         // The other form, room for SWITCH_MAX_FRAME + SWITCH_TAG_SIZE bytes
 	UINT BufSize;       // ... its size, 0 before it is built
@@ -738,14 +743,15 @@ static const UCHAR *SwitchEgressFrame(SWITCH_EGRESS *e, bool tagged, UINT *size)
 
 // Deliver a frame to a port of its VLAN, under the shared lock of the port, so that the member of a port that a change
 // took out gets nothing after the change. A frame to the port of a learnt address (check) goes only to a port of the
-// generation gen, the one of the entry. False when no member holds the port, it does not carry the VLAN, or another
-// member holds it.
+// generation gen, the one of the entry; any other frame only where the filter of the switch lets it (Deliver). False when
+// no member holds the port, it does not carry the VLAN, another member holds it, or the filter refuses it.
 static bool SwitchSendTo(SWITCH *sw, SWITCH_EGRESS *e, UINT port, bool check, UINT gen) {
 	SWITCH_PORT *p = &sw->Ports[port];
 	bool sent = false;
 
 	AcquireSRWLockShared(&p->Lock);
-	if (p->InUse && SwitchCarries(p, e->Vlan) && (check == false || p->Gen == gen)) {
+	if (p->InUse && SwitchCarries(p, e->Vlan) && (check == false || p->Gen == gen) &&
+	    (check || sw->Deliver == NULL || sw->Deliver(sw->FilterParam, e->Member, p->Member, e->Data, e->Size))) {
 		UINT size = 0;
 		const UCHAR *frame = SwitchEgressFrame(e, p->Mode == SWITCH_TRUNK && p->Vlan != e->Vlan, &size);
 
@@ -792,6 +798,31 @@ static UINT SwitchSendGroup(SWITCH *sw, SWITCH_EGRESS *e, const UCHAR *mac, UINT
 	return num;
 }
 
+// Whether the filter of the switch lets a frame of the VLAN vlan from port through (p, whose shared lock the caller
+// holds): to the member of the port of its destination when the VLAN learnt that address, else to a group. The port of
+// the destination is read under its shared lock, as SwitchSendTo reads it.
+static bool SwitchAdmit(SWITCH *sw, UINT64 now, UINT port, const SWITCH_PORT *p, UINT vlan, const UCHAR *frame, UINT size) {
+	UINT to = SWITCH_NO_MEMBER;
+
+	if ((frame[0] & 1) == 0) {
+		UINT gen = 0;
+		UINT q = SwitchLookup(sw, vlan, frame, &gen);
+
+		if (q == port) {
+			to = p->Member;
+		} else if (q < sw->MaxPorts) {
+			SWITCH_PORT *d = &sw->Ports[q];
+
+			AcquireSRWLockShared(&d->Lock);
+			if (d->InUse && d->Gen == gen && SwitchCarries(d, vlan))
+				to = d->Member;
+			ReleaseSRWLockShared(&d->Lock);
+		}
+	}
+
+	return sw->Admit(sw->FilterParam, now, p->Member, to, vlan, frame, size);
+}
+
 // A frame from a port, under the shared lock of the port: its VLAN, the learning of its source and its delivery; the
 // number of ports it went to
 static UINT SwitchForward(SWITCH *sw, UINT64 now, UINT port, const SWITCH_PORT *p, const UCHAR *frame, UINT size) {
@@ -828,8 +859,12 @@ static UINT SwitchForward(SWITCH *sw, UINT64 now, UINT port, const SWITCH_PORT *
 		return SwitchDrop(sw, SWITCH_DROP_VLAN);
 	if ((frame[6] & 1) != 0)
 		return SwitchDrop(sw, SWITCH_DROP_SOURCE);
+	// The filter of the switch, before its source is learnt: the security of an L2 Network (SwitchSecurity.h)
+	if (sw->Admit != NULL && SwitchAdmit(sw, now, port, p, vlan, frame, size) == false)
+		return SwitchDrop(sw, SWITCH_DROP_FILTER);
 
 	e.Vlan = vlan;
+	e.Member = p->Member;
 	e.State = SwitchVlan(sw, vlan);
 	if (e.State == NULL)
 		return SwitchDrop(sw, SWITCH_DROP_VLAN);
@@ -927,6 +962,7 @@ static void SwitchSetConfig(SWITCH_PORT *p, const SWITCH_PORT_CONFIG *cfg, UCHAR
 	p->Allowed = allowed;
 	p->Send = cfg->Send;
 	p->Param = cfg->Param;
+	p->Member = cfg->Member;
 }
 
 // Take a port out of the groups of the VLANs that it carries and that next, its membership to be (NULL for none), does
@@ -1004,6 +1040,9 @@ SWITCH *SwitchNew(const SWITCH_CONFIG *cfg) {
 	sw->AgingTime = c.AgingTime;
 	sw->BroadcastLimit = c.BroadcastLimit;
 	sw->MulticastLimit = c.MulticastLimit;
+	sw->Admit = c.Admit;
+	sw->Deliver = c.Deliver;
+	sw->FilterParam = c.FilterParam;
 	InitializeSRWLock(&sw->ConfigLock);
 
 	// The slots of a shard: twice its share of MaxMacs, a power of 2, of which it fills three quarters at most
