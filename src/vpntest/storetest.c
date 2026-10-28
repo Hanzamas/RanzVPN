@@ -5,7 +5,8 @@
 // - The store is a SQLite database that the winsqlite3.dll of System32 reads and writes (no other SQLite library
 //   is loaded), with the schema CS_SCHEMA_VERSION and the write-ahead log: a reader is not held up while another
 //   connection holds the write lock. A file that is no store, a database of another program and a store of a newer
-//   schema are refused and left as they are; what a store holds is there after it is opened again.
+//   schema are refused and left as they are; what a store holds is there after it is opened again. A store of schema 1
+//   gets the tables of schema 2, the policy of the networks (CORE-S4-3 #76), when it is opened, and keeps its rows.
 // - Settings, networks, users, listeners and certificates are added, read back, and refused when they are not
 //   valid or not unique; deleting a network deletes its users, certificates and hub-admins.
 // - Passwords are PBKDF2-HMAC-SHA256 hashes (BCryptDeriveKeyPBKDF2, checked against the RFC 7914 vectors) with a
@@ -301,6 +302,79 @@ static void StoreTestLibrary(STORETEST_CTX *ctx)
 	CsFreeNetworkList(o);
 	StoreTestCheck(ctx, kept, "A store opened again holds its settings and networks", "setting \"%s\"", value);
 	CsClose(s);
+
+	StoreTestDeleteDir(dir);
+}
+
+// A store of schema 1, which a node made before the policy of the networks (CORE-S4-3 #76), gets the tables of the
+// versions after its own when it is opened, keeps its rows, and its policy then takes rows as a new store's does
+static void StoreTestUpgrade(STORETEST_CTX *ctx)
+{
+	wchar_t dir[MAX_PATH];
+	wchar_t path[MAX_PATH];
+	char version[MAX_SIZE];
+	char tables[MAX_SIZE];
+	char value[MAX_SIZE];
+	char schema[MAX_SIZE];
+	CS_RULE r;
+	CS_PORT p;
+
+	StoreTestNewDir(dir, sizeof(dir), "upgrade");
+	StoreTestPath(path, sizeof(path), dir);
+
+	// A new store with a setting and a network, without the tables of schema 2: a store of schema 1
+	CONFIG_STORE *s = CsOpen(path);
+	CsSetSetting(s, "Kept", "yes");
+	CsAddNetwork(s, STORETEST_NETWORK, CS_MODE_L2, true);
+	CsClose(s);
+
+	bool made = StoreTestRawExec(path, "DROP TABLE rule_values; DROP TABLE rules; DROP TABLE network_vlans; DROP TABLE vlans; DROP TABLE user_groups; PRAGMA user_version = 1");
+	StoreTestRawText(path, "PRAGMA user_version", version, sizeof(version));
+	StoreTestRawText(path, "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('user_groups', 'vlans', 'network_vlans', 'rules', 'rule_values')", tables, sizeof(tables));
+	StoreTestCheck(ctx, made && StrCmp(version, "1") == 0 && StrCmp(tables, "0") == 0,
+		"A store of schema 1 is made: a store with a setting and a network, without the tables of schema 2",
+		"the statements ran %u, user_version \"%s\", %s tables of schema 2 left", (UINT)made, version, tables);
+
+	s = CsOpen(path);
+	if (StoreTestCheck(ctx, s != NULL, "CsOpen opens a store of schema 1", "CsOpen(%S) returned NULL", path) == false)
+	{
+		StoreTestDeleteDir(dir);
+		return;
+	}
+
+	LIST *o = CsEnumNetworks(s);
+	bool kept = CsGetSetting(s, "Kept", value, sizeof(value)) && StrCmp(value, "yes") == 0 && LIST_NUM(o) == 1;
+	CsFreeNetworkList(o);
+	Format(schema, sizeof(schema), "schema %u\n", CS_SCHEMA_VERSION);
+	StoreTestCheck(ctx, kept && StoreTestDumpHas(s, schema), "The store of schema 1 opened has schema CS_SCHEMA_VERSION, its setting and its network",
+		"setting \"%s\", or no line \"schema %u\" in the dump", value, (UINT)CS_SCHEMA_VERSION);
+
+	// The tables of schema 2 take the VLAN settings of the network and a rule: the port of a member without a VLAN and the
+	// document of the store then have them
+	Zero(&r, sizeof(r));
+	StrCpy(r.Network, sizeof(r.Network), STORETEST_NETWORK);
+	StrCpy(r.Name, sizeof(r.Name), STORETEST_NETWORK ".upgraded");
+	r.Priority = 10;
+	r.Action = CS_ALLOW;
+	r.Protocol = CS_PROTO_TCP;
+	r.Active = true;
+	CsAddRuleValue(&r, CS_KEY_PORTS, "443");
+
+	UINT vlans_err = CsSetNetworkVlans(s, STORETEST_NETWORK, 0x88A8, 5);
+	UINT rule_err = CsAddRule(s, &r);
+	bool port = CsGetPort(s, STORETEST_NETWORK, "nobody", &p) && p.Mode == CS_PORT_TRUNK && p.Vlan == 5 && p.Tpid == 0x88A8;
+	char *doc = CsPolicyDocument(s);
+	bool in_doc = (doc != NULL && SearchStrEx(doc, "\"" STORETEST_NETWORK ".upgraded\"", 0, true) != INFINITE);
+	StoreTestCheck(ctx, vlans_err == ERR_NO_ERROR && rule_err == ERR_NO_ERROR && port && in_doc,
+		"The tables of schema 2 take the VLAN settings of the network and a rule, which the port and the document of the store then have",
+		"CsSetNetworkVlans %u, CsAddRule %u, port %u (mode %u, vlan %u, tpid 0x%04x), document \"%s\"", vlans_err, rule_err, (UINT)port, p.Mode, p.Vlan,
+		p.Tpid, doc != NULL ? doc : "(none)");
+	Free(doc);
+	CsClose(s);
+
+	StoreTestRawText(path, "PRAGMA user_version", version, sizeof(version));
+	StoreTestCheck(ctx, ToInt(version) == CS_SCHEMA_VERSION, "The file of the store has user_version CS_SCHEMA_VERSION after the upgrade",
+		"user_version \"%s\"", version);
 
 	StoreTestDeleteDir(dir);
 }
@@ -848,6 +922,7 @@ void store_test(UINT num, char **arg)
 	Print("Configuration store test: SQLite through winsqlite3.dll, the fork configuration import, named admin roles\n");
 
 	StoreTestLibrary(&ctx);
+	StoreTestUpgrade(&ctx);
 	StoreTestRefused(&ctx, "text", "a file that is no database", NULL, "declare root\r\n{\r\n}\r\n");
 	StoreTestRefused(&ctx, "other", "a database of another program", "CREATE TABLE other (x INTEGER)", NULL);
 	StoreTestRefused(&ctx, "newer", "a store of a newer schema", "PRAGMA user_version = 99", NULL);
