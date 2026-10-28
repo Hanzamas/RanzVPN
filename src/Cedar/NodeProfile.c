@@ -24,7 +24,9 @@
 //   flags, and a later fragment that overlaps them, could hide a SYN (RFC 1858) and are dropped too.
 // - Privacy filter: no packet passes between the node and a peer when the profiles of both have it (client isolation).
 // - The MAC addresses and no-bridge hold in an L2 Network, whose frames the policy engine of its switch judges by the
-//   member of each session there (ADR-0019 decision 1): the profile is the guard of that member (NodeProfileMember).
+//   member of each session there (ADR-0019 decision 1): the profile is the guard of that member (NodeProfileMember),
+//   under the security of the Network (Core/SwitchSecurity.h). The overlay carries no frame of an L2 Network yet
+//   (NodeLink.c): the L2 data path that carries them makes the member of each session with it.
 //
 // Each Generation that the overlay applies gets a profile table beside its forwarding tables (NodeProfileAttach): the
 // profile of the peer of each next hop with its own addresses, and the flags and addresses of the node itself. The two go
@@ -810,7 +812,8 @@ UINT NodeProfileExpired(NODE *n, const char *name, const UCHAR *key, UINT64 sinc
 // The guard of the member of the session of a device in an L2 Network (Core/Policy.h), from the session profile p of the
 // device, onto the member configuration m: the MAC check with the most MAC addresses of p, or with one address, the first
 // that the session sends from, under no-bridge; client isolation under the privacy filter. The rest of m stays as it is,
-// and so does all of it for a device that runs under no profile.
+// and so does all of it for a device that runs under no profile. The member then goes to SwitchSecurityMember, which adds
+// the protections of the Network, and its limits where the profile sets none.
 void NodeProfileMember(const CONTROL_PROFILE *p, POLICY_MEMBER_CONFIG *m) {
 	if (p == NULL || m == NULL || p->Set == false)
 		return;

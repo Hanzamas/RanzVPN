@@ -26,9 +26,11 @@
 // - Idle timeout: under 2 s, the session of node-b at node-a stays while node-a sends to it every 250 ms, and ends about
 //   2 s after the last packet; node-b dials again.
 // - Automatic disconnect: under 2 s, the session of node-b at node-a ends about 2 s after it came up, while packets flow.
-// - L2: the guard of the member of a session in an L2 Network (Core/Policy.h) from its profile (NodeProfileMember): a
-//   session under 2 MAC addresses sends from 2 and not from a third, one under no-bridge from its first only, two under
-//   the privacy filter do not reach each other and each reaches a session under none.
+// - L2: the switch of an L2 Network with the policy engine as its filter (Core/SwitchSecurity.h), and a port for the session
+//   of each device, whose member carries the guard of the profile of the device (NodeProfileMember): a session under 2 MAC
+//   addresses sends from 2 and not from a third, one under no-bridge from its first only, two under the privacy filter do
+//   not reach each other, by unicast or broadcast, and each reaches a session under none. A frame that a profile refuses
+//   goes nowhere, and the MAC table does not learn its source.
 // A Generation without profiles lets everything through again. Print "PROFILE TEST OK" only when every check passes.
 
 #include "testlist.h"
@@ -51,6 +53,7 @@
 
 #include "Core/Control.h"
 #include "Core/Policy.h"
+#include "Core/SwitchSecurity.h"
 #include "Core/Transport.h"
 
 #include <stdio.h>
@@ -128,6 +131,12 @@ static char *profiletest_addrs[PROFILETEST_NODES][6] =
 #define	PROFILETEST_ICMP		4			// An echo request of ICMP or ICMPv6
 #define	PROFILETEST_SYN_HOP		5			// A TCP SYN behind a hop-by-hop options header of IPv6
 
+// The L2 case: the sessions of the switch of an L2 Network
+#define	PROFILETEST_L2_MEMBERS	5			// Under 2 MAC addresses, under no-bridge, twice under the privacy filter, and under none
+#define	PROFILETEST_L2_VLAN		1			// The VLAN of every port
+#define	PROFILETEST_L2_NOW		1000		// The time of the switch and of the policy engine (ms)
+#define	PROFILETEST_L2_LEARNT	8			// The addresses that its MAC table learns
+
 // The checks of the test
 typedef struct PROFILETEST_CTX
 {
@@ -182,6 +191,17 @@ typedef struct PROFILETEST_STREAM
 	UINT64 Sent;						// Packets that the overlay sent
 	UINT64 Refused;						// ... and that it dropped
 } PROFILETEST_STREAM;
+
+// A port of the switch of the L2 case: the session of a device, its member in the policy engine, and what the port
+// delivered in the current case
+typedef struct PROFILETEST_PORT
+{
+	UINT Port;
+	UINT Member;
+	UINT NumFrames;						// The frames it delivered
+	UINT Size;							// The last of them ...
+	UCHAR Frame[PROFILETEST_KEEP];		// ...
+} PROFILETEST_PORT;
 
 static bool ProfileTestCheck(PROFILETEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
 static bool ProfileTestCheck(PROFILETEST_CTX *ctx, bool ok, char *what, char *fmt, ...)
@@ -1301,19 +1321,56 @@ static UINT ProfileTestFrame(UCHAR *f, UCHAR *dst_mac, UCHAR *src_mac, char *src
 	return 14 + ProfileTestDatagram(f + 14, src, dst, 1, 16);
 }
 
-// The L2 case: the members of the sessions of an L2 Network in the policy engine, each with the guard of the profile of its
-// device (NodeProfileMember)
+// The procedure of a port of the switch of the L2 case, on the thread of SwitchInput: it counts the frames that the port
+// delivers, and keeps the last
+static void ProfileTestPortSend(void *param, UINT port, const UCHAR *frame, UINT size)
+{
+	PROFILETEST_PORT *p = (PROFILETEST_PORT *)param;
+
+	p->NumFrames++;
+	p->Size = size;
+	Copy(p->Frame, frame, MIN(size, (UINT)sizeof(p->Frame)));
+}
+
+// The ports of the L2 case, but the one of member to, that delivered a frame of the current case
+static UINT ProfileTestStrays(PROFILETEST_PORT *ports, UINT to)
+{
+	UINT num = 0;
+
+	for (UINT i = 0;i < PROFILETEST_L2_MEMBERS;i++)
+	{
+		if (i != to && ports[i].NumFrames != 0)
+		{
+			num++;
+		}
+	}
+
+	return num;
+}
+
+// The L2 case: the switch of an L2 Network with the policy engine as its filter (Core/SwitchSecurity.h), as the L2 data path
+// of a node runs it, and a port for the session of each device, whose member carries the guard of the profile of the device
+// (NodeProfileMember) in a Network that turns on no protection of its own, so that only the profiles refuse a frame. Every
+// session first sends from its first MAC address, which the switch learns; then the frame of each case goes from one
+// session to the first address of another, and reaches the port of that one alone, or goes nowhere for the reason of the
+// guard and leaves no address in the MAC table.
 static void ProfileTestL2(PROFILETEST_CTX *ctx)
 {
 	static const char doc[] = "{\"networks\": [{\"name\": \"lan\", \"mode\": \"l2\"}], \"rules\": [{\"name\": \"starter\", \"action\": \"allow\", \"priority\": 1000000}]}";
-	static char *names[5] = {"two-macs", "no-bridge", "isolated-1", "isolated-2", "plain"};
-	CONTROL_PROFILE p[5];
-	UINT members[5];
-	UCHAR macs[5][3][6];
+	static char *names[PROFILETEST_L2_MEMBERS] = {"two-macs", "no-bridge", "isolated-1", "isolated-2", "plain"};
+	static UCHAR broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+	// The addresses that the MAC table learns: member, then its MAC address
+	static const UINT learnt[PROFILETEST_L2_LEARNT][2] = {{0, 0}, {0, 1}, {1, 0}, {2, 0}, {3, 0}, {4, 0}, {4, 1}, {4, 2}};
+	CONTROL_PROFILE p[PROFILETEST_L2_MEMBERS];
+	PROFILETEST_PORT ports[PROFILETEST_L2_MEMBERS];
+	UCHAR macs[PROFILETEST_L2_MEMBERS][3][6];
 	UCHAR f[PROFILETEST_MAX_PACKET];
-	POLICY_RESULT r;
-	char error[MAX_SIZE];
-	bool ok;
+	SWITCH_MAC_ENTRY list[PROFILETEST_L2_LEARNT * 2];
+	SWITCH_SECURITY sec;
+	SWITCH_CONFIG sc;
+	SWITCH_STATS sb, sa;
+	POLICY_STATS pb, pa;
+	char error[MAX_SIZE], src[MAX_SIZE], dst[MAX_SIZE];
 
 	// The profiles: 2 MAC addresses, no-bridge, the privacy filter twice, and none
 	for (UINT i = 0;i < 4;i++)
@@ -1326,18 +1383,40 @@ static void ProfileTestL2(PROFILETEST_CTX *ctx)
 	p[2].PrivacyFilter = true;
 	p[3].PrivacyFilter = true;
 
+	// The policy engine with the document of the L2 Network, and the switch of the Network with the engine as its filter
 	POLICY_ENGINE *e = PolicyNew(16);
-	ok = (e != NULL && PolicySetRules(e, doc, StrLen(doc), error, sizeof(error)));
-	for (UINT i = 0;i < 5;i++)
+	bool ok = (e != NULL && PolicySetRules(e, doc, StrLen(doc), error, sizeof(error)));
+	Zero(&sc, sizeof(sc));
+	sc.MaxPorts = PROFILETEST_L2_MEMBERS;
+	sc.MaxMacs = 64;
+	SwitchSecurityFilter(&sc, e);
+	SWITCH *sw = (ok ? SwitchNew(&sc) : NULL);
+	ok = (ok && sw != NULL);
+
+	// A member and an access port of the VLAN of the Network for each session: the guard of its profile, then the security
+	// of the Network, which adds nothing
+	Zero(&sec, sizeof(sec));
+	Zero(ports, sizeof(ports));
+	for (UINT i = 0;i < PROFILETEST_L2_MEMBERS;i++)
 	{
 		POLICY_MEMBER_CONFIG c;
+		SWITCH_PORT_CONFIG pc;
 
 		Zero(&c, sizeof(c));
 		c.Network = "lan";
 		c.User = (i < 4 ? "alice" : NULL);
 		NodeProfileMember(&p[i], &c);
-		members[i] = (e != NULL ? PolicyAddMember(e, &c) : POLICY_NO_MEMBER);
-		ok = ok && members[i] != POLICY_NO_MEMBER;
+		ports[i].Member = (ok ? SwitchSecurityMember(e, &c, &sec, SWITCH_CLIENT) : POLICY_NO_MEMBER);
+
+		Zero(&pc, sizeof(pc));
+		pc.Mode = SWITCH_ACCESS;
+		pc.Vlan = PROFILETEST_L2_VLAN;
+		pc.Send = ProfileTestPortSend;
+		pc.Param = &ports[i];
+		pc.Member = ports[i].Member;
+		ports[i].Port = (ok ? SwitchAddPort(sw, &pc) : SWITCH_PORT_NONE);
+		ok = (ok && ports[i].Member != POLICY_NO_MEMBER && ports[i].Port != SWITCH_PORT_NONE);
+
 		for (UINT k = 0;k < 3;k++)
 		{
 			UCHAR mac[6] = {0x02, 0x52, 0x5A, 0x40, (UCHAR)i, (UCHAR)k};
@@ -1345,13 +1424,28 @@ static void ProfileTestL2(PROFILETEST_CTX *ctx)
 			Copy(macs[i][k], mac, 6);
 		}
 	}
-	if (ProfileTestCheck(ctx, ok, "L2: the policy engine takes the document of the L2 Network and a member for each session", "%s", ok ? "" : "refused") == false)
+
+	// Every session sends from its first MAC address to the broadcast address, which no port takes yet: the switch learns
+	// the address on its port
+	for (UINT i = 0;i < PROFILETEST_L2_MEMBERS && ok;i++)
 	{
+		Format(src, sizeof(src), "10.20.0.%u", 10 + i * 3);
+		UINT size = ProfileTestFrame(f, broadcast, macs[i][0], src, "10.20.0.255");
+
+		SwitchInput(sw, PROFILETEST_L2_NOW, ports[i].Port, f, size);
+	}
+	SwitchGetStats(sw, &sa);
+	if (ProfileTestCheck(ctx, ok && sa.NumMacs == PROFILETEST_L2_MEMBERS,
+		"L2: the switch of the L2 Network, with the policy engine as its filter, takes a port for each session and learns the first MAC address of each",
+		"made %u, %u addresses learnt", (UINT)ok, sa.NumMacs) == false)
+	{
+		SwitchFree(sw);
 		PolicyFree(e);
 		return;
 	}
 
-	// A frame of member i from its MAC address k to member j, and whether it passes
+	// The frame of member From from its MAC address Mac to the first address of member To: it reaches the port of To alone,
+	// or the filter of the switch refuses it for Reason and it goes nowhere
 	struct
 	{
 		UINT From;
@@ -1364,7 +1458,7 @@ static void ProfileTestL2(PROFILETEST_CTX *ctx)
 	{
 		{0, 0, 4, true, 0, "L2: the session under 2 MAC addresses sends from its first"},
 		{0, 1, 4, true, 0, "L2: ... and from its second"},
-		{0, 2, 4, false, POLICY_DROP_MAC, "L2: ... and not from a third"},
+		{0, 2, 4, false, POLICY_DROP_MAC, "L2: ... and not from a third: the frame goes nowhere"},
 		{0, 0, 4, true, 0, "L2: ... and from its first again"},
 		{1, 0, 4, true, 0, "L2: the session under no-bridge sends from its first MAC address"},
 		{1, 1, 4, false, POLICY_DROP_MAC, "L2: ... and from no other, so no LAN behind it is bridged"},
@@ -1378,22 +1472,71 @@ static void ProfileTestL2(PROFILETEST_CTX *ctx)
 
 	for (UINT i = 0;i < sizeof(cases) / sizeof(cases[0]);i++)
 	{
-		char src[MAX_SIZE], dst[MAX_SIZE];
+		UINT from = cases[i].From, to = cases[i].To;
 
-		Format(src, sizeof(src), "10.20.0.%u", 10 + cases[i].From * 3 + cases[i].Mac);
-		Format(dst, sizeof(dst), "10.20.0.%u", 10 + cases[i].To * 3);
-		UINT size = ProfileTestFrame(f, macs[cases[i].To][0], macs[cases[i].From][cases[i].Mac], src, dst);
-		bool pass = PolicyInput(e, 1000 + i, members[cases[i].From], members[cases[i].To], 0, f, size, &r);
+		Format(src, sizeof(src), "10.20.0.%u", 10 + from * 3 + cases[i].Mac);
+		Format(dst, sizeof(dst), "10.20.0.%u", 10 + to * 3);
+		UINT size = ProfileTestFrame(f, macs[to][0], macs[from][cases[i].Mac], src, dst);
 
-		ProfileTestCheck(ctx, pass == cases[i].Pass && (pass || r.Reason == cases[i].Reason), cases[i].What, "the frame of %s %s, reason %u", names[cases[i].From],
-			pass ? "passes" : "is dropped", r.Reason);
+		for (UINT k = 0;k < PROFILETEST_L2_MEMBERS;k++)
+		{
+			ports[k].NumFrames = 0;
+		}
+		SwitchGetStats(sw, &sb);
+		PolicyGetStats(e, &pb);
+		UINT reached = SwitchInput(sw, PROFILETEST_L2_NOW, ports[from].Port, f, size);
+		SwitchGetStats(sw, &sa);
+		PolicyGetStats(e, &pa);
+
+		UINT64 refused = sa.Drops[SWITCH_DROP_FILTER] - sb.Drops[SWITCH_DROP_FILTER];
+		UINT strays = ProfileTestStrays(ports, to);
+		bool got = (ports[to].NumFrames == 1 && ports[to].Size == size && Cmp(ports[to].Frame, f, MIN(size, (UINT)sizeof(ports[to].Frame))) == 0);
+		bool pass = (reached == 1 && got && refused == 0);
+		bool dropped = (reached == 0 && ports[to].NumFrames == 0 && refused == 1 && pa.Reasons[cases[i].Reason] == pb.Reasons[cases[i].Reason] + 1);
+
+		ProfileTestCheck(ctx, strays == 0 && (cases[i].Pass ? pass : dropped), cases[i].What,
+			"the frame of %s from its MAC address %u went to %u ports, %u of them not the port of %s; the filter of the switch refused %I64u", names[from], cases[i].Mac,
+			reached, strays, names[to], refused);
 	}
 
+	// A broadcast of a session under the privacy filter reaches the session under none, and not the other session under it
+	ok = (SwitchSubscribe(sw, ports[3].Port, PROFILETEST_L2_VLAN, broadcast) && SwitchSubscribe(sw, ports[4].Port, PROFILETEST_L2_VLAN, broadcast));
+	for (UINT k = 0;k < PROFILETEST_L2_MEMBERS;k++)
+	{
+		ports[k].NumFrames = 0;
+	}
+	UINT size = ProfileTestFrame(f, broadcast, macs[2][0], "10.20.0.16", "10.20.0.255");
+	UINT reached = SwitchInput(sw, PROFILETEST_L2_NOW, ports[2].Port, f, size);
+	ProfileTestCheck(ctx, ok && reached == 1 && ports[4].NumFrames == 1 && ProfileTestStrays(ports, 4) == 0,
+		"L2: a broadcast of a session under the privacy filter reaches the session under none, and not the other session under it",
+		"subscribed %u, it went to %u ports: isolated-2 got %u frames, plain %u", (UINT)ok, reached, ports[3].NumFrames, ports[4].NumFrames);
+
+	// The MAC table holds the addresses that the sessions sent from, each on its port, and none that the filter refused
+	UINT num = SwitchGetMacs(sw, list, PROFILETEST_L2_LEARNT * 2), found = 0;
+	for (UINT i = 0;i < PROFILETEST_L2_LEARNT;i++)
+	{
+		UINT m = learnt[i][0];
+
+		for (UINT k = 0;k < num;k++)
+		{
+			if (list[k].Port == ports[m].Port && Cmp(list[k].Mac, macs[m][learnt[i][1]], 6) == 0)
+			{
+				found++;
+				break;
+			}
+		}
+	}
+	ProfileTestCheck(ctx, num == PROFILETEST_L2_LEARNT && found == PROFILETEST_L2_LEARNT,
+		"L2: the MAC table holds the addresses that the sessions sent from, each on its port, and none of those that the filter refused",
+		"%u entries, %u of the %u expected", num, found, (UINT)PROFILETEST_L2_LEARNT);
+
+	// The switch calls the engine: it goes first
+	SwitchFree(sw);
 	PolicyFree(e);
 }
 
 // profile: the session profiles of the devices of a User in the data plane of a node
-RANZ_TEST("profile", profile_test, "Session profiles of the overlay: upload and download limits shape a session, the counts of sessions and addresses refuse one more, the idle timeout and the automatic disconnect end a session, no-routing, no-server and the privacy filter block what they name, and the L2 guard of a session.");
+RANZ_TEST("profile", profile_test, "Session profiles of the overlay: upload and download limits shape a session, the counts of sessions and addresses refuse one more, the idle timeout and the automatic disconnect end a session, no-routing, no-server and the privacy filter block what they name, and the MAC addresses, no-bridge and the privacy filter of a session on the switch of an L2 Network.");
 void profile_test(UINT num, char **arg)
 {
 	PROFILETEST_CTX ctx;
