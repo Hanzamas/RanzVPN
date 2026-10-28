@@ -24,13 +24,21 @@ typedef struct NODE_CAPS_HOST {
 	bool XdpDriver;
 	// The API library of the XDP runtime, xdpapi.dll of System32, is on the host
 	bool XdpApi;
+	// The edition of Windows (SDN-12, #188): the product type of the version of the host (VER_NT_WORKSTATION, VER_NT_SERVER
+	// or VER_NT_DOMAIN_CONTROLLER; 0 when it cannot be read) and the product that GetProductInfo gives (PRODUCT_*)
+	UINT ProductType;
+	UINT Product;
+	// Hyper-V is present: the service of its Virtual Machine Management, vmms, is registered
+	bool HyperV;
 } NODE_CAPS_HOST;
 
 // Fill host with what the host that the node runs on holds
 void NodeCapsReadHost(NODE_CAPS_HOST *host);
 
 // Fill caps with the Capabilities that a host holding host gives a node: the architecture, and SeLow and the XDP
-// runtime where they are all there. Neither exists for any architecture but x64, so another host has none.
+// runtime where they are all there. Neither exists for any architecture but x64, so another host has none. The Windows
+// edition, Hyper-V, and the Egress tier that a node on the host uses as the internet exit of a VRF (SDN-12, #188): the
+// proxy on the Windows TCP/IP stack, which runs on every host (NodeEgress.c).
 void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps);
 
 // The procedure of the control client that tells the Capabilities of the node for each Hello (CONTROL_CAPS_PROC): they
@@ -38,8 +46,9 @@ void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps);
 // one. param is not used.
 void NodeCapsProc(void *param, CONTROL_CAPS *caps);
 
-// Write the Capabilities of the node to its node log, as the line "Capabilities: architecture x64, SeLow yes, XDP no":
-// what ranz install put on the machine is read from there from outside (.github/scripts/install.ps1)
+// Write the Capabilities of the node to its node log, as the line "Capabilities: architecture x64, SeLow yes, XDP no,
+// SKU Server, Hyper-V no, egress tier proxy": what ranz install put on the machine is read from there from outside
+// (.github/scripts/install.ps1)
 void NodeLogCaps(NODE *n);
 
 #endif // NODE_CAPS_H

@@ -11,8 +11,12 @@
 // architecture is the one of this build, an arm64 host has neither driver, and NodeCapsProc, which the control client
 // calls for each Hello, gives what NodeCapsDecide decides on what NodeCapsReadHost found. The install job and the
 // default VRF tracer of windows.yml read the same Capabilities from a node on a machine that ranz install changed (the
-// node log) and from the controller that its Hello reached (the API). Prints "CAPS TEST OK" only when every check
-// passes.
+// node log) and from the controller that its Hello reached (the API).
+// The Windows edition, Hyper-V and the Egress tier (SDN-12, #188): the editions of Windows 11 and Windows Server that a
+// node runs on, each as the product type of its version and the product of GetProductInfo, give the SKU of the control
+// protocol, a product that it does not count gives none, and a version that cannot be read gives none either. Hyper-V is
+// what the host holds. Every host, Home, Pro and arm64 among them, gives the Egress tier of the proxy, which runs on every
+// host. Prints "CAPS TEST OK" only when every check passes.
 
 #include "testlist.h"
 
@@ -49,6 +53,39 @@ static const CAPS_CASE caps_cases[] =
 	{"a host of another architecture", {PROCESSOR_ARCHITECTURE_INTEL, true, true, true, true, true}, CONTROL_ARCHITECTURE_UNSPECIFIED, false, false},
 };
 
+// The edition of a host, and the Windows edition (CONTROL_SKU_*) that a node on it reports (SDN-12, #188)
+typedef struct CAPS_SKU_CASE
+{
+	char *Name;
+	UINT ProductType;
+	UINT Product;
+	UINT Machine;
+	bool HyperV;
+	UINT Sku;
+} CAPS_SKU_CASE;
+
+// The editions: the product type of the version, the product of GetProductInfo, the architecture and Hyper-V
+static const CAPS_SKU_CASE caps_sku_cases[] =
+{
+	{"Windows 11 Home", VER_NT_WORKSTATION, PRODUCT_CORE, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_HOME},
+	{"Windows 11 Home Single Language on arm64", VER_NT_WORKSTATION, PRODUCT_CORE_SINGLELANGUAGE, PROCESSOR_ARCHITECTURE_ARM64, false, CONTROL_SKU_HOME},
+	{"Windows 11 Home N", VER_NT_WORKSTATION, PRODUCT_CORE_N, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_HOME},
+	{"Windows 11 Pro with Hyper-V", VER_NT_WORKSTATION, PRODUCT_PROFESSIONAL, PROCESSOR_ARCHITECTURE_AMD64, true, CONTROL_SKU_PRO},
+	{"Windows 11 Pro on arm64", VER_NT_WORKSTATION, PRODUCT_PROFESSIONAL, PROCESSOR_ARCHITECTURE_ARM64, false, CONTROL_SKU_PRO},
+	{"Windows 11 Pro for Workstations", VER_NT_WORKSTATION, PRODUCT_PRO_WORKSTATION, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_PRO},
+	{"Windows 11 Pro Education", VER_NT_WORKSTATION, PRODUCT_PRO_FOR_EDUCATION, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_PRO},
+	{"Windows 11 Enterprise", VER_NT_WORKSTATION, PRODUCT_ENTERPRISE, PROCESSOR_ARCHITECTURE_ARM64, false, CONTROL_SKU_ENTERPRISE},
+	{"Windows 11 Enterprise LTSC", VER_NT_WORKSTATION, PRODUCT_ENTERPRISE_S, PROCESSOR_ARCHITECTURE_AMD64, true, CONTROL_SKU_ENTERPRISE},
+	{"Windows 11 Education", VER_NT_WORKSTATION, PRODUCT_EDUCATION, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_ENTERPRISE},
+	{"Windows 11 IoT Enterprise", VER_NT_WORKSTATION, PRODUCT_IOTENTERPRISE, PROCESSOR_ARCHITECTURE_ARM64, false, CONTROL_SKU_ENTERPRISE},
+	{"Windows 11 Enterprise multi-session", VER_NT_WORKSTATION, PRODUCT_SERVERRDSH, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_ENTERPRISE},
+	{"Windows Server 2025 Datacenter with Hyper-V", VER_NT_SERVER, PRODUCT_DATACENTER_SERVER, PROCESSOR_ARCHITECTURE_AMD64, true, CONTROL_SKU_SERVER},
+	{"Windows Server 2022 Standard", VER_NT_SERVER, PRODUCT_STANDARD_SERVER, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_SERVER},
+	{"a domain controller", VER_NT_DOMAIN_CONTROLLER, PRODUCT_STANDARD_SERVER, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_SERVER},
+	{"a workstation of a product that the protocol does not count", VER_NT_WORKSTATION, PRODUCT_HOME_PREMIUM, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_UNSPECIFIED},
+	{"a host whose version cannot be read", 0, PRODUCT_PROFESSIONAL, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_UNSPECIFIED},
+};
+
 // caps: the Capabilities of a node for the hosts that ranz install leaves, and for this host
 RANZ_TEST("caps", caps_test, "Node Capabilities: the architecture, SeLow and the XDP runtime that a node reports in its Hello, for each host that ranz install leaves and for this host.");
 void caps_test(UINT num, char **arg)
@@ -83,11 +120,40 @@ void caps_test(UINT num, char **arg)
 		}
 	}
 
+	// The Windows edition, Hyper-V and the Egress tier (SDN-12, #188): every host takes the proxy
+	for (UINT i = 0; i < sizeof(caps_sku_cases) / sizeof(caps_sku_cases[0]); i++)
+	{
+		const CAPS_SKU_CASE *c = &caps_sku_cases[i];
+
+		Zero(&host, sizeof(host));
+		host.Machine = c->Machine;
+		host.ProductType = c->ProductType;
+		host.Product = c->Product;
+		host.HyperV = c->HyperV;
+		caps.Sku = 99;
+		caps.HyperV = (c->HyperV == false);
+		caps.EgressTier = 99;
+		NodeCapsDecide(&host, &caps);
+
+		if (caps.Sku != c->Sku || caps.HyperV != c->HyperV || caps.EgressTier != CONTROL_EGRESS_PROXY)
+		{
+			Print("  [FAIL] %s: SKU %u, Hyper-V %u, Egress tier %u; expected %u, %u, %u (the proxy)\n", c->Name, caps.Sku, (UINT)caps.HyperV, caps.EgressTier,
+				c->Sku, (UINT)c->HyperV, (UINT)CONTROL_EGRESS_PROXY);
+			failed++;
+		}
+		else
+		{
+			Print("  [OK] %s: SKU %u, Hyper-V %u, Egress tier %u (the proxy)\n", c->Name, caps.Sku, (UINT)caps.HyperV, caps.EgressTier);
+		}
+	}
+
 	// A decision for no host and for no Capabilities does nothing but return
 	NodeCapsDecide(NULL, &caps);
-	if (caps.Architecture != CONTROL_ARCHITECTURE_UNSPECIFIED || caps.SeLow || caps.Xdp)
+	if (caps.Architecture != CONTROL_ARCHITECTURE_UNSPECIFIED || caps.SeLow || caps.Xdp || caps.Sku != CONTROL_SKU_UNSPECIFIED || caps.HyperV ||
+		caps.EgressTier != CONTROL_EGRESS_NONE)
 	{
-		Print("  [FAIL] No host: architecture %u, SeLow %u, XDP %u; expected a Capabilities that holds none\n", caps.Architecture, (UINT)caps.SeLow, (UINT)caps.Xdp);
+		Print("  [FAIL] No host: architecture %u, SeLow %u, XDP %u, SKU %u, Hyper-V %u, Egress tier %u; expected a Capabilities that holds none\n",
+			caps.Architecture, (UINT)caps.SeLow, (UINT)caps.Xdp, caps.Sku, (UINT)caps.HyperV, caps.EgressTier);
 		failed++;
 	}
 	NodeCapsDecide(&caps_cases[0].Host, NULL);
@@ -98,6 +164,20 @@ void caps_test(UINT num, char **arg)
 	Print("  This host: machine %u, SeLow service %u and driver %u, XDP service %u, driver %u and API library %u: architecture %u, SeLow %u, XDP %u\n",
 		host.Machine, (UINT)host.SeLowService, (UINT)host.SeLowDriver, (UINT)host.XdpService, (UINT)host.XdpDriver, (UINT)host.XdpApi,
 		caps.Architecture, (UINT)caps.SeLow, (UINT)caps.Xdp);
+	Print("  This host: product type %u, product 0x%X, Hyper-V %u: SKU %u, Egress tier %u\n", host.ProductType, host.Product, (UINT)host.HyperV, caps.Sku,
+		caps.EgressTier);
+
+	// The version of a host that runs this build can be read, and the tier of every host is the proxy
+	if (host.ProductType != VER_NT_WORKSTATION && host.ProductType != VER_NT_SERVER && host.ProductType != VER_NT_DOMAIN_CONTROLLER)
+	{
+		Print("  [FAIL] The product type of this host is %u, which is neither a workstation's nor a server's\n", host.ProductType);
+		failed++;
+	}
+	if (caps.EgressTier != CONTROL_EGRESS_PROXY)
+	{
+		Print("  [FAIL] The Egress tier of this host is %u, not %u (the proxy)\n", caps.EgressTier, (UINT)CONTROL_EGRESS_PROXY);
+		failed++;
+	}
 
 	// An x64 build runs natively on x64 and under emulation on arm64, where Windows shows it an x64 host
 #if defined(_M_ARM64)
@@ -126,6 +206,12 @@ void caps_test(UINT num, char **arg)
 	{
 		Print("  [FAIL] NodeCapsProc: architecture %u, SeLow %u, XDP %u; the decision on this host is %u, %u, %u\n", reported.Architecture,
 			(UINT)reported.SeLow, (UINT)reported.Xdp, caps.Architecture, (UINT)caps.SeLow, (UINT)caps.Xdp);
+		failed++;
+	}
+	if (reported.Sku != caps.Sku || reported.HyperV != caps.HyperV || reported.EgressTier != caps.EgressTier)
+	{
+		Print("  [FAIL] NodeCapsProc: SKU %u, Hyper-V %u, Egress tier %u; the decision on this host is %u, %u, %u\n", reported.Sku, (UINT)reported.HyperV,
+			reported.EgressTier, caps.Sku, (UINT)caps.HyperV, caps.EgressTier);
 		failed++;
 	}
 

@@ -7,6 +7,9 @@
 // the package copies into System32. SeLow and the XDP runtime exist for x64 only (ADR-0013, ADR-0022), so a host of
 // another architecture has neither, whatever it holds under those names. A fact that cannot be found counts as
 // missing, which the controller reads as a Capability that the node lacks (ADR-0033).
+// The Windows edition comes from the version of the host (RtlGetVersion, which tells it to any program) and the product
+// of GetProductInfo, Hyper-V from the service of its Virtual Machine Management, and the Egress tier, how the node takes
+// the traffic of a VRF whose internet exit it is to the outside (SDN-12, #188; ADR-0025 decisions 13 to 15), from them.
 
 #include "Node.h"
 
@@ -18,6 +21,10 @@
 
 // The key of the services of Windows in the registry: the key of a service is named after it
 #define NODE_CAPS_SERVICES L"SYSTEM\\CurrentControlSet\\Services\\"
+
+// RtlGetVersion of ntdll.dll: the version of Windows as it is, which GetVersionExW tells only a program whose manifest
+// names that version. 0 (STATUS_SUCCESS) when it filled info.
+typedef LONG(WINAPI NODE_CAPS_GET_VERSION_FUNC)(OSVERSIONINFOEXW *info);
 
 // Whether the service name is registered on the host. The Service Control Manager keeps the key of each service under
 // Services, which every account can read, so the node needs no right on the service itself.
@@ -55,6 +62,60 @@ static bool NodeCapsFile(const wchar_t *dir, const wchar_t *name) {
 	return (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0);
 }
 
+// The edition of Windows into host: the product type of its version and the product of GetProductInfo, both 0 when
+// they cannot be read
+static void NodeCapsReadEdition(NODE_CAPS_HOST *host) {
+	OSVERSIONINFOEXW v;
+	DWORD product = 0;
+	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	NODE_CAPS_GET_VERSION_FUNC *get = (ntdll != NULL ? (NODE_CAPS_GET_VERSION_FUNC *)(void *)GetProcAddress(ntdll, "RtlGetVersion") : NULL);
+
+	Zero(&v, sizeof(v));
+	v.dwOSVersionInfoSize = sizeof(v);
+
+	if (get == NULL || get(&v) != 0)
+		return;
+
+	host->ProductType = v.wProductType;
+	if (GetProductInfo(v.dwMajorVersion, v.dwMinorVersion, v.wServicePackMajor, v.wServicePackMinor, &product))
+		host->Product = product;
+}
+
+// The Windows edition of a workstation of the product of GetProductInfo (CONTROL_SKU_*): Home, Pro or Enterprise, with
+// the editions that the control protocol counts with them (Sku of control.proto); CONTROL_SKU_UNSPECIFIED for another
+static UINT NodeCapsEdition(UINT product) {
+	switch (product) {
+	case PRODUCT_CORE:
+	case PRODUCT_CORE_N:
+	case PRODUCT_CORE_COUNTRYSPECIFIC:
+	case PRODUCT_CORE_SINGLELANGUAGE:
+		return CONTROL_SKU_HOME;
+	case PRODUCT_PROFESSIONAL:
+	case PRODUCT_PROFESSIONAL_N:
+	case PRODUCT_PRO_WORKSTATION:
+	case PRODUCT_PRO_WORKSTATION_N:
+	case PRODUCT_PRO_FOR_EDUCATION:
+	case PRODUCT_PRO_FOR_EDUCATION_N:
+		return CONTROL_SKU_PRO;
+	case PRODUCT_ENTERPRISE:
+	case PRODUCT_ENTERPRISE_N:
+	case PRODUCT_ENTERPRISE_E:
+	case PRODUCT_ENTERPRISE_EVALUATION:
+	case PRODUCT_ENTERPRISE_N_EVALUATION:
+	case PRODUCT_ENTERPRISE_S:
+	case PRODUCT_ENTERPRISE_S_N:
+	case PRODUCT_ENTERPRISE_S_EVALUATION:
+	case PRODUCT_ENTERPRISE_S_N_EVALUATION:
+	case PRODUCT_EDUCATION:
+	case PRODUCT_EDUCATION_N:
+	case PRODUCT_IOTENTERPRISE:
+	case PRODUCT_SERVERRDSH:
+		return CONTROL_SKU_ENTERPRISE;
+	default:
+		return CONTROL_SKU_UNSPECIFIED;
+	}
+}
+
 void NodeCapsReadHost(NODE_CAPS_HOST *host) {
 	SYSTEM_INFO info;
 
@@ -73,6 +134,10 @@ void NodeCapsReadHost(NODE_CAPS_HOST *host) {
 	host->XdpService = NodeCapsService(L"xdp");
 	host->XdpDriver = NodeCapsFile(L"drivers\\", L"xdp.sys");
 	host->XdpApi = NodeCapsFile(L"", L"xdpapi.dll");
+
+	// The edition and Hyper-V (SDN-12, #188)
+	NodeCapsReadEdition(host);
+	host->HyperV = NodeCapsService(L"vmms");
 }
 
 void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps) {
@@ -88,6 +153,16 @@ void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps) {
 		caps->Architecture = CONTROL_ARCHITECTURE_X64;
 	else if (host->Machine == PROCESSOR_ARCHITECTURE_ARM64)
 		caps->Architecture = CONTROL_ARCHITECTURE_ARM64;
+
+	// The edition: a host whose version is not a workstation's is a Windows Server (SDN-12, #188)
+	if (host->ProductType == VER_NT_SERVER || host->ProductType == VER_NT_DOMAIN_CONTROLLER)
+		caps->Sku = CONTROL_SKU_SERVER;
+	else if (host->ProductType == VER_NT_WORKSTATION)
+		caps->Sku = NodeCapsEdition(host->Product);
+	caps->HyperV = host->HyperV;
+
+	// The Egress tier: the proxy on the Windows TCP/IP stack runs on every host, Home, Pro and arm64 among them (NodeEgress.c)
+	caps->EgressTier = CONTROL_EGRESS_PROXY;
 
 	// There is no SeLow package for arm64 and no production-signed XDP runtime (ADR-0022): a service of one of their names
 	// on another host is not them
@@ -118,10 +193,41 @@ static const char *NodeCapsArchitecture(UINT architecture) {
 	return "unknown";
 }
 
+// The Windows edition of the Capabilities as the node log names it
+static const char *NodeCapsSku(UINT sku) {
+	switch (sku) {
+	case CONTROL_SKU_HOME:
+		return "Home";
+	case CONTROL_SKU_PRO:
+		return "Pro";
+	case CONTROL_SKU_ENTERPRISE:
+		return "Enterprise";
+	case CONTROL_SKU_SERVER:
+		return "Server";
+	default:
+		return "unknown";
+	}
+}
+
+// The Egress tier of the Capabilities as the node log names it
+static const char *NodeCapsEgress(UINT tier) {
+	switch (tier) {
+	case CONTROL_EGRESS_RRAS:
+		return "RRAS NAT";
+	case CONTROL_EGRESS_WINNAT:
+		return "WinNAT";
+	case CONTROL_EGRESS_PROXY:
+		return "proxy";
+	default:
+		return "none";
+	}
+}
+
 void NodeLogCaps(NODE *n) {
 	CONTROL_CAPS caps;
 
 	NodeCapsProc(NULL, &caps);
 
-	NodeLog(n, "Capabilities: architecture %s, SeLow %s, XDP %s", NodeCapsArchitecture(caps.Architecture), caps.SeLow ? "yes" : "no", caps.Xdp ? "yes" : "no");
+	NodeLog(n, "Capabilities: architecture %s, SeLow %s, XDP %s, SKU %s, Hyper-V %s, egress tier %s", NodeCapsArchitecture(caps.Architecture),
+	        caps.SeLow ? "yes" : "no", caps.Xdp ? "yes" : "no", NodeCapsSku(caps.Sku), caps.HyperV ? "yes" : "no", NodeCapsEgress(caps.EgressTier));
 }
