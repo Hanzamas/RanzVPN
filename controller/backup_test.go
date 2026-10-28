@@ -103,6 +103,34 @@ func TestBackupThenRestore(t *testing.T) {
 	}
 }
 
+// A temporary file that an earlier backup left, which others may read, is not written into:
+// createBackupFile makes a new one in its place, readable by its owner only from the start
+// (AUD1-DT-10, #458).
+func TestCreateBackupFileReplacesWhatIsLeft(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "store.backup.tmp")
+	if err := os.WriteFile(tmp, []byte("left from before"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, protected, err := createBackupFile(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if !protected {
+		t.Error("createBackupFile says that the volume of the temporary folder keeps no access lists")
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Size() != 0 {
+		t.Errorf("the temporary file holds %d bytes of what was left from before", fi.Size())
+	}
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Errorf("the temporary file has the mode %v, want 0600", fi.Mode().Perm())
+	}
+}
+
 // fileFlag takes -o FILE out of the arguments in each spelling the flag package takes, and
 // leaves the flags of the service.
 func TestFileFlag(t *testing.T) {
