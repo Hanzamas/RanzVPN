@@ -64,6 +64,7 @@ on:
     - 'docs/first-test.md'
     - '!.github/workflows/ranz.yml'
     - '!.github/scripts/controller-service.ps1'
+    - '!.github/scripts/controller-hostfiles.ps1'
     - '!.github/scripts/ranz-tools.ps1'
     - '!.github/workflows/move-only.yml'
     - '!.github/scripts/move-only-check.py'

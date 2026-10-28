@@ -190,6 +190,8 @@ func (c *Controller) banUser(ctx context.Context, user, reason string) (BanResul
 		return BanResult{}, err
 	}
 	ended := c.endSessions(snaps, func(name string) bool { return c.intent.Nodes[name].Owner == user }, "%s", banReason(ban))
+	// The user tokens of the user end with its sessions (logins.go; SDN-32)
+	c.endUserTokens(sctx, user)
 	c.log.Warn("user banned", "user", user, "by", ban.By, "sessions", len(ended))
 	return BanResult{Ban: ban, Disconnected: ended}, nil
 }
