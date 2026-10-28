@@ -50,13 +50,13 @@
 // each network and the rules of the policy engine of the new core (Core/Policy.h), which CsPolicyDocument writes as the
 // engine's document of rules. A rule is one of that document: the default action of every network is deny (ADR-0019
 // amendment of 2026-10-21), so what a network lets through is what its allow rules let through.
-#define CS_MAX_RULE_NAME     63 // Bytes of the name of a rule at most, as of a name of the policy engine
-#define CS_MAX_VALUES        16 // Values of the lists of a rule (CS_RULE) at most
-#define CS_MAX_VALUE_LEN     63 // Bytes of a value at most: a name, an address with its prefix length, a port range, a VLAN
-#define CS_POLICY_NAME_LEN   48 // Bytes of a network name that the document of the policy engine keeps at most (CsPolicyNetworkName)
-#define CS_MAX_PRIORITY      1000000 // The lowest priority of a rule
-#define CS_TPID_8021Q        0x8100  // The TPID of a network that sets none
-#define CS_UNTAGGED_VLAN     1       // The untagged VLAN of a network that sets none
+#define CS_MAX_RULE_NAME   63      // Bytes of the name of a rule at most, as of a name of the policy engine
+#define CS_MAX_VALUES      16      // Values of the lists of a rule (CS_RULE) at most
+#define CS_MAX_VALUE_LEN   63      // Bytes of a value at most: a name, an address with its prefix length, a port range, a VLAN
+#define CS_POLICY_NAME_LEN 48      // Bytes of a network name that the document of the policy engine keeps at most (CsPolicyNetworkName)
+#define CS_MAX_PRIORITY    1000000 // The lowest priority of a rule
+#define CS_TPID_8021Q      0x8100  // The TPID of a network that sets none
+#define CS_UNTAGGED_VLAN   1       // The untagged VLAN of a network that sets none
 
 // The action of a rule
 #define CS_ALLOW 0
