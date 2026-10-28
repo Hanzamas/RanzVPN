@@ -43,6 +43,30 @@ func TestNoticeHasTheGoBGPLicence(t *testing.T) {
 	}
 }
 
+// The NOTICE holds the MIT License of the go-qrcode that go.mod pins, word for word (SDN-82, #377): the
+// controller draws the QR code of the configuration of a Device with it, and the licence asks for its
+// text with every copy of the library. The text is compared with the LICENSE file of the module that
+// this build uses, so a go-qrcode whose licence text changed fails here until the NOTICE follows it.
+func TestNoticeHasTheQRCodeLicence(t *testing.T) {
+	const module = "github.com/skip2/go-qrcode"
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", module).Output()
+	if err != nil {
+		t.Fatalf("go list -m %s: %v", module, err)
+	}
+	b, err := os.ReadFile(filepath.Join(strings.TrimSpace(string(out)), "LICENSE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Fields(string(b))
+	if len(want) == 0 {
+		t.Fatalf("the LICENSE of %s holds no words", module)
+	}
+	have := strings.Fields(notice)
+	if !strings.Contains(strings.Join(have, " "), strings.Join(want, " ")) {
+		t.Errorf("the NOTICE does not hold the licence text of %s word for word: %s", module, firstDifference(have, want))
+	}
+}
+
 // The NOTICE holds the licence text of the rqlite release that CI pins, word for word (ONE-4,
 // #313): ranz carries the rqlited.exe of that release as the rqlite member of a Controller, and the
 // MIT License asks for its text with every copy. rqlite is no module of ranz, so its LICENSE is not

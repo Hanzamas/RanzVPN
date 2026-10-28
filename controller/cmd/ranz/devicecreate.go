@@ -11,6 +11,7 @@ import (
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
+	"github.com/Hanzamas/RanzVPN/controller/internal/devicekey"
 )
 
 // The command that makes a WireGuard Device with its keys (SDN-82 #377), which main.go hands the
@@ -115,16 +116,14 @@ func shownOnce(created controller.DeviceCreated) string {
 // modules, two rows of modules to a line in half blocks. The colours are set, so that the code reads the
 // same on a dark theme as on a light one.
 func qrText(rows []string) string {
-	const quiet = 4
-	size := len(rows) + 2*quiet
+	size := len(rows) + 2*devicekey.Quiet
 	dark := func(x, y int) bool {
-		x, y = x-quiet, y-quiet
-		return y >= 0 && y < len(rows) && x >= 0 && x < len(rows[y]) && rows[y][x] == '1'
+		return devicekey.Dark(rows, x-devicekey.Quiet, y-devicekey.Quiet)
 	}
 	var b strings.Builder
 	for y := 0; y < size; y += 2 {
 		b.WriteString("\x1b[30;47m")
-		for x := 0; x < size; x++ {
+		for x := range size {
 			switch upper, lower := dark(x, y), dark(x, y+1); {
 			case upper && lower:
 				b.WriteString("█")
