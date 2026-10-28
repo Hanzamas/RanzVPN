@@ -17,6 +17,8 @@ async function render() {
   find('#tokens', RanzTable).render([
     { label: 'Name', cell: (t) => t.name },
     { label: 'Role', cell: (t) => t.role },
+    { label: 'Expires', cell: (t) => (t.expires ? `${t.expires}${t.expired ? ' (expired)' : ''}` : 'never') },
+    { label: 'Last used', cell: (t) => t.lastUsed ?? 'never' },
     {
       label: '',
       cell: (t) => {

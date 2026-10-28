@@ -113,12 +113,19 @@ func (s *servedController) served() string {
 // every start. A certificate that an operator sets is served by the TLS port and named by the status, the
 // store keeps the setting across a restart, a client that trusts the CA of the certificate checks its chain
 // for the host, one that trusts no CA is refused unless it pins the fingerprint, and clearing the setting
-// gives back the first fingerprint.
+// gives back the first fingerprint. The file of the data directory that ranz on this host checks a
+// loopback address by (AUD1-DT-13, #461) holds the fingerprint that is served at each of these points.
 func TestRunServesTheCertificateOfItsSetting(t *testing.T) {
 	rqlited := memberRqlited(t)
 	addrs := freeAddrs(t, 4)
 	dir := t.TempDir()
 	ctx := context.Background()
+	file := func(want string) {
+		t.Helper()
+		if got, err := servercert.ReadFingerprint(dir); err != nil || got != want {
+			t.Errorf("the fingerprint file of the data directory holds %q, %v, want %q", got, err, want)
+		}
+	}
 
 	// The self-signed certificate, which stays the same across a restart
 	c := runServing(t, dir, addrs, rqlited)
@@ -126,6 +133,7 @@ func TestRunServesTheCertificateOfItsSetting(t *testing.T) {
 	if first == "" || c.served() != first {
 		t.Fatalf("the status names the fingerprint %q and a new connection gets %s", first, c.served())
 	}
+	file(first)
 	if err := c.end(); err != nil {
 		t.Errorf("the controller ended with %v", err)
 	}
@@ -133,6 +141,7 @@ func TestRunServesTheCertificateOfItsSetting(t *testing.T) {
 	if got := c.status().TLSFingerprint; got != first || c.served() != first {
 		t.Fatalf("after a restart the status names %s and a new connection gets %s, want %s as before", got, c.served(), first)
 	}
+	file(first)
 	info, err := c.api.ControllerCertificate(ctx)
 	if err != nil || info.Source != servercert.SourceSelfSigned || info.Fingerprint != first {
 		t.Fatalf("show with no setting: %+v, %v", info, err)
@@ -194,6 +203,7 @@ func TestRunServesTheCertificateOfItsSetting(t *testing.T) {
 	if got := c.status().TLSFingerprint; got != fp || c.served() != fp {
 		t.Errorf("after the replacement the status names %s and a new connection gets %s, want %s", got, c.served(), fp)
 	}
+	file(fp)
 
 	// A client with no fingerprint checks the chain: the CA that signed the certificate makes it good, any
 	// other CA is refused; with the fingerprint a client takes it as it is, and the first fingerprint is refused
@@ -249,6 +259,7 @@ func TestRunServesTheCertificateOfItsSetting(t *testing.T) {
 	if got := c.status().TLSFingerprint; got != fp || c.served() != fp {
 		t.Fatalf("after a restart the status names %s and a new connection gets %s, want %s of the setting", got, c.served(), fp)
 	}
+	file(fp)
 
 	// A setting that does not work leaves the certificate in use: the key of a file that is gone
 	if err := os.Remove(keyFile); err != nil {
@@ -262,6 +273,7 @@ func TestRunServesTheCertificateOfItsSetting(t *testing.T) {
 	if got := c.status().TLSFingerprint; got != fp {
 		t.Errorf("a refused setting changed the certificate to %s, want %s", got, fp)
 	}
+	file(fp)
 
 	// Clearing the setting gives back the self-signed certificate of the first start, also after a restart
 	if res, err = c.api.ClearControllerCertificate(ctx, false); err != nil {
@@ -270,6 +282,7 @@ func TestRunServesTheCertificateOfItsSetting(t *testing.T) {
 	if res.Certificate.Fingerprint != first || c.status().TLSFingerprint != first || c.served() != first {
 		t.Errorf("after clear the certificate is %+v, the status names %s and a new connection gets %s, want %s", res.Certificate, c.status().TLSFingerprint, c.served(), first)
 	}
+	file(first)
 	if err := c.end(); err != nil {
 		t.Errorf("the controller ended with %v", err)
 	}
@@ -277,6 +290,7 @@ func TestRunServesTheCertificateOfItsSetting(t *testing.T) {
 	if got := c.status().TLSFingerprint; got != first || c.served() != first {
 		t.Errorf("after the last restart the status names %s and a new connection gets %s, want %s", got, c.served(), first)
 	}
+	file(first)
 }
 
 // portOf returns the port of the host:port address addr.

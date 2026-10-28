@@ -75,9 +75,13 @@
 //	ranz [flags] licence -f FILE               install the licence key in FILE (- for standard input)
 //	ranz [flags] licence -remove               remove the licence key, which leaves the Personal tier
 //	ranz [flags] whoami                        print the name and the role of the token
-//	ranz [flags] token list                    print the API tokens, without their secrets
-//	ranz [flags] token create -role ROLE NAME  create an API token with the role viewer, operator or admin, and print its secret
-//	ranz [flags] token delete NAME             delete an API token
+//	ranz [flags] token list [-o json|table]    print the API tokens, without their secrets, each with when it expires and when it
+//	                                           was last used; ranz tokens is the same (tokens.go, AUD1-DT-13 #461)
+//	ranz [flags] token create -role ROLE [-expires TIME|DURATION] NAME
+//	                                           create an API token with the role viewer, operator or admin, and print its secret;
+//	                                           the controller refuses it from the time that -expires names, an RFC 3339 time or
+//	                                           a time from now such as 720h, and never when it is left out
+//	ranz [flags] token delete NAME             delete an API token, an expired one too
 //	ranz [flags] user list                     print the users, with their devices and whether each has a password (SDN-31)
 //	ranz [flags] user set [flags] NAME         make the user, or change the fields that the flags name: -display, -groups,
 //	                                           -expires, -max-devices, -may-change-password and -no-saved-password
@@ -133,6 +137,12 @@
 //	-tls-fingerprint HEX  accept only the certificate with this TLS fingerprint, the one that
 //	                      `ranz status` prints, RANZ_TLS_FINGERPRINT by default: for a controller on
 //	                      another host while its certificate is self-signed
+//	-controller-dir DIR   the data directory of the controller on this host, RANZ_CONTROLLER_DIR by
+//	                      default, the one of the service when left out. Toward a loopback address,
+//	                      which is the default server, ranz accepts only the certificate with the TLS
+//	                      fingerprint that the controller wrote to tls.fingerprint there, because
+//	                      another program of the host can listen on a port that the controller is not
+//	                      on. Without that file, and without -tls-fingerprint, it sends no token.
 //
 // Every call needs the token of a role (SDN-14, #190): viewer reads and exports, operator also
 // applies, imports, deletes, confirms, rolls back and installs or removes the licence key, and
@@ -162,7 +172,6 @@ import (
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
-	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 )
 
 const usage = `usage:
@@ -178,7 +187,7 @@ const usage = `usage:
   ranz test throughput [flags] HOST[:PORT]
   ranz doctor [-bundle [-o FILE]]
   ranz explain [flags] [-vrf VRF] [-protocol tcp|udp|icmp|N] [-sport PORT] [-port PORT] [-o text|json] A B
-  ranz login [-server URL] [-tls-fingerprint HEX] [-device | -user NAME [-password-file FILE]] [-o FILE]
+  ranz login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device | -user NAME [-password-file FILE]] [-o FILE]
   ranz [flags] apply -f FILE [-confirm DURATION]
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]
@@ -195,8 +204,9 @@ const usage = `usage:
   ranz [flags] status
   ranz [flags] licence -f FILE|-remove
   ranz [flags] whoami
-  ranz [flags] token list
-  ranz [flags] token create -role viewer|operator|admin NAME
+  ranz [flags] token list [-o json|table]
+  ranz [flags] tokens [-o json|table]
+  ranz [flags] token create -role viewer|operator|admin [-expires TIME|DURATION] NAME
   ranz [flags] token delete NAME
   ranz [flags] user list
   ranz [flags] user set [-display TEXT] [-groups A,B] [-expires TIME|none] [-max-devices N] [-may-change-password=BOOL] [-no-saved-password=BOOL] NAME
@@ -249,18 +259,22 @@ func runCLI(args []string) {
 	flags.StringVar(&server, "server", server, "the URL of the controller's HTTP API")
 	tokenFile := flags.String("token-file", os.Getenv("RANZ_TOKEN_FILE"), "the file that holds the API token; without one, RANZ_TOKEN holds the token")
 	fingerprint := flags.String("tls-fingerprint", os.Getenv("RANZ_TLS_FINGERPRINT"), "accept only the controller's certificate with this TLS fingerprint (ranz status prints it)")
+	controllerDir := flags.String("controller-dir", os.Getenv("RANZ_CONTROLLER_DIR"), "the data directory of the controller on this host, which holds the TLS fingerprint that a loopback address is checked by; the one of the service when left out")
 	flags.Usage = func() {
 		fmt.Fprint(os.Stderr, usage)
 		flags.PrintDefaults()
 	}
 	_ = flags.Parse(args)
-	c, err := newClient(server, *tokenFile, os.Getenv("RANZ_TOKEN"), *fingerprint)
+	c, err := newClient(server, *tokenFile, os.Getenv("RANZ_TOKEN"), *fingerprint, *controllerDir)
 	if err == nil {
 		err = do(context.Background(), c, flags.Args(), os.Stdout)
 	}
 	if errors.Is(err, errUsage) {
 		flags.Usage()
 		os.Exit(2)
+	}
+	if refusal := loopbackRefusal(err); refusal != nil {
+		err = refusal
 	}
 	var refused *api.Error
 	if errors.As(err, &refused) {
@@ -275,7 +289,10 @@ func runCLI(args []string) {
 
 // newClient returns a client of the API at server. It calls with the token in the file
 // tokenFile, or with token when tokenFile is empty, and pins the TLS fingerprint when it is set.
-func newClient(server, tokenFile, token, fingerprint string) (*api.Client, error) {
+// Toward a loopback host with no fingerprint it checks the one in the data directory
+// controllerDir of the controller of this host, and refuses every call when it cannot read it
+// (checkLoopback): the client that api.NewClient makes for a loopback host checks nothing.
+func newClient(server, tokenFile, token, fingerprint, controllerDir string) (*api.Client, error) {
 	c := api.NewClient(server)
 	c.Token = token
 	if tokenFile != "" {
@@ -289,6 +306,8 @@ func newClient(server, tokenFile, token, fingerprint string) (*api.Client, error
 		if err := c.Pin(fingerprint); err != nil {
 			return nil, err
 		}
+	} else if api.Loopback(server) {
+		checkLoopback(c, server, controllerDir)
 	}
 	return c, nil
 }
@@ -461,29 +480,9 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 			return err
 		}
 		return show(out, tok)
-	case len(args) == 2 && args[0] == "token" && args[1] == "list":
-		ts, err := c.Tokens(ctx)
-		if err != nil {
-			return err
-		}
-		return show(out, api.TokenList{Tokens: ts})
-	case len(args) >= 2 && args[0] == "token" && args[1] == "create":
-		flags := flag.NewFlagSet("token create", flag.ContinueOnError)
-		role := flags.String("role", "", "the role of the token: viewer, operator or admin")
-		if err := flags.Parse(args[2:]); err != nil || *role == "" || flags.NArg() != 1 {
-			return errUsage
-		}
-		tok, err := c.CreateToken(ctx, flags.Arg(0), rbac.Role(*role))
-		if err != nil {
-			return err
-		}
-		return show(out, tok)
-	case len(args) == 3 && args[0] == "token" && args[1] == "delete":
-		tok, err := c.DeleteToken(ctx, args[2])
-		if err != nil {
-			return err
-		}
-		return show(out, tok)
+	case args[0] == "token" || args[0] == "tokens":
+		// The API tokens, with their expiry and their last use (tokens.go; AUD1-DT-13)
+		return tokenCommand(ctx, c, args, out)
 	case len(args) >= 2 && args[0] == "device" && args[1] == "create":
 		// A WireGuard Device with its keys (devicecreate.go; SDN-82)
 		return createDevice(ctx, c, args[2:], out, os.Stderr)

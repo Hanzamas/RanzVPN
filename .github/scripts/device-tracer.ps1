@@ -50,6 +50,8 @@ $data = Join-Path $work 'data'
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 # adminTokenFile of controller: the secret of the admin token of the first start
 $tokenFile = Join-Path $data 'admin.token'
+# Toward a loopback address ranz checks the TLS fingerprint that the controller writes to this directory (AUD1-DT-13, #461)
+$env:RANZ_CONTROLLER_DIR = $data
 $controllerOut = Join-Path $work 'controller.out'
 $controllerErr = Join-Path $work 'controller.err'
 $traceOut = Join-Path $work 'vpntest.out'
