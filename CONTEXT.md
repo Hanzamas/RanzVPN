@@ -941,6 +941,31 @@ The comments on the issue `Integrator heartbeat`, by which an Integrator shows t
 **Fast set, full set**:
 The two sets of CI jobs of a pull request (see `.github/scripts/ci-plan.py`).
 
+**Security (of an L2 Network)**:
+The protections of the fork that the switch of an L2 Network applies to the frames of its clients: the MAC and IP checks with their limits, ARP and DHCP only, the DHCP guard and the RA guard (`Network.security`, `SWITCH_SECURITY`, SDN-41). The Policy engine enforces them as the guard of the switch.
+
+**Gateway (of an L2 Network)**:
+A Node behind which the real gateway of an L2 Network is (its router and the DHCP server of its LAN), or the Node that answers DHCP for it. No protection holds for its ports, and the addresses that it sends from are its own before a client's. **Client (of an L2 Network)** is any member that is not a gateway; the protections of the Network hold for it.
+
+**User login**:
+A User proves its password at the Controller (`internal/login`), and the login gives a user token or enrols a device (SDN-32). It is not the Login of a Noise session (`NOISE_LOGIN`), nor the SE-VPN login.
+_Avoid_: session (the slim fork's `SESSION` and the Controller's session of SDN-50 are other things)
+
+**Password login**, **Browser login**, **Device code login**:
+The three ways in of a User login. The browser login is the authorization code grant with PKCE, the S256 method only, for the public client `ranz`; the device code login is RFC 8628. The **Authorization page** is the page of the Controller where the user signs in for a browser login (`GET /api/v1/login/authorize`), and its **Loopback redirect** is `http://127.0.0.1:PORT/PATH`, where `ranz` listens for the code (RFC 8252). The **Device page** is where the user types the **User code** that a device shows (`XXXX-XXXX` of 8 consonants).
+
+**User token**:
+The bearer secret (`ranz_u_` and 128 random bits) that a login gives a User that holds an API role: 12 hours at most and never past the expiry of the User. The store keeps its SHA-256 (table `user_tokens`), and its name in the API and the actor of its audit records is `user:NAME`. It is not an API token.
+
+**API role of a User**:
+The role (viewer, operator or admin) that an admin gives a User with `ranz user role set` (table `user_roles`, outside the Intent). A User with none logs in to enrol a device but gets no user token. Say API role of a User, not "user role".
+
+**Enrolment (of a device)**:
+The Node resource that a login of its User makes (`Controller.EnrolDevice`): owned by the User, one revision, under the actor `user:NAME`. It is not **Enrolment sources**.
+
+**User login throttle**:
+Five failed user logins in a row for one name or from one source (an IPv4 address or an IPv6 /64): the next is refused with 429 without a check of the password, and one try comes back each minute. It is not the **Login throttle** of a Node.
+
 
 ## Flagged ambiguities
 
@@ -958,7 +983,7 @@ The two sets of CI jobs of a pull request (see `.github/scripts/ci-plan.py`).
 - "Network" names three things: the SDN resource (a segment inside a VRF, the successor of the Hub), the Mayaqua Network module (sockets), and a word the Hub entry tells you to avoid. In slim-fork text say Hub; say Network only for the SDN resource.
 - "Node" is a new-core host running `ranz-node`, the new core's binary, and its `NODE` object. `NODE_INFO` (Session) is unrelated: the record of a connecting client's host details that a SE-VPN login sends, not a Node.
 - "Session" is the slim fork's `SESSION`, one peer attached to a Hub. The new core's connection between two Nodes is the Noise session (`NOISE_SESSION`); say Noise session for it.
-- "Login" is the Login of a Noise session (`NOISE_LOGIN`). The slim fork's login is the SE-VPN login (`ServerAccept`, `ClientUploadAuth`); both end in Sam.
+- "Login" is the Login of a Noise session (`NOISE_LOGIN`). The slim fork's login is the SE-VPN login (`ServerAccept`, `ClientUploadAuth`); both end in Sam. The User login of SDN-32 is a third thing: a User proves its password at the Controller.
 - "Capability" is what a Node reports to the Controller. `CAPS` (`ServerCaps.c`) is the slim fork's list of server capabilities for admin clients.
 - "Role" is what a Node does (`server`, `client`, `bridge`, `relay`). The `admin`, `operator` and `viewer` of the Controller's API are API roles, held by an API token; say API role for them.
 - "controller" was a role of the node binary in ADR-0022. Since ADR-0026 the Controller is the separate `ranz-controller` service, and the node has no `controller` role.
@@ -982,4 +1007,5 @@ The two sets of CI jobs of a pull request (see `.github/scripts/ci-plan.py`).
 - "Bundle" is a Diagnostics bundle, always with "diagnostics" before it. `ranz.exe` is not called a bundle.
 - "Heartbeat" is the licence re-validation of an Activation token. The integrator heartbeat is the comments on the heartbeat issue, and has nothing to do with it.
 - "Software KSP" is the in-memory signer of CI in this glossary. ADR-0022 uses "software KSP" for the Microsoft Software Key Storage Provider. Say which one.
+- "Gateway" is the Node that terminates the WireGuard of Devices (Gateway of a Device), and also the Node behind which the real gateway of an L2 Network is (Gateway of an L2 Network, SDN-41). Say which one.
 - "Device" is a stock WireGuard client or router behind a gateway Node (spec #374). A Node that a User owns also counts against the maximum devices of that User, but it is not a Device.

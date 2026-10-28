@@ -147,11 +147,10 @@ func (s *Store) AuditTargets(ctx context.Context) ([]export.Stored, error) {
 		if err := qr.Scan(&name, &doc, &delivered); err != nil {
 			return nil, fmt.Errorf("store: reading the audit targets: %w", err)
 		}
-		var t export.Target
-		if err := json.Unmarshal([]byte(doc), &t); err != nil {
+		t, err := s.decodeTarget(auditTargetsTable, name, doc)
+		if err != nil {
 			return nil, fmt.Errorf("store: audit target %q: %w", name, err)
 		}
-		t.Name = name
 		out = append(out, export.Stored{Target: t, Delivered: uint64(delivered)})
 	}
 	return out, nil
@@ -161,12 +160,12 @@ func (s *Store) AuditTargets(ctx context.Context) ([]export.Stored, error) {
 // latest record: it is sent the records that follow, not the ones of before it existed. An update
 // keeps what the target was sent.
 func (s *Store) PutAuditTarget(ctx context.Context, t export.Target) error {
-	b, err := json.Marshal(t)
+	doc, err := s.encodeTarget(auditTargetsTable, t)
 	if err != nil {
 		return fmt.Errorf("store: audit target %q: %w", t.Name, err)
 	}
 	err = s.write(ctx, []gorqlite.ParameterizedStatement{statement(`INSERT INTO audit_targets (name, target, delivered) VALUES (?, ?, (SELECT COALESCE(MAX(id), 0) FROM audit_log)) ON CONFLICT (name) DO UPDATE SET target = excluded.target`,
-		t.Name, string(b))})
+		t.Name, doc)})
 	if err != nil {
 		return fmt.Errorf("store: audit target %q: %w", t.Name, err)
 	}
