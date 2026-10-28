@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -16,8 +17,11 @@ func TestReaderWriter(t *testing.T) {
 		Type:     TypeStart,
 		ASN:      65001,
 		RouterID: "192.0.2.1",
-		Peers:    []Peer{{Address: "192.0.2.2", ASN: 65002, Passive: true}},
-		Accept:   []string{"198.51.100.0/24"},
+		Peers: []Peer{
+			{Address: "192.0.2.2", ASN: 65002, Passive: true},
+			{Address: "192.0.2.3", ASN: 65001, HoldTime: 9, VRFs: []PeerVRF{{ID: 101, Accept: []string{"10.0.0.3/32"}}, {ID: 102}}},
+		},
+		Accept: []string{"198.51.100.0/24"},
 	}
 	if err := w.Write(sent); err != nil {
 		t.Fatal(err)
@@ -35,7 +39,7 @@ func TestReaderWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Type != sent.Type || got.ASN != sent.ASN || got.RouterID != sent.RouterID || len(got.Peers) != 1 || got.Peers[0] != sent.Peers[0] || len(got.Accept) != 1 || got.Accept[0] != sent.Accept[0] {
+	if got.Type != sent.Type || got.ASN != sent.ASN || got.RouterID != sent.RouterID || !reflect.DeepEqual(got.Peers, sent.Peers) || len(got.Accept) != 1 || got.Accept[0] != sent.Accept[0] {
 		t.Errorf("start after the round trip: %+v, sent %+v", got, sent)
 	}
 	got, err = r.Read()
