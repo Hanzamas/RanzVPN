@@ -36,10 +36,12 @@ func TestExplainCommandProfile(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(admin+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The test server is on a loopback address, so ranz explain pins its certificate (AUD1-DT-13, #461)
+	fingerprint := fingerprintOf(srv.Certificate())
 	run := func(args ...string) string {
 		t.Helper()
 		var out, errOut bytes.Buffer
-		if code := runExplain(ctx, append([]string{"-server", srv.URL, "-token-file", tokenFile}, args...), &out, &errOut); code != 0 {
+		if code := runExplain(ctx, append([]string{"-server", srv.URL, "-token-file", tokenFile, "-tls-fingerprint", fingerprint}, args...), &out, &errOut); code != 0 {
 			t.Fatalf("ranz explain %v: exit code %d: %s", args, code, errOut.String())
 		}
 		return out.String()
