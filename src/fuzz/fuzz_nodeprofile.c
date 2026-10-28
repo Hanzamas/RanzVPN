@@ -18,6 +18,8 @@
 #include "Cedar/Node.h"
 #include "Cedar/NodeProfile.h"
 
+#include "Mayaqua/Memory.h"
+
 #include "Core/Control.h"
 
 #include <stdlib.h>

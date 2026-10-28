@@ -1,0 +1,12 @@
+{"resources": [
+  {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48"}},
+  {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}},
+  {"kind": "SessionProfile", "name": "laptops", "spec": {"uploadLimit": 20000000, "downloadLimit": 40000000, "maxSessions": 2, "maxIpv4": 4, "maxIpv6": 8, "idleTimeout": 900, "noServer": true, "privacyFilter": true}},
+  {"kind": "SessionProfile", "name": "contractors", "spec": {"downloadLimit": 10000000, "maxMacs": 1, "autoDisconnect": 28800, "noBridge": true, "noRouting": true}},
+  {"kind": "Group", "name": "staff", "spec": {"displayName": "Staff", "sessionProfile": "laptops"}},
+  {"kind": "User", "name": "alice", "spec": {"displayName": "Alice", "groups": ["staff"]}},
+  {"kind": "User", "name": "bob", "spec": {"groups": ["staff"], "sessionProfile": "contractors"}},
+  {"kind": "Node", "name": "alice-laptop", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "owner": "alice", "addresses": {"corp-lan": "10.10.0.1"}}},
+  {"kind": "Node", "name": "bob-laptop", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"], "owner": "bob", "addresses": {"corp-lan": "10.10.0.2"}}},
+  {"kind": "Node", "name": "files", "spec": {"publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "vrfs": ["corp"], "tags": ["db"], "addresses": {"corp-lan": "10.10.0.3"}}}
+]}

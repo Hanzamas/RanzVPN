@@ -90,6 +90,10 @@ src/Core  ControlApply   fuzz_control  via ControlInput
 # both; neither name has a parser word, both are listed as the readers of the controller's bytes that they are
 src/Core  ControlCopyRelays  fuzz_control  via ControlInput
 src/Core  ControlTakeSignal  fuzz_control  via ControlInput
+# The session profiles of a state (SDN-40 #233): ControlInput hands an Update to ControlCopyProfiles, which takes the
+# SessionProfile of the NodeConfig and of each Peer object, and the owner of fuzz_control checks what it took. No parser word
+# in the name, listed as the reader of the controller's bytes that it is
+src/Core  ControlCopyProfiles  fuzz_control  via ControlInput
 
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table

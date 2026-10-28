@@ -497,21 +497,22 @@ static UINT ProfileTestNumPackets(PROFILETEST_NODE *t)
 	return num;
 }
 
-// Whether packet index that the host of t took is the one of size bytes at want
-static bool ProfileTestPacketIs(PROFILETEST_NODE *t, UINT index, UCHAR *want, UINT size)
+// Whether one of the packets that the host of t took from index from on is the one of size bytes at want. Every packet of
+// the test carries an id of its own, so the one of a case is found among packets of earlier cases that came late.
+static bool ProfileTestFind(PROFILETEST_NODE *t, UINT from, UCHAR *want, UINT size)
 {
-	bool same = false;
+	bool found = false;
 
 	AcquireSRWLockShared(&t->Lock);
-	if (index < LIST_NUM(t->Packets))
+	for (UINT i = from;i < LIST_NUM(t->Packets) && found == false;i++)
 	{
-		PROFILETEST_PACKET *p = LIST_DATA(t->Packets, index);
+		PROFILETEST_PACKET *p = LIST_DATA(t->Packets, i);
 
-		same = (p->Size == size && Cmp(p->Data, want, MIN(size, (UINT)sizeof(p->Data))) == 0);
+		found = (p->Size == size && Cmp(p->Data, want, MIN(size, (UINT)sizeof(p->Data))) == 0);
 	}
 	ReleaseSRWLockShared(&t->Lock);
 
-	return same;
+	return found;
 }
 
 // The packets that the overlay of a node dropped
@@ -793,14 +794,16 @@ static void ProfileTestCase(PROFILETEST_CTX *ctx, PROFILETEST_NODE *nodes, UINT 
 	}
 	else
 	{
-		// The host of the receiver takes it, or its overlay drops it
+		// The host of the receiver takes it, or its overlay drops it. A packet that an earlier case sent may reach the host
+		// after this one was sent: the beats of the timeout cases go to node-b until the test sees its new session up at
+		// node-a, so node-b may take the last of them once it reads that session. Such a packet is not the one of this case.
 		UINT64 limit = Tick64() + PROFILETEST_BOUND;
 
 		while (Tick64() < limit)
 		{
-			if (ProfileTestNumPackets(r) > before)
+			if (ProfileTestFind(r, before, packet, size))
 			{
-				end = (ProfileTestPacketIs(r, before, packet, size) ? PROFILETEST_DELIVERED : PROFILETEST_CHANGED);
+				end = PROFILETEST_DELIVERED;
 				break;
 			}
 			if (ProfileTestDropped(r) != dropped)
@@ -823,7 +826,8 @@ static void ProfileTestCase(PROFILETEST_CTX *ctx, PROFILETEST_NODE *nodes, UINT 
 		}
 	}
 
-	ProfileTestCheck(ctx, end == expect && counted, what, "it %s, and the drop is %s", ends[end], counted ? "counted as it must" : "not counted at the node that dropped it alone");
+	ProfileTestCheck(ctx, end == expect && counted, what, "it %s, and the drop is %s; the host of %s took %u packets meanwhile", ends[end],
+		counted ? "counted as it must" : "not counted at the node that dropped it alone", r->Name, ProfileTestNumPackets(r) - before);
 }
 
 // The stream thread of s sends its packet as fast as the overlay of its node takes it
