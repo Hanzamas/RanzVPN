@@ -207,7 +207,8 @@ func (m *Member) ServeStream(tc *tls.Conn) {
 	m.log.Debug("node refused: standby", "remote", conn.RemoteAddr().String(), "leader", l.Holder)
 }
 
-// Handler returns the member's HTTP API: GET /api/v1/status answers for this member, every other
+// Handler returns the member's HTTP API: GET /api/v1/status answers for this member, with the admin
+// source allowlist and, on the leader, the starter rule (api.Status.WithAccess), every other
 // call goes to the controller of the leader, here or forwarded to the member that leads with the
 // caller's bearer token, which the leader checks again. Every call needs the role that the API
 // asks for it (api.Guard): the tokens are in the store, so every member knows them. A call that
@@ -216,7 +217,10 @@ func (m *Member) ServeStream(tc *tls.Conn) {
 func (m *Member) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, r *http.Request) {
-		api.Reply(w, http.StatusOK, m.Status())
+		m.mu.Lock()
+		c := m.active
+		m.mu.Unlock()
+		api.Reply(w, http.StatusOK, m.Status().WithAccess(r.Context(), m.cfg.Store, c))
 	})
 	mux.HandleFunc("/", m.serveAPI)
 	// The logins of users need no token: they go to the leader in front of the Guard (SDN-32)
