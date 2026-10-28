@@ -23,8 +23,9 @@ import (
 //
 // A is a Node, which sends from its address in the VRF, a WireGuard Device, or an address of either; B is a Node, a
 // Device or an IP address. The flags come before A and B: the connection flags of the CLI (-server, -token-file,
-// -tls-fingerprint, with the same environment variables), -vrf, -protocol, -sport, -port, and -o json for the
-// answer of the API as it is.
+// -tls-fingerprint and -controller-dir, with the same environment variables), -vrf, -protocol, -sport, -port, and
+// -o json for the answer of the API as it is. Toward a loopback address, which is the default server, it checks
+// the certificate as the CLI does (loopback.go, AUD1-DT-13, #461).
 func init() {
 	register("explain", func(args []string) int { return runExplain(context.Background(), args, os.Stdout, os.Stderr) })
 }
@@ -45,6 +46,7 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	flags.StringVar(&server, "server", server, "the URL of the controller's HTTP API")
 	tokenFile := flags.String("token-file", os.Getenv("RANZ_TOKEN_FILE"), "the file that holds the API token; without one, RANZ_TOKEN holds the token")
 	fingerprint := flags.String("tls-fingerprint", os.Getenv("RANZ_TLS_FINGERPRINT"), "accept only the controller's certificate with this TLS fingerprint (ranz status prints it)")
+	controllerDir := flags.String("controller-dir", os.Getenv("RANZ_CONTROLLER_DIR"), "the data directory of the controller on this host, which holds the TLS fingerprint that a loopback address is checked by; the one of the service when left out")
 	vrf := flags.String("vrf", "", "the VRF of A that the packet goes in; left out, the VRF that leads B to another Node")
 	protocol := flags.String("protocol", "", "tcp, udp, icmp or the number of an IP protocol; icmp, an echo request, when left out")
 	sport := flags.Uint("sport", 0, "the source port of TCP or UDP")
@@ -64,7 +66,7 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		flags.Usage()
 		return 2
 	}
-	c, err := newClient(server, *tokenFile, os.Getenv("RANZ_TOKEN"), *fingerprint)
+	c, err := newClient(server, *tokenFile, os.Getenv("RANZ_TOKEN"), *fingerprint, *controllerDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "ranz:", err)
 		return 1
@@ -72,6 +74,9 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	q := explain.Query{From: flags.Arg(0), To: flags.Arg(1), VRF: *vrf, Protocol: *protocol, SourcePort: uint16(*sport), Port: uint16(*port)}
 	res, err := c.Explain(ctx, q)
 	if err != nil {
+		if refusal := loopbackRefusal(err); refusal != nil {
+			err = refusal
+		}
 		var refused *api.Error
 		if errors.As(err, &refused) {
 			fmt.Fprintf(stderr, "ranz: %v (%d %s)\n", err, refused.Status, http.StatusText(refused.Status))

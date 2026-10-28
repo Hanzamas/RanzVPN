@@ -274,7 +274,7 @@ func TestPeerRoutesAreBounded(t *testing.T) {
 		rs = append(rs, nat(fmt.Sprintf("x-%02d", k), "e", "x", fmt.Sprintf("192.168.%d.0/24", k), fmt.Sprintf("10.200.%d.0/24", k)))
 	}
 	if _, err := Apply(New(), doc(rs...), nil); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(),
-		`Node "y": 17 routes lead to its peer "x", the outside prefixes of the 1:1 NAT rules of the peer with the routes that leaks add, and the control protocol carries at most 16`) {
+		`Node "y": 17 routes lead to its peer "x", the outside prefixes of the 1:1 NAT rules of the peer with the routes that leaks add and the LAN subnets and hub prefixes of the peer, and the control protocol carries at most 16`) {
 		t.Errorf("17 leaked routes to one peer: %v", err)
 	}
 	if _, err := Apply(New(), doc(rs[:len(rs)-1]...), nil); err != nil {

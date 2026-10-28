@@ -17,7 +17,7 @@ import (
 
 // ranz node login (SDN-32, #226) enrols this Node as a device of the user who signs in:
 //
-//	ranz node login [-server URL] [-tls-fingerprint HEX] [-device] [-name NAME]
+//	ranz node login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device] [-name NAME]
 //
 // The Node service gives the public half of its static key (as ranz node key does), and a browser login,
 // or with -device a device code login that the user finishes on another device, takes the key to the
@@ -27,7 +27,7 @@ import (
 // (as ranz node controller set makes them), and the service restarts to take them, so the Node joins on
 // its next control stream. The verb needs administrator rights, as every verb of ranz node does.
 
-const nodeLoginUsage = `usage: ranz node login [-server URL] [-tls-fingerprint HEX] [-device] [-name NAME]`
+const nodeLoginUsage = `usage: ranz node login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device] [-name NAME]`
 
 // nodeLoginAnswer is what ranz node login prints: the Node resource of the enrolment, its user and the
 // revision that holds it, and the Controller settings of the Node.
@@ -42,7 +42,7 @@ type nodeLoginAnswer struct {
 func nodeLogin(ctx context.Context, args []string, stdout, stderr io.Writer, agent nodeAgent) int {
 	flags := flag.NewFlagSet("ranz node login", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	server, fingerprint := connectionFlags(flags)
+	server, fingerprint, controllerDir := connectionFlags(flags)
 	device := flags.Bool("device", false, "sign in with a device code, on any other device: for a Node without a browser")
 	name := flags.String("name", "", "the name of the Node resource of this Node; the Controller draws one when it is left out")
 	flags.Usage = func() {
@@ -74,7 +74,7 @@ func nodeLogin(ctx context.Context, args []string, stdout, stderr io.Writer, age
 		fmt.Fprintf(stderr, "ranz node login: the Node gave no static key: %q %s\n", k.PublicKey, k.Error)
 		return 1
 	}
-	lc, err := loginClient(*server, *fingerprint)
+	lc, err := loginClient(*server, *fingerprint, *controllerDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "ranz node login:", err)
 		return 1
