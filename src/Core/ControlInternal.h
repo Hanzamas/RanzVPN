@@ -41,4 +41,7 @@ void ControlCopyEndpoints(CONTROL_STATE *st, const ranz_control_v1_Object *objec
 // ControlLink.c
 void ControlCopyLinks(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 
+// ControlProfile.c
+void ControlCopyProfiles(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
+
 #endif // CORE_CONTROL_INTERNAL_H

@@ -186,6 +186,8 @@ add_library(corecontrol STATIC
   ControlLink.c
   # The events of the node that the client reports (AUD1-DT-11, #459)
   ControlEvent.c
+  # The session profiles of a node and of its peers in a desired state (SDN-40, #233)
+  ControlProfile.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")
