@@ -282,6 +282,12 @@ func run(configFile, keyFile, ping, tcp string, blocked bool, timeout, serve tim
 		return err
 	}
 	fmt.Fprintf(out, "WGPEER UP addresses %v gateway %s at %s (%s)\n", local, base64.StdEncoding.EncodeToString(cfg.gatewayKey), cfg.endpoint, endpoint)
+	// Whether the client holds the PresharedKey of its gateway: the handshake completes only if the gateway holds the same
+	if cfg.presharedKey != nil {
+		fmt.Fprintln(out, "WGPEER PRESHARED KEY yes")
+	} else {
+		fmt.Fprintln(out, "WGPEER PRESHARED KEY no")
+	}
 
 	// The handshake: the persistent keepalive starts it as the Device comes up, and an echo request
 	// to the overlay host starts it without one
