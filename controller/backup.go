@@ -45,8 +45,23 @@ func runBackup(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "ranz controller backup: the store is in %s (%d bytes); it holds the hashes of the API tokens and the licence key, so keep it as safe as the data directory\n", file, size)
+	fmt.Fprint(os.Stderr, backupMessage(file, size, len(cfg.join) > 0))
 	return nil
+}
+
+// backupMessage is what `ranz controller backup` says once it wrote the backup file of size bytes: who
+// may read it, and everything that it holds, which is all that the controller keeps, so the operator
+// knows how safe to keep it (AUD1-DT-10, #458). A member of a cluster keeps the secrets of the targets in
+// clear, as sealTargets says.
+func backupMessage(file string, size int64, clusterMember bool) string {
+	secrets := "the secrets of the targets (the export and audit targets), which the key of this host seals: " +
+		"a restore on another host brings the targets back with no secret, and the log of the controller there names them, so that you put each one again with its secret"
+	if clusterMember {
+		secrets = "the secrets of the targets (the export and audit targets) in clear, since the members of a cluster have no sealing key in common"
+	}
+	return fmt.Sprintf("ranz controller backup: the store is in %s (%d bytes), %s.\n"+
+		"  It holds everything that the controller keeps in its store: the Intent with every revision, the states and the Capabilities of the Nodes, the events and the audit log, the settings (the lists of admin sources and destinations, the certificate of the controller), the leases of DHCP, the hashes of the API tokens and of the passwords of the users, the licence key, and %s.\n"+
+		"  Keep every copy of it as safe as the data directory.\n", file, size, backupAccess, secrets)
 }
 
 // runRestore runs `ranz controller restore -f FILE [flags]`, with the flags of the service.
@@ -67,14 +82,18 @@ func runRestore(args []string) error {
 	if err := restore(ctx, cfg, file, adminRights, os.Stderr); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "ranz controller restore: the store is the backup in %s; the leader loads it\n", file)
+	fmt.Fprintf(os.Stderr, "ranz controller restore: the store is the backup in %s; the leader loads it.\n"+
+		"  The secrets of the targets in it open only with the key of the host that made the backup: on another host the targets come back with no secret, and the log of the controller names them, so that you put each one again with its secret.\n", file)
 	return nil
 }
 
-// backup writes a backup of the controller's store to file, readable by its owner only, and
-// returns its size. rights must allow it (adminRights), and the data directory of cfg must exist.
-// The backup goes to a temporary file first, so a failed one leaves an earlier backup in file as
-// it was. out receives the output of an rqlited that backup starts (openStore).
+// backup writes a backup of the controller's store to file, for its owner only (on Windows for SYSTEM
+// and the Administrators, whatever the access list of the folder of file says), and returns its size.
+// rights must allow it (adminRights), and the data directory of cfg must exist. The backup goes to a
+// temporary file first, so a failed one leaves an earlier backup in file as it was. The temporary file
+// has its access list from the moment it exists, and no other handle of it is open while the store is
+// written to it (createBackupFile). out receives the output of an rqlited that backup starts
+// (openStore), and the warning for a volume that has no access lists.
 func backup(ctx context.Context, cfg config, file string, rights func() error, out io.Writer) (int64, error) {
 	if err := onHost(cfg, rights, "backup"); err != nil {
 		return 0, err
@@ -85,9 +104,12 @@ func backup(ctx context.Context, cfg config, file string, rights func() error, o
 	}
 	defer stop()
 	tmp := file + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	f, protected, err := createBackupFile(tmp)
 	if err != nil {
 		return 0, err
+	}
+	if !protected {
+		fmt.Fprintf(out, "ranz controller backup: warning: the volume of %s has no access lists, so whoever can read the volume can read the backup\n", file)
 	}
 	err = st.Backup(ctx, f)
 	if cerr := f.Close(); err == nil {
@@ -132,7 +154,9 @@ func restore(ctx context.Context, cfg config, file string, rights func() error, 
 }
 
 // onHost refuses a caller that rights do not allow, and a host without the data directory of
-// cfg, as reset-admin does: the command cmd runs on the controller's host only.
+// cfg, as reset-admin does: the command cmd runs on the controller's host only. It refuses a data
+// directory that another account than SYSTEM, the Administrators and the service's owns, since the
+// command runs the rqlited of that directory as the administrator (checkDataDirOwner).
 func onHost(cfg config, rights func() error, cmd string) error {
 	if err := rights(); err != nil {
 		return err
@@ -140,7 +164,7 @@ func onHost(cfg config, rights func() error, cmd string) error {
 	if fi, err := os.Stat(cfg.dataDir); err != nil || !fi.IsDir() {
 		return fmt.Errorf("the data directory %s (-data) does not exist: %s runs on the controller's host, with the flags of the service", cfg.dataDir, cmd)
 	}
-	return nil
+	return checkDataDirOwner(cfg.dataDir)
 }
 
 // fileFlag takes the flag -name FILE (or -name=FILE, with one or two dashes) out of args, and
