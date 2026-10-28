@@ -62,6 +62,8 @@ func FuzzRead(f *testing.F) {
 		{Body: &controlpb.ControlMessage_Signal{Signal: &controlpb.Signal{Peer: "branch-2", Envelope: []byte{4, 1, 2, 3}}}},
 		{Body: &controlpb.ControlMessage_Telemetry{Telemetry: &controlpb.Telemetry{Rules: []*controlpb.RuleCounters{{VrfId: 10, Rule: "default-allow-all", PacketCount: 22, ByteCount: 3300}}}}},
 		{Body: &controlpb.ControlMessage_Leases{Leases: &controlpb.Leases{Network: "corp-lan", Leases: []*controlpb.Lease{{Mac: []byte{2, 0, 0, 0, 0, 1}, Address: []byte{10, 10, 0, 7}, ExpiresMs: 1760000000000, HostName: "laptop"}}}}},
+		{Body: &controlpb.ControlMessage_OperationResult{OperationResult: &controlpb.OperationResult{Id: 7, Status: controlpb.OperationStatus_OPERATION_STATUS_OK, Total: 1,
+			Entries: []*controlpb.TableEntry{{Vlan: 20, Mac: []byte{2, 0, 0, 0, 0, 1}, Address: []byte{10, 10, 0, 7}, Member: "laptop", LastSeenMs: 1760000000000}}}}},
 	} {
 		b, err := proto.MarshalOptions{Deterministic: true}.Marshal(m)
 		if err != nil {
