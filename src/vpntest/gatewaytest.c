@@ -1255,6 +1255,29 @@ static UINT64 HubSpokeTransit(GATEWAYTEST_NODE *nodes)
 	return st.Transit;
 }
 
+// The packets that the hub sent on from one spoke to another and the packets that it dropped since transit_before and
+// dropped_before, once they reach want_transit and want_dropped or GATEWAYTEST_BOUND ms passed. The hub counts a packet on the
+// thread that took it from the spoke, after it sent it on (NodeGatewayTransit) or dropped it, so the other spoke can take the
+// packet before the hub counted it.
+static void HubSpokeCounts(GATEWAYTEST_NODE *nodes, UINT64 transit_before, UINT64 dropped_before, UINT64 want_transit, UINT64 want_dropped,
+	UINT64 *transit, UINT64 *dropped)
+{
+	for (UINT64 end = Tick64() + GATEWAYTEST_BOUND;;)
+	{
+		NODE_OVERLAY_STATUS hub;
+
+		NodeOverlayGetStatus(nodes[HUBSPOKE_H].Node, &hub);
+		*transit = HubSpokeTransit(nodes) - transit_before;
+		*dropped = hub.Dropped - dropped_before;
+
+		if ((*transit >= want_transit && *dropped >= want_dropped) || Tick64() >= end)
+		{
+			return;
+		}
+		SleepThread(GATEWAYTEST_POLL);
+	}
+}
+
 // One packet of the host of from, from src to dst: it reaches the host of to as it was sent, and when via_hub is set the hub
 // sent it on and its Mirror copied it to the sensor as it was sent; with to GATEWAYTEST_NONE, no host takes it, the hub drops
 // it and its Mirror copies nothing
@@ -1271,9 +1294,10 @@ static void HubSpokeSend(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, HUBSPOKE
 	UINT64 dropped_before = hub.Dropped;
 	UINT marker = GatewayTestSend(ctx, &nodes[from], HUBSPOKE_VRF_ID, src, dst, GATEWAYTEST_PORT);
 	UINT got = GatewayTestWhere(nodes, HUBSPOKE_NUM_NODES, marker, to == GATEWAYTEST_NONE ? GATEWAYTEST_QUIET : GATEWAYTEST_BOUND, &p);
-	UINT64 transit = HubSpokeTransit(nodes) - transit_before;
+	UINT64 transit, dropped;
 
-	NodeOverlayGetStatus(nodes[HUBSPOKE_H].Node, &hub);
+	// The hub counts the packet after it sent it on or dropped it: wait for its counters
+	HubSpokeCounts(nodes, transit_before, dropped_before, via_hub ? 1 : 0, to == GATEWAYTEST_NONE ? 1 : 0, &transit, &dropped);
 	GatewayTestPacket(want, src, dst, GATEWAYTEST_PORT, marker);
 
 	if (to == GATEWAYTEST_NONE)
@@ -1281,9 +1305,9 @@ static void HubSpokeSend(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, HUBSPOKE
 		UINT copy = HubSpokeRead(sensor, GATEWAYTEST_POLL);
 
 		Format(what, sizeof(what), "%s sends %s > %s; node-h, which is no hub in its state, drops it, and its Mirror copies nothing", nodes[from].Name, src, dst);
-		GatewayTestCheck(ctx, marker != 0 && got == GATEWAYTEST_NONE && transit == 0 && hub.Dropped > dropped_before && copy == 0, what,
+		GatewayTestCheck(ctx, marker != 0 && got == GATEWAYTEST_NONE && transit == 0 && dropped != 0 && copy == 0, what,
 			"taken by %s, %I64u sent on, %I64u dropped, the sensor read %u bytes", GatewayTestName(nodes, HUBSPOKE_NUM_NODES, got), transit,
-			hub.Dropped - dropped_before, copy);
+			dropped, copy);
 		return;
 	}
 
