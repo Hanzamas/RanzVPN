@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,10 +14,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -314,12 +317,59 @@ func TestAdminFromFlagIsChecked(t *testing.T) {
 			t.Errorf("-admin-from %q gave %q (%v)", ok, cfg.adminFrom, err)
 		}
 	}
-	for _, bad := range []string{"nowhere", "10.0.0.1/8", "10.0.0.0/8,10.0.0.0/8"} {
+	// A value that names no prefix is no list and no any, as ranz install says too
+	for _, bad := range []string{"nowhere", "10.0.0.1/8", "10.0.0.0/8,10.0.0.0/8", ",", " , ", "any,any", "any,10.0.0.0/8"} {
 		if _, err := parseFlags([]string{"-admin-from", bad}); err == nil {
 			t.Errorf("-admin-from %q was taken", bad)
 		}
 	}
 	if got := adminFromArgs("any"); fmt.Sprint(got) != "[-admin-from any]" {
 		t.Errorf("the service arguments are %v", got)
+	}
+}
+
+// reset-admin makes no token in a store that holds none: that store has not had its first start, and
+// a token of reset-admin would turn the first start into a later one, which keeps the empty list of
+// the store and leaves the API open to every address. Once the first start has set the list and made
+// its token, reset-admin makes another beside it and the list stays.
+func TestResetAdminRefusesAStoreBeforeItsFirstStart(t *testing.T) {
+	rq := rqlitetest.Start(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	st, err := store.Open(ctx, rq.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	dir := t.TempDir()
+	cfg, err := parseFlags([]string{"-data", dir, "-rqlite", rq.URL(), "-admin-from", "192.0.2.0/24"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := func() error { return nil }
+	if _, _, err := resetAdmin(ctx, cfg, allowed, io.Discard); !errors.Is(err, errBeforeFirstStart) {
+		t.Fatalf("reset-admin on a store before its first start gave %v, want %v", err, errBeforeFirstStart)
+	}
+	tokens := rbac.New(st)
+	if held, err := tokens.List(ctx); err != nil || len(held) != 0 {
+		t.Fatalf("reset-admin on a store before its first start left the tokens %+v (%v)", held, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, adminTokenFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("reset-admin on a store before its first start wrote %s (%v)", adminTokenFile, err)
+	}
+
+	// The first start sets the list and makes its token, and reset-admin then makes another
+	created, err := bootstrapAdmin(ctx, tokens, st, cfg.adminFrom, func(string) error { return nil }, slog.New(slog.DiscardHandler))
+	if err != nil || !created {
+		t.Fatalf("the first start made the token: %v (%v)", created, err)
+	}
+	if _, _, err := resetAdmin(ctx, cfg, allowed, io.Discard); err != nil {
+		t.Fatalf("reset-admin after the first start: %v", err)
+	}
+	if held, err := tokens.List(ctx); err != nil || len(held) != 2 {
+		t.Errorf("after the first start and reset-admin the tokens are %+v (%v), want two", held, err)
+	}
+	if list, err := st.AdminSources(ctx); err != nil || fmt.Sprint(list) != "[192.0.2.0/24]" {
+		t.Errorf("after reset-admin the admin source allowlist is %v (%v), want the one of the first start", list, err)
 	}
 }

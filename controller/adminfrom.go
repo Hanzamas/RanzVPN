@@ -2,6 +2,7 @@ package controllercmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,7 +21,9 @@ import (
 // no API token in the store, sets the admin source allowlist of the store to it: prefixes, or "any"
 // for the open default. It sets the list before it makes the first admin token, so that a controller
 // that holds a token has had its list set, whatever stopped a start in between: a start that cannot
-// set the list makes no token, and the next start is a first start again. Only that start sets the
+// set the list makes no token, and the next start is a first start again. Only that start makes the
+// first token: `ranz controller reset-admin` refuses a store that holds none (afterFirstStart), as a
+// token of its own would turn the first start into a later one. Only that start sets the
 // list: a later start, a restart of a cluster member and a reinstall over a data directory that holds
 // a store keep the list that an admin set with `ranz admin-sources`, and say in the log which list
 // it is, with a warning when it is empty. Without -admin-from the first start leaves the list empty,
@@ -50,16 +53,20 @@ func KeptStore(dir string) bool {
 }
 
 // parseAdminFrom parses the value of -admin-from: the prefixes of the list it names, sorted and each
-// in its canonical form, none for "any" or no value, and whether it names a list at all.
+// in its canonical form, none for "any" or no value, and whether it names a list at all. A value that
+// names no prefix, as "," does, is refused, as ranz install refuses it: it is no list and no "any".
 func parseAdminFrom(value string) (prefixes []string, set bool, err error) {
-	value = strings.TrimSpace(value)
-	switch value {
-	case "":
+	if value == "" {
 		return nil, false, nil
-	case adminFromAny:
+	}
+	entries := splitList(value)
+	switch {
+	case len(entries) == 0:
+		return nil, false, errors.New("-admin-from names no prefix: give prefixes separated by commas, or any")
+	case len(entries) == 1 && entries[0] == adminFromAny:
 		return nil, true, nil
 	}
-	parsed, err := intent.ParseSources(splitList(value))
+	parsed, err := intent.ParseSources(entries)
 	if err != nil {
 		return nil, false, fmt.Errorf("-admin-from: %w", err)
 	}
@@ -124,6 +131,26 @@ func bootstrapAdmin(ctx context.Context, tokens adminTokens, st adminSourceStore
 		return false, fmt.Errorf("the first admin token: %w", err)
 	}
 	return created, nil
+}
+
+// errBeforeFirstStart refuses `ranz controller reset-admin` on a store that holds no API token. Such a
+// store has not had its first start, which sets the admin source allowlist of -admin-from before it
+// makes the first admin token (bootstrapAdmin): a token that reset-admin made there would make that
+// start a later one, which keeps the empty list of the store and leaves the API and the web UI open
+// to every address.
+var errBeforeFirstStart = errors.New("the store holds no API token, so the controller has not made its first start yet, which sets the admin source allowlist and then writes the first admin token to admin.token: start the controller service, and read admin.token")
+
+// afterFirstStart returns errBeforeFirstStart when the store of tokens holds no API token, so that only
+// the first start makes the first token.
+func afterFirstStart(ctx context.Context, tokens adminTokens) error {
+	held, err := tokens.List(ctx)
+	if err != nil {
+		return fmt.Errorf("reading the API tokens: %w", err)
+	}
+	if len(held) == 0 {
+		return errBeforeFirstStart
+	}
+	return nil
 }
 
 // firstAdminSources is what the first start of the controller does about the admin source

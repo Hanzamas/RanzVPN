@@ -42,10 +42,15 @@ var privateBlocks = []netip.Prefix{
 // operator asked: AdminFromAny for --admin-from any, the prefixes of values in their canonical form
 // and order, else the default of addrs, the addresses of the interfaces of the host. values is the
 // list that --admin-from gave, empty for no flag. It refuses an entry that is not a prefix or an
-// address, and any beside another entry.
+// address, and any beside another entry. It refuses a default that holds more entries than the list
+// does (intent.MaxSources), with which the Controller would not start, and asks for --admin-from.
 func AdminFrom(values []string, addrs []net.Addr) (string, error) {
 	if len(values) == 0 {
-		return strings.Join(defaultAdminFrom(addrs), ","), nil
+		list := defaultAdminFrom(addrs)
+		if len(list) > intent.MaxSources {
+			return "", fmt.Errorf("the default admin source allowlist of this host, loopback and %d private subnets, has more than the %d entries that the list holds: name the sources with --admin-from", len(list)-len(loopbackPrefixes), intent.MaxSources)
+		}
+		return strings.Join(list, ","), nil
 	}
 	if slices.Contains(values, AdminFromAny) {
 		if len(values) > 1 {

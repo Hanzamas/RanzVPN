@@ -1,9 +1,12 @@
 package install
 
 import (
+	"fmt"
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 )
 
 func ipnet(t *testing.T, cidr string) net.Addr {
@@ -67,6 +70,26 @@ func TestAdminFromDefaultStaysWithinThePrivateBlocks(t *testing.T) {
 		if got, err := AdminFrom(nil, c.addrs); err != nil || got != c.want {
 			t.Errorf("%s: the default allowlist is %q (%v), want %q", c.what, got, err, c.want)
 		}
+	}
+}
+
+// A host with more private subnets than the list holds gets no default, as the Controller would not
+// start with it: ranz install asks for --admin-from. A default of as many entries as the list holds
+// is taken.
+func TestAdminFromDefaultThatTheListCannotHoldIsRefused(t *testing.T) {
+	var addrs []net.Addr
+	for i := range intent.MaxSources - len(loopbackPrefixes) + 1 {
+		addrs = append(addrs, ipnet(t, fmt.Sprintf("10.%d.%d.1/24", i/256, i%256)))
+	}
+	if got, err := AdminFrom(nil, addrs); err == nil || !strings.Contains(err.Error(), "--admin-from") {
+		t.Errorf("a default of loopback and %d private subnets gave %d entries (%v), want a refusal that asks for --admin-from", len(addrs), strings.Count(got, ",")+1, err)
+	}
+	got, err := AdminFrom(nil, addrs[1:])
+	if err != nil || strings.Count(got, ",")+1 != intent.MaxSources {
+		t.Errorf("a default of %d entries, as many as the list holds, gave %d entries (%v)", intent.MaxSources, strings.Count(got, ",")+1, err)
+	}
+	if _, err := intent.ParseSources(strings.Split(got, ",")); err != nil {
+		t.Errorf("the default of %d entries is no list that the Controller takes: %v", intent.MaxSources, err)
 	}
 }
 

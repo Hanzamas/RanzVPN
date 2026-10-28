@@ -414,7 +414,11 @@ func installController(w io.Writer, m *mgr.Mgr, dir string, opts Options) error 
 		return err
 	}
 	if !exists {
-		addrs, _ := net.InterfaceAddrs()
+		// The default takes the private subnets of the interfaces: with none read, it is loopback alone
+		addrs, aerr := net.InterfaceAddrs()
+		if aerr != nil && len(opts.AdminFrom) == 0 {
+			fmt.Fprintf(w, "install: warning: the addresses of the interfaces of this host cannot be read (%v), so the admin source allowlist of the Controller is loopback alone\n", aerr)
+		}
 		adminFrom, err := AdminFrom(opts.AdminFrom, addrs)
 		if err != nil {
 			return err
