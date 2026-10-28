@@ -6,20 +6,27 @@
 // transaction, or left out when the store refuses it. Every input is written to a file of its own and imported into a new
 // store in memory (CsOpen of SQLite's ":memory:"). An import that fails must leave the store empty and report that it
 // carried nothing, as CsImportForkConfig promises; one that succeeds leaves the store not empty, and the store is then
-// dumped as the CLI dumps one (CsDump), which reads back every row that the import wrote.
+// dumped as the CLI dumps one (CsDump), which reads back every row that the import wrote. Its policy (CORE-S4-3 #76),
+// the groups, VLANs and access lists of the hubs, is then written as the document of rules of the policy engine
+// (CsPolicyDocument), which must be there, and compiled into the engine's rule tables (PolicyTableText), which refuses
+// only a document beyond the bounds of the engine (64 networks, 1024 rules).
 //
 // The seeds (src/fuzz/seeds/fuzz_configimport.py) are the fork configuration of vpntest store
 // (tests/golden/store/fork_server.config), the configuration without ServerConfiguration that the test refuses, the same
 // fork configuration in the binary format, and the server configurations of fuzz_cfg.
 //
 // fuzz-max-len: 16384
+// fuzz-libs: corepolicy
 
 #include "fuzz_common.h"
 
 #include "Cedar/CedarType.h"
 #include "Cedar/ConfigStore.h"
 
+#include "Core/Policy.h"
+
 #include "Mayaqua/Memory.h"
+#include "Mayaqua/Str.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -112,6 +119,16 @@ static void FuzzConfigImport(const uint8_t *data, size_t size)
 
 		BUF *dump = CsDump(s);
 		FreeBuf(dump);
+
+		char error[256];
+		char *doc = CsPolicyDocument(s);
+		if (doc == NULL)
+		{
+			FuzzFail("an import that succeeded made no document of rules");
+		}
+
+		PolicyFreeString(PolicyTableText(doc, StrLen(doc), error, sizeof(error)));
+		Free(doc);
 	}
 	else
 	{
