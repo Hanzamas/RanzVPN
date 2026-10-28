@@ -108,6 +108,12 @@
 #define NODE_FLAP_LIMIT  5     // Replacements of the session of one peer in the window above which the overlay reports it, without FlapLimit in the configuration
 #define NODE_FLAP_WINDOW 60000 // ms of that window, without FlapWindow in the configuration
 
+// How the overlay of a node reaches a peer (NODE_OVERLAY_SESSION.Path; NodeAgent.c, CORE-S5-5 #411)
+#define NODE_PATH_NONE   0 // Not yet: no stream session and no datagram path
+#define NODE_PATH_STREAM 1 // Its stream session (QUIC, TLS or mimic): the Noise session of its Tunnel
+#define NODE_PATH_RELAY  2 // The datagram path of the peer agent, through a Relay
+#define NODE_PATH_DIRECT 3 // The datagram path of the peer agent, on a direct path (ICE or a punch, CORE-S5-3 and CORE-S5-4)
+
 // The Mirrors of a node (NodeMirror.c; SDN-23, #199)
 #define NODE_MIRROR_ETHER     14                 // Bytes of the Ethernet header in front of the IP packet of a copy
 #define NODE_MIRROR_BURST     50                 // ms of its rate that the token bucket of a Mirror holds ...
@@ -251,6 +257,9 @@ typedef void(NODE_REFUSED_PROC)(NODE *n, void *param, const char *name);
 // Runs once the control pipe of a mimicry sidecar exists and before the sidecar starts, with the name of the pipe: a
 // test that connects another client to it (NODE_MIMIC_TEST)
 typedef void(NODE_MIMIC_LAUNCH_PROC)(void *param, const wchar_t *pipe);
+// Takes the peer layer of the peer agent of the overlay once it starts, and NULL before it stops (NodeOverlayStart; NodeAgent.c,
+// CORE-S5-5 #411), so that the network of a test hands it the datagrams for the node; after NULL the network hands it none
+typedef void(NODE_PATH_ATTACH_PROC)(NODE *n, void *param, PEER_AGENT *agent);
 
 // What a test changes in the way a node starts its mimicry sidecars (NODE.MimicTest; NodeMimic.c)
 struct NODE_MIMIC_TEST {
@@ -470,6 +479,10 @@ struct NODE {
 	// The throttle of the Login (NodeThrottle.c; AUD1-DT-5, #453), from NewNode to FreeNode
 	struct NODE_THROTTLE *LoginThrottle;
 
+	// The peer agent of the overlay (NodeAgent.c; CORE-S5-5, #411): the datagram path to the peers that the node reaches on no
+	// stream session, NULL while the overlay does not run
+	struct NODE_AGENT *volatile Agent;
+
 	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233), NULL while the overlay does not run
 	struct NODE_PROFILE *Profile;
 };
@@ -510,6 +523,15 @@ struct NODE_OVERLAY_CONFIG {
 	// which the overlay reports it as an Event, 0 for NODE_FLAP_LIMIT, and the window, 0 for NODE_FLAP_WINDOW
 	UINT FlapLimit;
 	UINT FlapWindow;
+
+	// The network of the datagram path of the peer agent (NodeAgent.c; CORE-S5-5, #411), NULL for a UDP socket of its own, as a
+	// Node service has it: the send procedure of its datagrams with its first parameter, and the procedure that hands the
+	// network its peer layer, with AdapterParam (the NAT simulator of the vpntest harness)
+	PEER_SEND_PROC *PathSend;
+	void *PathSendParam;
+	NODE_PATH_ATTACH_PROC *PathAttach;
+	// The configuration of the peer layer of the agent, NULL for PeerDefaultConfig: the shorter timers of a test
+	const PEER_CONFIG *PathConfig;
 };
 
 // What NodeOverlayGetStatus reports
@@ -551,6 +573,12 @@ struct NODE_OVERLAY_SESSION {
 	bool Up;                             // Its Noise session is up ...
 	char Transport[TRANSPORT_NAME_SIZE]; // ... over this transport ...
 	UINT64 Since;                        // ... since this GetTickCount64
+
+	// How the overlay reaches the peer now (NODE_PATH_*), and the records of the overlay that went to it and came from it on its
+	// datagram path (NodeAgent.c; CORE-S5-5, #411)
+	UINT Path;
+	UINT64 DatagramsOut;
+	UINT64 DatagramsIn;
 };
 
 // What NodePolicyGetVrf reports of the policy of a VRF of a node: its Network in the policy engine (Core/Policy.h)
