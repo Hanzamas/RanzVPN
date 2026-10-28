@@ -213,6 +213,12 @@ The server's text configuration tree (`$ranz_server.config`, `FOLDER`/`ITEM`), l
 The configuration of a Node (`CONFIG_STORE`, the ConfigStore module): the SQLite database `ranz_node.db` in its data directory, read and written through the inbox `winsqlite3.dll` of System32 with a write-ahead log, so readers do not wait for a writer. It holds the settings (`Roles`, `NumWorkers`), the networks (an L2 network is a Hub of the server role), the users of each network with a PBKDF2-HMAC-SHA256 password hash and a pinned key (the Noise static key of trust on first use), the listeners, the certificates (subject and thumbprint; keys stay in a CNG KSP) and the named admin accounts with the roles owner, hub-admin (of one network) and read-only. It replaces the Config file for the new core (ADR-0022). A Config file in the data directory of a Node with an empty store is imported once (`CsImportForkConfig`) and renamed to `ranz_server.config.imported`; its SHA-0 password hashes and server key are left out.
 _Avoid_: config file (the fork's text tree), database (alone)
 
+**Policy schema**:
+Schema 2 of the Configuration store: the groups of each network, the VLAN of users and groups, the VLAN settings of each network and the rules of the Policy engine, which `CsPolicyDocument` writes as a Document of rules. A store of schema 1 gets the new tables when it is opened.
+
+**Policy import**:
+The part of the import of a fork Config file (`CsImportForkConfig`) that carries the access lists, groups and VLAN policy of its hubs into the Policy schema.
+
 **Machine identity**:
 The 20 bytes that `GenerateMachineUniqueHash` returns for a server: a hash of the Windows MachineGuid and the `MachineIdSalt` of the Config file, kept in the `CEDAR`. It sets the MAC address and the 172.31.x.x address of every Hub and the `unique_id` of a Cascade login. It stays the same across restarts, renames and IP changes; servers cloned from one image differ only when each has its own config file, and so its own salt (FIX-5, `docs/upgrade-notes.md`).
 _Avoid_: machine ID (Windows' name for the MachineGuid), `UniqueId` (a random value per `CEDAR`, copied into `NODE_INFO`)
@@ -716,6 +722,9 @@ The forwarding plane of one L2 Network (`SWITCH`, the Switch module), in place o
 **Port (of a Switch)**:
 The attachment of one member (a user session, a cascade, a bridge, a loopback adapter): an access port, or a trunk port with a native VLAN, as decision 2 of ADR-0019 has them. **TPID** is the tag protocol id of the VLAN tags of a Network.
 
+**Untagged VLAN (of a Network)**:
+The VLAN of the untagged frames of a member without a VLAN of its own, which is the native VLAN of its trunk port. The Policy import gives a Network the lowest VLAN that no user or group of its hub has.
+
 **Group subscription**:
 The subscription of a port to a group address of a VLAN (the broadcast group, a multicast group, or every group). Broadcast and multicast frames go to the subscribers only.
 
@@ -730,6 +739,15 @@ The isolation set of a Member: client isolation, the MAC and IP checks, ARP and 
 
 **Document (of rules)**:
 The JSON rules, Networks and Address groups that the Policy engine puts in force at once, numbered from 1.
+
+**Rule table**:
+The rules of one Network in the order that the Policy engine evaluates them, each with its action and match, ending in the default action of the Network, as `PolicyTableText` writes them. A **golden rule table** is one kept under `tests/golden`.
+
+**Inactive rule**:
+A rule that the Configuration store keeps for the operator and leaves out of the Document of rules: an entry that was inactive in the fork or matched nothing there, or an allow entry with a match that the engine lacks.
+
+**Widened entry**:
+A deny entry of a fork access list that the Policy import carries without a match that the engine lacks, so that it denies more than the fork did, never less.
 
 **Address group**:
 A named list of IP prefixes that the ends of rules name.
