@@ -204,7 +204,7 @@ You see this, with your own values:
 
 Write down `publicKey` as `<CONTROLLER-KEY>`, `tlsFingerprint` as `<FINGERPRINT>` and `tlsPort` as `<PORT>`. If `tlsPort` is `5555`, the Controller fell back and `tlsPortFallback` is `true`.
 
-`ranz` on PC A does not check the certificate: loopback is the host itself. On any other PC, `ranz` accepts the certificate only with the fingerprint (step 13). A browser cannot check the fingerprint, so it warns. Step 21 replaces the certificate by one that a browser trusts.
+`ranz` on PC A checks the certificate by the fingerprint that the Controller writes to `tls.fingerprint` in its data directory (`C:\ProgramData\Ranz\controller`), because another program of the host can listen on a port that the Controller is not on. Where it cannot read that file it sends no token and asks for `-tls-fingerprint`. On any other PC, `ranz` accepts the certificate only with the fingerprint (step 13). A browser cannot check the fingerprint, so it warns. Step 21 replaces the certificate by one that a browser trusts.
 
 ### 8. The web UI (web-ui)
 
