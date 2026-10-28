@@ -56,6 +56,7 @@ type Store struct {
 	// when rqlite asks for one (OpenWith).
 	url    string
 	client *http.Client // for the calls beside gorqlite's; nil is http.DefaultClient (httpClient)
+	seal   *sealing     // what seals the secrets of the targets, nil before SetSealer (sealed.go)
 }
 
 // Node is the stored state of one node. Desired is the full state at Generation; Acked is the
@@ -129,7 +130,7 @@ func (s *Store) Close() {
 // and each of its writes fails with ErrNotLeader, and writes nothing, once the lease has another
 // epoch.
 func (s *Store) Fenced(epoch int64) *Store {
-	return &Store{conn: s.conn, epoch: epoch, url: s.url, client: s.client}
+	return &Store{conn: s.conn, epoch: epoch, url: s.url, client: s.client, seal: s.seal}
 }
 
 // write runs stmts in one rqlite transaction, after the fence when s is fenced.
