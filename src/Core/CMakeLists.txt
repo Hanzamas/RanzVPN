@@ -190,6 +190,8 @@ add_library(corecontrol STATIC
   ControlEvent.c
   # The Relays of a desired state and the Signals of the peers on the control stream (CORE-S5-5, #411)
   ControlSignal.c
+  # The live operations of the Controller on the tables of the L2 Networks (SDN-50-N, #492)
+  ControlOperation.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

@@ -51,6 +51,13 @@ void NodeWireGuardApplied(NODE *n, const struct CONTROL_STATE *st);
 void NodeWireGuardCaps(void *param, struct CONTROL_CAPS *caps);
 HANDLE NodeWireGuardIsolate(NODE *n, UINT index, const struct CONTROL_STATE *st, UINT *pairs);
 void NodeWireGuardRelease(HANDLE engine);
+// The live operations of the Controller on the switches of the L2 Networks (NodeOperation.c; SDN-50-N, #492): they start and
+// stop with the overlay, and the control stream hands each Operation to the procedure, whose parameter is the node
+struct CONTROL_OPERATION;
+struct CONTROL_OPERATION_RESULT;
+void NodeOperationStart(NODE *n);
+void NodeOperationStop(NODE *n);
+void NodeOperationProc(void *param, const struct CONTROL_OPERATION *op, struct CONTROL_OPERATION_RESULT *res);
 // The pool of the handshakes of the streams that the overlay accepts (NodeHandshake.c; AUD1-DT-1, #449)
 typedef struct NODE_HANDSHAKES NODE_HANDSHAKES;
 NODE_HANDSHAKES *NodeHandshakeStart(const NOISE_SESSION_CONFIG *cfg, UINT max);

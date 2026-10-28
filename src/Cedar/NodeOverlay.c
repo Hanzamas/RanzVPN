@@ -786,6 +786,15 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Signals = NodeAgentStart(n, cfg);
 	cc.SignalProc = NodeAgentSignal;
 	cc.SignalParam = n;
+	// The live operations of the Controller read and clear the tables of the switches of the L2 Networks, and the Hello reports
+	// them (NodeOperation.c; SDN-50-N, #492); a test may tell Capabilities of its own
+	NodeOperationStart(n);
+	cc.OperationProc = NodeOperationProc;
+	cc.OperationParam = n;
+	if (cfg->Caps != NULL) {
+		cc.CapsProc = cfg->Caps;
+		cc.CapsParam = cfg->AdapterParam;
+	}
 
 	ov->Thread = (ov->Handshakes != NULL ? CreateThread(NULL, 0, NodeOverlayThread, ov, 0, &thread_id) : NULL);
 	ov->Control = (ov->Thread != NULL && cfg->Control != NULL ? ControlStart(&cc) : NULL);
@@ -830,6 +839,8 @@ void NodeOverlayStop(NODE *n) {
 	// No table holds a link any more: the VXLAN module of the links goes, with its receive threads (NodeLink.c)
 	NodeLinkStop(n);
 	NodeDhcpStop(n);
+	// The control stream that handed them the Operations stopped (NodeOperation.c)
+	NodeOperationStop(n);
 	ov->Halt = true;
 	if (ov->Thread != NULL) {
 		WaitForSingleObject(ov->Thread, INFINITE);
