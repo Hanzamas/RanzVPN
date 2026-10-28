@@ -170,7 +170,7 @@ func TestRolesLimitTheUI(t *testing.T) {
 				}
 			}
 		}
-		for _, name := range []string{"apply", "deleteResource", "confirmRevision", "rollback", "diff", "installLicence", "tokens", "createToken", "deleteToken", "diagnosticsBundle"} {
+		for _, name := range []string{"apply", "deleteResource", "confirmRevision", "rollback", "diff", "installLicence", "tokens", "createToken", "deleteToken", "diagnosticsBundle", "createDevice"} {
 			if !seen[name] && (name != "deleteToken" || role == rbac.Admin) {
 				t.Errorf("%s: no page has a control of the action %s", role, name)
 			}

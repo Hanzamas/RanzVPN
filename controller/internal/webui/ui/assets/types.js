@@ -21,6 +21,8 @@
  * @property {boolean} xdp
  * @property {number} egressTier
  * @property {boolean} tlsPortFallback
+ * @property {boolean} [wireguard] - wireguard.dll loads, so the node can be the gateway of Devices (SDN-80)
+ * @property {string} [wireguardKey] - the public key of its WireGuard interface, base64
  */
 
 /**
@@ -146,11 +148,43 @@
  * @property {string} gateway
  * @property {string} [address]
  * @property {string} [ipv6Address]
+ * @property {string} [owner] - the User that the Device is a device of (SDN-82)
+ * @property {boolean} [presharedKey] - the Device has a PresharedKey, which the controller showed once (SDN-82)
  * @property {string} [lastHandshake]
  * @property {number} txBytes
  * @property {number} rxBytes
  * @property {string} [reported]
  * @property {boolean} [unlicensed]
+ */
+
+/**
+ * controller.DeviceRequest (SDN-82): the Device that an administrator asks the controller to make. The
+ * controller makes the key pair and the PresharedKey of the Device, unless publicKey and noPresharedKey say
+ * otherwise.
+ * @typedef {object} DeviceRequest
+ * @property {string} name
+ * @property {string} network
+ * @property {string} gateway
+ * @property {string} [owner]
+ * @property {string[]} [tags]
+ * @property {boolean} [batterySaver]
+ * @property {string} [publicKey]
+ * @property {boolean} [noPresharedKey]
+ */
+
+/**
+ * controller.DeviceCreated (SDN-82): what the making of a Device answers, once: its finished WireGuard
+ * configuration with the keys that only this answer holds, and the QR code of it as its modules, one string of
+ * 1 (dark) and 0 (light) for each row, without the quiet zone
+ * @typedef {object} DeviceCreated
+ * @property {string} name
+ * @property {number} revision
+ * @property {NodeGeneration[] | null} nodes
+ * @property {string} publicKey
+ * @property {boolean} keyMade
+ * @property {boolean} presharedKey
+ * @property {string} config
+ * @property {string[]} qr
  */
 
 /**
