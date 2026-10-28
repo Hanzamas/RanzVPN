@@ -48,9 +48,10 @@ func KeyOf(o *controlpb.Object) Key {
 }
 
 // Compile returns the desired state of every Node of in, by node name. A node gets itself with
-// its addresses, its 1:1 NAT rules (nat.go) and the Mirrors that select it (mirror.go), the VRFs
-// it is a member of with their Networks, a Peer for every other node that shares one of those
-// VRFs (full mesh) or that a leak joins to it (leak.go), with that node's addresses and routes in
+// its addresses, its 1:1 NAT rules (nat.go), its LAN subnets (topology.go) and the Mirrors that
+// select it (mirror.go), the VRFs it is a member of with their Networks, a Peer for every other node
+// that shares one of those VRFs (full mesh, but two spokes of a VRF of topology hub-and-spoke do
+// not share it: topology.go) or that a leak joins to it (leak.go), with that node's addresses and routes in
 // them and the routes that its VRFs leak into the node's, and with the endpoints that it is dialled
 // at (endpoint.go), a Relay for every such node that is a relay (ADR-0015), and the rules of the
 // policy of its VRFs that can match a flow with one end at the node (policy.go). The node's own
@@ -67,6 +68,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		vrfs[name].Dns = zone(in, name)
 		// The kind of the links of the VRF and its VNI (link.go; SDN-76)
 		withLink(vrfs[name], v)
+		// The hub of a VRF of topology hub-and-spoke and its ECMP (topology.go; SDN-19)
+		withTopology(vrfs[name], v)
 		// How the Nodes of the VRF exchange their routes (peering.go; SDN-77)
 		vrfs[name].Peering = vrfPeering(v)
 	}
@@ -108,6 +111,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 	responders := in.Responders()
 	// The WireGuard Devices of the VRFs of each node (device.go; SDN-80)
 	devs := devices(in, vrfs)
+	// The LAN subnets behind each gateway (topology.go; SDN-19)
+	lans := lanSubnets(in, vrfs)
 	out := map[string]State{}
 	for name, n := range in.Nodes {
 		s := State{}
@@ -136,6 +141,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		self.Endpoints = endpoints(n)
 		// The tunnel endpoint of the node for the links of kind vxlan and geneve (link.go; SDN-76)
 		self.Vtep = ownVtep(in, n)
+		// The LAN subnets behind the node, which lead to its host (topology.go; SDN-19)
+		self.LanSubnets = lans[name]
 		// The BGP peering of the node (peering.go; SDN-77)
 		self.Peering = nodePeering(in, n, vrfs)
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
@@ -146,7 +153,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			var shared []uint32
 			sharedVRFs := map[string]bool{}
 			for _, v := range o.VRFs {
-				if member[v] {
+				// Two spokes of a VRF of topology hub-and-spoke do not share it (topology.go; SDN-19)
+				if member[v] && !in.Spokes(v, name, other) {
 					shared = append(shared, vrfs[v].GetId())
 					sharedVRFs[v] = true
 				}
@@ -157,6 +165,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			slices.Sort(shared)
 			peer := &controlpb.Peer{Name: other, PublicKey: keys[other], VrfIds: shared, Addresses: addresses(in, other, vrfs, sharedVRFs), Tags: slices.Clone(tags[other])}
 			peer.Routes = peerRoutes(nat[other], shared)
+			// The LAN subnets of a gateway and the prefixes that lead to a hub (topology.go; SDN-19)
+			peer.Routes = withGateways(peer.Routes, in.GatewayRoutes(name, other), vrfs)
 			peer.Routes = withLeaks(peer.Routes, leaked.routes[name][other])
 			// The endpoints of the peer, which this node dials it at (endpoint.go; SDN-93)
 			peer.Endpoints = endpoints(o)

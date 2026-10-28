@@ -210,4 +210,7 @@ char *PolicyCountersJson(POLICY_ENGINE *p);
 char *PolicyCountersText(POLICY_ENGINE *p);
 void PolicyFreeString(char *s);
 
+// PolicyTable.c: the rule tables that a document compiles to, as text (CORE-S4-3, #76)
+char *PolicyTableText(const char *json, UINT size, char *error, UINT error_size);
+
 #endif // CORE_POLICY_H

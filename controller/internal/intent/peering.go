@@ -32,10 +32,10 @@ const (
 	DefaultHoldTime = 90
 	MinHoldTime     = 3
 	MaxHoldTime     = 65535
-	// MaxPeeringAnnounce is the most LAN subnets that a Node announces in its VRFs that peer by BGP:
-	// the NodeConfig of the control protocol carries 16 (control.options). What the peers of the Node
-	// take from it is those and its addresses, at most MaxAddresses: MaxPeeringAccept.
-	MaxPeeringAnnounce = 16
+	// MaxPeeringAnnounce is the most LAN subnets that a Node announces in its VRFs that peer by BGP,
+	// which are some of its LAN subnets (MaxLANSubnets, topology.go). What the peers of the Node take
+	// from it is those and its addresses, at most MaxAddresses: MaxPeeringAccept.
+	MaxPeeringAnnounce = MaxLANSubnets
 	MaxPeeringAccept   = MaxPeeringAnnounce + MaxAddresses
 )
 
@@ -81,11 +81,11 @@ func (in Intent) completePeering() {
 }
 
 // validatePeering checks the peering of a completed intent: the protocol of each VRF is bgp or none,
-// a VRF that peers by BGP has a link of kind vxlan or geneve and a hold time from MinHoldTime to
-// MaxHoldTime or none, and a VRF that does not names no hold time. The Nodes of a VRF that peers by
-// BGP have tunnel endpoints of one family (link.go checks that they have them), and each Node that
-// peers has a router id of its own and at most MaxPeeringAnnounce LAN subnets in the VRFs that peer.
-// A problem names the VRF or the Node and what is wrong.
+// a VRF that peers by BGP has a link of kind vxlan or geneve, is a full mesh, since its Nodes pass on
+// nothing that they learned (topology.go), and has a hold time from MinHoldTime to MaxHoldTime or
+// none, and a VRF that does not names no hold time. The Nodes of a VRF that peers by BGP have tunnel
+// endpoints of one family (link.go checks that they have them), and each Node that peers has a router
+// id of its own. A problem names the VRF or the Node and what is wrong.
 func (in Intent) validatePeering() []error {
 	var problems []error
 	for _, name := range sortedNames(in.VRFs) {
@@ -100,6 +100,8 @@ func (in Intent) validatePeering() []error {
 			problems = append(problems, fmt.Errorf("VRF %q: the peering protocol must be %s, not %q", name, PeeringBGP, p.Protocol))
 		case !Plain(v.Link):
 			problems = append(problems, fmt.Errorf("VRF %q: BGP peering needs a link of kind %s or %s, and the link is %s: the sessions run on the network that the operator trusts", name, LinkVXLAN, LinkGeneve, cmp.Or(v.Link, LinkNoise)))
+		case v.HubAndSpoke():
+			problems = append(problems, fmt.Errorf("VRF %q: BGP peering is a full mesh, and the topology is %s: a spoke would learn no route of another, since the hub passes on nothing that it learned", name, TopologyHubAndSpoke))
 		case p.HoldTime != 0 && (p.HoldTime < MinHoldTime || p.HoldTime > MaxHoldTime):
 			problems = append(problems, fmt.Errorf("VRF %q: the peering holdTime %d is not from %d to %d", name, p.HoldTime, MinHoldTime, MaxHoldTime))
 		}
@@ -139,13 +141,6 @@ func (in Intent) validatePeering() []error {
 			problems = append(problems, fmt.Errorf("Node %q: its BGP router id %s, from its vtep address, is already the one of Node %q", name, id, other))
 		} else {
 			ids[id] = name
-		}
-		lans := 0
-		for _, v := range vrfs {
-			lans += len(n.LANSubnets[v])
-		}
-		if lans > MaxPeeringAnnounce {
-			problems = append(problems, fmt.Errorf("Node %q: it announces %d LAN subnets in the VRFs that peer by BGP, more than %d", name, lans, MaxPeeringAnnounce))
 		}
 	}
 	return problems

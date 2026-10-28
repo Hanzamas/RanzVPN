@@ -1,8 +1,6 @@
 package desired
 
 import (
-	"bytes"
-	"cmp"
 	"net/netip"
 	"slices"
 
@@ -91,12 +89,4 @@ func lanRoutes(n intent.Node, names []string, vrfs map[string]*controlpb.Vrf) []
 	}
 	sortRoutes(out)
 	return out
-}
-
-// sortRoutes orders routes by VRF id, then prefix.
-func sortRoutes(routes []*controlpb.Route) {
-	slices.SortStableFunc(routes, func(a, b *controlpb.Route) int {
-		return cmp.Or(cmp.Compare(a.GetVrfId(), b.GetVrfId()), bytes.Compare(a.GetPrefix().GetAddress(), b.GetPrefix().GetAddress()),
-			cmp.Compare(a.GetPrefix().GetLength(), b.GetPrefix().GetLength()))
-	})
 }

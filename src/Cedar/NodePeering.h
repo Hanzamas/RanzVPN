@@ -41,7 +41,6 @@ void NodePeeringFree(NODE *n);
 const struct CONTROL_STATE *NodePeeringWith(NODE *n, const struct CONTROL_STATE *st);
 void NodePeeringDone(const struct CONTROL_STATE *with, const struct CONTROL_STATE *st);
 void NodePeeringApplied(NODE *n, const struct CONTROL_STATE *st, bool swapped);
-UINT NodePeeringRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);
 void NodePeeringGetStatus(NODE *n, NODE_PEERING_STATUS *st);
 UINT NodePeeringGetPeers(NODE *n, struct CONTROL_PEERING_PEER *list, UINT max);
 

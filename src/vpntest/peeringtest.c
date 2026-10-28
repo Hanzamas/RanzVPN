@@ -7,7 +7,9 @@
 // for node-c, and connects from there. The test applies the desired states of the nodes itself (NodeOverlayApply), as the
 // Controller compiles them (controller/internal/desired/peering.go): the settings of the sidecar of each node with the
 // LAN subnets that it announces, and for each peer the address of its sidecar, the hold time of their session, its VRFs
-// and what the peer may announce there, its addresses and its LAN subnets. Node-a is a member of VRF red (101), node-b and
+// and what the peer may announce there, its addresses and its LAN subnets; with the LAN subnets behind each node, which lead
+// to its host, and in a VRF that does not peer by BGP the LAN subnet of each peer there as its route, as the Controller
+// gives them (desired/topology.go; SDN-19). Node-a is a member of VRF red (101), node-b and
 // node-c of red and of blue (102), and 192.168.1.0/24 is the LAN of node-a in red and the LAN of node-b in blue. Fake
 // adapters stand in for the hosts, and the in-process loopback transport carries the packets between the nodes: on one
 // host the tunnel endpoints of three nodes would all send from 127.0.0.1, and a link of kind vxlan names its peer by the
@@ -19,9 +21,10 @@
 //   node arrives at the host of that node, in that VRF. The two LANs 192.168.1.0/24 stay apart: node-c reaches the one of
 //   node-a in red and the one of node-b in blue, and node-a, which is in no VRF blue, learns nothing of blue.
 // - A session from 127.0.0.9, an address that the Controller did not name, is refused, and node-a counts it.
-// - Red stops peering (Generation 2): node-a, in no VRF that peers any more, stops its sidecar and its learned routes go;
-//   node-b and node-c keep their session in blue, and no packet goes to a LAN of red any more. Red peers again (Generation
-//   3): node-a starts a new sidecar and the mesh converges again.
+// - Red stops peering (Generation 2): node-a, in no VRF that peers any more, stops its sidecar, and no node holds a route of
+//   red that it learned by BGP any more; node-b and node-c keep their session in blue. The Controller gives the LAN subnets
+//   of red as routes of their nodes again, so the packets to a LAN of red go by those. Red peers again (Generation 3):
+//   node-a starts a new sidecar and the mesh converges again.
 // - The sidecar of node-c stops answering, as a host that loses power: its threads are suspended. Node-a and node-b remove
 //   its routes within the hold time of the sessions, and keep each other's; once it answers again, the mesh converges.
 // - Node-c stops: its sidecar ends the sessions, and node-a and node-b remove its routes within the hold time.
@@ -299,10 +302,11 @@ static void PeeringTestAddress(CONTROL_ADDRESS *a, PEERINGTEST_MEMBER *m)
 
 // The desired state of node i in the Generation that runs, as the Controller compiles it: its VRFs in name order, each with a
 // link of kind noise in the harness and the peering of the Generation, and its address in each, in the order of their
-// Network, which has the name of the VRF; while a VRF of it peers by BGP, the settings of its sidecar and the LAN subnets that
-// it announces there; and the other two nodes as its peers in name order, each with its addresses in the VRFs that the two
-// share, and while one of those peers by BGP, the address of its sidecar, the hold time, the VRFs of their session and what
-// it may announce there, its address as a host route and its LAN subnet in each. PeeringTestFreeState frees it.
+// Network, which has the name of the VRF; the LAN subnets behind it, by VRF id; while a VRF of it peers by BGP, the settings
+// of its sidecar and the LAN subnets that it announces there; and the other two nodes as its peers in name order, each with
+// its addresses in the VRFs that the two share, its LAN subnet in each of those that does not peer by BGP as its route, and
+// while one of those peers by BGP, the address of its sidecar, the hold time, the VRFs of their session and what it may
+// announce there, its address as a host route and its LAN subnet in each. PeeringTestFreeState frees it.
 static CONTROL_STATE *PeeringTestState(PEERINGTEST_CTX *ctx, UINT i)
 {
 	CONTROL_STATE *st = ZeroMalloc(sizeof(CONTROL_STATE));
@@ -328,6 +332,17 @@ static CONTROL_STATE *PeeringTestState(PEERINGTEST_CTX *ctx, UINT i)
 		peers = peers || v->Peering;
 
 		PeeringTestAddress(&st->Addresses[st->NumAddresses++], m);
+	}
+
+	// The LAN subnets behind the node in its VRFs, which lead to its host, whether a VRF peers by BGP or not (SDN-19)
+	for (UINT k = 0;k < 2;k++)
+	{
+		PEERINGTEST_MEMBER *m = PeeringTestMember(i, peeringtest_by_id[k]);
+
+		if (m != NULL)
+		{
+			PeeringTestRoute(&st->LanSubnets[st->NumLanSubnets++], m->VrfId, m->Lan, PEERINGTEST_LENGTH);
+		}
 	}
 
 	if (peers)
@@ -376,6 +391,19 @@ static CONTROL_STATE *PeeringTestState(PEERINGTEST_CTX *ctx, UINT i)
 			if (m != NULL && PeeringTestMember(i, m->VrfId) != NULL)
 			{
 				PeeringTestAddress(&cp->Addresses[cp->NumAddresses++], m);
+			}
+		}
+
+		// In a VRF of the two that does not peer by BGP, the Controller gives the LAN subnet of the peer there as its route, but
+		// for a prefix that node i has behind it there too (intent.GatewayRoutes; SDN-19)
+		for (UINT k = 0;k < 2;k++)
+		{
+			PEERINGTEST_MEMBER *m = PeeringTestMember(j, peeringtest_by_id[k]);
+			PEERINGTEST_MEMBER *own = PeeringTestMember(i, peeringtest_by_id[k]);
+
+			if (m != NULL && own != NULL && PeeringTestPeers(ctx, m->VrfId) == false && StrCmp(m->Lan, own->Lan) != 0)
+			{
+				PeeringTestRoute(&cp->Routes[cp->NumRoutes++], m->VrfId, m->Lan, PEERINGTEST_LENGTH);
 			}
 		}
 
@@ -867,16 +895,25 @@ static UINT PeeringTestLookup(PEERINGTEST_NODE *t, UINT vrf_id, char *addr)
 }
 
 // Where the forwarding tables of node i lead the host of the LAN subnet of the member m in the Generation that runs: in a VRF
-// of node i that peers by BGP, its own LAN to its host and the LAN of another node to that node, while that node is there;
-// anywhere else nowhere
+// of node i, its own LAN to its host; the LAN of another node to that node, in a VRF that peers by BGP by the route that node i
+// learned from it while that node is there, and in a VRF that does not by the route that the Controller gives; anywhere else
+// nowhere
 static UINT PeeringTestWant(PEERINGTEST_CTX *ctx, UINT i, PEERINGTEST_MEMBER *m)
 {
-	if (PeeringTestMember(i, m->VrfId) == NULL || PeeringTestPeers(ctx, m->VrfId) == false || ctx->Nodes[m->Node].Gone)
+	if (PeeringTestMember(i, m->VrfId) == NULL)
+	{
+		return NODE_VRF_NONE;
+	}
+	if (m->Node == i)
+	{
+		return NODE_VRF_LOCAL;
+	}
+	if (PeeringTestPeers(ctx, m->VrfId) && ctx->Nodes[m->Node].Gone)
 	{
 		return NODE_VRF_NONE;
 	}
 
-	return (m->Node == i ? NODE_VRF_LOCAL : PeeringTestHop(i, m->Node));
+	return PeeringTestHop(i, m->Node);
 }
 
 // Whether the forwarding tables of each node that is there lead the host of each LAN subnet where PeeringTestWant says; the
@@ -1046,9 +1083,10 @@ static void PeeringTestSend(PEERINGTEST_CTX *ctx, UINT from, UINT vrf_id, char *
 // The cases
 //
 
-// Each host sends a packet to the LAN of each other node in each VRF that the two share: where the VRF peers by BGP it arrives
-// at the host of that node, in that VRF, and else it goes nowhere. The routes of a VRF stay in it: a packet of node-a in red
-// to the LAN of node-c in blue goes nowhere, as does one of node-c in blue to the LAN of node-b in red.
+// Each host sends a packet to the LAN of each other node in each VRF that the two share: it arrives at the host of that node,
+// in that VRF, by the route learned by BGP where the VRF peers and by the route of the Controller where it does not. The routes
+// of a VRF stay in it: a packet of node-a in red to the LAN of node-c in blue goes nowhere, as does one of node-c in blue to the
+// LAN of node-b in red.
 static void PeeringTestPackets(PEERINGTEST_CTX *ctx)
 {
 	for (UINT i = 0;i < PEERINGTEST_NODES;i++)
@@ -1059,7 +1097,7 @@ static void PeeringTestPackets(PEERINGTEST_CTX *ctx)
 
 			if (m->Node != i && PeeringTestMember(i, m->VrfId) != NULL)
 			{
-				PeeringTestSend(ctx, i, m->VrfId, m->LanHost, PeeringTestPeers(ctx, m->VrfId) ? m->Node : PEERINGTEST_NODES);
+				PeeringTestSend(ctx, i, m->VrfId, m->LanHost, m->Node);
 			}
 		}
 	}
@@ -1136,7 +1174,7 @@ static bool PeeringTestMesh(PEERINGTEST_CTX *ctx, UINT64 gen, bool red_peers, co
 		"%s", "see the reports above");
 
 	bool tables = (converged && PeeringTestWaitTables(ctx));
-	PeeringTestCheck(ctx, tables, "The forwarding table of each VRF that peers by BGP leads the LAN of each other node to that node and the LAN of the node to its host, and no other table leads there",
+	PeeringTestCheck(ctx, tables, "The forwarding table of each VRF leads the LAN of each other node to that node, by BGP where the VRF peers and by the route of the Controller where it does not, and the LAN of the node to its host, and no other table leads there",
 		"%s", "see the line above");
 
 	PeeringTestStatus(ctx, starts);

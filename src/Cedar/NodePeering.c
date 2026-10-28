@@ -15,8 +15,9 @@
 // and the adapter of the VRF of the host takes it with the other routes of the peer, through IP Helper (NodeVrfAdapter.c). The
 // learned routes go in with each Generation (NodePeeringWith), and when they change, the worker of the peering builds the
 // forwarding tables of the Generation in force anew with them (NodeOverlayRebuild), from the copy of its state that the
-// peering keeps. The LAN subnets of the node itself lead to its host (NodePeeringRoutes). The sidecar takes a session only from
-// the address of a peer that the Controller named; it refuses any other, and the node counts each.
+// peering keeps. The LAN subnets that the node announces lead to its host with the other LAN subnets behind it
+// (CONTROL_STATE.LanSubnets, NodeGateway.c; SDN-19, #195). The sidecar takes a session only from the address of a peer that the
+// Controller named; it refuses any other, and the node counts each.
 //
 // The node reports the peers of its sidecar, the state of each session and the prefixes learned from each, with the sessions
 // refused, on its control stream (ControlSetPeeringReport), which ranz explain shows. A sidecar that ends by itself, or does
@@ -1512,36 +1513,6 @@ void NodePeeringApplied(NODE *n, const CONTROL_STATE *st, bool swapped) {
 
 	if (wake)
 		SetEvent(p->Wake);
-}
-
-// The routes of the forwarding tables of the state st that the peering adds, into routes, or only their number when routes is
-// NULL: each LAN subnet that the node announces in a VRF that peers by BGP leads to its host. Their number.
-UINT NodePeeringRoutes(const CONTROL_STATE *st, NODE_VRF_ROUTE *routes) {
-	UINT num = 0;
-
-	if (st == NULL || st->Peering == NULL)
-		return 0;
-
-	for (UINT i = 0; i < st->Peering->NumAnnounce && i < CONTROL_MAX_ANNOUNCE; i++) {
-		const CONTROL_ROUTE *a = &st->Peering->Announce[i];
-
-		if ((a->AddressSize != 4 && a->AddressSize != 16) || a->Length > a->AddressSize * 8 || NodePeeringVrfPeers(st, a->VrfId) == false)
-			continue;
-
-		if (routes != NULL) {
-			NODE_VRF_ROUTE *r = &routes[num];
-
-			Zero(r, sizeof(NODE_VRF_ROUTE));
-			r->VrfId = a->VrfId;
-			Copy(r->Address, a->Address, a->AddressSize);
-			r->AddressSize = a->AddressSize;
-			r->Length = a->Length;
-			r->NextHop = NODE_VRF_LOCAL;
-		}
-		num++;
-	}
-
-	return num;
 }
 
 //

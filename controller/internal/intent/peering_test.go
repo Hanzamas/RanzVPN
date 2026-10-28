@@ -54,8 +54,9 @@ func TestApplyPeering(t *testing.T) {
 }
 
 // A peering is refused with the VRF or the Node and the reason: an unknown protocol, a VRF whose link
-// is noise, a hold time without the protocol or out of range, tunnel endpoints of two families in one
-// VRF that peers, more LAN subnets than a Node announces, and two Nodes of one router id.
+// is noise, a VRF of topology hub-and-spoke, a hold time without the protocol or out of range, tunnel
+// endpoints of two families in one VRF that peers, more LAN subnets than a Node announces, and two
+// Nodes of one router id.
 func TestApplyPeeringRejects(t *testing.T) {
 	var lans []string
 	for i := range MaxPeeringAnnounce + 1 {
@@ -69,11 +70,12 @@ func TestApplyPeeringRejects(t *testing.T) {
 		{`"link": "vxlan", "peering": {"protocol": "ospf"}`, ``, `10.1.0.2`, `VRF "dc": the peering protocol must be bgp, not "ospf"`},
 		{`"link": "noise", "peering": {"protocol": "bgp"}`, ``, `10.1.0.2`, `VRF "dc": BGP peering needs a link of kind vxlan or geneve, and the link is noise`},
 		{`"peering": {"protocol": "bgp"}`, ``, `10.1.0.2`, `VRF "dc": BGP peering needs a link of kind vxlan or geneve, and the link is noise`},
+		{`"link": "vxlan", "topology": "hub-and-spoke", "hub": "a", "peering": {"protocol": "bgp"}`, ``, `10.1.0.2`, `VRF "dc": BGP peering is a full mesh, and the topology is hub-and-spoke`},
 		{`"link": "vxlan", "peering": {"holdTime": 9}`, ``, `10.1.0.2`, `VRF "dc": the peering holdTime 9 needs the peering protocol bgp`},
 		{`"link": "vxlan", "peering": {"protocol": "bgp", "holdTime": 2}`, ``, `10.1.0.2`, `VRF "dc": the peering holdTime 2 is not from 3 to 65535`},
 		{`"link": "vxlan", "peering": {"protocol": "bgp", "holdTime": 70000}`, ``, `10.1.0.2`, `VRF "dc": the peering holdTime 70000 is not from 3 to 65535`},
 		{`"link": "geneve", "peering": {"protocol": "bgp"}`, ``, `2001:db8::2`, `Node "b": VRF "dc" peers by BGP, and the vtep address 2001:db8::2 is not of the family of the one of Node "a"`},
-		{`"link": "vxlan", "peering": {"protocol": "bgp"}`, many, `10.1.0.2`, `Node "a": it announces 17 LAN subnets in the VRFs that peer by BGP, more than 16`},
+		{`"link": "vxlan", "peering": {"protocol": "bgp"}`, many, `10.1.0.2`, `Node "a": it advertises 17 LAN subnets, and the control protocol carries at most 16`},
 	} {
 		_, err := Apply(New(), doc(
 			res(KindVRF, "dc", `{"id": 30, "ula": "fd12:3456:789c::/48", `+c.dc+`}`),

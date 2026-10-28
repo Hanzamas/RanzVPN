@@ -70,12 +70,20 @@ func TestCompilePeering(t *testing.T) {
 	if got := states["lab-1"][Key{controlpb.Kind_KIND_PEER, "gw"}].GetPeer().GetPeering(); got != nil {
 		t.Errorf("the Peer gw of lab-1, which shares only corp, has the peering %v", got)
 	}
+	// The LAN subnets of the VRFs that peer by BGP go by BGP: the Controller makes no route of them
+	if got := states["db"][Key{controlpb.Kind_KIND_PEER, "gw"}].GetPeer().GetRoutes(); len(got) != 0 {
+		t.Errorf("the Peer gw of db, which announces its LAN subnets by BGP in dc and lab, has the routes %v", got)
+	}
 
-	// Without the peering of dc, the two peer in lab alone, with its hold time
+	// Without the peering of dc, the two peer in lab alone, with its hold time, and the Controller gives
+	// the LAN subnet of gw in dc as a route of its Peer again
 	states = compile(t, peeringResources("")...)
 	ofGW = &controlpb.PeerPeering{Address: gw, HoldTime: 30, VrfIds: []uint32{40}, Accept: []*controlpb.Route{route(40, "192.168.40.0/24")}}
 	if got := states["db"][Key{controlpb.Kind_KIND_PEER, "gw"}].GetPeer().GetPeering(); !proto.Equal(got, ofGW) {
 		t.Errorf("without the peering of dc the Peer gw of db has the peering %v, want %v", got, ofGW)
+	}
+	if got := states["db"][Key{controlpb.Kind_KIND_PEER, "gw"}].GetPeer().GetRoutes(); len(got) != 1 || !proto.Equal(got[0], route(30, "192.168.10.0/24")) {
+		t.Errorf("without the peering of dc the Peer gw of db has the routes %v, want the LAN subnet 192.168.10.0/24 of dc", got)
 	}
 }
 

@@ -39,6 +39,7 @@
 
 #include "NodeAgent.h"
 #include "NodeCaps.h"
+#include "NodeGateway.h"
 #include "NodeInternal.h"
 #include "NodeLink.h"
 #include "NodePeering.h"
@@ -184,8 +185,8 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 	max_routes += NodeLeakRoutes(st, NULL);
 	// The WireGuard Devices (NodeWireGuard.c; SDN-80, #375): the addresses of each lead to its gateway
 	max_routes += NodeDeviceRoutes(st, NULL);
-	// The BGP peering (NodePeering.c; SDN-77, #357): the LAN subnets that the node announces lead to the host
-	max_routes += NodePeeringRoutes(st, NULL);
+	// Gateway HA (NodeGateway.c; SDN-19, #195): the LAN subnets behind the node lead to its host
+	max_routes += NodeGatewayRoutes(st, NULL);
 
 	NODE_VRF_ROUTE *routes = ZeroMalloc(sizeof(NODE_VRF_ROUTE) * MAX(max_routes, 1));
 
@@ -201,7 +202,9 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 	num += NodeNatRoutes(st, routes + num);
 	num += NodeLeakRoutes(st, routes + num);
 	num += NodeDeviceRoutes(st, routes + num);
-	num += NodePeeringRoutes(st, routes + num);
+	num += NodeGatewayRoutes(st, routes + num);
+	// ... and a prefix that several peers announce leads to the next hop of their group of gateways
+	NodeGatewayGroupRoutes(st, routes, num);
 
 	NODE_VRF_TABLES *v = NodeLeakNewTables(st, routes, num, (void **)hops);
 	Free(routes);
@@ -226,6 +229,8 @@ static bool NodeOverlaySwapTables(NODE_OVERLAY *ov, const CONTROL_STATE *st, NOD
 	NodeMirrorAttach(ov->Node, v, st);
 	// The links of kind vxlan and geneve of the Generation go in with its tables (NodeLink.c; SDN-76, #356)
 	NodeLinkAttach(ov->Node, v, st);
+	// The groups of gateways and the hubs of the Generation go in with its tables (NodeGateway.c; SDN-19, #195)
+	NodeGatewayAttach(ov->Node, v, st);
 	*num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
 	NodePolicyApplied(ov->Node, swapped);
@@ -605,8 +610,9 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 }
 
 // A data record of the peer p: the VRF id, then an IP packet, which goes to the host in that VRF when its table routes
-// the source to p and the destination to the host; nat_buf takes the packet that a 1:1 NAT rule translates. The thread
-// of the overlay, or the receive thread of a link (NodeOverlayLinkDeliver), reads the tables as an online reader.
+// the source to p and the destination to the host, and on to another peer when the node is the hub of the VRF and its
+// table routes the destination there (NodeGatewayTransit); nat_buf takes the packet that a 1:1 NAT rule translates. The
+// thread of the overlay, or the receive thread of a link (NodeOverlayLinkDeliver), reads the tables as an online reader.
 static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCHAR *record, UINT size, UCHAR *nat_buf) {
 	UCHAR src[16], dst[16];
 	UINT addr_size = 0;
@@ -619,9 +625,15 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 	NODE_VRF_TABLE *vt = NodeGetVrfTable(v, vrf_id);
 
 	if (vt != NULL && NodeOverlayEnds(packet, packet_size, src, dst, &addr_size)) {
-		UINT from = NodeVrfLookup(vt, src, addr_size);
+		// A source behind a group of gateways comes from the gateway of the group that sent it (NodeGateway.c; SDN-19, #195)
+		UINT from = NodeGatewayFrom(v, NodeVrfLookup(vt, src, addr_size), p);
+		UINT to = NodeVrfLookup(vt, dst, addr_size);
 
-		ok = (from < v->NumHops && v->Hops[from] == p && NodeVrfLookup(vt, dst, addr_size) == NODE_VRF_LOCAL);
+		// The hub of a VRF of topology hub-and-spoke sends the packet of one spoke on to another (NodeGateway.c)
+		if (from < v->NumHops && v->Hops[from] == p && to != NODE_VRF_LOCAL && NodeGatewayTransit(ov->Node, v, vrf_id, from, to, record, size))
+			return;
+
+		ok = (from < v->NumHops && v->Hops[from] == p && to == NODE_VRF_LOCAL);
 		// The policy of the VRF judges the packet as the peer sent it, before a 1:1 NAT rule translates it (NodePolicy.c)
 		ok = ok && NodePolicyInbound(ov->Node, v, vrf_id, from, packet, packet_size);
 	}
@@ -709,7 +721,10 @@ static bool NodeOverlayReceive(NODE_OVERLAY *ov) {
 			busy = true;
 			if (ret == NOISE_RECEIVE_DATA) {
 				NodeOverlayDeliver(ov, p, ov->Buf, size, ov->NatBuf);
-			} else if (ret != NOISE_RECEIVE_CONTROL) {
+			} else if (ret == NOISE_RECEIVE_CONTROL) {
+				// A probe of a gateway, or the answer to one (NodeGateway.c; SDN-19, #195)
+				NodeGatewayControl(ov->Node, p, ov->Buf, size);
+			} else {
 				NodeOverlayClose(ov, p);
 				break;
 			}
@@ -743,6 +758,8 @@ static void NodeOverlayReap(NODE_OVERLAY *ov) {
 			return;
 
 		NodeOverlayClose(ov, gone);
+		// What the gateway HA knows of the peer goes with it (NodeGateway.c; SDN-19, #195)
+		NodeGatewayForget(ov->Node, gone);
 		Free(gone);
 	}
 }
@@ -768,6 +785,8 @@ static DWORD WINAPI NodeOverlayThread(LPVOID param) {
 		NodeReaderOffline(&ov->Reader);
 
 		NodeOverlayReap(ov);
+		// The probes of the gateways that are due, and the gateways that stopped answering them (NodeGateway.c; SDN-19, #195)
+		NodeGatewayProbe(ov->Node);
 
 		if (busy == false)
 			Sleep(NODE_OVERLAY_IDLE);
@@ -822,6 +841,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	ov->Flap = NodeFlapStart(n, cfg->FlapLimit, cfg->FlapWindow, ov->Events);
 	NodeShapeStart(n, cfg);
 	NodePolicyStart(n, cfg);
+	// The gateway HA, whose gateways the states name (NodeGateway.c; SDN-19, #195)
+	NodeGatewayStart(n);
 	// The Listener, which listens where a state says (NodeListener.c; SDN-45, #238)
 	NodeListenerStart(n, cfg->Key);
 	n->Overlay = ov;
@@ -912,6 +933,8 @@ void NodeOverlayStop(NODE *n) {
 	NodeAgentStop(n);
 	// The thread closed every session, the ones over the streams of the Listener too (NodeListener.c; SDN-45, #238)
 	NodeListenerStop(n);
+	// No table holds a gateway any more, and the thread forgot every peer: the gateway HA goes (NodeGateway.c; SDN-19, #195)
+	NodeGatewayStop(n);
 	// The thread stopped the pool of the handshakes; a thread that did not start leaves it to stop here
 	NodeHandshakeFree(ov->Handshakes);
 	// The thread that counted the replacements and the control stream that sent the events are done
@@ -965,6 +988,8 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the tables route the packet as the overlay sees it
 	if (vt != NULL && size <= NOISE_MAX_PAYLOAD - NODE_OVERLAY_VRF_TAG && NodeNatEnds(v, vrf_id, packet, size, src, dst, &addr_size) && NodeVrfLookup(vt, src, addr_size) == NODE_VRF_LOCAL)
 		hop = NodeVrfLookup(vt, dst, addr_size);
+	// A prefix that several gateways announce goes to the gateway that their group picks (NodeGateway.c; SDN-19, #195)
+	hop = NodeGatewayPick(v, hop, packet, size);
 
 	// Only to a peer: the host's own addresses and the addresses of no route stay here
 	if (vt == NULL || hop >= v->NumHops) {
@@ -1125,4 +1150,47 @@ UINT NodeOverlayGetSessions(NODE *n, NODE_OVERLAY_SESSION *list, UINT max, char 
 	NodeAgentSessions(n, list, MIN(num, max));
 
 	return num;
+}
+
+// Whether the peer of the overlay, a next hop of the tables, has its Noise session now (NodeGateway.c; SDN-19, #195)
+bool NodeOverlayPeerUp(void *peer) {
+	NODE_OVERLAY_PEER *p = (NODE_OVERLAY_PEER *)peer;
+
+	return (p != NULL && ReadPointerAcquire((PVOID const volatile *)&p->Session) != NULL);
+}
+
+// Send a control record of size bytes to the peer of the overlay, a next hop of the tables, on its Noise session: a probe of
+// gateway HA or the answer to one (NodeGateway.c; SDN-19, #195). False when the peer has no session, or the send failed.
+bool NodeOverlaySendControl(NODE *n, void *peer, const UCHAR *data, UINT size) {
+	NODE_OVERLAY_PEER *p = (NODE_OVERLAY_PEER *)peer;
+
+	if (n == NULL || n->Overlay == NULL || p == NULL)
+		return false;
+
+	// Counted on the peer before it reads the session, so the thread does not close the session under the send
+	InterlockedIncrement(&p->Senders);
+	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&p->Session);
+	bool ok = (s != NULL && TransportNoiseSend(s, NOISE_RECORD_CONTROL, data, size));
+	InterlockedDecrement(&p->Senders);
+
+	return ok;
+}
+
+// Send the data record of size bytes, the VRF id and then an IP packet, to the next hop hop of the tables v, over its
+// session or its link of kind vxlan or geneve: the packet of one spoke that the hub of their VRF sends on to another
+// (NodeGateway.c; SDN-19, #195). False when it went nowhere. The caller is an online reader of the node's table snapshot,
+// which holds v.
+bool NodeOverlaySendRecord(NODE *n, NODE_VRF_TABLES *v, UINT hop, const UCHAR *record, UINT size) {
+	if (n == NULL || n->Overlay == NULL || v == NULL || hop >= v->NumHops || record == NULL || size < NODE_OVERLAY_VRF_TAG)
+		return false;
+
+	NODE_OVERLAY_PEER *peer = (NODE_OVERLAY_PEER *)v->Hops[hop];
+
+	InterlockedIncrement(&peer->Senders);
+	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&peer->Session);
+	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
+	bool ok = (plain ? NodeLinkSend(v, hop, record, size - NODE_OVERLAY_VRF_TAG) : (s != NULL && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size)));
+	InterlockedDecrement(&peer->Senders);
+
+	return ok;
 }

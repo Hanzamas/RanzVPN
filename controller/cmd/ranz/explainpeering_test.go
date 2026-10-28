@@ -42,9 +42,11 @@ func TestExplainPeeringWithoutBGP(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(admin+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The test server is on a loopback address, so ranz explain pins its certificate (AUD1-DT-13, #461)
+	fingerprint := fingerprintOf(srv.Certificate())
 
 	var out, errOut bytes.Buffer
-	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "node-x"}, &out, &errOut); code != 0 {
+	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "-tls-fingerprint", fingerprint, "node-x"}, &out, &errOut); code != 0 {
 		t.Fatalf("ranz explain node-x: exit code %d: %s", code, errOut.String())
 	}
 	if want := "BGP peering of node-x: none, no VRF of the Node peers by BGP\n"; out.String() != want {
@@ -52,12 +54,12 @@ func TestExplainPeeringWithoutBGP(t *testing.T) {
 	}
 	out.Reset()
 	errOut.Reset()
-	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "nowhere"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), `Node "nowhere" (404 Not Found)`) {
+	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "-tls-fingerprint", fingerprint, "nowhere"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), `Node "nowhere" (404 Not Found)`) {
 		t.Errorf("ranz explain nowhere: exit code %d, %q", code, errOut.String())
 	}
 	out.Reset()
 	errOut.Reset()
-	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "-o", "json", "node-x"}, &out, &errOut); code != 0 {
+	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "-tls-fingerprint", fingerprint, "-o", "json", "node-x"}, &out, &errOut); code != 0 {
 		t.Fatalf("ranz explain -o json node-x: exit code %d: %s", code, errOut.String())
 	}
 	var st controller.PeeringStatus
@@ -95,9 +97,14 @@ func TestExplainPeeringPrintsThePeers(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte("secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The stand-in is on a loopback address, so ranz explain pins its certificate (AUD1-DT-13, #461)
+	run := func(out, errOut *bytes.Buffer, args ...string) int {
+		t.Helper()
+		return runExplain(ctx, append([]string{"-server", srv.URL, "-token-file", tokenFile, "-tls-fingerprint", fingerprintOf(srv.Certificate())}, args...), out, errOut)
+	}
 
 	var out, errOut bytes.Buffer
-	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "gw-1"}, &out, &errOut); code != 0 {
+	if code := run(&out, &errOut, "gw-1"); code != 0 {
 		t.Fatalf("ranz explain gw-1: exit code %d: %s", code, errOut.String())
 	}
 	want := "BGP peering of gw-1 in AS 4200000000: 2 peers, 3 sessions refused (reported 2026-10-28T12:00:00Z)\n" +
@@ -111,7 +118,7 @@ func TestExplainPeeringPrintsThePeers(t *testing.T) {
 	}
 
 	out.Reset()
-	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "-o", "json", "gw-1"}, &out, &errOut); code != 0 {
+	if code := run(&out, &errOut, "-o", "json", "gw-1"); code != 0 {
 		t.Fatalf("ranz explain -o json gw-1: exit code %d: %s", code, errOut.String())
 	}
 	var got controller.PeeringStatus
@@ -123,7 +130,7 @@ func TestExplainPeeringPrintsThePeers(t *testing.T) {
 	}
 
 	errOut.Reset()
-	if code := runExplain(ctx, []string{"-server", srv.URL, "-token-file", tokenFile, "db"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "not this one (404 Not Found)") {
+	if code := run(&out, &errOut, "db"); code != 1 || !strings.Contains(errOut.String(), "not this one (404 Not Found)") {
 		t.Errorf("ranz explain db: exit code %d, %q", code, errOut.String())
 	}
 }
