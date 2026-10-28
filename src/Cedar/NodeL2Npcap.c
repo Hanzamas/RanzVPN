@@ -8,16 +8,20 @@
 // signed-images mitigation of ADR-0039 is on, as Npcap's publisher, not Microsoft, signs its DLLs; the node log says so.
 // The code follows the documented API of libpcap and WinPcap, which Npcap keeps (pcap_open with its open flags,
 // pcap_next_ex, pcap_sendpacket, pcap_getevent, pcap_setfilter), declared here as the node takes it by GetProcAddress:
-// - Capture: a handle opened with PCAP_OPENFLAG_PROMISCUOUS, so the NIC takes the frames of every MAC address;
-//   PCAP_OPENFLAG_NOCAPTURE_LOCAL, which WinPcap documents for "applications like bridges, that should ignore the traffic
-//   they just sent"; and PCAP_OPENFLAG_MAX_RESPONSIVENESS, so the driver hands each frame over at once. Its drain thread
-//   waits on the event of the handle and takes the frames with pcap_next_ex, which gives them in place, into the capture
-//   ring of the adapter: it takes no lock and allocates nothing (#72, risk R1). Npcap is a filter driver, so the frames
-//   that the host sends are on the segment it sees, as they are for SeLow.
-// - Inject: a second handle sends the owner's frames with pcap_sendpacket, on the injector thread, so a send never waits
-//   behind a read of the drain thread on the same handle. Its BPF filter takes no frame, so it keeps none.
-// - The promiscuous mode for the XDP backend: one more handle opened promiscuous, whose filter takes no frame either, so
-//   Npcap copies nothing while XDP carries the frames; it is kept until the XDP backend lets go of the bridge.
+// - One handle captures and injects, opened with PCAP_OPENFLAG_PROMISCUOUS, so the NIC takes the frames of every MAC
+//   address; PCAP_OPENFLAG_NOCAPTURE_LOCAL, which WinPcap documents for "applications like bridges, that should ignore
+//   the traffic they just sent"; and PCAP_OPENFLAG_MAX_RESPONSIVENESS, so the driver hands each frame over at once. The
+//   flag leaves out only what the same handle sent: the Npcap driver taps each frame that pcap_sendpacket sends for
+//   every other handle on the adapter (NPF_Write and NPF_DoTap, packetWin7/npf/npf of nmap/npcap), so a bridge that sent
+//   on a second handle would capture each frame that it put onto the segment and hand it back to its owner.
+// - Capture: the drain thread waits on the event of the handle and takes the frames with pcap_next_ex, which gives them
+//   in place, into the capture ring of the adapter: it takes no lock and allocates nothing (#72, risk R1). Npcap is a
+//   filter driver, so the frames that the host sends are on the segment it sees, as they are for SeLow.
+// - Inject: the injector thread sends the owner's frames on the same handle with pcap_sendpacket. Packet.dll waits for
+//   the frames of a read on the event and then reads what the driver holds without waiting (PacketReceivePacket), so a
+//   send waits at most for the copy of a read on the synchronous handle.
+// - The promiscuous mode for the XDP backend: one more handle opened promiscuous, whose filter takes no frame, so Npcap
+//   copies nothing while XDP carries the frames; it is kept until the XDP backend lets go of the bridge.
 
 #include "Node.h"
 
@@ -35,8 +39,8 @@
 #define NODE_L2_PCAP_MAX_RESPONSIVENESS 0x10
 // Bytes of the error text of a pcap call (PCAP_ERRBUF_SIZE)
 #define NODE_L2_PCAP_ERRBUF 256
-// Bytes of a frame that the capture handle keeps at most: more than any frame of the adapter (NODE_L2_MAX_FRAME), so
-// that a longer one arrives whole and the capture ring counts it as one that it refused
+// Bytes of a frame that the handle of the backend keeps at most: more than any frame of the adapter (NODE_L2_MAX_FRAME),
+// so that a longer one arrives whole and the capture ring counts it as one that it refused
 #define NODE_L2_PCAP_SNAPLEN 65536
 // ms that pcap_next_ex waits for a frame, and that the drain thread waits on the event of the handle at a time, so that
 // it sees its halt
@@ -98,10 +102,9 @@ static char node_l2_npcap_error[MAX_SIZE];
 // The state of the backend on one adapter (NODE_L2.BackendState)
 typedef struct NODE_L2_NPCAP {
 	NODE_L2 *Adapter;
-	// The capture handle, its event, which the handle owns, and the send handle
-	void *Capture;
+	// The handle that captures and sends, and its event, which the handle owns
+	void *Handle;
 	HANDLE Event;
-	void *Send;
 	// The drain thread, and its halt; Broken once a read failed (the adapter went, or Npcap let go of it)
 	HANDLE Thread;
 	volatile LONG Halt;
@@ -199,9 +202,9 @@ static void *NodeL2NpcapHandle(NODE_L2 *a, int flags, bool reject, char *error, 
 	return p;
 }
 
-// The drain thread: once the event of the capture handle is set, the frames that it holds, each straight from the
-// buffer of pcap into the capture ring of the adapter. A frame that the handle cut short is longer than any that the
-// adapter carries, and counted as such. A read that fails marks the binding broken, which the health check sees.
+// The drain thread: once the event of the handle is set, the frames that it holds, each straight from the buffer of
+// pcap into the capture ring of the adapter. A frame that the handle cut short is longer than any that the adapter
+// carries, and counted as such. A read that fails marks the binding broken, which the health check sees.
 static DWORD WINAPI NodeL2NpcapDrain(void *param) {
 	NODE_L2_NPCAP *s = (NODE_L2_NPCAP *)param;
 
@@ -213,7 +216,7 @@ static DWORD WINAPI NodeL2NpcapDrain(void *param) {
 		while (num < NODE_L2_NPCAP_BATCH && ReadAcquire(&s->Halt) == 0) {
 			NODE_L2_PCAP_HEADER *header = NULL;
 			const UCHAR *data = NULL;
-			int ret = node_l2_npcap.NextEx(s->Capture, &header, &data);
+			int ret = node_l2_npcap.NextEx(s->Handle, &header, &data);
 
 			if (ret != 1) {
 				if (ret < 0)
@@ -237,7 +240,8 @@ static DWORD WINAPI NodeL2NpcapDrain(void *param) {
 	return 0;
 }
 
-// Hand a batch to the segment, on the injector thread: each frame through pcap_sendpacket. Returns how many Npcap took.
+// Hand a batch to the segment, on the injector thread: each frame through pcap_sendpacket on the handle that captures,
+// which leaves it out of its capture. Returns how many Npcap took.
 static UINT NodeL2NpcapInject(NODE_L2 *a, const UCHAR **frames, const UINT *sizes, UINT num) {
 	NODE_L2_NPCAP *s = (NODE_L2_NPCAP *)a->BackendState;
 	UINT taken = 0;
@@ -246,13 +250,13 @@ static UINT NodeL2NpcapInject(NODE_L2 *a, const UCHAR **frames, const UINT *size
 		return 0;
 
 	for (UINT i = 0; i < num; i++)
-		if (node_l2_npcap.SendPacket(s->Send, frames[i], (int)sizes[i]) == 0)
+		if (node_l2_npcap.SendPacket(s->Handle, frames[i], (int)sizes[i]) == 0)
 			taken++;
 
 	return taken;
 }
 
-// Whether the binding works: no read of the capture handle failed
+// Whether the binding works: no read of the handle failed
 static bool NodeL2NpcapHealthy(NODE_L2 *a) {
 	NODE_L2_NPCAP *s = (NODE_L2_NPCAP *)a->BackendState;
 
@@ -261,15 +265,13 @@ static bool NodeL2NpcapHealthy(NODE_L2 *a) {
 
 // Free the state of the backend once no thread runs on it
 static void NodeL2NpcapRelease(NODE_L2_NPCAP *s) {
-	if (s->Capture != NULL)
-		node_l2_npcap.Close(s->Capture);
-	if (s->Send != NULL)
-		node_l2_npcap.Close(s->Send);
+	if (s->Handle != NULL)
+		node_l2_npcap.Close(s->Handle);
 
 	Free(s);
 }
 
-// Stop: the drain thread ends within timeout ms, then the handles close. pcap_sendpacket returns once Npcap sent the
+// Stop: the drain thread ends within timeout ms, then the handle closes. pcap_sendpacket returns once Npcap sent the
 // frame, so nothing that was injected is outstanding. A drain thread that does not end in time keeps the state.
 static bool NodeL2NpcapDetach(NODE_L2 *a, UINT timeout) {
 	NODE_L2_NPCAP *s = (NODE_L2_NPCAP *)a->BackendState;
@@ -289,24 +291,22 @@ static bool NodeL2NpcapDetach(NODE_L2 *a, UINT timeout) {
 	return true;
 }
 
-// Bind to the NIC: the capture handle, promiscuous and blind to its own frames, the send handle, then the drain thread
+// Bind to the NIC: the handle, promiscuous and blind to the frames that it sends itself, then the drain thread
 static bool NodeL2NpcapAttach(NODE_L2 *a, char *error, UINT error_size) {
 	if (NodeL2NpcapPresent(error, error_size) == false)
 		return false;
 
 	NODE_L2_NPCAP *s = ZeroMalloc(sizeof(NODE_L2_NPCAP));
 	s->Adapter = a;
-	s->Capture = NodeL2NpcapHandle(a, NODE_L2_PCAP_PROMISCUOUS | NODE_L2_PCAP_NOCAPTURE_LOCAL | NODE_L2_PCAP_MAX_RESPONSIVENESS, false, error, error_size);
-	if (s->Capture != NULL)
-		s->Send = NodeL2NpcapHandle(a, 0, true, error, error_size);
-	if (s->Capture == NULL || s->Send == NULL) {
+	s->Handle = NodeL2NpcapHandle(a, NODE_L2_PCAP_PROMISCUOUS | NODE_L2_PCAP_NOCAPTURE_LOCAL | NODE_L2_PCAP_MAX_RESPONSIVENESS, false, error, error_size);
+	if (s->Handle == NULL) {
 		NodeL2NpcapRelease(s);
 		return false;
 	}
 
-	s->Event = node_l2_npcap.GetEvent(s->Capture);
+	s->Event = node_l2_npcap.GetEvent(s->Handle);
 	if (s->Event == NULL) {
-		Format(error, error_size, "Npcap gives no event for its capture handle");
+		Format(error, error_size, "Npcap gives no event for its handle");
 		NodeL2NpcapRelease(s);
 		return false;
 	}

@@ -15,15 +15,17 @@
 // - Foreign-MAC receive: the host's ARP reply to the member, and the datagrams that the host sends to the member (a
 //   permanent neighbour), are captured with the member's address as their destination.
 // - Coexistence with the host stack, on the runner's NIC: the host's own TCP connection through the NIC works while the
-//   bridge is on and after it went, and the bridge sends no probe onto the LAN.
+//   bridge is on and after it went, the host resolves its gateway again while the bridge is on, and the bridge sends no
+//   probe onto the LAN. The gateway's ARP reply is a frame of the wire to the NIC's own address, which the XDP backend
+//   takes on RX inspect, as no rule lets an ARP frame pass, and hands back to the host (NODE_L2_STATUS.ToHost).
 // - Throughput against SeLow: on the stand-in, frames of 1514 bytes onto the switch and to the host, and the host's
 //   datagrams to the member, for 2 s each, printed as NICBRIDGE BENCH lines for each backend: a regression number of the
 //   runner, not a gate (ADR-0002 amendment of 2026-10-21).
 // XDP takes the frames that come in from below the adapter, and NDIS loopback is no such frame (XDP inspects none of
 // them), while neither a KM-TEST adapter nor the network of a runner gives one for a member's address. So for XDP the
 // lines of the frames to and from the host are printed (NICBRIDGE DIAG), and the checks are the transmit onto the wire,
-// coexistence, shutdown and the benchmark; the NIC is held in promiscuous mode by the device of SeLow, the test's own
-// stand-in for Npcap, which ranz install does not put on a runner.
+// coexistence, the frames of the wire that come back to the host, shutdown and the benchmark; the NIC is held in
+// promiscuous mode by the device of SeLow, the test's own stand-in for Npcap, which ranz install does not put on a runner.
 // - Npcap and the default: a bridge whose owner names no backend binds SeLow on the NIC. Npcap is used only where it is
 //   installed: on a runner without it, a bridge on Npcap alone does not come up; where it is installed, "npcap" runs the
 //   spike with it.
@@ -93,6 +95,7 @@ typedef struct NICBRIDGE_PORT
 	UCHAR Mac[6];
 	UINT Address;						// Its IPv4 address, in network byte order; 0 for none
 	UINT Member;						// The IPv4 address of the member of the overlay on its subnet; 0 for none
+	UINT Gateway;						// The IPv4 address of its default gateway, in network byte order; 0 for none
 	NODE_KMTEST *KmTest;				// The KM-TEST adapter of the stand-in, NULL for the NIC
 } NICBRIDGE_PORT;
 
@@ -452,6 +455,54 @@ static bool NicBridgeLearnt(UINT64 luid, UINT addr, const UCHAR *mac)
 	return (nb.PhysicalAddressLength == 6 && Cmp(nb.PhysicalAddress, mac, 6) == 0);
 }
 
+// Make the host ask for the MAC address of the address addr on the interface luid again: its neighbour entry goes, and
+// ResolveIpNetEntry2 asks and waits for the answer. True when the host learnt a MAC address for it.
+static bool NicBridgeResolve(UINT64 luid, UINT addr)
+{
+	MIB_IPNET_ROW2 nb;
+
+	Zero(&nb, sizeof(nb));
+	nb.InterfaceLuid.Value = luid;
+	nb.Address.Ipv4.sin_family = AF_INET;
+	nb.Address.Ipv4.sin_addr.s_addr = addr;
+	DeleteIpNetEntry2(&nb);
+
+	DWORD err = ResolveIpNetEntry2(&nb, NULL);
+	if (err != NO_ERROR)
+	{
+		Print("  ResolveIpNetEntry2: error %u\n", (UINT)err);
+		return false;
+	}
+
+	return (nb.PhysicalAddressLength == 6);
+}
+
+// The IPv4 address of the default gateway of the interface luid, in network byte order; 0 for none
+static UINT NicBridgeGateway(UINT64 luid)
+{
+	MIB_IPFORWARD_TABLE2 *t = NULL;
+	UINT gateway = 0;
+
+	if (GetIpForwardTable2(AF_INET, &t) != NO_ERROR)
+	{
+		return 0;
+	}
+
+	for (ULONG i = 0;i < t->NumEntries && gateway == 0;i++)
+	{
+		MIB_IPFORWARD_ROW2 *r = &t->Table[i];
+
+		if (r->InterfaceLuid.Value == luid && r->DestinationPrefix.PrefixLength == 0)
+		{
+			gateway = r->NextHop.Ipv4.sin_addr.s_addr;
+		}
+	}
+
+	FreeMibTable(t);
+
+	return gateway;
+}
+
 // The frames that the interface if_index has sent, unicast and not, by its own counters
 static UINT64 NicBridgeSent(UINT if_index)
 {
@@ -586,10 +637,14 @@ static bool NicBridgeNic(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p)
 		}
 		p->Member = Endian32(member);
 	}
+	p->Gateway = NicBridgeGateway(p->Luid);
 
 	Print("  the runner's NIC: interface %u, '%s', MAC %02X-%02X-%02X-%02X-%02X-%02X, %u.%u.%u.%u/%u, the member at %u.%u.%u.%u\n", p->IfIndex, alias,
 		(UINT)p->Mac[0], (UINT)p->Mac[1], (UINT)p->Mac[2], (UINT)p->Mac[3], (UINT)p->Mac[4], (UINT)p->Mac[5], p->Address & 0xFF, (p->Address >> 8) & 0xFF,
 		(p->Address >> 16) & 0xFF, p->Address >> 24, length, p->Member & 0xFF, (p->Member >> 8) & 0xFF, (p->Member >> 16) & 0xFF, p->Member >> 24);
+	Zero(alias, sizeof(alias));
+	UniToUtf8(alias, sizeof(alias) - 1, row.Description);
+	Print("  the runner's NIC is '%s', its gateway %u.%u.%u.%u\n", alias, p->Gateway & 0xFF, (p->Gateway >> 8) & 0xFF, (p->Gateway >> 16) & 0xFF, p->Gateway >> 24);
 
 	return true;
 }
@@ -892,11 +947,28 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 		(UINT64)ReadAcquire64(&o.Frames), (UINT64)ReadAcquire64(&o.ToMember));
 
 	// Coexistence with the host stack, on the runner's NIC: the host's own TCP connection through the NIC works while the
-	// bridge is on, and the bridge sends no probe onto the LAN
+	// bridge is on, the host resolves its gateway again, and the bridge sends no probe onto the LAN. On XDP the gateway's
+	// ARP reply, a frame of the wire to the NIC's own address that no rule lets pass, reaches the host only through the
+	// bridge, which hands it back; the health check reports those frames once a second.
 	if (nic)
 	{
 		Format(what, sizeof(what), "coexistence on %s: the host's own TCP connection to %s through the NIC works while the bridge is on", p->Name, NICBRIDGE_TCP_HOST);
 		NicBridgeCheck(ctx, NicBridgeTcp(), what, "it did not");
+
+		NodeL2GetStatus(a, &st);
+		UINT64 to_host = st.ToHost;
+		bool resolved = (p->Gateway != 0 && NicBridgeResolve(p->Luid, p->Gateway));
+		UINT64 end = GetTickCount64() + NICBRIDGE_ANSWER;
+		NodeL2GetStatus(a, &st);
+		while (from_host == false && st.ToHost == to_host && GetTickCount64() < end)
+		{
+			Sleep(NICBRIDGE_POLL);
+			NodeL2GetStatus(a, &st);
+		}
+		Format(what, sizeof(what), "coexistence on %s: the host resolves its gateway again while the bridge is on%s", p->Name,
+			from_host ? "" : ", and its ARP reply, a frame of the wire that RX inspect takes, comes back to the host through the bridge");
+		NicBridgeCheck(ctx, resolved && (from_host || st.ToHost > to_host), what, "%s, %I64u frames of the wire handed back to the host",
+			p->Gateway == 0 ? "no gateway found" : (resolved ? "resolved" : "not resolved"), st.ToHost - to_host);
 
 		Sleep(NODE_L2_PROBE + 1000);
 		NodeL2GetStatus(a, &st);
