@@ -560,6 +560,378 @@ The in-memory key that the Activation service releases only against an Enterpris
 **Software KSP**:
 The in-memory `crypto.Signer` that stands in for the HSM or the CNG KSP in CI.
 
+**Audit log**:
+The Controller's record of who did what, kept in the store, sent to the Audit targets and trimmed by the Audit retention. `ranz get audit` and the API list it. It is not the Events (conditions reported to operators) and not the slim fork's security log.
+
+**Audit record**:
+One entry of the Audit log: kind (`login`, `logout`, `auth-failed`, `enrolment`, `intent-change`, `operation`), actor, source, outcome, time, and for an intent change its revision.
+
+**Audit target**:
+Where the Audit log is sent: a webhook or a syslog receiver, managed under `/api/v1/audit/targets`.
+
+**Audit retention**:
+The policy (days and maximum number of records) that removes old Audit records.
+
+**Origin**:
+The actor and the source address of an API call. The Guard of the API carries it in the context of the call, so that the records the call makes name them.
+
+**Live operation**:
+What an operator asks of the Controller at the moment they ask it: a session list, a disconnect, a ban, a read or a clear of a table. The Intent never holds one.
+
+**Operation**:
+The frame of the control protocol by which the Controller asks a Node to read or clear a table (`Operation`); the Node answers with an `OperationResult`. A Node that answers them reports the Capability `operations`.
+
+**Ban**:
+A User that an operator cut off. It is kept in the store, not in the Intent. While it holds, the Nodes of that user are left out of the desired state of every other Node.
+
+**Diagnostics bundle**:
+One ZIP archive with the logs, the configuration and the status of a Controller or of a host, a manifest, and no secret. The term always carries "diagnostics": `ranz.exe` is not called a bundle.
+
+**Redaction**:
+The replacement of secrets with `[redacted]` (`Redact`, `RedactJSON`), found by the name written before them and by their form, before a part enters a Diagnostics bundle.
+
+**Log limits**:
+The two limits, age and disk, that the log of a Controller, of a Node and of the BGP sidecar keep within: the flags `-log-days` and `-log-mb`, and the Node settings `LogDays` and `LogMB`.
+
+**Source (of a bundle)**:
+What gives the parts of a Diagnostics bundle. A **Part** is one file of the archive.
+
+**Throughput test**:
+`ranz test throughput`: a test server on one Node (`-listen ADDRESS`, port 9821 unless the address names one) and a client on another that open TCP connections (32 by default) which carry data for a span (15 s by default), in one direction or both. The rate of each direction is what its receivers counted from the first data to the last, in Ethernet frames unless `-raw`. It runs on the TCP/IP stack of the hosts, so over the overlay it measures the path that a Node's traffic takes. It succeeds the traffic test of vpncmd (`TrafficServer`, `TrafficClient`, the `Tt*` functions).
+_Avoid_: speed test, iperf, traffic test (the vpncmd one)
+
+**System check**:
+`ranz doctor`: the six checks of the vpncmd Check command (Kernel System, Memory Operation System, ANSI / Unicode string processing system, File system, Thread processing system, Network system), run on the host of `ranz`. It exits with 0 when all pass.
+_Avoid_: health check, Check (the vpncmd command), Diagnostics bundle (another thing)
+
+**Key link**:
+The property of a certificate in the My store that names its private key (the provider, the key name and the key set, `CERT_KEY_PROV_INFO`), by which Schannel and `CryptoCertFindByThumbprint` find the key. `ranz cert -ksp NAME` creates the key in the Microsoft Software Key Storage Provider and the certificate with this link, in the store of the user, or with `-machine` in LocalMachine\My and the machine key set.
+_Avoid_: key association, key binding
+
+**Ingress queue**:
+The queue of a session's data records in front of the stream of a transport over TCP (TLS-443), which CoDel runs, so that an inner TCP flow backs off at the first drop instead of filling a buffer behind a stalled outer TCP (`TRANSPORT.Queue`, `TransportQueue.c`).
+
+**Peer session**:
+The Noise_IK session between two Nodes over UDP that carries every data datagram of the peer layer (`PeerSession.c`), whatever the Path.
+
+**Bind challenge**:
+A Relay's answer to a bind from an address it has no cookie for: a cookie for that address, sealed to the Node (`PEER_MSG_CHALLENGE`, `PeerChallenge.c`).
+
+**Connection exporter**:
+The TLS exporter of RFC 8446 section 7.5 and RFC 9001 that msquic gives for one QUIC connection. It is the channel binding of the streams of that connection.
+
+**Fallback after a handshake**:
+A transport of a fallback list whose stream connected but whose Noise handshake then failed stays out of the races of that list for `TRANSPORT_FALLBACK_HOLD`, so the next dial goes to the next transport of the list.
+
+**Transport log**:
+The log of the transport module (`TransportLog`), which a Node puts into its node log.
+
+**Outbound path**:
+How the connection of a client transport reaches its server: direct, or through an outbound proxy (the system's, an HTTP CONNECT proxy or a SOCKS5 proxy), from its Underlay binding (`TRANSPORT_PATH`).
+
+**Underlay binding**:
+The interface (by alias or index) and the local address that the connections of a client to its server or to its proxy leave from.
+
+**Handshake pool**:
+The threads that run the Noise handshakes of the streams that the overlay of a Node accepted, with a cap on the handshakes in flight (`NodeHandshake.c`).
+
+**Waiting**:
+The control streams of a Controller that wait for a Hello, with a cap in all and one for each Source (`control.Waiting`).
+
+**Source (of a limit)**:
+An IPv4 address, or the /64 that an IPv6 address is in; an IPv4-mapped IPv6 address is its IPv4 address. The Limits for a source count by it, and so does `control.Waiting`.
+
+**Pending connection**:
+A connection that a listener took and whose handshake is not finished: the front door's until its owner has it, QUIC's until `CONNECTED`, the TLS port's until its TLS handshake is done.
+
+**Limits for a source**:
+The caps on the Pending connections in all and for one Source, and the rates of the new connections and of the handshake attempts of a Source (`SOURCE_LIMIT_CONFIG`, `port.Limits`).
+
+**Retry limit**:
+The memory of the handshakes above which msquic answers a new connection with a retry (`TRANSPORT_QUIC_RETRY_DEFAULT`).
+
+**Login throttle**:
+The per-user and per-source count of the failed Logins of a Node in a window. Above its limit the Node refuses further Logins without a check.
+
+**Front door owner**:
+The process, or the part of the Node, that takes the connections of one entry of the owner table of the front door on TCP 443.
+
+**Owner table**:
+The ordered entries (TLS by server name and ALPN, or first bytes) that tell the front door which Front door owner gets a connection.
+
+**Handoff pipe**:
+The named pipe of an owner process through which the front door hands it a socket (`WSAPROTOCOL_INFOW` in a handoff message, one byte of answer).
+
+**Handoff**:
+The moment the owner took the socket. After it the front door holds no handle of the connection.
+
+**Mimic transport**:
+The transport named `mimic`, made of the data pipes of the Mimicry sidecar (`NodeMimicTransport.c`).
+
+**Mimicry sidecar**:
+`ranz mimic`, the process that carries the mimicry transport between two Nodes (`controller/internal/mimic`). A Node starts one for each role that has a `MimicServer` or `MimicClient` setting (`NodeMimic.c`).
+
+**Control pipe**:
+The pipe between a Node and its Mimicry sidecar that carries JSON lines (start, ready, accepted, probe, stats, error). The **Data pipe** carries one pipe connection for each inner stream, with the channel binding as its first line.
+
+**Decoy**:
+The site that a connection which is no Ranz client is spliced to. A server with the Trojan posture reverse-proxies a peer to a website on its loopback interface when the first handshake message of that peer does not authenticate (`TRANSPORT_TLS_CONFIG.Decoy`, `TransportDecoy.c`). In the mimic transport the own decoy is a landing page with a certificate from an ACME service, and the borrow decoy is a big site whose real certificate the prober sees and whose key the sidecar never holds.
+
+**ClientHello split**:
+The client option that sends the ClientHello as two TCP segments, cut in the middle of the server name (`SplitClientHello`).
+
+**Short id**:
+Up to 8 bytes that a client puts into its Proof so that the server can tell its clients apart. The REALITY server keeps a list of them, and a ClientHello that names none of them goes to the Decoy.
+
+**Parrot**:
+The ClientHello of a browser version that uTLS reproduces (Edge sends the parrot of Chrome).
+
+**Padding profile**:
+`off`, `size` or `shape`: what a Mimicry sidecar does to the sizes and the timing of the frames it sends.
+
+**Probe**:
+A connection to the REALITY listener that is no Ranz client. It is spliced to the Decoy, counted and never logged one by one.
+
+**Mimic link**:
+One server in the `MimicClient` setting: its address, the public key of the REALITY server and the Short id.
+
+**Proof**:
+The session id of the ClientHello of a Mimic link, which seals the version and the Short id under the auth key.
+
+**Temporary certificate**:
+The certificate that a REALITY server presents to a client that proved the key. It is signed with the HMAC of its key under the auth key, and it is the pin check of the mimic path.
+
+**Switch**:
+The forwarding plane of one L2 Network (`SWITCH`, the Switch module), in place of the forwarding of the Hub. It is not a name for the Hub, whose entry avoids "virtual switch".
+
+**Port (of a Switch)**:
+The attachment of one member (a user session, a cascade, a bridge, a loopback adapter): an access port, or a trunk port with a native VLAN, as decision 2 of ADR-0019 has them. **TPID** is the tag protocol id of the VLAN tags of a Network.
+
+**Group subscription**:
+The subscription of a port to a group address of a VLAN (the broadcast group, a multicast group, or every group). Broadcast and multicast frames go to the subscribers only.
+
+**Policy engine**:
+The stateful firewall of the Networks of a Node (`POLICY_ENGINE`, the Policy module of the new core). It is not `POLICY`, the per-Session policy of the slim fork, and not a Policy, one rule of the Intent.
+
+**Member**:
+A sender of frames in one Network of a Policy engine (a user session, a cascade, a bridge, a Node) with its identity and its guard.
+
+**Guard (of a member)**:
+The isolation set of a Member: client isolation, the MAC and IP checks, ARP and DHCP only, no DHCP server, the RA filter, the protocol filters. The Guard of the API, which sets the Origin, is another thing.
+
+**Document (of rules)**:
+The JSON rules, Networks and Address groups that the Policy engine puts in force at once, numbered from 1.
+
+**Address group**:
+A named list of IP prefixes that the ends of rules name.
+
+**Conntrack table**:
+The bounded table of the flows of a Network that the rules allowed. The frames of a **flow** take the fast path.
+
+**Rule (of a Node)**:
+A Policy as a Node enforces it, the `Rule` object of the control protocol: its VRF, priority, action, ends, protocol and ports.
+
+**End (of a Policy)**:
+`from`, the end that opens a flow, or `to`: tags and addresses; any without either. An **End outside a VRF** is the Member that the engine keeps in a VRF for a Peer that is no member of it, which has no tag.
+
+**VRF policy**:
+`Vrf.policy`: the conntrack quota and the timeouts of a VRF on a Node. A VRF that has it is under default deny.
+
+**1:1 NAT rule**:
+A rule of a VRF (the `NAT` resource, `NODE_NAT_RULE`) that one Node applies between its host and the overlay, from its **inside prefix** to its **outside prefix**, address for address. The inside prefix is the prefix as the host of the Node sees it, and the outside prefix as the VRF sees it. The 4via6 of a VRF is such a rule between the families.
+
+**Peer route**:
+A prefix of a shared VRF that leads to a Peer besides its addresses (`Peer.routes`, `CONTROL_ROUTE`). So far these are the outside prefixes of its 1:1 NAT rules.
+
+**Route target**:
+A tag of the BGP form `ASN:NUMBER` or `IPV4:NUMBER` that a VRF imports or exports (`importTargets`, `exportTargets`). The routes of a VRF leak into every other VRF that imports a Route target that it exports.
+
+**Leak**:
+A route of one VRF that a Route target puts into the forwarding table of another VRF (a leaked route). On the wire it is a `Peer.routes` entry with `peer_vrf_id`.
+
+**Connect**:
+The "connect VRF" shortcut: `ranz connect vrf A B`, `POST /api/v1/connect` and the UI action `connect`. It makes the two route-target edits of a two-way Leak in one revision.
+
+**DHCP responder**:
+The DHCP server that one Node runs for an L2 Network (`dhcp` of the Network), from the IPv4 pool of the Network, while no DHCP server of the bridged LAN answers.
+
+**Lease**:
+An address of the pool that a client of a DHCP responder holds until it expires, as the Node reports it to the Controller and IPAM lists it (`GET /api/v1/ipam/leases`).
+
+**L2 adapter**:
+The L2 port of a Node on a KM-TEST Loopback Adapter (`NODE_L2`, `NodeL2.c`): the adapter, the backend that carries its frames, and the capture and send rings between them and the owner.
+
+**L2 backend**:
+The driver behind an L2 adapter (`NODE_L2_BACKEND`: attach, inject, health, detach): XDP (`NodeL2Xdp.c`) or SeLow (`NodeL2SeLow.c`).
+
+**Capture ring**:
+The bounded ring from the drain thread of an L2 backend to the owner. A full ring drops the frame and counts it, and never pushes back into the driver.
+
+**Receive-path probe**:
+The Neighbor Solicitation that the health check of an L2 backend injects, which the host must learn within 2 s.
+
+**Overlay suffix**:
+The DNS suffix of the zone of a VRF (`dnsSuffix`, else `<vrf>.ranz.internal`). The NRPT sends the names under it, and only those, to the Stub resolver.
+
+**DnsRecord**:
+The Intent resource that adds a name to the zone of a VRF: the addresses of a Node of the VRF, or the addresses it lists.
+
+**Stub resolver**:
+The DNS responder of a Node on UDP 53 of its addresses in each VRF. It answers the zone of that VRF and nothing else.
+
+**VRF adapter**:
+The Wintun adapter of one VRF on a host (`NodeVrfAdapter.c`). Its requested GUID derives from the static key of the Node and the VRF id, so the interface of the VRF on that host is the same on every start.
+
+**Forwarding setting**:
+`"forwarding": true` in the Client setting makes the Node a gateway or an exit. Each of its VRF adapters then gets Forwarding, WeakHostSend and WeakHostReceive.
+
+**Encapsulation (of a VTEP)**:
+VXLAN or Geneve: the header in which the module sends to a VTEP and reads what it receives from it. It belongs to the VTEP, not to the VNI.
+
+**Critical option**:
+A Geneve option whose type has its high bit set. A tunnel endpoint that does not know it drops the datagram.
+
+**Link kind**:
+`noise`, `vxlan` or `geneve` (`VRF.link`, `LinkKind`): the kind of the links between the Nodes of a VRF. A **Plain link** is a link of kind `vxlan` or `geneve`, which carries the packets of a VRF without encryption on a network that the operator trusts. The Capability `plainLinks` says that a Node runs them.
+
+**Tunnel endpoint of a Node**:
+`Node.vtep`, `Vtep`: the address and ports of the Node for Plain links. It is a VTEP in the sense of this glossary.
+
+**Client setting**:
+The `Client` setting of the Configuration store: one JSON object that names the Wintun adapter, the DNS servers and suffix, the pipe of the logged-in user and each server (node name, certificate thumbprint, fallback list). Without it the client role holds nothing.
+
+**Dialler**:
+The data transport of the overlay of a client Node. It dials a server by its node name through the race of the fallback list of that server, and listens nowhere.
+
+**Pipe of the logged-in user**:
+`\\.\pipe\ranz-node-client` (or the pipe of the Client setting), through which an interactive user reads the status of the client role and takes it down and up.
+
+**Controller settings**:
+The address, static key and TLS fingerprint of the Controller in the Configuration store of a Node, which `ranz node controller` sets, shows and clears.
+
+**Admin pipe**:
+The named pipe `\\.\pipe\ranz-node-admin` of the Node service (`NODE_ADMIN_PIPE`), for the verbs of `ranz node` (`key`, `controller`, `state`). Only SYSTEM, the Administrators and the service account open it.
+
+**State of a Node**:
+What the Node service does now, as `ranz node state` shows it. It is not the desired state that the Controller compiles for the Node, and the Generation is one field of it.
+
+**Redial delay**:
+The delay before a Node opens its control stream again: 1 s after a stream that was open, doubled by each attempt that fails, at most 60 s.
+
+**Ranz folder**:
+The fixed folder under Program Files (`C:\Program Files\Ranz VPN`) that `ranz install` makes, with an access list for SYSTEM, the Administrators and the two service accounts. It holds `ranz-node.exe` and the `ranz.exe` that the services run. `ranz uninstall` removes it and keeps the data directories.
+
+**Unsigned Payload**:
+A Payload that cannot carry an Authenticode signature (the INF and the counter manifest of a driver package, the NOTICE). `ranz install` checks its hash only. Windows checks the INF against the signed catalog of its package when it publishes the package.
+
+**Install record**:
+The registry key `HKLM\SOFTWARE\Hanzcodes\Ranz VPN\Drivers`, one value for each driver that `ranz install` put on the machine. `ranz uninstall` reads it to remove those drivers and no other.
+
+**Firewall group**:
+The Windows Firewall group `Ranz VPN` (`FirewallGroup`) that holds every rule that `ranz install` makes, and the rule of `ranz test throughput -listen` while it serves. `ranz uninstall` removes the whole group.
+
+**Stand-in Node**:
+A Node that `vpntest firsttest` runs in place of the Node service, which cannot join a Controller yet. It opens the control stream of a Node resource of the Intent.
+
+**First test**:
+The test of the product on two PCs that `docs/first-test.md` describes.
+
+**Gap (of the runbook)**:
+Something that the runbook needs and the code does not have, listed with its ticket or the words "no ticket".
+
+**Credential of the store**:
+The user `controller` and its random password in `rqlite-auth.json`, which rqlited reads with `-auth` and the store client sends.
+
+**Cluster CA**:
+The CA that signs the certificates of the members of the store for the mutual TLS between them. It is not the TLS certificate of the Controller.
+
+**Key check**:
+The comparison of the static key of a session with the key pinned to the user, after Sam accepted the Login (`NodeLoginPinned`); `kp_on` and `kp_none` in the models.
+
+**Overlay session**:
+A Noise session between two Nodes of the overlay, with no Login. The static key is the Peer.
+
+**Production path**:
+Code that a Node service or the Controller runs outside the tests. The page of a model says which models stand for it.
+
+**Identity kind**:
+Which key protects the identity of a Node: `software` (the Noise static key alone, the default) or `tpm` (the Noise static key and a TPM-held key, pinned together). The Node resource holds it.
+
+**TPM pin**:
+The SHA-256 of the SubjectPublicKeyInfo of the TPM-held key of a Node, kept in its Node resource.
+
+**TPM proof**:
+The signature of the TPM-held key over a label, the handshake hash of a Noise session and its public key. A Node of the `tpm` kind sends it in the first control record of a Tunnel.
+
+**Certificate setting**:
+The setting that names where the certificate of the TLS port of the Controller comes from (a file with its key, a thumbprint of Windows key storage, or ACME) and the hosts it must name. One row of the store, outside the Intent.
+
+**TLS pin set**:
+The TLS fingerprints that a Node accepts for the certificate of its Controller (`NodeConfig.controller_tls`, `CONTROL_STATE.TlsPins`, `tlsFingerprints` of the Controller settings), the certificate in use first. It has two members while the certificate changes and one otherwise.
+
+**`endpoints` of a Node**:
+The list of a transport and an address under which the other Nodes reach the Node (Node resource, `NodeConfig`, `Peer`; the Go type `intent.Endpoint`, the message `Endpoint` of `control.proto`). It follows the words of SDN-93. **Dialable** (`NODE_OVERLAY_CONFIG.Dialable`) says whether a data transport can dial a Peer that has the endpoints it has.
+
+**Listener resource**:
+The resource of the Intent that says where a Node listens: the ports and the certificate source, with a fixed TLS policy for each surface. It is not the Listener module of Cedar, which holds the TCP listeners of the slim fork.
+
+**ACME sidecar**:
+`ranz acme`, the subcommand that a Node runs to get and renew the certificate of a Listener resource that has an ACME source.
+
+**User**:
+The Intent resource of a local account: a display name, groups, an expiry, may-change-password, a maximum number of devices and no-saved-password. It holds no API role. Its password is the **User password**: a PBKDF2 hash kept in the store, outside the Intent. A **Saved password** is a password that a client took from its own storage, not from a person, and a User with no-saved-password is refused it.
+
+**Group**:
+The Intent resource that names a set of Users. Its name is a tag of policy. The **Group tag** is that name, which the devices of its members carry (`intent.NodeTags`), so a Policy written for the Group applies to them.
+
+**Owner (of a Node)**:
+The User that a Node is a device of (`Node.owner`). A Device with an owner inherits the Group tags of the owner. Not a Front door owner.
+
+**Maximum devices**:
+`maxDevices` of a User. An Intent that holds more devices of the User is refused. The Nodes and the Devices of a User count against it.
+
+**Device**:
+A phone, laptop or router that joins exactly one Network over standard WireGuard, without `ranz.exe`, through its gateway Node. It is not a Peer.
+
+**Gateway (of a Device)**:
+The Node that terminates the WireGuard of its Devices with WireGuardNT and reports the Capability `wireguard`.
+
+**WireGuard end**:
+The `wireguard` field of a gateway Node: the DNS name that its Devices reach it at, and its UDP port.
+
+**Battery saver**:
+The flag of a Device that turns the keepalive of its configuration off.
+
+**Formal model**:
+The ProVerif models in `tests/formal`, checked in CI against `expected.tsv`. A **Scenario (of a model)** is a set of compromises that a model gives the attacker (none, cert, cert-client, noise-client, both, fs). A **Negative control** is a model with a protection left out (the binding, the pin, the key comparison of a join) that must show its attack. The **Table from the model to the code** is `tests/formal/model-to-code.tsv`.
+
+**Plane (of the threat model)**:
+One of the parts of the system that the threat model treats on its own: the Noise session, the transports, the front door, the control stream, the API with the web UI and the tokens, the store and the licence, and the data plane. It is not the control plane or the data plane that name a split of the traffic.
+
+**Trust boundary**:
+A line that data crosses between parties that are trusted differently, numbered B1 to B12 on the diagram of the threat model.
+
+**Attacker class**:
+One of the six who attack in the threat model: an attacker on the path, a malicious peer, a malicious tenant, a thief of a node key, a token holder and a local user. The page uses "tenant" only for a party that controls Nodes or Devices in another VRF, because a VRF is not called a tenant here.
+
+**Gap (of the threat model)**:
+A threat that no control answers, numbered G-n, answered by an open ticket, a **Draft ticket** (DT-n, the text of a ticket that the page proposes for the integrator to file) or an amendment of an open ticket.
+
+**Scenario (of explain)**:
+A topology, an Intent and test packets with their verdicts, in `tests/explain`. The **Plan** is what `ranz-explainplan` writes of a Scenario for `vpntest explain`: the states of its Nodes as control frames and its packets with the verdicts of explain. A **Fault** is the rule that the Plan leaves out of the state of one Node in a broken Scenario, and the packets whose verdict that must break.
+
+**Lane**:
+One agent that builds one ticket, or continues one pull request, in its own worktree (docs/agents/integrator.md).
+
+**Integrator**:
+The session that launches Lanes, merges green pull requests and closes tickets. A **Tick** is one round of its job, from the heartbeat to the report.
+
+**Integrator heartbeat**:
+The comments on the issue `Integrator heartbeat`, by which an Integrator shows that it is alive. It is not the licence Heartbeat. The pages always say "integrator heartbeat" or "the heartbeat issue".
+
+**Fast set, full set**:
+The two sets of CI jobs of a pull request (see `.github/scripts/ci-plan.py`).
+
 
 ## Flagged ambiguities
 
@@ -591,3 +963,14 @@ The in-memory `crypto.Signer` that stands in for the HSM or the CNG KSP in CI.
 - "Policy" is the SDN resource kind, one rule of a VRF's policy. The slim fork's `POLICY` is the per-Session policy of a Hub user or group, a different thing.
 - "Route" is a LAN subnet that a gateway Node advertises in a VRF (`intent.Route`). A route inside a Forwarding table, a route of the Windows routing table and the Path of a peer are different things.
 - "Tunnel" is the Noise sessions of up to 16 connections between two Nodes (`NOISE_TUNNEL`), and the Cedar `TUNNEL` is the object around one, held by a Connection of type `CONNECTION_NOISE`. A Cascade is not a Tunnel.
+- "Endpoint" is one service published into another VRF (SDN-24). The `endpoints` of a Node (SDN-93, the Go type `intent.Endpoint`, the message `Endpoint` of `control.proto`) are the transports and addresses under which other Nodes reach it. Whichever of the two merges second may need a new name for its type.
+- "Listener" in the slim fork is the TCP listener of Cedar (the `Listener` module). The new core has the Listener resource of the Intent, which says where a Node listens.
+- "Owner" is the User that a Node is a device of (`Node.owner`), and also the Front door owner, the process that takes the connections of one entry of the owner table. They are unrelated.
+- "Guard" is the isolation set of a Member of the Policy engine, and also the Guard of the Controller's API, which sets the Origin of a call. They are unrelated.
+- "Gap" is a gap of the first-test runbook, and also a gap of the threat model (G-n). "Scenario" is a compromise set of a formal model, and also a topology with verdicts of the explain conformance. "Source" is the address that the limits of a listener count by, and also what gives the parts of a Diagnostics bundle. Say which one.
+- "Port" is the attachment of a member to a Switch, and also a TCP or UDP port. "Switch" is the new core's forwarding plane of an L2 Network, never a word for the Hub.
+- "Plane" in the threat model is one of its parts of the system (the Noise session, the front door and so on). The control plane and the data plane name a split of the traffic.
+- "Bundle" is a Diagnostics bundle, always with "diagnostics" before it. `ranz.exe` is not called a bundle.
+- "Heartbeat" is the licence re-validation of an Activation token. The integrator heartbeat is the comments on the heartbeat issue, and has nothing to do with it.
+- "Software KSP" is the in-memory signer of CI in this glossary. ADR-0022 uses "software KSP" for the Microsoft Software Key Storage Provider. Say which one.
+- "Device" is a stock WireGuard client or router behind a gateway Node (spec #374). A Node that a User owns also counts against the maximum devices of that User, but it is not a Device.
