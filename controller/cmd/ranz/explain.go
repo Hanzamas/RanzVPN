@@ -93,17 +93,19 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 }
 
 // printExplain prints the walk of r: the packet, one line for each step with its Node and its kind, and the verdict.
+// The kinds take 6 columns, more when a step of a longer kind is there (profile, SDN-40).
 func printExplain(out io.Writer, r explain.Result) error {
-	width := len(r.Packet.Node)
+	width, kinds := len(r.Packet.Node), 6
 	for _, s := range r.Steps {
 		width = max(width, len(s.Node))
+		kinds = max(kinds, len(s.Kind))
 	}
 	p := r.Packet
 	if _, err := fmt.Fprintf(out, "%s from %s in VRF %s\n", p, p.Node, p.VRF); err != nil {
 		return err
 	}
 	for _, s := range r.Steps {
-		if _, err := fmt.Fprintf(out, "  %-*s  %-6s  %s\n", width, s.Node, s.Kind, s.Text); err != nil {
+		if _, err := fmt.Fprintf(out, "  %-*s  %-*s  %s\n", width, s.Node, kinds, s.Kind, s.Text); err != nil {
 			return err
 		}
 	}
