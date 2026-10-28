@@ -717,7 +717,9 @@ try {
 	Wait-ServiceState $controllerService 'Running'
 	$csvc = Get-CimInstance Win32_Service -Filter "Name='$controllerService'"
 	if ($csvc.StartName -ne $controllerAccount) { throw "$controllerService runs as '$($csvc.StartName)', not its virtual account $controllerAccount" }
-	if ($csvc.PathName -ne "`"$installedRanz`" controller") { throw "$controllerService runs '$($csvc.PathName)', not the ranz.exe of $installDir with controller" }
+	# With the admin source allowlist of the first install (AUD1-DT-6): loopback and the private subnets of the host
+	if ($csvc.PathName -notmatch ('^' + [regex]::Escape("`"$installedRanz`" controller -admin-from ") + '\S*127\.0\.0\.0/8\S*$')) { throw "$controllerService runs '$($csvc.PathName)', not the ranz.exe of $installDir with controller and -admin-from, which holds loopback" }
+	if ($r.Out -notmatch 'install: the Controller starts with the admin source allowlist [^\r\n]*127\.0\.0\.0/8[^\r\n]*403[^\r\n]*ranz admin-sources set') { throw "ranz install --controller did not say which sources may reach the API and how to change that:`n$($r.Out)" }
 	$csid = (& sc.exe showsid $controllerService | Out-String)
 	if ($csid -notmatch [regex]::Escape($controllerSid)) { throw "Windows gives $controllerAccount another SID than ${controllerSid}:`n$csid" }
 	Assert-Access $installDir $controllerAccount 'ReadAndExecute'
@@ -735,6 +737,8 @@ try {
 	$r = Invoke-Ranz $goodExe @('install', '-controller')
 	if ($r.Code -ne 0) { throw "the second ranz install -controller exited with code $($r.Code)" }
 	if ($r.Out -notmatch [regex]::Escape("the rule `"$stray`" of the group $firewallGroup is removed")) { throw "the second ranz install did not say that it removed the rule $stray of an older version:`n$($r.Out)" }
+	# A service that is there already is only started: it keeps the admin source allowlist that its store holds, and install says so (AUD1-DT-6)
+	if ($r.Out -notmatch ([regex]::Escape("install: the $controllerService service is there already, so --admin-from and the default change nothing") + '[^\r\n]*ranz admin-sources set')) { throw "the second ranz install -controller did not say that the Controller keeps the admin source allowlist that it has:`n$($r.Out)" }
 	# The drivers that it put there are not installed again, and are still its own, so that uninstall removes them
 	if ($x64 -and ($r.Out -notmatch 'the SeLow driver is installed already' -or $r.Out -notmatch 'the XDP runtime is installed already')) {
 		throw "the second ranz install did not say that SeLow and the XDP runtime are installed already:`n$($r.Out)"

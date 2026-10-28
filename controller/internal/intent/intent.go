@@ -147,6 +147,9 @@ type Network struct {
 	// DHCP is the DHCP responder of an L2 Network (SDN-43, dhcp.go): a Node that answers DHCP from
 	// the IPv4 pool when the bridged LAN has no DHCP server. Left out, the responder is off.
 	DHCP *DHCP `json:"dhcp,omitempty"`
+	// Security is the security of an L2 Network (SDN-41, security.go): the protections that its
+	// switch applies to the frames of its clients, and its gateways. Left out, none holds.
+	Security *Security `json:"security,omitempty"`
 }
 
 // Node is a node of the overlay, identified by its Noise static key.
@@ -282,6 +285,7 @@ func (in Intent) Clone() Intent {
 		n.EnrolSources = slices.Clone(n.EnrolSources)
 		n.Reserved = slices.Clone(n.Reserved)
 		n.DHCP = n.DHCP.clone()
+		n.Security = n.Security.clone()
 		out.Networks[name] = n
 	}
 	for name, n := range in.Nodes {
@@ -419,8 +423,9 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
 // Network, a Node, a Policy, a Mirror, a NAT or a DnsRecord uses cannot be deleted, nor can a
 // Network that a Device uses, nor a Node that a NAT, a DnsRecord or a Listener uses, that is the
-// gateway of a Device, that answers DHCP for a Network or that is the hub of a VRF, a Group that a
-// User belongs to, and a User that owns a Node. The Nodes lose their addresses in a deleted Network.
+// gateway of a Device or of the security of a Network, that answers DHCP for a Network or that is
+// the hub of a VRF, a Group that a User belongs to, and a User that owns a Node. The Nodes lose
+// their addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -475,6 +480,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		// The DHCP responder of a Network (SDN-43, dhcp.go)
 		if users := next.dhcpUsers(name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q answers DHCP for %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
+		// The gateways of the security of a Network (SDN-41, security.go)
+		if users := next.securityUsers(name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q is a gateway of %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
 		// The names of the zones of overlay DNS (SDN-11, dns.go)
 		if users := next.dnsUsers("", name); len(users) > 0 {
@@ -783,6 +792,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeNAT()
 	in.completeLeaks()
 	in.completeDHCP(prev)
+	// The limits and the gateways of the security of the L2 Networks (security.go; SDN-41)
+	in.completeSecurity()
 	in.completeDNS()
 	in.completeUsers()
 	in.completeListeners()
@@ -907,6 +918,7 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateNAT()...)
 	problems = append(problems, in.validateLeaks()...)
 	problems = append(problems, in.validateDHCP()...)
+	problems = append(problems, in.validateSecurity()...)
 	problems = append(problems, in.validateDNS()...)
 	problems = append(problems, in.validateUsers()...)
 	problems = append(problems, in.validateListeners()...)

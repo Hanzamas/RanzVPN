@@ -12,7 +12,7 @@
 // - A conntrack table has a lock per shard (PolicyTrack.c), which a frame holds while it finds, adds or changes its flow.
 // - The addresses that the members of a Network own are a sorted list of the Network under its LearnLock, which a frame
 //   holds shared to look up its source and exclusive to take a new one. A Network whose members own nothing, and a member
-//   under no check, take no lock for it.
+//   under no check that is no gateway, take no lock for it.
 // - The changes (members, their addresses, documents) hold ConfigLock, which the data path never takes. A frame takes the
 //   lock of its slot, then the LearnLock of its Network or the lock of a shard, never both at once; a change takes
 //   ConfigLock, then one of those, and waits for the slots with none of them held.
@@ -26,6 +26,7 @@
 #define POLICY_MAX_HEADERS  8      // IPv6 extension headers that a packet may have before its transport header
 #define POLICY_ETH_HEADER   14     // The two MAC addresses and the EtherType of an Ethernet frame
 #define POLICY_TAG_SIZE     4      // A VLAN tag
+#define POLICY_MAX_TAGS     2      // VLAN tags that a frame may have before its EtherType: an outer and an inner tag (QinQ)
 #define POLICY_ARP_SIZE     28     // An ARP packet for Ethernet and IPv4
 #define POLICY_NO_RULE      0xFFFF // No rule: what PolicyRejudge returns for a flow that a member left
 
@@ -61,6 +62,10 @@
 #define POLICY_ICMP6_RS         133
 #define POLICY_ICMP6_RA         134
 #define POLICY_ICMP6_REDIRECT   137
+
+// The flags of a guard that judge what a frame carries: a member under one of them sends no frame that carries more than
+// the engine reads (POLICY_PACKET.Opaque), which none of them could judge
+#define POLICY_GUARD_READS (POLICY_GUARD_CHECK_IP | POLICY_GUARD_NO_DHCP_SERVER | POLICY_GUARD_NO_RA | POLICY_GUARD_NO_ROUTER)
 
 // What a frame reads of a member: made when it joins, never changed, and freed once no frame can still read it
 typedef struct POLICY_RECORD {
@@ -123,7 +128,8 @@ struct POLICY_ENGINE {
 // What PolicyInput reads of a frame
 typedef struct POLICY_PACKET {
 	const UCHAR *Smac;   // L2: the source MAC address; NULL in an L3 Network
-	UINT EtherType;      // The EtherType after a tag; that of the family for a packet of an L3 Network
+	UINT EtherType;      // The EtherType after the tags; that of the family for a packet of an L3 Network
+	bool Opaque;         // It carries more than the engine reads: a tag after POLICY_MAX_TAGS, an IPv6 extension header after POLICY_MAX_HEADERS
 	bool Group;          // To a group address: an L2 destination with the multicast bit, an IP broadcast or multicast destination
 	UINT Family;         // POLICY_IPV4 or POLICY_IPV6, 0 for a frame that is not IP
 	UCHAR Src[16];       // The source IP address, IPv4 in the first 4 bytes
@@ -151,6 +157,11 @@ static const UCHAR policy_zero[16] = {0};
 // A 16-bit value at p, big-endian
 static UINT PolicyGet16(const UCHAR *p) {
 	return ((UINT)p[0] << 8) | p[1];
+}
+
+// Whether an EtherType is the TPID of a VLAN tag: 0x8100 (IEEE 802.1Q), 0x88A8 (802.1ad) or 0x9100
+static bool PolicyIsTag(UINT type) {
+	return type == 0x8100 || type == 0x88A8 || type == 0x9100;
 }
 
 //
@@ -355,6 +366,14 @@ static UINT PolicyOwnerOf(POLICY_NET *net, UINT kind, const UCHAR *addr) {
 	return member;
 }
 
+// The addresses of a kind that the member of the record rec may own: its limit, or POLICY_MAX_GATEWAY for a gateway
+static UINT PolicyOwnLimit(const POLICY_RECORD *rec, UINT kind) {
+	if ((rec->Guard & POLICY_GUARD_GATEWAY) != 0)
+		return POLICY_MAX_GATEWAY;
+
+	return (kind == POLICY_OWN_MAC ? rec->MaxMacs : rec->MaxIps);
+}
+
 // Give member, whose record is rec, an address of a kind: true when it owns it now or did before; false when another
 // member owns it, the member owns its limit of the kind, it left, or there is no memory. The caller holds the LearnLock
 // of the Network exclusive.
@@ -373,7 +392,7 @@ static bool PolicyOwnerAdd(POLICY_ENGINE *p, POLICY_NET *net, UINT member, const
 		return net->Owners[i].Member == member;
 
 	UINT *num = (kind == POLICY_OWN_MAC ? &s->NumMacs : &s->NumIps);
-	if (*num >= (kind == POLICY_OWN_MAC ? rec->MaxMacs : rec->MaxIps))
+	if (*num >= PolicyOwnLimit(rec, kind))
 		return false;
 
 	UINT count = (UINT)net->NumOwners;
@@ -417,11 +436,63 @@ static void PolicyOwnerDropMember(POLICY_ENGINE *p, POLICY_NET *net, UINT member
 	p->Slots[member].NumIps = 0;
 }
 
+// Give the gateway member, whose record is rec, an address of a kind that another member may own: one that no member
+// owns, as PolicyOwnerAdd gives it, or one of a member that is no gateway, which moves to the gateway while the gateway
+// owns fewer than its limit of the kind. An address of another gateway stays its own. The caller holds the LearnLock of
+// the Network exclusive.
+static void PolicyOwnerTake(POLICY_ENGINE *p, POLICY_NET *net, UINT member, const POLICY_RECORD *rec, UINT kind, const UCHAR *addr) {
+	POLICY_SLOT *s = &p->Slots[member];
+	POLICY_OWNER o;
+	bool found = false;
+
+	PolicyOwnerKey(&o, kind, addr);
+	UINT i = PolicyOwnerIndex(net, &o, &found);
+	if (found == false) {
+		PolicyOwnerAdd(p, net, member, rec, kind, addr);
+		return;
+	}
+
+	UINT owner = net->Owners[i].Member;
+	UINT *num = (kind == POLICY_OWN_MAC ? &s->NumMacs : &s->NumIps);
+	if (owner == member || s->Record != rec || *num >= PolicyOwnLimit(rec, kind))
+		return;
+
+	// The owner may be leaving: PolicyDelMember takes out what it owned under this lock
+	const POLICY_RECORD *old = PolicyRecordOf(p, owner);
+	if (old != NULL && (old->Guard & POLICY_GUARD_GATEWAY) != 0)
+		return;
+
+	UINT *old_num = (kind == POLICY_OWN_MAC ? &p->Slots[owner].NumMacs : &p->Slots[owner].NumIps);
+	if (*old_num != 0)
+		(*old_num)--;
+	net->Owners[i].Member = member;
+	(*num)++;
+}
+
+// Whether the gateway member, whose record is rec, may send from an address of a kind: always. It owns the address from
+// then on (PolicyOwnerTake), so that no member under a check can take it or keep it; a frame from an address that it owns
+// only reads the list.
+static bool PolicyGatewaySource(POLICY_ENGINE *p, UINT member, const POLICY_RECORD *rec, UINT kind, const UCHAR *addr) {
+	POLICY_NET *net = rec->Net;
+
+	if (PolicyOwnerOf(net, kind, addr) == member)
+		return true;
+
+	AcquireSRWLockExclusive(&net->LearnLock);
+	PolicyOwnerTake(p, net, member, rec, kind, addr);
+	ReleaseSRWLockExclusive(&net->LearnLock);
+
+	return true;
+}
+
 // Whether a member may send from an address of a kind: it owns it; or no member owns it and the member is under no check
-// of the kind; or it is under the check (check), no member owns the address, and the member takes it within its limit
+// of the kind; or it is under the check (check), no member owns the address, and the member takes it within its limit.
+// The gateway of an L2 Network may send from any address (PolicyGatewaySource).
 static bool PolicySourceOk(POLICY_ENGINE *p, UINT member, const POLICY_RECORD *rec, UINT kind, const UCHAR *addr, bool check) {
 	POLICY_NET *net = rec->Net;
 
+	if ((rec->Guard & POLICY_GUARD_GATEWAY) != 0)
+		return PolicyGatewaySource(p, member, rec, kind, addr);
 	if (check == false && ReadAcquire(&net->NumOwners) == 0)
 		return true;
 
@@ -709,7 +780,7 @@ static bool PolicyParseIpv4(const UCHAR *ip, UINT size, bool quoted, POLICY_PACK
 }
 
 // The IPv6 header at ip, size bytes, and its extension headers into pk, as PolicyParseIpv4. A packet with more than
-// POLICY_MAX_HEADERS extension headers has the next one as its protocol.
+// POLICY_MAX_HEADERS extension headers has the next one as its protocol, and carries more than the engine reads.
 static bool PolicyParseIpv6(const UCHAR *ip, UINT size, bool quoted, POLICY_PACKET *pk) {
 	if (size < 40 || (ip[0] >> 4) != 6)
 		return false;
@@ -754,6 +825,8 @@ static bool PolicyParseIpv6(const UCHAR *ip, UINT size, bool quoted, POLICY_PACK
 	pk->Protocol = next;
 	pk->L4 = ip + off;
 	pk->L4Size = end - off;
+	if (pk->Later == false && (next == 0 || next == 43 || next == 44 || next == 60))
+		pk->Opaque = true;
 
 	return true;
 }
@@ -770,19 +843,21 @@ static bool PolicyParse(const UCHAR *frame, UINT size, UINT mode, POLICY_PACKET 
 	if (mode == POLICY_L2) {
 		UINT off = POLICY_ETH_HEADER;
 
-		// The two addresses, then the EtherType after one tag (0x8100, 0x88A8 or 0x9100, as the VLAN of the frame is the
-		// caller's); a group address is no source
+		// The two addresses, then the EtherType after the tags, POLICY_MAX_TAGS at most (as the VLAN of the frame is the
+		// caller's): the tag of a QinQ frame inside its outer tag, or one behind a priority tag, is read too, and a frame
+		// with a tag after them carries more than the engine reads. A group address is no source.
 		if (size < POLICY_ETH_HEADER || (frame[6] & 1) != 0)
 			return false;
 		pk->Smac = frame + 6;
 		pk->Group = ((frame[0] & 1) != 0);
 		pk->EtherType = PolicyGet16(frame + 12);
-		if (pk->EtherType == 0x8100 || pk->EtherType == 0x88A8 || pk->EtherType == 0x9100) {
-			if (size < POLICY_ETH_HEADER + POLICY_TAG_SIZE)
+		for (UINT n = 0; n < POLICY_MAX_TAGS && PolicyIsTag(pk->EtherType); n++) {
+			if (size < off + POLICY_TAG_SIZE)
 				return false;
-			pk->EtherType = PolicyGet16(frame + 16);
+			pk->EtherType = PolicyGet16(frame + off + 2);
 			off += POLICY_TAG_SIZE;
 		}
+		pk->Opaque = PolicyIsTag(pk->EtherType);
 		ip = frame + off;
 		ip_size = size - off;
 
@@ -839,8 +914,16 @@ static UINT PolicyGuard(POLICY_ENGINE *p, UINT from, const POLICY_RECORD *rec, c
 
 	if (reason != POLICY_PASS_RULE)
 		return reason;
+	// The IP check and the DHCP and RA guards judge what a frame carries: a frame that carries more than the engine reads
+	// could hide a source address, a DHCP server message or a router advertisement from them
+	if ((guard & POLICY_GUARD_READS) != 0 && pk->Opaque)
+		return POLICY_DROP_PROTOCOL;
 	if ((guard & POLICY_GUARD_NO_DHCP_SERVER) != 0 && pk->Control == POLICY_CTL_DHCP_SERVER)
 		return POLICY_DROP_DHCP_SERVER;
+	// The RA guard of an L2 Network holds for what the member sends only: it still gets the router advertisements of the
+	// gateway (SDN-41)
+	if ((guard & POLICY_GUARD_NO_ROUTER) != 0 && pk->Control == POLICY_CTL_ND && pk->IcmpType == POLICY_ICMP6_RA)
+		return POLICY_DROP_RA;
 
 	// The source MAC address, and the sender of an ARP frame
 	if (pk->Smac != NULL) {
