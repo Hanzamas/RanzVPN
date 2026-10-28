@@ -257,6 +257,10 @@ typedef struct CS_NETWORK CS_NETWORK;
 typedef struct CS_USER CS_USER;
 typedef struct CS_ADMIN CS_ADMIN;
 typedef struct CS_IMPORT CS_IMPORT;
+typedef struct CS_GROUP CS_GROUP;
+typedef struct CS_RULE_VALUE CS_RULE_VALUE;
+typedef struct CS_RULE CS_RULE;
+typedef struct CS_PORT CS_PORT;
 
 
 

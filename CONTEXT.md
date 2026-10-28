@@ -966,6 +966,34 @@ The Node resource that a login of its User makes (`Controller.EnrolDevice`): own
 **User login throttle**:
 Five failed user logins in a row for one name or from one source (an IPv4 address or an IPv6 /64): the next is refused with 429 without a check of the password, and one try comes back each minute. It is not the **Login throttle** of a Node.
 
+**Sealing key**:
+The Controller's own key for the secrets of its store: a persisted key of the Microsoft Software Key Storage Provider on Windows, a file `store.key` elsewhere. It sits beside the Noise static key and the TLS key.
+
+**Sealed secret**:
+The form in which the store keeps the secret of an export or audit target: `ranz-sealed:1:` and the base64 of a sealed box that only the **Sealing key** opens.
+
+**Access record**:
+An audit record of the kind `access`, made for a read of the API tokens, the API roles of users, the audit log or the licence. Its actor is the caller (`token:NAME`, or `user:NAME` for a **User token**), and the Log keeps at most one for each actor and read in a minute.
+
+**Token life**:
+The expiry and the last use of an API token, kept in the table `api_token_life` (`ranz token create -expires`, `ranz tokens`). A **User token** has an end of its own and no token life.
+
+**TLS fingerprint file**:
+`tls.fingerprint` in the data directory of the Controller: the TLS fingerprint of the certificate that it serves, written at every start and at every change of the certificate. `ranz` on the same host trusts a loopback address only when its certificate has this fingerprint, or the one that `-tls-fingerprint` names.
+
+**Hub node**:
+In a VRF of topology hub-and-spoke, the Node that the other members reach each other through. Say Hub node, not plain "Hub", which is the slim fork's Virtual Hub.
+_Avoid_: Hub (the slim fork's object)
+
+**Spoke**:
+A member of a hub-and-spoke VRF other than its **Hub node**. Two spokes are no peers in the VRF.
+
+**Gateway group**:
+The gateway Nodes that advertise one LAN subnet in one VRF. It has a next hop of its own in the forwarding tables, after those of the peers and of the leaked routes. It is not the **Gateway (of an L2 Network)**.
+
+**Gateway probe**:
+The control record that a Node sends each gateway of a **Gateway group** every 100 ms inside its Noise session, and its answer. A gateway whose answers stop for 500 ms, or whose session closes, is down, and it is up again after 3 answers in a row.
+
 
 ## Flagged ambiguities
 
@@ -1007,5 +1035,6 @@ Five failed user logins in a row for one name or from one source (an IPv4 addres
 - "Bundle" is a Diagnostics bundle, always with "diagnostics" before it. `ranz.exe` is not called a bundle.
 - "Heartbeat" is the licence re-validation of an Activation token. The integrator heartbeat is the comments on the heartbeat issue, and has nothing to do with it.
 - "Software KSP" is the in-memory signer of CI in this glossary. ADR-0022 uses "software KSP" for the Microsoft Software Key Storage Provider. Say which one.
-- "Gateway" is the Node that terminates the WireGuard of Devices (Gateway of a Device), and also the Node behind which the real gateway of an L2 Network is (Gateway of an L2 Network, SDN-41). Say which one.
+- "Gateway" is the Node that terminates the WireGuard of Devices (Gateway of a Device), and also the Node behind which the real gateway of an L2 Network is (Gateway of an L2 Network, SDN-41), and a Node that advertises a LAN subnet in a VRF (a member of a Gateway group, SDN-19). Say which one.
+- "Hub" in the SDN language is the slim fork's Virtual Hub, which the Network replaced. The Node of a hub-and-spoke VRF is the Hub node (SDN-19).
 - "Device" is a stock WireGuard client or router behind a gateway Node (spec #374). A Node that a User owns also counts against the maximum devices of that User, but it is not a Device.
