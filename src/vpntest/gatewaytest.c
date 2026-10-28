@@ -25,7 +25,9 @@
 // hubspoke: VRF branch of topology hub-and-spoke with the hub node-h and the spokes node-a and node-b, and the LAN
 // 192.168.9.0/24 behind node-b. The spokes have no session to each other. A packet of one spoke to the other, or to the LAN
 // behind it, passes the hub, which counts it, and arrives as it was sent, and so do the replies; the hub reaches each spoke
-// directly. A hub whose state names no hub drops what one spoke sends the other.
+// directly. A Mirror of the VRF at the hub copies each packet that it sends on to a sensor of the test, a UDP socket on
+// 127.0.0.1, as an inspection appliance at the hub sees the traffic between two sites (ADR-0029 decision 8). A hub whose
+// state names no hub drops what one spoke sends the other, and its Mirror copies nothing of it.
 // Print "HUBSPOKE TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -50,6 +52,9 @@
 
 #include "Core/Control.h"
 #include "Core/Transport.h"
+#include "Core/Vxlan.h"
+
+#include <WS2tcpip.h>
 
 #include <stdio.h>
 
@@ -1103,20 +1108,104 @@ void gateway_test(UINT num, char **arg)
 #define	HUBSPOKE_POOL			"10.20.0.0"
 #define	HUBSPOKE_LAN			"192.168.9.0"
 #define	HUBSPOKE_LAN_HOST		"192.168.9.5"
+#define	HUBSPOKE_COPY			(VXLAN_HEADER_SIZE + NODE_MIRROR_ETHER + GATEWAYTEST_PACKET)	// The datagram of the copy of a test packet
+#define	HUBSPOKE_DRAIN			100			// The datagrams that the sensor reads at most before a packet is sent
 
 static char *hubspoke_names[HUBSPOKE_NUM_NODES] = {"node-h", "node-a", "node-b"};
 static char *hubspoke_addresses[HUBSPOKE_NUM_NODES] = {"10.20.0.1", "10.20.0.2", "10.20.0.3"};
 
+// The sensor of the Mirror of node-h: a UDP socket on 127.0.0.1 and a port that the system picks, and the datagram that it
+// read last
+typedef struct HUBSPOKE_SENSOR
+{
+	SOCKET Socket;
+	USHORT Port;
+	UCHAR Datagram[VXLAN_MAX_DATAGRAM + 1];
+} HUBSPOKE_SENSOR;
+
+// Open the sensor t: false when its socket could not be bound
+static bool HubSpokeOpenSensor(HUBSPOKE_SENSOR *t)
+{
+	struct sockaddr_in sa;
+	int sa_size = sizeof(sa);
+
+	t->Socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (t->Socket == INVALID_SOCKET)
+	{
+		return false;
+	}
+
+	Zero(&sa, sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	if (bind(t->Socket, (struct sockaddr *)&sa, sizeof(sa)) != 0 || getsockname(t->Socket, (struct sockaddr *)&sa, &sa_size) != 0)
+	{
+		return false;
+	}
+
+	t->Port = ntohs(sa.sin_port);
+
+	return true;
+}
+
+// The next datagram that the sensor t reads within timeout ms, into its Datagram: its size, 0 for none
+static UINT HubSpokeRead(HUBSPOKE_SENSOR *t, UINT timeout)
+{
+	WSAPOLLFD p;
+
+	Zero(&p, sizeof(p));
+	p.fd = t->Socket;
+	p.events = POLLRDNORM;
+	if (t->Socket == INVALID_SOCKET || WSAPoll(&p, 1, (INT)timeout) != 1)
+	{
+		return 0;
+	}
+
+	int n = recv(t->Socket, (char *)t->Datagram, (int)sizeof(t->Datagram), 0);
+
+	return (n > 0 ? (UINT)n : 0);
+}
+
+// Read what the sensor t holds now: the copies of the packets that the host of node-h sent or took before
+static void HubSpokeDrain(HUBSPOKE_SENSOR *t)
+{
+	UINT n = 0;
+
+	while (n < HUBSPOKE_DRAIN && HubSpokeRead(t, 0) != 0)
+	{
+		n++;
+	}
+}
+
+// Whether the datagram of size bytes that the sensor t read last is the copy of the test packet packet on the VNI of the VRF
+// id of branch: the VXLAN header with the I flag, an Ethernet header, then the packet as it was sent
+static bool HubSpokeCopyOf(HUBSPOKE_SENSOR *t, UINT size, const UCHAR *packet)
+{
+	const UCHAR *d = t->Datagram;
+	UINT vni = ((UINT)d[4] << 16) | ((UINT)d[5] << 8) | (UINT)d[6];
+
+	return (size == HUBSPOKE_COPY && d[0] == 0x08 && vni == HUBSPOKE_VRF_ID &&
+		Cmp(d + VXLAN_HEADER_SIZE + NODE_MIRROR_ETHER, packet, GATEWAYTEST_PACKET) == 0);
+}
+
 // The state of node i at generation gen, as the controller compiles it for VRF branch of topology hub-and-spoke with the hub
 // node-h; with hub not set, the state of node-h names no hub. node-h has both spokes as its peers, node-b with its LAN as its
 // route; each spoke has node-h as its only peer, with the pool of the VRF and the LAN subnets of the other nodes as routes of
-// node-h. node-b has its LAN as a LAN subnet of its own.
-static CONTROL_STATE *HubSpokeState(GATEWAYTEST_NODE *nodes, UINT i, UINT64 gen, bool hub)
+// node-h. node-b has its LAN as a LAN subnet of its own. node-h has a Mirror of every packet of the VRF to the sensor on
+// 127.0.0.1 and the port sensor, on the VNI of the VRF id.
+static CONTROL_STATE *HubSpokeState(GATEWAYTEST_NODE *nodes, UINT i, UINT64 gen, bool hub, USHORT sensor)
 {
 	CONTROL_STATE *st = GatewayTestState(&nodes[i], gen, HUBSPOKE_VRF_ID, HUBSPOKE_VRF, (i != HUBSPOKE_H || hub) ? "node-h" : NULL, false, HUBSPOKE_NUM_NODES);
 
 	if (i == HUBSPOKE_H)
 	{
+		CONTROL_MIRROR *m = &st->Mirrors[st->NumMirrors++];
+
+		StrCpy(m->Name, sizeof(m->Name), "inspect");
+		m->VrfId = HUBSPOKE_VRF_ID;
+		m->SensorSize = (GatewayTestAddress(m->Sensor, "127.0.0.1") ? 4 : 0);
+		m->SensorPort = sensor;
+
 		GatewayTestPeer(st, &nodes[HUBSPOKE_A], HUBSPOKE_VRF_ID, HUBSPOKE_VRF);
 		CONTROL_PEER *b = GatewayTestPeer(st, &nodes[HUBSPOKE_B], HUBSPOKE_VRF_ID, HUBSPOKE_VRF);
 		GatewayTestRoute(st, b, HUBSPOKE_VRF_ID, HUBSPOKE_LAN, 24);
@@ -1137,8 +1226,9 @@ static CONTROL_STATE *HubSpokeState(GATEWAYTEST_NODE *nodes, UINT i, UINT64 gen,
 	return st;
 }
 
-// Apply the states of a Generation to the three nodes, and wait until each runs it with its sessions
-static bool HubSpokeApply(GATEWAYTEST_NODE *nodes, UINT64 gen, bool hub)
+// Apply the states of a Generation to the three nodes, with the Mirror of node-h to the sensor on the port sensor, and wait
+// until each runs it with its sessions
+static bool HubSpokeApply(GATEWAYTEST_NODE *nodes, UINT64 gen, bool hub, USHORT sensor)
 {
 	// node-h has a session to each spoke, a spoke to node-h alone
 	UINT want[HUBSPOKE_NUM_NODES] = {2, 1, 1};
@@ -1146,7 +1236,7 @@ static bool HubSpokeApply(GATEWAYTEST_NODE *nodes, UINT64 gen, bool hub)
 
 	for (UINT i = 0;i < HUBSPOKE_NUM_NODES;i++)
 	{
-		CONTROL_STATE *st = HubSpokeState(nodes, i, gen, hub);
+		CONTROL_STATE *st = HubSpokeState(nodes, i, gen, hub, sensor);
 
 		applied = NodeOverlayApply(nodes[i].Node, st) && applied;
 		GatewayTestFreeState(st);
@@ -1165,15 +1255,17 @@ static UINT64 HubSpokeTransit(GATEWAYTEST_NODE *nodes)
 	return st.Transit;
 }
 
-// One packet of the host of from, from src to dst: it reaches the host of to as it was sent, and the hub sent it on when
-// via_hub is set; with to GATEWAYTEST_NONE, no host takes it and the hub drops it
-static void HubSpokeSend(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, UINT from, char *src, char *dst, UINT to, bool via_hub)
+// One packet of the host of from, from src to dst: it reaches the host of to as it was sent, and when via_hub is set the hub
+// sent it on and its Mirror copied it to the sensor as it was sent; with to GATEWAYTEST_NONE, no host takes it, the hub drops
+// it and its Mirror copies nothing
+static void HubSpokeSend(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, HUBSPOKE_SENSOR *sensor, UINT from, char *src, char *dst, UINT to, bool via_hub)
 {
 	GATEWAYTEST_TAKEN p;
 	UCHAR want[GATEWAYTEST_PACKET];
 	NODE_OVERLAY_STATUS hub;
 	char what[MAX_SIZE];
 
+	HubSpokeDrain(sensor);
 	NodeOverlayGetStatus(nodes[HUBSPOKE_H].Node, &hub);
 	UINT64 transit_before = HubSpokeTransit(nodes);
 	UINT64 dropped_before = hub.Dropped;
@@ -1186,9 +1278,12 @@ static void HubSpokeSend(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, UINT fro
 
 	if (to == GATEWAYTEST_NONE)
 	{
-		Format(what, sizeof(what), "%s sends %s > %s; node-h, which is no hub in its state, drops it", nodes[from].Name, src, dst);
-		GatewayTestCheck(ctx, marker != 0 && got == GATEWAYTEST_NONE && transit == 0 && hub.Dropped > dropped_before, what,
-			"taken by %s, %I64u sent on, %I64u dropped", GatewayTestName(nodes, HUBSPOKE_NUM_NODES, got), transit, hub.Dropped - dropped_before);
+		UINT copy = HubSpokeRead(sensor, GATEWAYTEST_POLL);
+
+		Format(what, sizeof(what), "%s sends %s > %s; node-h, which is no hub in its state, drops it, and its Mirror copies nothing", nodes[from].Name, src, dst);
+		GatewayTestCheck(ctx, marker != 0 && got == GATEWAYTEST_NONE && transit == 0 && hub.Dropped > dropped_before && copy == 0, what,
+			"taken by %s, %I64u sent on, %I64u dropped, the sensor read %u bytes", GatewayTestName(nodes, HUBSPOKE_NUM_NODES, got), transit,
+			hub.Dropped - dropped_before, copy);
 		return;
 	}
 
@@ -1197,12 +1292,24 @@ static void HubSpokeSend(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, UINT fro
 	GatewayTestCheck(ctx, marker != 0 && got == to && p.Size == GATEWAYTEST_PACKET && Cmp(p.Data, want, GATEWAYTEST_PACKET) == 0 &&
 		p.VrfId == HUBSPOKE_VRF_ID && transit == (via_hub ? 1 : 0), what,
 		"taken by %s, %I64u sent on by the hub", GatewayTestName(nodes, HUBSPOKE_NUM_NODES, got), transit);
+
+	// What the hub sends on from one spoke to another, its Mirror copies (ADR-0029 decision 8)
+	if (via_hub)
+	{
+		UINT copy = HubSpokeRead(sensor, GATEWAYTEST_BOUND);
+
+		Format(what, sizeof(what), "%s sends %s > %s; the Mirror of %s at node-h copies it to its sensor as it was sent, on VNI %u", nodes[from].Name, src, dst,
+			HUBSPOKE_VRF, HUBSPOKE_VRF_ID);
+		GatewayTestCheck(ctx, marker != 0 && HubSpokeCopyOf(sensor, copy, want), what, "the sensor read %u bytes", copy);
+	}
 }
 
-static void HubSpokeOverlay(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, TRANSPORT *loopback)
+static void HubSpokeOverlay(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, TRANSPORT *loopback, HUBSPOKE_SENSOR *sensor)
 {
+	NODE_MIRROR_STATUS ms;
+
 	if (GatewayTestStart(ctx, nodes, HUBSPOKE_NUM_NODES, loopback) == false ||
-		GatewayTestCheck(ctx, HubSpokeApply(nodes, 1, true),
+		GatewayTestCheck(ctx, HubSpokeApply(nodes, 1, true, sensor->Port),
 		"The three nodes of branch apply their states: node-h has a session to each spoke, and the spokes none to each other",
 		"the states or the sessions did not come up") == false)
 	{
@@ -1210,49 +1317,60 @@ static void HubSpokeOverlay(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, TRANS
 	}
 
 	// One spoke reaches the other, and the LAN behind it, through the hub, and the replies come back through it
-	HubSpokeSend(ctx, nodes, HUBSPOKE_A, "10.20.0.2", "10.20.0.3", HUBSPOKE_B, true);
-	HubSpokeSend(ctx, nodes, HUBSPOKE_B, "10.20.0.3", "10.20.0.2", HUBSPOKE_A, true);
-	HubSpokeSend(ctx, nodes, HUBSPOKE_A, "10.20.0.2", HUBSPOKE_LAN_HOST, HUBSPOKE_B, true);
-	HubSpokeSend(ctx, nodes, HUBSPOKE_B, HUBSPOKE_LAN_HOST, "10.20.0.2", HUBSPOKE_A, true);
+	HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_A, "10.20.0.2", "10.20.0.3", HUBSPOKE_B, true);
+	HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_B, "10.20.0.3", "10.20.0.2", HUBSPOKE_A, true);
+	HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_A, "10.20.0.2", HUBSPOKE_LAN_HOST, HUBSPOKE_B, true);
+	HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_B, HUBSPOKE_LAN_HOST, "10.20.0.2", HUBSPOKE_A, true);
 	// The hub reaches each spoke, and each spoke the hub, directly
-	HubSpokeSend(ctx, nodes, HUBSPOKE_A, "10.20.0.2", "10.20.0.1", HUBSPOKE_H, false);
-	HubSpokeSend(ctx, nodes, HUBSPOKE_H, "10.20.0.1", "10.20.0.3", HUBSPOKE_B, false);
+	HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_A, "10.20.0.2", "10.20.0.1", HUBSPOKE_H, false);
+	HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_H, "10.20.0.1", "10.20.0.3", HUBSPOKE_B, false);
 
 	// A node whose state names no hub sends nothing on from one spoke to another
-	if (GatewayTestCheck(ctx, HubSpokeApply(nodes, 2, false), "Generation 2: the state of node-h names no hub", "not applied"))
+	if (GatewayTestCheck(ctx, HubSpokeApply(nodes, 2, false, sensor->Port), "Generation 2: the state of node-h names no hub", "not applied"))
 	{
-		HubSpokeSend(ctx, nodes, HUBSPOKE_A, "10.20.0.2", "10.20.0.3", GATEWAYTEST_NONE, false);
+		HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_A, "10.20.0.2", "10.20.0.3", GATEWAYTEST_NONE, false);
 	}
 
-	Print("  node-h sent on %I64u packets from one spoke to another\n", HubSpokeTransit(nodes));
+	NodeMirrorGetStatus(nodes[HUBSPOKE_H].Node, &ms);
+	Print("  node-h sent on %I64u packets from one spoke to another, and its Mirror sent %I64u copies\n", HubSpokeTransit(nodes), ms.Copied);
 }
 
 // hubspoke: the hub of a VRF of topology hub-and-spoke in the data plane
-RANZ_TEST("hubspoke", hubspoke_test, "Hub-and-spoke: the spokes of a VRF have no session to each other, a packet of one spoke to another or to the LAN behind it passes the hub, which sends it on as it came, and the replies too; a node that is no hub sends nothing on.");
+RANZ_TEST("hubspoke", hubspoke_test, "Hub-and-spoke: the spokes of a VRF have no session to each other, a packet of one spoke to another or to the LAN behind it passes the hub, which sends it on as it came and copies it to the sensor of its Mirror, and the replies too; a node that is no hub sends nothing on.");
 void hubspoke_test(UINT num, char **arg)
 {
 	GATEWAYTEST_CTX ctx;
 	GATEWAYTEST_WATCH watch;
 	GATEWAYTEST_NODE *nodes = ZeroMalloc(sizeof(GATEWAYTEST_NODE) * HUBSPOKE_NUM_NODES);
+	HUBSPOKE_SENSOR *sensor = ZeroMalloc(sizeof(HUBSPOKE_SENSOR));
 	TRANSPORT *loopback = TransportLoopbackNew("loopback", 0, true);
 	HANDLE watchdog;
 
 	Zero(&ctx, sizeof(ctx));
+	sensor->Socket = INVALID_SOCKET;
 	watch.Done = CreateEventW(NULL, TRUE, FALSE, NULL);
 	watch.Name = "HUBSPOKE";
 	watchdog = (watch.Done != NULL ? CreateThread(NULL, 0, GatewayTestWatchdog, &watch, 0, NULL) : NULL);
 
 	Print("HUBSPOKE test: the hub of a VRF of topology hub-and-spoke in the node's data plane, over the overlay of in-process nodes\n");
 
-	if (GatewayTestCheck(&ctx, GatewayTestKeys(nodes, HUBSPOKE_NUM_NODES, hubspoke_names, hubspoke_addresses, 151), "The static keys of the three nodes",
-		"PeerKeyFromScalar failed"))
+	bool keys = GatewayTestCheck(&ctx, GatewayTestKeys(nodes, HUBSPOKE_NUM_NODES, hubspoke_names, hubspoke_addresses, 151), "The static keys of the three nodes",
+		"PeerKeyFromScalar failed");
+	bool open = HubSpokeOpenSensor(sensor);
+	open = GatewayTestCheck(&ctx, open, "The sensor of the Mirror of node-h: a UDP socket on 127.0.0.1", "error %u", (UINT)WSAGetLastError());
+	if (keys && open)
 	{
-		HubSpokeOverlay(&ctx, nodes, loopback);
+		HubSpokeOverlay(&ctx, nodes, loopback, sensor);
 	}
 
 	GatewayTestFree(nodes, HUBSPOKE_NUM_NODES);
 	TransportLoopbackFree(loopback);
 	Free(nodes);
+	if (sensor->Socket != INVALID_SOCKET)
+	{
+		closesocket(sensor->Socket);
+	}
+	Free(sensor);
 
 	if (watchdog != NULL)
 	{
