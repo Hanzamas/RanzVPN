@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
@@ -98,6 +99,11 @@ func TestParseStart(t *testing.T) {
 	m.ListenPort = -1
 	if cfg, err := parseStart(m); err != nil || cfg.listenPort != -1 {
 		t.Errorf("listen_port -1: %+v, %v", cfg, err)
+	}
+	// A node of the peering of the standard mode that is alone in its VRFs starts with no peers
+	alone := Message{Type: TypeStart, ASN: 65001, RouterID: "192.0.2.1", Address: "192.0.2.10"}
+	if cfg, err := parseStart(alone); err != nil || len(cfg.peers) != 0 || cfg.address != netip.MustParseAddr("192.0.2.10") {
+		t.Errorf("a start with an address and no peers: %+v, %v", cfg, err)
 	}
 
 	bad := []struct {

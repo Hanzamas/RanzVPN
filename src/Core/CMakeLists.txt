@@ -190,6 +190,9 @@ add_library(corecontrol STATIC
   ControlEvent.c
   # The Relays of a desired state and the Signals of the peers on the control stream (CORE-S5-5, #411)
   ControlSignal.c
+  # The BGP peering of a desired state and the report of the node, and the copy of a state that its peering keeps (SDN-77, #357)
+  ControlPeering.c
+  ControlCopy.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

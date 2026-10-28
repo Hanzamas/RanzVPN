@@ -237,6 +237,9 @@ type Controller struct {
 	// The live operations of operators: the banned users and the Operations that wait for a node
 	// (operations.go, bans.go; SDN-50)
 	live liveState
+
+	// The BGP peering of the standard mode that the nodes reported (peeringreport.go; SDN-77)
+	peering peeringState
 }
 
 // node is the desired state of one node and what the node acknowledged of it.

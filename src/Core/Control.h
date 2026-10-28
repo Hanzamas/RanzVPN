@@ -216,6 +216,51 @@ typedef struct CONTROL_VTEP {
 	UINT GenevePort;   // The UDP port of Geneve, 0 for the default (GENEVE_PORT)
 } CONTROL_VTEP;
 
+// The BGP peering of the standard mode (SDN-77, #357): the sizes of control.options
+#define CONTROL_MAX_ANNOUNCE       16   // The LAN subnets that a node announces (NodePeering.announce)
+#define CONTROL_MAX_ACCEPT         32   // What a peer may announce: its addresses and its LAN subnets (PeerPeering.accept)
+#define CONTROL_MAX_PEERING_PEERS  64   // The peers of the sidecar of a node that one report holds (PeeringReport.peers)
+#define CONTROL_MAX_LEARNED        32   // The prefixes learned from one peer that a report holds (PeeringPeer.learned)
+#define CONTROL_PEERING_STATE_SIZE 16   // The state of a session with its NUL (PeeringPeer.state)
+#define CONTROL_PEERING_REPORT     1000 // ms between two reports of the peering of a node at least
+
+// The BGP peering of a node (NodePeering of the control protocol; SDN-77, #357): the settings of its sidecar ranz bgp, which
+// listens on TCP 179 of Address and connects from it, and the LAN subnets that the node announces besides its addresses in
+// the VRFs that peer by BGP (CONTROL_VRF.Peering)
+typedef struct CONTROL_PEERING {
+	UINT Asn;                                     // The AS of the overlay, one for every node: the sessions are internal BGP
+	UCHAR RouterId[4];                            // Its BGP identifier
+	UCHAR Address[16];                            // Its address on the network that the operator trusts: 4 bytes for IPv4, 16 for IPv6
+	UINT AddressSize;                             // ... their number
+	UINT NumAnnounce;                             // The LAN subnets that it announces
+	CONTROL_ROUTE Announce[CONTROL_MAX_ANNOUNCE]; // ... ordered by VRF id, then prefix
+} CONTROL_PEERING;
+
+// The BGP peering with a peer (PeerPeering of the control protocol; SDN-77, #357) in the VRFs that the two share and that peer
+// by BGP: the address of the sidecar of the peer, the only address that the sidecar of the node takes a session from, and what
+// the peer may announce there, with their more specific ones
+typedef struct CONTROL_PEER_PEERING {
+	UCHAR Address[16];                        // The address of the sidecar of the peer: 4 bytes for IPv4, 16 for IPv6
+	UINT AddressSize;                         // ... their number
+	UINT HoldTime;                            // The BGP hold time of the session in seconds, 0 for 90
+	UINT NumVrfs;                             // The VRFs of the session
+	UINT VrfIds[CONTROL_MAX_VRFS];            // ... ascending
+	UINT NumAccept;                           // What the peer may announce in them: its addresses and its LAN subnets
+	CONTROL_ROUTE Accept[CONTROL_MAX_ACCEPT]; // ... ordered by VRF id, then prefix
+} CONTROL_PEER_PEERING;
+
+// One peer of the sidecar of a node, as the node reports it (PeeringPeer of the control protocol; SDN-77, #357)
+typedef struct CONTROL_PEERING_PEER {
+	UCHAR Address[16];                          // The address of the sidecar of the peer: 4 bytes for IPv4, 16 for IPv6
+	UINT AddressSize;                           // ... their number
+	char State[CONTROL_PEERING_STATE_SIZE];     // The state of the session: idle, connect, active, opensent, openconfirm or established
+	UINT NumLearned;                            // The prefixes that the node learned from it
+	CONTROL_ROUTE Learned[CONTROL_MAX_LEARNED]; // ... each with its VRF, ordered by VRF id, then prefix
+} CONTROL_PEERING_PEER;
+
+// The report of the BGP peering of a node that a client sends to the controller (CONTROL_CONFIG.Peering), ControlPeering.c
+typedef struct CONTROL_PEERING_REPORT CONTROL_PEERING_REPORT;
+
 // A peer of the node: another node that shares a VRF with it (Peer of the control protocol)
 typedef struct CONTROL_PEER {
 	char Name[CONTROL_NAME_SIZE];                     // Its node name
@@ -237,6 +282,10 @@ typedef struct CONTROL_PEER {
 	// Its tunnel endpoint (SDN-76, #356): the only address that the node takes the datagrams of a link of kind vxlan or
 	// geneve of a shared VRF from
 	CONTROL_VTEP Vtep;
+
+	// The BGP peering with it (SDN-77, #357), NULL while no VRF that it shares with the node peers by BGP. Valid as the
+	// state is.
+	CONTROL_PEER_PEERING *Peering;
 } CONTROL_PEER;
 
 // A name of the zone of a VRF and the addresses that it answers (DnsRecord of the control protocol; SDN-11, #187)
@@ -272,6 +321,7 @@ typedef struct CONTROL_VRF {
 	CONTROL_DNS_ZONE *Dns;        // Its zone of overlay DNS (SDN-11, #187), NULL while overlay DNS is off in it; valid as the state is
 	UINT Link;                    // The kind of the links between its nodes (CONTROL_LINK_*; SDN-76, #356) ...
 	UINT Vni;                     // ... and the VNI of a link of kind vxlan or geneve
+	bool Peering;                 // Its nodes exchange their routes by BGP (SDN-77, #357)
 } CONTROL_VRF;
 
 // A reservation of the pool of a DHCP responder: an IPv4 prefix (Prefix of Dhcp.reserved)
@@ -445,7 +495,16 @@ typedef struct CONTROL_STATE {
 	// relay role shares a VRF with it.
 	UINT NumRelays;
 	CONTROL_RELAY Relays[CONTROL_MAX_RELAYS];
+
+	// Its BGP peering (SDN-77, #357), NULL while no VRF of the node peers by BGP. Valid as the state is.
+	CONTROL_PEERING *Peering;
 } CONTROL_STATE;
+
+// A copy of a state that holds its own memory, for an owner that applies the state again later (the BGP peering of the node,
+// SDN-77, #357), and its free, ControlCopy.c. Each field of CONTROL_STATE that points at memory of its own is copied there, so
+// a new such field is copied there too. NULL when there is no memory.
+CONTROL_STATE *ControlCopyState(const CONTROL_STATE *st);
+void ControlFreeStateCopy(CONTROL_STATE *st);
 
 // Takes each state that the client applied, before the client acknowledges its Generation. It runs
 // on the client's thread; state is valid until it returns.
@@ -523,6 +582,10 @@ typedef struct CONTROL_CONFIG {
 	// The Signals that the client sends to the controller for the peers of the node, NULL for none: the owner's, which must
 	// outlive the client
 	CONTROL_SIGNALS *Signals;
+
+	// The report of the BGP peering of the node that the client sends, NULL for none: the owner's, which must outlive the
+	// client (SDN-77, #357)
+	CONTROL_PEERING_REPORT *Peering;
 } CONTROL_CONFIG;
 
 // How a client stands (ControlGetStatus)
@@ -608,5 +671,18 @@ CONTROL_SIGNALS *ControlNewSignals();
 void ControlFreeSignals(CONTROL_SIGNALS *q);
 bool ControlSendSignal(CONTROL_SIGNALS *q, const char *peer, const UCHAR *envelope, UINT size);
 bool ControlWriteSignals(CONTROL_SIGNALS *q, TRANSPORT_STREAM *s);
+
+// The report of the BGP peering of a node (SDN-77, #357), ControlPeering.c. NewPeeringReport makes the report that a client
+// sends (CONTROL_CONFIG.Peering), FreePeeringReport frees it once no client uses it. SetPeeringReport puts the peers of the
+// sidecar of the node, CONTROL_MAX_PEERING_PEERS at most, and the sessions that it refused since the node started, in place
+// of the ones before, and the client sends them as the peering of one Telemetry message after each Hello and whenever they
+// changed, at most every CONTROL_PEERING_REPORT ms. GetPeeringReport copies the peers that it holds, at most max, into list,
+// and the refused sessions into refused: the number of the peers. WritePeeringReport writes that message when it is due, as
+// the client does on its stream.
+CONTROL_PEERING_REPORT *ControlNewPeeringReport();
+void ControlFreePeeringReport(CONTROL_PEERING_REPORT *r);
+void ControlSetPeeringReport(CONTROL_PEERING_REPORT *r, const CONTROL_PEERING_PEER *peers, UINT num, UINT64 refused);
+UINT ControlGetPeeringReport(CONTROL_PEERING_REPORT *r, CONTROL_PEERING_PEER *list, UINT max, UINT64 *refused);
+bool ControlWritePeeringReport(CONTROL_PEERING_REPORT *r, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H

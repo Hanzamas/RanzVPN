@@ -31,7 +31,8 @@
 // A start with an address runs the peering of the standard mode (SDN-77 #357, peering.go): the
 // peers are other Ranz nodes, which reach the node at that address on a network that the operator
 // trusts. The sidecar listens there only, connects from there, and is the next hop of what it
-// announces; listen_addresses and accept are not given. Each peer has hold_time (the BGP hold time
+// announces; listen_addresses and accept are not given, and peers may be empty while the node is
+// alone in its VRFs. Each peer has hold_time (the BGP hold time
 // in seconds, 90 when 0) and vrfs: the VRFs that the two nodes share (id) with the prefixes that the
 // peer may announce in each, with their more specific ones (accept). The routes are VPN routes
 // (RFC 4364) whose route distinguisher holds the VRF id, so a route of one VRF never reaches

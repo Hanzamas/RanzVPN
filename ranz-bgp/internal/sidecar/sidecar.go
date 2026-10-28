@@ -232,7 +232,8 @@ func parseStart(m Message) (config, error) {
 		}
 		cfg.listenAddresses = append(cfg.listenAddresses, addr.String())
 	}
-	if len(m.Peers) == 0 {
+	// A node of the peering of the standard mode may be alone in its VRFs for now: a peers message brings its peers
+	if len(m.Peers) == 0 && !cfg.address.IsValid() {
 		return cfg, errors.New("start: no peers")
 	}
 	seen := make(map[netip.Addr]bool)

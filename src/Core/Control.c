@@ -408,10 +408,13 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopySecurities(&st, c->Objects, c->NumObjects);
 	// The relays that the node may use, its home relay first (ControlSignal.c; CORE-S5-5, #411)
 	ControlCopyRelays(&st, c->Objects, c->NumObjects);
+	// The BGP peering of the node and of its peers (ControlPeering.c; SDN-77, #357)
+	ControlCopyPeerings(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);
 
+	ControlFreePeerings(&st);
 	ControlFreeSecurities(&st);
 	ControlFreeListener(&st);
 	ControlFreeZones(&st);
@@ -586,11 +589,15 @@ static void ControlRun(CONTROL_CLIENT *c) {
 	ControlLeasesResend(c->Config.Leases);
 	// ... and so do the counters of the WireGuard Devices of a gateway (ControlDevice.c; SDN-80, #375)
 	ControlDevicesResend(c->Config.Devices);
+	// ... and the BGP peering of the node (ControlPeering.c; SDN-77, #357)
+	ControlPeeringResend(c->Config.Peering);
 
 	while (ok && ControlHalted(c) == false) {
 		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
 		// The events of the node that wait for the controller (ControlEvent.c; AUD1-DT-11, #459)
 		ok = ok && ControlWriteEvents(c->Config.Events, s);
+		// The BGP peering of the node when it changed (ControlPeering.c; SDN-77, #357)
+		ok = ok && ControlWritePeeringReport(c->Config.Peering, s);
 		// ... and the Signals of the node for its peers, as they come (ControlSignal.c; CORE-S5-5, #411)
 		ok = ok && ControlWriteSignals(c->Config.Signals, s);
 		if (ok == false)

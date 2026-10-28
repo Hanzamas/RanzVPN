@@ -480,6 +480,10 @@ struct NODE {
 	// The peer agent of the overlay (NodeAgent.c; CORE-S5-5, #411): the datagram path to the peers that the node reaches on no
 	// stream session, NULL while the overlay does not run
 	struct NODE_AGENT *volatile Agent;
+
+	// The BGP peering of the standard mode (NodePeering.c; SDN-77, #357): the sidecar of the VRFs whose nodes exchange their
+	// routes by BGP, NULL while the overlay does not run
+	struct NODE_PEERING *Peering;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)

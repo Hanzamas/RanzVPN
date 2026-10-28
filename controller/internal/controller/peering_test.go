@@ -7,13 +7,19 @@
 package controller_test
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"net/netip"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
@@ -95,4 +101,66 @@ func TestPeeringIsTheSettingsOfTheSidecars(t *testing.T) {
 	h.waitNode("db", 2, true)
 	h.checkState(gw)
 	h.checkState(db)
+}
+
+// TestPeeringReportReachesTheAPI is the last criterion of SDN-77 at the controller: what gw-1 reports of the peering of
+// its sidecar, each peer with the state of its session and the prefixes learned from it and the sessions refused, is what
+// the API answers for gw-1, which ranz explain gw-1 prints, with the Node of each peer named by its tunnel endpoint and
+// the VRF of each prefix by its name. A peer that no Node has keeps its address alone, and a Node outside the peering
+// has none.
+func TestPeeringReportReachesTheAPI(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	h.setLicence(licence.Licence{ID: "ent-1", Licensee: "Test", Tier: licence.Enterprise, Nodes: 5, Expires: time.Now().Add(year)})
+	h.apply("peering.json")
+	plain := proto.Clone(capsServer).(*controlpb.Capabilities)
+	plain.PlainLinks = true
+	gw := h.newSim("gw-1", keyBranch1)
+	gw.Capabilities = plain
+	gw.start(h)
+	gw.update(t)
+	h.waitNode("gw-1", 1, true)
+
+	// Before a report: the peers that the intent names, and none of the sidecar
+	st, err := h.api.Peering(ctx, "gw-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Node != "gw-1" || st.ASN != intent.PeeringASN || !slices.Equal(st.Expected, []string{"db"}) || !st.Reported.IsZero() || len(st.Peers) != 0 || st.Refused != 0 {
+		t.Errorf("the peering of gw-1 before its report is %+v", st)
+	}
+
+	report := &controlpb.Telemetry{Peering: &controlpb.PeeringReport{Refused: 2, Peers: []*controlpb.PeeringPeer{
+		{Address: netip.MustParseAddr("10.1.0.2").AsSlice(), State: "established", Learned: []*controlpb.Route{hostRoute(30, "10.30.0.2/32"), hostRoute(30, "192.168.20.0/24")}},
+		{Address: netip.MustParseAddr("10.1.0.9").AsSlice(), State: "active"},
+	}}}
+	if err := gw.Telemetry(report); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(waitTimeout)
+	for st.Reported.IsZero() {
+		if time.Now().After(deadline) {
+			t.Fatalf("the API has no report of the peering of gw-1 within %v", waitTimeout)
+		}
+		time.Sleep(20 * time.Millisecond)
+		if st, err = h.api.Peering(ctx, "gw-1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []controller.PeeringPeer{
+		{Node: "db", Address: "10.1.0.2", State: "established", Learned: []controller.PeeringRoute{{VRF: "dc", Prefix: "10.30.0.2/32"}, {VRF: "dc", Prefix: "192.168.20.0/24"}}},
+		{Address: "10.1.0.9", State: "active", Learned: []controller.PeeringRoute{}},
+	}
+	if !reflect.DeepEqual(st.Peers, want) || st.Refused != 2 {
+		t.Errorf("the peering of gw-1 after its report is %+v, want the peers %+v and 2 sessions refused", st, want)
+	}
+
+	// A Node outside the peering, and one that the intent does not have
+	if st, err := h.api.Peering(ctx, "lab-1"); err != nil || st.ASN != 0 || len(st.Expected) != 0 || len(st.Peers) != 0 {
+		t.Errorf("the peering of lab-1 is %+v, %v, want none", st, err)
+	}
+	var refused *api.Error
+	if _, err := h.api.Peering(ctx, "nowhere"); !errors.As(err, &refused) || refused.Status != http.StatusNotFound {
+		t.Errorf("the peering of a Node that the intent does not have gave %v, want 404", err)
+	}
 }
