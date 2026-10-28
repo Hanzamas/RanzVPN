@@ -13,8 +13,9 @@
 // winsqlite3.dll of System32 reads and writes (ADR-0022, Configuration store)
 #define CS_FILE_NAME L"ranz_node.db"
 
-// The schema of a new store (PRAGMA user_version). A store of a newer schema is refused, never changed.
-#define CS_SCHEMA_VERSION 1
+// The schema of a new store (PRAGMA user_version). A store of a newer schema is refused, never changed; a store of an
+// older one gets the tables of the versions after its own when it is opened. Version 2 adds the policy of the networks.
+#define CS_SCHEMA_VERSION 2
 
 // The setting that records the import of a fork configuration: the name of the file imported
 #define CS_SETTING_IMPORTED "ImportedFrom"
@@ -44,6 +45,50 @@
 #define CS_ROLE_OWNER     0 // Everything
 #define CS_ROLE_HUB_ADMIN 1 // One network
 #define CS_ROLE_READ_ONLY 2 // Reads everything, changes nothing
+
+// The policy of the networks (schema 2; CORE-S4-3, #76): the groups, the VLAN of users and groups, the VLAN settings of
+// each network and the rules of the policy engine of the new core (Core/Policy.h), which CsPolicyDocument writes as the
+// engine's document of rules. A rule is one of that document: the default action of every network is deny (ADR-0019
+// amendment of 2026-10-21), so what a network lets through is what its allow rules let through.
+#define CS_MAX_RULE_NAME   63      // Bytes of the name of a rule at most, as of a name of the policy engine
+#define CS_MAX_VALUES      16      // Values of the lists of a rule (CS_RULE) at most
+#define CS_MAX_VALUE_LEN   63      // Bytes of a value at most: a name, an address with its prefix length, a port range, a VLAN
+#define CS_POLICY_NAME_LEN 48      // Bytes of a network name that the document of the policy engine keeps at most (CsPolicyNetworkName)
+#define CS_MAX_PRIORITY    1000000 // The lowest priority of a rule
+#define CS_TPID_8021Q      0x8100  // The TPID of a network that sets none
+#define CS_UNTAGGED_VLAN   1       // The untagged VLAN of a network that sets none
+
+// The action of a rule
+#define CS_ALLOW 0
+#define CS_DENY  1
+
+// The protocol of a rule besides the IP protocol numbers 0 to 255, as the policy engine names them
+#define CS_PROTO_TCP  6   // TCP
+#define CS_PROTO_UDP  17  // UDP
+#define CS_PROTO_ANY  256 // Any frame
+#define CS_PROTO_IP   257 // Any IP packet
+#define CS_PROTO_ICMP 258 // ICMP of the family of the packet: ICMP for IPv4, ICMPv6 for IPv6
+
+// The lists of a rule (CS_RULE_VALUE): the keys of a rule of the policy engine's document, and the lists of its two ends
+#define CS_KEY_FROM_USERS     0 // The users of the end that sends the first frame of a flow
+#define CS_KEY_FROM_GROUPS    1 // ... its groups
+#define CS_KEY_FROM_TAGS      2 // ... the tags of its node
+#define CS_KEY_FROM_ADDRESSES 3 // ... its addresses: an IPv4 or IPv6 address, with /length for a prefix
+#define CS_KEY_TO_USERS       4 // The users of the end that the first frame goes to
+#define CS_KEY_TO_GROUPS      5 // ... its groups
+#define CS_KEY_TO_TAGS        6 // ... the tags of its node
+#define CS_KEY_TO_ADDRESSES   7 // ... its addresses
+#define CS_KEY_PORTS          8 // The destination ports, of a rule of TCP or UDP: a port or "low-high"
+#define CS_KEY_VLANS          9 // The VLANs of the frames, 1 to 4094
+#define CS_NUM_KEYS           10
+
+// Whose VLAN a VLAN row is (CsSetVlan)
+#define CS_VLAN_USER  0 // A user's own: it wins over the VLAN of the user's group, as the fork's policy of a user does
+#define CS_VLAN_GROUP 1 // A group's: the VLAN of the users of the group that have none of their own
+
+// The port of a member of an L2 network (CsGetPort), as the switch of the new core has ports (Core/Switch.h)
+#define CS_PORT_ACCESS 0 // An access port: one VLAN, untagged towards the member
+#define CS_PORT_TRUNK  1 // A trunk port of every VLAN, with the untagged VLAN of the network as its native VLAN
 
 // What CsPinUserKey found (trust on first use, ADR-0022 Enrollment)
 #define CS_KEY_PINNED   0 // The user had no key: this one is pinned now
@@ -91,6 +136,41 @@ struct CS_ADMIN {
 	bool HasPassword;                  // Whether a password hash is set
 };
 
+// A group of a network: the identity that the rules of the policy engine name for the users of the group
+struct CS_GROUP {
+	char Network[MAX_HUBNAME_LEN + 1]; // The network of the group
+	char Name[MAX_USERNAME_LEN + 1];   // The name, unique in the network without case
+	wchar_t RealName[MAX_SIZE];        // The real name
+	wchar_t Note[MAX_SIZE];            // The note
+};
+
+// One value of a list of a rule
+struct CS_RULE_VALUE {
+	UINT Key;                         // The list: CS_KEY_*
+	char Value[CS_MAX_VALUE_LEN + 1]; // The value, as the document of the policy engine writes it
+};
+
+// A rule of the policy of a network: a rule of the policy engine's document (Core/PolicyRules.c), which names its network
+struct CS_RULE {
+	char Network[MAX_HUBNAME_LEN + 1];   // The network whose table takes the rule
+	char Name[CS_MAX_RULE_NAME + 1];     // The name, unique in the store as in a document: letters, digits, '.', '-' and '_'
+	UINT Priority;                       // 0 to CS_MAX_PRIORITY, the lowest first; rules of one priority in the order they were added
+	UINT Action;                         // CS_ALLOW or CS_DENY
+	UINT Protocol;                       // An IP protocol number, or CS_PROTO_*
+	bool Both;                           // Direction both: the rule also matches from its to end to its from end
+	bool Active;                         // In the document of the policy engine; an inactive rule is kept for the operator
+	wchar_t Note[MAX_SIZE];              // Where the rule comes from, and what it leaves out
+	UINT NumValues;                      // The values of its lists
+	CS_RULE_VALUE Values[CS_MAX_VALUES]; // ...
+};
+
+// The port of a member of an L2 network on the switch of the new core (CsGetPort)
+struct CS_PORT {
+	UINT Mode; // CS_PORT_ACCESS or CS_PORT_TRUNK
+	UINT Vlan; // The VLAN of an access port; the native VLAN of a trunk port, which is the untagged VLAN of the network
+	UINT Tpid; // The TPID of the network's tags
+};
+
 // What CsImportForkConfig carried from the fork's ranz_server.config into the store, and what it left out
 struct CS_IMPORT {
 	UINT NumNetworks;         // Hubs, as L2 networks
@@ -98,9 +178,16 @@ struct CS_IMPORT {
 	UINT NumListeners;        // TCP listeners, as TLS listeners
 	UINT NumCerts;            // The server certificate, its chain, the CAs of the hubs and the user certificates
 	UINT NumAdmins;           // The server administrator (owner) and the hub administrators (hub-admin)
-	UINT NumSkipped;          // Hubs, users, listeners and certificates that were not valid, or not unique
+	UINT NumSkipped;          // Hubs, users, groups, VLANs, listeners and certificates that were not valid, or not unique
 	UINT NumPasswordsDropped; // SHA-0 password hashes left out (ADR-0022 2026-10-19): those users and admins need a new password
 	bool ServerKeyDropped;    // The server key was left out: it belongs in a CNG KSP, not in the store
+	UINT NumGroups;           // Groups of the hubs
+	UINT NumVlans;            // VLANs of users and groups (the VLanId of their policy)
+	UINT NumEntries;          // Entries of the access lists, carried as rules of the policy (an entry may make several rules)
+	UINT NumEntriesInactive;  // ... carried inactive: inactive in the fork, matching nothing there, or allow entries with a match the engine lacks
+	UINT NumEntriesWidened;   // ... deny entries carried without a match that the engine lacks: they deny more than the fork did, never less
+	UINT NumEffectsDropped;   // Delays, jitter, losses and redirect URLs of entries left out
+	UINT NumOptionsDropped;   // Hub options left out: NoManageVlanId and ApplyIPv4AccessListOnArpPacket where they were set
 };
 
 // ConfigStore.c
@@ -128,6 +215,15 @@ UINT CsSetAdminPassword(CONFIG_STORE *s, char *name, char *password);
 bool CsCheckAdminPassword(CONFIG_STORE *s, char *name, char *password, CS_ADMIN *a);
 BUF *CsDump(CONFIG_STORE *s);
 bool CsPbkdf2(void *dst, UINT dst_size, char *password, void *salt, UINT salt_size, UINT iterations);
+UINT CsAddGroup(CONFIG_STORE *s, CS_GROUP *g);
+bool CsGetGroup(CONFIG_STORE *s, char *network, char *name, CS_GROUP *g);
+UINT CsSetVlan(CONFIG_STORE *s, char *network, UINT kind, char *name, UINT vlan);
+UINT CsSetNetworkVlans(CONFIG_STORE *s, char *network, UINT tpid, UINT untagged);
+bool CsGetPort(CONFIG_STORE *s, char *network, char *user, CS_PORT *p);
+UINT CsAddRule(CONFIG_STORE *s, CS_RULE *r);
+bool CsAddRuleValue(CS_RULE *r, UINT key, char *value);
+bool CsPolicyNetworkName(CONFIG_STORE *s, char *network, char *name, UINT size);
+char *CsPolicyDocument(CONFIG_STORE *s);
 
 // ConfigStoreImport.c
 UINT CsImportForkConfig(CONFIG_STORE *s, wchar_t *path, CS_IMPORT *ret);

@@ -72,6 +72,8 @@ src/Core  PolicyParseRules  fuzz_policy
 src/Core  PolicyNewDoc      fuzz_policy  via PolicyParseRules
 src/Core  PolicySetRules    fuzz_policy
 src/Core  PolicyInput       fuzz_policy
+# The compiled rule tables of a document as text (CORE-S4-3 #76): no parser word in its name, and it parses the document
+src/Core  PolicyTableText   fuzz_policy
 
 # The front door (SDN-29 #205): the first bytes that any peer sends to TCP 443, and the handoff message that an owner
 # process reads from its pipe. FrontDoorRoute has no parser word in its name and reads the same bytes.
