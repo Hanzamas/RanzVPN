@@ -131,8 +131,6 @@ UINT NodeFrameWrite(UCHAR *room, UINT group, UINT64 tags) {
 // group gives the claim, the last one when there are several; an option that the node does not know and whose critical
 // bit is clear is skipped.
 bool NodeFrameParse(const UCHAR *record, UINT size, NODE_SOURCE_CLAIM *claim, UINT *header) {
-	NODE_SOURCE_CLAIM c;
-
 	if (claim == NULL || header == NULL)
 		return false;
 
@@ -153,7 +151,7 @@ bool NodeFrameParse(const UCHAR *record, UINT size, NODE_SOURCE_CLAIM *claim, UI
 	// The options fill whole words, so the header of one fits in what is left of them, and its data must fit after it. The
 	// claim goes into *claim once every option is read, so that a record that the node drops leaves none, as one whose
 	// option of the source group comes before an option that runs past the options
-	Copy(&c, claim, sizeof(NODE_SOURCE_CLAIM));
+	NODE_SOURCE_CLAIM c = *claim;
 	for (UINT pos = NODE_FRAME_HEADER; pos < end;) {
 		UINT type = record[pos];
 		UINT len = (UINT)record[pos + 1] * 4;
@@ -173,7 +171,7 @@ bool NodeFrameParse(const UCHAR *record, UINT size, NODE_SOURCE_CLAIM *claim, UI
 		pos += 4 + len;
 	}
 
-	Copy(claim, &c, sizeof(NODE_SOURCE_CLAIM));
+	*claim = c;
 	*header = end;
 	return true;
 }
