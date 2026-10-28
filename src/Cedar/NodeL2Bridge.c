@@ -22,6 +22,11 @@
 //   its Hyper-V Extensible Virtual Switch protocol (vms_pp) to it, unbinds the host's own, and sets it promiscuous for
 //   the ports of the switch, the host's vNIC among them. A bridge there would take the frames of every port, and an XDP
 //   program there would redirect all of them, as the host's addresses are on its vNIC: a bridge attaches to that vNIC.
+// - An L2 bridge (NodeL2BridgeNew) joins the segment to an L2 Network: the bridge is the member of a port of the
+//   Network's switch (Core/Switch.h), which takes every group of each VLAN that it carries, as a port of a bridge to a
+//   LAN does, so the Network's broadcast and multicast frames, and its frames to an address that it has not learnt,
+//   reach the segment. The frames that the bridge takes from the segment enter the switch at that port, which learns the
+//   addresses of the segment there, so the Network's frames to them go to the bridge alone.
 
 // COBJMACROS: the INetCfg_* call macros of the SDK headers (the COM interfaces are C structs here), before any header
 #define COBJMACROS
@@ -32,7 +37,10 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
 
+#include "NodeInternal.h"
 #include "NodeL2.h"
+
+#include "Core/Switch.h"
 
 #include <devguid.h>
 #include <iphlpapi.h>
@@ -233,4 +241,139 @@ UINT NodeL2HyperVIndex(const char *name, char *error, UINT error_size) {
 		Format(error, error_size, "the host has no vNIC of the Hyper-V virtual switch %s (%s): a private switch, or an external one that the host does not share, gives it none; Add-VMNetworkAdapter -ManagementOS -SwitchName adds one", name, why);
 
 	return index;
+}
+
+// An L2 bridge: a bridge of the L2 adapter as the member of a port of the switch of an L2 Network (NodeL2BridgeNew)
+struct NODE_L2_BRIDGE {
+	NODE *Node;
+	// The switch, and the port of the bridge on it
+	SWITCH *Switch;
+	UINT Port;
+	// The L2 adapter in bridge mode, NULL once it goes, and the lock that keeps it from the deliveries of the switch
+	SRWLOCK Lock;
+	NODE_L2 *Adapter;
+};
+
+// A frame that the bridge took from the segment (NODE_L2_PROC), on the I/O thread of its adapter queue: into the switch at
+// the port of the bridge, which learns its source there
+static void NodeL2BridgeFromSegment(NODE_L2 *a, void *param, const UCHAR *frame, UINT size) {
+	NODE_L2_BRIDGE *b = (NODE_L2_BRIDGE *)param;
+
+	SwitchInput(b->Switch, GetTickCount64(), b->Port, frame, size);
+}
+
+// A frame that the switch hands the port of the bridge (SWITCH_SEND_PROC), on the thread of SwitchInput: onto the segment,
+// through the send ring of the adapter, which never waits
+static void NodeL2BridgeToSegment(void *param, UINT port, const UCHAR *frame, UINT size) {
+	NODE_L2_BRIDGE *b = (NODE_L2_BRIDGE *)param;
+
+	AcquireSRWLockShared(&b->Lock);
+	if (b->Adapter != NULL)
+		NodeL2Send(b->Adapter, frame, size);
+	ReleaseSRWLockShared(&b->Lock);
+}
+
+// Subscribe the port of the bridge to every group of each VLAN of the membership pc: the VLAN of an access port, or the
+// native VLAN and the allowed list of a trunk port. False when a subscription fails.
+static bool NodeL2BridgeSubscribe(NODE_L2_BRIDGE *b, const SWITCH_PORT_CONFIG *pc) {
+	if (pc->Mode != SWITCH_TRUNK)
+		return SwitchSubscribe(b->Switch, b->Port, pc->Vlan, NULL);
+
+	if (pc->Vlan != 0 && SwitchSubscribe(b->Switch, b->Port, pc->Vlan, NULL) == false)
+		return false;
+	for (UINT i = 0; i < pc->NumAllowed; i++)
+		if (SwitchSubscribe(b->Switch, b->Port, pc->Allowed[i], NULL) == false)
+			return false;
+
+	return true;
+}
+
+// The L2 bridge of the L2 Network whose switch is sw, on the running node n (CORE-S3-3, #73): the L2 adapter of cfg in
+// bridge mode, on its NIC or the host vNIC of a Hyper-V virtual switch (NodeL2BridgeIndex, NodeL2HyperVIndex), as the
+// member of a port of the membership port, which takes every group of each VLAN that it carries. The procedures of the
+// adapter (cfg->Proc, Param) and of the port (port->Send, Param) are the bridge's own. NULL when the switch gives no such
+// port or no backend binds; the node log says why.
+NODE_L2_BRIDGE *NodeL2BridgeNew(NODE *n, struct SWITCH *sw, const struct SWITCH_PORT_CONFIG *port, const NODE_L2_CONFIG *cfg) {
+	SWITCH_PORT_CONFIG pc;
+	NODE_L2_CONFIG c;
+
+	if (n == NULL || sw == NULL || port == NULL || cfg == NULL)
+		return NULL;
+
+	NODE_L2_BRIDGE *b = ZeroMalloc(sizeof(NODE_L2_BRIDGE));
+	b->Node = n;
+	b->Switch = sw;
+	InitializeSRWLock(&b->Lock);
+
+	pc = *port;
+	pc.Send = NodeL2BridgeToSegment;
+	pc.Param = b;
+	b->Port = SwitchAddPort(sw, &pc);
+	if (b->Port == SWITCH_PORT_NONE || NodeL2BridgeSubscribe(b, &pc) == false) {
+		NodeLog(n, "L2 bridge of interface %u not created: the switch gives it no port that takes every group of its VLANs", cfg->IfIndex);
+		if (b->Port != SWITCH_PORT_NONE)
+			SwitchDelPort(sw, b->Port);
+		Free(b);
+		return NULL;
+	}
+
+	c = *cfg;
+	c.Bridge = true;
+	c.Proc = NodeL2BridgeFromSegment;
+	c.Param = b;
+	NODE_L2 *a = NodeL2New(n, &c);
+	if (a == NULL) {
+		SwitchDelPort(sw, b->Port);
+		Free(b);
+		return NULL;
+	}
+
+	AcquireSRWLockExclusive(&b->Lock);
+	b->Adapter = a;
+	ReleaseSRWLockExclusive(&b->Lock);
+
+	NodeLog(n, "L2 bridge of interface %u: the member of port %u of the switch of its Network, %s", cfg->IfIndex, b->Port, pc.Mode == SWITCH_TRUNK ? "a trunk port" : "an access port");
+
+	return b;
+}
+
+// Take an L2 bridge off its switch and down: the switch hands it nothing more, its adapter goes (NodeL2Free), then its
+// port. False when a step of the adapter did not finish in time: the bridge is then left as it is, holding its port, as a
+// thread of its adapter may still run on it.
+bool NodeL2BridgeFree(NODE_L2_BRIDGE *b) {
+	if (b == NULL)
+		return true;
+
+	AcquireSRWLockExclusive(&b->Lock);
+	NODE_L2 *a = b->Adapter;
+	b->Adapter = NULL;
+	ReleaseSRWLockExclusive(&b->Lock);
+
+	if (NodeL2Free(a) == false)
+		return false;
+
+	SwitchDelPort(b->Switch, b->Port);
+	Free(b);
+
+	return true;
+}
+
+// The port of an L2 bridge on the switch of its Network, SWITCH_PORT_NONE for none
+UINT NodeL2BridgePort(NODE_L2_BRIDGE *b) {
+	return (b != NULL ? b->Port : SWITCH_PORT_NONE);
+}
+
+// The status of the adapter of an L2 bridge (NodeL2GetStatus)
+void NodeL2BridgeGetStatus(NODE_L2_BRIDGE *b, NODE_L2_STATUS *st) {
+	if (st == NULL)
+		return;
+
+	if (b == NULL) {
+		Zero(st, sizeof(NODE_L2_STATUS));
+		return;
+	}
+
+	AcquireSRWLockShared(&b->Lock);
+	NodeL2GetStatus(b->Adapter, st);
+	ReleaseSRWLockShared(&b->Lock);
 }

@@ -31,7 +31,10 @@
 // - A bridge (NodeL2Bridge.c, NodeL2Npcap.c; CORE-S3-3, #73): the same adapter on a physical NIC, or on the host vNIC of
 //   a Hyper-V virtual switch, whose segment the host shares (NODE_L2_CONFIG.Bridge). Its backends are SeLow, the bundled
 //   default, then Npcap where the operator installed it, or XDP, which the owner names, with Npcap holding the NIC in
-//   promiscuous mode (ADR-0018 decision 3). A bridge sends no probe and is never reset: its NIC is the host's.
+//   promiscuous mode (ADR-0018 decision 3). A bridge sends no probe and is never reset: its NIC is the host's. An L2
+//   bridge (NODE_L2_BRIDGE, NodeL2BridgeNew) is such a bridge as the member of a port of the switch of an L2 Network
+//   (Core/Switch.h): the frames that it takes from the segment enter the switch there, and the frames that the switch
+//   hands the port go onto the segment.
 
 #ifndef NODE_L2_H
 #define NODE_L2_H
@@ -80,14 +83,27 @@
 #define NODE_L2_TO_HOST   2
 // Addresses of the host on the NIC of a bridge whose packets the XDP backend lets pass to the host untouched, at most
 #define NODE_L2_XDP_MAX_PASS 32
+// What the Npcap backend gives pcap_open, as pcap/pcap.h of libpcap in the SDK of Npcap names them: promiscuous mode, no
+// capture of what the handle sent itself, and each frame handed over at once; and the opcode BPF_RET | BPF_K, whose
+// instruction with the constant 0 makes a filter that takes no frame
+#define NODE_L2_PCAP_PROMISCUOUS        0x01
+#define NODE_L2_PCAP_NOCAPTURE_LOCAL    0x08
+#define NODE_L2_PCAP_MAX_RESPONSIVENESS 0x10
+#define NODE_L2_BPF_REJECT              0x06
 
-// The types of the L2 adapter. NODE_L2_RING, a ring of frames, and NODE_KMTEST, a KM-TEST adapter, are their files' own.
+// The types of the L2 adapter. NODE_L2_RING, a ring of frames, NODE_KMTEST, a KM-TEST adapter, and NODE_L2_BRIDGE, an
+// L2 bridge, are their files' own.
 typedef struct NODE_L2 NODE_L2;
 typedef struct NODE_L2_BACKEND NODE_L2_BACKEND;
 typedef struct NODE_L2_CONFIG NODE_L2_CONFIG;
 typedef struct NODE_L2_STATUS NODE_L2_STATUS;
 typedef struct NODE_L2_RING NODE_L2_RING;
 typedef struct NODE_KMTEST NODE_KMTEST;
+typedef struct NODE_L2_BRIDGE NODE_L2_BRIDGE;
+
+// The switch of an L2 Network and the membership of a port of it (Core/Switch.h), whose member an L2 bridge is
+struct SWITCH;
+struct SWITCH_PORT_CONFIG;
 
 // Takes a frame that the host sent out of the adapter, on the I/O thread of the adapter queue. The frame stays valid
 // during the call only; the procedure may call NodeL2Send.
@@ -99,6 +115,51 @@ typedef bool(NODE_L2_RESET_PROC)(void *param, UINT *if_index);
 // when it cannot. And lets go of it again.
 typedef bool(NODE_L2_HOLD_PROC)(NODE_L2 *a, void **hold, char *error, UINT error_size);
 typedef void(NODE_L2_LET_GO_PROC)(void *hold);
+
+// The pcap API that the Npcap backend calls (NodeL2Npcap.c), as libpcap and WinPcap define it and Npcap keeps it: the
+// header of a frame that pcap_next_ex hands over (struct pcap_pkthdr, its time a struct timeval of Winsock, two longs),
+// a BPF instruction and a program of them for pcap_setfilter (struct bpf_insn, struct bpf_program), and the functions
+// pcap_open, pcap_close, pcap_next_ex, pcap_sendpacket, pcap_getevent, pcap_setfilter and pcap_geterr, whose pcap_t is
+// opaque. The wpcap.dll of an installed Npcap gives them, or the stand-in of a test (NodeL2NpcapStandIn).
+typedef struct NODE_L2_PCAP_HEADER {
+	long Seconds;
+	long Microseconds;
+	// The bytes captured of the frame, and its bytes on the segment
+	UINT Captured;
+	UINT Size;
+} NODE_L2_PCAP_HEADER;
+
+typedef struct NODE_L2_BPF_INSN {
+	// The opcode, the jumps when true and when false, and the constant
+	USHORT Code;
+	UCHAR Jt;
+	UCHAR Jf;
+	UINT K;
+} NODE_L2_BPF_INSN;
+
+typedef struct NODE_L2_BPF_PROGRAM {
+	// Length instructions
+	UINT Length;
+	NODE_L2_BPF_INSN *Instructions;
+} NODE_L2_BPF_PROGRAM;
+
+typedef void *(NODE_L2_PCAP_OPEN_PROC)(const char *source, int snaplen, int flags, int read_timeout, void *auth, char *errbuf);
+typedef void(NODE_L2_PCAP_CLOSE_PROC)(void *p);
+typedef int(NODE_L2_PCAP_NEXT_EX_PROC)(void *p, NODE_L2_PCAP_HEADER **header, const UCHAR **data);
+typedef int(NODE_L2_PCAP_SENDPACKET_PROC)(void *p, const UCHAR *data, int size);
+typedef HANDLE(NODE_L2_PCAP_GETEVENT_PROC)(void *p);
+typedef int(NODE_L2_PCAP_SETFILTER_PROC)(void *p, NODE_L2_BPF_PROGRAM *program);
+typedef char *(NODE_L2_PCAP_GETERR_PROC)(void *p);
+
+typedef struct NODE_L2_PCAP_API {
+	NODE_L2_PCAP_OPEN_PROC *Open;
+	NODE_L2_PCAP_CLOSE_PROC *Close;
+	NODE_L2_PCAP_NEXT_EX_PROC *NextEx;
+	NODE_L2_PCAP_SENDPACKET_PROC *SendPacket;
+	NODE_L2_PCAP_GETEVENT_PROC *GetEvent;
+	NODE_L2_PCAP_SETFILTER_PROC *SetFilter;
+	NODE_L2_PCAP_GETERR_PROC *GetErr;
+} NODE_L2_PCAP_API;
 
 // The procedures of a backend. Attach binds to the adapter (NODE_L2.IfIndex, Luid, Guid) and starts the drain thread
 // that hands each frame that the host sends to NodeL2Capture; false, with why in error, when it cannot bind. Inject
@@ -305,12 +366,17 @@ UINT NodeL2BridgeWay(const UCHAR *frame, UINT size, const UCHAR *mac);
 UINT NodeL2BridgeIndex(const char *name, char *error, UINT error_size);
 UINT NodeL2HyperVIndex(const char *name, char *error, UINT error_size);
 UINT NodeL2BridgeAddresses(NODE_L2 *a, NODE_L2_ADDRESS *list, UINT max);
+NODE_L2_BRIDGE *NodeL2BridgeNew(NODE *n, struct SWITCH *sw, const struct SWITCH_PORT_CONFIG *port, const NODE_L2_CONFIG *cfg);
+bool NodeL2BridgeFree(NODE_L2_BRIDGE *b);
+UINT NodeL2BridgePort(NODE_L2_BRIDGE *b);
+void NodeL2BridgeGetStatus(NODE_L2_BRIDGE *b, NODE_L2_STATUS *st);
 
 // NodeL2Npcap.c
 const NODE_L2_BACKEND *NodeL2NpcapBackend();
 bool NodeL2NpcapPresent(char *error, UINT error_size);
 bool NodeL2NpcapHold(NODE_L2 *a, void **hold, char *error, UINT error_size);
 void NodeL2NpcapLetGo(void *hold);
+void NodeL2NpcapStandIn(const NODE_L2_PCAP_API *api);
 
 // NodeKmTest.c
 NODE_KMTEST *NodeKmTestNew(NODE *n, const UCHAR *mac);

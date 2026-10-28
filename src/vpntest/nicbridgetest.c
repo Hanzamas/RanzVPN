@@ -1,34 +1,52 @@
 // nicbridgetest.c
 // Named NIC bridge test of vpntest ("nicbridge" command, CORE-S3-3 #73)
 //
-// The bridge of the L2 adapter of the node (Cedar/NodeL2Bridge.c) through the backend interface, on the two attachments
-// that CI has (ADR-0002 amendment of 2026-10-21): the runner's own NIC, the physical side, and a KM-TEST adapter standing
-// in for the host vNIC of a Hyper-V virtual switch, whose host stack plays the devices on the switch. The XDP job of
-// windows.yml runs it after ranz install as administrator (.github/scripts/kmtest.ps1); it needs the drivers, so the
-// smoke loop leaves it out (.github/quality/smoke-exclude.txt). Its argument names the backends: "selow" (the default),
-// "xdp" (SeLow, then XDP, on the same attachments, for the comparison) or "npcap".
+// The bridge of an L2 Network to a segment through the backend interface (Cedar/NodeL2Bridge.c): in each run an L2 bridge
+// (NodeL2BridgeNew) is the member of a port of the switch of an L2 Network, beside a member of the Network that the test
+// plays at another port, so that the bridged L2 segment reaches the devices of the segment. The attachments are the ones
+// that CI has (ADR-0002 amendment of 2026-10-21):
+// - the runner's own NIC, the physical side, whose LAN device is the host stack on the NIC, since no network of a
+//   runner carries the frames of another MAC address;
+// - a KM-TEST adapter standing in for the host vNIC of a Hyper-V virtual switch, whose host stack plays the devices on
+//   the switch;
+// - and, when the job made one (.github/scripts/kmtest.ps1), a Hyper-V virtual switch of the runner itself: the bridge
+//   takes the host vNIC of the switch, found by the name of the switch (NodeL2HyperVIndex), and a second host vNIC on
+//   the switch is a device of the Hyper-V network, whose frames reach the bridge from below its vNIC, through the switch,
+//   as the frames of a virtual machine do.
+// The XDP job of windows.yml runs it after ranz install as administrator (.github/scripts/kmtest.ps1); it needs the
+// drivers, so the smoke loop leaves it out (.github/quality/smoke-exclude.txt). Its arguments: the backends, "selow" (the
+// default), "xdp" (SeLow, then XDP, on the same attachments, for the comparison) or "npcap"; then the name of the
+// Hyper-V switch and of the device's vNIC on it, when the job made them.
 // The spike of ADR-0018 decision 3, for each backend on each attachment:
-// - Foreign-MAC transmit: frames of the overlay from a member's MAC address leave the NIC (its counter of sent frames
-//   rises by them), and the backend takes them for the switch of the stand-in. Datagrams of the member reach a socket of
-//   the host on the attachment, and an ARP request of the member for the attachment's address is answered: the host is
-//   the device on the LAN that CI has, since no network of a runner carries the frames of another MAC address.
-// - Foreign-MAC receive: the host's ARP reply to the member, and the datagrams that the host sends to the member (a
-//   permanent neighbour), are captured with the member's address as their destination.
-// - Coexistence with the host stack, on the runner's NIC: the host's own TCP connection through the NIC works while the
+// - Foreign-MAC transmit: frames of the overlay from the member's MAC address go through the switch to the bridge, which
+//   puts them onto the segment (on the NIC its counter of sent frames rises by them). Datagrams of the member reach a
+//   socket of the device, and an ARP request of the member for the device's address is answered.
+// - Foreign-MAC receive: the device's ARP reply to the member, and the datagrams that the device sends to the member (a
+//   permanent neighbour), are captured with the member's address as their destination and reach the member through the
+//   switch.
+// - Coexistence with the host stack: on the runner's NIC the host's own TCP connection through the NIC works while the
 //   bridge is on and after it went, the host resolves its gateway again while the bridge is on, and the bridge sends no
-//   probe onto the LAN. The gateway's ARP reply is a frame of the wire to the NIC's own address, which the XDP backend
-//   takes on RX inspect, as no rule lets an ARP frame pass, and hands back to the host (NODE_L2_STATUS.ToHost).
-// - Throughput against SeLow: on the stand-in, frames of 1514 bytes onto the switch and to the host, and the host's
-//   datagrams to the member, for 2 s each, printed as NICBRIDGE BENCH lines for each backend: a regression number of the
-//   runner, not a gate (ADR-0002 amendment of 2026-10-21).
-// XDP takes the frames that come in from below the adapter, and NDIS loopback is no such frame (XDP inspects none of
-// them), while neither a KM-TEST adapter nor the network of a runner gives one for a member's address. So for XDP the
-// lines of the frames to and from the host are printed (NICBRIDGE DIAG), and the checks are the transmit onto the wire,
-// coexistence, the frames of the wire that come back to the host, shutdown and the benchmark; the NIC is held in
-// promiscuous mode by the device of SeLow, the test's own stand-in for Npcap, which ranz install does not put on a runner.
-// - Npcap and the default: a bridge whose owner names no backend binds SeLow on the NIC. Npcap is used only where it is
-//   installed: on a runner without it, a bridge on Npcap alone does not come up; where it is installed, "npcap" runs the
-//   spike with it.
+//   probe onto the LAN; the gateway's ARP reply is a frame of the wire to the NIC's own address, which the XDP backend
+//   takes on RX inspect, as no rule lets an ARP frame pass, and hands back to the host (NODE_L2_STATUS.ToHost). On a
+//   Hyper-V switch the host resolves the link-local address of the device through the bridged vNIC while the bridge is
+//   on and after it went.
+// - Throughput against SeLow: on the stand-in and on a Hyper-V switch, frames of 1514 bytes of the member onto the
+//   segment and to the device, and the device's datagrams to the member, for 2 s each, printed as NICBRIDGE BENCH lines
+//   for each backend: a regression number of the runner, not a gate (ADR-0002 amendment of 2026-10-21).
+// XDP takes the frames that come in from below the interface, and NDIS loopback is no such frame (XDP inspects none of
+// them), while neither a KM-TEST adapter nor the network of a runner gives one for a member's address. So for XDP on
+// those two the lines of the frames to and from the device are printed (NICBRIDGE DIAG), and its checks there are the
+// transmit onto the wire, coexistence, the frames of the wire that come back to the host, shutdown and the benchmark; on
+// a Hyper-V switch, where the device's frames come from below, XDP passes every check. The NIC is held in promiscuous
+// mode for XDP by the device of SeLow (the test's own hold) in the xdp mode, and by the product's hold through Npcap
+// (NodeL2NpcapHold) in the npcap mode.
+// - Npcap and the default: an L2 bridge whose owner names no backend binds SeLow on the NIC. Npcap is used only where it
+//   is installed: on a runner without it, a bridge on Npcap alone does not come up. No runner may carry Npcap (its free
+//   licence allows five installations and has no silent install), so the npcap mode gives the Npcap backend a stand-in
+//   of Npcap's pcap API (NodeL2NpcapStandIn) whose handles are the SeLow device of the adapter: SeLow keeps the adapter
+//   promiscuous while its device is open, and hands over no frame that the handle sent itself, as Npcap does for a handle
+//   opened with PCAP_OPENFLAG_PROMISCUOUS and PCAP_OPENFLAG_NOCAPTURE_LOCAL. The Npcap backend, then XDP with Npcap's
+//   hold, pass the spike on it.
 // Prints "NICBRIDGE TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -46,6 +64,8 @@
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Str.h"
 
+#include "Core/Switch.h"
+
 #include <iphlpapi.h>
 #include <ws2tcpip.h>
 
@@ -56,9 +76,10 @@
 #define	NICBRIDGE_ANSWER		5000		// ms that an answer of the host may take
 #define	NICBRIDGE_POLL			20			// Poll interval of observable state (ms)
 #define	NICBRIDGE_NETWORK		76			// The Network id of the stand-in, and of the MAC addresses of the test after it
-#define	NICBRIDGE_LENGTH		24			// The prefix length of the address of the stand-in
-#define	NICBRIDGE_RX_PORT		5566		// UDP port of the socket of the host that takes the datagrams of the member
-#define	NICBRIDGE_TX_PORT		5567		// UDP port of the datagrams that the host sends to the member
+#define	NICBRIDGE_LENGTH		24			// The prefix length of the addresses of the stand-in and of the device on a Hyper-V switch
+#define	NICBRIDGE_VLAN			1			// The VLAN of the member and of the bridge in the switch of a run
+#define	NICBRIDGE_RX_PORT		5566		// UDP port of the socket of the device that takes the datagrams of the member
+#define	NICBRIDGE_TX_PORT		5567		// UDP port of the datagrams that the device sends to the member
 #define	NICBRIDGE_BENCH_PORT	5568		// UDP port of the sink of the benchmark
 #define	NICBRIDGE_WIRE			1000		// Frames of the member onto the wire, to another address
 #define	NICBRIDGE_ETHERTYPE		0x88B5		// The local experimental EtherType of IEEE 802 for those frames
@@ -67,6 +88,9 @@
 #define	NICBRIDGE_ARP_FRAME		60			// Bytes of an ARP frame, padded to the shortest Ethernet frame
 #define	NICBRIDGE_TCP_HOST		"github.com"	// A host on the internet that the runner reaches through its NIC
 #define	NICBRIDGE_TCP_PORT		"443"
+#define	NICBRIDGE_PCAP_ERRBUF	256			// Bytes of the error text of a pcap call (PCAP_ERRBUF_SIZE)
+#define	NICBRIDGE_PCAP_READS	4			// Reads of the SeLow device that one pcap_next_ex of the stand-in makes at most
+#define	NICBRIDGE_NPF			"\\Device\\NPF_"	// What the device of a handle of Npcap begins with, before the GUID of the adapter
 
 // The checks of the test
 typedef struct NICBRIDGE_CTX
@@ -75,29 +99,41 @@ typedef struct NICBRIDGE_CTX
 	UINT NumFailed;
 } NICBRIDGE_CTX;
 
-// The owner of a bridge: counts the frames that the bridge took from the segment, and those of them to the member
+// The member of the L2 Network that the test plays at a port of its switch: counts the frames that the switch hands it,
+// and those of them to its address
 typedef struct NICBRIDGE_OWNER
 {
 	UCHAR Member[6];					// The MAC address of the member of the overlay
-	volatile LONG64 Frames;				// Frames that the bridge took from the segment
+	volatile LONG64 Frames;				// Frames that the switch handed the member
 	volatile LONG64 ToMember;			// ... to the member
 	volatile LONG64 ArpReplies;			// ... of these, ARP replies
 	volatile LONG64 Udp;				// ... of these, UDP datagrams to NICBRIDGE_TX_PORT
 } NICBRIDGE_OWNER;
 
-// One attachment of the test: the runner's NIC, or the KM-TEST adapter that stands in for a Hyper-V switch
+// One attachment of the test: the runner's NIC, the KM-TEST adapter that stands in for a Hyper-V switch, or a Hyper-V switch
 typedef struct NICBRIDGE_PORT
 {
 	char *Name;							// What it is, in the lines of the test
 	char *Tag;							// ... in the NICBRIDGE BENCH lines
-	UINT IfIndex;
+	UINT IfIndex;						// The interface of the bridge
 	UINT64 Luid;
 	UCHAR Mac[6];
-	UINT Address;						// Its IPv4 address, in network byte order; 0 for none
+	UINT64 HostLuid;					// The interface of the host stack that plays the device: the bridge's, or the device's vNIC on a Hyper-V switch
+	UCHAR HostMac[6];
+	UINT Address;						// The IPv4 address of the device, in network byte order; 0 for none
 	UINT Member;						// The IPv4 address of the member of the overlay on its subnet; 0 for none
 	UINT Gateway;						// The IPv4 address of its default gateway, in network byte order; 0 for none
-	NODE_KMTEST *KmTest;				// The KM-TEST adapter of the stand-in, NULL for the NIC
+	bool Wire;							// The device's frames reach the bridge from below its interface, through a Hyper-V switch
+	NODE_KMTEST *KmTest;				// The KM-TEST adapter of the stand-in, NULL for the others
 } NICBRIDGE_PORT;
+
+// The L2 Network of a run: its switch, the port of the member that the test plays, and the L2 bridge
+typedef struct NICBRIDGE_NET
+{
+	SWITCH *Switch;
+	UINT MemberPort;
+	NODE_L2_BRIDGE *Bridge;
+} NICBRIDGE_NET;
 
 // The sink of the benchmark
 typedef struct NICBRIDGE_SINK
@@ -108,11 +144,23 @@ typedef struct NICBRIDGE_SINK
 	volatile LONG64 Received;
 } NICBRIDGE_SINK;
 
+// A handle of the stand-in of Npcap's pcap API (NodeL2NpcapStandIn): the SeLow device of the adapter that it was opened
+// on, the next frame of its read buffer, and a filter that takes no frame
+typedef struct NICBRIDGE_PCAP
+{
+	SU_ADAPTER *Su;
+	UINT Next;
+	bool Reject;
+	NODE_L2_PCAP_HEADER Header;
+	char Error[MAX_SIZE];
+} NICBRIDGE_PCAP;
+
 // The MAC addresses of the test, derived as NodeL2Mac derives those of adapters: the stand-in, the member of the overlay
 // and another address of the segment
 static UCHAR nicbridge_standin_mac[6];
 static UCHAR nicbridge_member_mac[6];
 static UCHAR nicbridge_other_mac[6];
+static UCHAR nicbridge_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 static bool NicBridgeCheck(NICBRIDGE_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
 static bool NicBridgeCheck(NICBRIDGE_CTX *ctx, bool ok, char *what, char *fmt, ...)
@@ -193,13 +241,13 @@ static bool NicBridgeWait64(volatile LONG64 *value, LONG64 want, UINT bound)
 }
 
 // Wait up to NICBRIDGE_BOUND ms until the backend of the bridge took at least want frames, into st
-static bool NicBridgeWaitInjected(NODE_L2 *a, UINT64 want, NODE_L2_STATUS *st)
+static bool NicBridgeWaitInjected(NODE_L2_BRIDGE *b, UINT64 want, NODE_L2_STATUS *st)
 {
 	UINT64 end = GetTickCount64() + NICBRIDGE_BOUND;
 
 	while (true)
 	{
-		NodeL2GetStatus(a, st);
+		NodeL2BridgeGetStatus(b, st);
 		if (st->Injected >= want)
 		{
 			return true;
@@ -298,11 +346,11 @@ static UINT NicBridgeWireFrame(UCHAR *f, const UCHAR *dst_mac, UINT size)
 }
 
 //
-// The owner and the host's stack
+// The member, the holds and the stand-in of Npcap
 //
 
-// The owner of a bridge: counts the frames, and those to the member by kind
-static void NicBridgeOwnerProc(NODE_L2 *a, void *param, const UCHAR *frame, UINT size)
+// The port of the member in the switch (SWITCH_SEND_PROC): counts the frames, and those to the member by kind
+static void NicBridgeMemberSend(void *param, UINT port, const UCHAR *frame, UINT size)
 {
 	NICBRIDGE_OWNER *o = (NICBRIDGE_OWNER *)param;
 
@@ -331,8 +379,8 @@ static void NicBridgeOwnerProc(NODE_L2 *a, void *param, const UCHAR *frame, UINT
 	}
 }
 
-// What holds the NIC of a bridge in promiscuous mode for the XDP backend in this test: the device of SeLow on the
-// interface, which sets the mode when it is opened. The product takes Npcap (NodeL2NpcapHold), which a runner does not have.
+// What holds the NIC of a bridge in promiscuous mode for the XDP backend in the xdp mode: the device of SeLow on the
+// interface, which sets the mode when it is opened. The product takes Npcap (NodeL2NpcapHold), as the npcap mode does.
 static bool NicBridgeHold(NODE_L2 *a, void **hold, char *error, UINT error_size)
 {
 	char id[MAX_SIZE];
@@ -360,6 +408,212 @@ static void NicBridgeLetGo(void *hold)
 		SuCloseAdapter((SU_ADAPTER *)hold);
 	}
 }
+
+// pcap_open of the stand-in: the SeLow device of the adapter of the GUID that the device of Npcap names
+static void *NicBridgePcapOpen(const char *source, int snaplen, int flags, int read_timeout, void *auth, char *errbuf)
+{
+	char id[MAX_SIZE];
+
+	if (source == NULL || StartWith(source, NICBRIDGE_NPF) == false)
+	{
+		StrCpy(errbuf, NICBRIDGE_PCAP_ERRBUF, "the stand-in of Npcap opens devices of Npcap only");
+		return NULL;
+	}
+
+	Format(id, sizeof(id), SL_ADAPTER_ID_PREFIX "%s", source + StrLen(NICBRIDGE_NPF));
+	SU_ADAPTER *su = SuOpenAdapter(id);
+	if (su == NULL)
+	{
+		Format(errbuf, NICBRIDGE_PCAP_ERRBUF, "the SeLow device %s cannot be opened (error %u)", id, (UINT)GetLastError());
+		return NULL;
+	}
+
+	NICBRIDGE_PCAP *p = ZeroMalloc(sizeof(NICBRIDGE_PCAP));
+	p->Su = su;
+
+	return p;
+}
+
+static void NicBridgePcapClose(void *h)
+{
+	NICBRIDGE_PCAP *p = (NICBRIDGE_PCAP *)h;
+
+	SuCloseAdapter(p->Su);
+	Free(p);
+}
+
+// pcap_next_ex of the stand-in: the next frame of the read buffer of the device, in place, which the device fills again
+// once it is used up. 0 when the device holds no frame, -1 when its read failed.
+static int NicBridgePcapNextEx(void *h, NODE_L2_PCAP_HEADER **header, const UCHAR **data)
+{
+	NICBRIDGE_PCAP *p = (NICBRIDGE_PCAP *)h;
+	UCHAR *buf = p->Su->GetBuffer;
+	UINT reads = 0;
+
+	if (p->Reject)
+	{
+		return 0;
+	}
+
+	while (true)
+	{
+		UINT num = MIN(SL_NUM_PACKET(buf), (UINT)SL_MAX_PACKET_EXCHANGE);
+
+		if (p->Next < num)
+		{
+			UINT size = SL_SIZE_OF_PACKET(buf, p->Next);
+
+			*data = (const UCHAR *)SL_ADDR_OF_PACKET(buf, p->Next);
+			p->Next++;
+			Zero(&p->Header, sizeof(p->Header));
+			p->Header.Captured = size;
+			p->Header.Size = size;
+			*header = &p->Header;
+			return 1;
+		}
+
+		if (reads == NICBRIDGE_PCAP_READS)
+		{
+			return 0;
+		}
+		reads++;
+
+		if (SuGetPacketsFromDriver(p->Su) == false)
+		{
+			StrCpy(p->Error, sizeof(p->Error), "a read of the SeLow device failed");
+			return -1;
+		}
+		p->Next = 0;
+
+		// An empty read: the device's queue is empty, and it signals its event for the next frame
+		if (SL_NUM_PACKET(buf) == 0 && SL_LEFT_FLAG(buf) == 0)
+		{
+			return 0;
+		}
+	}
+}
+
+// pcap_sendpacket of the stand-in: one frame through the exchange buffer of the device
+static int NicBridgePcapSendPacket(void *h, const UCHAR *data, int size)
+{
+	NICBRIDGE_PCAP *p = (NICBRIDGE_PCAP *)h;
+	UCHAR *buf = p->Su->PutBuffer;
+
+	if (size < SL_MIN_PACKET_SIZE || size > SL_MAX_PACKET_SIZE)
+	{
+		return -1;
+	}
+
+	SL_NUM_PACKET(buf) = 1;
+	SL_SIZE_OF_PACKET(buf, 0) = (UINT)size;
+	Copy(SL_ADDR_OF_PACKET(buf, 0), data, (UINT)size);
+
+	return (SuPutPacketsToDriver(p->Su) ? 0 : -1);
+}
+
+static HANDLE NicBridgePcapGetEvent(void *h)
+{
+	return (HANDLE)((NICBRIDGE_PCAP *)h)->Su->hEvent;
+}
+
+// pcap_setfilter of the stand-in: the one instruction "ret #0" takes no frame; it takes no other filter
+static int NicBridgePcapSetFilter(void *h, NODE_L2_BPF_PROGRAM *program)
+{
+	NICBRIDGE_PCAP *p = (NICBRIDGE_PCAP *)h;
+
+	if (program == NULL || program->Length != 1 || program->Instructions[0].Code != NODE_L2_BPF_REJECT || program->Instructions[0].K != 0)
+	{
+		StrCpy(p->Error, sizeof(p->Error), "the stand-in of Npcap takes no other filter");
+		return -1;
+	}
+	p->Reject = true;
+
+	return 0;
+}
+
+static char *NicBridgePcapGetErr(void *h)
+{
+	return ((NICBRIDGE_PCAP *)h)->Error;
+}
+
+static const NODE_L2_PCAP_API nicbridge_pcap_api = {NicBridgePcapOpen, NicBridgePcapClose, NicBridgePcapNextEx, NicBridgePcapSendPacket, NicBridgePcapGetEvent, NicBridgePcapSetFilter, NicBridgePcapGetErr};
+
+//
+// The L2 Network of a run
+//
+
+// The L2 Network of a run: a switch with the member that the test plays and an L2 bridge of the backend b (NULL for the
+// default ones) on the attachment p, both access ports of one VLAN; the member takes the broadcast group, which also
+// takes the frames to an address that the Network has not learnt. own_hold: the test's own hold of promiscuous mode for
+// XDP, else the product's (NodeL2NpcapHold). False when the bridge did not come up.
+static bool NicBridgeNetNew(NICBRIDGE_NET *net, NODE *n, NICBRIDGE_PORT *p, const NODE_L2_BACKEND *b, NICBRIDGE_OWNER *o, bool own_hold)
+{
+	const NODE_L2_BACKEND *list[1];
+	SWITCH_PORT_CONFIG pc;
+	NODE_L2_CONFIG cfg;
+
+	Zero(net, sizeof(NICBRIDGE_NET));
+	net->MemberPort = SWITCH_PORT_NONE;
+	net->Switch = SwitchNew(NULL);
+	if (net->Switch == NULL)
+	{
+		return false;
+	}
+
+	Zero(&pc, sizeof(pc));
+	pc.Mode = SWITCH_ACCESS;
+	pc.Vlan = NICBRIDGE_VLAN;
+	pc.Send = NicBridgeMemberSend;
+	pc.Param = o;
+	net->MemberPort = SwitchAddPort(net->Switch, &pc);
+	if (net->MemberPort == SWITCH_PORT_NONE || SwitchSubscribe(net->Switch, net->MemberPort, NICBRIDGE_VLAN, nicbridge_broadcast) == false)
+	{
+		return false;
+	}
+
+	pc.Send = NULL;
+	pc.Param = NULL;
+	Zero(&cfg, sizeof(cfg));
+	cfg.IfIndex = p->IfIndex;
+	if (b != NULL)
+	{
+		list[0] = b;
+		cfg.Backends = list;
+		cfg.NumBackends = 1;
+	}
+	if (own_hold)
+	{
+		cfg.Hold = NicBridgeHold;
+		cfg.LetGo = NicBridgeLetGo;
+	}
+	net->Bridge = NodeL2BridgeNew(n, net->Switch, &pc, &cfg);
+
+	return (net->Bridge != NULL);
+}
+
+// Take the L2 bridge of a run down, then its switch; false when the bridge did not go in time, which leaves the switch
+static bool NicBridgeNetFree(NICBRIDGE_NET *net)
+{
+	bool ok = NodeL2BridgeFree(net->Bridge);
+
+	if (ok && net->Switch != NULL)
+	{
+		SwitchFree(net->Switch);
+	}
+	Zero(net, sizeof(NICBRIDGE_NET));
+
+	return ok;
+}
+
+// A frame of the member into the switch of its Network; whether the switch handed it to a port
+static bool NicBridgeFromMember(NICBRIDGE_NET *net, const UCHAR *frame, UINT size)
+{
+	return (SwitchInput(net->Switch, GetTickCount64(), net->MemberPort, frame, size) != 0);
+}
+
+//
+// The host's stack
+//
 
 // A UDP socket bound to the address addr and port port (0 for any)
 static SOCKET NicBridgeSocket(UINT addr, USHORT port)
@@ -477,6 +731,59 @@ static bool NicBridgeResolve(UINT64 luid, UINT addr)
 	return (nb.PhysicalAddressLength == 6);
 }
 
+// The preferred link-local IPv6 address of the interface luid into addr; false for none
+static bool NicBridgeLinkLocal(UINT64 luid, UCHAR *addr)
+{
+	MIB_UNICASTIPADDRESS_TABLE *t = NULL;
+	bool ret = false;
+
+	if (GetUnicastIpAddressTable(AF_INET6, &t) != NO_ERROR)
+	{
+		return false;
+	}
+
+	for (ULONG i = 0;i < t->NumEntries && ret == false;i++)
+	{
+		MIB_UNICASTIPADDRESS_ROW *row = &t->Table[i];
+		const UCHAR *p = row->Address.Ipv6.sin6_addr.u.Byte;
+
+		if (row->InterfaceLuid.Value != luid || row->DadState != IpDadStatePreferred || p[0] != 0xFE || (p[1] & 0xC0) != 0x80)
+		{
+			continue;
+		}
+
+		Copy(addr, p, 16);
+		ret = true;
+	}
+
+	FreeMibTable(t);
+
+	return ret;
+}
+
+// Make the host ask, on the interface luid, for the MAC address of the link-local IPv6 address addr again: its neighbour
+// entry goes, and ResolveIpNetEntry2 sends a Neighbor Solicitation and waits for the advertisement. True when the host
+// learnt the MAC address mac for it.
+static bool NicBridgeResolve6(UINT64 luid, const UCHAR *addr, const UCHAR *mac)
+{
+	MIB_IPNET_ROW2 nb;
+
+	Zero(&nb, sizeof(nb));
+	nb.InterfaceLuid.Value = luid;
+	nb.Address.Ipv6.sin6_family = AF_INET6;
+	Copy(&nb.Address.Ipv6.sin6_addr, addr, 16);
+	DeleteIpNetEntry2(&nb);
+
+	DWORD err = ResolveIpNetEntry2(&nb, NULL);
+	if (err != NO_ERROR)
+	{
+		Print("  ResolveIpNetEntry2 of a link-local address: error %u\n", (UINT)err);
+		return false;
+	}
+
+	return (nb.PhysicalAddressLength == 6 && Cmp(nb.PhysicalAddress, mac, 6) == 0);
+}
+
 // The IPv4 address of the default gateway of the interface luid, in network byte order; 0 for none
 static UINT NicBridgeGateway(UINT64 luid)
 {
@@ -551,6 +858,49 @@ static bool NicBridgeTcp()
 	freeaddrinfo(list);
 
 	return ok;
+}
+
+// Give the interface luid the IPv4 address addr/length, and wait until it is preferred; false when it did not take it
+static bool NicBridgeAddAddress(UINT64 luid, UINT addr, UINT length, DWORD *error)
+{
+	MIB_UNICASTIPADDRESS_ROW row;
+
+	InitializeUnicastIpAddressEntry(&row);
+	row.InterfaceLuid.Value = luid;
+	row.Address.Ipv4.sin_family = AF_INET;
+	row.Address.Ipv4.sin_addr.s_addr = addr;
+	row.OnLinkPrefixLength = (UCHAR)length;
+	row.DadState = IpDadStatePreferred;
+	*error = CreateUnicastIpAddressEntry(&row);
+	bool ok = (*error == NO_ERROR || *error == ERROR_OBJECT_ALREADY_EXISTS);
+
+	for (UINT64 end = GetTickCount64() + NICBRIDGE_BOUND;ok && GetTickCount64() < end;Sleep(100))
+	{
+		MIB_UNICASTIPADDRESS_ROW r;
+
+		InitializeUnicastIpAddressEntry(&r);
+		r.InterfaceLuid.Value = luid;
+		r.Address.Ipv4.sin_family = AF_INET;
+		r.Address.Ipv4.sin_addr.s_addr = addr;
+		if (GetUnicastIpAddressEntry(&r) == NO_ERROR && r.DadState == IpDadStatePreferred)
+		{
+			break;
+		}
+	}
+
+	return ok;
+}
+
+// Take the IPv4 address addr off the interface luid again
+static void NicBridgeDelAddress(UINT64 luid, UINT addr)
+{
+	MIB_UNICASTIPADDRESS_ROW row;
+
+	InitializeUnicastIpAddressEntry(&row);
+	row.InterfaceLuid.Value = luid;
+	row.Address.Ipv4.sin_family = AF_INET;
+	row.Address.Ipv4.sin_addr.s_addr = addr;
+	DeleteUnicastIpAddressEntry(&row);
 }
 
 // The sink of the benchmark: counts the datagrams that reach it
@@ -646,6 +996,8 @@ static bool NicBridgeNic(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p)
 	}
 	p->Luid = row.InterfaceLuid.Value;
 	Copy(p->Mac, row.PhysicalAddress, 6);
+	p->HostLuid = p->Luid;
+	Copy(p->HostMac, p->Mac, 6);
 
 	if (GetUnicastIpAddressTable(AF_INET, &t) == NO_ERROR)
 	{
@@ -688,15 +1040,16 @@ static bool NicBridgeNic(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p)
 // devices on the switch, found by its alias as the owner of a bridge names it
 static bool NicBridgeStandIn(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE *n)
 {
-	MIB_UNICASTIPADDRESS_ROW addr;
 	MIB_IF_ROW2 row;
 	char alias[MAX_SIZE];
 	char error[MAX_SIZE * 2];
+	DWORD err = NO_ERROR;
 
 	Zero(p, sizeof(NICBRIDGE_PORT));
 	p->Name = "the stand-in of a Hyper-V switch";
-	p->Tag = "hyperv";
+	p->Tag = "standin";
 	Copy(p->Mac, nicbridge_standin_mac, 6);
+	Copy(p->HostMac, nicbridge_standin_mac, 6);
 	p->Address = NicBridgeAddr(198, 18, NICBRIDGE_NETWORK, 1);
 	p->Member = NicBridgeAddr(198, 18, NICBRIDGE_NETWORK, 2);
 
@@ -718,29 +1071,9 @@ static bool NicBridgeStandIn(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE *n)
 		return false;
 	}
 	p->Luid = row.InterfaceLuid.Value;
+	p->HostLuid = p->Luid;
 
-	InitializeUnicastIpAddressEntry(&addr);
-	addr.InterfaceLuid.Value = p->Luid;
-	addr.Address.Ipv4.sin_family = AF_INET;
-	addr.Address.Ipv4.sin_addr.s_addr = p->Address;
-	addr.OnLinkPrefixLength = NICBRIDGE_LENGTH;
-	addr.DadState = IpDadStatePreferred;
-	DWORD err = CreateUnicastIpAddressEntry(&addr);
-	bool ok = (err == NO_ERROR || err == ERROR_OBJECT_ALREADY_EXISTS);
-
-	for (UINT64 end = GetTickCount64() + NICBRIDGE_BOUND;ok && GetTickCount64() < end;Sleep(100))
-	{
-		MIB_UNICASTIPADDRESS_ROW r;
-
-		InitializeUnicastIpAddressEntry(&r);
-		r.InterfaceLuid.Value = p->Luid;
-		r.Address.Ipv4.sin_family = AF_INET;
-		r.Address.Ipv4.sin_addr.s_addr = p->Address;
-		if (GetUnicastIpAddressEntry(&r) == NO_ERROR && r.DadState == IpDadStatePreferred)
-		{
-			break;
-		}
-	}
+	bool ok = NicBridgeAddAddress(p->Luid, p->Address, NICBRIDGE_LENGTH, &err);
 
 	Print("  the stand-in: interface %u, '%s', MAC %02X-%02X-%02X-%02X-%02X-%02X, 198.18.%u.1/%u, the member at 198.18.%u.2\n", p->IfIndex, alias, (UINT)p->Mac[0],
 		(UINT)p->Mac[1], (UINT)p->Mac[2], (UINT)p->Mac[3], (UINT)p->Mac[4], (UINT)p->Mac[5], (UINT)NICBRIDGE_NETWORK, (UINT)NICBRIDGE_LENGTH, (UINT)NICBRIDGE_NETWORK);
@@ -748,14 +1081,69 @@ static bool NicBridgeStandIn(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE *n)
 	return NicBridgeCheck(ctx, ok, "the stand-in takes its IPv4 address", "CreateUnicastIpAddressEntry: error %u", (UINT)err);
 }
 
+// The Hyper-V switch of the runner that the job made, named sw_name: the bridge takes the host vNIC of the switch, found by
+// the name of the switch as the owner of a bridge names it (NodeL2HyperVIndex), and the second host vNIC on the switch,
+// named device, is a device of the Hyper-V network with an IPv4 address of its own
+static bool NicBridgeHyperV(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, char *sw_name, char *device)
+{
+	MIB_IF_ROW2 row;
+	char alias[MAX_SIZE];
+	char error[MAX_SIZE * 2];
+	DWORD err = NO_ERROR;
+
+	Zero(p, sizeof(NICBRIDGE_PORT));
+	p->Name = "a Hyper-V switch of the runner";
+	p->Tag = "vswitch";
+	p->Wire = true;
+	p->Address = NicBridgeAddr(198, 18, NICBRIDGE_NETWORK + 1, 2);
+	p->Member = NicBridgeAddr(198, 18, NICBRIDGE_NETWORK + 1, 3);
+
+	// The bridge's vNIC, by the name of the switch
+	p->IfIndex = NodeL2HyperVIndex(sw_name, error, sizeof(error));
+	Zero(&row, sizeof(row));
+	row.InterfaceIndex = p->IfIndex;
+	bool found = (p->IfIndex != 0 && GetIfEntry2(&row) == NO_ERROR);
+	if (NicBridgeCheck(ctx, found, "NodeL2HyperVIndex finds the host vNIC of the Hyper-V switch of the runner by the name of the switch", "'%s': interface %u: %s", sw_name, p->IfIndex, error) == false)
+	{
+		return false;
+	}
+	p->Luid = row.InterfaceLuid.Value;
+	Copy(p->Mac, row.PhysicalAddress, 6);
+	Zero(alias, sizeof(alias));
+	UniToUtf8(alias, sizeof(alias) - 1, row.Alias);
+	Print("  the bridge's vNIC: interface %u, '%s', MAC %02X-%02X-%02X-%02X-%02X-%02X\n", p->IfIndex, alias, (UINT)p->Mac[0], (UINT)p->Mac[1], (UINT)p->Mac[2], (UINT)p->Mac[3],
+		(UINT)p->Mac[4], (UINT)p->Mac[5]);
+
+	// The device: the second host vNIC of the switch
+	Format(alias, sizeof(alias), "vEthernet (%s)", device);
+	UINT index = NodeL2BridgeIndex(alias, error, sizeof(error));
+	Zero(&row, sizeof(row));
+	row.InterfaceIndex = index;
+	found = (index != 0 && GetIfEntry2(&row) == NO_ERROR);
+	if (NicBridgeCheck(ctx, found, "a second host vNIC of the Hyper-V switch is a device of the Hyper-V network", "'%s': interface %u: %s", alias, index, error) == false)
+	{
+		return false;
+	}
+	p->HostLuid = row.InterfaceLuid.Value;
+	Copy(p->HostMac, row.PhysicalAddress, 6);
+
+	bool ok = NicBridgeAddAddress(p->HostLuid, p->Address, NICBRIDGE_LENGTH, &err);
+
+	Print("  the device: interface %u, '%s', MAC %02X-%02X-%02X-%02X-%02X-%02X, 198.18.%u.2/%u, the member at 198.18.%u.3\n", index, alias, (UINT)p->HostMac[0],
+		(UINT)p->HostMac[1], (UINT)p->HostMac[2], (UINT)p->HostMac[3], (UINT)p->HostMac[4], (UINT)p->HostMac[5], (UINT)NICBRIDGE_NETWORK + 1, (UINT)NICBRIDGE_LENGTH,
+		(UINT)NICBRIDGE_NETWORK + 1);
+
+	return NicBridgeCheck(ctx, ok, "the device on the Hyper-V switch takes its IPv4 address", "CreateUnicastIpAddressEntry: error %u", (UINT)err);
+}
+
 //
 // The parts of the test
 //
 
-// The benchmark on the stand-in (ADR-0018 decision 3, throughput against SeLow): frames of 1514 bytes of the member onto
-// the switch and to the host, and for a backend that sees the host's sends, the host's datagrams to the member, each for
-// NICBRIDGE_BENCH_TIME ms. Rates in frames per second, as NICBRIDGE BENCH lines.
-static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE_L2 *a, NICBRIDGE_OWNER *o, char *backend, bool host_sends)
+// The benchmark on the stand-in and on a Hyper-V switch (ADR-0018 decision 3, throughput against SeLow): frames of 1514
+// bytes of the member onto the segment and to the device, and for a backend that sees the device's sends, the device's
+// datagrams to the member, each for NICBRIDGE_BENCH_TIME ms. Rates in frames per second, as NICBRIDGE BENCH lines.
+static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NICBRIDGE_NET *net, NICBRIDGE_OWNER *o, char *backend, bool host_sends)
 {
 	UCHAR frame[NODE_L2_MAX_FRAME];
 	NODE_L2_STATUS st;
@@ -763,8 +1151,8 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE_L2 *a, NI
 	int timeout = 100;
 	int rcvbuf = 16 << 20;
 
-	// Onto the switch
-	NodeL2GetStatus(a, &st);
+	// Onto the segment
+	NodeL2BridgeGetStatus(net->Bridge, &st);
 	UINT64 before = st.Injected;
 	UINT size = NicBridgeWireFrame(frame, nicbridge_other_mac, 14 + 20 + 8 + NICBRIDGE_SEGMENT);
 	UINT64 end = GetTickCount64() + NICBRIDGE_BENCH_TIME;
@@ -772,15 +1160,15 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE_L2 *a, NI
 	{
 		for (UINT i = 0;i < 1024;i++)
 		{
-			NodeL2Send(a, frame, size);
+			NicBridgeFromMember(net, frame, size);
 		}
 	}
 	Sleep(200);
-	NodeL2GetStatus(a, &st);
+	NodeL2BridgeGetStatus(net->Bridge, &st);
 	UINT64 wire = (st.Injected - before) * 1000 / NICBRIDGE_BENCH_TIME;
-	Print("NICBRIDGE BENCH %s %s onto the switch: %I64u frames/s taken by the backend\n", backend, p->Tag, wire);
+	Print("NICBRIDGE BENCH %s %s onto the segment: %I64u frames/s taken by the backend\n", backend, p->Tag, wire);
 
-	// To the host, into a socket
+	// To the device, into a socket
 	Zero(&sink, sizeof(sink));
 	sink.Sock = NicBridgeSocket(p->Address, NICBRIDGE_BENCH_PORT);
 	UINT64 host = 0;
@@ -790,19 +1178,19 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE_L2 *a, NI
 		setsockopt(sink.Sock, SOL_SOCKET, SO_RCVBUF, (char *)&rcvbuf, sizeof(rcvbuf));
 		sink.Thread = CreateThread(NULL, 0, NicBridgeSinkThread, &sink, 0, NULL);
 
-		NodeL2GetStatus(a, &st);
+		NodeL2BridgeGetStatus(net->Bridge, &st);
 		before = st.Injected;
-		size = NicBridgeUdpFrame(frame, p->Mac, nicbridge_member_mac, p->Member, p->Address, 40000, NICBRIDGE_BENCH_PORT, NICBRIDGE_SEGMENT);
+		size = NicBridgeUdpFrame(frame, p->HostMac, nicbridge_member_mac, p->Member, p->Address, 40000, NICBRIDGE_BENCH_PORT, NICBRIDGE_SEGMENT);
 		end = GetTickCount64() + NICBRIDGE_BENCH_TIME;
 		while (GetTickCount64() < end)
 		{
 			for (UINT i = 0;i < 1024;i++)
 			{
-				NodeL2Send(a, frame, size);
+				NicBridgeFromMember(net, frame, size);
 			}
 		}
 		Sleep(200);
-		NodeL2GetStatus(a, &st);
+		NodeL2BridgeGetStatus(net->Bridge, &st);
 		host = (st.Injected - before) * 1000 / NICBRIDGE_BENCH_TIME;
 
 		InterlockedExchange(&sink.Stop, 1);
@@ -813,12 +1201,12 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE_L2 *a, NI
 		}
 		closesocket(sink.Sock);
 	}
-	Print("NICBRIDGE BENCH %s %s to the host: %I64u frames/s taken by the backend, %I64u frames/s delivered to a socket\n", backend, p->Tag, host,
+	Print("NICBRIDGE BENCH %s %s to the device: %I64u frames/s taken by the backend, %I64u frames/s delivered to a socket\n", backend, p->Tag, host,
 		(UINT64)sink.Received * 1000 / NICBRIDGE_BENCH_TIME);
 
-	// The host's datagrams to the member
+	// The device's datagrams to the member
 	UINT64 captured = 0;
-	if (host_sends && NicBridgeNeighbour(p->Luid, p->Member, nicbridge_member_mac, true))
+	if (host_sends && NicBridgeNeighbour(p->HostLuid, p->Member, nicbridge_member_mac, true))
 	{
 		SOCKET s = NicBridgeSocket(p->Address, 0);
 		LONG64 udp = ReadAcquire64(&o->Udp);
@@ -834,80 +1222,87 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NODE_L2 *a, NI
 		}
 		Sleep(200);
 		captured = (UINT64)(ReadAcquire64(&o->Udp) - udp) * 1000 / NICBRIDGE_BENCH_TIME;
-		NicBridgeNeighbour(p->Luid, p->Member, NULL, false);
-		Print("NICBRIDGE BENCH %s %s from the host: %I64u frames/s captured\n", backend, p->Tag, captured);
+		NicBridgeNeighbour(p->HostLuid, p->Member, NULL, false);
+		Print("NICBRIDGE BENCH %s %s from the device: %I64u frames/s captured and handed to the member\n", backend, p->Tag, captured);
 	}
 
 	char what[MAX_SIZE];
-	Format(what, sizeof(what), "the benchmark of the %s backend moves frames onto the switch and to the host (the rates are the NICBRIDGE BENCH lines)", backend);
+	Format(what, sizeof(what), "the benchmark of the %s backend on %s moves frames onto the segment and to the device%s (the rates are the NICBRIDGE BENCH lines)", backend, p->Name,
+		host_sends ? ", and captures the device's" : "");
 	NicBridgeCheck(ctx, wire > 0 && host > 0 && (host_sends == false || captured > 0), what, "%I64u, %I64u, %I64u frames/s", wire, host, captured);
 }
 
-// The spike of ADR-0018 decision 3 for the backend b on the attachment p, through the backend interface
-static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const NODE_L2_BACKEND *b)
+// Coexistence on a Hyper-V switch: the host resolves the link-local IPv6 address of the device through the bridged vNIC,
+// with a solicitation that it sends and an advertisement that comes back through the switch
+static void NicBridgeVswitchHost(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, char *when)
 {
-	const NODE_L2_BACKEND *list[1];
-	NODE_L2_CONFIG cfg;
+	UCHAR ll[16];
+	char what[MAX_SIZE];
+
+	bool have = NicBridgeLinkLocal(p->HostLuid, ll);
+	bool resolved = (have && NicBridgeResolve6(p->Luid, ll, p->HostMac));
+	Format(what, sizeof(what), "coexistence on %s: the host resolves the link-local address of the device through the bridged vNIC %s", p->Name, when);
+	NicBridgeCheck(ctx, resolved, what, "%s", have ? "not resolved to the device's MAC address" : "the device has no preferred link-local address");
+}
+
+// The spike of ADR-0018 decision 3 for the backend b on the attachment p, through the backend interface: an L2 bridge, the
+// member of a port of the switch of an L2 Network beside the member that the test plays. own_hold: the test's own hold
+// of promiscuous mode for XDP (the SeLow device), else the product's (NodeL2NpcapHold).
+static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const NODE_L2_BACKEND *b, bool own_hold)
+{
+	NICBRIDGE_NET net;
 	NODE_L2_STATUS st;
 	NICBRIDGE_OWNER o;
 	UCHAR frame[NODE_L2_MAX_FRAME];
 	char what[MAX_SIZE];
 	char buf[2048];
 	int timeout = 200;
-	// XDP takes only what comes in from below the adapter, which no attachment of a runner gives for the member
-	bool from_host = (StrCmp(b->Name, "xdp") != 0);
-	bool nic = (p->KmTest == NULL);
+	// XDP takes only what comes in from below the interface: the device's frames on a Hyper-V switch do; on the NIC and on
+	// the stand-in no frame of the host for the member does
+	bool from_host = (StrCmp(b->Name, "xdp") != 0 || p->Wire);
+	bool nic = (p->KmTest == NULL && p->Wire == false);
 
 	Zero(&o, sizeof(o));
 	Copy(o.Member, nicbridge_member_mac, 6);
-	list[0] = b;
-	Zero(&cfg, sizeof(cfg));
-	cfg.IfIndex = p->IfIndex;
-	cfg.Proc = NicBridgeOwnerProc;
-	cfg.Param = &o;
-	cfg.Backends = list;
-	cfg.NumBackends = 1;
-	cfg.Bridge = true;
-	cfg.Hold = NicBridgeHold;
-	cfg.LetGo = NicBridgeLetGo;
 
 	Print("The %s backend on %s\n", b->Name, p->Name);
-	NODE_L2 *a = NodeL2New(n, &cfg);
-	NodeL2GetStatus(a, &st);
-	Format(what, sizeof(what), "the %s backend binds a bridge on %s through the backend interface", b->Name, p->Name);
-	if (NicBridgeCheck(ctx, a != NULL && StrCmp(st.Backend, b->Name) == 0 && st.Bridge, what, "%s, backend '%s'", a != NULL ? "a bridge" : "no bridge", st.Backend) == false)
+	bool up = NicBridgeNetNew(&net, n, p, b, &o, own_hold);
+	NodeL2BridgeGetStatus(net.Bridge, &st);
+	Format(what, sizeof(what), "the %s backend binds an L2 bridge on %s, the member of a port of the switch of an L2 Network, through the backend interface", b->Name, p->Name);
+	if (NicBridgeCheck(ctx, up && StrCmp(st.Backend, b->Name) == 0 && st.Bridge, what, "%s, backend '%s'", up ? "a bridge" : "no bridge", st.Backend) == false)
 	{
-		NodeL2Free(a);
+		NicBridgeNetFree(&net);
 		return;
 	}
-	Print("  the bridge is on %u queue(s) of the driver\n", st.Queues);
+	Print("  the bridge is on %u queue(s) of the driver, at port %u of the switch\n", st.Queues, NodeL2BridgePort(net.Bridge));
 
-	// Foreign-MAC transmit onto the wire: frames of the member to another address of the segment, which the backend takes,
-	// and which the NIC counts as sent
+	// Foreign-MAC transmit onto the segment: frames of the member to another address of the segment, which the switch hands
+	// the bridge, whose backend takes them, and which the NIC counts as sent
 	UINT64 sent_before = NicBridgeSent(p->IfIndex);
 	UINT64 injected_before = st.Injected;
 	UINT size = NicBridgeWireFrame(frame, nicbridge_other_mac, 64);
 	UINT sent = 0;
 	for (UINT i = 0;i < NICBRIDGE_WIRE;i++)
 	{
-		sent += (NodeL2Send(a, frame, size) ? 1 : 0);
+		sent += (NicBridgeFromMember(&net, frame, size) ? 1 : 0);
 		if ((i % 100) == 99)
 		{
 			Sleep(1);
 		}
 	}
-	bool taken = NicBridgeWaitInjected(a, injected_before + sent, &st);
+	bool taken = NicBridgeWaitInjected(net.Bridge, injected_before + sent, &st);
 	Sleep(500);
 	UINT64 counted = NicBridgeSent(p->IfIndex) - sent_before;
-	Format(what, sizeof(what), "foreign-MAC transmit on %s: the backend takes the frames of the member for the segment%s", p->Name, nic ? ", and the NIC counts them as sent" : "");
-	NicBridgeCheck(ctx, sent == NICBRIDGE_WIRE && taken && (nic == false || counted >= sent), what, "%u sent, %I64u taken by the backend, %I64u counted by the interface",
+	Format(what, sizeof(what), "foreign-MAC transmit on %s: the member's frames go through the switch to the bridge, whose backend takes them for the segment%s", p->Name,
+		nic ? ", and the NIC counts them as sent" : "");
+	NicBridgeCheck(ctx, sent == NICBRIDGE_WIRE && taken && (nic == false || counted >= sent), what, "%u handed to the bridge, %I64u taken by the backend, %I64u counted by the interface",
 		sent, st.Injected - injected_before, counted);
 	if (nic == false)
 	{
-		Print("NICBRIDGE DIAG %s %s: %I64u frames counted as sent by the KM-TEST adapter\n", b->Name, p->Tag, counted);
+		Print("NICBRIDGE DIAG %s %s: %I64u frames counted as sent by the bridge's interface\n", b->Name, p->Tag, counted);
 	}
 
-	// Foreign-MAC transmit to the host: datagrams of the member reach a socket of the host on the attachment
+	// Foreign-MAC transmit to the device: datagrams of the member reach a socket of the device
 	UINT got = 0;
 	SOCKET r = (p->Address != 0 && p->Member != 0 ? NicBridgeSocket(p->Address, NICBRIDGE_RX_PORT) : INVALID_SOCKET);
 	if (r != INVALID_SOCKET)
@@ -915,8 +1310,8 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 		setsockopt(r, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
 		for (UINT i = 0;i < 5;i++)
 		{
-			UINT usize = NicBridgeUdpFrame(frame, p->Mac, nicbridge_member_mac, p->Member, p->Address, 40000, NICBRIDGE_RX_PORT, 32);
-			NodeL2Send(a, frame, usize);
+			UINT usize = NicBridgeUdpFrame(frame, p->HostMac, nicbridge_member_mac, p->Member, p->Address, 40000, NICBRIDGE_RX_PORT, 32);
+			NicBridgeFromMember(&net, frame, usize);
 			if (recv(r, buf, sizeof(buf), 0) > 0)
 			{
 				got++;
@@ -932,29 +1327,29 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 		closesocket(r);
 	}
 
-	// Foreign-MAC transmit and receive: an ARP request of the member for the attachment's address; the host learns the
-	// member, and its reply to the member is captured
+	// Foreign-MAC transmit and receive: an ARP request of the member for the device's address; the device learns the
+	// member, and its reply to the member reaches the member through the bridge and the switch
 	bool learnt = false;
 	bool replied = false;
 	if (p->Address != 0 && p->Member != 0)
 	{
 		LONG64 replies = ReadAcquire64(&o.ArpReplies);
 
-		NicBridgeNeighbour(p->Luid, p->Member, NULL, false);
+		NicBridgeNeighbour(p->HostLuid, p->Member, NULL, false);
 		for (UINT i = 0;i < 3;i++)
 		{
 			UINT asize = NicBridgeArpRequest(frame, nicbridge_member_mac, p->Member, p->Address);
-			NodeL2Send(a, frame, asize);
+			NicBridgeFromMember(&net, frame, asize);
 			Sleep(50);
 		}
 		replied = NicBridgeWait64(&o.ArpReplies, replies + 1, from_host ? NICBRIDGE_ANSWER : 1000);
-		learnt = NicBridgeLearnt(p->Luid, p->Member, nicbridge_member_mac);
+		learnt = NicBridgeLearnt(p->HostLuid, p->Member, nicbridge_member_mac);
 	}
 
-	// Foreign-MAC receive: the host's datagrams to the member, a permanent neighbour, are captured
+	// Foreign-MAC receive: the device's datagrams to the member, a permanent neighbour, are captured and reach the member
 	UINT usent = 0;
 	bool captured = false;
-	if (p->Address != 0 && p->Member != 0 && NicBridgeNeighbour(p->Luid, p->Member, nicbridge_member_mac, true))
+	if (p->Address != 0 && p->Member != 0 && NicBridgeNeighbour(p->HostLuid, p->Member, nicbridge_member_mac, true))
 	{
 		LONG64 before = ReadAcquire64(&o.Udp);
 		SOCKET s = NicBridgeSocket(p->Address, 0);
@@ -966,18 +1361,18 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 		}
 		captured = NicBridgeWait64(&o.Udp, before + 20, from_host ? NICBRIDGE_BOUND : 1000);
 	}
-	NicBridgeNeighbour(p->Luid, p->Member, NULL, false);
+	NicBridgeNeighbour(p->HostLuid, p->Member, NULL, false);
 
 	if (from_host)
 	{
-		Format(what, sizeof(what), "foreign-MAC transmit on %s: the datagrams of the member reach a socket of the host", p->Name);
+		Format(what, sizeof(what), "foreign-MAC transmit on %s: the datagrams of the member reach a socket of the device", p->Name);
 		NicBridgeCheck(ctx, got >= 4, what, "%u of 5 received", got);
-		Format(what, sizeof(what), "foreign-MAC transmit and receive on %s: the host answers the ARP request of the member, and its reply to the member is captured", p->Name);
-		NicBridgeCheck(ctx, replied, what, "no reply captured; the host %s the member", learnt ? "learnt" : "did not learn");
-		Format(what, sizeof(what), "foreign-MAC receive on %s: the datagrams that the host sends to the member are captured", p->Name);
+		Format(what, sizeof(what), "foreign-MAC transmit and receive on %s: the device answers the ARP request of the member, and its reply reaches the member", p->Name);
+		NicBridgeCheck(ctx, replied, what, "no reply captured; the device %s the member", learnt ? "learnt" : "did not learn");
+		Format(what, sizeof(what), "foreign-MAC receive on %s: the datagrams that the device sends to the member are captured and reach the member", p->Name);
 		NicBridgeCheck(ctx, usent == 20 && captured, what, "%u sent, %I64u captured", usent, (UINT64)ReadAcquire64(&o.Udp));
 	}
-	Print("NICBRIDGE DIAG %s %s: %u of 5 datagrams of the member at the host, the host %s the member, %s its ARP reply, %u of its datagrams to the member, %I64u captured; %I64u frames from the segment, %I64u to the member\n",
+	Print("NICBRIDGE DIAG %s %s: %u of 5 datagrams of the member at the device, the device %s the member, %s its ARP reply, %u of its datagrams to the member, %I64u captured; %I64u frames handed to the member, %I64u to its address\n",
 		b->Name, p->Tag, got, learnt ? "learnt" : "did not learn", replied ? "captured" : "did not capture", usent, (UINT64)ReadAcquire64(&o.Udp),
 		(UINT64)ReadAcquire64(&o.Frames), (UINT64)ReadAcquire64(&o.ToMember));
 
@@ -990,37 +1385,41 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 		Format(what, sizeof(what), "coexistence on %s: the host's own TCP connection to %s through the NIC works while the bridge is on", p->Name, NICBRIDGE_TCP_HOST);
 		NicBridgeCheck(ctx, NicBridgeTcp(), what, "it did not");
 
-		NodeL2GetStatus(a, &st);
+		NodeL2BridgeGetStatus(net.Bridge, &st);
 		UINT64 to_host = st.ToHost;
 		bool resolved = (p->Gateway != 0 && NicBridgeResolve(p->Luid, p->Gateway));
 		UINT64 end = GetTickCount64() + NICBRIDGE_ANSWER;
-		NodeL2GetStatus(a, &st);
-		while (from_host == false && st.ToHost == to_host && GetTickCount64() < end)
+		NodeL2BridgeGetStatus(net.Bridge, &st);
+		while (StrCmp(b->Name, "xdp") == 0 && st.ToHost == to_host && GetTickCount64() < end)
 		{
 			Sleep(NICBRIDGE_POLL);
-			NodeL2GetStatus(a, &st);
+			NodeL2BridgeGetStatus(net.Bridge, &st);
 		}
 		Format(what, sizeof(what), "coexistence on %s: the host resolves its gateway again while the bridge is on%s", p->Name,
-			from_host ? "" : ", and its ARP reply, a frame of the wire that RX inspect takes, comes back to the host through the bridge");
-		NicBridgeCheck(ctx, resolved && (from_host || st.ToHost > to_host), what, "%s, %I64u frames of the wire handed back to the host",
+			StrCmp(b->Name, "xdp") == 0 ? ", and its ARP reply, a frame of the wire that RX inspect takes, comes back to the host through the bridge" : "");
+		NicBridgeCheck(ctx, resolved && (StrCmp(b->Name, "xdp") != 0 || st.ToHost > to_host), what, "%s, %I64u frames of the wire handed back to the host",
 			p->Gateway == 0 ? "no gateway found" : (resolved ? "resolved" : "not resolved"), st.ToHost - to_host);
 
 		Sleep(NODE_L2_PROBE + 1000);
-		NodeL2GetStatus(a, &st);
+		NodeL2BridgeGetStatus(net.Bridge, &st);
 		NicBridgeCheck(ctx, st.Probes == 0, "a bridge sends no probe of the receive path onto the LAN", "%I64u probes", st.Probes);
 	}
 	else
 	{
-		NicBridgeBench(ctx, p, a, &o, b->Name, from_host);
+		if (p->Wire)
+		{
+			NicBridgeVswitchHost(ctx, p, "while the bridge is on");
+		}
+		NicBridgeBench(ctx, p, &net, &o, b->Name, from_host);
 	}
 
-	NodeL2GetStatus(a, &st);
+	NodeL2BridgeGetStatus(net.Bridge, &st);
 	Print("  status: captured %I64u (%I64u dropped), delivered %I64u, sent %I64u (%I64u dropped), injected %I64u (%I64u refused) in %I64u batches, %I64u handed back to the host (%I64u dropped), %I64u reattaches\n",
 		st.Captured, st.CaptureDrops, st.Delivered, st.Sent, st.SendDrops, st.Injected, st.InjectDrops, st.Batches, st.ToHost, st.ToHostDrops, st.Reattaches);
 
 	UINT64 t0 = GetTickCount64();
-	bool freed = NodeL2Free(a);
-	Format(what, sizeof(what), "NodeL2Free takes the bridge on %s down in time", p->Name);
+	bool freed = NicBridgeNetFree(&net);
+	Format(what, sizeof(what), "NodeL2BridgeFree takes the L2 bridge on %s off its switch and down in time", p->Name);
 	NicBridgeCheck(ctx, freed, what, "a step did not finish in time (%I64u ms)", GetTickCount64() - t0);
 
 	if (nic)
@@ -1028,43 +1427,39 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 		Format(what, sizeof(what), "coexistence on %s: the host's own TCP connection through the NIC works after the bridge went", p->Name);
 		NicBridgeCheck(ctx, NicBridgeTcp(), what, "it did not");
 	}
+	else if (p->Wire)
+	{
+		NicBridgeVswitchHost(ctx, p, "after the bridge went");
+	}
 }
 
-// SeLow is the default of a bridge, and Npcap is used only where it is installed
+// SeLow is the default of an L2 bridge, and Npcap is used only where it is installed
 static void NicBridgeDefault(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p)
 {
-	const NODE_L2_BACKEND *list[1];
-	NODE_L2_CONFIG cfg;
-	NODE_L2_STATUS st;
+	NICBRIDGE_NET net;
 	NICBRIDGE_OWNER o;
+	NODE_L2_STATUS st;
 	char error[MAX_SIZE];
 
 	Zero(&o, sizeof(o));
-	Zero(&cfg, sizeof(cfg));
-	cfg.IfIndex = p->IfIndex;
-	cfg.Proc = NicBridgeOwnerProc;
-	cfg.Param = &o;
-	cfg.Bridge = true;
+	Copy(o.Member, nicbridge_member_mac, 6);
 
-	NODE_L2 *a = NodeL2New(n, &cfg);
-	NodeL2GetStatus(a, &st);
-	NicBridgeCheck(ctx, a != NULL && StrCmp(st.Backend, "selow") == 0, "a bridge on the runner's NIC whose owner names no backend binds SeLow, the default", "%s, backend '%s'",
-		a != NULL ? "a bridge" : "no bridge", st.Backend);
-	NodeL2Free(a);
+	bool up = NicBridgeNetNew(&net, n, p, NULL, &o, false);
+	NodeL2BridgeGetStatus(net.Bridge, &st);
+	NicBridgeCheck(ctx, up && StrCmp(st.Backend, "selow") == 0, "an L2 bridge on the runner's NIC whose owner names no backend binds SeLow, the default", "%s, backend '%s'",
+		up ? "a bridge" : "no bridge", st.Backend);
+	NicBridgeNetFree(&net);
 
 	if (NodeL2NpcapPresent(error, sizeof(error)))
 	{
-		Print("  Npcap is installed here: nicbridge npcap runs the spike with it\n");
+		Print("  Npcap is installed here: the check of a host without it is left out\n");
 		return;
 	}
 
 	Print("NICBRIDGE NPCAP absent: %s\n", error);
-	list[0] = NodeL2NpcapBackend();
-	cfg.Backends = list;
-	cfg.NumBackends = 1;
-	a = NodeL2New(n, &cfg);
-	NicBridgeCheck(ctx, a == NULL, "Npcap is used only where it is installed: without it a bridge on Npcap alone does not come up", "a bridge came up");
-	NodeL2Free(a);
+	up = NicBridgeNetNew(&net, n, p, NodeL2NpcapBackend(), &o, false);
+	NicBridgeCheck(ctx, up == false, "Npcap is used only where it is installed: without it an L2 bridge on Npcap alone does not come up", "a bridge came up");
+	NicBridgeNetFree(&net);
 }
 
 // A new empty data directory under the temp directory of the process, with a configuration store: no role, one worker
@@ -1120,7 +1515,7 @@ static void NicBridgeDeleteDir(wchar_t *dir)
 					TOKEN_LIST *t = ParseToken(text, "\r\n");
 					for (UINT j = 0;j < t->NumTokens;j++)
 					{
-						if (InStr(t->Token[j], "L2 adapter") || InStr(t->Token[j], "KM-TEST"))
+						if (InStr(t->Token[j], "L2 adapter") || InStr(t->Token[j], "L2 bridge") || InStr(t->Token[j], "KM-TEST"))
 						{
 							Print("  [LOG] %s\n", t->Token[j]);
 						}
@@ -1138,25 +1533,35 @@ static void NicBridgeDeleteDir(wchar_t *dir)
 	}
 }
 
-// nicbridge: the bridge of an L2 Network on the runner's NIC and on a stand-in of a Hyper-V switch (CORE-S3-3)
-RANZ_TEST("nicbridge", nicbridge_test, "NIC bridge: the bridge of an L2 Network through the backend interface on the runner's NIC and on a KM-TEST adapter standing in for a Hyper-V switch, with SeLow, XDP or Npcap (argument: selow, xdp or npcap): foreign-MAC transmit and receive, coexistence with the host stack, the benchmark against SeLow, SeLow the default and Npcap only where it is installed (administrator rights, the drivers of ranz install).");
+// nicbridge: the bridge of an L2 Network on the runner's NIC, on a stand-in of a Hyper-V switch and on a Hyper-V switch of
+// the runner (CORE-S3-3)
+RANZ_TEST("nicbridge", nicbridge_test, "NIC bridge: an L2 bridge of an L2 Network through the backend interface on the runner's NIC, on a KM-TEST adapter standing in for a Hyper-V switch and on a Hyper-V switch of the runner, with SeLow, XDP or Npcap through a stand-in of its pcap API (arguments: selow, xdp or npcap, then the Hyper-V switch and its device vNIC): foreign-MAC transmit and receive, coexistence with the host stack, the benchmark against SeLow, SeLow the default and Npcap only where it is installed (administrator rights, the drivers of ranz install).");
 void nicbridge_test(UINT num, char **arg)
 {
 	NICBRIDGE_CTX ctx;
 	NICBRIDGE_PORT nic;
 	NICBRIDGE_PORT standin;
+	NICBRIDGE_PORT vsw;
+	NICBRIDGE_PORT *ports[3];
 	WSADATA wsa;
 	UCHAR key[PEER_KEY_SIZE];
 	wchar_t dir[MAX_PATH];
+	char error[MAX_SIZE];
 	char *mode = (num >= 1 ? arg[0] : "selow");
+	char *vswitch = (num >= 3 ? arg[1] : NULL);
+	char *device = (num >= 3 ? arg[2] : NULL);
 	bool xdp = (StrCmpi(mode, "xdp") == 0);
 	bool npcap = (StrCmpi(mode, "npcap") == 0);
+	UINT num_ports = 0;
 
 	HANDLE done = CreateEventW(NULL, TRUE, FALSE, NULL);
 	HANDLE watchdog = (done != NULL ? CreateThread(NULL, 0, NicBridgeWatchdog, done, 0, NULL) : NULL);
 
 	Zero(&ctx, sizeof(ctx));
+	Zero(&nic, sizeof(nic));
 	Zero(&standin, sizeof(standin));
+	Zero(&vsw, sizeof(vsw));
+	Zero(ports, sizeof(ports));
 	WSAStartup(MAKEWORD(2, 2), &wsa);
 
 	memset(key, 0x73, sizeof(key));
@@ -1164,7 +1569,8 @@ void nicbridge_test(UINT num, char **arg)
 	NodeL2Mac(nicbridge_member_mac, key, NICBRIDGE_NETWORK + 1);
 	NodeL2Mac(nicbridge_other_mac, key, NICBRIDGE_NETWORK + 2);
 
-	Print("NIC bridge test: the bridge of an L2 Network on the runner's NIC and on a stand-in of a Hyper-V switch, mode %s\n", mode);
+	Print("NIC bridge test: an L2 bridge of an L2 Network on the runner's NIC, on a stand-in of a Hyper-V switch%s, mode %s\n",
+		vswitch != NULL ? " and on a Hyper-V switch of the runner" : "", mode);
 
 	NicBridgeNewDir(dir, sizeof(dir));
 	NODE *n = NewNode(dir);
@@ -1173,47 +1579,52 @@ void nicbridge_test(UINT num, char **arg)
 	if (NicBridgeCheck(&ctx, started, "a node without a role runs for the bridges", "NewNode or NodeStart failed"))
 	{
 		bool have_nic = NicBridgeNic(&ctx, &nic);
-		bool have_standin = NicBridgeStandIn(&ctx, &standin, n);
 
+		// The stand-in first, then the Hyper-V switch that the job made, then the runner's NIC
+		if (NicBridgeStandIn(&ctx, &standin, n))
+		{
+			ports[num_ports++] = &standin;
+		}
+		if (vswitch != NULL && NicBridgeHyperV(&ctx, &vsw, vswitch, device))
+		{
+			ports[num_ports++] = &vsw;
+		}
 		if (have_nic)
 		{
+			ports[num_ports++] = &nic;
 			NicBridgeDefault(&ctx, n, &nic);
 		}
 
 		if (npcap)
 		{
-			char error[MAX_SIZE];
-
-			if (NodeL2NpcapPresent(error, sizeof(error)))
+			// No runner may carry Npcap: the stand-in of its pcap API over the SeLow device of each adapter
+			NodeL2NpcapStandIn(&nicbridge_pcap_api);
+			bool present = NodeL2NpcapPresent(error, sizeof(error));
+			Print("NICBRIDGE NPCAP stand-in: the pcap API of Npcap over the SeLow device of each adapter\n");
+			if (NicBridgeCheck(&ctx, present, "the Npcap backend takes the stand-in of Npcap's pcap API", "'%s'", error))
 			{
-				if (have_standin)
+				for (UINT i = 0;i < num_ports;i++)
 				{
-					NicBridgeRun(&ctx, n, &standin, NodeL2NpcapBackend());
+					NicBridgeRun(&ctx, n, ports[i], NodeL2NpcapBackend(), false);
 				}
-				if (have_nic)
+				// XDP carries the frames, and Npcap, the product's hold, holds the NIC in promiscuous mode
+				for (UINT i = 0;i < num_ports;i++)
 				{
-					NicBridgeRun(&ctx, n, &nic, NodeL2NpcapBackend());
+					NicBridgeRun(&ctx, n, ports[i], NodeL2XdpBackend(), false);
 				}
 			}
+			NodeL2NpcapStandIn(NULL);
 		}
 		else
 		{
-			// SeLow first, then XDP, on the stand-in and then on the runner's NIC
-			if (have_standin)
+			// SeLow, then XDP on the same attachment, for the comparison
+			for (UINT i = 0;i < num_ports;i++)
 			{
-				NicBridgeRun(&ctx, n, &standin, NodeL2SeLowBackend());
-			}
-			if (have_standin && xdp)
-			{
-				NicBridgeRun(&ctx, n, &standin, NodeL2XdpBackend());
-			}
-			if (have_nic)
-			{
-				NicBridgeRun(&ctx, n, &nic, NodeL2SeLowBackend());
-			}
-			if (have_nic && xdp)
-			{
-				NicBridgeRun(&ctx, n, &nic, NodeL2XdpBackend());
+				NicBridgeRun(&ctx, n, ports[i], NodeL2SeLowBackend(), true);
+				if (xdp)
+				{
+					NicBridgeRun(&ctx, n, ports[i], NodeL2XdpBackend(), true);
+				}
 			}
 		}
 	}
@@ -1223,6 +1634,10 @@ void nicbridge_test(UINT num, char **arg)
 		NodeKmTestFree(standin.KmTest, true);
 		NodeStop(n);
 		FreeNode(n);
+	}
+	if (vsw.HostLuid != 0)
+	{
+		NicBridgeDelAddress(vsw.HostLuid, vsw.Address);
 	}
 	NicBridgeDeleteDir(dir);
 

@@ -7,7 +7,8 @@
 // not bind, and a bridge goes on to its next backend. In the ranzvpnserver service the load fails while the
 // signed-images mitigation of ADR-0039 is on, as Npcap's publisher, not Microsoft, signs its DLLs; the node log says so.
 // The code follows the documented API of libpcap and WinPcap, which Npcap keeps (pcap_open with its open flags,
-// pcap_next_ex, pcap_sendpacket, pcap_getevent, pcap_setfilter), declared here as the node takes it by GetProcAddress:
+// pcap_next_ex, pcap_sendpacket, pcap_getevent, pcap_setfilter), which the node takes by GetProcAddress into the table
+// of NodeL2.h (NODE_L2_PCAP_API):
 // - One handle captures and injects, opened with PCAP_OPENFLAG_PROMISCUOUS, so the NIC takes the frames of every MAC
 //   address; PCAP_OPENFLAG_NOCAPTURE_LOCAL, which WinPcap documents for "applications like bridges, that should ignore
 //   the traffic they just sent"; and PCAP_OPENFLAG_MAX_RESPONSIVENESS, so the driver hands each frame over at once. The
@@ -24,6 +25,8 @@
 //   send waits at most for the copy of a read on the synchronous handle.
 // - The promiscuous mode for the XDP backend: one more handle opened promiscuous, whose filter takes no frame, so Npcap
 //   copies nothing while XDP carries the frames; it is kept until the XDP backend lets go of the bridge.
+// - A test gives a stand-in of the pcap API in place of wpcap.dll (NodeL2NpcapStandIn): no runner may carry Npcap, whose
+//   free licence allows five installations and has no silent install. Each handle keeps the API that opened it.
 
 #include "Node.h"
 
@@ -35,10 +38,6 @@
 
 // The folder of Npcap's DLLs below System32, and its pcap library
 #define NODE_L2_NPCAP_DLL L"\\Npcap\\wpcap.dll"
-// The flags of pcap_open (pcap/pcap.h of libpcap, which Npcap ships in its SDK)
-#define NODE_L2_PCAP_PROMISCUOUS        0x01
-#define NODE_L2_PCAP_NOCAPTURE_LOCAL    0x08
-#define NODE_L2_PCAP_MAX_RESPONSIVENESS 0x10
 // Bytes of the error text of a pcap call (PCAP_ERRBUF_SIZE)
 #define NODE_L2_PCAP_ERRBUF 256
 // Bytes of a frame that the handle of the backend keeps at most: more than any frame of the adapter (NODE_L2_MAX_FRAME),
@@ -50,61 +49,20 @@
 #define NODE_L2_NPCAP_WAIT   50
 // Frames that the drain thread takes in a row before it wakes the adapter queue
 #define NODE_L2_NPCAP_BATCH 256
-// The BPF instruction "ret #0" (BPF_RET | BPF_K, k 0): a filter of it takes no frame
-#define NODE_L2_BPF_REJECT 0x06
 
-// The header of a captured frame (struct pcap_pkthdr): its time as a struct timeval of Winsock, two longs, then the
-// bytes captured and the bytes of the frame
-typedef struct NODE_L2_PCAP_HEADER {
-	long Seconds;
-	long Microseconds;
-	UINT Captured;
-	UINT Size;
-} NODE_L2_PCAP_HEADER;
-
-// A BPF instruction and a program of them (struct bpf_insn, struct bpf_program)
-typedef struct NODE_L2_BPF_INSN {
-	USHORT Code;
-	UCHAR Jt;
-	UCHAR Jf;
-	UINT K;
-} NODE_L2_BPF_INSN;
-
-typedef struct NODE_L2_BPF_PROGRAM {
-	UINT Length;
-	NODE_L2_BPF_INSN *Instructions;
-} NODE_L2_BPF_PROGRAM;
-
-// The functions of wpcap.dll that the node takes by name; a pcap_t is opaque
-typedef void *(NODE_L2_PCAP_OPEN_FUNC)(const char *source, int snaplen, int flags, int read_timeout, void *auth, char *errbuf);
-typedef void(NODE_L2_PCAP_CLOSE_FUNC)(void *p);
-typedef int(NODE_L2_PCAP_NEXT_EX_FUNC)(void *p, NODE_L2_PCAP_HEADER **header, const UCHAR **data);
-typedef int(NODE_L2_PCAP_SENDPACKET_FUNC)(void *p, const UCHAR *data, int size);
-typedef HANDLE(NODE_L2_PCAP_GETEVENT_FUNC)(void *p);
-typedef int(NODE_L2_PCAP_SETFILTER_FUNC)(void *p, NODE_L2_BPF_PROGRAM *program);
-typedef char *(NODE_L2_PCAP_GETERR_FUNC)(void *p);
-
-// wpcap.dll and its functions, loaded once per process and kept until the process ends
-typedef struct NODE_L2_NPCAP_API {
-	HMODULE Module;
-	NODE_L2_PCAP_OPEN_FUNC *Open;
-	NODE_L2_PCAP_CLOSE_FUNC *Close;
-	NODE_L2_PCAP_NEXT_EX_FUNC *NextEx;
-	NODE_L2_PCAP_SENDPACKET_FUNC *SendPacket;
-	NODE_L2_PCAP_GETEVENT_FUNC *GetEvent;
-	NODE_L2_PCAP_SETFILTER_FUNC *SetFilter;
-	NODE_L2_PCAP_GETERR_FUNC *GetErr;
-} NODE_L2_NPCAP_API;
-
+// The functions of the wpcap.dll of an installed Npcap, loaded once per process and kept until the process ends
 static INIT_ONCE node_l2_npcap_once = INIT_ONCE_STATIC_INIT;
-static NODE_L2_NPCAP_API node_l2_npcap;
+static NODE_L2_PCAP_API node_l2_npcap;
 static bool node_l2_npcap_loaded = false;
 static char node_l2_npcap_error[MAX_SIZE];
+// The stand-in of a test, used in place of wpcap.dll while it is set (NodeL2NpcapStandIn)
+static const NODE_L2_PCAP_API *node_l2_npcap_standin = NULL;
 
 // The state of the backend on one adapter (NODE_L2.BackendState)
 typedef struct NODE_L2_NPCAP {
 	NODE_L2 *Adapter;
-	// The handle that captures and sends, and its event, which the handle owns
+	// The pcap API that opened the handle, the handle that captures and sends, and its event, which the handle owns
+	const NODE_L2_PCAP_API *Api;
 	void *Handle;
 	HANDLE Event;
 	// The drain thread, and its halt; Broken once a read failed (the adapter went, or Npcap let go of it)
@@ -112,6 +70,13 @@ typedef struct NODE_L2_NPCAP {
 	volatile LONG Halt;
 	volatile LONG Broken;
 } NODE_L2_NPCAP;
+
+// What holds the NIC of a bridge in promiscuous mode for the XDP backend (NodeL2NpcapHold): a handle, and the pcap API
+// that opened it
+typedef struct NODE_L2_NPCAP_HOLD {
+	const NODE_L2_PCAP_API *Api;
+	void *Handle;
+} NODE_L2_NPCAP_HOLD;
 
 // Load wpcap.dll from System32\Npcap, and Packet.dll beside it, which it imports, and take its functions
 static BOOL CALLBACK NodeL2NpcapLoad(PINIT_ONCE once, void *param, void **context) {
@@ -138,13 +103,13 @@ static BOOL CALLBACK NodeL2NpcapLoad(PINIT_ONCE once, void *param, void **contex
 		return TRUE;
 	}
 
-	node_l2_npcap.Open = (NODE_L2_PCAP_OPEN_FUNC *)(void *)GetProcAddress(m, "pcap_open");
-	node_l2_npcap.Close = (NODE_L2_PCAP_CLOSE_FUNC *)(void *)GetProcAddress(m, "pcap_close");
-	node_l2_npcap.NextEx = (NODE_L2_PCAP_NEXT_EX_FUNC *)(void *)GetProcAddress(m, "pcap_next_ex");
-	node_l2_npcap.SendPacket = (NODE_L2_PCAP_SENDPACKET_FUNC *)(void *)GetProcAddress(m, "pcap_sendpacket");
-	node_l2_npcap.GetEvent = (NODE_L2_PCAP_GETEVENT_FUNC *)(void *)GetProcAddress(m, "pcap_getevent");
-	node_l2_npcap.SetFilter = (NODE_L2_PCAP_SETFILTER_FUNC *)(void *)GetProcAddress(m, "pcap_setfilter");
-	node_l2_npcap.GetErr = (NODE_L2_PCAP_GETERR_FUNC *)(void *)GetProcAddress(m, "pcap_geterr");
+	node_l2_npcap.Open = (NODE_L2_PCAP_OPEN_PROC *)(void *)GetProcAddress(m, "pcap_open");
+	node_l2_npcap.Close = (NODE_L2_PCAP_CLOSE_PROC *)(void *)GetProcAddress(m, "pcap_close");
+	node_l2_npcap.NextEx = (NODE_L2_PCAP_NEXT_EX_PROC *)(void *)GetProcAddress(m, "pcap_next_ex");
+	node_l2_npcap.SendPacket = (NODE_L2_PCAP_SENDPACKET_PROC *)(void *)GetProcAddress(m, "pcap_sendpacket");
+	node_l2_npcap.GetEvent = (NODE_L2_PCAP_GETEVENT_PROC *)(void *)GetProcAddress(m, "pcap_getevent");
+	node_l2_npcap.SetFilter = (NODE_L2_PCAP_SETFILTER_PROC *)(void *)GetProcAddress(m, "pcap_setfilter");
+	node_l2_npcap.GetErr = (NODE_L2_PCAP_GETERR_PROC *)(void *)GetProcAddress(m, "pcap_geterr");
 
 	if (node_l2_npcap.Open == NULL || node_l2_npcap.Close == NULL || node_l2_npcap.NextEx == NULL || node_l2_npcap.SendPacket == NULL ||
 	    node_l2_npcap.GetEvent == NULL || node_l2_npcap.SetFilter == NULL || node_l2_npcap.GetErr == NULL) {
@@ -154,24 +119,43 @@ static BOOL CALLBACK NodeL2NpcapLoad(PINIT_ONCE once, void *param, void **contex
 		return TRUE;
 	}
 
-	node_l2_npcap.Module = m;
 	node_l2_npcap_loaded = true;
 
 	return TRUE;
 }
 
-// Whether Npcap is on this host and its pcap API loaded; error (when not NULL) gets why not
-bool NodeL2NpcapPresent(char *error, UINT error_size) {
+// The pcap API in use: the stand-in of a test while one is set, else the wpcap.dll of an installed Npcap once it loaded;
+// NULL, with why in error (when not NULL), for none
+static const NODE_L2_PCAP_API *NodeL2NpcapApi(char *error, UINT error_size) {
 	InitOnceExecuteOnce(&node_l2_npcap_once, NodeL2NpcapLoad, NULL, NULL);
 
-	StrCpy(error, error_size, node_l2_npcap_loaded ? "" : node_l2_npcap_error);
+	const NODE_L2_PCAP_API *api = node_l2_npcap_standin;
+	if (api == NULL && node_l2_npcap_loaded)
+		api = &node_l2_npcap;
 
-	return node_l2_npcap_loaded;
+	StrCpy(error, error_size, api != NULL ? "" : node_l2_npcap_error);
+
+	return api;
 }
 
-// Open a handle of Npcap on the NIC of the adapter, its device \Device\NPF_{GUID}, with the open flags flags; with
-// reject, a filter that takes no frame. NULL, with why in error, when it cannot.
-static void *NodeL2NpcapHandle(NODE_L2 *a, int flags, bool reject, char *error, UINT error_size) {
+// Whether Npcap is on this host and its pcap API loaded, or a test gave a stand-in of it; error (when not NULL) gets why
+// not
+bool NodeL2NpcapPresent(char *error, UINT error_size) {
+	return (NodeL2NpcapApi(error, error_size) != NULL);
+}
+
+// Give the backend the stand-in of a test in place of the pcap API of wpcap.dll, as no runner may carry Npcap; NULL takes
+// it away again, which leaves the wpcap.dll of an installed Npcap. Only while no bridge is on Npcap and nothing holds a
+// NIC through it.
+void NodeL2NpcapStandIn(const NODE_L2_PCAP_API *api) {
+	InitOnceExecuteOnce(&node_l2_npcap_once, NodeL2NpcapLoad, NULL, NULL);
+
+	node_l2_npcap_standin = api;
+}
+
+// Open a handle of the pcap API api on the NIC of the adapter, its device \Device\NPF_{GUID}, with the open flags flags;
+// with reject, a filter that takes no frame. NULL, with why in error, when it cannot.
+static void *NodeL2NpcapHandle(const NODE_L2_PCAP_API *api, NODE_L2 *a, int flags, bool reject, char *error, UINT error_size) {
 	char device[MAX_SIZE];
 	char errbuf[NODE_L2_PCAP_ERRBUF];
 	NODE_L2_BPF_INSN none;
@@ -182,7 +166,7 @@ static void *NodeL2NpcapHandle(NODE_L2 *a, int flags, bool reject, char *error, 
 	       (UINT)g->Data4[1], (UINT)g->Data4[2], (UINT)g->Data4[3], (UINT)g->Data4[4], (UINT)g->Data4[5], (UINT)g->Data4[6], (UINT)g->Data4[7]);
 
 	Zero(errbuf, sizeof(errbuf));
-	void *p = node_l2_npcap.Open(device, NODE_L2_PCAP_SNAPLEN, flags, NODE_L2_PCAP_TIMEOUT, NULL, errbuf);
+	void *p = api->Open(device, NODE_L2_PCAP_SNAPLEN, flags, NODE_L2_PCAP_TIMEOUT, NULL, errbuf);
 	if (p == NULL) {
 		errbuf[sizeof(errbuf) - 1] = 0;
 		Format(error, error_size, "Npcap cannot open %s: %s", device, errbuf);
@@ -194,9 +178,9 @@ static void *NodeL2NpcapHandle(NODE_L2 *a, int flags, bool reject, char *error, 
 		none.Code = NODE_L2_BPF_REJECT;
 		program.Length = 1;
 		program.Instructions = &none;
-		if (node_l2_npcap.SetFilter(p, &program) != 0) {
-			Format(error, error_size, "Npcap takes no filter on %s: %s", device, node_l2_npcap.GetErr(p));
-			node_l2_npcap.Close(p);
+		if (api->SetFilter(p, &program) != 0) {
+			Format(error, error_size, "Npcap takes no filter on %s: %s", device, api->GetErr(p));
+			api->Close(p);
 			return NULL;
 		}
 	}
@@ -218,7 +202,7 @@ static DWORD WINAPI NodeL2NpcapDrain(void *param) {
 		while (num < NODE_L2_NPCAP_BATCH && ReadAcquire(&s->Halt) == 0) {
 			NODE_L2_PCAP_HEADER *header = NULL;
 			const UCHAR *data = NULL;
-			int ret = node_l2_npcap.NextEx(s->Handle, &header, &data);
+			int ret = s->Api->NextEx(s->Handle, &header, &data);
 
 			if (ret != 1) {
 				if (ret < 0)
@@ -252,7 +236,7 @@ static UINT NodeL2NpcapInject(NODE_L2 *a, const UCHAR **frames, const UINT *size
 		return 0;
 
 	for (UINT i = 0; i < num; i++)
-		if (node_l2_npcap.SendPacket(s->Handle, frames[i], (int)sizes[i]) == 0)
+		if (s->Api->SendPacket(s->Handle, frames[i], (int)sizes[i]) == 0)
 			taken++;
 
 	return taken;
@@ -268,7 +252,7 @@ static bool NodeL2NpcapHealthy(NODE_L2 *a) {
 // Free the state of the backend once no thread runs on it
 static void NodeL2NpcapRelease(NODE_L2_NPCAP *s) {
 	if (s->Handle != NULL)
-		node_l2_npcap.Close(s->Handle);
+		s->Api->Close(s->Handle);
 
 	Free(s);
 }
@@ -295,18 +279,20 @@ static bool NodeL2NpcapDetach(NODE_L2 *a, UINT timeout) {
 
 // Bind to the NIC: the handle, promiscuous and blind to the frames that it sends itself, then the drain thread
 static bool NodeL2NpcapAttach(NODE_L2 *a, char *error, UINT error_size) {
-	if (NodeL2NpcapPresent(error, error_size) == false)
+	const NODE_L2_PCAP_API *api = NodeL2NpcapApi(error, error_size);
+	if (api == NULL)
 		return false;
 
 	NODE_L2_NPCAP *s = ZeroMalloc(sizeof(NODE_L2_NPCAP));
 	s->Adapter = a;
-	s->Handle = NodeL2NpcapHandle(a, NODE_L2_PCAP_PROMISCUOUS | NODE_L2_PCAP_NOCAPTURE_LOCAL | NODE_L2_PCAP_MAX_RESPONSIVENESS, false, error, error_size);
+	s->Api = api;
+	s->Handle = NodeL2NpcapHandle(api, a, NODE_L2_PCAP_PROMISCUOUS | NODE_L2_PCAP_NOCAPTURE_LOCAL | NODE_L2_PCAP_MAX_RESPONSIVENESS, false, error, error_size);
 	if (s->Handle == NULL) {
 		NodeL2NpcapRelease(s);
 		return false;
 	}
 
-	s->Event = node_l2_npcap.GetEvent(s->Handle);
+	s->Event = api->GetEvent(s->Handle);
 	if (s->Event == NULL) {
 		Format(error, error_size, "Npcap gives no event for its handle");
 		NodeL2NpcapRelease(s);
@@ -337,19 +323,36 @@ const NODE_L2_BACKEND *NodeL2NpcapBackend() {
 }
 
 // Hold the NIC of the bridge a in promiscuous mode for the XDP backend (NODE_L2_HOLD_PROC): into *hold, a handle of Npcap
-// opened promiscuous, whose filter takes no frame. False, with why in error, where Npcap is not installed or cannot open
-// the NIC.
+// opened promiscuous, whose filter takes no frame, with the pcap API that opened it. False, with why in error, where
+// Npcap is not installed or cannot open the NIC.
 bool NodeL2NpcapHold(NODE_L2 *a, void **hold, char *error, UINT error_size) {
-	if (a == NULL || hold == NULL || NodeL2NpcapPresent(error, error_size) == false)
+	if (a == NULL || hold == NULL)
 		return false;
 
-	*hold = NodeL2NpcapHandle(a, NODE_L2_PCAP_PROMISCUOUS, true, error, error_size);
+	*hold = NULL;
+	const NODE_L2_PCAP_API *api = NodeL2NpcapApi(error, error_size);
+	if (api == NULL)
+		return false;
 
-	return (*hold != NULL);
+	void *p = NodeL2NpcapHandle(api, a, NODE_L2_PCAP_PROMISCUOUS, true, error, error_size);
+	if (p == NULL)
+		return false;
+
+	NODE_L2_NPCAP_HOLD *h = ZeroMalloc(sizeof(NODE_L2_NPCAP_HOLD));
+	h->Api = api;
+	h->Handle = p;
+	*hold = h;
+
+	return true;
 }
 
 // Let go of the promiscuous mode that NodeL2NpcapHold holds (NODE_L2_LET_GO_PROC)
 void NodeL2NpcapLetGo(void *hold) {
-	if (hold != NULL && node_l2_npcap_loaded)
-		node_l2_npcap.Close(hold);
+	NODE_L2_NPCAP_HOLD *h = (NODE_L2_NPCAP_HOLD *)hold;
+
+	if (h == NULL)
+		return;
+
+	h->Api->Close(h->Handle);
+	Free(h);
 }

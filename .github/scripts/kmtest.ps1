@@ -18,9 +18,13 @@
 # 5. The measurement of senders with USO on a KM-TEST adapter without an L2 adapter and on adapters with one, without a
 #    pause of the owner (vpntest kmtest xdp bare), printed for the record, then ranz uninstall.
 # The bridge of an L2 Network (CORE-S3-3, #73; seam 3 of #45): vpntest nicbridge after step 1 with SeLow, and after step
-# 2 with SeLow and then XDP, on the runner's NIC and on a KM-TEST adapter standing in for a Hyper-V switch (ADR-0002
-# amendment of 2026-10-21): foreign-MAC transmit and receive, coexistence with the host stack, the benchmark against
-# SeLow (NICBRIDGE BENCH lines), SeLow the default and Npcap, which no runner has, used only where it is installed.
+# 2 with SeLow and then XDP, and with Npcap through a stand-in of its pcap API and then XDP with Npcap's hold, on the
+# runner's NIC, on a KM-TEST adapter standing in for a Hyper-V switch (ADR-0002 amendment of 2026-10-21) and on the
+# Hyper-V lab of the bridge: an internal Hyper-V virtual switch that the Hyper-V role of the runner image gives, with the
+# bridge's host vNIC, whose port allows MAC address spoofing as the port of any bridge must, and a second host vNIC, a
+# device on the switch whose frames reach the bridge from below its vNIC, as the frames of a virtual machine do. The
+# test checks foreign-MAC transmit and receive, coexistence with the host stack, the benchmark against SeLow (NICBRIDGE
+# BENCH lines), SeLow the default and Npcap, which no runner may carry, used only where it is installed.
 # Each run of vpntest is a process of its own with a time limit: a run that a driver keeps from ending fails its step,
 # and the job goes on with the next one.
 param(
@@ -51,11 +55,43 @@ $recoveryText = 'a recovery was asked for'
 $kmtestMinutes = 12
 # ... and a run of vpntest nicbridge: its watchdog (NICBRIDGE_BUDGET of src/vpntest/nicbridgetest.c, eight minutes) and two more
 $nicbridgeMinutes = 10
+# The Hyper-V lab of the bridge: the internal switch, whose host vNIC is vEthernet ($labSwitch), and the device's host vNIC on
+# it, vEthernet ($labDevice)
+$labSwitch = 'ranz-nicbridge'
+$labDevice = 'ranz-nicbridge-device'
 
 # A step that failed: the job goes on with the next one and fails at the end
 function Add-Failure([string] $step) {
 	$script:failures += $step
 	Write-Host "::error::$step"
+}
+
+# Make the Hyper-V lab of the bridge: the internal switch with the host vNIC of the bridge, whose port allows MAC address
+# spoofing (Set-VMNetworkAdapter -MacAddressSpoofing), so that the switch takes the frames of the overlay's addresses from
+# it and learns them there, and the device's host vNIC. The hypervisor need not run for a virtual switch. True when the lab
+# is there.
+function New-BridgeLab {
+	try {
+		$vmms = Get-Service -Name vmms -ErrorAction Stop
+		if ($vmms.Status -ne 'Running') { Start-Service -Name vmms -ErrorAction Stop }
+		Write-Host "the Hyper-V Virtual Machine Management service: $((Get-Service -Name vmms).Status)"
+		New-VMSwitch -Name $labSwitch -SwitchType Internal -ErrorAction Stop | Out-Host
+		Add-VMNetworkAdapter -ManagementOS -SwitchName $labSwitch -Name $labDevice -ErrorAction Stop
+		Set-VMNetworkAdapter -ManagementOS -Name $labSwitch -MacAddressSpoofing On -ErrorAction Stop
+		Get-VMNetworkAdapter -ManagementOS | Format-Table -AutoSize Name, SwitchName, MacAddress, MacAddressSpoofing | Out-Host
+		Get-NetAdapter -IncludeHidden | Where-Object { $_.Name -like 'vEthernet*' } | Format-Table -AutoSize Name, InterfaceIndex, InterfaceDescription, MacAddress, Status | Out-Host
+		return $true
+	} catch {
+		Add-Failure "the Hyper-V lab of the bridge could not be made: $($_.Exception.Message)"
+		return $false
+	}
+}
+
+# Take the Hyper-V lab of the bridge away again
+function Remove-BridgeLab {
+	Remove-VMNetworkAdapter -ManagementOS -Name $labDevice -Confirm:$false -ErrorAction SilentlyContinue
+	Remove-VMSwitch -Name $labSwitch -Force -Confirm:$false -ErrorAction SilentlyContinue
+	Write-Host "the Hyper-V lab of the bridge is taken away: $(@(Get-VMSwitch -Name $labSwitch -ErrorAction SilentlyContinue).Count) switch left"
 }
 
 # Run ranz.exe with arguments: its exit code and its output, standard error included
@@ -146,13 +182,17 @@ try { Write-Host "Secure Boot: $(Confirm-SecureBootUEFI)" } catch { Write-Host "
 # that listens has its own
 New-NetFirewallRule -DisplayName $firewallRule -Direction Inbound -Program $vpntestExe -Action Allow -Profile Any | Out-Null
 
+# The Hyper-V lab of the bridge, before the drivers, which bind to its vNICs as to any adapter
+$lab = @()
+if (New-BridgeLab) { $lab = @($labSwitch, $labDevice) }
+
 # 1. SeLow alone: XDP cannot bind, and the node falls back to SeLow at run time
 $r = Invoke-Ranz @('install', '--no-xdp')
 if ($r.Code -ne 0) { Add-Failure "ranz install --no-xdp exited with code $($r.Code)" }
 if (Test-Path -LiteralPath $xdpSys) { Add-Failure "$xdpSys is there after ranz install --no-xdp" }
 if (-not (Invoke-KmTest @('selow', 'quick'))) { Add-Failure 'vpntest kmtest selow quick: the fallback to SeLow' }
 # The bridge on SeLow, the default, with no XDP runtime on the machine
-if (-not (Invoke-KmTest @('selow') $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge selow: the bridge on SeLow' }
+if (-not (Invoke-KmTest (@('selow') + $lab) $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge selow: the bridge on SeLow' }
 
 # 2. The XDP runtime, production-signed
 $r = Invoke-Ranz @('install')
@@ -210,7 +250,11 @@ if (-not (Test-Path -LiteralPath $etl)) {
 }
 
 # The bridge on SeLow and then on XDP, on the same attachments, which gives the benchmark of XDP against SeLow
-if (-not (Invoke-KmTest @('xdp') $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge xdp: the bridge on SeLow and on XDP' }
+if (-not (Invoke-KmTest (@('xdp') + $lab) $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge xdp: the bridge on SeLow and on XDP' }
+# The bridge on Npcap, through the stand-in of its pcap API over the SeLow device, and on XDP with Npcap's hold of
+# promiscuous mode through it: no runner may carry Npcap itself
+if (-not (Invoke-KmTest (@('npcap') + $lab) $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge npcap: the bridge on Npcap and on XDP with its hold' }
+if ($lab.Count -gt 0) { Remove-BridgeLab }
 
 # 3. The soak: an hour on the nightly run of a Sunday, two minutes otherwise
 $soak = 120
