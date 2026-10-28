@@ -1,0 +1,75 @@
+schema 2
+setting name="ImportedFrom" value="fork_policy.config"
+network name="LAB" mode="l2" online=1
+network name="OFFICE" mode="l2" online=1
+user network="LAB" name="alice" auth="anonymous" group="staff" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="LAB" name="bob" auth="anonymous" group="staff" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="LAB" name="carol" auth="anonymous" group="" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="LAB" name="dave" auth="anonymous" group="ops" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="LAB" name="erin" auth="anonymous" group="guests" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="LAB" name="frank" auth="anonymous" group="guests" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="LAB" name="ops" auth="anonymous" group="" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="LAB" name="srv" auth="anonymous" group="" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="OFFICE" name="kim" auth="anonymous" group="" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="OFFICE" name="lee" auth="anonymous" group="" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+user network="OFFICE" name="max" auth="anonymous" group="" real_name="" note="" auth_name="" auth_serial=none expire_time=0 password="unset" pinned_key=none
+admin name="administrator" role="owner" network=none password="unset"
+group network="LAB" name="guests" real_name="Guests" note=""
+group network="LAB" name="ops" real_name="Operations" note=""
+group network="LAB" name="staff" real_name="Staff" note=""
+vlan network="LAB" kind="group" name="guests" vlan=20
+vlan network="LAB" kind="group" name="ops" vlan=1
+vlan network="LAB" kind="group" name="staff" vlan=10
+vlan network="LAB" kind="user" name="bob" vlan=0
+vlan network="LAB" kind="user" name="frank" vlan=10
+vlan network="OFFICE" kind="user" name="kim" vlan=30
+network_vlans network="LAB" tpid="0x8100" untagged=2
+network_vlans network="OFFICE" tpid="0x88A8" untagged=1
+rule network="LAB" position=1 name="LAB.acl-1" priority=100 action="allow" protocol="tcp" direction="forward" active=1 note="Entry 1 of the fork's access list (its note: alice may)"
+rule network="LAB" position=2 name="LAB.acl-2" priority=100 action="deny" protocol="tcp" direction="forward" active=1 note="Entry 2 of the fork's access list (its note: no ssh to the server)"
+rule network="LAB" position=3 name="LAB.acl-3" priority=200 action="deny" protocol="any" direction="forward" active=1 note="Entry 3 of the fork's access list"
+rule network="LAB" position=4 name="LAB.acl-4.1" priority=300 action="allow" protocol="any" direction="forward" active=1 note="Entry 4 of the fork's access list"
+rule network="LAB" position=5 name="LAB.acl-4.2" priority=300 action="allow" protocol="any" direction="forward" active=1 note="Entry 4 of the fork's access list"
+rule network="LAB" position=6 name="LAB.acl-5" priority=500 action="allow" protocol="tcp" direction="forward" active=0 note="Entry 5 of the fork's access list, inactive: the policy engine has no match on source MAC addresses, without which the entry would let more through"
+rule network="LAB" position=7 name="LAB.acl-6" priority=600 action="deny" protocol=58 direction="forward" active=1 note="Entry 6 of the fork's access list"
+rule network="LAB" position=8 name="LAB.acl-7" priority=700 action="deny" protocol="any" direction="forward" active=1 note="Entry 7 of the fork's access list, which denies more than the fork did: the policy engine has no match on masks that are no prefix"
+rule network="LAB" position=9 name="LAB.acl-8.1" priority=800 action="allow" protocol="tcp" direction="forward" active=1 note="Entry 8 of the fork's access list"
+rule network="LAB" position=10 name="LAB.acl-8.2" priority=800 action="allow" protocol="udp" direction="forward" active=1 note="Entry 8 of the fork's access list"
+rule network="LAB" position=11 name="LAB.acl-9" priority=850 action="deny" protocol="udp" direction="forward" active=1 note="Entry 9 of the fork's access list, which denies more than the fork did: the policy engine has no match on source ports"
+rule network="LAB" position=12 name="LAB.acl-10" priority=900 action="deny" protocol=1 direction="forward" active=0 note="Entry 10 of the fork's access list, inactive in the fork"
+rule network="LAB" position=13 name="LAB.acl-11" priority=1000 action="deny" protocol="tcp" direction="forward" active=1 note="Entry 11 of the fork's access list; a deny entry for its redirect URL, which is left out"
+rule network="LAB" position=14 name="LAB.acl-12" priority=1100 action="allow" protocol="udp" direction="forward" active=1 note="Entry 12 of the fork's access list; its delay, jitter and loss are left out"
+rule network="LAB" position=15 name="LAB.acl-13" priority=1200 action="deny" protocol="tcp" direction="forward" active=1 note="Entry 13 of the fork's access list, which denies more than the fork did: the policy engine has no match on the TCP state"
+rule network="LAB" position=16 name="LAB.acl-14" priority=1300 action="deny" protocol=1 direction="forward" active=1 note="Entry 14 of the fork's access list"
+rule network="LAB" position=17 name="LAB.acl-15" priority=1400 action="deny" protocol="any" direction="forward" active=1 note="Entry 15 of the fork's access list, which denies more than the fork did: the policy engine has no match on user list files"
+rule network="LAB" position=18 name="LAB.acl-16" priority=1500 action="deny" protocol=1 direction="forward" active=0 note="Entry 16 of the fork's access list, which matches nothing in the fork"
+rule network="LAB" position=19 name="LAB.default-allow" priority=1000000 action="allow" protocol="any" direction="forward" active=1 note="The default of the fork's access list: a frame that no entry matches passes"
+rule network="OFFICE" position=1 name="OFFICE.default-allow" priority=1000000 action="allow" protocol="any" direction="forward" active=1 note="The default of the fork's access list: a frame that no entry matches passes"
+rule_value rule="LAB.acl-1" list="from.users" value="alice"
+rule_value rule="LAB.acl-1" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-1" list="ports" value="22"
+rule_value rule="LAB.acl-2" list="to.addresses" value="10.0.0.10/32"
+rule_value rule="LAB.acl-2" list="ports" value="22"
+rule_value rule="LAB.acl-3" list="from.groups" value="guests"
+rule_value rule="LAB.acl-3" list="to.addresses" value="10.0.0.0/24"
+rule_value rule="LAB.acl-4.1" list="from.users" value="ops"
+rule_value rule="LAB.acl-4.2" list="from.groups" value="ops"
+rule_value rule="LAB.acl-5" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-5" list="ports" value="80"
+rule_value rule="LAB.acl-6" list="to.addresses" value="2001:db8:1::/48"
+rule_value rule="LAB.acl-7" list="to.addresses" value="172.16.0.0/16"
+rule_value rule="LAB.acl-8.1" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-8.1" list="ports" value="8000-8080"
+rule_value rule="LAB.acl-8.2" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-8.2" list="ports" value="8000-8080"
+rule_value rule="LAB.acl-9" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-10" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-11" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-11" list="ports" value="80"
+rule_value rule="LAB.acl-12" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-12" list="ports" value="5060"
+rule_value rule="LAB.acl-13" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-14" list="from.addresses" value="0.0.0.0/0"
+rule_value rule="LAB.acl-14" list="to.users" value="carol"
+rule_value rule="LAB.acl-15" list="to.addresses" value="10.0.5.0/24"
+rule_value rule="LAB.acl-16" list="from.addresses" value="0.0.0.0/0"
