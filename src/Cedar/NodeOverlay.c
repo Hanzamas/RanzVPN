@@ -20,7 +20,9 @@
 // QUIC transport (CORE-S1-1, #67) carries the sessions on the paths of the peer module. Of two peers, the one with the
 // lower static key dials and the other accepts; the static key of the handshake is a peer's identity, so a session
 // has no Login. The endpoints of a Peer object (SDN-93, #410) are where a data transport that dials through them reaches the
-// peer: such a node dials only a peer that has some, and a node that has none of its own always dials (NodeEndpoints.c). One
+// peer: such a node dials only a peer that has some, and a node that has none of its own always dials (NodeEndpoints.c). A pair
+// that cannot dial each other, as neither has an endpoint, and a pair whose dial failed carry their records on the datagram
+// path of the peer agent, through a Relay, in place of a session (NodeAgent.c; CORE-S5-5, #411). One
 // thread of the overlay accepts, dials and reads the sessions, and a pool runs the handshakes of the streams that it accepts
 // (NodeHandshake.c; AUD1-DT-1, #449); the thread alone closes the sessions, and a sender
 // counts itself on the peer while it sends, so a session is never closed under a send. The forwarding reads the
@@ -35,6 +37,7 @@
 
 #include "Core/Control.h"
 
+#include "NodeAgent.h"
 #include "NodeCaps.h"
 #include "NodeGateway.h"
 #include "NodeInternal.h"
@@ -318,6 +321,9 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	}
 	NodeSetPeers(ov->Node, infos, st->NumPeers);
 	Free(infos);
+	// The peer agent takes the peers and the Relays: the datagram path of the pairs that cannot dial each other (NodeAgent.c;
+	// CORE-S5-5, #411)
+	NodeAgentApply(ov->Node, st);
 
 	if (swapped)
 		NodeLog(ov->Node, "Overlay: generation %I64u applied: node %s, %u addresses, %u peers, the forwarding tables of %u VRFs", st->Generation, st->Name, st->NumAddresses, st->NumPeers, num_vrfs);
@@ -495,6 +501,9 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 
 			if (p->Gone || p->Session != NULL || now < p->NextDial)
 				continue;
+			// A pair that cannot dial each other takes the datagram path of the peer agent (NodeAgent.c; CORE-S5-5, #411)
+			if (NodeAgentDatagramOnly(ov->Node, ov->NumEndpoints, p->NumEndpoints))
+				continue;
 
 			// A client dials its peers whatever the order of the keys: they cannot dial it (CORE-S3-1). A data transport that
 			// dials through endpoints dials a peer that has some, and a node without endpoints always dials (NodeEndpoints.c;
@@ -516,13 +525,17 @@ static bool NodeOverlayDial(NODE_OVERLAY *ov) {
 
 	InterlockedIncrement64(&ov->Dials);
 	TRANSPORT_STREAM *stream = TransportDial(ov->Config.Data, name, NULL);
-	if (stream == NULL)
+	if (stream == NULL) {
+		// The peer agent offers the peer the datagram path, while the node dials it again (NodeAgent.c; CORE-S5-5, #411)
+		NodeAgentDialFailed(ov->Node, key);
 		return true;
+	}
 
 	TRANSPORT_NOISE *s = ZeroMalloc(sizeof(TRANSPORT_NOISE));
 	NodeOverlaySessionConfig(ov, &c, key);
 	if (TransportNoiseConnect(s, stream, &c, NODE_OVERLAY_HANDSHAKE) == false) {
 		Free(s);
+		NodeAgentDialFailed(ov->Node, key);
 		// The data transport races the next transport of the peer's list at the next dial (CORE-H5-R, #443)
 		if (ov->Config.Refused != NULL)
 			ov->Config.Refused(ov->Node, ov->Config.AdapterParam, name);
@@ -586,6 +599,30 @@ void NodeOverlayLinkDeliver(NODE *n, void *hop, const UCHAR *record, UINT size, 
 
 	if (ov != NULL)
 		NodeOverlayDeliver(ov, (NODE_OVERLAY_PEER *)hop, record, size, nat_buf);
+}
+
+// A data record that the datagram path of the peer agent carried from the peer of key (NodeAgent.c; CORE-S5-5, #411), which
+// goes to the host as a record of a session does, with nat_buf of NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH bytes for its
+// translation. The caller is an online reader of the node's table snapshot: the peer is the next hop of its tables that holds
+// key, and the record of a peer that no table leads to is dropped.
+void NodeOverlayAgentDeliver(NODE *n, const UCHAR *key, const UCHAR *record, UINT size, UCHAR *nat_buf) {
+	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
+	NODE_TABLES *t = NodeGetTables(n);
+	NODE_VRF_TABLES *v = (t != NULL ? t->Vrfs : NULL);
+
+	if (ov == NULL || key == NULL)
+		return;
+
+	for (UINT i = 0; v != NULL && i < v->NumHops; i++) {
+		NODE_OVERLAY_PEER *p = (NODE_OVERLAY_PEER *)v->Hops[i];
+
+		if (p != NULL && Cmp(p->Key, key, PEER_KEY_SIZE) == 0) {
+			NodeOverlayDeliver(ov, p, record, size, nat_buf);
+			return;
+		}
+	}
+
+	InterlockedIncrement64(&ov->Dropped);
 }
 
 // Read the records of every session: the data records go to the host, keepalives keep the session open, and a session
@@ -768,6 +805,11 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Devices = NodeWireGuardStart(n, cfg);
 	// The events of the node go on the control stream too (ControlEvent.c; AUD1-DT-11, #459)
 	cc.Events = ov->Events;
+	// The peer agent, the datagram path to the peers that the node reaches on no stream session: its Signals go on the control
+	// stream, both ways (NodeAgent.c; CORE-S5-5, #411)
+	cc.Signals = NodeAgentStart(n, cfg);
+	cc.SignalProc = NodeAgentSignal;
+	cc.SignalParam = n;
 
 	ov->Thread = (ov->Handshakes != NULL ? CreateThread(NULL, 0, NodeOverlayThread, ov, 0, &thread_id) : NULL);
 	ov->Control = (ov->Thread != NULL && cfg->Control != NULL ? ControlStart(&cc) : NULL);
@@ -817,6 +859,9 @@ void NodeOverlayStop(NODE *n) {
 		WaitForSingleObject(ov->Thread, INFINITE);
 		CloseHandle(ov->Thread);
 	}
+	// The peer agent goes once the control stream that carried its Signals and the thread that dialled its peers stopped
+	// (NodeAgent.c; CORE-S5-5, #411)
+	NodeAgentStop(n);
 	// The thread closed every session, the ones over the streams of the Listener too (NodeListener.c; SDN-45, #238)
 	NodeListenerStop(n);
 	// No table holds a gateway any more, and the thread forgot every peer: the gateway HA goes (NodeGateway.c; SDN-19, #195)
@@ -894,9 +939,11 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&peer->Session);
 	// A link of kind vxlan or geneve of the VRF of the record carries it in place of the session (NodeLink.c; SDN-76, #356)
 	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
+	// The datagram path of the peer agent carries it while the peer has no session (NodeAgent.c; CORE-S5-5, #411)
+	bool datagram = (allowed && s == NULL && plain == false && NodeAgentHasPath(n, peer->Key));
 	// The MTU of the VRF clamps the MSS of a TCP SYN as the overlay sees it, after the 1:1 NAT rules, and the rate limits
 	// of the VRF and the node may drop it (NodeShape.c)
-	bool ok = (allowed && (s != NULL || plain) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size) : TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG)));
+	bool ok = (allowed && (s != NULL || plain || datagram) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size) : (datagram ? NodeAgentSend(n, peer->Key, record, size + NODE_OVERLAY_VRF_TAG) : TransportNoiseSend(s, NOISE_RECORD_DATA, record, size + NODE_OVERLAY_VRF_TAG))));
 	InterlockedDecrement(&peer->Senders);
 
 	// A Mirror copies the packet as it went to the peer (NodeMirror.c)
@@ -1026,6 +1073,9 @@ UINT NodeOverlayGetSessions(NODE *n, NODE_OVERLAY_SESSION *list, UINT max, char 
 		}
 	}
 	Unlock(ov->Lock);
+
+	// How the overlay reaches each peer, and the records of its datagram path (NodeAgent.c; CORE-S5-5, #411)
+	NodeAgentSessions(n, list, MIN(num, max));
 
 	return num;
 }
