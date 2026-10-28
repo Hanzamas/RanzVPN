@@ -103,8 +103,11 @@
 // there, and the prefixes that it announces besides its addresses, its LAN subnets; and each peer
 // that shares such a VRF with it the address of that peer's sidecar, the hold time of their session,
 // the VRFs of the session and what the peer may announce in them (Peer.peering). The controller
-// writes nothing else: the routes go between the nodes. No schema version changes with them: a node
-// of an older release skips the fields it does not know.
+// writes nothing else: the routes go between the nodes. A node reports the peers of its sidecar, the
+// state of each session and the prefixes that it learned from each, with the sessions that its
+// sidecar refused, in a Telemetry message of its own whenever they change (Telemetry.peering), which
+// ranz explain shows. No schema version changes with them: a node of an older release skips the
+// fields it does not know, and a controller of an older release skips the report.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -670,6 +673,27 @@ message Telemetry {
   repeated NodeEvent events = 5;
   // The Devices whose gateway the node is (SDN-80): all of them in each summary that holds any
   repeated DeviceCounters devices = 6;
+  // The BGP peering of the standard mode at the node (SDN-77): in a summary of its own whenever it
+  // changed, and absent from the others
+  PeeringReport peering = 7;
+}
+
+// The BGP peering of the standard mode at a node (SDN-77 #357): each peer of its sidecar, in the
+// order of its address, and the sessions that the sidecar refused since the node started, from an
+// address that no peer has.
+message PeeringReport {
+  repeated PeeringPeer peers = 1;
+  uint64 refused = 2;
+}
+
+// One peer of the sidecar of a node (SDN-77 #357): the address of the peer's sidecar, 4 bytes for
+// IPv4 and 16 for IPv6, the state of their session (idle, connect, active, opensent, openconfirm or
+// established) and the prefixes that the node learned from it, each with its VRF, ordered by VRF id,
+// then prefix.
+message PeeringPeer {
+  bytes address = 1;
+  string state = 2;
+  repeated Route learned = 3;
 }
 
 // The WireGuard end of one Device at its gateway (SDN-80): the last handshake, in Unix time in

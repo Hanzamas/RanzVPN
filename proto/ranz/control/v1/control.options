@@ -156,3 +156,12 @@ ranz.control.v1.NodePeering.announce max_count:16
 ranz.control.v1.PeerPeering.address max_size:16
 ranz.control.v1.PeerPeering.vrf_ids max_count:16
 ranz.control.v1.PeerPeering.accept max_count:32
+# What a node reports of the peering in its Telemetry (SDN-77): the peers of its sidecar, at most one
+# for each of its 64 Peer objects, each with the address of its sidecar, the state of its session,
+# a word of at most 11 letters, and the prefixes that the node learned from it, at most what the
+# peer may announce (PeerPeering.accept). They make the largest Telemetry frame about 84 kB larger
+# (MaxTelemetry).
+ranz.control.v1.PeeringReport.peers max_count:64
+ranz.control.v1.PeeringPeer.address max_size:16
+ranz.control.v1.PeeringPeer.state max_size:16
+ranz.control.v1.PeeringPeer.learned max_count:32
