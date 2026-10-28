@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"net"
 	"net/http"
@@ -324,6 +325,81 @@ func TestRanzExplainChecksLoopbackToo(t *testing.T) {
 	explainAt(other.srv.URL, "-tls-fingerprint", otherFP)
 	if _, auth := other.seen(); len(auth) != 1 || auth[0] != "Bearer ranz_ADMINSECRET" {
 		t.Errorf("the listener with the fingerprint on the command line got the headers %q, want one call with the token", auth)
+	}
+}
+
+// ranz login and ranz node login (SDN-32, #226) have the connection flags of the CLI and check a loopback address as
+// the CLI does: a password or a code goes to the key of the Controller only. With no fingerprint to check by, or toward
+// another key, they send nothing and do not even connect; the data directory comes from -controller-dir or from
+// RANZ_CONTROLLER_DIR, and -tls-fingerprint takes the place of the file.
+func TestRanzLoginChecksLoopbackToo(t *testing.T) {
+	ctx := context.Background()
+	right, rightFP := answerer(t)
+	other, otherFP := answerer(t)
+	dir, empty := t.TempDir(), t.TempDir()
+	if err := servercert.WriteFingerprint(dir, rightFP); err != nil {
+		t.Fatal(err)
+	}
+	// loginAt runs ranz login with a password toward server and the flags, and returns its exit code and its standard
+	// error
+	loginAt := func(server string, flags ...string) (int, string) {
+		t.Helper()
+		var out, errOut bytes.Buffer
+		args := append([]string{"-server", server, "-user", "alice"}, flags...)
+		code := runLogin(ctx, args, strings.NewReader("a password\n"), &out, &errOut)
+		return code, errOut.String()
+	}
+
+	// With no fingerprint to check by it sends no password and does not even connect
+	code, errOut := loginAt(right.srv.URL, "-controller-dir", empty)
+	for _, want := range []string{"sends no token", "-tls-fingerprint", empty} {
+		if code != 1 || !strings.Contains(errOut, want) {
+			t.Errorf("ranz login with no fingerprint: exit code %d, %q, want 1 and %q", code, errOut, want)
+		}
+	}
+	if conns, auth := right.seen(); conns != 0 || len(auth) != 0 {
+		t.Errorf("the listener got %d connections and %d requests, want none: ranz must not connect before it knows who answers", conns, len(auth))
+	}
+
+	// Another key is refused with both fingerprints, and no request reaches its listener
+	code, errOut = loginAt(other.srv.URL, "-controller-dir", dir)
+	for _, want := range []string{"sent no token", otherFP, rightFP} {
+		if code != 1 || !strings.Contains(errOut, want) {
+			t.Errorf("ranz login toward another key: exit code %d, %q, want 1 and %q", code, errOut, want)
+		}
+	}
+	if _, auth := other.seen(); len(auth) != 0 {
+		t.Errorf("the listener with another key got %d requests, want none: the password must not leave ranz", len(auth))
+	}
+
+	// The right key gets the login, by the file of the data directory that the flag names, by the one that
+	// RANZ_CONTROLLER_DIR names, and by -tls-fingerprint
+	loginAt(right.srv.URL, "-controller-dir", dir)
+	t.Setenv("RANZ_CONTROLLER_DIR", dir)
+	loginAt(right.srv.URL)
+	if _, auth := right.seen(); len(auth) != 2 {
+		t.Errorf("the right listener got %d requests, want the two logins", len(auth))
+	}
+	loginAt(other.srv.URL, "-tls-fingerprint", otherFP)
+	if _, auth := other.seen(); len(auth) != 1 {
+		t.Errorf("the listener with the fingerprint on the command line got %d requests, want the login", len(auth))
+	}
+
+	// ranz node login asks the Node service for its key, and then makes the same check
+	nodeKey, err := keys.GenerateSoft()
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := &fakeNode{answers: map[string]string{"key": `{"publicKey":"` + base64.StdEncoding.EncodeToString(nodeKey.Public()) + `"}`}}
+	var out, nodeErr bytes.Buffer
+	code = nodeLogin(ctx, []string{"-server", other.srv.URL, "-controller-dir", dir, "-device"}, &out, &nodeErr, node)
+	for _, want := range []string{"sent no token", otherFP, rightFP} {
+		if code != 1 || !strings.Contains(nodeErr.String(), want) {
+			t.Errorf("ranz node login toward another key: exit code %d, %q, want 1 and %q", code, nodeErr.String(), want)
+		}
+	}
+	if _, auth := other.seen(); len(auth) != 1 {
+		t.Errorf("the listener with another key got %d requests, want the one of the login with its fingerprint and none of the Node's", len(auth))
 	}
 }
 
