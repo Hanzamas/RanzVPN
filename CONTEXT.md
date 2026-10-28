@@ -493,7 +493,7 @@ The soft state of one node at a Relay: the address that the node's last bind cam
 _Avoid_: allocation (TURN), session
 
 **Path**:
-How a node reaches a peer: the relay path through a Relay, up as soon as the two have exchanged one Signal each (relay-first), or the direct path that ICE validates later (CORE-S5-3). The session layer moves between them (ADR-0015 item 7).
+How a node reaches a peer: the relay path through a Relay, up as soon as the two have exchanged one Signal each (relay-first), or the direct path that ICE validates later (CORE-S5-3). The session layer moves between them (ADR-0015 item 7). A pair where one node has an endpoint that the other dials uses a Stream session instead; the state of a node names it `stream` beside `relay` and `direct`.
 _Avoid_: route (a route of a VRF), connection
 
 **Signal**:
@@ -612,7 +612,16 @@ _Avoid_: key association, key binding
 The queue of a session's data records in front of the stream of a transport over TCP (TLS-443), which CoDel runs, so that an inner TCP flow backs off at the first drop instead of filling a buffer behind a stalled outer TCP (`TRANSPORT.Queue`, `TransportQueue.c`).
 
 **Peer session**:
-The Noise_IK session between two Nodes over UDP that carries every data datagram of the peer layer (`PeerSession.c`), whatever the Path.
+The Noise_IK session between two Nodes over UDP that carries every data datagram of the peer layer (`PeerSession.c`), whatever the Path. It belongs to the pair, not to a path, and moves between the relay path and a direct path with its keys (ADR-0015 item 7).
+
+**Peer agent**:
+The part of the overlay of a Node that runs the peer layer of the new core, on a UDP socket of its own, once a desired state names a Relay. It binds to the home relay and to the Relay that a Signal of a peer names, renews the Bindings, and offers and answers the Signals (`NodeAgent.c`).
+
+**Datagram path**:
+How a pair of Nodes that cannot dial each other (neither has an endpoint), or whose dial failed, exchanges the records of the overlay: as datagrams in the Peer session of the pair, through a Relay (the relay path), or on a direct path once ICE or a punch finds one.
+
+**Stream session**:
+The Noise session of a Tunnel over a stream transport (QUIC, TLS or mimic) that a pair keeps when one Node has an endpoint that the other dials. A Node holds Stream sessions and the Datagram path at the same time, for different peers.
 
 **Bind challenge**:
 A Relay's answer to a bind from an address it has no cookie for: a cookie for that address, sealed to the Node (`PEER_MSG_CHALLENGE`, `PeerChallenge.c`).
