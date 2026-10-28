@@ -24,7 +24,8 @@ func (l prefixList) Commit(ctx context.Context, c store.Changes) error {
 
 // The TLS port serves the web UI and the API behind the admin source allowlist (SDN-39): from an
 // address outside it, both refuse every path, the pages of the UI included, and from an address of
-// it, or from loopback, both serve.
+// it, or from loopback, both serve. The logins of users (SDN-32) are paths of the API, so the
+// allowlist stands in front of them as of every call: a caller outside it cannot even try a password.
 func TestWebHandlerRestrictsTheUIAndTheAPI(t *testing.T) {
 	reached := 0
 	apiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +42,9 @@ func TestWebHandlerRestrictsTheUIAndTheAPI(t *testing.T) {
 		{"192.0.2.10:50000", "/", http.StatusOK},
 		{"192.0.2.10:50000", "/sign-in", http.StatusOK},
 		{"127.0.0.1:50000", "/api/v1/status", http.StatusTeapot},
+		{"192.0.2.10:50000", "/api/v1/login/device", http.StatusTeapot},
+		{"198.51.100.9:50000", "/api/v1/login/device", http.StatusForbidden},
+		{"198.51.100.9:50000", "/api/v1/login/authorize", http.StatusForbidden},
 		{"198.51.100.9:50000", "/api/v1/status", http.StatusForbidden},
 		{"198.51.100.9:50000", "/", http.StatusForbidden},
 		{"198.51.100.9:50000", "/sign-in", http.StatusForbidden},
@@ -54,7 +58,7 @@ func TestWebHandlerRestrictsTheUIAndTheAPI(t *testing.T) {
 			t.Errorf("GET %s from %s got %d, want %d", c.path, c.remote, w.Code, c.want)
 		}
 	}
-	if reached != 2 {
-		t.Errorf("the API was reached %d times, want the 2 requests from the allowlist and from loopback", reached)
+	if reached != 3 {
+		t.Errorf("the API was reached %d times, want the 3 requests from the allowlist and from loopback", reached)
 	}
 }

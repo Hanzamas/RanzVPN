@@ -431,6 +431,10 @@ func (c *Controller) ApplyConfirm(ctx context.Context, doc intent.Document, conf
 	if err := c.unconfirmed(); err != nil {
 		return ApplyResult{}, err
 	}
+	// The condition of an enrolment on the intent in force, under the lock (logins.go; SDN-32)
+	if err := checkPrecondition(ctx, c.intent); err != nil {
+		return ApplyResult{}, err
+	}
 	st := c.evaluate(c.lic)
 	if err := c.checkCluster(ctx, st); err != nil {
 		return ApplyResult{}, err

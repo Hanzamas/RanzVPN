@@ -49,6 +49,9 @@ func userCommand(ctx context.Context, c *api.Client, args []string, out io.Write
 			return err
 		}
 		return show(out, res)
+	case len(args) >= 1 && args[0] == "role":
+		// The API roles of users (userrole.go; SDN-32)
+		return userRoleCommand(ctx, c, args[1:], out)
 	}
 	return errUsage
 }
