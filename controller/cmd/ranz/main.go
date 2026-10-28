@@ -85,6 +85,21 @@
 //	                                           devices of its members
 //	ranz [flags] group set [-display TEXT] NAME  make the group, or change its display name
 //	ranz [flags] group delete NAME             delete the group
+//	ranz [flags] session list [-user NAME] [-node NAME]
+//	                                           print the sessions, the control streams of the nodes: who is connected, from
+//	                                           where, with which addresses and how much traffic (SDN-50, operator)
+//	ranz [flags] session disconnect ID         end the session ID at once; -user NAME ends every session of the user
+//	ranz [flags] ban list                      print the banned users
+//	ranz [flags] ban set [-reason TEXT] USER   ban the user: every device of the user is cut off at once, and none gets in
+//	                                           until the ban is lifted with ban clear
+//	ranz [flags] ban clear USER                lift the ban of the user
+//	ranz [flags] mac-table [-node NODE] NETWORK
+//	                                           print the MAC table of the L2 Network on each node that holds it
+//	ranz [flags] mac-table clear [-node NODE] [-mac ADDRESS] NETWORK
+//	                                           remove the entry of the MAC address from it, or every entry
+//	ranz [flags] ip-table [-node NODE] NETWORK  print the IP table of the L2 Network, as mac-table does
+//	ranz [flags] ip-table clear [-node NODE] [-address ADDRESS] NETWORK
+//	                                           remove the entry of the IP address from it, or every entry
 //	ranz [flags] admin-sources list            print the admin source allowlist: the prefixes that the API and the web UI accept
 //	                                           connections from (none: any address)
 //	ranz [flags] admin-sources set PREFIX...   replace the allowlist with these prefixes, each a CIDR prefix such as 203.0.113.0/24
@@ -114,8 +129,10 @@
 //	                      another host while its certificate is self-signed
 //
 // Every call needs the token of a role (SDN-14, #190): viewer reads and exports, operator also
-// applies, imports, deletes, confirms, rolls back and installs or removes the licence key, admin
-// also manages the tokens and the admin source allowlist (SDN-39, #232). The first start of the
+// applies, imports, deletes, confirms, rolls back and installs or removes the licence key, and
+// makes every call of the live operations, the reads of them too (session, ban, mac-table and
+// ip-table: SDN-50, #243), admin also manages the tokens and the admin source allowlist
+// (SDN-39, #232). The first start of the
 // controller creates the admin token and writes its secret to
 // admin.token in its data directory; when it is lost, `ranz controller reset-admin` on the
 // controller's host makes a new one.
@@ -181,6 +198,15 @@ const usage = `usage:
   ranz [flags] group list
   ranz [flags] group set [-display TEXT] NAME
   ranz [flags] group delete NAME
+  ranz [flags] session list [-user NAME] [-node NAME]
+  ranz [flags] session disconnect ID|-user NAME
+  ranz [flags] ban list
+  ranz [flags] ban set [-reason TEXT] USER
+  ranz [flags] ban clear USER
+  ranz [flags] mac-table [-node NODE] NETWORK
+  ranz [flags] mac-table clear [-node NODE] [-mac ADDRESS] NETWORK
+  ranz [flags] ip-table [-node NODE] NETWORK
+  ranz [flags] ip-table clear [-node NODE] [-address ADDRESS] NETWORK
   ranz [flags] admin-sources list
   ranz [flags] admin-sources set PREFIX...
   ranz [flags] admin-sources clear
@@ -453,6 +479,15 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 		return userCommand(ctx, c, args[1:], out)
 	case args[0] == "group":
 		return groupCommand(ctx, c, args[1:], out)
+	case args[0] == "session":
+		// The live operations (operations.go; SDN-50)
+		return sessionCommand(ctx, c, args[1:], out)
+	case args[0] == "ban":
+		return banCommand(ctx, c, args[1:], out)
+	case args[0] == "mac-table":
+		return macTableCommand(ctx, c, args[1:], out)
+	case args[0] == "ip-table":
+		return ipTableCommand(ctx, c, args[1:], out)
 	case args[0] == "controller-cert":
 		return controllerCertCommand(ctx, c, args[1:], out)
 	case args[0] == "admin-destinations":
