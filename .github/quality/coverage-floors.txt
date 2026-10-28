@@ -85,6 +85,10 @@ go  controller/internal/intent          91
 go  controller/internal/keys            71
 go  controller/internal/licence         89
 go  controller/internal/logfile         85
+# login (SDN-32 #226): the logins of users, which the package's own tests run against a fake controller and a fake token store
+# (the conformance of the controller package runs them against the real ones, and counts for that package): 89.3% measured at
+# the first run, less two points
+go  controller/internal/login           87
 # mimic (CORE-P2-1 #85): the Linux job runs the sidecars end to end on Unix sockets, with the REALITY
 # library, uTLS and an ACME service of the test; pipe_windows.go is the part that only Windows builds.
 # 91.6% was measured in the first run, in which the tests that move a stream failed, so it is a lower
