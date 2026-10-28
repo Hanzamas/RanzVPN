@@ -1,10 +1,11 @@
 // fuzz_policy.c
 // libFuzzer target: the policy engine of the new core (Core/Policy.c, Core/PolicyRules.c, CORE-S4-2 #75), which reads the
 // JSON documents of rules that the controller sends and the frames that the members of a Network send.
-// - An input that starts with '{' is a document of rules: PolicyParseRules checks it, and PolicySetRules puts it in force
-//   on an engine of its own, through which a fixed set of frames of its members then passes, so that the rules that the
-//   input compiles are matched; the counters of the engine are then written as the JSON of the admin API and as the text
-//   of the CLI.
+// - An input that starts with '{' is a document of rules: PolicyParseRules checks it, PolicyTableText writes the rule
+//   tables that it compiles to, which it must do exactly when PolicyParseRules takes it, and PolicySetRules puts it in
+//   force on an engine of its own, through which a fixed set of frames of its members then passes, so that the rules that
+//   the input compiles are matched; the counters of the engine are then written as the JSON of the admin API and as the
+//   text of the CLI.
 // - Any other input is a frame for PolicyInput: its first byte chooses the member that sends it (bits 0 to 2, modulo the
 //   7 members) and the member that it goes to (bits 3 to 5; 7 for an end outside the Network), its second byte moves the
 //   clock on by tens of ms (0xFF also ages the conntrack tables after the frame), the low bits of its third byte choose
@@ -22,6 +23,7 @@
 
 #include "Core/Policy.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -190,12 +192,22 @@ static bool FuzzPolicySetup()
 	return PolicySetRules(fuzz_frames, fuzz_policy_doc, (UINT)strlen(fuzz_policy_doc), error, sizeof(error));
 }
 
-// A document of rules: checked, put in force, and judged by the fixed frames
+// A document of rules: checked, its tables written, put in force, and judged by the fixed frames
 static void FuzzPolicyDocument(const uint8_t *data, size_t size)
 {
 	char error[256];
 
-	PolicyParseRules((const char *)data, (UINT)size, error, sizeof(error));
+	bool parsed = PolicyParseRules((const char *)data, (UINT)size, error, sizeof(error));
+	char *tables = PolicyTableText((const char *)data, (UINT)size, error, sizeof(error));
+	if ((tables != NULL) != parsed)
+	{
+		fprintf(stderr, "==RANZ FUZZ== PolicyTableText and PolicyParseRules disagree on a document\n");
+		fflush(stderr);
+		_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+		abort();
+	}
+	PolicyFreeString(tables);
+
 	if (PolicySetRules(fuzz_docs, (const char *)data, (UINT)size, error, sizeof(error)) == false)
 	{
 		return;
