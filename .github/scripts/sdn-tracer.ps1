@@ -77,8 +77,14 @@ function Stop-All {
 $ctl = $null
 $trace = $null
 try {
+	# The first start sets the admin source allowlist that -admin-from names (AUD1-DT-6, #454), as ranz install --controller
+	# passes it: loopback and the addresses of this runner. The nodes and this script come from loopback, which the list
+	# always serves, and the control stream of the nodes is not behind the list, so the check runs with the list in force
+	$runnerAddresses = @(Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred |
+		Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } | ForEach-Object { $_.IPAddress } | Sort-Object -Unique)
+	$adminFrom = (@('127.0.0.0/8') + $runnerAddresses) -join ','
 	$ctl = Start-Process -FilePath $ranz -PassThru -NoNewWindow -RedirectStandardOutput $controllerOut -RedirectStandardError $controllerErr -ArgumentList @(
-		'controller', '-data', $data, '-listen', $tls, '-name', 'tracer', '-rqlited', $env:RQLITED, '-rqlite', "http://$rqliteHttp", '-rqlite-raft', $rqliteRaft)
+		'controller', '-data', $data, '-listen', $tls, '-name', 'tracer', '-admin-from', $adminFrom, '-rqlited', $env:RQLITED, '-rqlite', "http://$rqliteHttp", '-rqlite-raft', $rqliteRaft)
 	# The handle keeps the exit code of the process for ExitCode
 	$null = $ctl.Handle
 
@@ -95,6 +101,12 @@ try {
 	}
 	$status = Invoke-Ranz @('status')
 	Write-Host "controller: $($status | ConvertTo-Json -Compress -Depth 4)"
+	# The list is in force: loopback and each address of this runner, which the list holds as /32
+	$held = @($status.adminAccess.sources)
+	if ($status.adminAccess.open -or $held -notcontains '127.0.0.0/8') { throw "the first start did not set the admin source allowlist of -admin-from ${adminFrom}: $($status.adminAccess | ConvertTo-Json -Compress)" }
+	foreach ($address in $runnerAddresses) {
+		if ($held -notcontains "$address/32") { throw "the admin source allowlist does not hold the address $address of this runner: $($held -join ',')" }
+	}
 
 	# The intent of the first start
 	$resources = @((Invoke-Ranz @('get', 'resources')).resources)
