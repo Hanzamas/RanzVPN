@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -65,11 +66,17 @@ type frrRouter struct {
 	container string
 }
 
-// vtysh runs command in the vtysh of FRR: its output, or false when it failed.
+// vtysh runs command in the vtysh of FRR: what it wrote to its standard output, or false when it failed. What it writes
+// to its standard error stays out of the output, which may be JSON.
 func (f *frrRouter) vtysh(command string) (string, bool) {
-	out, err := exec.Command("docker", "exec", f.container, "vtysh", "-c", command).CombinedOutput()
+	out, err := exec.Command("docker", "exec", f.container, "vtysh", "-c", command).Output()
 	if err != nil {
-		f.t.Logf("vtysh -c %q: %v\n%s", command, err, out)
+		var exit *exec.ExitError
+		var stderr []byte
+		if errors.As(err, &exit) {
+			stderr = exit.Stderr
+		}
+		f.t.Logf("vtysh -c %q: %v\n%s%s", command, err, out, stderr)
 		return "", false
 	}
 	return string(out), true
@@ -217,10 +224,25 @@ func echoReply(b []byte, vni uint32, mac string, id, seq int) string {
 	return ""
 }
 
+// drain drops what came to the VTEP of the gateway and was not read, such as a late reply to an echo request sent again.
+func (g *frrVTEP) drain() {
+	g.t.Helper()
+	buf := make([]byte, 2048)
+	for {
+		if err := g.conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+			g.t.Fatal(err)
+		}
+		if _, _, err := g.conn.ReadFromUDP(buf); err != nil {
+			return
+		}
+	}
+}
+
 // exchange sends FRR the echo request seq of the VRF v by the route r of the fabric every second, until its echo reply
 // comes back or timeout passes: whether it came, and what else came.
 func (g *frrVTEP) exchange(v frrVRF, r Message, seq int, timeout time.Duration) (bool, []string) {
 	g.t.Helper()
+	g.drain()
 	frame := echoFrame(g.t, r.VNI, r.RouterMAC, int(v.vni), seq)
 	to := net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.MustParseAddr(r.NextHop), frrVTEPPort))
 	buf := make([]byte, 2048)
@@ -263,7 +285,6 @@ func TestFRREVPN(t *testing.T) {
 	if _, ok := frr.vtysh("show version"); !ok {
 		t.Fatalf("FRR in the container %s does not answer", container)
 	}
-	t.Cleanup(frr.dump)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -275,6 +296,8 @@ func TestFRREVPN(t *testing.T) {
 		{VRF: 102, VNI: 10102, Import: []string{"65000:10102"}, Export: []string{"65000:10102"}, Accept: accept},
 	}}
 	node := startNode(t, ctx)
+	// The cleanups run last first: the state of FRR goes into the log before the pipe of the node closes
+	t.Cleanup(frr.dump)
 	node.send(Message{
 		Type:            TypeStart,
 		ASN:             65001,

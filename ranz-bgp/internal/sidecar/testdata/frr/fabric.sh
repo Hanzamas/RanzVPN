@@ -5,8 +5,8 @@
 # 172.31.25.1; the container is one leaf of the fabric, on 172.31.25.10, its VTEP. Each VRF of the leaf is a VRF of the
 # kernel of the container with its L3 VNI on a VXLAN device in a bridge whose MAC is the router MAC of the VRF, as FRR
 # documents EVPN type-5 with symmetric routing, and the LAN 172.16.1.1/24 and fd16::1/64 on a dummy device: red on VNI
-# 10101 with the router MAC 02:00:5e:10:00:01, blue on VNI 10102 with 02:00:5e:10:00:02. FRR (frr.conf and daemons next
-# to this script) starts once the devices are there.
+# 10101 with the router MAC 02:00:5e:10:00:01, blue on VNI 10102 with 02:00:5e:10:00:02. FRR (frr.conf, daemons and
+# vtysh.conf next to this script) starts once the devices are there.
 #
 # The argument is the image of FRR, which ranz.yml pins by its digest. The container is ranz-frr.
 set -euo pipefail
@@ -59,6 +59,7 @@ ns addr show
 
 docker cp "$here/frr.conf" "$name:/etc/frr/frr.conf"
 docker cp "$here/daemons" "$name:/etc/frr/daemons"
+docker cp "$here/vtysh.conf" "$name:/etc/frr/vtysh.conf"
 docker exec "$name" chown -R frr:frr /etc/frr
 docker exec "$name" /usr/lib/frr/frrinit.sh start
 
