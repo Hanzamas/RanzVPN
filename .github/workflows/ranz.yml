@@ -157,7 +157,10 @@ jobs:
   linux:
     name: ranz (Linux)
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # The tests with the race detector take about 8 minutes, and the fuzz step runs each target of fuzz-targets.txt for 20 s,
+    # one after the other, about 14 minutes now: a job of 25 minutes was cancelled in its static analysis, the last step,
+    # with every step before it done
+    timeout-minutes: 40
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5

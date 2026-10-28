@@ -10,8 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"runtime"
 	"sync"
@@ -202,20 +202,21 @@ func TestFrontDoorHandsOver(t *testing.T) {
 		http2 bool
 		want  string
 	}{{"HTTP/1.1", false, "HTTP/1.1"}, {"h2", true, "HTTP/2.0"}} {
+		// The local address of the connection that carried the request, which the handler of the API sees as the remote
+		// address of the request. The transport says which connection that was: the last connection that it dialed may be
+		// another one, which it opened besides, and failed this check now and then.
 		var local string
+		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { local = info.Conn.LocalAddr().String() }}
 		tr := &http.Transport{
 			TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 			ForceAttemptHTTP2: c.http2,
-			DialContext: func(ctx context.Context, network, a string) (net.Conn, error) {
-				conn, err := (&net.Dialer{}).DialContext(ctx, network, a)
-				if err == nil {
-					local = conn.LocalAddr().String()
-				}
-				return conn, err
-			},
 		}
 		client := &http.Client{Transport: tr, Timeout: 10 * time.Second}
-		resp, err := client.Get("https://" + addr + "/")
+		req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), http.MethodGet, "https://"+addr+"/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("%s through the front door: %v", c.name, err)
 		}
