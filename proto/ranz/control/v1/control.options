@@ -154,3 +154,8 @@ ranz.control.v1.TableEntry.member max_size:64
 # MaxLANSubnets). They make a Vrf object about 70 bytes larger and the NodeConfig about 500 bytes.
 ranz.control.v1.Vrf.hub max_size:64
 ranz.control.v1.NodeConfig.lan_subnets max_count:16
+# The session profile of a device (SDN-40): the names of the SessionProfile and of the User that owns
+# the device, DNS labels as every name. It makes a Peer and the NodeConfig, and so an Object, about 200
+# bytes larger.
+ranz.control.v1.SessionProfile.name max_size:64
+ranz.control.v1.SessionProfile.user max_size:64
