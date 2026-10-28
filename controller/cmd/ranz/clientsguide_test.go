@@ -38,7 +38,8 @@ type guide struct {
 	order    []string
 }
 
-// readGuide reads docs/clients.md.
+// readGuide reads docs/clients.md. A checkout on Windows may hold it with CRLF line endings (core.autocrlf), so
+// the lines are cut at the line feed after the carriage returns are gone: a heading must not end in one.
 func readGuide(t *testing.T) *guide {
 	t.Helper()
 	b, err := os.ReadFile("../../../docs/clients.md")
@@ -49,7 +50,7 @@ func readGuide(t *testing.T) *guide {
 	var cur *guideSection
 	var fence []string
 	inFence := false
-	for _, line := range strings.Split(string(b), "\n") {
+	for _, line := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
 		switch {
 		case strings.HasPrefix(line, "```"):
 			if inFence && cur != nil {

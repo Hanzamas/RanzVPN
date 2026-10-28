@@ -241,10 +241,12 @@ function Invoke-Client([string[]] $argv, [string[]] $want, [string] $config = $d
 }
 
 # A client of the configuration in the file config that must get no handshake with the gateway: it comes up, and gives up
-# after a few seconds. what says which client it is, for the message of the check.
+# after a few seconds. what says which client it is, for the message of the check. Its exit code is the answer that the
+# check wants, so it does not stay in $LASTEXITCODE: the step of the workflow ends with that variable as its own exit code.
 function Assert-NoHandshake([string] $config, [string] $what) {
 	$out = & $wgpeer -config $config -ping $hostAddress -timeout 6s 2>&1 | ForEach-Object { "$_" }
 	$code = $LASTEXITCODE
+	$global:LASTEXITCODE = 0
 	$out | ForEach-Object { Write-Host "  $_" }
 	if ($code -eq 0 -or -not ($out | Where-Object { $_ -like '*no handshake with the gateway*' })) {
 		throw "$what completed a handshake with the gateway, or failed in another way (exit code $code)"
