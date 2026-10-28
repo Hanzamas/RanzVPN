@@ -10,6 +10,8 @@
 4. **Fill `LANES`.** Copy `EXAMPLE_LANE` into the array, once per lane. Keep a finished lane in the array with `skip: true`, so that a new run shows what was done.
 5. **Run** it with the Workflow tool, with the path of your copy as `scriptPath`. A Workflow runs at most `CPUs - 2` lanes at once, which is 2 in a cloud container, and it queues the others. So run one lane in each Workflow (its own copy, with `skip: true` on the other lanes), or start the lane as its own agent with isolation `worktree`, and the lanes run side by side. A free slot is then a lane that ended, and nothing queues. Before you run one, check that no running Workflow, and no tick comment of the last 3 hours, has the same lane. After a cut-off, start a new run with resume lanes. Do not use `resumeFromRunId` for that: a new `STATE` changes every prompt, so nothing would come from the cache, and in the cloud the journal of the old run is gone.
 
+   **Lanes as agents, without the script.** A cloud integrator that starts every lane as its own agent (the Agent tool, isolation `worktree`, `run_in_background`, effort `max`, the model of the lane) writes the shared text once into a file of the scratchpad: `QUOTE` and the other lines of `AUTH`, `RULES`, `COMMON`, `STATE` and the wait rule. The prompt of each lane then says: read this file with the Read tool first, it binds you as if it stood here; then `YOUR LANE: ...` (the task, as above); and the wait rule at the end, word for word. Twelve prompts stay short, and a new `STATE` is one edit of the file. A lane that cannot read the file returns `ok: false` with `blocked` set, and does nothing else.
+
 ## A lane object
 
 | Field | Meaning |

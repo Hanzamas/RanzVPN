@@ -19,3 +19,7 @@ Ranz nodes run on very different Windows hosts: Home, Pro and Server SKUs, x64 a
 - Capability rejection is checked in the controller conformance seam (ADR-0026) with simulated nodes that report different Capabilities.
 - The unified-management spec #224 adds device posture (OS version, BitLocker, Defender, firewall, domain membership), reported with the Capabilities (SDN-57, #250).
 - Tickets: SDN-9 (#185).
+
+## Amendment 2026-10-27: the Capability operations (SDN-50)
+
+Recorded by SDN-50 (#243). `Capabilities.operations` (field 12) says that the node answers the `Operation` frame of its control stream: it reads and clears the MAC table and the IP table of its L2 Networks on the order of the Controller (ADR-0027 amendment of the same day). It is the Capability of a way of talking, not of a feature: no resource of the Intent needs it, `capability.Check` has no rule for it, and no apply is refused for the lack of it. Decision 4 holds, since a node that cannot answer forwards as well as one that can, and only an operator's view of its tables is missing. The Controller sends an Operation only to a node that reports it, because a node that does not know the frame ends its stream, and a call that asks every node of a Network gives the others the status `unsupported` (ADR-0031 amendment of the same day). The API form of the Capabilities has it as `operations`, and a node that reports nothing reports no `operations`.

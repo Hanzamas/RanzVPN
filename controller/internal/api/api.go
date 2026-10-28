@@ -136,7 +136,9 @@ func Routes(c *controller.Controller, tokens *rbac.Tokens, status Status) *http.
 // the console may be reached from, and the admin destination lists, which say where an operator
 // may point the controller and the nodes, need admin; so do everything under /api/v1/audit/targets,
 // which says where the audit log goes, and the change of /api/v1/audit/retention, which says how
-// long it is kept (AUD1-DT-9, #457). Any other read (GET or HEAD) needs viewer; every other request
+// long it is kept (AUD1-DT-9, #457). Everything under /api/v1/operations, the live operations of an
+// operator, needs operator, the reads too, since they show who is connected and what the nodes learnt
+// of their members (SDN-50, #243). Any other read (GET or HEAD) needs viewer; every other request
 // changes the Intent and needs operator. An endpoint added later is so guarded from the start, by
 // what its method does.
 func Needs(method, urlPath string) rbac.Role {
@@ -147,6 +149,8 @@ func Needs(method, urlPath string) rbac.Role {
 		return rbac.Admin
 	case p == auditTargetsPath || strings.HasPrefix(p, auditTargetsPath+"/"), p == auditRetentionPath && !read:
 		return rbac.Admin
+	case p == operationsPath || strings.HasPrefix(p, operationsPath+"/"):
+		return rbac.Operator
 	case read:
 		return rbac.Viewer
 	}
