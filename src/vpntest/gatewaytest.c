@@ -18,6 +18,8 @@
 // - Stop: with ECMP off, gw-2 carries every flow; its overlay stops, its Noise session to node-a closes, and the traffic moves
 //   to gw-3 within the probe interval (#195).
 // - Recovery: gw-1 thaws, answers its probes in a row, and carries the flows again.
+// - Standby: with ECMP off gw-1 carries every flow and gw-3 stands by. gw-1 freezes again; node-a finds it down with its probes
+//   and the traffic moves to gw-3, the standby gateway, each in under one second (#195).
 // Print "GATEWAY TEST OK" only when every check passes.
 //
 // hubspoke: VRF branch of topology hub-and-spoke with the hub node-h and the spokes node-a and node-b, and the LAN
@@ -1006,6 +1008,21 @@ static void GatewayOverlay(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, TRANSP
 	GatewayTestCheck(ctx, back != INFINITE, what, "not within %u ms", GATEWAYTEST_BOUND);
 	Print("  recovery of gw-1: up again after %u ms\n", back);
 	GatewayFlows(ctx, nodes, 4, GATEWAY_GW1, "With gw-1 up again, it carries every flow");
+
+	// Standby: with ECMP off gw-1 carries every flow and gw-3 stands by, gw-2 being stopped. gw-1 freezes again with its Noise
+	// session open; node-a finds it down with its probes in under a second, and the traffic moves to gw-3, the standby gateway,
+	// within that time (#195). gw-1 thaws again afterwards.
+	start = Tick64();
+	InterlockedExchange(&nodes[GATEWAY_GW1].Link->Frozen, 1);
+	failover = GatewayFailover(ctx, nodes, GATEWAYTEST_PORT, GATEWAY_GW1, start, &to);
+	found = GatewayWaitPeer(nodes, GATEWAY_GW1, false, start);
+	open = GatewaySessionUp(nodes, "gw-1");
+	InterlockedExchange(&nodes[GATEWAY_GW1].Link->Frozen, 0);
+	Format(what, sizeof(what), "Standby: gw-1 freezes again with its Noise session open; node-a finds it down with its probes in under %u ms", GATEWAYTEST_FAILOVER);
+	GatewayTestCheck(ctx, found < GATEWAYTEST_FAILOVER && open, what, "found down after %u ms, the session %s", found, open ? "open" : "closed");
+	Format(what, sizeof(what), "Standby: the traffic of gw-1 moves to gw-3, the standby gateway, in under %u ms", GATEWAYTEST_FAILOVER);
+	GatewayTestCheck(ctx, failover < GATEWAYTEST_FAILOVER && to == GATEWAY_GW3, what, "%u ms, to %s", failover, GatewayTestName(nodes, GATEWAY_NUM_NODES, to));
+	Print("  standby failover from gw-1: found down after %u ms, its traffic moved to gw-3 after %u ms\n", found, failover);
 
 	NodeGatewayGetStatus(nodes[GATEWAY_A].Node, &gs);
 	GatewayTestCheck(ctx, gs.Failovers >= 2 && gs.Recoveries >= 1 && gs.Probes != 0 && gs.Answers != 0,
