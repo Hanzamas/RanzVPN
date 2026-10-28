@@ -104,6 +104,11 @@ src/Cedar  NodeShapeOutput      exempt  only AdjustTcpMssL3 of TcpIp reads the b
 # The Mirrors of the Node (SDN-23 #199) read the packets that the overlay sends to the peers and delivers to the host:
 # the IPv4 header, the IPv6 extension headers and the ports. No parser word in the name, listed as a parser
 src/Cedar  NodeMirrorCopy  fuzz_mirror
+# The session profiles of the Node (SDN-40 #233) read the packets that the overlay sends to a peer and takes from one: the
+# two addresses, the IPv6 extension headers and the flags of TCP. No parser word in the names, listed as the readers of
+# packets that they are
+src/Cedar  NodeProfileOutbound  fuzz_nodeprofile
+src/Cedar  NodeProfileInbound   fuzz_nodeprofile
 # The DHCP responder of an L2 Network (SDN-43 #236) reads the frames that the members of the switch of the Network send:
 # the DHCP messages of the clients and of a DHCP server of the LAN, and the ARP requests
 src/Cedar  NodeDhcpInput  fuzz_nodedhcp
