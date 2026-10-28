@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -395,6 +396,170 @@ func TestMimicNodeThatLeavesHasNoLink(t *testing.T) {
 		}
 	}
 	h.settle(map[string]uint64{"gw-1": 6, "gw-2": 4, "hub": 5, "lab-1": 5})
+}
+
+// waitMimicKey waits until the store holds the key want as the mimic key that the Node with the static key key reported, none when
+// want is nil, and fails the test when it does not within waitTimeout.
+func (h *harness) waitMimicKey(key string, want []byte) {
+	h.t.Helper()
+	deadline := time.Now().Add(waitTimeout)
+	for {
+		pins, err := h.st.LoadPins(context.Background())
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		if got := pins[key].GetMimicKey(); bytes.Equal(got, want) {
+			return
+		} else if time.Now().After(deadline) {
+			h.t.Fatalf("the store holds the mimic key %x within %v, want %x", got, waitTimeout, want)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestMimicDeletedNodeLeavesNoLinkAndNoKey is the fifth criterion of SDN-94 for a Node that leaves the Network by its Node resource:
+// the Node of the server is deleted after its Listener, which a guard keeps from going before, and then the Peer hub and every link to
+// it are gone from the states of the others. The controller forgets the public key that the Node reported, so a Node that is made
+// again with the same static key starts with none: its clients get the Peer and no link until it reports a key, and its server has a
+// new short id.
+func TestMimicDeletedNodeLeavesNoLinkAndNoKey(t *testing.T) {
+	n := startMimicNet(t)
+	h := n.h
+	ctx := context.Background()
+	hubKey := string(keyBranch2.Public())
+	h.waitMimicKey(hubKey, mimicKey1)
+
+	// The Node that a Listener names is not deleted
+	if _, err := h.api.Delete(ctx, intent.KindNode, "hub"); err == nil || !strings.Contains(err.Error(), `Node "hub" is used by Listener "edge-hub"`) {
+		t.Errorf("the delete of hub while its Listener stands is %v, want a refusal that names the Listener", err)
+	}
+
+	// The Listener goes: hub is no server, and its clients have no link
+	res, err := h.api.Delete(ctx, intent.KindListener, "edge-hub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []controller.NodeGeneration{{Name: "gw-1", Generation: 3}, {Name: "gw-2", Generation: 3}, {Name: "hub", Generation: 2}}; !equalGenerations(res.Nodes, want) {
+		t.Errorf("the delete of the Listener changed %+v, want %+v", res.Nodes, want)
+	}
+	for _, s := range []*sim{n.gw1, n.gw2, n.hub} {
+		if c := nodeObject(s.update(t)); c == nil || c.GetMimic() != nil {
+			t.Errorf("the NodeConfig of %s after the Listener was deleted is %v, want no mimic part", s.name, c)
+		}
+	}
+	h.settle(map[string]uint64{"gw-1": 3, "gw-2": 3, "hub": 2, "lab-1": 1})
+
+	// The Node resource goes: hub is refused as a Node that no resource names, its peers lose the Peer, and the key that it reported is
+	// gone from the store
+	res, err = h.api.Delete(ctx, intent.KindNode, "hub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []controller.NodeGeneration{{Name: "gw-1", Generation: 4}, {Name: "gw-2", Generation: 4}}; !equalGenerations(res.Nodes, want) {
+		t.Errorf("the delete of hub changed %+v, want %+v", res.Nodes, want)
+	}
+	if r := n.hub.refusal(t).GetRefuse(); r.GetReason() != controlpb.RefuseReason_REFUSE_REASON_UNKNOWN_NODE {
+		t.Errorf("hub was refused with %v after its Node resource was deleted, want UNKNOWN_NODE", r)
+	}
+	for _, c := range []*sim{n.gw1, n.gw2} {
+		m := c.update(t)
+		if !slices.Contains(removed(m), desired.Key{Kind: controlpb.Kind_KIND_PEER, Name: "hub"}) || nodeObject(m).GetMimic() != nil {
+			t.Errorf("the update of %s after hub was deleted removes %v and has the mimic part %v, want the Peer hub removed and no link", c.name, removed(m), nodeObject(m).GetMimic())
+		}
+	}
+	h.settle(map[string]uint64{"gw-1": 4, "gw-2": 4, "lab-1": 1})
+	if pins, err := h.st.LoadPins(ctx); err != nil || pins[hubKey] != nil {
+		t.Errorf("the store holds %v (%v) for hub after its Node resource was deleted, want nothing", pins[hubKey], err)
+	}
+
+	// The Node is made again with the same static key and the same Listener: it starts with no key, so its clients get the Peer and no
+	// link, and its server has a short id of its own
+	res = h.apply("mimic.json")
+	if want := []controller.NodeGeneration{{Name: "gw-1", Generation: 5}, {Name: "gw-2", Generation: 5}, {Name: "hub", Generation: 1}}; !equalGenerations(res.Nodes, want) {
+		t.Errorf("mimic.json applied again changed %+v, want %+v", res.Nodes, want)
+	}
+	hub := h.sim("hub", keyBranch2)
+	if id := nodeObject(hub.update(t)).GetMimic().GetServer().GetShortId(); !bytes.Equal(id, shortID2) {
+		t.Errorf("the short id of hub, made again, is %v, want %v: the one of the Node that was deleted is not kept", id, shortID2)
+	}
+	for _, c := range []*sim{n.gw1, n.gw2} {
+		m := c.update(t)
+		if p := peerObject(m, "hub"); p == nil || nodeObject(m).GetMimic() != nil {
+			t.Errorf("the update of %s after hub was made again has the Peer hub %v and the mimic part %v, want the Peer and no link", c.name, p, nodeObject(m).GetMimic())
+		}
+	}
+	h.settle(map[string]uint64{"gw-1": 5, "gw-2": 5, "hub": 1, "lab-1": 1})
+	ex, err := h.api.ExplainListener(ctx, "edge-hub")
+	if err != nil || ex.KeyReported || len(ex.Links) != 0 || !strings.Contains(ex.Waiting, "the Controller waits for the public key of Node hub") || !slices.Equal(ex.Unlinked, []string{"gw-1", "gw-2"}) {
+		t.Errorf("the explanation of edge-hub after hub was made again is %+v (%v), want a Controller that waits for its key, with no link", ex, err)
+	}
+
+	// It reports a key of its own: each client gets its link with that key and the short id of the new server
+	if err := hub.ReportKeys(&controlpb.Pins{MimicKey: mimicKey2}); err != nil {
+		t.Fatal(err)
+	}
+	wantLink := &controlpb.MimicLink{Peer: "hub", Address: "hub.example.com:8443", ServerName: "www.example.com", PublicKey: mimicKey2, ShortId: shortID2}
+	for _, c := range []*sim{n.gw1, n.gw2} {
+		if links := nodeObject(c.update(t)).GetMimic().GetLinks(); len(links) != 1 || !proto.Equal(links[0], wantLink) {
+			t.Errorf("the links of %s after hub reported its new key are %v, want %v", c.name, links, wantLink)
+		}
+	}
+	h.settle(map[string]uint64{"gw-1": 6, "gw-2": 6, "hub": 1, "lab-1": 1})
+	for _, s := range []*sim{n.gw1, n.gw2, hub, n.lab} {
+		h.checkMimicState(s, mimicInput(shortID2, mimicKey2))
+	}
+}
+
+// TestMimicKeyOfANodeThatIsNoServer: a Node that is no mimic server when it reports its key, as one does that has not yet applied
+// the end of its role, has the report kept and no Generation made for it, since no state holds the key of a Node that is no server;
+// and the clients get their link at once when the Node is a server again, with the key that it reported, and no second report.
+func TestMimicKeyOfANodeThatIsNoServer(t *testing.T) {
+	n := startMimicNet(t)
+	h := n.h
+	ctx := context.Background()
+	hubKey := string(keyBranch2.Public())
+
+	if _, err := h.api.Delete(ctx, intent.KindListener, "edge-hub"); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []*sim{n.gw1, n.gw2, n.hub} {
+		s.update(t)
+	}
+	h.settle(map[string]uint64{"gw-1": 3, "gw-2": 3, "hub": 2, "lab-1": 1})
+
+	// The report is kept, and nobody gets a Generation for it
+	if err := n.hub.ReportKeys(&controlpb.Pins{MimicKey: mimicKey2}); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMimicKey(hubKey, mimicKey2)
+	h.settle(map[string]uint64{"gw-1": 3, "gw-2": 3, "hub": 2, "lab-1": 1})
+	for _, s := range []*sim{n.gw1, n.gw2, n.hub, n.lab} {
+		select {
+		case u := <-s.Updates:
+			t.Errorf("%s got the update %v for the key of a Node that is no mimic server", s.name, u)
+		default:
+		}
+	}
+
+	// The Node is a server again, with a short id of its own: its clients have the link in the same Generation, with the key that it
+	// reported
+	res := h.apply("mimic.json")
+	if want := []controller.NodeGeneration{{Name: "gw-1", Generation: 4}, {Name: "gw-2", Generation: 4}, {Name: "hub", Generation: 3}}; !equalGenerations(res.Nodes, want) {
+		t.Errorf("mimic.json applied again changed %+v, want %+v", res.Nodes, want)
+	}
+	if id := nodeObject(n.hub.update(t)).GetMimic().GetServer().GetShortId(); !bytes.Equal(id, shortID2) {
+		t.Errorf("the short id of hub, a server again, is %v, want %v", id, shortID2)
+	}
+	wantLink := &controlpb.MimicLink{Peer: "hub", Address: "hub.example.com:8443", ServerName: "www.example.com", PublicKey: mimicKey2, ShortId: shortID2}
+	for _, c := range []*sim{n.gw1, n.gw2} {
+		if links := nodeObject(c.update(t)).GetMimic().GetLinks(); len(links) != 1 || !proto.Equal(links[0], wantLink) {
+			t.Errorf("the links of %s after hub became a server again are %v, want %v", c.name, links, wantLink)
+		}
+	}
+	h.settle(map[string]uint64{"gw-1": 4, "gw-2": 4, "hub": 3, "lab-1": 1})
+	for _, s := range []*sim{n.gw1, n.gw2, n.hub, n.lab} {
+		h.checkMimicState(s, mimicInput(shortID2, mimicKey2))
+	}
 }
 
 // TestMimicShortIDAndKeySurviveARestart is the sixth criterion of SDN-94: the short id of a server is the same after the controller
