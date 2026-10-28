@@ -107,6 +107,16 @@
 // other live operations are the controller's own: it lists the sessions (the control streams of the nodes),
 // ends one with a Refuse that has the reason REFUSE_REASON_OPERATOR, and bans a user by leaving the Nodes
 // that the user owns out of every desired state. No schema version changes with them.
+//
+// Topology and gateways (SDN-19, #195, ADR-0025 decisions 11 and 12): a VRF of topology
+// hub-and-spoke names its hub node in the Vrf object of every member (Vrf.hub). A spoke gets the hub
+// as its only peer in the VRF, with the prefixes of the VRF as routes of the hub, and the hub sends
+// the traffic of one spoke on to another. A node gets the LAN subnets behind it in its NodeConfig
+// (NodeConfig.lan_subnets) and the ones of each gateway that shares a VRF with it as routes of that
+// Peer; when several gateways announce one prefix, the node picks a healthy one from its own probes
+// inside their Noise sessions and from the controller's health data (Peer.down), or one of the
+// healthy ones by the hash of each flow when the VRF spreads them (Vrf.ecmp). No schema version
+// changes with them: a node of an older release skips the fields it does not know.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -302,6 +312,9 @@ message NodeConfig {
   // Go writes the members of a oneof after the other fields of a message and nanopb in the order of the
   // numbers, and the two must write the same bytes.
   string listener_decoy = 12;
+  // The LAN subnets behind the node, which it advertises as a gateway in its VRFs (SDN-19 #195),
+  // ordered by VRF id, then prefix: they lead to its host.
+  repeated Route lan_subnets = 13;
 }
 
 // The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise
@@ -454,6 +467,12 @@ message Vrf {
   // vxlan or geneve carries its packets on, 0 for a link of kind noise.
   LinkKind link = 8;
   uint32 vni = 9;
+  // The hub node of a VRF of topology hub-and-spoke (SDN-19 #195), which sends the traffic of one
+  // spoke on to another; empty for a full mesh
+  string hub = 11;
+  // The flows to a prefix that several gateways announce spread over the healthy ones by the hash
+  // of each flow (SDN-19 #195); without it the first healthy gateway in name order carries them
+  bool ecmp = 12;
 }
 
 // The zone of a VRF (SDN-11 #187, ADR-0028 decisions 6 and 7). The stub resolver of a node
@@ -519,9 +538,11 @@ message L2Security {
 // Another node that shares at least one VRF with this one (full mesh), or that a leak between a VRF
 // of each joins (SDN-7), with its addresses in the L3 Networks of the shared VRFs, ordered by
 // Network name, and the routes that lead to it besides them: the outside prefixes of its 1:1 NAT
-// rules in the shared VRFs, and the routes that its VRFs leak into the VRFs of this node, ordered
-// by VRF id, then prefix. Its endpoints (SDN-93 #410) are the addresses under which this node dials it,
-// in the order of its Node resource; a peer without any is not dialled.
+// rules in the shared VRFs, the LAN subnets that it advertises there (SDN-19), the prefixes that a
+// spoke reaches through it when it is the hub of a shared VRF (SDN-19), and the routes that its VRFs
+// leak into the VRFs of this node, ordered by VRF id, then prefix. Two spokes of a VRF of topology
+// hub-and-spoke do not share it. Its endpoints (SDN-93 #410) are the addresses under which this node
+// dials it, in the order of its Node resource; a peer without any is not dialled.
 message Peer {
   string name = 1;
   bytes public_key = 2;         // the Noise static key, 32 bytes
@@ -533,6 +554,11 @@ message Peer {
   // The tunnel endpoint of the peer (SDN-76 #356), absent while no shared VRF has a link of kind vxlan
   // or geneve: the only address that this node takes the datagrams of those links from.
   Vtep vtep = 8;
+  // The controller's health data of a gateway (SDN-19 #195): the peer announces a prefix that
+  // another gateway announces too, and it has had no control stream for a while. The node gives the
+  // traffic of that prefix to another gateway that answers its probes, and to this one only while
+  // none does.
+  bool down = 11;
 }
 
 // The transports that a node dials a peer over, as a fallback list names them: quic, tls and mimic

@@ -365,6 +365,9 @@ struct NODE_VRF_TABLES {
 	NODE_POLICY_TABLE *Policy;
 	// The links of kind vxlan and geneve of the same Generation (NodeLink.c; SDN-76, #356), NULL for none
 	struct NODE_LINK_TABLE *Link;
+	// The groups of gateways and the hubs of the same Generation (NodeGateway.c; SDN-19, #195): the next hop of each group
+	// comes after those of the peers and of the leaked routes. NULL for neither.
+	struct NODE_GATEWAY_TABLE *Gateway;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -480,6 +483,10 @@ struct NODE {
 	// The peer agent of the overlay (NodeAgent.c; CORE-S5-5, #411): the datagram path to the peers that the node reaches on no
 	// stream session, NULL while the overlay does not run
 	struct NODE_AGENT *volatile Agent;
+
+	// The gateway HA of the overlay (NodeGateway.c; SDN-19, #195): the gateways of its groups and their probes, NULL while
+	// the overlay does not run
+	struct NODE_GATEWAY *Gateway;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)

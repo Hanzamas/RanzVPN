@@ -229,6 +229,10 @@ type Controller struct {
 	// The certificate of the TLS port and the fingerprints that the nodes get of it (certificate.go)
 	certs *certificateState
 
+	// The gateways that the nodes get reported down, the health data of gateway HA, guarded by mu
+	// (gateways.go)
+	gw gatewayState
+
 	// The cap on the control streams that wait for a Hello, and the throttle of the log of the ones it
 	// closes (waiting.go)
 	waiting    *control.Waiting
@@ -686,6 +690,8 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	if err := c.withMimic(next, states); err != nil {
 		return compiled{}, err
 	}
+	// The gateways that are down, the health data of gateway HA (gateways.go; SDN-19)
+	c.withHealth(states)
 	return compiled{lic: lic, force: force, states: states}, nil
 }
 

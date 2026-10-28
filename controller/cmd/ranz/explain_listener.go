@@ -22,6 +22,9 @@ import (
 func explainListener(ctx context.Context, c *api.Client, name, format string, stdout, stderr io.Writer) int {
 	res, err := c.ExplainListener(ctx, name)
 	if err != nil {
+		if refusal := loopbackRefusal(err); refusal != nil {
+			err = refusal
+		}
 		var refused *api.Error
 		if errors.As(err, &refused) {
 			fmt.Fprintf(stderr, "ranz: %v (%d %s)\n", err, refused.Status, http.StatusText(refused.Status))
