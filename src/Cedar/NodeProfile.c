@@ -23,6 +23,9 @@
 //   no-server takes no SYN for its host and sends no SYN-ACK of it. A TCP header that the packet cuts short before its
 //   flags, and a later fragment that overlaps them, could hide a SYN (RFC 1858) and are dropped too.
 // - Privacy filter: no packet passes between the node and a peer when the profiles of both have it (client isolation).
+// - The hub of a VRF of topology hub-and-spoke sends the packets of one spoke on to another (NodeGateway.c; SDN-19, #195),
+//   and holds the sessions of both: it judges such a packet by the profiles of both peers (NodeProfileTransit), so the
+//   privacy filter keeps two devices apart through a hub too, and a hub under no-routing passes no packet on.
 // - The MAC addresses and no-bridge hold in an L2 Network, whose frames the policy engine of its switch judges by the
 //   member of each session there (ADR-0019 decision 1): the profile is the guard of that member (NodeProfileMember),
 //   under the security of the Network (Core/SwitchSecurity.h). The overlay carries no frame of an L2 Network yet
@@ -501,6 +504,68 @@ bool NodeProfileOutbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, con
 // table snapshot, which holds v.
 bool NodeProfileInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size) {
 	return NodeProfileJudge(v, vrf_id, hop, packet, size, false);
+}
+
+// A packet of the VRF vrf_id that the node, the hub of the VRF, sends on from the peer of next hop from to the peer of next
+// hop to (NodeGatewayTransit), as the peer of from sent it. The sessions of both carry it, so the profile of each judges it
+// as the node judges a packet that the peer sends or takes: the privacy filter between the two, then no-routing and
+// no-server of each, then the addresses that the session of the one sends from, then the bucket of what the node takes from
+// the one and the bucket of what it sends to the other. Of the node's own flags, which hold for the packets of its host,
+// no-routing holds: a device under it routes no packet, and the node routes this one. False drops it, counted by its
+// reason. The caller is an online reader of the node's table snapshot, which holds v.
+bool NodeProfileTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, const UCHAR *packet, UINT size) {
+	NODE_PROFILE_TABLE *t = (v != NULL ? v->Profile : NULL);
+	UCHAR src[16], dst[16];
+	UINT addr_size = 0;
+	volatile LONG64 *dropped = NULL;
+
+	if (t == NULL)
+		return true;
+
+	NODE_PROFILE *pr = t->Profile;
+	const NODE_PROFILE_HOP *a = (from < t->NumHops && t->Hops[from].Peer != NULL ? &t->Hops[from] : NULL);
+	const NODE_PROFILE_HOP *b = (to < t->NumHops && t->Hops[to].Peer != NULL ? &t->Hops[to] : NULL);
+
+	// Neither peer runs under a profile, and the node may route
+	if (a == NULL && b == NULL && (t->Own == false || t->NoRouting == false))
+		return true;
+
+	if (NodeProfileEnds(packet, size, src, dst, &addr_size) == false)
+		return false;
+
+	// The flags of the TCP header, and whether no-routing or no-server of either peer drops the packet: from an address that
+	// is no address of the one, to one that is no address of the other, a SYN-ACK of the one, a SYN to the other
+	UINT tcp = ((a != NULL && a->NoServer) || (b != NULL && b->NoServer) ? NodeProfileTcp(packet, size) : NODE_PROFILE_NOT_TCP);
+	bool routed = (a != NULL && a->NoRouting && NodeProfileOwns(a->Addresses, a->NumAddresses, vrf_id, src, addr_size) == false);
+	routed = routed || (b != NULL && b->NoRouting && NodeProfileOwns(b->Addresses, b->NumAddresses, vrf_id, dst, addr_size) == false);
+	bool served = ((a != NULL && a->NoServer && NodeProfileServes(tcp, false)) || (b != NULL && b->NoServer && NodeProfileServes(tcp, true)));
+	LONG64 now = (LONG64)GetTickCount64();
+
+	if (a != NULL)
+		InterlockedExchange64(&a->Peer->LastPacket, now);
+	if (b != NULL)
+		InterlockedExchange64(&b->Peer->LastPacket, now);
+
+	if (t->Own && t->NoRouting)
+		dropped = &pr->Routing;
+	else if (a != NULL && b != NULL && a->PrivacyFilter && b->PrivacyFilter)
+		dropped = &pr->Isolated;
+	else if (routed)
+		dropped = &pr->Routing;
+	else if (served)
+		dropped = &pr->Server;
+	else if (a != NULL && NodeProfileSource(a->Peer, vrf_id, src, addr_size, (addr_size == 4 ? a->MaxIpv4 : a->MaxIpv6)) == false)
+		dropped = &pr->Addresses;
+	else if (a != NULL && NodeProfileTake(&a->Upload, size, t->Frequency) == false)
+		dropped = &pr->Upload;
+	else if (b != NULL && NodeProfileTake(&b->Download, size, t->Frequency) == false)
+		dropped = &pr->Download;
+
+	if (dropped == NULL)
+		return true;
+
+	InterlockedIncrement64(dropped);
+	return false;
 }
 
 //

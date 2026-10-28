@@ -1,10 +1,12 @@
 // fuzz_nodeprofile.c
 // libFuzzer target: the session profiles of the Node module (Cedar/NodeProfile.c, SDN-40 #233), which read the IP packets
-// that the overlay sends to a peer (NodeProfileOutbound) and takes from one (NodeProfileInbound): their two addresses, the
-// extension headers of IPv6 and the flags of TCP. An input is a list of packets, each after a byte that picks the way (bit
-// 0: a packet of the host to the peer) and the next hop (bits 1 and 2: the peer under a profile, the peer under none, the
-// next hop of a route that a VRF of the first leaks, and one that the tables do not have), and the size of the packet in 2
-// bytes. The profile of the peer limits its uploads and downloads and the IPv4 and IPv6 addresses that its session sends
+// that the overlay sends to a peer (NodeProfileOutbound) and takes from one (NodeProfileInbound), and the ones that the hub
+// of a VRF sends on from one peer to another (NodeProfileTransit): their two addresses, the extension headers of IPv6 and
+// the flags of TCP. An input is a list of packets, each after a byte that picks the way (bit 0: a packet of the host to the
+// peer; bit 3: a packet that the node sends on from the next hop of bits 1 and 2 to the one of bits 4 and 5) and the next
+// hop (bits 1 and 2: the peer under a profile, the peer under none, the next hop of a route that a VRF of the first leaks,
+// and one that the tables do not have), and the size of the packet in 2 bytes. The profile of the peer limits its uploads
+// and downloads and the IPv4 and IPv6 addresses that its session sends
 // from, and has no-routing, no-server and the privacy filter, as the node's own profile has, so the packets of one input
 // fill the addresses of its session one after the other. Each input builds the profiles and the tables anew and frees them,
 // so Mayaqua's leak check finds nothing left. Each packet is copied into a buffer of its size exactly, so that
@@ -141,7 +143,13 @@ static void FuzzProfile(const uint8_t *data, size_t size)
 			{
 				hop = FUZZ_PROFILE_NO_HOP;
 			}
-			if ((pick & 0x01) != 0)
+			if ((pick & 0x08) != 0)
+			{
+				UINT to = (pick >> 4) & 0x03;
+
+				NodeProfileTransit(n, v, FUZZ_PROFILE_VRF, hop, (to == 3 ? FUZZ_PROFILE_NO_HOP : to), packet, len);
+			}
+			else if ((pick & 0x01) != 0)
 			{
 				NodeProfileOutbound(n, v, FUZZ_PROFILE_VRF, hop, packet, len);
 			}

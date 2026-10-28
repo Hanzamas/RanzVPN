@@ -1,8 +1,9 @@
 # fuzz_nodeprofile.py
 # Seeds of fuzz_nodeprofile (src/fuzz/fuzz_nodeprofile.c): the session profiles of the Node module
 # (src/Cedar/NodeProfile.c, SDN-40 #233). An input is a list of packets, each after a byte that picks the way (bit 0: a
-# packet of the host to the peer) and the next hop (bits 1 and 2: 0 the peer under a profile, 1 the peer under none, 2 the
-# leaked route of the first, 3 a next hop that the tables do not have), and its size in 2 bytes. The node is 10.0.0.1 and
+# packet of the host to the peer; bit 3: a packet that the node, as a hub, sends on from the next hop of bits 1 and 2 to the
+# one of bits 4 and 5) and the next hop (bits 1 and 2: 0 the peer under a profile, 1 the peer under none, 2 the leaked
+# route of the first, 3 a next hop that the tables do not have), and its size in 2 bytes. The node is 10.0.0.1 and
 # fd00::1, its peers 10.0.0.2 and fd00::2 (under the profile) and 10.0.0.3 and fd00::3; the profile limits the IPv4
 # addresses of a session to 2 and its IPv6 addresses to 1, and has no-routing, no-server and the privacy filter.
 #

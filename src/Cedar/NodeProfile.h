@@ -45,6 +45,7 @@ void NodeProfileAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st);
 void NodeProfileFreeTable(NODE_PROFILE_TABLE *t);
 bool NodeProfileOutbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size);
 bool NodeProfileInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size);
+bool NodeProfileTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, const UCHAR *packet, UINT size);
 bool NodeProfileUp(NODE *n, const char *name, const UCHAR *key);
 void NodeProfileDown(NODE *n, const char *name, const UCHAR *key);
 UINT NodeProfileExpired(NODE *n, const char *name, const UCHAR *key, UINT64 since, UINT64 now);

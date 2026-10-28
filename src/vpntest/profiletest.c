@@ -21,6 +21,9 @@
 //   IPv4 and in IPv6.
 // - Flags at both: the privacy filter keeps node-b and node-c apart at the node that sends, while each reaches node-a and
 //   node-e, which runs under the profile of bob without it.
+// - Flags at a hub: node-a is the hub of red, of topology hub-and-spoke (Cedar/NodeGateway.c), and sends the packets of one
+//   device on to another, judged by the profiles of both: not the packet of node-b to node-c, both under the privacy
+//   filter, nor a TCP SYN of node-e to node-b under no-server, while the packets of node-b to node-e go on.
 // - Sessions: alice runs under at most 2 sessions at a node, bob under 1. node-a holds 2 of the 3 devices of alice and
 //   refuses the third while they are up, and holds the one of bob; once node-a drops one of the two, the third comes up.
 // - Idle timeout: under 2 s, the session of node-b at node-a stays while node-a sends to it every 250 ms, and ends about
@@ -115,6 +118,11 @@ static char *profiletest_addrs[PROFILETEST_NODES][6] =
 #define	PROFILETEST_AT_SENDER	1			// The overlay of the sender drops it
 #define	PROFILETEST_AT_RECEIVER	2			// The overlay of the receiver drops it
 #define	PROFILETEST_CHANGED		3			// The host of the receiver takes another packet, or none comes
+#define	PROFILETEST_AT_HUB		4			// The overlay of node-a, the hub of red that sends it on, drops it
+
+// The pools of red, which lead to node-a at the devices when node-a is the hub of red
+#define	PROFILETEST_POOL		"10.0.0.0"
+#define	PROFILETEST_POOL6		"fd00::"
 
 // The counter of NODE_PROFILE_STATUS that a drop counts in
 #define	PROFILETEST_NO_REASON	0
@@ -177,6 +185,7 @@ typedef struct PROFILETEST_GEN
 	UINT64 RateB;									// The rate limit of node-b itself (NodeShape.c), 0 for none
 	UINT Without;									// The nodes that node-a does not hold as peers, nor they node-a (PROFILETEST_BIT)
 	bool Spokes;									// The devices hold node-a alone as a peer, not each other
+	bool Hub;										// ... and node-a is the hub of red, of topology hub-and-spoke: the pools of red lead to it
 } PROFILETEST_GEN;
 
 // The sender of a rate case: one node sends one packet to another as fast as its overlay takes it
@@ -613,7 +622,7 @@ static void ProfileTestRoute(CONTROL_ROUTE *r, char *prefix)
 // and two devices when g holds the devices to node-a alone
 static bool ProfileTestPeers(PROFILETEST_GEN *g, UINT i, UINT j)
 {
-	if (i == j || (g->Spokes && i != PROFILETEST_A && j != PROFILETEST_A))
+	if (i == j || ((g->Spokes || g->Hub) && i != PROFILETEST_A && j != PROFILETEST_A))
 	{
 		return false;
 	}
@@ -637,6 +646,10 @@ static CONTROL_STATE *ProfileTestState(PROFILETEST_NODE *nodes, PROFILETEST_GEN 
 	st->NumVrfs = 1;
 	StrCpy(st->Vrfs[0].Name, sizeof(st->Vrfs[0].Name), "red");
 	st->Vrfs[0].Id = PROFILETEST_VRF;
+	if (g->Hub)
+	{
+		StrCpy(st->Vrfs[0].Hub, sizeof(st->Vrfs[0].Hub), profiletest_names[PROFILETEST_A]);
+	}
 	if (g->Own)
 	{
 		Copy(&st->Profile, &g->Profiles[i], sizeof(CONTROL_PROFILE));
@@ -668,6 +681,12 @@ static CONTROL_STATE *ProfileTestState(PROFILETEST_NODE *nodes, PROFILETEST_GEN 
 		{
 			ProfileTestRoute(&p->Routes[p->NumRoutes++], PROFILETEST_NAT_OUTSIDE);
 			ProfileTestRoute(&p->Routes[p->NumRoutes++], PROFILETEST_NAT6_OUTSIDE);
+		}
+		// A device reaches the other devices through the hub: the pools of red lead to node-a
+		if (g->Hub && j == PROFILETEST_A)
+		{
+			ProfileTestRoute(&p->Routes[p->NumRoutes++], PROFILETEST_POOL);
+			ProfileTestRoute(&p->Routes[p->NumRoutes++], PROFILETEST_POOL6);
 		}
 		if (g->Peers)
 		{
@@ -812,12 +831,12 @@ static void ProfileTestGen(PROFILETEST_GEN *g, UINT64 generation, CONTROL_PROFIL
 // expect says, a drop counted in the counter of the reason at the node that drops it and at no other
 static void ProfileTestCase(PROFILETEST_CTX *ctx, PROFILETEST_NODE *nodes, UINT from, UINT to, UINT kind, char *src, char *dst, UINT expect, UINT reason, char *what)
 {
-	static char *ends[] = {"is delivered", "is dropped by the sender", "is dropped by the receiver", "arrives changed or not at all"};
+	static char *ends[] = {"is delivered", "is dropped by the sender", "is dropped by the receiver", "arrives changed or not at all", "is dropped by the hub"};
 	UCHAR packet[PROFILETEST_MAX_PACKET];
 	PROFILETEST_NODE *f = &nodes[from], *r = &nodes[to];
 	UINT size = ProfileTestPacket(packet, kind, src, dst, ++ctx->NextId);
 	UINT before = ProfileTestNumPackets(r);
-	UINT64 dropped = ProfileTestDropped(r);
+	UINT64 dropped = ProfileTestDropped(r), dropped_hub = ProfileTestDropped(&nodes[PROFILETEST_A]);
 	UINT64 counts[PROFILETEST_NODES];
 	UINT end = PROFILETEST_CHANGED;
 
@@ -849,12 +868,18 @@ static void ProfileTestCase(PROFILETEST_CTX *ctx, PROFILETEST_NODE *nodes, UINT 
 				end = PROFILETEST_AT_RECEIVER;
 				break;
 			}
+			// A packet that the hub sends on from one device to another is dropped there, or reaches the receiver
+			if (expect == PROFILETEST_AT_HUB && ProfileTestDropped(&nodes[PROFILETEST_A]) != dropped_hub)
+			{
+				end = PROFILETEST_AT_HUB;
+				break;
+			}
 			SleepThread(1);
 		}
 	}
 
 	// The reason counts the drop at the node that dropped it, and at no other
-	UINT at = (expect == PROFILETEST_AT_SENDER ? from : (expect == PROFILETEST_AT_RECEIVER ? to : PROFILETEST_NONE));
+	UINT at = (expect == PROFILETEST_AT_SENDER ? from : (expect == PROFILETEST_AT_RECEIVER ? to : (expect == PROFILETEST_AT_HUB ? PROFILETEST_A : PROFILETEST_NONE)));
 	bool counted = true;
 	for (UINT i = 0;i < PROFILETEST_NODES && reason != PROFILETEST_NO_REASON;i++)
 	{
@@ -1098,6 +1123,32 @@ static void ProfileTestFlagsBoth(PROFILETEST_CTX *ctx, PROFILETEST_NODE *nodes)
 		"The privacy filter: node-e reaches node-b");
 	ProfileTestCase(ctx, nodes, PROFILETEST_A, PROFILETEST_B, PROFILETEST_SYN, a4, b4, PROFILETEST_AT_SENDER, PROFILETEST_SERVER,
 		"No-server at both: node-a drops the TCP SYN to node-b first");
+}
+
+// The flags at a hub: node-a is the hub of red, of topology hub-and-spoke, and each device holds node-a alone as a peer,
+// so a packet of one device to another passes node-a, which holds the sessions of both and judges the packet by the
+// profiles of both. The NodeConfigs and the Peer objects carry the profiles, alice with the privacy filter and no-server,
+// bob with neither: node-a does not send the packet of node-b on to node-c, nor a TCP SYN of node-e on to node-b, and
+// sends the packets of node-b on to node-e, its TCP SYN too.
+static void ProfileTestHub(PROFILETEST_CTX *ctx, PROFILETEST_NODE *nodes, CONTROL_PROFILE *alice, CONTROL_PROFILE *bob, UINT64 *generation)
+{
+	char *b4 = "10.0.0.2", *c4 = "10.0.0.3", *e4 = "10.0.0.5";
+	PROFILETEST_GEN g;
+
+	ProfileTestGen(&g, ++(*generation), alice, bob, true, true);
+	g.Hub = true;
+	bool ok = ProfileTestApply(nodes, &g) && ProfileTestWaitLinks(nodes, &g);
+	ProfileTestCheck(ctx, ok, "The nodes apply the Generation in which node-a is the hub of red, and each device has its session to node-a",
+		"applied and linked %u", (UINT)ok);
+
+	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_C, PROFILETEST_ICMP, b4, c4, PROFILETEST_AT_HUB, PROFILETEST_ISOLATED,
+		"The privacy filter at the hub: node-a does not send the packet of node-b on to node-c, both devices under it");
+	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_E, PROFILETEST_ICMP, b4, e4, PROFILETEST_DELIVERED, PROFILETEST_ISOLATED,
+		"The privacy filter at the hub: node-a sends the packet of node-b on to node-e, whose profile has none");
+	ProfileTestCase(ctx, nodes, PROFILETEST_E, PROFILETEST_B, PROFILETEST_SYN, e4, b4, PROFILETEST_AT_HUB, PROFILETEST_SERVER,
+		"No-server at the hub: node-a does not send a TCP SYN of node-e on to node-b");
+	ProfileTestCase(ctx, nodes, PROFILETEST_B, PROFILETEST_E, PROFILETEST_SYN, b4, e4, PROFILETEST_DELIVERED, PROFILETEST_SERVER,
+		"No-server at the hub: node-a sends the TCP SYN of node-b on to node-e, as node-b may open connections");
 }
 
 // The session case: alice under at most 2 sessions at a node, bob under 1, and the devices hold node-a alone as a peer, so
@@ -1656,6 +1707,9 @@ void profile_test(UINT num, char **arg)
 		ProfileTestGen(&g, ++generation, &alice, &bob, true, true);
 		ProfileTestCheck(&ctx, ProfileTestApply(nodes, &g), "The nodes apply the Generation of the flags at both", "not applied");
 		ProfileTestFlagsBoth(&ctx, nodes);
+
+		// The flags at the hub of red, which sends the packets of one device on to another
+		ProfileTestHub(&ctx, nodes, &alice, &bob, &generation);
 		alice.NoServer = false;
 		alice.PrivacyFilter = false;
 
