@@ -506,7 +506,8 @@ message Device {
   repeated string tags = 4;        // sorted
   string gateway = 5;              // the node that terminates it
   bytes public_key = 6;            // its WireGuard key, 32 bytes: in the state of its gateway only
-  bytes preshared_key = 7;         // its PresharedKey, 32 bytes: in the state of its gateway only, and only for a Device that has one
+  // 7 and 8 are the group and the tag set of the source group (SDN-87 #386), so the PresharedKey is 9
+  bytes preshared_key = 9;         // its PresharedKey, 32 bytes: in the state of its gateway only, and only for a Device that has one
 }
 
 // An IP prefix: 4 address bytes for IPv4, 16 for IPv6.
