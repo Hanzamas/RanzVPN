@@ -13,8 +13,9 @@
 //   backend refuses.
 // - A bridge is never reset: a backend of the test that reports itself broken and attaches no more is reattached by the
 //   health check again and again, and the reset of the owner never runs.
-// - The interface of a bridge: NodeL2BridgeIndex finds the runner's NIC (the interface of its route to 8.8.8.8) by its
-//   alias and by its GUID, and refuses a name that no interface has and the loopback interface, which is no Ethernet;
+// - The interface of a bridge: NodeL2BridgeIndex finds the runner's NIC (the interface of its route to 8.8.8.8), which no
+//   external Hyper-V virtual switch owns, by its alias and by its GUID, and refuses a name that no interface has and the
+//   loopback interface, which is no Ethernet;
 //   NodeL2HyperVIndex refuses a virtual switch that the host does not have, and says how to give the host a vNIC of one.
 // - arm64 is L3 only: no bridge either, whatever the backend.
 // Prints "L2BRIDGE TEST OK" only when every check passes.

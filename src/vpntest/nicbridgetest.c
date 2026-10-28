@@ -574,6 +574,40 @@ static DWORD WINAPI NicBridgeSinkThread(LPVOID param)
 // The attachments
 //
 
+// The Ethernet interfaces of this runner, for the record: a Hyper-V virtual switch gives the host a vNIC that Hyper-V
+// names "vEthernet (<switch>)"
+static void NicBridgeInterfaces()
+{
+	MIB_IF_TABLE2 *t = NULL;
+
+	if (GetIfTable2(&t) != NO_ERROR)
+	{
+		return;
+	}
+
+	for (ULONG i = 0;i < t->NumEntries;i++)
+	{
+		MIB_IF_ROW2 *r = &t->Table[i];
+		char alias[MAX_SIZE];
+		char description[MAX_SIZE];
+
+		if (r->Type != IF_TYPE_ETHERNET_CSMACD || r->InterfaceAndOperStatusFlags.FilterInterface)
+		{
+			continue;
+		}
+
+		Zero(alias, sizeof(alias));
+		Zero(description, sizeof(description));
+		UniToUtf8(alias, sizeof(alias) - 1, r->Alias);
+		UniToUtf8(description, sizeof(description) - 1, r->Description);
+		Print("  an Ethernet interface of this runner: %u, '%s', '%s', MAC %02X-%02X-%02X-%02X-%02X-%02X, %s, %s\n", (UINT)r->InterfaceIndex, alias, description,
+			(UINT)r->PhysicalAddress[0], (UINT)r->PhysicalAddress[1], (UINT)r->PhysicalAddress[2], (UINT)r->PhysicalAddress[3], (UINT)r->PhysicalAddress[4],
+			(UINT)r->PhysicalAddress[5], r->InterfaceAndOperStatusFlags.HardwareInterface ? "hardware" : "virtual", r->OperStatus == IfOperStatusUp ? "up" : "not up");
+	}
+
+	FreeMibTable(t);
+}
+
 // The runner's NIC: the interface of its route to 8.8.8.8, its IPv4 address, and for the member of the overlay the last
 // address of its subnet but one, which no device of a runner's network has
 static bool NicBridgeNic(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p)
@@ -590,6 +624,7 @@ static bool NicBridgeNic(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p)
 	Zero(p, sizeof(NICBRIDGE_PORT));
 	p->Name = "the runner's NIC";
 	p->Tag = "nic";
+	NicBridgeInterfaces();
 
 	Copy(&route, dst, 4);
 	Zero(&row, sizeof(row));

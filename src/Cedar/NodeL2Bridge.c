@@ -17,7 +17,14 @@
 //   through the host vNIC of its virtual switch, which Hyper-V names "vEthernet (<switch>)" (NodeL2HyperVIndex). Its
 //   port on the switch must allow MAC address spoofing (Set-VMNetworkAdapter -ManagementOS -MacAddressSpoofing On), as
 //   the port of any virtual machine that bridges must, or the switch drops the frames of the segment's other addresses;
-//   the node cannot read that setting, so the documentation of the Bridge says it.
+//   the node cannot read that setting, so it is the operator's step, as it is for such a virtual machine.
+// - The physical NIC of an external virtual switch is refused (NodeL2BridgeSwitched): the switch owns it. Hyper-V binds
+//   its Hyper-V Extensible Virtual Switch protocol (vms_pp) to it, unbinds the host's own, and sets it promiscuous for
+//   the ports of the switch, the host's vNIC among them. A bridge there would take the frames of every port, and an XDP
+//   program there would redirect all of them, as the host's addresses are on its vNIC: a bridge attaches to that vNIC.
+
+// COBJMACROS: the INetCfg_* call macros of the SDK headers (the COM interfaces are C structs here), before any header
+#define COBJMACROS
 
 #include "Node.h"
 
@@ -27,7 +34,9 @@
 
 #include "NodeL2.h"
 
+#include <devguid.h>
 #include <iphlpapi.h>
+#include <netcfgx.h>
 #include <objbase.h>
 
 // The backends of a bridge whose owner names none, in order, into list, max of them at most: SeLow, the bundled default,
@@ -113,6 +122,49 @@ static bool NodeL2BridgeUsable(const MIB_IF_ROW2 *row, char *error, UINT error_s
 	return true;
 }
 
+// Whether an external Hyper-V virtual switch owns the NIC of the interface GUID guid: the network configuration, read
+// through INetCfg without a lock, has the Hyper-V Extensible Virtual Switch protocol (vms_pp) bound to it. False on a
+// host without that protocol, and where the configuration cannot be read.
+static bool NodeL2BridgeSwitched(const GUID *guid) {
+	INetCfg *cfg = NULL;
+	INetCfgComponent *vms = NULL;
+	INetCfgComponentBindings *bindings = NULL;
+	IEnumNetCfgComponent *nics = NULL;
+	INetCfgComponent *nic = NULL;
+	GUID g;
+	bool switched = false;
+
+	HRESULT init = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+
+	if (SUCCEEDED(CoCreateInstance(&CLSID_CNetCfg, NULL, CLSCTX_INPROC_SERVER, &IID_INetCfg, (void **)&cfg))) {
+		if (SUCCEEDED(INetCfg_Initialize(cfg, NULL))) {
+			if (INetCfg_FindComponent(cfg, L"vms_pp", &vms) == S_OK &&
+			    SUCCEEDED(INetCfgComponent_QueryInterface(vms, &IID_INetCfgComponentBindings, (void **)&bindings)) &&
+			    SUCCEEDED(INetCfg_EnumComponents(cfg, &GUID_DEVCLASS_NET, &nics))) {
+				while (switched == false && IEnumNetCfgComponent_Next(nics, 1, &nic, NULL) == S_OK) {
+					if (SUCCEEDED(INetCfgComponent_GetInstanceGuid(nic, &g)) && IsEqualGUID(&g, guid))
+						switched = (INetCfgComponentBindings_IsBoundTo(bindings, nic) == S_OK);
+					INetCfgComponent_Release(nic);
+				}
+			}
+
+			if (nics != NULL)
+				IEnumNetCfgComponent_Release(nics);
+			if (bindings != NULL)
+				INetCfgComponentBindings_Release(bindings);
+			if (vms != NULL)
+				INetCfgComponent_Release(vms);
+			INetCfg_Uninitialize(cfg);
+		}
+		INetCfg_Release(cfg);
+	}
+
+	if (SUCCEEDED(init))
+		CoUninitialize();
+
+	return switched;
+}
+
 // The interface of a bridge named name (UTF-8): its alias as Windows shows it ("Ethernet", "vEthernet (Lab)"), or its
 // GUID in braces. Its index, or 0, with why in error, when no interface has that name or it cannot carry a bridge.
 UINT NodeL2BridgeIndex(const char *name, char *error, UINT error_size) {
@@ -151,6 +203,11 @@ UINT NodeL2BridgeIndex(const char *name, char *error, UINT error_size) {
 
 	if (NodeL2BridgeUsable(&row, error, error_size) == false)
 		return 0;
+
+	if (NodeL2BridgeSwitched(&row.InterfaceGuid)) {
+		Format(error, error_size, "interface %u is the NIC of an external Hyper-V virtual switch, which owns it: a bridge attaches to the host vNIC of that switch, vEthernet (<switch>)", (UINT)row.InterfaceIndex);
+		return 0;
+	}
 
 	return (UINT)row.InterfaceIndex;
 }

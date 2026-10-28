@@ -13,7 +13,9 @@
 //   the traffic they just sent"; and PCAP_OPENFLAG_MAX_RESPONSIVENESS, so the driver hands each frame over at once. The
 //   flag leaves out only what the same handle sent: the Npcap driver taps each frame that pcap_sendpacket sends for
 //   every other handle on the adapter (NPF_Write and NPF_DoTap, packetWin7/npf/npf of nmap/npcap), so a bridge that sent
-//   on a second handle would capture each frame that it put onto the segment and hand it back to its owner.
+//   on a second handle would capture each frame that it put onto the segment and hand it back to its owner. UserBridge,
+//   the bridge that the Npcap developer guide gives as its example (hsluoyz/UserBridge), opens each adapter so, once,
+//   and reads and sends on that handle from two threads, as this backend does.
 // - Capture: the drain thread waits on the event of the handle and takes the frames with pcap_next_ex, which gives them
 //   in place, into the capture ring of the adapter: it takes no lock and allocates nothing (#72, risk R1). Npcap is a
 //   filter driver, so the frames that the host sends are on the segment it sees, as they are for SeLow.
