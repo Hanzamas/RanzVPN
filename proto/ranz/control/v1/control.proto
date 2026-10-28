@@ -80,6 +80,21 @@
 // Generation and waits for the acknowledgements before it serves the certificate, so a node that
 // pinned the fingerprint of the old one still reaches the controller. No schema version changes
 // with it: a node of an older release skips the field it does not know.
+//
+// Session flap (AUD1-DT-11, #459): a node counts the replacements of the session of each of its
+// peers in a window, since a new handshake of a key closes the session that the node holds for it,
+// and above its limit it reports the event NODE_EVENT_TYPE_SESSION_FLAP in its Telemetry: the peer
+// in subject, and in message how often and from which source addresses the sessions came. No
+// schema version changes with it: a controller of an older release skips an event of a type that it
+// does not know.
+//
+// Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
+// Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
+// the node does it at once and answers with an OperationResult of the same id. Only a node that reports
+// the Capability operations is sent one, since a node that does not know the frame ends its stream. The
+// other live operations are the controller's own: it lists the sessions (the control streams of the nodes),
+// ends one with a Refuse that has the reason REFUSE_REASON_OPERATOR, and bans a user by leaving the Nodes
+// that the user owns out of every desired state. No schema version changes with them.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -112,6 +127,11 @@ message ControlMessage {
     // node to controller, after the Hello and whenever they change (SDN-43): the leases of the DHCP
     // responder of one L2 Network
     Leases leases = 8;
+    // controller to node, after the Hello (SDN-50): one live operation, only to a node that reports
+    // the Capability operations
+    Operation operation = 9;
+    // node to controller (SDN-50): the answer to an Operation
+    OperationResult operation_result = 10;
   }
 }
 
@@ -177,6 +197,10 @@ enum RefuseReason {
   REFUSE_REASON_LICENCE = 5;
   // The controller is a standby member of a cluster; Refuse.leader names the leader.
   REFUSE_REASON_NOT_LEADER = 6;
+  // An operator of the controller ended the stream (SDN-50 #243): a disconnect of the session, or a ban of the user
+  // that the node belongs to. Refuse.message says which. A node dials again after the delay of a refused stream; a
+  // banned user's node is refused again until an operator lifts the ban.
+  REFUSE_REASON_OPERATOR = 7;
 }
 
 // The members of the controller cluster, from the Controller resources of the intent, ordered by
@@ -253,6 +277,13 @@ message NodeConfig {
   // The tunnel endpoint of the node for the links of kind vxlan and geneve (SDN-76 #356): the ports it
   // listens on. Absent while no VRF of the node has such a link.
   Vtep vtep = 11;
+  // The decoy of the Listener of the node (AUD1-DT-4 #452): the loopback address and port of a site on the node,
+  // "127.0.0.1:8080" or "[::1]:8080", to which the node passes a prober of the TLS of the new protocol, one whose
+  // first frame does not open under its static key. Empty for none, and while no Listener names the node. A
+  // node of an older release skips the field. It is a field of the NodeConfig and not of the Listener, because
+  // Go writes the members of a oneof after the other fields of a message and nanopb in the order of the
+  // numbers, and the two must write the same bytes.
+  string listener_decoy = 12;
 }
 
 // The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise
@@ -506,6 +537,9 @@ message Capabilities {
   bytes wireguard_key = 10;
   // The node runs the links of kind vxlan and geneve (SDN-76 #356): the VXLAN module over Winsock UDP.
   bool plain_links = 11;
+  // The node answers the Operation messages of the controller: it reads and clears the MAC table and the
+  // IP table of its L2 Networks (SDN-50 #243).
+  bool operations = 12;
 }
 
 // The Windows edition of a node's host.
@@ -652,7 +686,8 @@ message Flow {
 }
 
 // An event of the node itself that the controller turns into an Event (ADR-0030 decision 5).
-// subject names what it is about: for a gateway failover, the gateway that the node moved to.
+// subject names what it is about: for a gateway failover, the gateway that the node moved to; for
+// a session flap, the peer whose session was replaced again and again.
 message NodeEvent {
   NodeEventType type = 1;
   string subject = 2;
@@ -663,6 +698,9 @@ message NodeEvent {
 enum NodeEventType {
   NODE_EVENT_TYPE_UNSPECIFIED = 0;
   NODE_EVENT_TYPE_GATEWAY_FAILOVER = 1;
+  // Two holders of one key replace the session of a peer again and again (NS-12 of
+  // docs/threat-model.md, AUD1-DT-11 #459).
+  NODE_EVENT_TYPE_SESSION_FLAP = 2;
 }
 
 // A 1:1 NAT rule of a node in one of its VRFs (ADR-0025 decisions 4 and 5, SDN-6): the host of
@@ -703,4 +741,63 @@ message Mirror {
   uint32 vni = 7;       // the VNI of the copies, 0 for the VRF id of each packet
   // Bits per second of VXLAN datagrams that the node sends the sensor at most, 0 for no limit
   uint64 rate_limit = 8;
+}
+
+// One live operation of an operator on a node (SDN-50 #243, ADR-0031 amendment of 2026-10-27): the
+// controller sends it after the Hello, to a node that reports the Capability operations, and the node
+// answers each with one OperationResult that has the same id. An operation is no part of the desired
+// state: it does what it says at the moment it arrives, and the node keeps nothing of it.
+message Operation {
+  // Chosen by the controller; the node puts it into the answer. Never 0.
+  uint64 id = 1;
+  OperationKind kind = 2;
+  // The L2 Network whose table the operation reads or clears
+  string network = 3;
+  // A clear of the MAC table with a mac removes the entry of that MAC address alone (6 bytes), and a clear of the
+  // IP table with an address the entry of that address alone (4 or 16 bytes); without one it removes every entry
+  // of the table. A read has neither.
+  bytes mac = 4;
+  bytes address = 5;
+}
+
+// What an Operation asks of the node.
+enum OperationKind {
+  OPERATION_KIND_UNSPECIFIED = 0;
+  // Read the MAC table of the Network: the entries that its L2 switch learnt, in every VLAN
+  OPERATION_KIND_MAC_TABLE = 1;
+  OPERATION_KIND_CLEAR_MAC_TABLE = 2;
+  // Read the IP table of the Network: the addresses that the node saw its members use
+  OPERATION_KIND_IP_TABLE = 3;
+  OPERATION_KIND_CLEAR_IP_TABLE = 4;
+}
+
+// The answer of a node to an Operation. A read lists at most 512 entries of the table, and total says how
+// many the table holds; a clear lists none, and total says how many entries it removed.
+message OperationResult {
+  uint64 id = 1;
+  OperationStatus status = 2;
+  // Why the operation failed, empty when it did not
+  string message = 3;
+  repeated TableEntry entries = 4;
+  uint32 total = 5;
+}
+
+// How an Operation ended on the node.
+enum OperationStatus {
+  OPERATION_STATUS_UNSPECIFIED = 0;  // as OPERATION_STATUS_FAILED
+  OPERATION_STATUS_OK = 1;
+  // The node has no L2 Network of that name
+  OPERATION_STATUS_NO_NETWORK = 2;
+  OPERATION_STATUS_FAILED = 3;
+}
+
+// One entry of the MAC table or of the IP table of an L2 Network on a node (SDN-50 #243). An entry of the MAC
+// table has the VLAN, the MAC address, the member of the Network that the address was learnt on and the time of the
+// last frame from it; an entry of the IP table has the address with the MAC address that it was seen with.
+message TableEntry {
+  uint32 vlan = 1;
+  bytes mac = 2;        // 6 bytes
+  bytes address = 3;    // the IP table: 4 bytes for IPv4, 16 for IPv6
+  string member = 4;    // the name of the peer, session or port that the entry belongs to, empty for none
+  uint64 last_seen_ms = 5;  // Unix time in milliseconds
 }

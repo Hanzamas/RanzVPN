@@ -17,6 +17,8 @@ The check of 2026-10-26 showed this.
 
 - GraphQL. So `gh pr create`, `gh pr list`, `gh pr checks`, `gh pr view`, `gh pr merge` and `gh issue list` fail. The check saw them fail. The other `gh pr` and `gh issue` commands (`edit`, `ready`, `comment`, `close`, `view`) use GraphQL too: treat them the same. Use the commands of this page.
 - A tool for the usage of the plan. There is no `get_usage`. Only the limit of the plan stops a session.
+- `gh api --paginate` on a list of more than 100 rows. GitHub answers with a `Link` url of the form `repositories/<id>/...`, and the proxy refuses it (403, "Numeric-ID repository paths are not supported"). Read each page yourself with `per_page=100&page=N` and stop at a page of fewer than 100 rows (seen on 2026-10-27, on the list of the ready tickets, which has more than 100 rows).
+- The search API. `gh api search/issues` answers 403 ("sessions are bound to their configured repositories"). So the progress count at the end of "Other reads" and the search for the heartbeat issue fail: the routine prompt names the heartbeat issue, and the progress is counted from the lists of issues. The tool `search_issues` of the github MCP server is a search by meaning, not a count.
 
 **The limits:**
 
@@ -146,16 +148,16 @@ As far as we know, the tool `merge_pull_request` takes no `sha`. Prefer the comm
 ```
 gh api repos/Hanzamas/RanzVPN/issues/<n> --jq '[.number, .state, ([.labels[].name] | join(",")), .title] | @tsv'
 gh api repos/Hanzamas/RanzVPN/issues/<n> --jq .body
-gh api repos/Hanzamas/RanzVPN/issues/<n>/comments --paginate --jq '.[].body'
+gh api "repos/Hanzamas/RanzVPN/issues/<n>/comments?per_page=100" --jq '.[].body'
 ```
 
 ### The ready tickets
 
 ```
-gh api "repos/Hanzamas/RanzVPN/issues?state=open&labels=ready-for-agent&per_page=100" --paginate --jq '.[] | select(.pull_request == null) | select([.labels[].name] | any(. == "postponed" or . == "needs-triage" or . == "parked") | not) | [.number, .title] | @tsv'
+for p in 1 2 3; do gh api "repos/Hanzamas/RanzVPN/issues?state=open&labels=ready-for-agent&per_page=100&page=$p" --jq '.[] | select(.pull_request == null) | select([.labels[].name] | any(. == "postponed" or . == "needs-triage" or . == "parked") | not) | [.number, .title] | @tsv'; done
 ```
 
-This list also holds specs. A ticket has a line `Ticket key:` in its body. For each candidate, read its body, find the numbers in its `## Blocked by` section, and read the state of each blocker (`gh api repos/Hanzamas/RanzVPN/issues/<m> --jq .state`). The ticket is ready when every blocker is `closed`. See "Launching lanes" in [integrator.md](integrator.md).
+The loop reads three pages, which holds 300 rows (there were 108 on 2026-10-27). The proxy does not take `--paginate` (see "What a cloud session has and lacks"). This list also holds specs. A ticket has a line `Ticket key:` in its body. For each candidate, read its body, find the numbers in its `## Blocked by` section, and read the state of each blocker (`gh api repos/Hanzamas/RanzVPN/issues/<m> --jq .state`). The ticket is ready when every blocker is `closed`. See "Launching lanes" in [integrator.md](integrator.md).
 
 ### Comment, edit a comment, close a ticket
 
@@ -177,12 +179,14 @@ git ls-remote --heads origin
 
 The first gives the date of the newest commit of a branch. A branch with a commit in the last 45 minutes is busy. The second shows the newest full runs on `integration`: one push starts about 7 runs, one for each workflow. Judge the newest push only.
 
-The progress count. It counts the tickets (issues with `Ticket key` in the body) that are not postponed, not parked and not waiting for the maintainer:
+The progress count. It counts the tickets (issues with `Ticket key` in the body) that are not postponed, not parked and not waiting for the maintainer. The search API is refused in a cloud session (403), so the commands below fail there:
 
 ```
 gh api -X GET search/issues -f q='repo:Hanzamas/RanzVPN is:issue is:closed "Ticket key" in:body -label:postponed -label:needs-triage -label:parked' --jq .total_count
 gh api -X GET search/issues -f q='repo:Hanzamas/RanzVPN is:issue is:open "Ticket key" in:body -label:postponed -label:needs-triage -label:parked' --jq .total_count
 ```
+
+In the cloud, count the open tickets from the lists of the issues instead: the list of "The ready tickets" gives the open ones that carry `ready-for-agent`, and the closed ones are the issues of `issues?state=closed&per_page=100&page=N` with `Ticket key` in the body. Or leave the line out of the report and say so.
 
 ## The heartbeat in commands
 
@@ -274,6 +278,14 @@ done
 
 A line is a hint. Before you merge, run the two looks of the merge procedure. The line `PULSE` comes every 5 minutes: on it, refresh your heartbeat comment and look again at the lanes, the pull requests and the ready tickets. The poll is every 30 seconds, so a clean or failed pull request is seen within a minute. Each poll makes 1 call plus 2 calls for each open pull request, which is fine for 40 pull requests.
 
+**Wait without ending your turn.** A notice of Monitor reaches the session between two tool calls, and a turn that ends is a tick that ends. When nothing is left to do, block on the output file of the watcher. Its path is `<scratchpad parent>/tasks/<monitor-id>.output` (the notices of Monitor and the task list name the id). One command waits for the next line or for 2 minutes, and then you act and wait again:
+
+```
+timeout 120 tail -n0 -F /tmp/claude-0/<project>/<session>/tasks/<monitor-id>.output | head -n1
+```
+
+Set the Bash timeout of that call above 120 seconds. Do the useful work between the waits: the lanes, the pull requests, the tickets, the docs.
+
 ## Git in a cloud session
 
 - Shallow clone. A merge of `origin/integration` needs the merge base. If `git rev-parse --is-shallow-repository` prints `true`, run `git fetch --unshallow origin` once. Lane worktrees share the objects of the clone.
@@ -287,6 +299,9 @@ A line is a hint. Before you merge, run the two looks of the merge procedure. Th
 - A lane watches CI with `gh run watch`, in the background. The template says how.
 - When a tick starts after a cut-off, the open pull requests and the pushed branches are the state. Start resume lanes for them as in "After a cut-off" in [integrator.md](integrator.md). A cloud tick cannot resume the Workflow of an earlier tick with `resumeFromRunId`: the journal of that run went with the container. It starts new resume lanes. The lanes that the tick comments of the last 3 hours name are in flight, not cut off: see "The heartbeat in commands".
 - The result of a lane is a claim. Read the pull request yourself before you merge it.
+- Twelve lanes with the full text of the rules (about 10 KB each) cost much to launch. Write the shared text once into a file of the scratchpad (the authority, the rules, the common text, the state of the moment and the wait rule), and let the prompt of each lane say: read this file with the Read tool first, it binds you as if it stood here, then `YOUR LANE: ...`, and end the prompt with the wait rule. The agents of a session run in the same container and read the scratchpad (done on 2026-10-27 with 14 lanes, all of them read it). The prompt of a lane still carries its own task and the wait rule.
+- A lane that has not pushed anything can be stopped (`TaskStop`) without loss. Its worktree stays on disk. Use it to make room for a resume lane, which comes before a new ticket in the order of "Launching lanes". A merge makes every other pull request that shares a file conflict (the proto files, `control.pb.go`, `Control.c`), so expect a wave of conflict lanes after a burst of merges, and merge the pull request that shares the fewest files with the others last.
+- The proxy and the permission check of a cloud session are the same for the lanes. A lane reads, pushes, opens its pull request, rewrites the body of its own pull request with `gh api --method PATCH repos/Hanzamas/RanzVPN/pulls/<n> -F body=@<file>` and adds the label `full-ci`. Rule 17 of the lane template has these commands.
 
 ## The routine
 

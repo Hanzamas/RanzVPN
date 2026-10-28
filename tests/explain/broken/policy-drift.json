@@ -1,0 +1,19 @@
+{
+  "description": "The deliberately broken scenario of the suite: its fault gives a-1 a state without the deny rule no-telnet, as a data plane that drifted from the compiled model would run. Explain walks the model, in which a-1 drops the telnet flow with no-telnet; the data plane of the harness lets it out of a-1, and b-1 drops it. The suite must fail on that packet and pass the other.",
+  "nodes": {"a-1": 1, "b-1": 33},
+  "intent": {"resources": [
+    {"kind": "VRF", "name": "lab", "spec": {"id": 20, "ula": "fd00:20::/48"}},
+    {"kind": "Network", "name": "lab-lan", "spec": {"vrf": "lab", "ipv4Pool": "10.20.0.0/24"}},
+    {"kind": "Node", "name": "a-1", "spec": {"vrfs": ["lab"], "tags": ["client"], "addresses": {"lab-lan": "10.20.0.1"}}},
+    {"kind": "Node", "name": "b-1", "spec": {"vrfs": ["lab"], "tags": ["server"], "addresses": {"lab-lan": "10.20.0.2"}}},
+    {"kind": "Policy", "name": "server-tcp", "spec": {"vrf": "lab", "action": "allow", "from": {"tags": ["client"]}, "to": {"tags": ["server"]}, "protocol": "tcp"}},
+    {"kind": "Policy", "name": "no-telnet", "spec": {"vrf": "lab", "action": "deny", "priority": 10, "protocol": "tcp", "ports": [23]}}
+  ]},
+  "packets": [
+    {"name": "web", "from": "a-1", "to": "b-1", "protocol": "tcp", "sourcePort": 40000, "port": 80,
+     "expect": {"delivered": true, "node": "b-1", "vrf": "lab", "source": "10.20.0.1", "destination": "10.20.0.2", "rules": {"a-1": "server-tcp", "b-1": "server-tcp"}}},
+    {"name": "telnet", "from": "a-1", "to": "b-1", "protocol": "tcp", "sourcePort": 40001, "port": 23,
+     "expect": {"delivered": false, "node": "a-1", "reason": "policy", "rules": {"a-1": "no-telnet"}}}
+  ],
+  "fault": {"node": "a-1", "dropRule": "no-telnet", "breaks": ["telnet"]}
+}

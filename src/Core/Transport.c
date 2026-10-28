@@ -168,6 +168,23 @@ TRANSPORT *TransportOf(TRANSPORT_STREAM *s) {
 	return (s != NULL ? s->Transport : NULL);
 }
 
+bool TransportRemote(TRANSPORT_STREAM *s, char *address, UINT size) {
+	if (address == NULL || size == 0)
+		return false;
+
+	address[0] = 0;
+	// A transport that tells no address has none to give
+	if (s == NULL || s->Transport->Remote == NULL)
+		return false;
+
+	if (s->Transport->Remote(s->Stream, address, size) == false) {
+		address[0] = 0;
+		return false;
+	}
+
+	return true;
+}
+
 //
 // The fallback list
 //

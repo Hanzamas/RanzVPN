@@ -84,6 +84,7 @@ type nodeStateListeners struct {
 		TCPPort  int    `json:"tcpPort"`
 		QUICPort int    `json:"quicPort"`
 		Fallback bool   `json:"fallback"`
+		Decoy    string `json:"decoy"`
 		Error    string `json:"error"`
 		// Refused is what the limits for a source of the two listeners refused since the Node started
 		// (AUD1-DT-3, #451): the front door on TCP, and QUIC on UDP with what msquic does about a flood.
@@ -234,7 +235,10 @@ func frontDoor(l nodeStateListeners) string {
 		if f.Fallback {
 			s += " (TCP 443 was taken)"
 		}
-		return s
+		if f.Decoy != "" {
+			return s + ", decoy " + f.Decoy
+		}
+		return s + ", no decoy"
 	case f.Error != "":
 		return "not running: " + f.Error
 	}

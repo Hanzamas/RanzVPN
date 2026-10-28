@@ -69,6 +69,7 @@
 #define CONTROL_ACME_NAMES      4   // The DNS names of a certificate of ACME (CertificateAcme.names) ...
 #define CONTROL_ACME_NAME_SIZE  254 // ... each with its terminating NUL
 #define CONTROL_THUMBPRINT_SIZE 41  // A thumbprint of 40 hex digits with its terminating NUL (Listener.ksp)
+#define CONTROL_DECOY_SIZE      48  // The decoy of a Listener, a loopback address and a port, with its terminating NUL (NodeConfig.listener_decoy)
 
 // The Listener of the node (Listener of the control protocol; SDN-45, #238; ADR-0035): the front door on the TCP port,
 // which hands each connection of the new protocol to the node's TLS, and QUIC on the UDP port, both with the certificate
@@ -79,6 +80,8 @@ typedef struct CONTROL_LISTENER {
 	// The TCP port of the front door and the UDP port of QUIC
 	UINT Port;
 	UINT QuicPort;
+	// The decoy of the TLS of the new protocol (AUD1-DT-4, #452): the loopback address and port of a site on the node, "" for none
+	char Decoy[CONTROL_DECOY_SIZE];
 	// The source of the certificate (CONTROL_CERT_*)
 	UINT Source;
 	// FILE: the PKCS #12 file, and the file that holds its password, "" for none
@@ -323,6 +326,24 @@ typedef struct CONTROL_DEVICE_COUNTERS {
 // The counters of the Devices that a client reports to the controller (CONTROL_CONFIG.Devices), ControlDevice.c
 typedef struct CONTROL_DEVICES CONTROL_DEVICES;
 
+// The events of the node itself that a client reports to the controller (NodeEvent of the control protocol, ADR-0030 decision
+// 5; AUD1-DT-11, #459), ControlEvent.c. The types are the values of NodeEventType: a node reports one only for a type that
+// it names here, and a controller that does not know a type skips it
+#define CONTROL_EVENT_SESSION_FLAP 2   // Two holders of one key replace the session of a peer again and again (NS-12)
+#define CONTROL_EVENT_SUBJECT_SIZE 64  // The subject of an event with its NUL (NodeEvent.subject of control.options)
+#define CONTROL_EVENT_MESSAGE_SIZE 256 // ... and its message (NodeEvent.message)
+#define CONTROL_MAX_EVENTS         8   // The events that one Telemetry message holds (Telemetry.events of control.options)
+#define CONTROL_EVENT_QUEUE        64  // The events that wait for a stream at most: a new one takes the place of the oldest
+
+typedef struct CONTROL_EVENT {
+	UINT Type;                                // CONTROL_EVENT_*
+	char Subject[CONTROL_EVENT_SUBJECT_SIZE]; // What it is about: the peer of a session flap
+	char Message[CONTROL_EVENT_MESSAGE_SIZE]; // What happened, in words for the operator
+} CONTROL_EVENT;
+
+// The events that wait for the controller (CONTROL_CONFIG.Events), ControlEvent.c
+typedef struct CONTROL_EVENTS CONTROL_EVENTS;
+
 // The desired state that the client applied, as its owner takes it (CONTROL_STATE_PROC). The
 // Networks and Relays of the state stay in the client until a module of the node needs them: the
 // DHCP responders of the Networks are the first (SDN-43, #236).
@@ -435,6 +456,10 @@ typedef struct CONTROL_CONFIG {
 	// The counters of the WireGuard Devices that the client reports, NULL for none: the owner's, which must outlive the
 	// client (SDN-80, #375)
 	CONTROL_DEVICES *Devices;
+
+	// The events of the node that the client reports, NULL for none: the owner's, which must outlive the client
+	// (AUD1-DT-11, #459)
+	CONTROL_EVENTS *Events;
 } CONTROL_CONFIG;
 
 // How a client stands (ControlGetStatus)
@@ -496,5 +521,19 @@ CONTROL_DEVICES *ControlNewDevices();
 void ControlFreeDevices(CONTROL_DEVICES *d);
 void ControlSetDevices(CONTROL_DEVICES *d, const CONTROL_DEVICE_COUNTERS *counters, UINT num);
 bool ControlWriteDevices(CONTROL_DEVICES *d, TRANSPORT_STREAM *s);
+
+// The events of the node (AUD1-DT-11, #459), ControlEvent.c. NewEvents makes the queue that a client sends
+// (CONTROL_CONFIG.Events), FreeEvents frees it once no client uses it. RaiseEvent puts one event of a type (CONTROL_EVENT_*)
+// into it, with the subject and the message cut to their fields: false for no queue or no type. The client writes the
+// events that wait as Telemetry messages of CONTROL_MAX_EVENTS each, on the stream that is open and after the Hello of the
+// next stream when none is, so a node that was cut off from its controller reports what it saw once it is back; an event
+// leaves the queue once its write succeeded. At most CONTROL_EVENT_QUEUE wait, and a new event above that takes the place of
+// the oldest. GetEvents copies the events that wait, at most max, into list: their number. WriteEvents writes the first
+// events that wait as one Telemetry message, as the client does on its stream.
+CONTROL_EVENTS *ControlNewEvents();
+void ControlFreeEvents(CONTROL_EVENTS *e);
+bool ControlRaiseEvent(CONTROL_EVENTS *e, UINT type, const char *subject, const char *message);
+UINT ControlGetEvents(CONTROL_EVENTS *e, CONTROL_EVENT *list, UINT max);
+bool ControlWriteEvents(CONTROL_EVENTS *e, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H
