@@ -235,7 +235,8 @@ func AuditCalls(a Auditor, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		actor := audit.ActorUnknown
 		if tok, ok := Caller(r.Context()); ok {
-			actor = audit.ActorToken(tok.Name)
+			// The API token, or the User of a user token (SDN-32)
+			actor = tok.Actor()
 		}
 		r = r.WithContext(audit.NewContext(r.Context(), audit.Origin{Actor: actor, Source: audit.Host(r.RemoteAddr)}))
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {

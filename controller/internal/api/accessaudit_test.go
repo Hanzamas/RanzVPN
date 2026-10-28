@@ -11,9 +11,9 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 )
 
-// AuditCalls records a read of the API tokens, the audit log and the licence that succeeded as an
-// access, with the call as its action and the token and the address of its caller as its origin
-// (AUD1-DT-13, #461); it records no other read, no read that failed, and it passes every answer on.
+// AuditCalls records a read of the API tokens, the API roles of users, the audit log and the licence that
+// succeeded as an access, with the call as its action and the token and the address of its caller as its
+// origin (AUD1-DT-13, #461); it records no other read, no read that failed, and it passes every answer on.
 func TestAuditCallsRecordsTheReadsOfTheTokensTheAuditLogAndTheLicence(t *testing.T) {
 	for _, c := range []struct {
 		name, method, path, query string
@@ -21,6 +21,7 @@ func TestAuditCallsRecordsTheReadsOfTheTokensTheAuditLogAndTheLicence(t *testing
 		action                    string // of the record, none when the read is not recorded
 	}{
 		{"the tokens", http.MethodGet, "/api/v1/tokens", "", http.StatusOK, "GET /api/v1/tokens"},
+		{"the API roles of users", http.MethodGet, "/api/v1/tokens/users", "", http.StatusOK, "GET /api/v1/tokens/users"},
 		{"the audit log", http.MethodGet, "/api/v1/audit", "", http.StatusOK, "GET /api/v1/audit"},
 		{"the licence", http.MethodGet, "/api/v1/licence", "", http.StatusOK, "GET /api/v1/licence"},
 		{"a head of the licence", http.MethodHead, "/api/v1/licence", "", http.StatusOK, "HEAD /api/v1/licence"},
@@ -64,6 +65,27 @@ func TestAuditCallsRecordsTheReadsOfTheTokensTheAuditLogAndTheLicence(t *testing
 		if r.Kind != audit.Access || r.Action != c.action || r.Outcome != audit.Success || r.Message != "" || r.Subject != "" || f.origins[0] != want {
 			t.Errorf("%s: recorded %+v with the origin %+v, want the kind %q, the action %q, success, and the origin %+v",
 				c.name, r, f.origins[0], audit.Access, c.action, want)
+		}
+	}
+}
+
+// A read with a user token (SDN-32) is an access of its User, as every call of the token is: the actor is
+// user:NAME, and the name of an API token never is.
+func TestAuditCallsRecordsTheReadOfAUserTokenUnderItsUser(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		token rbac.Token
+		actor string
+	}{
+		{"a user token", rbac.Token{Name: "user:alice", Role: rbac.Viewer, User: "alice"}, "user:alice"},
+		{"an API token", rbac.Token{Name: "alice", Role: rbac.Viewer}, "token:alice"},
+	} {
+		f := &fakeAuditor{}
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/audit", nil)
+		req = req.WithContext(context.WithValue(req.Context(), callerKey{}, c.token))
+		AuditCalls(f, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(httptest.NewRecorder(), req)
+		if len(f.recs) != 1 || f.recs[0].Kind != audit.Access || f.origins[0].Actor != c.actor {
+			t.Errorf("%s: recorded %+v with the origins %+v, want one access of the actor %q", c.name, f.recs, f.origins, c.actor)
 		}
 	}
 }

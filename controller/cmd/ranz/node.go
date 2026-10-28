@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,8 @@ import (
 //	ranz node controller clear
 //	ranz node key                                              the public half of its static key
 //	ranz node state [-o json|table]                            what it does now (nodestate.go; SDN-91)
+//	ranz node login [-device] [-name NAME]                     enrol it as a device of the user who signs in
+//	                                                           (nodelogin.go; SDN-32)
 //
 // The Node service ranzvpnserver does the work. It answers one command a line on its admin pipe,
 // which only SYSTEM, the Administrators and the service itself may open, so the verbs need
@@ -74,6 +77,7 @@ const nodeUsage = `usage:
   ranz node controller clear
   ranz node key
   ranz node state [-o json|table]
+  ranz node login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device] [-name NAME]
 <host:port>, <key> and <fingerprint> are the TLS port, publicKey and tlsFingerprint of ranz status on the Controller.`
 
 func runNode(args []string, stdout, stderr io.Writer, agent nodeAgent) int {
@@ -93,6 +97,9 @@ func runNode(args []string, stdout, stderr io.Writer, agent nodeAgent) int {
 		return nodeController(stdout, stderr, agent, "ranz node controller set", "controller set "+s.Address+" "+s.PublicKey+" "+s.TLSFingerprint, true)
 	case len(args) >= 1 && args[0] == "state":
 		return nodeState(args[1:], stdout, stderr, agent)
+	case len(args) >= 1 && args[0] == "login":
+		// The enrolment of this Node by a login of its user (nodelogin.go; SDN-32)
+		return nodeLogin(context.Background(), args[1:], stdout, stderr, agent)
 	case len(args) == 1 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help"):
 		fmt.Fprintln(stdout, nodeUsage)
 		return 0

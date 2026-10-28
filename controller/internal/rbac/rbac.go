@@ -110,14 +110,18 @@ func (r Role) rank() int {
 type Token struct {
 	Name string `json:"name"`
 	Role Role   `json:"role"`
+	// User is the User whose login made the token, a user token (users.go; SDN-32), and empty for an
+	// API token.
+	User string `json:"user,omitempty"`
 	// Expires is the instant, an RFC 3339 time, from which the controller refuses the secret of the
-	// token. Left out, the token never expires.
+	// API token. Left out, the token never expires. A user token has its own end (UserToken), which
+	// the store checks, so this stays empty for it.
 	Expires time.Time `json:"expires,omitzero"`
 	// Expired says that Expires has passed: the token is refused (401), still listed, and an admin
 	// can still delete it.
 	Expired bool `json:"expired,omitempty"`
-	// LastUsed is when the token last authenticated a call, right to the minute (UseInterval). Left
-	// out, the token was never used.
+	// LastUsed is when the API token last authenticated a call, right to the minute (UseInterval).
+	// Left out, the token was never used, and a user token keeps no use.
 	LastUsed time.Time `json:"lastUsed,omitzero"`
 }
 
@@ -149,20 +153,25 @@ func New(st *store.Store) *Tokens {
 	return &Tokens{st: st, now: time.Now, used: map[string]time.Time{}}
 }
 
-// WithClock makes t read the time from now, which a test sets: the expiry of a token and the minute
-// between two stores of its use go by it. It returns t.
+// WithClock makes t read the time from now, which a test sets: the expiry of an API token and the
+// minute between two stores of its use go by it. It returns t.
 func (t *Tokens) WithClock(now func() time.Time) *Tokens {
 	t.now = now
 	return t
 }
 
-// Authenticate returns the token whose secret is secret, ErrUnauthenticated when no token has it,
-// and ErrExpired, with the token, when the token has expired. A token that is accepted has its use
-// stored, at most once in UseInterval; the token that Authenticate returns is as the store held it
-// before this use.
+// Authenticate returns the token whose secret is secret, an API token or a user token,
+// ErrUnauthenticated when no token has it, and ErrExpired, with the token, when the API token has
+// expired. An API token that is accepted has its use stored, at most once in UseInterval; the token
+// that Authenticate returns is as the store held it before this use. A user token has its own end,
+// which the store checks (users.go), and no use of it is stored.
 func (t *Tokens) Authenticate(ctx context.Context, secret string) (Token, error) {
 	if !strings.HasPrefix(secret, secretPrefix) {
 		return Token{}, ErrUnauthenticated
+	}
+	if strings.HasPrefix(secret, userTokenPrefix) {
+		// A user token of a login (users.go; SDN-32)
+		return t.authenticateUser(ctx, secret)
 	}
 	st, ok, err := t.st.TokenByHash(ctx, hash(secret))
 	if err != nil {

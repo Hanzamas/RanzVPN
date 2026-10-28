@@ -87,6 +87,10 @@ func ActorNode(name string) string { return "node:" + name }
 // in base64, so that an operator can write the Node resource for it.
 func ActorKey(publicKey []byte) string { return "key:" + base64.StdEncoding.EncodeToString(publicKey) }
 
+// ActorUser returns the actor of the User name: a login of the User, the name that a failed login
+// gave, and a call of the API with a user token of the User (SDN-32).
+func ActorUser(name string) string { return "user:" + name }
+
 // The limits of the text of a Record, which a caller or a failing request can influence: the store
 // never holds more than this of any field.
 const (

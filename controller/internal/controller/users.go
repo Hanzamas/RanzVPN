@@ -237,6 +237,8 @@ func (c *Controller) holdsUser(name string) bool {
 // name would get the old password. commit calls it once the change is stored, before it makes next the
 // intent. A failure is logged: the Users that the intent does not hold cannot authenticate anyway.
 func (c *Controller) dropPasswords(ctx context.Context, next intent.Intent) {
+	// The API roles and the user tokens follow the Users too (logins.go; SDN-32)
+	c.dropUserAccess(ctx, next)
 	var gone []string
 	for name := range c.intent.Users {
 		if _, ok := next.Users[name]; !ok {
