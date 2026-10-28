@@ -368,6 +368,8 @@ struct NODE_VRF_TABLES {
 	// The groups of gateways and the hubs of the same Generation (NodeGateway.c; SDN-19, #195): the next hop of each group
 	// comes after those of the peers and of the leaked routes. NULL for neither.
 	struct NODE_GATEWAY_TABLE *Gateway;
+	// The VRFs whose internet exit the node is in the same Generation (NodeEgress.c; SDN-12, #188), NULL for none
+	struct NODE_EGRESS_TABLE *Egress;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -487,6 +489,10 @@ struct NODE {
 	// The gateway HA of the overlay (NodeGateway.c; SDN-19, #195): the gateways of its groups and their probes, NULL while
 	// the overlay does not run
 	struct NODE_GATEWAY *Gateway;
+
+	// The internet exit of the VRFs of the overlay (NodeEgress.c; SDN-12, #188): its proxy and the interfaces that carry the
+	// egress, NULL while the overlay does not run
+	struct NODE_EGRESS *Egress;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -936,6 +942,7 @@ NODE_VRF_TABLES *NodeNewVrfTables(UINT64 generation, const NODE_VRF_ROUTE *route
 void NodeFreeVrfTables(NODE_VRF_TABLES *v);
 NODE_VRF_TABLE *NodeGetVrfTable(NODE_VRF_TABLES *v, UINT vrf_id);
 UINT NodeVrfLookup(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size);
+bool NodeVrfDefault(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size);
 
 // NodeLeak.c
 UINT NodeLeakRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);

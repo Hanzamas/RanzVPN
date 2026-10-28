@@ -136,6 +136,16 @@ src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: i
 # The peer agent of the overlay (CORE-S5-5 #411) takes the Signals that the Controller carries from a peer: no parser word in the
 # name, listed as the reader of a peer's bytes that it is
 src/Cedar  NodeAgentSignal  exempt  hands the envelope of a Signal as it came to PeerOpenSignal (fuzz_peer), which opens and decodes it; it reads only what that gave
+# The internet exit of the Node (SDN-12 #188) reads the IPv4 packets that the peers of a VRF send to an address outside it,
+# gives the TCP segments and UDP datagrams of the proxy other ends and writes echo replies. NodeEgressRewrite,
+# NodeEgressEchoReply and NodeEgressRefuses have no parser word in their names, listed as the writers and readers of a peer's
+# bytes that they are; NodeEgressDeliver and NodeEgressFromHost read only what NodeEgressParse gives.
+src/Cedar  NodeEgressParse      fuzz_egress
+src/Cedar  NodeEgressRewrite    fuzz_egress
+src/Cedar  NodeEgressEchoReply  fuzz_egress
+src/Cedar  NodeEgressRefuses    fuzz_egress
+src/Cedar  NodeEgressDeliver    exempt  hands the packet of a peer to NodeEgressParse (fuzz_egress), which reads it, and the copy that goes to the host to NodeEgressRewrite (fuzz_egress); it reads no byte that NodeEgressParse did not check
+src/Cedar  NodeEgressFromHost   exempt  a packet of the host's own IP stack, which it hands to NodeEgressParse (fuzz_egress) and, when it answers a flow of the proxy, to NodeEgressRewrite (fuzz_egress); it reads no byte that NodeEgressParse did not check
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen

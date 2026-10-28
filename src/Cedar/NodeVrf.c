@@ -14,6 +14,7 @@
 // tbl24, 64 MiB of address space that VirtualAlloc gives as zero pages, takes memory only for the pages that are used.
 
 #include "Node.h"
+#include "NodeEgress.h"
 #include "NodeGateway.h"
 #include "NodeLink.h"
 
@@ -297,6 +298,8 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 	NodeFreeLinkTable(v->Link);
 	// The groups of gateways and the hubs (NodeGateway.c; SDN-19, #195)
 	NodeFreeGatewayTable(v->Gateway);
+	// The VRFs whose internet exit the node is (NodeEgress.c; SDN-12, #188)
+	NodeFreeEgressTable(v->Egress);
 	for (UINT i = 0; i < v->NumVrfs; i++)
 		NodeFreeVrfTable(v->Vrfs[i]);
 	NodeShapeFreeTable(v->Shape);
@@ -369,4 +372,43 @@ UINT NodeVrfLookup(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size) {
 	}
 
 	return ((e & NODE_VRF_VALID) != 0 ? (e & NODE_VRF_VALUE) : NODE_VRF_NONE);
+}
+
+// Whether the /0 route of its family alone holds the address addr (size bytes, as NodeVrfLookup takes it) in the table t
+// of a VRF: the table has that route, and no longer prefix holds the address. The internet exit of a VRF takes what its
+// default route leads to the host, and nothing that another route of the VRF holds (NodeEgress.c; SDN-12, #188).
+bool NodeVrfDefault(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size) {
+	UINT e = 0;
+	if (t == NULL || addr == NULL)
+		return false;
+
+	if (size == 4) {
+		UINT a = READ_UINT(addr);
+
+		if (t->Tbl24 != NULL) {
+			e = t->Tbl24[a >> 8];
+			if ((e & NODE_VRF_GROUP) != 0)
+				e = t->Tbl8[(e & NODE_VRF_VALUE) * NODE_VRF_BLOCK + (a & 0xFF)];
+		}
+
+		return ((e & NODE_VRF_VALID) == 0 && (t->Default4 & NODE_VRF_VALID) != 0);
+	}
+
+	if (size == 16) {
+		if (t->Nodes6 != NULL) {
+			UINT node = 0;
+
+			for (UINT i = 0; i < 16; i++) {
+				e = t->Nodes6[node * NODE_VRF_BLOCK + addr[i]];
+				if ((e & NODE_VRF_GROUP) == 0)
+					break;
+
+				node = e & NODE_VRF_VALUE;
+			}
+		}
+
+		return ((e & NODE_VRF_VALID) == 0 && (t->Default6 & NODE_VRF_VALID) != 0);
+	}
+
+	return false;
 }
