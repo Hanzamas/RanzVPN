@@ -193,6 +193,10 @@ controller/internal/activation  Install.OpenFeature   exempt  opens the sealed E
 controller/internal/activation  OpenOfflineResponse   FuzzOpenOfflineResponse
 
 controller/internal/rbac   ParseRole  exempt  compares the name with the three role names; decodes nothing
+# The logins of users (SDN-32 #226): the query of the authorization page and the form of the device authorization
+# endpoint, which any caller sends
+controller/internal/login  ParseAuthorize      FuzzParse
+controller/internal/login  ParseDeviceRequest  FuzzParse
 controller/internal/store  Open       exempt  opens the controller's own rqlite store by its URL
 controller/internal/store  OpenWith   exempt  opens the controller's own rqlite store by its URL, with the credential and the CA that the controller read from its own files
 

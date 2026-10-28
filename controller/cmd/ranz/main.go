@@ -34,6 +34,9 @@
 //	                          configuration and the status of its Node and Controller and no secret (SDN-54, #247)
 //	ranz explain [flags] A B  walk the compiled model of the controller for a packet from A to B and name each VRF,
 //	                          route, 1:1 NAT rule, link and rule of the policy that it meets (explain.go, SDN-15 #191)
+//	ranz login [flags]        sign in as a user that holds an API role and take its user token: in the browser, with
+//	                          a device code (-device) or with the password of the user (-user); ranz node login enrols
+//	                          the Node of this PC as a device of the user who signs in (login.go, SDN-32 #226)
 //
 // Usage of the CLI:
 //
@@ -81,6 +84,9 @@
 //	                                           devices of its members
 //	ranz [flags] group set [-display TEXT] NAME  make the group, or change its display name
 //	ranz [flags] group delete NAME             delete the group
+//	ranz [flags] user role list|set NAME ROLE|clear NAME
+//	                                           the API roles of users, which their logins carry (admin; userrole.go)
+//	ranz [flags] token role NAME ROLE          give an API token another role in place, its secret unchanged (admin)
 //	ranz [flags] session list [-user NAME] [-node NAME]
 //	                                           print the sessions, the control streams of the nodes: who is connected, from
 //	                                           where, with which addresses and how much traffic (SDN-50, operator)
@@ -168,6 +174,7 @@ const usage = `usage:
   ranz test throughput [flags] HOST[:PORT]
   ranz doctor [-bundle [-o FILE]]
   ranz explain [flags] [-vrf VRF] [-protocol tcp|udp|icmp|N] [-sport PORT] [-port PORT] [-o text|json] A B
+  ranz login [-server URL] [-tls-fingerprint HEX] [-device | -user NAME [-password-file FILE]] [-o FILE]
   ranz [flags] apply -f FILE [-confirm DURATION]
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]
@@ -193,6 +200,8 @@ const usage = `usage:
   ranz [flags] group list
   ranz [flags] group set [-display TEXT] NAME
   ranz [flags] group delete NAME
+  ranz [flags] user role list|set NAME ROLE|clear NAME
+  ranz [flags] token role NAME viewer|operator|admin
   ranz [flags] session list [-user NAME] [-node NAME]
   ranz [flags] session disconnect ID|-user NAME
   ranz [flags] ban list
@@ -285,6 +294,9 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 		return errUsage
 	}
 	switch {
+	case len(args) == 4 && args[0] == "token" && args[1] == "role":
+		// The role of an API token, changed in place (tokenrole.go; SDN-32)
+		return tokenRole(ctx, c, args[2], args[3], out)
 	case args[0] == "apply":
 		flags := flag.NewFlagSet("apply", flag.ContinueOnError)
 		file := flags.String("f", "", "the intent document, - for standard input")
