@@ -2,29 +2,22 @@ package controller
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/ecdh"
-	"crypto/hkdf"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
-	"image/color"
 	"io"
 	"slices"
 	"sync"
 
-	"github.com/skip2/go-qrcode"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
+	"github.com/Hanzamas/RanzVPN/controller/internal/devicekey"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
-	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 )
 
 // The keys of the WireGuard Devices (SDN-82 #377, spec #374). An administrator makes a Device without
@@ -40,12 +33,12 @@ import (
 //   - The PresharedKey is the only protection of a recorded WireGuard session against a future quantum
 //     computer, and the gateway needs it to terminate the Device. So the controller keeps it, sealed:
 //     AES-256-GCM under a key that comes from its own static key, which sits in the key storage
-//     provider on Windows, by a Diffie-Hellman with a fixed point and HKDF (sealAEAD), so the store, a
-//     backup of it or a copy of the disk does not give one. The sealed key is in the table device_keys,
-//     not in the intent, and in the states of the gateways as they are stored and compared. The control
-//     stream carries it in clear to the gateway alone (openDeviceKeys), which hands it to WireGuardNT.
-//     A controller of a cluster that has another static key cannot open the keys that a member sealed,
-//     which the log says (openDeviceKeys): the Device is then made again.
+//     provider on Windows (devicekey.Sealer), so the store, a backup of it or a copy of the disk does not
+//     give one. The sealed key is in the table device_keys, not in the intent, and in the states of the
+//     gateways as they are stored and compared. The control stream carries it in clear to the gateway
+//     alone (openDeviceKeys), which hands it to WireGuardNT. A controller of a cluster that has another
+//     static key cannot open the keys that a member sealed, which the log says (openDeviceKeys): the
+//     Device is then made again.
 //   - Both are shown once. The configuration that GET /api/v1/devices/{name}/config renders later has
 //     no private key and no PresharedKey, and says where each goes.
 //
@@ -95,33 +88,15 @@ type DeviceCreated struct {
 	// imports, with the keys of the Device in it.
 	Config string `json:"config"`
 	// QR is the QR code of Config, as its modules without the quiet zone: one string for each row, a 1
-	// for a dark module and a 0 for a light one. A page or a terminal draws it (QRImage).
+	// for a dark module and a 0 for a light one. A page or a terminal draws it (devicekey.Rows), and
+	// QRImage makes a picture of it.
 	QR []string `json:"qr"`
 }
 
-// QRImage draws the QR code of the configuration as a picture: black modules on white, scale pixels
-// to a module, with the quiet zone of 4 modules around it that a scanner needs.
+// QRImage draws the QR code of the configuration as a picture: black modules on white, scale pixels to a
+// module, with the quiet zone around it that a scanner needs.
 func (d DeviceCreated) QRImage(scale int) *image.Gray {
-	const quiet = 4
-	scale = max(scale, 1)
-	side := (len(d.QR) + 2*quiet) * scale
-	img := image.NewGray(image.Rect(0, 0, side, side))
-	for i := range img.Pix {
-		img.Pix[i] = 0xff
-	}
-	for y, row := range d.QR {
-		for x := 0; x < len(row); x++ {
-			if row[x] != '1' {
-				continue
-			}
-			for dy := 0; dy < scale; dy++ {
-				for dx := 0; dx < scale; dx++ {
-					img.SetGray((x+quiet)*scale+dx, (y+quiet)*scale+dy, color.Gray{Y: 0})
-				}
-			}
-		}
-	}
-	return img
+	return devicekey.Image(d.QR, scale)
 }
 
 // deviceKeys is what the controller keeps for the keys of the Devices.
@@ -129,120 +104,12 @@ type deviceKeys struct {
 	// create serializes CreateDevice, so that the undoing of one creation never takes the PresharedKey
 	// that another one just stored.
 	create sync.Mutex
-	// aead seals and opens the PresharedKeys; nil when the static key of the controller gave no key to
-	// seal with (the log says why), so that no Device can be given one.
-	aead cipher.AEAD
+	// sealer seals and opens the PresharedKeys; nil when the static key of the controller gave no key
+	// to seal with (the log says why), so that no Device can be given one.
+	sealer *devicekey.Sealer
 	// sealed holds the sealed PresharedKey of each Device that has one, by Device name: what the store
 	// holds, decoded. Guarded by Controller.mu.
 	sealed map[string][]byte
-}
-
-// sealLabel names the point that the static key of the controller does its Diffie-Hellman with, after a
-// hash, to give the key that seals the PresharedKeys: only the holder of the static key finds the
-// shared secret, the controller asks the key storage provider for it instead of reading the key, and
-// nothing of it is stored. The node derives its WireGuard key the same way (NodeWireGuard.c).
-const sealLabel = "ranz controller: the key that seals the PresharedKeys of the Devices, version 1"
-
-// sealInfo is the HKDF context of the AES key, sealVersion the first byte of a sealed key.
-const (
-	sealInfo    = "ranz controller device keys, AES-256-GCM"
-	sealVersion = 1
-)
-
-// sealAEAD returns the AES-256-GCM AEAD that seals the PresharedKeys under the key derived from the
-// static key.
-func sealAEAD(key keys.Static) (cipher.AEAD, error) {
-	if key == nil {
-		return nil, errors.New("the controller has no static key")
-	}
-	point := sha256.Sum256([]byte(sealLabel))
-	shared, err := key.DH(point[:])
-	if err != nil {
-		return nil, fmt.Errorf("the static key of the controller gives no secret to derive the sealing key from: %w", err)
-	}
-	defer clear(shared)
-	secret, err := hkdf.Key(sha256.New, shared, nil, sealInfo, 32)
-	if err != nil {
-		return nil, err
-	}
-	defer clear(secret)
-	block, err := aes.NewCipher(secret)
-	if err != nil {
-		return nil, err
-	}
-	return cipher.NewGCM(block)
-}
-
-// sealAAD is the additional data of a sealed key: the name of its Device, so that a sealed key moved
-// to another Device does not open.
-func sealAAD(name string) []byte {
-	return []byte("ranz device preshared key\x00" + name)
-}
-
-// sealKey seals the PresharedKey psk of the Device name: the version, a nonce that random draws and the
-// ciphertext with its tag.
-func sealKey(aead cipher.AEAD, name string, psk []byte, random io.Reader) ([]byte, error) {
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := io.ReadFull(random, nonce); err != nil {
-		return nil, err
-	}
-	sealed := append([]byte{sealVersion}, nonce...)
-	return aead.Seal(sealed, nonce, psk, sealAAD(name)), nil
-}
-
-// openKey returns the PresharedKey that sealKey sealed for the Device name. It fails for a key of
-// another version, one that is altered in any byte, one that was sealed for another Device and one that
-// another static key sealed.
-func openKey(aead cipher.AEAD, name string, sealed []byte) ([]byte, error) {
-	n := aead.NonceSize()
-	if len(sealed) < 1+n+aead.Overhead() || sealed[0] != sealVersion {
-		return nil, errors.New("not a sealed PresharedKey of this version")
-	}
-	psk, err := aead.Open(nil, sealed[1:1+n], sealed[1+n:], sealAAD(name))
-	if err != nil {
-		return nil, errors.New("the sealed PresharedKey does not open: another static key sealed it, or it was altered")
-	}
-	return psk, nil
-}
-
-// newKeyPair draws a WireGuard key pair from random, the private key clamped as wg genkey writes one,
-// and returns its private and its public key.
-func newKeyPair(random io.Reader) (private, public []byte, err error) {
-	private = make([]byte, intent.KeySize)
-	if _, err := io.ReadFull(random, private); err != nil {
-		return nil, nil, err
-	}
-	private[0] &= 248
-	private[31] = private[31]&127 | 64
-	k, err := ecdh.X25519().NewPrivateKey(private)
-	if err != nil {
-		clear(private)
-		return nil, nil, err
-	}
-	return private, k.PublicKey().Bytes(), nil
-}
-
-// qrRows returns the QR code of text as its modules, one string of 0 and 1 for each row, without the
-// quiet zone.
-func qrRows(text string) ([]string, error) {
-	q, err := qrcode.New(text, qrcode.Medium)
-	if err != nil {
-		return nil, fmt.Errorf("the QR code of the configuration: %w", err)
-	}
-	q.DisableBorder = true
-	bitmap := q.Bitmap()
-	rows := make([]string, len(bitmap))
-	for y, row := range bitmap {
-		line := make([]byte, len(row))
-		for x, dark := range row {
-			line[x] = '0'
-			if dark {
-				line[x] = '1'
-			}
-		}
-		rows[y] = string(line)
-	}
-	return rows, nil
 }
 
 // gatewayKey returns the public key of the WireGuard interface that the Node gateway reported with the
@@ -292,7 +159,7 @@ func (c *Controller) CreateDevice(ctx context.Context, req DeviceRequest) (Devic
 		public = k
 	} else {
 		var err error
-		if private, public, err = newKeyPair(c.random); err != nil {
+		if private, public, err = devicekey.NewPair(c.random); err != nil {
 			return DeviceCreated{}, fmt.Errorf("making the key pair of Device %q: %w", req.Name, err)
 		}
 		defer clear(private)
@@ -300,7 +167,7 @@ func (c *Controller) CreateDevice(ctx context.Context, req DeviceRequest) (Devic
 
 	var psk, sealed []byte
 	if !req.NoPresharedKey {
-		if c.dkeys.aead == nil {
+		if c.dkeys.sealer == nil {
 			return DeviceCreated{}, errors.New("the controller cannot seal the PresharedKey of a Device, since its static key gave no key to seal with, as its log says: make the Device without a PresharedKey, or fix the key")
 		}
 		psk = make([]byte, intent.KeySize)
@@ -309,7 +176,8 @@ func (c *Controller) CreateDevice(ctx context.Context, req DeviceRequest) (Devic
 			return DeviceCreated{}, fmt.Errorf("making the PresharedKey of Device %q: %w", req.Name, err)
 		}
 		var err error
-		if sealed, err = sealKey(c.dkeys.aead, req.Name, psk, rand.Reader); err != nil {
+		// The nonce comes from crypto/rand whatever source the keys come from: a nonce never repeats under one key
+		if sealed, err = c.dkeys.sealer.Seal(req.Name, psk, rand.Reader); err != nil {
 			return DeviceCreated{}, fmt.Errorf("sealing the PresharedKey of Device %q: %w", req.Name, err)
 		}
 	}
@@ -339,7 +207,7 @@ func (c *Controller) CreateDevice(ctx context.Context, req DeviceRequest) (Devic
 	c.mu.Unlock()
 	var rows []string
 	if err == nil {
-		rows, err = qrRows(config)
+		rows, err = devicekey.Rows(config)
 	}
 	if err != nil {
 		// The Device is made and nobody has the keys that its configuration needs: it goes again
@@ -358,11 +226,11 @@ func (c *Controller) CreateDevice(ctx context.Context, req DeviceRequest) (Devic
 // not hold is dropped. New calls it before it compiles.
 func (c *Controller) loadDeviceKeys(ctx context.Context, in intent.Intent) error {
 	c.dkeys.sealed = map[string][]byte{}
-	aead, err := sealAEAD(c.key)
+	sealer, err := devicekey.NewSealer(c.key)
 	if err != nil {
 		c.log.Error("the controller cannot seal the PresharedKeys of the Devices, and opens none", "err", err)
 	}
-	c.dkeys.aead = aead
+	c.dkeys.sealer = sealer
 	rows, err := c.store.DeviceKeys(ctx)
 	if err != nil {
 		return err
@@ -464,9 +332,9 @@ func (c *Controller) openDeviceKeys(u *controlpb.Update) *controlpb.Update {
 			continue
 		}
 		clone.PresharedKey = nil
-		if c.dkeys.aead == nil {
+		if c.dkeys.sealer == nil {
 			c.log.Error("the PresharedKey of a Device is not sent: the controller cannot open it, since its static key gave no key to open it with", "device", d.GetName())
-		} else if psk, err := openKey(c.dkeys.aead, d.GetName(), d.GetPresharedKey()); err != nil {
+		} else if psk, err := c.dkeys.sealer.Open(d.GetName(), d.GetPresharedKey()); err != nil {
 			c.log.Error("the PresharedKey of a Device is not sent: it does not open", "device", d.GetName(), "err", err)
 		} else {
 			clone.PresharedKey = psk

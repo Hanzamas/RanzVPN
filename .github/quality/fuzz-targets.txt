@@ -215,6 +215,10 @@ controller/internal/throughput  ReadRequest     FuzzRead
 controller/internal/throughput  ReadReport      FuzzRead
 controller/internal/throughput  Receiver.Input  FuzzRead
 
+# The sealed PresharedKeys of the WireGuard Devices (SDN-82 #377): the bytes of a row of the device_keys table, which the
+# Sealer opens
+controller/internal/devicekey  Sealer.Open  FuzzOpen
+
 # The diagnostics bundle (SDN-54 #247): the text of a log and the JSON documents of a bundle, which Redact and RedactJSON read
 # before anything leaves the host
 controller/internal/bundle  Redact      FuzzRedact
