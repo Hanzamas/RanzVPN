@@ -1,0 +1,23 @@
+network LAB: l2, default action deny, 16 rules
+  priority  rule               action  match
+  100       LAB.acl-1          allow   protocol tcp; ports 22; from users alice; from addresses 0.0.0.0/0
+  100       LAB.acl-2          deny    protocol tcp; ports 22; to addresses 10.0.0.10/32
+  200       LAB.acl-3          deny    protocol any; from groups guests; to addresses 10.0.0.0/24
+  300       LAB.acl-4.1        allow   protocol any; from users ops
+  300       LAB.acl-4.2        allow   protocol any; from groups ops
+  600       LAB.acl-6          deny    protocol 58; to addresses 2001:db8:1::/48
+  700       LAB.acl-7          deny    protocol any; to addresses 172.16.0.0/16
+  800       LAB.acl-8.1        allow   protocol tcp; ports 8000-8080; from addresses 0.0.0.0/0
+  800       LAB.acl-8.2        allow   protocol udp; ports 8000-8080; from addresses 0.0.0.0/0
+  850       LAB.acl-9          deny    protocol udp; from addresses 0.0.0.0/0
+  1000      LAB.acl-11         deny    protocol tcp; ports 80; from addresses 0.0.0.0/0
+  1100      LAB.acl-12         allow   protocol udp; ports 5060; from addresses 0.0.0.0/0
+  1200      LAB.acl-13         deny    protocol tcp; from addresses 0.0.0.0/0
+  1300      LAB.acl-14         deny    protocol 1; from addresses 0.0.0.0/0; to users carol
+  1400      LAB.acl-15         deny    protocol any; to addresses 10.0.5.0/24
+  1000000   LAB.default-allow  allow   protocol any
+  -         default:deny       deny    every frame that no rule matches
+network OFFICE: l2, default action deny, 1 rules
+  priority  rule                  action  match
+  1000000   OFFICE.default-allow  allow   protocol any
+  -         default:deny          deny    every frame that no rule matches

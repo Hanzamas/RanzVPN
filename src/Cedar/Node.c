@@ -226,6 +226,9 @@ static void NodeImportForkConfig(NODE *n) {
 
 	NodeLog(n, "Fork configuration %S imported: %u networks, %u users, %u listeners, %u certificates, %u admins, %u skipped", path, r.NumNetworks, r.NumUsers, r.NumListeners, r.NumCerts, r.NumAdmins, r.NumSkipped);
 
+	NodeLog(n, "Fork configuration policy (CORE-S4-3): %u groups, %u VLANs, %u access list entries as rules, %u of them inactive, %u that deny more than the fork did; %u delays and redirects and %u hub options left out",
+	        r.NumGroups, r.NumVlans, r.NumEntries, r.NumEntriesInactive, r.NumEntriesWidened, r.NumEffectsDropped, r.NumOptionsDropped);
+
 	if (r.NumPasswordsDropped != 0)
 		NodeLog(n, "Fork configuration: %u SHA-0 passwords not carried over (ADR-0022): set those passwords again", r.NumPasswordsDropped);
 
