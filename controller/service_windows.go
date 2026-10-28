@@ -58,7 +58,9 @@ const logFile = "controller.log"
 // dataDirSDDL is the ACL of a data directory the controller creates: full control for SYSTEM,
 // the Administrators, the directory's owner and the service's account, inherited, and nothing for
 // anyone else. A directory created under ProgramData would otherwise let every user read the
-// controller key.
+// controller key. The owner is in the list, so the owner must be SYSTEM, the Administrators or an
+// account of the controller's own (checkDataDirOwner), or the list would give a user that made the
+// directory first a right in it.
 const dataDirSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)(A;OICI;FA;;;" + serviceSID + ")"
 
 func defaultDataDir() string {
@@ -171,8 +173,9 @@ func (s *service) openLog() (*logfile.Writer, error) {
 // install registers the Windows service, started automatically as its virtual account and running
 // this executable as `ranz controller` with args, the event source of its Application log
 // entries, and, with -http-listen, the HTTP.sys URL reservations of the plain-HTTP port. It
-// creates the data directory, or sets the ACL of the one that exists, so that the service's
-// account, which is not an administrator, has it.
+// makes the data directory with the Administrators as its owner, or takes over the one that exists
+// (takeOverDataDir), so that the service's account, which is not an administrator, has it and no
+// other account does.
 func install(args []string, cfg config) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -185,10 +188,7 @@ func install(args []string, cfg config) error {
 // with args: `ranz install` (internal/install, ONE-2 #311) names the ranz.exe that it copied into
 // the Ranz folder, so that the service does not run from wherever the download was left.
 func installService(exe string, args []string, cfg config) error {
-	if err := os.MkdirAll(cfg.dataDir, 0o700); err != nil {
-		return err
-	}
-	if err := protectDir(cfg.dataDir); err != nil {
+	if err := takeOverDataDir(cfg.dataDir); err != nil {
 		return err
 	}
 	m, err := mgr.Connect()
@@ -298,6 +298,13 @@ func uninstall() error {
 // the Node service.
 func Install(exe string) error {
 	return installService(exe, nil, config{dataDir: defaultDataDir()})
+}
+
+// InstallAdminFrom is Install with the flag -admin-from of the service set to adminFrom, the admin
+// source allowlist that the first start applies (AUD1-DT-6, #454): prefixes separated by commas, or
+// "any".
+func InstallAdminFrom(exe, adminFrom string) error {
+	return installService(exe, adminFromArgs(adminFrom), config{dataDir: defaultDataDir()})
 }
 
 // Uninstall removes the Windows service. The service must be stopped first, as uninstall needs;

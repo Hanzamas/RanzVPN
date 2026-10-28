@@ -32,7 +32,14 @@
 // for a frame to it, PolicyDeliver for a frame to a group address), as the fork's Hub applies them on both sides. A member
 // owns the source addresses it was given (PolicyBindMac, PolicyBindIp) and, under a check, those it sent from first, up
 // to its limit; no other member of its Network may send from them. ARP, IPv6 neighbour discovery and DHCP pass the guard
-// and not the rules, as the segment needs them.
+// and not the rules, as the segment needs them. The security of an L2 Network (Core/SwitchSecurity.h; SDN-41, #234) adds
+// two flags: the RA guard of a client, which sends no router advertisement and still gets those of the gateway
+// (POLICY_GUARD_NO_ROUTER), and the gateway itself (POLICY_GUARD_GATEWAY), which is never refused a source address and
+// owns each one it sends from, up to POLICY_MAX_GATEWAY of each kind, taking it over from a member that is no gateway, so
+// that no member under a check can take an address of the gateway or keep one from it. The engine reads two VLAN tags of
+// a frame, an outer and an inner one, and eight IPv6 extension headers of a packet: a member under the IP check or a DHCP
+// or RA guard sends no frame that carries more, which could hide a source address, a DHCP server message or a router
+// advertisement from them.
 //
 // Counters. Each rule counts the flows it allowed and the frames and bytes it matched, and the default action of each
 // Network counts its own (PolicyGetCounters; PolicyCountersJson for the admin API, PolicyCountersText for the CLI). A rule
@@ -59,6 +66,7 @@
 #define POLICY_MAX_FLOWS    1048576 // Flows of the conntrack table of a Network at most
 #define POLICY_MAX_IDS      32      // Groups, and tags, of a member at most
 #define POLICY_MAX_BOUND    64      // Addresses of a member at most, of each kind (MAC, IP)
+#define POLICY_MAX_GATEWAY  65536   // Addresses of each kind that a gateway (POLICY_GUARD_GATEWAY) owns at most
 
 // The values of a member or a Network that sets none
 #define POLICY_DEFAULT_MEMBERS 1024  // Members of an engine without max_members
@@ -98,7 +106,9 @@
 #define POLICY_GUARD_NO_IPV4        0x0040 // No IPv4 or ARP frames (FilterIPv4)
 #define POLICY_GUARD_NO_IPV6        0x0080 // No IPv6 frames (FilterIPv6)
 #define POLICY_GUARD_NO_NON_IP      0x0100 // No frames of another EtherType (FilterNonIP)
-#define POLICY_GUARD_ALL            0x01FF // Every flag
+#define POLICY_GUARD_NO_ROUTER      0x0200 // Sends no IPv6 router advertisements, and still gets them (the RA guard of an L2 Network)
+#define POLICY_GUARD_GATEWAY        0x0400 // The gateway of an L2 Network: never refused a source address, and owns those it sends from
+#define POLICY_GUARD_ALL            0x07FF // Every flag
 
 // The reasons of a verdict (POLICY_RESULT): a frame passes for one of the first five, and is dropped for any other
 #define POLICY_PASS_RULE        0  // The first frame of a flow, or a frame that is no flow's, that a rule allowed
@@ -117,7 +127,7 @@
 #define POLICY_DROP_BROADCAST   13 // To a group address, other than ARP, DHCP and neighbour discovery, under ARP and DHCP only
 #define POLICY_DROP_DHCP_SERVER 14 // A DHCP or DHCPv6 server message of a member that may send none
 #define POLICY_DROP_RA          15 // An IPv6 router advertisement of a member that may send none
-#define POLICY_DROP_PROTOCOL    16 // An IPv4, IPv6 or non-IP frame of a member that filters them
+#define POLICY_DROP_PROTOCOL    16 // An IPv4, IPv6 or non-IP frame of a member that filters them; one that carries more than the engine reads, of a member under the IP check or a DHCP or RA guard
 #define POLICY_NUM_REASONS      17
 
 // A member (PolicyAddMember). The strings are copied.

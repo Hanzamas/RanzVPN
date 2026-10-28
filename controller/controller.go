@@ -54,9 +54,13 @@
 // refused with 403 before its token is looked at, and recorded as an event. Without a list, every
 // address may reach them. A loopback address always passes, so a local administrator always
 // reaches the controller. The control stream of the nodes is not behind it: a Network limits the
-// addresses its Nodes enrol from (its enrolSources). In a cluster, the list must hold the
-// addresses of the members too, because a standby forwards a call to the leader from its own
-// address.
+// addresses its Nodes enrol from (its enrolSources). -admin-from sets the list at the first start,
+// the one that finds no API token in the store, and before it makes the first admin token
+// (AUD1-DT-6, #454): `ranz install --controller` passes loopback and the private subnets of the
+// host, or what its --admin-from names; "any" leaves the list empty, and a run without the flag
+// does too. A later start keeps the list that the store holds, and says in its log which list that
+// is, with a warning when it is empty. In a cluster, the list must hold the addresses of the
+// members too, because a standby forwards a call to the leader from its own address.
 //
 // Cluster (SDN-17, ADR-0026): a cluster of 3 or 5 members runs one `ranz controller` on each host,
 // each with its own rqlited, all started with the same -rqlite-join (the Raft addresses of every
@@ -74,11 +78,28 @@
 // records the reset in the Application log on Windows (event ID 5).
 //
 // A local administrator of the host also backs up the whole store (the intent with every
-// revision, the node states, the events, the tokens and the licence key) with backup, and puts a
-// backup back with restore (SDN-52, #245), with the flags of the service, while it runs or while
-// it is stopped. A restore under a running controller first takes the lease of the leader for a
-// lease duration, so the leader steps down, and then the next leader loads the restored store. In
-// a cluster, restore runs while the members run: rqlite loads the backup into every member.
+// revision, the node states, the events, the hashes of the tokens and of the passwords, the licence
+// key and the secrets of the targets) with backup, and puts a backup back with restore (SDN-52,
+// #245), with the flags of the service, while it runs or while it is stopped. A restore under a
+// running controller first takes the lease of the leader for a lease duration, so the leader steps
+// down, and then the next leader loads the restored store. In a cluster, restore runs while the
+// members run: rqlite loads the backup into every member. The file of a backup has an access list of
+// its own, for SYSTEM and the Administrators only on Windows, whatever the access list of its folder
+// says (AUD1-DT-10, #458). The secrets of the export and audit targets are in the store sealed with a
+// key of this host (the sealing key, internal/keys), so a restore on the same host keeps them working;
+// on another host the targets come back with no secret, the log of the controller names them, and the
+// operator puts each one again with its secret. The members of a cluster have no sealing key in
+// common and keep those secrets in clear.
+//
+// On Windows the data directory belongs to SYSTEM, the Administrators or the service's account, and
+// nobody else has a right in it (ST-3 of docs/threat-model.md). install makes it with the
+// Administrators as its owner and a protected access list. A directory that exists and that one of
+// them, or the administrator who installs, owns is kept, with what it holds, and given that owner and
+// that list. One that another account owns, which a local user may have made before the install, is
+// made again when it is empty, and refused when it holds anything or is a link, since what it holds
+// would run as the controller. The service refuses to start in a data directory that another account
+// owns, and so do reset-admin, backup and restore, which run the rqlited of its payload folder: that
+// keeps out a directory that a local user put in the place of the real one.
 //
 // The service log of the Windows service is controller.log in the data directory, and it stays
 // within an age limit and a disk limit (SDN-54, #247): -log-days (30 by default) and -log-mb (256),
@@ -146,8 +167,8 @@ const fallbackPort = "5555"
 const fallbackFile = "listen-fallback"
 
 // adminTokenFile, in the data directory, holds the secret of the admin token that the first
-// start of the controller creates (rbac.Bootstrap). Only the directory's owner and the
-// administrators can read it (makeDataDir).
+// start of the controller creates (rbac.Bootstrap). Only the directory's owner, SYSTEM, the
+// administrators and the service's account can read it (makeDataDir).
 const adminTokenFile = "admin.token"
 
 // adminSourcesTTL is how long a member uses a read of the admin source allowlist: a change of it
@@ -180,6 +201,7 @@ type config struct {
 	lease         time.Duration
 	logDays       int
 	logMB         int
+	adminFrom     string // -admin-from: the admin source allowlist that the first start sets
 	schema        controlpb.SchemaVersion
 	limits        port.Limits // the limits for a source of the TLS port (AUD1-DT-3, #451)
 }
@@ -235,6 +257,7 @@ func parseFlags(args []string) (config, error) {
 	flags.IntVar(&schema, "schema-version", 0, "the control schema version to run as: the newest of this release by default, or the one before it during a rolling upgrade of a cluster, until every member runs this release")
 	flags.IntVar(&cfg.logDays, "log-days", logfile.DefaultMaxAgeDays, "the age limit of the service log in days: a file of the log whose last record is older is deleted; 0 for no limit (the Windows service writes the log, elsewhere the controller logs to its standard error)")
 	flags.IntVar(&cfg.logMB, "log-mb", logfile.DefaultMaxMB, "the disk limit of the service log in megabytes: its files never take more together, and the oldest are deleted first; 0 for no limit")
+	flags.StringVar(&cfg.adminFrom, "admin-from", "", "the admin source allowlist that the first start sets: prefixes separated by commas, or any for none; a later start keeps the list in the store (ranz admin-sources)")
 	flags.IntVar(&cfg.limits.MaxPending, "max-pending", 0, fmt.Sprintf("the most connections of the TLS port that wait for their TLS handshake in all; the next is closed (0: %d)", port.DefaultMaxPending))
 	flags.IntVar(&cfg.limits.MaxPendingPerSource, "max-pending-per-source", 0, fmt.Sprintf("... and for one source, an IPv4 address or the /64 of an IPv6 address (0: %d)", port.DefaultMaxPendingPerSource))
 	flags.Float64Var(&cfg.limits.ConnectRate, "connect-rate", 0, fmt.Sprintf("the new connections a second that a source may open at the TLS port, sustained (0: %d)", port.DefaultRate))
@@ -246,6 +269,10 @@ func parseFlags(args []string) (config, error) {
 	}
 	if flags.NArg() > 0 {
 		return config{}, fmt.Errorf("unexpected arguments: %q", flags.Args())
+	}
+	if _, _, err := parseAdminFrom(cfg.adminFrom); err != nil {
+		fmt.Fprintln(flags.Output(), err)
+		return config{}, err
 	}
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "listen" {
@@ -481,13 +508,18 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		return err
 	}
 	defer st.Close()
+	if err := sealTargets(ctx, cfg, st, log); err != nil {
+		return err
+	}
 	tokens := rbac.New(st)
 	tokenFile := filepath.Join(cfg.dataDir, adminTokenFile)
-	created, err := tokens.Bootstrap(ctx, func(secret string) error {
+	// The first start sets the admin source allowlist and then makes the first admin token, and a later
+	// start says which list it keeps (adminfrom.go)
+	created, err := bootstrapAdmin(ctx, tokens, st, cfg.adminFrom, func(secret string) error {
 		return os.WriteFile(tokenFile, []byte(secret+"\n"), 0o600)
-	})
+	}, log)
 	if err != nil {
-		return fmt.Errorf("the first admin token: %w", err)
+		return err
 	}
 	if created {
 		log.Info("first start: the admin token is created, its secret is in the data directory", "token", rbac.FirstAdmin, "file", tokenFile)
@@ -669,10 +701,12 @@ func serveHTTP(srv *http.Server, l net.Listener) error {
 }
 
 // makeDataDir creates the data directory if it does not exist, readable by its owner and the
-// administrators only.
+// administrators only. One that exists must belong to SYSTEM, the Administrators or the account that
+// runs the controller (checkDataDirOwner): a directory that a local user made before the install, or
+// put in its place, is not used (ST-3).
 func makeDataDir(dir string) error {
 	if _, err := os.Stat(dir); err == nil {
-		return nil
+		return checkDataDirOwner(dir)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err

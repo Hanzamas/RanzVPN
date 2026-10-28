@@ -207,7 +207,8 @@ func (m *Member) ServeStream(tc *tls.Conn) {
 	m.log.Debug("node refused: standby", "remote", conn.RemoteAddr().String(), "leader", l.Holder)
 }
 
-// Handler returns the member's HTTP API: GET /api/v1/status answers for this member, every other
+// Handler returns the member's HTTP API: GET /api/v1/status answers for this member, with the admin
+// source allowlist and, on the leader, the starter rule (api.Status.WithAccess), every other
 // call goes to the controller of the leader, here or forwarded to the member that leads with the
 // caller's bearer token, which the leader checks again. Every call needs the role that the API
 // asks for it (api.Guard): the tokens are in the store, so every member knows them. A call that
@@ -216,10 +217,14 @@ func (m *Member) ServeStream(tc *tls.Conn) {
 func (m *Member) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, r *http.Request) {
-		api.Reply(w, http.StatusOK, m.Status())
+		m.mu.Lock()
+		c := m.active
+		m.mu.Unlock()
+		api.Reply(w, http.StatusOK, m.Status().WithAccess(r.Context(), m.cfg.Store, c))
 	})
 	mux.HandleFunc("/", m.serveAPI)
-	return api.AuditRefusals(m.audit, api.Guard(m.cfg.Tokens, mux))
+	// The logins of users need no token: they go to the leader in front of the Guard (SDN-32)
+	return api.WithLogins(http.HandlerFunc(m.serveAPI), api.AuditRefusals(m.audit, api.Guard(m.cfg.Tokens, mux)))
 }
 
 // Status returns the answer of GET /api/v1/status of this member.
@@ -342,7 +347,7 @@ func (m *Member) lead(ctx context.Context, l store.Lease) {
 		m.release(l.Epoch)
 		return
 	}
-	h := api.AuditCalls(c, api.Routes(c, m.cfg.Tokens, m.cfg.Status))
+	h := api.WithLogins(api.Logins(c, m.cfg.Tokens, m.Status), api.AuditCalls(c, api.Routes(c, m.cfg.Tokens, m.cfg.Status)))
 	m.mu.Lock()
 	m.active, m.handler, m.lease = c, h, l
 	m.proxy, m.proxyFor = nil, store.Lease{}

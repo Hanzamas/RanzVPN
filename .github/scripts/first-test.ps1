@@ -135,6 +135,9 @@ $script:current = $null
 $script:pc = 'a'
 $script:background = @()
 $script:windows = @{ a = @{}; b = @{} }
+# The events of the admin source allowlist that the Controller holds (AUD1-DT-6): the one of its first start, and one more for
+# each change that a step makes by hand
+$script:allowlistEvents = 1
 $windowVariables = 'RANZ_SERVER', 'RANZ_TOKEN_FILE', 'RANZ_TLS_FINGERPRINT', 'RANZ_TOKEN'
 
 # The window of the PC: its RANZ_* variables are put away, and the ones of the other PC come back
@@ -474,6 +477,8 @@ try {
 		if ($out -notmatch 'ranz install: done' -or $out -notmatch 'install: the ranz-controller service is running') { throw 'ranz install --controller did not say that it is done and that the Controller runs' }
 		# The rules of the Node and the Controller, and only them, read back from Windows Firewall
 		if ($out -notmatch 'install: Windows Firewall lets in') { throw 'ranz install --controller did not say which ports it opened in Windows Firewall' }
+		# The first install narrows who may reach the API (AUD1-DT-6): loopback and the private subnets, and how to change it
+		if ($out -notmatch 'install: the Controller starts with the admin source allowlist [^\r\n]*127\.0\.0\.0/8[^\r\n]*403[^\r\n]*ranz admin-sources set') { throw 'ranz install --controller did not say which sources may reach the API and how to change that' }
 		$script:firewallIds = Assert-FirewallRules ($nodeRules + $controllerRules)
 		foreach ($name in $nodeService, $controllerService) { Wait-Service $name 'Running' }
 		foreach ($f in 'ranz-node.exe', 'ranz.exe', 'wintun.dll', 'NOTICE.txt') {
@@ -486,13 +491,21 @@ try {
 	}
 
 	Step 'controller-up' {
-		$null = Invoke-Doc
+		$out = Invoke-Doc
 		foreach ($name in $nodeService, $controllerService) { Wait-Service $name 'Running' }
+		# The data directory is the Administrators' (AUD1-DT-10, #458, ST-3): they own it, its access list is protected, and
+		# only SYSTEM, the Administrators, the owner and the service account have a rule in it
+		if ($out -notmatch '(?m)^BUILTIN\\Administrators\s*$') { throw "the data directory of the Controller is not owned by the Administrators:`n$out" }
+		if ($out -notmatch '(?m)^True\s*$') { throw "the access list of the data directory of the Controller is not protected:`n$out" }
+		$rules = @((Get-Acl -LiteralPath $controllerData).Access | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique)
+		$others = @($rules | Where-Object { @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM', 'OWNER RIGHTS', 'S-1-3-4', "NT SERVICE\$controllerService") -notcontains $_ })
+		if ($others.Count -gt 0) { throw "the access list of the data directory of the Controller has rules for $($others -join ', ')" }
+		Write-Host "the data directory of the Controller: owned by the Administrators, a protected access list with rules for $($rules -join ', ') only"
 		foreach ($f in 'admin.token', 'controller.log', 'payload\rqlited.exe', 'rqlite') {
 			if (-not (Test-Path -LiteralPath (Join-Path $controllerData $f))) { throw "the Controller did not make $f in $controllerData" }
 		}
 		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
-		foreach ($line in 'first start: the intent of a first install', 'msg="TLS port"') {
+		foreach ($line in 'first start: the intent of a first install', 'msg="TLS port"', 'first start: the admin source allowlist is set', 'first start: the starter rule default-allow-all allows all traffic inside VRF default') {
 			if ($log -notmatch [regex]::Escape($line)) { throw "controller.log does not say '$line'" }
 		}
 		$token = (Get-Content -LiteralPath $adminToken -Raw).Trim()
@@ -506,6 +519,18 @@ try {
 		if ($status.tlsFingerprint -notmatch '^[0-9a-f]{64}$') { throw "the TLS fingerprint is '$($status.tlsFingerprint)', not 64 hex digits" }
 		if ([Convert]::FromBase64String($status.publicKey).Length -ne 32) { throw "the public key '$($status.publicKey)' is not the base64 of 32 bytes" }
 		if ($status.capabilities.tlsPort -ne 443 -or $status.capabilities.tlsPortFallback) { throw 'the Controller is not on TCP 443' }
+		# ranz status says who may reach the API and what the starter rule does (AUD1-DT-6)
+		if ($status.adminAccess.open -or @($status.adminAccess.sources) -notcontains '127.0.0.0/8' -or $status.adminAccess.note -notmatch 'ranz admin-sources set') { throw "ranz status says $($status.adminAccess | ConvertTo-Json -Compress) about the admin source allowlist, not loopback and the private subnets, with how to change it" }
+		if ($status.starterRule.name -ne 'default-allow-all' -or $status.starterRule.note -notmatch 'allows all traffic inside VRF default' -or $status.starterRule.note -notmatch 'docs/first-test\.md') { throw "ranz status says $($status.starterRule | ConvertTo-Json -Compress) about the starter rule" }
+		# PC B reaches the Controller through the address of the runner (step 13), so the allowlist must hold it. A runner on a
+		# private subnet is in the default; one on a public address is named by hand, as the runbook says
+		$held = @($status.adminAccess.sources | ForEach-Object { $_ })
+		if ($values['PC-A'] -notmatch '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)') {
+			Write-Host "the address $($values['PC-A']) of the runner is not private, so the allowlist does not hold it: it is added now"
+			$null = Invoke-Ranz (@('admin-sources', 'set') + $held + @($values['PC-A']))
+			# The change is an event of its own, which the steps that count the events expect
+			$script:allowlistEvents++
+		}
 		# What the log says at the first start is what the API says
 		# (the log writer quotes a value that holds an equals sign, as a base64 key does)
 		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
@@ -868,9 +893,14 @@ try {
 		foreach ($line in 'msg="TLS certificate"', 'msg="certificate of the controller changed"') {
 			$null = Wait-Until { (Get-Content -LiteralPath $controllerLog -Raw) -match [regex]::Escape($line) } "controller.log to say '$line'" 15
 		}
+		# The first start set the admin source allowlist and recorded it (AUD1-DT-6), and step 7 recorded one more when it had to add
+		# the address of the runner, so the events are those and the change
 		$events = @((Invoke-Ranz @('get', 'events')).events | Where-Object { $_ })
-		if ($events.Count -ne 1 -or $events[0].type -ne 'controller-certificate-changed' -or $events[0].message -notmatch [regex]::Escape($new)) {
-			throw "the events are $($events | ConvertTo-Json -Compress -Depth 4), not the change of the certificate"
+		$allowed = @($events | Where-Object { $_.type -eq 'admin-sources-changed' })
+		$changed = @($events | Where-Object { $_.type -eq 'controller-certificate-changed' })
+		if ($events.Count -ne ($script:allowlistEvents + 1) -or $allowed.Count -ne $script:allowlistEvents -or @($allowed | Where-Object { $_.message -match 'at the first start' }).Count -ne 1 -or
+			$changed.Count -ne 1 -or $changed[0].message -notmatch [regex]::Escape($new)) {
+			throw "the events are $($events | ConvertTo-Json -Compress -Depth 4), not the $($script:allowlistEvents) of the admin source allowlist, the first at the first start, and the change of the certificate"
 		}
 		$null = Wait-Until {
 			$audit = Invoke-Ranz @('get', 'audit', '-kind', 'operation', '-limit', '1000')
@@ -972,9 +1002,14 @@ try {
 	Step 'logs' {
 		$out = Invoke-Doc
 		if ($out -notmatch 'ranz-controller started') { throw 'the Application log does not say that ranz-controller started' }
-		# The one event is the change of the certificate of step 21 (SDN-92)
+		# The events are the admin source allowlist of the first start and the change that step 7 made when it had to add the address
+		# of the runner (AUD1-DT-6), and the change of the certificate of step 21 (SDN-92)
 		$events = @((Invoke-Ranz @('get', 'events')).events | Where-Object { $_ })
-		if ($events.Count -ne 1 -or $events[0].type -ne 'controller-certificate-changed') { throw "the Controller has the events $($events | ConvertTo-Json -Compress -Depth 4), not the change of the certificate of step 21 alone" }
+		$allowed = @($events | Where-Object { $_.type -eq 'admin-sources-changed' })
+		$changed = @($events | Where-Object { $_.type -eq 'controller-certificate-changed' })
+		if ($events.Count -ne ($script:allowlistEvents + 1) -or $allowed.Count -ne $script:allowlistEvents -or @($allowed | Where-Object { $_.message -match 'at the first start' }).Count -ne 1 -or $changed.Count -ne 1) {
+			throw "the Controller has the events $($events | ConvertTo-Json -Compress -Depth 4), not the $($script:allowlistEvents) of the admin source allowlist, the first at the first start, and the change of the certificate of step 21 alone"
+		}
 		$revisions = ((Invoke-Ranz @('get', 'revisions')).revisions | ForEach-Object { $_.operation }) -join ','
 		if ($revisions -ne 'first-start,apply,apply') { throw "the revisions are $revisions, not the first start and the applies of steps 15 and 20" }
 		# The bundle of the Controller, the one that the button of the Diagnostics page downloads

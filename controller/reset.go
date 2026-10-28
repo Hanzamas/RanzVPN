@@ -67,10 +67,12 @@ func runResetAdmin(args []string) error {
 // resetAdmin creates a new admin token in the controller's store and writes its secret to
 // admin.token in the data directory, as the first start does (rbac.Bootstrap), and returns the
 // token with its secret and that file. It runs on the controller's host only: rights must
-// allow it (adminRights), and the data directory of cfg must exist. While the service runs,
-// its rqlite answers at -rqlite; while it is stopped, resetAdmin runs the rqlited of the service
-// (-rqlited, or the member of this executable) on the service's data for as long as it takes. out
-// receives the output of that rqlited.
+// allow it (adminRights), and the data directory of cfg must exist and must not be another
+// account's (checkDataDirOwner). While the service runs, its rqlite answers at -rqlite; while it
+// is stopped, resetAdmin runs the rqlited of the service (-rqlited, or the member of this
+// executable) on the service's data for as long as it takes. out receives the output of that
+// rqlited. A store that holds no token has not had its first start, and is refused
+// (afterFirstStart).
 func resetAdmin(ctx context.Context, cfg config, rights func() error, out io.Writer) (rbac.NewToken, string, error) {
 	if err := rights(); err != nil {
 		return rbac.NewToken{}, "", err
@@ -78,14 +80,22 @@ func resetAdmin(ctx context.Context, cfg config, rights func() error, out io.Wri
 	if fi, err := os.Stat(cfg.dataDir); err != nil || !fi.IsDir() {
 		return rbac.NewToken{}, "", fmt.Errorf("the data directory %s (-data) does not exist: reset-admin runs on the controller's host, with the flags of the service", cfg.dataDir)
 	}
+	if err := checkDataDirOwner(cfg.dataDir); err != nil {
+		return rbac.NewToken{}, "", err
+	}
 	st, stop, err := openStore(ctx, cfg, out)
 	if err != nil {
 		return rbac.NewToken{}, "", err
 	}
 	defer stop()
+	tokens := rbac.New(st)
+	// Only the first start makes the first token, after it set the admin source allowlist (adminfrom.go)
+	if err := afterFirstStart(ctx, tokens); err != nil {
+		return rbac.NewToken{}, "", err
+	}
 	file := filepath.Join(cfg.dataDir, adminTokenFile)
 	name := "admin-" + time.Now().UTC().Format("20060102-150405")
-	tok, err := rbac.New(st).Recover(ctx, name, func(secret string) error {
+	tok, err := tokens.Recover(ctx, name, func(secret string) error {
 		return os.WriteFile(file, []byte(secret+"\n"), 0o600)
 	})
 	if err != nil {

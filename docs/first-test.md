@@ -159,7 +159,9 @@ This does the following, and checks the hash and the signature of every file bef
 - Because of `--controller` it also registers and starts the Controller service `ranz-controller`. The Controller brings its own rqlite member inside `ranz.exe`.
 - It opens the ports of the Node and the Controller in Windows Firewall: the group `Ranz VPN` holds three inbound rules that allow, `Ranz VPN Node (TCP 443)`, `Ranz VPN Node (UDP 443)` and `Ranz VPN Controller (TCP 443, 5555)`, and nothing else.
 
-The last lines are `install: the ranz-controller service is running`, a line `install: Windows Firewall lets in ...` for each rule, and `ranz install: done`. It is safe to run the command again: a rule that is there as it should be stays, so a second install and an upgrade leave the same rules.
+- It narrows who may reach the API and the web UI of the Controller, because TCP 443 and 5555 are open on every profile. The admin source allowlist is loopback and the subnets of the private interfaces of the PC (RFC 1918 and unique local addresses), unless you name the sources yourself with `--admin-from`, for example `ranz install --controller --admin-from 203.0.113.0/24,198.51.100.7`, or open the API to every address with `--admin-from any`. From an address outside the list, every call gets `403` before its token is looked at, and the refusals are events (`admin-access-refused`, one a minute for one address). The control stream of the Nodes is not behind the list: a Node enrols from any address, and a Network limits where its Nodes enrol from. The Controller applies the list at its first start only; change it afterwards with `ranz admin-sources set PREFIX...` or lift it with `ranz admin-sources clear`. A Controller whose store is there already, because the service is registered or because `ranz uninstall` left the data directory, keeps the list of that store whatever `--admin-from` says, and `ranz install` says so in place of the line below.
+
+The last lines are a line `install: the Controller starts with the admin source allowlist ...`, `install: the ranz-controller service is running`, a line `install: Windows Firewall lets in ...` for each rule, and `ranz install: done`. It is safe to run the command again: a rule that is there as it should be stays, so a second install and an upgrade leave the same rules.
 
 ### 6. The Controller starts (controller-up)
 
@@ -169,13 +171,17 @@ The last lines are `install: the ranz-controller service is running`, a line `in
 Get-Service ranzvpnserver, ranz-controller
 Get-ChildItem C:\ProgramData\Ranz\controller
 Get-Content C:\ProgramData\Ranz\controller\controller.log -Tail 12
+(Get-Acl C:\ProgramData\Ranz\controller).Owner
+(Get-Acl C:\ProgramData\Ranz\controller).AreAccessRulesProtected
 ```
 
 Both services are `Running`. The folder `C:\ProgramData\Ranz\controller` is the data directory of the Controller. At its first start the Controller made:
 
-- `admin.token`: the secret of the admin API token. Only SYSTEM, the Administrators, the owner of the folder and the service account can read it.
-- `controller.log`: its log. It says `first start: the intent of a first install` and `TLS port`.
+- `admin.token`: the secret of the admin API token. Only SYSTEM, the Administrators and the service account can read it.
+- `controller.log`: its log. It says `first start: the intent of a first install` and `TLS port`, and at its first start which sources may reach the API and how to change that (`first start: the admin source allowlist is set`) and that the starter rule allows all traffic inside VRF `default` and how to narrow it (`first start: the starter rule default-allow-all`). Every later start says which list it keeps (`the admin source allowlist is set`), and warns when there is none.
 - `payload\rqlited.exe` and `rqlite\`: its store.
+
+The last two commands print `BUILTIN\Administrators` and `True`: the Administrators own the data directory, and its access list is protected, so that it takes no rule from `C:\ProgramData`, which lets every user make a folder. Only SYSTEM, the Administrators and the service account have a right in it. `ranz install` made it that way. A folder of that name that another account made before the install is not kept: the install makes an empty one again, and refuses one that holds files, with a message that says what to do, since the files could be a store with a token that its maker knows or an `rqlited.exe` of its own, which the service would run. The service itself does not start in a data directory that an account other than SYSTEM, the Administrators and the service owns.
 
 ### 7. The certificate (certificate)
 
@@ -198,9 +204,13 @@ You see this, with your own values:
   "controlAddress": "[::]:443",
   "tlsFingerprint": "...64 hex digits...",
   "capabilities": { "tlsPort": 443, "tlsPortFallback": false },
+  "adminAccess": { "sources": ["10.1.2.0/24", "127.0.0.0/8", "::1/128"], "open": false, "note": "only these sources, and loopback, reach the API ..." },
+  "starterRule": { "name": "default-allow-all", "note": "the starter rule default-allow-all allows all traffic inside VRF default: narrow it ..." },
   ...
 }
 ```
+
+`adminAccess` is the admin source allowlist of step 5: the sources that may reach the API and the web UI, and `open` is `true` when there is none. The list is an admin's to read, so `sources` is in the answer for the admin token only: a viewer reads `open` and the note. `starterRule` is there while the Intent holds the starter rule of step 9 as the first start made it.
 
 Write down `publicKey` as `<CONTROLLER-KEY>`, `tlsFingerprint` as `<FINGERPRINT>` and `tlsPort` as `<PORT>`. If `tlsPort` is `5555`, the Controller fell back and `tlsPortFallback` is `true`.
 
@@ -244,6 +254,16 @@ You see three resources:
 There is one revision, `first-start`. `ranz get ipam` shows the pool of Network `default`: its size, and `allocated` is 0. The pages VRFs, Networks, Intent and Revisions of the web UI show the same.
 
 A Node that names no VRF joins VRF `default` and gets an address from that pool.
+
+The starter rule lets every Node of VRF `default` talk to every other. The first start says so in `controller.log`, and `ranz status` says so in `starterRule` for as long as the Intent holds the rule as the first start made it: a rule of that name that you narrowed in place, with a protocol or ports, no longer allows all, and `starterRule` is gone. To narrow it, first apply the Policies that you want, each with the action `allow` or `deny`, while the starter rule still lets everything through, and then delete the starter rule. VRF `default` is then at default deny for every flow that your Policies do not allow, and the flows that they allow never stop in between. For example, to let the Nodes of VRF `default` ping each other and reach TCP 443 of the Nodes that carry the tag `web` (`tags` of their Node resource), and nothing else:
+
+```powershell
+Set-Content -Path C:\ranz-test\policies.json -Value '{"resources":[{"kind":"Policy","name":"allow-ping","spec":{"vrf":"default","action":"allow","protocol":"icmp"}},{"kind":"Policy","name":"allow-web","spec":{"vrf":"default","action":"allow","to":{"tags":["web"]},"protocol":"tcp","ports":["443"]}}]}'
+ranz apply -f C:\ranz-test\policies.json
+ranz delete Policy default-allow-all
+```
+
+This test keeps the starter rule, so these commands are no step of it. `ranz apply -f` takes an intent document, as in step 15; an end of a Policy (`from`, `to`) may also name addresses, and a `priority` orders the rules. `ranz diff` shows what a change did, and `ranz rollback REVISION` takes it back.
 
 ## Part 2. PC B: a Node
 
@@ -303,6 +323,8 @@ ranz get resources
 ```
 
 `TcpTestSucceeded` must be `True`. If not, the firewall rules of step 5 or the network is the problem. `ranz whoami` prints the name `pc-b` and the role `viewer`. `ranz get resources` prints the three resources of step 9. The `RANZ_TLS_FINGERPRINT` makes `ranz` accept the certificate of the Controller only when its fingerprint is the one you copied. A wrong value fails. The viewer token cannot change anything: `ranz apply` from PC B is answered with 403.
+
+PC B is let in by the admin source allowlist of step 5 when it is on a private subnet of PC A. When it is not, `ranz` on PC B is answered with 403 `is not allowed to reach the API and the web UI` before the token is looked at: add its address on PC A with `ranz admin-sources set` (it replaces the list, so name the entries of `ranz admin-sources list` too), or install with `--admin-from`.
 
 ### 14. The link between the two PCs (link-check)
 
@@ -611,9 +633,9 @@ ranz get revisions
 ```
 
 - The Application log says `ranz-controller started`.
-- `ranz get events` holds one event, `controller-certificate-changed`, the change of step 21. The Controller also raises an event for an automatic rollback of an apply with `--confirm`, a pool near exhaustion and a refused enrolment, and none of that happened. The refusals of step 20 are failed authentications in the audit log.
+- `ranz get events` holds two events: `admin-sources-changed`, the admin source allowlist that the first start set (step 5), and `controller-certificate-changed`, the change of step 21. The Controller also raises an event for an automatic rollback of an apply with `--confirm`, a pool near exhaustion, a refused enrolment and a call from a source outside the allowlist (`admin-access-refused`), and none of that happened. The refusals of step 20 are failed authentications in the audit log.
 - `ranz get revisions` shows the first start, the apply of step 15 and the apply of step 20. The certificate of step 21 is no part of the Intent, so it made no revision.
-- In the web UI, Nodes shows both Nodes connected with the Generation they applied, `pc-a` the Node service and `pc-b` the stand-in, Revisions shows the three revisions, and Events shows the change of the certificate.
+- In the web UI, Nodes shows both Nodes connected with the Generation they applied, `pc-a` the Node service and `pc-b` the stand-in, Revisions shows the three revisions, and Events shows the allowlist of the first start and the change of the certificate.
 
 The Diagnostics page of the web UI has a button that downloads the diagnostics bundle of the Controller: its log, its Intent, revisions, events, licence, Nodes and address pools, and the state of its PC, with no secret in it. An operator or an admin may pull it, and every pull is in the audit log. This is the same by command, with the same token (the button calls this URL):
 
@@ -662,7 +684,7 @@ Run on each PC:
 ranz uninstall
 ```
 
-It stops and removes the services, takes out the drivers that `ranz install` put there (and leaves a driver that was there before), removes every rule of the group `Ranz VPN` from Windows Firewall, and removes `C:\Program Files\Ranz VPN`. `Get-NetFirewallRule -Group "Ranz VPN"` then finds no rule, and `ranz node state` says that the Node service is stopped. It keeps the data directories on purpose (ADR-0020): a later `ranz install` resumes with the same Configuration store and the same Controller store.
+It stops and removes the services, takes out the drivers that `ranz install` put there (and leaves a driver that was there before), removes every rule of the group `Ranz VPN` from Windows Firewall, and removes `C:\Program Files\Ranz VPN`. `Get-NetFirewallRule -Group "Ranz VPN"` then finds no rule, and `ranz node state` says that the Node service is stopped. It keeps the data directories on purpose (ADR-0020): a later `ranz install` resumes with the same Configuration store and the same Controller store, and the Controller keeps the admin source allowlist of that store (`ranz install` says so).
 
 ### 27. Remove what uninstall keeps (clean-up)
 
@@ -697,7 +719,7 @@ These are the ways this test fails, with what the code says. Whatever fails, tak
 - **The Controller stops at start and its log names rqlite.** Its store listens on `127.0.0.1:4001` and `127.0.0.1:4002`. Another program holds one of them.
 - **The Controller is on 5555 and you did not expect it.** Something held 443 at its first start. The log says `the TLS port fell back`, the Application log has a warning (ID 4) and `ranz status` says `"tlsPortFallback": true`. The fallback stays until you start with an explicit `-listen`, or delete the file `listen-fallback` in the data directory. Use `<PORT>` 5555 in every step.
 - **`ranz` says 401.** The token is wrong or deleted: `the bearer token is not a token of this controller, or it was deleted`. On PC A, `ranz controller reset-admin` makes a new admin token, prints it once and writes it to `admin.token`.
-- **`ranz` says 403 with `is not allowed to reach the API and the web UI`.** The admin source allowlist does not hold the address of the caller. `ranz admin-sources list` on PC A shows it. A loopback address always passes.
+- **`ranz` says 403 with `is not allowed to reach the API and the web UI`.** The admin source allowlist does not hold the address of the caller. `ranz admin-sources list` on PC A shows it. A loopback address always passes. `ranz install --controller` sets the list to loopback and the private subnets of PC A, so an address outside them, a public one for example, needs `ranz install --controller --admin-from PREFIX,...` at the install, or `ranz admin-sources set` on PC A afterwards.
 - **`ranz` on PC B says `the controller's certificate has the TLS fingerprint ..., not ...`.** `<FINGERPRINT>` is not the one of this Controller, or PC B reaches another machine than PC A.
 - **A connection from PC B times out.** The firewall rules of step 5 (`Get-NetFirewallRule -Group "Ranz VPN"`; `ranz install` says `install: warning: Windows Firewall was not set` when another firewall owns the policy), or PC B does not reach `<PC-A>`. `Test-NetConnection` of step 13 tells.
 - **`ranz node` says `needs administrator rights`.** The window is not elevated: the admin pipe of the Node service lets only SYSTEM and the Administrators in. `is stopped` (`does not run here`) means that the Node service is stopped: `Start-Service ranzvpnserver`.
@@ -720,6 +742,7 @@ The job `first_test` of `.github/workflows/windows.yml` runs on `windows-latest`
 - **One machine plays both PCs.** The runner is PC A and PC B. It switches the `RANZ_*` variables of the window when the PC changes, so that PC B reads the Controller through the address of the runner and the fingerprint, as a second PC would. `<PC-A>` is the address of the runner that is not loopback. Step 10 finds the install of step 5 there already, which is safe.
 - **The Node service of the runner joins.** Step 20 runs on the one Node service of the runner, as `pc-a`, in place of the stand-in for that Node; the stand-in keeps playing `pc-b`. Before the settings of the runbook, the script sets a wrong TLS fingerprint and then a wrong static key with `ranz node controller set`, and waits for the node log to say which check failed. After the right settings it waits for the refusal of the key in the audit log, then for `pc-a` connected at its acknowledged Generation, and after the restart of the Controller for `pc-a` connected again.
 - **The certificate is replaced for real.** Step 21 makes the CA and the certificate with `ranz cert` for the address of the runner, gives the service account of the Controller the key file, and sets the certificate. The script reads the answer (the two Nodes pinned, the new fingerprint), the log, the events and the audit log, and checks that the Nodes that were connected stayed connected: the Controller log has no new `node connected` line. A certificate for another host is refused with its reason, and the certificate in use stays. The Node service must hold the new fingerprint and keep it in its settings. After the restart of the Controller and then of the Node service, both Nodes are connected again at their acknowledged Generation, and the node log has no new failure of the fingerprint check. PC B reaches the Controller with no fingerprint once it trusts the CA, with the new fingerprint, and the web UI answers 200 to a client that checks the chain. With the CA out of the store, `ranz` without the fingerprint is refused with `unknown authority`.
+- **The admin source allowlist is read back.** The script checks the line of `ranz install` about the list (step 5), the lines of the first start in `controller.log` about the list and the starter rule (step 6), and `adminAccess` and `starterRule` of `ranz status` (step 7). PC B then reaches the Controller from the address of the runner, which is not loopback, so the list must hold it: on a private subnet it is in the default list, and when the address is not private the script adds it with `ranz admin-sources set` first, as the troubleshooting says, and counts that change among the events of steps 21 and 23.
 - **The firewall, the audit log and the state of the Node are read back.** After each install the script reads the rules of the group `Ranz VPN` from Windows Firewall, with their protocols, ports and programs: the three of the Node and the Controller, the same rules (by their ids) after the second install of step 10, none after the uninstall. It reads the enrolments and the refusal of the key of step 20 with `ranz get audit`, checks that a call without a valid token is refused, and reads `ranz node state` of the Node service before and after it joins, and once it is uninstalled.
 - **A Gap is read from the sources.** At the Gap step, which the script runs last, it looks in the sources for what the document says is missing: a data transport of the Node service that dials a peer (Gap 3). When it is there, the job fails, until this file has real steps for it. It also checks that the closed Gaps stay closed: the Node service sets the control stream of its overlay, the CLI has the verbs of steps 20 and 21, `ranz install` knows the firewall, and the CLI has the verbs for the audit log and the state of a Node. So does the part of Gap 3 that SDN-93 closed: a Node dials a peer through its endpoints.
 - **What CI cannot do.** It cannot try two PCs, a browser, or the Gaps. The web UI is checked by its pages and by the API calls that the pages make. The overlay between two Nodes is the stand-in, with one real Wintun adapter and a fake host.
