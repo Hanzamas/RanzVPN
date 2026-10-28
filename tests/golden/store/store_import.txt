@@ -1,4 +1,4 @@
-schema 1
+schema 2
 setting name="ImportedFrom" value="fork_server.config"
 network name="DEFAULT" mode="l2" online=1
 network name="SALES" mode="l2" online=0
@@ -16,3 +16,7 @@ certificate usage="server" network=none user=none subject="CN=ranz-certdl-tls" t
 certificate usage="user" network="SALES" user="carol" subject="CN=ranz-certdl-https" thumbprint="D6B5303BB746EBCA5CD879E55670A4AB05091507"
 admin name="administrator" role="owner" network=none password="unset"
 admin name="administrator@SALES" role="hub-admin" network="SALES" password="unset"
+network_vlans network="DEFAULT" tpid="0x8100" untagged=1
+network_vlans network="SALES" tpid="0x8100" untagged=1
+rule network="DEFAULT" position=1 name="DEFAULT.default-allow" priority=1000000 action="allow" protocol="any" direction="forward" active=1 note="The default of the fork's access list: a frame that no entry matches passes"
+rule network="SALES" position=1 name="SALES.default-allow" priority=1000000 action="allow" protocol="any" direction="forward" active=1 note="The default of the fork's access list: a frame that no entry matches passes"

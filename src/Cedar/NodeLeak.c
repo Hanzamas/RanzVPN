@@ -17,6 +17,8 @@
 
 #include "Core/Control.h"
 
+#include "NodeGateway.h"
+
 // Whether the route c of a peer is one that a VRF of the peer leaks into a VRF of the node
 static bool NodeLeakIs(const CONTROL_ROUTE *c) {
 	return (c->PeerVrfId != 0 && c->PeerVrfId != c->VrfId);
@@ -66,7 +68,9 @@ UINT NodeLeakRoutes(const CONTROL_STATE *st, NODE_VRF_ROUTE *routes) {
 // be built.
 NODE_VRF_TABLES *NodeLeakNewTables(const CONTROL_STATE *st, const NODE_VRF_ROUTE *routes, UINT num, void **hops) {
 	UINT num_leaks = NodeLeakRoutes(st, NULL);
-	UINT num_hops = st->NumPeers + num_leaks;
+	// The next hops of the groups of gateways come after those of the leaked routes (NodeGateway.c; SDN-19, #195)
+	UINT num_groups = NodeGatewayGroups(st, NULL, NULL);
+	UINT num_hops = st->NumPeers + num_leaks + num_groups;
 	void **all = ZeroMalloc(sizeof(void *) * MAX(num_hops, 1));
 	UINT *vrfs = ZeroMalloc(sizeof(UINT) * MAX(num_hops, 1));
 	UINT k = st->NumPeers;
@@ -84,6 +88,10 @@ NODE_VRF_TABLES *NodeLeakNewTables(const CONTROL_STATE *st, const NODE_VRF_ROUTE
 			}
 		}
 	}
+
+	// ... each with the peer of the first gateway of its group, until the group picks one for a packet
+	if (num_groups != 0)
+		NodeGatewayGroups(st, hops, all + st->NumPeers + num_leaks);
 
 	NODE_VRF_TABLES *v = NodeNewVrfTables(st->Generation, routes, num, all, num_hops);
 	Free(all);

@@ -149,3 +149,8 @@ ranz.control.v1.OperationResult.entries max_count:512
 ranz.control.v1.TableEntry.mac max_size:6
 ranz.control.v1.TableEntry.address max_size:16
 ranz.control.v1.TableEntry.member max_size:64
+# The topology of a VRF and its gateways (SDN-19): the name of the hub node of a VRF of topology
+# hub-and-spoke, and the LAN subnets behind a node, 16 at most (controller/internal/intent
+# MaxLANSubnets). They make a Vrf object about 70 bytes larger and the NodeConfig about 500 bytes.
+ranz.control.v1.Vrf.hub max_size:64
+ranz.control.v1.NodeConfig.lan_subnets max_count:16

@@ -24,14 +24,15 @@ import (
 //	                          the token to FILE, for -token-file; without it the token is printed.
 //	ranz node login [flags]   enrol this Node as a device of the user who signs in (nodelogin.go)
 //
-// The flags -server and -tls-fingerprint are the connection flags of the CLI, with the same environment
-// variables. A user token lasts 12 hours, and no longer than its user; ranz user role (userrole.go) gives
-// a user its API role.
+// The flags -server, -tls-fingerprint and -controller-dir are the connection flags of the CLI, with the same
+// environment variables, and a loopback address is checked as the CLI checks it (loopback.go; AUD1-DT-13,
+// #461): a login sends a password or a code, which must not reach another program of this host. A user token
+// lasts 12 hours, and no longer than its user; ranz user role (userrole.go) gives a user its API role.
 func init() {
 	register("login", func(args []string) int { return runLogin(context.Background(), args, os.Stdin, os.Stdout, os.Stderr) })
 }
 
-const loginUsage = `usage: ranz login [-server URL] [-tls-fingerprint HEX] [-device | -user NAME [-password-file FILE]] [-o FILE]`
+const loginUsage = `usage: ranz login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device | -user NAME [-password-file FILE]] [-o FILE]`
 
 // openBrowser opens a page in the browser of the user (browser_windows.go, browser_other.go); the tests
 // replace it with a browser of their own.
@@ -52,7 +53,7 @@ type signedIn struct {
 func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("ranz login", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	server, fingerprint := connectionFlags(flags)
+	server, fingerprint, controllerDir := connectionFlags(flags)
 	device := flags.Bool("device", false, "sign in with a device code, on any other device: for a host without a browser")
 	user := flags.String("user", "", "sign in with the password of this user, which -password-file holds")
 	passwordFile := flags.String("password-file", "-", "the file that holds the password of -user, one line; - for standard input")
@@ -71,7 +72,7 @@ func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout, stder
 		flags.Usage()
 		return 2
 	}
-	lc, err := loginClient(*server, *fingerprint)
+	lc, err := loginClient(*server, *fingerprint, *controllerDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "ranz login:", err)
 		return 1
@@ -113,22 +114,24 @@ func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout, stder
 	return printJSON(stdout, stderr, "ranz login", signedIn{Token: tok.Token, Expires: tok.Expires, TokenFile: *out})
 }
 
-// connectionFlags adds the connection flags of the CLI that a login uses to flags: -server and
-// -tls-fingerprint, with their environment variables.
-func connectionFlags(flags *flag.FlagSet) (server, fingerprint *string) {
+// connectionFlags adds the connection flags of the CLI that a login uses to flags: -server,
+// -tls-fingerprint and -controller-dir, with their environment variables.
+func connectionFlags(flags *flag.FlagSet) (server, fingerprint, controllerDir *string) {
 	s := os.Getenv("RANZ_SERVER")
 	if s == "" {
 		s = "https://127.0.0.1"
 	}
 	server = flags.String("server", s, "the URL of the controller's HTTP API")
 	fingerprint = flags.String("tls-fingerprint", os.Getenv("RANZ_TLS_FINGERPRINT"), "accept only the controller's certificate with this TLS fingerprint (ranz status prints it)")
-	return server, fingerprint
+	controllerDir = flags.String("controller-dir", os.Getenv("RANZ_CONTROLLER_DIR"), "the data directory of the controller on this host, which holds the TLS fingerprint that a loopback address is checked by; the one of the service when left out")
+	return server, fingerprint, controllerDir
 }
 
 // loginClient returns the client of the logins of the controller at server, which checks its
-// certificate as the CLI does (newClient), with the TLS fingerprint pinned when it is set.
-func loginClient(server, fingerprint string) (*login.Client, error) {
-	c, err := newClient(server, "", "", fingerprint)
+// certificate as the CLI does (newClient): by the TLS fingerprint when it is set, and toward a
+// loopback address by the one in the data directory controllerDir of the controller of this host.
+func loginClient(server, fingerprint, controllerDir string) (*login.Client, error) {
+	c, err := newClient(server, "", "", fingerprint, controllerDir)
 	if err != nil {
 		return nil, err
 	}
