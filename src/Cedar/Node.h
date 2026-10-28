@@ -1,5 +1,5 @@
 // Node.h
-// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeEndpoints.c, NodeHarden.c, NodeLeak.c, NodeListener.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeState.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
+// Header of the Node module (Node.c, NodeBgp.c, NodeClient.c, NodeController.c, NodeDhcp.c, NodeDns.c, NodeEndpoints.c, NodeFlap.c, NodeHarden.c, NodeLeak.c, NodeListener.c, NodeMirror.c, NodeNat.c, NodeOverlay.c, NodePolicy.c, NodeSession.c, NodeShape.c, NodeState.c, NodeTable.c, NodeVrf.c, NodeVrfAdapter.c, NodeWintun.c, NodeWorker.c): the node of the new core
 
 #ifndef NODE_H
 #define NODE_H
@@ -103,6 +103,16 @@
 // The handshakes of the streams that the overlay accepts (NodeHandshake.c; AUD1-DT-1, #449)
 #define NODE_OVERLAY_HANDSHAKES        64 // Handshakes in flight at most, without MaxHandshakes in the configuration
 #define NODE_OVERLAY_HANDSHAKE_WORKERS 16 // Threads of the pool that runs them, one handshake each at a time
+
+// The session flap (NodeFlap.c; AUD1-DT-11, #459)
+#define NODE_FLAP_LIMIT  5     // Replacements of the session of one peer in the window above which the overlay reports it, without FlapLimit in the configuration
+#define NODE_FLAP_WINDOW 60000 // ms of that window, without FlapWindow in the configuration
+
+// How the overlay of a node reaches a peer (NODE_OVERLAY_SESSION.Path; NodeAgent.c, CORE-S5-5 #411)
+#define NODE_PATH_NONE   0 // Not yet: no stream session and no datagram path
+#define NODE_PATH_STREAM 1 // Its stream session (QUIC, TLS or mimic): the Noise session of its Tunnel
+#define NODE_PATH_RELAY  2 // The datagram path of the peer agent, through a Relay
+#define NODE_PATH_DIRECT 3 // The datagram path of the peer agent, on a direct path (ICE or a punch, CORE-S5-3 and CORE-S5-4)
 
 // The Mirrors of a node (NodeMirror.c; SDN-23, #199)
 #define NODE_MIRROR_ETHER     14                 // Bytes of the Ethernet header in front of the IP packet of a copy
@@ -247,6 +257,9 @@ typedef void(NODE_REFUSED_PROC)(NODE *n, void *param, const char *name);
 // Runs once the control pipe of a mimicry sidecar exists and before the sidecar starts, with the name of the pipe: a
 // test that connects another client to it (NODE_MIMIC_TEST)
 typedef void(NODE_MIMIC_LAUNCH_PROC)(void *param, const wchar_t *pipe);
+// Takes the peer layer of the peer agent of the overlay once it starts, and NULL before it stops (NodeOverlayStart; NodeAgent.c,
+// CORE-S5-5 #411), so that the network of a test hands it the datagrams for the node; after NULL the network hands it none
+typedef void(NODE_PATH_ATTACH_PROC)(NODE *n, void *param, PEER_AGENT *agent);
 
 // What a test changes in the way a node starts its mimicry sidecars (NODE.MimicTest; NodeMimic.c)
 struct NODE_MIMIC_TEST {
@@ -463,6 +476,10 @@ struct NODE {
 
 	// The throttle of the Login (NodeThrottle.c; AUD1-DT-5, #453), from NewNode to FreeNode
 	struct NODE_THROTTLE *LoginThrottle;
+
+	// The peer agent of the overlay (NodeAgent.c; CORE-S5-5, #411): the datagram path to the peers that the node reaches on no
+	// stream session, NULL while the overlay does not run
+	struct NODE_AGENT *volatile Agent;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -496,6 +513,20 @@ struct NODE_OVERLAY_CONFIG {
 	// Takes the peer whose handshake failed on a stream that the overlay dialled (CORE-H5-R, #443), NULL for none; with
 	// AdapterParam
 	NODE_REFUSED_PROC *Refused;
+
+	// The session flap (NodeFlap.c; AUD1-DT-11, #459): the replacements of the session of one peer in FlapWindow ms above
+	// which the overlay reports it as an Event, 0 for NODE_FLAP_LIMIT, and the window, 0 for NODE_FLAP_WINDOW
+	UINT FlapLimit;
+	UINT FlapWindow;
+
+	// The network of the datagram path of the peer agent (NodeAgent.c; CORE-S5-5, #411), NULL for a UDP socket of its own, as a
+	// Node service has it: the send procedure of its datagrams with its first parameter, and the procedure that hands the
+	// network its peer layer, with AdapterParam (the NAT simulator of the vpntest harness)
+	PEER_SEND_PROC *PathSend;
+	void *PathSendParam;
+	NODE_PATH_ATTACH_PROC *PathAttach;
+	// The configuration of the peer layer of the agent, NULL for PeerDefaultConfig: the shorter timers of a test
+	const PEER_CONFIG *PathConfig;
 };
 
 // What NodeOverlayGetStatus reports
@@ -524,6 +555,11 @@ struct NODE_OVERLAY_STATUS {
 	UINT64 HandshakesTimedOut; // Closed because they did not finish in NODE_OVERLAY_HANDSHAKE
 	UINT64 HandshakesFailed;   // Closed because they failed within it
 	UINT64 HandshakesRefused;  // Streams refused at the accept, because MaxHandshakes were in flight
+
+	// The sessions that a new handshake of the key of a peer replaced, and the session flaps that the overlay reported as
+	// Events (NodeFlap.c; AUD1-DT-11, #459)
+	UINT64 SessionsReplaced;
+	UINT64 SessionFlaps;
 };
 
 // One peer of the overlay and its Noise session, as NodeOverlayGetSessions reports it (SDN-91, #396)
@@ -532,6 +568,12 @@ struct NODE_OVERLAY_SESSION {
 	bool Up;                             // Its Noise session is up ...
 	char Transport[TRANSPORT_NAME_SIZE]; // ... over this transport ...
 	UINT64 Since;                        // ... since this GetTickCount64
+
+	// How the overlay reaches the peer now (NODE_PATH_*), and the records of the overlay that went to it and came from it on its
+	// datagram path (NodeAgent.c; CORE-S5-5, #411)
+	UINT Path;
+	UINT64 DatagramsOut;
+	UINT64 DatagramsIn;
 };
 
 // What NodePolicyGetVrf reports of the policy of a VRF of a node: its Network in the policy engine (Core/Policy.h)
@@ -700,6 +742,8 @@ struct NODE_LISTENER_STATUS {
 	bool Fallback;
 	// The certificate of both, by its thumbprint, "" while none runs
 	char Thumbprint[MAX_SIZE];
+	// The decoy that the TLS of the new protocol runs with (AUD1-DT-4, #452), "" for none
+	char Decoy[MAX_SIZE];
 	// Why the listeners do not run, "" while they do or no Listener asks for them
 	char Error[MAX_SIZE];
 	// The streams that the overlay took from the listeners
@@ -707,6 +751,14 @@ struct NODE_LISTENER_STATUS {
 	// The runs of the ACME sidecar, and the certificates of ACME that the listeners took
 	UINT64 AcmeRuns;
 	UINT64 AcmeIssued;
+	// What the limits for a source of the two listeners refused, since the node started (AUD1-DT-3, #451): the front door
+	// on TCP, QUIC on UDP, where msquic.dll is present (HasQuic), and what msquic does about a flood of Initial packets
+	SOURCE_LIMIT_STATS FrontDoorLimits;
+	bool HasQuic;
+	SOURCE_LIMIT_STATS QuicLimits;
+	UINT QuicRetryMemoryLimit; // The retry setting of msquic, read back from it
+	bool QuicRetrying;         // msquic answers new connections with a retry now
+	UINT64 QuicRetries;        // The retry packets that msquic sent
 };
 
 // What NodeGetStatus reports
@@ -899,6 +951,8 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size);
 void NodeOverlayGetStatus(NODE *n, NODE_OVERLAY_STATUS *st);
 UINT NodeOverlayGetSessions(NODE *n, NODE_OVERLAY_SESSION *list, UINT max, char *listener, UINT listener_size);
 UINT NodeOverlayEndpoints(NODE *n, const char *name, struct CONTROL_ENDPOINT *out, UINT max);
+struct CONTROL_EVENT;
+UINT NodeOverlayGetEvents(NODE *n, struct CONTROL_EVENT *list, UINT max);
 
 // NodeEndpoints.c
 UINT NodeEndpointsTargets(const struct CONTROL_ENDPOINT *endpoints, UINT num, TRANSPORT **known, UINT num_known, TRANSPORT_TARGET *targets, UINT max);

@@ -11,6 +11,9 @@
 //   bgp is, answers the HTTP-01 challenge, installs the certificate in the store with its key in the software key
 //   storage provider and gives its thumbprint; a thread of the Listener runs it again every NODE_LISTENER_ACME_CHECK, and
 //   it renews the certificate RenewDays before its end. A new certificate starts the listeners again with it.
+// The Listener may name a decoy (AUD1-DT-4, #452): the loopback address and port of a site on the node. The TLS of the new
+// protocol then reads the first frame of each stream with the static key of the node, and passes a prober, one whose first
+// frame does not open under it, to the site byte for byte (Core/TransportDecoy.c); without a decoy it closes the stream.
 // The overlay takes the streams of both listeners as those of its own (NodeListenerAccept): a peer of the desired state
 // opens its Noise session on one, and the static key of the handshake names the peer. A state without a Listener stops
 // the listeners: the node listens on no port of its own. When TCP 443 is taken, the front door listens on
@@ -34,9 +37,16 @@
 
 #include "NodeInternal.h"
 
+#include <ws2tcpip.h>
+
+#include <string.h>
+
 // The Listener of a node: the one of the state applied last, and the listeners that run for it
 struct NODE_LISTENER {
 	NODE *Node;
+	// The static key of the node, which outlives the Listener: the TLS of the new protocol opens the first frame of a
+	// stream with it to tell a prober from a peer (the decoy; AUD1-DT-4, #452)
+	PEER_KEY *Key;
 	// The fields below: NodeListenerAccept holds it shared, a change of the listeners exclusive
 	SRWLOCK Lock;
 	// The Listener applied last, and whether there is one
@@ -71,11 +81,17 @@ struct NODE_LISTENER {
 	HANDLE AcmeNow;
 	volatile LONG64 AcmeRuns;
 	volatile LONG64 AcmeIssued;
+	// What the limits for a source of the listeners that went away refused (AUD1-DT-3, #451): the front door and QUIC, so
+	// the counters of the status go on over a restart of the listeners. The lock guards them.
+	SOURCE_LIMIT_STATS FrontDoorGone;
+	SOURCE_LIMIT_STATS QuicGone;
 };
 
 // Whether two Listeners are the same
 static bool NodeListenerSame(const CONTROL_LISTENER *a, const CONTROL_LISTENER *b) {
 	if (StrCmp(a->Name, b->Name) != 0 || a->Port != b->Port || a->QuicPort != b->QuicPort || a->Source != b->Source)
+		return false;
+	if (StrCmp(a->Decoy, b->Decoy) != 0)
 		return false;
 	if (StrCmp(a->Path, b->Path) != 0 || StrCmp(a->PasswordFile, b->PasswordFile) != 0 || StrCmp(a->Thumbprint, b->Thumbprint) != 0)
 		return false;
@@ -91,18 +107,82 @@ static bool NodeListenerSame(const CONTROL_LISTENER *a, const CONTROL_LISTENER *
 	return true;
 }
 
+// Whether decoy is a loopback address and a port: "127.x.y.z:port" or "[::1]:port", the address in numbers and the port 1 to
+// 65535. A decoy is a site on the node, so the node refuses any other address, a name included, whoever sent it.
+static bool NodeListenerDecoyIsLoopback(const char *decoy) {
+	char host[TRANSPORT_ADDRESS_SIZE];
+	struct in_addr v4;
+	struct in6_addr v6;
+
+	const char *colon = (decoy != NULL ? strrchr(decoy, ':') : NULL);
+	if (colon == NULL || colon == decoy)
+		return false;
+
+	UINT len = (UINT)(colon - decoy);
+	const char *h = decoy;
+	bool bracket = (decoy[0] == '[');
+	if (bracket) {
+		if (len < 3 || colon[-1] != ']')
+			return false;
+		h++;
+		len -= 2;
+	}
+	if (len == 0 || len >= sizeof(host))
+		return false;
+	Copy(host, (void *)h, len);
+	host[len] = 0;
+
+	const char *port = colon + 1;
+	UINT digits = StrLen(port);
+	if (digits == 0 || digits > 5)
+		return false;
+	UINT number = 0;
+	for (UINT i = 0; i < digits; i++) {
+		if (port[i] < '0' || port[i] > '9')
+			return false;
+		number = number * 10 + (UINT)(port[i] - '0');
+	}
+	if (number == 0 || number > 65535)
+		return false;
+
+	if (bracket)
+		return (inet_pton(AF_INET6, host, &v6) == 1 && IN6_IS_ADDR_LOOPBACK(&v6));
+
+	return (inet_pton(AF_INET, host, &v4) == 1 && (ntohl(v4.s_addr) >> 24) == 127);
+}
+
 // The owner of the front door: the TLS listener of the new protocol takes every TLS connection (TransportTake)
 static bool NodeListenerTake(void *param, SOCKET s) {
 	return TransportTake((TRANSPORT_LISTENER *)param, (UINT_PTR)s);
+}
+
+// Add what the limits for a source of a listener refused, which goes away, to the total of its kind
+static void NodeListenerAddRefused(SOURCE_LIMIT_STATS *total, const SOURCE_LIMIT_STATS *s) {
+	total->Admitted += s->Admitted;
+	total->RefusedFull += s->RefusedFull;
+	total->RefusedSource += s->RefusedSource;
+	total->RefusedRate += s->RefusedRate;
+	total->RefusedHandshake += s->RefusedHandshake;
 }
 
 // Stop the listeners that run: the front door first, so that no connection reaches the TLS listener once it closes, then
 // the listeners. Their transports retire, since the overlay may still hold their streams. The caller holds the lock
 // exclusive.
 static void NodeListenerDown(NODE_LISTENER *l) {
-	if (l->FrontDoor != NULL)
+	if (l->FrontDoor != NULL) {
+		FRONT_DOOR_STATS fs;
+
+		FrontDoorGetStats(l->FrontDoor, &fs);
+		NodeListenerAddRefused(&l->FrontDoorGone, &fs.Limits);
 		FrontDoorStop(l->FrontDoor);
+	}
 	l->FrontDoor = NULL;
+	if (l->Quic != NULL) {
+		TRANSPORT_QUIC_STATS qs;
+
+		if (TransportQuicGetStats(l->Quic, &qs))
+			NodeListenerAddRefused(&l->QuicGone, &qs.Limits);
+	}
 
 	if (l->TlsListener != NULL)
 		TransportCloseListener(l->TlsListener);
@@ -139,6 +219,21 @@ static bool NodeListenerUp(NODE_LISTENER *l, const char *thumb) {
 	// The TLS of the new protocol: TLS 1.3 alone, the fixed policy of the surface
 	TransportTlsDefaultConfig(&tc, thumb, true);
 	tc.Versions = TRANSPORT_TLS_13;
+
+	// The decoy (AUD1-DT-4, #452): a prober, one whose first frame does not open under the static key of the node, is passed
+	// to the site on the loopback interface that the Listener names. Without one, as before, it meets a closed connection.
+	if (IsEmptyStr(c->Decoy) == false) {
+		if (NodeListenerDecoyIsLoopback(c->Decoy) == false || l->Key == NULL) {
+			Format(l->Error, sizeof(l->Error), "the decoy %s is not a loopback address and a port, such as 127.0.0.1:8080", c->Decoy);
+			return false;
+		}
+		StrCpy(tc.Decoy, sizeof(tc.Decoy), c->Decoy);
+		if (l->Key->Identity != NULL)
+			tc.DecoyIdentity = l->Key->Identity;
+		else
+			tc.DecoyKey = l->Key->Private;
+	}
+
 	l->Tls = TransportTlsServerNew(&tc);
 	l->TlsListener = (l->Tls != NULL ? TransportListen(l->Tls, "") : NULL);
 	if (l->TlsListener == NULL) {
@@ -200,6 +295,10 @@ static bool NodeListenerUp(NODE_LISTENER *l, const char *thumb) {
 		NodeLog(n, "Listener %s: TCP port 443 is taken, so the front door listens on TCP port %u instead (the fallback of ADR-0035)", c->Name, (UINT)l->Port);
 	NodeLog(n, "Listener %s: the front door listens on TCP port %u and QUIC on UDP port %u, with the certificate %s; the new protocol takes TLS 1.3 only",
 	        c->Name, (UINT)l->Port, (UINT)l->QuicPort, thumb);
+	if (IsEmptyStr(c->Decoy) == false)
+		NodeLog(n, "Listener %s: a prober of the TLS of the new protocol is passed to the decoy %s", c->Name, c->Decoy);
+	else
+		NodeLog(n, "Listener %s: no decoy, so a prober of the TLS of the new protocol meets a closed connection", c->Name);
 
 	return true;
 }
@@ -483,12 +582,13 @@ static void NodeListenerAcmeStop(NODE_LISTENER *l) {
 //
 
 // Start the Listener of a node with its overlay: it listens on nothing until a state names a Listener
-void NodeListenerStart(NODE *n) {
+void NodeListenerStart(NODE *n, PEER_KEY *key) {
 	if (n == NULL || n->Listener != NULL)
 		return;
 
 	NODE_LISTENER *l = ZeroMalloc(sizeof(NODE_LISTENER));
 	l->Node = n;
+	l->Key = key;
 	InitializeSRWLock(&l->Lock);
 	l->RetiredTls = NewListFast(NULL);
 	l->RetiredQuic = NewListFast(NULL);
@@ -626,11 +726,38 @@ void NodeListenerGetStatus(NODE *n, NODE_LISTENER_STATUS *st) {
 			st->Source = l->Config.Source;
 		}
 		st->Running = (l->FrontDoor != NULL);
+		if (st->Running)
+			StrCpy(st->Decoy, sizeof(st->Decoy), l->Config.Decoy);
 		st->Port = l->Port;
 		st->QuicPort = l->QuicPort;
 		st->Fallback = l->Fallback;
 		StrCpy(st->Thumbprint, sizeof(st->Thumbprint), l->Thumbprint);
 		StrCpy(st->Error, sizeof(st->Error), l->Error);
+
+		// What the limits for a source refused: the listeners that went away, and the ones that run
+		st->FrontDoorLimits = l->FrontDoorGone;
+		st->QuicLimits = l->QuicGone;
+		if (l->FrontDoor != NULL) {
+			FRONT_DOOR_STATS fs;
+
+			FrontDoorGetStats(l->FrontDoor, &fs);
+			NodeListenerAddRefused(&st->FrontDoorLimits, &fs.Limits);
+			st->FrontDoorLimits.Pending = fs.Limits.Pending;
+			st->FrontDoorLimits.Sources = fs.Limits.Sources;
+		}
+		if (l->Quic != NULL) {
+			TRANSPORT_QUIC_STATS qs;
+
+			st->HasQuic = TransportQuicGetStats(l->Quic, &qs);
+			if (st->HasQuic) {
+				NodeListenerAddRefused(&st->QuicLimits, &qs.Limits);
+				st->QuicLimits.Pending = qs.Limits.Pending;
+				st->QuicLimits.Sources = qs.Limits.Sources;
+				st->QuicRetryMemoryLimit = qs.RetryMemoryLimit;
+				st->QuicRetrying = qs.DosMode;
+				st->QuicRetries = qs.Retries;
+			}
+		}
 	}
 	ReleaseSRWLockShared(&l->Lock);
 

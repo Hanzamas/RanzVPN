@@ -85,6 +85,11 @@ src/Core  FrontDoorHandoffDecode  fuzz_frontdoor
 src/Core  ControlInput   fuzz_control
 src/Core  ControlDecode  fuzz_control  via ControlInput
 src/Core  ControlApply   fuzz_control  via ControlInput
+# The Relay objects of a state and the Signals that the Controller carries (CORE-S5-5 #411): ControlInput hands an Update to
+# ControlCopyRelays and a Signal to ControlTakeSignal, and the frames of TestRelaysAndSignals in the corpus of fuzz_control hold
+# both; neither name has a parser word, both are listed as the readers of the controller's bytes that they are
+src/Core  ControlCopyRelays  fuzz_control  via ControlInput
+src/Core  ControlTakeSignal  fuzz_control  via ControlInput
 
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
@@ -117,6 +122,9 @@ src/Cedar  NodeMimicParseBind     fuzz_nodemimic
 src/Cedar  NodeMimicParseAnswer   fuzz_nodemimic
 # The Capabilities of the Node (ONE-3 #312) come from the host, not from a peer
 src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: it asks Windows for the architecture of the host, whether the services SeLow and xdp are registered and whether three files of System32 exist
+# The peer agent of the overlay (CORE-S5-5 #411) takes the Signals that the Controller carries from a peer: no parser word in the
+# name, listed as the reader of a peer's bytes that it is
+src/Cedar  NodeAgentSignal  exempt  hands the envelope of a Signal as it came to PeerOpenSignal (fuzz_peer), which opens and decodes it; it reads only what that gave
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
@@ -173,6 +181,12 @@ controller/internal/export  Target.Validate  FuzzValidate
 # The audit log (SDN-49 #242): the filter of GET /api/v1/audit, and the audit targets (webhooks and syslog receivers) that an operator sets through the API
 controller/internal/audit   ParseFilter           FuzzParseFilter
 controller/internal/export  Target.ValidateAudit  FuzzValidateAudit
+
+# The live operations (SDN-50 #243): the entries of a table that a node lists in its OperationResult, which TableOperation takes
+# when they are well formed and in number, and the reason of a ban that an operator gives the API, which BanUser checks. Neither
+# function has a parser word in its name, and each is listed with the function that reads the bytes
+controller/internal/controller  Controller.TableOperation  FuzzTableEntries   via tableEntries
+controller/internal/controller  Controller.BanUser         FuzzCheckBanReason  via checkBanReason
 
 # The licence keys (SDN-30 #206) and the revocation list (SEC-5 #283)
 controller/internal/licence  Parse             FuzzParse

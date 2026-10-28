@@ -32,6 +32,7 @@
 #define QUIC_BACKLOG     16     // Accepted streams a listener holds before it drops the oldest
 #define QUIC_DIAL_POLL   50     // How often a dial checks its cancel while it waits to connect (ms)
 #define QUIC_PEER_STREAM 4      // Bidirectional streams the peer may open on a connection
+#define QUIC_REMOTE_SIZE 64     // The address of the other end of a connection with its NUL: [IPv6]:port is 47 bytes at most
 
 // The msquic API, opened once per process through LoadLibrary and ref-counted over the transports
 static SRWLOCK g_quic_lock = SRWLOCK_INIT;
@@ -52,12 +53,16 @@ typedef struct QUIC_NET {
 	UCHAR Binding[NOISE_MAX_BINDING];         // The server's tls-server-end-point, computed at New
 	UINT BindingSize;                         // ... its size (server only; a client learns it per connection)
 	volatile LONG BoundPort;                  // The port the last listener bound (a listener on port 0)
+	SOURCE_LIMITS *Limits;                    // A server: the limits for a source of its listeners (SourceLimit.h)
+	volatile LONG DosMode;                    // msquic answers new connections with a retry now (the DOS_MODE_CHANGED event) ...
+	volatile LONG64 DosChanges;               // ... and how often it changed
 } QUIC_NET;
 
 // A listener: its backlog of accepted streams, each the control stream of one connection
 typedef struct QUIC_LISTENER {
 	QUIC_NET *Net;                           // The transport
 	HQUIC Listener;                          // The msquic listener
+	volatile LONG Refs;                      // The app plus every connection it accepted, which may outlive its close
 	SRWLOCK Lock;                            // The queue below
 	CONDITION_VARIABLE Changed;              // A stream was queued, or the listener closed
 	struct QUIC_STREAM *Queue[QUIC_BACKLOG]; // The control streams dialled and not accepted, oldest first
@@ -79,6 +84,9 @@ typedef struct QUIC_CONN {
 	bool BindingBad;                     // A client that pinned another certificate: the binding is wrong
 	UCHAR Exporter[NOISE_EXPORTER_SIZE]; // The TLS exporter of the connection, the binding of its streams
 	bool Exported;                       // ... taken when the handshake completed
+	char Remote[QUIC_REMOTE_SIZE];       // The address of the other end, "host:port": taken when the handshake completed, "" until then (AUD1-DT-11, #459)
+	SOURCE_KEY Key;                      // The source of a connection that a listener accepted
+	volatile LONG Pending;               // 1 while the limits count it as one that has not finished its handshake
 } QUIC_CONN;
 
 // A stream: the TRANSPORT stream object, a synchronous byte stream over an async msquic stream
@@ -344,6 +352,22 @@ static bool QuicOpenConfiguration(QUIC_NET *net) {
 	}
 
 	return QuicLoadCredential(net);
+}
+
+// The limits of a server transport (AUD1-DT-3, #451): the limits for a source of its listeners, and the retry of msquic. A
+// connection that msquic accepts from a source is counted until its handshake is done (QuicConnLeave), and the memory that
+// the handshakes of the process may hold before msquic asks for a retry is set from the configuration. msquic keeps that
+// setting for the process, so it holds for every listener in it. False when either cannot be set: a listener without
+// either is no listener of this transport.
+static bool QuicStartLimits(QUIC_NET *net) {
+	UINT limit = (net->Cfg.RetryMemoryLimit != 0 ? net->Cfg.RetryMemoryLimit : TRANSPORT_QUIC_RETRY_DEFAULT);
+	UINT16 retry = (UINT16)(limit > 0xFFFF ? 0xFFFF : limit);
+
+	net->Limits = SourceLimitsNew(&net->Cfg.Limits);
+	if (net->Limits == NULL)
+		return false;
+
+	return QUIC_SUCCEEDED(g_quic->SetParam(NULL, QUIC_PARAM_GLOBAL_RETRY_MEMORY_PERCENT, sizeof(retry), &retry));
 }
 
 //
@@ -642,6 +666,19 @@ static UINT QuicStreamBinding(void *stream, UCHAR *binding, UINT max, UINT *size
 	return type;
 }
 
+// The address of the other end of the connection of a stream, which the connection took when it came up (AUD1-DT-11, #459)
+static bool QuicStreamRemote(void *stream, char *address, UINT size) {
+	const QUIC_CONN *c = ((const QUIC_STREAM *)stream)->Conn;
+	size_t len = strnlen(c->Remote, sizeof(c->Remote));
+
+	if (len == 0 || len >= size)
+		return false;
+
+	CopyMemory(address, c->Remote, len);
+	address[len] = 0;
+	return true;
+}
+
 static bool QuicStreamRekey(void *stream) {
 	// QUIC holds the keys; the outer key update is QUIC_PARAM_CONN_FORCE_KEY_UPDATE of the private
 	// header, which this transport does not set yet. The session asks for it on its schedule, and
@@ -654,6 +691,20 @@ static bool QuicStreamRekey(void *stream) {
 // The connections
 //
 
+// The connection of a listener has finished its handshake, or is gone: the limits for a source count it no more. Once only.
+static void QuicConnLeave(QUIC_CONN *c) {
+	if (c->Listener != NULL && InterlockedExchange(&c->Pending, 0) == 1)
+		SourceLimitsLeave(c->Net->Limits, &c->Key);
+}
+
+// Release one reference of a listener: free it once it is closed and every connection that it accepted is gone. A
+// connection outlives the close of its listener, and the client's control stream may reach it only after that close,
+// so the stream must still find the listener closed, never freed memory.
+static void QuicListenerRelease(QUIC_LISTENER *l) {
+	if (l != NULL && InterlockedDecrement(&l->Refs) == 0)
+		QuicRelease(l, sizeof(QUIC_LISTENER));
+}
+
 // Release one reference of a connection: free it once the callback and every stream are gone
 static void QuicConnRelease(QUIC_CONN *c) {
 	if (c == NULL || InterlockedDecrement(&c->Refs) != 0)
@@ -664,7 +715,19 @@ static void QuicConnRelease(QUIC_CONN *c) {
 	// The handle is closed with the last reference, once the callback and every stream are done with it
 	if (c->Connection != NULL)
 		g_quic->ConnectionClose(c->Connection);
+	QuicListenerRelease(c->Listener);
 	QuicRelease(c, sizeof(QUIC_CONN));
+}
+
+// Take the address of the other end of the connection, as msquic has it once the connection is up, into Remote; it stays
+// empty when msquic tells none (AUD1-DT-11, #459)
+static void QuicConnRemote(QUIC_CONN *c, HQUIC connection) {
+	QUIC_ADDR remote;
+	UINT32 size = sizeof(remote);
+
+	ZeroMemory(&remote, sizeof(remote));
+	if (QUIC_SUCCEEDED(g_quic->GetParam(connection, QUIC_PARAM_CONN_REMOTE_ADDRESS, &size, &remote)))
+		TransportAddressText((const struct sockaddr *)&remote, c->Remote, sizeof(c->Remote));
 }
 
 // The connection callback: it records the certificate's binding and the exporter of the connection,
@@ -677,6 +740,8 @@ static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnC
 		// The exporter now, while msquic still holds the TLS state, which a server lets go of once the
 		// client acknowledged its handshake; the streams of the connection take it as their binding
 		c->Exported = TransportQuicExporter(g_quic, connection, c->Net->Server, c->Exporter);
+		QuicConnRemote(c, connection);
+		QuicConnLeave(c);
 		InterlockedExchange(&c->Connected, 1);
 		if (c->Ready != NULL)
 			SetEvent(c->Ready);
@@ -732,6 +797,7 @@ static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnC
 	}
 
 	case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
+		QuicConnLeave(c);
 		InterlockedExchange(&c->Failed, 1);
 		if (c->Ready != NULL)
 			SetEvent(c->Ready);
@@ -743,7 +809,8 @@ static _Function_class_(QUIC_CONNECTION_CALLBACK) QUIC_STATUS QUIC_API QuicConnC
 	}
 }
 
-// A new connection wrapper, with one reference for the callback. NULL when there is no memory.
+// A new connection wrapper, with one reference for the callback; a connection of a listener holds one of the listener
+// too. NULL when there is no memory.
 static QUIC_CONN *QuicConnNew(QUIC_NET *net, QUIC_LISTENER *listener, bool want_ready) {
 	QUIC_CONN *c = (QUIC_CONN *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(QUIC_CONN));
 
@@ -751,7 +818,6 @@ static QUIC_CONN *QuicConnNew(QUIC_NET *net, QUIC_LISTENER *listener, bool want_
 		return NULL;
 
 	c->Net = net;
-	c->Listener = listener;
 	c->Refs = 1;
 	if (want_ready) {
 		c->Ready = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -759,6 +825,10 @@ static QUIC_CONN *QuicConnNew(QUIC_NET *net, QUIC_LISTENER *listener, bool want_
 			QuicRelease(c, sizeof(QUIC_CONN));
 			return NULL;
 		}
+	}
+	if (listener != NULL) {
+		InterlockedIncrement(&listener->Refs);
+		c->Listener = listener;
 	}
 
 	return c;
@@ -773,18 +843,44 @@ static _Function_class_(QUIC_LISTENER_CALLBACK) QUIC_STATUS QUIC_API QuicListene
 
 	UNREFERENCED_PARAMETER(listener);
 
+	// msquic starts or stops answering new connections with a retry, because the handshakes hold too much memory (or
+	// no more): the status of the node tells
+	if (event->Type == QUIC_LISTENER_EVENT_DOS_MODE_CHANGED) {
+		InterlockedExchange(&l->Net->DosMode, event->DOS_MODE_CHANGED.DosModeEnabled ? 1 : 0);
+		InterlockedIncrement64(&l->Net->DosChanges);
+		return QUIC_STATUS_SUCCESS;
+	}
+
 	if (event->Type != QUIC_LISTENER_EVENT_NEW_CONNECTION)
 		return QUIC_STATUS_SUCCESS;
 
+	// The limits for a source decide first: a connection over the caps or the rates of its source is refused, before it
+	// holds more than the msquic state that the Initial packet made
+	SOURCE_KEY key;
+	UINT64 now = GetTickCount64();
+
+	SourceLimitsKey((const struct sockaddr *)event->NEW_CONNECTION.Info->RemoteAddress, &key);
+	if (SourceLimitsEnter(l->Net->Limits, &key, now) != SOURCE_LIMIT_ADMIT)
+		return QUIC_STATUS_CONNECTION_REFUSED;
+	if (SourceLimitsHandshake(l->Net->Limits, &key, now) != SOURCE_LIMIT_ADMIT) {
+		SourceLimitsLeave(l->Net->Limits, &key);
+		return QUIC_STATUS_CONNECTION_REFUSED;
+	}
+
 	// A new connection: give it its callback and its configuration, which proceeds with the handshake
 	QUIC_CONN *c = QuicConnNew(l->Net, l, false);
-	if (c == NULL)
+	if (c == NULL) {
+		SourceLimitsLeave(l->Net->Limits, &key);
 		return QUIC_STATUS_OUT_OF_MEMORY;
+	}
 
+	c->Key = key;
+	c->Pending = 1;
 	c->Connection = event->NEW_CONNECTION.Connection;
 	g_quic->SetCallbackHandler(event->NEW_CONNECTION.Connection, (void *)QuicConnCallback, c);
 	if (QUIC_FAILED(g_quic->ConnectionSetConfiguration(event->NEW_CONNECTION.Connection, l->Net->Configuration))) {
 		c->Connection = NULL; // msquic closes a connection whose acceptance failed
+		QuicConnLeave(c);
 		QuicConnRelease(c);
 		return QUIC_STATUS_INTERNAL_ERROR;
 	}
@@ -806,6 +902,7 @@ static bool QuicListen(void *param, const char *address, void **listener) {
 	if (l == NULL)
 		return false;
 	l->Net = net;
+	l->Refs = 1;
 	InitializeSRWLock(&l->Lock);
 	InitializeConditionVariable(&l->Changed);
 
@@ -813,6 +910,11 @@ static bool QuicListen(void *param, const char *address, void **listener) {
 		QuicRelease(l, sizeof(QUIC_LISTENER));
 		return false;
 	}
+
+	// msquic tells a listener when it starts or stops answering new connections with a retry only when the listener
+	// asks for it (AUD1-DT-3, #451): the state of the node counts it
+	BOOLEAN dos_events = TRUE;
+	(void)g_quic->SetParam(l->Listener, QUIC_PARAM_DOS_MODE_EVENTS, sizeof(dos_events), &dos_events);
 
 	QuicMakeAddr(host, port, &addr);
 	if (QUIC_FAILED(g_quic->ListenerStart(l->Listener, &net->Alpn, 1, &addr))) {
@@ -882,8 +984,10 @@ static void QuicCloseListener(void *listener) {
 		QuicStreamRelease(drop[i]);
 	}
 
+	// The connections that it accepted hold the listener until they are gone: a stream that reaches one of them later
+	// finds the listener closed and is aborted
 	g_quic->ListenerClose(l->Listener);
-	QuicRelease(l, sizeof(QUIC_LISTENER));
+	QuicListenerRelease(l);
 }
 
 //
@@ -974,6 +1078,7 @@ static void QuicFill(TRANSPORT *t, QUIC_NET *net) {
 	t->Close = QuicStreamClose;
 	t->Binding = QuicStreamBinding;
 	t->Rekey = QuicStreamRekey;
+	t->Remote = QuicStreamRemote;
 }
 
 void TransportQuicDefaultConfig(TRANSPORT_QUIC_CONFIG *cfg, const char *thumbprint, bool machine_store) {
@@ -1031,6 +1136,8 @@ static TRANSPORT *TransportQuicNew(const TRANSPORT_QUIC_CONFIG *cfg, bool server
 
 	if (ok)
 		ok = QuicOpenConfiguration(net);
+	if (ok && server)
+		ok = QuicStartLimits(net);
 
 	if (ok == false) {
 		TransportQuicFree(t);
@@ -1057,6 +1164,43 @@ USHORT TransportQuicBoundPort(TRANSPORT *t) {
 	return (USHORT)InterlockedCompareExchange(&((QUIC_NET *)t->Param)->BoundPort, 0, 0);
 }
 
+bool TransportQuicGetStats(TRANSPORT *t, TRANSPORT_QUIC_STATS *st) {
+	UINT64 counters[64];
+	UINT32 size;
+	UINT16 retry = 0;
+
+	if (st == NULL)
+		return false;
+
+	ZeroMemory(st, sizeof(TRANSPORT_QUIC_STATS));
+	if (t == NULL || t->Param == NULL || t->Listen != QuicListen)
+		return false;
+
+	QUIC_NET *net = (QUIC_NET *)t->Param;
+	if (net->Server == false || net->Limits == NULL)
+		return false;
+
+	SourceLimitsGetStats(net->Limits, &st->Limits);
+	st->DosMode = (InterlockedCompareExchange(&net->DosMode, 0, 0) != 0);
+	st->DosModeChanges = (UINT64)InterlockedCompareExchange64(&net->DosChanges, 0, 0);
+
+	// What msquic holds, read back from it: the retry setting, and the counters of the process
+	size = sizeof(retry);
+	if (QUIC_SUCCEEDED(g_quic->GetParam(NULL, QUIC_PARAM_GLOBAL_RETRY_MEMORY_PERCENT, &size, &retry)))
+		st->RetryMemoryLimit = retry;
+
+	ZeroMemory(counters, sizeof(counters));
+	size = sizeof(counters);
+	if (QUIC_SUCCEEDED(g_quic->GetParam(NULL, QUIC_PARAM_GLOBAL_PERF_COUNTERS, &size, counters))) {
+		if (size >= (QUIC_PERF_COUNTER_SEND_STATELESS_RETRY + 1) * sizeof(UINT64))
+			st->Retries = counters[QUIC_PERF_COUNTER_SEND_STATELESS_RETRY];
+		if (size >= (QUIC_PERF_COUNTER_CONN_ACTIVE + 1) * sizeof(UINT64))
+			st->ActiveConnections = counters[QUIC_PERF_COUNTER_CONN_ACTIVE];
+	}
+
+	return true;
+}
+
 void TransportQuicFree(TRANSPORT *t) {
 	QUIC_NET *net;
 
@@ -1071,6 +1215,7 @@ void TransportQuicFree(TRANSPORT *t) {
 			g_quic->ConfigurationClose(net->Configuration);
 		if (net->Registration != NULL)
 			g_quic->RegistrationClose(net->Registration);
+		SourceLimitsFree(net->Limits);
 		SecureZeroMemory(net->Binding, sizeof(net->Binding));
 		QuicRelease(net, sizeof(QUIC_NET));
 		QuicApiClose();

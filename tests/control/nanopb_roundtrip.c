@@ -42,6 +42,10 @@ static const char *body_name(pb_size_t which) {
 		return "Telemetry";
 	case ranz_control_v1_ControlMessage_leases_tag:
 		return "Leases";
+	case ranz_control_v1_ControlMessage_operation_tag:
+		return "Operation";
+	case ranz_control_v1_ControlMessage_operation_result_tag:
+		return "OperationResult";
 	default:
 		return "nothing";
 	}
@@ -115,6 +119,15 @@ static int roundtrip(const char *path) {
 		break;
 	case ranz_control_v1_ControlMessage_leases_tag:
 		printf("%s: Leases of \"%s\", %u leases, %zu bytes\n", path, msg.body.leases.network, (unsigned)msg.body.leases.leases_count, n);
+		break;
+	case ranz_control_v1_ControlMessage_operation_tag:
+		printf("%s: Operation %llu of kind %d on \"%s\", %zu bytes\n", path, (unsigned long long)msg.body.operation.id,
+			   (int)msg.body.operation.kind, msg.body.operation.network, n);
+		break;
+	case ranz_control_v1_ControlMessage_operation_result_tag:
+		printf("%s: OperationResult %llu of status %d, %u entries of %u, %zu bytes\n", path, (unsigned long long)msg.body.operation_result.id,
+			   (int)msg.body.operation_result.status, (unsigned)msg.body.operation_result.entries_count,
+			   (unsigned)msg.body.operation_result.total, n);
 		break;
 	default:
 		fprintf(stderr, "%s: a control message with no body\n", path);

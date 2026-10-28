@@ -80,6 +80,11 @@ type Node struct {
 	// Signals receives every Signal that the controller forwarded to the node: peer names the
 	// node that sent it. When it is nil, nothing is delivered.
 	Signals chan *controlpb.Signal
+	// Operations answers the live operations that the controller sends the node (SDN-50, operations.go).
+	// A node reports the Capability operations only when it has one, and the controller sends no
+	// Operation to a node that does not; the simulator ends its stream at an Operation that it has no
+	// handler for, as a node ends its stream at a frame that it does not know.
+	Operations OperationHandler
 
 	mu      sync.Mutex
 	state   desired.State
@@ -204,13 +209,18 @@ func (n *Node) run(ctx context.Context, ep Endpoint) error {
 			}
 		case *controlpb.ControlMessage_Refuse:
 			return &RefusedError{Refuse: body.Refuse}
+		case *controlpb.ControlMessage_Operation:
+			// A live operation of an operator (SDN-50, operations.go)
+			if err := n.operate(conn, body.Operation); err != nil {
+				return err
+			}
 		case *controlpb.ControlMessage_Controllers:
 			if version < controlpb.SchemaVersion_SCHEMA_VERSION_2 {
 				return errors.New("nodesim: the controller sent a Controllers message to a node of schema version 1, which does not have it")
 			}
 			n.learn(body.Controllers)
 		default:
-			return errors.New("nodesim: the controller sent a frame that is neither an Update, a Signal, a Controllers message nor a Refuse")
+			return errors.New("nodesim: the controller sent a frame that is neither an Update, a Signal, a Controllers message, an Operation nor a Refuse")
 		}
 	}
 }

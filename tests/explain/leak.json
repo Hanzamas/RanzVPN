@@ -1,0 +1,36 @@
+{
+  "description": "Route leaking with route targets (SDN-7): shared and red leak into each other, blue leaks into shared but imports nothing. The policy of the VRF that leaked traffic goes into judges it, with the sender as the end outside the VRF, which only addresses match (SDN-8). A leak moves routes one way, so a packet that blue cannot route back is dropped by the Node of blue, and blue itself has no route to shared.",
+  "nodes": {"node-s": 1, "node-r": 33, "node-b": 97},
+  "intent": {"resources": [
+    {"kind": "VRF", "name": "shared", "spec": {"id": 10, "ula": "fd00:a::/48", "exportTargets": ["64512:10"], "importTargets": ["64512:1", "64512:2"]}},
+    {"kind": "VRF", "name": "red", "spec": {"id": 1, "ula": "fd00:1::/48", "exportTargets": ["64512:1"], "importTargets": ["64512:10"]}},
+    {"kind": "VRF", "name": "blue", "spec": {"id": 2, "ula": "fd00:2::/48", "exportTargets": ["64512:2"]}},
+    {"kind": "Network", "name": "shared-lan", "spec": {"vrf": "shared", "ipv4Pool": "10.100.0.0/24"}},
+    {"kind": "Network", "name": "red-lan", "spec": {"vrf": "red", "ipv4Pool": "10.1.0.0/24"}},
+    {"kind": "Network", "name": "blue-lan", "spec": {"vrf": "blue", "ipv4Pool": "10.2.0.0/24"}},
+    {"kind": "Node", "name": "node-s", "spec": {"vrfs": ["shared"], "tags": ["dns"], "addresses": {"shared-lan": "10.100.0.1"}}},
+    {"kind": "Node", "name": "node-r", "spec": {"vrfs": ["red"], "tags": ["app"], "addresses": {"red-lan": "10.1.0.1"}}},
+    {"kind": "Node", "name": "node-b", "spec": {"vrfs": ["blue"], "tags": ["lab"], "addresses": {"blue-lan": "10.2.0.1"}}},
+    {"kind": "Policy", "name": "shared-allow-all", "spec": {"vrf": "shared", "action": "allow"}},
+    {"kind": "Policy", "name": "red-from-shared-dns", "spec": {"vrf": "red", "action": "allow", "from": {"addresses": ["10.100.0.0/24"]}, "to": {"tags": ["app"]}, "protocol": "udp", "ports": [53]}},
+    {"kind": "Policy", "name": "red-from-shared-tcp", "spec": {"vrf": "red", "action": "allow", "from": {"addresses": ["10.100.0.0/24"]}, "to": {"tags": ["app"]}, "protocol": "tcp"}},
+    {"kind": "Policy", "name": "red-no-telnet", "spec": {"vrf": "red", "action": "deny", "priority": 50, "from": {"addresses": ["10.100.0.0/24"]}, "protocol": "tcp", "ports": [23]}},
+    {"kind": "Policy", "name": "blue-allow-all", "spec": {"vrf": "blue", "action": "allow"}}
+  ]},
+  "packets": [
+    {"name": "shared-to-red-dns", "from": "node-s", "to": "node-r", "protocol": "udp", "sourcePort": 40000, "port": 53,
+     "expect": {"delivered": true, "node": "node-r", "vrf": "red", "source": "10.100.0.1", "destination": "10.1.0.1", "rules": {"node-s": "shared-allow-all", "node-r": "red-from-shared-dns"}}},
+    {"name": "shared-to-red-ntp", "from": "node-s", "to": "node-r", "protocol": "udp", "sourcePort": 40001, "port": 123,
+     "expect": {"delivered": false, "node": "node-r", "reason": "policy", "rules": {"node-s": "shared-allow-all", "node-r": "default:deny"}}},
+    {"name": "shared-to-red-telnet", "from": "node-s", "to": "node-r", "protocol": "tcp", "sourcePort": 40002, "port": 23,
+     "expect": {"delivered": false, "node": "node-r", "reason": "policy", "rules": {"node-s": "shared-allow-all", "node-r": "red-no-telnet"}}},
+    {"name": "shared-to-red-ssh", "from": "node-s", "to": "10.1.0.1", "protocol": "tcp", "sourcePort": 40003, "port": 22,
+     "expect": {"delivered": true, "node": "node-r", "vrf": "red", "source": "10.100.0.1", "destination": "10.1.0.1", "rules": {"node-s": "shared-allow-all", "node-r": "red-from-shared-tcp"}}},
+    {"name": "red-to-shared", "from": "node-r", "to": "node-s", "protocol": "udp", "sourcePort": 40004, "port": 53,
+     "expect": {"delivered": false, "node": "node-r", "reason": "policy", "rules": {"node-r": "default:deny"}}},
+    {"name": "blue-to-shared", "from": "node-b", "to": "10.100.0.1", "protocol": "udp", "sourcePort": 40005, "port": 53,
+     "expect": {"delivered": false, "node": "node-b", "reason": "route"}},
+    {"name": "shared-to-blue", "from": "node-s", "to": "node-b", "protocol": "udp", "sourcePort": 40006, "port": 53,
+     "expect": {"delivered": false, "node": "node-b", "reason": "route", "rules": {"node-s": "shared-allow-all"}}}
+  ]
+}

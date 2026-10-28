@@ -7,8 +7,9 @@
 // arrived on its WireGuard interface and would leave on it again, of either family, and permit it between two Devices of
 // one VRF whose every packet the rules of the state let through both ways. The filters of the forward layers see the
 // interfaces and the addresses of a packet, and neither its protocol nor its ports, so a pair that a rule allows or
-// denies only some flows of stays apart. The filters are in a dynamic session of the filter engine, so they go when the
-// session closes; each state that the gateway applies opens a new one before the old one closes.
+// denies only some flows of stays apart whole (ADR-0029 amendment of 2026-10-27). The filters are in a dynamic session of
+// the filter engine, so they go when the session closes; each state that the gateway applies opens a new one before the
+// old one closes.
 
 #include "Node.h"
 

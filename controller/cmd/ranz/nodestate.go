@@ -20,7 +20,8 @@ import (
 // SYSTEM, the Administrators and the service itself may open (NodeState.c answers it): its Roles, its
 // control stream (the Controller, since when it is connected and the acknowledged Generation, or why
 // it is not), its Wintun adapters with their VRFs and addresses, the Noise sessions of its peers
-// with their transport and age, and its listeners. JSON, the default, is the answer of the service
+// with their transport and age, how it reaches each peer (on its stream session or through a Relay)
+// with the datagrams each way, and its listeners. JSON, the default, is the answer of the service
 // with the field service; a table is a few lines for a person. For a stopped service the verb says
 // that the service is stopped, with the exit code 3, as the status of a stopped service is in
 // scripts.
@@ -66,12 +67,17 @@ type nodeStateAdapter struct {
 	Addresses      []string `json:"addresses"`
 }
 
-// nodeStateSession is one peer of a Node and its Noise session.
+// nodeStateSession is one peer of a Node and its Noise session, and how the Node reaches it
+// (CORE-S5-5, #411): its path, stream while its session is up, relay or direct on the datagram path
+// of the peer agent, or none, with the records of the overlay that went each way on that path.
 type nodeStateSession struct {
-	Peer       string `json:"peer"`
-	Up         bool   `json:"up"`
-	Transport  string `json:"transport"`
-	AgeSeconds uint64 `json:"ageSeconds"`
+	Peer         string `json:"peer"`
+	Up           bool   `json:"up"`
+	Transport    string `json:"transport"`
+	AgeSeconds   uint64 `json:"ageSeconds"`
+	Path         string `json:"path"`
+	DatagramsOut uint64 `json:"datagramsOut"`
+	DatagramsIn  uint64 `json:"datagramsIn"`
 }
 
 // nodeStateListeners are the listeners of a Node: the data transport of its overlay, the front door
@@ -84,9 +90,46 @@ type nodeStateListeners struct {
 		TCPPort  int    `json:"tcpPort"`
 		QUICPort int    `json:"quicPort"`
 		Fallback bool   `json:"fallback"`
+		Decoy    string `json:"decoy"`
 		Error    string `json:"error"`
+		// Refused is what the limits for a source of the two listeners refused since the Node started
+		// (AUD1-DT-3, #451): the front door on TCP, and QUIC on UDP with what msquic does about a flood.
+		Refused struct {
+			TCP  nodeStateLimits `json:"tcp"`
+			QUIC struct {
+				nodeStateLimits
+				Available        bool   `json:"available"`
+				RetryMemoryLimit uint32 `json:"retryMemoryLimit"`
+				Retrying         bool   `json:"retrying"`
+				Retries          uint64 `json:"retries"`
+			} `json:"quic"`
+		} `json:"refused"`
 	} `json:"frontDoor"`
 	RelayUDPPort int `json:"relayUdpPort"`
+}
+
+// nodeStateLimits is what the limits for a source of one listener hold and refused: the connections
+// that wait for their handshake now, the sources it counts, the connections it admitted, and the
+// refusals by reason (SourceLimit.h).
+type nodeStateLimits struct {
+	Pending          uint32 `json:"pending"`
+	Sources          uint32 `json:"sources"`
+	Admitted         uint64 `json:"admitted"`
+	RefusedFull      uint64 `json:"refusedFull"`
+	RefusedSource    uint64 `json:"refusedSource"`
+	RefusedRate      uint64 `json:"refusedRate"`
+	RefusedHandshake uint64 `json:"refusedHandshake"`
+}
+
+// refusals is the sum of the refusals of one listener.
+func (s nodeStateLimits) refusals() uint64 {
+	return s.RefusedFull + s.RefusedSource + s.RefusedRate + s.RefusedHandshake
+}
+
+// limits is a listener's refusals in the words of the table: how many, and for which reason.
+func (s nodeStateLimits) limits() string {
+	return fmt.Sprintf("%d refused (%d over the cap in all, %d over the cap of a source, %d over the rate of connections, %d over the rate of handshakes), %d waiting for their handshake",
+		s.refusals(), s.RefusedFull, s.RefusedSource, s.RefusedRate, s.RefusedHandshake, s.Pending)
 }
 
 // nodeState runs ranz node state with args, the arguments after state.
@@ -148,6 +191,13 @@ func nodeStateTable(out io.Writer, a nodeStateAnswer) error {
 	}
 	l := a.Listeners
 	fmt.Fprintf(tw, "Listeners\toverlay %s; front door %s; relay %s\n", orNone(l.Overlay), frontDoor(l), portOrNone("UDP", l.RelayUDPPort))
+	if l.FrontDoor.Running {
+		r := l.FrontDoor.Refused
+		fmt.Fprintf(tw, "Refused on TCP\t%s\n", r.TCP.limits())
+		if r.QUIC.Available {
+			fmt.Fprintf(tw, "Refused on QUIC\t%s; retry %s, %d retries sent, limit %d/65535 of the memory\n", r.QUIC.limits(), retryWord(r.QUIC.Retrying), r.QUIC.Retries, r.QUIC.RetryMemoryLimit)
+		}
+	}
 	if err := tw.Flush(); err != nil {
 		return err
 	}
@@ -164,12 +214,12 @@ func nodeStateTable(out io.Writer, a nodeStateAnswer) error {
 
 	fmt.Fprintln(out)
 	tw = tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "PEER\tSESSION\tTRANSPORT\tAGE")
+	fmt.Fprintln(tw, "PEER\tSESSION\tTRANSPORT\tAGE\tPATH\tDATAGRAMS")
 	for _, s := range a.Sessions {
 		if s.Up {
-			fmt.Fprintf(tw, "%s\tup\t%s\t%ds\n", s.Peer, s.Transport, s.AgeSeconds)
+			fmt.Fprintf(tw, "%s\tup\t%s\t%ds\t%s\t%s\n", s.Peer, s.Transport, s.AgeSeconds, orNone(s.Path), datagrams(s))
 		} else {
-			fmt.Fprintf(tw, "%s\tdown\t-\t-\n", s.Peer)
+			fmt.Fprintf(tw, "%s\tdown\t-\t-\t%s\t%s\n", s.Peer, orNone(s.Path), datagrams(s))
 		}
 	}
 	if err := tw.Flush(); err != nil {
@@ -191,11 +241,19 @@ func frontDoor(l nodeStateListeners) string {
 		if f.Fallback {
 			s += " (TCP 443 was taken)"
 		}
-		return s
+		if f.Decoy != "" {
+			return s + ", decoy " + f.Decoy
+		}
+		return s + ", no decoy"
 	case f.Error != "":
 		return "not running: " + f.Error
 	}
 	return "none"
+}
+
+// datagrams is what went each way on the datagram path of a peer, in the words of the table.
+func datagrams(s nodeStateSession) string {
+	return fmt.Sprintf("%d out, %d in", s.DatagramsOut, s.DatagramsIn)
 }
 
 func portOrNone(protocol string, port int) string {
@@ -203,6 +261,15 @@ func portOrNone(protocol string, port int) string {
 		return "none"
 	}
 	return protocol + " " + strconv.Itoa(port)
+}
+
+// retryWord is the state of the retry of msquic in the words of the table: it is set on every start, and it answers new
+// connections once the handshakes hold more memory than its limit.
+func retryWord(answering bool) string {
+	if answering {
+		return "answering now"
+	}
+	return "armed"
 }
 
 func orNone(s string) string {

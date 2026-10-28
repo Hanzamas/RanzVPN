@@ -13,15 +13,19 @@ ranz_add_executable(vpntest HAMCORE
     ${RANZ_VPNTEST_SOURCES}
   # The session and crypto modules of the new core for nodelogin.c, the transport module for transporttest.c,
   # quictest.c and tlstest.c (the QUIC transport loads msquic.dll at run time, so no import library is linked), the VXLAN
-  # module for vxlantest.c, the switch module for switchtest.c, the policy engine for policytest.c; netapi32: the local
-  # account that stands for a domain account (NetUserAdd)
+  # module for vxlantest.c, the switch module for switchtest.c, the policy engine for policytest.c, the NAT simulator of
+  # the core tests and the messages of the control stream for relaypathtest.c (CORE-S5-5, #411); netapi32: the local
+  # account that stands for a domain account (NetUserAdd); the front door for sourcelimitstest.c
   LIBRARIES
+    corefrontdoor
     coretransport
     corenoise
     corecrypto
     corevxlan
     coreswitch
     corepolicy
+    natsim
+    corecontrolpb
     "netapi32.lib"
   # The resources test (runtime.c) compares every hamcore file the executable serves with its source
   # file. A C-only definition, so the resource scripts of vpntest do not get the quoted path.

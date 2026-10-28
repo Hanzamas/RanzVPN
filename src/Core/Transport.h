@@ -26,6 +26,7 @@
 #define CORE_TRANSPORT_H
 
 #include "Core/Noise.h"
+#include "Core/SourceLimit.h"
 
 #define TRANSPORT_NAME_SIZE    32  // A transport name with its terminating NUL
 #define TRANSPORT_ADDRESS_SIZE 256 // An address with its terminating NUL: a host and a port, a URL, a pipe name
@@ -66,6 +67,11 @@ typedef bool(TRANSPORT_REKEY_PROC)(void *stream);
 // (Core/FrontDoor.h; SDN-29, #205): it continues as one the listener accepted itself. It may be
 // NULL: a transport that is not over TCP takes none.
 typedef bool(TRANSPORT_TAKE_PROC)(void *listener, UINT_PTR socket);
+// Remote gives the address of the other end of a stream into address (size bytes at most, with its NUL) as the transport
+// knows it: "host:port", an IPv6 host in brackets. It is the source of a stream that a listener accepted, and the address
+// that a stream that was dialled connected to (AUD1-DT-11, #459). False when the transport does not know it, or it does
+// not fit. It may be NULL: a transport that tells no address.
+typedef bool(TRANSPORT_REMOTE_PROC)(void *stream, char *address, UINT size);
 
 // One transport: its name in a fallback list, its state and its procedures
 typedef struct TRANSPORT {
@@ -82,6 +88,7 @@ typedef struct TRANSPORT {
 	TRANSPORT_REKEY_PROC *Rekey;                  // Update the outer keys of a stream, or NULL
 	UINT Queue;                                   // TRANSPORT_QUEUE_*: the ingress queue of the sessions over it, NONE for none
 	TRANSPORT_TAKE_PROC *Take;                    // Take a connection that the front door routed to a listener, or NULL
+	TRANSPORT_REMOTE_PROC *Remote;                // The address of the other end of a stream, or NULL
 } TRANSPORT;
 
 // One entry of a fallback list: a transport and the address it dials
@@ -187,6 +194,9 @@ void TransportClose(TRANSPORT_STREAM *s);
 UINT TransportBinding(TRANSPORT_STREAM *s, UCHAR *binding, UINT max, UINT *size);
 bool TransportRekey(TRANSPORT_STREAM *s);
 TRANSPORT *TransportOf(TRANSPORT_STREAM *s);
+// The address of the other end of a stream, as the Remote procedure of its transport gives it (see TRANSPORT_REMOTE_PROC):
+// the source of a stream that a listener accepted. False, with address empty, when the transport tells none.
+bool TransportRemote(TRANSPORT_STREAM *s, char *address, UINT size);
 
 // The front door's handoff to a listener of this process (SDN-29, #205): the listener takes the TCP
 // connection socket (a SOCKET, blocking) and closes it in time; false, with the socket still the
@@ -274,9 +284,14 @@ UINT64 TransportQueueNow();
 // real transport, so that the harness races transports of different speeds. Its streams have no
 // channel binding, unless bound: each stream then has a random binding that both of its ends
 // give, which stands in for the exporter of a TLS or QUIC session. Free frees the transport once
-// its listeners are closed.
+// its listeners are closed. SetSource sets the address that the streams dialled from now on come from, as
+// the listener's end of each tells it ("198.51.100.7:40001", at most TRANSPORT_LOOPBACK_REMOTE - 1 bytes,
+// "" for none): the harness stands in for hosts of several addresses, as the address of a dialled TCP
+// connection does (AUD1-DT-11, #459). The dialler's end tells the address that it dialled.
+#define TRANSPORT_LOOPBACK_REMOTE 64 // The longest address that a loopback stream tells, with its NUL
 TRANSPORT *TransportLoopbackNew(const char *name, UINT dial_delay, bool bound);
 void TransportLoopbackFree(TRANSPORT *t);
+void TransportLoopbackSetSource(TRANSPORT *t, const char *source);
 
 // The outbound path of a client transport (TransportPath.c, SDN-61 #254): how its connection reaches the server. A
 // dial of TLS-443 goes direct, or through an outbound proxy: the system's, which WinHTTP finds for the server's URL
@@ -367,9 +382,29 @@ typedef struct TRANSPORT_QUIC_CONFIG {
 	UINT IdleTimeoutMs;                              // The QUIC idle timeout, 0 for TRANSPORT_QUIC_IDLE_DEFAULT
 	bool BreakBinding;                               // A client that changes the binding it computes: for the mismatch test
 	bool EndPointBinding;                            // Bind the tls-server-end-point, as before CORE-H5: for the test of an old node
+	SOURCE_LIMIT_CONFIG Limits;                      // A listener: the limits for a source (SourceLimit.h), a field of 0 takes its default
+	UINT RetryMemoryLimit;                           // A listener: the memory of the handshakes above which msquic answers a new connection with a retry, in 1/65535 of the memory of the machine; 0 for TRANSPORT_QUIC_RETRY_DEFAULT
 } TRANSPORT_QUIC_CONFIG;
 
 #define TRANSPORT_QUIC_IDLE_DEFAULT 30000 // The QUIC idle timeout without one in the configuration (ms)
+
+// The memory of the handshakes that a listener holds before it asks the peers of new connections to prove their address with
+// a retry (QUIC_PARAM_GLOBAL_RETRY_MEMORY_PERCENT of msquic, in 1/65535 of the memory of the machine). msquic's own
+// default is 65, about 0.1%, which a flood of Initial packets can fill before the listener refuses a source (FD-6, TR-5 of
+// docs/threat-model.md); this is a quarter of it, about 4 MiB on a machine with 16 GiB, which an honest site's handshakes
+// do not reach, and a flood meets retry after the first few thousand packets.
+#define TRANSPORT_QUIC_RETRY_DEFAULT 16
+
+// What a QUIC listener did (TransportQuicGetStats): the limits for a source, the setting of retry as msquic holds it now
+// and what msquic did
+typedef struct TRANSPORT_QUIC_STATS {
+	SOURCE_LIMIT_STATS Limits; // The connections that have not finished their handshake now, and what the limits refused
+	UINT RetryMemoryLimit;     // The retry setting that msquic holds, read back from it (QUIC_PARAM_GLOBAL_RETRY_MEMORY_PERCENT)
+	bool DosMode;              // msquic answers new connections with a retry now, because the handshakes hold too much memory
+	UINT64 DosModeChanges;     // The times it started or stopped
+	UINT64 Retries;            // The retry packets that msquic of this process sent, ever (QUIC_PERF_COUNTER_SEND_STATELESS_RETRY)
+	UINT64 ActiveConnections;  // The connections that msquic of this process holds now (QUIC_PERF_COUNTER_CONN_ACTIVE)
+} TRANSPORT_QUIC_STATS;
 
 // Fill cfg with the defaults: the name "quic", the ALPN "h3", the thumbprint of the server
 // certificate (upper-case hex, spaces and colons ignored) and the store it is in
@@ -389,6 +424,12 @@ TRANSPORT *TransportQuicServerNew(const TRANSPORT_QUIC_CONFIG *cfg);
 TRANSPORT *TransportQuicClientNew(const TRANSPORT_QUIC_CONFIG *cfg);
 USHORT TransportQuicBoundPort(TRANSPORT *t);
 void TransportQuicFree(TRANSPORT *t);
+
+// The counters of the listeners of a server transport (AUD1-DT-3, #451), at this moment; false for a transport that is not
+// a QUIC server. A listener of a server transport refuses a connection of a source over its caps or its rates, as the
+// front door does, and sets the retry of msquic (TRANSPORT_QUIC_RETRY_DEFAULT); the setting that this reports is read back
+// from msquic.
+bool TransportQuicGetStats(TRANSPORT *t, TRANSPORT_QUIC_STATS *st);
 
 // The msquic of the exporter (TransportQuicExporter.c; CORE-H5-R, #443). ConnectionExportKeyingMaterial sits in the
 // preview part of the msquic API table, which a later minor version may move or change, so a side reads the exporter

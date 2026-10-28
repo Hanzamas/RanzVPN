@@ -129,6 +129,7 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		self.WireguardPort = wireguardPort(in, name)
 		// The Listener of the node (listener.go; SDN-45)
 		self.Listener = listener(in, name)
+		self.ListenerDecoy = listenerDecoy(in, name)
 		// The endpoints of the node (endpoint.go; SDN-93)
 		self.Endpoints = endpoints(n)
 		// The tunnel endpoint of the node for the links of kind vxlan and geneve (link.go; SDN-76)
