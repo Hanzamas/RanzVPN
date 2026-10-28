@@ -116,6 +116,11 @@ src/Cedar  NodeMirrorCopy  fuzz_mirror
 # The DHCP responder of an L2 Network (SDN-43 #236) reads the frames that the members of the switch of the Network send:
 # the DHCP messages of the clients and of a DHCP server of the LAN, and the ARP requests
 src/Cedar  NodeDhcpInput  fuzz_nodedhcp
+# The gateway HA of the Node (SDN-19 #195) reads the control records that a peer sends on its Noise session as a probe or
+# its answer, and the IP packets of the host whose flow hash picks the gateway of a flow. NodeGatewayFlowHash has no parser
+# word in its name, listed as the reader of packets that it is; NodeGatewayControl hands a record to NodeGatewayParseProbe.
+src/Cedar  NodeGatewayParseProbe  fuzz_gateway
+src/Cedar  NodeGatewayFlowHash    fuzz_gateway
 # The stub resolver of overlay DNS (SDN-11 #187) reads the DNS queries that reach UDP port 53 of the node's addresses in a
 # VRF. No parser word in the name, listed as the parser it is
 src/Cedar  NodeDnsAnswer  fuzz_nodedns

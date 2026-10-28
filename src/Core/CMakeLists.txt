@@ -190,6 +190,9 @@ add_library(corecontrol STATIC
   ControlEvent.c
   # The Relays of a desired state and the Signals of the peers on the control stream (CORE-S5-5, #411)
   ControlSignal.c
+  # The hubs and the ECMP of the VRFs, the LAN subnets of a node and the gateways that are down in a desired state (SDN-19,
+  # #195)
+  ControlGateway.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")
