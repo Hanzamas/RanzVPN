@@ -17,6 +17,10 @@
 #    with USO and plain ones (#72, risk R1) and the benchmark of the batch sizes.
 # 5. The measurement of senders with USO on a KM-TEST adapter without an L2 adapter and on adapters with one, without a
 #    pause of the owner (vpntest kmtest xdp bare), printed for the record, then ranz uninstall.
+# The bridge of an L2 Network (CORE-S3-3, #73; seam 3 of #45): vpntest nicbridge after step 1 with SeLow, and after step
+# 2 with SeLow and then XDP, on the runner's NIC and on a KM-TEST adapter standing in for a Hyper-V switch (ADR-0002
+# amendment of 2026-10-21): foreign-MAC transmit and receive, coexistence with the host stack, the benchmark against
+# SeLow (NICBRIDGE BENCH lines), SeLow the default and Npcap, which no runner has, used only where it is installed.
 # Each run of vpntest is a process of its own with a time limit: a run that a driver keeps from ending fails its step,
 # and the job goes on with the next one.
 param(
@@ -45,6 +49,8 @@ $recoveryText = 'a recovery was asked for'
 # Minutes that a run of vpntest kmtest is given: its own watchdog (KMTEST_BUDGET of src/vpntest/kmtesttest.c, ten minutes
 # and the soak on top) and two more
 $kmtestMinutes = 12
+# ... and a run of vpntest nicbridge: its watchdog (NICBRIDGE_BUDGET of src/vpntest/nicbridgetest.c, eight minutes) and two more
+$nicbridgeMinutes = 10
 
 # A step that failed: the job goes on with the next one and fails at the end
 function Add-Failure([string] $step) {
@@ -73,26 +79,26 @@ function Read-Shared([string] $path) {
 	}
 }
 
-# Run vpntest kmtest with arguments as a process of its own, for $minutes at most: true when it printed its OK marker and
-# no leak, and ended. A run that does not end in time is stopped; a process whose I/O a driver keeps may not end even
-# then, and the job goes on without it.
-function Invoke-KmTest([string[]] $argv, [int] $minutes = $kmtestMinutes) {
+# Run vpntest kmtest, or the test $test, with arguments as a process of its own, for $minutes at most: true when it
+# printed its OK marker and no leak, and ended. A run that does not end in time is stopped; a process whose I/O a driver
+# keeps may not end even then, and the job goes on without it.
+function Invoke-KmTest([string[]] $argv, [int] $minutes = $kmtestMinutes, [string] $test = 'kmtest') {
 	$script:runs++
 	$out = Join-Path $env:RUNNER_TEMP "kmtest-$($script:runs).out"
 	$err = Join-Path $env:RUNNER_TEMP "kmtest-$($script:runs).err"
-	Write-Host "vpntest kmtest $($argv -join ' '), $minutes minutes at most"
-	$p = Start-Process -FilePath $vpntestExe -ArgumentList (@('kmtest') + $argv) -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
+	Write-Host "vpntest $test $($argv -join ' '), $minutes minutes at most"
+	$p = Start-Process -FilePath $vpntestExe -ArgumentList (@($test) + $argv) -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
 	# The handle keeps the exit code of the process
 	$null = $p.Handle
 	$ended = $p.WaitForExit($minutes * 60000)
 	if (-not $ended) {
 		Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
 		$ended = $p.WaitForExit(30000)
-		Write-Host "::error::vpntest kmtest $($argv -join ' ') did not end within $minutes minutes: stopped$(if (-not $ended) { ', and it does not end' })"
+		Write-Host "::error::vpntest $test $($argv -join ' ') did not end within $minutes minutes: stopped$(if (-not $ended) { ', and it does not end' })"
 	}
 	$text = (Read-Shared $out) + (Read-Shared $err)
 	Write-Host $text
-	$ok = $text -match '(?m)^KMTEST TEST OK' -and $text -match 'NO MEMORY LEAKS'
+	$ok = $text -match "(?m)^$($test.ToUpperInvariant()) TEST OK" -and $text -match 'NO MEMORY LEAKS'
 	return ($ok -and $ended)
 }
 
@@ -145,6 +151,8 @@ $r = Invoke-Ranz @('install', '--no-xdp')
 if ($r.Code -ne 0) { Add-Failure "ranz install --no-xdp exited with code $($r.Code)" }
 if (Test-Path -LiteralPath $xdpSys) { Add-Failure "$xdpSys is there after ranz install --no-xdp" }
 if (-not (Invoke-KmTest @('selow', 'quick'))) { Add-Failure 'vpntest kmtest selow quick: the fallback to SeLow' }
+# The bridge on SeLow, the default, with no XDP runtime on the machine
+if (-not (Invoke-KmTest @('selow') $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge selow: the bridge on SeLow' }
 
 # 2. The XDP runtime, production-signed
 $r = Invoke-Ranz @('install')
@@ -200,6 +208,9 @@ if (-not (Test-Path -LiteralPath $etl)) {
 	Write-Host "trace session file: $etl ($($bytes.Length) bytes), a recovery in it: $found"
 	if (-not $found) { Add-Failure "the trace session received no event with '$recoveryText'" }
 }
+
+# The bridge on SeLow and then on XDP, on the same attachments, which gives the benchmark of XDP against SeLow
+if (-not (Invoke-KmTest @('xdp') $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge xdp: the bridge on SeLow and on XDP' }
 
 # 3. The soak: an hour on the nightly run of a Sunday, two minutes otherwise
 $soak = 120
