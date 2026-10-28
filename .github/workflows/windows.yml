@@ -1713,7 +1713,8 @@ jobs:
   # on the nightly run of a Sunday), ranz uninstall and install after the traffic, and then the paused consumer and the
   # benchmark of the batch sizes. Each run of vpntest has a time limit. arm64 is L3 only (no XDP runtime and no SeLow
   # package for it): the l2adapter test of build_and_test shows that no L2 adapter is offered there.
-  # .github/scripts/kmtest.ps1.
+  # .github/scripts/kmtest.ps1. Then QTIP between two server node processes, each on its own KM-TEST adapter with XDP
+  # (CORE-S7-2, #83): .github/scripts/qtip.ps1.
   kmtest:
     needs: [build_and_test, sign_and_integrity]
     strategy:
@@ -1722,7 +1723,7 @@ jobs:
         runner: [windows-2022, windows-2025]
     name: kmtest (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 110
+    timeout-minutes: 135
     steps:
     - uses: actions/checkout@v4
     - name: Download the x64 binaries
@@ -1753,6 +1754,23 @@ jobs:
       timeout-minutes: 100
       run: |
         . .github/scripts/kmtest.ps1 -Ranz artifacts\ranz\ranz.exe -Vpntest artifacts\bin\vpntest.exe -Runner ${{ matrix.runner }}
+    # The msquic.dll of the pinned package next to vpntest, for the QTIP step below (CORE-S7-2, #83); the step of the L2
+    # adapter above needs none, so it comes after it
+    - name: Fetch msquic
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      run: |
+        .github/scripts/fetch-msquic.ps1 -Arch x64 -DllDir "${{ github.workspace }}\artifacts\bin"
+    # QTIP between two server node processes on this runner, each on its own KM-TEST adapter with XDP (CORE-S7-2, #83;
+    # ADR-0018 decision 5, ADR-0002 amendment of 2026-10-21): ranz install, vpntest qtip in one process, then node-s (vpntest
+    # qtip serve) with QTIP on 8443, whose TCP and UDP port must be held, and node-c (vpntest qtip dial), whose QTIP link to
+    # node-s goes to the job summary, then ranz uninstall (.github/scripts/qtip.ps1)
+    - name: QTIP between two server node processes
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      timeout-minutes: 20
+      run: |
+        . .github/scripts/qtip.ps1 -Ranz artifacts\ranz\ranz.exe -Vpntest artifacts\bin\vpntest.exe -Runner ${{ matrix.runner }}
 
   # The first test of the product on two PCs (docs/first-test.md, in simple English for the person who runs it by hand), proved on a
   # runner that plays both PCs, on windows-latest (x64) and windows-11-arm (arm64). .github/scripts/first-test.ps1 reads the
