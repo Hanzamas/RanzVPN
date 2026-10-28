@@ -5,12 +5,14 @@
 // destination (endpoint independent mapping) or once per destination address and port (address and port dependent
 // mapping, a symmetric NAT), on public ports that it allocates in order. It lets a datagram from outside in to a
 // mapping from any address (endpoint independent filtering) or only from an address and port that the mapping
-// sent to (address and port dependent filtering, section 5). What the network drops, it counts.
+// sent to (address and port dependent filtering, section 5). A NAT may age its mappings, as a real one does (RFC 4787
+// REQ-5): a mapping that carried no datagram out for its timeout is gone, and a datagram from outside to it is dropped.
+// What the network drops, it counts.
 //
 // One delivery thread hands the datagrams to PeerInput of the receiving host, in the order they were sent, so
 // that a receiver that sends from its receive procedure queues behind the datagram it took.
 
-#include "coretest.h"
+#include "natsim.h"
 
 #include <string.h>
 
@@ -27,6 +29,7 @@ typedef struct NATSIM_MAPPING {
 	USHORT Port;                     // The public port
 	UINT NumSent;                    // The destinations it sent to
 	PEER_ADDR Sent[NATSIM_MAX_SENT]; // ... their addresses and ports
+	UINT64 LastOut;                  // When it last carried a datagram out (GetTickCount64)
 } NATSIM_MAPPING;
 
 struct NATSIM_NAT {
@@ -39,6 +42,8 @@ struct NATSIM_NAT {
 	UINT NumMappings;                             // Its mappings
 	NATSIM_MAPPING Mappings[NATSIM_MAX_MAPPINGS]; // ... in the order it made them
 	volatile LONG Filtered;                       // Datagrams from outside that its filter dropped
+	UINT Timeout;                                 // ms after which a mapping that carried nothing out is gone, 0 for never
+	volatile LONG Expired;                        // Mappings that aged out
 };
 
 struct NATSIM_HOST {
@@ -74,13 +79,16 @@ struct NATSIM {
 	NATSIM_TAP *Tap;                     // Sees every datagram sent and may drop it, NULL for none
 	void *TapParam;                      // ... its parameter
 	volatile LONG Hold;                  // The delivery waits while it is set
+	NATSIM_HOST *Delivering;             // The host whose peer layer the delivery thread hands a datagram to now
+	DWORD ThreadId;                      // The delivery thread
 };
 
 static bool NatSimSameIp(const PEER_ADDR *a, const PEER_ADDR *b) {
 	return memcmp(a->Ip, b->Ip, sizeof(a->Ip)) == 0;
 }
 
-// The delivery thread: one datagram at a time, in queue order
+// The delivery thread: one datagram at a time, in queue order. The host that it delivers to is marked while it does, so
+// that a peer layer that leaves its host (NatSimAttach) is never handed a datagram after.
 static DWORD WINAPI NatSimThread(void *param) {
 	NATSIM *s = (NATSIM *)param;
 
@@ -98,6 +106,7 @@ static DWORD WINAPI NatSimThread(void *param) {
 				s->Tail = NULL;
 		}
 		PEER_AGENT *agent = (item != NULL ? item->To->Agent : NULL);
+		s->Delivering = (agent != NULL ? item->To : NULL);
 		LeaveCriticalSection(&s->Lock);
 
 		if (item == NULL) {
@@ -107,6 +116,10 @@ static DWORD WINAPI NatSimThread(void *param) {
 
 		if (agent != NULL)
 			PeerInput(agent, &item->From, item->Data, item->Size);
+
+		EnterCriticalSection(&s->Lock);
+		s->Delivering = NULL;
+		LeaveCriticalSection(&s->Lock);
 
 		HeapFree(GetProcessHeap(), 0, item);
 		InterlockedIncrement(&s->Done);
@@ -122,7 +135,7 @@ NATSIM *NatSimNew() {
 
 	InitializeCriticalSection(&s->Lock);
 	s->Event = CreateEventW(NULL, FALSE, FALSE, NULL);
-	s->Thread = CreateThread(NULL, 0, NatSimThread, s, 0, NULL);
+	s->Thread = CreateThread(NULL, 0, NatSimThread, s, 0, &s->ThreadId);
 
 	return s;
 }
@@ -177,6 +190,14 @@ void NatSimSetAllocation(NATSIM_NAT *n, UINT allocation, UINT32 seed) {
 	n->RandState = (seed != 0 ? seed : 1);
 }
 
+// Set the time after which a mapping of the NAT that carried no datagram out is gone, in ms (0: never, the default). A
+// datagram out refreshes its mapping, one in does not (RFC 4787 REQ-6 lets a NAT choose).
+void NatSimSetTimeout(NATSIM *s, NATSIM_NAT *n, UINT timeout) {
+	EnterCriticalSection(&s->Lock);
+	n->Timeout = timeout;
+	LeaveCriticalSection(&s->Lock);
+}
+
 // A host with the address addr behind the NAT nat, or on the public side for NULL
 NATSIM_HOST *NatSimAddHost(NATSIM *s, NATSIM_NAT *nat, const PEER_ADDR *addr) {
 	NATSIM_HOST *h = NULL;
@@ -193,11 +214,23 @@ NATSIM_HOST *NatSimAddHost(NATSIM *s, NATSIM_NAT *nat, const PEER_ADDR *addr) {
 	return h;
 }
 
-// The peer layer that the datagrams to the host go to; NULL drops them
+// The peer layer that the datagrams to the host go to; NULL drops them. A peer layer that leaves its host gets no
+// datagram once this returns: it waits for the one that the delivery thread may be handing it, unless it runs on that
+// thread, so the caller may free the layer after.
 void NatSimAttach(NATSIM_HOST *h, PEER_AGENT *a) {
-	EnterCriticalSection(&h->Sim->Lock);
-	h->Agent = a;
-	LeaveCriticalSection(&h->Sim->Lock);
+	NATSIM *s = h->Sim;
+
+	while (true) {
+		EnterCriticalSection(&s->Lock);
+		bool busy = (a == NULL && s->Delivering == h && GetCurrentThreadId() != s->ThreadId);
+		if (busy == false)
+			h->Agent = a;
+		LeaveCriticalSection(&s->Lock);
+
+		if (busy == false)
+			return;
+		Sleep(1);
+	}
 }
 
 // Whether the NAT already has a mapping on the public port, so a new one cannot reuse it
@@ -244,9 +277,30 @@ static USHORT NatSimAllocPort(NATSIM_NAT *n, const PEER_ADDR *inside) {
 	return n->NextPort++;
 }
 
-// The mapping of the NAT for a datagram from the private address inside to remote: the one there is, or a new one.
-// The caller holds the lock.
-static NATSIM_MAPPING *NatSimMap(NATSIM_NAT *n, const PEER_ADDR *inside, const PEER_ADDR *remote) {
+// Age the mappings of the NAT at now: the ones that carried no datagram out for its timeout are gone. The caller holds
+// the lock.
+static void NatSimAge(NATSIM_NAT *n, UINT64 now) {
+	UINT kept = 0;
+
+	if (n->Timeout == 0)
+		return;
+
+	for (UINT i = 0; i < n->NumMappings; i++) {
+		if (now - n->Mappings[i].LastOut >= n->Timeout) {
+			InterlockedIncrement(&n->Expired);
+			continue;
+		}
+		if (kept != i)
+			n->Mappings[kept] = n->Mappings[i];
+		kept++;
+	}
+
+	n->NumMappings = kept;
+}
+
+// The mapping of the NAT for a datagram from the private address inside to remote at now: the one there is, or a new
+// one. The caller holds the lock.
+static NATSIM_MAPPING *NatSimMap(NATSIM_NAT *n, const PEER_ADDR *inside, const PEER_ADDR *remote, UINT64 now) {
 	NATSIM_MAPPING *m = NULL;
 
 	for (UINT i = 0; i < n->NumMappings && m == NULL; i++) {
@@ -273,6 +327,7 @@ static NATSIM_MAPPING *NatSimMap(NATSIM_NAT *n, const PEER_ADDR *inside, const P
 				known = true;
 		if (known == false && m->NumSent < NATSIM_MAX_SENT)
 			m->Sent[m->NumSent++] = *remote;
+		m->LastOut = now;
 	}
 
 	return m;
@@ -333,10 +388,13 @@ bool NatSimSend(void *param, const PEER_ADDR *dst, const void *data, UINT size) 
 
 	EnterCriticalSection(&s->Lock);
 	{
+		UINT64 now = GetTickCount64();
+
 		item->From = h->Addr;
 
 		if (h->Nat != NULL) {
-			NATSIM_MAPPING *m = NatSimMap(h->Nat, &h->Addr, dst);
+			NatSimAge(h->Nat, now);
+			NATSIM_MAPPING *m = NatSimMap(h->Nat, &h->Addr, dst, now);
 
 			item->From = h->Nat->Public;
 			item->From.Port = (m != NULL ? m->Port : 0);
@@ -349,6 +407,7 @@ bool NatSimSend(void *param, const PEER_ADDR *dst, const void *data, UINT size) 
 		for (UINT i = 0; i < s->NumNats && to == NULL && routed == false; i++) {
 			if (NatSimSameIp(&s->Nats[i].Public, dst)) {
 				routed = true;
+				NatSimAge(&s->Nats[i], now);
 				to = NatSimInbound(s, &s->Nats[i], dst->Port, &item->From);
 			}
 		}
@@ -411,6 +470,11 @@ void NatSimHold(NATSIM *s, bool hold) {
 // The datagrams from outside that the filter of the NAT dropped
 UINT NatSimFiltered(NATSIM_NAT *n) {
 	return (UINT)InterlockedCompareExchange(&n->Filtered, 0, 0);
+}
+
+// The mappings of the NAT that aged out (NatSimSetTimeout)
+UINT NatSimExpired(NATSIM_NAT *n) {
+	return (UINT)InterlockedCompareExchange(&n->Expired, 0, 0);
 }
 
 // The datagrams to an address that no host and no NAT of the network has
