@@ -39,6 +39,7 @@
 
 #include "NodeAgent.h"
 #include "NodeCaps.h"
+#include "NodeEvpn.h"
 #include "NodeInternal.h"
 #include "NodeLink.h"
 
@@ -555,6 +556,11 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 	if (vt != NULL && NodeOverlayEnds(packet, packet_size, src, dst, &addr_size)) {
 		UINT from = NodeVrfLookup(vt, src, addr_size);
 
+		// A packet of the peer to the fabric of an EVPN gateway: no route of the VRF holds its destination, an IP prefix route
+		// of the fabric does (NodeEvpn.c; SDN-25, #201)
+		if (from < v->NumHops && v->Hops[from] == p && NodeEvpnTransit(ov->Node, v, vrf_id, from, packet, packet_size))
+			return;
+
 		ok = (from < v->NumHops && v->Hops[from] == p && NodeVrfLookup(vt, dst, addr_size) == NODE_VRF_LOCAL);
 		// The policy of the VRF judges the packet as the peer sent it, before a 1:1 NAT rule translates it (NodePolicy.c)
 		ok = ok && NodePolicyInbound(ov->Node, v, vrf_id, from, packet, packet_size);
@@ -873,7 +879,7 @@ bool NodeOverlayApply(NODE *n, const CONTROL_STATE *st) {
 // VRF id to the peer that the table of the VRF routes its destination to, over its session. False when it went
 // nowhere. The caller is an online reader of the node's table snapshot: a worker, the I/O thread of an adapter queue,
 // or a thread that registered itself.
-bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
+static bool NodeOverlayForward(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size, bool fabric) {
 	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
 	UCHAR src[16], dst[16];
 	UCHAR buf[NODE_OVERLAY_RECORD];
@@ -888,13 +894,16 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	NODE_VRF_TABLE *vt = NodeGetVrfTable(v, vrf_id);
 
 	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the tables route the packet as the overlay sees it
-	if (vt != NULL && size <= NOISE_MAX_PAYLOAD - NODE_OVERLAY_VRF_TAG && NodeNatEnds(v, vrf_id, packet, size, src, dst, &addr_size) && NodeVrfLookup(vt, src, addr_size) == NODE_VRF_LOCAL)
+	if (vt != NULL && size <= NOISE_MAX_PAYLOAD - NODE_OVERLAY_VRF_TAG && NodeNatEnds(v, vrf_id, packet, size, src, dst, &addr_size) && (fabric || NodeVrfLookup(vt, src, addr_size) == NODE_VRF_LOCAL))
 		hop = NodeVrfLookup(vt, dst, addr_size);
 
-	// Only to a peer: the host's own addresses and the addresses of no route stay here
+	// Only to a peer: the host's own addresses and the addresses of no route stay here, but that an IP prefix route of the
+	// fabric of an EVPN gateway takes a packet of the host to an address of no route (NodeEvpn.c; SDN-25, #201)
 	if (vt == NULL || hop >= v->NumHops) {
-		InterlockedIncrement64(&ov->Dropped);
-		return false;
+		bool evpn = (fabric == false && hop == NODE_VRF_NONE && NodeEvpnOutput(n, v, vrf_id, packet, size));
+
+		InterlockedIncrement64(evpn ? &ov->Forwarded : &ov->Dropped);
+		return evpn;
 	}
 
 	NODE_OVERLAY_PEER *peer = (NODE_OVERLAY_PEER *)v->Hops[hop];
@@ -926,6 +935,41 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 		Free(record);
 
 	InterlockedIncrement64(ok ? &ov->Forwarded : &ov->Dropped);
+	return ok;
+}
+
+// A packet of the host in the VRF vrf_id (NodeOverlayForward)
+bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
+	return NodeOverlayForward(n, vrf_id, packet, size, false);
+}
+
+// A packet that came into the VRF vrf_id from the fabric of an EVPN gateway (NodeEvpn.c; SDN-25, #201), from a source that
+// the gateway checked: to the host when the table of the VRF routes its destination to the host, through the 1:1 NAT rules
+// as the packet of a peer goes, with nat_buf of NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH bytes for its translation; else on to the
+// peer that the table routes it to, as the packet of the host goes (NodeOverlayForward). At the gateway the fabric stands
+// where the LAN of a gateway stands: the policy of the VRF judges the packet to a peer as one of the host, and the packet to
+// the host not at all. False when it went nowhere. The caller is an online reader of the node's table snapshot; once the
+// overlay took its forwarding tables away (NodeOverlayStop), a packet goes nowhere.
+bool NodeOverlayFabricInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size, UCHAR *nat_buf) {
+	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
+	UCHAR src[16], dst[16];
+	UINT addr_size = 0;
+	NODE_TABLES *t = NodeGetTables(n);
+	NODE_VRF_TABLES *v = (t != NULL ? t->Vrfs : NULL);
+	NODE_VRF_TABLE *vt = NodeGetVrfTable(v, vrf_id);
+
+	if (ov == NULL || vt == NULL)
+		return false;
+
+	if (NodeOverlayEnds(packet, size, src, dst, &addr_size) == false || NodeVrfLookup(vt, dst, addr_size) != NODE_VRF_LOCAL)
+		return NodeOverlayForward(n, vrf_id, packet, size, true);
+
+	bool ok = (ov->Config.Adapter != NULL && NodeNatInbound(v, vrf_id, &packet, &size, nat_buf, NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH));
+
+	InterlockedIncrement64(ok ? &ov->Delivered : &ov->Dropped);
+	if (ok)
+		ov->Config.Adapter(n, ov->Config.AdapterParam, vrf_id, packet, size);
+
 	return ok;
 }
 

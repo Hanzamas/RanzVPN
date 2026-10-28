@@ -332,6 +332,9 @@ struct NODE_TABLES {
 	NODE_TABLE *Route;     // The route table; its compiled form comes with the routed networks (CORE-S6-1, #80)
 	NODE_TABLE *Policy;    // The policy table; its compiled form comes with the policy engine (CORE-S4-2, #75)
 	NODE_VRF_TABLES *Vrfs; // The forwarding tables of the VRFs (NodeVrf.c; SDN-4, #180), NULL for none
+	// The IP prefix routes of the fabric of an EVPN gateway (NodeEvpn.c; SDN-25, #201), NULL for none: NodeSwapEvpn replaces
+	// them, and the other swaps carry them over
+	struct NODE_EVPN_TABLE *Evpn;
 };
 
 // One route of the forwarding tables of the VRFs (NodeNewVrfTables)
@@ -440,6 +443,9 @@ struct NODE {
 	char *ConfigBgp;              // The BGP settings of the configuration (NODE_SETTING_BGP), NULL for none
 	wchar_t BgpSidecar[MAX_PATH]; // The executable that holds the sidecar: NODE_BGP_EXE_NAME next to the executable; a test may name another before NodeStart
 	NODE_BGP *Bgp;                // The running BGP sidecar (NodeBgp.c), NULL when none runs
+	// The EVPN of a gateway (NodeEvpn.c; SDN-25, #201): the VTEP and the routes of the fabric of a sidecar whose Bgp setting
+	// has an evpn object, from the start of the sidecar to its stop; NULL without one
+	struct NODE_EVPN *Evpn;
 
 	// The mimicry sidecar and the mimic transport (NodeMimic.c; CORE-P2-6, #406), under Lock. A test may name another
 	// executable and set MimicTest before NodeStart.
@@ -879,6 +885,8 @@ void NodeReaderOnline(NODE *n, NODE_READER *r);
 // NodeBgp.c
 bool NodeBgpAnnounce(NODE *n, char *prefix, char *next_hop);
 bool NodeBgpWithdraw(NODE *n, char *prefix);
+bool NodeBgpAnnounceVrf(NODE *n, UINT vrf_id, char *prefix);
+bool NodeBgpWithdrawVrf(NODE *n, UINT vrf_id, char *prefix);
 void NodeBgpGetStatus(NODE *n, NODE_BGP_STATUS *st);
 
 // NodeMimic.c, NodeMimicTransport.c

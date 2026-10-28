@@ -129,6 +129,16 @@ src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: i
 # The peer agent of the overlay (CORE-S5-5 #411) takes the Signals that the Controller carries from a peer: no parser word in the
 # name, listed as the reader of a peer's bytes that it is
 src/Cedar  NodeAgentSignal  exempt  hands the envelope of a Signal as it came to PeerOpenSignal (fuzz_peer), which opens and decodes it; it reads only what that gave
+# The EVPN of a gateway node (SDN-25 #201): the learned and withdrawn messages of its BGP sidecar as IP prefix routes of an
+# EVPN VRF, and the frames that the VTEPs of a fabric send on the L3 VNI of an EVPN VRF, with the two ends of their packets.
+# The functions that take what these read are listed too, as the readers of routes and packets that they are.
+src/Cedar  NodeEvpnParseRoute      fuzz_evpn
+src/Cedar  NodeEvpnParseFrame      fuzz_evpn
+src/Cedar  NodeEvpnEnds            fuzz_evpn  via NodeEvpnParseFrame
+src/Cedar  NodeEvpnRoute           exempt  puts the route that NodeEvpnParseRoute (fuzz_evpn) read from a message of the node's own sidecar into the list of the routes; it reads no byte itself
+src/Cedar  NodeEvpnOutput          exempt  a packet of the host's own IP stack, whose two ends NodeNatEnds (fuzz_nat) reads as for NodeOverlayInput, and which NodeNatCopy (fuzz_nat) writes into the frame for the fabric
+src/Cedar  NodeEvpnTransit         exempt  a packet of a peer that the overlay delivered, whose two ends NodeEvpnEnds (fuzz_evpn) reads, and which the policy of the VRF (fuzz_policy) judges before it goes to the fabric as it came
+src/Cedar  NodeOverlayFabricInput  exempt  a packet of the fabric that NodeEvpnParseFrame (fuzz_evpn) took, whose two ends NodeOverlayEnds reads as for NodeOverlayDeliver; NodeNatInbound (fuzz_nat) translates it for the host, or NodeNatEnds and NodeNatCopy (fuzz_nat) and the policy (fuzz_policy) take it on to a peer as for NodeOverlayInput
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
