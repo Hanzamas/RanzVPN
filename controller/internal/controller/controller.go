@@ -237,6 +237,10 @@ type Controller struct {
 	// The live operations of operators: the banned users and the Operations that wait for a node
 	// (operations.go, bans.go; SDN-50)
 	live liveState
+
+	// The keys that the nodes reported about themselves, which the mimic parts of the states are compiled with
+	// (mimic.go; SDN-94)
+	mimic mimicState
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -343,6 +347,10 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		return nil, err
 	}
 	if c.caps, err = c.store.LoadCapabilities(ctx); err != nil {
+		return nil, err
+	}
+	// The keys that the nodes reported about themselves, which the first compile below uses (mimic.go; SDN-94)
+	if err := c.loadPins(ctx); err != nil {
 		return nil, err
 	}
 	// The bans of users, which the first compile below honours (bans.go; SDN-50)
@@ -674,6 +682,10 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	}
 	// The TLS fingerprints of the certificate that the controller serves (certificate.go; SDN-92)
 	c.withFingerprints(states)
+	// The settings of the mimic servers and the links of their clients (mimic.go; SDN-94)
+	if err := c.withMimic(next, states); err != nil {
+		return compiled{}, err
+	}
 	return compiled{lic: lic, force: force, states: states}, nil
 }
 
@@ -724,9 +736,11 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	if err := c.store.Commit(sctx, ch); err != nil {
 		return nil, err
 	}
-	// The passwords of the Users that the change removed (users.go), and their bans (bans.go)
+	// The passwords of the Users that the change removed (users.go), and their bans (bans.go), and the keys that the
+	// Nodes that it removed reported (mimic.go)
 	c.dropPasswords(sctx, next)
 	c.dropBans(sctx, next)
+	c.dropPins(sctx, next)
 
 	c.intent, c.lic, c.force = next, cp.lic, force
 	if m := members(next); !proto.Equal(m, c.members) {
@@ -1132,8 +1146,15 @@ func (c *Controller) readLoop(s *stream) {
 		case *controlpb.ControlMessage_OperationResult:
 			// The answer of the node to a live operation (SDN-50, operations.go)
 			c.takeOperationResult(s, body.OperationResult)
+		case *controlpb.ControlMessage_Pins:
+			// The keys that the node reports about itself, the public key of its mimic server (SDN-94, mimic.go)
+			if err := c.takePins(s, body.Pins); err != nil {
+				c.log.Warn("node refused: bad Pins", "node", s.name, "err", err)
+				writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "%v", err))
+				return
+			}
 		default:
-			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks, Signals, Telemetry, Leases and OperationResults after its Hello"))
+			writeRefuse(s.conn, refusal(controlpb.RefuseReason_REFUSE_REASON_PROTOCOL, "a node sends only Acks, Signals, Telemetry, Leases, OperationResults and Pins after its Hello"))
 			return
 		}
 	}

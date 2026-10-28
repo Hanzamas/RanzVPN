@@ -25,13 +25,19 @@ import (
 // Device or an IP address. The flags come before A and B: the connection flags of the CLI (-server, -token-file,
 // -tls-fingerprint, with the same environment variables), -vrf, -protocol, -sport, -port, and -o json for the
 // answer of the API as it is.
+//
+//	ranz explain [flags] -listener NAME   explain a Listener (SDN-94, #423): its mimic section, whether its Node
+//	                                      reported the public key of its mimic server, and the Nodes that have a link
+//	                                      to it (explain_listener.go)
 func init() {
 	register("explain", func(args []string) int { return runExplain(context.Background(), args, os.Stdout, os.Stderr) })
 }
 
 const explainUsage = `usage: ranz explain [flags] A B
+       ranz explain [flags] -listener NAME
   A: a Node, a WireGuard Device or an address of either, which sends the packet
   B: a Node, a WireGuard Device or an IP address
+  NAME: a Listener: its mimic section, whether its Node reported the public key of its mimic server, and the Nodes that have a link to it
 `
 
 // runExplain runs ranz explain with the arguments that follow its name, and returns the exit code.
@@ -50,6 +56,7 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	sport := flags.Uint("sport", 0, "the source port of TCP or UDP")
 	port := flags.Uint("port", 0, "the destination port of TCP or UDP")
 	format := flags.String("o", "text", "the form of the answer: text, or json as the API gives it")
+	listener := flags.String("listener", "", "explain the Listener with this name, in place of a packet (no A and B)")
 	flags.Usage = func() {
 		fmt.Fprint(stderr, explainUsage)
 		flags.PrintDefaults()
@@ -60,7 +67,13 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		}
 		return 2
 	}
-	if flags.NArg() != 2 || *sport > 65535 || *port > 65535 || (*format != "text" && *format != "json") {
+	if *listener != "" {
+		// A Listener, with no packet: A, B and the flags of a packet do not go with it
+		if flags.NArg() != 0 || *vrf != "" || *protocol != "" || *sport != 0 || *port != 0 || (*format != "text" && *format != "json") {
+			flags.Usage()
+			return 2
+		}
+	} else if flags.NArg() != 2 || *sport > 65535 || *port > 65535 || (*format != "text" && *format != "json") {
 		flags.Usage()
 		return 2
 	}
@@ -68,6 +81,9 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	if err != nil {
 		fmt.Fprintln(stderr, "ranz:", err)
 		return 1
+	}
+	if *listener != "" {
+		return explainListener(ctx, c, *listener, *format, stdout, stderr)
 	}
 	q := explain.Query{From: flags.Arg(0), To: flags.Arg(1), VRF: *vrf, Protocol: *protocol, SourcePort: uint16(*sport), Port: uint16(*port)}
 	res, err := c.Explain(ctx, q)

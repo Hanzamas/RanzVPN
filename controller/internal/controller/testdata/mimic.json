@@ -1,0 +1,11 @@
+{
+  "resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48"}},
+    {"kind": "VRF", "name": "lab", "spec": {"id": 20, "ula": "fd12:3456:789b::/48"}},
+    {"kind": "Node", "name": "gw-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"]}},
+    {"kind": "Node", "name": "gw-2", "spec": {"publicKey": "iDGGuAC0HVzwQpaV2ps8xPMo680YSm5IL6V4wQPwbHc=", "vrfs": ["corp"]}},
+    {"kind": "Node", "name": "hub", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"], "endpoints": [{"transport": "quic", "address": "hub.example.com:443"}, {"transport": "mimic", "address": "hub.example.com:8443"}]}},
+    {"kind": "Node", "name": "lab-1", "spec": {"publicKey": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=", "vrfs": ["lab"]}},
+    {"kind": "Listener", "name": "edge-hub", "spec": {"node": "hub", "certificate": {"file": "C:\\ProgramData\\Ranz\\hub.pfx"}, "mimic": {"listen": ":8443", "serverNames": ["www.example.com", "cdn.example.com"], "decoy": {"acme": {"cacheDir": "C:\\ProgramData\\Ranz\\mimic-acme", "email": "ops@example.com"}}}}}
+  ]
+}
