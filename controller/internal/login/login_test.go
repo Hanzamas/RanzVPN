@@ -589,6 +589,32 @@ func TestUserCodeThrottle(t *testing.T) {
 	}
 }
 
+// The device codes that wait are counted for each source as the throttle counts the failed logins: the
+// addresses of an IPv6 /64 are one source, so changing the address within it gives a host no more than
+// maxGrantsPerSource, and another /64 has its own.
+func TestDeviceCodeCapCountsAnIPv6PrefixAsOneSource(t *testing.T) {
+	e := newTestEnv(t)
+	ask := func(remote string) int {
+		req := httptest.NewRequest(http.MethodPost, DeviceCodePath, strings.NewReader("client_id="+ClientID))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = remote
+		w := httptest.NewRecorder()
+		e.s.ServeHTTP(w, req)
+		return w.Code
+	}
+	for i := range maxGrantsPerSource {
+		if code := ask(fmt.Sprintf("[2001:db8:0:1::%x]:50000", i+1)); code != http.StatusOK {
+			t.Fatalf("device code %d from the /64 2001:db8:0:1::/64: %d", i+1, code)
+		}
+	}
+	if code := ask("[2001:db8:0:1:aaaa::1]:50000"); code != http.StatusServiceUnavailable {
+		t.Errorf("a device code from another address of the same /64: %d, want 503", code)
+	}
+	if code := ask("[2001:db8:0:2::1]:50000"); code != http.StatusOK {
+		t.Errorf("a device code from another /64: %d, want 200", code)
+	}
+}
+
 // The requests of the authorization page: what ParseAuthorize takes, and what it refuses.
 func TestParseAuthorize(t *testing.T) {
 	_, challenge := NewVerifier()

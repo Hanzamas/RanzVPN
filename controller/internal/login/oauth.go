@@ -374,7 +374,9 @@ func baseURL(r *http.Request) string {
 }
 
 // addDevice keeps the device code code of the grant g, with a user code that no other device code
-// that waits has, for deviceLife.
+// that waits has, for deviceLife. The device codes that wait are counted for each source as the throttle
+// counts the failed logins (sourceKey): every address of an IPv6 /64 is one source, so a host that holds a
+// whole /64 cannot fill the table by changing its address.
 func (s *Server) addDevice(code string, g *grant) error {
 	now := s.now()
 	s.mu.Lock()
@@ -383,9 +385,9 @@ func (s *Server) addDevice(code string, g *grant) error {
 	if len(s.codes)+len(s.devices) >= maxGrants {
 		return errFull
 	}
-	mine := 0
+	mine, source := 0, sourceKey(g.source)
 	for _, o := range s.devices {
-		if o.source == g.source {
+		if sourceKey(o.source) == source {
 			mine++
 		}
 	}
