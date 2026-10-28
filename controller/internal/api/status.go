@@ -17,6 +17,11 @@ type Status struct {
 	// Cluster tells which member of the controller cluster answers and which one leads
 	// (internal/cluster). Every member answers the status itself.
 	Cluster *ClusterStatus `json:"cluster,omitempty"`
+	// AdminAccess is the admin source allowlist in force, with its prefixes for an admin only, and
+	// StarterRule the starter rule of the first install while the intent holds it as the first start
+	// made it (statusaccess.go).
+	AdminAccess *AdminAccess       `json:"adminAccess,omitempty"`
+	StarterRule *StarterRuleStatus `json:"starterRule,omitempty"`
 	// Diagnostics is what the program tells the diagnostics bundle about it (diagnostics.go). It
 	// is the program's setting, not part of the answer.
 	Diagnostics *Diagnostics `json:"-"`
@@ -68,7 +73,7 @@ type Capabilities struct {
 func init() {
 	register(
 		route{http.MethodGet, "/api/v1/status", rbac.Viewer, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
-			reply(w, http.StatusOK, d.Status.WithRefusals())
+			reply(w, http.StatusOK, d.withAccess(r.Context()).WithRefusals())
 		}},
 		route{http.MethodGet, "/api/v1/whoami", rbac.Viewer, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
 			tok, _ := Caller(r.Context())
