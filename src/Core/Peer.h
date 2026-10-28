@@ -4,9 +4,11 @@
 // A node reaches a peer over a path. The relay path goes through a relay, a node with the relay role that both
 // ends are bound to; it is up as soon as the two have exchanged one signal each through the control plane, so a
 // new peer pair comes up in one round trip (relay-first). The direct path is the one that ICE validates later, in
-// the background (PeerIce.c, CORE-S5-3 #79): the pair moves to it once a candidate pair validates, with no
-// datagram held back, and back to the relay when consent freshness (RFC 7675) finds it dead. A node behind a home
-// gateway asks it for a public port with PCP, NAT-PMP or UPnP (PeerPortMap.c), so that a peer reaches it there.
+// the background (PeerIce.c, CORE-S5-3 #79, CORE-S5-6 #412): the pair moves to it once a candidate pair validates,
+// with no datagram held back (an Upgrade), and back to the relay when consent freshness (RFC 7675) finds it dead (a
+// Fallback). ICE runs on the socket of the layer, so its candidates are the host addresses of that socket and the
+// address that the home relay saw the node at, and no STUN server is needed. A node behind a home gateway may ask it
+// for a public port with PCP, NAT-PMP or UPnP (PeerPortMap.c), which then goes first among its candidates.
 // PeerSetDirect sets a direct path by hand. Every datagram a node receives goes through one ingress, PeerInput,
 // whichever path it came on: a datagram for the node itself is delivered, one for another node is forwarded when
 // the node has the relay role and both ends are bound to it. The same policy check runs in both cases: the source
@@ -36,9 +38,9 @@
 // replaced on a schedule and after a number of datagrams, and a session whose peer is silent is dropped.
 //
 // The datagrams travel over a send procedure that the caller gives (PEER_SEND_PROC) and come back through
-// PeerInput: a UDP socket (PeerUdp.c) or the harness network of coretest. The socket stands in for the QUIC
-// datagrams of CORE-S1-1 (#67) until the transport interface of CORE-F4 (#64) carries them; the relay then
-// shares the QUIC listener on UDP 443 (ADR-0035).
+// PeerInput: a UDP socket (PeerUdp.c) or the harness network of coretest. The checks of ICE and their answers, STUN
+// messages, go the same way. The socket stands in for the QUIC datagrams of CORE-S1-1 (#67) until the transport
+// interface of CORE-F4 (#64) carries them; the relay then shares the QUIC listener on UDP 443 (ADR-0035).
 
 #ifndef CORE_PEER_H
 #define CORE_PEER_H
@@ -82,15 +84,15 @@
 
 // The type of an ICE candidate (RFC 8445 section 5.1.1)
 #define PEER_CANDIDATE_HOST      1 // An address of the node itself
-#define PEER_CANDIDATE_SRFLX     2 // Server reflexive: the address that its relay, or with ICE its STUN server, sees it at
+#define PEER_CANDIDATE_SRFLX     2 // Server reflexive: the address that its home relay saw it at, in the answer of its bind
 #define PEER_CANDIDATE_MAPPED    3 // A public port that the node's home gateway granted (PCP, NAT-PMP or UPnP)
 #define PEER_CANDIDATE_PREDICTED 4 // The public port the node's own NAT will give its next mapping (PeerPunch.c, CORE-S5-4)
 
 // The ICE session of a node with a peer (PEER_STATUS)
 #define PEER_ICE_NONE      0 // None: ICE is off, or no signal of the session yet
 #define PEER_ICE_CHECKING  1 // Checking candidate pairs, while the peer stays on the relay
-#define PEER_ICE_CONNECTED 2 // A candidate pair validated: the direct path is up
-#define PEER_ICE_COMPLETED 3 // ... and the controlling end nominated it
+#define PEER_ICE_CONNECTED 2 // A candidate pair validated: the node takes the peer's records from its address there
+#define PEER_ICE_COMPLETED 3 // ... and the controlling end nominated it: the direct path is up, the same pair at both ends
 #define PEER_ICE_FAILED    4 // No pair validated, or the direct path lost consent: the peer is on the relay
 
 // The symmetric-NAT hole punch of a node with a peer (PEER_STATUS; PeerPunch.c, CORE-S5-4). It runs on the peer
@@ -124,7 +126,14 @@
 #define PEER_DROP_SEND      10 // The send procedure failed
 #define PEER_DROP_CLEAR     11 // A data datagram of the old clear form (PEER_MSG_DATA): there is no downgrade to it
 #define PEER_DROP_SESSION   12 // A record or a handshake answer under no session of its source: an unknown index, or another node's
-#define PEER_NUM_REASONS    13
+#define PEER_DROP_ICE       13 // A STUN message that no ICE session of the node takes: of a session that ended or failed, or none
+#define PEER_NUM_REASONS    14
+
+// The port mapping of a node behind a home gateway (PEER_STATS; PeerPortMap.c)
+#define PEER_PORTMAP_OFF     0 // Off: the node asks no gateway, and no request leaves it
+#define PEER_PORTMAP_PENDING 1 // Asking: libplum looks for a gateway that answers PCP, NAT-PMP or UPnP
+#define PEER_PORTMAP_MAPPED  2 // The gateway granted a public port, which goes first among the candidates
+#define PEER_PORTMAP_FAILED  3 // No gateway granted one
 
 // A transport address: an IPv4 address as an IPv4-mapped IPv6 address (RFC 4291 section 2.5.5.2), and a port
 typedef struct PEER_ADDR {
@@ -204,11 +213,14 @@ typedef struct PEER_STATS {
 	UINT NumBindings;               // Nodes bound to the relay role now
 	UINT NumBound;                  // Relays that the node is bound to now
 	UINT NumIce;                    // ICE sessions now
+	UINT PortMap;                   // PEER_PORTMAP_*: the port mapping of the home gateway
+	PEER_ADDR Mapped;               // ... the public address and port that it granted, zero for none
 	UINT64 Drops[PEER_NUM_REASONS]; // What the peer layer dropped, by reason (PEER_DROP_*)
 } PEER_STATS;
 
-// The configuration of the peer layer of a node (PeerDefaultConfig). With Ice, every ICE session of the node runs
-// on one UDP socket, the ICE socket, so that one mapping of a NAT or a home gateway serves all of its peers.
+// The configuration of the peer layer of a node (PeerDefaultConfig). With Ice, every ICE session of the node runs on
+// the socket of the layer, the ICE socket, so that one mapping of a NAT or a home gateway serves the relay and all of
+// its peers.
 typedef struct PEER_CONFIG {
 	bool Relay;                      // The relay role: take binds and forward between the nodes bound to it
 	UINT RelayRate;                  // Data datagrams per second that one bound node may send through the relay
@@ -217,11 +229,7 @@ typedef struct PEER_CONFIG {
 	UINT BindRetry;                  // ms before a bind that had no answer is sent again
 	UINT BindExpiry;                 // ms after which the relay role drops a binding that was not renewed
 	bool Ice;                        // Move each peer from the relay to a direct path that ICE validates (libjuice)
-	char IceBind[PEER_HOST_SIZE];    // The address of the ICE socket, empty for every address of the node
-	USHORT IcePort;                  // ... its port, 0 for one that the system picks (then one node per process)
-	char StunServer[PEER_HOST_SIZE]; // The STUN server of the server reflexive candidate (an address), empty for none
-	USHORT StunPort;                 // ... its port, 0 for 3478
-	bool PortMap;                    // Ask the home gateway for a public port of the ICE socket (libplum)
+	bool PortMap;                    // With Ice, ask the home gateway for a public port of the socket (libplum)
 	UINT PortMapTimeout;             // ms that the port mapping waits for a gateway, per protocol; 0 for 10 s
 	bool Punch;                      // Try port prediction and birthday punching for a symmetric-NAT peer (PeerPunch.c)
 	UINT PunchBudget;                // The most probes one punch of a peer may send before it gives up; 0 for the default
@@ -257,8 +265,8 @@ typedef struct PEER_UDP PEER_UDP;
 // Sends one datagram to dst; false when it could not be sent
 typedef bool(PEER_SEND_PROC)(void *param, const PEER_ADDR *dst, const void *data, UINT size);
 // Takes one data datagram for the node from the peer src, which came on path (PEER_PATH_RELAY or
-// PEER_PATH_DIRECT). It runs on the thread that called PeerInput, or on the thread of the ICE socket for a
-// datagram of an ICE session, and may call PeerSend and nothing else of the peer layer.
+// PEER_PATH_DIRECT). It runs on the thread that called PeerInput, and may call PeerSend and nothing else of the
+// peer layer.
 typedef void(PEER_RECV_PROC)(PEER_AGENT *a, void *param, const UCHAR *src, UINT path, const void *data, UINT size);
 
 // Peer.c
@@ -277,6 +285,7 @@ void PeerTick(PEER_AGENT *a);
 bool PeerGetStatus(PEER_AGENT *a, const UCHAR *key, PEER_STATUS *st);
 void PeerGetStats(PEER_AGENT *a, PEER_STATS *st);
 UINT PeerGetCandidates(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max);
+bool PeerHomeBound(PEER_AGENT *a);
 const UCHAR *PeerPublicKey(PEER_AGENT *a);
 void PeerAddrSetV4(PEER_ADDR *a, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, USHORT port);
 bool PeerAddrEqual(const PEER_ADDR *a, const PEER_ADDR *b);
@@ -319,7 +328,9 @@ PEER_UDP *PeerUdpNew(USHORT port);
 USHORT PeerUdpPort(PEER_UDP *u);
 bool PeerUdpSend(void *param, const PEER_ADDR *dst, const void *data, UINT size);
 bool PeerUdpStart(PEER_UDP *u, PEER_AGENT *a);
+void PeerUdpStop(PEER_UDP *u);
 void PeerUdpFree(PEER_UDP *u);
+UINT PeerUdpHosts(PEER_UDP *u, PEER_ADDR *addrs, UINT max);
 void PeerAddrToStr(char *str, UINT size, const PEER_ADDR *a);
 
 #endif // CORE_PEER_H
