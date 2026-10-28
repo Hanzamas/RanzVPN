@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 )
 
-// TokenList is the answer of GET /api/v1/tokens.
+// TokenList is the answer of GET /api/v1/tokens: each token with its role, its expiry and whether
+// it has expired, and when it was last used.
 type TokenList struct {
 	Tokens []rbac.Token `json:"tokens"`
 }
@@ -18,6 +20,9 @@ type TokenList struct {
 type TokenRequest struct {
 	Name string    `json:"name"`
 	Role rbac.Role `json:"role"`
+	// Expires is the instant, an RFC 3339 time in the future, from which the controller refuses
+	// the token. Left out, the token never expires.
+	Expires time.Time `json:"expires,omitzero"`
 }
 
 func init() {
@@ -38,7 +43,7 @@ func init() {
 				reply(w, http.StatusBadRequest, Problem{Error: "the body is not a token request: " + err.Error()})
 				return
 			}
-			tok, err := d.Tokens.Create(r.Context(), req.Name, req.Role)
+			tok, err := d.Tokens.CreateExpiring(r.Context(), req.Name, req.Role, req.Expires)
 			if err != nil {
 				replyError(w, err)
 				return
@@ -63,10 +68,17 @@ func (c *Client) Tokens(ctx context.Context) ([]rbac.Token, error) {
 	return l.Tokens, err
 }
 
-// CreateToken creates the API token name with role and returns it with its secret.
+// CreateToken creates the API token name with role, which never expires, and returns it with its
+// secret.
 func (c *Client) CreateToken(ctx context.Context, name string, role rbac.Role) (rbac.NewToken, error) {
+	return c.CreateTokenRequest(ctx, TokenRequest{Name: name, Role: role})
+}
+
+// CreateTokenRequest creates the API token that req asks for, with its expiry when it has one, and
+// returns it with its secret.
+func (c *Client) CreateTokenRequest(ctx context.Context, req TokenRequest) (rbac.NewToken, error) {
 	var t rbac.NewToken
-	err := c.do(ctx, http.MethodPost, tokensPath, TokenRequest{Name: name, Role: role}, &t)
+	err := c.do(ctx, http.MethodPost, tokensPath, req, &t)
 	return t, err
 }
 
