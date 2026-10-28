@@ -4,16 +4,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 )
 
 // The answer of NodeState.c for a Node with the client role, joined to its Controller, with an
-// adapter in one VRF, a peer with its session up and one without, and its listeners.
+// adapter in one VRF, a peer with its session up and one without, which it reaches through a Relay
+// (CORE-S5-5, #411), and its listeners.
 const testNodeState = `{"running":true,"roles":"server, client","name":"pc-a",` +
 	`"controlStream":{"set":true,"controller":"192.168.1.10:443","connected":true,"connectedSeconds":42,"generation":7,"why":"","nextRetryMs":0},` +
 	`"adapters":[{"vrf":1,"name":"Ranz VPN VRF 1","interfaceIndex":23,"addresses":["10.20.0.5"]}],` +
-	`"sessions":[{"peer":"pc-b","up":true,"transport":"tcp","ageSeconds":30},{"peer":"pc-c","up":false,"transport":"","ageSeconds":0}],` +
+	`"sessions":[{"peer":"pc-b","up":true,"transport":"tcp","ageSeconds":30,"path":"stream","datagramsOut":0,"datagramsIn":0},` +
+	`{"peer":"pc-c","up":false,"transport":"","ageSeconds":0,"path":"relay","datagramsOut":12,"datagramsIn":11}],` +
 	`"numPeers":2,` +
 	`"listeners":{"overlay":"tcp","frontDoor":{"listener":"default","running":true,"tcpPort":443,"quicPort":443,"fallback":false,"decoy":"","error":"",` +
 	`"refused":{"tcp":{"pending":3,"sources":2,"admitted":900,"refusedFull":1,"refusedSource":40,"refusedRate":5,"refusedHandshake":2},` +
@@ -53,6 +56,29 @@ func TestNodeStatePrintsTheAnswerOfTheService(t *testing.T) {
 		if !strings.Contains(out, s) {
 			t.Errorf("the table has no %q:\n%s", s, out)
 		}
+	}
+}
+
+// The table says how the Node reaches each peer, on its stream session or through a Relay, and the
+// datagrams that went each way on its datagram path (CORE-S5-5 #411). A Node service that names no
+// path, as one from before the peer agent, shows none.
+func TestNodeStateShowsThePathOfEachPeer(t *testing.T) {
+	f := &fakeNode{answers: map[string]string{"state": testNodeState}}
+	code, out, errOut := runNodeWith(t, f, "state", "-o", "table")
+	if code != 0 {
+		t.Fatalf("exit code %d, stderr %q", code, errOut)
+	}
+	for _, row := range []string{`PEER\s+SESSION\s+TRANSPORT\s+AGE\s+PATH\s+DATAGRAMS\n`, `pc-b\s+up\s+tcp\s+30s\s+stream\s+0 out, 0 in\n`, `pc-c\s+down\s+-\s+-\s+relay\s+12 out, 11 in\n`} {
+		if !regexp.MustCompile(row).MatchString(out) {
+			t.Errorf("the table has no row %q:\n%s", row, out)
+		}
+	}
+
+	older := strings.Replace(testNodeState, `,"path":"relay","datagramsOut":12,"datagramsIn":11`, ``, 1)
+	f = &fakeNode{answers: map[string]string{"state": older}}
+	code, out, errOut = runNodeWith(t, f, "state", "-o", "table")
+	if code != 0 || !regexp.MustCompile(`pc-c\s+down\s+-\s+-\s+none\s+0 out, 0 in\n`).MatchString(out) {
+		t.Errorf("a peer without a path: exit code %d, stderr %q, table:\n%s", code, errOut, out)
 	}
 }
 

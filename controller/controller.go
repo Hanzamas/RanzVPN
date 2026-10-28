@@ -56,9 +56,13 @@
 // refused with 403 before its token is looked at, and recorded as an event. Without a list, every
 // address may reach them. A loopback address always passes, so a local administrator always
 // reaches the controller. The control stream of the nodes is not behind it: a Network limits the
-// addresses its Nodes enrol from (its enrolSources). In a cluster, the list must hold the
-// addresses of the members too, because a standby forwards a call to the leader from its own
-// address.
+// addresses its Nodes enrol from (its enrolSources). -admin-from sets the list at the first start,
+// the one that finds no API token in the store, and before it makes the first admin token
+// (AUD1-DT-6, #454): `ranz install --controller` passes loopback and the private subnets of the
+// host, or what its --admin-from names; "any" leaves the list empty, and a run without the flag
+// does too. A later start keeps the list that the store holds, and says in its log which list that
+// is, with a warning when it is empty. In a cluster, the list must hold the addresses of the
+// members too, because a standby forwards a call to the leader from its own address.
 //
 // Cluster (SDN-17, ADR-0026): a cluster of 3 or 5 members runs one `ranz controller` on each host,
 // each with its own rqlited, all started with the same -rqlite-join (the Raft addresses of every
@@ -182,6 +186,7 @@ type config struct {
 	lease         time.Duration
 	logDays       int
 	logMB         int
+	adminFrom     string // -admin-from: the admin source allowlist that the first start sets
 	schema        controlpb.SchemaVersion
 	limits        port.Limits // the limits for a source of the TLS port (AUD1-DT-3, #451)
 }
@@ -237,6 +242,7 @@ func parseFlags(args []string) (config, error) {
 	flags.IntVar(&schema, "schema-version", 0, "the control schema version to run as: the newest of this release by default, or the one before it during a rolling upgrade of a cluster, until every member runs this release")
 	flags.IntVar(&cfg.logDays, "log-days", logfile.DefaultMaxAgeDays, "the age limit of the service log in days: a file of the log whose last record is older is deleted; 0 for no limit (the Windows service writes the log, elsewhere the controller logs to its standard error)")
 	flags.IntVar(&cfg.logMB, "log-mb", logfile.DefaultMaxMB, "the disk limit of the service log in megabytes: its files never take more together, and the oldest are deleted first; 0 for no limit")
+	flags.StringVar(&cfg.adminFrom, "admin-from", "", "the admin source allowlist that the first start sets: prefixes separated by commas, or any for none; a later start keeps the list in the store (ranz admin-sources)")
 	flags.IntVar(&cfg.limits.MaxPending, "max-pending", 0, fmt.Sprintf("the most connections of the TLS port that wait for their TLS handshake in all; the next is closed (0: %d)", port.DefaultMaxPending))
 	flags.IntVar(&cfg.limits.MaxPendingPerSource, "max-pending-per-source", 0, fmt.Sprintf("... and for one source, an IPv4 address or the /64 of an IPv6 address (0: %d)", port.DefaultMaxPendingPerSource))
 	flags.Float64Var(&cfg.limits.ConnectRate, "connect-rate", 0, fmt.Sprintf("the new connections a second that a source may open at the TLS port, sustained (0: %d)", port.DefaultRate))
@@ -248,6 +254,10 @@ func parseFlags(args []string) (config, error) {
 	}
 	if flags.NArg() > 0 {
 		return config{}, fmt.Errorf("unexpected arguments: %q", flags.Args())
+	}
+	if _, _, err := parseAdminFrom(cfg.adminFrom); err != nil {
+		fmt.Fprintln(flags.Output(), err)
+		return config{}, err
 	}
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "listen" {
@@ -485,11 +495,13 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	defer st.Close()
 	tokens := rbac.New(st)
 	tokenFile := filepath.Join(cfg.dataDir, adminTokenFile)
-	created, err := tokens.Bootstrap(ctx, func(secret string) error {
+	// The first start sets the admin source allowlist and then makes the first admin token, and a later
+	// start says which list it keeps (adminfrom.go)
+	created, err := bootstrapAdmin(ctx, tokens, st, cfg.adminFrom, func(secret string) error {
 		return os.WriteFile(tokenFile, []byte(secret+"\n"), 0o600)
-	})
+	}, log)
 	if err != nil {
-		return fmt.Errorf("the first admin token: %w", err)
+		return err
 	}
 	if created {
 		log.Info("first start: the admin token is created, its secret is in the data directory", "token", rbac.FirstAdmin, "file", tokenFile)
