@@ -9,7 +9,7 @@
 // The node reports the peers of its sidecar, the state of each session and the prefixes that it learned from each, with the
 // sessions that the sidecar refused (ControlSetPeeringReport): the client sends them as the peering of a Telemetry message of
 // their own after each Hello, so a controller that the node reaches anew has them, and whenever they changed, at most every
-// CONTROL_PEERING_REPORT ms.
+// CONTROL_PEERING_INTERVAL ms.
 
 #include "Core/ControlInternal.h"
 
@@ -306,7 +306,7 @@ static bool ControlPeeringSend(const ranz_control_v1_Telemetry *m, TRANSPORT_STR
 	return ok;
 }
 
-// Write the report as one Telemetry message when it changed since the client sent it and CONTROL_PEERING_REPORT ms passed
+// Write the report as one Telemetry message when it changed since the client sent it and CONTROL_PEERING_INTERVAL ms passed
 // since then, on the thread of the client: false when the write failed, which ends the stream
 bool ControlWritePeeringReport(CONTROL_PEERING_REPORT *r, TRANSPORT_STREAM *s) {
 	bool due = false;
@@ -316,7 +316,7 @@ bool ControlWritePeeringReport(CONTROL_PEERING_REPORT *r, TRANSPORT_STREAM *s) {
 		return true;
 
 	AcquireSRWLockExclusive(&r->Lock);
-	if (r->Changed && (r->Sent == 0 || now - r->Sent >= CONTROL_PEERING_REPORT)) {
+	if (r->Changed && (r->Sent == 0 || now - r->Sent >= CONTROL_PEERING_INTERVAL)) {
 		ControlPeeringFill(r);
 		r->Changed = false;
 		r->Sent = now;

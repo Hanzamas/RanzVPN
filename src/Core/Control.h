@@ -222,7 +222,7 @@ typedef struct CONTROL_VTEP {
 #define CONTROL_MAX_PEERING_PEERS  64   // The peers of the sidecar of a node that one report holds (PeeringReport.peers)
 #define CONTROL_MAX_LEARNED        32   // The prefixes learned from one peer that a report holds (PeeringPeer.learned)
 #define CONTROL_PEERING_STATE_SIZE 16   // The state of a session with its NUL (PeeringPeer.state)
-#define CONTROL_PEERING_REPORT     1000 // ms between two reports of the peering of a node at least
+#define CONTROL_PEERING_INTERVAL   1000 // ms between two reports of the peering of a node at least
 
 // The BGP peering of a node (NodePeering of the control protocol; SDN-77, #357): the settings of its sidecar ranz bgp, which
 // listens on TCP 179 of Address and connects from it, and the LAN subnets that the node announces besides its addresses in
@@ -676,7 +676,7 @@ bool ControlWriteSignals(CONTROL_SIGNALS *q, TRANSPORT_STREAM *s);
 // sends (CONTROL_CONFIG.Peering), FreePeeringReport frees it once no client uses it. SetPeeringReport puts the peers of the
 // sidecar of the node, CONTROL_MAX_PEERING_PEERS at most, and the sessions that it refused since the node started, in place
 // of the ones before, and the client sends them as the peering of one Telemetry message after each Hello and whenever they
-// changed, at most every CONTROL_PEERING_REPORT ms. GetPeeringReport copies the peers that it holds, at most max, into list,
+// changed, at most every CONTROL_PEERING_INTERVAL ms. GetPeeringReport copies the peers that it holds, at most max, into list,
 // and the refused sessions into refused: the number of the peers. WritePeeringReport writes that message when it is due, as
 // the client does on its stream.
 CONTROL_PEERING_REPORT *ControlNewPeeringReport();
