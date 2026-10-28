@@ -83,6 +83,8 @@ $serviceSid = 'S-1-5-80-3572785604-795126647-2475823641-2319294638-1653438898'
 $data = Join-Path $env:RUNNER_TEMP 'ranz-controller-data'
 # adminTokenFile of controller: the secret of the admin token of the first start
 $tokenFile = Join-Path $data 'admin.token'
+# Toward a loopback address ranz checks the TLS fingerprint that the controller writes to this directory (AUD1-DT-13, #461)
+$env:RANZ_CONTROLLER_DIR = $data
 # Where the controller writes its rqlite member: payloadDir of controller/ and the name of the Payload
 $memberFile = Join-Path $data 'payload\rqlited.exe'
 $work = Join-Path $env:RUNNER_TEMP 'ranz-controller-check'
@@ -297,6 +299,20 @@ try {
 	$status = Invoke-Ranz @('status')
 	Write-Host "status: $($status | ConvertTo-Json -Compress -Depth 4)"
 	if (-not $status.tlsFingerprint) { throw 'the status names no TLS fingerprint' }
+	# The service wrote the TLS fingerprint that it serves to its data directory, and ranz checks a loopback address by
+	# it (AUD1-DT-13, #461): every call above went through that check. Where ranz finds no such file it sends no token
+	# and says what to give it, -tls-fingerprint takes the place of the file, and a wrong one is refused.
+	$fingerprintFile = Join-Path $data 'tls.fingerprint'
+	if ((Get-Content -LiteralPath $fingerprintFile -Raw).Trim() -ne $status.tlsFingerprint) { throw "tls.fingerprint does not hold the TLS fingerprint of the status, $($status.tlsFingerprint)" }
+	$noFile = Join-Path $work 'no-controller'
+	$noFileErr = Join-Path $work 'ranz-no-fingerprint.err'
+	& $ranz -server $api -token-file $tokenFile -controller-dir $noFile whoami 2> $noFileErr | Out-Null
+	if ($LASTEXITCODE -eq 0 -or (Get-Content -LiteralPath $noFileErr -Raw) -notmatch 'sends no token.*-tls-fingerprint') { throw "ranz called a loopback address with no fingerprint to check it by (exit code $LASTEXITCODE): $(Get-Content -LiteralPath $noFileErr -Raw)" }
+	$byFlag = (Invoke-Checked $ranz @('-server', $api, '-token-file', $tokenFile, '-controller-dir', $noFile, '-tls-fingerprint', $status.tlsFingerprint, 'whoami')) | ConvertFrom-Json
+	if ($byFlag.name -ne 'admin') { throw "ranz with -tls-fingerprint did not get the admin token: $($byFlag | ConvertTo-Json -Compress)" }
+	& $ranz -server $api -token-file $tokenFile -tls-fingerprint ('00' * 32) whoami 2>$null | Out-Null
+	if ($LASTEXITCODE -eq 0) { throw 'ranz accepted the certificate of the controller on loopback with a wrong TLS fingerprint' }
+	Write-Host 'ranz checks the controller on loopback by the fingerprint in its data directory, or by the flag, and sends no token without one'
 	if ($status.capabilities.tlsPort -ne 443 -or $status.capabilities.tlsPortFallback) { throw 'the TLS port is not 443 with 443 free' }
 	if ($status.capabilities.plainHttp -notmatch 'HTTP\.sys') { throw "port 80 does not run on HTTP.sys: $($status.capabilities.plainHttp)" }
 	if ($status.capabilities.plainHttp -notmatch [regex]::Escape($acmePrefix)) { throw "the controller does not hold the ACME path of port 80: $($status.capabilities.plainHttp)" }

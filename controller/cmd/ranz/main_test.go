@@ -122,7 +122,8 @@ func TestCLIGetsTheSameAnswersAsTheAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		cli, err := newClient(srv.URL, tokenFile, "", "")
+		// The test server is on a loopback address, so the client pins its certificate (AUD1-DT-13, #461)
+		cli, err := newClient(srv.URL, tokenFile, "", fingerprintOf(srv.Certificate()), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -178,7 +179,7 @@ func TestNewClientToken(t *testing.T) {
 		{file, "ranz_FROMENV", "ranz_FROMFILE"},
 		{"", "", ""},
 	} {
-		cl, err := newClient("https://127.0.0.1", c.file, c.env, "")
+		cl, err := newClient("https://127.0.0.1", c.file, c.env, testFingerprint, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,10 +187,10 @@ func TestNewClientToken(t *testing.T) {
 			t.Errorf("file %q, RANZ_TOKEN %q: the token is %q, want %q", c.file, c.env, cl.Token, c.want)
 		}
 	}
-	if _, err := newClient("https://127.0.0.1", filepath.Join(t.TempDir(), "none"), "", ""); err == nil {
+	if _, err := newClient("https://127.0.0.1", filepath.Join(t.TempDir(), "none"), "", testFingerprint, ""); err == nil {
 		t.Error("a missing token file was not an error")
 	}
-	if _, err := newClient("https://127.0.0.1", "", "", "not hex"); err == nil {
+	if _, err := newClient("https://127.0.0.1", "", "", "not hex", ""); err == nil {
 		t.Error("a TLS fingerprint that is not hex was not an error")
 	}
 }

@@ -80,13 +80,16 @@ func (h *harness) auditedAPI(secret string) *api.Client {
 	return c
 }
 
-// waitAudit lists the audit log through c until ok holds of its records, and returns them. It fails
-// with the records it saw when ok does not hold within waitTimeout.
+// waitAudit lists the audit log with the token of c until ok holds of its records, and returns them.
+// It fails with the records it saw when ok does not hold within waitTimeout. The listing goes to the
+// API of the harness, which has no audit log on it: the audited API records each read of the audit
+// log as an access (AUD1-DT-13, #461), and a test that counts what it made would count those too.
 func (h *harness) waitAudit(c *api.Client, what string, ok func([]audit.Record) bool) []audit.Record {
 	h.t.Helper()
+	reader := h.client(c.Token)
 	deadline := time.Now().Add(waitTimeout)
 	for {
-		l, err := c.Audit(context.Background(), audit.Filter{})
+		l, err := reader.Audit(context.Background(), audit.Filter{})
 		if err != nil {
 			h.t.Fatal(err)
 		}
@@ -136,7 +139,8 @@ func checkAuditRecord(t *testing.T, r audit.Record, since time.Time, actor, sour
 // TestAuditRecordsEachKindOnce is the first criterion of #242: a change of the intent, a node that
 // opens its control stream for the first time, the end of that stream and a call with a token that
 // is none of the controller's each make their record once, and so does a call that changes something
-// but the intent, and every record has its actor, its time, its source and its outcome.
+// but the intent and a read of the licence, and every record has its actor, its time, its source and
+// its outcome.
 func TestAuditRecordsEachKindOnce(t *testing.T) {
 	h := newAuditHarness(t)
 	admin := h.auditedAPI(h.admin)
@@ -160,6 +164,10 @@ func TestAuditRecordsEachKindOnce(t *testing.T) {
 	}
 	// operation: a call that changes something but the intent
 	if _, err := admin.SetAuditRetention(ctx, audit.Retention{Days: 90, MaxRecords: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	// access: a read of the licence (AUD1-DT-13, #461)
+	if _, err := admin.Licence(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -186,6 +194,7 @@ func TestAuditRecordsEachKindOnce(t *testing.T) {
 	checkAuditRecord(t, auditOfKind(recs, audit.AuthFailed)[0], since, audit.ActorUnknown, "127.0.0.1", audit.Failure, "", 0)
 	checkAuditRecord(t, auditOfKind(recs, audit.IntentChange)[0], since, caller, "127.0.0.1", audit.Success, "apply", res.Revision)
 	checkAuditRecord(t, auditOfKind(recs, audit.Operation)[0], since, caller, "127.0.0.1", audit.Success, "PUT /api/v1/audit/retention", 0)
+	checkAuditRecord(t, auditOfKind(recs, audit.Access)[0], since, caller, "127.0.0.1", audit.Success, "GET /api/v1/licence", 0)
 	if m := auditOfKind(recs, audit.AuthFailed)[0].Message; !strings.Contains(m, "is not a token of this controller") {
 		t.Errorf("the failed authentication says %q, want why the token was refused", m)
 	}
@@ -586,7 +595,9 @@ func TestAuditRetentionRemovesOldRecords(t *testing.T) {
 // filter. A record that is not valid is refused.
 func TestAuditListingPagesAndFilters(t *testing.T) {
 	h := newAuditHarness(t)
-	admin := h.auditedAPI(h.admin)
+	// The API of the harness has no audit log on it: the audited API would record each listing as an
+	// access (AUD1-DT-13, #461), which the next page would list
+	admin := h.client(h.admin)
 	ctx := context.Background()
 	for i := 1; i <= 5; i++ {
 		kind := audit.Login
