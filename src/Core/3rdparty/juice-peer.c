@@ -1,4 +1,6 @@
 /**
+ * Copyright (c) 2022 Paul-Louis Ageneau
+ *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -7,8 +9,9 @@
 // juice-peer.c
 // The peer mode of libjuice 1.7.4 for Ranz VPN (CORE-S5-6, #412; juice-peer.h): the connection of an agent whose
 // socket is the socket of the peer layer of a node. It stands in the place of conn_thread.c, the thread mode of
-// libjuice, and has its interface (conn_thread.h), so conn.c runs an agent made with JUICE_CONCURRENCY_MODE_THREAD on
-// it; src/Core/3rdparty/CMakeLists.txt builds this file in place of that one.
+// libjuice, changed from it for Ranz VPN, and has its interface (conn_thread.h), so conn.c runs an agent made with
+// JUICE_CONCURRENCY_MODE_THREAD on it; src/Core/3rdparty/CMakeLists.txt builds this file in place of that one. It keeps
+// the notices of conn_thread.c and its licence, the Mozilla Public License 2.0 (controller/cmd/ranz/NOTICE).
 //
 // As in the thread mode, each agent has a thread of its own, which runs the timers of the agent (its checks, their
 // retransmissions, consent freshness) under the mutex of the agent and sleeps until the next one is due or the agent
