@@ -356,6 +356,26 @@ static void FuzzTlsPins(const CONTROL_STATE *st)
 	}
 }
 
+// The securities of the L2 Networks (SDN-41 #234): each of a Network whose name ends, with its gateways
+static void FuzzSecurities(const CONTROL_STATE *st)
+{
+	if (st->NumSecurities > CONTROL_MAX_SECURITIES || (st->NumSecurities != 0 && st->Securities == NULL))
+	{
+		FuzzFail("a state has too many securities, or securities and no array of them");
+	}
+
+	for (UINT i = 0;i < st->NumSecurities;i++)
+	{
+		const CONTROL_SECURITY *s = &st->Securities[i];
+
+		if (FuzzEnds(s->Network, sizeof(s->Network)) == false)
+		{
+			FuzzFail("the Network of a security does not end");
+		}
+		FuzzTags(s->Gateways, s->NumGateways, CONTROL_MAX_GATEWAYS, "a security has a gateway that does not end, or too many gateways");
+	}
+}
+
 // The owner of the clients: it checks each state that it is handed
 static void FuzzControlState(void *param, const CONTROL_STATE *st)
 {
@@ -395,6 +415,7 @@ static void FuzzControlState(void *param, const CONTROL_STATE *st)
 	FuzzMirrorsDhcps(st);
 	FuzzListenerDevices(st);
 	FuzzTlsPins(st);
+	FuzzSecurities(st);
 }
 
 // A client without its thread, whose owner is f

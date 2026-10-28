@@ -223,7 +223,8 @@ func (m *Member) Handler() http.Handler {
 		api.Reply(w, http.StatusOK, m.Status().WithAccess(r.Context(), m.cfg.Store, c))
 	})
 	mux.HandleFunc("/", m.serveAPI)
-	return api.AuditRefusals(m.audit, api.Guard(m.cfg.Tokens, mux))
+	// The logins of users need no token: they go to the leader in front of the Guard (SDN-32)
+	return api.WithLogins(http.HandlerFunc(m.serveAPI), api.AuditRefusals(m.audit, api.Guard(m.cfg.Tokens, mux)))
 }
 
 // Status returns the answer of GET /api/v1/status of this member.
@@ -346,7 +347,7 @@ func (m *Member) lead(ctx context.Context, l store.Lease) {
 		m.release(l.Epoch)
 		return
 	}
-	h := api.AuditCalls(c, api.Routes(c, m.cfg.Tokens, m.cfg.Status))
+	h := api.WithLogins(api.Logins(c, m.cfg.Tokens, m.Status), api.AuditCalls(c, api.Routes(c, m.cfg.Tokens, m.cfg.Status)))
 	m.mu.Lock()
 	m.active, m.handler, m.lease = c, h, l
 	m.proxy, m.proxyFor = nil, store.Lease{}

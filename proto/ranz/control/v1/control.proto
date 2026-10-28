@@ -396,6 +396,30 @@ message Network {
   // The DHCP responder of an L2 Network (SDN-43): only in the state of the node that answers DHCP
   // for the Network, and only while the responder is on.
   Dhcp dhcp = 6;
+  // The security of an L2 Network (SDN-41): in the state of every node of its VRF, each of which
+  // judges the frames that come to its own switch, and only while a protection of it is on. A node
+  // of an older release skips the field it does not know.
+  L2Security security = 7;
+}
+
+// The security of an L2 Network (SDN-41 #234, ADR-0019 decision 1): the protections of the fork
+// that the switch of the Network applies to the frames of its clients (src/Core/SwitchSecurity.h).
+// A client is any member of the Network but the gateways: the nodes behind which its real gateway
+// is, its router and the DHCP server of its LAN, with the node that answers DHCP for it. No
+// protection holds for a gateway, and under a check an address that it sends from is its own
+// before a client's. A limit is 0 while its check is off.
+message L2Security {
+  bool check_mac = 1;   // a client sends from MAC addresses of its own only (CheckMac)
+  bool check_ip = 2;    // ... and from IP addresses of its own only (CheckIP)
+  uint32 max_macs = 3;  // the MAC addresses that a client owns under check_mac, 1 to 64
+  uint32 max_ips = 4;   // the IP addresses that a client owns under check_ip, 1 to 64
+  // The frames of a client to a group address, and those to it from one, are ARP, DHCP, DHCPv6
+  // and IPv6 neighbour discovery only (ArpDhcpOnly).
+  bool arp_dhcp_only = 5;
+  bool dhcp_guard = 6;  // no DHCP or DHCPv6 server messages from a client (DHCPNoServer)
+  // No IPv6 router advertisements from a client, which still gets those of the gateways (RAFilter).
+  bool ra_guard = 7;
+  repeated string gateways = 8;  // sorted: the nodes of the gateways
 }
 
 // Another node that shares at least one VRF with this one (full mesh), or that a leak between a VRF

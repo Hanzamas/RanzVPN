@@ -94,6 +94,10 @@ src/Core  ControlTakeSignal  fuzz_control  via ControlInput
 # SessionProfile of the NodeConfig and of each Peer object, and the owner of fuzz_control checks what it took. No parser word
 # in the name, listed as the reader of the controller's bytes that it is
 src/Core  ControlCopyProfiles  fuzz_control  via ControlInput
+# The security of the L2 Networks of a state (SDN-41 #234): ControlInput hands the Network objects of an Update to
+# ControlCopySecurities, which copies the L2Security of each L2 Network, and the seeds security-*.bin of fuzz_control hold
+# them; no parser word in the name, listed as the reader of the controller's bytes that it is
+src/Core  ControlCopySecurities  fuzz_control  via ControlInput
 
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
@@ -210,6 +214,13 @@ controller/internal/activation  Install.OpenFeature   exempt  opens the sealed E
 controller/internal/activation  OpenOfflineResponse   FuzzOpenOfflineResponse
 
 controller/internal/rbac   ParseRole  exempt  compares the name with the three role names; decodes nothing
+# The logins of users (SDN-32 #226): the query of the authorization page and the form of the device authorization
+# endpoint, which any caller sends, the user code that a person types into the device page and the code verifier that the
+# token endpoint takes. The last two have no parser word in their names and read the same kind of bytes
+controller/internal/login  ParseAuthorize      FuzzParse
+controller/internal/login  ParseDeviceRequest  FuzzParse
+controller/internal/login  NormalizeUserCode   FuzzParse
+controller/internal/login  VerifyChallenge     FuzzParse
 controller/internal/store  Open       exempt  opens the controller's own rqlite store by its URL
 controller/internal/store  OpenWith   exempt  opens the controller's own rqlite store by its URL, with the credential and the CA that the controller read from its own files
 
