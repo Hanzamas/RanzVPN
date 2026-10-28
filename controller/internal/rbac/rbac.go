@@ -90,6 +90,9 @@ func (r Role) rank() int {
 type Token struct {
 	Name string `json:"name"`
 	Role Role   `json:"role"`
+	// User is the User whose login made the token, a user token (users.go; SDN-32), and empty for an
+	// API token.
+	User string `json:"user,omitempty"`
 }
 
 // NewToken is a token just created, with its secret, which the controller shows this once.
@@ -108,10 +111,15 @@ func New(st *store.Store) *Tokens {
 	return &Tokens{st: st}
 }
 
-// Authenticate returns the token whose secret is secret, or ErrUnauthenticated.
+// Authenticate returns the token whose secret is secret, an API token or a user token, or
+// ErrUnauthenticated.
 func (t *Tokens) Authenticate(ctx context.Context, secret string) (Token, error) {
 	if !strings.HasPrefix(secret, secretPrefix) {
 		return Token{}, ErrUnauthenticated
+	}
+	if strings.HasPrefix(secret, userTokenPrefix) {
+		// A user token of a login (users.go; SDN-32)
+		return t.authenticateUser(ctx, secret)
 	}
 	st, ok, err := t.st.TokenByHash(ctx, hash(secret))
 	if err != nil {

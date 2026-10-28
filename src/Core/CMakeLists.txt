@@ -184,6 +184,8 @@ add_library(corecontrol STATIC
   ControlEndpoint.c
   # The kinds of the links of the VRFs and the tunnel endpoints in a desired state (SDN-76, #356)
   ControlLink.c
+  # The security of the L2 Networks in a desired state (SDN-41, #234)
+  ControlSecurity.c
   # The events of the node that the client reports (AUD1-DT-11, #459)
   ControlEvent.c
   # The Relays of a desired state and the Signals of the peers on the control stream (CORE-S5-5, #411)
@@ -239,8 +241,9 @@ set_target_properties(corevxlan
 
 # coreswitch: the switch module (Switch.h, Switch*.c; CORE-S4-1, #74): the VLAN-aware L2 switch of an L2 Network, the
 # forwarding plane of the new core in place of the forwarding of the Hub and its hub-wide lock. It calls bcrypt for the
-# random key of its MAC table and nothing else. The programs of the slim fork that link it (vpntest, the fuzz targets)
-# keep their own build options, so ranz_core_options and the library stay PRIVATE, as for corepeer.
+# random key of its MAC table, and the policy engine for the security of an L2 Network, and nothing else. The programs of
+# the slim fork that link it (vpntest, the fuzz targets) keep their own build options, so ranz_core_options and the
+# libraries stay PRIVATE, as for corepeer.
 file(GLOB SOURCES_CORE_SWITCH "Switch*.c")
 file(GLOB HEADERS_CORE_SWITCH "Switch*.h")
 
@@ -250,8 +253,11 @@ target_include_directories(coreswitch PUBLIC "${TOP_DIRECTORY}/src")
 
 target_link_libraries(coreswitch PRIVATE ranz_core_options ranz_warnings)
 
-# The only library the module calls
+# The only system library the module calls
 target_link_libraries(coreswitch PRIVATE "bcrypt.lib")
+
+# The security of an L2 Network (SwitchSecurity.c; SDN-41, #234) makes the policy engine the filter of a switch
+target_link_libraries(coreswitch PRIVATE corepolicy)
 
 set_target_properties(coreswitch
   PROPERTIES
