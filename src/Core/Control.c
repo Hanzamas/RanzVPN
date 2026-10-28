@@ -408,6 +408,9 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopySecurities(&st, c->Objects, c->NumObjects);
 	// The relays that the node may use, its home relay first (ControlSignal.c; CORE-S5-5, #411)
 	ControlCopyRelays(&st, c->Objects, c->NumObjects);
+	// The hubs and the ECMP of the VRFs, the LAN subnets of the node and the gateways that are down (ControlGateway.c; SDN-19,
+	// #195)
+	ControlCopyGateways(&st, c->Objects, c->NumObjects);
 	// The VRFs whose internet exit the node is (ControlEgress.c; SDN-12, #188)
 	ControlCopyEgress(&st, c->Objects, c->NumObjects);
 

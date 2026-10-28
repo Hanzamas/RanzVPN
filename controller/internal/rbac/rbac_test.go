@@ -116,12 +116,19 @@ func TestRecover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []Token{{Name: FirstAdmin, Role: Admin}, tok.Token}; len(ts) != 2 || ts[0] != want[0] || ts[1] != want[1] {
+	// The recovered secret was used above, so its listing has a last use that a bare token has not
+	if want := []Token{{Name: FirstAdmin, Role: Admin}, tok.Token}; len(ts) != 2 || who(ts[0]) != who(want[0]) || who(ts[1]) != who(want[1]) {
 		t.Errorf("after the recovery the tokens are %+v, want %+v", ts, want)
 	}
 	if _, err := tokens.Recover(ctx, tok.Name, func(string) error { return nil }); !errors.Is(err, ErrExists) {
 		t.Errorf("a recovery with the name of a token gave %v, want ErrExists", err)
 	}
+}
+
+// who strips a token of its life, which a use changes: the name and the role are what a test
+// compares.
+func who(t Token) Token {
+	return Token{Name: t.Name, Role: t.Role}
 }
 
 func openStore(t *testing.T) *store.Store {

@@ -62,6 +62,22 @@ func TestEgressRejects(t *testing.T) {
 		}
 	}
 
+	// In a VRF of topology hub-and-spoke the spokes reach only the hub, so the hub is the exit and a spoke is none
+	hub := func(egress string) []Resource {
+		return []Resource{
+			res(KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48", "topology": "hub-and-spoke", "hub": "gw", "egress": "`+egress+`"}`),
+			res(KindNode, "gw", `{"publicKey": "`+key1+`", "vrfs": ["corp"]}`),
+			res(KindNode, "site-1", `{"publicKey": "`+key2+`", "vrfs": ["corp"]}`),
+		}
+	}
+	want := `VRF "corp": egress: Node "site-1" is a spoke of the VRF of topology hub-and-spoke, whose other spokes reach only its hub: the egress is the hub "gw"`
+	if _, err := Apply(New(), doc(hub("site-1")...), nil); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), want) {
+		t.Errorf("a spoke as the exit: the error is %v, want one with %q", err, want)
+	}
+	if in, err := Apply(New(), doc(hub("gw")...), nil); err != nil || !slices.Equal(in.EgressVRFs("gw"), []string{"corp"}) {
+		t.Errorf("the hub as the exit: %v", err)
+	}
+
 	in, err := Apply(New(), doc(
 		res(KindVRF, "corp", `{"id": 10, "ula": "fd12:3456:789a::/48", "egress": "gw"}`),
 		res(KindNode, "gw", `{"publicKey": "`+key1+`", "vrfs": ["corp"]}`),
