@@ -170,6 +170,9 @@ controller/internal/controller  Controller.Import  exempt  takes a document that
 controller/internal/api         Client.Import      exempt  the API client of `ranz import`: it sends a parsed document to the controller and reads the controller's own answer
 # A protocol or a port of a Policy (SDN-8 #184), which a document gives as a number or a string
 controller/internal/intent  PolicyValue.UnmarshalJSON  FuzzParseDocument  via ParseDocument
+# The mimic section of a Listener (SDN-94 #423) comes in the same documents, and FuzzParseDocument starts from one that holds
+# the section with each decoy; ListenerMimic.UnmarshalJSON reads it and refuses a key and a short id by name
+controller/internal/intent  ListenerMimic.UnmarshalJSON  FuzzParseDocument  via ParseDocument
 # The Users, the Groups and the owners of the Nodes (SDN-31 #225) come in the same documents, and FuzzUsers starts from one
 # that holds them; the stored form of the password hash of a User (internal/password) is read by Parse
 controller/internal/intent  ParseDocument  FuzzUsers
