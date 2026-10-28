@@ -226,6 +226,10 @@ controller/internal/store  OpenWith   exempt  opens the controller's own rqlite 
 # operator copied from the first member of a cluster
 controller/internal/sidecar  ReadCredential  FuzzParseCredential via parseCredential
 
+# The secrets of the export and audit targets that the store keeps sealed to a key of the controller (AUD1-DT-10 #458): the
+# bytes that the store holds in place of a sealed secret, which anyone who can write to the store can choose
+controller/internal/keys  Sealer.Open  FuzzSealerOpen
+
 # The CA certificate and key files of `ranz cert -signcert` and -signkey (SDN-53 #246): the operator's own files, which
 # LoadAuthority reads as PEM
 controller/internal/certgen  LoadAuthority  FuzzLoadAuthority
