@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -213,7 +212,8 @@ func TestTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gone != (rbac.Token{Name: rbac.FirstAdmin, Role: rbac.Admin}) {
+	// The token was used, so the answer has its last use; it never had an expiry
+	if gone.Name != rbac.FirstAdmin || gone.Role != rbac.Admin || !gone.Expires.IsZero() || gone.Expired || gone.LastUsed.IsZero() {
 		t.Errorf("the delete answered %+v", gone)
 	}
 	if _, err := h.api.Status(ctx); httpStatus(err) != http.StatusUnauthorized {
@@ -226,8 +226,8 @@ func TestTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []rbac.Token{{Name: "root", Role: rbac.Admin}}; fmt.Sprint(tokens) != fmt.Sprint(want) {
-		t.Errorf("the tokens are %+v, want %+v", tokens, want)
+	if len(tokens) != 1 || tokens[0].Name != "root" || tokens[0].Role != rbac.Admin || !tokens[0].Expires.IsZero() || tokens[0].Expired || tokens[0].LastUsed.IsZero() {
+		t.Errorf("the tokens are %+v, want root, an admin token that never expires and was used", tokens)
 	}
 }
 
@@ -313,7 +313,8 @@ func (h *harness) deleteTokenIfThere(name string) {
 }
 
 // snapshot returns what an action can change, as the admin token reads it: the intent, the
-// nodes, the tokens and the licence in force.
+// nodes, the tokens and the licence in force. The last use of a token is left out: every call,
+// the refused ones too, is a use that moves it.
 func (h *harness) snapshot() string {
 	h.t.Helper()
 	ctx := context.Background()
@@ -324,6 +325,9 @@ func (h *harness) snapshot() string {
 	tokens, err := h.api.Tokens(ctx)
 	if err != nil {
 		h.t.Fatal(err)
+	}
+	for i := range tokens {
+		tokens[i].LastUsed = time.Time{}
 	}
 	lic, err := h.api.Licence(ctx)
 	if err != nil {
