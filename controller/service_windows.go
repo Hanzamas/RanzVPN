@@ -300,6 +300,13 @@ func Install(exe string) error {
 	return installService(exe, nil, config{dataDir: defaultDataDir()})
 }
 
+// InstallAdminFrom is Install with the flag -admin-from of the service set to adminFrom, the admin
+// source allowlist that the first start applies (AUD1-DT-6, #454): prefixes separated by commas, or
+// "any".
+func InstallAdminFrom(exe, adminFrom string) error {
+	return installService(exe, adminFromArgs(adminFrom), config{dataDir: defaultDataDir()})
+}
+
 // Uninstall removes the Windows service. The service must be stopped first, as uninstall needs;
 // `ranz uninstall` (internal/install, ONE-2 #311) stops it itself before calling this.
 func Uninstall() error {
