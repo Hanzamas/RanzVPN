@@ -1,0 +1,13 @@
+network lab: l2, default action deny, 3 rules
+  priority  rule          action  match
+  5         web           allow   protocol tcp; ports 80,8000-8080; vlans 10,20; from users ann,bob; from groups staff; from tags laptop; to tags server; to address group dmz 10.2.0.0/24,2001:db8:2::/64; to address group empty, which holds no address; direction both
+  10        routed        allow   protocol ip; from addresses 10.1.0.0/16,2001:db8::1/128
+  20        ping          allow   protocol icmp
+  -         default:deny  deny    every frame that no rule matches
+network wan: l3, default action deny, 3 rules
+  priority  rule          action  match
+  10        routed        allow   protocol ip; from addresses 10.1.0.0/16,2001:db8::1/128
+  20        ping          allow   protocol icmp
+  30        gre           deny    protocol 47
+  -         default:deny  deny    every frame that no rule matches
+no network
