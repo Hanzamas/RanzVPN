@@ -56,10 +56,15 @@
 # installed through IP Helper, the node starting ranz bgp) needs the C build and runs in
 # windows.yml (.github/scripts/bgp-spike.ps1).
 #
-# Neither job touches the C build, so they run beside windows.yml and add nothing to its time.
+# evpn-frr: the EVPN of a gateway (SDN-25 #201) against FRR, the reference BGP speaker of a
+# data-centre fabric, in a container of its own on this runner: EVPN type-5 both ways between the
+# sidecar and FRR, and VXLAN both ways between the gateway and the VRFs of the kernel of FRR
+# (TestFRREVPN of ranz-bgp/internal/sidecar).
+#
+# No job here touches the C build, so they run beside windows.yml and add nothing to its time.
 #
 # Two sets of jobs, which the plan job chooses (ci-plan.yml, .github/scripts/ci-plan.py; windows.yml
-# says when each runs). A pull request runs linux and windows for x64. The full set also runs windows
+# says when each runs). A pull request runs linux, evpn-frr and windows for x64. The full set also runs windows
 # for arm64, which a pull request does not create, since GitHub cannot skip one leg of a matrix: it
 # runs on a push to master or integration, every night, on workflow_dispatch, and on a pull request
 # with the label full-ci or with a sensitive path of ci-plan.py.
@@ -695,3 +700,37 @@ jobs:
       timeout-minutes: 10
       run: |
         . .github/scripts/controller-service.ps1 -BinDir build\ranz
+
+  # The EVPN of a gateway against FRR, the reference BGP speaker of a data-centre fabric (SDN-25 #201; ADR-0032). FRR runs
+  # in a container of its own on a bridge of this runner, which stands in for the second host (ADR-0002 amendment of
+  # 2026-10-21): one leaf of the fabric, whose VRFs red and blue hand the same LAN to the gateway on their own L3 VNIs,
+  # through the VXLAN of the kernel of the container (ranz-bgp/internal/sidecar/testdata/frr/fabric.sh). TestFRREVPN is the
+  # gateway on the runner: the sidecar peers EVPN type-5 with FRR, the prefixes of each VRF reach the VRF of FRR and the
+  # other way round, an ICMP echo goes both ways through VXLAN in each VRF, and a prefix withdrawn in red stays in blue.
+  # The node itself runs the same exchange against a harness VTEP on Windows (vpntest evpn, windows.yml).
+  evpn-frr:
+    name: EVPN with FRR (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # FRR 10.7.1, pinned by the digest of its image
+      FRR_IMAGE: 'quay.io/frrouting/frr:10.7.1@sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2'
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: go.sum
+    - name: The fabric, FRR in a container of its own
+      run: bash ranz-bgp/internal/sidecar/testdata/frr/fabric.sh "$FRR_IMAGE"
+    # The test must run, not skip: the step fails unless it passed
+    - name: The gateway against FRR
+      shell: bash
+      env:
+        RANZ_FRR_CONTAINER: ranz-frr
+      run: |
+        go test -count=1 -v -run '^TestFRREVPN$' ./ranz-bgp/internal/sidecar 2>&1 | tee "$RUNNER_TEMP/frr-test.out"
+        grep -q -- '--- PASS: TestFRREVPN' "$RUNNER_TEMP/frr-test.out"
+    - name: The log of FRR
+      if: ${{ !cancelled() }}
+      run: docker exec ranz-frr cat /tmp/frr.log
