@@ -22,7 +22,8 @@
 //   saw the node at, which the answer of its bind gives, so no STUN server is needed and none is used. The pair moves to the
 //   direct path that ICE validates (an Upgrade), with its peer session, and back to the Relay when consent freshness fails
 //   it (a Fallback). With ICE the agent offers and answers once the home relay answered its bind, so that every Signal names
-//   that address, and it offers again to every peer of the datagram path when its candidates change. A node asks its home
+//   that address; the node of the lower static key of a pair offers it, and the other answers, so that no two offers cross;
+//   and either offers again to a peer that it gave a Signal when its candidates change, which restarts ICE. A node asks its home
 //   gateway for a public port of the socket with PCP, NAT-PMP or UPnP only when its setting PortMapping is 1
 //   (NODE_SETTING_PORT_MAPPING): it is off by default, as a port that a gateway opens is attack surface. The public port then
 //   goes first among the candidates. The Upgrades and the Fallbacks go to the Controller on the control stream
@@ -52,6 +53,7 @@ typedef struct NODE_AGENT_PEER {
 	bool DialFailed;           // The last dial of the node to it failed
 	bool Resignal;             // The home relay or the candidates changed: the next offer tells the peer, whether it has a Path or not
 	bool Answer;               // With ICE, its offer came before the home relay answered the bind: the thread answers it then
+	bool Signalled;            // The node gave the control stream a Signal for it: an offer or an answer
 	UINT64 NextSignal;         // When the agent may offer it a Signal next (GetTickCount64)
 	UINT Delay;                // ... and the delay after that offer
 	volatile LONG64 Out;       // Records of the overlay sent to it on its Path
@@ -244,7 +246,8 @@ void NodeAgentDialFailed(NODE *n, const UCHAR *key) {
 // Offer a Signal to each peer that needs the datagram path and has no Path to it yet, as its delay allows, and once to each that
 // has to hear of a new home relay or of new candidates of the node. The Signal goes on the control stream, which the Controller
 // carries it on to the peer. With ICE an offer names the address that the home relay saw the node at, so none goes before the
-// relay answered the bind of the node.
+// relay answered the bind of the node, and the node of the lower static key of a pair offers and the other answers, so that
+// no two offers cross: the other offers only to tell of a new home relay or new candidates, which restarts ICE.
 static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 	UCHAR env[PEER_MAX_ENVELOPE];
 	NODE_AGENT_DUE *due = NULL;
@@ -260,6 +263,8 @@ static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 			const NODE_AGENT_PEER *e = &a->Peers[i];
 
 			if ((e->Datagram == false && e->DialFailed == false) || now < e->NextSignal)
+				continue;
+			if (a->Config.Ice && e->Resignal == false && Cmp(a->Key->Public, e->Key, PEER_KEY_SIZE) > 0)
 				continue;
 
 			if (due == NULL)
@@ -299,14 +304,29 @@ static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 			} else if (e != NULL) {
 				e->NextSignal = now + e->Delay;
 				e->Delay = MIN(e->Delay * 2, NODE_AGENT_SIGNAL_MAX);
-				if (offered)
+				if (offered) {
 					e->Resignal = false;
+					e->Signalled = true;
+				}
 			}
 		}
 		ReleaseSRWLockExclusive(&a->Lock);
 	}
 
 	Free(due);
+}
+
+// Note that the node gave the control stream a Signal for the peer of key: a change of its candidates goes to the peer from now
+// on (NodeAgentCandidates)
+static void NodeAgentSignalled(NODE_AGENT *a, const UCHAR *key) {
+	AcquireSRWLockExclusive(&a->Lock);
+	{
+		NODE_AGENT_PEER *e = NodeAgentFind(a, key);
+
+		if (e != NULL)
+			e->Signalled = true;
+	}
+	ReleaseSRWLockExclusive(&a->Lock);
 }
 
 // A Signal that the Controller carried from the peer of the node name peer (CONTROL_SIGNAL_PROC), on the thread of the control
@@ -359,8 +379,10 @@ void NodeAgentSignal(void *param, const char *peer, const UCHAR *envelope, UINT 
 	ReleaseSRWLockExclusive(&a->Lock);
 
 	UINT len = (known && later == false ? PeerSealSignal(p, sig.Sender, PEER_SIGNAL_ANSWER, env, sizeof(env)) : 0);
-	if (len != 0 && ControlSendSignal(a->Signals, name, env, len))
+	if (len != 0 && ControlSendSignal(a->Signals, name, env, len)) {
 		InterlockedIncrement64(&a->SignalsSent);
+		NodeAgentSignalled(a, sig.Sender);
+	}
 }
 
 // With ICE, the answers to the offers that came before the home relay answered the bind of the node, once it did: each names
@@ -394,8 +416,10 @@ static void NodeAgentAnswer(NODE_AGENT *a, PEER_AGENT *p) {
 	for (UINT i = 0; i < num; i++) {
 		UINT len = PeerSealSignal(p, due[i].Key, PEER_SIGNAL_ANSWER, env, sizeof(env));
 
-		if (len != 0 && ControlSendSignal(a->Signals, due[i].Name, env, len))
+		if (len != 0 && ControlSendSignal(a->Signals, due[i].Name, env, len)) {
 			InterlockedIncrement64(&a->SignalsSent);
+			NodeAgentSignalled(a, due[i].Key);
+		}
 	}
 
 	Free(due);
@@ -414,9 +438,9 @@ static bool NodeAgentSameCandidates(const PEER_CANDIDATE *c, UINT n, const PEER_
 }
 
 // With ICE: when the candidates of the node changed since the last look, as when the home gateway granted the public port of
-// the socket or the home relay saw the node at another address, each peer of the datagram path hears of them in an offer. The
-// offer starts a new ICE session with the peer while the one there is still checks without the public port, or failed
-// (PeerSealSignal), and the peer takes the candidates with it.
+// the socket or the home relay saw the node at another address, each peer of the datagram path that the node gave a Signal
+// already hears of them in an offer. The offer starts a new ICE session with the peer while the one there is still checks
+// without the public port, or failed (PeerSealSignal), and the peer takes the candidates with it.
 static void NodeAgentCandidates(NODE_AGENT *a, PEER_AGENT *p) {
 	PEER_CANDIDATE c[PEER_MAX_CANDIDATES];
 
@@ -431,6 +455,8 @@ static void NodeAgentCandidates(NODE_AGENT *a, PEER_AGENT *p) {
 	AcquireSRWLockExclusive(&a->Lock);
 	{
 		for (UINT i = 0; i < a->NumPeers; i++) {
+			if (a->Peers[i].Signalled == false)
+				continue;
 			a->Peers[i].Resignal = true;
 			a->Peers[i].NextSignal = 0;
 		}

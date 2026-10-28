@@ -586,7 +586,10 @@ static UINT PeerPathOf(PEER_AGENT *a, PEER *p) {
 // (the public port of the home gateway, the address that the home relay saw, the host addresses), with the
 // credentials of the node's ICE session with the peer. An offer starts that session when there is none, the last
 // one failed, or it still checks without the public port that the home gateway granted since: a new offer restarts
-// ICE. Returns the size of the envelope in buf, 0 when peer is no peer or the envelope does not fit size.
+// ICE. An answer carries no credentials while that session is the node's own offer that waits for the answer of the
+// peer: the node did not take the offer of the peer then, as its key is higher, and the peer takes the node's offer
+// instead (PeerIceRemote), so the two never end up both controlling. Returns the size of the envelope in buf, 0 when
+// peer is no peer or the envelope does not fit size.
 UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UINT size) {
 	PEER_SIGNAL s;
 	UCHAR payload[PEER_MAX_SIGNAL];
@@ -606,6 +609,8 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 		s.NumCandidates = PeerIceCandidates(a, s.Candidates, PEER_MAX_CANDIDATES);
 	}
 
+	// The side of the peer in an ICE session changes under IceLock, which comes before the lock of the layer (PeerIce.c)
+	AcquireSRWLockShared(&a->IceLock);
 	AcquireSRWLockShared(&a->Lock);
 	{
 		PEER *p = PeerFind(a, peer);
@@ -613,7 +618,9 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 		known = (p != NULL);
 
 		if (a->Config.Ice) {
-			if (p != NULL && p->Ice != NULL) {
+			bool waiting = (p != NULL && p->Ice != NULL && p->Ice->Controlling && p->Ice->RemoteUfrag[0] == 0);
+
+			if (p != NULL && p->Ice != NULL && (type == PEER_SIGNAL_OFFER || waiting == false)) {
 				strcpy_s(s.IceUfrag, sizeof(s.IceUfrag), p->Ice->Ufrag);
 				strcpy_s(s.IcePwd, sizeof(s.IcePwd), p->Ice->Pwd);
 			}
@@ -644,6 +651,7 @@ UINT PeerSealSignal(PEER_AGENT *a, const UCHAR *peer, UINT type, UCHAR *buf, UIN
 		}
 	}
 	ReleaseSRWLockShared(&a->Lock);
+	ReleaseSRWLockShared(&a->IceLock);
 
 	if (known == false)
 		return 0;
