@@ -124,10 +124,13 @@
  */
 
 /**
- * rbac.Token
+ * rbac.Token: the times are RFC 3339 and left out while the token has none (AUD1-DT-13)
  * @typedef {object} Token
  * @property {string} name
  * @property {import('./api.js').Role} role
+ * @property {string} [expires] - the instant from which the controller refuses the token
+ * @property {boolean} [expired] - the expiry has passed: the token is refused, and an admin can still delete it
+ * @property {string} [lastUsed] - when the token last authenticated a call, right to the minute
  */
 
 /**

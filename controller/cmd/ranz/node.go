@@ -77,7 +77,7 @@ const nodeUsage = `usage:
   ranz node controller clear
   ranz node key
   ranz node state [-o json|table]
-  ranz node login [-server URL] [-tls-fingerprint HEX] [-device] [-name NAME]
+  ranz node login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device] [-name NAME]
 <host:port>, <key> and <fingerprint> are the TLS port, publicKey and tlsFingerprint of ranz status on the Controller.`
 
 func runNode(args []string, stdout, stderr io.Writer, agent nodeAgent) int {

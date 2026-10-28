@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/capability"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
@@ -45,6 +46,10 @@ const tokensPath = "/api/v1/tokens"
 
 // challenge is the WWW-Authenticate header of a refusal (RFC 6750), which names the controller.
 const challenge = `Bearer realm="ranz-controller"`
+
+// expiredDescription is the error_description that the challenge of a token that has expired carries
+// (RFC 6750, section 3), beside the error invalid_token.
+const expiredDescription = "the token expired"
 
 // Problem is the body of every answer that is not 200 OK.
 type Problem struct {
@@ -159,8 +164,8 @@ func Needs(method, urlPath string) rbac.Role {
 
 // Guard passes each request whose bearer token has a role that allows what the request Needs
 // to h, with the token in its context (Caller). It answers 401 Unauthorized to a request with no
-// token or with one the controller does not know, and 403 Forbidden to one whose role is too
-// low (RFC 6750, section 3).
+// token, with one the controller does not know and with one that has expired, and 403 Forbidden
+// to one whose role is too low (RFC 6750, section 3).
 func Guard(tokens *rbac.Tokens, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		secret, ok := bearer(r)
@@ -170,6 +175,12 @@ func Guard(tokens *rbac.Tokens, h http.Handler) http.Handler {
 			return
 		}
 		tok, err := tokens.Authenticate(r.Context(), secret)
+		if errors.Is(err, rbac.ErrExpired) {
+			// Told to the holder of the secret, who has it already: when the token ended, not its name
+			w.Header().Set("WWW-Authenticate", challenge+`, error="invalid_token", error_description="`+expiredDescription+`"`)
+			reply(w, http.StatusUnauthorized, Problem{Error: fmt.Sprintf("the bearer token expired at %s: an admin makes a new one", tok.Expires.Format(time.RFC3339))})
+			return
+		}
 		if errors.Is(err, rbac.ErrUnauthenticated) {
 			w.Header().Set("WWW-Authenticate", challenge+`, error="invalid_token"`)
 			reply(w, http.StatusUnauthorized, Problem{Error: "the bearer token is not a token of this controller, or it was deleted"})
@@ -257,15 +268,24 @@ func (e *Error) Error() string {
 }
 
 // NewClient returns a client of the API at base. The controller's certificate is self-signed
-// until ACME, so for a loopback host the client does not check the certificate (nothing outside
-// the host can sit between the two ends); for any other host it checks the certificate as
-// usual, or the fingerprint that Pin sets.
+// until ACME, so for a loopback host (Loopback) the client does not check the certificate; for any
+// other host it checks the certificate as usual, or the fingerprint that Pin sets. That a loopback
+// host needs no check is true of the network and not of the host: another process of it can listen
+// on the port that the controller is not on (AUD1-DT-13, #461). So a program that sends a token
+// to a controller on its own host calls Pin, as ranz does (cmd/ranz); this client is for the tests
+// of a controller that they start themselves.
 func NewClient(base string) *Client {
 	c := &Client{URL: base}
-	if u, err := url.Parse(base); err == nil && u.Scheme == "https" && loopbackHost(u.Hostname()) {
+	if Loopback(base) {
 		c.HTTP = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	}
 	return c
+}
+
+// Loopback reports whether base is an https URL of this host: a loopback address or localhost.
+func Loopback(base string) bool {
+	u, err := url.Parse(base)
+	return err == nil && u.Scheme == "https" && loopbackHost(u.Hostname())
 }
 
 // Pin makes c accept only a certificate whose public key has the fingerprint fp, the
@@ -285,7 +305,7 @@ func (c *Client) Pin(fp string) error {
 			}
 			sum := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
 			if !bytes.Equal(sum[:], want) {
-				return fmt.Errorf("the controller's certificate has the TLS fingerprint %x, not %s", sum, fp)
+				return &FingerprintError{Got: hex.EncodeToString(sum[:]), Want: fp}
 			}
 			return nil
 		},
