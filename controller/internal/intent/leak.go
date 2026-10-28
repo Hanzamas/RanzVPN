@@ -39,8 +39,9 @@ const (
 	// MaxRouteTargets is the most route targets that a VRF imports, and the most that it exports.
 	MaxRouteTargets = 32
 	// MaxPeerRoutes is the most routes that lead to one peer of a Node besides its addresses: the
-	// outside prefixes of its 1:1 NAT rules and the routes that leaks add. The Peer message of the
-	// control protocol carries 16 (proto/ranz/control/v1/control.options).
+	// outside prefixes of its 1:1 NAT rules, the routes that leaks add and the default route of
+	// each VRF whose internet exit it is (egress.go). The Peer message of the control protocol
+	// carries 16 (proto/ranz/control/v1/control.options).
 	MaxPeerRoutes = 16
 	// DefaultRouteTargetASN is the AS number of the route target that Connect gives a VRF that
 	// exports none (DefaultRouteTarget): 64512, the first AS number for private use (RFC 6996).
@@ -369,7 +370,8 @@ func (in Intent) leakedRoutes() ([]LeakedRoute, []error) {
 
 // validatePeerRoutes checks that no Node has more than MaxPeerRoutes routes to one peer besides
 // its addresses: the outside prefixes of the 1:1 NAT rules of the peer in the VRFs that the two
-// share, and the routes leaked into the VRFs of the Node that lead to the peer.
+// share, the routes leaked into the VRFs of the Node that lead to the peer, and the default route
+// of each VRF of the two whose internet exit the peer is (egress.go).
 func (in Intent) validatePeerRoutes(leaked []LeakedRoute) []error {
 	count := map[[2]string]int{} // by Node and peer
 	for _, name := range sortedNames(in.Nodes) {
@@ -385,11 +387,13 @@ func (in Intent) validatePeerRoutes(leaked []LeakedRoute) []error {
 				count[[2]string{name, r.Node}]++
 			}
 		}
+		// The default routes of the internet exits (egress.go; SDN-12)
+		in.egressRoutes(name, count)
 	}
 	var problems []error
 	for _, k := range slices.SortedFunc(maps.Keys(count), func(a, b [2]string) int { return cmp.Or(cmp.Compare(a[0], b[0]), cmp.Compare(a[1], b[1])) }) {
 		if count[k] > MaxPeerRoutes {
-			problems = append(problems, fmt.Errorf("Node %q: %d routes lead to its peer %q, the outside prefixes of the 1:1 NAT rules of the peer with the routes that leaks add, and the control protocol carries at most %d",
+			problems = append(problems, fmt.Errorf("Node %q: %d routes lead to its peer %q, the outside prefixes of the 1:1 NAT rules of the peer with the routes that leaks add and the default routes of the VRFs whose internet exit it is, and the control protocol carries at most %d",
 				k[0], count[k], k[1], MaxPeerRoutes))
 		}
 	}

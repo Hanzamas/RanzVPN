@@ -116,6 +116,10 @@ type VRF struct {
 	// that such a link carries the VRF on; left out, it is the id of the VRF.
 	Link string `json:"link,omitempty"`
 	VNI  uint32 `json:"vni,omitempty"`
+	// Egress is the Node, a member of the VRF, that is its internet exit (SDN-12, egress.go): the
+	// other Nodes of the VRF send it their traffic to the addresses outside the VRF, and it takes
+	// that traffic to the internet with its Egress tier. Left out, the VRF has no exit.
+	Egress string `json:"egress,omitempty"`
 }
 
 // Network belongs to one VRF. Its pools are the controller's to allocate from (ADR-0028,
@@ -410,8 +414,9 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
 // Network, a Node, a Policy, a Mirror, a NAT or a DnsRecord uses cannot be deleted, nor can a
 // Network that a Device uses, nor a Node that a NAT, a DnsRecord or a Listener uses, that is the
-// gateway of a Device or that answers DHCP for a Network, a Group that a User belongs to, and a
-// User that owns a Node. The Nodes lose their addresses in a deleted Network.
+// gateway of a Device, that answers DHCP for a Network or that is the internet exit of a VRF, a
+// Group that a User belongs to, and a User that owns a Node. The Nodes lose their addresses in a
+// deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -474,6 +479,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		// The Listener of the Node (SDN-45, listener.go)
 		if users := next.listenerUsers(name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
+		// The VRFs whose internet exit the Node is (SDN-12, egress.go)
+		if users := next.egressUsers(name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q is the internet exit of %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
 		delete(next.Nodes, name)
 	case KindPolicy:
@@ -898,6 +907,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateEndpoints()...)
 	problems = append(problems, in.validateDevices()...)
 	problems = append(problems, in.validateLinks()...)
+	// The internet exits of the VRFs (egress.go)
+	problems = append(problems, in.validateEgress()...)
 	return append(problems, in.validateIPAM()...)
 }
 
