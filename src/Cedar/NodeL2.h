@@ -28,6 +28,10 @@
 //   node never unbinds a driver: ranz uninstall does.
 // - arm64 is L3 only: there is no production-signed XDP runtime and no SeLow package for it (ADR-0022 amendment of
 //   2026-10-21), so no L2 adapter is offered there (NodeL2Offered).
+// - A bridge (NodeL2Bridge.c, NodeL2Npcap.c; CORE-S3-3, #73): the same adapter on a physical NIC, or on the host vNIC of
+//   a Hyper-V virtual switch, whose segment the host shares (NODE_L2_CONFIG.Bridge). Its backends are SeLow, the bundled
+//   default, then Npcap where the operator installed it, or XDP, which the owner names, with Npcap holding the NIC in
+//   promiscuous mode (ADR-0018 decision 3). A bridge sends no probe and is never reset: its NIC is the host's.
 
 #ifndef NODE_L2_H
 #define NODE_L2_H
@@ -71,6 +75,11 @@
 // The Event Log source and the event id of a recovery: after the MS_EVENT_* ids of the service (Mayaqua/Microsoft.h)
 #define NODE_L2_EVENT_SOURCE   "ranzvpnserver"
 #define NODE_L2_EVENT_RECOVERY 10
+// Where a frame on the segment of a bridge goes (NodeL2BridgeWay): to the host, to the others on the segment, or both
+#define NODE_L2_TO_OTHERS 1
+#define NODE_L2_TO_HOST   2
+// Addresses of the host on the NIC of a bridge whose packets the XDP backend lets pass to the host untouched, at most
+#define NODE_L2_XDP_MAX_PASS 32
 
 // The types of the L2 adapter. NODE_L2_RING, a ring of frames, and NODE_KMTEST, a KM-TEST adapter, are their files' own.
 typedef struct NODE_L2 NODE_L2;
@@ -85,6 +94,11 @@ typedef struct NODE_KMTEST NODE_KMTEST;
 typedef void(NODE_L2_PROC)(NODE_L2 *a, void *param, const UCHAR *frame, UINT size);
 // Resets the KM-TEST adapter after failed attaches, and gives the index of its interface afterwards; false when it could not
 typedef bool(NODE_L2_RESET_PROC)(void *param, UINT *if_index);
+// Holds the NIC of a bridge in promiscuous mode while the XDP backend carries its frames, as XDP cannot set the mode
+// itself (xdp-for-windows issue #44): what holds it goes to *hold, for NODE_L2_LET_GO_PROC; false, with why in error,
+// when it cannot. And lets go of it again.
+typedef bool(NODE_L2_HOLD_PROC)(NODE_L2 *a, void **hold, char *error, UINT error_size);
+typedef void(NODE_L2_LET_GO_PROC)(void *hold);
 
 // The procedures of a backend. Attach binds to the adapter (NODE_L2.IfIndex, Luid, Guid) and starts the drain thread
 // that hands each frame that the host sends to NodeL2Capture; false, with why in error, when it cannot bind. Inject
@@ -131,6 +145,14 @@ struct NODE_L2_CONFIG {
 	UINT BackendRing;
 	// No probe of the receive path of the host: for a backend of a test, whose frames reach no host
 	bool NoProbe;
+	// A bridge (CORE-S3-3, #73): IfIndex is a physical NIC or the host vNIC of a Hyper-V virtual switch (NodeL2BridgeIndex,
+	// NodeL2HyperVIndex), whose segment the host shares. Without Backends it takes SeLow, then Npcap; it sends no probe
+	// and is never reset, whatever Reset says.
+	bool Bridge;
+	// What holds the NIC of a bridge in promiscuous mode for the XDP backend, and lets go of it; NULL for Npcap
+	// (NodeL2NpcapHold). A test may give its own.
+	NODE_L2_HOLD_PROC *Hold;
+	NODE_L2_LET_GO_PROC *LetGo;
 };
 
 // An L2 adapter: a KM-TEST adapter, the backend that carries its frames, and the two rings between them and the owner
@@ -156,6 +178,10 @@ struct NODE_L2 {
 	UINT FlushUs;
 	UINT BackendRing;
 	bool NoProbe;
+	// A bridge, and what holds its NIC in promiscuous mode for the XDP backend (NODE_L2_CONFIG)
+	bool Bridge;
+	NODE_L2_HOLD_PROC *Hold;
+	NODE_L2_LET_GO_PROC *LetGo;
 	// The capture ring, from the backend to the owner, and the adapter queue that empties it; its event is auto-reset
 	NODE_L2_RING *Captures;
 	HANDLE CaptureEvent;
@@ -200,7 +226,19 @@ struct NODE_L2 {
 	volatile LONG64 DriverDrops;
 	volatile LONG64 DriverWaitFailures;
 	volatile LONG DriverWaitError;
+	// A bridge on XDP: the frames of the wire that were the host's own, which the backend handed back to the host, and the
+	// ones that found the ring of its socket full
+	volatile LONG64 ToHost;
+	volatile LONG64 ToHostDrops;
 };
+
+// A unicast address of the host on the interface of an adapter (NodeL2BridgeAddresses)
+typedef struct NODE_L2_ADDRESS {
+	// 4 for IPv4, 16 for IPv6
+	UINT Size;
+	// The address, in network byte order
+	UCHAR Bytes[16];
+} NODE_L2_ADDRESS;
 
 // What NodeL2GetStatus reports
 struct NODE_L2_STATUS {
@@ -237,6 +275,10 @@ struct NODE_L2_STATUS {
 	UINT64 DriverDrops;
 	UINT64 WaitFailures;
 	UINT WaitError;
+	// A bridge, and on XDP the frames of the wire that it handed back to the host, and the ones that it dropped
+	bool Bridge;
+	UINT64 ToHost;
+	UINT64 ToHostDrops;
 };
 
 // NodeL2.c
@@ -256,6 +298,19 @@ UINT NodeL2XdpQueues(UINT if_index, UINT max, char *error, UINT error_size);
 
 // NodeL2SeLow.c
 const NODE_L2_BACKEND *NodeL2SeLowBackend();
+
+// NodeL2Bridge.c
+UINT NodeL2BridgeBackends(const NODE_L2_BACKEND **list, UINT max);
+UINT NodeL2BridgeWay(const UCHAR *frame, UINT size, const UCHAR *mac);
+UINT NodeL2BridgeIndex(const char *name, char *error, UINT error_size);
+UINT NodeL2HyperVIndex(const char *name, char *error, UINT error_size);
+UINT NodeL2BridgeAddresses(NODE_L2 *a, NODE_L2_ADDRESS *list, UINT max);
+
+// NodeL2Npcap.c
+const NODE_L2_BACKEND *NodeL2NpcapBackend();
+bool NodeL2NpcapPresent(char *error, UINT error_size);
+bool NodeL2NpcapHold(NODE_L2 *a, void **hold, char *error, UINT error_size);
+void NodeL2NpcapLetGo(void *hold);
 
 // NodeKmTest.c
 NODE_KMTEST *NodeKmTestNew(NODE *n, const UCHAR *mac);
