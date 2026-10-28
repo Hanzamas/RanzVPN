@@ -222,23 +222,23 @@ typedef struct PEER_STATS {
 // the socket of the layer, the ICE socket, so that one mapping of a NAT or a home gateway serves the relay and all of
 // its peers.
 typedef struct PEER_CONFIG {
-	bool Relay;                      // The relay role: take binds and forward between the nodes bound to it
-	UINT RelayRate;                  // Data datagrams per second that one bound node may send through the relay
-	UINT RelayBurst;                 // ... of them in one burst
-	UINT BindInterval;               // ms between two binds of the node to a relay: the keepalive of its binding
-	UINT BindRetry;                  // ms before a bind that had no answer is sent again
-	UINT BindExpiry;                 // ms after which the relay role drops a binding that was not renewed
-	bool Ice;                        // Move each peer from the relay to a direct path that ICE validates (libjuice)
-	bool PortMap;                    // With Ice, ask the home gateway for a public port of the socket (libplum)
-	UINT PortMapTimeout;             // ms that the port mapping waits for a gateway, per protocol; 0 for 10 s
-	bool Punch;                      // Try port prediction and birthday punching for a symmetric-NAT peer (PeerPunch.c)
-	UINT PunchBudget;                // The most probes one punch of a peer may send before it gives up; 0 for the default
-	UINT PunchPorts;                 // The ports swept above a predicted or reflexive one in the birthday range; 0 for the default
-	UINT PunchRate;                  // Probes one PeerTick sends per punching peer, so a burst stays bounded; 0 for the default
-	UINT SessionRekeyTime;           // ms after which the initiator of a peer session's keys replaces them; 0 for the default
-	UINT64 SessionRekeyDatagrams;    // Records sent under one key after which the sender replaces it; 0 for the default
-	UINT SessionTimeout;             // ms without a record from the peer after which its session is dropped; 0 for the default
-	UINT SessionKeepalive;           // ms after a record received with none sent, when a keepalive answers it; 0 for the default
+	bool Relay;                   // The relay role: take binds and forward between the nodes bound to it
+	UINT RelayRate;               // Data datagrams per second that one bound node may send through the relay
+	UINT RelayBurst;              // ... of them in one burst
+	UINT BindInterval;            // ms between two binds of the node to a relay: the keepalive of its binding
+	UINT BindRetry;               // ms before a bind that had no answer is sent again
+	UINT BindExpiry;              // ms after which the relay role drops a binding that was not renewed
+	bool Ice;                     // Move each peer from the relay to a direct path that ICE validates (libjuice)
+	bool PortMap;                 // With Ice, ask the home gateway for a public port of the socket (libplum)
+	UINT PortMapTimeout;          // ms that the port mapping waits for a gateway, per protocol; 0 for 10 s
+	bool Punch;                   // Try port prediction and birthday punching for a symmetric-NAT peer (PeerPunch.c)
+	UINT PunchBudget;             // The most probes one punch of a peer may send before it gives up; 0 for the default
+	UINT PunchPorts;              // The ports swept above a predicted or reflexive one in the birthday range; 0 for the default
+	UINT PunchRate;               // Probes one PeerTick sends per punching peer, so a burst stays bounded; 0 for the default
+	UINT SessionRekeyTime;        // ms after which the initiator of a peer session's keys replaces them; 0 for the default
+	UINT64 SessionRekeyDatagrams; // Records sent under one key after which the sender replaces it; 0 for the default
+	UINT SessionTimeout;          // ms without a record from the peer after which its session is dropped; 0 for the default
+	UINT SessionKeepalive;        // ms after a record received with none sent, when a keepalive answers it; 0 for the default
 } PEER_CONFIG;
 
 #define PEER_DEFAULT_RELAY_RATE   20000

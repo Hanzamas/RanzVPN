@@ -22,17 +22,17 @@
 #include <stdio.h>
 #include <string.h>
 
-#define ICE_WAIT         10000 // ms: a bounded wait for the network to carry everything sent
-#define ICE_MAP_WAIT     30000 // ms: for the gateway to grant a public port through libplum
-#define ICE_UP_WAIT      30000 // ms: for ICE to validate and nominate the direct path once the checks pass
-#define ICE_FAIL_WAIT    90000 // ms: for a session to fail, 30 s without consent or the 39.5 s of its checks
-#define ICE_GAP          10    // ms between two datagrams of a stream
-#define ICE_SETTLED      20    // Datagrams of the stream on the direct path before it ends
-#define ICE_TICK         100   // ms between two ticks of the peer layers: their binds and session timers
-#define ICE_BIND         400   // The keepalive of the bindings of A and B (ms) ...
-#define ICE_BIND_RETRY   200   // ... and their retry (ms)
-#define ICE_PORT         5000  // The port of the socket of A and B on their home networks
-#define ICE_MAP_TIMEOUT  2000  // ms that libplum waits for a gateway per protocol
+#define ICE_WAIT        10000 // ms: a bounded wait for the network to carry everything sent
+#define ICE_MAP_WAIT    30000 // ms: for the gateway to grant a public port through libplum
+#define ICE_UP_WAIT     30000 // ms: for ICE to validate and nominate the direct path once the checks pass
+#define ICE_FAIL_WAIT   90000 // ms: for a session to fail, 30 s without consent or the 39.5 s of its checks
+#define ICE_GAP         10    // ms between two datagrams of a stream
+#define ICE_SETTLED     20    // Datagrams of the stream on the direct path before it ends
+#define ICE_TICK        100   // ms between two ticks of the peer layers: their binds and session timers
+#define ICE_BIND        400   // The keepalive of the bindings of A and B (ms) ...
+#define ICE_BIND_RETRY  200   // ... and their retry (ms)
+#define ICE_PORT        5000  // The port of the socket of A and B on their home networks
+#define ICE_MAP_TIMEOUT 2000  // ms that libplum waits for a gateway per protocol
 
 // One node of a test and what it received
 typedef struct ICE_NODE {
@@ -48,15 +48,15 @@ typedef struct ICE_NODE {
 
 // The network of a test: the relay R on the public side, A and B behind NATs of their own
 typedef struct ICE_WORLD {
-	NATSIM *Sim;              // The network
-	NATSIM_NAT *NatA;         // A's NAT
-	NATSIM_NAT *NatB;         // B's NAT
-	HOMEGW *Gateway;          // The home gateway of A's NAT, NULL without the port mapping
-	ICE_NODE R, A, B;         // The nodes
-	volatile LONG BlockIce;   // The network drops every STUN message while it is set
-	volatile LONG Halt;       // Ends the ticker
-	HANDLE Ticker;            // The thread that ticks the peer layers
-	bool WsaStarted;          // WSAStartup succeeded
+	NATSIM *Sim;            // The network
+	NATSIM_NAT *NatA;       // A's NAT
+	NATSIM_NAT *NatB;       // B's NAT
+	HOMEGW *Gateway;        // The home gateway of A's NAT, NULL without the port mapping
+	ICE_NODE R, A, B;       // The nodes
+	volatile LONG BlockIce; // The network drops every STUN message while it is set
+	volatile LONG Halt;     // Ends the ticker
+	HANDLE Ticker;          // The thread that ticks the peer layers
+	bool WsaStarted;        // WSAStartup succeeded
 } ICE_WORLD;
 
 // The receive procedure of every node: count the datagram; with Echo, answer "ping ..." with "pong ..."
@@ -79,7 +79,7 @@ static void ice_recv(PEER_AGENT *a, void *param, const UCHAR *src, UINT path, co
 // matches. No datagram of the peer layer has it there.
 static bool ice_is_stun(const UCHAR *data, UINT size) {
 	return size >= 20 && (data[0] & 0xC0) == 0 && data[4] == 0x21 && data[5] == 0x12 && data[6] == 0xA4 && data[7] == 0x42 &&
-		   (UINT)((data[2] << 8) | data[3]) + 20 == size;
+	       (UINT)((data[2] << 8) | data[3]) + 20 == size;
 }
 
 // The tap of the network: it drops every STUN message while BlockIce is set
@@ -447,7 +447,7 @@ static void ice_upgrade(ICE_WORLD *w) {
 	PeerGetStats(w->A.Agent, &st_a);
 	PeerGetStats(w->B.Agent, &st_b);
 	coretest_check(st_a.Upgrades == 1 && st_b.Upgrades == 1 && st_a.Fallbacks == 0 && st_a.NumIce == 1 && st_b.NumIce == 1 && st_a.PortMap == PEER_PORTMAP_MAPPED && st_b.PortMap == PEER_PORTMAP_OFF,
-		"Each end counts one Upgrade of its ICE session; A's port mapping is mapped, B asked no gateway");
+	               "Each end counts one Upgrade of its ICE session; A's port mapping is mapped, B asked no gateway");
 
 	// The gateway loses the mapping: the checks of consent freshness fail both ways, and the pair moves back to R
 	coretest_check(HomeGwDrop(w->Gateway), "The gateway loses its mapping, as a gateway that restarts does");
