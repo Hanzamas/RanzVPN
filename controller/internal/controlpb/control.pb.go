@@ -88,6 +88,14 @@
 // schema version changes with it: a controller of an older release skips an event of a type that it
 // does not know.
 //
+// Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
+// Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
+// the node does it at once and answers with an OperationResult of the same id. Only a node that reports
+// the Capability operations is sent one, since a node that does not know the frame ends its stream. The
+// other live operations are the controller's own: it lists the sessions (the control streams of the nodes),
+// ends one with a Refuse that has the reason REFUSE_REASON_OPERATOR, and bans a user by leaving the Nodes
+// that the user owns out of every desired state. No schema version changes with them.
+//
 // Topology and gateways (SDN-19, #195, ADR-0025 decisions 11 and 12): a VRF of topology
 // hub-and-spoke names its hub node in the Vrf object of every member (Vrf.hub). A spoke gets the hub
 // as its only peer in the VRF, with the prefixes of the VRF as routes of the hub, and the hub sends
@@ -190,6 +198,10 @@ const (
 	RefuseReason_REFUSE_REASON_LICENCE RefuseReason = 5
 	// The controller is a standby member of a cluster; Refuse.leader names the leader.
 	RefuseReason_REFUSE_REASON_NOT_LEADER RefuseReason = 6
+	// An operator of the controller ended the stream (SDN-50 #243): a disconnect of the session, or a ban of the user
+	// that the node belongs to. Refuse.message says which. A node dials again after the delay of a refused stream; a
+	// banned user's node is refused again until an operator lifts the ban.
+	RefuseReason_REFUSE_REASON_OPERATOR RefuseReason = 7
 )
 
 // Enum value maps for RefuseReason.
@@ -202,6 +214,7 @@ var (
 		4: "REFUSE_REASON_CAPABILITY",
 		5: "REFUSE_REASON_LICENCE",
 		6: "REFUSE_REASON_NOT_LEADER",
+		7: "REFUSE_REASON_OPERATOR",
 	}
 	RefuseReason_value = map[string]int32{
 		"REFUSE_REASON_UNSPECIFIED":    0,
@@ -211,6 +224,7 @@ var (
 		"REFUSE_REASON_CAPABILITY":     4,
 		"REFUSE_REASON_LICENCE":        5,
 		"REFUSE_REASON_NOT_LEADER":     6,
+		"REFUSE_REASON_OPERATOR":       7,
 	}
 )
 
@@ -779,6 +793,118 @@ func (NodeEventType) EnumDescriptor() ([]byte, []int) {
 	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{11}
 }
 
+// What an Operation asks of the node.
+type OperationKind int32
+
+const (
+	OperationKind_OPERATION_KIND_UNSPECIFIED OperationKind = 0
+	// Read the MAC table of the Network: the entries that its L2 switch learnt, in every VLAN
+	OperationKind_OPERATION_KIND_MAC_TABLE       OperationKind = 1
+	OperationKind_OPERATION_KIND_CLEAR_MAC_TABLE OperationKind = 2
+	// Read the IP table of the Network: the addresses that the node saw its members use
+	OperationKind_OPERATION_KIND_IP_TABLE       OperationKind = 3
+	OperationKind_OPERATION_KIND_CLEAR_IP_TABLE OperationKind = 4
+)
+
+// Enum value maps for OperationKind.
+var (
+	OperationKind_name = map[int32]string{
+		0: "OPERATION_KIND_UNSPECIFIED",
+		1: "OPERATION_KIND_MAC_TABLE",
+		2: "OPERATION_KIND_CLEAR_MAC_TABLE",
+		3: "OPERATION_KIND_IP_TABLE",
+		4: "OPERATION_KIND_CLEAR_IP_TABLE",
+	}
+	OperationKind_value = map[string]int32{
+		"OPERATION_KIND_UNSPECIFIED":     0,
+		"OPERATION_KIND_MAC_TABLE":       1,
+		"OPERATION_KIND_CLEAR_MAC_TABLE": 2,
+		"OPERATION_KIND_IP_TABLE":        3,
+		"OPERATION_KIND_CLEAR_IP_TABLE":  4,
+	}
+)
+
+func (x OperationKind) Enum() *OperationKind {
+	p := new(OperationKind)
+	*p = x
+	return p
+}
+
+func (x OperationKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OperationKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_ranz_control_v1_control_proto_enumTypes[12].Descriptor()
+}
+
+func (OperationKind) Type() protoreflect.EnumType {
+	return &file_ranz_control_v1_control_proto_enumTypes[12]
+}
+
+func (x OperationKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OperationKind.Descriptor instead.
+func (OperationKind) EnumDescriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{12}
+}
+
+// How an Operation ended on the node.
+type OperationStatus int32
+
+const (
+	OperationStatus_OPERATION_STATUS_UNSPECIFIED OperationStatus = 0 // as OPERATION_STATUS_FAILED
+	OperationStatus_OPERATION_STATUS_OK          OperationStatus = 1
+	// The node has no L2 Network of that name
+	OperationStatus_OPERATION_STATUS_NO_NETWORK OperationStatus = 2
+	OperationStatus_OPERATION_STATUS_FAILED     OperationStatus = 3
+)
+
+// Enum value maps for OperationStatus.
+var (
+	OperationStatus_name = map[int32]string{
+		0: "OPERATION_STATUS_UNSPECIFIED",
+		1: "OPERATION_STATUS_OK",
+		2: "OPERATION_STATUS_NO_NETWORK",
+		3: "OPERATION_STATUS_FAILED",
+	}
+	OperationStatus_value = map[string]int32{
+		"OPERATION_STATUS_UNSPECIFIED": 0,
+		"OPERATION_STATUS_OK":          1,
+		"OPERATION_STATUS_NO_NETWORK":  2,
+		"OPERATION_STATUS_FAILED":      3,
+	}
+)
+
+func (x OperationStatus) Enum() *OperationStatus {
+	p := new(OperationStatus)
+	*p = x
+	return p
+}
+
+func (x OperationStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OperationStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_ranz_control_v1_control_proto_enumTypes[13].Descriptor()
+}
+
+func (OperationStatus) Type() protoreflect.EnumType {
+	return &file_ranz_control_v1_control_proto_enumTypes[13]
+}
+
+func (x OperationStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OperationStatus.Descriptor instead.
+func (OperationStatus) EnumDescriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{13}
+}
+
 // One frame of the control stream.
 type ControlMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -792,6 +918,8 @@ type ControlMessage struct {
 	//	*ControlMessage_Controllers
 	//	*ControlMessage_Telemetry
 	//	*ControlMessage_Leases
+	//	*ControlMessage_Operation
+	//	*ControlMessage_OperationResult
 	Body          isControlMessage_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -906,6 +1034,24 @@ func (x *ControlMessage) GetLeases() *Leases {
 	return nil
 }
 
+func (x *ControlMessage) GetOperation() *Operation {
+	if x != nil {
+		if x, ok := x.Body.(*ControlMessage_Operation); ok {
+			return x.Operation
+		}
+	}
+	return nil
+}
+
+func (x *ControlMessage) GetOperationResult() *OperationResult {
+	if x != nil {
+		if x, ok := x.Body.(*ControlMessage_OperationResult); ok {
+			return x.OperationResult
+		}
+	}
+	return nil
+}
+
 type isControlMessage_Body interface {
 	isControlMessage_Body()
 }
@@ -948,6 +1094,17 @@ type ControlMessage_Leases struct {
 	Leases *Leases `protobuf:"bytes,8,opt,name=leases,proto3,oneof"`
 }
 
+type ControlMessage_Operation struct {
+	// controller to node, after the Hello (SDN-50): one live operation, only to a node that reports
+	// the Capability operations
+	Operation *Operation `protobuf:"bytes,9,opt,name=operation,proto3,oneof"`
+}
+
+type ControlMessage_OperationResult struct {
+	// node to controller (SDN-50): the answer to an Operation
+	OperationResult *OperationResult `protobuf:"bytes,10,opt,name=operation_result,json=operationResult,proto3,oneof"`
+}
+
 func (*ControlMessage_Hello) isControlMessage_Body() {}
 
 func (*ControlMessage_Update) isControlMessage_Body() {}
@@ -963,6 +1120,10 @@ func (*ControlMessage_Controllers) isControlMessage_Body() {}
 func (*ControlMessage_Telemetry) isControlMessage_Body() {}
 
 func (*ControlMessage_Leases) isControlMessage_Body() {}
+
+func (*ControlMessage_Operation) isControlMessage_Body() {}
+
+func (*ControlMessage_OperationResult) isControlMessage_Body() {}
 
 // The first frame a node sends.
 type Hello struct {
@@ -3135,7 +3296,10 @@ type Capabilities struct {
 	// configuration of each of its Devices names.
 	WireguardKey []byte `protobuf:"bytes,10,opt,name=wireguard_key,json=wireguardKey,proto3" json:"wireguard_key,omitempty"`
 	// The node runs the links of kind vxlan and geneve (SDN-76 #356): the VXLAN module over Winsock UDP.
-	PlainLinks    bool `protobuf:"varint,11,opt,name=plain_links,json=plainLinks,proto3" json:"plain_links,omitempty"`
+	PlainLinks bool `protobuf:"varint,11,opt,name=plain_links,json=plainLinks,proto3" json:"plain_links,omitempty"`
+	// The node answers the Operation messages of the controller: it reads and clears the MAC table and the
+	// IP table of its L2 Networks (SDN-50 #243).
+	Operations    bool `protobuf:"varint,12,opt,name=operations,proto3" json:"operations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3243,6 +3407,13 @@ func (x *Capabilities) GetWireguardKey() []byte {
 func (x *Capabilities) GetPlainLinks() bool {
 	if x != nil {
 		return x.PlainLinks
+	}
+	return false
+}
+
+func (x *Capabilities) GetOperations() bool {
+	if x != nil {
+		return x.Operations
 	}
 	return false
 }
@@ -4338,11 +4509,254 @@ func (x *Mirror) GetRateLimit() uint64 {
 	return 0
 }
 
+// One live operation of an operator on a node (SDN-50 #243, ADR-0031 amendment of 2026-10-27): the
+// controller sends it after the Hello, to a node that reports the Capability operations, and the node
+// answers each with one OperationResult that has the same id. An operation is no part of the desired
+// state: it does what it says at the moment it arrives, and the node keeps nothing of it.
+type Operation struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Chosen by the controller; the node puts it into the answer. Never 0.
+	Id   uint64        `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Kind OperationKind `protobuf:"varint,2,opt,name=kind,proto3,enum=ranz.control.v1.OperationKind" json:"kind,omitempty"`
+	// The L2 Network whose table the operation reads or clears
+	Network string `protobuf:"bytes,3,opt,name=network,proto3" json:"network,omitempty"`
+	// A clear of the MAC table with a mac removes the entry of that MAC address alone (6 bytes), and a clear of the
+	// IP table with an address the entry of that address alone (4 or 16 bytes); without one it removes every entry
+	// of the table. A read has neither.
+	Mac           []byte `protobuf:"bytes,4,opt,name=mac,proto3" json:"mac,omitempty"`
+	Address       []byte `protobuf:"bytes,5,opt,name=address,proto3" json:"address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Operation) Reset() {
+	*x = Operation{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Operation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Operation) ProtoMessage() {}
+
+func (x *Operation) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Operation.ProtoReflect.Descriptor instead.
+func (*Operation) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *Operation) GetId() uint64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *Operation) GetKind() OperationKind {
+	if x != nil {
+		return x.Kind
+	}
+	return OperationKind_OPERATION_KIND_UNSPECIFIED
+}
+
+func (x *Operation) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *Operation) GetMac() []byte {
+	if x != nil {
+		return x.Mac
+	}
+	return nil
+}
+
+func (x *Operation) GetAddress() []byte {
+	if x != nil {
+		return x.Address
+	}
+	return nil
+}
+
+// The answer of a node to an Operation. A read lists at most 512 entries of the table, and total says how
+// many the table holds; a clear lists none, and total says how many entries it removed.
+type OperationResult struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Id     uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Status OperationStatus        `protobuf:"varint,2,opt,name=status,proto3,enum=ranz.control.v1.OperationStatus" json:"status,omitempty"`
+	// Why the operation failed, empty when it did not
+	Message       string        `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Entries       []*TableEntry `protobuf:"bytes,4,rep,name=entries,proto3" json:"entries,omitempty"`
+	Total         uint32        `protobuf:"varint,5,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperationResult) Reset() {
+	*x = OperationResult{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperationResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperationResult) ProtoMessage() {}
+
+func (x *OperationResult) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperationResult.ProtoReflect.Descriptor instead.
+func (*OperationResult) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *OperationResult) GetId() uint64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *OperationResult) GetStatus() OperationStatus {
+	if x != nil {
+		return x.Status
+	}
+	return OperationStatus_OPERATION_STATUS_UNSPECIFIED
+}
+
+func (x *OperationResult) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *OperationResult) GetEntries() []*TableEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *OperationResult) GetTotal() uint32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+// One entry of the MAC table or of the IP table of an L2 Network on a node (SDN-50 #243). An entry of the MAC
+// table has the VLAN, the MAC address, the member of the Network that the address was learnt on and the time of the
+// last frame from it; an entry of the IP table has the address with the MAC address that it was seen with.
+type TableEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Vlan          uint32                 `protobuf:"varint,1,opt,name=vlan,proto3" json:"vlan,omitempty"`
+	Mac           []byte                 `protobuf:"bytes,2,opt,name=mac,proto3" json:"mac,omitempty"`                                    // 6 bytes
+	Address       []byte                 `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`                            // the IP table: 4 bytes for IPv4, 16 for IPv6
+	Member        string                 `protobuf:"bytes,4,opt,name=member,proto3" json:"member,omitempty"`                              // the name of the peer, session or port that the entry belongs to, empty for none
+	LastSeenMs    uint64                 `protobuf:"varint,5,opt,name=last_seen_ms,json=lastSeenMs,proto3" json:"last_seen_ms,omitempty"` // Unix time in milliseconds
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TableEntry) Reset() {
+	*x = TableEntry{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TableEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TableEntry) ProtoMessage() {}
+
+func (x *TableEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TableEntry.ProtoReflect.Descriptor instead.
+func (*TableEntry) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *TableEntry) GetVlan() uint32 {
+	if x != nil {
+		return x.Vlan
+	}
+	return 0
+}
+
+func (x *TableEntry) GetMac() []byte {
+	if x != nil {
+		return x.Mac
+	}
+	return nil
+}
+
+func (x *TableEntry) GetAddress() []byte {
+	if x != nil {
+		return x.Address
+	}
+	return nil
+}
+
+func (x *TableEntry) GetMember() string {
+	if x != nil {
+		return x.Member
+	}
+	return ""
+}
+
+func (x *TableEntry) GetLastSeenMs() uint64 {
+	if x != nil {
+		return x.LastSeenMs
+	}
+	return 0
+}
+
 var File_ranz_control_v1_control_proto protoreflect.FileDescriptor
 
 const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1dranz/control/v1/control.proto\x12\x0franz.control.v1\"\xbc\x03\n" +
+	"\x1dranz/control/v1/control.proto\x12\x0franz.control.v1\"\xc7\x04\n" +
 	"\x0eControlMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.ranz.control.v1.HelloH\x00R\x05hello\x121\n" +
 	"\x06update\x18\x02 \x01(\v2\x17.ranz.control.v1.UpdateH\x00R\x06update\x12(\n" +
@@ -4351,7 +4765,10 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x06signal\x18\x05 \x01(\v2\x17.ranz.control.v1.SignalH\x00R\x06signal\x12@\n" +
 	"\vcontrollers\x18\x06 \x01(\v2\x1c.ranz.control.v1.ControllersH\x00R\vcontrollers\x12:\n" +
 	"\ttelemetry\x18\a \x01(\v2\x1a.ranz.control.v1.TelemetryH\x00R\ttelemetry\x121\n" +
-	"\x06leases\x18\b \x01(\v2\x17.ranz.control.v1.LeasesH\x00R\x06leasesB\x06\n" +
+	"\x06leases\x18\b \x01(\v2\x17.ranz.control.v1.LeasesH\x00R\x06leases\x12:\n" +
+	"\toperation\x18\t \x01(\v2\x1a.ranz.control.v1.OperationH\x00R\toperation\x12M\n" +
+	"\x10operation_result\x18\n" +
+	" \x01(\v2 .ranz.control.v1.OperationResultH\x00R\x0foperationResultB\x06\n" +
 	"\x04body\"\xc0\x01\n" +
 	"\x05Hello\x12E\n" +
 	"\x0eschema_version\x18\x01 \x01(\x0e2\x1e.ranz.control.v1.SchemaVersionR\rschemaVersion\x12-\n" +
@@ -4516,7 +4933,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\bprefixes\x18\x02 \x03(\v2\x17.ranz.control.v1.PrefixR\bprefixes\"5\n" +
 	"\tPortRange\x12\x14\n" +
 	"\x05first\x18\x01 \x01(\rR\x05first\x12\x12\n" +
-	"\x04last\x18\x02 \x01(\rR\x04last\"\x9c\x03\n" +
+	"\x04last\x18\x02 \x01(\rR\x04last\"\xbc\x03\n" +
 	"\fCapabilities\x12&\n" +
 	"\x03sku\x18\x01 \x01(\x0e2\x14.ranz.control.v1.SkuR\x03sku\x12A\n" +
 	"\farchitecture\x18\x02 \x01(\x0e2\x1d.ranz.control.v1.ArchitectureR\farchitecture\x12\x17\n" +
@@ -4531,7 +4948,10 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\rwireguard_key\x18\n" +
 	" \x01(\fR\fwireguardKey\x12\x1f\n" +
 	"\vplain_links\x18\v \x01(\bR\n" +
-	"plainLinks\"k\n" +
+	"plainLinks\x12\x1e\n" +
+	"\n" +
+	"operations\x18\f \x01(\bR\n" +
+	"operations\"k\n" +
 	"\aAddress\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x15\n" +
 	"\x06vrf_id\x18\x02 \x01(\rR\x05vrfId\x12/\n" +
@@ -4623,11 +5043,31 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"sensorPort\x12\x10\n" +
 	"\x03vni\x18\a \x01(\rR\x03vni\x12\x1d\n" +
 	"\n" +
-	"rate_limit\x18\b \x01(\x04R\trateLimit*[\n" +
+	"rate_limit\x18\b \x01(\x04R\trateLimit\"\x95\x01\n" +
+	"\tOperation\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x04R\x02id\x122\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1e.ranz.control.v1.OperationKindR\x04kind\x12\x18\n" +
+	"\anetwork\x18\x03 \x01(\tR\anetwork\x12\x10\n" +
+	"\x03mac\x18\x04 \x01(\fR\x03mac\x12\x18\n" +
+	"\aaddress\x18\x05 \x01(\fR\aaddress\"\xc2\x01\n" +
+	"\x0fOperationResult\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x04R\x02id\x128\n" +
+	"\x06status\x18\x02 \x01(\x0e2 .ranz.control.v1.OperationStatusR\x06status\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x125\n" +
+	"\aentries\x18\x04 \x03(\v2\x1b.ranz.control.v1.TableEntryR\aentries\x12\x14\n" +
+	"\x05total\x18\x05 \x01(\rR\x05total\"\x86\x01\n" +
+	"\n" +
+	"TableEntry\x12\x12\n" +
+	"\x04vlan\x18\x01 \x01(\rR\x04vlan\x12\x10\n" +
+	"\x03mac\x18\x02 \x01(\fR\x03mac\x12\x18\n" +
+	"\aaddress\x18\x03 \x01(\fR\aaddress\x12\x16\n" +
+	"\x06member\x18\x04 \x01(\tR\x06member\x12 \n" +
+	"\flast_seen_ms\x18\x05 \x01(\x04R\n" +
+	"lastSeenMs*[\n" +
 	"\rSchemaVersion\x12\x1e\n" +
 	"\x1aSCHEMA_VERSION_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SCHEMA_VERSION_1\x10\x01\x12\x14\n" +
-	"\x10SCHEMA_VERSION_2\x10\x02*\xe2\x01\n" +
+	"\x10SCHEMA_VERSION_2\x10\x02*\xfe\x01\n" +
 	"\fRefuseReason\x12\x1d\n" +
 	"\x19REFUSE_REASON_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aREFUSE_REASON_UNKNOWN_NODE\x10\x01\x12 \n" +
@@ -4635,7 +5075,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x16REFUSE_REASON_PROTOCOL\x10\x03\x12\x1c\n" +
 	"\x18REFUSE_REASON_CAPABILITY\x10\x04\x12\x19\n" +
 	"\x15REFUSE_REASON_LICENCE\x10\x05\x12\x1c\n" +
-	"\x18REFUSE_REASON_NOT_LEADER\x10\x06*\x8a\x01\n" +
+	"\x18REFUSE_REASON_NOT_LEADER\x10\x06\x12\x1a\n" +
+	"\x16REFUSE_REASON_OPERATOR\x10\a*\x8a\x01\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tKIND_NODE\x10\x01\x12\f\n" +
@@ -4689,7 +5130,18 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\rNodeEventType\x12\x1f\n" +
 	"\x1bNODE_EVENT_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" NODE_EVENT_TYPE_GATEWAY_FAILOVER\x10\x01\x12 \n" +
-	"\x1cNODE_EVENT_TYPE_SESSION_FLAP\x10\x02B;Z9github.com/Hanzamas/RanzVPN/controller/internal/controlpbb\x06proto3"
+	"\x1cNODE_EVENT_TYPE_SESSION_FLAP\x10\x02*\xb1\x01\n" +
+	"\rOperationKind\x12\x1e\n" +
+	"\x1aOPERATION_KIND_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18OPERATION_KIND_MAC_TABLE\x10\x01\x12\"\n" +
+	"\x1eOPERATION_KIND_CLEAR_MAC_TABLE\x10\x02\x12\x1b\n" +
+	"\x17OPERATION_KIND_IP_TABLE\x10\x03\x12!\n" +
+	"\x1dOPERATION_KIND_CLEAR_IP_TABLE\x10\x04*\x8a\x01\n" +
+	"\x0fOperationStatus\x12 \n" +
+	"\x1cOPERATION_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13OPERATION_STATUS_OK\x10\x01\x12\x1f\n" +
+	"\x1bOPERATION_STATUS_NO_NETWORK\x10\x02\x12\x1b\n" +
+	"\x17OPERATION_STATUS_FAILED\x10\x03B;Z9github.com/Hanzamas/RanzVPN/controller/internal/controlpbb\x06proto3"
 
 var (
 	file_ranz_control_v1_control_proto_rawDescOnce sync.Once
@@ -4703,8 +5155,8 @@ func file_ranz_control_v1_control_proto_rawDescGZIP() []byte {
 	return file_ranz_control_v1_control_proto_rawDescData
 }
 
-var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
-var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
+var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
 var file_ranz_control_v1_control_proto_goTypes = []any{
 	(SchemaVersion)(0),      // 0: ranz.control.v1.SchemaVersion
 	(RefuseReason)(0),       // 1: ranz.control.v1.RefuseReason
@@ -4718,124 +5170,134 @@ var file_ranz_control_v1_control_proto_goTypes = []any{
 	(EgressTier)(0),         // 9: ranz.control.v1.EgressTier
 	(DhcpMode)(0),           // 10: ranz.control.v1.DhcpMode
 	(NodeEventType)(0),      // 11: ranz.control.v1.NodeEventType
-	(*ControlMessage)(nil),  // 12: ranz.control.v1.ControlMessage
-	(*Hello)(nil),           // 13: ranz.control.v1.Hello
-	(*Update)(nil),          // 14: ranz.control.v1.Update
-	(*Ack)(nil),             // 15: ranz.control.v1.Ack
-	(*Signal)(nil),          // 16: ranz.control.v1.Signal
-	(*Refuse)(nil),          // 17: ranz.control.v1.Refuse
-	(*Controllers)(nil),     // 18: ranz.control.v1.Controllers
-	(*Controller)(nil),      // 19: ranz.control.v1.Controller
-	(*Object)(nil),          // 20: ranz.control.v1.Object
-	(*ObjectKey)(nil),       // 21: ranz.control.v1.ObjectKey
-	(*NodeConfig)(nil),      // 22: ranz.control.v1.NodeConfig
-	(*Vtep)(nil),            // 23: ranz.control.v1.Vtep
-	(*Listener)(nil),        // 24: ranz.control.v1.Listener
-	(*CertificateFile)(nil), // 25: ranz.control.v1.CertificateFile
-	(*CertificateAcme)(nil), // 26: ranz.control.v1.CertificateAcme
-	(*Vrf)(nil),             // 27: ranz.control.v1.Vrf
-	(*DnsZone)(nil),         // 28: ranz.control.v1.DnsZone
-	(*DnsRecord)(nil),       // 29: ranz.control.v1.DnsRecord
-	(*Network)(nil),         // 30: ranz.control.v1.Network
-	(*Peer)(nil),            // 31: ranz.control.v1.Peer
-	(*Endpoint)(nil),        // 32: ranz.control.v1.Endpoint
-	(*Relay)(nil),           // 33: ranz.control.v1.Relay
-	(*Device)(nil),          // 34: ranz.control.v1.Device
-	(*Prefix)(nil),          // 35: ranz.control.v1.Prefix
-	(*VrfPolicy)(nil),       // 36: ranz.control.v1.VrfPolicy
-	(*Rule)(nil),            // 37: ranz.control.v1.Rule
-	(*RuleEnd)(nil),         // 38: ranz.control.v1.RuleEnd
-	(*PortRange)(nil),       // 39: ranz.control.v1.PortRange
-	(*Capabilities)(nil),    // 40: ranz.control.v1.Capabilities
-	(*Address)(nil),         // 41: ranz.control.v1.Address
-	(*Dhcp)(nil),            // 42: ranz.control.v1.Dhcp
-	(*Leases)(nil),          // 43: ranz.control.v1.Leases
-	(*Lease)(nil),           // 44: ranz.control.v1.Lease
-	(*Telemetry)(nil),       // 45: ranz.control.v1.Telemetry
-	(*DeviceCounters)(nil),  // 46: ranz.control.v1.DeviceCounters
-	(*PeerCounters)(nil),    // 47: ranz.control.v1.PeerCounters
-	(*VrfCounters)(nil),     // 48: ranz.control.v1.VrfCounters
-	(*RuleCounters)(nil),    // 49: ranz.control.v1.RuleCounters
-	(*Flow)(nil),            // 50: ranz.control.v1.Flow
-	(*NodeEvent)(nil),       // 51: ranz.control.v1.NodeEvent
-	(*Nat)(nil),             // 52: ranz.control.v1.Nat
-	(*Route)(nil),           // 53: ranz.control.v1.Route
-	(*Mirror)(nil),          // 54: ranz.control.v1.Mirror
+	(OperationKind)(0),      // 12: ranz.control.v1.OperationKind
+	(OperationStatus)(0),    // 13: ranz.control.v1.OperationStatus
+	(*ControlMessage)(nil),  // 14: ranz.control.v1.ControlMessage
+	(*Hello)(nil),           // 15: ranz.control.v1.Hello
+	(*Update)(nil),          // 16: ranz.control.v1.Update
+	(*Ack)(nil),             // 17: ranz.control.v1.Ack
+	(*Signal)(nil),          // 18: ranz.control.v1.Signal
+	(*Refuse)(nil),          // 19: ranz.control.v1.Refuse
+	(*Controllers)(nil),     // 20: ranz.control.v1.Controllers
+	(*Controller)(nil),      // 21: ranz.control.v1.Controller
+	(*Object)(nil),          // 22: ranz.control.v1.Object
+	(*ObjectKey)(nil),       // 23: ranz.control.v1.ObjectKey
+	(*NodeConfig)(nil),      // 24: ranz.control.v1.NodeConfig
+	(*Vtep)(nil),            // 25: ranz.control.v1.Vtep
+	(*Listener)(nil),        // 26: ranz.control.v1.Listener
+	(*CertificateFile)(nil), // 27: ranz.control.v1.CertificateFile
+	(*CertificateAcme)(nil), // 28: ranz.control.v1.CertificateAcme
+	(*Vrf)(nil),             // 29: ranz.control.v1.Vrf
+	(*DnsZone)(nil),         // 30: ranz.control.v1.DnsZone
+	(*DnsRecord)(nil),       // 31: ranz.control.v1.DnsRecord
+	(*Network)(nil),         // 32: ranz.control.v1.Network
+	(*Peer)(nil),            // 33: ranz.control.v1.Peer
+	(*Endpoint)(nil),        // 34: ranz.control.v1.Endpoint
+	(*Relay)(nil),           // 35: ranz.control.v1.Relay
+	(*Device)(nil),          // 36: ranz.control.v1.Device
+	(*Prefix)(nil),          // 37: ranz.control.v1.Prefix
+	(*VrfPolicy)(nil),       // 38: ranz.control.v1.VrfPolicy
+	(*Rule)(nil),            // 39: ranz.control.v1.Rule
+	(*RuleEnd)(nil),         // 40: ranz.control.v1.RuleEnd
+	(*PortRange)(nil),       // 41: ranz.control.v1.PortRange
+	(*Capabilities)(nil),    // 42: ranz.control.v1.Capabilities
+	(*Address)(nil),         // 43: ranz.control.v1.Address
+	(*Dhcp)(nil),            // 44: ranz.control.v1.Dhcp
+	(*Leases)(nil),          // 45: ranz.control.v1.Leases
+	(*Lease)(nil),           // 46: ranz.control.v1.Lease
+	(*Telemetry)(nil),       // 47: ranz.control.v1.Telemetry
+	(*DeviceCounters)(nil),  // 48: ranz.control.v1.DeviceCounters
+	(*PeerCounters)(nil),    // 49: ranz.control.v1.PeerCounters
+	(*VrfCounters)(nil),     // 50: ranz.control.v1.VrfCounters
+	(*RuleCounters)(nil),    // 51: ranz.control.v1.RuleCounters
+	(*Flow)(nil),            // 52: ranz.control.v1.Flow
+	(*NodeEvent)(nil),       // 53: ranz.control.v1.NodeEvent
+	(*Nat)(nil),             // 54: ranz.control.v1.Nat
+	(*Route)(nil),           // 55: ranz.control.v1.Route
+	(*Mirror)(nil),          // 56: ranz.control.v1.Mirror
+	(*Operation)(nil),       // 57: ranz.control.v1.Operation
+	(*OperationResult)(nil), // 58: ranz.control.v1.OperationResult
+	(*TableEntry)(nil),      // 59: ranz.control.v1.TableEntry
 }
 var file_ranz_control_v1_control_proto_depIdxs = []int32{
-	13, // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
-	14, // 1: ranz.control.v1.ControlMessage.update:type_name -> ranz.control.v1.Update
-	15, // 2: ranz.control.v1.ControlMessage.ack:type_name -> ranz.control.v1.Ack
-	17, // 3: ranz.control.v1.ControlMessage.refuse:type_name -> ranz.control.v1.Refuse
-	16, // 4: ranz.control.v1.ControlMessage.signal:type_name -> ranz.control.v1.Signal
-	18, // 5: ranz.control.v1.ControlMessage.controllers:type_name -> ranz.control.v1.Controllers
-	45, // 6: ranz.control.v1.ControlMessage.telemetry:type_name -> ranz.control.v1.Telemetry
-	43, // 7: ranz.control.v1.ControlMessage.leases:type_name -> ranz.control.v1.Leases
-	0,  // 8: ranz.control.v1.Hello.schema_version:type_name -> ranz.control.v1.SchemaVersion
-	40, // 9: ranz.control.v1.Hello.capabilities:type_name -> ranz.control.v1.Capabilities
-	20, // 10: ranz.control.v1.Update.set:type_name -> ranz.control.v1.Object
-	21, // 11: ranz.control.v1.Update.remove:type_name -> ranz.control.v1.ObjectKey
-	1,  // 12: ranz.control.v1.Refuse.reason:type_name -> ranz.control.v1.RefuseReason
-	19, // 13: ranz.control.v1.Controllers.controllers:type_name -> ranz.control.v1.Controller
-	22, // 14: ranz.control.v1.Object.node:type_name -> ranz.control.v1.NodeConfig
-	27, // 15: ranz.control.v1.Object.vrf:type_name -> ranz.control.v1.Vrf
-	30, // 16: ranz.control.v1.Object.network:type_name -> ranz.control.v1.Network
-	31, // 17: ranz.control.v1.Object.peer:type_name -> ranz.control.v1.Peer
-	33, // 18: ranz.control.v1.Object.relay:type_name -> ranz.control.v1.Relay
-	37, // 19: ranz.control.v1.Object.rule:type_name -> ranz.control.v1.Rule
-	34, // 20: ranz.control.v1.Object.device:type_name -> ranz.control.v1.Device
-	2,  // 21: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
-	41, // 22: ranz.control.v1.NodeConfig.addresses:type_name -> ranz.control.v1.Address
-	52, // 23: ranz.control.v1.NodeConfig.nat:type_name -> ranz.control.v1.Nat
-	54, // 24: ranz.control.v1.NodeConfig.mirrors:type_name -> ranz.control.v1.Mirror
-	24, // 25: ranz.control.v1.NodeConfig.listener:type_name -> ranz.control.v1.Listener
-	32, // 26: ranz.control.v1.NodeConfig.endpoints:type_name -> ranz.control.v1.Endpoint
-	23, // 27: ranz.control.v1.NodeConfig.vtep:type_name -> ranz.control.v1.Vtep
-	53, // 28: ranz.control.v1.NodeConfig.lan_subnets:type_name -> ranz.control.v1.Route
-	25, // 29: ranz.control.v1.Listener.file:type_name -> ranz.control.v1.CertificateFile
-	26, // 30: ranz.control.v1.Listener.acme:type_name -> ranz.control.v1.CertificateAcme
-	35, // 31: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
-	36, // 32: ranz.control.v1.Vrf.policy:type_name -> ranz.control.v1.VrfPolicy
-	28, // 33: ranz.control.v1.Vrf.dns:type_name -> ranz.control.v1.DnsZone
-	3,  // 34: ranz.control.v1.Vrf.link:type_name -> ranz.control.v1.LinkKind
-	29, // 35: ranz.control.v1.DnsZone.records:type_name -> ranz.control.v1.DnsRecord
-	4,  // 36: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
-	35, // 37: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
-	35, // 38: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
-	42, // 39: ranz.control.v1.Network.dhcp:type_name -> ranz.control.v1.Dhcp
-	41, // 40: ranz.control.v1.Peer.addresses:type_name -> ranz.control.v1.Address
-	53, // 41: ranz.control.v1.Peer.routes:type_name -> ranz.control.v1.Route
-	32, // 42: ranz.control.v1.Peer.endpoints:type_name -> ranz.control.v1.Endpoint
-	23, // 43: ranz.control.v1.Peer.vtep:type_name -> ranz.control.v1.Vtep
-	5,  // 44: ranz.control.v1.Endpoint.transport:type_name -> ranz.control.v1.Transport
-	41, // 45: ranz.control.v1.Device.addresses:type_name -> ranz.control.v1.Address
-	6,  // 46: ranz.control.v1.Rule.action:type_name -> ranz.control.v1.RuleAction
-	38, // 47: ranz.control.v1.Rule.from:type_name -> ranz.control.v1.RuleEnd
-	38, // 48: ranz.control.v1.Rule.to:type_name -> ranz.control.v1.RuleEnd
-	39, // 49: ranz.control.v1.Rule.ports:type_name -> ranz.control.v1.PortRange
-	35, // 50: ranz.control.v1.RuleEnd.prefixes:type_name -> ranz.control.v1.Prefix
-	7,  // 51: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
-	8,  // 52: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
-	9,  // 53: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
-	35, // 54: ranz.control.v1.Address.prefix:type_name -> ranz.control.v1.Prefix
-	10, // 55: ranz.control.v1.Dhcp.mode:type_name -> ranz.control.v1.DhcpMode
-	35, // 56: ranz.control.v1.Dhcp.reserved:type_name -> ranz.control.v1.Prefix
-	44, // 57: ranz.control.v1.Leases.leases:type_name -> ranz.control.v1.Lease
-	47, // 58: ranz.control.v1.Telemetry.peers:type_name -> ranz.control.v1.PeerCounters
-	48, // 59: ranz.control.v1.Telemetry.vrfs:type_name -> ranz.control.v1.VrfCounters
-	49, // 60: ranz.control.v1.Telemetry.rules:type_name -> ranz.control.v1.RuleCounters
-	50, // 61: ranz.control.v1.Telemetry.flows:type_name -> ranz.control.v1.Flow
-	51, // 62: ranz.control.v1.Telemetry.events:type_name -> ranz.control.v1.NodeEvent
-	46, // 63: ranz.control.v1.Telemetry.devices:type_name -> ranz.control.v1.DeviceCounters
-	11, // 64: ranz.control.v1.NodeEvent.type:type_name -> ranz.control.v1.NodeEventType
-	35, // 65: ranz.control.v1.Nat.inside:type_name -> ranz.control.v1.Prefix
-	35, // 66: ranz.control.v1.Nat.outside:type_name -> ranz.control.v1.Prefix
-	35, // 67: ranz.control.v1.Route.prefix:type_name -> ranz.control.v1.Prefix
-	68, // [68:68] is the sub-list for method output_type
-	68, // [68:68] is the sub-list for method input_type
-	68, // [68:68] is the sub-list for extension type_name
-	68, // [68:68] is the sub-list for extension extendee
-	0,  // [0:68] is the sub-list for field type_name
+	15, // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
+	16, // 1: ranz.control.v1.ControlMessage.update:type_name -> ranz.control.v1.Update
+	17, // 2: ranz.control.v1.ControlMessage.ack:type_name -> ranz.control.v1.Ack
+	19, // 3: ranz.control.v1.ControlMessage.refuse:type_name -> ranz.control.v1.Refuse
+	18, // 4: ranz.control.v1.ControlMessage.signal:type_name -> ranz.control.v1.Signal
+	20, // 5: ranz.control.v1.ControlMessage.controllers:type_name -> ranz.control.v1.Controllers
+	47, // 6: ranz.control.v1.ControlMessage.telemetry:type_name -> ranz.control.v1.Telemetry
+	45, // 7: ranz.control.v1.ControlMessage.leases:type_name -> ranz.control.v1.Leases
+	57, // 8: ranz.control.v1.ControlMessage.operation:type_name -> ranz.control.v1.Operation
+	58, // 9: ranz.control.v1.ControlMessage.operation_result:type_name -> ranz.control.v1.OperationResult
+	0,  // 10: ranz.control.v1.Hello.schema_version:type_name -> ranz.control.v1.SchemaVersion
+	42, // 11: ranz.control.v1.Hello.capabilities:type_name -> ranz.control.v1.Capabilities
+	22, // 12: ranz.control.v1.Update.set:type_name -> ranz.control.v1.Object
+	23, // 13: ranz.control.v1.Update.remove:type_name -> ranz.control.v1.ObjectKey
+	1,  // 14: ranz.control.v1.Refuse.reason:type_name -> ranz.control.v1.RefuseReason
+	21, // 15: ranz.control.v1.Controllers.controllers:type_name -> ranz.control.v1.Controller
+	24, // 16: ranz.control.v1.Object.node:type_name -> ranz.control.v1.NodeConfig
+	29, // 17: ranz.control.v1.Object.vrf:type_name -> ranz.control.v1.Vrf
+	32, // 18: ranz.control.v1.Object.network:type_name -> ranz.control.v1.Network
+	33, // 19: ranz.control.v1.Object.peer:type_name -> ranz.control.v1.Peer
+	35, // 20: ranz.control.v1.Object.relay:type_name -> ranz.control.v1.Relay
+	39, // 21: ranz.control.v1.Object.rule:type_name -> ranz.control.v1.Rule
+	36, // 22: ranz.control.v1.Object.device:type_name -> ranz.control.v1.Device
+	2,  // 23: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
+	43, // 24: ranz.control.v1.NodeConfig.addresses:type_name -> ranz.control.v1.Address
+	54, // 25: ranz.control.v1.NodeConfig.nat:type_name -> ranz.control.v1.Nat
+	56, // 26: ranz.control.v1.NodeConfig.mirrors:type_name -> ranz.control.v1.Mirror
+	26, // 27: ranz.control.v1.NodeConfig.listener:type_name -> ranz.control.v1.Listener
+	34, // 28: ranz.control.v1.NodeConfig.endpoints:type_name -> ranz.control.v1.Endpoint
+	25, // 29: ranz.control.v1.NodeConfig.vtep:type_name -> ranz.control.v1.Vtep
+	55, // 30: ranz.control.v1.NodeConfig.lan_subnets:type_name -> ranz.control.v1.Route
+	27, // 31: ranz.control.v1.Listener.file:type_name -> ranz.control.v1.CertificateFile
+	28, // 32: ranz.control.v1.Listener.acme:type_name -> ranz.control.v1.CertificateAcme
+	37, // 33: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
+	38, // 34: ranz.control.v1.Vrf.policy:type_name -> ranz.control.v1.VrfPolicy
+	30, // 35: ranz.control.v1.Vrf.dns:type_name -> ranz.control.v1.DnsZone
+	3,  // 36: ranz.control.v1.Vrf.link:type_name -> ranz.control.v1.LinkKind
+	31, // 37: ranz.control.v1.DnsZone.records:type_name -> ranz.control.v1.DnsRecord
+	4,  // 38: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
+	37, // 39: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
+	37, // 40: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
+	44, // 41: ranz.control.v1.Network.dhcp:type_name -> ranz.control.v1.Dhcp
+	43, // 42: ranz.control.v1.Peer.addresses:type_name -> ranz.control.v1.Address
+	55, // 43: ranz.control.v1.Peer.routes:type_name -> ranz.control.v1.Route
+	34, // 44: ranz.control.v1.Peer.endpoints:type_name -> ranz.control.v1.Endpoint
+	25, // 45: ranz.control.v1.Peer.vtep:type_name -> ranz.control.v1.Vtep
+	5,  // 46: ranz.control.v1.Endpoint.transport:type_name -> ranz.control.v1.Transport
+	43, // 47: ranz.control.v1.Device.addresses:type_name -> ranz.control.v1.Address
+	6,  // 48: ranz.control.v1.Rule.action:type_name -> ranz.control.v1.RuleAction
+	40, // 49: ranz.control.v1.Rule.from:type_name -> ranz.control.v1.RuleEnd
+	40, // 50: ranz.control.v1.Rule.to:type_name -> ranz.control.v1.RuleEnd
+	41, // 51: ranz.control.v1.Rule.ports:type_name -> ranz.control.v1.PortRange
+	37, // 52: ranz.control.v1.RuleEnd.prefixes:type_name -> ranz.control.v1.Prefix
+	7,  // 53: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
+	8,  // 54: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
+	9,  // 55: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
+	37, // 56: ranz.control.v1.Address.prefix:type_name -> ranz.control.v1.Prefix
+	10, // 57: ranz.control.v1.Dhcp.mode:type_name -> ranz.control.v1.DhcpMode
+	37, // 58: ranz.control.v1.Dhcp.reserved:type_name -> ranz.control.v1.Prefix
+	46, // 59: ranz.control.v1.Leases.leases:type_name -> ranz.control.v1.Lease
+	49, // 60: ranz.control.v1.Telemetry.peers:type_name -> ranz.control.v1.PeerCounters
+	50, // 61: ranz.control.v1.Telemetry.vrfs:type_name -> ranz.control.v1.VrfCounters
+	51, // 62: ranz.control.v1.Telemetry.rules:type_name -> ranz.control.v1.RuleCounters
+	52, // 63: ranz.control.v1.Telemetry.flows:type_name -> ranz.control.v1.Flow
+	53, // 64: ranz.control.v1.Telemetry.events:type_name -> ranz.control.v1.NodeEvent
+	48, // 65: ranz.control.v1.Telemetry.devices:type_name -> ranz.control.v1.DeviceCounters
+	11, // 66: ranz.control.v1.NodeEvent.type:type_name -> ranz.control.v1.NodeEventType
+	37, // 67: ranz.control.v1.Nat.inside:type_name -> ranz.control.v1.Prefix
+	37, // 68: ranz.control.v1.Nat.outside:type_name -> ranz.control.v1.Prefix
+	37, // 69: ranz.control.v1.Route.prefix:type_name -> ranz.control.v1.Prefix
+	12, // 70: ranz.control.v1.Operation.kind:type_name -> ranz.control.v1.OperationKind
+	13, // 71: ranz.control.v1.OperationResult.status:type_name -> ranz.control.v1.OperationStatus
+	59, // 72: ranz.control.v1.OperationResult.entries:type_name -> ranz.control.v1.TableEntry
+	73, // [73:73] is the sub-list for method output_type
+	73, // [73:73] is the sub-list for method input_type
+	73, // [73:73] is the sub-list for extension type_name
+	73, // [73:73] is the sub-list for extension extendee
+	0,  // [0:73] is the sub-list for field type_name
 }
 
 func init() { file_ranz_control_v1_control_proto_init() }
@@ -4852,6 +5314,8 @@ func file_ranz_control_v1_control_proto_init() {
 		(*ControlMessage_Controllers)(nil),
 		(*ControlMessage_Telemetry)(nil),
 		(*ControlMessage_Leases)(nil),
+		(*ControlMessage_Operation)(nil),
+		(*ControlMessage_OperationResult)(nil),
 	}
 	file_ranz_control_v1_control_proto_msgTypes[8].OneofWrappers = []any{
 		(*Object_Node)(nil),
@@ -4872,8 +5336,8 @@ func file_ranz_control_v1_control_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ranz_control_v1_control_proto_rawDesc), len(file_ranz_control_v1_control_proto_rawDesc)),
-			NumEnums:      12,
-			NumMessages:   43,
+			NumEnums:      14,
+			NumMessages:   46,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
