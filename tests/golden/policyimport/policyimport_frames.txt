@@ -1,0 +1,52 @@
+network LAB: tpid 0x8100, untagged vlan 2
+  alice: vlan 10 (access port), group staff
+  bob: no vlan (trunk port, native vlan 2), group staff
+  carol: no vlan (trunk port, native vlan 2)
+  dave: vlan 1 (access port), group ops
+  erin: vlan 20 (access port), group guests
+  frank: vlan 10 (access port), group guests
+  ops: no vlan (trunk port, native vlan 2)
+  srv: no vlan (trunk port, native vlan 2)
+network OFFICE: tpid 0x88a8, untagged vlan 1
+  kim: vlan 30 (access port)
+  lee: no vlan (trunk port, native vlan 1)
+  max: no vlan (trunk port, native vlan 1)
+1 alice hello: both bob/10 carol/10 frank ops/10 srv/10 (pass-control)
+2 bob hello: both carol ops srv (pass-control)
+3 carol hello: both bob ops srv (pass-control)
+4 dave hello: both bob/1 carol/1 ops/1 srv/1 (pass-control)
+5 erin hello: both bob/20 carol/20 ops/20 srv/20 (pass-control)
+6 frank hello: both alice bob/10 carol/10 ops/10 srv/10 (pass-control)
+7 ops hello: both bob carol srv (pass-control)
+8 srv hello: both bob carol ops (pass-control)
+9 bob hello in vlan 10: both alice carol/10 frank ops/10 srv/10 (pass-control)
+10 srv hello in vlan 1: both bob/1 carol/1 dave ops/1 (pass-control)
+11 srv hello in vlan 10: both alice bob/10 carol/10 frank ops/10 (pass-control)
+12 srv hello in vlan 20: both bob/20 carol/20 erin ops/20 (pass-control)
+13 carol hello in vlan 99: both bob/99 ops/99 srv/99 (pass-control)
+14 carol hello in the untagged vlan 2: fork bob/2 ops/2 srv/2; new core bob ops srv (pass-control): native vlan untagged
+15 alice tcp 22 to srv: both srv/10 (pass-rule LAB.acl-1)
+16 bob tcp 22 to srv: both nobody (drop-rule LAB.acl-2)
+17 erin udp 53 to srv: both nobody (drop-rule LAB.acl-3)
+18 frank udp 8080 to alice: both nobody (drop-rule LAB.acl-3)
+19 ops tcp 3389 to carol: both carol (pass-rule LAB.acl-4.1)
+20 dave tcp 443 to srv: both srv/1 (pass-rule LAB.acl-4.2)
+21 bob udp 8080 to srv: both srv (pass-rule LAB.acl-8.2)
+22 bob udp 9999 to srv: fork srv; new core nobody (drop-rule LAB.acl-9): narrower
+23 carol tcp 80 to srv: fork srv; new core nobody (drop-rule LAB.acl-11): narrower
+24 bob tcp 80 to srv: fork srv; new core nobody (drop-rule LAB.acl-11): narrower
+25 bob tcp ack 5000 to srv: fork srv; new core nobody (drop-rule LAB.acl-13): narrower
+26 bob tcp syn 5000 to srv: both nobody (drop-rule LAB.acl-13)
+27 bob ping to carol: both nobody (drop-rule LAB.acl-14)
+28 carol ping to bob: both bob (pass-rule LAB.default-allow)
+29 bob ping6 to srv: both nobody (drop-rule LAB.acl-6)
+30 bob tcp6 22 to srv: both srv (pass-rule LAB.default-allow)
+31 carol udp 7 to 172.16.5.1 through srv: both nobody (drop-rule LAB.acl-7)
+32 carol ping to 172.16.5.2 through srv: fork srv; new core nobody (drop-rule LAB.acl-7): narrower
+33 kim hello: both lee/30 max/30 (pass-control)
+34 lee hello: both max (pass-control)
+35 max hello: both lee (pass-control)
+36 lee hello in vlan 30: both kim max/30 (pass-control)
+37 kim tcp 445 to lee: both lee/30 (pass-rule OFFICE.default-allow)
+38 lee udp 53 to max: both max (pass-rule OFFICE.default-allow)
+38 cases: 32 the same, 5 narrower, 1 native vlan untagged, 0 different
