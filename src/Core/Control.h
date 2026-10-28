@@ -54,6 +54,11 @@
 // The endpoints of a node and of its peers (SDN-93, #410)
 #define CONTROL_MAX_ENDPOINTS 8 // The endpoints of a node and of a peer (NodeConfig.endpoints, Peer.endpoints of control.options)
 
+// The relays of a node and the Signals of its peers (CORE-S5-5, #411)
+#define CONTROL_MAX_RELAYS   8    // The Relay objects of a state that the node takes, the first by name (PEER_MAX_RELAYS of Core/Peer.h)
+#define CONTROL_MAX_ENVELOPE 1024 // The envelope of a Signal (Signal.envelope of control.options; PEER_MAX_ENVELOPE)
+#define CONTROL_MAX_SIGNALS  64   // The Signals that wait for the stream at most; the oldest goes first, as at the controller
+
 // The TLS fingerprints of the certificate of the Controller that a state names (SDN-92, #397)
 #define CONTROL_TLS_PINS     4  // The fingerprints of a state (NodeConfig.controller_tls of control.options)
 #define CONTROL_TLS_PIN_SIZE 65 // A fingerprint: 64 hex digits and the terminating NUL
@@ -186,6 +191,16 @@ typedef struct CONTROL_ENDPOINT {
 	// The address that the transport dials: host:port, with an IPv6 host in brackets
 	char Address[TRANSPORT_ADDRESS_SIZE];
 } CONTROL_ENDPOINT;
+
+// A relay that the node may use (Relay of the control protocol; CORE-S5-5, #411): another node with the relay role that
+// shares a VRF with it, which binds the node and forwards its datagrams to the peers bound to it (ADR-0015)
+typedef struct CONTROL_RELAY {
+	char Name[CONTROL_NAME_SIZE]; // Its node name
+	UCHAR Key[NOISE_KEY_SIZE];    // Its static key
+	UCHAR Address[16];            // The address that its relay role listens on: 4 bytes for IPv4, 16 for IPv6
+	UINT AddressSize;             // ... their number
+	UINT Port;                    // ... and its UDP port
+} CONTROL_RELAY;
 
 // The kinds of a link between the nodes of a VRF (LinkKind of the control protocol; SDN-76, #356)
 #define CONTROL_LINK_NOISE  0 // The Noise session over QUIC or TLS
@@ -344,9 +359,18 @@ typedef struct CONTROL_EVENT {
 // The events that wait for the controller (CONTROL_CONFIG.Events), ControlEvent.c
 typedef struct CONTROL_EVENTS CONTROL_EVENTS;
 
+// Takes a Signal that the controller carried from the peer of the node name peer (CORE-S5-5, #411): its envelope of size
+// bytes, sealed to the node, which only the node's peer layer opens. It runs on the client's thread; the envelope is
+// valid until it returns.
+typedef void(CONTROL_SIGNAL_PROC)(void *param, const char *peer, const UCHAR *envelope, UINT size);
+
+// The Signals that a client sends to the controller for the peers of the node (CONTROL_CONFIG.Signals), ControlSignal.c
+typedef struct CONTROL_SIGNALS CONTROL_SIGNALS;
+
 // The desired state that the client applied, as its owner takes it (CONTROL_STATE_PROC). The
-// Networks and Relays of the state stay in the client until a module of the node needs them: the
-// DHCP responders of the Networks are the first (SDN-43, #236).
+// Networks of the state stay in the client until a module of the node needs them: the DHCP
+// responders of the Networks are the first (SDN-43, #236). The Relays go to the peer agent of the
+// node (CORE-S5-5, #411).
 typedef struct CONTROL_STATE {
 	UINT64 Generation;                                // The Generation of the state
 	char Name[CONTROL_NAME_SIZE];                     // The node's name in the intent
@@ -390,6 +414,11 @@ typedef struct CONTROL_STATE {
 
 	// Its tunnel endpoint for the links of kind vxlan and geneve (SDN-76, #356): the ports it listens on
 	CONTROL_VTEP Vtep;
+
+	// The relays that it may use (CORE-S5-5, #411), in name order: the first is its home relay. None while no node with the
+	// relay role shares a VRF with it.
+	UINT NumRelays;
+	CONTROL_RELAY Relays[CONTROL_MAX_RELAYS];
 
 	// The VRFs whose internet exit it is (SDN-12, #188), by id, in the order of its NodeConfig: none while it is the exit
 	// of no VRF
@@ -484,6 +513,14 @@ typedef struct CONTROL_CONFIG {
 	// The events of the node that the client reports, NULL for none: the owner's, which must outlive the client
 	// (AUD1-DT-11, #459)
 	CONTROL_EVENTS *Events;
+
+	// Takes each Signal that the controller carried from a peer, NULL to drop them (CORE-S5-5, #411) ...
+	CONTROL_SIGNAL_PROC *SignalProc;
+	// ... and its first parameter
+	void *SignalParam;
+	// The Signals that the client sends to the controller for the peers of the node, NULL for none: the owner's, which must
+	// outlive the client
+	CONTROL_SIGNALS *Signals;
 } CONTROL_CONFIG;
 
 // How a client stands (ControlGetStatus)
@@ -559,5 +596,15 @@ void ControlFreeEvents(CONTROL_EVENTS *e);
 bool ControlRaiseEvent(CONTROL_EVENTS *e, UINT type, const char *subject, const char *message);
 UINT ControlGetEvents(CONTROL_EVENTS *e, CONTROL_EVENT *list, UINT max);
 bool ControlWriteEvents(CONTROL_EVENTS *e, TRANSPORT_STREAM *s);
+
+// The Signals of a node (CORE-S5-5, #411), ControlSignal.c. NewSignals makes the queue that a client sends
+// (CONTROL_CONFIG.Signals), FreeSignals frees it once no client uses it. SendSignal queues a Signal for the peer of the
+// node name peer, with its envelope of 1 to CONTROL_MAX_ENVELOPE bytes: the client writes it on its stream at once while
+// one is open, else on the next one, and at most CONTROL_MAX_SIGNALS wait, a full queue dropping its oldest. WriteSignals
+// writes the Signals that wait, each as one frame, as the client does on its stream.
+CONTROL_SIGNALS *ControlNewSignals();
+void ControlFreeSignals(CONTROL_SIGNALS *q);
+bool ControlSendSignal(CONTROL_SIGNALS *q, const char *peer, const UCHAR *envelope, UINT size);
+bool ControlWriteSignals(CONTROL_SIGNALS *q, TRANSPORT_STREAM *s);
 
 #endif // CORE_CONTROL_H

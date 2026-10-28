@@ -404,6 +404,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyEndpoints(&st, c->Objects, c->NumObjects);
 	// The kinds of the links of the VRFs and the tunnel endpoints (ControlLink.c; SDN-76, #356)
 	ControlCopyLinks(&st, c->Objects, c->NumObjects);
+	// The relays that the node may use, its home relay first (ControlSignal.c; CORE-S5-5, #411)
+	ControlCopyRelays(&st, c->Objects, c->NumObjects);
 	// The VRFs whose internet exit the node is (ControlEgress.c; SDN-12, #188)
 	ControlCopyEgress(&st, c->Objects, c->NumObjects);
 
@@ -431,9 +433,9 @@ bool ControlDecode(CONTROL_CLIENT *c, const UCHAR *data, UINT size) {
 }
 
 // Take the message of a frame of the controller, size bytes at data after the size of the frame: an Update is applied
-// and handed to the owner; the members of a cluster and the Signals of the peers come with the modules that use them.
-// false ends the stream: a Refuse, a message that does not decode or does not apply, and one that only a node sends.
-// The message stays in Message.
+// and handed to the owner; a Signal of a peer goes to the owner as it came; the members of a cluster come with the
+// module that uses them. false ends the stream: a Refuse, a message that does not decode or does not apply, and one
+// that only a node sends. The message stays in Message.
 bool ControlInput(CONTROL_CLIENT *c, const UCHAR *data, UINT size) {
 	ranz_control_v1_ControlMessage *m = c->Message;
 
@@ -464,7 +466,11 @@ bool ControlInput(CONTROL_CLIENT *c, const UCHAR *data, UINT size) {
 		return false;
 
 	case ranz_control_v1_ControlMessage_controllers_tag:
+		return true;
+
 	case ranz_control_v1_ControlMessage_signal_tag:
+		// The envelope stays sealed: only the peer layer of the node opens it (ControlSignal.c; CORE-S5-5, #411)
+		ControlTakeSignal(&c->Config, &m->body.signal);
 		return true;
 
 	default:
@@ -588,6 +594,8 @@ static void ControlRun(CONTROL_CLIENT *c) {
 		ok = ControlWriteLeases(c->Config.Leases, s) && ControlWriteDevices(c->Config.Devices, s);
 		// The events of the node that wait for the controller (ControlEvent.c; AUD1-DT-11, #459)
 		ok = ok && ControlWriteEvents(c->Config.Events, s);
+		// ... and the Signals of the node for its peers, as they come (ControlSignal.c; CORE-S5-5, #411)
+		ok = ok && ControlWriteSignals(c->Config.Signals, s);
 		if (ok == false)
 			break;
 
