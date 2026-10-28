@@ -48,6 +48,12 @@ $ErrorActionPreference = 'Stop'
 #   the runner's elevated account with the flags of the service, while the service runs and while
 #   it is stopped: reset-admin prints the secret, writes it to admin.token, and the API answers
 #   it as admin;
+# - leave its files as AUD1-DT-10 (#458) says (controller-hostfiles.ps1): a data directory that
+#   install made owned by the Administrators, with a protected access list; a backup written for
+#   SYSTEM and the Administrators only, whatever its folder lets in, that holds the secret of a
+#   target sealed and is named by what `ranz controller backup` says, and whose restore under the
+#   running service brings the target back with its secret; and no start of the service in a
+#   data directory that a standard user owns;
 # - refuse the API from an address outside the admin source allowlist (SDN-39, #232): with the
 #   list set to documentation addresses, the runner's own address, which is not loopback, gets 403
 #   and an admin-access-refused event while loopback still passes, and with the list removed the
@@ -268,9 +274,13 @@ Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue |
 }
 & netsh http show servicestate view=requestq | Select-String -Pattern ':80/' -SimpleMatch -Context 12, 0 | ForEach-Object { Write-Host $_ }
 
+# Test-DataDirOwner, Test-Backup and Test-ServiceRefusesDataDir (AUD1-DT-10, #458)
+. (Join-Path $PSScriptRoot 'controller-hostfiles.ps1')
+
 $hold = $null
 try {
 	Write-Host (Invoke-Checked $ranz @('controller', 'install', '-data', $data, '-http-listen', ':80'))
+	Test-DataDirOwner
 	foreach ($p in @($acmePrefix, $redirectPrefix)) {
 		$acl = Get-URLReservation $p
 		if ($acl -notmatch [regex]::Escape($p) -or $acl -notmatch [regex]::Escape($account)) { throw "install made no URL reservation of $p for ${account}:`n$acl" }
@@ -507,6 +517,8 @@ try {
 	if ($remote.role -ne 'admin') { throw "the address of the runner is not served with the allowlist removed: $($remote | ConvertTo-Json -Compress)" }
 	Write-Host "admin source allowlist: ${hostAddr} is refused while the list holds documentation addresses only, loopback passes, and the address passes again once the list is removed"
 
+	Test-Backup
+
 	Stop-Service -Name $service
 	$started = @(Get-ServiceEvents | Where-Object { $_.Id -eq 1 })
 	$stopped = @(Get-ServiceEvents | Where-Object { $_.Id -eq 2 })
@@ -518,6 +530,8 @@ try {
 	if ($resets.Count -ne 2) { throw "expected 2 reset-admin warnings (event ID 5), found $($resets.Count)" }
 	if ($failed.Count -gt 0) { throw "$service wrote $($failed.Count) failure entries (event ID 3)" }
 	Write-Host "Application log: $($resets[0].Message)"
+
+	Test-ServiceRefusesDataDir
 
 	Write-Host (Invoke-Checked $ranz @('controller', 'uninstall'))
 	foreach ($p in @($acmePrefix, $redirectPrefix)) {
