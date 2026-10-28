@@ -90,6 +90,10 @@ func init() {
 				return
 			}
 			name := r.PathValue("name")
+			// The password of a User that holds an API role is set by an admin (userroles.go; SDN-32)
+			if adminForPassword(d, w, r, name) {
+				return
+			}
 			if err := d.Controller.SetUserPassword(r.Context(), name, req.Password); err != nil {
 				if errors.Is(err, password.ErrInvalid) {
 					reply(w, http.StatusBadRequest, Problem{Error: err.Error()})
