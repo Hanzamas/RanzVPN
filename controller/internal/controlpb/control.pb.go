@@ -74,6 +74,18 @@
 // with the race of its fallback list. No schema version changes with them: a node of an older
 // release skips the field it does not know.
 //
+// Mimic servers and their clients (SDN-94, #423, ADR-0023): a Listener resource may have a mimic
+// section, the settings of the server role of the mimicry sidecar. The node that it names gets them,
+// with a short id that the controller made, in the mimic part of its NodeConfig (NodeConfig.mimic);
+// they hold no key. The node makes the X25519 key of its mimic server itself, keeps the private key in
+// its own Configuration store and reports the public key in a Pins message after its Hello and
+// whenever it changes: no message of this protocol holds a private key. Once the key is reported,
+// every node that has the mimic server as a peer and a mimic endpoint of it gets a link to each of
+// those endpoints in the mimic part of its own NodeConfig: the address of the endpoint, the first
+// server name, the public key and the short id. Until the report arrives, no client has a link. No
+// schema version changes with them: a node of an older release skips the fields it does not know,
+// and a controller of an older release answers the first Pins with REFUSE_REASON_PROTOCOL.
+//
 // Certificate of the controller (SDN-92, #397): while the controller serves a certificate that an
 // operator set, every node gets the TLS fingerprints of it that the node may accept
 // (NodeConfig.controller_tls). The controller sends the fingerprint of a new certificate in a
@@ -368,6 +380,56 @@ func (LinkKind) EnumDescriptor() ([]byte, []int) {
 	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{3}
 }
 
+// The modes of the decoy of a mimic server.
+type MimicDecoyMode int32
+
+const (
+	MimicDecoyMode_MIMIC_DECOY_MODE_UNSPECIFIED MimicDecoyMode = 0 // as MIMIC_DECOY_MODE_OWN
+	MimicDecoyMode_MIMIC_DECOY_MODE_OWN         MimicDecoyMode = 1
+	MimicDecoyMode_MIMIC_DECOY_MODE_BORROW      MimicDecoyMode = 2
+)
+
+// Enum value maps for MimicDecoyMode.
+var (
+	MimicDecoyMode_name = map[int32]string{
+		0: "MIMIC_DECOY_MODE_UNSPECIFIED",
+		1: "MIMIC_DECOY_MODE_OWN",
+		2: "MIMIC_DECOY_MODE_BORROW",
+	}
+	MimicDecoyMode_value = map[string]int32{
+		"MIMIC_DECOY_MODE_UNSPECIFIED": 0,
+		"MIMIC_DECOY_MODE_OWN":         1,
+		"MIMIC_DECOY_MODE_BORROW":      2,
+	}
+)
+
+func (x MimicDecoyMode) Enum() *MimicDecoyMode {
+	p := new(MimicDecoyMode)
+	*p = x
+	return p
+}
+
+func (x MimicDecoyMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MimicDecoyMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_ranz_control_v1_control_proto_enumTypes[4].Descriptor()
+}
+
+func (MimicDecoyMode) Type() protoreflect.EnumType {
+	return &file_ranz_control_v1_control_proto_enumTypes[4]
+}
+
+func (x MimicDecoyMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MimicDecoyMode.Descriptor instead.
+func (MimicDecoyMode) EnumDescriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{4}
+}
+
 type NetworkMode int32
 
 const (
@@ -401,11 +463,11 @@ func (x NetworkMode) String() string {
 }
 
 func (NetworkMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[4].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[5].Descriptor()
 }
 
 func (NetworkMode) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[4]
+	return &file_ranz_control_v1_control_proto_enumTypes[5]
 }
 
 func (x NetworkMode) Number() protoreflect.EnumNumber {
@@ -414,7 +476,7 @@ func (x NetworkMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NetworkMode.Descriptor instead.
 func (NetworkMode) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{4}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{5}
 }
 
 // The transports that a node dials a peer over, as a fallback list names them: quic, tls and mimic
@@ -455,11 +517,11 @@ func (x Transport) String() string {
 }
 
 func (Transport) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[5].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[6].Descriptor()
 }
 
 func (Transport) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[5]
+	return &file_ranz_control_v1_control_proto_enumTypes[6]
 }
 
 func (x Transport) Number() protoreflect.EnumNumber {
@@ -468,7 +530,7 @@ func (x Transport) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Transport.Descriptor instead.
 func (Transport) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{5}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{6}
 }
 
 // What a Rule does with the flows that it matches.
@@ -505,11 +567,11 @@ func (x RuleAction) String() string {
 }
 
 func (RuleAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[6].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[7].Descriptor()
 }
 
 func (RuleAction) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[6]
+	return &file_ranz_control_v1_control_proto_enumTypes[7]
 }
 
 func (x RuleAction) Number() protoreflect.EnumNumber {
@@ -518,7 +580,7 @@ func (x RuleAction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RuleAction.Descriptor instead.
 func (RuleAction) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{6}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{7}
 }
 
 // The Windows edition of a node's host.
@@ -561,11 +623,11 @@ func (x Sku) String() string {
 }
 
 func (Sku) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[7].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[8].Descriptor()
 }
 
 func (Sku) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[7]
+	return &file_ranz_control_v1_control_proto_enumTypes[8]
 }
 
 func (x Sku) Number() protoreflect.EnumNumber {
@@ -574,7 +636,7 @@ func (x Sku) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Sku.Descriptor instead.
 func (Sku) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{7}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{8}
 }
 
 // The processor architecture of a node's host.
@@ -611,11 +673,11 @@ func (x Architecture) String() string {
 }
 
 func (Architecture) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[8].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[9].Descriptor()
 }
 
 func (Architecture) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[8]
+	return &file_ranz_control_v1_control_proto_enumTypes[9]
 }
 
 func (x Architecture) Number() protoreflect.EnumNumber {
@@ -624,7 +686,7 @@ func (x Architecture) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Architecture.Descriptor instead.
 func (Architecture) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{8}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{9}
 }
 
 // How the node translates the traffic of a VRF it is the internet exit of: the first tier its
@@ -665,11 +727,11 @@ func (x EgressTier) String() string {
 }
 
 func (EgressTier) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[9].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[10].Descriptor()
 }
 
 func (EgressTier) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[9]
+	return &file_ranz_control_v1_control_proto_enumTypes[10]
 }
 
 func (x EgressTier) Number() protoreflect.EnumNumber {
@@ -678,7 +740,7 @@ func (x EgressTier) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EgressTier.Descriptor instead.
 func (EgressTier) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{9}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{10}
 }
 
 // What the DHCP responder of an L2 Network does.
@@ -715,11 +777,11 @@ func (x DhcpMode) String() string {
 }
 
 func (DhcpMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[10].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[11].Descriptor()
 }
 
 func (DhcpMode) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[10]
+	return &file_ranz_control_v1_control_proto_enumTypes[11]
 }
 
 func (x DhcpMode) Number() protoreflect.EnumNumber {
@@ -728,7 +790,7 @@ func (x DhcpMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DhcpMode.Descriptor instead.
 func (DhcpMode) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{10}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{11}
 }
 
 // What a node reports as an event.
@@ -767,11 +829,11 @@ func (x NodeEventType) String() string {
 }
 
 func (NodeEventType) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[11].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[12].Descriptor()
 }
 
 func (NodeEventType) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[11]
+	return &file_ranz_control_v1_control_proto_enumTypes[12]
 }
 
 func (x NodeEventType) Number() protoreflect.EnumNumber {
@@ -780,7 +842,7 @@ func (x NodeEventType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NodeEventType.Descriptor instead.
 func (NodeEventType) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{11}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{12}
 }
 
 // What an Operation asks of the node.
@@ -825,11 +887,11 @@ func (x OperationKind) String() string {
 }
 
 func (OperationKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[12].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[13].Descriptor()
 }
 
 func (OperationKind) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[12]
+	return &file_ranz_control_v1_control_proto_enumTypes[13]
 }
 
 func (x OperationKind) Number() protoreflect.EnumNumber {
@@ -838,7 +900,7 @@ func (x OperationKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use OperationKind.Descriptor instead.
 func (OperationKind) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{12}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{13}
 }
 
 // How an Operation ended on the node.
@@ -879,11 +941,11 @@ func (x OperationStatus) String() string {
 }
 
 func (OperationStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_ranz_control_v1_control_proto_enumTypes[13].Descriptor()
+	return file_ranz_control_v1_control_proto_enumTypes[14].Descriptor()
 }
 
 func (OperationStatus) Type() protoreflect.EnumType {
-	return &file_ranz_control_v1_control_proto_enumTypes[13]
+	return &file_ranz_control_v1_control_proto_enumTypes[14]
 }
 
 func (x OperationStatus) Number() protoreflect.EnumNumber {
@@ -892,7 +954,7 @@ func (x OperationStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use OperationStatus.Descriptor instead.
 func (OperationStatus) EnumDescriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{13}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{14}
 }
 
 // One frame of the control stream.
@@ -910,6 +972,7 @@ type ControlMessage struct {
 	//	*ControlMessage_Leases
 	//	*ControlMessage_Operation
 	//	*ControlMessage_OperationResult
+	//	*ControlMessage_Pins
 	Body          isControlMessage_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1042,6 +1105,15 @@ func (x *ControlMessage) GetOperationResult() *OperationResult {
 	return nil
 }
 
+func (x *ControlMessage) GetPins() *Pins {
+	if x != nil {
+		if x, ok := x.Body.(*ControlMessage_Pins); ok {
+			return x.Pins
+		}
+	}
+	return nil
+}
+
 type isControlMessage_Body interface {
 	isControlMessage_Body()
 }
@@ -1095,6 +1167,12 @@ type ControlMessage_OperationResult struct {
 	OperationResult *OperationResult `protobuf:"bytes,10,opt,name=operation_result,json=operationResult,proto3,oneof"`
 }
 
+type ControlMessage_Pins struct {
+	// node to controller, after the Hello and whenever they change (SDN-94): the keys that the node
+	// reports about itself, the public key of its mimic server
+	Pins *Pins `protobuf:"bytes,11,opt,name=pins,proto3,oneof"`
+}
+
 func (*ControlMessage_Hello) isControlMessage_Body() {}
 
 func (*ControlMessage_Update) isControlMessage_Body() {}
@@ -1114,6 +1192,8 @@ func (*ControlMessage_Leases) isControlMessage_Body() {}
 func (*ControlMessage_Operation) isControlMessage_Body() {}
 
 func (*ControlMessage_OperationResult) isControlMessage_Body() {}
+
+func (*ControlMessage_Pins) isControlMessage_Body() {}
 
 // The first frame a node sends.
 type Hello struct {
@@ -1772,6 +1852,9 @@ type NodeConfig struct {
 	// The tunnel endpoint of the node for the links of kind vxlan and geneve (SDN-76 #356): the ports it
 	// listens on. Absent while no VRF of the node has such a link.
 	Vtep *Vtep `protobuf:"bytes,11,opt,name=vtep,proto3" json:"vtep,omitempty"`
+	// The mimic part of the state of the node (SDN-94 #423): the settings of its mimic server and the links that
+	// it dials as a client. Absent while the node is neither.
+	Mimic *Mimic `protobuf:"bytes,20,opt,name=mimic,proto3" json:"mimic,omitempty"`
 	// The decoy of the Listener of the node (AUD1-DT-4 #452): the loopback address and port of a site on the node,
 	// "127.0.0.1:8080" or "[::1]:8080", to which the node passes a prober of the TLS of the new protocol, one whose
 	// first frame does not open under its static key. Empty for none, and while no Listener names the node. A
@@ -1886,6 +1969,13 @@ func (x *NodeConfig) GetEndpoints() []*Endpoint {
 func (x *NodeConfig) GetVtep() *Vtep {
 	if x != nil {
 		return x.Vtep
+	}
+	return nil
+}
+
+func (x *NodeConfig) GetMimic() *Mimic {
+	if x != nil {
+		return x.Mimic
 	}
 	return nil
 }
@@ -2226,6 +2316,437 @@ func (x *CertificateAcme) GetRenewDays() uint32 {
 	return 0
 }
 
+// The mimic part of the state of a node (SDN-94 #423, ADR-0023, CORE-P2-6 #406): what the node writes into its
+// Configuration store for its mimicry sidecar. server is present while a Listener resource gives the node a mimic
+// section: the node is a mimic server. links holds a link to each mimic endpoint of each peer that is a mimic server
+// and whose public key the node reported: the node is a client of those servers. The part is absent while the node
+// is neither. It holds no private key: that of a mimic server is the node's, which makes it, keeps it and reports
+// the public key (Pins), so no message of this protocol has a field for it.
+type Mimic struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Server        *MimicServer           `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
+	Links         []*MimicLink           `protobuf:"bytes,2,rep,name=links,proto3" json:"links,omitempty"` // ordered by the name of the peer, then by the order of its endpoints
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Mimic) Reset() {
+	*x = Mimic{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Mimic) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Mimic) ProtoMessage() {}
+
+func (x *Mimic) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Mimic.ProtoReflect.Descriptor instead.
+func (*Mimic) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *Mimic) GetServer() *MimicServer {
+	if x != nil {
+		return x.Server
+	}
+	return nil
+}
+
+func (x *Mimic) GetLinks() []*MimicLink {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
+// The settings of the server role of the mimicry sidecar that an operator chose in the mimic section of a Listener,
+// and the short id that the controller made for the server. The node adds the private key that it made, and writes
+// the text that the sidecar reads (CORE-P2-6): a REALITY listener that takes a client that proves the key of the
+// server and splices every other connection to the decoy.
+type MimicServer struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// host:port of the TCP listener of the sidecar, an address of its own, never the one of the front door: an IP
+	// address or none for every address, and a port from 1 to 65535
+	Listen string `protobuf:"bytes,1,opt,name=listen,proto3" json:"listen,omitempty"`
+	// The names of the decoy site, the SNI values that a client may use, 1 to 8 DNS names in lower case. The first
+	// one is the name in the ClientHello of the links of the clients.
+	ServerNames []string `protobuf:"bytes,2,rep,name=server_names,json=serverNames,proto3" json:"server_names,omitempty"`
+	// How far the clock of a client may be from the server's, in ms: a captured ClientHello that a prober sends
+	// again is refused once it is older
+	MaxTimeDiffMs uint32      `protobuf:"varint,3,opt,name=max_time_diff_ms,json=maxTimeDiffMs,proto3" json:"max_time_diff_ms,omitempty"`
+	Decoy         *MimicDecoy `protobuf:"bytes,4,opt,name=decoy,proto3" json:"decoy,omitempty"`
+	// The short id of the server, 8 bytes, which the controller made when the server first had settings and keeps
+	// for as long as it is one. Every client puts it into its proof.
+	ShortId       []byte `protobuf:"bytes,5,opt,name=short_id,json=shortId,proto3" json:"short_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MimicServer) Reset() {
+	*x = MimicServer{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MimicServer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MimicServer) ProtoMessage() {}
+
+func (x *MimicServer) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MimicServer.ProtoReflect.Descriptor instead.
+func (*MimicServer) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *MimicServer) GetListen() string {
+	if x != nil {
+		return x.Listen
+	}
+	return ""
+}
+
+func (x *MimicServer) GetServerNames() []string {
+	if x != nil {
+		return x.ServerNames
+	}
+	return nil
+}
+
+func (x *MimicServer) GetMaxTimeDiffMs() uint32 {
+	if x != nil {
+		return x.MaxTimeDiffMs
+	}
+	return 0
+}
+
+func (x *MimicServer) GetDecoy() *MimicDecoy {
+	if x != nil {
+		return x.Decoy
+	}
+	return nil
+}
+
+func (x *MimicServer) GetShortId() []byte {
+	if x != nil {
+		return x.ShortId
+	}
+	return nil
+}
+
+// The site that a connection which is no Ranz client is spliced to (CORE-P2-1 #85). In the mode own, the default, it
+// is a landing page of the sidecar with a certificate from exactly one source: acme, cert_file with key_file, or
+// self_signed, a certificate that stands for the real one in tests only. In the mode borrow it is the site at dest,
+// whose own certificate the prober sees: no other field is set, and the sidecar holds no key of the site.
+type MimicDecoy struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mode          MimicDecoyMode         `protobuf:"varint,1,opt,name=mode,proto3,enum=ranz.control.v1.MimicDecoyMode" json:"mode,omitempty"`
+	Dest          string                 `protobuf:"bytes,2,opt,name=dest,proto3" json:"dest,omitempty"` // borrow: host:port of the site
+	Acme          *MimicAcme             `protobuf:"bytes,3,opt,name=acme,proto3" json:"acme,omitempty"`
+	CertFile      string                 `protobuf:"bytes,4,opt,name=cert_file,json=certFile,proto3" json:"cert_file,omitempty"` // own: a PEM file on the node, with key_file
+	KeyFile       string                 `protobuf:"bytes,5,opt,name=key_file,json=keyFile,proto3" json:"key_file,omitempty"`
+	SelfSigned    bool                   `protobuf:"varint,6,opt,name=self_signed,json=selfSigned,proto3" json:"self_signed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MimicDecoy) Reset() {
+	*x = MimicDecoy{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MimicDecoy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MimicDecoy) ProtoMessage() {}
+
+func (x *MimicDecoy) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MimicDecoy.ProtoReflect.Descriptor instead.
+func (*MimicDecoy) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *MimicDecoy) GetMode() MimicDecoyMode {
+	if x != nil {
+		return x.Mode
+	}
+	return MimicDecoyMode_MIMIC_DECOY_MODE_UNSPECIFIED
+}
+
+func (x *MimicDecoy) GetDest() string {
+	if x != nil {
+		return x.Dest
+	}
+	return ""
+}
+
+func (x *MimicDecoy) GetAcme() *MimicAcme {
+	if x != nil {
+		return x.Acme
+	}
+	return nil
+}
+
+func (x *MimicDecoy) GetCertFile() string {
+	if x != nil {
+		return x.CertFile
+	}
+	return ""
+}
+
+func (x *MimicDecoy) GetKeyFile() string {
+	if x != nil {
+		return x.KeyFile
+	}
+	return ""
+}
+
+func (x *MimicDecoy) GetSelfSigned() bool {
+	if x != nil {
+		return x.SelfSigned
+	}
+	return false
+}
+
+// How the own decoy of a mimic server gets its certificate from an ACME service (RFC 8555), with the TLS-ALPN-01
+// challenge that the REALITY listener splices to the decoy site.
+type MimicAcme struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Directory     string                 `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`               // the https URL of the ACME directory
+	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`                       // the contact of the account, empty for none
+	CacheDir      string                 `protobuf:"bytes,3,opt,name=cache_dir,json=cacheDir,proto3" json:"cache_dir,omitempty"` // the folder on the node that holds the account key and the certificates
+	CaFile        string                 `protobuf:"bytes,4,opt,name=ca_file,json=caFile,proto3" json:"ca_file,omitempty"`       // the roots of a private ACME service, a PEM file on the node; empty for the system's
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MimicAcme) Reset() {
+	*x = MimicAcme{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MimicAcme) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MimicAcme) ProtoMessage() {}
+
+func (x *MimicAcme) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MimicAcme.ProtoReflect.Descriptor instead.
+func (*MimicAcme) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *MimicAcme) GetDirectory() string {
+	if x != nil {
+		return x.Directory
+	}
+	return ""
+}
+
+func (x *MimicAcme) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *MimicAcme) GetCacheDir() string {
+	if x != nil {
+		return x.CacheDir
+	}
+	return ""
+}
+
+func (x *MimicAcme) GetCaFile() string {
+	if x != nil {
+		return x.CaFile
+	}
+	return ""
+}
+
+// One link of a node to a mimic server (CONTEXT.md, Mimic link): what the sidecar of the client role needs to dial it.
+type MimicLink struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Peer          string                 `protobuf:"bytes,1,opt,name=peer,proto3" json:"peer,omitempty"`                               // the Node that is the mimic server
+	Address       string                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`                         // host:port of a mimic endpoint of the server, which the node dials
+	ServerName    string                 `protobuf:"bytes,3,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"` // the SNI of the ClientHello: the first server name of the server
+	PublicKey     []byte                 `protobuf:"bytes,4,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`    // the X25519 public key of the server that its node reported, 32 bytes: the pin of the link
+	ShortId       []byte                 `protobuf:"bytes,5,opt,name=short_id,json=shortId,proto3" json:"short_id,omitempty"`          // the short id of the server, 8 bytes
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MimicLink) Reset() {
+	*x = MimicLink{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MimicLink) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MimicLink) ProtoMessage() {}
+
+func (x *MimicLink) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MimicLink.ProtoReflect.Descriptor instead.
+func (*MimicLink) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *MimicLink) GetPeer() string {
+	if x != nil {
+		return x.Peer
+	}
+	return ""
+}
+
+func (x *MimicLink) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *MimicLink) GetServerName() string {
+	if x != nil {
+		return x.ServerName
+	}
+	return ""
+}
+
+func (x *MimicLink) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
+func (x *MimicLink) GetShortId() []byte {
+	if x != nil {
+		return x.ShortId
+	}
+	return nil
+}
+
+// The keys that a node reports about itself, after its Hello and whenever they change (SDN-94 #423). Each report
+// replaces the one before: a key that it leaves out is one that the node has none of. CORE-H3 (#400) adds the pin of
+// the certificate of the node to it.
+type Pins struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The X25519 public key of the mimic server of the node, 32 bytes, empty for none. The node made the key pair
+	// itself and keeps the private key in its Configuration store. The controller gives the public key to the
+	// clients of the server in their links, and it is what they pin.
+	MimicKey      []byte `protobuf:"bytes,1,opt,name=mimic_key,json=mimicKey,proto3" json:"mimic_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Pins) Reset() {
+	*x = Pins{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Pins) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Pins) ProtoMessage() {}
+
+func (x *Pins) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Pins.ProtoReflect.Descriptor instead.
+func (*Pins) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *Pins) GetMimicKey() []byte {
+	if x != nil {
+		return x.MimicKey
+	}
+	return nil
+}
+
 // A VRF the node is a member of.
 type Vrf struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
@@ -2249,7 +2770,7 @@ type Vrf struct {
 
 func (x *Vrf) Reset() {
 	*x = Vrf{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[15]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2261,7 +2782,7 @@ func (x *Vrf) String() string {
 func (*Vrf) ProtoMessage() {}
 
 func (x *Vrf) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[15]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2274,7 +2795,7 @@ func (x *Vrf) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vrf.ProtoReflect.Descriptor instead.
 func (*Vrf) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{15}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Vrf) GetName() string {
@@ -2356,7 +2877,7 @@ type DnsZone struct {
 
 func (x *DnsZone) Reset() {
 	*x = DnsZone{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[16]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2368,7 +2889,7 @@ func (x *DnsZone) String() string {
 func (*DnsZone) ProtoMessage() {}
 
 func (x *DnsZone) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[16]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2381,7 +2902,7 @@ func (x *DnsZone) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DnsZone.ProtoReflect.Descriptor instead.
 func (*DnsZone) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{16}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DnsZone) GetSuffix() string {
@@ -2410,7 +2931,7 @@ type DnsRecord struct {
 
 func (x *DnsRecord) Reset() {
 	*x = DnsRecord{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[17]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2422,7 +2943,7 @@ func (x *DnsRecord) String() string {
 func (*DnsRecord) ProtoMessage() {}
 
 func (x *DnsRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[17]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2435,7 +2956,7 @@ func (x *DnsRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DnsRecord.ProtoReflect.Descriptor instead.
 func (*DnsRecord) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{17}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *DnsRecord) GetName() string {
@@ -2469,7 +2990,7 @@ type Network struct {
 
 func (x *Network) Reset() {
 	*x = Network{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[18]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2481,7 +3002,7 @@ func (x *Network) String() string {
 func (*Network) ProtoMessage() {}
 
 func (x *Network) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[18]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2494,7 +3015,7 @@ func (x *Network) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Network.ProtoReflect.Descriptor instead.
 func (*Network) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{18}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *Network) GetName() string {
@@ -2563,7 +3084,7 @@ type Peer struct {
 
 func (x *Peer) Reset() {
 	*x = Peer{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[19]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2575,7 +3096,7 @@ func (x *Peer) String() string {
 func (*Peer) ProtoMessage() {}
 
 func (x *Peer) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[19]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2588,7 +3109,7 @@ func (x *Peer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Peer.ProtoReflect.Descriptor instead.
 func (*Peer) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{19}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Peer) GetName() string {
@@ -2661,7 +3182,7 @@ type Endpoint struct {
 
 func (x *Endpoint) Reset() {
 	*x = Endpoint{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[20]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2673,7 +3194,7 @@ func (x *Endpoint) String() string {
 func (*Endpoint) ProtoMessage() {}
 
 func (x *Endpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[20]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2686,7 +3207,7 @@ func (x *Endpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Endpoint.ProtoReflect.Descriptor instead.
 func (*Endpoint) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{20}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *Endpoint) GetTransport() Transport {
@@ -2718,7 +3239,7 @@ type Relay struct {
 
 func (x *Relay) Reset() {
 	*x = Relay{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[21]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2730,7 +3251,7 @@ func (x *Relay) String() string {
 func (*Relay) ProtoMessage() {}
 
 func (x *Relay) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[21]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2743,7 +3264,7 @@ func (x *Relay) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Relay.ProtoReflect.Descriptor instead.
 func (*Relay) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{21}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *Relay) GetName() string {
@@ -2794,7 +3315,7 @@ type Device struct {
 
 func (x *Device) Reset() {
 	*x = Device{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[22]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2806,7 +3327,7 @@ func (x *Device) String() string {
 func (*Device) ProtoMessage() {}
 
 func (x *Device) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[22]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2819,7 +3340,7 @@ func (x *Device) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Device.ProtoReflect.Descriptor instead.
 func (*Device) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{22}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *Device) GetName() string {
@@ -2875,7 +3396,7 @@ type Prefix struct {
 
 func (x *Prefix) Reset() {
 	*x = Prefix{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[23]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2887,7 +3408,7 @@ func (x *Prefix) String() string {
 func (*Prefix) ProtoMessage() {}
 
 func (x *Prefix) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[23]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2900,7 +3421,7 @@ func (x *Prefix) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Prefix.ProtoReflect.Descriptor instead.
 func (*Prefix) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{23}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *Prefix) GetAddress() []byte {
@@ -2937,7 +3458,7 @@ type VrfPolicy struct {
 
 func (x *VrfPolicy) Reset() {
 	*x = VrfPolicy{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[24]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2949,7 +3470,7 @@ func (x *VrfPolicy) String() string {
 func (*VrfPolicy) ProtoMessage() {}
 
 func (x *VrfPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[24]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2962,7 +3483,7 @@ func (x *VrfPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VrfPolicy.ProtoReflect.Descriptor instead.
 func (*VrfPolicy) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{24}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *VrfPolicy) GetMaxFlows() uint32 {
@@ -3029,7 +3550,7 @@ type Rule struct {
 
 func (x *Rule) Reset() {
 	*x = Rule{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[25]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3041,7 +3562,7 @@ func (x *Rule) String() string {
 func (*Rule) ProtoMessage() {}
 
 func (x *Rule) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[25]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3054,7 +3575,7 @@ func (x *Rule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Rule.ProtoReflect.Descriptor instead.
 func (*Rule) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{25}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *Rule) GetName() string {
@@ -3125,7 +3646,7 @@ type RuleEnd struct {
 
 func (x *RuleEnd) Reset() {
 	*x = RuleEnd{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[26]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3137,7 +3658,7 @@ func (x *RuleEnd) String() string {
 func (*RuleEnd) ProtoMessage() {}
 
 func (x *RuleEnd) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[26]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3150,7 +3671,7 @@ func (x *RuleEnd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuleEnd.ProtoReflect.Descriptor instead.
 func (*RuleEnd) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{26}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RuleEnd) GetTags() []string {
@@ -3178,7 +3699,7 @@ type PortRange struct {
 
 func (x *PortRange) Reset() {
 	*x = PortRange{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[27]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3190,7 +3711,7 @@ func (x *PortRange) String() string {
 func (*PortRange) ProtoMessage() {}
 
 func (x *PortRange) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[27]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3203,7 +3724,7 @@ func (x *PortRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortRange.ProtoReflect.Descriptor instead.
 func (*PortRange) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{27}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *PortRange) GetFirst() uint32 {
@@ -3252,7 +3773,7 @@ type Capabilities struct {
 
 func (x *Capabilities) Reset() {
 	*x = Capabilities{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[28]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3264,7 +3785,7 @@ func (x *Capabilities) String() string {
 func (*Capabilities) ProtoMessage() {}
 
 func (x *Capabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[28]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3277,7 +3798,7 @@ func (x *Capabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Capabilities.ProtoReflect.Descriptor instead.
 func (*Capabilities) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{28}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *Capabilities) GetSku() Sku {
@@ -3377,7 +3898,7 @@ type Address struct {
 
 func (x *Address) Reset() {
 	*x = Address{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[29]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3389,7 +3910,7 @@ func (x *Address) String() string {
 func (*Address) ProtoMessage() {}
 
 func (x *Address) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[29]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3402,7 +3923,7 @@ func (x *Address) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Address.ProtoReflect.Descriptor instead.
 func (*Address) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{29}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *Address) GetNetwork() string {
@@ -3445,7 +3966,7 @@ type Dhcp struct {
 
 func (x *Dhcp) Reset() {
 	*x = Dhcp{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[30]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3457,7 +3978,7 @@ func (x *Dhcp) String() string {
 func (*Dhcp) ProtoMessage() {}
 
 func (x *Dhcp) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[30]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3470,7 +3991,7 @@ func (x *Dhcp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Dhcp.ProtoReflect.Descriptor instead.
 func (*Dhcp) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{30}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *Dhcp) GetMode() DhcpMode {
@@ -3527,7 +4048,7 @@ type Leases struct {
 
 func (x *Leases) Reset() {
 	*x = Leases{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[31]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3539,7 +4060,7 @@ func (x *Leases) String() string {
 func (*Leases) ProtoMessage() {}
 
 func (x *Leases) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[31]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3552,7 +4073,7 @@ func (x *Leases) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Leases.ProtoReflect.Descriptor instead.
 func (*Leases) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{31}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *Leases) GetNetwork() string {
@@ -3582,7 +4103,7 @@ type Lease struct {
 
 func (x *Lease) Reset() {
 	*x = Lease{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[32]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3594,7 +4115,7 @@ func (x *Lease) String() string {
 func (*Lease) ProtoMessage() {}
 
 func (x *Lease) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[32]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3607,7 +4128,7 @@ func (x *Lease) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Lease.ProtoReflect.Descriptor instead.
 func (*Lease) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{32}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *Lease) GetMac() []byte {
@@ -3660,7 +4181,7 @@ type Telemetry struct {
 
 func (x *Telemetry) Reset() {
 	*x = Telemetry{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[33]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3672,7 +4193,7 @@ func (x *Telemetry) String() string {
 func (*Telemetry) ProtoMessage() {}
 
 func (x *Telemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[33]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3685,7 +4206,7 @@ func (x *Telemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Telemetry.ProtoReflect.Descriptor instead.
 func (*Telemetry) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{33}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *Telemetry) GetPeers() []*PeerCounters {
@@ -3745,7 +4266,7 @@ type DeviceCounters struct {
 
 func (x *DeviceCounters) Reset() {
 	*x = DeviceCounters{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[34]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3757,7 +4278,7 @@ func (x *DeviceCounters) String() string {
 func (*DeviceCounters) ProtoMessage() {}
 
 func (x *DeviceCounters) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[34]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3770,7 +4291,7 @@ func (x *DeviceCounters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceCounters.ProtoReflect.Descriptor instead.
 func (*DeviceCounters) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{34}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *DeviceCounters) GetDevice() string {
@@ -3816,7 +4337,7 @@ type PeerCounters struct {
 
 func (x *PeerCounters) Reset() {
 	*x = PeerCounters{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[35]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3828,7 +4349,7 @@ func (x *PeerCounters) String() string {
 func (*PeerCounters) ProtoMessage() {}
 
 func (x *PeerCounters) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[35]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3841,7 +4362,7 @@ func (x *PeerCounters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeerCounters.ProtoReflect.Descriptor instead.
 func (*PeerCounters) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{35}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PeerCounters) GetPeer() string {
@@ -3894,7 +4415,7 @@ type VrfCounters struct {
 
 func (x *VrfCounters) Reset() {
 	*x = VrfCounters{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[36]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3906,7 +4427,7 @@ func (x *VrfCounters) String() string {
 func (*VrfCounters) ProtoMessage() {}
 
 func (x *VrfCounters) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[36]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3919,7 +4440,7 @@ func (x *VrfCounters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VrfCounters.ProtoReflect.Descriptor instead.
 func (*VrfCounters) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{36}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *VrfCounters) GetVrfId() uint32 {
@@ -3979,7 +4500,7 @@ type RuleCounters struct {
 
 func (x *RuleCounters) Reset() {
 	*x = RuleCounters{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[37]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3991,7 +4512,7 @@ func (x *RuleCounters) String() string {
 func (*RuleCounters) ProtoMessage() {}
 
 func (x *RuleCounters) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[37]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4004,7 +4525,7 @@ func (x *RuleCounters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuleCounters.ProtoReflect.Descriptor instead.
 func (*RuleCounters) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{37}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *RuleCounters) GetVrfId() uint32 {
@@ -4057,7 +4578,7 @@ type Flow struct {
 
 func (x *Flow) Reset() {
 	*x = Flow{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[38]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4069,7 +4590,7 @@ func (x *Flow) String() string {
 func (*Flow) ProtoMessage() {}
 
 func (x *Flow) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[38]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4082,7 +4603,7 @@ func (x *Flow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Flow.ProtoReflect.Descriptor instead.
 func (*Flow) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{38}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *Flow) GetVrfId() uint32 {
@@ -4169,7 +4690,7 @@ type NodeEvent struct {
 
 func (x *NodeEvent) Reset() {
 	*x = NodeEvent{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[39]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4181,7 +4702,7 @@ func (x *NodeEvent) String() string {
 func (*NodeEvent) ProtoMessage() {}
 
 func (x *NodeEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[39]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4194,7 +4715,7 @@ func (x *NodeEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeEvent.ProtoReflect.Descriptor instead.
 func (*NodeEvent) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{39}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *NodeEvent) GetType() NodeEventType {
@@ -4237,7 +4758,7 @@ type Nat struct {
 
 func (x *Nat) Reset() {
 	*x = Nat{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[40]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4249,7 +4770,7 @@ func (x *Nat) String() string {
 func (*Nat) ProtoMessage() {}
 
 func (x *Nat) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[40]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4262,7 +4783,7 @@ func (x *Nat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Nat.ProtoReflect.Descriptor instead.
 func (*Nat) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{40}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *Nat) GetVrfId() uint32 {
@@ -4301,7 +4822,7 @@ type Route struct {
 
 func (x *Route) Reset() {
 	*x = Route{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[41]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4313,7 +4834,7 @@ func (x *Route) String() string {
 func (*Route) ProtoMessage() {}
 
 func (x *Route) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[41]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4326,7 +4847,7 @@ func (x *Route) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Route.ProtoReflect.Descriptor instead.
 func (*Route) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{41}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *Route) GetVrfId() uint32 {
@@ -4371,7 +4892,7 @@ type Mirror struct {
 
 func (x *Mirror) Reset() {
 	*x = Mirror{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[42]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4383,7 +4904,7 @@ func (x *Mirror) String() string {
 func (*Mirror) ProtoMessage() {}
 
 func (x *Mirror) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[42]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4396,7 +4917,7 @@ func (x *Mirror) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mirror.ProtoReflect.Descriptor instead.
 func (*Mirror) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{42}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *Mirror) GetName() string {
@@ -4477,7 +4998,7 @@ type Operation struct {
 
 func (x *Operation) Reset() {
 	*x = Operation{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[43]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4489,7 +5010,7 @@ func (x *Operation) String() string {
 func (*Operation) ProtoMessage() {}
 
 func (x *Operation) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[43]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4502,7 +5023,7 @@ func (x *Operation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Operation.ProtoReflect.Descriptor instead.
 func (*Operation) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{43}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *Operation) GetId() uint64 {
@@ -4556,7 +5077,7 @@ type OperationResult struct {
 
 func (x *OperationResult) Reset() {
 	*x = OperationResult{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[44]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4568,7 +5089,7 @@ func (x *OperationResult) String() string {
 func (*OperationResult) ProtoMessage() {}
 
 func (x *OperationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[44]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4581,7 +5102,7 @@ func (x *OperationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationResult.ProtoReflect.Descriptor instead.
 func (*OperationResult) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{44}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *OperationResult) GetId() uint64 {
@@ -4635,7 +5156,7 @@ type TableEntry struct {
 
 func (x *TableEntry) Reset() {
 	*x = TableEntry{}
-	mi := &file_ranz_control_v1_control_proto_msgTypes[45]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4647,7 +5168,7 @@ func (x *TableEntry) String() string {
 func (*TableEntry) ProtoMessage() {}
 
 func (x *TableEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_ranz_control_v1_control_proto_msgTypes[45]
+	mi := &file_ranz_control_v1_control_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4660,7 +5181,7 @@ func (x *TableEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TableEntry.ProtoReflect.Descriptor instead.
 func (*TableEntry) Descriptor() ([]byte, []int) {
-	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{45}
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *TableEntry) GetVlan() uint32 {
@@ -4702,7 +5223,7 @@ var File_ranz_control_v1_control_proto protoreflect.FileDescriptor
 
 const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1dranz/control/v1/control.proto\x12\x0franz.control.v1\"\xc7\x04\n" +
+	"\x1dranz/control/v1/control.proto\x12\x0franz.control.v1\"\xf4\x04\n" +
 	"\x0eControlMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.ranz.control.v1.HelloH\x00R\x05hello\x121\n" +
 	"\x06update\x18\x02 \x01(\v2\x17.ranz.control.v1.UpdateH\x00R\x06update\x12(\n" +
@@ -4714,7 +5235,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x06leases\x18\b \x01(\v2\x17.ranz.control.v1.LeasesH\x00R\x06leases\x12:\n" +
 	"\toperation\x18\t \x01(\v2\x1a.ranz.control.v1.OperationH\x00R\toperation\x12M\n" +
 	"\x10operation_result\x18\n" +
-	" \x01(\v2 .ranz.control.v1.OperationResultH\x00R\x0foperationResultB\x06\n" +
+	" \x01(\v2 .ranz.control.v1.OperationResultH\x00R\x0foperationResult\x12+\n" +
+	"\x04pins\x18\v \x01(\v2\x15.ranz.control.v1.PinsH\x00R\x04pinsB\x06\n" +
 	"\x04body\"\xc0\x01\n" +
 	"\x05Hello\x12E\n" +
 	"\x0eschema_version\x18\x01 \x01(\x0e2\x1e.ranz.control.v1.SchemaVersionR\rschemaVersion\x12-\n" +
@@ -4757,7 +5279,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04kind\"J\n" +
 	"\tObjectKey\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.ranz.control.v1.KindR\x04kind\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xf6\x03\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xa4\x04\n" +
 	"\n" +
 	"NodeConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
@@ -4772,7 +5294,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x0econtroller_tls\x18\t \x03(\tR\rcontrollerTls\x127\n" +
 	"\tendpoints\x18\n" +
 	" \x03(\v2\x19.ranz.control.v1.EndpointR\tendpoints\x12)\n" +
-	"\x04vtep\x18\v \x01(\v2\x15.ranz.control.v1.VtepR\x04vtep\x12%\n" +
+	"\x04vtep\x18\v \x01(\v2\x15.ranz.control.v1.VtepR\x04vtep\x12,\n" +
+	"\x05mimic\x18\x14 \x01(\v2\x16.ranz.control.v1.MimicR\x05mimic\x12%\n" +
 	"\x0elistener_decoy\x18\f \x01(\tR\rlistenerDecoy\"`\n" +
 	"\x04Vtep\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x1d\n" +
@@ -4798,7 +5321,40 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\thttp_port\x18\x04 \x01(\rR\bhttpPort\x12\x17\n" +
 	"\aca_file\x18\x05 \x01(\tR\x06caFile\x12\x1d\n" +
 	"\n" +
-	"renew_days\x18\x06 \x01(\rR\trenewDays\"\xa6\x02\n" +
+	"renew_days\x18\x06 \x01(\rR\trenewDays\"o\n" +
+	"\x05Mimic\x124\n" +
+	"\x06server\x18\x01 \x01(\v2\x1c.ranz.control.v1.MimicServerR\x06server\x120\n" +
+	"\x05links\x18\x02 \x03(\v2\x1a.ranz.control.v1.MimicLinkR\x05links\"\xbf\x01\n" +
+	"\vMimicServer\x12\x16\n" +
+	"\x06listen\x18\x01 \x01(\tR\x06listen\x12!\n" +
+	"\fserver_names\x18\x02 \x03(\tR\vserverNames\x12'\n" +
+	"\x10max_time_diff_ms\x18\x03 \x01(\rR\rmaxTimeDiffMs\x121\n" +
+	"\x05decoy\x18\x04 \x01(\v2\x1b.ranz.control.v1.MimicDecoyR\x05decoy\x12\x19\n" +
+	"\bshort_id\x18\x05 \x01(\fR\ashortId\"\xde\x01\n" +
+	"\n" +
+	"MimicDecoy\x123\n" +
+	"\x04mode\x18\x01 \x01(\x0e2\x1f.ranz.control.v1.MimicDecoyModeR\x04mode\x12\x12\n" +
+	"\x04dest\x18\x02 \x01(\tR\x04dest\x12.\n" +
+	"\x04acme\x18\x03 \x01(\v2\x1a.ranz.control.v1.MimicAcmeR\x04acme\x12\x1b\n" +
+	"\tcert_file\x18\x04 \x01(\tR\bcertFile\x12\x19\n" +
+	"\bkey_file\x18\x05 \x01(\tR\akeyFile\x12\x1f\n" +
+	"\vself_signed\x18\x06 \x01(\bR\n" +
+	"selfSigned\"u\n" +
+	"\tMimicAcme\x12\x1c\n" +
+	"\tdirectory\x18\x01 \x01(\tR\tdirectory\x12\x14\n" +
+	"\x05email\x18\x02 \x01(\tR\x05email\x12\x1b\n" +
+	"\tcache_dir\x18\x03 \x01(\tR\bcacheDir\x12\x17\n" +
+	"\aca_file\x18\x04 \x01(\tR\x06caFile\"\x94\x01\n" +
+	"\tMimicLink\x12\x12\n" +
+	"\x04peer\x18\x01 \x01(\tR\x04peer\x12\x18\n" +
+	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x1f\n" +
+	"\vserver_name\x18\x03 \x01(\tR\n" +
+	"serverName\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x04 \x01(\fR\tpublicKey\x12\x19\n" +
+	"\bshort_id\x18\x05 \x01(\fR\ashortId\"#\n" +
+	"\x04Pins\x12\x1b\n" +
+	"\tmimic_key\x18\x01 \x01(\fR\bmimicKey\"\xa6\x02\n" +
 	"\x03Vrf\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\rR\x02id\x12)\n" +
@@ -5032,7 +5588,11 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x15LINK_KIND_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fLINK_KIND_NOISE\x10\x01\x12\x13\n" +
 	"\x0fLINK_KIND_VXLAN\x10\x02\x12\x14\n" +
-	"\x10LINK_KIND_GENEVE\x10\x03*U\n" +
+	"\x10LINK_KIND_GENEVE\x10\x03*i\n" +
+	"\x0eMimicDecoyMode\x12 \n" +
+	"\x1cMIMIC_DECOY_MODE_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14MIMIC_DECOY_MODE_OWN\x10\x01\x12\x1b\n" +
+	"\x17MIMIC_DECOY_MODE_BORROW\x10\x02*U\n" +
 	"\vNetworkMode\x12\x1c\n" +
 	"\x18NETWORK_MODE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fNETWORK_MODE_L3\x10\x01\x12\x13\n" +
@@ -5096,148 +5656,162 @@ func file_ranz_control_v1_control_proto_rawDescGZIP() []byte {
 	return file_ranz_control_v1_control_proto_rawDescData
 }
 
-var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
-var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
+var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 15)
+var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_ranz_control_v1_control_proto_goTypes = []any{
 	(SchemaVersion)(0),      // 0: ranz.control.v1.SchemaVersion
 	(RefuseReason)(0),       // 1: ranz.control.v1.RefuseReason
 	(Kind)(0),               // 2: ranz.control.v1.Kind
 	(LinkKind)(0),           // 3: ranz.control.v1.LinkKind
-	(NetworkMode)(0),        // 4: ranz.control.v1.NetworkMode
-	(Transport)(0),          // 5: ranz.control.v1.Transport
-	(RuleAction)(0),         // 6: ranz.control.v1.RuleAction
-	(Sku)(0),                // 7: ranz.control.v1.Sku
-	(Architecture)(0),       // 8: ranz.control.v1.Architecture
-	(EgressTier)(0),         // 9: ranz.control.v1.EgressTier
-	(DhcpMode)(0),           // 10: ranz.control.v1.DhcpMode
-	(NodeEventType)(0),      // 11: ranz.control.v1.NodeEventType
-	(OperationKind)(0),      // 12: ranz.control.v1.OperationKind
-	(OperationStatus)(0),    // 13: ranz.control.v1.OperationStatus
-	(*ControlMessage)(nil),  // 14: ranz.control.v1.ControlMessage
-	(*Hello)(nil),           // 15: ranz.control.v1.Hello
-	(*Update)(nil),          // 16: ranz.control.v1.Update
-	(*Ack)(nil),             // 17: ranz.control.v1.Ack
-	(*Signal)(nil),          // 18: ranz.control.v1.Signal
-	(*Refuse)(nil),          // 19: ranz.control.v1.Refuse
-	(*Controllers)(nil),     // 20: ranz.control.v1.Controllers
-	(*Controller)(nil),      // 21: ranz.control.v1.Controller
-	(*Object)(nil),          // 22: ranz.control.v1.Object
-	(*ObjectKey)(nil),       // 23: ranz.control.v1.ObjectKey
-	(*NodeConfig)(nil),      // 24: ranz.control.v1.NodeConfig
-	(*Vtep)(nil),            // 25: ranz.control.v1.Vtep
-	(*Listener)(nil),        // 26: ranz.control.v1.Listener
-	(*CertificateFile)(nil), // 27: ranz.control.v1.CertificateFile
-	(*CertificateAcme)(nil), // 28: ranz.control.v1.CertificateAcme
-	(*Vrf)(nil),             // 29: ranz.control.v1.Vrf
-	(*DnsZone)(nil),         // 30: ranz.control.v1.DnsZone
-	(*DnsRecord)(nil),       // 31: ranz.control.v1.DnsRecord
-	(*Network)(nil),         // 32: ranz.control.v1.Network
-	(*Peer)(nil),            // 33: ranz.control.v1.Peer
-	(*Endpoint)(nil),        // 34: ranz.control.v1.Endpoint
-	(*Relay)(nil),           // 35: ranz.control.v1.Relay
-	(*Device)(nil),          // 36: ranz.control.v1.Device
-	(*Prefix)(nil),          // 37: ranz.control.v1.Prefix
-	(*VrfPolicy)(nil),       // 38: ranz.control.v1.VrfPolicy
-	(*Rule)(nil),            // 39: ranz.control.v1.Rule
-	(*RuleEnd)(nil),         // 40: ranz.control.v1.RuleEnd
-	(*PortRange)(nil),       // 41: ranz.control.v1.PortRange
-	(*Capabilities)(nil),    // 42: ranz.control.v1.Capabilities
-	(*Address)(nil),         // 43: ranz.control.v1.Address
-	(*Dhcp)(nil),            // 44: ranz.control.v1.Dhcp
-	(*Leases)(nil),          // 45: ranz.control.v1.Leases
-	(*Lease)(nil),           // 46: ranz.control.v1.Lease
-	(*Telemetry)(nil),       // 47: ranz.control.v1.Telemetry
-	(*DeviceCounters)(nil),  // 48: ranz.control.v1.DeviceCounters
-	(*PeerCounters)(nil),    // 49: ranz.control.v1.PeerCounters
-	(*VrfCounters)(nil),     // 50: ranz.control.v1.VrfCounters
-	(*RuleCounters)(nil),    // 51: ranz.control.v1.RuleCounters
-	(*Flow)(nil),            // 52: ranz.control.v1.Flow
-	(*NodeEvent)(nil),       // 53: ranz.control.v1.NodeEvent
-	(*Nat)(nil),             // 54: ranz.control.v1.Nat
-	(*Route)(nil),           // 55: ranz.control.v1.Route
-	(*Mirror)(nil),          // 56: ranz.control.v1.Mirror
-	(*Operation)(nil),       // 57: ranz.control.v1.Operation
-	(*OperationResult)(nil), // 58: ranz.control.v1.OperationResult
-	(*TableEntry)(nil),      // 59: ranz.control.v1.TableEntry
+	(MimicDecoyMode)(0),     // 4: ranz.control.v1.MimicDecoyMode
+	(NetworkMode)(0),        // 5: ranz.control.v1.NetworkMode
+	(Transport)(0),          // 6: ranz.control.v1.Transport
+	(RuleAction)(0),         // 7: ranz.control.v1.RuleAction
+	(Sku)(0),                // 8: ranz.control.v1.Sku
+	(Architecture)(0),       // 9: ranz.control.v1.Architecture
+	(EgressTier)(0),         // 10: ranz.control.v1.EgressTier
+	(DhcpMode)(0),           // 11: ranz.control.v1.DhcpMode
+	(NodeEventType)(0),      // 12: ranz.control.v1.NodeEventType
+	(OperationKind)(0),      // 13: ranz.control.v1.OperationKind
+	(OperationStatus)(0),    // 14: ranz.control.v1.OperationStatus
+	(*ControlMessage)(nil),  // 15: ranz.control.v1.ControlMessage
+	(*Hello)(nil),           // 16: ranz.control.v1.Hello
+	(*Update)(nil),          // 17: ranz.control.v1.Update
+	(*Ack)(nil),             // 18: ranz.control.v1.Ack
+	(*Signal)(nil),          // 19: ranz.control.v1.Signal
+	(*Refuse)(nil),          // 20: ranz.control.v1.Refuse
+	(*Controllers)(nil),     // 21: ranz.control.v1.Controllers
+	(*Controller)(nil),      // 22: ranz.control.v1.Controller
+	(*Object)(nil),          // 23: ranz.control.v1.Object
+	(*ObjectKey)(nil),       // 24: ranz.control.v1.ObjectKey
+	(*NodeConfig)(nil),      // 25: ranz.control.v1.NodeConfig
+	(*Vtep)(nil),            // 26: ranz.control.v1.Vtep
+	(*Listener)(nil),        // 27: ranz.control.v1.Listener
+	(*CertificateFile)(nil), // 28: ranz.control.v1.CertificateFile
+	(*CertificateAcme)(nil), // 29: ranz.control.v1.CertificateAcme
+	(*Mimic)(nil),           // 30: ranz.control.v1.Mimic
+	(*MimicServer)(nil),     // 31: ranz.control.v1.MimicServer
+	(*MimicDecoy)(nil),      // 32: ranz.control.v1.MimicDecoy
+	(*MimicAcme)(nil),       // 33: ranz.control.v1.MimicAcme
+	(*MimicLink)(nil),       // 34: ranz.control.v1.MimicLink
+	(*Pins)(nil),            // 35: ranz.control.v1.Pins
+	(*Vrf)(nil),             // 36: ranz.control.v1.Vrf
+	(*DnsZone)(nil),         // 37: ranz.control.v1.DnsZone
+	(*DnsRecord)(nil),       // 38: ranz.control.v1.DnsRecord
+	(*Network)(nil),         // 39: ranz.control.v1.Network
+	(*Peer)(nil),            // 40: ranz.control.v1.Peer
+	(*Endpoint)(nil),        // 41: ranz.control.v1.Endpoint
+	(*Relay)(nil),           // 42: ranz.control.v1.Relay
+	(*Device)(nil),          // 43: ranz.control.v1.Device
+	(*Prefix)(nil),          // 44: ranz.control.v1.Prefix
+	(*VrfPolicy)(nil),       // 45: ranz.control.v1.VrfPolicy
+	(*Rule)(nil),            // 46: ranz.control.v1.Rule
+	(*RuleEnd)(nil),         // 47: ranz.control.v1.RuleEnd
+	(*PortRange)(nil),       // 48: ranz.control.v1.PortRange
+	(*Capabilities)(nil),    // 49: ranz.control.v1.Capabilities
+	(*Address)(nil),         // 50: ranz.control.v1.Address
+	(*Dhcp)(nil),            // 51: ranz.control.v1.Dhcp
+	(*Leases)(nil),          // 52: ranz.control.v1.Leases
+	(*Lease)(nil),           // 53: ranz.control.v1.Lease
+	(*Telemetry)(nil),       // 54: ranz.control.v1.Telemetry
+	(*DeviceCounters)(nil),  // 55: ranz.control.v1.DeviceCounters
+	(*PeerCounters)(nil),    // 56: ranz.control.v1.PeerCounters
+	(*VrfCounters)(nil),     // 57: ranz.control.v1.VrfCounters
+	(*RuleCounters)(nil),    // 58: ranz.control.v1.RuleCounters
+	(*Flow)(nil),            // 59: ranz.control.v1.Flow
+	(*NodeEvent)(nil),       // 60: ranz.control.v1.NodeEvent
+	(*Nat)(nil),             // 61: ranz.control.v1.Nat
+	(*Route)(nil),           // 62: ranz.control.v1.Route
+	(*Mirror)(nil),          // 63: ranz.control.v1.Mirror
+	(*Operation)(nil),       // 64: ranz.control.v1.Operation
+	(*OperationResult)(nil), // 65: ranz.control.v1.OperationResult
+	(*TableEntry)(nil),      // 66: ranz.control.v1.TableEntry
 }
 var file_ranz_control_v1_control_proto_depIdxs = []int32{
-	15, // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
-	16, // 1: ranz.control.v1.ControlMessage.update:type_name -> ranz.control.v1.Update
-	17, // 2: ranz.control.v1.ControlMessage.ack:type_name -> ranz.control.v1.Ack
-	19, // 3: ranz.control.v1.ControlMessage.refuse:type_name -> ranz.control.v1.Refuse
-	18, // 4: ranz.control.v1.ControlMessage.signal:type_name -> ranz.control.v1.Signal
-	20, // 5: ranz.control.v1.ControlMessage.controllers:type_name -> ranz.control.v1.Controllers
-	47, // 6: ranz.control.v1.ControlMessage.telemetry:type_name -> ranz.control.v1.Telemetry
-	45, // 7: ranz.control.v1.ControlMessage.leases:type_name -> ranz.control.v1.Leases
-	57, // 8: ranz.control.v1.ControlMessage.operation:type_name -> ranz.control.v1.Operation
-	58, // 9: ranz.control.v1.ControlMessage.operation_result:type_name -> ranz.control.v1.OperationResult
-	0,  // 10: ranz.control.v1.Hello.schema_version:type_name -> ranz.control.v1.SchemaVersion
-	42, // 11: ranz.control.v1.Hello.capabilities:type_name -> ranz.control.v1.Capabilities
-	22, // 12: ranz.control.v1.Update.set:type_name -> ranz.control.v1.Object
-	23, // 13: ranz.control.v1.Update.remove:type_name -> ranz.control.v1.ObjectKey
-	1,  // 14: ranz.control.v1.Refuse.reason:type_name -> ranz.control.v1.RefuseReason
-	21, // 15: ranz.control.v1.Controllers.controllers:type_name -> ranz.control.v1.Controller
-	24, // 16: ranz.control.v1.Object.node:type_name -> ranz.control.v1.NodeConfig
-	29, // 17: ranz.control.v1.Object.vrf:type_name -> ranz.control.v1.Vrf
-	32, // 18: ranz.control.v1.Object.network:type_name -> ranz.control.v1.Network
-	33, // 19: ranz.control.v1.Object.peer:type_name -> ranz.control.v1.Peer
-	35, // 20: ranz.control.v1.Object.relay:type_name -> ranz.control.v1.Relay
-	39, // 21: ranz.control.v1.Object.rule:type_name -> ranz.control.v1.Rule
-	36, // 22: ranz.control.v1.Object.device:type_name -> ranz.control.v1.Device
-	2,  // 23: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
-	43, // 24: ranz.control.v1.NodeConfig.addresses:type_name -> ranz.control.v1.Address
-	54, // 25: ranz.control.v1.NodeConfig.nat:type_name -> ranz.control.v1.Nat
-	56, // 26: ranz.control.v1.NodeConfig.mirrors:type_name -> ranz.control.v1.Mirror
-	26, // 27: ranz.control.v1.NodeConfig.listener:type_name -> ranz.control.v1.Listener
-	34, // 28: ranz.control.v1.NodeConfig.endpoints:type_name -> ranz.control.v1.Endpoint
-	25, // 29: ranz.control.v1.NodeConfig.vtep:type_name -> ranz.control.v1.Vtep
-	27, // 30: ranz.control.v1.Listener.file:type_name -> ranz.control.v1.CertificateFile
-	28, // 31: ranz.control.v1.Listener.acme:type_name -> ranz.control.v1.CertificateAcme
-	37, // 32: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
-	38, // 33: ranz.control.v1.Vrf.policy:type_name -> ranz.control.v1.VrfPolicy
-	30, // 34: ranz.control.v1.Vrf.dns:type_name -> ranz.control.v1.DnsZone
-	3,  // 35: ranz.control.v1.Vrf.link:type_name -> ranz.control.v1.LinkKind
-	31, // 36: ranz.control.v1.DnsZone.records:type_name -> ranz.control.v1.DnsRecord
-	4,  // 37: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
-	37, // 38: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
-	37, // 39: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
-	44, // 40: ranz.control.v1.Network.dhcp:type_name -> ranz.control.v1.Dhcp
-	43, // 41: ranz.control.v1.Peer.addresses:type_name -> ranz.control.v1.Address
-	55, // 42: ranz.control.v1.Peer.routes:type_name -> ranz.control.v1.Route
-	34, // 43: ranz.control.v1.Peer.endpoints:type_name -> ranz.control.v1.Endpoint
-	25, // 44: ranz.control.v1.Peer.vtep:type_name -> ranz.control.v1.Vtep
-	5,  // 45: ranz.control.v1.Endpoint.transport:type_name -> ranz.control.v1.Transport
-	43, // 46: ranz.control.v1.Device.addresses:type_name -> ranz.control.v1.Address
-	6,  // 47: ranz.control.v1.Rule.action:type_name -> ranz.control.v1.RuleAction
-	40, // 48: ranz.control.v1.Rule.from:type_name -> ranz.control.v1.RuleEnd
-	40, // 49: ranz.control.v1.Rule.to:type_name -> ranz.control.v1.RuleEnd
-	41, // 50: ranz.control.v1.Rule.ports:type_name -> ranz.control.v1.PortRange
-	37, // 51: ranz.control.v1.RuleEnd.prefixes:type_name -> ranz.control.v1.Prefix
-	7,  // 52: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
-	8,  // 53: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
-	9,  // 54: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
-	37, // 55: ranz.control.v1.Address.prefix:type_name -> ranz.control.v1.Prefix
-	10, // 56: ranz.control.v1.Dhcp.mode:type_name -> ranz.control.v1.DhcpMode
-	37, // 57: ranz.control.v1.Dhcp.reserved:type_name -> ranz.control.v1.Prefix
-	46, // 58: ranz.control.v1.Leases.leases:type_name -> ranz.control.v1.Lease
-	49, // 59: ranz.control.v1.Telemetry.peers:type_name -> ranz.control.v1.PeerCounters
-	50, // 60: ranz.control.v1.Telemetry.vrfs:type_name -> ranz.control.v1.VrfCounters
-	51, // 61: ranz.control.v1.Telemetry.rules:type_name -> ranz.control.v1.RuleCounters
-	52, // 62: ranz.control.v1.Telemetry.flows:type_name -> ranz.control.v1.Flow
-	53, // 63: ranz.control.v1.Telemetry.events:type_name -> ranz.control.v1.NodeEvent
-	48, // 64: ranz.control.v1.Telemetry.devices:type_name -> ranz.control.v1.DeviceCounters
-	11, // 65: ranz.control.v1.NodeEvent.type:type_name -> ranz.control.v1.NodeEventType
-	37, // 66: ranz.control.v1.Nat.inside:type_name -> ranz.control.v1.Prefix
-	37, // 67: ranz.control.v1.Nat.outside:type_name -> ranz.control.v1.Prefix
-	37, // 68: ranz.control.v1.Route.prefix:type_name -> ranz.control.v1.Prefix
-	12, // 69: ranz.control.v1.Operation.kind:type_name -> ranz.control.v1.OperationKind
-	13, // 70: ranz.control.v1.OperationResult.status:type_name -> ranz.control.v1.OperationStatus
-	59, // 71: ranz.control.v1.OperationResult.entries:type_name -> ranz.control.v1.TableEntry
-	72, // [72:72] is the sub-list for method output_type
-	72, // [72:72] is the sub-list for method input_type
-	72, // [72:72] is the sub-list for extension type_name
-	72, // [72:72] is the sub-list for extension extendee
-	0,  // [0:72] is the sub-list for field type_name
+	16, // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
+	17, // 1: ranz.control.v1.ControlMessage.update:type_name -> ranz.control.v1.Update
+	18, // 2: ranz.control.v1.ControlMessage.ack:type_name -> ranz.control.v1.Ack
+	20, // 3: ranz.control.v1.ControlMessage.refuse:type_name -> ranz.control.v1.Refuse
+	19, // 4: ranz.control.v1.ControlMessage.signal:type_name -> ranz.control.v1.Signal
+	21, // 5: ranz.control.v1.ControlMessage.controllers:type_name -> ranz.control.v1.Controllers
+	54, // 6: ranz.control.v1.ControlMessage.telemetry:type_name -> ranz.control.v1.Telemetry
+	52, // 7: ranz.control.v1.ControlMessage.leases:type_name -> ranz.control.v1.Leases
+	64, // 8: ranz.control.v1.ControlMessage.operation:type_name -> ranz.control.v1.Operation
+	65, // 9: ranz.control.v1.ControlMessage.operation_result:type_name -> ranz.control.v1.OperationResult
+	35, // 10: ranz.control.v1.ControlMessage.pins:type_name -> ranz.control.v1.Pins
+	0,  // 11: ranz.control.v1.Hello.schema_version:type_name -> ranz.control.v1.SchemaVersion
+	49, // 12: ranz.control.v1.Hello.capabilities:type_name -> ranz.control.v1.Capabilities
+	23, // 13: ranz.control.v1.Update.set:type_name -> ranz.control.v1.Object
+	24, // 14: ranz.control.v1.Update.remove:type_name -> ranz.control.v1.ObjectKey
+	1,  // 15: ranz.control.v1.Refuse.reason:type_name -> ranz.control.v1.RefuseReason
+	22, // 16: ranz.control.v1.Controllers.controllers:type_name -> ranz.control.v1.Controller
+	25, // 17: ranz.control.v1.Object.node:type_name -> ranz.control.v1.NodeConfig
+	36, // 18: ranz.control.v1.Object.vrf:type_name -> ranz.control.v1.Vrf
+	39, // 19: ranz.control.v1.Object.network:type_name -> ranz.control.v1.Network
+	40, // 20: ranz.control.v1.Object.peer:type_name -> ranz.control.v1.Peer
+	42, // 21: ranz.control.v1.Object.relay:type_name -> ranz.control.v1.Relay
+	46, // 22: ranz.control.v1.Object.rule:type_name -> ranz.control.v1.Rule
+	43, // 23: ranz.control.v1.Object.device:type_name -> ranz.control.v1.Device
+	2,  // 24: ranz.control.v1.ObjectKey.kind:type_name -> ranz.control.v1.Kind
+	50, // 25: ranz.control.v1.NodeConfig.addresses:type_name -> ranz.control.v1.Address
+	61, // 26: ranz.control.v1.NodeConfig.nat:type_name -> ranz.control.v1.Nat
+	63, // 27: ranz.control.v1.NodeConfig.mirrors:type_name -> ranz.control.v1.Mirror
+	27, // 28: ranz.control.v1.NodeConfig.listener:type_name -> ranz.control.v1.Listener
+	41, // 29: ranz.control.v1.NodeConfig.endpoints:type_name -> ranz.control.v1.Endpoint
+	26, // 30: ranz.control.v1.NodeConfig.vtep:type_name -> ranz.control.v1.Vtep
+	30, // 31: ranz.control.v1.NodeConfig.mimic:type_name -> ranz.control.v1.Mimic
+	28, // 32: ranz.control.v1.Listener.file:type_name -> ranz.control.v1.CertificateFile
+	29, // 33: ranz.control.v1.Listener.acme:type_name -> ranz.control.v1.CertificateAcme
+	31, // 34: ranz.control.v1.Mimic.server:type_name -> ranz.control.v1.MimicServer
+	34, // 35: ranz.control.v1.Mimic.links:type_name -> ranz.control.v1.MimicLink
+	32, // 36: ranz.control.v1.MimicServer.decoy:type_name -> ranz.control.v1.MimicDecoy
+	4,  // 37: ranz.control.v1.MimicDecoy.mode:type_name -> ranz.control.v1.MimicDecoyMode
+	33, // 38: ranz.control.v1.MimicDecoy.acme:type_name -> ranz.control.v1.MimicAcme
+	44, // 39: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
+	45, // 40: ranz.control.v1.Vrf.policy:type_name -> ranz.control.v1.VrfPolicy
+	37, // 41: ranz.control.v1.Vrf.dns:type_name -> ranz.control.v1.DnsZone
+	3,  // 42: ranz.control.v1.Vrf.link:type_name -> ranz.control.v1.LinkKind
+	38, // 43: ranz.control.v1.DnsZone.records:type_name -> ranz.control.v1.DnsRecord
+	5,  // 44: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
+	44, // 45: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
+	44, // 46: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
+	51, // 47: ranz.control.v1.Network.dhcp:type_name -> ranz.control.v1.Dhcp
+	50, // 48: ranz.control.v1.Peer.addresses:type_name -> ranz.control.v1.Address
+	62, // 49: ranz.control.v1.Peer.routes:type_name -> ranz.control.v1.Route
+	41, // 50: ranz.control.v1.Peer.endpoints:type_name -> ranz.control.v1.Endpoint
+	26, // 51: ranz.control.v1.Peer.vtep:type_name -> ranz.control.v1.Vtep
+	6,  // 52: ranz.control.v1.Endpoint.transport:type_name -> ranz.control.v1.Transport
+	50, // 53: ranz.control.v1.Device.addresses:type_name -> ranz.control.v1.Address
+	7,  // 54: ranz.control.v1.Rule.action:type_name -> ranz.control.v1.RuleAction
+	47, // 55: ranz.control.v1.Rule.from:type_name -> ranz.control.v1.RuleEnd
+	47, // 56: ranz.control.v1.Rule.to:type_name -> ranz.control.v1.RuleEnd
+	48, // 57: ranz.control.v1.Rule.ports:type_name -> ranz.control.v1.PortRange
+	44, // 58: ranz.control.v1.RuleEnd.prefixes:type_name -> ranz.control.v1.Prefix
+	8,  // 59: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
+	9,  // 60: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
+	10, // 61: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
+	44, // 62: ranz.control.v1.Address.prefix:type_name -> ranz.control.v1.Prefix
+	11, // 63: ranz.control.v1.Dhcp.mode:type_name -> ranz.control.v1.DhcpMode
+	44, // 64: ranz.control.v1.Dhcp.reserved:type_name -> ranz.control.v1.Prefix
+	53, // 65: ranz.control.v1.Leases.leases:type_name -> ranz.control.v1.Lease
+	56, // 66: ranz.control.v1.Telemetry.peers:type_name -> ranz.control.v1.PeerCounters
+	57, // 67: ranz.control.v1.Telemetry.vrfs:type_name -> ranz.control.v1.VrfCounters
+	58, // 68: ranz.control.v1.Telemetry.rules:type_name -> ranz.control.v1.RuleCounters
+	59, // 69: ranz.control.v1.Telemetry.flows:type_name -> ranz.control.v1.Flow
+	60, // 70: ranz.control.v1.Telemetry.events:type_name -> ranz.control.v1.NodeEvent
+	55, // 71: ranz.control.v1.Telemetry.devices:type_name -> ranz.control.v1.DeviceCounters
+	12, // 72: ranz.control.v1.NodeEvent.type:type_name -> ranz.control.v1.NodeEventType
+	44, // 73: ranz.control.v1.Nat.inside:type_name -> ranz.control.v1.Prefix
+	44, // 74: ranz.control.v1.Nat.outside:type_name -> ranz.control.v1.Prefix
+	44, // 75: ranz.control.v1.Route.prefix:type_name -> ranz.control.v1.Prefix
+	13, // 76: ranz.control.v1.Operation.kind:type_name -> ranz.control.v1.OperationKind
+	14, // 77: ranz.control.v1.OperationResult.status:type_name -> ranz.control.v1.OperationStatus
+	66, // 78: ranz.control.v1.OperationResult.entries:type_name -> ranz.control.v1.TableEntry
+	79, // [79:79] is the sub-list for method output_type
+	79, // [79:79] is the sub-list for method input_type
+	79, // [79:79] is the sub-list for extension type_name
+	79, // [79:79] is the sub-list for extension extendee
+	0,  // [0:79] is the sub-list for field type_name
 }
 
 func init() { file_ranz_control_v1_control_proto_init() }
@@ -5256,6 +5830,7 @@ func file_ranz_control_v1_control_proto_init() {
 		(*ControlMessage_Leases)(nil),
 		(*ControlMessage_Operation)(nil),
 		(*ControlMessage_OperationResult)(nil),
+		(*ControlMessage_Pins)(nil),
 	}
 	file_ranz_control_v1_control_proto_msgTypes[8].OneofWrappers = []any{
 		(*Object_Node)(nil),
@@ -5276,8 +5851,8 @@ func file_ranz_control_v1_control_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ranz_control_v1_control_proto_rawDesc), len(file_ranz_control_v1_control_proto_rawDesc)),
-			NumEnums:      14,
-			NumMessages:   46,
+			NumEnums:      15,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
