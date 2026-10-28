@@ -141,6 +141,10 @@ type Config struct {
 	// OperationTimeout is how long the controller waits for the answer of a node to a live operation of
 	// an operator (SDN-50, operations.go); DefaultOperationTimeout when zero.
 	OperationTimeout time.Duration
+	// Now is the clock of the lives of the node keys (SDN-56, nodekeys.go); time.Now when nil. KeyCheck is how
+	// often the controller looks for keys that ended; DefaultKeyCheck when zero.
+	Now      func() time.Time
+	KeyCheck time.Duration
 }
 
 // NodeGeneration is the generation of a node's desired state.
@@ -241,6 +245,9 @@ type Controller struct {
 	// The live operations of operators: the banned users and the Operations that wait for a node
 	// (operations.go, bans.go; SDN-50)
 	live liveState
+
+	// The lives of the node keys, and the nodes that they hold back (nodekeys.go; SDN-56)
+	keyLife keyLifeState
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -353,6 +360,10 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	if err := c.startLiveOperations(ctx, cfg); err != nil {
 		return nil, err
 	}
+	// The lives of the node keys, which the first compile honours too (nodekeys.go; SDN-56)
+	if err := c.startKeys(ctx, cfg); err != nil {
+		return nil, err
+	}
 	for _, sn := range stored {
 		n := &node{gen: sn.Generation, ackedGen: sn.AckedGeneration}
 		if n.state, err = desired.FromFull(sn.Desired); err != nil {
@@ -393,6 +404,8 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		return nil, err
 	}
 	c.startAudit()
+	// The look at the lives of the node keys (nodekeys.go; SDN-56)
+	c.startKeySweep()
 	c.log.Info("intent loaded", "resources", len(rs), "nodes", len(c.nodes), "revision", c.revision, "schema", int32(c.schema))
 	c.log.Info("licence", "tier", c.force.Tier, "nodes", c.force.Nodes, "state", c.force.State, "message", c.force.Message)
 	return c, nil
@@ -658,6 +671,7 @@ func (c *Controller) Close() {
 	c.wg.Wait()
 	c.stopTelemetry()
 	c.stopAudit()
+	c.stopKeys()
 }
 
 // compiled is an intent compiled under a licence: the licence key installed (nil for none), the
@@ -780,6 +794,8 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 		}
 	}
 	c.refuseOutsideSources()
+	// The lives of the node keys, and the streams of the nodes that they hold back (nodekeys.go; SDN-56)
+	c.commitKeys(sctx)
 	c.schedule(force)
 	return result, nil
 }
@@ -1003,6 +1019,13 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		// The user that owns the node is banned (bans.go; SDN-50)
 		c.mu.Unlock()
 		c.refuseBanned(conn, name, ban, remote)
+		return
+	}
+	if hold, held := c.keyHeld(name); held {
+		// The key of the node ended, or its Network holds it for approval (nodekeys.go; SDN-56)
+		message := c.holdMessage(name, hold)
+		c.mu.Unlock()
+		c.refuseKey(conn, name, message, remote)
 		return
 	}
 	n := c.nodes[name]

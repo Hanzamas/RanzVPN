@@ -95,6 +95,10 @@ func (c *Controller) EnrolDevice(ctx context.Context, user, name string, key []b
 		res, err := c.ApplyConfirm(withPrecondition(ctx, check), doc, 0)
 		switch {
 		case errors.Is(err, errEnrolled):
+			// The device authenticates again, so its key lives for another period (nodekeys.go; SDN-56)
+			if err := c.refreshKey(ctx, held, user); err != nil {
+				return Enrolment{}, err
+			}
 			return Enrolment{Node: held, User: user, Revision: c.LatestRevision()}, nil
 		case taken && name == "" && try < maxEnrolTries:
 			// Another change took the name that was drawn: draw the next one
