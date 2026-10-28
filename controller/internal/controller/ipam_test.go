@@ -303,8 +303,9 @@ func TestPoolThresholdEvent(t *testing.T) {
 // received; and the control protocol has no DHCP inside the overlay: the only messages, fields and
 // enums named after it are the ones of the DHCP responder of an L2 Network (SDN-43 #236), listed
 // here, which answers the clients of the LAN that the Network bridges and never a node (an L3
-// Network has none, internal/intent dhcp.go). A ticket that adds DHCP to the protocol changes this
-// test and names what it adds.
+// Network has none, internal/intent dhcp.go), and the protections of the security of an L2 Network
+// (SDN-41 #234), which judge the DHCP of that LAN and answer none. A ticket that adds DHCP to the
+// protocol changes this test and names what it adds.
 func TestNoDHCPInTheOverlay(t *testing.T) {
 	h := newHarness(t)
 	h.apply("ipam-pools.json")
@@ -341,6 +342,14 @@ func TestNoDHCPInTheOverlay(t *testing.T) {
 		"ranz.control.v1.DhcpMode",
 		"ranz.control.v1.Network.dhcp",
 	}
+	// The security of an L2 Network (SDN-41 #234): ARP and DHCP only lets the DHCP of the LAN through
+	// to a client, and the DHCP guard drops the DHCP servers among the clients
+	security := []string{
+		"ranz.control.v1.L2Security.arp_dhcp_only",
+		"ranz.control.v1.L2Security.dhcp_guard",
+	}
+	want := slices.Concat(responder, security)
+	slices.Sort(want)
 	var dhcp []string
 	for _, name := range names {
 		if strings.Contains(strings.ToLower(name), "dhcp") {
@@ -348,9 +357,9 @@ func TestNoDHCPInTheOverlay(t *testing.T) {
 		}
 	}
 	slices.Sort(dhcp)
-	if !slices.Equal(dhcp, responder) {
-		t.Errorf("the names of the control protocol after DHCP are\n%s\nwant the ones of the responder of an L2 Network alone\n%s: no DHCP runs inside the overlay",
-			strings.Join(dhcp, "\n"), strings.Join(responder, "\n"))
+	if !slices.Equal(dhcp, want) {
+		t.Errorf("the names of the control protocol after DHCP are\n%s\nwant the ones of the responder and of the security of an L2 Network alone\n%s: no DHCP runs inside the overlay",
+			strings.Join(dhcp, "\n"), strings.Join(want, "\n"))
 	}
 }
 

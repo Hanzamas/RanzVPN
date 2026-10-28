@@ -90,6 +90,10 @@ src/Core  ControlApply   fuzz_control  via ControlInput
 # both; neither name has a parser word, both are listed as the readers of the controller's bytes that they are
 src/Core  ControlCopyRelays  fuzz_control  via ControlInput
 src/Core  ControlTakeSignal  fuzz_control  via ControlInput
+# The security of the L2 Networks of a state (SDN-41 #234): ControlInput hands the Network objects of an Update to
+# ControlCopySecurities, which copies the L2Security of each L2 Network, and the seeds security-*.bin of fuzz_control hold
+# them; no parser word in the name, listed as the reader of the controller's bytes that it is
+src/Core  ControlCopySecurities  fuzz_control  via ControlInput
 
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table
