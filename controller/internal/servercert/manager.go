@@ -67,6 +67,9 @@ type Manager struct {
 	cfg  Config
 	log  *slog.Logger
 	self *Loaded
+	// served is called with the certificate that is served each time it changes (PublishFingerprint);
+	// it is set before Start and not changed.
+	served func(Info)
 
 	// cur is the certificate that GetCertificate gives to each new handshake. It changes under mu.
 	cur atomic.Pointer[Loaded]
@@ -243,6 +246,9 @@ func (m *Manager) adoptLocked(l *Loaded, setting string) {
 func (m *Manager) logServed(l *Loaded) {
 	m.log.Info("TLS certificate", "source", l.Info.Source, "subject", l.Info.Subject, "names", strings.Join(l.Info.Names, ","),
 		"thumbprint", l.Info.Thumbprint, "tlsFingerprint", l.Info.Fingerprint, "notAfter", l.Info.NotAfter.Format(time.RFC3339))
+	if m.served != nil {
+		m.served(l.Info)
+	}
 }
 
 // Refresh looks at the store: the certificate of a setting that is not the one in use is loaded and

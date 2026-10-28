@@ -239,6 +239,10 @@ controller/internal/certgen  LoadAuthority  FuzzLoadAuthority
 controller/internal/servercert  ParseSetting  FuzzParseSetting
 controller/internal/servercert  Manager.Load  FuzzLoadPEM  via loadPEM
 
+# The file of the data directory that holds the TLS fingerprint of the certificate in use (AUD1-DT-13 #461), which ranz on
+# the same host reads before it sends a token to a loopback address: the Controller wrote it itself, or someone replaced it
+controller/internal/servercert  ReadFingerprint  FuzzReadFingerprint  via parseFingerprint
+
 # The traffic test of `ranz test throughput` (SDN-53 #246): what a peer sends to a test server (the request, and the frames
 # of an upload) and to a test client (the frames of a download, the report of an upload)
 controller/internal/throughput  ReadRequest     FuzzRead
