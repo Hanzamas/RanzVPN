@@ -199,7 +199,8 @@ type Node struct {
 	// Left out, the node can be in no VRF with such a link.
 	VTEP VTEP `json:"vtep,omitzero"`
 	// NonExpiring marks the Node as one whose key never expires (SDN-56, keylife.go): a server or a gateway, which no
-	// user logs in for again. Left out, the key of the Node lives for the key lifetime of its Networks.
+	// user logs in for again. A Node that has an owner is refused the mark: the key of a device of a User lives by the
+	// login of its User (SDN-56-R1). Left out, the key of the Node lives for the key lifetime of its Networks.
 	NonExpiring bool `json:"nonExpiring,omitempty"`
 }
 
