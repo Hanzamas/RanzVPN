@@ -118,7 +118,8 @@ type VRF struct {
 	VNI  uint32 `json:"vni,omitempty"`
 	// Topology is the topology of the VRF (SDN-19, topology.go): full-mesh, the default, where every
 	// Node of the VRF is a peer of every other, or hub-and-spoke, where the spokes reach each other
-	// only through the Node Hub, the hub of the VRF.
+	// only through the Node Hub, the hub of the VRF, where the policy of the VRF decides the traffic
+	// between two spokes by its real ends (SDN-19-R2).
 	Topology string `json:"topology,omitempty"`
 	Hub      string `json:"hub,omitempty"`
 	// ECMP spreads the flows to a LAN subnet that several gateways advertise in the VRF over the
