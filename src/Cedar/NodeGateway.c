@@ -29,6 +29,14 @@
 // the hub, which has every spoke as its peer, sends it on (NodeGatewayTransit): the traffic between two sites passes the
 // hub, where a Mirror of the VRF copies it to a sensor, and two spokes never talk directly. A node that is not the hub of
 // the VRF drops such a packet, as the overlay did before.
+//
+// The hub is the place where the policy of the VRF decides the traffic between two spokes (SDN-19-R2, #508). A spoke sees
+// the hub as the other end of a packet of another spoke; the hub sees both real ends, as both are its peers. So it judges
+// the packet before it sends it on, with the policy of the VRF, by the peer that sent it and the peer of its next hop
+// (NodePolicyTransit), and drops what the policy does not let through: with no rule between two spokes, the default deny
+// of the VRF keeps them apart, whatever the rules between the spokes and the hub allow, and the Mirror copies only the
+// packets that the policy let through. The destination spoke judges the packet as a packet of the hub, the trust anchor of
+// the topology, whose policy it passed.
 
 #include "Node.h"
 
@@ -661,10 +669,11 @@ bool NodeGatewayHub(NODE_VRF_TABLES *v, UINT vrf_id) {
 
 // A packet of a peer in the VRF vrf_id, the data record of size bytes, which came from the next hop from and whose
 // destination the forwarding table of the VRF leads to the next hop to, not to the host: when the node is the hub of the VRF,
-// it sends the record on to that next hop, or to the gateway that the group of to picks, and a Mirror of the VRF copies the
-// packet there, as an inspection appliance at the hub sees the traffic between two spokes. True when the packet went on;
-// false when the node is no hub of the VRF, or the packet goes nowhere: never back to the peer that sent it, nor along a
-// leaked route. The caller is an online reader of the node's table snapshot, which holds v.
+// it sends the record on to that next hop, or to the gateway that the group of to picks, once the session profiles of the two
+// peers and the policy of the VRF let it through, and a Mirror of the VRF copies the packet there, as an inspection appliance
+// at the hub sees the traffic between two spokes. True when the packet went on; false when the node is no hub of the VRF, or
+// the packet goes nowhere: never back to the peer that sent it, nor along a leaked route, nor past the policy of the VRF.
+// The caller is an online reader of the node's table snapshot, which holds v.
 bool NodeGatewayTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, const UCHAR *record, UINT size) {
 	NODE_GATEWAY *g = (n != NULL ? n->Gateway : NULL);
 	const NODE_GATEWAY_TABLE *t = (v != NULL ? v->Gateway : NULL);
@@ -679,7 +688,11 @@ bool NodeGatewayTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UIN
 	if (to >= t->NumPeers || from >= v->NumHops || v->Hops[to] == v->Hops[from])
 		return false;
 	// The session profiles of the two peers judge the packet as it passes the node (NodeProfile.c; SDN-40, #233)
-	if (NodeProfileTransit(n, v, vrf_id, from, to, packet, packet_size) == false || NodeOverlaySendRecord(n, v, to, record, size) == false)
+	if (NodeProfileTransit(n, v, vrf_id, from, to, packet, packet_size) == false)
+		return false;
+	// ... and then the policy of the VRF, by its two real ends: the peer that sent it and the peer of its next hop, which only
+	// the hub sees (NodePolicy.c; SDN-19-R2, #508)
+	if (NodePolicyTransit(n, v, vrf_id, from, to, packet, packet_size) == false || NodeOverlaySendRecord(n, v, to, record, size) == false)
 		return false;
 
 	NodeMirrorCopy(v, vrf_id, packet, packet_size, false);

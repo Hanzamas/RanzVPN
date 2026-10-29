@@ -2,6 +2,7 @@ package desired
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -111,6 +112,42 @@ func TestCompileHubAndSpoke(t *testing.T) {
 	for _, a := range states["a"][Key{controlpb.Kind_KIND_PEER, "c"}].GetPeer().GetAddresses() {
 		if a.GetNetwork() != "corp-lan" {
 			t.Errorf("the Peer c of a has the address %s of %s, a Network of the VRF in which both are spokes", prefixText(a.GetPrefix()), a.GetNetwork())
+		}
+	}
+}
+
+// The hub of VRF branch, of topology hub-and-spoke, judges the flows that it sends on from one spoke to
+// another by their real ends (SDN-19-R2 #508), so it gets every rule of branch: site-a-to-site-b too,
+// whose ends name the tags of the spokes a and b and none of the hub. A spoke gets the rules whose from
+// or to end can be it, as a Node of a full mesh does, so c, which has neither site-a nor site-b, does not
+// get site-a-to-site-b. In corp, a full mesh, the hub gets no rule whose ends name none of its tags.
+func TestCompileHubRules(t *testing.T) {
+	states := compile(t,
+		res(intent.KindVRF, "branch", `{"id": 20, "ula": "fd00:20::/48", "topology": "hub-and-spoke", "hub": "hub"}`),
+		res(intent.KindVRF, "corp", `{"id": 10, "ula": "fd00:10::/48"}`),
+		res(intent.KindNode, "hub", `{"publicKey": "`+key1+`", "vrfs": ["branch", "corp"], "tags": ["hub"]}`),
+		res(intent.KindNode, "a", `{"publicKey": "`+key2+`", "vrfs": ["branch", "corp"], "tags": ["branch", "site-a"]}`),
+		res(intent.KindNode, "b", `{"publicKey": "`+key3+`", "vrfs": ["branch", "corp"], "tags": ["branch", "site-b"]}`),
+		res(intent.KindNode, "c", `{"publicKey": "`+key4+`", "vrfs": ["branch"], "tags": ["branch"]}`),
+		res(intent.KindPolicy, "branch-to-hub", `{"vrf": "branch", "action": "allow", "from": {"tags": ["branch"]}, "to": {"tags": ["hub"]}}`),
+		res(intent.KindPolicy, "hub-to-branch", `{"vrf": "branch", "action": "allow", "from": {"tags": ["hub"]}, "to": {"tags": ["branch"]}}`),
+		res(intent.KindPolicy, "site-a-to-site-b", `{"vrf": "branch", "action": "allow", "from": {"tags": ["site-a"]}, "to": {"tags": ["site-b"]}}`),
+		res(intent.KindPolicy, "corp-a-to-b", `{"vrf": "corp", "action": "allow", "from": {"tags": ["site-a"]}, "to": {"tags": ["site-b"]}}`),
+	)
+	for node, want := range map[string][]string{
+		"hub": {"branch-to-hub", "hub-to-branch", "site-a-to-site-b"},
+		"a":   {"branch-to-hub", "corp-a-to-b", "hub-to-branch", "site-a-to-site-b"},
+		"b":   {"branch-to-hub", "corp-a-to-b", "hub-to-branch", "site-a-to-site-b"},
+		"c":   {"branch-to-hub", "hub-to-branch"},
+	} {
+		var got []string
+		for _, k := range states[node].keys() {
+			if k.Kind == controlpb.Kind_KIND_RULE {
+				got = append(got, k.Name)
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("node %s gets the rules %v, want %v", node, got, want)
 		}
 	}
 }

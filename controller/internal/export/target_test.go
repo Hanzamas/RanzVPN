@@ -24,6 +24,30 @@ func TestValidateAcceptsTheKinds(t *testing.T) {
 	}
 }
 
+// A webhook may name the events of the life of a node key (SDN-56-R1), alone or with the others, so that an operator who wants to hear
+// of the end of a key before it comes gets those and no other.
+func TestValidateAcceptsTheEventsOfTheLifeOfAKey(t *testing.T) {
+	for _, types := range [][]string{
+		{event.NodeKeyExpiring},
+		{event.NodeKeyEnded},
+		{event.NodeWaiting},
+		{event.NodeKeyExpiring, event.NodeKeyEnded, event.NodeWaiting, event.NodeDown},
+	} {
+		tg := Target{Name: "keys", Kind: KindWebhook, URL: "https://hooks.example.com/keys", Types: types}
+		if err := tg.Validate(); err != nil {
+			t.Errorf("%+v: %v", tg, err)
+		}
+		for _, typ := range types {
+			if !tg.Wants(typ) {
+				t.Errorf("%+v does not want %s, which it names", tg, typ)
+			}
+		}
+		if tg.Wants(event.GatewayFailover) {
+			t.Errorf("%+v wants %s, which it does not name", tg, event.GatewayFailover)
+		}
+	}
+}
+
 func TestValidateRefusesWhatIsNotValid(t *testing.T) {
 	hook := Target{Name: "slack", Kind: KindWebhook, URL: "https://hooks.example.com/x"}
 	with := func(f func(*Target)) Target {
