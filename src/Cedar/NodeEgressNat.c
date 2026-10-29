@@ -7,8 +7,11 @@
 //   whose exit it is a private interface of the NAT and each interface that carries the egress a public one, a boundary
 //   with address and port translation (IP_NAT_INTERFACE_INFO under MS_IP_NAT, MS-RRASM 2.2.1.2.197), through the MprConfig
 //   functions, which keep the configuration of the router, and the MprAdmin ones, which give it to the running router, as
-//   netsh routing ip nat does. mprapi.dll is loaded at run time: Windows documents the configuration of the router for
-//   Windows Server only, so a node of another edition never imports it.
+//   netsh routing ip nat does. RRAS knows the interfaces of the adapters that it found when it started: where it lacks the
+//   interface of an adapter that came after, as the adapter of a VRF does, or the IPv4 transport of the interface, the node
+//   adds them with the NAT information, as netsh routing ip add interface does, and takes out again what it added.
+//   mprapi.dll is loaded at run time: Windows documents the configuration of the router for Windows Server only, so a node
+//   of another edition never imports it.
 // - Tier 2, WinNAT: the node creates the NAT network of WinNAT of its own name (NODE_EGRESS_NETNAT_NAME) over one supernet
 //   that holds every IPv4 prefix of the VRFs whose exit it is, as an instance of MSFT_NetNat of the WMI namespace
 //   ROOT\StandardCimv2, which is what New-NetNat creates. WinNAT allows one NAT network per host, and Ranz never touches
@@ -46,8 +49,24 @@
 // The NAT routing protocol of the IPv4 router of RRAS: the type of its global and interface information (MS_IP_NAT of
 // MS-RRASM 2.2.1.2.3)
 #define NODE_EGRESS_MS_IP_NAT 0x81372715
+// The status of an interface in its IPv4 information (IP_INTERFACE_STATUS_INFO of ipinfoid.h), and the status of one that is
+// up (MIB_IF_ADMIN_STATUS_UP)
+#define NODE_EGRESS_IP_STATUS 0xFFFF0004
+#define NODE_EGRESS_ADMIN_UP  1
 // The IPv4 router manager of RRAS (PID_IP of mprapi.h)
 #define NODE_EGRESS_PID_IP 0x00000021
+// The type of the interface of a LAN adapter in RRAS (ROUTER_IF_TYPE_DEDICATED of mprapi.h)
+#define NODE_EGRESS_IF_DEDICATED 3
+// The characters of the name of an interface of the router at level 0, with its end (MAX_INTERFACE_NAME_LEN + 1 of mprapi.h)
+#define NODE_EGRESS_MPR_NAME 257
+// The errors with which the router says that it lacks the interface, or the IPv4 transport of the interface, that it was asked
+// for (ERROR_UNKNOWN_PROTOCOL_ID and ERROR_NO_SUCH_INTERFACE of mprerror.h)
+#define NODE_EGRESS_MPR_NO_PROTOCOL  902
+#define NODE_EGRESS_MPR_NO_INTERFACE 905
+// What the node added to RRAS for an interface beside its NAT information, which it takes out again: the interface, which RRAS
+// lacks for an adapter that came after the router started, or the IPv4 transport of the interface
+#define NODE_EGRESS_MADE_INTERFACE 0x01
+#define NODE_EGRESS_MADE_TRANSPORT 0x02
 // The logging level that the node gives the NAT routing protocol: errors only (IPNATHLP_LOGGING_ERROR, MS-RRASM 2.2.1.2.195)
 #define NODE_EGRESS_NAT_LOGGING 1
 // The router types of RRAS (RouterType, MS-RRASM 2.2.3.4.1): IPv4 routing over LAN interfaces, and over demand-dial ones too
@@ -90,6 +109,18 @@ typedef struct NODE_EGRESS_NAT_INTERFACE {
 	RTR_INFO_BLOCK_HEADER Header;
 } NODE_EGRESS_NAT_INTERFACE;
 
+// An interface of the router at level 0 (MPR_INTERFACE_0 of mprapi.h): what MprAdminInterfaceCreate and MprConfigInterfaceCreate
+// take for the interface of an adapter that RRAS lacks
+typedef struct NODE_EGRESS_MPR_INTERFACE {
+	WCHAR Name[NODE_EGRESS_MPR_NAME]; // The name of the interface: the GUID of its adapter in braces
+	HANDLE Interface;                 // What the router gives back ...
+	BOOL Enabled;                     // ... the interface is enabled ...
+	DWORD Type;                       // ... its type, NODE_EGRESS_IF_DEDICATED (ROUTER_INTERFACE_TYPE) ...
+	DWORD ConnectionState;            // ... and what the router gives back (ROUTER_CONNECTION_STATE ...)
+	DWORD UnreachabilityReasons;
+	DWORD LastError;
+} NODE_EGRESS_MPR_INTERFACE;
+
 // The functions of mprapi.dll that the NAT of RRAS uses
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_CONNECT_FUNC)(LPWSTR server, HANDLE *handle);
 typedef VOID(APIENTRY NODE_EGRESS_MPR_DISCONNECT_FUNC)(HANDLE handle);
@@ -106,6 +137,13 @@ typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADMIN_SET_FUNC)(HANDLE server, DWORD tran
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADMIN_IF_FUNC)(HANDLE server, LPWSTR name, HANDLE *handle, BOOL clients);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADMIN_IF_GET_FUNC)(HANDLE server, HANDLE iface, DWORD transport, LPBYTE *info, LPDWORD size);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADMIN_IF_SET_FUNC)(HANDLE server, HANDLE iface, DWORD transport, LPBYTE info, DWORD size);
+typedef DWORD(APIENTRY NODE_EGRESS_MPR_IF_CREATE_FUNC)(HANDLE server, DWORD level, LPBYTE buffer, HANDLE *handle);
+typedef DWORD(APIENTRY NODE_EGRESS_MPR_IF_DELETE_FUNC)(HANDLE server, HANDLE iface);
+typedef DWORD(APIENTRY NODE_EGRESS_MPR_CONFIG_IF_ADD_FUNC)(HANDLE config, HANDLE iface, DWORD transport, LPWSTR name, LPBYTE info, DWORD size, HANDLE *handle);
+typedef DWORD(APIENTRY NODE_EGRESS_MPR_CONFIG_IF_REMOVE_FUNC)(HANDLE config, HANDLE iface, HANDLE transport);
+typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADMIN_IF_ADD_FUNC)(HANDLE server, HANDLE iface, DWORD transport, LPBYTE info, DWORD size);
+typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADMIN_IF_REMOVE_FUNC)(HANDLE server, HANDLE iface, DWORD transport);
+typedef DWORD(APIENTRY NODE_EGRESS_MPR_CREATE_FUNC)(DWORD version, LPVOID *header);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_FIND_FUNC)(LPVOID header, DWORD type, LPDWORD item_size, LPDWORD count, LPBYTE *data);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADD_FUNC)(LPVOID header, DWORD type, DWORD item_size, DWORD count, LPBYTE data, LPVOID *next);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_REMOVE_FUNC)(LPVOID header, DWORD type, LPVOID *next);
@@ -125,6 +163,10 @@ typedef struct NODE_EGRESS_MPR {
 	NODE_EGRESS_MPR_CONFIG_IF_TRANSPORT_FUNC *ConfigIfTransport; // MprConfigInterfaceTransportGetHandle
 	NODE_EGRESS_MPR_CONFIG_IF_GET_FUNC *ConfigIfGet;             // MprConfigInterfaceTransportGetInfo
 	NODE_EGRESS_MPR_CONFIG_IF_SET_FUNC *ConfigIfSet;             // MprConfigInterfaceTransportSetInfo
+	NODE_EGRESS_MPR_IF_CREATE_FUNC *ConfigIfCreate;              // MprConfigInterfaceCreate
+	NODE_EGRESS_MPR_IF_DELETE_FUNC *ConfigIfDelete;              // MprConfigInterfaceDelete
+	NODE_EGRESS_MPR_CONFIG_IF_ADD_FUNC *ConfigIfAdd;             // MprConfigInterfaceTransportAdd
+	NODE_EGRESS_MPR_CONFIG_IF_REMOVE_FUNC *ConfigIfRemove;       // MprConfigInterfaceTransportRemove
 	NODE_EGRESS_MPR_CONNECT_FUNC *AdminConnect;                  // MprAdminServerConnect
 	NODE_EGRESS_MPR_DISCONNECT_FUNC *AdminDisconnect;            // MprAdminServerDisconnect
 	NODE_EGRESS_MPR_FREE_FUNC *AdminFree;                        // MprAdminBufferFree
@@ -133,6 +175,11 @@ typedef struct NODE_EGRESS_MPR {
 	NODE_EGRESS_MPR_ADMIN_IF_FUNC *AdminIf;                      // MprAdminInterfaceGetHandle
 	NODE_EGRESS_MPR_ADMIN_IF_GET_FUNC *AdminIfGet;               // MprAdminInterfaceTransportGetInfo
 	NODE_EGRESS_MPR_ADMIN_IF_SET_FUNC *AdminIfSet;               // MprAdminInterfaceTransportSetInfo
+	NODE_EGRESS_MPR_IF_CREATE_FUNC *AdminIfCreate;               // MprAdminInterfaceCreate
+	NODE_EGRESS_MPR_IF_DELETE_FUNC *AdminIfDelete;               // MprAdminInterfaceDelete
+	NODE_EGRESS_MPR_ADMIN_IF_ADD_FUNC *AdminIfAdd;               // MprAdminInterfaceTransportAdd
+	NODE_EGRESS_MPR_ADMIN_IF_REMOVE_FUNC *AdminIfRemove;         // MprAdminInterfaceTransportRemove
+	NODE_EGRESS_MPR_CREATE_FUNC *InfoCreate;                     // MprInfoCreate
 	NODE_EGRESS_MPR_FIND_FUNC *BlockFind;                        // MprInfoBlockFind
 	NODE_EGRESS_MPR_ADD_FUNC *BlockAdd;                          // MprInfoBlockAdd
 	NODE_EGRESS_MPR_ADD_FUNC *BlockSet;                          // MprInfoBlockSet
@@ -147,6 +194,7 @@ typedef struct NODE_EGRESS_MPR {
 // the handles that NodeEgressRrasPut takes
 typedef struct NODE_EGRESS_RRAS_INFO {
 	bool Config;      // Of the configuration of the router, else of the running router
+	UINT Lacks;       // Without the information: the router lacks the interface or its IPv4 transport (NODE_EGRESS_MADE_*), 0 for neither
 	HANDLE Interface; // The interface
 	HANDLE Transport; // ... and its IPv4 transport in the configuration
 	LPBYTE Info;      // Its IPv4 information, which NodeEgressRrasDone frees ...
@@ -155,9 +203,11 @@ typedef struct NODE_EGRESS_RRAS_INFO {
 
 // An interface of the NAT of RRAS that the node keeps configured
 typedef struct NODE_EGRESS_RRAS_IF {
-	UINT64 Luid; // The interface
-	UINT Flags;  // Its NAT flags: 0 for a private interface, NODE_EGRESS_RRAS_PUBLIC for a public one
-	bool Done;   // The running router took them from the node
+	UINT64 Luid;                         // The interface
+	wchar_t Name[NODE_EGRESS_RRAS_NAME]; // ... and its name in RRAS, which the node keeps for when its adapter is gone
+	UINT Flags;                          // Its NAT flags: 0 for a private interface, NODE_EGRESS_RRAS_PUBLIC for a public one
+	bool Done;                           // The running router took them from the node
+	UINT Made[2];                        // What the node added for it to the running router [0] and to the configuration [1] (NODE_EGRESS_MADE_*)
 } NODE_EGRESS_RRAS_IF;
 
 // A connection to the WMI namespace of WinNAT, with COM initialized on the calling thread for it
@@ -464,45 +514,62 @@ static void NodeEgressMprDisconnect(NODE_EGRESS_MPR *m) {
 	Zero(m, sizeof(NODE_EGRESS_MPR));
 }
 
+// The function name of mprapi.dll of m; *missing becomes true when the library lacks it
+static void *NodeEgressMprProc(NODE_EGRESS_MPR *m, const char *name, bool *missing) {
+	void *proc = (void *)GetProcAddress(m->Module, name);
+
+	if (proc == NULL)
+		*missing = true;
+
+	return proc;
+}
+
 // Load mprapi.dll into m with the functions that the NAT of RRAS uses, and connect to the configuration of the router and to
 // the running router: NO_ERROR, or the error of Windows when one of them cannot be had
 static DWORD NodeEgressMprConnect(NODE_EGRESS_MPR *m) {
+	bool missing = false;
+
 	Zero(m, sizeof(NODE_EGRESS_MPR));
 
 	m->Module = LoadLibraryExW(L"mprapi.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
 	if (m->Module == NULL)
 		return GetLastError();
 
-	m->ConfigConnect = (NODE_EGRESS_MPR_CONNECT_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigServerConnect");
-	m->ConfigDisconnect = (NODE_EGRESS_MPR_DISCONNECT_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigServerDisconnect");
-	m->ConfigFree = (NODE_EGRESS_MPR_FREE_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigBufferFree");
-	m->ConfigTransport = (NODE_EGRESS_MPR_TRANSPORT_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigTransportGetHandle");
-	m->ConfigGet = (NODE_EGRESS_MPR_CONFIG_GET_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigTransportGetInfo");
-	m->ConfigSet = (NODE_EGRESS_MPR_CONFIG_SET_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigTransportSetInfo");
-	m->ConfigIf = (NODE_EGRESS_MPR_CONFIG_IF_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigInterfaceGetHandle");
-	m->ConfigIfTransport = (NODE_EGRESS_MPR_CONFIG_IF_TRANSPORT_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigInterfaceTransportGetHandle");
-	m->ConfigIfGet = (NODE_EGRESS_MPR_CONFIG_IF_GET_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigInterfaceTransportGetInfo");
-	m->ConfigIfSet = (NODE_EGRESS_MPR_CONFIG_IF_SET_FUNC *)(void *)GetProcAddress(m->Module, "MprConfigInterfaceTransportSetInfo");
-	m->AdminConnect = (NODE_EGRESS_MPR_CONNECT_FUNC *)(void *)GetProcAddress(m->Module, "MprAdminServerConnect");
-	m->AdminDisconnect = (NODE_EGRESS_MPR_DISCONNECT_FUNC *)(void *)GetProcAddress(m->Module, "MprAdminServerDisconnect");
-	m->AdminFree = (NODE_EGRESS_MPR_FREE_FUNC *)(void *)GetProcAddress(m->Module, "MprAdminBufferFree");
-	m->AdminGet = (NODE_EGRESS_MPR_ADMIN_GET_FUNC *)(void *)GetProcAddress(m->Module, "MprAdminTransportGetInfo");
-	m->AdminSet = (NODE_EGRESS_MPR_ADMIN_SET_FUNC *)(void *)GetProcAddress(m->Module, "MprAdminTransportSetInfo");
-	m->AdminIf = (NODE_EGRESS_MPR_ADMIN_IF_FUNC *)(void *)GetProcAddress(m->Module, "MprAdminInterfaceGetHandle");
-	m->AdminIfGet = (NODE_EGRESS_MPR_ADMIN_IF_GET_FUNC *)(void *)GetProcAddress(m->Module, "MprAdminInterfaceTransportGetInfo");
-	m->AdminIfSet = (NODE_EGRESS_MPR_ADMIN_IF_SET_FUNC *)(void *)GetProcAddress(m->Module, "MprAdminInterfaceTransportSetInfo");
-	m->BlockFind = (NODE_EGRESS_MPR_FIND_FUNC *)(void *)GetProcAddress(m->Module, "MprInfoBlockFind");
-	m->BlockAdd = (NODE_EGRESS_MPR_ADD_FUNC *)(void *)GetProcAddress(m->Module, "MprInfoBlockAdd");
-	m->BlockSet = (NODE_EGRESS_MPR_ADD_FUNC *)(void *)GetProcAddress(m->Module, "MprInfoBlockSet");
-	m->BlockRemove = (NODE_EGRESS_MPR_REMOVE_FUNC *)(void *)GetProcAddress(m->Module, "MprInfoBlockRemove");
-	m->BlockSize = (NODE_EGRESS_MPR_SIZE_FUNC *)(void *)GetProcAddress(m->Module, "MprInfoBlockQuerySize");
-	m->InfoDelete = (NODE_EGRESS_MPR_FREE_FUNC *)(void *)GetProcAddress(m->Module, "MprInfoDelete");
+	m->ConfigConnect = (NODE_EGRESS_MPR_CONNECT_FUNC *)NodeEgressMprProc(m, "MprConfigServerConnect", &missing);
+	m->ConfigDisconnect = (NODE_EGRESS_MPR_DISCONNECT_FUNC *)NodeEgressMprProc(m, "MprConfigServerDisconnect", &missing);
+	m->ConfigFree = (NODE_EGRESS_MPR_FREE_FUNC *)NodeEgressMprProc(m, "MprConfigBufferFree", &missing);
+	m->ConfigTransport = (NODE_EGRESS_MPR_TRANSPORT_FUNC *)NodeEgressMprProc(m, "MprConfigTransportGetHandle", &missing);
+	m->ConfigGet = (NODE_EGRESS_MPR_CONFIG_GET_FUNC *)NodeEgressMprProc(m, "MprConfigTransportGetInfo", &missing);
+	m->ConfigSet = (NODE_EGRESS_MPR_CONFIG_SET_FUNC *)NodeEgressMprProc(m, "MprConfigTransportSetInfo", &missing);
+	m->ConfigIf = (NODE_EGRESS_MPR_CONFIG_IF_FUNC *)NodeEgressMprProc(m, "MprConfigInterfaceGetHandle", &missing);
+	m->ConfigIfTransport = (NODE_EGRESS_MPR_CONFIG_IF_TRANSPORT_FUNC *)NodeEgressMprProc(m, "MprConfigInterfaceTransportGetHandle", &missing);
+	m->ConfigIfGet = (NODE_EGRESS_MPR_CONFIG_IF_GET_FUNC *)NodeEgressMprProc(m, "MprConfigInterfaceTransportGetInfo", &missing);
+	m->ConfigIfSet = (NODE_EGRESS_MPR_CONFIG_IF_SET_FUNC *)NodeEgressMprProc(m, "MprConfigInterfaceTransportSetInfo", &missing);
+	m->ConfigIfCreate = (NODE_EGRESS_MPR_IF_CREATE_FUNC *)NodeEgressMprProc(m, "MprConfigInterfaceCreate", &missing);
+	m->ConfigIfDelete = (NODE_EGRESS_MPR_IF_DELETE_FUNC *)NodeEgressMprProc(m, "MprConfigInterfaceDelete", &missing);
+	m->ConfigIfAdd = (NODE_EGRESS_MPR_CONFIG_IF_ADD_FUNC *)NodeEgressMprProc(m, "MprConfigInterfaceTransportAdd", &missing);
+	m->ConfigIfRemove = (NODE_EGRESS_MPR_CONFIG_IF_REMOVE_FUNC *)NodeEgressMprProc(m, "MprConfigInterfaceTransportRemove", &missing);
+	m->AdminConnect = (NODE_EGRESS_MPR_CONNECT_FUNC *)NodeEgressMprProc(m, "MprAdminServerConnect", &missing);
+	m->AdminDisconnect = (NODE_EGRESS_MPR_DISCONNECT_FUNC *)NodeEgressMprProc(m, "MprAdminServerDisconnect", &missing);
+	m->AdminFree = (NODE_EGRESS_MPR_FREE_FUNC *)NodeEgressMprProc(m, "MprAdminBufferFree", &missing);
+	m->AdminGet = (NODE_EGRESS_MPR_ADMIN_GET_FUNC *)NodeEgressMprProc(m, "MprAdminTransportGetInfo", &missing);
+	m->AdminSet = (NODE_EGRESS_MPR_ADMIN_SET_FUNC *)NodeEgressMprProc(m, "MprAdminTransportSetInfo", &missing);
+	m->AdminIf = (NODE_EGRESS_MPR_ADMIN_IF_FUNC *)NodeEgressMprProc(m, "MprAdminInterfaceGetHandle", &missing);
+	m->AdminIfGet = (NODE_EGRESS_MPR_ADMIN_IF_GET_FUNC *)NodeEgressMprProc(m, "MprAdminInterfaceTransportGetInfo", &missing);
+	m->AdminIfSet = (NODE_EGRESS_MPR_ADMIN_IF_SET_FUNC *)NodeEgressMprProc(m, "MprAdminInterfaceTransportSetInfo", &missing);
+	m->AdminIfCreate = (NODE_EGRESS_MPR_IF_CREATE_FUNC *)NodeEgressMprProc(m, "MprAdminInterfaceCreate", &missing);
+	m->AdminIfDelete = (NODE_EGRESS_MPR_IF_DELETE_FUNC *)NodeEgressMprProc(m, "MprAdminInterfaceDelete", &missing);
+	m->AdminIfAdd = (NODE_EGRESS_MPR_ADMIN_IF_ADD_FUNC *)NodeEgressMprProc(m, "MprAdminInterfaceTransportAdd", &missing);
+	m->AdminIfRemove = (NODE_EGRESS_MPR_ADMIN_IF_REMOVE_FUNC *)NodeEgressMprProc(m, "MprAdminInterfaceTransportRemove", &missing);
+	m->InfoCreate = (NODE_EGRESS_MPR_CREATE_FUNC *)NodeEgressMprProc(m, "MprInfoCreate", &missing);
+	m->BlockFind = (NODE_EGRESS_MPR_FIND_FUNC *)NodeEgressMprProc(m, "MprInfoBlockFind", &missing);
+	m->BlockAdd = (NODE_EGRESS_MPR_ADD_FUNC *)NodeEgressMprProc(m, "MprInfoBlockAdd", &missing);
+	m->BlockSet = (NODE_EGRESS_MPR_ADD_FUNC *)NodeEgressMprProc(m, "MprInfoBlockSet", &missing);
+	m->BlockRemove = (NODE_EGRESS_MPR_REMOVE_FUNC *)NodeEgressMprProc(m, "MprInfoBlockRemove", &missing);
+	m->BlockSize = (NODE_EGRESS_MPR_SIZE_FUNC *)NodeEgressMprProc(m, "MprInfoBlockQuerySize", &missing);
+	m->InfoDelete = (NODE_EGRESS_MPR_FREE_FUNC *)NodeEgressMprProc(m, "MprInfoDelete", &missing);
 
-	if (m->ConfigConnect == NULL || m->ConfigDisconnect == NULL || m->ConfigFree == NULL || m->ConfigTransport == NULL || m->ConfigGet == NULL ||
-	    m->ConfigSet == NULL || m->ConfigIf == NULL || m->ConfigIfTransport == NULL || m->ConfigIfGet == NULL || m->ConfigIfSet == NULL ||
-	    m->AdminConnect == NULL || m->AdminDisconnect == NULL || m->AdminFree == NULL || m->AdminGet == NULL || m->AdminSet == NULL ||
-	    m->AdminIf == NULL || m->AdminIfGet == NULL || m->AdminIfSet == NULL || m->BlockFind == NULL || m->BlockAdd == NULL || m->BlockSet == NULL ||
-	    m->BlockRemove == NULL || m->BlockSize == NULL || m->InfoDelete == NULL) {
+	if (missing) {
 		NodeEgressMprDisconnect(m);
 		return ERROR_PROC_NOT_FOUND;
 	}
@@ -607,24 +674,36 @@ static bool NodeEgressRrasName(UINT64 luid, wchar_t *name, UINT size) {
 	return (StringFromGUID2(&guid, name, (int)(size / sizeof(wchar_t))) != 0);
 }
 
-// The IPv4 information of the interface named name in the running router (config false) or in the configuration of the
-// router (config true) into f, which NodeEgressRrasDone frees whatever the result
-static DWORD NodeEgressRrasGet(NODE_EGRESS_MPR *m, wchar_t *name, bool config, NODE_EGRESS_RRAS_INFO *f) {
-	DWORD err;
+// Whether err of the router says that it lacks the interface, or the IPv4 transport of the interface, that it was asked for
+static bool NodeEgressRrasLacks(DWORD err) {
+	return (err == NODE_EGRESS_MPR_NO_INTERFACE || err == NODE_EGRESS_MPR_NO_PROTOCOL || err == ERROR_NOT_FOUND || err == ERROR_FILE_NOT_FOUND);
+}
 
+// The IPv4 information of the interface named name in the running router (config false) or in the configuration of the
+// router (config true) into f, which NodeEgressRrasDone frees whatever the result. Without it, f->Lacks says whether the
+// router lacks the interface or its IPv4 transport, as it lacks those of an adapter that came after it started.
+static DWORD NodeEgressRrasGet(NODE_EGRESS_MPR *m, wchar_t *name, bool config, NODE_EGRESS_RRAS_INFO *f) {
 	Zero(f, sizeof(NODE_EGRESS_RRAS_INFO));
 	f->Config = config;
 
+	DWORD err = (config ? m->ConfigIf(m->Config, name, &f->Interface) : m->AdminIf(m->Admin, name, &f->Interface, FALSE));
+	if (err != NO_ERROR) {
+		f->Interface = NULL;
+		if (NodeEgressRrasLacks(err))
+			f->Lacks = NODE_EGRESS_MADE_INTERFACE;
+		return err;
+	}
+
 	if (config) {
-		err = m->ConfigIf(m->Config, name, &f->Interface);
-		if (err == NO_ERROR)
-			err = m->ConfigIfTransport(m->Config, f->Interface, NODE_EGRESS_PID_IP, &f->Transport);
+		err = m->ConfigIfTransport(m->Config, f->Interface, NODE_EGRESS_PID_IP, &f->Transport);
 		if (err == NO_ERROR)
 			err = m->ConfigIfGet(m->Config, f->Interface, f->Transport, &f->Info, &f->Size);
+		else if (NodeEgressRrasLacks(err))
+			f->Lacks = NODE_EGRESS_MADE_TRANSPORT;
 	} else {
-		err = m->AdminIf(m->Admin, name, &f->Interface, FALSE);
-		if (err == NO_ERROR)
-			err = m->AdminIfGet(m->Admin, f->Interface, NODE_EGRESS_PID_IP, &f->Info, &f->Size);
+		err = m->AdminIfGet(m->Admin, f->Interface, NODE_EGRESS_PID_IP, &f->Info, &f->Size);
+		if (NodeEgressRrasLacks(err))
+			f->Lacks = NODE_EGRESS_MADE_TRANSPORT;
 	}
 
 	if (err == NO_ERROR && f->Info == NULL)
@@ -699,15 +778,69 @@ static DWORD NodeEgressRrasBlock(NODE_EGRESS_MPR *m, LPBYTE info, UINT64 luid, U
 	return m->BlockAdd(info, NODE_EGRESS_MS_IP_NAT, sizeof(n), 1, (LPBYTE)&n, next);
 }
 
-// Make the NAT information of the interface of luid hold flags in the running router and in the configuration of the router:
-// *changed says whether the running router held other information. The error of the running router; the configuration keeps
-// it where it holds the interface.
-static DWORD NodeEgressRrasSet(NODE_EGRESS_MPR *m, UINT64 luid, UINT flags, bool *changed) {
-	wchar_t name[NODE_EGRESS_RRAS_NAME];
+// Add what the router of f lacks for the interface named name, of luid: the interface of a LAN adapter with its IPv4 transport,
+// or the transport alone, whose IPv4 information holds the interface up and its NAT flags, as netsh routing ip add interface
+// and netsh routing ip nat add interface give it. *made takes what the node added (NODE_EGRESS_MADE_*).
+static DWORD NodeEgressRrasMake(NODE_EGRESS_MPR *m, wchar_t *name, NODE_EGRESS_RRAS_INFO *f, UINT64 luid, UINT flags, UINT *made) {
+	NODE_EGRESS_MPR_INTERFACE iface;
+	ULONG status = NODE_EGRESS_ADMIN_UP;
+	LPVOID empty = NULL;
+	LPVOID up = NULL;
+	LPVOID info = NULL;
+	DWORD err;
+
+	if (f->Lacks == NODE_EGRESS_MADE_INTERFACE) {
+		Zero(&iface, sizeof(iface));
+		UniStrCpy(iface.Name, sizeof(iface.Name), name);
+		iface.Enabled = TRUE;
+		iface.Type = NODE_EGRESS_IF_DEDICATED;
+
+		err = (f->Config ? m->ConfigIfCreate(m->Config, 0, (LPBYTE)&iface, &f->Interface) : m->AdminIfCreate(m->Admin, 0, (LPBYTE)&iface, &f->Interface));
+		if (err != NO_ERROR) {
+			f->Interface = NULL;
+			return err;
+		}
+		*made |= NODE_EGRESS_MADE_INTERFACE;
+	}
+
+	err = m->InfoCreate(RTR_INFO_BLOCK_VERSION, &empty);
+	if (err == NO_ERROR)
+		err = m->BlockAdd(empty, NODE_EGRESS_IP_STATUS, sizeof(status), 1, (LPBYTE)&status, &up);
+	if (err == NO_ERROR)
+		err = NodeEgressRrasBlock(m, (LPBYTE)up, luid, flags, &info);
+	if (err == NO_ERROR && info == NULL)
+		err = ERROR_INVALID_DATA;
+	if (err == NO_ERROR) {
+		DWORD size = m->BlockSize(info);
+
+		if (f->Config)
+			err = m->ConfigIfAdd(m->Config, f->Interface, NODE_EGRESS_PID_IP, NULL, (LPBYTE)info, size, &f->Transport);
+		else
+			err = m->AdminIfAdd(m->Admin, f->Interface, NODE_EGRESS_PID_IP, (LPBYTE)info, size);
+	}
+	if (err == NO_ERROR)
+		*made |= NODE_EGRESS_MADE_TRANSPORT;
+
+	if (info != NULL)
+		m->InfoDelete(info);
+	if (up != NULL)
+		m->InfoDelete(up);
+	if (empty != NULL)
+		m->InfoDelete(empty);
+
+	return err;
+}
+
+// Make the NAT information of the interface named name, of luid, hold flags in the running router and in the configuration of
+// the router. Where a router lacks the interface or its IPv4 transport, as it lacks those of an adapter that came after it
+// started, the node adds them (NodeEgressRrasMake), and made takes what it added to each, the running router [0] and the
+// configuration [1], which NodeEgressRrasDrop takes out again. *changed says whether the running router held other
+// information. The error of the running router; the configuration keeps the setting where it can.
+static DWORD NodeEgressRrasSet(NODE_EGRESS_MPR *m, wchar_t *name, UINT64 luid, UINT flags, UINT *made, bool *changed) {
 	DWORD ret = NO_ERROR;
 
 	*changed = false;
-	if (NodeEgressRrasName(luid, name, sizeof(name)) == false)
+	if (name[0] == 0)
 		return ERROR_NOT_FOUND;
 
 	for (UINT i = 0; i < 2; i++) {
@@ -715,13 +848,18 @@ static DWORD NodeEgressRrasSet(NODE_EGRESS_MPR *m, UINT64 luid, UINT flags, bool
 		LPVOID next = NULL;
 		DWORD err = NodeEgressRrasGet(m, name, i == 1, &f);
 
-		if (err == NO_ERROR)
+		if (err == NO_ERROR) {
 			err = NodeEgressRrasBlock(m, f.Info, luid, flags, &next);
-		if (err == NO_ERROR && next != NULL) {
-			err = NodeEgressRrasPut(m, &f, next);
+			if (err == NO_ERROR && next != NULL) {
+				err = NodeEgressRrasPut(m, &f, next);
+				if (err == NO_ERROR && i == 0)
+					*changed = true;
+				m->InfoDelete(next);
+			}
+		} else if (f.Lacks != 0) {
+			err = NodeEgressRrasMake(m, name, &f, luid, flags, &made[i]);
 			if (err == NO_ERROR && i == 0)
 				*changed = true;
-			m->InfoDelete(next);
 		}
 		NodeEgressRrasDone(m, &f);
 
@@ -732,22 +870,32 @@ static DWORD NodeEgressRrasSet(NODE_EGRESS_MPR *m, UINT64 luid, UINT flags, bool
 	return ret;
 }
 
-// Take the NAT information of the interface of luid out of the running router and of the configuration of the router. The
-// error of the running router, NO_ERROR when it holds none.
-static DWORD NodeEgressRrasDrop(NODE_EGRESS_MPR *m, UINT64 luid) {
-	wchar_t name[NODE_EGRESS_RRAS_NAME];
+// Take what the node set for the interface named name out of the running router and of the configuration of the router: the
+// interface where the node added it, else its IPv4 transport where the node added that, else its NAT information. made says
+// what the node added to the running router [0] and to the configuration [1] (NODE_EGRESS_MADE_*), NULL for nothing. The
+// error of the running router, NO_ERROR when it holds nothing of the node.
+static DWORD NodeEgressRrasDrop(NODE_EGRESS_MPR *m, wchar_t *name, const UINT *made) {
 	DWORD ret = NO_ERROR;
 
-	if (NodeEgressRrasName(luid, name, sizeof(name)) == false)
+	if (name[0] == 0)
 		return ERROR_NOT_FOUND;
 
 	for (UINT i = 0; i < 2; i++) {
 		NODE_EGRESS_RRAS_INFO f;
 		LPVOID next = NULL;
 		UINT held = 0;
+		UINT added = (made != NULL ? made[i] : 0);
 		DWORD err = NodeEgressRrasGet(m, name, i == 1, &f);
 
-		if (err == NO_ERROR && NodeEgressRrasHolds(m, f.Info, &held)) {
+		if (f.Lacks == NODE_EGRESS_MADE_INTERFACE) {
+			err = NO_ERROR;
+		} else if (f.Interface != NULL && (added & NODE_EGRESS_MADE_INTERFACE) != 0) {
+			err = (f.Config ? m->ConfigIfDelete(m->Config, f.Interface) : m->AdminIfDelete(m->Admin, f.Interface));
+		} else if (f.Lacks == NODE_EGRESS_MADE_TRANSPORT) {
+			err = NO_ERROR;
+		} else if (err == NO_ERROR && (added & NODE_EGRESS_MADE_TRANSPORT) != 0) {
+			err = (f.Config ? m->ConfigIfRemove(m->Config, f.Interface, f.Transport) : m->AdminIfRemove(m->Admin, f.Interface, NODE_EGRESS_PID_IP));
+		} else if (err == NO_ERROR && NodeEgressRrasHolds(m, f.Info, &held)) {
 			err = m->BlockRemove(f.Info, NODE_EGRESS_MS_IP_NAT, &next);
 			if (err == NO_ERROR && next != NULL) {
 				err = NodeEgressRrasPut(m, &f, next);
@@ -794,11 +942,12 @@ bool NodeEgressRrasFlags(UINT64 luid, UINT *flags) {
 // node to set again. False when it could not be taken out.
 bool NodeEgressRrasRemove(UINT64 luid) {
 	NODE_EGRESS_MPR m;
+	wchar_t name[NODE_EGRESS_RRAS_NAME];
 
-	if (NodeEgressMprConnect(&m) != NO_ERROR)
+	if (NodeEgressRrasName(luid, name, sizeof(name)) == false || NodeEgressMprConnect(&m) != NO_ERROR)
 		return false;
 
-	DWORD err = NodeEgressRrasDrop(&m, luid);
+	DWORD err = NodeEgressRrasDrop(&m, name, NULL);
 	NodeEgressMprDisconnect(&m);
 
 	return (err == NO_ERROR);
@@ -829,12 +978,13 @@ NODE_EGRESS_NAT *NodeEgressNatNew(NODE *n, UINT tier) {
 }
 
 // Tier 1: the NAT of RRAS as want says, the NAT routing protocol, each adapter of a VRF a private interface and each interface
-// that carries the egress a public one; an interface that the node configured before and that want leaves out loses its NAT
-// information. True when the running router holds all of it; *restored counts the interfaces that held it once and had lost
-// it.
+// that carries the egress a public one, with the interface or its IPv4 transport added where the router lacks them; an
+// interface that the node configured before and that want leaves out loses what the node set. True when the running router
+// holds all of it; *restored counts the interfaces that held it once and had lost it.
 static bool NodeEgressNatRras(NODE_EGRESS_NAT *nat, const NODE_EGRESS_NAT_WANT *want, UINT *restored) {
 	NODE_EGRESS_MPR m;
 	NODE_EGRESS_RRAS_IF next[NODE_EGRESS_RRAS_MAX];
+	char what[MAX_SIZE];
 	UINT num = 0;
 	bool added = false;
 
@@ -866,16 +1016,29 @@ static bool NodeEgressNatRras(NODE_EGRESS_NAT *nat, const NODE_EGRESS_NAT_WANT *
 		num++;
 	}
 
+	// Each with its name in RRAS, and what the node added for it before
+	for (UINT i = 0; i < num; i++) {
+		NodeEgressRrasName(next[i].Luid, next[i].Name, sizeof(next[i].Name));
+		for (UINT j = 0; j < nat->NumIfs; j++) {
+			if (nat->Ifs[j].Luid != next[i].Luid)
+				continue;
+			Copy(next[i].Made, nat->Ifs[j].Made, sizeof(next[i].Made));
+			if (next[i].Name[0] == 0)
+				UniStrCpy(next[i].Name, sizeof(next[i].Name), nat->Ifs[j].Name);
+		}
+	}
+
 	// An interface that the node configured and that want leaves out
 	for (UINT i = 0; i < nat->NumIfs; i++) {
+		NODE_EGRESS_RRAS_IF *r = &nat->Ifs[i];
 		bool kept = false;
 
 		for (UINT j = 0; j < num && kept == false; j++)
-			kept = (next[j].Luid == nat->Ifs[i].Luid);
-		if (kept == false && nat->Ifs[i].Done) {
-			err = NodeEgressRrasDrop(&m, nat->Ifs[i].Luid);
+			kept = (next[j].Luid == r->Luid);
+		if (kept == false && (r->Done || r->Made[0] != 0 || r->Made[1] != 0)) {
+			err = NodeEgressRrasDrop(&m, r->Name, r->Made);
 			if (err != NO_ERROR)
-				NodeLog(nat->Node, "Egress: the NAT information of an interface of Routing and Remote Access that carries no egress any more could not be taken out (error 0x%x)", (UINT)err);
+				NodeLog(nat->Node, "Egress: what the node set in Routing and Remote Access for an interface that carries no egress any more could not be taken out (error 0x%x)", (UINT)err);
 		}
 	}
 
@@ -885,6 +1048,7 @@ static bool NodeEgressNatRras(NODE_EGRESS_NAT *nat, const NODE_EGRESS_NAT_WANT *
 		NET_IFINDEX index = 0;
 		bool changed = false;
 		bool before = false;
+		UINT made = next[i].Made[0];
 
 		for (UINT j = 0; j < nat->NumIfs && before == false; j++)
 			before = (nat->Ifs[j].Luid == next[i].Luid && nat->Ifs[j].Flags == next[i].Flags && nat->Ifs[j].Done);
@@ -892,11 +1056,18 @@ static bool NodeEgressNatRras(NODE_EGRESS_NAT *nat, const NODE_EGRESS_NAT_WANT *
 		l.Value = next[i].Luid;
 		ConvertInterfaceLuidToIndex(&l, &index);
 
-		err = NodeEgressRrasSet(&m, next[i].Luid, next[i].Flags, &changed);
+		err = NodeEgressRrasSet(&m, next[i].Name, next[i].Luid, next[i].Flags, next[i].Made, &changed);
 		next[i].Done = (err == NO_ERROR);
+		if ((next[i].Made[0] & ~made & NODE_EGRESS_MADE_INTERFACE) != 0)
+			NodeLog(nat->Node, "Egress: Routing and Remote Access had no interface %u, an adapter that came after the router started: the node added it to the router", (UINT)index);
+		else if ((next[i].Made[0] & ~made & NODE_EGRESS_MADE_TRANSPORT) != 0)
+			NodeLog(nat->Node, "Egress: interface %u of Routing and Remote Access had no IPv4 transport: the node added it", (UINT)index);
+
 		if (err != NO_ERROR) {
 			ok = false;
-			NodeEgressNatError(nat, "an interface cannot be made an interface of the NAT of Routing and Remote Access", err);
+			Format(what, sizeof(what), "interface %u cannot be made a %s interface of the NAT of Routing and Remote Access", (UINT)index,
+			       next[i].Flags != 0 ? "public" : "private");
+			NodeEgressNatError(nat, what, err);
 		} else if (changed && before) {
 			(*restored)++;
 			NodeLog(nat->Node, "Egress: the NAT of Routing and Remote Access had lost interface %u as a %s interface: the node set it again", (UINT)index,
@@ -1017,7 +1188,8 @@ bool NodeEgressNatForeign(const NODE_EGRESS_NAT *nat) {
 }
 
 // Undo what the node configured in the NAT of Windows, and free nat: the NAT information of each interface of RRAS that it
-// configured and the NAT routing protocol if it added it, or its NAT network of WinNAT
+// configured, the interfaces and IPv4 transports that it added to RRAS and the NAT routing protocol if it added it, or its NAT
+// network of WinNAT
 void NodeEgressNatFree(NODE_EGRESS_NAT *nat) {
 	if (nat == NULL)
 		return;
@@ -1030,7 +1202,9 @@ void NodeEgressNatFree(NODE_EGRESS_NAT *nat) {
 			UINT left = 0;
 
 			for (UINT i = 0; i < nat->NumIfs; i++) {
-				if (nat->Ifs[i].Done && NodeEgressRrasDrop(&m, nat->Ifs[i].Luid) != NO_ERROR)
+				NODE_EGRESS_RRAS_IF *r = &nat->Ifs[i];
+
+				if ((r->Done || r->Made[0] != 0 || r->Made[1] != 0) && NodeEgressRrasDrop(&m, r->Name, r->Made) != NO_ERROR)
 					left++;
 			}
 			if (nat->Protocol)
