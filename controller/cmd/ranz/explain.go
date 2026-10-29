@@ -21,6 +21,9 @@ import (
 //	                           and whether it encrypts, the effective session profile of each end that runs under one,
 //	                           with the User or the Group that gives it (SDN-40), and the rule of the policy of the VRF
 //	                           at each end; then where the packet ends
+//	ranz explain [flags] NODE  print the BGP peering of the Node NODE (SDN-77, #357; explainpeering.go): the peers of
+//	                           its sidecar with the state of each session and the prefixes learned from each, as the
+//	                           Node reported them last, and the Nodes that the intent names as its peers
 //
 // A is a Node, which sends from its address in the VRF, a WireGuard Device, or an address of either; B is a Node, a
 // Device or an IP address. The flags come before A and B: the connection flags of the CLI (-server, -token-file,
@@ -36,9 +39,11 @@ func init() {
 }
 
 const explainUsage = `usage: ranz explain [flags] A B
+       ranz explain [flags] NODE
        ranz explain [flags] -listener NAME
   A: a Node, a WireGuard Device or an address of either, which sends the packet
   B: a Node, a WireGuard Device or an IP address
+  NODE: a Node, whose BGP peering is printed: its peers, the state of each session and the prefixes learned from each
   NAME: a Listener: its mimic section, whether its Node reported the public key of its mimic server, and the Nodes that have a link to it
 `
 
@@ -76,7 +81,7 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			flags.Usage()
 			return 2
 		}
-	} else if flags.NArg() != 2 || *sport > 65535 || *port > 65535 || (*format != "text" && *format != "json") {
+	} else if flags.NArg() < 1 || flags.NArg() > 2 || *sport > 65535 || *port > 65535 || (*format != "text" && *format != "json") {
 		flags.Usage()
 		return 2
 	}
@@ -87,6 +92,10 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	}
 	if *listener != "" {
 		return explainListener(ctx, c, *listener, *format, stdout, stderr)
+	}
+	// One Node: its BGP peering (explainpeering.go; SDN-77)
+	if flags.NArg() == 1 {
+		return explainPeering(ctx, c, flags.Arg(0), *format, stdout, stderr)
 	}
 	q := explain.Query{From: flags.Arg(0), To: flags.Arg(1), VRF: *vrf, Protocol: *protocol, SourcePort: uint16(*sport), Port: uint16(*port)}
 	res, err := c.Explain(ctx, q)

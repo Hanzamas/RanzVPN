@@ -139,6 +139,19 @@
 // inside their Noise sessions and from the controller's health data (Peer.down), or one of the
 // healthy ones by the hash of each flow when the VRF spreads them (Vrf.ecmp). No schema version
 // changes with them: a node of an older release skips the fields it does not know.
+//
+// BGP peering of the standard mode (SDN-77, #357): the nodes of a VRF whose links are of kind vxlan
+// or geneve and whose peering is bgp (Vrf.peering) exchange their routes there by BGP, in a full
+// mesh, each with the sidecar ranz bgp on the network that the operator trusts. A node gets the
+// settings of its sidecar (NodeConfig.peering): the AS of the overlay, its router id, its address
+// there, and the prefixes that it announces besides its addresses, its LAN subnets; and each peer
+// that shares such a VRF with it the address of that peer's sidecar, the hold time of their session,
+// the VRFs of the session and what the peer may announce in them (Peer.peering). The controller
+// writes nothing else: the routes go between the nodes. A node reports the peers of its sidecar, the
+// state of each session and the prefixes that it learned from each, with the sessions that its
+// sidecar refused, in a Telemetry message of its own whenever they change (Telemetry.peering), which
+// ranz explain shows. No schema version changes with them: a node of an older release skips the
+// fields it does not know, and a controller of an older release skips the report.
 syntax = "proto3";
 
 package ranz.control.v1;
@@ -337,12 +350,42 @@ message NodeConfig {
   // The LAN subnets behind the node, which it advertises as a gateway in its VRFs (SDN-19 #195),
   // ordered by VRF id, then prefix: they lead to its host.
   repeated Route lan_subnets = 13;
+  // The BGP peering of the node (SDN-77 #357), absent while no VRF of the node peers by BGP
+  NodePeering peering = 14;
   // The source group of the node in each of its VRFs (SDN-87 #386), ordered by VRF id; none for a node
   // that does not report the Capability tags
   repeated SourceGroup groups = 15;
   // The session profile that the node runs under as a device of a User (SDN-40 #233), absent for a node
   // that has no owner or whose owner runs under none: the node enforces its flags on itself.
   SessionProfile profile = 16;
+}
+
+// How the nodes of a VRF exchange their routes (SDN-77 #357).
+enum Peering {
+  PEERING_UNSPECIFIED = 0;  // the controller gives them, with the addresses and the routes of each Peer
+  PEERING_BGP = 1;          // the nodes peer by BGP in a full mesh, on the links of kind vxlan or geneve
+}
+
+// The BGP peering of a node (SDN-77 #357): the settings of its sidecar ranz bgp. The sidecar listens on
+// TCP 179 of the address of the node and connects from it, and takes a session only from the address of
+// a peer whose Peer object has a PeerPeering.
+message NodePeering {
+  uint32 asn = 1;        // the AS of the overlay, one for every node: the sessions are internal BGP
+  bytes router_id = 2;   // its BGP identifier, 4 bytes
+  bytes address = 3;     // its address on the network that the operator trusts: 4 bytes for IPv4, 16 for IPv6
+  // The prefixes that it announces besides its addresses in the VRFs that peer by BGP: its LAN subnets
+  // there, ordered by VRF id, then prefix
+  repeated Route announce = 4;
+}
+
+// The BGP peering with a peer (SDN-77 #357), in the VRFs that the two share and that peer by BGP.
+message PeerPeering {
+  bytes address = 1;            // the address of the peer's sidecar: 4 bytes for IPv4, 16 for IPv6
+  uint32 hold_time = 2;         // the BGP hold time of the session in seconds, 0 for 90
+  repeated uint32 vrf_ids = 3;  // the VRFs of the session, ascending
+  // What the peer may announce in them, with their more specific ones: its addresses and its LAN
+  // subnets there, ordered by VRF id, then prefix. The node takes nothing else from it.
+  repeated Route accept = 4;
 }
 
 // The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise
@@ -504,6 +547,8 @@ message Vrf {
   // The flows to a prefix that several gateways announce spread over the healthy ones by the hash
   // of each flow (SDN-19 #195); without it the first healthy gateway in name order carries them
   bool ecmp = 12;
+  // How the nodes of the VRF exchange their routes (SDN-77 #357)
+  Peering peering = 13;
 }
 
 // The source group of an endpoint in one VRF (SDN-87 #386): its group ID, from 1 to 65535, and its
@@ -627,6 +672,8 @@ message Peer {
   // traffic of that prefix to another gateway that answers its probes, and to this one only while
   // none does.
   bool down = 11;
+  // The BGP peering with the peer (SDN-77 #357), absent while no shared VRF peers by BGP
+  PeerPeering peering = 12;
   // The session profile that the peer runs under as a device of a User (SDN-40 #233, SessionProfile at
   // the end of this file), absent for none: this node enforces it on its session with the peer.
   SessionProfile profile = 13;
@@ -665,7 +712,8 @@ message Relay {
 // VRF gets it: its addresses and its tags identify it to the Rules, as the tags of a Peer do, and a
 // packet to one of its addresses goes to the gateway, which delivers it to its host, and so to the
 // WireGuard interface there. Only the gateway gets its public key, which its WireGuard interface
-// takes as a peer of its own, with the addresses as the allowed IPs.
+// takes as a peer of its own, with the addresses as the allowed IPs, and with its PresharedKey when it has one
+// (SDN-82 #377).
 message Device {
   string name = 1;
   uint32 vrf_id = 2;
@@ -677,6 +725,7 @@ message Device {
   // reports the Capability tags; 0 otherwise
   uint32 group = 7;
   uint64 tag_set = 8;
+  bytes preshared_key = 9;         // its PresharedKey, 32 bytes: in the state of its gateway only, and only for a Device that has one
 }
 
 // An IP prefix: 4 address bytes for IPv4, 16 for IPv6.
@@ -854,6 +903,9 @@ message Telemetry {
   // The packets of the peers of the node by the tag mode of their source group (SDN-87): every mode in
   // each summary that holds any
   repeated SourceGroupCounters groups = 7;
+  // The BGP peering of the standard mode at the node (SDN-77): in a summary of its own whenever it
+  // changed, and absent from the others.
+  PeeringReport peering = 8;
 }
 
 // The packets of the peers that a node judged in one tag mode (SDN-87 #386): the records of its Noise
@@ -868,6 +920,24 @@ message SourceGroupCounters {
   // another group generation of the peer than the node's state, as it was made on another state
   uint64 ignored = 4;
   uint64 refused = 5;  // claimed a group that the sending node may not assert: dropped as an unknown group
+}
+
+// The BGP peering of the standard mode at a node (SDN-77 #357): each peer of its sidecar, in the
+// order of its address, and the sessions that the sidecar refused since the node started, from an
+// address that no peer has.
+message PeeringReport {
+  repeated PeeringPeer peers = 1;
+  uint64 refused = 2;
+}
+
+// One peer of the sidecar of a node (SDN-77 #357): the address of the peer's sidecar, 4 bytes for
+// IPv4 and 16 for IPv6, the state of their session (idle, connect, active, opensent, openconfirm or
+// established) and the prefixes that the node learned from it, each with its VRF, ordered by VRF id,
+// then prefix.
+message PeeringPeer {
+  bytes address = 1;
+  string state = 2;
+  repeated Route learned = 3;
 }
 
 // The WireGuard end of one Device at its gateway (SDN-80): the last handshake, in Unix time in

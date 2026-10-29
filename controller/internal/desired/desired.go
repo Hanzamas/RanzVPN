@@ -70,6 +70,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		withLink(vrfs[name], v)
 		// The hub of a VRF of topology hub-and-spoke and its ECMP (topology.go; SDN-19)
 		withTopology(vrfs[name], v)
+		// How the Nodes of the VRF exchange their routes (peering.go; SDN-77)
+		vrfs[name].Peering = vrfPeering(v)
 		// The tag mode of its Networks (sourcegroup.go; SDN-87)
 		vrfs[name].TagMode = tagMode(in.VRFTagMode(name))
 	}
@@ -145,6 +147,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		self.Vtep = ownVtep(in, n)
 		// The LAN subnets behind the node, which lead to its host (topology.go; SDN-19)
 		self.LanSubnets = lans[name]
+		// The BGP peering of the node (peering.go; SDN-77)
+		self.Peering = nodePeering(in, n, vrfs)
 		// The session profile of the node, whose flags it enforces on itself (profile.go; SDN-40)
 		self.Profile = profiles[name]
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
@@ -174,6 +178,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			peer.Endpoints = endpoints(o)
 			// The tunnel endpoint of the peer, for the links of kind vxlan and geneve of the shared VRFs (link.go; SDN-76)
 			peer.Vtep = peerVtep(in, o, sharedVRFs)
+			// The BGP peering with the peer in the shared VRFs that peer by BGP (peering.go; SDN-77)
+			peer.Peering = peerPeering(in, other, o, sharedVRFs, vrfs)
 			// The session profile of the peer, which this node enforces on its session with it (profile.go; SDN-40)
 			peer.Profile = profiles[other]
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})

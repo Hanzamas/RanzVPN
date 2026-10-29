@@ -10,9 +10,11 @@
 //   controller sends them after the Hello: the client takes them in turn until one ends the stream, as the stream of a
 //   client ends then, or the next frame is empty or longer than the input left.
 // The owner checks each state that it is handed: its Generation is not 0, every count is within its array, every address
-// and prefix within its bytes, every string ends in its buffer, a TLS fingerprint is 64 hex digits in lower case, and a
-// session profile of the node or of a peer that is not set holds nothing (ControlCopyProfiles; SDN-40 #233), and a
-// source group has a group ID of 16 bits and a VRF a tag mode that the node knows (SDN-87 #386). After
+// and prefix within its bytes, every string ends in its buffer, a TLS fingerprint is 64 hex digits in lower case, a
+// session profile of the node or of a peer that is not set holds nothing (ControlCopyProfiles; SDN-40 #233), the BGP
+// peering of the node and of each peer has the address of a sidecar that is IPv4 or IPv6, and that of a peer a VRF
+// (ControlCopyPeerings; SDN-77 #357), and a source group has a group ID of 16 bits and a VRF a tag mode that the node
+// knows (SDN-87 #386). After
 // a message whose Update was handed to the owner, the client must have taken it and stand at its Generation. Each message
 // is copied into a buffer of its size exactly, so that AddressSanitizer reports a read past it. The client allocates from
 // the process heap, which Mayaqua does not count: AddressSanitizer checks those blocks, and -rss_limit_mb bounds a leak.
@@ -25,8 +27,9 @@
 //
 // The seeds (src/fuzz/seeds/fuzz_control.py) are the control messages that the controller conformance tests and the
 // cluster tests sent and received, each a seed of its own (wire-*.bin), and the messages that each simulated node
-// received, in their order, as one stream (stream-*.bin); and a state with L2 and L3 Networks followed by Operations of
-// every kind (operation-*.bin).
+// received, in their order, as one stream (stream-*.bin); a state with L2 and L3 Networks followed by Operations of
+// every kind (operation-*.bin); and a state whose VRFs peer by BGP followed by deltas with a peering that the node cannot
+// read, without it and with it again (peering-*.bin).
 //
 // fuzz-max-len: 8192
 // fuzz-libs: corecontrol
@@ -412,6 +415,43 @@ static void FuzzSecurities(const CONTROL_STATE *st)
 	}
 }
 
+// The BGP peering of the node and of the peers (SDN-77 #357): the address of each sidecar is IPv4 or IPv6, the peering of a
+// peer has a VRF, every count is within its array and every prefix within its bytes
+static void FuzzPeerings(const CONTROL_STATE *st)
+{
+	const CONTROL_PEERING *own = st->Peering;
+
+	if (own != NULL)
+	{
+		if ((own->AddressSize != 4 && own->AddressSize != 16) || own->NumAnnounce > CONTROL_MAX_ANNOUNCE)
+		{
+			FuzzFail("the peering of the node has an address that is neither IPv4 nor IPv6, or too many LAN subnets");
+		}
+		for (UINT i = 0;i < own->NumAnnounce;i++)
+		{
+			FuzzPrefix(own->Announce[i].AddressSize, own->Announce[i].Length, "a LAN subnet that the node announces is neither IPv4 nor IPv6, or longer than its address");
+		}
+	}
+
+	for (UINT i = 0;i < st->NumPeers;i++)
+	{
+		const CONTROL_PEER_PEERING *p = st->Peers[i].Peering;
+
+		if (p == NULL)
+		{
+			continue;
+		}
+		if ((p->AddressSize != 4 && p->AddressSize != 16) || p->NumVrfs == 0 || p->NumVrfs > CONTROL_MAX_VRFS || p->NumAccept > CONTROL_MAX_ACCEPT)
+		{
+			FuzzFail("the peering of a peer has an address that is neither IPv4 nor IPv6, no VRF, too many VRFs or too many prefixes");
+		}
+		for (UINT j = 0;j < p->NumAccept;j++)
+		{
+			FuzzPrefix(p->Accept[j].AddressSize, p->Accept[j].Length, "a prefix that a peer may announce is neither IPv4 nor IPv6, or longer than its address");
+		}
+	}
+}
+
 // The owner of the clients: it checks each state that it is handed
 static void FuzzControlState(void *param, const CONTROL_STATE *st)
 {
@@ -453,6 +493,7 @@ static void FuzzControlState(void *param, const CONTROL_STATE *st)
 	FuzzListenerDevices(st);
 	FuzzTlsPins(st);
 	FuzzSecurities(st);
+	FuzzPeerings(st);
 }
 
 // The owner of the live operations (SDN-50-N, #492): it checks the Operation that it is handed, and answers it with every entry

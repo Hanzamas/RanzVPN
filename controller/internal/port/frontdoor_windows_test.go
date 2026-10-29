@@ -202,9 +202,9 @@ func TestFrontDoorHandsOver(t *testing.T) {
 		http2 bool
 		want  string
 	}{{"HTTP/1.1", false, "HTTP/1.1"}, {"h2", true, "HTTP/2.0"}} {
-		// The local address of the connection that carried the request, as the transport reports it on the
-		// goroutine of the request: the transport may dial another connection besides it, which carries
-		// nothing, so the address of the last dial is not always the one that the API saw
+		// The local address of the connection that carried the request, which the handler of the API sees as the remote
+		// address of the request. The transport says which connection that was: the last connection that it dialed may be
+		// another one, which it opened besides, and failed this check now and then.
 		var local string
 		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { local = info.Conn.LocalAddr().String() }}
 		tr := &http.Transport{

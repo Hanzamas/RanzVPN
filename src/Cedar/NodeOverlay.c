@@ -42,6 +42,7 @@
 #include "NodeGateway.h"
 #include "NodeInternal.h"
 #include "NodeLink.h"
+#include "NodePeering.h"
 #include "NodeProfile.h"
 #include "NodeSourceGroup.h"
 
@@ -95,6 +96,9 @@ struct NODE_OVERLAY {
 	// which raises one when two holders of a key replace it again and again (NodeFlap.c; AUD1-DT-11, #459)
 	CONTROL_EVENTS *Events;
 	NODE_FLAP *Flap;
+	// The applies of the states and the forwarding tables that the BGP peering builds anew, one at a time (NodePeering.c;
+	// SDN-77, #357)
+	LOCK *ApplyLock;
 };
 
 // The IPv4 addresses of a CONTROL_ADDRESS list, in network byte order, and the VRF of each; the forwarding tables take
@@ -214,12 +218,45 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 	return v;
 }
 
+// The forwarding tables of the state st with what goes in with them, built beside the live ones and swapped in; next hop i
+// is hops[i], the peer of st->Peers[i]. Whether they went in, and the number of their VRFs into num_vrfs.
+static bool NodeOverlaySwapTables(NODE_OVERLAY *ov, const CONTROL_STATE *st, NODE_OVERLAY_PEER **hops, UINT *num_vrfs) {
+	// Built beside the live tables, then in their place: the swap returns once no reader holds the tables before
+	NODE_VRF_TABLES *v = NodeOverlayTables(st, hops);
+	// The rules of the policy of the VRFs of the Generation go in with its tables (NodePolicy.c)
+	NodePolicyAttach(ov->Node, v, st);
+	// The MTU and the rate limits of the Generation go in with its tables (NodeShape.c)
+	NodeShapeAttach(ov->Node, v, st);
+	// The Mirrors of the Generation go in with its tables (NodeMirror.c)
+	NodeMirrorAttach(ov->Node, v, st);
+	// The links of kind vxlan and geneve of the Generation go in with its tables (NodeLink.c; SDN-76, #356)
+	NodeLinkAttach(ov->Node, v, st);
+	// The groups of gateways and the hubs of the Generation go in with its tables (NodeGateway.c; SDN-19, #195)
+	NodeGatewayAttach(ov->Node, v, st);
+	// The session profiles of the peers and of the node go in with its tables (NodeProfile.c; SDN-40, #233)
+	NodeProfileAttach(ov->Node, v, st);
+	// The source groups of the Generation go in with its tables (NodeSourceGroup.c; SDN-87, #386)
+	NodeSourceGroupAttach(ov->Node, v, st);
+	*num_vrfs = (v != NULL ? v->NumVrfs : 0);
+	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
+	NodePolicyApplied(ov->Node, swapped);
+	NodeLinkApplied(ov->Node, swapped);
+	if (v != NULL && swapped == false)
+		NodeFreeVrfTables(v);
+
+	return swapped;
+}
+
 // The state that the control stream applied: the node's name and addresses, its peers, and the forwarding tables of
 // its VRFs, built beside the live ones and swapped in. A peer that stays keeps its session; one that the state drops
 // goes only once the new tables are in, when no reader can find it any more. The relay role gets the peers too
 // (NodeSetPeers). It runs on the thread of the control stream, or on the caller's of NodeOverlayApply.
-static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
+static void NodeOverlayState(void *param, const CONTROL_STATE *state) {
 	NODE_OVERLAY *ov = (NODE_OVERLAY *)param;
+	// One state or rebuild of the forwarding tables at a time, and the routes that the BGP peering learned go in with the state
+	// (NodePeering.c; SDN-77, #357)
+	Lock(ov->ApplyLock);
+	const CONTROL_STATE *st = NodePeeringWith(ov->Node, state);
 	PEER_INFO *infos = ZeroMalloc(sizeof(PEER_INFO) * MAX(st->NumPeers, 1));
 	NODE_OVERLAY_PEER **hops = ZeroMalloc(sizeof(NODE_OVERLAY_PEER *) * MAX(st->NumPeers, 1));
 	LIST *dropped = NewListFast(NULL);
@@ -269,28 +306,9 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	}
 	Unlock(ov->Lock);
 
-	// Built beside the live tables, then in their place: the swap returns once no reader holds the tables before
-	NODE_VRF_TABLES *v = NodeOverlayTables(st, hops);
-	// The rules of the policy of the VRFs of the Generation go in with its tables (NodePolicy.c)
-	NodePolicyAttach(ov->Node, v, st);
-	// The MTU and the rate limits of the Generation go in with its tables (NodeShape.c)
-	NodeShapeAttach(ov->Node, v, st);
-	// The Mirrors of the Generation go in with its tables (NodeMirror.c)
-	NodeMirrorAttach(ov->Node, v, st);
-	// The links of kind vxlan and geneve of the Generation go in with its tables (NodeLink.c; SDN-76, #356)
-	NodeLinkAttach(ov->Node, v, st);
-	// The groups of gateways and the hubs of the Generation go in with its tables (NodeGateway.c; SDN-19, #195)
-	NodeGatewayAttach(ov->Node, v, st);
-	// The session profiles of the peers and of the node go in with its tables (NodeProfile.c; SDN-40, #233)
-	NodeProfileAttach(ov->Node, v, st);
-	// The source groups of the Generation go in with its tables (NodeSourceGroup.c; SDN-87, #386)
-	NodeSourceGroupAttach(ov->Node, v, st);
-	UINT num_vrfs = (v != NULL ? v->NumVrfs : 0);
-	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
-	NodePolicyApplied(ov->Node, swapped);
-	NodeLinkApplied(ov->Node, swapped);
-	if (v != NULL && swapped == false)
-		NodeFreeVrfTables(v);
+	// The forwarding tables of the Generation, and what goes in with them
+	UINT num_vrfs = 0;
+	bool swapped = NodeOverlaySwapTables(ov, st, hops, &num_vrfs);
 
 	// The host's adapter of each VRF takes the MTU of the Generation that went in, before the overlay reports it
 	if (swapped)
@@ -342,6 +360,51 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	// The WireGuard interface of a gateway, after the adapters of its VRFs (NodeWireGuard.c; SDN-80, #375)
 	if (swapped)
 		NodeWireGuardApplied(ov->Node, st);
+	// The sidecar of the BGP peering takes the Generation that went in (NodePeering.c; SDN-77, #357)
+	NodePeeringApplied(ov->Node, state, swapped);
+	NodePeeringDone(st, state);
+	Unlock(ov->ApplyLock);
+}
+
+// Build the forwarding tables of the state st anew and swap them in, as the BGP peering does when the routes that its sidecar
+// learned change (NodePeering.c; SDN-77, #357): st is the Generation in force, with those routes among the routes of its peers,
+// and the adapters of the host take it too. False when another Generation went in meanwhile, which took the routes itself, or
+// when the tables could not be built or installed.
+bool NodeOverlayRebuild(NODE *n, const CONTROL_STATE *st) {
+	NODE_OVERLAY *ov = (n != NULL ? n->Overlay : NULL);
+	bool swapped = false;
+
+	if (ov == NULL || st == NULL)
+		return false;
+
+	Lock(ov->ApplyLock);
+	{
+		NODE_OVERLAY_PEER **hops = ZeroMalloc(sizeof(NODE_OVERLAY_PEER *) * MAX(st->NumPeers, 1));
+		bool found = false;
+		UINT num_vrfs = 0;
+
+		// Next hop i of the tables is the peer of st->Peers[i], which the Generation in force holds
+		Lock(ov->Lock);
+		{
+			found = (ov->Generation == st->Generation);
+			for (UINT i = 0; i < st->NumPeers && found; i++) {
+				hops[i] = NodeOverlayPeer(ov, st->Peers[i].Name, st->Peers[i].Key);
+				found = (hops[i] != NULL);
+			}
+		}
+		Unlock(ov->Lock);
+
+		if (found)
+			swapped = NodeOverlaySwapTables(ov, st, hops, &num_vrfs);
+		Free(hops);
+
+		// The host's adapter of each VRF takes the routes too
+		if (swapped && ov->Config.State != NULL)
+			ov->Config.State(ov->Node, ov->Config.AdapterParam, st);
+	}
+	Unlock(ov->ApplyLock);
+
+	return swapped;
 }
 
 //
@@ -802,6 +865,7 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	ov->Node = n;
 	Copy(&ov->Config, cfg, sizeof(NODE_OVERLAY_CONFIG));
 	ov->Lock = NewLock();
+	ov->ApplyLock = NewLock();
 	ov->Peers = NewListFast(NULL);
 	ov->Buf = Malloc(NOISE_MAX_PAYLOAD);
 	ov->NatBuf = Malloc(NOISE_MAX_PAYLOAD + NODE_NAT_GROWTH);
@@ -850,6 +914,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	cc.Signals = NodeAgentStart(n, cfg);
 	cc.SignalProc = NodeAgentSignal;
 	cc.SignalParam = n;
+	// The BGP peering of the standard mode, whose report goes on the control stream (NodePeering.c; SDN-77, #357)
+	cc.Peering = NodePeeringStart(n);
 	// The live operations of the Controller read and clear the tables of the switches of the L2 Networks, and the Hello reports
 	// them (NodeOperation.c; SDN-50-N, #492); a test may tell Capabilities of its own
 	NodeOperationStart(n);
@@ -887,6 +953,9 @@ void NodeOverlayStop(NODE *n) {
 	if (ov == NULL)
 		return;
 
+	// The BGP peering halts before anything of the overlay stops: its sidecar ends, and it builds no tables any more and calls
+	// no adapter (NodePeering.c; SDN-77, #357)
+	NodePeeringHalt(n);
 	// The packets of the host stop first where the overlay stops them, as for the client role (CORE-S3-1)
 	if (ov->Config.AdapterStop != NULL)
 		ov->Config.AdapterStop(n, ov->Config.AdapterParam);
@@ -922,6 +991,8 @@ void NodeOverlayStop(NODE *n) {
 	// The thread that counted the replacements and the control stream that sent the events are done
 	NodeFlapFree(ov->Flap);
 	ControlFreeEvents(ov->Events);
+	// ... and so is the control stream that sent the report of the BGP peering (NodePeering.c; SDN-77, #357)
+	NodePeeringFree(n);
 	// No table holds a session profile any more, and the thread that asked about the sessions ended (NodeProfile.c)
 	NodeProfileStop(n);
 	// No table, thread or control stream reads the source groups any more (NodeSourceGroup.c; SDN-87, #386)
@@ -929,6 +1000,7 @@ void NodeOverlayStop(NODE *n) {
 
 	n->Overlay = NULL;
 	ReleaseList(ov->Peers);
+	DeleteLock(ov->ApplyLock);
 	DeleteLock(ov->Lock);
 	Free(ov->Buf);
 	Free(ov->NatBuf);

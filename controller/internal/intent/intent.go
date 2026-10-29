@@ -126,6 +126,9 @@ type VRF struct {
 	// healthy ones by the hash of each flow (SDN-19, topology.go). Left out, the first healthy
 	// gateway in name order carries them.
 	ECMP bool `json:"ecmp,omitempty"`
+	// Peering is how the Nodes of the VRF exchange their routes when its link is vxlan or geneve
+	// (SDN-77, peering.go): with the protocol bgp they peer by BGP. Left out, the Controller gives them.
+	Peering Peering `json:"peering,omitzero"`
 }
 
 // Network belongs to one VRF. Its pools are the controller's to allocate from (ADR-0028,
@@ -836,6 +839,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeLinks()
 	// The topologies of the VRFs (SDN-19, topology.go)
 	in.completeTopologies()
+	// The BGP peering of the VRFs (peering.go)
+	in.completePeering()
 	// The tag modes of the Networks (tagmode.go)
 	in.completeTagModes()
 	return problems
@@ -967,6 +972,9 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateKeyLife()...)
 	// The topologies of the VRFs and the LAN subnets of the gateways (SDN-19, topology.go)
 	problems = append(problems, in.validateTopologies()...)
+	// The BGP peering of the VRFs (peering.go)
+	problems = append(problems, in.validatePeering()...)
+	// The tag modes of the Networks (tagmode.go)
 	problems = append(problems, in.validateTagModes()...)
 	return append(problems, in.validateIPAM()...)
 }

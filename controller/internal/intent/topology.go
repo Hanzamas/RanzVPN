@@ -57,7 +57,8 @@ func (in Intent) Spokes(vrf, a, b string) bool {
 // subnets that peer advertises there; and in a VRF of topology hub-and-spoke whose hub peer is, of
 // which node is a spoke, also the prefixes of the VRF that its other Nodes hold (hubPrefixes), which
 // node reaches through the hub. A prefix that node advertises in the VRF itself is none of them: it
-// leads to its host.
+// leads to its host. A VRF that peers by BGP has none: the two announce their LAN subnets to each
+// other there (peering.go).
 func (in Intent) GatewayRoutes(node, peer string) []Route {
 	var out []Route
 	if node == peer {
@@ -66,6 +67,10 @@ func (in Intent) GatewayRoutes(node, peer string) []Route {
 	other := in.Nodes[peer]
 	for _, vrf := range in.Nodes[node].VRFs {
 		if !slices.Contains(other.VRFs, vrf) || in.Spokes(vrf, node, peer) {
+			continue
+		}
+		// The LAN subnets of a VRF that peers by BGP go by BGP (peering.go; SDN-77)
+		if in.VRFs[vrf].Peering.Protocol == PeeringBGP {
 			continue
 		}
 		var prefixes []netip.Prefix
