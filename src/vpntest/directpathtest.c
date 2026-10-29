@@ -100,6 +100,12 @@
 #define	DIRECTPATH_FRAME_LATER	1			// Not within the timeout: the bytes read so far stay in Frame
 #define	DIRECTPATH_FRAME_END	2			// The stream ended, or its next frame is larger than allowed
 
+// How the last echo went (DirectPathEcho), for the detail of a check that fails
+#define	DIRECTPATH_ECHO_OK		0			// Both packets came whole
+#define	DIRECTPATH_ECHO_REFUSED	1			// The Node of the sending host took its packet nowhere
+#define	DIRECTPATH_ECHO_LOST	2			// The adapter of the other host took no packet within DIRECTPATH_BOUND
+#define	DIRECTPATH_ECHO_ALTERED	3			// ... or another packet than the one sent
+
 static char *directpath_names[DIRECTPATH_NUM_NODES] = {"node-a", "node-b", "node-c"};
 static char *directpath_tags[DIRECTPATH_NUM_NODES] = {"site-a", "site-b", "site-c"};
 
@@ -193,6 +199,10 @@ typedef struct DIRECTPATH_CTX
 	volatile LONG NumStreams;
 	volatile LONG Carry;					// It carries the Signals: node-a and node-b applied their first state
 	volatile LONG64 Carried;				// The Signals that it carried
+
+	// The last echo: the leg that failed, 0 for the packet out and 1 for the answer, and how (DIRECTPATH_ECHO_*)
+	UINT EchoLeg;
+	UINT EchoResult;
 } DIRECTPATH_CTX;
 
 static bool DirectPathCheck(DIRECTPATH_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
@@ -329,11 +339,14 @@ static bool DirectPathWaitPackets(DIRECTPATH_CTX *ctx, UINT t, LONG count)
 }
 
 // A packet from the host of node from, port sport, to the host of node to, and the answer of that host back: whether both
-// came whole, as they were sent
+// came whole, as they were sent. How it went stays in EchoLeg and EchoResult.
 static bool DirectPathEcho(DIRECTPATH_CTX *ctx, UINT from, UINT to, USHORT sport)
 {
 	UCHAR packet[PEER_MAX_DATAGRAM];
 	bool ok = true;
+
+	ctx->EchoLeg = 0;
+	ctx->EchoResult = DIRECTPATH_ECHO_OK;
 
 	for (UINT k = 0;k < 2 && ok;k++)
 	{
@@ -346,14 +359,22 @@ static bool DirectPathEcho(DIRECTPATH_CTX *ctx, UINT from, UINT to, USHORT sport
 		NodeReaderOnline(ctx->Nodes[src].Node, &ctx->Nodes[src].Reader);
 		ok = NodeOverlayInput(ctx->Nodes[src].Node, DIRECTPATH_VRF, packet, size);
 		NodeReaderOffline(&ctx->Nodes[src].Reader);
+		ctx->EchoResult = (ok ? DIRECTPATH_ECHO_OK : DIRECTPATH_ECHO_REFUSED);
 
-		ok = ok && DirectPathWaitPackets(ctx, dst, before + 1);
+		if (ok && DirectPathWaitPackets(ctx, dst, before + 1) == false)
+		{
+			ok = false;
+			ctx->EchoResult = DIRECTPATH_ECHO_LOST;
+		}
 		if (ok)
 		{
 			AcquireSRWLockShared(&t->Lock);
 			ok = (t->LastSize == size && t->LastVrf == DIRECTPATH_VRF && Cmp(t->Last, packet, size) == 0);
 			ReleaseSRWLockShared(&t->Lock);
+			ctx->EchoResult = (ok ? DIRECTPATH_ECHO_OK : DIRECTPATH_ECHO_ALTERED);
 		}
+
+		ctx->EchoLeg = k;
 	}
 
 	return ok;
@@ -537,6 +558,43 @@ static char *DirectPathIceName(UINT ice)
 	default:
 		return "none";
 	}
+}
+
+// What node i saw of its pair with node j, appended to str: the path, the ICE session and the address of the direct path,
+// the peer session, and what its peer layer dropped, by reason
+static void DirectPathPairWords(DIRECTPATH_CTX *ctx, UINT i, UINT j, char *str, UINT size)
+{
+	PEER_STATUS st;
+	PEER_STATS stats;
+	char addr[64];
+	char one[MAX_SIZE];
+
+	bool known = DirectPathStatus(ctx, i, j, &st);
+	DirectPathStats(ctx, i, &stats);
+	PeerAddrToStr(addr, sizeof(addr), &st.Direct);
+	Format(one, sizeof(one), "; %s to %s: %s, ICE %s at %s, session %s after %I64u handshakes, drops:", ctx->Nodes[i].Name, ctx->Nodes[j].Name, known ? DirectPathPathName(st.Path) : "no peer",
+		DirectPathIceName(st.Ice), addr, st.Session == PEER_SESSION_UP ? "up" : (st.Session == PEER_SESSION_HANDSHAKE ? "in its handshake" : "none"), st.Handshakes);
+	StrCat(str, size, one);
+
+	for (UINT r = PEER_OK + 1;r < PEER_NUM_REASONS;r++)
+	{
+		if (stats.Drops[r] != 0)
+		{
+			Format(one, sizeof(one), " %s %I64u", PeerReasonName(r), stats.Drops[r]);
+			StrCat(str, size, one);
+		}
+	}
+}
+
+// How the last echo between the hosts of node from and node to went, into str, for the detail of a check that fails: the
+// leg that failed and how, and what each end saw of the pair
+static void DirectPathEchoWords(DIRECTPATH_CTX *ctx, UINT from, UINT to, char *str, UINT size)
+{
+	static char *results[] = {"came whole", "was taken nowhere by its Node", "did not come within the bound", "came altered"};
+
+	Format(str, size, "the %s %s", ctx->EchoLeg == 0 ? "packet out" : "answer", results[MIN(ctx->EchoResult, (UINT)DIRECTPATH_ECHO_ALTERED)]);
+	DirectPathPairWords(ctx, from, to, str, size);
+	DirectPathPairWords(ctx, to, from, str, size);
 }
 
 //
@@ -1366,6 +1424,7 @@ static void DirectPathPortMapping(DIRECTPATH_CTX *ctx)
 	PEER_ADDR mapped;
 	USHORT external = 0, internal = 0;
 	char addr[64];
+	char words[MAX_SIZE * 2];
 
 	Zero(&st_c, sizeof(st_c));
 	Print("[e. port mapping: off at node-a and node-b, on at node-c, which joins behind a symmetric NAT with a home gateway]\n");
@@ -1434,8 +1493,9 @@ static void DirectPathPortMapping(DIRECTPATH_CTX *ctx)
 
 	bool echo = DirectPathEcho(ctx, DIRECTPATH_B, DIRECTPATH_C, 44000);
 	DirectPathStats(ctx, DIRECTPATH_C, &st_c);
+	DirectPathEchoWords(ctx, DIRECTPATH_B, DIRECTPATH_C, words, sizeof(words));
 	DirectPathCheck(ctx, echo && st_c.Upgrades >= 1, "A packet of the host of node-b reaches the host of node-c on that path and comes back, and node-c counts its Upgrade",
-		"echo %u, Upgrades of node-c %I64u", (UINT)echo, st_c.Upgrades);
+		"echo %u, Upgrades of node-c %I64u: %s", (UINT)echo, st_c.Upgrades, words);
 }
 
 // f. Export: the Upgrades and the Fallbacks of each Node in its state, as ranz node state prints it, and in the Telemetry

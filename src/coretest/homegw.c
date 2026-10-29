@@ -10,8 +10,11 @@
 // The gateway answers M-SEARCH on 239.255.255.250:1900, joined on every IPv4 interface since multicast loops back to
 // the host on the interface it leaves by; it serves its description and its control URL; and it takes
 // GetExternalIPAddress, AddPortMapping and DeletePortMapping. It counts the searches and the requests that it answered,
-// so a test sees that a node with port mapping off asked nothing. HomeGwDrop loses the mapping, as a gateway that
-// restarts does, without telling libplum.
+// so a test sees that a node with port mapping off asked nothing. It is the gateway of the world of the test only: it
+// answers the searches and the connections of sockets of its own process, where the nodes of the test run, and of no
+// other program of the host, as the SSDP clients of Windows that search for a gateway on some runners are, which
+// neither learn of it nor count (IP Helper names the process of each socket). HomeGwDrop loses the mapping, as a
+// gateway that restarts does, without telling libplum.
 //
 // One thread serves everything: the SSDP socket and the HTTP listener.
 
@@ -87,7 +90,73 @@ static void HomeGwJoinAll(SOCKET s) {
 		HeapFree(GetProcessHeap(), 0, list);
 }
 
-// Answer every M-SEARCH for an Internet Gateway Device with the location of the description
+// The IPv4 UDP endpoints of the host, or with tcp its TCP connections, each with the process that owns it, which the
+// caller frees with HeapFree; NULL when IP Helper cannot read them. The table may grow between the call that sizes it
+// and the one that reads it, so the read is tried again.
+static void *HomeGwOwners(bool tcp) {
+	void *t = NULL;
+	DWORD size = 0;
+	DWORD ret = ERROR_INSUFFICIENT_BUFFER;
+
+	for (UINT tries = 0; tries < 4 && ret == ERROR_INSUFFICIENT_BUFFER; tries++) {
+		if (t != NULL)
+			HeapFree(GetProcessHeap(), 0, t);
+		t = (size != 0 ? HeapAlloc(GetProcessHeap(), 0, size) : NULL);
+		ret = (tcp ? GetExtendedTcpTable(t, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_CONNECTIONS, 0) : GetExtendedUdpTable(t, &size, FALSE, AF_INET, UDP_TABLE_OWNER_PID, 0));
+	}
+
+	if (ret != NO_ERROR && t != NULL) {
+		HeapFree(GetProcessHeap(), 0, t);
+		t = NULL;
+	}
+
+	return t;
+}
+
+// Whether the UDP endpoint from, an address of the host and a port, is a socket of this process: a search of a node of
+// the test, and not one of another program of the host
+static bool HomeGwOwnUdp(const SOCKADDR_IN *from) {
+	MIB_UDPTABLE_OWNER_PID *t = (MIB_UDPTABLE_OWNER_PID *)HomeGwOwners(false);
+	bool own = false;
+
+	for (DWORD i = 0; t != NULL && i < t->dwNumEntries && own == false; i++) {
+		const MIB_UDPROW_OWNER_PID *r = &t->table[i];
+
+		// The port is in network order in the low 16 bits; a socket on the wildcard address sends from each address
+		own = ((USHORT)r->dwLocalPort == from->sin_port && (r->dwLocalAddr == INADDR_ANY || r->dwLocalAddr == from->sin_addr.s_addr) && r->dwOwningPid == GetCurrentProcessId());
+	}
+
+	if (t != NULL)
+		HeapFree(GetProcessHeap(), 0, t);
+
+	return own;
+}
+
+// Whether the connection s, which the HTTP listener on port port took, comes from a socket of this process: its peer
+// is the local end of a connection of the process to that port
+static bool HomeGwOwnTcp(SOCKET s, USHORT port) {
+	SOCKADDR_IN peer;
+	int peer_len = sizeof(peer);
+	bool own = false;
+
+	if (getpeername(s, (SOCKADDR *)&peer, &peer_len) != 0 || peer.sin_family != AF_INET)
+		return false;
+
+	MIB_TCPTABLE_OWNER_PID *t = (MIB_TCPTABLE_OWNER_PID *)HomeGwOwners(true);
+
+	for (DWORD i = 0; t != NULL && i < t->dwNumEntries && own == false; i++) {
+		const MIB_TCPROW_OWNER_PID *r = &t->table[i];
+
+		own = (r->dwLocalAddr == peer.sin_addr.s_addr && (USHORT)r->dwLocalPort == peer.sin_port && (USHORT)r->dwRemotePort == htons(port) && r->dwOwningPid == GetCurrentProcessId());
+	}
+
+	if (t != NULL)
+		HeapFree(GetProcessHeap(), 0, t);
+
+	return own;
+}
+
+// Answer every M-SEARCH of this process for an Internet Gateway Device with the location of the description
 static void HomeGwSsdp(HOMEGW *g) {
 	char buf[HOMEGW_BUFFER];
 	char reply[512];
@@ -105,6 +174,9 @@ static void HomeGwSsdp(HOMEGW *g) {
 
 		buf[n] = 0;
 		if (strncmp(buf, "M-SEARCH", 8) != 0 || strstr(buf, "InternetGatewayDevice") == NULL)
+			continue;
+		// Another program of the host, as an SSDP client of Windows, neither learns of the gateway nor counts
+		if (from.ss_family != AF_INET || HomeGwOwnUdp((const SOCKADDR_IN *)&from) == false)
 			continue;
 
 		int len = snprintf(reply, sizeof(reply), "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=120\r\nEXT:\r\nLOCATION: http://127.0.0.1:%u/igd.xml\r\nSERVER: Windows/10 UPnP/1.1 coretest/1\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\nUSN: uuid:7e1a3b1c-0000-4000-8000-000000000079::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n", g->HttpPort);
@@ -190,6 +262,12 @@ static void HomeGwHttp(HOMEGW *g) {
 	SOCKET s = accept(g->Http, NULL, NULL);
 	if (s == INVALID_SOCKET)
 		return;
+
+	// A connection of another program of the host gets no answer and does not count
+	if (HomeGwOwnTcp(s, g->HttpPort) == false) {
+		closesocket(s);
+		return;
+	}
 
 	// The request: its head, then the body of its Content-Length
 	ioctlsocket(s, FIONBIO, &blocking);

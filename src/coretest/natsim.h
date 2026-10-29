@@ -50,8 +50,9 @@ UINT NatSimDrop(NATSIM *s, NATSIM_NAT *n, const PEER_ADDR *inside);
 
 // The simulated home gateway of a NAT (homegw.c): a UPnP Internet Gateway Device that libplum finds with SSDP on the
 // loopback interfaces of the host and asks for a port mapping over HTTP on 127.0.0.1, which it grants as a port forward
-// of its NAT on the network of the simulator, with the public address of the NAT as its external address. It counts what
-// it was asked, so a test sees that a node with port mapping off asked nothing.
+// of its NAT on the network of the simulator, with the public address of the NAT as its external address. It answers the
+// sockets of its own process only, where the nodes of a test run, and counts what they asked, so a test sees that a node
+// with port mapping off asked nothing.
 typedef struct HOMEGW HOMEGW;
 
 HOMEGW *HomeGwNew(NATSIM *s, NATSIM_NAT *nat);
