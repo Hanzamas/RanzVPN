@@ -199,6 +199,8 @@ add_library(corecontrol STATIC
   ControlProfile.c
   # The Upgrades and the Fallbacks of the Paths of the peer agent that the client reports (CORE-S5-6, #412)
   ControlPath.c
+  # The live operations of the Controller on the tables of the L2 Networks (SDN-50-N, #492)
+  ControlOperation.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

@@ -58,4 +58,8 @@ void ControlCopyProfiles(CONTROL_STATE *st, const ranz_control_v1_Object *object
 // ControlPath.c
 void ControlPathsResend(CONTROL_PATHS *p);
 
+// ControlOperation.c: an Operation that ControlInput took, the body of m, which the answer replaces, and the write of the answer
+bool ControlTakeOperation(const CONTROL_CONFIG *cfg, const ranz_control_v1_Object *objects, UINT num, ranz_control_v1_ControlMessage *m);
+bool ControlWriteOperationResult(const ranz_control_v1_OperationResult *r, TRANSPORT_STREAM *s);
+
 #endif // CORE_CONTROL_INTERNAL_H
