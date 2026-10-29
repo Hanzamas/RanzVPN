@@ -251,8 +251,8 @@ if (-not (Test-Path -LiteralPath $etl)) {
 
 # The bridge on SeLow and then on XDP, on the same attachments, which gives the benchmark of XDP against SeLow
 if (-not (Invoke-KmTest (@('xdp') + $lab) $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge xdp: the bridge on SeLow and on XDP' }
-# The bridge on Npcap, through the stand-in of its pcap API over the SeLow device, and on XDP with Npcap's hold of
-# promiscuous mode through it: no runner may carry Npcap itself
+# The bridge on SeLow, then on Npcap, through the stand-in of its pcap API over the SeLow device, and on XDP with Npcap's
+# hold of promiscuous mode through it, each against SeLow on the same attachments: no runner may carry Npcap itself
 if (-not (Invoke-KmTest (@('npcap') + $lab) $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge npcap: the bridge on Npcap and on XDP with its hold' }
 if ($lab.Count -gt 0) { Remove-BridgeLab }
 

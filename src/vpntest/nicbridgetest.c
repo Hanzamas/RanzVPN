@@ -15,8 +15,9 @@
 //   as the frames of a virtual machine do.
 // The XDP job of windows.yml runs it after ranz install as administrator (.github/scripts/kmtest.ps1); it needs the
 // drivers, so the smoke loop leaves it out (.github/quality/smoke-exclude.txt). Its arguments: the backends, "selow" (the
-// default), "xdp" (SeLow, then XDP, on the same attachments, for the comparison) or "npcap"; then the name of the
-// Hyper-V switch and of the device's vNIC on it, when the job made them.
+// default), "xdp" (SeLow, then XDP, on the same attachments, for the comparison) or "npcap" (SeLow, then Npcap, then XDP
+// with Npcap's hold, on the same attachments); then the name of the Hyper-V switch and of the device's vNIC on it, when
+// the job made them.
 // The spike of ADR-0018 decision 3, for each backend on each attachment:
 // - Foreign-MAC transmit: frames of the overlay from the member's MAC address go through the switch to the bridge, which
 //   puts them onto the segment (on the NIC its counter of sent frames rises by them). Datagrams of the member reach a
@@ -32,7 +33,9 @@
 //   on and after it went.
 // - Throughput against SeLow: on the stand-in and on a Hyper-V switch, frames of 1514 bytes of the member onto the
 //   segment and to the device, and the device's datagrams to the member, for 2 s each, printed as NICBRIDGE BENCH lines
-//   for each backend: a regression number of the runner, not a gate (ADR-0002 amendment of 2026-10-21).
+//   for each backend; each backend that runs after SeLow on the same attachment also prints its rates as shares of
+//   SeLow's ("NICBRIDGE BENCH <backend> <attachment> against selow"): a regression number of the runner, not a gate
+//   (ADR-0002 amendment of 2026-10-21).
 // XDP takes the frames that come in from below the interface, and NDIS loopback is no such frame (XDP inspects none of
 // them), while neither a KM-TEST adapter nor the network of a runner gives one for a member's address. So for XDP on
 // those two the lines of the frames to and from the device are printed (NICBRIDGE DIAG), and its checks there are the
@@ -84,6 +87,7 @@
 #define	NICBRIDGE_WIRE			1000		// Frames of the member onto the wire, to another address
 #define	NICBRIDGE_ETHERTYPE		0x88B5		// The local experimental EtherType of IEEE 802 for those frames
 #define	NICBRIDGE_BENCH_TIME	2000		// ms of each benchmark run
+#define	NICBRIDGE_RATES			3			// The rates of a benchmark: onto the segment, to the device, from the device
 #define	NICBRIDGE_SEGMENT		1472		// Bytes of the payload of a datagram of the benchmark: frames of 1514 bytes
 #define	NICBRIDGE_ARP_FRAME		60			// Bytes of an ARP frame, padded to the shortest Ethernet frame
 #define	NICBRIDGE_TCP_HOST		"github.com"	// A host on the internet that the runner reaches through its NIC
@@ -125,6 +129,8 @@ typedef struct NICBRIDGE_PORT
 	UINT Gateway;						// The IPv4 address of its default gateway, in network byte order; 0 for none
 	bool Wire;							// The device's frames reach the bridge from below its interface, through a Hyper-V switch
 	NODE_KMTEST *KmTest;				// The KM-TEST adapter of the stand-in, NULL for the others
+	UINT64 SeLow[NICBRIDGE_RATES];		// The rates of SeLow's benchmark on it in this run, for the backends after it (frames/s)
+	bool HaveSeLow;						// ... measured
 } NICBRIDGE_PORT;
 
 // The L2 Network of a run: its switch, the port of the member that the test plays, and the L2 bridge
@@ -1142,8 +1148,9 @@ static bool NicBridgeHyperV(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, char *sw_name
 
 // The benchmark on the stand-in and on a Hyper-V switch (ADR-0018 decision 3, throughput against SeLow): frames of 1514
 // bytes of the member onto the segment and to the device, and for a backend that sees the device's sends, the device's
-// datagrams to the member, each for NICBRIDGE_BENCH_TIME ms. Rates in frames per second, as NICBRIDGE BENCH lines.
-static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NICBRIDGE_NET *net, NICBRIDGE_OWNER *o, char *backend, bool host_sends)
+// datagrams to the member, each for NICBRIDGE_BENCH_TIME ms. Rates in frames per second, as NICBRIDGE BENCH lines, and
+// into rates (NICBRIDGE_RATES of them, 0 for one not measured).
+static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NICBRIDGE_NET *net, NICBRIDGE_OWNER *o, char *backend, bool host_sends, UINT64 *rates)
 {
 	UCHAR frame[NODE_L2_MAX_FRAME];
 	NODE_L2_STATUS st;
@@ -1226,10 +1233,58 @@ static void NicBridgeBench(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, NICBRIDGE_NET 
 		Print("NICBRIDGE BENCH %s %s from the device: %I64u frames/s captured and handed to the member\n", backend, p->Tag, captured);
 	}
 
+	rates[0] = wire;
+	rates[1] = host;
+	rates[2] = captured;
+
 	char what[MAX_SIZE];
 	Format(what, sizeof(what), "the benchmark of the %s backend on %s moves frames onto the segment and to the device%s (the rates are the NICBRIDGE BENCH lines)", backend, p->Name,
 		host_sends ? ", and captures the device's" : "");
 	NicBridgeCheck(ctx, wire > 0 && host > 0 && (host_sends == false || captured > 0), what, "%I64u, %I64u, %I64u frames/s", wire, host, captured);
+}
+
+// The share of SeLow's rate selow that the rate of another backend is, in percent, into s, with both rates: "n/a" when
+// SeLow moved nothing there
+static void NicBridgeShare(char *s, UINT size, UINT64 rate, UINT64 selow)
+{
+	if (selow == 0)
+	{
+		Format(s, size, "n/a (%I64u frames/s, SeLow none)", rate);
+		return;
+	}
+
+	Format(s, size, "%I64u%% (%I64u of SeLow's %I64u frames/s)", rate * 100 / selow, rate, selow);
+}
+
+// The throughput of a backend against SeLow on the same attachment in this run (ADR-0018 decision 3): its rates as shares
+// of SeLow's, as a NICBRIDGE BENCH line. A regression number of the runner, not a gate (ADR-0002 amendment of 2026-10-21).
+// SeLow's own rates are kept for the backends that run after it.
+static void NicBridgeAgainstSeLow(NICBRIDGE_PORT *p, char *backend, const UINT64 *rates, bool host_sends)
+{
+	char wire[MAX_SIZE];
+	char host[MAX_SIZE];
+	char from[MAX_SIZE];
+
+	if (StrCmp(backend, "selow") == 0)
+	{
+		Copy(p->SeLow, rates, sizeof(p->SeLow));
+		p->HaveSeLow = true;
+		return;
+	}
+
+	if (p->HaveSeLow == false)
+	{
+		return;
+	}
+
+	NicBridgeShare(wire, sizeof(wire), rates[0], p->SeLow[0]);
+	NicBridgeShare(host, sizeof(host), rates[1], p->SeLow[1]);
+	StrCpy(from, sizeof(from), "not measured, as the backend sees no frame of the device there");
+	if (host_sends)
+	{
+		NicBridgeShare(from, sizeof(from), rates[2], p->SeLow[2]);
+	}
+	Print("NICBRIDGE BENCH %s %s against selow: onto the segment %s, to the device %s, from the device %s\n", backend, p->Tag, wire, host, from);
 }
 
 // Coexistence on a Hyper-V switch: the host resolves the link-local IPv6 address of the device through the bridged vNIC,
@@ -1406,11 +1461,14 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 	}
 	else
 	{
+		UINT64 rates[NICBRIDGE_RATES];
+
 		if (p->Wire)
 		{
 			NicBridgeVswitchHost(ctx, p, "while the bridge is on");
 		}
-		NicBridgeBench(ctx, p, &net, &o, b->Name, from_host);
+		NicBridgeBench(ctx, p, &net, &o, b->Name, from_host, rates);
+		NicBridgeAgainstSeLow(p, b->Name, rates, from_host);
 	}
 
 	NodeL2BridgeGetStatus(net.Bridge, &st);
@@ -1597,6 +1655,12 @@ void nicbridge_test(UINT num, char **arg)
 
 		if (npcap)
 		{
+			// SeLow first, on each attachment, for the comparison
+			for (UINT i = 0;i < num_ports;i++)
+			{
+				NicBridgeRun(&ctx, n, ports[i], NodeL2SeLowBackend(), false);
+			}
+
 			// No runner may carry Npcap: the stand-in of its pcap API over the SeLow device of each adapter
 			NodeL2NpcapStandIn(&nicbridge_pcap_api);
 			bool present = NodeL2NpcapPresent(error, sizeof(error));
