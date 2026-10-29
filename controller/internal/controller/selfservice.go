@@ -156,7 +156,7 @@ func (c *Controller) selfNode(name string, now time.Time) SelfDevice {
 	n := c.intent.Nodes[name]
 	info := c.keyInfo(name, now)
 	d := SelfDevice{Kind: intent.KindNode, Name: name, KeyExpires: info.Expires, VRFs: slices.Clone(n.VRFs), Tags: c.intent.NodeTags(name),
-		Addresses: nodeAddresses(n)}
+		Addresses: selfAddresses(n)}
 	rn := c.nodes[name]
 	if rn != nil {
 		d.Connected = rn.stream != nil
@@ -197,9 +197,9 @@ func (c *Controller) selfOther(ref intent.DeviceRef) SelfDevice {
 	return d
 }
 
-// nodeAddresses returns the addresses of the Node n in the Networks of its VRFs: the IPv4 addresses, then the
-// IPv6 ones, each by the name of the Network.
-func nodeAddresses(n intent.Node) []SelfAddress {
+// selfAddresses returns the addresses of the Node n in the Networks of its VRFs, as nodeAddresses orders them
+// (the IPv4 addresses, then the IPv6 ones, each by the name of the Network), each with its Network.
+func selfAddresses(n intent.Node) []SelfAddress {
 	var out []SelfAddress
 	for _, network := range slices.Sorted(maps.Keys(n.Addresses)) {
 		out = append(out, SelfAddress{Network: network, Address: n.Addresses[network]})
