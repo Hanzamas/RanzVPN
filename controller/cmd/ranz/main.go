@@ -59,6 +59,10 @@
 //	                                           -kind, -actor, -since, -until, -after and -limit (audit.go)
 //	ranz [flags] get devices                   print the WireGuard Devices with the last handshake and the traffic of each
 //	ranz [flags] get device-config NAME        print the WireGuard configuration of the Device NAME, for a stock client
+//	ranz [flags] device create -network N -gateway NODE [flags] NAME
+//	                                           make the WireGuard Device NAME with its keys and print its finished configuration,
+//	                                           which shows its private key and PresharedKey once; -qr draws the QR code (devicecreate.go,
+//	                                           SDN-82)
 //	ranz [flags] delete KIND NAME              delete one resource
 //	ranz [flags] connect vrf A B               leak the routes of the VRFs A and B into each other, as one revision: each
 //	                                           imports a route target that the other exports (SDN-7)
@@ -198,6 +202,7 @@ const usage = `usage:
   ranz [flags] get revision ID
   ranz [flags] get audit [-kind KIND] [-actor ACTOR] [-since TIME] [-until TIME] [-after ID] [-limit N] [-o json|table]
   ranz [flags] get device-config NAME
+  ranz [flags] device create -network NETWORK -gateway NODE [-owner USER] [-tags A,B] [-battery-saver] [-public-key KEY] [-no-preshared-key] [-o FILE] [-qr] [-qr-file FILE] NAME
   ranz [flags] delete KIND NAME
   ranz [flags] connect vrf A B
   ranz [flags] export [-o json|yaml]
@@ -487,6 +492,9 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 	case args[0] == "token" || args[0] == "tokens":
 		// The API tokens, with their expiry and their last use (tokens.go; AUD1-DT-13)
 		return tokenCommand(ctx, c, args, out)
+	case len(args) >= 2 && args[0] == "device" && args[1] == "create":
+		// A WireGuard Device with its keys (devicecreate.go; SDN-82)
+		return createDevice(ctx, c, args[2:], out, os.Stderr)
 	case args[0] == "user":
 		return userCommand(ctx, c, args[1:], out)
 	case args[0] == "group":

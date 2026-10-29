@@ -6,6 +6,7 @@ package rqlitetest
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,6 +18,9 @@ import (
 
 // startTimeout bounds the start of rqlited.
 const startTimeout = 60 * time.Second
+
+// startAttempts is how many times Start picks two addresses and starts rqlited on them.
+const startAttempts = 3
 
 // Start starts rqlited and stops it when the test ends. On a failure the test log shows
 // rqlited's output.
@@ -46,12 +50,11 @@ func start(t testing.TB, id, join string) *sidecar.Rqlited {
 	if err != nil {
 		t.Fatal(err)
 	}
-	addrs := freeAddrs(t, 2)
 	var joinAddrs []string
 	if join != "" {
 		joinAddrs = []string{join}
 	}
-	r := &sidecar.Rqlited{Path: path, DataDir: filepath.Join(dir, "data"), HTTPAddr: addrs[0], RaftAddr: addrs[1], NodeID: id, Join: joinAddrs, Output: out}
+	r := &sidecar.Rqlited{Path: path, DataDir: filepath.Join(dir, "data"), NodeID: id, Join: joinAddrs, Output: out}
 	t.Cleanup(func() {
 		r.Stop()
 		out.Close()
@@ -61,17 +64,39 @@ func start(t testing.TB, id, join string) *sidecar.Rqlited {
 			}
 		}
 	})
-	Restart(t, r)
-	return r
+	// The addresses were free a moment ago. A process that runs at the same time (the tests of another package, or a
+	// connection that took one of the ports as its own) may take one before rqlited binds it, and rqlited then exits at
+	// once, so a start that ended so goes again on two other addresses, with an empty data directory. A start that ran out
+	// of time, and the last of the attempts, fail the test.
+	for attempt := 1; ; attempt++ {
+		addrs := freeAddrs(t, 2)
+		r.HTTPAddr, r.RaftAddr = addrs[0], addrs[1]
+		err := startOnce(r)
+		if err == nil {
+			return r
+		}
+		if attempt == startAttempts || errors.Is(err, context.DeadlineExceeded) {
+			t.Fatal(err)
+		}
+		t.Logf("rqlited did not start on %s and %s, another try: %v", r.HTTPAddr, r.RaftAddr, err)
+		if err := os.RemoveAll(r.DataDir); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// startOnce starts r, which has its addresses, and returns why it did not start.
+func startOnce(r *sidecar.Rqlited) error {
+	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
+	defer cancel()
+	return r.Start(ctx)
 }
 
 // Restart starts r, which Start returned, again after r.Stop, on the same data directory and
 // addresses.
 func Restart(t testing.TB, r *sidecar.Rqlited) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
-	defer cancel()
-	if err := r.Start(ctx); err != nil {
+	if err := startOnce(r); err != nil {
 		t.Fatal(err)
 	}
 }
