@@ -1,0 +1,3 @@
+{"resources": [
+  {"kind": "User", "name": "bob", "spec": {"groups": ["staff"]}}
+]}
