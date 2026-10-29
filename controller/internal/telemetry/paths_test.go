@@ -43,6 +43,36 @@ func TestHubKeepsAndExportsTheUpgradesAndFallbacks(t *testing.T) {
 	}
 }
 
+// nodePathRefresh is how often a node lists its Paths again while they stay the same:
+// CONTROL_PATH_REFRESH of the C node (src/Core/Control.h).
+const nodePathRefresh = 30 * time.Second
+
+// A node whose Paths stay the same, as they do for hours on a node whose pairs keep their paths,
+// lists them again every nodePathRefresh: the Hub keeps them in the export for as long as it does,
+// well past the stale time of a counter, and drops them once it stopped.
+func TestHubKeepsThePathsOfAStableNode(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	h := NewHub(0)
+	h.now = func() time.Time { return now }
+	want := PathCounters{Upgrades: 1, Fallbacks: 1}
+	for since := time.Duration(0); since <= 3*DefaultStale; since += nodePathRefresh {
+		h.Report("node-a", &controlpb.Telemetry{Paths: &controlpb.PathCounters{Upgrades: want.Upgrades, Fallbacks: want.Fallbacks}})
+		now = now.Add(nodePathRefresh - time.Second)
+		if snap := h.Snapshot(nil); len(snap) != 1 || snap[0].Paths == nil || *snap[0].Paths != want {
+			t.Fatalf("%s after the first report of the same Paths every %s, the Hub holds %+v, want them", since+nodePathRefresh-time.Second, nodePathRefresh, snap)
+		}
+		now = now.Add(time.Second)
+	}
+	samples := h.Samples(nil)
+	if len(samples) != 2 || samples[0].Metric != "path_upgrades" || samples[0].Value != 1 || samples[1].Metric != "path_fallbacks" || samples[1].Value != 1 {
+		t.Errorf("the export of node-a after %s holds %+v, want its Upgrades and Fallbacks", 3*DefaultStale, samples)
+	}
+	now = now.Add(DefaultStale + time.Second)
+	if snap := h.Snapshot(nil); len(snap) != 0 {
+		t.Errorf("past the stale time after node-a stopped listing its Paths, the Hub still holds %+v", snap)
+	}
+}
+
 // The Paths that a node stopped reporting go stale as its other counters do, and a node that
 // reported nothing but its Paths stays while they are fresh.
 func TestHubDropsStalePaths(t *testing.T) {

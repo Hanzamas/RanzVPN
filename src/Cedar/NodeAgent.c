@@ -22,9 +22,10 @@
 //   saw the node at, which the answer of its bind gives, so no STUN server is needed and none is used. The pair moves to the
 //   direct path that ICE validates (an Upgrade), with its peer session, and back to the Relay when consent freshness fails
 //   it (a Fallback). With ICE the agent offers and answers once the home relay answered its bind, so that every Signal names
-//   that address; the node of the lower static key of a pair offers it, and the other answers, so that no two offers cross;
-//   and either offers again to a peer that it gave a Signal when its candidates change, which restarts ICE. A node asks its home
-//   gateway for a public port of the socket with PCP, NAT-PMP or UPnP only when its setting PortMapping is 1
+//   that address; the node of the lower static key of a pair that neither can dial offers it, and the other answers, so that
+//   no two offers cross, while a node whose dial of the peer failed offers whatever the order of the keys, as the peer cannot
+//   tell; and either offers again to a peer that it gave a Signal when its candidates change, which restarts ICE. A node asks
+//   its home gateway for a public port of the socket with PCP, NAT-PMP or UPnP only when its setting PortMapping is 1
 //   (NODE_SETTING_PORT_MAPPING): it is off by default, as a port that a gateway opens is attack surface. The public port then
 //   goes first among the candidates. The Upgrades and the Fallbacks go to the Controller on the control stream
 //   (ControlSetPaths), which exports them.
@@ -246,8 +247,11 @@ void NodeAgentDialFailed(NODE *n, const UCHAR *key) {
 // Offer a Signal to each peer that needs the datagram path and has no Path to it yet, as its delay allows, and once to each that
 // has to hear of a new home relay or of new candidates of the node. The Signal goes on the control stream, which the Controller
 // carries it on to the peer. With ICE an offer names the address that the home relay saw the node at, so none goes before the
-// relay answered the bind of the node, and the node of the lower static key of a pair offers and the other answers, so that
-// no two offers cross: the other offers only to tell of a new home relay or new candidates, which restarts ICE.
+// relay answered the bind of the node. A pair that neither node can dial is offered by the node of the lower static key, and
+// the other answers, so that no two offers cross: the other offers it only to tell of a new home relay or new candidates, which
+// restarts ICE. A node whose dial of the peer failed offers whatever the order of the keys, as the peer cannot tell that the
+// pair needs the datagram path: it dials no node that has no endpoints, and a client dials every peer. Should the peer offer
+// too, both ends keep the same one of the two offers (PeerIceRemote).
 static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 	UCHAR env[PEER_MAX_ENVELOPE];
 	NODE_AGENT_DUE *due = NULL;
@@ -264,7 +268,7 @@ static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 
 			if ((e->Datagram == false && e->DialFailed == false) || now < e->NextSignal)
 				continue;
-			if (a->Config.Ice && e->Resignal == false && Cmp(a->Key->Public, e->Key, PEER_KEY_SIZE) > 0)
+			if (a->Config.Ice && e->Resignal == false && e->DialFailed == false && Cmp(a->Key->Public, e->Key, PEER_KEY_SIZE) > 0)
 				continue;
 
 			if (due == NULL)

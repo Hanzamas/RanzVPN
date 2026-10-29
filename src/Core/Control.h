@@ -60,7 +60,8 @@
 #define CONTROL_MAX_SIGNALS  64   // The Signals that wait for the stream at most; the oldest goes first, as at the controller
 
 // The Paths of the peer agent of a node (CORE-S5-6, #412)
-#define CONTROL_PATH_REPORT 1000 // ms between two reports of the Upgrades and the Fallbacks of the Paths of a node
+#define CONTROL_PATH_REPORT  1000  // ms between two reports of the Upgrades and the Fallbacks of the Paths of a node, at least ...
+#define CONTROL_PATH_REFRESH 30000 // ... and at most, while they stay the same: the controller drops a counter that its node does not report again
 
 // The TLS fingerprints of the certificate of the Controller that a state names (SDN-92, #397)
 #define CONTROL_TLS_PINS     4  // The fingerprints of a state (NodeConfig.controller_tls of control.options)
@@ -798,8 +799,9 @@ bool ControlWritePeeringReport(CONTROL_PEERING_REPORT *r, TRANSPORT_STREAM *s);
 // The Paths of the peer agent of a node (CORE-S5-6, #412), ControlPath.c. NewPaths makes the report that a client sends
 // (CONTROL_CONFIG.Paths), FreePaths frees it once no client uses it. SetPaths puts the Upgrades and the Fallbacks of the
 // Paths of the node since it started in place of the ones before: the client sends them in one Telemetry message after
-// each Hello once they were set, and whenever they changed, at most every CONTROL_PATH_REPORT ms. WritePaths writes that
-// message when it is due, as the client does on its stream.
+// each Hello once they were set, whenever they changed, at most every CONTROL_PATH_REPORT ms, and again every
+// CONTROL_PATH_REFRESH ms while they stay the same, as the controller drops a counter that its node did not report for a
+// while (5 minutes). WritePaths writes that message when it is due, as the client does on its stream.
 CONTROL_PATHS *ControlNewPaths();
 void ControlFreePaths(CONTROL_PATHS *p);
 void ControlSetPaths(CONTROL_PATHS *p, UINT64 upgrades, UINT64 fallbacks);

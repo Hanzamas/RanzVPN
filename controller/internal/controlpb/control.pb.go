@@ -4614,7 +4614,9 @@ type Telemetry struct {
 	// changed, and absent from the others. 7 is the groups of SDN-87 (#386), so the peering is 8.
 	Peering *PeeringReport `protobuf:"bytes,8,opt,name=peering,proto3" json:"peering,omitempty"`
 	// The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), absent while
-	// its peer layer does not run
+	// its peer layer does not run. The node lists them in a summary of their own after each Hello,
+	// whenever they change and again every 30 s while they stay the same, as the controller drops a
+	// counter that its node stopped listing.
 	Paths         *PathCounters `protobuf:"bytes,9,opt,name=paths,proto3" json:"paths,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

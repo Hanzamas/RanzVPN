@@ -9,7 +9,9 @@
 //   relay role on the public side, and stun-1, a STUN server there, is one that no Node is told of.
 // - node-c joins later, behind a symmetric NAT whose home gateway grants port mappings (the simulated gateway of homegw.c,
 //   which libplum finds with SSDP on the loopback interfaces of the host and whose mapping is a port forward of the NAT).
-//   The setting PortMapping of node-c is 1; node-a and node-b have none, so their port mapping is off.
+//   The setting PortMapping of node-c is 1; node-a and node-b have none, so their port mapping is off. node-c runs on a data
+//   transport of its own, so that no stream between it and another Node connects, as through a firewall that lets UDP alone
+//   through.
 // - The Controller is a stand-in of this file on the control stream of each Node, as in relaypathtest.c: the Updates of the
 //   desired state of each Node, and the Signals of the Nodes, which it carries to the Node they name. It keeps the Upgrades
 //   and the Fallbacks that each Node reports in its Telemetry.
@@ -27,11 +29,15 @@
 //    no datagram at all to stun-1.
 // d. Fallback: the NAT of node-a drops its mappings, as a NAT that restarts does. Consent freshness fails the direct path at
 //    both ends, which fall back to relay-1, a Fallback each, and the packets go on there in the same peer session.
-// e. Port mapping: the gateway was asked nothing while node-a and node-b ran with port mapping off. node-c joins with it on:
-//    libplum gets a public port from the gateway, node-c offers it first among its candidates, and node-b reaches node-c
-//    directly at that port.
+// e. Port mapping: the gateway was asked nothing while node-a and node-b ran with port mapping off. node-c joins with it on,
+//    as the peer of node-b: libplum gets a public port from the gateway, node-c offers it first among its candidates, and
+//    node-b reaches node-c directly at that port.
 // f. Export: the state of each Node, as its admin pipe answers it and ranz node state prints it, and the Telemetry that it
-//    reports to the stand-in of the Controller, which the Controller exports, hold its Upgrades and Fallbacks.
+//    reports to the stand-in of the Controller, which the Controller exports, hold its Upgrades and Fallbacks. Each Node
+//    reports them again while they stay the same, as the Controller drops a counter that its node does not report again.
+// g. A failed dial: node-a and node-c become peers, and the one of the lower static key names an endpoint, so the other one
+//    dials it and is dialled by no Node. That dial fails, as no stream reaches node-c. The Node whose dial failed offers the
+//    datagram path although its key is the higher one, as its peer cannot tell that the pair needs it, and the pair takes it.
 // Print "DIRECTPATH TEST OK" only when every check passes.
 
 #include "testlist.h"
@@ -143,6 +149,8 @@ typedef struct DIRECTPATH_LINK
 	volatile LONG Reports;					// The Telemetry messages with the Paths of the Node that it took
 	volatile LONG64 Upgrades;				// ... the Upgrades of the last of them
 	volatile LONG64 Fallbacks;				// ... and its Fallbacks
+	volatile LONG Refreshes;				// ... the ones of them with the counts of the report before on their stream
+	volatile LONG64 Gap;					// ... and the longest time from the report before to such a one (ms)
 } DIRECTPATH_LINK;
 
 // One stream that the stand-in took, and its thread
@@ -155,6 +163,10 @@ typedef struct DIRECTPATH_STREAM
 	UINT FrameSize;							// ... its bytes read so far
 	UCHAR *Out;								// The frame being written
 	ranz_control_v1_ControlMessage *Message;	// The message read last, or written
+	bool HasPaths;							// The Node reported its Paths on the stream: the counts of the last report ...
+	UINT64 PathUpgrades;					// ...
+	UINT64 PathFallbacks;					// ...
+	UINT64 PathsAt;							// ... and when the stand-in took it (Tick64)
 } DIRECTPATH_STREAM;
 
 // The state of the test
@@ -186,8 +198,10 @@ typedef struct DIRECTPATH_CTX
 	volatile LONG64 ToStun;					// The datagrams of any kind to stun-1
 	volatile LONG64 RelayRecords;			// The records of peer sessions on the links of node-a and node-b with relay-1
 
-	// The transports: the data streams between the Nodes, which none dials, and the control streams to the stand-in
+	// The transports: the data streams between node-a and node-b, which neither dials; the one of node-c alone, so that no stream
+	// between it and another Node connects, of which only the dial of step g tries one; and the control streams to the stand-in
 	TRANSPORT *Data;
+	TRANSPORT *Island;
 	TRANSPORT *Control;
 
 	// The stand-in of the Controller
@@ -722,11 +736,47 @@ static void DirectPathAddress(ranz_control_v1_Address *a, UINT i)
 	a->prefix.length = 10;
 }
 
+// The Node of the lower static key of node-a and node-c, which names an endpoint from Generation 3 (step g)
+static UINT DirectPathLower(DIRECTPATH_CTX *ctx)
+{
+	return (Cmp(ctx->Nodes[DIRECTPATH_A].Key.Public, ctx->Nodes[DIRECTPATH_C].Key.Public, PEER_KEY_SIZE) < 0 ? DIRECTPATH_A : DIRECTPATH_C);
+}
+
+// Whether node j is a peer of node i in Generation g: node-a and node-b in every one, node-b and node-c from Generation 2, and
+// node-a and node-c from Generation 3
+static bool DirectPathPeers(UINT i, UINT j, UINT64 g)
+{
+	if (i == j)
+	{
+		return false;
+	}
+	if (i != DIRECTPATH_C && j != DIRECTPATH_C)
+	{
+		return true;
+	}
+
+	return (i == DIRECTPATH_B || j == DIRECTPATH_B ? g >= 2 : g >= 3);
+}
+
+// The endpoint that node i names from Generation 3 when its key is the lower one of node-a and node-c, into e: TLS at port 443
+// of the public address of its NAT, which forwards no stream to it
+static void DirectPathEndpoint(DIRECTPATH_CTX *ctx, UINT i, ranz_control_v1_Endpoint *e)
+{
+	PEER_ADDR addr = ctx->Nodes[i].Public;
+
+	addr.Port = 443;
+	e->transport = ranz_control_v1_Transport_TRANSPORT_TLS;
+	PeerAddrToStr(e->address, sizeof(e->address), &addr);
+}
+
 // The desired state of node i at Generation g, as an Update of the stand-in, into m: the Node with its tag and its address,
 // VRF default with its policy, its peers, relay-1 and the rule allow-all. In Generation 1 node-a and node-b are the peers of
-// each other; from Generation 2 node-c is a peer of both, and they are its peers.
+// each other; from Generation 2 node-b and node-c are too; from Generation 3 node-a and node-c are too, and the one of them of
+// the lower key names an endpoint, which its Peer object lists at the others.
 static void DirectPathState(DIRECTPATH_CTX *ctx, UINT i, UINT64 g, ranz_control_v1_ControlMessage *m)
 {
+	UINT lower = DirectPathLower(ctx);
+
 	Zero(m, sizeof(ranz_control_v1_ControlMessage));
 	m->which_body = ranz_control_v1_ControlMessage_update_tag;
 
@@ -741,6 +791,11 @@ static void DirectPathState(DIRECTPATH_CTX *ctx, UINT i, UINT64 g, ranz_control_
 	StrCpy(node->tags[0], sizeof(node->tags[0]), directpath_tags[i]);
 	node->addresses_count = 1;
 	DirectPathAddress(&node->addresses[0], i);
+	if (g >= 3 && i == lower)
+	{
+		node->endpoints_count = 1;
+		DirectPathEndpoint(ctx, i, &node->endpoints[0]);
+	}
 
 	o = &u->set[u->set_count++];
 	o->which_kind = ranz_control_v1_Object_vrf_tag;
@@ -751,7 +806,7 @@ static void DirectPathState(DIRECTPATH_CTX *ctx, UINT i, UINT64 g, ranz_control_
 
 	for (UINT j = 0;j < DIRECTPATH_NUM_NODES;j++)
 	{
-		if (j == i || (j == DIRECTPATH_C && g < 2))
+		if (DirectPathPeers(i, j, g) == false)
 		{
 			continue;
 		}
@@ -768,6 +823,11 @@ static void DirectPathState(DIRECTPATH_CTX *ctx, UINT i, UINT64 g, ranz_control_
 		DirectPathAddress(&p->addresses[0], j);
 		p->tags_count = 1;
 		StrCpy(p->tags[0], sizeof(p->tags[0]), directpath_tags[j]);
+		if (g >= 3 && j == lower)
+		{
+			p->endpoints_count = 1;
+			DirectPathEndpoint(ctx, j, &p->endpoints[0]);
+		}
 	}
 
 	o = &u->set[u->set_count++];
@@ -838,8 +898,25 @@ static void DirectPathTake(DIRECTPATH_CTX *ctx, DIRECTPATH_STREAM *t, UINT i)
 	case ranz_control_v1_ControlMessage_telemetry_tag:
 		if (t->Message->body.telemetry.has_paths)
 		{
-			InterlockedExchange64(&l->Upgrades, (LONG64)t->Message->body.telemetry.paths.upgrades);
-			InterlockedExchange64(&l->Fallbacks, (LONG64)t->Message->body.telemetry.paths.fallbacks);
+			const ranz_control_v1_PathCounters *pc = &t->Message->body.telemetry.paths;
+			UINT64 now = Tick64();
+
+			// The counts of the report before on the stream: the Node sent them again while they stayed the same
+			if (t->HasPaths && pc->upgrades == t->PathUpgrades && pc->fallbacks == t->PathFallbacks)
+			{
+				if ((LONG64)(now - t->PathsAt) > InterlockedCompareExchange64(&l->Gap, 0, 0))
+				{
+					InterlockedExchange64(&l->Gap, (LONG64)(now - t->PathsAt));
+				}
+				InterlockedIncrement(&l->Refreshes);
+			}
+			t->HasPaths = true;
+			t->PathUpgrades = pc->upgrades;
+			t->PathFallbacks = pc->fallbacks;
+			t->PathsAt = now;
+
+			InterlockedExchange64(&l->Upgrades, (LONG64)pc->upgrades);
+			InterlockedExchange64(&l->Fallbacks, (LONG64)pc->fallbacks);
 			InterlockedIncrement(&l->Reports);
 		}
 		break;
@@ -1044,7 +1121,8 @@ static void DirectPathDeleteFiles(wchar_t *dir)
 	DeleteDirW(dir);
 }
 
-// The data transport dials a peer only at an endpoint, and no Node of the test names one
+// The data transport dials a peer only at an endpoint, and only one Node of the test names one: the one of the lower key of
+// node-a and node-c, from Generation 3 (step g)
 static bool DirectPathDialable(NODE *n, void *param, const char *name, const struct CONTROL_ENDPOINT *endpoints, UINT num)
 {
 	return (num != 0);
@@ -1065,7 +1143,8 @@ static void DirectPathAttach(NODE *n, void *param, PEER_AGENT *agent)
 }
 
 // Start node i: its data directory, with the setting PortMapping for node-c, its Node, and its overlay with the control
-// stream to the stand-in, the data transport, the fake adapter of its host and the network of the simulator for its agent
+// stream to the stand-in, the data transport, node-c one of its own, the fake adapter of its host and the network of the
+// simulator for its agent
 static bool DirectPathStartNode(DIRECTPATH_CTX *ctx, UINT i)
 {
 	DIRECTPATH_NODE *t = &ctx->Nodes[i];
@@ -1082,7 +1161,7 @@ static bool DirectPathStartNode(DIRECTPATH_CTX *ctx, UINT i)
 	c.Control = ctx->Control;
 	StrCpy(c.Controller, sizeof(c.Controller), DIRECTPATH_CONTROLLER);
 	Copy(c.ControllerKey, ctx->ControllerKey.Public, PEER_KEY_SIZE);
-	c.Data = ctx->Data;
+	c.Data = (i == DIRECTPATH_C ? ctx->Island : ctx->Data);
 	c.Key = &t->Key;
 	c.Adapter = DirectPathAdapter;
 	c.AdapterParam = t;
@@ -1449,15 +1528,15 @@ static void DirectPathPortMapping(DIRECTPATH_CTX *ctx)
 		"port mapping of node-a %s, of node-b %s; the gateway answered %u M-SEARCH and %u HTTP requests; a mapped candidate %u", NodeAgentPortMapName(st_a.PortMap),
 		NodeAgentPortMapName(st_b.PortMap), searches, requests, (UINT)(no_mapped == false));
 
-	// node-c joins: node-a and node-b learn of it first, so that its Signals find it among their peers
-	bool acked = DirectPathApply(ctx, DIRECTPATH_A, 2) && DirectPathApply(ctx, DIRECTPATH_B, 2);
-	DirectPathCheck(ctx, acked, "node-a and node-b apply Generation 2, with node-c as their peer", "not acknowledged");
+	// node-c joins as the peer of node-b, which learns of it first, so that its Signals find it among the peers of node-b
+	bool acked = DirectPathApply(ctx, DIRECTPATH_B, 2);
+	DirectPathCheck(ctx, acked, "node-b applies Generation 2, with node-c as its peer", "not acknowledged");
 	if (DirectPathStartNode(ctx, DIRECTPATH_C) == false)
 	{
 		return;
 	}
 	acked = DirectPathWaitHello(ctx, DIRECTPATH_C) && DirectPathApply(ctx, DIRECTPATH_C, 2);
-	if (DirectPathCheck(ctx, acked, "node-c says Hello and applies Generation 2, with node-a and node-b as its peers", "not acknowledged") == false)
+	if (DirectPathCheck(ctx, acked, "node-c says Hello and applies Generation 2, with node-b as its peer", "not acknowledged") == false)
 	{
 		return;
 	}
@@ -1499,7 +1578,7 @@ static void DirectPathPortMapping(DIRECTPATH_CTX *ctx)
 }
 
 // f. Export: the Upgrades and the Fallbacks of each Node in its state, as ranz node state prints it, and in the Telemetry
-// that it reported to the stand-in of the Controller
+// that it reported to the stand-in of the Controller, which it reports again while they stay the same
 static void DirectPathExport(DIRECTPATH_CTX *ctx)
 {
 	char *reply = ZeroMalloc(NODE_ADMIN_REPLY);
@@ -1547,6 +1626,106 @@ static void DirectPathExport(DIRECTPATH_CTX *ctx)
 	}
 
 	Free(reply);
+
+	// The counts go again while they stay the same, at the latest CONTROL_PATH_REFRESH ms after the report before: the
+	// Controller drops a counter that its node did not report for a while, and the counts of a Node whose pairs keep their
+	// paths stay the same for hours
+	bool refreshed = false;
+	for (UINT64 end = Tick64() + CONTROL_PATH_REFRESH + DIRECTPATH_BOUND;Tick64() < end && refreshed == false;SleepThread(DIRECTPATH_POLL))
+	{
+		refreshed = true;
+		for (UINT i = 0;i < DIRECTPATH_NUM_NODES;i++)
+		{
+			refreshed = refreshed && (ctx->Nodes[i].Node == NULL || InterlockedCompareExchange(&ctx->Links[i].Refreshes, 0, 0) != 0);
+		}
+	}
+
+	for (UINT i = 0;i < DIRECTPATH_NUM_NODES;i++)
+	{
+		DIRECTPATH_LINK *l = &ctx->Links[i];
+		LONG refreshes = InterlockedCompareExchange(&l->Refreshes, 0, 0);
+		LONG64 gap = InterlockedCompareExchange64(&l->Gap, 0, 0);
+		char what[MAX_SIZE];
+
+		if (ctx->Nodes[i].Node == NULL)
+		{
+			continue;
+		}
+
+		Print("  [INFO] %s reported the same counts again %ld times, the longest %I64d ms after the report before\n", ctx->Nodes[i].Name, refreshes, gap);
+		Format(what, sizeof(what), "%s reports its Upgrades and Fallbacks again while they stay the same, within %u ms of the report before, so the Controller, which drops a counter that its node did not report for 5 minutes, keeps them",
+			ctx->Nodes[i].Name, (UINT)(CONTROL_PATH_REFRESH + DIRECTPATH_BOUND));
+		DirectPathCheck(ctx, refreshes != 0 && gap <= CONTROL_PATH_REFRESH + DIRECTPATH_BOUND, what, "%ld reports of the same counts, the longest %I64d ms after the one before", refreshes, gap);
+	}
+}
+
+// Whether i and j each reach the other on a Path within timeout ms, through relay-1 or on the direct path
+static bool DirectPathWaitAnyPath(DIRECTPATH_CTX *ctx, UINT i, UINT j, UINT timeout, PEER_STATUS *si, PEER_STATUS *sj)
+{
+	for (UINT64 end = Tick64() + timeout;Tick64() < end;SleepThread(DIRECTPATH_POLL))
+	{
+		if (DirectPathStatus(ctx, i, j, si) && DirectPathStatus(ctx, j, i, sj) && si->Path != PEER_PATH_NONE && sj->Path != PEER_PATH_NONE)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// g. A failed dial: node-a and node-c become peers, and the one of the lower key names an endpoint, so the other one dials it,
+// while it dials no Node that names none. The dial fails, as no stream reaches node-c. The Node whose dial failed offers the
+// datagram path although its key is the higher one, as its peer cannot tell that the pair needs it, and the pair takes it.
+static void DirectPathDialFailed(DIRECTPATH_CTX *ctx)
+{
+	NODE_OVERLAY_STATUS ox_before, oy_before, ox, oy;
+	NODE_AGENT_STATUS ax_before, ax;
+	NODE_OVERLAY_SESSION s;
+	PEER_STATUS xy, yx;
+	char what[MAX_SIZE];
+	char words[MAX_SIZE * 2];
+	UINT y = DirectPathLower(ctx);
+	UINT x = (y == DIRECTPATH_A ? DIRECTPATH_C : DIRECTPATH_A);
+	char *nx = ctx->Nodes[x].Name;
+	char *ny = ctx->Nodes[y].Name;
+
+	Print("[g. a failed dial: node-a and node-c become peers, %s names an endpoint, and the dial of %s, the Node of the higher key, fails]\n", ny, nx);
+
+	NodeOverlayGetStatus(ctx->Nodes[x].Node, &ox_before);
+	NodeOverlayGetStatus(ctx->Nodes[y].Node, &oy_before);
+	NodeAgentGetStatus(ctx->Nodes[x].Node, &ax_before);
+
+	// The Node of the lower key learns of the other first, so that the offer of the other finds it among its peers
+	bool acked = DirectPathApply(ctx, y, 3) && DirectPathApply(ctx, x, 3);
+	Format(what, sizeof(what), "%s and %s apply Generation 3: they are peers now, and %s names an endpoint, which its Peer object at %s lists", ny, nx, ny, nx);
+	if (DirectPathCheck(ctx, acked, what, "not acknowledged") == false)
+	{
+		return;
+	}
+
+	Zero(&xy, sizeof(xy));
+	Zero(&yx, sizeof(yx));
+	UINT64 t0 = Tick64();
+	bool up = DirectPathWaitAnyPath(ctx, x, y, DIRECTPATH_BOUND, &xy, &yx);
+	Print("  [INFO] %s reaches %s on the %s path %I64u ms after Generation 3\n", nx, ny, DirectPathPathName(xy.Path), Tick64() - t0);
+
+	NodeOverlayGetStatus(ctx->Nodes[x].Node, &ox);
+	NodeOverlayGetStatus(ctx->Nodes[y].Node, &oy);
+	NodeAgentGetStatus(ctx->Nodes[x].Node, &ax);
+	DirectPathSession(ctx, x, ny, &s);
+	Format(what, sizeof(what), "%s dialled %s at its endpoint and the dial failed, while %s, which dials no Node without one, dialled nothing: neither can tell the other that the pair needs the datagram path",
+		nx, ny, ny);
+	DirectPathCheck(ctx, ox.Dials > ox_before.Dials && oy.Dials == oy_before.Dials && s.Up == false, what, "dials of %s %I64u, of %s %I64u; a stream session up %u", nx, ox.Dials - ox_before.Dials,
+		ny, oy.Dials - oy_before.Dials, (UINT)s.Up);
+
+	Format(what, sizeof(what), "%s, whose key is the higher one, offered the datagram path as its dial failed, and the pair took it", nx);
+	DirectPathCheck(ctx, up && ax.SignalsSent > ax_before.SignalsSent, what, "Signals of %s %I64u; path of %s to %s %s, of %s to %s %s", nx, ax.SignalsSent - ax_before.SignalsSent, nx, ny,
+		DirectPathPathName(xy.Path), ny, nx, DirectPathPathName(yx.Path));
+
+	bool echo = DirectPathEcho(ctx, x, y, 45000);
+	DirectPathEchoWords(ctx, x, y, words, sizeof(words));
+	Format(what, sizeof(what), "A packet of the host of %s reaches the host of %s on that path and comes back", nx, ny);
+	DirectPathCheck(ctx, echo, what, "%s", words);
 }
 
 //
@@ -1640,8 +1819,9 @@ static bool DirectPathStart(DIRECTPATH_CTX *ctx)
 	ctx->PathConfig.BindInterval = DIRECTPATH_BIND;
 	ctx->PathConfig.BindRetry = DIRECTPATH_BIND_RETRY;
 
-	// The transports, and the stand-in of the Controller, which listens on the bound one
+	// The transports, node-c with one of its own, and the stand-in of the Controller, which listens on the bound one
 	ctx->Data = TransportLoopbackNew("loopback", 0, false);
+	ctx->Island = TransportLoopbackNew("island", 0, false);
 	ctx->Control = TransportLoopbackNew("control", 0, true);
 	ctx->Listener = (ctx->Control != NULL ? TransportListen(ctx->Control, DIRECTPATH_CONTROLLER) : NULL);
 	for (UINT i = 0;i < DIRECTPATH_NUM_NODES;i++)
@@ -1649,7 +1829,7 @@ static bool DirectPathStart(DIRECTPATH_CTX *ctx)
 		ctx->Links[i].Out = ControlNewSignals();
 		ok = (ctx->Links[i].Out != NULL) && ok;
 	}
-	ctx->Acceptor = (ok && ctx->Data != NULL && ctx->Listener != NULL ? CreateThread(NULL, 0, DirectPathAccept, ctx, 0, NULL) : NULL);
+	ctx->Acceptor = (ok && ctx->Data != NULL && ctx->Island != NULL && ctx->Listener != NULL ? CreateThread(NULL, 0, DirectPathAccept, ctx, 0, NULL) : NULL);
 	if (DirectPathCheck(ctx, ctx->Acceptor != NULL, "The stand-in of the Controller listens on the bound loopback transport of the control streams", "it could not start") == false)
 	{
 		return false;
@@ -1731,6 +1911,10 @@ static void DirectPathStop(DIRECTPATH_CTX *ctx)
 	{
 		TransportLoopbackFree(ctx->Data);
 	}
+	if (ctx->Island != NULL)
+	{
+		TransportLoopbackFree(ctx->Island);
+	}
 	if (ctx->Control != NULL)
 	{
 		TransportLoopbackFree(ctx->Control);
@@ -1745,7 +1929,7 @@ static void DirectPathStop(DIRECTPATH_CTX *ctx)
 }
 
 // directpath: a pair of Nodes behind cone NATs moves from the Relay to the direct path that ICE finds, and back
-RANZ_TEST_TAGS("directpath", directpath_test, "core", "Direct path of the new core (CORE-S5-6): a pair of Nodes behind cone NATs of the simulator moves from a Relay to the direct path that ICE validates in the same peer session, with no STUN server, falls back to the Relay when the NAT drops its mapping, and a Node with port mapping on offers the public port that a home gateway grants first.");
+RANZ_TEST_TAGS("directpath", directpath_test, "core", "Direct path of the new core (CORE-S5-6): a pair of Nodes behind cone NATs of the simulator moves from a Relay to the direct path that ICE validates in the same peer session, with no STUN server, falls back to the Relay when the NAT drops its mapping, and a Node with port mapping on offers the public port that a home gateway grants first; each Node reports its Upgrades and Fallbacks again while they stay the same, and a pair whose one dial failed takes the datagram path.");
 void directpath_test(UINT num, char **arg)
 {
 	DIRECTPATH_CTX *ctx = ZeroMalloc(sizeof(DIRECTPATH_CTX));
@@ -1762,6 +1946,10 @@ void directpath_test(UINT num, char **arg)
 		DirectPathFallback(ctx, &session);
 		DirectPathPortMapping(ctx);
 		DirectPathExport(ctx);
+		if (ctx->Nodes[DIRECTPATH_C].Node != NULL)
+		{
+			DirectPathDialFailed(ctx);
+		}
 	}
 
 	DirectPathStop(ctx);

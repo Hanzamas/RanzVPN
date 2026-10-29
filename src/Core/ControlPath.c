@@ -4,7 +4,9 @@
 // Fallbacks, each a direct path whose consent freshness failed, so that its pair went back to the Relay. The owner sets the
 // counts (ControlSetPaths), and the client sends them in one Telemetry message after each Hello once they were set, so a
 // controller that the node reaches anew has them, and whenever they changed, at most every CONTROL_PATH_REPORT ms. The
-// controller exports them.
+// controller exports them, and drops a counter that its node did not report for a while (telemetry.DefaultStale, 5 minutes),
+// as a counter that the node no longer has: so the client sends the counts again every CONTROL_PATH_REFRESH ms while they
+// stay the same, as they do for hours on a node whose pairs keep their paths.
 
 #include "Core/ControlInternal.h"
 
@@ -108,8 +110,9 @@ static bool ControlPathsSend(const ranz_control_v1_Telemetry *m, TRANSPORT_STREA
 	return ok;
 }
 
-// Write the counts as one Telemetry message when they changed since the client sent them and CONTROL_PATH_REPORT ms passed
-// since then, on the thread of the client: false when the write failed, which ends the stream
+// Write the counts as one Telemetry message, on the thread of the client, once they were set: on a stream that has none of
+// them yet, when they changed since the client sent them and CONTROL_PATH_REPORT ms passed since then, and when they stayed
+// the same for CONTROL_PATH_REFRESH ms. False when the write failed, which ends the stream.
 bool ControlWritePaths(CONTROL_PATHS *p, TRANSPORT_STREAM *s) {
 	bool due = false;
 	UINT64 now = GetTickCount64();
@@ -118,7 +121,7 @@ bool ControlWritePaths(CONTROL_PATHS *p, TRANSPORT_STREAM *s) {
 		return true;
 
 	AcquireSRWLockExclusive(&p->Lock);
-	if (p->Changed && (p->Sent == 0 || now - p->Sent >= CONTROL_PATH_REPORT)) {
+	if (p->Set && (p->Sent == 0 || now - p->Sent >= (p->Changed ? CONTROL_PATH_REPORT : CONTROL_PATH_REFRESH))) {
 		ranz_control_v1_Telemetry *m = p->Message;
 
 		ZeroMemory(m, sizeof(ranz_control_v1_Telemetry));
