@@ -230,6 +230,9 @@ type Controller struct {
 	// The WireGuard ends of the Devices that their gateways reported (devices.go)
 	dev deviceState
 
+	// The sealed PresharedKeys of the Devices (devicekeys.go)
+	dkeys deviceKeys
+
 	// The certificate of the TLS port and the fingerprints that the nodes get of it (certificate.go)
 	certs *certificateState
 
@@ -245,6 +248,9 @@ type Controller struct {
 	// The live operations of operators: the banned users and the Operations that wait for a node
 	// (operations.go, bans.go; SDN-50)
 	live liveState
+
+	// The BGP peering of the standard mode that the nodes reported (peeringreport.go; SDN-77)
+	peering peeringState
 
 	// The keys that the nodes reported about themselves, which the mimic parts of the states are compiled with
 	// (mimic.go; SDN-94)
@@ -358,6 +364,10 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		return nil, err
 	}
 	if c.caps, err = c.store.LoadCapabilities(ctx); err != nil {
+		return nil, err
+	}
+	// The sealed PresharedKeys of the Devices, which the compile below puts into the states of their gateways
+	if err := c.loadDeviceKeys(ctx, in); err != nil {
 		return nil, err
 	}
 	// The keys that the nodes reported about themselves, which the first compile below uses (mimic.go; SDN-94)
@@ -710,6 +720,8 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	}
 	// The TLS fingerprints of the certificate that the controller serves (certificate.go; SDN-92)
 	c.withFingerprints(states)
+	// The sealed PresharedKeys of the Devices, in the states of their gateways (devicekeys.go; SDN-82)
+	desired.WithPresharedKeys(states, c.dkeys.sealed)
 	// The settings of the mimic servers and the links of their clients (mimic.go; SDN-94)
 	if err := c.withMimic(next, states); err != nil {
 		return compiled{}, err
@@ -771,6 +783,8 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	c.dropPasswords(sctx, next)
 	c.dropBans(sctx, next)
 	c.dropPins(sctx, next)
+	// The PresharedKeys of the Devices that the change removed (devicekeys.go)
+	c.dropDeviceKeys(sctx, next)
 
 	c.intent, c.lic, c.force = next, cp.lic, force
 	if m := members(next); !proto.Equal(m, c.members) {
@@ -892,6 +906,8 @@ func checkFeatures(doc intent.Document, st licence.Status) error {
 			problems = append(problems, fmt.Errorf("%s %q: %s is an Enterprise feature, and the licence in force is %s", r.Kind, r.Name, f.Name(), st.Tier))
 		}
 	}
+	// The BGP peering of the Nodes of a VRF (peering.go; SDN-77)
+	problems = append(problems, peeringFeatures(doc, st)...)
 	if len(problems) > 0 {
 		return fmt.Errorf("%w:\n%w", licence.ErrRefused, errors.Join(problems...))
 	}
@@ -1332,7 +1348,8 @@ func (c *Controller) nextUpdate(s *stream) *controlpb.Update {
 		u = desired.Full(n.state, n.gen)
 	}
 	s.inflight, s.sent = n.gen, n.state
-	return u
+	// The states hold the PresharedKeys of the Devices sealed: the gateway gets them opened (devicekeys.go)
+	return c.openDeviceKeys(u)
 }
 
 // nextMembers returns the Controllers message the node of s lacks: none for a node of schema

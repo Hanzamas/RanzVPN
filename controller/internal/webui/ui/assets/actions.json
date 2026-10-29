@@ -14,6 +14,7 @@
     {"name": "resources", "method": "GET", "path": "/api/v1/resources", "role": "viewer"},
     {"name": "nodes", "method": "GET", "path": "/api/v1/nodes", "role": "viewer"},
     {"name": "devices", "method": "GET", "path": "/api/v1/devices", "role": "viewer"},
+    {"name": "createDevice", "method": "POST", "path": "/api/v1/devices", "role": "operator"},
     {"name": "apply", "method": "POST", "path": "/api/v1/apply", "role": "operator"},
     {"name": "deleteResource", "method": "DELETE", "path": "/api/v1/resources/{kind}/{name}", "role": "operator"},
     {"name": "connect", "method": "POST", "path": "/api/v1/connect", "role": "operator"},
