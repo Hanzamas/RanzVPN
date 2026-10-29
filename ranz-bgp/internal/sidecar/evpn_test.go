@@ -413,23 +413,34 @@ func (n *testNode) hasEVPN(num int) bool {
 	return found >= num
 }
 
-// A start whose evpn is not one is answered with an error, and the session ends.
+// A start whose evpn is not one, or that has an address too (the peering of the standard mode), is answered with an
+// error, and the session ends.
 func TestEVPNBadStart(t *testing.T) {
-	node := startNode(t, context.Background())
-	e := testEVPN()
-	e.VRFs[0].VNI = 0
-	node.send(Message{Type: TypeStart, ASN: 65001, RouterID: "192.0.2.1", ListenPort: -1, Peers: []Peer{{Address: "192.0.2.2", ASN: 65002}}, EVPN: e})
-	m := node.wait("an error for the evpn", false, isType(TypeError))
-	if !strings.Contains(m.Error, "evpn: vrf 101") {
-		t.Errorf("the error: %+v", m)
+	bad := testEVPN()
+	bad.VRFs[0].VNI = 0
+	cases := []struct {
+		name string
+		m    Message
+		want string
+	}{
+		{"a VRF without a VNI", Message{Type: TypeStart, ASN: 65001, RouterID: "192.0.2.1", ListenPort: -1, Peers: []Peer{{Address: "192.0.2.2", ASN: 65002}}, EVPN: bad}, "evpn: vrf 101"},
+		{"evpn with an address", Message{Type: TypeStart, ASN: 65001, RouterID: "192.0.2.1", ListenPort: -1, Address: "192.0.2.1", EVPN: testEVPN()}, "a start has one of them"},
 	}
-	select {
-	case err := <-node.done:
-		if err == nil {
-			t.Error("the session ended without an error")
+	for _, c := range cases {
+		node := startNode(t, context.Background())
+		node.send(c.m)
+		m := node.wait("an error for "+c.name, false, isType(TypeError))
+		if !strings.Contains(m.Error, c.want) {
+			t.Errorf("%s: the error: %+v", c.name, m)
 		}
-	case <-time.After(waitTimeout):
-		t.Fatal("the session did not end")
+		select {
+		case err := <-node.done:
+			if err == nil {
+				t.Errorf("%s: the session ended without an error", c.name)
+			}
+		case <-time.After(waitTimeout):
+			t.Fatalf("%s: the session did not end", c.name)
+		}
 	}
 }
 
@@ -438,7 +449,7 @@ func TestEVPNBadStart(t *testing.T) {
 func TestEVPNPeerFamilies(t *testing.T) {
 	families := func(s *session) []string {
 		var out []string
-		for _, a := range s.withEVPN(peerRequest(peerConfig{address: netip.MustParseAddr("192.0.2.2"), asn: 65002})).AfiSafis {
+		for _, a := range s.withEVPN(s.peerRequest(peerConfig{address: netip.MustParseAddr("192.0.2.2"), asn: 65002})).AfiSafis {
 			out = append(out, a.Config.Family.Afi.String()+"/"+a.Config.Family.Safi.String())
 		}
 		return out

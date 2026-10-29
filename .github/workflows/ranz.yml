@@ -73,8 +73,10 @@
 # filter. A pull request runs them when it changes a path that they read: controller/ and
 # ranz-bgp/, the two trees of the module; go.mod and go.sum; proto/, the schema that go generate
 # and the nanopb round trip read; tests/control/, the round trip program; tests/explain/, the
-# scenarios of the explain conformance that the tests of the controller read; .gitattributes, which
-# sets the line endings of the checkout; this file, the plan (ci-plan.yml and ci-plan.py),
+# scenarios of the explain conformance that the tests of the controller read; docs/clients.md, the
+# clients guide that a test of controller/cmd/ranz keeps in step with the product (SDN-82, #377);
+# .gitattributes, which sets the line endings of the checkout; this file, the plan (ci-plan.yml and
+# ci-plan.py),
 # .github/scripts/controller-service.ps1 with the .github/scripts/controller-hostfiles.ps1 that it
 # runs, .github/scripts/ranz-tools.ps1, the binary hardening gate
 # .github/scripts/binary-hardening.ps1, which windows.yml runs too, the fuzz targets, coverage
@@ -102,6 +104,7 @@ on:
     - 'tests/control/**'
     - 'tests/explain/**'
     - '.gitattributes'
+    - 'docs/clients.md'
     - '.github/workflows/ranz.yml'
     - '.github/workflows/ci-plan.yml'
     - '.github/scripts/ci-plan.py'
@@ -164,7 +167,10 @@ jobs:
   linux:
     name: ranz (Linux)
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # The tests with the race detector take about 8 minutes, and the fuzz step runs each target of fuzz-targets.txt for 20 s,
+    # one after the other, about 14 minutes now: a job of 25 minutes was cancelled in its static analysis, the last step,
+    # with every step before it done
+    timeout-minutes: 40
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5

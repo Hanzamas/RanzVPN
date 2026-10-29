@@ -170,7 +170,7 @@ func TestRolesLimitTheUI(t *testing.T) {
 				}
 			}
 		}
-		for _, name := range []string{"apply", "deleteResource", "confirmRevision", "rollback", "diff", "installLicence", "tokens", "createToken", "deleteToken", "diagnosticsBundle"} {
+		for _, name := range []string{"apply", "deleteResource", "confirmRevision", "rollback", "diff", "installLicence", "tokens", "createToken", "deleteToken", "diagnosticsBundle", "createDevice"} {
 			if !seen[name] && (name != "deleteToken" || role == rbac.Admin) {
 				t.Errorf("%s: no page has a control of the action %s", role, name)
 			}
@@ -428,6 +428,12 @@ func newHarness(t *testing.T) *harness {
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
 	}
+	// The sealing key of the host, which seals the PresharedKey of a Device that a page makes (SDN-82)
+	sealing, err := keys.GenerateSoft()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetSealer(keys.NewSealer(sealing), nil)
 	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key})
 	if err != nil {
 		t.Fatal(err)

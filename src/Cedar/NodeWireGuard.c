@@ -12,7 +12,9 @@
 //   only the holder of the static key can find it.
 // - The interface. A state in which the node is the gateway of a Device brings up one WireGuard interface with the
 //   requested GUID of the node's static key and VRF id 0, which no VRF has (NodeVrfAdapterGuid): it listens on the UDP
-//   port of the state, and each Device that it terminates is a peer of it whose allowed IPs are its addresses. Windows
+//   port of the state, and each Device that it terminates is a peer of it whose allowed IPs are its addresses, and whose
+//   PresharedKey is the one that its state carries, for a Device that has one (SDN-82, #377; a secret, wiped with the
+//   Devices of the state that goes, and never logged). Windows
 //   forwards between it and the Wintun adapter of the VRF of each Device (SDN-5): both have forwarding and the weak host
 //   model on, and the addresses of the Devices are routes through the WireGuard interface. A packet of a Device to an
 //   overlay host leaves the host through the adapter of its VRF, where the overlay takes it, judges it by the policy of
@@ -55,6 +57,7 @@ typedef BOOL(WINAPI WIREGUARD_GET_CONFIGURATION_FUNC)(WIREGUARD_ADAPTER_HANDLE a
 #define NODE_WG_INTERFACE_HAS_PORT      0x0004 // WIREGUARD_INTERFACE_HAS_LISTEN_PORT
 #define NODE_WG_INTERFACE_REPLACE_PEERS 0x0008 // WIREGUARD_INTERFACE_REPLACE_PEERS
 #define NODE_WG_PEER_HAS_PUBLIC_KEY     0x0001 // WIREGUARD_PEER_HAS_PUBLIC_KEY
+#define NODE_WG_PEER_HAS_PRESHARED_KEY  0x0002 // WIREGUARD_PEER_HAS_PRESHARED_KEY
 #define NODE_WG_PEER_REPLACE_ALLOWED    0x0020 // WIREGUARD_PEER_REPLACE_ALLOWED_IPS
 
 // WIREGUARD_ALLOWED_IP: an allowed IP of a peer; Flags is 0, which adds it
@@ -115,6 +118,9 @@ static UINT node_wg_error = 0;
 typedef struct NODE_WG_DEVICE {
 	char Name[CONTROL_NAME_SIZE];
 	UCHAR Key[NODE_WIREGUARD_KEY_SIZE];
+	// Its PresharedKey, when it has one: a secret that goes to the interface and is wiped when the Device goes
+	bool HasPreshared;
+	UCHAR Preshared[NODE_WIREGUARD_KEY_SIZE];
 	UINT VrfId;
 	UINT NumAddresses;
 	NODE_PREFIX Addresses[CONTROL_DEVICE_ADDRESSES];
@@ -378,6 +384,10 @@ static NODE_WG_INTERFACE *NodeWireGuardConfig(NODE_WIREGUARD *wg, DWORD *size) {
 
 		peer->Flags = NODE_WG_PEER_HAS_PUBLIC_KEY | NODE_WG_PEER_REPLACE_ALLOWED;
 		Copy(peer->PublicKey, d->Key, NODE_WIREGUARD_KEY_SIZE);
+		if (d->HasPreshared) {
+			peer->Flags |= NODE_WG_PEER_HAS_PRESHARED_KEY;
+			Copy(peer->PresharedKey, d->Preshared, NODE_WIREGUARD_KEY_SIZE);
+		}
 		peer->AllowedIPsCount = d->NumAddresses;
 		pos += (UINT)sizeof(NODE_WG_PEER);
 
@@ -411,6 +421,8 @@ static void NodeWireGuardDown(NODE_WIREGUARD *wg) {
 	wg->Isolation = NULL;
 	wg->Pairs = 0;
 
+	if (wg->Devices != NULL)
+		SecureZeroMemory(wg->Devices, sizeof(NODE_WG_DEVICE) * wg->NumDevices);
 	Free(wg->Devices);
 	wg->Devices = NULL;
 	wg->NumDevices = 0;
@@ -460,6 +472,8 @@ static bool NodeWireGuardUp(NODE_WIREGUARD *wg, const CONTROL_STATE *st) {
 
 // The Devices of the state st whose gateway the node is, into the list of the WireGuard end: their number
 static UINT NodeWireGuardDevices(NODE_WIREGUARD *wg, const CONTROL_STATE *st) {
+	if (wg->Devices != NULL)
+		SecureZeroMemory(wg->Devices, sizeof(NODE_WG_DEVICE) * wg->NumDevices);
 	Free(wg->Devices);
 	wg->Devices = ZeroMalloc(sizeof(NODE_WG_DEVICE) * MAX(st->NumDevices, 1));
 	wg->NumDevices = 0;
@@ -473,6 +487,9 @@ static UINT NodeWireGuardDevices(NODE_WIREGUARD *wg, const CONTROL_STATE *st) {
 
 		StrCpy(d->Name, sizeof(d->Name), cd->Name);
 		Copy(d->Key, cd->Key, NODE_WIREGUARD_KEY_SIZE);
+		d->HasPreshared = cd->HasPreshared;
+		if (cd->HasPreshared)
+			Copy(d->Preshared, cd->Preshared, NODE_WIREGUARD_KEY_SIZE);
 		d->VrfId = cd->VrfId;
 		for (UINT j = 0; j < cd->NumAddresses && j < CONTROL_DEVICE_ADDRESSES; j++) {
 			NODE_PREFIX *p = &d->Addresses[d->NumAddresses++];

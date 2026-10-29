@@ -32,9 +32,10 @@ func FuzzRead(f *testing.F) {
 				t.Fatal("Read returned a message without a type")
 			}
 			if m.Type == TypeStart {
+				// Only the peering of the standard mode, which has an address, may start without peers
 				cfg, err := parseStart(m)
-				if err == nil && len(cfg.peers) == 0 {
-					t.Fatalf("a start without peers is accepted: %+v", m)
+				if err == nil && len(cfg.peers) == 0 && !cfg.address.IsValid() {
+					t.Fatalf("a start without peers or an address is accepted: %+v", m)
 				}
 				if err == nil {
 					checkEVPN(t, m.EVPN, cfg.routerID)

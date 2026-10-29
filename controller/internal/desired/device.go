@@ -27,7 +27,8 @@ func devices(in intent.Intent, vrfs map[string]*controlpb.Vrf) map[string][]*con
 			continue
 		}
 		v := vrfs[nw.VRF]
-		obj := &controlpb.Device{Name: name, VrfId: v.GetId(), Tags: slices.Clone(d.Tags), Gateway: d.Gateway}
+		// The tags of the Device with the Groups of its owner (SDN-82)
+		obj := &controlpb.Device{Name: name, VrfId: v.GetId(), Tags: in.DeviceTags(name), Gateway: d.Gateway}
 		for _, family := range []int{4, 6} {
 			if p, ok := in.DeviceAddress(name, family); ok {
 				obj.Addresses = append(obj.Addresses, &controlpb.Address{Network: d.Network, VrfId: v.GetId(), Prefix: prefix(p)})
@@ -65,11 +66,12 @@ func wireguardPort(in intent.Intent, node string) uint32 {
 // is the Node node: an end of r holds the tags of such a Device. The gateway judges the flows of its
 // Devices, so it gets the rules that name them (nodeRules).
 func gatewayHolds(in intent.Intent, node string, r intent.Rule) bool {
-	for _, d := range in.Devices {
+	for name, d := range in.Devices {
 		if d.Gateway != node || in.Networks[d.Network].VRF != r.VRF {
 			continue
 		}
-		if r.From.Holds(d.Tags) || r.To.Holds(d.Tags) {
+		tags := in.DeviceTags(name)
+		if r.From.Holds(tags) || r.To.Holds(tags) {
 			return true
 		}
 	}

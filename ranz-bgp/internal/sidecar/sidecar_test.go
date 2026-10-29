@@ -387,8 +387,8 @@ func TestSession(t *testing.T) {
 	}
 
 	// What cannot be applied is answered with an error; the session goes on. A prefix with a vrf
-	// is of an EVPN VRF, which a session without EVPN has none of (evpn.go; SDN-25 #201): it goes
-	// nowhere, and its withdraw takes no unicast route away.
+	// is of an EVPN VRF (evpn.go; SDN-25 #201) or of the peering of the standard mode (peering.go),
+	// and this session runs neither: it goes nowhere, and its withdraw takes no unicast route away.
 	refused := []Message{
 		{Type: TypeWithdraw, Prefix: "198.18.0.0/15"},
 		{Type: TypeAnnounce, Prefix: "203.0.113.1/24"},

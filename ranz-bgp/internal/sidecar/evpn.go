@@ -8,9 +8,10 @@ package sidecar
 // An announce or withdraw whose vrf is one of these VRFs is a route of that VRF: an IP prefix route with the route
 // distinguisher of the VRF, no ESI, Ethernet tag 0, no gateway IP and the L3 VNI of the VRF as its label, the VTEP as its
 // next hop, and the export route targets of the VRF, the VXLAN encapsulation and the router MAC as its extended
-// communities: the interface-less model of RFC 9136 section 4.4.1. One with the vrf of no such VRF, also in a session
-// without EVPN, is refused: the prefix of a VRF never goes to the peers as a unicast route, where the prefixes of two VRFs
-// would meet in one table. An IP prefix route of a peer goes to each VRF whose
+// communities: the interface-less model of RFC 9136 section 4.4.1. One with the vrf of no such VRF is refused, and so is
+// one with a vrf in a session without EVPN, unless it runs the peering of the standard mode (peering.go), which has no
+// evpn: the prefix of a VRF never goes to the peers as a unicast route, where the prefixes of two VRFs would meet in one
+// table. An IP prefix route of a peer goes to each VRF whose
 // import route targets it carries and whose accept list covers its prefix, as a learned message with the vrf, the VTEP
 // of the fabric as the next hop, the VNI and the router MAC of the fabric; when it goes, as a withdrawn message with the
 // vrf and the VNI. The node installs neither into the Windows routing table: its own forwarding of the VRF carries them
