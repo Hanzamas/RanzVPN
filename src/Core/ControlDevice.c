@@ -82,6 +82,16 @@ static bool ControlCopyDevice(CONTROL_DEVICE *d, const ranz_control_v1_Device *s
 		d->HasKey = true;
 	}
 
+	// The PresharedKey of a Device that has one, in the state of its gateway only (SDN-82): a secret, so a Device whose
+	// key is not 32 bytes is left out whole
+	if (src->preshared_key.size != 0) {
+		if (src->preshared_key.size != NOISE_KEY_SIZE)
+			return false;
+
+		CopyMemory(d->Preshared, src->preshared_key.bytes, NOISE_KEY_SIZE);
+		d->HasPreshared = true;
+	}
+
 	return (d->Name[0] != 0 && d->NumAddresses != 0);
 }
 
@@ -109,6 +119,8 @@ void ControlCopyDevices(CONTROL_STATE *st, const ranz_control_v1_Object *objects
 
 		if (ControlCopyDevice(&st->Devices[st->NumDevices], &objects[i].kind.device))
 			st->NumDevices++;
+		else
+			SecureZeroMemory(&st->Devices[st->NumDevices], sizeof(CONTROL_DEVICE));
 	}
 
 	// A delta appends the objects it adds, so the Devices are sorted here

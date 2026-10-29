@@ -412,7 +412,8 @@ typedef struct CONTROL_SECURITY {
 // A WireGuard Device of a VRF of the node (Device of the control protocol; SDN-80, #375): a phone, a laptop or a router
 // that joins one Network over standard WireGuard through its gateway node. Its addresses and its tags identify it to the
 // rules; a packet to one of its addresses goes to its gateway, and the gateway delivers it to its host, where its
-// WireGuard interface takes it. HasKey: the state is the one of its gateway, which terminates it with Key.
+// WireGuard interface takes it. HasKey: the state is the one of its gateway, which terminates it with Key, and with
+// Preshared when HasPreshared (the PresharedKey of the Device, SDN-82 #377).
 typedef struct CONTROL_DEVICE {
 	// Its name, and the VRF of its Network
 	char Name[CONTROL_NAME_SIZE];
@@ -428,6 +429,9 @@ typedef struct CONTROL_DEVICE {
 	// The node is its gateway, and Key is its WireGuard public key
 	bool HasKey;
 	UCHAR Key[NOISE_KEY_SIZE];
+	// The Device has a PresharedKey, a secret that the gateway hands to its WireGuard interface and never logs
+	bool HasPreshared;
+	UCHAR Preshared[NOISE_KEY_SIZE];
 } CONTROL_DEVICE;
 
 // The WireGuard end of one Device at its gateway, as the gateway reports it (DeviceCounters of the control protocol):

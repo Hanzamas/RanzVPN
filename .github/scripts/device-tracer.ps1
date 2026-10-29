@@ -30,7 +30,14 @@ $ErrorActionPreference = 'Stop'
 #   keeps two Devices of one gateway apart whole (ADR-0029 amendment of 2026-10-27). The rule denies the ICMP of the
 #   Device only, so the ping to tablet is blocked as well, and the TCP connection to tablet still goes through;
 # - with the rule gone and wireguard.port of the gateway set to another port, the gateway listens there and no longer on
-#   51820, the configuration names the new port, and the client reaches host through it.
+#   51820, the configuration names the new port, and the client reaches host through it;
+# - a Device whose keys the controller makes (SDN-82, #377): `ranz device create` makes its key pair and its PresharedKey,
+#   applies it and prints its finished configuration with the private key and the PresharedKey in it, and the QR code of it
+#   into a PNG file. The client takes that configuration as it is, with no key file: the gateway terminates the Device with
+#   the PresharedKey, so the client completes its handshake, pings host and opens a TCP connection to it, while the same
+#   configuration without its PresharedKey line gets no handshake. The controller shows neither key again, in the
+#   configuration that it renders later or in its output, and the revocation of the Device takes it from the gateway with
+#   the next Generation, after which its client gets no handshake either.
 # The output of the processes is shown when a check fails, with the node log of vpntest devicetrace (Stop-Trace).
 
 $bin = (Resolve-Path $BuildDir).Path
@@ -223,14 +230,28 @@ function New-DeviceKey([string] $file) {
 	return $public
 }
 
-# One run of the client: its lines, which must hold each of want
-function Invoke-Client([string[]] $argv, [string[]] $want) {
-	$out = & $wgpeer (@('-config', $deviceConfig, '-key', $deviceKey) + $argv) 2>&1 | ForEach-Object { "$_" }
+# One run of the client: its lines, which must hold each of want. It reads the configuration of the file config and the
+# private key of the file that $key names (-key FILE), none for a finished configuration that holds the private key
+function Invoke-Client([string[]] $argv, [string[]] $want, [string] $config = $deviceConfig, [string[]] $key = @('-key', $deviceKey)) {
+	$out = & $wgpeer (@('-config', $config) + $key + $argv) 2>&1 | ForEach-Object { "$_" }
 	$code = $LASTEXITCODE
 	$out | ForEach-Object { Write-Host "  $_" }
 	if ($code -ne 0) { throw "ranz-wgpeer $($argv -join ' ') exited with code $code" }
 	foreach ($w in $want) {
 		if (-not ($out | Where-Object { $_ -like "$w*" })) { throw "ranz-wgpeer $($argv -join ' ') printed no line '$w'" }
+	}
+}
+
+# A client of the configuration in the file config that must get no handshake with the gateway: it comes up, and gives up
+# after a few seconds. what says which client it is, for the message of the check. Its exit code is the answer that the
+# check wants, so it does not stay in $LASTEXITCODE: the step of the workflow ends with that variable as its own exit code.
+function Assert-NoHandshake([string] $config, [string] $what) {
+	$out = & $wgpeer -config $config -ping $hostAddress -timeout 6s 2>&1 | ForEach-Object { "$_" }
+	$code = $LASTEXITCODE
+	$global:LASTEXITCODE = 0
+	$out | ForEach-Object { Write-Host "  $_" }
+	if ($code -eq 0 -or -not ($out | Where-Object { $_ -like '*no handshake with the gateway*' })) {
+		throw "$what completed a handshake with the gateway, or failed in another way (exit code $code)"
 	}
 }
 
@@ -407,6 +428,56 @@ try {
 	Wait-Listening $defaultPort $false
 	Get-DeviceConfig 'phone' $deviceConfig $wireguardKey $otherPort
 	Invoke-Client @('-ping', $hostAddress, '-tcp', "${hostAddress}:$tcpPort", '-timeout', '30s') @('WGPEER HANDSHAKE OK', "WGPEER PING OK $hostAddress", "WGPEER TCP OK ${hostAddress}:$tcpPort")
+
+	# A Device whose keys the controller makes (SDN-82, #377). The gateway is connected and has reported the key of its
+	# WireGuard interface, which `ranz device create` needs, and listens on the port that the configuration names now.
+	# The finished configuration is written to a file that only this process reads, and holds the private key of the Device
+	# and its PresharedKey, which the script never prints.
+	$pocketConfig = Join-Path $work 'pocket.conf'
+	$pocketPlain = Join-Path $work 'pocket-without-psk.conf'
+	$pocketPng = Join-Path $work 'pocket.png'
+	$pocketNote = Join-Path $work 'pocket.err'
+	$before = $gw.generation
+	& $ranz -server $api -token-file $tokenFile device create -network default -gateway gw -tags pockets -o $pocketConfig -qr-file $pocketPng pocket 2> $pocketNote
+	if ($LASTEXITCODE -ne 0) { throw "ranz device create exited with code ${LASTEXITCODE}: $(Read-Shared $pocketNote)" }
+	Write-Host (Read-Shared $pocketNote)
+	$text = Get-Content -Raw -LiteralPath $pocketConfig
+	foreach ($line in "PublicKey = $wireguardKey", "Endpoint = ${endpoint}:$otherPort", 'PersistentKeepalive = 25') {
+		if ($text -notmatch "(?m)^$([regex]::Escape($line))\r?$") { throw "the finished configuration of Device pocket has no line '$line'" }
+	}
+	$pocketKeys = @{}
+	foreach ($name in 'PrivateKey', 'PresharedKey') {
+		$m = [regex]::Match($text, "(?m)^$name = ([A-Za-z0-9+/]{43}=)\r?$")
+		if (-not $m.Success) { throw "the finished configuration of Device pocket has no line $name with a key" }
+		$pocketKeys[$name] = $m.Groups[1].Value
+	}
+	$png = [System.IO.File]::ReadAllBytes($pocketPng)
+	if ($png.Length -lt 1000 -or $png[0] -ne 0x89 -or [System.Text.Encoding]::ASCII.GetString($png, 1, 3) -ne 'PNG') { throw 'ranz device create wrote no PNG file of the QR code' }
+	$gw = Wait-Acknowledged 'gw' $before
+
+	# The client takes the finished configuration as it is, with no file for its private key, and reaches host: the gateway
+	# terminates the Device with its PresharedKey
+	Invoke-Client @('-ping', $hostAddress, '-tcp', "${hostAddress}:$tcpPort", '-timeout', '30s') @('WGPEER PRESHARED KEY yes', 'WGPEER HANDSHAKE OK', "WGPEER PING OK $hostAddress", "WGPEER TCP OK ${hostAddress}:$tcpPort") $pocketConfig @()
+
+	# The same configuration without its PresharedKey line is that of a client that does not hold it, and gets no handshake
+	Get-Content -LiteralPath $pocketConfig | Where-Object { $_ -notmatch '^PresharedKey = ' } | Set-Content -LiteralPath $pocketPlain -Encoding utf8NoBOM
+	Assert-NoHandshake $pocketPlain 'a client without the PresharedKey of Device pocket'
+
+	# The controller shows neither key again, in the configuration that it renders later or in its own output
+	$later = (& $ranz -server $api -token-file $tokenFile get device-config pocket) -join "`n"
+	if ($LASTEXITCODE -ne 0) { throw "ranz get device-config pocket exited with code $LASTEXITCODE" }
+	foreach ($name in $pocketKeys.Keys) {
+		if ($later.Contains($pocketKeys[$name])) { throw "the configuration that the controller renders later holds the $name of Device pocket" }
+		foreach ($file in $controllerOut, $controllerErr) {
+			if ((Read-Shared $file).Contains($pocketKeys[$name])) { throw "the output of the controller holds the $name of Device pocket" }
+		}
+	}
+
+	# The revocation takes the Device from the gateway with the next Generation, and its client gets no handshake any more
+	$before = $gw.generation
+	$null = Invoke-Ranz @('delete', 'Device', 'pocket')
+	$gw = Wait-Acknowledged 'gw' $before
+	Assert-NoHandshake $pocketConfig 'the client of the revoked Device pocket'
 
 	# The nodes stop, and the gateway takes its WireGuard interface away
 	New-Item -ItemType File -Force -Path $stop | Out-Null
