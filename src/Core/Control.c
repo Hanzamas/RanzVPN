@@ -440,8 +440,8 @@ bool ControlDecode(CONTROL_CLIENT *c, const UCHAR *data, UINT size) {
 
 // Take the message of a frame of the controller, size bytes at data after the size of the frame: an Update is applied
 // and handed to the owner; a Signal of a peer goes to the owner as it came; the members of a cluster come with the
-// module that uses them. false ends the stream: a Refuse, a message that does not decode or does not apply, and one
-// that only a node sends. The message stays in Message.
+// module that uses them; an Operation is done, and its answer takes its place. false ends the stream: a Refuse, a message
+// that does not decode or does not apply, and one that only a node sends. The message stays in Message.
 bool ControlInput(CONTROL_CLIENT *c, const UCHAR *data, UINT size) {
 	ranz_control_v1_ControlMessage *m = c->Message;
 
@@ -479,6 +479,11 @@ bool ControlInput(CONTROL_CLIENT *c, const UCHAR *data, UINT size) {
 		ControlTakeSignal(&c->Config, &m->body.signal);
 		return true;
 
+	case ranz_control_v1_ControlMessage_operation_tag:
+		// A live operation: the node does it at once, and its answer takes its place in the message (ControlOperation.c;
+		// SDN-50-N, #492)
+		return ControlTakeOperation(&c->Config, c->Objects, c->NumObjects, m);
+
 	default:
 		break;
 	}
@@ -487,13 +492,16 @@ bool ControlInput(CONTROL_CLIENT *c, const UCHAR *data, UINT size) {
 	return false;
 }
 
-// Take the frame that Frame holds (ControlInput), and acknowledge an Update that it applied. false ends the stream: a
-// message that ControlInput does not take, or a failed write.
+// Take the frame that Frame holds (ControlInput), acknowledge an Update that it applied and answer an Operation. false ends
+// the stream: a message that ControlInput does not take, or a failed write.
 static bool ControlTake(CONTROL_CLIENT *c, TRANSPORT_STREAM *s) {
 	ranz_control_v1_ControlMessage *m = c->Message;
 
 	if (ControlInput(c, c->Frame + CONTROL_FRAME_HEADER, c->FrameSize - CONTROL_FRAME_HEADER) == false)
 		return false;
+	// The answer to an Operation, which ControlInput put in its place (ControlOperation.c; SDN-50-N, #492)
+	if (m->which_body == ranz_control_v1_ControlMessage_operation_result_tag)
+		return ControlWriteOperationResult(&m->body.operation_result, s);
 	if (m->which_body != ranz_control_v1_ControlMessage_update_tag)
 		return true;
 
@@ -529,6 +537,8 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	}
 	// The links of kind vxlan and geneve (SDN-76, #356)
 	hello->capabilities.plain_links = caps.PlainLinks;
+	// The live operations, which the client does when its owner gives it their procedure (ControlOperation.c; SDN-50-N, #492)
+	hello->capabilities.operations = (c->Config.OperationProc != NULL);
 }
 
 // One stream: the dial, the handshake bound to the exporter of the TLS session, the Hello, then

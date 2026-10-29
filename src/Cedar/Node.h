@@ -249,6 +249,8 @@ typedef void(NODE_STATE_PROC)(NODE *n, void *param, const struct CONTROL_STATE *
 // Takes how each stream of the control stream ended or why it did not open (NodeOverlayStart; CONTROL_END_PROC of
 // Core/Control.h), on the thread of the control stream
 struct CONTROL_STATUS;
+// The Capabilities that the Hello of the control stream reports (NODE_OVERLAY_CONFIG.Caps; CONTROL_CAPS of Core/Control.h)
+struct CONTROL_CAPS;
 typedef void(NODE_CONTROL_END_PROC)(void *param, const struct CONTROL_STATUS *st);
 // Takes an IP packet of the host's own stack from the ring of a Wintun adapter, on the I/O thread of its adapter queue
 typedef void(NODE_WINTUN_PROC)(NODE_WINTUN *w, void *param, const UCHAR *packet, UINT size);
@@ -499,6 +501,10 @@ struct NODE {
 
 	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233), NULL while the overlay does not run
 	struct NODE_PROFILE *Profile;
+
+	// The switches of the L2 Networks, whose tables the live operations of the Controller read and clear (NodeOperation.c;
+	// SDN-50-N, #492), NULL while the overlay does not run
+	struct NODE_OPERATIONS *Operations;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -546,6 +552,11 @@ struct NODE_OVERLAY_CONFIG {
 	NODE_PATH_ATTACH_PROC *PathAttach;
 	// The configuration of the peer layer of the agent, NULL for PeerDefaultConfig: the shorter timers of a test
 	const PEER_CONFIG *PathConfig;
+
+	// Tells the Capabilities that the Hello of the control stream reports in place of the ones of the host (NodeCaps.c), NULL
+	// for those; with AdapterParam. A test whose own switch is the L2 data path of the node reports the L2 backend that the
+	// switch stands in for, which the Controller asks of a node that holds an L2 Network (SDN-50-N, #492).
+	void (*Caps)(void *param, struct CONTROL_CAPS *caps);
 };
 
 // What NodeOverlayGetStatus reports
@@ -1043,5 +1054,13 @@ bool NodeWireGuardAvailable(UINT *error);
 bool NodeWireGuardKey(const PEER_KEY *key, UCHAR *priv, UCHAR *pub);
 void NodeWireGuardGetStatus(NODE *n, NODE_WIREGUARD_STATUS *st);
 UINT NodeDeviceRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);
+
+// NodeOperation.c (SDN-50-N, #492): the L2 data path attaches the switch of an L2 Network, whose MAC table and IP table the
+// live operations of the Controller read and clear, and detaches it before it frees it. The procedure of an attached switch
+// takes the name of the member of the port port into name of size bytes, "" for none, which the entries of that port carry;
+// it runs on the thread of the control stream, while the switch cannot be detached.
+typedef void(NODE_PORT_NAME_PROC)(void *param, UINT port, char *name, UINT size);
+bool NodeOperationAttach(NODE *n, const char *network, struct SWITCH *sw, NODE_PORT_NAME_PROC *name, void *param);
+void NodeOperationDetach(NODE *n, const char *network);
 
 #endif // NODE_H
