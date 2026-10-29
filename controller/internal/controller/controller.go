@@ -498,6 +498,10 @@ func (c *Controller) Delete(ctx context.Context, kind, name string) (ApplyResult
 	if err := c.unconfirmed(); err != nil {
 		return ApplyResult{}, err
 	}
+	// The condition of the removal of a device on the intent in force, under the lock (selfservice.go; SDN-58)
+	if err := checkPrecondition(ctx, c.intent); err != nil {
+		return ApplyResult{}, err
+	}
 	if err := c.checkCluster(ctx, c.evaluate(c.lic)); err != nil {
 		return ApplyResult{}, err
 	}
