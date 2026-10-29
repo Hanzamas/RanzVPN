@@ -137,6 +137,9 @@ src/Cedar  NodeMirrorCopy  fuzz_mirror
 src/Cedar  NodeProfileOutbound  fuzz_nodeprofile
 src/Cedar  NodeProfileInbound   fuzz_nodeprofile
 src/Cedar  NodeProfileTransit   fuzz_nodeprofile
+# The hub of a VRF of topology hub-and-spoke judges the packets that it sends on from one spoke to another by the policy of the
+# VRF (SDN-19-R2 #508). No parser word in the name, listed with the reason that it is no parser
+src/Cedar  NodePolicyTransit  exempt  hands the packet that a spoke sent, as it came, to PolicyInput (fuzz_policy), which parses it, with the members of its two peers; it reads only the two addresses of the IPv4 or IPv6 header within the size of the packet, to find a WireGuard Device, as NodePolicyInbound does for every packet of a peer
 # The DHCP responder of an L2 Network (SDN-43 #236) reads the frames that the members of the switch of the Network send:
 # the DHCP messages of the clients and of a DHCP server of the LAN, and the ARP requests
 src/Cedar  NodeDhcpInput  fuzz_nodedhcp

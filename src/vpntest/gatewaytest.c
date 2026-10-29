@@ -22,12 +22,21 @@
 //   and the traffic moves to gw-3, the standby gateway, each in under one second (#195).
 // Print "GATEWAY TEST OK" only when every check passes.
 //
-// hubspoke: VRF branch of topology hub-and-spoke with the hub node-h and the spokes node-a and node-b, and the LAN
-// 192.168.9.0/24 behind node-b. The spokes have no session to each other. A packet of one spoke to the other, or to the LAN
+// hubspoke: VRF branch of topology hub-and-spoke with the hub node-h and the spokes node-a, node-b and node-c, and the LAN
+// 192.168.9.0/24 behind node-b. The spokes have no session to each other. A packet of one spoke to another, or to the LAN
 // behind it, passes the hub, which counts it, and arrives as it was sent, and so do the replies; the hub reaches each spoke
 // directly. A Mirror of the VRF at the hub copies each packet that it sends on to a sensor of the test, a UDP socket on
 // 127.0.0.1, as an inspection appliance at the hub sees the traffic between two sites (ADR-0029 decision 8). A hub whose
 // state names no hub drops what one spoke sends the other, and its Mirror copies nothing of it.
+// The hub is where the policy of branch decides the traffic between two spokes (SDN-19-R2, #508): it judges each packet that
+// it sends on by the rules of branch, with the spoke that sent it and the spoke of its next hop as its two ends.
+// - With branch-to-hub and hub-to-branch alone, each spoke reaches the hub and the hub each spoke, and a packet of one spoke to
+//   another is dropped at the hub, which counts it with the drops of its policy, though the spoke let it out.
+// - With site-a-to-site-b, from the tag of node-a to the tag of node-b, node-a reaches node-b and the LAN behind it, and the
+//   replies come back; node-c reaches neither, and node-a does not reach node-c.
+// - With a-to-lan-b, from the address of node-a to the LAN behind node-b, node-a reaches that LAN, node-c does not, node-a does
+//   not reach node-c, and the flow that the tag rule allowed ends at the hub.
+// Each packet that the policy lets through, the Mirror of the hub copies as it was sent, and none that it drops.
 // Print "HUBSPOKE TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -391,10 +400,10 @@ static bool GatewayTestAddress(UCHAR *addr, char *str)
 	return true;
 }
 
-// A UDP datagram of IPv4 from src to dst into buf (GATEWAYTEST_PACKET bytes), from the source port sport to port 53, with the
-// marker in the first 4 bytes of its data: its size, 0 when an address is not IPv4. The header has no options, TTL 64,
-// identification 0 and Don't Fragment.
-static UINT GatewayTestPacket(UCHAR *buf, char *src, char *dst, USHORT sport, UINT marker)
+// A UDP datagram of IPv4 from src to dst into buf (GATEWAYTEST_PACKET bytes), from the source port sport to the port dport,
+// with the marker in the first 4 bytes of its data: its size, 0 when an address is not IPv4. The header has no options, TTL
+// 64, identification 0 and Don't Fragment.
+static UINT GatewayTestDatagram(UCHAR *buf, char *src, char *dst, USHORT sport, USHORT dport, UINT marker)
 {
 	UCHAR *udp = buf + 20;
 	UINT s, d;
@@ -415,7 +424,7 @@ static UINT GatewayTestPacket(UCHAR *buf, char *src, char *dst, USHORT sport, UI
 	Copy(buf + 10, &sum, 2);
 
 	WRITE_USHORT(udp, sport);
-	WRITE_USHORT(udp + 2, 53);
+	WRITE_USHORT(udp + 2, dport);
 	WRITE_USHORT(udp + 4, 8 + GATEWAYTEST_DATA);
 	WRITE_UINT(udp + 8, marker);
 	for (UINT i = 4;i < GATEWAYTEST_DATA;i++)
@@ -432,6 +441,12 @@ static UINT GatewayTestPacket(UCHAR *buf, char *src, char *dst, USHORT sport, UI
 	Copy(udp + 6, &sum, 2);
 
 	return GATEWAYTEST_PACKET;
+}
+
+// A test datagram from the source port sport to port 53 (GatewayTestDatagram)
+static UINT GatewayTestPacket(UCHAR *buf, char *src, char *dst, USHORT sport, UINT marker)
+{
+	return GatewayTestDatagram(buf, src, dst, sport, 53, marker);
 }
 
 // A state of the node t at generation gen in the VRF vrf_id of the name vrf, of topology hub-and-spoke with the hub hub when
@@ -466,6 +481,7 @@ static void GatewayTestFreeState(CONTROL_STATE *st)
 	if (st != NULL)
 	{
 		Free(st->Peers);
+		Free(st->Rules);
 		Free(st);
 	}
 }
@@ -1102,7 +1118,8 @@ void gateway_test(UINT num, char **arg)
 #define	HUBSPOKE_H				0
 #define	HUBSPOKE_A				1
 #define	HUBSPOKE_B				2
-#define	HUBSPOKE_NUM_NODES		3
+#define	HUBSPOKE_C				3
+#define	HUBSPOKE_NUM_NODES		4
 #define	HUBSPOKE_VRF_ID			20
 #define	HUBSPOKE_VRF			"branch"
 #define	HUBSPOKE_POOL			"10.20.0.0"
@@ -1111,8 +1128,14 @@ void gateway_test(UINT num, char **arg)
 #define	HUBSPOKE_COPY			(VXLAN_HEADER_SIZE + NODE_MIRROR_ETHER + GATEWAYTEST_PACKET)	// The datagram of the copy of a test packet
 #define	HUBSPOKE_DRAIN			100			// The datagrams that the sensor reads at most before a packet is sent
 
-static char *hubspoke_names[HUBSPOKE_NUM_NODES] = {"node-h", "node-a", "node-b"};
-static char *hubspoke_addresses[HUBSPOKE_NUM_NODES] = {"10.20.0.1", "10.20.0.2", "10.20.0.3"};
+// The policy of branch in a Generation (SDN-19-R2, #508)
+#define	HUBSPOKE_NO_POLICY		0			// None: branch forwards as the starter rule does
+#define	HUBSPOKE_TWO_RULES		1			// branch-to-hub and hub-to-branch alone, under the default deny of branch
+#define	HUBSPOKE_TAG_RULE		2			// ... and site-a-to-site-b, from the tag site-a to the tag site-b
+#define	HUBSPOKE_PREFIX_RULE	3			// ... and a-to-lan-b, from the address of node-a to the LAN behind node-b, in its place
+
+static char *hubspoke_names[HUBSPOKE_NUM_NODES] = {"node-h", "node-a", "node-b", "node-c"};
+static char *hubspoke_addresses[HUBSPOKE_NUM_NODES] = {"10.20.0.1", "10.20.0.2", "10.20.0.3", "10.20.0.4"};
 
 // The sensor of the Mirror of node-h: a UDP socket on 127.0.0.1 and a port that the system picks, and the datagram that it
 // read last
@@ -1188,14 +1211,99 @@ static bool HubSpokeCopyOf(HUBSPOKE_SENSOR *t, UINT size, const UCHAR *packet)
 		Cmp(d + VXLAN_HEADER_SIZE + NODE_MIRROR_ETHER, packet, GATEWAYTEST_PACKET) == 0);
 }
 
+// The tags of node i into tags, sorted, which identify it to the rules of branch: hub for node-h, branch for a spoke, and site-a
+// and site-b for node-a and node-b. Their number.
+static UINT HubSpokeTags(UINT i, char (*tags)[CONTROL_NAME_SIZE])
+{
+	UINT num = 0;
+
+	StrCpy(tags[num++], CONTROL_NAME_SIZE, i == HUBSPOKE_H ? "hub" : "branch");
+	if (i == HUBSPOKE_A || i == HUBSPOKE_B)
+	{
+		StrCpy(tags[num++], CONTROL_NAME_SIZE, i == HUBSPOKE_A ? "site-a" : "site-b");
+	}
+
+	return num;
+}
+
+// A rule of branch in the state st, of the name name and the default priority, which allows the flows that it matches
+static CONTROL_RULE *HubSpokeRule(CONTROL_STATE *st, char *name)
+{
+	CONTROL_RULE *r = &st->Rules[st->NumRules++];
+
+	StrCpy(r->Name, sizeof(r->Name), name);
+	r->VrfId = HUBSPOKE_VRF_ID;
+	r->Priority = 1000;
+
+	return r;
+}
+
+// A tag of an end of a rule
+static void HubSpokeRuleTag(CONTROL_RULE_END *e, char *tag)
+{
+	StrCpy(e->Tags[e->NumTags], sizeof(e->Tags[e->NumTags]), tag);
+	e->NumTags++;
+}
+
+// An IPv4 prefix of an end of a rule
+static void HubSpokeRulePrefix(CONTROL_RULE_END *e, char *address, UINT length)
+{
+	CONTROL_PREFIX *p = &e->Prefixes[e->NumPrefixes++];
+
+	p->AddressSize = (GatewayTestAddress(p->Address, address) ? 4 : 0);
+	p->Length = length;
+}
+
+// The rules of branch that node i enforces under the policy policy, in name order, as the controller compiles them
+// (controller/internal/desired/policy.go): branch-to-hub and hub-to-branch for every node, as one end of each names a tag of
+// it; site-a-to-site-b for node-a and node-b, whose tags its ends name, and for node-h, the hub, which gets every rule of its
+// VRF as it judges the flows between two spokes (SDN-19-R2, #508), but not for node-c; a-to-lan-b, whose ends name no tag,
+// for every node.
+static void HubSpokeRules(CONTROL_STATE *st, UINT i, UINT policy)
+{
+	CONTROL_RULE *r;
+
+	st->Rules = ZeroMalloc(sizeof(CONTROL_RULE) * 3);
+
+	if (policy == HUBSPOKE_PREFIX_RULE)
+	{
+		r = HubSpokeRule(st, "a-to-lan-b");
+		HubSpokeRulePrefix(&r->From, hubspoke_addresses[HUBSPOKE_A], 32);
+		HubSpokeRulePrefix(&r->To, HUBSPOKE_LAN, 24);
+	}
+
+	r = HubSpokeRule(st, "branch-to-hub");
+	HubSpokeRuleTag(&r->From, "branch");
+	HubSpokeRuleTag(&r->To, "hub");
+
+	r = HubSpokeRule(st, "hub-to-branch");
+	HubSpokeRuleTag(&r->From, "hub");
+	HubSpokeRuleTag(&r->To, "branch");
+
+	if (policy == HUBSPOKE_TAG_RULE && i != HUBSPOKE_C)
+	{
+		r = HubSpokeRule(st, "site-a-to-site-b");
+		HubSpokeRuleTag(&r->From, "site-a");
+		HubSpokeRuleTag(&r->To, "site-b");
+	}
+}
+
 // The state of node i at generation gen, as the controller compiles it for VRF branch of topology hub-and-spoke with the hub
-// node-h; with hub not set, the state of node-h names no hub. node-h has both spokes as its peers, node-b with its LAN as its
+// node-h; with hub not set, the state of node-h names no hub. node-h has the spokes as its peers, node-b with its LAN as its
 // route; each spoke has node-h as its only peer, with the pool of the VRF and the LAN subnets of the other nodes as routes of
 // node-h. node-b has its LAN as a LAN subnet of its own. node-h has a Mirror of every packet of the VRF to the sensor on
-// 127.0.0.1 and the port sensor, on the VNI of the VRF id.
-static CONTROL_STATE *HubSpokeState(GATEWAYTEST_NODE *nodes, UINT i, UINT64 gen, bool hub, USHORT sensor)
+// 127.0.0.1 and the port sensor, on the VNI of the VRF id. Under a policy other than HUBSPOKE_NO_POLICY, branch has its
+// policy and its rules (HubSpokeRules). Each node and each Peer has its tags.
+static CONTROL_STATE *HubSpokeState(GATEWAYTEST_NODE *nodes, UINT i, UINT64 gen, bool hub, UINT policy, USHORT sensor)
 {
 	CONTROL_STATE *st = GatewayTestState(&nodes[i], gen, HUBSPOKE_VRF_ID, HUBSPOKE_VRF, (i != HUBSPOKE_H || hub) ? "node-h" : NULL, false, HUBSPOKE_NUM_NODES);
+
+	st->NumTags = HubSpokeTags(i, st->Tags);
+	if (policy != HUBSPOKE_NO_POLICY)
+	{
+		st->Vrfs[0].Policy = true;
+		HubSpokeRules(st, i, policy);
+	}
 
 	if (i == HUBSPOKE_H)
 	{
@@ -1206,15 +1314,23 @@ static CONTROL_STATE *HubSpokeState(GATEWAYTEST_NODE *nodes, UINT i, UINT64 gen,
 		m->SensorSize = (GatewayTestAddress(m->Sensor, "127.0.0.1") ? 4 : 0);
 		m->SensorPort = sensor;
 
-		GatewayTestPeer(st, &nodes[HUBSPOKE_A], HUBSPOKE_VRF_ID, HUBSPOKE_VRF);
-		CONTROL_PEER *b = GatewayTestPeer(st, &nodes[HUBSPOKE_B], HUBSPOKE_VRF_ID, HUBSPOKE_VRF);
-		GatewayTestRoute(st, b, HUBSPOKE_VRF_ID, HUBSPOKE_LAN, 24);
+		for (UINT j = HUBSPOKE_A;j < HUBSPOKE_NUM_NODES;j++)
+		{
+			CONTROL_PEER *p = GatewayTestPeer(st, &nodes[j], HUBSPOKE_VRF_ID, HUBSPOKE_VRF);
+
+			p->NumTags = HubSpokeTags(j, p->Tags);
+			if (j == HUBSPOKE_B)
+			{
+				GatewayTestRoute(st, p, HUBSPOKE_VRF_ID, HUBSPOKE_LAN, 24);
+			}
+		}
 		return st;
 	}
 
 	CONTROL_PEER *h = GatewayTestPeer(st, &nodes[HUBSPOKE_H], HUBSPOKE_VRF_ID, HUBSPOKE_VRF);
+	h->NumTags = HubSpokeTags(HUBSPOKE_H, h->Tags);
 	GatewayTestRoute(st, h, HUBSPOKE_VRF_ID, HUBSPOKE_POOL, 24);
-	if (i == HUBSPOKE_A)
+	if (i != HUBSPOKE_B)
 	{
 		GatewayTestRoute(st, h, HUBSPOKE_VRF_ID, HUBSPOKE_LAN, 24);
 	}
@@ -1226,17 +1342,17 @@ static CONTROL_STATE *HubSpokeState(GATEWAYTEST_NODE *nodes, UINT i, UINT64 gen,
 	return st;
 }
 
-// Apply the states of a Generation to the three nodes, with the Mirror of node-h to the sensor on the port sensor, and wait
-// until each runs it with its sessions
-static bool HubSpokeApply(GATEWAYTEST_NODE *nodes, UINT64 gen, bool hub, USHORT sensor)
+// Apply the states of a Generation to the four nodes, under the policy policy of branch, with the Mirror of node-h to the sensor
+// on the port sensor, and wait until each runs it with its sessions
+static bool HubSpokeApply(GATEWAYTEST_NODE *nodes, UINT64 gen, bool hub, UINT policy, USHORT sensor)
 {
 	// node-h has a session to each spoke, a spoke to node-h alone
-	UINT want[HUBSPOKE_NUM_NODES] = {2, 1, 1};
+	UINT want[HUBSPOKE_NUM_NODES] = {3, 1, 1, 1};
 	bool applied = true;
 
 	for (UINT i = 0;i < HUBSPOKE_NUM_NODES;i++)
 	{
-		CONTROL_STATE *st = HubSpokeState(nodes, i, gen, hub, sensor);
+		CONTROL_STATE *st = HubSpokeState(nodes, i, gen, hub, policy, sensor);
 
 		applied = NodeOverlayApply(nodes[i].Node, st) && applied;
 		GatewayTestFreeState(st);
@@ -1328,13 +1444,136 @@ static void HubSpokeSend(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, HUBSPOKE
 	}
 }
 
+// The packets that the policy of node i dropped, of any VRF (NodePolicyGetVrf): 0 while the rules in force there hold no VRF
+// branch
+static UINT64 HubSpokePolicyDrops(GATEWAYTEST_NODE *nodes, UINT i)
+{
+	NODE_POLICY_VRF_STATUS st;
+
+	return (NodePolicyGetVrf(nodes[i].Node, HUBSPOKE_VRF, &st) ? st.Dropped : 0);
+}
+
+// One packet of the host of the spoke from, from src and the port sport to dst and the port dport, which the forwarding table
+// of the spoke leads to node-h, under the policy of branch; why names the rule that decides it at node-h. With to a node: the
+// host of to takes it as it was sent, node-h let it through by its policy and sent it on, and its Mirror copied it as it was
+// sent. With to GATEWAYTEST_NONE: the spoke sent it to node-h, which dropped it by its policy and counted it with the drops of
+// its policy; no host takes it, node-h sent nothing on and its Mirror copied nothing.
+static void HubSpokeJudged(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, HUBSPOKE_SENSOR *sensor, UINT from, char *src, USHORT sport, char *dst,
+	USHORT dport, UINT to, char *why)
+{
+	GATEWAYTEST_TAKEN p;
+	UCHAR packet[GATEWAYTEST_PACKET];
+	NODE_OVERLAY_STATUS st;
+	char what[MAX_SIZE];
+	UINT64 transit, dropped;
+
+	HubSpokeDrain(sensor);
+	NodeOverlayGetStatus(nodes[from].Node, &st);
+	UINT64 forwarded_before = st.Forwarded;
+	NodeOverlayGetStatus(nodes[HUBSPOKE_H].Node, &st);
+	UINT64 dropped_before = st.Dropped;
+	UINT64 transit_before = HubSpokeTransit(nodes);
+	UINT64 policy_before = HubSpokePolicyDrops(nodes, HUBSPOKE_H);
+	UINT marker = ++ctx->Marker;
+	UINT size = GatewayTestDatagram(packet, src, dst, sport, dport, marker);
+
+	if (size != 0)
+	{
+		NodeReaderOnline(nodes[from].Node, &nodes[from].Reader);
+		NodeOverlayInput(nodes[from].Node, HUBSPOKE_VRF_ID, packet, size);
+		NodeReaderOffline(&nodes[from].Reader);
+	}
+
+	UINT got = GatewayTestWhere(nodes, HUBSPOKE_NUM_NODES, marker, to == GATEWAYTEST_NONE ? GATEWAYTEST_QUIET : GATEWAYTEST_BOUND, &p);
+
+	// The hub counts the packet after it sent it on or dropped it, and the drop of its policy before the drop of its overlay:
+	// wait for its counters
+	HubSpokeCounts(nodes, transit_before, dropped_before, to == GATEWAYTEST_NONE ? 0 : 1, to == GATEWAYTEST_NONE ? 1 : 0, &transit, &dropped);
+	UINT64 policy = HubSpokePolicyDrops(nodes, HUBSPOKE_H) - policy_before;
+	NodeOverlayGetStatus(nodes[from].Node, &st);
+	UINT64 forwarded = st.Forwarded - forwarded_before;
+
+	if (to == GATEWAYTEST_NONE)
+	{
+		UINT copy = HubSpokeRead(sensor, GATEWAYTEST_POLL);
+
+		Format(what, sizeof(what), "%s: %s sends %s:%u > %s:%u to node-h, which drops it by the policy of %s and counts it with the drops of its policy; no host takes it, and the Mirror of node-h copies nothing",
+			why, nodes[from].Name, src, (UINT)sport, dst, (UINT)dport, HUBSPOKE_VRF);
+		GatewayTestCheck(ctx, size != 0 && forwarded == 1 && got == GATEWAYTEST_NONE && transit == 0 && policy == 1 && copy == 0, what,
+			"%s sent %I64u packets to node-h, taken by %s, %I64u sent on by node-h, %I64u dropped by its policy, the sensor read %u bytes",
+			nodes[from].Name, forwarded, GatewayTestName(nodes, HUBSPOKE_NUM_NODES, got), transit, policy, copy);
+		return;
+	}
+
+	Format(what, sizeof(what), "%s: %s sends %s:%u > %s:%u; node-h lets it through by the policy of %s and sends it on, and %s takes it as it was sent",
+		why, nodes[from].Name, src, (UINT)sport, dst, (UINT)dport, HUBSPOKE_VRF, nodes[to].Name);
+	GatewayTestCheck(ctx, size != 0 && got == to && p.Size == GATEWAYTEST_PACKET && Cmp(p.Data, packet, GATEWAYTEST_PACKET) == 0 &&
+		p.VrfId == HUBSPOKE_VRF_ID && transit == 1 && policy == 0, what, "taken by %s, %I64u sent on by node-h, %I64u dropped by its policy",
+		GatewayTestName(nodes, HUBSPOKE_NUM_NODES, got), transit, policy);
+
+	// The Mirror of the VRF at the hub sees what the policy let through
+	UINT copy = HubSpokeRead(sensor, GATEWAYTEST_BOUND);
+
+	Format(what, sizeof(what), "%s: the Mirror of %s at node-h copies %s:%u > %s:%u to its sensor as it was sent, as the policy let it through",
+		why, HUBSPOKE_VRF, src, (UINT)sport, dst, (UINT)dport);
+	GatewayTestCheck(ctx, size != 0 && HubSpokeCopyOf(sensor, copy, packet), what, "the sensor read %u bytes", copy);
+}
+
+// The policy of branch decides at node-h, the hub, what one spoke sends another (SDN-19-R2, #508), by the rules of branch with
+// the spoke that sent a packet and the spoke of its next hop as its two ends, which only the hub sees. The packets of one
+// Generation that must be the first of their flow at node-h come from a source port of their own.
+static void HubSpokePolicy(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, HUBSPOKE_SENSOR *sensor)
+{
+	char *h = hubspoke_addresses[HUBSPOKE_H];
+	char *a = hubspoke_addresses[HUBSPOKE_A];
+	char *b = hubspoke_addresses[HUBSPOKE_B];
+	char *c = hubspoke_addresses[HUBSPOKE_C];
+	USHORT port = GATEWAYTEST_PORT;
+
+	// The usual two rules alone: each spoke reaches the hub and the hub each spoke, and no rule lets one spoke reach another
+	if (GatewayTestCheck(ctx, HubSpokeApply(nodes, 3, true, HUBSPOKE_TWO_RULES, sensor->Port),
+		"Generation 3: branch has its policy, with branch-to-hub and hub-to-branch and no rule between two spokes", "not applied"))
+	{
+		HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_A, a, h, HUBSPOKE_H, false);
+		HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_H, h, b, HUBSPOKE_B, false);
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_A, a, port, b, 53, GATEWAYTEST_NONE, "No rule between two spokes");
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_A, a, port, HUBSPOKE_LAN_HOST, 53, GATEWAYTEST_NONE, "No rule between two spokes, to the LAN behind node-b");
+	}
+
+	// A rule from the tag of node-a to the tag of node-b: the tags of the Peer that sent a packet and of the Peer of its next hop
+	// decide at the hub
+	if (GatewayTestCheck(ctx, HubSpokeApply(nodes, 4, true, HUBSPOKE_TAG_RULE, sensor->Port),
+		"Generation 4: and site-a-to-site-b, from the tag site-a of node-a to the tag site-b of node-b", "not applied"))
+	{
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_A, a, port, b, 53, HUBSPOKE_B, "site-a-to-site-b");
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_B, b, 53, a, port, HUBSPOKE_A, "The reply on the flow that site-a-to-site-b allowed");
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_A, a, port, HUBSPOKE_LAN_HOST, 53, HUBSPOKE_B, "site-a-to-site-b, to the LAN behind node-b, the Peer of its next hop");
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_C, c, port, b, 53, GATEWAYTEST_NONE, "site-a-to-site-b, from node-c, which has no tag site-a");
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_A, a, port, c, 53, GATEWAYTEST_NONE, "site-a-to-site-b, to node-c, which has no tag site-b");
+	}
+
+	// A rule from the address of node-a to the LAN behind node-b in its place: the addresses of the packet that the Peer sent decide
+	// at the hub. The flow that the tag rule allowed ends at the hub when the next packet of node-a meets the rules without it.
+	port++;
+	if (GatewayTestCheck(ctx, HubSpokeApply(nodes, 5, true, HUBSPOKE_PREFIX_RULE, sensor->Port),
+		"Generation 5: a-to-lan-b, from the address of node-a to the LAN behind node-b, in place of site-a-to-site-b", "not applied"))
+	{
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_A, a, port, HUBSPOKE_LAN_HOST, 53, HUBSPOKE_B, "a-to-lan-b");
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_C, c, port, HUBSPOKE_LAN_HOST, 53, GATEWAYTEST_NONE, "a-to-lan-b, from node-c, whose address it does not name");
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_A, a, port, c, 53, GATEWAYTEST_NONE, "a-to-lan-b, to node-c, outside the LAN behind node-b");
+		HubSpokeJudged(ctx, nodes, sensor, HUBSPOKE_A, a, GATEWAYTEST_PORT, b, 53, GATEWAYTEST_NONE, "The flow of node-a to node-b without site-a-to-site-b, which allowed it");
+	}
+
+	Print("  node-h dropped %I64u packets by the policy of %s\n", HubSpokePolicyDrops(nodes, HUBSPOKE_H), HUBSPOKE_VRF);
+}
+
 static void HubSpokeOverlay(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, TRANSPORT *loopback, HUBSPOKE_SENSOR *sensor)
 {
 	NODE_MIRROR_STATUS ms;
 
 	if (GatewayTestStart(ctx, nodes, HUBSPOKE_NUM_NODES, loopback) == false ||
-		GatewayTestCheck(ctx, HubSpokeApply(nodes, 1, true, sensor->Port),
-		"The three nodes of branch apply their states: node-h has a session to each spoke, and the spokes none to each other",
+		GatewayTestCheck(ctx, HubSpokeApply(nodes, 1, true, HUBSPOKE_NO_POLICY, sensor->Port),
+		"The four nodes of branch apply their states: node-h has a session to each spoke, and the spokes none to each other",
 		"the states or the sessions did not come up") == false)
 	{
 		return;
@@ -1350,17 +1589,20 @@ static void HubSpokeOverlay(GATEWAYTEST_CTX *ctx, GATEWAYTEST_NODE *nodes, TRANS
 	HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_H, "10.20.0.1", "10.20.0.3", HUBSPOKE_B, false);
 
 	// A node whose state names no hub sends nothing on from one spoke to another
-	if (GatewayTestCheck(ctx, HubSpokeApply(nodes, 2, false, sensor->Port), "Generation 2: the state of node-h names no hub", "not applied"))
+	if (GatewayTestCheck(ctx, HubSpokeApply(nodes, 2, false, HUBSPOKE_NO_POLICY, sensor->Port), "Generation 2: the state of node-h names no hub", "not applied"))
 	{
 		HubSpokeSend(ctx, nodes, sensor, HUBSPOKE_A, "10.20.0.2", "10.20.0.3", GATEWAYTEST_NONE, false);
 	}
+
+	// The hub decides by the policy of the VRF what one spoke sends another (SDN-19-R2, #508)
+	HubSpokePolicy(ctx, nodes, sensor);
 
 	NodeMirrorGetStatus(nodes[HUBSPOKE_H].Node, &ms);
 	Print("  node-h sent on %I64u packets from one spoke to another, and its Mirror sent %I64u copies\n", HubSpokeTransit(nodes), ms.Copied);
 }
 
 // hubspoke: the hub of a VRF of topology hub-and-spoke in the data plane
-RANZ_TEST("hubspoke", hubspoke_test, "Hub-and-spoke: the spokes of a VRF have no session to each other, a packet of one spoke to another or to the LAN behind it passes the hub, which sends it on as it came and copies it to the sensor of its Mirror, and the replies too; a node that is no hub sends nothing on.");
+RANZ_TEST("hubspoke", hubspoke_test, "Hub-and-spoke: the spokes of a VRF have no session to each other, a packet of one spoke to another or to the LAN behind it passes the hub, which sends it on as it came and copies it to the sensor of its Mirror, and the replies too; a node that is no hub sends nothing on. The hub judges each such packet by the policy of the VRF with the two spokes as its ends, and drops what no rule between them allows, which its Mirror does not see.");
 void hubspoke_test(UINT num, char **arg)
 {
 	GATEWAYTEST_CTX ctx;
@@ -1378,7 +1620,7 @@ void hubspoke_test(UINT num, char **arg)
 
 	Print("HUBSPOKE test: the hub of a VRF of topology hub-and-spoke in the node's data plane, over the overlay of in-process nodes\n");
 
-	bool keys = GatewayTestCheck(&ctx, GatewayTestKeys(nodes, HUBSPOKE_NUM_NODES, hubspoke_names, hubspoke_addresses, 151), "The static keys of the three nodes",
+	bool keys = GatewayTestCheck(&ctx, GatewayTestKeys(nodes, HUBSPOKE_NUM_NODES, hubspoke_names, hubspoke_addresses, 151), "The static keys of the four nodes",
 		"PeerKeyFromScalar failed");
 	bool open = HubSpokeOpenSensor(sensor);
 	open = GatewayTestCheck(&ctx, open, "The sensor of the Mirror of node-h: a UDP socket on 127.0.0.1", "error %u", (UINT)WSAGetLastError());

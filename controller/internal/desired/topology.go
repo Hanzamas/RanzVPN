@@ -19,6 +19,12 @@ import (
 // it (intent.GatewayRoutes). Two spokes of a VRF of topology hub-and-spoke do not share it, so they are
 // no peers through it. The Controller marks the Peer object of a gateway down from its health data
 // (controller/gateways.go).
+//
+// The hub is the place where the policy of the VRF decides the traffic between two spokes (SDN-19-R2
+// #508): a spoke sees the hub as the other end of that traffic, and the hub sees both real ends. The hub
+// judges each packet that it sends on from one spoke to another by the rules of the VRF, with the Peer
+// that sent it and the Peer of its next hop as its ends, so it gets every rule of the VRF (hubHolds),
+// the rules between two spokes among them, which name no tag of its own.
 
 // withTopology puts the hub of the VRF v of topology hub-and-spoke and its ECMP into its Vrf object
 // vrf.
@@ -27,6 +33,14 @@ func withTopology(vrf *controlpb.Vrf, v intent.VRF) {
 		vrf.Hub = v.Hub
 	}
 	vrf.Ecmp = v.ECMP
+}
+
+// hubHolds reports whether the Node node is the hub of the VRF of the rule r, a VRF of topology
+// hub-and-spoke. The hub judges the flows that it sends on between any two spokes of the VRF by their
+// real ends, so any rule of the VRF can match a flow there, and it gets them all (nodeRules).
+func hubHolds(in intent.Intent, node string, r intent.Rule) bool {
+	v := in.VRFs[r.VRF]
+	return v.HubAndSpoke() && v.Hub == node
 }
 
 // lanSubnets returns the LAN subnets of each Node of in as its NodeConfig carries them, by Node name,

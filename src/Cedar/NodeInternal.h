@@ -30,6 +30,7 @@ void NodePolicyAttach(NODE *n, NODE_VRF_TABLES *v, const struct CONTROL_STATE *s
 void NodePolicyApplied(NODE *n, bool swapped);
 bool NodePolicyOutbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size);
 bool NodePolicyInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size);
+bool NodePolicyTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, const UCHAR *packet, UINT size);
 bool NodeClientStart(NODE *n);
 void NodeClientStop(NODE *n);
 void NodeControllerStart(NODE *n);
