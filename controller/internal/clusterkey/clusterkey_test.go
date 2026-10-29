@@ -120,6 +120,24 @@ func (m *member) waitHolds(t *testing.T) {
 	}
 }
 
+// gaveLine is the text of the line of the log of a member that gave a copy of the Cluster key to member,
+// as the text handler of slog writes it: the message in quotes, then the attribute.
+func gaveLine(member string) string {
+	return `msg="gave a copy of the Cluster key to a member of the cluster" member=` + member
+}
+
+// eventually reports whether cond holds within a few seconds. A member writes a line of its log just
+// after the store took what the line tells, so a test that saw the effect in the store or in another
+// member waits for the line.
+func eventually(cond func() bool) bool {
+	for deadline := time.Now().Add(5 * time.Second); !cond(); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			return false
+		}
+	}
+	return true
+}
+
 // openRaw returns a connection to the rqlite member at url that reads what that member holds itself
 // (level none), as anything that reads its data does, whatever the store makes of the rows.
 func openRaw(t *testing.T, url string) *gorqlite.Connection {
@@ -319,7 +337,7 @@ func TestMemberThatJoinsLaterOpensWhatTheClusterSealed(t *testing.T) {
 	if !strings.Contains(c3.log.String(), "holds the Cluster key: its copy opens") {
 		t.Errorf("c3 did not say that it holds the key that its copy holds:\n%s", c3.log)
 	}
-	if !strings.Contains(c1.log.String()+c2.log.String(), "gave a copy of the Cluster key to a member of the cluster member=c3") {
+	if !eventually(func() bool { return strings.Contains(c1.log.String()+c2.log.String(), gaveLine("c3")) }) {
 		t.Errorf("no member said that it gave c3 a copy:\n%s\n%s", c1.log, c2.log)
 	}
 	if ts, err := c3.st.Targets(ctx); err != nil || len(ts) != 1 || ts[0].Secret != alerts.Secret {
@@ -603,8 +621,8 @@ func TestCopyThatDoesNotOpenIsGivenAgain(t *testing.T) {
 	if !strings.Contains(again.log.String(), "does not open with its sealing key: it is removed") {
 		t.Errorf("c2 did not say that its copy does not open:\n%s", again.log)
 	}
-	if n := strings.Count(c1.log.String(), "member=c2"); n < 2 {
-		t.Errorf("c1 gave c2 %d copies, want the first and another:\n%s", n, c1.log)
+	if !eventually(func() bool { return strings.Count(c1.log.String(), gaveLine("c2")) >= 2 }) {
+		t.Errorf("c1 gave c2 %d copies, want the first and another:\n%s", strings.Count(c1.log.String(), gaveLine("c2")), c1.log)
 	}
 }
 
