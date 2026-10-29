@@ -217,6 +217,7 @@ A local schedule that resumes work after a usage window (a scheduled task) and t
 | The `overlaydns` test | The answer for an AAAA record of a 4via6 address times out (status 1460). Seen once, on x64 of PR 403. If it fails on a second pull request, start a small fix lane. |
 | The step "Firewall rule of /install and /uninstall" of `windows.yml`, x64 | Rules of store apps appear during the wait of 10 seconds, so the count of rules changes. Seen on PRs 415 and 420. If it fails on a third pull request, start a small fix lane that filters the rules by name. |
 | `TestRollingUpgrade` of `ranz` on Linux | A port is already in use. Seen once. If it fails again, start a small fix lane that takes a free port. |
+| A job that dies before any test ran, at the checkout or at the clone of a submodule | `Failed to connect to github.com:443` while the runner clones `liboqs`. Seen on PR 500 (`Application Verifier (new core)`, 2026-10-29); the next head passed with no change. Rerun that job once. |
 
 Rerun a failed job once when two things hold. The only failing check is a known flake. The failing case is in no code that the pull request changed. Rerun it for the run of the current head:
 

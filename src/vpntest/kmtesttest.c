@@ -500,8 +500,10 @@ static UINT KmSendTo(SOCKET s, UINT dst, USHORT port, UINT num, UINT size)
 	return sent;
 }
 
-// Give the adapter its IPv4 address and the permanent neighbour, and wait until the address is preferred
-static bool KmSetUp(KMTEST_ADAPTER *x)
+// Give the adapter its IPv4 address and the permanent neighbour, and wait until the address is preferred; false, with the
+// step that failed and its error in error, when one does not succeed. NodeKmTestNew returned the adapter once the IPv4
+// stack of the host had its interface, so the address is not refused for an interface that the stack does not know yet.
+static bool KmSetUp(KMTEST_ADAPTER *x, char *error, UINT error_size)
 {
 	MIB_UNICASTIPADDRESS_ROW row;
 	MIB_IPNET_ROW2 nb;
@@ -515,7 +517,7 @@ static bool KmSetUp(KMTEST_ADAPTER *x)
 	DWORD err = CreateUnicastIpAddressEntry(&row);
 	if (err != NO_ERROR && err != ERROR_OBJECT_ALREADY_EXISTS)
 	{
-		Print("  CreateUnicastIpAddressEntry: error %u\n", (UINT)err);
+		Format(error, error_size, "CreateUnicastIpAddressEntry: error %u", (UINT)err);
 		return false;
 	}
 
@@ -529,10 +531,11 @@ static bool KmSetUp(KMTEST_ADAPTER *x)
 	err = CreateIpNetEntry2(&nb);
 	if (err != NO_ERROR && err != ERROR_OBJECT_ALREADY_EXISTS)
 	{
-		Print("  CreateIpNetEntry2: error %u\n", (UINT)err);
+		Format(error, error_size, "CreateIpNetEntry2: error %u", (UINT)err);
 		return false;
 	}
 
+	UINT state = 0;
 	for (UINT64 end = GetTickCount64() + KMTEST_BOUND;GetTickCount64() < end;Sleep(100))
 	{
 		MIB_UNICASTIPADDRESS_ROW r;
@@ -541,13 +544,15 @@ static bool KmSetUp(KMTEST_ADAPTER *x)
 		r.InterfaceLuid.Value = x->Luid;
 		r.Address.Ipv4.sin_family = AF_INET;
 		r.Address.Ipv4.sin_addr.s_addr = x->Address;
-		if (GetUnicastIpAddressEntry(&r) == NO_ERROR && r.DadState == IpDadStatePreferred)
+		err = GetUnicastIpAddressEntry(&r);
+		if (err == NO_ERROR && r.DadState == IpDadStatePreferred)
 		{
 			return true;
 		}
+		state = (UINT)r.DadState;
 	}
 
-	Print("  the address of the adapter did not become preferred\n");
+	Format(error, error_size, "the address did not become preferred within %u ms (GetUnicastIpAddressEntry: error %u, DAD state %u)", KMTEST_BOUND, (UINT)err, state);
 	return false;
 }
 
@@ -556,6 +561,7 @@ static bool KmNewAdapter(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, const UCHA
 {
 	MIB_IF_ROW2 row;
 	NET_LUID luid;
+	char error[MAX_SIZE];
 
 	Zero(x, sizeof(KMTEST_ADAPTER));
 	NodeL2Mac(x->Mac, key, network_id);
@@ -592,7 +598,8 @@ static bool KmNewAdapter(KMTEST_CTX *ctx, KMTEST_ADAPTER *x, NODE *n, const UCHA
 	Print("  adapter of Network %u: interface %u, MAC %02X-%02X-%02X-%02X-%02X-%02X\n", network_id, x->IfIndex, (UINT)x->Mac[0], (UINT)x->Mac[1],
 		(UINT)x->Mac[2], (UINT)x->Mac[3], (UINT)x->Mac[4], (UINT)x->Mac[5]);
 
-	return KmCheck(ctx, KmSetUp(x), "the adapter takes its IPv4 address and the permanent neighbour", "IP Helper failed");
+	StrCpy(error, sizeof(error), "");
+	return KmCheck(ctx, KmSetUp(x, error, sizeof(error)), "the adapter takes its IPv4 address and the permanent neighbour", "%s", error);
 }
 
 // The L2 adapter on the KM-TEST adapter, with ring entries of the AF_XDP rings (0 for the default) and batches of batch
