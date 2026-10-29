@@ -9,6 +9,12 @@
 // limits. Every frame that the switch delivers is read to its last byte, so AddressSanitizer reports one that runs past
 // the input or past the buffer of the switch.
 //
+// The switch learns the source address of the host of each frame in its IP table too, which reads the IPv4 header, the
+// ARP packet or the IPv6 header after the tag (SwitchIpLearn of Core/SwitchIp.c; SDN-50-N, #492). The IP table holds 64
+// entries as well; it ages with the MAC table, and before 0xFE clears both tables each is read into a list of fewer entries
+// than it may hold, its first ones by VLAN and address, and the entries of the source MAC address of the frame and of the
+// address in the place of the source of an untagged IPv4 packet are cleared alone.
+//
 // The frame then comes in at the same port of a second switch of the same ports, whose filter is the policy engine of
 // the security of an L2 Network under every protection (Core/SwitchSecurity.h; SDN-41, #234): the member of the access
 // port is the gateway of the Network, and the members of the trunk ports are its clients. So inputs also reach the filter
@@ -32,6 +38,7 @@
 #define	FUZZ_NUM_MEMBERS		3				// ... the members
 #define	FUZZ_AGE				0xFF			// The clock byte that ages the MAC table after the frame
 #define	FUZZ_CLEAR				0xFE			// ... and the one that clears it
+#define	FUZZ_LIST				8				// The entries of a table that a read before a clear lists at most
 
 // The document of the policy engine of the second switch: its Network, whose starter rule lets every frame through, so
 // that only the protections drop one
@@ -69,6 +76,7 @@ static SWITCH *FuzzSwitchNew(SWITCH_CONFIG *c, const UINT *members, UINT *ports)
 
 	c->MaxPorts = FUZZ_NUM_PORTS;
 	c->MaxMacs = 64;
+	c->MaxIps = 64;
 	c->AgingTime = 2000;
 	c->BroadcastLimit = 50;
 	c->MulticastLimit = 20;
@@ -207,8 +215,22 @@ static void FuzzSwitch(const uint8_t *data, size_t size)
 	}
 	else if (data[1] == FUZZ_CLEAR)
 	{
+		SWITCH_MAC_ENTRY macs[FUZZ_LIST];
+		SWITCH_IP_ENTRY ips[FUZZ_LIST];
+
+		// The first entries of each table, then the entries of the source of the frame and of the address at the place of the
+		// source of an IPv4 packet, then every entry (SDN-50-N, #492)
+		SwitchGetMacs(fuzz_switch, macs, FUZZ_LIST);
+		SwitchGetIps(fuzz_switch, ips, FUZZ_LIST);
+		if (frame_size >= 30)
+		{
+			SwitchClearMac(fuzz_switch, frame + 6);
+			SwitchClearIps(fuzz_switch, frame + 26, 4);
+		}
 		SwitchClearMacs(fuzz_switch);
 		SwitchClearMacs(fuzz_secure);
+		SwitchClearIps(fuzz_switch, NULL, 0);
+		SwitchClearIps(fuzz_secure, NULL, 0);
 	}
 
 	free(frame);

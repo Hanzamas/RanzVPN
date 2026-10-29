@@ -16,9 +16,16 @@
 // is copied into a buffer of its size exactly, so that AddressSanitizer reports a read past it. The client allocates from
 // the process heap, which Mayaqua does not count: AddressSanitizer checks those blocks, and -rss_limit_mb bounds a leak.
 //
+// An Operation of the Controller (SDN-50-N, #492) the client decodes and checks (ControlTakeOperation), and hands one for an
+// L2 Network of its state to the owner, which checks it in turn: a kind that the node knows, a Network that ends in its
+// buffer, and a MAC address or an address of the size of one, for a clear of its table alone. The owner answers with every
+// entry that an answer holds and one more, of every size of address, with a status of every value and strings of bytes that
+// are no ASCII and do not end, which the client must make an answer of.
+//
 // The seeds (src/fuzz/seeds/fuzz_control.py) are the control messages that the controller conformance tests and the
 // cluster tests sent and received, each a seed of its own (wire-*.bin), and the messages that each simulated node
-// received, in their order, as one stream (stream-*.bin).
+// received, in their order, as one stream (stream-*.bin); and a state with L2 and L3 Networks followed by Operations of
+// every kind (operation-*.bin).
 //
 // fuzz-max-len: 8192
 // fuzz-libs: corecontrol
@@ -42,6 +49,7 @@ typedef struct FUZZ_CONTROL
 {
 	UINT NumStates;					// The states handed to it
 	UINT64 Generation;				// ... and the Generation of the last one
+	UINT NumOperations;				// The Operations handed to it (SDN-50-N, #492)
 } FUZZ_CONTROL;
 
 // The static key of the node of the clients: the client keeps it and never runs a handshake with it
@@ -418,6 +426,51 @@ static void FuzzControlState(void *param, const CONTROL_STATE *st)
 	FuzzSecurities(st);
 }
 
+// The owner of the live operations (SDN-50-N, #492): it checks the Operation that it is handed, and answers it with every entry
+// that an answer holds and one more, each of another size of address, a status of any value by the id of the Operation, and a
+// message and members of bytes that are no ASCII and do not end
+static void FuzzControlOperation(void *param, const CONTROL_OPERATION *op, CONTROL_OPERATION_RESULT *res)
+{
+	static const UINT sizes[] = {4, 16, 0, 5};
+	FUZZ_CONTROL *f = (FUZZ_CONTROL *)param;
+
+	f->NumOperations++;
+
+	if (op->Kind < CONTROL_OPERATION_MAC_TABLE || op->Kind > CONTROL_OPERATION_CLEAR_IP_TABLE)
+	{
+		FuzzFail("an Operation of a kind that the node does not know was handed to the owner");
+	}
+	if (FuzzEnds(op->Network, sizeof(op->Network)) == false)
+	{
+		FuzzFail("the Network of an Operation does not end");
+	}
+	if (op->HasMac && op->Kind != CONTROL_OPERATION_CLEAR_MAC_TABLE)
+	{
+		FuzzFail("an Operation that is no clear of the MAC table names a MAC address");
+	}
+	if (op->AddressSize != 0 && (op->Kind != CONTROL_OPERATION_CLEAR_IP_TABLE || (op->AddressSize != 4 && op->AddressSize != 16)))
+	{
+		FuzzFail("an Operation that is no clear of the IP table names an address, or one that is neither IPv4 nor IPv6");
+	}
+
+	res->Status = (UINT)(op->Id % 5);
+	memset(res->Message, 0xC3, sizeof(res->Message));
+	res->Total = (UINT)op->Id;
+	res->NumEntries = CONTROL_MAX_ENTRIES + 1;
+	for (UINT i = 0;i < CONTROL_MAX_ENTRIES;i++)
+	{
+		CONTROL_TABLE_ENTRY *e = &res->Entries[i];
+
+		e->Vlan = i;
+		memset(e->Mac, (int)i, sizeof(e->Mac));
+		e->AddressSize = sizes[i % (sizeof(sizes) / sizeof(sizes[0]))];
+		memset(e->Address, (int)(i + 1), sizeof(e->Address));
+		memset(e->Member, 'a' + (int)(i % 26), sizeof(e->Member));
+		e->Member[0] = (char)0xFF;
+		e->LastSeen = op->Id + i;
+	}
+}
+
 // A client without its thread, whose owner is f
 static CONTROL_CLIENT *FuzzControlNew(FUZZ_CONTROL *f)
 {
@@ -430,6 +483,8 @@ static CONTROL_CLIENT *FuzzControlNew(FUZZ_CONTROL *f)
 	cfg.StaticKey = fuzz_control_key;
 	cfg.Proc = FuzzControlState;
 	cfg.Param = f;
+	cfg.OperationProc = FuzzControlOperation;
+	cfg.OperationParam = f;
 
 	CONTROL_CLIENT *c = ControlNew(&cfg);
 	if (c == NULL)
