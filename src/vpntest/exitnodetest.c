@@ -63,7 +63,7 @@
 #define	EXITNODETEST_NODE_C			"node-c"
 #define	EXITNODETEST_GW4			"gw4"
 #define	EXITNODETEST_GW6			"gw6"
-#define	EXITNODETEST_SERVER			"192.0.2.10:443"	// A server address that the runner reaches through its default route (TEST-NET-1)
+#define	EXITNODETEST_SERVER_ADDRESS	"192.0.2.10:443"	// A server address that the runner reaches through its default route (TEST-NET-1)
 #define	EXITNODETEST_DATA_4			"ranz exit ipv4"
 #define	EXITNODETEST_DATA_6			"ranz exit ipv6"
 #define	EXITNODETEST_MAX_PACKET		2048
@@ -76,7 +76,7 @@ static UCHAR exitnodetest_gw6[4] = {100, 64, 0, 6};			// gw6 ...
 static UCHAR exitnodetest_gw6_6[16] = {0xFD, 0x00, 0x00, 0x55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x06};
 static UCHAR exitnodetest_net4[4] = {198, 51, 100, 77};		// An IPv4 address of the internet (TEST-NET-2)
 static UCHAR exitnodetest_net6[16] = {0x20, 0x01, 0x0D, 0xB8, 0x00, 0x55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x77};	// ... and an IPv6 one
-static UCHAR exitnodetest_server[4] = {192, 0, 2, 10};		// The server address of EXITNODETEST_SERVER
+static UCHAR exitnodetest_server[4] = {192, 0, 2, 10};		// The server address of EXITNODETEST_SERVER_ADDRESS
 static UCHAR exitnodetest_any[16];							// 0.0.0.0/0 and ::/0
 
 // The checks of the test
@@ -950,7 +950,7 @@ static void ExitNodeTestRun(EXITNODETEST_CTX *ctx)
 		// The server address that the runner reaches by its default route, as a stream of the role gives one
 		ExitNodeTestBest(exitnodetest_server, 4, &server_luid, &server_length, detail, sizeof(detail));
 		Print("  [INFO] before an exit: %s\n", detail);
-		NodeClientServerAddress(c->Node, EXITNODETEST_SERVER);
+		NodeClientServerAddress(c->Node, EXITNODETEST_SERVER_ADDRESS);
 
 		// From here until exit none the default routes of the adapter take the traffic of the runner: the steps are short
 		Print("[exit gw4: an exit node that carries no IPv6]\n");
