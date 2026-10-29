@@ -11,7 +11,7 @@ import (
 // The join tokens (SDN-58, #251): one row for each secret that a User made in the portal for a device of
 // its own, with the name of the User, the name that the device is to take, and the end of the token, and the
 // SHA-256 of the secret, never the secret itself. A device that presents the secret with its static key is
-// enrolled as a Node that the User owns (internal/controller, joins.go), and the token is spent: the device
+// enrolled as a Node that the User owns (internal/controller, jointokens.go), and the token is spent: the device
 // takes it from the store as claimed first, so that two devices cannot enrol with one token, and the row is
 // deleted once the Node is made, or given back when the enrolment is refused. A join token is no intent, for
 // the reasons that a password and a user token are not: a revision, a rollback or an import never changes one

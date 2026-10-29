@@ -214,8 +214,12 @@ func selfAddresses(n intent.Node) []SelfAddress {
 // revision of the intent under the actor of ctx (POST /api/v1/self/devices): the Node is named name, or, when
 // name is empty, the first of user-1, user-2 and so on that no Node has. It is the enrolment of a login
 // (EnrolDevice), made by the User from the portal, so the errors are those of EnrolDevice, and one that
-// wraps ErrUserExpired or ErrUserBanned is a User that may not act now.
+// wraps ErrUserExpired or ErrUserBanned is a User that may not act now. A name that is no name of a resource is
+// refused whatever the key is (checkDeviceName), an error that wraps intent.ErrInvalid.
 func (c *Controller) AddSelfDevice(ctx context.Context, user, name string, key []byte) (Enrolment, error) {
+	if err := checkDeviceName(name); err != nil {
+		return Enrolment{}, err
+	}
 	if err := c.validUser(user); err != nil {
 		return Enrolment{}, err
 	}

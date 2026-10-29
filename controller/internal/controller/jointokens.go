@@ -48,6 +48,17 @@ var ErrBadJoinToken = errors.New("the join token is not one of this controller, 
 // deviceNameRule is the rule of the names of resources (intent), which the name of a Node is one of.
 var deviceNameRule = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
+// checkDeviceName refuses a name for the Node of a device that is no name of a resource, with an error that wraps
+// intent.ErrInvalid. The empty name is the one that the controller draws. The name is checked before anything else
+// is, so a name that is no name is refused whichever key comes with it, also one that a Node of the User holds
+// already, whose enrolment is otherwise made again with no revision (EnrolDevice).
+func checkDeviceName(name string) error {
+	if name != "" && !deviceNameRule.MatchString(name) {
+		return badRequestf("the name of the device must be 1 to 63 lower-case letters, digits and hyphens, not starting or ending with a hyphen")
+	}
+	return nil
+}
+
 // JoinTokenInfo is a join token as its User sees it in the portal: never its secret.
 type JoinTokenInfo struct {
 	// ID names the token in the list of its User and in the revocation of it.
@@ -99,8 +110,8 @@ func joinInfo(t store.JoinToken) JoinTokenInfo {
 // name of a resource, one that wraps ErrConflict a User that has MaxJoinTokens waiting already, and one that
 // wraps ErrUserExpired or ErrUserBanned a User that may not act now.
 func (c *Controller) MakeJoinToken(ctx context.Context, user, name string) (NewJoinToken, error) {
-	if name != "" && !deviceNameRule.MatchString(name) {
-		return NewJoinToken{}, badRequestf("the name of the device must be 1 to 63 lower-case letters, digits and hyphens, not starting or ending with a hyphen")
+	if err := checkDeviceName(name); err != nil {
+		return NewJoinToken{}, err
 	}
 	if err := c.validUser(user); err != nil {
 		return NewJoinToken{}, err

@@ -15,10 +15,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
+	"github.com/Hanzamas/RanzVPN/controller/internal/audit"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
@@ -113,11 +115,106 @@ func (h *harness) portalSignIn(t *testing.T, tab context.Context, user, password
 	h.settle(t, tab, "portal")
 }
 
-// problemOf waits until the page shows a problem and returns what it says.
-func (h *harness) problemOf(t *testing.T, tab context.Context) string {
+// problemOf waits until the page shows a problem and returns what it says. A page that shows none within the time of
+// every wait fails the test with the report of what the page and the controller saw (pageReport), and problemOf
+// reports false, so that the rest of the test still runs.
+func (h *harness) problemOf(t *testing.T, tab context.Context) (string, bool) {
 	t.Helper()
-	return run(t, tab, chromedp.Poll[string](`(() => document.querySelector('ranz-problem')?.textContent || null)()`,
+	ctx, cancel := context.WithTimeout(tab, waitTimeout)
+	defer cancel()
+	problem, err := chromedp.Run(ctx, chromedp.Poll[string](`(() => document.querySelector('ranz-problem')?.textContent || null)()`,
 		chromedp.WithPollingInterval(pollInterval), chromedp.WithPollingTimeout(waitTimeout)))
+	if err != nil {
+		t.Errorf("the page shows no problem: %v\n%s", err, h.pageReport(tab))
+		return "", false
+	}
+	return problem, true
+}
+
+// reportTimeout bounds each question that pageReport asks of a page that may not answer.
+const reportTimeout = 5 * time.Second
+
+// watchPage makes the page that tab shows keep a log of its calls of fetch, with what each answered or why it failed,
+// and of the errors that its scripts raise, which pageReport reads. It changes nothing of what the page does.
+func watchPage(t *testing.T, tab context.Context) {
+	t.Helper()
+	run(t, tab, chromedp.Evaluate[chromedp.Void](`(() => {
+		const log = (window.pageLog = []);
+		const call = window.fetch.bind(window);
+		window.fetch = async (input, init) => {
+			const entry = { call: (init?.method ?? 'GET') + ' ' + input };
+			log.push(entry);
+			try {
+				const r = await call(input, init);
+				entry.status = r.status;
+				return r;
+			} catch (err) {
+				entry.failed = String(err);
+				throw err;
+			}
+		};
+		addEventListener('error', (ev) => log.push({ error: ev.message }));
+		addEventListener('unhandledrejection', (ev) => log.push({ rejected: String(ev.reason) }));
+	})()`))
+}
+
+// pageReport says what the page in tab and the controller show, for the message of a wait that ran out: where the page
+// is and what its problem area, its fields and its buttons hold, the log of watchPage, the failed logins that the
+// controller recorded, and what the controller answers to a wrong sign-in that the page makes itself. A question that
+// gets no answer says so.
+func (h *harness) pageReport(tab context.Context) string {
+	ask := func(script string, await bool) string {
+		ctx, cancel := context.WithTimeout(tab, reportTimeout)
+		defer cancel()
+		var action chromedp.Action[string]
+		if await {
+			action = chromedp.Evaluate[string](script, chromedp.EvalAwaitPromise)
+		} else {
+			action = chromedp.Evaluate[string](script)
+		}
+		out, err := chromedp.Run(ctx, action)
+		if err != nil {
+			return "no answer: " + err.Error()
+		}
+		return out
+	}
+	page := ask(`JSON.stringify({
+		url: location.href,
+		state: document.documentElement.dataset.state,
+		problem: document.querySelector('ranz-problem')?.textContent,
+		fields: [...document.querySelectorAll('form input')].map((i) => i.id + ' holds ' + i.value.length + ' characters'),
+		disabled: [...document.querySelectorAll('form button')].map((b) => b.disabled),
+		log: window.pageLog,
+	})`, false)
+	recorded := func() string {
+		ctx, cancel := context.WithTimeout(context.Background(), reportTimeout)
+		defer cancel()
+		l, err := h.admin.Audit(ctx, audit.Filter{Kind: audit.AuthFailed})
+		if err != nil {
+			return "no answer: " + err.Error()
+		}
+		lines := make([]string, len(l.Records))
+		for i, r := range l.Records {
+			lines[i] = fmt.Sprintf("%s from %s: %s", r.Actor, r.Source, r.Message)
+		}
+		return fmt.Sprintf("%d (%s)", len(lines), strings.Join(lines, "; "))
+	}()
+	login := ask(`fetch('/api/v1/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify({user: 'alice', password: 'not the password of alice', scope: 'self'})})
+		.then(async (r) => r.status + ' ' + (await r.text()).replace(/\s+/g, ' '), (err) => 'failed: ' + err)`, true)
+	return fmt.Sprintf("the page: %s\nthe failed logins that the controller recorded: %s\nthe answer to a wrong sign-in that the page makes itself: %s", page, recorded, login)
+}
+
+// redirectedTo opens the page at path in tab, which holds no token that it takes, and waits for the page page that it
+// goes on to, the sign-in of the portal or of the console. The page that is left replaces itself with the sign-in, so
+// the wait is for the document that is there then: a poll of the page that is left would end with the navigation.
+func (h *harness) redirectedTo(t *testing.T, tab context.Context, path, page string) {
+	t.Helper()
+	run(t, tab, chromedp.Steps(
+		chromedp.Navigate(h.url(path)),
+		chromedp.WaitReady(chromedp.CSS(fmt.Sprintf(`html[data-page=%q]`, page))),
+	))
+	h.settle(t, tab, page)
 }
 
 // portalRows waits until the table with the selector table has want rows, and returns the text of each.
@@ -211,15 +308,15 @@ func TestAUserUsesThePortal(t *testing.T) {
 
 	// A page of the portal without a token goes to the sign-in, and a wrong password is refused in the words of
 	// the controller, with the field emptied
-	run(t, tab, chromedp.Navigate(h.url("/portal")))
-	h.settle(t, tab, "portal-sign-in")
+	h.redirectedTo(t, tab, "/portal", "portal-sign-in")
 	portalControls(t, tab, "the sign-in", "signIn")
+	watchPage(t, tab)
 	run(t, tab, chromedp.Steps(
 		chromedp.SetValue(chromedp.CSS("#user"), "alice"),
 		chromedp.SetValue(chromedp.CSS("#password"), "not the password of alice"),
 		chromedp.Click(chromedp.CSS(`#sign-in button[type="submit"]`)),
 	))
-	if refused := h.problemOf(t, tab); !strings.Contains(refused, "the user name or the password is wrong") {
+	if refused, ok := h.problemOf(t, tab); ok && !strings.Contains(refused, "the user name or the password is wrong") {
 		t.Errorf("a wrong password: the sign-in says %q", refused)
 	}
 	if left := run(t, tab, chromedp.Evaluate[string](`document.querySelector('#password').value`)); left != "" {
@@ -252,12 +349,13 @@ func TestAUserUsesThePortal(t *testing.T) {
 		t.Errorf("the controller holds the devices %v of alice, want her laptop and her phone", devices)
 	}
 	// What the controller refuses is shown as it says it: the key of the laptop of bob is no key of hers to add
+	watchPage(t, tab)
 	run(t, tab, chromedp.Steps(
 		chromedp.SetValue(chromedp.CSS("#device-name"), "stolen"),
 		chromedp.SetValue(chromedp.CSS("#device-key"), portalKey(bobKey)),
 		chromedp.Click(chromedp.CSS(`#add-form button[type="submit"]`)),
 	))
-	if refused := h.problemOf(t, tab); !strings.Contains(refused, "is no device of User") {
+	if refused, ok := h.problemOf(t, tab); ok && !strings.Contains(refused, "is no device of User") {
 		t.Errorf("adding the key of the laptop of bob: the page says %q", refused)
 	}
 
@@ -326,8 +424,7 @@ func TestAUserUsesThePortal(t *testing.T) {
 
 	// The portal and the console keep their tokens apart: the console does not open with the token of the
 	// portal, and signing in to the console does not take the portal away
-	run(t, tab, chromedp.Navigate(h.url("/")))
-	h.settle(t, tab, "sign-in")
+	h.redirectedTo(t, tab, "/", "sign-in")
 	h.signIn(t, tab, h.secret)
 	h.visit(t, tab, "/portal", "portal")
 	if rows := portalRows(t, tab, "#devices", 2); !strings.Contains(rows[0], "alice-laptop") {
@@ -339,13 +436,16 @@ func TestAUserUsesThePortal(t *testing.T) {
 	if _, err := h.client(selfSecret).Self(ctx); err != nil {
 		t.Fatalf("the token of the portal before the sign-out: %v", err)
 	}
-	run(t, tab, chromedp.Click(chromedp.Search(`//header[@id="portal-header"]//button[normalize-space()="Sign out"]`)))
+	// The page leaves for the sign-in once the controller has ended the token, so the wait is for the sign-in itself
+	run(t, tab, chromedp.Steps(
+		chromedp.Click(chromedp.Search(`//header[@id="portal-header"]//button[normalize-space()="Sign out"]`)),
+		chromedp.WaitReady(chromedp.CSS(`html[data-page="portal-sign-in"]`)),
+	))
 	h.settle(t, tab, "portal-sign-in")
 	if _, err := h.client(selfSecret).Self(ctx); httpStatus(err) != http.StatusUnauthorized {
 		t.Errorf("the token of the portal after the sign-out: %v, want 401", err)
 	}
-	run(t, tab, chromedp.Navigate(h.url("/portal-join")))
-	h.settle(t, tab, "portal-sign-in")
+	h.redirectedTo(t, tab, "/portal-join", "portal-sign-in")
 
 	// bob signs in to the same portal, and sees his laptop and nothing of the devices of alice
 	h.portalSignIn(t, tab, "bob", portalBobPassword)
