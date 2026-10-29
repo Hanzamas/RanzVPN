@@ -35,10 +35,10 @@
 // import and export route targets, and accept: the prefixes, with their more specific ones, that
 // are taken from the fabric into the VRF). An announce or withdraw with the vrf of one of them is
 // an IP prefix route (EVPN type 5) of that VRF, with the VTEP as its next hop, so it has no
-// next_hop. A learned message with a vni is an IP prefix route of the fabric in the EVPN VRF vrf:
-// its prefix via the VTEP next_hop of the fabric, with the vni and the router_mac to send it in
-// VXLAN; a withdrawn message with a vni is one that went. The node installs them into the
-// forwarding of the VRF, never into the Windows routing table.
+// next_hop; one with any other vrf is refused. A learned message with a vni is an IP prefix route
+// of the fabric in the EVPN VRF vrf: its prefix via the VTEP next_hop of the fabric, with the vni
+// and the router_mac to send it in VXLAN; a withdrawn message with a vni is one that went. The
+// node installs them into the forwarding of the VRF, never into the Windows routing table.
 package sidecar
 
 import (

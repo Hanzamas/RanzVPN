@@ -8,7 +8,9 @@ package sidecar
 // An announce or withdraw whose vrf is one of these VRFs is a route of that VRF: an IP prefix route with the route
 // distinguisher of the VRF, no ESI, Ethernet tag 0, no gateway IP and the L3 VNI of the VRF as its label, the VTEP as its
 // next hop, and the export route targets of the VRF, the VXLAN encapsulation and the router MAC as its extended
-// communities: the interface-less model of RFC 9136 section 4.4.1. An IP prefix route of a peer goes to each VRF whose
+// communities: the interface-less model of RFC 9136 section 4.4.1. One with the vrf of no such VRF, also in a session
+// without EVPN, is refused: the prefix of a VRF never goes to the peers as a unicast route, where the prefixes of two VRFs
+// would meet in one table. An IP prefix route of a peer goes to each VRF whose
 // import route targets it carries and whose accept list covers its prefix, as a learned message with the vrf, the VTEP
 // of the fabric as the next hop, the VNI and the router MAC of the fabric; when it goes, as a withdrawn message with the
 // vrf and the VNI. The node installs neither into the Windows routing table: its own forwarding of the VRF carries them
@@ -223,6 +225,15 @@ func (e *evpnState) has(vrf uint32) bool {
 	return e != nil && vrf != 0 && e.byID[vrf] != nil
 }
 
+// vrf is the EVPN VRF of the vrf of an announce or withdraw message, or why there is none: a VRF that the evpn object
+// does not name, also in a session without EVPN.
+func (e *evpnState) vrf(id uint32) (*evpnVRF, error) {
+	if !e.has(id) {
+		return nil, fmt.Errorf("VRF %d is no EVPN VRF of the gateway: the prefixes of a VRF go to the peers as its IP prefix routes alone", id)
+	}
+	return e.byID[id], nil
+}
+
 // importsAny reports whether the VRF imports one of the route targets.
 func (v *evpnVRF) importsAny(targets []string) bool {
 	for _, t := range targets {
@@ -325,10 +336,13 @@ func (e *evpnState) evpnPath(v *evpnVRF, prefix netip.Prefix) (*apiutil.Path, er
 	}, nil
 }
 
-// announceEVPN applies an announce of an EVPN VRF: the prefix goes to the peers as an IP prefix route of the VRF. The
+// announceEVPN applies an announce with a vrf: the prefix goes to the peers as an IP prefix route of that EVPN VRF. The
 // next hop of the route is the VTEP, so the message names none.
 func (s *session) announceEVPN(m Message) error {
-	v := s.evpn.byID[m.VRF]
+	v, err := s.evpn.vrf(m.VRF)
+	if err != nil {
+		return err
+	}
 	prefix, err := parsePrefix(m.Prefix)
 	if err != nil {
 		return err
@@ -350,22 +364,26 @@ func (s *session) announceEVPN(m Message) error {
 	return nil
 }
 
-// withdrawEVPN applies a withdraw of an EVPN VRF.
+// withdrawEVPN applies a withdraw with a vrf, of a prefix of that EVPN VRF.
 func (s *session) withdrawEVPN(m Message) error {
+	v, err := s.evpn.vrf(m.VRF)
+	if err != nil {
+		return err
+	}
 	prefix, err := parsePrefix(m.Prefix)
 	if err != nil {
 		return err
 	}
-	key := evpnKey{vrf: m.VRF, prefix: prefix}
+	key := evpnKey{vrf: v.id, prefix: prefix}
 	id, ok := s.evpn.announced[key]
 	if !ok {
-		return fmt.Errorf("prefix %s is not announced in VRF %d", prefix, m.VRF)
+		return fmt.Errorf("prefix %s is not announced in VRF %d", prefix, v.id)
 	}
 	if err := s.bgp.DeletePath(apiutil.DeletePathRequest{UUIDs: []uuid.UUID{id}}); err != nil {
 		return err
 	}
 	delete(s.evpn.announced, key)
-	s.log.Info("EVPN prefix withdrawn", "vrf", m.VRF, "prefix", prefix)
+	s.log.Info("EVPN prefix withdrawn", "vrf", v.id, "prefix", prefix)
 	return nil
 }
 

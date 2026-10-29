@@ -427,8 +427,8 @@ func (s *session) send(m Message) {
 
 // announce applies an announce message: the prefix goes to the peers as a path of the node.
 func (s *session) announce(m Message) error {
-	// A prefix of an EVPN VRF goes to the fabric as an IP prefix route (evpn.go; SDN-25 #201)
-	if s.evpn.has(m.VRF) {
+	// A prefix of an EVPN VRF goes to the fabric as an IP prefix route, one of another VRF nowhere (evpn.go; SDN-25 #201)
+	if m.VRF != 0 {
 		return s.announceEVPN(m)
 	}
 	prefix, err := parsePrefix(m.Prefix)
@@ -487,7 +487,7 @@ func (s *session) announce(m Message) error {
 // withdraw applies a withdraw message.
 func (s *session) withdraw(m Message) error {
 	// ... and leaves it (evpn.go)
-	if s.evpn.has(m.VRF) {
+	if m.VRF != 0 {
 		return s.withdrawEVPN(m)
 	}
 	prefix, err := parsePrefix(m.Prefix)

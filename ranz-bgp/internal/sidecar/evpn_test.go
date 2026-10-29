@@ -350,12 +350,15 @@ func TestEVPN(t *testing.T) {
 		return !a && b
 	})
 
-	// What cannot be applied is answered with an error; the session goes on
+	// What cannot be applied is answered with an error; the session goes on. A prefix of VRF 103, which the gateway does
+	// not hand to the fabric, goes nowhere, and its withdraw takes nothing of VRF 102
 	refused := []Message{
 		{Type: TypeAnnounce, VRF: 101, Prefix: "10.20.0.0/24", NextHop: "192.0.2.1"},
 		{Type: TypeAnnounce, VRF: 101, Prefix: "10.20.0.1/24"},
 		{Type: TypeWithdraw, VRF: 102, Prefix: "10.20.0.0/24"},
 		{Type: TypeWithdraw, VRF: 102, Prefix: "not-a-prefix"},
+		{Type: TypeAnnounce, VRF: 103, Prefix: "10.30.0.0/24"},
+		{Type: TypeWithdraw, VRF: 103, Prefix: "10.10.0.0/24"},
 	}
 	for _, m := range refused {
 		node.send(m)
@@ -364,6 +367,30 @@ func TestEVPN(t *testing.T) {
 			t.Errorf("error for %+v: %+v", m, e)
 		}
 	}
+	time.Sleep(settleTime)
+	if _, ok := fabric.routes()["10.10.0.0/24 65000:102"]; !ok {
+		t.Error("the fabric lost the route of VRF 102 after a withdraw of VRF 103")
+	}
+	if n := fabric.unicastRoutes(); n != 0 {
+		t.Errorf("the fabric has %d IPv4 unicast routes of the gateway, whose prefixes are of VRFs", n)
+	}
+}
+
+// unicastRoutes is the number of the IPv4 unicast routes that the fabric router has from the gateway
+func (f *testFabric) unicastRoutes() int {
+	f.t.Helper()
+	num := 0
+	err := f.bgp.ListPath(apiutil.ListPathRequest{TableType: api.TableType_TABLE_TYPE_GLOBAL, Family: bgp.RF_IPv4_UC}, func(_ bgp.NLRI, paths []*apiutil.Path) {
+		for _, p := range paths {
+			if p.PeerAddress.IsValid() {
+				num++
+			}
+		}
+	})
+	if err != nil {
+		f.t.Fatalf("fabric RIB: %v", err)
+	}
+	return num
 }
 
 // hasEVPN reports whether the global RIB of the sidecar holds at least num IP prefix routes of the peers
