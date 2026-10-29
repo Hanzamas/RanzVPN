@@ -1573,3 +1573,11 @@ UINT NodePeeringGetPeers(NODE *n, CONTROL_PEERING_PEER *list, UINT max) {
 
 	return num;
 }
+
+// The report that the control stream of the node sends (NodePeeringStart), NULL while the overlay does not run. A test without
+// a control stream reads it and writes it as the client does (ControlGetPeeringReport, ControlWritePeeringReport).
+CONTROL_PEERING_REPORT *NodePeeringGetReport(NODE *n) {
+	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
+
+	return (p != NULL ? p->Report : NULL);
+}

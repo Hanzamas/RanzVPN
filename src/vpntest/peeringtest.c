@@ -18,15 +18,23 @@
 // - The full mesh: each node starts its sidecar, whose pipe has the strict DACL, and has a session established with each
 //   other node; each learns exactly what the others announce in the VRFs that they share, each prefix in its VRF, and the
 //   forwarding table of the VRF leads the LAN of each peer to that peer, so a packet of each host to the LAN of each other
-//   node arrives at the host of that node, in that VRF. The two LANs 192.168.1.0/24 stay apart: node-c reaches the one of
-//   node-a in red and the one of node-b in blue, and node-a, which is in no VRF blue, learns nothing of blue.
+//   node arrives at the host of that node, in that VRF. The adapter of the host of each node takes the LAN of each other node
+//   in a VRF that the two share as a route of that node there, the learned ones as the others, as the adapters of the VRFs of
+//   the client role take a state and put its routes into the Windows routing table through IP Helper (NodeClient.c,
+//   NodeVrfAdapter.c). The two LANs 192.168.1.0/24 stay apart: node-c reaches the one of node-a in red and the one of node-b
+//   in blue, and node-a, which is in no VRF blue, learns nothing of blue.
 // - A session from 127.0.0.9, an address that the Controller did not name, is refused, and node-a counts it.
+// - The report on the control stream: the report that the control stream of each node sends holds the peers of its sidecar,
+//   the state of each session, the prefixes learned from each and the sessions refused. Written as the client writes it, it is
+//   one Telemetry message whose peering has them by the fields of the schema, and a report that did not change is not written
+//   again.
 // - Red stops peering (Generation 2): node-a, in no VRF that peers any more, stops its sidecar, and no node holds a route of
 //   red that it learned by BGP any more; node-b and node-c keep their session in blue. The Controller gives the LAN subnets
 //   of red as routes of their nodes again, so the packets to a LAN of red go by those. Red peers again (Generation 3):
 //   node-a starts a new sidecar and the mesh converges again.
 // - The sidecar of node-c stops answering, as a host that loses power: its threads are suspended. Node-a and node-b remove
-//   its routes within the hold time of the sessions, and keep each other's; once it answers again, the mesh converges.
+//   its routes within the hold time of the sessions, from their forwarding tables and from the adapters of their hosts, and
+//   keep each other's; once it answers again, the mesh converges.
 // - Node-c stops: its sidecar ends the sessions, and node-a and node-b remove its routes within the hold time.
 // Print "PEERING TEST OK" only when every check passes. .github/scripts/bgp-peering.ps1 builds ranz.exe and runs it.
 
@@ -63,6 +71,7 @@
 #define	PEERINGTEST_POLL		50			// Poll interval of observable state (ms)
 #define	PEERINGTEST_SIZE		100			// The size of a test packet
 #define	PEERINGTEST_TEXT		4096		// The size of the text of the report of a node
+#define	PEERINGTEST_WIRE		4096		// A frame of the report of a node on the control stream at most
 #define	PEERINGTEST_ASN			4200000000U	// The AS of the overlay, one for every node (intent.PeeringASN)
 #define	PEERINGTEST_HOLD		9			// The BGP hold time of the sessions in s, as the VRFs of the Intent name it
 #define	PEERINGTEST_GRACE		1000		// What the sidecar and the node take past the hold time to remove the routes (ms)
@@ -110,7 +119,17 @@ static PEERINGTEST_MEMBER peeringtest_members[] =
 
 #define	PEERINGTEST_MEMBERS		(sizeof(peeringtest_members) / sizeof(peeringtest_members[0]))
 
-// One node and the fake adapter of its host, which keeps the last packet that the host took
+// A route of a peer in a state that the adapter of a host took, with the node of that peer
+typedef struct PEERINGTEST_HOST_ROUTE
+{
+	UINT Node;							// The node of the peer, PEERINGTEST_NODES for a peer of another name
+	CONTROL_ROUTE Route;
+} PEERINGTEST_HOST_ROUTE;
+
+#define	PEERINGTEST_HOST_ROUTES	((PEERINGTEST_NODES - 1) * CONTROL_MAX_ROUTES)
+
+// One node and the fake adapter of its host, which keeps the last packet that the host took and the routes of the peers in
+// the last state that it took
 typedef struct PEERINGTEST_NODE
 {
 	wchar_t Dir[MAX_PATH];				// Its data directory
@@ -119,11 +138,13 @@ typedef struct PEERINGTEST_NODE
 	NODE_READER Reader;					// The test thread as a reader of the node's tables, online while it looks up or sends
 	bool Gone;							// Its sidecar does not answer, or it stopped: the other nodes have no route of it
 	bool Stopped;						// It stopped
-	SRWLOCK Lock;						// LastVrf, Last and LastSize
+	SRWLOCK Lock;						// LastVrf, Last, LastSize, NumHostRoutes and HostRoutes
 	volatile LONG Arrivals;				// Packets that the host took
 	UINT LastVrf;						// The VRF of the last one ...
 	UCHAR Last[PEERINGTEST_SIZE * 2];	// ... and the packet, as much as fits
 	UINT LastSize;
+	UINT NumHostRoutes;					// The routes of the peers in the last state that the adapter took
+	PEERINGTEST_HOST_ROUTE HostRoutes[PEERINGTEST_HOST_ROUTES];
 } PEERINGTEST_NODE;
 
 // A thread of a sidecar that the test suspended
@@ -138,6 +159,7 @@ typedef struct PEERINGTEST_CTX
 {
 	UINT NumChecks;
 	UINT NumFailed;
+	TRANSPORT *Loopback;				// The in-process loopback transport of the nodes
 	PEERINGTEST_NODE Nodes[PEERINGTEST_NODES];
 	UINT64 Generation;					// The Generation that the nodes run ...
 	bool RedPeers;						// ... and whether red peers by BGP in it
@@ -549,6 +571,42 @@ static void PeeringTestAdapter(NODE *n, void *param, UINT vrf_id, const UCHAR *p
 	ReleaseSRWLockExclusive(&t->Lock);
 }
 
+// The fake adapter of a host takes a state that the overlay applied, as the adapters of the VRFs of the client role take one
+// and put the routes of its peers into the Windows routing table through IP Helper (NodeClient.c, NodeVrfAdapter.c): with each
+// Generation, and with the forwarding tables that the BGP peering builds anew when the routes that it learned change. It keeps
+// the routes of the peers, each with the node of its peer.
+static void PeeringTestHostState(NODE *n, void *param, const CONTROL_STATE *st)
+{
+	PEERINGTEST_NODE *t = (PEERINGTEST_NODE *)param;
+
+	AcquireSRWLockExclusive(&t->Lock);
+	{
+		t->NumHostRoutes = 0;
+		for (UINT i = 0;i < st->NumPeers;i++)
+		{
+			const CONTROL_PEER *cp = &st->Peers[i];
+			UINT node = PEERINGTEST_NODES;
+
+			for (UINT j = 0;j < PEERINGTEST_NODES;j++)
+			{
+				if (StrCmp(cp->Name, peeringtest_names[j]) == 0)
+				{
+					node = j;
+				}
+			}
+
+			for (UINT j = 0;j < cp->NumRoutes && j < CONTROL_MAX_ROUTES && t->NumHostRoutes < PEERINGTEST_HOST_ROUTES;j++)
+			{
+				PEERINGTEST_HOST_ROUTE *r = &t->HostRoutes[t->NumHostRoutes++];
+
+				r->Node = node;
+				Copy(&r->Route, &cp->Routes[j], sizeof(CONTROL_ROUTE));
+			}
+		}
+	}
+	ReleaseSRWLockExclusive(&t->Lock);
+}
+
 // Whether the host of node t took at least target packets within timeout
 static bool PeeringTestArrived(PEERINGTEST_NODE *t, LONG target, UINT timeout)
 {
@@ -754,14 +812,10 @@ static bool PeeringTestWaitOverlay(PEERINGTEST_CTX *ctx)
 	}
 }
 
-// The report of the peering of node t as text (NodePeeringGetPeers, what the Telemetry of the node carries and ranz explain
-// prints): a line for each peer of its sidecar in the order of its address, with the state of their session and the
+// The num peers of a report as text: a line for each, with the address of its sidecar, the state of their session and the
 // prefixes learned from it, each after the name of its VRF
-static void PeeringTestReport(PEERINGTEST_NODE *t, char *text, UINT size)
+static void PeeringTestPeersText(CONTROL_PEERING_PEER *peers, UINT num, char *text, UINT size)
 {
-	CONTROL_PEERING_PEER *peers = ZeroMalloc(sizeof(CONTROL_PEERING_PEER) * CONTROL_MAX_PEERING_PEERS);
-	UINT num = NodePeeringGetPeers(t->Node, peers, CONTROL_MAX_PEERING_PEERS);
-
 	StrCpy(text, size, "");
 	for (UINT i = 0;i < num;i++)
 	{
@@ -787,7 +841,17 @@ static void PeeringTestReport(PEERINGTEST_NODE *t, char *text, UINT size)
 		StrCat(line, sizeof(line), "\n");
 		StrCat(text, size, line);
 	}
+}
 
+// The report of the peering of node t as text (NodePeeringGetPeers, what the Telemetry of the node carries and ranz explain
+// prints): a line for each peer of its sidecar in the order of its address, with the state of their session and the
+// prefixes learned from it, each after the name of its VRF
+static void PeeringTestReport(PEERINGTEST_NODE *t, char *text, UINT size)
+{
+	CONTROL_PEERING_PEER *peers = ZeroMalloc(sizeof(CONTROL_PEERING_PEER) * CONTROL_MAX_PEERING_PEERS);
+	UINT num = NodePeeringGetPeers(t->Node, peers, CONTROL_MAX_PEERING_PEERS);
+
+	PeeringTestPeersText(peers, num, text, size);
 	Free(peers);
 }
 
@@ -954,6 +1018,90 @@ static bool PeeringTestWaitTables(PEERINGTEST_CTX *ctx)
 	UINT64 end = Tick64() + PEERINGTEST_BOUND;
 
 	while (PeeringTestTablesAre(ctx, diff, sizeof(diff)) == false)
+	{
+		if (Tick64() >= end)
+		{
+			Print("  [INFO] %s\n", diff);
+			return false;
+		}
+		SleepThread(PEERINGTEST_POLL);
+	}
+
+	return true;
+}
+
+// Whether the adapter of the host of each node that is there took the routes of the peers that PeeringTestWant says: for each
+// LAN subnet of another node in a VRF of the node that its forwarding table leads to that node, a route of that node to it in
+// that VRF, and no other route of a peer. The first difference goes into diff.
+static bool PeeringTestHostRoutesAre(PEERINGTEST_CTX *ctx, char *diff, UINT diff_size)
+{
+	StrCpy(diff, diff_size, "");
+
+	for (UINT i = 0;i < PEERINGTEST_NODES;i++)
+	{
+		PEERINGTEST_NODE *t = &ctx->Nodes[i];
+		UINT want = 0;
+		bool ok = true;
+
+		if (t->Gone)
+		{
+			continue;
+		}
+
+		AcquireSRWLockShared(&t->Lock);
+		{
+			for (UINT k = 0;k < PEERINGTEST_MEMBERS && ok;k++)
+			{
+				PEERINGTEST_MEMBER *m = &peeringtest_members[k];
+				CONTROL_ROUTE lan;
+				bool found = false;
+
+				if (m->Node == i || PeeringTestWant(ctx, i, m) == NODE_VRF_NONE)
+				{
+					continue;
+				}
+
+				want++;
+				PeeringTestRoute(&lan, m->VrfId, m->Lan, PEERINGTEST_LENGTH);
+				for (UINT j = 0;j < t->NumHostRoutes && found == false;j++)
+				{
+					CONTROL_ROUTE *r = &t->HostRoutes[j].Route;
+
+					found = (t->HostRoutes[j].Node == m->Node && r->VrfId == lan.VrfId && r->AddressSize == lan.AddressSize && r->Length == lan.Length &&
+						Cmp(r->Address, lan.Address, lan.AddressSize) == 0);
+				}
+				if (found == false)
+				{
+					Format(diff, diff_size, "the adapter of the host of %s has no route to %s/%u of %s in %s", peeringtest_names[i], m->Lan, (UINT)PEERINGTEST_LENGTH,
+						peeringtest_names[m->Node], PeeringTestVrfName(m->VrfId));
+					ok = false;
+				}
+			}
+			if (ok && t->NumHostRoutes != want)
+			{
+				Format(diff, diff_size, "the adapter of the host of %s took %u routes of its peers, not %u", peeringtest_names[i], t->NumHostRoutes, want);
+				ok = false;
+			}
+		}
+		ReleaseSRWLockShared(&t->Lock);
+
+		if (ok == false)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// Whether the routes that the adapters of the hosts took come to PeeringTestHostRoutesAre within PEERINGTEST_BOUND; the
+// difference that stayed is printed
+static bool PeeringTestWaitHost(PEERINGTEST_CTX *ctx)
+{
+	char diff[MAX_SIZE];
+	UINT64 end = Tick64() + PEERINGTEST_BOUND;
+
+	while (PeeringTestHostRoutesAre(ctx, diff, sizeof(diff)) == false)
 	{
 		if (Tick64() >= end)
 		{
@@ -1177,6 +1325,10 @@ static bool PeeringTestMesh(PEERINGTEST_CTX *ctx, UINT64 gen, bool red_peers, co
 	PeeringTestCheck(ctx, tables, "The forwarding table of each VRF leads the LAN of each other node to that node, by BGP where the VRF peers and by the route of the Controller where it does not, and the LAN of the node to its host, and no other table leads there",
 		"%s", "see the line above");
 
+	bool host = (tables && PeeringTestWaitHost(ctx));
+	PeeringTestCheck(ctx, host, "The adapter of the host of each node takes the LAN of each other node as a route of that node in their VRF, by BGP where the VRF peers and by the route of the Controller where it does not, and no other route of a peer",
+		"%s", "see the line above");
+
 	PeeringTestStatus(ctx, starts);
 	if (tables)
 	{
@@ -1235,6 +1387,342 @@ static void PeeringTestRefused(PEERINGTEST_CTX *ctx)
 	PeeringTestCheck(ctx, after.NumEstablished == PEERINGTEST_NODES - 1, "The sessions of node-a with node-b and node-c stay established", "%u established", after.NumEstablished);
 }
 
+// A field of a message of the schema, as PeeringTestField reads it
+typedef struct PEERINGTEST_FIELD
+{
+	UINT Number;						// Its number
+	bool Bytes;							// It is length-delimited (wire type 2), else a varint (wire type 0) ...
+	UINT64 Value;						// ... whose value this is
+	UCHAR *Data;						// The bytes of a length-delimited one ...
+	UINT Size;							// ... and their number
+} PEERINGTEST_FIELD;
+
+// The varint at *pos of buf, size bytes, into *value; false when it is cut short or longer than 64 bits
+static bool PeeringTestVarint(UCHAR *buf, UINT size, UINT *pos, UINT64 *value)
+{
+	UINT64 v = 0;
+
+	for (UINT shift = 0;shift < 64 && *pos < size;shift += 7)
+	{
+		UCHAR b = buf[(*pos)++];
+
+		v |= (UINT64)(b & 0x7F) << shift;
+		if ((b & 0x80) == 0)
+		{
+			*value = v;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// The field at *pos of buf, size bytes, into f, and *pos moves behind it: false when it is cut short, or of a wire type other
+// than a varint and a length-delimited one
+static bool PeeringTestField(UCHAR *buf, UINT size, UINT *pos, PEERINGTEST_FIELD *f)
+{
+	UINT64 tag = 0;
+
+	Zero(f, sizeof(PEERINGTEST_FIELD));
+	if (PeeringTestVarint(buf, size, pos, &tag) == false || (tag >> 3) == 0 || (tag >> 3) > 0x1FFFFFFF)
+	{
+		return false;
+	}
+
+	f->Number = (UINT)(tag >> 3);
+	if ((tag & 7) == 0)
+	{
+		return PeeringTestVarint(buf, size, pos, &f->Value);
+	}
+	if ((tag & 7) != 2 || PeeringTestVarint(buf, size, pos, &f->Value) == false || f->Value > (UINT64)(size - *pos))
+	{
+		return false;
+	}
+
+	f->Bytes = true;
+	f->Data = buf + *pos;
+	f->Size = (UINT)f->Value;
+	*pos += f->Size;
+
+	return true;
+}
+
+// The Prefix of a route, size bytes at buf (Prefix of the schema: the bytes address 1 and the varint length 2), into r: false
+// for anything else, and for an address that is neither IPv4 nor IPv6
+static bool PeeringTestDecodePrefix(UCHAR *buf, UINT size, CONTROL_ROUTE *r)
+{
+	PEERINGTEST_FIELD f;
+	UINT pos = 0;
+
+	while (pos < size)
+	{
+		if (PeeringTestField(buf, size, &pos, &f) == false)
+		{
+			return false;
+		}
+		if (f.Number == 1 && f.Bytes && (f.Size == 4 || f.Size == 16))
+		{
+			Copy(r->Address, f.Data, f.Size);
+			r->AddressSize = f.Size;
+		}
+		else if (f.Number == 2 && f.Bytes == false && f.Value <= 128)
+		{
+			r->Length = (UINT)f.Value;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	return (r->AddressSize != 0);
+}
+
+// A route that a node learned, size bytes at buf (Route of the schema: the varint vrf_id 1 and the Prefix 2), into r, which the
+// caller zeroed: false for anything else
+static bool PeeringTestDecodeRoute(UCHAR *buf, UINT size, CONTROL_ROUTE *r)
+{
+	PEERINGTEST_FIELD f;
+	UINT pos = 0;
+	bool prefix = false;
+
+	while (pos < size)
+	{
+		if (PeeringTestField(buf, size, &pos, &f) == false)
+		{
+			return false;
+		}
+		if (f.Number == 1 && f.Bytes == false && f.Value <= 0xFFFFFFFF)
+		{
+			r->VrfId = (UINT)f.Value;
+		}
+		else if (f.Number == 2 && f.Bytes && prefix == false && PeeringTestDecodePrefix(f.Data, f.Size, r))
+		{
+			prefix = true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	return prefix;
+}
+
+// A peer of a report, size bytes at buf (PeeringPeer of the schema: the bytes address 1, the string state 2 and the Routes
+// learned 3), into p, which the caller zeroed: false for anything else
+static bool PeeringTestDecodePeer(UCHAR *buf, UINT size, CONTROL_PEERING_PEER *p)
+{
+	PEERINGTEST_FIELD f;
+	UINT pos = 0;
+
+	while (pos < size)
+	{
+		if (PeeringTestField(buf, size, &pos, &f) == false || f.Bytes == false)
+		{
+			return false;
+		}
+		if (f.Number == 1 && (f.Size == 4 || f.Size == 16))
+		{
+			Copy(p->Address, f.Data, f.Size);
+			p->AddressSize = f.Size;
+		}
+		else if (f.Number == 2 && f.Size < sizeof(p->State))
+		{
+			Zero(p->State, sizeof(p->State));
+			Copy(p->State, f.Data, f.Size);
+		}
+		else if (f.Number == 3 && p->NumLearned < CONTROL_MAX_LEARNED && PeeringTestDecodeRoute(f.Data, f.Size, &p->Learned[p->NumLearned]))
+		{
+			p->NumLearned++;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	return (p->AddressSize != 0);
+}
+
+// The report of one frame that ControlWritePeeringReport wrote, as the schema says: 4 bytes of length, then a ControlMessage
+// whose one field is the Telemetry 7, whose one field is the PeeringReport 8, which repeats the PeeringPeer 1 and has the
+// varint refused 2. The peers go into list, max at most, and the refused sessions into *refused: the number of the peers, or
+// INFINITE when the frame is no such message.
+static UINT PeeringTestDecodeReport(UCHAR *frame, UINT size, CONTROL_PEERING_PEER *list, UINT max, UINT64 *refused)
+{
+	PEERINGTEST_FIELD f;
+	UINT pos = 4;
+	UINT num = 0;
+
+	*refused = 0;
+	Zero(list, sizeof(CONTROL_PEERING_PEER) * max);
+	if (size < 4 || READ_UINT(frame) != size - 4)
+	{
+		return INFINITE;
+	}
+
+	// The Telemetry, the only field of the ControlMessage, and the PeeringReport, the only field of the Telemetry
+	if (PeeringTestField(frame, size, &pos, &f) == false || f.Number != 7 || f.Bytes == false || pos != size)
+	{
+		return INFINITE;
+	}
+
+	UCHAR *t = f.Data;
+	UINT t_size = f.Size;
+	UINT t_pos = 0;
+	if (PeeringTestField(t, t_size, &t_pos, &f) == false || f.Number != 8 || f.Bytes == false || t_pos != t_size)
+	{
+		return INFINITE;
+	}
+
+	UCHAR *r = f.Data;
+	UINT r_size = f.Size;
+	UINT r_pos = 0;
+	while (r_pos < r_size)
+	{
+		if (PeeringTestField(r, r_size, &r_pos, &f) == false)
+		{
+			return INFINITE;
+		}
+		if (f.Number == 1 && f.Bytes && num < max && PeeringTestDecodePeer(f.Data, f.Size, &list[num]))
+		{
+			num++;
+		}
+		else if (f.Number == 2 && f.Bytes == false)
+		{
+			*refused = f.Value;
+		}
+		else
+		{
+			return INFINITE;
+		}
+	}
+
+	return num;
+}
+
+// One frame from s into buf, size bytes at most: its 4 bytes of length and its message, as the client writes them. Its size, 0
+// when none came whole within PEERINGTEST_BOUND.
+static UINT PeeringTestReadFrame(TRANSPORT_STREAM *s, UCHAR *buf, UINT size)
+{
+	UINT have = 0;
+	UINT need = 4;
+	UINT64 end = Tick64() + PEERINGTEST_BOUND;
+
+	while (have < need && Tick64() < end)
+	{
+		UINT got = TransportRead(s, buf + have, need - have, PEERINGTEST_POLL);
+
+		if (got == 0)
+		{
+			return 0;
+		}
+		if (got != TRANSPORT_LATER)
+		{
+			have += got;
+		}
+		if (have >= 4 && need == 4)
+		{
+			need = 4 + READ_UINT(buf);
+			if (need < 4 || need > size)
+			{
+				return 0;
+			}
+		}
+	}
+
+	return (have == need ? need : 0);
+}
+
+// The report on the control stream: the report that the control stream of each node sends holds what the node reports of its
+// peering, the peers of its sidecar with the state of each session and the prefixes learned from each, and the sessions that
+// its sidecar refused. Written as the client writes it, it is one Telemetry message whose peering has them, read here field
+// by field from the schema (proto/ranz/control/v1/control.proto), not through nanopb, and a report that did not change is not
+// written again. No control stream of the harness sends the reports, so the test writes each one itself.
+static void PeeringTestWire(PEERINGTEST_CTX *ctx)
+{
+	CONTROL_PEERING_PEER *held = ZeroMalloc(sizeof(CONTROL_PEERING_PEER) * CONTROL_MAX_PEERING_PEERS);
+	CONTROL_PEERING_PEER *sent = ZeroMalloc(sizeof(CONTROL_PEERING_PEER) * CONTROL_MAX_PEERING_PEERS);
+	char *want = ZeroMalloc(PEERINGTEST_TEXT);
+	char *got = ZeroMalloc(PEERINGTEST_TEXT);
+	UCHAR *frame = ZeroMalloc(PEERINGTEST_WIRE);
+	char what[MAX_SIZE];
+
+	Print("[the report on the control stream]\n");
+
+	TRANSPORT_LISTENER *l = TransportListen(ctx->Loopback, "peering-report");
+	TRANSPORT_STREAM *dialled = (l != NULL ? TransportDial(ctx->Loopback, "peering-report", NULL) : NULL);
+	TRANSPORT_STREAM *accepted = (dialled != NULL ? TransportAccept(l, PEERINGTEST_BOUND) : NULL);
+	PeeringTestCheck(ctx, accepted != NULL, "A stream for the reports, as the control stream of a node", "listener %u, dialled %u, accepted %u", (UINT)(l != NULL),
+		(UINT)(dialled != NULL), (UINT)(accepted != NULL));
+
+	for (UINT i = 0;i < PEERINGTEST_NODES && accepted != NULL;i++)
+	{
+		PEERINGTEST_NODE *t = &ctx->Nodes[i];
+		CONTROL_PEERING_REPORT *report = NodePeeringGetReport(t->Node);
+		NODE_PEERING_STATUS st;
+		UINT64 refused = 0;
+		UINT num = 0;
+		bool same = false;
+
+		// The worker of the peering of the node puts what the node holds into the report once it changed
+		UINT64 end = Tick64() + PEERINGTEST_BOUND;
+		while (true)
+		{
+			NodePeeringGetStatus(t->Node, &st);
+			PeeringTestReport(t, want, PEERINGTEST_TEXT);
+			num = ControlGetPeeringReport(report, held, CONTROL_MAX_PEERING_PEERS, &refused);
+			PeeringTestPeersText(held, num, got, PEERINGTEST_TEXT);
+			same = (report != NULL && num != 0 && StrCmp(got, want) == 0 && refused == st.Refused);
+			if (same || Tick64() >= end)
+			{
+				break;
+			}
+			SleepThread(PEERINGTEST_POLL);
+		}
+
+		if (same == false)
+		{
+			Print("  [INFO] the report of the control stream of %s:\n%s  ... where the node holds:\n%s", peeringtest_names[i], IsEmptyStr(got) ? "    (none)\n" : got,
+				IsEmptyStr(want) ? "    (none)\n" : want);
+		}
+		Format(what, sizeof(what), "  %s: the report of its control stream holds the peers of its sidecar, the state of each session, the prefixes learned from each and the %I64u sessions refused",
+			peeringtest_names[i], st.Refused);
+		PeeringTestCheck(ctx, same, what, "the report %u, %u peers in it and %I64u sessions refused, where the node counts %I64u", (UINT)(report != NULL), num, refused, st.Refused);
+
+		// Written as the client writes it: one Telemetry message with the report in its peering
+		UINT64 sent_refused = 0;
+		bool wrote = (same && ControlWritePeeringReport(report, dialled));
+		UINT size = (wrote ? PeeringTestReadFrame(accepted, frame, PEERINGTEST_WIRE) : 0);
+		UINT sent_num = (size != 0 ? PeeringTestDecodeReport(frame, size, sent, CONTROL_MAX_PEERING_PEERS, &sent_refused) : INFINITE);
+		bool equal = (sent_num == num && sent_refused == refused && Cmp(sent, held, sizeof(CONTROL_PEERING_PEER) * num) == 0);
+
+		if (sent_num != INFINITE && equal == false)
+		{
+			PeeringTestPeersText(sent, sent_num, got, PEERINGTEST_TEXT);
+			Print("  [INFO] the report of %s as it was written:\n%s", peeringtest_names[i], IsEmptyStr(got) ? "    (none)\n" : got);
+		}
+		Format(what, sizeof(what), "  %s: written as the client writes it, the report is one Telemetry message of the schema whose peering has those peers, sessions, prefixes and refused sessions",
+			peeringtest_names[i]);
+		PeeringTestCheck(ctx, wrote && size != 0 && equal, what, "wrote %u, a frame of %u bytes, %u peers in it and %I64u sessions refused", (UINT)wrote, size, sent_num, sent_refused);
+
+		// Nothing changed since: the client writes nothing
+		bool again = (wrote && ControlWritePeeringReport(report, dialled) && TransportRead(accepted, frame, 1, PEERINGTEST_QUIET) == TRANSPORT_LATER);
+		Format(what, sizeof(what), "  %s: a report that did not change is not written again", peeringtest_names[i]);
+		PeeringTestCheck(ctx, again, what, "%s", "the write failed, or it wrote a frame");
+	}
+
+	TransportClose(dialled);
+	TransportClose(accepted);
+	TransportCloseListener(l);
+	Free(frame);
+	Free(got);
+	Free(want);
+	Free(sent);
+	Free(held);
+}
+
 // The sidecar of node-c stops answering, as a host that loses power: its threads are suspended, so it holds its sessions and
 // sends nothing. Node-a and node-b remove its routes once their hold timers expire, within the hold time, and keep each
 // other's; once it answers again, the sessions come back and the mesh converges again.
@@ -1262,6 +1750,8 @@ static void PeeringTestSilent(PEERINGTEST_CTX *ctx)
 	PeeringTestCheck(ctx, gone && took <= (UINT64)PEERINGTEST_HOLD * 1000 + PEERINGTEST_GRACE, what, "removed %u, after %I64u ms", (UINT)gone, took);
 	if (gone)
 	{
+		PeeringTestCheck(ctx, PeeringTestWaitHost(ctx), "The adapters of the hosts of node-a and node-b take no route of node-c any more, and keep each other's", "%s",
+			"see the line above");
 		PeeringTestSend(ctx, PEERINGTEST_A, PEERINGTEST_RED, "192.168.2.10", PEERINGTEST_B);
 		PeeringTestSend(ctx, PEERINGTEST_A, PEERINGTEST_RED, "192.168.3.10", PEERINGTEST_NODES);
 	}
@@ -1270,7 +1760,7 @@ static void PeeringTestSilent(PEERINGTEST_CTX *ctx)
 	ReleaseList(threads);
 	c->Gone = false;
 
-	bool converged = (PeeringTestWaitReports(ctx) && PeeringTestWaitTables(ctx));
+	bool converged = (PeeringTestWaitReports(ctx) && PeeringTestWaitTables(ctx) && PeeringTestWaitHost(ctx));
 	PeeringTestCheck(ctx, converged, "Once the sidecar of node-c answers again, the sessions come back and the mesh converges again", "%s", "see the lines above");
 }
 
@@ -1307,6 +1797,8 @@ static void PeeringTestStop(PEERINGTEST_CTX *ctx)
 	Format(what, sizeof(what), "Node-c stops: node-a and node-b remove its routes within the hold time of %u s, and keep each other's", (UINT)PEERINGTEST_HOLD);
 	PeeringTestCheck(ctx, gone && took <= (UINT64)PEERINGTEST_HOLD * 1000, what, "removed %u, after %I64u ms", (UINT)gone, took);
 	PeeringTestCheck(ctx, st.ProcessId != 0 && PeeringTestExited(st.ProcessId), "The sidecar of node-c exited with the node", "process %u", st.ProcessId);
+	PeeringTestCheck(ctx, gone && PeeringTestWaitHost(ctx), "The adapters of the hosts of node-a and node-b take no route of node-c any more, and keep each other's", "%s",
+		"see the line above");
 
 	PeeringTestSend(ctx, PEERINGTEST_A, PEERINGTEST_RED, "192.168.2.10", PEERINGTEST_B);
 	PeeringTestSend(ctx, PEERINGTEST_B, PEERINGTEST_RED, "192.168.1.10", PEERINGTEST_A);
@@ -1350,6 +1842,7 @@ static bool PeeringTestOpen(PEERINGTEST_CTX *ctx, TRANSPORT *loopback)
 		c.Key = &t->Key;
 		c.Adapter = PeeringTestAdapter;
 		c.AdapterParam = t;
+		c.State = PeeringTestHostState;
 		Format(what, sizeof(what), "  %s: its overlay runs without a control stream, and its sidecar will listen on TCP %u of %s", peeringtest_names[i],
 			(UINT)PEERINGTEST_PORT, peeringtest_addrs[i]);
 		ok = PeeringTestCheck(ctx, ok && NodeOverlayStart(t->Node, &c), what, "%s", "PeerKeyFromScalar or NodeOverlayStart failed") && ok;
@@ -1413,8 +1906,8 @@ static void PeeringTestClose(PEERINGTEST_CTX *ctx)
 	}
 }
 
-// The full mesh, the refused session, red without the peering and back, the sidecar of node-c that stops answering and node-c
-// that stops
+// The full mesh, the refused session, the report on the control stream, red without the peering and back, the sidecar of node-c
+// that stops answering and node-c that stops
 static void PeeringTestRun(PEERINGTEST_CTX *ctx)
 {
 	UINT starts[PEERINGTEST_NODES] = {1, 1, 1};
@@ -1427,6 +1920,7 @@ static void PeeringTestRun(PEERINGTEST_CTX *ctx)
 	}
 
 	PeeringTestRefused(ctx);
+	PeeringTestWire(ctx);
 
 	// Red stops peering: node-a, in no VRF that peers any more, stops its sidecar
 	NodePeeringGetStatus(ctx->Nodes[PEERINGTEST_A].Node, &a);
@@ -1445,7 +1939,7 @@ static void PeeringTestRun(PEERINGTEST_CTX *ctx)
 }
 
 // peering: the BGP peering of the standard mode between three nodes
-RANZ_TEST("peering", peering_test, "BGP peering of the standard mode: three nodes, each with its sidecar ranz bgp (ranz.exe next to vpntest) on TCP 179 of a loopback address of its own, in a full mesh of two VRFs; what each learns and installs, a session from an address that the Controller did not name refused and counted, the peering of a VRF removed and back, and the routes of a node whose sidecar stops answering, or that stops, gone from the other two within the hold time.");
+RANZ_TEST("peering", peering_test, "BGP peering of the standard mode: three nodes, each with its sidecar ranz bgp (ranz.exe next to vpntest) on TCP 179 of a loopback address of its own, in a full mesh of two VRFs; what each learns and installs in its forwarding tables and on the adapter of its host, a session from an address that the Controller did not name refused and counted, the report on the control stream, the peering of a VRF removed and back, and the routes of a node whose sidecar stops answering, or that stops, gone from the other two within the hold time.");
 void peering_test(UINT num, char **arg)
 {
 	PEERINGTEST_CTX *ctx = ZeroMalloc(sizeof(PEERINGTEST_CTX));
@@ -1456,6 +1950,7 @@ void peering_test(UINT num, char **arg)
 	Print("BGP peering test: three nodes peer by BGP in the standard mode, each with its own sidecar ranz bgp\n");
 
 	ctx->Seq = 1;
+	ctx->Loopback = loopback;
 	if (PeeringTestOpen(ctx, loopback))
 	{
 		PeeringTestRun(ctx);

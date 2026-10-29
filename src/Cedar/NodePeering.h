@@ -43,6 +43,7 @@ void NodePeeringDone(const struct CONTROL_STATE *with, const struct CONTROL_STAT
 void NodePeeringApplied(NODE *n, const struct CONTROL_STATE *st, bool swapped);
 void NodePeeringGetStatus(NODE *n, NODE_PEERING_STATUS *st);
 UINT NodePeeringGetPeers(NODE *n, struct CONTROL_PEERING_PEER *list, UINT max);
+struct CONTROL_PEERING_REPORT *NodePeeringGetReport(NODE *n);
 
 // NodeOverlay.c
 bool NodeOverlayRebuild(NODE *n, const struct CONTROL_STATE *st);
