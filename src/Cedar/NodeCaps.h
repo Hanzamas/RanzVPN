@@ -35,7 +35,8 @@ typedef struct NODE_CAPS_HOST {
 	// The NAT of WinNAT is on the host: the service of its driver, WinNat, is registered
 	bool WinNat;
 	// A NAT network of WinNAT that is not the node's exists, which WinNAT allows one of per host and Ranz never touches
-	// (NodeEgressNat.c); looked for only where Hyper-V and WinNAT are present
+	// (NodeEgressNat.c), as the last look of the node at the NAT networks of WinNAT saw it; only where Hyper-V and WinNAT
+	// are present
 	bool NetNat;
 } NODE_CAPS_HOST;
 

@@ -31,7 +31,7 @@
 // uplinks, with node-x on the tier that the runner gives it (NodeCapsDecide) and the answers of the network behind uplink-a
 // put back into uplink-a, where the NAT took the requests out:
 // - The tier: the Capabilities of the runner give it, from its edition, RRAS, Hyper-V, WinNAT and the NAT networks of WinNAT
-//   that exist, and the Egress of node-x uses it.
+//   that a look of the test found, as a node sees them once it looked, and the Egress of node-x uses it.
 // - Egress: a UDP datagram, an echo request and a TCP SYN of node-c to the network behind uplink-a leave the runner by uplink-a
 //   with the address of uplink-a as their source, translated by the NAT of Windows, and each answer reaches node-c from the
 //   address and port that it named.
@@ -40,10 +40,11 @@
 // - Once node-x is the exit of no VRF, the NAT of Windows holds nothing of the node.
 // egressnat checks the tier that the runner gives: WinNAT where Hyper-V and WinNAT are present and no NAT network of WinNAT of
 // another program exists; then a NAT network of WinNAT of another name, which the test creates where there is none, makes the
-// runner give the proxy, the Egress of a new node-x uses the proxy, and the other NAT network is still there as it was once
-// the node stopped, never touched. On a runner without Hyper-V or WinNAT it checks that the runner gives the proxy. egressrras
-// needs a Windows Server whose Routing and Remote Access runs as a LAN router (the egress-rras job of windows.yml installs it,
-// .github/scripts/egress-rras.ps1) and checks RRAS NAT there.
+// runner give the proxy once a look found it; a new node-x on WinNAT, the tier of a node that has not looked yet, finds it at
+// its first reconcile and falls back to the proxy, which carries the egress; and the other NAT network is still there as it
+// was once the node stopped, never touched. On a runner without Hyper-V or WinNAT it checks that the runner gives the proxy.
+// egressrras needs a Windows Server whose Routing and Remote Access runs as a LAN router (the egress-rras job of windows.yml
+// installs it, .github/scripts/egress-nat.ps1 -Rras) and checks RRAS NAT there.
 
 #include "harness_int.h"
 #include "testlist.h"
@@ -1486,12 +1487,14 @@ static char *EgressTestTierName(UINT tier)
 	}
 }
 
-// The Egress tier that the Capabilities of the runner give a node, with what decides it into host; with print, the facts go to
-// the output
+// The Egress tier that the Capabilities of the runner give a node, with what decides it into host, once a look at the NAT
+// networks of WinNAT of the runner, as the Egress of a node makes when it serves tier 2, found what exists: the Capabilities
+// take what the last look saw (NodeEgressForeignNetNat). With print, the facts go to the output.
 static UINT EgressTestHostTier(NODE_CAPS_HOST *host, bool print)
 {
 	CONTROL_CAPS caps;
 
+	NodeEgressNetNatPrefix(NODE_EGRESS_NETNAT_NAME, NULL, 0);
 	NodeCapsReadHost(host);
 	NodeCapsDecide(host, &caps);
 
@@ -1569,9 +1572,10 @@ static bool EgressTestNatEmpty(UINT tier, UINT64 corp, UINT64 uplink)
 	return (NodeEgressRrasFlags(corp, &flags) == false && NodeEgressRrasFlags(uplink, &flags) == false);
 }
 
-// Start the pair, with tag in the names of the data directories of the nodes: false when a key, the transport, the adapters or
-// an overlay cannot be had. EgressTestPairStop takes what it started, whatever the result.
-static bool EgressTestPairStart(EGRESSTEST_PAIR *p, char *tag)
+// Start the pair, with tag in the names of the data directories of the nodes and node-x on tier (CONTROL_EGRESS_*), 0 for the
+// one that the Capabilities of the runner give: false when a key, the transport, the adapters or an overlay cannot be had.
+// EgressTestPairStop takes what it started, whatever the result.
+static bool EgressTestPairStart(EGRESSTEST_PAIR *p, char *tag, UINT tier)
 {
 	NODE_OVERLAY_CONFIG cfg;
 	UCHAR scalar[PEER_KEY_SIZE];
@@ -1595,7 +1599,7 @@ static bool EgressTestPairStart(EGRESSTEST_PAIR *p, char *tag)
 		return false;
 	}
 
-	// node-x: no tier in its configuration, so the Egress takes the one of the runner
+	// node-x: the tier of the test, or with 0 none in its configuration, so the Egress takes the one of the runner
 	Format(dir, sizeof(dir), "%sx", tag);
 	EgressTestNewDir(p->XDir, sizeof(p->XDir), dir);
 	p->X = NewNode(p->XDir);
@@ -1608,6 +1612,7 @@ static bool EgressTestPairStart(EGRESSTEST_PAIR *p, char *tag)
 	cfg.AdapterParam = p->Set;
 	cfg.AdapterStop = EgressTestHalt;
 	cfg.State = EgressTestApplied;
+	cfg.EgressTier = tier;
 	ok = (p->Set != NULL && NodeOverlayStart(p->X, &cfg));
 
 	Format(dir, sizeof(dir), "%sc", tag);
@@ -1784,7 +1789,7 @@ static void EgressTestNatRun(EGRESSTEST_CTX *ctx, UINT tier)
 	Zero(&es, sizeof(es));
 	Print("[%s]\n", name);
 
-	bool ok = EgressTestPairStart(&pair, "nat");
+	bool ok = EgressTestPairStart(&pair, "nat", 0);
 	NodeEgressGetStatus(pair.X, &es);
 	Format(what, sizeof(what), "node-x and node-c: their overlays run, and the Egress of node-x uses %s, the tier that the runner gives", name);
 	ok = EgressTestCheck(ctx, ok && es.Tier == tier, what, "overlays %u, tier %u", (UINT)ok, es.Tier);
@@ -1869,9 +1874,10 @@ static void EgressTestNatRun(EGRESSTEST_CTX *ctx, UINT tier)
 	EgressTestPairStop(&pair, &uplinks, ctx->NumFailed != failed);
 }
 
-// A NAT network of WinNAT of another program, which the test creates where none exists: the runner gives the proxy, the Egress
-// of a new node-x uses it and answers an echo request of node-c from the runner, and the other NAT network is still there as it
-// was once the node stopped
+// A NAT network of WinNAT of another program, which the test creates where none exists: once a look found it the runner gives
+// the proxy; a new node-x on WinNAT, as a node that has not looked yet starts, finds it at its first reconcile and falls back to
+// the proxy, which answers an echo request of node-c from the runner; and the other NAT network is still there as it was once
+// the node stopped
 static void EgressTestForeign(EGRESSTEST_CTX *ctx)
 {
 	EGRESSTEST_PAIR pair;
@@ -1891,41 +1897,42 @@ static void EgressTestForeign(EGRESSTEST_CTX *ctx)
 	after[0] = 0;
 	Print("[a NAT network of WinNAT of another program]\n");
 
-	UINT tier = EgressTestHostTier(&host, false);
+	// Whether a NAT network of WinNAT of another program exists on the runner already, as a look sees it
+	EgressTestHostTier(&host, false);
 	if (host.NetNat == false)
 	{
 		created = NodeEgressNetNatAdd(EGRESSTEST_FOREIGN, EGRESSTEST_FOREIGN_NET);
 		ok = EgressTestCheck(ctx, created && NodeEgressNetNatPrefix(EGRESSTEST_FOREIGN, before, sizeof(before)),
 			"a NAT network of WinNAT of another program, RanzVPN-Test-Foreign over 198.18.200.0/24, created as New-NetNat does", "created %u", (UINT)created);
-
-		// The Capabilities look at the NAT networks again once the answer that they keep is old
-		for (UINT64 end = Tick64() + EGRESSTEST_BOUND;ok && tier != CONTROL_EGRESS_PROXY && Tick64() < end;SleepThread(EGRESSTEST_POLL * 10))
-		{
-			tier = EgressTestHostTier(&host, false);
-		}
 	}
 
+	// The Capabilities take what the last look at the NAT networks saw: the look of EgressTestHostTier finds the other one
 	if (ok)
 	{
-		EgressTestHostTier(&host, true);
+		UINT tier = EgressTestHostTier(&host, true);
+
 		ok = EgressTestCheck(ctx, tier == CONTROL_EGRESS_PROXY && host.NetNat,
 			"with a NAT network of WinNAT of another program, which WinNAT allows one of per host, the runner gives the proxy", "tier %u, another NAT network %u", tier,
 			(UINT)host.NetNat);
 	}
 
+	// node-x on WinNAT, as a node starts whose Capabilities saw no NAT network of WinNAT yet: its first reconcile finds the other
+	// one, which it leaves alone, and it falls back to the proxy
 	if (ok)
 	{
-		ok = EgressTestPairStart(&pair, "foreign");
+		ok = EgressTestPairStart(&pair, "foreign", CONTROL_EGRESS_WINNAT);
 		NodeEgressGetStatus(pair.X, &es);
-		ok = EgressTestCheck(ctx, ok && es.Tier == CONTROL_EGRESS_PROXY, "a new node-x and node-c: their overlays run, and the Egress of node-x uses the proxy",
-			"overlays %u, tier %u", (UINT)ok, es.Tier);
+		ok = EgressTestCheck(ctx, ok && es.Tier == CONTROL_EGRESS_WINNAT,
+			"a new node-x on WinNAT, the tier of a node that has not looked at the NAT networks of WinNAT yet, and node-c: their overlays run", "overlays %u, tier %u", (UINT)ok,
+			es.Tier);
 
 		if (ok)
 		{
 			bool done = EgressTestExit(&pair, 1, true, EgressTestWantProxy, &es);
 
-			ok = EgressTestCheck(ctx, done && es.Tier == CONTROL_EGRESS_PROXY, "node-x is the exit of corp, and its proxy listens on its address in corp", "%u VRFs, %u ready, tier %u",
-				es.NumVrfs, es.NumReady, es.Tier);
+			ok = EgressTestCheck(ctx, done && es.Tier == CONTROL_EGRESS_PROXY && es.Fallback == CONTROL_EGRESS_WINNAT,
+				"node-x is the exit of corp: its first reconcile finds the NAT network of the other program, and it falls back from WinNAT to the proxy, which listens on its address in corp",
+				"%u VRFs, %u ready, tier %u (fell back from %u)", es.NumVrfs, es.NumReady, es.Tier, es.Fallback);
 		}
 
 		if (ok)

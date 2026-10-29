@@ -11,7 +11,7 @@
 // of GetProductInfo, Hyper-V from the service of its Virtual Machine Management, and the Egress tier, how the node takes
 // the traffic of a VRF whose internet exit it is to the outside (SDN-12, #188; ADR-0025 decisions 13 to 15), from them and
 // from what the NAT of Windows has on the host: Routing and Remote Access running as a LAN router, the service of WinNAT
-// and a NAT network of WinNAT of another program (NodeEgressNat.c).
+// and a NAT network of WinNAT of another program, as the last look of the node at them saw it (NodeEgressNat.c).
 
 #include "Node.h"
 
@@ -143,7 +143,7 @@ void NodeCapsReadHost(NODE_CAPS_HOST *host) {
 	host->HyperV = NodeCapsService(L"vmms");
 
 	// What the Egress tiers on the NAT of Windows need: RRAS as a LAN router, and WinNAT with no NAT network of another program,
-	// which WMI is asked for only where it could matter
+	// as the last look of the node at the NAT networks saw it, since the Capabilities ask WMI nothing (NodeEgressForeignNetNat)
 	host->Rras = NodeEgressRrasRouter();
 	host->WinNat = NodeCapsService(L"WinNat");
 	host->NetNat = (host->HyperV && host->WinNat && NodeEgressForeignNetNat());

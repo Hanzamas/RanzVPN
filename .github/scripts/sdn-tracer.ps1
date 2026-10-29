@@ -173,8 +173,9 @@ try {
 	# editions that the control protocol counts as Home, Pro and Enterprise), Hyper-V from the service of its Virtual Machine
 	# Management, and the tier, the first that the runner supports: RRAS NAT (1) on a Windows Server whose Routing and Remote
 	# Access runs as a LAN router (its service runs, and its router type has LAN routing), WinNAT (2) where Hyper-V and the
-	# service of WinNAT are there and no NAT network of WinNAT of another name than the node's own (RanzVPN-Egress) exists, one
-	# that cannot be looked for counting as there, and else the proxy (3)
+	# service of WinNAT are there, and else the proxy (3). A node counts a NAT network of WinNAT of another name than its own
+	# (RanzVPN-Egress) once it looked at them, which it does when it serves WinNAT (src/Cedar/NodeEgressNat.c); the nodes of
+	# the tracer are the exit of no VRF and never look, so the NAT networks that CIM lists here are printed and do not count
 	$os = Get-CimInstance -ClassName Win32_OperatingSystem
 	$editions = @{ 'Home' = @(98, 99, 100, 101); 'Pro' = @(48, 49, 161, 162, 164, 165); 'Enterprise' = @(4, 27, 70, 72, 84, 121, 122, 125, 126, 129, 130, 175, 188) }
 	$sku = ''
@@ -193,13 +194,12 @@ try {
 		try {
 			$otherNats = @(Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetNat' | Where-Object { $_.Name -ne 'RanzVPN-Egress' }).Count
 		} catch {
-			Write-Host "this runner: the NAT networks of WinNAT cannot be listed ($_): one counts as there"
-			$otherNats = 1
+			Write-Host "this runner: the NAT networks of WinNAT cannot be listed ($_)"
 		}
 	}
 	$tier = 3
-	if ($haveRras) { $tier = 1 } elseif ($haveHyperV -and $haveWinNat -and $otherNats -eq 0) { $tier = 2 }
-	Write-Host "this runner: $($os.Caption), product type $($os.ProductType), SKU $($os.OperatingSystemSKU): edition '$sku', Hyper-V $haveHyperV, Routing and Remote Access as a LAN router $haveRras, WinNAT $haveWinNat, $otherNats NAT networks of WinNAT of another program: Egress tier $tier"
+	if ($haveRras) { $tier = 1 } elseif ($haveHyperV -and $haveWinNat) { $tier = 2 }
+	Write-Host "this runner: $($os.Caption), product type $($os.ProductType), SKU $($os.OperatingSystemSKU): edition '$sku', Hyper-V $haveHyperV, Routing and Remote Access as a LAN router $haveRras, WinNAT $haveWinNat, $otherNats NAT networks of WinNAT of another program, which nodes that never looked do not count: Egress tier $tier"
 	foreach ($s in $states | Where-Object { $nodes.Contains($_.name) }) {
 		$caps = $s.capabilities
 		if (-not $caps) { throw "the API lists no Capabilities for node $($s.name), which its Hello carries: $($s | ConvertTo-Json -Compress -Depth 4)" }

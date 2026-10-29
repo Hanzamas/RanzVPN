@@ -12,8 +12,12 @@
 // - Tier 2, WinNAT: the node creates the NAT network of WinNAT of its own name (NODE_EGRESS_NETNAT_NAME) over one supernet
 //   that holds every IPv4 prefix of the VRFs whose exit it is, as an instance of MSFT_NetNat of the WMI namespace
 //   ROOT\StandardCimv2, which is what New-NetNat creates. WinNAT allows one NAT network per host, and Ranz never touches
-//   one of another name: one that exists makes the host's tier the proxy (NodeCaps.c), and one that appears later makes the
-//   Egress fall back to the proxy (NodeEgressNatForeign).
+//   one of another name: one that the reconcile finds makes the Egress fall back to the proxy (NodeEgressNatForeign), and
+//   once a look of the node found one, its Capabilities give the proxy (NodeEgressForeignNetNat).
+//   Only tier 2 asks WMI. A process that uses WMI loads the provider of the Antimalware Scan Interface of the antivirus of the
+//   host, which Microsoft Defender keeps outside System32 (MpOav.dll), and the node loads DLLs from System32 only (ADR-0039
+//   decision 3): the Capabilities, which every node reads at each start and for each Hello, ask WMI nothing, so a node that
+//   serves no VRF on WinNAT never loads that provider.
 // The thread of the Egress reconciles the NAT against the Generation applied last every NODE_EGRESS_NAT_SCAN
 // (NodeEgressNatApply): what something else removed or changed, an operator or a reset of RRAS by an update of Windows, it
 // sets again, and counts. It undoes what it configured once the node is the exit of no VRF, or stops (NodeEgressNatFree).
@@ -62,8 +66,6 @@
 #define NODE_EGRESS_NETNAT_CLASS  L"MSFT_NetNat"
 // The NAT networks of WinNAT that one look counts at most
 #define NODE_EGRESS_NETNAT_MAX 64
-// ms that the answer of NodeEgressForeignNetNat is kept: the Hellos of many nodes of one process ask WMI once
-#define NODE_EGRESS_NETNAT_CACHE 1000
 // The characters of the internal prefix of a NAT network of WinNAT, "255.255.255.255/32" and room
 #define NODE_EGRESS_PREFIX 64
 
@@ -112,33 +114,33 @@ typedef DWORD(APIENTRY NODE_EGRESS_MPR_SIZE_FUNC)(LPVOID header);
 // mprapi.dll with the functions that the NAT of RRAS uses, and the connections to the configuration of the router and to the
 // running router
 typedef struct NODE_EGRESS_MPR {
-	HMODULE Module;                                      // mprapi.dll
-	NODE_EGRESS_MPR_CONNECT_FUNC *ConfigConnect;         // MprConfigServerConnect
-	NODE_EGRESS_MPR_DISCONNECT_FUNC *ConfigDisconnect;   // MprConfigServerDisconnect
-	NODE_EGRESS_MPR_FREE_FUNC *ConfigFree;               // MprConfigBufferFree
-	NODE_EGRESS_MPR_TRANSPORT_FUNC *ConfigTransport;     // MprConfigTransportGetHandle
-	NODE_EGRESS_MPR_CONFIG_GET_FUNC *ConfigGet;          // MprConfigTransportGetInfo
-	NODE_EGRESS_MPR_CONFIG_SET_FUNC *ConfigSet;          // MprConfigTransportSetInfo
-	NODE_EGRESS_MPR_CONFIG_IF_FUNC *ConfigIf;            // MprConfigInterfaceGetHandle
+	HMODULE Module;                                              // mprapi.dll
+	NODE_EGRESS_MPR_CONNECT_FUNC *ConfigConnect;                 // MprConfigServerConnect
+	NODE_EGRESS_MPR_DISCONNECT_FUNC *ConfigDisconnect;           // MprConfigServerDisconnect
+	NODE_EGRESS_MPR_FREE_FUNC *ConfigFree;                       // MprConfigBufferFree
+	NODE_EGRESS_MPR_TRANSPORT_FUNC *ConfigTransport;             // MprConfigTransportGetHandle
+	NODE_EGRESS_MPR_CONFIG_GET_FUNC *ConfigGet;                  // MprConfigTransportGetInfo
+	NODE_EGRESS_MPR_CONFIG_SET_FUNC *ConfigSet;                  // MprConfigTransportSetInfo
+	NODE_EGRESS_MPR_CONFIG_IF_FUNC *ConfigIf;                    // MprConfigInterfaceGetHandle
 	NODE_EGRESS_MPR_CONFIG_IF_TRANSPORT_FUNC *ConfigIfTransport; // MprConfigInterfaceTransportGetHandle
-	NODE_EGRESS_MPR_CONFIG_IF_GET_FUNC *ConfigIfGet;     // MprConfigInterfaceTransportGetInfo
-	NODE_EGRESS_MPR_CONFIG_IF_SET_FUNC *ConfigIfSet;     // MprConfigInterfaceTransportSetInfo
-	NODE_EGRESS_MPR_CONNECT_FUNC *AdminConnect;          // MprAdminServerConnect
-	NODE_EGRESS_MPR_DISCONNECT_FUNC *AdminDisconnect;    // MprAdminServerDisconnect
-	NODE_EGRESS_MPR_FREE_FUNC *AdminFree;                // MprAdminBufferFree
-	NODE_EGRESS_MPR_ADMIN_GET_FUNC *AdminGet;            // MprAdminTransportGetInfo
-	NODE_EGRESS_MPR_ADMIN_SET_FUNC *AdminSet;            // MprAdminTransportSetInfo
-	NODE_EGRESS_MPR_ADMIN_IF_FUNC *AdminIf;              // MprAdminInterfaceGetHandle
-	NODE_EGRESS_MPR_ADMIN_IF_GET_FUNC *AdminIfGet;       // MprAdminInterfaceTransportGetInfo
-	NODE_EGRESS_MPR_ADMIN_IF_SET_FUNC *AdminIfSet;       // MprAdminInterfaceTransportSetInfo
-	NODE_EGRESS_MPR_FIND_FUNC *BlockFind;                // MprInfoBlockFind
-	NODE_EGRESS_MPR_ADD_FUNC *BlockAdd;                  // MprInfoBlockAdd
-	NODE_EGRESS_MPR_ADD_FUNC *BlockSet;                  // MprInfoBlockSet
-	NODE_EGRESS_MPR_REMOVE_FUNC *BlockRemove;            // MprInfoBlockRemove
-	NODE_EGRESS_MPR_SIZE_FUNC *BlockSize;                // MprInfoBlockQuerySize
-	NODE_EGRESS_MPR_FREE_FUNC *InfoDelete;               // MprInfoDelete
-	HANDLE Config;                                       // The configuration of the router (MprConfigServerConnect)
-	HANDLE Admin;                                        // The running router (MprAdminServerConnect)
+	NODE_EGRESS_MPR_CONFIG_IF_GET_FUNC *ConfigIfGet;             // MprConfigInterfaceTransportGetInfo
+	NODE_EGRESS_MPR_CONFIG_IF_SET_FUNC *ConfigIfSet;             // MprConfigInterfaceTransportSetInfo
+	NODE_EGRESS_MPR_CONNECT_FUNC *AdminConnect;                  // MprAdminServerConnect
+	NODE_EGRESS_MPR_DISCONNECT_FUNC *AdminDisconnect;            // MprAdminServerDisconnect
+	NODE_EGRESS_MPR_FREE_FUNC *AdminFree;                        // MprAdminBufferFree
+	NODE_EGRESS_MPR_ADMIN_GET_FUNC *AdminGet;                    // MprAdminTransportGetInfo
+	NODE_EGRESS_MPR_ADMIN_SET_FUNC *AdminSet;                    // MprAdminTransportSetInfo
+	NODE_EGRESS_MPR_ADMIN_IF_FUNC *AdminIf;                      // MprAdminInterfaceGetHandle
+	NODE_EGRESS_MPR_ADMIN_IF_GET_FUNC *AdminIfGet;               // MprAdminInterfaceTransportGetInfo
+	NODE_EGRESS_MPR_ADMIN_IF_SET_FUNC *AdminIfSet;               // MprAdminInterfaceTransportSetInfo
+	NODE_EGRESS_MPR_FIND_FUNC *BlockFind;                        // MprInfoBlockFind
+	NODE_EGRESS_MPR_ADD_FUNC *BlockAdd;                          // MprInfoBlockAdd
+	NODE_EGRESS_MPR_ADD_FUNC *BlockSet;                          // MprInfoBlockSet
+	NODE_EGRESS_MPR_REMOVE_FUNC *BlockRemove;                    // MprInfoBlockRemove
+	NODE_EGRESS_MPR_SIZE_FUNC *BlockSize;                        // MprInfoBlockQuerySize
+	NODE_EGRESS_MPR_FREE_FUNC *InfoDelete;                       // MprInfoDelete
+	HANDLE Config;                                               // The configuration of the router (MprConfigServerConnect)
+	HANDLE Admin;                                                // The running router (MprAdminServerConnect)
 } NODE_EGRESS_MPR;
 
 // The IPv4 information of an interface of the running router or of the configuration of the router (NodeEgressRrasGet), with
@@ -167,6 +169,7 @@ typedef struct NODE_EGRESS_WMI {
 // The NAT networks of WinNAT on the host, as one look sees them (NodeEgressNetNats)
 typedef struct NODE_EGRESS_NETNATS {
 	UINT NumOthers;                     // The NAT networks of another name than the one looked for
+	UINT NumForeign;                    // The NAT networks of another name than the node's (NODE_EGRESS_NETNAT_NAME)
 	bool Found;                         // The one of the name exists ...
 	wchar_t Prefix[NODE_EGRESS_PREFIX]; // ... with this internal prefix ...
 	BSTR Path;                          // ... and this object path, which NodeEgressNetNatsFree frees
@@ -188,6 +191,10 @@ struct NODE_EGRESS_NAT {
 //
 // WinNAT
 //
+
+// What the last look of the process at the NAT networks of WinNAT saw (NodeEgressNetNats): 1 when one of another name than the
+// node's existed, which the Capabilities take without asking WMI (NodeEgressForeignNetNat)
+static volatile LONG node_egress_foreign = 0;
 
 // The calls through a proxy of WMI impersonate the node, as the provider of WinNAT needs: the process sets no default
 static HRESULT NodeEgressWmiBlanket(IUnknown *proxy) {
@@ -282,6 +289,8 @@ static HRESULT NodeEgressNetNats(IWbemServices *svc, const wchar_t *name, NODE_E
 			break;
 
 		NodeEgressWmiString(o, L"Name", n, sizeof(n));
+		if (UniStrCmpi(n, NODE_EGRESS_NETNAT_NAME) != 0)
+			nn->NumForeign++;
 		if (nn->Found == false && UniStrCmpi(n, name) == 0) {
 			VARIANT path;
 
@@ -300,6 +309,10 @@ static HRESULT NodeEgressNetNats(IWbemServices *svc, const wchar_t *name, NODE_E
 
 	if (list != NULL)
 		IEnumWbemClassObject_Release(list);
+
+	// What a look saw, whatever it looked for, is what the Capabilities take next (NodeEgressForeignNetNat)
+	if (SUCCEEDED(hr))
+		InterlockedExchange(&node_egress_foreign, nn->NumForeign != 0 ? 1 : 0);
 
 	return (FAILED(hr) ? hr : S_OK);
 }
@@ -348,34 +361,12 @@ static HRESULT NodeEgressNetNatCreate(IWbemServices *svc, const wchar_t *name, c
 	return hr;
 }
 
-// Whether a NAT network of WinNAT that is not the node's exists on the host (NodeCaps.c): WinNAT allows one per host, and Ranz
-// never touches one of another program (ADR-0025 decision 6). One that cannot be looked for counts as there. The answer is
-// kept for NODE_EGRESS_NETNAT_CACHE, so the Hellos of many nodes of one process ask WMI once.
+// Whether a NAT network of WinNAT that is not the node's exists on the host, as the last look of the process at the NAT networks
+// saw it (NodeCaps.c): WinNAT allows one per host, and Ranz never touches one of another program (ADR-0025 decision 6). It asks
+// WMI nothing, so the Capabilities load nothing of WMI; a process that has not looked counts none. The Egress that serves tier
+// 2 looks at each reconcile and falls back to the proxy on one that it finds (NodeEgressNatWinNat).
 bool NodeEgressForeignNetNat(void) {
-	static SRWLOCK lock = SRWLOCK_INIT;
-	static UINT64 since = 0;
-	static bool foreign = true;
-	UINT64 now = GetTickCount64();
-
-	AcquireSRWLockExclusive(&lock);
-	if (since == 0 || now >= since + NODE_EGRESS_NETNAT_CACHE) {
-		NODE_EGRESS_WMI w;
-
-		foreign = true;
-		if (SUCCEEDED(NodeEgressWmiConnect(&w))) {
-			NODE_EGRESS_NETNATS nn;
-
-			if (SUCCEEDED(NodeEgressNetNats(w.Services, NODE_EGRESS_NETNAT_NAME, &nn)))
-				foreign = (nn.NumOthers != 0);
-			NodeEgressNetNatsFree(&nn);
-			NodeEgressWmiClose(&w);
-		}
-		since = MAX(now, 1);
-	}
-	bool ret = foreign;
-	ReleaseSRWLockExclusive(&lock);
-
-	return ret;
+	return (ReadAcquire(&node_egress_foreign) != 0);
 }
 
 // Whether the NAT network of WinNAT name exists, with its internal prefix into prefix (size bytes) when it does
