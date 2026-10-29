@@ -477,7 +477,8 @@ func TestNoClusterKeyInTheStoreTheBackupOrTheLog(t *testing.T) {
 // restore keeps the Cluster key of the store that it replaces. Restored into the same cluster, the secrets
 // open as they were. Restored into another cluster, whose member of the same name has other keys, the
 // targets come back with their names and URLs and with no secret, the store says which, the cluster keeps
-// its own Cluster key, and a target that is put again is sealed with it and opens.
+// its own Cluster key, and a target that is put again is sealed with it and opens. Restored on a single
+// Controller, the targets come back with no secret too, and its store holds no Cluster key.
 func TestRestoreKeepsTheClusterKeyOfTheCluster(t *testing.T) {
 	ctx := context.Background()
 	rqA := rqlitetest.Start(t)
@@ -546,12 +547,45 @@ func TestRestoreKeepsTheClusterKeyOfTheCluster(t *testing.T) {
 	if got := b.lost.get(); !slices.Equal(got, []string{"export_targets/alerts", "audit_targets/siem"}) {
 		t.Errorf("the store told %v, want the two targets that lost their secrets", got)
 	}
-	alerts.Secret = "hmac-key-put-again"
-	if err := b.st.PutTarget(ctx, alerts); err != nil {
+	// A step of the Keeper that read the store after the backup was loaded and before the restore put the
+	// Cluster key back holds no key until its next step, so a put that it refuses meanwhile is put again
+	putAgain := alerts
+	putAgain.Secret = "hmac-key-put-again"
+	if !eventually(func() bool { err = b.st.PutTarget(ctx, putAgain); return !errors.Is(err, ErrNoKey) }) || err != nil {
+		t.Fatalf("a target put again after the restore: %v", err)
+	}
+	if ts, err := b.st.Targets(ctx); err != nil || len(ts) != 1 || ts[0].Secret != putAgain.Secret {
+		t.Errorf("a target put again after the restore reads %+v, %v", ts, err)
+	}
+
+	// A single Controller on another host, whose store has the Sealing key of its host as its Sealer and
+	// no Cluster key: the targets come back with no secret, as a backup of a single Controller does on
+	// another host, and the rows of the Cluster key of the backup are not kept
+	single, err := store.Open(ctx, rqlitetest.Start(t).URL())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if ts, err := b.st.Targets(ctx); err != nil || len(ts) != 1 || ts[0].Secret != alerts.Secret {
-		t.Errorf("a target put again after the restore reads %+v, %v", ts, err)
+	t.Cleanup(single.Close)
+	host, err := keys.GenerateSoft()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lost := &lostTargets{}
+	single.SetSealer(keys.NewSealer(host), lost.add)
+	if err := single.Restore(ctx, backup.Bytes(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if ts, err := single.Targets(ctx); err != nil || len(ts) != 1 || ts[0].Name != alerts.Name || ts[0].URL != alerts.URL || ts[0].Secret != "" {
+		t.Errorf("after a restore on a single Controller the targets are %+v, %v, want alerts with no secret", ts, err)
+	}
+	if at, err := single.AuditTargets(ctx); err != nil || len(at) != 1 || at[0].Name != siem.Name || at[0].Secret != "" {
+		t.Errorf("after a restore on a single Controller the audit targets are %+v, %v, want siem with no secret", at, err)
+	}
+	if got := lost.get(); !slices.Equal(got, []string{"export_targets/alerts", "audit_targets/siem"}) {
+		t.Errorf("the store of the single Controller told %v, want the two targets that lost their secrets", got)
+	}
+	if ck, err := single.ClusterKey(ctx); err != nil || ck.Public != nil || len(ck.Copies) != 0 {
+		t.Errorf("after a restore on a single Controller the store holds the Cluster key %+v, %v, want none", ck, err)
 	}
 }
 
