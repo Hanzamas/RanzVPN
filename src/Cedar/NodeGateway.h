@@ -34,8 +34,8 @@ typedef struct NODE_GATEWAY_PROBE_MSG {
 
 // What NodeGatewayGetStatus reports: the gateways since the overlay started
 typedef struct NODE_GATEWAY_STATUS {
-	UINT NumProbed;    // The gateways that the node probes: those of a group of the tables that hold them
-	UINT NumUp;        // ... of them up
+	UINT NumProbed;      // The gateways that the node probes: those of a group of the tables that hold them
+	UINT NumUp;          // ... of them up
 	UINT64 Probes;       // Probes sent
 	UINT64 PathProbes;   // ... of them on the datagram path of the peer agent (SDN-19-R1, #507)
 	UINT64 Answers;      // Answers to them taken
