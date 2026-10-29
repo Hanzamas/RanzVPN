@@ -6,8 +6,9 @@
 // its next start. A new adapter is created as devcon install does it, through SetupAPI: a root-enumerated device of
 // *MSLOOP, registered, and the driver of netloop.inf installed for the devices of *MSLOOP that have none, so the other
 // adapters of the node keep running. The MAC address takes effect when the device restarts (DIF_PROPERTYCHANGE), which
-// is also how the health check of the L2 adapter resets one (NodeKmTestReset). arm64 is L3 only (NodeL2Offered): no
-// adapter is created there.
+// is also how the health check of the L2 adapter resets one (NodeKmTestReset). A new or restarted adapter is up once its
+// interface has that address and the IPv4 stack of the host has bound to it, which happens after NDIS reports the
+// interface: before, the adapter cannot take an address. arm64 is L3 only (NodeL2Offered): no adapter is created there.
 
 #include "Node.h"
 
@@ -247,11 +248,11 @@ static bool NodeKmTestSetAddress(NODE_KMTEST *k) {
 	return ok;
 }
 
-// The interface of the adapter of k, once it is up with the address of k: its GUID from the driver key, then its index
-static bool NodeKmTestReadInterface(NODE_KMTEST *k) {
+// The interface of the adapter of k, once it is up with the address of k: its GUID from the driver key, then its index,
+// and its LUID into luid
+static bool NodeKmTestReadInterface(NODE_KMTEST *k, NET_LUID *luid) {
 	SP_DEVINFO_DATA dev;
 	wchar_t guid[64];
-	NET_LUID luid;
 	NET_IFINDEX index = 0;
 	MIB_IF_ROW2 row;
 
@@ -264,11 +265,11 @@ static bool NodeKmTestReadInterface(NODE_KMTEST *k) {
 	if (ok == false || CLSIDFromString(guid, &k->Guid) != NOERROR)
 		return false;
 
-	if (ConvertInterfaceGuidToLuid(&k->Guid, &luid) != NO_ERROR || ConvertInterfaceLuidToIndex(&luid, &index) != NO_ERROR)
+	if (ConvertInterfaceGuidToLuid(&k->Guid, luid) != NO_ERROR || ConvertInterfaceLuidToIndex(luid, &index) != NO_ERROR)
 		return false;
 
 	Zero(&row, sizeof(row));
-	row.InterfaceLuid = luid;
+	row.InterfaceLuid = *luid;
 	if (GetIfEntry2(&row) != NO_ERROR || row.PhysicalAddressLength != 6 || Cmp(row.PhysicalAddress, k->Mac, 6) != 0)
 		return false;
 
@@ -277,21 +278,52 @@ static bool NodeKmTestReadInterface(NODE_KMTEST *k) {
 	return true;
 }
 
-// Wait up to NODE_KMTEST_WAIT ms for the interface of the adapter of k to be up with its address
-static bool NodeKmTestWaitInterface(NODE_KMTEST *k) {
-	UINT64 end = GetTickCount64() + NODE_KMTEST_WAIT;
+// What GetIpInterfaceEntry says of the IPv4 interface of the LUID luid: NO_ERROR once the IPv4 stack of the host has it,
+// ERROR_NOT_FOUND before
+static DWORD NodeKmTestIpInterface(const NET_LUID *luid) {
+	MIB_IPINTERFACE_ROW row;
 
-	while (NodeKmTestReadInterface(k) == false) {
+	InitializeIpInterfaceEntry(&row);
+	row.Family = AF_INET;
+	row.InterfaceLuid = *luid;
+
+	return GetIpInterfaceEntry(&row);
+}
+
+// Wait up to NODE_KMTEST_WAIT ms for the interface of the adapter of k to be up with its address, and for the IPv4 stack
+// of the host to have it. The stack binds to a new or restarted adapter only after NDIS reports its interface, and until
+// then the adapter cannot take an address: CreateUnicastIpAddressEntry fails with ERROR_NOT_FOUND. False when the wait
+// ends first, with why in why, which names the last error.
+static bool NodeKmTestWaitInterface(NODE_KMTEST *k, char *why, UINT why_size) {
+	UINT64 end = GetTickCount64() + NODE_KMTEST_WAIT;
+	NET_LUID luid;
+	bool up = false;
+	DWORD err = ERROR_NOT_FOUND;
+
+	for (;;) {
+		up = NodeKmTestReadInterface(k, &luid);
+		if (up) {
+			err = NodeKmTestIpInterface(&luid);
+			if (err == NO_ERROR)
+				return true;
+		}
+
 		if (GetTickCount64() >= end)
-			return false;
+			break;
 		Sleep(NODE_KMTEST_POLL);
 	}
 
-	return true;
+	if (up)
+		Format(why, why_size, "the IPv4 stack of the host did not take its interface %u within %u ms (GetIpInterfaceEntry: error %u)", k->IfIndex, NODE_KMTEST_WAIT, (UINT)err);
+	else
+		Format(why, why_size, "its interface did not come up with that MAC address within %u ms", NODE_KMTEST_WAIT);
+
+	return false;
 }
 
 // The KM-TEST adapter of the MAC address mac (NodeL2Mac) on the node n: the present adapter of that address, or a new one
-// with it. NULL on a host that is L3 only, or when the adapter or its interface does not come up; the node log says why.
+// with it, returned once the IPv4 stack of the host has its interface, so that it can take an address at once. NULL on a
+// host that is L3 only, or when the adapter or its interface does not come up; the node log says why.
 NODE_KMTEST *NodeKmTestNew(NODE *n, const UCHAR *mac) {
 	SYSTEM_INFO info;
 	char error[MAX_SIZE];
@@ -328,8 +360,8 @@ NODE_KMTEST *NodeKmTestNew(NODE *n, const UCHAR *mac) {
 		}
 	}
 
-	if (NodeKmTestWaitInterface(k) == false) {
-		NodeLog(n, "KM-TEST adapter %S: its interface did not come up with that MAC address within %u ms", k->Address, NODE_KMTEST_WAIT);
+	if (NodeKmTestWaitInterface(k, error, sizeof(error)) == false) {
+		NodeLog(n, "KM-TEST adapter %S: %s", k->Address, error);
 		if (found == false)
 			NodeKmTestRemove(k);
 		Free(k);
@@ -360,10 +392,11 @@ UINT NodeKmTestIndex(NODE_KMTEST *k) {
 }
 
 // Reset a KM-TEST adapter (param, NODE_L2_RESET_PROC of the L2 adapter): its device restarts, and if_index gets the index
-// of its interface once that is up again
+// of its interface once that is up again, with the IPv4 stack of the host on it
 bool NodeKmTestReset(void *param, UINT *if_index) {
 	NODE_KMTEST *k = (NODE_KMTEST *)param;
 	SP_DEVINFO_DATA dev;
+	char why[MAX_SIZE];
 
 	if (k == NULL)
 		return false;
@@ -375,8 +408,9 @@ bool NodeKmTestReset(void *param, UINT *if_index) {
 	bool ok = NodeKmTestRestart(set, &dev);
 	SetupDiDestroyDeviceInfoList(set);
 
-	ok = ok && NodeKmTestWaitInterface(k);
-	NodeLog(k->Node, "KM-TEST adapter %S reset: %s, interface %u", k->Address, ok ? "up again" : "not up again", k->IfIndex);
+	StrCpy(why, sizeof(why), "its device did not restart");
+	ok = ok && NodeKmTestWaitInterface(k, why, sizeof(why));
+	NodeLog(k->Node, "KM-TEST adapter %S reset: %s, interface %u", k->Address, ok ? "up again" : why, k->IfIndex);
 
 	if (ok && if_index != NULL)
 		*if_index = k->IfIndex;
