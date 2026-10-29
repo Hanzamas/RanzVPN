@@ -67,6 +67,8 @@
 // lacks for an adapter that came after the router started, or the IPv4 transport of the interface
 #define NODE_EGRESS_MADE_INTERFACE 0x01
 #define NODE_EGRESS_MADE_TRANSPORT 0x02
+// The error with which the node says that the running router of RRAS kept the NAT information that it was told to delete
+#define NODE_EGRESS_RRAS_KEPT ERROR_CAN_NOT_COMPLETE
 // The logging level that the node gives the NAT routing protocol: errors only (IPNATHLP_LOGGING_ERROR, MS-RRASM 2.2.1.2.195)
 #define NODE_EGRESS_NAT_LOGGING 1
 // The router types of RRAS (RouterType, MS-RRASM 2.2.3.4.1): IPv4 routing over LAN interfaces, and over demand-dial ones too
@@ -144,6 +146,7 @@ typedef DWORD(APIENTRY NODE_EGRESS_MPR_CONFIG_IF_REMOVE_FUNC)(HANDLE config, HAN
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADMIN_IF_ADD_FUNC)(HANDLE server, HANDLE iface, DWORD transport, LPBYTE info, DWORD size);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADMIN_IF_REMOVE_FUNC)(HANDLE server, HANDLE iface, DWORD transport);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_CREATE_FUNC)(DWORD version, LPVOID *header);
+typedef DWORD(APIENTRY NODE_EGRESS_MPR_DUPLICATE_FUNC)(LPVOID header, LPVOID *copy);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_FIND_FUNC)(LPVOID header, DWORD type, LPDWORD item_size, LPDWORD count, LPBYTE *data);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_ADD_FUNC)(LPVOID header, DWORD type, DWORD item_size, DWORD count, LPBYTE data, LPVOID *next);
 typedef DWORD(APIENTRY NODE_EGRESS_MPR_REMOVE_FUNC)(LPVOID header, DWORD type, LPVOID *next);
@@ -180,6 +183,7 @@ typedef struct NODE_EGRESS_MPR {
 	NODE_EGRESS_MPR_ADMIN_IF_ADD_FUNC *AdminIfAdd;               // MprAdminInterfaceTransportAdd
 	NODE_EGRESS_MPR_ADMIN_IF_REMOVE_FUNC *AdminIfRemove;         // MprAdminInterfaceTransportRemove
 	NODE_EGRESS_MPR_CREATE_FUNC *InfoCreate;                     // MprInfoCreate
+	NODE_EGRESS_MPR_DUPLICATE_FUNC *InfoDuplicate;               // MprInfoDuplicate
 	NODE_EGRESS_MPR_FIND_FUNC *BlockFind;                        // MprInfoBlockFind
 	NODE_EGRESS_MPR_ADD_FUNC *BlockAdd;                          // MprInfoBlockAdd
 	NODE_EGRESS_MPR_ADD_FUNC *BlockSet;                          // MprInfoBlockSet
@@ -562,6 +566,7 @@ static DWORD NodeEgressMprConnect(NODE_EGRESS_MPR *m) {
 	m->AdminIfAdd = (NODE_EGRESS_MPR_ADMIN_IF_ADD_FUNC *)NodeEgressMprProc(m, "MprAdminInterfaceTransportAdd", &missing);
 	m->AdminIfRemove = (NODE_EGRESS_MPR_ADMIN_IF_REMOVE_FUNC *)NodeEgressMprProc(m, "MprAdminInterfaceTransportRemove", &missing);
 	m->InfoCreate = (NODE_EGRESS_MPR_CREATE_FUNC *)NodeEgressMprProc(m, "MprInfoCreate", &missing);
+	m->InfoDuplicate = (NODE_EGRESS_MPR_DUPLICATE_FUNC *)NodeEgressMprProc(m, "MprInfoDuplicate", &missing);
 	m->BlockFind = (NODE_EGRESS_MPR_FIND_FUNC *)NodeEgressMprProc(m, "MprInfoBlockFind", &missing);
 	m->BlockAdd = (NODE_EGRESS_MPR_ADD_FUNC *)NodeEgressMprProc(m, "MprInfoBlockAdd", &missing);
 	m->BlockSet = (NODE_EGRESS_MPR_ADD_FUNC *)NodeEgressMprProc(m, "MprInfoBlockSet", &missing);
@@ -609,17 +614,54 @@ static DWORD NodeEgressRrasGlobalBlock(NODE_EGRESS_MPR *m, LPBYTE info, LPVOID *
 }
 
 // A new IPv4 information from info, which holds the NAT block, without the NAT information into *next (MprInfoDelete), for the
-// running router (config false) or for the configuration of the router (config true). The running router keeps the
-// information of a block that an information leaves out: in the egress (RRAS NAT) job the NAT information of an interface
-// that was set without its block stayed, and the reconcile found nothing to set again. A block of no item tells it to delete
-// that information. The configuration of the router holds the whole information, from which the block goes.
+// running router (config false) or for the configuration of the router (config true). The configuration of the router holds the
+// whole information, from which the block goes. A running router keeps the information of a block that an information leaves
+// out, and an empty block tells a router manager of RRAS to delete the information of its type: the entry of the block in the
+// table of contents with a size and a count of 0, which the node writes into a copy of info. In the egress (RRAS NAT) job the
+// running router kept the NAT information of an interface that it got without the NAT block, and with the block of
+// MprInfoBlockSet of no item alike, so what it holds after the empty block is read back (NodeEgressRrasDrop,
+// NodeEgressRrasProtocolDrop).
 static DWORD NodeEgressRrasEmpty(NODE_EGRESS_MPR *m, LPBYTE info, bool config, LPVOID *next) {
-	ULONG none = 0;
-
 	if (config)
 		return m->BlockRemove(info, NODE_EGRESS_MS_IP_NAT, next);
 
-	return m->BlockSet(info, NODE_EGRESS_MS_IP_NAT, 0, 0, (LPBYTE)&none, next);
+	*next = NULL;
+	DWORD err = m->InfoDuplicate(info, next);
+	if (err != NO_ERROR) {
+		*next = NULL;
+		return err;
+	}
+
+	// The entries of the table of contents of the copy that its size holds
+	RTR_INFO_BLOCK_HEADER *h = (RTR_INFO_BLOCK_HEADER *)*next;
+	LPBYTE toc = (LPBYTE)*next + FIELD_OFFSET(RTR_INFO_BLOCK_HEADER, TocEntry);
+	for (ULONG i = 0; i < h->TocEntriesCount && FIELD_OFFSET(RTR_INFO_BLOCK_HEADER, TocEntry) + (i + 1) * sizeof(RTR_TOC_ENTRY) <= h->Size; i++) {
+		RTR_TOC_ENTRY *e = (RTR_TOC_ENTRY *)(toc + i * sizeof(RTR_TOC_ENTRY));
+
+		if (e->InfoType == NODE_EGRESS_MS_IP_NAT) {
+			e->InfoSize = 0;
+			e->Count = 0;
+		}
+	}
+
+	return NO_ERROR;
+}
+
+// Whether the global IPv4 information of the running router holds the NAT routing protocol: a NAT block of an item at least
+static bool NodeEgressRrasProtocolIn(NODE_EGRESS_MPR *m) {
+	LPBYTE info = NULL;
+	DWORD size = 0;
+	DWORD item = 0;
+	DWORD count = 0;
+	LPBYTE data = NULL;
+	bool held = false;
+
+	if (m->AdminGet(m->Admin, NODE_EGRESS_PID_IP, &info, &size, NULL, NULL) == NO_ERROR && info != NULL)
+		held = (m->BlockFind(info, NODE_EGRESS_MS_IP_NAT, &item, &count, &data) == NO_ERROR && item != 0 && count != 0);
+	if (info != NULL)
+		m->AdminFree(info);
+
+	return held;
 }
 
 // The NAT routing protocol in the IPv4 router of RRAS, running and configured: added where it lacks it, so the router has it
@@ -655,19 +697,28 @@ static DWORD NodeEgressRrasProtocol(NODE_EGRESS_MPR *m, bool *added) {
 	return err;
 }
 
-// Take the NAT routing protocol out of the IPv4 router of RRAS, running and configured: the node added it
-static void NodeEgressRrasProtocolDrop(NODE_EGRESS_MPR *m) {
+// Take the NAT routing protocol out of the IPv4 router of RRAS, running and configured: the node added it. The running router
+// gets the global information with an empty NAT block (NodeEgressRrasEmpty) and, where it holds the protocol still, the
+// information without the block. Whether the running router holds the protocol no more.
+static bool NodeEgressRrasProtocolDrop(NODE_EGRESS_MPR *m) {
 	LPBYTE info = NULL;
 	DWORD size = 0;
 	LPVOID next = NULL;
 	HANDLE transport = NULL;
+	bool gone = (NodeEgressRrasProtocolIn(m) == false);
 
-	if (m->AdminGet(m->Admin, NODE_EGRESS_PID_IP, &info, &size, NULL, NULL) == NO_ERROR && NodeEgressRrasEmpty(m, info, false, &next) == NO_ERROR && next != NULL) {
-		m->AdminSet(m->Admin, NODE_EGRESS_PID_IP, (LPBYTE)next, m->BlockSize(next), NULL, 0);
-		m->InfoDelete(next);
+	for (UINT i = 0; i < 2 && gone == false; i++) {
+		info = NULL;
+		next = NULL;
+		if (m->AdminGet(m->Admin, NODE_EGRESS_PID_IP, &info, &size, NULL, NULL) == NO_ERROR &&
+		    (i == 0 ? NodeEgressRrasEmpty(m, info, false, &next) : m->BlockRemove(info, NODE_EGRESS_MS_IP_NAT, &next)) == NO_ERROR && next != NULL) {
+			m->AdminSet(m->Admin, NODE_EGRESS_PID_IP, (LPBYTE)next, m->BlockSize(next), NULL, 0);
+			m->InfoDelete(next);
+		}
+		if (info != NULL)
+			m->AdminFree(info);
+		gone = (NodeEgressRrasProtocolIn(m) == false);
 	}
-	if (info != NULL)
-		m->AdminFree(info);
 
 	info = NULL;
 	next = NULL;
@@ -678,6 +729,8 @@ static void NodeEgressRrasProtocolDrop(NODE_EGRESS_MPR *m) {
 	}
 	if (info != NULL)
 		m->ConfigFree(info);
+
+	return gone;
 }
 
 // The name of the interface of luid in RRAS into name (size bytes): the GUID of its adapter in braces
@@ -764,6 +817,17 @@ static bool NodeEgressRrasHolds(NODE_EGRESS_MPR *m, LPBYTE info, UINT *flags) {
 	*flags = ((const NODE_EGRESS_NAT_INTERFACE *)data)->Flags;
 
 	return true;
+}
+
+// The NAT flags of the interface named name in the running router into *flags: false when the router holds no NAT information
+// for it, or cannot be asked
+static bool NodeEgressRrasNat(NODE_EGRESS_MPR *m, wchar_t *name, UINT *flags) {
+	NODE_EGRESS_RRAS_INFO f;
+	bool held = (NodeEgressRrasGet(m, name, false, &f) == NO_ERROR && NodeEgressRrasHolds(m, f.Info, flags));
+
+	NodeEgressRrasDone(m, &f);
+
+	return held;
 }
 
 // A new IPv4 information of the interface of luid whose NAT information holds flags, from its information info into *next
@@ -891,7 +955,8 @@ static DWORD NodeEgressRrasSet(NODE_EGRESS_MPR *m, wchar_t *name, UINT64 luid, U
 // Take what the node set for the interface named name out of the running router and of the configuration of the router: the
 // interface where the node added it, else its IPv4 transport where the node added that, else its NAT information. made says
 // what the node added to the running router [0] and to the configuration [1] (NODE_EGRESS_MADE_*), NULL for nothing. The
-// error of the running router, NO_ERROR when it holds nothing of the node.
+// error of the running router, NO_ERROR when it holds nothing of the node, NODE_EGRESS_RRAS_KEPT when it kept the NAT
+// information after the empty NAT block (NodeEgressRrasEmpty).
 static DWORD NodeEgressRrasDrop(NODE_EGRESS_MPR *m, wchar_t *name, const UINT *made) {
 	DWORD ret = NO_ERROR;
 
@@ -919,6 +984,9 @@ static DWORD NodeEgressRrasDrop(NODE_EGRESS_MPR *m, wchar_t *name, const UINT *m
 				err = NodeEgressRrasPut(m, &f, next);
 				m->InfoDelete(next);
 			}
+			// What the running router holds after the empty block
+			if (err == NO_ERROR && f.Config == false && NodeEgressRrasNat(m, name, &held))
+				err = NODE_EGRESS_RRAS_KEPT;
 		}
 		NodeEgressRrasDone(m, &f);
 
@@ -929,28 +997,49 @@ static DWORD NodeEgressRrasDrop(NODE_EGRESS_MPR *m, wchar_t *name, const UINT *m
 	return ret;
 }
 
+// Take the NAT information of the interface named name out of the running router that kept it after an empty NAT block
+// (NodeEgressRrasDrop): the IPv4 transport of the interface goes and comes back with the information that it held, without the
+// NAT block. The error of the running router, NODE_EGRESS_RRAS_KEPT when it holds the NAT information still.
+static DWORD NodeEgressRrasAnew(NODE_EGRESS_MPR *m, wchar_t *name) {
+	NODE_EGRESS_RRAS_INFO f;
+	LPVOID next = NULL;
+	UINT held = 0;
+
+	DWORD err = NodeEgressRrasGet(m, name, false, &f);
+	if (err == NO_ERROR)
+		err = m->BlockRemove(f.Info, NODE_EGRESS_MS_IP_NAT, &next);
+	if (err == NO_ERROR && next == NULL)
+		err = ERROR_INVALID_DATA;
+	if (err == NO_ERROR)
+		err = m->AdminIfRemove(m->Admin, f.Interface, NODE_EGRESS_PID_IP);
+	if (err == NO_ERROR)
+		err = m->AdminIfAdd(m->Admin, f.Interface, NODE_EGRESS_PID_IP, (LPBYTE)next, m->BlockSize(next));
+	if (next != NULL)
+		m->InfoDelete(next);
+	NodeEgressRrasDone(m, &f);
+
+	if (err == NO_ERROR && NodeEgressRrasNat(m, name, &held))
+		err = NODE_EGRESS_RRAS_KEPT;
+
+	return err;
+}
+
 // The NAT flags of the interface of luid in the running router of RRAS into *flags: false when the router holds no NAT
 // information for it, or cannot be asked
 bool NodeEgressRrasFlags(UINT64 luid, UINT *flags) {
 	NODE_EGRESS_MPR m;
-	NODE_EGRESS_RRAS_INFO f;
 	wchar_t name[NODE_EGRESS_RRAS_NAME];
 	UINT held = 0;
-	bool ok = false;
 
 	if (flags != NULL)
 		*flags = 0;
 	if (NodeEgressRrasName(luid, name, sizeof(name)) == false || NodeEgressMprConnect(&m) != NO_ERROR)
 		return false;
 
-	if (NodeEgressRrasGet(&m, name, false, &f) == NO_ERROR && NodeEgressRrasHolds(&m, f.Info, &held)) {
-		ok = true;
-		if (flags != NULL)
-			*flags = held;
-	}
-
-	NodeEgressRrasDone(&m, &f);
+	bool ok = NodeEgressRrasNat(&m, name, &held);
 	NodeEgressMprDisconnect(&m);
+	if (ok && flags != NULL)
+		*flags = held;
 
 	return ok;
 }
@@ -958,20 +1047,11 @@ bool NodeEgressRrasFlags(UINT64 luid, UINT *flags) {
 // Whether the IPv4 router of RRAS that runs holds the NAT routing protocol: false when it does not, or cannot be asked
 bool NodeEgressRrasProtocolHeld(void) {
 	NODE_EGRESS_MPR m;
-	LPBYTE info = NULL;
-	DWORD size = 0;
-	DWORD item = 0;
-	DWORD count = 0;
-	LPBYTE data = NULL;
-	bool held = false;
 
 	if (NodeEgressMprConnect(&m) != NO_ERROR)
 		return false;
 
-	if (m.AdminGet(m.Admin, NODE_EGRESS_PID_IP, &info, &size, NULL, NULL) == NO_ERROR && info != NULL)
-		held = (m.BlockFind(info, NODE_EGRESS_MS_IP_NAT, &item, &count, &data) == NO_ERROR && item != 0 && count != 0);
-	if (info != NULL)
-		m.AdminFree(info);
+	bool held = NodeEgressRrasProtocolIn(&m);
 	NodeEgressMprDisconnect(&m);
 
 	return held;
@@ -979,16 +1059,30 @@ bool NodeEgressRrasProtocolHeld(void) {
 
 // Take the NAT information of the interface of luid out of the running router of RRAS and of its configuration, as an
 // operator's netsh routing ip nat delete interface or a reset of RRAS does: what a test takes away for the reconcile of the
-// node to set again. False when it could not be taken out.
-bool NodeEgressRrasRemove(UINT64 luid) {
+// node to set again. The running router gets the empty NAT block with which the node takes out what it set (NodeEgressRrasDrop)
+// and, where it keeps the information after that, the IPv4 transport of the interface anew without it (NodeEgressRrasAnew).
+// *how (NULL for none) says which of the two took it out (NODE_EGRESS_TAKEN_*). False when the running router held none, or
+// holds it still.
+bool NodeEgressRrasRemove(UINT64 luid, UINT *how) {
 	NODE_EGRESS_MPR m;
 	wchar_t name[NODE_EGRESS_RRAS_NAME];
+	UINT held = 0;
+	UINT taken = NODE_EGRESS_TAKEN_EMPTY;
 
+	if (how != NULL)
+		*how = 0;
 	if (NodeEgressRrasName(luid, name, sizeof(name)) == false || NodeEgressMprConnect(&m) != NO_ERROR)
 		return false;
 
-	DWORD err = NodeEgressRrasDrop(&m, name, NULL);
+	DWORD err = (NodeEgressRrasNat(&m, name, &held) ? NodeEgressRrasDrop(&m, name, NULL) : ERROR_NOT_FOUND);
+	if (err == NODE_EGRESS_RRAS_KEPT) {
+		taken = NODE_EGRESS_TAKEN_TRANSPORT;
+		err = NodeEgressRrasAnew(&m, name);
+	}
 	NodeEgressMprDisconnect(&m);
+
+	if (err == NO_ERROR && how != NULL)
+		*how = taken;
 
 	return (err == NO_ERROR);
 }
@@ -1247,11 +1341,11 @@ void NodeEgressNatFree(NODE_EGRESS_NAT *nat) {
 				if ((r->Done || r->Made[0] != 0 || r->Made[1] != 0) && NodeEgressRrasDrop(&m, r->Name, r->Made) != NO_ERROR)
 					left++;
 			}
-			if (nat->Protocol)
-				NodeEgressRrasProtocolDrop(&m);
+			bool gone = (nat->Protocol == false || NodeEgressRrasProtocolDrop(&m));
 			NodeEgressMprDisconnect(&m);
 			NodeLog(nat->Node, "Egress: the NAT of Routing and Remote Access holds no interface of the node any more (%u of %u could not be taken out)%s", left,
-			        nat->NumIfs, nat->Protocol ? ", and the NAT routing protocol that the node added is gone" : "");
+			        nat->NumIfs,
+			        nat->Protocol == false ? "" : (gone ? ", and the NAT routing protocol that the node added is gone" : ", and the NAT routing protocol that the node added could not be taken out"));
 		} else {
 			NodeLog(nat->Node, "Egress: Routing and Remote Access cannot be had to take out the NAT of the node (error 0x%x)", (UINT)err);
 		}

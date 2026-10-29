@@ -37,6 +37,12 @@
 #define NODE_EGRESS_RRAS_NAPT     0x00000002
 #define NODE_EGRESS_RRAS_PUBLIC   (NODE_EGRESS_RRAS_BOUNDARY | NODE_EGRESS_RRAS_NAPT)
 
+// How NodeEgressRrasRemove took the NAT information of an interface out of the running router of RRAS: the empty NAT block with
+// which the node takes out what it set, or, where the router kept the information after that, the IPv4 transport of the
+// interface anew without it
+#define NODE_EGRESS_TAKEN_EMPTY     1
+#define NODE_EGRESS_TAKEN_TRANSPORT 2
+
 // The upper-layer protocols that the Egress carries
 #define NODE_EGRESS_ICMP 1
 #define NODE_EGRESS_TCP  6
@@ -128,6 +134,6 @@ bool NodeEgressNetNatAdd(const wchar_t *name, const wchar_t *prefix);
 bool NodeEgressNetNatRemove(const wchar_t *name);
 bool NodeEgressRrasFlags(UINT64 luid, UINT *flags);
 bool NodeEgressRrasProtocolHeld(void);
-bool NodeEgressRrasRemove(UINT64 luid);
+bool NodeEgressRrasRemove(UINT64 luid, UINT *how);
 
 #endif // NODE_EGRESS_H

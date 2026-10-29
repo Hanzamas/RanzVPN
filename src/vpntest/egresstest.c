@@ -1548,15 +1548,24 @@ static bool EgressTestNatHolds(UINT tier, UINT64 luid)
 	return (NodeEgressRrasFlags(luid, &flags) && flags == 0);
 }
 
-// Take the setting of the node for corp away from the NAT of Windows of the tier behind its back, as an operator or a reset does
+// Take the setting of the node for corp away from the NAT of Windows of the tier behind its back, as an operator or a reset does.
+// With RRAS the test says how its running router let the NAT information of the adapter of corp go.
 static bool EgressTestNatTakeAway(UINT tier, UINT64 luid)
 {
+	UINT how = 0;
+
 	if (tier == CONTROL_EGRESS_WINNAT)
 	{
 		return NodeEgressNetNatRemove(NODE_EGRESS_NETNAT_NAME);
 	}
 
-	return NodeEgressRrasRemove(luid);
+	bool taken = NodeEgressRrasRemove(luid, &how);
+	Print("  [INFO] the NAT information of the adapter of corp taken out of the running router of RRAS: %s\n",
+		how == NODE_EGRESS_TAKEN_EMPTY ? "by an empty NAT block" :
+		how == NODE_EGRESS_TAKEN_TRANSPORT ? "it kept the information after an empty NAT block, so by the IPv4 transport of the interface anew without it" :
+		"no, the router held none or holds it still");
+
+	return taken;
 }
 
 // Whether the NAT of Windows of the tier holds nothing of the node: no NAT network of WinNAT of the node, or no NAT information
