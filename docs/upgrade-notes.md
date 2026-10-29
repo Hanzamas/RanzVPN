@@ -2,6 +2,18 @@
 
 What an existing server shows after an upgrade. Newest first.
 
+## AUD1-DT-16 (#501): a cluster of Controllers seals the secrets of its targets with a Cluster key
+
+A cluster of Controllers, whose members run with `-rqlite-join`, kept the secrets of its export and audit targets in clear, since its members have no key in common. It seals them now with a Cluster key: one key of the cluster, which each member holds in memory and the store holds only as a copy for each member, sealed to the key of that member's host. At the first start of a member of this release:
+
+- **The cluster gets its Cluster key, and the secrets are sealed.** The first member of this release that starts makes the Cluster key, logs `this member holds the Cluster key: it made it`, seals the secrets that the store holds in clear, and logs `sealed the secrets of the targets that were in clear, with the Cluster key` with how many. Each member that starts after it publishes the public half of the key of its host in the store, gets a copy of the Cluster key from a member that holds it within seconds, and logs `this member holds the Cluster key: its copy opens`. The targets send as before, and the API still never shows a secret.
+- **During the rolling upgrade** a member of the earlier release cannot open a sealed secret. While one leads, the targets are sent without their secrets (a webhook unsigned, which a receiver that checks the signature refuses and the Controller sends again later; an OTLP endpoint without its bearer token), and its log says `the secret of a target cannot be opened`. Upgrade the members one after the other, without a pause: once a member of this release leads, the targets are sent with their secrets again. A target that a member of the earlier release puts meanwhile is in clear until a member of this release seals it, within a minute.
+- **A member that holds no Cluster key yet** refuses a target with a secret, says `this member does not hold the Cluster key yet` in its log, and sends to the targets without their secrets until it gets its copy, which a member that holds the key gives it within seconds.
+- **A backup of a cluster holds the secrets sealed**, and the Cluster key only as copies that the key of each member opens. A restore keeps the Cluster key of the cluster that it restores into: a backup of the same cluster opens as it was, and a backup of another cluster, or one restored on a single Controller, brings its targets back with their names, URLs and types and with no secret, as a backup restored on another host does. Put each target again with its secret. A backup that the cluster made before the upgrade holds the secrets in clear: make a new one and delete the old one.
+- **When every member loses the key of its host at once**, for instance when every member that ran in the foreground runs as the service, whose account has another key set, no member can open its copy. A minute later a member makes a new Cluster key and logs `the Cluster key was lost`, and the targets are sent without their secrets until each is put again. Change the members one after the other instead, and the members that still hold the key give the others a copy.
+- **A rollback** to the earlier release: its members cannot open a sealed secret, and send to the targets without their secrets until each is put again.
+- A single Controller that becomes a member of a cluster keeps the secrets that the key of its host sealed, which the other members cannot open: put each target again once the cluster has formed.
+
 ## AUD1-DT-10 (#458): the secrets of the targets are sealed, a backup is for the Administrators, the data directory has an owner
 
 The Controller's files on its host changed in three ways. At the first start after the upgrade:

@@ -248,6 +248,13 @@ controller/internal/sidecar  ReadCredential  FuzzParseCredential via parseCreden
 # bytes that the store holds in place of a sealed secret, which anyone who can write to the store can choose
 controller/internal/keys  Sealer.Open  FuzzSealerOpen
 
+# The Cluster key of a controller cluster (AUD1-DT-16 #501): the text of the copy of the key in the row of a member, which
+# the store reads, and the bytes of the copy, which a member opens with its own sealing key at its start and after; anyone
+# who can write to the store can choose both. Keeper.Open opens the secrets of the targets as the Sealer of a store
+controller/internal/store       Store.ClusterKey  FuzzDecodeCopy  via decodeCopy
+controller/internal/clusterkey  Keeper.Start      FuzzOpenCopy    via openCopy
+controller/internal/clusterkey  Keeper.Open       exempt  opens a sealed secret of a target with the Sealer of the Cluster key (keys.Sealer.Open), which FuzzSealerOpen drives
+
 # The CA certificate and key files of `ranz cert -signcert` and -signkey (SDN-53 #246): the operator's own files, which
 # LoadAuthority reads as PEM
 controller/internal/certgen  LoadAuthority  FuzzLoadAuthority
