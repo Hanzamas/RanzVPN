@@ -597,7 +597,7 @@ The span in which the Controller admits the static key of a Node. It is kept in 
 `Network.keyLifetimeDays`, 90 days when left out. A Node takes the shortest one of the Networks of its VRFs.
 
 **Non-expiring Node**:
-A Node marked `nonExpiring` in the Intent. Its key has no end.
+A Node marked `nonExpiring` in the Intent. Its key has no end. Only a Node that has no owner can be marked: the key of a device of a User lives by the login of its User, so the Intent refuses the mark on a Node that has an `owner`.
 
 **Refresh (of a key)**:
 The new period that a key gets when its User logs in again with the device (`EnrolDevice`), or when an operator refreshes the key of a Node that has no owner (`ranz node-key refresh`). A User that is banned or no longer valid cannot refresh.
@@ -607,6 +607,12 @@ The new period that a key gets when its User logs in again with the device (`Enr
 
 **Held back (Node)**:
 A Node whose key ended or that waits for approval. Like the Nodes of a Ban, it is left out of the desired state of every other Node, and its control stream is refused with `REFUSE_REASON_UNKNOWN_NODE` and a message that says why.
+
+**Key announcement**:
+One of the Events of the life of a key: `node-key-expiring`, `node-key-ended` and `node-waiting`. The Controller raises each once for each key and state. What was announced is noted in the row of the key in `node_keys` (column `announced`), in the same transaction as the Event, so a restart and the next leader of a cluster raise none twice and lose none. Each Event is also an `operation` record of the audit log under the actor `system`.
+
+**Key warning**:
+The Event `node-key-expiring`, raised when the key of a Node enters the span of 14 days before its end and again when 3 days are left. A key with no end raises none.
 
 **Diagnostics bundle**:
 One ZIP archive with the logs, the configuration and the status of a Controller or of a host, a manifest, and no secret. The term always carries "diagnostics": `ranz.exe` is not called a bundle.

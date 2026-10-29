@@ -22,7 +22,7 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 
 | Port | Protocol | Owner | Notes |
 |---|---|---|---|
-| TCP 179 | BGP | the sidecar `ranz bgp` (GoBGP) | Peers with the operator's own routers. Started only when the `Bgp` setting names peers. |
+| TCP 179 | BGP | the sidecar `ranz bgp` (GoBGP) | Peers with the operator's own routers. Started only when the `Bgp` setting names peers. A second one peers with the other Nodes of each VRF of the Node whose peering is `bgp` in the standard mode (SDN-77): started only while the Node is a member of such a VRF, it listens on the address of the tunnel endpoint of the Node only and takes a session only from the address of a peer that the Controller named. |
 | UDP 4789 | VXLAN | the VXLAN module of the Node (SDN-62) | Toward a fabric or a sensor. The Node is a VTEP. |
 | UDP 6081, configurable | Geneve | the VXLAN module of the Node (SDN-71) | Toward a fabric, OVN or NSX that uses Geneve instead of VXLAN. The Node is a tunnel endpoint of Geneve. |
 | UDP 67 and 68 | DHCP | the DHCP responder of the Node (SDN-43) | Only on an L2 Network whose responder is on, and only while no DHCP server of its bridged LAN answers. The responder is a member of the switch of the Network with a MAC address of its own and opens no socket of the host: it answers the clients' port 68 from port 67 and probes the LAN for a server from port 68. |
@@ -48,13 +48,13 @@ Publicly a Node needs only **TCP 443 and UDP 443** open to the internet (ADR-003
 | `127.0.0.1:4002` | rqlite Raft | In a cluster of 3 or 5 members, `-rqlite-raft` must be an address that the other members reach (or `-rqlite-raft-adv` names one): open it between the members only. |
 | `-api-listen`, `-control-listen`, `-http-listen` of `ranz controller` | HTTP or TLS | Development ports and the plain port 80; all off by default. |
 | `127.0.0.1`, a port that the system gives (`decoy.listen`) | HTTPS | The own decoy site of `ranz mimic`, which only its REALITY listener reaches: the setting takes loopback addresses only. |
-| named pipes | JSON lines, handoff messages and streams | The pipe of the BGP sidecar, the handoff pipes of the front door's owners, and the control pipe and the data pipes of the mimicry sidecar (JSON lines, then one pipe connection for each inner stream). Local, not network ports. |
+| named pipes | JSON lines, handoff messages and streams | The pipe of each BGP sidecar, the handoff pipes of the front door's owners, and the control pipe and the data pipes of the mimicry sidecar (JSON lines, then one pipe connection for each inner stream). Local, not network ports. |
 
 ## Firewall summary
 
 - Open to the internet: TCP 443 and UDP 443. Add TCP 80 only when ACME HTTP-01 or the redirect is wanted.
 - Between Controller cluster members: the Raft port, on a private network.
-- On a Node that peers with a fabric or routers: TCP 179 and UDP 4789 (UDP 6081 for a fabric of Geneve) to those peers, on the LAN side.
+- On a Node that peers with a fabric or routers: TCP 179 and UDP 4789 (UDP 6081 for a fabric of Geneve) to those peers, on the LAN side. On a Node of a VRF whose peering is `bgp` (SDN-77): TCP 179 between its tunnel endpoint and the ones of the other Nodes of the VRF, on the network that the operator trusts.
 - On a gateway of WireGuard Devices: its WireGuard port, UDP 51820 unless the Node sets `wireguard.port`, open to the internet or forwarded to it by the NAT in front of it.
 - On a mimic server (a Node whose Listener has a `mimic` section, SDN-94): the TCP port of that section, open to the internet or forwarded to it. It is the address of the sidecar, never the one of the front door, so a firewall that lets in TCP 443 for the front door does not open it.
 - On a server Node that runs QTIP (the `Qtip` setting): TCP 8443 and UDP 8443, or its `QtipPort`, to the other server Nodes that dial it.

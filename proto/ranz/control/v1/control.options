@@ -102,12 +102,14 @@ ranz.control.v1.DnsRecord.addresses max_count:8 max_size:16
 # its Network, its tags as those of a node, the name of its gateway and its WireGuard key; the public
 # key of the WireGuard interface of a node in its Capabilities; and the counters of 64 Devices in one
 # Telemetry, the most that one gateway terminates (controller/internal/intent MaxGatewayDevices). A
-# Device object is smaller than a NodeConfig.
+# Device object is smaller than a NodeConfig. Its PresharedKey (SDN-82) is 32 bytes too, and the
+# controller sends it to the gateway in clear inside the control stream, never sealed.
 ranz.control.v1.Device.name max_size:64
 ranz.control.v1.Device.addresses max_count:2
 ranz.control.v1.Device.tags max_count:16 max_size:64
 ranz.control.v1.Device.gateway max_size:64
 ranz.control.v1.Device.public_key max_size:32
+ranz.control.v1.Device.preshared_key max_size:32
 ranz.control.v1.Capabilities.wireguard_key max_size:32
 ranz.control.v1.Telemetry.devices max_count:64
 ranz.control.v1.DeviceCounters.device max_size:64
@@ -186,3 +188,23 @@ ranz.control.v1.SessionProfile.user max_size:64
 # The VRFs whose internet exit a node is (SDN-12): at most 16, the VRFs of a node (Peer.vrf_ids). It
 # makes the NodeConfig, and so an Object, about 70 bytes larger.
 ranz.control.v1.NodeConfig.egress_vrf_ids max_count:16
+# The BGP peering of the standard mode (SDN-77): a router id, the addresses of the sidecars, the LAN
+# subnets that a node announces, 16 at most, and what a peer may announce, its 16 addresses at most
+# and its LAN subnets (controller/internal/intent MaxPeeringAnnounce, MaxPeeringAccept). They make
+# the NodeConfig about 700 bytes larger and a Peer about 1.4 kB, which leaves it smaller than the
+# NodeConfig.
+ranz.control.v1.NodePeering.router_id max_size:4
+ranz.control.v1.NodePeering.address max_size:16
+ranz.control.v1.NodePeering.announce max_count:16
+ranz.control.v1.PeerPeering.address max_size:16
+ranz.control.v1.PeerPeering.vrf_ids max_count:16
+ranz.control.v1.PeerPeering.accept max_count:32
+# What a node reports of the peering in its Telemetry (SDN-77): the peers of its sidecar, at most one
+# for each of its 64 Peer objects, each with the address of its sidecar, the state of its session,
+# a word of at most 11 letters, and the prefixes that the node learned from it, at most what the
+# peer may announce (PeerPeering.accept). They make the largest Telemetry frame about 84 kB larger
+# (MaxTelemetry).
+ranz.control.v1.PeeringReport.peers max_count:64
+ranz.control.v1.PeeringPeer.address max_size:16
+ranz.control.v1.PeeringPeer.state max_size:16
+ranz.control.v1.PeeringPeer.learned max_count:32

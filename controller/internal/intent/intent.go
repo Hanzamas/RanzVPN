@@ -130,6 +130,9 @@ type VRF struct {
 	// other Nodes of the VRF send it their traffic to the addresses outside the VRF, and it takes
 	// that traffic to the internet with its Egress tier. Left out, the VRF has no exit.
 	Egress string `json:"egress,omitempty"`
+	// Peering is how the Nodes of the VRF exchange their routes when its link is vxlan or geneve
+	// (SDN-77, peering.go): with the protocol bgp they peer by BGP. Left out, the Controller gives them.
+	Peering Peering `json:"peering,omitzero"`
 }
 
 // Network belongs to one VRF. Its pools are the controller's to allocate from (ADR-0028,
@@ -841,6 +844,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeLinks()
 	// The topologies of the VRFs (SDN-19, topology.go)
 	in.completeTopologies()
+	// The BGP peering of the VRFs (peering.go)
+	in.completePeering()
 	return problems
 }
 
@@ -972,6 +977,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateTopologies()...)
 	// The internet exits of the VRFs (egress.go)
 	problems = append(problems, in.validateEgress()...)
+	// The BGP peering of the VRFs (peering.go)
+	problems = append(problems, in.validatePeering()...)
 	return append(problems, in.validateIPAM()...)
 }
 
