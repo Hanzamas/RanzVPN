@@ -82,19 +82,34 @@ func fingerprintTrustees() ([]*windows.SID, error) {
 	return append(trusted, service), nil
 }
 
-// checkFingerprintFolder refuses the folder dir of a fingerprint file when it is a link or no directory
-// (dataDirOwner), and as checkWriters does.
+// checkFingerprintFolder refuses the folder dir of a fingerprint file when it is a link or on a volume that
+// keeps no access lists, and as checkWriters does. Another account that owns the folder can change its access
+// list and replace the file in it, and one that may add a file to it can do the second.
 func checkFingerprintFolder(dir string, trusted []*windows.SID) error {
-	owner, err := dataDirOwner(dir)
+	name, err := windows.UTF16PtrFromString(dir)
 	if err != nil {
-		return err
+		return &fs.PathError{Op: "stat", Path: dir, Err: err}
 	}
-	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	attrs, err := windows.GetFileAttributes(name)
 	if err != nil {
-		return fmt.Errorf("the access list of %s: %w", dir, err)
+		return &fs.PathError{Op: "stat", Path: dir, Err: err}
+	}
+	if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return &UntrustedError{Path: dir, Why: "is a link (a junction or a symbolic link), which ranz does not follow"}
+	}
+	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return fmt.Errorf("the owner and the access list of %s: %w", dir, err)
 	}
 	if sd == nil {
 		return &UntrustedError{Path: dir, Why: "is on a volume that keeps no access lists, so every account may write it"}
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("the owner of %s: %w", dir, err)
+	}
+	if owner == nil {
+		return &UntrustedError{Path: dir, Why: "has no owner"}
 	}
 	return checkWriters(dir, owner, sd, trusted)
 }

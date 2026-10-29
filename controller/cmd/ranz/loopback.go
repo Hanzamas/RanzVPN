@@ -53,7 +53,7 @@ func (u *unchecked) Error() string {
 	if errors.As(u.err, &untrusted) {
 		return fmt.Sprintf("ranz sends no token to %s without checking who answers there: another program of this host can listen on that port. "+
 			"It checks the TLS fingerprint in %s in the data directory of the Controller (%s; -controller-dir or RANZ_CONTROLLER_DIR names another), "+
-			"and does not trust that file: %v, and only SYSTEM, the Administrators and the account of the Controller service may own or write the file and its folder, "+
+			"and does not trust that file: %v. Only SYSTEM, the Administrators and the account of the Controller service may own or write the file and its folder, "+
 			"so another account may have written the fingerprint. Give the fingerprint with -tls-fingerprint or RANZ_TLS_FINGERPRINT",
 			u.server, servercert.FingerprintFile, u.dir, untrusted)
 	}

@@ -74,12 +74,12 @@ func trustFingerprint(t *testing.T, dir string) {
 
 // TestRanzRefusesAFingerprintFileThatAnotherAccountMayHaveWritten is the first two criteria of AUD1-DT-14 (#496)
 // through ranz. The fingerprint file holds the fingerprint of the very listener that answers, and ranz still refuses
-// it when its folder lets the Users group add files, as the folders that a user makes in C:\ProgramData do, and when
-// the file is owned by an account that is none of SYSTEM, the Administrators and the account of the Controller
-// service: here the account that runs ranz, which a program of the same user that is not elevated leaves as the
-// owner of what it writes. ranz then connects to nothing, sends no token, names the folder or the file and says why,
-// and asks for -tls-fingerprint. The same file is taken once the folder and the file have the security of the install
-// again.
+// it when the folder is one that a local user made (C:\ProgramData lets every user make one, and the user owns it),
+// when the folder lets the Users group add files, and when the file is owned by an account that is none of SYSTEM,
+// the Administrators and the account of the Controller service: here the account that runs ranz, which a program of
+// the same user that is not elevated leaves as the owner of what it writes. ranz then connects to nothing, sends no
+// token, names the folder or the file and says why, and asks for -tls-fingerprint, which then takes the call through.
+// The same file is taken once the folder and the file have the security of the install again.
 func TestRanzRefusesAFingerprintFileThatAnotherAccountMayHaveWritten(t *testing.T) {
 	requireAdministrator(t)
 	ctx := context.Background()
@@ -116,6 +116,7 @@ func TestRanzRefusesAFingerprintFileThatAnotherAccountMayHaveWritten(t *testing.
 		// 0x116: add a file and a folder, write the attributes and the extended attributes, which C:\ProgramData gives the
 		// Users group on the folders made in it
 		{"a folder that the Users group may add files to", trustedFolder + "(A;;0x116;;;BU)", "O:BA", dir + ` may be written by BUILTIN\Users`},
+		{"a folder that a local user made", "O:" + user.User.Sid.String() + "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" + user.User.Sid.String() + ")", "O:BA", dir + " is owned by "},
 		{"a file of the account that runs ranz", trustedFolder, "O:" + user.User.Sid.String(), file + " is owned by "},
 	} {
 		setSecurity(t, dir, c.folder)
@@ -138,12 +139,26 @@ func TestRanzRefusesAFingerprintFileThatAnotherAccountMayHaveWritten(t *testing.
 		}
 	}
 
+	// What the refusal asks for takes the call through, while the file is still not trusted: the fingerprint of the
+	// command line does not come from the file, and the file is not read
+	pinned, err := newClient(right.srv.URL, tokenFile, "", rightFP, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := do(ctx, pinned, []string{"whoami"}, &out); err != nil || !strings.Contains(out.String(), `"name": "admin"`) {
+		t.Fatalf("-tls-fingerprint with a file that is not trusted gave %q, %v, want the answer of the listener", out.String(), err)
+	}
+	if conns, auth := right.seen(); conns != 1 || len(auth) != 1 || auth[0] != "Bearer ranz_ADMINSECRET" {
+		t.Errorf("the listener got %d connections and the headers %q, want the one call with the fingerprint of the command line", conns, auth)
+	}
+
 	// The same file with the security of the install is taken, and the token goes with the call
 	trustFingerprint(t, dir)
 	if out, err := whoami(); err != nil || !strings.Contains(out, `"name": "admin"`) {
 		t.Fatalf("the fingerprint file of a folder of the Administrators gave %q, %v, want the answer of the listener", out, err)
 	}
-	if conns, auth := right.seen(); conns != 1 || len(auth) != 1 || auth[0] != "Bearer ranz_ADMINSECRET" {
-		t.Errorf("the listener got %d connections and the headers %q, want one call with the token", conns, auth)
+	if _, auth := right.seen(); len(auth) != 2 || auth[1] != "Bearer ranz_ADMINSECRET" {
+		t.Errorf("the listener got the headers %q, want a second call with the token", auth)
 	}
 }
