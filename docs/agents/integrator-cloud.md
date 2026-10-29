@@ -15,7 +15,8 @@ The check of 2026-10-26 showed this.
 
 **It does not work:**
 
-- GraphQL. So `gh pr create`, `gh pr list`, `gh pr checks`, `gh pr view`, `gh pr merge` and `gh issue list` fail. The check saw them fail. The other `gh pr` and `gh issue` commands (`edit`, `ready`, `comment`, `close`, `view`) use GraphQL too: treat them the same. Use the commands of this page.
+- GraphQL. So `gh pr create`, `gh pr list`, `gh pr checks`, `gh pr view`, `gh pr merge` and `gh issue list` fail. The check saw them fail. The other `gh pr` and `gh issue` commands (`edit`, `ready`, `comment`, `close`, `view`) use GraphQL too: treat them the same. Use the commands of this page. The proxy answers a GraphQL call with a message that names the REST routes to use in its place, among them the CCR route that marks a draft ready (see "Mark a draft ready").
+- `gh auth status`. It prints `The token in GH_TOKEN is invalid`, and `gh api` REST calls work all the same, because the proxy adds the credential (seen on 2026-10-29). Do not stop at that line: test with `gh api repos/Hanzamas/RanzVPN/issues/<heartbeat>`.
 - A tool for the usage of the plan. There is no `get_usage`. Only the limit of the plan stops a session.
 - `gh api --paginate` on a list of more than 100 rows. GitHub answers with a `Link` url of the form `repositories/<id>/...`, and the proxy refuses it (403, "Numeric-ID repository paths are not supported"). Read each page yourself with `per_page=100&page=N` and stop at a page of fewer than 100 rows (seen on 2026-10-27, on the list of the ready tickets, which has more than 100 rows).
 - The search API. `gh api search/issues` answers 403 ("sessions are bound to their configured repositories"). So the progress count at the end of "Other reads" and the search for the heartbeat issue fail: the routine prompt names the heartbeat issue, and the progress is counted from the lists of issues. The tool `search_issues` of the github MCP server is a search by meaning, not a count.
@@ -131,7 +132,13 @@ A pull request is an issue for labels and comments, so `<n>` is the number of th
 
 ### Mark a draft ready
 
-REST has no call for it, and `gh pr ready` uses GraphQL. Try the tool `update_pull_request` with `draft` set to false. It was not tried. If it fails, leave the pull request, and put it in the report as "draft, needs the maintainer".
+REST has no call for it, and `gh pr ready` uses GraphQL, which the proxy refuses. The proxy has its own route. It worked on 2026-10-29 (PR 484), and answered `{"draft":false}`:
+
+```
+gh api --method POST repos/Hanzamas/RanzVPN/pulls/<n>/ccr/ready_for_review
+```
+
+`POST .../pulls/<n>/ccr/convert_to_draft` goes the other way. Mark a draft ready only when its lane says that the work is done, then take the pull request through the merge procedure like any other.
 
 ### Merge a pull request
 
@@ -141,7 +148,9 @@ gh api --method PUT repos/Hanzamas/RanzVPN/pulls/<n>/merge -f merge_method=merge
 
 `sha` must be the head that you checked at your second look. If the head moved, GitHub answers 409 (`Head branch was modified`) and merges nothing. That is the point of the parameter. A 405 means that the pull request is not mergeable now. After either answer, read the pull request again and start at the first look. Do not retry the same call.
 
-As far as we know, the tool `merge_pull_request` takes no `sha`. Prefer the command. If you must use the tool, read the head again right before the call.
+Copy the sha from the verdict of your look, character for character. A sha with one wrong character gets the same 409 as a real push (seen on 2026-10-29: the head had not moved, the sha was mistyped). So on a 409, read the head again and compare it with what you passed before you look for a lane that pushed.
+
+The tool `merge_pull_request` of the github MCP server has a parameter `expectedHeadSha` in its schema (seen on 2026-10-29, not tried). Prefer the command. If you must use the tool, read the head again right before the call.
 
 ### Read a ticket
 
@@ -215,6 +224,8 @@ Refresh every 5 minutes, on each `PULSE` of the watcher: write the file again wi
 ```
 gh api --method PATCH repos/Hanzamas/RanzVPN/issues/comments/<comment-id> -F body=@/tmp/tick.md
 ```
+
+A first tick that launches 12 lanes and reads their pull requests can take more than 15 minutes between two refreshes, and a tick that is not refreshed is taken over (seen on 2026-10-29: the first refresh came 14 minutes and 50 seconds after the post). So start a loop in the background as soon as you have posted: it sleeps 240 seconds, sets the `alive:` line of the tick file to now (`sed -i "s/^alive: .*/alive: $NOW/" tick.md`), patches the comment, and starts again; run it with `run_in_background` and a timeout of 7200000. Edit the report lines in the tick file, never the comment alone, so that the loop does not write an old report over a new one. The loop must stop when you end: make it exit when a stop file exists, create the file, and write `ended:` into the comment. A loop that outlives its tick would keep a dead tick alive for as long as the container runs.
 
 On a PC with PowerShell, the time of 15 minutes ago is `(Get-Date).ToUniversalTime().AddMinutes(-15).ToString("yyyy-MM-ddTHH:mm:ssZ")`.
 
