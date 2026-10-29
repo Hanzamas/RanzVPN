@@ -272,7 +272,7 @@ func (s *Server) issue(r *http.Request, acct controller.Account) (rbac.UserToken
 	if err != nil {
 		return rbac.UserToken{}, err
 	}
-	s.record(r, audit.Login, acct.Name, audit.Success, fmt.Sprintf("a user token with the role %s until %s", tok.Role, tok.Expires.Format(time.RFC3339)))
+	s.record(r, audit.Login, acct.Name, audit.Success, fmt.Sprintf("a user token with the role %s until %s", tok.Grant(), tok.Expires.Format(time.RFC3339)))
 	return tok, nil
 }
 

@@ -165,7 +165,8 @@ func Needs(method, urlPath string) rbac.Role {
 // Guard passes each request whose bearer token has a role that allows what the request Needs
 // to h, with the token in its context (Caller). It answers 401 Unauthorized to a request with no
 // token, with one the controller does not know and with one that has expired, and 403 Forbidden
-// to one whose role is too low (RFC 6750, section 3).
+// to one whose role is too low, and to one whose role is held for one Network that calls anything
+// but the calls of that Network (scopeRefusal; RFC 6750, section 3).
 func Guard(tokens *rbac.Tokens, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		secret, ok := bearer(r)
@@ -188,6 +189,12 @@ func Guard(tokens *rbac.Tokens, h http.Handler) http.Handler {
 		}
 		if err != nil {
 			replyError(w, err)
+			return
+		}
+		// A role that is held for one Network calls the calls of that Network and no other (scoped.go; SDN-38)
+		if refusal := scopeRefusal(tok, r); refusal != "" {
+			w.Header().Set("WWW-Authenticate", challenge+`, error="insufficient_scope"`)
+			reply(w, http.StatusForbidden, Problem{Error: refusal})
 			return
 		}
 		if need := Needs(r.Method, r.URL.Path); !tok.Role.Allows(need) {
