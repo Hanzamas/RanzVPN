@@ -15,6 +15,9 @@ func FuzzUsers(f *testing.F) {
 	f.Add([]byte(userJSON))
 	f.Add([]byte(`{"resources": [{"kind": "User", "name": "u", "spec": {"expires": "2031-01-02T03:04:05.5+07:00", "maxDevices": 1}}]}`))
 	f.Add([]byte(`{"resources": [{"kind": "Group", "name": "g", "spec": {}}, {"kind": "User", "name": "u", "spec": {"groups": ["g", "g"]}}]}`))
+	// The session profiles of the Users and the Groups (SDN-40, profile.go)
+	f.Add([]byte(`{"resources": [{"kind": "SessionProfile", "name": "p", "spec": {"uploadLimit": 8000000, "maxSessions": 2, "maxIpv4": 4, "idleTimeout": 600, "noServer": true}},
+		{"kind": "Group", "name": "g", "spec": {"sessionProfile": "p"}}, {"kind": "User", "name": "u", "spec": {"groups": ["g"]}}, {"kind": "User", "name": "v", "spec": {"sessionProfile": "p"}}]}`))
 
 	f.Fuzz(func(t *testing.T, b []byte) {
 		doc, err := ParseDocument(b)
@@ -38,6 +41,12 @@ func FuzzUsers(f *testing.F) {
 			}
 			if u.MayChangePassword == nil {
 				t.Fatalf("User %q has no choice of changing its password after the intent was completed", name)
+			}
+			// The effective profile of a User is one that the intent holds (profile.go)
+			if p := in.EffectiveProfile(name); p.Profile != "" {
+				if _, ok := in.SessionProfiles[p.Profile]; !ok {
+					t.Fatalf("User %q runs under SessionProfile %q, which the intent does not hold", name, p.Profile)
+				}
 			}
 		}
 		for name := range in.Nodes {

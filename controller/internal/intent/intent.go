@@ -76,7 +76,7 @@ type Document struct {
 
 // Resource is one declared object. Spec holds the fields of its kind: VRF, Network, Node, Policy,
 // Mirror (mirror.go), Controller, NAT, DnsRecord (dns.go), Group or User (user.go), Listener
-// (listener.go) or Device (device.go).
+// (listener.go), Device (device.go) or SessionProfile (profile.go).
 type Resource struct {
 	Kind string          `json:"kind"`
 	Name string          `json:"name"`
@@ -248,13 +248,16 @@ type Intent struct {
 	Users       map[string]User
 	Listeners   map[string]Listener
 	Devices     map[string]Device
+	// The session profiles of the Users and the Groups (profile.go; SDN-40)
+	SessionProfiles map[string]SessionProfile
 }
 
 // New returns an empty intent.
 func New() Intent {
 	return Intent{VRFs: map[string]VRF{}, Networks: map[string]Network{}, Nodes: map[string]Node{}, Policies: map[string]Policy{},
 		Mirrors: map[string]Mirror{}, Controllers: map[string]Controller{}, NATs: map[string]NAT{}, DNSRecords: map[string]DNSRecord{},
-		Groups: map[string]Group{}, Users: map[string]User{}, Listeners: map[string]Listener{}, Devices: map[string]Device{}}
+		Groups: map[string]Group{}, Users: map[string]User{}, Listeners: map[string]Listener{}, Devices: map[string]Device{},
+		SessionProfiles: map[string]SessionProfile{}}
 }
 
 // Clone returns a copy of in that shares nothing with it.
@@ -282,6 +285,8 @@ func (in Intent) Clone() Intent {
 	}
 	out.DNSRecords = in.cloneDNS()
 	out.Users, out.Groups = in.cloneUsers()
+	// The session profiles (profile.go)
+	out.SessionProfiles = in.cloneProfiles()
 	// The Listeners of the Nodes (listener.go)
 	out.Listeners = in.cloneListeners()
 	// The WireGuard Devices (device.go)
@@ -406,9 +411,14 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 			if err = decodeSpec(r.Spec, &d); err == nil {
 				next.Devices[r.Name] = d
 			}
+		case KindSessionProfile:
+			var p SessionProfile
+			if err = decodeSpec(r.Spec, &p); err == nil {
+				next.SessionProfiles[r.Name] = p
+			}
 		default:
-			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
-				KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice)
+			err = fmt.Errorf("the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s", KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror, KindController, KindNAT,
+				KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile)
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s %q: %w", r.Kind, r.Name, err))
@@ -550,16 +560,22 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 			return in, fmt.Errorf("%w: %s %q", ErrNotFound, kind, name)
 		}
 		delete(next.Devices, name)
+	case KindSessionProfile:
+		// A SessionProfile that a User or a Group names stays (profile.go)
+		if err := next.deleteProfile(name); err != nil {
+			return in, err
+		}
 	default:
-		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror,
-			KindController, KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, kind)
+		return in, fmt.Errorf("%w: the kind must be %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s or %s, not %q", ErrInvalid, KindVRF, KindNetwork, KindNode, KindPolicy, KindMirror,
+			KindController, KindNAT, KindDNSRecord, KindGroup, KindUser, KindListener, KindDevice, KindSessionProfile, kind)
 	}
 	return next, nil
 }
 
 // Resources returns every resource of in: the VRFs, then the Networks, then the Nodes, then the
 // Policies, then the Mirrors, then the Controllers, then the NATs, then the DnsRecords, then the
-// Groups, then the Users, then the Listeners, then the Devices, each ordered by name.
+// SessionProfiles, then the Groups, then the Users, then the Listeners, then the Devices, each
+// ordered by name.
 func (in Intent) Resources() []Resource {
 	var out []Resource
 	for _, name := range sortedNames(in.VRFs) {
@@ -651,6 +667,10 @@ func FromResources(rs []Resource) (Intent, error) {
 			var d Device
 			err = decodeSpec(r.Spec, &d)
 			in.Devices[r.Name] = d
+		case KindSessionProfile:
+			var p SessionProfile
+			err = decodeSpec(r.Spec, &p)
+			in.SessionProfiles[r.Name] = p
 		default:
 			err = errors.New("unknown kind")
 		}
@@ -930,6 +950,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateSecurity()...)
 	problems = append(problems, in.validateDNS()...)
 	problems = append(problems, in.validateUsers()...)
+	// The session profiles and the profiles that the Users and the Groups name (profile.go; SDN-40)
+	problems = append(problems, in.validateProfiles()...)
 	problems = append(problems, in.validateListeners()...)
 	problems = append(problems, in.validateEndpoints()...)
 	problems = append(problems, in.validateDevices()...)
