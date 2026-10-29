@@ -249,8 +249,9 @@ func (w *trayWindow) loop(ready chan<- error) {
 
 // create registers the class of the window once and makes the window, hidden: it takes messages and shows nothing
 func (w *trayWindow) create() error {
-	instance, err := windows.GetModuleHandle(nil)
-	if err != nil {
+	// The handle of the executable, which owns the class and the window; no reference is taken, so none is given back
+	var instance windows.Handle
+	if err := windows.GetModuleHandleEx(windows.GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, nil, &instance); err != nil {
 		return fmt.Errorf("the module handle: %w", err)
 	}
 	class, err := windows.UTF16PtrFromString(trayClassName)
