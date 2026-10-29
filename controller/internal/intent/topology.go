@@ -17,6 +17,13 @@ import (
 // another. The traffic between two sites so passes the hub, where an inspection appliance or a Mirror
 // of the VRF sees it (ADR-0029 decision 8), and two spokes never talk directly.
 //
+// The hub is the place where the policy of the VRF decides the traffic between two spokes (SDN-19-R2
+// #508). A spoke sees the hub as the other end of that traffic, and the hub sees both real ends: it
+// judges each packet that it sends on by the Policies of the VRF, with the spoke that sent it as the
+// from end and the spoke that it goes to as the to end, and drops what they do not allow. With no
+// Policy between two spokes the default deny of the VRF keeps them apart, whatever the Policies
+// between the spokes and the hub allow, and a Mirror of the VRF at the hub sees only what passed.
+//
 // Two gateway Nodes or more may advertise one LAN subnet in a VRF (Node.LANSubnets). Every other Node
 // of the VRF gets the subnet as a route of each of them and picks a healthy one, from its own probes
 // inside their Noise sessions and from the health data of the Controller; a VRF with ECMP spreads the

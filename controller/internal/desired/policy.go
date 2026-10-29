@@ -13,7 +13,9 @@ import (
 // VRFs that can match a flow with one end at the node: a rule whose from or to end names no tag
 // or a tag of the node. Every flow that a node judges has one end at the node, its host, so a
 // rule whose two ends name only tags that the node does not have never matches there. The tags
-// of each Peer identify the other end of a flow to the rules.
+// of each Peer identify the other end of a flow to the rules. The hub of a VRF of topology
+// hub-and-spoke judges the flows between two spokes too, which it sends on, so it gets every rule
+// of the VRF (topology.go; SDN-19-R2 #508).
 
 // vrfPolicy returns the policy of the VRF v as the control protocol carries it with the VRF.
 func vrfPolicy(v intent.VRF) *controlpb.VrfPolicy {
@@ -38,8 +40,9 @@ func nodeRules(in intent.Intent, vrfs map[string]*controlpb.Vrf) map[string][]*c
 			rule.Ports = append(rule.Ports, &controlpb.PortRange{First: uint32(p.First), Last: uint32(p.Last)})
 		}
 		for name, n := range in.Nodes {
-			// A gateway judges the flows of its Devices too (device.go; SDN-80)
-			if slices.Contains(n.VRFs, r.VRF) && (r.From.Holds(tags[name]) || r.To.Holds(tags[name]) || gatewayHolds(in, name, r)) {
+			// A gateway judges the flows of its Devices too (device.go; SDN-80), and a hub the flows
+			// between its spokes (topology.go; SDN-19-R2)
+			if slices.Contains(n.VRFs, r.VRF) && (r.From.Holds(tags[name]) || r.To.Holds(tags[name]) || gatewayHolds(in, name, r) || hubHolds(in, name, r)) {
 				out[name] = append(out[name], rule)
 			}
 		}
