@@ -24,11 +24,14 @@
 //   it (a Fallback). With ICE the agent offers and answers once the home relay answered its bind, so that every Signal names
 //   that address; the node of the lower static key of a pair that neither can dial offers it, and the other answers, so that
 //   no two offers cross, while a node whose dial of the peer failed offers whatever the order of the keys, as the peer cannot
-//   tell; and either offers again to a peer that it gave a Signal when its candidates change, which restarts ICE. A node asks
-//   its home gateway for a public port of the socket with PCP, NAT-PMP or UPnP only when its setting PortMapping is 1
-//   (NODE_SETTING_PORT_MAPPING): it is off by default, as a port that a gateway opens is attack surface. The public port then
-//   goes first among the candidates. The Upgrades and the Fallbacks go to the Controller on the control stream
-//   (ControlSetPaths), which exports them.
+//   tell. Either offers again to a peer that it gave a Signal when its candidates change, which starts a new ICE session where
+//   the one there failed or still checks without the public port that the home gateway granted since (PeerIceOffer). And the
+//   node that offers a pair offers it again NODE_AGENT_ICE_RETRY ms after its session failed, as after a Fallback, so that
+//   ICE runs again for the pair on the Relay: the delay doubles up to NODE_AGENT_ICE_RETRY_MAX while the new sessions fail
+//   too. A node asks its home gateway for a public port of the socket with PCP, NAT-PMP or UPnP only when its setting
+//   PortMapping is 1 (NODE_SETTING_PORT_MAPPING): it is off by default, as a port that a gateway opens is attack surface. The
+//   public port then goes first among the candidates. The Upgrades and the Fallbacks go to the Controller on the control
+//   stream (ControlSetPaths), which exports them.
 // - The overlay sends the record of a peer without a stream session on its Path (NodeAgentSend), after the forwarding table,
 //   the policy, the 1:1 NAT rules and the shaping of the VRF, as it sends the record of a session. A record that comes back
 //   goes to the host as one of a session does, with the same VRF tag and the same policy (NodeOverlayAgentDeliver), on the
@@ -57,6 +60,8 @@ typedef struct NODE_AGENT_PEER {
 	bool Signalled;            // The node gave the control stream a Signal for it: an offer or an answer
 	UINT64 NextSignal;         // When the agent may offer it a Signal next (GetTickCount64)
 	UINT Delay;                // ... and the delay after that offer
+	UINT64 NextIce;            // With ICE, when the agent offers again to start a new session of the pair, whose session failed; 0 while none failed
+	UINT IceDelay;             // ... and the delay from the failure of the next one
 	volatile LONG64 Out;       // Records of the overlay sent to it on its Path
 	volatile LONG64 In;        // ... and taken from it
 } NODE_AGENT_PEER;
@@ -66,6 +71,7 @@ typedef struct NODE_AGENT_DUE {
 	char Name[PEER_NAME_SIZE]; // Its node name
 	UCHAR Key[PEER_KEY_SIZE];  // Its static key
 	bool Resignal;             // It has to hear of a new home relay
+	UINT64 NextIce;            // When a new session of the pair is due, after the one there failed
 } NODE_AGENT_DUE;
 
 // A receive thread of the network of the agent, as a reader of the tables of the node
@@ -244,12 +250,13 @@ void NodeAgentDialFailed(NODE *n, const UCHAR *key) {
 // The Signals
 //
 
-// Offer a Signal to each peer that needs the datagram path and has no Path to it yet, as its delay allows, and once to each that
-// has to hear of a new home relay or of new candidates of the node. The Signal goes on the control stream, which the Controller
-// carries it on to the peer. With ICE an offer names the address that the home relay saw the node at, so none goes before the
-// relay answered the bind of the node. A pair that neither node can dial is offered by the node of the lower static key, and
-// the other answers, so that no two offers cross: the other offers it only to tell of a new home relay or new candidates, which
-// restarts ICE. A node whose dial of the peer failed offers whatever the order of the keys, as the peer cannot tell that the
+// Offer a Signal to each peer that needs the datagram path and has no Path to it yet, as its delay allows, once to each that
+// has to hear of a new home relay or of new candidates of the node, and with ICE again to each on the Relay whose ICE session
+// failed, once the delay of the pair passed. The Signal goes on the control stream, which the Controller carries it on to the
+// peer. With ICE an offer names the address that the home relay saw the node at, so none goes before the relay answered the
+// bind of the node. A pair that neither node can dial is offered by the node of the lower static key, and the other answers,
+// so that no two offers cross: the other offers it only to tell of a new home relay or new candidates, which can restart
+// ICE. A node whose dial of the peer failed offers whatever the order of the keys, as the peer cannot tell that the
 // pair needs the datagram path: it dials no node that has no endpoints, and a client dials every peer. Should the peer offer
 // too, both ends keep the same one of the two offers (PeerIceRemote).
 static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
@@ -276,6 +283,7 @@ static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 			StrCpy(due[num].Name, sizeof(due[num].Name), e->Name);
 			Copy(due[num].Key, e->Key, PEER_KEY_SIZE);
 			due[num].Resignal = e->Resignal;
+			due[num].NextIce = e->NextIce;
 			num++;
 		}
 	}
@@ -287,9 +295,13 @@ static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 		bool offered = false;
 
 		// A peer that has a Path sent the node a Signal, which the node answered: it needs no offer, unless it has to hear of a
-		// new home relay
+		// new home relay. With ICE it needs one too once the delay after its failed session passed, as after a Fallback: the
+		// offer starts a new session, so ICE runs again for the pair on the Relay and moves it to the direct path once that
+		// validates again, as after a restart of a NAT, whose new mapping no check of the failed session reaches.
 		bool path = (PeerGetStatus(p, d->Key, &st) && st.Path != PEER_PATH_NONE);
-		if (path == false || d->Resignal) {
+		bool failed = (a->Config.Ice && path && st.Ice == PEER_ICE_FAILED);
+		bool retry = (failed && d->NextIce != 0 && now >= d->NextIce);
+		if (path == false || d->Resignal || retry) {
 			UINT size = PeerSealSignal(p, d->Key, PEER_SIGNAL_OFFER, env, sizeof(env));
 
 			offered = (size != 0 && ControlSendSignal(a->Signals, d->Name, env, size));
@@ -312,6 +324,18 @@ static void NodeAgentOffer(NODE_AGENT *a, PEER_AGENT *p) {
 					e->Resignal = false;
 					e->Signalled = true;
 				}
+			}
+
+			// The next new session of a pair whose session failed: NODE_AGENT_ICE_RETRY ms after the failure, a delay that
+			// doubles with each new session that fails too and starts again once one is up
+			if (e != NULL && failed == false) {
+				e->NextIce = 0;
+				if (path && st.Ice == PEER_ICE_COMPLETED)
+					e->IceDelay = NODE_AGENT_ICE_RETRY;
+			} else if (e != NULL && (e->NextIce == 0 || (retry && offered))) {
+				e->NextIce = now + e->IceDelay;
+				if (retry && offered)
+					e->IceDelay = MIN(e->IceDelay * 2, NODE_AGENT_ICE_RETRY_MAX);
 			}
 		}
 		ReleaseSRWLockExclusive(&a->Lock);
@@ -624,6 +648,7 @@ void NodeAgentApply(NODE *n, const CONTROL_STATE *st) {
 		Copy(peers[i].Key, cp->Key, PEER_KEY_SIZE);
 		peers[i].Datagram = (st->NumEndpoints == 0 && cp->NumEndpoints == 0);
 		peers[i].Delay = NODE_AGENT_SIGNAL;
+		peers[i].IceDelay = NODE_AGENT_ICE_RETRY;
 		if (peers[i].Datagram)
 			num_datagram++;
 	}

@@ -28,7 +28,9 @@
 //    direct path runs between those addresses. The capture finds no STUN message to anything but a candidate of a Node, and
 //    no datagram at all to stun-1.
 // d. Fallback: the NAT of node-a drops its mappings, as a NAT that restarts does. Consent freshness fails the direct path at
-//    both ends, which fall back to relay-1, a Fallback each, and the packets go on there in the same peer session.
+//    both ends, which fall back to relay-1, a Fallback each, and the packets go on there in the same peer session. ICE runs
+//    again for the pair NODE_AGENT_ICE_RETRY ms after its session failed, and the new session moves it back to the direct
+//    path through the new mapping of the NAT, a second Upgrade each.
 // e. Port mapping: the gateway was asked nothing while node-a and node-b ran with port mapping off. node-c joins with it on,
 //    as the peer of node-b: libplum gets a public port from the gateway, node-c offers it first among its candidates, and
 //    node-b reaches node-c directly at that port.
@@ -1448,22 +1450,25 @@ static void DirectPathCandidates(DIRECTPATH_CTX *ctx)
 }
 
 // d. Fallback: the NAT of node-a drops its mappings, the direct path dies, and the pair falls back to relay-1, where its
-// packets go on
+// packets go on; then ICE runs again for the pair, and its new session moves it back to the direct path
 static void DirectPathFallback(DIRECTPATH_CTX *ctx, DIRECTPATH_SESSION *session)
 {
 	PEER_STATUS ab, ba;
 	PEER_STATS before, after, st_a, st_b;
+	PEER_ADDR pub_a;
 	char detail[MAX_SIZE * 2];
 	char what[MAX_SIZE];
+	char addr[64];
 
-	Print("[d. fallback: the NAT of node-a drops its mappings, and the pair falls back to relay-1]\n");
+	Print("[d. fallback: the NAT of node-a drops its mappings, the pair falls back to relay-1, and ICE runs again for it]\n");
 
 	UINT dropped = NatSimDrop(ctx->Sim, ctx->Nodes[DIRECTPATH_A].Nat, &ctx->Nodes[DIRECTPATH_A].Addr);
 	DirectPathCheck(ctx, dropped != 0, "The NAT of node-a drops the mappings of its host, as a NAT that restarts does", "it had none");
 
 	UINT64 t0 = Tick64();
 	bool fell = DirectPathWaitPath(ctx, DIRECTPATH_A, DIRECTPATH_B, PEER_PATH_RELAY, PEER_ICE_FAILED, DIRECTPATH_FAIL_WAIT, &ab, &ba);
-	Print("  [INFO] both ends were back on relay-1 %I64u ms after the NAT dropped the mappings\n", Tick64() - t0);
+	UINT64 fell_at = Tick64();
+	Print("  [INFO] both ends were back on relay-1 %I64u ms after the NAT dropped the mappings\n", fell_at - t0);
 	DirectPathCheck(ctx, fell, "Consent freshness failed the direct path at both ends, and both fell back to relay-1", "ICE at node-a %s, at node-b %s", DirectPathIceName(ab.Ice), DirectPathIceName(ba.Ice));
 
 	DirectPathStats(ctx, DIRECTPATH_A, &st_a);
@@ -1491,6 +1496,32 @@ static void DirectPathFallback(DIRECTPATH_CTX *ctx, DIRECTPATH_SESSION *session)
 	NODE_OVERLAY_SESSION s;
 	DirectPathSession(ctx, DIRECTPATH_A, directpath_names[DIRECTPATH_B], &s);
 	DirectPathCheck(ctx, s.Path == NODE_PATH_RELAY, "The state of node-a says relay for node-b again", "it says %s", NodeAgentPathName(s.Path));
+
+	// ICE runs again for the pair on relay-1: the Node that offered the pair offers again NODE_AGENT_ICE_RETRY ms after its
+	// session failed, and the new session validates the new mapping of the NAT of node-a, which no check of the old one reached
+	bool back = DirectPathWaitPath(ctx, DIRECTPATH_A, DIRECTPATH_B, PEER_PATH_DIRECT, PEER_ICE_COMPLETED, NODE_AGENT_ICE_RETRY + DIRECTPATH_UP_WAIT, &ab, &ba);
+	Print("  [INFO] ICE ran again for the pair, which was back on the direct path %I64u ms after the fallback\n", Tick64() - fell_at);
+	DirectPathStats(ctx, DIRECTPATH_A, &st_a);
+	DirectPathStats(ctx, DIRECTPATH_B, &st_b);
+	bool mapped = NatSimMapped(ctx->Nodes[DIRECTPATH_A].Nat, &ctx->Nodes[DIRECTPATH_A].Addr, &pub_a);
+	PeerAddrToStr(addr, sizeof(addr), &ba.Direct);
+	Format(what, sizeof(what), "ICE runs again for the pair on relay-1, %u ms after its session failed: the new session validates the new mapping of the NAT of node-a, and both ends move back to the direct path, a second Upgrade each",
+		(UINT)NODE_AGENT_ICE_RETRY);
+	DirectPathCheck(ctx, back && mapped && PeerAddrEqual(&ba.Direct, &pub_a) && st_a.Upgrades == 2 && st_b.Upgrades == 2 && st_a.Fallbacks == 1 && st_b.Fallbacks == 1, what,
+		"path of node-a to node-b %s and ICE %s, of node-b to node-a %s and ICE %s at %s; Upgrades %I64u and %I64u, Fallbacks %I64u and %I64u", DirectPathPathName(ab.Path), DirectPathIceName(ab.Ice),
+		DirectPathPathName(ba.Path), DirectPathIceName(ba.Ice), addr, st_a.Upgrades, st_b.Upgrades, st_a.Fallbacks, st_b.Fallbacks);
+
+	UINT direct = 0;
+	for (UINT k = 0;k < DIRECTPATH_ECHOES;k++)
+	{
+		if (DirectPathEcho(ctx, DIRECTPATH_A, DIRECTPATH_B, (USHORT)(43500 + k)))
+		{
+			direct++;
+		}
+	}
+	same = DirectPathSameSession(ctx, session, detail, sizeof(detail));
+	Format(what, sizeof(what), "%u packets of the host of node-a reach the host of node-b on the direct path again and come back, in the same peer session", (UINT)DIRECTPATH_ECHOES);
+	DirectPathCheck(ctx, direct == DIRECTPATH_ECHOES && same, what, "%u echoes came back; %s", direct, detail);
 }
 
 // e. Port mapping: off at node-a and node-b, which asked the gateway nothing; on at node-c, which gets a public port, offers
@@ -1929,7 +1960,7 @@ static void DirectPathStop(DIRECTPATH_CTX *ctx)
 }
 
 // directpath: a pair of Nodes behind cone NATs moves from the Relay to the direct path that ICE finds, and back
-RANZ_TEST_TAGS("directpath", directpath_test, "core", "Direct path of the new core (CORE-S5-6): a pair of Nodes behind cone NATs of the simulator moves from a Relay to the direct path that ICE validates in the same peer session, with no STUN server, falls back to the Relay when the NAT drops its mapping, and a Node with port mapping on offers the public port that a home gateway grants first; each Node reports its Upgrades and Fallbacks again while they stay the same, and a pair whose one dial failed takes the datagram path.");
+RANZ_TEST_TAGS("directpath", directpath_test, "core", "Direct path of the new core (CORE-S5-6): a pair of Nodes behind cone NATs of the simulator moves from a Relay to the direct path that ICE validates in the same peer session, with no STUN server, falls back to the Relay when the NAT drops its mapping and moves back once ICE runs again, and a Node with port mapping on offers the public port that a home gateway grants first; each Node reports its Upgrades and Fallbacks again while they stay the same, and a pair whose one dial failed takes the datagram path.");
 void directpath_test(UINT num, char **arg)
 {
 	DIRECTPATH_CTX *ctx = ZeroMalloc(sizeof(DIRECTPATH_CTX));
