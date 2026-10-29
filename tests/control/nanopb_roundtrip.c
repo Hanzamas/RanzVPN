@@ -46,6 +46,8 @@ static const char *body_name(pb_size_t which) {
 		return "Operation";
 	case ranz_control_v1_ControlMessage_operation_result_tag:
 		return "OperationResult";
+	case ranz_control_v1_ControlMessage_pins_tag:
+		return "Pins";
 	default:
 		return "nothing";
 	}
@@ -128,6 +130,9 @@ static int roundtrip(const char *path) {
 		printf("%s: OperationResult %llu of status %d, %u entries of %u, %zu bytes\n", path, (unsigned long long)msg.body.operation_result.id,
 			   (int)msg.body.operation_result.status, (unsigned)msg.body.operation_result.entries_count,
 			   (unsigned)msg.body.operation_result.total, n);
+		break;
+	case ranz_control_v1_ControlMessage_pins_tag:
+		printf("%s: Pins, a mimic key of %u bytes, %zu bytes\n", path, (unsigned)msg.body.pins.mimic_key.size, n);
 		break;
 	default:
 		fprintf(stderr, "%s: a control message with no body\n", path);
