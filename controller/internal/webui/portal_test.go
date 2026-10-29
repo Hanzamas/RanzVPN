@@ -35,10 +35,12 @@ const (
 )
 
 // TestThePortalPagesAreServed: each page of the portal, its scripts and its style are files of the UI at their
-// own paths, with the security headers of every file, for GET and HEAD only.
+// own paths, with the security headers of every file, for GET and HEAD only, and the sign-in of the console, which
+// is where a user lands on the controller, links to the sign-in of the portal.
 func TestThePortalPagesAreServed(t *testing.T) {
 	h := webui.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) }))
 	for _, c := range []struct{ path, contentType, contains string }{
+		{"/sign-in", "text/html; charset=utf-8", `href="/portal-sign-in"`},
 		{"/portal", "text/html; charset=utf-8", `data-page="portal"`},
 		{"/portal-sign-in", "text/html; charset=utf-8", `data-page="portal-sign-in"`},
 		{"/portal-join", "text/html; charset=utf-8", `data-page="portal-join"`},
