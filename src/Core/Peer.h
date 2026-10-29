@@ -126,7 +126,7 @@
 #define PEER_DROP_SEND      10 // The send procedure failed
 #define PEER_DROP_CLEAR     11 // A data datagram of the old clear form (PEER_MSG_DATA): there is no downgrade to it
 #define PEER_DROP_SESSION   12 // A record or a handshake answer under no session of its source: an unknown index, or another node's
-#define PEER_DROP_ICE       13 // A STUN message that no ICE session of the node takes: of a session that ended or failed, or none
+#define PEER_DROP_ICE       13 // A STUN message that no ICE session of the node takes: of a session that ended or failed, a check before the answer of the peer, or none
 #define PEER_NUM_REASONS    14
 
 // The port mapping of a node behind a home gateway (PEER_STATS; PeerPortMap.c)

@@ -17,9 +17,10 @@
 // retransmissions, consent freshness) under the mutex of the agent and sleeps until the next one is due or the agent
 // is interrupted. It owns no socket: the agent sends through the send procedure of its I/O (juice_peer_io_t), and the
 // peer layer hands it the STUN messages that come to its socket (juice_peer_input), which the agent takes under the
-// same mutex, as the thread mode takes what its socket receives. The host candidates of the agent are the host
-// addresses of the I/O. Data never goes through the agent: the peer layer sends its records on the pair that the agent
-// selected (juice_peer_selected) and takes them itself.
+// same mutex, as the thread mode takes what its socket receives, but no check of the peer before it has the remote
+// description (conn_peer_takes). The host candidates of the agent are the host addresses of the I/O. Data never goes
+// through the agent: the peer layer sends its records on the pair that the agent selected (juice_peer_selected) and
+// takes them itself.
 
 #include "conn_thread.h"
 #include "agent.h"
@@ -201,15 +202,23 @@ bool juice_peer_is_stun(const char *data, size_t size) {
 	return data != NULL && is_stun_datagram(data, size);
 }
 
-// Whether the agent takes the STUN message msg: a binding request that names its username fragment first, or an answer
-// to one of its own requests. Under the mutex of the agent.
+// Whether the agent takes the STUN message msg: a binding request that names its username fragment first, once the agent
+// has the remote description, or an answer to one of its own requests. Under the mutex of the agent.
+//
+// A request that comes before the remote description, as the checks of a peer that took the offer of the node do while
+// its answer is still on its way, is not taken. libjuice 1.7.4 would make a peer reflexive candidate of its source and a
+// pair with it, and agent_set_remote_description then puts the candidates of the description in the place of that
+// candidate, so the pair, which still checks the address of the request, names another candidate (the first of the
+// description, a host address of the peer) as its remote one: the address that juice_peer_selected gives, where the
+// peer layer sends the records of the peer and from where alone it takes them. The peer sends its check again (libjuice
+// retransmits a check for 39.5 s), and the agent takes it once it has the description.
 static bool conn_peer_takes(juice_agent_t *agent, const stun_message_t *msg) {
 	if (msg->msg_class == STUN_CLASS_REQUEST && msg->msg_method == STUN_METHOD_BINDING && msg->has_integrity) {
 		const char *separator = strchr(msg->credentials.username, ':');
 		size_t len = strlen(agent->local.ice_ufrag);
 
 		return separator != NULL && len != 0 && (size_t)(separator - msg->credentials.username) == len &&
-		       strncmp(msg->credentials.username, agent->local.ice_ufrag, len) == 0;
+		       strncmp(msg->credentials.username, agent->local.ice_ufrag, len) == 0 && agent->remote.ice_ufrag[0] != '\0';
 	}
 
 	return STUN_IS_RESPONSE(msg->msg_class) && agent_find_entry_from_transaction_id(agent, msg->transaction_id) != NULL;

@@ -13,8 +13,9 @@
 // tests carries the checks as it carries every datagram of the layer.
 //
 // An offer of the node starts its session with the peer as the controlling end; an offer of the peer starts it as the
-// controlled end, and the answer gives the offering end the peer's credentials and candidates. The checks run on the
-// thread of each session while the pair stays on the relay. Once a candidate pair validates, PeerSend sends the records
+// controlled end, and the answer gives the offering end the peer's credentials and candidates. A check of the peer
+// that comes before that answer is not taken, and the peer sends it again (juice-peer.c says why). The checks run on
+// the thread of each session while the pair stays on the relay. Once a candidate pair validates, PeerSend sends the records
 // of the peer session to the peer's address on that pair, on the socket of the layer, and PeerInput takes the records
 // from there as the direct path (PeerSourcePath), so the move holds back no datagram. Consent freshness (RFC 7675)
 // keeps the direct path alive and checks it: when the peer stops answering for 30 s, libjuice fails the session and the
