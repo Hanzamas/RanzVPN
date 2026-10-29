@@ -153,6 +153,12 @@ type Network struct {
 	// Security is the security of an L2 Network (SDN-41, security.go): the protections that its
 	// switch applies to the frames of its clients, and its gateways. Left out, none holds.
 	Security *Security `json:"security,omitempty"`
+	// Approval is how the Network admits a new Node (SDN-56, keylife.go): ApprovalAuto, the default, at once, or
+	// ApprovalManual, which holds the Node until an admin approves it.
+	Approval string `json:"approval,omitempty"`
+	// KeyLifetimeDays is how many days the key of a Node of the Network lives from its last authentication, from 1 to
+	// MaxKeyLifetimeDays (SDN-56, keylife.go). Left out, it is DefaultKeyLifetimeDays.
+	KeyLifetimeDays uint32 `json:"keyLifetimeDays,omitempty"`
 }
 
 // Node is a node of the overlay, identified by its Noise static key.
@@ -195,6 +201,9 @@ type Node struct {
 	// (SDN-76, link.go): its address on the network that the operator trusts and its ports.
 	// Left out, the node can be in no VRF with such a link.
 	VTEP VTEP `json:"vtep,omitzero"`
+	// NonExpiring marks the Node as one whose key never expires (SDN-56, keylife.go): a server or a gateway, which no
+	// user logs in for again. Left out, the key of the Node lives for the key lifetime of its Networks.
+	NonExpiring bool `json:"nonExpiring,omitempty"`
 }
 
 // Controller is one member of the controller cluster as nodes reach it (SDN-17, ADR-0026). The
@@ -952,6 +961,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateEndpoints()...)
 	problems = append(problems, in.validateDevices()...)
 	problems = append(problems, in.validateLinks()...)
+	// The approval and the key lifetime of the Networks (SDN-56, keylife.go)
+	problems = append(problems, in.validateKeyLife()...)
 	// The topologies of the VRFs and the LAN subnets of the gateways (SDN-19, topology.go)
 	problems = append(problems, in.validateTopologies()...)
 	// The BGP peering of the VRFs (peering.go)

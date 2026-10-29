@@ -42,6 +42,13 @@
 #define NODE_SETTING_LOG_DAYS     "LogDays"     // The age limit of the node log in days: older files of the log are deleted; without it NODE_LOG_DEFAULT_DAYS, 0 for no limit
 #define NODE_SETTING_LOG_MB       "LogMB"       // The disk limit of the node log in megabytes: its files never take more together; without it NODE_LOG_DEFAULT_MB, 0 for no limit
 
+// The XDP datapath of msquic and QTIP on the Listener (NodeQtip.c; CORE-S7-2, #83; ADR-0018 decisions 2 and 5), both off by
+// default and on Windows Server x64 only
+#define NODE_SETTING_QUIC_XDP  "QuicXdp"  // "on": the QUIC of the Listener runs on the XDP datapath of msquic; without it on Winsock
+#define NODE_SETTING_QTIP      "Qtip"     // "on": a QTIP listener beside it, for the links between server nodes; without it none
+#define NODE_SETTING_QTIP_PORT "QtipPort" // The port of the QTIP listener, TCP and UDP; without it, or 0, TRANSPORT_QUIC_QTIP_PORT
+#define NODE_QTIP_TRANSPORT    "qtip"     // The name of the QTIP transport in a fallback list
+
 // The limits of the node log (SDN-54, #247) without the settings above, and the most that a setting may name
 #define NODE_LOG_DEFAULT_DAYS 30
 #define NODE_LOG_DEFAULT_MB   256
@@ -242,6 +249,8 @@ typedef void(NODE_STATE_PROC)(NODE *n, void *param, const struct CONTROL_STATE *
 // Takes how each stream of the control stream ended or why it did not open (NodeOverlayStart; CONTROL_END_PROC of
 // Core/Control.h), on the thread of the control stream
 struct CONTROL_STATUS;
+// The Capabilities that the Hello of the control stream reports (NODE_OVERLAY_CONFIG.Caps; CONTROL_CAPS of Core/Control.h)
+struct CONTROL_CAPS;
 typedef void(NODE_CONTROL_END_PROC)(void *param, const struct CONTROL_STATUS *st);
 // Takes an IP packet of the host's own stack from the ring of a Wintun adapter, on the I/O thread of its adapter queue
 typedef void(NODE_WINTUN_PROC)(NODE_WINTUN *w, void *param, const UCHAR *packet, UINT size);
@@ -496,6 +505,10 @@ struct NODE {
 
 	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233), NULL while the overlay does not run
 	struct NODE_PROFILE *Profile;
+
+	// The switches of the L2 Networks, whose tables the live operations of the Controller read and clear (NodeOperation.c;
+	// SDN-50-N, #492), NULL while the overlay does not run
+	struct NODE_OPERATIONS *Operations;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)
@@ -543,6 +556,11 @@ struct NODE_OVERLAY_CONFIG {
 	NODE_PATH_ATTACH_PROC *PathAttach;
 	// The configuration of the peer layer of the agent, NULL for PeerDefaultConfig: the shorter timers of a test
 	const PEER_CONFIG *PathConfig;
+
+	// Tells the Capabilities that the Hello of the control stream reports in place of the ones of the host (NodeCaps.c), NULL
+	// for those; with AdapterParam. A test whose own switch is the L2 data path of the node reports the L2 backend that the
+	// switch stands in for, which the Controller asks of a node that holds an L2 Network (SDN-50-N, #492).
+	void (*Caps)(void *param, struct CONTROL_CAPS *caps);
 };
 
 // What NodeOverlayGetStatus reports
@@ -775,6 +793,12 @@ struct NODE_LISTENER_STATUS {
 	UINT QuicRetryMemoryLimit; // The retry setting of msquic, read back from it
 	bool QuicRetrying;         // msquic answers new connections with a retry now
 	UINT64 QuicRetries;        // The retry packets that msquic sent
+	// The XDP datapath of msquic and QTIP (NodeQtip.c; CORE-S7-2, #83): the datapath that the QUIC of the Listener asks msquic
+	// for (TRANSPORT_QUIC_DATAPATH_*), the port of the QTIP listener, TCP and UDP, 0 while it does not listen, and why it does
+	// not while the Qtip setting asks for it, "" otherwise
+	UINT QuicDatapath;
+	UINT QtipPort;
+	char QtipError[MAX_SIZE];
 };
 
 // What NodeGetStatus reports
@@ -1034,5 +1058,13 @@ bool NodeWireGuardAvailable(UINT *error);
 bool NodeWireGuardKey(const PEER_KEY *key, UCHAR *priv, UCHAR *pub);
 void NodeWireGuardGetStatus(NODE *n, NODE_WIREGUARD_STATUS *st);
 UINT NodeDeviceRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);
+
+// NodeOperation.c (SDN-50-N, #492): the L2 data path attaches the switch of an L2 Network, whose MAC table and IP table the
+// live operations of the Controller read and clear, and detaches it before it frees it. The procedure of an attached switch
+// takes the name of the member of the port port into name of size bytes, "" for none, which the entries of that port carry;
+// it runs on the thread of the control stream, while the switch cannot be detached.
+typedef void(NODE_PORT_NAME_PROC)(void *param, UINT port, char *name, UINT size);
+bool NodeOperationAttach(NODE *n, const char *network, struct SWITCH *sw, NODE_PORT_NAME_PROC *name, void *param);
+void NodeOperationDetach(NODE *n, const char *network);
 
 #endif // NODE_H

@@ -32,6 +32,12 @@
 // source, and each member that a frame to a group reaches: the security of an L2 Network, which the policy engine runs
 // (SwitchSecurity.h; SDN-41, #234). A frame that it refuses goes nowhere, and its source is not learnt.
 //
+// IP table (SwitchIp.c; SDN-50-N, #492). Beside the MAC table the switch learns the IP addresses that the members send from,
+// per VLAN, each with the MAC address and the port of its last frame, as the IP table of the Hub holds them: the source of an
+// IPv4 packet and the sender of an ARP packet, the source of an IPv6 packet, but no address that no host sends from (0.0.0.0/8,
+// 127.0.0.0/8, multicast, broadcast, the unspecified and the loopback address of IPv6). It reads them only; the frame passes
+// byte for byte all the same. The operators read and clear both tables (the live operations of the Controller).
+//
 // Time is the caller's: SwitchInput and SwitchAge take it in ms (GetTickCount64, or the clock of a test), and the limits
 // and the ages of the MAC table run on it.
 
@@ -67,6 +73,8 @@
 #define SWITCH_DEFAULT_MACS  65536   // ... without SWITCH_CONFIG.MaxMacs: the MAX_MAC_TABLES of the Hub
 #define SWITCH_DEFAULT_AGING 600000  // ms without SWITCH_CONFIG.AgingTime: the MAC_TABLE_EXPIRE_TIME of the Hub
 #define SWITCH_MAX_GROUPS    1024    // Groups with subscribers in one VLAN at most, besides every group
+#define SWITCH_MAX_IPS       1048576 // Entries of the IP table at most
+#define SWITCH_DEFAULT_IPS   65536   // ... without SWITCH_CONFIG.MaxIps: the MAX_IP_TABLES of the Hub
 
 // Why the switch dropped a frame before its VLAN took it (SWITCH_STATS)
 #define SWITCH_DROP_MALFORMED 0 // Shorter than SWITCH_MIN_FRAME, a tag cut short, or longer than SWITCH_MAX_FRAME
@@ -97,6 +105,7 @@ typedef struct SWITCH_CONFIG {
 	SWITCH_ADMIT_PROC *Admit;     // The filter of the switch: judges each frame, NULL for none ...
 	SWITCH_DELIVER_PROC *Deliver; // ... and each member that a frame to a group reaches, NULL for none
 	void *FilterParam;            // ... their first parameter
+	UINT MaxIps;                  // Entries of the IP table at most, up to SWITCH_MAX_IPS; 0 for SWITCH_DEFAULT_IPS
 } SWITCH_CONFIG;
 
 // Takes a frame that the switch delivers to the member of a port, byte for byte as it leaves the port. It runs on the
@@ -141,6 +150,10 @@ typedef struct SWITCH_STATS {
 	UINT64 Moved;                     // ... that moved to another port
 	UINT64 Refused;                   // Sources that it did not learn, as it was full
 	UINT64 Drops[SWITCH_NUM_REASONS]; // Frames dropped before their VLAN took them, by reason (SWITCH_DROP_*)
+	UINT NumIps;                      // The entries of the IP table
+	UINT64 IpsLearnt;                 // Entries that the IP table learnt
+	UINT64 IpsMoved;                  // ... that came from another MAC address or port
+	UINT64 IpsRefused;                // Addresses that it did not learn, as it was full
 } SWITCH_STATS;
 
 // One entry of the MAC table (SwitchGetMacs)
@@ -150,6 +163,16 @@ typedef struct SWITCH_MAC_ENTRY {
 	UINT Port;       // The port it was learnt on
 	UINT64 LastSeen; // The time of the last frame from it, as SwitchInput had it; refreshed once a second at most
 } SWITCH_MAC_ENTRY;
+
+// One entry of the IP table (SwitchGetIps)
+typedef struct SWITCH_IP_ENTRY {
+	UINT Vlan;         // The VLAN
+	UCHAR Address[16]; // The IP address: 4 bytes for IPv4, 16 for IPv6
+	UINT AddressSize;  // ... their number
+	UCHAR Mac[6];      // The MAC address of the last frame from it
+	UINT Port;         // ... and the port that frame came in at
+	UINT64 LastSeen;   // The time of that frame, as SwitchInput had it; refreshed once a second at most
+} SWITCH_IP_ENTRY;
 
 // The L2 switch of a Network, Switch.c
 typedef struct SWITCH SWITCH;
@@ -166,8 +189,13 @@ bool SwitchSetVlanLimits(SWITCH *sw, UINT vlan, UINT broadcast, UINT multicast);
 UINT SwitchInput(SWITCH *sw, UINT64 now, UINT port, const UCHAR *frame, UINT size);
 UINT SwitchAge(SWITCH *sw, UINT64 now);
 UINT SwitchClearMacs(SWITCH *sw);
+UINT SwitchClearMac(SWITCH *sw, const UCHAR *mac);
 UINT SwitchGetMacs(SWITCH *sw, SWITCH_MAC_ENTRY *list, UINT max);
 void SwitchGetStats(SWITCH *sw, SWITCH_STATS *st);
 bool SwitchGetVlanStats(SWITCH *sw, UINT vlan, SWITCH_VLAN_STATS *st);
+
+// SwitchIp.c
+UINT SwitchGetIps(SWITCH *sw, SWITCH_IP_ENTRY *list, UINT max);
+UINT SwitchClearIps(SWITCH *sw, const UCHAR *address, UINT size);
 
 #endif // CORE_SWITCH_H

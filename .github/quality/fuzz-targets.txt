@@ -65,6 +65,9 @@ src/Core  VxlanParseGeneve  fuzz_geneve
 
 # The switch module (CORE-S4-1 #74): the frames that the members of a Network send
 src/Core  SwitchInput  fuzz_switch
+# The IP table of the switch (SDN-50-N #492) reads the IPv4 header, the ARP packet or the IPv6 header of each frame that the
+# ingress of the switch takes; no parser word in the name, listed as the reader of frames that it is
+src/Core  SwitchIpLearn  fuzz_switch  via SwitchInput
 
 # The policy engine (CORE-S4-2 #75): the JSON documents of rules, and the frames that the members of a Network send.
 # PolicyNewDoc and PolicySetRules have no parser word in their names and are listed as the parsers they are.
@@ -104,6 +107,11 @@ src/Core  ControlCopySecurities  fuzz_control  via ControlInput
 # Update to ControlCopyPeerings, which copies the peering of each; no parser word in the name, listed as the reader of the
 # controller's bytes that it is
 src/Core  ControlCopyPeerings  fuzz_control  via ControlInput
+# The live operations of the Controller (SDN-50-N #492): ControlInput hands an Operation that ControlDecode decoded to
+# ControlTakeOperation, which checks its kind, its Network and the sizes of its MAC address and its address before the owner
+# does it, and the seeds operation-*.bin of fuzz_control hold Operations of every kind after a state with L2 and L3 Networks;
+# no parser word in the name, listed as the reader of the controller's bytes that it is
+src/Core  ControlTakeOperation  fuzz_control  via ControlInput
 
 # The Node and the configuration store of Cedar (CORE-F5)
 src/Cedar  NodeParseRoles       exempt  the role names of the node's own configuration, split by ParseToken and looked up in a fixed table

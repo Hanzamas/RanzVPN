@@ -384,6 +384,11 @@ typedef struct TRANSPORT_QUIC_CONFIG {
 	bool EndPointBinding;                            // Bind the tls-server-end-point, as before CORE-H5: for the test of an old node
 	SOURCE_LIMIT_CONFIG Limits;                      // A listener: the limits for a source (SourceLimit.h), a field of 0 takes its default
 	UINT RetryMemoryLimit;                           // A listener: the memory of the handshakes above which msquic answers a new connection with a retry, in 1/65535 of the memory of the machine; 0 for TRANSPORT_QUIC_RETRY_DEFAULT
+	// The XDP datapath of msquic (TransportQuicXdp.c; CORE-S7-2, #83), off by default and on Windows Server x64 only: Xdp
+	// carries the packets of the transport on it instead of Winsock, and Qtip gives them a TCP header too (QTIP), for a link
+	// between two server nodes; Qtip implies Xdp
+	bool Xdp;
+	bool Qtip;
 } TRANSPORT_QUIC_CONFIG;
 
 #define TRANSPORT_QUIC_IDLE_DEFAULT 30000 // The QUIC idle timeout without one in the configuration (ms)
@@ -447,6 +452,60 @@ bool TransportQuicExporterVersion(const UINT *version, bool server);
 // and reason, when that msquic is not the pinned minor, its table has no exporter or the connection gives none; the
 // stream then has no binding, and its session is encrypted.
 bool TransportQuicExporter(const void *api, void *connection, bool server, UCHAR *exporter);
+
+// The XDP datapath of msquic and QTIP (TransportQuicXdp.c; CORE-S7-2, #83; ADR-0018 decisions 2 and 5, ADR-0022). A
+// transport whose configuration has Xdp asks msquic to carry its packets on the XDP datapath of XDP for Windows, the runtime
+// that ranz install puts on a server (ONE-3, #312), instead of Winsock: one flag, and no AF_XDP code of Ranz. Qtip asks for
+// QTIP too, QUIC whose packets carry a TCP header instead of a UDP one, for a link between two server nodes that both run
+// XDP on a network that treats TCP better than UDP. Both are off by default and run on Windows Server x64 only
+// (TransportQuicXdpAllowed): elsewhere a transport with Xdp keeps the normal datapath, and one with Qtip is not made, since
+// QTIP has no normal datapath; a line of the transport log says why. Where the XDP runtime is missing msquic keeps the
+// normal datapath for Xdp by itself, but not for QTIP: a QTIP listener does not listen then, and a QTIP connection does
+// not start. A QTIP listener reserves the TCP and the UDP port of its address, and msquic does not let a QTIP and a
+// non-QTIP listener share a port, so QTIP listens on a port of its own, TRANSPORT_QUIC_QTIP_PORT (docs/ports.md).
+//
+// msquic takes both as settings from 2.5 on (XdpEnabled and QTIPEnabled of QUIC_SETTINGS, in the preview part of its
+// header; 2.3 and 2.4 had them as flags of the execution config of the whole process), at the same place in 2.5 and in the
+// pinned 2.6, so this build sets them on those only (TransportQuicXdpRelease). It takes the datapath of a connection from
+// the settings of its configuration, and the one of a listener from its global settings when the listener starts: so every
+// configuration of the module names both, off unless asked, and every listener of the module starts with the global ones
+// set for its own transport, under one lock, and put back at once. A transport without them stays on the normal datapath,
+// whatever another transport of the process asks.
+#define TRANSPORT_QUIC_QTIP_PORT  8443 // The port of a QTIP listener without another one, TCP and UDP
+#define TRANSPORT_QUIC_QTIP_MAJOR 2    // The first msquic that takes QTIP and XDP as settings: 2.5
+#define TRANSPORT_QUIC_QTIP_MINOR 5
+
+// The datapath that a QUIC transport asked msquic for
+#define TRANSPORT_QUIC_DATAPATH_NORMAL 0 // Winsock
+#define TRANSPORT_QUIC_DATAPATH_XDP    1 // The XDP datapath of msquic
+#define TRANSPORT_QUIC_DATAPATH_QTIP   2 // ... with QTIP
+
+// What msquic holds for a QUIC transport (TransportQuicGetXdpStatus)
+typedef struct TRANSPORT_QUIC_XDP_STATUS {
+	UINT Version[4]; // The version of msquic (QUIC_PARAM_GLOBAL_LIBRARY_VERSION)
+	bool Release;    // ... which takes XdpEnabled and QTIPEnabled where this build sets them (TransportQuicXdpRelease)
+	UINT Datapath;   // TRANSPORT_QUIC_DATAPATH_*: what the transport asked msquic for
+	bool Named;      // The configuration of the transport names both settings, as msquic holds it, so it takes neither from the global ones
+	bool Xdp;        // XdpEnabled of that configuration
+	bool Qtip;       // QTIPEnabled of that configuration
+	bool GlobalXdp;  // XdpEnabled of the global settings of msquic between two starts of a listener of the module
+	bool GlobalQtip; // QTIPEnabled of the global settings
+} TRANSPORT_QUIC_XDP_STATUS;
+
+// Whether the XDP datapath and QTIP run on a host of a server edition of Windows (server) whose native processor
+// architecture is machine (PROCESSOR_ARCHITECTURE_*): on Windows Server x64 only, since the XDP runtime is x64 only and
+// Microsoft tests it on Windows Server (ADR-0018). TransportQuicXdpHost asks it of this host, whichever architecture the
+// program was built for.
+bool TransportQuicXdpAllowed(bool server, UINT machine);
+bool TransportQuicXdpHost();
+
+// Whether the msquic of version (the four numbers of QUIC_PARAM_GLOBAL_LIBRARY_VERSION) takes XdpEnabled and QTIPEnabled
+// where this build sets them: from 2.5 (TRANSPORT_QUIC_QTIP_MAJOR, MINOR) to the pinned minor (TRANSPORT_QUIC_EXPORTER_MINOR)
+bool TransportQuicXdpRelease(const UINT *version);
+
+// What msquic holds for the QUIC transport t into st; false for a transport that is not a QUIC one, or when msquic tells
+// none of it. The settings are read only from an msquic that Release names.
+bool TransportQuicGetXdpStatus(TRANSPORT *t, TRANSPORT_QUIC_XDP_STATUS *st);
 
 // The log of the transport module (TransportLog.c; CORE-H5-R, #443): the lines that tell why a transport runs with less
 // than it should, as a QUIC side without an exporter. Each line goes to the procedure that SetLog gave, with its
