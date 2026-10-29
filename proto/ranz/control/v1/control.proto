@@ -74,6 +74,18 @@
 // with the race of its fallback list. No schema version changes with them: a node of an older
 // release skips the field it does not know.
 //
+// Mimic servers and their clients (SDN-94, #423, ADR-0023): a Listener resource may have a mimic
+// section, the settings of the server role of the mimicry sidecar. The node that it names gets them,
+// with a short id that the controller made, in the mimic part of its NodeConfig (NodeConfig.mimic);
+// they hold no key. The node makes the X25519 key of its mimic server itself, keeps the private key in
+// its own Configuration store and reports the public key in a Pins message after its Hello and
+// whenever it changes: no message of this protocol holds a private key. Once the key is reported,
+// every node that has the mimic server as a peer and a mimic endpoint of it gets a link to each of
+// those endpoints in the mimic part of its own NodeConfig: the address of the endpoint, the first
+// server name, the public key and the short id. Until the report arrives, no client has a link. No
+// schema version changes with them: a node of an older release skips the fields it does not know,
+// and a controller of an older release answers the first Pins with REFUSE_REASON_PROTOCOL.
+//
 // Certificate of the controller (SDN-92, #397): while the controller serves a certificate that an
 // operator set, every node gets the TLS fingerprints of it that the node may accept
 // (NodeConfig.controller_tls). The controller sends the fingerprint of a new certificate in a
@@ -142,6 +154,9 @@ message ControlMessage {
     Operation operation = 9;
     // node to controller (SDN-50): the answer to an Operation
     OperationResult operation_result = 10;
+    // node to controller, after the Hello and whenever they change (SDN-94): the keys that the node
+    // reports about itself, the public key of its mimic server
+    Pins pins = 11;
   }
 }
 
@@ -287,6 +302,9 @@ message NodeConfig {
   // The tunnel endpoint of the node for the links of kind vxlan and geneve (SDN-76 #356): the ports it
   // listens on. Absent while no VRF of the node has such a link.
   Vtep vtep = 11;
+  // The mimic part of the state of the node (SDN-94 #423): the settings of its mimic server and the links that
+  // it dials as a client. Absent while the node is neither.
+  Mimic mimic = 20;
   // The decoy of the Listener of the node (AUD1-DT-4 #452): the loopback address and port of a site on the node,
   // "127.0.0.1:8080" or "[::1]:8080", to which the node passes a prober of the TLS of the new protocol, one whose
   // first frame does not open under its static key. Empty for none, and while no Listener names the node. A
@@ -355,6 +373,85 @@ message CertificateAcme {
   uint32 http_port = 4;       // the TCP port that answers the HTTP-01 challenge
   string ca_file = 5;         // the roots of a private ACME service, a PEM file on the node; empty for the system's
   uint32 renew_days = 6;
+}
+
+// The mimic part of the state of a node (SDN-94 #423, ADR-0023, CORE-P2-6 #406): what the node writes into its
+// Configuration store for its mimicry sidecar. server is present while a Listener resource gives the node a mimic
+// section: the node is a mimic server. links holds a link to each mimic endpoint of each peer that is a mimic server
+// and whose public key the node reported: the node is a client of those servers. The part is absent while the node
+// is neither. It holds no private key: that of a mimic server is the node's, which makes it, keeps it and reports
+// the public key (Pins), so no message of this protocol has a field for it.
+message Mimic {
+  MimicServer server = 1;
+  repeated MimicLink links = 2;  // ordered by the name of the peer, then by the order of its endpoints
+}
+
+// The settings of the server role of the mimicry sidecar that an operator chose in the mimic section of a Listener,
+// and the short id that the controller made for the server. The node adds the private key that it made, and writes
+// the text that the sidecar reads (CORE-P2-6): a REALITY listener that takes a client that proves the key of the
+// server and splices every other connection to the decoy.
+message MimicServer {
+  // host:port of the TCP listener of the sidecar, an address of its own, never the one of the front door: an IP
+  // address or none for every address, and a port from 1 to 65535
+  string listen = 1;
+  // The names of the decoy site, the SNI values that a client may use, 1 to 8 DNS names in lower case. The first
+  // one is the name in the ClientHello of the links of the clients.
+  repeated string server_names = 2;
+  // How far the clock of a client may be from the server's, in ms: a captured ClientHello that a prober sends
+  // again is refused once it is older
+  uint32 max_time_diff_ms = 3;
+  MimicDecoy decoy = 4;
+  // The short id of the server, 8 bytes, which the controller made when the server first had settings and keeps
+  // for as long as it is one. Every client puts it into its proof.
+  bytes short_id = 5;
+}
+
+// The site that a connection which is no Ranz client is spliced to (CORE-P2-1 #85). In the mode own, the default, it
+// is a landing page of the sidecar with a certificate from exactly one source: acme, cert_file with key_file, or
+// self_signed, a certificate that stands for the real one in tests only. In the mode borrow it is the site at dest,
+// whose own certificate the prober sees: no other field is set, and the sidecar holds no key of the site.
+message MimicDecoy {
+  MimicDecoyMode mode = 1;
+  string dest = 2;  // borrow: host:port of the site
+  MimicAcme acme = 3;
+  string cert_file = 4;  // own: a PEM file on the node, with key_file
+  string key_file = 5;
+  bool self_signed = 6;
+}
+
+// The modes of the decoy of a mimic server.
+enum MimicDecoyMode {
+  MIMIC_DECOY_MODE_UNSPECIFIED = 0;  // as MIMIC_DECOY_MODE_OWN
+  MIMIC_DECOY_MODE_OWN = 1;
+  MIMIC_DECOY_MODE_BORROW = 2;
+}
+
+// How the own decoy of a mimic server gets its certificate from an ACME service (RFC 8555), with the TLS-ALPN-01
+// challenge that the REALITY listener splices to the decoy site.
+message MimicAcme {
+  string directory = 1;  // the https URL of the ACME directory
+  string email = 2;      // the contact of the account, empty for none
+  string cache_dir = 3;  // the folder on the node that holds the account key and the certificates
+  string ca_file = 4;    // the roots of a private ACME service, a PEM file on the node; empty for the system's
+}
+
+// One link of a node to a mimic server (CONTEXT.md, Mimic link): what the sidecar of the client role needs to dial it.
+message MimicLink {
+  string peer = 1;         // the Node that is the mimic server
+  string address = 2;      // host:port of a mimic endpoint of the server, which the node dials
+  string server_name = 3;  // the SNI of the ClientHello: the first server name of the server
+  bytes public_key = 4;    // the X25519 public key of the server that its node reported, 32 bytes: the pin of the link
+  bytes short_id = 5;      // the short id of the server, 8 bytes
+}
+
+// The keys that a node reports about itself, after its Hello and whenever they change (SDN-94 #423). Each report
+// replaces the one before: a key that it leaves out is one that the node has none of. CORE-H3 (#400) adds the pin of
+// the certificate of the node to it.
+message Pins {
+  // The X25519 public key of the mimic server of the node, 32 bytes, empty for none. The node made the key pair
+  // itself and keeps the private key in its Configuration store. The controller gives the public key to the
+  // clients of the server in their links, and it is what they pin.
+  bytes mimic_key = 1;
 }
 
 // A VRF the node is a member of.
