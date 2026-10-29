@@ -63,12 +63,19 @@ type User struct {
 	// from its own storage, and the controller refuses that login; the answer to a login carries the
 	// flag, so a client that asked does not save the password.
 	NoSavedPassword bool `json:"noSavedPassword,omitempty"`
+	// SessionProfile is the SessionProfile that the devices of the user run under (SDN-40,
+	// profile.go), over the one of a Group of the user. Left out, the user runs under the profile of
+	// its first Group that names one, or none.
+	SessionProfile string `json:"sessionProfile,omitempty"`
 }
 
 // Group is a named set of users. Its name is the tag.
 type Group struct {
 	// DisplayName is the name that a person reads in a list of groups, as for a User.
 	DisplayName string `json:"displayName,omitempty"`
+	// SessionProfile is the SessionProfile that the devices of its members run under when a member
+	// names none of its own (SDN-40, profile.go). Left out, the group gives none.
+	SessionProfile string `json:"sessionProfile,omitempty"`
 }
 
 // DeviceRef names one device of a User: the kind and the name of a resource that has the user as its
@@ -202,9 +209,14 @@ func (in Intent) deleteGroup(name string) error {
 	return nil
 }
 
-// dropUndeclaredUsers removes the Users and the Groups of in that declared, the resources of a
-// document by kind and name, does not hold (Replace).
+// dropUndeclaredUsers removes the Users, the Groups and the SessionProfiles of in that declared, the
+// resources of a document by kind and name, does not hold (Replace).
 func (in Intent) dropUndeclaredUsers(declared map[string]Resource) {
+	for name := range in.SessionProfiles {
+		if _, ok := declared[KindSessionProfile+"/"+name]; !ok {
+			delete(in.SessionProfiles, name)
+		}
+	}
 	for name := range in.Users {
 		if _, ok := declared[KindUser+"/"+name]; !ok {
 			delete(in.Users, name)
@@ -217,9 +229,10 @@ func (in Intent) dropUndeclaredUsers(declared map[string]Resource) {
 	}
 }
 
-// userResources returns the Groups of in as resources, then its Users, each ordered by name.
+// userResources returns the SessionProfiles of in as resources (profile.go), then its Groups, then its
+// Users, each ordered by name.
 func (in Intent) userResources() []Resource {
-	var out []Resource
+	out := in.profileResources()
 	for _, name := range sortedNames(in.Groups) {
 		out = append(out, resource(KindGroup, name, in.Groups[name]))
 	}

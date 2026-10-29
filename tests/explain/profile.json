@@ -1,0 +1,39 @@
+{
+  "description": "Session profiles (SDN-40): the laptops of alice run under the SessionProfile laptops, which her Group staff gives, and the laptop of bob under contractors, which bob names himself over the profile of staff; srv-1 runs under none. Each Node judges a packet by the profile of its peer and by its own, before the policy. A TCP SYN to a laptop under no-server is dropped by the Node that sends it, while a SYN from one passes; the privacy filter keeps the two laptops of alice apart, while each reaches srv-1 and the laptop of bob; no-routing drops a packet to the outside of the 1:1 NAT rule of lap-a at srv-1, and one from the LAN behind lap-a at lap-a itself. Explain names the profile of each end and the resource that gives it.",
+  "nodes": {"srv-1": 1, "lap-a": 33, "lap-b": 65, "lap-c": 97},
+  "intent": {"resources": [
+    {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd00:10::/48"}},
+    {"kind": "Network", "name": "corp-lan", "spec": {"vrf": "corp", "ipv4Pool": "10.10.0.0/24"}},
+    {"kind": "SessionProfile", "name": "laptops", "spec": {"uploadLimit": 20000000, "noRouting": true, "noServer": true, "privacyFilter": true}},
+    {"kind": "SessionProfile", "name": "contractors", "spec": {"downloadLimit": 10000000}},
+    {"kind": "Group", "name": "staff", "spec": {"sessionProfile": "laptops"}},
+    {"kind": "User", "name": "alice", "spec": {"groups": ["staff"]}},
+    {"kind": "User", "name": "bob", "spec": {"groups": ["staff"], "sessionProfile": "contractors"}},
+    {"kind": "Node", "name": "srv-1", "spec": {"vrfs": ["corp"], "tags": ["server"], "addresses": {"corp-lan": "10.10.0.1"}}},
+    {"kind": "Node", "name": "lap-a", "spec": {"vrfs": ["corp"], "owner": "alice", "addresses": {"corp-lan": "10.10.0.11"}}},
+    {"kind": "Node", "name": "lap-b", "spec": {"vrfs": ["corp"], "owner": "alice", "addresses": {"corp-lan": "10.10.0.12"}}},
+    {"kind": "Node", "name": "lap-c", "spec": {"vrfs": ["corp"], "owner": "bob", "addresses": {"corp-lan": "10.10.0.13"}}},
+    {"kind": "NAT", "name": "home-a", "spec": {"vrf": "corp", "node": "lap-a", "inside": "192.168.7.0/24", "outside": "10.70.7.0/24"}},
+    {"kind": "Policy", "name": "corp-all", "spec": {"vrf": "corp", "action": "allow"}}
+  ]},
+  "packets": [
+    {"name": "srv-to-lap-a-ssh", "from": "srv-1", "to": "lap-a", "protocol": "tcp", "sourcePort": 40000, "port": 22,
+     "expect": {"delivered": false, "node": "srv-1", "reason": "profile"}},
+    {"name": "lap-a-to-srv-https", "from": "lap-a", "to": "srv-1", "protocol": "tcp", "sourcePort": 40001, "port": 443,
+     "expect": {"delivered": true, "node": "srv-1", "vrf": "corp", "source": "10.10.0.11", "destination": "10.10.0.1", "rules": {"lap-a": "corp-all", "srv-1": "corp-all"}}},
+    {"name": "srv-to-lap-a-ping", "from": "srv-1", "to": "lap-a",
+     "expect": {"delivered": true, "node": "lap-a", "vrf": "corp", "source": "10.10.0.1", "destination": "10.10.0.11", "rules": {"srv-1": "corp-all", "lap-a": "corp-all"}}},
+    {"name": "srv-to-lap-c-ssh", "from": "srv-1", "to": "lap-c", "protocol": "tcp", "sourcePort": 40002, "port": 22,
+     "expect": {"delivered": true, "node": "lap-c", "vrf": "corp", "source": "10.10.0.1", "destination": "10.10.0.13", "rules": {"srv-1": "corp-all", "lap-c": "corp-all"}}},
+    {"name": "lap-a-to-lap-b-ping", "from": "lap-a", "to": "lap-b",
+     "expect": {"delivered": false, "node": "lap-a", "reason": "profile"}},
+    {"name": "lap-b-to-lap-a-ping", "from": "lap-b", "to": "lap-a",
+     "expect": {"delivered": false, "node": "lap-b", "reason": "profile"}},
+    {"name": "lap-a-to-lap-c-ping", "from": "lap-a", "to": "lap-c",
+     "expect": {"delivered": true, "node": "lap-c", "vrf": "corp", "source": "10.10.0.11", "destination": "10.10.0.13", "rules": {"lap-a": "corp-all", "lap-c": "corp-all"}}},
+    {"name": "srv-to-home-a-dns", "from": "srv-1", "to": "10.70.7.5", "protocol": "udp", "sourcePort": 40003, "port": 53,
+     "expect": {"delivered": false, "node": "srv-1", "reason": "profile"}},
+    {"name": "home-a-to-srv-syslog", "from": "192.168.7.5", "to": "srv-1", "protocol": "udp", "sourcePort": 40004, "port": 514,
+     "expect": {"delivered": false, "node": "lap-a", "reason": "profile"}}
+  ]
+}
