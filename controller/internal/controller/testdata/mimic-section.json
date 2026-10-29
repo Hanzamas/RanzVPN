@@ -1,0 +1,5 @@
+{
+  "resources": [
+    {"kind": "Listener", "name": "edge-hub", "spec": {"node": "hub", "certificate": {"file": "C:\\ProgramData\\Ranz\\hub.pfx"}, "mimic": {"listen": ":9443", "serverNames": ["cdn.example.com", "www.example.com"], "maxTimeDiffMs": 5000, "decoy": {"mode": "borrow", "dest": "www.example.com:443"}}}}
+  ]
+}
