@@ -680,13 +680,19 @@ type compiled struct {
 	lic    *licence.Licence
 	force  licence.Status
 	states map[string]desired.State
+	// holds are the Nodes of the intent that the lives of their keys held back when it was compiled, which the states of
+	// the others leave out and commit notes as the holds in force (nodekeys.go; SDN-56)
+	holds map[string]keyHold
 }
 
 // compile compiles next under lic, the licence key installed (nil for none).
 func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled, error) {
 	force := c.evaluate(lic)
-	// The Nodes of the banned users are left out of the states of the others (bans.go; SDN-50)
-	states, err := c.compileStates(next.Capped(force.Nodes))
+	// The Nodes that the lives of their keys hold back, read once at this instant (nodekeys.go; SDN-56)
+	holds := c.keyHolds(next, c.keyNow())
+	// The Nodes of the banned users are left out of the states of the others (bans.go; SDN-50), and so are the
+	// Nodes held back
+	states, err := c.compileStates(next.Capped(force.Nodes), holds)
 	if err != nil {
 		return compiled{}, err
 	}
@@ -694,7 +700,7 @@ func (c *Controller) compile(next intent.Intent, lic *licence.Licence) (compiled
 	c.withFingerprints(states)
 	// The gateways that are down, the health data of gateway HA (gateways.go; SDN-19)
 	c.withHealth(states)
-	return compiled{lic: lic, force: force, states: states}, nil
+	return compiled{lic: lic, force: force, states: states, holds: holds}, nil
 }
 
 // commit makes next the intent and cp.lic the licence, with cp what next compiles to under it:
@@ -795,7 +801,7 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	}
 	c.refuseOutsideSources()
 	// The lives of the node keys, and the streams of the nodes that they hold back (nodekeys.go; SDN-56)
-	c.commitKeys(sctx)
+	c.commitKeys(sctx, cp.holds)
 	c.schedule(force)
 	return result, nil
 }

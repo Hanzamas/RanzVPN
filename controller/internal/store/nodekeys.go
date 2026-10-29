@@ -9,13 +9,15 @@ import (
 	"github.com/rqlite/gorqlite"
 )
 
-// The lives of the node keys (SDN-56, #249): one row for each static key that a Node resource holds, with when
-// the key last authenticated, when it ends, and whether the Node was admitted, by whom and when. It is no intent,
-// so a revision, a rollback or an import never changes a row and an Intent export holds none; a store backup holds
-// them. The controller keeps a Node whose key ended, and a Node that waits for approval, out of the desired state
-// of every other Node and refuses its control stream (internal/controller, nodekeys.go), and deletes the row of a
-// key that no Node resource holds any more. The rows are by the key and not by the name of the Node, so a Node that
-// is deleted and made again, or that gets another key, starts with a life of its own.
+// The lives of the node keys (SDN-56, #249): one row for each static key that a Node resource holds or held, with
+// when the key last authenticated, when it ends, and whether the Node was admitted, by whom and when. It is no
+// intent, so a revision, a rollback or an import never changes a row and an Intent export holds none; a store
+// backup holds them. The controller keeps a Node whose key ended, and a Node that waits for approval, out of the
+// desired state of every other Node and refuses its control stream (internal/controller, nodekeys.go). The rows are
+// by the key and not by the name of the Node, and none is deleted: the row of a key that no Node resource holds any
+// more stays, with when the key ends and without the approval, so that a Node that is deleted and made again with
+// the key, or that gets its key back, does not give a key that ended another life. A Node that gets a new key starts
+// with a life of its own.
 func init() {
 	RegisterSchema("node_keys", `CREATE TABLE IF NOT EXISTS node_keys (public_key TEXT NOT NULL PRIMARY KEY, node TEXT NOT NULL, refreshed INTEGER NOT NULL, `+
 		`expires INTEGER NOT NULL, approved INTEGER NOT NULL, approved_by TEXT NOT NULL, approved_at INTEGER NOT NULL)`)
@@ -65,9 +67,8 @@ func (s *Store) NodeKeys(ctx context.Context) ([]NodeKey, error) {
 	return out, nil
 }
 
-// ChangeNodeKeys stores the lives put, each in place of the one that its key had, and deletes the lives of the keys
-// gone, in one transaction. A key that has no life is no error.
-func (s *Store) ChangeNodeKeys(ctx context.Context, put []NodeKey, gone [][]byte) error {
+// PutNodeKeys stores the lives put, each in place of the one that its key had, in one transaction.
+func (s *Store) PutNodeKeys(ctx context.Context, put []NodeKey) error {
 	var stmts []gorqlite.ParameterizedStatement
 	for _, k := range put {
 		approved := int64(0)
@@ -76,9 +77,6 @@ func (s *Store) ChangeNodeKeys(ctx context.Context, put []NodeKey, gone [][]byte
 		}
 		stmts = append(stmts, statement(`INSERT OR REPLACE INTO node_keys (public_key, node, refreshed, expires, approved, approved_by, approved_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			base64.StdEncoding.EncodeToString(k.Key), k.Node, keyMillis(k.Refreshed), keyMillis(k.Expires), approved, k.ApprovedBy, keyMillis(k.ApprovedAt)))
-	}
-	for _, key := range gone {
-		stmts = append(stmts, statement(`DELETE FROM node_keys WHERE public_key = ?`, base64.StdEncoding.EncodeToString(key)))
 	}
 	if len(stmts) == 0 {
 		return nil

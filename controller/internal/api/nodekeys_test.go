@@ -62,9 +62,9 @@ func TestNodeKeysClientCalls(t *testing.T) {
 	expect("RefreshNodeKey of a name that needs escaping", http.MethodPost, "/api/v1/operations/node-keys/a%20b/refresh")
 }
 
-// The list of the keys takes no parameter, and refuses one with 400 Bad Request before it asks the controller, so that a
-// misspelt narrowing does not widen the call.
-func TestNodeKeysRouteRefusesAQuery(t *testing.T) {
+// Each call of the keys takes no parameter, the list, the approval and the refresh, and refuses one with 400 Bad Request
+// before it asks the controller, so that a misspelt narrowing does not widen the call.
+func TestNodeKeysRoutesRefuseAQuery(t *testing.T) {
 	mux := http.NewServeMux()
 	for _, rt := range routes {
 		handle := rt.Handle
@@ -72,10 +72,16 @@ func TestNodeKeysRouteRefusesAQuery(t *testing.T) {
 			handle(routeDeps{}, w, r)
 		})
 	}
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/operations/node-keys?node=files", nil))
-	var p Problem
-	if w.Code != http.StatusBadRequest || json.Unmarshal(w.Body.Bytes(), &p) != nil || !strings.Contains(p.Error, `the query has the parameter "node"`) || !strings.Contains(p.Error, "(it takes: none)") {
-		t.Errorf("the answer is %d %s, want 400 that names the parameter and says that the call takes none", w.Code, w.Body.String())
+	for _, c := range []struct{ method, target string }{
+		{http.MethodGet, "/api/v1/operations/node-keys?node=files"},
+		{http.MethodPost, "/api/v1/operations/node-keys/files/approve?node=files"},
+		{http.MethodPost, "/api/v1/operations/node-keys/files/refresh?node=files"},
+	} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(c.method, c.target, nil))
+		var p Problem
+		if w.Code != http.StatusBadRequest || json.Unmarshal(w.Body.Bytes(), &p) != nil || !strings.Contains(p.Error, `the query has the parameter "node"`) || !strings.Contains(p.Error, "(it takes: none)") {
+			t.Errorf("%s %s answered %d %s, want 400 that names the parameter and says that the call takes none", c.method, c.target, w.Code, w.Body.String())
+		}
 	}
 }

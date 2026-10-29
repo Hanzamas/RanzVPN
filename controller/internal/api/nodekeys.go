@@ -38,6 +38,9 @@ func init() {
 			reply(w, http.StatusOK, NodeKeyList{NodeKeys: d.Controller.NodeKeys(r.Context())})
 		}},
 		route{http.MethodPost, operationsPath + "/node-keys/{name}/approve", rbac.Operator, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
+			if !queryOnly(w, r) {
+				return
+			}
 			info, err := d.Controller.ApproveNode(r.Context(), r.PathValue("name"))
 			if err != nil {
 				replyError(w, err)
@@ -46,6 +49,9 @@ func init() {
 			reply(w, http.StatusOK, info)
 		}},
 		route{http.MethodPost, operationsPath + "/node-keys/{name}/refresh", rbac.Operator, func(d routeDeps, w http.ResponseWriter, r *http.Request) {
+			if !queryOnly(w, r) {
+				return
+			}
 			info, err := d.Controller.RefreshNodeKey(r.Context(), r.PathValue("name"))
 			if err != nil {
 				replyError(w, err)

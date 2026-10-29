@@ -96,7 +96,7 @@ func (c *Controller) EnrolDevice(ctx context.Context, user, name string, key []b
 		switch {
 		case errors.Is(err, errEnrolled):
 			// The device authenticates again, so its key lives for another period (nodekeys.go; SDN-56)
-			if err := c.refreshKey(ctx, held, user); err != nil {
+			if err := c.refreshKey(ctx, held, user, key); err != nil {
 				return Enrolment{}, err
 			}
 			return Enrolment{Node: held, User: user, Revision: c.LatestRevision()}, nil

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"fmt"
@@ -25,7 +26,11 @@ import (
 //
 // The intent holds the policy and the controller keeps the outcome, one row for each key in the store (table
 // node_keys), so that a revision, a rollback or an import does not give an expired key another life and does not
-// approve a Node. A Node whose key ended, or that its Network holds for approval, is held back, as the Nodes of a banned
+// approve a Node. The row of a key stays when no Node holds the key any more, with when the key ends and without its
+// approval, which was the approval of the Node: a Node that is deleted and made again with the key, by an apply, a
+// rollback, an import or the automatic rollback of an unconfirmed apply, or that gets its key back, has the life that
+// the key had, and waits again in a Network that holds new Nodes for approval. A Node whose key ended, or that its
+// Network holds for approval, is held back, as the Nodes of a banned
 // user are (bans.go): the desired state of every other Node is compiled as if it were not in the intent, so that no Node
 // has it as a Peer, a Relay or a route, and its control stream is refused, with the reason REFUSE_REASON_UNKNOWN_NODE, the
 // one reason of the control protocol for a node that is not admitted, and a message that says which of the two it is. A
@@ -65,10 +70,11 @@ type keyLifeState struct {
 	// them, and nothing changes them.
 	now   func() time.Time
 	every time.Duration
-	// life is the life of each key that a Node resource holds, by the static key (its bytes as a string). startKeys
-	// loads it from the store.
+	// life is the life of each key that a Node resource holds or held, by the static key (its bytes as a string): the
+	// life of a key that no Node holds any more is kept (syncKeys). startKeys loads it from the store.
 	life map[string]store.NodeKey
-	// applied are the Nodes that the desired states in force were compiled without, for the life of their keys, by name.
+	// applied are the Nodes that the desired states in force were compiled without, for the life of their keys, by name:
+	// the holds of the compile that made those states (compiled.holds), which commitKeys notes.
 	applied map[string]keyHold
 
 	cancel context.CancelFunc
@@ -200,7 +206,10 @@ func holdOf(in intent.Intent, name string, n intent.Node, rec store.NodeKey, rec
 	return keyHold{}, false
 }
 
-// keyHolds returns the Nodes of in that the lives of the keys hold back at the instant now, by name. c.mu is held.
+// keyHolds returns the Nodes of in that the lives of the keys hold back at the instant now, by name. compile reads them
+// once, for the states that it makes and for commitKeys, which notes them as the holds in force, so that a key that ends
+// while a change is committed is not taken as left out of states that still have its Node; reconcileKeys compares the
+// holds of now with those. c.mu is held.
 func (c *Controller) keyHolds(in intent.Intent, now time.Time) map[string]keyHold {
 	out := map[string]keyHold{}
 	for name, n := range in.Nodes {
@@ -226,11 +235,10 @@ func (c *Controller) keyHeld(name string) (keyHold, bool) {
 	return holdOf(c.intent, name, n, rec, recorded, c.keyNow())
 }
 
-// withheld returns the names of the Nodes of in that the desired states of the others are compiled without: the Nodes of
-// the banned users, which compileStates names in banned, and the ones that the lives of the keys hold back, each once and
-// in name order. compileStates calls it. c.mu is held.
-func (c *Controller) withheld(in intent.Intent, banned []string) []string {
-	holds := c.keyHolds(in, c.keyNow())
+// withheld returns the names of the Nodes that the desired states of the others are compiled without: the Nodes of the
+// banned users, which compileStates names in banned, and the ones that the lives of the keys hold back, holds, which
+// compile read, each once and in name order. compileStates calls it.
+func withheld(banned []string, holds map[string]keyHold) []string {
 	if len(holds) == 0 {
 		return banned
 	}
@@ -281,9 +289,11 @@ func sameKeyLife(a, b store.NodeKey) bool {
 // syncKeys brings the stored lives in line with the intent in force. A Node whose key has no life yet gets one: its key
 // lives for the key lifetime of its Networks from now, and the Node is admitted unless a Network holds it for approval. A
 // Node that no Network holds for approval any more is admitted. A Node marked nonExpiring has a key that does not end, and
-// one that is not marked has one that does, from now when it had none. The life of a key that no Node resource holds is
-// deleted. A write that fails is logged and made again at the next look; nothing changes in memory until the store has it,
-// so a Node whose life is not stored stays as the intent says (a Node that its Network holds waits). c.mu is held.
+// one that is not marked has one that does, from now when it had none. The life of a key that no Node resource holds any
+// more is kept as its tombstone: a Node that holds the key again finds when the key ends, so a key that ended stays ended
+// until a re-authentication, and finds no approval, so a Network that holds new Nodes for approval holds it. A write that
+// fails is logged and made again at the next look; nothing changes in memory until the store has it, so a Node whose life
+// is not stored stays as the intent says (a Node that its Network holds waits). c.mu is held.
 func (c *Controller) syncKeys(ctx context.Context) {
 	now := c.keyNow()
 	in := c.intent
@@ -313,36 +323,41 @@ func (c *Controller) syncKeys(ctx context.Context) {
 			put = append(put, next)
 		}
 	}
-	var gone [][]byte
 	for _, k := range slices.Sorted(maps.Keys(c.keyLife.life)) {
-		if !current[k] {
-			gone = append(gone, []byte(k))
+		if rec := c.keyLife.life[k]; !current[k] && !sameKeyLife(rec, tombstone(rec)) {
+			put = append(put, tombstone(rec))
 		}
 	}
-	if len(put) == 0 && len(gone) == 0 {
+	if len(put) == 0 {
 		return
 	}
-	if err := c.store.ChangeNodeKeys(ctx, put, gone); err != nil {
+	if err := c.store.PutNodeKeys(ctx, put); err != nil {
 		c.log.Warn("storing the lives of the node keys, which the next look tries again", "err", err)
 		return
 	}
 	for _, k := range put {
 		c.keyLife.life[string(k.Key)] = k
 	}
-	for _, k := range gone {
-		delete(c.keyLife.life, string(k))
-	}
+}
+
+// tombstone returns the life rec of a key that no Node resource holds any more as the store keeps it: with when the key
+// last authenticated and when it ends, and without the approval, which was the approval of the Node that held it.
+func tombstone(rec store.NodeKey) store.NodeKey {
+	rec.Approved, rec.ApprovedBy, rec.ApprovedAt = false, "", time.Time{}
+	return rec
 }
 
 // commitKeys is what commit does for the lives of the keys once a change is stored: it brings the stored lives in line
-// with the intent that is now in force, notes the Nodes that the new desired states were compiled without, and refuses the
-// control streams of those among them that are open. c.mu is held, and c.intent is the intent that was just committed.
-func (c *Controller) commitKeys(ctx context.Context) {
+// with the intent that is now in force, notes holds, the Nodes that compile held back and the new desired states were
+// compiled without, and refuses the control streams of those among them that are open. It does not read the clock again:
+// a key that ended since the compile is in states that still have its Node, so it is no hold in force yet, and the next
+// look at the keys compiles the states again without it. c.mu is held, and c.intent is the intent that was just committed.
+func (c *Controller) commitKeys(ctx context.Context, holds map[string]keyHold) {
 	c.syncKeys(ctx)
-	c.keyLife.applied = c.keyHolds(c.intent, c.keyNow())
-	for _, name := range slices.Sorted(maps.Keys(c.keyLife.applied)) {
+	c.keyLife.applied = holds
+	for _, name := range slices.Sorted(maps.Keys(holds)) {
 		if n := c.nodes[name]; n != nil && n.stream != nil {
-			c.refuse(n.stream, controlpb.RefuseReason_REFUSE_REASON_UNKNOWN_NODE, "%s", c.holdMessage(name, c.keyLife.applied[name]))
+			c.refuse(n.stream, controlpb.RefuseReason_REFUSE_REASON_UNKNOWN_NODE, "%s", c.holdMessage(name, holds[name]))
 		}
 	}
 }
@@ -351,7 +366,7 @@ func (c *Controller) commitKeys(ctx context.Context) {
 func (c *Controller) putKeyLife(ctx context.Context, k store.NodeKey) error {
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)
 	defer cancel()
-	if err := c.store.ChangeNodeKeys(sctx, []store.NodeKey{k}, nil); err != nil {
+	if err := c.store.PutNodeKeys(sctx, []store.NodeKey{k}); err != nil {
 		return err
 	}
 	c.keyLife.life[string(k.Key)] = k
@@ -381,23 +396,32 @@ func (c *Controller) renewKey(ctx context.Context, name string) error {
 	return c.reconcileKeys(ctx)
 }
 
-// refreshKey is the re-authentication of the device name of the User user: the login of the User checked its password
-// already, and EnrolDevice calls this when the static key of the device is the key of a Node that the User owns. The key
-// of the Node lives for another period from now. A User that is no longer valid cannot refresh it, whatever its caller
-// checked: an error that wraps ErrUserExpired is a User past its expiry, and one that wraps ErrUserBanned a User that an
-// operator banned.
-func (c *Controller) refreshKey(ctx context.Context, name, user string) error {
+// refreshKey is the re-authentication of the device of the User user whose static key is key: the login of the User
+// checked its password already, and EnrolDevice calls this when key is the key of the Node name, which the User owns. The
+// key of the Node lives for another period from now. EnrolDevice found the Node under an earlier lock, so refreshKey checks
+// again that the Node holds key as a device of the User: an error that wraps intent.ErrNotFound is a Node or a User that a
+// change of the intent removed since, and one that wraps ErrConflict a Node that it gave another key or another owner. A
+// User that is no longer valid at the instant of the clock of the lives of the keys cannot refresh the key, whatever its
+// caller checked: an error that wraps ErrUserExpired is a User past its expiry, and one that wraps ErrUserBanned a User
+// that an operator banned.
+func (c *Controller) refreshKey(ctx context.Context, name, user string, key []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.intent.Nodes[name]; !ok {
+	n, ok := c.intent.Nodes[name]
+	if !ok {
 		// A change of the intent removed the Node since EnrolDevice found it
 		return fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindNode, name)
+	}
+	// Apply validated the key
+	if k, _ := intent.ParseKey(n.PublicKey); !bytes.Equal(k, key) || n.Owner != user {
+		// A change of the intent gave the Node another key or another owner since EnrolDevice found it
+		return fmt.Errorf("%w: Node %q no longer holds the static key of the device as a device of User %q", ErrConflict, name, user)
 	}
 	u, ok := c.intent.Users[user]
 	if !ok {
 		return fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindUser, user)
 	}
-	if u.ExpiredAt(time.Now()) {
+	if u.ExpiredAt(c.keyNow()) {
 		return fmt.Errorf("%w: User %q expired at %s", ErrUserExpired, user, u.Expires.Format(time.RFC3339))
 	}
 	if _, banned := c.live.bans[user]; banned {

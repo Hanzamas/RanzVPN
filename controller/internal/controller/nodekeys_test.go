@@ -6,6 +6,7 @@
 package controller_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -28,6 +29,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
+	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
 // keyDay is a day of the clock of the lives of the keys.
@@ -326,8 +328,9 @@ func TestAUserRemovedFromTheProviderLosesAccessAtTheNextRefresh(t *testing.T) {
 	bob := h.sim("bob-laptop", keyBranch2)
 	h.connect(t, alice, bob)
 
-	// alice is removed: her account has expired. Her device keeps its access, as every node does until its key ends
-	res, err := h.api.PutUser(ctx, "alice", intent.User{Expires: time.Now().Add(-time.Hour)})
+	// alice is removed on day 30 of the clock of the controller, when her account expires. Her device keeps its access, as
+	// every node does until its key ends
+	res, err := h.api.PutUser(ctx, "alice", intent.User{Expires: start.Add(30 * keyDay)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +344,9 @@ func TestAUserRemovedFromTheProviderLosesAccessAtTheNextRefresh(t *testing.T) {
 	checkKeyState(t, h.nodeKeys(), "alice-laptop", controller.KeyValid)
 
 	// On day 45 both devices try to refresh: bob's key is refreshed, alice's is not, and a caller that did not check her
-	// password gets the same refusal from the enrolment of the device
+	// password gets the same refusal from the enrolment of the device. The refresh reads the expiry of alice on the clock
+	// of the controller, which this test moved 45 days past the wall clock that the check of her password reads, so the
+	// refusal is the refresh's own
 	if err := h.reauthenticate("alice", "a good password", keyBranch1); !errors.Is(err, controller.ErrUserExpired) {
 		t.Errorf("a login of the removed alice gave %v, want ErrUserExpired", err)
 	}
@@ -591,14 +596,17 @@ func TestKeyLifetimeFollowsTheNetwork(t *testing.T) {
 }
 
 // The lives of the keys are in the store, outside the intent: a restart of the controller and of its store keeps who was
-// approved and who was not and when each key ends, and a rollback does not give an expired key another life. A node that
-// is deleted and made again has a key of its own, whose life starts from the new node.
+// approved and who was not and when each key ends, and no change of the intent gives a key that ended another life. The
+// store keeps the life of a key that no node holds any more, with when the key ends and without the approval, which went
+// with its node: a rollback that makes the node again, a delete and a new apply of it, and another key and then its own
+// key again all leave the key ended, and a Network that holds new nodes for approval holds the node again. Only the login
+// of its user gives the key another life.
 func TestTheLivesOfTheKeysSurviveARestartAndAreNotPartOfTheIntent(t *testing.T) {
 	h, clk := newKeysHarness(t)
 	ctx := context.Background()
 	start := clk.Now()
 	h.apply("nodekeys-manual.json")
-	h.setPasswords("bob")
+	h.setPasswords("alice", "bob")
 	for _, name := range []string{"alice-laptop", "bob-laptop", "files"} {
 		checkKeyState(t, h.nodeKeys(), name, controller.KeyPending)
 	}
@@ -639,21 +647,84 @@ func TestTheLivesOfTheKeysSurviveARestartAndAreNotPartOfTheIntent(t *testing.T) 
 	bob.update(t)
 	h.checkStateWithout(bob, "alice-laptop", "files")
 
-	// A rollback of the intent to the revision that made the nodes does not give the key of alice-laptop another life
+	// alice-laptop is deleted: the store keeps the life of its key, with the end of the key and without the approval of the node
+	if _, err := h.api.Delete(ctx, intent.KindNode, "alice-laptop"); err != nil {
+		t.Fatal(err)
+	}
+	ended := start.Add(90 * keyDay)
+	if k, ok := h.storedKeyLife(keyBranch1); !ok || k.Approved || k.ApprovedBy != "" || !k.ApprovedAt.IsZero() || !k.Expires.Equal(ended) {
+		t.Errorf("the store keeps the life %+v (%v) for the key of alice-laptop once the node is deleted, want the key that ended on day 90, not approved", k, ok)
+	}
+
+	// A rollback to revision 1, which holds alice-laptop, makes it again: its key gets no new life, and the Network, which
+	// holds new nodes for approval, holds it again
 	if _, err := h.api.Rollback(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
-	checkKeyState(t, h.nodeKeys(), "alice-laptop", controller.KeyExpired)
+	if k := h.nodeKeys()["alice-laptop"]; k.State != controller.KeyPending || k.Approved || k.ApprovedBy != "" || !k.Refreshed.Equal(start) || !k.Expires.Equal(ended) {
+		t.Errorf("the key of alice-laptop is %+v after the rollback made the node again on day 91, want the key that ended on day 90, waiting for approval", k)
+	}
+	alice.start(h)
+	checkRefusal(t, "alice-laptop", refuseOf(t, alice), `Node "alice-laptop" waits for an administrator to approve it in Network "corp-lan"`)
+	noUpdate(t, bob)
 
-	// Deleting the node and making it again is a new node: in a Network that holds new nodes it waits, and its key lives from now
+	// files is approved, and the Network admits at once again: alice-laptop is admitted, with the key that ended on day 90
+	if _, err := h.api.ApproveNode(ctx, "files"); err != nil {
+		t.Fatal(err)
+	}
+	bob.update(t)
+	h.applyJSON(keysNetwork(`, "approval": "auto"`))
+	if k := h.nodeKeys()["alice-laptop"]; k.State != controller.KeyExpired || !k.Approved || k.ApprovedBy != audit.ActorSystem || !k.Expires.Equal(ended) {
+		t.Errorf("the key of alice-laptop is %+v once its Network admits at once, want it admitted by the system with the key that ended on day 90", k)
+	}
+	alice.start(h)
+	checkRefusal(t, "alice-laptop", refuseOf(t, alice), expiredMessage("alice-laptop", ended, true))
+
+	// Deleting the node and making it again gives its key no new life either, and nor does another key and then its own key
+	// again; the other key is a new key, which lives from now
 	if _, err := h.api.Delete(ctx, intent.KindNode, "alice-laptop"); err != nil {
 		t.Fatal(err)
 	}
 	h.applyJSON(keysNode("alice-laptop", keyBranch1, "10.10.0.1", `, "owner": "alice"`))
-	k := h.nodeKeys()["alice-laptop"]
-	if k.State != controller.KeyPending || k.Approved || !k.Refreshed.Equal(start.Add(91*keyDay)) || !k.Expires.Equal(start.Add(181*keyDay)) {
-		t.Errorf("the key of alice-laptop is %+v after the node was deleted and made again on day 91, want a new key that waits for approval and ends on day 181", k)
+	if k := h.nodeKeys()["alice-laptop"]; k.State != controller.KeyExpired || !k.Expires.Equal(ended) {
+		t.Errorf("the key of alice-laptop is %+v after the node was deleted and made again on day 91, want the key that ended on day 90", k)
 	}
+	h.applyJSON(keysNode("alice-laptop", keyUnknown, "10.10.0.1", `, "owner": "alice"`))
+	if k := h.nodeKeys()["alice-laptop"]; k.State != controller.KeyValid || !k.Expires.Equal(start.Add(181*keyDay)) {
+		t.Errorf("the key of alice-laptop is %+v after the node got another key on day 91, want that key valid until day 181", k)
+	}
+	bob.update(t)
+	h.applyJSON(keysNode("alice-laptop", keyBranch1, "10.10.0.1", `, "owner": "alice"`))
+	if k := h.nodeKeys()["alice-laptop"]; k.State != controller.KeyExpired || !k.Expires.Equal(ended) {
+		t.Errorf("the key of alice-laptop is %+v after the node got its own key back on day 91, want the key that ended on day 90", k)
+	}
+	bob.update(t)
+	h.checkStateWithout(bob, "alice-laptop")
+
+	// Only the login of alice gives the key another life
+	if err := h.reauthenticate("alice", "a good password", keyBranch1); err != nil {
+		t.Fatal(err)
+	}
+	if k := h.nodeKeys()["alice-laptop"]; k.State != controller.KeyValid || !k.Refreshed.Equal(start.Add(91*keyDay)) || !k.Expires.Equal(start.Add(181*keyDay)) {
+		t.Errorf("the key of alice-laptop is %+v after her login on day 91, want it valid until day 181", k)
+	}
+	bob.update(t)
+	h.checkState(bob)
+}
+
+// storedKeyLife returns the life that the store keeps for the static key key, and whether it keeps one.
+func (h *harness) storedKeyLife(key keys.Static) (store.NodeKey, bool) {
+	h.t.Helper()
+	stored, err := h.st.NodeKeys(context.Background())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	for _, k := range stored {
+		if bytes.Equal(k.Key, key.Public()) {
+			return k, true
+		}
+	}
+	return store.NodeKey{}, false
 }
 
 // TestNodeKeyOperationsAreAuditedAndNeedTheOperatorRole: the operations on the keys of the nodes are recorded in the audit
