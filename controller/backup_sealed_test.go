@@ -35,9 +35,9 @@ func TestBackupMessageNamesWhatItHolds(t *testing.T) {
 		t.Errorf("the message of a single controller says that the secrets are in clear:\n%s", msg)
 	}
 
-	// A member of a cluster keeps the secrets in clear, and says so
+	// A member of a cluster seals the secrets with the Cluster key (AUD1-DT-16), and says so
 	cluster := backupMessage("store.backup", 4096, true)
-	for _, want := range []string{"the Intent", "the hashes", "the licence key", "the secrets of the targets", "in clear"} {
+	for _, want := range []string{"the Intent", "the hashes", "the licence key", "the secrets of the targets", "the Cluster key of the cluster seals"} {
 		if !strings.Contains(cluster, want) {
 			t.Errorf("the message of backup of a cluster member does not say %q:\n%s", want, cluster)
 		}
