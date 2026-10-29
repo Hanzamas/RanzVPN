@@ -104,6 +104,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 	}
 	// The tags of each node with the Groups of its owner (user.go; SDN-31)
 	tags := nodeTags(in)
+	// The session profile of each node that is the device of a User with one (profile.go; SDN-40)
+	profiles := nodeProfiles(in)
 	// The rules of the policy of the VRFs that each node enforces (policy.go; SDN-8)
 	rules := nodeRules(in, vrfs)
 	nat := natRules(in, vrfs)
@@ -145,6 +147,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		self.LanSubnets = lans[name]
 		// The BGP peering of the node (peering.go; SDN-77)
 		self.Peering = nodePeering(in, n, vrfs)
+		// The session profile of the node, whose flags it enforces on itself (profile.go; SDN-40)
+		self.Profile = profiles[name]
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
 		for other, o := range in.Nodes {
 			if other == name {
@@ -174,6 +178,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			peer.Vtep = peerVtep(in, o, sharedVRFs)
 			// The BGP peering with the peer in the shared VRFs that peer by BGP (peering.go; SDN-77)
 			peer.Peering = peerPeering(in, other, o, sharedVRFs, vrfs)
+			// The session profile of the peer, which this node enforces on its session with it (profile.go; SDN-40)
+			peer.Profile = profiles[other]
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})
 			// A relay forwards only between nodes that share a VRF with it, so a peer that only a leak joins is none
 			if o.Relay != "" && len(shared) > 0 {

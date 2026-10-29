@@ -413,6 +413,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	ControlCopyGateways(&st, c->Objects, c->NumObjects);
 	// The BGP peering of the node and of its peers (ControlPeering.c; SDN-77, #357)
 	ControlCopyPeerings(&st, c->Objects, c->NumObjects);
+	// The session profiles of the node and of its peers (ControlProfile.c; SDN-40, #233)
+	ControlCopyProfiles(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);

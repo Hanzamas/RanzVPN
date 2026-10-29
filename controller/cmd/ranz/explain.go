@@ -18,8 +18,9 @@ import (
 //	ranz explain [flags] A B   walk the compiled model of the controller for a packet from A to B and print each
 //	                           step: the VRF, the route of the forwarding table with the VRF that a leaked route comes
 //	                           from and its route targets, the 1:1 NAT rules, the link with the endpoints of its Nodes
-//	                           and whether it encrypts, and the rule of the policy of the VRF at each end; then where
-//	                           the packet ends
+//	                           and whether it encrypts, the effective session profile of each end that runs under one,
+//	                           with the User or the Group that gives it (SDN-40), and the rule of the policy of the VRF
+//	                           at each end; then where the packet ends
 //	ranz explain [flags] NODE  print the BGP peering of the Node NODE (SDN-77, #357; explainpeering.go): the peers of
 //	                           its sidecar with the state of each session and the prefixes learned from each, as the
 //	                           Node reported them last, and the Nodes that the intent names as its peers
@@ -107,17 +108,19 @@ func runExplain(ctx context.Context, args []string, stdout, stderr io.Writer) in
 }
 
 // printExplain prints the walk of r: the packet, one line for each step with its Node and its kind, and the verdict.
+// The kinds take 6 columns, more when a step of a longer kind is there (profile, SDN-40).
 func printExplain(out io.Writer, r explain.Result) error {
-	width := len(r.Packet.Node)
+	width, kinds := len(r.Packet.Node), 6
 	for _, s := range r.Steps {
 		width = max(width, len(s.Node))
+		kinds = max(kinds, len(s.Kind))
 	}
 	p := r.Packet
 	if _, err := fmt.Fprintf(out, "%s from %s in VRF %s\n", p, p.Node, p.VRF); err != nil {
 		return err
 	}
 	for _, s := range r.Steps {
-		if _, err := fmt.Fprintf(out, "  %-*s  %-6s  %s\n", width, s.Node, s.Kind, s.Text); err != nil {
+		if _, err := fmt.Fprintf(out, "  %-*s  %-*s  %s\n", width, s.Node, kinds, s.Kind, s.Text); err != nil {
 			return err
 		}
 	}

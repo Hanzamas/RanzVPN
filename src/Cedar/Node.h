@@ -368,6 +368,8 @@ struct NODE_VRF_TABLES {
 	// The groups of gateways and the hubs of the same Generation (NodeGateway.c; SDN-19, #195): the next hop of each group
 	// comes after those of the peers and of the leaked routes. NULL for neither.
 	struct NODE_GATEWAY_TABLE *Gateway;
+	// The session profiles of the peers and of the node of the same Generation (NodeProfile.c; SDN-40, #233), NULL for none
+	struct NODE_PROFILE_TABLE *Profile;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -491,6 +493,9 @@ struct NODE {
 	// The BGP peering of the standard mode (NodePeering.c; SDN-77, #357): the sidecar of the VRFs whose nodes exchange their
 	// routes by BGP, NULL while the overlay does not run
 	struct NODE_PEERING *Peering;
+
+	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233), NULL while the overlay does not run
+	struct NODE_PROFILE *Profile;
 };
 
 // How the overlay of a node runs (NodeOverlayStart)

@@ -196,6 +196,8 @@ add_library(corecontrol STATIC
   # The BGP peering of a desired state and the report of the node, and the copy of a state that its peering keeps (SDN-77, #357)
   ControlPeering.c
   ControlCopy.c
+  # The session profiles of a node and of its peers in a desired state (SDN-40, #233)
+  ControlProfile.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")
