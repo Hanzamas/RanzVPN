@@ -831,6 +831,9 @@ static bool EvpnTestOpen(EVPNTEST_CTX *ctx, TRANSPORT *loopback)
 // the story, and the logs of both sidecars go into the job log.
 static void EvpnTestClose(EVPNTEST_CTX *ctx)
 {
+	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
+	bool gw_ran = (gw->Node != NULL);
+
 	for (UINT i = 0;i < 3;i++)
 	{
 		EVPNTEST_NODE *t = &ctx->Nodes[i];
@@ -845,8 +848,7 @@ static void EvpnTestClose(EVPNTEST_CTX *ctx)
 		}
 	}
 
-	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
-	if (gw->Node != NULL)
+	if (gw_ran)
 	{
 		NODE_EVPN_STATUS es;
 		NODE_BGP_STATUS bs;
@@ -854,7 +856,17 @@ static void EvpnTestClose(EVPNTEST_CTX *ctx)
 		NodeEvpnGetStatus(gw->Node, &es);
 		NodeBgpGetStatus(gw->Node, &bs);
 		EvpnTestCheck(ctx, es.Running == false && bs.ProcessId == 0, "NodeStop ends the EVPN of gw with its sidecar", "EVPN running %u, sidecar %u", (UINT)es.Running, bs.ProcessId);
+	}
 
+	// A node holds the file of its log open while it lives: FreeNode writes the last lines and closes it (FreeLog)
+	for (UINT i = 0;i < 3;i++)
+	{
+		FreeNode(ctx->Nodes[i].Node);
+		ctx->Nodes[i].Node = NULL;
+	}
+
+	if (gw_ran)
+	{
 		char *log = EvpnTestReadLog(gw->Dir, NULL);
 		char *lines[] =
 		{
@@ -890,15 +902,14 @@ static void EvpnTestClose(EVPNTEST_CTX *ctx)
 		}
 	}
 
+	// The data directory of each node that the test made (EvpnTestNewDir)
 	for (UINT i = 0;i < 3;i++)
 	{
 		EVPNTEST_NODE *t = &ctx->Nodes[i];
 		wchar_t log_dir[MAX_PATH];
 
-		if (t->Node != NULL)
+		if (UniIsEmptyStr(t->Dir) == false)
 		{
-			FreeNode(t->Node);
-
 			ConbinePathW(log_dir, sizeof(log_dir), t->Dir, NODE_LOG_DIR_NAME);
 			EvpnTestDeleteFiles(log_dir);
 			EvpnTestDeleteFiles(t->Dir);
