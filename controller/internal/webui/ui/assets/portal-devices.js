@@ -51,17 +51,30 @@ function networks(d) {
 
 /**
  * status returns the cell of how a device stands: what its state says, and for a WireGuard Device the last
- * handshake of its gateway.
+ * handshake of its gateway, unless it is beyond the licence, which says so.
  * @param {SelfDevice} d
  * @returns {import('./dom.js').Child}
  */
 function status(d) {
-  if (d.kind === 'Device') {
+  if (d.kind === 'Device' && d.state !== 'unlicensed') {
     return d.lastHandshake ? `Last handshake ${when(d.lastHandshake)}` : el('span', { class: 'none' }, 'No handshake yet');
   }
   const text = states.get(d.state ?? '') ?? d.state ?? '';
   const connected = d.connected && d.connectedSince ? ` since ${when(d.connectedSince)}` : '';
   return el('span', { class: d.state === 'connected' ? 'yes' : '' }, text + connected);
+}
+
+/**
+ * removal returns the question that asks before a device goes: a Node can be added again by its key, but the
+ * keys of a WireGuard Device show once, so the configuration that the device holds stops working for good.
+ * @param {SelfDevice} d
+ * @returns {string}
+ */
+function removal(d) {
+  if (d.kind === 'Device') {
+    return `Remove the WireGuard device ${d.name}? Its gateway stops terminating it with the next generation, and the configuration that the device holds stops working for good: to use the device again, an administrator makes a new Device.`;
+  }
+  return `Remove the device ${d.name}? It leaves the network at once, and you can add it again.`;
 }
 
 async function render() {
@@ -82,7 +95,7 @@ async function render() {
       cell: (d) => {
         const b = el('button', { type: 'button', class: 'danger small', 'data-action': 'removeSelfDevice' }, 'Remove');
         onClick(b, async () => {
-          if (!(await confirm(`Remove the device ${d.name}? It leaves the network at once, and you can add it again.`, 'Remove'))) {
+          if (!(await confirm(removal(d), 'Remove'))) {
             return;
           }
           await call('removeSelfDevice', { params: { kind: d.kind, name: d.name } });

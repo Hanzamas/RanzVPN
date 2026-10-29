@@ -59,7 +59,7 @@ type SelfDevice struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
 	// State says how the device stands: DeviceConnected, DeviceOffline, KeyExpired, KeyPending, DeviceBanned or
-	// DeviceUnlicensed. It is left out for a Device, which has no control stream and no key of this kind.
+	// DeviceUnlicensed. A Device has no control stream and no key of this kind, so it has DeviceUnlicensed or none.
 	State string `json:"state,omitempty"`
 	// Connected says that the Node has its control stream open, and ConnectedSince is when it was accepted.
 	Connected      bool      `json:"connected"`
@@ -70,8 +70,8 @@ type SelfDevice struct {
 	AckedGeneration uint64 `json:"ackedGeneration,omitempty"`
 	// KeyExpires is when the static key of the Node ends, left out for a Node that is marked nonExpiring.
 	KeyExpires time.Time `json:"keyExpires,omitzero"`
-	// VRFs are the VRFs that the device is in, Tags the tags that policy sees it with, its own and the Groups of
-	// its owner, and Addresses its addresses in the Networks of those VRFs.
+	// VRFs are the VRFs that the device is in (the VRF of the Network of a Device), Tags the tags that policy sees
+	// it with, its own and the Groups of its owner, and Addresses its addresses in the Networks of those VRFs.
 	VRFs      []string      `json:"vrfs,omitempty"`
 	Tags      []string      `json:"tags,omitempty"`
 	Addresses []SelfAddress `json:"addresses,omitempty"`
@@ -181,14 +181,18 @@ func (c *Controller) selfNode(name string, now time.Time) SelfDevice {
 }
 
 // selfOther returns a device of the intent in force that is no Node, as a device of its User: its kind and
-// name, and for a WireGuard Device its tags and its addresses in its Network. c.mu is held.
+// name, and for a WireGuard Device its VRF, its tags (its own and the Groups of its owner, as policy sees them,
+// intent.DeviceTags) and its addresses in its Network. c.mu is held.
 func (c *Controller) selfOther(ref intent.DeviceRef) SelfDevice {
 	d := SelfDevice{Kind: ref.Kind, Name: ref.Name}
 	if ref.Kind != intent.KindDevice {
 		return d
 	}
 	dev := c.intent.Devices[ref.Name]
-	d.Tags = slices.Clone(dev.Tags)
+	d.Tags = c.intent.DeviceTags(ref.Name)
+	if nw, ok := c.intent.Networks[dev.Network]; ok {
+		d.VRFs = []string{nw.VRF}
+	}
 	for _, a := range []string{dev.Address, dev.IPv6Address} {
 		if a != "" {
 			d.Addresses = append(d.Addresses, SelfAddress{Network: dev.Network, Address: a})
