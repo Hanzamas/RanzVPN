@@ -21,6 +21,10 @@ import (
 // provider, and the member that leads next could not open what the member before it sealed. A member
 // of a cluster, which is a Controller with -rqlite-join, seals them with the Cluster key of the cluster
 // instead (sealClusterTargets, AUD1-DT-16).
+//
+// The store's Sealer also seals the PresharedKeys of the WireGuard Devices (SDN-82, #377), which the
+// controller reads from it (store.Sealer): the sealing key of this host, or the Cluster key for a member
+// of a cluster. A PresharedKey is never kept in clear.
 func sealTargets(ctx context.Context, cfg config, st *store.Store, log *slog.Logger) error {
 	lost := func(table, name string) {
 		log.Warn("the secret of a target cannot be opened with the sealing key of this host, so the target is sent without it until it is put again",
