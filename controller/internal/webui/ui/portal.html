@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en" data-page="portal">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My devices | Ranz portal</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/portal.css">
+<script type="module" src="/assets/portal-devices.js"></script>
+</head>
+<body>
+<header id="portal-header" class="portal"></header>
+<main>
+<h1>My devices</h1>
+<p class="lead">The devices that are yours, and how each stands now. Add a device by the static key that it shows, or make a join token for one that cannot sign in itself.</p>
+<ranz-problem></ranz-problem>
+<output id="result" aria-live="polite"></output>
+<section aria-labelledby="h-account">
+<h2 id="h-account">You</h2>
+<div id="account"></div>
+</section>
+<section aria-labelledby="h-devices" data-action="selfDevices">
+<h2 id="h-devices">Devices</h2>
+<ranz-table id="devices"></ranz-table>
+</section>
+<section aria-labelledby="h-add" data-action="addSelfDevice">
+<h2 id="h-add">Add a device</h2>
+<p class="hint">On the device, <code>ranz node key</code> shows its static key. Paste it here, and then run <code>ranz node login</code> on the device to point it at this controller. A device that cannot sign in itself joins with a <a href="/portal-join">join token</a> instead.</p>
+<form id="add-form" class="inline">
+<label for="device-name">Name</label>
+<input id="device-name" name="name" pattern="[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?" size="20" spellcheck="false" placeholder="chosen for you when left out">
+<label for="device-key">Static key</label>
+<input id="device-key" name="publicKey" size="48" spellcheck="false" autocomplete="off" required>
+<button type="submit">Add</button>
+</form>
+</section>
+<ranz-confirm></ranz-confirm>
+</main>
+</body>
+</html>

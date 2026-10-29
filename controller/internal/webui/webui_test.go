@@ -57,7 +57,8 @@ func embedded(t *testing.T) map[string]string {
 }
 
 // The action table is well formed: unique names, a method of the API, a path of the API and one
-// of the three roles.
+// of the three roles, or self for a call of the portal, or public for a call that needs no token
+// (SDN-58).
 func TestActionTable(t *testing.T) {
 	seen := map[string]bool{}
 	for _, a := range loadActions(t) {
@@ -71,7 +72,7 @@ func TestActionTable(t *testing.T) {
 		if !strings.HasPrefix(a.Path, "/api/v1/") {
 			t.Errorf("the action %s calls %q, which is not a path of the API", a.Name, a.Path)
 		}
-		if !slices.Contains([]string{"viewer", "operator", "admin"}, a.Role) {
+		if !slices.Contains([]string{"viewer", "operator", "admin", "self", "public"}, a.Role) {
 			t.Errorf("the action %s needs the role %q", a.Name, a.Role)
 		}
 	}

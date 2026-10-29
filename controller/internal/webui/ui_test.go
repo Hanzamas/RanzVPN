@@ -91,6 +91,10 @@ func TestActionsAreAPIRoutes(t *testing.T) {
 	h := newHarness(t)
 	for _, a := range actions(t) {
 		concrete := placeholder.ReplaceAllString(a.Path, "x")
+		if api.IsLogin(concrete) {
+			// The logins are served in front of the Guard, so they are no routes of it (TestLoginActionsAreServedByTheLogins)
+			continue
+		}
 		_, pattern := h.routes.Handler(httptest.NewRequest(a.Method, concrete, nil))
 		if want := a.Method + " " + a.Path; pattern != want {
 			t.Errorf("the action %s calls %s %s, which the API answers with the route %q, not %q", a.Name, a.Method, concrete, pattern, want)
@@ -461,10 +465,12 @@ func newHarness(t *testing.T) *harness {
 	}
 	h.routes = api.Routes(c, tokens, api.Status{ControlAddress: h.ln.Addr().String(), TLSFingerprint: keys.Fingerprint(cert),
 		Diagnostics: &api.Diagnostics{LogFile: h.logPath, LogLimits: logLimits}})
+	// The logins of users are in front of the Guard, as ranz-controller serves them (SDN-32, SDN-58)
+	logins := api.Logins(c, tokens, func() api.Status { return api.Status{TLSFingerprint: keys.Fingerprint(cert)} })
 	srv := &port.Server{
 		TLS:     &tls.Config{Certificates: []tls.Certificate{cert}},
 		Control: c.ServeStream,
-		HTTP:    webui.Handler(api.Guard(tokens, h.routes)),
+		HTTP:    webui.Handler(api.WithLogins(logins, api.Guard(tokens, h.routes))),
 	}
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(h.ln) }()
