@@ -499,6 +499,10 @@ struct NODE {
 	// the overlay does not run
 	struct NODE_GATEWAY *Gateway;
 
+	// The BGP peering of the standard mode (NodePeering.c; SDN-77, #357): the sidecar of the VRFs whose nodes exchange their
+	// routes by BGP, NULL while the overlay does not run
+	struct NODE_PEERING *Peering;
+
 	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233), NULL while the overlay does not run
 	struct NODE_PROFILE *Profile;
 

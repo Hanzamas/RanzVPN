@@ -246,6 +246,9 @@ type Controller struct {
 	// (operations.go, bans.go; SDN-50)
 	live liveState
 
+	// The BGP peering of the standard mode that the nodes reported (peeringreport.go; SDN-77)
+	peering peeringState
+
 	// The keys that the nodes reported about themselves, which the mimic parts of the states are compiled with
 	// (mimic.go; SDN-94)
 	mimic mimicState
@@ -888,6 +891,8 @@ func checkFeatures(doc intent.Document, st licence.Status) error {
 			problems = append(problems, fmt.Errorf("%s %q: %s is an Enterprise feature, and the licence in force is %s", r.Kind, r.Name, f.Name(), st.Tier))
 		}
 	}
+	// The BGP peering of the Nodes of a VRF (peering.go; SDN-77)
+	problems = append(problems, peeringFeatures(doc, st)...)
 	if len(problems) > 0 {
 		return fmt.Errorf("%w:\n%w", licence.ErrRefused, errors.Join(problems...))
 	}

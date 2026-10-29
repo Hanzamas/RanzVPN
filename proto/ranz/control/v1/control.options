@@ -183,3 +183,23 @@ ranz.control.v1.NodeConfig.lan_subnets max_count:16
 # bytes larger.
 ranz.control.v1.SessionProfile.name max_size:64
 ranz.control.v1.SessionProfile.user max_size:64
+# The BGP peering of the standard mode (SDN-77): a router id, the addresses of the sidecars, the LAN
+# subnets that a node announces, 16 at most, and what a peer may announce, its 16 addresses at most
+# and its LAN subnets (controller/internal/intent MaxPeeringAnnounce, MaxPeeringAccept). They make
+# the NodeConfig about 700 bytes larger and a Peer about 1.4 kB, which leaves it smaller than the
+# NodeConfig.
+ranz.control.v1.NodePeering.router_id max_size:4
+ranz.control.v1.NodePeering.address max_size:16
+ranz.control.v1.NodePeering.announce max_count:16
+ranz.control.v1.PeerPeering.address max_size:16
+ranz.control.v1.PeerPeering.vrf_ids max_count:16
+ranz.control.v1.PeerPeering.accept max_count:32
+# What a node reports of the peering in its Telemetry (SDN-77): the peers of its sidecar, at most one
+# for each of its 64 Peer objects, each with the address of its sidecar, the state of its session,
+# a word of at most 11 letters, and the prefixes that the node learned from it, at most what the
+# peer may announce (PeerPeering.accept). They make the largest Telemetry frame about 84 kB larger
+# (MaxTelemetry).
+ranz.control.v1.PeeringReport.peers max_count:64
+ranz.control.v1.PeeringPeer.address max_size:16
+ranz.control.v1.PeeringPeer.state max_size:16
+ranz.control.v1.PeeringPeer.learned max_count:32

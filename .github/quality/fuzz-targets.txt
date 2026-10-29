@@ -103,6 +103,10 @@ src/Core  ControlCopyProfiles  fuzz_control  via ControlInput
 # ControlCopySecurities, which copies the L2Security of each L2 Network, and the seeds security-*.bin of fuzz_control hold
 # them; no parser word in the name, listed as the reader of the controller's bytes that it is
 src/Core  ControlCopySecurities  fuzz_control  via ControlInput
+# The BGP peering of the standard mode of a state (SDN-77 #357): ControlInput hands the Vrf, NodeConfig and Peer objects of an
+# Update to ControlCopyPeerings, which copies the peering of each, and the seeds peering-*.bin of fuzz_control hold them; no
+# parser word in the name, listed as the reader of the controller's bytes that it is
+src/Core  ControlCopyPeerings  fuzz_control  via ControlInput
 # The live operations of the Controller (SDN-50-N #492): ControlInput hands an Operation that ControlDecode decoded to
 # ControlTakeOperation, which checks its kind, its Network and the sizes of its MAC address and its address before the owner
 # does it, and the seeds operation-*.bin of fuzz_control hold Operations of every kind after a state with L2 and L3 Networks;

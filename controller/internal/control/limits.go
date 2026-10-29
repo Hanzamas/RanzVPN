@@ -27,8 +27,9 @@ const (
 	// envelope of MaxEnvelope bytes (Signal.envelope), about 1.1 kB.
 	MaxSignal = MaxEnvelope + 1<<10
 	// MaxTelemetry is the largest Telemetry message: the counters of 64 peers, 16 VRFs, 32 rules and
-	// 64 Devices, 32 flow records and 8 events (Telemetry of control.options), about 24 kB.
-	MaxTelemetry = 32 << 10
+	// 64 Devices, 32 flow records and 8 events, and the BGP peering of the standard mode, 64 peers with
+	// 32 learned prefixes each (Telemetry of control.options; SDN-77), about 106 kB.
+	MaxTelemetry = 112 << 10
 	// MaxLeases is the largest Leases message: the 1024 leases of one responder (Leases.leases of
 	// control.options), about 95 kB.
 	MaxLeases = 128 << 10
