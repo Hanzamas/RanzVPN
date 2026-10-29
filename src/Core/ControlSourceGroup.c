@@ -2,7 +2,8 @@
 // The source groups on the control stream (SDN-87, #386; Core/Control.h). A packet between two nodes can carry the
 // identity of its source, its group ID and its tag set. The NodeConfig of a state carries the node's own source group in
 // each of its VRFs (CONTROL_STATE.Groups); each Peer object the source group of the peer in each VRF that they share and
-// the frame version of the records of the Noise session that the node sends it (CONTROL_PEER.Groups, FrameVersion); each
+// the frame version of the records of the Noise session that the node sends it (CONTROL_PEER.Groups, FrameVersion), each
+// group with the group generation of its node in the VRF, which the claims of that node name; each
 // Device object the source group of the Device (CONTROL_DEVICE.Group, TagSet); and each Vrf object how the node trusts
 // the source group that a link of kind vxlan or geneve of the VRF carries (CONTROL_VRF.TagMode). They go with the state,
 // as the owner takes it (ControlCopySourceGroups). The node reports the packets of its peers that it judged by their
@@ -57,6 +58,7 @@ static void ControlCopyGroups(CONTROL_SOURCE_GROUP *dst, UINT *num, const ranz_c
 		g->VrfId = src[i].vrf_id;
 		g->Group = src[i].group;
 		g->TagSet = src[i].tag_set;
+		g->Generation = src[i].generation;
 		(*num)++;
 	}
 }

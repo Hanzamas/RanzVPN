@@ -22,24 +22,37 @@
 // source of the packet, when the node is the gateway of that Device, and the node's own group in the VRF of the packet
 // otherwise. A packet of a route that a VRF of the peer leaks goes into a VRF of which the node has no group, and carries
 // none. The relay role forwards the sealed datagrams of the peer layer as they are. The hub of a VRF of topology
-// hub-and-spoke, the one node that sends the packet of a peer on to another (NodeGateway.c; SDN-19, #195), sends it as a
-// record of frame version 0 or a datagram without a source group, so the other spoke judges it by the map of address to
-// group, as a packet of the hub. So no node rewrites the source group of another.
+// hub-and-spoke, the one node that sends the packet of a peer on to another (NodeGateway.c; SDN-19, #195), judges the
+// source group that the packet carried as a destination does (NodeSourceGroupTransit), and its policy judges the packet by
+// it (NodePolicyTransit; SDN-19-R2, #508); then it sends the packet on as a record of frame version 0 or a datagram without
+// a source group, so the other spoke judges it by the map of address to group, as a packet of the hub, whose policy it
+// passed. So no node rewrites the source group of another.
+//
+// Each claim names the group generation of its sender in the VRF of the packet (CONTROL_SOURCE_GROUP.Generation): the
+// Generation of the sender's state from which on it may assert the groups that it may assert there, which the controller
+// gives the sender in its own groups and every other node in the groups of the sender's Peer object. So two nodes whose
+// states agree on what the sender may assert hold the same group generation for it, whatever their own Generations.
 //
 // At the destination (NodeSourceGroupInbound) a claim that the node takes must be a group that the sending peer may assert
 // in the VRF of the packet, with the tag set of that group where the claim carries one: the policy of the VRF then judges
-// the packet by that group. Any other claim is an unknown group: the node drops the packet, counts it and logs it, at most
-// one line every NODE_SOURCE_GROUP_LOG ms. The node judges the claims of a peer so only once it knows the groups that the
-// peer may assert, which its state gives with the frame version 1 of the peer once both report the Capability tags. The
-// controller gives both nodes their Generations at once, but each applies its own when it comes, and a node that the
-// controller cannot reach forwards on the state that it applied last: so a peer can send its claims before the node knows
-// its groups, and the node ignores them until it does, as the tag mode off ignores the claims of a link, instead of
-// dropping every packet of the peer. A packet that carried no source group, or one that the node ignores, is judged by the
-// map of address to group, as before SDN-87: the route of its source leads to the peer, whose own group it is, or to a
-// Device of the peer, whose group it is; an address that no route of the VRF leads to the peer is no address of the map,
-// and the overlay drops its packet. A claim gains nothing over that map, so ignoring one opens nothing. The node counts
-// the packets of its peers by the tag mode in which it judged them, the records of its sessions as the mode session, and
-// reports the counters on its control stream (Core/ControlSourceGroup.c).
+// the packet by that group. The controller never gives a group ID or a bit of a VRF to another set of tags or tag, so the
+// group means the same in the Generation of the sender and in the node's own, and the node takes it whatever group
+// generation the claim names. Any other claim that names the group generation that the node's state gives the peer, or
+// none, as the group policy extension of VXLAN has no room for one, is an unknown group: the node drops the packet, counts
+// it and logs it, at most one line every NODE_SOURCE_GROUP_LOG ms. A claim of another group generation was made on another
+// state of the peer than the one that the node's state knows, the one before or the one after: the node ignores it and
+// judges the packet by the map of address to group of its own state, so that neither node misjudges an honest packet while
+// their Generations roll out. The node judges the claims of a peer only once it knows the groups that the peer may assert,
+// which its state gives with the frame version 1 of the peer once both report the Capability tags. The controller gives
+// both nodes their Generations at once, but each applies its own when it comes, and a node that the controller cannot
+// reach forwards on the state that it applied last: so a peer can send its claims before the node knows its groups, and
+// the node ignores them until it does, as the tag mode off ignores the claims of a link, instead of dropping every packet
+// of the peer. A packet that carried no source group, or one that the node ignores, is judged by the map of address to
+// group, as before SDN-87: the route of its source leads to the peer, whose own group it is, or to a Device of the peer,
+// whose group it is; an address that no route of the VRF leads to the peer is no address of the map, and the overlay drops
+// its packet. A claim gains nothing over that map, so ignoring one opens nothing. The node counts the packets of its peers
+// by the tag mode in which it judged them, the records of its sessions as the mode session, and reports the counters on
+// its control stream (Core/ControlSourceGroup.c).
 
 #include "NodeSourceGroup.h"
 
@@ -47,20 +60,23 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 
+#include "NodeGateway.h"
 #include "NodeInternal.h"
 
 // The results of a packet in a tag mode, as the node counts them
 #define NODE_SOURCE_CARRIED 0 // It carried a source group that the node took
 #define NODE_SOURCE_MISSING 1 // It carried none: the map of address to group judged it
-#define NODE_SOURCE_IGNORED 2 // It carried one that the node ignores, in the tag mode off or of a peer whose groups it does not know: the map judged it
+#define NODE_SOURCE_IGNORED 2 // It carried one that the node ignores, in the tag mode off, of a peer whose groups it does not know or made on another state of the peer: the map judged it
 #define NODE_SOURCE_REFUSED 3 // It claimed a group that the sending peer may not assert: dropped
 #define NODE_SOURCE_RESULTS 4
 
-// One source group that a node knows: its VRF, its group ID and its tag set
+// One source group that a node knows: its VRF, its group ID and its tag set, and the group generation of the node that may
+// assert it in the VRF, its 32 low bits
 typedef struct NODE_SOURCE_GROUP {
 	UINT VrfId;
 	UINT Group;
 	UINT64 Tags;
+	UINT Generation;
 } NODE_SOURCE_GROUP;
 
 // One address of a WireGuard Device whose gateway the node is, and the source group that the node stamps on its packets
@@ -108,12 +124,12 @@ struct NODE_SOURCE_GROUPS {
 // The record of frame version 1
 //
 
-// Write the header of a record of frame version 1 with the source group group and its tag set tags into the
-// NODE_FRAME_ROOM bytes at room, which the data record of frame version 0 follows: the VRF tag of no VRF, the frame
-// version, the length of the options in 4-byte words, two reserved bytes, then the option of the source group, its type,
-// the length of its data in 4-byte words and two reserved bytes, and its data: the group ID, two reserved bytes and the
-// tag set, big-endian. Its size, NODE_FRAME_ROOM.
-UINT NodeFrameWrite(UCHAR *room, UINT group, UINT64 tags) {
+// Write the header of a record of frame version 1 with the source group group, its tag set tags and the group generation
+// generation of the node into the NODE_FRAME_ROOM bytes at room, which the data record of frame version 0 follows: the VRF
+// tag of no VRF, the frame version, the length of the options in 4-byte words, two reserved bytes, then the option of the
+// source group, its type, the length of its data in 4-byte words and two reserved bytes, and its data: the group ID, two
+// reserved bytes, the tag set and the group generation, big-endian. Its size, NODE_FRAME_ROOM.
+UINT NodeFrameWrite(UCHAR *room, UINT group, UINT64 tags, UINT generation) {
 	Zero(room, NODE_FRAME_ROOM);
 	room[4] = NODE_FRAME_VERSION;
 	room[5] = (4 + NODE_FRAME_GROUP_DATA) / 4;
@@ -121,6 +137,7 @@ UINT NodeFrameWrite(UCHAR *room, UINT group, UINT64 tags) {
 	room[NODE_FRAME_HEADER + 1] = NODE_FRAME_GROUP_DATA / 4;
 	WRITE_USHORT(room + NODE_FRAME_HEADER + 4, group);
 	WRITE_UINT64(room + NODE_FRAME_HEADER + 8, tags);
+	WRITE_UINT(room + NODE_FRAME_HEADER + 16, generation);
 
 	return NODE_FRAME_ROOM;
 }
@@ -164,8 +181,10 @@ bool NodeFrameParse(const UCHAR *record, UINT size, NODE_SOURCE_CLAIM *claim, UI
 		if (type == NODE_FRAME_GROUP && len == NODE_FRAME_GROUP_DATA) {
 			c.Carried = true;
 			c.HasTags = true;
+			c.HasGeneration = true;
 			c.Group = READ_USHORT(record + pos + 4);
 			c.Tags = READ_UINT64(record + pos + 8);
+			c.Generation = READ_UINT(record + pos + 16);
 		} else if ((type & NODE_FRAME_CRITICAL) != 0) {
 			return false;
 		}
@@ -189,8 +208,10 @@ void NodeSourceGroupClaim(NODE_SOURCE_CLAIM *claim, UINT carrier, const VXLAN_GR
 	if (group != NULL && group->Carried) {
 		claim->Carried = true;
 		claim->HasTags = group->HasTags;
+		claim->HasGeneration = group->HasGeneration;
 		claim->Group = group->Group;
 		claim->Tags = group->Tags;
+		claim->Generation = group->Generation;
 	}
 }
 
@@ -207,17 +228,30 @@ static UINT NodeSourceGroupMode(const NODE_SOURCE_GROUP_TABLE *t, UINT vrf_id) {
 	return CONTROL_TAG_MODE_OFF;
 }
 
-// The source group of a WireGuard Device of the state as the table holds it
-static void NodeSourceGroupOfDevice(NODE_SOURCE_GROUP *g, const CONTROL_DEVICE *d) {
+// The group generation in the VRF vrf_id of the num source groups of groups, the own groups of a node: its 32 low bits, 0
+// for a VRF in which the node has no group of its own
+static UINT NodeSourceGroupGenerationOf(const CONTROL_SOURCE_GROUP *groups, UINT num, UINT vrf_id) {
+	for (UINT i = 0; i < num && i < CONTROL_MAX_VRFS; i++)
+		if (groups[i].VrfId == vrf_id)
+			return (UINT)groups[i].Generation;
+
+	return 0;
+}
+
+// The source group of a WireGuard Device of the state as the table holds it, with the group generation of its gateway in
+// its VRF among the num own groups of the gateway, groups
+static void NodeSourceGroupOfDevice(NODE_SOURCE_GROUP *g, const CONTROL_DEVICE *d, const CONTROL_SOURCE_GROUP *groups, UINT num) {
 	g->VrfId = d->VrfId;
 	g->Group = d->Group;
 	g->Tags = d->TagSet;
+	g->Generation = NodeSourceGroupGenerationOf(groups, num, d->VrfId);
 }
 
 // The source groups of the Generation of st onto its forwarding tables v, before they go in: the tag mode of each VRF, the
 // node's own groups, the addresses of the Devices whose gateway the node is with their groups, and of each peer the frame
 // version of the records that the node sends it and the groups that it may assert: its own and those of the Devices whose
-// gateway it is
+// gateway it is. Each group holds the group generation of the node that may assert it in its VRF, the node's own or the
+// peer's, which the claims of that node name.
 void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st) {
 	if (n == NULL || v == NULL || st == NULL)
 		return;
@@ -236,6 +270,7 @@ void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st)
 		g->VrfId = st->Groups[i].VrfId;
 		g->Group = st->Groups[i].Group;
 		g->Tags = st->Groups[i].TagSet;
+		g->Generation = (UINT)st->Groups[i].Generation;
 	}
 
 	// The Devices whose gateway the node is, one entry for each of their addresses
@@ -256,7 +291,7 @@ void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st)
 			NODE_SOURCE_DEVICE *e = &t->Devices[t->NumDevices++];
 			Copy(e->Address, a->Address, a->AddressSize);
 			e->Size = a->AddressSize;
-			NodeSourceGroupOfDevice(&e->Group, d);
+			NodeSourceGroupOfDevice(&e->Group, d, st->Groups, st->NumGroups);
 		}
 	}
 
@@ -282,12 +317,13 @@ void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st)
 			g->VrfId = cp->Groups[j].VrfId;
 			g->Group = cp->Groups[j].Group;
 			g->Tags = cp->Groups[j].TagSet;
+			g->Generation = (UINT)cp->Groups[j].Generation;
 		}
 		for (UINT j = 0; j < num_devices; j++) {
 			const CONTROL_DEVICE *d = &st->Devices[j];
 
 			if (d->Group != 0 && StrCmp(d->Gateway, cp->Name) == 0)
-				NodeSourceGroupOfDevice(&p->Groups[p->NumGroups++], d);
+				NodeSourceGroupOfDevice(&p->Groups[p->NumGroups++], d, cp->Groups, cp->NumGroups);
 		}
 	}
 
@@ -364,15 +400,16 @@ const UCHAR *NodeSourceGroupWrap(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id, UCHA
 	    NodeSourceGroupOf(t, vrf_id, record + NODE_OVERLAY_VRF_TAG, *size - NODE_OVERLAY_VRF_TAG, &g) == false)
 		return record;
 
-	NodeFrameWrite(record - NODE_FRAME_ROOM, g.Group, g.Tags);
+	NodeFrameWrite(record - NODE_FRAME_ROOM, g.Group, g.Tags, g.Generation);
 	*size += NODE_FRAME_ROOM;
 
 	return record - NODE_FRAME_ROOM;
 }
 
-// The source group that a packet of the host in the VRF vrf_id carries over a link of kind vxlan or geneve, into *group:
-// false, with *group empty, unless the tag mode of the VRF is trusted-underlay and the node has a source group for the
-// packet. The caller reads v as a reader of the table snapshot of the node.
+// The source group that a packet of the host in the VRF vrf_id carries over a link of kind vxlan or geneve, into *group,
+// with the group generation of the node in the VRF, which only Geneve carries: false, with *group empty, unless the tag
+// mode of the VRF is trusted-underlay and the node has a source group for the packet. The caller reads v as a reader of
+// the table snapshot of the node.
 bool NodeSourceGroupStamp(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, VXLAN_GROUP *group) {
 	const NODE_SOURCE_GROUP_TABLE *t = (v != NULL ? v->SourceGroups : NULL);
 	NODE_SOURCE_GROUP g;
@@ -386,8 +423,10 @@ bool NodeSourceGroupStamp(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, 
 
 	group->Carried = true;
 	group->HasTags = true;
+	group->HasGeneration = true;
 	group->Group = (USHORT)g.Group;
 	group->Tags = g.Tags;
+	group->Generation = g.Generation;
 
 	return true;
 }
@@ -415,6 +454,37 @@ static bool NodeSourceGroupAllowed(const NODE_SOURCE_GROUP_TABLE *t, UINT hop, U
 	return false;
 }
 
+// The group generation that the table t gives the peer of the next hop hop in the VRF vrf_id, its 32 low bits: 0 when the
+// peer has no group there
+static UINT NodeSourceGroupGeneration(const NODE_SOURCE_GROUP_TABLE *t, UINT hop, UINT vrf_id) {
+	const NODE_SOURCE_PEER *p = (t != NULL && hop < t->NumPeers ? &t->Peers[hop] : NULL);
+
+	for (UINT i = 0; p != NULL && i < p->NumGroups; i++)
+		if (p->Groups[i].VrfId == vrf_id)
+			return p->Groups[i].Generation;
+
+	return 0;
+}
+
+// How the node of the table t judges a packet of the next hop hop in the VRF vrf_id with the claim, in the tag mode mode
+// (NODE_SOURCE_*): it takes a group that the peer may assert, whatever group generation the claim names, as a group ID
+// means the same set of tags in every Generation; a claim of any other group is an unknown group when it names the group
+// generation that the node's state gives the peer, or none, and one made on another state of the peer otherwise, which
+// the node ignores. A packet without a claim, or with one that off ignores or of a peer whose groups the node does not
+// know yet, goes to the map of address to group.
+static UINT NodeSourceGroupJudge(const NODE_SOURCE_GROUP_TABLE *t, UINT mode, UINT vrf_id, UINT hop, const NODE_SOURCE_CLAIM *claim) {
+	if (claim == NULL || claim->Carried == false)
+		return NODE_SOURCE_MISSING;
+	if (mode == CONTROL_TAG_MODE_OFF || NodeSourceGroupKnows(t, hop) == false)
+		return NODE_SOURCE_IGNORED;
+	if (NodeSourceGroupAllowed(t, hop, vrf_id, claim))
+		return NODE_SOURCE_CARRIED;
+	if (claim->HasGeneration && claim->Generation != NodeSourceGroupGeneration(t, hop, vrf_id))
+		return NODE_SOURCE_IGNORED;
+
+	return NODE_SOURCE_REFUSED;
+}
+
 // Count a packet of a peer in the tag mode mode with the result (NODE_SOURCE_*)
 static void NodeSourceGroupCount(NODE_SOURCE_GROUPS *g, UINT mode, UINT result) {
 	if (g != NULL && mode < CONTROL_TAG_MODES && result < NODE_SOURCE_RESULTS)
@@ -440,8 +510,10 @@ static void NodeSourceGroupLog(NODE *n, const NODE_SOURCE_GROUP_TABLE *t, UINT h
 	bool log = false;
 	char line[MAX_SIZE];
 	char more[MAX_SIZE];
+	char tags[64];
+	char gen[64];
 
-	if (g == NULL)
+	if (g == NULL || claim == NULL)
 		return;
 
 	Lock(g->Lock);
@@ -463,12 +535,14 @@ static void NodeSourceGroupLog(NODE *n, const NODE_SOURCE_GROUP_TABLE *t, UINT h
 	StrCpy(more, sizeof(more), "");
 	if (others != 0)
 		Format(more, sizeof(more), "; %I64u more claims that their peers may not assert were dropped since the line before", others);
+	StrCpy(tags, sizeof(tags), "");
 	if (claim->HasTags)
-		Format(line, sizeof(line), "Source group: %s claimed the group %u with the tag set 0x%016I64x in VRF %u in %s, which it may not assert: dropped as an unknown group%s",
-		       (t != NULL && hop < t->NumPeers) ? t->Peers[hop].Name : "a peer", claim->Group, claim->Tags, vrf_id, NodeSourceGroupCarrier(claim->Carrier), more);
-	else
-		Format(line, sizeof(line), "Source group: %s claimed the group %u in VRF %u in %s, which it may not assert: dropped as an unknown group%s",
-		       (t != NULL && hop < t->NumPeers) ? t->Peers[hop].Name : "a peer", claim->Group, vrf_id, NodeSourceGroupCarrier(claim->Carrier), more);
+		Format(tags, sizeof(tags), " with the tag set 0x%016I64x", claim->Tags);
+	StrCpy(gen, sizeof(gen), "");
+	if (claim->HasGeneration)
+		Format(gen, sizeof(gen), " in its group generation %u", claim->Generation);
+	Format(line, sizeof(line), "Source group: %s claimed the group %u%s in VRF %u in %s, which it may not assert%s: dropped as an unknown group%s",
+	       (t != NULL && hop < t->NumPeers) ? t->Peers[hop].Name : "a peer", claim->Group, tags, vrf_id, NodeSourceGroupCarrier(claim->Carrier), gen, more);
 
 	NodeLog(n, "%s", line);
 
@@ -480,37 +554,66 @@ static void NodeSourceGroupLog(NODE *n, const NODE_SOURCE_GROUP_TABLE *t, UINT h
 	Unlock(g->Lock);
 }
 
+// The tag mode in which the node of the table t judges the claim of a packet in the VRF vrf_id: session for a record of a
+// Noise session, which carries a source group that the session authenticated, whatever the tag mode; the tag mode of the
+// VRF for a datagram of a link of kind vxlan or geneve, which decides on its source group: off ignores it,
+// trusted-underlay takes it
+static UINT NodeSourceGroupClaimMode(const NODE_SOURCE_GROUP_TABLE *t, UINT vrf_id, const NODE_SOURCE_CLAIM *claim) {
+	return (claim == NULL || claim->Carrier == NODE_CARRIER_SESSION ? CONTROL_TAG_MODE_SESSION : NodeSourceGroupMode(t, vrf_id));
+}
+
 // A packet of the next hop hop of the tables v in the VRF vrf_id on its way to the host, with the source group that it
-// carried, as claim tells, before a 1:1 NAT rule translates it: true when it passes. A record of a Noise session carries
-// a source group that the session authenticated, which the node takes whatever the tag mode; a datagram of a link of kind
-// vxlan or geneve carries one that the tag mode of its VRF decides on: off ignores it, trusted-underlay takes it. The node
-// takes the group of a peer whose groups it knows, and it must be one that the peer may assert: the policy of the VRF
-// judges the packet by it. Any other is an unknown group, which the node drops, counts and logs. A packet that carried
-// none, one that off ignores, or one of a peer whose groups the node does not know yet, is judged by the map of address
-// to group. The caller is an online reader of the node's table snapshot, which holds v.
+// carried, as claim tells, before a 1:1 NAT rule translates it: true when it passes. The node judges the claim in the tag
+// mode of its carrier (NodeSourceGroupJudge): the policy of the VRF judges the packet by a group that the node takes; an
+// unknown group the node drops, counts and logs; a packet that carried none, or one that the node ignores, the map of
+// address to group judges. The caller is an online reader of the node's table snapshot, which holds v.
 bool NodeSourceGroupInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size) {
 	NODE_SOURCE_GROUPS *g = (n != NULL ? n->SourceGroups : NULL);
 	const NODE_SOURCE_GROUP_TABLE *t = (v != NULL ? v->SourceGroups : NULL);
-	UINT mode = (claim == NULL || claim->Carrier == NODE_CARRIER_SESSION ? CONTROL_TAG_MODE_SESSION : NodeSourceGroupMode(t, vrf_id));
+	UINT mode = NodeSourceGroupClaimMode(t, vrf_id, claim);
+	UINT result = NodeSourceGroupJudge(t, mode, vrf_id, hop, claim);
 
-	if (claim == NULL || claim->Carried == false) {
-		NodeSourceGroupCount(g, mode, NODE_SOURCE_MISSING);
-		return NodePolicyInbound(n, v, vrf_id, hop, packet, size);
-	}
-
-	if (mode == CONTROL_TAG_MODE_OFF || NodeSourceGroupKnows(t, hop) == false) {
-		NodeSourceGroupCount(g, mode, NODE_SOURCE_IGNORED);
-		return NodePolicyInbound(n, v, vrf_id, hop, packet, size);
-	}
-
-	if (NodeSourceGroupAllowed(t, hop, vrf_id, claim) == false) {
-		NodeSourceGroupCount(g, mode, NODE_SOURCE_REFUSED);
+	NodeSourceGroupCount(g, mode, result);
+	if (result == NODE_SOURCE_REFUSED) {
 		NodeSourceGroupLog(n, t, hop, vrf_id, claim);
 		return false;
 	}
+	if (result == NODE_SOURCE_CARRIED && claim != NULL)
+		return NodePolicyInboundGroup(n, v, vrf_id, hop, claim->Group, packet, size);
 
-	NodeSourceGroupCount(g, mode, NODE_SOURCE_CARRIED);
-	return NodePolicyInboundGroup(n, v, vrf_id, hop, claim->Group, packet, size);
+	return NodePolicyInbound(n, v, vrf_id, hop, packet, size);
+}
+
+// A packet of the next hop hop of the tables v in the VRF vrf_id, with the source group that it carried, as claim tells,
+// which the node sends on to another peer as the hub of the VRF (NodeGatewayTransit): the node judges the claim as the
+// destination of the packet would (NodeSourceGroupJudge) and counts it. True with *group the group that the policy of the
+// VRF judges the packet by at the hub (NodePolicyTransit), 0 for the map of address to group; false for an unknown group,
+// which the node drops and logs. The packet goes on without its source group. A node that is no hub of the VRF sends
+// nothing on and judges nothing here: true with *group 0. The caller is an online reader of the node's table snapshot,
+// which holds v.
+bool NodeSourceGroupTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const NODE_SOURCE_CLAIM *claim, UINT *group) {
+	NODE_SOURCE_GROUPS *g = (n != NULL ? n->SourceGroups : NULL);
+	const NODE_SOURCE_GROUP_TABLE *t = (v != NULL ? v->SourceGroups : NULL);
+
+	if (group == NULL)
+		return false;
+
+	*group = 0;
+	if (NodeGatewayHub(v, vrf_id) == false)
+		return true;
+
+	UINT mode = NodeSourceGroupClaimMode(t, vrf_id, claim);
+	UINT result = NodeSourceGroupJudge(t, mode, vrf_id, hop, claim);
+
+	NodeSourceGroupCount(g, mode, result);
+	if (result == NODE_SOURCE_REFUSED) {
+		NodeSourceGroupLog(n, t, hop, vrf_id, claim);
+		return false;
+	}
+	if (result == NODE_SOURCE_CARRIED && claim != NULL)
+		*group = claim->Group;
+
+	return true;
 }
 
 //

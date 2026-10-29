@@ -8,7 +8,7 @@
 // - a record that it takes has a header within the record: none, or the 8 bytes of the fixed header and whole words of
 //   options; a record that it drops has no header and no claim;
 // - a record whose VRF tag is not 0 is taken with no header and no claim;
-// - a claim comes from the session, with its tag set, and its group ID has 16 bits.
+// - a claim comes from the session, with its tag set and the group generation of its sender, and its group ID has 16 bits.
 //
 // fuzz-max-len: 2048
 
@@ -67,7 +67,7 @@ static void FuzzFrame(const uint8_t *data, size_t size)
 		abort();
 	}
 
-	if (claim.Carrier != NODE_CARRIER_SESSION || (claim.Carried && (claim.HasTags == false || claim.Group > 0xFFFF)))
+	if (claim.Carrier != NODE_CARRIER_SESSION || (claim.Carried && (claim.HasTags == false || claim.HasGeneration == false || claim.Group > 0xFFFF)))
 	{
 		abort();
 	}

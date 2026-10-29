@@ -783,10 +783,11 @@ bool NodePolicyInboundGroup(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, 
 // hop to, a peer (NodeGatewayTransit), as the peer of from sent it: true when the policy of the VRF lets it through. The
 // policy judges it by its two real ends, with the same engine and the same rules as a packet of the host: the member of
 // the peer that sent it, the end outside the VRF for a route that a VRF of the peer leaks, and the member of the peer that
-// it goes to; a WireGuard Device behind either peer is the end in place of its gateway (SDN-80, #375). A dropped packet
-// counts with the others that the policy dropped. The caller is an online reader of the node's table snapshot, which
-// holds v.
-bool NodePolicyTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, const UCHAR *packet, UINT size) {
+// it goes to; a WireGuard Device behind either peer is the end in place of its gateway (SDN-80, #375). The source group
+// group that the packet carried, which the node took (NodeSourceGroupTransit; SDN-87, #386), 0 for none, is the end of
+// the sender as at a destination. A dropped packet counts with the others that the policy dropped. The caller is an online
+// reader of the node's table snapshot, which holds v.
+bool NodePolicyTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, UINT group, const UCHAR *packet, UINT size) {
 	const NODE_POLICY_TABLE *t = (v != NULL ? v->Policy : NULL);
 	const NODE_POLICY_VRF *e = NodePolicyFind(t, vrf_id);
 
@@ -800,13 +801,18 @@ bool NodePolicyTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT
 	if (t->Closed == false && p->Engine != NULL) {
 		UINT sender = (from < t->NumHops ? e->Hops[from] : e->Outside);
 		UINT receiver = (to < t->NumHops ? e->Hops[to] : e->Outside);
-		UINT sender_group = 0, receiver_group = 0;
+		UINT sender_group = (from < t->NumHops ? e->HopGroups[from] : 0);
+		UINT receiver_group = 0;
 		UINT host = e->Host;
 
 		// A Device whose gateway sent the packet is its source, one whose gateway is the peer of its next hop its destination.
 		// No Device of the node's own is either: the forwarding table leads their addresses to the host, so host stays.
 		NodePolicyDeviceEnds(e, packet, size, false, &host, &sender, &sender_group);
 		NodePolicyDeviceEnds(e, packet, size, true, &host, &receiver, &receiver_group);
+		// The source group that the packet carried is the end of the sender, unless the map of address to group gives that
+		// group already, whose member keeps the flows of the end (SDN-87, #386)
+		if (group != 0 && group != sender_group)
+			sender = NodePolicyGroupMember(e, group);
 		ok = PolicyInput(p->Engine, NodePolicyNow(n, p), sender, receiver, 0, packet, size, NULL);
 	}
 	if (ok == false)

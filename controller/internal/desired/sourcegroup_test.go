@@ -286,6 +286,88 @@ func TestNumberGroupsRetired(t *testing.T) {
 	}
 }
 
+// generationsText returns the group generations of the source groups as text: "vrf@generation" each, by commas.
+func generationsText(groups []*controlpb.SourceGroup) string {
+	var parts []string
+	for _, g := range groups {
+		parts = append(parts, fmt.Sprintf("%d@%d", g.GetVrfId(), g.GetGeneration()))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// SDN-87: the group generation of a Node in a VRF is the Generation of its state from which on it may assert what it
+// asserts there (GroupGenerations), in its NodeConfig and in its Peer object at the others (WithGroupGenerations). Every
+// Node of sourceGroupResources gets its groups in the Generation 3. Device phone is deleted in the Generation 7 of each:
+// gw, the gateway of phone in dc, may assert its group web alone there from then on, so its group generation of dc is 7,
+// at gw and at every peer of it; it keeps 3 in corp, where it asserts what it did, and so do db, lab and old everywhere,
+// which no Device has as its gateway. A claim of gw that names 3 in dc was made on the state before, which let gw assert
+// ops, the group of phone. The objects that the states share are not changed.
+func TestGroupGenerations(t *testing.T) {
+	in, err := intent.Apply(intent.New(), intent.Document{Resources: sourceGroupResources(intent.TagModeTrustedUnderlay)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, numbers := numbered(t, in, nil)
+	gens := map[string]map[uint32]uint64{}
+	for name, st := range before {
+		gens[name] = GroupGenerations(st, nil, name, 3)
+	}
+	shared := before["db"][Key{controlpb.Kind_KIND_PEER, "gw"}]
+	WithGroupGenerations(before, gens)
+	if g := shared.GetPeer().GetGroups(); len(g) != 1 || g[0].GetGeneration() != 0 {
+		t.Errorf("WithGroupGenerations changed the Peer gw of db that SourceGroups made: %v", g)
+	}
+
+	without, err := intent.Delete(in, intent.KindDevice, "phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := numbered(t, without, numbers)
+	gens = map[string]map[uint32]uint64{}
+	for name, st := range after {
+		gens[name] = GroupGenerations(st, before[name], name, 7)
+	}
+	WithGroupGenerations(after, gens)
+
+	node := func(states map[string]State, name string) *controlpb.NodeConfig {
+		return states[name][Key{controlpb.Kind_KIND_NODE, name}].GetNode()
+	}
+	peer := func(states map[string]State, name, other string) *controlpb.Peer {
+		return states[name][Key{controlpb.Kind_KIND_PEER, other}].GetPeer()
+	}
+	for _, c := range []struct {
+		what, got, want string
+	}{
+		{"the groups of gw with phone", generationsText(node(before, "gw").GetGroups()), "10@3, 30@3"},
+		{"the Peer gw of db with phone", generationsText(peer(before, "db", "gw").GetGroups()), "30@3"},
+		{"the groups of gw without phone", generationsText(node(after, "gw").GetGroups()), "10@3, 30@7"},
+		{"the Peer gw of db without phone", generationsText(peer(after, "db", "gw").GetGroups()), "30@7"},
+		{"the Peer gw of lab without phone", generationsText(peer(after, "lab", "gw").GetGroups()), "30@7"},
+		{"the Peer gw of old without phone", generationsText(peer(after, "old", "gw").GetGroups()), "10@3, 30@7"},
+		{"the groups of db without phone", generationsText(node(after, "db").GetGroups()), "30@3"},
+		{"the Peer db of gw without phone", generationsText(peer(after, "gw", "db").GetGroups()), "30@3"},
+		{"the groups of lab without phone", generationsText(node(after, "lab").GetGroups()), "30@3"},
+		{"the groups of old without phone", generationsText(node(after, "old").GetGroups()), "10@3, 30@3"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s have the group generations %q, want %q", c.what, c.got, c.want)
+		}
+	}
+
+	// A Node without a state before takes the Generation that its state goes out as, and so does a state before without
+	// group generations
+	if got := GroupGenerations(after["db"], nil, "db", 1); got[30] != 1 {
+		t.Errorf("db without a state before has the group generations %v, want 1 in dc", got)
+	}
+	plain, err := Compile(without)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := GroupGenerations(after["gw"], plain["gw"], "gw", 9); got[10] != 9 || got[30] != 9 {
+		t.Errorf("gw after a state without source groups has the group generations %v, want 9 in both VRFs", got)
+	}
+}
+
 // A VRF that gave its largest group ID, or its MaxTagBits bits, gives no more: a Node whose set of tags has no group ID in
 // it has no group there, a Device none, and a tag without a bit is in no tag set. The numbers of another VRF are its own.
 func TestNumberGroupsFull(t *testing.T) {

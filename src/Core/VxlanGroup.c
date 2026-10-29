@@ -1,9 +1,10 @@
 // VxlanGroup.c
 // The source group in the datagrams of the VXLAN module (SDN-87, #386; Core/Vxlan.h): the group policy extension of
 // VXLAN, the G flag and the group ID in the VXLAN header, and the option of the source group of Geneve, with the group
-// ID and the tag set, as the module sends them (VxlanSendToGroup) and as VxlanInput reads them. The critical bit of the
-// option is clear, so a tunnel endpoint that does not know it skips it instead of dropping the datagram (RFC 8926 section
-// 3.5.1), and the class is one of Experimental Use until the vendor class of Ranz VPN is registered before the release.
+// ID, the tag set and the group generation of the sender, as the module sends them (VxlanSendToGroup) and as VxlanInput
+// reads them. The critical bit of the option is clear, so a tunnel endpoint that does not know it skips it instead of
+// dropping the datagram (RFC 8926 section 3.5.1), and the class is one of Experimental Use until the vendor class of Ranz
+// VPN is registered before the release.
 
 #include "Core/Vxlan.h"
 
@@ -19,8 +20,9 @@ void VxlanWriteGroup(UCHAR *header, USHORT group) {
 }
 
 // Write the option of the source group, GENEVE_GROUP_OPTION bytes at option: its class, its type with the critical bit
-// clear and the length of its data, then the group ID, two reserved bytes and the tag set, big-endian
-void VxlanWriteGroupOption(UCHAR *option, USHORT group, UINT64 tags) {
+// clear and the length of its data, then the group ID, two reserved bytes, the tag set and the group generation of the
+// sender, big-endian
+void VxlanWriteGroupOption(UCHAR *option, USHORT group, UINT64 tags, UINT generation) {
 	ZeroMemory(option, GENEVE_GROUP_OPTION);
 	option[0] = (UCHAR)(GENEVE_CLASS_RANZ >> 8);
 	option[1] = (UCHAR)GENEVE_CLASS_RANZ;
@@ -30,6 +32,8 @@ void VxlanWriteGroupOption(UCHAR *option, USHORT group, UINT64 tags) {
 	option[5] = (UCHAR)group;
 	for (UINT i = 0; i < 8; i++)
 		option[8 + i] = (UCHAR)(tags >> (56 - 8 * i));
+	for (UINT i = 0; i < 4; i++)
+		option[16 + i] = (UCHAR)(generation >> (24 - 8 * i));
 }
 
 // Read the group policy extension of the VXLAN header at the start of the datagram data, size bytes, into *g: true when
@@ -58,11 +62,16 @@ bool VxlanParseGroupOption(const GENEVE_OPTION *o, VXLAN_GROUP *g) {
 	UINT64 tags = 0;
 	for (UINT i = 0; i < 8; i++)
 		tags = (tags << 8) | o->Data[4 + i];
+	UINT generation = 0;
+	for (UINT i = 0; i < 4; i++)
+		generation = (generation << 8) | o->Data[12 + i];
 
 	g->Carried = true;
 	g->HasTags = true;
+	g->HasGeneration = true;
 	g->Group = (USHORT)(((UINT)o->Data[0] << 8) | o->Data[1]);
 	g->Tags = tags;
+	g->Generation = generation;
 
 	return true;
 }

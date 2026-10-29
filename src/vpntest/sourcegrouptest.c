@@ -1,10 +1,11 @@
 // sourcegrouptest.c
 // Named source group carrier test of vpntest ("sourcegroup" command, SDN-87 #386)
 //
-// The encoding and the decoding of the source group of a packet, its group ID and its tag set, in each of its carriers:
-// the record of frame version 1 of a Noise session (Cedar/NodeSourceGroup.c: NodeFrameWrite, NodeFrameParse), and the
-// group policy extension of VXLAN and the option of the source group of Geneve (Core/VxlanGroup.c), as the VXLAN module
-// sends a frame with them (VxlanSendToGroup) and reads them at its one ingress (VxlanInput). For each of four groups the
+// The encoding and the decoding of the source group of a packet, its group ID and its tag set, and of the group generation
+// of its sender, in each of its carriers: the record of frame version 1 of a Noise session (Cedar/NodeSourceGroup.c:
+// NodeFrameWrite, NodeFrameParse), and the group policy extension of VXLAN, which has room for the group ID alone, and
+// the option of the source group of Geneve (Core/VxlanGroup.c), as the VXLAN module sends a frame with them
+// (VxlanSendToGroup) and reads them at its one ingress (VxlanInput). For each of four groups the
 // test prints the bytes of each carrier field by field and what a node reads back from them, then the records and the
 // datagrams that a node does not take, or that carry options it does not know; the text matches the golden file
 // tests/golden/sourcegroup/sourcegroup_carriers.txt (golden family "sourcegroup"). The critical bit of the option of
@@ -30,14 +31,15 @@
 #define	SGTEST_PACKET			20			// The packet of a record
 #define	SGTEST_GOLDEN			"sourcegroup_carriers.txt"
 
-// The groups of the test and their tag sets
+// The groups of the test, their tag sets and the group generations of their senders
 static UINT sgtest_groups[4] = {1, 3, 258, 65535};
 static UINT64 sgtest_tags[4] = {0x1ULL, 0x4ULL, 0x0102030405060708ULL, 0xFFFFFFFFFFFFFFFFULL};
+static UINT sgtest_generations[4] = {1, 7, 0x01020304, 0xFFFFFFFF};
 
 // The fields of each carrier, in bytes, 0 for the line between the header and the option
-static UINT sgtest_ranz_fields[] = {4, 1, 1, 2, 0, 1, 1, 2, 2, 2, 8, 0, 4};
+static UINT sgtest_ranz_fields[] = {4, 1, 1, 2, 0, 1, 1, 2, 2, 2, 8, 4, 0, 4};
 static UINT sgtest_vxlan_fields[] = {1, 1, 2, 3, 1};
-static UINT sgtest_geneve_fields[] = {1, 1, 2, 3, 1, 0, 2, 1, 1, 2, 2, 8};
+static UINT sgtest_geneve_fields[] = {1, 1, 2, 3, 1, 0, 2, 1, 1, 2, 2, 8, 4};
 
 // The test
 typedef struct SGTEST_CTX
@@ -158,7 +160,8 @@ static void SgTestInput(SGTEST_CTX *ctx, const UCHAR *datagram, UINT size, bool 
 	VxlanInput(ctx->Receiver, &from, datagram, size);
 }
 
-// What the receiver read from the last datagram, as a line: the group, with its tag set where it came with one, and the frame
+// What the receiver read from the last datagram, as a line: the group, with its tag set and the group generation of its
+// sender where it came with them, and the frame
 static void SgTestRead(SGTEST_CTX *ctx, char *out, UINT size, const UCHAR *frame)
 {
 	if (ctx->Got == false)
@@ -170,14 +173,14 @@ static void SgTestRead(SGTEST_CTX *ctx, char *out, UINT size, const UCHAR *frame
 		Format(out, size, "  read: no source group; the frame of %u bytes %s", ctx->FrameSize,
 			(ctx->FrameSize == SGTEST_FRAME && Cmp(ctx->Frame, frame, SGTEST_FRAME) == 0) ? "as it was sent" : "changed");
 	}
-	else if (ctx->Group.HasTags)
+	else if (ctx->Group.HasTags && ctx->Group.HasGeneration)
 	{
-		Format(out, size, "  read: group %u, tag set 0x%016I64x; the frame of %u bytes %s", (UINT)ctx->Group.Group, ctx->Group.Tags, ctx->FrameSize,
-			(ctx->FrameSize == SGTEST_FRAME && Cmp(ctx->Frame, frame, SGTEST_FRAME) == 0) ? "as it was sent" : "changed");
+		Format(out, size, "  read: group %u, tag set 0x%016I64x, group generation %u; the frame of %u bytes %s", (UINT)ctx->Group.Group, ctx->Group.Tags,
+			ctx->Group.Generation, ctx->FrameSize, (ctx->FrameSize == SGTEST_FRAME && Cmp(ctx->Frame, frame, SGTEST_FRAME) == 0) ? "as it was sent" : "changed");
 	}
 	else
 	{
-		Format(out, size, "  read: group %u, no tag set; the frame of %u bytes %s", (UINT)ctx->Group.Group, ctx->FrameSize,
+		Format(out, size, "  read: group %u, no tag set and no group generation; the frame of %u bytes %s", (UINT)ctx->Group.Group, ctx->FrameSize,
 			(ctx->FrameSize == SGTEST_FRAME && Cmp(ctx->Frame, frame, SGTEST_FRAME) == 0) ? "as it was sent" : "changed");
 	}
 }
@@ -200,8 +203,8 @@ static void SgTestReadRecord(SGTEST_CTX *ctx, char *out, UINT size, const UCHAR 
 	}
 	else
 	{
-		Format(out, size, "  read: group %u, tag set 0x%016I64x; a header of %u bytes, then the data record of VRF %u", claim.Group, claim.Tags, header,
-			READ_UINT(record + header));
+		Format(out, size, "  read: group %u, tag set 0x%016I64x, group generation %u; a header of %u bytes, then the data record of VRF %u", claim.Group,
+			claim.Tags, claim.Generation, header, READ_UINT(record + header));
 	}
 }
 
@@ -221,12 +224,12 @@ static void SgTestGroups(SGTEST_CTX *ctx)
 		VXLAN_ADDR vtep;
 		char what[MAX_SIZE];
 
-		Format(line, sizeof(line), "group %u, tag set 0x%016I64x", sgtest_groups[i], sgtest_tags[i]);
+		Format(line, sizeof(line), "group %u, tag set 0x%016I64x, group generation %u", sgtest_groups[i], sgtest_tags[i], sgtest_generations[i]);
 		SgTestLine(ctx, line);
 
 		// The record of frame version 1: the header, then the data record of frame version 0
 		Zero(record, sizeof(record));
-		UINT header = NodeFrameWrite(record, sgtest_groups[i], sgtest_tags[i]);
+		UINT header = NodeFrameWrite(record, sgtest_groups[i], sgtest_tags[i], sgtest_generations[i]);
 		WRITE_UINT(record + header, SGTEST_VRF);
 		SgTestFields(fields, sizeof(fields), record, sgtest_ranz_fields, sizeof(sgtest_ranz_fields) / sizeof(sgtest_ranz_fields[0]));
 		Format(line, sizeof(line), "  ranz frame: %s", fields);
@@ -237,8 +240,10 @@ static void SgTestGroups(SGTEST_CTX *ctx)
 		Zero(&group, sizeof(group));
 		group.Carried = true;
 		group.HasTags = true;
+		group.HasGeneration = true;
 		group.Group = (USHORT)sgtest_groups[i];
 		group.Tags = sgtest_tags[i];
+		group.Generation = sgtest_generations[i];
 
 		// VXLAN: the group ID alone
 		SgTestVtep(&vtep, false);
@@ -253,7 +258,7 @@ static void SgTestGroups(SGTEST_CTX *ctx)
 		Format(what, sizeof(what), "group %u: the module sent a datagram of VXLAN of %u bytes", sgtest_groups[i], VXLAN_HEADER_SIZE + SGTEST_FRAME);
 		SgTestCheck(ctx, sent && ctx->DatagramSize == VXLAN_HEADER_SIZE + SGTEST_FRAME, what);
 
-		// Geneve: the group ID and the tag set in the option
+		// Geneve: the group ID, the tag set and the group generation in the option
 		SgTestVtep(&vtep, true);
 		ctx->DatagramSize = 0;
 		sent = VxlanSendToGroup(ctx->Sender, SGTEST_VNI, &vtep, &group, frame, SGTEST_FRAME);
@@ -318,8 +323,9 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	record[NODE_FRAME_HEADER + 1] = NODE_FRAME_GROUP_DATA / 4;
 	WRITE_USHORT(record + NODE_FRAME_HEADER + 4, 5);
 	WRITE_UINT64(record + NODE_FRAME_HEADER + 8, 0x10);
-	record[NODE_FRAME_HEADER + 16] = 0x02;
-	record[NODE_FRAME_HEADER + 17] = 4;
+	WRITE_UINT(record + NODE_FRAME_HEADER + 16, 9);
+	record[NODE_FRAME_HEADER + 20] = 0x02;
+	record[NODE_FRAME_HEADER + 21] = 4;
 	WRITE_UINT(record + NODE_FRAME_HEADER + 24, SGTEST_VRF);
 	SgTestLine(ctx, "a record of frame version 1 with the option of the source group, then an option whose data runs past the options");
 	SgTestReadRecord(ctx, line, sizeof(line), record, NODE_FRAME_HEADER + 24 + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
@@ -338,15 +344,16 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	// An option that the node does not know, with its critical bit clear and no data, before the option of the source group
 	Zero(record, sizeof(record));
 	record[4] = NODE_FRAME_VERSION;
-	record[5] = 5;
+	record[5] = 6;
 	record[NODE_FRAME_HEADER] = 0x02;
 	record[NODE_FRAME_HEADER + 4] = NODE_FRAME_GROUP;
 	record[NODE_FRAME_HEADER + 5] = NODE_FRAME_GROUP_DATA / 4;
 	WRITE_USHORT(record + NODE_FRAME_HEADER + 8, 7);
 	WRITE_UINT64(record + NODE_FRAME_HEADER + 12, 0x80);
-	WRITE_UINT(record + NODE_FRAME_HEADER + 20, SGTEST_VRF);
+	WRITE_UINT(record + NODE_FRAME_HEADER + 20, 9);
+	WRITE_UINT(record + NODE_FRAME_HEADER + 24, SGTEST_VRF);
 	SgTestLine(ctx, "a record of frame version 1 with an option of the type 0x02 that the node does not know, then the option of the source group");
-	SgTestReadRecord(ctx, line, sizeof(line), record, NODE_FRAME_HEADER + 20 + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
+	SgTestReadRecord(ctx, line, sizeof(line), record, NODE_FRAME_HEADER + 24 + NODE_OVERLAY_VRF_TAG + SGTEST_PACKET);
 	SgTestLine(ctx, line);
 
 	// VXLAN without the G flag
@@ -362,7 +369,7 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	Zero(datagram, sizeof(datagram));
 	VxlanWriteGeneve(datagram, SGTEST_VNI);
 	datagram[0] |= (UCHAR)(GENEVE_GROUP_OPTION / 4);
-	VxlanWriteGroupOption(datagram + GENEVE_HEADER_SIZE, 7, 0x80);
+	VxlanWriteGroupOption(datagram + GENEVE_HEADER_SIZE, 7, 0x80, 9);
 	datagram[GENEVE_HEADER_SIZE + 2] |= GENEVE_OPTION_CRITICAL;
 	Copy(datagram + GENEVE_HEADER_SIZE + GENEVE_GROUP_OPTION, frame, SGTEST_FRAME);
 	VxlanGetStats(ctx->Receiver, &before);
@@ -382,7 +389,7 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	datagram[GENEVE_HEADER_SIZE + 1] = 0x03;
 	datagram[GENEVE_HEADER_SIZE + 2] = 0x05;
 	datagram[GENEVE_HEADER_SIZE + 3] = 1;
-	VxlanWriteGroupOption(datagram + GENEVE_HEADER_SIZE + 8, 7, 0x80);
+	VxlanWriteGroupOption(datagram + GENEVE_HEADER_SIZE + 8, 7, 0x80, 9);
 	Copy(datagram + GENEVE_HEADER_SIZE + 8 + GENEVE_GROUP_OPTION, frame, SGTEST_FRAME);
 	SgTestLine(ctx, "a datagram of Geneve with an option of the class 0x0103, then the option of the source group");
 	SgTestInput(ctx, datagram, sizeof(datagram), true);
@@ -425,13 +432,15 @@ static void SgTestSizes(SGTEST_CTX *ctx)
 	VXLAN_GROUP group;
 	VXLAN_ADDR vtep;
 
-	// The source groups of a node whose own group in VRF 101 is 3 and whose one peer takes records of frame version 1
+	// The source groups of a node whose own group in VRF 101 is 3, of the group generation 5, and whose one peer takes
+	// records of frame version 1
 	st->NumVrfs = 1;
 	st->Vrfs[0].Id = SGTEST_VRF;
 	st->NumGroups = 1;
 	st->Groups[0].VrfId = SGTEST_VRF;
 	st->Groups[0].Group = 3;
 	st->Groups[0].TagSet = 0x4ULL;
+	st->Groups[0].Generation = 5;
 	StrCpy(p->Name, sizeof(p->Name), "node-b");
 	p->FrameVersion = NODE_FRAME_VERSION;
 	st->NumPeers = 1;
@@ -451,6 +460,14 @@ static void SgTestSizes(SGTEST_CTX *ctx)
 		Format(what, sizeof(what), "%s (a record of %u bytes, a payload of %u)", c->What, c->Size, c->Max);
 		SgTestCheck(ctx, ok, what);
 	}
+
+	// The header names the group, the tag set and the group generation of the node
+	NODE_SOURCE_CLAIM claim;
+	UINT header = 0;
+	UINT size = NODE_OVERLAY_VRF_TAG + SGTEST_PACKET;
+	const UCHAR *start = NodeSourceGroupWrap(v, 0, SGTEST_VRF, record, &size, NOISE_MAX_PAYLOAD);
+	SgTestCheck(ctx, NodeFrameParse(start, size, &claim, &header) && claim.Carried && claim.Group == 3 && claim.Tags == 0x4ULL && claim.HasGeneration &&
+		claim.Generation == 5 && header == NODE_FRAME_ROOM, "the header of a record names the group 3, its tag set and the group generation 5 of the node");
 
 	// Geneve: the largest frame that fits a datagram with the option goes with it, and the largest one that fits without the
 	// option goes without it
@@ -505,9 +522,9 @@ void sourcegroup_test(UINT num, char **arg)
 		VxlanSetGroupReceiver(ctx->Receiver, SgTestReceive);
 
 		SgTestLine(ctx, "# SDN-87: the source group in each carrier, as a node sends it and as a node reads it back");
-		SgTestLine(ctx, "# ranz frame: the VRF tag 0, the version, the length of the options, reserved | the type, the length, reserved, the group, reserved, the tag set | the VRF tag of the record");
+		SgTestLine(ctx, "# ranz frame: the VRF tag 0, the version, the length of the options, reserved | the type, the length, reserved, the group, reserved, the tag set, the group generation | the VRF tag of the record");
 		SgTestLine(ctx, "# vxlan: the flags, the flags D and A, the group, the VNI, reserved");
-		SgTestLine(ctx, "# geneve: the version and the length of the options, the flags O and C, the protocol, the VNI, reserved | the class, the type, the length, the group, reserved, the tag set");
+		SgTestLine(ctx, "# geneve: the version and the length of the options, the flags O and C, the protocol, the VNI, reserved | the class, the type, the length, the group, reserved, the tag set, the group generation");
 		SgTestGroups(ctx);
 		SgTestOthers(ctx);
 		SgTestSizes(ctx);

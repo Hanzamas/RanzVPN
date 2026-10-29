@@ -26,6 +26,14 @@ import (
 // survive a restart and a new leader, and no state that a Node gets holds a number that the store does
 // not hold. An intent exported and imported into another controller gives the groups the numbers of that
 // controller.
+//
+// What a Node may assert in a VRF changes with the intent, though, and the Generations of two Nodes go in
+// at different times. So each group of a Node carries its group generation in the VRF, the Generation of
+// its state from which on it may assert what it asserts there, in its NodeConfig and in its Peer object
+// at the other Nodes, and its claims name it: a Node takes the claim of a group that the sender may not
+// assert by its state for an unknown group only when the claim names the group generation that its state
+// gives the sender, and judges the packet by the map of address to group otherwise. The group generation
+// comes from the Generations that the store holds with the states, so it survives a restart too.
 
 // groupState is what the controller keeps for the source groups beside the intent.
 type groupState struct {
@@ -50,7 +58,10 @@ func (c *Controller) loadGroupNumbers(ctx context.Context) error {
 
 // withSourceGroups puts the source groups into states, which in compiled to, for the Nodes that report
 // the Capability tags, with the numbers that the controller gave and those that the sets of tags and the
-// tags of in that have none take now, which it returns for commit to store. c.mu is held.
+// tags of in that have none take now, which it returns for commit to store. Each group of a Node carries
+// the group generation of the Node in its VRF, which the claims of the Node name (desired.GroupGenerations):
+// the Generation that commit gives its state, the one after the Generation of its state now, when the
+// groups that it may assert there change, and the one of its state now otherwise. c.mu is held.
 func (c *Controller) withSourceGroups(in intent.Intent, states map[string]desired.State) desired.GroupNumbers {
 	added := desired.NumberGroups(in, c.groups.numbers)
 	desired.SourceGroups(in, states, c.groups.numbers.With(added), func(node string) bool {
@@ -62,6 +73,16 @@ func (c *Controller) withSourceGroups(in intent.Intent, states map[string]desire
 		k, _ := intent.ParseKey(n.PublicKey)
 		return c.caps[string(k)].GetTags()
 	})
+	gens := map[string]map[uint32]uint64{}
+	for name, st := range states {
+		var prev desired.State
+		next := uint64(1)
+		if n := c.nodes[name]; n != nil {
+			prev, next = n.state, n.gen+1
+		}
+		gens[name] = desired.GroupGenerations(st, prev, name, next)
+	}
+	desired.WithGroupGenerations(states, gens)
 	return added
 }
 

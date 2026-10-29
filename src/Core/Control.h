@@ -217,11 +217,14 @@ typedef struct CONTROL_RELAY {
 #define CONTROL_LINK_GENEVE 2 // ... or plain Geneve
 
 // The source group of an endpoint in one VRF (SourceGroup of the control protocol; SDN-87, #386): its group ID, from 1 to
-// 65535, and its tag set, a bit for each of the first 64 tags of the VRF in name order
+// 65535, and its tag set, a bit for each of the first 64 tags of the VRF in name order; and the group generation of the
+// node in the VRF, the Generation of its state from which on it may assert the groups that it may assert there, which its
+// claims name
 typedef struct CONTROL_SOURCE_GROUP {
-	UINT VrfId;    // The VRF
-	UINT Group;    // The group ID
-	UINT64 TagSet; // The tag set
+	UINT VrfId;        // The VRF
+	UINT Group;        // The group ID
+	UINT64 TagSet;     // The tag set
+	UINT64 Generation; // The group generation
 } CONTROL_SOURCE_GROUP;
 
 // The packets of the peers that a node judged in one tag mode, which it reports (SourceGroupCounters of the control

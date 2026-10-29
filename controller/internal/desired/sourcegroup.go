@@ -20,18 +20,29 @@ import (
 // endpoints with the same tags are one group and the group of an endpoint tells its tags, and a bit of
 // the tag set for each tag, MaxTagBits at most.
 //
-// The numbers are stable (NumberGroups). A claim on the wire is a group ID and a tag set and names no
-// Generation, and the Node that takes it reads it in the numbering of the state that it applied last: the
-// Generations of two Nodes go in at different times, and a Node that the Controller cannot reach forwards
-// on its last one for as long. So a group ID or a bit, once given in a VRF, stays with its set of tags or
-// its tag for good, also once no endpoint of the VRF has them: a claim means the same set of tags in every
-// Generation that holds it, and the claim of a group that the sending Node may no longer assert is an
-// unknown group. A new set of tags gets the group ID after the largest one that the VRF gave, and a new
-// tag the bit after the largest one, in the order of the sets and of the names where one compilation
-// brings several, so that the numbers come from the intents that the Controller compiled one after the
-// other and from nothing else. The Controller keeps them in its store (internal/controller,
-// sourcegroup.go). A VRF that gave all of its group IDs, or all of its bits, gives no more: an endpoint
-// whose set of tags has no group ID carries no source group, and a tag without a bit is in no tag set.
+// The numbers are stable (NumberGroups). The Node that takes a claim reads it in the numbering of the
+// state that it applied last, and the Generations of two Nodes go in at different times: a Node that the
+// Controller cannot reach forwards on its last one for as long. So a group ID or a bit, once given in a
+// VRF, stays with its set of tags or its tag for good, also once no endpoint of the VRF has them: a claim
+// means the same set of tags in every Generation that holds it. A new set of tags gets the group ID after
+// the largest one that the VRF gave, and a new tag the bit after the largest one, in the order of the sets
+// and of the names where one compilation brings several, so that the numbers come from the intents that
+// the Controller compiled one after the other and from nothing else. The Controller keeps them in its
+// store (internal/controller, sourcegroup.go). A VRF that gave all of its group IDs, or all of its bits,
+// gives no more: an endpoint whose set of tags has no group ID carries no source group, and a tag without
+// a bit is in no tag set.
+//
+// What a Node may assert changes with the Generations, though: a claim names the group generation of its
+// sender in the VRF of the claim (SourceGroup.generation), the Generation of the sender's state from
+// which on it may assert the groups that it asserts there, its own and those of the Devices whose gateway
+// it is (GroupGenerations). The Controller gives it to the sender in its NodeConfig and to every other
+// Node in the sender's Peer object (WithGroupGenerations), so two Nodes whose states agree on what the
+// sender may assert in a VRF hold the same group generation for it. A Node takes the claim of a group that
+// its state lets the peer assert whatever group generation the claim names, as the numbers mean the same
+// in every Generation. It takes the claim of another group for an unknown group only when the claim names
+// the group generation that its state gives the peer; a claim of another group generation was made on
+// another state, the one before or the one after the Node's own, and the Node judges its packet by the
+// map of address to group, as it judges a packet without a claim.
 //
 // A Node that reports the Capability tags gets its own group in each of its VRFs (NodeConfig.groups)
 // and the group of each Device of its state (Device.group, Device.tag_set), and of each peer that
@@ -209,6 +220,86 @@ func (g GroupNumbers) group(id uint32, tags []string) *controlpb.SourceGroup {
 		}
 	}
 	return sg
+}
+
+// asserted returns the source groups that the Node name may assert in the VRF id by the state st, its own there and those
+// of the Devices of st whose gateway it is, as text: each group ID with its tag set, in order, each once.
+func asserted(st State, name string, id uint32) string {
+	var groups []string
+	for _, g := range st[Key{controlpb.Kind_KIND_NODE, name}].GetNode().GetGroups() {
+		if g.GetVrfId() == id {
+			groups = append(groups, fmt.Sprintf("%d/%#x", g.GetGroup(), g.GetTagSet()))
+		}
+	}
+	for k, o := range st {
+		if d := o.GetDevice(); k.Kind == controlpb.Kind_KIND_DEVICE && d.GetGateway() == name && d.GetVrfId() == id && d.GetGroup() != 0 {
+			groups = append(groups, fmt.Sprintf("%d/%#x", d.GetGroup(), d.GetTagSet()))
+		}
+	}
+	slices.Sort(groups)
+	return strings.Join(slices.Compact(groups), " ")
+}
+
+// GroupGenerations returns the group generation of the Node name in each VRF in which its state st gives it its own source
+// group: the one that prev, its state before, gave it there when prev lets it assert the same groups there as st, and
+// next, the Generation that st goes out as, otherwise. prev is nil for a Node that had no state. So the group generation
+// of a Node in a VRF changes with the Generation that changes what it may assert there, and with no other.
+func GroupGenerations(st, prev State, name string, next uint64) map[uint32]uint64 {
+	before := map[uint32]uint64{}
+	for _, g := range prev[Key{controlpb.Kind_KIND_NODE, name}].GetNode().GetGroups() {
+		if g.GetGeneration() != 0 {
+			before[g.GetVrfId()] = g.GetGeneration()
+		}
+	}
+	out := map[uint32]uint64{}
+	for _, g := range st[Key{controlpb.Kind_KIND_NODE, name}].GetNode().GetGroups() {
+		id := g.GetVrfId()
+		out[id] = next
+		if gen, ok := before[id]; ok && asserted(prev, name, id) == asserted(st, name, id) {
+			out[id] = gen
+		}
+	}
+	return out
+}
+
+// WithGroupGenerations puts the group generations gens, by Node and VRF id (GroupGenerations), into the source groups of
+// states: of the NodeConfig of each Node and of each Peer object, 0 where gens has none. The objects that it changes are
+// replaced, never changed, as states share them.
+func WithGroupGenerations(states map[string]State, gens map[string]map[uint32]uint64) {
+	differ := func(groups []*controlpb.SourceGroup, of map[uint32]uint64) bool {
+		return slices.ContainsFunc(groups, func(g *controlpb.SourceGroup) bool { return g.GetGeneration() != of[g.GetVrfId()] })
+	}
+	set := func(groups []*controlpb.SourceGroup, of map[uint32]uint64) {
+		for _, g := range groups {
+			g.Generation = of[g.GetVrfId()]
+		}
+	}
+	for _, st := range states {
+		for k, o := range st {
+			switch k.Kind {
+			case controlpb.Kind_KIND_NODE:
+				if !differ(o.GetNode().GetGroups(), gens[k.Name]) {
+					continue
+				}
+				node, ok := proto.Clone(o.GetNode()).(*controlpb.NodeConfig)
+				if !ok {
+					continue
+				}
+				set(node.Groups, gens[k.Name])
+				st[k] = &controlpb.Object{Kind: &controlpb.Object_Node{Node: node}}
+			case controlpb.Kind_KIND_PEER:
+				if !differ(o.GetPeer().GetGroups(), gens[k.Name]) {
+					continue
+				}
+				p, ok := proto.Clone(o.GetPeer()).(*controlpb.Peer)
+				if !ok {
+					continue
+				}
+				set(p.Groups, gens[k.Name])
+				st[k] = &controlpb.Object{Kind: &controlpb.Object_Peer{Peer: p}}
+			}
+		}
+	}
 }
 
 // SourceGroups puts the source groups of the VRFs of in, with the numbers of numbers (NumberGroups), into

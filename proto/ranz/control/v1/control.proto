@@ -113,9 +113,14 @@
 // group policy extension or in a Geneve option when its VRF is in the tag mode trusted-underlay
 // (Vrf.tag_mode). A node judges the claims of a peer only once its state gives the peer the frame
 // version 1 with its groups: before, as when a peer's Generation went in before the node's own, it
-// ignores them. The node reports the packets that it judged by their source group in its Telemetry
-// (SourceGroupCounters). No schema version changes with them: a node of an older release skips the
-// fields it does not know, reports no Capability tags and gets no record of version 1.
+// ignores them. Each claim names the group generation of its sender in its VRF (SourceGroup.generation),
+// the Generation of the sender's state from which on it may assert what it asserts there: a claim of a
+// group that the peer may not assert is an unknown group only when it names the group generation that
+// the node's state gives the peer; one of another group generation was made on another state, and the
+// node judges its packet by the map of address to group. The node reports the packets that it judged
+// by their source group in its Telemetry (SourceGroupCounters). No schema version changes with them: a
+// node of an older release skips the fields it does not know, reports no Capability tags and gets no
+// record of version 1.
 //
 // Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
 // Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
@@ -508,6 +513,11 @@ message SourceGroup {
   uint32 vrf_id = 1;
   uint32 group = 2;
   uint64 tag_set = 3;
+  // The group generation of the node in the VRF, in its NodeConfig and in its Peer object at every
+  // other node: the Generation of the node's state from which on it may assert the groups that it
+  // may assert there, this one and those of the Devices whose gateway it is. It changes only when
+  // those change. The node names it in each claim that it sends, its 32 low bits on the wire.
+  uint64 generation = 4;
 }
 
 // How a node trusts the source group that a link of kind vxlan or geneve carries (SDN-87 #386), the
@@ -605,7 +615,8 @@ message Peer {
   Vtep vtep = 8;
   // The source group of the peer in each shared VRF (SDN-87 #386), ordered by VRF id, when the node and
   // the peer both report the Capability tags. With the groups of the Devices whose gateway the peer
-  // is, these are the groups that it may assert; a claim of another one is an unknown group.
+  // is, these are the groups that it may assert; a claim of another one that names the group
+  // generation of the peer here is an unknown group.
   repeated SourceGroup groups = 9;
   // The frame version of the data records of the Noise sessions that the node sends the peer (SDN-87
   // #386): 1 when both report the Capability tags, and each record then carries its source group;
@@ -852,8 +863,9 @@ message SourceGroupCounters {
   TagMode mode = 1;
   uint64 carried = 2;  // judged by the source group that they carried
   uint64 missing = 3;  // carried none, judged by the map of address to group
-  // carried one that the node ignores, judged by that map too: in the mode off, or of a peer whose
-  // groups the node does not know yet
+  // carried one that the node ignores, judged by that map too: in the mode off, of a peer whose
+  // groups the node does not know yet, or a claim of a group that the peer may not assert which names
+  // another group generation of the peer than the node's state, as it was made on another state
   uint64 ignored = 4;
   uint64 refused = 5;  // claimed a group that the sending node may not assert: dropped as an unknown group
 }

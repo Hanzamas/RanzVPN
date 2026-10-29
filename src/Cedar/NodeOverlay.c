@@ -588,10 +588,13 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 		// A source behind a group of gateways comes from the gateway of the group that sent it (NodeGateway.c; SDN-19, #195)
 		UINT from = NodeGatewayFrom(v, NodeVrfLookup(vt, src, addr_size), p);
 		UINT to = NodeVrfLookup(vt, dst, addr_size);
+		UINT group = 0;
 
 		// The hub of a VRF of topology hub-and-spoke sends the packet of one spoke on to another (NodeGateway.c), as the data
-		// record of frame version 0, without the source group that it carried (NodeSourceGroup.c; SDN-87, #386)
-		if (from < v->NumHops && v->Hops[from] == p && to != NODE_VRF_LOCAL && NodeGatewayTransit(ov->Node, v, vrf_id, from, to, record, size))
+		// record of frame version 0: it judges the source group that the packet carried first, and its policy judges the
+		// packet by the group that it took (NodeSourceGroup.c; SDN-87, #386)
+		if (from < v->NumHops && v->Hops[from] == p && to != NODE_VRF_LOCAL && NodeSourceGroupTransit(ov->Node, v, vrf_id, from, claim, &group) &&
+		    NodeGatewayTransit(ov->Node, v, vrf_id, from, to, group, record, size))
 			return;
 
 		ok = (from < v->NumHops && v->Hops[from] == p && to == NODE_VRF_LOCAL);

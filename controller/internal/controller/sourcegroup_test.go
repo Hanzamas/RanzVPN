@@ -10,6 +10,7 @@ package controller_test
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -47,6 +48,38 @@ func groupsOf(groups []*controlpb.SourceGroup) string {
 	return strings.Join(parts, ", ")
 }
 
+// generationsOf returns the group generations of the source groups as text, "vrf@generation" each, by commas.
+func generationsOf(groups []*controlpb.SourceGroup) string {
+	var parts []string
+	for _, g := range groups {
+		parts = append(parts, fmt.Sprintf("%d@%d", g.GetVrfId(), g.GetGeneration()))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// generationCase is the group generations that a simulated node holds, as generationsOf gives them: of its NodeConfig
+// when peer is empty, of its Peer object peer otherwise.
+type generationCase struct {
+	node       *sim
+	peer, want string
+}
+
+// checkGenerations checks the group generations of each case.
+func checkGenerations(t *testing.T, when string, cases ...generationCase) {
+	t.Helper()
+	for _, c := range cases {
+		what := "the group generations of " + c.node.name
+		groups := stateObject(c.node, controlpb.Kind_KIND_NODE, c.node.name).GetNode().GetGroups()
+		if c.peer != "" {
+			what = "the group generations of the Peer " + c.peer + " of " + c.node.name
+			groups = stateObject(c.node, controlpb.Kind_KIND_PEER, c.peer).GetPeer().GetGroups()
+		}
+		if got := generationsOf(groups); got != c.want {
+			t.Errorf("%s: %s are %q, want %q", when, what, got, c.want)
+		}
+	}
+}
+
 // stateObject returns the object of kind and name of the state that the simulated node s built, nil for none.
 func stateObject(s *sim, kind controlpb.Kind, name string) *controlpb.Object {
 	_, st := s.State()
@@ -68,7 +101,8 @@ func (h *harness) storedNumbers() desired.GroupNumbers {
 }
 
 // checkGroupState checks that the state that the simulated node s built is the full state that the intent of the
-// controller compiles to for it, with the source groups of the Nodes tagged by the numbers that the store holds.
+// controller compiles to for it, with the source groups of the Nodes tagged by the numbers that the store holds. The
+// group generations come from the Generations that the states had (checkGenerations), so this leaves them out.
 func (h *harness) checkGroupState(s *sim, tagged ...string) {
 	h.t.Helper()
 	rs, err := h.api.Resources(context.Background())
@@ -90,6 +124,8 @@ func (h *harness) checkGroupState(s *sim, tagged ...string) {
 	}
 	desired.SourceGroups(capped, states, h.storedNumbers(), func(node string) bool { return slices.Contains(tagged, node) })
 	gen, got := s.State()
+	got = maps.Clone(got)
+	desired.WithGroupGenerations(map[string]desired.State{s.name: got}, nil)
 	if want := states[s.name]; !desired.Equal(got, want) {
 		h.t.Errorf("%s: the state at generation %d differs from the compiled intent with the source groups of %v:\n--- node\n%s\n--- intent\n%s",
 			s.name, gen, tagged, show(desired.Full(got, gen)), show(desired.Full(want, gen)))
@@ -186,6 +222,11 @@ func TestSourceGroupsReachTheNodes(t *testing.T) {
 	if d := stateObject(lab, controlpb.Kind_KIND_DEVICE, "phone").GetDevice(); d.GetGroup() != 0 || d.GetTagSet() != 0 {
 		t.Errorf("Device phone at lab-1, which does not report the Capability tags, has the group %d and the tag set %#x", d.GetGroup(), d.GetTagSet())
 	}
+	// Each group carries the group generation of its node, which its claims name: the Generation 2 of the Hello that gave
+	// gw-1 and db their groups, at the node and in its Peer object at the other. The Peer db gave gw-1 its Generation 3,
+	// which changed nothing that gw-1 may assert, its group web and the group ops of phone, so its group generation stays.
+	checkGenerations(t, "gw-1 and db report the Capability tags",
+		generationCase{gw, "", "30@2"}, generationCase{db, "", "30@2"}, generationCase{gw, "db", "30@2"}, generationCase{db, "gw-1", "30@2"})
 	for _, s := range []*sim{gw, db, lab} {
 		if mode := stateObject(s, controlpb.Kind_KIND_VRF, "dc").GetVrf().GetTagMode(); mode != controlpb.TagMode_TAG_MODE_TRUSTED_UNDERLAY {
 			t.Errorf("the Vrf dc of %s has the tag mode %v, want trusted-underlay", s.name, mode)
@@ -210,6 +251,10 @@ func TestSourceGroupsReachTheNodes(t *testing.T) {
 	if p := stateObject(gw, controlpb.Kind_KIND_PEER, "lab-1").GetPeer(); groupsOf(p.GetGroups()) != "30 3/0x4" || p.GetFrameVersion() != 1 {
 		t.Errorf("the Peer lab-1 of gw-1, once lab-1 reports the Capability tags, is %v", p)
 	}
+	// lab-1 may assert its group from its Generation 2 on; gw-1 and db, whose Generations went on, still assert what they did
+	checkGenerations(t, "lab-1 reports the Capability tags",
+		generationCase{lab, "", "30@2"}, generationCase{gw, "lab-1", "30@2"}, generationCase{db, "lab-1", "30@2"},
+		generationCase{gw, "", "30@2"}, generationCase{lab, "gw-1", "30@2"}, generationCase{lab, "db", "30@2"})
 
 	// ... and when it stops, the next Generation takes its groups away again
 	lab.halt()
@@ -251,6 +296,12 @@ func TestSourceGroupsReachTheNodes(t *testing.T) {
 // that still holds phone reads as ops. The store keeps the retired numbers: a restart of the controller and of rqlite gives
 // no Node a Generation, and a new Device tablet with the tag admin takes the group ID 4 and the bit 3, never the retired 2
 // and 1. Each state is the compiled intent with the numbers that the store holds.
+//
+// The group generations follow what each node may assert. gw-1, the gateway of phone and then of tablet, may assert other
+// groups from its Generation 4, which deletes phone, and from its Generation 5, which brings tablet: a claim of gw-1 names
+// the group generation 2, 4 or 5, and a node that holds another one for gw-1 ignores the claim of a group that its state
+// does not let gw-1 assert instead of dropping it as an unknown group. db asserts its group db alone from its Generation 2
+// on, whatever goes, so its group generation stays 2.
 func TestSourceGroupNumbersStay(t *testing.T) {
 	const tabletKey = "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
 	h := newHarness(t)
@@ -285,7 +336,13 @@ func TestSourceGroupNumbersStay(t *testing.T) {
 		h.checkGroupState(gw, "gw-1", "db")
 		h.checkGroupState(db, "gw-1", "db")
 	}
+	// The group generations of gw-1 and db, at each and at the other
+	generations := func(when, gwGen, dbGen string) {
+		t.Helper()
+		checkGenerations(t, when, generationCase{gw, "", gwGen}, generationCase{db, "gw-1", gwGen}, generationCase{db, "", dbGen}, generationCase{gw, "db", dbGen})
+	}
 	check("with Device phone")
+	generations("with Device phone", "30@2", "30@2")
 	if d := stateObject(gw, controlpb.Kind_KIND_DEVICE, "phone").GetDevice(); d.GetGroup() != 2 || d.GetTagSet() != 0x2 {
 		t.Errorf("Device phone at gw-1 has the group %d and the tag set %#x, want 2 and 0x2", d.GetGroup(), d.GetTagSet())
 	}
@@ -305,6 +362,7 @@ func TestSourceGroupNumbersStay(t *testing.T) {
 	db.update(t)
 	h.settle(map[string]uint64{"gw-1": 4, "db": 3})
 	check("once Device phone is deleted")
+	generations("once Device phone is deleted", "30@4", "30@2")
 	if o := stateObject(gw, controlpb.Kind_KIND_DEVICE, "phone"); o != nil {
 		t.Errorf("the state of gw-1 still holds Device phone: %v", o)
 	}
@@ -326,6 +384,7 @@ func TestSourceGroupNumbersStay(t *testing.T) {
 	db.start(h)
 	h.settle(map[string]uint64{"gw-1": 4, "db": 3})
 	check("after the restart")
+	generations("after the restart", "30@4", "30@2")
 
 	// A new set of tags and a new tag take the numbers after the largest ones, never the retired ones of [ops] and ops
 	res = h.applyJSON(`{"kind": "Device", "name": "tablet", "spec": {"network": "dc-net", "gateway": "gw-1", "publicKey": "` + tabletKey + `", "tags": ["admin"]}}`)
@@ -336,6 +395,7 @@ func TestSourceGroupNumbersStay(t *testing.T) {
 	db.update(t)
 	h.settle(map[string]uint64{"gw-1": 5, "db": 4})
 	check("with Device tablet")
+	generations("with Device tablet", "30@5", "30@2")
 	for _, s := range []*sim{gw, db} {
 		if d := stateObject(s, controlpb.Kind_KIND_DEVICE, "tablet").GetDevice(); d.GetGroup() != 4 || d.GetTagSet() != 0x8 {
 			t.Errorf("Device tablet at %s has the group %d and the tag set %#x, want 4 and 0x8", s.name, d.GetGroup(), d.GetTagSet())
