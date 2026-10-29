@@ -684,7 +684,7 @@ message Telemetry {
   repeated DeviceCounters devices = 6;
   // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), absent while
   // its peer layer does not run
-  PathCounters paths = 7;
+  PathCounters paths = 9;
 }
 
 // The Paths of the peer agent of a node since the node started (CORE-S5-6, ADR-0015 decision 4):
