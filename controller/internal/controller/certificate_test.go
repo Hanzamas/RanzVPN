@@ -403,6 +403,9 @@ func TestCertificateReplacementReachesPinnedNodes(t *testing.T) {
 	// told is refused at the TLS session, before it sends anything.
 	b1.halt()
 	b1.serve()
+	// The Controller still shows the stream that just ended as connected until it reads its end, so the Hello of the
+	// new stream is what says that the Node is back: waiting for the status alone can count the streams before it
+	certWait(t, "branch-1 to open a new stream", func() bool { return b1.hellos() > hellos["branch-1"] })
 	h.waitConnected("branch-1")
 	if b1.hellos() != hellos["branch-1"]+1 {
 		t.Errorf("branch-1 opened %d streams, want one more than %d", b1.hellos(), hellos["branch-1"])

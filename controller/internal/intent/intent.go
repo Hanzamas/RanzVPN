@@ -118,13 +118,17 @@ type VRF struct {
 	VNI  uint32 `json:"vni,omitempty"`
 	// Topology is the topology of the VRF (SDN-19, topology.go): full-mesh, the default, where every
 	// Node of the VRF is a peer of every other, or hub-and-spoke, where the spokes reach each other
-	// only through the Node Hub, the hub of the VRF.
+	// only through the Node Hub, the hub of the VRF, where the policy of the VRF decides the traffic
+	// between two spokes by its real ends (SDN-19-R2).
 	Topology string `json:"topology,omitempty"`
 	Hub      string `json:"hub,omitempty"`
 	// ECMP spreads the flows to a LAN subnet that several gateways advertise in the VRF over the
 	// healthy ones by the hash of each flow (SDN-19, topology.go). Left out, the first healthy
 	// gateway in name order carries them.
 	ECMP bool `json:"ecmp,omitempty"`
+	// Peering is how the Nodes of the VRF exchange their routes when its link is vxlan or geneve
+	// (SDN-77, peering.go): with the protocol bgp they peer by BGP. Left out, the Controller gives them.
+	Peering Peering `json:"peering,omitzero"`
 }
 
 // Network belongs to one VRF. Its pools are the controller's to allocate from (ADR-0028,
@@ -199,7 +203,8 @@ type Node struct {
 	// Left out, the node can be in no VRF with such a link.
 	VTEP VTEP `json:"vtep,omitzero"`
 	// NonExpiring marks the Node as one whose key never expires (SDN-56, keylife.go): a server or a gateway, which no
-	// user logs in for again. Left out, the key of the Node lives for the key lifetime of its Networks.
+	// user logs in for again. A Node that has an owner is refused the mark: the key of a device of a User lives by the
+	// login of its User (SDN-56-R1). Left out, the key of the Node lives for the key lifetime of its Networks.
 	NonExpiring bool `json:"nonExpiring,omitempty"`
 }
 
@@ -831,6 +836,8 @@ func (in Intent) complete(prev Intent, random io.Reader) []error {
 	in.completeLinks()
 	// The topologies of the VRFs (SDN-19, topology.go)
 	in.completeTopologies()
+	// The BGP peering of the VRFs (peering.go)
+	in.completePeering()
 	return problems
 }
 
@@ -960,6 +967,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateKeyLife()...)
 	// The topologies of the VRFs and the LAN subnets of the gateways (SDN-19, topology.go)
 	problems = append(problems, in.validateTopologies()...)
+	// The BGP peering of the VRFs (peering.go)
+	problems = append(problems, in.validatePeering()...)
 	return append(problems, in.validateIPAM()...)
 }
 

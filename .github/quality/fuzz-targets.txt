@@ -103,6 +103,10 @@ src/Core  ControlCopyProfiles  fuzz_control  via ControlInput
 # ControlCopySecurities, which copies the L2Security of each L2 Network, and the seeds security-*.bin of fuzz_control hold
 # them; no parser word in the name, listed as the reader of the controller's bytes that it is
 src/Core  ControlCopySecurities  fuzz_control  via ControlInput
+# The BGP peering of the standard mode of a state (SDN-77 #357): ControlInput hands the Vrf, NodeConfig and Peer objects of an
+# Update to ControlCopyPeerings, which copies the peering of each, and the seeds peering-*.bin of fuzz_control hold them; no
+# parser word in the name, listed as the reader of the controller's bytes that it is
+src/Core  ControlCopyPeerings  fuzz_control  via ControlInput
 # The live operations of the Controller (SDN-50-N #492): ControlInput hands an Operation that ControlDecode decoded to
 # ControlTakeOperation, which checks its kind, its Network and the sizes of its MAC address and its address before the owner
 # does it, and the seeds operation-*.bin of fuzz_control hold Operations of every kind after a state with L2 and L3 Networks;
@@ -133,6 +137,9 @@ src/Cedar  NodeMirrorCopy  fuzz_mirror
 src/Cedar  NodeProfileOutbound  fuzz_nodeprofile
 src/Cedar  NodeProfileInbound   fuzz_nodeprofile
 src/Cedar  NodeProfileTransit   fuzz_nodeprofile
+# The hub of a VRF of topology hub-and-spoke judges the packets that it sends on from one spoke to another by the policy of the
+# VRF (SDN-19-R2 #508). No parser word in the name, listed with the reason that it is no parser
+src/Cedar  NodePolicyTransit  exempt  hands the packet that a spoke sent, as it came, to PolicyInput (fuzz_policy), which parses it, with the members of its two peers; it reads only the two addresses of the IPv4 or IPv6 header within the size of the packet, to find a WireGuard Device, as NodePolicyInbound does for every packet of a peer
 # The DHCP responder of an L2 Network (SDN-43 #236) reads the frames that the members of the switch of the Network send:
 # the DHCP messages of the clients and of a DHCP server of the LAN, and the ARP requests
 src/Cedar  NodeDhcpInput  fuzz_nodedhcp
@@ -247,8 +254,9 @@ controller/internal/store  OpenWith   exempt  opens the controller's own rqlite 
 # operator copied from the first member of a cluster
 controller/internal/sidecar  ReadCredential  FuzzParseCredential via parseCredential
 
-# The secrets of the export and audit targets that the store keeps sealed to a key of the controller (AUD1-DT-10 #458): the
-# bytes that the store holds in place of a sealed secret, which anyone who can write to the store can choose
+# The secrets of the export and audit targets that the store keeps sealed to a key of the controller (AUD1-DT-10 #458), and
+# the PresharedKeys of the WireGuard Devices (SDN-82 #377): the bytes that the store holds in place of a sealed secret,
+# which anyone who can write to the store can choose
 controller/internal/keys  Sealer.Open  FuzzSealerOpen
 
 # The CA certificate and key files of `ranz cert -signcert` and -signkey (SDN-53 #246): the operator's own files, which

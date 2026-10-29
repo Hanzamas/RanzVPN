@@ -63,6 +63,10 @@
 //	                                           -kind, -actor, -since, -until, -after and -limit (audit.go)
 //	ranz [flags] get devices                   print the WireGuard Devices with the last handshake and the traffic of each
 //	ranz [flags] get device-config NAME        print the WireGuard configuration of the Device NAME, for a stock client
+//	ranz [flags] device create -network N -gateway NODE [flags] NAME
+//	                                           make the WireGuard Device NAME with its keys and print its finished configuration,
+//	                                           which shows its private key and PresharedKey once; -qr draws the QR code (devicecreate.go,
+//	                                           SDN-82)
 //	ranz [flags] delete KIND NAME              delete one resource
 //	ranz [flags] connect vrf A B               leak the routes of the VRFs A and B into each other, as one revision: each
 //	                                           imports a route target that the other exports (SDN-7)
@@ -103,8 +107,9 @@
 //	ranz [flags] ban set [-reason TEXT] USER   ban the user: every device of the user is cut off at once, and none gets in
 //	                                           until the ban is lifted with ban clear
 //	ranz [flags] ban clear USER                lift the ban of the user
-//	ranz [flags] node-key list                 print the key of every Node: its state (valid, expired or pending), when it last
-//	                                           authenticated, when it ends and whether it was approved (SDN-56, operator)
+//	ranz [flags] node-key list [-o json|table] print the key of every Node: its state (valid, expired or pending), when it last
+//	                                           authenticated, when it ends, the days that are left and whether it was approved
+//	                                           (SDN-56, operator)
 //	ranz [flags] node-key approve NODE         approve a Node that its Network holds for approval; its key lives from now
 //	ranz [flags] node-key refresh NODE         give the key of a Node that has no owner another period, as the login of its
 //	                                           user does for a device
@@ -202,6 +207,7 @@ const usage = `usage:
   ranz [flags] get revision ID
   ranz [flags] get audit [-kind KIND] [-actor ACTOR] [-since TIME] [-until TIME] [-after ID] [-limit N] [-o json|table]
   ranz [flags] get device-config NAME
+  ranz [flags] device create -network NETWORK -gateway NODE [-owner USER] [-tags A,B] [-battery-saver] [-public-key KEY] [-no-preshared-key] [-o FILE] [-qr] [-qr-file FILE] NAME
   ranz [flags] delete KIND NAME
   ranz [flags] connect vrf A B
   ranz [flags] export [-o json|yaml]
@@ -227,7 +233,7 @@ const usage = `usage:
   ranz [flags] ban list
   ranz [flags] ban set [-reason TEXT] USER
   ranz [flags] ban clear USER
-  ranz [flags] node-key list
+  ranz [flags] node-key list [-o json|table]
   ranz [flags] node-key approve NODE
   ranz [flags] node-key refresh NODE
   ranz [flags] mac-table [-node NODE] NETWORK
@@ -491,6 +497,9 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 	case args[0] == "token" || args[0] == "tokens":
 		// The API tokens, with their expiry and their last use (tokens.go; AUD1-DT-13)
 		return tokenCommand(ctx, c, args, out)
+	case len(args) >= 2 && args[0] == "device" && args[1] == "create":
+		// A WireGuard Device with its keys (devicecreate.go; SDN-82)
+		return createDevice(ctx, c, args[2:], out, os.Stderr)
 	case args[0] == "user":
 		return userCommand(ctx, c, args[1:], out)
 	case args[0] == "group":

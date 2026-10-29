@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
@@ -78,5 +79,72 @@ func TestNodeKeys(t *testing.T) {
 	}
 	if k := keys[0]; k.Approved || k.ApprovedBy != "" || !k.ApprovedAt.IsZero() || !k.Expires.Equal(retired.Expires) || !k.Refreshed.Equal(at) {
 		t.Errorf("the life of alice-laptop is %+v after it was written without its approval, want %+v", k, retired)
+	}
+}
+
+// The life of a key holds the announcements that the controller made of it (SDN-56-R1), and the Events that were announced are
+// written in the same call as the life that notes them: the marks come back as they were written, a write with no Event adds
+// none, and the Events that earlier writes made stay when a life is written again.
+func TestNodeKeysHoldWhatWasAnnouncedAndWriteTheEventsWithIt(t *testing.T) {
+	rq := rqlitetest.Start(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	st, err := store.Open(ctx, rq.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	key := bytes.Repeat([]byte{7}, 32)
+	at := time.Date(2026, time.October, 29, 9, 10, 11, 456000000, time.UTC)
+	life := store.NodeKey{Key: key, Node: "alice-laptop", Refreshed: at, Expires: at.Add(90 * 24 * time.Hour), Approved: true, ApprovedBy: "system", ApprovedAt: at}
+	if err := st.PutNodeKeys(ctx, []store.NodeKey{life}); err != nil {
+		t.Fatal(err)
+	}
+	if keys, err := st.NodeKeys(ctx); err != nil || len(keys) != 1 || keys[0].Announced != 0 {
+		t.Fatalf("a life that was written with no marks has %+v (%v), want none", keys, err)
+	}
+	if evs, err := st.Events(ctx); err != nil || len(evs) != 0 {
+		t.Fatalf("the store holds the events %+v (%v) after a write with none, want none", evs, err)
+	}
+
+	// The marks and the Event of an announcement are written by one call
+	life.Announced = store.AnnouncedExpiring | store.AnnouncedLast
+	ev := event.Event{Time: at, Type: event.NodeKeyExpiring, Node: "alice-laptop", Subject: "alice", Message: "the key of Node alice-laptop ends soon"}
+	if err := st.PutNodeKeys(ctx, []store.NodeKey{life}, ev); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := st.NodeKeys(ctx)
+	if err != nil || len(keys) != 1 || keys[0].Announced != store.AnnouncedExpiring|store.AnnouncedLast || !bytes.Equal(keys[0].Key, key) {
+		t.Fatalf("the life after the announcement is %+v (%v), want the marks %b", keys, err, store.AnnouncedExpiring|store.AnnouncedLast)
+	}
+	evs, err := st.Events(ctx)
+	if err != nil || len(evs) != 1 || evs[0].ID != 1 || evs[0].Type != event.NodeKeyExpiring || evs[0].Node != "alice-laptop" || evs[0].Subject != "alice" ||
+		evs[0].Message != ev.Message || !evs[0].Time.Equal(at) {
+		t.Fatalf("the events after the announcement are %+v (%v), want the one that was written", evs, err)
+	}
+
+	// A new period takes the marks of the end away and leaves the Event, and the next announcement is a second one
+	life.Announced = 0
+	if err := st.PutNodeKeys(ctx, []store.NodeKey{life}); err != nil {
+		t.Fatal(err)
+	}
+	if keys, err = st.NodeKeys(ctx); err != nil || keys[0].Announced != 0 {
+		t.Errorf("the life after the new period is %+v (%v), want no marks", keys, err)
+	}
+	life.Announced = store.AnnouncedEnded
+	second := event.Event{Time: at.Add(time.Hour), Type: event.NodeKeyEnded, Node: "alice-laptop", Subject: "alice", Message: "the key of Node alice-laptop ended"}
+	if err := st.PutNodeKeys(ctx, []store.NodeKey{life}, second, ev); err != nil {
+		t.Fatal(err)
+	}
+	if evs, err = st.Events(ctx); err != nil || len(evs) != 3 || evs[1].Type != event.NodeKeyEnded || evs[2].Type != event.NodeKeyExpiring || evs[2].ID != 3 {
+		t.Errorf("the events after the second announcement are %+v (%v), want the first, the second and the one that was written with it, in the order they were given", evs, err)
+	}
+	// Events and no life is a write too
+	if err := st.PutNodeKeys(ctx, nil, ev); err != nil {
+		t.Fatal(err)
+	}
+	if evs, err = st.Events(ctx); err != nil || len(evs) != 4 {
+		t.Errorf("the store holds %d events (%v) after a call with an Event and no life, want 4", len(evs), err)
 	}
 }

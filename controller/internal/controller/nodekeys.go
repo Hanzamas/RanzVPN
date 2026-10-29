@@ -13,6 +13,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/audit"
 	"github.com/Hanzamas/RanzVPN/controller/internal/control"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
+	"github.com/Hanzamas/RanzVPN/controller/internal/event"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
@@ -41,7 +42,8 @@ import (
 // valid cannot do: a User that was removed where it comes from, today a User whose account expired, is refused the login,
 // so the devices of that User lose access when their keys end. An operator refreshes the key of a Node that has no User
 // (RefreshNodeKey) and approves a Node that waits (ApproveNode). The controller looks at the lives of the keys every
-// Config.KeyCheck, and again at every change that it commits.
+// Config.KeyCheck, and again at every change that it commits. At each look it also says what comes before it does, with an
+// Event for a Node that waits, for a key that is to end and for a key that ended (keyevents.go; SDN-56-R1).
 
 // DefaultKeyCheck is how often the controller looks for keys that ended, when Config.KeyCheck is 0.
 const DefaultKeyCheck = 10 * time.Second
@@ -94,6 +96,10 @@ type NodeKeyInfo struct {
 	// refreshed it. Expires is when it ends, left out for a Node that is marked nonExpiring.
 	Refreshed time.Time `json:"refreshed,omitzero"`
 	Expires   time.Time `json:"expires,omitzero"`
+	// DaysLeft is how many days a valid key has left, counted up (a key with 3 days and 2 hours left has 4), so that an operator
+	// reads how soon it ends. It is left out for a key that has no end, for a key that ended and for the key of a Node that
+	// waits, whose life begins when it is approved.
+	DaysLeft int `json:"daysLeft,omitempty"`
 	// Approved says that the Node was admitted: no Network held it for approval, or an operator approved it.
 	Approved   bool      `json:"approved"`
 	ApprovedBy string    `json:"approvedBy,omitempty"`
@@ -280,9 +286,9 @@ func (c *Controller) refuseKey(conn *control.Conn, name, message string, remote 
 	writeRefuse(conn, refusal(controlpb.RefuseReason_REFUSE_REASON_UNKNOWN_NODE, "%s", message))
 }
 
-// sameKeyLife reports whether a and b are the life of the same Node in the same state.
+// sameKeyLife reports whether a and b are the life of the same Node in the same state, with the same announcements.
 func sameKeyLife(a, b store.NodeKey) bool {
-	return a.Node == b.Node && a.Approved == b.Approved && a.ApprovedBy == b.ApprovedBy &&
+	return a.Node == b.Node && a.Approved == b.Approved && a.ApprovedBy == b.ApprovedBy && a.Announced == b.Announced &&
 		a.Refreshed.Equal(b.Refreshed) && a.Expires.Equal(b.Expires) && a.ApprovedAt.Equal(b.ApprovedAt)
 }
 
@@ -291,13 +297,16 @@ func sameKeyLife(a, b store.NodeKey) bool {
 // Node that no Network holds for approval any more is admitted. A Node marked nonExpiring has a key that does not end, and
 // one that is not marked has one that does, from now when it had none. The life of a key that no Node resource holds any
 // more is kept as its tombstone: a Node that holds the key again finds when the key ends, so a key that ended stays ended
-// until a re-authentication, and finds no approval, so a Network that holds new Nodes for approval holds it. A write that
-// fails is logged and made again at the next look; nothing changes in memory until the store has it, so a Node whose life
-// is not stored stays as the intent says (a Node that its Network holds waits). c.mu is held.
+// until a re-authentication, and finds no approval, so a Network that holds new Nodes for approval holds it. The look also
+// announces what the lives call for (announce, keyevents.go): the Events and the marks that they were raised go to the store
+// with the lives, in one transaction. A write that fails is logged and made again at the next look; nothing changes in memory
+// until the store has it, so a Node whose life is not stored stays as the intent says (a Node that its Network holds waits),
+// and no Event is raised for a mark that was not stored. c.mu is held.
 func (c *Controller) syncKeys(ctx context.Context) {
 	now := c.keyNow()
 	in := c.intent
 	var put []store.NodeKey
+	var events []event.Event
 	current := make(map[string]bool, len(in.Nodes))
 	for _, name := range slices.Sorted(maps.Keys(in.Nodes)) {
 		n := in.Nodes[name]
@@ -310,7 +319,8 @@ func (c *Controller) syncKeys(ctx context.Context) {
 			next = store.NodeKey{Key: k, Refreshed: now}
 		}
 		next.Node = name
-		if _, waits := in.ApprovalNeeded(name); !next.Approved && !waits {
+		holder, waits := in.ApprovalNeeded(name)
+		if !next.Approved && !waits {
 			next.Approved, next.ApprovedBy, next.ApprovedAt = true, audit.ActorSystem, now
 		}
 		switch {
@@ -318,6 +328,11 @@ func (c *Controller) syncKeys(ctx context.Context) {
 			next.Expires = time.Time{}
 		case next.Expires.IsZero():
 			next.Expires = now.Add(in.KeyLifetime(name))
+		}
+		if len(events) < maxAnnouncements {
+			var announcements []event.Event
+			next, announcements = announce(name, n, next, holder, now)
+			events = append(events, announcements...)
 		}
 		if !recorded || !sameKeyLife(rec, next) {
 			put = append(put, next)
@@ -331,19 +346,23 @@ func (c *Controller) syncKeys(ctx context.Context) {
 	if len(put) == 0 {
 		return
 	}
-	if err := c.store.PutNodeKeys(ctx, put); err != nil {
+	if err := c.store.PutNodeKeys(ctx, put, events...); err != nil {
 		c.log.Warn("storing the lives of the node keys, which the next look tries again", "err", err)
 		return
 	}
 	for _, k := range put {
 		c.keyLife.life[string(k.Key)] = k
 	}
+	c.announced(ctx, events)
 }
 
 // tombstone returns the life rec of a key that no Node resource holds any more as the store keeps it: with when the key
-// last authenticated and when it ends, and without the approval, which was the approval of the Node that held it.
+// last authenticated, when it ends and what was announced of its end, and without the approval, which was the approval of the
+// Node that held it, and without the announcement that the Node waited for it, which a Node that holds the key again and waits
+// again is announced for.
 func tombstone(rec store.NodeKey) store.NodeKey {
 	rec.Approved, rec.ApprovedBy, rec.ApprovedAt = false, "", time.Time{}
+	rec.Announced &^= store.AnnouncedWaiting
 	return rec
 }
 
@@ -375,7 +394,8 @@ func (c *Controller) putKeyLife(ctx context.Context, k store.NodeKey) error {
 
 // renewKey gives the key of the Node name a new life: it lives for the key lifetime of the Networks of the Node from now,
 // or has no end when the Node is marked nonExpiring. A Node that was held back for the end of its key is admitted again,
-// and the other Nodes get it as a Peer again. c.mu is held, and the intent holds the Node.
+// and the other Nodes get it as a Peer again. The end of the new period is announced again, so the marks of the end of the
+// last one go. c.mu is held, and the intent holds the Node.
 func (c *Controller) renewKey(ctx context.Context, name string) error {
 	n := c.intent.Nodes[name]
 	// Apply validated the key
@@ -390,6 +410,7 @@ func (c *Controller) renewKey(ctx context.Context, name string) error {
 	if !n.NonExpiring {
 		rec.Expires = now.Add(c.intent.KeyLifetime(name))
 	}
+	rec.Announced &^= store.AnnouncedLife
 	if err := c.putKeyLife(ctx, rec); err != nil {
 		return err
 	}
@@ -443,6 +464,9 @@ func (c *Controller) keyInfo(name string, now time.Time) NodeKeyInfo {
 	}
 	if h, held := holdOf(c.intent, name, n, rec, recorded, now); held {
 		info.State, info.Network = h.reason, h.network
+	}
+	if info.State == KeyValid && !n.NonExpiring && !info.Expires.IsZero() {
+		info.DaysLeft = daysIn(info.Expires.Sub(now))
 	}
 	return info
 }
@@ -508,6 +532,8 @@ func (c *Controller) approveNode(ctx context.Context, name string) (NodeKeyInfo,
 	if !n.NonExpiring {
 		rec.Expires = now.Add(c.intent.KeyLifetime(name))
 	}
+	// The Node does not wait any more, and the end of its first period is yet to be announced
+	rec.Announced = 0
 	if err := c.putKeyLife(ctx, rec); err != nil {
 		return NodeKeyInfo{}, err
 	}

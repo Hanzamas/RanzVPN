@@ -80,7 +80,8 @@ func TestExplainCommand(t *testing.T) {
 	}{
 		{[]string{"nowhere", "node-r"}, 1, `"nowhere" is no Node, Device or IP address (404 Not Found)`},
 		{[]string{"-vrf", "red", "node-s", "node-r"}, 1, `Node "node-s" is not a member of VRF "red" (400 Bad Request)`},
-		{[]string{"node-s"}, 2, "usage: ranz explain"},
+		{[]string{}, 2, "usage: ranz explain"},
+		{[]string{"node-s", "node-r", "node-b"}, 2, "usage: ranz explain"},
 		{[]string{"-port", "70000", "node-s", "node-r"}, 2, "usage: ranz explain"},
 		{[]string{"-o", "xml", "node-s", "node-r"}, 2, "usage: ranz explain"},
 		{[]string{"-no-such-flag", "node-s", "node-r"}, 2, "flag provided but not defined"},

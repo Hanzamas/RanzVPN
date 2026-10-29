@@ -21,6 +21,10 @@ import (
 // provider, and the member that leads next could not open what the member before it sealed. A member
 // of a cluster, which is a Controller with -rqlite-join, keeps the secrets as they are put, in clear,
 // and says so in the log at each start.
+//
+// The store's Sealer also seals the PresharedKeys of the WireGuard Devices (SDN-82, #377), which the
+// controller reads from it (store.Sealer). A PresharedKey is never kept in clear, so a member of a
+// cluster, which has no Sealer, makes no Device with one: the administrator makes the Device without.
 func sealTargets(ctx context.Context, cfg config, st *store.Store, log *slog.Logger) error {
 	lost := func(table, name string) {
 		log.Warn("the secret of a target cannot be opened with the sealing key of this host, so the target is sent without it until it is put again",
@@ -28,7 +32,7 @@ func sealTargets(ctx context.Context, cfg config, st *store.Store, log *slog.Log
 	}
 	if len(cfg.join) > 0 {
 		st.SetSealer(nil, lost)
-		log.Warn("the secrets of the export and audit targets are kept in clear: the members of a cluster have no sealing key in common (ADR-0026)")
+		log.Warn("the secrets of the export and audit targets are kept in clear, and no Device is made with a PresharedKey: the members of a cluster have no sealing key in common (ADR-0026)")
 		return nil
 	}
 	sealer, err := keys.LoadSealer(cfg.dataDir)
