@@ -8,15 +8,27 @@ import (
 )
 
 // The PresharedKeys of the WireGuard Devices (SDN-82, #377): one row for each Device that has one, with
-// the name of the Device and the key sealed, never in clear. The controller seals it with AES-256-GCM
-// under a key that it derives from its own static key (internal/controller, devicekeys.go), so the
-// store alone, a backup of it or a copy of its disk does not give a PresharedKey. The keys are not part
-// of the intent, so that nobody who reads the intent, an export of it or a revision holds one, and a
-// rollback or an import never changes one; a store backup holds them, sealed. The controller deletes the
-// row of a Device that a change of the intent removes. The private key of a Device has no row: the
-// controller never keeps it.
+// the name of the Device and the key sealed, never in clear. The controller seals it as the store seals
+// the secrets of its targets (sealed.go): to the Sealing key of the Sealer of SetSealer, under the label
+// device_keys:NAME, so the store alone, a backup of it or a copy of its disk does not give a
+// PresharedKey, and a sealed key that is copied to the row of another Device does not open there
+// (internal/controller, devicekeys.go). The keys are not part of the intent, so that nobody who reads the
+// intent, an export of it or a revision holds one, and a rollback or an import never changes one; a store
+// backup holds them, sealed. The controller deletes the row of a Device that a change of the intent
+// removes. The private key of a Device has no row: the controller never keeps it.
 func init() {
 	RegisterSchema("device_keys", `CREATE TABLE IF NOT EXISTS device_keys (name TEXT NOT NULL PRIMARY KEY, sealed TEXT NOT NULL)`)
+}
+
+// Sealer returns the Sealer that SetSealer gave the store, which the controller seals the PresharedKeys
+// of the Devices with, nil when the store has none: a member of a cluster, whose members have no sealing
+// key in common (ADR-0026), or a store that SetSealer was not called on. The stores that Fenced makes
+// share it.
+func (s *Store) Sealer() Sealer {
+	if s.seal == nil {
+		return nil
+	}
+	return s.seal.sealer
 }
 
 // DeviceKeys returns the sealed PresharedKey of every Device that has one, as base64, by Device name.

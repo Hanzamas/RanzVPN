@@ -428,6 +428,12 @@ func newHarness(t *testing.T) *harness {
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
 	}
+	// The sealing key of the host, which seals the PresharedKey of a Device that a page makes (SDN-82)
+	sealing, err := keys.GenerateSoft()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetSealer(keys.NewSealer(sealing), nil)
 	c, err := controller.New(ctx, controller.Config{Store: st, Key: h.key})
 	if err != nil {
 		t.Fatal(err)

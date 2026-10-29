@@ -5,7 +5,6 @@
 package keys
 
 import (
-	"bytes"
 	"crypto"
 	"crypto/ecdh"
 	"crypto/ecdsa"
@@ -22,7 +21,6 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"slices"
 	"strings"
 	"time"
 )
@@ -75,22 +73,6 @@ func (k *Soft) DH(peer []byte) ([]byte, error) {
 		return nil, fmt.Errorf("keys: the peer key: %w", err)
 	}
 	return k.priv.ECDH(pub)
-}
-
-// normalizeU returns the 32 bytes u as the u-coordinate that RFC 7748 section 5 decodes from them: bit 255
-// masked, and a value from p = 2^255 - 19 up to 2^255 - 1 reduced by p. crypto/ecdh decodes every u so, and
-// a key storage provider that is given the blob of a peer key takes only that form (its C twin is
-// CryptoX25519NormalizeU), so the provider and crypto/ecdh agree on the point that u names.
-func normalizeU(u []byte) []byte {
-	n := bytes.Clone(u)
-	n[31] &= 0x7f
-	// p is 0xed, 30 bytes of 0xff and 0x7f, little endian: the values from p up are the low byte 0xed to 0xff
-	// after those
-	if n[31] == 0x7f && n[0] >= 0xed && !slices.ContainsFunc(n[1:31], func(b byte) bool { return b != 0xff }) {
-		n[0] -= 0xed
-		clear(n[1:])
-	}
-	return n
 }
 
 // LoadSoft returns the static key in the file path, and creates the file with a new key if it

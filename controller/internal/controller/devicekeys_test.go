@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -42,6 +43,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/nodesim"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
+	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
 // logBuffer is the log of a controller that a test reads while the controller still writes it.
@@ -63,13 +65,19 @@ func (l *logBuffer) String() string {
 }
 
 // newKeysHarness returns a harness whose controller says everything that it says, at the debug level, to
-// logs as well as to the test log, so that a test can look for a secret in it. A test that needs another
-// static key sets h.key before h.start, and one that needs a key of another kind sets h.tune again.
+// logs as well as to the test log, so that a test can look for a secret in it, and whose store seals with
+// a sealing key of its own, as the one of the host does (store.SetSealer). A test that needs another
+// sealing key, or none, sets h.sealer before h.start, and one that needs a setting of another kind sets
+// h.tune again.
 func newKeysHarness(t *testing.T, logs io.Writer) *harness {
 	t.Helper()
 	h := &harness{t: t, rq: rqlitetest.Start(t)}
 	h.tune = loggingTo(t, logs)
-	var err error
+	sealing, err := keys.GenerateSoft()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.sealer = keys.NewSealer(sealing)
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
 	}
@@ -376,11 +384,12 @@ func TestDeviceKeysAreFoundNowhere(t *testing.T) {
 }
 
 // TestPresharedKeyIsSealedAtRest is the first half of the second criterion of SDN-82 (#377): the
-// PresharedKey of a Device is in the store sealed, a sealed key that opens under the static key of the
-// controller to the PresharedKey that the configuration carries, and the controller still gives it to the
-// gateway of the Device after a restart of the gateway and of the controller. A controller whose static key
-// is another opens none of the sealed keys, says so in its log, and sends the Device without it, so that no
-// copy of the store gives a PresharedKey to a controller that has not the key.
+// PresharedKey of a Device is in the store sealed, as the secret of a target is: a sealed key that opens
+// under the sealing key of the controller, for its Device, to the PresharedKey that the configuration
+// carries, and the controller still gives it to the gateway of the Device after a restart of the gateway
+// and of the controller. A controller whose sealing key is another, as that of a host that a backup of the
+// store was restored on is, opens none of the sealed keys, says so in its log, and sends the Device without
+// it, so that no copy of the store gives a PresharedKey to a controller that has not the key.
 func TestPresharedKeyIsSealedAtRest(t *testing.T) {
 	logs := &logBuffer{}
 	h := newKeysHarness(t, logs)
@@ -390,7 +399,7 @@ func TestPresharedKeyIsSealedAtRest(t *testing.T) {
 	h.waitNode("gw", 2, true)
 	h.waitNode("host", 2, true)
 
-	// The row of the store is the sealed key, which opens only under the static key of the controller, for the Device
+	// The row of the store is the sealed key, which opens only under the sealing key of the controller, for the Device
 	rows, err := h.st.DeviceKeys(ctx)
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("the PresharedKeys in the store are %v, %v, want the one of phone", rows, err)
@@ -402,23 +411,18 @@ func TestPresharedKeyIsSealedAtRest(t *testing.T) {
 	if found := holds(blob, psk); len(found) > 0 || bytes.Contains([]byte(rows["phone"]), []byte(base64.StdEncoding.EncodeToString(psk))) {
 		t.Errorf("the row of the store holds the PresharedKey in clear: %v", found)
 	}
-	sealer, err := devicekey.NewSealer(h.key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := sealer.Open("phone", blob); err != nil || !bytes.Equal(got, psk) {
+	if got, err := h.sealer.Open("device_keys:phone", blob); err != nil || !bytes.Equal(got, psk) {
 		t.Errorf("the sealed key of the store opens to %x, %v, want the PresharedKey %x of the configuration", got, err, psk)
+	}
+	if _, err := h.sealer.Open("device_keys:laptop", blob); !errors.Is(err, keys.ErrNotSealed) {
+		t.Errorf("the sealed key of phone opens as the key of laptop, or says %v", err)
 	}
 	other, err := keys.GenerateSoft()
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherSealer, err := devicekey.NewSealer(other)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := otherSealer.Open("phone", blob); err == nil {
-		t.Error("the sealed key of the store opens under another static key")
+	if _, err := keys.NewSealer(other).Open("device_keys:phone", blob); !errors.Is(err, keys.ErrNotSealed) {
+		t.Errorf("the sealed key of the store opens under another sealing key, or says %v", err)
 	}
 
 	// The gateway terminates the Device with the PresharedKey, and no other node holds it or the key of the Device
@@ -448,7 +452,7 @@ func TestPresharedKeyIsSealedAtRest(t *testing.T) {
 	gw2.start(h)
 	check("after the restart of gw", waitDevice(t, gw2, "phone"), "gw", psk)
 
-	// The controller starts again with its store, which restarts too: the same static key opens the key that it
+	// The controller starts again with its store, which restarts too: the same sealing key opens the key that it
 	// sealed, for a gateway that starts with nothing
 	h.stop()
 	h.rq.Stop()
@@ -465,56 +469,40 @@ func TestPresharedKeyIsSealedAtRest(t *testing.T) {
 		t.Errorf("after a restart the controller lists Device phone as %+v, want one that has a PresharedKey", d)
 	}
 
-	// A controller with another static key, on the same store: it cannot open the key, says so, and the gateway
-	// terminates the Device without it. The nodes know the key of the controller that they trust, so the
-	// gateway that connects is a new one that trusts the new key.
+	// A controller with another sealing key, on the same store, as one on a host that a backup of the store was
+	// restored on has: it cannot open the key, says so, and the gateway terminates the Device without it
 	h.stop()
 	gw3.halt()
-	h.key = other
+	h.sealer = keys.NewSealer(other)
 	h.start()
 	gw4 := h.newSim("gw", keyBranch1)
 	gw4.Capabilities = capsWireGuard
 	gw4.start(h)
 	d := waitDevice(t, gw4, "phone")
-	check("under another static key", d, "gw", nil)
+	check("under another sealing key", d, "gw", nil)
 	if len(d.GetPublicKey()) != intent.KeySize {
-		t.Errorf("the gateway under another static key holds Device phone as %v, want one with its public key and no PresharedKey", d)
+		t.Errorf("the gateway under another sealing key holds Device phone as %v, want one with its public key and no PresharedKey", d)
 	}
-	if log := logs.String(); !strings.Contains(log, "the PresharedKey of a Device is not sent: it does not open") || !strings.Contains(log, "device=phone") {
+	if log := logs.String(); !strings.Contains(log, "the PresharedKey of a Device is not sent: it does not open with the sealing key of this host") || !strings.Contains(log, "device=phone") {
 		t.Errorf("the log of a controller that cannot open the sealed key does not say so:\n%s", log)
 	}
 }
 
-// lockedKey is the static key of a controller whose key storage provider refuses the first
-// Diffie-Hellman that it is asked for, which is the one that derives the key that seals the PresharedKeys,
-// and answers every other.
-type lockedKey struct {
-	*keys.Soft
-	mu   sync.Mutex
-	done bool
-}
+// errLocked is what a key storage provider that is locked answers to the Diffie-Hellman of a sealing key.
+var errLocked = errors.New("the provider is locked")
 
-func (k *lockedKey) DH(peer []byte) ([]byte, error) {
-	k.mu.Lock()
-	first := !k.done
-	k.done = true
-	k.mu.Unlock()
-	if first {
-		return nil, errLocked
-	}
-	return k.Soft.DH(peer)
-}
+// lockedSealer is the Sealer of a controller whose key storage provider is locked: sealing takes the public
+// half of the sealing key alone and works, and opening asks the provider for a Diffie-Hellman, which it
+// refuses.
+type lockedSealer struct{ store.Sealer }
 
-type lockedError struct{}
+func (lockedSealer) Open(string, []byte) ([]byte, error) { return nil, errLocked }
 
-func (lockedError) Error() string { return "the provider is locked" }
-
-var errLocked error = lockedError{}
-
-// TestDeviceWithoutASealingKey: a controller whose static key gives no key to seal with, as a key storage
-// provider that is locked does not, says so in its log, makes no Device that has a PresharedKey, and makes
-// one that has none when the administrator asks for that; the sealed keys of a store that it opens it
-// cannot open, so it sends their Devices without.
+// TestDeviceWithoutASealingKey: a controller that has no sealing key to seal with, as a member of a cluster
+// has none (ADR-0026), says so in its log, makes no Device that has a PresharedKey, and makes one that has
+// none when the administrator asks for that; the sealed keys of a store that it cannot open it sends its
+// Devices without. A controller whose key storage provider is locked seals what it cannot open, and does not
+// make a Device with a key that no gateway could be given.
 func TestDeviceWithoutASealingKey(t *testing.T) {
 	logs := &logBuffer{}
 	h := newKeysHarness(t, logs)
@@ -528,18 +516,15 @@ func TestDeviceWithoutASealingKey(t *testing.T) {
 	gw.halt()
 	host.halt()
 
-	// The key storage provider refuses the first Diffie-Hellman, which the controller does at its start
-	locked := &lockedKey{Soft: h.key}
-	h.tune = func(c *controller.Config) {
-		loggingTo(t, logs)(c)
-		c.Key = locked
-	}
+	// A controller with no sealing key, on the store of the first one
+	sealing := h.sealer
+	h.sealer = nil
 	h.start()
-	if log := logs.String(); !strings.Contains(log, "the controller cannot seal the PresharedKeys of the Devices, and opens none") || !strings.Contains(log, "the provider is locked") {
+	if log := logs.String(); !strings.Contains(log, "the controller has no sealing key, so it cannot open the PresharedKeys of the Devices that its store holds") {
 		t.Errorf("the log of a controller without a sealing key does not say so:\n%s", log)
 	}
 	_, err := h.api.CreateDevice(ctx, controller.DeviceRequest{Name: "laptop", Network: "lab-net", Gateway: "gw"})
-	if httpStatus(err) != http.StatusInternalServerError || err == nil || !strings.Contains(err.Error(), "cannot seal the PresharedKey of a Device") {
+	if httpStatus(err) != http.StatusInternalServerError || err == nil || !strings.Contains(err.Error(), "cannot seal the PresharedKey of a Device") || !strings.Contains(err.Error(), "cluster") {
 		t.Errorf("a Device with a PresharedKey, made by a controller that cannot seal one, gave %v, want an error that says so", err)
 	}
 	if rows, err := h.st.DeviceKeys(ctx); err != nil || len(rows) != 1 {
@@ -558,8 +543,27 @@ func TestDeviceWithoutASealingKey(t *testing.T) {
 	if d := waitDevice(t, gw2, "phone"); len(d.GetPresharedKey()) != 0 || len(d.GetPublicKey()) != intent.KeySize {
 		t.Errorf("the gateway holds Device phone as %v, want one with its public key and without the PresharedKey that the controller could not open", d)
 	}
-	if log := logs.String(); !strings.Contains(log, "the PresharedKey of a Device is not sent: the controller cannot open it") {
+	if log := logs.String(); !strings.Contains(log, "the PresharedKey of a Device is not sent: the controller cannot open it, since it has no sealing key") {
 		t.Errorf("the log of a controller that cannot open the sealed keys does not say so:\n%s", log)
+	}
+
+	// A controller whose provider is locked: it seals, finds that it cannot open what it sealed, and makes
+	// nothing of the Device
+	h.stop()
+	gw2.halt()
+	h.sealer = lockedSealer{sealing}
+	h.start()
+	before := h.resources()
+	_, err = h.api.CreateDevice(ctx, controller.DeviceRequest{Name: "tablet", Network: "lab-net", Gateway: "gw"})
+	if httpStatus(err) != http.StatusInternalServerError || err == nil || !strings.Contains(err.Error(), `cannot open the PresharedKey of Device "tablet" that it sealed`) ||
+		!strings.Contains(err.Error(), "the provider is locked") {
+		t.Errorf("a Device made by a controller whose provider is locked gave %v, want an error that says that its sealing key does not answer", err)
+	}
+	if after := h.resources(); after != before {
+		t.Errorf("the refusal changed the intent:\n--- after\n%s\n--- before\n%s", after, before)
+	}
+	if rows, err := h.st.DeviceKeys(ctx); err != nil || len(rows) != 1 || rows["tablet"] != "" {
+		t.Errorf("the PresharedKeys in the store after the refusal are %v, %v, want the one of phone and none of tablet", rows, err)
 	}
 }
 

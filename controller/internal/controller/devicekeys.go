@@ -1,8 +1,8 @@
 package controller
 
 import (
+	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -18,6 +18,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/devicekey"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
 // The keys of the WireGuard Devices (SDN-82 #377, spec #374). An administrator makes a Device without
@@ -31,14 +32,16 @@ import (
 //     resource, revision or export of the intent, no state of a node, no log, no audit record and no
 //     diagnostics bundle (the tests plant one and look for it in each).
 //   - The PresharedKey is the only protection of a recorded WireGuard session against a future quantum
-//     computer, and the gateway needs it to terminate the Device. So the controller keeps it, sealed:
-//     AES-256-GCM under a key that comes from its own static key, which sits in the key storage
-//     provider on Windows (devicekey.Sealer), so the store, a backup of it or a copy of the disk does not
-//     give one. The sealed key is in the table device_keys, not in the intent, and in the states of the
-//     gateways as they are stored and compared. The control stream carries it in clear to the gateway
-//     alone (openDeviceKeys), which hands it to WireGuardNT. A controller of a cluster that has another
-//     static key cannot open the keys that a member sealed, which the log says (openDeviceKeys): the
-//     Device is then made again.
+//     computer, and the gateway needs it to terminate the Device. So the controller keeps it sealed, as it
+//     keeps the secrets of its targets (AUD1-DT-10, ADR-0026): to the Sealing key of its store
+//     (store.Sealer), a key of the key storage provider on Windows that never leaves it, under the label
+//     device_keys:NAME. The store, a backup of it or a copy of the disk does not give one. The sealed key
+//     is in the table device_keys, not in the intent, and in the states of the gateways as they are
+//     stored and compared. The control stream carries it in clear to the gateway alone (openDeviceKeys),
+//     which hands it to WireGuardNT. The members of a cluster have no Sealing key in common, so a member
+//     seals none and makes a Device without a PresharedKey when it is asked to (CreateDevice). A key that
+//     the Sealing key does not open, as one that a backup of another host holds does not, is left out
+//     of the state of the gateway and the log says so (openDeviceKeys): the Device is then made again.
 //   - Both are shown once. The configuration that GET /api/v1/devices/{name}/config renders later has
 //     no private key and no PresharedKey, and says where each goes.
 //
@@ -104,12 +107,20 @@ type deviceKeys struct {
 	// create serializes CreateDevice, so that the undoing of one creation never takes the PresharedKey
 	// that another one just stored.
 	create sync.Mutex
-	// sealer seals and opens the PresharedKeys; nil when the static key of the controller gave no key
-	// to seal with (the log says why), so that no Device can be given one.
-	sealer *devicekey.Sealer
+	// sealer seals and opens the PresharedKeys: the Sealer of the store, the one that seals the secrets of
+	// the targets. It is nil for a member of a cluster, which has no sealing key, so that no Device can
+	// be given a PresharedKey there.
+	sealer store.Sealer
 	// sealed holds the sealed PresharedKey of each Device that has one, by Device name: what the store
 	// holds, decoded. Guarded by Controller.mu.
 	sealed map[string][]byte
+}
+
+// deviceKeyLabel is the label that the sealed PresharedKey of the Device name carries, as the label of a
+// secret of a target names its table and its name (store.Sealer): a sealed key that is moved to the row
+// of another Device does not open there.
+func deviceKeyLabel(name string) string {
+	return "device_keys:" + name
 }
 
 // gatewayKey returns the public key of the WireGuard interface that the Node gateway reported with the
@@ -168,7 +179,7 @@ func (c *Controller) CreateDevice(ctx context.Context, req DeviceRequest) (Devic
 	var psk, sealed []byte
 	if !req.NoPresharedKey {
 		if c.dkeys.sealer == nil {
-			return DeviceCreated{}, errors.New("the controller cannot seal the PresharedKey of a Device, since its static key gave no key to seal with, as its log says: make the Device without a PresharedKey, or fix the key")
+			return DeviceCreated{}, errors.New("the controller cannot seal the PresharedKey of a Device, since it has no sealing key: the members of a cluster have none in common (ADR-0026), so make the Device without a PresharedKey")
 		}
 		psk = make([]byte, intent.KeySize)
 		defer clear(psk)
@@ -176,9 +187,8 @@ func (c *Controller) CreateDevice(ctx context.Context, req DeviceRequest) (Devic
 			return DeviceCreated{}, fmt.Errorf("making the PresharedKey of Device %q: %w", req.Name, err)
 		}
 		var err error
-		// The nonce comes from crypto/rand whatever source the keys come from: a nonce never repeats under one key
-		if sealed, err = c.dkeys.sealer.Seal(req.Name, psk, rand.Reader); err != nil {
-			return DeviceCreated{}, fmt.Errorf("sealing the PresharedKey of Device %q: %w", req.Name, err)
+		if sealed, err = c.sealPresharedKey(req.Name, psk); err != nil {
+			return DeviceCreated{}, err
 		}
 	}
 
@@ -221,16 +231,31 @@ func (c *Controller) CreateDevice(ctx context.Context, req DeviceRequest) (Devic
 		KeyMade: private != nil, PresharedKey: psk != nil, Config: config, QR: rows}, nil
 }
 
-// loadDeviceKeys derives the key that seals the PresharedKeys and loads the sealed ones that the store
-// holds, which the first compile puts into the states of their gateways. A row of a Device that in does
-// not hold is dropped. New calls it before it compiles.
+// sealPresharedKey seals the PresharedKey psk of the Device name with the sealing key of the store and
+// opens it again. Sealing takes the public half of the sealing key alone, so a key storage provider that is
+// locked seals what it cannot open: the key that no gateway could be given is found now, and the Device is
+// not made with it.
+func (c *Controller) sealPresharedKey(name string, psk []byte) ([]byte, error) {
+	label := deviceKeyLabel(name)
+	sealed, err := c.dkeys.sealer.Seal(label, psk)
+	if err != nil {
+		return nil, fmt.Errorf("sealing the PresharedKey of Device %q: %w", name, err)
+	}
+	back, err := c.dkeys.sealer.Open(label, sealed)
+	opens := err == nil && bytes.Equal(back, psk)
+	clear(back)
+	if !opens {
+		return nil, fmt.Errorf("the controller cannot open the PresharedKey of Device %q that it sealed, so its gateway could not be given it: its sealing key does not answer (%v): make the Device without a PresharedKey, or fix the key", name, err)
+	}
+	return sealed, nil
+}
+
+// loadDeviceKeys takes the Sealer of the store, which seals and opens the PresharedKeys, and loads the sealed
+// ones that the store holds, which the first compile puts into the states of their gateways. A row of a
+// Device that in does not hold is dropped. New calls it before it compiles.
 func (c *Controller) loadDeviceKeys(ctx context.Context, in intent.Intent) error {
 	c.dkeys.sealed = map[string][]byte{}
-	sealer, err := devicekey.NewSealer(c.key)
-	if err != nil {
-		c.log.Error("the controller cannot seal the PresharedKeys of the Devices, and opens none", "err", err)
-	}
-	c.dkeys.sealer = sealer
+	c.dkeys.sealer = c.store.Sealer()
 	rows, err := c.store.DeviceKeys(ctx)
 	if err != nil {
 		return err
@@ -249,6 +274,9 @@ func (c *Controller) loadDeviceKeys(ctx context.Context, in intent.Intent) error
 		if err := c.store.DeleteDeviceKeys(ctx, gone); err != nil {
 			c.log.Warn("deleting the PresharedKeys of Devices that the intent does not hold", "devices", gone, "err", err)
 		}
+	}
+	if c.dkeys.sealer == nil && len(c.dkeys.sealed) > 0 {
+		c.log.Warn("the controller has no sealing key, so it cannot open the PresharedKeys of the Devices that its store holds, and their gateways get these Devices without them", "devices", len(c.dkeys.sealed))
 	}
 	return nil
 }
@@ -333,9 +361,9 @@ func (c *Controller) openDeviceKeys(u *controlpb.Update) *controlpb.Update {
 		}
 		clone.PresharedKey = nil
 		if c.dkeys.sealer == nil {
-			c.log.Error("the PresharedKey of a Device is not sent: the controller cannot open it, since its static key gave no key to open it with", "device", d.GetName())
-		} else if psk, err := c.dkeys.sealer.Open(d.GetName(), d.GetPresharedKey()); err != nil {
-			c.log.Error("the PresharedKey of a Device is not sent: it does not open", "device", d.GetName(), "err", err)
+			c.log.Error("the PresharedKey of a Device is not sent: the controller cannot open it, since it has no sealing key", "device", d.GetName())
+		} else if psk, err := c.dkeys.sealer.Open(deviceKeyLabel(d.GetName()), d.GetPresharedKey()); err != nil {
+			c.log.Error("the PresharedKey of a Device is not sent: it does not open with the sealing key of this host", "device", d.GetName(), "err", err)
 		} else {
 			clone.PresharedKey = psk
 		}

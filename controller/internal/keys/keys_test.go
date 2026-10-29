@@ -7,9 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"math/big"
 	"path/filepath"
-	"slices"
 	"testing"
 )
 
@@ -44,65 +42,6 @@ func TestSoftRFC7748(t *testing.T) {
 	}
 	if got := hex.EncodeToString(s); got != shared {
 		t.Errorf("the shared secret is %s, want %s", got, shared)
-	}
-}
-
-// normalizeU gives the u-coordinate that RFC 7748 section 5 decodes from 32 bytes, which crypto/ecdh does
-// for every u: the point that the normalized u names is the one of the u that was given, so the shared
-// secret of a key with either is the same, and the normalized u is below p with bit 255 clear.
-func TestNormalizeU(t *testing.T) {
-	k, err := NewSoft(unhex(t, alicePriv))
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 255), big.NewInt(19))
-	// little endian, 32 bytes
-	encode := func(v *big.Int) []byte {
-		b := v.FillBytes(make([]byte, 32))
-		slices.Reverse(b)
-		return b
-	}
-	decode := func(b []byte) *big.Int {
-		r := bytes.Clone(b)
-		slices.Reverse(r)
-		return new(big.Int).SetBytes(r)
-	}
-	topBit := encode(big.NewInt(9))
-	topBit[31] |= 0x80
-	hash := sha256.Sum256([]byte("ranz wireguard gateway key"))
-	// 0xed, then a 0xfe where p has a 0xff: below p
-	belowP := append([]byte{0xed, 0xfe}, append(bytes.Repeat([]byte{0xff}, 29), 0x7f)...)
-	// None of them is a point of low order, for which X25519 gives no secret
-	for _, c := range []struct {
-		name string
-		u    []byte
-		want int64 // the u that RFC 7748 decodes from it when it is a small one, else 0
-	}{
-		{"the base point", encode(big.NewInt(9)), 9},
-		{"the base point with bit 255 set", topBit, 9},
-		{"p - 2, the second largest u below p", encode(new(big.Int).Sub(p, big.NewInt(2))), 0},
-		{"p + 5", encode(new(big.Int).Add(p, big.NewInt(5))), 5},
-		{"2^255 - 1", encode(new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 255), big.NewInt(1))), 18},
-		{"2^256 - 1", bytes.Repeat([]byte{0xff}, 32), 18},
-		{"a hash, which has bit 255 set", hash[:], 0},
-		{"a u below p that has the low byte of p", belowP, 0},
-	} {
-		given := bytes.Clone(c.u)
-		n := normalizeU(c.u)
-		if !bytes.Equal(c.u, given) {
-			t.Errorf("%s: normalizeU changed the u that it was given", c.name)
-		}
-		if len(n) != 32 || n[31]&0x80 != 0 || decode(n).Cmp(p) >= 0 {
-			t.Errorf("%s: the normalized u %x has bit 255 set or is not below p", c.name, n)
-		}
-		if c.want != 0 && decode(n).Cmp(big.NewInt(c.want)) != 0 {
-			t.Errorf("%s: the normalized u is %v, want %d", c.name, decode(n), c.want)
-		}
-		a, errA := k.DH(c.u)
-		b, errB := k.DH(n)
-		if errA != nil || errB != nil || !bytes.Equal(a, b) {
-			t.Errorf("%s: the shared secret is %x (%v) of the u, and %x (%v) of the normalized u", c.name, a, errA, b, errB)
-		}
 	}
 }
 

@@ -236,8 +236,9 @@ controller/internal/store  OpenWith   exempt  opens the controller's own rqlite 
 # operator copied from the first member of a cluster
 controller/internal/sidecar  ReadCredential  FuzzParseCredential via parseCredential
 
-# The secrets of the export and audit targets that the store keeps sealed to a key of the controller (AUD1-DT-10 #458): the
-# bytes that the store holds in place of a sealed secret, which anyone who can write to the store can choose
+# The secrets of the export and audit targets that the store keeps sealed to a key of the controller (AUD1-DT-10 #458), and
+# the PresharedKeys of the WireGuard Devices (SDN-82 #377): the bytes that the store holds in place of a sealed secret,
+# which anyone who can write to the store can choose
 controller/internal/keys  Sealer.Open  FuzzSealerOpen
 
 # The CA certificate and key files of `ranz cert -signcert` and -signkey (SDN-53 #246): the operator's own files, which
@@ -258,10 +259,6 @@ controller/internal/servercert  ReadFingerprint  FuzzReadFingerprint  via parseF
 controller/internal/throughput  ReadRequest     FuzzRead
 controller/internal/throughput  ReadReport      FuzzRead
 controller/internal/throughput  Receiver.Input  FuzzRead
-
-# The sealed PresharedKeys of the WireGuard Devices (SDN-82 #377): the bytes of a row of the device_keys table, which the
-# Sealer opens
-controller/internal/devicekey  Sealer.Open  FuzzOpen
 
 # The diagnostics bundle (SDN-54 #247): the text of a log and the JSON documents of a bundle, which Redact and RedactJSON read
 # before anything leaves the host

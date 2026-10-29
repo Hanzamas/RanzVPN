@@ -424,8 +424,10 @@ jobs:
     # ping and a TCP connection through the gateway, a second Device of the gateway that the first reaches while the policy
     # lets them meet, a Device of the other node, a gateway too, that the first reaches through the overlay, the same pings
     # blocked by a deny rule of their ICMP while the TCP connection to the Device of the other gateway goes through, the last
-    # handshake and the traffic in ranz get devices, and the gateway on UDP 51820 and on the port that its Node sets
-    # (.github/scripts/device-tracer.ps1)
+    # handshake and the traffic in ranz get devices, and the gateway on UDP 51820 and on the port that its Node sets; and
+    # a Device whose keys the controller makes (SDN-82, #377): the client takes the configuration that ranz device create
+    # printed, with the PresharedKey in it, and completes its handshake, while the same configuration without that line gets
+    # none, and the client of the Device once it is revoked gets none either (.github/scripts/device-tracer.ps1)
     - name: Fetch WireGuardNT
       shell: pwsh
       run: |

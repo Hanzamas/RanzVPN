@@ -34,9 +34,8 @@ const (
 	blobECCPublic = "ECCPUBLICBLOB" // BCRYPT_ECCPUBLIC_BLOB
 	kdfRawSecret  = "TRUNCATE"      // BCRYPT_KDF_RAW_SECRET
 
-	machineKeyFlag  = 0x20 // NCRYPT_MACHINE_KEY_FLAG
-	silentFlag      = 0x40 // NCRYPT_SILENT_FLAG
-	noKeyValidation = 0x08 // NCRYPT_NO_KEY_VALIDATION
+	machineKeyFlag = 0x20 // NCRYPT_MACHINE_KEY_FLAG
+	silentFlag     = 0x40 // NCRYPT_SILENT_FLAG
 
 	bufferECCCurveName = 60 // NCRYPTBUFFER_ECC_CURVE_NAME
 
@@ -201,9 +200,8 @@ func exportBlob(h uintptr, blobType string) ([]byte, error) {
 	return b[:n], nil
 }
 
-// importKey imports an ephemeral key from blob, of the curve curve when it is not empty, with the flags
-// flags besides silentFlag.
-func importKey(prov uintptr, blobType string, blob []byte, curve string, flags uintptr) (uintptr, error) {
+// importKey imports an ephemeral key from blob, of the curve curve when it is not empty.
+func importKey(prov uintptr, blobType string, blob []byte, curve string) (uintptr, error) {
 	var params *ncryptBufferDesc
 	if curve != "" {
 		v := stringValue(curve)
@@ -211,7 +209,7 @@ func importKey(prov uintptr, blobType string, blob []byte, curve string, flags u
 	}
 	var h uintptr
 	r, _, _ := procImportKey.Call(prov, 0, uintptr(unsafe.Pointer(utf16z(blobType))), uintptr(unsafe.Pointer(params)),
-		uintptr(unsafe.Pointer(&h)), uintptr(unsafe.Pointer(&blob[0])), uintptr(len(blob)), silentFlag|flags)
+		uintptr(unsafe.Pointer(&h)), uintptr(unsafe.Pointer(&blob[0])), uintptr(len(blob)), silentFlag)
 	return h, status("NCryptImportKey "+blobType, r)
 }
 
@@ -310,21 +308,13 @@ func (k *kspStatic) Public() []byte {
 // the peer as an ECC public blob with the key as X and Y zero, imported with the curve name as a
 // parameter, and returns the raw secret in the reverse byte order of RFC 7748; DH turns it
 // back. TestKSPStatic checks the result against crypto/ecdh.
-//
-// X25519 takes any 32 bytes as the u-coordinate of the peer (RFC 7748 section 5, and crypto/ecdh), and
-// so does DH, as its C twin CryptoIdentityDh does: the blob has the u as RFC 7748 decodes it
-// (normalizeU), and is imported without the validation that the provider does by default, which
-// refuses a u outside the prime-order subgroup and one that is no point of the curve. The secret of
-// such a u is a point of the subgroup all the same, since the scalar of the key is a multiple of 8.
-// The sealing of the PresharedKeys (internal/devicekey) takes the hash of a label as the u, and the
-// provider refused it with "The parameter is incorrect" (TestKSPStaticAnyPoint).
 func (k *kspStatic) DH(peer []byte) ([]byte, error) {
 	if len(peer) != 32 {
 		return nil, fmt.Errorf("keys: a peer key of %d bytes, not 32", len(peer))
 	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	hp, err := importKey(k.prov, blobECCPublic, eccBlob(magicECDHPublicGeneric, normalizeU(peer), make([]byte, 32)), curve25519, noKeyValidation)
+	hp, err := importKey(k.prov, blobECCPublic, eccBlob(magicECDHPublicGeneric, peer, make([]byte, 32)), curve25519)
 	if err != nil {
 		return nil, err
 	}
