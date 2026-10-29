@@ -162,7 +162,7 @@ src/Cedar  NodeEvpnParseFrame      fuzz_evpn
 src/Cedar  NodeEvpnEnds            fuzz_evpn  via NodeEvpnParseFrame
 src/Cedar  NodeEvpnRoute           exempt  puts the route that NodeEvpnParseRoute (fuzz_evpn) read from a message of the node's own sidecar into the list of the routes; it reads no byte itself
 src/Cedar  NodeEvpnOutput          exempt  a packet of the host's own IP stack, whose two ends NodeNatEnds (fuzz_nat) reads as for NodeOverlayInput, and which NodeNatCopy (fuzz_nat) writes into the frame for the fabric
-src/Cedar  NodeEvpnTransit         exempt  a packet of a peer that the overlay delivered, whose two ends NodeEvpnEnds (fuzz_evpn) reads, and which the policy of the VRF (fuzz_policy) judges before it goes to the fabric as it came
+src/Cedar  NodeEvpnTransit         exempt  a packet of a peer that the overlay delivered, whose two ends NodeEvpnEnds (fuzz_evpn) reads, and which the session profile (NodeProfileInbound, fuzz_nodeprofile) and the policy of the VRF (fuzz_policy) judge before it goes to the fabric as it came, and NodeMirrorCopy (fuzz_mirror) copies
 src/Cedar  NodeOverlayFabricInput  exempt  a packet of the fabric that NodeEvpnParseFrame (fuzz_evpn) took, whose two ends NodeOverlayEnds reads as for NodeOverlayDeliver; NodeNatInbound (fuzz_nat) translates it for the host, or NodeNatEnds and NodeNatCopy (fuzz_nat) and the policy (fuzz_policy) take it on to a peer as for NodeOverlayInput
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)

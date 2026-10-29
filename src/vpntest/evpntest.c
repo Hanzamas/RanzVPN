@@ -21,6 +21,10 @@
 //   a packet to the address of peer in red reaches the host of peer through gw.
 // - The guard: a datagram on a VNI of no EVPN VRF, a frame to another MAC address, a packet from a source that the fabric did
 //   not announce and a packet to an address of no route are dropped and counted, and no host takes them.
+// - The session profile and the Mirror: at gw, peer runs under a session profile with no-server, and a Mirror of red copies TCP
+//   port 80 to a sensor on 127.0.0.1, as for the packets of a peer to a LAN subnet behind a gateway. The SYN-ACK of a server of
+//   peer to the fabric is dropped and counted, and neither the fabric nor the sensor takes it; the SYN of a client of peer goes
+//   to the fabric, and the sensor takes its copy as peer sent it.
 // - Overlap: the fabric withdraws 172.16.1.0/24 of its red; a packet of red to it goes nowhere, and the same packet of blue
 //   still goes on the VNI of blue.
 // Print "EVPN TEST OK" only when every check passes. .github/scripts/bgp-spike.ps1 runs it, with ranz.exe next to vpntest.
@@ -31,6 +35,7 @@
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
 #include "Cedar/NodeEvpn.h"
+#include "Cedar/NodeProfile.h"
 
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
@@ -65,6 +70,8 @@
 #define	EVPNTEST_VNI_RED		10101		// The L3 VNIs of red and blue
 #define	EVPNTEST_VNI_BLUE		10102
 #define	EVPNTEST_OTHER_VNI		999			// A VNI of no VRF
+#define	EVPNTEST_WEB			80			// The TCP port that the Mirror of gw copies, of the server of peer
+#define	EVPNTEST_CLIENT			5000		// ... and the port of the client of peer
 
 // The nodes
 #define	EVPNTEST_GW				0
@@ -123,6 +130,8 @@ typedef struct EVPNTEST_CTX
 	USHORT GwPort;						// The UDP port of the VTEP of gw
 	USHORT FabricPort;					// ... and of the VTEP of the node fabric, which nothing sends to
 	USHORT BgpPort;						// The TCP port of the sidecar of gw on 127.0.0.1
+	SOCKET Sensor;						// The sensor of the Mirror of gw, on 127.0.0.1 ...
+	USHORT SensorPort;					// ... and its UDP port
 	bool Overlays;						// The overlays of gw and peer run
 } EVPNTEST_CTX;
 
@@ -238,14 +247,16 @@ static UINT EvpnTestAddress(UCHAR *addr, char *str)
 	return 16;
 }
 
-// A UDP packet from src port 5000 to dst port 53 with the data seq, EVPNTEST_SIZE bytes, into buf: its size, 0 when its two
-// ends are not of one family
-static UINT EvpnTestPacket(UCHAR *buf, char *src, char *dst, UINT seq)
+// A packet from src to dst with the data seq, EVPNTEST_SIZE bytes, into buf: a TCP segment from port sport to port dport with
+// the flags flags and a header of 20 bytes, or for flags 0 a UDP packet from port 5000 to port 53. Its size, 0 when its two ends
+// are not of one family.
+static UINT EvpnTestSegment(UCHAR *buf, char *src, char *dst, UCHAR flags, USHORT sport, USHORT dport, UINT seq)
 {
 	UCHAR s[16], d[16];
 	UINT size = EvpnTestAddress(s, src);
 	UINT ip = (size == 4 ? 20 : 40);
 	UCHAR *l4 = buf + ip;
+	UCHAR proto = (flags != 0 ? IP_PROTO_TCP : IP_PROTO_UDP);
 
 	if (size == 0 || EvpnTestAddress(d, dst) != size)
 	{
@@ -258,7 +269,7 @@ static UINT EvpnTestPacket(UCHAR *buf, char *src, char *dst, UINT seq)
 		buf[0] = 0x45;
 		WRITE_USHORT(buf + 2, EVPNTEST_SIZE);
 		buf[8] = 64;
-		buf[9] = IP_PROTO_UDP;
+		buf[9] = proto;
 		Copy(buf + 12, s, 4);
 		Copy(buf + 16, d, 4);
 		USHORT sum = IpChecksum(buf, 20);
@@ -268,22 +279,44 @@ static UINT EvpnTestPacket(UCHAR *buf, char *src, char *dst, UINT seq)
 	{
 		buf[0] = 0x60;
 		WRITE_USHORT(buf + 4, EVPNTEST_SIZE - 40);
-		buf[6] = IP_PROTO_UDP;
+		buf[6] = proto;
 		buf[7] = 64;
 		Copy(buf + 8, s, 16);
 		Copy(buf + 24, d, 16);
 	}
 
-	WRITE_USHORT(l4, 5000);
-	WRITE_USHORT(l4 + 2, 53);
-	WRITE_USHORT(l4 + 4, EVPNTEST_SIZE - ip);
-	WRITE_UINT(l4 + 8, seq);
-	for (UINT i = ip + 12;i < EVPNTEST_SIZE;i++)
+	// The sequence number of the segment, or the length and the first data of the UDP packet; then the data
+	UINT data = ip + 12;
+	if (flags != 0)
+	{
+		WRITE_USHORT(l4, sport);
+		WRITE_USHORT(l4 + 2, dport);
+		WRITE_UINT(l4 + 4, seq);
+		l4[12] = 0x50;
+		l4[13] = flags;
+		WRITE_USHORT(l4 + 14, 65535);
+		data = ip + 20;
+	}
+	else
+	{
+		WRITE_USHORT(l4, 5000);
+		WRITE_USHORT(l4 + 2, 53);
+		WRITE_USHORT(l4 + 4, EVPNTEST_SIZE - ip);
+		WRITE_UINT(l4 + 8, seq);
+	}
+	for (UINT i = data;i < EVPNTEST_SIZE;i++)
 	{
 		buf[i] = (UCHAR)(i * 7 + seq);
 	}
 
 	return EVPNTEST_SIZE;
+}
+
+// A UDP packet from src port 5000 to dst port 53 with the data seq, EVPNTEST_SIZE bytes, into buf: its size, 0 when its two
+// ends are not of one family
+static UINT EvpnTestPacket(UCHAR *buf, char *src, char *dst, UINT seq)
+{
+	return EvpnTestSegment(buf, src, dst, 0, 0, 0, seq);
 }
 
 // A free UDP port of the wildcard address, or TCP of 127.0.0.1 with tcp, which the system picks: 0 for none
@@ -327,39 +360,48 @@ static USHORT EvpnTestFreePort(bool tcp)
 	return port;
 }
 
-// The harness VTEP of the fabric: a UDP socket on 127.0.0.2, on a port that the system picks, into ctx
-static bool EvpnTestOpenVtep(EVPNTEST_CTX *ctx)
+// A UDP socket on the IPv4 address addr, in host byte order, on a port that the system picks, into *s: its port, 0 when it
+// could not be opened
+static USHORT EvpnTestBind(SOCKET *s, UINT addr)
 {
 	struct sockaddr_in sa;
 	int size = sizeof(sa);
 
-	ctx->Vtep = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (ctx->Vtep == INVALID_SOCKET)
+	*s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (*s == INVALID_SOCKET)
 	{
-		return false;
+		return 0;
 	}
 
 	Zero(&sa, sizeof(sa));
 	sa.sin_family = AF_INET;
-	sa.sin_addr.s_addr = htonl(0x7F000002);
-	if (bind(ctx->Vtep, (struct sockaddr *)&sa, sizeof(sa)) != 0 || getsockname(ctx->Vtep, (struct sockaddr *)&sa, &size) != 0)
+	sa.sin_addr.s_addr = htonl(addr);
+	if (bind(*s, (struct sockaddr *)&sa, sizeof(sa)) != 0 || getsockname(*s, (struct sockaddr *)&sa, &size) != 0)
 	{
-		return false;
+		return 0;
 	}
 
-	ctx->VtepPort = ntohs(sa.sin_port);
-
-	return true;
+	return ntohs(sa.sin_port);
 }
 
-// The next datagram that the harness VTEP takes within timeout ms, into buf of size bytes: its size, 0 for none
-static UINT EvpnTestTake(EVPNTEST_CTX *ctx, UCHAR *buf, UINT size, UINT timeout)
+// The harness VTEP of the fabric on 127.0.0.2 and the sensor of the Mirror of gw on 127.0.0.1, each a UDP socket on a port that
+// the system picks, into ctx
+static bool EvpnTestOpenVtep(EVPNTEST_CTX *ctx)
+{
+	ctx->VtepPort = EvpnTestBind(&ctx->Vtep, 0x7F000002);
+	ctx->SensorPort = EvpnTestBind(&ctx->Sensor, INADDR_LOOPBACK);
+
+	return (ctx->VtepPort != 0 && ctx->SensorPort != 0);
+}
+
+// The next datagram that the socket s takes within timeout ms, into buf of size bytes: its size, 0 for none
+static UINT EvpnTestTakeFrom(SOCKET s, UCHAR *buf, UINT size, UINT timeout)
 {
 	fd_set fds;
 	struct timeval tv;
 
 	FD_ZERO(&fds);
-	FD_SET(ctx->Vtep, &fds);
+	FD_SET(s, &fds);
 	tv.tv_sec = (long)(timeout / 1000);
 	tv.tv_usec = (long)((timeout % 1000) * 1000);
 
@@ -368,17 +410,26 @@ static UINT EvpnTestTake(EVPNTEST_CTX *ctx, UCHAR *buf, UINT size, UINT timeout)
 		return 0;
 	}
 
-	int got = recvfrom(ctx->Vtep, (char *)buf, (int)size, 0, NULL, NULL);
+	int got = recvfrom(s, (char *)buf, (int)size, 0, NULL, NULL);
 
 	return (got > 0 ? (UINT)got : 0);
 }
 
-// Drop what the harness VTEP holds
+// The next datagram that the harness VTEP takes within timeout ms, into buf of size bytes: its size, 0 for none
+static UINT EvpnTestTake(EVPNTEST_CTX *ctx, UCHAR *buf, UINT size, UINT timeout)
+{
+	return EvpnTestTakeFrom(ctx->Vtep, buf, size, timeout);
+}
+
+// Drop what the harness VTEP and the sensor hold
 static void EvpnTestDrain(EVPNTEST_CTX *ctx)
 {
 	UCHAR buf[VXLAN_MAX_DATAGRAM];
 
 	while (EvpnTestTake(ctx, buf, sizeof(buf), 0) != 0)
+	{
+	}
+	while (EvpnTestTakeFrom(ctx->Sensor, buf, sizeof(buf), 0) != 0)
 	{
 	}
 }
@@ -570,7 +621,8 @@ static void EvpnTestRoute(CONTROL_ROUTE *r, UINT vrf_id, char *prefix, UINT leng
 
 // Apply Generation 1 of gw and peer: gw has 10.10.0.1 in red and in blue and fd10::1 in red, peer 10.10.0.2 and fd10::2 in
 // red; the state of peer routes 172.16.0.0/12 and fd16::/48 of red to gw, as the Controller routes the LAN subnets of a
-// gateway. No VRF has a policy.
+// gateway. At gw, peer runs under a session profile with no-server, and a Mirror copies TCP port 80 of red to the sensor. No
+// VRF has a policy.
 static bool EvpnTestApply(EVPNTEST_CTX *ctx)
 {
 	bool ok = true;
@@ -614,6 +666,22 @@ static bool EvpnTestApply(EVPNTEST_CTX *ctx)
 			EvpnTestRoute(&p->Routes[0], EVPNTEST_RED, "172.16.0.0", 12);
 			EvpnTestRoute(&p->Routes[1], EVPNTEST_RED, "fd16::", 48);
 			p->NumRoutes = 2;
+		}
+		else
+		{
+			CONTROL_MIRROR *m = &st->Mirrors[st->NumMirrors++];
+
+			p->Profile.Set = true;
+			StrCpy(p->Profile.Name, sizeof(p->Profile.Name), "no-server");
+			StrCpy(p->Profile.User, sizeof(p->Profile.User), "peer");
+			p->Profile.NoServer = true;
+
+			StrCpy(m->Name, sizeof(m->Name), "web");
+			m->VrfId = EVPNTEST_RED;
+			m->Protocol = IP_PROTO_TCP;
+			m->Port = EVPNTEST_WEB;
+			m->SensorSize = EvpnTestAddress(m->Sensor, "127.0.0.1");
+			m->SensorPort = ctx->SensorPort;
 		}
 		st->Peers = p;
 		st->NumPeers = 1;
@@ -767,13 +835,15 @@ static bool EvpnTestOpen(EVPNTEST_CTX *ctx, TRANSPORT *loopback)
 	ctx->FabricPort = EvpnTestFreePort(false);
 	ctx->BgpPort = EvpnTestFreePort(true);
 	ok = EvpnTestCheck(ctx, ok && ctx->GwPort != 0 && ctx->FabricPort != 0 && ctx->BgpPort != 0 && ctx->GwPort != ctx->FabricPort && EvpnTestOpenVtep(ctx),
-		"Free ports: the UDP ports of the VTEPs of gw and fabric, the TCP port of the sidecar of gw, and the harness VTEP on 127.0.0.2",
-		"VTEP ports %u and %u, BGP port %u, harness VTEP port %u, error %u", (UINT)ctx->GwPort, (UINT)ctx->FabricPort, (UINT)ctx->BgpPort, (UINT)ctx->VtepPort, (UINT)WSAGetLastError()) && ok;
+		"Free ports: the UDP ports of the VTEPs of gw and fabric, the TCP port of the sidecar of gw, the harness VTEP on 127.0.0.2 and the sensor on 127.0.0.1",
+		"VTEP ports %u and %u, BGP port %u, harness VTEP port %u, sensor port %u, error %u", (UINT)ctx->GwPort, (UINT)ctx->FabricPort, (UINT)ctx->BgpPort, (UINT)ctx->VtepPort,
+		(UINT)ctx->SensorPort, (UINT)WSAGetLastError()) && ok;
 	if (ok == false)
 	{
 		return false;
 	}
-	Print("  [INFO] gw: VTEP 127.0.0.1:%u, sidecar on 127.0.0.1:%u; harness VTEP of the fabric 127.0.0.2:%u\n", (UINT)ctx->GwPort, (UINT)ctx->BgpPort, (UINT)ctx->VtepPort);
+	Print("  [INFO] gw: VTEP 127.0.0.1:%u, sidecar on 127.0.0.1:%u; harness VTEP of the fabric 127.0.0.2:%u; sensor of the Mirror of gw 127.0.0.1:%u\n",
+		(UINT)ctx->GwPort, (UINT)ctx->BgpPort, (UINT)ctx->VtepPort, (UINT)ctx->SensorPort);
 
 	// gw first: the sidecar of fabric dials it once, a few seconds after it starts
 	Format(bgp, sizeof(bgp), EVPNTEST_GW_BGP, (UINT)ctx->BgpPort, (UINT)ctx->GwPort, (UINT)ctx->VtepPort);
@@ -827,8 +897,8 @@ static bool EvpnTestOpen(EVPNTEST_CTX *ctx, TRANSPORT *loopback)
 	return ok;
 }
 
-// The nodes first, whose overlays and sidecars stop with every thread joined, then the harness VTEP. The node log of gw tells
-// the story, and the logs of both sidecars go into the job log.
+// The nodes first, whose overlays and sidecars stop with every thread joined, then the harness VTEP and the sensor. The node
+// log of gw tells the story, and the logs of both sidecars go into the job log.
 static void EvpnTestClose(EVPNTEST_CTX *ctx)
 {
 	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
@@ -920,6 +990,10 @@ static void EvpnTestClose(EVPNTEST_CTX *ctx)
 	if (ctx->Vtep != INVALID_SOCKET)
 	{
 		closesocket(ctx->Vtep);
+	}
+	if (ctx->Sensor != INVALID_SOCKET)
+	{
+		closesocket(ctx->Sensor);
 	}
 }
 
@@ -1086,6 +1160,74 @@ static void EvpnTestGuard(EVPNTEST_CTX *ctx)
 	EvpnTestDrop(ctx, "A packet of red to 10.10.0.9, an address of no route of red, is dropped and counted", EVPNTEST_VNI_RED, evpntest_gw_mac, "172.16.1.10", "10.10.0.9", EvpnTestUndelivered);
 }
 
+// A TCP segment of the host of peer in red from 10.10.0.2 port sport to 172.16.1.20 port dport with the flags flags, which gw
+// forwards to the fabric, into packet: its size, and whether peer sent it
+static UINT EvpnTestFromPeer(EVPNTEST_CTX *ctx, UCHAR *packet, UCHAR flags, USHORT sport, USHORT dport, UINT seq, bool *sent)
+{
+	EVPNTEST_NODE *peer = &ctx->Nodes[EVPNTEST_PEER];
+	UINT size = EvpnTestSegment(packet, "10.10.0.2", "172.16.1.20", flags, sport, dport, seq);
+
+	EvpnTestDrain(ctx);
+
+	NodeReaderOnline(peer->Node, &peer->Reader);
+	*sent = (size != 0 && NodeOverlayInput(peer->Node, EVPNTEST_RED, packet, size));
+	NodeReaderOffline(&peer->Reader);
+
+	return size;
+}
+
+// The session profile of peer and the Mirror of gw judge the packets of peer to the fabric as those of a peer to a LAN subnet
+// behind a gateway: no-server drops the SYN-ACK of a server of peer, which neither the fabric nor the sensor takes, and the SYN
+// of a client of peer goes to the fabric, and to the sensor as peer sent it
+static void EvpnTestProfile(EVPNTEST_CTX *ctx)
+{
+	EVPNTEST_NODE *gw = &ctx->Nodes[EVPNTEST_GW];
+	UCHAR d[VXLAN_MAX_DATAGRAM];
+	UCHAR packet[EVPNTEST_SIZE];
+	NODE_PROFILE_STATUS before, after;
+	NODE_MIRROR_STATUS copies, copies_after;
+	bool sent = false;
+
+	Print("[the session profile of peer and the Mirror of gw]\n");
+
+	NodeProfileGetStatus(gw->Node, &before);
+	NodeMirrorGetStatus(gw->Node, &copies);
+
+	UINT size = EvpnTestFromPeer(ctx, packet, TCP_SYN | TCP_ACK, EVPNTEST_WEB, EVPNTEST_CLIENT, 500, &sent);
+	UINT64 end = Tick64() + EVPNTEST_WAIT;
+	bool counted = false;
+
+	while (sent && counted == false && Tick64() < end)
+	{
+		NodeProfileGetStatus(gw->Node, &after);
+		counted = (after.Server == before.Server + 1);
+		if (counted == false)
+		{
+			SleepThread(EVPNTEST_POLL);
+		}
+	}
+
+	UINT got = EvpnTestTake(ctx, d, sizeof(d), EVPNTEST_QUIET);
+	UINT copied = EvpnTestTakeFrom(ctx->Sensor, d, sizeof(d), 0);
+	NodeMirrorGetStatus(gw->Node, &copies_after);
+	EvpnTestCheck(ctx, size != 0 && counted && got == 0 && copied == 0 && copies_after.Copied == copies.Copied,
+		"peer, VRF 101: no-server of the session profile of peer drops the SYN-ACK of tcp 10.10.0.2:80 > 172.16.1.20:5000 at gw, counted, and neither the fabric nor the sensor takes it",
+		"sent %u, counted %u, the harness VTEP took %u bytes, the sensor %u bytes, %u copies", (UINT)sent, (UINT)counted, got, copied,
+		(UINT)(copies_after.Copied - copies.Copied));
+
+	size = EvpnTestFromPeer(ctx, packet, TCP_SYN, EVPNTEST_CLIENT, EVPNTEST_WEB, 501, &sent);
+	got = EvpnTestTake(ctx, d, sizeof(d), EVPNTEST_WAIT);
+	bool went = (sent && EvpnTestIsFrame(d, got, EVPNTEST_VNI_RED, packet, size));
+
+	// The copy: the VXLAN header on the VNI of the VRF, the Ethernet header of the Mirror, and the packet as peer sent it
+	copied = EvpnTestTakeFrom(ctx->Sensor, d, sizeof(d), EVPNTEST_WAIT);
+	bool copy = (copied == VXLAN_HEADER_SIZE + NODE_MIRROR_ETHER + size && d[0] == VXLAN_FLAG_VNI &&
+		(((UINT)d[4] << 16) | ((UINT)d[5] << 8) | d[6]) == EVPNTEST_RED && Cmp(d + VXLAN_HEADER_SIZE + NODE_MIRROR_ETHER, packet, size) == 0);
+	EvpnTestCheck(ctx, went && copy,
+		"peer, VRF 101: the SYN of tcp 10.10.0.2:5000 > 172.16.1.20:80 goes to the fabric on VNI 10101, and the Mirror of gw copies it to the sensor on VNI 101 as peer sent it",
+		"sent %u, to the fabric %u (%u bytes), copied %u (%u bytes)", (UINT)sent, (UINT)went, got, (UINT)copy, copied);
+}
+
 // Overlap: the fabric withdraws 172.16.1.0/24 of its red; red at gw loses it, blue keeps it
 static void EvpnTestOverlap(EVPNTEST_CTX *ctx)
 {
@@ -1118,12 +1260,12 @@ static void EvpnTestOverlap(EVPNTEST_CTX *ctx)
 	EvpnTestCheck(ctx, blue && EvpnTestIsFrame(d, got, EVPNTEST_VNI_BLUE, packet, size), "gw, VRF 102: the same packet still goes to the fabric on VNI 10102",
 		"taken %u, the harness VTEP took %u bytes", (UINT)blue, got);
 
-	// Five packets went to the fabric and four came from it; the guard dropped one of each kind
+	// Six packets went to the fabric, the SYN of peer among them, and four came from it; the guard dropped one of each kind
 	NodeEvpnGetStatus(gw->Node, &st);
 	Print("  [INFO] gw: sent %I64u, failed %I64u, delivered %I64u, undelivered %I64u, strangers %I64u, not ours %I64u, unknown VNI %I64u, malformed %I64u\n",
 		st.Sent, st.Failed, st.Delivered, st.Undelivered, st.Strangers, st.NotOurs, st.UnknownVni, st.Malformed);
-	EvpnTestCheck(ctx, st.Sent == 5 && st.Failed == 0 && st.Delivered == 4 && st.Undelivered == 1 && st.Strangers == 1 && st.NotOurs == 1 && st.UnknownVni == 1 && st.Malformed == 0,
-		"The counters of the EVPN of gw: 5 packets to the fabric, 4 from it, one drop of each kind of the guard", "%s", "see the line above");
+	EvpnTestCheck(ctx, st.Sent == 6 && st.Failed == 0 && st.Delivered == 4 && st.Undelivered == 1 && st.Strangers == 1 && st.NotOurs == 1 && st.UnknownVni == 1 && st.Malformed == 0,
+		"The counters of the EVPN of gw: 6 packets to the fabric, 4 from it, one drop of each kind of the guard", "%s", "see the line above");
 }
 
 // evpn: the EVPN of a gateway against a fabric
@@ -1138,6 +1280,7 @@ void evpn_test(UINT num, char **arg)
 	Print("EVPN test: a gateway hands two VRFs of one prefix to a fabric as EVPN type-5 routes, and VXLAN carries their packets both ways\n");
 
 	ctx->Vtep = INVALID_SOCKET;
+	ctx->Sensor = INVALID_SOCKET;
 
 	if (EvpnTestOpen(ctx, loopback))
 	{
@@ -1145,6 +1288,7 @@ void evpn_test(UINT num, char **arg)
 		EvpnTestIntoFabric(ctx);
 		EvpnTestFromFabric(ctx);
 		EvpnTestGuard(ctx);
+		EvpnTestProfile(ctx);
 		EvpnTestOverlap(ctx);
 	}
 
