@@ -25,9 +25,19 @@ import (
 // between the spokes and the hub allow, and a Mirror of the VRF at the hub sees only what passed.
 //
 // Two gateway Nodes or more may advertise one LAN subnet in a VRF (Node.LANSubnets). Every other Node
-// of the VRF gets the subnet as a route of each of them and picks a healthy one, from its own probes
-// inside their Noise sessions and from the health data of the Controller; a VRF with ECMP spreads the
-// flows to the subnet over the healthy ones by the hash of each flow.
+// of the VRF gets the subnet as a route of each of them and picks a healthy one, from its own probes,
+// inside their Noise sessions or on the datagram path of its peer agent (SDN-19-R1 #507), and from the
+// health data of the Controller; a VRF with ECMP spreads the flows to the subnet over the healthy ones
+// by the hash of each flow.
+//
+// The Peer message of the control protocol carries MaxPeerRoutes routes (validatePeerRoutes), and a
+// spoke has the hub as its only peer in the VRF, so it reaches MaxPeerRoutes prefixes of the VRF at
+// most through the hub (GatewayRoutes): the pools of the L3 Networks of the VRF, the LAN subnets of the
+// hub and of the other spokes and the outside prefixes of their 1:1 NAT rules, besides the routes of
+// the other VRFs that the two share and of the leaks. With one L3 Network of an IPv4 and an IPv6 pool
+// and no 1:1 NAT rule, 14 routes are left for the LAN subnets that a spoke reaches through the hub: the
+// VRF holds 15 spokes of one LAN subnet each, or 14 when the hub has a LAN subnet too, and an Intent
+// with one more is refused (SDN-19-R1 #507, TestHubAndSpokeBranchLANs).
 
 // The topologies of a VRF.
 const (
