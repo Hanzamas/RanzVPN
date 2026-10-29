@@ -216,6 +216,27 @@ typedef struct CONTROL_VTEP {
 	UINT GenevePort;   // The UDP port of Geneve, 0 for the default (GENEVE_PORT)
 } CONTROL_VTEP;
 
+// The session profile of a device (SessionProfile of the control protocol; SDN-40, #233): the limits of the sessions of the
+// devices of a User, the effective SessionProfile of the User that owns the node. A node enforces the profile of a peer on
+// its session with the peer, and the flags of its own profile on itself (Cedar/NodeProfile.c). A limit of 0 is none.
+typedef struct CONTROL_PROFILE {
+	bool Set;                     // The device runs under a profile, which the fields below hold; else they are 0
+	char Name[CONTROL_NAME_SIZE]; // The SessionProfile
+	char User[CONTROL_NAME_SIZE]; // The User that owns the device: the sessions of its devices count together
+	UINT64 UploadLimit;           // Bits per second that a node takes from the session of the device at most ...
+	UINT64 DownloadLimit;         // ... and that it sends to it at most
+	UINT MaxSessions;             // The sessions of the devices of the User that a node holds at once
+	UINT MaxMacs;                 // The MAC addresses that one session sends from in an L2 Network
+	UINT MaxIpv4;                 // The IPv4 addresses that one session sends from in each VRF ...
+	UINT MaxIpv6;                 // ... and the IPv6 addresses
+	UINT IdleTimeout;             // s without a packet in either direction after which a node ends the session
+	UINT AutoDisconnect;          // s after the session came up after which a node ends it
+	bool NoBridge;                // One MAC address in an L2 Network: the first that the session sends from
+	bool NoRouting;               // The device sends from and takes at its own addresses only, IPv4 and IPv6
+	bool NoServer;                // No TCP connection to the device, IPv4 and IPv6: no SYN to it, no SYN-ACK from it
+	bool PrivacyFilter;           // No packet between two devices whose profiles both have it
+} CONTROL_PROFILE;
+
 // A peer of the node: another node that shares a VRF with it (Peer of the control protocol)
 typedef struct CONTROL_PEER {
 	char Name[CONTROL_NAME_SIZE];                     // Its node name
@@ -241,6 +262,10 @@ typedef struct CONTROL_PEER {
 	// The controller reports it down (SDN-19, #195): it is a gateway of a prefix that another gateway announces too, and it
 	// has had no control stream for a while, so the node gives that prefix to another gateway that answers its probes
 	bool Down;
+
+	// The session profile that it runs under as a device of a User (SDN-40, #233), which the node enforces on its session
+	// with it; not Set for none
+	CONTROL_PROFILE Profile;
 } CONTROL_PEER;
 
 // A name of the zone of a VRF and the addresses that it answers (DnsRecord of the control protocol; SDN-11, #187)
@@ -460,6 +485,10 @@ typedef struct CONTROL_STATE {
 	// ordered by VRF id
 	UINT NumLanSubnets;
 	CONTROL_ROUTE LanSubnets[CONTROL_MAX_ROUTES];
+
+	// The session profile that it runs under as a device of a User (SDN-40, #233), whose flags it enforces on itself; not
+	// Set for none
+	CONTROL_PROFILE Profile;
 } CONTROL_STATE;
 
 // Takes each state that the client applied, before the client acknowledges its Generation. It runs
