@@ -411,6 +411,8 @@ static void ControlDeliver(CONTROL_CLIENT *c, UINT64 gen) {
 	// The hubs and the ECMP of the VRFs, the LAN subnets of the node and the gateways that are down (ControlGateway.c; SDN-19,
 	// #195)
 	ControlCopyGateways(&st, c->Objects, c->NumObjects);
+	// The session profiles of the node and of its peers (ControlProfile.c; SDN-40, #233)
+	ControlCopyProfiles(&st, c->Objects, c->NumObjects);
 
 	if (c->Config.Proc != NULL)
 		c->Config.Proc(c->Config.Param, &st);

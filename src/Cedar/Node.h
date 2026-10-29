@@ -370,6 +370,8 @@ struct NODE_VRF_TABLES {
 	// The groups of gateways and the hubs of the same Generation (NodeGateway.c; SDN-19, #195): the next hop of each group
 	// comes after those of the peers and of the leaked routes. NULL for neither.
 	struct NODE_GATEWAY_TABLE *Gateway;
+	// The session profiles of the peers and of the node of the same Generation (NodeProfile.c; SDN-40, #233), NULL for none
+	struct NODE_PROFILE_TABLE *Profile;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -489,6 +491,9 @@ struct NODE {
 	// The gateway HA of the overlay (NodeGateway.c; SDN-19, #195): the gateways of its groups and their probes, NULL while
 	// the overlay does not run
 	struct NODE_GATEWAY *Gateway;
+
+	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233), NULL while the overlay does not run
+	struct NODE_PROFILE *Profile;
 
 	// The switches of the L2 Networks, whose tables the live operations of the Controller read and clear (NodeOperation.c;
 	// SDN-50-N, #492), NULL while the overlay does not run
