@@ -113,9 +113,14 @@
 // group policy extension or in a Geneve option when its VRF is in the tag mode trusted-underlay
 // (Vrf.tag_mode). A node judges the claims of a peer only once its state gives the peer the frame
 // version 1 with its groups: before, as when a peer's Generation went in before the node's own, it
-// ignores them. The node reports the packets that it judged by their source group in its Telemetry
-// (SourceGroupCounters). No schema version changes with them: a node of an older release skips the
-// fields it does not know, reports no Capability tags and gets no record of version 1.
+// ignores them. Each claim names the group generation of its sender in its VRF (SourceGroup.generation),
+// the Generation of the sender's state from which on it may assert what it asserts there: a claim of a
+// group that the peer may not assert is an unknown group only when it names the group generation that
+// the node's state gives the peer; one of another group generation was made on another state, and the
+// node judges its packet by the map of address to group. The node reports the packets that it judged
+// by their source group in its Telemetry (SourceGroupCounters). No schema version changes with them: a
+// node of an older release skips the fields it does not know, reports no Capability tags and gets no
+// record of version 1.
 //
 // Live operations (SDN-50, #243): an operator reads or clears the MAC table or the IP table of an L2
 // Network on a node. The controller sends the node an Operation on its stream, with an id of its own;
@@ -3011,10 +3016,15 @@ func (x *Vrf) GetEcmp() bool {
 // tag set, the bit of each of its tags that the VRF gave one, 64 tags at most. A group ID and a bit
 // stay with their set of tags and their tag in the VRF for good.
 type SourceGroup struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	VrfId         uint32                 `protobuf:"varint,1,opt,name=vrf_id,json=vrfId,proto3" json:"vrf_id,omitempty"`
-	Group         uint32                 `protobuf:"varint,2,opt,name=group,proto3" json:"group,omitempty"`
-	TagSet        uint64                 `protobuf:"varint,3,opt,name=tag_set,json=tagSet,proto3" json:"tag_set,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	VrfId  uint32                 `protobuf:"varint,1,opt,name=vrf_id,json=vrfId,proto3" json:"vrf_id,omitempty"`
+	Group  uint32                 `protobuf:"varint,2,opt,name=group,proto3" json:"group,omitempty"`
+	TagSet uint64                 `protobuf:"varint,3,opt,name=tag_set,json=tagSet,proto3" json:"tag_set,omitempty"`
+	// The group generation of the node in the VRF, in its NodeConfig and in its Peer object at every
+	// other node: the Generation of the node's state from which on it may assert the groups that it
+	// may assert there, this one and those of the Devices whose gateway it is. It changes only when
+	// those change. The node names it in each claim that it sends, its 32 low bits on the wire.
+	Generation    uint64 `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3066,6 +3076,13 @@ func (x *SourceGroup) GetGroup() uint32 {
 func (x *SourceGroup) GetTagSet() uint64 {
 	if x != nil {
 		return x.TagSet
+	}
+	return 0
+}
+
+func (x *SourceGroup) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
 	}
 	return 0
 }
@@ -3411,7 +3428,8 @@ type Peer struct {
 	Vtep *Vtep `protobuf:"bytes,8,opt,name=vtep,proto3" json:"vtep,omitempty"`
 	// The source group of the peer in each shared VRF (SDN-87 #386), ordered by VRF id, when the node and
 	// the peer both report the Capability tags. With the groups of the Devices whose gateway the peer
-	// is, these are the groups that it may assert; a claim of another one is an unknown group.
+	// is, these are the groups that it may assert; a claim of another one that names the group
+	// generation of the peer here is an unknown group.
 	Groups []*SourceGroup `protobuf:"bytes,9,rep,name=groups,proto3" json:"groups,omitempty"`
 	// The frame version of the data records of the Noise sessions that the node sends the peer (SDN-87
 	// #386): 1 when both report the Capability tags, and each record then carries its source group;
@@ -4672,8 +4690,9 @@ type SourceGroupCounters struct {
 	Mode    TagMode                `protobuf:"varint,1,opt,name=mode,proto3,enum=ranz.control.v1.TagMode" json:"mode,omitempty"`
 	Carried uint64                 `protobuf:"varint,2,opt,name=carried,proto3" json:"carried,omitempty"` // judged by the source group that they carried
 	Missing uint64                 `protobuf:"varint,3,opt,name=missing,proto3" json:"missing,omitempty"` // carried none, judged by the map of address to group
-	// carried one that the node ignores, judged by that map too: in the mode off, or of a peer whose
-	// groups the node does not know yet
+	// carried one that the node ignores, judged by that map too: in the mode off, of a peer whose
+	// groups the node does not know yet, or a claim of a group that the peer may not assert which names
+	// another group generation of the peer than the node's state, as it was made on another state
 	Ignored       uint64 `protobuf:"varint,4,opt,name=ignored,proto3" json:"ignored,omitempty"`
 	Refused       uint64 `protobuf:"varint,5,opt,name=refused,proto3" json:"refused,omitempty"` // claimed a group that the sending node may not assert: dropped as an unknown group
 	unknownFields protoimpl.UnknownFields
@@ -6020,11 +6039,14 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\btag_mode\x18\n" +
 	" \x01(\x0e2\x18.ranz.control.v1.TagModeR\atagMode\x12\x10\n" +
 	"\x03hub\x18\v \x01(\tR\x03hub\x12\x12\n" +
-	"\x04ecmp\x18\f \x01(\bR\x04ecmp\"S\n" +
+	"\x04ecmp\x18\f \x01(\bR\x04ecmp\"s\n" +
 	"\vSourceGroup\x12\x15\n" +
 	"\x06vrf_id\x18\x01 \x01(\rR\x05vrfId\x12\x14\n" +
 	"\x05group\x18\x02 \x01(\rR\x05group\x12\x17\n" +
-	"\atag_set\x18\x03 \x01(\x04R\x06tagSet\"W\n" +
+	"\atag_set\x18\x03 \x01(\x04R\x06tagSet\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x04 \x01(\x04R\n" +
+	"generation\"W\n" +
 	"\aDnsZone\x12\x16\n" +
 	"\x06suffix\x18\x01 \x01(\tR\x06suffix\x124\n" +
 	"\arecords\x18\x02 \x03(\v2\x1a.ranz.control.v1.DnsRecordR\arecords\"=\n" +
