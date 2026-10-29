@@ -103,8 +103,9 @@
 //	ranz [flags] ban set [-reason TEXT] USER   ban the user: every device of the user is cut off at once, and none gets in
 //	                                           until the ban is lifted with ban clear
 //	ranz [flags] ban clear USER                lift the ban of the user
-//	ranz [flags] node-key list                 print the key of every Node: its state (valid, expired or pending), when it last
-//	                                           authenticated, when it ends and whether it was approved (SDN-56, operator)
+//	ranz [flags] node-key list [-o json|table] print the key of every Node: its state (valid, expired or pending), when it last
+//	                                           authenticated, when it ends, the days that are left and whether it was approved
+//	                                           (SDN-56, operator)
 //	ranz [flags] node-key approve NODE         approve a Node that its Network holds for approval; its key lives from now
 //	ranz [flags] node-key refresh NODE         give the key of a Node that has no owner another period, as the login of its
 //	                                           user does for a device
@@ -227,7 +228,7 @@ const usage = `usage:
   ranz [flags] ban list
   ranz [flags] ban set [-reason TEXT] USER
   ranz [flags] ban clear USER
-  ranz [flags] node-key list
+  ranz [flags] node-key list [-o json|table]
   ranz [flags] node-key approve NODE
   ranz [flags] node-key refresh NODE
   ranz [flags] mac-table [-node NODE] NETWORK
