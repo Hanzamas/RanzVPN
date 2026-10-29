@@ -90,12 +90,15 @@ function New-BridgeLab {
 	}
 }
 
-# Take the Hyper-V lab of the bridge away again, with the external switch that a run of vpntest nicbridge left
+# Take the Hyper-V lab of the bridge away again, with the external switch that a run of vpntest nicbridge left. The Name
+# of Get-VMSwitch takes one name only, so the switches that are left are picked from all of them.
 function Remove-BridgeLab {
 	Remove-VMNetworkAdapter -ManagementOS -Name $labDevice -Confirm:$false -ErrorAction SilentlyContinue
 	Remove-VMSwitch -Name $labSwitch -Force -Confirm:$false -ErrorAction SilentlyContinue
 	Remove-VMSwitch -Name $labExternal -Force -Confirm:$false -ErrorAction SilentlyContinue
-	Write-Host "the Hyper-V lab of the bridge is taken away: $(@(Get-VMSwitch -Name $labSwitch, $labExternal -ErrorAction SilentlyContinue).Count) switch left"
+	$left = @(Get-VMSwitch -ErrorAction SilentlyContinue | Where-Object { $_.Name -in @($labSwitch, $labExternal) })
+	Write-Host "the Hyper-V lab of the bridge is taken away: $($left.Count) switch left"
+	if ($left.Count -gt 0) { Add-Failure "the Hyper-V lab of the bridge stays: $(($left | ForEach-Object { $_.Name }) -join ', ')" }
 }
 
 # Run ranz.exe with arguments: its exit code and its output, standard error included
