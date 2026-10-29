@@ -269,6 +269,63 @@ func (c Caller) CheckNode(in intent.Intent, name string) error {
 	return nil
 }
 
+// CheckDocument returns nil when the resources that doc names are ones that the caller may change at all, and a
+// *Refusal when one is not: a kind that the delegation does not permit, or a resource that exists in the scope of
+// another Network or of none. It is made before the document is applied, so that a refusal never waits for what the
+// intent would say of the same document, which can name the resources of other scopes (the dependants of a
+// resource, the holder of an address): the scope is told first and alone. Check judges the change itself.
+func (c Caller) CheckDocument(prev intent.Intent, doc intent.Document) error {
+	var problems []error
+	add := func(format string, args ...any) { problems = append(problems, fmt.Errorf(format, args...)) }
+	for _, r := range doc.Resources {
+		if c.foreignNetwork(r.Kind, r.Name, add) || !c.mayChange(r.Kind, r.Name, add) {
+			continue
+		}
+		if before, existed := prev.ScopeOf(r.Kind, r.Name); existed && before != c.Network {
+			add("%s %q is not in the scope of Network %q", r.Kind, r.Name, c.Network)
+		}
+	}
+	if len(problems) > 0 {
+		return &Refusal{network: c.Network, problems: problems}
+	}
+	return nil
+}
+
+// CheckDelete returns nil when the caller may delete the resource kind/name of prev, and a *Refusal when it may
+// not: the kind is not one that the delegation permits, the resource is not in the scope, it is the Network itself,
+// or it is a User that holds an API role. A resource that prev does not hold is an error that wraps
+// intent.ErrNotFound. It is made before the intent is asked to delete the resource, as CheckDocument is made before it
+// applies a document.
+func (c Caller) CheckDelete(prev intent.Intent, kind, name string) error {
+	var problems []error
+	add := func(format string, args ...any) { problems = append(problems, fmt.Errorf(format, args...)) }
+	if c.mayChange(kind, name, add) {
+		if _, held := prev.ScopeOf(kind, name); !held {
+			return fmt.Errorf("%w: %s %q", intent.ErrNotFound, kind, name)
+		}
+		c.refuseDeletion(prev, kind, name, add)
+	}
+	if len(problems) > 0 {
+		return &Refusal{network: c.Network, problems: problems}
+	}
+	return nil
+}
+
+// refuseDeletion adds to add why the caller may not delete the resource kind/name of prev, when it may not, once
+// the kind and the permission are checked: it is the Network itself, it is not in the scope, or it is a User that
+// holds an API role.
+func (c Caller) refuseDeletion(prev intent.Intent, kind, name string, add func(format string, args ...any)) {
+	before, _ := prev.ScopeOf(kind, name)
+	switch {
+	case kind == intent.KindNetwork:
+		add("Network %q cannot be deleted by a scoped role: the Network of the scope is the global roles' to delete", name)
+	case before != c.Network:
+		add("%s %q is not in the scope of Network %q", kind, name, c.Network)
+	case kind == intent.KindUser && c.Holders[name]:
+		add("User %q holds an API role, and only the global roles delete a User that does", name)
+	}
+}
+
 // Refusal is the error of a change that a scoped role may not make. It says which Network and lists every
 // reason, one for each resource. It is an ErrOutOfScope, or an ErrQuota when the reasons are the quotas of
 // the Network.
@@ -307,14 +364,14 @@ func (c Caller) Check(prev, next intent.Intent) error {
 	var problems, quota []error
 	add := func(format string, args ...any) { problems = append(problems, fmt.Errorf(format, args...)) }
 	for _, r := range put {
-		if !c.mayChange(r.Kind, r.Name, add) {
+		if c.foreignNetwork(r.Kind, r.Name, add) || !c.mayChange(r.Kind, r.Name, add) {
 			continue
 		}
 		before, existed := prev.ScopeOf(r.Kind, r.Name)
 		after, _ := next.ScopeOf(r.Kind, r.Name)
 		switch {
-		case r.Kind == intent.KindNetwork && (r.Name != c.Network || !existed):
-			add("Network %q is not the Network of the scope, %q: a scoped role changes its own Network and cannot make another", r.Name, c.Network)
+		case r.Kind == intent.KindNetwork && !existed:
+			add("Network %q does not exist, and a scoped role cannot make a Network", r.Name)
 			continue
 		case existed && before != c.Network:
 			add("%s %q is not in the scope of Network %q", r.Kind, r.Name, c.Network)
@@ -341,16 +398,8 @@ func (c Caller) Check(prev, next intent.Intent) error {
 		}
 	}
 	for _, r := range gone {
-		if !c.mayChange(r.Kind, r.Name, add) {
-			continue
-		}
-		switch before, _ := prev.ScopeOf(r.Kind, r.Name); {
-		case r.Kind == intent.KindNetwork:
-			add("Network %q cannot be deleted by a scoped role: the Network of the scope is the global roles' to delete", r.Name)
-		case before != c.Network:
-			add("%s %q is not in the scope of Network %q", r.Kind, r.Name, c.Network)
-		case r.Kind == intent.KindUser && c.Holders[r.Name]:
-			add("User %q holds an API role, and only the global roles delete a User that does", r.Name)
+		if c.mayChange(r.Kind, r.Name, add) {
+			c.refuseDeletion(prev, r.Kind, r.Name, add)
 		}
 	}
 	if len(problems) > 0 {
@@ -361,6 +410,16 @@ func (c Caller) Check(prev, next intent.Intent) error {
 		return &Refusal{network: c.Network, quota: true, problems: quota}
 	}
 	return nil
+}
+
+// foreignNetwork adds, and reports true, when the resource kind/name is a Network that is not the Network of the
+// scope: a scoped role changes its own Network and cannot make or change another, whatever its delegation permits.
+func (c Caller) foreignNetwork(kind, name string, add func(format string, args ...any)) bool {
+	if kind != intent.KindNetwork || name == c.Network {
+		return false
+	}
+	add("Network %q is not the Network of the scope, %q: a scoped role changes its own Network and cannot make another", name, c.Network)
+	return true
 }
 
 // mayChange reports whether the caller may change a resource of kind at all: the kind is one that a scoped

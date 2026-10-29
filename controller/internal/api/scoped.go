@@ -131,10 +131,17 @@ func scopedCaller(w http.ResponseWriter, r *http.Request) (controller.ScopedRole
 	return controller.ScopedRole{Network: network, Admin: tok.Role.Allows(rbac.Admin)}, true
 }
 
-// holdsNetworkOrNone answers 404 Not Found, and reports false, when network names a Network that the intent does
-// not hold. The empty name, the whole API, is none.
+// holdsNetworkOrNone answers 400 Bad Request, and reports false, when network is no Network name, and 404 Not Found
+// when it names a Network that the intent does not hold. The empty name, the whole API, is none.
 func holdsNetworkOrNone(d routeDeps, w http.ResponseWriter, network string) bool {
-	if network == "" || d.Controller.HoldsNetwork(network) {
+	if network == "" {
+		return true
+	}
+	if _, err := rbac.NewGrant(rbac.Viewer, network); err != nil {
+		replyError(w, err)
+		return false
+	}
+	if d.Controller.HoldsNetwork(network) {
 		return true
 	}
 	replyError(w, fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindNetwork, network))

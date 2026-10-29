@@ -280,6 +280,10 @@ func (c *Controller) ApplyScoped(ctx context.Context, r ScopedRole, doc intent.D
 		if _, ok := in.Networks[r.Network]; !ok {
 			return fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindNetwork, r.Network)
 		}
+		// The scope is told first and alone: what the intent says of a document names resources of other scopes
+		if err := caller.CheckDocument(in, doc); err != nil {
+			return err
+		}
 		next, err := intent.Apply(in, doc, c.random)
 		if err != nil {
 			return err
@@ -299,6 +303,10 @@ func (c *Controller) DeleteScoped(ctx context.Context, r ScopedRole, kind, name 
 	check := func(in intent.Intent) error {
 		if _, ok := in.Networks[r.Network]; !ok {
 			return fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindNetwork, r.Network)
+		}
+		// The scope is told first and alone, as for an apply: the intent names what depends on a resource
+		if err := caller.CheckDelete(in, kind, name); err != nil {
+			return err
 		}
 		next, err := intent.Delete(in, kind, name)
 		if err != nil {

@@ -17,6 +17,67 @@ func quotaCaller(q scope.Quotas) scope.Caller {
 	return c
 }
 
+// The scope is told before the intent speaks: CheckDocument and CheckDelete refuse what is not the caller's before
+// the intent is asked, so that a refusal never carries what the intent would say of resources of other scopes, such as
+// what depends on a VRF.
+func TestTheScopeIsToldBeforeTheIntent(t *testing.T) {
+	in := base(t)
+	caller := admin("branch-a")
+	caller.Holders = map[string]bool{"alice": true}
+	for _, c := range []struct {
+		name string
+		rs   []intent.Resource
+		want string // empty when nothing is wrong
+	}{
+		{"a resource of the scope", []intent.Resource{res(intent.KindUser, "carol", `{"scope": "branch-a"}`), res(intent.KindNode, "a-server", `{}`)}, ""},
+		{"a resource of another scope", []intent.Resource{res(intent.KindUser, "bob", `{"scope": "branch-a"}`)}, `User "bob" is not in the scope of Network "branch-a"`},
+		{"a kind that is not delegated", []intent.Resource{res(intent.KindVRF, "corp", `{}`)}, `a VRF is none of them`},
+		{"another Network", []intent.Resource{res(intent.KindNetwork, "branch-b", `{}`)}, `Network "branch-b" is not the Network of the scope, "branch-a"`},
+		{"its own Network", []intent.Resource{res(intent.KindNetwork, "branch-a", `{}`)}, ""},
+		// What the document holds, wrong as it is for the intent, is not the scope's to say
+		{"a document that is no intent", []intent.Resource{res(intent.KindUser, "carol", `{"scope": "nowhere", "groups": ["nobody"]}`)}, ""},
+	} {
+		err := caller.CheckDocument(in, doc(c.rs...))
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: CheckDocument refused: %v", c.name, err)
+		case c.want != "" && (!errors.Is(err, scope.ErrOutOfScope) || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%s: CheckDocument gave %v, want a refusal that says %q", c.name, err, c.want)
+		}
+	}
+	// A caller whose delegation permits nothing is refused at the first resource
+	if err := (scope.Caller{Network: "branch-a"}).CheckDocument(in, doc(res(intent.KindUser, "carol", `{}`))); !errors.Is(err, scope.ErrOutOfScope) {
+		t.Errorf("CheckDocument with no delegation gave %v", err)
+	}
+
+	for _, c := range []struct {
+		kind, name string
+		want       string
+		err        error
+	}{
+		{intent.KindNode, "a-server", "", nil},
+		{intent.KindGroup, "legacy", "", nil},
+		{intent.KindNode, "b-server", `Node "b-server" is not in the scope of Network "branch-a"`, scope.ErrOutOfScope},
+		{intent.KindNode, "hub", `Node "hub" is not in the scope`, scope.ErrOutOfScope},
+		{intent.KindUser, "alice", `User "alice" holds an API role, and only the global roles delete a User that does`, scope.ErrOutOfScope},
+		{intent.KindNetwork, "branch-a", `Network "branch-a" cannot be deleted by a scoped role`, scope.ErrOutOfScope},
+		// The intent would list what uses the VRF, and the scope says only that it is not its to delete
+		{intent.KindVRF, "corp", `a VRF is none of them`, scope.ErrOutOfScope},
+		{intent.KindNode, "nobody", "no such resource", intent.ErrNotFound},
+	} {
+		err := caller.CheckDelete(in, c.kind, c.name)
+		switch {
+		case c.err == nil && err != nil:
+			t.Errorf("CheckDelete(%s, %s) refused: %v", c.kind, c.name, err)
+		case c.err != nil && (!errors.Is(err, c.err) || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("CheckDelete(%s, %s) gave %v, want %v that says %q", c.kind, c.name, err, c.err, c.want)
+		}
+		if err != nil && strings.Contains(err.Error(), "is used by") {
+			t.Errorf("CheckDelete(%s, %s) told what depends on the resource: %v", c.kind, c.name, err)
+		}
+	}
+}
+
 // A change that takes the Network over a quota is refused, naming the quota and the count that the change would
 // make; one that stays within it passes, and so does one that adds nothing to a count that is over its quota.
 func TestAChangeThatTakesTheNetworkOverAQuotaIsRefused(t *testing.T) {
