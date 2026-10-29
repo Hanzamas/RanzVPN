@@ -2,10 +2,12 @@
 // The Npcap backend of the L2 adapter (NodeL2.h; CORE-S3-3, #73), and what holds the NIC of a bridge in promiscuous mode
 // for the XDP backend (NodeL2NpcapHold). Npcap is optional and never bundled (ADR-0018 decision 3): ranz.exe carries no
 // file of it, so no Npcap OEM licence is needed, and the node uses it only where the operator installed it. The backend
-// loads Npcap's wpcap.dll by its full path from System32\Npcap, the folder that the Npcap installer gives its DLLs, as
-// the Npcap developer guide asks of a program that links Npcap explicitly; where that file is missing the backend does
-// not bind, and a bridge goes on to its next backend. In the ranzvpnserver service the load fails while the
-// signed-images mitigation of ADR-0039 is on, as Npcap's publisher, not Microsoft, signs its DLLs; the node log says so.
+// loads Npcap's wpcap.dll from System32\Npcap, the folder that the Npcap installer gives its DLLs, which the Npcap
+// developer guide asks a program that links Npcap explicitly to load it from: by its full path, with
+// LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR so that Packet.dll beside it loads too, instead of the SetDllDirectory of the guide,
+// which would change the DLL search of the whole process. Where that file is missing the backend does not bind, and a
+// bridge goes on to its next backend. In the ranzvpnserver service the load fails while the signed-images mitigation of
+// ADR-0039 is on, as Npcap's publisher, not Microsoft, signs its DLLs; the node log says so.
 // The code follows the documented API of libpcap and WinPcap, which Npcap keeps (pcap_open with its open flags,
 // pcap_next_ex, pcap_sendpacket, pcap_getevent, pcap_setfilter), which the node takes by GetProcAddress into the table
 // of NodeL2.h (NODE_L2_PCAP_API):
