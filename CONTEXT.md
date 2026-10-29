@@ -283,8 +283,20 @@ _Avoid_: Cascade, link
 The hash of a frame that picks its connection in a Tunnel (`NoiseTunnelFlowHash`): over the IP 5-tuple, else over the MAC pair, with the EtherType and the VLAN ids. It is symmetric, so both directions of a flow take the same connection and keep their order.
 
 **BGP sidecar**:
-`ranz-bgp` (`ranz-bgp/`, Go), a separate process that embeds GoBGP as a library and peers with the operator's own routers on TCP 179 (ADR-0010, ADR-0022). A Node starts it only when its `Bgp` setting names peers (`NodeBgp.c`), talks to it over a named pipe with JSON messages, one per line (start, announce and withdraw from the Node; ready, peer, learned, withdrawn and error from the sidecar), and installs the learned routes into the Windows routing table through IP Helper; the sidecar installs none itself. Since ONE-1 (#310) it is the subcommand `ranz bgp` of `ranz.exe` (ADR-0011 amendment of 2026-10-22), which the Node starts as a process of its own.
+`ranz-bgp` (`ranz-bgp/`, Go), a separate process that embeds GoBGP as a library and peers with the operator's own routers on TCP 179 (ADR-0010, ADR-0022). A Node starts it only when its `Bgp` setting names peers (`NodeBgp.c`), talks to it over a named pipe with JSON messages, one per line (start, announce and withdraw from the Node; ready, peer, learned, withdrawn and error from the sidecar), and installs the learned routes into the Windows routing table through IP Helper; the sidecar installs none itself. Since ONE-1 (#310) it is the subcommand `ranz bgp` of `ranz.exe` (ADR-0011 amendment of 2026-10-22), which the Node starts as a process of its own. Besides the one toward the routers of the operator (`NodeBgp.c`), a Node runs a second `ranz bgp` for its VRFs whose **Peering** is `bgp` (`NodePeering.c`, log `ranz-bgp-peering.log`), on the address of its tunnel endpoint (ADR-0010, SDN-77).
 _Avoid_: BGP daemon, BGP role (it is no Role), RRAS BGP
+
+**Peering (of a VRF)**:
+`VRF.peering`: how the Nodes of a VRF of the standard mode exchange their routes: `bgp`, by BGP in a full mesh, or left out, by the routes of the Controller.
+
+**Accept list (of a peer)**:
+`PeerPeering.accept`: the prefixes that a peer may announce in each VRF of the session, with their more specific ones: its addresses and its LAN subnets there.
+
+**Refused session**:
+A BGP session from an address that no Peer object names, which the sidecar refuses and the Node counts (`PeeringReport.refused`).
+
+**Peering report**:
+`Telemetry.peering`: the peers of the sidecar of a Node, the state of each session, the prefixes learned from each and the refused sessions, which `ranz explain NODE` shows.
 
 **ranz.exe**:
 The one signed executable of the product, one per architecture (ADR-0011 amendment of 2026-10-22): a Go multi-call binary (`ranz controller`, `ranz bgp`, `ranz tray` and the CLI verbs) that carries the Node and what it needs as Payloads. `ranz install` unpacks and registers them and `ranz uninstall` reverses it. Decided and ticketed (ONE-1 to ONE-5, #310 to #314). ONE-1 built the Go part: `ranz controller`, `ranz bgp`, `ranz notice`, `ranz version` and the CLI verbs are one executable. The Payloads, `ranz install` and the thin MSI come with ONE-2 to ONE-5; until then `ranz-node` is a separate file.
@@ -936,7 +948,7 @@ The Intent resource of a local account: a display name, groups, an expiry, may-c
 The Intent resource that names a set of Users. Its name is a tag of policy. The **Group tag** is that name, which the devices of its members carry (`intent.NodeTags`), so a Policy written for the Group applies to them.
 
 **Owner (of a Node)**:
-The User that a Node is a device of (`Node.owner`). A Device with an owner inherits the Group tags of the owner. Not a Front door owner.
+The User that a Node or a WireGuard Device is a device of (`Node.owner`, `Device.owner`). A Device with an owner carries the Group tags of the owner (`intent.DeviceTags`). Not a Front door owner.
 
 **Maximum devices**:
 `maxDevices` of a User. An Intent that holds more devices of the User is refused. The Nodes and the Devices of a User count against it.
@@ -958,6 +970,18 @@ The `wireguard` field of a gateway Node: the DNS name that its Devices reach it 
 
 **Battery saver**:
 The flag of a Device that turns the keepalive of its configuration off.
+
+**PresharedKey (of a Device)**:
+The 32-byte secret that a Device and its gateway both mix into the WireGuard handshake, the only protection of a recorded session against a future quantum computer. The Controller makes one for every Device unless `noPresharedKey`, keeps it as a **Sealed secret** in the table `device_keys` (never in the Intent), gives it in clear inside the control stream to the gateway alone, and shows it once (ADR-0026 amendment of 2026-10-29, SDN-82).
+
+**Finished configuration (of a Device)**:
+The `.conf` text that a stock client imports, with the `PrivateKey` and the `PresharedKey` in it, which only the answer to the making of a Device holds (`DeviceCreated.Config`). The configuration that `GET /api/v1/devices/NAME/config` renders later has a comment in place of each key.
+
+**QR code (of a Device)**:
+The QR code of the finished configuration, carried as its modules (`DeviceCreated.QR`: a string of 1 and 0 for each row, without the quiet zone), drawn by the web UI on a canvas, by `ranz device create -qr` on a terminal and by `-qr-file` into a PNG. Shown once.
+
+**Standalone Device**:
+A Device with no owner, a router for one. It takes the tags set on it and no others.
 
 **Formal model**:
 The ProVerif models in `tests/formal`, checked in CI against `expected.tsv`. A **Scenario (of a model)** is a set of compromises that a model gives the attacker (none, cert, cert-client, noise-client, both, fs). A **Negative control** is a model with a protection left out (the binding, the pin, the key comparison of a join) that must show its attack. The **Table from the model to the code** is `tests/formal/model-to-code.tsv`.
