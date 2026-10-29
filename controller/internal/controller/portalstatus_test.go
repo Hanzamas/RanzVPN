@@ -43,7 +43,7 @@ func TestThePortalSaysWhenADeviceWaitsForApprovalOrItsKeyEnded(t *testing.T) {
 
 	// After 91 days its key has ended: the portal says so, with when it ended
 	j.clk.Advance(91 * keyDay)
-	if d := waitSelfDeviceWhere(t, alice, "alice-laptop", "held back for its key", is(controller.KeyExpired)); !d.KeyExpires.Equal(start.Add(90*keyDay)) {
+	if d := waitSelfDeviceWhere(t, alice, "alice-laptop", "held back for its key", is(controller.KeyExpired)); !d.KeyExpires.Equal(start.Add(90 * keyDay)) {
 		t.Errorf("the device whose key ended is %+v, want the end of its key, %v", d, start.Add(90*keyDay))
 	}
 
