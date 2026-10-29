@@ -68,12 +68,11 @@ func (c *Controller) isBanned(user string) bool {
 // compileStates compiles the desired state of every Node of in, which a licence may have capped
 // already. The state of a Node of a banned user is what it is without the ban; the state of every other
 // Node is compiled from the intent without the Nodes of the banned users, so it has no Peer for them,
-// no Relay and no route that leads to one of them. c.mu is held.
-func (c *Controller) compileStates(in intent.Intent) (map[string]desired.State, error) {
-	if len(c.live.bans) == 0 {
-		return desired.Compile(in)
-	}
-	banned := in.NodesOwnedBy(slices.Sorted(maps.Keys(c.live.bans)))
+// no Relay and no route that leads to one of them. The Nodes that the life of their keys holds back, holds,
+// those whose key ended and those that wait for approval, are left out the same way (nodekeys.go; SDN-56).
+// c.mu is held.
+func (c *Controller) compileStates(in intent.Intent, holds map[string]keyHold) (map[string]desired.State, error) {
+	banned := withheld(in.NodesOwnedBy(slices.Sorted(maps.Keys(c.live.bans))), holds)
 	if len(banned) == 0 {
 		return desired.Compile(in)
 	}
