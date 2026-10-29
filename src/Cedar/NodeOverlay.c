@@ -621,6 +621,10 @@ void NodeOverlayAgentDeliver(NODE *n, const UCHAR *key, const UCHAR *record, UIN
 
 	if (ov == NULL || key == NULL)
 		return;
+	// A probe of gateway HA or its answer, which the datagram path carries in place of a Noise session (NodeGateway.c;
+	// SDN-19-R1, #507)
+	if (NodeGatewayDatagram(n, key, record, size))
+		return;
 
 	for (UINT i = 0; v != NULL && i < v->NumHops; i++) {
 		NODE_OVERLAY_PEER *p = (NODE_OVERLAY_PEER *)v->Hops[i];
@@ -1148,6 +1152,10 @@ bool NodeOverlaySendRecord(NODE *n, NODE_VRF_TABLES *v, UINT hop, const UCHAR *r
 	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
 	bool ok = (plain ? NodeLinkSend(v, hop, record, size - NODE_OVERLAY_VRF_TAG) : (s != NULL && TransportNoiseSend(s, NOISE_RECORD_DATA, record, size)));
 	InterlockedDecrement(&peer->Senders);
+
+	// The datagram path of the peer agent carries it to a peer that has no Noise session (NodeAgent.c; SDN-19-R1, #507)
+	if (plain == false && s == NULL)
+		ok = NodeAgentSend(n, peer->Key, record, size);
 
 	return ok;
 }

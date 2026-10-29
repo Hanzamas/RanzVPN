@@ -1,9 +1,11 @@
 # fuzz_gateway.py
 # Seeds of fuzz_gateway (src/fuzz/fuzz_gateway.c): the gateway HA of the Node module (src/Cedar/NodeGateway.c; SDN-19 #195).
-# The low bit of the first byte of a seed picks what follows: 0, a control record of the Noise session between two peers,
+# The first byte of a seed, modulo 3, picks what follows: 0, a control record of the Noise session between two peers,
 # which NodeGatewayParseProbe reads as a probe (kind 1) or its answer (kind 2), each the kind, the sequence in 4 bytes and
 # the time of the prober in 8 bytes, big-endian; 1, an IP packet of the host, whose flow hash NodeGatewayFlowHash takes over
-# its addresses, its protocol and the ports of TCP, UDP and SCTP, and over the flow label of IPv6.
+# its addresses, its protocol and the ports of TCP, UDP and SCTP, and over the flow label of IPv6; 2, a record of the datagram
+# path of the peer agent, which NodeGatewayParseDatagram reads as a control record when it starts with the VRF tag of no VRF,
+# 0, and the kind 0xFF, a probe or its answer after them (SDN-19-R1 #507), and as a data record otherwise.
 #
 # make_seeds.py runs make_seeds(h), h being make_seeds.py itself with write_seed and the packet helpers.
 
@@ -29,6 +31,9 @@ def make_seeds(h):
     def packet(name, data):
         h.write_seed('fuzz_gateway', name, b'\x01' + data)
 
+    def datagram(name, data):
+        h.write_seed('fuzz_gateway', name, b'\x02' + data)
+
     # A probe and its answer; a record of another kind, one byte short and one byte long, and an empty one
     record('probe.bin', probe(1, 7, 123456789))
     record('answer.bin', probe(2, 7, 123456789))
@@ -36,6 +41,18 @@ def make_seeds(h):
     record('short.bin', probe(1, 7, 123456789)[:12])
     record('long.bin', probe(2, 7, 123456789) + b'\x00')
     record('empty.bin', b'')
+
+    # The datagram path: a probe and its answer behind the VRF tag of no VRF and the kind of a control record; a control record
+    # that is no probe, and one without its probe; a record of the VRF tag of no VRF and another kind, a later frame version of
+    # the data records; a data record of VRF 10; and a VRF tag alone
+    control = struct.pack('>I', 0) + b'\xff'
+    datagram('dgram_probe.bin', control + probe(1, 9, 123456789))
+    datagram('dgram_answer.bin', control + probe(2, 9, 123456789))
+    datagram('dgram_other_kind.bin', control + probe(3, 9, 123456789))
+    datagram('dgram_bare.bin', control)
+    datagram('dgram_version.bin', struct.pack('>I', 0) + b'\x01' + bytes(19))
+    datagram('dgram_data.bin', struct.pack('>I', 10) + h.ipv4(a, b, 17, h.udp(a, b, 40006, 53, b'ranz-gateway')))
+    datagram('dgram_tag.bin', struct.pack('>I', 0))
 
     # IPv4: UDP and TCP with their ports, a fragment without them, ICMP, a header length past the packet and one under 20
     payload = b'ranz-gateway'
