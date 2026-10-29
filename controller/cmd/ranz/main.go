@@ -37,6 +37,10 @@
 //	ranz login [flags]        sign in as a user that holds an API role and take its user token: in the browser, with
 //	                          a device code (-device) or with the password of the user (-user); ranz node login enrols
 //	                          the Node of this PC as a device of the user who signs in (login.go, SDN-32 #226)
+//	ranz tray [flags] [status | login | up | down | exit NAME | exit none]
+//	                          the tray icon of a laptop: the status of the Node of this PC, sign-in in the
+//	                          browser and the choice of the exit node; the verbs do the same with no window
+//	                          (tray.go, SDN-55 #248)
 //
 // Usage of the CLI:
 //
@@ -189,6 +193,7 @@ const usage = `usage:
   ranz doctor [-bundle [-o FILE]]
   ranz explain [flags] [-vrf VRF] [-protocol tcp|udp|icmp|N] [-sport PORT] [-port PORT] [-o text|json] A B
   ranz login [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-device | -user NAME [-password-file FILE]] [-o FILE]
+  ranz tray [-server URL] [-tls-fingerprint HEX] [-controller-dir DIR] [-pipe NAME] [status | login [-device] | up | down | exit NAME [VRF] | exit none]
   ranz [flags] apply -f FILE [-confirm DURATION]
   ranz [flags] confirm REVISION
   ranz [flags] diff [FROM [TO]]
