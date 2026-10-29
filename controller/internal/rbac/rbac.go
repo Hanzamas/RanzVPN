@@ -8,8 +8,9 @@
 // Intent: every member of a controller cluster knows a token, and a deleted one stops working at
 // once. The first start of a controller creates the admin token FirstAdmin (Bootstrap), and a
 // local administrator of its host a new one when every admin secret is lost (Recover). Logins
-// of users (SDN-32, #226) and roles scoped to one Network (SDN-38, #231) come later and grant
-// the same roles.
+// of users (SDN-32, #226) grant the same roles, and a role can be held for one Network only (SDN-38,
+// #231, grant.go): the Guard then lets it call that Network's calls and no other, and the Controller
+// holds what it changes there to the delegation of the Network (internal/scope).
 //
 // A token has a life (AUD1-DT-13, #461): it may be made with an expiry (CreateExpiring), from
 // which the controller refuses its secret (ErrExpired) while an admin can still list and delete
@@ -110,6 +111,9 @@ func (r Role) rank() int {
 type Token struct {
 	Name string `json:"name"`
 	Role Role   `json:"role"`
+	// Network is the Network that the role of the token is held for (SDN-38, grant.go): the token calls
+	// the calls of that Network and no other. Left out, the role is held for the whole API.
+	Network string `json:"network,omitempty"`
 	// User is the User whose login made the token, a user token (users.go; SDN-32), and empty for an
 	// API token.
 	User string `json:"user,omitempty"`
@@ -250,32 +254,9 @@ func (t *Tokens) Create(ctx context.Context, name string, role Role) (NewToken, 
 // CreateExpiring creates the token name with role, which the controller refuses from the instant
 // expires on, and returns it with its secret. The zero time makes a token that never expires. An
 // expiry is kept in UTC to the second, and is refused unless it is in the future and in the years 1
-// to 9999.
+// to 9999. The role is held for the whole API; CreateGrant makes a token for one Network.
 func (t *Tokens) CreateExpiring(ctx context.Context, name string, role Role, expires time.Time) (NewToken, error) {
-	if !nameRule.MatchString(name) {
-		return NewToken{}, fmt.Errorf("%w: the token name %q must be 1 to 63 lower-case letters, digits and hyphens, not starting or ending with a hyphen", ErrInvalid, name)
-	}
-	if _, err := ParseRole(string(role)); err != nil {
-		return NewToken{}, err
-	}
-	if !expires.IsZero() {
-		expires = expires.UTC().Truncate(time.Second)
-		if y := expires.Year(); y < 1 || y > 9999 {
-			return NewToken{}, fmt.Errorf("%w: the expiry is outside the years 1 to 9999 (UTC)", ErrInvalid)
-		}
-		if !expires.After(t.now()) {
-			return NewToken{}, fmt.Errorf("%w: the expiry %s is not in the future", ErrInvalid, expires.Format(time.RFC3339))
-		}
-	}
-	secret := newSecret()
-	ok, err := t.st.AddToken(ctx, store.Token{Name: name, Role: string(role), Hash: hash(secret), Expires: expires})
-	if err != nil {
-		return NewToken{}, err
-	}
-	if !ok {
-		return NewToken{}, fmt.Errorf("%w: a token named %q exists already", ErrExists, name)
-	}
-	return NewToken{Token: Token{Name: name, Role: role, Expires: expires}, Secret: secret}, nil
+	return t.CreateGrant(ctx, name, Grant{Role: role}, expires)
 }
 
 // Delete deletes the token name, whether it has expired or not, and returns it. It refuses to delete
@@ -346,11 +327,11 @@ func (t *Tokens) Recover(ctx context.Context, name string, save func(secret stri
 
 // token returns the stored token st as the API shows it at the instant now.
 func token(st store.Token, now time.Time) (Token, error) {
-	role, err := ParseRole(st.Role)
+	g, err := ParseGrant(st.Role)
 	if err != nil {
 		return Token{}, fmt.Errorf("stored token %q: %w", st.Name, err)
 	}
-	tok := Token{Name: st.Name, Role: role, Expires: st.Expires, LastUsed: st.LastUsed}
+	tok := Token{Name: st.Name, Role: g.Role, Network: g.Network, Expires: st.Expires, LastUsed: st.LastUsed}
 	tok.Expired = tok.ExpiredAt(now)
 	return tok, nil
 }
