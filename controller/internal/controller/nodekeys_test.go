@@ -790,12 +790,14 @@ func TestNodeKeyOperationsAreAuditedAndNeedTheOperatorRole(t *testing.T) {
 		}
 		return nil
 	}
+	// The controller records the Events that it raises for the keys as operations of the system (nodekeys_events_test.go), which are
+	// not the calls of the operator that this test counts
 	recs := h.waitAudit(ops, "a record of each operation and of the refusal of alice-laptop", func(rs []audit.Record) bool {
-		return len(auditOfKind(rs, audit.Operation)) >= len(steps) && refused(rs) != nil
+		return len(operationsBy(rs, audit.ActorToken("ops-1"))) >= len(steps) && refused(rs) != nil
 	})
-	operations := auditOfKind(recs, audit.Operation)
+	operations := operationsBy(recs, audit.ActorToken("ops-1"))
 	if len(operations) != len(steps) {
-		t.Fatalf("the audit log holds %d operations, want %d, one for each call that was served:\n%s", len(operations), len(steps), auditLines(recs))
+		t.Fatalf("the audit log holds %d operations of ops-1, want %d, one for each call that was served:\n%s", len(operations), len(steps), auditLines(recs))
 	}
 	for i, s := range steps {
 		r := operations[i]
