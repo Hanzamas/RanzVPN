@@ -297,6 +297,9 @@ message NodeConfig {
   // The LAN subnets behind the node, which it advertises as a gateway in its VRFs (SDN-19 #195),
   // ordered by VRF id, then prefix: they lead to its host.
   repeated Route lan_subnets = 13;
+  // The session profile that the node runs under as a device of a User (SDN-40 #233), absent for a node
+  // that has no owner or whose owner runs under none: the node enforces its flags on itself.
+  SessionProfile profile = 16;
 }
 
 // The kind of the links between the nodes of a VRF (SDN-76 #356). A link of kind noise is the Noise
@@ -462,6 +465,9 @@ message Peer {
   // traffic of that prefix to another gateway that answers its probes, and to this one only while
   // none does.
   bool down = 11;
+  // The session profile that the peer runs under as a device of a User (SDN-40 #233, SessionProfile at
+  // the end of this file), absent for none: this node enforces it on its session with the peer.
+  SessionProfile profile = 13;
 }
 
 // The transports that a node dials a peer over, as a fallback list names them: quic, tls and mimic
@@ -850,4 +856,26 @@ message TableEntry {
   bytes address = 3;    // the IP table: 4 bytes for IPv4, 16 for IPv6
   string member = 4;    // the name of the peer, session or port that the entry belongs to, empty for none
   uint64 last_seen_ms = 5;  // Unix time in milliseconds
+}
+
+// The session profile of a device (SDN-40 #233, spec #224): the effective SessionProfile of the User
+// that owns the Node, its own or the one of the first of its Groups, in name order, that names one.
+// The NodeConfig of the device holds it, and the Peer object of the device that each other node holds:
+// a node enforces the profile of a peer on its session with that peer, and the flags of its own profile
+// on itself. A limit of 0 is none, and a flag that is not set is off.
+message SessionProfile {
+  string name = 1;              // the SessionProfile
+  string user = 2;              // the User that owns the device: the sessions of its devices count together
+  uint64 upload_limit = 3;      // bits per second that a node takes from the session of the device at most
+  uint64 download_limit = 4;    // bits per second that a node sends to the session of the device at most
+  uint32 max_sessions = 5;      // the sessions of the devices of the user that a node holds at once
+  uint32 max_macs = 6;          // the MAC addresses that one session sends from in an L2 Network
+  uint32 max_ipv4 = 7;          // the IPv4 addresses that one session sends from in each VRF
+  uint32 max_ipv6 = 8;          // ... and the IPv6 addresses
+  uint32 idle_timeout = 9;      // s without a packet in either direction after which a node ends the session
+  uint32 auto_disconnect = 10;  // s after the session came up after which a node ends it
+  bool no_bridge = 11;          // one MAC address in an L2 Network, the first that the session sends from
+  bool no_routing = 12;         // the device sends from and takes at its own addresses only, IPv4 and IPv6
+  bool no_server = 13;          // no TCP connection to the device, IPv4 and IPv6: no SYN to it, no SYN-ACK from it
+  bool privacy_filter = 14;     // no packet between two devices whose profiles both have it
 }
