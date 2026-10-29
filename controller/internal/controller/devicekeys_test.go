@@ -64,12 +64,12 @@ func (l *logBuffer) String() string {
 	return l.b.String()
 }
 
-// newKeysHarness returns a harness whose controller says everything that it says, at the debug level, to
+// newDeviceKeysHarness returns a harness whose controller says everything that it says, at the debug level, to
 // logs as well as to the test log, so that a test can look for a secret in it, and whose store seals with
 // a sealing key of its own, as the one of the host does (store.SetSealer). A test that needs another
 // sealing key, or none, sets h.sealer before h.start, and one that needs a setting of another kind sets
 // h.tune again.
-func newKeysHarness(t *testing.T, logs io.Writer) *harness {
+func newDeviceKeysHarness(t *testing.T, logs io.Writer) *harness {
 	t.Helper()
 	h := &harness{t: t, rq: rqlitetest.Start(t)}
 	h.tune = loggingTo(t, logs)
@@ -200,7 +200,7 @@ func makePhone(t *testing.T, c *api.Client) (created controller.DeviceCreated, p
 // it, and in the store only sealed.
 func TestDeviceKeysAreFoundNowhere(t *testing.T) {
 	logs := &logBuffer{}
-	h := newKeysHarness(t, logs)
+	h := newDeviceKeysHarness(t, logs)
 	ctx := context.Background()
 	gw, host := deviceLab(t, h, capsWireGuard)
 	audited := h.auditedAPI(h.admin)
@@ -392,7 +392,7 @@ func TestDeviceKeysAreFoundNowhere(t *testing.T) {
 // it, so that no copy of the store gives a PresharedKey to a controller that has not the key.
 func TestPresharedKeyIsSealedAtRest(t *testing.T) {
 	logs := &logBuffer{}
-	h := newKeysHarness(t, logs)
+	h := newDeviceKeysHarness(t, logs)
 	ctx := context.Background()
 	gw, host := deviceLab(t, h, capsWireGuard)
 	created, _, psk := makePhone(t, h.api)
@@ -505,7 +505,7 @@ func (lockedSealer) Open(string, []byte) ([]byte, error) { return nil, errLocked
 // make a Device with a key that no gateway could be given.
 func TestDeviceWithoutASealingKey(t *testing.T) {
 	logs := &logBuffer{}
-	h := newKeysHarness(t, logs)
+	h := newDeviceKeysHarness(t, logs)
 	ctx := context.Background()
 	gw, host := deviceLab(t, h, capsWireGuard)
 	if _, _, psk := makePhone(t, h.api); psk == nil {
@@ -573,7 +573,7 @@ func TestDeviceWithoutASealingKey(t *testing.T) {
 // configuration. It is shown once: nothing of the controller gives the keys again, a second call that
 // makes the Device is refused, and the configuration that the API renders later says where each key goes.
 func TestCreatedDeviceHasItsConfigurationAndQRCode(t *testing.T) {
-	h := newKeysHarness(t, &logBuffer{})
+	h := newDeviceKeysHarness(t, &logBuffer{})
 	ctx := context.Background()
 	deviceLab(t, h, capsWireGuard)
 	created, private, psk := makePhone(t, h.api)
@@ -667,7 +667,7 @@ func TestCreatedDeviceHasItsConfigurationAndQRCode(t *testing.T) {
 // gateway terminates the Device with the key that was supplied and the PresharedKey; and an administrator who
 // asks for no PresharedKey gets a Device without one.
 func TestDeviceWithAPublicKeyOfItsOwn(t *testing.T) {
-	h := newKeysHarness(t, &logBuffer{})
+	h := newDeviceKeysHarness(t, &logBuffer{})
 	ctx := context.Background()
 	gw, _ := deviceLab(t, h, capsWireGuard)
 	const routerKey = "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk="
@@ -729,7 +729,7 @@ func TestDeviceWithAPublicKeyOfItsOwn(t *testing.T) {
 // in the store. A Device that exists is not made again, since a key is never changed in place, and a gateway
 // that has not reported the key of its WireGuard interface is a conflict that names it.
 func TestCreateDeviceRefusals(t *testing.T) {
-	h := newKeysHarness(t, &logBuffer{})
+	h := newDeviceKeysHarness(t, &logBuffer{})
 	ctx := context.Background()
 	deviceLab(t, h, capsWireGuard)
 	first, err := h.api.CreateDevice(ctx, controller.DeviceRequest{Name: "first", Network: "lab-net", Gateway: "gw"})
@@ -794,7 +794,7 @@ func TestCreateDeviceRefusals(t *testing.T) {
 // as every change does; a viewer is refused, and so is a call with no token; and a body that is no Device to
 // make is a 400. The answer says no-store: it holds the keys, which no cache may keep.
 func TestCreateDeviceNeedsTheRoleOperator(t *testing.T) {
-	h := newKeysHarness(t, &logBuffer{})
+	h := newDeviceKeysHarness(t, &logBuffer{})
 	ctx := context.Background()
 	deviceLab(t, h, capsWireGuard)
 	viewer, err := h.api.CreateToken(ctx, "viewer-1", rbac.Viewer)
@@ -852,7 +852,7 @@ func TestCreateDeviceNeedsTheRoleOperator(t *testing.T) {
 // groups of the owner moves the tags and the rule with the Device. The Devices of a User count against its
 // maximum, and the owner of a Device cannot be deleted.
 func TestDeviceOfAUserTakesItsGroupsAsTags(t *testing.T) {
-	h := newKeysHarness(t, &logBuffer{})
+	h := newDeviceKeysHarness(t, &logBuffer{})
 	ctx := context.Background()
 	doc := usersDoc(t,
 		`{"kind": "VRF", "name": "lab", "spec": {"id": 7, "ula": "fd07:7:7::/48"}}`,
@@ -954,7 +954,7 @@ func TestDeviceOfAUserTakesItsGroupsAsTags(t *testing.T) {
 // its own, not the old one. A rollback that brings a Device back brings it without a PresharedKey, since a
 // key is never part of the intent; the configuration says so, and the Device is made again to get one.
 func TestRevokingADeviceTakesItsKey(t *testing.T) {
-	h := newKeysHarness(t, &logBuffer{})
+	h := newDeviceKeysHarness(t, &logBuffer{})
 	ctx := context.Background()
 	gw, _ := deviceLab(t, h, capsWireGuard)
 	_, _, old := makePhone(t, h.api)
@@ -1014,7 +1014,7 @@ func TestRevokingADeviceTakesItsKey(t *testing.T) {
 // crash between the key and its Device leaves, or one that is not base64, goes when the controller starts,
 // so a Device that is made later under that name never gets a key that it did not ask for.
 func TestStrayPresharedKeysAreDroppedAtStart(t *testing.T) {
-	h := newKeysHarness(t, &logBuffer{})
+	h := newDeviceKeysHarness(t, &logBuffer{})
 	ctx := context.Background()
 	deviceLab(t, h, capsWireGuard)
 	if _, _, psk := makePhone(t, h.api); psk == nil {
