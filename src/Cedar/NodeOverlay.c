@@ -43,6 +43,7 @@
 #include "NodeGateway.h"
 #include "NodeInternal.h"
 #include "NodeLink.h"
+#include "NodeProfile.h"
 
 // One peer of the overlay, from a Peer object of the desired state: a next hop of the forwarding tables
 typedef struct NODE_OVERLAY_PEER {
@@ -283,6 +284,8 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	NodeLinkAttach(ov->Node, v, st);
 	// The groups of gateways and the hubs of the Generation go in with its tables (NodeGateway.c; SDN-19, #195)
 	NodeGatewayAttach(ov->Node, v, st);
+	// The session profiles of the peers and of the node go in with its tables (NodeProfile.c; SDN-40, #233)
+	NodeProfileAttach(ov->Node, v, st);
 	// The VRFs whose internet exit the node is go in with its tables (NodeEgress.c; SDN-12, #188)
 	NodeEgressAttach(ov->Node, v, st);
 	UINT num_vrfs = (v != NULL ? v->NumVrfs : 0);
@@ -378,6 +381,9 @@ static void NodeOverlayClose(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p) {
 	if (s == NULL)
 		return;
 
+	// The session counts towards the most sessions of the User of the peer no more (NodeProfile.c; SDN-40, #233)
+	NodeProfileDown(ov->Node, p->Name, p->Key);
+
 	while (ReadAcquire(&p->Senders) != 0)
 		Sleep(1);
 
@@ -396,7 +402,8 @@ static bool NodeOverlayAttach(NODE_OVERLAY *ov, const UCHAR *key, TRANSPORT_NOIS
 	{
 		NODE_OVERLAY_PEER *p = NodeOverlayPeer(ov, NULL, key);
 
-		if (p != NULL && p->Session == NULL) {
+		// The session profile of the peer refuses the session of one device more of its User (NodeProfile.c; SDN-40, #233)
+		if (p != NULL && p->Session == NULL && NodeProfileUp(ov->Node, p->Name, key)) {
 			InterlockedExchangePointer((PVOID volatile *)&p->Session, s);
 			StrCpy(name, sizeof(name), p->Name);
 			p->Since = GetTickCount64();
@@ -580,6 +587,8 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 			return;
 
 		ok = (from < v->NumHops && v->Hops[from] == p && to == NODE_VRF_LOCAL);
+		// The session profile of the peer, and the node's own, judge it as the peer sent it (NodeProfile.c; SDN-40, #233)
+		ok = ok && NodeProfileInbound(ov->Node, v, vrf_id, from, packet, packet_size);
 		// The policy of the VRF judges the packet as the peer sent it, before a 1:1 NAT rule translates it (NodePolicy.c)
 		ok = ok && NodePolicyInbound(ov->Node, v, vrf_id, from, packet, packet_size);
 	}
@@ -679,6 +688,10 @@ static bool NodeOverlayReceive(NODE_OVERLAY *ov) {
 				break;
 			}
 		}
+
+		// The session profile of the peer ends a session that idled or that came to its automatic disconnect (NodeProfile.c)
+		if (p->Session != NULL && NodeProfileExpired(ov->Node, p->Name, p->Key, p->Since, GetTickCount64()) != NODE_PROFILE_LIVE)
+			NodeOverlayClose(ov, p);
 	}
 
 	Free(peers);
@@ -792,6 +805,8 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	NodePolicyStart(n, cfg);
 	// The gateway HA, whose gateways the states name (NodeGateway.c; SDN-19, #195)
 	NodeGatewayStart(n);
+	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233)
+	NodeProfileStart(n);
 	// The internet exit, whose VRFs the states name (NodeEgress.c; SDN-12, #188)
 	NodeEgressStart(n);
 	// The Listener, which listens where a state says (NodeListener.c; SDN-45, #238)
@@ -888,6 +903,8 @@ void NodeOverlayStop(NODE *n) {
 	// The thread that counted the replacements and the control stream that sent the events are done
 	NodeFlapFree(ov->Flap);
 	ControlFreeEvents(ov->Events);
+	// No table holds a session profile any more, and the thread that asked about the sessions ended (NodeProfile.c)
+	NodeProfileStop(n);
 
 	n->Overlay = NULL;
 	ReleaseList(ov->Peers);
@@ -951,8 +968,9 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	// What the host answers from the proxy of the internet exit goes from the address outside the VRF that the peer reached
 	// (NodeEgress.c; SDN-12, #188)
 	NodeEgressFromHost(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size);
-	// The policy of the VRF judges the packet as the overlay sees it, after the 1:1 NAT rules (NodePolicy.c; SDN-8, #184)
-	bool allowed = NodePolicyOutbound(n, v, vrf_id, hop, record + NODE_OVERLAY_VRF_TAG, size);
+	// The session profile of the peer and the node's own, then the policy of the VRF, judge the packet as the overlay sees it,
+	// after the 1:1 NAT rules (NodeProfile.c; SDN-40, #233; NodePolicy.c; SDN-8, #184)
+	bool allowed = NodeProfileOutbound(n, v, vrf_id, hop, record + NODE_OVERLAY_VRF_TAG, size) && NodePolicyOutbound(n, v, vrf_id, hop, record + NODE_OVERLAY_VRF_TAG, size);
 
 	// Counted on the peer before it reads the session, so the thread does not close the session under the send
 	InterlockedIncrement(&peer->Senders);

@@ -368,6 +368,8 @@ struct NODE_VRF_TABLES {
 	// The groups of gateways and the hubs of the same Generation (NodeGateway.c; SDN-19, #195): the next hop of each group
 	// comes after those of the peers and of the leaked routes. NULL for neither.
 	struct NODE_GATEWAY_TABLE *Gateway;
+	// The session profiles of the peers and of the node of the same Generation (NodeProfile.c; SDN-40, #233), NULL for none
+	struct NODE_PROFILE_TABLE *Profile;
 	// The VRFs whose internet exit the node is in the same Generation (NodeEgress.c; SDN-12, #188), NULL for none
 	struct NODE_EGRESS_TABLE *Egress;
 };
@@ -489,6 +491,9 @@ struct NODE {
 	// The gateway HA of the overlay (NodeGateway.c; SDN-19, #195): the gateways of its groups and their probes, NULL while
 	// the overlay does not run
 	struct NODE_GATEWAY *Gateway;
+
+	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233), NULL while the overlay does not run
+	struct NODE_PROFILE *Profile;
 
 	// The internet exit of the VRFs of the overlay (NodeEgress.c; SDN-12, #188): its proxy and the interfaces that carry the
 	// egress, NULL while the overlay does not run

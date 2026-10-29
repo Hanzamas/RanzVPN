@@ -102,6 +102,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 	}
 	// The tags of each node with the Groups of its owner (user.go; SDN-31)
 	tags := nodeTags(in)
+	// The session profile of each node that is the device of a User with one (profile.go; SDN-40)
+	profiles := nodeProfiles(in)
 	// The rules of the policy of the VRFs that each node enforces (policy.go; SDN-8)
 	rules := nodeRules(in, vrfs)
 	nat := natRules(in, vrfs)
@@ -141,6 +143,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 		self.Vtep = ownVtep(in, n)
 		// The LAN subnets behind the node, which lead to its host (topology.go; SDN-19)
 		self.LanSubnets = lans[name]
+		// The session profile of the node, whose flags it enforces on itself (profile.go; SDN-40)
+		self.Profile = profiles[name]
 		// The VRFs whose internet exit the node is (egress.go; SDN-12)
 		self.EgressVrfIds = egressVRFIDs(in, name, vrfs)
 		s.add(&controlpb.Object{Kind: &controlpb.Object_Node{Node: self}})
@@ -172,6 +176,8 @@ func Compile(in intent.Intent) (map[string]State, error) {
 			peer.Endpoints = endpoints(o)
 			// The tunnel endpoint of the peer, for the links of kind vxlan and geneve of the shared VRFs (link.go; SDN-76)
 			peer.Vtep = peerVtep(in, o, sharedVRFs)
+			// The session profile of the peer, which this node enforces on its session with it (profile.go; SDN-40)
+			peer.Profile = profiles[other]
 			s.add(&controlpb.Object{Kind: &controlpb.Object_Peer{Peer: peer}})
 			// A relay forwards only between nodes that share a VRF with it, so a peer that only a leak joins is none
 			if o.Relay != "" && len(shared) > 0 {
