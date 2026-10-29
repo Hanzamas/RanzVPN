@@ -590,6 +590,24 @@ The frame of the control protocol by which the Controller asks a Node to read or
 **Ban**:
 A User that an operator cut off. It is kept in the store, not in the Intent. While it holds, the Nodes of that user are left out of the desired state of every other Node.
 
+**Key life**:
+The span in which the Controller admits the static key of a Node. It is kept in the store (table `node_keys`) by key, begins when the Node is admitted or its User authenticates again, and ends at the end of the **Key lifetime**, so a revision, a rollback or an import does not give an expired key another life.
+
+**Key lifetime**:
+`Network.keyLifetimeDays`, 90 days when left out. A Node takes the shortest one of the Networks of its VRFs.
+
+**Non-expiring Node**:
+A Node marked `nonExpiring` in the Intent. Its key has no end.
+
+**Refresh (of a key)**:
+The new period that a key gets when its User logs in again with the device (`EnrolDevice`), or when an operator refreshes the key of a Node that has no owner (`ranz node-key refresh`). A User that is banned or no longer valid cannot refresh.
+
+**Approval mode**:
+`Network.approval`, `auto` (the default) or `manual`. In `manual` a new Node waits until an operator gives it its **Approval** (`ranz node-key approve`). Turning approval on cuts off no Node that was admitted.
+
+**Held back (Node)**:
+A Node whose key ended or that waits for approval. Like the Nodes of a Ban, it is left out of the desired state of every other Node, and its control stream is refused with `REFUSE_REASON_UNKNOWN_NODE` and a message that says why.
+
 **Diagnostics bundle**:
 One ZIP archive with the logs, the configuration and the status of a Controller or of a host, a manifest, and no secret. The term always carries "diagnostics": `ranz.exe` is not called a bundle.
 
@@ -916,6 +934,12 @@ The User that a Node is a device of (`Node.owner`). A Device with an owner inher
 
 **Maximum devices**:
 `maxDevices` of a User. An Intent that holds more devices of the User is refused. The Nodes and the Devices of a User count against it.
+
+**SessionProfile**:
+The Intent resource of the limits of the sessions of people: upload and download limits, maximum sessions, MAC, IPv4 and IPv6 counts, idle timeout, automatic disconnect, no-bridge, no-routing, no-server and privacy filter. A User or a Group names one in `sessionProfile`.
+
+**Effective profile**:
+The SessionProfile that the devices of a User run under: its own, else the one of its first Group in name order that names one (`EffectiveProfile`).
 
 **Device**:
 A phone, laptop or router that joins exactly one Network over standard WireGuard, without `ranz.exe`, through its gateway Node. It is not a Peer.

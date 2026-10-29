@@ -1022,6 +1022,11 @@ def make_switch_seeds():
     write_seed('fuzz_switch', 'native_priority_tag_profinet.bin',
                switch_input(2, 0, eth(MAC_A, MAC_B, 0x8100, struct.pack('>HH', 0xC000, 0x8892) + profinet)))
     write_seed('fuzz_switch', 'no_member.bin', switch_input(3, 0, eth(BROADCAST, MAC_A, 0x88B5, b'SW\x00\x04')))
+    # The IP table (SDN-50-N #492): an IPv6 packet, whose source the table learns, and an IPv4 packet whose clock byte reads
+    # and clears both tables after it
+    a6, b6 = bytes.fromhex('fd000000000000000000000000000001'), bytes.fromhex('fd000000000000000000000000000002')
+    write_seed('fuzz_switch', 'access_ipv6.bin', switch_input(0, 1, eth(MAC_B, MAC_A, 0x86DD, ipv6(a6, b6, 17, udp6(a6, b6, 40000, 40001, b'ranz-switch')))))
+    write_seed('fuzz_switch', 'access_ipv4_then_clear.bin', switch_input(0, 0xFE, eth(MAC_B, MAC_A, 0x0800, dgram)))
 
 
 def make_module_seeds():

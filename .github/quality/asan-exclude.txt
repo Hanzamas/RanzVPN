@@ -9,5 +9,6 @@ certdl       measures the client timeouts, time windows that AddressSanitizer wo
 nodesvc      installs ranz-node as a service, which would run outside the instrumented process; build_and_test runs it
 quic         needs msquic.dll, which this job does not fetch (noisehub runs its loopback part here)
 quicbind     needs msquic.dll, which this job does not fetch, and measures throughput and CPU, which AddressSanitizer distorts
+qtip         needs msquic.dll, which this job does not fetch, and the LocalMachine\My store; build_and_test and the XDP job run it
 sourcelimits needs msquic.dll, which this job does not fetch, and floods sockets and UDP, which AddressSanitizer slows; build_and_test runs it
 switchbench  measures how forwarding scales across cores, which AddressSanitizer distorts; build_and_test runs it

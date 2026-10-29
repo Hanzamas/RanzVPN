@@ -195,6 +195,8 @@ add_library(corecontrol STATIC
   ControlGateway.c
   # The session profiles of a node and of its peers in a desired state (SDN-40, #233)
   ControlProfile.c
+  # The live operations of the Controller on the tables of the L2 Networks (SDN-50-N, #492)
+  ControlOperation.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")
