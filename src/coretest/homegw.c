@@ -114,8 +114,12 @@ static void *HomeGwOwners(bool tcp) {
 }
 
 // Whether the UDP endpoint from, an address of the host and a port, is a socket of this process: a search of a node of
-// the test, and not one of another program of the host
+// the test, and not one of another program of the host. UDP 1900 never is: the one socket of the process there is the
+// gateway's own, and an SSDP service of the host may search from that port too.
 static bool HomeGwOwnUdp(const SOCKADDR_IN *from) {
+	if (from->sin_port == htons(HOMEGW_SSDP_PORT))
+		return false;
+
 	MIB_UDPTABLE_OWNER_PID *t = (MIB_UDPTABLE_OWNER_PID *)HomeGwOwners(false);
 	bool own = false;
 
