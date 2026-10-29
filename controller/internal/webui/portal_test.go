@@ -100,6 +100,24 @@ type portalControl struct {
 	Visible bool   `json:"visible"`
 }
 
+// The pointer of the headless browser does not always reach a button of the pages of the portal: a click that the
+// browser was told to make came to nothing on the sign-in and on the form that adds a device, on one system and then on
+// the other, while the controller recorded no call and the same page, asked the same thing in script, answered it. So
+// the test of the portal does not use the pointer: submit and press do to the page what the pointer does. The pointer is
+// what the tests of the console exercise, with their clicks on the buttons of its pages.
+
+// submit is the action that submits the form that the selector form names, as the Enter key does in a field of it: the
+// browser checks the fields of the form against their constraints, and then sends the submit event to the page.
+func submit(form string) chromedp.Action[chromedp.Void] {
+	return chromedp.Evaluate[chromedp.Void](fmt.Sprintf(`document.querySelector(%q).requestSubmit()`, form))
+}
+
+// press is the action that gives the button that the XPath expression names the click that a pointer gives it: the
+// page gets the click event, and the button does what a click makes it do, such as closing the dialog that it is in.
+func press(xpath string) chromedp.Action[chromedp.Void] {
+	return chromedp.Evaluate[chromedp.Void](fmt.Sprintf(`document.evaluate(%q, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue.click()`, xpath))
+}
+
 // portalSignIn signs tab in to the portal as the User user with the password, on its sign-in page, which goes
 // on to the page that My devices is.
 func (h *harness) portalSignIn(t *testing.T, tab context.Context, user, password string) {
@@ -109,7 +127,7 @@ func (h *harness) portalSignIn(t *testing.T, tab context.Context, user, password
 		chromedp.WaitVisible(chromedp.CSS("#user")),
 		chromedp.SetValue(chromedp.CSS("#user"), user),
 		chromedp.SetValue(chromedp.CSS("#password"), password),
-		chromedp.Click(chromedp.CSS(`#sign-in button[type="submit"]`)),
+		submit("#sign-in"),
 		chromedp.WaitReady(chromedp.CSS(`html[data-page="portal"]`)),
 	))
 	h.settle(t, tab, "portal")
@@ -135,7 +153,8 @@ func (h *harness) problemOf(t *testing.T, tab context.Context) (string, bool) {
 const reportTimeout = 5 * time.Second
 
 // watchPage makes the page that tab shows keep a log of its calls of fetch, with what each answered or why it failed,
-// and of the errors that its scripts raise, which pageReport reads. It changes nothing of what the page does.
+// of the errors that its scripts raise, and of the forms that are submitted or refused for a field that is not valid,
+// which pageReport reads. It changes nothing of what the page does.
 func watchPage(t *testing.T, tab context.Context) {
 	t.Helper()
 	run(t, tab, chromedp.Evaluate[chromedp.Void](`(() => {
@@ -155,6 +174,9 @@ func watchPage(t *testing.T, tab context.Context) {
 		};
 		addEventListener('error', (ev) => log.push({ error: ev.message }));
 		addEventListener('unhandledrejection', (ev) => log.push({ rejected: String(ev.reason) }));
+		for (const type of ['submit', 'invalid']) {
+			document.addEventListener(type, (ev) => log.push({ event: ev.type, target: ev.target.id }), true);
+		}
 	})()`))
 }
 
@@ -314,7 +336,7 @@ func TestAUserUsesThePortal(t *testing.T) {
 	run(t, tab, chromedp.Steps(
 		chromedp.SetValue(chromedp.CSS("#user"), "alice"),
 		chromedp.SetValue(chromedp.CSS("#password"), "not the password of alice"),
-		chromedp.Click(chromedp.CSS(`#sign-in button[type="submit"]`)),
+		submit("#sign-in"),
 	))
 	if refused, ok := h.problemOf(t, tab); ok && !strings.Contains(refused, "the user name or the password is wrong") {
 		t.Errorf("a wrong password: the sign-in says %q", refused)
@@ -339,7 +361,7 @@ func TestAUserUsesThePortal(t *testing.T) {
 
 	// She adds a phone by its static key; the controller holds it as her device, and the page lists it
 	if got := h.act(t, tab, chromedp.SetValue(chromedp.CSS("#device-name"), "alice-phone"), chromedp.SetValue(chromedp.CSS("#device-key"), portalKey(phoneKey)),
-		chromedp.Click(chromedp.CSS(`#add-form button[type="submit"]`))); !strings.Contains(got, "The device alice-phone is added") {
+		submit("#add-form")); !strings.Contains(got, "The device alice-phone is added") {
 		t.Errorf("adding the phone says %q", got)
 	}
 	if rows := portalRows(t, tab, "#devices", 2); !strings.Contains(rows[1], "alice-phone") {
@@ -353,16 +375,16 @@ func TestAUserUsesThePortal(t *testing.T) {
 	run(t, tab, chromedp.Steps(
 		chromedp.SetValue(chromedp.CSS("#device-name"), "stolen"),
 		chromedp.SetValue(chromedp.CSS("#device-key"), portalKey(bobKey)),
-		chromedp.Click(chromedp.CSS(`#add-form button[type="submit"]`)),
+		submit("#add-form"),
 	))
 	if refused, ok := h.problemOf(t, tab); ok && !strings.Contains(refused, "is no device of User") {
 		t.Errorf("adding the key of the laptop of bob: the page says %q", refused)
 	}
 
 	// She removes the phone, after the question; the controller no longer holds it
-	if got := h.act(t, tab, chromedp.Click(chromedp.Search(`//tr[td[1][normalize-space()="alice-phone"]]//button`)),
+	if got := h.act(t, tab, press(`//tr[td[1][normalize-space()="alice-phone"]]//button`),
 		chromedp.WaitVisible(chromedp.CSS(`dialog[open] button[value="ok"]`)),
-		chromedp.Click(chromedp.CSS(`dialog[open] button[value="ok"]`))); !strings.Contains(got, "The device alice-phone is removed") {
+		press(`//dialog[@open]//button[@value="ok"]`)); !strings.Contains(got, "The device alice-phone is removed") {
 		t.Errorf("removing the phone says %q", got)
 	}
 	portalRows(t, tab, "#devices", 1)
@@ -373,7 +395,7 @@ func TestAUserUsesThePortal(t *testing.T) {
 	// She makes a join token for a device without a browser; its secret shows once, with the command for it
 	h.visit(t, tab, "/portal-join", "portal-join")
 	portalControls(t, tab, "Join tokens", "makeJoinToken", "joinTokens", "signOut")
-	if got := h.act(t, tab, chromedp.SetValue(chromedp.CSS("#join-name"), "alice-nas"), chromedp.Click(chromedp.CSS(`#make-form button[type="submit"]`))); !strings.Contains(got, "The join token is made") {
+	if got := h.act(t, tab, chromedp.SetValue(chromedp.CSS("#join-name"), "alice-nas"), submit("#make-form")); !strings.Contains(got, "The join token is made") {
 		t.Errorf("making the join token says %q", got)
 	}
 	secret := run(t, tab, chromedp.Text(chromedp.CSS("code.secret")))
@@ -407,14 +429,14 @@ func TestAUserUsesThePortal(t *testing.T) {
 
 	// A token that she revokes enrols nothing
 	h.visit(t, tab, "/portal-join", "portal-join")
-	if got := h.act(t, tab, chromedp.Click(chromedp.CSS(`#make-form button[type="submit"]`))); !strings.Contains(got, "The join token is made") {
+	if got := h.act(t, tab, submit("#make-form")); !strings.Contains(got, "The join token is made") {
 		t.Fatalf("making a second join token says %q", got)
 	}
 	spare := run(t, tab, chromedp.Text(chromedp.CSS("code.secret")))
 	portalRows(t, tab, "#tokens", 1)
-	if got := h.act(t, tab, chromedp.Click(chromedp.Search(`//tr//button[normalize-space()="Revoke"]`)),
+	if got := h.act(t, tab, press(`//tr//button[normalize-space()="Revoke"]`),
 		chromedp.WaitVisible(chromedp.CSS(`dialog[open] button[value="ok"]`)),
-		chromedp.Click(chromedp.CSS(`dialog[open] button[value="ok"]`))); !strings.Contains(got, "The join token is revoked") {
+		press(`//dialog[@open]//button[@value="ok"]`)); !strings.Contains(got, "The join token is revoked") {
 		t.Errorf("revoking the join token says %q", got)
 	}
 	var refused *login.Error
@@ -438,7 +460,7 @@ func TestAUserUsesThePortal(t *testing.T) {
 	}
 	// The page leaves for the sign-in once the controller has ended the token, so the wait is for the sign-in itself
 	run(t, tab, chromedp.Steps(
-		chromedp.Click(chromedp.Search(`//header[@id="portal-header"]//button[normalize-space()="Sign out"]`)),
+		press(`//header[@id="portal-header"]//button[normalize-space()="Sign out"]`),
 		chromedp.WaitReady(chromedp.CSS(`html[data-page="portal-sign-in"]`)),
 	))
 	h.settle(t, tab, "portal-sign-in")
