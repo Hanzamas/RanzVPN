@@ -43,6 +43,7 @@
 
 #include "NodeGateway.h"
 #include "NodeInternal.h"
+#include "NodeProfile.h"
 
 #define NODE_GATEWAY_TICK 10 // ms between two looks of the thread of the overlay at the gateways
 
@@ -675,7 +676,10 @@ bool NodeGatewayTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UIN
 	UINT packet_size = size - NODE_OVERLAY_VRF_TAG;
 
 	to = NodeGatewayPick(v, to, packet, packet_size);
-	if (to >= t->NumPeers || from >= v->NumHops || v->Hops[to] == v->Hops[from] || NodeOverlaySendRecord(n, v, to, record, size) == false)
+	if (to >= t->NumPeers || from >= v->NumHops || v->Hops[to] == v->Hops[from])
+		return false;
+	// The session profiles of the two peers judge the packet as it passes the node (NodeProfile.c; SDN-40, #233)
+	if (NodeProfileTransit(n, v, vrf_id, from, to, packet, packet_size) == false || NodeOverlaySendRecord(n, v, to, record, size) == false)
 		return false;
 
 	NodeMirrorCopy(v, vrf_id, packet, packet_size, false);
