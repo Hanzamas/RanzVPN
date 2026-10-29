@@ -24,13 +24,33 @@
 // - Refused: datagrams of node-c to the loopback, to a link-local address and to an address of lab, another VRF of node-x,
 //   get no answer, and the Egress counts them as refused, so the egress of one VRF never leads into another.
 // Print "EGRESS TEST OK" only when every check passes. Needs administrator rights and wintun.dll next to vpntest
-// (.github/scripts/fetch-wintun.ps1).
+// (.github/scripts/fetch-wintun.ps1). node-x takes the proxy there whatever tier the runner gives
+// (NODE_OVERLAY_CONFIG.EgressTier).
+//
+// The tiers on the NAT of Windows (Cedar/NodeEgressNat.c) are the commands egressnat and egressrras, on the same nodes and
+// uplinks, with node-x on the tier that the runner gives it (NodeCapsDecide) and the answers of the network behind uplink-a
+// put back into uplink-a, where the NAT took the requests out:
+// - The tier: the Capabilities of the runner give it, from its edition, RRAS, Hyper-V, WinNAT and the NAT networks of WinNAT
+//   that exist, and the Egress of node-x uses it.
+// - Egress: a UDP datagram, an echo request and a TCP SYN of node-c to the network behind uplink-a leave the runner by uplink-a
+//   with the address of uplink-a as their source, translated by the NAT of Windows, and each answer reaches node-c from the
+//   address and port that it named.
+// - The reconcile: the NAT setting of the node taken away behind its back (its NAT network of WinNAT, or the NAT information
+//   of the adapter of corp in RRAS) is set again by the next reconcile, which the Egress counts, and the egress works again.
+// - Once node-x is the exit of no VRF, the NAT of Windows holds nothing of the node.
+// egressnat checks the tier that the runner gives: WinNAT where Hyper-V and WinNAT are present and no NAT network of WinNAT of
+// another program exists; then a NAT network of WinNAT of another name, which the test creates where there is none, makes the
+// runner give the proxy, the Egress of a new node-x uses the proxy, and the other NAT network is still there as it was once
+// the node stopped, never touched. On a runner without Hyper-V or WinNAT it checks that the runner gives the proxy. egressrras
+// needs a Windows Server whose Routing and Remote Access runs as a LAN router (the egress-rras job of windows.yml installs it,
+// .github/scripts/egress-rras.ps1) and checks RRAS NAT there.
 
 #include "harness_int.h"
 #include "testlist.h"
 
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
+#include "Cedar/NodeCaps.h"
 #include "Cedar/NodeEgress.h"
 
 #include "Mayaqua/Encrypt.h"
@@ -74,6 +94,13 @@
 #define	EGRESSTEST_ICMP_DATA	"ranz egress icmp"
 #define	EGRESSTEST_UPLINK_DATA	"ranz egress uplink"
 #define	EGRESSTEST_REFUSED_DATA	"ranz egress refused"
+#define	EGRESSTEST_NAT_DATA		"ranz egress nat"
+#define	EGRESSTEST_NAT_BUDGET	240000		// The whole of a test of the tiers on the NAT of Windows ends within this time (ms)
+#define	EGRESSTEST_NAT_BOUND	30000		// A bounded wait on the NAT of Windows: a reconcile every NODE_EGRESS_NAT_SCAN (ms)
+#define	EGRESSTEST_TCP_PORT		80			// The TCP port of the address behind uplink-a, which answers a SYN
+#define	EGRESSTEST_SERVER_ISN	0x53525652	// The initial sequence number of that address ("SRVR")
+#define	EGRESSTEST_FOREIGN		L"RanzVPN-Test-Foreign"	// The NAT network of WinNAT of another program that egressnat creates
+#define	EGRESSTEST_FOREIGN_NET	L"198.18.200.0/24"		// ... over a prefix of no VRF of the test
 
 // The addresses of the test, in network byte order
 static UINT egresstest_x_corp;		// node-x in corp: 198.19.61.1
@@ -114,15 +141,27 @@ typedef struct EGRESSTEST_MATCH
 	char *Payload;		// What its payload begins with, NULL for any
 } EGRESSTEST_MATCH;
 
-// The network outside behind uplink-a: what leaves the runner by uplink-a to it gets its answer on uplink-b
+// The network outside behind uplink-a: what leaves the runner by uplink-a to it gets its answer on uplink-b, or with Back on
+// uplink-a itself, where a NAT of Windows took it out
 typedef struct EGRESSTEST_UPLINKS
 {
 	NODE_WINTUN *A;						// uplink-a ...
 	NODE_WINTUN *B;						// ... and uplink-b
+	bool Back;							// The answers go back into uplink-a (the tiers on the NAT of Windows)
 	volatile LONG Datagrams;			// UDP datagrams to the echo port of the address behind uplink-a that left by uplink-a
 	volatile LONG Echoes;				// Echo requests to that address that left by uplink-a
-	volatile LONG Answered;				// Answers that the test put into uplink-b
+	volatile LONG Segments;				// TCP SYNs to its TCP port that left by uplink-a
+	volatile LONG Translated;			// Packets to that address that left with the address of uplink-a as their source
+	volatile LONG Answered;				// Answers that the test put into uplink-b, or uplink-a with Back
 } EGRESSTEST_UPLINKS;
+
+// What the watchdog of a test waits for: its end within its budget
+typedef struct EGRESSTEST_WATCH
+{
+	HANDLE Done;						// Set when the test ends
+	UINT Budget;						// ms that the test has
+	char *Name;							// The name of the test in capitals, for the line that says it failed
+} EGRESSTEST_WATCH;
 
 // The echo servers of the runner on its own address
 typedef struct EGRESSTEST_SERVERS
@@ -165,15 +204,16 @@ static bool EgressTestCheck(EGRESSTEST_CTX *ctx, bool ok, char *what, char *fmt,
 // The watchdog: a native thread that ends a run that hangs, so that a lost packet is a failed test instead of a hung CI step
 static DWORD WINAPI EgressTestWatchdog(LPVOID param)
 {
+	EGRESSTEST_WATCH *w = (EGRESSTEST_WATCH *)param;
 	char msg[MAX_SIZE];
 	DWORD written = 0;
 
-	if (WaitForSingleObject((HANDLE)param, EGRESSTEST_BUDGET) != WAIT_TIMEOUT)
+	if (WaitForSingleObject(w->Done, w->Budget) != WAIT_TIMEOUT)
 	{
 		return 0;
 	}
 
-	int len = snprintf(msg, sizeof(msg), "EGRESS TEST FAILED (did not finish within %u ms)\n", EGRESSTEST_BUDGET);
+	int len = snprintf(msg, sizeof(msg), "%s TEST FAILED (did not finish within %u ms)\n", w->Name, w->Budget);
 	if (len > 0)
 	{
 		WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), msg, (DWORD)MIN((UINT)len, (UINT)sizeof(msg) - 1), &written, NULL);
@@ -836,7 +876,8 @@ static void EgressTestServersStop(EGRESSTEST_SERVERS *s)
 }
 
 // What the runner sends out by uplink-a, on the I/O thread of its adapter queue: a UDP datagram to the echo port of the
-// address behind it, and an echo request to that address, get their answer from that address on uplink-b
+// address behind it, an echo request to that address and a TCP SYN to its TCP port get their answer from that address on
+// uplink-b, or on uplink-a with Back. A packet whose source is the address of uplink-a was translated by a NAT of Windows.
 static void EgressTestUplinkA(NODE_WINTUN *w, void *param, const UCHAR *packet, UINT size)
 {
 	EGRESSTEST_UPLINKS *u = (EGRESSTEST_UPLINKS *)param;
@@ -858,7 +899,28 @@ static void EgressTestUplinkA(NODE_WINTUN *w, void *param, const UCHAR *packet, 
 		return;
 	}
 
-	if (p.Protocol == IP_PROTO_UDP && p.DstPort == EGRESSTEST_ECHO_PORT)
+	if (src == egresstest_uplink_a)
+	{
+		InterlockedIncrement(&u->Translated);
+	}
+
+	if (p.Protocol == IP_PROTO_TCP && p.DstPort == EGRESSTEST_TCP_PORT && (p.TcpFlags & (TCP_SYN | TCP_ACK | TCP_RST)) == TCP_SYN)
+	{
+		UCHAR l4[20];
+
+		// The SYN-ACK: the ports swapped, the sequence number of the address behind uplink-a, the SYN acknowledged
+		Zero(l4, sizeof(l4));
+		WRITE_USHORT(l4, p.DstPort);
+		WRITE_USHORT(l4 + 2, p.SrcPort);
+		WRITE_UINT(l4 + 4, EGRESSTEST_SERVER_ISN);
+		WRITE_UINT(l4 + 8, READ_UINT(packet + p.HeaderSize + 4) + 1);
+		l4[12] = 5 << 4;
+		l4[13] = TCP_SYN | TCP_ACK;
+		WRITE_USHORT(l4 + 14, 65535);
+		total = EgressTestIp(reply, IP_PROTO_TCP, dst, src, l4, sizeof(l4));
+		InterlockedIncrement(&u->Segments);
+	}
+	else if (p.Protocol == IP_PROTO_UDP && p.DstPort == EGRESSTEST_ECHO_PORT)
 	{
 		UCHAR l4[EGRESSTEST_MAX_PACKET];
 		UINT l4_size = p.Total - p.HeaderSize;
@@ -882,7 +944,7 @@ static void EgressTestUplinkA(NODE_WINTUN *w, void *param, const UCHAR *packet, 
 		InterlockedIncrement(&u->Echoes);
 	}
 
-	if (total != 0 && NodeWintunSend(u->B, reply, total))
+	if (total != 0 && NodeWintunSend(u->Back ? u->A : u->B, reply, total))
 	{
 		InterlockedIncrement(&u->Answered);
 	}
@@ -944,14 +1006,15 @@ static bool EgressTestWaitFlags(UINT64 a, UINT64 b, UINT want_a, UINT want_b, UI
 }
 
 // Bring up uplink-a and uplink-b on the node n: their addresses, a default route of a high metric through each and a route
-// through uplink-a to the network behind it. False when one cannot be had.
-static bool EgressTestUplinksStart(EGRESSTEST_UPLINKS *u, NODE *n)
+// through uplink-a to the network behind it, whose answers go back into uplink-a with back. False when one cannot be had.
+static bool EgressTestUplinksStart(EGRESSTEST_UPLINKS *u, NODE *n, bool back)
 {
 	wchar_t name[MAX_SIZE];
 	NODE_PREFIX p;
 	UINT r = Rand32() & 0xFFFF;
 
 	Zero(u, sizeof(EGRESSTEST_UPLINKS));
+	u->Back = back;
 
 	// uplink-b first: the answers of uplink-a go into it
 	UniFormat(name, sizeof(name), L"RanzEb%04x", r);
@@ -1243,6 +1306,8 @@ static void EgressTestRun(EGRESSTEST_CTX *ctx)
 		cfg.AdapterParam = set;
 		cfg.AdapterStop = EgressTestHalt;
 		cfg.State = EgressTestApplied;
+		// The proxy, whatever tier this runner gives: egressnattest.c checks the tiers on the NAT of Windows
+		cfg.EgressTier = CONTROL_EGRESS_PROXY;
 		ok = (set != NULL && NodeOverlayStart(x, &cfg));
 
 		// node-c: its fake host is the test
@@ -1262,7 +1327,7 @@ static void EgressTestRun(EGRESSTEST_CTX *ctx)
 	// The uplinks, and what the strong host model does before node-x is an exit
 	if (ok)
 	{
-		uplinks_up = EgressTestUplinksStart(&uplinks, c);
+		uplinks_up = EgressTestUplinksStart(&uplinks, c, false);
 		ok = EgressTestCheck(ctx, uplinks_up, "uplink-a and uplink-b: two Wintun adapters of the test with their addresses, a default route of a high metric each and a route through uplink-a to the network behind it",
 			"an adapter, an address or a route failed");
 	}
@@ -1386,18 +1451,571 @@ static void EgressTestRun(EGRESSTEST_CTX *ctx)
 	Free(host);
 }
 
-// egress: the internet exit of a VRF with the proxy (SDN-12)
-RANZ_TEST("egress", egress_test, "Internet exit of a VRF: the proxy of an exit carries TCP, UDP and ICMP echo of a peer to the outside, the interfaces that carry the egress get Forwarding and weak host so a reply on another interface reaches the peer, and the loopback, link-local and other VRFs are refused (administrator rights, wintun.dll).");
-void egress_test(UINT num, char **arg)
+//
+// The tiers on the NAT of Windows
+//
+
+// The two nodes of a test of the tiers on the NAT of Windows, on the in-process loopback transport: node-x with its adapters of
+// the VRFs as its host, on the tier that the runner gives, and node-c, whose host is the test
+typedef struct EGRESSTEST_PAIR
+{
+	NODE *X;
+	NODE *C;
+	wchar_t XDir[MAX_PATH];
+	wchar_t CDir[MAX_PATH];
+	PEER_KEY XKey;
+	PEER_KEY CKey;
+	NODE_VRF_ADAPTERS *Set;				// The adapters of the VRFs of node-x
+	EGRESSTEST_HOST *Host;				// The host of node-c
+	TRANSPORT *Loopback;
+} EGRESSTEST_PAIR;
+
+// The name of an Egress tier as the test prints it
+static char *EgressTestTierName(UINT tier)
+{
+	switch (tier)
+	{
+	case CONTROL_EGRESS_RRAS:
+		return "RRAS NAT";
+	case CONTROL_EGRESS_WINNAT:
+		return "WinNAT";
+	case CONTROL_EGRESS_PROXY:
+		return "the proxy";
+	default:
+		return "no tier";
+	}
+}
+
+// The Egress tier that the Capabilities of the runner give a node, with what decides it into host; with print, the facts go to
+// the output
+static UINT EgressTestHostTier(NODE_CAPS_HOST *host, bool print)
+{
+	CONTROL_CAPS caps;
+
+	NodeCapsReadHost(host);
+	NodeCapsDecide(host, &caps);
+
+	if (print)
+	{
+		Print("  [INFO] this runner: SKU %u, RRAS as a LAN router %u, Hyper-V %u, WinNAT %u, a NAT network of WinNAT of another program %u: %s (tier %u)\n",
+			caps.Sku, (UINT)host->Rras, (UINT)host->HyperV, (UINT)host->WinNat, (UINT)host->NetNat, EgressTestTierName(caps.EgressTier), caps.EgressTier);
+	}
+
+	return caps.EgressTier;
+}
+
+// The LUID of the interface of the runner that holds the address addr into *luid: false for none
+static bool EgressTestLuidOf(UINT addr, UINT64 *luid)
+{
+	MIB_UNICASTIPADDRESS_TABLE *table = NULL;
+	bool found = false;
+
+	if (GetUnicastIpAddressTable(AF_INET, &table) != NO_ERROR)
+	{
+		return false;
+	}
+
+	for (ULONG i = 0;i < table->NumEntries && found == false;i++)
+	{
+		if (Cmp(&table->Table[i].Address.Ipv4.sin_addr, &addr, 4) == 0)
+		{
+			*luid = table->Table[i].InterfaceLuid.Value;
+			found = true;
+		}
+	}
+
+	FreeMibTable(table);
+
+	return found;
+}
+
+// Whether the NAT of Windows of the tier holds the setting of the node for corp: its NAT network of WinNAT over 198.19.61.0/24,
+// the supernet of corp, or the adapter of corp at luid a private interface of the NAT of RRAS
+static bool EgressTestNatHolds(UINT tier, UINT64 luid)
+{
+	wchar_t prefix[MAX_PATH];
+	UINT flags = 0;
+
+	if (tier == CONTROL_EGRESS_WINNAT)
+	{
+		return (NodeEgressNetNatPrefix(NODE_EGRESS_NETNAT_NAME, prefix, sizeof(prefix)) && UniStrCmpi(prefix, L"198.19.61.0/24") == 0);
+	}
+
+	return (NodeEgressRrasFlags(luid, &flags) && flags == 0);
+}
+
+// Take the setting of the node for corp away from the NAT of Windows of the tier behind its back, as an operator or a reset does
+static bool EgressTestNatTakeAway(UINT tier, UINT64 luid)
+{
+	if (tier == CONTROL_EGRESS_WINNAT)
+	{
+		return NodeEgressNetNatRemove(NODE_EGRESS_NETNAT_NAME);
+	}
+
+	return NodeEgressRrasRemove(luid);
+}
+
+// Whether the NAT of Windows of the tier holds nothing of the node: no NAT network of WinNAT of the node, or no NAT information
+// of the adapter of corp at corp or of uplink-a at uplink in RRAS
+static bool EgressTestNatEmpty(UINT tier, UINT64 corp, UINT64 uplink)
+{
+	UINT flags = 0;
+
+	if (tier == CONTROL_EGRESS_WINNAT)
+	{
+		return (NodeEgressNetNatPrefix(NODE_EGRESS_NETNAT_NAME, NULL, 0) == false);
+	}
+
+	return (NodeEgressRrasFlags(corp, &flags) == false && NodeEgressRrasFlags(uplink, &flags) == false);
+}
+
+// Start the pair, with tag in the names of the data directories of the nodes: false when a key, the transport, the adapters or
+// an overlay cannot be had. EgressTestPairStop takes what it started, whatever the result.
+static bool EgressTestPairStart(EGRESSTEST_PAIR *p, char *tag)
+{
+	NODE_OVERLAY_CONFIG cfg;
+	UCHAR scalar[PEER_KEY_SIZE];
+	wchar_t name[MAX_SIZE];
+	char dir[MAX_SIZE];
+
+	Zero(p, sizeof(EGRESSTEST_PAIR));
+	p->Host = ZeroMalloc(sizeof(EGRESSTEST_HOST));
+	InitializeSRWLock(&p->Host->Lock);
+	p->Loopback = TransportLoopbackNew("loopback", 0, false);
+	UniFormat(name, sizeof(name), L"RanzN%04x", Rand32() & 0xFFFF);
+
+	// Random scalars, so the adapters of a run have GUIDs of their own
+	Rand(scalar, sizeof(scalar));
+	bool ok = PeerKeyFromScalar(&p->XKey, scalar);
+	Rand(scalar, sizeof(scalar));
+	ok = PeerKeyFromScalar(&p->CKey, scalar) && ok;
+	Zero(scalar, sizeof(scalar));
+	if (ok == false || p->Loopback == NULL)
+	{
+		return false;
+	}
+
+	// node-x: no tier in its configuration, so the Egress takes the one of the runner
+	Format(dir, sizeof(dir), "%sx", tag);
+	EgressTestNewDir(p->XDir, sizeof(p->XDir), dir);
+	p->X = NewNode(p->XDir);
+	NodeStart(p->X);
+	p->Set = NodeVrfAdaptersNew(p->X, name, p->XKey.Public, true);
+	Zero(&cfg, sizeof(cfg));
+	cfg.Data = p->Loopback;
+	cfg.Key = &p->XKey;
+	cfg.Adapter = EgressTestToHost;
+	cfg.AdapterParam = p->Set;
+	cfg.AdapterStop = EgressTestHalt;
+	cfg.State = EgressTestApplied;
+	ok = (p->Set != NULL && NodeOverlayStart(p->X, &cfg));
+
+	Format(dir, sizeof(dir), "%sc", tag);
+	EgressTestNewDir(p->CDir, sizeof(p->CDir), dir);
+	p->C = NewNode(p->CDir);
+	NodeStart(p->C);
+	Zero(&cfg, sizeof(cfg));
+	cfg.Data = p->Loopback;
+	cfg.Key = &p->CKey;
+	cfg.Adapter = EgressTestClientHost;
+	cfg.AdapterParam = p->Host;
+
+	return (NodeOverlayStart(p->C, &cfg) && ok);
+}
+
+// Stop the pair: the overlays, node-x halting its adapters first, then its adapters, the uplinks u (NULL for none) and the
+// nodes, with the lines of the node log of node-x about the Egress printed with print_log
+static void EgressTestPairStop(EGRESSTEST_PAIR *p, EGRESSTEST_UPLINKS *u, bool print_log)
+{
+	if (p->C != NULL)
+	{
+		NodeOverlayStop(p->C);
+	}
+	if (p->X != NULL)
+	{
+		NodeOverlayStop(p->X);
+	}
+	if (p->Set != NULL)
+	{
+		NodeVrfAdaptersFree(p->Set);
+	}
+	if (u != NULL && u->A != NULL)
+	{
+		EgressTestUplinksStop(u);
+	}
+	else if (u != NULL && u->B != NULL)
+	{
+		NodeWintunFree(u->B);
+	}
+
+	EgressTestFreeNode(p->X, p->XDir, print_log);
+	EgressTestFreeNode(p->C, p->CDir, false);
+	if (p->Loopback != NULL)
+	{
+		TransportLoopbackFree(p->Loopback);
+	}
+	PeerKeyClose(&p->XKey);
+	PeerKeyClose(&p->CKey);
+	Free(p->Host);
+	Zero(p, sizeof(EGRESSTEST_PAIR));
+}
+
+// What a test waits for of the Egress of node-x, given its status (EgressTestWant*)
+typedef bool (EGRESSTEST_WANT_PROC)(const NODE_EGRESS_STATUS *es);
+
+// Make node-x the exit of corp (exit) or of no VRF, with node-c routing to it, and wait until their session is up and want holds
+// of the Egress of node-x, within EGRESSTEST_NAT_BOUND: whether it did, the status into es
+static bool EgressTestExit(EGRESSTEST_PAIR *p, UINT64 generation, bool exit, EGRESSTEST_WANT_PROC *want, NODE_EGRESS_STATUS *es)
+{
+	bool applied = EgressTestApply(p->X, p->C, generation, p->XKey.Public, p->CKey.Public, exit);
+	bool done = false;
+
+	for (UINT64 end = Tick64() + EGRESSTEST_NAT_BOUND;applied && done == false && Tick64() < end;SleepThread(EGRESSTEST_POLL))
+	{
+		NodeEgressGetStatus(p->X, es);
+		done = (EgressTestLinks(p->X) == 1 && EgressTestLinks(p->C) == 1 && want(es));
+	}
+
+	NodeEgressGetStatus(p->X, es);
+
+	return (applied && done);
+}
+
+// The Egress serves corp through the NAT of Windows: it holds what corp wants
+static bool EgressTestWantNat(const NODE_EGRESS_STATUS *es)
+{
+	return (es->NumVrfs == 1 && es->NatReady);
+}
+
+// The Egress serves corp through the proxy: it listens on the address of node-x in corp
+static bool EgressTestWantProxy(const NODE_EGRESS_STATUS *es)
+{
+	return (es->NumVrfs == 1 && es->NumReady == 1);
+}
+
+// The Egress serves no VRF, and the NAT of Windows takes nothing of it
+static bool EgressTestWantNone(const NODE_EGRESS_STATUS *es)
+{
+	return (es->NumVrfs == 0 && es->NatReady == false);
+}
+
+// The flows of node-c through the NAT of Windows of node-x to the network behind uplink-a, from port and the ports after it
+// (when names the moment): a UDP datagram, an echo request and a TCP SYN leave the runner by uplink-a with the address of
+// uplink-a as their source, translated, and each answer reaches node-c from the address and port that it named
+static void EgressTestNatFlows(EGRESSTEST_CTX *ctx, NODE *c, EGRESSTEST_HOST *h, EGRESSTEST_UPLINKS *u, UINT port, char *when)
+{
+	UCHAR packet[EGRESSTEST_MAX_PACKET];
+	UCHAR got[EGRESSTEST_MAX_PACKET];
+	UINT got_size = 0;
+	EGRESSTEST_MATCH m;
+	NODE_EGRESS_PACKET p;
+	char what[MAX_SIZE];
+
+	// A UDP datagram to the echo port
+	LONG translated = ReadAcquire(&u->Translated);
+	LONG left = ReadAcquire(&u->Datagrams);
+	bool sent = EgressTestSend(c, packet, EgressTestUdp(packet, port, egresstest_behind, EGRESSTEST_ECHO_PORT, EGRESSTEST_NAT_DATA));
+	Zero(&m, sizeof(m));
+	m.Protocol = IP_PROTO_UDP;
+	m.Src = egresstest_behind;
+	m.SrcPort = EGRESSTEST_ECHO_PORT;
+	m.Dst = egresstest_c_corp;
+	m.DstPort = port;
+	m.Payload = EGRESSTEST_NAT_DATA;
+	bool back = (sent && EgressTestTake(h, &m, EGRESSTEST_BOUND, got, &got_size) && NodeEgressParse(got, got_size, &p) && EgressTestChecksums(got, &p));
+	Format(what, sizeof(what), "%s: a UDP datagram of node-c to the network behind uplink-a leaves by uplink-a with the address of uplink-a as its source, and its answer reaches node-c", when);
+	EgressTestCheck(ctx, back && ReadAcquire(&u->Datagrams) > left && ReadAcquire(&u->Translated) > translated, what,
+		"sent %u, answered %u, %d datagrams left by uplink-a, %d of the packets translated", (UINT)sent, (UINT)back, (int)(ReadAcquire(&u->Datagrams) - left),
+		(int)(ReadAcquire(&u->Translated) - translated));
+
+	// An echo request, whose identifier the NAT translates and gives back
+	translated = ReadAcquire(&u->Translated);
+	left = ReadAcquire(&u->Echoes);
+	sent = EgressTestSend(c, packet, EgressTestEcho(packet, egresstest_behind, port, EGRESSTEST_NAT_DATA));
+	Zero(&m, sizeof(m));
+	m.Protocol = IP_PROTO_ICMPV4;
+	m.Src = egresstest_behind;
+	m.Dst = egresstest_c_corp;
+	m.EchoSeq = port;
+	m.Payload = EGRESSTEST_NAT_DATA;
+	back = (sent && EgressTestTake(h, &m, EGRESSTEST_BOUND, got, &got_size) && NodeEgressParse(got, got_size, &p) && EgressTestChecksums(got, &p));
+	Format(what, sizeof(what), "%s: an echo request of node-c to the network behind uplink-a leaves by uplink-a with the address of uplink-a as its source, and its reply reaches node-c", when);
+	EgressTestCheck(ctx, back && ReadAcquire(&u->Echoes) > left && ReadAcquire(&u->Translated) > translated, what,
+		"sent %u, answered %u, %d echo requests left by uplink-a, %d of the packets translated", (UINT)sent, (UINT)back, (int)(ReadAcquire(&u->Echoes) - left),
+		(int)(ReadAcquire(&u->Translated) - translated));
+
+	// A TCP SYN to the TCP port, whose SYN-ACK acknowledges it
+	translated = ReadAcquire(&u->Translated);
+	left = ReadAcquire(&u->Segments);
+	sent = EgressTestSend(c, packet, EgressTestTcp(packet, port + 1, egresstest_behind, EGRESSTEST_TCP_PORT, EGRESSTEST_ISN, 0, TCP_SYN, NULL));
+	Zero(&m, sizeof(m));
+	m.Protocol = IP_PROTO_TCP;
+	m.Src = egresstest_behind;
+	m.SrcPort = EGRESSTEST_TCP_PORT;
+	m.Dst = egresstest_c_corp;
+	m.DstPort = port + 1;
+	m.TcpFlags = TCP_SYN | TCP_ACK;
+	back = (sent && EgressTestTake(h, &m, EGRESSTEST_BOUND, got, &got_size) && NodeEgressParse(got, got_size, &p) && EgressTestChecksums(got, &p) &&
+		READ_UINT(got + p.HeaderSize + 8) == EGRESSTEST_ISN + 1);
+	Format(what, sizeof(what), "%s: a TCP SYN of node-c to the network behind uplink-a leaves by uplink-a with the address of uplink-a as its source, and its SYN-ACK reaches node-c", when);
+	EgressTestCheck(ctx, back && ReadAcquire(&u->Segments) > left && ReadAcquire(&u->Translated) > translated, what,
+		"sent %u, answered %u, %d SYNs left by uplink-a, %d of the packets translated", (UINT)sent, (UINT)back, (int)(ReadAcquire(&u->Segments) - left),
+		(int)(ReadAcquire(&u->Translated) - translated));
+
+	// The connection ends with a reset of node-c
+	EgressTestSend(c, packet, EgressTestTcp(packet, port + 1, egresstest_behind, EGRESSTEST_TCP_PORT, EGRESSTEST_ISN + 1, 0, TCP_RST, NULL));
+}
+
+// The tier on the NAT of Windows that the runner gives, tier (CONTROL_EGRESS_RRAS or CONTROL_EGRESS_WINNAT), with node-x on it:
+// the egress of node-c through the NAT, the reconcile of the setting of the node taken away behind its back, and the NAT empty
+// of the node once it is the exit of no VRF
+static void EgressTestNatRun(EGRESSTEST_CTX *ctx, UINT tier)
+{
+	EGRESSTEST_PAIR pair;
+	EGRESSTEST_UPLINKS uplinks;
+	NODE_EGRESS_STATUS es;
+	char what[MAX_SIZE];
+	char *name = EgressTestTierName(tier);
+	UINT failed = ctx->NumFailed;
+	UINT64 corp = 0;
+	UINT flags = 0;
+
+	Zero(&uplinks, sizeof(uplinks));
+	Zero(&es, sizeof(es));
+	Print("[%s]\n", name);
+
+	bool ok = EgressTestPairStart(&pair, "nat");
+	NodeEgressGetStatus(pair.X, &es);
+	Format(what, sizeof(what), "node-x and node-c: their overlays run, and the Egress of node-x uses %s, the tier that the runner gives", name);
+	ok = EgressTestCheck(ctx, ok && es.Tier == tier, what, "overlays %u, tier %u", (UINT)ok, es.Tier);
+
+	if (ok)
+	{
+		ok = EgressTestCheck(ctx, EgressTestUplinksStart(&uplinks, pair.C, true),
+			"uplink-a and uplink-b: two Wintun adapters of the test with their addresses, a default route of a high metric each and a route through uplink-a to the network behind it",
+			"an adapter, an address or a route failed");
+	}
+
+	// node-x is the exit of corp: the NAT of Windows takes the traffic of corp
+	if (ok)
+	{
+		bool done = EgressTestExit(&pair, 1, true, EgressTestWantNat, &es);
+
+		Format(what, sizeof(what), "node-x, the exit of corp (301), and node-c apply their states, their session is up, and the NAT of Windows holds what corp wants (%s)", name);
+		ok = EgressTestCheck(ctx, done && es.Tier == tier, what, "%u VRFs, NAT ready %u, tier %u (fell back from %u)", es.NumVrfs, (UINT)es.NatReady, es.Tier,
+			es.Fallback);
+	}
+
+	if (ok && tier == CONTROL_EGRESS_WINNAT)
+	{
+		ok = EgressTestCheck(ctx, EgressTestLuidOf(egresstest_x_corp, &corp) && EgressTestNatHolds(tier, corp),
+			"the NAT network of WinNAT of the node, RanzVPN-Egress, exists over 198.19.61.0/24, the supernet of corp", "it is not there as such");
+	}
+	else if (ok)
+	{
+		bool holds = (EgressTestLuidOf(egresstest_x_corp, &corp) && EgressTestNatHolds(tier, corp));
+		bool boundary = (NodeEgressRrasFlags(NodeWintunLuid(uplinks.A), &flags) && flags == NODE_EGRESS_RRAS_PUBLIC);
+
+		ok = EgressTestCheck(ctx, holds && boundary,
+			"the adapter of corp is a private interface of the NAT of RRAS, and uplink-a, an interface that carries the egress, a public one with address and port translation",
+			"adapter of corp %u, uplink-a %u (its flags 0x%x)", (UINT)holds, (UINT)boundary, flags);
+	}
+
+	if (ok)
+	{
+		EgressTestNatFlows(ctx, pair.C, pair.Host, &uplinks, 41020, "through the NAT");
+	}
+
+	// The setting of the node taken away behind its back: the next reconcile sets it again, and the egress works again
+	if (ok)
+	{
+		bool again = false;
+
+		NodeEgressGetStatus(pair.X, &es);
+		UINT64 before = es.Restored;
+		bool taken = EgressTestNatTakeAway(tier, corp);
+
+		for (UINT64 end = Tick64() + EGRESSTEST_NAT_BOUND;taken && again == false && Tick64() < end;SleepThread(EGRESSTEST_POLL * 10))
+		{
+			NodeEgressGetStatus(pair.X, &es);
+			again = (es.Restored > before && EgressTestNatHolds(tier, corp));
+		}
+
+		Format(what, sizeof(what), "%s taken away behind the back of node-x is set again by the next reconcile, which the Egress counts",
+			tier == CONTROL_EGRESS_WINNAT ? "the NAT network of WinNAT of the node" : "the NAT information of the adapter of corp in RRAS");
+		ok = EgressTestCheck(ctx, taken && again, what, "taken away %u, %I64u set again (%I64u before)", (UINT)taken, es.Restored, before);
+	}
+
+	if (ok)
+	{
+		EgressTestNatFlows(ctx, pair.C, pair.Host, &uplinks, 41030, "after the reconcile");
+	}
+
+	// node-x is the exit of no VRF: the NAT of Windows holds nothing of it
+	if (ok)
+	{
+		bool done = EgressTestExit(&pair, 2, false, EgressTestWantNone, &es);
+		bool empty = false;
+
+		for (UINT64 end = Tick64() + EGRESSTEST_NAT_BOUND;done && empty == false && Tick64() < end;SleepThread(EGRESSTEST_POLL * 10))
+		{
+			empty = EgressTestNatEmpty(tier, corp, NodeWintunLuid(uplinks.A));
+		}
+
+		EgressTestCheck(ctx, done && empty, "once node-x is the exit of no VRF, the NAT of Windows holds nothing of the node", "applied %u, %u VRFs, empty %u", (UINT)done,
+			es.NumVrfs, (UINT)empty);
+	}
+
+	EgressTestPairStop(&pair, &uplinks, ctx->NumFailed != failed);
+}
+
+// A NAT network of WinNAT of another program, which the test creates where none exists: the runner gives the proxy, the Egress
+// of a new node-x uses it and answers an echo request of node-c from the runner, and the other NAT network is still there as it
+// was once the node stopped
+static void EgressTestForeign(EGRESSTEST_CTX *ctx)
+{
+	EGRESSTEST_PAIR pair;
+	NODE_CAPS_HOST host;
+	NODE_EGRESS_STATUS es;
+	UCHAR packet[EGRESSTEST_MAX_PACKET];
+	UCHAR got[EGRESSTEST_MAX_PACKET];
+	UINT got_size = 0;
+	wchar_t before[MAX_PATH];
+	wchar_t after[MAX_PATH];
+	UINT failed = ctx->NumFailed;
+	bool created = false;
+	bool ok = true;
+
+	Zero(&es, sizeof(es));
+	before[0] = 0;
+	after[0] = 0;
+	Print("[a NAT network of WinNAT of another program]\n");
+
+	UINT tier = EgressTestHostTier(&host, false);
+	if (host.NetNat == false)
+	{
+		created = NodeEgressNetNatAdd(EGRESSTEST_FOREIGN, EGRESSTEST_FOREIGN_NET);
+		ok = EgressTestCheck(ctx, created && NodeEgressNetNatPrefix(EGRESSTEST_FOREIGN, before, sizeof(before)),
+			"a NAT network of WinNAT of another program, RanzVPN-Test-Foreign over 198.18.200.0/24, created as New-NetNat does", "created %u", (UINT)created);
+
+		// The Capabilities look at the NAT networks again once the answer that they keep is old
+		for (UINT64 end = Tick64() + EGRESSTEST_BOUND;ok && tier != CONTROL_EGRESS_PROXY && Tick64() < end;SleepThread(EGRESSTEST_POLL * 10))
+		{
+			tier = EgressTestHostTier(&host, false);
+		}
+	}
+
+	if (ok)
+	{
+		EgressTestHostTier(&host, true);
+		ok = EgressTestCheck(ctx, tier == CONTROL_EGRESS_PROXY && host.NetNat,
+			"with a NAT network of WinNAT of another program, which WinNAT allows one of per host, the runner gives the proxy", "tier %u, another NAT network %u", tier,
+			(UINT)host.NetNat);
+	}
+
+	if (ok)
+	{
+		ok = EgressTestPairStart(&pair, "foreign");
+		NodeEgressGetStatus(pair.X, &es);
+		ok = EgressTestCheck(ctx, ok && es.Tier == CONTROL_EGRESS_PROXY, "a new node-x and node-c: their overlays run, and the Egress of node-x uses the proxy",
+			"overlays %u, tier %u", (UINT)ok, es.Tier);
+
+		if (ok)
+		{
+			bool done = EgressTestExit(&pair, 1, true, EgressTestWantProxy, &es);
+
+			ok = EgressTestCheck(ctx, done && es.Tier == CONTROL_EGRESS_PROXY, "node-x is the exit of corp, and its proxy listens on its address in corp", "%u VRFs, %u ready, tier %u",
+				es.NumVrfs, es.NumReady, es.Tier);
+		}
+
+		if (ok)
+		{
+			UINT outside = EgressTestRunnerAddress();
+			EGRESSTEST_MATCH m;
+
+			bool sent = (outside != 0 && EgressTestSend(pair.C, packet, EgressTestEcho(packet, outside, 3, EGRESSTEST_ICMP_DATA)));
+			Zero(&m, sizeof(m));
+			m.Protocol = IP_PROTO_ICMPV4;
+			m.Src = outside;
+			m.Dst = egresstest_c_corp;
+			m.EchoSeq = 3;
+			m.Payload = EGRESSTEST_ICMP_DATA;
+			EgressTestCheck(ctx, sent && EgressTestTake(pair.Host, &m, EGRESSTEST_BOUND, got, &got_size),
+				"an echo request of node-c to the runner gets its echo reply through the proxy", "sent %u", (UINT)sent);
+		}
+
+		EgressTestPairStop(&pair, NULL, ctx->NumFailed != failed);
+	}
+
+	// The other NAT network as it was: the node never touched it, and made none of its own
+	if (created)
+	{
+		bool same = (NodeEgressNetNatPrefix(EGRESSTEST_FOREIGN, after, sizeof(after)) && UniStrCmpi(after, before) == 0);
+
+		EgressTestCheck(ctx, same && NodeEgressNetNatPrefix(NODE_EGRESS_NETNAT_NAME, NULL, 0) == false,
+			"once the node stopped, the NAT network of WinNAT of the other program is still there as it was, and the node made none of its own", "the same %u", (UINT)same);
+		EgressTestCheck(ctx, NodeEgressNetNatRemove(EGRESSTEST_FOREIGN), "the test removes the NAT network of WinNAT that it created", "Remove failed");
+	}
+	else
+	{
+		EgressTestCheck(ctx, NodeEgressNetNatPrefix(NODE_EGRESS_NETNAT_NAME, NULL, 0) == false,
+			"once the node stopped, the node made no NAT network of WinNAT of its own beside the one of the other program", "it made one");
+	}
+}
+
+// egressnat: the tier that the runner gives, and the tiers on the NAT of Windows that it has
+static void EgressTestNatHost(EGRESSTEST_CTX *ctx)
+{
+	NODE_CAPS_HOST host;
+	UINT tier = EgressTestHostTier(&host, true);
+
+	if (tier == CONTROL_EGRESS_WINNAT || tier == CONTROL_EGRESS_RRAS)
+	{
+		EgressTestNatRun(ctx, tier);
+	}
+
+	if (host.HyperV && host.WinNat)
+	{
+		EgressTestForeign(ctx);
+	}
+	else
+	{
+		EgressTestCheck(ctx, tier == CONTROL_EGRESS_PROXY || tier == CONTROL_EGRESS_RRAS,
+			"without Hyper-V and WinNAT the runner gives the proxy, or RRAS NAT on a Windows Server whose RRAS runs as a LAN router", "tier %u", tier);
+	}
+}
+
+// egressrras: RRAS NAT on a Windows Server whose Routing and Remote Access runs as a LAN router
+static void EgressTestRras(EGRESSTEST_CTX *ctx)
+{
+	NODE_CAPS_HOST host;
+	UINT tier = EgressTestHostTier(&host, true);
+
+	if (EgressTestCheck(ctx, tier == CONTROL_EGRESS_RRAS, "this runner, a Windows Server whose Routing and Remote Access runs as a LAN router, gives RRAS NAT", "tier %u, RRAS %u",
+		tier, (UINT)host.Rras))
+	{
+		EgressTestNatRun(ctx, CONTROL_EGRESS_RRAS);
+	}
+}
+
+// The body of a command of the test
+typedef void (EGRESSTEST_PROC)(EGRESSTEST_CTX *ctx);
+
+// Run a command of the test under its watchdog of budget ms: the addresses of the test, the crypto module and wintun.dll, then
+// run. "<NAME> TEST OK" only when every check passes.
+static void EgressTestMain(char *name, char *title, UINT budget, EGRESSTEST_PROC *run)
 {
 	EGRESSTEST_CTX ctx;
+	EGRESSTEST_WATCH watch;
 	UINT error = 0;
-	HANDLE done = CreateEventW(NULL, TRUE, FALSE, NULL);
-	HANDLE watchdog = (done != NULL ? CreateThread(NULL, 0, EgressTestWatchdog, done, 0, NULL) : NULL);
 
 	Zero(&ctx, sizeof(ctx));
+	watch.Done = CreateEventW(NULL, TRUE, FALSE, NULL);
+	watch.Budget = budget;
+	watch.Name = name;
+	HANDLE watchdog = (watch.Done != NULL ? CreateThread(NULL, 0, EgressTestWatchdog, &watch, 0, NULL) : NULL);
 
-	Print("Egress test: the internet exit of a VRF with the proxy on the TCP/IP stack of the runner\n");
+	Print("%s\n", title);
 
 	egresstest_x_corp = EgressTestAddr(198, 19, 61, 1);
 	egresstest_c_corp = EgressTestAddr(198, 19, 61, 2);
@@ -1413,26 +2031,47 @@ void egress_test(UINT num, char **arg)
 
 	if (ready)
 	{
-		EgressTestRun(&ctx);
+		run(&ctx);
 	}
 
 	if (watchdog != NULL)
 	{
-		SetEvent(done);
+		SetEvent(watch.Done);
 		WaitForSingleObject(watchdog, INFINITE);
 		CloseHandle(watchdog);
 	}
-	if (done != NULL)
+	if (watch.Done != NULL)
 	{
-		CloseHandle(done);
+		CloseHandle(watch.Done);
 	}
 
 	if (ctx.NumFailed == 0)
 	{
-		Print("EGRESS TEST OK\n");
+		Print("%s TEST OK\n", name);
 	}
 	else
 	{
-		Print("EGRESS TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
+		Print("%s TEST FAILED (%u of %u checks failed)\n", name, ctx.NumFailed, ctx.NumChecks);
 	}
+}
+
+// egress: the internet exit of a VRF with the proxy (SDN-12)
+RANZ_TEST("egress", egress_test, "Internet exit of a VRF: the proxy of an exit carries TCP, UDP and ICMP echo of a peer to the outside, the interfaces that carry the egress get Forwarding and weak host so a reply on another interface reaches the peer, and the loopback, link-local and other VRFs are refused (administrator rights, wintun.dll).");
+void egress_test(UINT num, char **arg)
+{
+	EgressTestMain("EGRESS", "Egress test: the internet exit of a VRF with the proxy on the TCP/IP stack of the runner", EGRESSTEST_BUDGET, EgressTestRun);
+}
+
+// egressnat: the internet exit of a VRF on the NAT of Windows that the runner gives (SDN-12)
+RANZ_TEST("egressnat", egressnat_test, "Internet exit of a VRF on the NAT of Windows: the tier that the runner gives; WinNAT where Hyper-V is present translates the egress of a peer, has a removed NAT network set again by the next reconcile and leaves a NAT network of another program alone, the node then taking the proxy (administrator rights, wintun.dll).");
+void egressnat_test(UINT num, char **arg)
+{
+	EgressTestMain("EGRESSNAT", "Egress test: the internet exit of a VRF on the NAT of Windows of the runner", EGRESSTEST_NAT_BUDGET, EgressTestNatHost);
+}
+
+// egressrras: the internet exit of a VRF on RRAS NAT (SDN-12)
+RANZ_TEST("egressrras", egressrras_test, "Internet exit of a VRF on RRAS NAT: a Windows Server whose Routing and Remote Access runs as a LAN router gives RRAS NAT, which translates the egress of a peer, and a removed NAT setting is set again by the next reconcile (administrator rights, wintun.dll, RRAS: the egress-rras job).");
+void egressrras_test(UINT num, char **arg)
+{
+	EgressTestMain("EGRESSRRAS", "Egress test: the internet exit of a VRF on RRAS NAT of the runner", EGRESSTEST_NAT_BUDGET, EgressTestRras);
 }

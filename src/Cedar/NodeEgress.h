@@ -1,6 +1,7 @@
 // NodeEgress.h
-// The internet exit of a VRF in the overlay of a node (NodeEgress.c; SDN-12, #188): the declarations that the overlay, the
-// forwarding tables, the tests and the fuzz target use
+// The internet exit of a VRF in the overlay of a node (NodeEgress.c; SDN-12, #188), with its tiers on the NAT of Windows
+// (NodeEgressNat.c): the declarations that the overlay, the forwarding tables, the Capabilities, the tests and the fuzz
+// target use
 
 #ifndef NODE_EGRESS_H
 #define NODE_EGRESS_H
@@ -21,6 +22,20 @@
 #define NODE_EGRESS_SCAN        1000  // ms between two looks at the interfaces that carry the egress
 #define NODE_EGRESS_MAX_UPLINKS 64    // Interfaces that carry the egress that the node changes at most
 #define NODE_EGRESS_STACK       2048  // Bytes of a packet that the proxy rewrites on the stack; a larger one is allocated
+#define NODE_EGRESS_NAT_SCAN    5000  // ms between two reconciles of the NAT of Windows of tiers 1 and 2
+#define NODE_EGRESS_NAT_TRIES   3     // Reconciles in a row that fail before the Egress falls back to the proxy
+#define NODE_EGRESS_SUPERNET    8     // The shortest supernet that tier 2 gives WinNAT: VRFs whose prefixes span more take the proxy
+#define NODE_EGRESS_MAX_PRIVATE 16    // The adapters of the VRFs whose exit the node is (CONTROL_MAX_VRFS)
+
+// The name of the NAT network of WinNAT that the node creates for tier 2 (NodeEgressNat.c): one per host, as WinNAT allows. A
+// NAT network of another name is never the node's.
+#define NODE_EGRESS_NETNAT_NAME L"RanzVPN-Egress"
+
+// The flags of the NAT of RRAS on an interface (IP_NAT_INTERFACE_FLAGS_* of MS-RRASM 2.2.1.2.197): a private interface has
+// none, a public one is a boundary with address and port translation
+#define NODE_EGRESS_RRAS_BOUNDARY 0x00000001
+#define NODE_EGRESS_RRAS_NAPT     0x00000002
+#define NODE_EGRESS_RRAS_PUBLIC   (NODE_EGRESS_RRAS_BOUNDARY | NODE_EGRESS_RRAS_NAPT)
 
 // The upper-layer protocols that the Egress carries
 #define NODE_EGRESS_ICMP 1
@@ -39,6 +54,17 @@
 
 typedef struct NODE_EGRESS NODE_EGRESS;
 typedef struct NODE_EGRESS_TABLE NODE_EGRESS_TABLE;
+typedef struct NODE_EGRESS_NAT NODE_EGRESS_NAT;
+
+// What the NAT of Windows of tiers 1 and 2 takes from the VRFs whose exit the node is (NodeEgressNatApply)
+typedef struct NODE_EGRESS_NAT_WANT {
+	UINT NumPrivate;                         // RRAS: the private interfaces, the adapters of those VRFs ...
+	UINT64 Private[NODE_EGRESS_MAX_PRIVATE]; // ... by their LUIDs
+	UINT NumPublic;                          // ... and the public ones, the interfaces that carry the egress
+	UINT64 Public[NODE_EGRESS_MAX_UPLINKS];  // ...
+	UCHAR Supernet[4];                       // WinNAT: the supernet that holds every IPv4 prefix of those VRFs ...
+	UINT Length;                             // ... and its length, 0 for none
+} NODE_EGRESS_NAT_WANT;
 
 // One IPv4 packet of TCP, UDP or ICMP as the Egress reads it (NodeEgressParse)
 typedef struct NODE_EGRESS_PACKET {
@@ -70,11 +96,14 @@ typedef struct NODE_EGRESS_STATUS {
 	UINT64 EchoReplies; // ... and their replies, which went back into the overlay
 	UINT64 Refused;     // Packets to a destination that the Egress refuses: the loopback, link-local, multicast or a VRF of the node
 	UINT64 Dropped;     // Other packets that the Egress took and could not carry
+	bool NatReady;      // Tiers 1 and 2: the NAT of Windows holds what the VRFs of the Generation applied last want
+	UINT64 Restored;    // Tiers 1 and 2: the times that the node set the NAT of Windows again after something else changed it
+	UINT Fallback;      // The tier that the Egress fell back to the proxy from (CONTROL_EGRESS_*), 0 for none
 } NODE_EGRESS_STATUS;
 
 // NodeEgress.c
 UINT NodeEgressRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);
-void NodeEgressStart(NODE *n);
+void NodeEgressStart(NODE *n, UINT tier);
 void NodeEgressStop(NODE *n);
 void NodeEgressAttach(NODE *n, NODE_VRF_TABLES *v, const struct CONTROL_STATE *st);
 void NodeFreeEgressTable(NODE_EGRESS_TABLE *t);
@@ -86,5 +115,18 @@ void NodeEgressRewrite(UCHAR *packet, const NODE_EGRESS_PACKET *p, const UCHAR *
 UINT NodeEgressEchoReply(UCHAR *buf, UINT size, const UCHAR *src, const UCHAR *dst, UINT id, UINT seq, const UCHAR *data, UINT data_size);
 bool NodeEgressRefuses(const UCHAR *dst);
 void NodeEgressGetStatus(NODE *n, NODE_EGRESS_STATUS *st);
+
+// NodeEgressNat.c
+bool NodeEgressRrasRouter(void);
+bool NodeEgressForeignNetNat(void);
+NODE_EGRESS_NAT *NodeEgressNatNew(NODE *n, UINT tier);
+bool NodeEgressNatApply(NODE_EGRESS_NAT *nat, const NODE_EGRESS_NAT_WANT *want, UINT *restored);
+bool NodeEgressNatForeign(const NODE_EGRESS_NAT *nat);
+void NodeEgressNatFree(NODE_EGRESS_NAT *nat);
+bool NodeEgressNetNatPrefix(const wchar_t *name, wchar_t *prefix, UINT size);
+bool NodeEgressNetNatAdd(const wchar_t *name, const wchar_t *prefix);
+bool NodeEgressNetNatRemove(const wchar_t *name);
+bool NodeEgressRrasFlags(UINT64 luid, UINT *flags);
+bool NodeEgressRrasRemove(UINT64 luid);
 
 #endif // NODE_EGRESS_H

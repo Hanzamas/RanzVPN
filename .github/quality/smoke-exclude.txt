@@ -14,3 +14,5 @@ kmtest         needs administrator rights, a KM-TEST adapter and the drivers of 
 devicetrace    needs the address and key of a running controller, administrator rights, wintun.dll and wireguard.dll next to vpntest and ranz-wgpeer: .github/scripts/device-tracer.ps1 runs it
 listeneracme   needs a test ACME server, ranz next to vpntest and administrator rights: .github/scripts/listener-acme.ps1 runs it
 explain        needs the plans that ranz-explainplan writes from the scenarios of tests/explain: .github/scripts/explain-conformance.ps1 runs it
+egressnat      changes the NAT of Windows of the runner (its NAT networks of WinNAT), administrator rights and wintun.dll next to vpntest: a step of build_and_test runs it (.github/scripts/egress-nat.ps1)
+egressrras     needs a Windows Server whose Routing and Remote Access runs as a LAN router: the egress-rras job installs it and runs the test (.github/scripts/egress-nat.ps1 -Rras)

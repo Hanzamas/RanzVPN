@@ -30,6 +30,13 @@ typedef struct NODE_CAPS_HOST {
 	UINT Product;
 	// Hyper-V is present: the service of its Virtual Machine Management, vmms, is registered
 	bool HyperV;
+	// Routing and Remote Access runs as an IPv4 router of LAN interfaces, whose NAT the node can configure (NodeEgressNat.c)
+	bool Rras;
+	// The NAT of WinNAT is on the host: the service of its driver, WinNat, is registered
+	bool WinNat;
+	// A NAT network of WinNAT that is not the node's exists, which WinNAT allows one of per host and Ranz never touches
+	// (NodeEgressNat.c); looked for only where Hyper-V and WinNAT are present
+	bool NetNat;
 } NODE_CAPS_HOST;
 
 // Fill host with what the host that the node runs on holds
@@ -37,8 +44,10 @@ void NodeCapsReadHost(NODE_CAPS_HOST *host);
 
 // Fill caps with the Capabilities that a host holding host gives a node: the architecture, and SeLow and the XDP
 // runtime where they are all there. Neither exists for any architecture but x64, so another host has none. The Windows
-// edition, Hyper-V, and the Egress tier that a node on the host uses as the internet exit of a VRF (SDN-12, #188): the
-// proxy on the Windows TCP/IP stack, which runs on every host (NodeEgress.c).
+// edition, Hyper-V, and the Egress tier that a node on the host uses as the internet exit of a VRF (SDN-12, #188), the
+// first that the host supports: RRAS NAT on a Windows Server whose Routing and Remote Access runs as a LAN router, WinNAT
+// where Hyper-V and WinNAT are present and no NAT network of WinNAT exists, and on every other host the proxy on the
+// Windows TCP/IP stack (NodeEgress.c).
 void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps);
 
 // The procedure of the control client that tells the Capabilities of the node for each Hello (CONTROL_CAPS_PROC): they

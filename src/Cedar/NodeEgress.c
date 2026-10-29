@@ -6,9 +6,13 @@
 // (NodeEgressRoutes): a packet of a peer that no other route of the VRF holds is the Egress's (NodeEgressDeliver), and what
 // answers it goes into the overlay as a packet of the node, whose source the default route holds too.
 //
-// The Egress tier is the first that the host supports, which the node reports as a Capability (NodeCaps.c). Here runs tier
-// 3, the proxy on the Windows TCP/IP stack, which every host has, Home, Pro and arm64 among them; it is no TCP/IP stack of
-// its own (ADR-0014). The proxy listens on the address of the node in each VRF whose exit it is, which its adapter of the VRF
+// The Egress tier is the first that the host supports, which the node reports as a Capability (NodeCaps.c). Tiers 1 and 2 are
+// the NAT of Windows, RRAS NAT on a Windows Server and WinNAT where Hyper-V is present and no NAT network of WinNAT exists
+// (NodeEgressNat.c): a packet of a peer to an address outside the VRF goes into the adapter of the VRF as it is, once the NAT
+// holds what the VRFs want, and the host translates it and its answer, which comes back through the adapter. The thread
+// reconciles the NAT every NODE_EGRESS_NAT_SCAN and falls back to the proxy when it cannot serve the VRFs (NodeEgressNatStep).
+// Tier 3 is the proxy on the Windows TCP/IP stack, which every host has, Home, Pro and arm64 among them; it is no TCP/IP stack
+// of its own (ADR-0014). The proxy listens on the address of the node in each VRF whose exit it is, which its adapter of the VRF
 // holds (NodeVrfAdapter.c), with a TCP listener and a UDP socket on ports that the system picks. A TCP segment or a UDP
 // datagram of a peer to an address outside the VRF goes into the adapter with the listener as its destination and, as its
 // source port, the port that its flow keeps for the peer's end (the port of the peer, unless another flow of that address
@@ -63,6 +67,10 @@
 #define NODE_EGRESS_NEW  0 // TCP: its SYN went to the host, which has not taken the connection yet
 #define NODE_EGRESS_OPEN 1 // The proxy carries it: TCP from the connection that the host took, UDP from its first datagram
 #define NODE_EGRESS_DONE 2 // TCP: its sockets closed; it stays for the last segments of the host
+
+// Why the NAT of Windows cannot serve the VRFs of a Generation, whose tier then falls back to the proxy
+#define NODE_EGRESS_FITS    0 // It can
+#define NODE_EGRESS_OVERLAP 1 // A VRF whose exit the node is overlaps another VRF of the node: its host sees it through 4via6
 
 // What a socket that the thread waits for is
 #define NODE_EGRESS_LISTENER  0 // The TCP listener of a VRF
@@ -159,13 +167,17 @@ typedef struct NODE_EGRESS_PING {
 // The internet exit of a node while its overlay runs
 struct NODE_EGRESS {
 	NODE *Node;                                          // The node
-	UINT Tier;                                           // The Egress tier of the node (CONTROL_EGRESS_*), as its Capabilities report it
+	volatile LONG Tier;                                  // The Egress tier that the node uses (CONTROL_EGRESS_*): its host's, until it falls back to the proxy
+	volatile LONG Fallback;                              // The tier that it fell back to the proxy from, 0 for none
 	SRWLOCK Lock;                                        // What the data path and the thread share: Vrfs, the wanted VRFs and the flows
 	UINT NumVrfs;                                        // The VRFs whose proxy the thread runs
 	NODE_EGRESS_VRF Vrfs[CONTROL_MAX_VRFS];              // ...
 	UINT NumWanted;                                      // The VRFs of the Generation applied last, which the thread takes into Vrfs
 	UINT WantedIds[CONTROL_MAX_VRFS];                    // ... their ids
 	UCHAR WantedAddresses[CONTROL_MAX_VRFS][4];          // ... and the address of the node in each
+	UCHAR WantedSupernet[4];                             // ... the supernet of those VRFs (NodeEgressSupernet) ...
+	UINT WantedLength;                                   // ... its length, 0 for none ...
+	UINT WantedFit;                                      // ... and whether the NAT of Windows can serve them (NODE_EGRESS_FITS)
 	NODE_EGRESS_FLOW *First;                             // The flows, the newest first
 	NODE_EGRESS_FLOW **ByPeer;                           // ... by their two ends as the peer sent them, NODE_EGRESS_BUCKETS chains
 	NODE_EGRESS_FLOW **ByProxy;                          // ... by the peer's end as the host sees it
@@ -187,6 +199,14 @@ struct NODE_EGRESS {
 	HANDLE Engine;                                       // The thread's: the dynamic session of the filters of the listeners, NULL for none
 	GUID SubLayer;                                       // ... and its sublayer
 	bool EngineFailed;                                   // The thread's: the session could not be had, and the node log said so
+	UCHAR Supernet[4];                                   // The thread's: the supernet of the VRFs that it took ...
+	UINT SupernetLength;                                 // ... its length ...
+	UINT Fit;                                            // ... and whether the NAT of Windows can serve them
+	NODE_EGRESS_NAT *Nat;                                // The thread's: what the node configured in the NAT of Windows, NULL for nothing
+	UINT64 NextNat;                                      // The thread's: when it reconciles the NAT next
+	UINT NatFailures;                                    // The thread's: the reconciles in a row that failed
+	volatile LONG NatReady;                              // The NAT of Windows holds what the VRFs want: the data path gives it their packets
+	volatile LONG64 Restored;                            // The times that the node set the NAT of Windows again after something else changed it
 	UINT Seed;                                           // Picks a port for a new flow, under the lock
 	volatile LONG64 Tcp;                                 // The counters of NODE_EGRESS_STATUS
 	volatile LONG64 Udp;
@@ -411,6 +431,85 @@ static bool NodeEgressAddress(const CONTROL_STATE *st, UINT vrf_id, UCHAR *addre
 			Copy(address, st->Addresses[i].Address, 4);
 			return true;
 		}
+	}
+
+	return false;
+}
+
+// Whether the node of the state st is the exit of the VRF vrf_id
+static bool NodeEgressIsExit(const CONTROL_STATE *st, UINT vrf_id) {
+	for (UINT i = 0; i < st->NumEgress && i < CONTROL_MAX_VRFS; i++)
+		if (st->EgressVrfIds[i] == vrf_id)
+			return true;
+
+	return false;
+}
+
+// The mask of an IPv4 prefix of length bits, in host byte order
+static UINT NodeEgressMask(UINT length) {
+	return (length == 0 ? 0 : 0xFFFFFFFFU << (32 - length));
+}
+
+// Widen the supernet *super of *length bits, none while *any is false, to hold the IPv4 prefix of bits bits at address (size
+// bytes): a prefix of another family, or /0, leaves it
+static void NodeEgressWiden(UINT *super, UINT *length, bool *any, const UCHAR *address, UINT size, UINT bits) {
+	if (size != 4 || bits == 0 || bits > 32)
+		return;
+
+	UINT a = READ_UINT(address) & NodeEgressMask(bits);
+	if (*any == false) {
+		*super = a;
+		*length = bits;
+		*any = true;
+		return;
+	}
+
+	UINT l = MIN(*length, bits);
+	while (l > 0 && (a & NodeEgressMask(l)) != (*super & NodeEgressMask(l)))
+		l--;
+
+	*length = l;
+	*super &= NodeEgressMask(l);
+}
+
+// The supernet of the VRFs whose exit the node of the state st is into address and *length, which tier 2 gives WinNAT: the
+// longest IPv4 prefix that holds every IPv4 prefix of those VRFs that leads to a member, the pools of the addresses of the
+// node and of its peers, the routes of the peers but a default route and a leaked one, and the LAN subnets behind the node.
+// A length of 0 for none.
+static void NodeEgressSupernet(const CONTROL_STATE *st, UCHAR *address, UINT *length) {
+	UINT super = 0;
+	bool any = false;
+
+	*length = 0;
+	for (UINT i = 0; i < st->NumAddresses && i < CONTROL_MAX_ADDRESSES; i++)
+		if (NodeEgressIsExit(st, st->Addresses[i].VrfId))
+			NodeEgressWiden(&super, length, &any, st->Addresses[i].Address, st->Addresses[i].AddressSize, st->Addresses[i].Length);
+	for (UINT i = 0; i < st->NumLanSubnets && i < CONTROL_MAX_ROUTES; i++)
+		if (NodeEgressIsExit(st, st->LanSubnets[i].VrfId))
+			NodeEgressWiden(&super, length, &any, st->LanSubnets[i].Address, st->LanSubnets[i].AddressSize, st->LanSubnets[i].Length);
+	for (UINT i = 0; i < st->NumPeers; i++) {
+		const CONTROL_PEER *p = &st->Peers[i];
+
+		for (UINT j = 0; j < p->NumAddresses && j < CONTROL_MAX_ADDRESSES; j++)
+			if (NodeEgressIsExit(st, p->Addresses[j].VrfId))
+				NodeEgressWiden(&super, length, &any, p->Addresses[j].Address, p->Addresses[j].AddressSize, p->Addresses[j].Length);
+		for (UINT j = 0; j < p->NumRoutes && j < CONTROL_MAX_ROUTES; j++)
+			if (NodeEgressIsExit(st, p->Routes[j].VrfId) && p->Routes[j].PeerVrfId == 0)
+				NodeEgressWiden(&super, length, &any, p->Routes[j].Address, p->Routes[j].AddressSize, p->Routes[j].Length);
+	}
+
+	WRITE_UINT(address, super);
+}
+
+// Whether a VRF whose exit the node of the state st is overlaps another VRF of the node. The controller gives such a VRF its
+// 4via6, a 1:1 NAT rule of an IPv6 /96 inside and the IPv4 0.0.0.0/0 outside (SDN-6), so the host sees it through IPv6 and the
+// IPv4 NAT of Windows cannot take its traffic.
+static bool NodeEgressOverlaps(const CONTROL_STATE *st) {
+	for (UINT i = 0; i < st->NumNats && i < CONTROL_MAX_NATS; i++) {
+		const CONTROL_NAT *r = &st->Nats[i];
+
+		if (NodeEgressIsExit(st, r->VrfId) && r->InsideSize == 16 && r->OutsideSize == 4 && r->OutsideLength == 0)
+			return true;
 	}
 
 	return false;
@@ -811,16 +910,29 @@ bool NodeEgressDeliver(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *pa
 	if (NodeVrfDefault(NodeGetVrfTable(v, vrf_id), packet + 16, 4) == false)
 		return false;
 
-	// The tiers on the NAT of Windows take the packet as it is, through the adapter of the VRF
-	if (e->Tier != CONTROL_EGRESS_PROXY)
-		return false;
+	// A destination that is no address of the outside, or that the host routes into a VRF of the node, is refused whatever the
+	// tier, so the egress of one VRF never leads into another
+	if (NodeEgressRefuses(packet + 16) || NodeEgressInside(t, packet + 16)) {
+		InterlockedIncrement64(&e->Refused);
+		return true;
+	}
+
+	// The tiers on the NAT of Windows take the packet as it is, through the adapter of the VRF, once the NAT holds what the VRFs
+	// want: before, it would leave the host with the address of the peer in the VRF
+	if ((UINT)ReadAcquire(&e->Tier) != CONTROL_EGRESS_PROXY) {
+		if (ReadAcquire(&e->NatReady) != 0)
+			return false;
+
+		InterlockedIncrement64(&e->Dropped);
+		return true;
+	}
 
 	if (NodeEgressParse(packet, size, &p) == false) {
 		InterlockedIncrement64(&e->Dropped);
 		return true;
 	}
 
-	if (NodeEgressRefuses(p.Dst) || NodeEgressInside(t, p.Dst) || (p.Protocol != NODE_EGRESS_ICMP && p.DstPort == 0)) {
+	if (p.Protocol != NODE_EGRESS_ICMP && p.DstPort == 0) {
 		InterlockedIncrement64(&e->Refused);
 		return true;
 	}
@@ -1318,6 +1430,11 @@ static void NodeEgressReconcile(NODE_EGRESS *e, UINT64 now) {
 
 		Copy(e->Vrfs, next, sizeof(NODE_EGRESS_VRF) * num);
 		e->NumVrfs = num;
+
+		// What the NAT of Windows of tiers 1 and 2 takes from them
+		Copy(e->Supernet, e->WantedSupernet, 4);
+		e->SupernetLength = e->WantedLength;
+		e->Fit = e->WantedFit;
 	}
 	ReleaseSRWLockExclusive(&e->Lock);
 
@@ -1336,9 +1453,12 @@ static void NodeEgressReconcile(NODE_EGRESS *e, UINT64 now) {
 
 // Bind the listeners of each VRF that has none, once NODE_EGRESS_BIND passed since its last attempt at now: the TCP listener
 // and the UDP socket on the address of the node in the VRF. Before the adapter of the VRF holds the address they cannot be
-// had, and the next attempt follows.
+// had, and the next attempt follows. The tiers on the NAT of Windows have no listeners.
 static void NodeEgressBind(NODE_EGRESS *e, UINT64 now) {
 	char a[64];
+
+	if ((UINT)ReadAcquire(&e->Tier) != CONTROL_EGRESS_PROXY)
+		return;
 
 	for (UINT i = 0; i < e->NumVrfs; i++) {
 		NODE_EGRESS_VRF *v = &e->Vrfs[i];
@@ -1498,6 +1618,127 @@ static void NodeEgressUplinks(NODE_EGRESS *e, bool exit) {
 	InterlockedExchange(&e->UplinksOn, (LONG)e->NumUplinks);
 }
 
+// The LUID of the interface that holds the IPv4 address into *luid: false when no interface holds it
+static bool NodeEgressAdapterOf(const UCHAR *address, UINT64 *luid) {
+	MIB_UNICASTIPADDRESS_TABLE *table = NULL;
+	bool found = false;
+
+	if (GetUnicastIpAddressTable(AF_INET, &table) != NO_ERROR)
+		return false;
+
+	for (ULONG i = 0; i < table->NumEntries && found == false; i++) {
+		const MIB_UNICASTIPADDRESS_ROW *r = &table->Table[i];
+
+		if (Cmp(&r->Address.Ipv4.sin_addr, address, 4) == 0) {
+			*luid = r->InterfaceLuid.Value;
+			found = true;
+		}
+	}
+
+	FreeMibTable(table);
+
+	return found;
+}
+
+// What the NAT of Windows takes now into want: the adapter of each VRF whose exit the node is, which holds its address in the
+// VRF, as a private interface, each interface that carries the egress but those adapters as a public one, and the supernet of
+// the VRFs. False while the adapter of a VRF does not hold its address yet.
+static bool NodeEgressNatWant(NODE_EGRESS *e, NODE_EGRESS_NAT_WANT *want) {
+	Zero(want, sizeof(NODE_EGRESS_NAT_WANT));
+
+	for (UINT i = 0; i < e->NumVrfs && want->NumPrivate < NODE_EGRESS_MAX_PRIVATE; i++) {
+		UINT64 luid = 0;
+
+		if (NodeEgressAdapterOf(e->Vrfs[i].Address, &luid) == false)
+			return false;
+
+		want->Private[want->NumPrivate++] = luid;
+	}
+
+	for (UINT i = 0; i < e->NumUplinks && want->NumPublic < NODE_EGRESS_MAX_UPLINKS; i++) {
+		bool vrf = false;
+
+		for (UINT j = 0; j < want->NumPrivate && vrf == false; j++)
+			vrf = (want->Private[j] == e->Uplinks[i].Luid);
+		if (vrf == false)
+			want->Public[want->NumPublic++] = e->Uplinks[i].Luid;
+	}
+
+	Copy(want->Supernet, e->Supernet, 4);
+	want->Length = e->SupernetLength;
+
+	return true;
+}
+
+// The NAT of Windows of tiers 1 and 2 against the VRFs that the thread took, every NODE_EGRESS_NAT_SCAN at now
+// (NodeEgressNat.c): undone once the node is the exit of no VRF. The Egress falls back to the proxy when the NAT cannot serve
+// the VRFs, a VRF that overlaps another VRF of the node or, for WinNAT, prefixes that span more than a supernet of
+// NODE_EGRESS_SUPERNET bits; when a NAT network of WinNAT of another program exists; and after NODE_EGRESS_NAT_TRIES
+// reconciles in a row that failed.
+static void NodeEgressNatStep(NODE_EGRESS *e, UINT64 now) {
+	UINT tier = (UINT)ReadAcquire(&e->Tier);
+	NODE_EGRESS_NAT_WANT want;
+	const char *reason = NULL;
+	UINT restored = 0;
+	bool ok = false;
+
+	if ((tier != CONTROL_EGRESS_RRAS && tier != CONTROL_EGRESS_WINNAT) || now < e->NextNat)
+		return;
+
+	e->NextNat = now + NODE_EGRESS_NAT_SCAN;
+
+	// The node is the exit of no VRF: what it configured goes
+	if (e->NumVrfs == 0) {
+		InterlockedExchange(&e->NatReady, 0);
+		NodeEgressNatFree(e->Nat);
+		e->Nat = NULL;
+		e->NatFailures = 0;
+		return;
+	}
+
+	if (e->Fit == NODE_EGRESS_OVERLAP)
+		reason = "a VRF whose exit the node is overlaps another VRF of the node, whose host sees it through 4via6";
+	else if (tier == CONTROL_EGRESS_WINNAT && e->SupernetLength < NODE_EGRESS_SUPERNET)
+		reason = "the prefixes of the VRFs whose exit the node is span more than a supernet that WinNAT takes";
+
+	if (reason == NULL) {
+		// The adapter of a VRF that does not hold its address yet: soon again, without a failure
+		if (NodeEgressNatWant(e, &want) == false) {
+			e->NextNat = now + NODE_EGRESS_BIND;
+			return;
+		}
+
+		if (e->Nat == NULL)
+			e->Nat = NodeEgressNatNew(e->Node, tier);
+		ok = NodeEgressNatApply(e->Nat, &want, &restored);
+		if (restored != 0)
+			InterlockedAdd64(&e->Restored, restored);
+
+		if (ok == false && NodeEgressNatForeign(e->Nat))
+			reason = "a NAT network of WinNAT of another program exists, which the node leaves alone";
+		else if (ok == false && ++e->NatFailures >= NODE_EGRESS_NAT_TRIES)
+			reason = "the NAT of Windows cannot be configured";
+	}
+
+	if (ok) {
+		e->NatFailures = 0;
+		InterlockedExchange(&e->NatReady, 1);
+		return;
+	}
+
+	InterlockedExchange(&e->NatReady, 0);
+	if (reason == NULL)
+		return;
+
+	// The proxy runs on every host: the thread binds its listeners from the next turn
+	NodeLog(e->Node, "Egress: tier %u cannot serve the VRFs: %s; the node falls back to the proxy, tier 3", tier, reason);
+	NodeEgressNatFree(e->Nat);
+	e->Nat = NULL;
+	e->NatFailures = 0;
+	InterlockedExchange(&e->Fallback, (LONG)tier);
+	InterlockedExchange(&e->Tier, CONTROL_EGRESS_PROXY);
+}
+
 // Add the socket s with the events to the sockets that the thread waits for, with what it is
 static void NodeEgressWaitFor(NODE_EGRESS *e, SOCKET s, SHORT events, UINT kind, UINT vrf, NODE_EGRESS_FLOW *f) {
 	if (s == INVALID_SOCKET || events == 0)
@@ -1604,8 +1845,9 @@ static void NodeEgressServe(NODE_EGRESS *e, UINT64 now) {
 	}
 }
 
-// The thread of the proxy: the VRFs of each Generation and their listeners, the connections and datagrams of the peers, the
-// flows whose time is up and the interfaces that carry the egress, until the Egress stops
+// The thread of the Egress: the VRFs of each Generation and the listeners of their proxy, the connections and datagrams of
+// the peers, the flows whose time is up, the interfaces that carry the egress and the NAT of Windows of tiers 1 and 2, until
+// the Egress stops
 static DWORD WINAPI NodeEgressThread(LPVOID param) {
 	NODE_EGRESS *e = (NODE_EGRESS *)param;
 
@@ -1615,6 +1857,7 @@ static DWORD WINAPI NodeEgressThread(LPVOID param) {
 		if (InterlockedExchange(&e->Changed, 0) != 0) {
 			NodeEgressReconcile(e, now);
 			e->NextScan = 0;
+			e->NextNat = 0;
 		}
 
 		NodeEgressBind(e, now);
@@ -1625,11 +1868,14 @@ static DWORD WINAPI NodeEgressThread(LPVOID param) {
 			e->NextScan = now + NODE_EGRESS_SCAN;
 		}
 
+		// After the interfaces, which are its public ones
+		NodeEgressNatStep(e, now);
+
 		NodeEgressWaits(e);
 
 		// Nothing to wait for and nothing to look after: the thread sleeps until a Generation or the stop wakes it
 		if (e->NumWaits == 0) {
-			bool idle = (e->NumVrfs == 0 && e->NumUplinks == 0 && e->First == NULL);
+			bool idle = (e->NumVrfs == 0 && e->NumUplinks == 0 && e->First == NULL && e->Nat == NULL);
 
 			WaitForSingleObject(e->Wake, idle ? INFINITE : NODE_EGRESS_POLL);
 			continue;
@@ -1641,12 +1887,15 @@ static DWORD WINAPI NodeEgressThread(LPVOID param) {
 			Sleep(NODE_EGRESS_POLL);
 	}
 
-	// The end: every flow and every listener closes, and every interface gets back what it had; the filters go with their
-	// session
+	// The end: every flow and every listener closes, the NAT of Windows holds nothing of the node any more, and every interface
+	// gets back what it had; the filters go with their session
 	AcquireSRWLockExclusive(&e->Lock);
 	e->NumWanted = 0;
 	ReleaseSRWLockExclusive(&e->Lock);
 	NodeEgressReconcile(e, GetTickCount64());
+	InterlockedExchange(&e->NatReady, 0);
+	NodeEgressNatFree(e->Nat);
+	e->Nat = NULL;
 	NodeEgressUplinks(e, false);
 	if (e->Engine != NULL) {
 		FwpmEngineClose0(e->Engine);
@@ -1660,9 +1909,9 @@ static DWORD WINAPI NodeEgressThread(LPVOID param) {
 // The Egress
 //
 
-// Start the internet exit of a node with its overlay (NodeOverlayStart): its tier is the one of its Capabilities, and the
-// thread of the proxy starts once the node is the exit of a VRF
-void NodeEgressStart(NODE *n) {
+// Start the internet exit of a node with its overlay (NodeOverlayStart): its tier is tier (CONTROL_EGRESS_*), or with 0 the one
+// of its Capabilities, the first that its host supports (NodeCaps.c), and its thread starts once the node is the exit of a VRF
+void NodeEgressStart(NODE *n, UINT tier) {
 	CONTROL_CAPS caps;
 
 	if (n == NULL || n->Egress != NULL)
@@ -1677,9 +1926,12 @@ void NodeEgressStart(NODE *n) {
 	e->Wake = CreateEventW(NULL, FALSE, FALSE, NULL);
 	e->Seed = (UINT)GetTickCount64() ^ (UINT)GetCurrentProcessId();
 
-	Zero(&caps, sizeof(caps));
-	NodeCapsProc(NULL, &caps);
-	e->Tier = caps.EgressTier;
+	if (tier == 0) {
+		Zero(&caps, sizeof(caps));
+		NodeCapsProc(NULL, &caps);
+		tier = caps.EgressTier;
+	}
+	e->Tier = (LONG)tier;
 
 	n->Egress = e;
 }
@@ -1718,8 +1970,8 @@ void NodeEgressStop(NODE *n) {
 }
 
 // The VRFs of a Generation that the overlay applied, once the adapters of its VRFs took it: the node is the exit of each
-// VRF of st->EgressVrfIds in which it has an IPv4 address, where the proxy listens. The thread of the proxy takes them; it
-// starts with the first VRF.
+// VRF of st->EgressVrfIds in which it has an IPv4 address, where the proxy listens, with the supernet of those VRFs that
+// WinNAT takes and whether the NAT of Windows can serve them. The thread takes them; it starts with the first VRF.
 void NodeEgressApplied(NODE *n, const CONTROL_STATE *st) {
 	NODE_EGRESS *e = (n != NULL ? n->Egress : NULL);
 	UINT num = 0;
@@ -1737,11 +1989,15 @@ void NodeEgressApplied(NODE *n, const CONTROL_STATE *st) {
 			}
 		}
 		num = e->NumWanted;
+
+		NodeEgressSupernet(st, e->WantedSupernet, &e->WantedLength);
+		e->WantedFit = (NodeEgressOverlaps(st) ? NODE_EGRESS_OVERLAP : NODE_EGRESS_FITS);
 	}
 	ReleaseSRWLockExclusive(&e->Lock);
 
 	if (st->NumEgress != 0 || e->Thread != NULL)
-		NodeLog(n, "Egress: generation %I64u: the internet exit of %u VRFs, %u of them with an address of the node, tier %u", st->Generation, st->NumEgress, num, e->Tier);
+		NodeLog(n, "Egress: generation %I64u: the internet exit of %u VRFs, %u of them with an address of the node, tier %u", st->Generation, st->NumEgress, num,
+		        (UINT)ReadAcquire(&e->Tier));
 
 	if (e->Thread == NULL && num != 0) {
 		DWORD id = 0;
@@ -1765,7 +2021,10 @@ void NodeEgressGetStatus(NODE *n, NODE_EGRESS_STATUS *st) {
 	if (e == NULL)
 		return;
 
-	st->Tier = e->Tier;
+	st->Tier = (UINT)ReadAcquire(&e->Tier);
+	st->Fallback = (UINT)ReadAcquire(&e->Fallback);
+	st->NatReady = (ReadAcquire(&e->NatReady) != 0);
+	st->Restored = (UINT64)ReadAcquire64(&e->Restored);
 
 	AcquireSRWLockShared(&e->Lock);
 	{

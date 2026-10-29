@@ -154,7 +154,7 @@ src/Cedar  NodeEgressParse      fuzz_egress
 src/Cedar  NodeEgressRewrite    fuzz_egress
 src/Cedar  NodeEgressEchoReply  fuzz_egress
 src/Cedar  NodeEgressRefuses    fuzz_egress
-src/Cedar  NodeEgressDeliver    exempt  hands the packet of a peer to NodeEgressParse (fuzz_egress), which reads it, and the copy that goes to the host to NodeEgressRewrite (fuzz_egress); it reads no byte that NodeEgressParse did not check
+src/Cedar  NodeEgressDeliver    exempt  reads the version and the destination of a packet of a peer only once it holds the 20 bytes of an IPv4 header, then hands it to NodeEgressParse (fuzz_egress) and the copy that goes to the host to NodeEgressRewrite (fuzz_egress)
 src/Cedar  NodeEgressFromHost   exempt  a packet of the host's own IP stack, which it hands to NodeEgressParse (fuzz_egress) and, when it answers a flow of the proxy, to NodeEgressRewrite (fuzz_egress); it reads no byte that NodeEgressParse did not check
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)

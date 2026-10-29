@@ -18,7 +18,7 @@ $ErrorActionPreference = 'Stop'
 # the API must also show the Capabilities that each node put in its Hello (ONE-3, #312): the architecture of
 # this runner, and SeLow and the XDP runtime as this machine holds them, which the script reads from the
 # registry and the files of Windows without the code of the node, and the Windows edition, Hyper-V and the
-# Egress tier of each node (SDN-12, #188), which it reads from CIM and the registry;
+# Egress tier of each node (SDN-12, #188), which it reads from CIM, the services and the registry;
 # once the controller stopped, they must still exchange it: they forward on the state they applied
 # last. vpntest creates the file $pinged after the first echoes and waits for the control streams
 # to go down; this script then checks the API and stops the controller. Once it stopped, vpntest also
@@ -171,7 +171,10 @@ try {
 	# The Windows edition, Hyper-V and the Egress tier of each node (SDN-12, #188): the edition from the product type and the
 	# SKU of the operating system as CIM reads them (Server for a host that is no workstation; the PRODUCT_* numbers of the
 	# editions that the control protocol counts as Home, Pro and Enterprise), Hyper-V from the service of its Virtual Machine
-	# Management, and the tier of the proxy (3), which every host takes
+	# Management, and the tier, the first that the runner supports: RRAS NAT (1) on a Windows Server whose Routing and Remote
+	# Access runs as a LAN router (its service runs, and its router type has LAN routing), WinNAT (2) where Hyper-V and the
+	# service of WinNAT are there and no NAT network of WinNAT of another name than the node's own (RanzVPN-Egress) exists, one
+	# that cannot be looked for counting as there, and else the proxy (3)
 	$os = Get-CimInstance -ClassName Win32_OperatingSystem
 	$editions = @{ 'Home' = @(98, 99, 100, 101); 'Pro' = @(48, 49, 161, 162, 164, 165); 'Enterprise' = @(4, 27, 70, 72, 84, 121, 122, 125, 126, 129, 130, 175, 188) }
 	$sku = ''
@@ -181,21 +184,22 @@ try {
 		foreach ($edition in $editions.Keys) { if ($editions[$edition] -contains [int] $os.OperatingSystemSKU) { $sku = $edition } }
 	}
 	$haveHyperV = Test-Path -LiteralPath "$services\vmms"
-	$tier = 3
-	Write-Host "this runner: $($os.Caption), product type $($os.ProductType), SKU $($os.OperatingSystemSKU): edition '$sku', Hyper-V $haveHyperV, Egress tier $tier"
-	# For the record, what else the tiers on the NAT of Windows look at on this runner: Routing and Remote Access, the WinNAT
-	# service, the NAT networks of WinNAT that exist and the key properties of their class
-	try {
-		$rras = Get-Service -Name 'RemoteAccess' -ErrorAction SilentlyContinue
-		$docker = Get-Service -Name 'docker' -ErrorAction SilentlyContinue
-		$netnats = @(Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetNat' -ErrorAction SilentlyContinue)
-		$natClass = Get-CimClass -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetNat' -ErrorAction SilentlyContinue
-		$natKeys = @($natClass.CimClassProperties | Where-Object { $_.Qualifiers.Name -contains 'key' } | ForEach-Object { $_.Name })
-		Write-Host "this runner: Routing and Remote Access $(if ($rras) { "$($rras.Status), start type $($rras.StartType)" } else { 'absent' }), docker $(if ($docker) { $docker.Status } else { 'absent' }), WinNAT service $(Test-Path -LiteralPath "$services\WinNat"), $($netnats.Count) NAT networks of WinNAT, MSFT_NetNat keys: $($natKeys -join ', ')"
-		foreach ($n in $netnats) { Write-Host "  NetNat '$($n.Name)': internal prefix $($n.InternalIPInterfaceAddressPrefix), store $($n.Store), active $($n.Active)" }
-	} catch {
-		Write-Host "this runner: the facts of RRAS and WinNAT could not be read: $_"
+	$rras = Get-Service -Name 'RemoteAccess' -ErrorAction SilentlyContinue
+	$routerType = (Get-ItemProperty -LiteralPath "$services\RemoteAccess\Parameters" -Name 'RouterType' -ErrorAction SilentlyContinue).RouterType
+	$haveRras = ($sku -eq 'Server') -and $rras -and ($rras.Status -eq 'Running') -and ($null -ne $routerType) -and (([int] $routerType -band 6) -ne 0)
+	$haveWinNat = Test-Path -LiteralPath "$services\WinNat"
+	$otherNats = 0
+	if ($haveHyperV -and $haveWinNat) {
+		try {
+			$otherNats = @(Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetNat' | Where-Object { $_.Name -ne 'RanzVPN-Egress' }).Count
+		} catch {
+			Write-Host "this runner: the NAT networks of WinNAT cannot be listed ($_): one counts as there"
+			$otherNats = 1
+		}
 	}
+	$tier = 3
+	if ($haveRras) { $tier = 1 } elseif ($haveHyperV -and $haveWinNat -and $otherNats -eq 0) { $tier = 2 }
+	Write-Host "this runner: $($os.Caption), product type $($os.ProductType), SKU $($os.OperatingSystemSKU): edition '$sku', Hyper-V $haveHyperV, Routing and Remote Access as a LAN router $haveRras, WinNAT $haveWinNat, $otherNats NAT networks of WinNAT of another program: Egress tier $tier"
 	foreach ($s in $states | Where-Object { $nodes.Contains($_.name) }) {
 		$caps = $s.capabilities
 		if (-not $caps) { throw "the API lists no Capabilities for node $($s.name), which its Hello carries: $($s | ConvertTo-Json -Compress -Depth 4)" }

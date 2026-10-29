@@ -545,6 +545,10 @@ struct NODE_OVERLAY_CONFIG {
 	NODE_PATH_ATTACH_PROC *PathAttach;
 	// The configuration of the peer layer of the agent, NULL for PeerDefaultConfig: the shorter timers of a test
 	const PEER_CONFIG *PathConfig;
+
+	// The Egress tier that the node uses as the internet exit of a VRF (CONTROL_EGRESS_* of Core/Control.h; NodeEgress.c, SDN-12
+	// #188), 0 for the one of its Capabilities, the first that its host supports (NodeCaps.c): the tier that a test checks
+	UINT EgressTier;
 };
 
 // What NodeOverlayGetStatus reports

@@ -808,7 +808,7 @@ bool NodeOverlayStart(NODE *n, NODE_OVERLAY_CONFIG *cfg) {
 	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233)
 	NodeProfileStart(n);
 	// The internet exit, whose VRFs the states name (NodeEgress.c; SDN-12, #188)
-	NodeEgressStart(n);
+	NodeEgressStart(n, cfg->EgressTier);
 	// The Listener, which listens where a state says (NodeListener.c; SDN-45, #238)
 	NodeListenerStart(n, cfg->Key);
 	n->Overlay = ov;

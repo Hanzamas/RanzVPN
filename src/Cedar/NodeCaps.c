@@ -9,7 +9,9 @@
 // missing, which the controller reads as a Capability that the node lacks (ADR-0033).
 // The Windows edition comes from the version of the host (RtlGetVersion, which tells it to any program) and the product
 // of GetProductInfo, Hyper-V from the service of its Virtual Machine Management, and the Egress tier, how the node takes
-// the traffic of a VRF whose internet exit it is to the outside (SDN-12, #188; ADR-0025 decisions 13 to 15), from them.
+// the traffic of a VRF whose internet exit it is to the outside (SDN-12, #188; ADR-0025 decisions 13 to 15), from them and
+// from what the NAT of Windows has on the host: Routing and Remote Access running as a LAN router, the service of WinNAT
+// and a NAT network of WinNAT of another program (NodeEgressNat.c).
 
 #include "Node.h"
 
@@ -17,6 +19,7 @@
 #include "Mayaqua/Memory.h"
 
 #include "NodeCaps.h"
+#include "NodeEgress.h"
 #include "NodeInternal.h"
 
 // The key of the services of Windows in the registry: the key of a service is named after it
@@ -138,6 +141,12 @@ void NodeCapsReadHost(NODE_CAPS_HOST *host) {
 	// The edition and Hyper-V (SDN-12, #188)
 	NodeCapsReadEdition(host);
 	host->HyperV = NodeCapsService(L"vmms");
+
+	// What the Egress tiers on the NAT of Windows need: RRAS as a LAN router, and WinNAT with no NAT network of another program,
+	// which WMI is asked for only where it could matter
+	host->Rras = NodeEgressRrasRouter();
+	host->WinNat = NodeCapsService(L"WinNat");
+	host->NetNat = (host->HyperV && host->WinNat && NodeEgressForeignNetNat());
 }
 
 void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps) {
@@ -161,8 +170,16 @@ void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps) {
 		caps->Sku = NodeCapsEdition(host->Product);
 	caps->HyperV = host->HyperV;
 
-	// The Egress tier: the proxy on the Windows TCP/IP stack runs on every host, Home, Pro and arm64 among them (NodeEgress.c)
-	caps->EgressTier = CONTROL_EGRESS_PROXY;
+	// The Egress tier, the first that the host supports (ADR-0025 decision 13): RRAS NAT on a Windows Server whose RRAS runs as
+	// a LAN router, WinNAT where Hyper-V and WinNAT are present and no NAT network of WinNAT exists, which the node then
+	// leaves alone, and the proxy on the Windows TCP/IP stack, which runs on every host, Home, Pro and arm64 among them
+	// (NodeEgress.c)
+	if (caps->Sku == CONTROL_SKU_SERVER && host->Rras)
+		caps->EgressTier = CONTROL_EGRESS_RRAS;
+	else if (host->HyperV && host->WinNat && host->NetNat == false)
+		caps->EgressTier = CONTROL_EGRESS_WINNAT;
+	else
+		caps->EgressTier = CONTROL_EGRESS_PROXY;
 
 	// There is no SeLow package for arm64 and no production-signed XDP runtime (ADR-0022): a service of one of their names
 	// on another host is not them

@@ -15,8 +15,11 @@
 // The Windows edition, Hyper-V and the Egress tier (SDN-12, #188): the editions of Windows 11 and Windows Server that a
 // node runs on, each as the product type of its version and the product of GetProductInfo, give the SKU of the control
 // protocol, a product that it does not count gives none, and a version that cannot be read gives none either. Hyper-V is
-// what the host holds. Every host, Home, Pro and arm64 among them, gives the Egress tier of the proxy, which runs on every
-// host. Prints "CAPS TEST OK" only when every check passes.
+// what the host holds. The Egress tier is the first that the host supports: RRAS NAT on a Windows Server whose Routing and
+// Remote Access runs as a LAN router (and on no workstation, whatever runs there), WinNAT where Hyper-V and WinNAT are present
+// and no NAT network of WinNAT of another program exists, and the proxy on every other host, Home, Pro and arm64 among them,
+// and where such a NAT network exists. This host gives a tier, the proxy when it has neither RRAS on a Windows Server nor
+// Hyper-V with WinNAT. Prints "CAPS TEST OK" only when every check passes.
 
 #include "testlist.h"
 
@@ -86,6 +89,39 @@ static const CAPS_SKU_CASE caps_sku_cases[] =
 	{"a host whose version cannot be read", 0, PRODUCT_PROFESSIONAL, PROCESSOR_ARCHITECTURE_AMD64, false, CONTROL_SKU_UNSPECIFIED},
 };
 
+// What decides the Egress tier of a host, and the tier (CONTROL_EGRESS_*) that a node on it uses (SDN-12, #188)
+typedef struct CAPS_TIER_CASE
+{
+	char *Name;
+	UINT ProductType;
+	UINT Product;
+	UINT Machine;
+	bool Rras;
+	bool HyperV;
+	bool WinNat;
+	bool NetNat;
+	UINT Tier;
+} CAPS_TIER_CASE;
+
+// The hosts: the product type and the product, the architecture, RRAS as a LAN router, Hyper-V, WinNAT and a NAT network of
+// WinNAT of another program
+static const CAPS_TIER_CASE caps_tier_cases[] =
+{
+	{"Windows Server 2025 whose RRAS runs as a LAN router", VER_NT_SERVER, PRODUCT_DATACENTER_SERVER, PROCESSOR_ARCHITECTURE_AMD64, true, false, false, false, CONTROL_EGRESS_RRAS},
+	{"Windows Server 2022 with RRAS, Hyper-V and WinNAT: RRAS NAT comes first", VER_NT_SERVER, PRODUCT_STANDARD_SERVER, PROCESSOR_ARCHITECTURE_AMD64, true, true, true, false, CONTROL_EGRESS_RRAS},
+	{"Windows Server 2025 with Hyper-V and WinNAT, no RRAS and no NAT network", VER_NT_SERVER, PRODUCT_DATACENTER_SERVER, PROCESSOR_ARCHITECTURE_AMD64, false, true, true, false, CONTROL_EGRESS_WINNAT},
+	{"Windows Server 2025 with Hyper-V, WinNAT and the NAT network of another program", VER_NT_SERVER, PRODUCT_DATACENTER_SERVER, PROCESSOR_ARCHITECTURE_AMD64, false, true, true, true, CONTROL_EGRESS_PROXY},
+	{"Windows 11 Pro with Hyper-V and WinNAT and no NAT network", VER_NT_WORKSTATION, PRODUCT_PROFESSIONAL, PROCESSOR_ARCHITECTURE_AMD64, false, true, true, false, CONTROL_EGRESS_WINNAT},
+	{"Windows 11 Pro with Hyper-V, WinNAT and the NAT network of Docker", VER_NT_WORKSTATION, PRODUCT_PROFESSIONAL, PROCESSOR_ARCHITECTURE_AMD64, false, true, true, true, CONTROL_EGRESS_PROXY},
+	{"Windows 11 Pro whose RRAS runs: RRAS NAT is for Windows Server", VER_NT_WORKSTATION, PRODUCT_PROFESSIONAL, PROCESSOR_ARCHITECTURE_AMD64, true, false, false, false, CONTROL_EGRESS_PROXY},
+	{"Windows 11 Home", VER_NT_WORKSTATION, PRODUCT_CORE, PROCESSOR_ARCHITECTURE_AMD64, false, false, false, false, CONTROL_EGRESS_PROXY},
+	{"Windows 11 Pro on arm64 without Hyper-V", VER_NT_WORKSTATION, PRODUCT_PROFESSIONAL, PROCESSOR_ARCHITECTURE_ARM64, false, false, false, false, CONTROL_EGRESS_PROXY},
+	{"Windows 11 Enterprise on arm64 with Hyper-V and WinNAT", VER_NT_WORKSTATION, PRODUCT_ENTERPRISE, PROCESSOR_ARCHITECTURE_ARM64, false, true, true, false, CONTROL_EGRESS_WINNAT},
+	{"a Windows Server with WinNAT and without Hyper-V", VER_NT_SERVER, PRODUCT_DATACENTER_SERVER, PROCESSOR_ARCHITECTURE_AMD64, false, false, true, false, CONTROL_EGRESS_PROXY},
+	{"Windows 11 Pro with Hyper-V and without WinNAT", VER_NT_WORKSTATION, PRODUCT_PROFESSIONAL, PROCESSOR_ARCHITECTURE_AMD64, false, true, false, false, CONTROL_EGRESS_PROXY},
+	{"a host with RRAS whose version cannot be read", 0, PRODUCT_DATACENTER_SERVER, PROCESSOR_ARCHITECTURE_AMD64, true, false, false, false, CONTROL_EGRESS_PROXY},
+};
+
 // caps: the Capabilities of a node for the hosts that ranz install leaves, and for this host
 RANZ_TEST("caps", caps_test, "Node Capabilities: the architecture, SeLow and the XDP runtime that a node reports in its Hello, for each host that ranz install leaves and for this host.");
 void caps_test(UINT num, char **arg)
@@ -120,7 +156,7 @@ void caps_test(UINT num, char **arg)
 		}
 	}
 
-	// The Windows edition, Hyper-V and the Egress tier (SDN-12, #188): every host takes the proxy
+	// The Windows edition, Hyper-V and the Egress tier (SDN-12, #188): with neither RRAS nor WinNAT, every host takes the proxy
 	for (UINT i = 0; i < sizeof(caps_sku_cases) / sizeof(caps_sku_cases[0]); i++)
 	{
 		const CAPS_SKU_CASE *c = &caps_sku_cases[i];
@@ -147,6 +183,33 @@ void caps_test(UINT num, char **arg)
 		}
 	}
 
+	// The Egress tier, the first that the host supports (SDN-12, #188)
+	for (UINT i = 0; i < sizeof(caps_tier_cases) / sizeof(caps_tier_cases[0]); i++)
+	{
+		const CAPS_TIER_CASE *c = &caps_tier_cases[i];
+
+		Zero(&host, sizeof(host));
+		host.Machine = c->Machine;
+		host.ProductType = c->ProductType;
+		host.Product = c->Product;
+		host.Rras = c->Rras;
+		host.HyperV = c->HyperV;
+		host.WinNat = c->WinNat;
+		host.NetNat = c->NetNat;
+		caps.EgressTier = 99;
+		NodeCapsDecide(&host, &caps);
+
+		if (caps.EgressTier != c->Tier)
+		{
+			Print("  [FAIL] %s: Egress tier %u; expected %u\n", c->Name, caps.EgressTier, c->Tier);
+			failed++;
+		}
+		else
+		{
+			Print("  [OK] %s: Egress tier %u\n", c->Name, caps.EgressTier);
+		}
+	}
+
 	// A decision for no host and for no Capabilities does nothing but return
 	NodeCapsDecide(NULL, &caps);
 	if (caps.Architecture != CONTROL_ARCHITECTURE_UNSPECIFIED || caps.SeLow || caps.Xdp || caps.Sku != CONTROL_SKU_UNSPECIFIED || caps.HyperV ||
@@ -164,18 +227,20 @@ void caps_test(UINT num, char **arg)
 	Print("  This host: machine %u, SeLow service %u and driver %u, XDP service %u, driver %u and API library %u: architecture %u, SeLow %u, XDP %u\n",
 		host.Machine, (UINT)host.SeLowService, (UINT)host.SeLowDriver, (UINT)host.XdpService, (UINT)host.XdpDriver, (UINT)host.XdpApi,
 		caps.Architecture, (UINT)caps.SeLow, (UINT)caps.Xdp);
-	Print("  This host: product type %u, product 0x%X, Hyper-V %u: SKU %u, Egress tier %u\n", host.ProductType, host.Product, (UINT)host.HyperV, caps.Sku,
-		caps.EgressTier);
+	Print("  This host: product type %u, product 0x%X, Hyper-V %u, RRAS as a LAN router %u, WinNAT %u, a NAT network of WinNAT of another program %u: SKU %u, Egress tier %u\n",
+		host.ProductType, host.Product, (UINT)host.HyperV, (UINT)host.Rras, (UINT)host.WinNat, (UINT)host.NetNat, caps.Sku, caps.EgressTier);
 
-	// The version of a host that runs this build can be read, and the tier of every host is the proxy
+	// The version of a host that runs this build can be read, and the host gives a tier: the proxy, unless it has RRAS on a
+	// Windows Server or Hyper-V with WinNAT
 	if (host.ProductType != VER_NT_WORKSTATION && host.ProductType != VER_NT_SERVER && host.ProductType != VER_NT_DOMAIN_CONTROLLER)
 	{
 		Print("  [FAIL] The product type of this host is %u, which is neither a workstation's nor a server's\n", host.ProductType);
 		failed++;
 	}
-	if (caps.EgressTier != CONTROL_EGRESS_PROXY)
+	if (caps.EgressTier < CONTROL_EGRESS_RRAS || caps.EgressTier > CONTROL_EGRESS_PROXY ||
+		((caps.Sku != CONTROL_SKU_SERVER || host.Rras == false) && (host.HyperV == false || host.WinNat == false) && caps.EgressTier != CONTROL_EGRESS_PROXY))
 	{
-		Print("  [FAIL] The Egress tier of this host is %u, not %u (the proxy)\n", caps.EgressTier, (UINT)CONTROL_EGRESS_PROXY);
+		Print("  [FAIL] The Egress tier of this host is %u, which its facts do not give\n", caps.EgressTier);
 		failed++;
 	}
 
