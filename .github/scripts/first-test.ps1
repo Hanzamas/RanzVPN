@@ -501,7 +501,7 @@ try {
 		$others = @($rules | Where-Object { @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM', 'OWNER RIGHTS', 'S-1-3-4', "NT SERVICE\$controllerService") -notcontains $_ })
 		if ($others.Count -gt 0) { throw "the access list of the data directory of the Controller has rules for $($others -join ', ')" }
 		Write-Host "the data directory of the Controller: owned by the Administrators, a protected access list with rules for $($rules -join ', ') only"
-		foreach ($f in 'admin.token', 'controller.log', 'payload\rqlited.exe', 'rqlite') {
+		foreach ($f in 'admin.token', 'controller.log', 'tls.fingerprint', 'payload\rqlited.exe', 'rqlite') {
 			if (-not (Test-Path -LiteralPath (Join-Path $controllerData $f))) { throw "the Controller did not make $f in $controllerData" }
 		}
 		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
@@ -535,6 +535,8 @@ try {
 		# (the log writer quotes a value that holds an equals sign, as a base64 key does)
 		$log = Get-Content -LiteralPath (Join-Path $controllerData 'controller.log') -Raw
 		if ($log -notmatch ('publicKey="?' + [regex]::Escape($status.publicKey) + '"?') -or $log -notmatch ('tlsFingerprint="?' + [regex]::Escape($status.tlsFingerprint) + '"?')) { throw 'controller.log does not name the key and the fingerprint that ranz status prints' }
+		# The file that ranz checks this host by holds the fingerprint that ranz status prints (AUD1-DT-13, #461; step 6 lists it)
+		if ((Get-Content -LiteralPath (Join-Path $controllerData 'tls.fingerprint') -Raw).Trim() -ne $status.tlsFingerprint) { throw "tls.fingerprint does not hold the TLS fingerprint that ranz status prints, $($status.tlsFingerprint)" }
 		$values['FINGERPRINT'] = $status.tlsFingerprint
 		$values['CONTROLLER-KEY'] = $status.publicKey
 		$values['PORT'] = [string] $status.capabilities.tlsPort
@@ -912,6 +914,8 @@ try {
 			throw "ranz controller-cert show after the change is $($shown | ConvertTo-Json -Compress -Depth 5)"
 		}
 		if ((Invoke-Ranz @('status')).tlsFingerprint -ne $new) { throw 'ranz status does not name the fingerprint of the new certificate' }
+		# The Controller writes the fingerprint file again when the certificate changes, as step 6 says
+		if ((Get-Content -LiteralPath (Join-Path $controllerData 'tls.fingerprint') -Raw).Trim() -ne $new) { throw "tls.fingerprint does not hold the fingerprint of the new certificate, $new" }
 
 		# The connections that were up stayed up: no Node connected again because of the change
 		foreach ($name in $nodeA, $nodeB) {
