@@ -1,0 +1,5 @@
+# A Pins message with a mimic key that is no key of 32 bytes ends the stream of the node that sent it.
+refuse: {
+  reason: REFUSE_REASON_PROTOCOL
+  message: "a Pins message holds a mimic key of 31 bytes: the public key of a mimic server is 32 bytes, or none"
+}
