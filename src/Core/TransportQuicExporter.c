@@ -3,7 +3,8 @@
 // RFC 9001 section 4.1) with NOISE_EXPORTER_LABEL, no context and NOISE_EXPORTER_SIZE bytes, the binding of the TLS-443
 // path (TlsExporter). msquic gives it from 2.6 on through ConnectionExportKeyingMaterial, which its Schannel build
 // answers with SECPKG_ATTR_KEYING_MATERIAL; the API table has that entry in the preview part of the header only, so this
-// file, and no other, includes msquic.h with the preview features. The exporter is of one connection: a middlebox that
+// file includes msquic.h with the preview features (as TransportQuicXdp.c does for the settings of the XDP datapath, and no
+// other file of the module). The exporter is of one connection: a middlebox that
 // holds the key of the certificate and terminates the QUIC session of a client has one exporter with the client and
 // another with the server, so the Noise handshake that it relays fails (finding F1 of docs/formal-model.md).
 //
