@@ -6,7 +6,8 @@
 // plays at another port, so that the bridged L2 segment reaches the devices of the segment. The attachments are the ones
 // that CI has (ADR-0002 amendment of 2026-10-21):
 // - the runner's own NIC, the physical side, whose LAN device is the host stack on the NIC, since no network of a
-//   runner carries the frames of another MAC address;
+//   runner carries the frames of another MAC address: the member asks the gateway of the NIC for its MAC address from
+//   its own, and whether the gateway answered is printed for the record (NICBRIDGE DIAG <backend> nic gateway);
 // - a KM-TEST adapter standing in for the host vNIC of a Hyper-V virtual switch, whose host stack plays the devices on
 //   the switch;
 // - and, when the job made one (.github/scripts/kmtest.ps1), a Hyper-V virtual switch of the runner itself: the bridge
@@ -115,10 +116,12 @@ typedef struct NICBRIDGE_CTX
 typedef struct NICBRIDGE_OWNER
 {
 	UCHAR Member[6];					// The MAC address of the member of the overlay
+	UINT Gateway;						// The IPv4 address of the gateway of the attachment, in network byte order; 0 for none
 	volatile LONG64 Frames;				// Frames that the switch handed the member
 	volatile LONG64 ToMember;			// ... to the member
 	volatile LONG64 ArpReplies;			// ... of these, ARP replies
-	volatile LONG64 Udp;				// ... of these, UDP datagrams to NICBRIDGE_TX_PORT
+	volatile LONG64 GatewayReplies;		// ... of the ARP replies, the gateway's
+	volatile LONG64 Udp;				// ... of the frames to the member, UDP datagrams to NICBRIDGE_TX_PORT
 } NICBRIDGE_OWNER;
 
 // One attachment of the test: the runner's NIC, the KM-TEST adapter that stands in for a Hyper-V switch, or a Hyper-V switch
@@ -380,6 +383,12 @@ static void NicBridgeMemberSend(void *param, UINT port, const UCHAR *frame, UINT
 	if (type == 0x0806 && size >= 42 && frame[20] == 0 && frame[21] == 2)
 	{
 		InterlockedIncrement64(&o->ArpReplies);
+
+		// The address of the sender of the reply, after its MAC address
+		if (o->Gateway != 0 && Cmp(frame + 28, &o->Gateway, 4) == 0)
+		{
+			InterlockedIncrement64(&o->GatewayReplies);
+		}
 	}
 
 	if (type == 0x0800 && size >= 14 + 20)
@@ -1403,6 +1412,39 @@ static void NicBridgeVswitchHost(NICBRIDGE_CTX *ctx, NICBRIDGE_PORT *p, char *wh
 	NicBridgeCheck(ctx, resolved, what, "%s", have ? "not resolved to the device's MAC address" : "the device has no preferred link-local address");
 }
 
+// A device of the LAN other than the host, on the runner's NIC: the member asks the gateway of the NIC for its MAC address
+// from its own MAC address and its address on the subnet, and whether the gateway answered is printed for the record
+// (NICBRIDGE DIAG), not checked. A hosted runner is a virtual machine of a public cloud, whose network takes no frame of
+// a MAC address other than that of its NIC (MAC address spoofing is not possible there, as Microsoft's guide to nested
+// virtualization says of a public cloud), so no other device of its LAN exchanges frames with the member, and the host
+// stack on the NIC plays the LAN device.
+static void NicBridgeLanDevice(NICBRIDGE_NET *net, NICBRIDGE_PORT *p, NICBRIDGE_OWNER *o, char *backend)
+{
+	UCHAR frame[NICBRIDGE_ARP_FRAME];
+
+	if (p->Gateway == 0 || p->Member == 0)
+	{
+		Print("NICBRIDGE DIAG %s %s gateway: no gateway, or no address of the member on the subnet of the NIC\n", backend, p->Tag);
+		return;
+	}
+
+	LONG64 before = ReadAcquire64(&o->GatewayReplies);
+	for (UINT i = 0;i < 3;i++)
+	{
+		UINT size = NicBridgeArpRequest(frame, nicbridge_member_mac, p->Member, p->Gateway);
+		NicBridgeFromMember(net, frame, size);
+		Sleep(50);
+	}
+	bool answered = NicBridgeWait64(&o->GatewayReplies, before + 1, NICBRIDGE_ANSWER);
+
+	// The host may have learnt the member from the requests: its entry goes again
+	NicBridgeNeighbour(p->HostLuid, p->Member, NULL, false);
+
+	Print("NICBRIDGE DIAG %s %s gateway: the gateway %u.%u.%u.%u of the LAN %s the ARP request that the member sent from its own MAC address%s\n", backend, p->Tag,
+		p->Gateway & 0xFF, (p->Gateway >> 8) & 0xFF, (p->Gateway >> 16) & 0xFF, p->Gateway >> 24, answered ? "answered" : "did not answer",
+		answered ? "" : " (the network of a hosted runner takes no frame of a MAC address other than that of its NIC)");
+}
+
 // The spike of ADR-0018 decision 3 for the backend b on the attachment p, through the backend interface: an L2 bridge, the
 // member of a port of the switch of an L2 Network beside the member that the test plays. own_hold: the test's own hold
 // of promiscuous mode for XDP (the SeLow device), else the product's (NodeL2NpcapHold).
@@ -1422,6 +1464,7 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 
 	Zero(&o, sizeof(o));
 	Copy(o.Member, nicbridge_member_mac, 6);
+	o.Gateway = p->Gateway;
 
 	Print("The %s backend on %s\n", b->Name, p->Name);
 	bool up = NicBridgeNetNew(&net, n, p, b, &o, own_hold);
@@ -1557,6 +1600,8 @@ static void NicBridgeRun(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p, const N
 			StrCmp(b->Name, "xdp") == 0 ? ", and its ARP reply, a frame of the wire that RX inspect takes, comes back to the host through the bridge" : "");
 		NicBridgeCheck(ctx, resolved && (StrCmp(b->Name, "xdp") != 0 || st.ToHost > to_host), what, "%s, %I64u frames of the wire handed back to the host",
 			p->Gateway == 0 ? "no gateway found" : (resolved ? "resolved" : "not resolved"), st.ToHost - to_host);
+
+		NicBridgeLanDevice(&net, p, &o, b->Name);
 
 		Sleep(NODE_L2_PROBE + 1000);
 		NodeL2BridgeGetStatus(net.Bridge, &st);

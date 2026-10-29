@@ -26,7 +26,8 @@
 # test checks foreign-MAC transmit and receive, coexistence with the host stack, the benchmark against SeLow (NICBRIDGE
 # BENCH lines), SeLow the default and Npcap, which no runner may carry, used only where it is installed. Last, it binds an
 # external Hyper-V virtual switch of the lab's name to a KM-TEST adapter of its own, and checks that a bridge refuses the
-# NIC that the switch owns and takes the switch's host vNIC instead (the scope note of #73).
+# NIC that the switch owns and takes the switch's host vNIC instead (the scope note of #73). And Npcap is never bundled
+# (ADR-0018 decision 3): ranz install, with the XDP runtime and without it, puts nothing of Npcap on the machine.
 # Each run of vpntest is a process of its own with a time limit: a run that a driver keeps from ending fails its step,
 # and the job goes on with the next one.
 param(
@@ -168,6 +169,25 @@ function Test-XdpRing([string] $when) {
 	if (-not $ring -or $ring -lt 64) { Add-Failure "ranz install did not set up the receive ring of the XDP runtime $when (XdpRxRingSize '$ring')" }
 }
 
+# What of Npcap is on the machine: the folder of its DLLs below System32, which its installer makes, and the key of its
+# driver service, npcap, or npf in the WinPcap-compatible mode of older versions
+function Get-Npcap {
+	$found = @()
+	$dir = Join-Path $env:SystemRoot 'System32\Npcap'
+	if (Test-Path -LiteralPath $dir) { $found += $dir }
+	foreach ($name in @('npcap', 'npf')) {
+		if (Test-Path -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$name") { $found += "the service $name" }
+	}
+	return $found
+}
+
+# Npcap is never bundled (ADR-0018 decision 3; CORE-S3-3, #73): ranz install puts nothing of it on the machine that the
+# runner image did not have
+function Test-NoNpcap([string] $after) {
+	$added = @(Get-Npcap | Where-Object { $_ -notin $npcapBefore })
+	if ($added.Count -gt 0) { Add-Failure "Npcap is on the machine after $after, which never bundles it: $($added -join ', ')" } else { Write-Host "no Npcap on the machine after $after" }
+}
+
 # signtool.exe of the Windows SDK: the highest version under the Windows Kits, x64 build
 function Get-SignTool {
 	$roots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "${env:ProgramFiles}\Windows Kits\10\bin")
@@ -193,10 +213,15 @@ New-NetFirewallRule -DisplayName $firewallRule -Direction Inbound -Program $vpnt
 $lab = @()
 if (New-BridgeLab) { $lab = @($labSwitch, $labDevice, $labExternal) }
 
+# Npcap on the machine before ranz install: the runner image carries none
+$npcapBefore = @(Get-Npcap)
+Write-Host "Npcap on this runner before ranz install: $(if ($npcapBefore.Count -gt 0) { $npcapBefore -join ', ' } else { 'none' })"
+
 # 1. SeLow alone: XDP cannot bind, and the node falls back to SeLow at run time
 $r = Invoke-Ranz @('install', '--no-xdp')
 if ($r.Code -ne 0) { Add-Failure "ranz install --no-xdp exited with code $($r.Code)" }
 if (Test-Path -LiteralPath $xdpSys) { Add-Failure "$xdpSys is there after ranz install --no-xdp" }
+Test-NoNpcap 'ranz install --no-xdp'
 if (-not (Invoke-KmTest @('selow', 'quick'))) { Add-Failure 'vpntest kmtest selow quick: the fallback to SeLow' }
 # The bridge on SeLow, the default, with no XDP runtime on the machine
 if (-not (Invoke-KmTest (@('selow') + $lab) $nicbridgeMinutes 'nicbridge')) { Add-Failure 'vpntest nicbridge selow: the bridge on SeLow' }
@@ -204,6 +229,7 @@ if (-not (Invoke-KmTest (@('selow') + $lab) $nicbridgeMinutes 'nicbridge')) { Ad
 # 2. The XDP runtime, production-signed
 $r = Invoke-Ranz @('install')
 if ($r.Code -ne 0) { Add-Failure "ranz install exited with code $($r.Code)" }
+Test-NoNpcap 'ranz install'
 if (-not (Test-Path -LiteralPath $xdpSys)) {
 	Add-Failure "ranz install put no $xdpSys on the machine"
 } else {
