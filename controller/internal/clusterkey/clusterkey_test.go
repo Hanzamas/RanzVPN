@@ -3,6 +3,7 @@ package clusterkey
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -222,6 +223,43 @@ func forms(b []byte) []string {
 		base64.URLEncoding.EncodeToString(b), base64.RawURLEncoding.EncodeToString(b)}
 }
 
+// presharedKeyLabel is the label under which the controller of a member seals the PresharedKey of the
+// Device phone with the Sealer of its store (SDN-82, internal/controller devicekeys.go).
+const presharedKeyLabel = "device_keys:phone"
+
+// putPresharedKey seals a new PresharedKey of the Device phone with the Cluster key that m holds, stores it in
+// the row of phone of the table device_keys, as the controller of a member does, and returns the key and
+// the sealed key.
+func putPresharedKey(t *testing.T, m *member) (psk, sealed []byte) {
+	t.Helper()
+	psk = make([]byte, 32)
+	if _, err := rand.Read(psk); err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := m.keeper.Seal(presharedKeyLabel, psk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.st.SetDeviceKey(context.Background(), "phone", base64.StdEncoding.EncodeToString(sealed)); err != nil {
+		t.Fatal(err)
+	}
+	return psk, sealed
+}
+
+// presharedKeyOf returns the sealed PresharedKey of the Device phone that the store st holds.
+func presharedKeyOf(t *testing.T, st *store.Store) []byte {
+	t.Helper()
+	rows, err := st.DeviceKeys(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := base64.StdEncoding.DecodeString(rows["phone"])
+	if err != nil || len(sealed) == 0 {
+		t.Fatalf("the store holds the PresharedKey of phone as %q (%v), want a sealed key", rows["phone"], err)
+	}
+	return sealed
+}
+
 // The first criterion of #501, for the store: three members on an rqlite cluster of three start at once,
 // as the members of a new cluster do. One of them makes the Cluster key, the others get a copy of it, and
 // all three hold the key that the store names. A target that is put through any member holds no secret in
@@ -413,10 +451,11 @@ func TestMemberWithoutTheClusterKeyKeepsNoSecret(t *testing.T) {
 }
 
 // The fourth criterion of #501: the store, a backup of it and the log hold neither the Cluster key nor a
-// private key in clear. Two members hold the key and seal secrets; the test reads every row of every table,
-// a backup and the logs of the members, for the private half of the Cluster key and of the two Sealing
-// keys, in any form. What the store does hold is the public half of the Cluster key, and a copy for each
-// member in the form of a sealed secret.
+// private key in clear. Two members hold the key and seal secrets, the secrets of two targets and the
+// PresharedKey of a Device (SDN-82); the test reads every row of every table, a backup and the logs of the
+// members, for the private half of the Cluster key and of the two Sealing keys, in any form, and for the
+// secrets. What the store does hold is the public half of the Cluster key, a copy for each member in the
+// form of a sealed secret, and the PresharedKey sealed with the Cluster key.
 func TestNoClusterKeyInTheStoreTheBackupOrTheLog(t *testing.T) {
 	rq := rqlitetest.Start(t)
 	c1, c2 := newMember(t, "c1", rq.URL(), nil, nil), newMember(t, "c2", rq.URL(), nil, nil)
@@ -431,6 +470,7 @@ func TestNoClusterKeyInTheStoreTheBackupOrTheLog(t *testing.T) {
 	if err := c2.st.PutAuditTarget(ctx, export.Target{Name: "siem", Kind: export.KindWebhook, URL: "https://siem.example.com/x", Secret: "hmac-key-of-siem"}); err != nil {
 		t.Fatal(err)
 	}
+	psk, sealed := putPresharedKey(t, c2)
 	h := c1.keeper.current()
 	rows := allRows(t, rq.URL())
 	var backup bytes.Buffer
@@ -459,6 +499,17 @@ func TestNoClusterKeyInTheStoreTheBackupOrTheLog(t *testing.T) {
 			t.Errorf("the store or its backup holds the secret %q in clear", secret)
 		}
 	}
+	for _, form := range forms(psk) {
+		if strings.Contains(rows, form) || bytes.Contains(backup.Bytes(), []byte(form)) || strings.Contains(logs, form) {
+			t.Errorf("the store, its backup or the log holds the PresharedKey of a Device in clear: %s", form)
+		}
+	}
+	if !strings.Contains(rows, "device_keys phone "+base64.StdEncoding.EncodeToString(sealed)) {
+		t.Errorf("the store does not hold the PresharedKey of phone sealed with the Cluster key:\n%s", rows)
+	}
+	if got, err := c1.keeper.Open(presharedKeyLabel, sealed); err != nil || !bytes.Equal(got, psk) {
+		t.Errorf("the PresharedKey that c2 sealed opens at c1 to %x, %v, want %x", got, err, psk)
+	}
 	if !strings.Contains(rows, "cluster_key 1 "+base64.StdEncoding.EncodeToString(h.public)) {
 		t.Errorf("the store does not hold the public half of the Cluster key:\n%s", rows)
 	}
@@ -473,12 +524,14 @@ func TestNoClusterKeyInTheStoreTheBackupOrTheLog(t *testing.T) {
 	}
 }
 
-// The fifth criterion of #501, for the store: a backup of a cluster holds its secrets sealed, and a
-// restore keeps the Cluster key of the store that it replaces. Restored into the same cluster, the secrets
-// open as they were. Restored into another cluster, whose member of the same name has other keys, the
-// targets come back with their names and URLs and with no secret, the store says which, the cluster keeps
-// its own Cluster key, and a target that is put again is sealed with it and opens. Restored on a single
-// Controller, the targets come back with no secret too, and its store holds no Cluster key.
+// The fifth criterion of #501, for the store: a backup of a cluster holds its secrets sealed, the secrets
+// of the targets and the PresharedKey of a Device (SDN-82), and a restore keeps the Cluster key of the
+// store that it replaces. Restored into the same cluster, the secrets open as they were. Restored into
+// another cluster, whose member of the same name has other keys, the targets come back with their names
+// and URLs and with no secret, the store says which, the Device comes back with a PresharedKey that does
+// not open, the cluster keeps its own Cluster key, and a target that is put again is sealed with it and
+// opens. Restored on a single Controller, the targets come back with no secret too, the PresharedKey does
+// not open there either, and its store holds no Cluster key.
 func TestRestoreKeepsTheClusterKeyOfTheCluster(t *testing.T) {
 	ctx := context.Background()
 	rqA := rqlitetest.Start(t)
@@ -493,6 +546,7 @@ func TestRestoreKeepsTheClusterKeyOfTheCluster(t *testing.T) {
 	if err := a.st.PutAuditTarget(ctx, siem); err != nil {
 		t.Fatal(err)
 	}
+	psk, _ := putPresharedKey(t, a)
 	var backup bytes.Buffer
 	if err := a.st.Backup(ctx, &backup); err != nil {
 		t.Fatal(err)
@@ -500,6 +554,11 @@ func TestRestoreKeepsTheClusterKeyOfTheCluster(t *testing.T) {
 	for _, secret := range []string{alerts.Secret, siem.Secret} {
 		if bytes.Contains(backup.Bytes(), []byte(secret)) {
 			t.Errorf("the backup holds the secret %q in clear", secret)
+		}
+	}
+	for _, form := range forms(psk) {
+		if bytes.Contains(backup.Bytes(), []byte(form)) {
+			t.Errorf("the backup holds the PresharedKey of a Device in clear: %s", form)
 		}
 	}
 
@@ -513,6 +572,9 @@ func TestRestoreKeepsTheClusterKeyOfTheCluster(t *testing.T) {
 	a.waitHolds(t)
 	if ts, err := a.st.Targets(ctx); err != nil || len(ts) != 1 || ts[0].Secret != alerts.Secret {
 		t.Errorf("after a restore into the same cluster the targets are %+v, %v, want the secret as it was", ts, err)
+	}
+	if got, err := a.keeper.Open(presharedKeyLabel, presharedKeyOf(t, a.st)); err != nil || !bytes.Equal(got, psk) {
+		t.Errorf("after a restore into the same cluster the PresharedKey of phone opens to %x, %v, want it as it was", got, err)
 	}
 
 	// Another cluster, whose member has the same name and other keys
@@ -546,6 +608,12 @@ func TestRestoreKeepsTheClusterKeyOfTheCluster(t *testing.T) {
 	}
 	if got := b.lost.get(); !slices.Equal(got, []string{"export_targets/alerts", "audit_targets/siem"}) {
 		t.Errorf("the store told %v, want the two targets that lost their secrets", got)
+	}
+	// The Device comes back with the PresharedKey that the Cluster key of the backup sealed, which the key of
+	// this cluster does not open; a step of the Keeper during the restore may hold no key for a moment
+	restored := presharedKeyOf(t, b.st)
+	if !eventually(func() bool { _, err = b.keeper.Open(presharedKeyLabel, restored); return !errors.Is(err, ErrNoKey) }) || !errors.Is(err, keys.ErrNotSealed) {
+		t.Errorf("after a restore into another cluster the PresharedKey of phone opens, or says %v, want keys.ErrNotSealed", err)
 	}
 	// A step of the Keeper that read the store after the backup was loaded and before the restore put the
 	// Cluster key back holds no key until its next step, so a put that it refuses meanwhile is put again
@@ -583,6 +651,9 @@ func TestRestoreKeepsTheClusterKeyOfTheCluster(t *testing.T) {
 	}
 	if got := lost.get(); !slices.Equal(got, []string{"export_targets/alerts", "audit_targets/siem"}) {
 		t.Errorf("the store of the single Controller told %v, want the two targets that lost their secrets", got)
+	}
+	if _, err := keys.NewSealer(host).Open(presharedKeyLabel, presharedKeyOf(t, single)); !errors.Is(err, keys.ErrNotSealed) {
+		t.Errorf("after a restore on a single Controller the PresharedKey of phone opens, or says %v, want keys.ErrNotSealed", err)
 	}
 	if ck, err := single.ClusterKey(ctx); err != nil || ck.Public != nil || len(ck.Copies) != 0 {
 		t.Errorf("after a restore on a single Controller the store holds the Cluster key %+v, %v, want none", ck, err)

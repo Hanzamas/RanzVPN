@@ -14,9 +14,10 @@ import (
 // sealClusterTargets is sealTargets for a member of a cluster, a Controller with -rqlite-join (AUD1-DT-16,
 // #501): the store seals the secrets of the targets with the Cluster key of the cluster, which the first
 // member of the cluster makes and each member holds once its copy opens with the sealing key of its own
-// host (internal/clusterkey). The member waits a moment at its start for its copy, so that it holds the
-// key before it can lead, and then seals the secrets that an earlier release kept in clear and logs how
-// many. A member that holds no key yet keeps no secret in clear, and says so in the log.
+// host (internal/clusterkey), and the controller seals the PresharedKeys of the Devices with it, as the
+// Sealer of the store (store.Sealer). The member waits a moment at its start for its copy, so that it
+// holds the key before it can lead, and then seals the secrets that an earlier release kept in clear and
+// logs how many. A member that holds no key yet keeps no secret in clear, and says so in the log.
 func sealClusterTargets(ctx context.Context, cfg config, st *store.Store, log *slog.Logger) error {
 	own, err := keys.LoadSealer(cfg.dataDir)
 	if err != nil {

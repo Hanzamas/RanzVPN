@@ -1,6 +1,7 @@
 // Package clusterkey keeps the Cluster key of a member of a controller cluster (AUD1-DT-16 #501,
 // ADR-0026 amendment of 2026-10-29): the key that seals the secrets of the export and audit targets of a
-// cluster, where a single Controller seals them with the Sealing key of its host (internal/keys).
+// cluster and the PresharedKeys of its WireGuard Devices (SDN-82 #377), where a single Controller seals
+// them with the Sealing key of its host (internal/keys).
 //
 // The Sealing key of a member is a key of its own host's key storage that never leaves it, so no two
 // members have one in common, and what one member sealed with it the next leader could not open. A
@@ -14,7 +15,8 @@
 //
 // The store names the key of the cluster (cluster_key), and a member holds a key only while the store
 // names it. A member that holds none keeps no secret: Seal refuses one, so no secret is kept in clear,
-// and Open opens none, so the targets are sent without their secrets until the member holds the key. A
+// and Open opens none, so the targets are sent without their secrets, and the Devices to their gateways
+// without their PresharedKeys, until the member holds the key. A
 // copy that its member's key does not open is removed, so that a member that holds the key gives
 // another. When no row has held a copy for LostAfter, no member can get the key any more: the member that
 // sees it makes a new one, and the secrets that the old key sealed are lost.
@@ -58,7 +60,7 @@ const startPoll = 250 * time.Millisecond
 const keyLen = 32
 
 // ErrNoKey is what Seal and Open fail with while the member holds no Cluster key.
-var ErrNoKey = errors.New("clusterkey: this member of the controller cluster does not hold the Cluster key yet, so it keeps no secret of a target: try again in a few seconds, once a member that holds the key has given it a copy")
+var ErrNoKey = errors.New("clusterkey: this member of the controller cluster does not hold the Cluster key yet, so it keeps no secret of a target and no PresharedKey of a Device: try again in a few seconds, once a member that holds the key has given it a copy")
 
 // Config is what a Keeper runs with.
 type Config struct {
@@ -140,7 +142,7 @@ func (k *Keeper) Start(ctx context.Context) error {
 		}
 	}
 	if !k.Holds() {
-		k.log.Warn("this member does not hold the Cluster key yet, so it keeps no secret of a target: it refuses a target with a secret, and sends to the targets without their secrets, until a member that holds the key gives it a copy")
+		k.log.Warn("this member does not hold the Cluster key yet, so it keeps no secret of a target and no PresharedKey of a Device: it refuses a target with a secret and a Device with a PresharedKey, and sends to the targets without their secrets and the Devices to their gateways without their PresharedKeys, until a member that holds the key gives it a copy")
 	}
 	lctx, cancel := context.WithCancel(ctx)
 	k.cancel, k.done = cancel, make(chan struct{})
@@ -353,7 +355,7 @@ func (k *Keeper) makeKey(ctx context.Context, old []byte) *held {
 	if old == nil {
 		k.log.Info("this member holds the Cluster key: it made it, since the cluster had none")
 	} else {
-		k.log.Warn("the Cluster key was lost, so this member holds a new one: no member had a copy of the old key, and the secrets that it sealed cannot be opened, so the targets are sent without them until each is put again",
+		k.log.Warn("the Cluster key was lost, so this member holds a new one: no member had a copy of the old key, and the secrets and the PresharedKeys that it sealed cannot be opened, so the targets are sent without their secrets until each is put again, and the Devices without their PresharedKeys until each is made again",
 			"lostAfter", k.cfg.LostAfter)
 	}
 	return h
@@ -372,7 +374,7 @@ func (k *Keeper) drop() {
 	k.mu.Lock()
 	k.key = nil
 	k.mu.Unlock()
-	k.log.Warn("the Cluster key in the store is not the one that this member held, so it holds none until its copy of that key opens: it keeps no secret of a target meanwhile")
+	k.log.Warn("the Cluster key in the store is not the one that this member held, so it holds none until its copy of that key opens: it keeps no secret of a target and no PresharedKey of a Device meanwhile")
 }
 
 // give gives a copy of the Cluster key h to every member whose row has none, this member's own included.

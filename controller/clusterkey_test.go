@@ -116,13 +116,15 @@ func TestClusterSealsWhatAnEarlierReleaseKeptInClear(t *testing.T) {
 }
 
 // The fifth and sixth criteria of #501, for the texts: backup says of a cluster that the Cluster key
-// seals the secrets of the targets and that a restore into another cluster brings them back with no
-// secret, and restore says what a restore does with the secrets on another host and in another cluster.
+// seals the secrets of the targets and the PresharedKeys of the Devices, and that a restore into another
+// cluster brings the targets back with no secret and the Devices with a PresharedKey that does not open,
+// and restore says what a restore does with both on another host and in another cluster.
 func TestBackupAndRestoreSayWhatAClusterDoes(t *testing.T) {
 	msg := backupMessage("store.backup", 4096, true)
 	for _, want := range []string{
-		"the secrets of the targets", "which the Cluster key of the cluster seals", "only as copies that the key of each member opens",
-		"a restore into another cluster brings the targets back with no secret", "put each one again with its secret",
+		"the secrets of the targets", "the PresharedKeys of the WireGuard Devices", "which the Cluster key of the cluster seals",
+		"only as copies that the key of each member opens", "a restore into another cluster brings the targets back with no secret",
+		"put each one again with its secret", "brings the Devices back with a PresharedKey that does not open", "make each one again",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("the message of backup of a cluster member does not say %q:\n%s", want, msg)
@@ -135,7 +137,8 @@ func TestBackupAndRestoreSayWhatAClusterDoes(t *testing.T) {
 	for _, want := range []string{
 		"store.backup", "the key of the host that made the backup", "the Cluster key of the cluster that made it",
 		"a restore keeps the Cluster key that this store has", "On another host, or in another cluster, the targets come back with no secret",
-		"put each one again with its secret",
+		"put each one again with its secret", "So do the PresharedKeys of the WireGuard Devices",
+		"on another host, or in another cluster, the log of the controller says that they do not open", "until you make each one again",
 	} {
 		if !strings.Contains(restored, want) {
 			t.Errorf("the message of restore does not say %q:\n%s", want, restored)
