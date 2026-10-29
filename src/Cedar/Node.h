@@ -42,6 +42,13 @@
 #define NODE_SETTING_LOG_DAYS     "LogDays"     // The age limit of the node log in days: older files of the log are deleted; without it NODE_LOG_DEFAULT_DAYS, 0 for no limit
 #define NODE_SETTING_LOG_MB       "LogMB"       // The disk limit of the node log in megabytes: its files never take more together; without it NODE_LOG_DEFAULT_MB, 0 for no limit
 
+// The XDP datapath of msquic and QTIP on the Listener (NodeQtip.c; CORE-S7-2, #83; ADR-0018 decisions 2 and 5), both off by
+// default and on Windows Server x64 only
+#define NODE_SETTING_QUIC_XDP  "QuicXdp"  // "on": the QUIC of the Listener runs on the XDP datapath of msquic; without it on Winsock
+#define NODE_SETTING_QTIP      "Qtip"     // "on": a QTIP listener beside it, for the links between server nodes; without it none
+#define NODE_SETTING_QTIP_PORT "QtipPort" // The port of the QTIP listener, TCP and UDP; without it, or 0, TRANSPORT_QUIC_QTIP_PORT
+#define NODE_QTIP_TRANSPORT    "qtip"     // The name of the QTIP transport in a fallback list
+
 // The limits of the node log (SDN-54, #247) without the settings above, and the most that a setting may name
 #define NODE_LOG_DEFAULT_DAYS 30
 #define NODE_LOG_DEFAULT_MB   256
@@ -781,6 +788,12 @@ struct NODE_LISTENER_STATUS {
 	UINT QuicRetryMemoryLimit; // The retry setting of msquic, read back from it
 	bool QuicRetrying;         // msquic answers new connections with a retry now
 	UINT64 QuicRetries;        // The retry packets that msquic sent
+	// The XDP datapath of msquic and QTIP (NodeQtip.c; CORE-S7-2, #83): the datapath that the QUIC of the Listener asks msquic
+	// for (TRANSPORT_QUIC_DATAPATH_*), the port of the QTIP listener, TCP and UDP, 0 while it does not listen, and why it does
+	// not while the Qtip setting asks for it, "" otherwise
+	UINT QuicDatapath;
+	UINT QtipPort;
+	char QtipError[MAX_SIZE];
 };
 
 // What NodeGetStatus reports
