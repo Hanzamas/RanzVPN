@@ -554,6 +554,54 @@ typedef void(CONTROL_CAPS_PROC)(void *param, CONTROL_CAPS *caps);
 struct CONTROL_STATUS;
 typedef void(CONTROL_END_PROC)(void *param, const struct CONTROL_STATUS *st);
 
+// The live operations of an operator on the tables of the L2 Networks (Operation and OperationResult of the control protocol;
+// SDN-50-N, #492; ADR-0027 amendment of 2026-10-27), ControlOperation.c. The kinds are the values of OperationKind, the
+// statuses those of OperationStatus.
+#define CONTROL_OPERATION_MAC_TABLE       1   // Read the MAC table of the Network
+#define CONTROL_OPERATION_CLEAR_MAC_TABLE 2   // ... clear it, or the entries of one MAC address
+#define CONTROL_OPERATION_IP_TABLE        3   // Read the IP table of the Network
+#define CONTROL_OPERATION_CLEAR_IP_TABLE  4   // ... clear it, or the entries of one address
+#define CONTROL_OPERATION_OK              1   // The node did it
+#define CONTROL_OPERATION_NO_NETWORK      2   // The node holds no L2 Network of that name
+#define CONTROL_OPERATION_FAILED          3   // The node could not do it, and the message says why
+#define CONTROL_MAX_ENTRIES               512 // The entries of a table that one answer lists (OperationResult.entries of control.options)
+#define CONTROL_OPERATION_MESSAGE_SIZE    256 // Why an operation failed, with its terminating NUL (OperationResult.message)
+
+// One live operation, as the client hands it to its owner
+typedef struct CONTROL_OPERATION {
+	UINT64 Id;                       // The id that the Controller gave it, which its answer carries
+	UINT Kind;                       // What it asks: CONTROL_OPERATION_MAC_TABLE to CONTROL_OPERATION_CLEAR_IP_TABLE
+	char Network[CONTROL_NAME_SIZE]; // The L2 Network, which the desired state gives the node
+	bool HasMac;                     // A clear of the MAC table takes the entries of Mac alone, in every VLAN ...
+	UCHAR Mac[6];                    // ...
+	UINT AddressSize;                // ... and a clear of the IP table those of Address alone: 4 for IPv4, 16 for IPv6, 0 for every entry
+	UCHAR Address[16];               // ...
+} CONTROL_OPERATION;
+
+// One entry of a table that the answer lists (TableEntry of the control protocol)
+typedef struct CONTROL_TABLE_ENTRY {
+	UINT Vlan;                      // Its VLAN
+	UCHAR Mac[6];                   // Its MAC address
+	UINT AddressSize;               // The IP table: its address, 4 bytes for IPv4 and 16 for IPv6 ...
+	UCHAR Address[16];              // ...
+	char Member[CONTROL_NAME_SIZE]; // The member of the Network that it belongs to: a peer, a session or a port; "" for none
+	UINT64 LastSeen;                // The time of the last frame from it: Unix time in ms, 0 for none
+} CONTROL_TABLE_ENTRY;
+
+// The answer of the owner to one live operation
+typedef struct CONTROL_OPERATION_RESULT {
+	UINT Status;                                  // CONTROL_OPERATION_OK, CONTROL_OPERATION_NO_NETWORK or CONTROL_OPERATION_FAILED
+	char Message[CONTROL_OPERATION_MESSAGE_SIZE]; // Why it failed, or a note on the answer; "" for none
+	UINT Total;                                   // A read: the entries that the table holds; a clear: the entries that it took out
+	UINT NumEntries;                              // A read: the first entries of the table by VLAN, then by address ...
+	CONTROL_TABLE_ENTRY Entries[CONTROL_MAX_ENTRIES];
+} CONTROL_OPERATION_RESULT;
+
+// Does the live operation op on the L2 Network that it names, which the desired state that the client applied gives the node
+// as an L2 Network, and puts its answer into res, which is zeroed. It runs on the client's thread, which answers the Operation
+// when it returns: the Controller waits 10 s for it.
+typedef void(CONTROL_OPERATION_PROC)(void *param, const CONTROL_OPERATION *op, CONTROL_OPERATION_RESULT *res);
+
 // How a client runs
 typedef struct CONTROL_CONFIG {
 	TRANSPORT *Transport;                 // The transport of the stream (see above)
@@ -587,6 +635,12 @@ typedef struct CONTROL_CONFIG {
 	// The Signals that the client sends to the controller for the peers of the node, NULL for none: the owner's, which must
 	// outlive the client
 	CONTROL_SIGNALS *Signals;
+
+	// Does the live operations of the Controller on the tables of the L2 Networks, NULL for none: the Hello then reports no
+	// Capability operations (SDN-50-N, #492) ...
+	CONTROL_OPERATION_PROC *OperationProc;
+	// ... and its first parameter
+	void *OperationParam;
 } CONTROL_CONFIG;
 
 // How a client stands (ControlGetStatus)
@@ -616,7 +670,8 @@ void ControlGetStatus(CONTROL_CLIENT *c, CONTROL_STATUS *st);
 // AUD1-DT-12, #460). New makes a client as Start does but starts no thread: NULL when the configuration is not complete.
 // Input takes the message of one frame of the controller, size bytes at data after the size of the frame, as the stream
 // of the client takes it, but sends no Ack: the client decodes it with nanopb, applies an Update to the objects that it
-// holds and hands them to the owner (Proc), and notes a Refuse in its status. It gives false for a message that ends the
+// holds and hands them to the owner (Proc), and notes a Refuse in its status. An Operation it does through the owner
+// (OperationProc) and answers, but writes no answer either (SDN-50-N, #492). It gives false for a message that ends the
 // stream: a Refuse, a message that does not decode or does not apply, and one that only a node sends. Free frees a
 // client of New.
 CONTROL_CLIENT *ControlNew(const CONTROL_CONFIG *cfg);

@@ -197,6 +197,8 @@ add_library(corecontrol STATIC
   ControlProfile.c
   # The VRFs whose internet exit a node is in a desired state (SDN-12, #188)
   ControlEgress.c
+  # The live operations of the Controller on the tables of the L2 Networks (SDN-50-N, #492)
+  ControlOperation.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

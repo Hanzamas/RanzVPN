@@ -407,6 +407,17 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/explain-conformance.ps1 -BuildDir build
+    # The operations tracer (SDN-50-N, #492): the controller of the default VRF tracer with the L2 Network lan, and the harness
+    # Node of vpntest opstrace, which holds lan with a switch whose members sent ARP, IPv4 and IPv6: its Hello reports the
+    # Capability operations, ranz mac-table and ranz ip-table read the tables of its switch through the controller with the
+    # entries that it learnt, a clear of one entry and of every entry takes them out, and the traffic that follows learns them
+    # again (.github/scripts/operations-tracer.ps1). arm64 is L3 only (ADR-0022), so no Node there holds an L2 Network.
+    - name: Operations tracer
+      if: matrix.platform.ARCHITECTURE == 'x64'
+      timeout-minutes: 10
+      shell: pwsh
+      run: |
+        . .github/scripts/operations-tracer.ps1 -BuildDir build
     # The Controller behind the front door of a node on the same host (SDN-73, #352; ADR-0035), on x64 and arm64: ranz
     # controller on a test port with its handoff pipe, and the node of coretest's frontdoor test with its front door on
     # another test port, never 443. Through the front door the API answers over h2, over HTTP/1.1 and with the server name
