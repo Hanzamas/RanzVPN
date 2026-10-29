@@ -32,6 +32,18 @@ const natJSON = `{"resources": [
   {"kind": "NAT", "name": "gw-lan", "spec": {"vrf": "red", "node": "gw", "inside": "192.168.1.0/24", "outside": "10.99.1.0/24"}}
 ]}`
 
+// mimicJSON is a document with a Listener that has a mimic section of each decoy (SDN-94), for the fuzz test to start from.
+const mimicJSON = `{"resources": [
+  {"kind": "VRF", "name": "corp", "spec": {"id": 10, "ula": "fd12:3456:789a::/48"}},
+  {"kind": "Node", "name": "a", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["corp"], "endpoints": [{"transport": "mimic", "address": "a.example.com:8443"}]}},
+  {"kind": "Node", "name": "b", "spec": {"publicKey": "WGmv9FBUlzLLqu1eXfmzCm2jHLDldCutWtShp2jxpns=", "vrfs": ["corp"]}},
+  {"kind": "Listener", "name": "edge-a", "spec": {"node": "a", "certificate": {"ksp": "AABBCCDDEEFF00112233445566778899AABBCCDD"},
+    "mimic": {"listen": ":8443", "serverNames": ["www.example.com", "cdn.example.com"], "maxTimeDiffMs": 60000,
+      "decoy": {"acme": {"cacheDir": "C:\\ProgramData\\Ranz\\mimic-acme", "email": "ops@example.com"}}}}},
+  {"kind": "Listener", "name": "edge-b", "spec": {"node": "b", "port": 8443, "certificate": {"ksp": "AABBCCDDEEFF00112233445566778899AABBCCDD"},
+    "mimic": {"listen": "[2001:db8::1]:443", "serverNames": ["site.example"], "decoy": {"mode": "borrow", "dest": "site.example:443"}}}}
+]}`
+
 // FuzzParseDocument reads the input as an intent document, in JSON or YAML as `ranz apply -f`,
 // `ranz import -f` and the API take one (ParseDocument), and applies a document that parses to an
 // empty intent (Apply) and as the whole intent of one (Replace, the import), which complete and
@@ -46,6 +58,7 @@ func FuzzParseDocument(f *testing.F) {
 	f.Add([]byte(natJSON))
 	f.Add([]byte(policyJSON))
 	f.Add([]byte(dnsJSON))
+	f.Add([]byte(mimicJSON))
 	f.Add([]byte(`{"resources": [{"kind": "Controller", "name": "c1", "spec": {}}]}`))
 
 	f.Fuzz(func(t *testing.T, b []byte) {
@@ -68,6 +81,13 @@ func FuzzParseDocument(f *testing.F) {
 			for vrf := range in.VRFs {
 				if _, records, _ := in.Zone(vrf); len(records) > MaxDNSRecords || slices.ContainsFunc(records, func(r ZoneRecord) bool { return len(r.Addresses) > MaxDNSAddresses }) {
 					t.Fatalf("the zone of VRF %q has %d records, or a record with more than %d addresses", vrf, len(records), MaxDNSAddresses)
+				}
+			}
+			// A mimic section that is applied fits the control protocol (listener_mimic.go; SDN-94)
+			for name, l := range in.Listeners {
+				if m := l.Mimic; m != nil && (len(m.ServerNames) == 0 || len(m.ServerNames) > MaxMimicServerNames || m.MaxTimeDiffMs < 1 || m.MaxTimeDiffMs > MaxMimicMaxTimeDiffMs ||
+					len(m.Listen) > MaxAddress) {
+					t.Fatalf("Listener %q has the mimic section %+v, which the control protocol does not carry", name, *m)
 				}
 			}
 			for _, r := range in.Routes() {

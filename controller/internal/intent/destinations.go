@@ -299,9 +299,15 @@ func (in Intent) OutsideDestinations(sensors []netip.Prefix, servers HostList) [
 	type nodePath struct{ field, path string }
 	for _, name := range sortedNames(in.Listeners) {
 		c := in.Listeners[name].Certificate
-		paths := []nodePath{{"file", c.File}, {"passwordFile", c.PasswordFile}}
+		paths := []nodePath{{"certificate: file", c.File}, {"certificate: passwordFile", c.PasswordFile}}
 		if c.ACME != nil {
-			paths = append(paths, nodePath{"acme: caFile", c.ACME.CAFile})
+			paths = append(paths, nodePath{"certificate: acme: caFile", c.ACME.CAFile})
+		}
+		// The files and the folder of the mimic section that the node opens (listener_mimic.go; SDN-94)
+		if m := in.Listeners[name].Mimic; m != nil {
+			for _, p := range m.nodePaths() {
+				paths = append(paths, nodePath{p[0], p[1]})
+			}
 		}
 		for _, p := range paths {
 			server, unc := UNCServer(p.path)
@@ -309,11 +315,11 @@ func (in Intent) OutsideDestinations(sensors []netip.Prefix, servers HostList) [
 				continue
 			}
 			if server == "" {
-				problems = append(problems, fmt.Errorf("Listener %q: certificate: %s: the path %q is in the device namespace of Windows or names no server, and no admin allows such a path: use a path on a drive, or a UNC path of a server that an admin allows",
+				problems = append(problems, fmt.Errorf("Listener %q: %s: the path %q is in the device namespace of Windows or names no server, and no admin allows such a path: use a path on a drive, or a UNC path of a server that an admin allows",
 					name, p.field, p.path))
 				continue
 			}
-			problems = append(problems, fmt.Errorf("Listener %q: certificate: %s: the UNC path %q names the server %q, which no admin allows (%s): an admin lists it with ranz admin-destinations set -unc-servers",
+			problems = append(problems, fmt.Errorf("Listener %q: %s: the UNC path %q names the server %q, which no admin allows (%s): an admin lists it with ranz admin-destinations set -unc-servers",
 				name, p.field, p.path, server, listedHosts(servers)))
 		}
 	}
