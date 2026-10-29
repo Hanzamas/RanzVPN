@@ -18,8 +18,9 @@ import (
 // certificate to the node, which renews it there. The TLS policy of each surface is fixed, and the
 // Listener only shows it: TLS 1.3 for the new protocol, TLS 1.2 and 1.3 for the web UI, the API and
 // compat. The Listener may name a decoy, a site on the loopback interface of the node that a prober of
-// the TLS of the new protocol meets (AUD1-DT-4 #452). A Node has one Listener at most; a Node that no
-// Listener names listens on no port of its own.
+// the TLS of the new protocol meets (AUD1-DT-4 #452), and a mimic section, the settings of the mimicry sidecar of the
+// Node (SDN-94 #423, listener_mimic.go). A Node has one Listener at most; a Node that no Listener names listens on no
+// port of its own.
 
 // KindListener is the kind of a Listener.
 const KindListener = "Listener"
@@ -79,6 +80,9 @@ type Listener struct {
 	// TLS is the TLS policy of the surfaces, which the controller fills in: ListenerPolicy and no
 	// other.
 	TLS ListenerTLS `json:"tls,omitzero"`
+	// Mimic is the mimic section (SDN-94 #423, listener_mimic.go): the settings of the server role of the mimicry
+	// sidecar of the Node, which then is a mimic server. Left out, the Node is none.
+	Mimic *ListenerMimic `json:"mimic,omitempty"`
 }
 
 // ListenerCertificate is the source of the certificate of a Listener: exactly one of File, KSP and
@@ -153,6 +157,7 @@ func (in Intent) cloneListeners() map[string]Listener {
 			c.Names = slices.Clone(a.Names)
 			l.Certificate.ACME = &c
 		}
+		l.Mimic = l.Mimic.clone()
 		out[name] = l
 	}
 	return out
@@ -188,6 +193,7 @@ func (in Intent) completeListeners() {
 		if l.TLS == (ListenerTLS{}) {
 			l.TLS = ListenerPolicy
 		}
+		l.Mimic.complete()
 		in.Listeners[name] = l
 	}
 }
@@ -216,6 +222,8 @@ func (in Intent) validateListeners() []error {
 		if l.TLS != ListenerPolicy {
 			problems = append(problems, fmt.Errorf("Listener %q: the TLS policy is fixed, TLS %s for the new protocol and TLS %s for the web UI, the API and compat: leave tls out", name, TLSNewProtocol, TLSWebUI))
 		}
+		// The mimic section (listener_mimic.go; SDN-94)
+		problems = append(problems, l.validateMimic(name)...)
 	}
 	return problems
 }
