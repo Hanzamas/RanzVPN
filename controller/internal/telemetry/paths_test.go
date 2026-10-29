@@ -45,7 +45,7 @@ func TestHubKeepsAndExportsTheUpgradesAndFallbacks(t *testing.T) {
 
 // nodePathRefresh is how often a node lists its Paths again while they stay the same:
 // CONTROL_PATH_REFRESH of the C node (src/Core/Control.h).
-const nodePathRefresh = 30 * time.Second
+const nodePathRefresh = 15 * time.Second
 
 // A node whose Paths stay the same, as they do for hours on a node whose pairs keep their paths,
 // lists them again every nodePathRefresh: the Hub keeps them in the export for as long as it does,

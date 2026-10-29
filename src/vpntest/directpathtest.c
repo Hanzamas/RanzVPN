@@ -28,15 +28,15 @@
 //    direct path runs between those addresses. The capture finds no STUN message to anything but a candidate of a Node, and
 //    no datagram at all to stun-1.
 // d. Fallback: the NAT of node-a drops its mappings, as a NAT that restarts does. Consent freshness fails the direct path at
-//    both ends, which fall back to relay-1, a Fallback each, and the packets go on there in the same peer session. ICE runs
-//    again for the pair NODE_AGENT_ICE_RETRY ms after its session failed, and the new session moves it back to the direct
-//    path through the new mapping of the NAT, a second Upgrade each.
+//    both ends, which fall back to relay-1, a Fallback each, and the packets go on there in the same peer session. While the
+//    pair waits there, each Node reports its counts again, as they stay the same, and the Controller drops a counter that its
+//    node does not report again. ICE runs again for the pair NODE_AGENT_ICE_RETRY ms after its session failed, and the new
+//    session moves it back to the direct path through the new mapping of the NAT, a second Upgrade each.
 // e. Port mapping: the gateway was asked nothing while node-a and node-b ran with port mapping off. node-c joins with it on,
 //    as the peer of node-b: libplum gets a public port from the gateway, node-c offers it first among its candidates, and
 //    node-b reaches node-c directly at that port.
 // f. Export: the state of each Node, as its admin pipe answers it and ranz node state prints it, and the Telemetry that it
-//    reports to the stand-in of the Controller, which the Controller exports, hold its Upgrades and Fallbacks. Each Node
-//    reports them again while they stay the same, as the Controller drops a counter that its node does not report again.
+//    reports to the stand-in of the Controller, which the Controller exports, hold its Upgrades and Fallbacks.
 // g. A failed dial: node-a and node-c become peers, and the one of the lower static key names an endpoint, so the other one
 //    dials it and is dialled by no Node. That dial fails, as no stream reaches node-c. The Node whose dial failed offers the
 //    datagram path although its key is the higher one, as its peer cannot tell that the pair needs it, and the pair takes it.
@@ -1497,6 +1497,42 @@ static void DirectPathFallback(DIRECTPATH_CTX *ctx, DIRECTPATH_SESSION *session)
 	DirectPathSession(ctx, DIRECTPATH_A, directpath_names[DIRECTPATH_B], &s);
 	DirectPathCheck(ctx, s.Path == NODE_PATH_RELAY, "The state of node-a says relay for node-b again", "it says %s", NodeAgentPathName(s.Path));
 
+	// While the pair waits on relay-1 for ICE to run again, the counts of the two stay the same, and each Node reports them
+	// again within CONTROL_PATH_REFRESH ms: the Controller drops a counter that its node did not report for a while, and the
+	// counts of a Node whose pairs keep their paths stay the same for hours
+	LONG refreshes[2];
+	bool reported = false, refreshed = false;
+	for (UINT64 end = Tick64() + DIRECTPATH_BOUND;Tick64() < end && reported == false;SleepThread(DIRECTPATH_POLL))
+	{
+		reported = true;
+		for (UINT i = DIRECTPATH_A;i <= DIRECTPATH_B;i++)
+		{
+			reported = reported && InterlockedCompareExchange64(&ctx->Links[i].Upgrades, 0, 0) == 1 && InterlockedCompareExchange64(&ctx->Links[i].Fallbacks, 0, 0) == 1;
+		}
+	}
+	for (UINT i = DIRECTPATH_A;i <= DIRECTPATH_B;i++)
+	{
+		refreshes[i] = InterlockedCompareExchange(&ctx->Links[i].Refreshes, 0, 0);
+	}
+	for (UINT64 end = Tick64() + CONTROL_PATH_REFRESH + DIRECTPATH_BOUND;reported && Tick64() < end && refreshed == false;SleepThread(DIRECTPATH_POLL))
+	{
+		refreshed = (InterlockedCompareExchange(&ctx->Links[DIRECTPATH_A].Refreshes, 0, 0) > refreshes[DIRECTPATH_A] &&
+			InterlockedCompareExchange(&ctx->Links[DIRECTPATH_B].Refreshes, 0, 0) > refreshes[DIRECTPATH_B]);
+	}
+	for (UINT i = DIRECTPATH_A;i <= DIRECTPATH_B;i++)
+	{
+		DIRECTPATH_LINK *l = &ctx->Links[i];
+		LONG count = InterlockedCompareExchange(&l->Refreshes, 0, 0);
+		LONG64 gap = InterlockedCompareExchange64(&l->Gap, 0, 0);
+		LONG64 upgrades = InterlockedCompareExchange64(&l->Upgrades, 0, 0), fallbacks = InterlockedCompareExchange64(&l->Fallbacks, 0, 0);
+
+		Print("  [INFO] %s reported the same counts again %ld times, the longest %I64d ms after the report before\n", ctx->Nodes[i].Name, count, gap);
+		Format(what, sizeof(what), "%s reports its Upgrade and its Fallback again while they stay the same, within %u ms of the report before, so the Controller, which drops a counter that its node did not report for 5 minutes, keeps them",
+			ctx->Nodes[i].Name, (UINT)(CONTROL_PATH_REFRESH + DIRECTPATH_BOUND));
+		DirectPathCheck(ctx, count > refreshes[i] && gap <= CONTROL_PATH_REFRESH + DIRECTPATH_BOUND && upgrades == 1 && fallbacks == 1, what,
+			"%ld reports of the same counts on relay-1, the longest %I64d ms after the one before; the last with %I64d Upgrades and %I64d Fallbacks", count - refreshes[i], gap, upgrades, fallbacks);
+	}
+
 	// ICE runs again for the pair on relay-1: the Node that offered the pair offers again NODE_AGENT_ICE_RETRY ms after its
 	// session failed, and the new session validates the new mapping of the NAT of node-a, which no check of the old one reached
 	bool back = DirectPathWaitPath(ctx, DIRECTPATH_A, DIRECTPATH_B, PEER_PATH_DIRECT, PEER_ICE_COMPLETED, NODE_AGENT_ICE_RETRY + DIRECTPATH_UP_WAIT, &ab, &ba);
@@ -1609,7 +1645,7 @@ static void DirectPathPortMapping(DIRECTPATH_CTX *ctx)
 }
 
 // f. Export: the Upgrades and the Fallbacks of each Node in its state, as ranz node state prints it, and in the Telemetry
-// that it reported to the stand-in of the Controller, which it reports again while they stay the same
+// that it reported to the stand-in of the Controller
 static void DirectPathExport(DIRECTPATH_CTX *ctx)
 {
 	char *reply = ZeroMalloc(NODE_ADMIN_REPLY);
@@ -1657,37 +1693,6 @@ static void DirectPathExport(DIRECTPATH_CTX *ctx)
 	}
 
 	Free(reply);
-
-	// The counts go again while they stay the same, at the latest CONTROL_PATH_REFRESH ms after the report before: the
-	// Controller drops a counter that its node did not report for a while, and the counts of a Node whose pairs keep their
-	// paths stay the same for hours
-	bool refreshed = false;
-	for (UINT64 end = Tick64() + CONTROL_PATH_REFRESH + DIRECTPATH_BOUND;Tick64() < end && refreshed == false;SleepThread(DIRECTPATH_POLL))
-	{
-		refreshed = true;
-		for (UINT i = 0;i < DIRECTPATH_NUM_NODES;i++)
-		{
-			refreshed = refreshed && (ctx->Nodes[i].Node == NULL || InterlockedCompareExchange(&ctx->Links[i].Refreshes, 0, 0) != 0);
-		}
-	}
-
-	for (UINT i = 0;i < DIRECTPATH_NUM_NODES;i++)
-	{
-		DIRECTPATH_LINK *l = &ctx->Links[i];
-		LONG refreshes = InterlockedCompareExchange(&l->Refreshes, 0, 0);
-		LONG64 gap = InterlockedCompareExchange64(&l->Gap, 0, 0);
-		char what[MAX_SIZE];
-
-		if (ctx->Nodes[i].Node == NULL)
-		{
-			continue;
-		}
-
-		Print("  [INFO] %s reported the same counts again %ld times, the longest %I64d ms after the report before\n", ctx->Nodes[i].Name, refreshes, gap);
-		Format(what, sizeof(what), "%s reports its Upgrades and Fallbacks again while they stay the same, within %u ms of the report before, so the Controller, which drops a counter that its node did not report for 5 minutes, keeps them",
-			ctx->Nodes[i].Name, (UINT)(CONTROL_PATH_REFRESH + DIRECTPATH_BOUND));
-		DirectPathCheck(ctx, refreshes != 0 && gap <= CONTROL_PATH_REFRESH + DIRECTPATH_BOUND, what, "%ld reports of the same counts, the longest %I64d ms after the one before", refreshes, gap);
-	}
 }
 
 // Whether i and j each reach the other on a Path within timeout ms, through relay-1 or on the direct path

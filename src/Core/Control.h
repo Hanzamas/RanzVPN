@@ -61,7 +61,7 @@
 
 // The Paths of the peer agent of a node (CORE-S5-6, #412)
 #define CONTROL_PATH_REPORT  1000  // ms between two reports of the Upgrades and the Fallbacks of the Paths of a node, at least ...
-#define CONTROL_PATH_REFRESH 30000 // ... and at most, while they stay the same: the controller drops a counter that its node does not report again
+#define CONTROL_PATH_REFRESH 15000 // ... and at most, while they stay the same: the controller drops a counter that its node does not report again
 
 // The TLS fingerprints of the certificate of the Controller that a state names (SDN-92, #397)
 #define CONTROL_TLS_PINS     4  // The fingerprints of a state (NodeConfig.controller_tls of control.options)

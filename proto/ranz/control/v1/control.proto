@@ -834,7 +834,7 @@ message Telemetry {
   PeeringReport peering = 8;
   // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), absent while
   // its peer layer does not run. The node lists them in a summary of their own after each Hello,
-  // whenever they change and again every 30 s while they stay the same, as the controller drops a
+  // whenever they change and again every 15 s while they stay the same, as the controller drops a
   // counter that its node stopped listing.
   PathCounters paths = 9;
 }

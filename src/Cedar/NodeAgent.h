@@ -14,7 +14,7 @@
 #define NODE_AGENT_HOSTS      30000 // ms between two reads of the host addresses of its UDP socket: its host candidates with ICE
 
 // With ICE, ms from the failure of the session of a pair on the Relay to the offer that starts a new one, as after a Fallback ...
-#define NODE_AGENT_ICE_RETRY 30000
+#define NODE_AGENT_ICE_RETRY 20000
 // ... and at most: the delay doubles while the new sessions fail too, and is NODE_AGENT_ICE_RETRY again once one is up
 #define NODE_AGENT_ICE_RETRY_MAX 1800000
 
