@@ -1,6 +1,7 @@
 // Switch.c
 // The L2 switch of the new core (Switch.h): the ports, the VLAN of a frame, the MAC table, the groups of each VLAN with
-// their subscribers, the limits and counters of each VLAN, and SwitchInput, the one ingress of every frame.
+// their subscribers, the limits and counters of each VLAN, and SwitchInput, the one ingress of every frame. The IP table is
+// SwitchIp.c's.
 //
 // No lock serialises the switch on the data path (spec #31 D2; ADR-0022, Threading):
 // - The MAC table is split into SWITCH_SHARDS shards by a keyed hash of the VLAN and the address, each a table with
@@ -21,6 +22,8 @@
 //   the lock of a shard or of a limit alone.
 
 #include "Core/Switch.h"
+
+#include "Core/SwitchInternal.h"
 
 #include <bcrypt.h>
 
@@ -58,6 +61,7 @@
 #define SWITCH_SWEEP_AGE  0 // The entries that no frame refreshed for the aging time
 #define SWITCH_SWEEP_PORT 1 // The entries of one port
 #define SWITCH_SWEEP_ALL  2 // Every entry
+#define SWITCH_SWEEP_MAC  3 // The entries of one MAC address, in every VLAN (SDN-50-N, #492)
 
 // One entry of the MAC table. A free slot has the key 0, which no entry has, as a VLAN id of a frame is never 0.
 typedef struct SWITCH_MAC {
@@ -155,6 +159,7 @@ struct SWITCH {
 	volatile LONG64 Moved;                         // ... moved
 	volatile LONG64 Refused;                       // Sources not learnt, as the table was full
 	volatile LONG64 Drops[SWITCH_NUM_REASONS];     // Frames dropped before their VLAN took them
+	SWITCH_IP_TABLE *Ips;                          // The IP table (SwitchIp.c; SDN-50-N, #492)
 };
 
 // A frame on its way out: the frame as it came, and its other form, built once for the first port that takes it
@@ -315,13 +320,15 @@ static void SwitchShardDelete(const SWITCH *sw, SWITCH_SHARD *s, UINT i) {
 	s->Num--;
 }
 
-// Whether a sweep takes out the entry e
-static bool SwitchSweeps(const SWITCH *sw, const SWITCH_MAC *e, UINT kind, UINT64 now, UINT port) {
+// Whether a sweep takes out the entry e. mac is the address of SWITCH_SWEEP_MAC, in the bits 0 to 47 of a key.
+static bool SwitchSweeps(const SWITCH *sw, const SWITCH_MAC *e, UINT kind, UINT64 now, UINT port, UINT64 mac) {
 	switch (kind) {
 	case SWITCH_SWEEP_AGE:
 		return now >= (UINT64)e->LastSeen + sw->AgingTime;
 	case SWITCH_SWEEP_PORT:
 		return (UINT)e->Port == port;
+	case SWITCH_SWEEP_MAC:
+		return ((UINT64)e->Key & 0xFFFFFFFFFFFFULL) == mac;
 	default:
 		return true;
 	}
@@ -329,13 +336,13 @@ static bool SwitchSweeps(const SWITCH *sw, const SWITCH_MAC *e, UINT kind, UINT6
 
 // Take out the entries of a shard that a sweep takes; their number. The sequence number turns odd before the first one
 // goes, so the readers look again only when the shard changes.
-static UINT SwitchShardSweep(const SWITCH *sw, SWITCH_SHARD *s, UINT kind, UINT64 now, UINT port) {
+static UINT SwitchShardSweep(const SWITCH *sw, SWITCH_SHARD *s, UINT kind, UINT64 now, UINT port, UINT64 mac) {
 	UINT num = 0;
 	UINT i = 0;
 
 	AcquireSRWLockExclusive(&s->Lock);
 	while (i <= s->Mask) {
-		if (s->Slots[i].Key == 0 || SwitchSweeps(sw, &s->Slots[i], kind, now, port) == false) {
+		if (s->Slots[i].Key == 0 || SwitchSweeps(sw, &s->Slots[i], kind, now, port, mac) == false) {
 			i++;
 			continue;
 		}
@@ -354,11 +361,11 @@ static UINT SwitchShardSweep(const SWITCH *sw, SWITCH_SHARD *s, UINT kind, UINT6
 }
 
 // Sweep the whole MAC table; the number of entries taken out
-static UINT SwitchSweep(SWITCH *sw, UINT kind, UINT64 now, UINT port) {
+static UINT SwitchSweep(SWITCH *sw, UINT kind, UINT64 now, UINT port, UINT64 mac) {
 	UINT num = 0;
 
 	for (UINT i = 0; i < SWITCH_SHARDS; i++)
-		num += SwitchShardSweep(sw, &sw->Shards[i], kind, now, port);
+		num += SwitchShardSweep(sw, &sw->Shards[i], kind, now, port, mac);
 	if (num != 0)
 		InterlockedExchangeAdd(&sw->NumMacs, -(LONG)num);
 
@@ -872,6 +879,8 @@ static UINT SwitchForward(SWITCH *sw, UINT64 now, UINT port, const SWITCH_PORT *
 	SwitchCount(e.State, e.Slot, SWITCH_IN_FRAMES, 1);
 	SwitchCount(e.State, e.Slot, SWITCH_IN_BYTES, size);
 	SwitchLearn(sw, now, vlan, frame + 6, port, p->Gen);
+	// ... and the address of its host, which the IP table learns (SwitchIp.c; SDN-50-N, #492)
+	SwitchIpLearn(sw->Ips, now, vlan, frame, size, e.Inner, port, p->Gen);
 
 	// A unicast frame to an address that the VLAN learnt goes to its port alone, never back to the port it came from
 	if ((frame[0] & 1) == 0) {
@@ -1027,7 +1036,9 @@ SWITCH *SwitchNew(const SWITCH_CONFIG *cfg) {
 		c.MaxMacs = SWITCH_DEFAULT_MACS;
 	if (c.AgingTime == 0)
 		c.AgingTime = SWITCH_DEFAULT_AGING;
-	if (c.Tpid < SWITCH_MIN_TPID || c.MaxPorts > SWITCH_MAX_PORTS || c.MaxMacs > SWITCH_MAX_MACS)
+	if (c.MaxIps == 0)
+		c.MaxIps = SWITCH_DEFAULT_IPS;
+	if (c.Tpid < SWITCH_MIN_TPID || c.MaxPorts > SWITCH_MAX_PORTS || c.MaxMacs > SWITCH_MAX_MACS || c.MaxIps > SWITCH_MAX_IPS)
 		return NULL;
 
 	SWITCH *sw = (SWITCH *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(SWITCH));
@@ -1072,6 +1083,13 @@ SWITCH *SwitchNew(const SWITCH_CONFIG *cfg) {
 		s->Slots = &sw->Slots[(SIZE_T)i * slots];
 	}
 
+	// The IP table, whose hash takes the random key of the MAC table (SwitchIp.c; SDN-50-N, #492)
+	sw->Ips = SwitchIpNew(c.MaxIps, sw->Seed);
+	if (sw->Ips == NULL) {
+		SwitchFree(sw);
+		return NULL;
+	}
+
 	return sw;
 }
 
@@ -1100,6 +1118,7 @@ void SwitchFree(SWITCH *sw) {
 		VirtualFree(sw->Shards, 0, MEM_RELEASE);
 	if (sw->Slots != NULL)
 		HeapFree(GetProcessHeap(), 0, sw->Slots);
+	SwitchIpFree(sw->Ips);
 
 	HeapFree(GetProcessHeap(), 0, sw);
 }
@@ -1176,7 +1195,8 @@ bool SwitchSetPort(SWITCH *sw, UINT port, const SWITCH_PORT_CONFIG *cfg) {
 			SwitchSetConfig(p, cfg, allowed);
 			ReleaseSRWLockExclusive(&p->Lock);
 
-			SwitchSweep(sw, SWITCH_SWEEP_PORT, 0, port);
+			SwitchSweep(sw, SWITCH_SWEEP_PORT, 0, port, 0);
+			SwitchIpForget(sw->Ips, port);
 			ok = true;
 		}
 	}
@@ -1219,7 +1239,8 @@ bool SwitchDelPort(SWITCH *sw, UINT port) {
 			ReleaseSRWLockExclusive(&p->Lock);
 
 			sw->NumPorts--;
-			SwitchSweep(sw, SWITCH_SWEEP_PORT, 0, port);
+			SwitchSweep(sw, SWITCH_SWEEP_PORT, 0, port, 0);
+			SwitchIpForget(sw->Ips, port);
 			ok = true;
 		}
 	}
@@ -1286,12 +1307,14 @@ UINT SwitchInput(SWITCH *sw, UINT64 now, UINT port, const UCHAR *frame, UINT siz
 	return num;
 }
 
-// Take out the entries of the MAC table that no frame refreshed for the aging time until now; their number
+// Take out the entries of the MAC table that no frame refreshed for the aging time until now; their number. The IP table
+// ages with it (SwitchIp.c).
 UINT SwitchAge(SWITCH *sw, UINT64 now) {
 	if (sw == NULL)
 		return 0;
 
-	return SwitchSweep(sw, SWITCH_SWEEP_AGE, now, 0);
+	SwitchIpAge(sw->Ips, now, sw->AgingTime);
+	return SwitchSweep(sw, SWITCH_SWEEP_AGE, now, 0, 0);
 }
 
 // Take out every entry of the MAC table; their number
@@ -1299,7 +1322,20 @@ UINT SwitchClearMacs(SWITCH *sw) {
 	if (sw == NULL)
 		return 0;
 
-	return SwitchSweep(sw, SWITCH_SWEEP_ALL, 0, 0);
+	return SwitchSweep(sw, SWITCH_SWEEP_ALL, 0, 0, 0);
+}
+
+// Take out the entries of the MAC address mac in every VLAN (SDN-50-N, #492); their number
+UINT SwitchClearMac(SWITCH *sw, const UCHAR *mac) {
+	if (sw == NULL || mac == NULL)
+		return 0;
+
+	return SwitchSweep(sw, SWITCH_SWEEP_MAC, 0, 0, SwitchMacKey(0, mac));
+}
+
+// The IP table of a switch, for SwitchIp.c
+SWITCH_IP_TABLE *SwitchIpTable(SWITCH *sw) {
+	return (sw != NULL ? sw->Ips : NULL);
 }
 
 // The order of two entries: by VLAN, then by address
@@ -1313,32 +1349,34 @@ static int SwitchCompareEntry(const void *p1, const void *p2) {
 	return memcmp(a->Mac, b->Mac, sizeof(a->Mac));
 }
 
-// The entries of the MAC table, max at most, by VLAN and address; their number
+// The first max entries of the MAC table by VLAN and address; their number
 UINT SwitchGetMacs(SWITCH *sw, SWITCH_MAC_ENTRY *list, UINT max) {
 	UINT num = 0;
 
 	if (sw == NULL || list == NULL)
 		return 0;
 
-	for (UINT i = 0; i < SWITCH_SHARDS && num < max; i++) {
+	for (UINT i = 0; i < SWITCH_SHARDS; i++) {
 		SWITCH_SHARD *s = &sw->Shards[i];
 
 		// The lock keeps the writers of the shard out while its entries are copied
 		AcquireSRWLockShared(&s->Lock);
-		for (UINT j = 0; j <= s->Mask && num < max; j++) {
+		for (UINT j = 0; j <= s->Mask; j++) {
 			const SWITCH_MAC *e = &s->Slots[j];
 			UINT64 key = (UINT64)e->Key;
+			SWITCH_MAC_ENTRY m;
 
 			if (key == 0)
 				continue;
 
-			SWITCH_MAC_ENTRY *m = &list[num++];
-			ZeroMemory(m, sizeof(SWITCH_MAC_ENTRY));
-			m->Vlan = (UINT)(key >> 48);
-			for (UINT k = 0; k < sizeof(m->Mac); k++)
-				m->Mac[k] = (UCHAR)(key >> (40 - 8 * k));
-			m->Port = (UINT)e->Port;
-			m->LastSeen = (UINT64)e->LastSeen;
+			ZeroMemory(&m, sizeof(m));
+			m.Vlan = (UINT)(key >> 48);
+			for (UINT k = 0; k < sizeof(m.Mac); k++)
+				m.Mac[k] = (UCHAR)(key >> (40 - 8 * k));
+			m.Port = (UINT)e->Port;
+			m.LastSeen = (UINT64)e->LastSeen;
+			// A table of more entries than max gives its first max (SDN-50-N, #492)
+			SwitchKeepFirst(list, &num, max, &m, sizeof(m), SwitchCompareEntry);
 		}
 		ReleaseSRWLockShared(&s->Lock);
 	}
@@ -1368,6 +1406,8 @@ void SwitchGetStats(SWITCH *sw, SWITCH_STATS *st) {
 	st->Refused = (UINT64)ReadNoFence64(&sw->Refused);
 	for (UINT i = 0; i < SWITCH_NUM_REASONS; i++)
 		st->Drops[i] = (UINT64)ReadNoFence64(&sw->Drops[i]);
+	// The counters of the IP table (SwitchIp.c; SDN-50-N, #492)
+	SwitchIpStats(sw->Ips, st);
 }
 
 // The counters and limits of the VLAN vlan; false while it has no state
