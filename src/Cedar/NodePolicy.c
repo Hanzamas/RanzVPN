@@ -21,6 +21,15 @@
 // VRF; the vpntest harness may leave it out) forwards as the overlay did before SDN-8, as the starter rule does. When
 // the engine refuses the document of a Generation, the VRFs with a policy drop every packet until a Generation whose
 // document it takes: the policy fails closed.
+//
+// The hub of a VRF of topology hub-and-spoke is where the policy of the VRF decides the traffic between two spokes
+// (NodePolicyTransit; SDN-19-R2, #508). A spoke sees the hub as the other end of every packet of another spoke, and the
+// hub sees both real ends, as both are its peers: it judges each packet that it sends on from one spoke to another
+// before it sends it, with the same engine and the same rules as a packet of its host, by the member of the peer that
+// sent it and the member of the peer of its next hop. So with no rule between two spokes the default deny of the VRF
+// keeps them apart at the hub, whatever the rules between the spokes and the hub let through, and the replies of an
+// allowed flow pass on the conntrack fast path of the hub. The destination spoke judges such a packet as a packet of
+// the hub, the trust anchor of the topology, whose policy it passed.
 
 #include "Node.h"
 
@@ -668,6 +677,41 @@ bool NodePolicyOutbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, cons
 // when the policy of the VRF lets it through
 bool NodePolicyInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const UCHAR *packet, UINT size) {
 	return NodePolicyJudge(n, v, vrf_id, hop, packet, size, false);
+}
+
+// A packet of the VRF vrf_id that the node, the hub of the VRF, sends on from the next hop from of the tables v to the next
+// hop to, a peer (NodeGatewayTransit), as the peer of from sent it: true when the policy of the VRF lets it through. The
+// policy judges it by its two real ends, with the same engine and the same rules as a packet of the host: the member of
+// the peer that sent it, the end outside the VRF for a route that a VRF of the peer leaks, and the member of the peer that
+// it goes to; a WireGuard Device behind either peer is the end in place of its gateway (SDN-80, #375). A dropped packet
+// counts with the others that the policy dropped. The caller is an online reader of the node's table snapshot, which
+// holds v.
+bool NodePolicyTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, UINT to, const UCHAR *packet, UINT size) {
+	const NODE_POLICY_TABLE *t = (v != NULL ? v->Policy : NULL);
+	const NODE_POLICY_VRF *e = NodePolicyFind(t, vrf_id);
+
+	// A VRF without its policy forwards as the overlay did before SDN-8
+	if (e == NULL)
+		return true;
+
+	NODE_POLICY *p = t->Policy;
+	bool ok = false;
+
+	if (t->Closed == false && p->Engine != NULL) {
+		UINT sender = (from < t->NumHops ? e->Hops[from] : e->Outside);
+		UINT receiver = (to < t->NumHops ? e->Hops[to] : e->Outside);
+		UINT host = e->Host;
+
+		// A Device whose gateway sent the packet is its source, one whose gateway is the peer of its next hop its destination.
+		// No Device of the node's own is either: the forwarding table leads their addresses to the host, so host stays.
+		NodePolicyDeviceEnds(e, packet, size, false, &host, &sender);
+		NodePolicyDeviceEnds(e, packet, size, true, &host, &receiver);
+		ok = PolicyInput(p->Engine, NodePolicyNow(n, p), sender, receiver, 0, packet, size, NULL);
+	}
+	if (ok == false)
+		InterlockedIncrement64(&p->Dropped);
+
+	return ok;
 }
 
 //
