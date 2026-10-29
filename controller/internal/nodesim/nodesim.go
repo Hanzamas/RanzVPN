@@ -93,6 +93,8 @@ type Node struct {
 	learned []Endpoint // from the last Controllers message
 	// pins are the TLS fingerprints that the last state named (SDN-92), nil before the first
 	pins []string
+	// report is what the node reports about itself after its Hello (mimic.go; SDN-94), nil for nothing
+	report *controlpb.Pins
 	// The stream that Run serves, nil while it serves none
 	conn *control.Conn
 }
@@ -172,6 +174,10 @@ func (n *Node) run(ctx context.Context, ep Endpoint) error {
 	hello := &controlpb.Hello{SchemaVersion: version, AppliedGeneration: n.gen, Capabilities: n.Capabilities}
 	n.mu.Unlock()
 	if err := n.send(conn, &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Hello{Hello: hello}}); err != nil {
+		return err
+	}
+	// The keys that the node reports about itself (mimic.go; SDN-94)
+	if err := n.sendKeys(conn); err != nil {
 		return err
 	}
 	for {

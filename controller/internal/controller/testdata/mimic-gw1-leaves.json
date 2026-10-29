@@ -1,0 +1,5 @@
+{
+  "resources": [
+    {"kind": "Node", "name": "gw-1", "spec": {"publicKey": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", "vrfs": ["lab"]}}
+  ]
+}

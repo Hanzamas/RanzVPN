@@ -126,6 +126,30 @@ ranz.control.v1.CertificateAcme.directory max_size:256
 ranz.control.v1.CertificateAcme.email max_size:128
 ranz.control.v1.CertificateAcme.names max_count:4 max_size:254
 ranz.control.v1.CertificateAcme.ca_file max_size:260
+# The mimic part of the state of a node (SDN-94): the settings of a mimic server and the links of a client, at most 8
+# server names and 8 links (controller/internal/intent MaxMimicServerNames, controller/internal/desired MaxMimicLinks).
+# A name is a DNS name of at most 253 characters, an address of at most 255, the path of a file of the node of at most 259
+# and an e-mail address of at most 127; a short id is 8 bytes and a key 32. They make the NodeConfig, and so an Object,
+# about 9 kB larger.
+ranz.control.v1.Mimic.links max_count:8
+ranz.control.v1.MimicServer.listen max_size:256
+ranz.control.v1.MimicServer.server_names max_count:8 max_size:254
+ranz.control.v1.MimicServer.short_id max_size:8
+ranz.control.v1.MimicDecoy.dest max_size:256
+ranz.control.v1.MimicDecoy.cert_file max_size:260
+ranz.control.v1.MimicDecoy.key_file max_size:260
+ranz.control.v1.MimicAcme.directory max_size:256
+ranz.control.v1.MimicAcme.email max_size:128
+ranz.control.v1.MimicAcme.cache_dir max_size:260
+ranz.control.v1.MimicAcme.ca_file max_size:260
+ranz.control.v1.MimicLink.peer max_size:64
+ranz.control.v1.MimicLink.address max_size:256
+ranz.control.v1.MimicLink.server_name max_size:254
+ranz.control.v1.MimicLink.public_key max_size:32
+ranz.control.v1.MimicLink.short_id max_size:8
+# What a node reports about itself (SDN-94): the public key of its mimic server, 32 bytes. A Pins frame is 36 bytes at
+# most (MaxPins of controller/internal/control).
+ranz.control.v1.Pins.mimic_key max_size:32
 # The endpoints of a node (SDN-93): 8 at most, as many as the entries of a fallback list (TRANSPORT_MAX_TARGETS), each an
 # address of at most 255 characters (controller/internal/intent MaxEndpoints, MaxAddress). They make a Peer about 2.1 kB
 # larger, which leaves it smaller than the NodeConfig, and the NodeConfig, and so an Object, about 2.1 kB larger.
