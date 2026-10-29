@@ -1,0 +1,23 @@
+# Generation 2 of gw-1 after the Node hub reported the public key of its mimic server: only the delta from generation 1,
+# which had the Peer hub with its endpoints and no link, since the key was not known. The one change is the NodeConfig of
+# gw-1, whose mimic part holds the link to the one mimic endpoint of hub: its address, the first server name of hub as the
+# name in the ClientHello, the public key that hub reported (the 32 bytes 0123456789abcdef twice) and the short id that the
+# Controller made for the server (the bytes 1 to 8). gw-2 gets the same, and lab-1, which shares no VRF with hub, nothing.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    node: {
+      name: "gw-1"
+      mimic: {
+        links: {
+          peer: "hub"
+          address: "hub.example.com:8443"
+          server_name: "www.example.com"
+          public_key: "0123456789abcdef0123456789abcdef"
+          short_id: "\001\002\003\004\005\006\007\010"
+        }
+      }
+    }
+  }
+}
