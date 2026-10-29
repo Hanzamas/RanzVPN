@@ -1874,7 +1874,10 @@ type NodeConfig struct {
 	ListenerDecoy string `protobuf:"bytes,12,opt,name=listener_decoy,json=listenerDecoy,proto3" json:"listener_decoy,omitempty"`
 	// The LAN subnets behind the node, which it advertises as a gateway in its VRFs (SDN-19 #195),
 	// ordered by VRF id, then prefix: they lead to its host.
-	LanSubnets    []*Route `protobuf:"bytes,13,rep,name=lan_subnets,json=lanSubnets,proto3" json:"lan_subnets,omitempty"`
+	LanSubnets []*Route `protobuf:"bytes,13,rep,name=lan_subnets,json=lanSubnets,proto3" json:"lan_subnets,omitempty"`
+	// The session profile that the node runs under as a device of a User (SDN-40 #233), absent for a node
+	// that has no owner or whose owner runs under none: the node enforces its flags on itself.
+	Profile       *SessionProfile `protobuf:"bytes,16,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2003,6 +2006,13 @@ func (x *NodeConfig) GetListenerDecoy() string {
 func (x *NodeConfig) GetLanSubnets() []*Route {
 	if x != nil {
 		return x.LanSubnets
+	}
+	return nil
+}
+
+func (x *NodeConfig) GetProfile() *SessionProfile {
+	if x != nil {
+		return x.Profile
 	}
 	return nil
 }
@@ -3244,7 +3254,10 @@ type Peer struct {
 	// another gateway announces too, and it has had no control stream for a while. The node gives the
 	// traffic of that prefix to another gateway that answers its probes, and to this one only while
 	// none does.
-	Down          bool `protobuf:"varint,11,opt,name=down,proto3" json:"down,omitempty"`
+	Down bool `protobuf:"varint,11,opt,name=down,proto3" json:"down,omitempty"`
+	// The session profile that the peer runs under as a device of a User (SDN-40 #233, SessionProfile at
+	// the end of this file), absent for none: this node enforces it on its session with the peer.
+	Profile       *SessionProfile `protobuf:"bytes,13,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3340,6 +3353,13 @@ func (x *Peer) GetDown() bool {
 		return x.Down
 	}
 	return false
+}
+
+func (x *Peer) GetProfile() *SessionProfile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
 }
 
 // An address under which the other nodes reach a node, over one transport (SDN-93 #410): host:port, a
@@ -5393,6 +5413,159 @@ func (x *TableEntry) GetLastSeenMs() uint64 {
 	return 0
 }
 
+// The session profile of a device (SDN-40 #233, spec #224): the effective SessionProfile of the User
+// that owns the Node, its own or the one of the first of its Groups, in name order, that names one.
+// The NodeConfig of the device holds it, and the Peer object of the device that each other node holds:
+// a node enforces the profile of a peer on its session with that peer, and the flags of its own profile
+// on itself. A limit of 0 is none, and a flag that is not set is off.
+type SessionProfile struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`                                             // the SessionProfile
+	User           string                 `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`                                             // the User that owns the device: the sessions of its devices count together
+	UploadLimit    uint64                 `protobuf:"varint,3,opt,name=upload_limit,json=uploadLimit,proto3" json:"upload_limit,omitempty"`           // bits per second that a node takes from the session of the device at most
+	DownloadLimit  uint64                 `protobuf:"varint,4,opt,name=download_limit,json=downloadLimit,proto3" json:"download_limit,omitempty"`     // bits per second that a node sends to the session of the device at most
+	MaxSessions    uint32                 `protobuf:"varint,5,opt,name=max_sessions,json=maxSessions,proto3" json:"max_sessions,omitempty"`           // the sessions of the devices of the user that a node holds at once
+	MaxMacs        uint32                 `protobuf:"varint,6,opt,name=max_macs,json=maxMacs,proto3" json:"max_macs,omitempty"`                       // the MAC addresses that one session sends from in an L2 Network
+	MaxIpv4        uint32                 `protobuf:"varint,7,opt,name=max_ipv4,json=maxIpv4,proto3" json:"max_ipv4,omitempty"`                       // the IPv4 addresses that one session sends from in each VRF
+	MaxIpv6        uint32                 `protobuf:"varint,8,opt,name=max_ipv6,json=maxIpv6,proto3" json:"max_ipv6,omitempty"`                       // ... and the IPv6 addresses
+	IdleTimeout    uint32                 `protobuf:"varint,9,opt,name=idle_timeout,json=idleTimeout,proto3" json:"idle_timeout,omitempty"`           // s without a packet in either direction after which a node ends the session
+	AutoDisconnect uint32                 `protobuf:"varint,10,opt,name=auto_disconnect,json=autoDisconnect,proto3" json:"auto_disconnect,omitempty"` // s after the session came up after which a node ends it
+	NoBridge       bool                   `protobuf:"varint,11,opt,name=no_bridge,json=noBridge,proto3" json:"no_bridge,omitempty"`                   // one MAC address in an L2 Network, the first that the session sends from
+	NoRouting      bool                   `protobuf:"varint,12,opt,name=no_routing,json=noRouting,proto3" json:"no_routing,omitempty"`                // the device sends from and takes at its own addresses only, IPv4 and IPv6
+	NoServer       bool                   `protobuf:"varint,13,opt,name=no_server,json=noServer,proto3" json:"no_server,omitempty"`                   // no TCP connection to the device, IPv4 and IPv6: no SYN to it, no SYN-ACK from it
+	PrivacyFilter  bool                   `protobuf:"varint,14,opt,name=privacy_filter,json=privacyFilter,proto3" json:"privacy_filter,omitempty"`    // no packet between two devices whose profiles both have it
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SessionProfile) Reset() {
+	*x = SessionProfile{}
+	mi := &file_ranz_control_v1_control_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionProfile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionProfile) ProtoMessage() {}
+
+func (x *SessionProfile) ProtoReflect() protoreflect.Message {
+	mi := &file_ranz_control_v1_control_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionProfile.ProtoReflect.Descriptor instead.
+func (*SessionProfile) Descriptor() ([]byte, []int) {
+	return file_ranz_control_v1_control_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *SessionProfile) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SessionProfile) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *SessionProfile) GetUploadLimit() uint64 {
+	if x != nil {
+		return x.UploadLimit
+	}
+	return 0
+}
+
+func (x *SessionProfile) GetDownloadLimit() uint64 {
+	if x != nil {
+		return x.DownloadLimit
+	}
+	return 0
+}
+
+func (x *SessionProfile) GetMaxSessions() uint32 {
+	if x != nil {
+		return x.MaxSessions
+	}
+	return 0
+}
+
+func (x *SessionProfile) GetMaxMacs() uint32 {
+	if x != nil {
+		return x.MaxMacs
+	}
+	return 0
+}
+
+func (x *SessionProfile) GetMaxIpv4() uint32 {
+	if x != nil {
+		return x.MaxIpv4
+	}
+	return 0
+}
+
+func (x *SessionProfile) GetMaxIpv6() uint32 {
+	if x != nil {
+		return x.MaxIpv6
+	}
+	return 0
+}
+
+func (x *SessionProfile) GetIdleTimeout() uint32 {
+	if x != nil {
+		return x.IdleTimeout
+	}
+	return 0
+}
+
+func (x *SessionProfile) GetAutoDisconnect() uint32 {
+	if x != nil {
+		return x.AutoDisconnect
+	}
+	return 0
+}
+
+func (x *SessionProfile) GetNoBridge() bool {
+	if x != nil {
+		return x.NoBridge
+	}
+	return false
+}
+
+func (x *SessionProfile) GetNoRouting() bool {
+	if x != nil {
+		return x.NoRouting
+	}
+	return false
+}
+
+func (x *SessionProfile) GetNoServer() bool {
+	if x != nil {
+		return x.NoServer
+	}
+	return false
+}
+
+func (x *SessionProfile) GetPrivacyFilter() bool {
+	if x != nil {
+		return x.PrivacyFilter
+	}
+	return false
+}
+
 var File_ranz_control_v1_control_proto protoreflect.FileDescriptor
 
 const file_ranz_control_v1_control_proto_rawDesc = "" +
@@ -5453,7 +5626,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04kind\"J\n" +
 	"\tObjectKey\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.ranz.control.v1.KindR\x04kind\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xdd\x04\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\x98\x05\n" +
 	"\n" +
 	"NodeConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
@@ -5472,7 +5645,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x05mimic\x18\x14 \x01(\v2\x16.ranz.control.v1.MimicR\x05mimic\x12%\n" +
 	"\x0elistener_decoy\x18\f \x01(\tR\rlistenerDecoy\x127\n" +
 	"\vlan_subnets\x18\r \x03(\v2\x16.ranz.control.v1.RouteR\n" +
-	"lanSubnets\"`\n" +
+	"lanSubnets\x129\n" +
+	"\aprofile\x18\x10 \x01(\v2\x1f.ranz.control.v1.SessionProfileR\aprofile\"`\n" +
 	"\x04Vtep\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\fR\aaddress\x12\x1d\n" +
 	"\n" +
@@ -5568,7 +5742,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\n" +
 	"dhcp_guard\x18\x06 \x01(\bR\tdhcpGuard\x12\x19\n" +
 	"\bra_guard\x18\a \x01(\bR\araGuard\x12\x1a\n" +
-	"\bgateways\x18\b \x03(\tR\bgateways\"\xc6\x02\n" +
+	"\bgateways\x18\b \x03(\tR\bgateways\"\x81\x03\n" +
 	"\x04Peer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -5579,7 +5753,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04tags\x18\x06 \x03(\tR\x04tags\x127\n" +
 	"\tendpoints\x18\a \x03(\v2\x19.ranz.control.v1.EndpointR\tendpoints\x12)\n" +
 	"\x04vtep\x18\b \x01(\v2\x15.ranz.control.v1.VtepR\x04vtep\x12\x12\n" +
-	"\x04down\x18\v \x01(\bR\x04down\"^\n" +
+	"\x04down\x18\v \x01(\bR\x04down\x129\n" +
+	"\aprofile\x18\r \x01(\v2\x1f.ranz.control.v1.SessionProfileR\aprofile\"^\n" +
 	"\bEndpoint\x128\n" +
 	"\ttransport\x18\x01 \x01(\x0e2\x1a.ranz.control.v1.TransportR\ttransport\x12\x18\n" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\"h\n" +
@@ -5751,7 +5926,24 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\aaddress\x18\x03 \x01(\fR\aaddress\x12\x16\n" +
 	"\x06member\x18\x04 \x01(\tR\x06member\x12 \n" +
 	"\flast_seen_ms\x18\x05 \x01(\x04R\n" +
-	"lastSeenMs*[\n" +
+	"lastSeenMs\"\xc2\x03\n" +
+	"\x0eSessionProfile\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04user\x18\x02 \x01(\tR\x04user\x12!\n" +
+	"\fupload_limit\x18\x03 \x01(\x04R\vuploadLimit\x12%\n" +
+	"\x0edownload_limit\x18\x04 \x01(\x04R\rdownloadLimit\x12!\n" +
+	"\fmax_sessions\x18\x05 \x01(\rR\vmaxSessions\x12\x19\n" +
+	"\bmax_macs\x18\x06 \x01(\rR\amaxMacs\x12\x19\n" +
+	"\bmax_ipv4\x18\a \x01(\rR\amaxIpv4\x12\x19\n" +
+	"\bmax_ipv6\x18\b \x01(\rR\amaxIpv6\x12!\n" +
+	"\fidle_timeout\x18\t \x01(\rR\vidleTimeout\x12'\n" +
+	"\x0fauto_disconnect\x18\n" +
+	" \x01(\rR\x0eautoDisconnect\x12\x1b\n" +
+	"\tno_bridge\x18\v \x01(\bR\bnoBridge\x12\x1d\n" +
+	"\n" +
+	"no_routing\x18\f \x01(\bR\tnoRouting\x12\x1b\n" +
+	"\tno_server\x18\r \x01(\bR\bnoServer\x12%\n" +
+	"\x0eprivacy_filter\x18\x0e \x01(\bR\rprivacyFilter*[\n" +
 	"\rSchemaVersion\x12\x1e\n" +
 	"\x1aSCHEMA_VERSION_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SCHEMA_VERSION_1\x10\x01\x12\x14\n" +
@@ -5848,7 +6040,7 @@ func file_ranz_control_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_ranz_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 15)
-var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_ranz_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_ranz_control_v1_control_proto_goTypes = []any{
 	(SchemaVersion)(0),      // 0: ranz.control.v1.SchemaVersion
 	(RefuseReason)(0),       // 1: ranz.control.v1.RefuseReason
@@ -5918,6 +6110,7 @@ var file_ranz_control_v1_control_proto_goTypes = []any{
 	(*Operation)(nil),       // 65: ranz.control.v1.Operation
 	(*OperationResult)(nil), // 66: ranz.control.v1.OperationResult
 	(*TableEntry)(nil),      // 67: ranz.control.v1.TableEntry
+	(*SessionProfile)(nil),  // 68: ranz.control.v1.SessionProfile
 }
 var file_ranz_control_v1_control_proto_depIdxs = []int32{
 	16, // 0: ranz.control.v1.ControlMessage.hello:type_name -> ranz.control.v1.Hello
@@ -5953,59 +6146,61 @@ var file_ranz_control_v1_control_proto_depIdxs = []int32{
 	26, // 30: ranz.control.v1.NodeConfig.vtep:type_name -> ranz.control.v1.Vtep
 	30, // 31: ranz.control.v1.NodeConfig.mimic:type_name -> ranz.control.v1.Mimic
 	63, // 32: ranz.control.v1.NodeConfig.lan_subnets:type_name -> ranz.control.v1.Route
-	28, // 33: ranz.control.v1.Listener.file:type_name -> ranz.control.v1.CertificateFile
-	29, // 34: ranz.control.v1.Listener.acme:type_name -> ranz.control.v1.CertificateAcme
-	31, // 35: ranz.control.v1.Mimic.server:type_name -> ranz.control.v1.MimicServer
-	34, // 36: ranz.control.v1.Mimic.links:type_name -> ranz.control.v1.MimicLink
-	32, // 37: ranz.control.v1.MimicServer.decoy:type_name -> ranz.control.v1.MimicDecoy
-	4,  // 38: ranz.control.v1.MimicDecoy.mode:type_name -> ranz.control.v1.MimicDecoyMode
-	33, // 39: ranz.control.v1.MimicDecoy.acme:type_name -> ranz.control.v1.MimicAcme
-	45, // 40: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
-	46, // 41: ranz.control.v1.Vrf.policy:type_name -> ranz.control.v1.VrfPolicy
-	37, // 42: ranz.control.v1.Vrf.dns:type_name -> ranz.control.v1.DnsZone
-	3,  // 43: ranz.control.v1.Vrf.link:type_name -> ranz.control.v1.LinkKind
-	38, // 44: ranz.control.v1.DnsZone.records:type_name -> ranz.control.v1.DnsRecord
-	5,  // 45: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
-	45, // 46: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
-	45, // 47: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
-	52, // 48: ranz.control.v1.Network.dhcp:type_name -> ranz.control.v1.Dhcp
-	40, // 49: ranz.control.v1.Network.security:type_name -> ranz.control.v1.L2Security
-	51, // 50: ranz.control.v1.Peer.addresses:type_name -> ranz.control.v1.Address
-	63, // 51: ranz.control.v1.Peer.routes:type_name -> ranz.control.v1.Route
-	42, // 52: ranz.control.v1.Peer.endpoints:type_name -> ranz.control.v1.Endpoint
-	26, // 53: ranz.control.v1.Peer.vtep:type_name -> ranz.control.v1.Vtep
-	6,  // 54: ranz.control.v1.Endpoint.transport:type_name -> ranz.control.v1.Transport
-	51, // 55: ranz.control.v1.Device.addresses:type_name -> ranz.control.v1.Address
-	7,  // 56: ranz.control.v1.Rule.action:type_name -> ranz.control.v1.RuleAction
-	48, // 57: ranz.control.v1.Rule.from:type_name -> ranz.control.v1.RuleEnd
-	48, // 58: ranz.control.v1.Rule.to:type_name -> ranz.control.v1.RuleEnd
-	49, // 59: ranz.control.v1.Rule.ports:type_name -> ranz.control.v1.PortRange
-	45, // 60: ranz.control.v1.RuleEnd.prefixes:type_name -> ranz.control.v1.Prefix
-	8,  // 61: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
-	9,  // 62: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
-	10, // 63: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
-	45, // 64: ranz.control.v1.Address.prefix:type_name -> ranz.control.v1.Prefix
-	11, // 65: ranz.control.v1.Dhcp.mode:type_name -> ranz.control.v1.DhcpMode
-	45, // 66: ranz.control.v1.Dhcp.reserved:type_name -> ranz.control.v1.Prefix
-	54, // 67: ranz.control.v1.Leases.leases:type_name -> ranz.control.v1.Lease
-	57, // 68: ranz.control.v1.Telemetry.peers:type_name -> ranz.control.v1.PeerCounters
-	58, // 69: ranz.control.v1.Telemetry.vrfs:type_name -> ranz.control.v1.VrfCounters
-	59, // 70: ranz.control.v1.Telemetry.rules:type_name -> ranz.control.v1.RuleCounters
-	60, // 71: ranz.control.v1.Telemetry.flows:type_name -> ranz.control.v1.Flow
-	61, // 72: ranz.control.v1.Telemetry.events:type_name -> ranz.control.v1.NodeEvent
-	56, // 73: ranz.control.v1.Telemetry.devices:type_name -> ranz.control.v1.DeviceCounters
-	12, // 74: ranz.control.v1.NodeEvent.type:type_name -> ranz.control.v1.NodeEventType
-	45, // 75: ranz.control.v1.Nat.inside:type_name -> ranz.control.v1.Prefix
-	45, // 76: ranz.control.v1.Nat.outside:type_name -> ranz.control.v1.Prefix
-	45, // 77: ranz.control.v1.Route.prefix:type_name -> ranz.control.v1.Prefix
-	13, // 78: ranz.control.v1.Operation.kind:type_name -> ranz.control.v1.OperationKind
-	14, // 79: ranz.control.v1.OperationResult.status:type_name -> ranz.control.v1.OperationStatus
-	67, // 80: ranz.control.v1.OperationResult.entries:type_name -> ranz.control.v1.TableEntry
-	81, // [81:81] is the sub-list for method output_type
-	81, // [81:81] is the sub-list for method input_type
-	81, // [81:81] is the sub-list for extension type_name
-	81, // [81:81] is the sub-list for extension extendee
-	0,  // [0:81] is the sub-list for field type_name
+	68, // 33: ranz.control.v1.NodeConfig.profile:type_name -> ranz.control.v1.SessionProfile
+	28, // 34: ranz.control.v1.Listener.file:type_name -> ranz.control.v1.CertificateFile
+	29, // 35: ranz.control.v1.Listener.acme:type_name -> ranz.control.v1.CertificateAcme
+	31, // 36: ranz.control.v1.Mimic.server:type_name -> ranz.control.v1.MimicServer
+	34, // 37: ranz.control.v1.Mimic.links:type_name -> ranz.control.v1.MimicLink
+	32, // 38: ranz.control.v1.MimicServer.decoy:type_name -> ranz.control.v1.MimicDecoy
+	4,  // 39: ranz.control.v1.MimicDecoy.mode:type_name -> ranz.control.v1.MimicDecoyMode
+	33, // 40: ranz.control.v1.MimicDecoy.acme:type_name -> ranz.control.v1.MimicAcme
+	45, // 41: ranz.control.v1.Vrf.ula:type_name -> ranz.control.v1.Prefix
+	46, // 42: ranz.control.v1.Vrf.policy:type_name -> ranz.control.v1.VrfPolicy
+	37, // 43: ranz.control.v1.Vrf.dns:type_name -> ranz.control.v1.DnsZone
+	3,  // 44: ranz.control.v1.Vrf.link:type_name -> ranz.control.v1.LinkKind
+	38, // 45: ranz.control.v1.DnsZone.records:type_name -> ranz.control.v1.DnsRecord
+	5,  // 46: ranz.control.v1.Network.mode:type_name -> ranz.control.v1.NetworkMode
+	45, // 47: ranz.control.v1.Network.ipv4_pool:type_name -> ranz.control.v1.Prefix
+	45, // 48: ranz.control.v1.Network.ipv6_pool:type_name -> ranz.control.v1.Prefix
+	52, // 49: ranz.control.v1.Network.dhcp:type_name -> ranz.control.v1.Dhcp
+	40, // 50: ranz.control.v1.Network.security:type_name -> ranz.control.v1.L2Security
+	51, // 51: ranz.control.v1.Peer.addresses:type_name -> ranz.control.v1.Address
+	63, // 52: ranz.control.v1.Peer.routes:type_name -> ranz.control.v1.Route
+	42, // 53: ranz.control.v1.Peer.endpoints:type_name -> ranz.control.v1.Endpoint
+	26, // 54: ranz.control.v1.Peer.vtep:type_name -> ranz.control.v1.Vtep
+	68, // 55: ranz.control.v1.Peer.profile:type_name -> ranz.control.v1.SessionProfile
+	6,  // 56: ranz.control.v1.Endpoint.transport:type_name -> ranz.control.v1.Transport
+	51, // 57: ranz.control.v1.Device.addresses:type_name -> ranz.control.v1.Address
+	7,  // 58: ranz.control.v1.Rule.action:type_name -> ranz.control.v1.RuleAction
+	48, // 59: ranz.control.v1.Rule.from:type_name -> ranz.control.v1.RuleEnd
+	48, // 60: ranz.control.v1.Rule.to:type_name -> ranz.control.v1.RuleEnd
+	49, // 61: ranz.control.v1.Rule.ports:type_name -> ranz.control.v1.PortRange
+	45, // 62: ranz.control.v1.RuleEnd.prefixes:type_name -> ranz.control.v1.Prefix
+	8,  // 63: ranz.control.v1.Capabilities.sku:type_name -> ranz.control.v1.Sku
+	9,  // 64: ranz.control.v1.Capabilities.architecture:type_name -> ranz.control.v1.Architecture
+	10, // 65: ranz.control.v1.Capabilities.egress_tier:type_name -> ranz.control.v1.EgressTier
+	45, // 66: ranz.control.v1.Address.prefix:type_name -> ranz.control.v1.Prefix
+	11, // 67: ranz.control.v1.Dhcp.mode:type_name -> ranz.control.v1.DhcpMode
+	45, // 68: ranz.control.v1.Dhcp.reserved:type_name -> ranz.control.v1.Prefix
+	54, // 69: ranz.control.v1.Leases.leases:type_name -> ranz.control.v1.Lease
+	57, // 70: ranz.control.v1.Telemetry.peers:type_name -> ranz.control.v1.PeerCounters
+	58, // 71: ranz.control.v1.Telemetry.vrfs:type_name -> ranz.control.v1.VrfCounters
+	59, // 72: ranz.control.v1.Telemetry.rules:type_name -> ranz.control.v1.RuleCounters
+	60, // 73: ranz.control.v1.Telemetry.flows:type_name -> ranz.control.v1.Flow
+	61, // 74: ranz.control.v1.Telemetry.events:type_name -> ranz.control.v1.NodeEvent
+	56, // 75: ranz.control.v1.Telemetry.devices:type_name -> ranz.control.v1.DeviceCounters
+	12, // 76: ranz.control.v1.NodeEvent.type:type_name -> ranz.control.v1.NodeEventType
+	45, // 77: ranz.control.v1.Nat.inside:type_name -> ranz.control.v1.Prefix
+	45, // 78: ranz.control.v1.Nat.outside:type_name -> ranz.control.v1.Prefix
+	45, // 79: ranz.control.v1.Route.prefix:type_name -> ranz.control.v1.Prefix
+	13, // 80: ranz.control.v1.Operation.kind:type_name -> ranz.control.v1.OperationKind
+	14, // 81: ranz.control.v1.OperationResult.status:type_name -> ranz.control.v1.OperationStatus
+	67, // 82: ranz.control.v1.OperationResult.entries:type_name -> ranz.control.v1.TableEntry
+	83, // [83:83] is the sub-list for method output_type
+	83, // [83:83] is the sub-list for method input_type
+	83, // [83:83] is the sub-list for extension type_name
+	83, // [83:83] is the sub-list for extension extendee
+	0,  // [0:83] is the sub-list for field type_name
 }
 
 func init() { file_ranz_control_v1_control_proto_init() }
@@ -6046,7 +6241,7 @@ func file_ranz_control_v1_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ranz_control_v1_control_proto_rawDesc), len(file_ranz_control_v1_control_proto_rawDesc)),
 			NumEnums:      15,
-			NumMessages:   53,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
