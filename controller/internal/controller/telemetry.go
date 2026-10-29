@@ -141,6 +141,8 @@ func (c *Controller) takeTelemetry(s *stream, t *controlpb.Telemetry) {
 	c.tel.exports.Flows(s.name, telemetry.FlowsOf(t))
 	// The WireGuard ends of the Devices whose gateway the node is (devices.go; SDN-80)
 	c.takeDevices(s.name, t.GetDevices())
+	// The BGP peering of the standard mode at the node (peeringreport.go; SDN-77)
+	c.takePeering(s.name, t.GetPeering())
 	for _, ne := range t.GetEvents() {
 		// Two holders of one key replace the session of a peer again and again (sessionflap.go; AUD1-DT-11, #459)
 		if ne.GetType() == controlpb.NodeEventType_NODE_EVENT_TYPE_SESSION_FLAP {

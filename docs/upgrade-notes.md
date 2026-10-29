@@ -2,6 +2,16 @@
 
 What an existing server shows after an upgrade. Newest first.
 
+## SDN-82 (#377): the Controller makes the keys of a WireGuard Device
+
+The Devices of SDN-80 (#375) had the public key that an administrator gave in the Intent, and no PresharedKey. After the upgrade:
+
+- **A Device can be made with its keys.** `ranz device create`, the form Make a Device on the Devices page and `POST /api/v1/devices` have the Controller make the key pair and a PresharedKey of the Device, add the Device to the Intent, and answer once with its finished configuration and the QR code of it. The private key is in no place that the Controller keeps; the PresharedKey is in the new table `device_keys` of the store, sealed to the sealing key of the host, the one that seals the secrets of the targets. The table is made at the first start, and is empty. The guide `docs/clients.md` has the setup of each client.
+- **The Devices that exist have no PresharedKey, and the Controller adds none.** A key is never changed in place. To give a Device a PresharedKey, make a new Device and delete the old one, and set the new configuration up on the client. An `apply` of a Device resource, as before, never makes one.
+- **A Device can have an owner.** The field `owner` of a Device names a User: the Device carries the groups of the User as tags, and counts against the maximum devices of the User. A User that owns a Device cannot be deleted.
+- **A Controller with `-rqlite-join`, a member of a cluster,** has no sealing key in common with the other members, so it refuses to make a Device that has a PresharedKey, and says so in its log at each start. Make the Devices of a cluster with `-no-preshared-key`.
+- **A backup holds the PresharedKeys sealed, and a restore on another host does not open them.** The Controller there logs `the PresharedKey of a Device is not sent` for each of those Devices, and its gateway terminates them without a PresharedKey, so a client that has one completes no handshake. Make each of those Devices again.
+
 ## AUD1-DT-10 (#458): the secrets of the targets are sealed, a backup is for the Administrators, the data directory has an owner
 
 The Controller's files on its host changed in three ways. At the first start after the upgrade:

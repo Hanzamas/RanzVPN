@@ -387,6 +387,9 @@ type harness struct {
 	// tune changes the Config of the controller before each start, for a test that needs a
 	// setting the others leave at its default (telemetry_test.go).
 	tune func(*controller.Config)
+	// sealer is what the store of each start seals the secrets with, as the sealing key of the host does
+	// (store.SetSealer), none when it is nil: the PresharedKeys of the Devices (devicekeys_test.go).
+	sealer store.Sealer
 	// limits are the limits for a source of the TLS port (AUD1-DT-3, #451), the defaults when they are zero.
 	limits port.Limits
 }
@@ -434,6 +437,9 @@ func (h *harness) start() {
 	st, err := store.Open(ctx, h.rq.URL())
 	if err != nil {
 		h.t.Fatal(err)
+	}
+	if h.sealer != nil {
+		st.SetSealer(h.sealer, nil)
 	}
 	log := slog.New(slog.NewTextHandler(testWriter{h.t}, nil))
 	cfg := controller.Config{Store: st, Key: h.key, Log: log, Schema: h.schema,

@@ -7,10 +7,12 @@ require (
 	github.com/chromedp/chromedp v0.21.0
 	github.com/flynn/noise v1.1.0
 	github.com/google/uuid v1.6.0
+	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/osrg/gobgp/v4 v4.10.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/refraction-networking/utls v1.8.2
 	github.com/rqlite/gorqlite v0.0.0-20261020015727-7224ce2bd419
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/xtls/reality v0.0.0-20261014101318-83f621788ca8
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.47.0
@@ -71,6 +73,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
+	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
