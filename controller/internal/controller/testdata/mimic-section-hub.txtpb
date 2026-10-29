@@ -1,0 +1,42 @@
+# Generation 2 of hub after mimic-section.json: only the delta from generation 1. The section of its Listener changed (the
+# address of the sidecar, the order of the server names, the clock tolerance and the decoy, which now borrows a site), so
+# the one change is its NodeConfig, whose mimic part holds the new settings of the server with the same short id as before
+# (the bytes 1 to 8) and no key. The new key of the server and the new endpoint of hub change the states of its clients, not this one.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    node: {
+      name: "hub"
+      listener: {
+        name: "edge-hub"
+        port: 443
+        quic_port: 443
+        file: {
+          path: "C:\\ProgramData\\Ranz\\hub.pfx"
+        }
+      }
+      endpoints: {
+        transport: TRANSPORT_QUIC
+        address: "hub.example.com:443"
+      }
+      endpoints: {
+        transport: TRANSPORT_MIMIC
+        address: "hub.example.com:8443"
+      }
+      mimic: {
+        server: {
+          listen: ":9443"
+          server_names: "cdn.example.com"
+          server_names: "www.example.com"
+          max_time_diff_ms: 5000
+          decoy: {
+            mode: MIMIC_DECOY_MODE_BORROW
+            dest: "www.example.com:443"
+          }
+          short_id: "\001\002\003\004\005\006\007\010"
+        }
+      }
+    }
+  }
+}
