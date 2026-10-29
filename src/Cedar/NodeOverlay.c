@@ -39,6 +39,7 @@
 
 #include "NodeAgent.h"
 #include "NodeCaps.h"
+#include "NodeExit.h"
 #include "NodeGateway.h"
 #include "NodeInternal.h"
 #include "NodeLink.h"
@@ -219,6 +220,9 @@ static NODE_VRF_TABLES *NodeOverlayTables(const CONTROL_STATE *st, NODE_OVERLAY_
 // (NodeSetPeers). It runs on the thread of the control stream, or on the caller's of NodeOverlayApply.
 static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	NODE_OVERLAY *ov = (NODE_OVERLAY *)param;
+	// A client takes the default route of a peer only from the exit node that its user chose: the state without them (NodeExit.c;
+	// SDN-55, #248)
+	NODE_EXIT_STATE *exits = NodeExitFilter(ov->Config.Exit, &st);
 	PEER_INFO *infos = ZeroMalloc(sizeof(PEER_INFO) * MAX(st->NumPeers, 1));
 	NODE_OVERLAY_PEER **hops = ZeroMalloc(sizeof(NODE_OVERLAY_PEER *) * MAX(st->NumPeers, 1));
 	LIST *dropped = NewListFast(NULL);
@@ -282,6 +286,8 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	NodeGatewayAttach(ov->Node, v, st);
 	// The session profiles of the peers and of the node go in with its tables (NodeProfile.c; SDN-40, #233)
 	NodeProfileAttach(ov->Node, v, st);
+	// The exit nodes of the Generation go in with its tables (NodeExit.c; SDN-55, #248)
+	NodeExitAttach(ov->Config.Exit, v, exits);
 	UINT num_vrfs = (v != NULL ? v->NumVrfs : 0);
 	bool swapped = (v != NULL && NodeSwapVrfs(ov->Node, v));
 	NodePolicyApplied(ov->Node, swapped);
@@ -339,6 +345,8 @@ static void NodeOverlayState(void *param, const CONTROL_STATE *st) {
 	// The WireGuard interface of a gateway, after the adapters of its VRFs (NodeWireGuard.c; SDN-80, #375)
 	if (swapped)
 		NodeWireGuardApplied(ov->Node, st);
+
+	NodeExitFreeState(exits);
 }
 
 //
@@ -569,8 +577,9 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 	NODE_VRF_TABLE *vt = NodeGetVrfTable(v, vrf_id);
 
 	if (vt != NULL && NodeOverlayEnds(packet, packet_size, src, dst, &addr_size)) {
-		// A source behind a group of gateways comes from the gateway of the group that sent it (NodeGateway.c; SDN-19, #195)
-		UINT from = NodeGatewayFrom(v, NodeVrfLookup(vt, src, addr_size), p);
+		// A source behind a group of gateways comes from the gateway of the group that sent it (NodeGateway.c; SDN-19, #195), and
+		// a source of no route from the exit node that the user of a client chose (NodeExit.c; SDN-55, #248)
+		UINT from = NodeGatewayFrom(v, NodeExitHop(v, vrf_id, NodeVrfLookup(vt, src, addr_size), src, addr_size, false), p);
 		UINT to = NodeVrfLookup(vt, dst, addr_size);
 
 		// The hub of a VRF of topology hub-and-spoke sends the packet of one spoke on to another (NodeGateway.c)
@@ -941,9 +950,10 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	NODE_VRF_TABLES *v = (t != NULL ? t->Vrfs : NULL);
 	NODE_VRF_TABLE *vt = NodeGetVrfTable(v, vrf_id);
 
-	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the tables route the packet as the overlay sees it
+	// 1:1 NAT and 4via6 (NodeNat.c; SDN-6, #182): the tables route the packet as the overlay sees it, and a destination of no
+	// route goes to the exit node that the user of a client chose (NodeExit.c; SDN-55, #248)
 	if (vt != NULL && size <= NOISE_MAX_PAYLOAD - NODE_OVERLAY_VRF_TAG && NodeNatEnds(v, vrf_id, packet, size, src, dst, &addr_size) && NodeVrfLookup(vt, src, addr_size) == NODE_VRF_LOCAL)
-		hop = NodeVrfLookup(vt, dst, addr_size);
+		hop = NodeExitHop(v, vrf_id, NodeVrfLookup(vt, dst, addr_size), dst, addr_size, true);
 	// A prefix that several gateways announce goes to the gateway that their group picks (NodeGateway.c; SDN-19, #195)
 	hop = NodeGatewayPick(v, hop, packet, size);
 

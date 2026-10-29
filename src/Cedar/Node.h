@@ -134,8 +134,8 @@
 #define NODE_CLIENT_DIAL        5000               // ms that the race of the fallback list of a server takes at most
 #define NODE_CLIENT_SLICE       50                 // ms that a read of a stream waits at most before it looks at whether the role closed it
 #define NODE_CLIENT_SETTLE      500                // ms without an address change before the role takes the network as roamed
-#define NODE_CLIENT_LINE        128                // Bytes of a command line of the pipe at most
-#define NODE_CLIENT_REPLY       2048               // Bytes of an answer of the pipe at most
+#define NODE_CLIENT_LINE        512                // Bytes of a command line of the pipe at most: enrol and the three Controller settings (SDN-55, #248)
+#define NODE_CLIENT_REPLY       16384              // Bytes of an answer of the pipe at most: the status with its exit nodes (SDN-55, #248)
 #define NODE_CLIENT_PIPE_IDLE   30000              // ms that the pipe waits for the next command of a connected user
 
 // The Controller of a node and its admin pipe (NodeController.c; SDN-90, #395)
@@ -379,6 +379,9 @@ struct NODE_VRF_TABLES {
 	struct NODE_GATEWAY_TABLE *Gateway;
 	// The session profiles of the peers and of the node of the same Generation (NodeProfile.c; SDN-40, #233), NULL for none
 	struct NODE_PROFILE_TABLE *Profile;
+	// The exit nodes of the same Generation and the one that the user of the client role chose (NodeExit.c; SDN-55, #248), NULL
+	// for the tables of a node without the client role
+	struct NODE_EXIT_TABLE *Exit;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -557,6 +560,10 @@ struct NODE_OVERLAY_CONFIG {
 	// for those; with AdapterParam. A test whose own switch is the L2 data path of the node reports the L2 backend that the
 	// switch stands in for, which the Controller asks of a node that holds an L2 Network (SDN-50-N, #492).
 	void (*Caps)(void *param, struct CONTROL_CAPS *caps);
+
+	// The exit node of the client role (NodeExit.c; SDN-55, #248), NULL for an overlay without it: the overlay then takes no
+	// default route of a peer but through the exit node that the user chose, which must outlive the overlay
+	struct NODE_EXIT *Exit;
 };
 
 // What NodeOverlayGetStatus reports
@@ -643,6 +650,17 @@ struct NODE_CLIENT_STATUS {
 	UINT64 NumRoams;                     // Settled address changes on other interfaces
 	UINT64 FromHost;                     // Packets of the host taken from its adapters
 	UINT64 ToHost;                       // Packets put into its adapters for the host
+
+	// The exit node that the logged-in user chose (NodeExit.c; SDN-55, #248)
+	bool ExitChosen;           // The user chose one ...
+	char Exit[PEER_NAME_SIZE]; // ... this peer ...
+	UINT ExitVrf;              // ... in this VRF
+	bool ExitAvailable;        // The forwarding tables in place hold it
+	bool ExitActive;           // The default routes of both families go through the adapter of its VRF
+	UINT NumExits;             // The exit nodes of the forwarding tables in place
+	UINT NumBypass;            // The host routes of server addresses through the interface of a default route of the host
+	UINT64 ExitDropped4;       // Packets of the host to the exit that it does not carry: IPv4 ...
+	UINT64 ExitDropped6;       // ... and IPv6
 };
 
 // What NodeControllerGetStatus reports (NodeController.c; SDN-90, #395)
@@ -1005,6 +1023,7 @@ void NodeListenerRenew(NODE *n);
 void NodeClientGetStatus(NODE *n, NODE_CLIENT_STATUS *st);
 void NodeClientPower(NODE *n, UINT event);
 UINT NodeClientGetAdapters(NODE *n, NODE_VRF_ADAPTER_STATUS *list, UINT max);
+void NodeClientServerAddress(NODE *n, const char *address);
 
 // NodeController.c
 void NodeControllerGetStatus(NODE *n, NODE_CONTROLLER_STATUS *st);
