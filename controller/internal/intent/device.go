@@ -53,10 +53,16 @@ type Device struct {
 	// Network with a WireGuard end, which reports the Capability wireguard.
 	Gateway string `json:"gateway"`
 	// PublicKey is the WireGuard key of the Device, base64 of KeySize bytes, which the administrator
-	// supplies. The controller never holds the private key of a Device.
+	// supplies, or which the controller makes with the key pair of the Device when it makes the Device
+	// (SDN-82, internal/controller devicekeys.go). The controller never holds the private key of a Device.
 	PublicKey string `json:"publicKey"`
 	// Tags identify the Device to the policy of its VRF, as the tags of a Node do.
 	Tags []string `json:"tags,omitempty"`
+	// Owner is the User that the Device is a device of (SDN-82, deviceowner.go): the Device carries the
+	// name of every Group of that User as a tag besides its own, and counts against the maximum devices
+	// of the User. Left out, the Device has no owner: a standalone Device, a router, takes the tags set
+	// on it.
+	Owner string `json:"owner,omitempty"`
 	// BatterySaver turns the keepalive of the configuration off, for a Device that only starts
 	// connections and should not wake its radio for one.
 	BatterySaver bool `json:"batterySaver,omitempty"`
@@ -248,7 +254,8 @@ func (in Intent) validateDevices() []error {
 			problems = append(problems, fmt.Errorf("Node %q: it is the gateway of %d Devices, at most %d", gw, terminated[gw], MaxGatewayDevices))
 		}
 	}
-	return problems
+	// The owner of each Device and its tags with those of the Groups of the owner (deviceowner.go)
+	return append(problems, in.validateDeviceOwners()...)
 }
 
 // deviceUsers returns the Devices of in that name the Network network or the gateway Node node, as
@@ -427,17 +434,25 @@ func (in Intent) countDevices(out []PoolUse, index map[string]int) {
 	}
 }
 
-// DeviceConfig returns the WireGuard configuration of the Device name, as a stock WireGuard client
+// DeviceConfig returns the WireGuard configuration of the Device name without a key of the Device
+// (DeviceConfigWith), as the controller shows it after the one time that it showed the keys.
+func (in Intent) DeviceConfig(name string, gatewayKey []byte) (string, error) {
+	return in.DeviceConfigWith(name, gatewayKey, DeviceKeys{})
+}
+
+// DeviceConfigWith returns the WireGuard configuration of the Device name, as a stock WireGuard client
 // imports it (SDN-80): its addresses, the MTU of its VRF, and its gateway as the one peer of the
 // configuration, with the public key gatewayKey of the WireGuard interface of the gateway (what the
 // gateway reported with the Capability wireguard), the DNS name and the UDP port of the gateway, the
 // prefixes of every Network of the VRF as the allowed IPs (a split tunnel: what the Device reaches of
 // them is up to the policy of the VRF) and a keepalive of DeviceKeepalive seconds unless the battery
 // saver is on. The controller never holds the private key of a Device, so the configuration says
-// where it goes. The configuration has no DNS line yet: a stock client sends every name to the
-// server of its DNS line, and the stub resolver of overlay DNS (SDN-11, #187) answers only the
-// names of the zone of its VRF and refuses every other one.
-func (in Intent) DeviceConfig(name string, gatewayKey []byte) (string, error) {
+// where it goes, unless keys carries the key pair that the controller just made for the Device
+// (SDN-82): then the configuration is the finished one that the Device imports, with the PrivateKey of
+// its [Interface] and the PresharedKey of its [Peer], shown once. The configuration has no DNS line
+// yet: a stock client sends every name to the server of its DNS line, and the stub resolver of overlay
+// DNS (SDN-11, #187) answers only the names of the zone of its VRF and refuses every other one.
+func (in Intent) DeviceConfigWith(name string, gatewayKey []byte, keys DeviceKeys) (string, error) {
 	d, ok := in.Devices[name]
 	if !ok {
 		return "", fmt.Errorf("%w: %s %q", ErrNotFound, KindDevice, name)
@@ -489,13 +504,23 @@ func (in Intent) DeviceConfig(name string, gatewayKey []byte) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Ranz VPN: the WireGuard configuration of Device %s, of Network %s in VRF %s\n", name, d.Network, nw.VRF)
 	b.WriteString("[Interface]\n")
-	b.WriteString("# PrivateKey = the private key of this Device, which only the Device holds\n")
+	if len(keys.Private) == KeySize {
+		fmt.Fprintf(&b, "PrivateKey = %s\n", base64.StdEncoding.EncodeToString(keys.Private))
+	} else {
+		b.WriteString("# PrivateKey = the private key of this Device, which only the Device holds\n")
+	}
 	fmt.Fprintf(&b, "Address = %s\n", strings.Join(addresses, ", "))
 	fmt.Fprintf(&b, "MTU = %d\n", mtu)
 	b.WriteString("\n")
 	b.WriteString("[Peer]\n")
 	fmt.Fprintf(&b, "# The gateway, Node %s\n", d.Gateway)
 	fmt.Fprintf(&b, "PublicKey = %s\n", base64.StdEncoding.EncodeToString(gatewayKey))
+	switch {
+	case len(keys.Preshared) == KeySize:
+		fmt.Fprintf(&b, "PresharedKey = %s\n", base64.StdEncoding.EncodeToString(keys.Preshared))
+	case keys.HasPreshared:
+		b.WriteString("# PresharedKey = the PresharedKey of this Device, which the controller showed once when it made the Device\n")
+	}
 	fmt.Fprintf(&b, "Endpoint = %s:%d\n", gw.WireGuard.Endpoint, gw.WireGuard.Port)
 	fmt.Fprintf(&b, "AllowedIPs = %s\n", strings.Join(allowed, ", "))
 	if !d.BatterySaver {
