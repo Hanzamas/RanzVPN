@@ -10,7 +10,9 @@ import (
 // 2026-10-28). The static key of a Node expires: it lives for the key lifetime of the Networks of the Node
 // from the last time that the Node authenticated, and a re-authentication of its User gives it another
 // period. An admin marks a server or a gateway nonExpiring, since no user logs in for it again, and its key
-// lives for good. A Network admits its new Nodes at once (approval auto, the default) or holds each of them
+// lives for good. A Node that has an owner is the device of a User, whose login refreshes its key, so the
+// mark is refused on it (SDN-56-R1 #515): taking the mark off would be a refresh that the operator refuses
+// for such a Node. A Network admits its new Nodes at once (approval auto, the default) or holds each of them
 // until an admin approves it (approval manual).
 //
 // The intent holds this policy and nothing of its outcome. When each key ends, and which Node an admin
@@ -75,7 +77,9 @@ func (in Intent) KeyLifetime(node string) time.Duration {
 }
 
 // validateKeyLife checks the approval mode and the key lifetime of each Network of a completed intent: the
-// mode is auto or manual, and the lifetime is at most MaxKeyLifetimeDays.
+// mode is auto or manual, and the lifetime is at most MaxKeyLifetimeDays. It checks the mark nonExpiring of
+// each Node too: a Node that has an owner is not marked, since the key of a device of a User lives by the
+// login of its User.
 func (in Intent) validateKeyLife() []error {
 	var problems []error
 	for _, name := range sortedNames(in.Networks) {
@@ -85,6 +89,11 @@ func (in Intent) validateKeyLife() []error {
 		}
 		if n.KeyLifetimeDays > MaxKeyLifetimeDays {
 			problems = append(problems, fmt.Errorf("Network %q: keyLifetimeDays %d is more than %d", name, n.KeyLifetimeDays, MaxKeyLifetimeDays))
+		}
+	}
+	for _, name := range sortedNames(in.Nodes) {
+		if n := in.Nodes[name]; n.NonExpiring && n.Owner != "" {
+			problems = append(problems, fmt.Errorf("Node %q: nonExpiring is for a Node that has no owner: the key of a device of User %q lives by the login of its User, who refreshes it", name, n.Owner))
 		}
 	}
 	return problems
