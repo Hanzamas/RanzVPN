@@ -168,8 +168,8 @@ func TestOperationsNeedTheOperatorAndAreAuditedByTheController(t *testing.T) {
 			t.Errorf("%s %s is not self-audited: AuditCalls would record it a second time", rt.Method, rt.Pattern)
 		}
 	}
-	if found != 10 {
-		t.Errorf("%d routes are registered under %s, want the 10 that the operations have", found, operationsPath)
+	if found != 13 {
+		t.Errorf("%d routes are registered under %s, want the 13 that the operations have", found, operationsPath)
 	}
 	for _, c := range []struct {
 		method, path string

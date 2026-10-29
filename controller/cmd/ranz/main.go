@@ -99,6 +99,11 @@
 //	ranz [flags] ban set [-reason TEXT] USER   ban the user: every device of the user is cut off at once, and none gets in
 //	                                           until the ban is lifted with ban clear
 //	ranz [flags] ban clear USER                lift the ban of the user
+//	ranz [flags] node-key list                 print the key of every Node: its state (valid, expired or pending), when it last
+//	                                           authenticated, when it ends and whether it was approved (SDN-56, operator)
+//	ranz [flags] node-key approve NODE         approve a Node that its Network holds for approval; its key lives from now
+//	ranz [flags] node-key refresh NODE         give the key of a Node that has no owner another period, as the login of its
+//	                                           user does for a device
 //	ranz [flags] mac-table [-node NODE] NETWORK
 //	                                           print the MAC table of the L2 Network on each node that holds it
 //	ranz [flags] mac-table clear [-node NODE] [-mac ADDRESS] NETWORK
@@ -217,6 +222,9 @@ const usage = `usage:
   ranz [flags] ban list
   ranz [flags] ban set [-reason TEXT] USER
   ranz [flags] ban clear USER
+  ranz [flags] node-key list
+  ranz [flags] node-key approve NODE
+  ranz [flags] node-key refresh NODE
   ranz [flags] mac-table [-node NODE] NETWORK
   ranz [flags] mac-table clear [-node NODE] [-mac ADDRESS] NETWORK
   ranz [flags] ip-table [-node NODE] NETWORK
@@ -487,6 +495,9 @@ func do(ctx context.Context, c *api.Client, args []string, out io.Writer) error 
 		return sessionCommand(ctx, c, args[1:], out)
 	case args[0] == "ban":
 		return banCommand(ctx, c, args[1:], out)
+	case args[0] == "node-key":
+		// The keys of the Nodes: their life and their approval (nodekeys.go; SDN-56)
+		return nodeKeyCommand(ctx, c, args[1:], out)
 	case args[0] == "mac-table":
 		return macTableCommand(ctx, c, args[1:], out)
 	case args[0] == "ip-table":

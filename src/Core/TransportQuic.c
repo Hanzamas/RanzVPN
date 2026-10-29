@@ -56,6 +56,7 @@ typedef struct QUIC_NET {
 	SOURCE_LIMITS *Limits;                    // A server: the limits for a source of its listeners (SourceLimit.h)
 	volatile LONG DosMode;                    // msquic answers new connections with a retry now (the DOS_MODE_CHANGED event) ...
 	volatile LONG64 DosChanges;               // ... and how often it changed
+	UINT Datapath;                            // TRANSPORT_QUIC_DATAPATH_*: the datapath that the transport asks msquic for (TransportQuicXdp.c)
 } QUIC_NET;
 
 // A listener: its backlog of accepted streams, each the control stream of one connection
@@ -301,6 +302,9 @@ static void QuicMakeSettings(QUIC_NET *net, bool bbr, QUIC_SETTINGS *settings) {
 		settings->IsSet.CongestionControlAlgorithm = 1;
 		settings->CongestionControlAlgorithm = 1;
 	}
+
+	// The datapath of the transport, named off unless it asks for XDP or QTIP (TransportQuicXdp.c; CORE-S7-2, #83)
+	TransportQuicXdpSettings(g_quic, settings, net->Datapath);
 }
 
 // Load the server's certificate credentials (by thumbprint in the store) or the client's (pin the
@@ -917,7 +921,8 @@ static bool QuicListen(void *param, const char *address, void **listener) {
 	(void)g_quic->SetParam(l->Listener, QUIC_PARAM_DOS_MODE_EVENTS, sizeof(dos_events), &dos_events);
 
 	QuicMakeAddr(host, port, &addr);
-	if (QUIC_FAILED(g_quic->ListenerStart(l->Listener, &net->Alpn, 1, &addr))) {
+	// On the datapath of the transport, which msquic takes from its global settings as the listener starts (TransportQuicXdp.c)
+	if (TransportQuicXdpListen(g_quic, l->Listener, &net->Alpn, &addr, net->Datapath) == false) {
 		g_quic->ListenerClose(l->Listener);
 		QuicRelease(l, sizeof(QUIC_LISTENER));
 		return false;
@@ -1134,6 +1139,9 @@ static TRANSPORT *TransportQuicNew(const TRANSPORT_QUIC_CONFIG *cfg, bool server
 		CryptoCertFree(cert);
 	}
 
+	// The datapath that the configuration asks for, where the host and msquic let it run (TransportQuicXdp.c; CORE-S7-2, #83)
+	if (ok)
+		ok = TransportQuicXdpChoose(g_quic, &net->Cfg, server, &net->Datapath);
 	if (ok)
 		ok = QuicOpenConfiguration(net);
 	if (ok && server)
@@ -1162,6 +1170,19 @@ USHORT TransportQuicBoundPort(TRANSPORT *t) {
 		return 0;
 
 	return (USHORT)InterlockedCompareExchange(&((QUIC_NET *)t->Param)->BoundPort, 0, 0);
+}
+
+bool TransportQuicXdpOf(TRANSPORT *t, const void **api, void **configuration, UINT *datapath) {
+	if (t == NULL || t->Param == NULL || t->Listen != QuicListen)
+		return false;
+
+	QUIC_NET *net = (QUIC_NET *)t->Param;
+
+	*api = g_quic;
+	*configuration = net->Configuration;
+	*datapath = net->Datapath;
+
+	return true;
 }
 
 bool TransportQuicGetStats(TRANSPORT *t, TRANSPORT_QUIC_STATS *st) {

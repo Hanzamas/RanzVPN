@@ -51,6 +51,13 @@ void NodeWireGuardApplied(NODE *n, const struct CONTROL_STATE *st);
 void NodeWireGuardCaps(void *param, struct CONTROL_CAPS *caps);
 HANDLE NodeWireGuardIsolate(NODE *n, UINT index, const struct CONTROL_STATE *st, UINT *pairs);
 void NodeWireGuardRelease(HANDLE engine);
+// The live operations of the Controller on the switches of the L2 Networks (NodeOperation.c; SDN-50-N, #492): they start and
+// stop with the overlay, and the control stream hands each Operation to the procedure, whose parameter is the node
+struct CONTROL_OPERATION;
+struct CONTROL_OPERATION_RESULT;
+void NodeOperationStart(NODE *n);
+void NodeOperationStop(NODE *n);
+void NodeOperationProc(void *param, const struct CONTROL_OPERATION *op, struct CONTROL_OPERATION_RESULT *res);
 // The pool of the handshakes of the streams that the overlay accepts (NodeHandshake.c; AUD1-DT-1, #449)
 typedef struct NODE_HANDSHAKES NODE_HANDSHAKES;
 NODE_HANDSHAKES *NodeHandshakeStart(const NOISE_SESSION_CONFIG *cfg, UINT max);
@@ -73,5 +80,21 @@ void NodeFlapGetStatus(NODE_FLAP *f, NODE_OVERLAY_STATUS *st);
 
 void NodeTransportLogStart(NODE *n);
 void NodeTransportLogStop(NODE *n);
+
+// The XDP datapath of msquic and QTIP on the Listener of a node (NodeQtip.c; CORE-S7-2, #83). New and Free hold the QTIP
+// listener of the Listener. QuicConfig sets Xdp in the configuration of the QUIC of the Listener from the QuicXdp setting.
+// Up starts the QTIP listener named name with the certificate thumb when the Qtip setting asks for it, and Down stops it,
+// both under the lock of the Listener; Accept gives the next stream that it took, NULL for none. ClientNew makes the QTIP
+// transport that the client role dials the server named server with, pinned to its certificate pin; NULL where QTIP cannot
+// run. GetStatus fills the QTIP part of the status of the Listener, with the datapath of its QUIC transport quic.
+typedef struct NODE_QTIP NODE_QTIP;
+NODE_QTIP *NodeQtipNew(NODE *n);
+void NodeQtipFree(NODE_QTIP *q);
+void NodeQtipQuicConfig(NODE *n, TRANSPORT_QUIC_CONFIG *cfg);
+void NodeQtipUp(NODE_QTIP *q, const char *name, const char *thumb);
+void NodeQtipDown(NODE_QTIP *q);
+TRANSPORT_STREAM *NodeQtipAccept(NODE_QTIP *q);
+TRANSPORT *NodeQtipClientNew(NODE *n, const char *server, const char *pin);
+void NodeQtipGetStatus(NODE_QTIP *q, TRANSPORT *quic, NODE_LISTENER_STATUS *st);
 
 #endif // NODE_INTERNAL_H

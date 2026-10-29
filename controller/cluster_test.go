@@ -20,8 +20,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -51,6 +55,10 @@ const clusterLease = 6 * time.Second
 // clusterTimeout bounds every wait for the cluster: its forming, a take-over, a node that
 // reconnects, an update.
 const clusterTimeout = 90 * time.Second
+
+// portTries is how many times a member is started again when its process ends because another
+// process of the host holds one of its ports (member.exitedEarly).
+const portTries = 3
 
 // clusterVendor stands in for the vendor key that release builds verify licence keys with. The
 // ranz of the members is built to trust it (clusterRanz), and newCluster installs an Enterprise
@@ -218,11 +226,13 @@ func TestNodesKeepForwardingWithoutControllers(t *testing.T) {
 // and comes back as version N while the others keep the cluster going: an apply goes through at
 // every step and reaches the nodes. Then the Controller resources of version N are accepted,
 // and the nodes upgrade to version N one after the other: each connects again at the generation
-// it had and receives the Controllers message of version N.
+// it had and receives the Controllers message of version N. A leader whose store a busy runner
+// stalls steps down by design, so every call of the API waits for a leader first (viaLeader), and
+// the moments between two leaders do not fail the test.
 func TestRollingUpgrade(t *testing.T) {
 	const old = controlpb.SchemaVersion_SCHEMA_VERSION_1
 	ms := newCluster(t, int(old))
-	if _, err := ms[0].api.Apply(context.Background(), clusterIntent(1280, ms)); err == nil || !strings.Contains(err.Error(), "Controller resources need control schema version 2") {
+	if _, err := tryApply(t, ms[0], clusterIntent(1280, ms)); err == nil || !strings.Contains(err.Error(), "Controller resources need control schema version 2") {
 		t.Errorf("a cluster of version 1 took Controller resources: %v", err)
 	}
 	apply(t, ms[0], clusterIntent(1280, nil))
@@ -302,6 +312,114 @@ func TestRqlitedWrittenAgain(t *testing.T) {
 	waitLeader(t, ms, "")
 }
 
+// TestCallsWaitForALeader checks what the cluster tests do before a call of the API that the
+// leader serves (member.viaLeader). They make none while the members agree on no leader. When the
+// answer is the 503 that every member gives while none leads, they wait for the next leader and
+// call again: that window is part of the design (a leader steps down when it could not renew its
+// lease for two thirds of the lease duration, and nobody leads until that member or a standby takes
+// the lease, ADR-0026), and a busy runner opened it in TestRollingUpgrade. Any other answer is the
+// leader's and comes back as it is. The members are fakes that answer as the members of a cluster
+// do.
+func TestCallsWaitForALeader(t *testing.T) {
+	// leading is whether the fakes agree on c1 as the leader, calls how many calls of the API reached
+	// one, refuse how many of the first calls it answers 503, and code the status that the next calls
+	// get instead of 200, when it is not 0
+	var leading atomic.Bool
+	var calls, refuse, code atomic.Int32
+	ms := make([]*member, 3)
+	for i := range ms {
+		name := fmt.Sprintf("c%d", i+1)
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/v1/status":
+				cs := &api.ClusterStatus{Member: name, Role: api.RoleStandby}
+				if leading.Load() {
+					cs.Leader, cs.Epoch = "c1", 1
+					if name == "c1" {
+						cs.Role = api.RoleLeader
+					}
+				}
+				api.Reply(w, http.StatusOK, api.Status{Cluster: cs})
+			case "/api/v1/resources":
+				if !leading.Load() {
+					t.Errorf("a call of the API reached %s while the members agreed on no leader", name)
+				}
+				switch n := calls.Add(1); {
+				case n <= refuse.Load():
+					api.Reply(w, http.StatusServiceUnavailable, api.Problem{Error: "this controller is a standby, and no member of the cluster leads at the moment: try again in a few seconds"})
+				case code.Load() != 0:
+					api.Reply(w, int(code.Load()), api.Problem{Error: "the leader refuses the call"})
+				default:
+					api.Reply(w, http.StatusOK, api.ResourceList{})
+				}
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		t.Cleanup(srv.Close)
+		ms[i] = &member{name: name, api: api.NewClient(srv.URL), cmd: &exec.Cmd{}, cluster: ms}
+	}
+	call := func(ctx context.Context) error {
+		_, err := ms[1].api.Resources(ctx)
+		return err
+	}
+
+	// No leader at first, and then the answer of a cluster between two leaders, twice
+	refuse.Store(2)
+	time.AfterFunc(600*time.Millisecond, func() { leading.Store(true) })
+	if err := ms[1].viaLeader(t, call); err != nil {
+		t.Fatalf("the call failed although a leader came: %v", err)
+	}
+	if n := calls.Load(); n != 3 {
+		t.Errorf("the call reached the leader %d times, want 3: two answers of 503 and the one that served it", n)
+	}
+
+	// An answer of the leader that is no 503 is not the sign of a cluster without one
+	calls.Store(0)
+	refuse.Store(0)
+	code.Store(http.StatusConflict)
+	err := ms[1].viaLeader(t, call)
+	var e *api.Error
+	if !errors.As(err, &e) || e.Status != http.StatusConflict {
+		t.Errorf("a 409 of the leader came back as %v, want that error", err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("the call reached the leader %d times, want once: only a 503 is called again", n)
+	}
+}
+
+// TestPortTaken checks how a wait for a member knows that its process ended because another
+// process holds one of its ports (member.portTaken): the output of its last start says so, on
+// Linux and on Windows, and what an earlier start printed does not count.
+func TestPortTaken(t *testing.T) {
+	const (
+		onLinux   = "listen tcp 127.0.0.1:44231: bind: address already in use\n"
+		onWindows = "listen tcp 127.0.0.1:58447: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.\n"
+		another   = "level=ERROR msg=\"controller failed\" err=\"-listen: permission denied\"\n"
+	)
+	for _, c := range []struct {
+		name          string
+		earlier, last string
+		want          bool
+	}{
+		{"on Linux", "", onLinux, true},
+		{"on Windows", "", onWindows, true},
+		{"another failure", "", another, false},
+		{"an earlier start", onLinux, another, false},
+		{"no output", onWindows, "", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := &member{dir: t.TempDir(), logAt: int64(len(c.earlier))}
+			if err := os.WriteFile(m.logPath(), []byte(c.earlier+c.last), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := m.portTaken(); got != c.want {
+				t.Errorf("portTaken is %v for %q after %q, want %v", got, c.last, c.earlier, c.want)
+			}
+		})
+	}
+}
+
 // clusterIntent returns the intent of the cluster tests: VRF corp with the MTU mtu, its Network,
 // the two nodes, and a Controller resource for each member of controllers.
 func clusterIntent(mtu int, controllers []*member) intent.Document {
@@ -322,12 +440,22 @@ func nodeSpec(k keys.Static) json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{"publicKey": %q, "vrfs": ["corp"]}`, base64.StdEncoding.EncodeToString(k.Public())))
 }
 
+// tryApply applies doc through the API of m, once a leader serves the call (viaLeader), and returns
+// what the leader answered.
+func tryApply(t *testing.T, m *member, doc intent.Document) (controller.ApplyResult, error) {
+	t.Helper()
+	var res controller.ApplyResult
+	err := m.viaLeader(t, func(ctx context.Context) (err error) {
+		res, err = m.api.Apply(ctx, doc)
+		return err
+	})
+	return res, err
+}
+
 // apply applies doc through the API of m and fails the test on an error.
 func apply(t *testing.T, m *member, doc intent.Document) controller.ApplyResult {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), clusterTimeout)
-	defer cancel()
-	res, err := m.api.Apply(ctx, doc)
+	res, err := tryApply(t, m, doc)
 	if err != nil {
 		t.Fatalf("applying through %s: %v", m.name, err)
 	}
@@ -347,9 +475,13 @@ type member struct {
 	api    *api.Client
 	key    []byte // the Noise static public key, from the status
 
+	cluster []*member // every member of the cluster this one belongs to, itself included
+
 	cmd    *exec.Cmd // nil while the process does not run
 	exited chan struct{}
 	err    error // how the process exited, once exited is closed
+	logAt  int64 // where the output of its last start begins in its log
+	tries  int   // starts since it last served that a port held by another process made necessary
 }
 
 // memberRqlited returns the -rqlited arguments of the member processes of a test: none when the
@@ -401,10 +533,15 @@ func (m *member) wantMemberWritten(t *testing.T) {
 
 // newCluster starts a cluster of three members that run as schema version schema (0 for the
 // default) and waits until they serve and agree on a leader. The members are killed when the
-// test ends, and their output goes to the test log if it failed.
+// test ends, and their output goes to the test log if it failed. The ports of the members are
+// ones that were free when freeAddrs returned them: a member whose port another process took
+// since starts again (member.exitedEarly).
 func newCluster(t *testing.T, schema int) []*member {
 	t.Helper()
 	memberRqlited(t)
+	// The first build of ranz takes a while, so it comes before the ports are chosen: they are free
+	// for as long as nothing else takes them
+	clusterRanz(t)
 	addrs := freeAddrs(t, 9)
 	var raft []string
 	for i := range 3 {
@@ -421,6 +558,9 @@ func newCluster(t *testing.T, schema int) []*member {
 		credential.install(t, filepath.Join(m.dir, "data"))
 		m.api = api.NewClient("https://" + m.tls)
 		ms = append(ms, m)
+	}
+	for _, m := range ms {
+		m.cluster = ms
 	}
 	t.Cleanup(func() {
 		for _, m := range ms {
@@ -458,9 +598,11 @@ func installLicence(t *testing.T, m *member) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), clusterTimeout)
-	defer cancel()
-	if _, err := m.api.SetLicence(ctx, key); err != nil {
+	err = m.viaLeader(t, func(ctx context.Context) error {
+		_, err := m.api.SetLicence(ctx, key)
+		return err
+	})
+	if err != nil {
 		t.Fatalf("installing the Enterprise licence through %s: %v", m.name, err)
 	}
 }
@@ -475,7 +617,7 @@ func waitAdminToken(t *testing.T, ms []*member) string {
 		for _, m := range ms {
 			select {
 			case <-m.exited:
-				t.Fatalf("%s exited before it served: %v", m.name, m.err)
+				m.exitedEarly(t)
 			default:
 			}
 			b, err := os.ReadFile(filepath.Join(m.dir, "data", adminTokenFile))
@@ -512,6 +654,9 @@ func (m *member) start(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if fi, err := out.Stat(); err == nil {
+		m.logAt = fi.Size()
+	}
 	fmt.Fprintf(out, "--- %s: start, schema version %d\n", time.Now().Format(time.RFC3339Nano), m.schema)
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout, cmd.Stderr = out, out
@@ -535,7 +680,7 @@ func (m *member) waitUp(t *testing.T) api.Status {
 	for {
 		select {
 		case <-m.exited:
-			t.Fatalf("%s exited before it served: %v", m.name, m.err)
+			m.exitedEarly(t)
 		default:
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -547,6 +692,7 @@ func (m *member) waitUp(t *testing.T) api.Status {
 				t.Fatal(err)
 			}
 			m.key = k
+			m.tries = 0
 			return s
 		}
 		if time.Now().After(deadline) {
@@ -554,6 +700,33 @@ func (m *member) waitUp(t *testing.T) api.Status {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// exitedEarly is what a wait for m does when its process ended before it served. The ports of a
+// member are ones that freeAddrs found free a moment before its process started, and a connection
+// or a listener of another process of the host may have taken one since: the process then ends
+// with the message that the address is in use. What holds the port is mostly gone a moment later,
+// so the process is started again, up to portTries times. Any other end fails the test.
+func (m *member) exitedEarly(t *testing.T) {
+	t.Helper()
+	if m.tries >= portTries || !m.portTaken() {
+		t.Fatalf("%s exited before it served: %v", m.name, m.err)
+	}
+	m.tries++
+	t.Logf("%s ended because a port it needs is in use (%v), starting it again: try %d of %d", m.name, m.err, m.tries, portTries)
+	time.Sleep(time.Second)
+	m.start(t)
+}
+
+// portTaken reports whether the output of the last start of m says that an address is in use: the
+// message of a failed bind on Linux, and the one of Windows.
+func (m *member) portTaken() bool {
+	b, err := os.ReadFile(m.logPath())
+	if err != nil || int64(len(b)) < m.logAt {
+		return false
+	}
+	out := string(b[m.logAt:])
+	return strings.Contains(out, "address already in use") || strings.Contains(out, "Only one usage of each socket address")
 }
 
 // status returns the status of the member.
@@ -662,6 +835,36 @@ func waitLeader(t *testing.T, ms []*member, not string) *member {
 	}
 }
 
+// viaLeader makes call, a call of the API that the leader serves, through the API of m, once the
+// running members agree on a leader (waitLeader), and makes it again within clusterTimeout while
+// the answer is 503, which is what every member gives while none leads. That window is part of the
+// design: a leader steps down when it could not renew its lease for two thirds of the lease
+// duration, and a store that a busy runner stalls for that long does it to the leader of a test,
+// which holds the lease until that member takes it again, at its next try, or a standby does once
+// it ran out (cluster.Member, ADR-0026). The tests check that the cluster goes on, so they wait for
+// the next leader and say so in the log. A 503 means that nothing was written, since the fence of
+// the store (store.ErrNotLeader) stops the write of a leader that lost the lease, so the call can
+// be made again. Any other answer is the leader's and comes back as it is.
+func (m *member) viaLeader(t *testing.T, call func(ctx context.Context) error) error {
+	t.Helper()
+	deadline := time.Now().Add(clusterTimeout)
+	for {
+		waitLeader(t, m.cluster, "")
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		err := call(ctx)
+		cancel()
+		var e *api.Error
+		if !errors.As(err, &e) || e.Status != http.StatusServiceUnavailable {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("no member led within %v: %w", clusterTimeout, err)
+		}
+		t.Logf("no member led during the call through %s, waiting for the next leader: %v", m.name, err)
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 // live returns a running member.
 func live(t *testing.T, ms []*member) *member {
 	t.Helper()
@@ -706,9 +909,11 @@ func waitAcked(t *testing.T, ms []*member, want map[string]uint64) {
 // intent compiles to for it.
 func checkState(t *testing.T, m *member, n *node) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), clusterTimeout)
-	defer cancel()
-	rs, err := m.api.Resources(ctx)
+	var rs []intent.Resource
+	err := m.viaLeader(t, func(ctx context.Context) (err error) {
+		rs, err = m.api.Resources(ctx)
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

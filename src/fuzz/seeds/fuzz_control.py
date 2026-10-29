@@ -19,6 +19,13 @@
 # leaves out and an L2 Network without one (security-state.bin), and that Update then two deltas, which give the third
 # Network one and take the first one's away, as a stream (security-stream.bin).
 #
+# The operation seeds (SDN-50-N #492) hold the Operations of the live operations, which the frames of those tests of
+# 2026-10-27 do not, so that inputs reach ControlTakeOperation: a read of the MAC table of an L2 Network alone
+# (operation-read.bin), and a state of the L2 Network lan and the L3 Network wan followed by an Operation of each kind on
+# lan, the clears with and without their entry, one on wan and one on dmz, which the node holds as no L2 Network, and three
+# that it refuses: of a kind that it does not know, and with a MAC address and an address of sizes that none has, as a
+# stream (operation-stream.bin).
+#
 # make_seeds.py runs make_seeds(h), h being make_seeds.py itself with write_seed.
 
 import hashlib
@@ -84,8 +91,33 @@ def make_security_seeds(h):
     h.write_seed('fuzz_control', 'security-stream.bin', b''.join(struct.pack('>I', len(m)) + m for m in (state, gives, takes)))
 
 
+def operation(op_id, kind, name, mac=b'', address=b''):
+    # A ControlMessage with the Operation op_id of the kind kind (1 and 2 the MAC table, 3 and 4 the IP table, the second a
+    # clear) on the Network name, with the MAC address mac or the address address of a clear
+    o = field(1, op_id) + field(2, kind) + message(3, name.encode('ascii'))
+    if mac:
+        o += message(4, mac)
+    if address:
+        o += message(5, address)
+    return message(9, o)
+
+
+def make_operation_seeds(h):
+    state = update(1, 0, [network('lan', 2), network('wan', 1)])
+    mac = bytes([0x02, 0x00, 0x00, 0x00, 0x00, 0x0A])
+    v4 = bytes([10, 20, 0, 8])
+    v6 = bytes([0xFD, 0x00] + [0x00] * 13 + [0x08])
+    operations = [operation(1, 1, 'lan'), operation(2, 3, 'lan'), operation(3, 2, 'lan', mac=mac), operation(4, 4, 'lan', address=v4),
+                  operation(5, 4, 'lan', address=v6), operation(6, 2, 'lan'), operation(7, 4, 'lan'), operation(8, 1, 'wan'),
+                  operation(9, 3, 'dmz'), operation(10, 9, 'lan'), operation(11, 2, 'lan', mac=mac[:5]),
+                  operation(12, 4, 'lan', address=v4[:3])]
+    h.write_seed('fuzz_control', 'operation-read.bin', operations[0])
+    h.write_seed('fuzz_control', 'operation-stream.bin', b''.join(struct.pack('>I', len(m)) + m for m in [state] + operations))
+
+
 def make_seeds(h):
     make_security_seeds(h)
+    make_operation_seeds(h)
 
     directory = os.environ.get('RANZ_CONTROL_WIRE')
     if not directory or not os.path.isdir(directory):
