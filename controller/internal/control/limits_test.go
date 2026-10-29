@@ -197,6 +197,7 @@ func TestFrameLimits(t *testing.T) {
 		{"a Telemetry message", &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Telemetry{Telemetry: &controlpb.Telemetry{Vrfs: []*controlpb.VrfCounters{{VrfId: 10, TxPackets: 3}}}}}, MaxTelemetry},
 		{"a Leases message", &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Leases{Leases: &controlpb.Leases{Network: "corp-lan"}}}, MaxLeases},
 		{"an OperationResult", &controlpb.ControlMessage{Body: &controlpb.ControlMessage_OperationResult{OperationResult: &controlpb.OperationResult{Id: 7, Total: 3}}}, MaxOperationResult},
+		{"a Pins message", &controlpb.ControlMessage{Body: &controlpb.ControlMessage_Pins{Pins: &controlpb.Pins{MimicKey: make([]byte, 32)}}}, MaxPins},
 		{"a second Hello", helloMessage(), MaxHello},
 	} {
 		t.Run(k.name, func(t *testing.T) {
@@ -410,6 +411,7 @@ func TestLimitsHoldTheOptions(t *testing.T) {
 		{"telemetry", fieldTelemetry, MaxTelemetry},
 		{"leases", fieldLeases, MaxLeases},
 		{"operation_result", fieldOperationResult, MaxOperationResult},
+		{"pins", fieldPins, MaxPins},
 	} {
 		fd := md.Fields().ByName(k.field)
 		if fd == nil {
