@@ -123,6 +123,52 @@ func TestKeyLifeRejects(t *testing.T) {
 	}
 }
 
+// The mark nonExpiring is for a Node that has no owner (SDN-56-R1): the key of a device of a User lives by the login of its
+// User, so the mark on such a Node is refused, in an apply and in an import, with a message that says so and names the
+// Node and the User. A Node that has no owner takes the mark, and so does a Node of a User whose mark is left out.
+func TestNonExpiringIsForANodeThatHasNoOwner(t *testing.T) {
+	corp := res(KindVRF, "corp", `{"id": 10, "ula": "fd00:10::/48"}`)
+	alice := res(KindUser, "alice", `{}`)
+	want := `Node "n": nonExpiring is for a Node that has no owner: the key of a device of User "alice" lives by the login of its User`
+	device := res(KindNode, "n", `{"publicKey": "`+key1+`", "vrfs": ["corp"], "owner": "alice", "nonExpiring": true}`)
+
+	if _, err := Apply(New(), doc(corp, alice, device), nil); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), want) {
+		t.Errorf("an apply of a device of alice marked nonExpiring gave %v, want an error with %q", err, want)
+	}
+	if _, err := Replace(New(), doc(corp, alice, device), nil); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), want) {
+		t.Errorf("an import of a device of alice marked nonExpiring gave %v, want an error with %q", err, want)
+	}
+	// Every Node that breaks the rule is named, and the others are not
+	both := doc(corp, alice,
+		res(KindNode, "a", `{"publicKey": "`+key1+`", "vrfs": ["corp"], "owner": "alice", "nonExpiring": true}`),
+		res(KindNode, "b", `{"publicKey": "`+key2+`", "vrfs": ["corp"], "owner": "alice", "nonExpiring": true}`),
+		res(KindNode, "files", `{"publicKey": "`+key3+`", "vrfs": ["corp"], "nonExpiring": true}`))
+	if _, err := Apply(New(), both, nil); err == nil || !strings.Contains(err.Error(), `Node "a": nonExpiring`) || !strings.Contains(err.Error(), `Node "b": nonExpiring`) ||
+		strings.Contains(err.Error(), `Node "files"`) {
+		t.Errorf("an apply of two devices and a server marked nonExpiring gave %v, want the two devices refused and the server not named", err)
+	}
+
+	// A server takes the mark, a device that is not marked is a device, and a Node that gets an owner while it is marked is refused
+	in, err := Apply(New(), doc(corp, alice,
+		res(KindNode, "files", `{"publicKey": "`+key1+`", "vrfs": ["corp"], "nonExpiring": true}`),
+		res(KindNode, "laptop", `{"publicKey": "`+key2+`", "vrfs": ["corp"], "owner": "alice"}`)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !in.Nodes["files"].NonExpiring || in.Nodes["laptop"].NonExpiring {
+		t.Errorf("the nodes are %+v, want only files marked nonExpiring", in.Nodes)
+	}
+	if _, err := Apply(in, doc(res(KindNode, "files", `{"publicKey": "`+key1+`", "vrfs": ["corp"], "nonExpiring": true, "owner": "alice"}`)), nil); !errors.Is(err, ErrInvalid) ||
+		!strings.Contains(err.Error(), `Node "files": nonExpiring is for a Node that has no owner`) {
+		t.Errorf("giving the server files an owner while it is marked gave %v, want it refused", err)
+	}
+	// The stored intent is read back as it is: no check is made of the resources that a store holds
+	stored := device.Spec
+	if _, err := FromResources([]Resource{{Kind: KindNode, Name: "n", Spec: stored}}); err != nil {
+		t.Errorf("reading back a stored device that is marked nonExpiring gave %v, want it read as it was written", err)
+	}
+}
+
 // The approval mode, the key lifetime and the mark nonExpiring are part of the intent as it is stored and read back,
 // and a change of one of them is a change of its resource.
 func TestKeyLifeIsPartOfTheIntent(t *testing.T) {
