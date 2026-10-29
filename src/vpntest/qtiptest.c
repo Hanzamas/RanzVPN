@@ -669,6 +669,50 @@ static void QtipTestDeleteDir(wchar_t *dir)
 	DeleteDirW(dir);
 }
 
+// The lines of the node log of the data directory dir about the KM-TEST adapter and the L2 adapter on it, where
+// NodeKmTestNew and NodeL2New say why one did not come up
+static void QtipTestPrintLog(wchar_t *dir)
+{
+	wchar_t log_dir[MAX_PATH];
+
+	ConbinePathW(log_dir, sizeof(log_dir), dir, NODE_LOG_DIR_NAME);
+	DIRLIST *d = EnumDirW(log_dir);
+
+	for (UINT i = 0;d != NULL && i < d->NumFiles;i++)
+	{
+		DIRENT *e = d->File[i];
+		wchar_t path[MAX_PATH];
+
+		if (e->Folder)
+		{
+			continue;
+		}
+
+		ConbinePathW(path, sizeof(path), log_dir, e->FileNameW);
+		BUF *b = ReadDumpW(path);
+		if (b == NULL)
+		{
+			continue;
+		}
+
+		char *text = ZeroMalloc(b->Size + 1);
+		Copy(text, b->Buf, b->Size);
+		TOKEN_LIST *t = ParseToken(text, "\r\n");
+		for (UINT j = 0;j < t->NumTokens;j++)
+		{
+			if (InStr(t->Token[j], "KM-TEST") || InStr(t->Token[j], "L2 adapter"))
+			{
+				Print("  [LOG] %s\n", t->Token[j]);
+			}
+		}
+		FreeToken(t);
+		Free(text);
+		FreeBuf(b);
+	}
+
+	FreeDir(d);
+}
+
 // Apply a state of node-s to its overlay, as the control stream does: its address in VRF 1, node-c as its peer, and its
 // Listener on ports that the system picks, with the certificate of the store
 static bool QtipTestApply(QTIPTEST_CTX *ctx, NODE *n)
@@ -881,7 +925,9 @@ static void QtipTestOwner(NODE_L2 *a, void *param, const UCHAR *frame, UINT size
 }
 
 // The KM-TEST adapter of the Network network of the node n, whose static key is key, with its IPv4 address
-// 198.18.<network>.1, and the L2 adapter of the node on it with the backend of the host, which must be XDP
+// 198.18.<network>.1, and the L2 adapter of the node on it with the backend of the host, which must be XDP. NodeKmTestNew
+// returns the adapter once the IPv4 stack of the host has its interface, so the address is not refused for an interface
+// that the stack does not know yet.
 static bool QtipTestAdapter(QTIPTEST_CTX *ctx, QTIPTEST_ADAPTER *x, NODE *n, const UCHAR *key, UINT network)
 {
 	MIB_UNICASTIPADDRESS_ROW row;
@@ -922,7 +968,8 @@ static bool QtipTestAdapter(QTIPTEST_CTX *ctx, QTIPTEST_ADAPTER *x, NODE *n, con
 	}
 	Print("  KM-TEST adapter of Network %u: interface %u, MAC %02X-%02X-%02X-%02X-%02X-%02X, 198.18.%u.1/%u\n", network, x->IfIndex, (UINT)x->Mac[0], (UINT)x->Mac[1],
 		(UINT)x->Mac[2], (UINT)x->Mac[3], (UINT)x->Mac[4], (UINT)x->Mac[5], network, (UINT)QTIPTEST_LENGTH);
-	if (QtipTestCheck(ctx, preferred, "the adapter takes its IPv4 address", "error %u", (UINT)err) == false)
+	if (QtipTestCheck(ctx, preferred, "the adapter takes its IPv4 address", "CreateUnicastIpAddressEntry: error %u%s", (UINT)err,
+		(err == NO_ERROR || err == ERROR_OBJECT_ALREADY_EXISTS) ? ", but the address did not become preferred in time" : "") == false)
 	{
 		return false;
 	}
@@ -991,6 +1038,10 @@ static void QtipTestServe(QTIPTEST_CTX *ctx, TRANSPORT *loopback, char *stop)
 	}
 	QtipTestAdapterFree(&x);
 	QtipTestNodeStop(n);
+	if (ctx->NumFailed != 0)
+	{
+		QtipTestPrintLog(dir);
+	}
 	QtipTestDeleteDir(dir);
 }
 
@@ -1057,6 +1108,10 @@ static void QtipTestDial(QTIPTEST_CTX *ctx, char *thumbprint)
 	}
 	QtipTestAdapterFree(&x);
 	QtipTestNodeStop(n);
+	if (ctx->NumFailed != 0)
+	{
+		QtipTestPrintLog(dir);
+	}
 	QtipTestDeleteDir(dir);
 }
 
