@@ -183,6 +183,19 @@ try {
 	$haveHyperV = Test-Path -LiteralPath "$services\vmms"
 	$tier = 3
 	Write-Host "this runner: $($os.Caption), product type $($os.ProductType), SKU $($os.OperatingSystemSKU): edition '$sku', Hyper-V $haveHyperV, Egress tier $tier"
+	# For the record, what else the tiers on the NAT of Windows look at on this runner: Routing and Remote Access, the WinNAT
+	# service, the NAT networks of WinNAT that exist and the key properties of their class
+	try {
+		$rras = Get-Service -Name 'RemoteAccess' -ErrorAction SilentlyContinue
+		$docker = Get-Service -Name 'docker' -ErrorAction SilentlyContinue
+		$netnats = @(Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetNat' -ErrorAction SilentlyContinue)
+		$natClass = Get-CimClass -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetNat' -ErrorAction SilentlyContinue
+		$natKeys = @($natClass.CimClassProperties | Where-Object { $_.Qualifiers.Name -contains 'key' } | ForEach-Object { $_.Name })
+		Write-Host "this runner: Routing and Remote Access $(if ($rras) { "$($rras.Status), start type $($rras.StartType)" } else { 'absent' }), docker $(if ($docker) { $docker.Status } else { 'absent' }), WinNAT service $(Test-Path -LiteralPath "$services\WinNat"), $($netnats.Count) NAT networks of WinNAT, MSFT_NetNat keys: $($natKeys -join ', ')"
+		foreach ($n in $netnats) { Write-Host "  NetNat '$($n.Name)': internal prefix $($n.InternalIPInterfaceAddressPrefix), store $($n.Store), active $($n.Active)" }
+	} catch {
+		Write-Host "this runner: the facts of RRAS and WinNAT could not be read: $_"
+	}
 	foreach ($s in $states | Where-Object { $nodes.Contains($_.name) }) {
 		$caps = $s.capabilities
 		if (-not $caps) { throw "the API lists no Capabilities for node $($s.name), which its Hello carries: $($s | ConvertTo-Json -Compress -Depth 4)" }
