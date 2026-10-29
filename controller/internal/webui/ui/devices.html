@@ -15,7 +15,55 @@
 <p class="lead">The WireGuard Devices of the Intent: phones, laptops and routers that join one Network over standard WireGuard through their gateway Node, with the last handshake and the traffic that the gateway reported for each.</p>
 <ranz-problem></ranz-problem>
 <output id="result" aria-live="polite"></output>
+<section id="issued" aria-labelledby="h-issued" hidden>
+<h2 id="h-issued">Configuration of the new Device</h2>
+<p id="keys-note" class="notice"></p>
+<div class="issued">
+<canvas id="qr" class="qr" role="img" aria-label="QR code of the configuration"></canvas>
+<pre id="config" class="config"></pre>
+</div>
+<div class="buttons">
+<button type="button" id="save">Save as a .conf file</button>
+<button type="button" id="done" class="quiet">I have it: clear this</button>
+</div>
+</section>
+<section aria-labelledby="h-devices">
+<h2 id="h-devices">Devices</h2>
 <ranz-table id="devices"></ranz-table>
+</section>
+<section id="make" aria-labelledby="h-make" data-action="createDevice" hidden>
+<h2 id="h-make">Make a Device</h2>
+<p class="hint">The controller makes the key pair of the Device and a PresharedKey, adds the Device to the Intent, and shows its finished configuration and the QR code of it once: it keeps no private key. A router or an advanced user that holds its own key gives the public key, and the controller then makes the PresharedKey alone.</p>
+<form id="make-form">
+<div class="row">
+<label for="name">Name</label>
+<input id="name" name="name" required pattern="[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?" size="24" spellcheck="false">
+</div>
+<div class="row">
+<label for="network">Network</label>
+<select id="network" name="network" required></select>
+<label for="gateway">Gateway</label>
+<select id="gateway" name="gateway" required></select>
+</div>
+<div class="row">
+<label for="owner">Owner</label>
+<select id="owner" name="owner"><option value="">none: a standalone Device</option></select>
+<label for="tags">Tags</label>
+<input id="tags" name="tags" size="32" spellcheck="false" placeholder="for example phones, staff">
+</div>
+<div class="row">
+<label for="public-key">Public key</label>
+<input id="public-key" name="publicKey" size="48" spellcheck="false" autocomplete="off" pattern="[A-Za-z0-9+\/]{43}=" placeholder="empty: the controller makes the key pair">
+</div>
+<div class="row">
+<label><input type="checkbox" id="battery-saver" name="batterySaver"> Battery saver: no keepalive</label>
+<label><input type="checkbox" id="no-preshared-key" name="noPresharedKey"> No PresharedKey</label>
+</div>
+<div class="buttons">
+<button type="submit">Make</button>
+</div>
+</form>
+</section>
 <ranz-confirm></ranz-confirm>
 </main>
 </body>

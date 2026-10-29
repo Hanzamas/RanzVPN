@@ -14,10 +14,10 @@ import (
 // network: who a person is to the controller, with the fields of the user of the slim fork (an
 // expiry, whether the user may change their own password, a maximum number of devices, no saved
 // password). A Group is a named set of users, and its name is a tag of policy: the devices of its
-// members carry it, so a rule written for the tag applies to them (NodeTags, which the compile of the
-// Nodes and the Mirrors use). A device of a User is a resource that names the user as its owner:
-// today a Node (Node.Owner), and the WireGuard Devices of #374 later (DevicesOf), so that the
-// maximum counts all of them and the self-service portal of #251 lists them.
+// members carry it, so a rule written for the tag applies to them (NodeTags and DeviceTags, which the
+// compile of the Nodes, the Devices and the Mirrors use). A device of a User is a resource that names
+// the user as its owner: a Node (Node.Owner) or a WireGuard Device (Device.Owner, SDN-82 #377;
+// DevicesOf), so that the maximum counts all of them and the self-service portal of #251 lists them.
 //
 // The password of a User is no part of the intent. It lives in the store, behind a call of its own
 // (internal/controller, users.go), so that nobody who reads the intent, an export of it or a revision
@@ -108,8 +108,8 @@ func (u User) ExpiredAt(t time.Time) bool {
 }
 
 // DevicesOf returns the devices of the User user, in name order, the Nodes that name it as their
-// owner first. The WireGuard Devices of #374 join them here, in one loop of their own, so that the
-// maximum of a user, the self-service portal and the list of the API see them all.
+// owner first, then its WireGuard Devices (SDN-82, deviceowner.go), so that the maximum of a user,
+// the self-service portal and the list of the API see them all.
 func (in Intent) DevicesOf(user string) []DeviceRef {
 	if user == "" {
 		return nil
@@ -118,6 +118,11 @@ func (in Intent) DevicesOf(user string) []DeviceRef {
 	for _, name := range sortedNames(in.Nodes) {
 		if in.Nodes[name].Owner == user {
 			out = append(out, DeviceRef{Kind: KindNode, Name: name})
+		}
+	}
+	for _, name := range sortedNames(in.Devices) {
+		if in.Devices[name].Owner == user {
+			out = append(out, DeviceRef{Kind: KindDevice, Name: name})
 		}
 	}
 	return out

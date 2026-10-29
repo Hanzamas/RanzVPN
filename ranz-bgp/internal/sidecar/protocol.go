@@ -24,8 +24,20 @@
 //	           opensent, openconfirm or established
 //	learned    the best route of the peers to prefix is now via next_hop, learned from peer
 //	withdrawn  no peer has a route to prefix any more (it came from peer)
+//	refused    GoBGP refused a session from peer, an address that no peer of the settings has
 //	error      a message of the node could not be applied: error, with its prefix if it had one;
 //	           an error for start ends the session
+//
+// A start with an address runs the peering of the standard mode (SDN-77 #357, peering.go): the
+// peers are other Ranz nodes, which reach the node at that address on a network that the operator
+// trusts. The sidecar listens there only, connects from there, and is the next hop of what it
+// announces; listen_addresses and accept are not given, and peers may be empty while the node is
+// alone in its VRFs. Each peer has hold_time (the BGP hold time
+// in seconds, 90 when 0) and vrfs: the VRFs that the two nodes share (id) with the prefixes that the
+// peer may announce in each, with their more specific ones (accept). The routes are VPN routes
+// (RFC 4364) whose route distinguisher holds the VRF id, so a route of one VRF never reaches
+// another; announce, withdraw, learned and withdrawn carry the vrf. A peers message from the node
+// holds the peers in place of the ones before: a peer that changes starts its session again.
 //
 // The session ends when the node closes the pipe: the sidecar then stops BGP, which tells the
 // peers with a Cease notification, and exits.
@@ -40,8 +52,9 @@ import (
 	"sync"
 )
 
-// ProtocolVersion is the version of the protocol that ready reports.
-const ProtocolVersion = 1
+// ProtocolVersion is the version of the protocol that ready reports: 2 adds the peering of the
+// standard mode and the refused message.
+const ProtocolVersion = 2
 
 // MaxLine is the size of one message at most, with its newline.
 const MaxLine = 64 * 1024
@@ -56,6 +69,8 @@ const (
 	TypeLearned   = "learned"
 	TypeWithdrawn = "withdrawn"
 	TypeError     = "error"
+	TypePeers     = "peers"
+	TypeRefused   = "refused"
 )
 
 // The session states of a peer message.
@@ -77,14 +92,18 @@ type Message struct {
 	RouterID        string   `json:"router_id,omitempty"`
 	ListenPort      int32    `json:"listen_port,omitempty"`
 	ListenAddresses []string `json:"listen_addresses,omitempty"`
-	Peers           []Peer   `json:"peers,omitempty"`
+	Peers           []Peer   `json:"peers,omitempty"` // also of peers
 	Accept          []string `json:"accept,omitempty"`
+	// Address is the node's own address in the peering of the standard mode
+	Address string `json:"address,omitempty"`
 
 	// announce, withdraw, learned, withdrawn, error
 	Prefix  string `json:"prefix,omitempty"`
 	NextHop string `json:"next_hop,omitempty"`
+	// VRF is the VRF id of a route of the peering of the standard mode, 0 for none
+	VRF uint32 `json:"vrf,omitempty"`
 
-	// peer, learned, withdrawn: the address of the peer
+	// peer, learned, withdrawn, refused: the address of the peer
 	Peer  string `json:"peer,omitempty"`
 	State string `json:"state,omitempty"`
 
@@ -96,12 +115,24 @@ type Message struct {
 	Error string `json:"error,omitempty"`
 }
 
-// Peer is one router of the operator in a start message.
+// Peer is one router of the operator in a start message, or one Ranz node in the peering of the
+// standard mode.
 type Peer struct {
 	Address string `json:"address"`
 	ASN     uint32 `json:"asn"`
 	Port    uint32 `json:"port,omitempty"`
 	Passive bool   `json:"passive,omitempty"`
+	// HoldTime and VRFs are of a Ranz node: the BGP hold time in seconds, 0 for the default, and
+	// the VRFs that it shares with the node
+	HoldTime uint32    `json:"hold_time,omitempty"`
+	VRFs     []PeerVRF `json:"vrfs,omitempty"`
+}
+
+// PeerVRF is a VRF that a Ranz node shares with the node, and the prefixes that it may announce
+// there, with their more specific ones.
+type PeerVRF struct {
+	ID     uint32   `json:"id"`
+	Accept []string `json:"accept,omitempty"`
 }
 
 // ErrLineTooLong is returned by Reader.Read for a message longer than MaxLine.

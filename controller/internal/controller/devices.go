@@ -24,6 +24,11 @@ type DeviceStatus struct {
 	Gateway     string `json:"gateway"`
 	Address     string `json:"address,omitempty"`
 	IPv6Address string `json:"ipv6Address,omitempty"`
+	// Owner is the User that the Device is a device of, left out for a standalone Device (SDN-82).
+	Owner string `json:"owner,omitempty"`
+	// PresharedKey says that the Device has a PresharedKey, which the controller showed once when it made
+	// the Device and keeps sealed (SDN-82).
+	PresharedKey bool `json:"presharedKey,omitempty"`
 	// LastHandshake is the time of the last WireGuard handshake of the Device with its gateway,
 	// zero before the first one that the gateway reported.
 	LastHandshake time.Time `json:"lastHandshake,omitzero"`
@@ -86,6 +91,10 @@ func (c *Controller) Devices() []DeviceStatus {
 	c.mu.Lock()
 	in := c.intent
 	covered := in.Capped(c.force.Nodes).Devices
+	keyed := map[string]bool{}
+	for name := range c.dkeys.sealed {
+		keyed[name] = true
+	}
 	c.mu.Unlock()
 	c.dev.mu.Lock()
 	ends := maps.Clone(c.dev.ends)
@@ -93,7 +102,8 @@ func (c *Controller) Devices() []DeviceStatus {
 	out := []DeviceStatus{}
 	for _, name := range slices.Sorted(maps.Keys(in.Devices)) {
 		d := in.Devices[name]
-		st := DeviceStatus{Name: name, Network: d.Network, Gateway: d.Gateway, Address: d.Address, IPv6Address: d.IPv6Address}
+		st := DeviceStatus{Name: name, Network: d.Network, Gateway: d.Gateway, Address: d.Address, IPv6Address: d.IPv6Address,
+			Owner: d.Owner, PresharedKey: keyed[name]}
 		if _, ok := covered[name]; !ok {
 			st.Unlicensed = true
 		}
@@ -115,11 +125,6 @@ func (c *Controller) DeviceConfig(name string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindDevice, name)
 	}
-	var key []byte
-	if gw, ok := c.intent.Nodes[d.Gateway]; ok {
-		// Apply validated the key.
-		k, _ := intent.ParseKey(gw.PublicKey)
-		key = c.caps[string(k)].GetWireguardKey()
-	}
-	return c.intent.DeviceConfig(name, key)
+	// The keys of the Device were shown once when it was made (devicekeys.go): this configuration says where they go
+	return c.intent.DeviceConfigWith(name, c.gatewayKey(d.Gateway), intent.DeviceKeys{HasPreshared: c.hasDeviceKey(name)})
 }

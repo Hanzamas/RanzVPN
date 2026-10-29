@@ -156,7 +156,8 @@ func TestHelloOverItsLimit(t *testing.T) {
 func TestFrameOverItsLimitClosesTheStream(t *testing.T) {
 	h := newHarness(t)
 	h.apply("apply1.json")
-	peers := make([]*controlpb.PeerCounters, 8000)
+	// Each counter takes 5 bytes of the frame at least, so a Telemetry message of these is over MaxTelemetry
+	peers := make([]*controlpb.PeerCounters, control.MaxTelemetry/4)
 	for i := range peers {
 		peers[i] = &controlpb.PeerCounters{Peer: "b"}
 	}
