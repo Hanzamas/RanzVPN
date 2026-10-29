@@ -54,8 +54,9 @@ func runBackup(args []string) error {
 // knows how safe to keep it (AUD1-DT-10, #458). A member of a cluster keeps the secrets of the targets in
 // clear, as sealTargets says.
 func backupMessage(file string, size int64, clusterMember bool) string {
-	secrets := "the secrets of the targets (the export and audit targets), which the key of this host seals: " +
-		"a restore on another host brings the targets back with no secret, and the log of the controller there names them, so that you put each one again with its secret"
+	secrets := "the secrets of the targets (the export and audit targets) and the PresharedKeys of the WireGuard Devices, which the key of this host seals: " +
+		"a restore on another host brings the targets back with no secret, and the log of the controller there names them, so that you put each one again with its secret; " +
+		"it brings the Devices back with a PresharedKey that does not open, so that you make each one again"
 	if clusterMember {
 		secrets = "the secrets of the targets (the export and audit targets) in clear, since the members of a cluster have no sealing key in common"
 	}
@@ -83,7 +84,8 @@ func runRestore(args []string) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "ranz controller restore: the store is the backup in %s; the leader loads it.\n"+
-		"  The secrets of the targets in it open only with the key of the host that made the backup: on another host the targets come back with no secret, and the log of the controller names them, so that you put each one again with its secret.\n", file)
+		"  The secrets of the targets in it open only with the key of the host that made the backup: on another host the targets come back with no secret, and the log of the controller names them, so that you put each one again with its secret.\n"+
+		"  So do the PresharedKeys of the WireGuard Devices: on another host the log of the controller says that they do not open, and the gateway terminates those Devices without a PresharedKey until you make each one again.\n", file)
 	return nil
 }
 

@@ -12,7 +12,8 @@
 # The seeds of src/fuzz/corpus/fuzz_control are the frames of the tests of 2026-10-27 (AUD1-DT-12 #460), written with
 #   RANZ_CONTROL_WIRE=<dir> RQLITED=<rqlited of the pinned rqlite> go test -count=1 ./controller/internal/controller ./controller
 #   RANZ_CONTROL_WIRE=<dir> python -I src/fuzz/make_seeds.py
-# Without RANZ_CONTROL_WIRE this file writes the security seeds alone, and the other seeds stay as they are.
+# Without RANZ_CONTROL_WIRE this file writes the security, the operation and the peering seeds alone, and the other seeds
+# stay as they are.
 #
 # The security seeds (SDN-41 #234) hold the L2Security of the L2 Networks of a state, which no frame of those tests holds,
 # so that inputs reach ControlCopySecurities: an Update of an L2 Network with one, an L3 Network with one that the node
@@ -26,9 +27,18 @@
 # that it refuses: of a kind that it does not know, and with a MAC address and an address of sizes that none has, as a
 # stream (operation-stream.bin).
 #
+# The peering seeds (SDN-77 #357) hold the BGP peering of the standard mode, which the frames of those tests of 2026-10-27 do
+# not, so that inputs reach ControlCopyPeerings: a state whose VRFs dc and lab peer by BGP, with the peering of the node
+# gw-1 and of its peers db, whose sidecar is on IPv4, and lab-1, on IPv6 and in both VRFs (peering-state.bin); and that
+# state followed by a delta with what the node cannot read (a router id of 3 bytes, an address of a sidecar of 5 bytes, a
+# peering of a peer without a VRF, prefixes without an address, of 3 bytes or longer than their address, and lab without
+# the peering), a delta that takes the peering of the node and the peer lab-1 away, and one that brings them back, as a
+# stream (peering-stream.bin).
+#
 # make_seeds.py runs make_seeds(h), h being make_seeds.py itself with write_seed.
 
 import hashlib
+import ipaddress
 import os
 import re
 import struct
@@ -72,13 +82,16 @@ def network(name, mode, security=None):
     return message(3, nw)
 
 
-def update(generation, base, objects):
-    # A ControlMessage with the Update to generation from base (0 for a full state) that sets objects
+def update(generation, base, objects, removes=()):
+    # A ControlMessage with the Update to generation from base (0 for a full state) that sets objects and removes the
+    # objects of the ObjectKeys removes
     u = field(1, generation)
     if base:
         u += field(2, base)
     for o in objects:
         u += message(3, o)
+    for k in removes:
+        u += message(4, k)
     return message(2, u)
 
 
@@ -115,9 +128,107 @@ def make_operation_seeds(h):
     h.write_seed('fuzz_control', 'operation-stream.bin', b''.join(struct.pack('>I', len(m)) + m for m in [state] + operations))
 
 
+def packed(number, values):
+    # A repeated varint field, packed as proto3 writes it
+    return message(number, b''.join(varint(v) for v in values))
+
+
+def ip(text):
+    # The bytes of an IPv4 or an IPv6 address
+    return ipaddress.ip_address(text).packed
+
+
+def raw_route(vrf_id, address, length):
+    # A Route of the VRF vrf_id whose Prefix has the bytes address and the length length, or none for address None
+    r = field(1, vrf_id)
+    if address is not None:
+        r += message(2, message(1, address) + field(2, length))
+    return r
+
+
+def route(vrf_id, prefix):
+    # A Route of the prefix ADDRESS/LENGTH of the VRF vrf_id
+    address, length = prefix.split('/')
+    return raw_route(vrf_id, ip(address), int(length))
+
+
+def vrf(name, vrf_id, peering):
+    # An Object of the VRF name with the id vrf_id and links of kind vxlan on the VNI 5000 + vrf_id, whose nodes peer by BGP
+    # when peering
+    v = message(1, name.encode('ascii')) + field(2, vrf_id) + field(8, 1) + field(9, 5000 + vrf_id)
+    if peering:
+        v += field(13, 1)
+    return message(2, v)
+
+
+def node_peering(router_id, address, announce):
+    # A NodePeering in the AS of the overlay with the router id and the address of the bytes router_id and address, which
+    # announces the Routes announce
+    p = field(1, 4200000000) + message(2, router_id) + message(3, address)
+    for r in announce:
+        p += message(4, r)
+    return p
+
+
+def node(name, peering=None):
+    # An Object of the NodeConfig of the node name, with the NodePeering peering
+    n = message(1, name.encode('ascii'))
+    if peering is not None:
+        n += message(14, peering)
+    return message(1, n)
+
+
+def peer_peering(address, hold_time, vrf_ids, accept):
+    # A PeerPeering with the sidecar of the bytes address, the hold time hold_time (0 for none), the VRFs vrf_ids and the
+    # Routes accept
+    p = message(1, address)
+    if hold_time:
+        p += field(2, hold_time)
+    if vrf_ids:
+        p += packed(3, vrf_ids)
+    for r in accept:
+        p += message(4, r)
+    return p
+
+
+def peer(name, key, vrf_ids, peering=None):
+    # An Object of the Peer name with the static key key, 32 bytes, in the VRFs vrf_ids, with the PeerPeering peering
+    p = message(1, name.encode('ascii')) + message(2, key) + packed(3, vrf_ids)
+    if peering is not None:
+        p += message(12, peering)
+    return message(4, p)
+
+
+def object_key(kind, name):
+    # An ObjectKey of the object of the kind kind, the tag of its kind in Object, and of the name name
+    return field(1, kind) + message(2, name.encode('ascii'))
+
+
+def make_peering_seeds(h):
+    gw = ip('10.1.0.1')
+    db_key = bytes([0x02] * 32)
+    lab_key = bytes([0x03] * 32)
+    own = node_peering(gw, gw, [route(30, '192.168.10.0/24'), route(31, '192.168.11.0/24')])
+    db = peer_peering(ip('10.1.0.2'), 9, [30], [route(30, '10.30.0.2/32'), route(30, '192.168.20.0/24')])
+    lab = peer_peering(ip('fd00::2'), 0, [30, 31], [route(30, '10.30.0.3/32'), route(31, 'fd00:31::/64')])
+    objects = [node('gw-1', own), vrf('dc', 30, True), vrf('lab', 31, True), peer('db', db_key, [30], db),
+               peer('lab-1', lab_key, [30, 31], lab)]
+    state = update(1, 0, objects)
+    cannot = update(2, 1, [node('gw-1', node_peering(gw[:3], gw, [route(30, '192.168.10.0/24')])), vrf('lab', 31, False),
+                           peer('db', db_key, [30], peer_peering(gw + b'\x00', 9, [30], [route(30, '10.30.0.2/32')])),
+                           peer('lab-1', lab_key, [30, 31],
+                                peer_peering(ip('fd00::2'), 0, [], [raw_route(31, None, 0), raw_route(31, gw[:3], 24),
+                                                                   raw_route(30, ip('10.30.0.0'), 40)]))])
+    takes = update(3, 2, [node('gw-1')], [object_key(4, 'lab-1')])
+    back = update(4, 3, objects)
+    h.write_seed('fuzz_control', 'peering-state.bin', state)
+    h.write_seed('fuzz_control', 'peering-stream.bin', b''.join(struct.pack('>I', len(m)) + m for m in (state, cannot, takes, back)))
+
+
 def make_seeds(h):
     make_security_seeds(h)
     make_operation_seeds(h)
+    make_peering_seeds(h)
 
     directory = os.environ.get('RANZ_CONTROL_WIRE')
     if not directory or not os.path.isdir(directory):
