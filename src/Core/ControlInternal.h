@@ -1,5 +1,5 @@
 // ControlInternal.h
-// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c, ControlListener.c, ControlDevice.c, ControlEndpoint.c, ControlEvent.c, ControlGateway.c, ControlLink.c, ControlPins.c, ControlSecurity.c, ControlSignal.c): only its own
+// Module-internal declarations of the control module (Control.c, ControlDhcp.c, ControlDns.c, ControlListener.c, ControlDevice.c, ControlEndpoint.c, ControlEvent.c, ControlGateway.c, ControlLink.c, ControlPins.c, ControlProfile.c, ControlSecurity.c, ControlSignal.c): only its own
 // files include this
 // header, after the messages that nanopb generates from the schema
 
@@ -55,5 +55,8 @@ void ControlTakeSignal(const CONTROL_CONFIG *cfg, const ranz_control_v1_Signal *
 
 // ControlGateway.c
 void ControlCopyGateways(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
+
+// ControlProfile.c
+void ControlCopyProfiles(CONTROL_STATE *st, const ranz_control_v1_Object *objects, UINT num);
 
 #endif // CORE_CONTROL_INTERNAL_H

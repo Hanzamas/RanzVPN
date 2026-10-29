@@ -16,6 +16,7 @@
 #include "Node.h"
 #include "NodeGateway.h"
 #include "NodeLink.h"
+#include "NodeProfile.h"
 #include "NodeSourceGroup.h"
 
 #include "Mayaqua/Memory.h"
@@ -304,6 +305,8 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 		NodeFreeVrfTable(v->Vrfs[i]);
 	NodeShapeFreeTable(v->Shape);
 	NodePolicyFreeTable(v->Policy);
+	// The session profiles (NodeProfile.c; SDN-40, #233)
+	NodeProfileFreeTable(v->Profile);
 
 	NodeFreeNat(v->Nat);
 	Free(v->HopVrfs);

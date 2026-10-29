@@ -195,6 +195,8 @@ add_library(corecontrol STATIC
   # The hubs and the ECMP of the VRFs, the LAN subnets of a node and the gateways that are down in a desired state (SDN-19,
   # #195)
   ControlGateway.c
+  # The session profiles of a node and of its peers in a desired state (SDN-40, #233)
+  ControlProfile.c
 )
 
 target_include_directories(corecontrol PRIVATE "${_ranz_controlpb}")

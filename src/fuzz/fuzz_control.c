@@ -11,6 +11,7 @@
 //   client ends then, or the next frame is empty or longer than the input left.
 // The owner checks each state that it is handed: its Generation is not 0, every count is within its array, every address
 // and prefix within its bytes, every string ends in its buffer, a TLS fingerprint is 64 hex digits in lower case, and a
+// session profile of the node or of a peer that is not set holds nothing (ControlCopyProfiles; SDN-40 #233), and a
 // source group has a group ID of 16 bits and a VRF a tag mode that the node knows (SDN-87 #386). After
 // a message whose Update was handed to the owner, the client must have taken it and stand at its Generation. Each message
 // is copied into a buffer of its size exactly, so that AddressSanitizer reports a read past it. The client allocates from
@@ -113,6 +114,19 @@ static void FuzzTags(const char (*tags)[CONTROL_NAME_SIZE], UINT num, UINT max, 
 static void FuzzVtep(const CONTROL_VTEP *v, const char *what)
 {
 	if ((v->AddressSize != 0 && v->AddressSize != 4 && v->AddressSize != 16) || v->VxlanPort > 0xFFFF || v->GenevePort > 0xFFFF)
+	{
+		FuzzFail(what);
+	}
+}
+
+// The session profile of the node or of a peer (ControlCopyProfiles; SDN-40 #233): its names end in their buffers, and one
+// that is not set holds no name, no limit and no flag
+static void FuzzProfile(const CONTROL_PROFILE *p, const char *what)
+{
+	bool held = (p->Name[0] != 0 || p->User[0] != 0 || p->UploadLimit != 0 || p->DownloadLimit != 0 || p->MaxSessions != 0 || p->MaxMacs != 0 ||
+		p->MaxIpv4 != 0 || p->MaxIpv6 != 0 || p->IdleTimeout != 0 || p->AutoDisconnect != 0 || p->NoBridge || p->NoRouting || p->NoServer || p->PrivacyFilter);
+
+	if (FuzzEnds(p->Name, sizeof(p->Name)) == false || FuzzEnds(p->User, sizeof(p->User)) == false || (p->Set == false && held))
 	{
 		FuzzFail(what);
 	}
@@ -258,6 +272,7 @@ static void FuzzPeers(const CONTROL_STATE *st)
 		FuzzTags(p->Tags, p->NumTags, CONTROL_MAX_TAGS, "a peer has a tag that does not end or too many tags");
 		FuzzEndpoints(p->Endpoints, p->NumEndpoints, "a peer has too many endpoints, or one that does not end");
 		FuzzVtep(&p->Vtep, "a peer has a tunnel endpoint that is neither IPv4 nor IPv6, or a port above 65535");
+		FuzzProfile(&p->Profile, "a peer has a session profile whose names do not end, or one that is not set and holds something");
 		FuzzGroups(p->Groups, p->NumGroups, "a peer has too many source groups, or one whose group ID is 0 or above 65535");
 	}
 }
@@ -410,6 +425,7 @@ static void FuzzControlState(void *param, const CONTROL_STATE *st)
 	FuzzTags(st->Tags, st->NumTags, CONTROL_MAX_TAGS, "the node has a tag that does not end or too many tags");
 	FuzzEndpoints(st->Endpoints, st->NumEndpoints, "the node has too many endpoints, or one that does not end");
 	FuzzVtep(&st->Vtep, "the node has a tunnel endpoint that is neither IPv4 nor IPv6, or a port above 65535");
+	FuzzProfile(&st->Profile, "the node has a session profile whose names do not end, or one that is not set and holds something");
 	FuzzGroups(st->Groups, st->NumGroups, "the node has too many source groups, or one whose group ID is 0 or above 65535");
 
 	if (st->NumNats > CONTROL_MAX_NATS)

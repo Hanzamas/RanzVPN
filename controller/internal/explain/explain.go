@@ -160,6 +160,8 @@ type Step struct {
 	NAT   *NAT   `json:"nat,omitempty"`
 	Rule  *Rule  `json:"rule,omitempty"`
 	Link  *Link  `json:"link,omitempty"`
+	// Profile is the session profile of a StepProfile (profile.go; SDN-40).
+	Profile *Profile `json:"profile,omitempty"`
 	// Text says the step in a sentence.
 	Text string `json:"text"`
 }
@@ -308,6 +310,10 @@ func (w *walk) send(s *node, vrf uint32, p packet) {
 		w.step(s, StepRoute, vrf, Step{Route: route}, "%s leads to %s: %s", r.prefix, peer.GetName(), r.what)
 	}
 
+	// The session profile of the peer and the one of the sender judge it before the policy (NodeProfileOutbound)
+	if !w.profile(s, vrf, out, r.hop, true) {
+		return
+	}
 	// The policy of the VRF judges the packet as the overlay sees it, after the 1:1 NAT rules (NodePolicyOutbound)
 	if !w.judge(s, vrf, out, r.hop, true) {
 		return
@@ -355,6 +361,10 @@ func (w *walk) receive(s, n *node, vrf uint32, p packet) {
 	}
 	w.step(n, StepRoute, vrf, Step{Route: &Route{Prefix: to.prefix, What: to.what}}, "%s leads to the host of %s: %s", to.prefix, n.name, to.what)
 
+	// The session profile of the sender and the one of n judge it before the policy (NodeProfileInbound)
+	if !w.profile(n, vrf, p, back.hop, false) {
+		return
+	}
 	// The policy of the VRF judges the packet as the peer sent it, before the 1:1 NAT rules (NodePolicyInbound)
 	if !w.judge(n, vrf, p, back.hop, false) {
 		return
