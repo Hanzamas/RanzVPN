@@ -127,6 +127,7 @@ bool NodeEgressNetNatPrefix(const wchar_t *name, wchar_t *prefix, UINT size);
 bool NodeEgressNetNatAdd(const wchar_t *name, const wchar_t *prefix);
 bool NodeEgressNetNatRemove(const wchar_t *name);
 bool NodeEgressRrasFlags(UINT64 luid, UINT *flags);
+bool NodeEgressRrasProtocolHeld(void);
 bool NodeEgressRrasRemove(UINT64 luid);
 
 #endif // NODE_EGRESS_H

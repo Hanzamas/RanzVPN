@@ -584,7 +584,8 @@ static DWORD NodeEgressMprConnect(NODE_EGRESS_MPR *m) {
 }
 
 // The NAT routing protocol in the global IPv4 information info of the router: a new information with it into *next
-// (MprInfoDelete), NULL when info holds it already
+// (MprInfoDelete), NULL when info holds it already. An empty NAT block, which tells the running router to take the protocol
+// out (NodeEgressRrasEmpty), holds no protocol.
 static DWORD NodeEgressRrasGlobalBlock(NODE_EGRESS_MPR *m, LPBYTE info, LPVOID *next) {
 	NODE_EGRESS_NAT_GLOBAL g;
 	DWORD item = 0;
@@ -592,7 +593,8 @@ static DWORD NodeEgressRrasGlobalBlock(NODE_EGRESS_MPR *m, LPBYTE info, LPVOID *
 	LPBYTE data = NULL;
 
 	*next = NULL;
-	if (m->BlockFind(info, NODE_EGRESS_MS_IP_NAT, &item, &count, &data) == NO_ERROR)
+	DWORD found = m->BlockFind(info, NODE_EGRESS_MS_IP_NAT, &item, &count, &data);
+	if (found == NO_ERROR && item != 0 && count != 0)
 		return NO_ERROR;
 
 	Zero(&g, sizeof(g));
@@ -600,7 +602,24 @@ static DWORD NodeEgressRrasGlobalBlock(NODE_EGRESS_MPR *m, LPBYTE info, LPVOID *
 	g.Header.Version = RTR_INFO_BLOCK_VERSION;
 	g.Header.Size = FIELD_OFFSET(RTR_INFO_BLOCK_HEADER, TocEntry);
 
+	if (found == NO_ERROR)
+		return m->BlockSet(info, NODE_EGRESS_MS_IP_NAT, sizeof(g), 1, (LPBYTE)&g, next);
+
 	return m->BlockAdd(info, NODE_EGRESS_MS_IP_NAT, sizeof(g), 1, (LPBYTE)&g, next);
+}
+
+// A new IPv4 information from info, which holds the NAT block, without the NAT information into *next (MprInfoDelete), for the
+// running router (config false) or for the configuration of the router (config true). The running router keeps the
+// information of a block that an information leaves out: in the egress (RRAS NAT) job the NAT information of an interface
+// that was set without its block stayed, and the reconcile found nothing to set again. A block of no item tells it to delete
+// that information. The configuration of the router holds the whole information, from which the block goes.
+static DWORD NodeEgressRrasEmpty(NODE_EGRESS_MPR *m, LPBYTE info, bool config, LPVOID *next) {
+	ULONG none = 0;
+
+	if (config)
+		return m->BlockRemove(info, NODE_EGRESS_MS_IP_NAT, next);
+
+	return m->BlockSet(info, NODE_EGRESS_MS_IP_NAT, 0, 0, (LPBYTE)&none, next);
 }
 
 // The NAT routing protocol in the IPv4 router of RRAS, running and configured: added where it lacks it, so the router has it
@@ -643,8 +662,7 @@ static void NodeEgressRrasProtocolDrop(NODE_EGRESS_MPR *m) {
 	LPVOID next = NULL;
 	HANDLE transport = NULL;
 
-	if (m->AdminGet(m->Admin, NODE_EGRESS_PID_IP, &info, &size, NULL, NULL) == NO_ERROR && m->BlockRemove(info, NODE_EGRESS_MS_IP_NAT, &next) == NO_ERROR &&
-	    next != NULL) {
+	if (m->AdminGet(m->Admin, NODE_EGRESS_PID_IP, &info, &size, NULL, NULL) == NO_ERROR && NodeEgressRrasEmpty(m, info, false, &next) == NO_ERROR && next != NULL) {
 		m->AdminSet(m->Admin, NODE_EGRESS_PID_IP, (LPBYTE)next, m->BlockSize(next), NULL, 0);
 		m->InfoDelete(next);
 	}
@@ -654,7 +672,7 @@ static void NodeEgressRrasProtocolDrop(NODE_EGRESS_MPR *m) {
 	info = NULL;
 	next = NULL;
 	if (m->ConfigTransport(m->Config, NODE_EGRESS_PID_IP, &transport) == NO_ERROR && m->ConfigGet(m->Config, transport, &info, &size, NULL, NULL, NULL) == NO_ERROR &&
-	    m->BlockRemove(info, NODE_EGRESS_MS_IP_NAT, &next) == NO_ERROR && next != NULL) {
+	    NodeEgressRrasEmpty(m, info, true, &next) == NO_ERROR && next != NULL) {
 		m->ConfigSet(m->Config, transport, (LPBYTE)next, m->BlockSize(next), NULL, 0, NULL);
 		m->InfoDelete(next);
 	}
@@ -896,7 +914,7 @@ static DWORD NodeEgressRrasDrop(NODE_EGRESS_MPR *m, wchar_t *name, const UINT *m
 		} else if (err == NO_ERROR && (added & NODE_EGRESS_MADE_TRANSPORT) != 0) {
 			err = (f.Config ? m->ConfigIfRemove(m->Config, f.Interface, f.Transport) : m->AdminIfRemove(m->Admin, f.Interface, NODE_EGRESS_PID_IP));
 		} else if (err == NO_ERROR && NodeEgressRrasHolds(m, f.Info, &held)) {
-			err = m->BlockRemove(f.Info, NODE_EGRESS_MS_IP_NAT, &next);
+			err = NodeEgressRrasEmpty(m, f.Info, f.Config, &next);
 			if (err == NO_ERROR && next != NULL) {
 				err = NodeEgressRrasPut(m, &f, next);
 				m->InfoDelete(next);
@@ -935,6 +953,28 @@ bool NodeEgressRrasFlags(UINT64 luid, UINT *flags) {
 	NodeEgressMprDisconnect(&m);
 
 	return ok;
+}
+
+// Whether the IPv4 router of RRAS that runs holds the NAT routing protocol: false when it does not, or cannot be asked
+bool NodeEgressRrasProtocolHeld(void) {
+	NODE_EGRESS_MPR m;
+	LPBYTE info = NULL;
+	DWORD size = 0;
+	DWORD item = 0;
+	DWORD count = 0;
+	LPBYTE data = NULL;
+	bool held = false;
+
+	if (NodeEgressMprConnect(&m) != NO_ERROR)
+		return false;
+
+	if (m.AdminGet(m.Admin, NODE_EGRESS_PID_IP, &info, &size, NULL, NULL) == NO_ERROR && info != NULL)
+		held = (m.BlockFind(info, NODE_EGRESS_MS_IP_NAT, &item, &count, &data) == NO_ERROR && item != 0 && count != 0);
+	if (info != NULL)
+		m.AdminFree(info);
+	NodeEgressMprDisconnect(&m);
+
+	return held;
 }
 
 // Take the NAT information of the interface of luid out of the running router of RRAS and of its configuration, as an

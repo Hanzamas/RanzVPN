@@ -37,7 +37,8 @@
 //   address and port that it named.
 // - The reconcile: the NAT setting of the node taken away behind its back (its NAT network of WinNAT, or the NAT information
 //   of the adapter of corp in RRAS) is set again by the next reconcile, which the Egress counts, and the egress works again.
-// - Once node-x is the exit of no VRF, the NAT of Windows holds nothing of the node.
+// - Once node-x is the exit of no VRF, the NAT of Windows holds nothing of the node, and the IPv4 router of RRAS holds the NAT
+//   routing protocol as it did before node-x: the node takes out again the one that it added.
 // egressnat checks the tier that the runner gives: WinNAT where Hyper-V and WinNAT are present and no NAT network of WinNAT of
 // another program exists; then a NAT network of WinNAT of another name, which the test creates where there is none, makes the
 // runner give the proxy once a look found it; a new node-x on WinNAT, the tier of a node that has not looked yet, finds it at
@@ -1784,6 +1785,9 @@ static void EgressTestNatRun(EGRESSTEST_CTX *ctx, UINT tier)
 	UINT failed = ctx->NumFailed;
 	UINT64 corp = 0;
 	UINT flags = 0;
+	// RRAS: whether its IPv4 router holds the NAT routing protocol before node-x, which the node adds where it lacks it and
+	// takes out again once it is the exit of no VRF
+	bool protocol = (tier == CONTROL_EGRESS_RRAS && NodeEgressRrasProtocolHeld());
 
 	Zero(&uplinks, sizeof(uplinks));
 	Zero(&es, sizeof(es));
@@ -1856,19 +1860,22 @@ static void EgressTestNatRun(EGRESSTEST_CTX *ctx, UINT tier)
 		EgressTestNatFlows(ctx, pair.C, pair.Host, &uplinks, 41030, "after the reconcile");
 	}
 
-	// node-x is the exit of no VRF: the NAT of Windows holds nothing of it
+	// node-x is the exit of no VRF: the NAT of Windows holds nothing of it, and with RRAS the running router holds the NAT routing
+	// protocol as it did before node-x
 	if (ok)
 	{
 		bool done = EgressTestExit(&pair, 2, false, EgressTestWantNone, &es);
 		bool empty = false;
+		bool held = protocol;
 
 		for (UINT64 end = Tick64() + EGRESSTEST_NAT_BOUND;done && empty == false && Tick64() < end;SleepThread(EGRESSTEST_POLL * 10))
 		{
-			empty = EgressTestNatEmpty(tier, corp, NodeWintunLuid(uplinks.A));
+			held = (tier == CONTROL_EGRESS_RRAS && NodeEgressRrasProtocolHeld());
+			empty = (EgressTestNatEmpty(tier, corp, NodeWintunLuid(uplinks.A)) && held == protocol);
 		}
 
-		EgressTestCheck(ctx, done && empty, "once node-x is the exit of no VRF, the NAT of Windows holds nothing of the node", "applied %u, %u VRFs, empty %u", (UINT)done,
-			es.NumVrfs, (UINT)empty);
+		EgressTestCheck(ctx, done && empty, "once node-x is the exit of no VRF, the NAT of Windows holds nothing of the node", "applied %u, %u VRFs, empty %u, the NAT routing protocol of RRAS %u (before node-x %u)",
+			(UINT)done, es.NumVrfs, (UINT)empty, (UINT)held, (UINT)protocol);
 	}
 
 	EgressTestPairStop(&pair, &uplinks, ctx->NumFailed != failed);
