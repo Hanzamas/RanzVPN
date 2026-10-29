@@ -24,7 +24,9 @@
 # bridge's host vNIC, whose port allows MAC address spoofing as the port of any bridge must, and a second host vNIC, a
 # device on the switch whose frames reach the bridge from below its vNIC, as the frames of a virtual machine do. The
 # test checks foreign-MAC transmit and receive, coexistence with the host stack, the benchmark against SeLow (NICBRIDGE
-# BENCH lines), SeLow the default and Npcap, which no runner may carry, used only where it is installed.
+# BENCH lines), SeLow the default and Npcap, which no runner may carry, used only where it is installed. Last, it binds an
+# external Hyper-V virtual switch of the lab's name to a KM-TEST adapter of its own, and checks that a bridge refuses the
+# NIC that the switch owns and takes the switch's host vNIC instead (the scope note of #73).
 # Each run of vpntest is a process of its own with a time limit: a run that a driver keeps from ending fails its step,
 # and the job goes on with the next one.
 param(
@@ -56,9 +58,10 @@ $kmtestMinutes = 12
 # ... and a run of vpntest nicbridge: its watchdog (NICBRIDGE_BUDGET of src/vpntest/nicbridgetest.c, eight minutes) and two more
 $nicbridgeMinutes = 10
 # The Hyper-V lab of the bridge: the internal switch, whose host vNIC is vEthernet ($labSwitch), and the device's host vNIC on
-# it, vEthernet ($labDevice)
+# it, vEthernet ($labDevice); and the external switch that vpntest nicbridge makes on a KM-TEST adapter of its own
 $labSwitch = 'ranz-nicbridge'
 $labDevice = 'ranz-nicbridge-device'
+$labExternal = 'ranz-nicbridge-external'
 
 # A step that failed: the job goes on with the next one and fails at the end
 function Add-Failure([string] $step) {
@@ -87,11 +90,12 @@ function New-BridgeLab {
 	}
 }
 
-# Take the Hyper-V lab of the bridge away again
+# Take the Hyper-V lab of the bridge away again, with the external switch that a run of vpntest nicbridge left
 function Remove-BridgeLab {
 	Remove-VMNetworkAdapter -ManagementOS -Name $labDevice -Confirm:$false -ErrorAction SilentlyContinue
 	Remove-VMSwitch -Name $labSwitch -Force -Confirm:$false -ErrorAction SilentlyContinue
-	Write-Host "the Hyper-V lab of the bridge is taken away: $(@(Get-VMSwitch -Name $labSwitch -ErrorAction SilentlyContinue).Count) switch left"
+	Remove-VMSwitch -Name $labExternal -Force -Confirm:$false -ErrorAction SilentlyContinue
+	Write-Host "the Hyper-V lab of the bridge is taken away: $(@(Get-VMSwitch -Name $labSwitch, $labExternal -ErrorAction SilentlyContinue).Count) switch left"
 }
 
 # Run ranz.exe with arguments: its exit code and its output, standard error included
@@ -184,7 +188,7 @@ New-NetFirewallRule -DisplayName $firewallRule -Direction Inbound -Program $vpnt
 
 # The Hyper-V lab of the bridge, before the drivers, which bind to its vNICs as to any adapter
 $lab = @()
-if (New-BridgeLab) { $lab = @($labSwitch, $labDevice) }
+if (New-BridgeLab) { $lab = @($labSwitch, $labDevice, $labExternal) }
 
 # 1. SeLow alone: XDP cannot bind, and the node falls back to SeLow at run time
 $r = Invoke-Ranz @('install', '--no-xdp')

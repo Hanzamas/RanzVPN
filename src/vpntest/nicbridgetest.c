@@ -17,7 +17,7 @@
 // drivers, so the smoke loop leaves it out (.github/quality/smoke-exclude.txt). Its arguments: the backends, "selow" (the
 // default), "xdp" (SeLow, then XDP, on the same attachments, for the comparison) or "npcap" (SeLow, then Npcap, then XDP
 // with Npcap's hold, on the same attachments); then the name of the Hyper-V switch and of the device's vNIC on it, when
-// the job made them.
+// the job made them, and the name of the external switch that the test makes itself.
 // The spike of ADR-0018 decision 3, for each backend on each attachment:
 // - Foreign-MAC transmit: frames of the overlay from the member's MAC address go through the switch to the bridge, which
 //   puts them onto the segment (on the NIC its counter of sent frames rises by them). Datagrams of the member reach a
@@ -50,6 +50,11 @@
 //   promiscuous while its device is open, and hands over no frame that the handle sent itself, as Npcap does for a handle
 //   opened with PCAP_OPENFLAG_PROMISCUOUS and PCAP_OPENFLAG_NOCAPTURE_LOCAL. The Npcap backend, then XDP with Npcap's
 //   hold, pass the spike on it.
+// - The NIC of an external Hyper-V virtual switch, when the job names one (the scope note of #73): the switch owns the
+//   NIC, so an XDP program or a bridge there would take the frames of every port of the switch, the host's vNIC among
+//   them. The test binds an external switch of that name to a KM-TEST adapter of its own with the cmdlets of Hyper-V
+//   (New-VMSwitch -NetAdapterName, with a vNIC of the host), so that the runner's NIC stays as it is: NodeL2BridgeIndex
+//   refuses the adapter, which it took before, and names the host vNIC of the switch, which NodeL2HyperVIndex finds.
 // Prints "NICBRIDGE TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -95,6 +100,8 @@
 #define	NICBRIDGE_PCAP_ERRBUF	256			// Bytes of the error text of a pcap call (PCAP_ERRBUF_SIZE)
 #define	NICBRIDGE_PCAP_READS	4			// Reads of the SeLow device that one pcap_next_ex of the stand-in makes at most
 #define	NICBRIDGE_NPF			"\\Device\\NPF_"	// What the device of a handle of Npcap begins with, before the GUID of the adapter
+#define	NICBRIDGE_PS_WAIT		120000		// ms that a command of PowerShell may take
+#define	NICBRIDGE_PS_OUTPUT		65536		// Bytes of the pipe of its output, more than it writes
 
 // The checks of the test
 typedef struct NICBRIDGE_CTX
@@ -161,11 +168,12 @@ typedef struct NICBRIDGE_PCAP
 	char Error[MAX_SIZE];
 } NICBRIDGE_PCAP;
 
-// The MAC addresses of the test, derived as NodeL2Mac derives those of adapters: the stand-in, the member of the overlay
-// and another address of the segment
+// The MAC addresses of the test, derived as NodeL2Mac derives those of adapters: the stand-in, the member of the overlay,
+// another address of the segment and the KM-TEST adapter that is the NIC of an external switch
 static UCHAR nicbridge_standin_mac[6];
 static UCHAR nicbridge_member_mac[6];
 static UCHAR nicbridge_other_mac[6];
+static UCHAR nicbridge_external_mac[6];
 static UCHAR nicbridge_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 static bool NicBridgeCheck(NICBRIDGE_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
@@ -930,6 +938,101 @@ static DWORD WINAPI NicBridgeSinkThread(LPVOID param)
 // The attachments
 //
 
+// Run a command of Windows PowerShell, whose cmdlets make and remove Hyper-V virtual switches, and wait for it, with its
+// output and errors into out: true when it ended with exit code 0 within NICBRIDGE_PS_WAIT. A command that does not end
+// in time is ended. Its input is NUL, as powershell.exe waits for the end of an input that a pipe or a console gives it.
+static bool NicBridgePowerShell(char *command, char *out, UINT out_size)
+{
+	wchar_t exe[MAX_PATH];
+	wchar_t cmd[MAX_SIZE * 4];
+	SECURITY_ATTRIBUTES sa;
+	STARTUPINFOW si;
+	PROCESS_INFORMATION pi;
+	HANDLE rd = NULL;
+	HANDLE wr = NULL;
+	DWORD code = INFINITE;
+	UINT len = 0;
+
+	StrCpy(out, out_size, "");
+
+	UINT dir_len = (UINT)GetSystemDirectoryW(exe, MAX_PATH);
+	if (dir_len == 0 || dir_len >= MAX_PATH - 64)
+	{
+		Format(out, out_size, "the system directory cannot be read (error %u)", (UINT)GetLastError());
+		return false;
+	}
+	UniStrCat(exe, sizeof(exe), L"\\WindowsPowerShell\\v1.0\\powershell.exe");
+	UniFormat(cmd, sizeof(cmd), L"\"%s\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"%S\"", exe, command);
+
+	Zero(&sa, sizeof(sa));
+	sa.nLength = sizeof(sa);
+	sa.bInheritHandle = TRUE;
+
+	HANDLE nul = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+	if (nul == INVALID_HANDLE_VALUE)
+	{
+		Format(out, out_size, "NUL cannot be opened (error %u)", (UINT)GetLastError());
+		return false;
+	}
+	if (CreatePipe(&rd, &wr, &sa, NICBRIDGE_PS_OUTPUT) == FALSE)
+	{
+		Format(out, out_size, "CreatePipe: error %u", (UINT)GetLastError());
+		CloseHandle(nul);
+		return false;
+	}
+	SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+
+	Zero(&si, sizeof(si));
+	si.cb = sizeof(si);
+	si.dwFlags = STARTF_USESTDHANDLES;
+	si.hStdInput = nul;
+	si.hStdOutput = wr;
+	si.hStdError = wr;
+	Zero(&pi, sizeof(pi));
+
+	BOOL started = CreateProcessW(exe, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+	CloseHandle(wr);
+	CloseHandle(nul);
+
+	if (started == FALSE)
+	{
+		Format(out, out_size, "%S cannot be started (error %u)", exe, (UINT)GetLastError());
+		CloseHandle(rd);
+		return false;
+	}
+
+	// The command ends, or is ended, before its output is read: it writes far less than the pipe holds
+	if (WaitForSingleObject(pi.hProcess, NICBRIDGE_PS_WAIT) == WAIT_OBJECT_0)
+	{
+		GetExitCodeProcess(pi.hProcess, &code);
+	}
+	else
+	{
+		TerminateProcess(pi.hProcess, 1);
+		WaitForSingleObject(pi.hProcess, NICBRIDGE_ANSWER);
+	}
+
+	while (len + 1 < out_size)
+	{
+		char buf[MAX_SIZE];
+		DWORD got = 0;
+
+		if (ReadFile(rd, buf, (DWORD)MIN((UINT)sizeof(buf), out_size - 1 - len), &got, NULL) == FALSE || got == 0)
+		{
+			break;
+		}
+		Copy(out + len, buf, got);
+		len += got;
+	}
+	out[len] = 0;
+
+	CloseHandle(rd);
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+
+	return (code == 0);
+}
+
 // The Ethernet interfaces of this runner, for the record: a Hyper-V virtual switch gives the host a vNIC that Hyper-V
 // names "vEthernet (<switch>)"
 static void NicBridgeInterfaces()
@@ -1520,6 +1623,73 @@ static void NicBridgeDefault(NICBRIDGE_CTX *ctx, NODE *n, NICBRIDGE_PORT *p)
 	NicBridgeNetFree(&net);
 }
 
+// The NIC of an external Hyper-V virtual switch: a KM-TEST adapter of the node, so that the runner's NIC stays as it is, to
+// which the test binds the external switch sw_name with a vNIC of the host (New-VMSwitch -NetAdapterName -AllowManagementOS).
+// The switch owns its NIC, so a bridge refuses it (NodeL2BridgeIndex) and takes the host vNIC of the switch instead
+// (NodeL2HyperVIndex). The switch, then the adapter, go again at the end; a switch of that name that an earlier run left
+// goes first.
+static void NicBridgeExternal(NICBRIDGE_CTX *ctx, NODE *n, char *sw_name)
+{
+	MIB_IF_ROW2 row;
+	char alias[MAX_SIZE];
+	char command[MAX_SIZE * 2];
+	char out[MAX_SIZE * 4];
+	char error[MAX_SIZE * 2];
+
+	Print("The NIC of an external Hyper-V virtual switch\n");
+	NODE_KMTEST *k = NodeKmTestNew(n, nicbridge_external_mac);
+	UINT index = NodeKmTestIndex(k);
+	Zero(&row, sizeof(row));
+	row.InterfaceIndex = index;
+	bool up = (k != NULL && GetIfEntry2(&row) == NO_ERROR);
+	if (NicBridgeCheck(ctx, up, "a second KM-TEST adapter comes up to be the NIC of an external Hyper-V switch", "adapter %s, interface %u", k != NULL ? "created" : "not created", index) == false)
+	{
+		NodeKmTestFree(k, true);
+		return;
+	}
+	Zero(alias, sizeof(alias));
+	UniToUtf8(alias, sizeof(alias) - 1, row.Alias);
+
+	UINT before = NodeL2BridgeIndex(alias, error, sizeof(error));
+	NicBridgeCheck(ctx, before == index, "NodeL2BridgeIndex takes the KM-TEST adapter while no virtual switch owns it", "'%s': interface %u, not %u: %s", alias, before, index, error);
+
+	Format(command, sizeof(command), "Get-VMSwitch -Name '%s' -ErrorAction SilentlyContinue | Remove-VMSwitch -Force; New-VMSwitch -Name '%s' -NetAdapterName '%s' -AllowManagementOS $true -ErrorAction Stop | Out-Null",
+		sw_name, sw_name, alias);
+	bool made = NicBridgePowerShell(command, out, sizeof(out));
+	if (NicBridgeCheck(ctx, made, "an external Hyper-V virtual switch takes the KM-TEST adapter as its NIC, with a vNIC of the host", "New-VMSwitch on '%s': %s", alias, out))
+	{
+		// The binding of the switch's protocol to its NIC, and the host's vNIC, as the network configuration shows them
+		UINT64 end = GetTickCount64() + NICBRIDGE_BOUND;
+		UINT refused = NodeL2BridgeIndex(alias, error, sizeof(error));
+		while (refused != 0 && GetTickCount64() < end)
+		{
+			Sleep(500);
+			refused = NodeL2BridgeIndex(alias, error, sizeof(error));
+		}
+		NicBridgeCheck(ctx, refused == 0 && InStr(error, "external Hyper-V virtual switch"), "a bridge refuses the NIC of an external Hyper-V virtual switch, which owns it, and names the host vNIC of the switch instead",
+			"'%s': interface %u: '%s'", alias, refused, error);
+
+		end = GetTickCount64() + NICBRIDGE_BOUND;
+		UINT vnic = NodeL2HyperVIndex(sw_name, error, sizeof(error));
+		while (vnic == 0 && GetTickCount64() < end)
+		{
+			Sleep(500);
+			vnic = NodeL2HyperVIndex(sw_name, error, sizeof(error));
+		}
+		NicBridgeCheck(ctx, vnic != 0 && vnic != index, "NodeL2HyperVIndex finds the host vNIC of the external switch, which a bridge takes instead of its NIC", "'%s': interface %u: %s", sw_name, vnic, error);
+		Print("  the external switch %s: its NIC interface %u, '%s', the host's vNIC interface %u\n", sw_name, index, alias, vnic);
+	}
+
+	// The switch goes before its NIC
+	Format(command, sizeof(command), "Remove-VMSwitch -Name '%s' -Force -ErrorAction Stop", sw_name);
+	bool removed = NicBridgePowerShell(command, out, sizeof(out));
+	if (made)
+	{
+		NicBridgeCheck(ctx, removed, "the external Hyper-V virtual switch goes again", "Remove-VMSwitch: %s", out);
+	}
+	NodeKmTestFree(k, true);
+}
+
 // A new empty data directory under the temp directory of the process, with a configuration store: no role, one worker
 static void NicBridgeNewDir(wchar_t *dir, UINT size)
 {
@@ -1593,7 +1763,7 @@ static void NicBridgeDeleteDir(wchar_t *dir)
 
 // nicbridge: the bridge of an L2 Network on the runner's NIC, on a stand-in of a Hyper-V switch and on a Hyper-V switch of
 // the runner (CORE-S3-3)
-RANZ_TEST("nicbridge", nicbridge_test, "NIC bridge: an L2 bridge of an L2 Network through the backend interface on the runner's NIC, on a KM-TEST adapter standing in for a Hyper-V switch and on a Hyper-V switch of the runner, with SeLow, XDP or Npcap through a stand-in of its pcap API (arguments: selow, xdp or npcap, then the Hyper-V switch and its device vNIC): foreign-MAC transmit and receive, coexistence with the host stack, the benchmark against SeLow, SeLow the default and Npcap only where it is installed (administrator rights, the drivers of ranz install).");
+RANZ_TEST("nicbridge", nicbridge_test, "NIC bridge: an L2 bridge of an L2 Network through the backend interface on the runner's NIC, on a KM-TEST adapter standing in for a Hyper-V switch and on a Hyper-V switch of the runner, with SeLow, XDP or Npcap through a stand-in of its pcap API (arguments: selow, xdp or npcap, then the Hyper-V switch and its device vNIC, then the name of an external switch to make): foreign-MAC transmit and receive, coexistence with the host stack, the benchmark against SeLow, SeLow the default and Npcap only where it is installed, the NIC of an external Hyper-V switch refused (administrator rights, the drivers of ranz install).");
 void nicbridge_test(UINT num, char **arg)
 {
 	NICBRIDGE_CTX ctx;
@@ -1608,6 +1778,7 @@ void nicbridge_test(UINT num, char **arg)
 	char *mode = (num >= 1 ? arg[0] : "selow");
 	char *vswitch = (num >= 3 ? arg[1] : NULL);
 	char *device = (num >= 3 ? arg[2] : NULL);
+	char *external = (num >= 4 ? arg[3] : NULL);
 	bool xdp = (StrCmpi(mode, "xdp") == 0);
 	bool npcap = (StrCmpi(mode, "npcap") == 0);
 	UINT num_ports = 0;
@@ -1626,9 +1797,10 @@ void nicbridge_test(UINT num, char **arg)
 	NodeL2Mac(nicbridge_standin_mac, key, NICBRIDGE_NETWORK);
 	NodeL2Mac(nicbridge_member_mac, key, NICBRIDGE_NETWORK + 1);
 	NodeL2Mac(nicbridge_other_mac, key, NICBRIDGE_NETWORK + 2);
+	NodeL2Mac(nicbridge_external_mac, key, NICBRIDGE_NETWORK + 3);
 
-	Print("NIC bridge test: an L2 bridge of an L2 Network on the runner's NIC, on a stand-in of a Hyper-V switch%s, mode %s\n",
-		vswitch != NULL ? " and on a Hyper-V switch of the runner" : "", mode);
+	Print("NIC bridge test: an L2 bridge of an L2 Network on the runner's NIC, on a stand-in of a Hyper-V switch%s, mode %s%s\n",
+		vswitch != NULL ? " and on a Hyper-V switch of the runner" : "", mode, external != NULL ? ", and the NIC of an external switch" : "");
 
 	NicBridgeNewDir(dir, sizeof(dir));
 	NODE *n = NewNode(dir);
@@ -1690,6 +1862,12 @@ void nicbridge_test(UINT num, char **arg)
 					NicBridgeRun(&ctx, n, ports[i], NodeL2XdpBackend(), true);
 				}
 			}
+		}
+
+		// Last, as it changes the network configuration of the host: the NIC of an external switch
+		if (external != NULL)
+		{
+			NicBridgeExternal(&ctx, n, external);
 		}
 	}
 
