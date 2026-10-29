@@ -348,17 +348,19 @@ static bool NodeSourceGroupOf(const NODE_SOURCE_GROUP_TABLE *t, UINT vrf_id, con
 }
 
 // The record of *size bytes at record, the VRF tag of its VRF and the packet of the host in the VRF vrf_id, as it goes to
-// the peer of the next hop hop of the tables v over its Noise session: with the header of frame version 1 and the source
-// group of the packet in the NODE_FRAME_ROOM bytes before record, which the caller holds, when the peer takes records of
-// frame version 1, the record is of the VRF of the packet, as a record of a leaked route is not, and the node has a source
-// group for the packet; the record as it is otherwise. Its start, with *size its size. The caller reads v as a reader of
-// the table snapshot of the node.
-const UCHAR *NodeSourceGroupWrap(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id, UCHAR *record, UINT *size) {
+// the peer of the next hop hop of the tables v over its Noise session, or over the datagram path of the peer agent: with
+// the header of frame version 1 and the source group of the packet in the NODE_FRAME_ROOM bytes before record, which the
+// caller holds, when the peer takes records of frame version 1, the record is of the VRF of the packet, as a record of a
+// leaked route is not, the node has a source group for the packet, and the record with the header fits max, the largest
+// payload of the path that it takes (NOISE_MAX_PAYLOAD on a session, PEER_MAX_PAYLOAD on the datagram path); the record as
+// it is otherwise, which the peer judges by the map of address to group, so that a record that fits its path without the
+// header still goes. Its start, with *size its size. The caller reads v as a reader of the table snapshot of the node.
+const UCHAR *NodeSourceGroupWrap(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id, UCHAR *record, UINT *size, UINT max) {
 	const NODE_SOURCE_GROUP_TABLE *t = (v != NULL ? v->SourceGroups : NULL);
 	NODE_SOURCE_GROUP g;
 
 	if (t == NULL || record == NULL || size == NULL || hop >= t->NumPeers || t->Peers[hop].FrameVersion != NODE_FRAME_VERSION ||
-	    *size < NODE_OVERLAY_VRF_TAG || *size > NOISE_MAX_PAYLOAD - NODE_FRAME_ROOM || READ_UINT(record) != vrf_id ||
+	    *size < NODE_OVERLAY_VRF_TAG || max < NODE_FRAME_ROOM || *size > max - NODE_FRAME_ROOM || READ_UINT(record) != vrf_id ||
 	    NodeSourceGroupOf(t, vrf_id, record + NODE_OVERLAY_VRF_TAG, *size - NODE_OVERLAY_VRF_TAG, &g) == false)
 		return record;
 

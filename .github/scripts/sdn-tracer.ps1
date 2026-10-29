@@ -18,9 +18,10 @@ $ErrorActionPreference = 'Stop'
 # the API must also show the Capabilities that each node put in its Hello (ONE-3, #312): the architecture of
 # this runner, and SeLow and the XDP runtime as this machine holds them, which the script reads from the
 # registry and the files of Windows without the code of the node;
-# both nodes report the Capability tags, so each judges the records of its Noise session by their source group
-# (SDN-87, #386), and the counters of the tag mode session that each reports must reach the telemetry of the API, the
-# echo request and the echo reply of the other node at least, with no claim refused;
+# both nodes report the Capability tags, so the controller gives each the source group of the other, which the records
+# of their Noise session carry (SDN-87, #386): the counters of the tag mode session that each reports must reach the
+# telemetry of the API, with at least two records of the other node that it judged by the group that they carried,
+# and no claim refused;
 # once the controller stopped, they must still exchange it: they forward on the state they applied
 # last. vpntest creates the file $pinged after the first echoes and waits for the control streams
 # to go down; this script then checks the API and stops the controller. Once it stopped, vpntest also
@@ -181,14 +182,15 @@ try {
 	Write-Host 'the Hello of each node carried its Capabilities, which are the ones of this machine'
 
 	# The source groups (SDN-87, #386): the counters of the tag mode session that each node reported, in the telemetry of
-	# the API, which ranz shows in no command of its own
+	# the API, which ranz shows in no command of its own. Each node judged at least two records of the other by the source
+	# group that they carried, the group that the controller gave the other node, before vpntest created $pinged
 	$secret = (Get-Content -LiteralPath $tokenFile -Raw).Trim()
 	$end = (Get-Date).AddSeconds($waitSeconds)
 	while ($true) {
 		$telemetry = Invoke-RestMethod -Uri "$api/api/v1/telemetry" -Headers @{ Authorization = "Bearer $secret" } -SkipCertificateCheck
 		$judged = @($telemetry.nodes | Where-Object { $_ -and $nodes.Contains($_.node) } | Where-Object {
 			$session = @($_.sourceGroups | Where-Object { $_ -and $_.mode -eq 'session' })
-			$session.Count -eq 1 -and $session[0].carried + $session[0].missing + $session[0].ignored -ge 2 -and $session[0].refused -eq 0
+			$session.Count -eq 1 -and $session[0].carried -ge 2 -and $session[0].refused -eq 0
 		})
 		if ($judged.Count -eq $nodes.Count) { break }
 		if ((Get-Date) -ge $end) { throw "the telemetry of the API does not show the source groups of both nodes: $($telemetry | ConvertTo-Json -Compress -Depth 6)" }

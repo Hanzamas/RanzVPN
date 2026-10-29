@@ -994,12 +994,13 @@ bool NodeOverlayInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size) {
 	TRANSPORT_NOISE *s = ReadPointerAcquire((PVOID const volatile *)&peer->Session);
 	// A link of kind vxlan or geneve of the VRF of the record carries it in place of the session (NodeLink.c; SDN-76, #356)
 	bool plain = (NodeLinkKind(v, hop, READ_UINT(record)) != CONTROL_LINK_NOISE);
-	// The source group of the packet goes before the record to a peer that takes records of frame version 1, on its session
-	// or on the datagram path; a link carries it in its own header (NodeSourceGroup.c; SDN-87, #386)
-	UINT frame_size = size + NODE_OVERLAY_VRF_TAG;
-	const UCHAR *frame = (plain ? record : NodeSourceGroupWrap(v, hop, vrf_id, record, &frame_size));
 	// The datagram path of the peer agent carries it while the peer has no session (NodeAgent.c; CORE-S5-5, #411)
 	bool datagram = (allowed && s == NULL && plain == false && NodeAgentHasPath(n, peer->Key));
+	// The source group of the packet goes before the record to a peer that takes records of frame version 1, on its session
+	// or on the datagram path, when the record fits the payload of that path with it; a link carries it in its own header
+	// (NodeSourceGroup.c; SDN-87, #386)
+	UINT frame_size = size + NODE_OVERLAY_VRF_TAG;
+	const UCHAR *frame = (plain ? record : NodeSourceGroupWrap(v, hop, vrf_id, record, &frame_size, datagram ? PEER_MAX_PAYLOAD : NOISE_MAX_PAYLOAD));
 	// The MTU of the VRF clamps the MSS of a TCP SYN as the overlay sees it, after the 1:1 NAT rules, and the rate limits
 	// of the VRF and the node may drop it (NodeShape.c)
 	bool ok = (allowed && (s != NULL || plain || datagram) && NodeShapeOutput(n, v, vrf_id, record + NODE_OVERLAY_VRF_TAG, size) && (plain ? NodeLinkSend(v, hop, record, size, true) : (datagram ? NodeAgentSend(n, peer->Key, frame, frame_size) : TransportNoiseSend(s, NOISE_RECORD_DATA, frame, frame_size))));

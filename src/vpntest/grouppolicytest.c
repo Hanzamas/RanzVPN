@@ -25,6 +25,12 @@
 //   geneve so is admin with the tag set of another group; and a packet from 10.0.0.99, an address that no route of red
 //   leads to node-a, is in no group and dropped. In the tag mode off the option is ignored and the map judges each
 //   packet, and node-a sends none, which node-b counts as missing.
+// - The controller deletes Device phone: its Generation goes in at node-b, while node-a forwards on the one before, which
+//   still holds phone, as a node that the controller cannot reach does. Guest and server keep their group IDs and tag sets
+//   (desired/sourcegroup.go), so node-b still takes the claim of guest on a packet from 10.0.0.1 and drops the packet as
+//   guest; the packet of 10.0.0.50 has no route of red to node-a any more and is dropped before any group; and once node-a
+//   stamps admin, the retired group of phone, on the packets of its own address, node-b drops them as an unknown group and
+//   counts them as refused.
 // - The Generations roll out: node-a reports the Capability tags and stamps admin on the records that it sends node-b,
 //   while the state of node-b gives node-a the frame version 0 and none of its groups, as until the Generation of node-b
 //   goes in, or while the controller cannot reach node-b. Node-b ignores those claims and judges the packets by the map:
@@ -77,8 +83,9 @@
 #define	GPTEST_A				0
 #define	GPTEST_B				1
 
-// The groups of red, as the controller numbers them (desired/sourcegroup.go): one for each set of tags of an endpoint,
-// admin, guest and server in name order, and a bit of the tag set for each tag of red in name order
+// The groups of red, as the controller numbers them when red comes in one intent (desired/sourcegroup.go): one for each set
+// of tags of an endpoint, admin, guest and server in name order, and a bit of the tag set for each tag of red in name
+// order. A number stays with its set of tags or its tag for good, also once no endpoint has them.
 #define	GPTEST_ADMIN			1
 #define	GPTEST_GUEST			2
 #define	GPTEST_SERVER			3
@@ -171,6 +178,20 @@ static GPTEST_CASE gptest_off[] =
 	{"off: ... and the one from 10.0.0.50 as admin: it arrives", false, GPTEST_PHONE, false, 0, 0, GPTEST_MISSING, true},
 };
 
+// The packets of node-a's host over noise once node-b runs the Generation that deletes Device phone and node-a the one
+// before, which holds phone: guest keeps its group ID and tag set, and admin, the group of phone, is retired
+static GPTEST_CASE gptest_kept[] =
+{
+	{"a packet from 10.0.0.1 carries guest, whose group ID and tag set stay as they were: node-b takes it as guest, which admin-in does not allow: dropped", false, "10.0.0.1", false, 0, 0, GPTEST_CARRIED, false},
+	{"one from 10.0.0.50, the address of phone, which no route of red leads to node-a any more, is in no group: dropped", false, GPTEST_PHONE, false, 0, 0, GPTEST_UNCOUNTED, false},
+};
+
+// ... while node-a stamps admin, the retired group of phone, on the packets of its own address
+static GPTEST_CASE gptest_retired[] =
+{
+	{"a packet from 10.0.0.1 that claims admin, the retired group of phone, which node-a may no longer assert: dropped as an unknown group, counted as refused", false, "10.0.0.1", false, 0, 0, GPTEST_REFUSED, false},
+};
+
 // The packets of node-a's host over noise while node-a stamps admin on them and node-b does not know the groups of node-a
 // yet
 static GPTEST_CASE gptest_rollout[] =
@@ -196,6 +217,7 @@ typedef struct GPTEST_NODE
 	USHORT VxlanPort;					// The UDP port of its socket of VXLAN ...
 	USHORT GenevePort;					// ... and of Geneve
 	UINT64 Generation;					// The Generation of the last state that the test applied
+	bool NoPhone;						// Its next states hold no Device phone: the controller deleted it
 	SRWLOCK Lock;						// Arrivals, Last and LastSize
 	volatile LONG Arrivals;				// Packets that the host took
 	UCHAR Last[GPTEST_SIZE * 2];		// The last one, as much as fits
@@ -538,7 +560,8 @@ static void GpTestPhone(CONTROL_DEVICE *d, bool gateway, bool grouped)
 
 // Apply the next Generation of node i: its addresses, its tag and its tunnel endpoint; VRF red with the link of kind and
 // the tag mode mode, whose policy node-b enforces with the rule admin-in and node-a not at all; the other node as its
-// peer; and the Device phone. With tagged, both nodes report the Capability tags, as the controller then makes their
+// peer; and the Device phone, unless the node's states hold it no more (NoPhone). With tagged, both nodes report the
+// Capability tags, as the controller then makes their
 // states: node-a's own group in red is own_group with the tag set own_tags, node-b's server, each node's Peer object names
 // the group of the other and the frame version 1, and phone has its group. Without, node-a is a node without the
 // Capability: its state names no group and no frame version, and node-b's names no group of node-a and no frame version,
@@ -611,10 +634,13 @@ static bool GpTestApply(GPTEST_CTX *ctx, UINT i, UINT kind, UINT mode, bool tagg
 	st->NumPeers = 1;
 	st->Peers = p;
 
-	// The Device phone, whose gateway node-a is
-	GpTestPhone(phone, b == false, tagged || b);
-	st->NumDevices = 1;
-	st->Devices = phone;
+	// The Device phone, whose gateway node-a is, unless the controller deleted it
+	if (t->NoPhone == false)
+	{
+		GpTestPhone(phone, b == false, tagged || b);
+		st->NumDevices = 1;
+		st->Devices = phone;
+	}
 
 	bool ok = NodeOverlayApply(t->Node, st);
 
@@ -880,6 +906,33 @@ static void GpTestInjected(GPTEST_CTX *ctx, UINT kind)
 	}
 }
 
+// The controller deletes Device phone, over noise: its Generation goes in at node-b, whose state then holds no phone and
+// gives node-a guest alone, while node-a runs the one before, which holds phone, as a node that the controller cannot reach
+// forwards on the state that it applied last. Guest and server keep their numbers and admin, the group of phone, is
+// retired, so a claim of guest is still taken and a claim of admin is an unknown group.
+static void GpTestRetired(GPTEST_CTX *ctx)
+{
+	GPTEST_NODE *b = &ctx->Nodes[GPTEST_B];
+	char what[MAX_SIZE];
+
+	Print("[the controller deletes Device phone, whose group admin is retired: node-b runs that Generation, node-a the one before, over noise]\n");
+	b->NoPhone = true;
+	bool applied = GpTestApply(ctx, GPTEST_B, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, 0, 0) &&
+		GpTestApply(ctx, GPTEST_A, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_GUEST, GPTEST_GUEST_TAGS) && GpTestWaitLinks(ctx);
+	if (GpTestCheck(ctx, applied, "The link of red is noise; the state of node-b holds no phone and gives node-a guest alone, and the state of node-a holds phone still",
+		"not within %u ms", GPTEST_BOUND))
+	{
+		GpTestCases(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_SESSION, gptest_kept, sizeof(gptest_kept) / sizeof(gptest_kept[0]));
+
+		Format(what, sizeof(what), "  noise: node-a stamps admin, the retired group of phone, on the packets of its own address, one Generation of node-a");
+		if (GpTestCheck(ctx, GpTestApplyA(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_ADMIN, GPTEST_ADMIN_TAGS), what, "not within %u ms", GPTEST_BOUND))
+		{
+			GpTestCases(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_SESSION, gptest_retired, sizeof(gptest_retired) / sizeof(gptest_retired[0]));
+		}
+	}
+	b->NoPhone = false;
+}
+
 // The nodes, their overlays and the harness tunnel endpoint, and the first Generation of each: noise, both with the
 // Capability tags
 static bool GpTestOpen(GPTEST_CTX *ctx, TRANSPORT *loopback)
@@ -957,7 +1010,8 @@ static void GpTestClose(GPTEST_CTX *ctx)
 	}
 }
 
-// The cases over noise, vxlan and geneve, each in a Generation of its own of both nodes, then the records of frame version 0
+// The cases over noise, vxlan and geneve, each in a Generation of its own of both nodes, then the retired group of phone,
+// the rollout of the Generations and the records of frame version 0
 static void GpTestRun(GPTEST_CTX *ctx)
 {
 	UINT kinds[3] = {CONTROL_LINK_NOISE, CONTROL_LINK_VXLAN, CONTROL_LINK_GENEVE};
@@ -978,6 +1032,9 @@ static void GpTestRun(GPTEST_CTX *ctx)
 			GpTestInjected(ctx, kind);
 		}
 	}
+
+	// The Generation that deletes Device phone at node-b, and the one before at node-a
+	GpTestRetired(ctx);
 
 	// One Generation of each node: node-b's without the groups of node-a, node-a's that stamps admin
 	Print("[the Generations roll out: node-a stamps its records before node-b knows its groups, over noise]\n");

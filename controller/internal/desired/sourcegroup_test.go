@@ -57,7 +57,7 @@ func TestSourceGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	tagged := map[string]bool{"gw": true, "db": true, "lab": true}
-	SourceGroups(in, states, func(node string) bool { return tagged[node] })
+	SourceGroups(in, states, NumberGroups(in, nil), func(node string) bool { return tagged[node] })
 
 	node := func(name string) *controlpb.NodeConfig {
 		return states[name][Key{controlpb.Kind_KIND_NODE, name}].GetNode()
@@ -141,8 +141,8 @@ func TestSourceGroupsTagMode(t *testing.T) {
 	}
 }
 
-// A VRF gives a bit of the tag set to its first 64 tags in name order: the tags after them are in no tag set, and the
-// group still tells them apart.
+// A VRF gives a bit of the tag set to 64 tags at most, in name order when they come in one intent: the tags after them
+// are in no tag set, and the group still tells them apart.
 func TestSourceGroupsTagBits(t *testing.T) {
 	keys := []string{key1, key2, key3, key4, "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="}
 	rs := []intent.Resource{res(intent.KindVRF, "dc", `{"id": 30, "ula": "fd12:3456:789c::/48"}`)}
@@ -161,11 +161,154 @@ func TestSourceGroupsTagBits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	SourceGroups(in, states, func(string) bool { return true })
+	SourceGroups(in, states, NumberGroups(in, nil), func(string) bool { return true })
 	for n, want := range []string{"30 1/0xffff", "30 2/0xffff0000", "30 3/0xffff00000000", "30 4/0xffff000000000000", "30 5/0x0"} {
 		name := fmt.Sprintf("n%d", n)
 		if got := groupsText(states[name][Key{controlpb.Kind_KIND_NODE, name}].GetNode().GetGroups()); got != want {
 			t.Errorf("the groups of %s are %q, want %q", name, got, want)
 		}
+	}
+}
+
+// numbered returns the states that in compiles to, with the source groups of every Node by the numbers of before and those
+// that in takes beside them, and those numbers.
+func numbered(t *testing.T, in intent.Intent, before GroupNumbers) (map[string]State, GroupNumbers) {
+	t.Helper()
+	states, err := Compile(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	numbers := before.With(NumberGroups(in, before))
+	SourceGroups(in, states, numbers, func(string) bool { return true })
+	return states, numbers
+}
+
+// SDN-87: the numbers of the source groups stay. VRF dc of sourceGroupResources numbers the sets of tags [] 1 (old), [db] 2,
+// [ops] 3 (Device phone) and [web] 4 (gw and lab), and the tags db, ops and web are the bits 0, 1 and 2. Deleting Device phone
+// takes the set [ops] and the tag ops out of dc, and gives no number: the other groups keep their group IDs and tag sets,
+// web 4/0x4 and db 2/0x1, where numbers by rank would make web 3/0x2, the numbers of ops in the Generation before.
+func TestNumberGroupsKeep(t *testing.T) {
+	in, err := intent.Apply(intent.New(), intent.Document{Resources: sourceGroupResources(intent.TagModeTrustedUnderlay)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, numbers := numbered(t, in, nil)
+	for id, want := range map[uint32]string{30: "[]=1 [db]=2 [ops]=3 [web]=4; db:0 ops:1 web:2", 10: "[]=1 [web]=2; web:0"} {
+		if got := numbers[id].String(); got != want {
+			t.Errorf("the numbers of VRF %d are %q, want %q", id, got, want)
+		}
+	}
+
+	without, err := intent.Delete(in, intent.KindDevice, "phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added := NumberGroups(without, numbers); len(added) != 0 {
+		t.Errorf("the deletion of Device phone gave the numbers %v", added)
+	}
+	states, after := numbered(t, without, numbers)
+	if got := after[30].String(); got != "[]=1 [db]=2 [ops]=3 [web]=4; db:0 ops:1 web:2" {
+		t.Errorf("the numbers of VRF dc once Device phone is deleted are %q, want those of before", got)
+	}
+	node := func(name string) *controlpb.NodeConfig {
+		return states[name][Key{controlpb.Kind_KIND_NODE, name}].GetNode()
+	}
+	for _, c := range []struct {
+		what, got, want string
+	}{
+		{"the groups of gw", groupsText(node("gw").GetGroups()), "10 2/0x1, 30 4/0x4"},
+		{"the groups of db", groupsText(node("db").GetGroups()), "30 2/0x1"},
+		{"the groups of lab", groupsText(node("lab").GetGroups()), "30 4/0x4"},
+		{"the groups of old", groupsText(node("old").GetGroups()), "10 1/0x0, 30 1/0x0"},
+		{"the Peer gw of db", groupsText(states["db"][Key{controlpb.Kind_KIND_PEER, "gw"}].GetPeer().GetGroups()), "30 4/0x4"},
+	} {
+		if c.got != c.want {
+			t.Errorf("once Device phone is deleted, %s are %q, want %q", c.what, c.got, c.want)
+		}
+	}
+	if o, ok := states["gw"][Key{controlpb.Kind_KIND_DEVICE, "phone"}]; ok {
+		t.Errorf("the state of gw still holds Device phone: %v", o)
+	}
+}
+
+// SDN-87: a number that a VRF gave never goes to another set of tags or tag. Once Device phone is deleted, the group ID 3 of
+// [ops] and the bit 1 of ops are retired: a new Device tablet with the tag admin takes the group ID 5 and the bit 3, the
+// next after the largest ones, and not 3 and 1, which a Node that still holds phone reads as ops. Phone made again with the
+// tag ops takes its numbers of before, which mean the same tags in every Generation.
+func TestNumberGroupsRetired(t *testing.T) {
+	const tabletKey = "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
+	in, err := intent.Apply(intent.New(), intent.Document{Resources: sourceGroupResources(intent.TagModeTrustedUnderlay)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, numbers := numbered(t, in, nil)
+	without, err := intent.Delete(in, intent.KindDevice, "phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, numbers = numbered(t, without, numbers)
+
+	tablet, err := intent.Apply(without, intent.Document{Resources: []intent.Resource{
+		res(intent.KindDevice, "tablet", `{"network": "dc-net", "gateway": "gw", "publicKey": "`+tabletKey+`", "tags": ["admin"]}`),
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := NumberGroups(tablet, numbers)[30].String(); got != "[admin]=5; admin:3" {
+		t.Errorf("Device tablet takes the numbers %q, want the group ID 5 and the bit 3, after the retired ones of ops", got)
+	}
+	states, numbers := numbered(t, tablet, numbers)
+	seen := map[uint32]string{}
+	for set, g := range numbers[30].Groups {
+		if other, ok := seen[g]; ok {
+			t.Errorf("the group ID %d went to the sets [%s] and [%s]", g, other, set)
+		}
+		seen[g] = set
+	}
+	for _, name := range []string{"gw", "db", "lab"} {
+		if d := states[name][Key{controlpb.Kind_KIND_DEVICE, "tablet"}].GetDevice(); d.GetGroup() != 5 || d.GetTagSet() != 0x8 {
+			t.Errorf("Device tablet at %s has the group %d and the tag set %#x, want 5 and 0x8", name, d.GetGroup(), d.GetTagSet())
+		}
+	}
+
+	again, err := intent.Apply(tablet, intent.Document{Resources: []intent.Resource{
+		res(intent.KindDevice, "phone", `{"network": "dc-net", "gateway": "gw", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "tags": ["ops"]}`),
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added := NumberGroups(again, numbers); len(added) != 0 {
+		t.Errorf("Device phone made again gave the numbers %v", added)
+	}
+	states, _ = numbered(t, again, numbers)
+	if d := states["gw"][Key{controlpb.Kind_KIND_DEVICE, "phone"}].GetDevice(); d.GetGroup() != 3 || d.GetTagSet() != 0x2 {
+		t.Errorf("Device phone made again has the group %d and the tag set %#x at gw, want 3 and 0x2, its numbers of before", d.GetGroup(), d.GetTagSet())
+	}
+}
+
+// A VRF that gave its largest group ID, or its MaxTagBits bits, gives no more: a Node whose set of tags has no group ID in
+// it has no group there, a Device none, and a tag without a bit is in no tag set. The numbers of another VRF are its own.
+func TestNumberGroupsFull(t *testing.T) {
+	in, err := intent.Apply(intent.New(), intent.Document{Resources: sourceGroupResources(intent.TagModeTrustedUnderlay)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := GroupNumbers{30: {Groups: map[string]uint32{"gone": maxGroup}, Bits: map[string]uint{"gone": MaxTagBits - 1}}}
+	added := NumberGroups(in, full)
+	if v, ok := added[30]; ok {
+		t.Errorf("VRF dc, which gave its last group ID and its last bit, gave %q", v)
+	}
+	if got := added[10].String(); got != "[]=1 [web]=2; web:0" {
+		t.Errorf("VRF corp took the numbers %q, want its own", got)
+	}
+	states, _ := numbered(t, in, full)
+	if got := groupsText(states["gw"][Key{controlpb.Kind_KIND_NODE, "gw"}].GetNode().GetGroups()); got != "10 2/0x1" {
+		t.Errorf("the groups of gw are %q, want its group of corp alone", got)
+	}
+	if p := states["gw"][Key{controlpb.Kind_KIND_PEER, "db"}].GetPeer(); len(p.GetGroups()) != 0 || p.GetFrameVersion() != FrameVersion {
+		t.Errorf("the Peer db of gw is %v, want no group and the frame version %d", p, FrameVersion)
+	}
+	if d := states["gw"][Key{controlpb.Kind_KIND_DEVICE, "phone"}].GetDevice(); d.GetGroup() != 0 || d.GetTagSet() != 0 {
+		t.Errorf("Device phone at gw has the group %d and the tag set %#x, want none", d.GetGroup(), d.GetTagSet())
 	}
 }

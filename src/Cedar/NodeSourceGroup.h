@@ -55,7 +55,7 @@ CONTROL_SOURCE_GROUPS *NodeSourceGroupStart(NODE *n);
 void NodeSourceGroupStop(NODE *n);
 void NodeSourceGroupAttach(NODE *n, NODE_VRF_TABLES *v, const CONTROL_STATE *st);
 void NodeFreeSourceGroupTable(NODE_SOURCE_GROUP_TABLE *t);
-const UCHAR *NodeSourceGroupWrap(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id, UCHAR *record, UINT *size);
+const UCHAR *NodeSourceGroupWrap(NODE_VRF_TABLES *v, UINT hop, UINT vrf_id, UCHAR *record, UINT *size, UINT max);
 bool NodeSourceGroupStamp(NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size, VXLAN_GROUP *group);
 bool NodeSourceGroupInbound(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT hop, const NODE_SOURCE_CLAIM *claim, const UCHAR *packet, UINT size);
 void NodeSourceGroupGetStatus(NODE *n, NODE_SOURCE_GROUP_STATUS *st);

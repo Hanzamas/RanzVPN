@@ -438,8 +438,10 @@ void VxlanSetGroupReceiver(VXLAN *v, VXLAN_RECV_GROUP_PROC *recv) {
 // Send frame, size bytes, on the VNI vni to the one VTEP vtep with the source group group (SDN-87, #386), as VxlanSendTo
 // sends it without one: in the group policy extension of the VXLAN header, the group ID alone, or behind the Geneve
 // header in the option of the source group, the group ID and the tag set (VxlanGroup.c). A group that carries nothing,
-// or none, sends the frame as VxlanSendTo does. False when vni has more than 24 bits, the frame is shorter than
-// VXLAN_MIN_FRAME or does not fit a datagram with its header, or the datagram could not be sent.
+// or none, sends the frame as VxlanSendTo does, and so does a frame that does not fit a datagram with the option, which
+// the frames up to VXLAN_MAX_FRAME bytes fit without it: the frame goes without its source group, as a frame that the
+// module sent before the source groups. False when vni has more than 24 bits, the frame is shorter than VXLAN_MIN_FRAME
+// or longer than VXLAN_MAX_FRAME, or the datagram could not be sent.
 bool VxlanSendToGroup(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXLAN_GROUP *group, const void *frame, UINT size) {
 	UCHAR buf[VXLAN_MAX_DATAGRAM];
 	UINT header = VXLAN_HEADER_SIZE;
@@ -452,7 +454,7 @@ bool VxlanSendToGroup(VXLAN *v, UINT vni, const VXLAN_ADDR *vtep, const VXLAN_GR
 	if (vtep->Encap == VXLAN_ENCAP_GENEVE)
 		header = GENEVE_HEADER_SIZE + GENEVE_GROUP_OPTION;
 	if (size > VXLAN_MAX_DATAGRAM - header)
-		return false;
+		return VxlanSendTo(v, vni, vtep, frame, size);
 
 	if (vtep->Encap == VXLAN_ENCAP_GENEVE) {
 		// The Geneve header with the length of its one option, in 4-byte words, and the option

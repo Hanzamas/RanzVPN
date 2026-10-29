@@ -21,6 +21,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/desired"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rqlitetest"
 	"github.com/Hanzamas/RanzVPN/controller/internal/telemetry"
 )
 
@@ -52,8 +53,22 @@ func stateObject(s *sim, kind controlpb.Kind, name string) *controlpb.Object {
 	return st[desired.Key{Kind: kind, Name: name}]
 }
 
+// storedNumbers returns the numbers of the source groups that the store of the controller holds.
+func (h *harness) storedNumbers() desired.GroupNumbers {
+	h.t.Helper()
+	stored, err := h.st.SourceGroups(context.Background())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	out := desired.GroupNumbers{}
+	for id, v := range stored {
+		out[id] = desired.VrfGroupNumbers{Groups: v.Groups, Bits: v.Bits}
+	}
+	return out
+}
+
 // checkGroupState checks that the state that the simulated node s built is the full state that the intent of the
-// controller compiles to for it, with the source groups of the Nodes tagged.
+// controller compiles to for it, with the source groups of the Nodes tagged by the numbers that the store holds.
 func (h *harness) checkGroupState(s *sim, tagged ...string) {
 	h.t.Helper()
 	rs, err := h.api.Resources(context.Background())
@@ -73,7 +88,7 @@ func (h *harness) checkGroupState(s *sim, tagged ...string) {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	desired.SourceGroups(capped, states, func(node string) bool { return slices.Contains(tagged, node) })
+	desired.SourceGroups(capped, states, h.storedNumbers(), func(node string) bool { return slices.Contains(tagged, node) })
 	gen, got := s.State()
 	if want := states[s.name]; !desired.Equal(got, want) {
 		h.t.Errorf("%s: the state at generation %d differs from the compiled intent with the source groups of %v:\n--- node\n%s\n--- intent\n%s",
@@ -227,6 +242,108 @@ func TestSourceGroupsReachTheNodes(t *testing.T) {
 	h.waitNode("lab-1", 4, true)
 	h.checkGroupState(gw, "gw-1", "db")
 	h.checkGroupState(db, "gw-1", "db")
+}
+
+// TestSourceGroupNumbersStay is the stable numbering of SDN-87 in the conformance seam. In VRF dc of sourcegroups.json the
+// sets of tags are numbered [db] 1, [ops] 2 (Device phone) and [web] 3 (gw-1 and lab-1), and the tags db, ops and web are
+// the bits 0, 1 and 2. Deleting Device phone retires [ops] and ops: gw-1 and db get their next Generation without phone,
+// and their groups keep their numbers, db 1/0x1 and web 3/0x4, where numbers by rank would make web 2/0x2, which a Node
+// that still holds phone reads as ops. The store keeps the retired numbers: a restart of the controller and of rqlite gives
+// no Node a Generation, and a new Device tablet with the tag admin takes the group ID 4 and the bit 3, never the retired 2
+// and 1. Each state is the compiled intent with the numbers that the store holds.
+func TestSourceGroupNumbersStay(t *testing.T) {
+	const tabletKey = "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
+	h := newHarness(t)
+	h.apply("sourcegroups.json")
+	gw := h.newSim("gw-1", keyBranch1)
+	gw.Capabilities = groupCaps(true, true)
+	gw.start(h)
+	gw.update(t)
+	h.waitNode("gw-1", 2, true)
+	db := h.newSim("db", keyBranch2)
+	db.Capabilities = groupCaps(true, false)
+	db.start(h)
+	db.update(t)
+	gw.update(t)
+	h.settle(map[string]uint64{"gw-1": 3, "db": 2})
+
+	// The groups of gw-1 and db, which keep their numbers whatever goes
+	check := func(when string) {
+		t.Helper()
+		for _, c := range []struct {
+			what, got, want string
+		}{
+			{"the groups of gw-1", groupsOf(stateObject(gw, controlpb.Kind_KIND_NODE, "gw-1").GetNode().GetGroups()), "30 3/0x4"},
+			{"the groups of db", groupsOf(stateObject(db, controlpb.Kind_KIND_NODE, "db").GetNode().GetGroups()), "30 1/0x1"},
+			{"the Peer db of gw-1", groupsOf(stateObject(gw, controlpb.Kind_KIND_PEER, "db").GetPeer().GetGroups()), "30 1/0x1"},
+			{"the Peer gw-1 of db", groupsOf(stateObject(db, controlpb.Kind_KIND_PEER, "gw-1").GetPeer().GetGroups()), "30 3/0x4"},
+		} {
+			if c.got != c.want {
+				t.Errorf("%s: %s are %q, want %q", when, c.what, c.got, c.want)
+			}
+		}
+		h.checkGroupState(gw, "gw-1", "db")
+		h.checkGroupState(db, "gw-1", "db")
+	}
+	check("with Device phone")
+	if d := stateObject(gw, controlpb.Kind_KIND_DEVICE, "phone").GetDevice(); d.GetGroup() != 2 || d.GetTagSet() != 0x2 {
+		t.Errorf("Device phone at gw-1 has the group %d and the tag set %#x, want 2 and 0x2", d.GetGroup(), d.GetTagSet())
+	}
+	if got := h.storedNumbers()[30].String(); got != "[db]=1 [ops]=2 [web]=3; db:0 ops:1 web:2" {
+		t.Errorf("the store holds the numbers %q of VRF dc", got)
+	}
+
+	// Device phone goes: no group changes its number, and the store keeps those of [ops] and ops
+	res, err := h.api.Delete(context.Background(), intent.KindDevice, "phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []controller.NodeGeneration{{Name: "db", Generation: 3}, {Name: "gw-1", Generation: 4}, {Name: "lab-1", Generation: 2}}; !equalGenerations(res.Nodes, want) {
+		t.Errorf("the deletion of Device phone changed %+v, want %+v", res.Nodes, want)
+	}
+	gw.update(t)
+	db.update(t)
+	h.settle(map[string]uint64{"gw-1": 4, "db": 3})
+	check("once Device phone is deleted")
+	if o := stateObject(gw, controlpb.Kind_KIND_DEVICE, "phone"); o != nil {
+		t.Errorf("the state of gw-1 still holds Device phone: %v", o)
+	}
+	if got := h.storedNumbers()[30].String(); got != "[db]=1 [ops]=2 [web]=3; db:0 ops:1 web:2" {
+		t.Errorf("once Device phone is deleted, the store holds the numbers %q of VRF dc, want those of before", got)
+	}
+
+	// A restart of the controller and of rqlite: the numbers come back from the store, so no Node gets a Generation
+	h.stop()
+	for _, s := range []*sim{gw, db} {
+		if err := s.end(t); err == nil {
+			t.Errorf("the stream of %s ended without an error when the controller stopped", s.name)
+		}
+	}
+	h.rq.Stop()
+	rqlitetest.Restart(t, h.rq)
+	h.start()
+	gw.start(h)
+	db.start(h)
+	h.settle(map[string]uint64{"gw-1": 4, "db": 3})
+	check("after the restart")
+
+	// A new set of tags and a new tag take the numbers after the largest ones, never the retired ones of [ops] and ops
+	res = h.applyJSON(`{"kind": "Device", "name": "tablet", "spec": {"network": "dc-net", "gateway": "gw-1", "publicKey": "` + tabletKey + `", "tags": ["admin"]}}`)
+	if want := []controller.NodeGeneration{{Name: "db", Generation: 4}, {Name: "gw-1", Generation: 5}, {Name: "lab-1", Generation: 3}}; !equalGenerations(res.Nodes, want) {
+		t.Errorf("Device tablet changed %+v, want %+v", res.Nodes, want)
+	}
+	gw.update(t)
+	db.update(t)
+	h.settle(map[string]uint64{"gw-1": 5, "db": 4})
+	check("with Device tablet")
+	for _, s := range []*sim{gw, db} {
+		if d := stateObject(s, controlpb.Kind_KIND_DEVICE, "tablet").GetDevice(); d.GetGroup() != 4 || d.GetTagSet() != 0x8 {
+			t.Errorf("Device tablet at %s has the group %d and the tag set %#x, want 4 and 0x8", s.name, d.GetGroup(), d.GetTagSet())
+		}
+	}
+	if got := h.storedNumbers()[30].String(); got != "[db]=1 [ops]=2 [web]=3 [admin]=4; db:0 ops:1 web:2 admin:3" {
+		t.Errorf("with Device tablet, the store holds the numbers %q of VRF dc", got)
+	}
 }
 
 // TestSourceGroupCountersReachTheExport is the seventh criterion of SDN-87 at the controller: the counters by tag mode

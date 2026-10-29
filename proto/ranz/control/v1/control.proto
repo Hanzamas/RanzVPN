@@ -101,15 +101,16 @@
 // does not know.
 //
 // Source groups (SDN-87, #386): a packet between two nodes can carry the identity of its source, its
-// group ID and its tag set. The controller numbers the groups of each VRF, one for each set of tags
-// of an endpoint of the VRF (a node with the Groups of its owner, or a Device), and gives each of
-// the first 64 tags of the VRF a bit of the tag set. A node that reports the Capability tags gets
-// its own group in each of its VRFs (NodeConfig.groups) and the group of each Device of them
-// (Device.group), and of each peer that reports it too the peer's own group in each shared VRF
-// (Peer.groups): a peer may assert those and the groups of the Devices whose gateway it is. Such a
-// peer gets records of frame version 1 on the Noise sessions (Peer.frame_version), which carry the
-// source group before the packet; a link of kind vxlan or geneve carries it in the VXLAN group
-// policy extension or in a Geneve option when its VRF is in the tag mode trusted-underlay
+// group ID and its tag set. The controller gives each set of tags of an endpoint of a VRF (a node
+// with the Groups of its owner, or a Device) a group ID and each of their tags a bit of the tag set,
+// 64 at most, and keeps them: a number once given in a VRF never goes to another set of tags or
+// tag, as a node may still forward on a Generation that holds it. A node that reports the
+// Capability tags gets its own group in each of its VRFs (NodeConfig.groups) and the group of each
+// Device of them (Device.group), and of each peer that reports it too the peer's own group in each
+// shared VRF (Peer.groups): a peer may assert those and the groups of the Devices whose gateway it
+// is. Such a peer gets records of frame version 1 on the Noise sessions (Peer.frame_version), which
+// carry the source group before the packet; a link of kind vxlan or geneve carries it in the VXLAN
+// group policy extension or in a Geneve option when its VRF is in the tag mode trusted-underlay
 // (Vrf.tag_mode). A node judges the claims of a peer only once its state gives the peer the frame
 // version 1 with its groups: before, as when a peer's Generation went in before the node's own, it
 // ignores them. The node reports the packets that it judged by their source group in its Telemetry
@@ -501,7 +502,8 @@ message Vrf {
 }
 
 // The source group of an endpoint in one VRF (SDN-87 #386): its group ID, from 1 to 65535, and its
-// tag set, a bit for each of the first 64 tags of the VRF in name order, the first in bit 0.
+// tag set, the bit of each of its tags that the VRF gave one, 64 tags at most. A group ID and a bit
+// stay with their set of tags and their tag in the VRF for good.
 message SourceGroup {
   uint32 vrf_id = 1;
   uint32 group = 2;

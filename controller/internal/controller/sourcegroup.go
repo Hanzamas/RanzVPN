@@ -17,11 +17,43 @@ import (
 // (tagsChanged), which gives the Nodes whose state changed their next Generation, the Node itself
 // before the Hello is answered. A Node that does not report the Capability, as a Node of an older
 // release does not, keeps the state it had, and its peers send it no record of frame version 1.
+//
+// The numbers of the groups are the controller's own (desired.NumberGroups): a group ID or a bit of the
+// tag set, once given in a VRF, never goes to another set of tags or tag, as a Node may still hold a
+// Generation that uses it. The controller keeps them in its store (table source_groups), loads them at
+// start, before the first compilation, and gives the new sets of tags and tags of a compilation the next
+// numbers, which commit stores before the states that use them (saveGroupNumbers). So the numbers
+// survive a restart and a new leader, and no state that a Node gets holds a number that the store does
+// not hold. An intent exported and imported into another controller gives the groups the numbers of that
+// controller.
+
+// groupState is what the controller keeps for the source groups beside the intent.
+type groupState struct {
+	// numbers are the numbers of the source groups that the store holds, by VRF id. Controller.mu guards them, as it
+	// does the intent that they are compiled with.
+	numbers desired.GroupNumbers
+}
+
+// loadGroupNumbers reads the numbers of the source groups from the store.
+func (c *Controller) loadGroupNumbers(ctx context.Context) error {
+	stored, err := c.store.SourceGroups(ctx)
+	if err != nil {
+		return err
+	}
+	numbers := desired.GroupNumbers{}
+	for id, v := range stored {
+		numbers[id] = desired.VrfGroupNumbers{Groups: v.Groups, Bits: v.Bits}
+	}
+	c.groups.numbers = numbers
+	return nil
+}
 
 // withSourceGroups puts the source groups into states, which in compiled to, for the Nodes that report
-// the Capability tags. c.mu is held.
-func (c *Controller) withSourceGroups(in intent.Intent, states map[string]desired.State) {
-	desired.SourceGroups(in, states, func(node string) bool {
+// the Capability tags, with the numbers that the controller gave and those that the sets of tags and the
+// tags of in that have none take now, which it returns for commit to store. c.mu is held.
+func (c *Controller) withSourceGroups(in intent.Intent, states map[string]desired.State) desired.GroupNumbers {
+	added := desired.NumberGroups(in, c.groups.numbers)
+	desired.SourceGroups(in, states, c.groups.numbers.With(added), func(node string) bool {
 		n, ok := in.Nodes[node]
 		if !ok {
 			return false
@@ -30,6 +62,33 @@ func (c *Controller) withSourceGroups(in intent.Intent, states map[string]desire
 		k, _ := intent.ParseKey(n.PublicKey)
 		return c.caps[string(k)].GetTags()
 	})
+	return added
+}
+
+// saveGroupNumbers stores the numbers of the source groups that a compilation gave (withSourceGroups),
+// before the states that use them, and makes them the controller's. commit calls it before it stores
+// the states, and stores none when it fails, so no Node gets a number that the store does not hold. A
+// write that fails may have gone in all the same: the controller then reads the numbers of the store
+// again, so that the next compilation gives none of them to another set or tag. c.mu is held.
+func (c *Controller) saveGroupNumbers(ctx context.Context, added desired.GroupNumbers) error {
+	if len(added) == 0 {
+		return nil
+	}
+	rows := map[uint32]store.SourceGroupNumbers{}
+	for id, v := range added {
+		rows[id] = store.SourceGroupNumbers{Groups: v.Groups, Bits: v.Bits}
+	}
+	if err := c.store.AddSourceGroups(ctx, rows); err != nil {
+		if lerr := c.loadGroupNumbers(ctx); lerr != nil {
+			c.log.Warn("reading the numbers of the source groups again", "err", lerr)
+		}
+		return err
+	}
+	c.groups.numbers = c.groups.numbers.With(added)
+	for id, v := range added {
+		c.log.Info("source group numbers given", "vrf", id, "numbers", v.String())
+	}
+	return nil
 }
 
 // tagsChanged recompiles the intent when the Capabilities caps that the Node name reported in its Hello

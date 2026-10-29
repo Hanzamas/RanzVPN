@@ -9,7 +9,8 @@
 // datagrams that a node does not take, or that carry options it does not know; the text matches the golden file
 // tests/golden/sourcegroup/sourcegroup_carriers.txt (golden family "sourcegroup"). The critical bit of the option of
 // Geneve is clear, and so is the C bit of its header, so that a tunnel endpoint that does not know the option skips it.
-// Print "SOURCEGROUP TEST OK" only when every check passes.
+// Last, the sizes: a record or a frame that does not fit its path with the source group goes without it, so the source
+// group costs no packet that went before it. Print "SOURCEGROUP TEST OK" only when every check passes.
 
 #include "harness_int.h"
 #include "testlist.h"
@@ -389,6 +390,101 @@ static void SgTestOthers(SGTEST_CTX *ctx)
 	SgTestLine(ctx, line);
 }
 
+// One size of a record and of the payload of its path, and whether the record goes with the header of frame version 1
+typedef struct SGTEST_SIZE
+{
+	UINT Max;							// The largest payload of the path
+	UINT Size;							// The record
+	bool Wrapped;						// It goes with the header
+	char *What;
+} SGTEST_SIZE;
+
+static SGTEST_SIZE sgtest_sizes[] =
+{
+	{PEER_MAX_PAYLOAD, PEER_MAX_PAYLOAD - NODE_FRAME_ROOM, true, "the datagram path of the peer agent: the largest record that fits its payload with the header goes with it"},
+	{PEER_MAX_PAYLOAD, PEER_MAX_PAYLOAD - NODE_FRAME_ROOM + 1, false, "the datagram path: a record one byte larger goes as it is, of frame version 0, as it went before the source groups"},
+	{PEER_MAX_PAYLOAD, PEER_MAX_PAYLOAD, false, "the datagram path: the largest record that fits its payload goes as it is"},
+	{NOISE_MAX_PAYLOAD, PEER_MAX_PAYLOAD, true, "a Noise session: that record goes with the header, as the payload of a session is larger"},
+	{NOISE_MAX_PAYLOAD, NOISE_MAX_PAYLOAD - NODE_FRAME_ROOM + 1, false, "a Noise session: a record that does not fit its payload with the header goes as it is"},
+};
+
+// The sizes: the source group costs no packet that went before it. A record that does not fit the payload of its path with
+// the header of frame version 1 goes as it is (NodeSourceGroupWrap), and a frame that does not fit a datagram of Geneve
+// with the option of the source group goes without it (VxlanSendToGroup); the peer judges either by the map of address to
+// group. Checks only, which the golden file does not hold.
+static void SgTestSizes(SGTEST_CTX *ctx)
+{
+	NODE *n = ZeroMalloc(sizeof(NODE));
+	NODE_VRF_TABLES *v = ZeroMalloc(sizeof(NODE_VRF_TABLES));
+	CONTROL_STATE *st = ZeroMalloc(sizeof(CONTROL_STATE));
+	CONTROL_PEER *p = ZeroMalloc(sizeof(CONTROL_PEER));
+	UCHAR *room = ZeroMalloc(NODE_FRAME_ROOM + NOISE_MAX_PAYLOAD);
+	UCHAR *record = room + NODE_FRAME_ROOM;
+	UCHAR *frame = ZeroMalloc(VXLAN_MAX_FRAME);
+	char what[MAX_SIZE];
+	VXLAN_GROUP group;
+	VXLAN_ADDR vtep;
+
+	// The source groups of a node whose own group in VRF 101 is 3 and whose one peer takes records of frame version 1
+	st->NumVrfs = 1;
+	st->Vrfs[0].Id = SGTEST_VRF;
+	st->NumGroups = 1;
+	st->Groups[0].VrfId = SGTEST_VRF;
+	st->Groups[0].Group = 3;
+	st->Groups[0].TagSet = 0x4ULL;
+	StrCpy(p->Name, sizeof(p->Name), "node-b");
+	p->FrameVersion = NODE_FRAME_VERSION;
+	st->NumPeers = 1;
+	st->Peers = p;
+	NodeSourceGroupAttach(n, v, st);
+
+	// The record of a packet of IPv4 of the host in VRF 101, after the room of the header
+	WRITE_UINT(record, SGTEST_VRF);
+	record[NODE_OVERLAY_VRF_TAG] = 0x45;
+	for (UINT i = 0;i < sizeof(sgtest_sizes) / sizeof(sgtest_sizes[0]);i++)
+	{
+		SGTEST_SIZE *c = &sgtest_sizes[i];
+		UINT size = c->Size;
+		const UCHAR *start = NodeSourceGroupWrap(v, 0, SGTEST_VRF, record, &size, c->Max);
+		bool ok = (c->Wrapped ? (start == room && size == c->Size + NODE_FRAME_ROOM && size <= c->Max) : (start == record && size == c->Size));
+
+		Format(what, sizeof(what), "%s (a record of %u bytes, a payload of %u)", c->What, c->Size, c->Max);
+		SgTestCheck(ctx, ok, what);
+	}
+
+	// Geneve: the largest frame that fits a datagram with the option goes with it, and the largest one that fits without the
+	// option goes without it
+	Zero(&group, sizeof(group));
+	group.Carried = true;
+	group.HasTags = true;
+	group.Group = 3;
+	group.Tags = 0x4ULL;
+	SgTestVtep(&vtep, true);
+	SgTestFrame(frame);
+
+	UINT with = VXLAN_MAX_DATAGRAM - GENEVE_HEADER_SIZE - GENEVE_GROUP_OPTION;
+	ctx->DatagramSize = 0;
+	bool sent = VxlanSendToGroup(ctx->Sender, SGTEST_VNI, &vtep, &group, frame, with);
+	SgTestInput(ctx, ctx->Datagram, ctx->DatagramSize, true);
+	Format(what, sizeof(what), "geneve: the largest frame that fits a datagram with the option of the source group, %u bytes, goes with it", with);
+	SgTestCheck(ctx, sent && ctx->DatagramSize == VXLAN_MAX_DATAGRAM && ctx->Got && ctx->Group.Carried && ctx->Group.Group == 3, what);
+
+	ctx->DatagramSize = 0;
+	sent = VxlanSendToGroup(ctx->Sender, SGTEST_VNI, &vtep, &group, frame, VXLAN_MAX_FRAME);
+	SgTestInput(ctx, ctx->Datagram, ctx->DatagramSize, true);
+	Format(what, sizeof(what), "geneve: a frame of %u bytes, the largest that a datagram takes without the option, goes without it, as it went before the source groups",
+		VXLAN_MAX_FRAME);
+	SgTestCheck(ctx, sent && ctx->DatagramSize == GENEVE_HEADER_SIZE + VXLAN_MAX_FRAME && (ctx->Datagram[0] & 0x3F) == 0 && ctx->Got && ctx->Group.Carried == false, what);
+
+	NodeFreeSourceGroupTable(v->SourceGroups);
+	Free(frame);
+	Free(room);
+	Free(p);
+	Free(st);
+	Free(v);
+	Free(n);
+}
+
 // sourcegroup: the source group in each carrier
 RANZ_TEST_TAGS("sourcegroup", sourcegroup_test, "core", "Source group carriers (SDN-87): the group ID and the tag set in the record of frame version 1 of a Noise session, the group policy extension of VXLAN and the option of Geneve, sent and read back (golden family sourcegroup); the critical bit of the option of Geneve is clear.");
 void sourcegroup_test(UINT num, char **arg)
@@ -414,6 +510,7 @@ void sourcegroup_test(UINT num, char **arg)
 		SgTestLine(ctx, "# geneve: the version and the length of the options, the flags O and C, the protocol, the VNI, reserved | the class, the type, the length, the group, reserved, the tag set");
 		SgTestGroups(ctx);
 		SgTestOthers(ctx);
+		SgTestSizes(ctx);
 	}
 
 	char *text = HarnessBufToStr(ctx->Text);
