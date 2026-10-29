@@ -308,7 +308,9 @@ func TestEVPN(t *testing.T) {
 	fabric.announce(fabricRoute{rd: "192.0.2.10:1", prefix: "172.16.4.0/24", nextHop: testFabricVTEP, label: 10101, targets: []string{"65000:10101"}})
 	fabric.announce(fabricRoute{rd: "192.0.2.10:1", prefix: "172.16.5.0/24", nextHop: testFabricVTEP, mac: testFabricMAC, gateway: "172.16.5.1", label: 10101, targets: []string{"65000:10101"}})
 	fabric.announce(fabricRoute{rd: "192.0.2.10:1", prefix: "172.16.6.0/24", nextHop: testFabricVTEP, mac: testFabricMAC, label: 10101, targets: []string{"65000:10101"}, encap: bgp.TUNNEL_TYPE_MPLS})
-	waitUntil(t, "the sidecar has the routes of the fabric", func() bool { return node.hasEVPN(6) })
+	// The global RIB of the sidecar holds every IP prefix route of the fabric, also the ones that the gateway does not take:
+	// the seven so far
+	waitUntil(t, "the sidecar has the routes of the fabric", func() bool { return node.hasEVPN(7) })
 	fabric.announce(fabricRoute{rd: "192.0.2.10:1", prefix: "172.16.7.0/24", nextHop: testFabricVTEP, mac: testFabricMAC, label: 10101, targets: []string{"65000:10101"}})
 	node.wait("learned 172.16.7.0/24 in VRF 101", false, isEVPNRoute(TypeLearned, 101, "172.16.7.0/24"))
 	time.Sleep(settleTime)
@@ -320,9 +322,11 @@ func TestEVPN(t *testing.T) {
 	}
 
 	// A second leaf offers 172.16.1.0/24 of VRF 101 under its own route distinguisher: the node keeps its route, and the
-	// route moves to the second leaf when the first withdraws it, without a withdrawn message between
+	// route moves to the second leaf when the first withdraws it, without a withdrawn message between. The withdraw waits
+	// until the sidecar has the ninth route, the one of the second leaf: else the fabric router may send the withdraw
+	// first, and the prefix of VRF 101 is rightly withdrawn and learned again.
 	inA2 := fabric.announce(fabricRoute{rd: "192.0.2.11:1", prefix: "172.16.1.0/24", nextHop: "192.0.2.11", mac: testFabricMAC2, label: 10101, targets: []string{"65000:10101"}})
-	waitUntil(t, "the sidecar has the route of the second leaf", func() bool { return node.hasEVPN(8) })
+	waitUntil(t, "the sidecar has the route of the second leaf", func() bool { return node.hasEVPN(9) })
 	fabric.withdraw(inA)
 	moved := node.wait("172.16.1.0/24 of VRF 101 via the second leaf", false, isEVPNRoute(TypeLearned, 101, "172.16.1.0/24"))
 	if moved.NextHop != "192.0.2.11" || moved.RouterMAC != testFabricMAC2 {
