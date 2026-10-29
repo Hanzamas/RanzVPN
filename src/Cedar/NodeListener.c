@@ -2,8 +2,9 @@
 // The Listener of a node (SDN-45, #238; ADR-0035): where the node listens, from the Listener of the desired state that
 // its overlay applies (CONTROL_STATE.Listener; Core/Control.h). The front door (Core/FrontDoor.h; SDN-29, #205) listens
 // on the TCP port and hands each TLS connection to the node's TLS transport (CORE-S2-1, #69), which takes TLS 1.3 only,
-// the fixed policy of the new protocol; QUIC (CORE-S1-1, #67) listens on the UDP port where msquic.dll is present. Both
-// present the certificate of the source of the Listener:
+// the fixed policy of the new protocol; QUIC (CORE-S1-1, #67) listens on the UDP port where msquic.dll is present, on the
+// XDP datapath of msquic with the QuicXdp setting, and QTIP beside it on a port of its own with the Qtip setting
+// (NodeQtip.c; CORE-S7-2, #83). They present the certificate of the source of the Listener:
 // - a PKCS #12 file on the node, which the node imports into the software key storage provider of the machine and puts
 //   in the LocalMachine\My store (CryptoCertImportPfx), with the password that a file beside it holds;
 // - a certificate of the LocalMachine\My store whose key is in a key storage provider, by its thumbprint;
@@ -66,6 +67,8 @@ struct NODE_LISTENER {
 	TRANSPORT *Quic;
 	TRANSPORT_LISTENER *QuicListener;
 	USHORT QuicPort;
+	// QTIP beside it with the Qtip setting, on a port of its own (NodeQtip.c; CORE-S7-2, #83)
+	NODE_QTIP *Qtip;
 	// The transports whose listeners closed: the overlay may still hold their streams, so they go with the Listener of the
 	// node, once its overlay closed every session
 	LIST *RetiredTls;
@@ -190,6 +193,7 @@ static void NodeListenerDown(NODE_LISTENER *l) {
 	if (l->QuicListener != NULL)
 		TransportCloseListener(l->QuicListener);
 	l->QuicListener = NULL;
+	NodeQtipDown(l->Qtip);
 
 	if (l->Tls != NULL)
 		Add(l->RetiredTls, l->Tls);
@@ -278,12 +282,14 @@ static bool NodeListenerUp(NODE_LISTENER *l, const char *thumb) {
 	// QUIC where msquic.dll is present; without it the front door carries the new protocol alone
 	if (TransportQuicAvailable()) {
 		TransportQuicDefaultConfig(&qc, thumb, true);
+		NodeQtipQuicConfig(n, &qc);
 		l->Quic = TransportQuicServerNew(&qc);
 		Format(address, sizeof(address), ":%u", c->QuicPort);
 		l->QuicListener = (l->Quic != NULL ? TransportListen(l->Quic, address) : NULL);
 		l->QuicPort = (l->QuicListener != NULL ? TransportQuicBoundPort(l->Quic) : 0);
 		if (l->QuicListener == NULL)
 			NodeLog(n, "Listener %s: QUIC cannot listen on UDP port %u, so the front door carries the new protocol alone", c->Name, c->QuicPort);
+		NodeQtipUp(l->Qtip, c->Name, thumb);
 	} else {
 		NodeLog(n, "Listener %s: msquic.dll is not there, so the front door carries the new protocol alone", c->Name);
 	}
@@ -592,6 +598,7 @@ void NodeListenerStart(NODE *n, PEER_KEY *key) {
 	InitializeSRWLock(&l->Lock);
 	l->RetiredTls = NewListFast(NULL);
 	l->RetiredQuic = NewListFast(NULL);
+	l->Qtip = NodeQtipNew(n);
 	l->AcmeHalt = CreateEventW(NULL, TRUE, FALSE, NULL);
 	l->AcmeNow = CreateEventW(NULL, FALSE, FALSE, NULL);
 	n->Listener = l;
@@ -618,6 +625,7 @@ void NodeListenerStop(NODE *n) {
 		TransportQuicFree((TRANSPORT *)LIST_DATA(l->RetiredQuic, i));
 	ReleaseList(l->RetiredTls);
 	ReleaseList(l->RetiredQuic);
+	NodeQtipFree(l->Qtip);
 	if (l->AcmeHalt != NULL)
 		CloseHandle(l->AcmeHalt);
 	if (l->AcmeNow != NULL)
@@ -693,6 +701,8 @@ TRANSPORT_STREAM *NodeListenerAccept(NODE *n) {
 		s = TransportAccept(l->TlsListener, 0);
 	if (s == NULL && l->QuicListener != NULL)
 		s = TransportAccept(l->QuicListener, 0);
+	if (s == NULL)
+		s = NodeQtipAccept(l->Qtip);
 	ReleaseSRWLockShared(&l->Lock);
 
 	if (s != NULL)
@@ -758,6 +768,7 @@ void NodeListenerGetStatus(NODE *n, NODE_LISTENER_STATUS *st) {
 				st->QuicRetries = qs.Retries;
 			}
 		}
+		NodeQtipGetStatus(l->Qtip, l->Quic, st);
 	}
 	ReleaseSRWLockShared(&l->Lock);
 

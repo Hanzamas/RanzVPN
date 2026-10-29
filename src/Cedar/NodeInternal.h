@@ -74,4 +74,20 @@ void NodeFlapGetStatus(NODE_FLAP *f, NODE_OVERLAY_STATUS *st);
 void NodeTransportLogStart(NODE *n);
 void NodeTransportLogStop(NODE *n);
 
+// The XDP datapath of msquic and QTIP on the Listener of a node (NodeQtip.c; CORE-S7-2, #83). New and Free hold the QTIP
+// listener of the Listener. QuicConfig sets Xdp in the configuration of the QUIC of the Listener from the QuicXdp setting.
+// Up starts the QTIP listener named name with the certificate thumb when the Qtip setting asks for it, and Down stops it,
+// both under the lock of the Listener; Accept gives the next stream that it took, NULL for none. ClientNew makes the QTIP
+// transport that the client role dials the server named server with, pinned to its certificate pin; NULL where QTIP cannot
+// run. GetStatus fills the QTIP part of the status of the Listener, with the datapath of its QUIC transport quic.
+typedef struct NODE_QTIP NODE_QTIP;
+NODE_QTIP *NodeQtipNew(NODE *n);
+void NodeQtipFree(NODE_QTIP *q);
+void NodeQtipQuicConfig(NODE *n, TRANSPORT_QUIC_CONFIG *cfg);
+void NodeQtipUp(NODE_QTIP *q, const char *name, const char *thumb);
+void NodeQtipDown(NODE_QTIP *q);
+TRANSPORT_STREAM *NodeQtipAccept(NODE_QTIP *q);
+TRANSPORT *NodeQtipClientNew(NODE *n, const char *server, const char *pin);
+void NodeQtipGetStatus(NODE_QTIP *q, TRANSPORT *quic, NODE_LISTENER_STATUS *st);
+
 #endif // NODE_INTERNAL_H

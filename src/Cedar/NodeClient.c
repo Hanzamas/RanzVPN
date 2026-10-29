@@ -69,6 +69,7 @@ typedef struct NODE_CLIENT_SERVER {
 	char Name[PEER_NAME_SIZE];                       // Its node name: the address of its peer on the dialler
 	TRANSPORT *Quic;                                 // The QUIC transport, NULL when the list names none or msquic.dll is missing
 	TRANSPORT *Tls;                                  // The TLS transport, NULL when the list names none
+	TRANSPORT *Qtip;                                 // The QTIP transport (NodeQtip.c; CORE-S7-2, #83), NULL when the list names none or QTIP cannot run here
 	UINT NumTargets;                                 // The entries of the fallback list that a transport here can dial
 	TRANSPORT_TARGET Targets[TRANSPORT_MAX_TARGETS]; // ... in the order of the list
 	TRANSPORT_FALLBACK Fallback;                     // The transports whose handshake failed, out of its races for a while (under the lock)
@@ -160,7 +161,7 @@ static bool NodeClientThumbprint(char *dst, UINT size, const char *src) {
 // transport can run.
 static bool NodeClientAddServer(NODE_CLIENT *c, NODE_CLIENT_SERVER *s, const char *name, const char *thumbprint, const char *dial) {
 	char pin[2 * CRYPTO_THUMBPRINT_SIZE + 1];
-	TRANSPORT *known[2];
+	TRANSPORT *known[3];
 	UINT num_known = 0;
 
 	Zero(s, sizeof(NODE_CLIENT_SERVER));
@@ -193,6 +194,13 @@ static bool NodeClientAddServer(NODE_CLIENT *c, NODE_CLIENT_SERVER *s, const cha
 			known[num_known++] = s->Tls;
 	}
 
+	// QTIP, to a server node that runs it, only where the list names it (NodeQtip.c; CORE-S7-2, #83)
+	if (InStr(dial, NODE_QTIP_TRANSPORT ":")) {
+		s->Qtip = NodeQtipClientNew(c->Node, name, pin);
+		if (s->Qtip != NULL)
+			known[num_known++] = s->Qtip;
+	}
+
 	// Each entry on its own, so that an entry of a transport that cannot run here leaves the others
 	TOKEN_LIST *t = ParseToken(dial, ",");
 	for (UINT i = 0; i < t->NumTokens && s->NumTargets < TRANSPORT_MAX_TARGETS; i++) {
@@ -206,6 +214,7 @@ static bool NodeClientAddServer(NODE_CLIENT *c, NODE_CLIENT_SERVER *s, const cha
 	if ((endpoints == false && s->NumTargets == 0) || (endpoints && s->Quic == NULL && s->Tls == NULL)) {
 		TransportQuicFree(s->Quic);
 		TransportTlsFree(s->Tls);
+		TransportQuicFree(s->Qtip);
 		Zero(s, sizeof(NODE_CLIENT_SERVER));
 		return false;
 	}
@@ -1027,6 +1036,7 @@ static void NodeClientFree(NODE_CLIENT *c) {
 	for (UINT i = 0; i < c->NumServers; i++) {
 		TransportQuicFree(c->Servers[i].Quic);
 		TransportTlsFree(c->Servers[i].Tls);
+		TransportQuicFree(c->Servers[i].Qtip);
 	}
 
 	Free(c->Servers);
