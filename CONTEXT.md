@@ -95,7 +95,7 @@ The new core (ADR-0022). Each of its modules is a static library of its own that
 |---|---|---|---|---|
 | Crypto: `Crypto.h`, `Crypto.c`, `CryptoX25519.c`, `CryptoMlKem.c`, `CryptoCert.c`, `CryptoInternal.h` (library `corecrypto`) | X25519, AES-GCM, SHA-256, HMAC-SHA256, HKDF and random bytes on CNG; the X25519MLKEM768 hybrid where CNG has ML-KEM; the node identity key in the Microsoft Software Key Storage Provider; self-signed ECDSA P-256 certificates, PFX import and the certificate stores through CryptoAPI | `CRYPTO_SHA256`, `CRYPTO_AEAD`, `CRYPTO_IDENTITY`, `CRYPTO_HYBRID`, `CRYPTO_MLKEM` | none (the system libraries bcrypt, ncrypt and crypt32) | In Core: Noise, Peer. Programs: `coretest`, `vpntest`, `fuzz` |
 | Noise: `Noise.h`, `Noise.c`, `NoiseSession.c` (library `corenoise`) | The session module: the Noise_IK handshake (`Noise_IK_25519_AESGCM_SHA256`, and `Noise_IKhfs_25519+MLKEM768_AESGCM_SHA256` where CNG has ML-KEM); the Noise session over it, bound to its outer TLS or QUIC session by the Channel binding, with a data stream and a control stream, keepalive, rekey on a schedule and the dead-peer timeout; the Login; the Tunnel | `NOISE_CIPHER`, `NOISE_HANDSHAKE`, `NOISE_SESSION`, `NOISE_LOGIN`, `NOISE_TUNNEL` | Crypto | Programs: `coretest`, `vpntest`, `fuzz`; types and macros only: Node |
-| Peer: `Peer.h`, `Peer.c`, `PeerSignal.c`, `PeerUdp.c`, `PeerInternal.h` (library `corepeer`) | The peer layer of a node (ADR-0015): the peer table and the Relays that the control plane sets, the Bindings of the node to its relays, the Path to each peer, the relay role, and `PeerInput`, the one ingress of every datagram with one policy check for a datagram the node takes and one its relay role forwards; Signals and binds sealed with the Noise one-way pattern K between node static keys; a UDP socket on Winsock that stands in for the QUIC datagrams of CORE-S1-1 | `PEER_AGENT`, `PEER_KEY`, `PEER_INFO`, `PEER_RELAY_INFO`, `PEER_SIGNAL`, `PEER_UDP` | Crypto (and the system library ws2_32) | In Cedar: Node. Programs: `coretest`, `vpntest`, `fuzz` |
+| Peer: `Peer.h`, `Peer.c`, `PeerSignal.c`, `PeerUdp.c`, `PeerInternal.h` (library `corepeer`) | The peer layer of a node (ADR-0015): the peer table and the Relays that the control plane sets, the Bindings of the node to its relays, the Path to each peer, the relay role, and `PeerInput`, the one ingress of every datagram with one policy check for a datagram the node takes and one its relay role forwards; Signals and binds sealed with the Noise one-way pattern K between node static keys; a UDP socket on Winsock that stands in for the QUIC datagrams of CORE-S1-1; ICE on libjuice, in its peer mode, on the socket of the layer, and the port mapping of the home gateway on libplum, with the host addresses of that socket read through IP Helper (CORE-S5-6) | `PEER_AGENT`, `PEER_KEY`, `PEER_INFO`, `PEER_RELAY_INFO`, `PEER_SIGNAL`, `PEER_UDP` | Crypto (and the system libraries ws2_32 and iphlpapi) | In Cedar: Node. Programs: `coretest`, `vpntest`, `fuzz` |
 
 ### Dependency cycles
 
@@ -479,7 +479,7 @@ The pure function of the HTTP listener that turns one parsed request into one an
 The folder in the data directory whose `.well-known/acme-challenge` holds one challenge file per token.
 
 **API token**:
-A bearer secret that a caller of the Controller's API presents, holding one of the three global API roles: `viewer` reads, `operator` also applies Intent, `admin` also manages the API tokens (ADR-0031). The Controller keeps only its SHA-256; the first start creates the `admin` token.
+A bearer secret that a caller of the Controller's API presents, holding one of the three API roles: `viewer` reads, `operator` also applies Intent, `admin` also manages the API tokens (ADR-0031). The role is held for the whole API or, as a **Scoped role**, for one Network. The Controller keeps only its SHA-256; the first start creates the `admin` token.
 _Avoid_: API key, password, session (a user login of SDN-32 is a different thing)
 
 **Admin source allowlist**:
@@ -519,20 +519,29 @@ A message from a node to one peer that the Controller carries (`Signal` of the c
 _Avoid_: signature (it is authenticated encryption, which only the receiver checks), SDP offer
 
 **ICE socket**:
-The one UDP socket of a Node on which all of its ICE sessions run (libjuice's mux mode), so one NAT mapping and one gateway port serve every peer.
+The one UDP socket of a Node on which all of its ICE sessions run. It is the UDP socket of the Peer agent, which its binds and records go on too, so every ICE session runs in the **Peer mode** of libjuice. One NAT mapping then serves the Relay and every peer, and the address that the home relay saw (the answer of the bind) is the server reflexive candidate.
 _Avoid_: ICE port (the port alone), relay socket
 
+**Peer mode (of libjuice)**:
+An agent of libjuice that has no socket of its own. It sends through the send procedure of the peer layer and takes the STUN messages that `PeerInput` hands it (`PeerIceInput`). `src/Core/3rdparty/juice-peer.c` takes the place of `conn_thread.c` of libjuice. It is the one changed file of libjuice, and it keeps the licence of libjuice (MPL-2.0).
+
 **ICE session**:
-A Node's ICE agent with one peer, which checks candidate pairs in the background while the Path stays on the Relay. The Node's offer starts it controlling, and the peer's offer starts it controlled. It ends when the peer goes, and a new offer replaces it after it failed.
+A Node's ICE agent with one peer, which checks candidate pairs in the background while the Path stays on the Relay. The Node's offer starts it controlling, and the peer's offer starts it controlled. It ends when the peer goes. A new offer replaces it after it failed, which the Node that offers the pair makes 20 s after the failure (a delay that doubles up to 30 min while the new ones fail), or while it still checks when the home gateway granted its public port since it started.
 _Avoid_: ICE connection, P2P session
 
 **Mapped candidate**:
-The public port that a Node's home gateway granted to its ICE socket through PCP, NAT-PMP or UPnP (`PEER_CANDIDATE_MAPPED`). It goes first in the Node's Signals.
+The public port that a Node's home gateway granted to its ICE socket through PCP, NAT-PMP or UPnP (`PEER_CANDIDATE_MAPPED`). A Node asks for one only when its **PortMapping** setting is 1. It goes first in the Node's Signals.
 _Avoid_: port forward, UPnP candidate
 
+**PortMapping (a setting of a Node)**:
+`PortMapping` in the Configuration store (`NODE_SETTING_PORT_MAPPING`). With 1 the Peer agent asks the home gateway for a public port of the ICE socket with PCP, NAT-PMP or UPnP (libplum). Without it, or with 0, libplum never starts and no request of it leaves the Node. It is off by default, because a port that a gateway opens is attack surface.
+
 **Upgrade** and **Fallback**:
-A Path moving from the Relay to the direct path once an ICE session validates a pair (Upgrade), and back when consent freshness fails it (Fallback). Both are counted per Node in `PEER_STATS`.
+A Path moving from the Relay to the direct path once an ICE session validates a pair (Upgrade), and back when consent freshness fails it (Fallback). Both are counted per Node in `PEER_STATS`, and reported as the **Path counters**. After a Fallback ICE runs again for the pair, so it moves back once a direct path validates again.
 _Avoid_: switchover, failover
+
+**Path counters**:
+`Telemetry.paths`, the message `PathCounters`: the Upgrades and the Fallbacks of a Node since it started. The Node reports them on its control stream after each Hello, whenever they change (at most once a second) and again every 15 s while they stay the same, because the Controller drops a counter that its node did not report for 5 minutes. The Controller exports them as `ranz_path_upgrades_total` and `ranz_path_fallbacks_total`, and in the JSON of its telemetry API. `ranz node state` shows them too.
 
 **Punch**:
 A Node's attempt at a direct path to a symmetric-NAT peer that ICE leaves on the Relay: it predicts the peer's next mapping port and sends authenticated probes to it on the peer layer's own socket (`PeerPunch.c`, `PEER_MSG_PUNCH`). The Controller triggers it with the Signal exchange, and on a meeting the Path moves off the Relay.
@@ -1027,31 +1036,65 @@ _Avoid_: session (the slim fork's `SESSION` and the Controller's session of SDN-
 The three ways in of a User login. The browser login is the authorization code grant with PKCE, the S256 method only, for the public client `ranz`; the device code login is RFC 8628. The **Authorization page** is the page of the Controller where the user signs in for a browser login (`GET /api/v1/login/authorize`), and its **Loopback redirect** is `http://127.0.0.1:PORT/PATH`, where `ranz` listens for the code (RFC 8252). The **Device page** is where the user types the **User code** that a device shows (`XXXX-XXXX` of 8 consonants).
 
 **User token**:
-The bearer secret (`ranz_u_` and 128 random bits) that a login gives a User that holds an API role: 12 hours at most and never past the expiry of the User. The store keeps its SHA-256 (table `user_tokens`), and its name in the API and the actor of its audit records is `user:NAME`. It is not an API token.
+The bearer secret (`ranz_u_` and 128 random bits) that a login gives a User that holds an API role: 12 hours at most and never past the expiry of the User. The store keeps its SHA-256 (table `user_tokens`), and its name in the API and the actor of its audit records is `user:NAME`. It carries the role of the User for the whole API or for one Network (a **Scoped role**). It is not an API token, and not a token of the **Self scope**.
 
 **API role of a User**:
-The role (viewer, operator or admin) that an admin gives a User with `ranz user role set` (table `user_roles`, outside the Intent). A User with none logs in to enrol a device but gets no user token. Say API role of a User, not "user role".
+The role (viewer, operator or admin) that an admin gives a User (table `user_roles`, outside the Intent): with `ranz user role set` for the whole API, or with the call `PUT /api/v1/tokens/users/NAME` and its `network` for one Network, as a **Scoped role**. A User with none logs in to enrol a device but gets no user token. Say API role of a User, not "user role".
+
+**Scoped role**:
+An API role that is held for one Network and not for the whole API (`rbac.Grant`, stored as `role@network`, for example `operator@branch-a`). An API token, a User (its **API role of a User**) or a login through a **Provider group** holds one. The Guard lets it call `whoami` and the calls under `/api/v1/networks/{network}` of its own Network, and nothing else (403), so a scope only narrows a role. What it may change in its Network is bound by the **Delegation** of the Network (ADR-0031 amendment of 2026-10-29, SDN-38).
+
+**Delegation**:
+What an admin of the whole API sets for a Network to bound its **Scoped roles** (`scope.Delegation`, `PUT /api/v1/tokens/delegations/NETWORK`). Its quotas are the most Users, Groups, Nodes and Policies in the scope of the Network, the most control streams that its Nodes have open at once, and the greatest rate limit in bit/s that a scoped role gives a Node. Its permissions are the kinds of resource that its scoped roles may change: `network`, `nodes`, `users`, `groups`, `rules` and `sessions`. A quota that is left out, or 0, is no limit. A Network with no Delegation permits its scoped roles nothing, so they only read. It is kept in the store (table `scope_delegations`), not in the Intent, so that a role cannot change its own limits. It is the successor of the admin options of a Hub of the slim fork.
+
+**Scope of a resource**:
+The Network whose **Scoped roles** administer a resource: the `scope` of a User, a Group, a Node and a Policy, which must name a Network (`intent.ScopeOf`). A Network is in its own scope. A Node that names none is in the scope of its owner, so the device that a User of a Network enrols is in that Network. A resource with none, and every resource of another kind (a VRF, a Controller and the rest), is changed by the roles of the whole API alone. The scope is in the Intent, so a revision, a rollback and an export carry it. A Network that is the scope of a resource cannot be deleted.
+
+**Provider group**:
+A group of an identity provider, as the provider names it, that an admin maps to an API role held for the whole API or for one Network (`rbac.GroupMapping`, `PUT /api/v1/tokens/provider-groups/PROVIDER`, table `provider_groups`, outside the Intent). A login through the provider gives its User a user token with the role that the groups of the person give, for the scope of their mapping, and nothing more. It is fixed when the token is made, so a person that changes team gets the new role at the next login. The identity providers (SDN-34 to SDN-36) are not built yet, so no login uses the mappings.
+_Avoid_: Group (the Intent resource that names Users)
 
 **Enrolment (of a device)**:
-The Node resource that a login of its User makes (`Controller.EnrolDevice`): owned by the User, one revision, under the actor `user:NAME`. It is not **Enrolment sources**.
+The Node resource that a login of its User makes (`Controller.EnrolDevice`): owned by the User, one revision, under the actor `user:NAME`. The User also makes one from the **Portal** (a **Self call**), and a device makes one with a **Join token**. It is not **Enrolment sources**.
 
 **User login throttle**:
 Five failed user logins in a row for one name or from one source (an IPv4 address or an IPv6 /64): the next is refused with 429 without a check of the password, and one try comes back each minute. It is not the **Login throttle** of a Node.
 
+**Portal**:
+The pages of the web UI for a User: `/portal-sign-in`, `/portal` (My devices) and `/portal-join` (Join tokens), each its own module. A client of the **Self calls** with the token of the **Self scope**, which the tab keeps under its own key (`ranz.selfToken`), apart from the API token of the administrator's pages (`ranz.apiToken`). Every control of it is a **UI action** with the role `self`, or `public` for the sign-in.
+
+**Self scope**:
+What a password login that asks for `"scope": "self"` gives the User (`POST /api/v1/login`): a token `ranz_s_` and 128 random bits that holds no API role and reaches the **Self calls** and no other call (403, `whoami` included). It needs no API role of the User, so a User that holds only a **Scoped role** signs in to the **Portal** with it. The store keeps its SHA-256 (table `self_tokens`). It ends 12 hours after the login, or at the expiry of the User when that comes first, and at once at a ban, when a change of the Intent removes the User and at a logout. `rbac.Self` is no fourth API role: an admin cannot give it. It is not a **User token**, and not the **Scope of a resource**.
+
+**Self call**:
+A call under `/api/v1/self`, which `api.Needs` gives the role `self`. It is about the User that holds the token and about nothing else: its devices (the Nodes and the Devices that name it as owner) and its **Join tokens**. A device of another User is not found (404). An API token names no User and is refused (403). The user token of a role of the whole API makes the calls, and the user token of a **Scoped role** does not (403).
+
+**Join token**:
+The secret `ranz_j_` and 128 random bits that a User makes in the **Portal** for a device of its own that cannot sign in itself, such as a Node without a browser. The device presents it with its static key at `POST /api/v1/login/join`, which `ranz node join` does. The Controller then enrols it as a Node that the User owns, in VRF default, with the tags of the Groups of the User, and the token is spent. It works once and ends after a day, and a User has 16 that wait at most. The store keeps its SHA-256 (table `join_tokens`), outside the Intent.
+
 **Sealing key**:
-The Controller's own key for the secrets of its store: a persisted key of the Microsoft Software Key Storage Provider on Windows, a file `store.key` elsewhere. It sits beside the Noise static key and the TLS key.
+The Controller's own key for the secrets of its store: a persisted key of the Microsoft Software Key Storage Provider on Windows, a file `store.key` elsewhere. It sits beside the Noise static key and the TLS key. A member of a cluster seals no secret with it: it opens the member's **Copy** of the **Cluster key** with it.
 
 **Sealed secret**:
-The form in which the store keeps the secret of an export or audit target: `ranz-sealed:1:` and the base64 of a sealed box that only the **Sealing key** opens.
+The form in which the store keeps a secret that a reader of the store must not get: the secret of an export or audit target (`ranz-sealed:1:` and the base64 of a sealed box) and the PresharedKey of a Device (the base64 of the box, in the table `device_keys`). Only the **Sealing key** opens it, or in a cluster the **Cluster key**. The label of its row is part of what the box authenticates, so a Sealed secret copied into another row does not open.
+
+**Cluster key**:
+The key that seals the secrets of a Controller cluster in the place of the **Sealing key** of a host: the secrets of its export and audit targets and the PresharedKeys of its Devices. It is a random X25519 key that seals as a Sealing key does (`keys.Sealer`), so a **Sealed secret** of a cluster has the form of the one of a single Controller. A member holds it in memory only. The store holds its public half (table `cluster_key`) and a **Copy** for each member, and never a private key. A member that holds none keeps no secret: it refuses a target with a secret and a Device with a PresharedKey. A restore keeps the Cluster key of the store that it replaces (`controller/internal/clusterkey`, ADR-0026 amendment of 2026-10-29, AUD1-DT-16).
+
+**Copy (of the Cluster key)**:
+The Cluster key sealed to the public half of the Sealing key of one member, under the label of that member's row of the table `cluster_key_copies`. Only that member opens it, with its own Sealing key, inside its key storage provider. A member that holds the Cluster key gives a copy to every row that has none. A copy that does not open is removed and given again.
 
 **Access record**:
-An audit record of the kind `access`, made for a read of the API tokens, the API roles of users, the audit log or the licence. Its actor is the caller (`token:NAME`, or `user:NAME` for a **User token**), and the Log keeps at most one for each actor and read in a minute.
+An audit record of the kind `access`, made for a read of the API tokens, the API roles of users, the delegations, the provider groups, the audit log or the licence. Its actor is the caller (`token:NAME`, or `user:NAME` for a **User token**), and the Log keeps at most one for each actor and read in a minute.
 
 **Token life**:
 The expiry and the last use of an API token, kept in the table `api_token_life` (`ranz token create -expires`, `ranz tokens`). A **User token** has an end of its own and no token life.
 
 **TLS fingerprint file**:
-`tls.fingerprint` in the data directory of the Controller: the TLS fingerprint of the certificate that it serves, written at every start and at every change of the certificate. `ranz` on the same host trusts a loopback address only when its certificate has this fingerprint, or the one that `-tls-fingerprint` names.
+`tls.fingerprint` in the data directory of the Controller: the TLS fingerprint of the certificate that it serves, written at every start and at every change of the certificate. `ranz` on the same host trusts a loopback address only when its certificate has this fingerprint, or the one that `-tls-fingerprint` names. On Windows `ranz` trusts the file only when SYSTEM, the Administrators or the account of the Controller service (`NT SERVICE\ranz-controller`) own it and its folder, and no other account may write either (`controllercmd.ReadFingerprint`, ADR-0031 amendment of 2026-10-29, AUD1-DT-14). Otherwise it sends no token, connects to nothing and asks for `-tls-fingerprint`.
+
+**Untrusted fingerprint file**:
+A `tls.fingerprint` that `ranz` does not take (`controllercmd.UntrustedError`): another account owns the file or its folder or may write one of them (an access list that is missing lets every account write), one of them is a link, or the volume keeps no access lists. The refusal names the file or the folder and says why, in one line. A file that is not there, or that holds no fingerprint, is refused too, but it is no Untrusted fingerprint file.
 
 **Hub node**:
 In a VRF of topology hub-and-spoke, the Node that the other members reach each other through. Say Hub node, not plain "Hub", which is the slim fork's Virtual Hub.
@@ -1110,3 +1153,5 @@ The control record that a Node sends each gateway of a **Gateway group** every 1
 - "Gateway" is the Node that terminates the WireGuard of Devices (Gateway of a Device), and also the Node behind which the real gateway of an L2 Network is (Gateway of an L2 Network, SDN-41), and a Node that advertises a LAN subnet in a VRF (a member of a Gateway group, SDN-19). Say which one.
 - "Hub" in the SDN language is the slim fork's Virtual Hub, which the Network replaced. The Node of a hub-and-spoke VRF is the Hub node (SDN-19).
 - "Device" is a stock WireGuard client or router behind a gateway Node (spec #374). A Node that a User owns also counts against the maximum devices of that User, but it is not a Device.
+- "Scope" is the Network that a resource is in or that an API role is held for (the Scope of a resource and the Scoped role, SDN-38), and also the Self scope of a login (SDN-58), a token that holds no role. They share the word and nothing else.
+- "Group" is the Intent resource that names Users, whose name is a tag of policy. A Provider group (SDN-38) is a group of an identity provider that an admin maps to an API role. Say Provider group for the second.
