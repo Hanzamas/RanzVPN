@@ -318,7 +318,6 @@ bool PeerGetStatus(PEER_AGENT *a, const UCHAR *key, PEER_STATUS *st);
 void PeerGetStats(PEER_AGENT *a, PEER_STATS *st);
 UINT PeerGetCandidates(PEER_AGENT *a, PEER_CANDIDATE *c, UINT max);
 bool PeerHomeBound(PEER_AGENT *a);
-bool PeerPunchDue(PEER_AGENT *a, const UCHAR *key);
 const UCHAR *PeerPublicKey(PEER_AGENT *a);
 void PeerAddrSetV4(PEER_ADDR *a, UCHAR b0, UCHAR b1, UCHAR b2, UCHAR b3, USHORT port);
 bool PeerAddrEqual(const PEER_ADDR *a, const PEER_ADDR *b);
@@ -355,6 +354,19 @@ typedef struct PEER_HANDSHAKE_INFO {
 // PeerSession.c
 bool PeerRecordParse(const UCHAR *data, UINT size, PEER_RECORD_INFO *r);
 bool PeerHandshakeParse(UINT kind, const UCHAR *payload, UINT size, PEER_HANDSHAKE_INFO *h);
+
+// The payload of a punch message (PeerPunchParse): a probe, a message of the exchange of nonces that proves the address
+// at which two probes met, or a keepalive on the punched path
+typedef struct PEER_PUNCH_INFO {
+	UINT64 Sequence;    // The sequence of the sender, which grows with the clock (PeerNextSequence)
+	UINT Type;          // The type of the message: a probe, a challenge, a response, a proof or a keepalive (PeerPunch.c)
+	const UCHAR *Nonce; // A nonce of the sender, in the payload: that of a challenge or of a response
+	const UCHAR *Echo;  // The echo of a nonce of the receiver, in the payload: that of a response or of a proof
+} PEER_PUNCH_INFO;
+
+// PeerPunch.c
+bool PeerPunchDue(PEER_AGENT *a, const UCHAR *key);
+bool PeerPunchParse(const UCHAR *payload, UINT size, PEER_PUNCH_INFO *m);
 
 // PeerUdp.c
 PEER_UDP *PeerUdpNew(USHORT port);

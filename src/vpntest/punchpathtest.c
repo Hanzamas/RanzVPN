@@ -36,7 +36,9 @@
 // f. Export: the state of each Node, as its admin pipe answers it and ranz node state prints it, and the Telemetry that it
 //    reports to the stand-in of the Controller, which the Controller exports, hold its NAT and its punches.
 // g. Seeds: the same punch, at the peer layers of two Nodes on the network of the simulator, over many seeds of the
-//    other subscribers: the success rate and the time to the direct path of each load, which the job log shows.
+//    other subscribers: the success rate and the time to the direct path of each load, which the job log shows. A seed
+//    that met and one that stayed on relay-1 run again and end the same way, the one that met at the same two mappings:
+//    the simulator is deterministic for a seed.
 // Print "PUNCHPATH TEST OK" only when every check passes.
 
 #include "testlist.h"
@@ -1699,9 +1701,10 @@ static void PunchPathSweepRecv(PEER_AGENT *a, void *param, const UCHAR *src, UIN
 // One seed of step g: node-a and node-b on their peer layers, behind the two symmetric NATs of the world with the generators of
 // seed, relay-1 and relay-2 on the public side, and the Signals that the test carries as the stand-in of the Controller.
 // The pair comes up through relay-1, the other subscribers of each NAT take up to max ports, and the node of the lower
-// key offers the punch. Whether the pair met within PUNCHPATH_SWEEP_TICKS ticks, and if so in how many ms into ms; when
-// it did not, whether the pair stays on relay-1 with its datagrams going on there into relayed.
-static bool PunchPathSweepOne(PUNCHPATH_CTX *ctx, UINT seed, UINT max, UINT64 *ms, bool *relayed)
+// key offers the punch. Whether the pair met within PUNCHPATH_SWEEP_TICKS ticks, and if so in how many ms into ms and the
+// address at which the node of the lower key reaches the other and the one at which the other reaches it into direct[0]
+// and direct[1]; when it did not, whether the pair stays on relay-1 with its datagrams going on there into relayed.
+static bool PunchPathSweepOne(PUNCHPATH_CTX *ctx, UINT seed, UINT max, UINT64 *ms, bool *relayed, PEER_ADDR *direct)
 {
 	PUNCHPATH_SWEEP_NODE nodes[PUNCHPATH_NUM_NODES];
 	PEER_AGENT *relays[PUNCHPATH_NUM_RELAYS];
@@ -1716,6 +1719,9 @@ static bool PunchPathSweepOne(PUNCHPATH_CTX *ctx, UINT seed, UINT max, UINT64 *m
 
 	Zero(nodes, sizeof(nodes));
 	Zero(relays, sizeof(relays));
+	Zero(&sa, sizeof(sa));
+	Zero(&sb, sizeof(sb));
+	Zero(direct, sizeof(PEER_ADDR) * 2);
 	*ms = 0;
 	*relayed = false;
 
@@ -1819,6 +1825,12 @@ static bool PunchPathSweepOne(PUNCHPATH_CTX *ctx, UINT seed, UINT max, UINT64 *m
 	}
 	*ms = Tick64() - t0;
 
+	if (met)
+	{
+		direct[0] = sa.Direct;
+		direct[1] = sb.Direct;
+	}
+
 	// A pair that did not meet goes on through relay-1
 	if (ok && met == false)
 	{
@@ -1841,13 +1853,59 @@ static bool PunchPathSweepOne(PUNCHPATH_CTX *ctx, UINT seed, UINT max, UINT64 *m
 	return ok && met;
 }
 
+// The simulator is deterministic for a seed: with the heavier load of step g, the seed met, at which the two ends reached
+// each other at the addresses direct, meets again at the same two mappings, and the seed stayed, which stayed on relay-1,
+// stays there again; 0 for no such seed
+static void PunchPathAgain(PUNCHPATH_CTX *ctx, UINT met, const PEER_ADDR *direct, UINT stayed)
+{
+	PEER_ADDR again[2];
+	UINT64 ms = 0;
+	bool relayed = false;
+	bool same_met = true;
+	bool same_stayed = true;
+	char first_a[64], first_b[64], addr_a[64], addr_b[64];
+	char what[MAX_SIZE];
+
+	if (met != 0)
+	{
+		bool ok = PunchPathSweepOne(ctx, met, PUNCHPATH_HEAVY_TAKE, &ms, &relayed, again);
+
+		PeerAddrToStr(first_a, sizeof(first_a), &direct[0]);
+		PeerAddrToStr(first_b, sizeof(first_b), &direct[1]);
+		PeerAddrToStr(addr_a, sizeof(addr_a), &again[0]);
+		PeerAddrToStr(addr_b, sizeof(addr_b), &again[1]);
+		Print("  [INFO] load of up to %u ports, seed %u again: %s in %I64u ms, the two ends at %s and %s; the first time at %s and %s\n", (UINT)PUNCHPATH_HEAVY_TAKE, met,
+			ok ? "met" : "did not meet", ms, addr_a, addr_b, first_a, first_b);
+		same_met = (ok && PeerAddrEqual(&again[0], &direct[0]) && PeerAddrEqual(&again[1], &direct[1]));
+	}
+
+	if (stayed != 0)
+	{
+		bool ok = PunchPathSweepOne(ctx, stayed, PUNCHPATH_HEAVY_TAKE, &ms, &relayed, again);
+
+		Print("  [INFO] load of up to %u ports, seed %u again: %s in %I64u ms\n", (UINT)PUNCHPATH_HEAVY_TAKE, stayed, ok ? "met" : (relayed ? "stayed on relay-1" : "did not run"), ms);
+		same_stayed = (ok == false && relayed);
+	}
+
+	Format(what, sizeof(what), "The simulator is deterministic for a seed: with up to %u ports taken, a seed that met meets again at the same two mappings, and a seed that stayed on relay-1 stays there again",
+		(UINT)PUNCHPATH_HEAVY_TAKE);
+	PunchPathCheck(ctx, (met != 0 || stayed != 0) && same_met && same_stayed, what, "seed %u met again at the same mappings: %s; seed %u stayed again: %s", met, same_met ? "yes" : "no", stayed,
+		same_stayed ? "yes" : "no");
+}
+
 // g. The seeds: the punch over PUNCHPATH_SEEDS seeds of the other subscribers, with a load that the range of the punch covers
 // and with a heavier one: the success rate of each and the time to the direct path, for the job log; with the first load,
-// every seed meets, and a seed that does not meet stays on relay-1 with its datagrams going on
+// every seed meets, and a seed that does not meet stays on relay-1 with its datagrams going on. The first seed of the
+// heavier load that met and the first one that stayed run again, and end as before (PunchPathAgain).
 static void PunchPathSeeds(PUNCHPATH_CTX *ctx)
 {
 	UINT loads[] = {PUNCHPATH_TAKE, PUNCHPATH_HEAVY_TAKE};
+	UINT met_seed = 0;
+	UINT stayed_seed = 0;
+	PEER_ADDR met_direct[2];
 	char what[MAX_SIZE];
+
+	Zero(met_direct, sizeof(met_direct));
 
 	Print("[g. seeds: the punch of the two symmetric NATs over %u seeds of the other subscribers of each NAT, with two loads]\n", (UINT)PUNCHPATH_SEEDS);
 
@@ -1861,7 +1919,8 @@ static void PunchPathSeeds(PUNCHPATH_CTX *ctx)
 		{
 			UINT64 ms = 0;
 			bool relayed = false;
-			bool ok = PunchPathSweepOne(ctx, s, loads[l], &ms, &relayed);
+			PEER_ADDR direct[2];
+			bool ok = PunchPathSweepOne(ctx, s, loads[l], &ms, &relayed, direct);
 
 			Print("  [INFO] load of up to %u ports, seed %u: %s in %I64u ms\n", loads[l], s, ok ? "met" : (relayed ? "stayed on relay-1" : "did not run"), ms);
 			if (ok)
@@ -1869,10 +1928,19 @@ static void PunchPathSeeds(PUNCHPATH_CTX *ctx)
 				met++;
 				total += ms;
 				longest = MAX(longest, ms);
+				if (loads[l] == PUNCHPATH_HEAVY_TAKE && met_seed == 0)
+				{
+					met_seed = s;
+					Copy(met_direct, direct, sizeof(met_direct));
+				}
 			}
 			else if (relayed)
 			{
 				stayed++;
+				if (loads[l] == PUNCHPATH_HEAVY_TAKE && stayed_seed == 0)
+				{
+					stayed_seed = s;
+				}
 			}
 		}
 
@@ -1893,6 +1961,8 @@ static void PunchPathSeeds(PUNCHPATH_CTX *ctx)
 			PunchPathCheck(ctx, met + stayed == PUNCHPATH_SEEDS, what, "%u met and %u stayed of %u", met, stayed, (UINT)PUNCHPATH_SEEDS);
 		}
 	}
+
+	PunchPathAgain(ctx, met_seed, met_direct, stayed_seed);
 }
 
 //

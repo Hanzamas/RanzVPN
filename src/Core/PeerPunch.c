@@ -688,6 +688,25 @@ static bool PeerPunchSend(PEER_AGENT *a, const UCHAR *key, const PEER_ADDR *to, 
 	return PeerSendRaw(a, to, env, size);
 }
 
+// Read the payload of a punch message, as PeerPunchSend writes it, into m: PEER_VERSION, the sequence (big-endian), the
+// type, a nonce and the echo of a nonce of the receiver, PEER_PUNCH_PAYLOAD_SIZE bytes in all. False unless it is exactly
+// one punch message of this version and of a known type; Nonce and Echo point into payload.
+bool PeerPunchParse(const UCHAR *payload, UINT size, PEER_PUNCH_INFO *m) {
+	if (m == NULL)
+		return false;
+
+	ZeroMemory(m, sizeof(PEER_PUNCH_INFO));
+	if (payload == NULL || size != PEER_PUNCH_PAYLOAD_SIZE || payload[0] != PEER_VERSION || payload[9] < PEER_PUNCH_PROBE || payload[9] > PEER_PUNCH_KEEPALIVE)
+		return false;
+
+	m->Sequence = PeerGetUint64(payload + 1);
+	m->Type = payload[9];
+	m->Nonce = payload + 10;
+	m->Echo = payload + 10 + PEER_PUNCH_NONCE_SIZE;
+
+	return true;
+}
+
 // A fresh nonce of the punch, which goes to the address to: kept in the next slot, in place of the oldest. False when
 // the random generator fails. The caller holds the lock.
 static bool PeerPunchNonce(PEER_PUNCH *punch, const PEER_ADDR *to, UCHAR *nonce) {
@@ -818,6 +837,7 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 	UCHAR sender[PEER_KEY_SIZE];
 	UCHAR payload[PEER_PUNCH_PAYLOAD_SIZE];
 	UCHAR nonce[PEER_PUNCH_NONCE_SIZE];
+	PEER_PUNCH_INFO m;
 	UINT len = 0;
 	UINT reason = PEER_OK;
 	UINT reply = 0;
@@ -825,11 +845,12 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 	bool limited = false;
 
 	ZeroMemory(nonce, sizeof(nonce));
+	ZeroMemory(&m, sizeof(m));
 
 	if (a->Config.Punch) {
 		if (PeerOpen(a, data, size, sender, payload, sizeof(payload), &len) == false)
 			reason = PEER_DROP_FORGED;
-		else if (len != PEER_PUNCH_PAYLOAD_SIZE || payload[0] != PEER_VERSION || payload[9] < PEER_PUNCH_PROBE || payload[9] > PEER_PUNCH_KEEPALIVE)
+		else if (PeerPunchParse(payload, len, &m) == false)
 			reason = PEER_DROP_MALFORMED;
 	} else {
 		reason = PEER_DROP_MALFORMED;
@@ -840,10 +861,10 @@ void PeerPunchInput(PEER_AGENT *a, const PEER_ADDR *from, const UCHAR *data, UIN
 		return;
 	}
 
-	UINT64 seq = PeerGetUint64(payload + 1);
-	UINT type = payload[9];
-	const UCHAR *their_nonce = payload + 10;
-	const UCHAR *echo = payload + 10 + PEER_PUNCH_NONCE_SIZE;
+	UINT64 seq = m.Sequence;
+	UINT type = m.Type;
+	const UCHAR *their_nonce = m.Nonce;
+	const UCHAR *echo = m.Echo;
 
 	AcquireSRWLockExclusive(&a->Lock);
 	{
