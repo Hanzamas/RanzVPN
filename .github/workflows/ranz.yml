@@ -415,9 +415,10 @@ jobs:
         wait "$server"
         cat "$tools/throughput-server.out"
     # -race is the race detection of ADR-0040 item 4 for the Go code; the profile is read by the
-    # coverage floor step. The package controller/internal/controller starts an rqlited for most of
-    # its tests and takes about 9 minutes under -race, so the default timeout of 10 minutes was too
-    # near: 20 minutes still stops a hang, and the job has 40
+    # coverage floor step. -timeout 20m (CI-SLOW-1, #552): go test stops a package after 10 minutes
+    # unless told otherwise. Most tests of controller/internal/controller start an rqlited, and the
+    # package took about 500 s to 540 s here under -race and about 500 s to 600 s on Windows x64,
+    # where a slow runner ran out of the 10 minutes. A hang still ends the job, only later.
     - name: Test
       env:
         RANZ_CONTROL_WIRE: ${{ runner.temp }}/wire
@@ -616,9 +617,10 @@ jobs:
       run: |
         go test -count=1 -v -run 'TestPipe|TestNoPipe|TestMitigations' ./ranz-bgp
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
-    # The package controller/internal/controller starts an rqlited for most of its tests and takes
-    # about 9 minutes on this runner: a slow runner timed it out at the default 10 minutes in the last
-    # test file of the package. 20 minutes still stops a hang, and the job has 40
+    # -timeout 20m (CI-SLOW-1, #552): go test stops a package after 10 minutes unless told otherwise.
+    # Most tests of controller/internal/controller start an rqlited, and the package took about 500 s
+    # to 600 s on Windows x64, where a slow runner ran out of the 10 minutes. A hang still ends the
+    # job, only later.
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
