@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 
@@ -302,11 +303,21 @@ func diagTaken(answers chan byte, n int, flag func(kind, format string, args ...
 	}
 }
 
-// diagVariant is a way to play the front door.
+var procGetProcessHandleCount = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetProcessHandleCount")
+
+// diagHandles is the number of handles that this process holds.
+func diagHandles() uint32 {
+	var n uint32
+	_, _, _ = procGetProcessHandleCount.Call(uintptr(windows.CurrentProcess()), uintptr(unsafe.Pointer(&n)))
+	return n
+}
+
+// diagVariant is a way to play the front door, and a way for the controller to rebuild the socket.
 type diagVariant struct {
 	name    string
 	order   string // first, after or late: when the front door closes its handle of a connection
 	process bool   // the front door is a process of its own
+	mode    string // diagRebuildMode: the candidate fix of rebuild
 }
 
 // diagOutcome is what one run of the scenario found: the kinds of its anomalies, and its trace.
@@ -363,6 +374,8 @@ func diagScenario(t *testing.T, cert tls.Certificate, v diagVariant) diagOutcome
 		return &diagConn{Conn: c, d: d, id: id}
 	}
 	defer func() { diagRebuild = nil }()
+	diagRebuildMode = v.mode
+	defer func() { diagRebuildMode = "" }()
 
 	pipe := testPipe()
 	fd, err := ListenFrontDoor(pipe, s)
@@ -495,15 +508,18 @@ func TestDiag534(t *testing.T) {
 		diagVariant
 		budget time.Duration
 	}{
-		{diagVariant{"in-process, handle closed before the pipe (TestFrontDoorHandsOver now)", "first", false}, 60 * time.Second},
-		{diagVariant{"in-process, handle closed after the pipe (the order of the node)", "after", false}, 60 * time.Second},
-		{diagVariant{"in-process, handle closed when the run ends", "late", false}, 60 * time.Second},
-		{diagVariant{"front door as a process, handle closed after the pipe (as the node)", "after", true}, 150 * time.Second},
+		{diagVariant{name: "control: rebuild as it is, in-process, handle closed after the pipe", order: "after"}, 15 * time.Second},
+		{diagVariant{name: "protect: in-process, handle closed after the pipe", order: "after", mode: "protect"}, 40 * time.Second},
+		{diagVariant{name: "protect: in-process, handle closed before the pipe", order: "first", mode: "protect"}, 40 * time.Second},
+		{diagVariant{name: "protect: front door as a process", order: "after", mode: "protect", process: true}, 90 * time.Second},
+		{diagVariant{name: "untracked: in-process, handle closed after the pipe", order: "after", mode: "untracked"}, 40 * time.Second},
+		{diagVariant{name: "untracked: front door as a process", order: "after", mode: "untracked", process: true}, 90 * time.Second},
 	}
 	failed := false
 	for _, v := range variants {
 		end := time.Now().Add(v.budget)
 		runs, bad, shown := 0, 0, 0
+		handlesBefore := diagHandles()
 		kinds := map[string]int{}
 		for runs < 3000 && time.Now().Before(end) {
 			runs++
@@ -520,7 +536,7 @@ func TestDiag534(t *testing.T) {
 				fmt.Printf("---- %s: run %d\n%s\n", v.name, runs, out.trace)
 			}
 		}
-		fmt.Printf("==== %s: %d runs, %d with an anomaly, kinds %v\n", v.name, runs, bad, kinds)
+		fmt.Printf("==== %s: %d runs, %d with an anomaly, kinds %v, handles %d before and %d after\n", v.name, runs, bad, kinds, handlesBefore, diagHandles())
 		if bad > 0 {
 			failed = true
 		}
