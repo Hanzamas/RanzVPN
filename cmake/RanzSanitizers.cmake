@@ -131,7 +131,7 @@ if(_ranz_asan_dynamic AND _ranz_asan_static_thunk)
 
   # [MS-RT]: "Even when statically linking, the ASan runtime DLL must be present at runtime".
   # Copy the DLL of this compiler next to the executables: the build directory (vpntest,
-  # vpnserver, vpncmd, the fuzz targets).
+  # vpnserver, ranz-node, the fuzz targets).
   get_filename_component(_ranz_cc_dir "${CMAKE_C_COMPILER}" DIRECTORY)
   set(RANZ_ASAN_DLL "")
   foreach(candidate

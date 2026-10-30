@@ -1,5 +1,5 @@
 // harness.c
-// In-process server harness for vpntest: hubs, cascade, frames, vpncmd golden outputs, benchmark
+// In-process server harness for vpntest: hubs, cascade, frames, golden outputs, benchmark
 //
 // Design notes:
 // - The server listens only on TCP 39555 (HARNESS_PORT). The port is below the Windows dynamic port
@@ -15,11 +15,10 @@
 //   sockets, StopSession and SiReleaseServer wait without a time limit.
 // - The [PASS]/[FAIL] lines carry no timing values: timings are on "TIME <name> <n> ms" and
 //   "BENCH <name> <value> <unit>" lines that a log diff can filter out.
-//   "HARNESS GOLDEN MODE update|compare" tells whether the golden files were compared.
-// - The admin RPC Pack goldens (golden family "pack", harness_pack.c) run right after the vpncmd
-//   goldens, while the sessions and the cascade are up. harness_int.h holds the shared types.
-// - The vpncmd command cases (golden family "cmd", harness_cmd.c) run after phase "adminreconnect": command
-//   sequences with failing steps, each on a Virtual Hub of its own.
+//   "HARNESS GOLDEN MODE update|compare" tells whether the golden file of the packet log was compared.
+// - The admin RPC Pack goldens (golden family "pack", harness_pack.c) run right after the packet log
+//   golden, while the sessions and the cascade are up. harness_int.h holds the shared types. They are the
+//   golden outputs of the admin RPC since vpncmd and its golden outputs left with CORE-S8-1 (#84).
 // - "bench" runs every case HARNESS_BENCH_RUNS times and prints "BENCH <name> <median> <unit>", then
 //   "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order. Besides the cascade path it has in-process
 //   cases without TLS, one per hot spot of spec #31: flood_fps_<n> (one session floods broadcast frames to
@@ -61,7 +60,7 @@
 //   and hub security log) at a loopback UDP receiver of the test. Each step is one admin RPC, then GetConfig, whose
 //   LA_GET_CONFIG line ends the step: the lines before it are the audit lines of the call. The step also compares
 //   ConfigRevision of the in-process server before and after.
-// - The log cases of PKG-4 (#108) run after the vpncmd command cases and restore every setting they change.
+// - The log cases of PKG-4 (#108) run after phase "adminreconnect" and restore every setting they change.
 //   Syslog datagrams go to a loopback UDP socket of the test on an ephemeral port.
 
 #include "harness_int.h"
@@ -70,7 +69,6 @@
 #include "Cedar/Account.h"
 #include "Cedar/Admin.h"
 #include "Cedar/Cedar.h"
-#include "Cedar/Command.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
 #include "Cedar/Listener.h"
@@ -175,7 +173,6 @@
 #define	HARNESS_QUEUE_HIGH			256					// Frames kept queued by the bench sender
 #define	HARNESS_QUEUE_LOW			64					// Sender wakes up below this
 #define	HARNESS_MAX_RECORD			64					// Recorded frames per test session
-#define	HARNESS_MAX_COLUMNS			32					// Columns tracked by the CSV normaliser
 #define	HARNESS_DIFF_MAX_LINES		1000				// Larger texts only report the first difference
 #define	HARNESS_DIFF_CONTEXT		2					// Context lines around a difference
 #define	HARNESS_PACK_ITEMS			32					// Sessions in the Pack benchmark struct
@@ -196,13 +193,8 @@
 #define	HARNESS_NS_PER_MS			1000000ULL
 #define	HARNESS_NS_PER_S			1000000000ULL
 
-// Normalised placeholders
-#define	HARNESS_TAG_VOLATILE		"<VOLATILE>"
-#define	HARNESS_TAG_DATETIME		"<DATETIME>"
-#define	HARNESS_TAG_MAC				"<MAC>"
+// Normalised placeholder
 #define	HARNESS_TAG_NUMBER			"<N>"
-
-#define	HARNESS_IS_DIGIT(c)			((c) >= '0' && (c) <= '9')
 
 // User of phase "zerokey" on hub HARNESS_HUB_A (deleted again by the phase)
 #define	HARNESS_ZEROKEY_USER		"zerokey"
@@ -232,29 +224,6 @@ typedef struct HARNESS_FRAME
 	UCHAR *Data;
 	UINT Size;
 } HARNESS_FRAME;
-
-// vpncmd command captured as a golden output
-typedef struct HARNESS_VPNCMD
-{
-	char *Name;					// Output file is vpncmd_<Name>.txt
-	char *Hub;					// NULL: server admin mode, otherwise /ADMINHUB
-	char *Command;				// Command after /CMD
-} HARNESS_VPNCMD;
-
-// Normalisation rules resolved from the string table (UTF-8 titles); typedef in harness_int.h
-struct HARNESS_NORM
-{
-	LIST *VolatileColumns;		// Column titles whose cells are volatile
-	LIST *VolatileRows;			// Row titles whose values are volatile
-	LIST *DropRows;				// Row titles removed (environment dependent rows)
-};
-
-// Cells of one CSV line
-typedef struct HARNESS_CELLS
-{
-	UINT Num;
-	char **Cell;
-} HARNESS_CELLS;
 
 // Watchdog of one test: a deadlock in the code under test fails the test instead of hanging the CI job
 typedef struct HARNESS_WATCHDOG
@@ -333,7 +302,7 @@ typedef struct CERTDL_CONN
 typedef struct CERTDL_RESULT
 {
 	UINT Err;					// Error code of the admin RPC
-	UINT Flag1;					// 1: the server built the chain up to a root (0 makes vpncmd print SM_CERT_NEED_ROOT)
+	UINT Flag1;					// 1: the server built the chain up to a root (0: SM_CERT_NEED_ROOT for an admin client)
 	UINT64 Elapsed;				// Duration of the admin RPC (ms)
 	UINT NumRequests;			// Requests the listener received
 	char RequestLine[MAX_SIZE];	// Request line of the first request
@@ -380,94 +349,6 @@ typedef struct ADMINAUDIT
 // Current phase of the test, read by the watchdog thread (static strings only)
 static char *volatile harness_phase = "start";
 static char *volatile harness_phase_detail = "";
-
-// Fixed list of vpncmd /SERVER commands for the golden outputs
-static HARNESS_VPNCMD harness_vpncmd_list[] =
-{
-	{"ServerInfoGet", NULL, "ServerInfoGet"},
-	{"ServerStatusGet", NULL, "ServerStatusGet"},
-	{"ListenerList", NULL, "ListenerList"},
-	{"HubList", NULL, "HubList"},
-	{"Caps", NULL, "Caps"},
-	{"HttpListenerGet", NULL, "HttpListenerGet"},
-	{"HARNESS_A_StatusGet", HARNESS_HUB_A, "StatusGet"},
-	{"HARNESS_A_CascadeList", HARNESS_HUB_A, "CascadeList"},
-	{"HARNESS_A_SessionList", HARNESS_HUB_A, "SessionList"},
-	{"HARNESS_A_UserList", HARNESS_HUB_A, "UserList"},
-	{"HARNESS_B_StatusGet", HARNESS_HUB_B, "StatusGet"},
-	{"HARNESS_B_SessionList", HARNESS_HUB_B, "SessionList"},
-	{"HARNESS_B_UserList", HARNESS_HUB_B, "UserList"},
-};
-
-// Columns whose cells depend on time or on traffic timing
-static char *harness_volatile_columns[] =
-{
-	"SM_HUB_COLUMN_9",			// Num Logins (incremented 30 s after a login)
-	"SM_HUB_COLUMN_10",			// Last Login
-	"SM_HUB_COLUMN_11",			// Last Communication
-	"SM_USER_COLUMN_6",			// Num Logins
-	"SM_USER_COLUMN_7",			// Last Login
-	"SM_SESS_COLUMN_4",			// Source Host Name (reverse lookup of 127.0.0.1)
-	"SM_SESS_COLUMN_6",			// Transfer Bytes
-	"SM_SESS_COLUMN_7",			// Transfer Packets
-	"SM_LINK_COLUMN_3",			// Established at
-	"SM_ACCESS_COLUMN_6",		// Unique ID of an access list rule (hash of its address, vpncmd cases)
-};
-
-// Item,Value rows whose values depend on the build, the machine, the time or traffic timing
-static char *harness_volatile_rows[] =
-{
-	"SM_INFO_PRODUCT_NAME",
-	"SM_INFO_VERSION",
-	"SM_INFO_BUILD",
-	"SM_INFO_HOSTNAME",
-	"SM_OS_SYSTEM_NAME",
-	"SM_OS_PRODUCT_NAME",
-	"SM_OS_VENDER_NAME",
-	"SM_OS_VERSION",
-	"SM_OS_KERNEL_NAME",
-	"SM_OS_KERNEL_VERSION",
-	"SM_ST_NUM_TCP",
-	"SM_ST_START_TIME",
-	"SM_ST_CURRENT_TIME",
-	"SM_ST_CURRENT_TICK",
-	"SM_ST_TOTAL_MEMORY",
-	"SM_ST_USED_MEMORY",
-	"SM_ST_FREE_MEMORY",
-	"SM_ST_TOTAL_PHYS",
-	"SM_ST_USED_PHYS",
-	"SM_ST_FREE_PHYS",
-	"SM_ST_SEND_UCAST_NUM",
-	"SM_ST_SEND_UCAST_SIZE",
-	"SM_ST_SEND_BCAST_NUM",
-	"SM_ST_SEND_BCAST_SIZE",
-	"SM_ST_RECV_UCAST_NUM",
-	"SM_ST_RECV_UCAST_SIZE",
-	"SM_ST_RECV_BCAST_NUM",
-	"SM_ST_RECV_BCAST_SIZE",
-	"SM_HUB_NUM_LOGIN",
-	"SM_HUB_LAST_LOGIN_TIME",
-	"SM_HUB_LAST_COMM_TIME",
-	"SM_HUB_CREATED_TIME",
-};
-
-// Rows that exist only on some machines
-static char *harness_drop_rows[] =
-{
-	"SM_OS_SERVICE_PACK",
-};
-
-// Capabilities that depend on the machine, the CPU or the build flavour, or whose title names the product (rows removed)
-static char *harness_drop_caps[] =
-{
-	"b_local_bridge",
-	"b_tap_supported",
-	"b_support_network_connection_name",
-	"b_is_in_vm",
-	"b_support_aes_ni",
-	"b_using_selow_driver",
-	"b_is_softether",			// Title names the product, changed by the Ranz rename of the string tables
-};
 
 // Configuration items that change on every save or depend on login timing
 static char *harness_config_volatile_names[] =
@@ -528,21 +409,7 @@ static bool HarnessSetup(HARNESS *h);
 static bool HarnessCheckMac(HARNESS *h, char *hubname, const UCHAR *mac, char *session_name);
 static bool HarnessTeach(HARNESS *h);
 static bool HarnessFrames(HARNESS *h);
-static void HarnessAddLabel(LIST *o, wchar_t *label);
-static void HarnessAddCapsLabel(LIST *o, char *caps_name);
-static bool HarnessInList(LIST *o, const char *str);
-static HARNESS_CELLS *HarnessCsvSplit(const char *line);
-static char *HarnessCsvJoin(const HARNESS_CELLS *c);
-static void HarnessFreeCells(HARNESS_CELLS *c);
-static void HarnessSetCell(HARNESS_CELLS *c, UINT index, const char *str);
-static bool HarnessIsDateTime(const char *s);
-static bool HarnessIsHexChar(char c);
-static bool HarnessHasRandomMac(char *s);
-static char *HarnessNormalizeCell(char *s);
-static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v);
 static void HarnessGetDirs(char *out_dir, UINT out_size, char *golden_dir, UINT golden_size, bool *update);
-static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir);
-static void HarnessGolden(HARNESS *h);
 static bool HarnessIsVolatileConfigName(const char *name, bool is_uint64);
 static char *HarnessNormalizeConfig(char *text);
 static bool HarnessCompareConfig(HARNESS *h, char *what, char *text1, char *text2);
@@ -1477,7 +1344,7 @@ static bool HarnessWaitListener(HARNESS *h, UINT timeout)
 	return HarnessCheck(h, listening, tmp);
 }
 
-// Connect the admin RPC as vpncmd does (empty password of a fresh configuration), retrying until timeout
+// Connect the admin RPC as an admin client does (empty password of a fresh configuration), retrying until timeout
 static RPC *HarnessAdminConnect(CEDAR *cedar, UINT timeout, UINT *err)
 {
 	CLIENT_OPTION o;
@@ -2042,567 +1909,7 @@ static bool HarnessFrames(HARNESS *h)
 }
 
 ////////////////////////////
-// vpncmd golden outputs
-
-// Resolve the normalisation rules from the string table
-HARNESS_NORM *HarnessNewNorm()
-{
-	HARNESS_NORM *n = ZeroMalloc(sizeof(HARNESS_NORM));
-
-	n->VolatileColumns = NewListFast(NULL);
-	n->VolatileRows = NewListFast(NULL);
-	n->DropRows = NewListFast(NULL);
-
-	for (UINT i = 0;i < sizeof(harness_volatile_columns) / sizeof(harness_volatile_columns[0]);i++)
-	{
-		HarnessAddLabel(n->VolatileColumns, _UU(harness_volatile_columns[i]));
-	}
-
-	for (UINT i = 0;i < sizeof(harness_volatile_rows) / sizeof(harness_volatile_rows[0]);i++)
-	{
-		HarnessAddLabel(n->VolatileRows, _UU(harness_volatile_rows[i]));
-	}
-
-	for (UINT i = 0;i < sizeof(harness_drop_rows) / sizeof(harness_drop_rows[0]);i++)
-	{
-		HarnessAddLabel(n->DropRows, _UU(harness_drop_rows[i]));
-	}
-
-	for (UINT i = 0;i < sizeof(harness_drop_caps) / sizeof(harness_drop_caps[0]);i++)
-	{
-		HarnessAddCapsLabel(n->DropRows, harness_drop_caps[i]);
-	}
-
-	return n;
-}
-
-// Release the normalisation rules
-void HarnessFreeNorm(HARNESS_NORM *n)
-{
-	if (n == NULL)
-	{
-		return;
-	}
-
-	HarnessFreeLines(n->VolatileColumns);
-	HarnessFreeLines(n->VolatileRows);
-	HarnessFreeLines(n->DropRows);
-
-	Free(n);
-}
-
-// Add a title (empty titles are ignored)
-static void HarnessAddLabel(LIST *o, wchar_t *label)
-{
-	if (label == NULL || UniIsEmptyStr(label))
-	{
-		return;
-	}
-
-	Add(o, HarnessUniToUtf8(label));
-}
-
-// Add the title vpncmd Caps prints for a capability name
-static void HarnessAddCapsLabel(LIST *o, char *caps_name)
-{
-	char name[MAX_SIZE];
-	wchar_t title[MAX_SIZE];
-
-	Format(name, sizeof(name), "CT_%s", caps_name);
-	UniStrCpy(title, sizeof(title), _UU(name));
-
-	if (UniIsEmptyStr(title))
-	{
-		UniFormat(title, sizeof(title), L"%S", (StrLen(caps_name) >= 2) ? caps_name + 2 : caps_name);
-	}
-
-	HarnessAddLabel(o, title);
-}
-
-// Exact string lookup
-static bool HarnessInList(LIST *o, const char *str)
-{
-	for (UINT i = 0;i < LIST_NUM(o);i++)
-	{
-		if (StrCmp(LIST_DATA(o, i), str) == 0)
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
-// Split a CSV line (quoted cells as written by vpncmd /CSV, lenient for plain text lines)
-static HARNESS_CELLS *HarnessCsvSplit(const char *line)
-{
-	HARNESS_CELLS *c = ZeroMalloc(sizeof(HARNESS_CELLS));
-	UINT len = StrLen(line);
-	UINT i = 0;
-
-	c->Cell = ZeroMalloc(sizeof(char *) * (len + 1));
-
-	while (true)
-	{
-		char *cell = ZeroMalloc(len + 1);
-		UINT n = 0;
-
-		if (i < len && line[i] == '"')
-		{
-			i++;
-			while (i < len)
-			{
-				if (line[i] == '"')
-				{
-					if ((i + 1) < len && line[i + 1] == '"')
-					{
-						cell[n++] = '"';
-						i += 2;
-						continue;
-					}
-
-					i++;
-					break;
-				}
-
-				cell[n++] = line[i++];
-			}
-		}
-
-		while (i < len && line[i] != ',')
-		{
-			cell[n++] = line[i++];
-		}
-
-		c->Cell[c->Num++] = cell;
-
-		if (i >= len)
-		{
-			break;
-		}
-
-		// Skip the comma
-		i++;
-	}
-
-	return c;
-}
-
-// Join cells into a CSV line with the vpncmd escaping rules
-static char *HarnessCsvJoin(const HARNESS_CELLS *c)
-{
-	BUF *b = NewBuf();
-
-	for (UINT i = 0;i < c->Num;i++)
-	{
-		char *s = c->Cell[i];
-		UINT len = StrLen(s);
-		bool escape = false;
-
-		if (i != 0)
-		{
-			WriteBuf(b, ",", 1);
-		}
-
-		for (UINT j = 0;j < len;j++)
-		{
-			if (s[j] == ',' || s[j] == '"' || s[j] == '\n')
-			{
-				escape = true;
-			}
-		}
-
-		if (escape == false)
-		{
-			WriteBuf(b, s, len);
-		}
-		else
-		{
-			WriteBuf(b, "\"", 1);
-			for (UINT j = 0;j < len;j++)
-			{
-				if (s[j] == '"')
-				{
-					WriteBuf(b, "\"", 1);
-				}
-				WriteBuf(b, &s[j], 1);
-			}
-			WriteBuf(b, "\"", 1);
-		}
-	}
-
-	WriteBufChar(b, 0);
-	char *ret = CopyStr((char *)b->Buf);
-	FreeBuf(b);
-
-	return ret;
-}
-
-// Release cells
-static void HarnessFreeCells(HARNESS_CELLS *c)
-{
-	if (c == NULL)
-	{
-		return;
-	}
-
-	for (UINT i = 0;i < c->Num;i++)
-	{
-		Free(c->Cell[i]);
-	}
-
-	Free(c->Cell);
-	Free(c);
-}
-
-// Replace a cell
-static void HarnessSetCell(HARNESS_CELLS *c, UINT index, const char *str)
-{
-	Free(c->Cell[index]);
-	c->Cell[index] = CopyStr(str);
-}
-
-// Whether a cell contains a date (4-digit year, 1-2 digit month and day with any separators)
-static bool HarnessIsDateTime(const char *s)
-{
-	UINT len = StrLen(s);
-
-	for (UINT i = 0;(i + 4) <= len;i++)
-	{
-		if (i >= 1 && HARNESS_IS_DIGIT(s[i - 1]))
-		{
-			continue;
-		}
-
-		if (HARNESS_IS_DIGIT(s[i]) == false || HARNESS_IS_DIGIT(s[i + 1]) == false ||
-			HARNESS_IS_DIGIT(s[i + 2]) == false || HARNESS_IS_DIGIT(s[i + 3]) == false)
-		{
-			continue;
-		}
-
-		UINT j = i + 4;
-		if (j < len && HARNESS_IS_DIGIT(s[j]))
-		{
-			continue;
-		}
-
-		// Separator (locale strings may be multi-byte)
-		UINT n = 0;
-		while (j < len && HARNESS_IS_DIGIT(s[j]) == false && n < 6)
-		{
-			j++;
-			n++;
-		}
-		if (n == 0 || j >= len || HARNESS_IS_DIGIT(s[j]) == false)
-		{
-			continue;
-		}
-
-		// Month
-		n = 0;
-		while (j < len && HARNESS_IS_DIGIT(s[j]))
-		{
-			j++;
-			n++;
-		}
-		if (n > 2)
-		{
-			continue;
-		}
-
-		// Separator
-		n = 0;
-		while (j < len && HARNESS_IS_DIGIT(s[j]) == false && n < 6)
-		{
-			j++;
-			n++;
-		}
-		if (n == 0 || j >= len || HARNESS_IS_DIGIT(s[j]) == false)
-		{
-			continue;
-		}
-
-		// Day
-		n = 0;
-		while (j < len && HARNESS_IS_DIGIT(s[j]))
-		{
-			j++;
-			n++;
-		}
-		if (n > 2)
-		{
-			continue;
-		}
-
-		return true;
-	}
-
-	return false;
-}
-
-// Hexadecimal digit
-static bool HarnessIsHexChar(char c)
-{
-	return (HARNESS_IS_DIGIT(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
-}
-
-// Whether a cell contains a MAC address other than the fixed harness addresses
-static bool HarnessHasRandomMac(char *s)
-{
-	UINT len = StrLen(s);
-
-	for (UINT i = 0;(i + 17) <= len;i++)
-	{
-		bool match = true;
-		char sep = s[i + 2];
-
-		if (sep != '-' && sep != ':')
-		{
-			continue;
-		}
-
-		for (UINT k = 0;k < 17;k++)
-		{
-			char c = s[i + k];
-
-			if ((k % 3) == 2)
-			{
-				if (c != sep)
-				{
-					match = false;
-					break;
-				}
-			}
-			else if (HarnessIsHexChar(c) == false)
-			{
-				match = false;
-				break;
-			}
-		}
-
-		if (match)
-		{
-			char found[18];
-			char known_a[64];
-			char known_b[64];
-
-			StrCpy(found, sizeof(found), s + i);
-			found[17] = 0;
-			if (sep == ':')
-			{
-				for (UINT k = 2;k < 17;k += 3)
-				{
-					found[k] = '-';
-				}
-			}
-
-			MacToStr(known_a, sizeof(known_a), harness_mac_a);
-			MacToStr(known_b, sizeof(known_b), harness_mac_b);
-
-			if (StrCmpi(found, known_a) != 0 && StrCmpi(found, known_b) != 0)
-			{
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
-// Generic cell rules; returns a new string when the cell changes, otherwise NULL
-static char *HarnessNormalizeCell(char *s)
-{
-	UINT len = StrLen(s);
-
-	if (HarnessIsDateTime(s))
-	{
-		return CopyStr(HARNESS_TAG_DATETIME);
-	}
-
-	if (HarnessHasRandomMac(s))
-	{
-		return CopyStr(HARNESS_TAG_MAC);
-	}
-
-	// Session names end with a per-hub counter: SID-<USER>-<n>
-	if (len >= 6 && s[0] == 'S' && s[1] == 'I' && s[2] == 'D' && s[3] == '-' && HARNESS_IS_DIGIT(s[len - 1]))
-	{
-		UINT i = len;
-		char *ret;
-
-		while (i > 0 && HARNESS_IS_DIGIT(s[i - 1]))
-		{
-			i--;
-		}
-
-		if (i >= 5 && s[i - 1] == '-')
-		{
-			ret = ZeroMalloc(i + 2);
-			Copy(ret, s, i);
-			ret[i] = '#';
-
-			return ret;
-		}
-	}
-
-	return NULL;
-}
-
-// Normalise the CSV output of one vpncmd command
-char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
-{
-	char *text = HarnessBufToStr(raw);
-	LIST *lines = HarnessSplitLines(HarnessSkipBom(text));
-	LIST *out = NewListFast(NULL);
-	bool volatile_col[HARNESS_MAX_COLUMNS];
-	UINT num_header = 0;
-
-	Zero(volatile_col, sizeof(volatile_col));
-
-	for (UINT i = 0;i < LIST_NUM(lines);i++)
-	{
-		char *line = LIST_DATA(lines, i);
-		HARNESS_CELLS *c = HarnessCsvSplit(line);
-		bool drop = false;
-		bool row_rule = false;
-		bool changed = false;
-
-		if (HarnessInList(n->DropRows, c->Cell[0]))
-		{
-			drop = true;
-		}
-		else if (c->Num >= 2 && HarnessInList(n->VolatileRows, c->Cell[0]))
-		{
-			for (UINT j = 1;j < c->Num;j++)
-			{
-				HarnessSetCell(c, j, HARNESS_TAG_VOLATILE);
-			}
-			row_rule = true;
-			changed = true;
-		}
-
-		if (drop == false && row_rule == false && c->Num >= 3)
-		{
-			bool is_header = false;
-
-			for (UINT j = 0;j < c->Num;j++)
-			{
-				if (HarnessInList(n->VolatileColumns, c->Cell[j]))
-				{
-					is_header = true;
-				}
-			}
-
-			if (is_header)
-			{
-				// Header of a multi-column table: remember the volatile columns
-				Zero(volatile_col, sizeof(volatile_col));
-				num_header = c->Num;
-				for (UINT j = 0;j < c->Num && j < HARNESS_MAX_COLUMNS;j++)
-				{
-					volatile_col[j] = HarnessInList(n->VolatileColumns, c->Cell[j]);
-				}
-			}
-			else if (c->Num == num_header)
-			{
-				for (UINT j = 0;j < c->Num && j < HARNESS_MAX_COLUMNS;j++)
-				{
-					if (volatile_col[j])
-					{
-						HarnessSetCell(c, j, HARNESS_TAG_VOLATILE);
-						changed = true;
-					}
-				}
-			}
-		}
-
-		if (drop == false)
-		{
-			for (UINT j = 0;j < c->Num;j++)
-			{
-				char *s = HarnessNormalizeCell(c->Cell[j]);
-
-				if (s != NULL)
-				{
-					Free(c->Cell[j]);
-					c->Cell[j] = s;
-					changed = true;
-				}
-			}
-
-			Add(out, changed ? HarnessCsvJoin(c) : CopyStr(line));
-		}
-
-		HarnessFreeCells(c);
-	}
-
-	// No trailing empty lines
-	while (LIST_NUM(out) >= 1 && StrLen(LIST_DATA(out, LIST_NUM(out) - 1)) == 0)
-	{
-		char *last = LIST_DATA(out, LIST_NUM(out) - 1);
-
-		Delete(out, last);
-		Free(last);
-	}
-
-	BUF *b = NewBuf();
-	for (UINT i = 0;i < LIST_NUM(out);i++)
-	{
-		char *s = LIST_DATA(out, i);
-
-		WriteBuf(b, s, StrLen(s));
-		WriteBuf(b, "\r\n", 2);
-	}
-	char *ret = HarnessBufToStr(b);
-	FreeBuf(b);
-
-	HarnessFreeLines(out);
-	HarnessFreeLines(lines);
-	Free(text);
-
-	return ret;
-}
-
-// Run one vpncmd /SERVER command in-process through CommandMain and read its /OUT file
-static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v)
-{
-	char cmdline[MAX_SIZE];
-	char tmp[MAX_SIZE];
-
-	FileDelete(HARNESS_VPNCMD_OUT);
-
-	if (v->Hub == NULL)
-	{
-		Format(cmdline, sizeof(cmdline), "vpncmd 127.0.0.1:%u /SERVER /CSV /PROGRAMMING /OUT:%s /CMD %s",
-			HARNESS_PORT, HARNESS_VPNCMD_OUT, v->Command);
-	}
-	else
-	{
-		Format(cmdline, sizeof(cmdline), "vpncmd 127.0.0.1:%u /SERVER /ADMINHUB:%s /CSV /PROGRAMMING /OUT:%s /CMD %s",
-			HARNESS_PORT, v->Hub, HARNESS_VPNCMD_OUT, v->Command);
-	}
-
-	Print("  vpncmd: %s\n", cmdline);
-
-	wchar_t *w = CopyStrToUni(cmdline);
-	UINT ret = CommandMain(w);
-	Free(w);
-
-	BUF *b = ReadDump(HARNESS_VPNCMD_OUT);
-	FileDelete(HARNESS_VPNCMD_OUT);
-
-	Format(tmp, sizeof(tmp), "vpncmd %s%s%s ran (return code %u, output %s)",
-		v->Hub == NULL ? "" : v->Hub, v->Hub == NULL ? "" : " ", v->Command, ret,
-		b == NULL ? "missing" : "captured");
-
-	if (HarnessCheck(h, ret == ERR_NO_ERROR && b != NULL, tmp) == false && b != NULL)
-	{
-		FreeBuf(b);
-		b = NULL;
-	}
-
-	return b;
-}
+// Golden files
 
 // Whether a directory contains at least one file
 bool HarnessDirHasFiles(char *dir)
@@ -2766,104 +2073,6 @@ void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *fil
 
 		Free(golden);
 		FreeBuf(g);
-	}
-}
-
-// Run the fixed vpncmd command list, normalise and compare with the golden files
-static void HarnessGolden(HARNESS *h)
-{
-	char out_dir[MAX_SIZE];
-	char golden_dir[MAX_SIZE];
-	bool update;
-
-	Print("[golden]\n");
-	HarnessSetPhase("golden", NULL);
-
-	HarnessGetDirs(out_dir, sizeof(out_dir), golden_dir, sizeof(golden_dir), &update);
-	MakeDirEx(out_dir);
-
-	// Fixed machine-readable mode line: CI can require compare mode once the golden files are committed
-	Print("HARNESS GOLDEN MODE %s\n", update ? "update" : "compare");
-	Print("  golden directory: %s (%s)\n", golden_dir,
-		update ? "update mode: missing or empty, or RANZ_UPDATE_GOLDEN=1" : "compare mode");
-	Print("  output directory: %s\n", out_dir);
-
-	HARNESS_NORM *n = HarnessNewNorm();
-
-	for (UINT i = 0;i < sizeof(harness_vpncmd_list) / sizeof(harness_vpncmd_list[0]);i++)
-	{
-		HARNESS_VPNCMD *v = &harness_vpncmd_list[i];
-
-		HarnessSetPhase("golden", v->Name);
-		BUF *raw = HarnessRunVpncmd(h, v);
-
-		if (raw != NULL)
-		{
-			char file_name[MAX_SIZE];
-			char *norm = HarnessNormalizeVpncmd(n, raw);
-
-			Format(file_name, sizeof(file_name), "vpncmd_%s.txt", v->Name);
-			HarnessCompareGolden(h, out_dir, golden_dir, file_name, norm, update);
-
-			Free(norm);
-			FreeBuf(raw);
-		}
-	}
-
-	if (update == false)
-	{
-		HarnessCheckStaleGolden(h, golden_dir);
-	}
-
-	HarnessFreeNorm(n);
-}
-
-// Compare mode: fail on every vpncmd_*.txt golden file that no command of the list produces
-static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir)
-{
-	DIRLIST *d = EnumDir(golden_dir);
-	UINT num_stale = 0;
-	char expected[MAX_SIZE];
-	char tmp[MAX_SIZE];
-
-	if (d == NULL)
-	{
-		return;
-	}
-
-	for (UINT i = 0;i < d->NumFiles;i++)
-	{
-		DIRENT *e = d->File[i];
-		bool known = false;
-
-		if (e->Folder || StartWith(e->FileName, "vpncmd_") == false || EndWith(e->FileName, ".txt") == false)
-		{
-			continue;
-		}
-
-		for (UINT j = 0;j < sizeof(harness_vpncmd_list) / sizeof(harness_vpncmd_list[0]);j++)
-		{
-			Format(expected, sizeof(expected), "vpncmd_%s.txt", harness_vpncmd_list[j].Name);
-			if (StrCmpi(e->FileName, expected) == 0)
-			{
-				known = true;
-				break;
-			}
-		}
-
-		if (known == false)
-		{
-			Format(tmp, sizeof(tmp), "stale golden file %s: no vpncmd command of the list produces it", e->FileName);
-			HarnessCheck(h, false, tmp);
-			num_stale++;
-		}
-	}
-
-	FreeDir(d);
-
-	if (num_stale == 0)
-	{
-		HarnessCheck(h, true, "no stale vpncmd_*.txt golden file");
 	}
 }
 
@@ -7419,6 +6628,12 @@ static void HarnessPacketLogGolden(HARNESS *h)
 	HarnessGetDirs(out_dir, sizeof(out_dir), golden_dir, sizeof(golden_dir), &update);
 	MakeDirEx(out_dir);
 
+	// Fixed machine-readable mode line: CI fails a run that records the golden file in place of comparing it
+	Print("HARNESS GOLDEN MODE %s\n", update ? "update" : "compare");
+	Print("  golden directory: %s (%s)\n", golden_dir,
+		update ? "update mode: missing or empty, or RANZ_UPDATE_GOLDEN=1" : "compare mode");
+	Print("  output directory: %s\n", out_dir);
+
 	cedar->NetSvcList = NewList(HarnessPlogCompareSvc);
 	HarnessPlogAddSvc(cedar, true, 53, "domain");
 	HarnessPlogAddSvc(cedar, true, 500, "isakmp");
@@ -7529,8 +6744,8 @@ static void HarnessLogRecordCheck(HARNESS *h)
 ////////////////////////////
 // Entry points
 
-// "harness": in-process server, two hubs, cascade, frames, vpncmd golden outputs and configuration round-trips
-RANZ_TEST("harness", harness_test, "In-process server: hubs, cascade, frames, vpncmd golden outputs, config round-trip.");
+// "harness": in-process server, two hubs, cascade, frames, golden outputs and configuration round-trips
+RANZ_TEST("harness", harness_test, "In-process server: hubs, cascade, frames, golden outputs, config round-trip.");
 void harness_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
@@ -7547,7 +6762,6 @@ void harness_test(UINT num, char **arg)
 	{
 		HarnessSetPhase("frames", NULL);
 		HarnessFrames(h);
-		HarnessGolden(h);
 		HarnessPacketLogGolden(h);
 		HarnessLogRecordCheck(h);
 		HarnessSetPhase("pack", NULL);
@@ -7563,7 +6777,6 @@ void harness_test(UINT num, char **arg)
 		HarnessSetPhase("adminreconnect", NULL);
 		HarnessAdminReconnect(h);
 		HarnessAdminInvoke(h);
-		HarnessCmdCases(h);
 		HarnessSetPhase("logs", NULL);
 		HarnessLogInject(h);
 		HarnessSyslogSelf(h);

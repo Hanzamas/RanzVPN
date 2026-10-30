@@ -167,28 +167,6 @@ typedef struct RPC_RENAME_LINK RPC_RENAME_LINK;
 typedef struct RPC_WINVER RPC_WINVER;
 
 
-typedef struct PARAM PARAM;
-typedef struct PARAM_VALUE PARAM_VALUE;
-typedef struct CONSOLE CONSOLE;
-typedef struct LOCAL_CONSOLE_PARAM LOCAL_CONSOLE_PARAM;
-typedef struct CMD CMD;
-typedef struct CMD_EVAL_MIN_MAX CMD_EVAL_MIN_MAX;
-
-
-typedef struct PS PS;
-typedef struct CT CT;
-typedef struct CTC CTC;
-typedef struct CTR CTR;
-typedef struct TTC TTC;
-typedef struct TTS TTS;
-typedef struct TTS_WORKER TTS_WORKER;
-typedef struct TTC_WORKER TTC_WORKER;
-typedef struct TT_RESULT TT_RESULT;
-typedef struct TTS_SOCK TTS_SOCK;
-typedef struct TTC_SOCK TTC_SOCK;
-typedef struct PT PT;
-
-
 typedef struct UDP_ACCEL UDP_ACCEL;
 
 

@@ -200,11 +200,11 @@ jobs:
         if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
 
         rem The linker's report of what /OPT:REF discarded and /OPT:ICF folded (src/CMakeLists.txt) for
-        rem vpnserver and vpncmd, uploaded as link-verbose-<arch>: each one is linked again with /VERBOSE,
+        rem vpnserver, uploaded as link-verbose-<arch>: it is linked again with /VERBOSE,
         rem passed in _LINK_, which lld-link and link.exe add to their arguments. lld-link has no
         rem /VERBOSE:REF; its /VERBOSE lists the discarded sections and the folded functions.
         set "_LINK_=/VERBOSE"
-        for %%t in (vpnserver vpncmd) do (
+        for %%t in (vpnserver) do (
           del build\%%t.exe
           cmake --build --preset %ARCHITECTURE% --target %%t > build\link-verbose-%%t.txt 2>&1
           if errorlevel 1 (
@@ -253,7 +253,7 @@ jobs:
         path: |
           build/unused-report.txt
           build/build-log.txt
-    - name: Upload linker report (vpnserver and vpncmd)
+    - name: Upload linker report (vpnserver)
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
@@ -271,7 +271,7 @@ jobs:
     - name: Version resource
       shell: pwsh
       run: |
-        foreach ($exe in 'vpnserver', 'vpncmd', 'vpntest', 'ranz-node', 'coretest') {
+        foreach ($exe in 'vpnserver', 'vpntest', 'ranz-node', 'coretest') {
           $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path "build/$exe.exe").Path)
           Write-Host "${exe}.exe: Language '$($info.Language)', FileDescription '$($info.FileDescription)', FileVersion '$($info.FileVersion)'"
           if ($info.Language -ne 'English (United States)') { throw "${exe}.exe: version resource language is '$($info.Language)', not English (United States) (0x0409)" }
@@ -559,14 +559,8 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/controller-acme.ps1 -BuildDir build
-    - name: Self-check
-      timeout-minutes: 10
-      shell: pwsh
-      run: |
-        $out = & build\vpncmd.exe /TOOLS /CMD Check 2>&1 | Out-String
-        Write-Host $out
-        if ($LASTEXITCODE -ne 0) { throw "vpncmd self-check exited with code $LASTEXITCODE" }
-        if ($out -notmatch 'All checks passed') { throw "vpncmd self-check did not report 'All checks passed'" }
+    # The self-check of vpncmd (/TOOLS /CMD Check) left with vpncmd (CORE-S8-1, #84): ranz doctor runs its six checks
+    # in ranz.yml (.github/scripts/ranz-tools.ps1; SDN-53, #246).
     # vpntest trace without and inside an ETW trace session on the Debug() TraceLogging provider (ticket #92).
     # The session's .etl file is kept in build/harness-out/.
     - name: ETW trace session
@@ -1213,7 +1207,7 @@ jobs:
           build/ranzguard.pdb
 
   # Debug configuration, built without running anything: the code that build_and_test
-  # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c and vpncmd.c) and without
+  # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c) and without
   # WIN32_NO_DEBUG_HELP_DLL (the DbgHelp call stacks of Win32.c), with the Debug definitions of
   # cmake/RanzOptions.cmake. x64 and arm64: Win32GetCallStack captures with CaptureStackBackTrace,
   # which needs no machine type. A pull request builds arm64 only: the x64 build of build_and_test covers

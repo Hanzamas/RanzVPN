@@ -114,7 +114,7 @@ target_link_libraries(cedar PRIVATE coreswitch)
 target_link_libraries(cedar PRIVATE corefrontdoor)
 
 # Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that
-# print it include it (Cedar.c, Admin.c, Server.c, Command.c), so a new stamp rebuilds those four
+# print it include it (Cedar.c, Admin.c, AdminServer.c, Server.c), so a new stamp rebuilds those four
 # and not the whole library. configure_file leaves the header alone when its content is the same.
 option(RANZ_EMBED_BUILDER "Put the builder's user and host name in the build info string. Off by default: they differ per machine, so the build is not reproducible." OFF)
 

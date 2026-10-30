@@ -1,5 +1,5 @@
 param(
-	[string] $X64Dir,       # The Binaries-x64 artifact: vpnserver.exe, vpncmd.exe, ranz-node.exe, vpntest.exe and the PDBs
+	[string] $X64Dir,       # The Binaries-x64 artifact: vpnserver.exe, ranz-node.exe, vpntest.exe and the PDBs
 	[string] $Arm64Dir,     # The Binaries-arm64 artifact (the same executables for arm64)
 	[string] $Wxs,          # .github/signing/signing-proof.wxs
 	[string] $LicenseFile,  # The LICENSE of the repository (unused payload, kept for parity with the release spec)
@@ -55,7 +55,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 # The shipped executables of the current server and the new-core node (ADR-0020). vpntest is a test tool,
 # not shipped; it is signed only to run the self-integrity test against a signed binary.
-$shipped = @('vpnserver.exe', 'vpncmd.exe', 'ranz-node.exe')
+$shipped = @('vpnserver.exe', 'ranz-node.exe')
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 

@@ -74,9 +74,6 @@ add_subdirectory(Mayaqua)
 # vpnserver
 add_subdirectory(vpnserver)
 
-# vpncmd
-add_subdirectory(vpncmd)
-
 # ranz-node, the node of the new core
 add_subdirectory(ranz-node)
 

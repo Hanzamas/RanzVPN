@@ -1,4 +1,0 @@
-Virtual Hub Name,Status,Users,Groups,Sessions,MAC Tables,IP Tables,Num Logins,Last Login,Last Communication,Transfer Bytes,Transfer Packets
-DEFAULT,Online,0,0,0,0,0,<VOLATILE>,<VOLATILE>,<VOLATILE>,<VOLATILE>,<VOLATILE>
-HARNESS_A,Online,1,0,2,2,0,<VOLATILE>,<VOLATILE>,<VOLATILE>,<VOLATILE>,<VOLATILE>
-HARNESS_B,Online,2,0,2,2,0,<VOLATILE>,<VOLATILE>,<VOLATILE>,<VOLATILE>,<VOLATILE>

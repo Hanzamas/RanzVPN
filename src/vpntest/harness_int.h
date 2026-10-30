@@ -20,7 +20,6 @@
 #define	HARNESS_PASSWORD			"Harness-Pass-1"
 #define	HARNESS_CONFIG_FILE			"$vpn_harness.config"
 #define	HARNESS_CONFIG_BACKUP_DIR	L"$backup.vpn_harness.config"	// Named by BackupCfgWEx after HARNESS_CONFIG_FILE
-#define	HARNESS_VPNCMD_OUT			"@harness_vpncmd.tmp"
 #define	HARNESS_FRAME_SIZE			96
 #define	HARNESS_ETHERTYPE_HI		0x88				// EtherType 0x88B5 (IEEE local experimental)
 #define	HARNESS_ETHERTYPE_LO		0xB5
@@ -48,15 +47,12 @@ typedef struct HARNESS
 {
 	SERVER *Server;				// In-process server
 	CEDAR *ClientCedar;			// Cedar of the admin RPC and of the test sessions
-	RPC *Rpc;					// Admin RPC (same client API as vpncmd)
+	RPC *Rpc;					// Admin RPC (the client stubs of AdminClient.c)
 	HARNESS_PA *PaA;			// Test session on HARNESS_A
 	HARNESS_PA *PaB;			// Test session on HARNESS_B
 	char *OldConfigName;		// SERVER_CONFIG_FILE_NAME before the run
 	UINT NumFail;				// Failed checks
 } HARNESS;
-
-// Normalisation rules of the vpncmd golden outputs (harness.c)
-typedef struct HARNESS_NORM HARNESS_NORM;
 
 // harness.c
 bool HarnessCheck(HARNESS *h, bool ok, char *what);
@@ -68,15 +64,9 @@ bool HarnessDirHasFiles(char *dir);
 void HarnessGetFamilyDirs(char *family, char *out_dir, UINT out_size, char *golden_dir, UINT golden_size, bool *update);
 void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, char *actual, bool update);
 bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size);
-HARNESS_NORM *HarnessNewNorm();
-void HarnessFreeNorm(HARNESS_NORM *n);
-char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw);
 
 // harness_pack.c
 void HarnessPackGolden(HARNESS *h);
-
-// harness_cmd.c
-void HarnessCmdCases(HARNESS *h);
 
 // harness.c: in-process server of the named tests in other files (login.c)
 HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *username, bool *ok);

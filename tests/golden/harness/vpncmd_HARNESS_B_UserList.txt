@@ -1,3 +1,0 @@
-User Name,Full Name,Group Name,Description,Auth Method,Num Logins,Last Login,Expiration Date,Transfer Bytes,Transfer Packets
-harness_cascade,Harness cascade,-,ranz harness,Password Authentication,<VOLATILE>,<VOLATILE>,No Expiration,<VOLATILE>,<VOLATILE>
-tester_b,Harness tester B,-,ranz harness,Password Authentication,<VOLATILE>,<VOLATILE>,No Expiration,<VOLATILE>,<VOLATILE>

@@ -2,7 +2,6 @@
 // VPN Server test program
 
 #include "testlist.h"
-#include "Cedar/Command.h"
 #include "Cedar/Account.h"
 #include "Cedar/Server.h"
 #include "Cedar/WaterMark.h"
@@ -567,12 +566,6 @@ int TestMain(char *cmd)
 				{
 					Print("TESTLIST %s %s\n", tests[i]->command_str, StrLen(tests[i]->tags) == 0 ? "-" : tests[i]->tags);
 				}
-			}
-			else if (StartWith(tmp, "vpncmd"))
-			{
-				wchar_t *s = CopyStrToUni(tmp);
-				CommandMain(s);
-				Free(s);
 			}
 			else
 			{

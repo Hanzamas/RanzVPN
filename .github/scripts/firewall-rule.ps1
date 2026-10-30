@@ -3,11 +3,11 @@ param([string] $BuildDir = 'build')
 $ErrorActionPreference = 'Stop'
 
 # The Windows Firewall rule of vpnserver /install and /uninstall (ticket #47), checked against the
-# rules that Windows Firewall reports. vpnserver.exe, vpncmd.exe and vpntest.exe are zipped and
+# rules that Windows Firewall reports. vpnserver.exe and vpntest.exe are zipped and
 # unzipped into a folder of their own, as a release zip is used, and vpnserver runs from there:
 #   1. /install adds exactly one rule, the inbound allow rule "Ranz VPN Server" for the unzipped
 #      vpnserver.exe: enabled, all profiles, all protocols, ports and addresses. No other rule is
-#      added or changed, and no rule names vpncmd.exe or vpntest.exe.
+#      added or changed, and no rule names vpntest.exe.
 #   2. A restart of the service, which starts the server again, adds, deletes or changes no rule.
 #   3. /uninstall deletes the rule: the rules are those of before /install again.
 #   4. vpnserver starts no cscript.exe or wscript.exe (the process start events of an ETW trace
@@ -41,11 +41,11 @@ $zip = Join-Path $root 'ranz-vpn.zip'
 $dir = Join-Path $root 'Ranz VPN'
 $etl = Join-Path $root 'process.etl'
 
-$files = @('vpnserver.exe', 'vpncmd.exe', 'vpntest.exe') | ForEach-Object { (Resolve-Path (Join-Path $BuildDir $_)).Path }
+$files = @('vpnserver.exe', 'vpntest.exe') | ForEach-Object { (Resolve-Path (Join-Path $BuildDir $_)).Path }
 Compress-Archive -Path $files -DestinationPath $zip
 Expand-Archive -Path $zip -DestinationPath $dir
 $exe = (Resolve-Path (Join-Path $dir 'vpnserver.exe')).Path
-$others = @('vpncmd.exe', 'vpntest.exe') | ForEach-Object { (Resolve-Path (Join-Path $dir $_)).Path }
+$others = @(@('vpntest.exe') | ForEach-Object { (Resolve-Path (Join-Path $dir $_)).Path })
 Write-Host "unzipped to $dir"
 
 $since = (Get-Date).AddSeconds(-2)
