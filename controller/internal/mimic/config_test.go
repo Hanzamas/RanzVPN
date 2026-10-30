@@ -98,16 +98,22 @@ func TestParseServerTakesTheValuesItIsGiven(t *testing.T) {
 	}
 }
 
-func TestParseServerRefuses(t *testing.T) {
+// A serverRefusal is a change that makes the smallest server that starts one that parseServer refuses, and a part of what it says.
+type serverRefusal struct {
+	name   string
+	change func(*ServerSettings)
+	want   string
+}
+
+// serverRefusals are the cases of TestParseServerRefuses. dir is a folder that a case may name a file in. The Controller checks the
+// mimic section of a Listener with these rules, and section_test.go puts each case to it as well, so a case that is added here is put
+// to the Controller too, or noSection says why it cannot be (TestEverySidecarCaseIsPutToTheController).
+func serverRefusals(dir string) []serverRefusal {
 	tooManyNames := make([]string, maxServerNames+1)
 	for i := range tooManyNames {
 		tooManyNames[i] = fmt.Sprintf("h%d.example", i)
 	}
-	cases := []struct {
-		name   string
-		change func(*ServerSettings)
-		want   string
-	}{
+	return []serverRefusal{
 		{"a listen without a port", func(s *ServerSettings) { s.Listen = "443" }, "not a host and a port"},
 		{"a port out of range", func(s *ServerSettings) { s.Listen = ":70000" }, "no valid port"},
 		{"a short private key", func(s *ServerSettings) { s.PrivateKey = "abcd" }, "64 hexadecimal digits"},
@@ -130,7 +136,7 @@ func TestParseServerRefuses(t *testing.T) {
 		{"a decoy on a host name", func(s *ServerSettings) { s.Decoy.Listen = "localhost:0" }, "not a loopback address"},
 		{"a decoy listen without a host", func(s *ServerSettings) { s.Decoy.Listen = ":0" }, "no host"},
 		{"a decoy page twice", func(s *ServerSettings) { s.Decoy.Page, s.Decoy.PageFile = "x", "y" }, "both set"},
-		{"a page file that is missing", func(s *ServerSettings) { s.Decoy.PageFile = filepath.Join(t.TempDir(), "none.html") }, "page_file"},
+		{"a page file that is missing", func(s *ServerSettings) { s.Decoy.PageFile = filepath.Join(dir, "none.html") }, "page_file"},
 		{"a page that is too large", func(s *ServerSettings) { s.Decoy.Page = strings.Repeat("x", maxPage+1) }, "at most"},
 		{"no certificate source", func(s *ServerSettings) { s.Decoy.SelfSigned = false }, "one certificate source"},
 		{"two certificate sources", func(s *ServerSettings) { s.Decoy.ACME = &ACME{CacheDir: "cache"} }, "one certificate source"},
@@ -141,7 +147,10 @@ func TestParseServerRefuses(t *testing.T) {
 		}, "https URL"},
 		{"a padding profile that does not exist", func(s *ServerSettings) { s.Padding.Profile = "fast" }, "padding"},
 	}
-	for _, c := range cases {
+}
+
+func TestParseServerRefuses(t *testing.T) {
+	for _, c := range serverRefusals(t.TempDir()) {
 		t.Run(c.name, func(t *testing.T) {
 			s := ownSettings(testPrivate)
 			c.change(s)
@@ -178,6 +187,34 @@ func TestParseServerAcceptsTheCertificateSources(t *testing.T) {
 	}
 }
 
+// borrowExtras are what a borrow decoy takes none of: a change of its decoy that gives it one. The names go after "a borrow decoy
+// with" in the cases of section_test.go, which puts each to the Controller as well (TestEverySidecarCaseIsPutToTheController).
+var borrowExtras = []struct {
+	name   string
+	change func(*Decoy)
+}{
+	{"a certificate file", func(d *Decoy) { d.CertFile = "cert.pem" }},
+	{"a key file", func(d *Decoy) { d.KeyFile = "key.pem" }},
+	{"a self-signed certificate", func(d *Decoy) { d.SelfSigned = true }},
+	{"ACME", func(d *Decoy) { d.ACME = &ACME{CacheDir: "cache"} }},
+	{"a page", func(d *Decoy) { d.Page = "<p>x</p>" }},
+	{"a page file", func(d *Decoy) { d.PageFile = "page.html" }},
+	{"a listen address", func(d *Decoy) { d.Listen = "127.0.0.1:0" }},
+	{"a name", func(d *Decoy) { d.Name = testName }},
+}
+
+// borrowBad are the changes that make a borrow decoy refuse for want of what it needs. The names go after "a borrow decoy with" in the
+// cases of section_test.go, as those of borrowExtras do.
+var borrowBad = []struct {
+	name   string
+	change func(*ServerSettings)
+}{
+	{"no dest", func(s *ServerSettings) { s.Decoy.Dest = "" }},
+	{"a dest with no port", func(s *ServerSettings) { s.Decoy.Dest = "example.com" }},
+	{"a dest on port 0", func(s *ServerSettings) { s.Decoy.Dest = "example.com:0" }},
+	{"no server names", func(s *ServerSettings) { s.ServerNames = nil }},
+}
+
 // The borrow decoy takes no key and no page: the site presents its own certificate, so the prober
 // sees that one, and the sidecar has no setting through which to hold a key of it.
 func TestBorrowDecoyTakesADestOnly(t *testing.T) {
@@ -189,20 +226,7 @@ func TestBorrowDecoyTakesADestOnly(t *testing.T) {
 		t.Errorf("the decoy is %+v, the server names %q", cfg.decoy, cfg.serverNames)
 	}
 
-	extras := []struct {
-		name   string
-		change func(*Decoy)
-	}{
-		{"a certificate file", func(d *Decoy) { d.CertFile = "cert.pem" }},
-		{"a key file", func(d *Decoy) { d.KeyFile = "key.pem" }},
-		{"a self-signed certificate", func(d *Decoy) { d.SelfSigned = true }},
-		{"ACME", func(d *Decoy) { d.ACME = &ACME{CacheDir: "cache"} }},
-		{"a page", func(d *Decoy) { d.Page = "<p>x</p>" }},
-		{"a page file", func(d *Decoy) { d.PageFile = "page.html" }},
-		{"a listen address", func(d *Decoy) { d.Listen = "127.0.0.1:0" }},
-		{"a name", func(d *Decoy) { d.Name = testName }},
-	}
-	for _, e := range extras {
+	for _, e := range borrowExtras {
 		s := borrowSettings(testPrivate, "www.example.com:443")
 		e.change(&s.Decoy)
 		if _, err := parseServer(s); err == nil || !strings.Contains(err.Error(), "takes a dest only") {
@@ -210,16 +234,7 @@ func TestBorrowDecoyTakesADestOnly(t *testing.T) {
 		}
 	}
 
-	bad := []struct {
-		name   string
-		change func(*ServerSettings)
-	}{
-		{"no dest", func(s *ServerSettings) { s.Decoy.Dest = "" }},
-		{"a dest with no port", func(s *ServerSettings) { s.Decoy.Dest = "example.com" }},
-		{"a dest on port 0", func(s *ServerSettings) { s.Decoy.Dest = "example.com:0" }},
-		{"no server names", func(s *ServerSettings) { s.ServerNames = nil }},
-	}
-	for _, b := range bad {
+	for _, b := range borrowBad {
 		s := borrowSettings(testPrivate, "www.example.com:443")
 		b.change(s)
 		if _, err := parseServer(s); err == nil {
