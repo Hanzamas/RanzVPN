@@ -162,6 +162,9 @@ src/Cedar  NodeCapsReadHost     exempt  reads no bytes of a peer or of a file: i
 # The peer agent of the overlay (CORE-S5-5 #411) takes the Signals that the Controller carries from a peer: no parser word in the
 # name, listed as the reader of a peer's bytes that it is
 src/Cedar  NodeAgentSignal  exempt  hands the envelope of a Signal as it came to PeerOpenSignal (fuzz_peer), which opens and decodes it; it reads only what that gave
+# The bridge of the L2 adapter (CORE-S3-3 #73) looks at each frame of the wire that its XDP backend takes: no parser word in the
+# name, listed as the reader of the bytes of the LAN that it is
+src/Cedar  NodeL2BridgeWay  exempt  compares the first six bytes of a frame, its destination MAC address, with the address of the NIC and tests their group bit; it reads no length and no field beyond them, and a frame shorter than six bytes is not read
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen
