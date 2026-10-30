@@ -163,6 +163,9 @@ struct NODE_PEERING {
 	UINT NumErrors;                // Error messages of the sidecars
 	UINT NumRebuilds;              // The forwarding tables built anew with the learned routes
 	UINT NumDeferred;              // ... rebuilds that met an apply
+	UINT NumFailed;                // ... rebuilds that failed: no copy of the Generation in force, or no tables
+	UINT FailCopies;               // A test's (NodePeeringFailNext): the copies of the state for a rebuild that fail next ...
+	UINT FailRebuilds;             // ... and then the rebuilds that fail
 	UINT NumUnsent;                // The sidecars ended because a message did not reach them
 	UINT NumHung;                  // The sidecars ended because they did not answer a ping
 	UINT NumAnnounced;             // The prefixes that the node announces
@@ -1540,26 +1543,35 @@ static void NodePeeringCheck(NODE_PEERING *p) {
 // of the overlay (SDN-77-R1, #531): a rebuild that meets one tries again every NODE_PEERING_BUSY ms while the halt allows, and one
 // that then finds another Generation in force leaves Dirty set, so that the next pass, which the apply woke, builds the tables of
 // that Generation with the routes of now. So a learned or withdrawn message during an apply is in the tables of the Generation that
-// it put in force. A copy of the state or a rebuild that fails is logged and leaves Dirty set too, and the worker tries again after
-// NODE_PEERING_RETRY.
+// it put in force. A copy of the state or a rebuild that fails is logged, counted (NumFailed) and leaves Dirty set too, and the
+// worker tries again after NODE_PEERING_RETRY.
 static void NodePeeringRebuild(NODE_PEERING *p) {
 	CONTROL_STATE *base = NULL;
 	UINT64 now = GetTickCount64();
 	bool due = false;
+	bool fail = false;
 	bool waited = false;
 	UINT num = 0;
 
 	Lock(p->Lock);
 	{
 		due = (p->Dirty && p->State != NULL && p->Halted == false && now >= p->NextRebuild);
-		if (due)
+		// A test may make the copy fail, as when there is no memory for it, and then the rebuild (NodePeeringFailNext)
+		if (due && p->FailCopies != 0)
+			p->FailCopies--;
+		else if (due)
 			base = ControlCopyState(p->State);
+		fail = (base != NULL && p->FailRebuilds != 0);
+		if (fail)
+			p->FailRebuilds--;
 
 		// The copy takes the routes of now: a change from here on sets Dirty again
-		if (base != NULL)
+		if (base != NULL) {
 			p->Dirty = false;
-		else if (due)
+		} else if (due) {
 			p->NextRebuild = now + NODE_PEERING_RETRY;
+			p->NumFailed++;
+		}
 	}
 	Unlock(p->Lock);
 
@@ -1571,7 +1583,7 @@ static void NodePeeringRebuild(NODE_PEERING *p) {
 
 	UINT64 gen = base->Generation;
 	const CONTROL_STATE *with = NodePeeringWith(p->Node, base);
-	UINT ret = NodeOverlayRebuild(p->Node, with);
+	UINT ret = (fail ? NODE_REBUILD_FAILED : NodeOverlayRebuild(p->Node, with));
 
 	// A rebuild that meets an apply counts at once, while the apply still runs
 	if (ret == NODE_REBUILD_BUSY || ret == NODE_REBUILD_STALE) {
@@ -1600,6 +1612,8 @@ static void NodePeeringRebuild(NODE_PEERING *p) {
 			if (ret == NODE_REBUILD_FAILED)
 				p->NextRebuild = GetTickCount64() + NODE_PEERING_RETRY;
 		}
+		if (ret == NODE_REBUILD_FAILED)
+			p->NumFailed++;
 	}
 	Unlock(p->Lock);
 
@@ -1919,6 +1933,7 @@ void NodePeeringGetStatus(NODE *n, NODE_PEERING_STATUS *st) {
 		st->NumLearned = LIST_NUM(p->Routes);
 		st->NumRebuilds = p->NumRebuilds;
 		st->NumDeferred = p->NumDeferred;
+		st->NumFailed = p->NumFailed;
 		st->NumUnsent = p->NumUnsent;
 		st->NumHung = p->NumHung;
 		st->Refused = p->Refused;
@@ -1966,4 +1981,21 @@ CONTROL_PEERING_REPORT *NodePeeringGetReport(NODE *n) {
 	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
 
 	return (p != NULL ? p->Report : NULL);
+}
+
+// A test makes the next copies copies of the Generation in force for a rebuild of the forwarding tables fail, as when there is no
+// memory for one, and then the next rebuilds rebuilds, as when the tables cannot be built or installed (NodePeeringRebuild;
+// SDN-77-R1, #531)
+void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds) {
+	NODE_PEERING *p = (n != NULL ? n->Peering : NULL);
+
+	if (p == NULL)
+		return;
+
+	Lock(p->Lock);
+	{
+		p->FailCopies = copies;
+		p->FailRebuilds = rebuilds;
+	}
+	Unlock(p->Lock);
 }

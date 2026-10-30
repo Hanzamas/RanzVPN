@@ -43,6 +43,9 @@
 //   Generation already and the BGP peering does not have it yet; meanwhile node-b announces its extra LAN, and later withdraws it,
 //   so that the learned and the withdrawn message reach node-a in the window. The worker of node-a meets the apply, and after both
 //   the forwarding tables of the Generation have the change.
+// - A failed copy and a failed rebuild: node-b announces its extra LAN while the next copy of the state for a rebuild at node-a
+//   fails, and then the next rebuild (NodePeeringFailNext); node-a logs and counts each, keeps the change, and a later pass builds
+//   the forwarding tables of the Generation with it.
 // - A narrower accept list: a Generation that takes the extra LAN of node-b from the accept lists while node-b still announces it
 //   has no route to it in the tables that node-a builds with it, though its sidecar has not withdrawn the route yet.
 // - A hostile peer: node-b announces more specific prefixes of its LAN in red, which no accept list holds; no node learns any of
@@ -221,6 +224,7 @@ typedef struct PEERINGTEST_CTX
 	UINT NumWindows;					// The windows of an apply whose apply the worker of node-a met (PeeringTestHeld), each with
 	UINT64 WindowFrom[PEERINGTEST_WINDOWS];	// ... the Generation of its rebuild, which went out of force in the window,
 	UINT64 WindowTo[PEERINGTEST_WINDOWS];	// ... and the one that the apply put in force
+	UINT64 Failed;						// The Generation whose first copy and rebuild at node-a failed (PeeringTestFailed), 0 for none
 	bool Ran;							// The nodes started their sidecars
 	UINT Seq;							// The data of the next test packet
 } PEERINGTEST_CTX;
@@ -2276,19 +2280,48 @@ static void PeeringTestWindow(PEERINGTEST_CTX *ctx)
 	PeeringTestHeld(ctx, 6, false);
 }
 
-// A narrower accept list: node-b announces its extra LAN, which node-a learns (Generation 7); Generation 8 takes it from the accept
-// lists of node-b at node-a and node-c, while node-b still announces it. The forwarding tables that node-a builds with Generation 8
-// have no route to it at once, before its sidecar takes the peers of the Generation and withdraws the route.
+// A failed copy and a failed rebuild: node-b announces its extra LAN, which the accept lists hold (Generation 7), while the next copy
+// of the Generation in force for a rebuild of the forwarding tables at node-a fails, as when there is no memory for it, and then the
+// next rebuild, as when the tables cannot be built (NodePeeringFailNext). Node-a counts each and keeps the change: with no other
+// change of the routes, a later pass builds the forwarding tables of the Generation with it. Its node log says each, which
+// PeeringTestClose reads once the node is freed.
+static void PeeringTestFailed(PEERINGTEST_CTX *ctx)
+{
+	PEERINGTEST_NODE *a = &ctx->Nodes[PEERINGTEST_A];
+	PEERINGTEST_EXTRA *x = &peeringtest_extras[PEERINGTEST_EXTRA_B];
+	NODE_PEERING_STATUS before, after;
+	char what[MAX_SIZE * 2];
+
+	Print("[Generation 7: node-b announces its extra LAN, which the accept lists hold, while the next copy of the state and then the next rebuild at node-a fail]\n");
+	NodePeeringGetStatus(a->Node, &before);
+	NodePeeringFailNext(a->Node, 1, 1);
+	ctx->Accepted[PEERINGTEST_EXTRA_B] = true;
+	ctx->Announced[PEERINGTEST_EXTRA_B] = true;
+	bool tables = PeeringTestConverge(ctx, PeeringTestApply(ctx, 7, true));
+
+	// The apply at node-a went in before node-b announced the extra LAN, so only a rebuild of the worker of node-a brings it in
+	NodePeeringGetStatus(a->Node, &after);
+	UINT hop = PeeringTestLookup(a, PEERINGTEST_RED, x->LanHost);
+	bool failed = (after.NumFailed == before.NumFailed + 2);
+	Format(what, sizeof(what), "  Node-a counts the failed copy and the failed rebuild, keeps the change, and a later pass builds its forwarding tables of Generation 7 with the route to %s/%u",
+		x->Lan, (UINT)PEERINGTEST_LENGTH);
+	PeeringTestCheck(ctx, tables && failed && after.NumRebuilds > before.NumRebuilds && hop == PeeringTestHop(PEERINGTEST_A, PEERINGTEST_B), what,
+		"%u failed rebuilds before and %u after, %u rebuilds before and %u after, the table of red leads %s to %s", before.NumFailed, after.NumFailed, before.NumRebuilds,
+		after.NumRebuilds, x->LanHost, PeeringTestHopName(PEERINGTEST_A, hop));
+	if (failed)
+	{
+		ctx->Failed = 7;
+	}
+}
+
+// A narrower accept list: node-b announces its extra LAN, which node-a learned with Generation 7 (PeeringTestFailed); Generation 8
+// takes it from the accept lists of node-b at node-a and node-c, while node-b still announces it. The forwarding tables that node-a
+// builds with Generation 8 have no route to it at once, before its sidecar takes the peers of the Generation and withdraws the route.
 static void PeeringTestNarrowed(PEERINGTEST_CTX *ctx)
 {
 	PEERINGTEST_NODE *a = &ctx->Nodes[PEERINGTEST_A];
 	PEERINGTEST_EXTRA *x = &peeringtest_extras[PEERINGTEST_EXTRA_B];
 	char what[MAX_SIZE * 2];
-
-	Print("[Generation 7: node-b announces its extra LAN, which the accept lists hold]\n");
-	ctx->Accepted[PEERINGTEST_EXTRA_B] = true;
-	ctx->Announced[PEERINGTEST_EXTRA_B] = true;
-	PeeringTestConverge(ctx, PeeringTestApply(ctx, 7, true));
 
 	Print("[Generation 8: the accept lists no longer hold the extra LAN of node-b, which node-b still announces]\n");
 	ctx->Generation = 8;
@@ -2617,7 +2650,7 @@ static void PeeringTestClose(PEERINGTEST_CTX *ctx)
 
 	// The node log of node-a, whole once the node is freed: the rebuild that met the apply of each window (PeeringTestHeld) found the
 	// Generation that the apply put in force and said so, and a later pass built the tables of that Generation (SDN-77-R1, #531)
-	char *node_log = (ctx->NumWindows != 0 ? PeeringTestReadLog(ctx->Nodes[PEERINGTEST_A].Dir, NULL) : NULL);
+	char *node_log = (ctx->NumWindows != 0 || ctx->Failed != 0 ? PeeringTestReadLog(ctx->Nodes[PEERINGTEST_A].Dir, NULL) : NULL);
 	for (UINT k = 0;k < ctx->NumWindows;k++)
 	{
 		char stale[MAX_SIZE], built[MAX_SIZE], what[MAX_SIZE];
@@ -2630,6 +2663,23 @@ static void PeeringTestClose(PEERINGTEST_CTX *ctx)
 		Format(what, sizeof(what), "The node log of node-a says that its rebuild with Generation %I64u found Generation %I64u in force, and a later pass built the tables of Generation %I64u",
 			ctx->WindowFrom[k], ctx->WindowTo[k], ctx->WindowTo[k]);
 		PeeringTestCheck(ctx, rebuilt, what, "%s", node_log == NULL ? "there is no log" : (at == INFINITE ? "no line of the rebuild that found another Generation" : "no rebuild of that Generation after it"));
+	}
+
+	// ... and that the copy of the state for a rebuild failed, then a rebuild of Generation ctx->Failed, and that a later pass built
+	// the tables of that Generation (PeeringTestFailed)
+	if (ctx->Failed != 0)
+	{
+		char copy[MAX_SIZE], rebuild[MAX_SIZE], built[MAX_SIZE];
+
+		StrCpy(copy, sizeof(copy), "BGP peering: the forwarding tables are not built anew with the learned routes: no memory for a copy of the Generation in force");
+		Format(rebuild, sizeof(rebuild), "BGP peering: the forwarding tables of generation %I64u could not be built anew with the learned routes", ctx->Failed);
+		Format(built, sizeof(built), "BGP peering: the forwarding tables of generation %I64u built anew", ctx->Failed);
+		UINT at = (node_log != NULL ? SearchStrEx(node_log, copy, 0, true) : INFINITE);
+		UINT again = (at != INFINITE ? SearchStrEx(node_log, rebuild, at, true) : INFINITE);
+		bool said = (again != INFINITE && SearchStrEx(node_log, built, again, true) != INFINITE);
+
+		PeeringTestCheck(ctx, said, "The node log of node-a says that a copy of the state for a rebuild failed, then a rebuild, and that a later pass built the tables of the Generation",
+			"%s", node_log == NULL ? "there is no log" : (at == INFINITE ? "no line of the failed copy" : (again == INFINITE ? "no line of the failed rebuild after it" : "no rebuild after them")));
 	}
 	Free(node_log);
 
@@ -2697,6 +2747,7 @@ static void PeeringTestRun(PEERINGTEST_CTX *ctx)
 	}
 
 	PeeringTestWindow(ctx);
+	PeeringTestFailed(ctx);
 	PeeringTestNarrowed(ctx);
 	PeeringTestHostile(ctx);
 	PeeringTestLarge(ctx);
@@ -2707,7 +2758,7 @@ static void PeeringTestRun(PEERINGTEST_CTX *ctx)
 }
 
 // peering: the BGP peering of the standard mode between three nodes
-RANZ_TEST("peering", peering_test, "BGP peering of the standard mode: three nodes, each with its sidecar ranz bgp (ranz.exe next to vpntest) on TCP 179 of a loopback address of its own, in a full mesh of two VRFs; what each learns and installs in its forwarding tables and on the adapter of its host, a session from an address that the Controller did not name refused and counted, the report on the control stream, the peering of a VRF removed and back, a route change during an apply, a narrower accept list, a hostile peer, a failed send in a large mesh, the routes of a node whose sidecar stops answering, or that stops, gone from the other two within the hold time, and a halt that waits for no sidecar.");
+RANZ_TEST("peering", peering_test, "BGP peering of the standard mode: three nodes, each with its sidecar ranz bgp (ranz.exe next to vpntest) on TCP 179 of a loopback address of its own, in a full mesh of two VRFs; what each learns and installs in its forwarding tables and on the adapter of its host, a session from an address that the Controller did not name refused and counted, the report on the control stream, the peering of a VRF removed and back, a route change during an apply, a failed copy of the state and a failed rebuild, a narrower accept list, a hostile peer, a failed send in a large mesh, the routes of a node whose sidecar stops answering, or that stops, gone from the other two within the hold time, and a halt that waits for no sidecar.");
 void peering_test(UINT num, char **arg)
 {
 	PEERINGTEST_CTX *ctx = ZeroMalloc(sizeof(PEERINGTEST_CTX));

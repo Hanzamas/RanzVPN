@@ -27,6 +27,7 @@ typedef struct NODE_PEERING_STATUS {
 	UINT NumLearned;        // The routes that it learned
 	UINT NumRebuilds;       // The forwarding tables built anew with the routes that it learned
 	UINT NumDeferred;       // ... rebuilds that met an apply of the overlay, counted at once: they wait for it, or take the Generation that it puts in force
+	UINT NumFailed;         // ... rebuilds that failed, for no copy of the Generation in force or no tables: each goes again after a while
 	UINT NumUnsent;         // The sidecars that the node ended because a message did not reach them
 	UINT NumHung;           // The sidecars that the node ended because they did not answer whether they run
 	UINT64 Refused;         // The sessions that the sidecar refused, from an address that no peer has
@@ -55,6 +56,7 @@ void NodePeeringApplied(NODE *n, const struct CONTROL_STATE *st, bool swapped);
 void NodePeeringGetStatus(NODE *n, NODE_PEERING_STATUS *st);
 UINT NodePeeringGetPeers(NODE *n, struct CONTROL_PEERING_PEER *list, UINT max);
 struct CONTROL_PEERING_REPORT *NodePeeringGetReport(NODE *n);
+void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds);
 
 // NodeOverlay.c
 UINT NodeOverlayRebuild(NODE *n, const struct CONTROL_STATE *st);
