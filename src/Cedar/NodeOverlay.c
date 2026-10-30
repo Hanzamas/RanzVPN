@@ -664,8 +664,9 @@ static void NodeOverlayDeliver(NODE_OVERLAY *ov, NODE_OVERLAY_PEER *p, const UCH
 		UINT group = 0;
 
 		// A packet of the peer to the fabric of an EVPN gateway: no route of the VRF holds its destination, an IP prefix route
-		// of the fabric does (NodeEvpn.c; SDN-25, #201)
-		if (from < v->NumHops && v->Hops[from] == p && to == NODE_VRF_NONE && NodeEvpnTransit(ov->Node, v, vrf_id, from, packet, packet_size))
+		// of the fabric does (NodeEvpn.c; SDN-25, #201). The gateway is its destination, which judges the source group that it
+		// carried (NodeSourceGroup.c; SDN-87, #386)
+		if (from < v->NumHops && v->Hops[from] == p && to == NODE_VRF_NONE && NodeEvpnTransit(ov->Node, v, vrf_id, from, claim, packet, packet_size))
 			return;
 
 		// The hub of a VRF of topology hub-and-spoke sends the packet of one spoke on to another (NodeGateway.c), as the data
