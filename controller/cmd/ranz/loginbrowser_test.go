@@ -81,6 +81,7 @@ func TestRanzLoginOpensNoBrowserBeforeItHasCheckedTheCertificate(t *testing.T) {
 	if err := servercert.WriteFingerprint(dir, rightFP); err != nil {
 		t.Fatal(err)
 	}
+	trustFingerprint(t, dir)
 	browser := browseRecording(t, right)
 	// loginAt runs ranz login, which signs in in the browser, toward server with the flags, and returns its exit code
 	// and its standard error
@@ -198,6 +199,7 @@ func TestRanzNodeLoginOpensNoBrowserBeforeItHasCheckedTheCertificate(t *testing.
 	if err := servercert.WriteFingerprint(dir, rightFP); err != nil {
 		t.Fatal(err)
 	}
+	trustFingerprint(t, dir)
 	nodeKey, err := keys.GenerateSoft()
 	if err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	controllercmd "github.com/Hanzamas/RanzVPN/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
 	"github.com/Hanzamas/RanzVPN/controller/internal/servercert"
 )
@@ -46,9 +47,9 @@ func holdsInOrder(msg, quote string) bool {
 
 // TestRunbookListsTheFingerprintFileAndHasAnEntryForEachRefusal: step 6 of the runbook lists tls.fingerprint among the
 // files of the Controller, and its troubleshooting list has an entry for the refusal of a Controller whose fingerprint
-// ranz cannot read and one for the refusal of a certificate that is not the Controller's. Each entry is titled by the
-// words of the message, as the code says them, and tells the reader what to give or set, and that the logins open no
-// browser.
+// ranz cannot read or does not trust (AUD1-DT-14, #496) and one for the refusal of a certificate that is not the
+// Controller's. Each entry is titled by the words of the message, as the code says them, and tells the reader what to
+// give or set, and that the logins open no browser.
 func TestRunbookListsTheFingerprintFileAndHasAnEntryForEachRefusal(t *testing.T) {
 	lines := docLines(t, "first-test.md")
 
@@ -92,13 +93,17 @@ func TestRunbookListsTheFingerprintFileAndHasAnEntryForEachRefusal(t *testing.T)
 	const server = "https://127.0.0.1"
 	for _, c := range []struct {
 		refusal error
-		quote   string // what the runbook quotes of the message, with "..." for the values in it
-		remedy  string // what the entry tells the reader to give or set
+		quote   string   // what the runbook quotes of the message, with "..." for the values in it
+		also    []string // what else the entry quotes of the message, in backticks
+		remedy  string   // what the entry tells the reader to give or set
 	}{
 		{&unchecked{server: server, dir: "DIR", err: errors.New("the file is not there")},
-			"ranz sends no token to " + server + " without checking who answers there", "-tls-fingerprint"},
+			"ranz sends no token to " + server + " without checking who answers there", nil, "-tls-fingerprint"},
+		// The same entry covers the refusal of a file that ranz does not trust (AUD1-DT-14, #496)
+		{&unchecked{server: server, dir: "DIR", err: &controllercmd.UntrustedError{Path: "DIR", Why: "is owned by SOMEONE"}},
+			"ranz sends no token to " + server + " without checking who answers there", []string{"does not trust that file"}, "-tls-fingerprint"},
 		{&mismatch{server: server, file: "FILE", err: &api.FingerprintError{Got: "GOT", Want: "WANT"}},
-			"ranz sent no token to " + server + ": what answers there has a certificate with the TLS fingerprint ..., and ... names ... for the Controller of this host", "RANZ_SERVER"},
+			"ranz sent no token to " + server + ": what answers there has a certificate with the TLS fingerprint ..., and ... names ... for the Controller of this host", nil, "RANZ_SERVER"},
 	} {
 		if !holdsInOrder(c.refusal.Error(), c.quote) {
 			t.Errorf("the runbook quotes %q, which the refusal does not say: %q", c.quote, c.refusal)
@@ -117,6 +122,14 @@ func TestRunbookListsTheFingerprintFileAndHasAnEntryForEachRefusal(t *testing.T)
 		for _, want := range []string{c.remedy, "`ranz login` and `ranz node login`", "no browser"} {
 			if !strings.Contains(entry, want) {
 				t.Errorf("the entry %q does not say %q", title, want)
+			}
+		}
+		for _, q := range c.also {
+			if !strings.Contains(c.refusal.Error(), q) {
+				t.Errorf("the runbook quotes %q, which the refusal does not say: %q", q, c.refusal)
+			}
+			if !strings.Contains(entry, "`"+q+"`") {
+				t.Errorf("the entry %q does not quote %q", title, q)
 			}
 		}
 	}
