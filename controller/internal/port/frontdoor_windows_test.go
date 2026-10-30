@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -110,13 +111,41 @@ func handOver(pipe string, raw windows.Handle) (byte, error) {
 	var once sync.Once
 	closeRaw := func() { once.Do(func() { windows.Closesocket(raw) }) }
 	defer closeRaw()
+	before := closeRaw
+	if os.Getenv("RANZ_DIAG_RAW") == "after" {
+		// THROWAWAY (#534): the front door closes its handle after the pipe, as the node does
+		before = nil
+	}
 	return sendThen(pipe, func(pid uint32) ([]byte, error) {
 		var info windows.WSAProtocolInfo
 		if err := windows.WSADuplicateSocket(raw, pid, &info); err != nil {
 			return nil, err
 		}
 		return encodeHandoff(&info)
-	}, closeRaw)
+	}, before)
+}
+
+// writerFunc is an io.Writer of a function.
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// testLog is the log of the Server of a test, which the test prints when it fails.
+func testLog(t *testing.T) *slog.Logger {
+	var mu sync.Mutex
+	var b bytes.Buffer
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if t.Failed() {
+			t.Logf("the log of the Server:\n%s", b.String())
+		}
+	})
+	return slog.New(slog.NewTextHandler(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return b.Write(p)
+	}), &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
 var procAccept = windows.NewLazySystemDLL("ws2_32.dll").NewProc("accept")
@@ -206,6 +235,7 @@ func TestFrontDoorHandsOver(t *testing.T) {
 	controls := make(chan controlStream, 4)
 	s := &Server{
 		TLS: &tls.Config{Certificates: []tls.Certificate{cert}},
+		Log: testLog(t),
 		Control: func(tc *tls.Conn) {
 			controls <- controlStream{tc.ConnectionState().NegotiatedProtocol, tc.RemoteAddr().String()}
 			tc.Close()
@@ -300,6 +330,7 @@ func TestFrontDoorHandoffsKeepTheirClient(t *testing.T) {
 	remotes := make(chan string, 1)
 	s := &Server{
 		TLS: &tls.Config{Certificates: []tls.Certificate{certificate(t)}},
+		Log: testLog(t),
 		Control: func(tc *tls.Conn) {
 			remotes <- tc.RemoteAddr().String()
 			tc.Close()

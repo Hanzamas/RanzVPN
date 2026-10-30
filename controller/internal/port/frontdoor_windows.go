@@ -118,17 +118,20 @@ func (f *FrontDoor) handoff(p net.Conn) {
 	answer := byte(handoffNotTaken)
 	if c != nil {
 		answer = handoffTaken
+		f.log.Debug("diag: handoff rebuilt", "remote", fmt.Sprint(c.RemoteAddr()), "local", fmt.Sprint(c.LocalAddr()))
 	} else {
 		f.log.Debug("a handoff of the front door is refused", "err", err)
 	}
 	// The answer has a time of its own, also after a front door that sent nothing in time
 	_ = p.SetDeadline(time.Now().Add(handoffTimeout))
 	_, werr := p.Write([]byte{answer})
+	f.log.Debug("diag: answer written", "err", werr)
 	// The front door reads the answer and closes its end, which ends this read: a close before it
 	// would drop the answer
 	if werr == nil {
 		_, _ = p.Read(buf[:1])
 	}
+	f.log.Debug("diag: the front door closed its end")
 	f.mu.Lock()
 	delete(f.pipes, p)
 	closed := f.closed
@@ -145,9 +148,9 @@ func (f *FrontDoor) handoff(p net.Conn) {
 	go f.srv.ServeConn(c)
 }
 
-// diagCloseHandle is the throwaway switch of the measurement of #534 to the close that the code had: the file closes the
-// handle with CloseHandle.
-var diagCloseHandle = os.Getenv("RANZ_DIAG_REBUILD") == "closehandle"
+// diagRebuild is the throwaway switch of the measurement of #534 to other ways to close the handle: "closehandle" is the close
+// that the code had, "noclose" leaves the handle open, and "late" closes it 300 ms after the handoff.
+var diagRebuild = os.Getenv("RANZ_DIAG_REBUILD")
 
 // handleFlagProtectFromClose is HANDLE_FLAG_PROTECT_FROM_CLOSE: CloseHandle does not close a handle that has it.
 const handleFlagProtectFromClose = 0x2
@@ -187,9 +190,18 @@ func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
 	// FileConn takes a socket of its own of the file, so the file closes after
 	file := os.NewFile(uintptr(h), "front door handoff")
 	c, err := net.FileConn(file)
-	if diagCloseHandle {
+	switch diagRebuild {
+	case "closehandle":
 		file.Close()
-	} else {
+	case "noclose":
+		_ = windows.SetHandleInformation(h, handleFlagProtectFromClose, handleFlagProtectFromClose)
+		file.Close()
+	case "late":
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			closeSocketFile(file, h)
+		}()
+	default:
 		closeSocketFile(file, h)
 	}
 	if err != nil {
