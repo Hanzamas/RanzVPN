@@ -35,7 +35,8 @@
 #   in, whatever its file names. So is docs/first-test.md: the job first_test runs the commands that
 #   it holds.
 # - tests/formal/: the models of the handshake that formal.yml runs with ProVerif on Linux (AUD-5, #389).
-# - ranz.yml, move-only.yml, quality.yml and formal.yml, and the scripts that only they call.
+# - ranz.yml, move-only.yml, quality.yml, formal.yml and fuzz.yml (the fuzz campaign, AUD-3 #363, which builds the fuzz targets
+#   itself), and the scripts that only they call.
 # Every other path runs the workflow: src/, proto/, cmake/, CMakeLists.txt, CMakePresets.json, vcpkg.json,
 # .gitmodules, .gitattributes, .clang-format, tests/golden/, developer_tools/stbchecker/, this file,
 # the actions of .github/actions, the scripts of .github/scripts that the jobs call and the files of
@@ -72,6 +73,11 @@ on:
     - '!.github/workflows/quality.yml'
     - '!.github/scripts/fuzz-registry.py'
     - '!.github/scripts/quality-gates-test.py'
+    - '!.github/workflows/fuzz.yml'
+    - '!.github/scripts/fuzz-campaign.py'
+    - '!.github/scripts/fuzz-campaign-test.py'
+    - '!.github/scripts/fuzz-fault.c'
+    - '!.github/scripts/fuzz-fault_test.go'
     - '!.github/scripts/one-binary-check.py'
     - '!.github/scripts/ci-plan-test.py'
     - '!tests/formal/**'
