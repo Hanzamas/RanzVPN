@@ -129,18 +129,18 @@ func (c *Controller) takePins(s *stream, p *controlpb.Pins) error {
 		limit.held = p
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
-	defer cancel()
-	c.applyPins(ctx, s.name, key, p, now)
+	c.applyPins(s.name, key, p, now)
 	return nil
 }
 
 // applyPins makes p the keys of the node name, whose static key is key, at the instant now: the store keeps them, in place of the
 // ones it reported before, and when the node is a mimic server, the states of its clients are compiled again with the key, so that
-// each gets its link, or a new one. It starts the interval of the node, in which no other change of its keys is applied. c.mu is
-// held.
-func (c *Controller) applyPins(ctx context.Context, name, key string, p *controlpb.Pins, now time.Time) {
+// each gets its link, or a new one. It starts the interval of the node, in which no other change of its keys is applied. Each change
+// has the store timeout to itself, so the changes that one look at the keys applies (flushPins) do not share one. c.mu is held.
+func (c *Controller) applyPins(name, key string, p *controlpb.Pins, now time.Time) {
 	c.mimic.limits[key] = &pinsLimit{until: now.Add(PinsInterval)}
+	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+	defer cancel()
 	if err := c.store.SavePins(ctx, []byte(key), p); err != nil {
 		c.log.Error("storing the keys that a node reported", "node", name, "err", err)
 	}
@@ -162,7 +162,7 @@ func (c *Controller) applyPins(ctx context.Context, name, key string, p *control
 
 // flushPins applies the reports that waited for the end of their interval, and ends the intervals that have none waiting. The look
 // at the keys calls it (sweepKeys). A report of a Node whose Node resource is gone is dropped. c.mu is held.
-func (c *Controller) flushPins(ctx context.Context) {
+func (c *Controller) flushPins() {
 	now := c.keyNow()
 	for _, key := range slices.Sorted(maps.Keys(c.mimic.limits)) {
 		limit := c.mimic.limits[key]
@@ -171,7 +171,7 @@ func (c *Controller) flushPins(ctx context.Context) {
 		}
 		delete(c.mimic.limits, key)
 		if name, ok := c.byKey[key]; ok && limit.held != nil {
-			c.applyPins(ctx, name, key, limit.held, now)
+			c.applyPins(name, key, limit.held, now)
 		}
 	}
 }

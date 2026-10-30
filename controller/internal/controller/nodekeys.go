@@ -174,7 +174,7 @@ func (c *Controller) sweepKeys() {
 	if err := c.reconcileKeys(ctx); err != nil {
 		c.log.Error("applying the lives of the node keys", "err", err)
 	}
-	c.flushPins(ctx)
+	c.flushPins()
 }
 
 // reconcileKeys brings the lives of the keys and the desired states in line with the clock: it writes the lives that the
