@@ -64,14 +64,21 @@ func diagClose(h windows.Handle) { _ = windows.CloseHandle(h) }
 
 func diagCloseSocket(h windows.Handle) { _ = windows.Closesocket(h) }
 
-// diagDup is what the controller does with the socket of a handoff before FileConn: the WSADuplicateSocket of the front door
-// for this process, and WSASocket of the info.
-func diagDup(src windows.Handle) (windows.Handle, error) {
-	var info windows.WSAProtocolInfo
-	if err := windows.WSADuplicateSocket(src, uint32(os.Getpid()), &info); err != nil {
-		return 0, err
+// diagPoison leaves the entries of n sockets that were closed with CloseHandle, as LoadConnectEx leaves one: the sockets take
+// the n free slots at the top of the handle table, and give them back to the next handles that are made.
+func diagPoison(n int) []windows.Handle {
+	hs := make([]windows.Handle, n)
+	for i := range hs {
+		s, err := diagSocket()
+		if err != nil {
+			panic(err)
+		}
+		hs[i] = s
 	}
-	return windows.WSASocket(fromProtocolInfo, fromProtocolInfo, fromProtocolInfo, &info, 0, windows.WSA_FLAG_OVERLAPPED|windows.WSA_FLAG_NO_HANDLE_INHERIT)
+	for i := len(hs) - 1; i >= 0; i-- {
+		_ = windows.CloseHandle(hs[i])
+	}
+	return hs
 }
 
 // diagLand calls alloc until it returns the handle want, and holds the handles that it returned on the way, so that the next
@@ -137,19 +144,8 @@ func diagPair(t *testing.T) (server, client, ln windows.Handle) {
 	return windows.Handle(r), client, ln
 }
 
-// TestDiag534Winsock makes a stale entry of a socket that is closed with CloseHandle, as LoadConnectEx leaves one, and tries
-// what comes by its handle value: an event, a socket of a handoff, a socket that is made with socket(), and the socket that
-// FileConn makes of its own. Then the ways to get rid of the entry.
+// TestDiag534Winsock tries what comes by the handle value of a stale entry that an event, and what drops the entry.
 func TestDiag534Winsock(t *testing.T) {
-	server, client, ln := diagPair(t)
-	defer windows.Closesocket(ln)
-	defer windows.Closesocket(client)
-	defer windows.Closesocket(server)
-	fmt.Printf("DIAG setup: the accepted socket %#x, the client %#x with the address %s, the server's view of its peer %s\n",
-		uintptr(server), uintptr(client), diagAddr(windows.Getsockname(client)), diagAddr(windows.Getpeername(server)))
-	dup := func() (windows.Handle, error) { return diagDup(server) }
-
-	// T0: an event on the value of a stale entry: does Winsock answer for it, and does closesocket drop the entry?
 	v0 := diagStale()
 	e, tries := diagLand(v0, diagEvent, diagClose)
 	fmt.Printf("DIAG T0: the stale value is %#x; an event landed on it: %v (%d tries)\n", uintptr(v0), e == v0, tries)
@@ -165,115 +161,66 @@ func TestDiag534Winsock(t *testing.T) {
 			diagClose(e2)
 		}
 	}
-
-	// T1: a socket of a handoff on the value of a stale entry
-	v1 := diagStale()
-	h1, tries := diagLand(v1, dup, diagCloseSocket)
-	fmt.Printf("DIAG T1: the stale value is %#x; a socket of a handoff landed on it: %v (%d tries)\n", uintptr(v1), h1 == v1, tries)
-	if h1 == v1 {
-		diagProbe("T1 the socket of the handoff", h1)
-		f := os.NewFile(uintptr(h1), "diag")
-		c, err := net.FileConn(f)
-		fmt.Printf("DIAG T1: FileConn: %v\n", err)
-		if c != nil {
-			fmt.Printf("DIAG T1: FileConn made the handle %#x, remote %v\n", diagHandleOf(c), c.RemoteAddr())
-			c.Close()
-		}
-		closeSocketFile(f, h1)
-		h1b, tries := diagLand(v1, dup, diagCloseSocket)
-		fmt.Printf("DIAG T1: after the closesocket of it, a socket of a handoff landed on the value again: %v (%d tries)\n", h1b == v1, tries)
-		if h1b == v1 {
-			diagProbe("T1 again", h1b)
-			diagCloseSocket(h1b)
-		}
-	}
-
-	// T2: a socket that is made with socket() on the value of a stale entry, and closed with closesocket: is the entry gone?
-	v2 := diagStale()
-	s2, tries := diagLand(v2, diagSocket, diagCloseSocket)
-	fmt.Printf("DIAG T2: the stale value is %#x; a socket() landed on it: %v (%d tries)\n", uintptr(v2), s2 == v2, tries)
-	if s2 == v2 {
-		fmt.Printf("DIAG T2: bind: %v\n", windows.Bind(s2, &windows.SockaddrInet4{Addr: [4]byte{127, 0, 0, 1}}))
-		diagProbe("T2 the socket() after bind", s2)
-		diagCloseSocket(s2)
-		h2, tries := diagLand(v2, dup, diagCloseSocket)
-		fmt.Printf("DIAG T2: after its closesocket, a socket of a handoff landed on the value: %v (%d tries)\n", h2 == v2, tries)
-		if h2 == v2 {
-			diagProbe("T2 the socket of the handoff", h2)
-			diagCloseSocket(h2)
-		}
-	}
-
-	// T3: a socket of a handoff on the value of a stale entry, copied to another value before anything else is done to it, and
-	// the old value closed with closesocket
-	v3 := diagStale()
-	h3, tries := diagLand(v3, dup, diagCloseSocket)
-	fmt.Printf("DIAG T3: the stale value is %#x; a socket of a handoff landed on it: %v (%d tries)\n", uintptr(v3), h3 == v3, tries)
-	if h3 == v3 {
-		var cp windows.Handle
-		self := windows.CurrentProcess()
-		derr := windows.DuplicateHandle(self, h3, self, &cp, 0, false, windows.DUPLICATE_SAME_ACCESS)
-		fmt.Printf("DIAG T3: DuplicateHandle: the copy is %#x, %v\n", uintptr(cp), derr)
-		fmt.Printf("DIAG T3: closesocket of the old value: %v\n", windows.Closesocket(h3))
-		if derr == nil {
-			diagProbe("T3 the copy", cp)
-			f := os.NewFile(uintptr(cp), "diag")
-			c, err := net.FileConn(f)
-			fmt.Printf("DIAG T3: FileConn of the copy: %v\n", err)
-			if c != nil {
-				fmt.Printf("DIAG T3: FileConn made the handle %#x, remote %v, local %v\n", diagHandleOf(c), c.RemoteAddr(), c.LocalAddr())
-				c.Close()
-			}
-			closeSocketFile(f, cp)
-		}
-		h3b, tries := diagLand(v3, dup, diagCloseSocket)
-		fmt.Printf("DIAG T3: after that, a socket of a handoff landed on the value again: %v (%d tries)\n", h3b == v3, tries)
-		if h3b == v3 {
-			diagProbe("T3 again", h3b)
-			diagCloseSocket(h3b)
-		}
-	}
-
-	// T4: the socket that FileConn makes of its own gets the value of a stale entry (the slot of a closed handle is the next
-	// to be given), and FileConn is tried a second time
-	d4, err := diagDup(server)
-	if err != nil {
-		t.Fatal(err)
-	}
-	v4 := diagStale()
-	f4 := os.NewFile(uintptr(d4), "diag")
-	c1, err1 := net.FileConn(f4)
-	fmt.Printf("DIAG T4: the socket of the handoff is %#x, the stale value %#x; FileConn the first time: %v\n", uintptr(d4), uintptr(v4), err1)
-	if c1 != nil {
-		fmt.Printf("DIAG T4: FileConn made the handle %#x, remote %v\n", diagHandleOf(c1), c1.RemoteAddr())
-		c1.Close()
-	}
-	c2, err2 := net.FileConn(f4)
-	fmt.Printf("DIAG T4: FileConn the second time: %v\n", err2)
-	if c2 != nil {
-		fmt.Printf("DIAG T4: FileConn made the handle %#x, remote %v\n", diagHandleOf(c2), c2.RemoteAddr())
-		c2.Close()
-	}
-	closeSocketFile(f4, d4)
 }
 
-// TestDiag534Dummy is the first dial of a process: the standard library loads ConnectEx with a socket that it closes with
-// CloseHandle. Which entries does Winsock hold before the dial, and which after it?
-func TestDiag534Dummy(t *testing.T) {
-	before := diagScan()
+// TestDiag534Rebuild hands a socket over to rebuild with entries of closed sockets on the top of the free slots of the handle
+// table, before the duplicate of the front door is made (the socket of the handoff comes by one), and between that and rebuild
+// (the socket that FileConn makes of its own comes by one). The variant of rebuild is diagRebuild.
+func TestDiag534Rebuild(t *testing.T) {
 	server, client, ln := diagPair(t)
-	afterPair := diagScan()
-	c, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", func() int {
-		sa, _ := windows.Getsockname(ln)
-		return sa.(*windows.SockaddrInet4).Port
-	}()))
-	if err != nil {
-		t.Fatal(err)
+	defer windows.Closesocket(ln)
+	defer windows.Closesocket(client)
+	defer windows.Closesocket(server)
+	want := diagAddr(windows.Getsockname(client))
+	fmt.Printf("DIAG rebuild: the variant is %q, the client is %s\n", diagRebuild, want)
+	for _, c := range []struct {
+		name            string
+		before, between int
+	}{
+		{"nothing is stale", 0, 0},
+		{"the socket of the handoff is on a stale value", 4, 0},
+		{"the socket of FileConn is on a stale value", 0, 4},
+		{"both are", 4, 4},
+	} {
+		ok, bad := 0, 0
+		var first error
+		for i := 0; i < 40; i++ {
+			if c.before > 0 {
+				diagPoison(c.before)
+			}
+			var info windows.WSAProtocolInfo
+			if err := windows.WSADuplicateSocket(server, uint32(os.Getpid()), &info); err != nil {
+				t.Fatal(err)
+			}
+			if c.between > 0 {
+				diagPoison(c.between)
+			}
+			msg, err := encodeHandoff(&info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := DecodeHandoff(msg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := rebuild(raw)
+			if err != nil {
+				bad++
+				if first == nil {
+					first = err
+				}
+				continue
+			}
+			if got := conn.RemoteAddr().String(); got != want {
+				bad++
+				if first == nil {
+					first = fmt.Errorf("the remote address is %s, not %s", got, want)
+				}
+			} else {
+				ok++
+			}
+			conn.Close()
+		}
+		fmt.Printf("DIAG rebuild %s: %d of 40 made a connection with the right client, %d did not; the first error: %v\n", c.name, ok, bad, first)
 	}
-	after := diagScan()
-	fmt.Printf("DIAG dummy: stale entries before %#x, after the plain sockets %#x, after the first dial of the standard library %#x\n", before, afterPair, after)
-	c.Close()
-	windows.Closesocket(server)
-	windows.Closesocket(client)
-	windows.Closesocket(ln)
 }

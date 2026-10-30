@@ -269,6 +269,13 @@ func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("port: WSASocketW of a handoff: %w", err)
 	}
+	if diagHas("probe") {
+		if _, err := windows.Getpeername(h); err != nil {
+			_, nerr := windows.Getsockname(h)
+			typ, terr := windows.GetsockoptInt(h, windows.SOL_SOCKET, diagSoType)
+			fmt.Fprintf(os.Stderr, "DIAG d1 odd: handle %#x, getpeername %v, getsockname %v, SO_TYPE %d (%v)\n", uintptr(h), err, nerr, typ, terr)
+		}
+	}
 	if diagHas("check") {
 		h = diagCheck(h)
 	}
@@ -279,7 +286,9 @@ func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
 		stale = diagScan()
 	}
 	tries := 1
-	if diagHas("retry") {
+	if diagHas("retry8") {
+		tries = 8
+	} else if diagHas("retry") {
 		tries = 3
 	}
 	var c net.Conn
