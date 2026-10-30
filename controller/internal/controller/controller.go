@@ -141,8 +141,9 @@ type Config struct {
 	// OperationTimeout is how long the controller waits for the answer of a node to a live operation of
 	// an operator (SDN-50, operations.go); DefaultOperationTimeout when zero.
 	OperationTimeout time.Duration
-	// Now is the clock of the lives of the node keys (SDN-56, nodekeys.go); time.Now when nil. KeyCheck is how
-	// often the controller looks for keys that ended; DefaultKeyCheck when zero.
+	// Now is the clock of the lives of the node keys (SDN-56, nodekeys.go) and of the interval of the reports of Pins
+	// (mimic.go); time.Now when nil. KeyCheck is how often the controller looks for keys that ended and for reports of
+	// Pins that wait for their interval; DefaultKeyCheck when zero.
 	Now      func() time.Time
 	KeyCheck time.Duration
 }
