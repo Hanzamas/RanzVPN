@@ -5,6 +5,7 @@
 package controller_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -12,7 +13,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,11 +34,17 @@ import (
 // newSealedHarness returns the harness of the telemetry tests whose store seals the secrets of the
 // targets with sealer, as the controller does with the sealing key of its host.
 func newSealedHarness(t *testing.T, sealer *keys.Sealer) *harness {
+	return newSealedHarnessLost(t, sealer, nil)
+}
+
+// newSealedHarnessLost is newSealedHarness whose store tells lost, which may be nil, which target has a
+// secret that it cannot open (store.SetSealer).
+func newSealedHarnessLost(t *testing.T, sealer *keys.Sealer, lost func(table, name string)) *harness {
 	h := &harness{t: t, rq: rqlitetest.Start(t), tune: func(c *controller.Config) {
 		c.NodeDownAfter = time.Minute
 		c.EventPoll = 50 * time.Millisecond
 		c.ExportInterval = time.Hour
-		c.Store.SetSealer(sealer, nil)
+		c.Store.SetSealer(sealer, lost)
 	}}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
@@ -73,6 +83,177 @@ func (h *harness) rawTargetRows() string {
 		}
 	}
 	return all.String()
+}
+
+// lostSecrets collects what the store tells about the secrets that it cannot open, from the goroutines of the
+// controller.
+type lostSecrets struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (l *lostSecrets) add(table, name string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.names = append(l.names, table+"/"+name)
+}
+
+func (l *lostSecrets) get() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.names)
+}
+
+// rewriteTargetURL changes the URL in the JSON of the row name of table, as a writer of the store does with raw
+// SQL: nothing else of the row changes, so the secret stays as it was sealed.
+func (h *harness) rewriteTargetURL(table, name, url string) {
+	h.t.Helper()
+	raw, err := gorqlite.Open(h.rq.URL() + "?disableClusterDiscovery=true")
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer raw.Close()
+	qr, err := raw.QueryOne(`SELECT name, target FROM ` + table)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	var doc map[string]any
+	for qr.Next() {
+		var n, d string
+		if err := qr.Scan(&n, &d); err != nil {
+			h.t.Fatal(err)
+		}
+		if n == name {
+			if err := json.Unmarshal([]byte(d), &doc); err != nil {
+				h.t.Fatal(err)
+			}
+		}
+	}
+	if doc == nil {
+		h.t.Fatalf("%s holds no target %s", table, name)
+	}
+	doc["url"] = url
+	b, err := json.Marshal(doc)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if _, err := raw.WriteOneParameterized(gorqlite.ParameterizedStatement{Query: `UPDATE ` + table + ` SET target = ? WHERE name = ?`, Arguments: []any{string(b), name}}); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+// carries returns the first of texts that the call holds, in the value of a header or in its body, and none
+// when it holds no one of them.
+func carries(c webhookCall, texts ...string) string {
+	for _, text := range texts {
+		if bytes.Contains(c.body, []byte(text)) {
+			return text
+		}
+		for _, values := range c.header {
+			for _, v := range values {
+				if strings.Contains(v, text) {
+					return text
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// TestChangedURLOfATargetSendsNoSecret is the fourth criterion of #502 at the controller: the label of a sealed
+// secret holds the URL of its target. A writer of the store points a webhook and an OTLP target at a URL of its own,
+// in rows that hold the secrets sealed for the old URLs, and the controller starts again: it sends to the new URLs
+// with no secret, the webhook unsigned and the OTLP request with no bearer token, and nothing that those URLs get
+// holds a secret, opened or sealed. Before the change the same targets are signed and called with their secrets, so
+// the absence after it is the effect of the URL and nothing else.
+func TestChangedURLOfATargetSendsNoSecret(t *testing.T) {
+	key, err := keys.GenerateSoft()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lost lostSecrets
+	h := newSealedHarnessLost(t, keys.NewSealer(key), lost.add)
+	const hookSecret, otlpSecret = "hmac-key-of-the-events", "bearer-token-of-the-collector"
+	events, collector := newWebhook(t), newWebhook(t)
+	h.putTarget(export.Target{Name: "alerts", Kind: export.KindWebhook, URL: events.URL + "/events", Secret: hookSecret})
+	h.putTarget(export.Target{Name: "collector", Kind: export.KindOTLP, URL: collector.URL, Secret: otlpSecret})
+	failover := func(b *sim, message string) {
+		t.Helper()
+		if err := b.Telemetry(&controlpb.Telemetry{Events: []*controlpb.NodeEvent{
+			{Type: controlpb.NodeEventType_NODE_EVENT_TYPE_GATEWAY_FAILOVER, Subject: "gw-2", Message: message}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// As they are put, the secrets work: the webhook is signed with its key and the OTLP endpoint is called with its token
+	b1 := h.joined()
+	failover(b1, "before")
+	for {
+		ev, call := events.next(t)
+		if ev.Message != "before" {
+			continue
+		}
+		mac := hmac.New(sha256.New, []byte(hookSecret))
+		mac.Write(call.body)
+		if got, want := call.header.Get("X-Ranz-Signature"), "sha256="+hex.EncodeToString(mac.Sum(nil)); got != want {
+			t.Fatalf("the webhook got the signature %q, want %q: the secret does not work, so this test shows nothing", got, want)
+		}
+		break
+	}
+	h.c.FlushExports(context.Background())
+	select {
+	case call := <-collector.calls:
+		if got, want := call.header.Get("Authorization"), "Bearer "+otlpSecret; got != want {
+			t.Fatalf("the OTLP endpoint got the Authorization %q, want %q: the secret does not work, so this test shows nothing", got, want)
+		}
+	case <-time.After(waitTimeout):
+		t.Fatalf("the OTLP endpoint got no metrics within %v", waitTimeout)
+	}
+
+	// A writer of the store points both targets at a URL of its own, and the controller starts again
+	thiefHook, thiefOTLP := newWebhook(t), newWebhook(t)
+	h.rewriteTargetURL("export_targets", "alerts", thiefHook.URL+"/events")
+	h.rewriteTargetURL("export_targets", "collector", thiefOTLP.URL)
+	h.stop()
+	h.start()
+	b1 = h.sim("branch-1", keyBranch1)
+	b1.update(h.t)
+	h.waitNode("branch-1", 1, true)
+	ts, err := h.c.Targets(context.Background())
+	if err != nil || len(ts) != 2 || ts[0].URL != thiefHook.URL+"/events" || ts[1].URL != thiefOTLP.URL || ts[0].Secret != "" || ts[1].Secret != "" {
+		t.Fatalf("after the change the targets are %+v, %v, want the new URLs and no secret", ts, err)
+	}
+	if got := lost.get(); !slices.Contains(got, "export_targets/alerts") || !slices.Contains(got, "export_targets/collector") {
+		t.Errorf("the store told %v, want it to name both targets, whose secrets do not open for the new URLs", got)
+	}
+
+	failover(b1, "after")
+	for {
+		ev, call := thiefHook.next(t)
+		if got := call.header.Get("X-Ranz-Signature"); got != "" {
+			t.Errorf("the new URL of the webhook got a call signed with %q: the secret opened for a URL that it was not sealed for", got)
+		}
+		if got := carries(call, hookSecret, "ranz-sealed"); got != "" {
+			t.Errorf("the new URL of the webhook got a call that holds %q", got)
+		}
+		if ev.Message == "after" {
+			break
+		}
+	}
+	h.c.FlushExports(context.Background())
+	select {
+	case call := <-thiefOTLP.calls:
+		if got := call.header.Get("Authorization"); got != "" {
+			t.Errorf("the new URL of the OTLP target got the Authorization %q: the bearer token was sent where it was not sealed for", got)
+		}
+		if got := carries(call, otlpSecret, "ranz-sealed"); got != "" {
+			t.Errorf("the new URL of the OTLP target got a call that holds %q", got)
+		}
+	case <-time.After(waitTimeout):
+		t.Fatalf("the new URL of the OTLP target got no metrics within %v", waitTimeout)
+	}
+	// The controller sends its last metrics when it stops, so it stops before the endpoints do
+	h.stop()
 }
 
 // TestTargetSecretsAreSealedAtTheController is the third criterion of #458: the table of the targets
