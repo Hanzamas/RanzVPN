@@ -511,25 +511,53 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
-    # THROWAWAY (#534): the diagnostics of TestFrontDoorHandsOver, removed again before the pull request is done
-    - name: Diagnostics of TestFrontDoorHandsOver (throwaway)
-      if: matrix.platform.ARCHITECTURE == 'x64'
+    # THROWAWAY (#534): the measurement of the fix of TestFrontDoorHandsOver, removed again before the pull request is done.
+    # It runs the tests of controller/internal/port with the close of the handle that the code had (RANZ_DIAG_REBUILD) and
+    # with the fix, in one process and in processes of their own, and fails the job on purpose.
+    - name: Measure TestFrontDoorHandsOver (throwaway)
       shell: pwsh
-      timeout-minutes: 15
-      env:
-        RANZ_DIAG_534: '1'
+      timeout-minutes: 25
       run: |
-        $env:RANZ_DIAG_REBUILD = 'closehandle'
-        go test -count=200 -run '^TestFrontDoorHandsOver$' ./controller/internal/port
-        Write-Host "the test with the old close of the handle, 200 times: exit code $LASTEXITCODE"
-        Remove-Item Env:RANZ_DIAG_REBUILD
-        go test -count=1000 -run '^TestFrontDoorHandsOver$' ./controller/internal/port
-        Write-Host "the test with the fix, 1000 times: exit code $LASTEXITCODE"
-        foreach ($v in 'control', 'fixed-after', 'fixed-first', 'fixed-process') {
-          $env:RANZ_DIAG_VARIANT = $v
-          go test -count=1 -v -timeout 8m -run '^TestDiag534$' ./controller/internal/port
-          Write-Host "diagnostics $v: exit code $LASTEXITCODE"
+        $exe = Join-Path $env:RUNNER_TEMP 'port.test.exe'
+        $log = Join-Path $env:RUNNER_TEMP 'port.test.log'
+        go version
+        Write-Host "architecture $env:PROCESSOR_ARCHITECTURE"
+        go test -c -o $exe ./controller/internal/port
+        if ($LASTEXITCODE -ne 0) { throw "go test -c exited with code $LASTEXITCODE" }
+        # The test binary $runs times, each time a process of its own
+        function Measure-Processes([string] $label, [string] $pattern, [int] $runs, [bool] $old) {
+          $env:RANZ_DIAG_REBUILD = if ($old) { 'closehandle' } else { '' }
+          $failed = 0
+          for ($i = 0; $i -lt $runs; $i++) {
+            & $exe "-test.run=$pattern" '-test.count=1' *> $log
+            if ($LASTEXITCODE -ne 0) {
+              $failed++
+              if ($failed -le 2) { Get-Content -LiteralPath $log | Select-Object -First 12 | ForEach-Object { Write-Host "    $_" } }
+            }
+          }
+          $env:RANZ_DIAG_REBUILD = ''
+          Write-Host "${label}: $failed of $runs processes failed"
         }
+        # The test binary once, with -test.count of $count
+        function Measure-Count([string] $label, [string] $pattern, [int] $count, [bool] $old) {
+          $env:RANZ_DIAG_REBUILD = if ($old) { 'closehandle' } else { '' }
+          & $exe "-test.run=$pattern" "-test.count=$count" *> $log
+          $code = $LASTEXITCODE
+          $failed = @(Select-String -LiteralPath $log -Pattern '^--- FAIL').Count
+          $env:RANZ_DIAG_REBUILD = ''
+          Write-Host "${label}: exit code $code, $failed of $count runs failed"
+          if ($failed -gt 0) { Get-Content -LiteralPath $log | Select-Object -First 6 | ForEach-Object { Write-Host "    $_" } }
+        }
+        Measure-Count 'old close of the handle, TestFrontDoorHandsOver in one process' '^TestFrontDoorHandsOver$' 200 $true
+        Measure-Processes 'old close of the handle, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 300 $true
+        Measure-Processes 'old close of the handle, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 20 $true
+        go test -count=100 -run TestFrontDoorHandsOver ./controller/internal/port
+        Write-Host "go test -count=100 -run TestFrontDoorHandsOver ./controller/internal/port: exit code $LASTEXITCODE"
+        Measure-Count 'fix, TestFrontDoorHandsOver in one process' '^TestFrontDoorHandsOver$' 1000 $false
+        Measure-Count 'fix, TestFrontDoorHandoffsKeepTheirClient in one process' '^TestFrontDoorHandoffsKeepTheirClient$' 20 $false
+        Measure-Processes 'fix, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 300 $false
+        Measure-Processes 'fix, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 100 $false
+        Measure-Processes 'fix, every test of the package' '.' 10 $false
         exit 1
     # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
     # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64

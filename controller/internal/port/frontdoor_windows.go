@@ -145,23 +145,23 @@ func (f *FrontDoor) handoff(p net.Conn) {
 	go f.srv.ServeConn(c)
 }
 
-// diagRebuild is the throwaway observation hook of the diagnostics of #534, and diagRebuildMode the
-// throwaway switch to the code as it was: "closehandle".
-var (
-	diagRebuild     func(h windows.Handle, c net.Conn, err error) net.Conn
-	diagRebuildMode = os.Getenv("RANZ_DIAG_REBUILD")
-)
+// diagCloseHandle is the throwaway switch of the measurement of #534 to the close that the code had: the file closes the
+// handle with CloseHandle.
+var diagCloseHandle = os.Getenv("RANZ_DIAG_REBUILD") == "closehandle"
 
 // handleFlagProtectFromClose is HANDLE_FLAG_PROTECT_FROM_CLOSE: CloseHandle does not close a handle that has it.
 const handleFlagProtectFromClose = 0x2
 
-// closeSocketFile closes file, which holds the handle h of a socket, and the socket's handle with it, as closesocket does.
-// os.File closes its handle with CloseHandle, which Winsock does not hear of: it keeps state by the value of a socket
-// handle, the remote address among it, that only closesocket drops, and gives it to the next socket of a handoff that
-// has the same value, so that connection reports the peer of an older one (#534). So the handle is protected from the
-// close of the file, which then fails and leaves it open, and closesocket closes it.
+// closeSocketFile closes file, which holds the handle h of a socket, and the socket with it, as closesocket does.
+// os.File closes a handle with CloseHandle, which Winsock does not hear of: Winsock keeps state by the value of each
+// socket handle, the remote address among it, until closesocket drops it, and a socket that comes by the same value
+// later starts with that state. The next handoff then got a connection that reported the client of an older one as its
+// remote address (#534), which the API and the limits for a source go by. So h is protected from the close of the file,
+// which then fails and leaves it open, and closesocket closes it.
 func closeSocketFile(file *os.File, h windows.Handle) {
-	if windows.SetHandleInformation(h, handleFlagProtectFromClose, handleFlagProtectFromClose) != nil {
+	// A debugger takes the close of a protected handle for an exception, which would end the process, so there the file
+	// closes the handle itself
+	if windows.RtlGetCurrentPeb().BeingDebugged != 0 || windows.SetHandleInformation(h, handleFlagProtectFromClose, handleFlagProtectFromClose) != nil {
 		file.Close()
 		return
 	}
@@ -170,7 +170,7 @@ func closeSocketFile(file *os.File, h windows.Handle) {
 		return
 	}
 	_ = windows.SetHandleInformation(h, handleFlagProtectFromClose, 0)
-	windows.Closesocket(h)
+	_ = windows.Closesocket(h)
 }
 
 // rebuild makes the controller's own socket of the WSAPROTOCOL_INFOW of a handoff and returns it as
@@ -184,18 +184,10 @@ func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("port: WSASocketW of a handoff: %w", err)
 	}
-	if diagRebuild != nil {
-		diagRebuild(h, nil, nil)
-	}
 	// FileConn takes a socket of its own of the file, so the file closes after
 	file := os.NewFile(uintptr(h), "front door handoff")
 	c, err := net.FileConn(file)
-	if diagRebuild != nil {
-		if w := diagRebuild(h, c, err); w != nil {
-			c = w
-		}
-	}
-	if diagRebuildMode == "closehandle" {
+	if diagCloseHandle {
 		file.Close()
 	} else {
 		closeSocketFile(file, h)

@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"os"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -169,16 +171,43 @@ func taken(t *testing.T, answers chan byte) {
 	}
 }
 
+// dialed records the local address of every connection that a client dials. A client may dial more than the one connection
+// that carries its request, and the front door hands over each of them.
+type dialed struct {
+	mu    sync.Mutex
+	local []string
+}
+
+func (d *dialed) dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+	if err == nil {
+		d.mu.Lock()
+		d.local = append(d.local, c.LocalAddr().String())
+		d.mu.Unlock()
+	}
+	return c, err
+}
+
+// all is the local addresses of the connections dialed so far.
+func (d *dialed) all() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.local)
+}
+
 // A connection that the front door hands over is the controller's: its own TLS handshake with its
 // own certificate, then the API over HTTP/1.1 and h2, or the control stream by its ALPN. No byte
-// passes through the front door, whose handle is closed before the client speaks.
+// passes through the front door, whose handle is closed before the client speaks. The controller
+// sees the client of each connection as the client dialed it: the API by the remote address of
+// the request, the control stream by the one that Control gets.
 func TestFrontDoorHandsOver(t *testing.T) {
 	cert := certificate(t)
-	controls := make(chan string, 4)
+	type controlStream struct{ proto, remote string }
+	controls := make(chan controlStream, 4)
 	s := &Server{
 		TLS: &tls.Config{Certificates: []tls.Certificate{cert}},
 		Control: func(tc *tls.Conn) {
-			controls <- tc.ConnectionState().NegotiatedProtocol
+			controls <- controlStream{tc.ConnectionState().NegotiatedProtocol, tc.RemoteAddr().String()}
 			tc.Close()
 		},
 		HTTP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -203,11 +232,12 @@ func TestFrontDoorHandsOver(t *testing.T) {
 		want  string
 	}{{"HTTP/1.1", false, "HTTP/1.1"}, {"h2", true, "HTTP/2.0"}} {
 		// The local address of the connection that carried the request, which the handler of the API sees as the remote
-		// address of the request. The transport says which connection that was: the last connection that it dialed may be
-		// another one, which it opened besides, and failed this check now and then.
+		// address of the request. The transport says which connection that was, among the ones that it dialed.
 		var local string
+		var dials dialed
 		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { local = info.Conn.LocalAddr().String() }}
 		tr := &http.Transport{
+			DialContext:       dials.dial,
 			TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 			ForceAttemptHTTP2: c.http2,
 		}
@@ -223,9 +253,13 @@ func TestFrontDoorHandsOver(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		tr.CloseIdleConnections()
-		taken(t, answers)
+		// The front door answers once for each connection that the client dialed
+		clientAddrs := dials.all()
+		for range clientAddrs {
+			taken(t, answers)
+		}
 		if got := string(body); got != c.want+" "+local {
-			t.Errorf("%s through the front door: the API answered %q, not %q", c.name, got, c.want+" "+local)
+			t.Errorf("%s through the front door: the API answered %q, not %q (the client dialed from %v)", c.name, got, c.want+" "+local, clientAddrs)
 		}
 		if !bytes.Equal(resp.TLS.PeerCertificates[0].Raw, cert.Certificate[0]) {
 			t.Errorf("%s through the front door: another certificate than the controller's", c.name)
@@ -239,9 +273,12 @@ func TestFrontDoorHandsOver(t *testing.T) {
 	defer tc.Close()
 	taken(t, answers)
 	select {
-	case p := <-controls:
-		if p != control.ALPN {
-			t.Errorf("Control got a connection of %q through the front door", p)
+	case got := <-controls:
+		if got.proto != control.ALPN {
+			t.Errorf("Control got a connection of %q through the front door", got.proto)
+		}
+		if got.remote != tc.LocalAddr().String() {
+			t.Errorf("Control got the connection of %s through the front door, and the client dialed from %s", got.remote, tc.LocalAddr())
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Control got no connection through the front door")
@@ -251,6 +288,47 @@ func TestFrontDoorHandsOver(t *testing.T) {
 	if again, err := ListenFrontDoor(pipe, s); err == nil {
 		again.Close()
 		t.Error("a second handoff pipe of the same name was made")
+	}
+}
+
+// Each connection that the front door hands over has its own client as its remote address, whatever handoffs came
+// before it: the API and the limits for a source go by that address. Winsock keeps state by the value of a socket
+// handle, the remote address among it, until closesocket drops it, and the controller once closed the handle of a
+// handoff with CloseHandle, so the next socket that came by the same handle value reported the client of an older
+// connection (#534). One connection after another, nearly every handoff that follows another one has such a value.
+func TestFrontDoorHandoffsKeepTheirClient(t *testing.T) {
+	remotes := make(chan string, 1)
+	s := &Server{
+		TLS: &tls.Config{Certificates: []tls.Certificate{certificate(t)}},
+		Control: func(tc *tls.Conn) {
+			remotes <- tc.RemoteAddr().String()
+			tc.Close()
+		},
+	}
+	defer s.Close()
+	pipe := testPipe()
+	fd, err := ListenFrontDoor(pipe, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fd.Close()
+	addr, answers := frontDoor(t, pipe)
+
+	for i := range 100 {
+		tc, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true, NextProtos: []string{control.ALPN}})
+		if err != nil {
+			t.Fatalf("connection %d through the front door: %v", i, err)
+		}
+		taken(t, answers)
+		select {
+		case remote := <-remotes:
+			if remote != tc.LocalAddr().String() {
+				t.Fatalf("connection %d through the front door: Control got the connection of %s, and the client dialed from %s", i, remote, tc.LocalAddr())
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("connection %d: Control got no connection through the front door", i)
+		}
+		tc.Close()
 	}
 }
 
