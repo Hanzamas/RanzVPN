@@ -508,19 +508,22 @@ func TestDiag534(t *testing.T) {
 		diagVariant
 		budget time.Duration
 	}{
-		{diagVariant{name: "control: rebuild as it is, in-process, handle closed after the pipe", order: "after"}, 15 * time.Second},
-		{diagVariant{name: "protect: in-process, handle closed after the pipe", order: "after", mode: "protect"}, 40 * time.Second},
-		{diagVariant{name: "protect: in-process, handle closed before the pipe", order: "first", mode: "protect"}, 40 * time.Second},
-		{diagVariant{name: "protect: front door as a process", order: "after", mode: "protect", process: true}, 90 * time.Second},
-		{diagVariant{name: "untracked: in-process, handle closed after the pipe", order: "after", mode: "untracked"}, 40 * time.Second},
-		{diagVariant{name: "untracked: front door as a process", order: "after", mode: "untracked", process: true}, 90 * time.Second},
+		{diagVariant{name: "control: the old close of the handle, in-process, handle closed after the pipe", order: "after", mode: "closehandle"}, 30 * time.Second},
+		{diagVariant{name: "fixed-after: in-process, handle closed after the pipe", order: "after"}, 60 * time.Second},
+		{diagVariant{name: "fixed-first: in-process, handle closed before the pipe", order: "first"}, 60 * time.Second},
+		{diagVariant{name: "fixed-process: front door as a process", order: "after", process: true}, 100 * time.Second},
 	}
+	only := os.Getenv("RANZ_DIAG_VARIANT")
 	failed := false
 	for _, v := range variants {
+		if !strings.HasPrefix(v.name, only) {
+			continue
+		}
 		end := time.Now().Add(v.budget)
-		runs, bad, shown := 0, 0, 0
+		runs, bad := 0, 0
 		handlesBefore := diagHandles()
 		kinds := map[string]int{}
+		shown := map[string]int{}
 		for runs < 3000 && time.Now().Before(end) {
 			runs++
 			out := diagScenario(t, cert, v.diagVariant)
@@ -528,11 +531,15 @@ func TestDiag534(t *testing.T) {
 				continue
 			}
 			bad++
+			show := false
 			for _, k := range out.anomalies {
 				kinds[k]++
+				if shown[k] < 2 {
+					shown[k]++
+					show = true
+				}
 			}
-			if shown < 3 {
-				shown++
+			if show {
 				fmt.Printf("---- %s: run %d\n%s\n", v.name, runs, out.trace)
 			}
 		}

@@ -510,10 +510,17 @@ jobs:
       env:
         RANZ_DIAG_534: '1'
       run: |
+        $env:RANZ_DIAG_REBUILD = 'closehandle'
         go test -count=200 -run '^TestFrontDoorHandsOver$' ./controller/internal/port
-        Write-Host "the test as it is, 200 times: exit code $LASTEXITCODE"
-        go test -count=1 -v -timeout 14m -run '^TestDiag534$' ./controller/internal/port
-        Write-Host "the diagnostics: exit code $LASTEXITCODE"
+        Write-Host "the test with the old close of the handle, 200 times: exit code $LASTEXITCODE"
+        Remove-Item Env:RANZ_DIAG_REBUILD
+        go test -count=1000 -run '^TestFrontDoorHandsOver$' ./controller/internal/port
+        Write-Host "the test with the fix, 1000 times: exit code $LASTEXITCODE"
+        foreach ($v in 'control', 'fixed-after', 'fixed-first', 'fixed-process') {
+          $env:RANZ_DIAG_VARIANT = $v
+          go test -count=1 -v -timeout 8m -run '^TestDiag534$' ./controller/internal/port
+          Write-Host "diagnostics $v: exit code $LASTEXITCODE"
+        }
         exit 1
     # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
     # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64
