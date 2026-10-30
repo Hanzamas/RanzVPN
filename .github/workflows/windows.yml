@@ -306,6 +306,18 @@ jobs:
         $arch = '${{ matrix.platform.ARCHITECTURE }}'
         python .github/scripts/bench-gate.py compare --runs 3 --medians ".github/quality/bench-$arch.txt" "build/harness-out/bench-$arch*.txt"
         if ($LASTEXITCODE -ne 0) { throw "a benchmark is slower than its recorded median allows (exit code $LASTEXITCODE)" }
+    # The Egress tiers on the NAT of Windows of the internet exit of a VRF (SDN-12, #188; ADR-0025 decision 13), on x64 and
+    # arm64: vpntest egressnat with node-x on the tier that the runner gives, WinNAT where Hyper-V and WinNAT are present (the
+    # egress of a peer translated, the NAT network of the node set again after it was removed behind its back, nothing of the
+    # node left once it is the exit of no VRF), and the proxy once a NAT network of WinNAT of another program exists, which the
+    # node leaves as it was (.github/scripts/egress-nat.ps1). A step of its own, since it changes the NAT of Windows of the
+    # runner; it needs only the build, so it runs after a test that failed too.
+    - name: Egress on the NAT of Windows
+      if: ${{ !cancelled() }}
+      timeout-minutes: 10
+      shell: pwsh
+      run: |
+        . .github/scripts/egress-nat.ps1 -BuildDir build
     # The new core's crypto module (CORE-F1, #61): known-answer tests of X25519, AES-GCM, SHA-256,
     # HMAC, HKDF and the RNG, the identity key, the ML-KEM hybrid, the certificate path and an
     # in-memory Schannel TLS 1.3 handshake; and its session module (CORE-F2, #62): the Noise_IK
@@ -1849,3 +1861,33 @@ jobs:
       timeout-minutes: 30
       run: |
         . .github/scripts/first-test.ps1 -Ranz artifacts\ranz\ranz.exe -Certificate artifacts\certificate\ranz-ci-signing.cer -Binaries artifacts\binaries -Architecture ${{ matrix.platform.ARCHITECTURE }}
+
+  # RRAS NAT of the internet exit of a VRF (SDN-12, #188; ADR-0025 decision 13), the VM job of the ticket on Windows Server 2025
+  # x64: Routing and Remote Access installed as a LAN router, as an operator sets it up, then vpntest egressrras: the
+  # Capabilities of the runner give RRAS NAT, the node adds the NAT routing protocol and makes the adapter of its VRF a private
+  # interface and the interfaces that carry the egress public ones through MprConfig and MprAdmin, the egress of a peer leaves
+  # translated and its answers come back, the NAT setting of the adapter taken away behind the node's back is set again by the
+  # next reconcile, and the NAT holds nothing of the node once it is the exit of no VRF (.github/scripts/egress-nat.ps1). It
+  # follows build_and_test (vpntest); RRAS changes the runner, so the test has a job of its own.
+  egress_rras:
+    needs: [plan, build_and_test]
+    if: needs.plan.outputs.full == 'true'
+    name: egress (RRAS NAT)
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download the x64 binaries
+      uses: actions/download-artifact@v4
+      with:
+        name: Binaries-x64
+        path: artifacts/bin
+    - name: Fetch Wintun
+      shell: pwsh
+      run: |
+        .github/scripts/fetch-wintun.ps1 -Arch x64 -DllDir "${{ github.workspace }}\artifacts\bin"
+    - name: RRAS NAT of the internet exit
+      shell: pwsh
+      timeout-minutes: 20
+      run: |
+        . .github/scripts/egress-nat.ps1 -BuildDir artifacts\bin -Rras
