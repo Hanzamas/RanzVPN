@@ -145,6 +145,9 @@ func (f *FrontDoor) handoff(p net.Conn) {
 	go f.srv.ServeConn(c)
 }
 
+// diagRebuild is the throwaway observation hook of the diagnostics of #534.
+var diagRebuild func(h windows.Handle, c net.Conn, err error) net.Conn
+
 // rebuild makes the controller's own socket of the WSAPROTOCOL_INFOW of a handoff and returns it as
 // a TCP connection of package net.
 func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
@@ -156,9 +159,17 @@ func rebuild(info [protocolInfoSize]byte) (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("port: WSASocketW of a handoff: %w", err)
 	}
+	if diagRebuild != nil {
+		diagRebuild(h, nil, nil)
+	}
 	// FileConn takes a socket of its own of the file, so the file closes after
 	file := os.NewFile(uintptr(h), "front door handoff")
 	c, err := net.FileConn(file)
+	if diagRebuild != nil {
+		if w := diagRebuild(h, c, err); w != nil {
+			c = w
+		}
+	}
 	file.Close()
 	if err != nil {
 		return nil, fmt.Errorf("port: the socket of a handoff: %w", err)

@@ -502,6 +502,19 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
+    # THROWAWAY (#534): the diagnostics of TestFrontDoorHandsOver, removed again before the pull request is done
+    - name: Diagnostics of TestFrontDoorHandsOver (throwaway)
+      if: matrix.platform.ARCHITECTURE == 'x64'
+      shell: pwsh
+      timeout-minutes: 15
+      env:
+        RANZ_DIAG_534: '1'
+      run: |
+        go test -count=200 -run '^TestFrontDoorHandsOver$' ./controller/internal/port
+        Write-Host "the test as it is, 200 times: exit code $LASTEXITCODE"
+        go test -count=1 -v -timeout 14m -run '^TestDiag534$' ./controller/internal/port
+        Write-Host "the diagnostics: exit code $LASTEXITCODE"
+        exit 1
     # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
     # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64
     - name: Install rqlited
