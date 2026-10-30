@@ -16,12 +16,14 @@
 // changed a route (NodeEvpnCommit), so the data path reads them without a lock, as it reads the forwarding tables of the VRFs.
 //
 // Into the fabric: the routes of the overlay come first, so a packet goes to the fabric only to a destination that no route of
-// its VRF holds and an IP prefix route of the fabric does: a packet of the host of the gateway (NodeOverlayInput,
-// NodeEvpnOutput), as the overlay sees it after the 1:1 NAT rules, and a packet of a peer that the gateway forwards
-// (NodeOverlayDeliver, NodeEvpnTransit). It goes behind an Ethernet header from the router MAC of the gateway to the router
-// MAC of the route, untagged, with the EtherType of IPv4 or IPv6, on the VNI of the route, to the VTEP of the route on the UDP
-// port of the VTEPs of the fabric (fabric_port, VXLAN_PORT without one): the interface-less model of RFC 9136 section 4.4.1,
-// as RFC 8365 section 5.1.3 carries it.
+// its VRF holds and an IP prefix route of the fabric does. The default route of the VRF is the one exception: a VRF with an
+// internet exit routes 0.0.0.0/0 to the exit at each of its Nodes (NodeEgress.c; SDN-12, #188), and a longer route of the
+// fabric wins over it, as the longest prefix wins (NodeEvpnTakes). So goes a packet of the host of the gateway
+// (NodeOverlayInput, NodeEvpnOutput), as the overlay sees it after the 1:1 NAT rules, and a packet of a peer that the gateway
+// forwards (NodeOverlayDeliver, NodeEvpnTransit). It goes behind an Ethernet header from the router MAC of the gateway to the
+// router MAC of the route, untagged, with the EtherType of IPv4 or IPv6, on the VNI of the route, to the VTEP of the route on
+// the UDP port of the VTEPs of the fabric (fabric_port, VXLAN_PORT without one): the interface-less model of RFC 9136 section
+// 4.4.1, as RFC 8365 section 5.1.3 carries it.
 //
 // Out of the fabric: the module carries the L3 VNI of each EVPN VRF and drops a datagram on any other VNI. A frame of an L3 VNI
 // goes into its VRF when it is addressed to the router MAC of the gateway, untagged, and holds an IP packet of the version of
@@ -331,6 +333,21 @@ static const NODE_EVPN_HOP *NodeEvpnFind(NODE_EVPN_TABLE *t, UINT vrf_id, const 
 	UINT i = NodeVrfLookup(NodeGetVrfTable(t->Routes, vrf_id), addr, size);
 
 	return (i < t->NumHops ? &t->Hops[i] : NULL);
+}
+
+// The next hop of the IP prefix route of the table t of the fabric that takes a packet of the VRF vrf_id, whose forwarding
+// table is vt, to the address dst (size bytes), NULL for none. The routes of the overlay come first: a route of the fabric
+// takes the packet when no route of the VRF holds dst, or when only the default route of the VRF holds it, as at a Node of a
+// VRF with an internet exit (NodeEgress.c; SDN-12, #188), and a longer route of the fabric holds it too. Of two default
+// routes, the one of the overlay wins.
+static const NODE_EVPN_HOP *NodeEvpnTakes(NODE_EVPN_TABLE *t, NODE_VRF_TABLE *vt, UINT vrf_id, const UCHAR *dst, UINT size) {
+	if (t == NULL)
+		return NULL;
+
+	if (NodeVrfLookup(vt, dst, size) != NODE_VRF_NONE && (NodeVrfDefault(vt, dst, size) == false || NodeVrfDefault(NodeGetVrfTable(t->Routes, vrf_id), dst, size)))
+		return NULL;
+
+	return NodeEvpnFind(t, vrf_id, dst, size);
 }
 
 // Send the IP packet of size bytes of the VRF vrf_id to the fabric by the route of the table t whose next hop is hop: a packet
