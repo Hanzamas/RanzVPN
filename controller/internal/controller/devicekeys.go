@@ -38,10 +38,12 @@ import (
 //     device_keys:NAME. The store, a backup of it or a copy of the disk does not give one. The sealed key
 //     is in the table device_keys, not in the intent, and in the states of the gateways as they are
 //     stored and compared. The control stream carries it in clear to the gateway alone (openDeviceKeys),
-//     which hands it to WireGuardNT. The members of a cluster have no Sealing key in common, so a member
-//     seals none and makes a Device without a PresharedKey when it is asked to (CreateDevice). A key that
-//     the Sealing key does not open, as one that a backup of another host holds does not, is left out
-//     of the state of the gateway and the log says so (openDeviceKeys): the Device is then made again.
+//     which hands it to WireGuardNT. The members of a cluster have no Sealing key in common, so the Sealer
+//     of the store of a member is the Cluster key of the cluster (internal/clusterkey, AUD1-DT-16), which
+//     the member that leads next opens too; a member that does not hold it yet makes no Device with a
+//     PresharedKey (CreateDevice). A key that the Sealer does not open, as one that a backup of another
+//     host or cluster holds does not, is left out of the state of the gateway and the log says so
+//     (openDeviceKeys): the Device is then made again.
 //   - Both are shown once. The configuration that GET /api/v1/devices/{name}/config renders later has
 //     no private key and no PresharedKey, and says where each goes.
 //
@@ -108,8 +110,8 @@ type deviceKeys struct {
 	// that another one just stored.
 	create sync.Mutex
 	// sealer seals and opens the PresharedKeys: the Sealer of the store, the one that seals the secrets of
-	// the targets. It is nil for a member of a cluster, which has no sealing key, so that no Device can
-	// be given a PresharedKey there.
+	// the targets, which is the Cluster key for a member of a cluster. It is nil for a store that was given
+	// none, so that no Device can be given a PresharedKey there.
 	sealer store.Sealer
 	// sealed holds the sealed PresharedKey of each Device that has one, by Device name: what the store
 	// holds, decoded. Guarded by Controller.mu.
@@ -179,7 +181,7 @@ func (c *Controller) CreateDevice(ctx context.Context, req DeviceRequest) (Devic
 	var psk, sealed []byte
 	if !req.NoPresharedKey {
 		if c.dkeys.sealer == nil {
-			return DeviceCreated{}, errors.New("the controller cannot seal the PresharedKey of a Device, since it has no sealing key: the members of a cluster have none in common (ADR-0026), so make the Device without a PresharedKey")
+			return DeviceCreated{}, errors.New("the controller cannot seal the PresharedKey of a Device, since it has no sealing key: neither the sealing key of its host nor the Cluster key of a cluster (ADR-0026), so make the Device without a PresharedKey")
 		}
 		psk = make([]byte, intent.KeySize)
 		defer clear(psk)
@@ -363,7 +365,7 @@ func (c *Controller) openDeviceKeys(u *controlpb.Update) *controlpb.Update {
 		if c.dkeys.sealer == nil {
 			c.log.Error("the PresharedKey of a Device is not sent: the controller cannot open it, since it has no sealing key", "device", d.GetName())
 		} else if psk, err := c.dkeys.sealer.Open(deviceKeyLabel(d.GetName()), d.GetPresharedKey()); err != nil {
-			c.log.Error("the PresharedKey of a Device is not sent: it does not open with the sealing key of this host", "device", d.GetName(), "err", err)
+			c.log.Error("the PresharedKey of a Device is not sent: it does not open with the sealing key of this host, or with the Cluster key for a member of a cluster", "device", d.GetName(), "err", err)
 		} else {
 			clone.PresharedKey = psk
 		}
