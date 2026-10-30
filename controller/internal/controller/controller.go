@@ -523,7 +523,8 @@ func (c *Controller) Delete(ctx context.Context, kind, name string) (ApplyResult
 	if err := c.unconfirmed(); err != nil {
 		return ApplyResult{}, err
 	}
-	// The condition of a delete of a scoped role on the intent in force, under the lock (scope.go; SDN-38)
+	// The condition of a delete of a scoped role (scope.go; SDN-38) or of the removal of a device (selfservice.go; SDN-58)
+	// on the intent in force, under the lock
 	if err := checkPrecondition(ctx, c.intent); err != nil {
 		return ApplyResult{}, err
 	}

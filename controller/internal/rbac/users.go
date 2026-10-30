@@ -137,6 +137,10 @@ func (t *Tokens) IssueUserToken(ctx context.Context, name string, expires time.T
 // returns its token. A secret that is no user token of this controller, or one that ended, is
 // ErrUnauthenticated.
 func (t *Tokens) RevokeUserToken(ctx context.Context, secret string) (Token, error) {
+	if strings.HasPrefix(secret, selfTokenPrefix) {
+		// A token of the self scope ends the same way (self.go; SDN-58)
+		return t.revokeSelfToken(ctx, secret)
+	}
 	if !strings.HasPrefix(secret, userTokenPrefix) {
 		return Token{}, ErrUnauthenticated
 	}

@@ -49,6 +49,13 @@ type loginEnv struct {
 // alice, with a password and at most 2 devices, and its logins. The device codes may be polled every
 // 100 ms.
 func newLoginEnv(t *testing.T) *loginEnv {
+	return newLoginEnvWith(t, nil)
+}
+
+// newLoginEnvWith is newLoginEnv for a test that sets something of the harness before the controller starts,
+// such as the sealing key that the PresharedKeys of the Devices need (portaldevice_test.go): set, when it is
+// not nil, runs on the harness before its first start.
+func newLoginEnvWith(t *testing.T, set func(*harness)) *loginEnv {
 	h := &harness{t: t, rq: rqlitetest.Start(t), defaults: true}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
@@ -56,6 +63,9 @@ func newLoginEnv(t *testing.T) *loginEnv {
 	}
 	if h.tlsKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader); err != nil {
 		t.Fatal(err)
+	}
+	if set != nil {
+		set(h)
 	}
 	h.start()
 	t.Cleanup(h.stop)

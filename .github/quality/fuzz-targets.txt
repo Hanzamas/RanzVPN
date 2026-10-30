@@ -250,6 +250,9 @@ controller/internal/login  ParseAuthorize      FuzzParse
 controller/internal/login  ParseDeviceRequest  FuzzParse
 controller/internal/login  NormalizeUserCode   FuzzParse
 controller/internal/login  VerifyChallenge     FuzzParse
+# The join of a device with a join token (SDN-58 #251): the form that a device sends to the logins, which carry no bearer token
+# of any kind, so any caller may send it
+controller/internal/login  ParseJoin  FuzzParseJoin
 controller/internal/store  Open       exempt  opens the controller's own rqlite store by its URL
 controller/internal/store  OpenWith   exempt  opens the controller's own rqlite store by its URL, with the credential and the CA that the controller read from its own files
 

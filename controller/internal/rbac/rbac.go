@@ -99,7 +99,8 @@ func (r Role) Allows(need Role) bool {
 }
 
 func (r Role) rank() int {
-	for i, x := range Roles {
+	// The roles that Allows orders: the three API roles, and the role Self of the self scope below them
+	for i, x := range ranked {
 		if x == r {
 			return i + 1
 		}
@@ -176,6 +177,10 @@ func (t *Tokens) Authenticate(ctx context.Context, secret string) (Token, error)
 	if strings.HasPrefix(secret, userTokenPrefix) {
 		// A user token of a login (users.go; SDN-32)
 		return t.authenticateUser(ctx, secret)
+	}
+	if strings.HasPrefix(secret, selfTokenPrefix) {
+		// A token of the self scope of a login for the portal (self.go; SDN-58)
+		return t.authenticateSelf(ctx, secret)
 	}
 	st, ok, err := t.st.TokenByHash(ctx, hash(secret))
 	if err != nil {
