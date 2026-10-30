@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,6 +23,11 @@ import (
 // that the Node writes from it (parseServer). The sidecar and the Controller may differ in one direction only: the Controller is
 // stricter where the Node and the control protocol need it (an IP address and a port of its own for the sidecar, at most 8 server
 // names, absolute paths), so a section that the sidecar refuses is refused by the Controller as well.
+//
+// The cases are copies, by name, of the cases of config_test.go, which keeps them in lists of its own (serverRefusals, borrowExtras and
+// borrowBad). TestEverySidecarCaseIsPutToTheController fails when a case of those lists is neither a case of sectionCases nor in
+// noSection with the reason that a section cannot hold it, so a case that is added to the sidecar's tests is put to the Controller
+// too (AUD1-DT-20, #522).
 
 // noSettings is the answer of the sidecar for a section that holds nothing that a Node could write for it: a setting that the
 // section has no place for.
@@ -95,10 +102,10 @@ func sectionCases() []sectionCase {
 		{"a borrow decoy with a key file", borrow(`, "keyFile": "C:\\k.pem"`), "the borrow decoy takes a dest only", "takes a dest only"},
 		{"a borrow decoy with a self-signed certificate", borrow(`, "selfSigned": true`), "the borrow decoy takes a dest only", "takes a dest only"},
 		{"a borrow decoy with ACME", borrow(`, "acme": {"cacheDir": "C:\\cache"}`), "the borrow decoy takes a dest only", "takes a dest only"},
-		{"a borrow decoy without a dest", sectionJSON(goodAddress, goodNames, `{"mode": "borrow"}`), "the borrow decoy needs a dest", "not a host and a port"},
+		{"a borrow decoy with no dest", sectionJSON(goodAddress, goodNames, `{"mode": "borrow"}`), "the borrow decoy needs a dest", "not a host and a port"},
 		{"a borrow decoy with a dest with no port", sectionJSON(goodAddress, goodNames, `{"mode": "borrow", "dest": "example.com"}`), "has no port", "not a host and a port"},
 		{"a borrow decoy with a dest on port 0", sectionJSON(goodAddress, goodNames, `{"mode": "borrow", "dest": "example.com:0"}`), "not a number from 1 to 65535", "no valid port"},
-		{"a borrow decoy without server names", sectionJSON(goodAddress, `[]`, `{"mode": "borrow", "dest": "example.com:443"}`), "holds 0 names, not 1 to 8", "needs server_names"},
+		{"a borrow decoy with no server names", sectionJSON(goodAddress, `[]`, `{"mode": "borrow", "dest": "example.com:443"}`), "holds 0 names, not 1 to 8", "needs server_names"},
 
 		// Where the Controller is stricter, because the Node and the control protocol need it: the sidecar takes these
 		{"a listen on port 0", sectionJSON(`":0"`, goodNames, goodDecoy), `has the port "0"`, ""},
@@ -209,5 +216,118 @@ func TestSectionRulesAreTheRulesOfTheSidecar(t *testing.T) {
 				t.Errorf("the sidecar refuses the settings that the control protocol carries for a section that the Controller took: %v", err)
 			}
 		})
+	}
+}
+
+// noSection are the cases of the sidecar's tests that a section cannot hold, each group with its reason. The Node writes some of the
+// settings that they change, or the Controller makes them (the private key, the short ids), and no field of the section sets the
+// others (the page, the name and the address of the decoy, the padding). Every other case of the sidecar's tests is a case of
+// sectionCases, of the same name.
+var noSection = []struct {
+	why   string
+	cases []string
+}{
+	{"the private key is the Node's, and the section has no place for it", []string{
+		"a short private key", "a private key that is no hex",
+	}},
+	{"the short ids are the Controller's, and the section has no place for them", []string{
+		"no short id", "too many short ids", "a short id that is no hex", "a short id of more than 8 bytes", "a short id twice",
+	}},
+	{"the section has no place for the name or the address of the decoy: its name is the first server name, and it listens on the loopback address that the sidecar picks", []string{
+		"a decoy name that is no name", "a decoy name that no client reaches", "a decoy on a public address", "a decoy on a host name",
+		"a decoy listen without a host", "a borrow decoy with a listen address", "a borrow decoy with a name",
+	}},
+	{"the section has no place for the page of the decoy", []string{
+		"a decoy page twice", "a page file that is missing", "a page that is too large", "a borrow decoy with a page", "a borrow decoy with a page file",
+	}},
+	{"the section has no place for the padding", []string{
+		"a padding profile that does not exist",
+	}},
+}
+
+// sidecarCases returns the names of the cases that the sidecar's tests put to parseServer for the settings of the server role: the
+// refusals of TestParseServerRefuses (serverRefusals), and those of TestBorrowDecoyTakesADestOnly (borrowExtras and borrowBad), which
+// are cases of a borrow decoy and take its name.
+func sidecarCases(t *testing.T) []string {
+	t.Helper()
+	var names []string
+	for _, c := range serverRefusals(t.TempDir()) {
+		names = append(names, c.name)
+	}
+	for _, e := range borrowExtras {
+		names = append(names, "a borrow decoy with "+e.name)
+	}
+	for _, b := range borrowBad {
+		names = append(names, "a borrow decoy with "+b.name)
+	}
+	return names
+}
+
+// sidecarCaseProblems returns what is wrong when the names of the cases of the sidecar's tests, sidecar, are held against the names of
+// the cases of sectionCases, inTable, and the cases that a section cannot hold, excused, by name with their reasons: a case of the
+// sidecar's tests that is neither a case of sectionCases nor excused, a case that is both, and an excused case that the sidecar's tests
+// do not have. It returns nothing when they agree.
+func sidecarCaseProblems(sidecar []string, inTable map[string]bool, excused map[string]string) []string {
+	var problems []string
+	seen := map[string]bool{}
+	for _, name := range sidecar {
+		seen[name] = true
+		_, isExcused := excused[name]
+		switch {
+		case !inTable[name] && !isExcused:
+			problems = append(problems, fmt.Sprintf("the case %q of the sidecar's tests is not a case of sectionCases: add it there, to put it to the Controller as well, or say in noSection why a section cannot hold it", name))
+		case inTable[name] && isExcused:
+			problems = append(problems, fmt.Sprintf("the case %q is a case of sectionCases and is in noSection: it belongs to one of the two", name))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(excused)) {
+		if !seen[name] {
+			problems = append(problems, fmt.Sprintf("noSection names the case %q, which the sidecar's tests do not have", name))
+		}
+	}
+	return problems
+}
+
+// TestEverySidecarCaseIsPutToTheController: the cases of the section are copies of the cases of the sidecar's tests, so a case that
+// is added to those tests would not be put to the Controller by this file. The test fails when a case of the sidecar's tests is
+// neither a case of sectionCases, of the same name, nor in noSection with the reason that a section cannot hold it, and when noSection
+// names a case that the sidecar's tests do not have, or one that sectionCases has.
+func TestEverySidecarCaseIsPutToTheController(t *testing.T) {
+	inTable := map[string]bool{}
+	for _, c := range sectionCases() {
+		inTable[c.name] = true
+	}
+	excused := map[string]string{}
+	for _, g := range noSection {
+		for _, name := range g.cases {
+			excused[name] = g.why
+		}
+	}
+	for _, problem := range sidecarCaseProblems(sidecarCases(t), inTable, excused) {
+		t.Error(problem)
+	}
+}
+
+// TestTheGuardOfTheSidecarCasesFindsEachDifference holds the guard to its word: it is shown each way in which the sidecar's tests and
+// the section tests can differ, and says each of them, and it says nothing of lists that agree. A guard that cannot fail would let a
+// case of the sidecar's tests stay out of the Controller's.
+func TestTheGuardOfTheSidecarCasesFindsEachDifference(t *testing.T) {
+	inTable := map[string]bool{"a case of both": true, "a case in both lists": true}
+	excused := map[string]string{"a case that a section cannot hold": "the reason", "a case in both lists": "the reason", "a case that is gone": "the reason"}
+	sidecar := []string{"a case of both", "a case that a section cannot hold", "a case in both lists", "a case that is new"}
+	got := sidecarCaseProblems(sidecar, inTable, excused)
+	want := []string{`"a case in both lists"`, `"a case that is new"`, `"a case that is gone"`}
+	if len(got) != len(want) {
+		t.Fatalf("the guard says %q, want one problem for each of %q", got, want)
+	}
+	for i, w := range want {
+		if !strings.Contains(got[i], w) {
+			t.Errorf("the problem %d is %q, want one about %s", i, got[i], w)
+		}
+	}
+
+	agreeing := map[string]string{"a case that a section cannot hold": "the reason"}
+	if got := sidecarCaseProblems([]string{"a case of both", "a case that a section cannot hold"}, inTable, agreeing); len(got) != 0 {
+		t.Errorf("the guard says %q of lists that agree", got)
 	}
 }
