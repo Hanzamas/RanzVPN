@@ -488,6 +488,8 @@ def merge_corpus(exe, common, seeds, inputs, work, log, cwd):
 
 def run_c(leg, build_dir, seconds, seed, mode, store, findings_dir, exe=None, root=ROOT, grace=HANG_GRACE):
     target, canary = leg['name'], leg['canary']
+    # The fuzzer runs in the build directory, as run_fuzzers.ps1 runs it: every path that it is given must not depend on that
+    build_dir, store, findings_dir, root = (os.path.abspath(path) for path in (build_dir, store, findings_dir, root))
     exe = exe or [os.path.join(build_dir, target + '.exe')]
     inputs = os.path.join(store, 'inputs')
     os.makedirs(inputs, exist_ok=True)
@@ -573,6 +575,7 @@ def replace_tree_from(directory, source):
 def run_go(leg, seconds, seed, mode, store, findings_dir, go=None, root=ROOT, grace=HANG_GRACE):
     go = go or ['go']
     test, canary = leg['test'], leg['canary']
+    store, findings_dir, root = (os.path.abspath(path) for path in (store, findings_dir, root))
     inputs = os.path.join(store, 'inputs')
     os.makedirs(inputs, exist_ok=True)
     previous = read_manifest(store)

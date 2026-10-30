@@ -302,6 +302,12 @@ def save(kind, data):
         f.write(data)
 
 
+for d in dirs:
+    # As libFuzzer: a corpus directory that is not there ends the run, whatever the directory that it runs in
+    if not os.path.isdir(d):
+        print('ERROR: The required directory "%s" does not exist' % d)
+        sys.exit(1)
+
 if '-merge' in flags:
     # -merge=1 base inputs: the inputs that add coverage go to base. Here only the inputs called new-a-* do.
     if mode == 'mergefail':
@@ -462,6 +468,28 @@ def test_c_run():
     for m in re.finditer(r"-match '([^']+)'", body):
         check('c-run: %r of Get-Problems is a pattern of the campaign' % m.group(1),
               any(re.search(m.group(1), needle) for needle, _ in fc.C_PATTERNS), m.group(1))
+
+
+def test_c_run_relative_paths():
+    # The workflow gives --build-dir build --store store --findings findings, relative to the checkout, and the fuzzer runs in
+    # the build directory: a path that it is given as it came would be a path of build\ (the first run of fuzz.yml found out)
+    tmp = tempfile.mkdtemp(prefix='fuzz-campaign-test-')
+    fake = write(tmp, 'fake_fuzzer.py', FAKE_FUZZER)
+    root = os.path.join(tmp, 'repo')
+    write(root, 'src/fuzz/corpus/fuzz_x/seed.bin', 'seed')
+    leg = {'kind': 'c', 'id': 'fuzz_x', 'name': 'fuzz_x', 'max_len': 4096, 'canary': False}
+    here = os.getcwd()
+    os.chdir(tmp)
+    try:
+        os.environ['FAKE_MODE'], os.environ['FAKE_TAG'] = 'crash', 'one'
+        code = silently(fc.run_c, leg, 'build', 1, 5, 'smoke', 'store', 'findings', exe=[sys.executable, fake], root=root)
+    finally:
+        os.chdir(here)
+    check('c-run: paths relative to the checkout reach a fuzzer that runs in the build directory',
+          code == 1 and names(os.path.join(tmp, 'store', 'inputs')) == ['new-a-one'] and 'findings.json' in names(os.path.join(tmp, 'findings')),
+          (code, names(os.path.join(tmp, 'store')), names(os.path.join(tmp, 'findings'))))
+    with open(os.path.join(tmp, 'store', 'manifest.json'), encoding='utf-8') as f:
+        check('c-run: and the replay passed, so the crash is the one of the fuzz step', json.load(f)['last']['message'].startswith('fuzz:'))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -860,6 +888,7 @@ def test_workflow():
 test_plan()
 test_store_find()
 test_c_run()
+test_c_run_relative_paths()
 test_go_run()
 test_report()
 test_parsers()
