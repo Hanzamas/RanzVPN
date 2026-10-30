@@ -1,0 +1,99 @@
+# A throwaway experiment of AUD1-DT-18 (#503), removed once its numbers are in the comment of the step
+# replace-certificate of .github/scripts/first-test.ps1. The step read controller.log with Get-Content -Raw right
+# after the answer of the Controller and twice (runs 40619177934 and 40619884045) found that the line it looked for was
+# not there, although the Controller had written it 56 ms and 247 ms before and the diagnostics of the same run show it.
+# In both runs the Controller wrote another line (node acknowledged) in the milliseconds of the read. The question: when
+# a file grows while Get-Content -Raw reads it, does the cmdlet return more than one string, so that -notmatch on its
+# result keeps the strings that do not hold the line and the check throws although the line is in the file?
+#
+# It runs when this file changes in a push to the branch of #503, and builds nothing of the product.
+
+name: exp-get-content-raw
+
+on:
+  push:
+    branches:
+    - aud/503-data-dir-window
+    paths:
+    - '.github/workflows/exp-get-content-raw.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    name: ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - arch: x64
+          runner: windows-latest
+        - arch: arm64
+          runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+    - name: Get-Content -Raw of a log that a writer appends to
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        Write-Host "PowerShell $($PSVersionTable.PSVersion) on $([System.Runtime.InteropServices.RuntimeInformation]::OSDescription), $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
+        $path = Join-Path $env:RUNNER_TEMP 'controller.log'
+
+        # The helper of first-test.ps1 for a file that a process may still write to
+        function Read-Shared([string] $path) {
+          $fs = [System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+          try {
+            return (New-Object System.IO.StreamReader($fs)).ReadToEnd()
+          } finally {
+            $fs.Dispose()
+          }
+        }
+
+        $first = 'time=2026-10-28T02:36:29.256Z level=INFO msg="TLS certificate" source=file'
+        $line = 'time=2026-10-28T02:36:29.310Z level=INFO msg="node acknowledged" member=runnervmdaln5 node=pc-a generation=3'
+        $pattern = [regex]::Escape('msg="TLS certificate"')
+
+        # A writer that appends a line every N ms (0: as fast as it can, up to 8 MB), while the script reads the file for 3 s
+        foreach ($every in 0, 1, 10) {
+          [System.IO.File]::WriteAllText($path, $first + "`n" + (($line + "`n") * 300))
+          $stop = [System.Threading.ManualResetEventSlim]::new($false)
+          $writer = Start-ThreadJob -ArgumentList $path, $stop, ($line + "`n"), $every -ScriptBlock {
+            param($path, $stop, $text, $every)
+            $bytes = [System.Text.Encoding]::ASCII.GetBytes($text)
+            # One WriteFile for each line, with the sharing that the handle of the Controller has
+            $fs = [System.IO.FileStream]::new($path, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite, 1)
+            try {
+              $clock = [System.Diagnostics.Stopwatch]::StartNew()
+              $n = 0
+              while (-not $stop.IsSet) {
+                $fs.Write($bytes, 0, $bytes.Length)
+                $n++
+                if ($n % 1000 -eq 0 -and $fs.Length -gt 8MB) { break }
+                if ($every -gt 0) { while ($clock.Elapsed.TotalMilliseconds -lt $n * $every -and -not $stop.IsSet) { } }
+              }
+            } finally {
+              $fs.Dispose()
+            }
+          }
+          $clock = [System.Diagnostics.Stopwatch]::StartNew()
+          $reads = 0; $arrays = 0; $notmatchTrue = 0; $matchFalse = 0; $sharedWrong = 0; $example = ''
+          while ($clock.Elapsed.TotalSeconds -lt 3) {
+            $r = Get-Content -LiteralPath $path -Raw
+            $reads++
+            if ($r -is [array]) {
+              $arrays++
+              if (-not $example) { $example = "$($r.Count) strings of $(($r | ForEach-Object { $_.Length }) -join ', ') characters; the last one starts with: $($r[-1].Substring(0, [Math]::Min(60, $r[-1].Length)))" }
+            }
+            # The condition of the check before the poll, and the one of the poll
+            if ($r -notmatch $pattern) { $notmatchTrue++ }
+            if (-not ($r -match $pattern)) { $matchFalse++ }
+            $s = Read-Shared $path
+            if ($s -isnot [string] -or -not $s.StartsWith($first)) { $sharedWrong++ }
+          }
+          $stop.Set()
+          $null = Receive-Job -Job $writer -Wait -AutoRemoveJob
+          Write-Host ("a line every {0} ms: {1} reads of Get-Content -Raw: more than one string {2} times; -notmatch true {3} times although the line was in the file all the time; -match false {4} times; Read-Shared: not one string from the first line {5} times" -f $every, $reads, $arrays, $notmatchTrue, $matchFalse, $sharedWrong)
+          if ($example) { Write-Host "  an example: $example" }
+        }
