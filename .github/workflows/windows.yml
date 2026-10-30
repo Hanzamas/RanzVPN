@@ -499,7 +499,9 @@ jobs:
     # built next to vpntest, where the node looks for it and starts it as ranz bgp, GoBGP's own gobgpd as
     # the router of the operator on 127.0.0.1, and vpntest bgp: BGP on TCP 179, a prefix announced and
     # withdrawn, a learned route installed through IP Helper and removed again, no sidecar on a node
-    # without BGP peers, and the sidecar of a node with them started as ranz bgp
+    # without BGP peers, and the sidecar of a node with them started as ranz bgp; then vpntest evpn, the
+    # EVPN of a gateway (SDN-25 #201): two VRFs with the same prefixes handed to a fabric as EVPN type-5
+    # routes between the sidecars of two nodes, and VXLAN both ways between the overlay and a harness VTEP
     - name: BGP sidecar spike
       timeout-minutes: 15
       shell: pwsh
