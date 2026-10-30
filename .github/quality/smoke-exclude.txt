@@ -20,3 +20,4 @@ explain        needs the plans that ranz-explainplan writes from the scenarios o
 egressnat      changes the NAT of Windows of the runner (its NAT networks of WinNAT), administrator rights and wintun.dll next to vpntest: a step of build_and_test runs it (.github/scripts/egress-nat.ps1)
 egressrras     needs a Windows Server whose Routing and Remote Access runs as a LAN router: the egress-rras job installs it and runs the test (.github/scripts/egress-nat.ps1 -Rras)
 opstrace       needs the address and key of a running controller whose Intent holds the L2 Network lan: .github/scripts/operations-tracer.ps1 runs it
+traytrace      runs until its script stops it, while ranz tray enrols it at a running controller: .github/scripts/tray-tracer.ps1 runs it
