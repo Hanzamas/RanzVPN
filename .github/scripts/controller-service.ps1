@@ -54,6 +54,10 @@ $ErrorActionPreference = 'Stop'
 #   target sealed and is named by what `ranz controller backup` says, and whose restore under the
 #   running service brings the target back with its secret; and no start of the service in a
 #   data directory that a standard user owns;
+# - write the TLS fingerprint file that ranz trusts (AUD1-DT-14, #496): owned by SYSTEM, the
+#   Administrators or its own account, with no rule for another account that writes it, and refused
+#   by ranz, with the folder named and no token sent, in a folder that the Users group may write
+#   (controller-hostfiles.ps1);
 # - refuse the API from an address outside the admin source allowlist (SDN-39, #232): with the
 #   list set to documentation addresses, the runner's own address, which is not loopback, gets 403
 #   and an admin-access-refused event while loopback still passes, and with the list removed the
@@ -274,7 +278,7 @@ Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue |
 }
 & netsh http show servicestate view=requestq | Select-String -Pattern ':80/' -SimpleMatch -Context 12, 0 | ForEach-Object { Write-Host $_ }
 
-# Test-DataDirOwner, Test-Backup and Test-ServiceRefusesDataDir (AUD1-DT-10, #458)
+# Test-DataDirOwner, Test-Backup and Test-ServiceRefusesDataDir (AUD1-DT-10, #458), Test-FingerprintFile (AUD1-DT-14, #496)
 . (Join-Path $PSScriptRoot 'controller-hostfiles.ps1')
 
 $hold = $null
@@ -313,6 +317,8 @@ try {
 	& $ranz -server $api -token-file $tokenFile -tls-fingerprint ('00' * 32) whoami 2>$null | Out-Null
 	if ($LASTEXITCODE -eq 0) { throw 'ranz accepted the certificate of the controller on loopback with a wrong TLS fingerprint' }
 	Write-Host 'ranz checks the controller on loopback by the fingerprint in its data directory, or by the flag, and sends no token without one'
+	# ranz trusts that file only when no other account can have written it or its folder (AUD1-DT-14, #496)
+	Test-FingerprintFile
 	if ($status.capabilities.tlsPort -ne 443 -or $status.capabilities.tlsPortFallback) { throw 'the TLS port is not 443 with 443 free' }
 	if ($status.capabilities.plainHttp -notmatch 'HTTP\.sys') { throw "port 80 does not run on HTTP.sys: $($status.capabilities.plainHttp)" }
 	if ($status.capabilities.plainHttp -notmatch [regex]::Escape($acmePrefix)) { throw "the controller does not hold the ACME path of port 80: $($status.capabilities.plainHttp)" }

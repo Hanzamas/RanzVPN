@@ -21,7 +21,8 @@ import (
 // control stream (the Controller, since when it is connected and the acknowledged Generation, or why
 // it is not), its Wintun adapters with their VRFs and addresses, the Noise sessions of its peers
 // with their transport and age, how it reaches each peer (on its stream session or through a Relay)
-// with the datagrams each way, and its listeners. JSON, the default, is the answer of the service
+// with the datagrams each way, its datagram path with the Upgrades and the Fallbacks of its Paths
+// and its port mapping (CORE-S5-6, #412), and its listeners. JSON, the default, is the answer of the service
 // with the field service; a table is a few lines for a person. For a stopped service the verb says
 // that the service is stopped, with the exit code 3, as the status of a stopped service is in
 // scripts.
@@ -43,8 +44,42 @@ type nodeStateAnswer struct {
 	Adapters      []nodeStateAdapter `json:"adapters"`
 	Sessions      []nodeStateSession `json:"sessions"`
 	NumPeers      int                `json:"numPeers"`
-	Listeners     nodeStateListeners `json:"listeners"`
-	Error         string             `json:"error,omitempty"`
+	// DatagramPath is nil for a Node service from before the field (CORE-S5-6, #412)
+	DatagramPath *nodeStateDatagramPath `json:"datagramPath,omitempty"`
+	Listeners    nodeStateListeners     `json:"listeners"`
+	Error        string                 `json:"error,omitempty"`
+}
+
+// nodeStateDatagramPath is the peer agent of a Node (CORE-S5-5, #411; CORE-S5-6, #412): whether its
+// peer layer runs, with ICE or without, and on which UDP port; the Relays of its state; the Upgrades
+// of its Paths to the direct path that ICE validated and their Fallbacks to the Relay since the Node
+// started; and the port mapping of its home gateway (off, asking, mapped or failed) with the public
+// address that the gateway granted.
+type nodeStateDatagramPath struct {
+	Running       bool   `json:"running"`
+	ICE           bool   `json:"ice"`
+	UDPPort       int    `json:"udpPort"`
+	Relays        int    `json:"relays"`
+	Upgrades      uint64 `json:"upgrades"`
+	Fallbacks     uint64 `json:"fallbacks"`
+	PortMapping   string `json:"portMapping"`
+	MappedAddress string `json:"mappedAddress"`
+}
+
+// words is the datagram path of a Node in the words of the table.
+func (d nodeStateDatagramPath) words() string {
+	if !d.Running {
+		return "not running: no desired state names a Relay"
+	}
+	ice := "without ICE"
+	if d.ICE {
+		ice = "with ICE"
+	}
+	mapping := d.PortMapping
+	if d.MappedAddress != "" {
+		mapping += " to " + d.MappedAddress
+	}
+	return fmt.Sprintf("%s, %s, %d Relays; %d Upgrades and %d Fallbacks; port mapping %s", portOrNone("UDP", d.UDPPort), ice, d.Relays, d.Upgrades, d.Fallbacks, mapping)
 }
 
 // nodeControlStream is the control stream of a Node: its Controller and since when it is connected
@@ -188,6 +223,9 @@ func nodeStateTable(out io.Writer, a nodeStateAnswer) error {
 		fmt.Fprintf(tw, "Control stream\tnot connected to %s: %s; the next attempt in %d ms\n", cs.Controller, cs.Why, cs.NextRetryMs)
 	default:
 		fmt.Fprintf(tw, "Control stream\tnone: %s\n", cs.Why)
+	}
+	if d := a.DatagramPath; d != nil {
+		fmt.Fprintf(tw, "Datagram path\t%s\n", d.words())
 	}
 	l := a.Listeners
 	fmt.Fprintf(tw, "Listeners\toverlay %s; front door %s; relay %s\n", orNone(l.Overlay), frontDoor(l), portOrNone("UDP", l.RelayUDPPort))
