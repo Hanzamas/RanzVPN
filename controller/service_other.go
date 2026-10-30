@@ -13,11 +13,6 @@ func defaultDataDir() string {
 	return "/var/lib/ranz-controller"
 }
 
-// protectDir does nothing: MkdirAll created the directory with mode 0700.
-func protectDir(string) error {
-	return nil
-}
-
 func isService() bool {
 	return false
 }

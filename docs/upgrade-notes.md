@@ -2,6 +2,14 @@
 
 What an existing server shows after an upgrade. Newest first.
 
+## AUD1-DT-18 (#503): the data directory has no gap at its creation, and `ranz install` looks at what a kept data directory holds
+
+The data directory of a Controller that is installed is not touched by the upgrade, and the service starts in it as before. What changes is how a new one is made, and which existing ones the install takes over:
+
+- **A new data directory has its owner and its access list from the moment it exists.** The install on a new host, or after the folder was removed, makes `C:\ProgramData\Ranz\controller` with the Administrators as its owner and the protected list in one call, and so does the service when the folder is missing. Before, the folder had the list of `C:\ProgramData`, which lets the Users group add files and folders, for the moment that the install took to set its own. Nothing to do.
+- **`ranz install` refuses a kept data directory that holds what another account owns.** A data directory that SYSTEM, the Administrators, `NT SERVICE\ranz-controller` or the account that runs the install owns is kept with what it holds, as before, when what it holds is theirs too. When a file or a folder in it, at any depth, is owned by another account, or is a link (a junction or a symbolic link), the install does not take the directory over: it names the file or the folder and its owner, and changes nothing. Look at it, then remove it, or give the directory and what it holds to the Administrators with `takeown /F "C:\ProgramData\Ranz\controller" /A /R /D Y`, and run the install again. Files that another administrator made, on a machine whose policy makes the creator the owner of what it makes, are refused the same way, and are given to the Administrators the same way.
+- **A Controller that is installed already is not looked at again.** `ranz install` only starts a service that is registered, and the service does not look at what its directory holds at its start. The install looks when it registers the service over a directory that is there, one that `ranz uninstall` left or that an administrator made. A data directory of an earlier release, in which a user made a folder while the directory had the list of its parent, stays as it is until the service is registered again over it.
+
 ## AUD1-DT-16 (#501): a cluster of Controllers seals the secrets of its targets and the PresharedKeys of its Devices with a Cluster key
 
 A cluster of Controllers, whose members run with `-rqlite-join`, kept the secrets of its export and audit targets in clear, and made no WireGuard Device with a PresharedKey, since its members have no key in common. It seals them now with a Cluster key: one key of the cluster, which each member holds in memory and the store holds only as a copy for each member, sealed to the key of that member's host. At the first start of a member of this release:

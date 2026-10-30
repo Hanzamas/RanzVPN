@@ -10,6 +10,8 @@
 #   secret;
 # - the service does not start in a data directory that a standard user owns, says why in the Application log,
 #   and starts again once the Administrators own the directory;
+# - the install over the data directory that the service filled takes it over, and refuses it with a file of the Users
+#   group in it, naming the file and its owner and changing nothing (AUD1-DT-18, #503);
 # - the TLS fingerprint file that the service writes is owned by SYSTEM, the Administrators or the account of the
 #   service, and no other account has a rule that writes it, so ranz takes it (AUD1-DT-14, #496; AP-2); the same file in
 #   a folder that the Users group may write is refused by ranz, which sends no token and names the folder.
@@ -176,4 +178,37 @@ function Test-ServiceRefusesDataDir {
 	Wait-Api
 	Stop-Service -Name $service
 	Write-Host 'the service did not start in a data directory that the Users group owns, and starts again with the Administrators as its owner'
+}
+
+# The install over the data directory that the service filled (AUD1-DT-18, #503; ST-3), with the service stopped. The install
+# takes the folder over as it takes any folder that the Administrators own, and looks at what it holds first: the service, its
+# rqlited and the commands of an administrator made it, so SYSTEM, the Administrators, the service or this account own all of
+# it, and the install goes on to the service, which exists already, and says so. With a file in it that the Users group owns,
+# which a user would have made while the folder had the list of its parent, the install refuses the folder, names the file and
+# its owner, and changes nothing: the owner and the access list of the folder, and the owner of the file, are what they were.
+function Test-DataDirChildren {
+	$errFile = Join-Path $work 'install-again.err'
+	& $ranz controller install -data $data 2> $errFile | Out-Null
+	$exit = $LASTEXITCODE
+	$said = Get-Content -LiteralPath $errFile -Raw
+	if ($exit -eq 0 -or $said -notmatch 'already exists') { throw "the install over the data directory that the service filled did not get as far as the service that exists (exit code $exit): $said" }
+	Write-Host "the install over the data directory that the service filled took it over and went on to the service: $($said.Trim())"
+
+	$planted = Join-Path $data 'planted'
+	New-Item -ItemType Directory -Force -Path $planted | Out-Null
+	$file = Join-Path $planted 'rqlited.exe'
+	Set-Content -LiteralPath $file -Value 'a file that a user made' -Encoding ascii
+	& icacls $file /setowner 'BUILTIN\Users' | Out-Null
+	if ($LASTEXITCODE -ne 0) { throw "icacls $file /setowner exited with code $LASTEXITCODE" }
+	$before = (Get-Acl -LiteralPath $data).Sddl
+	& $ranz controller install -data $data 2> $errFile | Out-Null
+	$exit = $LASTEXITCODE
+	$said = Get-Content -LiteralPath $errFile -Raw
+	if ($exit -eq 0 -or $said -notmatch [regex]::Escape($file) -or $said -notmatch 'BUILTIN\\Users' -or $said -notmatch 'did not take it over') {
+		throw "the install over a data directory that holds a file of the Users group was not refused with the file and its owner named (exit code $exit): $said"
+	}
+	if ((Get-Acl -LiteralPath $data).Sddl -ne $before) { throw 'the refused install changed the owner or the access list of the data directory' }
+	if ((Get-Acl -LiteralPath $file).Owner -ne 'BUILTIN\Users') { throw "the refused install changed the owner of $file" }
+	Write-Host "the install refused the data directory with $file of the Users group in it, and changed nothing: $($said.Trim())"
+	Remove-Item -LiteralPath $planted -Recurse -Force
 }

@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -21,6 +23,14 @@ import (
 // exists only when one of them, or the administrator who runs the install, owns it. The service, and the
 // commands that run on its host (reset-admin, backup and restore), refuse a data directory that any other
 // account owns.
+//
+// The folder is made with its owner and its access list in the call that makes it (AUD1-DT-18, #503;
+// makeProtectedDir), so that it never has the list of C:\ProgramData, which lets the Users group add files and
+// folders, not even for a moment: a user that polls for the folder would open it with the right to add to it in
+// that moment, the handle would keep the right after the list changed, and the user could make payload\ in it,
+// which the list that the install passes down keeps open to its owner. And a folder that is kept is looked at
+// down to its last file before the install changes it (checkDataDirChildren), since the same user could have
+// made payload\ in it while it had that list.
 
 // installDataDirSDDL is dataDirSDDL with the Administrators as its owner, as NODE_DATA_DIR_SDDL of
 // src/Cedar/Node.c is.
@@ -62,33 +72,36 @@ func dataDirOwner(dir string) (*windows.SID, error) {
 	return owner, nil
 }
 
-// ownerIsTrusted reports whether owner may own a data directory: SYSTEM, the Administrators, the account
-// of the service (the SID that Windows derives from its name, so that an administrator's command accepts
-// a directory that the service made), or the account that runs this process.
-func ownerIsTrusted(owner *windows.SID) (bool, error) {
+// dataDirTrustees returns the accounts that may own a data directory and what it holds: SYSTEM, the
+// Administrators, the account of the service (the SID that Windows derives from its name, so that an
+// administrator's command accepts a directory that the service made), and the account that runs this process.
+func dataDirTrustees() ([]*windows.SID, error) {
 	trusted := make([]*windows.SID, 0, 4)
 	for _, kind := range []windows.WELL_KNOWN_SID_TYPE{windows.WinLocalSystemSid, windows.WinBuiltinAdministratorsSid} {
 		sid, err := windows.CreateWellKnownSid(kind)
 		if err != nil {
-			return false, fmt.Errorf("a well-known SID: %w", err)
+			return nil, fmt.Errorf("a well-known SID: %w", err)
 		}
 		trusted = append(trusted, sid)
 	}
 	service, err := windows.StringToSid(serviceSID)
 	if err != nil {
-		return false, fmt.Errorf("the SID of the service: %w", err)
+		return nil, fmt.Errorf("the SID of the service: %w", err)
 	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
-		return false, fmt.Errorf("the account of this process: %w", err)
+		return nil, fmt.Errorf("the account of this process: %w", err)
 	}
-	trusted = append(trusted, service, user.User.Sid)
-	for _, sid := range trusted {
-		if owner.Equals(sid) {
-			return true, nil
-		}
+	return append(trusted, service, user.User.Sid), nil
+}
+
+// ownerIsTrusted reports whether owner may own a data directory (dataDirTrustees).
+func ownerIsTrusted(owner *windows.SID) (bool, error) {
+	trusted, err := dataDirTrustees()
+	if err != nil {
+		return false, err
 	}
-	return false, nil
+	return slices.ContainsFunc(trusted, owner.Equals), nil
 }
 
 // accountName returns the name of the account of sid as Windows knows it, or the SID as text.
@@ -147,17 +160,53 @@ func ownDataDir(dir string) error {
 	return nil
 }
 
-// makeOwnedDataDir makes the data directory dir, which is not there, and gives it to the Administrators.
-// The last folder is made with Mkdir, which fails when the name was taken meanwhile, so that a directory
-// that somebody else made in that moment is never taken for the one that this call made.
+// makeProtectedDir makes the folder dir, which is not there, with the security that sddl gives it, its owner
+// when the text names one and its access list, in the call that makes the folder: CreateDirectory takes the
+// security descriptor with the name. The folder never has the access list of its parent, which on
+// C:\ProgramData lets the Users group add files and folders, so no handle that has the right to add to it can
+// be opened before its own list is there, and a handle that is opened after is judged by that list (AUD1-DT-18,
+// #503). A call that made the folder and set the list after, as os.Mkdir and ownDataDir did, leaves that gap.
+// The call fails when the name was taken meanwhile, so that a directory that somebody else made in that
+// moment is never taken for the one that this call made. A volume that keeps no access lists, such as a FAT
+// drive, takes the folder and ignores the descriptor: the folder is removed again, and the error says so.
+func makeProtectedDir(dir, sddl string) error {
+	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		return fmt.Errorf("data directory ACL: %w", err)
+	}
+	name, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return &fs.PathError{Op: "mkdir", Path: dir, Err: err}
+	}
+	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+	if err := windows.CreateDirectory(name, &sa); err != nil {
+		return &fs.PathError{Op: "mkdir", Path: dir, Err: err}
+	}
+	if _, err := dataDirOwner(dir); err != nil {
+		_ = os.Remove(dir)
+		return err
+	}
+	return nil
+}
+
+// makeOwnedDataDir makes the data directory dir, which is not there, with the Administrators as its owner and
+// the protected access list of dataDirSDDL from the moment it exists (makeProtectedDir).
 func makeOwnedDataDir(dir string) error {
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return err
 	}
-	if err := os.Mkdir(dir, 0o700); err != nil {
+	return makeProtectedDir(dir, installDataDirSDDL)
+}
+
+// createDataDir makes the data directory dir, which is not there, for the start of the service and of a
+// Controller that an administrator starts by hand: with the protected access list of dataDirSDDL from the
+// moment it exists, and the account that makes it as its owner, since the account of the service cannot give
+// the folder to the Administrators. The service makes it only when the install did not, or when it was removed.
+func createDataDir(dir string) error {
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return err
 	}
-	return ownDataDir(dir)
+	return makeProtectedDir(dir, dataDirSDDL)
 }
 
 // takeOverDataDir makes the data directory dir for the install, with the Administrators as its owner and
@@ -165,7 +214,13 @@ func makeOwnedDataDir(dir string) error {
 //
 //   - A directory that SYSTEM, the Administrators, the service's account or the account that runs the
 //     install owns, a directory of an earlier install or one that an administrator made, is kept with what
-//     it holds, and its owner and its access list are set.
+//     it holds, and its owner and its access list are set, when what it holds is theirs too. A file or a
+//     folder in it, at any depth, that another account owns, and a link, are refused before anything is
+//     changed (checkDataDirChildren): a user made it while the folder had an access list that let the Users
+//     group add to it, its owner has full control of it through the entry for OWNER RIGHTS that the install
+//     passes down, and what it holds would run as the controller. It is not given to the Administrators
+//     either, since a handle that its owner opened before the list changed still writes after: the
+//     administrator looks at it, and removes it or gives it away.
 //   - A directory that another account owns is not kept: it may hold anything, a store with a token that
 //     the user knows or an rqlited.exe of its own, and the account that made it may hold it open, and so
 //     keep a way to write into it after the access list changed. It is taken over by making it again:
@@ -188,6 +243,9 @@ func takeOverDataDir(dir string) error {
 		return err
 	}
 	if trusted {
+		if err := checkDataDirChildren(dir); err != nil {
+			return err
+		}
 		return ownDataDir(dir)
 	}
 	if err := removeForeignDataDir(dir, owner); err != nil {
@@ -214,4 +272,82 @@ func removeForeignDataDir(dir string, owner *windows.SID) error {
 		return refuse("it could not be removed, and somebody may hold it open (" + err.Error() + ")")
 	}
 	return nil
+}
+
+// checkDataDirChildren refuses the data directory dir, whose owner is trusted, when a file or a folder in it, at
+// any depth, is owned by an account that is not (dataDirTrustees), is a link (a junction or a symbolic link),
+// or cannot be looked at (AUD1-DT-18, #503). A trusted owner of the folder says nothing of what is in it: a user
+// that made payload\ while the folder had the list of C:\ProgramData owns it still, and the entry for OWNER RIGHTS
+// that the install passes down gives that owner full control of it, so the user could swap the rqlited.exe that
+// the service starts. Links are not followed, and the install does not pass its list down through one: the
+// Controller makes none, and what a link points at is not the data directory. Nothing is changed: the check
+// reads the owners and the attributes only, and runs before the owner and the list are set.
+func checkDataDirChildren(dir string) error {
+	trusted, err := dataDirTrustees()
+	if err != nil {
+		return err
+	}
+	return checkChildren(dir, dir, trusted)
+}
+
+// checkChildren checks what the folder holds, one after the other in the order of their names and the folders
+// down to their last file, for the data directory dir that the folder is in or is.
+func checkChildren(dir, folder string, trusted []*windows.SID) error {
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		return refuseChild(dir, folder, "could not be read ("+err.Error()+")")
+	}
+	for _, entry := range entries {
+		path := filepath.Join(folder, entry.Name())
+		name, err := windows.UTF16PtrFromString(path)
+		if err != nil {
+			return refuseChild(dir, path, "could not be looked at ("+err.Error()+")")
+		}
+		attrs, err := windows.GetFileAttributes(name)
+		if err != nil {
+			return refuseChild(dir, path, "could not be looked at ("+err.Error()+")")
+		}
+		if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+			return refuseChild(dir, path, "is a link (a junction or a symbolic link), which the install does not follow")
+		}
+		owner, err := ownerOf(path)
+		if err != nil {
+			return refuseChild(dir, path, "has an owner that could not be read ("+err.Error()+")")
+		}
+		if !slices.ContainsFunc(trusted, owner.Equals) {
+			return refuseChild(dir, path, "is owned by "+accountName(owner)+", and only SYSTEM, the Administrators, "+serviceAccount+" and the account that runs the install may own what a data directory holds")
+		}
+		if attrs&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+			if err := checkChildren(dir, path, trusted); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// ownerOf returns the owner of the file or folder path, which is not a link.
+func ownerOf(path string) (*windows.SID, error) {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return nil, err
+	}
+	if sd == nil {
+		return nil, errors.New("it has no security descriptor")
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return nil, err
+	}
+	if owner == nil {
+		return nil, errors.New("it has no owner")
+	}
+	return owner, nil
+}
+
+// refuseChild is the refusal of the kept data directory dir, because of the file or folder path in it, which why
+// says what is wrong with.
+func refuseChild(dir, path, why string) error {
+	return fmt.Errorf("the data directory %s is kept with what it holds, so the install did not take it over: %s %s. A user may have put it there before the install, and it would run as the controller. "+
+		`Look at it, then remove it, or give the data directory and what it holds to the Administrators (takeown /F "%s" /A /R /D Y), and run the install again`, dir, path, why, dir)
 }
