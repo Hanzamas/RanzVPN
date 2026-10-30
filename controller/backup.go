@@ -53,7 +53,9 @@ func runBackup(args []string) error {
 // may read it, and everything that it holds, which is all that the controller keeps, so the operator
 // knows how safe to keep it (AUD1-DT-10, #458). A member of a cluster seals the secrets of the targets
 // and the PresharedKeys of the Devices with the Cluster key of the cluster, as sealClusterTargets says
-// (AUD1-DT-16, #501).
+// (AUD1-DT-16, #501). It also says what is not sealed, the URL of a target, and what holds for a secret
+// that the upgrade sealed, which the data of rqlite beside the store may still hold as it was
+// (AUD1-DT-17, #502).
 func backupMessage(file string, size int64, clusterMember bool) string {
 	secrets := "the secrets of the targets (the export and audit targets) and the PresharedKeys of the WireGuard Devices, which the key of this host seals: " +
 		"a restore on another host brings the targets back with no secret, and the log of the controller there names them, so that you put each one again with its secret; " +
@@ -65,6 +67,10 @@ func backupMessage(file string, size int64, clusterMember bool) string {
 	}
 	return fmt.Sprintf("ranz controller backup: the store is in %s (%d bytes), %s.\n"+
 		"  It holds everything that the controller keeps in its store: the Intent with every revision, the states and the Capabilities of the Nodes, the events and the audit log, the settings (the lists of admin sources and destinations, the certificate of the controller), the leases of DHCP, the hashes of the API tokens and of the passwords of the users, the licence key, and %s.\n"+
+		"  The secrets are sealed, and the URL of a target is not: a token in the path or the query of a webhook URL is in this file as it was put, so keep the file as safe as that token. "+
+		"A secret that an earlier release stored unsealed and that this release sealed is sealed in this file too, since the backup is vacuumed and holds none of the row that the sealing replaced; "+
+		"the data of rqlite beside the store, which is no part of this file, may still hold the old text until it truncates its log, so put each such target again with a new secret, and change it at the receiver. "+
+		"A backup that an earlier release made holds its secrets unsealed.\n"+
 		"  Keep every copy of it as safe as the data directory.\n", file, size, backupAccess, secrets)
 }
 
@@ -93,12 +99,16 @@ func runRestore(args []string) error {
 // restoreMessage is what `ranz controller restore` says once the store is the backup in file: the secrets
 // of the targets and the PresharedKeys of the Devices in it open only with the key that sealed them, which
 // a backup does not hold (AUD1-DT-10 #458, SDN-82 #377), and a restore keeps the Cluster key of the store
-// that it replaces (AUD1-DT-16 #501).
+// that it replaces (AUD1-DT-16 #501). The secret of a target opens for its URL only, and a backup that an
+// earlier release made holds the secrets unsealed, which the running controller seals without a restart
+// (AUD1-DT-17 #502).
 func restoreMessage(file string) string {
 	return fmt.Sprintf("ranz controller restore: the store is the backup in %s; the leader loads it.\n"+
-		"  The secrets of the targets in it open only with the key that sealed them: the key of the host that made the backup, or the Cluster key of the cluster that made it, since a restore keeps the Cluster key that this store has. "+
-		"On another host, or in another cluster, the targets come back with no secret, and the log of the controller names them, so that you put each one again with its secret.\n"+
-		"  So do the PresharedKeys of the WireGuard Devices: on another host, or in another cluster, the log of the controller says that they do not open, and the gateway terminates those Devices without a PresharedKey until you make each one again.\n", file)
+		"  The secrets of the targets in it open only with the key that sealed them, and for the URL that they were sealed with: the key of the host that made the backup, or the Cluster key of the cluster that made it, since a restore keeps the Cluster key that this store has. "+
+		"On another host, or in another cluster, the targets come back with no secret, and the log of the controller names them, so that you put each one again with its secret. "+
+		"A target whose URL was changed in the backup after its secret was sealed comes back with no secret too.\n"+
+		"  So do the PresharedKeys of the WireGuard Devices: on another host, or in another cluster, the log of the controller says that they do not open, and the gateway terminates those Devices without a PresharedKey until you make each one again.\n"+
+		"  A backup that an earlier release made holds the secrets of the targets unsealed. The controller seals them within a minute, without a restart, while it runs, and at its next start when it is stopped; the file of that backup keeps them unsealed, so delete it, or keep it as safe as the data directory.\n", file)
 }
 
 // backup writes a backup of the controller's store to file, for its owner only (on Windows for SYSTEM

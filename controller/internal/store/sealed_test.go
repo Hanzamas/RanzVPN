@@ -3,6 +3,9 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -402,5 +405,184 @@ func TestBackupHoldsSealedSecrets(t *testing.T) {
 	}
 	if got := lost.get(); !slices.Equal(got, []string{"export_targets/alerts"}) {
 		t.Errorf("on another host the store told %v, want alerts", got)
+	}
+}
+
+// allRows returns the target column of every row of the two tables of targets, as the store holds it, as one text.
+func allRows(t *testing.T, raw *gorqlite.Connection) string {
+	t.Helper()
+	var all strings.Builder
+	for _, table := range []string{"export_targets", "audit_targets"} {
+		for _, doc := range rawTargets(t, raw, table) {
+			all.WriteString(doc + "\n")
+		}
+	}
+	return all.String()
+}
+
+// plainBackup returns what rqlite answers to GET /db/backup with no ?vacuum: a copy of its SQLite file, which
+// is the backup that the store took before AUD1-DT-17.
+func plainBackup(t *testing.T, rq interface{ URL() string }) []byte {
+	t.Helper()
+	resp, err := http.Get(rq.URL() + "/db/backup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("a plain backup of rqlite: %s, %v", resp.Status, err)
+	}
+	return b
+}
+
+// The first and the third criterion of #502. A secret that an earlier release kept in clear is sealed by
+// changing its row, and SQLite leaves the old text of a changed row in the free space of its file, so the plain
+// copy of the file that rqlite makes holds a secret that sealing replaced. The backup of the store is vacuumed,
+// so it holds no secret in clear, whatever the rows held before. It holds the URL of each target in clear, with
+// the token that the path and the query of a webhook URL carry: only the secret of a target is sealed.
+func TestBackupOfAMigratedStoreHoldsNoSecretInClear(t *testing.T) {
+	rq := rqlitetest.Start(t)
+	st, raw := openStore(t, rq)
+	ctx := context.Background()
+
+	// No Sealer yet: as the store of an earlier release, which keeps the secrets as they were put
+	hook := export.Target{Name: "alerts", Kind: export.KindWebhook, URL: "https://hooks.example.com/services/T0001/path-token-5e1c0a?key=query-token-91af3d", Secret: "old-hmac-key-of-alerts-7c3e5a1b", Types: []string{event.NodeDown}}
+	collector := export.Target{Name: "collector", Kind: export.KindOTLP, URL: "https://otel.example.com:4318", Secret: "old-bearer-token-of-collector-2d8f6b"}
+	siem := export.Target{Name: "siem", Kind: export.KindWebhook, URL: "https://siem.example.com/audit", Secret: "old-hmac-key-of-siem-b40e6c9d"}
+	for _, tg := range []export.Target{hook, collector} {
+		if err := st.PutTarget(ctx, tg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.PutAuditTarget(ctx, siem); err != nil {
+		t.Fatal(err)
+	}
+	secrets := []string{hook.Secret, collector.Secret, siem.Secret}
+	for _, secret := range secrets {
+		if !strings.Contains(allRows(t, raw), secret) {
+			t.Fatalf("a store with no Sealer does not hold %q in clear, so this test shows nothing", secret)
+		}
+	}
+
+	st.SetSealer(newSealer(t), nil)
+	if n, err := st.SealTargetSecrets(ctx); err != nil || n != 3 {
+		t.Fatalf("SealTargetSecrets gave %d, %v, want the 3 secrets that were in clear", n, err)
+	}
+	for _, secret := range secrets {
+		if strings.Contains(allRows(t, raw), secret) {
+			t.Errorf("a row still holds %q in clear after the sealing", secret)
+		}
+	}
+
+	// What a backup would hold without the vacuum: the old text, in the free space that the changed rows left
+	leaked := 0
+	plain := plainBackup(t, rq)
+	for _, secret := range secrets {
+		if bytes.Contains(plain, []byte(secret)) {
+			leaked++
+		}
+	}
+	if leaked == 0 {
+		t.Error("a plain copy of the SQLite file of rqlite holds none of the secrets that sealing replaced: then Backup needs no vacuum, and ST-4 of the threat model and the amendment of AUD1-DT-17 of ADR-0026 say that it does")
+	}
+
+	var backup bytes.Buffer
+	if err := st.Backup(ctx, &backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CheckBackup(backup.Bytes()); err != nil {
+		t.Errorf("the backup: %v", err)
+	}
+	for _, secret := range secrets {
+		if bytes.Contains(backup.Bytes(), []byte(secret)) {
+			t.Errorf("the backup of a store whose secrets were sealed holds the old secret %q in clear", secret)
+		}
+	}
+	if n := bytes.Count(backup.Bytes(), []byte("ranz-sealed:1:")); n < 3 {
+		t.Errorf("the backup holds %d sealed secrets, want 3", n)
+	}
+	for _, kept := range []string{hook.URL, "path-token-5e1c0a", "query-token-91af3d", collector.URL, siem.URL} {
+		if !bytes.Contains(backup.Bytes(), []byte(kept)) {
+			t.Errorf("the backup does not hold %q: the URL of a target is kept in clear, and ST-4 and the text of backup say so", kept)
+		}
+	}
+}
+
+// setURL changes the URL in the JSON of the row name of table, as a writer of the store does with raw SQL: nothing
+// else of the row changes, and the secret stays as it was sealed.
+func setURL(t *testing.T, raw *gorqlite.Connection, table, name, url string) {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(rawTargets(t, raw, table)[name]), &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["url"] = url
+	b, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.WriteOneParameterized(gorqlite.ParameterizedStatement{Query: `UPDATE ` + table + ` SET target = ? WHERE name = ?`, Arguments: []any{string(b), name}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The fourth criterion of #502: the label of a sealed secret holds the URL of its target, so a row whose URL was
+// changed, in the table or in a backup, with the secret that was sealed for the old URL, gives no secret. The
+// target comes back with its new URL and none, and the store tells the function it was given. The secret opens
+// again when the URL is the old one, which shows that nothing but the URL kept it closed, and a target that is put
+// again with the new URL is sealed for it.
+func TestSealedSecretStaysWithItsURL(t *testing.T) {
+	rq := rqlitetest.Start(t)
+	st, raw := openStore(t, rq)
+	var lost lostTargets
+	st.SetSealer(newSealer(t), lost.add)
+	ctx := context.Background()
+	hook := export.Target{Name: "alerts", Kind: export.KindWebhook, URL: "https://hooks.example.com/x", Secret: "hmac-key-of-alerts", Types: []string{event.NodeDown}}
+	siem := export.Target{Name: "siem", Kind: export.KindWebhook, URL: "https://siem.example.com/audit", Secret: "hmac-key-of-siem"}
+	if err := st.PutTarget(ctx, hook); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutAuditTarget(ctx, siem); err != nil {
+		t.Fatal(err)
+	}
+
+	// A writer of the store points both targets at a URL of its own
+	evil := "https://evil.example.net/collect"
+	setURL(t, raw, "export_targets", "alerts", evil)
+	setURL(t, raw, "audit_targets", "siem", evil+"?audit")
+	ts, err := st.Targets(ctx)
+	if err != nil || len(ts) != 1 || ts[0].URL != evil || ts[0].Secret != "" || ts[0].Kind != hook.Kind || !slices.Equal(ts[0].Types, hook.Types) {
+		t.Fatalf("the targets after the URL was changed are %+v, %v, want the new URL, the types and no secret", ts, err)
+	}
+	at, err := st.AuditTargets(ctx)
+	if err != nil || len(at) != 1 || at[0].URL != evil+"?audit" || at[0].Secret != "" {
+		t.Fatalf("the audit targets after the URL was changed are %+v, %v, want the new URL and no secret", at, err)
+	}
+	if got := lost.get(); !slices.Equal(got, []string{"export_targets/alerts", "audit_targets/siem"}) {
+		t.Errorf("the store told %v, want both targets, each once", got)
+	}
+	// The sealed text is no clear secret, so the sealing leaves the row as it is
+	if n, err := st.SealTargetSecrets(ctx); err != nil || n != 0 {
+		t.Errorf("SealTargetSecrets gave %d, %v, want nothing to seal", n, err)
+	}
+	if doc := rawTargets(t, raw, "export_targets")["alerts"]; !strings.Contains(doc, `"secret":"ranz-sealed:1:`) || !strings.Contains(doc, evil) {
+		t.Errorf("reading a secret that does not open changed the row: %s", doc)
+	}
+
+	// The URL that the secret was sealed for opens it again
+	setURL(t, raw, "export_targets", "alerts", hook.URL)
+	if ts, err := st.Targets(ctx); err != nil || len(ts) != 1 || ts[0].URL != hook.URL || ts[0].Secret != hook.Secret {
+		t.Errorf("with the old URL back the targets are %+v, %v, want the secret as it was put", ts, err)
+	}
+
+	// Put again with the new URL, the target is sealed for it
+	moved := hook
+	moved.URL, moved.Secret = evil, "hmac-key-of-alerts-for-the-new-url"
+	if err := st.PutTarget(ctx, moved); err != nil {
+		t.Fatal(err)
+	}
+	if ts, err := st.Targets(ctx); err != nil || len(ts) != 1 || ts[0].URL != evil || ts[0].Secret != moved.Secret {
+		t.Errorf("a target put again with the new URL reads %+v, %v, want its new secret", ts, err)
 	}
 }
