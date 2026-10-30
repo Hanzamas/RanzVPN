@@ -231,6 +231,71 @@ func TestNewDataDirPassesALaterChangeOfItsListDown(t *testing.T) {
 	}
 }
 
+// A trailing separator in -data names the same folder, and a new data directory that the text names is made with its own
+// list all the same. `ranz controller install -data D:\RanzData\` registers the service with that text as it was typed, and
+// the service, or a Controller that an administrator starts by hand with it, makes the folder from it when it is missing.
+// filepath.Dir of such a path is the folder itself, so the step that made the folder above it (os.MkdirAll) made the data
+// directory with the access list of its folder, which on C:\ProgramData lets the Users group add files and folders, and the
+// call that makes it with its own list then failed because the name was taken: the start failed once, and the next start found
+// the folder, whose owner is trusted, and kept it with that list (finding A of the read-only review of PR 541, at the head
+// fba7a078). The test gives each way of making a new data directory the path with a trailing backslash and with a trailing
+// slash, in a folder that has the access list of C:\ProgramData, and wants the call to make the folder, with its own protected
+// list that has no entry for the Users group, so that a standard user cannot open it for adding files and folders, and the
+// start of the service that follows to keep it.
+func TestNewDataDirWithATrailingSeparatorIsMadeWithItsOwnList(t *testing.T) {
+	requireAdministrator(t)
+	for _, c := range []struct {
+		name   string
+		create func(string) error
+	}{
+		{"the install", takeOverDataDir},
+		{"the step of the install that makes the folder", makeOwnedDataDir},
+		{"the start of the service", makeDataDir},
+		{"the step of the start of the service that makes the folder", createDataDir},
+	} {
+		for _, tail := range []struct{ name, text string }{{"a trailing backslash", `\`}, {"a trailing slash", "/"}} {
+			t.Run(c.name+" with "+tail.name, func(t *testing.T) {
+				parent := filepath.Join(t.TempDir(), "ProgramData")
+				if err := os.Mkdir(parent, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				setDACL(t, parent, programDataSDDL)
+				dir := filepath.Join(parent, "Ranz", "controller")
+				typed := dir + tail.text
+				if above := filepath.Dir(typed); above != dir {
+					t.Fatalf("filepath.Dir of %q is %q, not the folder itself: a step that works on the path as it was typed does not make the folder with the list of its folder, so this test shows nothing", typed, above)
+				}
+
+				if err := c.create(typed); err != nil {
+					t.Errorf("%s did not make the data directory %q: %v", c.name, typed, err)
+				}
+				// The start that follows, a retry or the next boot, keeps the folder when there is one and its owner is trusted
+				if err := makeDataDir(typed); err != nil {
+					t.Errorf("the start of the service that follows, in %q: %v", typed, err)
+				}
+				got := securityOf(t, dir)
+				if !strings.Contains(got, "D:PAI") {
+					t.Errorf("the new data directory has the security %s, want a protected access list that passes changes down to what the folder holds", got)
+				}
+				for _, trustee := range []string{"BU", "WD", "AU", "IU"} {
+					if hasTrustee(got, trustee) {
+						t.Errorf("the new data directory has the security %s, which names %s: it has the access list of its folder", got, trustee)
+					}
+				}
+				name, err := windows.UTF16PtrFromString(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var opened error
+				asStandardUser(t, func() { opened = openForAdding(name) })
+				if opened == nil {
+					t.Errorf("a standard user opened the new data directory %s for adding files and folders", dir)
+				}
+			})
+		}
+	}
+}
+
 // keptDataDir makes the folder that an earlier install or an administrator left, which the Administrators (or the
 // account of this process) own, and which the test fills.
 func keptDataDir(t *testing.T) string {
