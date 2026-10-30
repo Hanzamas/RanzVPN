@@ -23,6 +23,12 @@
 //   setting (tlsFingerprints) before it acknowledges, so that it still reaches the Controller after the change and after a
 //   restart of the service (NodeControllerPins). A node that was not connected when the certificate changed has the old
 //   fingerprint only, and ranz node controller set gives it the new one.
+// - The logged-in user enrols the node through the tray (ranz tray; SDN-55, #248): the sign-in of the user at a Controller
+//   brings its keys, and the tray gives them to the client role on the pipe of the user (enrol), which a user without
+//   administrator rights may open. So the node takes them only while it has no Controller settings, in its store or in
+//   use: a user cannot move a node that an Administrator joined, and the same settings again change nothing. The node
+//   writes them into the store and takes them at once: a thread of its own starts the client role again, whose overlay
+//   then opens the control stream (NodeControllerEnrol).
 // - The admin pipe (NODE_ADMIN_PIPE), which only SYSTEM, the Administrators and the service account may open, takes one
 //   command line of an Administrator, as ranz node sends them, and answers it with one JSON object: key gives the public
 //   half of the static key of the node, which it makes first when no role needed it yet; controller gives the settings
@@ -83,6 +89,7 @@ struct NODE_CONTROLLER {
 	HANDLE PipeHandle;                             // Its server end, INVALID_HANDLE_VALUE without
 	HANDLE PipeStop;                               // Ends the thread of the pipe
 	HANDLE PipeThread;                             // The thread of the pipe
+	HANDLE Rejoin;                                 // The thread that has the node take the settings of an enrolment (SDN-55, #248), NULL for none (under Lock)
 };
 
 //
@@ -582,6 +589,229 @@ void NodeControllerPins(NODE *n, const CONTROL_STATE *st) {
 }
 
 //
+// The enrolment through the tray (SDN-55, #248)
+//
+
+// The Controller settings and the state of the control stream for the status of the client role on the pipe of the logged-in
+// user (NodeClient.c), into o as the object controller: whether the node has settings, their address, static key and TLS
+// fingerprint in use, whether the stream is open, the Generation of the state, and why the last stream ended or why there is
+// none. The thread of the pipe takes no node lock: the Controller of the node is there before the pipe starts and goes only
+// once the pipe stopped (NodeControllerStop stops the overlay, which stops the pipe first), and its settings are read under its
+// own lock, under which an enrolment changes them.
+void NodeControllerClientJson(NODE *n, cJSON *o) {
+	NODE_CONTROLLER *c = (n != NULL ? n->Controller : NULL);
+	NODE_OVERLAY_STATUS os;
+	cJSON *j = cJSON_CreateObject();
+	char *key = NULL;
+	UINT key_size = 0;
+	bool set = false;
+
+	NodeOverlayGetStatus(n, &os);
+
+	if (c != NULL) {
+		Lock(c->Lock);
+		{
+			set = c->Set;
+			if (set) {
+				key = Base64FromBin(&key_size, c->Key, PEER_KEY_SIZE);
+				cJSON_AddStringToObject(j, "address", c->Address);
+				cJSON_AddStringToObject(j, "publicKey", key != NULL ? key : "");
+				cJSON_AddStringToObject(j, "tlsFingerprint", c->NumPins == 0 ? c->Fingerprint : c->Pins[0]);
+				cJSON_AddStringToObject(j, "why", os.Connected ? "" : c->Why);
+			}
+		}
+		Unlock(c->Lock);
+	}
+
+	cJSON_AddBoolToObject(j, "set", set);
+	if (set == false)
+		cJSON_AddStringToObject(j, "why", "the node has no Controller settings: a sign-in or ranz node controller set gives it some");
+	cJSON_AddBoolToObject(j, "connected", os.Connected);
+	cJSON_AddNumberToObject(j, "generation", (double)os.Generation);
+	cJSON_AddItemToObject(o, "controller", j);
+
+	Free(key);
+}
+
+// Whether the Controller settings b name the Controller of the settings a: the same address and static key, and a TLS
+// fingerprint that a accepts
+static bool NodeControllerSame(const NODE_CONTROLLER *a, const NODE_CONTROLLER *b) {
+	bool fingerprint = (StrCmp(a->Fingerprint, b->Fingerprint) == 0);
+
+	for (UINT i = 0; i < a->NumPins && fingerprint == false; i++)
+		fingerprint = (StrCmp(a->Pins[i], b->Fingerprint) == 0);
+
+	return (StrCmp(a->Address, b->Address) == 0 && Cmp(a->Key, b->Key, PEER_KEY_SIZE) == 0 && fingerprint);
+}
+
+// The thread of an enrolment: the node takes the Controller settings that it wrote, and its client role starts again, so that
+// its overlay opens the control stream to that Controller. The role that it stops is the one whose pipe took the enrolment,
+// whose overlay has no control stream, so it stops under the node lock (NodeSetRoles). NodeControllerStop joins the thread.
+static DWORD WINAPI NodeControllerRejoin(LPVOID param) {
+	NODE_CONTROLLER *c = (NODE_CONTROLLER *)param;
+	NODE *n = c->Node;
+	bool set, running;
+	UINT roles;
+
+	Lock(n->Lock);
+	{
+		Lock(c->Lock);
+		NodeControllerLoad(c);
+		set = c->Set;
+		Unlock(c->Lock);
+		running = n->Running;
+		roles = n->Roles;
+	}
+	Unlock(n->Lock);
+
+	if (set == false || running == false || (roles & NODE_ROLE_CLIENT) == 0) {
+		NodeLog(n, "Controller: the settings of the enrolment wait for the next start of the node (%s)",
+		        set == false ? "they are not valid" : (running ? "the client role does not run" : "the node stops"));
+		return 0;
+	}
+
+	NodeLog(n, "Controller %s: the logged-in user enrolled the node, so its client role starts again to join it", c->Address);
+	NodeSetRoles(n, roles & ~NODE_ROLE_CLIENT);
+	NodeSetRoles(n, roles);
+
+	return 0;
+}
+
+// Wait for the thread of an enrolment to end (the node lock is not held)
+static void NodeControllerRejoinWait(NODE_CONTROLLER *c) {
+	HANDLE h;
+
+	Lock(c->Lock);
+	h = c->Rejoin;
+	c->Rejoin = NULL;
+	Unlock(c->Lock);
+
+	if (h != NULL) {
+		WaitForSingleObject(h, INFINITE);
+		CloseHandle(h);
+	}
+}
+
+// Have the node take the Controller settings of an enrolment at once, on a thread of its own (NodeControllerRejoin). The pipe
+// of the client role calls it once the user who enrolled closed it, so that the restart of the role does not cut the answer
+// short.
+void NodeControllerRejoinStart(NODE *n) {
+	NODE_CONTROLLER *c = (n != NULL ? n->Controller : NULL);
+	bool started;
+
+	if (c == NULL)
+		return;
+
+	Lock(c->Lock);
+	{
+		// A thread of an earlier enrolment that ended makes way
+		if (c->Rejoin != NULL && WaitForSingleObject(c->Rejoin, 0) == WAIT_OBJECT_0) {
+			CloseHandle(c->Rejoin);
+			c->Rejoin = NULL;
+		}
+		if (c->Rejoin == NULL)
+			c->Rejoin = CreateThread(NULL, 0, NodeControllerRejoin, c, 0, NULL);
+		started = (c->Rejoin != NULL);
+	}
+	Unlock(c->Lock);
+
+	if (started == false)
+		NodeLog(n, "Controller: the thread that takes the settings of the enrolment cannot start (error %u), so the node takes them at its next start", (UINT)GetLastError());
+}
+
+// The Controller settings that the sign-in of the logged-in user brought: enrol <address> <key> <fingerprint> on the pipe of
+// the client role, as ranz tray sends it (SDN-55, #248). The node takes them only while it has none, in its store or in use;
+// settings of the same Controller change nothing, and settings of another are refused. The answer, into o: the settings and
+// whether they changed, or an error. Settings that the node takes go into the store; true when the node should take them at
+// once (NodeControllerRejoinStart), as it should the same settings that an Administrator wrote into the store and that the
+// node does not use yet. It runs on the thread of the pipe, which takes no node lock (NodeControllerClientJson says why the
+// Controller is there).
+bool NodeControllerEnrol(NODE *n, const char *address, const char *key, const char *fingerprint, cJSON *o) {
+	if (n == NULL || o == NULL)
+		return false;
+
+	NODE_CONTROLLER *c = n->Controller;
+	NODE_CONTROLLER *check = ZeroMalloc(sizeof(NODE_CONTROLLER));
+	NODE_CONTROLLER *stored = ZeroMalloc(sizeof(NODE_CONTROLLER));
+	char *setting = ZeroMalloc(NODE_CONTROLLER_MAX_SETTING);
+	char error[MAX_SIZE];
+	bool has = false;
+	bool same = false;
+	bool changed = false;
+	bool rejoin = false;
+
+	StrCpy(error, sizeof(error), "");
+
+	if (c == NULL)
+		StrCpy(error, sizeof(error), "the node runs no Controller module");
+	else if (NodeControllerCheck(check, address, key, fingerprint, error, sizeof(error)))
+		check->Set = true;
+
+	if (c != NULL && check->Set) {
+		Lock(c->SettingLock);
+		{
+			// The settings of the store, which the node takes at its next start ...
+			if (n->Store != NULL && CsGetSetting(n->Store, NODE_SETTING_CONTROLLER, setting, NODE_CONTROLLER_MAX_SETTING) && IsEmptyStr(setting) == false) {
+				cJSON *s = cJSON_Parse(setting);
+				char ignored[MAX_SIZE];
+
+				if (cJSON_IsObject(s) && NodeControllerCheck(stored, NodeControllerJsonStr(s, "address"), NodeControllerJsonStr(s, "publicKey"), NodeControllerJsonStr(s, "tlsFingerprint"), ignored, sizeof(ignored))) {
+					NodeControllerLoadPins(stored, s);
+					has = true;
+					same = NodeControllerSame(stored, check);
+				}
+				cJSON_Delete(s);
+			}
+
+			// ... and those in use
+			Lock(c->Lock);
+			{
+				bool used = c->Set;
+
+				if (has == false && used) {
+					has = true;
+					same = NodeControllerSame(c, check);
+				}
+				// The same settings in the store that the node does not use yet: it takes them now
+				rejoin = (has && same && used == false);
+			}
+			Unlock(c->Lock);
+
+			if (has == false) {
+				cJSON *json = NodeControllerJson(check);
+				char *text = cJSON_PrintUnformatted(json);
+
+				cJSON_Delete(json);
+				changed = (text != NULL && n->Store != NULL && CsSetSetting(n->Store, NODE_SETTING_CONTROLLER, text) == ERR_NO_ERROR);
+				if (changed == false)
+					StrCpy(error, sizeof(error), "the Configuration store of the node cannot be written");
+				if (text != NULL)
+					cJSON_free(text);
+			} else if (same == false) {
+				StrCpy(error, sizeof(error), "the node has Controller settings of another Controller already: an Administrator changes them with ranz node controller set");
+			}
+		}
+		Unlock(c->SettingLock);
+	}
+
+	if (IsEmptyStr(error) == false) {
+		cJSON_AddStringToObject(o, "error", error);
+	} else {
+		cJSON_AddItemToObject(o, "controller", NodeControllerJson(check));
+		cJSON_AddBoolToObject(o, "changed", changed);
+	}
+
+	if (changed || rejoin)
+		NodeLog(n, "Client pipe: the logged-in user enrolled the node at the Controller %s, which it joins once the user closed the pipe", check->Address);
+
+	Free(setting);
+	Free(stored);
+	Free(check);
+
+	return (changed || rejoin);
+}
+
+//
 // The admin pipe
 //
 
@@ -926,6 +1156,8 @@ void NodeControllerStop(NODE *n) {
 		return;
 
 	NodeAdminStop(c);
+	// The thread of an enrolment ends before the overlay that it starts (SDN-55, #248)
+	NodeControllerRejoinWait(c);
 	NodeOverlayStop(n);
 
 	Lock(n->Lock);
