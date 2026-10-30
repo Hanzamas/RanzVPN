@@ -68,11 +68,15 @@ type RuleCounters struct {
 
 // PathCounters is what the Paths of the peer agent of a node did since the node started
 // (CORE-S5-6, #412): its Upgrades, each a Path that moved from the Relay to the direct path that
-// ICE validated, and its Fallbacks, each a direct path whose consent freshness failed, so that its
-// pair went back to the Relay.
+// ICE validated or a punch met, and its Fallbacks, each a direct path whose consent failed, so that
+// its pair went back to the Relay. The punches (CORE-S5-7, #413) are its attempts at a direct path
+// to a peer behind a symmetric NAT, the successes among them, and the failures of its prediction.
 type PathCounters struct {
-	Upgrades  uint64 `json:"upgrades"`
-	Fallbacks uint64 `json:"fallbacks"`
+	Upgrades       uint64 `json:"upgrades"`
+	Fallbacks      uint64 `json:"fallbacks"`
+	PunchAttempts  uint64 `json:"punchAttempts"`
+	PunchSuccesses uint64 `json:"punchSuccesses"`
+	PunchFailures  uint64 `json:"punchFailures"`
 }
 
 // NodeSnapshot is what the Hub holds of one node. Paths is nil for a node that reported none: one
@@ -199,7 +203,13 @@ func (h *Hub) Report(node string, t *controlpb.Telemetry) {
 		e.seen = now
 	}
 	if p := t.GetPaths(); p != nil {
-		d.paths = &pathEntry{PathCounters: PathCounters{Upgrades: p.GetUpgrades(), Fallbacks: p.GetFallbacks()}, seen: now}
+		d.paths = &pathEntry{PathCounters: PathCounters{
+			Upgrades:       p.GetUpgrades(),
+			Fallbacks:      p.GetFallbacks(),
+			PunchAttempts:  p.GetPunchAttempts(),
+			PunchSuccesses: p.GetPunchSuccesses(),
+			PunchFailures:  p.GetPunchFailures(),
+		}, seen: now}
 	}
 	h.prune(now)
 }
@@ -311,7 +321,10 @@ func (h *Hub) Samples(vrfName func(uint32) string) []Sample {
 		if n.Paths != nil {
 			out = append(out,
 				Sample{Metric: "path_upgrades", Labels: []string{n.Node}, Value: n.Paths.Upgrades},
-				Sample{Metric: "path_fallbacks", Labels: []string{n.Node}, Value: n.Paths.Fallbacks})
+				Sample{Metric: "path_fallbacks", Labels: []string{n.Node}, Value: n.Paths.Fallbacks},
+				Sample{Metric: "path_punch_attempts", Labels: []string{n.Node}, Value: n.Paths.PunchAttempts},
+				Sample{Metric: "path_punch_successes", Labels: []string{n.Node}, Value: n.Paths.PunchSuccesses},
+				Sample{Metric: "path_punch_failures", Labels: []string{n.Node}, Value: n.Paths.PunchFailures})
 		}
 	}
 	return out
