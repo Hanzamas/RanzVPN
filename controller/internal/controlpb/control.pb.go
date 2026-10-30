@@ -150,6 +150,12 @@
 // the hub has a LAN subnet too, and the controller refuses an intent with one more (MaxPeerRoutes,
 // controller/internal/intent/leak.go).
 //
+// Egress (SDN-12 #188, ADR-0025 decision 13): the node that is the internet exit of a VRF gets the
+// id of the VRF in its NodeConfig (NodeConfig.egress_vrf_ids), and every other node of the VRF gets
+// the default route 0.0.0.0/0 of the VRF as a route of the Peer of the exit. The exit reports the
+// Egress tier that its host gives it, with the SKU and Hyper-V that decide it, in its Capabilities.
+// No schema version changes with them: a node of an older release skips the field it does not know.
+//
 // BGP peering of the standard mode (SDN-77, #357): the nodes of a VRF whose links are of kind vxlan
 // or geneve and whose peering is bgp (Vrf.peering) exchange their routes there by BGP, in a full
 // mesh, each with the sidecar ranz bgp on the network that the operator trusts. A node gets the
@@ -2033,7 +2039,11 @@ type NodeConfig struct {
 	Groups []*SourceGroup `protobuf:"bytes,15,rep,name=groups,proto3" json:"groups,omitempty"`
 	// The session profile that the node runs under as a device of a User (SDN-40 #233), absent for a node
 	// that has no owner or whose owner runs under none: the node enforces its flags on itself.
-	Profile       *SessionProfile `protobuf:"bytes,16,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile *SessionProfile `protobuf:"bytes,16,opt,name=profile,proto3" json:"profile,omitempty"`
+	// The VRFs whose internet exit the node is (SDN-12 #188), by id, ascending: the node takes the
+	// traffic of their other nodes to the outside with the Egress tier of its host. Empty for a node
+	// that is the exit of no VRF.
+	EgressVrfIds  []uint32 `protobuf:"varint,17,rep,packed,name=egress_vrf_ids,json=egressVrfIds,proto3" json:"egress_vrf_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2183,6 +2193,13 @@ func (x *NodeConfig) GetGroups() []*SourceGroup {
 func (x *NodeConfig) GetProfile() *SessionProfile {
 	if x != nil {
 		return x.Profile
+	}
+	return nil
+}
+
+func (x *NodeConfig) GetEgressVrfIds() []uint32 {
+	if x != nil {
+		return x.EgressVrfIds
 	}
 	return nil
 }
@@ -6392,7 +6409,7 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"\x04kind\"J\n" +
 	"\tObjectKey\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.ranz.control.v1.KindR\x04kind\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x86\x06\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xac\x06\n" +
 	"\n" +
 	"NodeConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
@@ -6414,7 +6431,8 @@ const file_ranz_control_v1_control_proto_rawDesc = "" +
 	"lanSubnets\x126\n" +
 	"\apeering\x18\x0e \x01(\v2\x1c.ranz.control.v1.NodePeeringR\apeering\x124\n" +
 	"\x06groups\x18\x0f \x03(\v2\x1c.ranz.control.v1.SourceGroupR\x06groups\x129\n" +
-	"\aprofile\x18\x10 \x01(\v2\x1f.ranz.control.v1.SessionProfileR\aprofile\"\x8a\x01\n" +
+	"\aprofile\x18\x10 \x01(\v2\x1f.ranz.control.v1.SessionProfileR\aprofile\x12$\n" +
+	"\x0eegress_vrf_ids\x18\x11 \x03(\rR\fegressVrfIds\"\x8a\x01\n" +
 	"\vNodePeering\x12\x10\n" +
 	"\x03asn\x18\x01 \x01(\rR\x03asn\x12\x1b\n" +
 	"\trouter_id\x18\x02 \x01(\fR\brouterId\x12\x18\n" +
