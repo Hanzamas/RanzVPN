@@ -17,7 +17,10 @@
 // peer for a punch with a punch offer, a signal that carries its NAT and its prediction (PeerPunchDue,
 // PeerPunchSealSignal), which the control plane carries. The peer takes it when one of the two NATs is symmetric and the
 // pair can meet (PeerPunchPair): it begins its probes at once and answers with a punch answer of its own, upon which the
-// node begins its probes. So each end aims at the prediction that the other made just before its own probes began.
+// node begins its probes. So each end aims at the prediction that the other made just before its own probes began. The
+// peer answers only an offer that began an attempt, and an offer that finds an attempt of the peer still running ends
+// that one and begins the next: the node offers only once its own attempt ended, so nothing answers the probes of the
+// old one any more. So the two ends begin every attempt together and count the same attempts and the same backoff.
 //
 // The probes. Each probe to a new address makes a new mapping of a symmetric NAT, on the next port. The node of the
 // lower static key leads and sweeps the range of the peer's ports one by one, from PEER_PUNCH_BELOW under the predicted
@@ -32,9 +35,11 @@
 //
 // The limits, so that the probes do not look like a scan. An attempt sends PunchBudget probes at most, round robin over
 // its targets, and fails PEER_PUNCH_LINGER after its last probe when nothing met; the node sends PunchRate punch messages
-// in any second at most, probes and answers together, across its peers. After PunchAttempts attempts in a row that met
-// nothing, the pair stays on the relay for PunchBackoff before the next one, and a punch offer that comes meanwhile is
-// refused. The node counts the attempts, the successes and the failures, which its control stream reports.
+// in any second at most, probes and answers together, across its peers. The next attempt waits PunchRetry from the end
+// of the one before, so that the attempt of the peer, which began a little earlier, ended too. After PunchAttempts
+// attempts in a row that met nothing, the pair stays on the relay for PunchBackoff from the end of the last one, and a
+// punch offer that comes meanwhile is refused. The node counts the attempts, the successes and the failures, which its
+// control stream reports.
 //
 // The proof. A probe proves who sent it, not where the sender is: an attacker on the path can send a captured probe
 // from an address of its own (finding F3 of the second review of AUD-5, PR 405). So a meeting moves the peer to the
@@ -451,9 +456,11 @@ static void PeerPunchTargets(PEER_AGENT *a, PEER *p, UINT mine) {
 
 // Seal a punch offer or a punch answer for the peer of key: the relay assignment of the node, its reflexive candidate, its
 // predicted next port, the port of its mapping towards the peer's reflexive address when it made one, and its NAT. An
-// answer names the prediction that the probes of the node began at. An offer counts as an attempt that fails unless the
-// pair meets: the next one waits PunchRetry, or PunchBackoff after PunchAttempts of them. Returns the size of the envelope
-// in buf, 0 when key is no peer or the envelope does not fit size. Without the lock of the layer.
+// answer goes once, for the offer of the peer that began an attempt (PeerPunchStart), and names the prediction that the
+// probes of the node began at. An offer counts as an attempt that fails unless the pair meets: the next one waits
+// PunchRetry, or PunchBackoff after PunchAttempts of them, which the end of the attempt counts again (PeerPunchTick).
+// Returns the size of the envelope in buf, 0 when key is no peer, for an answer with no offer to answer, or when the
+// envelope does not fit size. Without the lock of the layer.
 UINT PeerPunchSealSignal(PEER_AGENT *a, const UCHAR *key, UINT type, UCHAR *buf, UINT size) {
 	PEER_SIGNAL s;
 	UCHAR payload[PEER_MAX_SIGNAL];
@@ -467,12 +474,15 @@ UINT PeerPunchSealSignal(PEER_AGENT *a, const UCHAR *key, UINT type, UCHAR *buf,
 	{
 		PEER *p = PeerFind(a, key);
 
-		known = (p != NULL);
-		if (p != NULL) {
+		known = (p != NULL && (type != PEER_SIGNAL_PUNCH_ANSWER || p->Punch.Answer));
+		if (known) {
 			PEER_PUNCH *punch = &p->Punch;
 			PEER_PUNCH_MODEL m;
 			PEER_ADDR next;
 			PEER_ADDR toward;
+
+			if (type == PEER_SIGNAL_PUNCH_ANSWER)
+				punch->Answer = false;
 
 			PeerPunchModel(a, &m);
 			s.Nat = m.Nat;
@@ -568,12 +578,15 @@ bool PeerPunchDue(PEER_AGENT *a, const UCHAR *key) {
 }
 
 // Take the punch offer or the punch answer s of the peer of key, whose candidates PeerOpenSignal took: begin an attempt
-// when the pair can meet, has no direct path and runs no attempt. An offer is taken unless the pair is in its backoff, and
-// counts as an attempt that fails unless the pair meets; an answer is taken only for the offer that the node sealed last,
-// within PunchRetry. The node's own prediction is kept, so that its answer names where its probes began. Without the
-// lock of the layer.
+// when the pair can meet and has no direct path. An offer is taken unless the pair is in its backoff, and counts as an
+// attempt that fails unless the pair meets; an attempt of the node that still runs then ends as one that met nothing, as
+// the peer offers only once its own attempt ended. Only an offer that began an attempt gets the punch answer of the node
+// (PeerPunchSealSignal). An answer is taken only for the offer that the node sealed last, within PunchRetry, while no
+// attempt runs. The node's own prediction is kept, so that its answer names where its probes began. Without the lock of
+// the layer.
 void PeerPunchStart(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s) {
 	bool attempt = false;
+	bool ended = false;
 
 	if (a->Config.Punch == false || s == NULL)
 		return;
@@ -589,13 +602,15 @@ void PeerPunchStart(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s) {
 			UINT64 retry = PeerPunchRetry(a);
 			UINT attempts = PeerPunchAttempts(a);
 			bool direct = (p->HasDirect || (p->Ice != NULL && PeerIceUp(p->Ice)));
+			bool offer = (s->Type == PEER_SIGNAL_PUNCH_OFFER);
+			bool probing = (punch->State == PEER_PUNCH_PROBING);
 
 			PeerPunchModel(a, &m);
 			punch->PeerNat = s->Nat;
 
-			bool take = (direct == false && punch->State != PEER_PUNCH_PROBING && PeerPunchPair(m.Nat, s->Nat));
+			bool take = (direct == false && (offer || probing == false) && PeerPunchPair(m.Nat, s->Nat));
 
-			if (take && s->Type == PEER_SIGNAL_PUNCH_OFFER) {
+			if (take && offer) {
 				// Refused in the backoff, which the peer keeps too: an offer up to a retry early is the clock of the peer
 				if (punch->Failures >= attempts && now + retry < punch->NextAttempt) {
 					take = false;
@@ -614,6 +629,12 @@ void PeerPunchStart(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s) {
 				punch->Offered = 0;
 
 			if (take) {
+				// The attempt that still runs met nothing
+				if (probing) {
+					punch->State = PEER_PUNCH_FAILED;
+					ended = true;
+				}
+
 				ZeroMemory(&punch->Own, sizeof(PEER_ADDR));
 				PeerPunchPortOf(&m, m.Mappings + 1, &punch->Own);
 				PeerPunchTargets(a, p, m.Nat);
@@ -626,10 +647,15 @@ void PeerPunchStart(PEER_AGENT *a, const UCHAR *key, const PEER_SIGNAL *s) {
 				punch->LastProbe = now;
 				attempt = true;
 			}
+
+			if (offer)
+				punch->Answer = attempt;
 		}
 	}
 	ReleaseSRWLockExclusive(&a->Lock);
 
+	if (ended)
+		PeerCount(a, PEER_COUNT_PUNCH_FAILURES);
 	if (attempt)
 		PeerCount(a, PEER_COUNT_PUNCH_ATTEMPTS);
 }
@@ -693,8 +719,9 @@ static bool PeerPunchEcho(PEER_PUNCH *punch, const PEER_ADDR *from, const UCHAR 
 }
 
 // The timer of the punches, from PeerTick: the next burst of probes of every attempt, within the rate of the node and the
-// budget of the attempt; an attempt that spent its budget fails PEER_PUNCH_LINGER after its last probe; and on a punched
-// path the keepalive of the node, or the Fallback once the peer said nothing there for PunchConsent.
+// budget of the attempt; an attempt that spent its budget fails PEER_PUNCH_LINGER after its last probe, and the next one
+// waits the retry, or the backoff after the last of the attempts, from then; and on a punched path the keepalive of the
+// node, or the Fallback once the peer said nothing there for PunchConsent.
 void PeerPunchTick(PEER_AGENT *a) {
 	PEER_PUNCH_SEND send[PEER_PUNCH_TICK_MAX];
 	UINT num = 0;
@@ -708,6 +735,8 @@ void PeerPunchTick(PEER_AGENT *a) {
 
 	UINT64 consent = PeerPunchConsent(a);
 	UINT64 retry = PeerPunchRetry(a);
+	UINT64 backoff = PeerPunchBackoff(a);
+	UINT attempts = PeerPunchAttempts(a);
 
 	AcquireSRWLockExclusive(&a->Lock);
 	AcquireSRWLockExclusive(&a->PunchLock);
@@ -736,6 +765,7 @@ void PeerPunchTick(PEER_AGENT *a) {
 				// The budget is spent and the answers on their way had their time: the attempt met nothing
 				if (punch->Budget == 0 && now - punch->LastProbe >= PEER_PUNCH_LINGER) {
 					punch->State = PEER_PUNCH_FAILED;
+					punch->NextAttempt = now + (punch->Failures >= attempts ? backoff : retry);
 					failed++;
 				}
 			} else if (punch->State == PEER_PUNCH_CONNECTED && p->HasDirect == false) {

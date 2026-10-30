@@ -372,14 +372,13 @@ static void NodeAgentSignalled(NODE_AGENT *a, const UCHAR *key) {
 // the key of the sender in the desired state, whatever name the Controller gave the Signal. With ICE the answer names the
 // address that the home relay saw the node at: an offer that comes before the relay answered the bind of the node is
 // answered by the thread of the agent once it did (NodeAgentAnswer). A punch offer gets the punch answer of the node once
-// its probes began (PeerPunchStart), and none when the node did not take it: in the backoff of the pair, or with NATs
-// that a punch cannot meet.
+// the offer began its probes (PeerPunchStart), and none when the node did not take it: in the backoff of the pair, or with
+// NATs that a punch cannot meet, for which the peer layer seals no answer.
 void NodeAgentSignal(void *param, const char *peer, const UCHAR *envelope, UINT size) {
 	NODE *n = (NODE *)param;
 	NODE_AGENT *a = NodeAgentOf(n);
 	PEER_AGENT *p = NodeAgentPeerOf(a);
 	PEER_SIGNAL sig;
-	PEER_STATUS ps;
 	UCHAR env[PEER_MAX_ENVELOPE];
 	char name[PEER_NAME_SIZE];
 	bool known = false;
@@ -405,9 +404,6 @@ void NodeAgentSignal(void *param, const char *peer, const UCHAR *envelope, UINT 
 		return;
 
 	bool punch = (sig.Type == PEER_SIGNAL_PUNCH_OFFER);
-	if (punch && (PeerGetStatus(p, sig.Sender, &ps) == false || ps.Punch != PEER_PUNCH_PROBING))
-		return;
-
 	bool later = (punch == false && a->Config.Ice && PeerHomeBound(p) == false);
 
 	AcquireSRWLockExclusive(&a->Lock);

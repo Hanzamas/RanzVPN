@@ -17,7 +17,10 @@
 //     pair stays on the relay, its traffic flowing there throughout;
 //   - two sequential NATs whose direct path is cut: each attempt spends its budget of probes within the rate of the node
 //     and fails, the pair stays on the relay, and after the attempts that met nothing an offer is refused until the
-//     backoff ends.
+//     backoff ends;
+//   - the same, where the attempts of B run longer than the ones of A: each offer of A, which comes once its own attempt
+//     ended, ends the attempt of B that still runs and begins the next at both ends, so the two count the same attempts
+//     and reach the backoff on the same offer, and an offer that B refuses gets no answer, so A begins no attempt alone.
 //   The test also checks that a probe begins only once the control plane carried the punch signals, and that the
 //   attempts, the successes and the failures of the prediction come out as metrics. A port-preserving NAT's allocation
 //   is checked on its own.
@@ -742,6 +745,76 @@ static void punch_limits() {
 	DeleteCriticalSection(&tap.Lock);
 }
 
+// Tick A alone every PUNCH_TICK ms until its attempt failed, within PUNCH_LIMIT_WAIT; true when the attempt of B, which is
+// not ticked, still runs then
+static bool punch_end_a(PUNCH_WORLD *w) {
+	for (UINT64 end = GetTickCount64() + PUNCH_LIMIT_WAIT; GetTickCount64() < end; Sleep(PUNCH_TICK)) {
+		PeerTick(w->A.Agent);
+		NatSimWaitIdle(w->Sim, PUNCH_WAIT);
+
+		if (punch_state(&w->A, &w->B) == PEER_PUNCH_FAILED)
+			return punch_state(&w->B, &w->A) == PEER_PUNCH_PROBING;
+	}
+
+	return false;
+}
+
+// Two sequential NATs whose direct path is cut, where the attempts of B run longer than the ones of A: each punch offer of A,
+// which comes once its own attempt ended, ends the attempt of B that still runs, as one that met nothing, and begins the next
+// at both ends, so the two count the same attempts and reach the backoff on the same offer; the offer that B refuses in the
+// backoff, while its last attempt still runs, gets no answer, so A begins no attempt alone
+static void punch_overlap() {
+	PUNCH_WORLD w;
+	PEER_CONFIG pc;
+	PEER_SIGNAL offer, answer;
+	PEER_STATS st_a, st_b;
+	UCHAR env[PEER_MAX_ENVELOPE];
+	char what[256];
+
+	punch_config(&pc);
+	pc.PunchBudget = PUNCH_LIMIT_BUDGET;
+	pc.PunchRate = PUNCH_LIMIT_RATE;
+	pc.PunchAttempts = PUNCH_LIMIT_TRIES;
+	pc.PunchRetry = PUNCH_LIMIT_RETRY;
+	pc.PunchBackoff = PUNCH_LIMIT_BACKOFF;
+
+	bool started = punch_world_start(&w, &pc, NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0,
+	                                 NATSIM_MAP_ADDRESS_PORT_DEPENDENT, NATSIM_FILTER_ADDRESS_PORT_DEPENDENT, NATSIM_ALLOC_SEQUENTIAL, 0);
+	coretest_check(started, "The network starts: A and B each behind a sequential-allocation symmetric NAT, their direct path cut, B's attempts slower than A's");
+	if (started == false) {
+		punch_world_stop(&w);
+		return;
+	}
+
+	NatSimCut(w.Sim, w.NatA, true);
+	coretest_check(punch_exchange(&w), "A and B exchange an offer and an answer through the control plane");
+
+	// Each offer of A goes once its own attempt ended, while the one of B, which the test does not tick, still runs
+	bool in_step = true;
+	for (UINT k = 0; k < PUNCH_LIMIT_TRIES; k++) {
+		bool offered = punch_offer(&w, &w.A, &w.B, &offer, &answer);
+
+		st_a = punch_stats(&w.A);
+		st_b = punch_stats(&w.B);
+		coretest_info("offer %u: A made %llu attempts and B %llu, of which B ended %llu that still ran", k + 1, st_a.PunchAttempts, st_b.PunchAttempts, st_b.PunchFailures);
+		bool ended = punch_end_a(&w);
+		in_step = in_step && offered && st_a.PunchAttempts == k + 1 && st_b.PunchAttempts == k + 1 && st_b.PunchFailures == k && ended;
+	}
+	snprintf(what, sizeof(what), "Each of the %u punch offers of A ends the attempt of B that still runs, as one that met nothing, and begins the next at both ends: the two count the same attempts",
+	         PUNCH_LIMIT_TRIES);
+	coretest_check(in_step, what);
+
+	// Both ends reached the backoff on the third offer: B refuses the next one and seals no answer to it, though its attempt
+	// still runs
+	UINT taken = punch_signal(&w.A, &w.B, PEER_SIGNAL_PUNCH_OFFER, &offer);
+	st_b = punch_stats(&w.B);
+	UINT sealed = PeerSealSignal(w.B.Agent, w.A.Key.Public, PEER_SIGNAL_PUNCH_ANSWER, env, sizeof(env));
+	coretest_check(taken == PEER_OK && punch_state(&w.B, &w.A) == PEER_PUNCH_PROBING && st_b.PunchAttempts == PUNCH_LIMIT_TRIES && sealed == 0,
+	               "In the backoff that both ends reached on the same offer, B refuses the next punch offer of A while its last attempt still runs, and seals no answer to it: A begins no attempt alone");
+
+	punch_world_stop(&w);
+}
+
 // A port-preserving NAT keeps the private source port of a mapping while it is free (the third pattern the seam asks
 // the simulator to model, next to sequential and random)
 static void punch_preserving() {
@@ -777,4 +850,5 @@ void punch_test() {
 	punch_birthday();
 	punch_random();
 	punch_limits();
+	punch_overlap();
 }

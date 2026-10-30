@@ -257,8 +257,8 @@ typedef struct PEER_CONFIG {
 	UINT PunchPorts;              // The ports above a predicted one that the birthday range covers; 0 for the default
 	UINT PunchRate;               // The most punch messages the node sends in any second, across its peers; 0 for the default
 	UINT PunchAttempts;           // Attempts in a row that met nothing, after which the pair stays on the relay for PunchBackoff; 0 for the default
-	UINT PunchRetry;              // ms from an attempt to the next one with the same peer; 0 for the default
-	UINT PunchBackoff;            // ms that the pair stays on the relay after PunchAttempts failed attempts; 0 for the default
+	UINT PunchRetry;              // ms from the end of an attempt to the next one with the same peer; 0 for the default
+	UINT PunchBackoff;            // ms that the pair stays on the relay after the end of PunchAttempts failed attempts; 0 for the default
 	UINT PunchConsent;            // ms without a word of the peer on a punched path, after which the pair falls back to the relay; 0 for the default
 	UINT SessionRekeyTime;        // ms after which the initiator of a peer session's keys replaces them; 0 for the default
 	UINT64 SessionRekeyDatagrams; // Records sent under one key after which the sender replaces it; 0 for the default
@@ -278,7 +278,7 @@ typedef struct PEER_CONFIG {
 #define PEER_DEFAULT_PUNCH_PORTS    12      // The birthday range: the next port of a sequential NAT within 12 above the predicted one
 #define PEER_DEFAULT_PUNCH_RATE     64      // Punch messages per second, probes and answers
 #define PEER_DEFAULT_PUNCH_ATTEMPTS 3       // Attempts that meet nothing before the backoff
-#define PEER_DEFAULT_PUNCH_RETRY    20000   // ms from one attempt to the next
+#define PEER_DEFAULT_PUNCH_RETRY    20000   // ms from the end of one attempt to the next
 #define PEER_DEFAULT_PUNCH_BACKOFF  1800000 // ms on the relay after the attempts
 #define PEER_DEFAULT_PUNCH_CONSENT  30000   // ms of silence that end a punched path, as consent freshness ends one of ICE
 // The timers of a peer session, those of the Noise session (Noise.h): rekey after 2 min or 2^24 records under one

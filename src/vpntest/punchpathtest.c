@@ -76,7 +76,7 @@
 #define	PUNCHPATH_BIND			400			// The keepalive of the Bindings of the Nodes: their BindInterval (ms) ...
 #define	PUNCHPATH_BIND_RETRY	200			// ... and their BindRetry (ms)
 #define	PUNCHPATH_ICE_WAIT		90000		// ms for ICE to give up the pair: libjuice fails a pair whose checks get no answer for 39.5 s
-#define	PUNCHPATH_RETRY			3000		// The PunchRetry of the Nodes: ms from an attempt to the next
+#define	PUNCHPATH_RETRY			3000		// The PunchRetry of the Nodes: ms from the end of an attempt to the next
 #define	PUNCHPATH_ATTEMPTS		3			// The PunchAttempts of the Nodes: attempts that meet nothing before the backoff
 #define	PUNCHPATH_BACKOFF		20000		// The PunchBackoff of the Nodes (ms)
 #define	PUNCHPATH_CONSENT		6000		// The PunchConsent of the Nodes: ms of silence that end a punched path
@@ -1506,7 +1506,8 @@ static bool PunchPathLimits(PUNCHPATH_CTX *ctx, UINT64 *third)
 	PunchPathCheck(ctx, echoes == PUNCHPATH_ECHOES && same, "When the punch fails, the pair stays on relay-1 with no loss of its session: packets of the hosts go on through relay-1 in the same peer session",
 		"%u echoes came back; %s", echoes, detail);
 
-	// The backoff: no attempt begins until it ends, PUNCHPATH_BACKOFF ms after the third offer
+	// The backoff: no attempt begins until it ends, PUNCHPATH_BACKOFF ms after the end of the third attempt, which began at
+	// *third
 	UINT64 quiet_until = *third + PUNCHPATH_BACKOFF - 2 * PUNCHPATH_RETRY;
 	UINT64 attempts_a = st[PUNCHPATH_A].PunchAttempts, attempts_b = st[PUNCHPATH_B].PunchAttempts;
 	bool quiet = true;

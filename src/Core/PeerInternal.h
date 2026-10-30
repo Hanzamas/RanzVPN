@@ -148,8 +148,9 @@ typedef struct PEER_PUNCH {
 	PEER_ADDR Own;                                          // The node's predicted port when its probes began, which its punch answer names
 	UINT Budget;                                            // Probes left of the attempt
 	UINT Failures;                                          // Attempts in a row that met nothing, the one under way among them
-	UINT64 NextAttempt;                                     // When the next attempt may begin (PeerNow): PunchRetry, or PunchBackoff after the last one
+	UINT64 NextAttempt;                                     // When the next attempt may begin (PeerNow): PunchRetry after the end of one, or PunchBackoff after the last one
 	UINT64 Offered;                                         // When the node sealed its last punch offer, 0 for none or once it was answered
+	bool Answer;                                            // The last punch offer of the peer began an attempt: its punch answer is due
 	UINT64 LastProbe;                                       // When the last probe of the attempt went: it fails PEER_PUNCH_LINGER after, once its budget is spent
 	UINT64 LastSent;                                        // When the node last sent a keepalive on the punched path
 	volatile LONG64 LastHeard;                              // When the peer was last heard on the punched path (PeerNow)
