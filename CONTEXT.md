@@ -537,7 +537,7 @@ _Avoid_: port forward, UPnP candidate
 `PortMapping` in the Configuration store (`NODE_SETTING_PORT_MAPPING`). With 1 the Peer agent asks the home gateway for a public port of the ICE socket with PCP, NAT-PMP or UPnP (libplum). Without it, or with 0, libplum never starts and no request of it leaves the Node. It is off by default, because a port that a gateway opens is attack surface.
 
 **Upgrade** and **Fallback**:
-A Path moving from the Relay to the direct path once an ICE session validates a pair (Upgrade), and back when consent freshness fails it (Fallback). Both are counted per Node in `PEER_STATS`, and reported as the **Path counters**. After a Fallback ICE runs again for the pair, so it moves back once a direct path validates again.
+A Path moving from the Relay to the direct path once an ICE session validates a pair (Upgrade), and back when consent freshness fails it (Fallback). Both are counted per Node in `PEER_STATS`, and reported in its Telemetry as the **Path counters** (`Telemetry.paths`). After a Fallback ICE runs again for the pair, so it moves back once a direct path validates again.
 _Avoid_: switchover, failover
 
 **Path counters**:
@@ -1029,7 +1029,7 @@ The protections of the fork that the switch of an L2 Network applies to the fram
 A Node behind which the real gateway of an L2 Network is (its router and the DHCP server of its LAN), or the Node that answers DHCP for it. No protection holds for its ports, and the addresses that it sends from are its own before a client's. **Client (of an L2 Network)** is any member that is not a gateway; the protections of the Network hold for it.
 
 **User login**:
-A User proves its password at the Controller (`internal/login`), and the login gives a user token or enrols a device (SDN-32). It is not the Login of a Noise session (`NOISE_LOGIN`), nor the SE-VPN login.
+A User proves its password at the Controller (`internal/login`), and the login gives a user token or enrols a device (SDN-32), or gives a token of the **Self scope** (SDN-58). It is not the Login of a Noise session (`NOISE_LOGIN`), nor the SE-VPN login.
 _Avoid_: session (the slim fork's `SESSION` and the Controller's session of SDN-50 are other things)
 
 **Password login**, **Browser login**, **Device code login**:
@@ -1051,7 +1051,7 @@ What an admin of the whole API sets for a Network to bound its **Scoped roles** 
 The Network whose **Scoped roles** administer a resource: the `scope` of a User, a Group, a Node and a Policy, which must name a Network (`intent.ScopeOf`). A Network is in its own scope. A Node that names none is in the scope of its owner, so the device that a User of a Network enrols is in that Network. A resource with none, and every resource of another kind (a VRF, a Controller and the rest), is changed by the roles of the whole API alone. The scope is in the Intent, so a revision, a rollback and an export carry it. A Network that is the scope of a resource cannot be deleted.
 
 **Provider group**:
-A group of an identity provider, as the provider names it, that an admin maps to an API role held for the whole API or for one Network (`rbac.GroupMapping`, `PUT /api/v1/tokens/provider-groups/PROVIDER`, table `provider_groups`, outside the Intent). A login through the provider gives its User a user token with the role that the groups of the person give, for the scope of their mapping, and nothing more. It is fixed when the token is made, so a person that changes team gets the new role at the next login. The identity providers (SDN-34 to SDN-36) are not built yet, so no login uses the mappings.
+A group of an identity provider, as the provider names it, that an admin maps to an API role held for the whole API or for one Network (`rbac.GroupMapping`, `PUT /api/v1/tokens/provider-groups/PROVIDER`, table `provider_groups`, outside the Intent). A login through the provider gives its User a user token with the role that the groups of the person give, for the scope of their mapping, and nothing more. The role is fixed when the token is made, so a person that changes team gets the new role at the next login. The identity providers (SDN-34 to SDN-36) are not built yet, so no login uses the mappings.
 _Avoid_: Group (the Intent resource that names Users)
 
 **Enrolment (of a device)**:
