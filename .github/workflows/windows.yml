@@ -1792,7 +1792,8 @@ jobs:
         .github/scripts/fetch-msquic.ps1 -Arch x64 -DllDir "${{ github.workspace }}\artifacts\bin"
     # QTIP between two server node processes on this runner, each on its own KM-TEST adapter with XDP (CORE-S7-2, #83;
     # ADR-0018 decision 5, ADR-0002 amendment of 2026-10-21): ranz install, vpntest qtip in one process, then the wire
-    # between the nodes (an internal Hyper-V switch with a host vNIC for each), node-s (vpntest qtip serve) with QTIP on
+    # between the nodes (an internal Hyper-V switch with a host vNIC for each, set up as the DuoNic pair on which msquic
+    # tests XDP and QTIP on one host), node-s (vpntest qtip serve) with QTIP on
     # 8443, whose TCP and UDP port must be held, and node-c (vpntest qtip dial), whose QTIP link to node-s across the wire
     # must come up, then the wire goes and ranz uninstall (.github/scripts/qtip.ps1)
     - name: QTIP between two server node processes

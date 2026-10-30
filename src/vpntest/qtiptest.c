@@ -34,12 +34,13 @@
 // session of node-c with the static key of node-s, which only node-s holds. It prints "QTIP LINK UP" or "QTIP LINK DOWN"
 // for the job summary. The wire is the job's (.github/scripts/qtip.ps1): an internal Hyper-V switch with a host vNIC for
 // each node, since XDP sends the frames of an AF_XDP socket down to the miniport, below its own hooks, and a KM-TEST
-// adapter sends nowhere what reaches it (send.c of the XDP LWF of xdp-for-windows 1.4.0). ADDRESS is no address of the
-// host: the stack of the host would carry a packet to one of its own addresses on the loopback, never on the wire. So
-// node-c's msquic takes the route to it out of the vNIC of node-c, to the MAC of the vNIC of node-s, which the job gives
-// it as a neighbour of that vNIC (RawResolveRoute of datapath_raw_socket_win.c of msquic 2.6.2), and node-s's msquic
-// takes the frames with its rule on the port of its listener, whatever their address, and answers on the route that they
-// came on (datapath_raw_socket.c).
+// adapter sends nowhere what reaches it (send.c of the XDP LWF of xdp-for-windows 1.4.0), set up as the DuoNic pair on
+// which msquic tests its XDP datapath and QTIP on one host (duonic.ps1 of microsoft/corenet-ci). ADDRESS is the address of
+// the vNIC of node-s, and each vNIC has a permanent neighbour entry and a /32 route for the address of the other node, so
+// that the host takes the route between the two out of the vNICs and not over the loopback: node-c's msquic takes its
+// source address from the host, node-s's msquic takes the frames with its rule on the port of its listener, and each end
+// resolves its route from its own address to the MAC of the other vNIC (RawResolveRoute of datapath_raw_socket_win.c of
+// msquic 2.6.2), which an address of node-s that is no address of the host would leave without a route back.
 // Print "QTIP TEST OK" only when every check passes; skip, passing, where msquic.dll is not present. Needs administrator
 // rights: the LocalMachine\My store and its key storage provider, and the KM-TEST adapters of serve and dial.
 

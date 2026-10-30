@@ -10,19 +10,23 @@
 #    role and its PowerShell module are features of the windows-2022 and windows-2025 images) with a host vNIC for each
 #    node, both with XDP. A KM-TEST adapter cannot be the wire: XDP sends the frames of an AF_XDP socket down to the
 #    miniport, below its own hooks, and a KM-TEST adapter sends nowhere what reaches it (send.c of the XDP LWF of
-#    xdp-for-windows 1.4.0). The vNIC of node-c has 198.18.85.2/24. node-s is 198.18.85.1 on the wire, which is no address
-#    of the host: the stack of the host carries a packet to one of its own addresses on the loopback, never on the wire, so
-#    the vNIC of node-s has no IPv4 address, and the vNIC of node-c has a neighbour entry for 198.18.85.1 with the MAC of
-#    the vNIC of node-s. msquic takes the route to an address and that entry for its frames (RawResolveRoute of
-#    datapath_raw_socket_win.c of msquic 2.6.2), and the rule of a QTIP listener on its port takes frames whatever their
-#    address, answered on the route that they came on (datapath_raw_socket.c).
+#    xdp-for-windows 1.4.0). The wire is set up as the DuoNic pair on which msquic tests its XDP datapath and QTIP on one
+#    host (vm-setup/duonic/duonic.ps1 of microsoft/corenet-ci): the vNIC of node-s has 198.18.85.1/24 and the vNIC of
+#    node-c 198.18.85.2/24, and each vNIC has a permanent neighbour entry for the address of the other node, with the MAC
+#    of the other vNIC, and a /32 route to it with metric 0, so that the host takes the route between the two addresses
+#    out of the vNICs and not over the loopback. msquic needs it on both ends: the client takes its source address from
+#    the host, and both ends resolve their route with GetBestRoute2 from their own address and take the neighbour entry
+#    of its next hop (RawResolveRoute of datapath_raw_socket_win.c of msquic 2.6.2). An address of node-s that is no
+#    address of the host leaves node-s without a route back: msquic answers the TCP handshake of QTIP on the route of the
+#    frame that it received (datapath_raw_socket.c), but the QUIC packets of its connection on a route that it resolves.
 # 3. Two server node processes. node-s (vpntest qtip serve STOPFILE) brings up its own KM-TEST adapter with XDP and its
 #    Listener with QTIP on 8443, and prints READY with the thumbprint of its certificate; from outside, Get-NetTCPConnection
 #    and Get-NetUDPEndpoint must show TCP 8443 and UDP 8443 held by its process. node-c (vpntest qtip dial THUMBPRINT
 #    198.18.85.1) brings up its own KM-TEST adapter with XDP, finds both ports held from its process and the QTIP listener
 #    of node-s out of reach of plain QUIC over the loopback, and dials node-s over QTIP across the wire: the
 #    QUIC-over-TCP-header link must come up, and node-s must say that its overlay took the stream. The frames that the two
-#    vNICs counted go to the job summary with the link.
+#    vNICs counted go to the job summary with the link, and the frames of port 8443 that pktmon captured on the adapters
+#    during the dial go to the log.
 # 4. The wire goes, then ranz uninstall.
 # Each run of vpntest is a process of its own with a time limit.
 param(
@@ -48,10 +52,12 @@ $script:runs = 0
 $wireSwitch = 'ranz-qtip'
 $dialNic = "vEthernet ($wireSwitch)"
 $serveNic = "vEthernet ($wireSwitch-s)"
-# node-c on the wire, the prefix length of the wire, and node-s on the wire, which is no address of the host
+# node-c on the wire, the prefix length of the wire, and node-s on the wire: the addresses of the two vNICs
 $dialWire = '198.18.85.2'
 $wireLength = 24
 $serveWire = '198.18.85.1'
+# The packet capture of the dial (pktmon, in the image of Windows Server since 2019), for the log
+$capture = Join-Path $env:RUNNER_TEMP 'qtip-dial.etl'
 
 # A step that failed: the job goes on with the next one and fails at the end
 function Add-Failure([string] $step) {
@@ -118,8 +124,9 @@ function Wait-Nic([string] $name) {
 	return $null
 }
 
-# The wire between node-c and node-s (step 2 above): the vNIC of node-c, with its address, and the vNIC of node-s, with
-# none, both with XDP, and the neighbour entry of node-s on the vNIC of node-c. It throws what went wrong.
+# The wire between node-c and node-s (step 2 above): the vNIC of each node with its address, both with XDP, and on each
+# vNIC the neighbour entry and the /32 route of the address of the other node, as duonic.ps1 has them. It throws what
+# went wrong.
 function New-Wire {
 	Remove-VMSwitch -Name $wireSwitch -Force -ErrorAction SilentlyContinue
 	$null = New-VMSwitch -Name $wireSwitch -SwitchType Internal -ErrorAction Stop
@@ -141,36 +148,86 @@ function New-Wire {
 		if (-not $b.Enabled) { Enable-NetAdapterBinding -Name $nic.Name -ComponentID ms_xdp -ErrorAction Stop }
 	}
 
-	# No DHCP and no automatic IPv4 address on either: node-c's vNIC gets its address on the wire, node-s's none
-	foreach ($nic in @($c, $s)) {
-		Set-NetIPInterface -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -Dhcp Disabled -ErrorAction Stop
-		Get-NetIPAddress -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
-	}
-	$null = New-NetIPAddress -InterfaceIndex $c.ifIndex -IPAddress $dialWire -PrefixLength $wireLength -ErrorAction Stop
-	$ip = $null
-	$deadline = (Get-Date).AddSeconds(30)
-	while ((Get-Date) -lt $deadline) {
-		$ip = Get-NetIPAddress -InterfaceIndex $c.ifIndex -IPAddress $dialWire -ErrorAction SilentlyContinue
-		if ($ip -and $ip.AddressState -eq 'Preferred') { break }
-		Start-Sleep -Milliseconds 500
-	}
-	if (-not $ip -or $ip.AddressState -ne 'Preferred') { throw "$dialWire on $dialNic is not preferred: $(if ($ip) { $ip.AddressState } else { 'no address' })" }
-	$left = @(Get-NetIPAddress -InterfaceIndex $s.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue)
-	if ($left.Count -gt 0) { throw "$serveNic keeps an IPv4 address: $(@($left | ForEach-Object { $_.IPAddress }) -join ', ')" }
+	# The two ends: each vNIC with the address of its node, and the other vNIC with the address of the other node
+	$ends = @(
+		[pscustomobject]@{ Nic = $c; Address = $dialWire; Peer = $s; PeerAddress = $serveWire },
+		[pscustomobject]@{ Nic = $s; Address = $serveWire; Peer = $c; PeerAddress = $dialWire }
+	)
 
-	# node-s on the wire is at the MAC of its vNIC: a neighbour entry of the vNIC of node-c, which never goes stale
-	$null = New-NetNeighbor -InterfaceIndex $c.ifIndex -IPAddress $serveWire -LinkLayerAddress ($s.MacAddress -replace '-', '') -State Permanent -ErrorAction Stop
-
-	# The host takes the route to node-s out of the vNIC of node-c, from node-c's address on the wire
-	$found = @(Find-NetRoute -RemoteIPAddress $serveWire -ErrorAction Stop)
-	$elsewhere = @($found | Where-Object { $_.InterfaceIndex -ne $c.ifIndex })
-	$from = @($found | Where-Object { $_.IPAddress -eq $dialWire })
-	if ($found.Count -eq 0 -or $elsewhere.Count -gt 0 -or $from.Count -eq 0) {
-		throw "the route to $serveWire does not leave $dialNic (interface $($c.ifIndex)) from ${dialWire}: $(@($found | ForEach-Object { "interface $($_.InterfaceIndex) $($_.IPAddress)$($_.DestinationPrefix)" }) -join '; ')"
+	# No DHCP, no other IPv4 address, and no duplicate address detection, whose probes the other vNIC of the same host
+	# receives: each vNIC gets the address of its node and nothing else
+	foreach ($e in $ends) {
+		Set-NetIPInterface -InterfaceIndex $e.Nic.ifIndex -AddressFamily IPv4 -Dhcp Disabled -DadTransmits 0 -ErrorAction Stop
+		Get-NetIPAddress -InterfaceIndex $e.Nic.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
+		$null = New-NetIPAddress -InterfaceIndex $e.Nic.ifIndex -IPAddress $e.Address -PrefixLength $wireLength -ErrorAction Stop
+	}
+	foreach ($e in $ends) {
+		$ip = $null
+		$deadline = (Get-Date).AddSeconds(30)
+		while ((Get-Date) -lt $deadline) {
+			$ip = Get-NetIPAddress -InterfaceIndex $e.Nic.ifIndex -IPAddress $e.Address -ErrorAction SilentlyContinue
+			if ($ip -and $ip.AddressState -eq 'Preferred') { break }
+			Start-Sleep -Milliseconds 500
+		}
+		if (-not $ip -or $ip.AddressState -ne 'Preferred') { throw "$($e.Address) on $($e.Nic.Name) is not preferred: $(if ($ip) { $ip.AddressState } else { 'no address' })" }
 	}
 
-	Write-Host "the wire: the internal switch $wireSwitch; node-c's vNIC $dialNic (interface $($c.ifIndex), MAC $($c.MacAddress)) with $dialWire/$wireLength; node-s's vNIC $serveNic (interface $($s.ifIndex), MAC $($s.MacAddress)) with no IPv4 address, and node-s at $serveWire behind it"
+	# Each vNIC reaches the other node at the MAC of the other vNIC, with a neighbour entry that never goes stale, on a /32
+	# route that wins over the route of the host to an address of its own ("Without these routing rules, applications
+	# would have to explicitly bind to a source address", duonic.ps1)
+	foreach ($e in $ends) {
+		$null = New-NetNeighbor -InterfaceIndex $e.Nic.ifIndex -IPAddress $e.PeerAddress -LinkLayerAddress ($e.Peer.MacAddress -replace '-', '') -State Permanent -ErrorAction Stop
+		$null = New-NetRoute -InterfaceIndex $e.Nic.ifIndex -DestinationPrefix "$($e.PeerAddress)/32" -NextHop '0.0.0.0' -RouteMetric 0 -PolicyStore ActiveStore -ErrorAction Stop
+	}
+
+	# The host takes the route to each node out of the vNIC of the other node, from the address of the other node
+	foreach ($e in $ends) {
+		$found = @(Find-NetRoute -RemoteIPAddress $e.PeerAddress -ErrorAction Stop)
+		$elsewhere = @($found | Where-Object { $_.InterfaceIndex -ne $e.Nic.ifIndex })
+		$from = @($found | Where-Object { $_.IPAddress -eq $e.Address })
+		if ($found.Count -eq 0 -or $elsewhere.Count -gt 0 -or $from.Count -eq 0) {
+			throw "the route to $($e.PeerAddress) does not leave $($e.Nic.Name) (interface $($e.Nic.ifIndex)) from $($e.Address): $(@($found | ForEach-Object { "interface $($_.InterfaceIndex) $($_.IPAddress)$($_.DestinationPrefix)" }) -join '; ')"
+		}
+	}
+
+	Write-Host "the wire: the internal switch $wireSwitch; node-c's vNIC $dialNic (interface $($c.ifIndex), MAC $($c.MacAddress)) with $dialWire/$wireLength and node-s's vNIC $serveNic (interface $($s.ifIndex), MAC $($s.MacAddress)) with $serveWire/$wireLength, each with the neighbour entry and the /32 route of the other address"
 	return [pscustomobject]@{ Dial = $c; Serve = $s }
+}
+
+# Start pktmon on the adapters for the TCP and UDP frames of port 8443, for the log of the dial; a capture that does not
+# start is said and is no failure
+function Start-Capture {
+	try {
+		$null = & pktmon stop 2>&1
+		$null = & pktmon filter remove 2>&1
+		$out = (& pktmon filter add qtip -p $port 2>&1 | Out-String)
+		if ($LASTEXITCODE -ne 0) { throw "pktmon filter add: $out" }
+		Remove-Item -LiteralPath $capture -Force -ErrorAction SilentlyContinue
+		$out = (& pktmon start --capture --comp nics --file-name $capture 2>&1 | Out-String)
+		if ($LASTEXITCODE -ne 0) { throw "pktmon start: $out" }
+		return $true
+	} catch {
+		Write-Host "no packet capture of the dial: $($_.Exception.Message)"
+		return $false
+	}
+}
+
+# ... and stop it and print what it captured, as text
+function Stop-Capture {
+	try {
+		$null = & pktmon stop 2>&1
+		$null = & pktmon filter remove 2>&1
+		$text = Join-Path $env:RUNNER_TEMP 'qtip-dial.txt'
+		# pktmon format, or pktmon etl2txt on the builds that name it so
+		$out = (& pktmon format $capture -o $text 2>&1 | Out-String)
+		if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $text)) { $out = (& pktmon etl2txt $capture --out $text 2>&1 | Out-String) }
+		if (-not (Test-Path -LiteralPath $text)) { throw "the capture could not be read: $out" }
+		$lines = @(Get-Content -LiteralPath $text)
+		Write-Host "the frames of port $port that pktmon captured on the adapters during the dial ($($lines.Count) lines, the first 400):"
+		$lines | Select-Object -First 400 | ForEach-Object { Write-Host "  $_" }
+	} catch {
+		Write-Host "the packet capture of the dial: $($_.Exception.Message)"
+	}
 }
 
 # The unicast frames that a vNIC of the wire sent and received so far, $null when it has no statistics
@@ -237,7 +294,9 @@ if (-not $thumbprint) {
 	# node-c dials node-s at its address on the wire: the QUIC-over-TCP-header link must come up
 	$c0 = Get-Frames $dialNic
 	$s0 = Get-Frames $serveNic
+	$captured = Start-Capture
 	$dial = Wait-Qtip (Start-Qtip @('dial', $thumbprint, $serveWire)) 5
+	if ($captured) { Stop-Capture }
 	if (-not $dial.Ok) { Add-Failure 'vpntest qtip dial: node-c' }
 	$link = [regex]::Match($dial.Text, '(?m)^QTIP LINK (UP|DOWN).*$')
 	$record = $(if ($link.Success) { $link.Value.Trim() } else { 'QTIP LINK: node-c printed no line of the link' })
@@ -245,7 +304,7 @@ if (-not $thumbprint) {
 	$frames = "$(Format-Frames $dialNic $c0 (Get-Frames $dialNic)); $(Format-Frames $serveNic $s0 (Get-Frames $serveNic))"
 	Write-Host "$record`n$frames"
 	if ($env:GITHUB_STEP_SUMMARY) {
-		"QTIP between two server node processes on $Runner, each on its own KM-TEST adapter with XDP, across an internal Hyper-V switch: $record ($frames)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+		"QTIP between two server node processes on $Runner, each on its own KM-TEST adapter with XDP, across an internal Hyper-V switch set up as the DuoNic pair of msquic: $record ($frames)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 	}
 }
 
