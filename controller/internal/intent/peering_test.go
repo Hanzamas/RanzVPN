@@ -177,9 +177,11 @@ func TestPeeringRoutesAreBounded(t *testing.T) {
 	}
 	for _, c := range []struct{ nats, routes int }{{5, 17}, {6, 18}} {
 		_, err := Apply(New(), doc(build(bgp, "", c.nats)...), nil)
-		want := fmt.Sprintf(`Node "a": %d routes lead to its peer "x", the outside prefixes of the 1:1 NAT rules of the peer with the routes that leaks add and the LAN subnets and hub prefixes of the peer, and the control protocol carries at most 16`, c.routes)
-		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), want) {
-			t.Errorf("12 LAN subnets and %d NAT rules of one peer in a VRF that peers by BGP: %v, want an error with %q", c.nats, err, want)
+		// The head and the tail of the message of the routes of the Controller (TestPeerRoutesAreBounded pins the whole of it)
+		want := fmt.Sprintf(`Node "a": %d routes lead to its peer "x", `, c.routes)
+		const tail = `and the control protocol carries at most 16`
+		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), tail) {
+			t.Errorf("12 LAN subnets and %d NAT rules of one peer in a VRF that peers by BGP: %v, want an error with %q and %q", c.nats, err, want, tail)
 			continue
 		}
 		// The same LAN subnets as routes of the Controller, in a VRF that does not peer, are refused with the same message
