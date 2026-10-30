@@ -78,12 +78,12 @@ func (s *Store) DeleteUserToken(ctx context.Context, hash string) (string, bool,
 	return name, wr.RowsAffected > 0, nil
 }
 
-// DeleteUserTokens deletes every user token of the users names, in one transaction. A user that has
-// none is no error.
+// DeleteUserTokens deletes every user token of the users names, and every token of their self scope
+// (selftokens.go), in one transaction. A user that has none is no error.
 func (s *Store) DeleteUserTokens(ctx context.Context, names []string) error {
 	var stmts []gorqlite.ParameterizedStatement
 	for _, name := range names {
-		stmts = append(stmts, statement(`DELETE FROM user_tokens WHERE name = ?`, name))
+		stmts = append(stmts, statement(`DELETE FROM user_tokens WHERE name = ?`, name), statement(`DELETE FROM self_tokens WHERE name = ?`, name))
 	}
 	if len(stmts) == 0 {
 		return nil
@@ -94,11 +94,14 @@ func (s *Store) DeleteUserTokens(ctx context.Context, names []string) error {
 	return nil
 }
 
-// EndUserTokens makes every user token of the User name that would end after until end at until: the
-// User expires then (intent.User.Expires), and a token never outlives its User.
+// EndUserTokens makes every user token of the User name, and every token of its self scope, that would end
+// after until end at until: the User expires then (intent.User.Expires), and a token never outlives its User.
 func (s *Store) EndUserTokens(ctx context.Context, name string, until time.Time) error {
 	ms := until.UnixMilli()
-	if err := s.write(ctx, []gorqlite.ParameterizedStatement{statement(`UPDATE user_tokens SET expires = ? WHERE name = ? AND expires > ?`, ms, name, ms)}); err != nil {
+	if err := s.write(ctx, []gorqlite.ParameterizedStatement{
+		statement(`UPDATE user_tokens SET expires = ? WHERE name = ? AND expires > ?`, ms, name, ms),
+		statement(`UPDATE self_tokens SET expires = ? WHERE name = ? AND expires > ?`, ms, name, ms),
+	}); err != nil {
 		return fmt.Errorf("store: ending the user tokens of a user: %w", err)
 	}
 	return nil

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-page="portal-sign-in">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in | Ranz portal</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css">
+<script type="module" src="/assets/portal-sign-in.js"></script>
+</head>
+<body class="narrow">
+<main>
+<h1>Ranz portal</h1>
+<p>Sign in with your user name and your password to see and manage your own devices, and to make a join token for a device that cannot sign in itself. The portal shows you nothing of anybody else, and nothing of the network that you do not own.</p>
+<ranz-problem></ranz-problem>
+<form id="sign-in" data-action="signIn">
+<label for="user">User name</label>
+<input id="user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+<label for="password">Password</label>
+<input id="password" type="password" autocomplete="current-password" required>
+<button type="submit">Sign in</button>
+</form>
+<p class="hint">Administrators sign in to the <a href="/sign-in">console</a> with an API token. This page signs in a user, which an administrator makes in the controller; it stays in this tab until you sign out or close it.</p>
+</main>
+</body>
+</html>
