@@ -31,7 +31,11 @@
 // - Roaming: a unicast address that comes, changes or goes on another interface (NotifyUnicastIpAddressChange) closes
 //   the streams once the changes settled, so the servers are dialled again on the new path.
 // - The logged-in user drives the role through a named pipe that the interactive users may open and no one remote:
-//   one command a line, status, up or down, each answered with the status of the role as one JSON object.
+//   one command a line, status, up or down, each answered with the status of the role as one JSON object. The tray of
+//   the laptop (ranz tray; SDN-55, #248) is that user: exit chooses the exit node that the traffic of the host leaves
+//   through, or none (NodeExit.c), key gives the public half of the static key of the node, and enrol takes the
+//   Controller settings that the sign-in of the user brought, while the node has none (NodeController.c). The status
+//   names the node and its Controller, and lists the exit nodes.
 //
 // The role takes its states from the control stream of the Controller settings of the node (NodeController.c; SDN-90,
 // #395), or without them from NodeOverlayApply, as the vpntest harness gives them. In the ranzvpnserver service the role
@@ -50,6 +54,7 @@
 
 #include "Core/Control.h"
 
+#include "NodeExit.h"
 #include "NodeInternal.h"
 
 #include <iphlpapi.h>
@@ -115,6 +120,8 @@ struct NODE_CLIENT {
 	HANDLE PipeHandle;                              // The server end of the pipe, INVALID_HANDLE_VALUE without
 	HANDLE PipeStop;                                // Ends the thread of the pipe
 	HANDLE PipeThread;                              // The thread of the pipe
+	bool Rejoin;                                    // An enrolment has the node take its Controller settings once the user closed the pipe (the thread of the pipe only)
+	NODE_EXIT *Exit;                                // The exit node that the logged-in user chose (NodeExit.c; SDN-55, #248)
 };
 
 static void NodeClientPipeStop(NODE_CLIENT *c);
@@ -347,6 +354,8 @@ static bool NodeClientDial(void *param, const char *address, HANDLE cancel, void
 	Unlock(c->Lock);
 	targets = raced;
 
+	// The server addresses keep off the adapter that an exit node gives the default routes (NodeExit.c; SDN-55, #248)
+	NodeExitDial(c->Exit);
 	TRANSPORT_STREAM *t = TransportRace(targets, num, TRANSPORT_RACE_DELAY, NODE_CLIENT_DIAL, &race);
 	if (t == NULL) {
 		bool logged;
@@ -365,6 +374,11 @@ static bool NodeClientDial(void *param, const char *address, HANDLE cancel, void
 	NODE_CLIENT_STREAM *cs = ZeroMalloc(sizeof(NODE_CLIENT_STREAM));
 	cs->Client = c;
 	cs->Stream = t;
+
+	// ... and so does the address that the stream reached
+	char remote[MAX_SIZE];
+	if (TransportRemote(t, remote, sizeof(remote)))
+		NodeExitAddServer(c->Exit, remote);
 
 	Lock(c->Lock);
 	{
@@ -512,6 +526,9 @@ static void NodeClientState(NODE *n, void *param, const CONTROL_STATE *st) {
 
 	InterlockedExchange(&c->VrfId, (LONG)vrf);
 	bool ok = NodeVrfAdaptersApply(c->Adapters, st);
+	// The exit nodes of the tables in place, and the default routes of the chosen one on the adapter of its VRF (NodeExit.c;
+	// SDN-55, #248)
+	NodeExitApplied(c->Exit);
 
 	NodeLog(n, "Client: generation %I64u on the adapters %S <VRF>: the first address in VRF %u, %u addresses, %u VRFs%s", st->Generation, c->Adapter, vrf,
 	        st->NumAddresses, st->NumVrfs, ok ? "" : " (not all of them set, see the lines before)");
@@ -621,6 +638,8 @@ static VOID CALLBACK NodeClientSettled(PTP_CALLBACK_INSTANCE instance, PVOID con
 	c->NumRoams++;
 	Unlock(c->Lock);
 
+	// The server addresses keep off the adapter of an exit node on the new path too (NodeExit.c; SDN-55, #248)
+	NodeExitRoam(c->Exit);
 	NodeClientReset(c, "roaming: an address of another interface changed, so the servers are dialled again on the new path");
 }
 
@@ -678,15 +697,35 @@ static void NodeClientSetDown(NODE_CLIENT *c, bool down) {
 	if (changed == false)
 		return;
 
+	// The routes of an exit node leave the host while the role is down (NodeExit.c; SDN-55, #248)
+	NodeExitSetDown(c->Exit, down);
+
 	if (down)
 		NodeClientReset(c, "down by the logged-in user: the streams close, and no server is dialled");
 	else
 		NodeLog(c->Node, "Client: up by the logged-in user: the servers are dialled again");
 }
 
+// The JSON object o as one answer of the pipe into reply, of size bytes, and o freed: an answer that does not fit is an
+// error that says so, since a JSON text cut short would be none
+static void NodeClientPrintJson(cJSON *o, char *reply, UINT size) {
+	char *text = cJSON_PrintUnformatted(o);
+
+	if (text != NULL && StrLen(text) < size)
+		StrCpy(reply, size, text);
+	else
+		StrCpy(reply, size, "{\"error\":\"the answer does not fit the pipe\"}");
+
+	if (text != NULL)
+		cJSON_free(text);
+	cJSON_Delete(o);
+}
+
 // The status of the role as one JSON object: its state (connected, connecting, down or asleep), the adapter and its
 // interface, the transport of the last stream, the peers of the overlay and their sessions, the node's addresses and
-// the counters
+// the counters; for the tray (SDN-55, #248) the name of the node, its Controller settings and control stream
+// (NodeController.c) and its exit nodes (NodeExit.c). A role that reaches its Controller and has a session to each peer
+// is connected, with no peer too; one without a control stream is connected once it has a session to each of its peers.
 static void NodeClientStatusJson(NODE_CLIENT *c, char *reply, UINT size) {
 	NODE_OVERLAY_STATUS os;
 	NODE_VRF_ADAPTER_STATUS first;
@@ -709,7 +748,7 @@ static void NodeClientStatusJson(NODE_CLIENT *c, char *reply, UINT size) {
 			state = "down";
 		else if (c->Asleep)
 			state = "asleep";
-		else if (os.NumPeers != 0 && os.NumLinks == os.NumPeers)
+		else if (os.NumLinks == os.NumPeers && (os.NumPeers != 0 || os.Connected))
 			state = "connected";
 		else
 			state = "connecting";
@@ -736,29 +775,79 @@ static void NodeClientStatusJson(NODE_CLIENT *c, char *reply, UINT size) {
 	cJSON_AddNumberToObject(o, "fromHost", (double)from_host);
 	cJSON_AddNumberToObject(o, "toHost", (double)to_host);
 
-	char *text = cJSON_PrintUnformatted(o);
-	StrCpy(reply, size, text != NULL ? text : "{}");
-	if (text != NULL)
-		cJSON_free(text);
-	cJSON_Delete(o);
+	// The node and its Controller, and the exit nodes (SDN-55, #248)
+	cJSON_AddStringToObject(o, "name", os.Name);
+	NodeControllerClientJson(c->Node, o);
+	NodeExitJson(c->Exit, o);
+
+	NodeClientPrintJson(o, reply, size);
 }
 
-// One command line of the logged-in user: status, up or down, without case. up and down take the role up and down,
-// and each is answered with the status of the role; another line with an error. The line is compared with the three
-// words and nothing else of it is read.
-static void NodeClientCommand(NODE_CLIENT *c, char *line, char *reply, UINT size) {
-	Trim(line);
+// Whether a word is a VRF id: 1 to 10 decimal digits
+static bool NodeClientNumber(const char *s) {
+	UINT len = StrLen(s);
 
-	if (StrCmpi(line, "up") == 0) {
+	if (len == 0 || len > 10)
+		return false;
+
+	for (UINT i = 0; i < len; i++)
+		if (s[i] < '0' || s[i] > '9')
+			return false;
+
+	return true;
+}
+
+// One command line of the logged-in user, its words without case: status; up and down, which take the role up and down;
+// exit NAME [VRF] and exit none, which choose the exit node that the traffic of the host leaves through, the one of the
+// name in the VRF of the id or in the one VRF that has it, or none (NodeExit.c); key, the public half of the static key of
+// the node; enrol ADDRESS KEY FINGERPRINT, the Controller settings that the sign-in of the user brought (NodeController.c).
+// status, up, down and exit are answered with the status of the role, key and enrol with what they give, and a command
+// that is refused or no command with an error. The words are split at white space and nothing else of the line is read.
+static void NodeClientCommand(NODE_CLIENT *c, char *line, char *reply, UINT size) {
+	TOKEN_LIST *t = ParseToken(line, " \t\r\n");
+	cJSON *o = NULL;
+	char error[MAX_SIZE];
+
+	StrCpy(error, sizeof(error), "");
+
+	if (t->NumTokens == 1 && StrCmpi(t->Token[0], "up") == 0) {
 		NodeClientSetDown(c, false);
-	} else if (StrCmpi(line, "down") == 0) {
+	} else if (t->NumTokens == 1 && StrCmpi(t->Token[0], "down") == 0) {
 		NodeClientSetDown(c, true);
-	} else if (StrCmpi(line, "status") != 0) {
-		StrCpy(reply, size, "{\"error\":\"unknown command: status, up or down\"}");
-		return;
+	} else if (t->NumTokens == 2 && StrCmpi(t->Token[0], "exit") == 0 && StrCmpi(t->Token[1], "none") == 0) {
+		NodeExitClear(c->Exit);
+	} else if ((t->NumTokens == 2 || t->NumTokens == 3) && StrCmpi(t->Token[0], "exit") == 0) {
+		if (t->NumTokens == 3 && NodeClientNumber(t->Token[2]) == false)
+			StrCpy(error, sizeof(error), "the VRF of an exit node is its id, a number");
+		else
+			NodeExitChoose(c->Exit, t->Token[1], (t->NumTokens == 3 ? ToInt(t->Token[2]) : 0), t->NumTokens == 2, error, sizeof(error));
+	} else if (t->NumTokens == 1 && StrCmpi(t->Token[0], "key") == 0) {
+		UINT key_size = 0;
+		char *key = Base64FromBin(&key_size, c->Key.Public, PEER_KEY_SIZE);
+
+		o = cJSON_CreateObject();
+		cJSON_AddStringToObject(o, "publicKey", key != NULL ? key : "");
+		Free(key);
+	} else if (t->NumTokens == 4 && StrCmpi(t->Token[0], "enrol") == 0) {
+		o = cJSON_CreateObject();
+		if (NodeControllerEnrol(c->Node, t->Token[1], t->Token[2], t->Token[3], o))
+			c->Rejoin = true;
+	} else if (t->NumTokens != 1 || StrCmpi(t->Token[0], "status") != 0) {
+		StrCpy(error, sizeof(error), "unknown command: status, up, down, exit NAME [VRF], exit none, key or enrol ADDRESS KEY FINGERPRINT");
 	}
 
-	NodeClientStatusJson(c, reply, size);
+	FreeToken(t);
+
+	if (IsEmptyStr(error) == false) {
+		cJSON_Delete(o);
+		o = cJSON_CreateObject();
+		cJSON_AddStringToObject(o, "error", error);
+	}
+
+	if (o != NULL)
+		NodeClientPrintJson(o, reply, size);
+	else
+		NodeClientStatusJson(c, reply, size);
 }
 
 // One read or write of the pipe, overlapped, until it completes, the role stops or the user stays idle too long; false
@@ -857,6 +946,13 @@ static DWORD WINAPI NodeClientPipeThread(LPVOID param) {
 			Sleep(NODE_CLIENT_SLICE);
 
 		DisconnectNamedPipe(c->PipeHandle);
+
+		// The user who enrolled the node has its answer: the node takes the Controller settings now, which starts the role
+		// again (NodeController.c; SDN-55, #248)
+		if (c->Rejoin) {
+			c->Rejoin = false;
+			NodeControllerRejoinStart(c->Node);
+		}
 	}
 
 	if (event != NULL)
@@ -963,6 +1059,9 @@ void NodeClientGetStatus(NODE *n, NODE_CLIENT_STATUS *st) {
 				st->NumRoams = c->NumRoams;
 			}
 			Unlock(c->Lock);
+
+			// The exit node that the logged-in user chose (NodeExit.c; SDN-55, #248)
+			NodeExitGetStatus(c->Exit, st);
 		}
 	}
 	Unlock(n->Lock);
@@ -984,6 +1083,21 @@ UINT NodeClientGetAdapters(NODE *n, NODE_VRF_ADAPTER_STATUS *list, UINT max) {
 	Unlock(n->Lock);
 
 	return num;
+}
+
+// A server address of the client role of a node, as its dialler takes one for each stream that connects (host:port, an IPv6
+// host in brackets; NodeExit.c, SDN-55 #248): the vpntest harness gives one that the runner reaches through its default route,
+// since the servers of the test listen on the loopback interface. Nothing while the role holds nothing.
+void NodeClientServerAddress(NODE *n, const char *address) {
+	if (n == NULL)
+		return;
+
+	Lock(n->Lock);
+	{
+		if (n->Client != NULL)
+			NodeExitAddServer(n->Client->Exit, address);
+	}
+	Unlock(n->Lock);
 }
 
 // The overlay of the node with the adapters and the dialler of the role, and the control stream of the Controller settings
@@ -1009,8 +1123,13 @@ static bool NodeClientOverlayStart(NODE_CLIENT *c) {
 	cfg.Dialable = NodeClientDialable;
 	// A failed handshake sends the next dial of its server to the next transport of the list (CORE-H5-R, #443)
 	cfg.Refused = NodeClientRefused;
-	// The control stream to the Controller of the Controller settings, when the node has them (NodeController.c; SDN-90, #395)
+	// The default routes of the peers only through the exit node that the user chose (NodeExit.c; SDN-55, #248)
+	cfg.Exit = c->Exit;
+	// The control stream to the Controller of the Controller settings, when the node has them (NodeController.c; SDN-90, #395),
+	// whose address keeps off the adapter of an exit node too
 	NodeControllerOverlay(c->Node, &cfg);
+	if (cfg.Control != NULL)
+		NodeExitAddServer(c->Exit, cfg.Controller);
 
 	c->Overlay = NodeOverlayStart(c->Node, &cfg);
 
@@ -1018,9 +1137,9 @@ static bool NodeClientOverlayStart(NODE_CLIENT *c) {
 }
 
 // Release what the role holds, in the order that keeps each part valid for the ones that call into it: the pipe and the
-// adapter queues, the events, the overlay, which closes every stream of the dialler, then the adapters, the key and
-// the transports. The overlay stops under the node lock here (NodeSetRoles): it has no control stream that would take
-// it.
+// adapter queues, the events, the overlay, which closes every stream of the dialler, then the routes of the exit node,
+// the adapters, the key and the transports. The overlay stops under the node lock here (NodeSetRoles): it has no
+// control stream that would take it.
 static void NodeClientFree(NODE_CLIENT *c) {
 	NODE *n = c->Node;
 
@@ -1030,6 +1149,8 @@ static void NodeClientFree(NODE_CLIENT *c) {
 	if (c->Overlay && n->Overlay != NULL)
 		NodeOverlayStop(n);
 
+	// The routes of the exit node leave the host before its adapters go (NodeExit.c; SDN-55, #248)
+	NodeExitFree(c->Exit);
 	NodeVrfAdaptersFree(c->Adapters);
 	PeerKeyClose(&c->Key);
 
@@ -1091,6 +1212,8 @@ bool NodeClientStart(NODE *n) {
 	if (ok) {
 		c->Adapters = NodeVrfAdaptersNew(n, c->Adapter, c->Key.Public, c->Forwarding);
 		ok = (c->Adapters != NULL);
+		// The exit node, whose default routes go on the adapter of its VRF (NodeExit.c; SDN-55, #248)
+		c->Exit = NodeExitNew(n, c->Adapters);
 	}
 
 	if (ok) {

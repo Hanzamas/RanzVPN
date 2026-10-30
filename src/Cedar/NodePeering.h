@@ -59,6 +59,6 @@ struct CONTROL_PEERING_REPORT *NodePeeringGetReport(NODE *n);
 void NodePeeringFailNext(NODE *n, UINT copies, UINT rebuilds);
 
 // NodeOverlay.c
-UINT NodeOverlayRebuild(NODE *n, const struct CONTROL_STATE *st);
+UINT NodeOverlayRebuild(NODE *n, const struct CONTROL_STATE *with);
 
 #endif // NODE_PEERING_H

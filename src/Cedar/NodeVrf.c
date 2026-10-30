@@ -15,6 +15,7 @@
 
 #include "Node.h"
 #include "NodeEgress.h"
+#include "NodeExit.h"
 #include "NodeGateway.h"
 #include "NodeLink.h"
 #include "NodeProfile.h"
@@ -307,6 +308,8 @@ void NodeFreeVrfTables(NODE_VRF_TABLES *v) {
 	NodePolicyFreeTable(v->Policy);
 	// The session profiles (NodeProfile.c; SDN-40, #233)
 	NodeProfileFreeTable(v->Profile);
+	// The exit nodes (NodeExit.c; SDN-55, #248)
+	NodeExitFreeTable(v->Exit);
 
 	NodeFreeNat(v->Nat);
 	Free(v->HopVrfs);
