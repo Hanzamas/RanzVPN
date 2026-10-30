@@ -67,6 +67,9 @@ go  controller/internal/cluster         61
 go  controller/internal/control         76
 go  controller/internal/controller      82
 go  controller/internal/desired         79
+# clusterkey (AUD1-DT-16 #501): the Cluster key of a controller cluster, which its tests run with members on rqlite clusters
+# of the test; set below the first measure, which the Linux job of ranz.yml records
+go  controller/internal/clusterkey      70
 # devicekey (SDN-82 #377): the key pair of a Device and the QR code of its configuration. The statements that no input
 # reaches are the error that crypto/ecdh cannot give for a private key of 32 bytes, and in qrscan (the scanner that the
 # tests of the QR code share) the error of a picture that cannot be a bitmap
