@@ -796,6 +796,20 @@ def make_peer_seeds():
     write_seed('fuzz_peer', 'bind_envelope.bin', PEER_BIND_ENVELOPE)
     # A bound with the header of an envelope and a ciphertext that opens for no one
     write_seed('fuzz_peer', 'bound_garbage.bin', b'\x03' + PEER_RELAY + PEER_A + b'\0' * 43)
+    # The STUN messages of ICE at B, whose session with A has A's answer (CORE-S5-6-R1, #537): a check of A that names the
+    # username fragment of that session as RanzUfrg, which fuzz_peer.c puts in its place, so the session takes it and
+    # libjuice dispatches it (agent_dispatch_stun); the same with USE-CANDIDATE; and an answer to no check of B. Each has a
+    # MESSAGE-INTEGRITY that is no HMAC, and no FINGERPRINT, which the fragment put in its place would break.
+    check = (stun_attr(0x0006, b'RanzUfrg:RanzPeer') + stun_attr(0x0024, struct.pack('>I', 0x6E7F1EFF)) +
+             stun_attr(0x8029, struct.pack('>Q', 0x0102030405060708)))
+    integrity = stun_attr(0x0008, bytes(20))
+    write_seed('fuzz_peer', 'stun_check.bin',
+               struct.pack('>HHI', 0x0001, len(check + integrity), STUN_COOKIE) + STUN_TID + check + integrity)
+    nominate = check + stun_attr(0x0025, b'') + integrity
+    write_seed('fuzz_peer', 'stun_check_use_candidate.bin',
+               struct.pack('>HHI', 0x0001, len(nominate), STUN_COOKIE) + STUN_TID + nominate)
+    write_seed('fuzz_peer', 'stun_answer.bin',
+               stun_response(stun_attr(0x0020, stun_address(1, 40000, bytes([203, 0, 113, 20]), True)) + integrity))
 
 
 # ---------------------------------------------------------------------------

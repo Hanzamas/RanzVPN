@@ -26,7 +26,9 @@ src/Core  NoiseLoginParse       fuzz_noise
 src/Core  NoiseTunnelFlowHash   fuzz_noise
 
 # The peer module (CORE-S5-2 #78): datagrams, envelopes and signals; the STUN messages of ICE on the socket of the layer,
-# which libjuice reads (CORE-S5-3 #79, CORE-S5-6 #412)
+# which libjuice reads (CORE-S5-3 #79, CORE-S5-6 #412): PeerIceInput reads each once with juice_peer_read of the peer mode
+# of libjuice (src/Core/3rdparty/juice-peer.c, which this file does not scope) and hands it to the session that it names,
+# whose dispatch the seeds of fuzz_peer reach (its fuzz-reach line; CORE-S5-6-R1 #537)
 src/Core  PeerInput             fuzz_peer
 src/Core  PeerIceInput          fuzz_peer  via PeerInput
 src/Core  PeerOpenSignal        fuzz_peer
