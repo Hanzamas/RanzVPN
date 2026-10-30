@@ -11,9 +11,10 @@ $PSNativeCommandUseErrorActionPreference = $false
 #   - vpntest peering runs three nodes whose sidecars peer on TCP 179 of 127.0.0.2, 127.0.0.3 and 127.0.0.4 in a full mesh
 #     of two VRFs (src/vpntest/peeringtest.c) and must print "PEERING TEST OK" and "NO MEMORY LEAKS". On a failure it prints
 #     the log of each node and of its sidecar.
-#   - vpntest bgpboth runs the sidecar of the operator, which listens on TCP 179 of every address, and the sidecar of the
-#     peering, which listens on TCP 179 of 127.0.0.2, on this host in either order of start (src/vpntest/bgpbothtest.c), and
-#     must print "BGPBOTH TEST OK" and "NO MEMORY LEAKS". It shows whether the two sidecars of one node bind without a clash.
+#   - vpntest bgpboth runs the sidecar of the operator, which listens on TCP 179 of every address (0.0.0.0 and ::), and the
+#     sidecar of the peering, which listens on TCP 179 of 127.0.0.2, and then of ::1, on this host in either order of start
+#     (src/vpntest/bgpbothtest.c), and must print "BGPBOTH TEST OK" and "NO MEMORY LEAKS". It shows whether the two sidecars
+#     of one node bind without a clash, for IPv4 and for IPv6 tunnel endpoints.
 
 $build = (Resolve-Path -LiteralPath $BuildDir).Path
 

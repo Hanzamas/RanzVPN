@@ -2,19 +2,20 @@
 // Named test of vpntest ("bgpboth" command, SDN-77-R1 #531)
 //
 // The two BGP sidecars of one host: the one toward the routers of the operator (Cedar/NodeBgp.c), whose settings name no
-// listen_addresses, so that GoBGP listens on TCP 179 of every address, and the one of the BGP peering of the standard mode
-// (Cedar/NodePeering.c), which listens on TCP 179 of the address of its node on the network that the operator trusts only,
-// 127.0.0.2 here. Each sidecar starts BGP, which sends ready only once GoBGP listens, while the other one runs, in either
-// order of start:
+// listen_addresses, so that GoBGP listens on TCP 179 of every address, 0.0.0.0 and :: (its default list), and the one of the BGP
+// peering of the standard mode (Cedar/NodePeering.c), which listens on TCP 179 of the address of its node on the network that
+// the operator trusts only: 127.0.0.2 for a node of IPv4 tunnel endpoints, and ::1 for one of IPv6 tunnel endpoints, which the
+// Intent allows as well (a host has one IPv6 loopback address). For each family, each sidecar starts BGP, which sends ready only
+// once GoBGP listens, while the other one runs, in either order of start:
 // - the order of a node: the sidecar of the operator starts first, at NodeStart, and the one of the peering with the first
 //   Generation that has a peering of the node; one node runs both;
 // - the other order: the sidecar of the peering of one node runs, and another node of the same host starts the sidecar of
 //   the operator.
-// In each order the test reads from the TCP table of Windows that each sidecar listens where it should: the one of the
-// operator on 0.0.0.0, the one of the peering on 127.0.0.2; and a session to 127.0.0.2:179 from 127.0.0.9, an address that no
-// peer has, reaches the sidecar of the peering, which refuses it and its node counts it, and not the one of the operator. A
-// sidecar that cannot listen sends an error and exits, and the node log, which the test prints then, names the error of the
-// bind.
+// In each order the test reads from the TCP table of Windows of the family that each sidecar listens where it should: the one
+// of the operator on every address, the one of the peering on the address of its node; and a session to TCP 179 of that
+// address from an address that no peer has (127.0.0.9, and ::1 itself for IPv6, which no peer has either) reaches the sidecar
+// of the peering, which refuses it and its node counts it, and not the one of the operator. A sidecar that cannot listen sends
+// an error and exits, and the node log, which the test prints then, names the error of the bind.
 // Print "BGPBOTH TEST OK" only when every check passes. .github/scripts/bgp-peering.ps1 runs it after vpntest peering.
 
 #include "testlist.h"
@@ -51,14 +52,32 @@
 #define	BGPBOTHTEST_ASN			4200000000U	// The AS of the overlay (intent.PeeringASN)
 #define	BGPBOTHTEST_VRF			101			// The VRF that peers by BGP
 #define	BGPBOTHTEST_HOLD		9			// The hold time of the session of the peering in s
-#define	BGPBOTHTEST_ADDRESS		"127.0.0.2"	// The address of the node on the network that the operator trusts
-#define	BGPBOTHTEST_PEER		"127.0.0.3"	// ... and of the sidecar of its peer, which never answers
-#define	BGPBOTHTEST_STRANGER	"127.0.0.9"	// An address that no peer has
 
 // The settings of the sidecar of the operator: no listen_addresses, so GoBGP listens on every address, and one peer that
 // waits for a connection that never comes
 #define	BGPBOTHTEST_SETTINGS	"{\"asn\":65001,\"router_id\":\"192.0.2.1\"," \
 								"\"peers\":[{\"address\":\"192.0.2.99\",\"asn\":65002,\"passive\":true}]}"
+
+// The addresses of one family of tunnel endpoints
+typedef struct BGPBOTHTEST_FAMILY
+{
+	char *Name;							// IPv4 or IPv6
+	int Af;								// ... its address family
+	char *Any;							// Every address, where the sidecar of the operator listens
+	char *Address;						// The address of the node on the network that the operator trusts
+	char *Peer;							// ... and of the sidecar of its peer, which never answers
+	char *Stranger;						// An address that no peer has
+	char *RouterId;						// The router id of the node: its IPv4 address, or 4 bytes of its own for an IPv6 one (intent.RouterID)
+} BGPBOTHTEST_FAMILY;
+
+static BGPBOTHTEST_FAMILY bgpbothtest_families[] =
+{
+	{"IPv4", AF_INET, "0.0.0.0", "127.0.0.2", "127.0.0.3", "127.0.0.9", "127.0.0.2"},
+	// A host has one IPv6 loopback address: the node has it, and the session from an address that no peer has comes from it too
+	{"IPv6", AF_INET6, "::", "::1", "2001:db8::3", "::1", "192.0.2.2"},
+};
+
+#define	BGPBOTHTEST_FAMILIES	(sizeof(bgpbothtest_families) / sizeof(bgpbothtest_families[0]))
 
 // A node of the test
 typedef struct BGPBOTHTEST_NODE
@@ -140,21 +159,35 @@ static bool BgpBothIp(UCHAR *addr, char *str)
 	return true;
 }
 
-// The IPv4 address of a text in network byte order, as the TCP table of Windows holds it; 0 for anything else
-static UINT BgpBothIpUint(char *str)
+// The address str of the family f into addr, 16 bytes: the number of its bytes, 4 or 16, as a state and the TCP table of Windows
+// hold it; 0 for anything else
+static UINT BgpBothAddr(const BGPBOTHTEST_FAMILY *f, char *str, UCHAR *addr)
 {
-	UCHAR addr[4];
-	UINT ret = 0;
+	Zero(addr, 16);
+	if (InetPtonA(f->Af, str, addr) != 1)
+	{
+		return 0;
+	}
 
-	BgpBothIp(addr, str);
-	Copy(&ret, addr, 4);
-
-	return ret;
+	return (f->Af == AF_INET ? 4 : 16);
 }
 
-// The desired state of a node whose VRF red peers by BGP, as the Controller compiles it: the node at BGPBOTHTEST_ADDRESS,
-// with one peer whose sidecar at BGPBOTHTEST_PEER never answers. BgpBothFreeState frees it.
-static CONTROL_STATE *BgpBothState(char *name)
+// The text of TCP 179 of the address str of the family f: 127.0.0.2:179, or [::1]:179
+static void BgpBothEndpoint(char *text, UINT size, const BGPBOTHTEST_FAMILY *f, char *str)
+{
+	if (f->Af == AF_INET)
+	{
+		Format(text, size, "%s:%u", str, (UINT)BGPBOTHTEST_PORT);
+	}
+	else
+	{
+		Format(text, size, "[%s]:%u", str, (UINT)BGPBOTHTEST_PORT);
+	}
+}
+
+// The desired state of a node whose VRF red peers by BGP, as the Controller compiles it: the node at the address of the family f,
+// with one peer whose sidecar never answers. BgpBothFreeState frees it.
+static CONTROL_STATE *BgpBothState(char *name, const BGPBOTHTEST_FAMILY *f)
 {
 	CONTROL_STATE *st = ZeroMalloc(sizeof(CONTROL_STATE));
 	CONTROL_PEERING *own = ZeroMalloc(sizeof(CONTROL_PEERING));
@@ -177,9 +210,8 @@ static CONTROL_STATE *BgpBothState(char *name)
 	BgpBothIp(st->Addresses[0].Address, "10.0.0.1");
 
 	own->Asn = BGPBOTHTEST_ASN;
-	BgpBothIp(own->RouterId, BGPBOTHTEST_ADDRESS);
-	BgpBothIp(own->Address, BGPBOTHTEST_ADDRESS);
-	own->AddressSize = 4;
+	BgpBothIp(own->RouterId, f->RouterId);
+	own->AddressSize = BgpBothAddr(f, f->Address, own->Address);
 	st->Peering = own;
 
 	st->Peers = ZeroMalloc(sizeof(CONTROL_PEER));
@@ -200,8 +232,7 @@ static CONTROL_STATE *BgpBothState(char *name)
 	cp->Addresses[0].Length = 24;
 	BgpBothIp(cp->Addresses[0].Address, "10.0.0.2");
 
-	BgpBothIp(pp->Address, BGPBOTHTEST_PEER);
-	pp->AddressSize = 4;
+	pp->AddressSize = BgpBothAddr(f, f->Peer, pp->Address);
 	pp->HoldTime = BGPBOTHTEST_HOLD;
 	pp->NumVrfs = 1;
 	pp->VrfIds[0] = BGPBOTHTEST_VRF;
@@ -317,9 +348,9 @@ static void BgpBothStartNode(BGPBOTHTEST_NODE *t, char *name, bool with_operator
 	NodeStart(t->Node);
 }
 
-// Start the overlay of node t without a control stream and apply the Generation that has a peering of the node: its sidecar
-// of the peering starts. Whether the overlay took the Generation.
-static bool BgpBothStartPeering(BGPBOTHTEST_CTX *ctx, BGPBOTHTEST_NODE *t, char *name, UCHAR seed)
+// Start the overlay of node t without a control stream and apply the Generation that has a peering of the node at the address of
+// the family f: its sidecar of the peering starts. Whether the overlay took the Generation.
+static bool BgpBothStartPeering(BGPBOTHTEST_CTX *ctx, BGPBOTHTEST_NODE *t, char *name, UCHAR seed, const BGPBOTHTEST_FAMILY *f)
 {
 	UCHAR scalar[PEER_KEY_SIZE];
 	NODE_OVERLAY_CONFIG c;
@@ -344,53 +375,73 @@ static bool BgpBothStartPeering(BGPBOTHTEST_CTX *ctx, BGPBOTHTEST_NODE *t, char 
 		return false;
 	}
 
-	CONTROL_STATE *st = BgpBothState(name);
+	CONTROL_STATE *st = BgpBothState(name, f);
 	bool ok = NodeOverlayApply(t->Node, st);
 	BgpBothFreeState(st);
 
 	return ok;
 }
 
-// Whether the process pid listens on TCP 179 of the IPv4 address addr, in network byte order (0 for every address)
-static bool BgpBothListens(UINT pid, UINT addr)
+// Whether the process pid listens on TCP 179 of the address str of the family f, as the TCP table of Windows of that family holds it
+static bool BgpBothListens(UINT pid, const BGPBOTHTEST_FAMILY *f, char *str)
 {
+	UCHAR addr[16];
 	DWORD size = 0;
 	bool ret = false;
 
-	if (pid == 0)
+	if (pid == 0 || BgpBothAddr(f, str, addr) == 0)
 	{
 		return false;
 	}
 
-	GetExtendedTcpTable(NULL, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
+	GetExtendedTcpTable(NULL, &size, FALSE, (ULONG)f->Af, TCP_TABLE_OWNER_PID_LISTENER, 0);
 	if (size == 0)
 	{
 		return false;
 	}
 
-	MIB_TCPTABLE_OWNER_PID *t = ZeroMalloc(size);
+	void *table = ZeroMalloc(size);
 
-	if (GetExtendedTcpTable(t, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0) == NO_ERROR)
+	if (GetExtendedTcpTable(table, &size, FALSE, (ULONG)f->Af, TCP_TABLE_OWNER_PID_LISTENER, 0) == NO_ERROR)
 	{
-		for (DWORD i = 0;i < t->dwNumEntries;i++)
+		if (f->Af == AF_INET)
 		{
-			MIB_TCPROW_OWNER_PID *r = &t->table[i];
+			MIB_TCPTABLE_OWNER_PID *t = (MIB_TCPTABLE_OWNER_PID *)table;
 
-			if (r->dwOwningPid == pid && ntohs((USHORT)r->dwLocalPort) == BGPBOTHTEST_PORT && r->dwLocalAddr == addr)
+			for (DWORD i = 0;i < t->dwNumEntries;i++)
 			{
-				ret = true;
+				MIB_TCPROW_OWNER_PID *r = &t->table[i];
+
+				if (r->dwOwningPid == pid && ntohs((USHORT)r->dwLocalPort) == BGPBOTHTEST_PORT && Cmp(&r->dwLocalAddr, addr, 4) == 0)
+				{
+					ret = true;
+				}
+			}
+		}
+		else
+		{
+			MIB_TCP6TABLE_OWNER_PID *t = (MIB_TCP6TABLE_OWNER_PID *)table;
+
+			for (DWORD i = 0;i < t->dwNumEntries;i++)
+			{
+				MIB_TCP6ROW_OWNER_PID *r = &t->table[i];
+
+				if (r->dwOwningPid == pid && ntohs((USHORT)r->dwLocalPort) == BGPBOTHTEST_PORT && Cmp(r->ucLocalAddr, addr, 16) == 0)
+				{
+					ret = true;
+				}
 			}
 		}
 	}
 
-	Free(t);
+	Free(table);
 
 	return ret;
 }
 
-// Whether the sidecar of the operator of node t runs BGP and listens on TCP 179 of every address, within BGPBOTHTEST_BOUND;
-// its process into pid
-static bool BgpBothWaitOperator(BGPBOTHTEST_NODE *t, UINT *pid)
+// Whether the sidecar of the operator of node t runs BGP and listens on TCP 179 of every address of the family f, within
+// BGPBOTHTEST_BOUND; its process into pid
+static bool BgpBothWaitOperator(BGPBOTHTEST_NODE *t, const BGPBOTHTEST_FAMILY *f, UINT *pid)
 {
 	UINT64 end = Tick64() + BGPBOTHTEST_BOUND;
 
@@ -400,7 +451,7 @@ static bool BgpBothWaitOperator(BGPBOTHTEST_NODE *t, UINT *pid)
 
 		NodeBgpGetStatus(t->Node, &st);
 		*pid = st.ProcessId;
-		if (st.Running && BgpBothListens(st.ProcessId, 0))
+		if (st.Running && BgpBothListens(st.ProcessId, f, f->Any))
 		{
 			return true;
 		}
@@ -412,9 +463,9 @@ static bool BgpBothWaitOperator(BGPBOTHTEST_NODE *t, UINT *pid)
 	}
 }
 
-// Whether the sidecar of the peering of node t runs BGP and listens on TCP 179 of BGPBOTHTEST_ADDRESS, within
+// Whether the sidecar of the peering of node t runs BGP and listens on TCP 179 of the address of the node of the family f, within
 // BGPBOTHTEST_BOUND; its process into pid
-static bool BgpBothWaitPeering(BGPBOTHTEST_NODE *t, UINT *pid)
+static bool BgpBothWaitPeering(BGPBOTHTEST_NODE *t, const BGPBOTHTEST_FAMILY *f, UINT *pid)
 {
 	UINT64 end = Tick64() + BGPBOTHTEST_BOUND;
 
@@ -424,7 +475,7 @@ static bool BgpBothWaitPeering(BGPBOTHTEST_NODE *t, UINT *pid)
 
 		NodePeeringGetStatus(t->Node, &st);
 		*pid = st.ProcessId;
-		if (st.Running && BgpBothListens(st.ProcessId, BgpBothIpUint(BGPBOTHTEST_ADDRESS)))
+		if (st.Running && BgpBothListens(st.ProcessId, f, f->Address))
 		{
 			return true;
 		}
@@ -436,26 +487,36 @@ static bool BgpBothWaitPeering(BGPBOTHTEST_NODE *t, UINT *pid)
 	}
 }
 
-// Whether a session to TCP 179 of BGPBOTHTEST_ADDRESS from BGPBOTHTEST_STRANGER, an address that no peer has, reaches the sidecar of
-// the peering of node t and not the sidecar of the operator, which listens on every address: the sidecar of the peering refuses it
-// and node t counts it (NODE_PEERING_STATUS.Refused), within BGPBOTHTEST_BOUND
-static bool BgpBothReachesPeering(BGPBOTHTEST_NODE *t)
+// Whether a session to TCP 179 of the address of the node of the family f, from an address that no peer has, reaches the sidecar
+// of the peering of node t and not the sidecar of the operator, which listens on every address: the sidecar of the peering refuses
+// it and node t counts it (NODE_PEERING_STATUS.Refused), within BGPBOTHTEST_BOUND
+static bool BgpBothReachesPeering(BGPBOTHTEST_NODE *t, const BGPBOTHTEST_FAMILY *f)
 {
 	NODE_PEERING_STATUS before, after;
-	struct sockaddr_in local, remote;
+	SOCKADDR_INET local, remote;
+	int len = (f->Af == AF_INET ? (int)sizeof(SOCKADDR_IN) : (int)sizeof(SOCKADDR_IN6));
 
 	NodePeeringGetStatus(t->Node, &before);
 
 	Zero(&local, sizeof(local));
-	local.sin_family = AF_INET;
-	InetPtonA(AF_INET, BGPBOTHTEST_STRANGER, &local.sin_addr);
 	Zero(&remote, sizeof(remote));
-	remote.sin_family = AF_INET;
-	remote.sin_port = htons(BGPBOTHTEST_PORT);
-	InetPtonA(AF_INET, BGPBOTHTEST_ADDRESS, &remote.sin_addr);
+	local.si_family = (ADDRESS_FAMILY)f->Af;
+	remote.si_family = (ADDRESS_FAMILY)f->Af;
+	if (f->Af == AF_INET)
+	{
+		InetPtonA(AF_INET, f->Stranger, &local.Ipv4.sin_addr);
+		InetPtonA(AF_INET, f->Address, &remote.Ipv4.sin_addr);
+		remote.Ipv4.sin_port = htons(BGPBOTHTEST_PORT);
+	}
+	else
+	{
+		InetPtonA(AF_INET6, f->Stranger, &local.Ipv6.sin6_addr);
+		InetPtonA(AF_INET6, f->Address, &remote.Ipv6.sin6_addr);
+		remote.Ipv6.sin6_port = htons(BGPBOTHTEST_PORT);
+	}
 
-	SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	bool connected = (s != INVALID_SOCKET && bind(s, (struct sockaddr *)&local, sizeof(local)) == 0 && connect(s, (struct sockaddr *)&remote, sizeof(remote)) == 0);
+	SOCKET s = socket(f->Af, SOCK_STREAM, IPPROTO_TCP);
+	bool connected = (s != INVALID_SOCKET && bind(s, (struct sockaddr *)&local, len) == 0 && connect(s, (struct sockaddr *)&remote, len) == 0);
 
 	UINT64 end = Tick64() + BGPBOTHTEST_BOUND;
 	bool counted = false;
@@ -553,29 +614,35 @@ static void BgpBothCloseNode(BGPBOTHTEST_NODE *t)
 	BgpBothDeleteFiles(t->Dir);
 }
 
-// The order of a node: its sidecar of the operator starts at NodeStart and listens on every address, then the first
-// Generation with a peering of the node starts its sidecar of the peering, which listens on BGPBOTHTEST_ADDRESS; both run
-static void BgpBothOperatorFirst(BGPBOTHTEST_CTX *ctx)
+// The order of a node: its sidecar of the operator starts at NodeStart and listens on every address, then the first Generation
+// with a peering of the node at the address of the family f starts its sidecar of the peering, which listens on that address; both
+// run. seed makes the static key of the node.
+static void BgpBothOperatorFirst(BGPBOTHTEST_CTX *ctx, const BGPBOTHTEST_FAMILY *f, UCHAR seed)
 {
 	BGPBOTHTEST_NODE t;
 	UINT op_pid = 0, peering_pid = 0;
+	char any[MAX_SIZE], address[MAX_SIZE], what[MAX_SIZE * 2];
 
-	Print("[one node: the sidecar of the operator starts first, then the one of the peering]\n");
+	BgpBothEndpoint(any, sizeof(any), f, f->Any);
+	BgpBothEndpoint(address, sizeof(address), f, f->Address);
+	Print("[%s, one node: the sidecar of the operator starts first, then the one of the peering]\n", f->Name);
 
 	BgpBothStartNode(&t, "one", true);
-	bool op = BgpBothWaitOperator(&t, &op_pid);
-	BgpBothCheck(ctx, op, "The sidecar of the operator runs BGP and listens on TCP 179 of every address", "process %u", op_pid);
+	bool op = BgpBothWaitOperator(&t, f, &op_pid);
+	Format(what, sizeof(what), "The sidecar of the operator runs BGP and listens on %s, every %s address", any, f->Name);
+	BgpBothCheck(ctx, op, what, "process %u", op_pid);
 
-	bool applied = BgpBothStartPeering(ctx, &t, "node-one", 0x31);
-	bool peering = (applied && BgpBothWaitPeering(&t, &peering_pid));
-	BgpBothCheck(ctx, peering, "The sidecar of the peering of the same node then runs BGP and listens on TCP 179 of 127.0.0.2", "applied %u, process %u",
-		(UINT)applied, peering_pid);
+	bool applied = BgpBothStartPeering(ctx, &t, "node-one", seed, f);
+	bool peering = (applied && BgpBothWaitPeering(&t, f, &peering_pid));
+	Format(what, sizeof(what), "The sidecar of the peering of the same node then runs BGP and listens on %s", address);
+	BgpBothCheck(ctx, peering, what, "applied %u, process %u", (UINT)applied, peering_pid);
 
-	bool both = (op && peering && BgpBothListens(op_pid, 0) && BgpBothListens(peering_pid, BgpBothIpUint(BGPBOTHTEST_ADDRESS)));
-	BgpBothCheck(ctx, both, "Both sidecars of the node listen at once, the one of the operator on 0.0.0.0:179 and the one of the peering on 127.0.0.2:179",
-		"operator %u, peering %u", (UINT)op, (UINT)peering);
-	BgpBothCheck(ctx, both && BgpBothReachesPeering(&t), "A session to 127.0.0.2:179 from 127.0.0.9 reaches the sidecar of the peering, which refuses it and the node counts it, and not the one of the operator",
-		"both listen %u", (UINT)both);
+	bool both = (op && peering && BgpBothListens(op_pid, f, f->Any) && BgpBothListens(peering_pid, f, f->Address));
+	Format(what, sizeof(what), "Both sidecars of the node listen at once, the one of the operator on %s and the one of the peering on %s", any, address);
+	BgpBothCheck(ctx, both, what, "operator %u, peering %u", (UINT)op, (UINT)peering);
+	Format(what, sizeof(what), "A session to %s from %s reaches the sidecar of the peering, which refuses it and the node counts it, and not the one of the operator", address,
+		f->Stranger);
+	BgpBothCheck(ctx, both && BgpBothReachesPeering(&t, f), what, "both listen %u", (UINT)both);
 
 	if (both == false)
 	{
@@ -586,29 +653,36 @@ static void BgpBothOperatorFirst(BGPBOTHTEST_CTX *ctx)
 	BgpBothCheck(ctx, BgpBothWaitExited(op_pid, peering_pid), "Both sidecars exit once the node stops", "process %u and %u", op_pid, peering_pid);
 }
 
-// The other order: the sidecar of the peering of one node runs and listens on BGPBOTHTEST_ADDRESS, then another node of the
-// host starts the sidecar of the operator, which listens on every address; both run
-static void BgpBothPeeringFirst(BGPBOTHTEST_CTX *ctx)
+// The other order: the sidecar of the peering of one node runs and listens on the address of the family f, then another node of
+// the host starts the sidecar of the operator, which listens on every address; both run. seed makes the static key of the node of
+// the peering.
+static void BgpBothPeeringFirst(BGPBOTHTEST_CTX *ctx, const BGPBOTHTEST_FAMILY *f, UCHAR seed)
 {
 	BGPBOTHTEST_NODE a, b;
 	UINT op_pid = 0, peering_pid = 0;
+	char any[MAX_SIZE], address[MAX_SIZE], what[MAX_SIZE * 2];
 
-	Print("[two nodes of one host: the sidecar of the peering runs, then the one of the operator starts]\n");
+	BgpBothEndpoint(any, sizeof(any), f, f->Any);
+	BgpBothEndpoint(address, sizeof(address), f, f->Address);
+	Print("[%s, two nodes of one host: the sidecar of the peering runs, then the one of the operator starts]\n", f->Name);
 
 	BgpBothStartNode(&a, "peering", false);
-	bool applied = BgpBothStartPeering(ctx, &a, "node-peering", 0x51);
-	bool peering = (applied && BgpBothWaitPeering(&a, &peering_pid));
-	BgpBothCheck(ctx, peering, "The sidecar of the peering runs BGP and listens on TCP 179 of 127.0.0.2", "applied %u, process %u", (UINT)applied, peering_pid);
+	bool applied = BgpBothStartPeering(ctx, &a, "node-peering", seed, f);
+	bool peering = (applied && BgpBothWaitPeering(&a, f, &peering_pid));
+	Format(what, sizeof(what), "The sidecar of the peering runs BGP and listens on %s", address);
+	BgpBothCheck(ctx, peering, what, "applied %u, process %u", (UINT)applied, peering_pid);
 
 	BgpBothStartNode(&b, "operator", true);
-	bool op = BgpBothWaitOperator(&b, &op_pid);
-	BgpBothCheck(ctx, op, "The sidecar of the operator then runs BGP and listens on TCP 179 of every address", "process %u", op_pid);
+	bool op = BgpBothWaitOperator(&b, f, &op_pid);
+	Format(what, sizeof(what), "The sidecar of the operator then runs BGP and listens on %s, every %s address", any, f->Name);
+	BgpBothCheck(ctx, op, what, "process %u", op_pid);
 
-	bool both = (op && peering && BgpBothListens(op_pid, 0) && BgpBothListens(peering_pid, BgpBothIpUint(BGPBOTHTEST_ADDRESS)));
-	BgpBothCheck(ctx, both, "Both sidecars listen at once, the one of the peering on 127.0.0.2:179 and the one of the operator on 0.0.0.0:179",
-		"peering %u, operator %u", (UINT)peering, (UINT)op);
-	BgpBothCheck(ctx, both && BgpBothReachesPeering(&a), "A session to 127.0.0.2:179 from 127.0.0.9 reaches the sidecar of the peering, which refuses it and the node counts it, and not the one of the operator",
-		"both listen %u", (UINT)both);
+	bool both = (op && peering && BgpBothListens(op_pid, f, f->Any) && BgpBothListens(peering_pid, f, f->Address));
+	Format(what, sizeof(what), "Both sidecars listen at once, the one of the peering on %s and the one of the operator on %s", address, any);
+	BgpBothCheck(ctx, both, what, "peering %u, operator %u", (UINT)peering, (UINT)op);
+	Format(what, sizeof(what), "A session to %s from %s reaches the sidecar of the peering, which refuses it and the node counts it, and not the one of the operator", address,
+		f->Stranger);
+	BgpBothCheck(ctx, both && BgpBothReachesPeering(&a, f), what, "both listen %u", (UINT)both);
 
 	if (both == false)
 	{
@@ -621,8 +695,8 @@ static void BgpBothPeeringFirst(BGPBOTHTEST_CTX *ctx)
 	BgpBothCheck(ctx, BgpBothWaitExited(op_pid, peering_pid), "Both sidecars exit once the nodes stop", "process %u and %u", op_pid, peering_pid);
 }
 
-// bgpboth: the sidecar of the operator and the sidecar of the peering on one host, in either order of start
-RANZ_TEST("bgpboth", bgpboth_test, "The two BGP sidecars of one host (ranz.exe next to vpntest): the one of the operator, which listens on TCP 179 of every address, and the one of the BGP peering of the standard mode, which listens on TCP 179 of 127.0.0.2, both run in either order of start.");
+// bgpboth: the sidecar of the operator and the sidecar of the peering on one host, in either order of start, for IPv4 and IPv6
+RANZ_TEST("bgpboth", bgpboth_test, "The two BGP sidecars of one host (ranz.exe next to vpntest): the one of the operator, which listens on TCP 179 of every address, and the one of the BGP peering of the standard mode, which listens on TCP 179 of 127.0.0.2 or ::1, both run in either order of start.");
 void bgpboth_test(UINT num, char **arg)
 {
 	BGPBOTHTEST_CTX *ctx = ZeroMalloc(sizeof(BGPBOTHTEST_CTX));
@@ -640,8 +714,12 @@ void bgpboth_test(UINT num, char **arg)
 
 	if (BgpBothCheck(ctx, ctx->Loopback != NULL && IsFileExistsW(sidecar), "ranz.exe, which holds both sidecars, is next to vpntest.exe", "%S is missing, or no loopback transport", sidecar))
 	{
-		BgpBothOperatorFirst(ctx);
-		BgpBothPeeringFirst(ctx);
+		// A key of its own for each node of the test
+		for (UINT i = 0;i < BGPBOTHTEST_FAMILIES;i++)
+		{
+			BgpBothOperatorFirst(ctx, &bgpbothtest_families[i], (UCHAR)(0x31 + 0x40 * i));
+			BgpBothPeeringFirst(ctx, &bgpbothtest_families[i], (UCHAR)(0x51 + 0x40 * i));
+		}
 	}
 
 	TransportLoopbackFree(ctx->Loopback);

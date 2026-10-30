@@ -157,7 +157,7 @@ type Peer struct {
 }
 
 // PeerVRF is a VRF that a Ranz node shares with the node, and the prefixes that it may announce
-// there, with their more specific ones.
+// there, exactly: a more specific prefix of one is none of them (SDN-77-R1 #531).
 type PeerVRF struct {
 	ID     uint32   `json:"id"`
 	Accept []string `json:"accept,omitempty"`

@@ -523,8 +523,8 @@ jobs:
     # an address that the Controller did not name refused and counted, the peering of a VRF removed and back, and the routes
     # of a node whose sidecar stops answering, and of a node that stops, gone from the other two within the hold time; and
     # vpntest bgpboth: the sidecar of the operator on TCP 179 of every address and the sidecar of the peering on TCP 179 of
-    # 127.0.0.2 of one host, in either order of start (SDN-77-R1, #531) (.github/scripts/bgp-peering.ps1). It needs only the
-    # build, so it runs after a test that failed too.
+    # 127.0.0.2, and of ::1, of one host, in either order of start (SDN-77-R1, #531) (.github/scripts/bgp-peering.ps1). It
+    # needs only the build, so it runs after a test that failed too.
     - name: BGP peering of the standard mode
       if: ${{ !cancelled() }}
       timeout-minutes: 15
