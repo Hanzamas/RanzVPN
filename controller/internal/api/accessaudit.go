@@ -14,8 +14,9 @@ import (
 // what the product may do (the licence). A read of one of them that succeeds is recorded as an
 // audit.Access under the actor that made it, an API token or the User of a user token (Token.Actor),
 // from the address that it came from, with the call as its action; the Log records it at most once a
-// minute for each actor and each read (audit.Log). A read that is refused or fails, a read of anything
-// else and the query of a read are not recorded.
+// minute for each actor and each read (audit.Log), and a read is a path: the action keeps the method of
+// the call that was recorded, but a HEAD of a path is the same read as a GET of it (AUD1-DT-19, #506). A
+// read that is refused or fails, a read of anything else and the query of a read are not recorded.
 var auditedReads = []string{tokensPath, userRolesPath, "/api/v1/audit", "/api/v1/licence"}
 
 // auditRead serves the read r with h, and records it as an audit.Access through a when it is one of
