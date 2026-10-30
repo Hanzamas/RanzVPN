@@ -356,16 +356,17 @@ static bool PeerPunchAllow(PEER_AGENT *a) {
 //
 
 // Add the address addr to the targets of the punch, unless it is there already or they are full, or, with skip, the node
-// sent to it before, so that a message there makes no new mapping. The caller holds the lock of the layer.
-static void PeerPunchAddTarget(PEER_AGENT *a, PEER_PUNCH *punch, const PEER_ADDR *addr, bool skip) {
+// sent to it before, so that a message there makes no new mapping. Returns whether it was added. The caller holds the
+// lock of the layer.
+static bool PeerPunchAddTarget(PEER_AGENT *a, PEER_PUNCH *punch, const PEER_ADDR *addr, bool skip) {
 	bool known = false;
 
 	if (addr->Port == 0 || punch->NumTargets >= PEER_PUNCH_MAX_TARGETS)
-		return;
+		return false;
 
 	for (UINT i = 0; i < punch->NumTargets; i++)
 		if (PeerAddrEqual(&punch->Targets[i], addr))
-			return;
+			return false;
 
 	if (skip) {
 		AcquireSRWLockShared(&a->PunchLock);
@@ -373,8 +374,11 @@ static void PeerPunchAddTarget(PEER_AGENT *a, PEER_PUNCH *punch, const PEER_ADDR
 		ReleaseSRWLockShared(&a->PunchLock);
 	}
 
-	if (known == false)
-		punch->Targets[punch->NumTargets++] = *addr;
+	if (known)
+		return false;
+
+	punch->Targets[punch->NumTargets++] = *addr;
+	return true;
 }
 
 // Build the targets of an attempt with the peer p from the candidates of its punch signal, the node's NAT being mine:
@@ -384,7 +388,9 @@ static void PeerPunchAddTarget(PEER_AGENT *a, PEER_PUNCH *punch, const PEER_ADDR
 //   the leader, the node of the lower static key, and for a node behind a cone, which aims at the port of the peer's
 //   mapping towards it when the peer names one; in steps of two from there for the other end, so that the two sweeps
 //   cross (above). In the sweep of a symmetric NAT an address that the node sent to before is left out: it makes no new
-//   mapping.
+//   mapping. After the sweep come spacers, ports of the peer's address counted down from the top that make the
+//   PunchPorts + PEER_PUNCH_BELOW - 1 more mappings by which the mappings of an attempt outnumber the sweep of the other
+//   end: the next attempt then sweeps ports of both NATs that the ones before did not, so it can meet too.
 // The caller holds the lock of the layer exclusively.
 static void PeerPunchTargets(PEER_AGENT *a, PEER *p, UINT mine) {
 	PEER_PUNCH *punch = &p->Punch;
@@ -426,6 +432,20 @@ static void PeerPunchTargets(PEER_AGENT *a, PEER *p, UINT mine) {
 
 		t.Port = (USHORT)port;
 		PeerPunchAddTarget(a, punch, &t, mine != PEER_NAT_CONE);
+	}
+
+	// The spacers of a symmetric NAT, above the ranges that the sweeps of the two ends cover
+	if (mine == PEER_NAT_CONE)
+		return;
+
+	UINT spacers = 0;
+	INT64 top = (INT64)base.Port + 2 * (INT64)count;
+	for (UINT port = 0xFFFF; port > top && spacers < ports + PEER_PUNCH_BELOW - 1 && punch->NumTargets < PEER_PUNCH_MAX_TARGETS; port--) {
+		PEER_ADDR t = base;
+
+		t.Port = (USHORT)port;
+		if (PeerPunchAddTarget(a, punch, &t, true))
+			spacers++;
 	}
 }
 
