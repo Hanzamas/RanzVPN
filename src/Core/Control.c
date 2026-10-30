@@ -540,6 +540,8 @@ static void ControlSetCaps(CONTROL_CLIENT *c, ranz_control_v1_Hello *hello) {
 	}
 	// The links of kind vxlan and geneve (SDN-76, #356)
 	hello->capabilities.plain_links = caps.PlainLinks;
+	// The BGP peering of the standard mode (SDN-77-R2, #532)
+	hello->capabilities.bgp_peering = caps.BgpPeering;
 	// The live operations, which the client does when its owner gives it their procedure (ControlOperation.c; SDN-50-N, #492)
 	hello->capabilities.operations = (c->Config.OperationProc != NULL);
 }

@@ -38,6 +38,14 @@ void NodeCapsDecide(const NODE_CAPS_HOST *host, CONTROL_CAPS *caps);
 // one. param is not used.
 void NodeCapsProc(void *param, CONTROL_CAPS *caps);
 
+// Set BgpPeering of caps: whether the node n runs the BGP peering of the standard mode (NodePeering.c), which its release has
+// and which needs the sidecar, the executable that NODE.BgpSidecar names (ranz.exe next to the node). A node without that file
+// never peers, as NodePeering.c only tries to start it again every 5 s, so it must not say that it does: the controller refuses
+// to make a node that does not report it a member of a VRF whose peering is bgp (SDN-77-R2, #532), where it would lose the LAN
+// routes of the VRF without an error. caps is left as it is when it is NULL, and a NULL node reports none. The file is looked for
+// again for each Hello.
+void NodeCapsPeering(NODE *n, CONTROL_CAPS *caps);
+
 // Write the Capabilities of the node to its node log, as the line "Capabilities: architecture x64, SeLow yes, XDP no":
 // what ranz install put on the machine is read from there from outside (.github/scripts/install.ps1)
 void NodeLogCaps(NODE *n);

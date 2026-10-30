@@ -583,6 +583,8 @@ typedef struct CONTROL_CAPS {
 	UCHAR WireGuardKey[NOISE_KEY_SIZE];
 	// The node runs the links of kind vxlan and geneve (SDN-76, #356)
 	bool PlainLinks;
+	// The node runs the BGP peering of the standard mode: ranz.exe, which holds its sidecar, is next to it (SDN-77-R2, #532)
+	bool BgpPeering;
 } CONTROL_CAPS;
 
 // Fills caps, which is zeroed, with the Capabilities of the node. The client calls it for each Hello, so a node

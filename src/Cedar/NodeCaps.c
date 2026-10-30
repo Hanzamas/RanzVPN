@@ -6,10 +6,13 @@
 // architecture from GetNativeSystemInfo, and a driver from the service that its package registers and the files that
 // the package copies into System32. SeLow and the XDP runtime exist for x64 only (ADR-0013, ADR-0022), so a host of
 // another architecture has neither, whatever it holds under those names. A fact that cannot be found counts as
-// missing, which the controller reads as a Capability that the node lacks (ADR-0033).
+// missing, which the controller reads as a Capability that the node lacks (ADR-0033). The BGP peering is a fact of the
+// install of the node more than of its host: NodeCapsPeering reports it when the sidecar is where the node looks for it
+// (SDN-77-R2, #532).
 
 #include "Node.h"
 
+#include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 
@@ -106,6 +109,15 @@ void NodeCapsProc(void *param, CONTROL_CAPS *caps) {
 	// The links of kind vxlan and geneve run on Winsock UDP, on every host (NodeLink.c; SDN-76, #356)
 	if (caps != NULL)
 		caps->PlainLinks = true;
+}
+
+void NodeCapsPeering(NODE *n, CONTROL_CAPS *caps) {
+	if (caps == NULL)
+		return;
+
+	// The peering is in this release (NodePeering.c); what it needs besides is the sidecar, which NodePeeringStartSidecar looks for
+	// in the same place and with the same check, so a node that reports it can start one
+	caps->BgpPeering = (n != NULL && IsFileExistsW(n->BgpSidecar));
 }
 
 // The architecture of the Capabilities as the node log names it
