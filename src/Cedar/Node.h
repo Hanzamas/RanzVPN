@@ -383,6 +383,8 @@ struct NODE_VRF_TABLES {
 	struct NODE_GATEWAY_TABLE *Gateway;
 	// The session profiles of the peers and of the node of the same Generation (NodeProfile.c; SDN-40, #233), NULL for none
 	struct NODE_PROFILE_TABLE *Profile;
+	// The VRFs whose internet exit the node is in the same Generation (NodeEgress.c; SDN-12, #188), NULL for none
+	struct NODE_EGRESS_TABLE *Egress;
 };
 
 // A per-core run-to-completion loop: one thread bound to one core takes work items from its I/O completion
@@ -513,6 +515,10 @@ struct NODE {
 	// The session profiles of the peers and of the node (NodeProfile.c; SDN-40, #233), NULL while the overlay does not run
 	struct NODE_PROFILE *Profile;
 
+	// The internet exit of the VRFs of the overlay (NodeEgress.c; SDN-12, #188): its proxy and the interfaces that carry the
+	// egress, NULL while the overlay does not run
+	struct NODE_EGRESS *Egress;
+
 	// The switches of the L2 Networks, whose tables the live operations of the Controller read and clear (NodeOperation.c;
 	// SDN-50-N, #492), NULL while the overlay does not run
 	struct NODE_OPERATIONS *Operations;
@@ -563,6 +569,10 @@ struct NODE_OVERLAY_CONFIG {
 	NODE_PATH_ATTACH_PROC *PathAttach;
 	// The configuration of the peer layer of the agent, NULL for PeerDefaultConfig: the shorter timers of a test
 	const PEER_CONFIG *PathConfig;
+
+	// The Egress tier that the node uses as the internet exit of a VRF (CONTROL_EGRESS_* of Core/Control.h; NodeEgress.c, SDN-12
+	// #188), 0 for the one of its Capabilities, the first that its host supports (NodeCaps.c): the tier that a test checks
+	UINT EgressTier;
 
 	// Tells the Capabilities that the Hello of the control stream reports in place of the ones of the host (NodeCaps.c), NULL
 	// for those; with AdapterParam. A test whose own switch is the L2 data path of the node reports the L2 backend that the
@@ -978,6 +988,7 @@ NODE_VRF_TABLES *NodeNewVrfTables(UINT64 generation, const NODE_VRF_ROUTE *route
 void NodeFreeVrfTables(NODE_VRF_TABLES *v);
 NODE_VRF_TABLE *NodeGetVrfTable(NODE_VRF_TABLES *v, UINT vrf_id);
 UINT NodeVrfLookup(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size);
+bool NodeVrfDefault(NODE_VRF_TABLE *t, const UCHAR *addr, UINT size);
 
 // NodeLeak.c
 UINT NodeLeakRoutes(const struct CONTROL_STATE *st, NODE_VRF_ROUTE *routes);

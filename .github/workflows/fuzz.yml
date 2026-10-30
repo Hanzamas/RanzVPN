@@ -1,0 +1,418 @@
+# The fuzz campaign (AUD-3, #363; ADR-0040 item 1): every fuzz target of .github/quality/fuzz-targets.txt runs for a long time
+# against a corpus that is stored between runs and grows, and the same targets run every night. The libFuzzer targets of src/fuzz
+# run under AddressSanitizer on Windows (the build of the fuzz-asan job of windows.yml), the Go fuzz tests on Linux (go test
+# -fuzz, as ranz.yml runs them). .github/scripts/fuzz-campaign.py does the work of each step and holds the fixtures that
+# quality.yml runs on every pull request (.github/scripts/fuzz-campaign-test.py).
+#
+# Three kinds of run, which the plan job chooses:
+# - the nightly run, on the schedule (a schedule runs on the default branch, master): every target for 15 minutes, against the
+#   corpus that the last night stored, which it grows and stores again;
+# - the campaign of AUD-3, by hand (workflow_dispatch: Run workflow with minutes 60, the default): every target for an hour. The
+#   input targets selects some of them by a word of their id (fuzz_noise, licence, go-controller-internal-control-FuzzOpen);
+# - a smoke run, on a pull request that changes this workflow or the script: every target for 20 seconds, to show that every leg
+#   works. It stores nothing for later runs.
+#
+# A leg is one target. It restores the stored corpus of its target (the newest artifact fuzz-corpus-<id> that a run on the
+# default branch of this repository made, .github/scripts/fuzz-campaign.py store-find), replays it, fuzzes, merges what it found
+# into the smallest set that adds coverage to the seeds of src/fuzz/corpus, and stores that set again (the artifact
+# fuzz-corpus-<id>, kept 60 days: the next night restores it, so a corpus that is stored every night does not expire). The
+# report job reads what each leg stored: a table in the job summary with the time of fuzzing of each target in all the runs that fed
+# its corpus, and a failure for a leg that found something, ran short or stored nothing.
+#
+# A finding fails its leg and the run: a crash, a timeout, an out-of-memory or a leak of Mayaqua objects of a libFuzzer target, a
+# failing input of a Go fuzz test, a hang. The leg saves the input in the artifact fuzz-findings-<id>, and
+#   python .github/scripts/fuzz-campaign.py regress --findings <the downloaded artifact>
+# puts it where it is replayed as a regression test (src/fuzz/corpus/<target>, testdata/fuzz of the package), to be committed with
+# the fix. Each kind of target also has a planted fault (.github/scripts/fuzz-fault.c, fuzz-fault_test.go): a leg that must end in
+# a finding, so that a campaign that reports nothing cannot pass for one that found nothing. The parsers job runs the registry
+# check, which refuses a parser with no fuzz target, and lists the parsers whose line says that a fuzz target is still to come.
+#
+# The run does not touch the full set of windows.yml and ranz.yml, which replay the seeds and fuzz for a minute (fuzz-asan) or for 20
+# seconds (go test -fuzz) on every push to integration and every night.
+
+name: fuzz
+
+on:
+  schedule:
+  - cron: '47 21 * * *'
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 'Minutes of fuzzing for each target (the campaign of AUD-3 is 60)'
+        default: '60'
+        required: false
+      targets:
+        description: 'Only the targets that have one of these words in their id, separated by commas (empty: every target)'
+        default: ''
+        required: false
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+    - '.github/workflows/fuzz.yml'
+    - '.github/scripts/fuzz-campaign.py'
+    - '.github/scripts/fuzz-fault.c'
+    - '.github/scripts/fuzz-fault_test.go'
+
+run-name: "${{ github.event_name == 'pull_request' && github.event.pull_request.title || format('Fuzz campaign: {0} on {1}', github.event_name, github.ref_name) }}"
+
+# A run that is not a pull request is never cancelled by the next one: a campaign takes hours
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# actions: read lets a leg find and download the artifact of the run that stored its corpus
+permissions:
+  contents: read
+  actions: read
+
+# The vcpkg binary cache of windows.yml, restored only
+env:
+  VCPKG_ROOT: C:\vcpkg
+  VCPKG_BINCACHE: ${{ github.workspace }}\vcpkg-bincache
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-bincache,readwrite
+  # The Go of ranz.yml (a fixture of fuzz-campaign-test.py keeps the two the same)
+  GO_VERSION: '1.27.3'
+
+jobs:
+  # What this run fuzzes and for how long (.github/scripts/fuzz-campaign.py plan)
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      reason: ${{ steps.plan.outputs.reason }}
+      seconds: ${{ steps.plan.outputs.seconds }}
+      seed: ${{ steps.plan.outputs.seed }}
+      publish: ${{ steps.plan.outputs.publish }}
+      store_name: ${{ steps.plan.outputs.store_name }}
+      upload_name: ${{ steps.plan.outputs.upload_name }}
+      retention_days: ${{ steps.plan.outputs.retention_days }}
+      timeout: ${{ steps.plan.outputs.timeout }}
+      targets: ${{ steps.plan.outputs.targets }}
+      c_matrix: ${{ steps.plan.outputs.c_matrix }}
+      go_matrix: ${{ steps.plan.outputs.go_matrix }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        sparse-checkout: |
+          .github
+          src/fuzz
+    - name: Plan
+      id: plan
+      env:
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        MINUTES: ${{ inputs.minutes }}
+        TARGETS: ${{ inputs.targets }}
+      run: python3 -I .github/scripts/fuzz-campaign.py plan --minutes "$MINUTES" --targets "$TARGETS"
+
+  # Criterion 4 of AUD-3: a parser without a fuzz target is reported. The registry check refuses a parser that has no line in
+  # .github/quality/fuzz-targets.txt (quality.yml runs it on every pull request); the nightly run runs it too, for a parser
+  # that reached a branch without it, and lists the parsers whose line says that a fuzz target is still to come.
+  parsers:
+    name: parsers without a fuzz target
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - name: Every parser has a line in the registry, and which of them has no fuzz target
+      run: python3 -I .github/scripts/fuzz-campaign.py parsers
+
+  # The libFuzzer targets under AddressSanitizer, built as the fuzz-asan job of windows.yml builds them, and the planted fault
+  # of the campaign (.github/scripts/fuzz-fault.c), which clang-cl builds as a libFuzzer target of its own. Every leg of fuzz_c
+  # fuzzes one of these executables, with the ASan runtime DLL and the symbols that a report of AddressSanitizer needs.
+  build:
+    name: build (AddressSanitizer, libFuzzer)
+    needs: plan
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-
+    - name: Pick clang-cl with the one-DLL ASan runtime and libFuzzer
+      shell: pwsh
+      run: |
+        # As the fuzz-asan job of windows.yml picks it: Visual Studio's clang-cl first, the runner's standalone LLVM second,
+        # and a toolchain only if its runtime directory holds the libraries that cmake/RanzSanitizers.cmake links (the
+        # one-DLL ASan runtime of LLVM 20 and later, and libFuzzer)
+        $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+        $libs = @('asan_dynamic', 'asan_static_runtime_thunk', 'fuzzer')
+        foreach ($cc in @("$vs\VC\Tools\Llvm\x64\bin\clang-cl.exe", "$env:ProgramFiles\LLVM\bin\clang-cl.exe")) {
+          if (-not (Test-Path -LiteralPath $cc)) { continue }
+          $dirs = @((& $cc -print-runtime-dir | Out-String).Trim(), (Join-Path (& $cc -print-resource-dir | Out-String).Trim() 'lib\windows'))
+          foreach ($rt in $dirs) {
+            if (-not (Test-Path -LiteralPath $rt)) { Write-Host "$cc -> $rt (does not exist)"; continue }
+            $missing = @($libs | Where-Object {
+              -not (Test-Path -LiteralPath "$rt\clang_rt.$_-x86_64.lib") -and -not (Test-Path -LiteralPath "$rt\clang_rt.$_.lib")
+            })
+            Write-Host "$cc -> $rt (missing: $($missing -join ', '))"
+            if ($missing.Count -eq 0) {
+              & $cc --version
+              "COMPILER_PATH=$cc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              "RANZ_RT_DIR=$rt" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              exit 0
+            }
+          }
+        }
+        throw 'No clang-cl with the one-DLL ASan runtime (LLVM 20 or later) and libFuzzer found'
+    # The msquic headers for the QUIC transport of the new core (CORE-S1-1, #67): CMake does not configure without them
+    - name: Fetch msquic
+      shell: pwsh
+      run: |
+        .github/scripts/fetch-msquic.ps1 -Arch x64
+    # The control module (SDN-3, #179) generates its messages with nanopb at build time
+    - name: Install the nanopb generator
+      uses: ./.github/actions/nanopb
+    - name: Build (RANZ_ASAN=ON, RANZ_FUZZ=ON)
+      shell: cmd
+      run: |
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
+
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        if "%VSINSTALL%"=="" (
+          echo Visual Studio installation was not found.
+          exit /b 1
+        )
+
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        rem COMPILER_PATH is the clang-cl picked by the step above
+        cmake --preset asan -DCMAKE_C_COMPILER="%COMPILER_PATH%"
+        if errorlevel 1 exit /b 1
+        cmake --build --preset asan
+        if errorlevel 1 exit /b 1
+    # The planted fault: a libFuzzer target of its own with AddressSanitizer, beside the targets of src/fuzz. clang-cl links the
+    # runtime libraries for /MT itself, as CMake does by name in cmake/RanzSanitizers.cmake, and the DLL is in build\ already.
+    - name: Build the planted fault of the campaign
+      shell: cmd
+      run: |
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        "%COMPILER_PATH%" /nologo /MT -fsanitize=fuzzer,address .github\scripts\fuzz-fault.c /Febuild\fuzz_canary.exe
+        if errorlevel 1 exit /b 1
+        dir build\fuzz_canary.exe build\clang_rt.asan_dynamic*.dll
+    # A leg that finds something is reproduced from these, with its symbols, for a week
+    - uses: actions/upload-artifact@v4
+      with:
+        name: fuzz-bin
+        if-no-files-found: error
+        retention-days: 7
+        path: |
+          build/fuzz_*.exe
+          build/fuzz_*.pdb
+          build/clang_rt.asan_dynamic*.dll
+
+  # One leg for each libFuzzer target of src/fuzz, and the planted fault. max-parallel leaves most of the runners of the account
+  # to the pull requests that others work on.
+  fuzz_c:
+    name: ${{ matrix.target.id }}
+    needs: [plan, build]
+    runs-on: windows-latest
+    timeout-minutes: ${{ fromJSON(needs.plan.outputs.timeout) }}
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.c_matrix) }}
+    steps:
+    # The seeds of the targets are src/fuzz/corpus; its .gitattributes keeps them byte for byte
+    - uses: actions/checkout@v4
+      with:
+        sparse-checkout: |
+          .github/scripts
+          src/fuzz
+    - name: Download the fuzz targets
+      uses: actions/download-artifact@v4
+      with:
+        name: fuzz-bin
+        path: build
+    - name: Look up the stored corpus
+      id: store
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        STORED: ${{ needs.plan.outputs.store_name }}-${{ matrix.target.id }}
+        BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        python -I .github/scripts/fuzz-campaign.py store-find --name $env:STORED --branch $env:BRANCH
+        if ($LASTEXITCODE -ne 0) { throw "store-find exited with code $LASTEXITCODE" }
+    # A corpus that exists and cannot be downloaded fails the leg: it would store a small corpus over the large one
+    - name: Restore the stored corpus
+      if: steps.store.outputs.run_id != ''
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ needs.plan.outputs.store_name }}-${{ matrix.target.id }}
+        run-id: ${{ steps.store.outputs.run_id }}
+        github-token: ${{ github.token }}
+        path: store
+    - name: Fuzz
+      shell: pwsh
+      env:
+        LEG: ${{ matrix.target.id }}
+        TARGET: ${{ matrix.target.name }}
+        MAX_LEN: ${{ matrix.target.max_len }}
+        SECONDS_TO_FUZZ: ${{ needs.plan.outputs.seconds }}
+        SEED: ${{ needs.plan.outputs.seed }}
+        MODE: ${{ needs.plan.outputs.mode }}
+        CANARY: ${{ matrix.target.canary && '--canary' || '' }}
+      run: |
+        # No argument at all for a target that is no planted fault: an empty one is not passed the same on every PowerShell
+        $extra = @()
+        if ($env:CANARY) { $extra += $env:CANARY }
+        python -I .github/scripts/fuzz-campaign.py c-run --id $env:LEG --target $env:TARGET --max-len $env:MAX_LEN --seconds $env:SECONDS_TO_FUZZ --seed $env:SEED --mode $env:MODE --build-dir build --store store --findings findings @extra
+        if ($LASTEXITCODE -ne 0) { throw "c-run exited with code $LASTEXITCODE" }
+    # The corpus of this run, also after a finding: what the leg found before it stopped is kept
+    - name: Store the corpus
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ needs.plan.outputs.upload_name }}-${{ matrix.target.id }}
+        path: store
+        if-no-files-found: ignore
+        retention-days: ${{ fromJSON(needs.plan.outputs.retention_days) }}
+        overwrite: true
+    - name: Save the findings
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: fuzz-findings-${{ matrix.target.id }}
+        path: findings
+        if-no-files-found: ignore
+        overwrite: true
+
+  # One leg for each Go fuzz test of the registry, and the planted fault
+  fuzz_go:
+    name: ${{ matrix.target.id }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ fromJSON(needs.plan.outputs.timeout) }}
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.go_matrix) }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: go.sum
+    - name: Look up the stored corpus
+      id: store
+      env:
+        GH_TOKEN: ${{ github.token }}
+        STORED: ${{ needs.plan.outputs.store_name }}-${{ matrix.target.id }}
+        BRANCH: ${{ github.event.repository.default_branch }}
+      run: python3 -I .github/scripts/fuzz-campaign.py store-find --name "$STORED" --branch "$BRANCH"
+    - name: Restore the stored corpus
+      if: steps.store.outputs.run_id != ''
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ needs.plan.outputs.store_name }}-${{ matrix.target.id }}
+        run-id: ${{ steps.store.outputs.run_id }}
+        github-token: ${{ github.token }}
+        path: store
+    - name: Fuzz
+      env:
+        LEG: ${{ matrix.target.id }}
+        PACKAGE: ${{ matrix.target.package }}
+        TEST: ${{ matrix.target.test }}
+        SECONDS_TO_FUZZ: ${{ needs.plan.outputs.seconds }}
+        SEED: ${{ needs.plan.outputs.seed }}
+        MODE: ${{ needs.plan.outputs.mode }}
+        CANARY: ${{ matrix.target.canary && '--canary' || '' }}
+      run: python3 -I .github/scripts/fuzz-campaign.py go-run --id "$LEG" --package "$PACKAGE" --test "$TEST" --seconds "$SECONDS_TO_FUZZ" --seed "$SEED" --mode "$MODE" --store store --findings findings $CANARY
+    - name: Store the corpus
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ needs.plan.outputs.upload_name }}-${{ matrix.target.id }}
+        path: store
+        if-no-files-found: ignore
+        retention-days: ${{ fromJSON(needs.plan.outputs.retention_days) }}
+        overwrite: true
+    - name: Save the findings
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: fuzz-findings-${{ matrix.target.id }}
+        path: findings
+        if-no-files-found: ignore
+        overwrite: true
+
+  # The verdict, from what each leg stored: every target ran its time and found nothing, every planted fault was reported, every
+  # corpus is stored. It runs after the legs whatever they did, and fails when any job of the run did not pass.
+  report:
+    name: report
+    needs: [plan, parsers, build, fuzz_c, fuzz_go]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        sparse-checkout: .github/scripts
+    - name: Download what the legs stored
+      continue-on-error: true
+      uses: actions/download-artifact@v4
+      with:
+        pattern: ${{ needs.plan.outputs.upload_name }}-*
+        path: stores
+    - name: Verdict
+      env:
+        PLAN_C: ${{ needs.plan.outputs.c_matrix }}
+        PLAN_GO: ${{ needs.plan.outputs.go_matrix }}
+        PREFIX: ${{ needs.plan.outputs.upload_name }}
+        SECONDS_TO_FUZZ: ${{ needs.plan.outputs.seconds }}
+        MODE: ${{ needs.plan.outputs.mode }}
+      run: python3 -I .github/scripts/fuzz-campaign.py report --stores stores --prefix "$PREFIX" --run-id "$GITHUB_RUN_ID" --seconds "$SECONDS_TO_FUZZ" --mode "$MODE" --plan-c "$PLAN_C" --plan-go "$PLAN_GO"
+    # The next run looks a corpus up and downloads it by the id of the run that stored it. This does the same for the first
+    # target of each kind, on the artifacts that this run stored: the lookup must find the run of this run, and the download
+    # must give back the manifest of the leg.
+    - name: Look the corpus of the first C target up, as the next run will
+      id: again_c
+      if: ${{ !cancelled() && needs.fuzz_c.result == 'success' }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        STORED: ${{ needs.plan.outputs.upload_name }}-${{ fromJSON(needs.plan.outputs.c_matrix)[0].id }}
+        BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+      run: python3 -I .github/scripts/fuzz-campaign.py store-find --name "$STORED" --branch "$BRANCH"
+    - name: Look the corpus of the first Go target up, as the next run will
+      id: again_go
+      if: ${{ !cancelled() && needs.fuzz_go.result == 'success' }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        STORED: ${{ needs.plan.outputs.upload_name }}-${{ fromJSON(needs.plan.outputs.go_matrix)[0].id }}
+        BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+      run: python3 -I .github/scripts/fuzz-campaign.py store-find --name "$STORED" --branch "$BRANCH"
+    - name: Download them by the id of the run
+      if: ${{ !cancelled() && steps.again_c.outputs.run_id != '' && steps.again_go.outputs.run_id != '' }}
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ needs.plan.outputs.upload_name }}-${{ fromJSON(needs.plan.outputs.c_matrix)[0].id }}
+        run-id: ${{ steps.again_c.outputs.run_id }}
+        github-token: ${{ github.token }}
+        path: again
+    - name: The lookup found this run, and the download holds the manifest
+      if: ${{ !cancelled() && needs.fuzz_c.result == 'success' && needs.fuzz_go.result == 'success' }}
+      env:
+        FOUND_C: ${{ steps.again_c.outputs.run_id }}
+        FOUND_GO: ${{ steps.again_go.outputs.run_id }}
+      run: |
+        test "$FOUND_C" = "$GITHUB_RUN_ID" || { echo "::error::the lookup of the first C target found run '$FOUND_C', not this run ($GITHUB_RUN_ID)"; exit 1; }
+        test "$FOUND_GO" = "$GITHUB_RUN_ID" || { echo "::error::the lookup of the first Go target found run '$FOUND_GO', not this run ($GITHUB_RUN_ID)"; exit 1; }
+        test -s again/manifest.json || { echo "::error::the download by the id of the run has no manifest.json"; ls -R again; exit 1; }
+        python3 -I -c 'import json, sys; m = json.load(open(sys.argv[1])); assert m["last"]["run_id"] == sys.argv[2], m' again/manifest.json "$GITHUB_RUN_ID"
+    - name: A job of the run did not pass
+      if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+      env:
+        RESULTS: ${{ join(needs.*.result, ' ') }}
+      run: |
+        echo "::error::a job of the run failed or was cancelled (the results of plan, parsers, build, fuzz_c and fuzz_go: $RESULTS)"
+        exit 1
