@@ -40,6 +40,7 @@ const laptopMissesL2 = `Node "laptop" (Home, arm64): L2 Network "corp-dmz" needs
 // each node reported, none before a node's first Hello, and keeps them across a restart of the
 // controller and of rqlite.
 func TestAPIListsCapabilities(t *testing.T) {
+	rqlitetest.Own(t) // it restarts rqlited
 	h := newHarness(t)
 	h.apply("caps-apply1.json")
 	for _, n := range h.nodes() {

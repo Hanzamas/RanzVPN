@@ -53,7 +53,7 @@ var (
 
 // newMimicHarness returns a harness whose controller draws the short ids of the mimic servers from counting.
 func newMimicHarness(t *testing.T) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), random: new(counting)}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), random: new(counting)}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)
@@ -567,6 +567,7 @@ func TestMimicKeyOfANodeThatIsNoServer(t *testing.T) {
 // Generation for the restart or for the key that hub reports again after its Hello, and the next change of the section gives hub
 // the short id that it had, and its clients the key.
 func TestMimicShortIDAndKeySurviveARestart(t *testing.T) {
+	rqlitetest.Own(t) // it restarts rqlited
 	n := startMimicNet(t)
 	h := n.h
 	all := []*sim{n.gw1, n.gw2, n.hub, n.lab}

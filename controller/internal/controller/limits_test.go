@@ -28,7 +28,7 @@ import (
 // newWaitingHarness returns a harness whose controller caps the streams that wait for a Hello as w
 // does.
 func newWaitingHarness(t *testing.T, w *control.Waiting) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), tune: func(c *controller.Config) { c.Waiting = w }}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), tune: func(c *controller.Config) { c.Waiting = w }}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)

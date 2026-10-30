@@ -23,7 +23,7 @@ import (
 
 // newLimitsHarness returns a harness whose TLS port has the limits for a source that limits gives.
 func newLimitsHarness(t *testing.T, limits port.Limits) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), limits: limits}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), limits: limits}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)

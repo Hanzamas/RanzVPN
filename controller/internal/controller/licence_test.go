@@ -140,6 +140,7 @@ func TestEnterpriseFeaturesNeedEnterpriseKey(t *testing.T) {
 // availability: once the controller's store is a cluster of two members, a Business licence
 // refuses every change of the intent, and an Enterprise licence allows it again.
 func TestControllerHANeedsEnterpriseKey(t *testing.T) {
+	rqlitetest.Own(t) // it joins a second member to rqlited
 	h := newHarness(t)
 	h.apply("apply1.json")
 	h.setLicence(licence.Licence{ID: "biz-1", Licensee: "Test", Tier: licence.Business, Nodes: 50, Expires: time.Now().Add(year)})

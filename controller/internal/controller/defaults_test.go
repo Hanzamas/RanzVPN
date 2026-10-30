@@ -24,7 +24,7 @@ import (
 // newFirstStartHarness returns a harness whose controller makes the intent of a first install
 // at its first start, with the ULA fd12:3456:789a::/48 for VRF default.
 func newFirstStartHarness(t *testing.T) *harness {
-	h := &harness{t: t, rq: rqlitetest.Start(t), defaults: true, random: bytes.NewReader([]byte{0x12, 0x34, 0x56, 0x78, 0x9a})}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), defaults: true, random: bytes.NewReader([]byte{0x12, 0x34, 0x56, 0x78, 0x9a})}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)

@@ -56,7 +56,7 @@ func newLoginEnv(t *testing.T) *loginEnv {
 // such as the sealing key that the PresharedKeys of the Devices need (portaldevice_test.go): set, when it is
 // not nil, runs on the harness before its first start.
 func newLoginEnvWith(t *testing.T, set func(*harness)) *loginEnv {
-	h := &harness{t: t, rq: rqlitetest.Start(t), defaults: true}
+	h := &harness{t: t, rq: rqlitetest.Fresh(t), defaults: true}
 	var err error
 	if h.key, err = keys.GenerateSoft(); err != nil {
 		t.Fatal(err)

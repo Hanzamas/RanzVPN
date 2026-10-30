@@ -44,7 +44,8 @@ import (
 // serves the certificate of a servercert.Manager, with stand-in Nodes that pin the TLS fingerprint of the
 // controller as a Node with Controller settings does (SDN-90).
 
-// certHarness is one controller on its own rqlite, whose TLS port gets its certificate from a Manager.
+// certHarness is one controller on a database of its own (rqlitetest.Fresh), whose TLS port gets its
+// certificate from a Manager.
 type certHarness struct {
 	t     *testing.T
 	st    *store.Store
@@ -61,7 +62,7 @@ type certHarness struct {
 // newCertHarness returns a controller that waits wait for the nodes to acknowledge a new fingerprint.
 func newCertHarness(t *testing.T, wait time.Duration) *certHarness {
 	t.Helper()
-	rq := rqlitetest.Start(t)
+	rq := rqlitetest.Fresh(t)
 	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
 	defer cancel()
 	st, err := store.Open(ctx, rq.URL())
