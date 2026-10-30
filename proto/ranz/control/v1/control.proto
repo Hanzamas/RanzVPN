@@ -906,6 +906,11 @@ message Telemetry {
   // The BGP peering of the standard mode at the node (SDN-77): in a summary of its own whenever it
   // changed, and absent from the others.
   PeeringReport peering = 8;
+  // The Upgrades and the Fallbacks of the Paths of the node's peer agent (CORE-S5-6), absent while
+  // its peer layer does not run. The node lists them in a summary of their own after each Hello,
+  // whenever they change and again every 15 s while they stay the same, as the controller drops a
+  // counter that its node stopped listing.
+  PathCounters paths = 9;
 }
 
 // The packets of the peers that a node judged in one tag mode (SDN-87 #386): the records of its Noise
@@ -938,6 +943,15 @@ message PeeringPeer {
   bytes address = 1;
   string state = 2;
   repeated Route learned = 3;
+}
+
+// The Paths of the peer agent of a node since the node started (CORE-S5-6, ADR-0015 decision 4):
+// the Upgrades, each a Path that moved from the Relay to the direct path that ICE validated, and
+// the Fallbacks, each a direct path whose consent freshness failed, so that its pair went back to
+// the Relay.
+message PathCounters {
+  uint64 upgrades = 1;
+  uint64 fallbacks = 2;
 }
 
 // The WireGuard end of one Device at its gateway (SDN-80): the last handshake, in Unix time in

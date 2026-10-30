@@ -66,13 +66,24 @@ type RuleCounters struct {
 	Bytes   uint64 `json:"bytes"`
 }
 
-// NodeSnapshot is what the Hub holds of one node.
+// PathCounters is what the Paths of the peer agent of a node did since the node started
+// (CORE-S5-6, #412): its Upgrades, each a Path that moved from the Relay to the direct path that
+// ICE validated, and its Fallbacks, each a direct path whose consent freshness failed, so that its
+// pair went back to the Relay.
+type PathCounters struct {
+	Upgrades  uint64 `json:"upgrades"`
+	Fallbacks uint64 `json:"fallbacks"`
+}
+
+// NodeSnapshot is what the Hub holds of one node. Paths is nil for a node that reported none: one
+// whose peer agent does not run, or a node of a release before the counters.
 type NodeSnapshot struct {
 	Node       string         `json:"node"`
 	ReportedAt time.Time      `json:"reportedAt"`
 	Peers      []PeerCounters `json:"peers"`
 	VRFs       []VrfCounters  `json:"vrfs"`
 	Rules      []RuleCounters `json:"rules"`
+	Paths      *PathCounters  `json:"paths,omitempty"`
 	// The packets of the peers by the tag mode of their source group (sourcegroup.go; SDN-87)
 	SourceGroups []SourceGroupCounters `json:"sourceGroups,omitempty"`
 }
@@ -97,11 +108,17 @@ type ruleEntry struct {
 	seen time.Time
 }
 
+type pathEntry struct {
+	PathCounters
+	seen time.Time
+}
+
 type nodeData struct {
 	seen  time.Time
 	peers map[string]*peerEntry
 	vrfs  map[uint32]*vrfEntry
 	rules map[ruleKey]*ruleEntry
+	paths *pathEntry
 	// The counters of the source groups by tag mode (sourcegroup.go; SDN-87)
 	groups map[string]*groupEntry
 }
@@ -185,6 +202,9 @@ func (h *Hub) Report(node string, t *controlpb.Telemetry) {
 		e.RuleCounters = RuleCounters{VRFID: key.vrf, Rule: key.rule, Packets: r.GetPacketCount(), Bytes: r.GetByteCount()}
 		e.seen = now
 	}
+	if p := t.GetPaths(); p != nil {
+		d.paths = &pathEntry{PathCounters: PathCounters{Upgrades: p.GetUpgrades(), Fallbacks: p.GetFallbacks()}, seen: now}
+	}
 	d.reportGroups(t, now)
 	h.prune(now)
 }
@@ -207,8 +227,11 @@ func (h *Hub) prune(now time.Time) {
 				delete(d.rules, k)
 			}
 		}
+		if d.paths != nil && now.Sub(d.paths.seen) > h.stale {
+			d.paths = nil
+		}
 		d.pruneGroups(now, h.stale)
-		if len(d.peers)+len(d.vrfs)+len(d.rules)+len(d.groups) == 0 && now.Sub(d.seen) > h.stale {
+		if len(d.peers)+len(d.vrfs)+len(d.rules)+len(d.groups) == 0 && d.paths == nil && now.Sub(d.seen) > h.stale {
 			delete(h.nodes, name)
 		}
 	}
@@ -252,6 +275,10 @@ func (h *Hub) Snapshot(vrfName func(uint32) string) []NodeSnapshot {
 			r.VRF = name(r.VRFID)
 			s.Rules = append(s.Rules, r)
 		}
+		if d.paths != nil {
+			p := d.paths.PathCounters
+			s.Paths = &p
+		}
 		slices.SortFunc(s.Peers, func(a, b PeerCounters) int { return cmp.Compare(a.Peer, b.Peer) })
 		slices.SortFunc(s.VRFs, func(a, b VrfCounters) int { return cmp.Compare(a.VRFID, b.VRFID) })
 		slices.SortFunc(s.Rules, func(a, b RuleCounters) int {
@@ -287,6 +314,11 @@ func (h *Hub) Samples(vrfName func(uint32) string) []Sample {
 			out = append(out,
 				Sample{Metric: "rule_packets", Labels: []string{n.Node, r.VRF, r.Rule}, Value: r.Packets},
 				Sample{Metric: "rule_bytes", Labels: []string{n.Node, r.VRF, r.Rule}, Value: r.Bytes})
+		}
+		if n.Paths != nil {
+			out = append(out,
+				Sample{Metric: "path_upgrades", Labels: []string{n.Node}, Value: n.Paths.Upgrades},
+				Sample{Metric: "path_fallbacks", Labels: []string{n.Node}, Value: n.Paths.Fallbacks})
 		}
 		out = append(out, groupSamples(n)...)
 	}

@@ -35,6 +35,8 @@ var Metrics = []Metric{
 	{Name: "vrf_dropped_packets", Help: "Packets that a node dropped in a VRF.", Unit: "{packet}", Kind: Counter, Labels: []string{"node", "vrf"}},
 	{Name: "rule_packets", Help: "Packets that a policy rule matched on a node.", Unit: "{packet}", Kind: Counter, Labels: []string{"node", "vrf", "rule"}},
 	{Name: "rule_bytes", Help: "Bytes of the packets that a policy rule matched on a node.", Unit: "By", Kind: Counter, Labels: []string{"node", "vrf", "rule"}},
+	{Name: "path_upgrades", Help: "Upgrades of a node: Paths of its peer agent that moved from the Relay to the direct path that ICE validated.", Unit: "{upgrade}", Kind: Counter, Labels: []string{"node"}},
+	{Name: "path_fallbacks", Help: "Fallbacks of a node: direct paths of its peer agent whose consent freshness failed, so that the pair went back to the Relay.", Unit: "{fallback}", Kind: Counter, Labels: []string{"node"}},
 	{Name: "source_group_packets", Help: "Packets of the peers of a node by the tag mode of their source group (session, off or trusted-underlay) and the result: carried (judged by the group that they carried), missing (carried none: judged by the map of address to group), ignored (carried one that the node ignores: in the mode off, or of a node whose groups it does not know yet) or refused (claimed a group that the sending node may not assert: dropped).", Unit: "{packet}", Kind: Counter, Labels: []string{"node", "mode", "result"}},
 	{Name: "node_connected", Help: "Whether a node has a control stream to the controller: 1 when it has, 0 when it has not.", Unit: "1", Kind: Gauge, Labels: []string{"node"}},
 	{Name: "events", Help: "Events that the controller raised, by type.", Unit: "{event}", Kind: Counter, Labels: []string{"type"}},

@@ -198,6 +198,9 @@ type Node struct {
 	// every Group of that User as a tag, and counts against the maximum devices of the User. Left
 	// out, the Node has no owner.
 	Owner string `json:"owner,omitempty"`
+	// Scope is the Network whose scoped roles administer the Node (SDN-38, scope.go). Left out, the Node is in
+	// the scope of its owner, if it has one, and otherwise only the global roles administer it.
+	Scope string `json:"scope,omitempty"`
 	// WireGuard is the WireGuard end of a node that is the gateway of Devices (SDN-80, device.go).
 	// Left out, the node is the gateway of no Device.
 	WireGuard WireGuard `json:"wireguard,omitzero"`
@@ -225,7 +228,10 @@ type Controller struct {
 // from its From end to its To end, of its protocol and to its ports, and the controller compiles
 // it into the policy engine of the Nodes of its VRF (policy.go; SDN-8, #184).
 type Policy struct {
-	VRF    string `json:"vrf"`
+	VRF string `json:"vrf"`
+	// Scope is the Network whose scoped roles administer the rule (SDN-38, scope.go). Left out, only the
+	// global roles administer it.
+	Scope  string `json:"scope,omitempty"`
 	Action string `json:"action"` // PolicyAllow or PolicyDeny
 	// Priority orders the rules of the VRF, the lowest first, from 1 to MaxPriority; of one
 	// priority a deny rule comes before an allow rule, then the names in order. Left out, it is
@@ -449,7 +455,8 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 
 // Delete returns in without the resource kind/name; in itself is not changed. A VRF that a
 // Network, a Node, a Policy, a Mirror, a NAT or a DnsRecord uses cannot be deleted, nor can a
-// Network that a Device uses, nor a Node that a NAT, a DnsRecord or a Listener uses, that is the
+// Network that a Device uses or that is the scope of a User, a Group, a Node or a Policy, nor a Node
+// that a NAT, a DnsRecord or a Listener uses, that is the
 // gateway of a Device or of the security of a Network, that answers DHCP for a Network or that is
 // the hub of a VRF, a Group that a User belongs to, and a User that owns a Node. The Nodes lose
 // their addresses in a deleted Network.
@@ -490,6 +497,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		// The Devices of the Network (device.go)
 		if users := next.deviceUsers(name, ""); len(users) > 0 {
 			return in, fmt.Errorf("%w: Network %q is used by %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
+		// The resources that are in the scope of the Network (scope.go; SDN-38)
+		if users := next.scopeUsers(name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Network %q is the scope of %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
 		delete(next.Networks, name)
 		next.release(name)
@@ -962,6 +973,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateSecurity()...)
 	problems = append(problems, in.validateDNS()...)
 	problems = append(problems, in.validateUsers()...)
+	// The scopes of the Users, the Groups, the Nodes and the Policies (scope.go; SDN-38)
+	problems = append(problems, in.validateScopes()...)
 	// The session profiles and the profiles that the Users and the Groups name (profile.go; SDN-40)
 	problems = append(problems, in.validateProfiles()...)
 	problems = append(problems, in.validateListeners()...)
