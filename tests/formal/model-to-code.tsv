@@ -213,7 +213,7 @@ overlay-lib.pvl	OverlaySessions	process	src/Cedar/NodeOverlay.c	NodeOverlayDial,
 overlay-lib.pvl	OverlayClient:SR	field	src/Cedar/NodeOverlay.c	NodeOverlaySessionConfig	RemoteStatic,NOISE_SUITE_IK	-	the static key of the peer from the desired state, and the suite Noise_IK of an overlay session
 overlay-lib.pvl	OverlayServer:suite	check	src/Core/NoiseSession.c	NoiseSessionAccept	NoiseSuiteAvailable	D7	the responder runs the suite of the record if it can run it
 overlay-lib.pvl	OverlayClient:prologue	field	src/Core/NoiseSession.c	NoisePrologue	NOISE_PROLOGUE_LABEL,binding_type,binding	-	the prologue of a session
-overlay-lib.pvl	OverlayClient:cd	message	src/Cedar/NodeOverlay.c	NodeOverlayInput	TransportNoiseSend	-	a packet of the host, with its VRF id, to the peer
+overlay-lib.pvl	OverlayClient:cd	message	src/Cedar/NodeOverlay.c	NodeOverlayInput,NodeOverlayForward	TransportNoiseSend	-	a packet of the host, with its VRF id, to the peer: NodeOverlayInput hands it to NodeOverlayForward, which also forwards a packet of the fabric of an EVPN gateway (SDN-25, #201)
 overlay-lib.pvl	OverlayServer:SI	field	src/Cedar/NodeOverlay.c	NodeOverlayAccept	RemoteStatic	-	the static key of the peer: the session has no Login
 overlay-lib.pvl	OverlayServer:x	check	src/Cedar/NodeOverlay.c	NodeOverlayAttach	NodeOverlayPeer	-	the peer of the desired state with that key; a session of a key that no peer has is closed
 overlay-lib.pvl	OverlayServer:d	message	src/Cedar/NodeOverlay.c	NodeOverlayDeliver	NodeOverlayEnds	-	a data record of the peer, delivered to the host when the table of its VRF routes it
