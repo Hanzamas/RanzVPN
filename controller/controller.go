@@ -92,7 +92,10 @@
 // on another host the targets come back with no secret, the log of the controller names them, and the
 // operator puts each one again with its secret. The members of a cluster have no sealing key in
 // common, so they seal those secrets with the Cluster key of the cluster, which each member holds
-// through a copy that its own sealing key opens (internal/clusterkey, AUD1-DT-16).
+// through a copy that its own sealing key opens (internal/clusterkey, AUD1-DT-16). A secret opens for
+// the URL of its target only, and the URL itself is not sealed; the backup is vacuumed, so it holds none
+// of the clear text of a secret that an earlier release kept in clear and that the upgrade sealed
+// (AUD1-DT-17, #502).
 //
 // On Windows the data directory belongs to SYSTEM, the Administrators or the service's account, and
 // nobody else has a right in it (ST-3 of docs/threat-model.md). install makes it with the
@@ -243,7 +246,7 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.apiListen, "api-listen", "", "for development: a loopback address for the API over plain HTTP, for example 127.0.0.1:7080")
 	flags.StringVar(&cfg.rqliteURL, "rqlite", "http://127.0.0.1:4001", "the URL of the rqlite HTTP API; with -rqlited, rqlited listens on its host:port")
 	flags.StringVar(&cfg.rqlited, "rqlited", "", "the path of rqlited, to run it as the controller's sidecar instead of the one that this executable carries (Windows)")
-	flags.BoolVar(&cfg.external, "rqlite-external", false, "run no rqlite member of its own: the rqlite at -rqlite is another process's")
+	flags.BoolVar(&cfg.external, "rqlite-external", false, "run no rqlite member of its own: the rqlite at -rqlite is another process's; it makes no cluster, so two Controllers on one such store each seal the secrets of their targets with the key of their own host, and neither opens the other's (a cluster is -rqlite-join)")
 	flags.StringVar(&cfg.raftAddr, "rqlite-raft", "127.0.0.1:4002", "the TCP address of the Raft transport of -rqlited; in a cluster, one the other members reach")
 	flags.StringVar(&cfg.raftAdv, "rqlite-raft-adv", "", "the Raft address of -rqlited as the other members reach it, when -rqlite-raft is not one (for example 0.0.0.0:4002)")
 	flags.StringVar(&cfg.rqliteID, "rqlite-id", "", "the Raft node id of -rqlited: 1 for a single controller, -name in a cluster when it is empty")

@@ -31,7 +31,7 @@ func sealClusterTargets(ctx context.Context, cfg config, st *store.Store, log *s
 				"kind", kind, "target", name)
 			return
 		}
-		log.Warn("the secret of a target cannot be opened with the Cluster key, which did not seal it, so the target is sent without it until it is put again",
+		log.Warn("the secret of a target cannot be opened with the Cluster key, which did not seal it, or the URL of the target was changed after the secret was sealed, so the target is sent without it until it is put again",
 			"kind", kind, "target", name)
 	})
 	return k.Start(ctx)
