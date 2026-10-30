@@ -612,8 +612,8 @@ jobs:
         go test -count=1 -v -run 'TestPipe|TestNoPipe|TestMitigations' ./ranz-bgp
         if ($LASTEXITCODE -ne 0) { throw "go test exited with code $LASTEXITCODE" }
     # The package controller/internal/controller starts an rqlited for most of its tests and takes
-    # about 9 minutes on this runner: a slow runner timed it out at the default 10 minutes with four
-    # tests left. 20 minutes still stops a hang, and the job has 40
+    # about 9 minutes on this runner: a slow runner timed it out at the default 10 minutes in the last
+    # test file of the package. 20 minutes still stops a hang, and the job has 40
     - name: Test
       if: matrix.platform.ARCHITECTURE == 'x64'
       shell: pwsh
