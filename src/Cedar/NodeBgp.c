@@ -14,6 +14,7 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 
+#include "NodeEvpn.h"
 #include "NodeInternal.h"
 
 #include <AclAPI.h>
@@ -50,6 +51,12 @@ typedef struct NODE_BGP_PEER {
 	char State[MAX_SIZE];   // Its session state (idle, connect, active, opensent, openconfirm, established)
 } NODE_BGP_PEER;
 
+// A prefix that the node announces, as a route of an EVPN VRF of a gateway (NodeEvpn.c; SDN-25, #201) or of none
+typedef struct NODE_BGP_ANNOUNCED {
+	UINT VrfId;            // The EVPN VRF, 0 for none
+	char Prefix[MAX_SIZE]; // The prefix
+} NODE_BGP_ANNOUNCED;
+
 // The sidecar of a running node
 struct NODE_BGP {
 	NODE *Node;                 // The node
@@ -69,7 +76,7 @@ struct NODE_BGP {
 	char Version[MAX_SIZE];     // What ready named
 	UINT NumErrors;             // Error messages of the sidecar
 	LIST *Peers;                // The peers of the settings (NODE_BGP_PEER)
-	LIST *Announced;            // The prefixes the node announces (strings)
+	LIST *Announced;            // The prefixes the node announces (NODE_BGP_ANNOUNCED)
 	LIST *Routes;               // The learned routes (NODE_BGP_ROUTE)
 	char *Line;                 // The reader thread: the message read so far
 	UINT LineSize;              // Its bytes
@@ -98,7 +105,7 @@ static BOOL CALLBACK NodeBgpJsonInit(PINIT_ONCE once, void *param, void **contex
 	return TRUE;
 }
 
-static bool NodeBgpAnnounceLocked(NODE *n, char *prefix, char *next_hop);
+static bool NodeBgpAnnounceLocked(NODE *n, char *prefix, char *next_hop, UINT vrf_id);
 
 // The string member name of a JSON object; "" when it has none
 static char *NodeBgpJsonStr(cJSON *o, char *name) {
@@ -324,9 +331,13 @@ static void NodeBgpOnMessage(NODE_BGP *b, char *line) {
 	} else if (StrCmp(type, "peer") == 0) {
 		NodeBgpPeerState(b, NodeBgpJsonStr(m, "peer"), NodeBgpJsonUint(m, "asn"), NodeBgpJsonStr(m, "state"));
 	} else if (StrCmp(type, "learned") == 0) {
-		NodeBgpLearned(b, NodeBgpJsonStr(m, "prefix"), NodeBgpJsonStr(m, "next_hop"), NodeBgpJsonStr(m, "peer"));
+		// An IP prefix route of an EVPN VRF goes to the EVPN of the gateway, never into the Windows routing table (NodeEvpn.c;
+		// SDN-25, #201)
+		if (NodeEvpnRoute(b->Node, line) == false)
+			NodeBgpLearned(b, NodeBgpJsonStr(m, "prefix"), NodeBgpJsonStr(m, "next_hop"), NodeBgpJsonStr(m, "peer"));
 	} else if (StrCmp(type, "withdrawn") == 0) {
-		NodeBgpWithdrawn(b, NodeBgpJsonStr(m, "prefix"), NodeBgpJsonStr(m, "peer"));
+		if (NodeEvpnRoute(b->Node, line) == false)
+			NodeBgpWithdrawn(b, NodeBgpJsonStr(m, "prefix"), NodeBgpJsonStr(m, "peer"));
 	} else if (StrCmp(type, "error") == 0) {
 		Lock(b->Lock);
 		{
@@ -397,6 +408,9 @@ static DWORD WINAPI NodeBgpReaderThread(void *param) {
 			b->LineSize = 0;
 		}
 
+		// The routes of the EVPN VRFs that the messages of this read changed go in together (NodeEvpn.c; SDN-25, #201)
+		NodeEvpnCommit(b->Node);
+
 		if (too_long) {
 			NodeLog(b->Node, "BGP sidecar: a message longer than %u bytes, the node stops reading", (UINT)NODE_BGP_MAX_LINE);
 			break;
@@ -413,7 +427,8 @@ static DWORD WINAPI NodeBgpReaderThread(void *param) {
 		}
 		Unlock(b->Lock);
 
-		UINT num = NodeBgpDeleteAllRoutes(b);
+		// ... and so do the routes of the EVPN VRFs (NodeEvpn.c; SDN-25, #201)
+		UINT num = NodeBgpDeleteAllRoutes(b) + NodeEvpnFlush(b->Node);
 		NodeLog(b->Node, "BGP sidecar closed the pipe: BGP stopped, %u learned routes removed", num);
 	}
 
@@ -691,21 +706,25 @@ void NodeBgpStart(NODE *n) {
 		TerminateJobObject(b->Job, 1);
 		NodeBgpFree(b);
 	} else {
+		// The EVPN of a gateway, before the first message of the sidecar (NodeEvpn.c; SDN-25, #201)
+		NodeEvpnStart(n, cfg);
 		b->Reader = CreateThread(NULL, 0, NodeBgpReaderThread, b, 0, &thread_id);
 
 		if (b->Reader == NULL) {
 			NodeLog(n, "BGP not started: no reader thread (error %u)", (UINT)GetLastError());
+			NodeEvpnStop(n);
 			TerminateJobObject(b->Job, 1);
 			NodeBgpFree(b);
 		} else {
 			n->Bgp = b;
 			NodeLog(n, "BGP sidecar %S bgp started: process %u, %u peers, pipe %S", n->BgpSidecar, b->ProcessId, LIST_NUM(b->Peers), b->PipeName);
 
+			// A prefix with a vrf is a route of that EVPN VRF
 			for (cJSON *a = (cJSON_IsArray(announce) ? announce->child : NULL); a != NULL; a = a->next) {
 				if (cJSON_IsString(a))
-					NodeBgpAnnounceLocked(n, cJSON_GetStringValue(a), NULL);
+					NodeBgpAnnounceLocked(n, cJSON_GetStringValue(a), NULL, 0);
 				else
-					NodeBgpAnnounceLocked(n, NodeBgpJsonStr(a, "prefix"), NodeBgpJsonStr(a, "next_hop"));
+					NodeBgpAnnounceLocked(n, NodeBgpJsonStr(a, "prefix"), NodeBgpJsonStr(a, "next_hop"), NodeBgpJsonUint(a, "vrf"));
 			}
 		}
 	}
@@ -743,12 +762,28 @@ void NodeBgpStop(NODE *n) {
 	else
 		NodeLog(n, "BGP stopped: the sidecar did not exit within %u ms and was ended, %u learned routes removed", (UINT)NODE_BGP_EXIT_WAIT, num);
 
+	// The EVPN of the gateway stops with its sidecar, once the reader thread ended (NodeEvpn.c; SDN-25, #201)
+	NodeEvpnStop(n);
 	NodeBgpFree(b);
 }
 
+// The prefix of the EVPN VRF vrf_id (0 for none) among the prefixes that the sidecar b announces, NULL for none; the caller
+// holds the lock of the sidecar
+static NODE_BGP_ANNOUNCED *NodeBgpFindAnnounced(NODE_BGP *b, char *prefix, UINT vrf_id) {
+	for (UINT i = 0; i < LIST_NUM(b->Announced); i++) {
+		NODE_BGP_ANNOUNCED *a = LIST_DATA(b->Announced, i);
+
+		if (a->VrfId == vrf_id && StrCmpi(a->Prefix, prefix) == 0)
+			return a;
+	}
+
+	return NULL;
+}
+
 // Announce prefix (an IPv4 or IPv6 prefix) to the peers, via next_hop or, for NULL or "", via the address of each
-// session. The caller holds the node lock.
-static bool NodeBgpAnnounceLocked(NODE *n, char *prefix, char *next_hop) {
+// session; with a vrf_id, as an IP prefix route of that EVPN VRF of a gateway, whose next hop is the VTEP of the gateway
+// (NodeEvpn.c; SDN-25, #201). The caller holds the node lock.
+static bool NodeBgpAnnounceLocked(NODE *n, char *prefix, char *next_hop, UINT vrf_id) {
 	SOCKADDR_INET addr;
 	BYTE len = 0;
 	bool ret = false;
@@ -765,6 +800,8 @@ static bool NodeBgpAnnounceLocked(NODE *n, char *prefix, char *next_hop) {
 	cJSON_AddStringToObject(m, "prefix", prefix);
 	if (IsEmptyStr(next_hop) == false)
 		cJSON_AddStringToObject(m, "next_hop", next_hop);
+	if (vrf_id != 0)
+		cJSON_AddNumberToObject(m, "vrf", vrf_id);
 
 	ret = NodeBgpSend(b, m);
 	cJSON_Delete(m);
@@ -772,18 +809,20 @@ static bool NodeBgpAnnounceLocked(NODE *n, char *prefix, char *next_hop) {
 	if (ret) {
 		Lock(b->Lock);
 		{
-			bool found = false;
+			if (NodeBgpFindAnnounced(b, prefix, vrf_id) == NULL) {
+				NODE_BGP_ANNOUNCED *a = ZeroMalloc(sizeof(NODE_BGP_ANNOUNCED));
 
-			for (UINT i = 0; i < LIST_NUM(b->Announced); i++)
-				if (StrCmpi(LIST_DATA(b->Announced, i), prefix) == 0)
-					found = true;
-
-			if (found == false)
-				Add(b->Announced, CopyStr(prefix));
+				a->VrfId = vrf_id;
+				StrCpy(a->Prefix, sizeof(a->Prefix), prefix);
+				Add(b->Announced, a);
+			}
 		}
 		Unlock(b->Lock);
 
-		NodeLog(n, "BGP prefix %s announced%s%s", prefix, IsEmptyStr(next_hop) ? "" : " via ", IsEmptyStr(next_hop) ? "" : next_hop);
+		if (vrf_id != 0)
+			NodeLog(n, "BGP prefix %s of VRF %u announced", prefix, vrf_id);
+		else
+			NodeLog(n, "BGP prefix %s announced%s%s", prefix, IsEmptyStr(next_hop) ? "" : " via ", IsEmptyStr(next_hop) ? "" : next_hop);
 	}
 
 	return ret;
@@ -799,16 +838,33 @@ bool NodeBgpAnnounce(NODE *n, char *prefix, char *next_hop) {
 
 	Lock(n->Lock);
 	{
-		ret = NodeBgpAnnounceLocked(n, prefix, next_hop);
+		ret = NodeBgpAnnounceLocked(n, prefix, next_hop, 0);
 	}
 	Unlock(n->Lock);
 
 	return ret;
 }
 
-// Withdraw a prefix that the node announced; false when no sidecar runs, the node does not announce prefix, or the
-// message does not reach the sidecar
-bool NodeBgpWithdraw(NODE *n, char *prefix) {
+// Announce prefix as an IP prefix route of the EVPN VRF vrf_id of a gateway (NodeEvpn.c; SDN-25, #201), whose next hop is the
+// VTEP of the gateway: false when vrf_id is 0, else as NodeBgpAnnounce. The sidecar answers a VRF that its evpn object does not
+// name with an error.
+bool NodeBgpAnnounceVrf(NODE *n, UINT vrf_id, char *prefix) {
+	bool ret = false;
+	if (n == NULL || vrf_id == 0)
+		return false;
+
+	Lock(n->Lock);
+	{
+		ret = NodeBgpAnnounceLocked(n, prefix, NULL, vrf_id);
+	}
+	Unlock(n->Lock);
+
+	return ret;
+}
+
+// Withdraw a prefix that the node announced in the EVPN VRF vrf_id, 0 for none; false when no sidecar runs, the node does not
+// announce prefix there, or the message does not reach the sidecar
+static bool NodeBgpWithdrawIn(NODE *n, char *prefix, UINT vrf_id) {
 	bool ret = false;
 	if (n == NULL || IsEmptyStr(prefix))
 		return false;
@@ -816,14 +872,12 @@ bool NodeBgpWithdraw(NODE *n, char *prefix) {
 	Lock(n->Lock);
 	{
 		NODE_BGP *b = n->Bgp;
-		char *announced = NULL;
+		NODE_BGP_ANNOUNCED *announced = NULL;
 
 		if (b != NULL) {
 			Lock(b->Lock);
 			{
-				for (UINT i = 0; i < LIST_NUM(b->Announced); i++)
-					if (StrCmpi(LIST_DATA(b->Announced, i), prefix) == 0)
-						announced = LIST_DATA(b->Announced, i);
+				announced = NodeBgpFindAnnounced(b, prefix, vrf_id);
 			}
 			Unlock(b->Lock);
 		}
@@ -831,7 +885,9 @@ bool NodeBgpWithdraw(NODE *n, char *prefix) {
 		if (announced != NULL) {
 			cJSON *m = cJSON_CreateObject();
 			cJSON_AddStringToObject(m, "type", "withdraw");
-			cJSON_AddStringToObject(m, "prefix", announced);
+			cJSON_AddStringToObject(m, "prefix", announced->Prefix);
+			if (vrf_id != 0)
+				cJSON_AddNumberToObject(m, "vrf", vrf_id);
 
 			ret = NodeBgpSend(b, m);
 			cJSON_Delete(m);
@@ -843,7 +899,10 @@ bool NodeBgpWithdraw(NODE *n, char *prefix) {
 				}
 				Unlock(b->Lock);
 
-				NodeLog(n, "BGP prefix %s withdrawn", prefix);
+				if (vrf_id != 0)
+					NodeLog(n, "BGP prefix %s of VRF %u withdrawn", prefix, vrf_id);
+				else
+					NodeLog(n, "BGP prefix %s withdrawn", prefix);
 				Free(announced);
 			}
 		}
@@ -851,6 +910,18 @@ bool NodeBgpWithdraw(NODE *n, char *prefix) {
 	Unlock(n->Lock);
 
 	return ret;
+}
+
+// Withdraw a prefix that the node announced; false when no sidecar runs, the node does not announce prefix, or the
+// message does not reach the sidecar
+bool NodeBgpWithdraw(NODE *n, char *prefix) {
+	return NodeBgpWithdrawIn(n, prefix, 0);
+}
+
+// Withdraw a prefix that the node announced in the EVPN VRF vrf_id of a gateway (NodeBgpAnnounceVrf): false when vrf_id is 0,
+// else as NodeBgpWithdraw
+bool NodeBgpWithdrawVrf(NODE *n, UINT vrf_id, char *prefix) {
+	return (vrf_id != 0 && NodeBgpWithdrawIn(n, prefix, vrf_id));
 }
 
 // The state of the BGP sidecar of the node
