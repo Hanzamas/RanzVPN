@@ -13,6 +13,10 @@ $PSNativeCommandUseErrorActionPreference = $false
 #   - vpntest bgp runs the node with its sidecar against that router (src/vpntest/bgptest.c) and must print
 #     "BGP TEST OK" and "NO MEMORY LEAKS". It also reads the command line of the sidecar from its log: the
 #     node started ranz.exe bgp.
+#   - vpntest evpn runs the EVPN of a gateway (SDN-25 #201, src/vpntest/evpntest.c): two nodes whose sidecars
+#     peer EVPN type-5 with each other on 127.0.0.1, the one the gateway and the other the BGP speaker of a
+#     fabric, and a harness VTEP of the fabric on 127.0.0.2. It needs no gobgpd, runs after vpntest bgp also
+#     when that failed, and must print "EVPN TEST OK" and "NO MEMORY LEAKS".
 # The log of gobgpd goes to build/harness-out/gobgpd.log and into the job log.
 
 $build = (Resolve-Path -LiteralPath $BuildDir).Path
@@ -93,7 +97,18 @@ try {
 
 $ok = ($full -cmatch '(?m)^BGP TEST OK\r?$')
 $leak = ($full -cmatch 'NO MEMORY LEAKS')
+
+# The EVPN of a gateway, with the sidecars of two nodes and no gobgpd
+$evpn = (Write-Output "q\n" | & (Join-Path $build 'vpntest.exe') evpn | Out-String)
+$evpnCode = $LASTEXITCODE
+Write-Host $evpn
+$evpnOk = ($evpn -cmatch '(?m)^EVPN TEST OK\r?$')
+$evpnLeak = ($evpn -cmatch 'NO MEMORY LEAKS')
+
 if (-not $ok -or -not $leak) {
 	throw "vpntest bgp failed (exit code $code, BGP TEST OK $ok, NO MEMORY LEAKS $leak)"
 }
-Write-Host 'BGP sidecar spike: ok'
+if (-not $evpnOk -or -not $evpnLeak) {
+	throw "vpntest evpn failed (exit code $evpnCode, EVPN TEST OK $evpnOk, NO MEMORY LEAKS $evpnLeak)"
+}
+Write-Host 'BGP sidecar spike and EVPN gateway: ok'
