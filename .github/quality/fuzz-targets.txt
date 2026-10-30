@@ -186,6 +186,16 @@ src/Cedar  NodeEgressFromHost   exempt  a packet of the host's own IP stack, whi
 # The bridge of the L2 adapter (CORE-S3-3 #73) looks at each frame of the wire that its XDP backend takes: no parser word in the
 # name, listed as the reader of the bytes of the LAN that it is
 src/Cedar  NodeL2BridgeWay  exempt  compares the first six bytes of a frame, its destination MAC address, with the address of the NIC and tests their group bit; it reads no length and no field beyond them, and a frame shorter than six bytes is not read
+# The EVPN of a gateway node (SDN-25 #201): the learned and withdrawn messages of its BGP sidecar as IP prefix routes of an
+# EVPN VRF, and the frames that the VTEPs of a fabric send on the L3 VNI of an EVPN VRF, with the two ends of their packets.
+# The functions that take what these read are listed too, as the readers of routes and packets that they are.
+src/Cedar  NodeEvpnParseRoute      fuzz_evpn
+src/Cedar  NodeEvpnParseFrame      fuzz_evpn
+src/Cedar  NodeEvpnEnds            fuzz_evpn  via NodeEvpnParseFrame
+src/Cedar  NodeEvpnRoute           exempt  puts the route that NodeEvpnParseRoute (fuzz_evpn) read from a message of the node's own sidecar into the list of the routes; it reads no byte itself
+src/Cedar  NodeEvpnOutput          exempt  a packet of the host's own IP stack, whose two ends NodeNatEnds (fuzz_nat) reads as for NodeOverlayInput, and which NodeNatCopy (fuzz_nat) writes into the frame for the fabric
+src/Cedar  NodeEvpnTransit         exempt  a packet of a peer that the overlay delivered, whose two ends NodeEvpnEnds (fuzz_evpn) reads, and which the session profile (NodeProfileInbound, fuzz_nodeprofile) and the policy of the VRF (fuzz_policy) judge before it goes to the fabric as it came, and NodeMirrorCopy (fuzz_mirror) copies
+src/Cedar  NodeOverlayFabricInput  exempt  a packet of the fabric that NodeEvpnParseFrame (fuzz_evpn) took, whose two ends NodeOverlayEnds reads as for NodeOverlayDeliver; NodeNatInbound (fuzz_nat) translates it for the host, or NodeNatEnds and NodeNatCopy (fuzz_nat) and the policy (fuzz_policy) take it on to a peer as for NodeOverlayInput
 
 # The control stream and the envelopes of the controller (SDN-2 #178, control.proto)
 controller/internal/control  Open                  FuzzOpen

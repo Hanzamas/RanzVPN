@@ -1,0 +1,94 @@
+// NodeEvpn.h
+// The EVPN of a gateway node (NodeEvpn.c; SDN-25, #201): the declarations that the BGP sidecar, the overlay, the table
+// snapshot, the fuzz target and the tests use
+
+#ifndef NODE_EVPN_H
+#define NODE_EVPN_H
+
+#include "Node.h"
+
+#define NODE_EVPN_ROUTER_MAC "02:52:5a:00:00:05" // The router MAC of a gateway whose evpn object names none (DefaultRouterMAC of ranz-bgp/internal/sidecar)
+#define NODE_EVPN_ETHER      14                  // Bytes of the Ethernet header in front of the IP packet of a frame of the fabric
+#define NODE_EVPN_MAX_VRFS   16                  // The VRFs of an evpn object at most (CONTROL_MAX_VRFS)
+#define NODE_EVPN_MAX_ROUTES 65536               // The IP prefix routes of the fabric that a gateway holds at most (NODE_VRF_MAX_HOPS)
+#define NODE_EVPN_TEXT       64                  // A prefix, an address or a MAC address as text, with its NUL
+
+// What NodeEvpnParseRoute finds in a message of the sidecar
+#define NODE_EVPN_NO_ROUTE  0 // No message of an IP prefix route of an EVPN VRF: one without a vni
+#define NODE_EVPN_LEARNED   1 // learned: the route of the prefix in the VRF is now the one of the message
+#define NODE_EVPN_WITHDRAWN 2 // withdrawn: no peer offers the prefix in the VRF any more
+#define NODE_EVPN_BAD       3 // A learned or withdrawn message with a vni that the node cannot take
+
+// What NodeEvpnParseFrame finds in a frame of the fabric
+#define NODE_EVPN_FRAME_OK        0 // An IP packet to the router MAC of the gateway
+#define NODE_EVPN_FRAME_NOT_OURS  1 // A frame to another MAC address
+#define NODE_EVPN_FRAME_MALFORMED 2 // A frame too short, tagged, or without an IP packet of the version of its EtherType
+
+typedef struct NODE_EVPN NODE_EVPN;
+typedef struct NODE_EVPN_TABLE NODE_EVPN_TABLE;
+
+// An IP prefix route of the fabric in an EVPN VRF, as a learned or withdrawn message of the sidecar names it
+// (NodeEvpnParseRoute) and as the gateway holds it (NodeEvpnGetRoutes). A withdrawn message names no next hop and no
+// router MAC.
+typedef struct NODE_EVPN_ROUTE {
+	UINT VrfId;                   // The EVPN VRF
+	char Prefix[NODE_EVPN_TEXT];  // The prefix, as the sidecar names it
+	UCHAR Address[16];            // ... 4 bytes for IPv4, 16 for IPv6, in network byte order
+	UINT AddressSize;             // ... their number
+	UINT Length;                  // ... and its length
+	char NextHop[NODE_EVPN_TEXT]; // The VTEP of the fabric, the next hop of the route
+	UCHAR Vtep[16];               // ... as an IPv4-mapped or an IPv6 address
+	UINT Vni;                     // The VNI of the route: its label, the L3 VNI of the VRF of the fabric
+	UCHAR RouterMac[6];           // The router MAC of the fabric: the inner destination of the frames of the route
+	char Peer[NODE_EVPN_TEXT];    // The BGP peer that the route came from
+} NODE_EVPN_ROUTE;
+
+// The IP packet of a frame of the fabric (NodeEvpnParseFrame)
+typedef struct NODE_EVPN_FRAME {
+	const UCHAR *Packet; // The packet, inside the frame
+	UINT Size;           // ... its bytes: the rest of the frame
+	UCHAR Src[16];       // Its source ...
+	UCHAR Dst[16];       // ... and its destination: 4 bytes for IPv4, 16 for IPv6
+	UINT AddrSize;       // ... their number
+} NODE_EVPN_FRAME;
+
+// What NodeEvpnGetStatus reports: the frames of the EVPN of the gateway since its sidecar started, all 0 without one
+typedef struct NODE_EVPN_STATUS {
+	bool Running;       // The EVPN of the gateway runs: the Bgp setting has an evpn object, and the socket of its VTEP is open
+	USHORT Port;        // The UDP port of the VTEP of the gateway
+	USHORT FabricPort;  // ... and of the VTEPs of the fabric
+	UINT NumVrfs;       // The EVPN VRFs
+	UINT NumRoutes;     // The IP prefix routes of the fabric that the gateway holds
+	UINT64 Sent;        // Packets of the overlay sent to a VTEP of the fabric
+	UINT64 Failed;      // Packets for the fabric that could not go: a frame too large, or a failed send
+	UINT64 Delivered;   // Packets of the fabric that the overlay took, for the host or a peer
+	UINT64 Undelivered; // ... that it did not take: no route of the VRF to their destination, the policy, or a failed send
+	UINT64 Strangers;   // Packets of the fabric from a source that no IP prefix route of their VRF holds: dropped
+	UINT64 NotOurs;     // Frames of the fabric to another MAC address than the router MAC of the gateway: dropped
+	UINT64 UnknownVni;  // Datagrams on a VNI of no EVPN VRF: dropped
+	UINT64 Malformed;   // Datagrams of no VXLAN, or frames without an IP packet: dropped
+} NODE_EVPN_STATUS;
+
+// NodeEvpn.c
+UINT NodeEvpnParseRoute(const char *line, NODE_EVPN_ROUTE *r);
+UINT NodeEvpnParseFrame(const UCHAR *frame, UINT size, const UCHAR *router_mac, NODE_EVPN_FRAME *f);
+bool NodeEvpnEnds(const UCHAR *packet, UINT size, UCHAR *src, UCHAR *dst, UINT *addr_size);
+struct cJSON;
+void NodeEvpnStart(NODE *n, struct cJSON *cfg);
+void NodeEvpnStop(NODE *n);
+bool NodeEvpnRoute(NODE *n, const char *line);
+void NodeEvpnCommit(NODE *n);
+UINT NodeEvpnFlush(NODE *n);
+void NodeEvpnFreeTable(NODE_EVPN_TABLE *t);
+bool NodeEvpnOutput(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, const UCHAR *packet, UINT size);
+bool NodeEvpnTransit(NODE *n, NODE_VRF_TABLES *v, UINT vrf_id, UINT from, const UCHAR *packet, UINT size);
+void NodeEvpnGetStatus(NODE *n, NODE_EVPN_STATUS *st);
+UINT NodeEvpnGetRoutes(NODE *n, NODE_EVPN_ROUTE *list, UINT max);
+
+// NodeTable.c
+bool NodeSwapEvpn(NODE *n, NODE_EVPN_TABLE *e);
+
+// NodeOverlay.c
+bool NodeOverlayFabricInput(NODE *n, UINT vrf_id, const UCHAR *packet, UINT size, UCHAR *nat_buf);
+
+#endif // NODE_EVPN_H
