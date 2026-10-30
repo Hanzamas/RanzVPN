@@ -59,8 +59,8 @@ func TestDeviceKeys(t *testing.T) {
 }
 
 // TestStoreSealer checks the Sealer that the controller seals the PresharedKeys of the Devices with: a store
-// has none until SetSealer gives it one, and has none again for a Sealer that is nil, as a member of a
-// cluster has; a store that Fenced makes has the same one, which is what the controller of a leader reads.
+// has none until SetSealer gives it one, and has none again for a Sealer that is nil; a store that Fenced
+// makes has the same one, which is what the controller of a leader reads.
 func TestStoreSealer(t *testing.T) {
 	rq := rqlitetest.Start(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

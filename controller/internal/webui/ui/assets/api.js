@@ -7,13 +7,20 @@
 /** @typedef {'viewer' | 'operator' | 'admin'} Role */
 
 /**
+ * What a UI action needs of the token it calls with: a role of the API, `self` for a call of the portal, which
+ * any token of a User makes and the portal's own token does (SDN-58), or `public` for a call that needs no
+ * token, such as the sign-in.
+ * @typedef {Role | 'self' | 'public'} Need
+ */
+
+/**
  * A UI action: the API call it makes and the least role that call needs, the role api.Needs
  * gives it.
  * @typedef {object} Action
  * @property {string} name
  * @property {string} method
  * @property {string} path - an http.ServeMux pattern: {placeholders} take the params of call
- * @property {Role} role
+ * @property {Need} role
  */
 
 /**
@@ -36,6 +43,9 @@ const roles = ['viewer', 'operator', 'admin'];
 
 /** Where the tab keeps the token: sessionStorage, so it ends with the tab. */
 const tokenKey = 'ranz.apiToken';
+
+/** Where the tab keeps the token of the portal, apart from the one of the console, which never holds it. */
+const selfTokenKey = 'ranz.selfToken';
 
 /**
  * allows reports whether a token of the role have may make a call that needs the role need, as
@@ -81,26 +91,52 @@ export class APIError extends Error {
   }
 }
 
-/** @returns {string} the token of the tab, empty when it has none */
-export function token() {
+/**
+ * @param {string} key
+ * @returns {string} what the tab keeps under key, empty when it keeps none
+ */
+function stored(key) {
   try {
-    return sessionStorage.getItem(tokenKey) ?? '';
+    return sessionStorage.getItem(key) ?? '';
   } catch {
     return '';
   }
 }
 
-/** @param {string} secret - the token the tab calls with from now on; empty forgets it */
-export function setToken(secret) {
+/**
+ * @param {string} key
+ * @param {string} secret - what the tab keeps under key from now on; empty forgets it
+ */
+function keep(key, secret) {
   try {
     if (secret) {
-      sessionStorage.setItem(tokenKey, secret);
+      sessionStorage.setItem(key, secret);
     } else {
-      sessionStorage.removeItem(tokenKey);
+      sessionStorage.removeItem(key);
     }
   } catch {
     // Without storage the token lasts until the next page, which then asks for it again.
   }
+}
+
+/** @returns {string} the token of the tab, empty when it has none */
+export function token() {
+  return stored(tokenKey);
+}
+
+/** @param {string} secret - the token the tab calls with from now on; empty forgets it */
+export function setToken(secret) {
+  keep(tokenKey, secret);
+}
+
+/** @returns {string} the token of the self scope that the portal calls with, empty when the tab has none */
+export function selfToken() {
+  return stored(selfTokenKey);
+}
+
+/** @param {string} secret - the token of the self scope that the portal calls with from now on; empty forgets it */
+export function setSelfToken(secret) {
+  keep(selfTokenKey, secret);
 }
 
 /**
@@ -146,7 +182,8 @@ export async function call(name, opts = {}) {
   }
   /** @type {Record<string, string>} */
   const headers = { Accept: opts.blob ? 'application/zip, application/json' : 'application/json' };
-  const secret = token();
+  // The console calls with its API token, the portal with its token of the self scope, and the sign-in with none
+  const secret = a.role === 'public' ? '' : a.role === 'self' ? selfToken() : token();
   if (secret) {
     headers.Authorization = `Bearer ${secret}`;
   }

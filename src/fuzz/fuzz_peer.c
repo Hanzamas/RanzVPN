@@ -2,11 +2,12 @@
 // libFuzzer target: the parsers of the peer layer of the new core (Core/Peer.c, Core/PeerSignal.c, CORE-S5-2 #78)
 // that read what the network and the control plane send. Every input runs as a datagram through PeerInput of a
 // relay that two nodes are bound to, once from the address of a bound node and once from an address that is
-// none; as a datagram that the ICE session with a bound node delivered, through PeerInputDirect (CORE-S5-3 #79);
-// as a signal envelope through PeerOpenSignal; and as the payload of a signal through PeerSignalDecode. For the peer
-// sessions (Core/PeerSession.c, CORE-H2 #399) it also runs as a datagram from A at the node B, which holds keys of a
-// session with A, and through PeerRecordParse and PeerHandshakeParse, the parsers of the clear header of a datagram
-// between two nodes and of the payloads of the handshake messages.
+// none; as a datagram from A at a node with ICE on and an ICE session with A, whose STUN messages go through
+// PeerIceInput to libjuice (Core/PeerIce.c; CORE-S5-3 #79, CORE-S5-6 #412); as a signal envelope through
+// PeerOpenSignal; and as the payload of a signal through PeerSignalDecode. For the peer sessions
+// (Core/PeerSession.c, CORE-H2 #399) it also runs as a datagram from A at the node B, which holds keys of a session
+// with A, and through PeerRecordParse and PeerHandshakeParse, the parsers of the clear header of a datagram between
+// two nodes and of the payloads of the handshake messages.
 // The keys are the fixed ones of coretest (src/coretest/envelope.c), so a seed can be a datagram between the
 // two bound nodes or a known answer of coretest.
 //
@@ -22,10 +23,6 @@
 // Largest input accepted: the largest datagram of the peer layer; longer inputs are skipped
 #define	FUZZ_MAX_INPUT_SIZE		PEER_MAX_DATAGRAM
 
-// What the ICE session with the peer of key delivered (Core/Peer.c), declared in Core/PeerInternal.h, which only the
-// files of the peer module include
-void PeerInputDirect(PEER_AGENT *a, const UCHAR *key, const UCHAR *data, UINT size);
-
 static PEER_KEY fuzz_relay_key;
 static PEER_KEY fuzz_a_key;
 static PEER_KEY fuzz_b_key;
@@ -35,6 +32,9 @@ static PEER_ADDR fuzz_other_addr;
 
 static PEER_AGENT *fuzz_node = NULL;
 static PEER_AGENT *fuzz_a = NULL;
+
+// The node B again, with ICE on and an ICE session with A, which its offer to A started
+static PEER_AGENT *fuzz_ice = NULL;
 
 // The last datagram that the relay sent, during the setup: the challenge of a bind
 static UCHAR fuzz_sent[PEER_MAX_DATAGRAM];
@@ -167,11 +167,27 @@ static bool FuzzPeerSetup()
 	PeerSetDirect(fuzz_a, fuzz_b_key.Public, &b_addr);
 	PeerSend(fuzz_a, fuzz_b_key.Public, "fuzz", 4);
 
+	// B with ICE on: its offer to A starts its ICE session with A, whose agent of libjuice takes the STUN messages of
+	// an input (Core/PeerIce.c)
+	UCHAR env[PEER_MAX_ENVELOPE];
+
+	PeerDefaultConfig(&c);
+	c.Ice = true;
+	fuzz_ice = PeerNew(&fuzz_b_key, &c, FuzzPeerSend, &fuzz_ice, NULL, NULL);
+	if (fuzz_ice == NULL)
+	{
+		return false;
+	}
+
+	PeerSetPeers(fuzz_ice, &peers[0], 1);
+	PeerSetHostCandidates(fuzz_ice, &b_addr, 1);
+	PeerSealSignal(fuzz_ice, fuzz_a_key.Public, PEER_SIGNAL_OFFER, env, sizeof(env));
+
 	return true;
 }
 
-// One input: a datagram from A and from a stranger, a datagram of the ICE session with A, a signal envelope, a signal
-// payload
+// One input: a datagram from A and from a stranger, a datagram from A at a node with an ICE session with A, a signal
+// envelope, a signal payload
 static void FuzzPeer(const uint8_t *data, size_t size)
 {
 	PEER_SIGNAL sig;
@@ -194,7 +210,7 @@ static void FuzzPeer(const uint8_t *data, size_t size)
 
 	PeerInput(fuzz_relay, &fuzz_a_addr, copy, (UINT)size);
 	PeerInput(fuzz_relay, &fuzz_other_addr, copy, (UINT)size);
-	PeerInputDirect(fuzz_relay, fuzz_a_key.Public, copy, (UINT)size);
+	PeerInput(fuzz_ice, &fuzz_a_addr, copy, (UINT)size);
 	PeerOpenSignal(fuzz_relay, copy, (UINT)size, &sig);
 	PeerSignalDecode(copy, (UINT)size, &sig);
 

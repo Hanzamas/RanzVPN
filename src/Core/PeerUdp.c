@@ -1,11 +1,13 @@
 // PeerUdp.c
 // A UDP socket of the peer layer on Winsock: dual-stack, on the wildcard address, with one receive thread that
 // drains the socket into PeerInput and runs PeerTick. It stands in for the QUIC datagrams of CORE-S1-1 (#67),
-// which the relay will take on the QUIC listener on UDP 443 (ADR-0035).
+// which the relay will take on the QUIC listener on UDP 443 (ADR-0035). Its host addresses, from IP Helper, are the
+// host candidates of ICE (CORE-S5-6, #412).
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
+#include <iphlpapi.h>
 
 #include "Core/PeerInternal.h"
 
@@ -111,6 +113,69 @@ USHORT PeerUdpPort(PEER_UDP *u) {
 	return (u != NULL ? u->Port : 0);
 }
 
+// Whether the address of a unicast address of the host can be a host candidate: no loopback, link-local or unspecified
+// address, and no IPv4 address in IPv6 form
+static bool PeerUdpHostAddr(const SOCKADDR *sa) {
+	if (sa->sa_family == AF_INET) {
+		const UCHAR *b = (const UCHAR *)&((const SOCKADDR_IN *)sa)->sin_addr;
+
+		return b[0] != 0 && b[0] != 127 && (b[0] != 169 || b[1] != 254);
+	}
+
+	if (sa->sa_family == AF_INET6) {
+		static const UCHAR zero[16] = {0};
+		static const UCHAR loopback[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+		static const UCHAR mapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
+		const UCHAR *b = (const UCHAR *)&((const SOCKADDR_IN6 *)sa)->sin6_addr;
+
+		// fe80::/10 is link-local
+		return memcmp(b, zero, 16) != 0 && memcmp(b, loopback, 16) != 0 && memcmp(b, mapped, 12) != 0 && (b[0] != 0xFE || (b[1] & 0xC0) != 0x80);
+	}
+
+	return false;
+}
+
+// The host addresses of the socket, its host candidates: the unicast addresses of every interface of the host that is up,
+// IPv4 and IPv6, with the port of the socket, at most max. The loopback interface, a tunnel and a virtual adapter, as a
+// Wintun adapter of the overlay is, give none, nor do loopback and link-local addresses. Returns their number.
+UINT PeerUdpHosts(PEER_UDP *u, PEER_ADDR *addrs, UINT max) {
+	ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME;
+	ULONG size = 16384;
+	UINT n = 0;
+
+	if (u == NULL || addrs == NULL)
+		return 0;
+
+	IP_ADAPTER_ADDRESSES *list = (IP_ADAPTER_ADDRESSES *)HeapAlloc(GetProcessHeap(), 0, size);
+	ULONG ret = (list != NULL ? GetAdaptersAddresses(AF_UNSPEC, flags, NULL, list, &size) : ERROR_NOT_ENOUGH_MEMORY);
+	if (ret == ERROR_BUFFER_OVERFLOW) {
+		HeapFree(GetProcessHeap(), 0, list);
+		list = (IP_ADAPTER_ADDRESSES *)HeapAlloc(GetProcessHeap(), 0, size);
+		ret = (list != NULL ? GetAdaptersAddresses(AF_UNSPEC, flags, NULL, list, &size) : ERROR_NOT_ENOUGH_MEMORY);
+	}
+
+	for (IP_ADAPTER_ADDRESSES *ad = (ret == NO_ERROR ? list : NULL); ad != NULL && n < max; ad = ad->Next) {
+		if (ad->OperStatus != IfOperStatusUp || ad->IfType == IF_TYPE_SOFTWARE_LOOPBACK || ad->IfType == IF_TYPE_TUNNEL || ad->IfType == IF_TYPE_PROP_VIRTUAL)
+			continue;
+
+		for (IP_ADAPTER_UNICAST_ADDRESS *ua = ad->FirstUnicastAddress; ua != NULL && n < max; ua = ua->Next) {
+			const SOCKADDR *sa = ua->Address.lpSockaddr;
+			PEER_ADDR a;
+
+			if (sa == NULL || PeerUdpHostAddr(sa) == false || PeerUdpFromSockaddr(&a, (const SOCKADDR_STORAGE *)sa) == false)
+				continue;
+
+			a.Port = u->Port;
+			addrs[n++] = a;
+		}
+	}
+
+	if (list != NULL)
+		HeapFree(GetProcessHeap(), 0, list);
+
+	return n;
+}
+
 // The PEER_SEND_PROC of a socket: param is the PEER_UDP
 bool PeerUdpSend(void *param, const PEER_ADDR *dst, const void *data, UINT size) {
 	PEER_UDP *u = (PEER_UDP *)param;
@@ -192,17 +257,26 @@ bool PeerUdpStart(PEER_UDP *u, PEER_AGENT *a) {
 	return (u->Thread != NULL);
 }
 
+// Stop and join the receive thread: no datagram goes to the peer layer any more, and its timers stop. The socket
+// stays open, so the ICE sessions of the layer, which send on it until they end, may be freed with the layer before
+// the socket (PeerUdpFree).
+void PeerUdpStop(PEER_UDP *u) {
+	if (u == NULL || u->Thread == NULL)
+		return;
+
+	SetEvent(u->StopEvent);
+	WaitForSingleObject(u->Thread, INFINITE);
+	CloseHandle(u->Thread);
+	u->Thread = NULL;
+}
+
 // Stop and join the receive thread, then close the socket. The peer layer that sends on it must not send any more;
 // free it after this.
 void PeerUdpFree(PEER_UDP *u) {
 	if (u == NULL)
 		return;
 
-	if (u->Thread != NULL) {
-		SetEvent(u->StopEvent);
-		WaitForSingleObject(u->Thread, INFINITE);
-		CloseHandle(u->Thread);
-	}
+	PeerUdpStop(u);
 
 	if (u->Socket != INVALID_SOCKET)
 		closesocket(u->Socket);

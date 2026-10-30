@@ -68,18 +68,6 @@ void fallback_test();
 #define CORETEST_FRONTDOOR_CHILD "frontdoor-child"
 int frontdoor_child(int argc, char *argv[]);
 
-// The simulated home gateway of the ICE tests (homegw.c): a UPnP Internet Gateway Device that libplum finds with
-// SSDP, and the port forwarding of the mapping it grants, from its WAN side on the IPv4 loopback to the home
-// network on the IPv6 loopback
-typedef struct HOMEGW HOMEGW;
-
-HOMEGW *HomeGwNew();
-void HomeGwFree(HOMEGW *g);
-bool HomeGwMapped(HOMEGW *g, USHORT *external, USHORT *internal);
-void HomeGwSetLink(HOMEGW *g, bool up);
-UINT HomeGwForwarded(HOMEGW *g);
-UINT HomeGwSearches(HOMEGW *g);
-
 // The static key of the X25519 scalar first, first + 1, ..., first + 31: the fixed keys of the peer tests, the same
 // as fixedKey of the controller's tests (controller/internal/controller)
 void coretest_fixed_key(PEER_KEY *k, UCHAR first);

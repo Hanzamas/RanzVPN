@@ -21,9 +21,9 @@ func init() {
 }
 
 // Sealer returns the Sealer that SetSealer gave the store, which the controller seals the PresharedKeys
-// of the Devices with, nil when the store has none: a member of a cluster, whose members have no sealing
-// key in common (ADR-0026), or a store that SetSealer was not called on. The stores that Fenced makes
-// share it.
+// of the Devices with: the sealing key of the host, or for a member of a cluster the Cluster key
+// (internal/clusterkey, ADR-0026). It is nil when the store has none, a store that SetSealer was not
+// called on or was given nil. The stores that Fenced makes share it.
 func (s *Store) Sealer() Sealer {
 	if s.seal == nil {
 		return nil

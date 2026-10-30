@@ -141,7 +141,9 @@ func Routes(c *controller.Controller, tokens *rbac.Tokens, status Status) *http.
 // the console may be reached from, and the admin destination lists, which say where an operator
 // may point the controller and the nodes, need admin; so do everything under /api/v1/audit/targets,
 // which says where the audit log goes, and the change of /api/v1/audit/retention, which says how
-// long it is kept (AUD1-DT-9, #457). Everything under /api/v1/operations, the live operations of an
+// long it is kept (AUD1-DT-9, #457). Everything under /api/v1/self, the calls of a User about its own
+// devices and join tokens, needs the role Self, which is below viewer and which a token of the self scope
+// holds (SDN-58, #251). Everything under /api/v1/operations, the live operations of an
 // operator, needs operator, the reads too, since they show who is connected and what the nodes learnt
 // of their members (SDN-50, #243). Any other read (GET or HEAD) needs viewer; every other request
 // changes the Intent and needs operator. An endpoint added later is so guarded from the start, by
@@ -150,6 +152,9 @@ func Needs(method, urlPath string) rbac.Role {
 	p := path.Clean("/" + urlPath)
 	read := method == http.MethodGet || method == http.MethodHead
 	switch {
+	case p == selfPath || strings.HasPrefix(p, selfPath+"/"):
+		// The self calls of a User, the least role there is (self.go; SDN-58)
+		return rbac.Self
 	case p == tokensPath || strings.HasPrefix(p, tokensPath+"/") || p == adminSourcesPath || p == adminDestinationsPath:
 		return rbac.Admin
 	case p == auditTargetsPath || strings.HasPrefix(p, auditTargetsPath+"/"), p == auditRetentionPath && !read:
@@ -165,7 +170,8 @@ func Needs(method, urlPath string) rbac.Role {
 // Guard passes each request whose bearer token has a role that allows what the request Needs
 // to h, with the token in its context (Caller). It answers 401 Unauthorized to a request with no
 // token, with one the controller does not know and with one that has expired, and 403 Forbidden
-// to one whose role is too low (RFC 6750, section 3).
+// to one whose role is too low, and to one whose role is held for one Network that calls anything
+// but the calls of that Network (scopeRefusal; RFC 6750, section 3).
 func Guard(tokens *rbac.Tokens, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		secret, ok := bearer(r)
@@ -188,6 +194,12 @@ func Guard(tokens *rbac.Tokens, h http.Handler) http.Handler {
 		}
 		if err != nil {
 			replyError(w, err)
+			return
+		}
+		// A role that is held for one Network calls the calls of that Network and no other (scoped.go; SDN-38)
+		if refusal := scopeRefusal(tok, r); refusal != "" {
+			w.Header().Set("WWW-Authenticate", challenge+`, error="insufficient_scope"`)
+			reply(w, http.StatusForbidden, Problem{Error: refusal})
 			return
 		}
 		if need := Needs(r.Method, r.URL.Path); !tok.Role.Allows(need) {

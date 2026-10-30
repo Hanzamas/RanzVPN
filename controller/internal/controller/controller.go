@@ -258,6 +258,9 @@ type Controller struct {
 
 	// The lives of the node keys, and the nodes that they hold back (nodekeys.go; SDN-56)
 	keyLife keyLifeState
+
+	// The delegations of the Networks, which the roles held for one Network are bound by (scope.go; SDN-38)
+	scopes scopeState
 }
 
 // node is the desired state of one node and what the node acknowledged of it.
@@ -380,6 +383,10 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	}
 	// The lives of the node keys, which the first compile honours too (nodekeys.go; SDN-56)
 	if err := c.startKeys(ctx, cfg); err != nil {
+		return nil, err
+	}
+	// The delegations of the Networks, which the streams of the nodes are held to from the first Hello (scope.go; SDN-38)
+	if err := c.loadScopes(ctx); err != nil {
 		return nil, err
 	}
 	for _, sn := range stored {
@@ -514,6 +521,11 @@ func (c *Controller) Delete(ctx context.Context, kind, name string) (ApplyResult
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.unconfirmed(); err != nil {
+		return ApplyResult{}, err
+	}
+	// The condition of a delete of a scoped role (scope.go; SDN-38) or of the removal of a device (selfservice.go; SDN-58)
+	// on the intent in force, under the lock
+	if err := checkPrecondition(ctx, c.intent); err != nil {
 		return ApplyResult{}, err
 	}
 	if err := c.checkCluster(ctx, c.evaluate(c.lic)); err != nil {
@@ -779,6 +791,8 @@ func (c *Controller) commit(ctx context.Context, next intent.Intent, cp compiled
 	c.dropPasswords(sctx, next)
 	c.dropBans(sctx, next)
 	c.dropPins(sctx, next)
+	// What was held for the Networks that the change removed (scope.go; SDN-38)
+	c.dropScopes(sctx, next)
 	// The PresharedKeys of the Devices that the change removed (devicekeys.go)
 	c.dropDeviceKeys(sctx, next)
 
@@ -1062,6 +1076,12 @@ func (c *Controller) serveConn(tc *tls.Conn) {
 		message := c.holdMessage(name, hold)
 		c.mu.Unlock()
 		c.refuseKey(conn, name, message, remote)
+		return
+	}
+	if network, limit, full := c.sessionsFull(name); full {
+		// The Network of the node has all the sessions that its delegation allows open (scopesessions.go; SDN-38)
+		c.mu.Unlock()
+		c.refuseSessions(conn, name, network, limit, remote)
 		return
 	}
 	n := c.nodes[name]

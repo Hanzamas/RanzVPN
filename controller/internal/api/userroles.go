@@ -37,6 +37,9 @@ type UserRoleList struct {
 // UserRoleRequest is the body of PUT /api/v1/tokens/users/{name}.
 type UserRoleRequest struct {
 	Role rbac.Role `json:"role"`
+	// Network is the Network that the role is held for (SDN-38, scoped.go), which must exist. Left out, the
+	// role is held for the whole API, and replaces a role that was held for a Network.
+	Network string `json:"network,omitempty"`
 }
 
 func init() {
@@ -62,7 +65,10 @@ func init() {
 				replyError(w, fmt.Errorf("%w: %s %q", intent.ErrNotFound, intent.KindUser, name))
 				return
 			}
-			ur, err := d.Tokens.SetUserRole(r.Context(), name, req.Role)
+			if !holdsNetworkOrNone(d, w, req.Network) {
+				return
+			}
+			ur, err := d.Tokens.SetUserGrant(r.Context(), name, rbac.Grant{Role: req.Role, Network: req.Network})
 			if err != nil {
 				replyError(w, err)
 				return
@@ -108,10 +114,16 @@ func (c *Client) UserRoles(ctx context.Context) ([]rbac.UserRole, error) {
 	return l.Roles, err
 }
 
-// SetUserRole gives the User name the API role role and returns it.
+// SetUserRole gives the User name the API role role, held for the whole API, and returns it.
 func (c *Client) SetUserRole(ctx context.Context, name string, role rbac.Role) (rbac.UserRole, error) {
+	return c.SetUserGrant(ctx, name, rbac.Grant{Role: role})
+}
+
+// SetUserGrant gives the User name the API role of g, held for the Network of g, or for the whole API when it
+// names none, in place of the one it held, and returns it.
+func (c *Client) SetUserGrant(ctx context.Context, name string, g rbac.Grant) (rbac.UserRole, error) {
 	var ur rbac.UserRole
-	err := c.do(ctx, http.MethodPut, userRolesPath+"/"+url.PathEscape(name), UserRoleRequest{Role: role}, &ur)
+	err := c.do(ctx, http.MethodPut, userRolesPath+"/"+url.PathEscape(name), UserRoleRequest{Role: g.Role, Network: g.Network}, &ur)
 	return ur, err
 }
 

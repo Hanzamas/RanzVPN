@@ -20,6 +20,10 @@ type TokenList struct {
 type TokenRequest struct {
 	Name string    `json:"name"`
 	Role rbac.Role `json:"role"`
+	// Network is the Network that the role of the token is held for (SDN-38, scoped.go): the token calls the
+	// calls of that Network and no other, and the Network must exist. Left out, the role is held for the whole
+	// API.
+	Network string `json:"network,omitempty"`
 	// Expires is the instant, an RFC 3339 time in the future, from which the controller refuses
 	// the token. Left out, the token never expires.
 	Expires time.Time `json:"expires,omitzero"`
@@ -43,7 +47,10 @@ func init() {
 				reply(w, http.StatusBadRequest, Problem{Error: "the body is not a token request: " + err.Error()})
 				return
 			}
-			tok, err := d.Tokens.CreateExpiring(r.Context(), req.Name, req.Role, req.Expires)
+			if !holdsNetworkOrNone(d, w, req.Network) {
+				return
+			}
+			tok, err := d.Tokens.CreateGrant(r.Context(), req.Name, rbac.Grant{Role: req.Role, Network: req.Network}, req.Expires)
 			if err != nil {
 				replyError(w, err)
 				return

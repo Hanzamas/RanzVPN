@@ -321,6 +321,15 @@ jobs:
         curl -fsSL -o "$RUNNER_TEMP/xdp-LICENSE" "https://raw.githubusercontent.com/microsoft/xdp-for-windows/v${XDP_VERSION}/LICENSE"
         echo "WINTUN_LICENSE=$RUNNER_TEMP/wintun-LICENSE" >> "$GITHUB_ENV"
         echo "XDP_LICENSE=$RUNNER_TEMP/xdp-LICENSE" >> "$GITHUB_ENV"
+    # The licences of libjuice and libplum, which ranz-node.exe links (CORE-S5-6, #412): the LICENSE of the commit that each
+    # submodule pins, for TestNoticeHasTheLicencesOfLibjuiceAndLibplum, which compares it with the NOTICE word for word
+    - name: The licences of libjuice and libplum
+      run: |
+        for lib in libjuice libplum; do
+          commit="$(git rev-parse "HEAD:src/Core/3rdparty/$lib")"
+          curl -fsSL -o "$RUNNER_TEMP/$lib-LICENSE" "https://raw.githubusercontent.com/paullouisageneau/$lib/$commit/LICENSE"
+          echo "${lib^^}_LICENSE=$RUNNER_TEMP/$lib-LICENSE" >> "$GITHUB_ENV"
+        done
     # The tools of SDN-53 (#246), read from outside. ranz cert makes a CA and the certificates that it
     # signs, and OpenSSL takes them: openssl verify builds their chain (the trust store), an openssl
     # s_server with a certificate (the listener) is accepted by an openssl s_client that trusts the CA
@@ -522,6 +531,15 @@ jobs:
         $xdp = Join-Path $env:RUNNER_TEMP 'xdp-LICENSE'
         Invoke-WebRequest -Uri "https://raw.githubusercontent.com/microsoft/xdp-for-windows/v$env:XDP_VERSION/LICENSE" -OutFile $xdp
         "XDP_LICENSE=$xdp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        # The licences of libjuice and libplum at the commits that their submodules pin, for
+        # TestNoticeHasTheLicencesOfLibjuiceAndLibplum (CORE-S5-6, #412)
+        foreach ($lib in 'libjuice', 'libplum') {
+          $commit = git rev-parse "HEAD:src/Core/3rdparty/$lib"
+          if ($LASTEXITCODE -ne 0) { throw "git rev-parse HEAD:src/Core/3rdparty/$lib exited with code $LASTEXITCODE" }
+          $file = Join-Path $env:RUNNER_TEMP "$lib-LICENSE"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/paullouisageneau/$lib/$commit/LICENSE" -OutFile $file
+          "$($lib.ToUpper())_LICENSE=$file" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        }
         $sum = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
         if ($sum -ne $env:RQLITE_WIN64_SHA256) { throw "rqlite-$env:RQLITE_VERSION-win64.zip has the SHA-256 $sum, not the pinned $env:RQLITE_WIN64_SHA256" }
         Expand-Archive -Path $zip -DestinationPath $dir
