@@ -11,8 +11,10 @@
 // - the other order: the sidecar of the peering of one node runs, and another node of the same host starts the sidecar of
 //   the operator.
 // In each order the test reads from the TCP table of Windows that each sidecar listens where it should: the one of the
-// operator on 0.0.0.0, the one of the peering on 127.0.0.2. A sidecar that cannot listen sends an error and exits, and the
-// node log, which the test prints then, names the error of the bind.
+// operator on 0.0.0.0, the one of the peering on 127.0.0.2; and a session to 127.0.0.2:179 from 127.0.0.9, an address that no
+// peer has, reaches the sidecar of the peering, which refuses it and its node counts it, and not the one of the operator. A
+// sidecar that cannot listen sends an error and exits, and the node log, which the test prints then, names the error of the
+// bind.
 // Print "BGPBOTH TEST OK" only when every check passes. .github/scripts/bgp-peering.ps1 runs it after vpntest peering.
 
 #include "testlist.h"
@@ -51,6 +53,7 @@
 #define	BGPBOTHTEST_HOLD		9			// The hold time of the session of the peering in s
 #define	BGPBOTHTEST_ADDRESS		"127.0.0.2"	// The address of the node on the network that the operator trusts
 #define	BGPBOTHTEST_PEER		"127.0.0.3"	// ... and of the sidecar of its peer, which never answers
+#define	BGPBOTHTEST_STRANGER	"127.0.0.9"	// An address that no peer has
 
 // The settings of the sidecar of the operator: no listen_addresses, so GoBGP listens on every address, and one peer that
 // waits for a connection that never comes
@@ -433,6 +436,48 @@ static bool BgpBothWaitPeering(BGPBOTHTEST_NODE *t, UINT *pid)
 	}
 }
 
+// Whether a session to TCP 179 of BGPBOTHTEST_ADDRESS from BGPBOTHTEST_STRANGER, an address that no peer has, reaches the sidecar of
+// the peering of node t and not the sidecar of the operator, which listens on every address: the sidecar of the peering refuses it
+// and node t counts it (NODE_PEERING_STATUS.Refused), within BGPBOTHTEST_BOUND
+static bool BgpBothReachesPeering(BGPBOTHTEST_NODE *t)
+{
+	NODE_PEERING_STATUS before, after;
+	struct sockaddr_in local, remote;
+
+	NodePeeringGetStatus(t->Node, &before);
+
+	Zero(&local, sizeof(local));
+	local.sin_family = AF_INET;
+	InetPtonA(AF_INET, BGPBOTHTEST_STRANGER, &local.sin_addr);
+	Zero(&remote, sizeof(remote));
+	remote.sin_family = AF_INET;
+	remote.sin_port = htons(BGPBOTHTEST_PORT);
+	InetPtonA(AF_INET, BGPBOTHTEST_ADDRESS, &remote.sin_addr);
+
+	SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	bool connected = (s != INVALID_SOCKET && bind(s, (struct sockaddr *)&local, sizeof(local)) == 0 && connect(s, (struct sockaddr *)&remote, sizeof(remote)) == 0);
+
+	UINT64 end = Tick64() + BGPBOTHTEST_BOUND;
+	bool counted = false;
+	while (connected)
+	{
+		NodePeeringGetStatus(t->Node, &after);
+		counted = (after.Refused > before.Refused);
+		if (counted || Tick64() >= end)
+		{
+			break;
+		}
+		SleepThread(BGPBOTHTEST_POLL);
+	}
+
+	if (s != INVALID_SOCKET)
+	{
+		closesocket(s);
+	}
+
+	return counted;
+}
+
 // Whether the process pid ended; 0 is none
 static bool BgpBothExited(UINT pid)
 {
@@ -529,6 +574,8 @@ static void BgpBothOperatorFirst(BGPBOTHTEST_CTX *ctx)
 	bool both = (op && peering && BgpBothListens(op_pid, 0) && BgpBothListens(peering_pid, BgpBothIpUint(BGPBOTHTEST_ADDRESS)));
 	BgpBothCheck(ctx, both, "Both sidecars of the node listen at once, the one of the operator on 0.0.0.0:179 and the one of the peering on 127.0.0.2:179",
 		"operator %u, peering %u", (UINT)op, (UINT)peering);
+	BgpBothCheck(ctx, both && BgpBothReachesPeering(&t), "A session to 127.0.0.2:179 from 127.0.0.9 reaches the sidecar of the peering, which refuses it and the node counts it, and not the one of the operator",
+		"both listen %u", (UINT)both);
 
 	if (both == false)
 	{
@@ -560,6 +607,8 @@ static void BgpBothPeeringFirst(BGPBOTHTEST_CTX *ctx)
 	bool both = (op && peering && BgpBothListens(op_pid, 0) && BgpBothListens(peering_pid, BgpBothIpUint(BGPBOTHTEST_ADDRESS)));
 	BgpBothCheck(ctx, both, "Both sidecars listen at once, the one of the peering on 127.0.0.2:179 and the one of the operator on 0.0.0.0:179",
 		"peering %u, operator %u", (UINT)peering, (UINT)op);
+	BgpBothCheck(ctx, both && BgpBothReachesPeering(&a), "A session to 127.0.0.2:179 from 127.0.0.9 reaches the sidecar of the peering, which refuses it and the node counts it, and not the one of the operator",
+		"both listen %u", (UINT)both);
 
 	if (both == false)
 	{
