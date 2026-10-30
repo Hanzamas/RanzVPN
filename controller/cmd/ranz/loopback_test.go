@@ -110,6 +110,7 @@ func TestRanzRefusesAnotherKeyOnLoopbackAndSendsNoToken(t *testing.T) {
 	if err := servercert.WriteFingerprint(dir, rightFP); err != nil {
 		t.Fatal(err)
 	}
+	trustFingerprint(t, dir)
 	tokenFile := filepath.Join(t.TempDir(), "admin.token")
 	if err := os.WriteFile(tokenFile, []byte("ranz_ADMINSECRET\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -180,6 +181,7 @@ func TestRanzSendsNoTokenToLoopbackWithoutAFingerprint(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(garbled, servercert.FingerprintFile), []byte("not a fingerprint\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	trustFingerprint(t, garbled)
 
 	for _, c := range []struct {
 		name, dir, want string
@@ -279,6 +281,7 @@ func TestRanzExplainChecksLoopbackToo(t *testing.T) {
 	if err := servercert.WriteFingerprint(dir, rightFP); err != nil {
 		t.Fatal(err)
 	}
+	trustFingerprint(t, dir)
 	tokenFile := filepath.Join(t.TempDir(), "admin.token")
 	if err := os.WriteFile(tokenFile, []byte("ranz_ADMINSECRET\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -340,6 +343,7 @@ func TestRanzLoginChecksLoopbackToo(t *testing.T) {
 	if err := servercert.WriteFingerprint(dir, rightFP); err != nil {
 		t.Fatal(err)
 	}
+	trustFingerprint(t, dir)
 	// loginAt runs ranz login with a password toward server and the flags, and returns its exit code and its standard
 	// error
 	loginAt := func(server string, flags ...string) (int, string) {
@@ -419,6 +423,31 @@ func TestLoopbackRefusal(t *testing.T) {
 	for _, err := range []error{nil, errors.New("connection refused"), &api.Error{Status: http.StatusUnauthorized}} {
 		if got := loopbackRefusal(err); got != nil {
 			t.Errorf("%v holds the refusal %v", err, got)
+		}
+	}
+}
+
+// The refusal of a fingerprint file that another account may have written (AUD1-DT-14, #496) says so in its one line,
+// with what it refuses and why, and asks for -tls-fingerprint. It does not send the reader to that file for the
+// fingerprint, as the refusal of a file that cannot be read does.
+func TestTheRefusalOfAFileThatIsNotTrustedSaysWhy(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "controller")
+	why := &controllercmd.UntrustedError{Path: dir, Why: `may be written by BUILTIN\Users`}
+	untrusted := (&unchecked{server: "https://127.0.0.1", dir: dir, err: why}).Error()
+	for _, want := range []string{"sends no token to https://127.0.0.1", "does not trust that file", dir + ` may be written by BUILTIN\Users`, "SYSTEM, the Administrators and the account of the Controller service", "-tls-fingerprint", "RANZ_TLS_FINGERPRINT"} {
+		if !strings.Contains(untrusted, want) {
+			t.Errorf("the refusal %q does not say %q", untrusted, want)
+		}
+	}
+	unreadable := (&unchecked{server: "https://127.0.0.1", dir: dir, err: os.ErrPermission}).Error()
+	for _, c := range []struct {
+		text, says, not string
+	}{
+		{untrusted, "does not trust", "finds it in that file"},
+		{unreadable, "cannot be read", "does not trust"},
+	} {
+		if !strings.Contains(c.text, c.says) || strings.Contains(c.text, c.not) || strings.Contains(c.text, "\n") {
+			t.Errorf("the refusal %q does not say %q in one line, or says %q", c.text, c.says, c.not)
 		}
 	}
 }
