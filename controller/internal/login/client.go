@@ -20,10 +20,10 @@ import (
 )
 
 // The client of the logins: what ranz login and ranz node login do, and the tests. A browser login
-// listens on a loopback port for the redirect (Callback), opens the browser at the authorization page
-// (Client.AuthorizeURL) and exchanges the code for the result (Client.Exchange); a device code login
-// asks for a code (Client.StartDevice), shows it, and polls until a user signed in with it
-// (Client.PollDevice).
+// listens on a loopback port for the redirect (Callback), fetches the authorization page itself to check
+// the controller (Client.CheckAuthorize), opens the browser at the page (Client.AuthorizeURL) and
+// exchanges the code for the result (Client.Exchange); a device code login asks for a code
+// (Client.StartDevice), shows it, and polls until a user signed in with it (Client.PollDevice).
 
 // Client calls the logins of a controller.
 type Client struct {
@@ -68,6 +68,40 @@ func NewVerifier() (verifier, challenge string) {
 // opens.
 func (c *Client) AuthorizeURL(req Request) string {
 	return strings.TrimSuffix(c.URL, "/") + AuthorizePath + "?" + req.Values().Encode()
+}
+
+// CheckAuthorize fetches the authorization page of req as the browser will, and returns an error when the
+// controller does not serve it (AUD1-DT-19, #506). It is the one call that a browser login makes before it
+// opens the browser: a browser cannot check the certificate of the controller by its fingerprint, and the user
+// types a password into the page, so the client does, through its HTTP client, which pins the certificate. A
+// certificate that fails the check is refused before the first byte of the request goes out, and the error is
+// the refusal of the client, so a browser is sent to the controller and to nothing else that answers at its
+// address. The call changes nothing at the controller: the page is a form that nobody has signed in on, and it
+// carries no secret of the client (the state and the challenge of the request are no secret).
+func (c *Client) CheckAuthorize(ctx context.Context, req Request) error {
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, c.AuthorizeURL(req), nil)
+	if err != nil {
+		return err
+	}
+	hc := c.HTTP
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(r)
+	if err != nil {
+		// The error of the client names the URL that it called, with the query of the request: it names the page
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			ue.URL = strings.TrimSuffix(c.URL, "/") + AuthorizePath
+		}
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxBody))
+	if resp.StatusCode != http.StatusOK {
+		return &Error{Status: resp.StatusCode, Code: "the controller did not serve its authorization page"}
+	}
+	return nil
 }
 
 // Exchange exchanges the code that the redirect of a browser login brought for what the login gave
