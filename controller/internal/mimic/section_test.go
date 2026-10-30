@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -261,6 +263,31 @@ func sidecarCases(t *testing.T) []string {
 	return names
 }
 
+// sidecarCaseProblems returns what is wrong when the names of the cases of the sidecar's tests, sidecar, are held against the names of
+// the cases of sectionCases, inTable, and the cases that a section cannot hold, excused, by name with their reasons: a case of the
+// sidecar's tests that is neither a case of sectionCases nor excused, a case that is both, and an excused case that the sidecar's tests
+// do not have. It returns nothing when they agree.
+func sidecarCaseProblems(sidecar []string, inTable map[string]bool, excused map[string]string) []string {
+	var problems []string
+	seen := map[string]bool{}
+	for _, name := range sidecar {
+		seen[name] = true
+		_, isExcused := excused[name]
+		switch {
+		case !inTable[name] && !isExcused:
+			problems = append(problems, fmt.Sprintf("the case %q of the sidecar's tests is not a case of sectionCases: add it there, to put it to the Controller as well, or say in noSection why a section cannot hold it", name))
+		case inTable[name] && isExcused:
+			problems = append(problems, fmt.Sprintf("the case %q is a case of sectionCases and is in noSection: it belongs to one of the two", name))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(excused)) {
+		if !seen[name] {
+			problems = append(problems, fmt.Sprintf("noSection names the case %q, which the sidecar's tests do not have", name))
+		}
+	}
+	return problems
+}
+
 // TestEverySidecarCaseIsPutToTheController: the cases of the section are copies of the cases of the sidecar's tests, so a case that
 // is added to those tests would not be put to the Controller by this file. The test fails when a case of the sidecar's tests is
 // neither a case of sectionCases, of the same name, nor in noSection with the reason that a section cannot hold it, and when noSection
@@ -276,20 +303,31 @@ func TestEverySidecarCaseIsPutToTheController(t *testing.T) {
 			excused[name] = g.why
 		}
 	}
-	seen := map[string]bool{}
-	for _, name := range sidecarCases(t) {
-		seen[name] = true
-		_, isExcused := excused[name]
-		switch {
-		case !inTable[name] && !isExcused:
-			t.Errorf("the case %q of the sidecar's tests is not a case of sectionCases: add it there, to put it to the Controller as well, or say in noSection why a section cannot hold it", name)
-		case inTable[name] && isExcused:
-			t.Errorf("the case %q is a case of sectionCases and is in noSection: it belongs to one of the two", name)
+	for _, problem := range sidecarCaseProblems(sidecarCases(t), inTable, excused) {
+		t.Error(problem)
+	}
+}
+
+// TestTheGuardOfTheSidecarCasesFindsEachDifference holds the guard to its word: it is shown each way in which the sidecar's tests and
+// the section tests can differ, and says each of them, and it says nothing of lists that agree. A guard that cannot fail would let a
+// case of the sidecar's tests stay out of the Controller's.
+func TestTheGuardOfTheSidecarCasesFindsEachDifference(t *testing.T) {
+	inTable := map[string]bool{"a case of both": true, "a case in both lists": true}
+	excused := map[string]string{"a case that a section cannot hold": "the reason", "a case in both lists": "the reason", "a case that is gone": "the reason"}
+	sidecar := []string{"a case of both", "a case that a section cannot hold", "a case in both lists", "a case that is new"}
+	got := sidecarCaseProblems(sidecar, inTable, excused)
+	want := []string{`"a case in both lists"`, `"a case that is new"`, `"a case that is gone"`}
+	if len(got) != len(want) {
+		t.Fatalf("the guard says %q, want one problem for each of %q", got, want)
+	}
+	for i, w := range want {
+		if !strings.Contains(got[i], w) {
+			t.Errorf("the problem %d is %q, want one about %s", i, got[i], w)
 		}
 	}
-	for name := range excused {
-		if !seen[name] {
-			t.Errorf("noSection names the case %q, which the sidecar's tests do not have", name)
-		}
+
+	agreeing := map[string]string{"a case that a section cannot hold": "the reason"}
+	if got := sidecarCaseProblems([]string{"a case of both", "a case that a section cannot hold"}, inTable, agreeing); len(got) != 0 {
+		t.Errorf("the guard says %q of lists that agree", got)
 	}
 }
