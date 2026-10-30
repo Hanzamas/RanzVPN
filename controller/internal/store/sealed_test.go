@@ -450,7 +450,10 @@ func TestBackupOfAMigratedStoreHoldsNoSecretInClear(t *testing.T) {
 	hook := export.Target{Name: "alerts", Kind: export.KindWebhook, URL: "https://hooks.example.com/services/T0001/path-token-5e1c0a?key=query-token-91af3d", Secret: "old-hmac-key-of-alerts-7c3e5a1b", Types: []string{event.NodeDown}}
 	collector := export.Target{Name: "collector", Kind: export.KindOTLP, URL: "https://otel.example.com:4318", Secret: "old-bearer-token-of-collector-2d8f6b"}
 	siem := export.Target{Name: "siem", Kind: export.KindWebhook, URL: "https://siem.example.com/audit", Secret: "old-hmac-key-of-siem-b40e6c9d"}
-	for _, tg := range []export.Target{hook, collector} {
+	// The target with no secret, between the two that have one, keeps the old row of the first from being next to the old row
+	// of the second: SQLite joins free blocks that touch, and puts the longer row that replaces one into a block that is long enough
+	flows := export.Target{Name: "flows", Kind: export.KindIPFIX, URL: "udp://192.0.2.10:4739"}
+	for _, tg := range []export.Target{hook, flows, collector} {
 		if err := st.PutTarget(ctx, tg); err != nil {
 			t.Fatal(err)
 		}
