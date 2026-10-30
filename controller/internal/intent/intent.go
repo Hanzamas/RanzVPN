@@ -126,6 +126,10 @@ type VRF struct {
 	// healthy ones by the hash of each flow (SDN-19, topology.go). Left out, the first healthy
 	// gateway in name order carries them.
 	ECMP bool `json:"ecmp,omitempty"`
+	// Egress is the Node, a member of the VRF, that is its internet exit (SDN-12, egress.go): the
+	// other Nodes of the VRF send it their traffic to the addresses outside the VRF, and it takes
+	// that traffic to the internet with its Egress tier. Left out, the VRF has no exit.
+	Egress string `json:"egress,omitempty"`
 	// Peering is how the Nodes of the VRF exchange their routes when its link is vxlan or geneve
 	// (SDN-77, peering.go): with the protocol bgp they peer by BGP. Left out, the Controller gives them.
 	Peering Peering `json:"peering,omitzero"`
@@ -455,8 +459,8 @@ func Apply(in Intent, doc Document, random io.Reader) (Intent, error) {
 // Network that a Device uses or that is the scope of a User, a Group, a Node or a Policy, nor a Node
 // that a NAT, a DnsRecord or a Listener uses, that is the
 // gateway of a Device or of the security of a Network, that answers DHCP for a Network or that is
-// the hub of a VRF, a Group that a User belongs to, and a User that owns a Node. The Nodes lose
-// their addresses in a deleted Network.
+// the hub or the internet exit of a VRF, a Group that a User belongs to, and a User that owns a
+// Node. The Nodes lose their addresses in a deleted Network.
 func Delete(in Intent, kind, name string) (Intent, error) {
 	next := in.Clone()
 	switch kind {
@@ -531,6 +535,10 @@ func Delete(in Intent, kind, name string) (Intent, error) {
 		// The VRFs of topology hub-and-spoke whose hub the Node is (SDN-19, topology.go)
 		if users := next.hubUsers(name); len(users) > 0 {
 			return in, fmt.Errorf("%w: Node %q is the hub of %s", ErrInvalid, name, strings.Join(users, ", "))
+		}
+		// The VRFs whose internet exit the Node is (SDN-12, egress.go)
+		if users := next.egressUsers(name); len(users) > 0 {
+			return in, fmt.Errorf("%w: Node %q is the internet exit of %s", ErrInvalid, name, strings.Join(users, ", "))
 		}
 		delete(next.Nodes, name)
 	case KindPolicy:
@@ -980,6 +988,8 @@ func (in Intent) validate() []error {
 	problems = append(problems, in.validateKeyLife()...)
 	// The topologies of the VRFs and the LAN subnets of the gateways (SDN-19, topology.go)
 	problems = append(problems, in.validateTopologies()...)
+	// The internet exits of the VRFs (egress.go)
+	problems = append(problems, in.validateEgress()...)
 	// The BGP peering of the VRFs (peering.go)
 	problems = append(problems, in.validatePeering()...)
 	return append(problems, in.validateIPAM()...)
