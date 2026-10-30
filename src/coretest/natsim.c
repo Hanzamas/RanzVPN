@@ -9,6 +9,11 @@
 // REQ-5): a mapping that carried no datagram out for its timeout is gone, and a datagram from outside to it is dropped.
 // What the network drops, it counts.
 //
+// A NAT can also forward a public port to a host behind it, as a home gateway does for the port mapping that PCP,
+// NAT-PMP or UPnP asked for (CORE-S5-6, #412; the simulated gateway of homegw.c): the forward takes datagrams from any
+// address, never ages, and carries every datagram of that host out, whatever its destination. A test can drop the
+// mappings of a host, as a NAT that restarts loses them, so that its next datagram out gets a new public port.
+//
 // One delivery thread hands the datagrams to PeerInput of the receiving host, in the order they were sent, so
 // that a receiver that sends from its receive procedure queues behind the datagram it took.
 
@@ -27,6 +32,7 @@ typedef struct NATSIM_MAPPING {
 	PEER_ADDR Inside;                // The private address and port
 	PEER_ADDR Remote;                // The destination it was made for, with address and port dependent mapping
 	USHORT Port;                     // The public port
+	bool Forward;                    // A port forward (NatSimForward): in from anywhere, out to anywhere, never aged
 	UINT NumSent;                    // The destinations it sent to
 	PEER_ADDR Sent[NATSIM_MAX_SENT]; // ... their addresses and ports
 	UINT64 LastOut;                  // When it last carried a datagram out (GetTickCount64)
@@ -277,8 +283,8 @@ static USHORT NatSimAllocPort(NATSIM_NAT *n, const PEER_ADDR *inside) {
 	return n->NextPort++;
 }
 
-// Age the mappings of the NAT at now: the ones that carried no datagram out for its timeout are gone. The caller holds
-// the lock.
+// Age the mappings of the NAT at now: the ones that carried no datagram out for its timeout are gone, a port forward
+// never. The caller holds the lock.
 static void NatSimAge(NATSIM_NAT *n, UINT64 now) {
 	UINT kept = 0;
 
@@ -286,7 +292,7 @@ static void NatSimAge(NATSIM_NAT *n, UINT64 now) {
 		return;
 
 	for (UINT i = 0; i < n->NumMappings; i++) {
-		if (now - n->Mappings[i].LastOut >= n->Timeout) {
+		if (n->Mappings[i].Forward == false && now - n->Mappings[i].LastOut >= n->Timeout) {
 			InterlockedIncrement(&n->Expired);
 			continue;
 		}
@@ -298,10 +304,14 @@ static void NatSimAge(NATSIM_NAT *n, UINT64 now) {
 	n->NumMappings = kept;
 }
 
-// The mapping of the NAT for a datagram from the private address inside to remote at now: the one there is, or a new
-// one. The caller holds the lock.
+// The mapping of the NAT for a datagram from the private address inside to remote at now: a port forward of inside,
+// else the one there is, or a new one. The caller holds the lock.
 static NATSIM_MAPPING *NatSimMap(NATSIM_NAT *n, const PEER_ADDR *inside, const PEER_ADDR *remote, UINT64 now) {
 	NATSIM_MAPPING *m = NULL;
+
+	for (UINT i = 0; i < n->NumMappings && m == NULL; i++)
+		if (n->Mappings[i].Forward && PeerAddrEqual(&n->Mappings[i].Inside, inside))
+			m = &n->Mappings[i];
 
 	for (UINT i = 0; i < n->NumMappings && m == NULL; i++) {
 		NATSIM_MAPPING *c = &n->Mappings[i];
@@ -338,7 +348,7 @@ static NATSIM_MAPPING *NatSimMap(NATSIM_NAT *n, const PEER_ADDR *inside, const P
 static NATSIM_HOST *NatSimInbound(NATSIM *s, NATSIM_NAT *n, USHORT port, const PEER_ADDR *from) {
 	for (UINT i = 0; i < n->NumMappings; i++) {
 		NATSIM_MAPPING *m = &n->Mappings[i];
-		bool allowed = (n->Filtering == NATSIM_FILTER_ENDPOINT_INDEPENDENT);
+		bool allowed = (n->Filtering == NATSIM_FILTER_ENDPOINT_INDEPENDENT || m->Forward);
 
 		if (m->Port != port)
 			continue;
@@ -480,6 +490,92 @@ UINT NatSimExpired(NATSIM_NAT *n) {
 // The datagrams to an address that no host and no NAT of the network has
 UINT NatSimUnroutable(NATSIM *s) {
 	return (UINT)InterlockedCompareExchange(&s->Unroutable, 0, 0);
+}
+
+// The public address of the NAT, port 0
+void NatSimPublic(NATSIM_NAT *n, PEER_ADDR *pub) {
+	*pub = n->Public;
+}
+
+// Forward the public port of the NAT to the host behind it whose port is inside_port, as a home gateway does for a
+// port mapping: false when the NAT has a mapping on that port already, or no such host
+bool NatSimForward(NATSIM *s, NATSIM_NAT *n, USHORT port, USHORT inside_port) {
+	bool ok = false;
+
+	EnterCriticalSection(&s->Lock);
+	{
+		NATSIM_HOST *h = NULL;
+
+		for (UINT i = 0; i < s->NumHosts && h == NULL; i++)
+			if (s->Hosts[i].Nat == n && s->Hosts[i].Addr.Port == inside_port)
+				h = &s->Hosts[i];
+
+		if (port != 0 && h != NULL && NatSimPortUsed(n, port) == false && n->NumMappings < NATSIM_MAX_MAPPINGS) {
+			NATSIM_MAPPING *m = &n->Mappings[n->NumMappings++];
+
+			ZeroMemory(m, sizeof(NATSIM_MAPPING));
+			m->Inside = h->Addr;
+			m->Port = port;
+			m->Forward = true;
+			m->LastOut = GetTickCount64();
+			ok = true;
+		}
+	}
+	LeaveCriticalSection(&s->Lock);
+
+	return ok;
+}
+
+// Remove the forward of the public port of the NAT; false when it has none there
+bool NatSimUnforward(NATSIM *s, NATSIM_NAT *n, USHORT port) {
+	bool found = false;
+
+	EnterCriticalSection(&s->Lock);
+	{
+		UINT kept = 0;
+
+		for (UINT i = 0; i < n->NumMappings; i++) {
+			if (n->Mappings[i].Forward && n->Mappings[i].Port == port) {
+				found = true;
+				continue;
+			}
+			if (kept != i)
+				n->Mappings[kept] = n->Mappings[i];
+			kept++;
+		}
+
+		n->NumMappings = kept;
+	}
+	LeaveCriticalSection(&s->Lock);
+
+	return found;
+}
+
+// Drop every mapping of the NAT for the private address inside but a port forward, as a NAT that restarts loses them:
+// a datagram from outside to one of their ports is dropped, and the next datagram of inside out gets a new mapping.
+// Returns how many it dropped.
+UINT NatSimDrop(NATSIM *s, NATSIM_NAT *n, const PEER_ADDR *inside) {
+	UINT dropped = 0;
+
+	EnterCriticalSection(&s->Lock);
+	{
+		UINT kept = 0;
+
+		for (UINT i = 0; i < n->NumMappings; i++) {
+			if (n->Mappings[i].Forward == false && PeerAddrEqual(&n->Mappings[i].Inside, inside)) {
+				dropped++;
+				continue;
+			}
+			if (kept != i)
+				n->Mappings[kept] = n->Mappings[i];
+			kept++;
+		}
+
+		n->NumMappings = kept;
+	}
+	LeaveCriticalSection(&s->Lock);
+
+	return dropped;
 }
 
 // The public address and port of the newest mapping of the NAT for the private address inside, for the checks of

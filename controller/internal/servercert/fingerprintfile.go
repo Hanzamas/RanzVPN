@@ -16,9 +16,10 @@ import (
 // FingerprintFile is the file in the data directory of the Controller that holds the TLS fingerprint of
 // the certificate that its TLS port serves (AUD1-DT-13, #461): the 64 hex digits and a line end. The ranz
 // of the same host reads it, and checks the certificate of a Controller on a loopback address against it,
-// so that a program of the host that listens on the port in the Controller's place gets no token. Only the
-// owner of the data directory and the administrators write there, which is why the file can be trusted;
-// what it holds is no secret, since every client of the port sees it.
+// so that a program of the host that listens on the port in the Controller's place gets no token. On
+// Windows ranz trusts the file only when no other account than SYSTEM, the Administrators and the account
+// of the Controller service can have written it, the file or its folder (controllercmd.ReadFingerprint,
+// AUD1-DT-14, #496); what it holds is no secret, since every client of the port sees it.
 const FingerprintFile = "tls.fingerprint"
 
 const (
@@ -70,19 +71,25 @@ func WriteFingerprint(dir, fp string) error {
 // program on the host of the Controller. The error says why there is none: the file is not there or cannot
 // be read, or it holds no fingerprint.
 func ReadFingerprint(dir string) (string, error) {
-	file := filepath.Join(dir, FingerprintFile)
-	f, err := os.Open(file)
+	f, err := os.Open(filepath.Join(dir, FingerprintFile))
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
+	return ReadFingerprintFile(f)
+}
+
+// ReadFingerprintFile returns the TLS fingerprint that f, a FingerprintFile that the caller opened, holds, as
+// ReadFingerprint does. ranz on Windows opens the file itself, and reads it through the handle whose owner
+// and access list it checked (controllercmd.ReadFingerprint, AUD1-DT-14).
+func ReadFingerprintFile(f *os.File) (string, error) {
 	b, err := io.ReadAll(io.LimitReader(f, maxFingerprintFile))
 	if err != nil {
 		return "", err
 	}
 	fp, err := parseFingerprint(string(b))
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", file, err)
+		return "", fmt.Errorf("%s: %w", f.Name(), err)
 	}
 	return fp, nil
 }

@@ -1,97 +1,52 @@
 // homegw.c
-// The simulated home gateway of the ICE tests (ice.c; CORE-S5-3, #79): a UPnP Internet Gateway Device (UPnP Device
-// Architecture 1.0, WANIPConnection:1) that libplum finds with SSDP and asks for a port mapping, and the port
-// forwarding of the mapping it grants. Its WAN side is the IPv4 loopback, 127.0.0.1, and its home network the IPv6
-// loopback, ::1, where the ICE socket of the node behind it is. A socket on the IPv4 loopback cannot send to the IPv6
-// loopback, so a peer on the WAN side reaches that node only at the public port of the gateway.
+// The simulated home gateway of a NAT of the NAT simulator (natsim.c; CORE-S5-3, #79; CORE-S5-6, #412): a UPnP Internet
+// Gateway Device (UPnP Device Architecture 1.0, WANIPConnection:1) that libplum finds with SSDP and asks for a port
+// mapping, which it grants as a port forward of its NAT on the network of the simulator (NatSimForward). libplum runs on
+// real sockets of the host, so the gateway answers there: SSDP on UDP 1900 of the loopback interfaces, and its
+// description and control URL over HTTP on 127.0.0.1. Its external address is the public address of its NAT, and the
+// port forward leads to the host behind the NAT whose port is the internal port of the mapping, the port of the socket
+// of its peer layer, so a peer reaches that host at the public port.
 //
-// The gateway answers M-SEARCH on 239.255.255.250:1900, joined on every IPv4 interface since multicast loops back
-// to the host on the interface it leaves by; it serves its description and its control URL over HTTP on 127.0.0.1;
-// and it takes GetExternalIPAddress, AddPortMapping and DeletePortMapping. The mapping forwards what comes to its
-// public port from an address of the WAN side to the internal port on ::1, from a port of its own for each such
-// address (a flow), and sends what the node sends back to that port to the address of the flow, from the public
-// port. With its link down (HomeGwSetLink) it forwards nothing, as a gateway whose WAN link failed.
+// The gateway answers M-SEARCH on 239.255.255.250:1900, joined on every IPv4 interface since multicast loops back to
+// the host on the interface it leaves by; it serves its description and its control URL; and it takes
+// GetExternalIPAddress, AddPortMapping and DeletePortMapping. It counts the searches and the requests that it answered,
+// so a test sees that a node with port mapping off asked nothing. It is the gateway of the world of the test only: it
+// answers the searches and the connections of sockets of its own process, where the nodes of the test run, and of no
+// other program of the host, as the SSDP clients of Windows that search for a gateway on some runners are, which
+// neither learn of it nor count (IP Helper names the process of each socket). HomeGwDrop loses the mapping, as a
+// gateway that restarts does, without telling libplum.
 //
-// One thread serves everything: the SSDP socket, the HTTP listener, the public port and the flows.
+// One thread serves everything: the SSDP socket and the HTTP listener.
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
 #include <iphlpapi.h>
 
-#include "coretest.h"
+#include "natsim.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define HOMEGW_SSDP_PORT 1900
-#define HOMEGW_MAX_FLOWS 8    // WAN addresses that the mapping forwards for
-#define HOMEGW_BUFFER    4096 // The largest datagram it forwards, and the largest HTTP request
-
-// One address of the WAN side that the mapping forwards for, and the gateway's port for it on the home network
-typedef struct HOMEGW_FLOW {
-	SOCKADDR_IN Remote; // The address on the WAN side
-	SOCKET Inside;      // The gateway's socket on ::1 for it
-} HOMEGW_FLOW;
+#define HOMEGW_BUFFER    4096 // The largest SSDP datagram, and the largest HTTP request
 
 struct HOMEGW {
-	bool WsaStarted;                     // WSAStartup succeeded
-	SOCKET Ssdp;                         // UDP 1900, in the SSDP multicast group
-	SOCKET Http;                         // The HTTP listener on 127.0.0.1
-	USHORT HttpPort;                     // ... its port
-	CRITICAL_SECTION Lock;               // The mapping, for HomeGwMapped
-	SOCKET Wan;                          // The public port of the mapping on 127.0.0.1, INVALID_SOCKET for none
-	USHORT External;                     // ... its number
-	USHORT Internal;                     // The internal port on ::1 that it forwards to
-	UINT NumFlows;                       // The flows of the mapping
-	HOMEGW_FLOW Flows[HOMEGW_MAX_FLOWS]; // ... in the order they came
-	volatile LONG Link;                  // 1 while the WAN link is up
-	volatile LONG Searches;              // M-SEARCH requests answered
-	volatile LONG Forwarded;             // Datagrams forwarded either way
-	volatile LONG Stop;                  // Ends the thread
-	HANDLE Thread;                       // The thread
+	bool WsaStarted;        // WSAStartup succeeded
+	NATSIM *Sim;            // The network of the simulator
+	NATSIM_NAT *Nat;        // The NAT of the gateway, whose public address is its external address
+	SOCKET Ssdp;            // UDP 1900, in the SSDP multicast group
+	SOCKET Http;            // The HTTP listener on 127.0.0.1
+	USHORT HttpPort;        // ... its port
+	CRITICAL_SECTION Lock;  // The mapping
+	USHORT External;        // The public port of the mapping, 0 for none
+	USHORT Internal;        // The port of the host behind the NAT that it forwards to
+	volatile LONG Searches; // M-SEARCH requests answered
+	volatile LONG Requests; // HTTP requests answered: the description and the actions
+	volatile LONG Stop;     // Ends the thread
+	HANDLE Thread;          // The thread
 };
-
-// A non-blocking UDP socket on the loopback address of family at port, where an ICMP port unreachable does not fail
-// the next receive; INVALID_SOCKET when it cannot be bound
-static SOCKET HomeGwUdp(int family, USHORT port) {
-	SOCKADDR_STORAGE sa;
-	BOOL no_reset = FALSE;
-	DWORD ret = 0;
-	u_long nonblocking = 1;
-	int len;
-
-	SOCKET s = socket(family, SOCK_DGRAM, IPPROTO_UDP);
-	if (s == INVALID_SOCKET)
-		return INVALID_SOCKET;
-
-	WSAIoctl(s, SIO_UDP_CONNRESET, &no_reset, sizeof(no_reset), NULL, 0, &ret, NULL, NULL);
-	ioctlsocket(s, FIONBIO, &nonblocking);
-
-	ZeroMemory(&sa, sizeof(sa));
-	if (family == AF_INET) {
-		SOCKADDR_IN *in = (SOCKADDR_IN *)&sa;
-
-		in->sin_family = AF_INET;
-		in->sin_port = htons(port);
-		in->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		len = sizeof(SOCKADDR_IN);
-	} else {
-		SOCKADDR_IN6 *in6 = (SOCKADDR_IN6 *)&sa;
-
-		in6->sin6_family = AF_INET6;
-		in6->sin6_port = htons(port);
-		in6->sin6_addr.s6_addr[15] = 1;
-		len = sizeof(SOCKADDR_IN6);
-	}
-
-	if (bind(s, (const SOCKADDR *)&sa, len) != 0) {
-		closesocket(s);
-		return INVALID_SOCKET;
-	}
-
-	return s;
-}
 
 // Join the SSDP group on the interface of the IPv4 address ifaddr; a second join of one interface fails, which
 // does no harm
@@ -135,7 +90,77 @@ static void HomeGwJoinAll(SOCKET s) {
 		HeapFree(GetProcessHeap(), 0, list);
 }
 
-// Answer every M-SEARCH for an Internet Gateway Device with the location of the description
+// The IPv4 UDP endpoints of the host, or with tcp its TCP connections, each with the process that owns it, which the
+// caller frees with HeapFree; NULL when IP Helper cannot read them. The table may grow between the call that sizes it
+// and the one that reads it, so the read is tried again.
+static void *HomeGwOwners(bool tcp) {
+	void *t = NULL;
+	DWORD size = 0;
+	DWORD ret = ERROR_INSUFFICIENT_BUFFER;
+
+	for (UINT tries = 0; tries < 4 && ret == ERROR_INSUFFICIENT_BUFFER; tries++) {
+		if (t != NULL)
+			HeapFree(GetProcessHeap(), 0, t);
+		t = (size != 0 ? HeapAlloc(GetProcessHeap(), 0, size) : NULL);
+		ret = (tcp ? GetExtendedTcpTable(t, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_CONNECTIONS, 0) : GetExtendedUdpTable(t, &size, FALSE, AF_INET, UDP_TABLE_OWNER_PID, 0));
+	}
+
+	if (ret != NO_ERROR && t != NULL) {
+		HeapFree(GetProcessHeap(), 0, t);
+		t = NULL;
+	}
+
+	return t;
+}
+
+// Whether the UDP endpoint from, an address of the host and a port, is a socket of this process: a search of a node of
+// the test, and not one of another program of the host. UDP 1900 never is: the one socket of the process there is the
+// gateway's own, and an SSDP service of the host may search from that port too.
+static bool HomeGwOwnUdp(const SOCKADDR_IN *from) {
+	if (from->sin_port == htons(HOMEGW_SSDP_PORT))
+		return false;
+
+	MIB_UDPTABLE_OWNER_PID *t = (MIB_UDPTABLE_OWNER_PID *)HomeGwOwners(false);
+	bool own = false;
+
+	for (DWORD i = 0; t != NULL && i < t->dwNumEntries && own == false; i++) {
+		const MIB_UDPROW_OWNER_PID *r = &t->table[i];
+
+		// The port is in network order in the low 16 bits; a socket on the wildcard address sends from each address
+		own = ((USHORT)r->dwLocalPort == from->sin_port && (r->dwLocalAddr == INADDR_ANY || r->dwLocalAddr == from->sin_addr.s_addr) && r->dwOwningPid == GetCurrentProcessId());
+	}
+
+	if (t != NULL)
+		HeapFree(GetProcessHeap(), 0, t);
+
+	return own;
+}
+
+// Whether the connection s, which the HTTP listener on port port took, comes from a socket of this process: its peer
+// is the local end of a connection of the process to that port
+static bool HomeGwOwnTcp(SOCKET s, USHORT port) {
+	SOCKADDR_IN peer;
+	int peer_len = sizeof(peer);
+	bool own = false;
+
+	if (getpeername(s, (SOCKADDR *)&peer, &peer_len) != 0 || peer.sin_family != AF_INET)
+		return false;
+
+	MIB_TCPTABLE_OWNER_PID *t = (MIB_TCPTABLE_OWNER_PID *)HomeGwOwners(true);
+
+	for (DWORD i = 0; t != NULL && i < t->dwNumEntries && own == false; i++) {
+		const MIB_TCPROW_OWNER_PID *r = &t->table[i];
+
+		own = (r->dwLocalAddr == peer.sin_addr.s_addr && (USHORT)r->dwLocalPort == peer.sin_port && (USHORT)r->dwRemotePort == htons(port) && r->dwOwningPid == GetCurrentProcessId());
+	}
+
+	if (t != NULL)
+		HeapFree(GetProcessHeap(), 0, t);
+
+	return own;
+}
+
+// Answer every M-SEARCH of this process for an Internet Gateway Device with the location of the description
 static void HomeGwSsdp(HOMEGW *g) {
 	char buf[HOMEGW_BUFFER];
 	char reply[512];
@@ -153,6 +178,9 @@ static void HomeGwSsdp(HOMEGW *g) {
 
 		buf[n] = 0;
 		if (strncmp(buf, "M-SEARCH", 8) != 0 || strstr(buf, "InternetGatewayDevice") == NULL)
+			continue;
+		// Another program of the host, as an SSDP client of Windows, neither learns of the gateway nor counts
+		if (from.ss_family != AF_INET || HomeGwOwnUdp((const SOCKADDR_IN *)&from) == false)
 			continue;
 
 		int len = snprintf(reply, sizeof(reply), "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=120\r\nEXT:\r\nLOCATION: http://127.0.0.1:%u/igd.xml\r\nSERVER: Windows/10 UPnP/1.1 coretest/1\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\nUSN: uuid:7e1a3b1c-0000-4000-8000-000000000079::urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n", g->HttpPort);
@@ -191,47 +219,46 @@ static void HomeGwSoap(SOCKET s, int code, const char *content) {
 	HomeGwRespond(s, code, body);
 }
 
-// Map the public port external on 127.0.0.1 to the internal port on ::1; false when the gateway has another
-// mapping or the port is taken. The thread of the gateway only.
+// Map the public port external of the NAT to the host behind it with the port internal: false when the gateway has
+// another mapping, or the NAT cannot forward that port. The thread of the gateway only.
 static bool HomeGwMap(HOMEGW *g, USHORT external, USHORT internal) {
 	bool ok = false;
 
 	EnterCriticalSection(&g->Lock);
-	if (g->Wan != INVALID_SOCKET) {
-		ok = (g->External == external);
-		if (ok)
-			g->Internal = internal;
-	} else if (external != 0) {
-		g->Wan = HomeGwUdp(AF_INET, external);
-		ok = (g->Wan != INVALID_SOCKET);
-		if (ok) {
-			g->External = external;
-			g->Internal = internal;
-		}
+	if (g->External != 0) {
+		ok = (g->External == external && g->Internal == internal);
+	} else if (external != 0 && NatSimForward(g->Sim, g->Nat, external, internal)) {
+		g->External = external;
+		g->Internal = internal;
+		ok = true;
 	}
 	LeaveCriticalSection(&g->Lock);
 
 	return ok;
 }
 
-// Remove the mapping and its flows. The thread of the gateway only.
-static void HomeGwUnmap(HOMEGW *g) {
+// Remove the mapping: false when there is none
+static bool HomeGwUnmap(HOMEGW *g) {
+	bool had = false;
+
 	EnterCriticalSection(&g->Lock);
-	if (g->Wan != INVALID_SOCKET)
-		closesocket(g->Wan);
-	g->Wan = INVALID_SOCKET;
+	if (g->External != 0) {
+		NatSimUnforward(g->Sim, g->Nat, g->External);
+		had = true;
+	}
 	g->External = 0;
 	g->Internal = 0;
-	for (UINT i = 0; i < g->NumFlows; i++)
-		closesocket(g->Flows[i].Inside);
-	g->NumFlows = 0;
 	LeaveCriticalSection(&g->Lock);
+
+	return had;
 }
 
 // One HTTP request: the description, or a SOAP action on the control URL
 static void HomeGwHttp(HOMEGW *g) {
 	static const char description[] = "<?xml version=\"1.0\"?>\r\n<root xmlns=\"urn:schemas-upnp-org:device-1-0\"><specVersion><major>1</major><minor>0</minor></specVersion><device><deviceType>urn:schemas-upnp-org:device:InternetGatewayDevice:1</deviceType><friendlyName>coretest home gateway</friendlyName><deviceList><device><deviceType>urn:schemas-upnp-org:device:WANDevice:1</deviceType><deviceList><device><deviceType>urn:schemas-upnp-org:device:WANConnectionDevice:1</deviceType><serviceList><service><serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType><serviceId>urn:upnp-org:serviceId:WANIPConn1</serviceId><controlURL>/ctl</controlURL><eventSubURL>/evt</eventSubURL><SCPDURL>/scpd.xml</SCPDURL></service></serviceList></device></deviceList></device></deviceList></device></root>\r\n";
 	char req[HOMEGW_BUFFER];
+	char content[256];
+	PEER_ADDR pub;
 	int len = 0;
 	u_long blocking = 0;
 	DWORD timeout = 2000;
@@ -239,6 +266,12 @@ static void HomeGwHttp(HOMEGW *g) {
 	SOCKET s = accept(g->Http, NULL, NULL);
 	if (s == INVALID_SOCKET)
 		return;
+
+	// A connection of another program of the host gets no answer and does not count
+	if (HomeGwOwnTcp(s, g->HttpPort) == false) {
+		closesocket(s);
+		return;
+	}
 
 	// The request: its head, then the body of its Content-Length
 	ioctlsocket(s, FIONBIO, &blocking);
@@ -257,10 +290,15 @@ static void HomeGwHttp(HOMEGW *g) {
 	}
 	req[len] = 0;
 
+	InterlockedIncrement(&g->Requests);
+
 	if (strncmp(req, "GET /igd.xml ", 13) == 0) {
 		HomeGwRespond(s, 200, description);
 	} else if (strncmp(req, "POST /ctl ", 10) == 0 && strstr(req, "#GetExternalIPAddress") != NULL) {
-		HomeGwSoap(s, 200, "<u:GetExternalIPAddressResponse xmlns:u=\"urn:schemas-upnp-org:service:WANIPConnection:1\"><NewExternalIPAddress>127.0.0.1</NewExternalIPAddress></u:GetExternalIPAddressResponse>");
+		// The public address of the NAT
+		NatSimPublic(g->Nat, &pub);
+		snprintf(content, sizeof(content), "<u:GetExternalIPAddressResponse xmlns:u=\"urn:schemas-upnp-org:service:WANIPConnection:1\"><NewExternalIPAddress>%u.%u.%u.%u</NewExternalIPAddress></u:GetExternalIPAddressResponse>", pub.Ip[12], pub.Ip[13], pub.Ip[14], pub.Ip[15]);
+		HomeGwSoap(s, 200, content);
 	} else if (strncmp(req, "POST /ctl ", 10) == 0 && strstr(req, "#AddPortMapping") != NULL) {
 		UINT external = HomeGwXmlNumber(req, "NewExternalPort");
 		UINT internal = HomeGwXmlNumber(req, "NewInternalPort");
@@ -281,116 +319,21 @@ static void HomeGwHttp(HOMEGW *g) {
 	closesocket(s);
 }
 
-// The flow of the WAN address from: the one there is, or a new one with a port of its own on ::1; NULL when the
-// gateway has no room for another one
-static HOMEGW_FLOW *HomeGwFlow(HOMEGW *g, const SOCKADDR_IN *from) {
-	for (UINT i = 0; i < g->NumFlows; i++)
-		if (g->Flows[i].Remote.sin_addr.s_addr == from->sin_addr.s_addr && g->Flows[i].Remote.sin_port == from->sin_port)
-			return &g->Flows[i];
-
-	if (g->NumFlows == HOMEGW_MAX_FLOWS)
-		return NULL;
-
-	SOCKET s = HomeGwUdp(AF_INET6, 0);
-	if (s == INVALID_SOCKET)
-		return NULL;
-
-	EnterCriticalSection(&g->Lock);
-	HOMEGW_FLOW *f = &g->Flows[g->NumFlows++];
-	f->Remote = *from;
-	f->Inside = s;
-	LeaveCriticalSection(&g->Lock);
-
-	return f;
-}
-
-// What came to the public port: to the internal port on ::1, from the flow of its source
-static void HomeGwFromWan(HOMEGW *g) {
-	char buf[HOMEGW_BUFFER];
-	SOCKADDR_STORAGE from;
-	SOCKADDR_IN6 to;
-
-	ZeroMemory(&to, sizeof(to));
-	to.sin6_family = AF_INET6;
-	to.sin6_addr.s6_addr[15] = 1;
-	to.sin6_port = htons(g->Internal);
-
-	while (true) {
-		int from_len = sizeof(from);
-		int n = recvfrom(g->Wan, buf, sizeof(buf), 0, (SOCKADDR *)&from, &from_len);
-
-		if (n == SOCKET_ERROR) {
-			if (WSAGetLastError() == WSAEMSGSIZE)
-				continue;
-			break;
-		}
-
-		if (InterlockedCompareExchange(&g->Link, 0, 0) == 0 || from.ss_family != AF_INET)
-			continue;
-
-		HOMEGW_FLOW *f = HomeGwFlow(g, (const SOCKADDR_IN *)&from);
-		if (f != NULL && sendto(f->Inside, buf, n, 0, (const SOCKADDR *)&to, sizeof(to)) == n)
-			InterlockedIncrement(&g->Forwarded);
-	}
-}
-
-// What the node sent back to the port of the flow f: to the WAN address of the flow, from the public port
-static void HomeGwFromInside(HOMEGW *g, HOMEGW_FLOW *f) {
-	char buf[HOMEGW_BUFFER];
-	SOCKADDR_STORAGE from;
-
-	while (true) {
-		int from_len = sizeof(from);
-		int n = recvfrom(f->Inside, buf, sizeof(buf), 0, (SOCKADDR *)&from, &from_len);
-
-		if (n == SOCKET_ERROR) {
-			if (WSAGetLastError() == WSAEMSGSIZE)
-				continue;
-			break;
-		}
-
-		// Only from the internal port of the mapping
-		const SOCKADDR_IN6 *in6 = (const SOCKADDR_IN6 *)&from;
-		if (InterlockedCompareExchange(&g->Link, 0, 0) == 0 || from.ss_family != AF_INET6 || ntohs(in6->sin6_port) != g->Internal)
-			continue;
-
-		if (sendto(g->Wan, buf, n, 0, (const SOCKADDR *)&f->Remote, sizeof(f->Remote)) == n)
-			InterlockedIncrement(&g->Forwarded);
-	}
-}
-
-// The thread of the gateway: datagrams first, then SSDP, then one HTTP request, which may change the mapping and
-// so comes last before the next poll
+// The thread of the gateway: SSDP first, then one HTTP request, which may change the mapping
 static DWORD WINAPI HomeGwThread(void *param) {
 	HOMEGW *g = (HOMEGW *)param;
-	WSAPOLLFD fds[3 + HOMEGW_MAX_FLOWS];
+	WSAPOLLFD fds[2];
 
 	while (InterlockedCompareExchange(&g->Stop, 0, 0) == 0) {
-		UINT n = 0;
-		UINT flows = g->NumFlows;
-
 		ZeroMemory(fds, sizeof(fds));
-		fds[n].fd = g->Ssdp;
-		fds[n++].events = POLLRDNORM;
-		fds[n].fd = g->Http;
-		fds[n++].events = POLLRDNORM;
-		if (g->Wan != INVALID_SOCKET) {
-			fds[n].fd = g->Wan;
-			fds[n++].events = POLLRDNORM;
-		}
-		for (UINT i = 0; i < flows; i++) {
-			fds[n].fd = g->Flows[i].Inside;
-			fds[n++].events = POLLRDNORM;
-		}
+		fds[0].fd = g->Ssdp;
+		fds[0].events = POLLRDNORM;
+		fds[1].fd = g->Http;
+		fds[1].events = POLLRDNORM;
 
-		if (WSAPoll(fds, n, 50) <= 0)
+		if (WSAPoll(fds, 2, 50) <= 0)
 			continue;
 
-		if (g->Wan != INVALID_SOCKET && fds[2].revents != 0)
-			HomeGwFromWan(g);
-		for (UINT i = 0; i < flows && g->Wan != INVALID_SOCKET; i++)
-			if (fds[3 + i].revents != 0)
-				HomeGwFromInside(g, &g->Flows[i]);
 		if (fds[0].revents != 0)
 			HomeGwSsdp(g);
 		if (fds[1].revents != 0)
@@ -400,7 +343,7 @@ static DWORD WINAPI HomeGwThread(void *param) {
 	return 0;
 }
 
-// Stop the gateway and close its sockets
+// Stop the gateway and close its sockets; its port forward goes
 void HomeGwFree(HOMEGW *g) {
 	if (g == NULL)
 		return;
@@ -424,22 +367,26 @@ void HomeGwFree(HOMEGW *g) {
 	HeapFree(GetProcessHeap(), 0, g);
 }
 
-// A gateway with its link up and no mapping yet; NULL when UDP 1900 or the HTTP listener cannot be opened
-HOMEGW *HomeGwNew() {
+// The gateway of the NAT nat on the network s, with no mapping yet; NULL when UDP 1900 or the HTTP listener cannot be
+// opened
+HOMEGW *HomeGwNew(NATSIM *s, NATSIM_NAT *nat) {
 	WSADATA wsa;
 	SOCKADDR_IN sa;
 	int sa_len = sizeof(sa);
 	BOOL reuse = TRUE;
 	u_long nonblocking = 1;
 
+	if (s == NULL || nat == NULL)
+		return NULL;
+
 	HOMEGW *g = (HOMEGW *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(HOMEGW));
 	if (g == NULL)
 		return NULL;
 
+	g->Sim = s;
+	g->Nat = nat;
 	g->Ssdp = INVALID_SOCKET;
 	g->Http = INVALID_SOCKET;
-	g->Wan = INVALID_SOCKET;
-	g->Link = 1;
 	InitializeCriticalSection(&g->Lock);
 	g->WsaStarted = (WSAStartup(MAKEWORD(2, 2), &wsa) == 0);
 
@@ -476,10 +423,11 @@ HOMEGW *HomeGwNew() {
 	return g;
 }
 
-// The mapping that the gateway granted: its public port on 127.0.0.1 and the internal port on ::1; false for none
+// The mapping that the gateway granted: its public port on the NAT and the port of the host that it forwards to; false
+// for none
 bool HomeGwMapped(HOMEGW *g, USHORT *external, USHORT *internal) {
 	EnterCriticalSection(&g->Lock);
-	bool ret = (g->Wan != INVALID_SOCKET);
+	bool ret = (g->External != 0);
 	*external = g->External;
 	*internal = g->Internal;
 	LeaveCriticalSection(&g->Lock);
@@ -487,17 +435,18 @@ bool HomeGwMapped(HOMEGW *g, USHORT *external, USHORT *internal) {
 	return ret;
 }
 
-// Bring the WAN link of the gateway up or down: down, it forwards nothing
-void HomeGwSetLink(HOMEGW *g, bool up) {
-	InterlockedExchange(&g->Link, up ? 1 : 0);
-}
-
-// The datagrams that the mapping forwarded so far, either way
-UINT HomeGwForwarded(HOMEGW *g) {
-	return (UINT)InterlockedCompareExchange(&g->Forwarded, 0, 0);
+// Lose the mapping, as a gateway that restarts does: the port forward is gone, and libplum is not told. False when the
+// gateway had none.
+bool HomeGwDrop(HOMEGW *g) {
+	return HomeGwUnmap(g);
 }
 
 // The M-SEARCH requests that the gateway answered so far
 UINT HomeGwSearches(HOMEGW *g) {
 	return (UINT)InterlockedCompareExchange(&g->Searches, 0, 0);
+}
+
+// The HTTP requests that the gateway answered so far: the description and the actions of the control URL
+UINT HomeGwRequests(HOMEGW *g) {
+	return (UINT)InterlockedCompareExchange(&g->Requests, 0, 0);
 }

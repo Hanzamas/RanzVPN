@@ -168,3 +168,38 @@ NOTICE rules for every package that carries wireguard.dll (SDN-80, #375, and any
          above, with wireguard.dll, wireguard.h, NodeWireGuard.c and the licence file that fetch-wireguard.ps1 puts
          beside the DLL as wireguard-LICENSE.txt; the NOTICE names WireGuard LLC, WireGuard and WireGuardNT only to say
          what it carries.
+
+
+Libraries that the node links
+-----------------------------
+
+
+libjuice v1.7.4 and libplum v0.6.0
+----------------------------------
+
+What:    libjuice, the ICE agent of the peer layer of the node (src/Core/PeerIce.c; CORE-S5-3 #79, CORE-S5-6 #412), and
+         libplum, its port mapping of home gateways with PCP, NAT-PMP and UPnP (src/Core/PeerPortMap.c), both by
+         Paul-Louis Ageneau. ranz-node.exe links both statically (src/Core/3rdparty/CMakeLists.txt), and ranz.exe carries
+         ranz-node.exe as a Payload.
+
+Pinned:  the git submodules src/Core/3rdparty/libjuice at the tag v1.7.4, the commit b89c792e3612, and
+         src/Core/3rdparty/libplum at the tag v0.6.0, the commit e4be508aad42. A new pin changes the submodule, the
+         source lists of src/Core/3rdparty/CMakeLists.txt and the NOTICE together: TestNoticeHasTheLicencesOfLibjuiceAndLibplum
+         fails until the NOTICE names the commit that the submodule pins.
+
+Licence: the Mozilla Public License, Version 2.0 (the file LICENSE of each). It is file-level copyleft: the files of the
+         two libraries stay under it, and the files of Ranz VPN, which only call them, are not Covered Software
+         (section 3.3). In short:
+         - a recipient of ranz.exe must be told that it carries libjuice and libplum, under which licence, and where
+           their source is (section 3.2(a)): the NOTICE says so, with the commits;
+         - a file of either that Ranz VPN changes is published under the same licence, with the notices of the file
+           that it stands in for (sections 3.1 and 3.4): src/Core/3rdparty/juice-peer.c, which takes the place of
+           src/conn_thread.c of libjuice, and src/Core/3rdparty/plum-xml.c, which takes the place of the function
+           xml_find_matching_child of src/util.c of libplum, are in the source of Ranz VPN;
+         - they come without warranty and without liability.
+
+NOTICE rules for every package that carries ranz-node.exe (CORE-S5-6, #412, and any later one):
+         1. The NOTICE of the package names libjuice and libplum, the commits that their submodules pin, their copyright
+            notices and their licence, whose text it holds word for word (TestNoticeHasTheLicencesOfLibjuiceAndLibplum).
+         2. The two changed files keep their notices and stay in src/Core/3rdparty, where the source of Ranz VPN
+            publishes them.
