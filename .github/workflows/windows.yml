@@ -424,6 +424,18 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/operations-tracer.ps1 -BuildDir build
+    # The tray tracer (SDN-55, #248): ranz tray, the tray of a laptop, with the controller of the default VRF tracer, whose
+    # Intent holds the User alice with a password, and the Node of vpntest traytrace, with the client role on a Wintun adapter,
+    # the pipe of its logged-in user and no Controller settings. ranz tray status says that the Node is not signed in; ranz tray
+    # login signs alice in, with tray-browser.ps1 as the browser that signs in on the authorization page, and the Node enrols:
+    # it takes the keys of the Controller on its pipe and joins it, as ranz tray status and the API show; ranz tray down and up
+    # turn its client role off and on; once the Node is gone, ranz tray says that the Ranz service does not run, with the exit
+    # code 3 (.github/scripts/tray-tracer.ps1)
+    - name: Tray tracer
+      timeout-minutes: 10
+      shell: pwsh
+      run: |
+        . .github/scripts/tray-tracer.ps1 -BuildDir build
     # The Controller behind the front door of a node on the same host (SDN-73, #352; ADR-0035), on x64 and arm64: ranz
     # controller on a test port with its handoff pipe, and the node of coretest's frontdoor test with its front door on
     # another test port, never 443. Through the front door the API answers over h2, over HTTP/1.1 and with the server name
