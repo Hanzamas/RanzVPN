@@ -511,12 +511,13 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache-dependency-path: go.sum
-    # THROWAWAY (#534): the measurement of the fix of TestFrontDoorHandsOver, removed again before the pull request is done.
-    # It runs the tests of controller/internal/port with the close of the handle that the code had (RANZ_DIAG_REBUILD) and
-    # with the fix, in one process and in processes of their own, and fails the job on purpose.
+    # THROWAWAY (#534): the measurement of the fixes of TestFrontDoorHandsOver, removed again before the pull request is done.
+    # It tries what Winsock does with the entry of a socket that was closed with CloseHandle, which the standard library
+    # leaves in every process that dials, runs the test in processes of their own with candidate fixes of rebuild
+    # (RANZ_DIAG_REBUILD), and fails the job on purpose.
     - name: Measure TestFrontDoorHandsOver (throwaway)
       shell: pwsh
-      timeout-minutes: 25
+      timeout-minutes: 30
       run: |
         $exe = Join-Path $env:RUNNER_TEMP 'port.test.exe'
         $log = Join-Path $env:RUNNER_TEMP 'port.test.log'
@@ -524,21 +525,35 @@ jobs:
         Write-Host "architecture $env:PROCESSOR_ARCHITECTURE"
         go test -c -o $exe ./controller/internal/port
         if ($LASTEXITCODE -ne 0) { throw "go test -c exited with code $LASTEXITCODE" }
-        # The test binary $runs times, each time a process of its own, with the close of the handle $rebuild (RANZ_DIAG_REBUILD)
-        # and the close of the front door's handle $raw (RANZ_DIAG_RAW); the failures by what they say
-        function Measure-Processes([string] $label, [string] $pattern, [int] $runs, [string] $rebuild, [string] $raw) {
+        # The experiments with a stale entry, once, and the first dial of a process, three times
+        & $exe '-test.run=^TestDiag534Winsock$' '-test.v' '-test.count=1' '-test.timeout=120s' *> $log
+        Write-Host "TestDiag534Winsock: exit code $LASTEXITCODE"
+        Get-Content -LiteralPath $log | ForEach-Object { Write-Host $_ }
+        for ($i = 0; $i -lt 3; $i++) {
+          & $exe '-test.run=^TestDiag534Dummy$' '-test.v' '-test.count=1' '-test.timeout=120s' *> $log
+          Get-Content -LiteralPath $log | Where-Object { $_ -match 'DIAG|FAIL|panic' } | ForEach-Object { Write-Host $_ }
+        }
+        # The test binary $runs times, each time a process of its own, with the candidate fixes $rebuild (RANZ_DIAG_REBUILD);
+        # the failures by what they say, and how often a candidate found a stale entry
+        function Measure-Processes([string] $label, [string] $pattern, [int] $runs, [string] $rebuild) {
           $env:RANZ_DIAG_REBUILD = $rebuild
-          $env:RANZ_DIAG_RAW = $raw
           $reset = 0
           $wrong = 0
           $other = 0
+          $stale = 0
+          $retried = 0
+          $healed = 0
           for ($i = 0; $i -lt $runs; $i++) {
-            & $exe "-test.run=$pattern" '-test.count=1' *> $log
-            if ($LASTEXITCODE -ne 0) {
-              $text = Get-Content -LiteralPath $log -Raw
+            & $exe "-test.run=$pattern" '-test.count=1' '-test.timeout=60s' *> $log
+            $code = $LASTEXITCODE
+            $text = Get-Content -LiteralPath $log -Raw
+            if ($text -match 'DIAG stale d1') { $stale++ }
+            if ($text -match 'DIAG filecon retry') { $retried++ }
+            if ($text -match 'DIAG healed [1-9]') { $healed++ }
+            if ($code -ne 0) {
               if ($text -match 'forcibly closed') {
                 $reset++
-                if ($reset -le 2) { Write-Host $text }
+                if ($reset -le 3) { Write-Host $text }
               } elseif ($text -match 'the API answered|Control got the connection of') {
                 $wrong++
               } else {
@@ -548,29 +563,15 @@ jobs:
             }
           }
           $env:RANZ_DIAG_REBUILD = ''
-          $env:RANZ_DIAG_RAW = ''
-          Write-Host "${label}: of $runs processes $reset were reset, $wrong saw a wrong address, $other failed otherwise"
+          Write-Host "${label}: of $runs processes $reset were reset, $wrong saw a wrong address, $other failed otherwise; $stale had a stale handle of a handoff, $retried tried FileConn again, $healed healed an entry"
         }
-        # The test binary once, with -test.count of $count
-        function Measure-Count([string] $label, [string] $pattern, [int] $count) {
-          & $exe "-test.run=$pattern" "-test.count=$count" *> $log
-          $code = $LASTEXITCODE
-          $failed = @(Select-String -LiteralPath $log -Pattern '^--- FAIL').Count
-          Write-Host "${label}: exit code $code, $failed of $count runs failed"
-          if ($failed -gt 0) { Get-Content -LiteralPath $log | Select-Object -First 6 | ForEach-Object { Write-Host "    $_" } }
-        }
-        go test -count=100 -run TestFrontDoorHandsOver ./controller/internal/port
-        Write-Host "go test -count=100 -run TestFrontDoorHandsOver ./controller/internal/port: exit code $LASTEXITCODE"
-        Measure-Count 'fix, TestFrontDoorHandsOver in one process' '^TestFrontDoorHandsOver$' 1000
-        Measure-Processes 'old close of the handle, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 1000 'closehandle' ''
-        Measure-Processes 'fix, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 1000 '' ''
-        Measure-Processes 'handle left open, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 1000 'noclose' ''
-        Measure-Processes 'handle closed late, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 1000 'late' ''
-        Measure-Processes 'fix and the front door closes its handle after the pipe, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 1000 '' 'after'
-        Measure-Processes 'fix, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 150 '' ''
-        Measure-Processes 'handle left open, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 150 'noclose' ''
-        Measure-Processes 'handle closed late, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 150 'late' ''
-        Measure-Processes 'fix and the front door closes its handle after the pipe, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 150 '' 'after'
+        Measure-Processes 'baseline, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 2000 ''
+        Measure-Processes 'scan, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 2000 'scan'
+        Measure-Processes 'retry, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 2000 'retry'
+        Measure-Processes 'check and retry, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 2000 'check,retry'
+        Measure-Processes 'heal and retry, TestFrontDoorHandsOver' '^TestFrontDoorHandsOver$' 2000 'heal,retry'
+        Measure-Processes 'baseline, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 200 ''
+        Measure-Processes 'check and retry, TestFrontDoorHandoffsKeepTheirClient' '^TestFrontDoorHandoffsKeepTheirClient$' 200 'check,retry'
         exit 1
     # rqlite publishes a Windows build for x64 only: on the arm64 runner this is the x64 rqlited.exe,
     # which Windows 11 on ARM runs under emulation, and which is the member of ranz for arm64
