@@ -35,6 +35,10 @@ target_link_libraries(cedar PRIVATE bcrypt.lib crypt32.lib iphlpapi.lib ole32.li
 # (NodeWireGuardFilter.c; SDN-80, #375)
 target_link_libraries(cedar PRIVATE fwpuclnt.lib)
 
+# oleaut32.lib: the BSTRs and VARIANTs of the WMI calls through which the internet exit creates its NAT network of WinNAT
+# (NodeEgressNat.c; SDN-12, #188), with the COM of ole32.lib above. The mprapi.dll of its RRAS NAT is loaded at run time.
+target_link_libraries(cedar PRIVATE oleaut32.lib)
+
 # The L2 adapter of the Node module (NodeL2*.c, NodeKmTest.c; CORE-S3-2, #72): newdev.lib for
 # UpdateDriverForPlugAndPlayDevicesW, which installs the driver of a new KM-TEST Loopback Adapter, and ntdll.lib for
 # NtCreateFile and NtDeviceIoControlFile, through which the header-only API of XDP for Windows drives the XDP driver
