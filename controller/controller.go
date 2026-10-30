@@ -91,7 +91,8 @@
 // key of this host (the sealing key, internal/keys), so a restore on the same host keeps them working;
 // on another host the targets come back with no secret, the log of the controller names them, and the
 // operator puts each one again with its secret. The members of a cluster have no sealing key in
-// common and keep those secrets in clear.
+// common, so they seal those secrets with the Cluster key of the cluster, which each member holds
+// through a copy that its own sealing key opens (internal/clusterkey, AUD1-DT-16).
 //
 // On Windows the data directory belongs to SYSTEM, the Administrators or the service's account, and
 // nobody else has a right in it (ST-3 of docs/threat-model.md). install makes it with the

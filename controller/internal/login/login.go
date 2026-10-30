@@ -156,6 +156,8 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("GET "+DevicePath, s.devicePage)
 	mux.HandleFunc("POST "+DevicePath, s.approveDevice)
 	mux.HandleFunc("POST "+LogoutPath, s.logout)
+	// The join of a device with a join token of the portal (portal.go; SDN-58)
+	mux.HandleFunc("POST "+JoinPath, s.join)
 	s.mux = mux
 	return s
 }
@@ -172,6 +174,10 @@ type SignInRequest struct {
 	// Saved says that the client took the password from its own storage, which a User that may not
 	// save its password refuses (intent.User.NoSavedPassword).
 	Saved bool `json:"saved,omitempty"`
+	// Scope asks for a token that does less than the API role of the User allows: ScopeSelf gives a token
+	// of the self scope, for the portal, which needs no API role (portal.go; SDN-58). Left out, the login
+	// gives the user token of the API role of the User.
+	Scope string `json:"scope,omitempty"`
 }
 
 // SignedIn is the answer of a password login: the user token with its secret and its end, and whether
@@ -199,6 +205,11 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 	acct, err := s.authenticate(r, req.User, req.Password, req.Saved)
 	if err != nil {
 		refuse(w, err)
+		return
+	}
+	if req.Scope != "" {
+		// A login for the portal: a token of the self scope (portal.go; SDN-58)
+		s.signInScoped(w, r, req.Scope, acct)
 		return
 	}
 	tok, err := s.issue(r, acct)
@@ -312,7 +323,7 @@ func statusOf(err error) int {
 	switch {
 	case errors.As(err, &t):
 		return http.StatusTooManyRequests
-	case errors.Is(err, controller.ErrBadCredentials):
+	case errors.Is(err, controller.ErrBadCredentials), errors.Is(err, controller.ErrBadJoinToken):
 		return http.StatusUnauthorized
 	case errors.Is(err, controller.ErrUserExpired), errors.Is(err, controller.ErrUserBanned), errors.Is(err, controller.ErrSavedPassword),
 		errors.Is(err, rbac.ErrNoRole), errors.Is(err, licence.ErrRefused):
