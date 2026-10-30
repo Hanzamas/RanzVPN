@@ -41,6 +41,17 @@
 //
 // The session ends when the node closes the pipe: the sidecar then stops BGP, which tells the
 // peers with a Cease notification, and exits.
+//
+// A start with evpn makes the node an EVPN gateway to a data-centre fabric (evpn.go; SDN-25 #201),
+// and has no address: its peers are the routers of the fabric, not Ranz nodes. evpn names the VTEP
+// of the node, its router_mac and its vrfs (vrf, the L3 vni, the rd, the
+// import and export route targets, and accept: the prefixes, with their more specific ones, that
+// are taken from the fabric into the VRF). An announce or withdraw with the vrf of one of them is
+// an IP prefix route (EVPN type 5) of that VRF, with the VTEP as its next hop, so it has no
+// next_hop; one with any other vrf is refused. A learned message with a vni is an IP prefix route
+// of the fabric in the EVPN VRF vrf: its prefix via the VTEP next_hop of the fabric, with the vni
+// and the router_mac to send it in VXLAN; a withdrawn message with a vni is one that went. The
+// node installs them into the forwarding of the VRF, never into the Windows routing table.
 package sidecar
 
 import (
@@ -53,8 +64,8 @@ import (
 )
 
 // ProtocolVersion is the version of the protocol that ready reports: 2 adds the peering of the
-// standard mode and the refused message.
-const ProtocolVersion = 2
+// standard mode and the refused message, 3 the EVPN of a gateway.
+const ProtocolVersion = 3
 
 // MaxLine is the size of one message at most, with its newline.
 const MaxLine = 64 * 1024
@@ -100,7 +111,8 @@ type Message struct {
 	// announce, withdraw, learned, withdrawn, error
 	Prefix  string `json:"prefix,omitempty"`
 	NextHop string `json:"next_hop,omitempty"`
-	// VRF is the VRF id of a route of the peering of the standard mode, 0 for none
+	// VRF is the VRF id of a route of the peering of the standard mode or of an EVPN VRF (evpn.go),
+	// 0 for none
 	VRF uint32 `json:"vrf,omitempty"`
 
 	// peer, learned, withdrawn, refused: the address of the peer
@@ -113,6 +125,12 @@ type Message struct {
 
 	// error
 	Error string `json:"error,omitempty"`
+
+	// The EVPN of a gateway (evpn.go; SDN-25 #201): its settings in start; the VNI of a route of
+	// an EVPN VRF in learned and withdrawn, and the router MAC of the fabric in learned
+	EVPN      *EVPN  `json:"evpn,omitempty"`
+	VNI       uint32 `json:"vni,omitempty"`
+	RouterMAC string `json:"router_mac,omitempty"`
 }
 
 // Peer is one router of the operator in a start message, or one Ranz node in the peering of the
