@@ -148,7 +148,9 @@
 //	                      which is the default server, ranz accepts only the certificate with the TLS
 //	                      fingerprint that the controller wrote to tls.fingerprint there, because
 //	                      another program of the host can listen on a port that the controller is not
-//	                      on. Without that file, and without -tls-fingerprint, it sends no token.
+//	                      on. Without that file, and without -tls-fingerprint, it sends no token. On
+//	                      Windows it takes the file only when no account but SYSTEM, the Administrators
+//	                      and the service of the controller owns or may write the file or its folder.
 //
 // Every call needs the token of a role (SDN-14, #190): viewer reads and exports, operator also
 // applies, imports, deletes, confirms, rolls back and installs or removes the licence key, and
