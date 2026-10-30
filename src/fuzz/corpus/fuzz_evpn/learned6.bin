@@ -1,0 +1,1 @@
+0{"type":"learned","prefix":"2001:db8:16::/48","next_hop":"2001:db8::10","vrf":101,"peer":"2001:db8::10","vni":10101,"router_mac":"02:00:5e:10:00:01"}

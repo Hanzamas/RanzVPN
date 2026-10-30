@@ -33,7 +33,7 @@
 //   no route is dropped. The tables of a Generation take a learned route only while the accept list of its peer there holds it.
 // - A message that does not reach the sidecar, a full pipe or a line too long, ends it: the reader hears the pipe close, the
 //   routes go, and another sidecar starts with the full state of the Generation in force. The peers go in peers messages of one
-//   line each at most (protocol 3), so a mesh of any size fits, and the node holds and counts every peer, beyond the 64 of a report.
+//   line each at most (protocol 4), so a mesh of any size fits, and the node holds and counts every peer, beyond the 64 of a report.
 // - The node asks the sidecar every NODE_PEERING_PING whether it runs (ping), and the sidecar answers once GoBGP answers it (pong):
 //   one that does not answer within NODE_PEERING_ANSWER hangs, and the node ends it as above, so its routes do not stay.
 // - The halt is answered at once: every wait of the worker ends at the halt, and a sidecar that stops is not waited for at the
@@ -1035,7 +1035,7 @@ static cJSON *NodePeeringPeersJson(const CONTROL_STATE *st) {
 }
 
 // Send the peers of the JSON array peers to the sidecar s in peers messages of one line each, NODE_BGP_MAX_LINE bytes at most:
-// each but the last says that more come, and the sidecar takes all of them in place of the ones before with the last (protocol 3;
+// each but the last says that more come, and the sidecar takes all of them in place of the ones before with the last (protocol 4;
 // SDN-77-R1, #531), so the peers of a mesh of any size reach it, and an empty list is one message. False when one did not reach the
 // sidecar, which ends it (NodePeeringSendLine).
 static bool NodePeeringSendPeers(NODE_PEERING *p, NODE_PEERING_SIDECAR *s, const cJSON *peers) {
@@ -1498,7 +1498,7 @@ static void NodePeeringSettle(NODE_PEERING *p) {
 	NodePeeringReap(p);
 }
 
-// Whether the sidecar runs (protocol 3): NODE_PEERING_PING after its last answer the worker asks it again (ping), and the sidecar
+// Whether the sidecar runs (protocol 4): NODE_PEERING_PING after its last answer the worker asks it again (ping), and the sidecar
 // answers once GoBGP answered it too (pong). A sidecar that does not answer within NODE_PEERING_ANSWER hangs: the worker ends it
 // (NodePeeringEnd), so the routes that it learned go, and another starts, as for one that ends by itself (SDN-77-R1, #531).
 static void NodePeeringCheck(NODE_PEERING *p) {

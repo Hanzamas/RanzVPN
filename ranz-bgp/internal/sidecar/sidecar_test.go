@@ -386,13 +386,17 @@ func TestSession(t *testing.T) {
 		t.Errorf("withdrawn 198.51.100.0/24: from %q, want 127.0.0.1", w.Peer)
 	}
 
-	// What cannot be applied is answered with an error; the session goes on.
+	// What cannot be applied is answered with an error; the session goes on. A prefix with a vrf
+	// is of an EVPN VRF (evpn.go; SDN-25 #201) or of the peering of the standard mode (peering.go),
+	// and this session runs neither: it goes nowhere, and its withdraw takes no unicast route away.
 	refused := []Message{
 		{Type: TypeWithdraw, Prefix: "198.18.0.0/15"},
 		{Type: TypeAnnounce, Prefix: "203.0.113.1/24"},
 		{Type: TypeAnnounce, Prefix: "198.18.0.0/15", NextHop: "2001:db8::1"},
 		{Type: TypeStart, ASN: 65001},
 		{Type: "bogus"},
+		{Type: TypeAnnounce, Prefix: "198.18.0.0/15", VRF: 101},
+		{Type: TypeWithdraw, Prefix: "203.0.113.0/24", VRF: 101},
 	}
 	for _, m := range refused {
 		node.send(m)
@@ -403,6 +407,10 @@ func TestSession(t *testing.T) {
 	}
 	if !a.established() || !b.established() {
 		t.Error("a session ended after a refused message")
+	}
+	time.Sleep(settleTime)
+	if b.has("198.18.0.0/15") || !b.has("203.0.113.0/24") {
+		t.Error("an announce or withdraw with a vrf changed the unicast routes that router b has from the sidecar")
 	}
 
 	// The node closes the pipe: the sidecar stops BGP and both routers see their session end.
