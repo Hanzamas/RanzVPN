@@ -62,6 +62,15 @@
 //   node-c, and so does the one from 10.0.0.1 once node-a stamps admin on it; a claim of server, which node-a may not
 //   assert, is dropped at the hub as an unknown group and counted as refused. Node-c takes each packet as a record of frame
 //   version 0, without the source group that it carried, and counts it as missing.
+// - The EVPN gateway (SDN-25, #201): node-b hands red to a data-centre fabric (Cedar/NodeEvpn.c), with the IP prefix route
+//   172.16.1.0/24 of the fabric on the L3 VNI of red via a harness VTEP on 127.0.0.1, and the state of node-a routes the LAN
+//   subnets of node-b, 172.16.0.0/12, to it, as the controller routes the LAN subnets of a gateway. The test starts the EVPN
+//   of node-b from the evpn object of a Bgp setting and hands it the route as the BGP sidecar of node-b would, without the
+//   sidecar. Node-b is the destination of the packets of node-a's host to the fabric, over noise, and judges the source group
+//   that they carried as for a packet to its host: the packet from 10.0.0.1 carries guest and is dropped, the one from
+//   10.0.0.50 carries admin and the harness VTEP takes it on the L3 VNI of red, without a source group; once node-a stamps
+//   admin on the packets of its own address, the packet from 10.0.0.1 reaches the fabric too, and a claim of server is
+//   dropped as an unknown group and counted as refused.
 // Print "GROUPPOLICY TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -69,6 +78,7 @@
 
 #include "Cedar/ConfigStore.h"
 #include "Cedar/Node.h"
+#include "Cedar/NodeEvpn.h"
 #include "Cedar/NodeLink.h"
 #include "Cedar/NodeSourceGroup.h"
 
@@ -80,6 +90,7 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Network.h"
+#include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
@@ -89,6 +100,8 @@
 #include "Core/Vxlan.h"
 
 #include <WS2tcpip.h>
+
+#include <cjson/cJSON.h>
 
 #include <stdio.h>
 
@@ -102,6 +115,16 @@
 #define	GPTEST_PORT				9000		// The UDP port of node-b's host that every packet goes to
 #define	GPTEST_FIRST_PORT		20000		// The UDP source port of the first case; each case takes the next
 #define	GPTEST_PHONE			"10.0.0.50"	// The address of the Device phone
+#define	GPTEST_L3VNI			10101		// The L3 VNI of red at the EVPN gateway node-b
+#define	GPTEST_FABRIC_ADDR		"172.16.1.20"	// An address of the fabric, which the IP prefix route of the fabric holds
+
+// The Bgp setting of node-b, the EVPN gateway, with the UDP port of its VTEP and of the harness VTEP of the fabric: its evpn
+// object alone, which hands red to the fabric on its L3 VNI
+#define	GPTEST_EVPN				"{\"evpn\":{\"vtep\":\"127.0.0.1\",\"port\":%u,\"fabric_port\":%u,\"vrfs\":[{\"vrf\":101,\"vni\":10101}]}}"
+
+// The learned message of the IP prefix route of the fabric in red, as the BGP sidecar of node-b hands it over: 172.16.1.0/24
+// on the L3 VNI of red, via the harness VTEP of the fabric on 127.0.0.1, with the router MAC of the fabric
+#define	GPTEST_FABRIC_ROUTE		"{\"type\":\"learned\",\"vrf\":101,\"vni\":10101,\"prefix\":\"172.16.1.0/24\",\"next_hop\":\"127.0.0.1\",\"router_mac\":\"02:00:5e:10:00:01\",\"peer\":\"fabric\"}"
 
 // The nodes: node-a and node-b, and node-c, a spoke of the hub node-b in the case of the hub
 #define	GPTEST_A				0
@@ -154,9 +177,12 @@ static char *gptest_results[4] = {"carried", "missing", "ignored", "refused"};
 // The MAC address of both ends of the Ethernet header of a frame of a link
 static const UCHAR gptest_mac[6] = {0x02, 0x52, 0x5A, 0x00, 0x00, 0x03};
 
-// One case: a UDP packet of red to node-b's host, or to node-c's through the hub node-b, which node-a's host sends, or the
-// harness tunnel endpoint with the source group that its datagram carries; and what node-b counts it as and whether the
-// host of its destination takes it
+// The router MAC of the fabric, which the IP prefix route of the fabric names: the destination of a frame to the fabric
+static const UCHAR gptest_fabric_mac[6] = {0x02, 0x00, 0x5E, 0x10, 0x00, 0x01};
+
+// One case: a UDP packet of red to node-b's host, to node-c's through the hub node-b, or to the fabric of node-b, the EVPN
+// gateway, which node-a's host sends, or the harness tunnel endpoint with the source group that its datagram carries; and
+// what node-b counts it as and whether the host of its destination, or the harness VTEP of the fabric, takes it
 typedef struct GPTEST_CASE
 {
 	char *What;							// What the case shows
@@ -279,6 +305,26 @@ static GPTEST_CASE gptest_hub_rogue[] =
 	{"a packet from 10.0.0.1 to node-c that claims server, which node-a may not assert: the hub drops it as an unknown group and counts it as refused", false, "10.0.0.1", false, 0, 0, GPTEST_REFUSED, false},
 };
 
+// The packets of node-a's host to the fabric of node-b, the EVPN gateway, while node-a stamps guest, its own group, on the
+// packets of its address and admin on those of the address of phone
+static GPTEST_CASE gptest_fabric[] =
+{
+	{"a packet from 10.0.0.1 to the fabric carries guest: node-b, the EVPN gateway, takes the claim, and its policy drops the packet, as admin-in does not allow guest", false, "10.0.0.1", false, 0, 0, GPTEST_CARRIED, false},
+	{"one from 10.0.0.50 to the fabric carries admin, which admin-in allows: node-b hands it to the fabric", false, GPTEST_PHONE, false, 0, 0, GPTEST_CARRIED, true},
+};
+
+// ... while node-a stamps admin on the packets of its own address
+static GPTEST_CASE gptest_fabric_admin[] =
+{
+	{"a packet from 10.0.0.1 to the fabric carries admin now: the policy of node-b judges it by the group that it carries, and it reaches the fabric", false, "10.0.0.1", false, 0, 0, GPTEST_CARRIED, true},
+};
+
+// ... while node-a stamps server, which it may not assert
+static GPTEST_CASE gptest_fabric_rogue[] =
+{
+	{"a packet from 10.0.0.1 to the fabric that claims server, which node-a may not assert: node-b drops it as an unknown group and counts it as refused", false, "10.0.0.1", false, 0, 0, GPTEST_REFUSED, false},
+};
+
 // The packets of node-a's host over noise while node-a stamps admin on them and node-b does not know the groups of node-a
 // yet
 static GPTEST_CASE gptest_rollout[] =
@@ -320,6 +366,9 @@ typedef struct GPTEST_CTX
 	GPTEST_NODE Nodes[GPTEST_NUM_NODES];
 	SOCKET Vtep;						// The harness tunnel endpoint, on 127.0.0.1: the address of the tunnel endpoint of node-a
 	UINT NextPort;						// The UDP source port of the next case
+	SOCKET Fabric;						// The harness VTEP of the fabric of node-b, on 127.0.0.1 ...
+	USHORT FabricPort;					// ... and its UDP port
+	bool Gateway;						// The next states of node-a route the LAN subnets of node-b, the EVPN gateway, to it
 } GPTEST_CTX;
 
 static bool GpTestCheck(GPTEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
@@ -390,9 +439,9 @@ static UINT GpTestAddress(UCHAR *addr, char *str)
 	return 16;
 }
 
-// The test packet from the address src and the UDP port sport to the host of the node dst on GPTEST_PORT, GPTEST_SIZE
-// bytes of IPv4, into buf
-static void GpTestPacket(UCHAR *buf, char *src, UINT dst, UINT sport)
+// The test packet from the address src and the UDP port sport to the address dst on GPTEST_PORT, GPTEST_SIZE bytes of
+// IPv4, into buf
+static void GpTestPacketTo(UCHAR *buf, char *src, char *dst, UINT sport)
 {
 	UCHAR addr[16];
 
@@ -403,7 +452,7 @@ static void GpTestPacket(UCHAR *buf, char *src, UINT dst, UINT sport)
 	buf[9] = IP_PROTO_UDP;
 	GpTestAddress(addr, src);
 	Copy(buf + 12, addr, 4);
-	GpTestAddress(addr, gptest_addrs[dst][0]);
+	GpTestAddress(addr, dst);
 	Copy(buf + 16, addr, 4);
 	USHORT sum = IpChecksum(buf, 20);
 	Copy(buf + 10, &sum, 2);
@@ -415,6 +464,12 @@ static void GpTestPacket(UCHAR *buf, char *src, UINT dst, UINT sport)
 	{
 		buf[i] = (UCHAR)(i * 13 + sport);
 	}
+}
+
+// The test packet from the address src and the UDP port sport to the host of the node dst (GpTestPacketTo)
+static void GpTestPacket(UCHAR *buf, char *src, UINT dst, UINT sport)
+{
+	GpTestPacketTo(buf, src, gptest_addrs[dst][0], sport);
 }
 
 // The num free UDP ports of the wildcard address into ports, which the system picks, each another: the sockets that
@@ -524,6 +579,70 @@ static bool GpTestInject(GPTEST_CTX *ctx, UINT kind, const UCHAR *packet, bool h
 	sa.sin_port = htons(geneve ? b->GenevePort : b->VxlanPort);
 
 	return sendto(ctx->Vtep, (char *)datagram, (int)size, 0, (struct sockaddr *)&sa, sizeof(sa)) == (int)size;
+}
+
+// The UDP port of the socket s, 0 for none
+static USHORT GpTestPortOf(SOCKET s)
+{
+	struct sockaddr_in sa;
+	int sa_size = sizeof(sa);
+
+	Zero(&sa, sizeof(sa));
+	if (s == INVALID_SOCKET || getsockname(s, (struct sockaddr *)&sa, &sa_size) != 0)
+	{
+		return 0;
+	}
+
+	return ntohs(sa.sin_port);
+}
+
+// The next datagram that the harness VTEP of the fabric takes within timeout ms, into buf of size bytes: its size, 0 for
+// none
+static UINT GpTestTakeFabric(GPTEST_CTX *ctx, UCHAR *buf, UINT size, UINT timeout)
+{
+	fd_set fds;
+	struct timeval tv;
+
+	FD_ZERO(&fds);
+	FD_SET(ctx->Fabric, &fds);
+	tv.tv_sec = (long)(timeout / 1000);
+	tv.tv_usec = (long)((timeout % 1000) * 1000);
+	if (select(0, &fds, NULL, NULL, &tv) != 1)
+	{
+		return 0;
+	}
+
+	int got = recvfrom(ctx->Fabric, (char *)buf, (int)size, 0, NULL, NULL);
+
+	return (got > 0 ? (UINT)got : 0);
+}
+
+// Drop what the harness VTEP of the fabric holds
+static void GpTestDrainFabric(GPTEST_CTX *ctx)
+{
+	UCHAR buf[VXLAN_MAX_DATAGRAM];
+
+	while (GpTestTakeFabric(ctx, buf, sizeof(buf), 0) != 0)
+	{
+	}
+}
+
+// Whether the datagram d of size bytes that the harness VTEP of the fabric took is the VXLAN datagram of packet: the I flag
+// alone, as the gateway hands a packet to the fabric without its source group, and the L3 VNI of red; then the Ethernet
+// header to the router MAC of the fabric, untagged, with the EtherType of IPv4; and the packet as it was sent
+static bool GpTestIsFabricFrame(const UCHAR *d, UINT size, const UCHAR *packet)
+{
+	if (size != VXLAN_HEADER_SIZE + NODE_EVPN_ETHER + GPTEST_SIZE || d[0] != VXLAN_FLAG_VNI)
+	{
+		return false;
+	}
+	if ((((UINT)d[4] << 16) | ((UINT)d[5] << 8) | d[6]) != GPTEST_L3VNI)
+	{
+		return false;
+	}
+
+	return (Cmp(d + VXLAN_HEADER_SIZE, gptest_fabric_mac, 6) == 0 && READ_USHORT(d + VXLAN_HEADER_SIZE + 12) == MAC_PROTO_IPV4 &&
+		Cmp(d + VXLAN_HEADER_SIZE + NODE_EVPN_ETHER, packet, GPTEST_SIZE) == 0);
 }
 
 //
@@ -646,6 +765,17 @@ static void GpTestPhone(CONTROL_DEVICE *d, bool gateway, bool grouped)
 	}
 }
 
+// Add the route of red to prefix/length to the routes of the Peer p
+static void GpTestRoute(CONTROL_PEER *p, char *prefix, UINT length)
+{
+	CONTROL_ROUTE *r = &p->Routes[p->NumRoutes++];
+
+	Zero(r, sizeof(CONTROL_ROUTE));
+	r->VrfId = GPTEST_VRF;
+	r->AddressSize = GpTestAddress(r->Address, prefix);
+	r->Length = length;
+}
+
 // Apply the next Generation of node i: its addresses, its tag and its tunnel endpoint; VRF red with the link of kind and
 // the tag mode mode, whose policy node-b enforces with the rule admin-in and node-a not at all; the other node as its
 // peer; and the Device phone, unless the node's states hold it no more (NoPhone). With tagged, both nodes report the
@@ -721,6 +851,12 @@ static bool GpTestApply(GPTEST_CTX *ctx, UINT i, UINT kind, UINT mode, bool tagg
 		p->Groups[0].TagSet = (b ? GPTEST_GUEST_TAGS : GPTEST_SERVER_TAGS);
 		p->Groups[0].Generation = (b ? t->Since : GPTEST_SINCE);
 		p->FrameVersion = NODE_FRAME_VERSION;
+	}
+	// The LAN subnets of node-b, the EVPN gateway, which the state of node-a routes to it as the controller routes the LAN
+	// subnets of a gateway: the fabric holds 172.16.1.0/24 of them (SDN-25, #201)
+	if (ctx->Gateway && b == false)
+	{
+		GpTestRoute(p, "172.16.0.0", 12);
 	}
 	st->NumPeers = 1;
 	st->Peers = p;
@@ -1088,12 +1224,7 @@ static void GpTestAhead(GPTEST_CTX *ctx)
 // through the hub
 static void GpTestPool(CONTROL_PEER *p)
 {
-	CONTROL_ROUTE *r = &p->Routes[p->NumRoutes++];
-
-	Zero(r, sizeof(CONTROL_ROUTE));
-	r->VrfId = GPTEST_VRF;
-	r->AddressSize = GpTestAddress(r->Address, "10.0.0.0");
-	r->Length = 24;
+	GpTestRoute(p, "10.0.0.0", 24);
 }
 
 // Apply the next Generation of node i, over noise, in VRF red of topology hub-and-spoke with the hub node-b, as the
@@ -1256,6 +1387,151 @@ static void GpTestHub(GPTEST_CTX *ctx)
 	}
 }
 
+// Start the EVPN of node-b without its BGP sidecar, as NodeBgpStart does with the node lock held: the evpn object of its Bgp
+// setting, with a free UDP port for the VTEP of node-b and the harness VTEP of the fabric on 127.0.0.1 as the VTEP of the
+// fabric. Then the IP prefix route of the fabric in red, as the reader thread of the sidecar hands over a learned message and
+// puts the routes of one read into the table snapshot (Cedar/NodeEvpn.c). Whether the EVPN of node-b runs with the route.
+static bool GpTestEvpnStart(GPTEST_CTX *ctx)
+{
+	NODE *n = ctx->Nodes[GPTEST_B].Node;
+	NODE_EVPN_STATUS st;
+	char text[MAX_SIZE];
+	USHORT port = 0;
+
+	ctx->Fabric = GpTestOpenVtep();
+	ctx->FabricPort = GpTestPortOf(ctx->Fabric);
+	if (ctx->FabricPort == 0 || GpTestFreePorts(&port, 1) == false)
+	{
+		return false;
+	}
+
+	Format(text, sizeof(text), GPTEST_EVPN, (UINT)port, (UINT)ctx->FabricPort);
+	cJSON *cfg = cJSON_Parse(text);
+	Lock(n->Lock);
+	{
+		NodeEvpnStart(n, cfg);
+	}
+	Unlock(n->Lock);
+	cJSON_Delete(cfg);
+
+	NodeEvpnRoute(n, GPTEST_FABRIC_ROUTE);
+	NodeEvpnCommit(n);
+
+	NodeEvpnGetStatus(n, &st);
+
+	return (st.Running && st.NumRoutes == 1);
+}
+
+// Stop the EVPN of node-b, as NodeBgpStop does with the node lock held, while the test thread is no online reader
+static void GpTestEvpnStop(GPTEST_CTX *ctx)
+{
+	NODE *n = ctx->Nodes[GPTEST_B].Node;
+
+	Lock(n->Lock);
+	{
+		NodeEvpnStop(n);
+	}
+	Unlock(n->Lock);
+}
+
+// One case of the EVPN gateway, over noise: a UDP packet of node-a's host from the address of the case to the fabric, which
+// node-b must count once in the tag mode session, as the case says, and the harness VTEP of the fabric take as a VXLAN
+// datagram with the packet as it was sent, or take nothing
+static void GpTestCaseFabric(GPTEST_CTX *ctx, GPTEST_CASE *c)
+{
+	GPTEST_NODE *a = &ctx->Nodes[GPTEST_A];
+	GPTEST_NODE *b = &ctx->Nodes[GPTEST_B];
+	NODE_SOURCE_GROUP_STATUS before, after;
+	UCHAR packet[GPTEST_SIZE];
+	UCHAR d[VXLAN_MAX_DATAGRAM];
+	char what[MAX_SIZE * 2];
+	bool counted = false;
+	UINT size = 0;
+
+	GpTestDrainFabric(ctx);
+	GpTestPacketTo(packet, c->Src, GPTEST_FABRIC_ADDR, ctx->NextPort++);
+	NodeSourceGroupGetStatus(b->Node, &before);
+
+	NodeReaderOnline(a->Node, &a->Reader);
+	bool sent = NodeOverlayInput(a->Node, GPTEST_VRF, packet, GPTEST_SIZE);
+	NodeReaderOffline(&a->Reader);
+
+	// Node-b judged the packet once it counted it, by the source group that it carried
+	UINT64 end = Tick64() + GPTEST_BOUND;
+	while (sent && counted == false)
+	{
+		NodeSourceGroupGetStatus(b->Node, &after);
+		counted = (GpTestCount(&after, CONTROL_TAG_MODE_SESSION, c->Result) > GpTestCount(&before, CONTROL_TAG_MODE_SESSION, c->Result));
+		if (counted == false)
+		{
+			if (Tick64() >= end)
+			{
+				break;
+			}
+			SleepThread(GPTEST_POLL);
+		}
+	}
+
+	if (sent)
+	{
+		size = GpTestTakeFabric(ctx, d, sizeof(d), c->Arrives ? GPTEST_BOUND : GPTEST_QUIET);
+	}
+	NodeSourceGroupGetStatus(b->Node, &after);
+
+	bool arrived = (size != 0);
+	bool same = (arrived && GpTestIsFabricFrame(d, size, packet));
+	// The packet of the case is the one packet that node-b counted
+	UINT64 counts = GpTestTotal(&after) - GpTestTotal(&before);
+
+	Format(what, sizeof(what), "  noise: %s", c->What);
+	GpTestCheck(ctx, sent && counted && counts == 1 && arrived == c->Arrives && (c->Arrives == false || same), what,
+		"sent %u, counted as %s in the tag mode session %u, %I64u counted in all, reached the fabric %u, as it was sent %u", (UINT)sent,
+		gptest_results[c->Result], (UINT)counted, counts, (UINT)arrived, (UINT)same);
+}
+
+// The num cases of cases, in order, to the fabric
+static void GpTestCasesFabric(GPTEST_CTX *ctx, GPTEST_CASE *cases, UINT num)
+{
+	for (UINT i = 0;i < num;i++)
+	{
+		GpTestCaseFabric(ctx, &cases[i]);
+	}
+}
+
+// The EVPN gateway, over noise: node-b hands red to a fabric (Cedar/NodeEvpn.c), and the state of node-a routes the LAN
+// subnets of node-b to it. Node-b is the destination of the packets of node-a's host to the fabric, so it judges the source
+// group that they carried as for a packet to its host: guest and admin, the groups that node-a stamps on the packets of its
+// own address and of phone; admin on the packets of its own address; and server, which node-a may not assert.
+static void GpTestGateway(GPTEST_CTX *ctx)
+{
+	char what[MAX_SIZE];
+
+	Print("[the EVPN gateway: node-b hands red to a fabric, and node-a routes the LAN subnets of node-b to it, over noise]\n");
+	bool started = GpTestEvpnStart(ctx);
+	ctx->Gateway = true;
+	if (GpTestCheck(ctx, started, "Node-b runs the EVPN of red, with the IP prefix route 172.16.1.0/24 of the fabric via the harness VTEP on 127.0.0.1",
+		"the VTEP of the fabric on the UDP port %u, and the EVPN does not run or holds another number of routes", (UINT)ctx->FabricPort) &&
+		GpTestSwitch(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true))
+	{
+		GpTestCasesFabric(ctx, gptest_fabric, sizeof(gptest_fabric) / sizeof(gptest_fabric[0]));
+
+		Format(what, sizeof(what), "  noise: node-a stamps admin on the packets of its own address, one Generation of node-a");
+		if (GpTestCheck(ctx, GpTestApplyA(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_ADMIN, GPTEST_ADMIN_TAGS), what, "not within %u ms", GPTEST_BOUND))
+		{
+			GpTestCasesFabric(ctx, gptest_fabric_admin, sizeof(gptest_fabric_admin) / sizeof(gptest_fabric_admin[0]));
+		}
+
+		Format(what, sizeof(what), "  noise: node-a stamps server, which it may not assert, on them, one Generation of node-a");
+		if (GpTestCheck(ctx, GpTestApplyA(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_TRUSTED, true, GPTEST_SERVER, GPTEST_SERVER_TAGS), what, "not within %u ms", GPTEST_BOUND))
+		{
+			GpTestCasesFabric(ctx, gptest_fabric_rogue, sizeof(gptest_fabric_rogue) / sizeof(gptest_fabric_rogue[0]));
+		}
+	}
+	ctx->Gateway = false;
+
+	GpTestEvpnStop(ctx);
+}
+
 // The nodes, their overlays and the harness tunnel endpoint, and the first Generation of node-a and node-b: noise, both
 // with the Capability tags. Node-c, which only the case of the hub uses, runs no state until then.
 static bool GpTestOpen(GPTEST_CTX *ctx, TRANSPORT *loopback)
@@ -1332,10 +1608,14 @@ static void GpTestClose(GPTEST_CTX *ctx)
 	{
 		closesocket(ctx->Vtep);
 	}
+	if (ctx->Fabric != INVALID_SOCKET)
+	{
+		closesocket(ctx->Fabric);
+	}
 }
 
 // The cases over noise, vxlan and geneve, each in a Generation of its own of both nodes, then the retired group of phone
-// both ways, the rollout of the Generations, the records of frame version 0 and the hub
+// both ways, the rollout of the Generations, the records of frame version 0, the EVPN gateway and the hub
 static void GpTestRun(GPTEST_CTX *ctx)
 {
 	UINT kinds[3] = {CONTROL_LINK_NOISE, CONTROL_LINK_VXLAN, CONTROL_LINK_GENEVE};
@@ -1377,12 +1657,15 @@ static void GpTestRun(GPTEST_CTX *ctx)
 		GpTestCases(ctx, CONTROL_LINK_NOISE, CONTROL_TAG_MODE_SESSION, gptest_version0, sizeof(gptest_version0) / sizeof(gptest_version0[0]));
 	}
 
+	// The EVPN gateway judges the source group of the packets that it hands to the fabric, with both nodes' states again
+	GpTestGateway(ctx);
+
 	// The hub of a VRF of topology hub-and-spoke judges the source group of the packets that it sends on
 	GpTestHub(ctx);
 }
 
 // grouppolicy: the policy of a VRF by the source group that a packet carries
-RANZ_TEST_TAGS("grouppolicy", grouppolicy_test, "core", "Source group policy (SDN-87): between two nodes, a rule written by tag allows or denies a packet by the source group that it carries, over noise, vxlan and geneve; a claim of a group that the sending node may not assert is dropped, counted and logged; a packet without one is judged by the map of address to group; trusted-underlay honours a forged group and off ignores it; a node on a stale state takes the claims of the groups that it knows and ignores the others, made on another state of the peer; a node ignores the claims of a peer whose groups it does not know yet; a node of frame version 0 still gets through; the hub of a VRF of topology hub-and-spoke judges the source group of a packet that it sends on from one spoke to another.");
+RANZ_TEST_TAGS("grouppolicy", grouppolicy_test, "core", "Source group policy (SDN-87): between two nodes, a rule written by tag allows or denies a packet by the source group that it carries, over noise, vxlan and geneve; a claim of a group that the sending node may not assert is dropped, counted and logged; a packet without one is judged by the map of address to group; trusted-underlay honours a forged group and off ignores it; a node on a stale state takes the claims of the groups that it knows and ignores the others, made on another state of the peer; a node ignores the claims of a peer whose groups it does not know yet; a node of frame version 0 still gets through; an EVPN gateway judges the source group of a packet of a peer that it hands to the fabric; the hub of a VRF of topology hub-and-spoke judges the source group of a packet that it sends on from one spoke to another.");
 void grouppolicy_test(UINT num, char **arg)
 {
 	GPTEST_CTX *ctx = ZeroMalloc(sizeof(GPTEST_CTX));
@@ -1393,6 +1676,7 @@ void grouppolicy_test(UINT num, char **arg)
 	Print("Source group policy test: the node that takes a packet of a peer judges it by the source group that the packet carried\n");
 
 	ctx->Vtep = INVALID_SOCKET;
+	ctx->Fabric = INVALID_SOCKET;
 	ctx->NextPort = GPTEST_FIRST_PORT;
 
 	if (GpTestOpen(ctx, loopback))

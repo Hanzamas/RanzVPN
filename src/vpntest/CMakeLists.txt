@@ -38,3 +38,8 @@ ranz_add_executable(vpntest HAMCORE
 # (sdntrace.c) runs the TLS of the control stream on it until the Schannel transport of CORE-S2-1
 # (#69) does; Mayaqua no longer exports the OpenSSL include path, so these files get it
 set_source_files_properties(x509test.c crypto.c sdntrace.c PROPERTIES INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIR}")
+
+# The source group policy test (grouppolicytest.c, SDN-87 #386) starts the EVPN of a gateway node without its BGP sidecar,
+# from the evpn object of a Bgp setting that cJSON parses, as NodeBgpStart does. Cedar does not export the include path of
+# cJSON (vcpkg; the path that Cedar found from the header), so this file gets it; vpntest links cJSON through Cedar.
+set_source_files_properties(grouppolicytest.c PROPERTIES INCLUDE_DIRECTORIES "${RANZ_CJSON_INCLUDE_DIR}")
