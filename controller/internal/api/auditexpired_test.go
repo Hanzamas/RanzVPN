@@ -52,6 +52,33 @@ func TestAuditRefusalsRecordsTheTokenThatExpired(t *testing.T) {
 	}
 }
 
+// A source that was refused a moment before, for a token that no one has, does not hide the record of its call with the token that
+// expired: the throttle of the failed authentications of a source counts a token apart (audit.Log). Both come from one source and
+// go to one audit log, as they do in the controller, which the test above keeps apart with a log for each call. A source that tries a
+// leaked token among others must show the token in the log, not only the others. That the same token again within the window is held
+// back is the test of the audit package, which moves the clock.
+func TestAnExpiredTokenIsRecordedAfterAnotherRefusalOfItsSource(t *testing.T) {
+	st := &auditStore{}
+	h := AuditRefusals(audit.NewLog(st, nil), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Expired") != "" {
+			noteExpired(r.Context(), rbac.Token{Name: "ci", Role: rbac.Operator, Expires: time.Date(2026, time.October, 30, 14, 0, 0, 0, time.UTC), Expired: true})
+		}
+		reply(w, http.StatusUnauthorized, Problem{Error: "no"})
+	}))
+	for _, expired := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+		req.RemoteAddr = "192.0.2.7:1000"
+		if expired {
+			req.Header.Set("X-Expired", "1")
+		}
+		h.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	recs := st.records()
+	if len(recs) != 2 || recs[0].Actor != audit.ActorUnknown || recs[1].Actor != "token:ci" || !strings.Contains(recs[1].Message, "expired") {
+		t.Errorf("the records are %+v, want the refusal of the unknown token and, from the same source, the one of the token that expired, under its name", recs)
+	}
+}
+
 // The note of a refusal belongs to its call: one call that was refused for an expired token does not name the token in the record of
 // the next, and a Guard that no AuditRefusals stands in front of, whose context has no note, tells nothing and fails nowhere.
 func TestTheNoteOfARefusalBelongsToItsCall(t *testing.T) {
