@@ -129,13 +129,15 @@ func TestThreatModelCS6ListsTheLoadOfChangedPins(t *testing.T) {
 
 // TestThreatModelCS5SaysWhatTheClientStatesHold is the third criterion of AUD1-DT-20: the row CS-5 says what the states of a client
 // hold now, the link of each mimic server that it dials, and names the case of a stolen client key with the model that shows it; it
-// no longer says that the desired state holds no secret.
+// says as well that the state of a mimic server holds its short id, and no longer says that the desired state holds no secret.
 func TestThreatModelCS5SaysWhatTheClientStatesHold(t *testing.T) {
 	checkRowSays(t, "CS-5",
 		"its mimic links (the address, the server name, the public key and the short id of each mimic server that it dials)",
 		"The link of a client holds, for each mimic server that it dials, the address, the first server name, the public key of the server and its short id",
 		"So whoever steals the key of a client holds a link",
 		"it learns that the server is no decoy (model `mimic-link`",
+		"the short id in the settings of a mimic server",
+		"The settings of the Node of a mimic server hold the same short id, so the stolen key of that Node gives it as well",
 	)
 	if row := threatModelRow(t, "CS-5"); strings.Contains(row, "holds no secret today") {
 		t.Error("the row CS-5 of the threat model still says that the desired state holds no secret today")
