@@ -13,10 +13,10 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/http/httptrace"
 	"os"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -256,22 +256,17 @@ func TestFrontDoorHandsOver(t *testing.T) {
 		http2 bool
 		want  string
 	}{{"HTTP/1.1", false, "HTTP/1.1"}, {"h2", true, "HTTP/2.0"}} {
-		// The local address of the connection that carried the request, which the handler of the API sees as the remote
-		// address of the request. The transport says which connection that was, among the ones that it dialed.
-		var local string
+		// The client may dial more than the one connection that carries its request, and the front door hands over each of
+		// them, so the test does not depend on which one carried the request: it records every connection that the client
+		// dials, waits for the handoff of each, and checks the remote address that the API saw against that set.
 		var dials dialed
-		trace := &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) { local = info.Conn.LocalAddr().String() }}
 		tr := &http.Transport{
 			DialContext:       dials.dial,
 			TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 			ForceAttemptHTTP2: c.http2,
 		}
 		client := &http.Client{Transport: tr, Timeout: 10 * time.Second}
-		req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), http.MethodGet, "https://"+addr+"/", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp, err := client.Do(req)
+		resp, err := client.Get("https://" + addr + "/")
 		if err != nil {
 			t.Fatalf("%s through the front door: %v", c.name, err)
 		}
@@ -283,8 +278,14 @@ func TestFrontDoorHandsOver(t *testing.T) {
 		for range clientAddrs {
 			taken(t, answers)
 		}
-		if got := string(body); got != c.want+" "+local {
-			t.Errorf("%s through the front door: the API answered %q, not %q (the client dialed from %v)", c.name, got, c.want+" "+local, clientAddrs)
+		// The handler answers with the protocol and the remote address of the request, which is the client of the connection
+		// that carried it: one of the connections that this leg dialed, and none of an older leg or of an older handoff
+		proto, remote, _ := strings.Cut(string(body), " ")
+		if proto != c.want {
+			t.Errorf("%s through the front door: the API answered over %q, not %q", c.name, proto, c.want)
+		}
+		if !slices.Contains(clientAddrs, remote) {
+			t.Errorf("%s through the front door: the API saw the client %q, and the client dialed from %v", c.name, remote, clientAddrs)
 		}
 		if !bytes.Equal(resp.TLS.PeerCertificates[0].Raw, cert.Certificate[0]) {
 			t.Errorf("%s through the front door: another certificate than the controller's", c.name)
