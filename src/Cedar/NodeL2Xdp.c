@@ -16,6 +16,15 @@
 //   poked once per batch when XDP asks for it, and the completions recycled in bulk (ADR-0022 amendment of 2026-10-19).
 // - The health check reads the statistics of the sockets of TX inspect, the frames that XDP dropped or cut short before
 //   a drain thread took them, into the counters of the adapter.
+// - A bridge (CORE-S3-3, #73) faces the wire instead of the host: the programs sit on the queues of RX inspect, and the
+//   injector sends on {L2, TX, INJECT}, onto the segment. The rule API has no match of a MAC address and no copy of a
+//   frame, so the program of each queue first lets the packets to the host's own addresses on the NIC pass untouched
+//   (XDP_MATCH_IPV4_DST_MASK and XDP_MATCH_IPV6_DST_MASK, NodeL2BridgeAddresses), and redirects the rest; the drain
+//   thread hands the host back, through a socket of RX inject of its own queue, the frames of those that are its own (to
+//   its MAC address, or broadcast and multicast, NodeL2BridgeWay), and captures the ones for the others. XDP cannot set
+//   the NIC promiscuous (xdp-for-windows issue #44), so Npcap holds it so while the backend is bound (NodeL2NpcapHold),
+//   or what the owner gives instead (NODE_L2_CONFIG.Hold). XDP inspects no frame that NDIS loops back
+//   (src/xdplwf/recv.c of release/1.4), so the frames that the host sends reach the bridge only through the wire.
 // The API is the header-only one of XDP_API_VERSION 3 from the pinned SDK package (src/Cedar/CMakeLists.txt): it opens
 // the XDP driver with NtCreateFile of ntdll, so nothing of the package ships, and the runtime is the one that ranz
 // install puts on the machine (ONE-3, #312). Where the runtime is missing or cannot bind, XskCreate, XskBind or
@@ -71,6 +80,9 @@ extern BOOLEAN XskRingProducerNeedPoke(const XSK_RING *Ring);
 #define NODE_L2_XDP_WAIT 50
 // ms that an injection waits at most for completions when no chunk is free
 #define NODE_L2_XDP_FREE_WAIT 1
+// Entries of the rings of the socket through which the drain thread of a bridge hands the host back its own frames, and
+// chunks of its UMEM
+#define NODE_L2_XDP_HOST_RING 256
 
 typedef struct NODE_L2_XDP NODE_L2_XDP;
 
@@ -94,6 +106,14 @@ typedef struct NODE_L2_XDP_QUEUE {
 	volatile LONG64 Frames;
 	volatile LONG64 WaitFailures;
 	volatile LONG WaitError;
+	// A bridge: the socket of RX inject of the queue, through which the drain thread hands the host back the frames of the
+	// wire that are its own, the chunks of its UMEM that no descriptor holds (a stack), and the frames that it handed back
+	// and dropped. The drain thread only.
+	NODE_L2_XSK Host;
+	UINT64 *HostFree;
+	UINT NumHostFree;
+	volatile LONG64 HostFrames;
+	volatile LONG64 HostDrops;
 } NODE_L2_XDP_QUEUE;
 
 // The state of the backend on one adapter (NODE_L2.BackendState)
@@ -106,6 +126,11 @@ struct NODE_L2_XDP {
 	// What the health check put into the counters of the adapter so far, on the injector thread
 	UINT64 ReportedDrops;
 	UINT64 ReportedWaitFailures;
+	UINT64 ReportedHost;
+	UINT64 ReportedHostDrops;
+	// A bridge: what holds its NIC in promiscuous mode, and lets go of it
+	void *Hold;
+	NODE_L2_LET_GO_PROC *LetGo;
 	// RX inject, on the injector thread only: the socket, the chunks of its UMEM that no descriptor holds (a stack), the
 	// descriptors submitted and completed so far, and when the completions last moved
 	UINT RingSize;
@@ -191,15 +216,21 @@ static void NodeL2XdpClose(NODE_L2_XSK *s) {
 	s->Umem = NULL;
 }
 
-// Free the state of the backend once no thread runs on it
+// Free the state of the backend once no thread runs on it, and let go of the promiscuous mode of a bridge last
 static void NodeL2XdpRelease(NODE_L2_XDP *x) {
 	for (UINT i = 0; x->Queues != NULL && i < x->NumQueues; i++) {
 		if (x->Queues[i].Program != NULL)
 			CloseHandle(x->Queues[i].Program);
 		NodeL2XdpClose(&x->Queues[i].Rx);
+		NodeL2XdpClose(&x->Queues[i].Host);
+		if (x->Queues[i].HostFree != NULL)
+			HeapFree(GetProcessHeap(), 0, x->Queues[i].HostFree);
 	}
 
 	NodeL2XdpClose(&x->Tx);
+
+	if (x->Hold != NULL && x->LetGo != NULL)
+		x->LetGo(x->Hold);
 
 	if (x->Queues != NULL)
 		HeapFree(GetProcessHeap(), 0, x->Queues);
@@ -229,12 +260,50 @@ static bool NodeL2XdpJoin(NODE_L2_XDP *x, UINT timeout) {
 	return true;
 }
 
-// The drain thread of a queue of TX inspect: the frames of its RX ring, NODE_L2_XDP_BATCH at a time, into the capture
-// ring of the adapter, and their chunks back to the fill ring in one go. Between batches it waits on the RX ring, and
-// pokes the fill ring when XDP asks for it.
+// The completions of the socket through which the drain thread of a bridge hands the host back its frames, in one go:
+// their chunks are free again. The drain thread only.
+static void NodeL2XdpHostComplete(NODE_L2_XDP_QUEUE *q) {
+	UINT32 index = 0;
+	UINT32 num = XskRingConsumerReserve(&q->Host.Other, q->Host.NumChunks, &index);
+
+	for (UINT32 i = 0; i < num; i++)
+		q->HostFree[q->NumHostFree++] = *(UINT64 *)XskRingGetElement(&q->Host.Other, index + i);
+	if (num != 0)
+		XskRingConsumerRelease(&q->Host.Other, num);
+}
+
+// Hand the host back a frame of the wire of size bytes that is its own, through the socket of RX inject of the queue,
+// without a wait: into a free chunk and a descriptor of the TX ring, or dropped and counted when there is neither. The
+// drain thread only. Returns 1 when the frame went, 0 when it was dropped.
+static UINT NodeL2XdpToHost(NODE_L2_XDP_QUEUE *q, const UCHAR *frame, UINT size) {
+	UINT32 index = 0;
+
+	if (size > NODE_L2_XDP_CHUNK || q->NumHostFree == 0 || XskRingProducerReserve(&q->Host.Ring, 1, &index) != 1) {
+		InterlockedIncrement64(&q->HostDrops);
+		return 0;
+	}
+
+	XSK_BUFFER_DESCRIPTOR *d = (XSK_BUFFER_DESCRIPTOR *)XskRingGetElement(&q->Host.Ring, index);
+	UINT64 chunk = q->HostFree[--q->NumHostFree];
+
+	CopyMemory(q->Host.Umem + chunk, frame, size);
+	d->Address.AddressAndOffset = chunk;
+	d->Length = size;
+	d->Reserved = 0;
+	XskRingProducerSubmit(&q->Host.Ring, 1);
+	InterlockedIncrement64(&q->HostFrames);
+
+	return 1;
+}
+
+// The drain thread of a queue of TX inspect, or of RX inspect for a bridge: the frames of its RX ring, NODE_L2_XDP_BATCH
+// at a time, into the capture ring of the adapter, and their chunks back to the fill ring in one go. A bridge hands the
+// host back the frames that are its own instead, or as well (NodeL2BridgeWay). Between batches it waits on the RX ring,
+// and pokes the fill ring when XDP asks for it.
 static DWORD WINAPI NodeL2XdpDrain(void *param) {
 	NODE_L2_XDP_QUEUE *q = (NODE_L2_XDP_QUEUE *)param;
 	NODE_L2_XDP *x = q->Xdp;
+	NODE_L2 *a = x->Adapter;
 	UINT64 bases[NODE_L2_XDP_BATCH];
 
 	while (ReadAcquire(&x->Halt) == 0) {
@@ -259,13 +328,25 @@ static DWORD WINAPI NodeL2XdpDrain(void *param) {
 			continue;
 		}
 
+		UINT to_host = 0;
+		if (a->Bridge)
+			NodeL2XdpHostComplete(q);
+
 		for (UINT32 i = 0; i < num; i++) {
 			XSK_BUFFER_DESCRIPTOR *d = (XSK_BUFFER_DESCRIPTOR *)XskRingGetElement(&q->Rx.Ring, index + i);
+			const UCHAR *frame = q->Rx.Umem + d->Address.BaseAddress + d->Address.Offset;
+			UINT way = (a->Bridge ? NodeL2BridgeWay(frame, d->Length, a->Mac) : NODE_L2_TO_OTHERS);
 
-			NodeL2Capture(x->Adapter, q->Rx.Umem + d->Address.BaseAddress + d->Address.Offset, d->Length);
+			if ((way & NODE_L2_TO_OTHERS) != 0)
+				NodeL2Capture(a, frame, d->Length);
+			if ((way & NODE_L2_TO_HOST) != 0)
+				to_host += NodeL2XdpToHost(q, frame, d->Length);
 			bases[i] = d->Address.BaseAddress;
 		}
 		XskRingConsumerRelease(&q->Rx.Ring, num);
+
+		if (to_host != 0 && XskRingProducerNeedPoke(&q->Host.Ring))
+			XskNotifySocket(q->Host.Socket, XSK_NOTIFY_FLAG_POKE_TX, 0, &result);
 
 		UINT32 fill = 0;
 		UINT32 got = XskRingProducerReserve(&q->Rx.Other, num, &fill);
@@ -289,6 +370,8 @@ static void NodeL2XdpReport(NODE_L2_XDP *x) {
 	NODE_L2 *a = x->Adapter;
 	UINT64 drops = 0;
 	UINT64 failures = 0;
+	UINT64 host = 0;
+	UINT64 host_drops = 0;
 	UINT busy = 0;
 
 	for (UINT i = 0; i < x->NumQueues; i++) {
@@ -299,6 +382,8 @@ static void NodeL2XdpReport(NODE_L2_XDP *x) {
 		ZeroMemory(&stats, sizeof(stats));
 		if (SUCCEEDED(XskGetSockopt(q->Rx.Socket, XSK_SOCKOPT_STATISTICS, &stats, &len)))
 			drops += stats.RxDropped + stats.RxTruncated;
+		host += (UINT64)ReadAcquire64(&q->HostFrames);
+		host_drops += (UINT64)ReadAcquire64(&q->HostDrops);
 
 		if (ReadAcquire64(&q->WaitFailures) != 0) {
 			failures += (UINT64)ReadAcquire64(&q->WaitFailures);
@@ -316,6 +401,14 @@ static void NodeL2XdpReport(NODE_L2_XDP *x) {
 	if (failures > x->ReportedWaitFailures) {
 		InterlockedAdd64(&a->DriverWaitFailures, (LONG64)(failures - x->ReportedWaitFailures));
 		x->ReportedWaitFailures = failures;
+	}
+	if (host > x->ReportedHost) {
+		InterlockedAdd64(&a->ToHost, (LONG64)(host - x->ReportedHost));
+		x->ReportedHost = host;
+	}
+	if (host_drops > x->ReportedHostDrops) {
+		InterlockedAdd64(&a->ToHostDrops, (LONG64)(host_drops - x->ReportedHostDrops));
+		x->ReportedHostDrops = host_drops;
 	}
 }
 
@@ -388,9 +481,14 @@ static bool NodeL2XdpHealthy(NODE_L2 *a) {
 
 	NodeL2XdpReport(x);
 
-	for (UINT i = 0; i < x->NumQueues; i++)
-		if (XskRingError(&x->Queues[i].Rx.Ring) || XskRingError(&x->Queues[i].Rx.Other))
+	for (UINT i = 0; i < x->NumQueues; i++) {
+		NODE_L2_XDP_QUEUE *q = &x->Queues[i];
+
+		if (XskRingError(&q->Rx.Ring) || XskRingError(&q->Rx.Other))
 			return false;
+		if (q->Host.Socket != NULL && (XskRingError(&q->Host.Ring) || XskRingError(&q->Host.Other)))
+			return false;
+	}
 
 	if (XskRingError(&x->Tx.Ring) || XskRingError(&x->Tx.Other))
 		return false;
@@ -441,19 +539,110 @@ static bool NodeL2XdpDetach(NODE_L2 *a, UINT timeout) {
 	return ok;
 }
 
-// Bind to the adapter: on each queue of TX inspect a socket with its fill ring full and the program that redirects every
-// frame of the queue to it, then the socket of RX inject, and last the drain threads
+// How many queues of the inspect hook inspect of the interface if_index take a socket and a program that redirects to
+// it, from queue 0 on, up to max: one for each receive queue that the adapter reports for RSS, and one for an adapter
+// without RSS, such as KM-TEST (#72, multi-queue). A socket binds to a queue that the adapter does not have too, and only
+// XdpCreateProgram refuses it, so each queue gets both. error gets why the first queue that did not take them failed.
+static UINT NodeL2XdpCount(UINT if_index, const XDP_HOOK_ID *inspect, UINT max, char *error, UINT error_size) {
+	UINT num = 0;
+
+	if (error != NULL && error_size != 0)
+		error[0] = 0;
+
+	for (; num < max; num++) {
+		NODE_L2_XSK s;
+		XDP_RULE rule;
+		HANDLE program = NULL;
+		const char *step = "";
+
+		ZeroMemory(&s, sizeof(s));
+		HRESULT hr = NodeL2XdpOpen(&s, if_index, num, inspect, true, NODE_L2_XDP_PROBE_RING, &step);
+		if (SUCCEEDED(hr)) {
+			ZeroMemory(&rule, sizeof(rule));
+			rule.Match = XDP_MATCH_ALL;
+			rule.Action = XDP_PROGRAM_ACTION_REDIRECT;
+			rule.Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK;
+			rule.Redirect.Target = s.Socket;
+			step = "XdpCreateProgram";
+			hr = XdpCreateProgram(if_index, inspect, num, XDP_CREATE_PROGRAM_FLAG_GENERIC, &rule, 1, &program);
+			if (SUCCEEDED(hr))
+				CloseHandle(program);
+		}
+		NodeL2XdpClose(&s);
+
+		if (FAILED(hr)) {
+			if (error != NULL)
+				snprintf(error, error_size, "queue %u: %s failed (0x%08X)", num, step, (UINT)hr);
+			break;
+		}
+	}
+
+	return num;
+}
+
+// The rules of a bridge that let the packets to the host's own unicast addresses on its NIC pass to the host untouched,
+// into rules, max of them at most: XDP_MATCH_IPV4_DST_MASK and XDP_MATCH_IPV6_DST_MASK of each address, with a full mask.
+// Returns their number. An address that the host gains later takes the way through the drain thread, which hands the
+// host back what is its own, until the next attach.
+static UINT NodeL2XdpPassRules(NODE_L2 *a, XDP_RULE *rules, UINT max) {
+	NODE_L2_ADDRESS addresses[NODE_L2_XDP_MAX_PASS];
+	UINT num = NodeL2BridgeAddresses(a, addresses, max < NODE_L2_XDP_MAX_PASS ? max : NODE_L2_XDP_MAX_PASS);
+
+	for (UINT i = 0; i < num; i++) {
+		XDP_RULE *r = &rules[i];
+
+		ZeroMemory(r, sizeof(XDP_RULE));
+		r->Action = XDP_PROGRAM_ACTION_PASS;
+		if (addresses[i].Size == 4) {
+			r->Match = XDP_MATCH_IPV4_DST_MASK;
+			CopyMemory(&r->Pattern.IpMask.Address.Ipv4, addresses[i].Bytes, 4);
+			FillMemory(&r->Pattern.IpMask.Mask.Ipv4, 4, 0xFF);
+		} else {
+			r->Match = XDP_MATCH_IPV6_DST_MASK;
+			CopyMemory(&r->Pattern.IpMask.Address.Ipv6, addresses[i].Bytes, 16);
+			FillMemory(&r->Pattern.IpMask.Mask.Ipv6, 16, 0xFF);
+		}
+	}
+
+	return num;
+}
+
+// The socket of RX inject of queue queue of a bridge, through which its drain thread hands the host back its own frames,
+// with every chunk of its UMEM free
+static HRESULT NodeL2XdpOpenHost(NODE_L2_XDP_QUEUE *q, UINT if_index, UINT queue, const char **step) {
+	XDP_HOOK_ID host = {XDP_HOOK_L2, XDP_HOOK_RX, XDP_HOOK_INJECT};
+
+	HRESULT hr = NodeL2XdpOpen(&q->Host, if_index, queue, &host, false, NODE_L2_XDP_HOST_RING, step);
+	if (FAILED(hr))
+		return hr;
+
+	*step = "the free list";
+	q->HostFree = (UINT64 *)HeapAlloc(GetProcessHeap(), 0, sizeof(UINT64) * q->Host.NumChunks);
+	if (q->HostFree == NULL)
+		return E_OUTOFMEMORY;
+	for (UINT i = 0; i < q->Host.NumChunks; i++)
+		q->HostFree[q->NumHostFree++] = (UINT64)i * NODE_L2_XDP_CHUNK;
+
+	return S_OK;
+}
+
+// Bind to the adapter: on each queue of TX inspect (of RX inspect for a bridge) a socket with its fill ring full and the
+// program that redirects every frame of the queue to it, after the rules that let a bridge's host have its own; then the
+// socket of RX inject (TX inject for a bridge), and last the drain threads. A bridge holds its NIC in promiscuous mode
+// first, through Npcap or what the owner gives instead.
 static bool NodeL2XdpAttach(NODE_L2 *a, char *error, UINT error_size) {
-	XDP_HOOK_ID inspect = {XDP_HOOK_L2, XDP_HOOK_TX, XDP_HOOK_INSPECT};
-	XDP_HOOK_ID inject = {XDP_HOOK_L2, XDP_HOOK_RX, XDP_HOOK_INJECT};
+	XDP_HOOK_ID inspect = {XDP_HOOK_L2, a->Bridge ? XDP_HOOK_RX : XDP_HOOK_TX, XDP_HOOK_INSPECT};
+	XDP_HOOK_ID inject = {XDP_HOOK_L2, a->Bridge ? XDP_HOOK_TX : XDP_HOOK_RX, XDP_HOOK_INJECT};
+	const char *inspect_name = (a->Bridge ? "RX inspect" : "TX inspect");
+	XDP_RULE rules[NODE_L2_XDP_MAX_PASS + 1];
 	char why[256];
 	const char *step = "";
 	UINT32 index = 0;
 	HRESULT hr;
 
-	UINT queues = NodeL2XdpQueues(a->IfIndex, NODE_L2_XDP_MAX_QUEUES, why, sizeof(why));
+	UINT queues = NodeL2XdpCount(a->IfIndex, &inspect, NODE_L2_XDP_MAX_QUEUES, why, sizeof(why));
 	if (queues == 0) {
-		snprintf(error, error_size, "TX inspect: %s", why);
+		snprintf(error, error_size, "%s: %s", inspect_name, why);
 		return false;
 	}
 
@@ -472,7 +661,19 @@ static bool NodeL2XdpAttach(NODE_L2 *a, char *error, UINT error_size) {
 	}
 	x->NumQueues = queues;
 
-	// The rings of TX inspect: NODE_L2_CONFIG.BackendRing each, or a share of NODE_L2_XDP_CHUNKS
+	// A bridge: the NIC promiscuous, so that the frames of the segment's other addresses reach RX inspect at all
+	if (a->Bridge) {
+		x->LetGo = (a->Hold != NULL ? a->LetGo : NodeL2NpcapLetGo);
+		bool held = (a->Hold != NULL ? a->Hold(a, &x->Hold, why, sizeof(why)) : NodeL2NpcapHold(a, &x->Hold, why, sizeof(why)));
+		if (held == false) {
+			x->Hold = NULL;
+			snprintf(error, error_size, "the NIC cannot be held in promiscuous mode, which XDP cannot set itself (xdp-for-windows issue #44): %s", why);
+			NodeL2XdpRelease(x);
+			return false;
+		}
+	}
+
+	// The rings of the inspect hook: NODE_L2_CONFIG.BackendRing each, or a share of NODE_L2_XDP_CHUNKS
 	UINT ring = a->BackendRing;
 	if (ring == 0) {
 		ring = NODE_L2_XDP_RING;
@@ -480,14 +681,19 @@ static bool NodeL2XdpAttach(NODE_L2 *a, char *error, UINT error_size) {
 			ring /= 2;
 	}
 
+	// The rules of each queue: a bridge's passes for the host's own addresses, then the redirect of the queue
+	UINT num_rules = (a->Bridge ? NodeL2XdpPassRules(a, rules, NODE_L2_XDP_MAX_PASS) : 0);
+
 	for (UINT i = 0; i < queues; i++) {
 		NODE_L2_XDP_QUEUE *q = &x->Queues[i];
-		XDP_RULE rule;
+		XDP_RULE *rule = &rules[num_rules];
 
 		q->Xdp = x;
 		hr = NodeL2XdpOpen(&q->Rx, a->IfIndex, i, &inspect, true, ring, &step);
+		if (SUCCEEDED(hr) && a->Bridge)
+			hr = NodeL2XdpOpenHost(q, a->IfIndex, i, &step);
 		if (FAILED(hr)) {
-			snprintf(error, error_size, "TX inspect, queue %u: %s failed (0x%08X)", i, step, (UINT)hr);
+			snprintf(error, error_size, "%s, queue %u: %s failed (0x%08X)", inspect_name, i, step, (UINT)hr);
 			NodeL2XdpRelease(x);
 			return false;
 		}
@@ -498,14 +704,14 @@ static bool NodeL2XdpAttach(NODE_L2 *a, char *error, UINT error_size) {
 			*(UINT64 *)XskRingGetElement(&q->Rx.Other, index + j) = (UINT64)j * NODE_L2_XDP_CHUNK;
 		XskRingProducerSubmit(&q->Rx.Other, got);
 
-		ZeroMemory(&rule, sizeof(rule));
-		rule.Match = XDP_MATCH_ALL;
-		rule.Action = XDP_PROGRAM_ACTION_REDIRECT;
-		rule.Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK;
-		rule.Redirect.Target = q->Rx.Socket;
-		hr = XdpCreateProgram(a->IfIndex, &inspect, i, XDP_CREATE_PROGRAM_FLAG_GENERIC, &rule, 1, &q->Program);
+		ZeroMemory(rule, sizeof(XDP_RULE));
+		rule->Match = XDP_MATCH_ALL;
+		rule->Action = XDP_PROGRAM_ACTION_REDIRECT;
+		rule->Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK;
+		rule->Redirect.Target = q->Rx.Socket;
+		hr = XdpCreateProgram(a->IfIndex, &inspect, i, XDP_CREATE_PROGRAM_FLAG_GENERIC, rules, num_rules + 1, &q->Program);
 		if (FAILED(hr)) {
-			snprintf(error, error_size, "TX inspect, queue %u: XdpCreateProgram failed (0x%08X)", i, (UINT)hr);
+			snprintf(error, error_size, "%s, queue %u: XdpCreateProgram of %u rules failed (0x%08X)", inspect_name, i, num_rules + 1, (UINT)hr);
 			q->Program = NULL;
 			NodeL2XdpRelease(x);
 			return false;
@@ -514,7 +720,7 @@ static bool NodeL2XdpAttach(NODE_L2 *a, char *error, UINT error_size) {
 
 	hr = NodeL2XdpOpen(&x->Tx, a->IfIndex, 0, &inject, false, x->RingSize, &step);
 	if (FAILED(hr)) {
-		snprintf(error, error_size, "RX inject: %s failed (0x%08X)", step, (UINT)hr);
+		snprintf(error, error_size, "%s: %s failed (0x%08X)", a->Bridge ? "TX inject" : "RX inject", step, (UINT)hr);
 		NodeL2XdpRelease(x);
 		return false;
 	}
@@ -557,44 +763,10 @@ const NODE_L2_BACKEND *NodeL2XdpBackend() {
 	return &node_l2_xdp;
 }
 
-// How many queues of the TX inspect hook of the interface if_index take a socket and a program that redirects to it,
-// from queue 0 on, up to max: one for each receive queue that the adapter reports for RSS, and one for an adapter
-// without RSS, such as KM-TEST (#72, multi-queue). A socket binds to a queue that the adapter does not have too, and only
-// XdpCreateProgram refuses it, so each queue gets both. error gets why the first queue that did not take them failed.
+// How many queues of the TX inspect hook of the interface if_index, the hook of the KM-TEST adapter, take a socket and a
+// program that redirects to it, up to max (NodeL2XdpCount)
 UINT NodeL2XdpQueues(UINT if_index, UINT max, char *error, UINT error_size) {
 	XDP_HOOK_ID inspect = {XDP_HOOK_L2, XDP_HOOK_TX, XDP_HOOK_INSPECT};
-	UINT num = 0;
 
-	if (error != NULL && error_size != 0)
-		error[0] = 0;
-
-	for (; num < max; num++) {
-		NODE_L2_XSK s;
-		XDP_RULE rule;
-		HANDLE program = NULL;
-		const char *step = "";
-
-		ZeroMemory(&s, sizeof(s));
-		HRESULT hr = NodeL2XdpOpen(&s, if_index, num, &inspect, true, NODE_L2_XDP_PROBE_RING, &step);
-		if (SUCCEEDED(hr)) {
-			ZeroMemory(&rule, sizeof(rule));
-			rule.Match = XDP_MATCH_ALL;
-			rule.Action = XDP_PROGRAM_ACTION_REDIRECT;
-			rule.Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK;
-			rule.Redirect.Target = s.Socket;
-			step = "XdpCreateProgram";
-			hr = XdpCreateProgram(if_index, &inspect, num, XDP_CREATE_PROGRAM_FLAG_GENERIC, &rule, 1, &program);
-			if (SUCCEEDED(hr))
-				CloseHandle(program);
-		}
-		NodeL2XdpClose(&s);
-
-		if (FAILED(hr)) {
-			if (error != NULL)
-				snprintf(error, error_size, "queue %u: %s failed (0x%08X)", num, step, (UINT)hr);
-			break;
-		}
-	}
-
-	return num;
+	return NodeL2XdpCount(if_index, &inspect, max, error, error_size);
 }
